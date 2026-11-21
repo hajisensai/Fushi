@@ -19,6 +19,7 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -126,6 +127,13 @@ class _FakeImporter extends MangaOcrModelImporter {
 
 /// 系统 OCR 可用性桩：设置区据此决定「设备自带」那项灰不灰。
 class _FakeSystemOcr implements SystemOcrMangaRunner {
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
   _FakeSystemOcr(this.available, {this.status = SystemOcrModelStatus.ready});
 
   final bool available;

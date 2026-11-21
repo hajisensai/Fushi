@@ -29,9 +29,13 @@ void main() {
     'extension vendor (assets)': 'assets/browser_extension/vendor/popup.js',
     'extension vendor (tools)': '../tools/browser-extension/vendor/popup.js',
   };
+  // BUG-4935：扩展侧解码收口到 vendor/dict-media.js 的 applyFushiPopupDisplayPrefs
+  // （页面弹窗 / 侧边栏 / 嵌套层共用），不再在 content.js 里各写一份。
   const Map<String, String> contentMirrors = <String, String>{
-    'extension content (assets)': 'assets/browser_extension/content.js',
-    'extension content (tools)': '../tools/browser-extension/content.js',
+    'extension dict-media (assets)':
+        'assets/browser_extension/vendor/dict-media.js',
+    'extension dict-media (tools)':
+        '../tools/browser-extension/vendor/dict-media.js',
   };
 
   test(
@@ -133,42 +137,45 @@ void main() {
     );
   });
 
-  test(
-    'the pitch dedup preference is wired through to the browser extension',
-    () {
-      // 根因②的守卫。app 侧把偏好放进查词响应的 theme 字典（非 CSS 变量、仅 JS 消费，
-      // 与 --fushi-instant-scroll 同法），扩展 content.js 据此设 popup.js 读的全局。
-      final String appModel = File(
-        'lib/src/models/app_model.dart',
-      ).readAsStringSync();
-      expect(
-        appModel,
-        contains("'--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',"),
-        reason:
-            'app_model must send the pitch-dedup preference to the extension; '
-            'without it window.deduplicatePitchAccents is undefined in the '
-            'browser and the dedup branch never runs',
-      );
-      // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路
-      // 填，两路都必须接到「音调去重」偏好上。
-      expect(appModel, contains('dedupPitch: deduplicatePitchAccents,'));
-      expect(appModel, contains('dedupPitch: p.deduplicatePitchAccents,'));
+  test('the pitch dedup preference is wired through to the browser extension', () {
+    // 根因②的守卫。app 侧把偏好放进查词响应的 theme 字典（非 CSS 变量、仅 JS 消费，
+    // 与 --fushi-instant-scroll 同法），扩展 content.js 据此设 popup.js 读的全局。
+    final String appModel = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    // BUG-4935：显示偏好的编码收口到 popup_theme_css.dart 的
+    // buildPopupDisplayPrefsThemeVars，app_model 的 theme 表展开它。
+    expect(
+      appModel,
+      contains('...buildPopupDisplayPrefsThemeVars(inputs.displayPrefs),'),
+    );
+    expect(
+      File('lib/src/utils/popup_theme_css.dart').readAsStringSync(),
+      contains("'--fushi-dedup-pitch': prefs.dedupPitch ? '1' : '0',"),
+      reason:
+          'app_model must send the pitch-dedup preference to the extension; '
+          'without it window.deduplicatePitchAccents is undefined in the '
+          'browser and the dedup branch never runs',
+    );
+    // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路
+    // 填，两路都必须接到「音调去重」偏好上。
+    expect(appModel, contains('dedupPitch: deduplicatePitchAccents,'));
+    expect(appModel, contains('dedupPitch: p.deduplicatePitchAccents,'));
 
-      contentMirrors.forEach((String name, String relPath) {
-        final File file = File(relPath);
-        expect(file.existsSync(), isTrue, reason: '$relPath must exist');
-        expect(
-          file.readAsStringSync(),
-          contains(
-            "window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';",
-          ),
-          reason:
-              '[$name] content.js must publish the preference on the shared '
-              'window that popup.js reads',
-        );
-      });
-    },
-  );
+    contentMirrors.forEach((String name, String relPath) {
+      final File file = File(relPath);
+      expect(file.existsSync(), isTrue, reason: '$relPath must exist');
+      expect(
+        file.readAsStringSync(),
+        contains(
+          "window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';",
+        ),
+        reason:
+            '[$name] the extension decoder must publish the preference on the shared '
+            'window that popup.js reads',
+      );
+    });
+  });
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.

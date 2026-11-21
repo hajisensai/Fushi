@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:image/image.dart' as img;
 
 import 'google_lens_fixture.dart';
@@ -19,6 +20,40 @@ void main() {
     expect(prepared.width, 1500);
     expect(prepared.height, 750);
     expect(prepared.data.take(2), <int>[0xff, 0xd8]);
+  });
+
+  test('内存像素（视频暂停帧）不解码：原生缩到长边 1500 编 JPEG，尺寸口径同 prepareImage', () {
+    final img.Image source = img.Image(width: 2000, height: 1000);
+    for (final img.Pixel px in source) {
+      px
+        ..r = px.x % 256
+        ..g = px.y % 256
+        ..b = 90;
+    }
+    final img.Image rgba = source.convert(numChannels: 4, alpha: 255);
+    final GoogleLensPreparedImage prepared = GoogleLensProtocol.prepareRgba(
+      OcrRgbaImage(
+        rgba: rgba.getBytes(order: img.ChannelOrder.rgba),
+        width: 2000,
+        height: 1000,
+      ),
+    );
+    expect((prepared.originalWidth, prepared.originalHeight), (2000, 1000));
+    expect((prepared.width, prepared.height), (1500, 750));
+    expect(prepared.data.take(2), <int>[0xff, 0xd8]);
+    final img.Image jpeg = img.decodeJpg(prepared.data)!;
+    expect((jpeg.width, jpeg.height), (1500, 750));
+    // 面积平均缩小：中间一点的颜色仍接近源图对应位置。
+    final img.Pixel mid = jpeg.getPixel(750, 375);
+    expect(mid.b.toInt(), closeTo(90, 6));
+    expect(mid.g.toInt(), closeTo(500 % 256, 8));
+  });
+
+  test('内存像素不超限时不缩放', () {
+    final GoogleLensPreparedImage prepared = GoogleLensProtocol.prepareRgba(
+      OcrRgbaImage(rgba: Uint8List(64 * 36 * 4), width: 64, height: 36),
+    );
+    expect((prepared.width, prepared.height), (64, 36));
   });
 
   test('request contains image payload and Japanese locale', () {

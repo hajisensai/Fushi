@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-3431：滚动（连续）模式每次杀进程重开都回退一列（竖排 912 → 874 → 837）。
 ///
@@ -20,7 +21,7 @@ void main() {
   test(
     'continuous restore aligns the target glyph, not the soft-wrap caret',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
@@ -37,27 +38,15 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final String payload = jsonEncode(<String, String>{
+      final Map<String, String> payload = <String, String>{
         'continuous': ReaderPaginationScripts.continuousShellSource(),
         'studyUnits': kStudyUnitJs,
-      });
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'fushi-continuous-glyph-anchor-',
+      };
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        jsTest.path,
+        payload,
       );
-      final File payloadFile = File('${temp.path}/payload.json')
-        ..writeAsStringSync(payload);
-      late final ProcessResult result;
-      try {
-        result = await Process.run(
-          nodeExe,
-          <String>[jsTest.path, payloadFile.path],
-          workingDirectory: Directory.current.path,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
-        );
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
 
       expect(
         result.exitCode,
@@ -73,22 +62,4 @@ void main() {
       );
     },
   );
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }

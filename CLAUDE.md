@@ -6,10 +6,11 @@
 
 - 始终用中文回复。发现问题直接说，不为了顺滑把风险说轻。先读最近层级的 `AGENTS.md` / `CLAUDE.md`。
 - **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
-- 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。
+- 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。**长期集成分支也不追 `develop`**：只在对 `develop` 开整批 PR 前合一次（与最后一批合流并成一次验证），中途不合、不量、不汇报「落后多少提交」。（[细则](docs/agent/rules-detail.md#集成分支不追-develop)）
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
+- **方案取最优、一次做到位**（修 bug 与做功能都适用）：动手前先比较有没有更好的方案，有就用更好的，不因为「改动小 / 沿用现状省事」退而求其次；做到一半发现更好的就换，并在回复里说明换了什么、为什么。能根本修复 / 完整实现的就一次做完，不交「先凑一版、以后再补」的补丁式半成品。更好的方案若会改变用户可见行为或明显扩大范围，先列取舍问用户；确实只能分期的，写明还缺什么并登记（`docs/BUGS.md` / [拍板台](docs/agent/decision-board.md)），不只在汇报里提。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
-- 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
+- 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号不是需要处理或汇报的事（本机并行工作区取号互不相同，跨机器的由 develop 上的 settle CI 自动改号），真要改号用 `bug.dart renumber` / `settle`，别手动改文件名。
 - **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 要设计图 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
 - 函数和新增 Dart helper 要有明确类型签名。
 
@@ -51,7 +52,8 @@
 
 - 文档改动：`git diff --cached --check` 即可。
 - **本机重活一律走租约**：在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（`flutter test` / `analyze` / `build` / `gradlew` / `run_windows_itest.ps1`）；test 与 analyze 自动外包给 dist 机器，只验能编过的构建加 `--check-only`。（[heavy-lease.md](docs/agent/heavy-lease.md)）
-- **推送前唯一本地门**：`fushi/` 下全量 `dart tool/heavy.dart -- flutter analyze --no-pub`，一个分支只在 push 前跑一次。analyze 过了 ≠ CI 绿，推完看 PR CI。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
+- **推送前唯一本地门**：`fushi/` 下全量 `dart tool/heavy.dart -- flutter analyze --no-pub`，一个分支只在 push 前跑一次。analyze 过了 ≠ CI 绿，但开发会话不为 PR CI 留守（见下一条）。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
+- **等待不烧缓存**（2026-11-20，实测与依据见 [fast-workflow.md](docs/agent/fast-workflow.md#等待与缓存)）：① 开发会话 push + 开 PR 后就结束，不挂 `wait-ci` / `gh run watch` / `gh pr checks --watch`，不开 Auto-fix 与 PR 监视；PR CI 的红由**合并任务**在合并前读一次、按根因修。② 主会话里预计 <2 分钟且期间没别的事可推进的命令前台跑；要后台跑的几条合成一条命令、一个日志，只被唤醒一次。③ 子代理的缓存只保 5 分钟：前台 `timeout` 不超过 270000，等待切成不超过 4 分钟一片（写在 `.claude/agents/*.md`，`tool/claude_hooks/subagent_wait_slice.mjs` 兜底）。
 - **PR CI 默认只跑快门**（analyze + 守卫 + 直接受影响的测试），全量在合并后的 `develop` 上跑；改了原生 / Android / pubspec / `fushi/tool/` 等才在 PR 上自动跑全量。**不为全量空等**：快门绿就算 PR CI 过；要在分支上跑全量用 `gh workflow run main.yml --ref <分支>` 或 `full-ci` 标签。（[build.md](docs/agent/build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
 - Rust 改动（`native/fushi_*`）：「编译—测试」循环用 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，fushi_fsrs 改一行重编约 8 秒；`--release` 是 7～15 分钟），一大批测试用 `bash tool/rust_test.sh <crate> [过滤]`（分进程跑，全量快一倍多），**不拿 `cargo test --release` 当循环**，`id_audit` 与默认构建本地只跑一种。`--release` 只用于出产物（`build_*` / `tool/native_libs.ps1`）和量性能，全量 release 测试交给 PR CI 的 `native-*-gate`。一个 worktree 一个 target 目录，不另设共用的 `CARGO_TARGET_DIR`。（[build.md](docs/agent/build.md#rust-本地开发循环quick-profile)）
@@ -65,7 +67,7 @@
 - **2026-11-01 仓库历史已用 filter-repo 重写**：旧 clone / 分支与新历史无共同祖先，报 `unrelated histories` 时禁止 `--allow-unrelated-histories`，用 `git rebase --onto origin/develop <旧分叉点> <分支>` 只搬自己的提交（或从新 `origin/develop` 重开 worktree）；带旧历史的 PR / push 会被 `.github/workflows/history-guard.yml` 判红。
 - 提交前 `git status --short`，**只 stage 本轮相关文件（禁止 `git add -A`）**，再 `git diff --cached --check`；提交信息简洁写真实改动；提交后回复里给出哈希和仍存在的无关未提交改动。
 - 过了推送门就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
-- 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
+- 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。合并任务合并前对每条 PR 读一次 CI 的现成结论（`gh pr checks <N>`，不 `--watch`）：红了就在合并任务里按根因修，还没跑完的不等；批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
 - 版本号、发布通道（push 只进 debug / prerelease，正式版只能手动触发）、跨 workflow release 序列：见 [build.md](docs/agent/build.md)。
 - **TestFlight 不用人管**：`develop` 每次 push 的 `release-desktop.yml` 都自动传 debug 包（用户 2026-11-02 拍板），合并后不查序列、不补发；`main` 的 push 不传。（[细则](docs/agent/rules-detail.md#testflight-每次-push-自动传)）
 

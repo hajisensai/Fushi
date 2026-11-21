@@ -198,6 +198,14 @@ const KNOWN: &[Known] = &[
               a failed protocol 3 cache rebuild instead of skipping the cache layer",
     },
     Known {
+        test: "store::gen4::prepare::tests::a_library_missing_tables_its_schema_claims_is_refused_as_corrupt",
+        what: "caches",
+        old: Some("no such table: sync2_replay_pending"),
+        why: "the test drops sync2_replay_pending and marks the library as schema 13 on purpose (a development \
+              build's library) to prove the migration refuses it as corrupt: protocol 3's own catch-up fails on \
+              the missing table, so there is no protocol 3 cache baseline when the preparation copy is closed",
+    },
+    Known {
         test: "store::sync2::tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
         what: "entities",
         old: None,

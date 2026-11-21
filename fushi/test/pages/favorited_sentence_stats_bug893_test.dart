@@ -10,6 +10,13 @@ import 'package:fushi_core/fushi_core.dart';
 // 读取端又用 `dateKey != null` 过滤，把所有书内收藏滤光。修复：写入补 dateKey +
 // 读取端回退 `dateKey ?? statDateKey(createdAt)`（createdAt 恒非空，已存无 dateKey 收藏也计入）。
 
+/// 收藏句 → 计数面的三列行（生产读口 `getFavoriteSentenceStatRows` 的形状）。
+List<FavoriteSentenceStatRow> _statRows(List<FavoriteSentence> favs) =>
+    <FavoriteSentenceStatRow>[
+      for (final FavoriteSentence s in favs)
+        (source: s.source, dateKey: s.dateKey, createdAt: s.createdAt),
+    ];
+
 /// 阅读侧收藏语句的分桶：直接走生产判据（[StatCounterFacts.favoriteSentenceEvents]，
 /// 三个统计 tab 共用的那一个），不再在测试里复刻一份——复刻件与实现漂移时，测试会
 /// 在实现已经坏掉的情况下继续绿。
@@ -19,7 +26,7 @@ StatActivityBuckets bucketFavoritedSentences(
 ) {
   return bucketActivityByDateKey(
     StatCounterFacts(
-      favoriteSentences: favSentences,
+      favoriteSentences: _statRows(favSentences),
     ).favoriteSentenceEvents(source: StatSourceKind.book),
     now,
   );
@@ -32,7 +39,7 @@ StatActivityBuckets bucketVideoFavoritedSentences(
 ) {
   return bucketActivityByDateKey(
     StatCounterFacts(
-      favoriteSentences: favSentences,
+      favoriteSentences: _statRows(favSentences),
     ).favoriteSentenceEvents(source: StatSourceKind.video),
     now,
   );
@@ -162,7 +169,9 @@ void main() {
         ),
       ];
       final StatActivityBuckets all = bucketActivityByDateKey(
-        StatCounterFacts(favoriteSentences: favs).favoriteSentenceEvents(),
+        StatCounterFacts(
+          favoriteSentences: _statRows(favs),
+        ).favoriteSentenceEvents(),
         now,
       );
       expect(

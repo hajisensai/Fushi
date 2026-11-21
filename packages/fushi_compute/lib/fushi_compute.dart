@@ -30,3 +30,4 @@ export 'src/signal/ffc_signal.dart';
 export 'src/text/cue_match.dart';
 export 'src/text/legacy_text.dart';
 export 'src/ts/fushi_compute_ts.dart';
+export 'src/upscale/fushi_compute_upscale.dart';

@@ -48,12 +48,6 @@ class VideoDiscTrackRefreshGate {
   void beginRefresh() => _dirty = false;
 }
 
-/// Per-controller [VideoDiscTrackRefreshGate]. Extensions cannot declare
-/// fields and the controller's main file is claimed by in-flight branches;
-/// fold this into a plain field of [VideoPlayerController] once they land.
-final Expando<VideoDiscTrackRefreshGate> _videoDiscTrackRefreshGates =
-    Expando<VideoDiscTrackRefreshGate>('videoDiscTrackRefreshGate');
-
 /// Blu-ray navigation uses the existing Player/texture. The disc VM selects
 /// titles; the library only binds identity after an atomic native snapshot.
 extension VideoDiscMenuController on VideoPlayerController {
@@ -72,9 +66,6 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discLoadStage = stage;
     debugPrint('[video-load] disc-stage=$stage');
   }
-
-  VideoDiscTrackRefreshGate get _discTrackRefreshGate =>
-      _videoDiscTrackRefreshGates[this] ??= VideoDiscTrackRefreshGate();
 
   bool get discNavigationSupported => _discNavigationSupported;
   bool get discMenuEntryPending => _discInitialMenuPending;
@@ -163,6 +154,7 @@ extension VideoDiscMenuController on VideoPlayerController {
   void _resetDiscMenu() {
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
+    _discVerifiedJavaHome = null;
     _discRootPath = null;
     _discIsDvd = false;
     _discRemote = null;
@@ -269,15 +261,20 @@ extension VideoDiscMenuController on VideoPlayerController {
     String? javaHome;
     if (info.requiresJava) {
       _setDiscLoadStage('disc-java');
-      final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
-      _discJavaRuntimeProbe = manager;
-      try {
-        javaHome = await manager.probeJavaHome();
-      } finally {
-        if (identical(_discJavaRuntimeProbe, manager)) {
-          _discJavaRuntimeProbe = null;
-        }
-      }
+      javaHome = await resolveBlurayJavaHomeForOpen(
+        verified: _discVerifiedJavaHome,
+        probe: () async {
+          final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
+          _discJavaRuntimeProbe = manager;
+          try {
+            return await manager.probeJavaHome();
+          } finally {
+            if (identical(_discJavaRuntimeProbe, manager)) {
+              _discJavaRuntimeProbe = null;
+            }
+          }
+        },
+      );
     }
     if (!_isCurrentLoad(player, loadToken)) return;
     // libbluray decrypts menus, IG and titles itself through libaacs. Register

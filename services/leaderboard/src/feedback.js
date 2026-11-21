@@ -58,8 +58,9 @@
 // 或结案 7 天（先到者）即删（purgeFeedbackVideos，按 has_video 部分索引有界读）。视频占单独的
 // R2 配额池（budget.js 'video'，默认 1 GiB，满了 507 video_quota，不挤占头像 / 封面 / 截图那份），
 // 并按上传 IP 每天限总字节数（videoBytesPerIpDay），一个 IP 不能独占视频池。样本文件（f0..f2）与视频
-// 同属「大附件」（LARGE_KINDS）：同一个池、同一份 IP 日额度、同样的保留期；has_video 列（冻结名）
-// 实际含义是「有大附件」。
+// 同属「大附件」（LARGE_KINDS）：同一个池、同样的保留期；has_video 列（冻结名）实际含义是「有大附件」。
+// IP 日额度两者分开记（样本文件 fileBytesPerIpDay，拍板台 left3660）：大样本文件不会挤掉录屏，
+// 录屏也不会挤掉样本文件。超了回 429 upload_quota_daily，客户端据此提醒「今天额度用完、几点后可重试」。
 //
 // 防投毒（feedback_guard.js）：伪装字符剥掉、提示注入 / 链接灌水 / 跨来源重复打标记（flags），
 // 同来源同内容 1 小时内重复提交 409；截图按文件头宽高拒收解码炸弹，日志按 gzip ISIZE 拒收
@@ -149,6 +150,12 @@ export const FEEDBACK_LIMITS = {
    * （视频池默认就是 1 GiB，见 budget.js）。
    */
   videoBytesPerIpDay: 200 * 1024 * 1024,
+  /**
+   * 每个上传 IP 每天（UTC 日窗口）样本文件（f0..f2）总字节上限，与视频那份分开记（拍板台 left3660）：
+   * 一个满额（100 MB）样本文件。客户端 FeedbackLimits.fileBytesPerDay 同值（feedback_files.test.js 核对），
+   * 选的文件合计超过它时撰写页先提醒。
+   */
+  fileBytesPerIpDay: 100 * 1024 * 1024,
   /** 视频在结案后保留多久（与创建后保留期取先到者）。 */
   videoRetentionAfterCloseMs: 7 * 24 * HOUR,
   /** 视频自创建起最多保留多久（未结案也删）。 */
@@ -769,7 +776,7 @@ function streamedPlan(slot, request) {
  * 进 Worker 内存就逼近 128 MB 上限）。所有能在读体之前判的都先判（窗口 / 槽位 / 长度 / 类型或文件名），
  * 超限的请求不扣预算也不占配额；魔数只读开头一块。R2 put 要求流长度已知，经 FixedLengthStream（Workers
  * 运行时全局）按声明长度封口：实际字节多了少了流都会出错，归还配额、删掉半截对象，400 bad_length。
- * 魔数通过后才计费：先记上传 IP 当天的大附件字节（视频与样本文件共用一份，超了 429 rate_limited），
+ * 魔数通过后才计费：先记上传 IP 当天的字节（视频 / 样本文件各一份额度，超了 429 upload_quota_daily），
  * 再扣 media 预算 1 次，最后在视频池按声明长度预占（满了 507 video_quota；与头像 / 封面 / 截图的普通池
  * 互不挤占）。
  */
@@ -793,8 +800,11 @@ export async function putStreamedAttachment(env, row, slot, request, now, ip) {
   try {
     const head = await readHead(reader, Math.min(plan.headBytes, length));
     const { type, ext, extra } = plan.check(head);
-    // 按 IP 的日字节额度先于全局预算：超了的 IP 不消耗全站的 media 次数。
-    await hit(env, `feedback:video:ip:${ip}`, DAY, FEEDBACK_LIMITS.videoBytesPerIpDay, now, length);
+    // 按 IP 的日字节额度先于全局预算：超了的 IP 不消耗全站的 media 次数。视频与样本文件各记一份。
+    const quota = slot === VIDEO_SLOT
+      ? { bucket: `feedback:video:ip:${ip}`, limit: FEEDBACK_LIMITS.videoBytesPerIpDay }
+      : { bucket: `feedback:file:ip:${ip}`, limit: FEEDBACK_LIMITS.fileBytesPerIpDay };
+    await hit(env, quota.bucket, DAY, quota.limit, now, length, 'upload_quota_daily');
     await spend(env, 'media', 1, now);
     await reserveMediaBytes(env, length, 'video');
     reserved = true;

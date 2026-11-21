@@ -29,15 +29,15 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kMiningTtsFallbackVoicePref;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
 
-/// String：制卡单词音频的 TTS 兜底声音（[MiningTtsFallbackVoice.wire]）。
-/// 值可能指向本机的声音预设（`tts_voice_presets` 是设备本地清单），所以与
-/// `tts_active_preset_id` 同族：设备本地，不进 Profile 快照 / 备份 / 同步。
-const String kMiningTtsFallbackVoicePref = 'mining_tts_fallback_voice';
+export 'package:fushi/src/models/preference_keys.dart'
+    show kMiningTtsFallbackVoicePref;
 
 /// double：TTS 兜底发音（查词 ♪ / 自动发音、制卡单词音频）的倍速，默认 1.0。
 /// 倍速是 TTS 声音本身的属性：制卡单词音频一律按它，不受有声书「句子音频跟随

@@ -45,6 +45,8 @@ void main() {
         'adblock-allow',
         'adblock-disallow',
         'adblock-allowlist-set',
+        'search',
+        'read',
       ]),
     );
   });
@@ -189,6 +191,66 @@ void main() {
       _build('bookmark-rm', <String>['9', '--yes']).body,
       <String, Object?>{'confirm': true},
     );
+  });
+
+  test('search：多个词拼成搜索词，--limit，--yes 带 confirm', () {
+    final CtlRequestSpec plain = _build('search', <String>['葬送の', 'フリーレン']);
+    expect(plain.method, 'POST');
+    expect(plain.path, '/api/admin/web/search');
+    expect(plain.body, <String, Object?>{'query': '葬送の フリーレン'});
+    expect(
+      _build('search', <String>['x', '--limit', '3', '--yes']).body,
+      <String, Object?>{'query': 'x', 'limit': 3, 'confirm': true},
+    );
+    expect(() => _build('search', <String>[]), _usageError());
+    expect(
+      () => _build('search', <String>['x', '--limit', '0']),
+      _usageError(),
+    );
+  });
+
+  test('read：只收结果 id，--offset 取后续段，--yes 带 confirm', () {
+    final CtlRequestSpec read = _build('read', <String>['rabc123']);
+    expect(read.method, 'POST');
+    expect(read.path, '/api/admin/web/read');
+    expect(read.body, <String, Object?>{'id': 'rabc123'});
+    expect(
+      _build('read', <String>['rabc123', '--offset', '4000', '-y']).body,
+      <String, Object?>{'id': 'rabc123', 'offset': 4000, 'confirm': true},
+    );
+    expect(() => _build('read', <String>[]), _usageError());
+    expect(
+      () => _build('read', <String>['r1', '--offset', '-1']),
+      _usageError(),
+    );
+  });
+
+  test('render：搜索结果表与读到的正文', () {
+    final String table = _spec('search').render!(<String, Object?>{
+      'results': <Object?>[
+        <String, Object?>{
+          'id': 'rabc',
+          'title': 'T',
+          'snippet': 'S',
+          'site': 'example.org',
+        },
+      ],
+    });
+    expect(table, contains('rabc'));
+    expect(table, contains('example.org'));
+    expect(
+      _spec('search').render!(<String, Object?>{'results': <Object?>[]}),
+      contains('没有搜到结果'),
+    );
+    final String page = _spec('read').render!(<String, Object?>{
+      'title': 'T',
+      'url': 'https://example.org/a',
+      'text': 'hello',
+      'totalChars': 9000,
+      'nextOffset': 4000,
+    });
+    expect(page, contains('hello'));
+    expect(page, contains('--offset 4000'));
   });
 
   test('adblock：开关 / 列表 / 更新 / 白名单', () {

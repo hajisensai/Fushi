@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -87,7 +88,8 @@ void main() {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
-  /// 模拟引擎的固定临时文件名：暂存必须拷走，下一张会覆盖它们。
+  /// 模拟引擎的临时媒体：暂存必须拷走——引擎在暂存返回后就删掉本张卡的私有目录；这里
+  /// 让下一张写同名文件覆盖它，效果一样。
   Future<int> stageOne(String word, {String book = 'remote/emby/1'}) async {
     final File cover = File('${tmp.path}/immersion_clip.avif')
       ..writeAsStringSync('cover-$word');
@@ -192,7 +194,7 @@ void main() {
     await queue.commitAll(
       bookUid: 'remote/emby/1',
       retryFailed: true,
-      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.duplicate)]),
+      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.notConfigured)]),
     );
     final VideoMineCommitSummary retry = await queue.commitAll(
       bookUid: 'remote/emby/1',
@@ -201,6 +203,36 @@ void main() {
     );
     expect(retry.succeeded, 1);
     expect(await queue.failed('remote/emby/1'), isEmpty);
+  });
+
+  test('「全部写入」的批量重排跳过重复卡；列表里单行「重试」才把它排回去', () async {
+    final int dup = await stageOne('走る');
+    await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.duplicate)]),
+    );
+    // 再点「全部写入」：重复卡不重排，不调 Anki，也不再报一次失败。
+    final _Repo untouched = _Repo(<MineOutcome>[]);
+    final VideoMineCommitSummary again = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: untouched,
+    );
+    expect(again.succeeded + again.failed, 0);
+    expect(untouched.contexts, isEmpty);
+    expect((await queue.failed('remote/emby/1')).single.error, 'duplicate');
+
+    // 用户在 Anki 删了那张、点这一行的「重试」：排回待写入，下一次写入落卡。
+    expect(await queue.retry(dup), isTrue);
+    expect(await queue.retry(dup), isFalse, reason: '已不是失败态，不重复排');
+    final VideoMineCommitSummary landed = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: _Repo(<MineOutcome>[const MineOutcome.success()]),
+    );
+    expect(landed.succeeded, 1);
+    expect(await queue.openCount('remote/emby/1'), 0);
   });
 
   test('BUG-4813：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
@@ -269,7 +301,7 @@ void main() {
     expect(repo.expressions, <String>['走る']);
   });
 
-  test('打开播放页问角标时收掉旧版本留下的 done 行', () async {
+  test('问角标只计数、不删旧版本留下的 done 行；首页首帧的 sweepLegacyDone 才收掉', () async {
     final int legacy = await stageOne('走る');
     final int open = await stageOne('跳ぶ');
     await (db.update(
@@ -280,9 +312,15 @@ void main() {
       ),
     );
 
+    // 读方法没有删除副作用（#3722 L4）：done 行不计入角标，但仍留在表里。
     expect(await queue.openCount('remote/emby/1'), 1);
+    final List<WebMineQueueRow> before = await db.select(db.webMineQueue).get();
+    expect(before.map((WebMineQueueRow r) => r.id), <int>[legacy, open]);
+
+    await WebMineQueueStore(db).sweepLegacyDone();
     final List<WebMineQueueRow> left = await db.select(db.webMineQueue).get();
     expect(left.map((WebMineQueueRow r) => r.id), <int>[open]);
+    expect(await queue.openCount('remote/emby/1'), 1);
   });
 
   test('退出写入先等在途的暂存任务收尾，再读待写入的行', () async {
@@ -506,5 +544,104 @@ void main() {
     expect(await queue.failed('remote/emby/1'), isEmpty);
     expect(await queue.pending('remote/emby/1'), isEmpty);
     expect(queue.bundleDir(id).existsSync(), isFalse);
+  });
+
+  group('没送到（后端不可达）与失败分开（拍板 design-nmv-fyi-behavior 第 1 条）', () {
+    MineOutcome refused() => MineOutcome.failure(
+      'Cannot connect to AnkiConnect',
+      errorCode: AnkiErrorCode.connectionRefused,
+    );
+
+    test('Anki 没开：行仍是待办、记下原因，这一轮停下不逐张再试', () async {
+      final int a = await stageOne('走る');
+      final int b = await stageOne('跳ぶ');
+      final _Repo repo = _Repo(<MineOutcome>[refused()]);
+      final VideoMineCommitSummary summary = await queue.commitAll(
+        bookUid: 'remote/emby/1',
+        repo: repo,
+        retryFailed: false,
+      );
+      expect(repo.contexts, hasLength(1), reason: 'stops after the first');
+      expect(summary.succeeded, 0);
+      expect(summary.failed, 0);
+      expect(summary.undelivered, 2);
+      expect(summary.attempted, 2);
+      expect(summary.firstError, 'Cannot connect to AnkiConnect');
+      expect(await queue.failed('remote/emby/1'), isEmpty);
+      final List<WebMineQueueRow> pending = await queue.pending(
+        'remote/emby/1',
+      );
+      expect(pending.map((WebMineQueueRow r) => r.id), <int>[a, b]);
+      expect(pending.first.error, 'Cannot connect to AnkiConnect');
+      expect(pending.last.error, isNull);
+      expect(queue.bundleDir(a).existsSync(), isTrue);
+      expect(await queue.openCount('remote/emby/1'), 2);
+    });
+
+    test('没送到的下次退出自动再试；永久失败的（重复）不跟着重跑', () async {
+      await stageOne('走る');
+      await stageOne('跳ぶ');
+      // 第一次退出：Anki 没开。
+      final VideoMineCommitSummary? first = await commitPendingVideoMines(
+        queue: Future<VideoMineQueue>.value(queue),
+        bookUid: 'remote/emby/1',
+        repo: _Repo(<MineOutcome>[refused()]),
+        inFlight: const <Future<void>>[],
+      );
+      expect(first!.undelivered, 2);
+      expect(videoMineCommitSeverity(first), ToastSeverity.warning);
+      expect(
+        videoMineCommitMessage(first),
+        contains(t.video_mine_queue_committed_undelivered(count: 2)),
+      );
+
+      // 第二次退出：Anki 开了，第一张落卡、第二张是重复。
+      final _Repo repo = _Repo(<MineOutcome>[
+        const MineOutcome.success(),
+        const MineOutcome.duplicate(),
+      ]);
+      final VideoMineCommitSummary? second = await commitPendingVideoMines(
+        queue: Future<VideoMineQueue>.value(queue),
+        bookUid: 'remote/emby/1',
+        repo: repo,
+        inFlight: const <Future<void>>[],
+      );
+      expect(repo.contexts, hasLength(2));
+      expect(second!.succeeded, 1);
+      expect(second.failed, 1);
+      expect(second.undelivered, 0);
+
+      // 第三次退出：只剩重复那张（失败）→ 什么都不做（BUG-4813 不回退）。
+      final _Repo untouched = _Repo(<MineOutcome>[]);
+      expect(
+        await commitPendingVideoMines(
+          queue: Future<VideoMineQueue>.value(queue),
+          bookUid: 'remote/emby/1',
+          repo: untouched,
+          inFlight: const <Future<void>>[],
+        ),
+        isNull,
+      );
+      expect(untouched.contexts, isEmpty);
+      expect((await queue.failed('remote/emby/1')).single.error, 'duplicate');
+    });
+
+    test('超时 / 结果未知可能已经建了卡：仍标失败，不自动再试', () async {
+      await stageOne('走る');
+      final VideoMineCommitSummary summary = await queue.commitAll(
+        bookUid: 'remote/emby/1',
+        repo: _Repo(<MineOutcome>[
+          MineOutcome.failure(
+            'timed out',
+            errorCode: AnkiErrorCode.connectionTimeout,
+          ),
+        ]),
+        retryFailed: false,
+      );
+      expect(summary.failed, 1);
+      expect(summary.undelivered, 0);
+      expect(await queue.pending('remote/emby/1'), isEmpty);
+      expect((await queue.failed('remote/emby/1')).single.error, 'timed out');
+    });
   });
 }

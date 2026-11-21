@@ -14,6 +14,7 @@ import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import mextensionserver.impl.ExtensionHttpServers
+import mextensionserver.impl.InvocationLane
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
@@ -36,9 +37,8 @@ class DalvikHandler {
         // session.
         var pendingJarCookies: String? = null
         return try {
-            val body = mutableMapOf<String, String>()
-            session.parseBody(body)
-            val json = body["postData"] ?: throw IllegalArgumentException("No JSON body")
+            // Not `parseBody`: it spools the body into a temp file (BUG-5046).
+            val json = BridgeRequests.readJson(session)
             val dataBody = objectMapper.readValue(json, DataBody::class.java)
 
             // A failing call is the *most* likely one to have rotated the
@@ -48,7 +48,10 @@ class DalvikHandler {
             // carry it back; otherwise the host retries forever with the dead
             // value it already had.
             val invocationResult =
-                MExtensionServerLoader.invokeWithExtension(dataBody.data) { loadedExtension ->
+                MExtensionServerLoader.invokeWithExtension(
+                    dataBody.apkSha256,
+                    InvocationLane.forMethod(dataBody.method),
+                ) { loadedExtension ->
                     val selectedSource = MihonInvoker.selectSource(loadedExtension.sources, dataBody)
                     MihonInvoker.preparePreferences(dataBody, selectedSource)
                     // Host-owned login session; see [SourceCookieInjection].
@@ -83,6 +86,8 @@ class DalvikHandler {
                     "application/json",
                     responseJson,
                 ).withJarCookies(pendingJarCookies)
+        } catch (error: RequestBodyException) {
+            with(BridgeRequests) { error.toResponse() }
         } catch (error: LinkageError) {
             errorResponse(error).withJarCookies(pendingJarCookies)
         } catch (error: Exception) {
@@ -95,6 +100,12 @@ class DalvikHandler {
         apply { if (payload != null) addHeader(SET_COOKIE_HEADER, payload) }
 
     internal fun errorResponse(error: Throwable): NanoHTTPD.Response {
+        // Not a failure of the call: the host has not uploaded this APK to this
+        // process yet (first call after a start / restart). It uploads and
+        // repeats the call once; see ExtensionApkStore.
+        BridgeRequests.apkNotRegisteredIn(error)?.let { missing ->
+            return with(BridgeRequests) { missing.toResponse() }
+        }
         logger.error(error) { "Error handling request" }
         // The interceptor's exception is usually wrapped by the time it reaches here (Rx /
         // coroutine adapters, extension-side catch-and-rethrow), so walk the cause chain

@@ -791,6 +791,126 @@ void main() {
       backend.finish(1, 0);
       expect(await second, isNotNull);
     });
+
+    group('与整轨转文字共用一次抽轨（gap-disc-4）', () {
+      late GraphicSubtitleTrackExtractionHub hub;
+      late FfmpegGraphicSubtitleRegionLoader shared;
+
+      setUp(() {
+        hub = GraphicSubtitleTrackExtractionHub(backend: backend);
+        shared = FfmpegGraphicSubtitleRegionLoader(
+          cacheDir: Directory(p.join(dir.path, 'shared-cache')),
+          extractions: hub,
+          onExtractFailure: (GraphicSubtitleRegionRequest _, String summary) =>
+              failures.add(summary),
+        );
+      });
+
+      GraphicSubtitleTrackLease ocrLease() => hub.acquire(
+        input: local.input,
+        streamIndex: local.streamIndex,
+        codec: local.codec,
+      );
+
+      test('时间表在抽、转文字加入：ffmpeg 只起一次，两边拿到同一份载荷', () async {
+        final Future<GraphicSubtitleRegionTrack?> regions = shared.load(
+          local,
+          fallbackCanvas: _canvas,
+        );
+        await until(() => backend.started == 1);
+        final GraphicSubtitleTrackLease ocr = ocrLease();
+        final List<Duration> progress = <Duration>[];
+        ocr.listenProgress(progress.add);
+        backend.finish(0, 0);
+        expect((await regions)!.regions.single.startMs, 1000);
+        final GraphicSubtitleTrackExtractOutcome outcome = await ocr.outcome;
+        expect(outcome.ok, isTrue);
+        expect(backend.started, 1, reason: '第二个使用方不该再起一个 ffmpeg');
+        // 时间表那份已交回，转文字还持有：载荷还在，读得到完整的 cue。
+        expect(File(ocr.payloadPath).existsSync(), isTrue);
+        expect(
+          PgsSubtitleParser.parse(File(ocr.payloadPath).readAsBytesSync()),
+          hasLength(1),
+        );
+        await ocr.release();
+        // 载荷不保留：最后一份交回就删。
+        expect(File(ocr.payloadPath).existsSync(), isFalse);
+        expect(hub.debugActiveExtractions, 0);
+      });
+
+      test('转文字在抽、时间表加入后放弃：不杀进程，转文字照常拿到载荷', () async {
+        final GraphicSubtitleTrackLease ocr = ocrLease();
+        await until(() => backend.started == 1);
+        final Completer<void> cancel = Completer<void>();
+        final Future<GraphicSubtitleRegionTrack?> regions = shared.load(
+          local,
+          fallbackCanvas: _canvas,
+          cancel: cancel.future,
+        );
+        await pumpEventQueue();
+        cancel.complete();
+        expect(await regions, isNull);
+        await pumpEventQueue();
+        expect(backend.killed, 0);
+        backend.finish(0, 0);
+        expect((await ocr.outcome).ok, isTrue);
+        expect(backend.started, 1);
+        await ocr.release();
+      });
+
+      test('全部交回时还没抽完：进程被杀；之后再要开新的一份', () async {
+        final GraphicSubtitleTrackLease first = ocrLease();
+        await until(() => backend.started == 1);
+        await first.release();
+        expect(backend.killed, 1);
+        expect((await first.outcome).ok, isFalse);
+        expect(hub.debugActiveExtractions, 0);
+
+        final GraphicSubtitleTrackLease second = ocrLease();
+        await until(() => backend.started == 2);
+        backend.finish(1, 0);
+        expect((await second.outcome).ok, isTrue);
+        await second.release();
+        // 取消不是失败：不记日志。
+        expect(failures, isEmpty);
+      });
+
+      test('抽取失败的那份不留给后来者：下一位重新抽', () async {
+        final GraphicSubtitleTrackLease first = ocrLease();
+        await until(() => backend.started == 1);
+        backend.finish(0, 1);
+        final GraphicSubtitleTrackExtractOutcome failed = await first.outcome;
+        expect(failed.ok, isFalse);
+        expect(failed.exitCode, 1);
+        expect(failed.failure, contains('Invalid data found'));
+        final GraphicSubtitleTrackLease second = ocrLease();
+        await until(() => backend.started == 2);
+        backend.finish(1, 0);
+        expect((await second.outcome).ok, isTrue);
+        await first.release();
+        await second.release();
+      });
+
+      test('ffmpeg 起不来（ProcessException）：落成失败结局，交回不抛，下一位重新抽', () async {
+        backend.launchError = const ProcessException('ffmpeg', <String>[
+          '-i',
+        ], 'not found');
+        final GraphicSubtitleTrackLease first = ocrLease();
+        final GraphicSubtitleTrackExtractOutcome failed = await first.outcome;
+        expect(failed.ok, isFalse);
+        expect(failed.exitCode, isNull);
+        expect(failed.failure, contains('ffmpeg launch failed'));
+        expect(hub.debugActiveExtractions, 0, reason: '坏掉的抽取不留在表里');
+        // 整轨转文字在 finally 里交回：这里抛出会跳过页面收尾（运行标志复位）。
+        await first.release();
+
+        final GraphicSubtitleTrackLease second = ocrLease();
+        await until(() => backend.started == 1);
+        backend.finish(0, 0);
+        expect((await second.outcome).ok, isTrue);
+        await second.release();
+      });
+    });
   });
 }
 
@@ -803,6 +923,9 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
 
   /// 非零退出 / 被强杀时的 ffmpeg 日志。
   String failureOutput = 'Invalid data found when processing input';
+
+  /// 非 null = 下一次观察式运行像 `Process.start` 起不来那样直接抛它（用一次即清）。
+  ProcessException? launchError;
   final List<Completer<int?>> _runs = <Completer<int?>>[];
   int killed = 0;
 
@@ -815,6 +938,11 @@ class _ScriptedBackend implements FfmpegBackend, FfmpegWatchedRunner {
     List<String> args,
     FfmpegWatch watch,
   ) async {
+    final ProcessException? launch = launchError;
+    if (launch != null) {
+      launchError = null;
+      throw launch;
+    }
     final Completer<int?> exit = Completer<int?>();
     _runs.add(exit);
     unawaited(

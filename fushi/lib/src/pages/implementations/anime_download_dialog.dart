@@ -1384,9 +1384,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             appModel.database,
           );
           bool any = false;
+          // 整表只读一次建查表，不逐个文件 findByVideoPath（每次都整表读 + 逐行
+          // 归一）。同一行只删一次：不同写法的路径可能归一到同一行。
+          final VideoPathIndex index = await repo.videoPathIndex();
+          final Set<String> deleted = <String>{};
           for (final String path in videoAbsolutePaths) {
-            final VideoBookRow? row = await repo.findByVideoPath(path);
-            if (row == null) continue;
+            final VideoBookRow? row = index.find(path);
+            if (row == null || !deleted.add(row.bookUid)) continue;
             await repo.deleteVideoBookAndReclaimAssets(
               row.bookUid,
               compactDatabase: false,

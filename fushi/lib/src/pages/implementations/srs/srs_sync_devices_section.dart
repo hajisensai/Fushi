@@ -75,6 +75,8 @@ List<String> srsDeviceRowDetails(
       },
     if (!d.self && d.trust != SrsDeviceTrust.trusted)
       t.srs_device_trust_held_detail(n: d.heldDeletes + d.heldPurges),
+    // 在等这台设备的重切件（内核 `relayBlocked`）：原因与出路（同步它一次 / 确认它 / 等作者自己同步）。
+    ...srsRelayBlockedDetails(d),
     if (d.digestMismatch) t.srs_timeline_digest_mismatch,
     if (!d.self && d.rulesTheirs != null && d.rulesMine != null)
       t.srs_device_rules_differ(
@@ -83,6 +85,18 @@ List<String> srsDeviceRowDetails(
       ),
     if (d.warning != null) t.srs_timeline_device_warning,
   ].nonNulls.toList();
+}
+
+/// [d] 的 `relayBlocked` 按原因各一行（件数合计）；没有就空。
+List<String> srsRelayBlockedDetails(SrsDeviceView d) {
+  final int purge = d.relayBlockedPieces(SrsRelayBlockedReason.purge);
+  final int pending = d.relayBlockedPieces(SrsRelayBlockedReason.pending);
+  final int rejected = d.relayBlockedPieces(SrsRelayBlockedReason.rejected);
+  return <String>[
+    if (purge > 0) t.srs_device_relay_blocked_purge(n: purge),
+    if (pending > 0) t.srs_device_relay_blocked_trust(n: pending),
+    if (rejected > 0) t.srs_device_relay_blocked_rejected(n: rejected),
+  ];
 }
 
 class SrsSyncDevicesSection extends StatelessWidget {

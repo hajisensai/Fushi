@@ -103,6 +103,33 @@ pub const DEDUP_MAX_PAIRS: usize = 20_000;
 /// 一张盐表最多多少项（Join 与 Salts 相同）。
 pub const SALTS_MAX: usize = 1 << 16;
 
+/// 原生日志里一条操作的载荷上限（[native_allowed] 写读两侧同用；读侧在 [super::segment::read_op_slot] 读到长度前缀时
+/// 就拒，不为超限的载荷开窗口）。实测本机存量 51.7 万条协议 3 操作最大载荷 311 KiB，留五十倍余量。
+pub const MAX_OP_PAYLOAD: usize = 16 * 1024 * 1024;
+
+/// 一条操作的载荷超过 [MAX_OP_PAYLOAD] 时给用户看的报错的开头（[payload_within_cap]）。本机写入（`Truth::append_native`）
+/// 与 `.fushisrs` 导入（`export.rs` 的语法核对）报这一句，Dart 在 FFI 边界按它把错误类型化成 `SrsOpTooLargeException`
+/// （`packages/fushi_srs/lib/src/store/srs_core.dart` 的 `marker`，界面按类型给专门的本地化提示）；改它要同步改 Dart
+/// （`srs_core_test.dart` 核对两边一致）。
+pub const ERR_OP_TOO_LARGE: &str = "op too large";
+
+/// 载荷不超过 [MAX_OP_PAYLOAD]；超了给一句看得懂的报错（多大、上限多少、通常是什么造成的），以 [ERR_OP_TOO_LARGE]
+/// 开头。[native_allowed] 里同一条线只给静态短句（收段的坏件理由），面向用户的入口先过这里。
+pub fn payload_within_cap(op: &Op4) -> Result<(), String> {
+    let n = op.payload.len();
+    if n <= MAX_OP_PAYLOAD {
+        return Ok(());
+    }
+    Err(format!(
+        "{ERR_OP_TOO_LARGE}: change {}:{} is {n} bytes ({:.1} MiB), over the {} MiB limit for a single change \
+         (usually a field holding an embedded image or file; store it as a media file instead)",
+        op.id.device,
+        op.id.seq,
+        n as f64 / (1024.0 * 1024.0),
+        MAX_OP_PAYLOAD / (1024 * 1024)
+    ))
+}
+
 /// 一条协议 4 的操作。克隆是廉价的（载荷与上下文共享）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Op4 {
@@ -196,12 +223,98 @@ pub(crate) fn read_kind_fmt(r: &mut Reader<'_>) -> DResult<(u16, u16)> {
 
 /// 链的下一环：`blake3(域前缀 || 前一环 || 信封 || 载荷哈希)`。
 pub fn chain_next4(prev: &Chain, op: &Op4) -> Chain {
+    chain_next4_parts(prev, &op.envelope(), blake3::hash(&op.payload).as_bytes())
+}
+
+/// [chain_next4] 的拆开形：只有信封与载荷哈希也算得出（重切件里被剔除的操作，`gen4/recut.rs`）。
+pub fn chain_next4_parts(prev: &Chain, envelope: &[u8], payload_hash: &[u8; 32]) -> Chain {
     let mut h = blake3::Hasher::new();
     h.update(CHAIN_DOMAIN);
     h.update(prev);
-    h.update(&op.envelope());
-    h.update(blake3::hash(&op.payload).as_bytes());
+    h.update(envelope);
+    h.update(payload_hash);
     *h.finalize().as_bytes()
+}
+
+/// 一条 Purge 点得到这条操作的实体：(种类, 规范形引用)。见 [purge_targets_v1]。
+pub type PurgeTargets = BTreeSet<(EntKind, Key)>;
+
+/// **冻结**的「哪些实体上的 Purge 能清掉这条操作」（第五波 K2 根治，`gen4/segment.rs`「签名」）。它是原生段签名原文
+/// 的一部分（每条操作的摘要带着它），所以按第 1 版的规则冻结：以后清除的语义变了也不改这里（否则旧段的签名全部
+/// 验不过），新语义要新的格式版本。规则与派生层判「已清除」的那几类内容操作一一对应（`store/gen4/weigh.rs` 文件头
+/// 「彻底清除」）：
+///
+/// - `fmt == 4` 的 Edit，键不是 `deleted`：它的 (种类, 实体)；卡的 `deck` 写入、值是 JSON 字符串 d 时另加 (牌组, d)
+///   （把卡挪进被清除牌组的修改，牌组那边的清除也管它）。笔记的 `tags` 整列表写入同样是 (笔记, 实体)。
+/// - `fmt == 4` 的 TagAdd / TagRemove / TagOrder：(笔记, note)。
+/// - 其余一律为空：日志、身份记录、媒体、盐、Purge 本身……清除不碰它们；`fmt != 4`（更新版本写的）的操作体本版本
+///   不解，也为空——更新的版本按同一条冻结规则算，同一条操作在新旧读者上得到同一个集合。
+///
+/// 引用取规范形（`Key::of(text)`：UUID 文本压成 16 字节，与派生层 `Ref::of` 同一个归一）。
+pub fn purge_targets_v1(op: &Op4) -> PurgeTargets {
+    let mut out = PurgeTargets::new();
+    if op.fmt != BODY_FMT {
+        return out;
+    }
+    let norm = |k: &Key| Key::of(&k.text());
+    match op.body() {
+        Ok(Body4::Edit(ed)) if ed.key != "deleted" => {
+            out.insert((ed.kind, norm(&ed.entity)));
+            if ed.kind == EntKind::Card && ed.key == "deck" {
+                if let Ok(serde_json::Value::String(d)) =
+                    serde_json::from_str::<serde_json::Value>(&ed.value)
+                {
+                    out.insert((EntKind::Deck, Key::of(&d)));
+                }
+            }
+        }
+        Ok(Body4::TagAdd { note, .. } | Body4::TagRemove { note, .. })
+        | Ok(Body4::TagOrder { note, .. }) => {
+            out.insert((EntKind::Note, norm(&note)));
+        }
+        _ => {}
+    }
+    out
+}
+
+/// [PurgeTargets] 的规范编码：`n uv | (种类 u8 | 引用) × n`，按 (种类, 引用) 升序（集合的迭代序）。
+pub fn write_purge_targets(w: &mut Writer, targets: &PurgeTargets) {
+    w.uv(targets.len() as u64);
+    for (kind, key) in targets {
+        w.u8(*kind as u8);
+        write_key(w, key);
+    }
+}
+
+/// 读 [write_purge_targets] 的编码：只收规范形（严格升序、引用规范、条数有上限）。
+pub fn read_purge_targets(r: &mut Reader<'_>) -> DResult<PurgeTargets> {
+    let n = uv_min(r)?;
+    if n > 64 {
+        return Err(DecodeError("too many purge targets"));
+    }
+    let mut out = PurgeTargets::new();
+    let mut prev: Option<(EntKind, Key)> = None;
+    for _ in 0..n {
+        let kind = ent_kind(r.u8()?)?;
+        let key = read_key(r)?;
+        let item = (kind, key);
+        if prev.as_ref().is_some_and(|p| *p >= item) {
+            return Err(DecodeError("purge targets out of order"));
+        }
+        prev = Some(item.clone());
+        out.insert(item);
+    }
+    Ok(out)
+}
+
+/// 清除语义下 [x] 的作者写它时**没见过** [purge]（同一台设备 = purge 在它之后；别的设备 = 依赖里没有它）：这条 Purge
+/// 管得到它（`store/gen4/weigh.rs`「彻底清除」的 `unseen`）。
+pub fn purge_unseen_by(x: &Op4, purge: &OpId) -> bool {
+    if purge.device == x.id.device {
+        purge.seq > x.id.seq
+    } else {
+        !x.deps.contains(purge)
+    }
 }
 
 /// 一次可编辑字段的写入。
@@ -225,7 +338,11 @@ const EDIT_STAMP: u8 = 4;
 const EDIT_KNOWN: u8 = 7;
 
 /// 复习日志。字段与协议 3 的 `LogBody` 一一对应；`hlc` / `server_time` 是它的 `legacy_hlc` / `legacy_server_time`
-/// （作者给日志的旧 HLC、迁移进来的旧日志的 S(e)），只有承袭的日志有——原生日志的排序键就是操作自己的 HLC。
+/// （作者给日志的旧 HLC、迁移进来的旧日志的 S(e)），只有承袭的日志有。原生日志不带：排序键是操作自己的 HLC，
+/// **Anki 来源的例外**——它的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules::anki_source_hlc`：revlog
+/// `(ankiId, 0, "anki")`、导入锚点 `(at, 1, "anki")`），回导的外来原生日志（`extra` 带 `foreignLog: true`）同理
+/// `(at, 0, "fushi")`（`crate::anki_import_rules::derived_log_hlc`），都在日志投影（`store/gen4/cache.rs` `log_body`）里算，
+/// 不进线格式。
 #[derive(Clone, Debug, PartialEq)]
 pub struct Log4 {
     pub id: Key,
@@ -972,6 +1089,9 @@ fn read_log(r: &mut Reader<'_>, exact: bool) -> DResult<Log4> {
 /// 协议 3 的操作体、退役的 12、只属于承袭日志的 13、带旧戳的修改与带旧 HLC / 旧服务器时刻的日志不能（设计稿 §536：
 /// 换代后的新写入不携带 v1 形状的数据；写入 [crate::store::gen4::truth::Truth::append_native] 与收段两侧同用这一处）。带盐的 14 / 15 只能出现在这里（heritage.rs 拒）。
 pub fn native_allowed(op: &Op4) -> Result<(), &'static str> {
+    if op.payload.len() > MAX_OP_PAYLOAD {
+        return Err("native op payload exceeds MAX_OP_PAYLOAD");
+    }
     if op.fmt < BODY_FMT {
         return Err("native op body is not protocol 4");
     }

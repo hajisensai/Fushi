@@ -122,6 +122,40 @@ void main() {
     );
   });
 
+  // 拍板台 design-nmv-autosync-epoch：图形字幕 OCR 边识别边发布时，只有首次发布
+  // （图形轨 → 文本）算换源；之后的补发走 updateCuesInSameSource，不推进
+  // cueSourceEpoch，否则期间跑着的自动对轴会把同一源的结果当过期丢掉。
+  test('graphic OCR live re-publish keeps the cue source epoch', () {
+    final String subtitle = _read(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    );
+    const String start = 'Future<void> publishLive() async {';
+    final int at = subtitle.indexOf(start);
+    expect(at, isNonNegative);
+    final int end = subtitle.indexOf(
+      'final List<GraphicSubtitleTextCue>? texts',
+      at,
+    );
+    expect(end, greaterThan(at));
+    final String body = subtitle.substring(at, end);
+    final int firstPublish = body.indexOf('if (!livePublished) {');
+    final int sameSource = body.indexOf(
+      'controller.updateCuesInSameSource(live);',
+    );
+    expect(firstPublish, isNonNegative);
+    expect(sameSource, greaterThan(firstPublish));
+    expect(
+      'controller.setCues(live);'.allMatches(body).length,
+      1,
+      reason: '只有首次发布用 setCues',
+    );
+    expect(
+      body.indexOf('controller.setCues(live);'),
+      lessThan(sameSource),
+      reason: 'setCues 只能在首次发布分支里',
+    );
+  });
+
   test('auto-align audio, envelope and cue raster share one probe limit', () {
     final String subtitle = _read(
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart',

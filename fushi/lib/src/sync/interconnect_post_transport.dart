@@ -242,6 +242,8 @@ class InterconnectPostTransport {
     bool anyResponse = false;
     // 请求发出后等应答超时：对端可能已经处理了这次请求。
     bool anyTimedOut = false;
+    // 对端回了话、而且这句话不排除它执行过这次请求（404 / 405 = 没有这个端点 / 端点没接线，什么都没做，不算）。
+    bool anyMayHaveExecuted = false;
     // BUG-1550：某台对端拒了我的凭据不该株连其余对端；记下来，全部试完还没结果才抛。
     SyncAuthError? authError;
     for (final FushiClientUrl candidate in candidates) {
@@ -280,6 +282,11 @@ class InterconnectPostTransport {
           continue;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
+          // 404 / 405：旧版 host 没有这个端点，或这台主机此刻没接这条路由（例如服务端制卡没有任何可写的落点时
+          // `/api/mine/forward` 回 404 `Mining off`，读请求体之前就回了）——请求没被执行，不是「可能已送达」。
+          if (response.statusCode != 404 && response.statusCode != 405) {
+            anyMayHaveExecuted = true;
+          }
           onRejectedResponse?.call(
             response.statusCode,
             _responseObject(response),
@@ -295,6 +302,7 @@ class InterconnectPostTransport {
             candidate: candidate.copyWith(token: token),
           );
         }
+        anyMayHaveExecuted = true;
         onRejectedResponse?.call(response.statusCode, null);
       } on TimeoutException {
         anyTimedOut = true;
@@ -319,7 +327,7 @@ class InterconnectPostTransport {
     return (
       json: null,
       allUnreachable: !anyResponse && (attempted || ranked.withheld > 0),
-      mayHaveDelivered: anyResponse || anyTimedOut,
+      mayHaveDelivered: anyMayHaveExecuted || anyTimedOut,
       candidate: null,
     );
   }
@@ -456,8 +464,9 @@ Object? _responseJson(http.Response response) {
 
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。
-/// [mayHaveDelivered]：至少一个候选拿到了响应，或请求发出后等应答超时——对端
-/// 可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。
+/// [mayHaveDelivered]：至少一个候选回了不排除执行过的响应（2xx、或 404 / 405 以外的非 2xx），或请求发出后等应答
+/// 超时——对端可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。401 之后会抛
+/// [SyncAuthError]，不经这个字段；404 / 405 是「没有这个端点 / 没接线」，对端什么都没做，不算。
 typedef InterconnectPostOutcome = ({
   Map<String, dynamic>? json,
   bool allUnreachable,

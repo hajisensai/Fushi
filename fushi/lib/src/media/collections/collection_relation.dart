@@ -33,7 +33,7 @@ CollectionRelationsCompanion createLocalCollectionRelation({
   required int sortIndex,
 }) {
   return CollectionRelationsCompanion.insert(
-    collectionId: collectionId,
+    collectionId: Value<int?>(collectionId),
     relationType: type.wire,
     sortIndex: Value<int>(sortIndex),
     targetCollectionId: Value<int?>(targetCollectionId),

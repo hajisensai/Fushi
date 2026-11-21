@@ -827,14 +827,38 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
 // Fushi 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
 let captureActive = false;
 
+// 同一扩展只允许一个 offscreen 文档：录制与单词发音（反馈 8KlXeA-A0f）共用这一份，声明两种
+// 用途。并发调用（查词连点 ♪ / 发音撞上起录）共享同一次在途 createDocument，否则第二次
+// create 会抛「Only a single offscreen document may be created」。
+let offscreenCreating = null;
+
 async function ensureOffscreen() {
   const has = await chrome.offscreen.hasDocument?.();
   if (has) return;
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Record the streaming tab to build Anki GIF cards (TODO-1000).',
-  });
+  if (!offscreenCreating) {
+    offscreenCreating = chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA', 'AUDIO_PLAYBACK'],
+      justification: 'Record the streaming tab to build Anki GIF cards (TODO-1000), '
+        + 'and play dictionary word audio outside the page CSP.',
+    }).finally(() => { offscreenCreating = null; });
+  }
+  await offscreenCreating;
+}
+
+// 反馈 8KlXeA-A0f：页面层查词弹窗的单词发音交 offscreen 文档播（页面里的 <audio> 吃页面
+// CSP 的 media-src，X 等站点会拦掉 sync server 的音频端点）。浏览器没有 offscreen API
+// （部分移动端 Chromium）或播放失败 → {ok:false}，content 侧回落页面内 <audio>。
+async function playWordAudioOffscreen(url, volume) {
+  try {
+    await ensureOffscreen();
+    const resp = await chrome.runtime.sendMessage({
+      target: 'offscreen', type: 'playWordAudio', url, volume,
+    });
+    return { ok: !!(resp && resp.ok === true), error: resp && resp.error ? String(resp.error) : undefined };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
 }
 
 // 徽标反馈：录制中在扩展图标上打红点，让用户**看得见**正在录（否则不知道录没录 → 制卡无音频
@@ -1373,6 +1397,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'fushiSelectProfile') {
     selectFushiProfile(msg.profile).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e && e.message || e) }));
+    return true;
+  }
+  if (msg && msg.type === 'playWordAudio') {
+    playWordAudioOffscreen(msg.url, msg.volume).then(sendResponse);
     return true;
   }
   if (msg && msg.type === 'studySample') {

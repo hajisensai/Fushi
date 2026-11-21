@@ -90,6 +90,8 @@ String mediaLinkRelationLabel(MediaLinkRelation relation) => switch (relation) {
   MediaLinkRelation.soundtrack => t.media_link_relation_soundtrack,
   MediaLinkRelation.sameWork => t.media_link_relation_same_work,
   MediaLinkRelation.cast => t.media_link_relation_cast,
+  MediaLinkRelation.sequel => t.media_link_relation_sequel,
+  MediaLinkRelation.sideStory => t.media_link_relation_side_story,
 };
 
 /// 卡片角标：站在本页条目的视角描述另一端是什么（「原作」「改编作」「主题曲」…）。

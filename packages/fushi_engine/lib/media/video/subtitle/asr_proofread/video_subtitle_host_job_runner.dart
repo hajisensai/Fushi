@@ -21,6 +21,10 @@
 ///   host 这份文件）；只能和 `videoId` 一起给，可与 `episode` / `discTitle` 组合。不给按
 ///   识别语言挑。capability 的 `acceptsAudioTrack` 声明认它——老 host 不认，会静默按
 ///   语言挑（降级，不是错结果）；
+///   `skipExisting`（bool，默认 false）：`videoId` 那一集旁已有 `<视频名>.<后缀>.srt`
+///   时不识别、记 `skippedExistingSubtitle`（与 `collectionId` 整季同一判据）。提交方
+///   逐集提交远端合集时带它：列表里的 `subtitleFileName` 只报 host 学习语言那一条，
+///   别的语言有没有字幕只有 host 自己看得到。老 host 不认，照常生成（不是错结果）；
 /// - `collectionId`：整季——合集的全部视频成员按成员顺序排队，已有
 ///   `<视频名>.<后缀>.srt` 的集跳过；
 /// - 都不给：用上传的输入（`input` 指名一个，否则全部上传的视频文件；可带 `title`
@@ -30,7 +34,9 @@
 ///   退回不校对。
 /// - `segmenter`：`auto` / `moss` / `window`（默认 auto）；`mossBackend`：`auto` /
 ///   `cuda` / `vulkan` / `cpu`（默认 auto）；`regenerateGlossary`（bool）；
-///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]）；
+///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]；capability 的
+///   `languages` 列出认的取值——老 host 不校验未知参数，收到 `language` 会静默按日语跑，
+///   提交方必须先看这个位）；
 ///   `suffix`（默认取 `language`）。
 /// - `frames`（bool，默认 false）：画面参考——AI 校对每批附上 host 上这个视频对应
 ///   时刻的画面（spec `2026-11-11-video-subtitle-ai-reference`）。只在 host 的校对
@@ -133,6 +139,7 @@ class VideoSubtitleJobParams {
     this.regenerateGlossary = false,
     this.language = VideoSubtitleLanguage.japanese,
     this.frames = false,
+    this.skipExisting = false,
     String? suffix,
   }) : _suffix = suffix;
 
@@ -262,6 +269,7 @@ class VideoSubtitleJobParams {
       regenerateGlossary: flag('regenerateGlossary', false),
       language: language,
       frames: flag('frames', false),
+      skipExisting: flag('skipExisting', false),
       suffix: suffix,
     );
   }
@@ -289,6 +297,9 @@ class VideoSubtitleJobParams {
 
   /// 画面参考（见文件头的 `frames`）。
   final bool frames;
+
+  /// `videoId` 那一集已有目标字幕时跳过（见文件头的 `skipExisting`）。
+  final bool skipExisting;
   final String? _suffix;
 
   /// 输出后缀；没给时取 [language] 的标签。
@@ -449,6 +460,13 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       // 认 `audioTrack`（识别提交方播放器当前的音轨）。老 host 没有这个位，收到会静默按
       // 识别语言挑：提交方据此不带它、并告诉用户将按语言选轨。
       'acceptsAudioTrack': resolveVideoPath != null,
+      // 认 `language` 的取值（[VideoSubtitleLanguage.tag]）。没有这个位的 host 要么根本
+      // 不认 `language`（会静默按日语跑），要么认但没声明：提交方一律只给它日语任务、
+      // 不显示语言选择。
+      'languages': <String>[
+        for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+          l.tag,
+      ],
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,
       // 校对提供商开了图片输入：`frames=true` 才真的会带画面。
@@ -758,7 +776,12 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       final SubtitleWorkContext work =
           await loader?.forBook(videoId) ??
           _fallbackWork(path, params.title, useFolder: true);
-      return _Target(videos: <String>[path], work: work);
+      // 管线的 wholeSeason 只决定「已有目标字幕的集跳过」（skipExisting 同义）。
+      return _Target(
+        videos: <String>[path],
+        work: work,
+        wholeSeason: params.skipExisting,
+      );
     }
     final int? collectionId = params.collectionId;
     if (collectionId != null) {

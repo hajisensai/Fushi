@@ -1,6 +1,6 @@
 ## BUG-4797 · 样本文件与录屏共用每 IP 每天 200 MiB 额度，满额样本文件仍会被 429 挤掉
 - **报告**：2026-11-17（PR #3660 / BUG-4784 复审遗留：客户端已改成视频先传，但服务端额度设计没动）
 - **真实性**：✅ 真缺陷（待维护者定额度设计）。根因：`services/leaderboard/src/feedback.js:151` `videoBytesPerIpDay = 200 MiB`，视频 `v0` 与样本文件 `f0..f2` 计同一个每 IP 每天额度；`packages/fushi_engine/lib/feedback/feedback_models.dart` 允许 3 个样本文件、每个 100 MB。BUG-4784 只保证录屏先传、不被挤掉；视频 + 满额样本文件（或同 IP 当天多条反馈）仍会让后传的样本文件 429，而客户端补传窗口 `FeedbackLimits.attachWindow` 只有 24 小时，与按天恢复的额度可能错开，样本文件最终丢失。
-- **[ ] ① 未修复** — 要不要给样本文件单设额度 / 调大共用额度 / 改成按反馈而非按 IP 计，属于服务端额度与成本设计，需维护者拍板，客户端不做特例。
-- **[ ] ② 未加自动化测试** — 方案定了再按方案在 `services/leaderboard/test/` 加额度用例。
+- **[x] ① 已修复**（拍板台 left3660，维护者选 A「样本文件单设额度，给提醒」）— 服务端 `services/leaderboard/src/feedback.js`：新增 `FEEDBACK_LIMITS.fileBytesPerIpDay = 100 MiB`，`putStreamedAttachment` 视频记 `feedback:video:ip:<ip>`（200 MiB 不变）、样本文件记 `feedback:file:ip:<ip>`，两份互不挤占；超了回 429 `upload_quota_daily`（`ratelimit.js` 的 `hit` 加可选错误码参数）。客户端：`FeedbackLimits.fileBytesPerDay` / `dailyQuotaError` / `dailyQuotaResetAfter`（下一个 UTC 零点）；`FeedbackService` 撞日额度时留在待传区并记重置时刻（`uploadQuotaResetAt`，`FeedbackSubmitResult` / `FeedbackRetryResult.quotaResetAt`）。提醒：撰写页所选样本文件合计超过 100 MiB 时警告条；提交后 snack、详情页待传提示与重试 snack 改说「今天额度已用完，<本地时间> 之后重试」。
+- **[x] ② 已加自动化测试** — `services/leaderboard/test/feedback_files.test.js`（样本文件额度 429 `upload_quota_daily`、视频不受影响、换 IP / 次日照传、与客户端常量同值）、`feedback_video.test.js`（视频额度用完照传样本文件）；`fushi/test/feedback/feedback_files_service_test.dart`（撞额度留待传 + 重置时刻 + 重试成功后提醒消失；普通 `rate_limited` 不提醒；`dailyQuotaResetAfter`）。
 - **备注**：BUG-4784 的客户端顺序修复已合入（PR #3660），本条只登记服务端额度这一半。

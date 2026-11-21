@@ -5,11 +5,19 @@ import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/sync/screen_ocr_lens_engine.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 
 /// 记下每次逐页识别的语言与字节。
 class _FakeLens implements GoogleLensMangaOcrRunner {
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
   final List<(Uint8List, String)> calls = <(Uint8List, String)>[];
 
   @override

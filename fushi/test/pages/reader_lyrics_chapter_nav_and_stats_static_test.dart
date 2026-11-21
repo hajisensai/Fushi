@@ -179,6 +179,38 @@ void main() {
       );
     });
 
+    test('书籍模式的「跳转记录」是布局按钮：无历史置灰不消失，顶栏不再写死追加（拍板台 ymMpf0raAu）', () {
+      final String render = methodBody(
+        src,
+        '  bool _shouldRenderReaderControl(ReaderControlItem item)',
+      );
+      final int renderCase = render.indexOf(
+        'case ReaderControlItem.jumpHistory:',
+      );
+      expect(renderCase, greaterThan(0));
+      expect(
+        render.substring(renderCase, render.indexOf(';', renderCase) + 1),
+        contains('return true;'),
+        reason: '入口不随历史有无消失',
+      );
+      final String action = methodBody(
+        src,
+        '  ReaderHeaderAction _readerControlAction(ReaderControlItem item)',
+      );
+      final int at = action.indexOf('case ReaderControlItem.jumpHistory:');
+      expect(at, greaterThan(0));
+      final String jumpCase = action.substring(
+        at,
+        action.indexOf('case ReaderControlItem.', at + 10),
+      );
+      expect(jumpCase, contains('_jumpHistory.isEmpty'));
+      expect(jumpCase, contains('? null'), reason: '无历史时置灰');
+      expect(containsIdentifierCall(jumpCase, '_openJumpHistoryPanel'), isTrue);
+      // 两种顶栏都只从布局的「更多」槽取，不再写死追加跳转记录（否则出现两条）。
+      expect(src, isNot(contains('_jumpHistoryMenuActions')));
+      expect(src, isNot(contains('_jumpHistoryMenuItems')));
+    });
+
     test('「跳到收藏」在歌词模式走音频定位到那句 cue', () {
       final String body = methodBody(
         src,

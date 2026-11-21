@@ -2,15 +2,15 @@
 // 高亮却给整个 <ruby> 元素加类——查的和亮的不是同一段。在真 Chrome DOM 上跑生产的
 // fushiReader / fushiSelection，断言：① 点 ruby 基字任意位置，查词从该 ruby 基字段的开头起；
 // ② 高亮只在完整覆盖 ruby 全部基字时才整元素加类，部分覆盖按字符范围画（等于查词范围）。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const driver = await launchChromeDriver();
 let count = 0;
 try {

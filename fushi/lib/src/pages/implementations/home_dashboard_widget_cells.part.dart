@@ -342,24 +342,29 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     double height,
   ) {
     final double tileWidth = height * 1.9;
-    return SectionSwipeCascade(
-      child: HorizontalDragScrollable(
-        child: ListView.separated(
-          key: const ValueKey<String>('home-continue-row'),
-          scrollDirection: Axis.horizontal,
-          physics: desktopAwareScrollPhysics(),
-          itemCount: entries.length - 1,
-          separatorBuilder: (BuildContext _, int _) =>
-              const SizedBox(width: kFushiCoverBlockSpacing),
-          itemBuilder: (BuildContext _, int i) => SizedBox(
-            width: tileWidth,
-            child: _continueBlock(
-              tokens,
-              appModel,
-              entries[i + 1],
-              i + 1,
-              FushiCoverBlockSize.half,
-              portraitOnly: true,
+    // 视口给半高色块的投影留余量（[FushiShadowBleedViewport]），不把阴影裁成直角框。
+    return FushiShadowBleedViewport(
+      bleed: kFushiCoverBlockHalfBleed,
+      builder: (BuildContext _, EdgeInsets padding) => SectionSwipeCascade(
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            key: const ValueKey<String>('home-continue-row'),
+            scrollDirection: Axis.horizontal,
+            physics: desktopAwareScrollPhysics(),
+            padding: padding,
+            itemCount: entries.length - 1,
+            separatorBuilder: (BuildContext _, int _) =>
+                const SizedBox(width: kFushiCoverBlockSpacing),
+            itemBuilder: (BuildContext _, int i) => SizedBox(
+              width: tileWidth,
+              child: _continueBlock(
+                tokens,
+                appModel,
+                entries[i + 1],
+                i + 1,
+                FushiCoverBlockSize.half,
+                portraitOnly: true,
+              ),
             ),
           ),
         ),
@@ -795,12 +800,19 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                       },
                     );
                     if (box.maxWidth >= _kTodayBarsSideWidth) {
+                      // 细柱（设计稿 11-20 #12「宁可把柱状图变小」）：柱状图只占卡宽
+                      // 约 20%、最多 7 根 12px 细柱的宽，省出的宽度给左边的大字与
+                      // 副行，卡片尺寸不变。
+                      final double barsWidth = math.min(
+                        box.maxWidth * _kTodayBarsWidthShare,
+                        _kTodayBarsMaxWidth,
+                      );
                       return Row(
                         children: <Widget>[
-                          Expanded(flex: 11, child: main),
+                          Expanded(child: main),
                           const SizedBox(width: 12),
-                          Expanded(
-                            flex: 9,
+                          SizedBox(
+                            width: barsWidth,
                             child: HomeWidgetOverflowClip(
                               child: bars(math.max(16, box.maxHeight)),
                             ),
@@ -860,16 +872,16 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     }
     final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
+    // 副行只写目标（设计稿 11-20 #12）：大字已经是今日字数（「2.2 万」），副行再写
+    // 一遍原始字数「21687 / 30000 字」只会把时长挤成省略号。读到多少由起始侧的
+    // 目标环给（环 = 已读 / 目标，读超了封顶 100%）。
+    final String goalFigure = formatStatCharsAxis(goal);
     final String? goalLine = !hasGoal
         ? null
         : switch (period) {
-            StudyGoalPeriod.daily => t.stat_goal_progress(
-              read: goalChars,
-              goal: goal,
-            ),
-            StudyGoalPeriod.weekly => t.stat_goal_progress_weekly(
-              read: goalChars,
-              goal: goal,
+            StudyGoalPeriod.daily => t.home_today_goal_target(goal: goalFigure),
+            StudyGoalPeriod.weekly => t.home_today_goal_target_weekly(
+              goal: goalFigure,
             ),
           };
     return Builder(
@@ -1238,6 +1250,10 @@ const double _kMiniGap = 8;
 const double _kTodayBarsSideWidth = 380;
 const double _kTodayBarsBelowHeight = 130;
 const double _kTodayMainMaxHeight = 72;
+
+/// 「今日」结束侧近 7 天柱条占内容宽的比例，与上限（7 根 12px 细柱 + 6 道 5px 间隔）。
+const double _kTodayBarsWidthShare = 0.2;
+const double _kTodayBarsMaxWidth = 7 * 12 + 6 * 5;
 
 /// 「继续」主角怎么分：只放主卡 / 其余条目挂在主卡旁 / 挂在主卡下。
 enum _ContinueSplit { none, side, below }

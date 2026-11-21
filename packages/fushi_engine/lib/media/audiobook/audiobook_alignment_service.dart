@@ -14,8 +14,7 @@ import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
     show loadBookTextSections;
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
-import 'package:fushi_engine/media/video/video_clip_subtitle.dart'
-    show formatSrtTimestamp;
+import 'package:fushi_engine/media/video/subtitle/srt_writer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
 
@@ -267,20 +266,15 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
 /// 与 `SrtParser` 的解析契约一致；空文本 cue 跳过（与 `serializeAsrCuesToSrt`
 /// 同规则）。
 String serializeAudioCuesToSrt(List<AudioCue> cues) {
-  final StringBuffer sb = StringBuffer();
-  int index = 1;
-  for (final AudioCue cue in cues) {
-    if (cue.text.isEmpty) continue;
-    sb
-      ..writeln(index++)
-      ..writeln(
-        '${formatSrtTimestamp(cue.startMs)} --> '
-        '${formatSrtTimestamp(cue.endMs)}',
-      )
-      ..writeln(cue.text.replaceAll('\n', ' '))
-      ..writeln();
-  }
-  return sb.toString();
+  return writeSrtBlocks(<SrtBlock>[
+    for (final AudioCue cue in cues)
+      if (cue.text.isNotEmpty)
+        (
+          startMs: cue.startMs,
+          endMs: cue.endMs,
+          text: cue.text.replaceAll('\n', ' '),
+        ),
+  ]);
 }
 
 /// [finalizeAlignedCues] 送进后台 isolate 的输入（全是可跨 isolate 拷贝的纯数据）。

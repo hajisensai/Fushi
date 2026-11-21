@@ -537,7 +537,7 @@ class VideoSourceScrapeCoordinator
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await _rewriteSidecarsUnlocked(
         workId,
@@ -695,7 +695,7 @@ class VideoSourceScrapeCoordinator
     );
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await _scrapeSourceUnlocked(
         source,
@@ -811,7 +811,9 @@ class VideoSourceScrapeCoordinator
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<SourceScrapeReport>.error(StateError('视频刮削资料正在清理'));
+      return Future<SourceScrapeReport>.error(
+        VideoScrapeMaintenanceActiveError(),
+      );
     }
     return _scrapeSourceUnlocked(
       source,

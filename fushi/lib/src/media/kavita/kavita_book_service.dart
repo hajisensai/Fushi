@@ -48,6 +48,7 @@ import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_sync.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 
 /// 「阅读」产生的缓存副本最多留几本（按最近使用淘汰）。显式「下载」的不计入。
 const int kKavitaCachedBookLimit = 8;
@@ -56,8 +57,13 @@ const int kKavitaCachedBookLimit = 8;
 typedef KavitaEpubImporter =
     Future<String> Function(String filePath, String fileName);
 
-/// 删一本本地书，返回是否真删了。生产实现走 `ReaderFushiSource.deleteBook`。
+/// 删一本本地书，返回是否真删了。生产实现走 `ReaderFushiSource.deleteBook`，且
+/// **不**回收数据库空间——一轮删除结束后由 [KavitaDatabaseCompactor] 统一回收一次。
 typedef KavitaBookDeleter = Future<bool> Function(String bookKey);
+
+/// 一轮删除（淘汰 / 一键清理 / 移除下载）真删掉至少一本后回收一次数据库空间。生产
+/// 实现走 `ReaderFushiSource.compactAfterBookDeleteBestEffort`（整库 VACUUM）。
+typedef KavitaDatabaseCompactor = Future<void> Function();
 
 /// 按服务器配置 id 取协议层客户端；服务器已删除 / 停用时返回 null。
 typedef KavitaApiResolver = KavitaApi? Function(String serverConfigId);
@@ -126,11 +132,16 @@ enum _GuardedRemoval {
 }
 
 class KavitaBookService {
+  /// [appModel] 只有会删书的实例（详情页、设置页）需要：删书原语要它清 override
+  /// 封面。只做绑定读写 / 记同步的实例（进度同步、进度刷新）不给，对它调删除类方法
+  /// 抛 [StateError]。
   KavitaBookService({
     required FushiDatabase db,
+    AppModel? appModel,
     Directory? tempRoot,
     KavitaEpubImporter? importEpub,
     KavitaBookDeleter? deleteBook,
+    KavitaDatabaseCompactor? compactDatabase,
     KavitaApiResolver? apiFor,
     int cacheLimit = kKavitaCachedBookLimit,
     Duration pushTimeout = const Duration(seconds: 8),
@@ -138,7 +149,12 @@ class KavitaBookService {
   }) : _db = db,
        _tempRoot = tempRoot,
        _importEpub = importEpub ?? _defaultImport(db),
-       _deleteBook = deleteBook ?? _defaultDelete(db),
+       _deleteBook =
+           deleteBook ??
+           (appModel == null ? null : _defaultDelete(db, appModel)),
+       _compactDatabase =
+           compactDatabase ??
+           (() => ReaderFushiSource.compactAfterBookDeleteBestEffort(db)),
        _apiFor = apiFor,
        _cacheLimit = cacheLimit,
        _pushTimeout = pushTimeout,
@@ -149,7 +165,8 @@ class KavitaBookService {
   /// 下载临时目录；只有 [openOrImport] 需要（绑定读写不需要）。
   final Directory? _tempRoot;
   final KavitaEpubImporter _importEpub;
-  final KavitaBookDeleter _deleteBook;
+  final KavitaBookDeleter? _deleteBook;
+  final KavitaDatabaseCompactor _compactDatabase;
 
   /// 删之前推未同步进度用；null = 推不了（有未同步进度的书一律保留）。
   final KavitaApiResolver? _apiFor;
@@ -179,10 +196,12 @@ class KavitaBookService {
         policy: const DuplicatePolicy.suffix(),
       );
 
-  static KavitaBookDeleter _defaultDelete(FushiDatabase db) =>
+  static KavitaBookDeleter _defaultDelete(FushiDatabase db, AppModel app) =>
       (String bookKey) async => (await ReaderFushiSource.instance.deleteBook(
         db: db,
         bookKey: bookKey,
+        appModel: app,
+        compactDatabase: false,
       )).deleted;
 
   /// 本地已绑定这一章的书的 bookKey；没有返回 null。
@@ -444,24 +463,28 @@ class KavitaBookService {
   Future<KavitaCacheCleanup> trimCache({String? keep}) async {
     KavitaCacheCleanup result = const KavitaCacheCleanup();
     final Set<String> attempted = <String>{};
-    while (true) {
-      final _Entry? victim = await _serialized(() async {
-        for (final _Entry e in await _trimVictims(keep)) {
-          if (!attempted.contains(e.row.bookKey)) return e;
-        }
-        return null;
-      });
-      if (victim == null) return result;
-      attempted.add(victim.row.bookKey);
-      final _GuardedRemoval outcome = await _removeGuarded(
-        victim,
-        stillRemovable: (_Entry fresh) async =>
-            _sameUse(victim, fresh) &&
-            (await _trimVictims(
-              keep,
-            )).any((_Entry e) => e.row.bookKey == fresh.row.bookKey),
-      );
-      result = _tally(result, outcome);
+    try {
+      while (true) {
+        final _Entry? victim = await _serialized(() async {
+          for (final _Entry e in await _trimVictims(keep)) {
+            if (!attempted.contains(e.row.bookKey)) return e;
+          }
+          return null;
+        });
+        if (victim == null) return result;
+        attempted.add(victim.row.bookKey);
+        final _GuardedRemoval outcome = await _removeGuarded(
+          victim,
+          stillRemovable: (_Entry fresh) async =>
+              _sameUse(victim, fresh) &&
+              (await _trimVictims(
+                keep,
+              )).any((_Entry e) => e.row.bookKey == fresh.row.bookKey),
+        );
+        result = _tally(result, outcome);
+      }
+    } finally {
+      if (result.removed > 0) await _compactDatabase();
     }
   }
 
@@ -469,21 +492,25 @@ class KavitaBookService {
   Future<KavitaCacheCleanup> clearCache() async {
     KavitaCacheCleanup result = const KavitaCacheCleanup();
     final Set<String> attempted = <String>{};
-    while (true) {
-      final _Entry? victim = await _serialized(() async {
-        for (final _Entry e in await _evictableEntries()) {
-          if (!attempted.contains(e.row.bookKey)) return e;
-        }
-        return null;
-      });
-      if (victim == null) return result;
-      attempted.add(victim.row.bookKey);
-      final _GuardedRemoval outcome = await _removeGuarded(
-        victim,
-        stillRemovable: (_Entry fresh) async =>
-            _sameUse(victim, fresh) && !await _hasUserData(fresh.row),
-      );
-      result = _tally(result, outcome);
+    try {
+      while (true) {
+        final _Entry? victim = await _serialized(() async {
+          for (final _Entry e in await _evictableEntries()) {
+            if (!attempted.contains(e.row.bookKey)) return e;
+          }
+          return null;
+        });
+        if (victim == null) return result;
+        attempted.add(victim.row.bookKey);
+        final _GuardedRemoval outcome = await _removeGuarded(
+          victim,
+          stillRemovable: (_Entry fresh) async =>
+              _sameUse(victim, fresh) && !await _hasUserData(fresh.row),
+        );
+        result = _tally(result, outcome);
+      }
+    } finally {
+      if (result.removed > 0) await _compactDatabase();
     }
   }
 
@@ -508,6 +535,8 @@ class KavitaBookService {
     );
     switch (outcome) {
       case _GuardedRemoval.removed:
+        await _compactDatabase();
+        return KavitaLocalRemoval.removed;
       case _GuardedRemoval.gone:
         return KavitaLocalRemoval.removed;
       case _GuardedRemoval.failed:
@@ -548,7 +577,11 @@ class KavitaBookService {
       final _Entry? fresh = await _entryFor(victim.row.bookKey);
       if (fresh == null) return _GuardedRemoval.gone;
       if (!await stillRemovable(fresh)) return _GuardedRemoval.changed;
-      return await _deleteBook(fresh.row.bookKey)
+      final KavitaBookDeleter? delete = _deleteBook;
+      if (delete == null) {
+        throw StateError('KavitaBookService 构造时没给 appModel / deleteBook，不能删书');
+      }
+      return await delete(fresh.row.bookKey)
           ? _GuardedRemoval.removed
           : _GuardedRemoval.failed;
     });

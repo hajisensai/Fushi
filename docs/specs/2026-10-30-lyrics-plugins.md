@@ -47,6 +47,7 @@ LyricText { format: 'lrc'|'yrc'|'qrc'|'krc'|'ttml'|'txt', text, language? }   //
 - `query` 由宿主生成（§4），`title` / `artist` / `album` / `durationMs` 是原始曲目信息，插件愿意可自己拼。
   宿主会对同一首歌依次用多个 `query` 调 `lyricsSearch`（见 §4），所以插件**不要**自己做多轮回退。
 - `format` 直接当 Rust 解析器 hint（`FushiLyricsAsync.parse(bytes, hint: format)`）；`yrc` 逐字、`lrc` 逐行。
+  `qrc` 的 `text` 可以是明文 QRC，也可以是 QQ 音乐接口的加密形态原样交上来：十六进制密文串、旧接口 XML（`<content><![CDATA[hex]]></content>`，只取 `<content>`，翻译请另放 `translation`），宿主统一解密（`native/fushi_music/src/lyrics/qrc.rs` 的 `sniff_encrypted`），插件不用自己剥壳。
   与所有者口述的 `{raw, format, translation?}` 的差别只是字段名：复用 `LyricText` 才能原样走
   `MusicPluginLyrics.fromJson` + `buildMusicPluginLyrics`（译文合并、TTML 落库）零新增解析代码（待确认，见 §9）。
 - 不可信输入处理（只影响显示，不让整次失败）：候选缺 `title` / `ref` 丢弃；`title` / `artist` 去空白并截断 200；

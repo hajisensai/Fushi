@@ -2,7 +2,7 @@
 // 量整次请求耗时与进程 RSS 峰值（相对开始时的增量，与绝对峰值）。
 //
 // 手动跑（库复制一份再开，原件不动）：
-//   FUSHI_SRS_AC_BENCH_DB=<srs.db> FUSHI_SRS_AC_BENCH_TMP=<放副本的目录> [FUSHI_SRS_AC_BENCH_PROFILE=<uid>] \
+//   FUSHI_SRS_AC_BENCH_DB=<新代库目录或协议 3 的 srs.db> FUSHI_SRS_AC_BENCH_TMP=<放副本的目录> [FUSHI_SRS_AC_BENCH_PROFILE=<uid>] \
 //     dart tool/heavy.dart -- flutter test test/srs/ankiconnect/srs_ankiconnect_real_db_bench_test.dart
 // 不设环境变量时跳过。
 import 'dart:async';
@@ -43,18 +43,8 @@ void main() {
   test(
     '基准：AnkiConnect 大库读动作',
     () async {
-      final Directory tmp = Directory(
-        tmpRoot ?? Directory.systemTemp.path,
-      ).createTempSync('srs_ac_');
-      addTearDown(() {
-        try {
-          tmp.deleteSync(recursive: true);
-        } on FileSystemException {
-          // 句柄晚释放。
-        }
-      });
-      File(src!).copySync('${tmp.path}/srs.db');
-      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+      // 副本上跑：新代库目录拷一份，协议 3 的 srs.db 经换代迁移。
+      final TestSrs srs = await openRealDataTestSrs(src!, tmpRoot: tmpRoot);
       final Stopwatch opening = Stopwatch()..start();
       final SrsDbStore store = await SrsDbStore.open(
         core: srs.core,

@@ -252,6 +252,22 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     title: t.manga_reader_grayscale,
   ),
   MangaReaderPreferenceDescriptor(
+    key: 'enhancedScaling',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_enhanced_scaling,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'gammaCorrectScaling',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_gamma_correct_scaling,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'aiUpscale',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_ai_upscale,
+    choices: const <String>['off', 'light', 'high'],
+  ),
+  MangaReaderPreferenceDescriptor(
     key: 'customColorFilter',
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_custom_color_filter,
@@ -427,6 +443,12 @@ class MangaReaderSettingsSheet extends StatefulWidget {
 /// 「保持屏幕常亮」（`keep_screen_awake`），全局作用域下照常可改，补丁由宿主经
 /// [splitMangaGlobalPatch] 分流过去，而不是写进漫画偏好里一个没人读的字段。
 const Set<String> _kWorkOnlyKeys = <String>{'fullscreen'};
+
+/// 子开关 → 它依赖的主开关：主开关关着时子开关不起作用（如 Gamma 校正只在画质缩放
+/// 开着时参与转码，见 `MangaFitQuality.fromPreferences`），行置灰不可操作。
+const Map<String, String> _kRequiresToggle = <String, String>{
+  'gammaCorrectScaling': 'enhancedScaling',
+};
 
 /// 全局作用域补丁按落点拆开：`keepScreenOn` 落到阅读器全局「保持屏幕常亮」
 /// （漫画没有本书覆盖时开书 / 重应用都只读它），其余键合进漫画全局偏好。
@@ -671,6 +693,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     },
     'quickZoomTarget' =>
       value == 'fit_width' ? t.manga_scale_fit_width : t.manga_scale_fit_height,
+    'aiUpscale' => switch (value) {
+      'light' => t.manga_reader_ai_upscale_light,
+      'high' => t.manga_reader_ai_upscale_high,
+      _ => t.manga_reader_ai_upscale_off,
+    },
     'tapZones' => switch (value) {
       'edge' => t.manga_reader_tap_edge,
       'disabled' => t.manga_reader_tap_disabled,
@@ -729,6 +756,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'showTapZonesOverlay' => FushiIcons.touch,
     'invertColors' => FushiIcons.darkMode,
     'grayscale' => FushiIcons.filter,
+    'enhancedScaling' => FushiIcons.highQuality,
+    'gammaCorrectScaling' => FushiIcons.brightnessAuto,
+    'aiUpscale' => FushiIcons.highQuality,
     'brightness' => FushiIcons.lightMode,
     'contrast' => FushiIcons.brightnessAuto,
     'saturation' => FushiIcons.appearance,
@@ -759,9 +789,17 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         icon: icon,
         showIcon: icon != null,
         value: _value(d.key) == true,
-        onChanged: _editable(d.key) ? (bool v) => _set(d.key, v) : null,
+        onChanged: _editable(d.key) && _prerequisiteOn(d.key)
+            ? (bool v) => _set(d.key, v)
+            : null,
       ),
     );
+  }
+
+  /// [key] 依赖的主开关（[_kRequiresToggle]）当前是开着的；没有依赖为 true。
+  bool _prerequisiteOn(String key) {
+    final String? parent = _kRequiresToggle[key];
+    return parent == null || _value(parent) == true;
   }
 
   Widget _integer(MangaReaderPreferenceDescriptor d) {
@@ -946,6 +984,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     if (const <String>{
       'invertColors',
       'grayscale',
+      'enhancedScaling',
+      'gammaCorrectScaling',
+      'aiUpscale',
       'brightness',
       'contrast',
       'saturation',
@@ -1053,6 +1094,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       (
         () => t.manga_reader_group_overlay,
         <String>['customColorFilter', 'colorFilterColor', 'colorFilterOpacity'],
+      ),
+      (
+        () => t.manga_reader_group_image_quality,
+        <String>['enhancedScaling', 'gammaCorrectScaling', 'aiUpscale'],
       ),
     ],
     _ => <(String Function(), List<String>)>[

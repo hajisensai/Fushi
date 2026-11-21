@@ -29,6 +29,7 @@ void main() {
     channel: () => 'stable',
     locale: () => 'en',
     buildInfo: () async => const BuildInfo(),
+    usageStats: () => false,
     operatingSystem: 'linux',
   );
 
@@ -90,7 +91,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('local title'), findsNothing);
     expect(find.text('home'), findsOneWidget);
+    // 弹过即记进「已弹过」：同一组签名下次冷启动不再弹。
+    expect(feed.seenDialogIds, contains('L'));
   });
+
+  testWidgets(
+    'local dialog already seen for this signature does not show again',
+    (WidgetTester tester) async {
+      final PreferencesRepository prefs = (await tester.runAsync(makePrefs))!;
+      final NoticeFeed feed = makeFeed(
+        prefs,
+        reply(const <Map<String, Object?>>[]),
+      );
+      addTearDown(feed.dispose);
+      await tester.runAsync(() => feed.markDialogSeen('_local:seen'));
+      await pumpApp(
+        tester,
+        feed,
+        localDialog: () async => const RemoteNotice(
+          id: '_local:seen',
+          level: RemoteNoticeLevel.dialog,
+          title: 'seen title',
+          body: '',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('seen title'), findsNothing);
+    },
+  );
 
   testWidgets('block covers pushed routes', (WidgetTester tester) async {
     final PreferencesRepository prefs = (await tester.runAsync(makePrefs))!;

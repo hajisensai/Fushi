@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart'
+    show kBtSiteParserRuleTemplate;
 import 'package:fushi_server/src/admin/web_ui.dart';
 import 'package:fushi_server/src/admin/web_ui_en.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -118,7 +120,7 @@ void main() {
   group('按语言出页', () {
     test('英文：填好 lang / LANG / EN，不留占位', () {
       final String html = renderAdminWebUi(ServerConfig.languageEnglish);
-      expect(html, contains('<html lang="en">'));
+      expect(html, contains('<html lang="en" data-fushi-theme-host="page">'));
       expect(html, contains('const LANG = "en";'));
       expect(html, contains(jsonEncode(kWebUiEnglish)));
       expect(html, isNot(contains('__FUSHI_')));
@@ -126,10 +128,21 @@ void main() {
 
     test('中文：EN 为空表', () {
       final String html = renderAdminWebUi(ServerConfig.languageChinese);
-      expect(html, contains('<html lang="zh-CN">'));
+      expect(
+        html,
+        contains('<html lang="zh-CN" data-fushi-theme-host="page">'),
+      );
       expect(html, contains('const LANG = "zh";'));
       expect(html, contains('const EN = {};'));
       expect(html, isNot(contains('__FUSHI_')));
+      // 「怎么写解析规则」里的模板与 app 同一份（引擎常量），转义后原样出现。
+      expect(
+        html,
+        contains(
+          '<pre id="bt-parser-template">'
+          '${const HtmlEscape().convert(kBtSiteParserRuleTemplate)}</pre>',
+        ),
+      );
     });
 
     test('登录页按语言出文案与错误提示', () {
@@ -137,7 +150,7 @@ void main() {
         ServerConfig.languageEnglish,
         tokenError: true,
       );
-      expect(en, contains('<html lang="en">'));
+      expect(en, contains('<html lang="en" data-fushi-theme-host="page">'));
       expect(en, contains('>Sign in</button>'));
       expect(en, contains('Wrong token'));
       expect(en, isNot(contains('__T_')));
@@ -145,7 +158,7 @@ void main() {
       expect(_cjk.hasMatch(en), isFalse);
 
       final String zh = renderAdminLogin(ServerConfig.languageChinese);
-      expect(zh, contains('<html lang="zh-CN">'));
+      expect(zh, contains('<html lang="zh-CN" data-fushi-theme-host="page">'));
       expect(zh, contains('>登录</button>'));
       expect(zh, isNot(contains('Token 不正确')));
       expect(zh, isNot(contains('__T_')));

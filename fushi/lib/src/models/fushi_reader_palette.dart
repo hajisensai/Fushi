@@ -26,6 +26,10 @@ import 'package:fushi/src/models/theme_notifier.dart' show hctToneKeepingHue;
 /// | 浮动工具栏 / 侧板 [chromeContainer] | neutral 92 | neutral 17 |
 /// | 漫画底 [mangaBackground] | neutral 95 | neutral 4 |
 ///
+/// 「纯黑深色背景」（OLED）开着时，深色的页面底与漫画底都取 tone 0（真黑），
+/// 判据是 [scheme] 自身的页面底已是真黑（见 [fushiReaderSchemeIsPureBlack]），
+/// 不另传开关——app 外壳与阅读器读同一个 ColorScheme，不会再各说各话。
+///
 /// neutral 的色相 / 彩度锚定 `scheme.surfaceContainer`（与
 /// [applyFushiSurfaceLadder] 同一个锚点，所以和 app 页面底是同一家族），彩度封顶
 /// [_kNeutralChromaCap]：vibrant 的中性色彩度 ~10，整页铺满时偏色明显，书页只留
@@ -105,6 +109,7 @@ FushiReaderPalette fushiReaderPaletteFor(
   // 每次都解十几次 HCT 不划算；入参 → 结果是纯映射，按用到的角色色做键缓存。
   final _ReaderPaletteKey key = (
     scheme.surfaceContainer.toARGB32(),
+    scheme.surface.toARGB32(),
     scheme.outline.toARGB32(),
     scheme.primary.toARGB32(),
     scheme.primaryContainer.toARGB32(),
@@ -119,10 +124,16 @@ FushiReaderPalette fushiReaderPaletteFor(
   return _paletteCache[key] = _buildReaderPalette(scheme, brightness);
 }
 
-typedef _ReaderPaletteKey = (int, int, int, int, int, Brightness);
+typedef _ReaderPaletteKey = (int, int, int, int, int, int, Brightness);
 final Map<_ReaderPaletteKey, FushiReaderPalette> _paletteCache =
     <_ReaderPaletteKey, FushiReaderPalette>{};
 const int _kPaletteCacheLimit = 32;
+
+/// [scheme] 是否是「纯黑深色背景」方案：深色且页面底 `surface` 已是真黑
+/// （`applyFushiPureBlackSurfaceLadder` 把 surface 压到 tone 0）。
+bool fushiReaderSchemeIsPureBlack(ColorScheme scheme) =>
+    scheme.brightness == Brightness.dark &&
+    Hct.fromInt(scheme.surface.toARGB32()).tone < 0.5;
 
 FushiReaderPalette _buildReaderPalette(
   ColorScheme scheme,
@@ -150,7 +161,9 @@ FushiReaderPalette _buildReaderPalette(
   final TonalPalette primaryContainer = _paletteOf(scheme.primaryContainer);
   final TonalPalette tertiaryContainer = _paletteOf(scheme.tertiaryContainer);
 
-  final Color background = neutral(dark ? 6 : 98);
+  // 纯黑（OLED）：页面底真黑，正文 / 注音 / 高亮的对比度循环照常以它为底重算。
+  final bool pureBlack = dark && fushiReaderSchemeIsPureBlack(scheme);
+  final Color background = neutral(pureBlack ? 0 : (dark ? 6 : 98));
   final Color text = _ensureContrast(
     neutral,
     startTone: dark ? 90 : 12,
@@ -202,7 +215,7 @@ FushiReaderPalette _buildReaderPalette(
     ),
     rubyText: rubyText,
     chromeContainer: neutral(dark ? 17 : 92),
-    mangaBackground: neutral(dark ? 4 : 95),
+    mangaBackground: neutral(pureBlack ? 0 : (dark ? 4 : 95)),
   );
 }
 

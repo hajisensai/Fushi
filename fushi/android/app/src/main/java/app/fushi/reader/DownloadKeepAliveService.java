@@ -242,7 +242,8 @@ public final class DownloadKeepAliveService extends Service {
         if (manager == null) return;
         NotificationChannel channel = new NotificationChannel(
                 NotificationIds.CHANNEL_DOWNLOAD_KEEP_ALIVE,
-                "Downloads",
+                NotificationChannelNames.nameFor(
+                        this, NotificationIds.CHANNEL_DOWNLOAD_KEEP_ALIVE, "Downloads"),
                 NotificationManager.IMPORTANCE_LOW);
         channel.setShowBadge(false);
         channel.setSound(null, null);

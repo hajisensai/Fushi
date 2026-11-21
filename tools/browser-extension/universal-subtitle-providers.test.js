@@ -65,7 +65,9 @@ function loadContent(opts) {
   const events = []; // 时序记录：listener 注册 / postMessage
   const intervals = []; // {fn, ms}
   const storageWrites = []; // chrome.storage.local.set 落盘记录（制卡队列真相源）
-  const storageData = {};
+  const storageData = Object.assign({}, opts.storage || {});
+  const storageListeners = [];
+  const messageListeners = [];
   const state = { subText: '', subRuby: null, videoPresent: true, video: null };
   function createVideo(currentTime, textTracks) {
     const listeners = Object.create(null);
@@ -88,7 +90,10 @@ function loadContent(opts) {
   const video = createVideo(0, opts.textTracks);
   state.video = video;
   const windowObj = {
-    addEventListener: (t) => events.push({ type: 'listener', t }),
+    addEventListener: (t, fn) => {
+      events.push({ type: 'listener', t });
+      if (t === 'message') messageListeners.push(fn);
+    },
     postMessage: (msg) => events.push({ type: 'post', msg }),
     innerWidth: 1200,
     innerHeight: 800,
@@ -154,7 +159,7 @@ function loadContent(opts) {
           },
           set(obj) { storageWrites.push(obj); Object.assign(storageData, JSON.parse(JSON.stringify(obj))); return Promise.resolve(); },
         },
-        onChanged: { addListener() {} },
+        onChanged: { addListener(fn) { storageListeners.push(fn); } },
       },
     },
   };
@@ -172,10 +177,15 @@ function loadContent(opts) {
   const harvester = intervals.find((i) => i.ms === 1200);
   return {
     events,
+    ctx,
     state,
     storageWrites,
     video,
     windowObj,
+    // 模拟主世界桥的 window.postMessage（source 必须是 window 本身才被接收端认）。
+    deliver(data) { for (const fn of messageListeners) fn({ source: windowObj, data }); },
+    // 模拟设置页改了 chrome.storage.local（storage.onChanged）。
+    changeStorage(changes) { for (const fn of storageListeners) fn(changes, 'local'); },
     location: sandbox.location,
     sampler,
     harvester,
@@ -999,4 +1009,106 @@ test('切行后段与正文错位时不挂 ruby（宁可不画，也不把振假
   assert.ok(track[0].ruby, '第一行与整句一致，应带振假名');
   assert.strictEqual(track[track.length - 1].ruby, undefined,
     '后缀行的段与正文对不上，不得挂 ruby（否则振假名标到别的字上）');
+});
+
+// ── YouTube 自动字幕分句整合（反馈 97pds8EODm，storage.subtitleMergeAsrSentences）──
+// 真加载 subtitle-adapters + subtitle-providers + content.js：桥发来的 ASR 轨按开关派生，开关
+// 来自 storage（首读 + onChanged 实时），切换时 store 就地重算并通知面板；人工轨不受影响。
+const ASR_BRIDGE_MSG = {
+  __fushiStream: 'cues',
+  videoKey: 'yt-asr1',
+  lang: 'English (自动)',
+  languageCode: 'en',
+  format: 'cues',
+  asr: true,
+  cues: [
+    { startMs: 18800, endMs: 21800, text: "We're no strangers to",
+      words: [{ offsetMs: 0, text: "We're" }, { offsetMs: 700, text: ' no' }, { offsetMs: 1400, text: ' strangers' }, { offsetMs: 2200, text: ' to' }] },
+    { startMs: 21800, endMs: 25960, text: 'love. You know the rules',
+      words: [{ offsetMs: 0, text: 'love.' }, { offsetMs: 500, text: ' You' }, { offsetMs: 800, text: ' know' }, { offsetMs: 1100, text: ' the' }, { offsetMs: 1400, text: ' rules' }] },
+  ],
+};
+const MANUAL_BRIDGE_MSG = {
+  __fushiStream: 'cues',
+  videoKey: 'yt-asr1',
+  lang: 'English',
+  languageCode: 'en',
+  format: 'cues',
+  cues: [
+    { startMs: 0, endMs: 1000, text: 'Hello' },
+    { startMs: 1000, endMs: 2000, text: 'world' },
+  ],
+};
+
+function loadYoutubeAsr(storage) {
+  const h = loadContent({ hostname: 'www.youtube.com', pathname: '/watch', search: '?v=asr1', storage });
+  const notified = [];
+  h.windowObj.fushiSubtitlePanelOnCues = (key) => notified.push(key);
+  return { h, notified };
+}
+const plainCues = (cues) => JSON.parse(JSON.stringify(cues));
+
+test('97pds8EODm：开关关（默认）时 ASR 轨原样按行入 store，且不带词级时间', () => {
+  const { h } = loadYoutubeAsr({});
+  h.deliver(ASR_BRIDGE_MSG);
+  assert.deepStrictEqual(plainCues(h.windowObj.fushiEpisodeCues['yt-asr1|English (自动)']), [
+    { startMs: 18800, endMs: 21800, text: "We're no strangers to" },
+    { startMs: 21800, endMs: 25960, text: 'love. You know the rules' },
+  ]);
+});
+
+test('97pds8EODm：storage 已开时 ASR 轨按句重切（句号在行中间也按下一词起点切开），人工轨不动', () => {
+  const { h } = loadYoutubeAsr({ subtitleMergeAsrSentences: true });
+  h.deliver(ASR_BRIDGE_MSG);
+  h.deliver(MANUAL_BRIDGE_MSG);
+  assert.deepStrictEqual(plainCues(h.windowObj.fushiEpisodeCues['yt-asr1|English (自动)']), [
+    { startMs: 18800, endMs: 22300, text: "We're no strangers to love." },
+    { startMs: 22300, endMs: 25960, text: 'You know the rules' },
+  ]);
+  assert.deepStrictEqual(plainCues(h.windowObj.fushiEpisodeCues['yt-asr1|English']), [
+    { startMs: 0, endMs: 1000, text: 'Hello' },
+    { startMs: 1000, endMs: 2000, text: 'world' },
+  ], '人工轨本就按句切好，不得被合并');
+});
+
+test('97pds8EODm：设置页切换开关即时重算已到的 ASR 轨并通知面板，关回去恢复按行', () => {
+  const { h, notified } = loadYoutubeAsr({});
+  h.deliver(ASR_BRIDGE_MSG);
+  h.deliver(MANUAL_BRIDGE_MSG);
+  const key = 'yt-asr1|English (自动)';
+  notified.length = 0;
+  h.changeStorage({ subtitleMergeAsrSentences: { newValue: true } });
+  assert.strictEqual(h.windowObj.fushiEpisodeCues[key].length, 2);
+  assert.strictEqual(h.windowObj.fushiEpisodeCues[key][0].text, "We're no strangers to love.");
+  assert.deepStrictEqual(notified, [key], '只通知被重算的 ASR 轨');
+  h.changeStorage({ subtitleMergeAsrSentences: { newValue: false } });
+  assert.deepStrictEqual(h.windowObj.fushiEpisodeCues[key].map((c) => c.text),
+    ["We're no strangers to", 'love. You know the rules']);
+  // 无关键变化不得触发重算。
+  notified.length = 0;
+  h.changeStorage({ subtitleOverlayBlur: { newValue: true } });
+  assert.deepStrictEqual(notified, []);
+});
+
+test('97pds8EODm：本地 server 兜底的自动字幕轨（无词级时间）同样受开关控制，只按标点合并', () => {
+  const { h } = loadYoutubeAsr({ subtitleMergeAsrSentences: true });
+  const applied = h.ctx.fushiApplyYoutubeServerCaptions; // 隔离世界顶层函数（content.js 直接调）
+  assert.strictEqual(typeof applied, 'function');
+  applied({ ok: true, data: { tracks: [
+    { languageCode: 'ja', languageName: '日本語', isAutoGenerated: true, cues: [
+      { startMs: 0, endMs: 2000, text: 'きょうは' },
+      { startMs: 2000, endMs: 4000, text: 'いい天気ですね。' },
+      { startMs: 4000, endMs: 6000, text: 'そうですね' },
+    ] },
+    { languageCode: 'ja', languageName: '日本語', isAutoGenerated: false, cues: [
+      { startMs: 0, endMs: 2000, text: 'きょうは' },
+      { startMs: 2000, endMs: 4000, text: 'いい天気ですね。' },
+    ] },
+  ] } });
+  const store = h.windowObj.fushiEpisodeCues;
+  assert.deepStrictEqual(plainCues(store['yt-asr1|日本語 (自动)']), [
+    { startMs: 0, endMs: 4000, text: 'きょうはいい天気ですね。' },
+    { startMs: 4000, endMs: 6000, text: 'そうですね' },
+  ]);
+  assert.strictEqual(store['yt-asr1|日本語'].length, 2, '人工轨不合并');
 });

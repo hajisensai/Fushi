@@ -345,7 +345,9 @@ pub fn mostly_utf8(bytes: &[u8]) -> bool {
 /// 文件，BOM 三字节不是正文。
 ///
 /// 已知判不对的输入（字节层面与候选同形，本模块没有词频模型）：EUC-KR 韩文等其它双字节
-/// 编码，会被 GBK / Big5 零错误解成汉字。
+/// 编码，会被 GBK / Big5 零错误解成汉字。整份文档的对外入口是
+/// `fushi_compute::document_charset::decode_document`：它先用 chardetng 认出这些编码，
+/// 中日编码才交给本函数。
 pub fn decode_document(bytes: &[u8]) -> Option<(&'static Encoding, String)> {
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     if bytes.is_ascii() || mostly_utf8(bytes) || latin1_plausible(bytes) {

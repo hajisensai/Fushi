@@ -229,8 +229,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'collection_scrape_meta': BackupTableRule.rowLevel(
     '随 media_collections FK cascade',
   ),
+  // v162：起点也可以是单视频（散装电影），随 video_books 一起裁剪。
   'collection_relations': BackupTableRule.rowLevel(
-    '随 media_collections FK cascade',
+    '随 media_collections / video_books FK cascade',
   ),
   'media_images': BackupTableRule.rowLevel(
     '随 media_collections / video_books FK cascade',
@@ -309,6 +310,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   }),
   'favorite_words': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
+  }),
+  // v166：收藏句（原偏好 `favorite_sentences`，BUG-816 起归「书籍」类别）。
+  'favorite_sentences': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
   }),
   'activity_events': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
@@ -398,6 +403,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_disc_sources': BackupTableRule.deviceLocal(),
   // v131：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
   'video_theme_song_spans': BackupTableRule.deviceLocal(),
+  // v163：作品图谱 AI 裁决缓存，设备本地（见 _deviceLocalTables）。
+  'media_link_ai_verdicts': BackupTableRule.deviceLocal(),
+  // v165：视频内容指纹缓存，设备本地（见 _deviceLocalTables）。
+  'video_content_fingerprints': BackupTableRule.deviceLocal(),
   // v135：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
   'game_voice_casts': BackupTableRule.deviceLocal(),
   // v133：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、

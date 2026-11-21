@@ -209,8 +209,7 @@ void main() {
       // 播放头在歌词结束后、下一句开始前的静默段。
       final int raw = nearestCueIndexAtOrBefore(cues, 50000);
       expect(raw, 2, reason: '按 startMs 最大取到组内末字');
-      final ({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) merged =
-          mergePerCharacterCueGroups(cues);
+      final merged = mergePerCharacterCueGroups(cues);
       expect(merged.repByRaw[raw], 0, reason: '面板会把它映射回唯一渲染的整句代表行');
       expect(merged.byRep[0]!.text, '手を伸');
     });

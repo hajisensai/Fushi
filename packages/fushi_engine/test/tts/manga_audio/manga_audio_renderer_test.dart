@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
@@ -51,6 +52,22 @@ MangaScriptLine _line(
 
 class _FakeBackend implements MangaRenderBackend {
   final Set<String> failVoices = <String>{};
+
+  /// 克隆旁白：能不能克隆、准备成不成功、每次准备收到的声音 id。
+  @override
+  bool canCloneNarrator = false;
+  bool narratorReady = true;
+  final List<String> narratorPrepared = <String>[];
+
+  @override
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    narratorPrepared.add(narrator.id);
+    return narratorReady;
+  }
+
   final List<String> synthCalls = <String>[];
   int clipCalls = 0;
 
@@ -377,6 +394,103 @@ void main() {
       expect(backend.synthCalls, isEmpty);
       expect(out.manifest.lines.single.durationMs, 1500);
       expect(out.manifest.lines.single.voice, 'audiobook:novel#0:0-1500');
+    });
+
+    group('克隆旁白', () {
+      // 第 0 页第一句剪有声书（4 s，够当参考），第二句（B）合成，第 2 页那句单句指定声音。
+      MangaAudioScript mixed() => MangaAudioScript(
+        voices: CastVoiceAssignment(byCharacter: <String, String>{'B': 'vb'}),
+        audiobookSources: <String>['novel'],
+        lines: <MangaScriptLine>[
+          _line(
+            0,
+            <int>[0],
+            audio: const MangaAudiobookClip(
+              bookKey: 'novel',
+              fileIndex: 0,
+              startMs: 1000,
+              endMs: 5000,
+            ),
+          ),
+          _line(0, <int>[1], speaker: 'B'),
+          _line(2, <int>[0], voice: 'solo'),
+        ],
+      );
+
+      String narratorId(MangaAudioScript s) =>
+          mangaNarratorFor(script: s, pageCount: _pages().length)!.id;
+
+      test('能克隆：没单句指定声音的合成句改用旁白，单句指定的不改，清单记旁白 id', () async {
+        backend.canCloneNarrator = true;
+        final MangaAudioScript script = mixed();
+        final String id = narratorId(script);
+        final MangaRenderOutcome out = await run(script, CastVoicingLedger());
+        expect(backend.narratorPrepared, <String>[id]);
+        expect(backend.clipCalls, 1);
+        expect(backend.synthCalls, <String>['$id|0|元気？', 'solo|0|またね']);
+        expect(out.manifest.lines[1].voice, id);
+      });
+
+      test('参考音频准备失败 / 后端不能克隆：合成句照旧用各自指派的声音', () async {
+        backend.canCloneNarrator = true;
+        backend.narratorReady = false;
+        await run(mixed(), CastVoicingLedger());
+        expect(backend.synthCalls.first, startsWith('vb|'));
+
+        final _FakeBackend plain = _FakeBackend();
+        await MangaAudioRenderer(
+          backend: plain,
+          manifestFile: MangaRenderManifest.fileFor(tmp, 'vol-2'),
+        ).render(
+          script: mixed(),
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          previous: null,
+          ledger: CastVoicingLedger(),
+          onProgress: (int done, int total) {},
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(plain.narratorPrepared, isEmpty);
+        expect(plain.synthCalls.first, startsWith('vb|'));
+      });
+
+      test('换种子重生成与补回都用旁白，补回不把旁白 id 写进演出稿', () async {
+        backend.canCloneNarrator = true;
+        final MangaAudioScript script = mixed();
+        final String id = narratorId(script);
+        backend.failVoices.add(id);
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        final MangaRenderOutcome out = await run(script, ledger);
+        expect(out.manifest.lines[1].placeholder, isTrue);
+
+        backend.failVoices.clear();
+        final MangaRegenerateCandidate c = await renderer.regenerate(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          lineId: 'p0b1',
+          seed: 9,
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(c.voice, id);
+        await renderer.discardCandidate(c);
+
+        final Map<String, MangaBackfillStatus> r = await renderer.backfill(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          manifest: out.manifest,
+          ledger: ledger,
+          requests: const <MangaBackfillRequest>[
+            MangaBackfillRequest(lineId: 'p0b1'),
+          ],
+          onProgress: (int d, int t) {},
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(r['p0b1'], MangaBackfillStatus.voiced);
+        expect(out.manifest.lines[1].voice, id);
+        expect(script.lineById('p0b1')!.voice, isNull);
+      });
     });
 
     test('系列用词替换表：改念的文字与清单文本；手填念法不替换；改表后受影响的句子重做', () async {

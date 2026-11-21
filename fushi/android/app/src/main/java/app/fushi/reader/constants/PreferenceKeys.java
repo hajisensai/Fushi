@@ -24,6 +24,12 @@ public final class PreferenceKeys {
      */
     public static final String FILE_FLOATING_BALL = "floating_ball_prefs";
 
+    /**
+     * 通知渠道显示名（渠道 id → 当前界面语言的名字），Dart 启动时整表推过来，见
+     * {@code NotificationChannelNames}。
+     */
+    public static final String FILE_NOTIFICATION_CHANNELS = "notification_channel_names";
+
     /** Prefs file used by {@code MainActivity} for splash/theme persistence. */
     public static final String FILE_SPLASH = "hibiki_splash";
 

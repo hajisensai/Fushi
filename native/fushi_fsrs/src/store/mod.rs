@@ -29,6 +29,7 @@ pub mod gen4;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
+pub(crate) mod legacy3;
 pub(crate) mod legacy_clock;
 pub(crate) mod local_state;
 pub(crate) mod media_gc;
@@ -59,9 +60,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-use rusqlite::types::{Value, ValueRef};
+use rusqlite::types::Value;
+#[cfg(any(test, feature = "raw_sql"))]
+use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 
+#[cfg(test)]
 const LEGACY_KEY: &str = "legacy_import";
 
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
@@ -82,8 +86,11 @@ pub struct SrsCore {
     /// 内核只读命令的只读连接池（[SrsCore::reader] / [SrsCore::read_visible]）：并发的读命令各借一条，一条全库长读
     /// 不挡复习排队（BUG-4298）。不与 [SrsCore::query_readers] 合用：Dart 查询道的 worker 数等于那个池的上限，几条
     /// 长读（同步冲突扫描）就能把它借满，复习排队若去那里等连接就又排在长读后面。
+    /// 两个池都只在测试构建里有（G7-6）：生产构建的协议 3 内核只跑冻结命令，全走写连接，不留用不到的常驻读连接。
+    #[cfg(test)]
     readers: read_pool::ReadPool,
     /// 查询道专用的只读连接池（[SrsCore::read_query]：Dart 发来的只读查询命令 `read` / `read_lib`，store/reads.rs）。
+    #[cfg(test)]
     query_readers: read_pool::ReadPool,
     writer: Mutex<Option<Connection>>,
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。写连接上唯一能跨调用留着的事务——
@@ -95,7 +102,8 @@ pub struct SrsCore {
     /// 先关内核读连接池（等借出的放回），所以不会漏掉一条正在开的。
     side_conns: Mutex<Vec<Weak<SideConnection>>>,
     /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
-    /// [SrsCore::set_ingest_phase] 转换。
+    /// [SrsCore::set_ingest_phase] 转换。换代后收段会话只在测试构建里编（G7-6），生产构建没有这个阶段。
+    #[cfg(test)]
     ingest: Mutex<sync2::transport::IngestPhase>,
     /// 有写入在等写锁，正在投的收段那一片尽快收：等在内核写锁上的线程数（[SrsCore::writer] 记）+ Dart 侧排队置的
     /// 请求（[SrsCore::sync2_ingest_yield]）。
@@ -111,6 +119,7 @@ pub struct SrsCore {
     bulk_holds_cache: AtomicBool,
     /// 批量写入的嵌套深度与要恢复的写连接 `wal_autocheckpoint`（`bulk_cache` 命令，[SrsCore::bulk_begin]）。按库计数：
     /// 几个 profile 的副本共用这一个写连接，只有最外层改 / 恢复阈值。
+    #[cfg(test)]
     bulk: Mutex<BulkDepth>,
     /// 各 profile 的缓存配置（内置笔记类型的代码默认值、默认牌组：只有 Dart 知道），Dart 每次打开副本时发
     /// `cache_config_set` 注册（store/cache_rev.rs）。只在内存：库重开（覆盖恢复会重开）就没了，所以每次打开都注册。
@@ -129,6 +138,7 @@ pub struct SrsCore {
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
     /// 按持有者登记，最后一个持有者释放才关。
+    #[cfg(test)]
     browse: Mutex<browse::Sessions>,
     /// 测试钩子：收段预处理拿完公钥、开始解码之前调用（测预处理不持写锁）。
     #[cfg(test)]
@@ -204,6 +214,7 @@ impl<'a> Conn<'a> {
 pub(crate) const BULK_WAL_AUTOCHECKPOINT_PAGES: i64 = 16384;
 
 /// [SrsCore] `bulk`：批量写入的嵌套深度与最外层开始时写连接的 `wal_autocheckpoint`。
+#[cfg(test)]
 #[derive(Default)]
 struct BulkDepth {
     depth: u32,
@@ -342,6 +353,7 @@ pub(crate) fn lock_recovering<T>(
 
 /// 只读连接的恢复：panic 时停在读事务里（`BEGIN` 之后没走到 `ROLLBACK`）就结束它。不结束，这条连接之后每次读都
 /// 读那份旧快照，WAL 也一直并不回主库。
+#[cfg(test)]
 pub(crate) fn end_read_tx(c: &Connection) -> Result<(), String> {
     if c.is_autocommit() {
         return Ok(());
@@ -371,6 +383,7 @@ impl SrsCore {
 
 /// [read_pool::ReadPool]（内核读连接池与查询道的连接池）的开连接函数：只读打开、配置同读连接（mmap 按次要
 /// 连接，见 [MmapRole]）。
+#[cfg(test)]
 fn open_pool_reader(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(
         path,
@@ -395,7 +408,8 @@ fn open_pool_reader(path: &Path) -> Result<Connection, String> {
 pub(crate) enum MmapRole {
     /// 写连接。
     Primary,
-    /// 读连接池、快照整理。
+    /// 读连接池、快照整理（换代后两者都只在测试构建里编，G7-6）。
+    #[cfg(test)]
     Secondary,
 }
 
@@ -406,11 +420,14 @@ pub(crate) const MMAP_BYTES: i64 = 268_435_456;
 pub(crate) fn mmap_size_for(role: MmapRole) -> i64 {
     match role {
         MmapRole::Primary => MMAP_BYTES,
+        #[cfg(test)]
         MmapRole::Secondary if cfg!(target_pointer_width = "32") => 0,
+        #[cfg(test)]
         MmapRole::Secondary => MMAP_BYTES,
     }
 }
 
+#[cfg(test)]
 fn configure(conn: &Connection) -> Result<(), String> {
     configure_as(conn, MmapRole::Secondary)
 }
@@ -488,27 +505,34 @@ impl SrsCore {
             .map_err(|e| e.to_string())?;
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
+        #[cfg(test)]
         let readers =
             read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_pool_reader)?;
+        #[cfg(test)]
         let query_readers =
             read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_pool_reader)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
+            #[cfg(test)]
             readers,
+            #[cfg(test)]
             query_readers,
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
             side_conns: Mutex::new(Vec::new()),
+            #[cfg(test)]
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
             ingest_yield: sync2::transport::YieldSignal::default(),
             ingest_holds_cache: AtomicBool::new(false),
             bulk_holds_cache: AtomicBool::new(false),
+            #[cfg(test)]
             bulk: Mutex::new(BulkDepth::default()),
             cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
             refresh: Mutex::new(refresh::Refresh::new()),
             study_hub,
+            #[cfg(test)]
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
             ingest_prepare_hook: Mutex::new(None),
@@ -568,6 +592,7 @@ impl SrsCore {
 
     /// 批量写入期间写连接放回时留着页缓存（[SrsCore] `bulk_holds_cache`）。只由 [SrsCore::bulk_begin] /
     /// [SrsCore::bulk_end] 随深度调（测试也直接调）。
+    #[cfg(test)]
     pub(crate) fn set_bulk_holds_cache(&self, on: bool) {
         self.bulk_holds_cache.store(on, Ordering::Relaxed);
     }
@@ -579,6 +604,7 @@ impl SrsCore {
     /// 把同一批热页（索引、缓存表）拷回主库一遍——实测迁移 1.5 万笔记时 COMMIT 合计 37 秒，调大后 6 秒。中途崩溃也
     /// 无妨：下次打开时 SQLite 照常回放 WAL。不能整个关掉（以前设 0）：WAL 不并回就一直长，每读一页都要从新到旧逐段
     /// 查 wal-index 的哈希段，整体随规模平方增长；封顶后 WAL 最多几个哈希段。
+    #[cfg(test)]
     pub fn bulk_begin(&self) -> Result<u32, String> {
         let mut b = lock_recovering(&self.bulk, |_| Ok(()))?;
         if b.depth == 0 {
@@ -602,6 +628,7 @@ impl SrsCore {
     /// 把写连接的 `wal_autocheckpoint` 恢复成最外层开始时的原值——并完才恢复，免得恢复后的第一笔写入在写连接上抢先把
     /// 整份 WAL 并一遍。并回失败（库正被关 / 开不了 checkpoint 连接）也照样恢复（否则这条连接之后一直不并回，WAL 无上限
     /// 地涨到下次开库），报的是并回的错。没有配对的开始就结束是调用方的错，报错、深度不动。
+    #[cfg(test)]
     pub fn bulk_end(&self) -> Result<u32, String> {
         let mut b = lock_recovering(&self.bulk, |_| Ok(()))?;
         if b.depth == 0 {
@@ -651,6 +678,7 @@ impl SrsCore {
 
     /// 收段阶段唯一的转换入口：把 [slot]（持着 `ingest` 锁拿到的）换成 [next]，同时写下写连接放回时看的镜像
     /// （`ingest_holds_cache`），返回旧阶段。
+    #[cfg(test)]
     pub(crate) fn set_ingest_phase(
         &self,
         slot: &mut sync2::transport::IngestPhase,
@@ -664,6 +692,7 @@ impl SrsCore {
     }
 
     /// 收段阶段的锁。
+    #[cfg(test)]
     pub(crate) fn ingest_phase(
         &self,
     ) -> Result<MutexGuard<'_, sync2::transport::IngestPhase>, String> {
@@ -678,12 +707,14 @@ impl SrsCore {
     /// 从内核读连接池借一条只读连接（用完放回；放回时还停在读事务里——命令 panic 在 `BEGIN` 与 `ROLLBACK` 之间——
     /// 就先结束它，见 store/read_pool.rs）。库已关闭报「已关闭」：关闭先关这个池并等借出的放回，所以持着它的调用
     /// （[SrsCore::register_side] 登记旁路连接）与关闭互斥。
+    #[cfg(test)]
     pub(crate) fn reader(&self) -> Result<read_pool::Pooled<'_>, String> {
         self.readers.get()
     }
 
     /// 写连接上是否挂着跨命令的事务（只有旧库搬迁）：挂着时只读命令也必须在写连接上读，才看得见那笔事务里
     /// 未提交的行。
+    #[cfg(test)]
     fn writer_tx_open(&self) -> bool {
         self.legacy_open.load(Ordering::SeqCst)
     }
@@ -691,6 +722,7 @@ impl SrsCore {
     /// 只读命令的连接选择：写连接上挂着事务（[SrsCore::writer_tx_open]）时在写连接的 SAVEPOINT 里读（嵌在那笔
     /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则从内核读连接池借一条、在它的一个读事务里读
     /// （整段同一份已提交快照，不排写锁；读命令之间各占一条连接，不互相排队，BUG-4298）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
+    #[cfg(test)]
     pub(crate) fn read_visible<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -699,6 +731,7 @@ impl SrsCore {
     }
 
     /// [SrsCore::read_visible]，并告诉 [f] 它是不是在写连接上还没结束的事务里读（true = 看得见未提交的行）。
+    #[cfg(test)]
     pub(crate) fn read_visible_tx<T>(
         &self,
         f: impl FnOnce(&Connection, bool) -> Result<T, String>,
@@ -718,6 +751,7 @@ impl SrsCore {
     /// 从查询道专用的池（[SrsCore::query_readers]）借连接——那个池的上限就是 Dart 查询道的 worker 数
     /// （[SrsCore::read_concurrency]），几条长读把它借满也不占内核读命令（复习排队）的连接。整条命令在一个读事务里：
     /// 开读事务时取最新的 WAL 尾，所以调用方等到写命令返回后再发的查询一定看得见那笔写入。
+    #[cfg(test)]
     pub(crate) fn read_query<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -741,12 +775,12 @@ impl SrsCore {
         // 测试构建：关之前与协议 4 的新存储对拍（见 `Drop for SrsCore`）。
         #[cfg(test)]
         gen4::parity::check_core(self);
-        // 换代前的预演自己开着一条只读连接（store/gen4/dryrun.rs）：先停下它、等它放开，关完库文件才能被换掉。
-        gen4::dryrun::stop_rehearsal(&self.path);
         // 先关内核读连接池（等借出的放回）：此后登记旁路连接报已关闭，下面拿到的清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
+        #[cfg(test)]
         self.readers.close();
         // 等在途的查询命令把连接放回（放回即关）。
+        #[cfg(test)]
         self.query_readers.close();
         let side = std::mem::take(&mut *self.side_conns.lock().unwrap_or_else(|e| e.into_inner()));
         for s in side.iter().filter_map(Weak::upgrade) {
@@ -756,6 +790,7 @@ impl SrsCore {
         drop(writer);
     }
 
+    #[cfg(test)]
     fn meta(conn: &Connection, key: &str) -> Result<Option<String>, String> {
         match conn.query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
             r.get(0)
@@ -766,6 +801,7 @@ impl SrsCore {
         }
     }
 
+    #[cfg(test)]
     fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
         conn.execute(
             "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
@@ -777,13 +813,18 @@ impl SrsCore {
     }
 
     // ------------------------------------------------------------ 旧库搬迁（§3）
+    //
+    // 协议 1 主库的一次性搬迁（Dart 读旧表、这里写）。新代没有这条路（G7-6 删了 C 入口与 Dart 调用方，主库残留协议 1
+    // 表时 Dart 拒绝打开），这几个方法只编进测试构建：写连接 panic 恢复（BUG-4297 `legacy_open`）与旧库形态的用例还用它们。
 
+    #[cfg(test)]
     /// 旧主库里的 SRS 数据是否已搬进来（或确认没有要搬的）。
     pub fn legacy_imported(&self) -> Result<bool, String> {
         let w = self.writer()?;
         Ok(Self::meta(&w, LEGACY_KEY)?.is_some())
     }
 
+    #[cfg(test)]
     /// 开搬迁事务：清空 9 张表（未写标记的库里不该有东西；上一次搬到一半崩溃时 SQLite 已回滚）。
     pub fn legacy_begin(&self) -> Result<(), String> {
         let w = self.writer()?;
@@ -805,6 +846,7 @@ impl SrsCore {
         Ok(())
     }
 
+    #[cfg(test)]
     /// 写一页旧表行（列序 = [schema::TABLES] 里该表的列序）。
     pub fn legacy_page(&self, table: &str, page: &[u8]) -> Result<usize, String> {
         // 先取写锁再看 `legacy_open`：panic 后的恢复（[SrsCore::recover_writer]）在取锁时才跑，先看标志读到的是旧值。
@@ -853,6 +895,7 @@ impl SrsCore {
         Ok(rows.len())
     }
 
+    #[cfg(test)]
     /// 写标记并提交。
     pub fn legacy_commit(&self) -> Result<(), String> {
         // 先取写锁再看标志（同 [SrsCore::legacy_page]）。
@@ -874,6 +917,7 @@ impl SrsCore {
         result
     }
 
+    #[cfg(test)]
     pub fn legacy_abort(&self) -> Result<(), String> {
         // 先取写锁再看标志（同 [SrsCore::legacy_page]）：panic 恢复已回滚并结束搬迁时这里照常成功。
         let w = self.writer()?;
@@ -883,6 +927,7 @@ impl SrsCore {
         w.execute_batch("ROLLBACK").map_err(|e| e.to_string())
     }
 
+    #[cfg(test)]
     /// 主库里本来就没有 SRS 表（新装）：直接写标记。
     pub fn legacy_mark_none(&self) -> Result<(), String> {
         let w = self.writer()?;
@@ -899,11 +944,13 @@ impl SrsCore {
     /// 快照一律写成 `auto_vacuum = INCREMENTAL`（源库是老的 NONE 也一样）：剥表后原地收空空闲链表，不再对快照整库
     /// `VACUUM`（那是第二次整份重写：磁盘峰值翻倍、耗时翻倍）。写之前按「有效数据 + [compact::MARGIN]」查目标所在卷
     /// 的空闲空间，不够就报 [SNAPSHOT_NO_SPACE]（一个字节都不写），不让它写到一半变成 SQLITE_FULL。
+    #[cfg(test)]
     pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
         self.snapshot_into_with_free_space(target, strip_device_local, compact::free_bytes)
     }
 
     /// [snapshot_into]，目标所在卷的空闲空间由 [free] 给（测试注入）。
+    #[cfg(test)]
     pub(crate) fn snapshot_into_with_free_space(
         &self,
         target: &Path,
@@ -1011,11 +1058,13 @@ impl SrsCore {
 
     /// 读命令的并发上限（查询道只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
     /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
+    #[cfg(test)]
     pub fn read_concurrency(&self) -> usize {
         self.query_readers.cap()
     }
 
     /// 查询道的只读连接池眼下开着的连接数（空闲 + 借出），内存诊断用。
+    #[cfg(test)]
     pub fn pooled_readers(&self) -> usize {
         self.query_readers.live()
     }
@@ -1028,6 +1077,8 @@ impl SrsCore {
         (len(&self.path), len(Path::new(&wal)))
     }
 
+    /// [SrsCore::exec_raw] 的执行体（测试也直接在别的连接上用）：只在测试构建与带 `raw_sql` 的库里有。
+    #[cfg(any(test, feature = "raw_sql"))]
     fn exec_on(
         conn: &Connection,
         sql: &str,
@@ -1201,6 +1252,7 @@ impl SrsCore {
 
     /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
     /// 产品代码一律走粗粒度命令。
+    #[cfg(test)]
     pub fn debug_query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         query_rows(&*self.reader()?, sql, params)
     }
@@ -1208,6 +1260,7 @@ impl SrsCore {
     /// 按库文件路径另开一条旁路连接（[flags] 打开、[setup] 配置）并登记（[SrsCore::close] 逐个关掉）。开的时候借着一条
     /// 内核读连接：与 [SrsCore::close]（先关内核读连接池、等借出的放回）互斥，库已关闭就报「已关闭」，不会按路径
     /// 把关库后可能已被删换的库文件重新打开。
+    #[cfg(test)]
     fn register_side(
         &self,
         flags: OpenFlags,
@@ -1231,6 +1284,7 @@ impl SrsCore {
     /// checkpoint 锁与写锁互不相干，PASSIVE 也不等读者）。大批写入暂停自动 checkpoint 之后收尾用（Dart
     /// `SrsDbStore.bulkWrites`）：在写连接上并回几十 MB 的 WAL 要几百毫秒，那期间所有写入都排在它后面。
     /// 这条连接登记成旁路连接，库关闭时等它做完再关。返回 `{busy, log, checkpointed}`（`PRAGMA wal_checkpoint` 的三列）。
+    #[cfg(test)]
     pub fn wal_checkpoint(&self) -> Result<serde_json::Value, String> {
         let session = self.register_side(
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -1339,7 +1393,7 @@ mod tests {
         let bulk = |on: bool| {
             let mut blobs = Vec::new();
             let mut files = Vec::new();
-            ffi::sync2_dispatch(
+            legacy3::sync2_dispatch(
                 &core,
                 &serde_json::json!({"op": "bulk_cache", "on": on}),
                 &mut blobs,

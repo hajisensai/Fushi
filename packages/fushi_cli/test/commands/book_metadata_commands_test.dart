@@ -59,6 +59,25 @@ void main() {
     );
   });
 
+  test('search --nsfw：带上 nsfw=true；不加不传（拍板台 pr3497）', () {
+    expect(_build('search', <String>['x', '--nsfw']).query, <String, String>{
+      'query': 'x',
+      'nsfw': 'true',
+    });
+    expect(_build('search', <String>['x']).query, <String, String>{
+      'query': 'x',
+    });
+    expect(
+      _spec('search').render!(<String, Object?>{
+        'candidates': <Object?>[
+          <String, Object?>{'source': 'bangumi', 'id': '11', 'title': '四叶'},
+        ],
+        'hiddenNsfw': 2,
+      }),
+      allOf(contains('四叶'), contains('2 条 NSFW'), contains('--nsfw')),
+    );
+  });
+
   test('--source 认 mangabaka 与书目四源：anilist / openbd / ndl / rakuten', () {
     expect(kBookScrapeSources, <String>[
       'bangumi',
