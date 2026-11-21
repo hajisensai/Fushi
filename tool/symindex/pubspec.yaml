@@ -1,0 +1,8 @@
+name: symindex
+description: 符号索引的 Dart 部分：用 analyzer 解析全仓，导出定义与引用（tool/symindex/README.md）。
+publish_to: none
+environment:
+  sdk: ^3.9.0
+dependencies:
+  analyzer: ^14.7.0
+  path: ^1.9.0
