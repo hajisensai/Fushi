@@ -493,6 +493,7 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
+        DictionaryPopupRealmKeyWebView,
         DictionaryPopupWebViewState,
         QueuedOverwriteReply,
         QueuedOverwriteSettled;
@@ -3563,7 +3564,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   DictionaryPopupWebViewState? get caretTopPopupState {
     final int idx = _topVisiblePopupIndex;
     if (idx < 0 || idx >= _popup.entries.length) return null;
-    return _popup.entries[idx].webViewKey.currentState;
+    return _popup.entries[idx].webViewKey.webViewState;
   }
 
   @override
@@ -8974,7 +8975,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (index <= 0 &&
         _popup.entries.isNotEmpty &&
         _popup.entries.first.isWarmSlot) {
-      _popup.entries.first.webViewKey.currentState?.clearSelection();
+      _popup.entries.first.webViewKey.webViewState?.clearSelection();
     }
     setState(() => _popup.dismissAt(index));
     final bool stackEmpty = !_hasVisiblePopup;
@@ -9509,7 +9510,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int idx = _topVisiblePopupIndex;
     if (idx < 0) return; // 没有可见浮层：不消费，也没什么可制卡的
     final DictionaryPopupWebViewState? popup =
-        _popup.entries[idx].webViewKey.currentState;
+        _popup.entries[idx].webViewKey.webViewState;
     if (popup == null) return;
     unawaited(popup.mineFirstVisibleEntry());
   }

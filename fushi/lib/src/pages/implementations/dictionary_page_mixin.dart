@@ -27,12 +27,14 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
 import 'package:fushi/src/pages/base_source_page.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
+        DictionaryPopupRealmKeyWebView,
         DictionaryPopupWebViewState,
         OpenAdvancedMiningCallback,
         QueuedOverwriteReply,
@@ -380,7 +382,7 @@ mixin DictionaryPageMixin {
   /// 结果区、不属于浮层（BUG-3216 / BUG-4209），所以按表面传，不覆写宿主级 getter。
   @protected
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
-    GlobalKey<DictionaryPopupWebViewState> webViewKey, {
+    GlobalKey<DictionaryPopupRealmState> webViewKey, {
     FavoriteLookupContext? Function()? lookupContext,
   }) => mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
       ? (int entryIndex, String matched, String expression, String reading) =>
@@ -405,7 +407,7 @@ mixin DictionaryPageMixin {
   /// （[advancedMiningDeckChoiceAvailable] 为 false）时卡片落在那台设备、用它的 Anki
   /// 配置，本机的卡组列表对它没有意义——不给卡组分区。
   Future<void> _openAdvancedMiningDialog({
-    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required GlobalKey<DictionaryPopupRealmState> webViewKey,
     required int entryIndex,
     required String matched,
     required String expression,
@@ -429,7 +431,7 @@ mixin DictionaryPageMixin {
           ? await loadAdvancedMiningFieldsSection(
               ref,
               fetchPayload: () async =>
-                  webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+                  webViewKey.webViewState?.buildMinePayloadByIndex(entryIndex),
               fallbackSentence: () => lookupContext()?.sentence ?? '',
             )
           : null;
@@ -454,14 +456,14 @@ mixin DictionaryPageMixin {
               ? null
               : buildAdvancedMiningWordAudioSection(
                   listChoices: () async =>
-                      await webViewKey.currentState?.listWordAudioChoices(
+                      await webViewKey.webViewState?.listWordAudioChoices(
                         expression,
                         reading.isEmpty ? expression : reading,
                         matched: matched,
                       ) ??
                       const <Map<String, String>>[],
                   refreshSource: (int sourceIndex) async =>
-                      await webViewKey.currentState
+                      await webViewKey.webViewState
                           ?.listWordAudioChoicesForSource(
                             expression,
                             reading.isEmpty ? expression : reading,
@@ -477,7 +479,7 @@ mixin DictionaryPageMixin {
                 MiningRequestOverrides overrides, {
                 String? wordAudioUrl,
               }) async =>
-                  await webViewKey.currentState?.mineEntryByIndex(
+                  await webViewKey.webViewState?.mineEntryByIndex(
                     entryIndex,
                     // BUG-2634 第二轮：_onMineEntryImpl 在 await _mineVideoCard
                     // 之前就把草稿 / cue / 历史快照读完，连当前帧截图的 Future 都
@@ -1472,7 +1474,7 @@ mixin DictionaryPageMixin {
               contextSentence,
             );
             if (count > 0) {
-              final Rect? wordRect = await entry.webViewKey.currentState
+              final Rect? wordRect = await entry.webViewKey.webViewState
                   ?.highlightSelection(count);
               // BUG-2054：同一次高亮顺带取回整词 bbox，把刚打开的子层从「点击的首
               // 字符」重锚到整词矩形——跨行选区时首字符矩形只覆盖第一行，子弹窗会
@@ -1744,7 +1746,7 @@ mixin DictionaryPageMixin {
             // onRendered 相同的翻可见路径，不空等 failsafe。state 为 null 时
             // 维持等待，交给 failsafe。
             final bool renderPending =
-                entry.webViewKey.currentState?.refreshCurrentResult() ?? true;
+                entry.webViewKey.webViewState?.refreshCurrentResult() ?? true;
             if (!renderPending && controller.revealRendered(entry)) {
               controller.endSearchUi();
               setState(() {});
@@ -1787,7 +1789,7 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.currentState,
+            popupState: entry.webViewKey.webViewState,
             matched: lookupEntryMatchedText(first),
           );
         }
@@ -1876,7 +1878,7 @@ mixin DictionaryPageMixin {
     }
     // 离开当前页前记下它的滚动位（回来时恢复）；查询开始后再读会读到新内容。
     final double scrollTop =
-        await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
+        await entry.webViewKey.webViewState?.currentScrollTop() ?? 0;
     if (!mounted || !controller.entries.contains(entry)) return;
     final String termAtStart = entry.searchTerm;
     entry.isSearching = true;
@@ -1912,7 +1914,7 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.currentState,
+            popupState: entry.webViewKey.webViewState,
             matched: lookupEntryMatchedText(first),
           );
         }
@@ -1935,7 +1937,7 @@ mixin DictionaryPageMixin {
   }) async {
     if (entry.isSearching) return;
     final double scrollTop =
-        await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
+        await entry.webViewKey.webViewState?.currentScrollTop() ?? 0;
     if (!mounted || !controller.entries.contains(entry)) return;
     // goForward / goBack 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
     if (forward) {
