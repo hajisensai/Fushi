@@ -294,7 +294,10 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 3（第六波，交接 §44「第六波 导入红测试收尾」）：同一派生加上界——外来日志的发生时刻晚于载着它的那条操作时不派生、
 ///   回落到操作 HLC（第五波复核修复，`derived_log_hlc` 的 `op_wall`）。2 推出时还没有这道上界，按 2 物化过的开发库里
 ///   带未来时刻的外来日志排在派生位置上，要重建一次才换成新口径。
-pub const CACHE_RULES: i64 = 3;
+/// - 4（嵌套并入的改名写入者）：按类判时改名写入者的旧上下文只换到归回证据撑得住的 seq 上界（`class.rs` 的
+///   `Canon::dvv`，上界记在 `derive_cfg` 的 `alias::WRITER_UPTO_KEY`）。之前整段换：被并入两次的库里，中间那份库的
+///   `{merged-…: n}` 把最初写入者名下 seq ≤ n、它其实没见过的写入判成已被覆盖（冲突变支配）。整层重建才写下上界。
+pub const CACHE_RULES: i64 = 4;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -1430,7 +1433,7 @@ impl<'t, 'c> Index<'t, 'c> {
         out: &mut Settled,
     ) -> Result<(), String> {
         // 归回的写入者表在这一趟里不变：按类拼行（`class.rs` [Index::class_lines]）每个实体都要它，读一次。
-        self.pass_writers = Some(self.writer_aliases()?);
+        self.pass_writers = Some(std::rc::Rc::new(self.writer_aliases()?));
         self.pass_rules_begin()?;
         let done = self.cache_pass_with(cfg, notes, cards, all, out);
         self.pass_writers = None;
@@ -2999,6 +3002,88 @@ mod tests {
         });
     }
 
+    /// 名字表不变、只有归回写入者的证据范围变了（BUG-5056 的 `aliasWriterUpto`）：一样整层重建。被测笔记的字段寄存器
+    /// 里 `(w1, 2)`（HLC 100）与 `(v, 1)`（上下文 `merged:2`、HLC 90）：范围只到 seq 1 时 `merged:2` 证不到盖住
+    /// `(w1, 2)`，两条并发、HLC 大的 `a` 胜；另一条笔记上来了 `(merged, 2)` 与 `(w1, 2)` 的同一条记录，范围升到 2，
+    /// `b` 支配 `a`。这条笔记不在这一批碰到的实体里，只有整层重建才会更新它的 `sort_field`。
+    #[test]
+    fn a_writer_bound_moving_rebuilds_rows_the_batch_did_not_touch() {
+        use crate::gen4_ids::rules;
+        use crate::store::gen4::derive::tests::{heritage, stamp};
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            let merged = format!("merged-{}~w1", rules::merged_writer_hash(U1, "w1").text());
+            let f0 = format!("f/{}", rules::field(&w.nt[0], 0).text());
+            let write = |entity: &crate::sync2::id::Id, key: &str, value: &str, s| {
+                Body4::Edit(Edit4 {
+                    kind: EntKind::Note,
+                    entity: Key::Uuid(*entity),
+                    key: key.to_owned(),
+                    value: format!("\"{value}\""),
+                    stamp: Some(s),
+                    ..native_edit()
+                })
+            };
+            let steps: Vec<Body4> = twin_steps(&w)
+                .into_iter()
+                .filter(|b| !matches!(b, Body4::Edit(e) if e.key.starts_with("f/")))
+                .collect();
+            let sort_field = |conn: &Connection| -> String {
+                rows(
+                    conn,
+                    &format!(
+                        "SELECT sort_field FROM notes WHERE id = {}",
+                        blob(&w.c_note)
+                    ),
+                )[0][0]
+                    .clone()
+            };
+            let proof = |wr: &str, seq: i64, physical: i64| {
+                write(
+                    &w.note[1],
+                    "proof",
+                    "p",
+                    stamp(wr, seq, r#"{"vv":{}}"#, physical),
+                )
+            };
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let mut first = vec![Body4::salts([U1]).unwrap()];
+                first.extend(steps.iter().cloned());
+                feed(t, &mut ix, col, 1, &first);
+                heritage(t, &mut ix, col, op(0xc1, 1, 1, &[], &proof("w1", 1, 50)));
+                heritage(t, &mut ix, col, op(0xc2, 1, 2, &[], &proof(&merged, 1, 50)));
+                let ctx = format!(r#"{{"vv":{{"{merged}":2}}}}"#);
+                let a = write(&w.note[0], &f0, "a", stamp("w1", 2, r#"{"vv":{}}"#, 100));
+                let b = write(&w.note[0], &f0, "b", stamp("v", 1, &ctx, 90));
+                heritage(t, &mut ix, col, op(0xd1, 1, 3, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 4, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(1));
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "a");
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                heritage(
+                    t,
+                    &mut ix,
+                    col,
+                    op(0xc3, 1, 5, &[], &proof(&merged, 2, 100)),
+                );
+                ix.settle()?;
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(2));
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "b");
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(48))]
 
@@ -3157,7 +3242,17 @@ mod tests {
                 "{what}：派生口径变了，改期望、记新修订号并升 CACHE_RULES"
             );
         }
-        let latest = table.iter().map(|r| r.8).max().unwrap();
+        // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
+        const ELSEWHERE: [(&str, i64); 1] = [(
+            "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
+            4,
+        )];
+        let latest = table
+            .iter()
+            .map(|r| r.8)
+            .chain(ELSEWHERE.iter().map(|r| r.1))
+            .max()
+            .unwrap();
         assert_eq!(
             super::CACHE_RULES,
             latest,

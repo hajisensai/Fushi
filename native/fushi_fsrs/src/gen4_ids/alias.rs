@@ -105,6 +105,8 @@ pub struct Dot {
 pub struct WriterEv {
     pub name: String,
     pub dots: Vec<Dot>,
+    /// 名下 HLC 解不开的记录的 seq（不当「同一条记录」的证据，只说明这个名字在这一号上有记录，[WriterBound::own]）。
+    pub raw: Vec<u64>,
 }
 
 /// 一个集合的证据。各项都是集合语义：顺序、重复都不影响结果；同一个 ID 的多条证据取并集。
@@ -223,6 +225,24 @@ struct Entry {
 struct WriterEntry {
     origin: String,
     how: WriterHow,
+    /// 归回证据撑得住的范围（[Aliases::writer_bound]）。
+    bound: WriterBound,
+}
+
+/// 一个归回的写入者名字 `merged-…` 换成最初写入者 `w` 时，证据撑得住的范围（[Aliases::writer_bound]）。
+///
+/// 旧上下文是「seq ≤ n 都见过」的区间断言。两个名字下同 seq 的同一条记录（同 HLC 物理时刻与计数）证明两边到这个 seq
+/// 为止是同一段历史（同一个写入者的计数器走到 s 时，s 之前的每一号都出自同一段历史），所以 `{merged-…: n}` 里 seq ≤
+/// [upto] 的那段可以换成 `w` 的；[upto] 以上，被改名的那份库自己裁掉的副本不在这个集合里，`w` 名下同 seq 的记录可能
+/// 根本不是它见过的那条（嵌套并入：那份库又被并进来）。那一段只确知它见过自己名下的记录（[own]，换名后是 `w` 名下的
+/// 同号 dot）。按类判时 `Canon::dvv`（`store/gen4/class.rs`）按这个范围换：超出的部分留在原名下，`w` 名下没有证据的
+/// 写入照原值判，不会被凭空判成已被覆盖。
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WriterBound {
+    /// 与最初写入者同 seq 同记录的最大 seq；一条都没有（经类里别的名字连上的）= 0。
+    pub upto: u64,
+    /// 这个名字在集合里、seq 大于 [upto] 的记录（含 HLC 解不开的），升序。
+    pub own: Vec<u64>,
 }
 
 /// 别名表。
@@ -286,6 +306,14 @@ impl Aliases {
     /// 盐（排序去重后）；[How::Salted] / [How::Fallback] 的 `salt` 是它的下标。
     pub fn salts(&self) -> &[String] {
         &self.salts
+    }
+
+    /// [WriterHow::Resolved] 的名字 [w] 归回最初写入者时证据撑得住的范围（[WriterBound]）。没归回的名字是 None。
+    pub fn writer_bound(&self, w: &str) -> Option<&WriterBound> {
+        match self.writers.get(w) {
+            Some(e) if e.how == WriterHow::Resolved => Some(&e.bound),
+            _ => None,
+        }
     }
 
     /// 归到了最初写入者的名字：(存量名字, 规范名字)，按存量名字排序。
@@ -1278,6 +1306,13 @@ impl<'a> Resolver<'a> {
         }
 
         let ev = self.ev;
+        // 名字 → 名下 HLC 解不开的记录的 seq（只进 [WriterBound::own]）。
+        let raw: HashMap<&str, BTreeSet<u64>> = ev
+            .writers
+            .iter()
+            .filter(|w| !w.raw.is_empty())
+            .map(|w| (w.name.as_str(), w.raw.iter().copied().collect()))
+            .collect();
         // 在操作里出现过的名字与它名下的记录（同一个 seq 有两种戳 = 证据自相矛盾，记 None：和谁都对不上）。
         let mut dots: BTreeMap<&'a str, Dots> = BTreeMap::new();
         for w in &ev.writers {
@@ -1421,6 +1456,21 @@ impl<'a> Resolver<'a> {
                     WriterEntry {
                         origin: root.clone(),
                         how,
+                        bound: {
+                            let mine = &dots[m];
+                            let upto = mine
+                                .iter()
+                                .rev()
+                                .find(|(seq, x)| x.is_some() && root_dots.get(*seq) == Some(*x))
+                                .map_or(0, |(seq, _)| *seq);
+                            let mut own: BTreeSet<u64> =
+                                mine.range(upto + 1..).map(|(seq, _)| *seq).collect();
+                            if let Some(r) = raw.get(*m) {
+                                own.extend(r.range(upto + 1..).copied());
+                            }
+                            let own = own.into_iter().collect();
+                            WriterBound { upto, own }
+                        },
                     },
                 );
             }
