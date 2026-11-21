@@ -3182,6 +3182,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 拍板台 42UUu_kcwD：手机 / 平板切出 app 或锁屏后视频声音继续播（默认关）。
+  /// 关着时进后台暂停、回前台续播（BUG-2544）。
+  bool get videoBackgroundPlay =>
+      getPref('video_background_play', defaultValue: false) as bool;
+
+  Future<void> setVideoBackgroundPlay(bool value) async {
+    await setPref('video_background_play', value);
+    notifyListeners();
+  }
+
   /// 记住每部作品上次手动转到的方向（默认关）。
   bool get videoRememberOrientation =>
       getPref('video_remember_orientation', defaultValue: false) as bool;

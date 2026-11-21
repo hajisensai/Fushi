@@ -13046,6 +13046,8 @@
   "video_setting_av_delay_hint_short": "正の値で遅らせ、負の値で早める",
   "video_setting_av_delay_reset": "0 に戻す",
   "video_setting_av_delay_tap_to_type": "タップして直接入力",
+  "video_setting_background_play": "Keep playing audio in background",
+  "video_setting_background_play_hint": "Sound keeps playing after you leave the app or lock the screen; the picture comes back when you return",
   "video_setting_brightness_swipe_gesture": "スワイプで明るさ調整",
   "video_setting_brightness_swipe_gesture_hint": "画面の左半分を上下にスワイプして画面の明るさを変更します。オフにするとシステムの明るさスライダーを使います",
   "video_setting_clip_export_video_bitrate": "クリップ書き出しの動画ビットレート",

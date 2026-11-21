@@ -13046,6 +13046,8 @@
   "video_setting_av_delay_hint_short": "+ = later, − = earlier",
   "video_setting_av_delay_reset": "Reset to 0",
   "video_setting_av_delay_tap_to_type": "Tap to type a value",
+  "video_setting_background_play": "Keep playing audio in background",
+  "video_setting_background_play_hint": "Sound keeps playing after you leave the app or lock the screen; the picture comes back when you return",
   "video_setting_brightness_swipe_gesture": "Parlaklığı kaydırarak ayarla",
   "video_setting_brightness_swipe_gesture_hint": "Ekran parlaklığını değiştirmek için videonun sol yarısında yukarı/aşağı kaydırın. Bunun yerine sistem parlaklık kaydırıcısını kullanmak için kapatın",
   "video_setting_clip_export_video_bitrate": "Klip dışa aktarma video bit hızı",

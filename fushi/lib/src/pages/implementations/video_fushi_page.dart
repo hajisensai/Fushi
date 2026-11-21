@@ -1181,6 +1181,19 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required bool hasNativePlayer,
   }) => isPlaying && hasNativePlayer;
 
+  /// 拍板台 42UUu_kcwD：[shouldPauseForBackground] 成立（正在播、真播放器）之后，
+  /// 是「后台继续放声音」（只挂起视频轨）还是照 BUG-2544 暂停。
+  ///
+  /// [backgroundPlayEnabled]：视频设置「后台继续播放声音」（默认关）。
+  /// [isMobile]：只有手机 / 平板会走到真后台的 `paused`；桌面最小化本来就不暂停，
+  /// 这里显式要求移动端，免得哪天桌面也收到 `paused` 时被这个开关改了行为。
+  /// 纯函数，供单测直接验证。
+  @visibleForTesting
+  static bool shouldKeepAudioInBackground({
+    required bool backgroundPlayEnabled,
+    required bool isMobile,
+  }) => backgroundPlayEnabled && isMobile;
+
   /// BUG-2544：回前台（`resumed`）时是否把播放续上。
   ///
   /// [pausedForBackground]：本次确实是**我们**因进后台而暂停了正在播的视频
@@ -4321,6 +4334,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _watchTracker?.start();
         _studyClockGate.setUnfocused(false);
         _studyClockGate.setLifecycleStopped(false);
+        // 拍板台 42UUu_kcwD：后台继续放声音时挂起的视频轨先还原，**排在解码链刷新
+        // 之前**——刷新是原地 seek，轨还关着时 seek 重建不了画面。未挂起时 no-op。
+        unawaited(_controller?.resumeVideoAfterBackground());
         // BUG-1863：从真后台回来先把视频解码链重建一次（详见
         // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
         _refreshDecodeAfterResumeIfNeeded();
@@ -4380,6 +4396,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isPlaying: controller.isPlaying,
       hasNativePlayer: controller.hasNativePlayer,
     )) {
+      return;
+    }
+    // 拍板台 42UUu_kcwD：开着「后台继续播放声音」时不暂停，只挂起视频轨（`vid=no`，
+    // 理由见 [VideoPlayerController.suspendVideoForBackground]），回前台在
+    // `resumed` 分支还原。不置 [_pausedForBackground]：没停过，回来也就不必续播。
+    if (VideoFushiPage.shouldKeepAudioInBackground(
+      backgroundPlayEnabled: appModel.videoBackgroundPlay,
+      isMobile: isMobilePlatform,
+    )) {
+      unawaited(controller.suspendVideoForBackground());
       return;
     }
     _pausedForBackground = true;
