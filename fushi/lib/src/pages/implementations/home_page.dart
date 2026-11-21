@@ -99,6 +99,9 @@ import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceWorkPlanner;
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
@@ -125,8 +128,6 @@ import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
     show maybeShowShellLayoutChoice;
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
-import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
-    show maybeShowLibraryLayoutDefaultNotice;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
@@ -166,6 +167,7 @@ import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/pages/implementations/home_reader_page.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/web_hub_page.dart';
@@ -772,16 +774,6 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      // 库页默认布局改成封面网格：升级上来、没选过布局的用户提醒一次「拼贴仍可选」
-      // （拍板台 pr3454，2026-11-16）。同样排在更新弹窗之前、串行。
-      if (mounted) {
-        await maybeShowLibraryLayoutDefaultNotice(
-          context: context,
-          appModel: appModelNoUpdate,
-          freshInstall: freshInstall,
-        );
-      }
-
       // 覆盖导入完成后的一次性提示（快照留多久、在哪找回 / 删除）。导入完成时 app
       // 立刻重启，提示只能在这里补上；与上面的弹框串行，排在更新弹窗之前。
       if (mounted) {
@@ -1126,6 +1118,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    // 正文里的宿主页（子元素）先于本 State 卸载、已各自注销；这里摘浮层、释放 controller。
+    _sharedLookupPopupHost.dispose();
     _sourceAutoScan.dispose();
     if (_backdropShellRoute case final Route<Object?> route) {
       setFushiPageRouteModuleShell(route, false);
@@ -2564,6 +2558,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// 避免 app 一启动就把没访问的 tab 的远端列表/封面预拉一遍。
   final Set<HomeTab> _visitedKeepAliveTabs = <HomeTab>{};
 
+  /// 游戏 tab（texthooker 工作台）与查词 tab 共用的查词弹窗栈 + 根 Overlay 浮层宿主
+  /// （拍板台 design-shared-lookup-webview）。两页都保活、都把浮层挂在根 Overlay，
+  /// 原先各 seed 一个常驻隐藏的预热 WebView，两个 tab 都进过后后台挂着两个；它们不会
+  /// 同时可见，也不走阅读器的光标路由，所以共用一个 controller 与一个热槽 WebView。
+  /// 经 [SharedLookupPopupScope] 下发到正文；别的查词表面（阅读器 / 视频 / 复习卡……）
+  /// 不读它，照旧各有各的。
+  final SharedLookupPopupHost _sharedLookupPopupHost = SharedLookupPopupHost();
+
   /// 缓存视频页仓库实例，令 [HomeVideoPage] 的 `widget.repo` 跨 [buildBody] 重建保持
   /// 同一对象，避免每次 `setState` 都塞入新 repo 触发无谓 didUpdateWidget。
   VideoBookRepository? _videoRepo;
@@ -3836,6 +3838,17 @@ class _HomePageState extends BasePageState<HomePage>
     _videoLibraryRefreshSignal.value++;
   }
 
+  /// 来源页改动了视频库（扫描 / 「仅此一次」导入 / 移除来源）。
+  ///
+  /// 「仅此一次」导入扫完删掉临时来源行、移除来源，都会让视频的 `sourceId` 归 NULL
+  /// 落进无来源刮削范围，但条目集合不变，视频页按条目集合变化发起的补刮等不到这一
+  /// 刻（扫描期间那一轮还对着临时行，计划器不为临时行立项）。这里补发一轮：补刮
+  /// 本身幂等、受总闸与退避记账约束（拍板台 gtpgyff3l7-oneshot-scrape）。
+  void _onVideoSourcesChangedLibrary() {
+    _notifyVideoLibraryChanged();
+    unawaited(_videoLibraryScrapeSweep.sweepOnce());
+  }
+
   VideoSourceScrapeTaskController get _videoSourceScrapeController =>
       _videoScrapeRuntime.controller;
 
@@ -4036,13 +4049,18 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Future<void> _scrapeAllVideosFromSources() async {
-    final List<SourceLibraryRow> sources = await appModel.database
-        .getMediaSourcesByKind('video');
-    final List<SourceLibraryRow> localSources = sources
-        .where((SourceLibraryRow source) => source.transport == 'local')
-        .toList(growable: false);
+    // 本机视频来源 + 无来源本机视频（「仅此一次」导入、手动导入的视频，拍板台
+    // gtpgyff3l7-oneshot-scrape）：两类走同一条刮削链。
+    final List<SourceLibraryRow> localSources = await localVideoScrapeScopes(
+      appModel.database,
+    );
+    final bool nothingToScrape =
+        localSources.every(isSourcelessVideoScrapeScope) &&
+        (await VideoSourceWorkPlanner(
+          appModel.database,
+        ).plan(sourcelessLocalVideoScrapeScope)).isEmpty;
     if (!mounted) return;
-    if (localSources.isEmpty) {
+    if (nothingToScrape) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(FushiSnackBar(content: Text(t.media_source_no_sources)));
@@ -4196,59 +4214,62 @@ class _HomePageState extends BasePageState<HomePage>
       listenable: _backgroundTasksListenable,
       tasks: _backgroundTasks,
       onOpen: _openBackgroundTasksFromAvatar,
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
-          // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
-          for (final HomeTab tab in _keepAliveTabs)
-            if (_visitedKeepAliveTabs.contains(tab))
-              Offstage(
-                key: ValueKey<HomeTab>(tab),
-                offstage: visible != tab,
-                child: TickerMode(
-                  enabled: visible == tab,
-                  child: DropSurfaceScope(
-                    // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
-                    // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
-                    // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
-                    // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
-                    // 与「接拖放的那个」永远是同一个。
-                    isActive: () => _visibleTab == tab,
-                    // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
-                    // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
-                    // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
-                    // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
-                    // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
-                    child: SectionVisibilityScope(
-                      visible: visible == tab,
-                      // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
-                      // 可见那一页照常重排（BUG-3447）。
-                      child: NavRailSyncedContent(
-                        hidden: visible != tab,
-                        child: _keepAliveTabContent(
-                          tab,
-                          visible: visible == tab,
+      child: SharedLookupPopupScope(
+        host: _sharedLookupPopupHost,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            // 保活 tab：一旦访问过就常驻树中，仅用 Offstage 隐藏未选中者（State 不销毁）。
+            // 隐藏时同步关掉 TickerMode，令其 AnimationController 停走、不与可见 tab 抢帧。
+            for (final HomeTab tab in _keepAliveTabs)
+              if (_visitedKeepAliveTabs.contains(tab))
+                Offstage(
+                  key: ValueKey<HomeTab>(tab),
+                  offstage: visible != tab,
+                  child: TickerMode(
+                    enabled: visible == tab,
+                    child: DropSurfaceScope(
+                      // Offstage 只关 Flutter 的 hitTest，不影响 desktop_drop——它按
+                      // 全局广播 + 各自 paintBounds 判定，而隐藏的保活 tab 仍以全屏
+                      // 约束布局，于是**每个访问过的 tab 都会收到同一次拖放**。判据与
+                      // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
+                      // 与「接拖放的那个」永远是同一个。
+                      isActive: () => _visibleTab == tab,
+                      // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
+                      // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
+                      // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
+                      // （_selectTabFromNav）：它藏着时不消费聚焦请求，等这一层按新的
+                      // 可见性重建之后（后帧）再消费，焦点才不会被 ExcludeFocus 吞掉。
+                      child: SectionVisibilityScope(
+                        visible: visible == tab,
+                        // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
+                        // 可见那一页照常重排（BUG-3447）。
+                        child: NavRailSyncedContent(
+                          hidden: visible != tab,
+                          child: _keepAliveTabContent(
+                            tab,
+                            visible: visible == tab,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+            // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
+            if (!_keepAliveTabs.contains(visible))
+              KeyedSubtree(
+                key: ValueKey<HomeTab>(visible),
+                child: _buildTabContent(visible),
               ),
-          // 非保活 tab：仅在选中时构建、切走即销毁，保留其 initState 挂载语义。
-          if (!_keepAliveTabs.contains(visible))
-            KeyedSubtree(
-              key: ValueKey<HomeTab>(visible),
-              child: _buildTabContent(visible),
-            ),
-          // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
-          // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。首页由头像
-          // 外圈承载，不挂这颗（它会盖住首页的统计 / 复习卡，H3）。
-          if (_hasBackgroundTasks &&
-              !_shellFabHostedByBar &&
-              !homeBackgroundTasksOnAvatar(visible))
-            _buildBackgroundTasksFab(),
-        ],
+            // 「后台任务」入口：同步 / 复习同步 / 补刮共用一颗 FAB，外圈一项任务一段
+            // 进度弧（替代此前各库页顶部的两行同步横幅，2026-11-03）。首页由头像
+            // 外圈承载，不挂这颗（它会盖住首页的统计 / 复习卡，H3）。
+            if (_hasBackgroundTasks &&
+                !_shellFabHostedByBar &&
+                !homeBackgroundTasksOnAvatar(visible))
+              _buildBackgroundTasksFab(),
+          ],
+        ),
       ),
     );
   }
@@ -4413,7 +4434,7 @@ class _HomePageState extends BasePageState<HomePage>
         onScrapeSource: _scrapeVideoSource,
         onVideoScanCompleted: _onVideoSourceScanCompleted,
         onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
-        onLibraryChanged: _notifyVideoLibraryChanged,
+        onLibraryChanged: _onVideoSourcesChangedLibrary,
         // 补刮的触发点收口在视频页：首次进入 / 切回 / 库里多出条目时各调一次
         // （BUG-2199）。旧实现把它挂在 HomePage 的进 tab 时机上并以进程为幂等
         // 键，于是本次会话下载入库的作品永远赶不上那唯一一轮。
@@ -4511,6 +4532,10 @@ class _HomePageState extends BasePageState<HomePage>
 /// 是实色分组底，所以这里给内容区垫回 `colorScheme.surface`。
 ///
 /// 结构恒定：MD3 / 无窗口材质时也挂着，只是透明色（不画任何像素、不接命中）。
+///
+/// 路由层背景层在画用户背景图片时（[FushiPageBackdrop.activeOf]）不垫：那时脚手架
+/// 底色被背景层换成透明，这里若照「半透明 = 窗口材质」垫实色，就把图片整片盖住
+/// （Apple 下选了背景图首页仍是白底）。图片本身已盖住窗口材质。
 class _GlassContentSurface extends StatelessWidget {
   const _GlassContentSurface({required this.child});
 
@@ -4520,7 +4545,9 @@ class _GlassContentSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool solid =
-        isGlassDesign(context) && theme.scaffoldBackgroundColor.a < 1;
+        isGlassDesign(context) &&
+        theme.scaffoldBackgroundColor.a < 1 &&
+        !FushiPageBackdrop.activeOf(context);
     // 底色画在不参与命中测试的背景槽里：ColoredBox 自身是 opaque 命中，直接
     // 包住内容会改变 MD3 下空白区的点击穿透。
     return Stack(

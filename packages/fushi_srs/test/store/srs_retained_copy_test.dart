@@ -50,6 +50,14 @@ void main() {
       () => SrsRetainedCopyState.fromJson(const <String, Object?>{'copy': '?'}),
       throwsA(isA<SrsCoreException>()),
     );
+    // BUG-5079：坏了的保留副本有自己的线上名，不再混进 other。
+    final SrsRetainedCopyState bad = SrsRetainedCopyState.fromJson(
+      const <String, Object?>{'copy': 'unreadable'},
+    );
+    expect(bad.kind, SrsRetainedCopyKind.unreadable);
+    expect(bad.unreadable, isTrue);
+    expect(bad.present, isFalse);
+    expect(s.unreadable, isFalse);
     final SrsRetainedCopyDeletion d = SrsRetainedCopyDeletion.fromJson(
       const <String, Object?>{'deleted': true, 'freedBytes': 99},
     );

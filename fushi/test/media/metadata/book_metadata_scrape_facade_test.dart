@@ -131,6 +131,83 @@ void main() {
     });
   });
 
+  group('isSongForItem（导入的歌曲默认 iTunes）', () {
+    late FushiDatabase db;
+
+    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    MediaItem itemFor(String identifier) => MediaItem(
+      mediaIdentifier: identifier,
+      title: 'Lemon',
+      mediaTypeIdentifier: 'reader',
+      mediaSourceIdentifier: 'reader_fushi',
+      position: 0,
+      duration: 0,
+      canDelete: true,
+      canEdit: true,
+    );
+
+    Future<void> srtBook(String uid, String srtPath) => db.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: uid,
+        title: 'Lemon',
+        srtPath: srtPath,
+        importedAt: 0,
+      ),
+    );
+
+    test('字幕书：字幕文件是 .lrc 才算歌曲（大小写不敏感）', () async {
+      await srtBook('song', 'C:/music/Lemon.LRC');
+      await srtBook('drama', 'C:/books/drama.srt');
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('song')),
+        ),
+        isTrue,
+      );
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('drama')),
+        ),
+        isFalse,
+      );
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('missing')),
+        ),
+        isFalse,
+      );
+    });
+
+    test('EPUB 有声书：对齐格式 lrc 算歌曲；smil / 没挂有声书不算', () async {
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'epub-song',
+          alignmentFormat: 'lrc',
+          alignmentPath: 'C:/a/song.lrc',
+        ),
+      );
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'epub-novel',
+          alignmentFormat: 'smil',
+          alignmentPath: 'C:/a/novel.smil',
+        ),
+      );
+      Future<bool> isSong(String key) => BookMetadataScrapeFacade.isSongForItem(
+        db,
+        itemFor(ReaderFushiSource.mediaIdentifierFor(key)),
+      );
+      expect(await isSong('epub-song'), isTrue);
+      expect(await isSong('epub-novel'), isFalse);
+      expect(await isSong('epub-plain'), isFalse);
+    });
+  });
+
   group('applyToBook / restore', () {
     late FushiDatabase db;
     late Directory thumbs;

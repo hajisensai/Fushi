@@ -22,6 +22,7 @@ import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -1175,8 +1176,12 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       );
       final TtsCachedAudio audio = await cache.obtain(
         key,
-        (String out) =>
-            provider.synthesize(text, outputPath: out, cancel: cancel),
+        (String out) => ttsSynthesizeSplittingOnReject(
+          provider,
+          text,
+          outputPath: out,
+          cancel: cancel,
+        ),
       );
       if (!mounted || cancel.isCancelled) return;
       // 播完才释放（桌面 media_kit 下 play() 发出命令即返回）。
@@ -2480,6 +2485,8 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
             icon: FushiIcons.refresh,
             showIcon: true,
             title: t.audiobook_studio_retry,
+            // 续跑按章：编码完的章重试时直接跳过，逐句缓存被淘汰也不影响它们。
+            subtitle: t.audiobook_studio_retry_resume_hint,
             onTap: () => unawaited(_queue.retry(job.id)),
           ),
       ],

@@ -569,8 +569,10 @@ void main() {
     );
     expect(button, findsOneWidget);
     await tester.tap(button);
-    final Finder status = find.byKey(
-      const ValueKey<String>('manga_read_aloud_status'),
+    // 状态读数是播放条左侧的 `_BarLabel`（带 tooltip / 圆点），文字在它里面的 Text。
+    final Finder status = find.descendant(
+      of: find.byKey(const ValueKey<String>('manga_read_aloud_status')),
+      matching: find.byType(Text),
     );
     await tester.runAsync(() async {
       for (int i = 0; i < 80; i++) {

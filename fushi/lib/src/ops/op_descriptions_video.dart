@@ -90,7 +90,8 @@ List<OpDescription> _describeScrapeOps(
     method: 'GET',
     pattern: '$_video/works',
     summary:
-        'List video works of local video sources with their scraped identity '
+        'List video works of local video sources (plus local videos without a '
+        'source, reported with sourceId null) with their scraped identity '
         '(provider:id), or with pending=true the works waiting for confirmation '
         'and why.',
     availability: video,

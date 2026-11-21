@@ -475,6 +475,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '删除前一直保留（不会自动到期）': 'Kept until you delete it (never expires on its own)',
   '自动删除没做成': 'Automatic deletion did not happen',
   '删除保留副本': 'Delete retained copy',
+  '已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响':
+      'Damaged (not a readable SQLite file): it can no longer be used to go back to the old version. The current review library is not affected.',
   '立即删除旧版本保留副本？不可撤销：删除后不能再退回旧版本，彻底清除过的内容在旧库里的原文也随之消失。删除前会先核对新库完好，核对不过不删。':
       'Delete the old-version retained copy now? This cannot be undone: you can no longer go back to the old version, and the original text of anything you permanently purged goes with it. The current library is checked first; if the check fails nothing is deleted.',
   '已删除保留副本，释放 {0}': 'Retained copy deleted, {0} freed',

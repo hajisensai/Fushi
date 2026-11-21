@@ -336,6 +336,8 @@ void main() {
             Directory mediaRoot, {
             SrsMediaCipher? cipher,
             required String locationId,
+            void Function(int done, int total)? onProgress,
+            bool Function()? deferRemaining,
           }) async {
             mediaRuns++;
             return SrsMediaSyncReport();
@@ -376,6 +378,80 @@ void main() {
     expect(mediaRuns, 4, reason: '用户主动同步：全量对账');
   });
 
+  // BUG-5061（反馈 arw7eXO895）：发段之后的完整媒体对账带时间预算；到点留下没做的，这个位置不记成已对账，下一轮
+  // 什么都没变也接着对账；媒体阶段按项报 done/total。
+  test('媒体对账到点留下没做的：下一轮接着对账，阶段进度按项报', () async {
+    final DateTime now = DateTime(2026, 11, 21, 12);
+    final List<bool Function()?> budgets = <bool Function()?>[];
+    int deferredLeft = 2;
+    final Directory media = Directory(p.join(root.path, '_media'))
+      ..createSync();
+    final Directory location = Directory(p.join(root.path, 'loc'))
+      ..createSync();
+    final List<SrsSyncProgress> seen = <SrsSyncProgress>[];
+    void listen() {
+      final SrsSyncProgress? v = srsSyncProgress.value;
+      if (v != null && v.stage == SrsSyncStage.media) seen.add(v);
+    }
+
+    srsSyncProgress.addListener(listen);
+    addTearDown(() => srsSyncProgress.removeListener(listen));
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(location));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      readMediaRoot: () async => media,
+      clock: () => now,
+      mediaRunner:
+          (
+            SyncAssetStore backend,
+            SrsDbStore st,
+            Directory mediaRoot, {
+            SrsMediaCipher? cipher,
+            required String locationId,
+            void Function(int done, int total)? onProgress,
+            bool Function()? deferRemaining,
+          }) async {
+            budgets.add(deferRemaining);
+            onProgress?.call(0, 3);
+            onProgress?.call(1, 3);
+            final SrsMediaSyncReport r = SrsMediaSyncReport()..completed = true;
+            if (deferredLeft > 0) r.deferred = deferredLeft--;
+            return r;
+          },
+    );
+    Future<void> round() async {
+      expect(
+        (await s.syncWithBackend(LocalDirectoryAssetStore(location))).error,
+        isNull,
+      );
+    }
+
+    await round();
+    expect(budgets, hasLength(1));
+    expect(budgets.single, isNotNull, reason: '完整对账带时间预算 / 收手判断');
+    expect(budgets.single!(), isFalse, reason: '刚开始：预算没用完');
+    expect(
+      seen,
+      containsAllInOrder(<SrsSyncProgress>[
+        const SrsSyncProgress(stage: SrsSyncStage.media, done: 0, total: 3),
+        const SrsSyncProgress(stage: SrsSyncStage.media, done: 1, total: 3),
+      ]),
+      reason: '媒体阶段按项报 done/total',
+    );
+    await round();
+    expect(budgets, hasLength(2), reason: '上一轮留下了没做的：什么都没变也接着对账');
+    await round();
+    expect(budgets, hasLength(3), reason: '还留着：再接着');
+    await round();
+    expect(budgets, hasLength(3), reason: '做完了：记成已对账，什么都没变就跳过');
+  });
+
   // 审查 S-11：进复习页的节流同步以前直接调 syncNow，清空对账时刻 → 每次进页都把全部媒体整套对一遍。
   test('进复习页的节流同步：媒体对账走内容指纹门控，只有手动立即同步做全量', () async {
     DateTime now = DateTime(2026, 10, 29, 12);
@@ -402,6 +478,8 @@ void main() {
             Directory mediaRoot, {
             SrsMediaCipher? cipher,
             required String locationId,
+            void Function(int done, int total)? onProgress,
+            bool Function()? deferRemaining,
           }) async {
             mediaRuns++;
             return SrsMediaSyncReport();
@@ -723,6 +801,8 @@ void main() {
             Directory mediaRoot, {
             SrsMediaCipher? cipher,
             required String locationId,
+            void Function(int done, int total)? onProgress,
+            bool Function()? deferRemaining,
           }) async {
             ciphers.add(cipher);
             return SrsMediaSyncReport();
@@ -799,6 +879,8 @@ void main() {
             Directory mediaRoot, {
             SrsMediaCipher? cipher,
             required String locationId,
+            void Function(int done, int total)? onProgress,
+            bool Function()? deferRemaining,
           }) async {
             final SrsMediaSyncReport r = SrsMediaSyncReport();
             if (undecryptable) r.undecryptable.add('pic.png');
@@ -1892,6 +1974,8 @@ void main() {
               Directory mediaRoot, {
               SrsMediaCipher? cipher,
               required String locationId,
+              void Function(int done, int total)? onProgress,
+              bool Function()? deferRemaining,
             }) async {
               mediaRuns++;
               return SrsMediaSyncReport();

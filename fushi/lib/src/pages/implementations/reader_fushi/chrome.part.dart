@@ -4411,6 +4411,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       dateKey: statTodayKey(),
       expression: headword?.expression,
       reading: headword?.reading,
+      // 反馈 fMicnouU6V：用户在「高亮样式 → 收藏」里选的新收藏颜色。
+      color: ReaderFushiSource.instance.favoriteHighlightColor,
     );
     await repo.add(fav);
     _invalidateFavoriteSentenceCache();

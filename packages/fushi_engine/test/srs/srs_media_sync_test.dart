@@ -155,6 +155,92 @@ void main() {
     expect(r.missing, <String>{'dog.png'});
   });
 
+  // BUG-5061（反馈 arw7eXO895）：列出来之后本机文件没了（被删 / 被换走），以前 PathNotFoundException 让整趟媒体上传
+  // 作废、下一轮从头再来；现在只跳过那一项、记进 vanished，其余照传。
+  test('对账中途本机文件没了：只跳过那一项（记 vanished），其余照传，不抛', () async {
+    final Directory mediaA = mediaDir('a');
+    final File gone = File(p.join(mediaA.path, 'gone.mp3'));
+    final _VanishOnListStore loc = _VanishOnListStore(gone);
+    final SrsDbStore a = await device('a');
+    writeMedia(mediaA, 'cat.png', <int>[1, 2, 3]);
+    writeMedia(mediaA, 'gone.mp3', <int>[9, 9]);
+    t += 1000;
+    await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '猫',
+        srsLapisFieldId(kProfile, 'Picture'): '<img src="cat.png">',
+        srsLapisFieldId(kProfile, 'ExpressionAudio'): '[sound:gone.mp3]',
+      },
+    );
+    final SrsMediaSyncReport r = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      uploadOnly: true,
+    );
+    expect(gone.existsSync(), isFalse, reason: '前提：哈希之后、上传之前文件没了');
+    expect(r.vanished, <String>{'gone.mp3'});
+    expect(r.uploaded, 1);
+    expect(r.completed, isTrue);
+    expect(remoteMedia(loc), <String>{
+      sha(<int>[1, 2, 3]),
+    });
+  });
+
+  // BUG-5061：发段之前那一步以前把全部没上传的媒体整份传完才放行，1 GB 媒体连云盘慢时段一直发不出去。
+  test('deferRemaining 为真后不再开始新的项：剩下的记 deferred 留给下一轮，进度按项报', () async {
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    final Directory mediaA = mediaDir('a');
+    final SrsDbStore a = await device('a');
+    const int n = 20;
+    final StringBuffer pics = StringBuffer();
+    for (int i = 0; i < n; i++) {
+      writeMedia(mediaA, 'p$i.png', <int>[i, i + 1, i + 2]);
+      pics.write('<img src="p$i.png">');
+    }
+    await addNote(a, '絵', pics.toString());
+    final List<(int, int)> progress = <(int, int)>[];
+    final SrsMediaSyncReport first = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      uploadOnly: true,
+      onProgress: (int done, int total) => progress.add((done, total)),
+      deferRemaining: () => progress.length > 3,
+    );
+    expect(first.completed, isTrue);
+    expect(first.uploaded, lessThan(n), reason: '到点之后不再开始新的');
+    expect(first.uploaded, greaterThan(0));
+    expect(first.uploaded + first.deferred, n, reason: '在途的做完，没开始的全部留下');
+    expect(progress.first, (0, n));
+    expect(progress.last, (first.uploaded, n));
+    expect(remoteMedia(loc), hasLength(first.uploaded));
+
+    final SrsMediaSyncReport second = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      uploadOnly: true,
+    );
+    expect(second.deferred, 0);
+    expect(second.uploaded, first.deferred, reason: '下一轮只补剩下的');
+    expect(remoteMedia(loc), hasLength(n));
+  });
+
+  test('srsMediaDeadline：预算用完或要收手即为真', () async {
+    expect(srsMediaDeadline(Duration.zero)(), isTrue);
+    expect(srsMediaDeadline(const Duration(hours: 1))(), isFalse);
+    bool stop = false;
+    final bool Function() d = srsMediaDeadline(
+      const Duration(hours: 1),
+      shouldStop: () => stop,
+    );
+    expect(d(), isFalse);
+    stop = true;
+    expect(d(), isTrue);
+  });
+
   test('被删笔记的媒体：90 天内位置上保留、还能下载；过期后清掉独占的，共享的与本机不认识的不删', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
     final Directory mediaA = mediaDir('a');
@@ -706,3 +792,16 @@ class _StatSpyFile implements File {
 
 /// 不覆盖任何东西的 [IOOverrides]：在代理里造真实 [File] 时跳出外层的 `createFile`。
 final class _NoOverrides extends IOOverrides {}
+
+/// 第一次列目录时删掉 [victim]：模拟对账中途（哈希之后、上传之前）本机文件被删。
+final class _VanishOnListStore extends SrsMemoryLocationStore {
+  _VanishOnListStore(this.victim);
+
+  final File victim;
+
+  @override
+  Future<List<SrsLocationEntry>> list(String dir) async {
+    if (victim.existsSync()) victim.deleteSync();
+    return super.list(dir);
+  }
+}

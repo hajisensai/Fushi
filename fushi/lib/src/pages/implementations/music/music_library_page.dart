@@ -34,7 +34,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart'
     show MusicAudioIntake, MusicAudioIntakeResult;
 import 'package:fushi/src/media/music/music_disc_art.dart'
-    show MusicDiscArtIndex;
+    show MusicDiscArtIndex, shareMusicDiscArtAcrossVersions;
 import 'package:fushi/src/media/music/music_file_drop.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
@@ -145,6 +145,17 @@ LibrarySectionGroup musicLibrarySectionGroupOf(MusicLibrarySection s) =>
     s == MusicLibrarySection.recommend
     ? LibrarySectionGroup.online
     : LibrarySectionGroup.library;
+
+/// 在线来源重读后音乐页停在哪个分区。打开音乐页恒落在曲库（与书 / 漫画 / 视频 /
+/// 游戏库一致，用户 2026-11-21 拍板）：装了带推荐的插件也不把默认页抢成推荐，推荐
+/// 只在用户点「推荐」时进入；推荐来源没了，停在推荐页的回到 [lastLibrary]。纯函数。
+MusicLibrarySection musicLibrarySectionAfterSourcesChanged({
+  required MusicLibrarySection current,
+  required MusicLibrarySection lastLibrary,
+  required bool hasRecommend,
+}) => !hasRecommend && current == MusicLibrarySection.recommend
+    ? lastLibrary
+    : current;
 
 String musicLibrarySectionLabel(MusicLibrarySection s) => switch (s) {
   MusicLibrarySection.recommend => t.music_section_recommend,
@@ -292,8 +303,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   final GlobalKey<MediaSourcesViewState> _sourcesKey =
       GlobalKey<MediaSourcesViewState>();
 
-  /// 用户是否自己点过分区：没点过时，推荐页出现即默认落在推荐页。
-  bool _sectionTouched = false;
   MusicLibrarySnapshot? _snapshot;
 
   /// 显式 opt-in 混排进曲库的服务器专辑（服务器曲库 P5）。与本地快照分开取：服务器慢或
@@ -517,9 +526,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       if (album == null) continue;
       tracksByAlbum.putIfAbsent(album, () => <String>[]).add(t.path);
     }
-    final Map<String, String> found = tracksByAlbum.isEmpty
+    final Map<String, String> resolved = tracksByAlbum.isEmpty
         ? const <String, String>{}
         : await MusicDiscArtIndex.instance.resolve(tracksByAlbum);
+    // 标签不一致被拆成两张专辑的同一张 CD（一份带扫图、一份不带）共用盘面图。
+    final Map<String, String> found = shareMusicDiscArtAcrossVersions(
+      found: resolved,
+      albums: <String, ({String title, List<String> trackPaths})>{
+        for (final MapEntry<String, List<String>> e in tracksByAlbum.entries)
+          if (snap.albumByUid[e.key] case final MusicAlbumRow a)
+            e.key: (title: a.title, trackPaths: e.value),
+      },
+    );
     if (!mounted || !identical(snap, _snapshot)) return;
     MusicDiscArtIndex.instance.publish(found);
   }
@@ -877,7 +895,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     if (v != _section || _importOpen) _chrome.resetToTop();
     // 点任一分区页签都离开导入视图。
     _importOpen = false;
-    _sectionTouched = true;
     _section = v;
     if (musicLibrarySectionGroupOf(v) == LibrarySectionGroup.library) {
       _lastLibrarySection = v;
@@ -1325,11 +1342,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         for (final MusicOrderedSource o in ordered)
           if (o.source case final MusicPluginOnlineSource p) p.manifest,
       ];
-      if (_hasRecommend && !_sectionTouched) {
-        _section = MusicLibrarySection.recommend;
-      } else if (!_hasRecommend && _section == MusicLibrarySection.recommend) {
-        _section = MusicLibrarySection.albums;
-      }
+      _section = musicLibrarySectionAfterSourcesChanged(
+        current: _section,
+        lastLibrary: _lastLibrarySection,
+        hasRecommend: _hasRecommend,
+      );
     });
     _publishSearchInputs();
   }
@@ -1688,26 +1705,38 @@ class _AlbumCard extends ConsumerWidget {
   /// 点按；参数是卡片的全局矩形（CD 详情从这里放大，取不到为 null）。
   final ValueChanged<Rect?> onTap;
 
-  /// 光盘来源：盘是一张带 `DVD` / `BD` 角标的专辑，右键 / 长按菜单里有「章节导入为曲目」
-  /// （§9.2）。
+  /// 光盘来源：盘是一张带 `DVD` / `BD` 角标的专辑，右键 / 长按菜单里另有「章节导入为
+  /// 曲目」（§9.2）；普通专辑的菜单只有「从音乐库移除」（拍板台 mmXVwo0Ibv）。
   final MusicDiscSourceRow? disc;
 
   /// 专辑目录里的盘面扫描图（设计稿 M3）：给了就是「封面 + 唱片」色块，chip 写
   /// 「CD」；没有就不画唱片（不造假唱片）。
   final String? discArtPath;
 
-  void _showDiscMenu(BuildContext context, WidgetRef ref, Offset position) {
-    final MusicDiscSourceRow? d = disc;
-    if (d == null) return;
+  /// 右键 / 长按菜单（[showMusicAlbumMenu]）：光盘专辑的盘动作，普通专辑整张移出音乐库。
+  void _showAlbumMenu(BuildContext context, WidgetRef ref, Offset position) {
+    final AppModel app = ref.read(appProvider);
+    if (!app.isDatabaseReady) return;
     unawaited(
-      showMusicDiscAlbumMenu(
+      showMusicAlbumMenu(
         context: context,
-        app: ref.read(appProvider),
+        app: app,
         globalPosition: position,
         album: album,
-        disc: d,
+        disc: disc,
         tracks: tracks,
       ),
+    );
+  }
+
+  /// 卡片中心处唤出菜单（长按用）。
+  void _showAlbumMenuAtCenter(BuildContext context, WidgetRef ref) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox) return;
+    _showAlbumMenu(
+      context,
+      ref,
+      box.localToGlobal(box.size.center(Offset.zero)),
     );
   }
 
@@ -1798,22 +1827,11 @@ class _AlbumCard extends ConsumerWidget {
           embeddedFromPath: embeddedCoverPath,
           badges: <Widget>[?discBadge],
           onTap: () => onTap(_originOf(context)),
-          onLongPress: disc == null
-              ? null
-              : () {
-                  final RenderObject? box = context.findRenderObject();
-                  if (box is! RenderBox) return;
-                  _showDiscMenu(
-                    context,
-                    ref,
-                    box.localToGlobal(box.size.center(Offset.zero)),
-                  );
-                },
+          onLongPress: () => _showAlbumMenuAtCenter(context, ref),
         ),
       );
-      if (disc == null) return line;
       return ContextMenuTrigger(
-        onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+        onInvoke: (Offset position) => _showAlbumMenu(context, ref, position),
         child: line,
       );
     }
@@ -1824,17 +1842,7 @@ class _AlbumCard extends ConsumerWidget {
       scale: kMusicHoverLiftScale,
       builder: (BuildContext context, bool _) => shelfCoverCard(
         onTap: () => onTap(_originOf(context)),
-        onLongPress: disc == null
-            ? null
-            : () {
-                final RenderObject? box = context.findRenderObject();
-                if (box is! RenderBox) return;
-                _showDiscMenu(
-                  context,
-                  ref,
-                  box.localToGlobal(box.size.center(Offset.zero)),
-                );
-              },
+        onLongPress: () => _showAlbumMenuAtCenter(context, ref),
         child: block != null
             ? _block(block, badge, discBadge)
             : Column(
@@ -1861,10 +1869,9 @@ class _AlbumCard extends ConsumerWidget {
               ),
       ),
     );
-    if (disc == null) return card;
     // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
     return ContextMenuTrigger(
-      onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+      onInvoke: (Offset position) => _showAlbumMenu(context, ref, position),
       child: card,
     );
   }

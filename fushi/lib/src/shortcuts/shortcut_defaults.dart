@@ -485,6 +485,8 @@ class ShortcutDefaults {
     // 组）。手柄**不绑**：手柄 B 是 universal 的 globalBack，再在 manga scope 绑会
     // 遮蔽返回阶梯（见上方翻页注释与 `universal_back_test`）。
     ShortcutAction.mangaToggleBookmark: _kb([_key(LogicalKeyboardKey.keyB)]),
+    // 逐格读：Z（manga 组内空闲）。键盘-only。
+    ShortcutAction.mangaToggleBubbleFocus: _kb([_key(LogicalKeyboardKey.keyZ)]),
     // 朗读 / 漫画有声：K 播放暂停、J / L 上一句 / 下一句（视频播放器的 J/K/L 肌肉
     // 记忆；manga 组内三键都空闲）。只绑键盘，手柄不绑（漫画页手柄通道归翻页与返回）。
     ShortcutAction.mangaAudioPlayPause: _kb([_key(LogicalKeyboardKey.keyK)]),
@@ -769,6 +771,8 @@ class ShortcutDefaults {
     // 反馈 N8qzDdzIvD：galgame 台词朗读同样默认不绑键（OS 级热键全系统吞键，不玩
     // galgame 的用户不该被偷走组合键），要用的人在快捷键设置里自己录。
     ShortcutAction.globalExternalGalgameSpeakLine: const ShortcutBindingSet(),
+    ShortcutAction.globalExternalGalgameOverlayToggle:
+        const ShortcutBindingSet(),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立

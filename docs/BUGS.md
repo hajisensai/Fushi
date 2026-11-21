@@ -38,7 +38,42 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5071](bugs/BUG-5071-server-torrent-upload-off-ignored.md) | ✅ | ✅ | 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配 |
+> 共 4414 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
+| [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
+| [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
+| [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
+| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
+| [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | 🚧 | 🚧 | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
+| [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
+| [BUG-5081](bugs/BUG-5081-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
+| [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
+| [BUG-5079](bugs/BUG-5079-srs-retained-copy-unreadable-unreported.md) | ✅ | ✅ | SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示 |
+| [BUG-5078](bugs/BUG-5078-live-progress-test-teardown-temp-delete-fails.md) | 🚧 | 🚧 | live-progress-test-teardown-temp-delete-fails |
+| [BUG-5077](bugs/BUG-5077-manga-read-aloud-bar-finished-no-regression-test.md) | ✅ | 🚧 | 漫画朗读读到章末播放条不退的修复（#3986）缺自动化回归测试 |
+| [BUG-5076](bugs/BUG-5076-db-enospc-misclassified-as-corruption.md) | 🚧 | 🚧 | 磁盘写满时 sqlite malformed(11) 被归到「数据库损坏」专屏，引导用户恢复备份 / 清数据 |
+| [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | 🚧 | 🚧 | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |
+| [BUG-5074](bugs/BUG-5074-srs-gen4-review-lag-after-upgrade.md) | ✅ | ✅ | SRS 升级到新代存储（gen4）后一背卡就卡、越背越卡 |
+| [BUG-5073](bugs/BUG-5073-stat-day-reset-hour-profile-switch.md) | ✅ | ✅ | 切 Profile 后统计日界仍按旧 Profile 的值直到重启 |
+| [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
+| [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
+| [BUG-5068](bugs/BUG-5068-interconnect-mdns-fallback-new-network.md) | ✅ | ✅ | 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它） |
+| [BUG-5067](bugs/BUG-5067-ios-flutter-logs-enospc-abort.md) | ✅ | ✅ | ios-flutter-logs-enospc-abort |
+| [BUG-5066](bugs/BUG-5066-tag-filter-chip-drag-handle-removed.md) | ✅ | ✅ | 库页标签 chip 左侧的拖动柄删除，拖动改由 chip 按指针类型分流 |
+| [BUG-5065](bugs/BUG-5065-android-gen4-lock-unsupported.md) | ✅ | ✅ | Android 上 gen4 换代锁永远拿不到，复习库打不开（`try_lock() not supported`） |
+| [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
+| [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
+| [BUG-5062](bugs/BUG-5062-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |
+| [BUG-5061](bugs/BUG-5061-srs-sync-media-upload-blocks-review-log.md) | ✅ | ✅ | srs-sync-media-upload-blocks-review-log |
+| [BUG-5060](bugs/BUG-5060-layout-maybe-later-double-prompt.md) | ✅ | ✅ | 「选一种库页布局」点「稍后再说」后紧接着又弹「库页现在默认封面网格」 |
+| [BUG-5059](bugs/BUG-5059-apple-design-page-backdrop-missing.md) | ✅ | ✅ | Apple 设计下自定义背景图片不显示（首页 / 设置页全白底） |
+| [BUG-5058](bugs/BUG-5058-music-disc-art-split-album-versions.md) | ✅ | ✅ | 同一张 CD 的另一个版本目录（如 24bit 版）不显示盘面图 |
+| [BUG-5057](bugs/BUG-5057-music-disc-art-numbered-scans.md) | ✅ | ✅ | 音乐 CD 盘面图认不出只有编号的扫图（`Scans/01.webp`、`BK/Scan 120.jpg`） |
 | [BUG-5056](bugs/BUG-5056-srs4-migration-nested-merge-verdict.md) | ✅ | ✅ | 复习库升级（gen4 迁移）在嵌套并入过的库上核对失败、整体撤回 |
+| [BUG-5055](bugs/BUG-5055-import-section-block-inherits-outer-scheme.md) | ✅ | ✅ | import-section-block-inherits-outer-scheme |
 | [BUG-5054](bugs/BUG-5054-pitch-hl-pattern-not-drawn.md) | ✅ | ✅ | 音调词典 H/L 模式串只显示成文本、不画高低线，且与同型数字位分成两行 |
 | [BUG-5053](bugs/BUG-5053-mihon-page-request-id-collision.md) | ✅ | ✅ | Mihon 取图请求号拿 identityHashCode 拼，两个活页引用撞号时互相顶掉 / 取消错页 |
 | [BUG-5052](bugs/BUG-5052-rwkv-repeat-guard-scope-mismatch.md) | ✅ | ✅ | rwkv-repeat-guard-scope-mismatch |

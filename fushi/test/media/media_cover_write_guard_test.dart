@@ -214,6 +214,18 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     'IPTV 频道台标（tvg-logo）补封面：派生 <video_covers>/<uid> 目的地，字节经引擎 '
         'writeCoverBytesAtomically 收口写盘，本文件自己不裸写。',
   ),
+  '../packages/fushi_engine/lib/media/video/stream_video_sync.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '互联同步来的流媒体书（拍板台 Z2OhxAjKVv）补 YouTube 缩略图：派生 '
+        'videoCoverFileName 目的地后交给 downloadVideoCoverToPath（'
+        'video_cover_extractor）收口落盘，本文件自己不写字节。',
+  ),
+  'lib/src/sync/sync_orchestrator/stream_videos.part.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '互联拉下来的流媒体书补封面：只派生 VideoStorage.coversDir 交给 '
+        'backfillStreamVideoThumbnailCover（经 downloadVideoCoverToPath 收口落盘），'
+        '本文件自己不写字节。',
+  ),
   '../packages/fushi_engine/lib/media/video/video_storage.dart': (
     CoverDeriverRole.derivesPathOnly,
     '路径派生的定义处之一，自身不落盘。',

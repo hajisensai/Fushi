@@ -2,6 +2,8 @@
 // 布局」。框里两张预览卡复用设置页的 ShellLayoutChoiceCards，默认高亮拼贴；
 // 「用这个」交回所选布局，「稍后再说」交回 null（ThemeNotifier 侧的落库与不再弹
 // 由 test/settings/shell_style_settings_effect_test.dart 咬住）。交互一律焦点驱动。
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart';
@@ -116,6 +118,26 @@ void main() {
     );
     expect(
       shouldShowShellLayoutChoice(pending: false, redesignActive: true),
+      isFalse,
+    );
+  });
+
+  test('首页首帧只有这一个库页布局提示（BUG-5060）', () {
+    // 此前首帧在这个选择框之后还串着 pr3454 的「库页现在默认封面网格」一次性提示：
+    // 在框里点「稍后再说」不写布局，那条提示紧接着又弹，且对「哪个是新默认」的
+    // 说法与本框相反。G1 已覆盖「升级用户被告知拼贴可选」，那条提示整体删除。
+    final String source = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    expect(
+      RegExp(r'await maybeShowShellLayoutChoice\(').allMatches(source).length,
+      1,
+    );
+    expect(source, isNot(contains('LibraryLayoutDefaultNotice')));
+    expect(
+      File(
+        'lib/src/pages/implementations/library_layout_default_notice.dart',
+      ).existsSync(),
       isFalse,
     );
   });

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:material_ui/material_ui.dart';
@@ -115,6 +116,118 @@ void main() {
     await notifier.setFollowPageBackdropAccent(false);
     expect(notifier.pageBackdropAccentSeed, isNull);
     expect(primary(), baseline);
+  });
+
+  // ── 主题选择与取色覆盖：点色卡要真的换主题 ──────────────────────────────
+
+  test('取色生效时报告覆盖来源；在主题选择里点色卡：关掉取色、显示所选主题、背景图保留', () async {
+    notifier = build();
+    final Color blue = ThemeNotifier.buildPresetColorScheme(
+      ThemeNotifier.themePresets['m3-blue']!,
+      Brightness.light,
+    ).primary;
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(
+      notifier.activeAccentOverrideSource,
+      ThemeAccentOverrideSource.pageBackdrop,
+    );
+
+    await notifier.pickAppThemeKey('m3-blue');
+
+    expect(notifier.appThemeKey, 'm3-blue');
+    expect(notifier.followPageBackdropAccent, isFalse);
+    expect(notifier.pageBackdropAccentSeed, isNull);
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(primary(), blue);
+    expect(
+      pageBackdropSettings.value.hasCustomImage,
+      isTrue,
+      reason: '只关取色，不动背景图',
+    );
+  });
+
+  test('没有取色覆盖时点色卡：不碰「从图片取色」开关', () async {
+    notifier = build();
+    await notifier.pickAppThemeKey('m3-blue');
+    expect(notifier.appThemeKey, 'm3-blue');
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(notifier.followPageBackdropAccent, isTrue);
+  });
+
+  test('setAppThemeKey 只换键（删除自定义主题后的回落等非用户选择）：不关取色', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.setAppThemeKey('m3-blue');
+    expect(notifier.followPageBackdropAccent, isTrue);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+  });
+
+  test('点色卡：关取色与换主题同一次通知、监听者从不看到「取色已关、主题未换」的中间态', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    final Color blue = ThemeNotifier.buildPresetColorScheme(
+      ThemeNotifier.themePresets['m3-blue']!,
+      Brightness.light,
+    ).primary;
+    final List<Color> seen = <Color>[];
+    void listener() => seen.add(primary());
+    notifier.addListener(listener);
+
+    await notifier.pickAppThemeKey('m3-blue');
+    notifier.removeListener(listener);
+
+    expect(seen, <Color>[blue]);
+  });
+
+  test('背景图取色与图标取色同时生效：点色卡两个都关，不会落到图标取色上', () async {
+    final Future<int?> Function(String) originalIconExtractor =
+        ThemeNotifier.appIconSeedExtractor;
+    addTearDown(() {
+      ThemeNotifier.appIconSeedExtractor = originalIconExtractor;
+      currentAppIconSelection.value = const AppIconSelection(
+        presetKey: 'default',
+      );
+    });
+    final File icon = source('icon.png');
+    ThemeNotifier.appIconSeedExtractor = (String _) async => red;
+    currentAppIconSelection.value = AppIconSelection(
+      presetKey: customIconKey,
+      customPath: icon.path,
+    );
+    notifier = build();
+    await notifier.setFollowAppIconAccent(true);
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(notifier.appIconAccentSeed, const Color(red));
+    expect(
+      notifier.activeAccentOverrideSource,
+      ThemeAccentOverrideSource.pageBackdrop,
+    );
+
+    await notifier.pickAppThemeKey('m3-blue');
+
+    expect(notifier.followPageBackdropAccent, isFalse);
+    expect(notifier.followAppIconAccent, isFalse);
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(
+      primary(),
+      ThemeNotifier.buildPresetColorScheme(
+        ThemeNotifier.themePresets['m3-blue']!,
+        Brightness.light,
+      ).primary,
+    );
+  });
+
+  test('点色卡落库：开关与主题键同一批写进偏好库，重载后仍是所选主题', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.pickAppThemeKey('m3-blue');
+
+    final Map<String, String> stored = await database.getAllPrefs();
+    expect(stored['app_theme_key'], PrefCodec.encode('m3-blue'));
+    expect(
+      stored[kPageBackdropFollowImageAccentPrefKey],
+      PrefCodec.encode(false),
+    );
   });
 
   test('切回形状预设：取色不再生效，换回自定义又恢复', () async {

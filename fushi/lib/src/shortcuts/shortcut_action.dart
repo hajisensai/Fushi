@@ -727,6 +727,9 @@ enum ShortcutAction {
   // 与书签面板同一入口 `_toggleBookmarkHere`。默认键盘 B（manga scope 内空闲），
   // 手柄留空（B 归 universal 返回）。
   mangaToggleBookmark(ShortcutScope.manga, 'manga_toggle_bookmark'),
+  // 逐格读（气泡聚焦）进 / 出：视图缩放到当前气泡、按阅读顺序跳气泡。默认键盘 Z
+  // （manga scope 内空闲；video 的 Z 是字幕延迟，分属不同 co-active 组）。手柄留空。
+  mangaToggleBubbleFocus(ShortcutScope.manga, 'manga_toggle_bubble_focus'),
   // 朗读 / 漫画有声（成品音频）的播放暂停 / 上一句 / 下一句：执行体 = 播放条同名按钮。
   // 只开键盘通道：漫画页手柄的方向键 / 肩键归翻页、B 归 universal 返回（见
   // docs/agent/focus-ownership.md 漫画页第③条），手柄默认不绑。
@@ -925,6 +928,19 @@ enum ShortcutAction {
     'global_external_galgame_speak_line',
   ),
 
+  // 反馈 fMicnouU6V（拍板台「做」）：显示 / 隐藏 galgame 台词浮窗（游戏内 overlay）
+  // 的全局快捷键。游戏窗口在前台时要能按，所以同样只能是 OS 级热键（本 scope）。
+  //
+  // 执行体登记在 GlobalLookupController._osHotKeyActions，落到
+  // `GalHookTextOverlayController.toggleVisibility`：浮窗可见时走浮窗「关闭」按钮
+  // （`onClose`）的同一个 `closeForCurrentSession`（本局不再自动弹），不可见时走
+  // 文本钩子页「显示 Hook 浮窗」的同一个 `showManually`。平台门、键盘-only、默认
+  // 不绑键的理由与 globalExternalGalgameSpeakLine 相同。
+  globalExternalGalgameOverlayToggle(
+    ShortcutScope.globalExternal,
+    'global_external_galgame_overlay_toggle',
+  ),
+
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
   // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
   // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
@@ -1014,9 +1030,9 @@ enum ShortcutAction {
     ShortcutAction.globalExternalAudiobookPrevSentence ||
     ShortcutAction.globalExternalAudiobookNextSentence ||
     ShortcutAction.globalExternalAudiobookReplaySentence ||
-    ShortcutAction.globalExternalGalgameSpeakLine => const <ShortcutChannel>{
-      ShortcutChannel.keyboard,
-    },
+    ShortcutAction.globalExternalGalgameSpeakLine ||
+    ShortcutAction.globalExternalGalgameOverlayToggle =>
+      const <ShortcutChannel>{ShortcutChannel.keyboard},
     _ => scope.channels,
   };
 

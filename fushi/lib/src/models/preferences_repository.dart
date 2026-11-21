@@ -138,6 +138,8 @@ import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
 // 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
+import 'package:fushi/src/utils/net/github_mirrors.dart'
+    show gitHubMirrorsEnabledReader;
 import 'package:fushi_engine/utils/net/app_proxy.dart'
     show
         appUserProxyModeReader,
@@ -425,6 +427,9 @@ class PreferencesRepository extends ChangeNotifier
     appUserProxyModeReader = () => networkProxyMode;
     appUserProxyUsernameReader = () => networkProxyUsername;
     appUserProxyPasswordReader = () => networkProxyPassword;
+    // GitHub 加速镜像开关同属进程级网络出口策略，同一时机绑定：词典下载、Mihon 扩展
+    // 仓库、字体、着色器、更新检查都在拿不到 AppModel 的地方生成候选。
+    gitHubMirrorsEnabledReader = () => gitHubMirrorsEnabled;
     // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
     miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
   }
@@ -3112,16 +3117,6 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('browse_moved_notice_handled', true);
   }
 
-  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
-  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      getPref('library_layout_default_notice_handled', defaultValue: false)
-          as bool;
-
-  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
-    await setPref('library_layout_default_notice_handled', true);
-  }
-
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(
@@ -3184,6 +3179,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoPortraitSubtitleList(bool value) async {
     await setPref('video_portrait_subtitle_list', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 42UUu_kcwD：手机 / 平板切出 app 或锁屏后视频声音继续播（默认关）。
+  /// 关着时进后台暂停、回前台续播（BUG-2544）。
+  bool get videoBackgroundPlay =>
+      getPref('video_background_play', defaultValue: false) as bool;
+
+  Future<void> setVideoBackgroundPlay(bool value) async {
+    await setPref('video_background_play', value);
     notifyListeners();
   }
 
@@ -6678,6 +6683,17 @@ class PreferencesRepository extends ChangeNotifier
         ? value
         : kProxyModeAuto;
     await setPref('network_proxy_mode', normalized);
+    notifyListeners();
+  }
+
+  /// 是否允许 GitHub 下载（更新、词典、字体、着色器、Mihon 扩展仓库）在直连失败后
+  /// 走第三方加速镜像（ghproxy 等，`kGitHubMirrorPrefixes`）。默认开；关掉后只剩
+  /// GitHub 直连与 jsDelivr——给安全软件拦截代理域名、或不愿请求经第三方代理的用户。
+  bool get gitHubMirrorsEnabled =>
+      getPref('network_github_mirrors_enabled', defaultValue: true) as bool;
+
+  Future<void> setGitHubMirrorsEnabled(bool value) async {
+    await setPref('network_github_mirrors_enabled', value);
     notifyListeners();
   }
 

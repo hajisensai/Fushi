@@ -25,6 +25,7 @@ const List<String> kBookScrapeSourceNames = <String>[
   'openbd',
   'ndl',
   'rakuten',
+  'itunes',
 ];
 
 List<OpDescription> describeBookMetadataOps(
@@ -40,7 +41,9 @@ List<OpDescription> describeBookMetadataOps(
         'series), anilist (light novels; also returns a banner image), openbd '
         '(ISBN lookup only), ndl (National Diet Library, title or ISBN), '
         'rakuten (Rakuten Books, title or ISBN; only when the user entered '
-        'Rakuten credentials in settings). Returns id, title, author, year, '
+        'Rakuten credentials in settings), itunes (songs on the Japanese '
+        'iTunes store, album cover art; use it for audiobooks that are really '
+        'songs with LRC lyrics). Returns id, title, author, year, '
         'publisher, series, ISBN and cover URL per candidate. MangaBaka data '
         'is CC BY-NC-SA 4.0: show "Data from MangaBaka" wherever it is '
         'displayed.',
@@ -49,7 +52,8 @@ List<OpDescription> describeBookMetadataOps(
         'query',
         description:
             'Title, Bangumi subject URL, DLsite work id / URL, MangaBaka '
-            'series URL / id, AniList URL, or ISBN (required for openbd).',
+            'series URL / id, AniList URL, Apple Music URL, or ISBN (required '
+            'for openbd).',
         required: true,
       ),
       OpParam.string(
@@ -84,7 +88,8 @@ List<OpDescription> describeBookMetadataOps(
         'id',
         description:
             'Bangumi subject id, DLsite work id (RJ…), MangaBaka series id, '
-            'AniList media id, or ISBN for openbd / ndl / rakuten.',
+            'AniList media id, iTunes track / album id, or ISBN for openbd / '
+            'ndl / rakuten.',
         required: true,
         inPath: true,
       ),

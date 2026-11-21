@@ -323,6 +323,10 @@ class SyncRepository {
   // 7c 视频刮削元数据增量拉取基线：本设备从该通道见过的最大 host updatedAt。
   // 设备本地：随备份到新设备会让它以为已见过、永远不全量拉。
   static const _keyVideoMetadataSyncSinceMs = 'sync_video_metadata_since_ms';
+  // 流媒体书拉取基线（拍板台 Z2OhxAjKVv）：本设备从该通道见过的最大 host 拥有时刻。
+  // 晚于它的 host 流媒体书才落到本机——早于它、本机却没有的，是本机删掉的，不再建回。
+  // 设备本地：随备份到新设备会让它以为已见过、永远拉不到。
+  static const _keyStreamVideoPullSinceMs = 'sync_stream_video_pull_since_ms';
   // 删除墓碑**推送**的因果基线（互联通道专用，与上面的消费基线镜像对称）：描述
   // 「本设备已把删除推给对端 host 到什么时刻」。deletedAt 晚于它的墓碑才需要推。
   //
@@ -702,6 +706,18 @@ class SyncRepository {
 
   Future<void> setVideoMetadataSyncSinceMs(SyncChannelScope scope, int ms) =>
       _setString(scope.key(_keyVideoMetadataSyncSinceMs), ms.toString());
+
+  /// 流媒体书拉取基线：上次从该通道见过的最大 host 拥有时刻（毫秒，host 时钟）。
+  /// 0 = 从未拉过（全量）。设备本地、按通道分槽。
+  Future<int> getStreamVideoPullSinceMs(SyncChannelScope scope) async {
+    final String? s = await _getStringOrNull(
+      scope.key(_keyStreamVideoPullSinceMs),
+    );
+    return s == null ? 0 : int.tryParse(s) ?? 0;
+  }
+
+  Future<void> setStreamVideoPullSinceMs(SyncChannelScope scope, int ms) =>
+      _setString(scope.key(_keyStreamVideoPullSinceMs), ms.toString());
 
   /// 删除墓碑消费的因果基线（毫秒）。远端删除标记 deletedAt 晚于它才弹逐条确认；
   /// 早于它视为本设备已处理过、不再反复弹。0 = 从未消费过。设备本地
@@ -2012,6 +2028,7 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
+    _keyStreamVideoPullSinceMs,
     _keyContentSniffCache,
     // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
     // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
