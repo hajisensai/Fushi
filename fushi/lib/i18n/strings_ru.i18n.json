@@ -7648,6 +7648,8 @@
   "nav_tab_bar_to_sidebar": "Show sidebar",
   "nav_video": "Видео",
   "nav_web": "Браузер",
+  "network_github_mirrors_hint": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+  "network_github_mirrors_label": "Use GitHub download mirrors",
   "network_proxy_address_hint": "HTTP-прокси, через который идут все запросы в публичный интернет",
   "network_proxy_auto_hint": "Применяется ко всем интернет-запросам приложения: обновления, облачная синхронизация, словари, загрузки, субтитры и метаданные. Оставьте пустым для автоматического режима: переменные окружения, затем включённый системный прокси. P2P-передачи (torrent) по умолчанию подключаются напрямую; их можно включить отдельно ниже.",
   "network_proxy_credentials_scope_hint": "Учётные данные применяются только к HTTP-запросам; встроенный torrent-движок не может их использовать",
