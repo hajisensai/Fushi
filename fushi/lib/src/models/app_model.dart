@@ -457,6 +457,9 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart'
+    show mediaServerRouteFailoverForRepository;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show mediaServerTrackingEpisodeOf;
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
@@ -5308,6 +5311,11 @@ class AppModel
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+      // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
+      // （拍板台 design-media-server-failover-transport）。
+      MediaServerRouteFailover.install(
+        mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
+      );
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       onMusicSourceScanned = () => unawaited(musicLoudness.schedule());

@@ -12733,6 +12733,7 @@
   "video_marked_unwatched": "Marqué comme non vu",
   "video_marked_watched": "Marqué comme vu",
   "video_media_server_launch_unavailable": "This media server is no longer signed in. Sign in again in Settings › Services, then try again.",
+  "video_media_server_route_switched": "Connection dropped. Switched to another server address and resumed.",
   "video_menu_fullscreen": "Basculer en plein écran",
   "video_menu_lock": "Mode immersif / verrouillé",
   "video_menu_play_pause": "Lecture / Pause",

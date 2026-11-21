@@ -12733,6 +12733,7 @@
   "video_marked_unwatched": "已標記為未看",
   "video_marked_watched": "已標記為已看",
   "video_media_server_launch_unavailable": "This media server is no longer signed in. Sign in again in Settings › Services, then try again.",
+  "video_media_server_route_switched": "Connection dropped. Switched to another server address and resumed.",
   "video_menu_fullscreen": "切換全螢幕",
   "video_menu_lock": "沉浸／鎖定模式",
   "video_menu_play_pause": "播放／暫停",

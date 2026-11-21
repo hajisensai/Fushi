@@ -19,6 +19,73 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (_controller?.isBlurayNavigationSession == true) return;
     if (_sourceReviewActive) return;
     final int? positionMs = _controller?.positionMs;
+    // 媒体服务器的流在播放途中断了（EOF 远在片尾之前）：先问一次线路故障转移器，
+    // 换到另一条可达线路就按当前位置重新取流接着播；换不了才按「播完」处理
+    // （拍板台 design-media-server-failover-transport）。
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is RemoteVideoRouteFailover &&
+        !_streamRouteFailoverInFlight &&
+        isInterruptedStreamEnd(
+          positionMs: positionMs,
+          durationMs: _controller?.durationMs,
+        )) {
+      unawaited(
+        _recoverInterruptedStream(
+          client as RemoteVideoRouteFailover,
+          positionMs!,
+        ),
+      );
+      return;
+    }
+    _finishPlaybackCompleted(positionMs);
+  }
+
+  /// 流断了之后换线路重载（[_handlePlaybackCompleted]）：[client] 改走新线路成功时
+  /// 与换档同一条路收尾旧会话、按 [positionMs] 重新取流（取流地址带新 host），弹
+  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。等待期间用户换了集
+  /// （播放代际变了）或退出页面就什么都不做。
+  Future<void> _recoverInterruptedStream(
+    RemoteVideoRouteFailover client,
+    int positionMs,
+  ) async {
+    final int generation = _remotePlaybackGeneration;
+    _streamRouteFailoverInFlight = true;
+    bool switched = false;
+    try {
+      switched = await client.failoverRemoteVideoRoute(
+        const MediaServerStreamInterrupted(),
+      );
+    } finally {
+      _streamRouteFailoverInFlight = false;
+    }
+    if (!mounted || generation != _remotePlaybackGeneration) return;
+    if (!switched) {
+      _finishPlaybackCompleted(positionMs);
+      return;
+    }
+    _releaseRemotePlayback(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      generation: _remotePlaybackGeneration,
+    );
+    await _reportRemotePlaybackStopped(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      positionMs: positionMs,
+      generation: _remotePlaybackGeneration,
+    );
+    if (!mounted) return;
+    await _loadRemoteEpisode(
+      _currentEpisode < 0 ? 0 : _currentEpisode,
+      startIntent: EpisodeStartIntent.explicitCue,
+      initialPositionMsOverride: positionMs,
+    );
+    if (!mounted) return;
+    _showOsd(t.video_media_server_route_switched, icon: Icons.swap_horiz);
+  }
+
+  /// 「播完」的收尾：上报停止，满足条件时进自动连播倒计时。
+  void _finishPlaybackCompleted(int? positionMs) {
     if (positionMs != null) {
       unawaited(
         _reportRemotePlaybackStopped(

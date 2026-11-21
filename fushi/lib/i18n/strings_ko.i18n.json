@@ -12733,6 +12733,7 @@
   "video_marked_unwatched": "시청 안 함으로 표시했습니다",
   "video_marked_watched": "시청함으로 표시했습니다",
   "video_media_server_launch_unavailable": "This media server is no longer signed in. Sign in again in Settings › Services, then try again.",
+  "video_media_server_route_switched": "Connection dropped. Switched to another server address and resumed.",
   "video_menu_fullscreen": "전체 화면 전환",
   "video_menu_lock": "몰입 / 잠금 모드",
   "video_menu_play_pause": "재생 / 일시정지",
