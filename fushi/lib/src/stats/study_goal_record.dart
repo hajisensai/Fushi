@@ -295,6 +295,41 @@ enum StudyGoalSwipeScope {
       wire == all.wire ? all : daily;
 }
 
+/// 首页「今日」格聚焦版式翻哪些页——「主目标」与「左右滑动」两项设置的**唯一**
+/// 选择规则（首页翻页、设置「主目标」候选都按它，HBK-AUDIT-021）。
+///
+/// 页 = 「左右滑动」范围内的目标（[StudyGoalSwipeScope.daily] 只取每日目标，一个
+/// 每日目标都没有时退回全部，不让格子空着），再并上主目标 [mainGoalId]：设置里任何
+/// 目标都能选作主目标，选了周 / 月目标而范围是「每日」时，它按记录顺序插回原位，
+/// 与每日目标共存——不会因为过滤掉了主目标而换成第一条每日目标。[goalOf] 取每项
+/// 的目标记录（首页传进度项，设置传记录本身）。页序 = 记录顺序。
+List<T> studyGoalTodayPages<T>(
+  List<T> goals, {
+  required StudyGoal Function(T item) goalOf,
+  required String mainGoalId,
+  required StudyGoalSwipeScope scope,
+}) {
+  if (scope == StudyGoalSwipeScope.all) return goals;
+  final List<T> pages = <T>[
+    for (final T g in goals)
+      if (goalOf(g).period == StudyGoalPeriod.daily ||
+          goalOf(g).id == mainGoalId)
+        g,
+  ];
+  final bool hasDaily = pages.any(
+    (T g) => goalOf(g).period == StudyGoalPeriod.daily,
+  );
+  return hasDaily ? pages : goals;
+}
+
+/// [studyGoalTodayPages] 给出的 [pages] 里从哪页开始：主目标 [mainGoalId] 那页；
+/// 指不到（'' =「第一个目标」，或主目标已删）就是第一页。
+int studyGoalTodayPageIndex<T>(
+  List<T> pages, {
+  required StudyGoal Function(T item) goalOf,
+  required String mainGoalId,
+}) => math.max(0, pages.indexWhere((T g) => goalOf(g).id == mainGoalId));
+
 /// 首页「今日」格的版式（偏好 `home_today_layout`）。
 enum StudyGoalTodayLayout {
   /// 聚焦（缺省）：一条目标大环 + 大字，左右滑看其余目标。

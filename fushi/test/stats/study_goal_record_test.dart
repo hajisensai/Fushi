@@ -204,4 +204,64 @@ void main() {
     expect(StudyGoalSwipeScope.fromWire(null), StudyGoalSwipeScope.daily);
     expect(StudyGoalSwipeScope.fromWire('x'), StudyGoalSwipeScope.daily);
   });
+
+  group('today pages (HBK-AUDIT-021)', () {
+    final List<StudyGoal> goals = <StudyGoal>[
+      goal('d1', StudyGoalId.total),
+      goal('w', StudyGoalId.chars, period: StudyGoalPeriod.weekly),
+      goal('d2', StudyGoalId.mined),
+      goal('m', StudyGoalId.chars, period: StudyGoalPeriod.monthly),
+    ];
+    StudyGoal self(StudyGoal g) => g;
+    List<String> ids(List<StudyGoal> l) => <String>[
+      for (final StudyGoal g in l) g.id,
+    ];
+    List<StudyGoal> pages(
+      List<StudyGoal> list,
+      String main, [
+      StudyGoalSwipeScope scope = StudyGoalSwipeScope.daily,
+    ]) => studyGoalTodayPages<StudyGoal>(
+      list,
+      goalOf: self,
+      mainGoalId: main,
+      scope: scope,
+    );
+    int index(List<StudyGoal> list, String main) =>
+        studyGoalTodayPageIndex<StudyGoal>(
+          list,
+          goalOf: self,
+          mainGoalId: main,
+        );
+
+    test('weekly / monthly main goal coexists with daily goals', () {
+      final List<StudyGoal> w = pages(goals, 'w');
+      expect(ids(w), <String>['d1', 'w', 'd2']);
+      expect(w[index(w, 'w')].id, 'w');
+      final List<StudyGoal> m = pages(goals, 'm');
+      expect(ids(m), <String>['d1', 'd2', 'm']);
+      expect(m[index(m, 'm')].id, 'm');
+    });
+
+    test('daily main / no main / stale main = daily goals only', () {
+      for (final String main in <String>['d2', '', 'gone']) {
+        final List<StudyGoal> l = pages(goals, main);
+        expect(ids(l), <String>['d1', 'd2']);
+      }
+      expect(index(pages(goals, 'd2'), 'd2'), 1);
+      expect(index(pages(goals, ''), ''), 0);
+      expect(index(pages(goals, 'gone'), 'gone'), 0);
+    });
+
+    test('scope all = every goal; no daily goal = every goal', () {
+      expect(ids(pages(goals, 'w', StudyGoalSwipeScope.all)), <String>[
+        'd1',
+        'w',
+        'd2',
+        'm',
+      ]);
+      final List<StudyGoal> noDaily = <StudyGoal>[goals[1], goals[3]];
+      expect(ids(pages(noDaily, 'm')), <String>['w', 'm']);
+      expect(ids(pages(noDaily, '')), <String>['w', 'm']);
+    });
+  });
 }

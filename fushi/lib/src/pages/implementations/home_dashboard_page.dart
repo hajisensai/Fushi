@@ -4826,26 +4826,23 @@ class _HomeDashboardPageState
 
   /// 「今日」目标翻页当前显示的那页：主目标（[AppModel.homeTodayMainGoal]，左右滑时
   /// 也写它）在 [goals] 里的位置，指不到就是第一页。翻页与旁边的近 7 天柱条都按它。
-  int _todayGoalIndex(List<StudyGoalProgress> goals) => math.max(
-    0,
-    goals.indexWhere(
-      (StudyGoalProgress g) =>
-          g.goal.id == ref.read(appProvider).homeTodayMainGoal,
-    ),
-  );
+  int _todayGoalIndex(List<StudyGoalProgress> goals) =>
+      studyGoalTodayPageIndex<StudyGoalProgress>(
+        goals,
+        goalOf: (StudyGoalProgress g) => g.goal,
+        mainGoalId: ref.read(appProvider).homeTodayMainGoal,
+      );
 
-  /// 「今日」格的目标页：按「左右滑动」设置取每日目标或全部目标；只有周 / 月目标
-  /// 而选了「每日」时退回全部目标（不让格子空着）。
+  /// 「今日」格的目标页：「左右滑动」范围内的目标再并上主目标，规则只在
+  /// [studyGoalTodayPages] 写一次（选了周 / 月主目标时与每日目标共存）。
   List<StudyGoalProgress> _todayGoals(WidgetGoalsInput input) {
-    final List<StudyGoalProgress> all = _studyGoalProgress(input);
-    if (ref.read(appProvider).homeTodaySwipeGoals == StudyGoalSwipeScope.all) {
-      return all;
-    }
-    final List<StudyGoalProgress> daily = <StudyGoalProgress>[
-      for (final StudyGoalProgress g in all)
-        if (g.goal.period == StudyGoalPeriod.daily) g,
-    ];
-    return daily.isEmpty ? all : daily;
+    final AppModel appModel = ref.read(appProvider);
+    return studyGoalTodayPages<StudyGoalProgress>(
+      _studyGoalProgress(input),
+      goalOf: (StudyGoalProgress g) => g.goal,
+      mainGoalId: appModel.homeTodayMainGoal,
+      scope: appModel.homeTodaySwipeGoals,
+    );
   }
 
   /// 统计中心入口（唯一入口：各媒体页头的「xx统计」已撤，统一从首页进总览）。

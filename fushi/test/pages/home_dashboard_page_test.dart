@@ -3298,6 +3298,51 @@ void main() {
     );
   });
 
+  testWidgets('HBK-AUDIT-021 今日格：「左右滑动」缺省每日时选了周主目标，主目标照样显示、与每日目标共存', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('d', StudyGoalId.total, 20),
+      goalRecord('w', StudyGoalId.chars, 5000, period: StudyGoalPeriod.weekly),
+      goalRecord(
+        'm',
+        StudyGoalId.chars,
+        20000,
+        period: StudyGoalPeriod.monthly,
+      ),
+    ]);
+    await appModel.setHomeTodayMainGoal('w');
+    expect(appModel.homeTodaySwipeGoals, StudyGoalSwipeScope.daily);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    Finder page(String id) =>
+        find.byKey(ValueKey<String>('home-today-goal-$id'));
+    // 起始页是用户选的周主目标，不是第一条每日目标。
+    expect(page('w'), findsOneWidget);
+    expect(page('d'), findsNothing);
+    // 页 = 每日目标 d + 主目标 w（记录顺序）；没选作主目标的月目标不进来。
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-2')),
+      findsNothing,
+    );
+
+    // 翻回每日目标那页：每日目标照常可翻到。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-0')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(page('d'), findsOneWidget);
+    expect(appModel.homeTodayMainGoal, 'd');
+  });
+
   testWidgets('今日格目标翻页：点按格子进「目标」设置子页', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();

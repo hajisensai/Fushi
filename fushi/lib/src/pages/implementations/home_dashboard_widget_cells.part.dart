@@ -2223,6 +2223,7 @@ const double _kDualRingMinSize = 48;
 
 /// 一行高「语言目标」格里并排的一条目标至少要这么宽（环 + 「800 / 1K 字」+ 度量）。
 const double _kLanguageGoalsCompactMinWidth = 170;
+
 /// 「今日」结束侧近 7 天柱条占内容宽的比例，与上限（7 根 12px 细柱 + 6 道 5px 间隔）。
 const double _kTodayBarsWidthShare = 0.2;
 const double _kTodayBarsMaxWidth = 7 * 12 + 6 * 5;
