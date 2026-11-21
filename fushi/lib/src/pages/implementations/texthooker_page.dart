@@ -39,9 +39,6 @@ import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/gal_ocr_recognizer.dart';
 import 'package:fushi/src/mining/gal_ocr_region_picker.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
-import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/ocr/local_screen_ocr.dart';
-import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
@@ -1190,18 +1187,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final ExternalWindowInfo? picked = await _showExternalWindowPicker();
     if (picked == null || !mounted) return;
     final PreferencesRepository prefs = _appModel.prefsRepo;
-    final GalOcrRecognizerResolution resolution = await resolveGalOcrRecognizer(
-      setting: prefs.screenOcrEngine,
-      global: MangaOcrEnginePreferenceKey.fromKey(
-        prefs.mangaOcrEnginePreference,
-      ),
-      language: prefs.screenOcrLanguage,
-      local: LocalScreenOcr(ref.read(mangaOcrServiceProvider)),
-    );
+    final GalOcrRecognizerResolution resolution =
+        await resolveGalOcrRecognizerFromPrefs(
+          prefs,
+          localService: ref.read(mangaOcrServiceProvider),
+        );
     final GalOcrRecognize? recognize = resolution.recognize;
     if (recognize == null) {
       FushiToast.show(
-        msg: resolution.unavailableReason == kSystemOcrModelUnavailableReason
+        msg: galOcrModelMissing(resolution)
             ? t.floating_ball_ocr_model_missing
             : t.floating_ball_ocr_failed,
         severity: ToastSeverity.error,
