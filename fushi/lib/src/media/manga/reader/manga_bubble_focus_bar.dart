@@ -1,4 +1,5 @@
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -34,7 +35,6 @@ class MangaBubbleFocusBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final int leftStep = rtl ? 1 : -1;
     Widget button({
       required Key key,
@@ -58,7 +58,8 @@ class MangaBubbleFocusBar extends StatelessWidget {
         () => onStep(step);
     return Material(
       key: const ValueKey<String>('manga_bubble_focus_bar'),
-      color: scheme.surfaceContainerHigh,
+      // 浮在页图之上的控件层：取共享令牌的浮层面色（MD3 / Apple / 玻璃各自解析）。
+      color: FushiDesignTokens.of(context).surfaces.overlay,
       elevation: 3,
       shape: const StadiumBorder(),
       child: Padding(
