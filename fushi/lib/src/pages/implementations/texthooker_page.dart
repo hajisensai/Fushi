@@ -209,10 +209,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   final GalHookSessionController _session = GalHookSessionController.instance;
 
-  /// 本页此刻不在屏上（所在 tab 被藏起 / 被不透明路由盖住 / State 失活）。上报给
-  /// [_popupHost]，浮层据渲染方可见与否 inert（BUG-953）。
-  bool _overlayInert = false;
-
   /// BUG-1799：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
   /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
   bool _revalidatingMined = false;
@@ -720,7 +716,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   void deactivate() {
-    _overlayInert = true;
     _popupHost.setOwnerVisible(this, false);
     super.deactivate();
   }
@@ -728,7 +723,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void activate() {
     super.activate();
-    _overlayInert = false;
     _popupHost.setOwnerVisible(this, true);
   }
 
@@ -741,8 +735,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // 弹窗/barrier 跨 tab 残留遮挡新 tab；重新可见时恢复，保留用户查词浮层状态。仅 Offstage
     // 隐藏这一路 deactivate 覆盖不到。宿主在帧后刷新浮层（根 Overlay 是祖先，build 期间
     // 不能反向标脏）。
-    _overlayInert = !TickerMode.of(context);
-    _popupHost.setOwnerVisible(this, !_overlayInert);
+    _popupHost.setOwnerVisible(this, TickerMode.of(context));
   }
 
   /// 测试可见：查词浮层当前是否被置为 inert（隐藏 tab / 失活时收起）。BUG-953 守卫用。
@@ -792,6 +785,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _popupHost.isRenderOwner(this) &&
       !_popupHost.overlayInert &&
       _popup.hasVisiblePopup;
+
+  /// 测试可见：制卡热键（[_handlePopupMineHardwareKey] / [_mineFromTopPopup]）此刻是否
+  /// 会作用到弹窗。
+  @visibleForTesting
+  bool get debugPopupMineHotkeyArmed => _ownsVisiblePopup;
 
   /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
   /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的
