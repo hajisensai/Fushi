@@ -1129,10 +1129,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// [lastFileDurationMs]：末文件的真实时长（已知时）。末文件的上界取它与 cue 估算的
   /// 较大者，与 [totalDuration] 同口径——否则拖到片尾会被夹回末句结束（sGoT-tNpkx）。
+  ///
+  /// [clampLastFile] 为假时末文件不设上界（落点在末文件内的偏移原样保留）：给末文件
+  /// 真实时长尚不可知、上界要等平台报出时长后再施加的调用方（冷启动恢复存档）。
   static ({int fileIndex, int offsetMs}) splitGlobalMs(
     int globalMs,
     List<int> fileDurationsMs, {
     int? lastFileDurationMs,
+    bool clampLastFile = true,
   }) {
     int remaining = globalMs < 0 ? 0 : globalMs;
     int fileIndex = 0;
@@ -1141,9 +1145,13 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (remaining < d) break;
       remaining -= d;
     }
+    final bool isLast = fileIndex >= fileDurationsMs.length - 1;
+    if (isLast && !clampLastFile) {
+      return (fileIndex: fileIndex, offsetMs: remaining);
+    }
     final int last = fileDurationsMs.isEmpty
         ? 0
-        : fileIndex == fileDurationsMs.length - 1
+        : isLast
         ? _lastFileSpanMs(fileDurationsMs, lastFileDurationMs)
         : fileDurationsMs[fileIndex];
     if (remaining > last) remaining = last;
@@ -1342,10 +1350,15 @@ class AudiobookPlayerController extends ChangeNotifier {
           if (_fileDurationsMs.isEmpty) {
             await _player.seek(Duration(milliseconds: savedMs));
           } else {
+            // HBK-AUDIT-036：新源刚设好、平台还没载入，末文件真实时长此刻不可知
+            // （[_knownLastFileDurationMs] 恒为 null）。按 cue 估算（末句结束）夹上界
+            // 会把存在片尾静音 / 音乐里的存档拽回末句——只保留目标文件与文件内偏移，
+            // 上界等平台报出该文件真实时长后由激活落点判定（[_updateCurrentCue] 的
+            // unreachable 分支）再施加。
             final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
               savedMs,
               _fileDurationsMs,
-              lastFileDurationMs: _knownLastFileDurationMs,
+              clampLastFile: false,
             );
             await _player.seek(
               Duration(milliseconds: target.offsetMs),
@@ -2395,6 +2408,17 @@ class AudiobookPlayerController extends ChangeNotifier {
           return;
         case ActivationRestoreTick.unreachable:
           _clearActivationRestore();
+          // HBK-AUDIT-036：落点超出平台刚报出的真实时长（音频被换短 / 存档越界），
+          // 上界此刻才可知——显式落到该文件真实末尾，不把越界位置交给平台自行处置。
+          final int realEndMs = _player.duration!.inMilliseconds;
+          _notePlaybackJump();
+          unawaited(
+            _player.seek(
+              Duration(milliseconds: realEndMs),
+              index: activation.fileIndex,
+            ),
+          );
+          return;
         case ActivationRestoreTick.landed:
           if ((_player.currentIndex ?? 0) > activation.fileIndex ||
               posMs >= activation.positionMs + _kActivationSettleProgressMs) {

@@ -261,6 +261,106 @@ void main() {
       await c.disposeAndRelease();
     });
   });
+
+  // HBK-AUDIT-036：冷启动时平台还没载入任何文件，末文件真实时长不可知。旧实现在
+  // load() 里按 cue 估算（末句结束）夹存档，片尾静音 / 音乐里的存档被拽回末句。
+  group('cold start resumes into the last file tail (HBK-AUDIT-036)', () {
+    test('splitGlobalMs keeps the last-file offset when clampLastFile is '
+        'false', () {
+      const List<int> durations = <int>[10000, 8000];
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          70000,
+          durations,
+          clampLastFile: false,
+        ),
+        (fileIndex: 1, offsetMs: 60000),
+      );
+      // 非末文件仍按估算拆分，不受影响。
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          9500,
+          durations,
+          clampLastFile: false,
+        ),
+        (fileIndex: 0, offsetMs: 9500),
+      );
+    });
+
+    test('a saved position in the last file tail survives load() and the '
+        'first platform activation', () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+
+      // 文件 0 估算 10000、文件 1 估算 8000（末句结束），文件 1 真实 100000。
+      // 存档 70000 = 文件 1 的 60000，落在末句之后的片尾里。
+      c.setAllBookCues(twoFileCues());
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[
+          makeFile('fushi-cold-tail-0.mp3'),
+          makeFile('fushi-cold-tail-1.mp3'),
+        ],
+        initialPositionMs: 70000,
+      );
+      c.setChapterCues(twoFileCues());
+
+      expect(c.currentFilePosition.fileIndex, 1);
+      expect(
+        c.currentFilePosition.positionMs,
+        60000,
+        reason:
+            'must not be clamped to the last cue end (8000) before the '
+            'real duration of the last file is known',
+      );
+      expect(c.globalPosition.inMilliseconds, 70000);
+
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(plat.player!.loadedIndex, 1);
+      expect(
+        plat.player!.loadedPositionMs,
+        60000,
+        reason: 'the platform must be activated at the saved in-file offset',
+      );
+      await c.pause();
+      expect(c.currentFilePosition.fileIndex, 1);
+      expect(c.globalPosition.inMilliseconds, 70000);
+      expect(c.totalDuration.inMilliseconds, 110000);
+      await c.disposeAndRelease();
+    });
+
+    test('a saved position beyond the real last-file duration is capped at '
+        'the real end once the platform reports it', () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+
+      c.setAllBookCues(twoFileCues());
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[
+          makeFile('fushi-cold-over-0.mp3'),
+          makeFile('fushi-cold-over-1.mp3'),
+        ],
+        // 文件 1 的 150000，超出真实时长 100000（音频被换短 / 存档越界）。
+        initialPositionMs: 160000,
+      );
+      c.setChapterCues(twoFileCues());
+
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await c.pause();
+      expect(plat.player!.loadedPositionMs, 150000);
+      expect(c.activationRestorePendingForTesting, isFalse);
+      expect(c.currentFilePosition.fileIndex, 1);
+      expect(
+        c.currentFilePosition.positionMs,
+        100000,
+        reason: 'the upper bound is the real duration reported by the platform',
+      );
+      await c.disposeAndRelease();
+    });
+  });
 }
 
 class _FakePlatform extends JustAudioPlatform {
@@ -296,6 +396,7 @@ class _FakePlayer extends AudioPlayerPlatform {
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
   int? loadedIndex;
+  int? loadedPositionMs;
   int _currentIndex = 0;
   bool _disposed = false;
 
@@ -320,6 +421,7 @@ class _FakePlayer extends AudioPlayerPlatform {
   @override
   Future<LoadResponse> load(LoadRequest request) async {
     loadedIndex = request.initialIndex;
+    loadedPositionMs = request.initialPosition?.inMilliseconds;
     _currentIndex = request.initialIndex ?? 0;
     emit(
       request.initialPosition?.inMilliseconds ?? 0,
