@@ -10635,6 +10635,8 @@
   "srs_retained_copy_status_kept": "$size · kept until you delete it",
   "srs_retained_copy_summary": "The review library from before the upgrade, kept so you can go back to the old version. It still holds the original text of anything purged since the upgrade.",
   "srs_retained_copy_title": "Delete old-version retained copy",
+  "srs_retained_copy_unreadable_status": "The review library from before the upgrade is no longer a readable file, so it can no longer be used to go back to the old version. Your current review data is not affected.",
+  "srs_retained_copy_unreadable_title": "Old-version retained copy is damaged",
   "srs_review_back_to_decks": "Back to decks",
   "srs_review_done": "All done for today",
   "srs_review_done_detail": "Reviewed $n cards in this session",

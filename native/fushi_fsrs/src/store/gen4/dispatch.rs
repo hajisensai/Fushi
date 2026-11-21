@@ -21,8 +21,9 @@
 //! - **改绑定的写**（`identity` 第一次建、`collection_join` / `collection_salts_add` / `collection_adopt`）：命令返回
 //!   绑定变化，[write_binding] 在写事务**提交成功之后**把它放进回包的 `bindingChanged`；回滚就没有回包、事件丢掉
 //!   （规划缺口 G-4）。
-//! - **读**（读连接）：集合号的换算与命令本体在**同一个读快照**里（`cmd::snapshot`，命令自己的快照沿用它）。浏览例外：
-//!   浏览会话要分清「在调用方的写事务里读」（`cmd/browse.rs` 文件头），所以集合号先单独换算、命令自己开快照。
+//! - **读**（读连接）：集合号的换算与命令本体在**同一个读快照**里（`cmd::snapshot`，命令自己的快照沿用它）。浏览与出卡
+//!   例外：浏览会话要分清「在调用方的写事务里读」（`cmd/browse.rs` 文件头），出卡会话要在读快照的第一条读之前取走待重读
+//!   id（`cmd/study.rs` 文件头），所以集合号先单独换算、命令自己开快照。
 //! - **写**（写连接，[G4Core::write]）：集合号、命令本体（`cmd/writes*.rs`，自己开 SAVEPOINT）、请求带 `study` 时的排队
 //!   （看得见这笔还没提交的写入）、本机状态行（`local.rs` [persist]，回包 `localRevision` / `localEpoch`）在**一个**
 //!   `BEGIN IMMEDIATE` 事务里；任何一步出错整笔回滚。`apply` 的前置条件不成立（`stale`）什么都不写，也不推进修订号。
@@ -38,7 +39,9 @@
 //! - 浏览会话：按缓存层代号 `cache_gen` 自己对上（`cmd/browse.rs`），写入经派生层收尾记账，这里不用做什么。
 //! - 统计原料缓存：键是 (集合, 统计指纹, 写入代数, 缓存层代号)；本进程每条写命令提交之后写入代数 +1，别的进程的写入
 //!   由缓存层代号兜住。`stats_release` 丢掉。
-//! - 出卡：`cmd/study.rs` 每条命令在一个读快照里现读（不常驻，见交接说明「S1 接线设计」的取舍），没有要失效的。
+//! - 出卡：常驻会话（`cmd/study.rs`，会话本体 `store/queue.rs`）靠 Primary 写连接上的临时触发器逐行记账（卡缓存行、日志
+//!   索引、卡的修改、别名表的净变化），写锁放下时挪成已提交（`kernel.rs` `Writer` 的 `Drop`）；不经 `Session` 的写一样被
+//!   触发器看见，这里不用做什么。Secondary 按刷新键印记整份重建（[run] 的 `study` 臂）。
 //!
 //! # C 直出入口（S1b）
 //!
@@ -403,7 +406,7 @@ fn local_write_tx(
             return Ok(v);
         }
         if let Some(s) = req.get("study").filter(|s| s.is_object()) {
-            let queued = cmd::study::study(t, col, s)?;
+            let queued = cmd::study::study(t, &c.study, col, s, None)?;
             v["study"] = queued;
         }
         local::persist(t, profile, anchor.as_ref(), &mut v)?;
@@ -541,7 +544,16 @@ fn run(
         // 没有集合的 profile 数出全 0（不报 has no collection，见 `profile_footprint_of`）。
         "profile_footprint" => c.read(|t| cmd::profile::profile_footprint_of(t, profile))?,
         "status" => read_col(c, profile, cmd::writes_local::status)?,
-        "study" => read_col(c, profile, |t, col| cmd::study::study(t, col, req))?,
+        // 集合号在读快照之外先读：出卡会话要在这次读事务的第一条读之前取走待重读 id（`cmd/study.rs` 文件头）。Secondary
+        // 没有写连接的触发器，会话按刷新键印记判库变没变（`refresh.rs` Secondary 的键）。
+        "study" => c.read(|t| {
+            let col = col_of(t, profile)?;
+            let stamp = match c.mode() {
+                OpenMode::Primary => None,
+                OpenMode::Secondary => Some(super::refresh::secondary_key(t, "", profile)?),
+            };
+            cmd::study::study(t, &c.study, col, req, stamp.as_deref())
+        })?,
         "local_state" => {
             // `reload: true`：调用方（Dart 命令失败后的重读）要丢掉它按刷新键记的一切（协议 3 同口径）。
             if req.get("reload") == Some(&Value::Bool(true)) {
@@ -591,7 +603,7 @@ fn run(
         | "browse_stats" | "browse_counts" | "browse_sources" | "anki_find" | "anki_dupes"
         | "anki_tags" => {
             let r = c.reader()?;
-            let t = Truth::new(&r);
+            let t = c.truth(&r);
             // 集合号单独换算（模块文件头「读」）：浏览命令自己开快照，会话靠它分清是不是在写事务里读。
             let col = col_of(&t, profile)?;
             let mut b = c.browse.lock().unwrap_or_else(|e| e.into_inner());

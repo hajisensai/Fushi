@@ -1,7 +1,7 @@
-//! 按集合的两条小读命令（G7-4e）：`binding_get`、`profile_footprint`。**还没接分发器**：协议 3 的
-//! `SrsCore::binding_get`（`store/binding.rs`）与 `SrsCore::profile_footprint`（`store/profile_data.rs`）原地不动，
-//! 分发器在整批推送里一次切到这里（规划 §2.2 S1）。协议 3 按 profile uid 查，这里按本机集合号（profile → 集合由
-//! [Truth::binding_of] 换算，接线时做）。
+//! 按集合的两条小读命令（G7-4e）：`binding_get`、`profile_footprint`。已接分发器（`dispatch.rs`）；协议 3 的
+//! `SrsCore::binding_get`（`store/binding.rs`）与 `SrsCore::profile_footprint`（`store/profile_data.rs`）不再经
+//! 分发器调用（冻结）。
+//! 协议 3 按 profile uid 查，这里按本机集合号（profile → 集合由分发器经 [Truth::binding_of] 换算）。
 //!
 //! # 形状（与协议 3 逐键相同）
 //!

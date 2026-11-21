@@ -59,7 +59,8 @@
 //!   的索引约 40 B；样本库的 33 万条有效复习约 30 MB（以样本探针 `gen4_sample_index` 的实测为准）。
 //! - **缓存配置**：本机状态表 `derive_cfg` 的 `"caches"` 项（值 = `caches::CacheConfig::parse` 吃的 JSON）。没设 =
 //!   不物化（三张表这个集合没有行）：配置只有宿主知道，接线（G7）在第一次重建前写进去；配置变了调
-//!   [Index::rebuild_caches]（只重建这一层）。
+//!   [Index::rebuild_caches]（只重建这一层）。解析结果（归一 + `CacheConfig::parse`，几百 KB 的内置模板文本逐个字段引用
+//!   查别名表，实测毫秒级）由库句柄跨命令记住（[CfgMemo]），每次用之前按「原文 + 原文里每个 ID 此刻的规范形」核对。
 //!
 //! # 别名：**缓存层按规范 ID 物化**（设计 §5.3「别名层接线」，G9-2）
 //!
@@ -114,6 +115,7 @@
 //! 的卡，扩成它们的连通分量，再按「有同一 Anki 复习时刻日志」扩到不动点（统计去重要看全，与协议 3 同）。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use rusqlite::types::ValueRef;
 use rusqlite::{OptionalExtension, params};
@@ -275,6 +277,74 @@ const TABLES: [&str; 4] = ["notes", "cards", "stats", "anki_members"];
 
 /// `derive_cfg` 里缓存配置的键。
 pub const CFG_KEY: &str = "caches";
+
+/// 各集合解析好的缓存配置（[Index::cache_config]），一个库句柄一份（`kernel.rs` `G4Core`，经 [Truth] 交给命令）。
+///
+/// 解析结果只取决于两样：`derive_cfg` 里的配置原文，与原文里出现的每个 ID 此刻的规范形（归一经
+/// `class.rs` `canonical_text` / `canonical_key`，后者也只把键里嵌的 ID 交给前者；它们按这个会话看到的别名表与盐集合
+/// 算）。所以记下原文与「原文里每个规范形状的 UUID → 它当时的规范形」，用之前在当前会话上逐个重查：两样都对得上就与
+/// 现算逐字相同。失效不靠谁来通知——`cache_config_set` 改原文、远程写入 / 收段改别名表或盐集合、整层重建、写事务回滚、
+/// 别的进程（Secondary）看到 Primary 的提交，都落在这两样上，不会漏掉哪条写入路径。原文里有 `\u` 转义时不记（转义
+/// 拼出的 ID 不在原文的字面里，核对会漏），每次现算。
+#[derive(Default)]
+pub struct CfgMemo(std::sync::Mutex<HashMap<i64, Arc<CfgEntry>>>);
+
+struct CfgEntry {
+    raw: String,
+    deps: Vec<(String, String)>,
+    cfg: Arc<CacheConfig>,
+}
+
+impl CfgMemo {
+    fn get(&self, col: i64) -> Option<Arc<CfgEntry>> {
+        // 锁里只有表的进出，不跑用户代码：毒化了表也完好。
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&col)
+            .cloned()
+    }
+
+    fn put(&self, col: i64, e: CfgEntry) {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(col, Arc::new(e));
+    }
+
+    /// 记着的集合数（测试）。
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+}
+
+/// [raw] 字面里出现的全部规范形状 UUID（去重）；有 `\u` 转义 = None（[CfgMemo] 不记）。
+fn config_ids_in(raw: &str) -> Option<BTreeSet<&str>> {
+    if raw.contains("\\u") {
+        return None;
+    }
+    const LEN: usize = 36;
+    let b = raw.as_bytes();
+    let mut out = BTreeSet::new();
+    let mut i = 0;
+    while i + LEN <= b.len() {
+        let w = &b[i..i + LEN];
+        let shaped = w.iter().enumerate().all(|(j, c)| match j {
+            8 | 13 | 18 | 23 => *c == b'-',
+            _ => c.is_ascii_digit() || (b'a'..=b'f').contains(c),
+        });
+        // 窗口全是 ASCII，两端都在字符边界上。
+        if shaped {
+            let s = &raw[i..i + LEN];
+            if crate::gen4_ids::alias::strict_id(s).is_some() {
+                out.insert(s);
+            }
+        }
+        i += 1;
+    }
+    Some(out)
+}
 
 /// `derive_cfg` 里「缓存层按哪一版推导口径物化的」的键（文件头「缓存配置」）。值是 [CACHE_RULES] 的十进制文本；没有 =
 /// 0（这个口径之前建的库）。
@@ -492,15 +562,49 @@ impl<'t, 'c> Index<'t, 'c> {
 
     // ------------------------------------------------------------ 入口
 
-    /// 这个集合的缓存配置（已按规范 ID 归一）；没设 = None（缓存层没物化，三张表这个集合没有行）。
-    pub(crate) fn cache_config(&self) -> Result<Option<CacheConfig>, String> {
+    /// 这个集合的缓存配置（已按规范 ID 归一）；没设 = None（缓存层没物化，三张表这个集合没有行）。会话带着库句柄的
+    /// [CfgMemo] 时，核对得上就用记着的那份（[CfgMemo] 文档），否则现算并记下。
+    pub(crate) fn cache_config(&self) -> Result<Option<Arc<CacheConfig>>, String> {
         let Some(text) = self.t.derive_cfg(self.col, CFG_KEY)? else {
             return Ok(None);
         };
+        let memo = self.t.cfg_memo();
+        if let Some(e) = memo.and_then(|m| m.get(self.col)) {
+            if e.raw == text && self.cfg_deps_hold(&e.deps)? {
+                return Ok(Some(e.cfg.clone()));
+            }
+        }
         let v: Value =
             serde_json::from_str(&text).map_err(|e| format!("gen4 cache: bad config: {e}"))?;
         // 配置里的 ID 是宿主给的，可能是带盐的存量 ID、也可能没在操作里出现过：按规范 ID 物化之前先归一（文件头「别名」）。
-        Ok(Some(CacheConfig::parse(&self.canonical_config(&v)?)?))
+        let cfg = Arc::new(CacheConfig::parse(&self.canonical_config(&v)?)?);
+        if let Some(m) = memo {
+            if let Some(ids) = config_ids_in(&text) {
+                let mut deps = Vec::with_capacity(ids.len());
+                for id in ids {
+                    deps.push((id.to_owned(), self.canonical_text(id)?));
+                }
+                m.put(
+                    self.col,
+                    CfgEntry {
+                        raw: text,
+                        deps,
+                        cfg: cfg.clone(),
+                    },
+                );
+            }
+        }
+        Ok(Some(cfg))
+    }
+
+    /// [CfgMemo] 记下的「ID → 规范形」此刻是否仍然成立。
+    fn cfg_deps_hold(&self, deps: &[(String, String)]) -> Result<bool, String> {
+        for (id, canon) in deps {
+            if self.canonical_text(id)? != *canon {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// 只重建缓存层（缓存配置变了之后调；索引不动）。在调用方的事务里。
@@ -3258,5 +3362,110 @@ mod tests {
             latest,
             "CACHE_RULES 与派生口径对表的最新修订号不一致"
         );
+    }
+
+    // ------------------------------------------------------------ 缓存配置记忆（CfgMemo）
+
+    /// 库句柄的缓存配置记忆：什么都没变时第二次直接用记着的那份（同一个 `Arc`）；原文换了（`cache_config_set` 的写法）
+    /// 就是新的那份；写事务回滚（原文回到旧值）之后又对回旧值，不会留着回滚掉的那份。
+    #[test]
+    fn the_cache_config_memo_hits_until_the_config_text_changes() {
+        use std::sync::Arc;
+        with(|t, col| {
+            put_cfg(t, col);
+            let memo = Arc::new(super::CfgMemo::default());
+            let tm = Truth::with_cfg_memo(t.conn(), memo.clone());
+            let get = || Index::new(&tm, col).cache_config().unwrap().unwrap();
+            let a = get();
+            assert_eq!(memo.len(), 1);
+            assert!(Arc::ptr_eq(&a, &get()), "nothing changed: the memo answers");
+            assert_eq!(a.default_deck(), id(DECK).text());
+
+            let other = id(0xd7).text();
+            let cfg = json!({"defaultDeck": other}).to_string();
+            tm.tx(|t| t.set_derive_cfg(col, CFG_KEY, Some(&cfg)))
+                .unwrap();
+            let b = get();
+            assert!(!Arc::ptr_eq(&a, &b));
+            assert_eq!(b.default_deck(), other);
+            assert!(Arc::ptr_eq(&b, &get()));
+
+            // 事务里改了原文、读过（记忆里是这份）、然后回滚：之后读到的是回滚后的原文。
+            let third = id(0xd8).text();
+            let cfg3 = json!({"defaultDeck": third}).to_string();
+            let _ = tm.tx(|t| -> Result<(), String> {
+                t.set_derive_cfg(col, CFG_KEY, Some(&cfg3))?;
+                assert_eq!(
+                    Index::new(t, col).cache_config()?.unwrap().default_deck(),
+                    third
+                );
+                Err("roll back".into())
+            });
+            assert_eq!(get().default_deck(), other);
+            // 没有原文：None，也不留记忆以外的东西。
+            tm.tx(|t| t.set_derive_cfg(col, CFG_KEY, None)).unwrap();
+            assert!(Index::new(&tm, col).cache_config().unwrap().is_none());
+        });
+    }
+
+    /// 原文没变、但原文里 ID 的规范形变了（盐随远程操作到达：带盐的内置默认牌组此后归到规范的那个）：记忆核对不上，
+    /// 现算出新的规范形，与不带记忆现算的逐字相同。失效不靠写路径通知，收段 / 远程写入 / 回滚都落在这一条核对上。
+    #[test]
+    fn the_cache_config_memo_follows_canonical_ids_when_salts_arrive() {
+        use crate::gen4_ids::rules::{self, CANONICAL};
+        use std::sync::Arc;
+        with(|t, col| {
+            let salted = rules::builtin_default_deck(Some(U1)).text();
+            let canon = rules::builtin_default_deck(CANONICAL).text();
+            assert_ne!(salted, canon);
+            let cfg = json!({"defaultDeck": salted}).to_string();
+            t.tx(|t| t.set_derive_cfg(col, CFG_KEY, Some(&cfg)))
+                .unwrap();
+            let memo = Arc::new(super::CfgMemo::default());
+            let tm = Truth::with_cfg_memo(t.conn(), memo.clone());
+            let get = || Index::new(&tm, col).cache_config().unwrap().unwrap();
+            let before = get();
+            assert_eq!(before.default_deck(), salted, "the salt is not known yet");
+            assert!(Arc::ptr_eq(&before, &get()));
+            tm.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 1, &[Body4::salts([U1]).unwrap()]);
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            let after = get();
+            assert_eq!(after.default_deck(), canon);
+            assert_eq!(
+                Index::new(t, col)
+                    .cache_config()
+                    .unwrap()
+                    .unwrap()
+                    .default_deck(),
+                after.default_deck(),
+                "memo and a fresh parse agree"
+            );
+        });
+    }
+
+    /// 原文里有 `\u` 转义：转义拼出的 ID 不在原文字面里，核对会漏，不记（每次现算）。
+    #[test]
+    fn a_config_with_unicode_escapes_is_not_memoized() {
+        use std::sync::Arc;
+        with(|t, col| {
+            // 反斜杠 + `u0041`（JSON 里的 "A"）。
+            let backslash = char::from(92u8);
+            let cfg = format!(
+                r#"{{"defaultDeck": "{}", "note": "{backslash}u0041"}}"#,
+                id(DECK).text()
+            );
+            t.tx(|t| t.set_derive_cfg(col, CFG_KEY, Some(&cfg)))
+                .unwrap();
+            let memo = Arc::new(super::CfgMemo::default());
+            let tm = Truth::with_cfg_memo(t.conn(), memo.clone());
+            let cfg = Index::new(&tm, col).cache_config().unwrap().unwrap();
+            assert_eq!(cfg.default_deck(), id(DECK).text());
+            assert_eq!(memo.len(), 0);
+        });
     }
 }
