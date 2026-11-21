@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename, isValidCollectionSectionKey;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
@@ -2869,11 +2871,30 @@ class RemoteVideoInfo {
     this.collection,
     this.importedAt,
     this.fileName,
+    this.sectionKey,
     this.peerPlayable = true,
   });
 
   final String id;
   final String title;
+
+  /// 这个文件在 host 上的**生效分栏**（`s<N>` / `extras`；BUG-5084）。
+  ///
+  /// host 的合集分栏 = 手动分栏 → 手动季集指定 → 文件名派生（引擎
+  /// `loadCollectionSections`，拍板台 iR6ccUys9H），前两张覆盖表只在 host 本机。
+  /// client 只拿得到 [fileName]（basename）去派生，认不出 host 上钉到 PV·特典的
+  /// 短篇，也看不到只写在 host 父目录上的季号——所以由 host 按同一入口算好下发，
+  /// client 的合集详情页 / 剧集面板直接用它（[collectionGroupKey]）。
+  ///
+  /// wire：`sectionKey`，只在非空时写；解析时形状不合法（[isValidCollectionSectionKey]）
+  /// 按缺省处理。null = 旧 host / 非互联来源，client 照旧按 [parseName] 派生；旧
+  /// client 不认识该键、按旧行为派生。
+  final String? sectionKey;
+
+  /// client 侧这一集的分栏键：host 下发了生效分栏就用它，否则按 [parseName]
+  /// 派生（与本机文件名派生同一判据）。
+  String get collectionGroupKey =>
+      sectionKey ?? collectionGroupKeyForFilename(parseName);
 
   /// 对端能否经 host 播放 / 下载这一条（host 有没有媒体字节可给）。
   ///
@@ -3055,6 +3076,7 @@ class RemoteVideoInfo {
     collection: collection,
     importedAt: importedAt,
     fileName: fileName,
+    sectionKey: sectionKey,
     peerPlayable: peerPlayable,
   );
 
@@ -3102,6 +3124,7 @@ class RemoteVideoInfo {
     if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
     if (collection != null) 'collection': collection!.toJson(),
     if (_isNonEmpty(fileName)) 'fileName': fileName,
+    if (_isNonEmpty(sectionKey)) 'sectionKey': sectionKey,
     if (!peerPlayable) 'peerPlayable': false,
   };
 
@@ -3160,6 +3183,7 @@ class RemoteVideoInfo {
     collection: collection ?? this.collection,
     importedAt: importedAt,
     fileName: fileName,
+    sectionKey: sectionKey,
     peerPlayable: peerPlayable,
   );
 
@@ -3208,9 +3232,17 @@ class RemoteVideoInfo {
       // 对齐 RemoteBookInfo.fromJson。旧 host 无该字段 → fromJson 返 null（向后兼容）。
       collection: RemoteCollectionMembership.fromJson(json['collection']),
       fileName: _jsonString(json['fileName']),
+      sectionKey: _jsonSectionKey(json['sectionKey']),
       peerPlayable: json['peerPlayable'] != false,
     );
   }
+}
+
+/// 解析 host 下发的生效分栏键：只认 [isValidCollectionSectionKey] 的形状，其余
+/// （缺键 / 空串 / 将来的新键形状）一律 null，client 回落文件名派生。
+String? _jsonSectionKey(Object? value) {
+  final String? key = _jsonString(value);
+  return key != null && isValidCollectionSectionKey(key) ? key : null;
 }
 
 /// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。

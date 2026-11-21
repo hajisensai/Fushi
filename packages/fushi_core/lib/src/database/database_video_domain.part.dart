@@ -772,16 +772,25 @@ mixin _FushiDbVideoDomain
   /// 一批文件的手动季集指定（刮削一个作品单元时按成员批量取）。
   Future<Map<String, VideoEpisodeBindingOverrideRow>>
   getVideoEpisodeBindingOverrides(Iterable<String> bookUids) async {
-    final List<String> uids = bookUids.toList(growable: false);
+    final List<String> uids = bookUids.toSet().toList(growable: false);
     if (uids.isEmpty) return const <String, VideoEpisodeBindingOverrideRow>{};
-    final List<VideoEpisodeBindingOverrideRow> rows =
-        await (select(videoEpisodeBindingOverrides)..where(
-              ($VideoEpisodeBindingOverridesTable t) => t.bookUid.isIn(uids),
-            ))
-            .get();
-    return <String, VideoEpisodeBindingOverrideRow>{
-      for (final VideoEpisodeBindingOverrideRow row in rows) row.bookUid: row,
-    };
+    final Map<String, VideoEpisodeBindingOverrideRow> out =
+        <String, VideoEpisodeBindingOverrideRow>{};
+    // SQLite 变量上限：互联 host 清单按整库取（BUG-5084），分块。
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 > uids.length ? uids.length : i + 500,
+      );
+      for (final VideoEpisodeBindingOverrideRow row
+          in await (select(videoEpisodeBindingOverrides)..where(
+                ($VideoEpisodeBindingOverridesTable t) => t.bookUid.isIn(chunk),
+              ))
+              .get()) {
+        out[row.bookUid] = row;
+      }
+    }
+    return out;
   }
 
   /// 写 / 覆盖某文件的手动季集指定。
