@@ -242,6 +242,10 @@ struct PieceEvent {
 // 「进度提示」，丢了不影响正确性（真相在 ht_torrent_pieces 的位图里）。
 constexpr std::size_t kMaxQueuedPieceEvents = 4096;
 
+// 一轮 ht_save_resume_data 同时在飞的 save_resume_data 请求上限（另受
+// alert_queue_size / 4 约束，取小者）。理由见 ht_save_resume_data。
+constexpr int kMaxResumeInFlight = 500;
+
 // TODO-1961-c：一次异步存储操作（改名 / 移动）的回执槽。
 //
 // `pending` 是「已发出、还没回执」；`ok` 只有在 `pending == 0` 时才有意义。
@@ -294,11 +298,21 @@ struct ht_session_ctx {
   // 已收割的 resume data（infohash → bencode 后的字节）。
   std::vector<std::pair<std::string, std::vector<char>>> resumes;
 
-  // 已发出 save_resume_data 但尚未收到回执的种子数（收齐即可停止等待）。
-  int resume_pending = 0;
+  // 已发出 save_resume_data 但尚未收到回执的种子（infohash → handle）。
+  //
+  // 按种子记账而不是只记个数：libtorrent 的 alert 队列有上限
+  // （alert_queue_size，默认 2000），溢出的 alert 被直接丢弃、只留一条
+  // alerts_dropped_alert。丢了哪几颗的回执只能从「谁还挂着」推出来，才能
+  // 对它们重新发请求；重复回执（原回执其实没丢）也靠它识别并忽略。
+  std::map<std::string, lt::torrent_handle> resume_inflight;
 
   // 本轮 save_resume_data 失败的个数（诊断用，随每轮保存清零）。
   int resume_failed = 0;
+
+  // drain_alerts 见到 alerts_dropped_alert 且其中含 resume 回执时置真，由
+  // ht_save_resume_data 消费：把仍挂着的种子重新发一遍（它们的回执可能
+  // 正在被丢掉的那批里）。
+  bool resume_receipts_dropped = false;
 
   // TODO-1961-c：改名 / 移动的回执槽。两者都是**异步**的：调用只是把请求排进
   // libtorrent，成没成只能从 file_renamed_alert / file_rename_failed_alert /
@@ -394,6 +408,20 @@ int apply_first_last_boost(lt::torrent_handle& h) {
   return 1;
 }
 
+// save_resume_data_failed_alert 的记账：按 handle 找回本轮挂着的那一颗。
+// 用 handle 相等（owner_before，种子已被移除、handle 失效也能比）而不是
+// infohash —— 失效 handle 取不到 infohash。返回 true = 确是本轮挂着的。
+bool settle_failed_resume(ht_session_ctx* ctx, const lt::torrent_handle& h) {
+  for (auto it = ctx->resume_inflight.begin(); it != ctx->resume_inflight.end();
+       ++it) {
+    if (it->second == h) {
+      ctx->resume_inflight.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
 // **唯一**的 alert 收割点：pop 一次，按类型分派进 ctx 的各队列，其余丢弃。
 // 任何需要 alert 的入口都只调它，绝不自己 pop_alerts（理由见 ht_session_ctx）。
 void drain_alerts(ht_session_ctx* ctx) {
@@ -413,14 +441,28 @@ void drain_alerts(ht_session_ctx* ctx) {
       continue;
     }
     if (const auto* sr = lt::alert_cast<lt::save_resume_data_alert>(a)) {
-      if (ctx->resume_pending > 0) ctx->resume_pending--;
-      ctx->resumes.emplace_back(best_hash_hex(sr->params.info_hashes),
-                                lt::write_resume_data_buf(sr->params));
+      // 只收本轮挂着的种子；不在册的是重发后原回执也到了的重复件（或上一轮
+      // 超时后的迟到件），落盘一次就够。
+      std::string id = best_hash_hex(sr->params.info_hashes);
+      if (ctx->resume_inflight.erase(id) > 0) {
+        ctx->resumes.emplace_back(std::move(id),
+                                  lt::write_resume_data_buf(sr->params));
+      }
       continue;
     }
-    if (lt::alert_cast<lt::save_resume_data_failed_alert>(a) != nullptr) {
-      if (ctx->resume_pending > 0) ctx->resume_pending--;
-      ctx->resume_failed++;
+    if (const auto* sf = lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
+      if (settle_failed_resume(ctx, sf->handle)) ctx->resume_failed++;
+      continue;
+    }
+    if (const auto* ad = lt::alert_cast<lt::alerts_dropped_alert>(a)) {
+      // 队列溢出：libtorrent 只告诉我们「丢过哪些类型」，不告诉丢了哪颗。
+      // 含 resume 回执时交给 ht_save_resume_data 对仍挂着的种子补发。
+      if (ad->dropped_alerts.test(
+              std::size_t(lt::save_resume_data_alert::alert_type)) ||
+          ad->dropped_alerts.test(
+              std::size_t(lt::save_resume_data_failed_alert::alert_type))) {
+        ctx->resume_receipts_dropped = true;
+      }
       continue;
     }
     // TODO-1961-c：改名 / 移动的回执。
@@ -1507,26 +1549,60 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
     std::filesystem::create_directories(
         std::filesystem::u8path(std::string(out_dir)), fs_ec);
 
+    // 先把 libtorrent 队列里积压的 alert 收走。两次 drain 之间（宿主每分钟
+    // 才保存一次）piece_finished / 状态类 alert 会一直堆在 libtorrent 内部
+    // 队列里，堆满 alert_queue_size 后新 alert 一律被丢弃 —— 不先腾空，本轮
+    // 的 resume 回执一到就被丢，一颗都收不到（BUG-5158 复现：加 3000 颗后
+    // 保存，saved=0 / timed_out=3000）。
+    drain_alerts(ctx);
+
     // 前一轮的残留（超时未收齐）不该算进本轮：清账再发。
     ctx->resumes.clear();
-    ctx->resume_pending = 0;
+    ctx->resume_inflight.clear();
     ctx->resume_failed = 0;
+    ctx->resume_receipts_dropped = false;
 
+    // 待发队列：无元数据的种子（磁力刚加、还没拿到 info dict）存了也无法
+    // 重建，libtorrent 会直接回 failed_alert —— 不发，省一轮等待。
+    std::vector<lt::torrent_handle> queue;
     for (const lt::torrent_handle& h : ctx->ses.get_torrents()) {
       if (!h.is_valid()) continue;
-      // 无元数据的种子（磁力刚加、还没拿到 info dict）存了也无法重建，
-      // libtorrent 会直接回 failed_alert —— 不发，省一轮等待。
       if (!h.torrent_file()) continue;
+      queue.push_back(h);
+    }
+
+    // 在飞上限：每颗种子恰好产生一条回执，在飞的回执数不超过队列容量的
+    // 四分之一，给同期的 piece / 状态类 alert 留足余量 —— 种子再多，本轮
+    // 的回执也不可能把队列挤爆。按回执到达逐颗补发（滑动窗口），总耗时
+    // 不因分批变长。
+    const int queue_cap =
+        ctx->ses.get_settings().get_int(lt::settings_pack::alert_queue_size);
+    const std::size_t window =
+        std::size_t(std::clamp(queue_cap / 4, 1, kMaxResumeInFlight));
+    std::size_t next = 0;
+    int reissued = 0;
+    const auto issue = [](const lt::torrent_handle& h) {
       // save_info_dict：把 info dict 一并写进 resume，重启后磁力种子无需
       // 重新向 DHT/peer 取元数据即可直接续传/做种。
       h.save_resume_data(lt::torrent_handle::save_info_dict);
-      ctx->resume_pending++;
-    }
+    };
+    const auto top_up = [&]() {
+      while (next < queue.size() && ctx->resume_inflight.size() < window) {
+        const lt::torrent_handle& h = queue[next++];
+        // 发之前种子可能已被移除；失效 handle 取不到 infohash，跳过即可
+        // （它也不会再有 resume 可存）。
+        if (!h.is_valid()) continue;
+        const std::string id = best_hash_hex(h.info_hashes());
+        if (!ctx->resume_inflight.emplace(id, h).second) continue;
+        issue(h);
+      }
+    };
+    top_up();
 
     const int budget_ms = timeout_ms > 0 ? timeout_ms : 5000;
     const std::chrono::steady_clock::time_point deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(budget_ms);
-    while (ctx->resume_pending > 0) {
+    while (!ctx->resume_inflight.empty()) {
       const std::chrono::steady_clock::time_point now =
           std::chrono::steady_clock::now();
       if (now >= deadline) break;
@@ -1535,6 +1611,19 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
       ctx->ses.wait_for_alert(
           std::chrono::duration_cast<lt::time_duration>(deadline - now));
       drain_alerts(ctx);
+      if (ctx->resume_receipts_dropped) {
+        // 队列仍然溢出过（窗口之外的 alert 洪峰），而且丢的里面有 resume
+        // 回执：丢的是哪几颗无从得知，唯一确定的是它们都还挂在 inflight
+        // 里。对挂着的全部补发一次；原回执若其实没丢，后到的重复件按
+        // inflight 去重，不会多写。
+        ctx->resume_receipts_dropped = false;
+        for (const auto& entry : ctx->resume_inflight) {
+          if (!entry.second.is_valid()) continue;
+          issue(entry.second);
+          reissued++;
+        }
+      }
+      top_up();
     }
 
     int saved = 0;
@@ -1572,10 +1661,13 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
       saved++;
     }
     const int alert_failed = ctx->resume_failed;
-    const int pending_left = ctx->resume_pending;
+    // 超时 = 发了没等到回执的 + 窗口没轮到、根本没发出去的。
+    const int pending_left =
+        int(ctx->resume_inflight.size()) + int(queue.size() - next);
     ctx->resumes.clear();
-    ctx->resume_pending = 0;
+    ctx->resume_inflight.clear();
     ctx->resume_failed = 0;
+    ctx->resume_receipts_dropped = false;
 
     std::string out = "{\"ok\":true,\"saved\":";
     out += std::to_string(saved);
@@ -1583,6 +1675,8 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
     out += std::to_string(alert_failed + write_failed);
     out += ",\"timed_out\":";
     out += std::to_string(pending_left);
+    out += ",\"reissued\":";
+    out += std::to_string(reissued);
     out += '}';
     return dup_string(out);
   } catch (const std::exception& e) {
