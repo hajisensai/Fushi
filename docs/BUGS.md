@@ -33,12 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4386 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5072](bugs/BUG-5072-completed-seeding-not-pausable.md) | ✅ | ✅ | 下载页已完成仍做种的视频任务无法暂停/恢复做种（单条与批量） |
-> 共 4414 条。点号进各自文件。
+> 共 4415 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -58,6 +53,7 @@
 | [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | 🚧 | 🚧 | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |
 | [BUG-5074](bugs/BUG-5074-srs-gen4-review-lag-after-upgrade.md) | ✅ | ✅ | SRS 升级到新代存储（gen4）后一背卡就卡、越背越卡 |
 | [BUG-5073](bugs/BUG-5073-stat-day-reset-hour-profile-switch.md) | ✅ | ✅ | 切 Profile 后统计日界仍按旧 Profile 的值直到重启 |
+| [BUG-5072](bugs/BUG-5072-completed-seeding-not-pausable.md) | ✅ | ✅ | 下载页已完成仍做种的视频任务无法暂停/恢复做种（单条与批量） |
 | [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
 | [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5068](bugs/BUG-5068-interconnect-mdns-fallback-new-network.md) | ✅ | ✅ | 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它） |
