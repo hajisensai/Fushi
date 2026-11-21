@@ -51,9 +51,15 @@ void main() {
     // WebView 与嵌套弹窗共用同一净缩放=1 坐标系。若错放进 LayoutBuilder 内层只中和
     // 局部，会重蹈被撤销的 FushiNativeScale 坐标错位坑。锚点用代码形态 child:
     // LayoutBuilder（注释里的「LayoutBuilder」字样不带 child: 前缀，不会误命中）。
+    // 嵌套弹窗栈的根 Overlay 浮层归共用宿主（design-shared-lookup-webview），不变式
+    // 在那里守。
+    final String host = read(
+      'lib/src/pages/implementations/shared_lookup_popup_host.dart',
+    );
+    final int hostNeutralizer = host.indexOf('FushiAppUiScaleNeutralizer(');
+    expect(hostNeutralizer, isNonNegative);
     expect(
-      src.indexOf('FushiAppUiScaleNeutralizer') <
-          src.indexOf('child: LayoutBuilder'),
+      hostNeutralizer < host.indexOf('child: LayoutBuilder'),
       isTrue,
       reason: '中和器必须包在 LayoutBuilder 外层（净缩放=1 的真实视口坐标系）',
     );
