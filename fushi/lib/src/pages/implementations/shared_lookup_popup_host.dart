@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 能把查词弹窗栈画进 [SharedLookupPopupHost] 根 Overlay 浮层的宿主页。
@@ -190,8 +191,9 @@ class SharedLookupPopupHost {
     final OverlayEntry? entry = _entry;
     if (entry == null) return;
     _entry = null;
-    if (entry.mounted) entry.remove();
-    entry.dispose();
+    // entry 自插入起就挂在根 Overlay 上；根 Overlay 已先一步卸载（整棵树拆除）时
+    // `mounted` 为 false，但 remove 仍须调用，否则 dispose 断言失败。
+    removeAndDisposeOwnedOverlayEntry(entry);
   }
 
   void _markNeedsBuild() {

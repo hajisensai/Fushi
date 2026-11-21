@@ -12,6 +12,7 @@ import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.da
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -1021,6 +1022,53 @@ void main() {
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('首页外壳里与查词 tab 共用查词宿主，外壳外私有一个（design-shared-lookup-webview）', (
+    WidgetTester tester,
+  ) async {
+    final SharedLookupPopupHost shared = SharedLookupPopupHost();
+    addTearDown(shared.dispose);
+    final ValueNotifier<bool> show = ValueNotifier<bool>(true);
+    addTearDown(show.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        SharedLookupPopupScope(
+          host: shared,
+          child: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: show,
+              builder: (BuildContext context, bool v, _) =>
+                  v ? const TexthookerPage() : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(TexthookerPage));
+    expect(
+      identical(state.debugPopupHost, shared),
+      isTrue,
+      reason: '外壳下发的宿主必须被采用，否则两个 tab 各挂一个热槽 WebView',
+    );
+    expect(shared.debugOwnerCount, 1);
+    expect(shared.isRenderOwner(state as SharedLookupPopupOwner), isTrue);
+
+    // 页面销毁只注销，不得把外壳持有的宿主（controller）一并释放。
+    show.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(shared.debugOwnerCount, 0);
+    expect(() => shared.controller.hasVisiblePopup, returnsNormally);
+
+    // 外壳外：私有一个。
+    show.value = true;
+    await tester.pumpWidget(_wrapPage(const Scaffold(body: TexthookerPage())));
+    await tester.pump();
+    final dynamic standalone = tester.state(find.byType(TexthookerPage));
+    expect(identical(standalone.debugPopupHost, shared), isFalse);
   });
 
   testWidgets('保活 tab 被 TickerMode 隐藏时查词浮层置 inert，恢复可见时复原（BUG-953）', (
