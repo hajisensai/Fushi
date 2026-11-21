@@ -715,23 +715,21 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final bool wait =
           request.url.queryParameters[kVideoFingerprintWaitQueryParam] != '0';
       try {
-        final VideoSourceFingerprint fingerprints =
-            VideoSourceFingerprint.instance;
+        final VideoSourceFingerprint fingerprints = _videoFingerprints;
         final String? digest = wait
-            ? await fingerprints.fingerprint(file.path)
-            : await fingerprints.known(file.path);
+            ? await _trackVideoFingerprintWork(
+                fingerprints.fingerprint(file.path),
+              )
+            : await _trackVideoFingerprintWork(fingerprints.known(file.path));
         if (digest == null) {
           unawaited(
-            fingerprints
-                .fingerprint(file.path)
-                .then<void>(
-                  (String _) {},
-                  onError: (Object error, StackTrace stack) => engineLog.log(
-                    'video.fingerprint.background',
-                    error,
-                    stack,
-                  ),
-                ),
+            _trackVideoFingerprintWork(
+              fingerprints.fingerprint(file.path),
+            ).then<void>(
+              (String _) {},
+              onError: (Object error, StackTrace stack) =>
+                  engineLog.log('video.fingerprint.background', error, stack),
+            ),
           );
           return shelf.Response(
             kVideoFingerprintPendingStatus,
@@ -1849,11 +1847,12 @@ int _episodeIndexFromRequest(shelf.Request request) {
 /// 后开始后台低优先级预热（拍板台 left3657）。host 不提供媒体库时只挂缓存。
 extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
   void _startVideoFingerprintWarmup() {
-    VideoSourceFingerprint.instance.store = _videoFingerprintStore;
+    _videoFingerprints.store = _videoFingerprintStore;
     final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return;
     final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
       listPaths: () => _videoFingerprintWarmPaths(svc),
+      fingerprints: _videoFingerprints,
     );
     _videoFingerprintWarmer = warmer;
     _videoFingerprintWarmStart = Timer(
@@ -1862,17 +1861,37 @@ extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
     );
   }
 
-  void _stopVideoFingerprintWarmup() {
+  /// 停机收尾：返回后本 host 发起的指纹计算全部结束（不再开着任何视频文件），落盘
+  /// 缓存也不再被写（BUG-5078 / BUG-5087）。最多等正在算的那一个文件。
+  Future<void> _stopVideoFingerprintWarmup() async {
     _videoFingerprintWarmStart?.cancel();
     _videoFingerprintWarmStart = null;
-    _videoFingerprintWarmer?.dispose();
+    final VideoFingerprintWarmer? warmer = _videoFingerprintWarmer;
     _videoFingerprintWarmer = null;
-    if (identical(
-      VideoSourceFingerprint.instance.store,
-      _videoFingerprintStore,
-    )) {
-      VideoSourceFingerprint.instance.store = null;
+    await warmer?.close();
+    while (_videoFingerprintWork.isNotEmpty) {
+      await Future.wait(_videoFingerprintWork.toList(growable: false));
     }
+    if (identical(_videoFingerprints.store, _videoFingerprintStore)) {
+      _videoFingerprints.store = null;
+    }
+    // 摘下之后才等：摘下前已拿到本缓存的写入（同进程别处的指纹计算）在这里收尾，
+    // 摘下后再算完的读到 store == null，不会再写。
+    await _videoFingerprintStore.idle();
+  }
+
+  /// 登记一次 `/fingerprint` 端点发起的指纹计算，[stop] 等它收尾。返回 [work] 本身：
+  /// 成败照常交给调用方处理，登记的只是「何时结束」。
+  Future<T> _trackVideoFingerprintWork<T>(Future<T> work) {
+    final Future<void> settled = work.then<void>(
+      (T _) {},
+      onError: (Object error, StackTrace stack) {},
+    );
+    _videoFingerprintWork.add(settled);
+    unawaited(
+      settled.whenComplete(() => _videoFingerprintWork.remove(settled)),
+    );
+    return work;
   }
 }
 

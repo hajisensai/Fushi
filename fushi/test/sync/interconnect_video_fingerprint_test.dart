@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -346,5 +347,106 @@ void main() {
       (jsonDecode(ok.body) as Map<String, dynamic>)['fingerprint'],
       sha256.convert(single.readAsBytesSync()).toString(),
     );
+  });
+
+  group('BUG-5078 / BUG-5087：host 停机等指纹计算收尾', () {
+    /// 起一台用可控指纹计算的 host：计算开始时完成 `started`，等 `release` 才返回。
+    /// 返回 host、落盘缓存文件与两个闸门。
+    Future<
+      ({
+        FushiSyncServer server,
+        File store,
+        Completer<void> started,
+        Completer<void> release,
+      })
+    >
+    gatedHost(String video) async {
+      final File file = File('${dir.path}/$video.mkv')
+        ..writeAsBytesSync(List<int>.filled(4096, 7));
+      final Directory root = Directory.systemTemp.createTempSync(
+        'hbk_vfp_stop',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final Completer<void> started = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: root.path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: _Host(
+          <(String, int), File>{('video/$video', 0): file},
+          videos: <RemoteVideoInfo>[
+            RemoteVideoInfo(id: 'video/$video', title: video),
+          ],
+        ),
+        videoFingerprints: VideoSourceFingerprint(
+          compute: (String absolutePath, FileStat stat) async {
+            if (!started.isCompleted) started.complete();
+            await release.future;
+            return 'c' * 64;
+          },
+        ),
+      );
+      await server.start();
+      return (
+        server: server,
+        store: File('${root.path}/video_fingerprints.json'),
+        started: started,
+        release: release,
+      );
+    }
+
+    /// 计算在途时停机：[FushiSyncServer.stop] 必须等它（及其落盘）结束才返回——之后
+    /// host 不再开着视频文件、不再写 sync-data 旁的缓存，调用方可以安全删目录。
+    Future<void> expectStopWaitsFor(
+      ({
+        FushiSyncServer server,
+        File store,
+        Completer<void> started,
+        Completer<void> release,
+      })
+      h,
+    ) async {
+      await h.started.future;
+      bool stopped = false;
+      final Future<void> stop = h.server.stop().then((_) => stopped = true);
+      // 停机路径上的其余收尾（关 socket、各子服务 dispose）都是 IO 级的短等待；
+      // 给足事件循环轮转，确认 stop 卡在指纹计算上而不是还没走到。
+      for (int i = 0; i < 20; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(stopped, isFalse, reason: '指纹计算还开着视频文件，stop 不能先返回');
+      h.release.complete();
+      await stop;
+      expect(
+        h.store.existsSync() && h.store.readAsStringSync().contains('c' * 64),
+        isTrue,
+        reason: '落盘写完才算收尾',
+      );
+    }
+
+    test('清单请求触发的后台预热', () async {
+      final h = await gatedHost('warm');
+      final ({int status, String body}) list = await _rawRequest(
+        'http://127.0.0.1:${h.server.port}',
+        '/api/library/videos',
+        token: token,
+      );
+      expect(list.status, 200);
+      await expectStopWaitsFor(h);
+    });
+
+    test('/fingerprint?wait=0 转后台算的那一次', () async {
+      final h = await gatedHost('later');
+      final ({int status, String body}) pending = await _rawRequest(
+        'http://127.0.0.1:${h.server.port}',
+        '/api/library/videos/video/later/fingerprint?'
+            '$kVideoFingerprintWaitQueryParam=0',
+        token: token,
+      );
+      expect(pending.status, kVideoFingerprintPendingStatus);
+      await expectStopWaitsFor(h);
+    });
   });
 }
