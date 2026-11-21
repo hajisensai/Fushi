@@ -541,8 +541,8 @@ class EmbeddedTorrentHost {
       enableNatpmp: discovery.natpmp,
       encPolicy: config.encryptionMode,
       anonymousMode: config.anonymousMode,
-      activeDownloads: config.maxActiveDownloads,
-      activeSeeds: config.maxActiveSeeds,
+      activeDownloads: libtorrentActiveLimitArg(config.maxActiveDownloads),
+      activeSeeds: libtorrentActiveLimitArg(config.maxActiveSeeds),
       maxUploadSlots: config.maxUploadSlots,
     );
     if (applied) {
@@ -1322,6 +1322,16 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
     fushiDebugPrint('[torrent] user paused write failed: $e');
   }
 }
+
+/// 活跃名额配置值 → `ht_apply_session_settings` 的入参（BUG-5071）。
+///
+/// native 只在入参 `> 0` 时写 `active_downloads` / `active_seeds`（`<= 0` 保持
+/// libtorrent 默认 3 / 5）。「不限」（负数，见
+/// [QbConnectionConfig.activeLimitUnlimited]）因此换成 int32 最大值下发：
+/// libtorrent 读这两项时本来就把负数映射成 int 最大值，两者等价，且新老 DLL
+/// 都走 `> 0` 分支生效，不依赖 native 改动。0 原样传（= 引擎默认）。
+int libtorrentActiveLimitArg(int configured) =>
+    configured < 0 ? 0x7fffffff : configured;
 
 /// 平台默认内置 DLL 路径解析：flutter runner 把 native 依赖放在可执行文件
 /// 旁（Windows）。阶段2 未接进 windows runner 前，这里返回 null 让

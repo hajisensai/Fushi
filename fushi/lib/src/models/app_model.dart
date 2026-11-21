@@ -353,7 +353,6 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi_engine/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
@@ -7529,37 +7528,9 @@ class AppModel
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
     final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     if (host == null) return;
-    final QbConnectionConfig effective = effectiveTorrentConfig(config);
-    host.post(
-      'applyLimits',
-      host.applyLimits(
-        downloadKbps: effective.downloadLimitKbps,
-        uploadKbps: effective.uploadLimitKbps,
-        maxConnections: effective.maxConnections,
-        limitLocalPeers: effective.limitLocalPeers,
-      ),
-    );
-    // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
-    // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
-    final TorrentMemorySettings mem = computeTorrentMemorySettings(
-      memoryLimitMb: effective.memoryLimitMb,
-      totalRamMb: detectTotalMemoryMb() ?? 0,
-    );
-    host.post(
-      'applyMemorySettings',
-      host.applyMemorySettings(
-        mem,
-        connectionsLimit: effective.maxConnections > 0
-            ? 0
-            : mem.connectionsLimit,
-      ),
-    );
-    // 会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
-    host.post('applySessionSettings', host.applySessionSettings(effective));
-    // 反吸血开关/阈值（用户可调）。
-    host.post('applyAntiLeechConfig', host.applyAntiLeechConfig(effective));
-    // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
-    host.post('setUploadPolicy', host.setUploadPolicy(effective));
+    // 限速 / 内存预算 / 会话级设置 / 反吸血 / 上传策略：与无头服务端共用同一份
+    // 下发序列（BUG-5071），见 [EmbeddedTorrentHostClient.postConfig]。
+    host.postConfig(effectiveTorrentConfig(config));
     // P2P 代理（默认直连；用户在系统设置里单独开启才跟全局代理）。
     _applyEmbeddedTorrentProxy();
   }
@@ -8715,10 +8686,7 @@ class AppModel
       onTick: () {
         // BUG-3577：两轮扫描在工作 isolate 里按序执行，这里只投递。
         final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
-        if (host != null) {
-          host.post('sweepAntiLeech', host.sweepAntiLeech());
-          host.post('sweepUploadPolicy', host.sweepUploadPolicy());
-        }
+        host?.postMaintenanceSweep();
         unawaited(_saveEmbeddedTorrentResume());
       },
     )..start();
