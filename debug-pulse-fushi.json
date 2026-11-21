@@ -1,12 +1,254 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T03:57:45Z",
+ "generatedAt": "2026-11-21T05:32:37Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
-  "seq": 30413
+  "sha": "2ddafb44b41ef4afdabd4497b6e91fde97bc0316",
+  "seq": 30416
  },
  "builds": [
+  {
+   "seq": 30413,
+   "version": "3.4.0",
+   "sha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
+   "unknown": false,
+   "publishedAt": "2026-11-21T05:32:25Z",
+   "testflight": false,
+   "baseSeq": 30040,
+   "prs": [
+    3951,
+    3979,
+    3978,
+    3977,
+    3976,
+    3975,
+    3974,
+    3973,
+    3972,
+    3971,
+    3970,
+    3969,
+    3968,
+    3967,
+    3966,
+    3965,
+    3964,
+    3963,
+    3962,
+    3961,
+    3960,
+    3959,
+    3958,
+    3957,
+    3956,
+    3955,
+    3954,
+    3953,
+    3952,
+    3950,
+    3949,
+    3948,
+    3947,
+    3946,
+    3945,
+    3944,
+    3943,
+    3942,
+    3941,
+    3940,
+    3939,
+    3938,
+    3937,
+    3936,
+    3935,
+    3934,
+    3933,
+    3932,
+    3931,
+    3930,
+    3929,
+    3928,
+    3927,
+    3926,
+    3925,
+    3924,
+    3923,
+    3922,
+    3921,
+    3920,
+    3919,
+    3918,
+    3917,
+    3916,
+    3915,
+    3914,
+    3913,
+    3912,
+    3911,
+    3910,
+    3909,
+    3908,
+    3907,
+    3906,
+    3905,
+    3904,
+    3602,
+    3468,
+    3466,
+    3874,
+    3903,
+    3902,
+    3901,
+    3900,
+    3899,
+    3898,
+    3897,
+    3896,
+    3895,
+    3893,
+    3892,
+    3891,
+    3890,
+    3889,
+    3888,
+    3887,
+    3886,
+    3885,
+    3884,
+    3883,
+    3882,
+    3880,
+    3879,
+    3878,
+    3877,
+    3876,
+    3875,
+    3873,
+    3872,
+    3871,
+    3870,
+    3869,
+    3868,
+    3867,
+    3866,
+    3865,
+    3863,
+    3862,
+    3861,
+    3860,
+    3859,
+    3858,
+    3857,
+    3856,
+    3855,
+    3854,
+    3853,
+    3852,
+    3851,
+    3850,
+    3849,
+    3848,
+    3847,
+    3846,
+    3845
+   ],
+   "direct": [
+    {
+     "sha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
+     "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-fix-fc0e29"
+    },
+    {
+     "sha": "509568de042599e3e0baf98ace345dac687b8cfd",
+     "subject": "fix(android-build): 每次出包都按源码戳记核对 Android .so，不再把源码已变的旧库静默打进包"
+    },
+    {
+     "sha": "a04894ad476640fc65d7c7382e53b34cae951d09",
+     "subject": "test(settings): 跳转记录 / 视频续播 / 下一集顺序登记进覆盖账本（develop 上该守卫红）"
+    },
+    {
+     "sha": "f6c3fe83c69c0ebc7da21ae8b59ce0257ba7bca3",
+     "subject": "docs(manga): aiUpscale 注释订正高质量档只在 DirectML 上跑（与引擎 tier_supported 一致）"
+    },
+    {
+     "sha": "d459e3163f4f1b780c571c606152b63915d82127",
+     "subject": "fix(upscale): 模型加载失败后这代配置按没就绪处理，不再每次提交都重载一遍模型、反复弹不可用"
+    },
+    {
+     "sha": "492a2bbe9013c207b36640773643001d82c63ad4",
+     "subject": "style(upscale): cargo fmt 超分引擎源码（#3951 合入后 rust-format 门会红）"
+    },
+    {
+     "sha": "119e7944ba462369542bd8c640ffdff4c6224115",
+     "subject": "fix(android-build): 本机出 Release 包在新 worktree 里能编过"
+    },
+    {
+     "sha": "5e1e6c3ba83cff18c5de96607a3099975b0ff05c",
+     "subject": "test: 两条新守卫的注释剥离改走 source_guard.maskComments"
+    },
+    {
+     "sha": "25c27037e0af01dcb7da4902aa56fd82320be5f1",
+     "subject": "test: 闭包不碰 dart:ui 的 7 个测试改用 package:test"
+    },
+    {
+     "sha": "d16f4af3a052ef89b9bfdc715eb8d244ab3f0775",
+     "subject": "fix(bt-site): 解析规则模板框改用 M3E 形状 / 面色 token"
+    },
+    {
+     "sha": "1e43a87c55471c069ff12147c16deb8b49d3558d",
+     "subject": "fix(prefs): video_resume_mode 按字母序排到 video_respect_ass_style 之后"
+    },
+    {
+     "sha": "ef199704c25c4a595b511bee6baa980133524078",
+     "subject": "test(video): 恢复起点静态守卫认 resolveVideoStart"
+    },
+    {
+     "sha": "85a3a23158aa38320ef00e42ba968e59c5e00550",
+     "subject": "test(web-video): 重建暂停守卫的锚点跟上 #3934 的会话结构"
+    },
+    {
+     "sha": "69f8328a8c1a90deb03a310fd8cac00defbf304d",
+     "subject": "ci: 本批新合入的三处 actions/checkout@v6 钉 40 位 SHA"
+    },
+    {
+     "sha": "c993560f0b2d0e2412012e46ef59be936f5a923c",
+     "subject": "chore(bugs): settle BUG number collisions on 71d1a8d36"
+    },
+    {
+     "sha": "71d1a8d36001fdebc5780a92f35889518e4f7628",
+     "subject": "docs(bugs): 重建 BUGS.md 索引（合流后残留多份「共 N 条」与重复行）"
+    },
+    {
+     "sha": "3e39b7c9466fe782b80a8452fccd0f0da1b188eb",
+     "subject": "fix(item-menu): 互联下载的发起/暂停/继续/取消回到右键菜单主操作行"
+    },
+    {
+     "sha": "d9b15870debc2097b5a8345fbd50194cd2cee639",
+     "subject": "fix(popup): 撤掉 #3851 的抬手选区探针，BUG-4911 并入 BUG-4925 的选区变化作废机制（同一检测器只留一套判据，旧选区不挡滑关）"
+    },
+    {
+     "sha": "3e83c6ed3fbe6402f9224a522de62c011d81af47",
+     "subject": "test(import): 开包定性调用方守卫改用 maskComments，不再手写 indexOf('//') 剥注释（合并后必跑 source_guard_adoption 红）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555136"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
+    },
+    "ios": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
+    }
+   }
+  },
   {
    "seq": 30040,
    "version": "3.4.0",
@@ -174,8 +416,8 @@
    "version": "3.4.0",
    "sha": "4d0daa3f864dfe2f88639d0c5c7bf2570f0bec81",
    "unknown": false,
-   "publishedAt": "2026-11-20T13:52:40Z",
-   "testflight": true,
+   "publishedAt": "2026-11-20T13:49:42Z",
+   "testflight": false,
    "baseSeq": 29190,
    "prs": [
     3802,
@@ -189,252 +431,44 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44734680517"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
-  "headSeq": 30413,
+  "headSha": "2ddafb44b41ef4afdabd4497b6e91fde97bc0316",
+  "headSeq": 30416,
   "prs": [
-   3951,
-   3979,
-   3978,
-   3977,
-   3976,
-   3975,
-   3974,
-   3973,
-   3972,
-   3971,
-   3970,
-   3969,
-   3968,
-   3967,
-   3966,
-   3965,
-   3964,
-   3963,
-   3962,
-   3961,
-   3960,
-   3959,
-   3958,
-   3957,
-   3956,
-   3955,
-   3954,
-   3953,
-   3952,
-   3950,
-   3949,
-   3948,
-   3947,
-   3946,
-   3945,
-   3944,
-   3943,
-   3942,
-   3941,
-   3940,
-   3939,
-   3938,
-   3937,
-   3936,
-   3935,
-   3934,
-   3933,
-   3932,
-   3931,
-   3930,
-   3929,
-   3928,
-   3927,
-   3926,
-   3925,
-   3924,
-   3923,
-   3922,
-   3921,
-   3920,
-   3919,
-   3918,
-   3917,
-   3916,
-   3915,
-   3914,
-   3913,
-   3912,
-   3911,
-   3910,
-   3909,
-   3908,
-   3907,
-   3906,
-   3905,
-   3904,
-   3602,
-   3468,
-   3466,
-   3874,
-   3903,
-   3902,
-   3901,
-   3900,
-   3899,
-   3898,
-   3897,
-   3896,
-   3895,
-   3893,
-   3892,
-   3891,
-   3890,
-   3889,
-   3888,
-   3887,
-   3886,
-   3885,
-   3884,
-   3883,
-   3882,
-   3880,
-   3879,
-   3878,
-   3877,
-   3876,
-   3875,
-   3873,
-   3872,
-   3871,
-   3870,
-   3869,
-   3868,
-   3867,
-   3866,
-   3865,
-   3863,
-   3862,
-   3861,
-   3860,
-   3859,
-   3858,
-   3857,
-   3856,
-   3855,
-   3854,
-   3853,
-   3852,
-   3851,
-   3850,
-   3849,
-   3848,
-   3847,
-   3846,
-   3845
+   3985
   ],
-  "direct": [
-   {
-    "sha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
-    "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-fix-fc0e29"
-   },
-   {
-    "sha": "509568de042599e3e0baf98ace345dac687b8cfd",
-    "subject": "fix(android-build): 每次出包都按源码戳记核对 Android .so，不再把源码已变的旧库静默打进包"
-   },
-   {
-    "sha": "a04894ad476640fc65d7c7382e53b34cae951d09",
-    "subject": "test(settings): 跳转记录 / 视频续播 / 下一集顺序登记进覆盖账本（develop 上该守卫红）"
-   },
-   {
-    "sha": "f6c3fe83c69c0ebc7da21ae8b59ce0257ba7bca3",
-    "subject": "docs(manga): aiUpscale 注释订正高质量档只在 DirectML 上跑（与引擎 tier_supported 一致）"
-   },
-   {
-    "sha": "d459e3163f4f1b780c571c606152b63915d82127",
-    "subject": "fix(upscale): 模型加载失败后这代配置按没就绪处理，不再每次提交都重载一遍模型、反复弹不可用"
-   },
-   {
-    "sha": "492a2bbe9013c207b36640773643001d82c63ad4",
-    "subject": "style(upscale): cargo fmt 超分引擎源码（#3951 合入后 rust-format 门会红）"
-   },
-   {
-    "sha": "119e7944ba462369542bd8c640ffdff4c6224115",
-    "subject": "fix(android-build): 本机出 Release 包在新 worktree 里能编过"
-   },
-   {
-    "sha": "5e1e6c3ba83cff18c5de96607a3099975b0ff05c",
-    "subject": "test: 两条新守卫的注释剥离改走 source_guard.maskComments"
-   },
-   {
-    "sha": "25c27037e0af01dcb7da4902aa56fd82320be5f1",
-    "subject": "test: 闭包不碰 dart:ui 的 7 个测试改用 package:test"
-   },
-   {
-    "sha": "d16f4af3a052ef89b9bfdc715eb8d244ab3f0775",
-    "subject": "fix(bt-site): 解析规则模板框改用 M3E 形状 / 面色 token"
-   },
-   {
-    "sha": "1e43a87c55471c069ff12147c16deb8b49d3558d",
-    "subject": "fix(prefs): video_resume_mode 按字母序排到 video_respect_ass_style 之后"
-   },
-   {
-    "sha": "ef199704c25c4a595b511bee6baa980133524078",
-    "subject": "test(video): 恢复起点静态守卫认 resolveVideoStart"
-   },
-   {
-    "sha": "85a3a23158aa38320ef00e42ba968e59c5e00550",
-    "subject": "test(web-video): 重建暂停守卫的锚点跟上 #3934 的会话结构"
-   },
-   {
-    "sha": "69f8328a8c1a90deb03a310fd8cac00defbf304d",
-    "subject": "ci: 本批新合入的三处 actions/checkout@v6 钉 40 位 SHA"
-   },
-   {
-    "sha": "c993560f0b2d0e2412012e46ef59be936f5a923c",
-    "subject": "chore(bugs): settle BUG number collisions on 71d1a8d36"
-   },
-   {
-    "sha": "71d1a8d36001fdebc5780a92f35889518e4f7628",
-    "subject": "docs(bugs): 重建 BUGS.md 索引（合流后残留多份「共 N 条」与重复行）"
-   },
-   {
-    "sha": "3e39b7c9466fe782b80a8452fccd0f0da1b188eb",
-    "subject": "fix(item-menu): 互联下载的发起/暂停/继续/取消回到右键菜单主操作行"
-   },
-   {
-    "sha": "d9b15870debc2097b5a8345fbd50194cd2cee639",
-    "subject": "fix(popup): 撤掉 #3851 的抬手选区探针，BUG-4911 并入 BUG-4925 的选区变化作废机制（同一检测器只留一套判据，旧选区不挡滑关）"
-   },
-   {
-    "sha": "3e83c6ed3fbe6402f9224a522de62c011d81af47",
-    "subject": "test(import): 开包定性调用方守卫改用 maskComments，不再手写 indexOf('//') 剥注释（合并后必跑 source_guard_adoption 红）"
-   }
-  ],
+  "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555136"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572568"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
    }
   }
  },
@@ -2351,6 +2385,15 @@
    "mergedAt": "2026-11-21T00:04:56Z",
    "additions": 623,
    "deletions": 6,
+   "labels": []
+  },
+  "3985": {
+   "number": 3985,
+   "title": "fix(srs-gen4): 嵌套并入的库迁移核对失败（BUG-5056）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T05:22:17Z",
+   "additions": 737,
+   "deletions": 69,
    "labels": []
   }
  }
