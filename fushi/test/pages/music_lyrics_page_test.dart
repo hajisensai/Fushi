@@ -317,8 +317,14 @@ void main() {
         ),
       ),
     );
-    // sidecar 读文件 / 解析是真 IO：在真异步区里等它落地，再推帧。
-    for (int i = 0; i < 10; i++) {
+    // sidecar 读文件 / 解析、后台 isolate 找 .cdg 都是真 IO：交替让真异步区跑一拍、推一帧，
+    // 至少 10 拍，且推到页面报告这首的歌词已落地为止——不按真实时长猜（原先固定 10 × 20 ms，
+    // 满载的慢 worker 上歌词还没出来，后面按语义标签找行就扑空）。
+    final State<StatefulWidget> state = tester.state(
+      find.byType(MusicLyricsPage),
+    );
+    bool settled() => (state as dynamic).lyricsLoadSettled as bool;
+    for (int i = 0; i < 10 || !settled(); i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );

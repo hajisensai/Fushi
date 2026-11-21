@@ -333,6 +333,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   String? _cdgPath;
   bool _loading = false;
 
+  /// 当前曲目的歌词解析（[_load]：sidecar 读文件、后台 isolate 找 `.cdg`）是否已落地。
+  /// 测试据此推帧到真 IO 跑完为止，而不是猜一段真实时长（慢机器上猜短了就是伪红）。
+  @visibleForTesting
+  bool get lyricsLoadSettled {
+    final String? uid = _engine.current?.trackUid;
+    return uid != null && uid == _loadedUid && !_loading;
+  }
+
   /// 在线搜歌词进行中（LRCLIB + 各歌词插件串行，装了插件可能要几秒）：歌词区显示进度、
   /// 「选择来源 / 搜索在线歌词」置灰，防止用户以为没反应重复触发叠出多个候选框。
   bool _searchingOnline = false;

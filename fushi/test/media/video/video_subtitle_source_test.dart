@@ -1506,6 +1506,12 @@ At least one output file must be specified
         return;
       }
       setFfmpegBackendForTesting(null);
+      // 被测代码要用的正是上面验过能跑的那一份：它可能只是随包统一 FFmpeg（PATH 上
+      // 没有 ffmpeg 的 worker，如 wight-mac），而生产解析是「覆盖 > app 旁捆绑 > PATH」，
+      // 测试进程旁没有捆绑件——不装配覆盖，合成成功、枚举却去 PATH 找 ffmpeg 起不来。
+      final String? previousFfmpeg = ffmpegPathOverride;
+      ffmpegPathOverride = ffmpeg;
+      addTearDown(() => ffmpegPathOverride = previousFfmpeg);
       final File srt = File(p.join(tempDir.path, 'sample.srt'))
         ..writeAsStringSync('''
 1
