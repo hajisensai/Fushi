@@ -85,8 +85,10 @@ class FavoriteSentence {
         normCharOffset: json['normCharOffset'] as int?,
         normCharLength: json['normCharLength'] as int?,
         color: json['color'] as String?,
+        // wire 上是带 `Z` 的 UTC 时刻（见 [toJson]），读进来统一转本地，与 [fromRow]
+        // 读库得到的时刻同一口径（DateTime 的 == 连 isUtc 一起比）。
         colorUpdatedAt: switch (json['colorUpdatedAt']) {
-          final String raw => DateTime.tryParse(raw),
+          final String raw => DateTime.tryParse(raw)?.toLocal(),
           _ => null,
         },
         // 向后兼容：旧条目无 source → 默认书籍；无 dateKey → 留空（不计入按日统计）。
@@ -166,8 +168,11 @@ class FavoriteSentence {
     if (normCharOffset != null) 'normCharOffset': normCharOffset,
     if (normCharLength != null) 'normCharLength': normCharLength,
     if (color != null) 'color': color,
+    // 颜色时钟是跨设备 LWW 比较的依据，必须是绝对时刻：一律写 UTC（带 `Z`）。
+    // 本地时间的 ISO 串不带时区，不同时区的设备（含跑在 UTC 容器里的 fushi_server）
+    // 会把同一个串读成相差几小时的时刻，改色的先后就判反了。
     if (colorUpdatedAt != null)
-      'colorUpdatedAt': colorUpdatedAt!.toIso8601String(),
+      'colorUpdatedAt': colorUpdatedAt!.toUtc().toIso8601String(),
     'source': source,
     if (dateKey != null) 'dateKey': dateKey,
     if (expression != null) 'expression': expression,

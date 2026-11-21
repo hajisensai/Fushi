@@ -149,6 +149,36 @@ void main() {
       expect(back.colorUpdatedAt, recolored.colorUpdatedAt);
       expect(untouched.toJson().containsKey('colorUpdatedAt'), isFalse);
     });
+
+    test('颜色时钟在 wire 上是带 Z 的 UTC 绝对时刻：不同时区的设备按真实先后取色', () {
+      // 本地时间的 ISO 串不带时区，别的时区读进来会差几个小时，LWW 先后判反。
+      final String wire = recolored.toJson()['colorUpdatedAt']! as String;
+      expect(wire, recolored.colorUpdatedAt!.toUtc().toIso8601String());
+      expect(wire.endsWith('Z'), isTrue);
+      // 对端（UTC+9）在本机改色之后一小时改成蓝色，wire 带显式时区偏移。
+      final DateTime remoteAt = recolored.colorUpdatedAt!.add(
+        const Duration(hours: 1),
+      );
+      final Map<String, dynamic> remoteJson =
+          jsonDecode(jsonEncode(recolored.toJson())) as Map<String, dynamic>
+            ..['color'] = 'blue'
+            ..['colorUpdatedAt'] = remoteAt
+                .toUtc()
+                .add(const Duration(hours: 9))
+                .toIso8601String()
+                .replaceFirst('Z', '+09:00');
+      final FavoriteSentence remote = FavoriteSentence.fromJson(remoteJson);
+      expect(
+        remote.colorUpdatedAt!.microsecondsSinceEpoch,
+        remoteAt.microsecondsSinceEpoch,
+      );
+      final FavoriteSentence m = AggregateMergeService.mergeFavoriteSentences(
+        <FavoriteSentence>[recolored],
+        <FavoriteSentence>[remote],
+      ).single;
+      expect(m.color, 'blue');
+      expect(m.toJson()['colorUpdatedAt'], remoteAt.toUtc().toIso8601String());
+    });
   });
 
   test('FavoriteSentenceRepository.setColor 落库颜色与时钟，getAll 读回', () async {
