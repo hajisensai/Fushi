@@ -14,6 +14,16 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import '../../ops/book_metadata_test_fixture.dart';
 
 /// [BookMetadataScrapeFacade]：从弹窗搬出来的候选解析规则 + 写回 / 快照 / 恢复。
+
+/// 只取可见候选（门面只暴露 [BookMetadataScrapeFacade.searchDetailed]：弹窗与控制
+/// 通道都走它）。
+Future<List<BookScrapeCandidate>> _search(
+  BookMetadataScrapeFacade facade, {
+  required BookScrapeSource source,
+  required String query,
+}) async =>
+    (await facade.searchDetailed(source: source, query: query)).candidates;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -27,7 +37,8 @@ void main() {
           searchHits: <Map<String, Object?>>[bangumiSubject('9', 'Searched')],
         ),
       );
-      final List<BookScrapeCandidate> got = await facade.search(
+      final List<BookScrapeCandidate> got = await _search(
+        facade,
         source: BookScrapeSource.bangumi,
         query: 'https://bgm.tv/subject/42',
       );
@@ -46,7 +57,8 @@ void main() {
           ],
         ),
       );
-      final List<BookScrapeCandidate> got = await facade.search(
+      final List<BookScrapeCandidate> got = await _search(
+        facade,
         source: BookScrapeSource.bangumi,
         query: '1984',
       );
@@ -61,7 +73,7 @@ void main() {
         scraper: offlineScraper(),
       );
       expect(
-        await facade.search(source: BookScrapeSource.bangumi, query: '  '),
+        await _search(facade, source: BookScrapeSource.bangumi, query: '  '),
         isEmpty,
       );
     });

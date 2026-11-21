@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// Source-scan guard locking the TODO-905 robust-open invariants into the
 /// database.dart open path so a later refactor can't silently regress to the
 /// naive "createInBackground + bare PRAGMA journal_mode=WAL, no recovery"
@@ -25,11 +27,25 @@ void main() {
       reason: 'both _openDb and _openDbFile must route through recovery',
     );
     // _openDb / _openDbFile must NOT call createInBackground directly anymore.
-    expect(
-      RegExp(r'_openDb\b[\s\S]{0,400}createInBackground').hasMatch(src),
-      isFalse,
-      reason: '_openDb must not bypass recovery with a direct open',
-    );
+    // 按函数体判（注释掩掉）：旧写法是「`_openDb` 之后 400 字内出现
+    // createInBackground」，`_openDb` 下方 doc 注释里提到 `createInBackground`
+    // 就误红，而真把直开写进函数体、只要离名字超过 400 字又会漏。
+    for (final String signature in <String>[
+      'LazyDatabase _openDb(',
+      'LazyDatabase _openDbFile(',
+    ]) {
+      final String body = methodBody(maskComments(src), signature);
+      expect(
+        body,
+        contains('_openWithRecovery('),
+        reason: '$signature must route through recovery',
+      );
+      expect(
+        body.contains('createInBackground'),
+        isFalse,
+        reason: '_openDb must not bypass recovery with a direct open',
+      );
+    }
   });
 
   test('Layer 1 checkpoint runs BEFORE any sidecar deletion (red line #1)', () {

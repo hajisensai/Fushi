@@ -32,9 +32,30 @@ void main() {
   test('completed handler gates on the auto-play-next toggle + playlist '
       'and reentry guards (TODO-639)', () {
     expect(pageSource, contains('bool _autoAdvanceInFlight = false'));
+    // 媒体服务器线路故障转移落地后，EOF 回调分三层：_handlePlaybackCompleted
+    // 取 EOF 那一刻的位置 → _handlePlaybackEnded 先问能否换线路续播（流中途断了）
+    // → 换不了 / 真播完才进 _finishPlaybackCompleted 做连播门控。前两层只许转发，
+    // 门控整段钉在 _finishPlaybackCompleted（连同它调用的 _autoAdvanceTargetEpisode）。
+    final String entry = _functionSource(
+      pageSource,
+      '  void _handlePlaybackCompleted() =>',
+      '  /// 播放器报 EOF',
+    );
+    expect(entry, contains('_handlePlaybackEnded('));
+    final String ended = _functionSource(
+      pageSource,
+      '  void _handlePlaybackEnded({',
+      '  /// 流断了之后换线路重载',
+    );
+    expect(ended, contains('_finishPlaybackCompleted(positionMs);'));
+    expect(
+      ended,
+      isNot(contains('_startAutoAdvanceCountdown(')),
+      reason: '连播只能经 _finishPlaybackCompleted 的门控进倒计时',
+    );
     final String fn = _functionSource(
       pageSource,
-      '  void _handlePlaybackCompleted() {',
+      '  void _finishPlaybackCompleted(int? positionMs) {',
       '  /// 启动自动连播倒计时',
     );
 
