@@ -1,4 +1,4 @@
-## BUG-4906 · Apple 设计下自定义背景图片不显示（首页 / 设置页全白底）
+## BUG-5059 · Apple 设计下自定义背景图片不显示（首页 / 设置页全白底）
 - **报告**：2026-11-19（用户：社区反馈截图——「页面背景」选了自定义图片、所有模块跟随全局，缩略图里有图，首页与设置页仍是白底）
 - **真实性**：✅ 真 bug。截图里出现「形状样式只在 Material 设计中显示」提示，即用户选的是 Apple（玻璃）设计；设置页文案与代码注释都承诺「自定义图片所有设计都显示」，实际 Apple 下一页都不画。三处叠加：
   - 根因 1：`fushi/lib/src/models/theme_notifier.dart:3284` Apple 分支的 `pageTransitionsTheme` 没套 `FushiBackdropPageTransitionsBuilder`（只有 Material 分支套了），Apple 下没有任何路由挂 `FushiPageBackdrop`。
