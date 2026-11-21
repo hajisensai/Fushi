@@ -417,15 +417,18 @@ const double _kSegmentPadding = 16;
 /// 换页签 / 换页名时的入场位移（逻辑 px）：小幅位移 + 淡入，不做大幅滑动。
 const double _kMastheadEnterTravel = 28;
 
-/// 页名大字：字重 900、字距 -0.045em、行高 0.98；宽窗 84 / 窄窗 46（滚动收缩
-/// 由绘制层缩放，这里是展开态字号）。
+/// 页名大字（滚动收缩由绘制层缩放，这里是展开态字号）：[tier] 档的字阶，见
+/// [FushiPageTitleMetrics.titleScale]（模块页 [FushiPageTitleTier.page] 宽窗
+/// 84 / 窄窗 46、w900；设置分类页 [FushiPageTitleTier.section] 52 / 34、w700）。
 TextStyle fushiMastheadTitleStyle(
   BuildContext context, {
   required bool compact,
+  FushiPageTitleTier tier = FushiPageTitleTier.page,
 }) {
   return FushiPageTitleMetrics.forCompact(compact).titleStyle(
     Theme.of(context).textTheme.displayLarge ?? const TextStyle(),
     color: fushiMastheadPaletteOf(context).ink,
+    tier: tier,
   );
 }
 
@@ -673,11 +676,15 @@ class FushiMastheadTitle extends StatelessWidget {
     required this.title,
     required this.compact,
     this.maxLines,
+    this.tier = FushiPageTitleTier.page,
     super.key,
   });
 
   final String title;
   final bool compact;
+
+  /// 页名字阶档位（设置分类页用 [FushiPageTitleTier.section]）。
+  final FushiPageTitleTier tier;
 
   /// null（默认，模块页）：自己按 [FushiPageTitleMetrics.fitTitle] 缩字号 / 换行。
   /// 非 null（二级页头）：调用方已按 [fushiMastheadTitleFit] 定好缩放与折行宽，
@@ -690,7 +697,11 @@ class FushiMastheadTitle extends StatelessWidget {
     // container：页名自己成一个语义节点。不成节点的话「书架」这个 label 会一路
     // 向上并进外壳的手势 / 焦点节点（与侧栏、页签争成兄弟合并组），换页或
     // 重排时框架复用这些共享节点就会断言 `!child.attached`。
-    final TextStyle base = fushiMastheadTitleStyle(context, compact: compact);
+    final TextStyle base = fushiMastheadTitleStyle(
+      context,
+      compact: compact,
+      tier: tier,
+    );
     return Semantics(
       container: true,
       header: true,

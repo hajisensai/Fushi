@@ -8,6 +8,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiPageHeader, FushiPageScaffold, FushiToolScaffold;
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show FushiMastheadPanel;
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
+    show FushiPageTitleTier;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiAppBar;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -78,6 +80,38 @@ void main() {
       find.byType(FushiMastheadPanel),
     );
     expect(panel.progress, greaterThan(0));
+  });
+
+  // 2026-11-20 用户截图「设置的字看着怪」：设置页名用二级字阶（52 / w700），
+  // 库页仍是 84 / w900 大字。
+  testWidgets('titleTier: section 的页名是 52 / w700，默认 page 仍是 84 / w900', (
+    WidgetTester tester,
+  ) async {
+    Future<TextStyle?> titleStyleFor(FushiPageTitleTier size) async {
+      await pumpHost(
+        tester,
+        Scaffold(
+          body: FushiMastheadHeader(
+            key: ValueKey<FushiPageTitleTier>(size),
+            title: 'General',
+            titleTier: size,
+            progress: 0,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      final RenderParagraph paragraph = tester.renderObject(
+        find.text('General'),
+      );
+      return paragraph.text.style;
+    }
+
+    final TextStyle? page = await titleStyleFor(FushiPageTitleTier.page);
+    expect(page?.fontSize, 84);
+    expect(page?.fontWeight, FontWeight.w900);
+    final TextStyle? section = await titleStyleFor(FushiPageTitleTier.section);
+    expect(section?.fontSize, 52);
+    expect(section?.fontWeight, FontWeight.w700);
   });
 
   /// 手机窄窗（380 宽）里挂一个带一颗动作的二级页头，返回页名的 RenderParagraph。

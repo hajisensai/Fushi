@@ -49,7 +49,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         kFushiMastheadActionExtent,
         kFushiMastheadTrackedOffset;
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
-    show FushiPageTitleMetrics;
+    show FushiPageTitleMetrics, FushiPageTitleScale, FushiPageTitleTier;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show fushiExpressiveMotionEnabled;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
@@ -91,6 +91,7 @@ typedef _TitleFitKey = ({
   double maxWidth,
   TextScaler textScaler,
   TextDirection direction,
+  FushiPageTitleTier tier,
   bool singleLine,
 });
 
@@ -104,10 +105,14 @@ class _MastheadTitleBox extends StatefulWidget {
     required this.compact,
     required this.scale,
     required this.singleLine,
+    required this.tier,
   });
 
   final String title;
   final bool compact;
+
+  /// 页名字阶档位。
+  final FushiPageTitleTier tier;
 
   /// 绘制层缩放（相对满字号）：滚动收缩进度对应的比例。
   final double scale;
@@ -123,20 +128,17 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
   _TitleFitKey? _fitKey;
   FushiMastheadTitleFit? _fit;
 
-  FushiMastheadTitleFit _fitFor(
-    _TitleFitKey key,
-    FushiPageTitleMetrics metrics,
-  ) {
+  FushiMastheadTitleFit _fitFor(_TitleFitKey key, FushiPageTitleScale scale) {
     final FushiMastheadTitleFit? cached = _fit;
     if (cached != null && key == _fitKey) return cached;
-    final double full = metrics.titleFontSize;
+    final double full = scale.fontSize;
     final FushiMastheadTitleFit fit = fushiMastheadTitleFit(
       text: key.text,
       style: key.style,
       maxWidth: key.maxWidth,
-      singleLineMinScale: metrics.collapsedTitleFontSize / full,
-      twoLineMinScale: metrics.twoLineMinTitleFontSize / full,
-      twoLineMaxScale: metrics.twoLineMaxTitleFontSize / full,
+      singleLineMinScale: scale.collapsedFontSize / full,
+      twoLineMinScale: scale.twoLineMinFontSize / full,
+      twoLineMaxScale: scale.twoLineMaxFontSize / full,
       direction: key.direction,
       textScaler: key.textScaler,
       maxLines: key.singleLine ? 1 : 2,
@@ -148,17 +150,18 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiPageTitleMetrics metrics = FushiPageTitleMetrics.forCompact(
+    final FushiPageTitleScale titleScale = FushiPageTitleMetrics.forCompact(
       widget.compact,
-    );
+    ).titleScale(widget.tier);
     final TextStyle style = fushiMastheadTitleStyle(
       context,
       compact: widget.compact,
+      tier: widget.tier,
     );
     final TextScaler textScaler = MediaQuery.textScalerOf(context);
     final TextDirection direction = Directionality.of(context);
     final double lineHeight =
-        textScaler.scale(metrics.titleFontSize) * (style.height ?? 1);
+        textScaler.scale(titleScale.fontSize) * titleScale.lineHeight;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final FushiMastheadTitleFit fit = _fitFor((
@@ -167,8 +170,9 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
           maxWidth: constraints.maxWidth,
           textScaler: textScaler,
           direction: direction,
+          tier: widget.tier,
           singleLine: widget.singleLine,
-        ), metrics);
+        ), titleScale);
         final double fitScale = math.min(widget.scale, fit.scale);
         final double width = math.min(
           constraints.maxWidth,
@@ -192,6 +196,7 @@ class _MastheadTitleBoxState extends State<_MastheadTitleBox> {
                   title: widget.title,
                   compact: widget.compact,
                   maxLines: fit.lines,
+                  tier: widget.tier,
                 ),
               ),
             ),
@@ -218,10 +223,14 @@ class FushiMastheadHeader extends StatelessWidget {
     this.badge,
     this.subtitle,
     this.bottom,
+    this.titleTier = FushiPageTitleTier.page,
     super.key,
   });
 
   final String title;
+
+  /// 页名字阶档位（设置分类页用 [FushiPageTitleTier.section]）。
+  final FushiPageTitleTier titleTier;
 
   /// 收缩进度（0 = 展开）：非 [titleInBody] 时页名按它在绘制层缩小。
   final double progress;
@@ -261,11 +270,10 @@ class FushiMastheadHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool compact = fushiMastheadCompact(context);
-    final FushiPageTitleMetrics metrics = FushiPageTitleMetrics.forCompact(
+    final FushiPageTitleScale titleScale = FushiPageTitleMetrics.forCompact(
       compact,
-    );
-    final double collapsed =
-        metrics.collapsedTitleFontSize / metrics.titleFontSize;
+    ).titleScale(titleTier);
+    final double collapsed = titleScale.collapsedFontSize / titleScale.fontSize;
     final double p = progress.clamp(0.0, 1.0);
     final double scale = titleInBody ? collapsed : lerpDouble(1, collapsed, p)!;
     final Widget titleBox = _MastheadTitleBox(
@@ -275,6 +283,7 @@ class FushiMastheadHeader extends StatelessWidget {
       // 裸图标行行高固定 kFushiMastheadBareRowExtent（48），装不下两行：页名
       // 只是滚过正文大标题后的定位提示，按收起态字号一行、放不下省略。
       singleLine: titleInBody,
+      tier: titleTier,
     );
     final Widget? lead =
         leading ??
