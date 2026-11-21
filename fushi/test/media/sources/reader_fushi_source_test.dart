@@ -1221,8 +1221,9 @@ void main() {
     });
 
     test('author override writes back to epubBooks.author column', () {
+      // BUG-5082：作者能力挂在书族基类上（EPUB / 漫画 / PDF 同一列），不再逐子类覆盖。
       final String source = File(
-        'lib/src/media/sources/reader_fushi_source.dart',
+        'lib/src/media/sources/reader_media_source.dart',
       ).readAsStringSync();
       expect(source, contains('bool get supportsAuthorEdit => true'));
       expect(source, contains('updateEpubBookAuthor'));
