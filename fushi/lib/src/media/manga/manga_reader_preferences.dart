@@ -223,8 +223,8 @@ class MangaReaderPreferences {
   final bool gammaCorrectScaling;
 
   /// 低清页 AI 超分：`off` / `light` / `high`（默认关）。只在页图显示得比原图大时才做；轻量档框外
-  /// ArtCNN、框内 Catmull-Rom，高质量档 waifu2x swin_unet（需要 GPU：Windows DirectML 加速包 /
-  /// Apple CoreML，没有时按轻量档做）。见 `manga_upscale_controller.dart` 与设计文档 §4。
+  /// ArtCNN、框内 Catmull-Rom，高质量档 waifu2x swin_unet（只在 Windows DirectML 加速包上跑——
+  /// CoreML 建不了 swin 会话、CPU 太慢，引擎 `tier_supported` 判不支持时按轻量档做）。见 `manga_upscale_controller.dart` 与设计文档 §4。
   final String aiUpscale;
   final bool lookupOnHover;
   final bool showOcrBoxes;
