@@ -79,7 +79,7 @@ void main() {
   });
 
   test('reads a native buffer view (mpv node) and prepends the header', () {
-    const int width = 40, height = 20, stride = 40 * 4 + 32;
+    const int height = 20, stride = 40 * 4 + 32;
     final Pointer<Uint8> native = malloc<Uint8>(height * stride);
     try {
       final Uint8List view = native.asTypedList(height * stride);

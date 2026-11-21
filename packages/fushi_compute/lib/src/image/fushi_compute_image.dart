@@ -113,29 +113,8 @@ typedef _ToRgbaC =
 typedef _ToRgbaDart =
     int Function(Pointer<Uint8>, int, int, int, int, Pointer<Uint8>, int);
 typedef _BgraToRgbaC =
-    Int32 Function(
-      Pointer<Uint8>,
-      Size,
-      Size,
-      Uint32,
-      Uint32,
-      Uint32,
-      Uint32,
-      Pointer<Uint8>,
-      Size,
-    );
-typedef _BgraToRgbaDart =
-    int Function(
-      Pointer<Uint8>,
-      int,
-      int,
-      int,
-      int,
-      int,
-      int,
-      Pointer<Uint8>,
-      int,
-    );
+    Int32 Function(Pointer<Uint8>, Size, Size, Uint32, Uint32);
+typedef _BgraToRgbaDart = int Function(Pointer<Uint8>, int, int, int, int);
 typedef _MosaicC =
     Int32 Function(
       Pointer<Uint8>,
@@ -564,7 +543,7 @@ class FushiComputeImage {
     try {
       return _bgraToRgba ??= _lib.library
           .lookupFunction<_BgraToRgbaC, _BgraToRgbaDart>(
-            'ffc_image_bgra_to_rgba8',
+            'ffc_image_bgra_to_rgba8_inplace',
           );
     } on ArgumentError catch (e) {
       throw _lib.missingSymbols('image bgra to rgba', e.message ?? e);
@@ -849,25 +828,26 @@ class FushiComputeImage {
     if ((x + width) * 4 > stride) {
       throw ArgumentError.value(stride, 'stride', 'row exceeds stride');
     }
-    // 矩形覆盖的字节段：首行左缘到末行右缘（中间行带上 stride 余下的部分，一次 memmove）。
+    // 矩形覆盖的字节段：首行左缘到末行右缘（中间行带上 stride 余下的部分），一次 memmove
+    // 拷进暂存区；Rust 在同一块上就地去掉行尾并换通道，只用一块暂存区（截帧 isolate 每次
+    // 都是新的，多一块就多一轮缺页）。
     final int start = y * stride + x * 4;
     final int span = (height - 1) * stride + width * 4;
     if (start + span > bgra.length) {
       throw ArgumentError.value(bgra.length, 'bgra', 'shorter than the rect');
     }
     final _BgraToRgbaDart call = _bgraToRgbaFunction;
-    final Pointer<Uint8> src = NativeScratch.input.reserve(span);
-    src
+    final Pointer<Uint8> buf = NativeScratch.input.reserve(span);
+    buf
         .asTypedListOutOfLine(span)
         .setRange(0, span, Uint8List.sublistView(bgra, start, start + span));
-    final int n = width * height * 4;
-    final Pointer<Uint8> out = NativeScratch.output.reserve(n);
     _check(
-      'ffc_image_bgra_to_rgba8',
-      call(src, span, stride, 0, 0, width, height, out, n),
+      'ffc_image_bgra_to_rgba8_inplace',
+      call(buf, span, stride, width, height),
     );
+    final int n = width * height * 4;
     return Uint8List(headerBytes + n)
-      ..setRange(headerBytes, headerBytes + n, out.asTypedListOutOfLine(n));
+      ..setRange(headerBytes, headerBytes + n, buf.asTypedListOutOfLine(n));
   }
 
   /// 就地给 RGBA8888 缓冲 [rgba] 打码。[rects] 每项是已夹进图像的像素范围

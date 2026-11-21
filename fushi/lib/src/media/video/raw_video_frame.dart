@@ -7,7 +7,7 @@
 /// isolate。智能遮布持续抽帧（播放中每秒约 4 次），整帧在 isolate 之间来回拷贝
 /// （1080p 约 8 MB、4K 约 33 MB）与纯 Dart 编码都不可接受。
 ///
-/// 逐像素的 BGRA→RGBA 换通道与裁块在 Rust（fushi_compute `ffc_image_bgra_to_rgba8`，
+/// 逐像素的 BGRA→RGBA 换通道与裁块在 Rust（fushi_compute `ffc_image_bgra_to_rgba8_inplace`，
 /// 经 [FushiComputeImage.bgraToRgba8]），本文件只算裁剪矩形、写字节头（HBK-AUDIT-008）。
 ///
 /// 裁剪的字节布局：24 字节小端头（整帧宽、整帧高、裁剪 left、top、宽、高，各
