@@ -17,6 +17,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
+import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart'
+    show mangaImageDimensions;
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -1310,6 +1312,176 @@ void main() {
     await downloads.whenIdle;
     expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
     downloads.dispose();
+  });
+
+  // HBK-AUDIT-050：作品页按书订阅，别的书逐页写进度不该叫醒它。
+  test('按书订阅任务变化：别的书写进度不发，本书行变了才发、同值重写不发', () async {
+    const OnlineMangaLibraryEntry other = OnlineMangaLibraryEntry(
+      runtime: OnlineMangaRuntimeKind.mihon,
+      extensionPackage: 'org.example.fixture',
+      sourceId: '1',
+      series: OnlineMangaSeries(
+        key: '/series/other',
+        title: 'Other series',
+        raw: <String, Object?>{'url': '/series/other'},
+      ),
+      chapters: _chapters,
+    );
+    await library.add(other);
+    final MangaDownloadService downloads = build();
+    final List<Map<String, MangaDownloadJobRow>> emitted =
+        <Map<String, MangaDownloadJobRow>>[];
+    int tableSignals = 0;
+    final StreamSubscription<Map<String, MangaDownloadJobRow>> mine = downloads
+        .watchChapterJobsForBook(bookKey)
+        .listen(emitted.add);
+    final StreamSubscription<void> all = downloads.watchJobs().listen(
+      (_) => tableSignals += 1,
+    );
+    addTearDown(() async {
+      await mine.cancel();
+      await all.cancel();
+      downloads.dispose();
+    });
+    Future<void> settle() =>
+        Future<void>.delayed(const Duration(milliseconds: 50));
+    await settle();
+
+    final MangaDownloadJobRow otherJob = await downloads.enqueueChapter(
+      entry: other,
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    for (int done = 1; done <= 5; done++) {
+      await db.updateMangaDownloadJobProgress(
+        otherJob.jobId,
+        pagesDone: done,
+        pagesTotal: 5,
+        updatedAt: done,
+      );
+    }
+    await settle();
+    expect(tableSignals, greaterThanOrEqualTo(6), reason: '全表信号照旧每写一次就发');
+    expect(emitted, isEmpty, reason: '别的书的入队 / 进度不发给本书的订阅');
+
+    final MangaDownloadJobRow job = await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await settle();
+    expect(emitted, hasLength(1));
+    expect(emitted.single.keys, <String>['/chapter/1']);
+
+    await db.updateMangaDownloadJobProgress(
+      job.jobId,
+      pagesDone: 1,
+      pagesTotal: 3,
+      updatedAt: 10,
+    );
+    await settle();
+    expect(emitted, hasLength(2));
+    expect(emitted.last['/chapter/1']!.pagesDone, 1);
+
+    // 同值重写：表有写入信号，但本书显示数据没变。
+    await db.updateMangaDownloadJobProgress(
+      job.jobId,
+      pagesDone: 1,
+      pagesTotal: 3,
+      updatedAt: 10,
+    );
+    await settle();
+    expect(emitted, hasLength(2));
+  });
+
+  // HBK-AUDIT-046：页齐后的全章校验（逐页读整页 + 解尺寸）也与中止信号赛跑，
+  // 暂停 / 取消不必等它校验完整章。
+  group('全章校验可被中止（HBK-AUDIT-046）', () {
+    const Duration guard = Duration(seconds: 5);
+
+    MangaDownloadService buildMeasuring(MangaPageDimensions dimensions) =>
+        MangaDownloadService(
+          database: db,
+          serviceFor: (OnlineMangaRuntimeKind runtime) => library,
+          pageDimensions: dimensions,
+          wait: (Duration duration) async {
+            waits.add(duration);
+          },
+        );
+
+    test('解尺寸卡住时暂停立即返回：行 paused、页图保留；恢复后不重取页即跑完', () async {
+      final Completer<void> measuring = Completer<void>();
+      final Completer<void> stuck = Completer<void>();
+      addTearDown(() {
+        if (!stuck.isCompleted) stuck.complete();
+      });
+      bool hold = true;
+      int measured = 0;
+      final MangaDownloadService downloads = buildMeasuring((
+        Uint8List bytes,
+      ) async {
+        measured += 1;
+        if (hold) {
+          if (!measuring.isCompleted) measuring.complete();
+          await stuck.future;
+        }
+        return mangaImageDimensions(bytes);
+      });
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await measuring.future.timeout(guard);
+
+      // 修复前：校验不看令牌，pause 要等这次解尺寸（这里永远不完成）走完。
+      await downloads.pause(job.jobId).timeout(guard);
+      await downloads.whenIdle.timeout(guard);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.paused);
+      expect(measured, 1, reason: '暂停后不再校验剩下的页');
+      expect(await isChapterDownloaded(bookDir, '/chapter/1'), isFalse);
+
+      hold = false;
+      stuck.complete();
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle.timeout(guard);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      expect(adapter.fetchCounts, <int, int>{
+        0: 1,
+        1: 1,
+        2: 1,
+      }, reason: '暂停时页已齐，恢复只重做校验、不重取页');
+      downloads.dispose();
+    });
+
+    test('校验第 1 页时取消：不再校验剩下的页，cancelled 且半成品删掉', () async {
+      late final MangaDownloadService downloads;
+      late final MangaDownloadJobRow job;
+      int measured = 0;
+      downloads = buildMeasuring((Uint8List bytes) async {
+        measured += 1;
+        if (measured == 1) await downloads.cancel(job.jobId);
+        return mangaImageDimensions(bytes);
+      });
+      job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await downloads.whenIdle.timeout(guard);
+      expect(
+        (await jobOf('/chapter/1')).status,
+        MangaDownloadJobStatus.cancelled,
+      );
+      expect(measured, 1, reason: '修复前会把整章校验完（3 次）才看令牌');
+      expect(
+        mangaChapterDirectory(bookDir, '/chapter/1').existsSync(),
+        isFalse,
+      );
+      downloads.dispose();
+    });
   });
 
   // 路线图 #3722 c43 遗留：整章下载途中 sidecar 重启，旧页表全部失效。原来按一般

@@ -42,6 +42,20 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     return query.get();
   }
 
+  /// 一本书某一类的任务（走唯一索引 `(kind, book_key, chapter_key)` 的前缀，
+  /// 不扫全表），按创建时刻升序。
+  Future<List<MangaDownloadJobRow>> listMangaDownloadJobsForBook({
+    required String kind,
+    required String bookKey,
+  }) =>
+      (select(mangaDownloadJobs)
+            ..where((t) => t.kind.equals(kind) & t.bookKey.equals(bookKey))
+            ..orderBy(<OrderingTerm Function($MangaDownloadJobsTable)>[
+              (t) => OrderingTerm(expression: t.createdAt),
+              (t) => OrderingTerm(expression: t.jobId),
+            ]))
+          .get();
+
   /// 「任务表变了」的信号流（不带行）。长驻页面订阅必须用它而不是裸
   /// `select(...).watch()`：drift 的 QueryStream 取消时会排一个 `Timer.run`，
   /// widget 测试里页面 dispose 后它仍 pending（BUG-834）。

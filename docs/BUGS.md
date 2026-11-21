@@ -63,6 +63,8 @@
 |---|:--:|:--:|---|
 | [BUG-5100](bugs/BUG-5100-manga-page-size-reread-prefix.md) | ✅ | ✅ | WebP/AVIF 漫画页探尺寸重复打开并重读前缀（HBK-AUDIT-051） |
 | [BUG-5099](bugs/BUG-5099-manga-epub-volume-double-parse.md) | ✅ | ✅ | 漫画 EPUB 整卷导入在调用 isolate 上重复解析（HBK-AUDIT-013） |
+| [BUG-5109](bugs/BUG-5109-manga-series-page-other-book-progress-refresh.md) | ✅ | ✅ | manga-series-page-other-book-progress-refresh |
+| [BUG-5108](bugs/BUG-5108-manga-download-pause-waits-verify.md) | ✅ | ✅ | manga-download-pause-waits-verify |
 > 共 4414 条。点号进各自文件。
 > 共 4416 条。点号进各自文件。
 
