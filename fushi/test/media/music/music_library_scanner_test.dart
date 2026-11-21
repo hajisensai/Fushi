@@ -15,6 +15,7 @@ MusicScannedTrack _track(
   String path = '/m/a.flac',
   String? album = 'Album',
   String? albumUid = 'al',
+  String? albumArtist = 'X',
   String? cover,
   bool embedded = false,
   int? start,
@@ -39,7 +40,7 @@ MusicScannedTrack _track(
   artistCredit: 'X',
   albumTitle: album,
   albumTitleSort: null,
-  albumArtist: 'X',
+  albumArtist: albumArtist,
   albumUid: albumUid,
   discNo: 1,
   discTotal: 1,
@@ -192,6 +193,81 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('BUG-5080：同目录同一张 CD 只有部分曲目写了专辑艺人，扫完并回一张；'
+      '不同目录、专辑艺人不止一位的不动', () async {
+    final _ScriptedScanner s = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        // 第 1 首带专辑艺人 → (艺人, 专辑名) uid；2、3 首没写 → (目录, 专辑名) uid。
+        _track(
+          'h1',
+          path: '/m/CDBOX/01.flac',
+          album: 'Here, the world!',
+          albumUid: 'artist-uid',
+        ),
+        _track(
+          'h2',
+          path: '/m/CDBOX/02.flac',
+          album: 'Here，ｔｈｅ world! ',
+          albumUid: 'dir-uid',
+          albumArtist: null,
+        ),
+        _track(
+          'h3',
+          path: '/m/CDBOX/03.flac',
+          album: 'Here, the world!',
+          albumUid: 'dir-uid',
+          albumArtist: null,
+        ),
+        // 别的目录的同名无艺人专辑：不是同一张，不动。
+        _track(
+          'o1',
+          path: '/m/other/01.flac',
+          album: 'Here, the world!',
+          albumUid: 'other-dir-uid',
+          albumArtist: null,
+        ),
+        // 同目录两位不同专辑艺人 + 一张无艺人：说不清归谁，不动。
+        _track('v1', path: '/m/VA/01.flac', album: 'Best', albumUid: 'va-a'),
+        _track(
+          'v2',
+          path: '/m/VA/02.flac',
+          album: 'Best',
+          albumUid: 'va-b',
+          albumArtist: 'Y',
+        ),
+        _track(
+          'v3',
+          path: '/m/VA/03.flac',
+          album: 'Best',
+          albumUid: 'va-dir',
+          albumArtist: null,
+        ),
+      ],
+    ]);
+    await MusicLibraryScanner(
+      db,
+      scanner: s.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    final Map<String, String?> albumOf = <String, String?>{
+      for (final MusicTrackRow t in await db.listMusicTracks())
+        t.trackUid: t.albumUid,
+    };
+    expect(albumOf['h1'], 'artist-uid');
+    expect(albumOf['h2'], 'artist-uid');
+    expect(albumOf['h3'], 'artist-uid');
+    expect(albumOf['o1'], 'other-dir-uid');
+    expect(
+      <String?>[albumOf['v1'], albumOf['v2'], albumOf['v3']],
+      <String>['va-a', 'va-b', 'va-dir'],
+    );
+    // 被并空的旧专辑行不再列出。
+    final Set<String> listed = <String>{
+      for (final MusicAlbumRow a in await db.listMusicAlbums()) a.albumUid,
+    };
+    expect(listed, isNot(contains('dir-uid')));
+    expect(listed, contains('artist-uid'));
   });
 
   test('重扫：没变的文件经 unchanged 保留（含 CUE 多首），消失的软删', () async {

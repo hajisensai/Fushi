@@ -25,7 +25,7 @@ import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_image_kind.dart';
 import 'media_link_kind.dart';
-import 'media_source_util.dart' show musicTrackPathKey;
+import 'media_source_util.dart' show musicAlbumNameKey, musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';

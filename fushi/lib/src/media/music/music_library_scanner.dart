@@ -466,6 +466,9 @@ class MusicLibraryScanner {
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    // 同一张 CD 只有部分曲目写了专辑艺人时 Rust 按单首算出两个专辑 uid：整源落完再按
+    // 「同目录同名」并回一张（BUG-5080）。
+    await _db.mergeSplitMusicAlbumsOfSource(sourceId);
     if (reparseAll) await _db.setPref(revisionKey, revision);
     final int imported = await _importPlaylists(playlists, errors);
     return MusicScanSummary(

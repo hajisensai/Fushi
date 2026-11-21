@@ -166,6 +166,87 @@ mixin _FushiDbMusic on _$FushiDatabase {
     });
   }
 
+  /// 扫描收尾：把来源 [sourceId] 下「同一张 CD 因专辑艺人标签不齐被拆开」的专辑并回去
+  /// （BUG-5080）。
+  ///
+  /// 专辑 uid 由 Rust 按单首曲目算（`native/fushi_music` `uid.rs` 的 `album_uid`）：有专辑
+  /// 艺人时按（专辑艺人, 专辑名），没有时按（专辑名, 所在目录）。同一目录的同一张 CD
+  /// 只有部分曲目写了专辑艺人时，两条规则各出一个 uid，一张 CD 被拆成两张。单首算 uid
+  /// 看不到同目录的兄弟曲目（增量扫描时没变的文件也不重读标签），所以在落库后按整源
+  /// 的在库状态归并：同一目录、同名（[musicAlbumNameKey]）的专辑里，带专辑艺人的
+  /// 专辑恰好只有一位艺人（多位艺人是真不同的专辑，不动）时，把没写专辑艺人的那几张的
+  /// 曲目改挂到带艺人的那张上。被并空的旧专辑行留着——[listMusicAlbums] 只列有在库
+  /// 曲目的专辑，之后某首文件改了被重新解析、又落回旧 uid 时，下次收尾再并一次。
+  /// 返回改挂的曲目数。
+  Future<int> mergeSplitMusicAlbumsOfSource(int sourceId) async {
+    final List<TypedResult> rows =
+        await (select(musicTracks).join(<Join>[
+              innerJoin(
+                musicAlbums,
+                musicAlbums.albumUid.equalsExp(musicTracks.albumUid),
+              ),
+            ])..where(
+              musicTracks.sourceId.equals(sourceId) &
+                  musicTracks.deletedAt.isNull(),
+            ))
+            .get();
+    // （目录, 专辑名键）→ 专辑 uid → (专辑艺人, 曲目 uid 列表)
+    final Map<String, Map<String, ({String? artist, List<String> tracks})>>
+    groups = <String, Map<String, ({String? artist, List<String> tracks})>>{};
+    for (final TypedResult r in rows) {
+      final MusicTrackRow track = r.readTable(musicTracks);
+      final MusicAlbumRow album = r.readTable(musicAlbums);
+      final String path = track.path;
+      final int cut = path.lastIndexOf(RegExp(r'[\\/]'));
+      if (cut <= 0) continue; // 远程无目录 / 根下文件：无从判断是否同一张。
+      final String key =
+          '${musicTrackPathKey(path.substring(0, cut))}\u0000'
+          '${musicAlbumNameKey(album.title)}';
+      final String? artist = album.albumArtistCredit?.trim().isEmpty ?? true
+          ? null
+          : album.albumArtistCredit;
+      groups
+          .putIfAbsent(
+            key,
+            () => <String, ({String? artist, List<String> tracks})>{},
+          )
+          .putIfAbsent(
+            album.albumUid,
+            () => (artist: artist, tracks: <String>[]),
+          )
+          .tracks
+          .add(track.trackUid);
+    }
+    final Map<String, List<String>> moves = <String, List<String>>{};
+    for (final Map<String, ({String? artist, List<String> tracks})> albums
+        in groups.values) {
+      if (albums.length < 2) continue;
+      final Map<String, String> tagged = <String, String>{
+        for (final MapEntry<String, ({String? artist, List<String> tracks})> e
+            in albums.entries)
+          if (e.value.artist case final String a) musicAlbumNameKey(a): e.key,
+      };
+      if (tagged.length != 1) continue;
+      final String target = tagged.values.single;
+      for (final MapEntry<String, ({String? artist, List<String> tracks})> e
+          in albums.entries) {
+        if (e.value.artist != null) continue;
+        moves.putIfAbsent(target, () => <String>[]).addAll(e.value.tracks);
+      }
+    }
+    if (moves.isEmpty) return 0;
+    return transaction(() async {
+      int total = 0;
+      for (final MapEntry<String, List<String>> m in moves.entries) {
+        total +=
+            await (update(musicTracks)
+                  ..where(($MusicTracksTable t) => t.trackUid.isIn(m.value)))
+                .write(MusicTracksCompanion(albumUid: Value<String?>(m.key)));
+      }
+      return total;
+    });
+  }
+
   /// 来源 [sourceId] 下在库曲目的（路径, 修改时刻, 大小, uid）。扫描器据此告诉 Rust
   /// 哪些文件没变（跳过标签解析），以及「没变的文件」对应哪些曲目 uid（一个 CUE 整轨
   /// 对应多首）。用户移除（[MusicTracks.hiddenAt]）的曲目也算：文件还在、没动过就不必

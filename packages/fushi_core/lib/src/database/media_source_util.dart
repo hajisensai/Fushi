@@ -50,6 +50,31 @@ String normalizeSourceRootPath(String raw, {required String transport}) {
 String musicTrackPathKey(String path, {p.Context? context}) =>
     (context ?? p.context).canonicalize(path);
 
+/// 专辑名 / 艺人名的比较键：与 `native/fushi_music` `uid.rs` 的 `normalize_name` 同一口径
+/// ——去首尾空白、连续空白折成一个、全角 ASCII（含全角空格）折成半角、小写。只用来认
+/// 「同一个名字的写法差异」，不做模糊匹配。
+String musicAlbumNameKey(String name) {
+  final StringBuffer out = StringBuffer();
+  bool pendingSpace = false;
+  for (final int rune in name.trim().runes) {
+    int c = rune;
+    if (c == 0x3000) {
+      c = 0x20;
+    } else if (c >= 0xFF01 && c <= 0xFF5E) {
+      c -= 0xFEE0;
+    }
+    final String ch = String.fromCharCode(c);
+    if (ch.trim().isEmpty) {
+      pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && out.isNotEmpty) out.write(' ');
+    pendingSpace = false;
+    out.write(ch.toLowerCase());
+  }
+  return out.toString();
+}
+
 /// 取归一化后路径的末段作为默认显示名（文件夹名）。
 /// - 末段为空（如根路径）时回退整段。
 /// - 纯函数，不触磁盘。
