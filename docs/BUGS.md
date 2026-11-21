@@ -57,6 +57,12 @@
 | [BUG-5089](bugs/BUG-5089-lnreader-missing-image-path-traversal.md) | ✅ | ✅ | lnreader-missing-image-path-traversal |
 > 共 4412 条。点号进各自文件。
 > 共 4413 条。点号进各自文件。
+> 共 4413 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5100](bugs/BUG-5100-manga-page-size-reread-prefix.md) | ✅ | ✅ | WebP/AVIF 漫画页探尺寸重复打开并重读前缀（HBK-AUDIT-051） |
+| [BUG-5099](bugs/BUG-5099-manga-epub-volume-double-parse.md) | ✅ | ✅ | 漫画 EPUB 整卷导入在调用 isolate 上重复解析（HBK-AUDIT-013） |
 > 共 4414 条。点号进各自文件。
 > 共 4416 条。点号进各自文件。
 
