@@ -578,6 +578,27 @@ function fushiScanModifierKeyup(event, modifier) {
   const mod = fushiNormalizeScanModifier(modifier);
   return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
 }
+// 悬停扫描延迟（反馈 L4Vhk0hOjM，对齐 Yomitan 的 Scan delay）：storage.scanDelay，毫秒整数 0–2000，
+// 缺省 / 非法值 = 0（立即查，旧行为）。只在触发键为 none 时生效——按键模式下按住键本身就是明确手势，
+// 不再等；none 模式指针一划过就查太灵敏，指针停稳 scanDelay 毫秒不再动才扫，期间每次 mousemove
+// 重新计时并换成最新坐标。side-panel.js 字幕行悬停用同名函数副本，shift-hover.test.js 交叉比对。
+let fushiScanDelayMs = 0;
+let fushiScanDelayTimer = null;
+const FUSHI_SCAN_DELAY_MAX_MS = 2000;
+function fushiNormalizeScanDelay(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return 0;
+  const ms = Math.round(value);
+  return ms <= 0 ? 0 : Math.min(FUSHI_SCAN_DELAY_MAX_MS, ms);
+}
+// 当前设置下悬停扫描要等多久：触发键不是 none 一律 0。
+function fushiEffectiveScanDelay(modifier, delay) {
+  return fushiNormalizeScanModifier(modifier) === 'none' ? fushiNormalizeScanDelay(delay) : 0;
+}
+function fushiCancelScanDelay() {
+  if (fushiScanDelayTimer === null) return;
+  try { clearTimeout(fushiScanDelayTimer); } catch (_) {}
+  fushiScanDelayTimer = null;
+}
 function fushiApplyShiftHoverLookupPref(saved) {
   if (saved && typeof saved.shiftHoverLookup === 'boolean') {
     fushiShiftHoverLookup = saved.shiftHoverLookup;
@@ -585,12 +606,15 @@ function fushiApplyShiftHoverLookupPref(saved) {
   if (saved && typeof saved.scanModifier === 'string') {
     fushiScanModifier = fushiNormalizeScanModifier(saved.scanModifier);
   }
+  if (saved && Object.prototype.hasOwnProperty.call(saved, 'scanDelay')) {
+    fushiScanDelayMs = fushiNormalizeScanDelay(saved.scanDelay);
+  }
 }
 // 弹窗内嵌套查词（vendor/popup.js，与 app 共用）经这个钩子认同一个触发键；app 内无此钩子时它退回 Shift。
 window.__fushiScanModifierHeld = (e) => fushiScanModifierHeld(e, fushiScanModifier);
 try {
   const fushiShiftPrefPromise = chrome.storage.local.get(
-    ['shiftHoverLookup', 'scanModifier'],
+    ['shiftHoverLookup', 'scanModifier', 'scanDelay'],
     fushiApplyShiftHoverLookupPref,
   );
   if (fushiShiftPrefPromise && typeof fushiShiftPrefPromise.then === 'function') {
@@ -600,6 +624,9 @@ try {
     if (area !== 'local' || !changes) return;
     if (changes.shiftHoverLookup) fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
     if (changes.scanModifier) fushiScanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
+    if (changes.scanDelay) fushiScanDelayMs = fushiNormalizeScanDelay(changes.scanDelay.newValue);
+    // 换了触发键或延迟：按旧设置排着的那次扫描作废，下次 mousemove 按新设置走。
+    if (changes.scanModifier || changes.scanDelay) fushiCancelScanDelay();
   });
 } catch (_) {}
 
@@ -2579,7 +2606,23 @@ function fushiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   // 松开 Shift 复位，下次可重查同词；在途期间被吞的那次取词也随之作废（用户已不在扫词）。
-  if (!fushiScanModifierHeld(e, fushiScanModifier)) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
+  if (!fushiScanModifierHeld(e, fushiScanModifier)) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); fushiCancelScanDelay(); return; }
+  // 扫描延迟（反馈 L4Vhk0hOjM，仅 none 模式）：重新计时，停稳到点再按这次的坐标扫；0 = 立即扫。
+  const delay = fushiEffectiveScanDelay(fushiScanModifier, fushiScanDelayMs);
+  fushiCancelScanDelay();
+  if (delay > 0) {
+    const x = e.clientX;
+    const y = e.clientY;
+    const target = e.target;
+    const clearNativeSelection = e.buttons === 0;
+    fushiScanDelayTimer = setTimeout(() => {
+      fushiScanDelayTimer = null;
+      // 到点前指针已移出窗口：不替一个不在页面上的指针查词。
+      if (fushiPointerOutsideDocument || fushiNfBatchRunning) return;
+      fushiShiftHoverAt(x, y, target, clearNativeSelection, false);
+    }, delay);
+    return;
+  }
   fushiShiftHoverAt(e.clientX, e.clientY, e.target, e.buttons === 0, false);
 });
 // Shift 悬停的共同入口：mousemove（指针在动）与 keydown（指针静止时按下 Shift）都走这里。
@@ -2838,6 +2881,7 @@ window.addEventListener('mousemove', (e) => {
 try {
   document.documentElement.addEventListener('mouseleave', () => {
     fushiPointerOutsideDocument = true;
+    fushiCancelScanDelay();
     if (!fushiLookupOpenedByHover || !fushiHost) return;
     fushiPointerOverPopup = false;
     fushiScheduleHoverLeave();
