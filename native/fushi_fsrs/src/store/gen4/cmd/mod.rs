@@ -207,14 +207,12 @@ pub(super) fn canon_ids_echo(
 
 /// 集合 [col] 的默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组。
 /// 写命令（[writes]）与出卡读命令（[study]）共用。
+/// 解析经 [Index::cache_config]（库句柄的缓存配置记忆，`cache.rs` `CfgMemo`）。
 pub(super) fn default_deck(t: &Truth<'_>, ix: &Index<'_, '_>, col: i64) -> Result<String, String> {
-    match t.derive_cfg(col, super::cache::CFG_KEY)? {
-        Some(text) => {
-            let v: Value =
-                serde_json::from_str(&text).map_err(|e| format!("gen4: bad cache config: {e}"))?;
-            let cfg = crate::store::caches::CacheConfig::parse(&ix.canonical_config(&v)?)?;
-            Ok(cfg.default_deck().to_owned())
-        }
+    debug_assert_eq!(ix.col, col);
+    debug_assert!(std::ptr::eq(ix.t, t));
+    match ix.cache_config()? {
+        Some(cfg) => Ok(cfg.default_deck().to_owned()),
         None => Ok(
             crate::gen4_ids::rules::builtin_default_deck(crate::gen4_ids::rules::CANONICAL).text(),
         ),

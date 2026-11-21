@@ -344,7 +344,13 @@ fn join_into(
     let mut n = Native::open(t, b.col)?;
     let (op, chain) = n.write(ix, Body4::Join(join.clone()), now)?;
     t.rebind(b.col, into_collection, into_dir)?;
-    // 位置目录换了：各位置媒体「在不在」从头对账（`media.rs` 调用方契约）。
+    // 换了根（集合的位置目录换了，位置身份不带目录）：位置进度从头对账（设计 §5.1）——各位置上的 head 记录、转发记账、
+    // 停放的重切件、旧根指纹与段结论（`sync_state.rs` [Truth::forget_all_locations]、`oldroot.rs`），与媒体「在不在」
+    // （`media.rs` 调用方契约）。不动的：已传水位（`cmd/sync.rs` `out_key`：每轮第一次发件按新目录的列举退水位重传，
+    // head 代号接着往上）、清单代号预留（`media_gen`，只升不降）、加密记忆（`loc_state`：见过加密就不写明文，是安全
+    // 状态，不随根撤）。
+    t.forget_all_locations(b.col)?;
+    t.oldroot_forget_all(b.col)?;
     super::media::forget_all(t, b.col)?;
     Ok((op, chain, join))
 }

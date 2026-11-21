@@ -818,3 +818,112 @@ fn a_join_forgets_media_presence_of_the_old_directory() {
     assert_eq!(usb["present"], json!([]), "{usb}");
     assert_eq!(usb["seeded"], json!(false), "{usb}");
 }
+
+/// 并入改绑换了根：位置进度从头对账（设计 §5.1）。各位置上的 head 记录、转发记账、停放件、旧根指纹与段结论在同一个
+/// 事务里去掉——留着的话，旧目录上已有的段会被当成新目录上也有（转发不补段、转发缓存被当「各位置都有了」删掉）。
+/// 加密记忆（`loc_state`）与已传水位不动。
+#[test]
+fn a_join_restarts_location_progress_but_keeps_the_seal() {
+    use crate::store::gen4::sync_state::LocHead;
+    let mut m = migrated();
+    let count = |c: &G4Core, table: &str| -> i64 {
+        c.read(|t| {
+            Ok(t.conn()
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap())
+        })
+        .unwrap()
+    };
+    let oldrun = |c: &G4Core| -> i64 {
+        c.read(|t| {
+            Ok(t.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM srs_meta WHERE key LIKE 'gen4_oldrun/%'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap())
+        })
+        .unwrap()
+    };
+    let tables = ["loc_heads", "relay_out", "relay_park", "oldroot_fp"];
+    ffsrs_store_close(m.h);
+    {
+        let c = G4Core::open(&m.dir.0, OpenMode::Primary).unwrap();
+        c.write(|t| {
+            let col = t.binding_of(P)?.unwrap().col;
+            for loc in ["folder:usb", "webdav:x"] {
+                t.put_loc_head(
+                    col,
+                    loc,
+                    &LocHead {
+                        device: id(0x51),
+                        gen: 3,
+                        seq: 9,
+                        segs: vec!["seg-1-9-aa.bin".into()],
+                    },
+                )?;
+                let conn = t.conn();
+                conn.execute(
+                    "INSERT INTO relay_out (col, loc_key, device, name, gen) VALUES (?1, ?2, ?3, 'rly-1-9-aa.bin', 3)",
+                    rusqlite::params![col, loc, &id(0x51).0[..]],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO relay_park (col, loc_key, device, name, last, wait, wait_seq, trust) \
+                     VALUES (?1, ?2, ?3, 'rly-1-9-aa.bin', 9, ?3, 1, 0)",
+                    rusqlite::params![col, loc, &id(0x51).0[..]],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO oldroot_fp (col, loc_key, fp, at) VALUES (?1, ?2, x'00', 1)",
+                    rusqlite::params![col, loc],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO srs_meta (key, value) VALUES (?1, 'done')",
+                    [format!("gen4_oldrun/{col}/{loc}\nseg.bin")],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO loc_state (col, loc_key, sealed, last_ok) VALUES (?1, ?2, 1, 5)",
+                    rusqlite::params![col, loc],
+                )
+                .unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+        for table in tables {
+            assert_eq!(count(&c, table), 2, "{table}");
+        }
+        assert_eq!(oldrun(&c), 2);
+        c.close();
+    }
+    m.h = open(&m.dir.0, 0).unwrap();
+    let v = g4(
+        m.h,
+        "collection_join",
+        T1,
+        json!({"into": id(0x0a).text(), "dir": "0000-home"}),
+    );
+    assert_eq!(v["outcome"], json!("joined"), "{v}");
+    let sealed = g4(
+        m.h,
+        "location_sealed",
+        T1,
+        json!({"location": "folder:usb"}),
+    );
+    assert_eq!(sealed["sealed"], json!(true), "{sealed}");
+    ffsrs_store_close(m.h);
+    {
+        let c = G4Core::open(&m.dir.0, OpenMode::Primary).unwrap();
+        for table in tables {
+            assert_eq!(count(&c, table), 0, "{table}");
+        }
+        assert_eq!(oldrun(&c), 0);
+        assert_eq!(count(&c, "loc_state"), 2, "the seal memory stays");
+        c.close();
+    }
+    m.h = open(&m.dir.0, 0).unwrap();
+}
