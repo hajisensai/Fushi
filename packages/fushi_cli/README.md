@@ -31,6 +31,7 @@ fushi_cli mcp               # MCP server（stdio）：让外部 AI 客户端调�
 | `backup` / `sync` / `dl` / `sub` / `mediaserver` / `peer` / `storage` | 备份（含按书 / 视频）与恢复、云同步与差异逐条应用、下载中心（直接入队、目标库、字幕策略、执行设备、优先级、互联 host 上的任务）、视频下载订阅（列表 / 逐集历史 / 立即检查 / 启停 / 编辑规则 / 删除；新建走 `aidl`）、Jellyfin / Emby / Plex（含 Plex PIN 授权）、互联配对链接与吊销、存储占用与数据目录迁移 |
 | `ext` / `source` / `discover` / `play` / `nav` / `aidl` | 扩展启停、源启停 / 置顶 / 偏好 / 筛选浏览、漫画章节与视频剧集下载任务、发现与一键获取、播放遥控、页面跳转、AI 下载会话（消歧 / 确认 / 取消） |
 | `video` | 作品与刮削（含 `video confirm` 回答待确认候选）、播放器音量 / 音轨 / 主副字幕、字幕导入 / OCR / 转录 / 对轴、在线字幕立即补 / 手动搜 / 点名下载（`video sub-fetch` / `sub-search` / `sub-get`）、字幕位置、着色器、制卡与暂存队列、片段导出、长任务、生成日语字幕（`video subtitle-gen` / `video subtitle-glossary`） |
+| `tts` | 漫画有声：演出稿查看与改句 / 改角色、AI 看图标注、单句重生成、整卷生成与取消、导入外部做好的成品清单（`tts import <key> <manifest.json>`，已有成品加 `--yes` 才替换） |
 | `game`（仅 Windows） | 游戏库管理与刮削、启动 / 附着 / 停止、文本线程与当前台词、音轨与补录、分阶段能力状态、制卡、内嵌查词模式与截图校准 |
 
 app 侧路由在 `fushi/lib/src/ops/ctl_*.dart`，CLI 侧命令在 `lib/src/commands/*_commands.dart`；
@@ -41,7 +42,8 @@ app 侧路由在 `fushi/lib/src/ops/ctl_*.dart`，CLI 侧命令在 `lib/src/comm
 
 **新增 UI 操作必须同时接 ctl 路由与 CLI 命令**：`fushi/test/ops/ctl_cli_route_coverage_guard_test.dart`
 双向钉死「每条路由都有 CLI 命令、每条 CLI 请求都落到路由」；设置页动作由
-`fushi/test/settings/settings_cli_action_coverage_test.dart` 要求声明 CLI 入口。
+`fushi/test/settings/settings_cli_action_coverage_test.dart` 要求声明 CLI 入口。界面里的导入 / 导出 / 选文件流程（`pickAnd*` / `import*` / `export*`）由
+`fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart` 盯住：没接路由的必须登记理由或待补 bug。
 
 全局选项：`--json`（机器可读输出）、`--app <路径>`、`--timeout <秒>`（默认 90）、
 `--no-launch`。
