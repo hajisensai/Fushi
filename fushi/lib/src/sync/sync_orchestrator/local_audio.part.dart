@@ -51,11 +51,9 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
     if (remoteEntries.isNotEmpty &&
         locals.isNotEmpty &&
         !await backend.hostReportsLocalAudioContentId()) {
-      report.errors.add(
-        'local audio: the peer runs an older Fushi that does not report '
-        'library content identity, so libraries were matched by display name '
-        'only (a renamed copy of the same library may transfer again). '
-        'Update Fushi on the peer.',
+      report.notePeerGap(
+        SyncPeerGapDimension.localAudioIdentity,
+        outdated: true,
       );
     }
 

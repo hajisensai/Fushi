@@ -11775,6 +11775,7 @@
   "sync_now_local_audio_out": "↑$count fuentes de audio",
   "sync_now_module_disabled": "The Sync & backup module is turned off",
   "sync_now_no_changes": "sin cambios",
+  "sync_now_peer_outdated": "the other device runs an older Fushi, $count item(s) not synced — update Fushi there",
   "sync_now_service_configs_in": "↓$count service settings",
   "sync_now_settings_in": "↓$count settings",
   "sync_now_settings_out": "↑$count settings",
