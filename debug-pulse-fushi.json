@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T07:02:28Z",
+ "generatedAt": "2026-11-21T08:31:43Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2ddafb44b41ef4afdabd4497b6e91fde97bc0316",
-  "seq": 30416
+  "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
+  "seq": 30478
  },
  "builds": [
   {
@@ -411,7 +411,54 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
+  "headSeq": 30478,
+  "prs": [
+   3989,
+   3844,
+   3839,
+   3756,
+   3840,
+   3754,
+   3738,
+   3986,
+   3981,
+   3753,
+   3987,
+   3982,
+   3988
+  ],
+  "direct": [
+   {
+    "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
+    "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
+   },
+   {
+    "sha": "1d0c585a12a383d85df7dd4a7fa6076580806b43",
+    "subject": "docs(bugs): 集成后重建 BUGS.md 索引"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059655"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+   }
+  }
+ },
  "prs": {
   "3448": {
    "number": 3448,
@@ -455,6 +502,17 @@
     "merge-approved"
    ]
   },
+  "3738": {
+   "number": 3738,
+   "title": "fix(reader): TXT 超长段落按章节上限拆分",
+   "author": "JHR-deve",
+   "mergedAt": "2026-11-21T08:28:36Z",
+   "additions": 515,
+   "deletions": 69,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3751": {
    "number": 3751,
    "title": "fix(manga-audio): 翻页不再被音频拉回、查词自动暂停、播放条重做成播放卡",
@@ -472,6 +530,39 @@
    "additions": 1051,
    "deletions": 230,
    "labels": []
+  },
+  "3753": {
+   "number": 3753,
+   "title": "fix(appearance): show the custom page backdrop image in the Apple design (BUG-4906)",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T08:28:36Z",
+   "additions": 277,
+   "deletions": 28,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3754": {
+   "number": 3754,
+   "title": "fix(ui): fit long secondary-page titles on phones instead of truncating (BUG-4906)",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 406,
+   "deletions": 64,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3756": {
+   "number": 3756,
+   "title": "fix(library): no second layout prompt after \"Maybe later\" (BUG-4906)",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 52,
+   "deletions": 448,
+   "labels": [
+    "merge-approved"
+   ]
   },
   "3757": {
    "number": 3757,
@@ -1065,6 +1156,35 @@
    "mergedAt": "2026-11-20T17:23:21Z",
    "additions": 78507,
    "deletions": 28169,
+   "labels": []
+  },
+  "3839": {
+   "number": 3839,
+   "title": "feat(manga): 气泡原位放大（方案 A）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T08:28:36Z",
+   "additions": 1806,
+   "deletions": 10,
+   "labels": []
+  },
+  "3840": {
+   "number": 3840,
+   "title": "fix(settings): lighter settings title, backing for text over wallpaper, nav list top fade",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T08:28:36Z",
+   "additions": 963,
+   "deletions": 137,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3844": {
+   "number": 3844,
+   "title": "feat(manga): 逐格读（气泡聚焦）+ 台词文字条 / 台词栏（方案 C）[依赖 #3839]",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T08:28:36Z",
+   "additions": 4093,
+   "deletions": 24,
    "labels": []
   },
   "3845": {
@@ -2273,6 +2393,24 @@
    "deletions": 6,
    "labels": []
   },
+  "3981": {
+   "number": 3981,
+   "title": "chore(agents): 去掉合并会话里失败调用的结构性来源",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 1145,
+   "deletions": 10,
+   "labels": []
+  },
+  "3982": {
+   "number": 3982,
+   "title": "fix(import): 表单色块下发块配色，修导入/转录对话框输入字与下拉值看不见（BUG-5055）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 83,
+   "deletions": 1,
+   "labels": []
+  },
   "3985": {
    "number": 3985,
    "title": "fix(srs-gen4): 嵌套并入的库迁移核对失败（BUG-5056）",
@@ -2280,6 +2418,42 @@
    "mergedAt": "2026-11-21T05:22:17Z",
    "additions": 737,
    "deletions": 69,
+   "labels": []
+  },
+  "3986": {
+   "number": 3986,
+   "title": "feat(manga): 朗读 / 有声播放条替换底栏工具栏，去掉浮动卡片",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 613,
+   "deletions": 378,
+   "labels": []
+  },
+  "3987": {
+   "number": 3987,
+   "title": "fix(music): 默认落在曲库、专辑墙改回拼贴、编号扫图按内容认盘面（BUG-5057）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 686,
+   "deletions": 36,
+   "labels": []
+  },
+  "3988": {
+   "number": 3988,
+   "title": "docs(bugs): 登记反馈分诊遗留 BUG-5063 / BUG-5064",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T07:42:56Z",
+   "additions": 15,
+   "deletions": 1,
+   "labels": []
+  },
+  "3989": {
+   "number": 3989,
+   "title": "fix(srs-sync): 媒体上传不再挡住复习记录段，媒体阶段报 done/total（BUG-5061）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T08:28:35Z",
+   "additions": 371,
+   "deletions": 18,
    "labels": []
   }
  }
