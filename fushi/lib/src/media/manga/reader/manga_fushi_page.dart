@@ -84,6 +84,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/media/manga/reader/manga_lookup_pause.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
@@ -110,6 +111,8 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
+import 'package:fushi/src/media/manga/reader/manga_bubble_focus_bar.dart';
+import 'package:fushi/src/media/manga/manga_bubble_focus_js.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout_editor.dart'
     show showMangaControlLayoutEditorSheet;
@@ -334,6 +337,10 @@ enum MangaReaderInputAction {
   /// 当前页书签加 / 删（快捷键 [ShortcutAction.mangaToggleBookmark]，反馈
   /// FhspOXxPl_）。与书签面板「当前页」那一行同一执行体 `_toggleBookmarkHere`。
   toggleBookmark,
+
+  /// 逐格读（气泡聚焦）进 / 出（快捷键 [ShortcutAction.mangaToggleBubbleFocus]，
+  /// 与气泡放大浮层右上角的「⤢」同一执行体）。
+  toggleBubbleFocus,
 
   /// 朗读 / 漫画有声的播放暂停、上一句、下一句（快捷键
   /// [ShortcutAction.mangaAudioPlayPause] 等，只开键盘通道）。
@@ -717,6 +724,23 @@ class MangaFushiPage extends BaseSourcePage {
     return rightKey == rtl ? 'prev' : 'next';
   }
 
+  /// 逐格读里 Flutter 持焦时的 Tab / Shift+Tab：返回跳气泡的步长（+1 / -1），
+  /// 不归逐格读时返回 null（Tab 照常交给焦点遍历）。与 WebView 持焦那条
+  /// （`manga_bubble_focus_js.dart` 的 keydown 监听）同口径：固定键、只在逐格读
+  /// 开着时拦、带 Ctrl / Alt / Meta 的组合不拦。
+  static int? bubbleFocusTabStep(
+    LogicalKeyboardKey key, {
+    required bool focusActive,
+    required bool shift,
+    required bool control,
+    required bool alt,
+    required bool meta,
+  }) {
+    if (!focusActive || key != LogicalKeyboardKey.tab) return null;
+    if (control || alt || meta) return null;
+    return shift ? -1 : 1;
+  }
+
   /// 把注册表解析出的 [ShortcutAction] 落成本页的输入动作。
   ///
   /// 键位本身由 [FushiShortcutRegistry]（`ShortcutScope.manga`）解析，左右方向键的朝向
@@ -769,6 +793,10 @@ class MangaFushiPage extends BaseSourcePage {
     // 加书签。
     if (action == ShortcutAction.mangaToggleBookmark) {
       return MangaReaderInputAction.toggleBookmark;
+    }
+    // 逐格读同理：不翻页，弹窗开着 / webtoon 模式下照样能进出。
+    if (action == ShortcutAction.mangaToggleBubbleFocus) {
+      return MangaReaderInputAction.toggleBubbleFocus;
     }
     // 朗读 / 漫画有声的播放控制同理：不翻页、不动视野，任何模式下都执行。
     final MangaReaderInputAction? readAloud = switch (action) {
@@ -898,6 +926,7 @@ class MangaFushiPage extends BaseSourcePage {
     ShortcutAction.mangaOpenStatistics,
     ShortcutAction.mangaToggleStudyClock,
     ShortcutAction.mangaToggleBookmark,
+    ShortcutAction.mangaToggleBubbleFocus,
     ShortcutAction.mangaAudioPlayPause,
     ShortcutAction.mangaAudioPreviousLine,
     ShortcutAction.mangaAudioNextLine,
@@ -3581,6 +3610,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     String inlineSelectionJs, {
     required MangaWindowNavigation navigation,
   }) {
+    // 气泡浮层 / 逐格读状态不在这里改：落点由调用方传入，消费与复位只在真正
+    // 装载新文档的路径上做（[_resetBubbleStateForNewDocument]）。
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode.isContinuous;
 
@@ -3667,6 +3698,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 在线直读章的 payload 尺寸是占位值（真尺寸要等页图到了才知道），只有本地卷 /
       // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4704）。
       fitImagesToDisplay: _pageSession is! OnlineMangaReaderSession,
+      // 气泡放大浮层：展开走 spatial default、收起走 effects default；减弱动态效果
+      // 时归零（墨水屏在脚本里按阅读器偏好另判）。
+      bubbleZoomOpenMs: fushiMotionDuration(
+        context,
+        FushiMotion.medium,
+      ).inMilliseconds,
+      bubbleZoomCloseMs: fushiMotionDuration(
+        context,
+        FushiMotion.short,
+      ).inMilliseconds,
+      textStripLayout: _textStripLayout,
+      bubbleFocusLabel: t.manga_bubble_focus_enter,
+      bubbleFocusResume: navigation.bubbleFocusResume,
+      textStripEmptyLabel: t.manga_reader_bubble_text_strip_empty,
     );
     return (document: document, keptSpreads: keptSpreads.toSet());
   }
@@ -3678,6 +3723,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         currentSpread: _currentSpread,
         restoreFraction: _currentFraction,
         zoomPercent: _zoomPercent,
+        bubbleFocusResume: _bubbleFocusResume ?? '',
       );
 
   /// 阅读器底色（[MangaBackground]）解析成一个 Flutter 颜色。
@@ -3782,6 +3828,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           );
       final String doc = built.document;
       _loadedSpreads = built.keptSpreads;
+      // 要换掉的旧文档里的放大浮层 / 逐格读随之作废；落点已随导航输入交给新文档。
+      _resetBubbleStateForNewDocument(navigation.bubbleFocusResume);
       await _controller!.loadData(
         data: doc,
         baseUrl: WebUri('https://${MangaFushiPage.kMangaHost}/'),
@@ -4364,6 +4412,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 (function(){
   var keep = new Set(${jsonEncode(pageIndices.toList())});
   var htmlByPage = ${jsonEncode(htmlByPage)};
+  // OCR 层要换：气泡放大浮层里是旧 OCR 的克隆，先收起。
+  if (window.__mangaBubbleZoomClose) window.__mangaBubbleZoomClose();
   document.querySelectorAll('.manga-page').forEach(function(page){
     var index = Number(page.getAttribute('data-page'));
     if (!keep.has(index)) {
@@ -4377,6 +4427,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     (page.querySelector('.manga-source') || page).insertAdjacentHTML('beforeend', htmlByPage[String(index)] || '');
     page.setAttribute('data-ocr-loaded', '1');
   });
+  if (window.__mangaTextStripRefresh) window.__mangaTextStripRefresh();
   ${_readAloud.reapplyJs}
 })();
 ''',
@@ -4417,6 +4468,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (event is! KeyDownEvent && !repeat) {
       return KeyEventResult.ignored;
     }
+    // 逐格读的 Tab / Shift+Tab：翻页后焦点被收回 Flutter（onMangaTurn 的 reclaim），
+    // 这里不接，Tab 会落到焦点遍历把焦点挪到顶栏按钮上。
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    final int? tabStep = MangaFushiPage.bubbleFocusTabStep(
+      event.logicalKey,
+      focusActive: _bubbleFocusActive,
+      shift: keyboard.isShiftPressed,
+      control: keyboard.isControlPressed,
+      alt: keyboard.isAltPressed,
+      meta: keyboard.isMetaPressed,
+    );
+    if (tabStep != null) {
+      _stepBubbleFocusClosingDictionary(tabStep);
+      return KeyEventResult.handled;
+    }
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       event.logicalKey,
       activeModifierKeys(),
@@ -4431,6 +4497,147 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   MangaReaderInputAction? _lastReaderInputAction;
+
+  /// 页内气泡放大浮层是否开着（JS `onMangaBubbleZoom` 回报；换文档时清零）。
+  bool _bubbleZoomOpen = false;
+
+  /// 收起气泡放大浮层（Esc）。先在 Dart 侧置否：JS 的 close 回报是异步的，
+  /// 紧跟着的第二下 Esc 不能再被当成「收浮层」吞掉。
+  void _closeBubbleZoom() {
+    _bubbleZoomOpen = false;
+    unawaited(
+      _controller
+              ?.evaluateJavascript(
+                source:
+                    'window.__mangaBubbleZoomClose && '
+                    'window.__mangaBubbleZoomClose();',
+              )
+              .catchError((Object e, StackTrace stack) {
+                ErrorLogService.instance.log(
+                  'MangaFushiPage.bubbleZoomClose',
+                  e,
+                  stack,
+                );
+                return null;
+              }) ??
+          Future<void>.value(),
+    );
+  }
+
+  /// JS `onMangaBubbleZoom(state, retract)`：记下浮层开合；`retract` = 双击气泡时
+  /// 第一击已经发起的查词要撤回（[clearDictionaryResult] 推进查词代号，在途结果作废）。
+  void _onMangaBubbleZoom(List<dynamic> args) {
+    if (args.isEmpty) return;
+    _bubbleZoomOpen = args[0] == 'open';
+    final bool retract = args.length > 1 && args[1] == true;
+    if (retract && mounted) clearDictionaryResult();
+  }
+
+  /// 逐格读（气泡聚焦）是否开着、当前气泡序号与本屏总数（JS `onMangaBubbleFocus`
+  /// 回报；换文档时按 [_bubbleFocusResume] 决定是否接着聚焦）。
+  bool _bubbleFocusActive = false;
+  int _bubbleFocusIndex = -1;
+  int _bubbleFocusTotal = 0;
+
+  /// 逐格读走到跨页尽头、交给翻页时脚本记下的落点（'first' / 'last'）。翻页若是
+  /// 换窗重建文档，新文档靠它接着聚焦；同窗翻页由脚本自己接，回报后清掉。
+  String? _bubbleFocusResume;
+
+  void _runBubbleFocusJs(String source) {
+    unawaited(
+      _controller?.evaluateJavascript(source: source).catchError((
+            Object e,
+            StackTrace stack,
+          ) {
+            ErrorLogService.instance.log(
+              'MangaFushiPage.bubbleFocus',
+              e,
+              stack,
+            );
+            return null;
+          }) ??
+          Future<void>.value(),
+    );
+  }
+
+  void _stepBubbleFocus(int step) {
+    _runBubbleFocusJs(
+      'window.__mangaFocusStep && window.__mangaFocusStep($step);',
+    );
+  }
+
+  /// 键盘跳气泡（← → / Tab）：查词弹窗开着时先关掉，再换气泡。
+  void _stepBubbleFocusClosingDictionary(int step) {
+    if (isDictionaryShown) clearDictionaryResult();
+    _stepBubbleFocus(step);
+  }
+
+  /// 换文档时收尾气泡浮层与逐格读的 Dart 侧状态（只在真正装载新文档时调，
+  /// [_buildWindowDocument] 保持纯函数）：新文档里没有放大浮层；逐格读只在
+  /// 「跨页尽头交给翻页」留下落点 [focusResume] 时由新文档接着聚焦，否则退出。
+  void _resetBubbleStateForNewDocument(String focusResume) {
+    _bubbleZoomOpen = false;
+    _bubbleFocusResume = null;
+    if (focusResume.isEmpty && _bubbleFocusActive) {
+      if (mounted) {
+        setState(() => _bubbleFocusActive = false);
+      } else {
+        _bubbleFocusActive = false;
+      }
+    }
+  }
+
+  void _exitBubbleFocus() {
+    if (isDictionaryShown) clearDictionaryResult();
+    _runBubbleFocusJs('window.__mangaFocusExit && window.__mangaFocusExit();');
+  }
+
+  /// JS `onMangaBubbleFocus(state, index, total, pendingEdge)`：state 为
+  /// enter / state / turn / exit。
+  void _onMangaBubbleFocus(List<dynamic> args) {
+    if (args.isEmpty || !mounted) return;
+    final String state = '${args[0]}';
+    final int index = args.length > 1 && args[1] is num
+        ? (args[1] as num).toInt()
+        : -1;
+    final int total = args.length > 2 && args[2] is num
+        ? (args[2] as num).toInt()
+        : 0;
+    final String edge = args.length > 3 ? '${args[3]}' : '';
+    setState(() {
+      _bubbleFocusActive = state != 'exit';
+      _bubbleFocusResume = state == 'turn' && edge.isNotEmpty ? edge : null;
+      if (state != 'turn') {
+        _bubbleFocusIndex = index;
+        _bubbleFocusTotal = total;
+      }
+    });
+  }
+
+  /// 文字条 / 台词栏的版式：桌面右侧台词栏，触屏底部文字条。
+  MangaTextStripLayout get _textStripLayout => isDesktopPlatform
+      ? MangaTextStripLayout.panel
+      : MangaTextStripLayout.strip;
+
+  /// 顶栏「台词文字条」开关：与 [_toggleOcrBoxes] 同样写本书覆盖，再重建文档
+  /// （页面要给文字条 / 台词栏让出边距）。
+  Future<void> _toggleTextStrip() async {
+    final bool next = !_readerPreferences.bubbleTextStrip;
+    setState(() {
+      _readerPreferences = _readerPreferences.copyWithJson(<String, Object?>{
+        'bubbleTextStrip': next,
+      });
+    });
+    final EpubBookRow? row = _bookRow;
+    if (row != null && row.uid.isNotEmpty) {
+      await _patchReaderOverride(row.uid, <String, Object?>{
+        'bubbleTextStrip': next,
+      });
+    }
+    if (!mounted) return;
+    await _loadInitialWindow();
+  }
+
   _MangaReaderInputSource? _lastReaderInputSource;
   DateTime? _lastReaderInputAt;
   Timer? _dictionaryTurnDismissTimer;
@@ -4514,6 +4721,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       unawaited(_toggleBookmarkHere(_bookmarkOnScreen()));
       return;
     }
+    if (action == MangaReaderInputAction.toggleBubbleFocus) {
+      _runBubbleFocusJs(
+        'window.__mangaFocusToggle && window.__mangaFocusToggle();',
+      );
+      return;
+    }
     if (action == MangaReaderInputAction.readAloudPlayPause ||
         action == MangaReaderInputAction.readAloudPrevious ||
         action == MangaReaderInputAction.readAloudNext) {
@@ -4531,6 +4744,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _lastReaderInputAction = action;
     _lastReaderInputSource = source;
     _lastReaderInputAt = now;
+    // 气泡放大浮层开着：关词典 / 返回键（默认都是 Esc）先收浮层，不退书。
+    if (_bubbleZoomOpen &&
+        (action == MangaReaderInputAction.dismissDictionary ||
+            action == MangaReaderInputAction.backOrExit)) {
+      _dictionaryTurnDismissTimer?.cancel();
+      if (isDictionaryShown) clearDictionaryResult();
+      _closeBubbleZoom();
+      return;
+    }
+    // 逐格读中：← → 换气泡（到头自动翻页），返回键（Esc）退出逐格读而不退书。
+    // 关词典那一级（弹窗开着时的 Esc）照常先关弹窗。
+    if (_bubbleFocusActive) {
+      final int? step = switch (action) {
+        MangaReaderInputAction.next => 1,
+        MangaReaderInputAction.previous => -1,
+        _ => null,
+      };
+      if (step != null) {
+        _stepBubbleFocusClosingDictionary(step);
+        return;
+      }
+      if (action == MangaReaderInputAction.backOrExit) {
+        _exitBubbleFocus();
+        return;
+      }
+    }
     if (action == MangaReaderInputAction.dismissDictionary) {
       _dictionaryTurnDismissTimer?.cancel();
       clearDictionaryResult();
@@ -5791,10 +6030,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 制卡用的分镜（归一化 [Rect]，阅读顺序）。条漫没有分镜格；模型不可用 / 检测失败
-  /// 时为空——调用方据此退回文本外扩（对话框）或整页（一键制卡）。
+  /// 制卡页 [pageIndex] 是否条漫长条（按 mokuro 给的原始像素尺寸，见
+  /// [isMangaStripPage]）。看的是页面形状而不是阅读模式：普通漫画用 webtoon 模式
+  /// 读时每页仍有分镜格，照样可以裁到分镜。没有 payload / 页越界 → false。
+  bool _isStripPage(int pageIndex) {
+    final MokuroPayload? payload = _payload;
+    if (payload == null || pageIndex < 0) return false;
+    if (pageIndex >= payload.images.length) return false;
+    final MokuroSize size = payload.images[pageIndex].size;
+    return isMangaStripPage(width: size.width, height: size.height);
+  }
+
+  /// 制卡用的分镜（归一化 [Rect]，阅读顺序）。条漫长条页没有分镜格；模型不可用 /
+  /// 检测失败时为空——调用方据此退回文本外扩（对话框）或整页（一键制卡）。
   Future<List<Rect>> _miningPanels(int pageIndex) async {
-    if (_mode.isWebtoon) return const <Rect>[];
+    if (_isStripPage(pageIndex)) return const <Rect>[];
     if (await _ensurePanelDetector() == null) return const <Rect>[];
     final PanelDetectionResult result = await _detectPanels(pageIndex);
     if (!result.usable) return const <Rect>[];
@@ -5901,7 +6151,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       overrides: overrides,
       miningPageIndex: miningPageIndex,
       cropToPanelByDefault: appModel.mangaMiningCropToPanel,
-      webtoon: _mode.isWebtoon,
+      stripPage: miningPageIndex != null && _isStripPage(miningPageIndex),
     );
     final String? planDiagnostic = imagePlan.diagnostic;
     if (planDiagnostic != null) {
@@ -6642,6 +6892,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @visibleForTesting
   Future<Object?> debugEvaluateJavascript(String source) async =>
       _controller?.evaluateJavascript(source: source);
+
+  /// 集成测试探针：经 DevTools 协议给正文 WebView 投真实输入（`Input.dispatchMouseEvent`
+  /// 走 Chromium 的输入管线，页面收到的是真 pointer 事件，不是脚本合成的）。
+  @visibleForTesting
+  Future<Object?> debugCallDevToolsProtocolMethod(
+    String method,
+    Map<String, dynamic> parameters,
+  ) async => _controller?.callDevToolsProtocolMethod(
+    methodName: method,
+    parameters: parameters,
+  );
 
   /// 集成测试取证：抓取正文 WebView 的实际渲染像素。
   @visibleForTesting
@@ -7640,56 +7901,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       ),
                     ),
                   ),
-                  // 漫画朗读播放卡：跟界面一起显隐（用户 2026-11-20：隐藏界面时
-                  // 卡片不该还挡在画面上；音频照常播，暂停 / 上下句用快捷键或唤出
-                  // 界面），显示时让到底部 chrome 上方。
-                  if (_readAloud.controller
-                      case final MangaReadAloudController readAloud)
+                  // 逐格读底部浮条（触屏）：‹ 序号 › ✕。桌面走键盘 / 滚轮，不出浮条。
+                  // 文字条开着时让到它上方。
+                  if (!isDesktopPlatform)
                     Positioned(
-                      left: kMangaChromeEdgeInset,
-                      right: kMangaChromeEdgeInset,
+                      left: 0,
+                      right: 0,
                       bottom:
                           MediaQuery.paddingOf(context).bottom +
-                          (_chromeVisible && _chromeActionsEnabled
-                              ? kMangaChromeBottomBarHeight
-                              : kMangaChromeBottomGap),
-                      child: ListenableBuilder(
-                        listenable: readAloud,
-                        builder: (BuildContext context, Widget? _) =>
-                            MangaChromeReveal(
-                              fromTop: false,
-                              visible: readAloud.isActive && _chromeVisible,
-                              child: Center(
-                                child: MangaReadAloudBar(
-                                  controller: readAloud,
-                                  keyHints: _readAloudKeyHints,
-                                  onVoice: () =>
-                                      unawaited(_readAloud.switchVoice()),
-                                ),
-                              ),
-                            ),
-                      ),
-                    ),
-                  // 漫画有声（成品音频）播放卡：同上，跟界面一起显隐。
-                  if (_readAloud.audio
-                      case final MangaAudioPlaybackDriver audio)
-                    Positioned(
-                      left: kMangaChromeEdgeInset,
-                      right: kMangaChromeEdgeInset,
-                      bottom:
-                          MediaQuery.paddingOf(context).bottom +
-                          (_chromeVisible && _chromeActionsEnabled
-                              ? kMangaChromeBottomBarHeight
-                              : kMangaChromeBottomGap),
+                          mangaTextStripReserve(
+                            _readerPreferences,
+                            _textStripLayout,
+                          ).bottom +
+                          kMangaChromeBottomGap,
                       child: MangaChromeReveal(
                         fromTop: false,
-                        visible: _chromeVisible,
+                        visible: _bubbleFocusActive,
                         child: Center(
-                          child: MangaAudioPlaybackBar(
-                            key: ValueKey<MangaAudioPlaybackDriver>(audio),
-                            driver: audio,
-                            keyHints: _readAloudKeyHints,
-                            onStop: _readAloud.stopAudio,
+                          child: MangaBubbleFocusBar(
+                            index: _bubbleFocusIndex,
+                            total: _bubbleFocusTotal,
+                            rtl: _spreadDirection == 'rtl',
+                            onStep: _stepBubbleFocus,
+                            onExit: _exitBubbleFocus,
                           ),
                         ),
                       ),
@@ -7934,24 +8168,83 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           jumpMarks: _mangaJumpMarks(),
         ),
       ),
-      toolbar: MangaReaderToolbar(
-        groups: plan.toolbar,
-        // FAB = 本页主操作：识别框开关（查词的入口）。开 = 圆角方、关 = 圆，按
-        // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。Apple 无 FAB，开关
-        // 在工具栏里（[_ocrBoxesToggleAction]）。
-        fab: isGlassDesign(context)
-            ? null
-            : KeyedSubtree(
-                key: const ValueKey<String>('manga_ocr_boxes_toggle'),
-                child: FushiToolbarFab(
-                  icon: _ocrBoxesIcon,
-                  tooltip: t.manga_ocr_boxes_toggle,
-                  rounded: _showOcrBoxes,
-                  morphing: true,
-                  onPressed: () => unawaited(_toggleOcrBoxes()),
-                ),
-              ),
-      ),
+      toolbar:
+          _buildPlaybackBar(plan) ??
+          MangaReaderToolbar(
+            groups: plan.toolbar,
+            // FAB = 本页主操作：识别框开关（查词的入口）。开 = 圆角方、关 = 圆，按
+            // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。Apple 无 FAB，开关
+            // 在工具栏里（[_ocrBoxesToggleAction]）。
+            fab: isGlassDesign(context)
+                ? null
+                : KeyedSubtree(
+                    key: const ValueKey<String>('manga_ocr_boxes_toggle'),
+                    child: FushiToolbarFab(
+                      icon: _ocrBoxesIcon,
+                      tooltip: t.manga_ocr_boxes_toggle,
+                      rounded: _showOcrBoxes,
+                      morphing: true,
+                      onPressed: () => unawaited(_toggleOcrBoxes()),
+                    ),
+                  ),
+          ),
+    );
+  }
+
+  /// 朗读 / 有声播放期间替换底栏工具栏那一行的播放条（与小说阅读器的有声书播放条
+  /// 同一思路，用户 2026-11-21）；没在播放时为 null（照常画工具栏）。
+  ///
+  /// 播放条与工具栏同高、坐在同一个槽里，所以固定态正文让位高度不变、悬浮态照旧浮在
+  /// 页图上并跟着底栏一起收起——画面不会因为开始播放被挤上去，也不会在收起界面后
+  /// 还留一块浮层。底栏原有按钮并进播放条中段（[_playbackBarMiddle]）。
+  Widget? _buildPlaybackBar(MangaChromePlan plan) {
+    final MangaAudioPlaybackDriver? audio = _readAloud.audio;
+    if (audio != null) {
+      return MangaAudioPlaybackBar(
+        key: ValueKey<MangaAudioPlaybackDriver>(audio),
+        driver: audio,
+        keyHints: _readAloudKeyHints,
+        onStop: _readAloud.stopAudio,
+        middle: _playbackBarMiddle(plan),
+      );
+    }
+    final MangaReadAloudController? readAloud = _readAloud.controller;
+    if (readAloud != null && readAloud.isActive) {
+      return MangaReadAloudBar(
+        key: ValueKey<MangaReadAloudController>(readAloud),
+        controller: readAloud,
+        keyHints: _readAloudKeyHints,
+        onVoice: () => unawaited(_readAloud.switchVoice()),
+        middle: _playbackBarMiddle(plan),
+      );
+    }
+    return null;
+  }
+
+  /// 播放条中段：底栏工具栏原有的按钮（同一份动作表、同一执行体），MD3 下再补上
+  /// 识别框开关（平时是工具栏旁的 FAB；Apple 下它本来就在动作表里）。
+  Widget? _playbackBarMiddle(MangaChromePlan plan) {
+    final List<MangaChromeAction> actions = <MangaChromeAction>[
+      for (final List<MangaChromeAction> g in plan.toolbar) ...g,
+      if (!isGlassDesign(context) && _chromeActionsEnabled)
+        _ocrBoxesToggleAction(),
+    ];
+    if (actions.isEmpty) return null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final MangaChromeAction a in actions)
+          FushiIconButton(
+            key: a.key,
+            icon: a.icon,
+            tooltip: a.label,
+            padTouchTarget: true,
+            busy: a.busy,
+            selected: a.active && !a.busy,
+            enabled: a.onPressed != null,
+            onTap: a.onPressed,
+          ),
+      ],
     );
   }
 
@@ -8295,6 +8588,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           priority: priority,
           active: reading,
           onPressed: () => unawaited(_readAloud.toggle()),
+        );
+      case MangaControlItem.textStrip:
+        if (_sourceReviewActive) return null;
+        final bool stripOn = _readerPreferences.bubbleTextStrip;
+        return MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_text_strip_button'),
+          icon: stripOn
+              ? FushiIcons.filled(FushiIcons.subtitles)
+              : FushiIcons.subtitles,
+          label: t.manga_reader_bubble_text_strip,
+          slot: slot,
+          priority: priority,
+          active: stripOn,
+          onPressed: () => unawaited(_toggleTextStrip()),
         );
       case MangaControlItem.ocrBoxes:
         // Apple 没有 FAB：识别框开关是一颗普通开关按钮（开 = 强调色字形，
@@ -9063,6 +9370,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _toggleFloatingChrome();
           },
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaBubbleZoom',
+          callback: _onMangaBubbleZoom,
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaBubbleFocus',
+          callback: _onMangaBubbleFocus,
         );
         controller.addJavaScriptHandler(
           handlerName: 'onMangaReaderHide',

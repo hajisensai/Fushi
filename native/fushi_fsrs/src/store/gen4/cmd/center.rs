@@ -193,7 +193,7 @@ fn check_item(
     ix: &mut Index<'_, '_>,
     col: i64,
     profile: &str,
-    writers: &BTreeMap<String, String>,
+    writers: &crate::store::gen4::class::WriterAliases,
     it: &Value,
 ) -> Result<(bool, Value), String> {
     let kind = it["k"]

@@ -3637,8 +3637,10 @@ window.fushiSelection = {
     var mangaGroupRect = null;
     var mangaGroup = mangaSentenceElement
       ? mangaSentenceElement.getAttribute('data-manga-sentence-group') : null;
+    // `.manga-zoom-page` = 漫画气泡放大浮层里的整页克隆（同样带 data-page 与 OCR
+    // 块）：在浮层里查词时句子框量的是放大后的块，弹窗锚到放大的气泡旁。
     var mangaPage = mangaSentenceElement && mangaSentenceElement.closest
-      ? mangaSentenceElement.closest('.manga-page') : null;
+      ? mangaSentenceElement.closest('.manga-page, .manga-zoom-page') : null;
     var mangaPageIndex = mangaPage
       ? Number(mangaPage.getAttribute('data-page')) : null;
     if (!Number.isInteger(mangaPageIndex) || mangaPageIndex < 0) {

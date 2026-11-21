@@ -1,4 +1,4 @@
-﻿# 定时刷新符号索引：把专用 worktree（<主 checkout>/.worktrees/symindex）拨到最新 origin/develop，
+﻿# 定时刷新符号索引：把专用 worktree（主 checkout 同级的 ../fushi-wt/symindex，按仓库规则不放 .worktrees/）拨到最新 origin/develop，
 # develop 没动就什么都不做；动了就解析依赖、经本机重活租约（fushi/tool/heavy.dart）重建索引。
 # 由计划任务每小时调用（tool/symindex/install_task.ps1 注册），也可手动跑。
 #
@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $commonDir = (git -C $here rev-parse --path-format=absolute --git-common-dir).Trim()
 $main = Split-Path -Parent $commonDir
-$wt = Join-Path $main '.worktrees\symindex'
+$wt = Join-Path (Split-Path -Parent $main) 'fushi-wt\symindex'
 $log = Join-Path $env:LOCALAPPDATA 'fushi-symindex\refresh.log'
 New-Item -ItemType Directory -Force (Split-Path -Parent $log) | Out-Null
 function Write-Log([string]$msg) { "$(Get-Date -Format s) $msg" | Out-File -Append -Encoding utf8 $log }

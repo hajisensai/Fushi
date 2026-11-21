@@ -21,6 +21,8 @@ on:
       - '.github/**'
       - 'tool/**'
       - '.claude/agents/**'
+      # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
+      - 'CLAUDE.md'
   # 本仓日常大量直推 develop（不走 PR），而发布 workflow 的 push 已不再因 workflow / tool
   # 改动触发——直推也要有门。
   push:
@@ -29,6 +31,8 @@ on:
       - '.github/**'
       - 'tool/**'
       - '.claude/agents/**'
+      # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
+      - 'CLAUDE.md'
 
 permissions:
   contents: read

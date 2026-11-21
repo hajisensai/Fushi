@@ -23,7 +23,7 @@ python tool/symindex/sym.py find PressScale               # 名字子串模糊�
 
 - 索引位置：`%LOCALAPPDATA%/fushi-symindex/index.sqlite`（`FUSHI_SYMINDEX_DB` 可改）。
 - 手动全量：`python tool/symindex/build.py --repo <checkout>`。2026-11-21 实测全仓 11.5k 个 Dart 文件 + 10 个 crate：24.7 万符号、195 万引用，15～25 分钟（Dart 8～17 分钟，随本机负载；Rust 约 7 分钟），heavy 记录的进程树峰值约 9.5 GB，索引约 80 MB。被索引的 checkout 必须已跑过 `setup_worktree.ps1`（否则 analyzer 仍报「解析成功」但跨包引用丢一半，`build.py` 发现缺 `package_config.json` / `strings.g.dart` 会直接失败）。
-- 定时：`tool/symindex/refresh.ps1` 把专用 worktree `<主 checkout>/.worktrees/symindex` 拨到最新 `origin/develop`，develop 没动就退出；动了就跑 `setup_worktree.ps1` 解析依赖，再经本机重活租约（`fushi/tool/heavy.dart`）重建。`tool/symindex/install_task.ps1` 注册每小时一次的计划任务 `FushiSymindexRefresh`，日志在 `%LOCALAPPDATA%/fushi-symindex/refresh.log`。
+- 定时：`tool/symindex/refresh.ps1` 把专用 worktree `../fushi-wt/symindex`（主 checkout 同级）拨到最新 `origin/develop`，develop 没动就退出；动了就跑 `setup_worktree.ps1` 解析依赖，再经本机重活租约（`fushi/tool/heavy.dart`）重建。`tool/symindex/install_task.ps1` 注册每小时一次的计划任务 `FushiSymindexRefresh`，日志在 `%LOCALAPPDATA%/fushi-symindex/refresh.log`。
 - 单元测试：`python3 tool/symindex/symdb_test.py`（CI：`ci-config-gate.yml`）。
 
 ## 收录范围

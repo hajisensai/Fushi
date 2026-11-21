@@ -50,6 +50,8 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         fushiMastheadPaletteOf,
         fushiMastheadProgressOf,
         kFushiMastheadTrackedOffset;
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
+    show FushiPageTitleTier;
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -866,6 +868,8 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     // + 分类形状徽标 + 当前分组小字 + 平铺动作（放不下才收「⋯」）。
     return FushiMastheadHeader(
       title: widget.title,
+      // 设置页满屏是小字行：页名用二级字阶，不用库页的 84 / w900 大字。
+      titleTier: FushiPageTitleTier.section,
       progress: p,
       onBack: widget.onBack,
       actions: widget.actions,
@@ -1644,7 +1648,10 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color page = apple
-        ? appleColorsOf(context).groupedBackground
+        ? fushiPageBackgroundColorOr(
+            context,
+            appleColorsOf(context).groupedBackground,
+          )
         : fushiPageBackgroundColor(context);
     final bool canPop =
         widget.showBack && (ModalRoute.of(context)?.canPop ?? false);

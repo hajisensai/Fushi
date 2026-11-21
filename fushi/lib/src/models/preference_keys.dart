@@ -469,9 +469,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',
-  // bool：库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示已处理
-  // （弹过，或判定本安装不需要弹）。描述本安装的状态，与 first_time_setup 同族、
-  // 不随 Profile 走（library_layout_default_notice.dart）。
+  // bool：已删除的「库页现在默认封面网格」一次性提示（拍板台 pr3454）的已处理标记。
+  // 该提示与「选一种库页布局」选择框（G1）重叠、说法相反，2026-11-21 按 PR #3756
+  // 拍板删除（BUG-5060）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'library_layout_default_notice_handled',
   // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
   // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个

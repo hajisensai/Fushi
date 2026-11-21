@@ -251,6 +251,25 @@ void main() {
       );
     });
 
+    // BUG-5061：媒体积压上千个文件时以前只显示「同步卡片媒体」，看不出在不在动。
+    testWidgets('媒体阶段知道总数：文字带计数 + 确定进度', (WidgetTester tester) async {
+      const SrsSyncProgress p = SrsSyncProgress(
+        stage: SrsSyncStage.media,
+        done: 37,
+        total: 1200,
+      );
+      srsSyncProgress.value = p;
+      await pumpBanner(tester);
+      final String line = srsSyncProgressLine(p);
+      expect(find.text(line), findsOneWidget);
+      expect(line, contains('37'));
+      expect(line, contains('1200'));
+      expect(
+        barValue(tester, 'sync-progress-banner-srs'),
+        closeTo(37 / 1200, 1e-9),
+      );
+    });
+
     testWidgets('准备 / 上传 / 媒体各有文案，进度条不确定', (WidgetTester tester) async {
       for (final SrsSyncStage stage in <SrsSyncStage>[
         SrsSyncStage.preparing,
