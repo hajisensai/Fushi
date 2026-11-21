@@ -310,10 +310,10 @@ void main() {
 
     for (final Size size in <Size>[
       const Size(420, 204),
-      const Size(220, 270),
+      const Size(400, 125),
     ]) {
       testWidgets(
-        '${size.width}×${size.height}：封面 + 唱片 + 标题大字 + CD chip，悬停唱片转出',
+        '${size.width}×${size.height}：封面 + 唱片 + 标题 / 副行 + CD chip，悬停唱片滑出',
         (WidgetTester tester) async {
           final SemanticsHandle semantics = tester.ensureSemantics();
           const String title = 'Fly Me to the Star';
@@ -323,7 +323,7 @@ void main() {
               title: title,
               art: FushiCoverBlockArt.square,
               chip: 'CD',
-              subtitle: 'should not show',
+              subtitle: 'sumimi · 2025',
               disc: ColoredBox(key: discKey, color: Colors.black),
               covers: <Widget>[ColoredBox(key: coverKey, color: Colors.teal)],
             ),
@@ -332,8 +332,9 @@ void main() {
           expect(find.byKey(discKey), findsOneWidget);
           expect(find.byKey(coverKey), findsOneWidget);
           expect(find.text('CD'), findsOneWidget);
-          expect(find.text('should not show'), findsNothing);
-          expect(fitPaint(title), findsOneWidget);
+          // 2026-11-21 起与原摆法同一套文字区：副行照常显示，标题是正文。
+          expect(find.text('sumimi · 2025'), findsOneWidget);
+          expect(find.text(title), findsOneWidget);
           expect(find.bySemanticsLabel(title), findsOneWidget);
 
           final Rect cover = tester.getRect(find.byKey(coverKey));
@@ -348,9 +349,7 @@ void main() {
       );
     }
 
-    testWidgets('唱片压在封面之上（W 原型「扇形」：唱片 z 2、封面 z 1）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('唱片垫在封面后面（从封套里滑出：唱片先画、封面压在上面）', (WidgetTester tester) async {
       await pumpBlock(
         tester,
         const FushiCoverBlock(
@@ -359,7 +358,7 @@ void main() {
           disc: ColoredBox(key: discKey, color: Colors.black),
           covers: <Widget>[ColoredBox(key: coverKey, color: Colors.teal)],
         ),
-        size: const Size(220, 270),
+        size: const Size(420, 204),
       );
       final List<Element> order = <Element>[];
       void visit(Element e) {
@@ -369,7 +368,7 @@ void main() {
       }
 
       tester.element(find.byKey(blockKey)).visitChildren(visit);
-      expect(order.map((Element e) => e.widget.key), <Key>[coverKey, discKey]);
+      expect(order.map((Element e) => e.widget.key), <Key>[discKey, coverKey]);
     });
   });
 

@@ -47,7 +47,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 169);
+    expect(migrated.schemaVersion, 170);
     await addVideo(migrated, 'video/a');
     await migrated.setVideoCollectionSectionOverrides(<String>[
       'video/a',
@@ -55,7 +55,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 169);
+    expect(probe.select('PRAGMA user_version').first.values.first, 170);
     expect(tableExists(probe, 'video_collection_section_overrides'), isTrue);
     expect(
       probe

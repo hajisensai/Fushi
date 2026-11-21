@@ -17,6 +17,7 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/music_disc_art.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
@@ -464,6 +465,44 @@ void main() {
     expect(playbackRouteMarks.isPlayback(route), isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
     expect(playbackRouteMarks.isPlayback(route), isFalse);
+  });
+
+  testWidgets('唱片模式：专辑有盘面扫描图就转真盘面，没有才画黑胶 + 封面贴标', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1424, 951);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await app.prefsRepo.setMusicLyricsLayout(MusicLyricsLayout.disc.prefValue);
+    final String disc = '${dir.path}${Platform.pathSeparator}disc.png';
+    File(disc).writeAsBytesSync(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      ),
+    );
+    addTearDown(
+      () => MusicDiscArtIndex.instance.publish(const <String, String>{}),
+    );
+    MusicDiscArtIndex.instance.publish(<String, String>{'al-1': disc});
+    await app.musicSession.engine.playQueue(<MusicPlayItem>[
+      MusicPlayItem(
+        trackUid: 'uid-1',
+        path: '${dir.path}${Platform.pathSeparator}song.flac',
+        title: 'Night Run',
+        albumUid: 'al-1',
+        durationMs: 60000,
+      ),
+    ]);
+    await app.musicSession.engine.pause();
+    await pumpPage(tester);
+    const ValueKey<String> realDisc = ValueKey<String>(
+      'music-player-real-disc',
+    );
+    expect(find.byKey(realDisc), findsOneWidget);
+
+    // 盘面图映射里没有这张专辑：回退黑胶。
+    MusicDiscArtIndex.instance.publish(const <String, String>{});
+    await tester.pump();
+    expect(find.byKey(realDisc), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('宽屏歌词页有返回键（窄屏顶栏有关闭键，宽屏原本没有退出口）', (WidgetTester tester) async {

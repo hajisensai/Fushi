@@ -81,7 +81,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 169);
+    expect(migrated.schemaVersion, 170);
     final List<CollectionRelationRow> before = await migrated
         .getCollectionRelations(a);
     expect(before.map((CollectionRelationRow r) => r.id), <int>[41, 42]);
@@ -172,7 +172,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 169);
+    expect(probe.select('PRAGMA user_version').first.values.first, 170);
     final String sql =
         probe
                 .select(

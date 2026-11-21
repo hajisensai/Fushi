@@ -37,6 +37,8 @@ import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/music/music_disc_art.dart'
+    show MusicDiscArtIndex, isLocalMusicTrackPath;
 import 'package:fushi/src/media/music/music_range_preview.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -1631,6 +1633,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 children: <Widget>[
                   _SpinningDisc(
                     coverPath: item?.coverPath,
+                    albumUid: item?.albumUid,
+                    trackPath: item?.path,
                     size: disc,
                     spinning: _engine.isPlaying,
                   ),
@@ -2547,15 +2551,25 @@ class _LyricsCover extends StatelessWidget {
   );
 }
 
-/// 唱片：深色同心纹盘面，中央嵌十二角饼干形封面；播放时匀速转，暂停停在原角度。
+/// 唱片：专辑目录里有盘面扫描图（[MusicDiscArtIndex]）时转的就是那张真盘面；没有
+/// 才画黑胶盘面、中央贴圆形封面。播放时匀速转，暂停停在原角度。
 class _SpinningDisc extends StatefulWidget {
   const _SpinningDisc({
     required this.coverPath,
     required this.size,
     required this.spinning,
+    this.albumUid,
+    this.trackPath,
   });
 
   final String? coverPath;
+
+  /// 当前曲目所属的曲库专辑（找盘面扫描图用）；插件 / 服务器曲目为 null。
+  final String? albumUid;
+
+  /// 当前曲目路径：曲库页还没发布过盘面图映射（从别处直接进播放页）时，按它所在的
+  /// 专辑目录现找一次。
+  final String? trackPath;
   final double size;
   final bool spinning;
 
@@ -2571,6 +2585,52 @@ class _SpinningDiscState extends State<_SpinningDisc>
     duration: const Duration(seconds: 12),
   );
 
+  /// 曲库页没发布到、按曲目目录现找出的盘面图（专辑 uid → 路径；找过没有记 null）。
+  final Map<String, String?> _lookedUp = <String, String?>{};
+
+  @override
+  void initState() {
+    super.initState();
+    MusicDiscArtIndex.instance.albums.addListener(_onDiscArt);
+    _lookUpDiscArt();
+  }
+
+  void _onDiscArt() {
+    if (mounted) setState(() {});
+  }
+
+  /// 当前专辑的盘面扫描图：先看曲库页发布的映射（含标签不一致拆开的版本共用，
+  /// BUG-5058），没有再看现找的结果。
+  String? get _discArtPath {
+    final String? album = widget.albumUid;
+    if (album == null) return null;
+    return MusicDiscArtIndex.instance.albums.value[album] ?? _lookedUp[album];
+  }
+
+  void _lookUpDiscArt() {
+    final String? album = widget.albumUid;
+    final String? path = widget.trackPath;
+    if (album == null ||
+        path == null ||
+        !isLocalMusicTrackPath(path) ||
+        _lookedUp.containsKey(album) ||
+        MusicDiscArtIndex.instance.albums.value.containsKey(album)) {
+      return;
+    }
+    _lookedUp[album] = null;
+    unawaited(
+      MusicDiscArtIndex.instance
+          .resolve(<String, List<String>>{
+            album: <String>[path],
+          })
+          .then((Map<String, String> found) {
+            final String? hit = found[album];
+            if (hit == null || !mounted) return;
+            setState(() => _lookedUp[album] = hit);
+          }),
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -2581,6 +2641,7 @@ class _SpinningDiscState extends State<_SpinningDisc>
   void didUpdateWidget(_SpinningDisc old) {
     super.didUpdateWidget(old);
     if (old.spinning != widget.spinning) _sync();
+    if (old.albumUid != widget.albumUid) _lookUpDiscArt();
   }
 
   void _sync() {
@@ -2594,6 +2655,7 @@ class _SpinningDiscState extends State<_SpinningDisc>
 
   @override
   void dispose() {
+    MusicDiscArtIndex.instance.albums.removeListener(_onDiscArt);
     _turn.dispose();
     super.dispose();
   }
@@ -2601,6 +2663,8 @@ class _SpinningDiscState extends State<_SpinningDisc>
   @override
   Widget build(BuildContext context) {
     final double size = widget.size;
+    final String? discArt = _discArtPath;
+    if (discArt != null) return _buildRealDisc(size, discArt);
     // 黑胶（用户 2026-10-29：「唱片那个材质改成黑胶」）：密纹盘面 + 两道随盘面
     // 转动的扇形反光 + 中央圆形贴标（封面）+ 中心轴孔。整张一起转，反光跟着转
     // 读作「光打在转动的胶片上」。
@@ -2654,6 +2718,49 @@ class _SpinningDiscState extends State<_SpinningDisc>
       ),
     );
   }
+}
+
+extension on _SpinningDiscState {
+  /// 真盘面：盘面扫描图铺满圆形整张转（扫图本身就有贴标、轴孔与反光，不再叠黑胶
+  /// 纹路和假贴标）；外缘一道细亮边让浅色盘面在浅色背景上也有轮廓。
+  Widget _buildRealDisc(double size, String discArt) => RepaintBoundary(
+    key: const ValueKey<String>('music-player-real-disc'),
+    child: SizedBox.square(
+      dimension: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: size * 0.1,
+              offset: Offset(0, size * 0.05),
+            ),
+          ],
+        ),
+        child: RotationTransition(
+          turns: _turn,
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.28),
+                width: math.max(1, size * 0.004),
+              ),
+            ),
+            child: ClipOval(
+              child: musicDiscArtImage(
+                discArt,
+                decodeWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// 黑胶盘面：近黑底、一圈圈细密纹（亮暗交替的同心圆）、外缘一道唇边、贴标外

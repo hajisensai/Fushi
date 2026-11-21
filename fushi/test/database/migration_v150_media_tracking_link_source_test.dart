@@ -65,7 +65,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 169);
+      expect(migrated.schemaVersion, 170);
       final MediaTrackingMappingRow row = await migrated
           .select(migrated.mediaTrackingMappings)
           .getSingle();
@@ -97,7 +97,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 169);
+      expect(probe.select('PRAGMA user_version').first.values.first, 170);
       expect(
         columnsOf(probe, 'media_tracking_mappings'),
         containsAll(<String>['link_source', 'confidence']),
@@ -150,7 +150,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 169);
+      expect(probe.select('PRAGMA user_version').first.values.first, 170);
     },
   );
 }

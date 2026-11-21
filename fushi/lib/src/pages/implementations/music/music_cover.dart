@@ -181,9 +181,10 @@ class MusicCover extends StatelessWidget {
 }
 
 /// 专辑盘面扫描图（[MusicDiscArtIndex] 认出的本地文件）画进唱片色块
-/// （[FushiCoverBlock.disc]）的图：按 512 宽解码、铺满圆形裁切。
-Widget musicDiscArtImage(String path) => Image(
-  image: ResizeImage.resizeIfNeeded(512, null, FileImage(File(path))),
+/// （[FushiCoverBlock.disc]）的图：默认按 512 宽解码（播放页大唱片传实际像素宽），
+/// 铺满圆形裁切。
+Widget musicDiscArtImage(String path, {int decodeWidth = 512}) => Image(
+  image: ResizeImage.resizeIfNeeded(decodeWidth, null, FileImage(File(path))),
   fit: BoxFit.cover,
   excludeFromSemantics: true,
 );
