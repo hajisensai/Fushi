@@ -118,6 +118,11 @@ class SmartSubtitleMaskSampler {
 
   /// 这一串连续失败已经报过：持续失败（每个采样周期一次）只记第一条。
   bool _errorReported = false;
+
+  /// 画面代际：每次画面不连续（seek / 倒退）或换搜索区域都 +1。一次抽样在截帧前记下
+  /// 当时的代际，截帧 / 识别回来时代际变了就整帧作废——旧帧的行框不能盖到新时间点上，
+  /// 也不能喂进刚清空的 tracker（HBK-AUDIT-007）。
+  int _generation = 0;
   int? _lastSampledPositionMs;
   int? _lastSeenPositionMs;
   Duration? _lastSampleAt;
@@ -132,6 +137,7 @@ class SmartSubtitleMaskSampler {
   set region(Rect value) {
     if (value == _region) return;
     _region = value;
+    _generation++;
     _tracker.reset();
     if (_unavailable) {
       _rect.value = value;
@@ -172,6 +178,7 @@ class SmartSubtitleMaskSampler {
     if (position != null && seen != null) {
       final int delta = position - seen;
       if (delta < 0 || delta > kSmartSubtitleMaskSeekJumpMs) {
+        _generation++;
         _tracker.reset();
         if (!_unavailable) _rect.value = null;
       }
@@ -198,12 +205,13 @@ class SmartSubtitleMaskSampler {
     _lastSampleAt = _clock();
     _lastSampledPositionMs = _controller.positionMs;
     final Rect region = _region;
+    final int generation = _generation;
     try {
       final RawVideoFrameCrop? crop = await _capture(region);
-      if (_disposed || crop == null) return;
+      if (_disposed || crop == null || generation != _generation) return;
       final List<Rect> lines = await _detect(crop);
-      // 识别期间换了搜索区域：这一帧作废。
-      if (_disposed || region != _region) return;
+      // 截帧 / 识别期间 seek 了或换了搜索区域：这一帧属于旧画面，作废。
+      if (_disposed || generation != _generation) return;
       final Rect? next = _tracker.addSample(
         lines: lines,
         region: region,
