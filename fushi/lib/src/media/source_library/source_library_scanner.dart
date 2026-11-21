@@ -38,7 +38,7 @@ import 'dart:isolate';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi/src/media/source_library/source_auto_scan.dart'
+import 'package:fushi/src/media/source_library/source_scan_activity.dart'
     show sourceScanActivity;
 
 import 'package:fushi/src/media/music/music_audio_intake.dart';

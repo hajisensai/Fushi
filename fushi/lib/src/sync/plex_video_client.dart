@@ -33,6 +33,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
 import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -191,8 +192,8 @@ class PlexServerConfig implements MediaServerConfig {
   ///
   /// 返回切到新线路后的配置（只改 [activeServerUrl]，不存任何新凭据）；不是传输
   /// 失败、全部不通、或最靠前的可达线路就是当前这条时返回 null（调用方原样
-  /// 照旧报错）。写回与清单缓存失效由调用方做（`rerouteMediaServerAfterFailure`），
-  /// 切换发生在建新客户端之前——已建的客户端不换地址。
+  /// 照旧报错）。写回与清单缓存失效由调用方做（`rerouteMediaServerAfterFailure`，
+  /// 请求漏斗里经 `MediaServerRouteFailover` 单飞调到）。
   Future<PlexServerConfig?> rerouteAfterFailure(
     Object error, {
     required Future<bool> Function(String uri) probe,
@@ -208,12 +209,15 @@ class PlexServerConfig implements MediaServerConfig {
     return withActiveRoute(reachable);
   }
 
+  /// 按当前线路建客户端；传输失败时经这台服务器共享的 [MediaServerRouteFailover]
+  /// 换线路并重试（[MediaServerRouteFailover.hookFor]）。
   PlexVideoClient buildClient({http.Client? httpClient}) => PlexVideoClient(
     api: PlexApi(
       serverUrl: effectiveServerUrl,
       token: token,
       clientInfo: PlexClientInfo(clientIdentifier: clientIdentifier),
       client: httpClient,
+      onRouteFailure: MediaServerRouteFailover.hookFor(sourceId),
     ),
     machineIdentifier: machineIdentifier,
     accountId: accountId,
@@ -235,6 +239,7 @@ class PlexVideoClient
         RemoteVideoCollectionIsWork,
         RemoteVideoTrackingEpisodeFetch,
         RemoteVideoClientConnections,
+        RemoteVideoRouteFailover,
         MediaServerBrowser {
   PlexVideoClient({
     required this.api,
@@ -294,6 +299,10 @@ class PlexVideoClient
 
   @override
   String get serverUrl => api.serverUrl;
+
+  @override
+  Future<bool> failoverRemoteVideoRoute(Object error) =>
+      api.failoverRoute(error);
 
   @override
   RemoteVideoClient get playbackClient => this;

@@ -13,7 +13,11 @@ import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteHandler;
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
-    show BrowserVideoSample;
+    show
+        BrowserVideoSample,
+        BrowserVideoStudyActivity,
+        BrowserVideoStudyActivitySink,
+        BrowserVideoStudyIdentity;
 import 'package:fushi/src/srs/srs_term_status_bridge.dart'
     show kSrsTermStatusBatchMax;
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
@@ -172,6 +176,7 @@ class FushiApiServer {
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
+    BrowserVideoStudyActivitySink? onExtensionStudyActivity,
     ExtensionFavoriteHandler? onExtensionFavorite,
     ExtensionVideoFavoriteHandler? onExtensionVideoFavorite,
     void Function()? onExtensionSeen,
@@ -200,6 +205,7 @@ class FushiApiServer {
        _extensionBuildProvider = extensionBuildProvider,
        _appLocaleProvider = appLocaleProvider,
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
+       _onExtensionStudyActivity = onExtensionStudyActivity,
        _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
        _onExtensionReport = onExtensionReport,
@@ -255,6 +261,9 @@ class FushiApiServer {
   // BUG-3141：扩展查词弹窗 ☆/★ 收藏（POST `/api/extension/favorite`）。app 侧与 app 外
   // 浮窗的 favoriteEntry / favoriteCheck 两个桥同一份收藏读写。未注入时端点 404。
   final ExtensionFavoriteHandler? _onExtensionFavorite;
+  // 反馈 PtsjrnVmH9：扩展查词 / 制卡请求体带 `study`（发请求的标签页正在统计的网页
+  // 视频）时，有结果的查词 / 成功的制卡经此记到该视频名下。未注入时忽略该字段。
+  final BrowserVideoStudyActivitySink? _onExtensionStudyActivity;
   // 浏览器扩展连接探活：任一扩展端点被命中即回调（app 侧记录 last-seen 时间戳，
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
@@ -665,7 +674,9 @@ class FushiApiServer {
       case '/api/lookup/audio/list':
         return _routesFor(services).handleAudioList(request);
       case '/api/mine':
-        return _routesFor(services).handleMine(request);
+        return _routesFor(
+          services,
+        ).handleMine(request, onMined: _reportMineStudyActivity);
       case '/api/mine/forward':
         return _lookupRoutes.handleMineForward(request);
       case '/api/anki/note-type/read':
@@ -867,6 +878,29 @@ class FushiApiServer {
   }
 
   /// BUG-530：浏览器扩展查词端点（与 FushiSyncServer 共享契约）。
+  /// 请求体 `study` 合契约且注入了 sink 时，把这次查词 / 制卡归属到那条网页视频。
+  void _reportStudyActivity(
+    Map<String, dynamic> body,
+    BrowserVideoStudyActivity activity,
+  ) {
+    final BrowserVideoStudyActivitySink? sink = _onExtensionStudyActivity;
+    if (sink == null) return;
+    final BrowserVideoStudyIdentity? identity =
+        BrowserVideoStudyIdentity.tryParse(body['study']);
+    if (identity == null) return;
+    sink(identity, activity);
+  }
+
+  /// `/api/mine` 的旁路记账：只有新卡落成（`result == 'success'`）才算一次制卡，重复卡 /
+  /// 失败不算——与 app 内制卡只在成功时 `recordMiningEvent` 同口径。
+  void _reportMineStudyActivity(
+    Map<String, dynamic> body,
+    Map<String, dynamic> response,
+  ) {
+    if (response['result'] != 'success') return;
+    _reportStudyActivity(body, BrowserVideoStudyActivity.mine);
+  }
+
   Future<shelf.Response> _handleDictionaryLookup(
     shelf.Request request,
     ExtensionRequestServices services,
@@ -896,6 +930,10 @@ class FushiApiServer {
           appLocaleProvider: _appLocaleProvider,
         );
     handlerWatch.stop();
+    // 查到了东西（弹窗有内容）才算一次查词，与 app 内弹窗只在开弹窗时计数同口径。
+    if (response['popupJson'] != null) {
+      _reportStudyActivity(body, BrowserVideoStudyActivity.lookup);
+    }
 
     // jsonEncode 必须只做一次。把最终编码阶段放进响应 header，避免为了把耗时写回
     // JSON body 而二次编码同一份（popupJson 可能数百 KB）。

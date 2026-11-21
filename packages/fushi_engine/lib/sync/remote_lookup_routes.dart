@@ -338,19 +338,26 @@ class RemoteLookupRoutes {
   });
 
   /// 制卡（BUG-530）。未注入挖词 service → 404；fields 缺失/类型错 → 400。
-  Future<shelf.Response> handleMine(shelf.Request request) async {
+  ///
+  /// [onMined]：制卡有了结果（任意 `result`）后回调请求体与响应体，供调用方按请求里的
+  /// 额外字段做旁路记账（浏览器扩展把成功的卡记到网页视频名下）。回调同步、不影响响应。
+  Future<shelf.Response> handleMine(
+    shelf.Request request, {
+    void Function(Map<String, dynamic> body, Map<String, dynamic> response)?
+    onMined,
+  }) async {
     final FushiRemoteMiningService? svc = mining;
     if (svc == null) return shelf.Response.notFound('Mining off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     try {
-      return jsonResponse(
-        await buildRemoteMineResponse(
-          body,
-          mining: svc,
-          wordAudio: resolveMineWordAudio,
-        ),
+      final Map<String, dynamic> response = await buildRemoteMineResponse(
+        body,
+        mining: svc,
+        wordAudio: resolveMineWordAudio,
       );
+      onMined?.call(body, response);
+      return jsonResponse(response);
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
     }

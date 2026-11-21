@@ -30,7 +30,7 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ja}；</li>
  *   <li>{@code startSystemBall.labels} 额外认 {@code notification}（常驻通知标题）与
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
- *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
+ *       ocr_notification / ocr_close}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
  *   <li>{@code startSystemBall.tapAction}：收起态点球直接执行的动作（{@code clipboard} /
  *       {@code screen_ocr}），此时长按才展开按钮；缺省 / 空 = 点球展开。</li>

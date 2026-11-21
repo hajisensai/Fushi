@@ -72,8 +72,13 @@ String summarizeSyncReport(SyncRunReport r) {
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
   if (r.errors.isEmpty) return done;
-  final String failed =
-      '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
+  String failed = '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
+  // 拍板 other-sync-peer-version-errors：对端版本过旧导致没同步的维度不能只混进
+  // 「N 项失败」——该做的是升级对端，要直说。具体哪几项在同步任务面板逐行列出。
+  final int outdated = r.peerGaps.where((SyncPeerGap g) => g.outdated).length;
+  if (outdated > 0) {
+    failed = '$failed · ${t.sync_now_peer_outdated(count: outdated)}';
+  }
   // BUG-1324：鉴权类失败不能和网络抖动一样只计进「N 项失败」——那句话里
   // 没有任何可操作信息。「凭据不被接受」要说去重新登录；「服务端拒绝」要把
   // 服务端给的原因原样摆出来，并说明这不是登录问题（否则用户会去反复重配

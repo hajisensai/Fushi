@@ -145,11 +145,14 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       msg: described.message,
       status: described.status,
       // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-      action: minedCardUndoToastAction(
-        repo,
-        outcome,
-        expression: fields['expression'],
-      ),
+      action:
+          minedCardUndoToastAction(
+            repo,
+            outcome,
+            expression: fields['expression'],
+          ) ??
+          // BUG-5085：复习库要升级时带「打开复习」（主窗口进程才装得上）。
+          mineFailureToastAction(outcome),
     );
   }
 

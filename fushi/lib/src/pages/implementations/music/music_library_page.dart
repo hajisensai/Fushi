@@ -1705,26 +1705,38 @@ class _AlbumCard extends ConsumerWidget {
   /// 点按；参数是卡片的全局矩形（CD 详情从这里放大，取不到为 null）。
   final ValueChanged<Rect?> onTap;
 
-  /// 光盘来源：盘是一张带 `DVD` / `BD` 角标的专辑，右键 / 长按菜单里有「章节导入为曲目」
-  /// （§9.2）。
+  /// 光盘来源：盘是一张带 `DVD` / `BD` 角标的专辑，右键 / 长按菜单里另有「章节导入为
+  /// 曲目」（§9.2）；普通专辑的菜单只有「从音乐库移除」（拍板台 mmXVwo0Ibv）。
   final MusicDiscSourceRow? disc;
 
   /// 专辑目录里的盘面扫描图（设计稿 M3）：给了就是「封面 + 唱片」色块，chip 写
   /// 「CD」；没有就不画唱片（不造假唱片）。
   final String? discArtPath;
 
-  void _showDiscMenu(BuildContext context, WidgetRef ref, Offset position) {
-    final MusicDiscSourceRow? d = disc;
-    if (d == null) return;
+  /// 右键 / 长按菜单（[showMusicAlbumMenu]）：光盘专辑的盘动作，普通专辑整张移出音乐库。
+  void _showAlbumMenu(BuildContext context, WidgetRef ref, Offset position) {
+    final AppModel app = ref.read(appProvider);
+    if (!app.isDatabaseReady) return;
     unawaited(
-      showMusicDiscAlbumMenu(
+      showMusicAlbumMenu(
         context: context,
-        app: ref.read(appProvider),
+        app: app,
         globalPosition: position,
         album: album,
-        disc: d,
+        disc: disc,
         tracks: tracks,
       ),
+    );
+  }
+
+  /// 卡片中心处唤出菜单（长按用）。
+  void _showAlbumMenuAtCenter(BuildContext context, WidgetRef ref) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox) return;
+    _showAlbumMenu(
+      context,
+      ref,
+      box.localToGlobal(box.size.center(Offset.zero)),
     );
   }
 
@@ -1813,22 +1825,11 @@ class _AlbumCard extends ConsumerWidget {
           embeddedFromPath: embeddedCoverPath,
           badges: <Widget>[?discBadge],
           onTap: () => onTap(_originOf(context)),
-          onLongPress: disc == null
-              ? null
-              : () {
-                  final RenderObject? box = context.findRenderObject();
-                  if (box is! RenderBox) return;
-                  _showDiscMenu(
-                    context,
-                    ref,
-                    box.localToGlobal(box.size.center(Offset.zero)),
-                  );
-                },
+          onLongPress: () => _showAlbumMenuAtCenter(context, ref),
         ),
       );
-      if (disc == null) return line;
       return ContextMenuTrigger(
-        onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+        onInvoke: (Offset position) => _showAlbumMenu(context, ref, position),
         child: line,
       );
     }
@@ -1839,17 +1840,7 @@ class _AlbumCard extends ConsumerWidget {
       scale: kMusicHoverLiftScale,
       builder: (BuildContext context, bool _) => shelfCoverCard(
         onTap: () => onTap(_originOf(context)),
-        onLongPress: disc == null
-            ? null
-            : () {
-                final RenderObject? box = context.findRenderObject();
-                if (box is! RenderBox) return;
-                _showDiscMenu(
-                  context,
-                  ref,
-                  box.localToGlobal(box.size.center(Offset.zero)),
-                );
-              },
+        onLongPress: () => _showAlbumMenuAtCenter(context, ref),
         child: block != null
             ? _block(block, badge, discBadge)
             : Column(
@@ -1876,10 +1867,9 @@ class _AlbumCard extends ConsumerWidget {
               ),
       ),
     );
-    if (disc == null) return card;
     // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
     return ContextMenuTrigger(
-      onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+      onInvoke: (Offset position) => _showAlbumMenu(context, ref, position),
       child: card,
     );
   }

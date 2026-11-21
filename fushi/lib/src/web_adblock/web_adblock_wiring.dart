@@ -42,6 +42,19 @@ abstract interface class WebAdblockPolicy {
   String? get contentRuleListIdentifier;
 }
 
+/// 建 WebView 前的拦截引擎暖机（app 侧是 `WebAdblockService`）。
+///
+/// 与 [WebAdblockPolicy] 分开：网页播放器宿主（`web_video_session.dart` 的
+/// `warmWebVideoAdblock`）只需要这两步，不该为此 import 读 AppModel 的服务实现——那条边
+/// 曾把网页视频会话 / 选轨拖进 lib/ 最大 import 环（`test/build/import_cycle_guard_test.dart`）。
+abstract interface class WebAdblockWarmup {
+  /// 按需同步一次（先暖机、不等网络，再由核心判断要不要联网刷新）。
+  Future<void> ensureLoaded();
+
+  /// 不联网，把磁盘缓存对应的引擎装进内存；暖过之后再调立即完成。
+  Future<void> ensureEngineWarm();
+}
+
 /// 页面被拦截的子资源的应答。
 final WebResourceResponse _blockedResponse = WebResourceResponse(
   contentType: 'text/plain',
