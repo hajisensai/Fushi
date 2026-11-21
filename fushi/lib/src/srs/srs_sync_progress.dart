@@ -18,10 +18,10 @@ class SrsSyncProgress {
 
   final SrsSyncStage stage;
 
-  /// [SrsSyncStage.downloading]：已下载（并已收进本机）的段数；其它阶段为 0。
+  /// [SrsSyncStage.downloading]：已下载（并已收进本机）的段数；[SrsSyncStage.media]：已做完的媒体项数；其它阶段为 0。
   final int done;
 
-  /// [SrsSyncStage.downloading]：这一轮要下载的段总数；未知为 0。
+  /// [SrsSyncStage.downloading]：这一轮要下载的段总数；[SrsSyncStage.media]：这一遍要做的媒体项数；未知为 0。
   final int total;
 
   @override
@@ -46,7 +46,7 @@ enum SrsSyncStage {
   /// 上传本机的改动。
   uploading,
 
-  /// 补齐卡片引用的媒体文件。
+  /// 补齐卡片引用的媒体文件（知道总数时 [SrsSyncProgress.done] / [SrsSyncProgress.total] 按项计）。
   media,
 }
 

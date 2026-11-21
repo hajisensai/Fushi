@@ -166,6 +166,43 @@ void main() {
     expect(route, isA<CupertinoPageRoute<void>>());
   });
 
+  // Apple（玻璃）设计的推入转场由主题给（Cupertino 推入 + 页面背景层）；
+  // CupertinoPageRoute 不读主题，推进来的页垫不上用户背景图片。
+  testWidgets('glass design routes go through the theme transitions', (
+    WidgetTester tester,
+  ) async {
+    final _RecordingNavigatorObserver observer = _RecordingNavigatorObserver();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: <NavigatorObserver>[observer],
+        theme: ThemeData(
+          platform: TargetPlatform.iOS,
+          extensions: const <ThemeExtension<dynamic>>[
+            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: true),
+          ],
+        ),
+        home: Builder(
+          builder: (BuildContext context) => TextButton(
+            onPressed: () {
+              Navigator.of(context).push<void>(
+                adaptivePageRoute<void>(
+                  context: context,
+                  builder: (_) => const SizedBox.shrink(),
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    observer.lastPushedRoute = null;
+    await tester.tap(find.text('open'));
+    await tester.pump();
+
+    expect(observer.lastPushedRoute, isA<MaterialPageRoute<void>>());
+  });
+
   testWidgets('auto and missing extension routes stay Material everywhere', (
     WidgetTester tester,
   ) async {

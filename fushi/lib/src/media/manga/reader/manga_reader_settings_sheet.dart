@@ -284,6 +284,51 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_lookup_on_hover,
   ),
+  // 气泡原位放大（方案 A）：开关、桌面鼠标触发方式、停留时长、放大倍率。
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleZoom',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_bubble_zoom,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleZoomHover',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_bubble_zoom_hover,
+    choices: const <String>['dwell', 'ctrl', 'off'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleZoomDelay',
+    kind: MangaReaderPreferenceKind.integer,
+    title: t.manga_reader_bubble_zoom_delay,
+    min: kMangaBubbleZoomDelayMin,
+    max: kMangaBubbleZoomDelayMax,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleZoomScale',
+    kind: MangaReaderPreferenceKind.integer,
+    title: t.manga_reader_bubble_zoom_scale,
+    min: kMangaBubbleZoomScaleMin,
+    max: kMangaBubbleZoomScaleMax,
+  ),
+  // 逐格读压暗（关 / 浅 / 中，默认浅）与文字条 / 台词栏（默认关）及其字号。
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleFocusDim',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_bubble_focus_dim,
+    choices: const <String>['off', 'light', 'medium'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleTextStrip',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_bubble_text_strip,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleTextStripSize',
+    kind: MangaReaderPreferenceKind.integer,
+    title: t.manga_reader_bubble_text_strip_size,
+    min: kMangaBubbleTextStripSizeMin,
+    max: kMangaBubbleTextStripSizeMax,
+  ),
   MangaReaderPreferenceDescriptor(
     key: 'showOcrBoxes',
     kind: MangaReaderPreferenceKind.toggle,
@@ -693,6 +738,16 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     },
     'quickZoomTarget' =>
       value == 'fit_width' ? t.manga_scale_fit_width : t.manga_scale_fit_height,
+    'bubbleZoomHover' => switch (value) {
+      'ctrl' => t.manga_reader_bubble_zoom_hover_ctrl,
+      'off' => t.manga_reader_bubble_zoom_hover_off,
+      _ => t.manga_reader_bubble_zoom_hover_dwell,
+    },
+    'bubbleFocusDim' => switch (value) {
+      'off' => t.manga_reader_bubble_focus_dim_off,
+      'medium' => t.manga_reader_bubble_focus_dim_medium,
+      _ => t.manga_reader_bubble_focus_dim_light,
+    },
     'aiUpscale' => switch (value) {
       'light' => t.manga_reader_ai_upscale_light,
       'high' => t.manga_reader_ai_upscale_high,
@@ -765,6 +820,13 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'customColorFilter' => FushiIcons.filter,
     'colorFilterOpacity' => FushiIcons.visibility,
     'lookupOnHover' => FushiIcons.mouse,
+    'bubbleZoom' => FushiIcons.zoomIn,
+    'bubbleZoomHover' => FushiIcons.mouse,
+    'bubbleZoomDelay' => FushiIcons.speed,
+    'bubbleZoomScale' => FushiIcons.zoomIn,
+    'bubbleFocusDim' => FushiIcons.brightnessAuto,
+    'bubbleTextStrip' => FushiIcons.subtitles,
+    'bubbleTextStripSize' => FushiIcons.textFields,
     'showOcrBoxes' => FushiIcons.visibility,
     'ocrTrigger' => FushiIcons.ocr,
     'ocrProgressBadge' => FushiIcons.visibility,
@@ -820,8 +882,8 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         min: d.min!.toDouble(),
         max: d.max!.toDouble(),
         divisions: d.max! - d.min!,
-        label: '$value',
-        readout: '$value',
+        label: _integerReadout(d.key, value),
+        readout: _integerReadout(d.key, value),
         // 拖动中只改草稿值（滤镜预览随之实时变化），松手才落库：落库要整窗重载。
         onChanged: (double v) =>
             setState(() => _sliderValues[d.key] = v.round()),
@@ -832,6 +894,14 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
     );
   }
+
+  /// 滑条读数：倍率显示成「2.4×」，时长带单位，其余原样。
+  static String _integerReadout(String key, int value) => switch (key) {
+    'bubbleZoomScale' => '${(value / 100).toStringAsFixed(1)}×',
+    'bubbleZoomDelay' => '$value ms',
+    'bubbleTextStripSize' => '$value px',
+    _ => '$value',
+  };
 
   List<MangaPanelOption<String>> _options(MangaReaderPreferenceDescriptor d) =>
       <MangaPanelOption<String>>[
@@ -1001,6 +1071,13 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'ocrProgressBadge',
       'showOcrBoxes',
       'lookupOnHover',
+      'bubbleZoom',
+      'bubbleZoomHover',
+      'bubbleZoomDelay',
+      'bubbleZoomScale',
+      'bubbleFocusDim',
+      'bubbleTextStrip',
+      'bubbleTextStripSize',
     }.contains(key)) {
       return 3;
     }
@@ -1110,6 +1187,18 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
           'ocrProgressBadge',
         ],
       ),
+      (
+        () => t.manga_reader_group_bubble_zoom,
+        <String>[
+          'bubbleZoom',
+          'bubbleZoomHover',
+          'bubbleZoomDelay',
+          'bubbleZoomScale',
+          'bubbleFocusDim',
+          'bubbleTextStrip',
+          'bubbleTextStripSize',
+        ],
+      ),
     ],
   };
 
@@ -1119,6 +1208,17 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   bool _appliesToCurrentMode(String key) => switch (key) {
     'showPageGaps' =>
       _value('mode') == MangaReadingMode.pagedVertical.storageKey,
+    // 气泡放大的子项只在开关开着时出现；鼠标触发两项只在桌面出现，停留时长只对
+    // 「停留自动放大」有意义；开了「悬停自动查词」时悬停归查词、停留放大不接管
+    // （见 manga_bubble_zoom_js.dart 的 _bzHoverTrigger），停留时长也就不出现。
+    'bubbleZoomScale' => _value('bubbleZoom') != false,
+    'bubbleTextStripSize' => _value('bubbleTextStrip') == true,
+    'bubbleZoomHover' => isDesktopPlatform && _value('bubbleZoom') != false,
+    'bubbleZoomDelay' =>
+      isDesktopPlatform &&
+          _value('bubbleZoom') != false &&
+          _value('lookupOnHover') != true &&
+          (_value('bubbleZoomHover') ?? 'dwell') == 'dwell',
     _ => true,
   };
 

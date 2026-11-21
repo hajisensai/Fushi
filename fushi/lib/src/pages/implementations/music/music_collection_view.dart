@@ -452,9 +452,11 @@ class MusicStyledCollection extends StatelessWidget {
           ? grid
           : ShelfCoverMaterialScope(material: material, child: grid);
     }
-    // 音乐的色块一律等尺寸（不起拼贴加大首块，用户 11-20 拍板）：每块都是 W 原型
-    // 的双格比例——有盘面图画唱片，没有走无盘专辑海报版式。
+    // 跟库页布局走，与书架 / 视频 / 游戏同一套（用户 11-21 拍板，撤回 11-20 的
+    // 「音乐一律等尺寸」）：拼贴 = 首块加大、旁边叠半高卡。有盘面图的专辑在各档块上
+    // 照样画唱片。
     return SliverFushiCoverBlocks(
+      layout: shellContentLayoutOf(context),
       itemCount: itemCount,
       itemBuilder: blockBuilder,
     );

@@ -125,8 +125,6 @@ import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
     show maybeShowShellLayoutChoice;
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
-import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
-    show maybeShowLibraryLayoutDefaultNotice;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
@@ -766,16 +764,6 @@ class _HomePageState extends BasePageState<HomePage>
       // 更新弹窗之前，与它们串行，不抢同一帧。
       if (mounted) {
         await maybeShowBrowseMovedNotice(
-          context: context,
-          appModel: appModelNoUpdate,
-          freshInstall: freshInstall,
-        );
-      }
-
-      // 库页默认布局改成封面网格：升级上来、没选过布局的用户提醒一次「拼贴仍可选」
-      // （拍板台 pr3454，2026-11-16）。同样排在更新弹窗之前、串行。
-      if (mounted) {
-        await maybeShowLibraryLayoutDefaultNotice(
           context: context,
           appModel: appModelNoUpdate,
           freshInstall: freshInstall,
@@ -4511,6 +4499,10 @@ class _HomePageState extends BasePageState<HomePage>
 /// 是实色分组底，所以这里给内容区垫回 `colorScheme.surface`。
 ///
 /// 结构恒定：MD3 / 无窗口材质时也挂着，只是透明色（不画任何像素、不接命中）。
+///
+/// 路由层背景层在画用户背景图片时（[FushiPageBackdrop.activeOf]）不垫：那时脚手架
+/// 底色被背景层换成透明，这里若照「半透明 = 窗口材质」垫实色，就把图片整片盖住
+/// （Apple 下选了背景图首页仍是白底）。图片本身已盖住窗口材质。
 class _GlassContentSurface extends StatelessWidget {
   const _GlassContentSurface({required this.child});
 
@@ -4520,7 +4512,9 @@ class _GlassContentSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool solid =
-        isGlassDesign(context) && theme.scaffoldBackgroundColor.a < 1;
+        isGlassDesign(context) &&
+        theme.scaffoldBackgroundColor.a < 1 &&
+        !FushiPageBackdrop.activeOf(context);
     // 底色画在不参与命中测试的背景槽里：ColoredBox 自身是 opaque 命中，直接
     // 包住内容会改变 MD3 下空白区的点击穿透。
     return Stack(

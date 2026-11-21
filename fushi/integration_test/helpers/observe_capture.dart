@@ -175,6 +175,15 @@ bool readerWebViewReady() => ReaderFushiPage.debugCaptureWebView != null;
 Future<ObserveShot> captureReaderWebView(String name) async {
   final Future<Uint8List?> Function()? hook =
       ReaderFushiPage.debugCaptureWebView;
+  return captureWebViewWith(name, hook);
+}
+
+/// 用调用方给的抓图钩子抓一张 WebView 截图（漫画阅读器等不走小说阅读器静态钩子的
+/// 页面，传自己的 `debugCaptureWebView`）。钩子为 null / 抛错时 `saved == false`。
+Future<ObserveShot> captureWebViewWith(
+  String name,
+  Future<Uint8List?> Function()? hook,
+) async {
   if (hook == null) {
     return ObserveShot(
       name: name,
