@@ -16,6 +16,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show IOException;
 
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
@@ -595,6 +596,12 @@ class DlsiteClient {
       throw DlsiteException('request timed out: ${uri.path}');
     } on http.ClientException catch (e) {
       throw DlsiteException('network error: ${e.message}');
+    } on IOException catch (e) {
+      // `IOClient` 只把 SocketException / HttpException 包成 ClientException；TLS 握手
+      // 失败（HandshakeException，代理 / 证书问题）等其它传输层错误原样漏出。这里一并
+      // 归成 DlsiteException：调用方（专辑页、整库识别的 DLsite 段）只按它处理网络失败，
+      // 漏出去会打断整段曲库识别。
+      throw DlsiteException('network error: $e');
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw DlsiteException(

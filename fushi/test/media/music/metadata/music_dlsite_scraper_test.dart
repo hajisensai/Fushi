@@ -226,6 +226,53 @@ void main() {
     expect(requests, isEmpty);
   });
 
+  test('整库：同一部作品分在两张专辑里，资料只取一次，两张专辑的封面都补上', () async {
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          _track('t5', 'asmr-bonus', '/asmr/$_rj 耳舐め/特典/01.mp3'),
+        ],
+        albums: <MusicAlbumsCompanion>[_album('asmr-bonus', '特典')],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    final MusicDlsiteLibraryReport r = await scraper().scrapeLibrary();
+    expect(r.total, 2, reason: '$_rj（两张专辑）+ RJ299717');
+    final List<String> productHits = <String>[
+      for (final Uri u in requests)
+        if (u.path.endsWith('product.json')) u.queryParameters['workno']!,
+    ];
+    expect(productHits.where((String w) => w == _rj).length, 1);
+    for (final String uid in <String>['asmr', 'asmr-bonus']) {
+      expect(
+        (await db.getMusicAlbum(uid))!.coverPath,
+        endsWith('dlsite_$_rj.jpg'),
+        reason: '$uid 没有自己的封面，补 DLsite 主图',
+      );
+    }
+  });
+
+  test('整库：DLsite 网络失败只记 failed，不抛出', () async {
+    final MusicDlsiteScraper s = MusicDlsiteScraper(
+      database: () => db,
+      locale: () => 'ja_JP',
+      clientFactory: (String locale) => DlsiteClient(
+        locale: locale,
+        minRequestInterval: Duration.zero,
+        client: MockClient(
+          (_) async => throw const HandshakeException('handshake failed'),
+        ),
+      ),
+      coverDirectory: () async => Directory('${tmp.path}/covers'),
+      clock: () => 42,
+    );
+    final MusicDlsiteLibraryReport r = await s.scrapeLibrary();
+    expect(r.total, 2);
+    expect(r.failed, 2);
+    expect(r.matched, 0);
+  });
+
   test('资料行：编号、社团、声优、类型、发售日、评分（人数）、销量、分级', () async {
     final MusicDlsiteAlbumInfo? info = await scraper().scrapeAlbum('asmr');
     final List<(String, String)> facts = musicDlsiteFacts(

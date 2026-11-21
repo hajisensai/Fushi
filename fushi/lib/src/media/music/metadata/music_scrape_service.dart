@@ -480,8 +480,9 @@ class MusicScrapeService {
 
   /// 识别曲库里没有结论（或结论版本旧）的全部曲目。串行、遵守 1 req/s。
   ///
-  /// 先跑专辑级 DLsite 资料（认得出作品编号、还没取过的专辑；编号是精确键，几秒
-  /// 就完），再逐首识别。
+  /// 先跑专辑级 DLsite 资料（认得出作品编号、还没取过的专辑；编号是精确键，每部
+  /// 作品两次请求、经 DLsite 客户端 700 ms 节流），再逐首识别。DLsite 段的网络失败
+  /// 只记进 `report.dlsite.failed`，不打断后面的逐首识别。
   Future<MusicLibraryScrapeReport> scrapeLibrary({
     void Function(int done, int total)? onProgress,
     bool Function()? cancelled,

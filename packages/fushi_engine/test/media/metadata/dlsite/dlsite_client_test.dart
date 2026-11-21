@@ -329,6 +329,25 @@ void main() {
       ]);
     });
 
+    test('TLS 握手失败等 IOClient 不包装的传输层错误也归成 DlsiteException', () async {
+      final DlsiteClient client = DlsiteClient(
+        minRequestInterval: Duration.zero,
+        client: MockClient(
+          (_) async =>
+              throw const HandshakeException('CERTIFICATE_VERIFY_FAILED'),
+        ),
+      );
+      final DlsiteWorkId id = DlsiteWorkId.tryParse('RJ299717')!;
+      await expectLater(
+        client.fetchProductBody(id),
+        throwsA(isA<DlsiteException>()),
+      );
+      await expectLater(
+        client.fetchRatingBody(id),
+        throwsA(isA<DlsiteException>()),
+      );
+    });
+
     test('非 2xx 抛带状态码的 DlsiteException', () async {
       final DlsiteClient client = DlsiteClient(
         minRequestInterval: Duration.zero,
