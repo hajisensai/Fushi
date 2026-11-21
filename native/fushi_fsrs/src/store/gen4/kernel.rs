@@ -239,8 +239,6 @@ pub struct G4Core {
     bulk: Mutex<Bulk>,
     /// 进程内刷新计数（`refresh.rs`，S1c）：按 profile、按类别，写命令提交之后推进，`refresh_keys` 只读它。
     pub(super) refresh: Mutex<super::refresh::Refresh>,
-    /// 保留副本 `srs.db` 在、但不是 SQLite 文件（`files::Opened::retained_copy_unreadable`）。
-    pub retained_copy_unreadable: bool,
     /// 彻底清除的字节层收尾被读者挡住了（`scrub.rs`）：之后的写命令提交之后不等地再试。出错不置位（原因记在库里，
     /// 下一次打开 / 下一次清除再试）。
     scrub_pending: AtomicBool,
@@ -307,7 +305,6 @@ impl G4Core {
             writes: AtomicU64::new(0),
             bulk: Mutex::new(Bulk::default()),
             refresh: Mutex::new(super::refresh::Refresh::new()),
-            retained_copy_unreadable: opened.retained_copy_unreadable,
             scrub_pending: AtomicBool::new(scrub_due),
             _live: Live::new(),
         })

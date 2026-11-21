@@ -139,8 +139,9 @@ pub struct Opened {
     /// 新代库的连接：已经配好（WAL、页缓存）；Primary 的已经建齐表。
     pub conn: Connection,
     /// 保留副本 `srs.db` 在、但不是 SQLite 文件（打开 / 读它报 `SQLITE_NOTADB`）。旧版本同样拒绝打开它，所以不挡新代库，
-    /// 但用户的保留副本已经没法用了：这个状态向上报，由 G7-5 的状态枚举呈现。只有 Primary 拿到换代锁、检查过
-    /// `srs.db` 时才可能置位；Secondary 与锁被别人拿着时不看它，恒为 `false`。
+    /// 但用户的保留副本已经没法用了。开库只用它跳过到期自动删；呈现给用户走全局命令 `gen4_retained_state` 的
+    /// `copy: "unreadable"`（`retained::inspect` 同一判据，随时现读磁盘，设置 › 存储 / ctl 显示，BUG-5065）。只有 Primary
+    /// 拿到换代锁、检查过 `srs.db` 时才可能置位；Secondary 与锁被别人拿着时不看它，恒为 `false`。
     pub retained_copy_unreadable: bool,
 }
 

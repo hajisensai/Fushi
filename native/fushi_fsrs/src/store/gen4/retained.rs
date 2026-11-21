@@ -117,6 +117,10 @@ pub enum CopyState {
     Tombstone,
     /// 封存的保留副本，`bytes` = 主文件 + `-wal` 的大小。
     Sealed { bytes: u64 },
+    /// 在，但不是 SQLite 文件（打开 / 读它报 `SQLITE_NOTADB`，与 `files::finish_seal` 的 `Retained::Unreadable` 同一判据）：
+    /// 保留副本已经坏了，退回旧版本这条路没了（旧版本同样拒绝打开它）。新代库不受影响；不认作保留副本、不删，只报给
+    /// 设置页 / ctl 提示用户（BUG-5065）。
+    Unreadable,
     /// 别的（没封存的协议 3 库、不是 SQLite 的文件、读不了……）：不是这里管的保留副本。
     Other,
 }
@@ -127,6 +131,7 @@ impl CopyState {
             CopyState::Absent => "absent",
             CopyState::Tombstone => "tombstone",
             CopyState::Sealed { .. } => "sealed",
+            CopyState::Unreadable => "unreadable",
             CopyState::Other => "other",
         }
     }
@@ -137,29 +142,33 @@ fn file_len(path: &Path) -> u64 {
 }
 
 /// 看一眼 [dir] 里的 `srs.db`：只读打开、只读 `srs_meta` 两行。不能读写打开：那会在旁边建出 `-wal` / `-shm`，改掉它的
-/// 文件状态（`files::RETAINED_UNRELATED_KEY` 按文件状态记「不是迁移来源」，变了就要重算整库摘要）。打不开 / 读不了的
-/// 一律算 [CopyState::Other]：不认作保留副本，不删。
+/// 文件状态（`files::RETAINED_UNRELATED_KEY` 按文件状态记「不是迁移来源」，变了就要重算整库摘要）。不是 SQLite 文件 =
+/// [CopyState::Unreadable]；别的打不开 / 读不了一律算 [CopyState::Other]：都不认作保留副本，不删。
 pub fn inspect(dir: &Path) -> CopyState {
     let path = dir.join(LEGACY_FILE);
     if !path.exists() {
         return CopyState::Absent;
     }
-    let Ok(c) = Connection::open_with_flags(
+    let not_a_db =
+        |e: &rusqlite::Error| e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase);
+    let c = match Connection::open_with_flags(
         &path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) else {
-        return CopyState::Other;
+    ) {
+        Ok(c) => c,
+        Err(e) if not_a_db(&e) => return CopyState::Unreadable,
+        Err(_) => return CopyState::Other,
     };
-    let read = |key: &str| -> Option<String> {
+    let read = |key: &str| -> Result<Option<String>, rusqlite::Error> {
         c.query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
             r.get(0)
         })
         .optional()
-        .ok()
-        .flatten()
     };
-    let schema = read("schema");
-    let tombstone = read("tombstone");
+    let (schema, tombstone) = match (read("schema"), read("tombstone")) {
+        (Err(e), _) | (_, Err(e)) if not_a_db(&e) => return CopyState::Unreadable,
+        (schema, tombstone) => (schema.ok().flatten(), tombstone.ok().flatten()),
+    };
     drop(c);
     if schema.as_deref() != Some(SEALED_SCHEMA.to_string().as_str()) {
         return CopyState::Other;
@@ -226,14 +235,23 @@ pub fn state(dir: &Path, now_ms: i64) -> Result<Value, String> {
 
 /// 全局命令 `gen4_retained_delete {dir}` → `{deleted, freedBytes}` 或 `{deleted: false, reason}`：现在就删保留副本
 /// （不看到期；用户在 app 设置 / ctl / 服务端 admin 确认过）。`reason`：`absent`（没有 / 已经是墓碑 / 不是保留副本，
-/// 什么都不动）、`migrating`（换代锁被别人拿着）。核对不过（文件头「删除」）报错，什么都不动。
+/// 什么都不动）、`unreadable`（在，但不是 SQLite 文件：[CopyState::Unreadable]，什么都不动）、`migrating`（换代锁被别人
+/// 拿着）。核对不过（文件头「删除」）报错，什么都不动。
 pub fn delete(dir: &Path) -> Result<Value, String> {
     let Some(lock) = GenLock::try_acquire(dir)? else {
         return Ok(json!({"deleted": false, "reason": "migrating"}));
     };
-    let CopyState::Sealed { bytes } = inspect(dir) else {
-        drop(lock);
-        return Ok(json!({"deleted": false, "reason": "absent"}));
+    let bytes = match inspect(dir) {
+        CopyState::Sealed { bytes } => bytes,
+        other => {
+            drop(lock);
+            let reason = if other == CopyState::Unreadable {
+                "unreadable"
+            } else {
+                "absent"
+            };
+            return Ok(json!({"deleted": false, "reason": reason}));
+        }
     };
     let path = dir.join(GEN4_FILE);
     if !path.exists() {

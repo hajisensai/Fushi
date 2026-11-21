@@ -10601,6 +10601,8 @@
   "srs_retained_copy_status_kept": "$size · 删除前一直保留",
   "srs_retained_copy_summary": "升级前的复习库，留着以便退回旧版本。升级后彻底清除的内容在里面仍有原文。",
   "srs_retained_copy_title": "删除旧版本保留副本",
+  "srs_retained_copy_unreadable_status": "升级前的复习库已不是可读的文件，不能再用它退回旧版本。当前的复习数据不受影响。",
+  "srs_retained_copy_unreadable_title": "旧版本保留副本已损坏",
   "srs_review_back_to_decks": "回到牌组",
   "srs_review_done": "今天的复习做完了",
   "srs_review_done_detail": "本次复习了 $n 张",

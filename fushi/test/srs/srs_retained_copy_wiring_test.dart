@@ -57,6 +57,9 @@ class _Backend implements SrsRetainedCopyBackend {
   /// 给了 = 状态命令卡在这里，直到测试放行（模拟后台 isolate 读的过程）。
   Completer<void>? gate;
 
+  /// 给了 = 状态命令固定报它（模拟别的副本形状，例如坏了的 unreadable）。
+  SrsRetainedCopyState? fixed;
+
   @override
   Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async {
     states++;
@@ -64,6 +67,8 @@ class _Backend implements SrsRetainedCopyBackend {
     if (waitFor != null) await waitFor.future;
     final String? why = refuseState;
     if (why != null) throw SrsCoreException(-1, why);
+    final SrsRetainedCopyState? pinned = fixed;
+    if (pinned != null) return pinned;
     if (deleted.isNotEmpty) {
       return const SrsRetainedCopyState(kind: SrsRetainedCopyKind.tombstone);
     }
@@ -303,6 +308,88 @@ void main() {
     expect(backend.deleted, <String>[_kDir]);
     expect(visible, isFalse, reason: '删完状态重读，行隐藏');
     expect(subtitle, isNull);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  // BUG-5065：保留副本坏了（内核报 unreadable）以前在 UI 上和「没有」一样，用户毫无提示。现在设置 › 存储出现一条
+  // 状态行说明退回旧版本的路没了、当前数据不受影响；删除行不出现（内核不删它）。正常的封存副本不出这条状态行。
+  testWidgets('设置 › 存储：保留副本坏了时出现损坏提示行、不出删除行；封存的副本不出提示行', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend()
+      ..fixed = const SrsRetainedCopyState(
+        kind: SrsRetainedCopyKind.unreadable,
+      );
+    final List<SettingsItem> items = buildStorageDestination().sections
+        .expand((SettingsSection s) => s.items)
+        .toList();
+    final SettingsStatusItem warning = items
+        .whereType<SettingsStatusItem>()
+        .singleWhere(
+          (SettingsStatusItem i) =>
+              i.id == 'storage.srs_retained_copy_unreadable',
+        );
+    final SettingsActionItem delete = items
+        .whereType<SettingsActionItem>()
+        .singleWhere(
+          (SettingsActionItem i) => i.id == 'storage.srs_retained_copy',
+        );
+    expect(warning.title, t.srs_retained_copy_unreadable_title);
+    expect(warning.subtitle, t.srs_retained_copy_unreadable_status);
+    expect(warning.onAction, isNull, reason: '内核不删坏了的副本，不给动作');
+    bool? warningVisible;
+    bool? deleteVisible;
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: Scaffold(
+        body: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            final SettingsContext ctx = SettingsContext(
+              context: context,
+              appModel: ref.read(appProvider),
+              ref: ref,
+              readerSource: ReaderFushiSource.instance,
+              refresh: () {},
+            );
+            warningVisible = warning.visible!(ctx);
+            deleteVisible = delete.visible!(ctx);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(warningVisible, isTrue);
+    expect(deleteVisible, isFalse);
+    await _unmount(tester);
+
+    backend.fixed = _sealed;
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: Scaffold(
+        body: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            final SettingsContext ctx = SettingsContext(
+              context: context,
+              appModel: ref.read(appProvider),
+              ref: ref,
+              readerSource: ReaderFushiSource.instance,
+              refresh: () {},
+            );
+            warningVisible = warning.visible!(ctx);
+            deleteVisible = delete.visible!(ctx);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(warningVisible, isFalse);
+    expect(deleteVisible, isTrue);
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });

@@ -985,9 +985,11 @@ function renderSrsMigration(g){
   if (c) c.onclick = guard(async()=>{ if(!await ask(T('叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。'), true)) return; await post('srs/migration/cancel'); toast(T('已请求叫停')); loadSrs(); });
 }
 // 旧版本保留副本（D32，engine srs_ctl_routes.dart 的 retained 路由）：迁移时封存在原位的协议 3 srs.db。只在还是封存的
-// 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。
+// 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。副本坏了
+// （copy = unreadable，BUG-5065）只提示、不给删除。
 function renderSrsRetained(r){
   const box = $('#srs-retained');
+  if (r && r.copy === 'unreadable') { box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml([[T('旧版本保留副本'), T('已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响')]])}</div>`; return; }
   if (!r || r.copy !== 'sealed') { box.innerHTML=''; return; }
   const due = r.dueAtMs ? T('{0} 到期后自动删除', fmtTime(r.dueAtMs)) : T('删除前一直保留（不会自动到期）');
   const kv = [[T('旧版本保留副本'), fmtBytes(r.bytes) + ' · ' + due]];

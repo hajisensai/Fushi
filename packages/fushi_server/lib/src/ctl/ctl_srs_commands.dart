@@ -754,14 +754,18 @@ void _renderRetained(Object? response, StringSink out) {
   if (response is! Map) return _json(response, out);
   final Object? copy = response['copy'];
   if (copy != 'sealed') {
-    out.writeln(
-      copy == 'tombstone'
-          ? tr(
-              '保留副本已删除（原位是墓碑）',
-              'The retained copy has been deleted (a tombstone is in its place)',
-            )
-          : tr('没有旧版本保留副本', 'No old-version retained copy'),
-    );
+    out.writeln(switch (copy) {
+      'tombstone' => tr(
+        '保留副本已删除（原位是墓碑）',
+        'The retained copy has been deleted (a tombstone is in its place)',
+      ),
+      // BUG-5065：保留副本坏了，退回旧版本这条路没了；新库不受影响。
+      'unreadable' => tr(
+        '旧版本保留副本已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响',
+        'The old-version retained copy is damaged (not a readable SQLite file) and can no longer be used to go back to the old version; the current review library is not affected',
+      ),
+      _ => tr('没有旧版本保留副本', 'No old-version retained copy'),
+    });
     return;
   }
   final Object? bytes = response['bytes'];

@@ -292,3 +292,34 @@ fn a_fresh_install_has_nothing_to_delete() {
         json!({"deleted": false, "reason": "absent"})
     );
 }
+
+/// BUG-5065：迁移后保留副本 `srs.db` 变成了不是 SQLite 的文件。开库照常（不挡新代库、不动它），状态命令报
+/// `copy: "unreadable"` 让设置页 / ctl 提示用户（以前只记在开库结果里、没人读，报成 `other` 后 UI 直接不显示）；
+/// 立即删除拒绝（`reason: "unreadable"`）且文件原样不动；到期了也不自动删。换回封存的副本后恢复 `sealed`。
+#[test]
+fn an_unreadable_copy_is_reported_and_never_deleted() {
+    let dir = migrated("d32-notadb");
+    let legacy = dir.0.join(LEGACY_FILE);
+    let sealed = std::fs::read(&legacy).unwrap();
+    assert_eq!(state_of(&dir.0, NOW)["copy"], "sealed");
+    let junk: Vec<u8> = b"this is not an sqlite file. ".repeat(200);
+    std::fs::write(&legacy, &junk).unwrap();
+    // 到期之后开库：不碰它。
+    let late = NOW + WITHOUT_SYNC_MS + 1;
+    drop(open_gen4(&dir.0, OpenMode::Primary).unwrap());
+    let s = state_of(&dir.0, late);
+    assert_eq!(s["copy"], "unreadable", "{s}");
+    assert_eq!(s["bytes"], 0, "{s}");
+    assert_eq!(s["due"], false, "{s}");
+    assert_eq!(s["error"], Value::Null, "{s}");
+    assert_eq!(
+        delete_now(&dir.0).unwrap(),
+        json!({"deleted": false, "reason": "unreadable"})
+    );
+    assert_eq!(std::fs::read(&legacy).unwrap(), junk);
+    // 零字节文件 SQLite 当作空库打开（不是坏文件）：不报 unreadable。
+    std::fs::write(&legacy, b"").unwrap();
+    assert_ne!(state_of(&dir.0, NOW)["copy"], "unreadable");
+    std::fs::write(&legacy, &sealed).unwrap();
+    assert_eq!(state_of(&dir.0, NOW)["copy"], "sealed");
+}
