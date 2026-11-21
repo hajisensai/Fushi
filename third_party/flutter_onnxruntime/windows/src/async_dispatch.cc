@@ -22,7 +22,9 @@ WorkQueue::WorkQueue(const char *name) : thread_([this, name = std::string(name)
   Run();
 }) {}
 
-WorkQueue::~WorkQueue() {
+WorkQueue::~WorkQueue() { Shutdown(); }
+
+void WorkQueue::Shutdown() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     stopping_ = true;
@@ -34,16 +36,20 @@ WorkQueue::~WorkQueue() {
 }
 
 bool WorkQueue::Post(std::function<void()> task) {
-  if (PlatformThreadDispatcher::SyncModeRequested()) {
-    task();
-    return true;
-  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_) {
       return false;
     }
-    tasks_.push_back(std::move(task));
+    if (!PlatformThreadDispatcher::SyncModeRequested()) {
+      tasks_.push_back(std::move(task));
+      task = nullptr;
+    }
+  }
+  if (task) {
+    // Sync mode: run inline, outside the lock (the task may Post again).
+    task();
+    return true;
   }
   cv_.notify_one();
   return true;
@@ -72,7 +78,9 @@ DelayedTask::DelayedTask(std::function<void()> fire) : fire_(std::move(fire)), t
   Run();
 }) {}
 
-DelayedTask::~DelayedTask() {
+DelayedTask::~DelayedTask() { Shutdown(); }
+
+void DelayedTask::Shutdown() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     stopping_ = true;
@@ -84,16 +92,17 @@ DelayedTask::~DelayedTask() {
   }
 }
 
-void DelayedTask::Schedule(std::chrono::milliseconds delay) {
+bool DelayedTask::Schedule(std::chrono::milliseconds delay) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_) {
-      return;
+      return false;
     }
     armed_ = true;
     deadline_ = std::chrono::steady_clock::now() + delay;
   }
   cv_.notify_all();
+  return true;
 }
 
 void DelayedTask::Cancel() {

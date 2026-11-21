@@ -104,6 +104,30 @@ class FlutterOnnxruntimePluginImpl {
 public:
   FlutterOnnxruntimePluginImpl() = default;
 
+  // Explicit teardown order (HBK-AUDIT-015). The queues' tasks and the idle
+  // timer reach into each other -- a CUDA close task still queued on the GPU
+  // queue arms the timer (cudaIdleMutex_ + cudaIdleRelease_), the timer posts
+  // to the GPU queue -- so no member declaration order is safe on its own:
+  // with the timer last, the GPU queue drains its close task after the timer
+  // and its mutex are destroyed; with the timer first, a firing timer posts to
+  // a queue already destroyed. Retire them here instead, while every member
+  // is still alive:
+  //   1. the timer stops accepting work and joins: no fire after this, and a
+  //      fire in flight finishes its (non-blocking) post to the live GPU queue;
+  //      a close task drained below then re-arms a stopped timer, a no-op;
+  //   2. the worker queues stop accepting work and drain what is queued
+  //      (session closes, a pending CUDA release) -- the managers, the
+  //      dispatcher and the idle mutex are all still alive while they do.
+  // Only then are members destroyed, with no thread left to touch them.
+  ~FlutterOnnxruntimePluginImpl() {
+    cudaIdleRelease_.Shutdown();
+    for (auto &entry : cpuSessionQueues_) {
+      entry.second->Shutdown();
+    }
+    cpuQueue_.Shutdown();
+    gpuQueue_.Shutdown();
+  }
+
   // Manager instances. Fushi fork: created on the first call that needs ONNX
   // Runtime (EnsureRuntime), not at plugin registration — both constructors
   // call into ORT, and the core must stay unbound until the app has had the
@@ -218,8 +242,8 @@ public:
 
   std::mutex cudaIdleMutex_;
   uint64_t cudaIdleGeneration_ = 0;
-  // Declared last: destroyed (cancelled + joined) before the queues and the
-  // session manager its callback posts to.
+  // Shut down explicitly in ~FlutterOnnxruntimePluginImpl() before the queues
+  // drain; its position among the members carries no lifetime guarantee.
   DelayedTask cudaIdleRelease_{[this]() { FireCudaIdleRelease(); }};
 
   // Complete [result] on the platform thread with [outcome].

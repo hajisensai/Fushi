@@ -40,9 +40,16 @@ public:
   WorkQueue(const WorkQueue &) = delete;
   WorkQueue &operator=(const WorkQueue &) = delete;
 
-  // Enqueue a task; returns false if the queue is shutting down. In sync mode
+  // Enqueue a task; returns false once Shutdown() has begun. In sync mode
   // (see PlatformThreadDispatcher::SyncModeRequested) the task runs inline.
   bool Post(std::function<void()> task);
+
+  // Stop accepting tasks, run every task already queued, join the worker.
+  // Idempotent; the destructor calls it. Lets an owner retire the queue while
+  // everything its tasks touch is still alive (see the plugin's ~Impl) instead
+  // of relying on member destruction order. Never call it from a task on this
+  // queue (it would join itself).
+  void Shutdown();
 
 private:
   void Run();
@@ -88,9 +95,10 @@ private:
 };
 
 // Runs [fire] on its own thread once the armed delay has passed. Schedule()
-// replaces a pending deadline; Cancel() drops it. The destructor cancels and
-// joins, so [fire] never runs after it returns: destroy a DelayedTask before
-// anything its callback touches.
+// replaces a pending deadline; Cancel() drops it. Shutdown() (also run by the
+// destructor) cancels, joins and makes every later Schedule() a no-op, so
+// [fire] never runs after it returns. The object itself stays valid after
+// Shutdown(): a task still draining elsewhere may call Schedule() on it safely.
 class DelayedTask {
 public:
   explicit DelayedTask(std::function<void()> fire);
@@ -99,8 +107,10 @@ public:
   DelayedTask(const DelayedTask &) = delete;
   DelayedTask &operator=(const DelayedTask &) = delete;
 
-  void Schedule(std::chrono::milliseconds delay);
+  // Returns false (and arms nothing) once Shutdown() has begun.
+  bool Schedule(std::chrono::milliseconds delay);
   void Cancel();
+  void Shutdown();
 
 private:
   void Run();

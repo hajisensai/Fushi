@@ -400,8 +400,14 @@ or below the API version of the downloaded DirectML core.
       (`FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS`, default 60 s, 0 = never). When it
       fires and no CUDA session was created since (`cudaGeneration()`
       unchanged), the GPU queue unloads the library and resets the context.
-      The task is the Impl's last member, destroyed before the queues it posts
-      to.
+      Teardown (HBK-AUDIT-015) is explicit, not member-order based: a CUDA
+      close task still queued on the GPU queue arms the timer, and the timer
+      posts to the GPU queue, so no declaration order is safe. The Impl
+      destructor first `Shutdown()`s the `DelayedTask` (joins; later
+      `Schedule()` calls return false), then `Shutdown()`s every `WorkQueue`
+      (refuse new posts, drain queued tasks), all while every member is alive.
+      Native test: `windows/test/async_dispatch_teardown_test.cc` (build line in
+      its header; `/DFUSHI_TEARDOWN_LEGACY` reproduces the old order).
     - `releaseCudaRuntime({resetContext})` does the same on demand; refused
       (`released: false`, `openCudaSessions > 0`) while a CUDA session is open.
     - Guard: `fushi/test/onnx/cuda_idle_release_guard_test.dart`; device probe:
