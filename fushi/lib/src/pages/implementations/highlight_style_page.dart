@@ -124,7 +124,10 @@ class _HighlightStylePageState extends State<HighlightStylePage>
     _kind,
   );
   late bool _vertical = widget.initiallyVertical;
-  String _favoriteColor = 'yellow';
+
+  /// 新收藏句的颜色（持久化偏好，见 [ReaderFushiSource.favoriteHighlightColor]），
+  /// 同时是收藏类预览的笔触色。
+  late String _favoriteColor = widget.source.favoriteHighlightColor;
   int _seedSalt = 0;
 
   /// 预览框当前的尺寸（LayoutBuilder 维护）：落笔总时长按它排出来的行数算。
@@ -150,6 +153,12 @@ class _HighlightStylePageState extends State<HighlightStylePage>
   Color get _previewColor => _kind == HighlightKind.favorite
       ? kFavoriteHighlightColors[_favoriteColor]!
       : kHighlightKindPreviewColors[_kind]!;
+
+  /// 选新收藏颜色：预览立即换色，并持久化（之后的收藏用它，已收藏的不变）。
+  void _selectFavoriteColor(String color) {
+    setState(() => _favoriteColor = color);
+    unawaited(widget.source.setFavoriteHighlightColor(color));
+  }
 
   void _selectKind(HighlightKind kind) {
     setState(() {
@@ -344,7 +353,7 @@ class _HighlightStylePageState extends State<HighlightStylePage>
             ),
             if (_kind == HighlightKind.favorite)
               FushiTooltip(
-                message: t.reader_highlight_preview_color_hint,
+                message: t.reader_highlight_favorite_color_hint,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
@@ -354,8 +363,8 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                         key: ValueKey<String>('highlight_style_color_${e.key}'),
                         color: e.value,
                         selected: e.key == _favoriteColor,
-                        semanticLabel: t.reader_highlight_preview_color,
-                        onTap: () => setState(() => _favoriteColor = e.key),
+                        semanticLabel: t.reader_highlight_favorite_color,
+                        onTap: () => _selectFavoriteColor(e.key),
                       ),
                   ],
                 ),
