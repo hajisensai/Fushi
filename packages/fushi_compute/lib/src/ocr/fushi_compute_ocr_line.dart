@@ -109,6 +109,9 @@ final class _OcrLineBindings {
       reset = lib.library.lookupFunction<_ResetC, _ResetDart>(
         'ffc_ocrline_reset',
       ),
+      forgetFrame = lib.library.lookupFunction<_ResetC, _ResetDart>(
+        'ffc_ocrline_forget_frame',
+      ),
       feedPng = lib.library.lookupFunction<_FeedPngC, _FeedPngDart>(
         'ffc_ocrline_feed_png',
       ),
@@ -123,6 +126,7 @@ final class _OcrLineBindings {
   final _NewDart create;
   final _FreeDart free;
   final _ResetDart reset;
+  final _ResetDart forgetFrame;
   final _FeedPngDart feedPng;
   final _FeedTextDart feedText;
   final NativeFinalizer finalizer;
@@ -290,6 +294,13 @@ final class FfcOcrLineTracker implements Finalizable {
   void reset() {
     _ensureOpen();
     _check('ffc_ocrline_reset', _b.reset(_handle));
+  }
+
+  /// 上一次交出的 OCR 帧没能识别（识别器单次报错）：同一画面稳定时会再交出一次，
+  /// 上一句保留。
+  void forgetFrame() {
+    _ensureOpen();
+    _check('ffc_ocrline_forget_frame', _b.forgetFrame(_handle));
   }
 
   /// 立即释放原生 tracker（幂等）。

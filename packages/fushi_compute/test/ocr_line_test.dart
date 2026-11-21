@@ -22,6 +22,8 @@ void main() {
     expect((ocr.width, ocr.height), (400, 100));
     expect(ocr.rgba!.length, 400 * 100 * 4);
     expect(feed(withText).action, FfcOcrLineFrameAction.idle);
+    tracker.forgetFrame();
+    expect(feed(withText).action, FfcOcrLineFrameAction.ocr);
     expect(feed(blank).action, FfcOcrLineFrameAction.cleared);
   });
 

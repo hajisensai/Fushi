@@ -289,6 +289,8 @@ class GalOcrLineSource {
       return;
     } on Object catch (error) {
       _report(GalOcrSourceIssue.recognizeFailed, error);
+      // Rust 交出这帧时已记下「OCR 过了」；没识别成就让它忘掉，同一画面下一轮再交出。
+      if (!stale()) tracker.forgetFrame();
       return;
     }
     if (stale()) return;

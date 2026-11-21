@@ -109,6 +109,12 @@ impl OcrLineTracker {
         *self = Self::default();
     }
 
+    /// 上一次交出的 OCR 帧没能识别（识别器单次报错）：只忘掉「这一帧已 OCR 过」，
+    /// 同一画面稳定时会再交出一次；上一句保留（去重照旧）。
+    pub fn forget_frame(&mut self) {
+        self.ocr_sig = None;
+    }
+
     /// 喂一帧已裁好的 RGBA（`width * height * 4`，行紧排）。
     pub fn feed_rgba(&mut self, rgba: &[u8], width: usize, height: usize) -> FrameAction {
         let luma = to_luma(rgba, width, height);
@@ -411,6 +417,21 @@ pub unsafe extern "C" fn ffc_ocrline_reset(handle: *mut std::ffi::c_void) -> i32
     })
 }
 
+/// 上一次交出的 OCR 帧识别失败：只忘掉帧标记（同一画面会再交出一次），上一句保留。
+///
+/// # Safety
+/// `handle` 是 [ffc_ocrline_new] 交出且尚未释放的指针。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_ocrline_forget_frame(handle: *mut std::ffi::c_void) -> i32 {
+    guard(|| {
+        if handle.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        with_tracker(handle, OcrLineTracker::forget_frame);
+        status::OK
+    })
+}
+
 /// 喂一帧整窗 PNG。`region` = 4 个 f32：客户区归一化 `[left, top, width, height]`。
 /// `out_meta = [action, width, height]`；action 为 [action::OCR] 时裁好的 RGBA
 /// （`width * height * 4`）经 `out_ptr` / `out_len` 交出（用 `ffc_free_bytes` 释放），否则二者写 null / 0。
@@ -664,6 +685,21 @@ mod tests {
             t.feed_png(b"not png", [0.0, 0.0, 1.0, 1.0]),
             Err(status::BAD_INPUT)
         );
+    }
+
+    #[test]
+    fn forget_frame_reoffers_same_frame_but_keeps_last_line() {
+        let mut t = OcrLineTracker::new();
+        t.feed_rgba(&frame(5), W, H);
+        assert!(is_ocr(&t.feed_rgba(&frame(5), W, H)));
+        assert_eq!(
+            t.feed_text("同じ台詞です"),
+            TextEvent::New("同じ台詞です".into())
+        );
+        assert_eq!(t.feed_rgba(&frame(5), W, H), FrameAction::Idle);
+        t.forget_frame();
+        assert!(is_ocr(&t.feed_rgba(&frame(5), W, H)));
+        assert_eq!(t.feed_text("同じ台詞です"), TextEvent::Duplicate);
     }
 
     #[test]

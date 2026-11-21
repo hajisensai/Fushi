@@ -624,5 +624,6 @@ spec `docs/specs/2026-11-22-game-ocr-line-stream-design.md`）。连续 OCR 的�
 |---|---|
 | `ffc_ocrline_new(void** out) -> i32` / `ffc_ocrline_free(void*)` | 建 / 释放 tracker（`free` 是 `void(void*)`，可挂 `NativeFinalizer`） |
 | `ffc_ocrline_reset(void*) -> i32` | 忘掉帧状态与上一句（换识别区域） |
+| `ffc_ocrline_forget_frame(void*) -> i32` | 上一次交出的 OCR 帧识别失败：只忘帧标记（同一画面会再交出），上一句保留 |
 | `ffc_ocrline_feed_png(void*, const u8* png, usize, const f32 region[4], u8** out, usize* out_len, u32 meta[3]) -> i32` | 整窗 PNG + 客户区归一化框 → `meta = [action, w, h]`（0 idle / 1 settling / 2 ocr / 3 cleared）；ocr 时交出裁好的 RGBA（`ffc_free_bytes`）。坏 PNG `-3`，框在图外 `-2` |
 | `ffc_ocrline_feed_text(void*, const u8* utf8, usize, u8** out, usize* out_len, u32* kind) -> i32` | OCR 全文（行间 `\n`）→ kind（0 empty / 1 duplicate / 2 new / 3 extend）；new / extend 交出这一句的显示文本（CJK 间空白已去；extend 是「上一句 + 新尾巴」） |
