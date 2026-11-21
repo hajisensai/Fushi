@@ -3432,6 +3432,116 @@ void main() {
     },
   );
 
+  group('BUG-5072 completed job seeding pause / resume', () {
+    test('pauses and resumes the exact seeding torrent on its own backend '
+        'without touching the completed lifecycle', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_completeSnapshot()],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String jobId = 'seeding-completed-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.scrape,
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      );
+
+      await environment.service.pauseSeedingJob(jobId);
+      expect(backend.pausedTorrentIds, <String>[_torrentHash]);
+      expect(
+        (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+        VideoDownloadJobLifecycle.completed,
+      );
+
+      await environment.service.resumeSeedingJob(jobId);
+      expect(backend.resumedTorrentIds, <String>[_torrentHash]);
+      expect(
+        (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+        VideoDownloadJobLifecycle.completed,
+      );
+    });
+
+    test('refuses when the torrent is no longer in the backend', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend();
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String jobId = 'seed-removed-completed-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.scrape,
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      );
+
+      await expectLater(
+        environment.service.pauseSeedingJob(jobId),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      expect(backend.pauseCalls, 0);
+    });
+
+    test(
+      'refuses a backend whose identity no longer matches the job',
+      () async {
+        final _FakeTorrentBackend backend = _FakeTorrentBackend(
+          snapshots: <TorrentSnapshot>[_completeSnapshot()],
+        );
+        final _PipelineEnvironment environment =
+            await _PipelineEnvironment.create(
+              backend: backend,
+              backendResolver: (_) async => VideoDownloadBackendBinding(
+                backend: backend,
+                identity: const VideoDownloadBackendIdentity(
+                  kind: 'embedded',
+                  profileId: 'embedded',
+                  fingerprint: 'another-installation',
+                ),
+              ),
+            );
+        addTearDown(environment.close);
+        const String jobId = 'seed-mismatched-backend';
+        await environment.insertJob(
+          jobId: jobId,
+          stage: VideoDownloadJobStage.scrape,
+          lifecycle: VideoDownloadJobLifecycle.completed,
+        );
+
+        await expectLater(
+          environment.service.pauseSeedingJob(jobId),
+          throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        );
+        await expectLater(
+          environment.service.resumeSeedingJob(jobId),
+          throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        );
+        expect(backend.pauseCalls, 0);
+        expect(backend.resumeCalls, 0);
+      },
+    );
+
+    test('refuses jobs that are not completed', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String jobId = 'seed-active-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+
+      await expectLater(
+        environment.service.pauseSeedingJob(jobId),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      expect(backend.pauseCalls, 0);
+    });
+  });
+
   test(
     'delete removes a stale task even when its backend cannot pause it',
     () async {
