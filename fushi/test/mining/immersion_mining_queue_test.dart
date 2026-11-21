@@ -181,32 +181,46 @@ void main() {
     });
 
     test('同时抽取的卡数有上限，前一张抽完下一张才接上', () async {
-      media
-        ..gate('/a.mp4')
-        ..gate('/b.mp4')
-        ..gate('/c.mp4');
+      // 名额按设备现算（桌面 12 核及以上 3 路、其余 2 路，见
+      // resolveImmersionExtractionConcurrency）：用同一口径算出本机名额，排「名额 + 1」张，
+      // 不把某一档硬写进测试——否则换台核多的机器就变红。
+      final int limit = resolveImmersionExtractionConcurrency(
+        isMobile: Platform.isAndroid || Platform.isIOS,
+        lowMemoryMode: ImmersionMiningEngine.lowMemoryModeReader(),
+        processors: Platform.numberOfProcessors,
+      );
+      expect(limit, greaterThanOrEqualTo(1));
+      final List<String> sources = <String>[
+        for (int i = 0; i <= limit; i++) '/clip-$i.mp4',
+      ];
+      final String waiting = sources.last;
+      final List<String> admitted = sources.sublist(0, limit);
+      for (final String s in sources) {
+        media.gate(s);
+      }
       final List<Future<ImmersionMiningResult>> jobs =
           <Future<ImmersionMiningResult>>[
-            for (final String s in <String>['/a.mp4', '/b.mp4', '/c.mp4'])
+            for (final String s in sources)
               mineEpisode(s, <String, String>{'expression': s}),
           ];
-      await media.started('/a.mp4');
-      await media.started('/b.mp4');
+      for (final String s in admitted) {
+        await media.started(s);
+      }
       await pumpEventQueue();
-      expect(media.startedSources, <String>[
-        '/a.mp4',
-        '/b.mp4',
-      ], reason: '第三张要等名额，不能十张卡起十路 ffmpeg');
+      expect(
+        media.startedSources,
+        admitted,
+        reason: '第 ${limit + 1} 张要等名额，不能十张卡起十路 ffmpeg',
+      );
 
-      media.release('/b.mp4');
-      await media.started('/c.mp4');
-      media
-        ..release('/a.mp4')
-        ..release('/c.mp4');
+      // 放掉最后一个占名额的（不是第一个），排队那张才接上：名额是「谁抽完谁让位」。
+      media.release(admitted.last);
+      await media.started(waiting);
+      media.releaseAll();
       await Future.wait<ImmersionMiningResult>(jobs);
       expect(
         repo.payloads.map((Map<String, dynamic> p) => p['expression']),
-        <String>['/a.mp4', '/b.mp4', '/c.mp4'],
+        sources,
       );
     });
 
