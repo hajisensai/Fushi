@@ -8,10 +8,12 @@ import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -1023,6 +1025,122 @@ void main() {
     );
   });
 
+  testWidgets('首页外壳里与查词 tab 共用查词宿主，外壳外私有一个（design-shared-lookup-webview）', (
+    WidgetTester tester,
+  ) async {
+    final SharedLookupPopupHost shared = SharedLookupPopupHost();
+    addTearDown(shared.dispose);
+    final ValueNotifier<bool> show = ValueNotifier<bool>(true);
+    addTearDown(show.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        SharedLookupPopupScope(
+          host: shared,
+          child: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: show,
+              builder: (BuildContext context, bool v, _) =>
+                  v ? const TexthookerPage() : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(TexthookerPage));
+    expect(
+      identical(state.debugPopupHost, shared),
+      isTrue,
+      reason: '外壳下发的宿主必须被采用，否则两个 tab 各挂一个热槽 WebView',
+    );
+    expect(shared.debugOwnerCount, 1);
+    expect(shared.isRenderOwner(state as SharedLookupPopupOwner), isTrue);
+
+    // 页面销毁只注销，不得把外壳持有的宿主（controller）一并释放。
+    show.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(shared.debugOwnerCount, 0);
+    expect(() => shared.controller.hasVisiblePopup, returnsNormally);
+
+    // 外壳外：私有一个。
+    show.value = true;
+    await tester.pumpWidget(_wrapPage(const Scaffold(body: TexthookerPage())));
+    await tester.pump();
+    final dynamic standalone = tester.state(find.byType(TexthookerPage));
+    expect(identical(standalone.debugPopupHost, shared), isFalse);
+  });
+
+  testWidgets('制卡热键只作用于本页在屏上的会话：tab 藏起或栈归查词 tab 时不武装', (
+    WidgetTester tester,
+  ) async {
+    final SharedLookupPopupHost shared = SharedLookupPopupHost();
+    addTearDown(shared.dispose);
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        SharedLookupPopupScope(
+          host: shared,
+          child: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: visible,
+              builder: (BuildContext context, bool v, _) =>
+                  TickerMode(enabled: v, child: const TexthookerPage()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    bool armed() =>
+        (tester.state(find.byType(TexthookerPage)) as dynamic)
+                .debugPopupMineHotkeyArmed
+            as bool;
+    void openSession() => shared.controller.beginTop(
+      term: '食べる',
+      rect: const Rect.fromLTWH(10, 10, 20, 20),
+      reuseWarmSlot: false,
+      replaceStack: false,
+      visible: true,
+    );
+
+    // 真实弹窗层要完整初始化的 AppModel 才能建，这里只验热键门：每次开会话、读门、
+    // 清栈都在两帧之间做完，不让带着 texthooker 弹窗层的浮层真的建出来。
+    void expectArmed(bool expected, String reason) {
+      openSession();
+      expect(armed(), expected, reason: reason);
+      shared.controller.clear();
+    }
+
+    expectArmed(true, '本页可见、栈归本页、有可见弹窗');
+
+    // 切到别的 tab：弹窗随 tab 藏起（Offstage），Ctrl+Enter 不能对看不见的弹窗制卡。
+    visible.value = false;
+    await tester.pump();
+    expectArmed(false, 'tab 藏起时热键不得作用于看不见的弹窗');
+
+    visible.value = true;
+    await tester.pump();
+    expectArmed(true, '切回可见后恢复');
+
+    // 查词 tab 真正查词接管了栈：那是别人的会话，本页的热键不能碰（浮层此时由替身
+    // 出空层，可以照常走帧）。
+    final _OtherLookupOwner dict = _OtherLookupOwner();
+    shared.attach(dict);
+    shared.setOwnerVisible(dict, true);
+    shared.claimForLookup(dict);
+    openSession();
+    await tester.pump();
+    expect(shared.overlayInert, isFalse);
+    expect(shared.controller.hasVisiblePopup, isTrue);
+    expect(armed(), isFalse, reason: '栈归查词 tab 时 texthooker 的热键不得武装');
+    shared.detach(dict);
+    await tester.pump();
+  });
+
   testWidgets('保活 tab 被 TickerMode 隐藏时查词浮层置 inert，恢复可见时复原（BUG-953）', (
     WidgetTester tester,
   ) async {
@@ -1182,4 +1300,22 @@ void main() {
       );
     });
   });
+}
+
+/// 共用查词宿主里的「另一个宿主页」（查词 tab）替身：只出空层。
+class _OtherLookupOwner implements SharedLookupPopupOwner {
+  @override
+  List<Widget> buildSharedLookupPopupLayers(
+    BuildContext context,
+    Size screen,
+  ) => const <Widget>[];
+
+  @override
+  ThemeData? get sharedLookupPopupTheme => null;
+
+  @override
+  bool get sharedLookupPopupOwnerAlive => true;
+
+  @override
+  void onSharedLookupPopupClaimed(DictionaryPopupController controller) {}
 }
