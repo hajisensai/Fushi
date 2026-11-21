@@ -21,7 +21,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 ///
 /// 组之间错峰进场（[fushiStaggeredItemBuilder]，窗口是详情页的
 /// [FushiEntranceScope]）；查询是异步回来的，组内命中另开一个按状态重放的窗口，
-/// 结果晚到也照样错峰进场。
+/// 结果晚到也照样错峰进场。多来源渠道按来源逐个出结果：已到的命中先列出，
+/// 组标题旁的转圈与列表下方的「还有 N 个来源在搜索」一直保留到最后一个来源返回，
+/// 之后到达的命中追加在末尾并各自错峰进场（已显示的行不换位、不重播）。
 class VideoWorkAcquisitionSection extends StatelessWidget {
   const VideoWorkAcquisitionSection({required this.controller, super.key});
 
@@ -141,10 +143,11 @@ class _ChannelGroup extends StatelessWidget {
                   style: tokens.type.listTitle,
                 ),
               ),
-              if (state.status == VideoAcquisitionChannelStatus.loading)
-                const SizedBox.square(
+              if (state.isSearching)
+                SizedBox.square(
+                  key: ValueKey<String>('$_keyPrefix-searching'),
                   dimension: 16,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  child: const FushiCircularProgressIndicator(strokeWidth: 2),
                 ),
             ],
           ),
@@ -229,32 +232,6 @@ class _ChannelGroup extends StatelessWidget {
   }
 
   Widget _buildHits(BuildContext context, FushiDesignTokens tokens) {
-    final List<VideoAcquisitionHit> hits = state.hits;
-    final NullableIndexedWidgetBuilder rowBuilder = fushiStaggeredItemBuilder((
-      BuildContext context,
-      int index,
-    ) {
-      final VideoAcquisitionHit hit = hits[index];
-      final VideoAcquisitionOpen? open = hit.open;
-      final String id = '$_keyPrefix-hit-${hit.id}';
-      return FushiPressScale(
-        enabled: open != null,
-        child: MediaDetailItemRow(
-          key: ValueKey<String>(id),
-          index: index,
-          count: hits.length,
-          title: hit.title,
-          subtitle: hit.subtitle,
-          meta: hit.meta,
-          titleMaxLines: 1,
-          focusId: open == null ? null : FushiFocusId(id),
-          trailing: open == null
-              ? null
-              : const FushiIcon(FushiIcons.chevronRight, size: 20),
-          onTap: open == null ? null : () => unawaited(open(context)),
-        ),
-      );
-    });
     return Column(
       key: ValueKey<String>('$_keyPrefix-ready'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -267,25 +244,27 @@ class _ChannelGroup extends StatelessWidget {
               style: tokens.type.metadata,
             ),
           ),
-        // 结果是异步晚到的：按状态重放一个进场窗口，命中照样错峰出现。
-        FushiEntranceScope(
-          replayKey: state.status,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (int i = 0; i < hits.length; i++) rowBuilder(context, i)!,
-            ],
-          ),
-        ),
+        _HitList(keyPrefix: _keyPrefix, hits: state.hits),
         ..._footer(context, tokens),
       ],
     );
   }
 
-  /// 部分来源失败的提示 + 渠道入口（BT = 进完整资源搜索页）。
+  /// 仍在搜索的来源数 + 部分来源失败的提示 + 渠道入口（BT = 进完整资源搜索页）。
   List<Widget> _footer(BuildContext context, FushiDesignTokens tokens) {
     final VideoAcquisitionOpen? entry = state.entry;
     return <Widget>[
+      if (state.pendingSourceCount > 0)
+        Padding(
+          padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+          child: Text(
+            t.video_acquisition_sources_pending(
+              count: state.pendingSourceCount,
+            ),
+            key: ValueKey<String>('$_keyPrefix-pending'),
+            style: tokens.type.metadata,
+          ),
+        ),
       if (state.failedSourceCount > 0)
         Padding(
           padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
@@ -336,6 +315,75 @@ class _ChannelGroup extends StatelessWidget {
         ),
         ?action,
       ],
+    );
+  }
+}
+
+/// 渠道的命中列表。命中可能分几批到达（多来源渠道按来源逐个出结果）：每行按命中
+/// id 定 key，后到的行只追加在末尾；新到的一批从第 0 档起错峰（而不是排在已有行
+/// 之后干等），已显示的行不重播。
+class _HitList extends StatefulWidget {
+  const _HitList({required this.keyPrefix, required this.hits});
+
+  final String keyPrefix;
+  final List<VideoAcquisitionHit> hits;
+
+  @override
+  State<_HitList> createState() => _HitListState();
+}
+
+class _HitListState extends State<_HitList> {
+  /// 本批新到的命中从第几行开始（错峰档位从这里归零）。
+  int _batchStart = 0;
+
+  @override
+  void didUpdateWidget(covariant _HitList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.hits.length > oldWidget.hits.length) {
+      _batchStart = oldWidget.hits.length;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<VideoAcquisitionHit> hits = widget.hits;
+    return FushiEntranceScope(
+      // 进场窗口在列表存续期间一直开着：行只会在结果到达时挂载（不是滚动懒加载），
+      // 每行进场只播一次，晚到的来源也照样有进场。
+      window: const Duration(days: 1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int i = 0; i < hits.length; i++) _row(context, hits, i),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context, List<VideoAcquisitionHit> hits, int index) {
+    final VideoAcquisitionHit hit = hits[index];
+    final VideoAcquisitionOpen? open = hit.open;
+    final String id = '${widget.keyPrefix}-hit-${hit.id}';
+    return FushiStaggeredEntrance(
+      key: ValueKey<String>('$id-entrance'),
+      index: index >= _batchStart ? index - _batchStart : 0,
+      child: FushiPressScale(
+        enabled: open != null,
+        child: MediaDetailItemRow(
+          key: ValueKey<String>(id),
+          index: index,
+          count: hits.length,
+          title: hit.title,
+          subtitle: hit.subtitle,
+          meta: hit.meta,
+          titleMaxLines: 1,
+          focusId: open == null ? null : FushiFocusId(id),
+          trailing: open == null
+              ? null
+              : const FushiIcon(FushiIcons.chevronRight, size: 20),
+          onTap: open == null ? null : () => unawaited(open(context)),
+        ),
+      ),
     );
   }
 }

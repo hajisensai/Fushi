@@ -40,10 +40,13 @@
 | [BUG-5130](bugs/BUG-5130-caret-line-move-node-prefilter-linear.md) | 🚧 | 🚧 | 阅读器光标每次行移动仍对章内每个文本节点各做一次行盒查询（随章长线性） |
 | [BUG-5097](bugs/BUG-5097-manga-text-strip-hover-remeasures-ocr.md) | ✅ | ✅ | 台词栏悬停在同一气泡逐字节点间反复重量整屏 OCR 框（HBK-AUDIT-045） |
 | [BUG-5094](bugs/BUG-5094-caret-line-move-long-paragraph-per-glyph.md) | ✅ | ✅ | 阅读器方向键行移动对跨页长段落逐字量几何（HBK-AUDIT-023） |
+| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
 | [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
+| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
+| [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | 🚧 | 🚧 | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
 | [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
 | [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
 | [BUG-5079](bugs/BUG-5079-srs-retained-copy-unreadable-unreported.md) | ✅ | ✅ | SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示 |
