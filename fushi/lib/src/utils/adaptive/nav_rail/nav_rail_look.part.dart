@@ -12,6 +12,36 @@ const double _kRailNotchFillet = 24;
 /// 镂空脊下内容区（舞台）起始边的圆角半径。
 const double _kRailStageRadius = 44;
 
+/// 舞台起始边大圆角在纵向占的高度：平滑圆角（[kShellSmoothRadiusScale]）比
+/// 名义半径伸得更远，取较大者，两种角形都不越界。
+const double _kRailStageCornerExtent =
+    _kRailStageRadius * kShellSmoothRadiusScale;
+
+/// 镂空脊侧栏列表视口离侧栏底边的距离（BUG-4971）：视口底 + bleed + 内凹圆角
+/// 必须停在舞台左下大圆角之上，当前项被挤到最底部时缺口才能和舞台直边连成
+/// 一体（旧值 12：缺口的内凹圆角伸进舞台圆角，被舞台补角的侧栏色盖出缺口）。
+const double _kRailNotchBottomInset =
+    _kRailStageCornerExtent + _kRailNotchFillet + _kRailNotchBleed;
+
+@visibleForTesting
+const double debugNavRailNotchBleed = _kRailNotchBleed;
+@visibleForTesting
+const double debugNavRailNotchFillet = _kRailNotchFillet;
+@visibleForTesting
+const double debugNavRailStageCornerExtent = _kRailStageCornerExtent;
+@visibleForTesting
+const double debugNavRailCollapsedShapeSize = _kNavRailShapeSize;
+
+/// 当前项缺口在色块面坐标里的上下沿（[surface] 是 `_RailNotchSurface` 的元素）；
+/// 没有缺口时 null。
+@visibleForTesting
+({double top, double bottom})? debugNavRailNotchExtent(Element surface) {
+  final _RailNotchSurfaceState state =
+      (surface as StatefulElement).state as _RailNotchSurfaceState;
+  final RenderObject? box = state._paintKey.currentContext?.findRenderObject();
+  return box is RenderBox ? state._notchExtent(box) : null;
+}
+
 /// 色脊悬浮色块的圆角半径。
 const double _kRailSpineRadius = 40;
 
@@ -159,7 +189,9 @@ class _RailNotchSurfaceState extends State<_RailNotchSurface> {
     );
     double top = local.top - _kRailNotchBleed;
     double bottom = local.bottom + _kRailNotchBleed;
-    // 当前项滚出列表可视区时，缺口随之被可视区上下沿截住。
+    // 当前项滚出列表可视区时，缺口随之被可视区上下沿（各外扩 bleed）截住。
+    // 视口外上下各留了 bleed + 内凹圆角的余量（见 [_kRailNotchBottomInset]），
+    // 截住后的缺口连同内凹圆角仍落在舞台直边上。
     // 不用 `scroll.position`：侧栏列表被整棵换掉的那一帧（页头有无切换让
     // Column 子节点错位重建），旧 Scrollable 要到帧末 finalizeTree 才卸载，
     // 绘制时控制器上同时挂着新旧两个 position，取单数会直接抛。
@@ -174,8 +206,8 @@ class _RailNotchSurfaceState extends State<_RailNotchSurface> {
         viewport.getTransformTo(surface),
         Offset.zero & viewport.size,
       );
-      top = math.max(top, view.top);
-      bottom = math.min(bottom, view.bottom);
+      top = math.max(top, view.top - _kRailNotchBleed);
+      bottom = math.min(bottom, view.bottom + _kRailNotchBleed);
       break;
     }
     if (bottom - top < 8) return null;
@@ -328,7 +360,7 @@ class _RailStageCornerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // 只在起始边一条窄带里做差集：带宽盖住圆角即可。
-    const double band = _kRailStageRadius * kShellSmoothRadiusScale + 8;
+    const double band = _kRailStageCornerExtent + 8;
     final Rect strip = textDirection == TextDirection.rtl
         ? Rect.fromLTWH(size.width - band, 0, band, size.height)
         : Rect.fromLTWH(0, 0, band, size.height);

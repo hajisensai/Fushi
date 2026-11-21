@@ -40,6 +40,15 @@ String bdjInstallerCommand({
   return command.toString();
 }
 
+/// 开盘时交给 libbluray 的私有 Java 目录。播放页在开盘前已经探测 / 安装并验证过的
+/// [verified] 直接用，不再跑第二遍 [BlurayJavaRuntimeManager.probeJavaHome]（每遍是一次
+/// PowerShell 启动 + 逐文件 SHA-256 + 起一次 java.exe，本机实测 0.6–1.4 s，冷启动近 5 s）；
+/// 没有现成结果（重载、换集、换画质等不经开盘前检查的路径）才调 [probe]。
+Future<String?> resolveBlurayJavaHomeForOpen({
+  required String? verified,
+  required Future<String?> Function() probe,
+}) async => verified ?? await probe();
+
 /// Optional private Java runtime for BD-J discs. HDMV never needs this download.
 /// Network access uses the app proxy; the bundled installer only sees a verified
 /// local archive and never modifies system JAVA_HOME or other applications.

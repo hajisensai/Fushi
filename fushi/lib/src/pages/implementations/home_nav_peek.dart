@@ -3,6 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
+    show isLocalMangaVolume;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -56,6 +59,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaKind,
         MusicAlbumRow,
         MusicTrackRow,
+        EpubBookRow,
         VideoBookRow,
         VideoMetadataImageRow,
         VideoMetadataWorkRow,
@@ -136,6 +140,7 @@ AdaptiveNavPeek homeNavPeekFor(
           ref: ref,
           appModel: appModel,
           manga: tab == HomeTab.manga,
+          contextOf: contextOf,
         )).toData(),
       );
     case HomeTab.video:
@@ -211,10 +216,30 @@ Future<bool Function(MediaNsfwTarget target)> _loadNsfwJudge(
   return (MediaNsfwTarget target) => target.resolve(snapshot);
 }
 
+/// 漫画速览行的有声状态：做不了有声（在线章节 / 读不出）的不在表里。
+enum _MangaPeekAudio { none, ready }
+
+/// [bookKeys] 里每本漫画的有声状态（[_MangaPeekAudio]）。只查要显示的那几本。
+Future<Map<String, _MangaPeekAudio>> _loadMangaPeekAudio(
+  AppModel appModel,
+  Iterable<String> bookKeys,
+) async {
+  final Map<String, _MangaPeekAudio> out = <String, _MangaPeekAudio>{};
+  for (final String key in bookKeys) {
+    final EpubBookRow? row = await appModel.database.getEpubBook(key);
+    if (row == null || !isLocalMangaVolume(row)) continue;
+    out[key] = await mangaHasAudio(appModel.database, key)
+        ? _MangaPeekAudio.ready
+        : _MangaPeekAudio.none;
+  }
+  return out;
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
   required bool manga,
+  required BuildContext Function() contextOf,
 }) async {
   final List<MediaItem> all = await ref.read(
     fushiBooksProvider(JapaneseLanguage.instance).future,
@@ -248,6 +273,9 @@ Future<NavPeekFeed> _loadBooks({
           )
           .toList()
         ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a));
+  // 漫画行的有声入口（2026-11-20 反馈 #6）：已有有声版常显「有声」签，没有的
+  // 悬停 / 聚焦时给「加声音」打开有声漫画工作台。生成 / 导入受听书模块门控。
+  Map<String, _MangaPeekAudio> audio = const <String, _MangaPeekAudio>{};
   AdaptiveNavPeekEntry entryOf(MediaItem item, {String? collection}) {
     final String itemTitle = ReaderFushiSource.instance
         .getDisplayTitleFromMediaItem(item);
@@ -258,10 +286,27 @@ Future<NavPeekFeed> _loadBooks({
     final double? progress = item.duration > 0
         ? (item.position / item.duration).clamp(0.0, 1.0)
         : null;
+    final String bookKey = keyOf(item);
+    final _MangaPeekAudio? audioState = audio[bookKey];
+    final bool hasAudio = audioState == _MangaPeekAudio.ready;
     return AdaptiveNavPeekEntry(
       title: collection ?? itemTitle,
       cover: noCover ? null : image,
-      blurCover: nsfw(MediaNsfwTarget.book(keyOf(item))),
+      blurCover: nsfw(MediaNsfwTarget.book(bookKey)),
+      status: hasAudio ? t.manga_audio_workbench_has_audio : null,
+      statusIcon: hasAudio ? FushiIcons.audio : null,
+      statusTone: AdaptiveNavPeekStatusTone.active,
+      action:
+          audioState == _MangaPeekAudio.none &&
+              MangaAudioWorkbenchEntry.isAvailable
+          ? AdaptiveNavPeekAction(
+              icon: FushiIcons.audio,
+              label: t.manga_audio_workbench_add_sound,
+              onPressed: () => unawaited(
+                MangaAudioWorkbenchEntry.open(contextOf(), bookKey: bookKey),
+              ),
+            )
+          : null,
       progress: progress,
       subtitle: _peekSubtitle(
         collection == null ? null : itemTitle,
@@ -300,17 +345,23 @@ Future<NavPeekFeed> _loadBooks({
             ShelfReadStatus.reading,
       )
       .firstOrNull;
+  final List<NavPeekUnit<MediaItem>> recentUnits = units
+      .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
+      .take(_kPeekRecentCount)
+      .toList();
+  if (manga && appModel.moduleVisibility.isEnabled(ModuleId.listening)) {
+    audio = await _loadMangaPeekAudio(appModel, <String>[
+      if (resume != null) keyOf(resume.item),
+      for (final NavPeekUnit<MediaItem> unit in recentUnits) keyOf(unit.item),
+    ]);
+  }
   NavPeekTimed timed(NavPeekUnit<MediaItem> unit) => (
     at: recentOf(unit.item),
     entry: entryOf(unit.item, collection: unit.collectionName),
   );
   return NavPeekFeed(
     resume: resume == null ? null : timed(resume),
-    recent: units
-        .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
-        .take(_kPeekRecentCount)
-        .map(timed)
-        .toList(),
+    recent: recentUnits.map(timed).toList(),
   );
 }
 
@@ -786,9 +837,19 @@ Future<AdaptiveNavPeekData> _loadHome({
 
   final List<NavPeekFeed> feeds = await Future.wait(<Future<NavPeekFeed>>[
     if (enabled(HomeTab.books))
-      _loadBooks(ref: ref, appModel: appModel, manga: false),
+      _loadBooks(
+        ref: ref,
+        appModel: appModel,
+        manga: false,
+        contextOf: contextOf,
+      ),
     if (enabled(HomeTab.manga))
-      _loadBooks(ref: ref, appModel: appModel, manga: true),
+      _loadBooks(
+        ref: ref,
+        appModel: appModel,
+        manga: true,
+        contextOf: contextOf,
+      ),
     if (enabled(HomeTab.video))
       _loadVideos(appModel: appModel, repo: videoRepo, contextOf: contextOf),
     if (enabled(HomeTab.games))

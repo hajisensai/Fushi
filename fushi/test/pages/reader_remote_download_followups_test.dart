@@ -175,7 +175,10 @@ void main() {
   }
 
   /// 书列表 provider 用真的（订阅书集合流），与生产同路径。
-  Widget buildApp(RemoteBookClient client) => ProviderScope(
+  Widget buildApp(
+    RemoteBookClient client, {
+    Future<File> Function(String remoteBookKey)? audiobookFetcher,
+  }) => ProviderScope(
     overrides: <Override>[
       appProvider.overrideWith((ref) => appModel),
       srtBooksProvider.overrideWith(
@@ -191,6 +194,10 @@ void main() {
             remoteBookDownloadDestination: (RemoteBookInfo book) async =>
                 File('${pathProviderDir.path}/${book.title}.epub'),
             remoteBookImporter: importAs,
+            remoteAudiobookFetcher: audiobookFetcher,
+            remoteAudiobookImporter: audiobookFetcher == null
+                ? null
+                : (File package, String? bookKeyOverride) async {},
           ),
         ),
       ),
@@ -444,6 +451,64 @@ void main() {
       reason:
           '最近阅读：对端 2000 > 本机 1500 > 对端未读（入库 1000）；'
           '下载时刻不能把它们顶到最前',
+    );
+    await unmount(tester);
+  });
+
+  testWidgets('⑥ 带有声书的书：正文落地后同一本书的卡接着画「有声书」进度，失败写在这张卡上', (
+    WidgetTester tester,
+  ) async {
+    final _ProgressGatedClient client = _ProgressGatedClient(<RemoteBookInfo>[
+      const RemoteBookInfo(
+        title: 'Frieren',
+        hasContent: true,
+        hasAudiobook: true,
+        importedAt: 5000,
+      ),
+    ], gated: false);
+    final Completer<File> audiobookGate = Completer<File>();
+    await tester.pumpWidget(
+      buildApp(client, audiobookFetcher: (String _) => audiobookGate.future),
+    );
+    await settle(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('remote_book_card_Frieren')),
+    );
+    await settle(tester);
+
+    // 正文已落地：占位卡让位，本地卡带着同一条任务的遮罩，环下写「有声书」。
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Frieren')),
+      findsNothing,
+    );
+    final Finder overlay = find.byKey(
+      const ValueKey<String>('landed_download_Frieren'),
+    );
+    expect(overlay, findsOneWidget, reason: '有声书还在下：本地卡必须接着画任务进度');
+    expect(
+      find.descendant(of: overlay, matching: find.text(t.section_audiobook)),
+      findsOneWidget,
+    );
+    expect(inGrid('Frieren'), findsOneWidget, reason: '只有这一张卡，不另起有声书卡');
+
+    // 有声书包失败：遮罩撤掉，失败写在这本书自己的卡上（书照常可读）。
+    audiobookGate.completeError(StateError('peer went away'));
+    await settle(tester);
+    expect(
+      find.byKey(const ValueKey<String>('landed_download_Frieren')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('shelf_meta_audiobook_download_failed'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Frieren')),
+      findsNothing,
+      reason: '失败不把占位卡请回来，也不另起一张卡',
     );
     await unmount(tester);
   });

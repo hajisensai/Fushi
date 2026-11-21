@@ -19,11 +19,15 @@
 //! （回归测试 `every_profile_table_is_purged` 钉住「除 `srs_meta` / `sync2_deps` 外每张表都有 `profile_uid`」）。
 //! 只动本机：远端存储位置上已同步的集合一个字节也不碰（`sync2_locations` 只是本机记的上传进度）。
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Map, Value, json};
 
 use super::SrsCore;
+#[cfg(test)]
 use super::sync2::{in_savepoint, sql};
+#[cfg(test)]
 use std::sync::atomic::Ordering;
 
 /// `srs_meta` 里一次性存量无主数据扫描的完成标记（值 = 完成时刻毫秒）。
@@ -35,6 +39,7 @@ use std::sync::atomic::Ordering;
 ///
 /// v3：v2 的扫描只认「表里还有行」的 uid，表里已经没有行、只剩 `srs_meta` 键的 uid（[meta_only_uids]）与没人引用的
 /// `sync2_deps` 不在它的清理面里；收尾（[SrsCore::orphan_sweep_done]）补上这两类之后再换一次键，v2 扫过的库再扫一次。
+#[cfg(test)]
 pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v3";
 
 /// 按 profile 记的 `srs_meta` 键里，profile uid 是**最后一段**的前缀（`<前缀><uid>`；`sync2_sealed/` 中间还有一段
@@ -42,8 +47,10 @@ pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v3";
 /// transport.rs `fork_key` / 状态摘要，sync2/mod.rs `MIGRATING_KEY`，sealed.rs `key`；sync2/heal.rs 的本机组指纹
 /// （`sync2_digest_dg/<uid>`）、对端组指纹与自动重建去重记录（`sync2_dg_peer/<设备>/<uid>`、
 /// `sync2_heal/<设备>/<uid>`，中间是设备 ID），sync2/min_reader.rs 按内容声明的 minReader，binding.rs 的集合绑定状态
-/// （`BINDING_PREFIX`）。
-const META_PROFILE_LAST: [&str; 11] = [
+/// （`BINDING_PREFIX`），新代库（`srs4.db`）的本机状态行 `local_state/<uid>`（gen4/local.rs；协议 3 的库里没有这种键，
+/// 登记在这里是为了守卫与新代 profile 清除（G9-5）按同一张表认它）。
+#[cfg(test)]
+const META_PROFILE_LAST: [&str; 12] = [
     "sync2_self_info/",
     "sync2_fork_at/",
     "sync2_digest/",
@@ -55,10 +62,12 @@ const META_PROFILE_LAST: [&str; 11] = [
     "sync2_heal/",
     "sync2_min_reader/",
     "srs_collection_bound/",
+    "local_state/",
 ];
 
 /// 同上，profile uid 是前缀之后**第一段**的（`<前缀><uid>/<设备或位置>`；devices.rs `ext_prefix` /
 /// `retired_prefix`，transport.rs 的 head 签名，sync2/former.rs 的旧身份观察记录 `<前缀><uid>/<位置>/<设备>`）。
+#[cfg(test)]
 const META_PROFILE_FIRST: [&str; 4] = [
     "sync2_device_ext/",
     "sync2_retired/",
@@ -77,6 +86,7 @@ const META_NOT_PROFILE: [&str; 2] = ["sync2_device_hint/", "profile_merge/"];
 /// 带 `profile_uid` 列的 `srs_*` / `sync2_*` 表（按名字排序）。删除按这个顺序：投影表（`srs_entities` /
 /// `srs_field_edits` / `srs_review_logs`）的删除触发器往 `sync2_digest_buckets` 记负项（sync2/digest.rs），按名字它排在
 /// 三张投影表之后，删到它时触发器写下的行一并删掉。
+#[cfg(test)]
 fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
     let mut stmt = c
         .prepare(
@@ -96,6 +106,7 @@ fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
 }
 
 /// [profile] 在各张按 profile 分的表里的总行数。
+#[cfg(test)]
 fn table_rows(c: &Connection, profile: &str) -> Result<i64, String> {
     let mut rows = 0i64;
     for t in profile_tables(c)? {
@@ -113,6 +124,7 @@ fn table_rows(c: &Connection, profile: &str) -> Result<i64, String> {
 /// 删掉按 [profile] 记的元数据键：`<前缀>/<uid>`（迁移进度、状态摘要、并入标记…）或 `<前缀>/<uid>/<下级>`（别的
 /// 设备的扩展 / 停用标记、各位置的 head 签名，sync2/devices.rs、transport.rs）；uid 是 UUID，不会误伤别的键。
 /// 返回删掉的键数。
+#[cfg(test)]
 fn delete_profile_meta(c: &Connection, profile: &str) -> Result<i64, String> {
     c.execute(
         "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1 \
@@ -129,6 +141,7 @@ fn delete_profile_meta(c: &Connection, profile: &str) -> Result<i64, String> {
 /// `read_ops` 都是从操作连过来），没有操作引用的行谁也读不到；之后再有操作带同样的版本向量，`intern_deps` 重新
 /// 插一行。内存里记着行号的只有收段会话的 `Append::deps`（channel.rs）：它记下的每个行号都是本会话刚插的操作引用
 /// 着的，那些操作只会被 [SrsCore::profile_purge]（同时作废该会话）删掉，所以这里删不到它记着的行。
+#[cfg(test)]
 fn gc_deps(c: &Connection) -> Result<i64, String> {
     c.execute(
         "DELETE FROM sync2_deps WHERE id NOT IN (SELECT deps FROM sync2_ops)",
@@ -140,6 +153,7 @@ fn gc_deps(c: &Connection) -> Result<i64, String> {
 
 /// [key] 是按 profile 记的键时，取出其中的 profile uid（只认 [META_PROFILE_LAST] / [META_PROFILE_FIRST] 里登记过
 /// 写法的键，且那一段是规范 UUID 文本）；别的键 None。
+#[cfg(test)]
 fn meta_profile_of(key: &str) -> Option<&str> {
     let uid = META_PROFILE_FIRST
         .iter()
@@ -157,6 +171,7 @@ fn meta_profile_of(key: &str) -> Option<&str> {
 /// 怎么来的：BUG-4292 之前删 profile 的 Rust 实现只删 `…/<uid>` 结尾的键，uid 在中间的
 /// （`sync2_device_ext/<uid>/…`、`sync2_retired/<uid>/…`、`sync2_head_sig/<uid>/…`）留下；同期并入的手抄删除按
 /// profile 的键只删两个。表行删光之后这些 uid 不再出现在 [SrsCore::profile_uids] 里，没有任何清理路径看得到它们。
+#[cfg(test)]
 fn meta_only_uids(c: &Connection) -> Result<Vec<String>, String> {
     let keys: Vec<String> = c
         .prepare("SELECT key FROM srs_meta")
@@ -182,6 +197,7 @@ fn meta_only_uids(c: &Connection) -> Result<Vec<String>, String> {
 }
 
 /// 用户看得见的规模：未删除的笔记、它们的卡、全部复习记录；外加该 uid 在各表里的总行数。
+#[cfg(test)]
 fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
     let count =
         |q: &str| -> Result<i64, String> { c.query_row(q, [profile], |r| r.get(0)).map_err(sql) };
@@ -198,9 +214,11 @@ fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
 }
 
 /// 并入标记的键前缀（Dart `kSrsProfileMergeMarkerPrefix`）：`profile_merge/<旧 uid>` → `{"profileId":..,"newUid":..}`。
+#[cfg(test)]
 pub(crate) const MERGE_MARKER_PREFIX: &str = "profile_merge/";
 
 /// [SrsCore::meta_set_edit] 认得的集合 → `srs_meta` 的键（Dart `kSrsRetiredV2DevicesKey` / `kSrsRetiredProfileUidsKey`）。
+#[cfg(test)]
 fn meta_set_key(set: &str) -> Result<&'static str, String> {
     match set {
         "retiredDevices" => Ok("srs_retired_v2_devices"),
@@ -211,6 +229,7 @@ fn meta_set_key(set: &str) -> Result<&'static str, String> {
 
 /// `srs_meta` 里 [key] 存的字符串集合（JSON 数组；没有 / 坏了 / 不是数组 = 空）。保留数组里的顺序、去重；非字符串
 /// 元素不认（这两个集合只有本模块写，写的都是字符串）。
+#[cfg(test)]
 fn read_meta_set(c: &Connection, key: &str) -> Result<Vec<String>, String> {
     let raw: Option<String> = c
         .query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| {
@@ -232,6 +251,7 @@ fn read_meta_set(c: &Connection, key: &str) -> Result<Vec<String>, String> {
 }
 
 /// [profile] 名下投影里的全部事件 ID（并入的收尾核对用；Dart 旧 `_eventIds`）。
+#[cfg(test)]
 fn event_ids(c: &Connection, profile: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     for table in [
@@ -255,6 +275,7 @@ fn event_ids(c: &Connection, profile: &str) -> Result<Vec<String>, String> {
 
 /// [ids] 里有几个不在 [profile] 名下：在投影表或操作索引的**任意一张**里出现就算在（含被支配而不在投影里的修改
 /// 记录、被清除内容的日志；Dart `_presentIn` 的口径）。
+#[cfg(test)]
 fn missing_under(c: &Connection, profile: &str, ids: &[&str]) -> Result<usize, String> {
     let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
     for chunk in ids.chunks(500) {
@@ -283,6 +304,7 @@ fn missing_under(c: &Connection, profile: &str, ids: &[&str]) -> Result<usize, S
 }
 
 /// 删掉 [profile] 的全部本机数据（[SrsCore::profile_purge] 的本体）：在调用方的写连接、调用方开的 SAVEPOINT 里做。
+#[cfg(test)]
 fn purge_on(c: &Connection, profile: &str) -> Result<Value, String> {
     let mut out = footprint(c, profile)?;
     let mut tables = Map::new();
@@ -316,6 +338,7 @@ fn purge_on(c: &Connection, profile: &str) -> Result<Value, String> {
 
 impl SrsCore {
     /// [profile] 的规模（`{notes, cards, reviews, rows}`）。读连接上一个读事务：几个数出自同一快照。
+    #[cfg(test)]
     pub fn profile_footprint(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(sql)?;
@@ -327,6 +350,7 @@ impl SrsCore {
     /// 删掉 [profile] 在本机 srs.db 里的全部数据（一个 savepoint：要么全删，要么一行不动）。返回删之前的
     /// 规模（同 [Self::profile_footprint]）加 `deleted`（实际删掉的总行数）与 `tables`（逐表行数，只列非零的）。
     /// 这个 uid 正在分批收段的会话一并作废。旧库搬迁事务开着时拒绝（搬迁会整表重写）。
+    #[cfg(test)]
     pub fn profile_purge(&self, profile: &str) -> Result<Value, String> {
         if profile.is_empty() {
             return Err("profile_purge: empty profile uid".into());
@@ -340,6 +364,7 @@ impl SrsCore {
     }
 
     /// 写锁 + 旧库搬迁事务没开着（搬迁会整表重写）。
+    #[cfg(test)]
     fn profile_writer(&self) -> Result<super::Conn<'_>, String> {
         // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）。
         let w = self.writer()?;
@@ -353,6 +378,7 @@ impl SrsCore {
     /// srs_profile_merge.dart）。之后任何一步中断，标记还在，下次从 `srs_meta` 读到它续做；并入提交
     /// （[Self::profile_merge_commit]）时随 [from] 的元数据键一起删掉。值的形态与 Dart 旧版 `jsonEncode` 写下的逐字节
     /// 相同（`profileId` 在前）。
+    #[cfg(test)]
     pub fn profile_merge_mark(
         &self,
         from: &str,
@@ -389,6 +415,7 @@ impl SrsCore {
     /// 以前这是 Dart 的一笔 Drift 事务（两批读 + `profile_purge`），不在任何副本的独占区里：别的副本此时发的写命令
     /// 会落进那笔事务。现在核对与删除之间只有内核的写锁，没有别的写入。[from] 的收段通道没做完就先做完（通道里还没
     /// 投影的操作进了投影才看得见；多出来的事件不在 [map] 里 → 再来一轮）。[fail_after]（测试注入）= `"check"`：核对通过之后报错，验证整笔回滚。
+    #[cfg(test)]
     pub fn profile_merge_commit(
         &self,
         from: &str,
@@ -438,6 +465,7 @@ impl SrsCore {
     /// v2 设备身份 / 离开的旧 uid」，srs_profile_link.dart）。读、改、写在一次持写锁、一个 SAVEPOINT 里——以前是 Dart
     /// 的「Drift 读一条 → 改 → Drift 写一条」，两个并发的增删互相覆盖。[add] / [remove] 都不给 = 只读（不取写锁）。
     /// 已有元素的顺序不动，新值追加；没变化不写。回包 `{"values": [...]}`。
+    #[cfg(test)]
     pub fn meta_set_edit(
         &self,
         set: &str,
@@ -472,6 +500,7 @@ impl SrsCore {
     }
 
     /// srs.db 里出现过数据的全部 uid（`{uids: [...], orphanSweptAt: 毫秒 | null}`）。
+    #[cfg(test)]
     pub fn profile_uids(&self) -> Result<Value, String> {
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(sql)?;
@@ -517,6 +546,7 @@ impl SrsCore {
     ///
     /// 返回 `{metaUids: [清掉键的 uid…], meta: 删掉的键数, deps: 回收的行数}`。旧库搬迁事务开着时拒绝（同
     /// [Self::profile_purge]）。重复调用幂等：第二次没有可清的。
+    #[cfg(test)]
     pub fn orphan_sweep_done(
         &self,
         now: i64,
@@ -1234,6 +1264,8 @@ mod tests {
         assert!(mod_rs.contains("const MIGRATING_KEY: &str = \"sync2_migrating/\";"));
         assert!(META_PROFILE_LAST.contains(&"sync2_migrating/"));
         assert!(META_PROFILE_LAST.contains(&crate::store::binding::BINDING_PREFIX));
+        assert!(META_PROFILE_LAST.contains(&crate::store::gen4::local::KEY_PREFIX));
+        assert!(seen.contains(crate::store::gen4::local::KEY_PREFIX));
     }
 
     /// 收尾清两类残留：只剩 meta 键的无主 uid 的键、没有任何操作引用的 `sync2_deps`。活 profile 名下带设备 ID 的键、

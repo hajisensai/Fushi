@@ -462,6 +462,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chardetng"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13de944a44b5064ee5d3a5ceccc49a41bfec50f2580e66f82e87703acdb88b53"
+dependencies = [
+ "cfg-if",
+ "encoding_rs",
+ "memchr",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1211,6 +1222,7 @@ dependencies = [
  "aes",
  "brotli-decompressor",
  "cbc",
+ "chardetng",
  "crc32fast",
  "encoding_rs",
  "fushi_asr_cue_post",

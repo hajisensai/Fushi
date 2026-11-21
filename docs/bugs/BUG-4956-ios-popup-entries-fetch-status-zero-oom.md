@@ -1,0 +1,15 @@
+## BUG-4956 · iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写）
+- **报告**：2026-11-16（应用内闪退反馈 8IS7uORlrQ：3.3.0-debug.24438，iPad Air 3 / iPad11,3，iOS 18.7.8，阅读器里查词时闪退）
+- **真实性**：✅ 真 bug。日志里 16:26:47 `UncaughtZone` Out of Memory，栈 `Utf8Encoder.convert ← StandardMessageCodec ← IOSInAppWebViewController.evaluateJavascript ← DictionaryPopupWebViewState._pushResults`；0.4 秒后 `DictRepo.historyPersist` 也 Out of Memory，栈 `sqlite3_bind_text ← replaceAllDictionaryHistory ← _writeHistorySnapshot`。rss 只有约 300 MB（max 551 MB）、memoryPressure 3 次。关键证据是同一进程 15:25:15 的 `DictPopupWebview.popupEntriesFetch: entries fetch failed, falling back to inline literal: HTTP 0`：
+  - **根因 ①**（主因）`fushi/lib/src/pages/implementations/popup_settings_injection.dart:827`（修前）`if (!r.ok) throw new Error('HTTP ' + r.status)`。P1-B（2026-10-20）让大结果（≥32K 码元）的词条 JSON 不进脚本、由页面 `fetch` 宿主拦截器取回；iOS / macOS 上词条 URL 是自定义 scheme `fushi-popup://`，由 flutter_inappwebview 的 `CustomSchemeHandler.swift` 交回**非 HTTP 的 `URLResponse`**——非 HTTP 传输没有状态码，WebKit 的 `fetch` 拿到 `status 0 / ok false`（正文照常送达，同 Safari 对 `file://` 的行为）。于是 iOS / macOS 上取回**每次都失败**，`popupEntriesFetchFailed` 把该 WebView 永久切回字面量投递：MB 级词条 JSON 先 `jsonEncode` 成 JS 字面量，再整串经 method channel `Utf8Encoder.convert`，正是崩溃栈。P1-B 在苹果平台从未生效。
+  - **根因 ②**（同一分配压力的第二个点）`fushi/lib/src/models/dictionary_repository.dart:1843`（修前）`_writeHistorySnapshot` 每次查词都 `replaceAllDictionaryHistory` 整表重写十条历史（单条 0.26–1.5 MB），全部 JSON 跨 isolate 拷给 drift、再在 `sqlite3_bind_text` 里各自 UTF-8 编码一遍；`_historyJsonMemo`（同文件 1678）还让十份 JSON 常驻 UI isolate 当 memo。
+  - BUG-4013 修的是原生地址空间占用（词典映射、WebKit 规则编译），不覆盖这两条 Dart 侧的大块瞬时分配。
+- **[x] ① 已修复** —
+  - 页面侧胶水（`buildPopupFetchedEntriesJs`）按传输判成败：http(s) URL 仍按 `r.ok`；自定义 scheme（iOS / macOS）`status 0` 不算失败，以正文是否为空判成败（宿主不认令牌时回空正文 → 照旧上报失败、回退字面量）。iOS / macOS 大结果从此真正走拦截投递，不再经 method channel 推 MB 级脚本。没有改 Swift 的 `URLResponse` → `HTTPURLResponse`：同一个 handler 还服务阅读器 / 漫画 / 歌词 / SRS 的媒体资源，改成 HTTP 200 会让 WebKit 媒体加载按 HTTP 语义要 Range（206），风险面远大于问题本身。
+  - 查词历史改增量落库：`FushiDatabase.syncDictionaryHistory`（`packages/fushi_core/lib/src/database/database_content_misc.part.dart`）一次事务里删掉不在快照里的行、给保留行改 position（正文过期才重写）、插入新增行；仓库用 `_historyRowIds`（对象身份 → 行 id）和 `_historyJsonStale`（就地改了 scrollPosition 的条目）取代 `_historyJsonMemo`，只序列化新增 / 过期那几条，内存里不再常驻整表 JSON。库里行身份过期（表被别处替换）时保留行改 position 命中 0 行 → 忘掉行身份、仍算脏，下一轮当新行写回。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/pages/dictionary_popup_entries_fetch_test.dart`（node 真执行生成的胶水）：自定义 scheme `status 0` + 有正文 → 渲染、不上报失败；自定义 scheme 空正文 → 上报 `empty response`；https `status 0` → 仍上报 `HTTP 0`。
+  - `fushi/test/models/dictionary_repository_test.dart` 组 `history incremental persistence (BUG-4956)`：新查词只插 1 行、其余行 id 不变且正文不重写；同一结果对象重查只改序不重写；淘汰 / 移除的条目从表里删掉；从库装载的历史不重新序列化；表被外部清空后保留条目写回。
+- **备注**：
+  - 本机 Windows，无 iOS 设备，未在 iPad 上复测原始路径；WebKit 对非 HTTP 自定义 scheme 响应给 `fetch` 的 status 为 0、正文可读，依据是 WebKit bug 222471 与 Safari `file://` 同类行为，未在真机抓包确认。若真机上正文也读不到，新逻辑会以 `empty response` 上报并回退字面量（与修前行为相同，不会画出空白）。
+  - `fushi_server` 的 `dictionary_host.dart` 仍用 `replaceAllDictionaryHistory`（服务端单次导入，不在查词热路径），未改。

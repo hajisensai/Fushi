@@ -132,6 +132,11 @@ class SrsCardAppearance {
 
   final SrsCardColorSource colorSource;
 
+  /// 卡面是否自己铺底色：只有自定义配色时铺它的 surface（用户选的卡面底色）；跟随 app
+  /// 主题时卡面透明，透出复习页背景（路由层的柔光 / 形状 / 图片背景）。原生卡面、WebView
+  /// 外壳 html/body、模板的 `.card` 底色与复习页底栏共用这一条判据。
+  bool get paintsOwnSurface => colorSource == SrsCardColorSource.custom;
+
   /// 自定义强调色（ARGB），[colorSource] 为 custom 时生效。
   final int customAccent;
 
@@ -585,11 +590,19 @@ String srsCardAppearanceCss({
   final String spacing =
       ':root .card.card{--fc-gap:${_fmt(tokens.gap(a.density))}px;'
       '--fc-pad:${_fmt(tokens.pad(a.density))}px;}';
+  // 卡面底色：模板 `.card{background-color:var(--fc-bg)}` 把卡面铺成 --fushi-srs-bg（=
+  // surface）。跟随 app 主题时那是一块与页面背景不同的实色——宽屏释义栏整块发暗、窄屏
+  // 释义 WebView 末尾一条白带。这里把 `.card` 的底色清成透明（`--fc-bg` 照旧，表面三档 /
+  // color-mix 推色不变）；只压模板那条 `.card`（特异度 0,1,0 → 0,2,0），用户在笔记类型
+  // CSS 里用更具体的选择器写的底色仍然生效。
+  final String surface = a.paintsOwnSurface
+      ? ''
+      : '.card.card{background-color:transparent;}';
   // 翻译模糊：开着才下发（关 = 零注入）；规则本身也挂在宿主类名下。
   final String blur = a.showTranslation && a.blurTranslation
       ? kSrsCardTranslationBlurCss
       : '';
-  return '${chain.fontFaces}$vars$spacing$blur';
+  return '${chain.fontFaces}$vars$spacing$surface$blur';
 }
 
 /// 卡面圆角：模板 `--fc-radius` / `--fc-radius-small` / `--fc-radius-inner` 由当前设计系统的

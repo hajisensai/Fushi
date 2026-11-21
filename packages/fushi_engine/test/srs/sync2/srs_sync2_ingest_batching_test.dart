@@ -2,6 +2,7 @@
 // 段按压缩后体积切、单段可到 4 MiB，按段数分批会让一批大到几百 MB 再整批跨 FFI；按实际字节切批则一批的内存
 // 有上界，进度按批推进、中途收手只丢在途那一批。
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -45,6 +46,29 @@ Future<List<SrsFetchedBatch>> _collect(Stream<SrsFetchedBatch> s) => s.toList();
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
+  // 第六波：一片被预算截断时内核交回（`requeue`）的重切件按下标取回、接到下一片；坏下标是契约坏了，报错不猜。
+  test('收段交回的段按下标取回，坏下标报错', () {
+    final List<Uint8List> slice = <Uint8List>[
+      Uint8List.fromList(<int>[1]),
+      Uint8List.fromList(<int>[2]),
+      Uint8List.fromList(<int>[3]),
+    ];
+    expect(SrsDbStore.srsIngestRequeued(slice, null), isEmpty);
+    expect(SrsDbStore.srsIngestRequeued(slice, <Object?>[]), isEmpty);
+    expect(SrsDbStore.srsIngestRequeued(slice, <Object?>[0, 2]), <Uint8List>[
+      slice[0],
+      slice[2],
+    ]);
+    expect(
+      () => SrsDbStore.srsIngestRequeued(slice, <Object?>[3]),
+      throwsStateError,
+    );
+    expect(
+      () => SrsDbStore.srsIngestRequeued(slice, <Object?>['0']),
+      throwsStateError,
+    );
+  });
 
   group('srsFetchInBatches', () {
     test('大段提前切批：累计字节到预算就交出这一批', () async {
@@ -510,6 +534,83 @@ void main() {
       );
       expect(host.steps, <String>['begin', 'batch', 'end']);
     });
+
+    test(
+      '收段让路：一批在内核里按 kSrsSync2IngestSliceItems 切成多个事务，每片各进一次写锁；结果与对端一致',
+      () async {
+        final SrsDbStore a = await device('A');
+        final SrsDbStore b = await device('B');
+        // 远超一片的操作数（每条笔记有笔记、卡片等多条操作）。
+        for (int i = 0; i < SrsDbStore.kSrsSync2IngestSliceItems; i++) {
+          await addNote(a, '語$i');
+        }
+        final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+        Future<SrsSync2Report> round(SrsDbStore s) => srsSync2Round(
+          host: s,
+          location: loc,
+          locationId: 'loc',
+          nowMs: () => DateTime.now().millisecondsSinceEpoch,
+        );
+        expect((await round(a)).error, isNull);
+        int slices = 0;
+        b.debugOnIngestSlice = () => slices++;
+        final SrsSync2Report rb = await round(b);
+        b.debugOnIngestSlice = null;
+        expect(rb.error, isNull);
+        // 收段的事务数 = 切片数 + 收尾一次；一批段（只有一个段）至少切成两片。
+        expect(slices, greaterThanOrEqualTo(3), reason: 'ingest sliced');
+        expect(rb.applied, greaterThan(SrsDbStore.kSrsSync2IngestSliceItems));
+        expect((await b.sync2Status())['pending'], 0);
+        expect((await round(a)).error, isNull);
+        expect(
+          (await a.sync2Digest())['digest'],
+          (await b.sync2Digest())['digest'],
+        );
+      },
+    );
+
+    test('收段让路：依赖另一台设备的段排在前面时，只停进等待缓冲的一片也算进展，一轮收完不报错', () async {
+      // 操作的依赖 = 写它时本机已应用的版本向量：a 先写一批，b 收下后写一批（依赖 a），a 再收下写一批（依赖 b）。
+      // 新设备 c 收段时无论 a、b 谁的段排在前面，前面那台都有一长串依赖后面那台的项，整片只停进等待缓冲
+      // （`landed` 为 0）。以前 Dart 拿 `landed` 判进展，这里抛 StateError、一轮失败。
+      const int n = SrsDbStore.kSrsSync2IngestSliceItems;
+      final SrsDbStore a = await device('A');
+      final SrsDbStore b = await device('B');
+      final SrsDbStore c = await device('C');
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      Future<SrsSync2Report> round(SrsDbStore s) => srsSync2Round(
+        host: s,
+        location: loc,
+        locationId: 'loc',
+        nowMs: () => DateTime.now().millisecondsSinceEpoch,
+      );
+      for (int i = 0; i < n; i++) {
+        await addNote(a, '甲$i');
+      }
+      expect((await round(a)).error, isNull);
+      expect((await round(b)).error, isNull);
+      for (int i = 0; i < n; i++) {
+        await addNote(b, '乙$i');
+      }
+      expect((await round(b)).error, isNull);
+      expect((await round(a)).error, isNull);
+      for (int i = 0; i < n; i++) {
+        await addNote(a, '丙$i');
+      }
+      expect((await round(a)).error, isNull);
+      int slices = 0;
+      c.debugOnIngestSlice = () => slices++;
+      final SrsSync2Report rc = await round(c);
+      c.debugOnIngestSlice = null;
+      expect(rc.error, isNull);
+      expect(slices, greaterThanOrEqualTo(3), reason: 'ingest sliced');
+      expect((await c.sync2Status())['pending'], 0);
+      expect((await round(a)).error, isNull);
+      expect(
+        (await a.sync2Digest())['digest'],
+        (await c.sync2Digest())['digest'],
+      );
+    });
   });
 
   // 发件分批 + 水位续传（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）：上传中途断掉，下一轮从已确认的水位接着发，
@@ -555,6 +656,8 @@ void main() {
         locationId: 'loc',
         nowMs: () => DateTime.now().millisecondsSinceEpoch,
         outboxBudgetBytes: 1, // 每批一段
+        // 新代按位置从水位起重切（不沿用别的位置的段）：段切小，三条笔记切出多段。
+        outboxSegmentBytes: 1,
       );
       await expectLater(round(), throwsA(isA<StateError>()));
       final List<String> firstRoundSegs = loc.segmentPuts.toList();
@@ -638,9 +741,10 @@ class _CountingHost implements SrsSync2Host {
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) {
     ingestSizes.add(segments.length);
-    return inner.sync2IngestBatch(segments, keyHex: keyHex);
+    return inner.sync2IngestBatch(segments, keyHex: keyHex, location: location);
   }
 
   @override
@@ -680,6 +784,18 @@ class _ScriptedHost implements SrsSync2Host {
       'collection': 'c1',
       'device': 'SELF',
     }, <(String, Uint8List)>[]),
+    // 新代的位置根（内核 `location_root`，G8-7）：新根 meta 由内核算出、交给 Dart 写（[writeMeta] 靠它立 meta）。
+    'location_root' => SrsSync2Result(
+      const <String, Object?>{
+        'state': 'ok',
+        'loc': 'LOC1',
+        'media': 'v4',
+        'ensure': <Object?>[],
+      },
+      <(String, Uint8List)>[
+        ('v4/meta.json', Uint8List.fromList(utf8.encode('{"fmt":"m4"}'))),
+      ],
+    ),
     'plan' => SrsSync2Result(<String, Object?>{
       'fetch': <Object?>[
         <String, Object?>{'device': 'SELF', 'files': own, 'own': true},
@@ -704,6 +820,7 @@ class _ScriptedHost implements SrsSync2Host {
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) async {
     steps.add('batch');
     if (failBatch) throw StateError('ingest failed');

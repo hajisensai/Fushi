@@ -70,4 +70,7 @@ public final class ChannelNames {
     // Android 文件分享（BUG-4740）：share_plus 在主线程整份拷贝文件会 ANR，Android 的
     // 文件分享改走这条。实现见 FushiShareChannel.kt，Dart 门面 fushi_share.dart。
     public static final String SHARE = PREFIX + "/share";
+    // 通知渠道显示名跟界面语言（拍板台 left3621）：Dart 启动时把「渠道 id → 名字」整表推过来。
+    // 实现见 NotificationChannelNames，Dart 门面 android_notification_channels.dart。
+    public static final String NOTIFICATION_CHANNELS = PREFIX + "/notification_channels";
 }

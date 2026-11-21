@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show YoutubeVariantSet, YoutubeVideoVariant;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -30,6 +32,7 @@ class YoutubeStreamCacheEntry {
     required this.httpHeaders,
     required this.expiresAtMs,
     this.targetHeight,
+    this.variants,
   });
 
   final String streamUrl;
@@ -46,6 +49,12 @@ class YoutubeStreamCacheEntry {
   /// 过期时间（unix 毫秒）= min(各流 expire) - 安全余量；此刻 >= 它即过期。
   final int expiresAtMs;
 
+  /// 画质菜单各档（gap-remote-10 持久版）：与起播的流出自同一份 manifest，档位直链
+  /// 同样是 googlevideo 带 `expire` 的地址，过期时间已一并算进 [expiresAtMs]（取最早
+  /// 的 expire），所以与播放流同生共死、不会单独过期。null = 旧缓存 / 解析没给档位，
+  /// 画质菜单照旧现取。
+  final YoutubeVariantSet? variants;
+
   bool isExpiredAt(DateTime now) => expiresAtMs <= now.millisecondsSinceEpoch;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -56,6 +65,7 @@ class YoutubeStreamCacheEntry {
     'httpHeaders': httpHeaders,
     'expiresAtMs': expiresAtMs,
     if (targetHeight != null) 'targetHeight': targetHeight,
+    if (variants != null) 'variants': youtubeVariantSetToJson(variants!),
   };
 
   /// 缺 streamUrl / expiresAtMs 抛（调用方按条目跳过脏数据）。
@@ -82,8 +92,68 @@ class YoutubeStreamCacheEntry {
       targetHeight: json['targetHeight'] is int
           ? json['targetHeight'] as int
           : null,
+      variants: youtubeVariantSetFromJson(json['variants']),
     );
   }
+}
+
+/// [YoutubeVariantSet] 的缓存 JSON。
+Map<String, Object?> youtubeVariantSetToJson(YoutubeVariantSet set) =>
+    <String, Object?>{
+      'variants': <Map<String, Object?>>[
+        for (final YoutubeVideoVariant v in set.variants)
+          <String, Object?>{
+            'height': v.height,
+            'label': v.label,
+            'videoUrl': v.videoUrl,
+            'codec': v.codec,
+          },
+      ],
+      if (set.audioStreamUrl != null) 'audioStreamUrl': set.audioStreamUrl,
+      'defaultIndex': set.defaultIndex,
+    };
+
+/// 读回 [youtubeVariantSetToJson]；缺字段 / 类型不对的整份丢掉（返回 null，画质菜单
+/// 现取），不拼出半份档位。
+YoutubeVariantSet? youtubeVariantSetFromJson(Object? json) {
+  if (json is! Map) return null;
+  final Object? list = json['variants'];
+  final Object? defaultIndex = json['defaultIndex'];
+  final Object? audio = json['audioStreamUrl'];
+  if (list is! List ||
+      defaultIndex is! int ||
+      (audio != null && audio is! String)) {
+    return null;
+  }
+  final List<YoutubeVideoVariant> variants = <YoutubeVideoVariant>[];
+  for (final Object? item in list) {
+    if (item is! Map) return null;
+    final Object? height = item['height'];
+    final Object? label = item['label'];
+    final Object? videoUrl = item['videoUrl'];
+    final Object? codec = item['codec'];
+    if (height is! int ||
+        label is! String ||
+        videoUrl is! String ||
+        videoUrl.isEmpty ||
+        codec is! String) {
+      return null;
+    }
+    variants.add(
+      YoutubeVideoVariant(
+        height: height,
+        label: label,
+        videoUrl: videoUrl,
+        codec: codec,
+      ),
+    );
+  }
+  if (defaultIndex >= variants.length) return null;
+  return YoutubeVariantSet(
+    variants: variants,
+    audioStreamUrl: audio as String?,
+    defaultIndex: defaultIndex,
+  );
 }
 
 /// 纯函数：从 googlevideo 直链的 expire=<unix秒> 查询参数解出过期时间（unix 毫秒）。

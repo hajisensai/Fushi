@@ -27,7 +27,7 @@ use super::truth::{NativeStep, Truth};
 use crate::gen4::op::chain_next4;
 use crate::gen4::segment::{NativeHeader, NativeItem, pack_native};
 use crate::sync2::keys::CollectionKey;
-use crate::sync2::segment::{Chain, SEGMENT_TARGET_BYTES};
+use crate::sync2::segment::{Chain, SEGMENT_MAX_RAW_BYTES, SEGMENT_TARGET_BYTES};
 
 /// 同层攒够几个相邻小段就合并。
 pub const COMPACT_FANOUT: usize = 4;
@@ -266,16 +266,25 @@ pub fn compact(
     cuts: &[Cut],
     key: Option<&CollectionKey>,
 ) -> Result<Vec<Compacted>, String> {
-    compact_to(t, col, cuts, key, SEGMENT_TARGET_BYTES)
+    compact_to(
+        t,
+        col,
+        cuts,
+        key,
+        SEGMENT_TARGET_BYTES,
+        SEGMENT_MAX_RAW_BYTES,
+    )
 }
 
-/// [compact]，段的目标体积是 [target]（测试用小值走「切了几段、不比原来少就不合并」那条路）。
+/// [compact]，段的目标体积是 [target]、整组打一段时的未压缩估计体积上限是 [max_raw]（测试用小值走「切了几段、
+/// 不比原来少就不合并」与「压缩后放得下、解压后太大」那两条路）。
 fn compact_to(
     t: &Truth<'_>,
     col: i64,
     cuts: &[Cut],
     key: Option<&CollectionKey>,
     target: u64,
+    max_raw: u64,
 ) -> Result<Vec<Compacted>, String> {
     let me = t
         .self_identity(col)?
@@ -301,13 +310,19 @@ fn compact_to(
                 key,
             )
         };
-        // 先整组打成一段；放不进目标体积才按估计体积切。
+        // 先整组打成一段；放不进目标体积才按估计体积切。整组的未压缩估计体积也要在 [max_raw] 内：重复度高的内容
+        // 压缩比能到上百倍，只看压缩后体积会打出解压后超过读侧上限（[crate::gen4::segment::MAX_BODY_RAW]）的段。
         let whole = recut(t, col, a, b, &pc, &lc, u64::MAX)?;
-        let one = pack(&whole[0])?;
-        let segments = if one.1.len() as u64 <= target {
+        let whole_raw: u64 = whole[0].items.iter().map(item_bytes).sum();
+        let one = if whole_raw <= max_raw {
+            Some(pack(&whole[0])?)
+        } else {
+            None
+        };
+        let segments = if let Some(one) = one.filter(|o| o.1.len() as u64 <= target) {
             vec![one]
         } else {
-            let pieces = recut(t, col, a, b, &pc, &lc, target)?;
+            let pieces = recut(t, col, a, b, &pc, &lc, target.min(max_raw))?;
             if pieces.len() >= group.len() {
                 continue;
             }

@@ -260,11 +260,19 @@ describe('视频配额池', () => {
     }
     const limited = await putVideo(env, f, MP4, { ip });
     expect(limited.status).toBe(429);
-    expect(limited.data.error).toBe('rate_limited');
+    expect(limited.data.error).toBe('upload_quota_daily');
     expect(videoBytes(env)).toBe(0);
     expect(env.MEDIA.store.size).toBe(0);
     // 额度按 IP 算：别的 IP 不受影响；次日窗口重新计。
     expect((await putVideo(env, f, MP4, { ip: '198.51.100.8' })).status).toBe(201);
+    // 样本文件另有一份额度（拍板台 left3660）：同 IP 视频额度用完照样能传样本文件。
+    const md = new TextEncoder().encode('# steps');
+    const file = await call(env, 'PUT', `/v1/feedback/${f.id}/attachments/f0`, {
+      body: md,
+      headers: { 'X-Fushi-Ticket': f.ticket, 'X-Fushi-File-Name': 'notes.md', 'Content-Length': String(md.length), 'CF-Connecting-IP': ip },
+      now: NOW,
+    });
+    expect(file.status).toBe(201);
     const g = (await submit(env, { now: NOW + DAY })).data;
     expect((await putVideo(env, g, MP4, { ip, now: NOW + DAY })).status).toBe(201);
   });

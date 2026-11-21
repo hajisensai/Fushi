@@ -390,8 +390,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   }
 
   /// 被关掉的功能模块不出现自己的快捷键分区（见 `module_registry.dart`）。
-  /// `globalExternal` 分区不属于任何模块：OS 热键随全局查词覆盖窗按平台能力
-  /// 装上，与查词页开关无关（BUG-4846），所以这里也恒可编辑。
+  /// `globalExternal` 分区不属于任何模块：OS 热键与查词页开关无关（BUG-4846），
+  /// 由分区顶部自己的「启用应用外快捷键」总开关管（拍板台 pr3605），所以这里恒可编辑。
   List<ShortcutScope> _visibleScopes() => <ShortcutScope>[
     for (final ShortcutScope scope in ShortcutScope.values)
       if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,
@@ -587,6 +587,24 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       // 这条触发不拦截原事件（native 走 RawInput，见 global_mouse_trigger.h），
       // 右键/中键有全系统级默认语义（上下文菜单 / 自动滚动），绑上去等于两件事
       // 同时发生。
+      // 维护者拍板 pr3605：app 外热键单独一个总开关，不挂在查词页模块上。关掉后
+      // OS 热键 / 鼠标侧键 / 手柄触发全部撤掉、不留系统钩子；下面的绑定照样可改，
+      // 重新打开即按当前绑定装回。
+      if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('shortcut-global-external-enabled'),
+          title: t.shortcut_global_external_enabled,
+          subtitle: t.shortcut_global_external_enabled_hint,
+          icon: FushiIcons.keyboard,
+          showIcon: true,
+          value: appModel.appExternalHotkeysEnabled,
+          onChanged: (bool value) async {
+            await appModel.setAppExternalHotkeysEnabled(value);
+            await GlobalLookupController.instance
+                .applyAppExternalTriggersEnabled();
+            if (mounted) setState(() {});
+          },
+        ),
       if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_global_external_desktop_note,

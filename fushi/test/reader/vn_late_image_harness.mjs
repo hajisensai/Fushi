@@ -18,7 +18,7 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
-import { readPayload, vnShellConfig, vnShellPage } from './vn_shell_harness_support.mjs';
+import { readPayload, vnShellConfig, vnShellPage } from './reader_harness_support.js';
 
 const scripts = readPayload();
 if (!resolveChrome()) {

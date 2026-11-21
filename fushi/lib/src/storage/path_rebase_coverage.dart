@@ -488,6 +488,12 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
   PathRebaseColumn(
+    'FavoriteSentences',
+    'source',
+    PathRebaseKind.notAPath,
+    '收藏来源枚举值（book/video/audiobook/lyrics/game/manga/music/web），不是路径。',
+  ),
+  PathRebaseColumn(
     'FavoriteWords',
     'sourceType',
     PathRebaseKind.notAPath,
@@ -702,6 +708,18 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   ),
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
+  PathRebaseColumn(
+    'CollectionRelations',
+    'bookUid',
+    PathRebaseKind.notAPath,
+    'v162 单视频起点的 bookUid 外键，不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
+    'targetBookUid',
+    PathRebaseKind.notAPath,
+    'v162 已绑定单视频目标的 bookUid 外键，不是路径。',
+  ),
   PathRebaseColumn(
     'CollectionRelations',
     'source',

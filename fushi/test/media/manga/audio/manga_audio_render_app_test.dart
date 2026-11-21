@@ -12,7 +12,14 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/local/irodori_batch_worker.dart'
+    show IrodoriBatchItem;
+import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart'
+    show MangaAudiobookClip;
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 Future<String> _insertBook(
@@ -39,7 +46,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ffmpeg 参数', () {
-    test('一句的各片段先统一格式再拼接，拼完裁首尾静音，输出 m4a', () {
+    test('一句的各片段先统一格式再拼接，拼完裁首尾静音、归一响度，输出 m4a', () {
       final List<String> one = buildMangaLineEncodeArgs(
         inputs: <String>['a.wav'],
         outputPath: 'out.part',
@@ -47,7 +54,12 @@ void main() {
       final String graph1 = one[one.indexOf('-filter_complex') + 1];
       expect(graph1, startsWith('[0:a]aresample=44100'));
       expect(graph1, contains('[a0]concat=n=1:v=0:a=1[c];[c]silenceremove'));
-      expect(graph1, endsWith('areverse[out]'));
+      expect(
+        graph1,
+        endsWith('areverse,$kMangaLoudnessFilter,aresample=44100[out]'),
+        reason: '响度归一在裁静音之后，loudnorm 升采样后要回到 44.1 kHz',
+      );
+      expect(graph1, isNot(contains('afade')), reason: '合成句不加淡入淡出');
       expect(one.sublist(one.length - 3), <String>['-f', 'mp4', 'out.part']);
 
       final List<String> two = buildMangaLineEncodeArgs(
@@ -61,7 +73,7 @@ void main() {
       );
     });
 
-    test('有声书片段按 cue 边界剪，不裁静音', () {
+    test('默认（广播剧音轨铺满整条音轨）只按 cue 边界剪，不整形', () {
       final List<String> args = buildMangaClipArgs(
         sourcePath: 'book.m4a',
         startMs: 1500,
@@ -77,6 +89,72 @@ void main() {
         'book.m4a',
       ]);
       expect(args.join(' '), isNot(contains('silenceremove')));
+      expect(args.join(' '), isNot(contains('loudnorm')));
+    });
+
+    test('和合成句排在一起的有声书片段：裁首尾静音、淡入淡出、与合成句同一个响度', () {
+      final List<String> args = buildMangaClipArgs(
+        sourcePath: 'book.m4a',
+        startMs: 1500,
+        endMs: 2300,
+        outputPath: 'o',
+        shapeAsLine: true,
+      );
+      final String af = args[args.indexOf('-af') + 1];
+      expect(af, startsWith('silenceremove'));
+      expect(af, contains(kMangaEdgeFadeFilter));
+      expect(af, endsWith('$kMangaLoudnessFilter,aresample=44100'));
+      expect(args.sublist(args.length - 3), <String>['-f', 'mp4', 'o']);
+    });
+
+    test('旁白参考音频：同一套整形，写无损 WAV', () {
+      final List<String> args = buildMangaNarratorRefArgs(
+        sourcePath: 'book.m4a',
+        startMs: 1000,
+        endMs: 5000,
+        outputPath: 'ref.wav.part',
+      );
+      expect(args.sublist(1, 7), <String>[
+        '-ss',
+        '1.000',
+        '-t',
+        '4.000',
+        '-i',
+        'book.m4a',
+      ]);
+      expect(args[args.indexOf('-af') + 1], contains(kMangaLoudnessFilter));
+      expect(args[args.indexOf('-c:a') + 1], 'pcm_s16le');
+      expect(args.sublist(args.length - 3), <String>[
+        '-f',
+        'wav',
+        'ref.wav.part',
+      ]);
+    });
+
+    test('旁白虚拟预设走声音包管线：不挂 LoRA，参考音频按顺序', () {
+      final MangaNarratorVoice narrator = MangaNarratorVoice(
+        const <MangaAudiobookClip>[
+          MangaAudiobookClip(
+            bookKey: 'novel',
+            fileIndex: 0,
+            startMs: 0,
+            endMs: 4000,
+          ),
+        ],
+      );
+      final TtsVoicePreset preset = mangaNarratorPreset(narrator, <String>[
+        '/c/a.wav',
+      ]);
+      expect(preset.id, narrator.id);
+      expect(preset.providerId, kIrodoriPackProviderId);
+      final IrodoriBatchItem item = irodoriBatchItemFromPreset(
+        preset,
+        id: 'k',
+        text: 'こんにちは',
+        outputPath: 'o.wav',
+      )!;
+      expect(item.refs, <String>['/c/a.wav']);
+      expect(item.adapterDir, isNull);
     });
   });
 

@@ -51,10 +51,17 @@ void main() {
         );
         // 不写死门控的字面形状：删除结果的类型会随需求扩展。BUG-439 的不变量是
         // **门控本身**——计数器只能由这次删除的返回值决定。
+        // gap-novelmisc-7 起逐项执行收进 `runShelfBatchDeleteItems`（每项兜住异常），
+        // 计数由每项回调的返回值决定：SRT 分支必须返回这次删除的真实结果。
         expect(
-          RegExp(r'if \(removed(\.\w+)?( > 0)?\) deleted\+\+').hasMatch(body),
+          RegExp(r'return removed(\.\w+)?( > 0)?;').hasMatch(body),
           isTrue,
           reason: 'only real deletions may be counted (BUG-439).',
+        );
+        expect(
+          source.contains('if (await deleteOne(key)) done++;'),
+          isTrue,
+          reason: '逐项执行器只按回调返回值计数（BUG-439）',
         );
         // 这一条正向匹配就足以钉住 BUG-439：它的原始形态是**删掉门控**、`repo.delete`
         // 之后无条件 `deleted++`；门控一没，上面的正则就不匹配 → 红。（变异实测过。）

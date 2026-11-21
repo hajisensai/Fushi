@@ -248,6 +248,7 @@ class FushiContinueBlockCard extends StatelessWidget {
       progress: entry.progress?.clamp(0.0, 1.0),
       // 状态角标（游戏的游玩状态）进文字区底部，不压在封面上。
       trailing: entry.badge,
+      disc: entry.blockDisc,
       action: hero && interactive
           ? (action ??
                 FushiCoverBlockAction(

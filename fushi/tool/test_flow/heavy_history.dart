@@ -6,15 +6,37 @@
 // finished run under the heavy state directory answers that
 // (`dart tool/heavy.dart --stats`).
 //
+// Holders that take the lease themselves (2026-11-20): dist_test's local
+// worker, pre_push_check and flutter_test_failures held slots and booked the
+// budget without a line here, so `--stats` / `--replay` could not see who
+// filled the queue (11-17..11-20: 32.1 h queued on record against 14.2 h
+// replayed). They write a line too now, marked by [HeavyHistoryEntry.via],
+// and every line says which worktree it ran for ([HeavyHistoryEntry.cwd]).
+//
 // Pure apart from the file; unit-tested (test/tools/heavy_history_test.dart).
 import 'dart:convert';
 import 'dart:io';
+
+import 'heavy_budget.dart';
 
 /// File name under the heavy state directory.
 const String kHeavyHistoryFile = 'history.jsonl';
 
 /// Past this size the older half is dropped (about 20 000 runs fit).
 const int kHeavyHistoryMaxBytes = 4 * 1024 * 1024;
+
+/// tool/heavy.dart's exit code (and the history's) for a run cancelled
+/// because whoever started it is gone (heavy_lease.dart HeavyCallerWatch):
+/// it left the queue, never started, or was killed while it ran. Before
+/// 2026-11-20 such runs were admitted anyway and their command died at once
+/// with -1073741502 (0xC0000142), which the history kept as a crash.
+const int kHeavyCallerGoneExit = 78;
+
+/// [HeavyHistoryEntry.via] of the tools that take the lease themselves; a
+/// heavy.dart run writes none.
+const String kHeavyViaDistLocal = 'dist-local';
+const String kHeavyViaPrePush = 'pre-push';
+const String kHeavyViaFlutterTestFailures = 'flutter_test_failures';
 
 /// Where a run ended up.
 enum HeavyRanWhere {
@@ -37,6 +59,8 @@ class HeavyHistoryEntry {
     this.bookMb,
     this.staticMb,
     this.peakMb,
+    this.cwd,
+    this.via,
   });
 
   /// When the run ended.
@@ -65,6 +89,16 @@ class HeavyHistoryEntry {
   final int? staticMb;
   final int? peakMb;
 
+  /// The worktree root the run was for (the lease's worktree lock). Null in
+  /// lines written before 2026-11-20 and for a run outside a checkout.
+  final String? cwd;
+
+  /// The tool that took the lease itself ([kHeavyViaDistLocal], ...); null
+  /// for a heavy.dart run. Such a line is a holder of the queue, not a sample
+  /// of a booking class: its peak is the whole tool's ([heavyMeasuredBookMb]
+  /// leaves it out).
+  final String? via;
+
   /// The booking class this run's peak is a sample of.
   int? get bookingClassMb => staticMb ?? bookMb;
 
@@ -79,6 +113,8 @@ class HeavyHistoryEntry {
     if (bookMb != null) 'bookMb': bookMb,
     if (staticMb != null) 'staticMb': staticMb,
     if (peakMb != null) 'peakMb': peakMb,
+    if (cwd != null) 'cwd': cwd,
+    if (via != null) 'via': via,
   };
 
   /// Null for a line that is not an entry (cut off, another format).
@@ -113,6 +149,8 @@ class HeavyHistoryEntry {
     final Object? book = j['bookMb'];
     final Object? fixed = j['staticMb'];
     final Object? peak = j['peakMb'];
+    final Object? dir = j['cwd'];
+    final Object? tool = j['via'];
     return HeavyHistoryEntry(
       at: when,
       kind: kind,
@@ -124,6 +162,8 @@ class HeavyHistoryEntry {
       bookMb: book is int ? book : null,
       staticMb: fixed is int ? fixed : null,
       peakMb: peak is int ? peak : null,
+      cwd: dir is String ? dir : null,
+      via: tool is String ? tool : null,
     );
   }
 }
@@ -157,6 +197,37 @@ void appendHeavyHistory(
     // Not writable: the run's own last line still says what it waited.
   }
 }
+
+/// The line of a run [via] a tool that took the lease itself: it queued
+/// [queued] for [need] (the lease's `waited`), then held the slot for [ran]
+/// for the worktree [cwd]. Booking fields as heavy.dart writes them: [need]'s
+/// booking, and for a measured kind that booking as its class. [peakMb] is
+/// the tool's Job peak where it has one (an upper bound: the Job is the
+/// whole tool's).
+HeavyHistoryEntry heavyHolderEntry({
+  required String via,
+  required HeavyNeed need,
+  required String label,
+  required String? cwd,
+  required Duration queued,
+  required Duration ran,
+  required int exitCode,
+  int? peakMb,
+  DateTime? at,
+}) => HeavyHistoryEntry(
+  at: at ?? DateTime.now(),
+  kind: need.kind.name,
+  label: label,
+  where: HeavyRanWhere.here,
+  queued: queued,
+  ran: ran,
+  exitCode: exitCode,
+  bookMb: need.bookedMb,
+  staticMb: kHeavyMeasuredKinds.contains(need.kind.name) ? need.bookedMb : null,
+  peakMb: peakMb,
+  cwd: cwd,
+  via: via,
+);
 
 /// The entries of [stateDir]'s history that ended at or after [since].
 List<HeavyHistoryEntry> readHeavyHistory(
@@ -200,7 +271,8 @@ const Duration kHeavyMeasuredWindow = Duration(days: 14);
 const Duration kHeavyMeasuredMinRun = Duration(seconds: 20);
 
 /// What a run of [kind] whose fixed booking is [staticMb] books when the
-/// [history] holds enough runs of that class on this machine: the 95th
+/// [history] holds enough heavy.dart runs of that class on this machine
+/// (lines [HeavyHistoryEntry.via] a tool are not samples): the 95th
 /// percentile of their Job peaks plus a tenth, rounded up to 256 MB, at
 /// least half of [staticMb] and at most the Job ceiling [capMb]. Null (the
 /// fixed booking stands) for other kinds and for a class with fewer than
@@ -217,6 +289,10 @@ int? heavyMeasuredBookMb(
   final List<HeavyHistoryEntry> runs = <HeavyHistoryEntry>[
     for (final HeavyHistoryEntry e in history)
       if (e.where == HeavyRanWhere.here &&
+          // Killed part way through when its caller went: a peak of half a
+          // run says nothing about the class.
+          e.exitCode != kHeavyCallerGoneExit &&
+          e.via == null &&
           e.kind == kind &&
           e.bookingClassMb == staticMb &&
           e.peakMb != null &&
@@ -254,8 +330,27 @@ String _span(int seconds) => seconds < 120
 
 /// The report of `heavy.dart --stats`: per kind and place, how many runs,
 /// how long they queued and ran.
-String renderHeavyStats(List<HeavyHistoryEntry> entries, {required int days}) {
+/// Runs cancelled because their caller was gone ([kHeavyCallerGoneExit]) are
+/// counted on a line of their own and left out of the rest: nobody waited for
+/// them, so their queueing is not what a caller waits.
+String renderHeavyStats(List<HeavyHistoryEntry> all, {required int days}) {
   final StringBuffer out = StringBuffer();
+  final List<HeavyHistoryEntry> gone = <HeavyHistoryEntry>[
+    for (final HeavyHistoryEntry e in all)
+      if (e.exitCode == kHeavyCallerGoneExit) e,
+  ];
+  final List<HeavyHistoryEntry> entries = <HeavyHistoryEntry>[
+    for (final HeavyHistoryEntry e in all)
+      if (e.exitCode != kHeavyCallerGoneExit) e,
+  ];
+  if (gone.isNotEmpty) {
+    out.writeln(
+      'heavy: ${gone.length} run(s) cancelled because their caller was gone '
+      '(exit $kHeavyCallerGoneExit), '
+      '${_span(gone.fold<int>(0, (int s, HeavyHistoryEntry e) => s + e.queued.inSeconds))} '
+      'queued by them; left out below',
+    );
+  }
   if (entries.isEmpty) {
     out.writeln('heavy: no finished run recorded in the last $days day(s)');
     return out.toString();
@@ -275,14 +370,17 @@ String renderHeavyStats(List<HeavyHistoryEntry> entries, {required int days}) {
       '${_span(queuedTotal)} queued in all',
     )
     ..writeln(
-      '  kind      where      runs  queued p50 / p90 / max        '
-      'ran p50 / p90',
+      '  kind      where                       runs  '
+      'queued p50 / p90 / max        ran p50 / p90',
     );
   final Map<String, List<HeavyHistoryEntry>> groups =
       <String, List<HeavyHistoryEntry>>{};
   for (final HeavyHistoryEntry e in entries) {
     groups
-        .putIfAbsent('${e.kind}\t${e.where.name}', () => <HeavyHistoryEntry>[])
+        .putIfAbsent(
+          '${e.kind}\t${e.where.name}${e.via == null ? '' : ' (${e.via})'}',
+          () => <HeavyHistoryEntry>[],
+        )
         .add(e);
   }
   for (final String key in groups.keys.toList()..sort()) {
@@ -295,7 +393,7 @@ String renderHeavyStats(List<HeavyHistoryEntry> entries, {required int days}) {
     ];
     final List<String> k = key.split('\t');
     out.writeln(
-      '  ${k[0].padRight(9)} ${k[1].padRight(10)} '
+      '  ${k[0].padRight(9)} ${k[1].padRight(27)} '
       '${'${g.length}'.padLeft(4)}  '
       '${'${_span(heavyPercentile(queued, 0.5))} / '
           '${_span(heavyPercentile(queued, 0.9))} / '
@@ -304,5 +402,30 @@ String renderHeavyStats(List<HeavyHistoryEntry> entries, {required int days}) {
       '${_span(heavyPercentile(ran, 0.9))}',
     );
   }
+  // Which worktrees the queueing was for (lines since 2026-11-20 say).
+  final Map<String, List<int>> byCwd = <String, List<int>>{};
+  for (final HeavyHistoryEntry e in entries) {
+    final String? dir = e.cwd;
+    if (dir == null) continue;
+    byCwd.putIfAbsent(dir, () => <int>[]).add(e.queued.inSeconds);
+  }
+  if (byCwd.isNotEmpty) {
+    final List<MapEntry<String, List<int>>> top = byCwd.entries.toList()
+      ..sort(
+        (MapEntry<String, List<int>> a, MapEntry<String, List<int>> b) =>
+            _sum(b.value).compareTo(_sum(a.value)),
+      );
+    out.writeln(
+      '  queued most for (of ${byCwd.length} worktree(s) on record):',
+    );
+    for (final MapEntry<String, List<int>> t in top.take(5)) {
+      out.writeln(
+        '    ${_span(_sum(t.value)).padLeft(7)} in '
+        '${'${t.value.length}'.padLeft(4)} run(s)  ${t.key}',
+      );
+    }
+  }
   return out.toString();
 }
+
+int _sum(List<int> values) => values.fold<int>(0, (int s, int v) => s + v);

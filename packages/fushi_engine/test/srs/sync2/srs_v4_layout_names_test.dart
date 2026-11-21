@@ -45,7 +45,25 @@ void main() {
       final String path =
           '$kSyncRootFolderName/$kSrsSync2Namespace/$_dir/$rest';
       expect(srsHostUploadedSegmentDevice(path), isNull, reason: rest);
-      expect(srsHostPathProfile(path), _dir, reason: rest);
+      expect(srsHostPathDir(path), _dir, reason: rest);
     }
+  });
+
+  test('the host path names a directory, never a bogus one', () {
+    const String ns = '$kSyncRootFolderName/$kSrsSync2Namespace';
+    // 对端写的路径不可信：空目录段、`.` / `..`、不在复习命名空间里一律不是任何目录。
+    for (final String path in <String>[
+      '$ns/',
+      '$ns//v4/meta.json',
+      '$ns/./v4/meta.json',
+      '$ns/../v4/meta.json',
+      '$kSyncRootFolderName/books/$_dir/v4/meta.json',
+      'other/$kSrsSync2Namespace/$_dir/v4/meta.json',
+    ]) {
+      expect(srsHostPathDir(path), isNull, reason: path);
+    }
+    // 目录段就是目录名，不论长什么样（新代全新集合的目录名 = 建它的 uid，但不一定是本机 uid，设计 §5.1）。
+    expect(srsHostPathDir('$ns/zz-remote/v4/meta.json'), 'zz-remote');
+    expect(srsHostPathDir('$ns/$_dir'), _dir);
   });
 }

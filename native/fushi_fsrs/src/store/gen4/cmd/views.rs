@@ -23,10 +23,25 @@
 //!
 //! 不存在的实体（没有定义、没有活着的写入、没有日志、没有缓存行）不出现在结果里；请求里同一个类的多个成员只出一份，
 //! 按请求里第一次出现的顺序。
+//!
+//! # 线上形状（分发器 `entity_views` 臂，G10-2 定案）
+//!
+//! ```text
+//! 请求 {op: "entity_views", profile, kind: 种类线名（note / notetype / deck / card …）, ids: [ID, …]}
+//! 回包 {views: [{id: 规范 ID, tag, v: 视图 JSON 文本}, …]}
+//! ```
+//!
+//! - 一条命令一个读快照（分发器 `read_col` 把集合号换算与本体放进同一个快照，[entity_views] 自己的快照沿用它）。
+//! - `ids` 必给、一次最多 `identity::LOOKUP_MAX` 条（与 `canonical_ids` 同一上限，超了明确报错，调用方分批）：整个集合的
+//!   视图一次拼完会长时间占着读连接。
+//! - `v` 是视图的规范 JSON **文本**（不是对象）：`tag` 按这串字节算，原样搬给远程复习的客户端，对端可以按同一份字节
+//!   核对，不经过任何一侧的再编码。
+//! - 种类不认识、`ids` 不是字符串数组一律报错，不回空结果（空结果会被当成「这些实体不存在」）。
 
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value, json};
 
+use super::identity::lookup_cap;
 use super::{canon_ids, edit_rows, profile_of, snapshot, with_profile};
 use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::schema::sql;
@@ -45,7 +60,37 @@ pub struct EntityView {
     pub json: String,
 }
 
-/// 集合 [col] 里 [kind] 种实体 [ids]（任何别名成员的号都行）的视图。在一个读快照里（[snapshot]）。
+/// `entity_views {kind, ids}` 的命令外壳（模块文件头「线上形状」）。
+pub fn entity_views_cmd(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
+    let kind = req
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or("entity_views: missing kind")?;
+    let kind = EntKind::parse(kind).ok_or_else(|| format!("entity_views: unknown kind {kind}"))?;
+    let ids = req
+        .get("ids")
+        .and_then(Value::as_array)
+        .ok_or("entity_views: ids must be an array")?;
+    lookup_cap(ids.len(), "entity_views")?;
+    let ids = ids
+        .iter()
+        .map(|x| {
+            x.as_str()
+                .map(str::to_owned)
+                .ok_or("entity_views: ids must be strings")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let views = entity_views(t, col, kind, &ids)?;
+    Ok(json!({
+        "views": views
+            .into_iter()
+            .map(|v| json!({"id": v.id, "tag": v.tag, "v": v.json}))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// 集合 [col] 里 [kind] 种实体 [ids]（任何别名成员的号都行）的视图。在一个读快照里（[snapshot]）。一次最多
+/// `identity::LOOKUP_MAX` 条由命令外壳（[entity_views_cmd]）卡住。
 pub fn entity_views(
     t: &Truth<'_>,
     col: i64,
@@ -103,7 +148,7 @@ fn view(
             let tags = ix.class_tags(c)?;
             any |= !tags.is_empty();
             m.insert("tags".into(), json!(tags));
-            let row = cache_row(t, "notes", col, c)?;
+            let row = cache_row(t, NOTE_ROW_SQL, col, c)?;
             any |= row.is_some();
             m.insert("row".into(), row.unwrap_or(Value::Null));
         }
@@ -115,7 +160,7 @@ fn view(
                 .collect();
             any |= !logs.is_empty();
             m.insert("logs".into(), Value::Array(logs));
-            let row = cache_row(t, "cards", col, c)?;
+            let row = cache_row(t, CARD_ROW_SQL, col, c)?;
             any |= row.is_some();
             m.insert("row".into(), row.unwrap_or(Value::Null));
         }
@@ -124,12 +169,14 @@ fn view(
     Ok(any.then_some(Value::Object(m)))
 }
 
-/// 缓存表 [table]（`notes` / `cards`）里 [c] 那一行：列名 → 值（`col` 不要；16 字节 ID 解回文本）。
-fn cache_row(t: &Truth<'_>, table: &str, col: i64, c: &Ref) -> Result<Option<Value>, String> {
-    let mut stmt = t
-        .conn()
-        .prepare_cached(&format!("SELECT * FROM {table} WHERE col = ?1 AND id = ?2"))
-        .map_err(sql)?;
+/// 笔记的缓存行（主键 `(col, id)` 点查；查询计划测试测的就是这一份，`cmd/views_tests.rs`）。
+pub(crate) const NOTE_ROW_SQL: &str = "SELECT * FROM notes WHERE col = ?1 AND id = ?2";
+/// 卡的缓存行（同 [NOTE_ROW_SQL]）。
+pub(crate) const CARD_ROW_SQL: &str = "SELECT * FROM cards WHERE col = ?1 AND id = ?2";
+
+/// 缓存表（[NOTE_ROW_SQL] / [CARD_ROW_SQL]）里 [c] 那一行：列名 → 值（`col` 不要；16 字节 ID 解回文本）。
+fn cache_row(t: &Truth<'_>, q: &str, col: i64, c: &Ref) -> Result<Option<Value>, String> {
+    let mut stmt = t.conn().prepare_cached(q).map_err(sql)?;
     let names: Vec<String> = stmt.column_names().into_iter().map(str::to_owned).collect();
     let mut rows = stmt.query(rusqlite::params![col, c]).map_err(sql)?;
     let Some(r) = rows.next().map_err(sql)? else {

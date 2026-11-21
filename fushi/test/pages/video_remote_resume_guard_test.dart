@@ -128,7 +128,9 @@ void main() {
       () {
         final String initRemote = region(
           'Future<void> _initRemote() async {',
-          '/// per-book 播放倍速偏好 key',
+          // 终点钉代码（倍速写入 key getter）而不是它上面的注释：BUG-5030 把注释改成
+          // 「写入 key」后，钉注释的锚点就失配了。
+          'String get _speedPrefKey',
         );
         // TODO-653/885：恢复由 _loadRemoteEpisode 定（互联走三方判定 BUG-4436，其余
         // 走 _resolveRemoteInitialPositionMs 的 LWW，见下一条守卫）；首开只带卡片回看的
@@ -203,7 +205,12 @@ void main() {
       );
       expect(
         _flat(region2).contains(
-          _flat('_isRemote ? _persistRemotePosition : _persistPosition'),
+          // BUG-5012：远端写入经 _remoteTeardown 登记（客户端等它用完再关）。
+          _flat(
+            '_isRemote ? (String uid, int posMs) => '
+            '_remoteTeardown.track(() => _persistRemotePosition(uid, posMs)) '
+            ': _persistPosition',
+          ),
         ),
         isTrue,
         reason: 'remote save must go through _persistRemotePosition',

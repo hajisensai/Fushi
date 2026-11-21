@@ -180,11 +180,13 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       // 时段明细要 per-game × per-day 事实行：统一事实面是唯一读取入口
       // （legacy hook 字数行 + galgame_sessions 段都在里面归一）。计数面与事实面
       // 同一次加载：总览的跨域数字必须恰好等于三个域 tab 之和，各页各查一遍就会
-      // 在口径漂移时静默对不上。
+      // 在口径漂移时静默对不上。只读游戏域（书 / 视频的段与 legacy 表本页一行不
+      // 用，与观看页同形）；计数面不收窄，「总览 = 各域之和」照旧成立。
       final StatFacts facts = await loadStatFacts(
         db,
         activityLimit: 0,
         includeCounters: true,
+        scope: const StatFactsScope.domain(kActivityMediaGame),
       );
       final StatCounterFacts counterFacts = facts.counters;
       _lookupEvents = counterFacts

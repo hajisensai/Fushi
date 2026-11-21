@@ -55,6 +55,10 @@ abstract class WebBrowserFeature {
   /// 宽：那条只认整页路由，给手机遥控登记之类「页面还在不在」的语义用。
   void onStudyCoverChanged({required bool covered}) {}
 
+  /// 前台标签页进入 / 离开「竖拿横视频」全屏分屏（视频贴顶、下面给功能侧栏，见
+  /// `webBrowserFullscreenSplit`）。字幕侧栏在此时自己拉开、离开时收回。
+  void onFullscreenSplitChanged(WebBrowserTab tab, {required bool split}) {}
+
   /// 标签页关闭（WebView 即将销毁）。
   void onTabClosed(WebBrowserTab tab) {}
 

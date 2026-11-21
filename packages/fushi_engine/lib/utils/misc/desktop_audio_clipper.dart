@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_hdr_tone_map.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
@@ -1366,11 +1367,15 @@ List<String> buildFfmpegFrameArgs({
   // BUG-2192：网飞录屏片段裁掉播放器黑边——crop 段排在 scale 之前（先裁后缩，缩放
   // 目标宽度指的是裁后画面）。null / 空 = 不裁。
   String? cropFilter,
+  // HDR10 / HLG 源映射到 SDR（[kFfmpegHdrToSdrScaleFilter]），排在缩放之后（小图上做
+  // 色彩管理更省）。只由 IO 层按 [ffmpegShouldToneMapToSdr] 置 true，SDR 源逐字不变。
+  bool toneMapToSdr = false,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   final String vfChain = <String>[
     if (cropFilter != null && cropFilter.isNotEmpty) cropFilter,
     if (scaleWidth != null && scaleWidth > 0) 'scale=$scaleWidth:-2',
+    if (toneMapToSdr) kFfmpegHdrToSdrScaleFilter,
   ].join(',');
   return <String>[
     '-y',
@@ -1432,6 +1437,14 @@ Future<String?> extractVideoFrameViaFfmpeg({
   final File staged = File(stagedCoverPath(outputPath));
   try {
     staged.parent.createSync(recursive: true);
+    final bool toneMapToSdr = await ffmpegShouldToneMapToSdr(
+      inputPath,
+      inputArgs: buildFfmpegRemoteInputArgs(
+        inputPath,
+        tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
+      ),
+    );
     final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegFrameArgs(
         inputPath: inputPath,
@@ -1442,6 +1455,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         httpHeaders: httpHeaders,
         scaleWidth: scaleWidth,
         cropFilter: cropFilter,
+        toneMapToSdr: toneMapToSdr,
       ),
       const Duration(seconds: 30),
     );
@@ -1571,6 +1585,9 @@ List<String> buildFfmpegClipAnimatedArgs({
   // 反馈 ZxyIMK-C5V：true = 动图只播放一次（见 [animatedLoopArgs]）。纯函数不读全局
   // 偏好，由 IO 层（[extractClipGifViaFfmpeg]）按 [miningAnimatedPlayOnceReader] 传值。
   bool playOnce = false,
+  // HDR10 / HLG 源映射到 SDR，见 [buildFfmpegFrameArgs] 的同名参数。排在缩放之后、
+  // GIF 调色板之前（调色板要按映射后的颜色取）。
+  bool toneMapToSdr = false,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
   final int rawDur = endMs - startMs;
@@ -1585,6 +1602,7 @@ List<String> buildFfmpegClipAnimatedArgs({
   if (cropFilter != null && cropFilter.isNotEmpty) pre.write('$cropFilter,');
   if (fps > 0) pre.write('fps=$fps,');
   if (width > 0) pre.write('scale=$width:-2:flags=lanczos,');
+  if (toneMapToSdr) pre.write('$kFfmpegHdrToSdrScaleFilter,');
 
   // GIF 走 filter_complex（palettegen 需要分流），webp/avif 单链走 -vf。两者不能混用
   // 同一个开关：filter_complex 里写不出裸 `-vf` 的等价链而不引入多余的 split。
@@ -1747,6 +1765,14 @@ Future<String?> extractClipGifViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
+    final bool toneMapToSdr = await ffmpegShouldToneMapToSdr(
+      inputPath,
+      inputArgs: buildFfmpegRemoteInputArgs(
+        inputPath,
+        tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
+      ),
+    );
     final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegClipAnimatedArgs(
         format: format,
@@ -1760,6 +1786,7 @@ Future<String?> extractClipGifViaFfmpeg({
         httpHeaders: httpHeaders,
         cropFilter: cropFilter,
         playOnce: playOnce ?? resolveMiningAnimatedPlayOnce(),
+        toneMapToSdr: toneMapToSdr,
       ),
       const Duration(seconds: 120),
     );

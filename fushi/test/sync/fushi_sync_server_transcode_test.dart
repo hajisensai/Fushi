@@ -158,6 +158,8 @@ void main() {
     setTranscodeSegmentRunnerForTesting(null);
     setTranscodeAvailableForTesting(null);
     await server.stop();
+    // stop 取消在途预取；等它们把名额交还，免得漏到下一个用例的并发计数里。
+    await server.transcodePrefetchesSettled();
   });
 
   final HttpClient client = HttpClient();
@@ -382,11 +384,14 @@ void main() {
         '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0'
         '&maxWidth=7680&maxBitrate=99999999',
       );
-      expect(runnerCalls, hasLength(1));
-      final List<String> args = runnerCalls.single;
-      expect(args.join(' '), contains('854'), reason: '档位来自 token，不是 query');
-      expect(args.join(' '), isNot(contains('7680')));
-      expect(args.join(' '), isNot(contains('99999999')));
+      await server.transcodePrefetchesSettled();
+      // 第 0 段 + host 预取的第 1 段：两次都按 token 上的档位转。
+      expect(runnerCalls, hasLength(2));
+      for (final List<String> args in runnerCalls) {
+        expect(args.join(' '), contains('854'), reason: '档位来自 token，不是 query');
+        expect(args.join(' '), isNot(contains('7680')));
+        expect(args.join(' '), isNot(contains('99999999')));
+      }
     });
 
     test('ffmpeg 失败 → 503（不装作成功返回空段：空段在播放器那头是黑屏转圈）', () async {
@@ -432,6 +437,211 @@ void main() {
       }
       await Future.wait(runs);
       expect(liveTranscodeCount, 0, reason: '排空后计数回零，名额不泄漏');
+    });
+
+    // BUG-4972 / video-34：修前每次请求都起一个 ffmpeg，往回拖 / 重连 / 并发
+    // 重复请求同一段都要整段重转。
+    test('同一段再请求从缓存取，不再起 ffmpeg；别的段照常转', () async {
+      await startServer();
+      await issue();
+      runnerCalls.clear();
+      // 用末段（第 2 段）：后面没有段，不触发 host 预取，计数只反映缓存本身。
+      final List<int> first = await getBytes(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2',
+      );
+      final List<int> again = await getBytes(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2',
+      );
+      expect(again, first);
+      expect(runnerCalls, hasLength(1), reason: '第二次命中缓存');
+      // 第 1 段照常转；它的下一段（第 2 段）已缓存，不再预取。
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=1');
+      await server.transcodePrefetchesSettled();
+      expect(runnerCalls, hasLength(2));
+      expect(server.cachedTranscodeSegmentCount, 2);
+    });
+
+    test('同一段的并发请求合流成一次转码', () async {
+      await startServer();
+      await issue();
+      final Completer<void> entered = Completer<void>();
+      final Completer<Uint8List> hold = Completer<Uint8List>();
+      addTearDown(() {
+        if (!hold.isCompleted) hold.complete(_syntheticSegment());
+      });
+      int calls = 0;
+      setTranscodeSegmentRunnerForTesting((List<String> args) {
+        calls++;
+        if (!entered.isCompleted) entered.complete();
+        return hold.future;
+      });
+      // 末段：不触发预取，runner 调用次数只反映合流。
+      final Future<List<int>> a = getBytes(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2',
+      );
+      await entered.future;
+      final Future<List<int>> b = getBytes(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2',
+      );
+      // 让第二个请求走到合流点再放行第一次转码。
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      hold.complete(_syntheticSegment());
+      expect(await a, _syntheticSegment());
+      expect(await b, _syntheticSegment());
+      expect(calls, 1);
+    });
+
+    test('换档后的新 token 不吃旧档缓存（画质档绑在 token 上）', () async {
+      await startServer();
+      await issue(); // 854 / 800 kbps
+      final String lowQuery = tokenQuery;
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=1280&maxBitrate=3000000',
+      );
+      final String highQuery = Uri.parse(json['url'] as String).query;
+      runnerCalls.clear();
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$lowQuery&n=2');
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$highQuery&n=2');
+      expect(runnerCalls, hasLength(2));
+      expect(runnerCalls[0].join(' '), contains('800000'));
+      expect(runnerCalls[1].join(' '), contains('3000000'));
+    });
+
+    test('token 被上限淘汰时，它名下缓存的段一并清掉', () async {
+      await startServer();
+      await issue();
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2');
+      expect(server.cachedTranscodeSegmentCount, 1);
+      // 签发到把最早那张挤出上限（BUG-1568 的 cap 是 128）。
+      for (int i = 0; i < 128; i++) {
+        await getJson(
+          '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+        );
+      }
+      expect(server.cachedTranscodeSegmentCount, 0);
+    });
+
+    // 拍板 design-nmv-transcode-prefetch：host 预取下一段。
+    String ssOf(List<String> args) => args[args.indexOf('-ss') + 1];
+
+    test('取第 n 段时 host 预取第 n+1 段，client 来取时直接命中', () async {
+      await startServer();
+      await issue();
+      runnerCalls.clear();
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0');
+      await server.transcodePrefetchesSettled();
+      expect(
+        runnerCalls.map(ssOf),
+        unorderedEquals(<String>['0.000', '6.000']),
+      );
+      expect(server.cachedTranscodeSegmentCount, 2);
+      expect(liveTranscodeCount, 0, reason: '预取的名额用完即还');
+
+      // 第 1 段命中预取结果，不再转；它又带出末段的预取。
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=1');
+      await server.transcodePrefetchesSettled();
+      expect(
+        runnerCalls.map(ssOf),
+        unorderedEquals(<String>['0.000', '6.000', '12.000']),
+      );
+      // 末段命中，后面没有段，不再预取。
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2');
+      await server.transcodePrefetchesSettled();
+      expect(runnerCalls, hasLength(3));
+    });
+
+    test('预取只用空闲名额：剩余名额不够给前台留一个时不预取', () async {
+      await startServer();
+      await issue();
+      runnerCalls.clear();
+      // 占住 kMaxConcurrentTranscodes - 1 个名额（别的流在转）。
+      final Completer<void> gate = Completer<void>();
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      final List<Future<void>> busy = <Future<void>>[
+        for (int i = 0; i < kMaxConcurrentTranscodes - 1; i++)
+          runGuardedTranscodeForTesting(() => gate.future),
+      ];
+      await Future<void>.delayed(Duration.zero);
+      expect(liveTranscodeCount, kMaxConcurrentTranscodes - 1);
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0');
+      expect(server.pendingTranscodePrefetchCount, 0);
+      expect(runnerCalls.map(ssOf), <String>['0.000'], reason: '不预取第 1 段');
+      gate.complete();
+      await Future.wait(busy);
+      expect(liveTranscodeCount, 0);
+    });
+
+    test('seek 走远：没人等的旧预取被作废，之后再取那一段重新转', () async {
+      await startServer(durationSeconds: 60.0);
+      await issue();
+      final Completer<Uint8List> hold = Completer<Uint8List>();
+      addTearDown(() {
+        if (!hold.isCompleted) hold.complete(_syntheticSegment());
+      });
+      final List<String> starts = <String>[];
+      setTranscodeSegmentRunnerForTesting((List<String> args) {
+        starts.add(ssOf(args));
+        // 第一次预取第 1 段时卡住，模拟它还在转。
+        if (ssOf(args) == '6.000' &&
+            starts.where((String s) => s == '6.000').length == 1) {
+          return hold.future;
+        }
+        return Future<Uint8List>.value(_syntheticSegment());
+      });
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0');
+      expect(server.pendingTranscodePrefetchCount, 1);
+      // 跳到第 5 段：第 1 段的预取没人等了，作废；第 6 段的预取照常起。
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=5');
+      await server.transcodePrefetchesSettled();
+      expect(server.pendingTranscodePrefetchCount, 0);
+      expect(
+        starts,
+        unorderedEquals(<String>['0.000', '6.000', '30.000', '36.000']),
+      );
+      expect(server.cachedTranscodeSegmentCount, 3, reason: '第 1 段没入缓存');
+      expect(liveTranscodeCount, 0);
+      // 再取第 1 段：不合流到那次被取消的工作上，重新转并成功。
+      final HttpClientResponse res = await get(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=1',
+        withAuth: false,
+      );
+      expect(res.statusCode, 200);
+      await res.drain<void>();
+      expect(starts.where((String s) => s == '6.000'), hasLength(2));
+    });
+
+    test('client 已经来取的预取段不被之后的 seek 作废', () async {
+      await startServer(durationSeconds: 60.0);
+      await issue();
+      final Completer<Uint8List> hold = Completer<Uint8List>();
+      addTearDown(() {
+        if (!hold.isCompleted) hold.complete(_syntheticSegment());
+      });
+      final List<String> starts = <String>[];
+      setTranscodeSegmentRunnerForTesting((List<String> args) {
+        starts.add(ssOf(args));
+        if (ssOf(args) == '6.000') return hold.future;
+        return Future<Uint8List>.value(_syntheticSegment());
+      });
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0');
+      // client 取第 1 段：合流到在途的预取上。
+      final Future<HttpClientResponse> seg1 = get(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=1',
+        withAuth: false,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // 随后又 seek 到第 5 段：第 1 段已经有人在等，不能作废。
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=5');
+      hold.complete(_syntheticSegment());
+      final HttpClientResponse res = await seg1;
+      expect(res.statusCode, 200);
+      expect(<int>[
+        for (final List<int> c in await res.toList()) ...c,
+      ], _syntheticSegment());
+      await server.transcodePrefetchesSettled();
+      expect(starts.where((String s) => s == '6.000'), hasLength(1));
     });
 
     test('段下标越界 → 404', () async {
@@ -511,8 +721,34 @@ void main() {
       );
       expect(await segment, 410);
       expect(await status('/api/library/videos/v1/hls.m3u8?$q'), 403);
+      // 第 0 段在跑时 host 起了第 1 段的预取（同样卡在 hold 上）：释放流票连它一起
+      // 取消，名额交还。
+      await server.transcodePrefetchesSettled();
+      expect(server.pendingTranscodePrefetchCount, 0);
       expect(pendingTranscodeWorkKeys, 0);
       expect(liveTranscodeCount, 0);
+    });
+
+    test('释放流票后，该流缓存的转码段一并清掉（BUG-4972）', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      final String ticket = json['ticket'] as String;
+      final String q = Uri.parse(json['url'] as String).query;
+      expect(await status('/api/library/videos/v1/hlsseg.ts?$q&n=1'), 200);
+      expect(await status('/api/library/videos/v1/hlsseg.ts?$q&n=2'), 200);
+      await server.transcodePrefetchesSettled();
+      expect(server.cachedTranscodeSegmentCount, 2);
+      expect(
+        await post(
+          '/api/library/videos/v1/streamrelease'
+          '?ticket=${Uri.encodeQueryComponent(ticket)}',
+        ),
+        204,
+      );
+      expect(server.cachedTranscodeSegmentCount, 0);
+      expect(await status('/api/library/videos/v1/hlsseg.ts?$q&n=0'), 403);
     });
 
     test('释放落在分段反查文件期间：回 410、一次 ffmpeg 都不起', () async {

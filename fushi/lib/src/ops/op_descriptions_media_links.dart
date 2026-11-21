@@ -102,7 +102,10 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
           'the detail page; the link is confirmed at once). Use this when the '
           'user names the works to link: e.g. a bonus CD / soundtrack album '
           'with its anime (same_work), a novel with its anime adaptation '
-          '(adaptation), an OP / ED song with the anime (theme_song). Look up '
+          '(adaptation), an OP / ED song with the anime (theme_song), a '
+          'sequel novel / season 2 / sequel game (sequel), a side story / '
+          'spin-off / movie / fan disc (side_story). sequel and side_story '
+          'link different works of one series and never merge them. Look up '
           'both endpoints with links.candidates first.',
       risk: OpRisk.write,
       params: const <OpParam>[
@@ -117,17 +120,36 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
           description:
               'adaptation = one is the source material of the other; '
               'theme_song = a music track / album is an OP / ED / insert song '
-              'of a video (one side music, other side video); same_work = any '
-              'other "belongs to the same work" pairing.',
+              'of a video (one side music, other side video); sequel = one is '
+              'a later installment of the other; side_story = one is a side '
+              'story / spin-off / movie of the other; same_work = any other '
+              '"belongs to the same work" pairing.',
           required: true,
-          enumValues: <String>['adaptation', 'same_work', 'theme_song'],
+          enumValues: <String>[
+            'adaptation',
+            'same_work',
+            'theme_song',
+            'sequel',
+            'side_story',
+          ],
         ),
         OpParam.string(
           'selfIs',
           description:
-              'Required for adaptation: original = endpoint is the source '
-              'material, adaptation = endpoint is the adaptation.',
-          enumValues: <String>['original', 'adaptation'],
+              'Direction, required for adaptation / sequel / side_story. '
+              'adaptation: original = endpoint is the source material, '
+              'adaptation = endpoint is the adaptation. sequel: prequel = '
+              'endpoint comes first, sequel = endpoint is the sequel. '
+              'side_story: main = endpoint is the main story, side_story = '
+              'endpoint is the side story.',
+          enumValues: <String>[
+            'original',
+            'adaptation',
+            'prequel',
+            'sequel',
+            'main',
+            'side_story',
+          ],
         ),
         OpParam.string(
           'role',
@@ -167,7 +189,9 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
           'verdicts are linked directly (confirmed_by=ai, undoable); the rest '
           'are stored as suggestions. Queries MAL / Wikidata; when an LLM is '
           'assigned to "media links" the candidates are also sent to that LLM '
-          'for a verdict. Slow.',
+          'for a verdict, and same-kind items with overlapping titles (two '
+          'video collections / movies, two games) that no metadata source '
+          'relates are sent too, to find sequels and side stories. Slow.',
       risk: OpRisk.write,
       params: const <OpParam>[_endpointParam],
       undo: opCustomUndo(
@@ -349,7 +373,7 @@ const List<OpParam> _pickParams = <OpParam>[
     'relation',
     description:
         'Only needed when the two items have several links: adaptation / '
-        'theme_song / soundtrack / same_work / cast.',
+        'theme_song / soundtrack / same_work / cast / sequel / side_story.',
   ),
 ];
 

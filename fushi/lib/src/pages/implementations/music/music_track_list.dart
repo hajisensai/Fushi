@@ -109,9 +109,9 @@ MusicItemMenu musicLocalTrackMenu(
           ).read(appProvider).musicSession.engine,
           () => musicPlayItemOf(track),
         ),
-        // 本地 MV（拍板台 jeNKF9u0WJ）：在视频播放页看画面（ASS 特效字幕 / 暂停识别
-        // 画面文字）。视频模块关掉时不给入口。
-        if (isMusicLocalVideoTrack(track) &&
+        // MV（拍板台 jeNKF9u0WJ；网络来源的串流看，left3568）：在视频播放页看画面
+        // （ASS 特效字幕 / 暂停识别画面文字）。视频模块关掉时不给入口。
+        if (isMusicWatchableVideoTrack(track) &&
             _appOf(context).moduleVisibility.isEnabled(ModuleId.video))
           MusicMenuAction(
             id: 'watchVideo',
@@ -685,8 +685,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       );
     }
     final Widget? header = shrinkWrap ? null : widget.header;
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(buildContext)) {
+    if (musicCoverBlocksActive(buildContext, widget.style)) {
       return _withSelection(
         MusicStyledCollection(
           style: MusicViewStyle.blocks,
@@ -1087,9 +1086,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               durationText: musicTrackTimeLabel(track.durationMs, resume),
               playing: playing,
               onTap: tap,
-              onLongPress: _selecting
-                  ? tap
-                  : () => openMusicTrackDetail(c, track.trackUid),
+              // 多选态长按 = 勾选；平时长按弹菜单（详情 / 多选 / 从歌单移除…都在里面）。
+              onLongPress: _selecting ? tap : null,
+              menu: menu,
             ),
           ),
         );
@@ -1133,6 +1132,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                     ? () => _tapRow(i, available ? play : () {})
                     : null,
                 onLongPress: _selecting ? tap : null,
+                menu: menu,
               ),
             ),
           ),
@@ -1302,7 +1302,7 @@ class MusicTrackListPage extends StatelessWidget {
         if (musicViewStyleSwitchable(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: MusicTrackList(
+      body: (BuildContext context) => MusicTrackList(
         tracks: tracks,
         albums: albums,
         context: MusicQueueContext.mixed,

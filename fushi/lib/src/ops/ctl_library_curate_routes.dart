@@ -39,6 +39,7 @@ List<CtlRoute> buildLibraryCurateCtlRoutes(OpContext context) =>
 typedef LibraryCurateLinkDepsFactory =
     ({LibraryCurateLinkDeps deps, void Function() close}) Function(
       AiProviderConfig? provider,
+      FushiDatabase db,
     );
 
 /// 路由表本体：依赖按回调注入，测试不必起 [OpContext]。
@@ -186,6 +187,7 @@ List<CtlRoute> buildLibraryCurateCtlRoutesFor({
       ];
       final ({LibraryCurateLinkDeps deps, void Function() close}) d = linkDeps(
         linkProvider(true),
+        database(),
       );
       try {
         final LibraryCurateLinkResult r = await runLibraryCurateLinkInference(
@@ -204,6 +206,7 @@ List<CtlRoute> buildLibraryCurateCtlRoutesFor({
       requireWritable();
       final ({LibraryCurateLinkDeps deps, void Function() close}) d = linkDeps(
         linkProvider(call.optBool('useAi') != false),
+        database(),
       );
       try {
         final LibraryCurateLinkResult r = await runLibraryCurateMusicInference(

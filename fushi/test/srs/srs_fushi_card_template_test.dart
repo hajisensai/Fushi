@@ -339,4 +339,80 @@ void main() {
       );
     }
   });
+
+  group('卡面底色（11-20：答案面释义区整块实色 / 窄屏释义末尾白带）', () {
+    SrsCardFaceDocument doc(SrsCardColorSource source, {bool dark = false}) =>
+        srsCardFaceDocumentFor(
+          SrsCardFace(
+            cardId: 'c#defs',
+            showingAnswer: true,
+            bodyHtml: '<div class="fc fc-back fc-defs-only">x</div>',
+            css: FushiCardNoteType.template.css,
+            languageCode: 'ja',
+            onBridgeKey: (_) {},
+            fushiCard: true,
+          ),
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF6750A4),
+              brightness: dark ? Brightness.dark : Brightness.light,
+            ),
+          ),
+          appearance: SrsCardAppearance(colorSource: source),
+          labels: const SrsCardLabels(
+            allDefinitions: 'a',
+            frequency: 'f',
+            source: 's',
+          ),
+          mediaUrlPrefix: 'https://srs.local/media/',
+          themedScrollbar: false,
+          fontUrl: (String p) => p,
+        );
+
+    for (final bool dark in <bool>[false, true]) {
+      test(
+        '默认外观（跟随 app）${dark ? '深色' : '浅色'}：html/body 透明、模板 .card 底色被清成透明',
+        () {
+          final String css = doc(SrsCardColorSource.app, dark: dark).themeCss;
+          expect(css, contains('html,body{background:transparent;'));
+          expect(css, contains('.card.card{background-color:transparent;}'));
+          // `--fc-bg` 照旧注入：表面三档 / 强调容器的 color-mix 推色不变，词典折叠卡片的面保留。
+          expect(css, contains('--fushi-srs-bg:'));
+          expect(css, contains('--fushi-srs-surface-container:'));
+        },
+      );
+    }
+
+    test('自定义配色：卡面铺用户选的 surface，不清 .card 底色', () {
+      final String css = doc(SrsCardColorSource.custom).themeCss;
+      expect(css, isNot(contains('html,body{background:transparent;')));
+      expect(css, isNot(contains('.card.card{background-color:transparent')));
+    });
+
+    test('宿主那条 .card.card 压得住模板里所有给卡面根铺底的规则（都只是裸 .card）', () {
+      // 宿主主题样式排在模板 CSS 之前，靠特异度（0,2,0 > 0,1,0）取胜；模板若改成更具体的
+      // 选择器给 .card / body / html 铺底，这里要跟着改。
+      final String css = FushiCardNoteType.template.css.replaceAll(
+        RegExp(r'/\*[\s\S]*?\*/'),
+        '',
+      );
+      final List<String> rootPainters = <String>[];
+      for (final RegExpMatch m in RegExp(
+        r'([^{}]+)\{([^{}]*)\}',
+      ).allMatches(css)) {
+        if (!RegExp(r'(^|;|\s)background(-color)?\s*:').hasMatch(m.group(2)!)) {
+          continue;
+        }
+        for (final String sel in m.group(1)!.split(',')) {
+          final String s = sel.trim();
+          final String last = s.split(RegExp(r'[\s>+~]+')).last;
+          if (RegExp(r'^(\.card\b|body\b|html\b)').hasMatch(last) ||
+              RegExp(r'^\.card(\.|$|:)').hasMatch(last)) {
+            rootPainters.add(s);
+          }
+        }
+      }
+      expect(rootPainters, <String>['.card']);
+    });
+  });
 }

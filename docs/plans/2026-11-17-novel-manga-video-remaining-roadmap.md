@@ -8,6 +8,7 @@
 - **来源**：对小说、漫画、视频三个域做了一轮只读代码审读，得到三份优化清单；之后又补读了十块没读到的区域（阅读器引擎 JS 两块、小说杂项、漫画杂项、来源扫描、网页视频、远端 / 媒体服务器、字幕面板、原盘与图形字幕、视频杂项）。每一条都由另一位审查者回到代码逐条复核，结论分四档。三份原始清单 159 条：成立 100、部分成立 34、需先量 8、被反驳 17；补读的十块 98 条：成立 47、部分成立 33、需先量 18、没有被反驳的。合计 257 条：成立 147、部分成立 67、需先量 26、被反驳 17。
 - **代码基准**：审读与复核用的是 `upstream/develop` @ `4c347287835`（2026-11-17），文中的位置与行号都是这个基准上的，开工前要重新定位。本文档所在分支基于更新的 `29ee33b204b`（比基准多 40 个提交）；文中点名的路径在这个提交上都存在。
 - **分组**：复核后的条目按「文件不相交、可并行」分成 57 组，排成 7 波：第 1 波 23 组（互相独立）、第 2 波 6 组、第 3 波 13 组、第 4 波 7 组、第 5 波 3 组、第 6～7 波 5 个测量组。另剔除 54 条（3 条待拍板的在第 5.1 节，其余见第 6 节）。
+- **2026-11-20 更新**：剩余 33 组已全部做完并开 PR（均未合并），结果、PR 号、测量数字与待拍板去向见文末**第 8 节**，下面各节的状态描述以第 8 节为准。
 - **当前进度（写于 2026-11-17 晚）**：第 1 波 23 组加上提前做完的 c41，共 24 个 PR 已开，**全部未合并、真机验证全部未做**。剩下 33 组：第 2 波 6、第 3 波 12、第 4 波 7、第 5 波 3、第 6 波 4、第 7 波 1。
 - **条目 id 的读法**：`novel-N` / `manga-N` / `video-N` 是三份原始清单的条目号；`-dN` 是清单「需所有者拍板」一节的第 N 项；`-s2-N` / `-s3-N` 是清单第 2 节 / 第 3 节的第 N 项；`gap-<块>-N` 是补读发现的条目。`cNN` 是实施组，`mN` 是测量组。
 
@@ -288,6 +289,7 @@
 - manga-3：`.epub` 定性在 UI isolate 上同步整本解压，批量导入每本解两遍以上，选中一本几百 MB 的 EPUB 界面直接停住。位置 `MG/manga_import_dialog.dart`、`F/media/import/import_carrier.dart`。修法：批量路径 `.epub` 不预定性、交导入阶段判；单选定性改异步并过 memo 守卫。
 - 文件：`MG/manga_import_dialog.dart`、`F/media/import/import_carrier.dart`、`MG/import/manga_folder_batch.dart`、`EN/media/manga/manga_archive_importer.dart`。
 - 测试：守卫 + 批量单测。验证：桌面把 300 MB 以上的文字 EPUB 选进漫画导入框，界面不停住。
+- 顺带收 c26 遗留：`_looksLikeImageEpub` 定性探测仍把 container / OPF / spine 文档解进系统临时目录（c26 后页图已不落盘，只剩几 KB，finally 删除）；定性改异步时一并改成书库根下的 `.tmp-*`（要给探测接口带 db），见 BUG-5013 备注。
 
 #### c40 `pr/novel-heavy-work-off-ui`（M）
 - 依赖：c01 #3699、c04 #3698。闸：#3515。
@@ -479,14 +481,14 @@
 
 | 出处 | 遗留 | 没做的原因 | 建议归属 |
 |---|---|---|---|
-| c09 | manga-18b 页图空闲超时**没修到根因**：sidecar 整张读完才回响应头，真实效果只是整请求上限 45 秒 → 90 秒 | 真修要改 `third_party/m_extension_server` 的图片代理为流式并重编三端 sidecar | 待拍板（第 5 节），与 manga-28 同批 |
+| c09 | manga-18b 页图空闲超时**没修到根因**：sidecar 整张读完才回响应头，真实效果只是整请求上限 45 秒 → 90 秒 | 真修要改 `third_party/m_extension_server` 的图片代理为流式并重编三端 sidecar | 2026-11-21 已做（拍板台 `design-nmv-sidecar-protocol`）：页图 / 封面改为 chunked 边收边转，与 manga-28 同批 |
 | c09 | 全源搜索 runner import 了 widget 文件（UI 分层退化） | 结构拆分要把 `OnlineMangaUnavailable` 从带登录页依赖的文件里拆出来 | 新开小组 |
 | c09 | `video_work_acquisition_backends.dart` 里等 `initialise()` 的那处没改 | 计划外文件 | 新开小组或并 c28 |
 | c10 | 过期的系统 OCR 逐页缓存会回填到后来引擎判为无文字的页 | 要定逐页缓存的失效规则（整卷落盘时清别的引擎的缓存 / 恢复时比时间或比引擎），各有代价 | 新开条目，先定规则（第 5 节） |
 | c10 | manga-25 四个探测调用方只有源码守卫、没有行为测试；真实延迟没量 | 入口都要 `BuildContext` + `AppModel` 才能驱动 | 真机验证时量 |
 | c08（漫画侧） | 本地页图卷的 `enumerateMangaPages`（`EN/ocr/manga_ocr_folder_job.dart`）不过滤 `._` / `@eaDir` | 文件归 c10 | c10 合入后单开或并 c38 |
 | c08（漫画侧） | 漫画首扫的索引每卷新导入仍整份重写一次（随卷数平方增长） | 根治要改成逐条存储，没做也没实测 | 并 c27 |
-| c11 | manga-8 的原方向（内容哈希 / host 跳过上传 / 缓存按内容键） | 要动协议并使现有缓存失效 | 待拍板，暂不做 |
+| c11 | manga-8 的原方向（内容哈希 / host 跳过上传 / 缓存按内容键） | 拍板「做」（design-nmv-manga-ocr-content-hash）。可选清单端点 + capabilities `contentDedup`，内容缓存放任务根 `_content_cache/<引擎签名>/`，卷目录逐页缓存不动、不失效 | 已做 |
 | c11 | manifest 端点的重复解析；章 `manga.json` 路径仍用私有 helper；`uploadPage` 在任务被取消后仍把状态写回 uploading | 计划外文件 / 文件被别的 claim 占着 / 既有窗口 | 新开小组 |
 | c12 | 服务器恢复后、开章前没有任何其它 Kavita 请求成功时，那一次开章仍按离线放行 | 审查给了两种做法，取了第一种 | 所有者过目（第 5 节） |
 | c12 | `KavitaMangaSyncSession.close()` 的 flush 吞错没加日志；`kavita_epub_sync.dart` 是否有同样的「每次等满」没看；分镜模型下载三个入口共用一个 `.part` | 不在文件清单 | 新开小组 |
@@ -528,7 +530,7 @@
 |---|---|---|---|
 | c08 | gap-scanner-10 的启动清理挂点：残留临时行 / 临时目录要等下一次任意来源扫描才清 | 应挂 `home_page.dart` 首帧，被 #3534 占着 | #3534 落地后补 |
 | c08 | gap-scanner-11 只修了扫描器入口与 ctl；引擎三处类型化错误没有界面消费，app / 引擎里另有十几处同一写死串 | 计划文件之外 | 新开小组（i18n） |
-| c08 | 视频搬家判据更严后的漏判；名单外的通用目录名连着两层都撞上时仍可能误判 | 根治要给视频记内容指纹 | gap-scanner-6 的视频那一半，未立项（第 5 节） |
+| c08 | 视频搬家判据更严后的漏判；名单外的通用目录名连着两层都撞上时仍可能误判 | 根治要给视频记内容指纹 | 已做：拍板台 design-nmv-video-move-fingerprint（v165 `video_content_fingerprints`） |
 | c08 | 远端漫画来源断网后仍逐卷尝试；旧版留在系统临时目录顶层的 `m1c_scan_*` 不清；音乐来源 `mediaCount` 列写入口径没改 | 修前就是这样 | 暂不处理，记在案 |
 | c08 | ctl `totalCount` 没有路由级断言；逐卷落盘抛错的分支没有自动化测试；跨进程文件锁没有真实跨进程测试 | 没有注入点 | 记在案 |
 
@@ -581,14 +583,14 @@ Android 真机上不卸载、不覆盖用户的 app；改 `wm size` / `density` 
 | 合集批量下载加「停止」钮 | 合集字幕批量开始后没有任何取消入口；24 集的批量点错来源只能干等（每集要过一次内嵌轨对齐） | 小改动、明确的体验问题 | 新增交互；「批量不随工作台关闭而取消」是 BUG-4496 的刻意设计，停止钮不能改变这一点 | 做，放进 c23 之后的字幕面板小组 |
 | novel-17g 插件隔离 | LNReader 插件在同一个 JS 全局里跑，任一插件可以冒用别的插件 id 读写其 storage | 真正的隔离 | 要每个插件一个独立 JS 环境（独立 WebView 或沙箱 iframe），推翻「运行时全局复用一个 WebView」的结构（L）；信任模型上插件是用户确认后装的第三方代码，与上游 LNReader 一致 | 不做，除非出现真实滥用。c02 已删掉无人使用的覆盖点 |
 | gap-disc-6 Java 探测直传 | BD-J 原盘开盘时 Java 运行时探测跑两遍，第二遍是一次 PowerShell 冷启动（仅 Windows 且盘需要 Java） | 省一次几百毫秒量级的探测（经验值，没有本仓实测） | 要改 `VideoPlayerController.load` 的签名，落在被多个在途分支占着的主文件上 | 以后做，等 c32 开工时并进去 |
-| manga-28 改 sidecar 协议 | 桌面每次调 sidecar 都带整个 APK 的 base64；真改是「先发哈希、未命中再发全量」 | 回环上少传几百 KB 到几 MB | 要动 vendored 服务端 overlay，重编 Windows / macOS / Linux 三端 sidecar，还有 host ABI 漂移守卫；视频在线源共用同一个 sidecar，两边都要验；实际占比没测 | 先等 m2 的测量。若要重编 sidecar，把 c09 的 manga-18b 真修（图片代理改流式）并在同一批 |
+| manga-28 改 sidecar 协议（2026-11-21 已做，拍板台 `design-nmv-sidecar-protocol`） | 桌面每次调 sidecar 都带整个 APK 的 base64；真改是「先发哈希、未命中再发全量」 | 回环上少传几百 KB 到几 MB | 要动 vendored 服务端 overlay，重编 Windows / macOS / Linux 三端 sidecar，还有 host ABI 漂移守卫；视频在线源共用同一个 sidecar，两边都要验；实际占比没测 | 先等 m2 的测量。若要重编 sidecar，把 c09 的 manga-18b 真修（图片代理改流式）并在同一批 |
 
 ### 5.2 计划里按拍板编入、但有分歧或值得知情的（另含一条要所有者定的外部 PR）
 
 | 事项 | 现状 | 建议 |
 |---|---|---|
 | video-34（c34） | 所有者定「预取下一段 + 小 LRU」；复核认为客户端已在预取，host 再预取会占并发名额 | 计划把 LRU 放前、预取放在量完单段耗时之后；量出来没收益就只留 LRU |
-| video-9（c15，已做） | 按拍板「退出只提交 pending」；复核另提「按失败原因分永久 / 瞬时」没采纳。结果：Anki 没开这类瞬时失败退出后不再自动重试 | 维持现状；若用户反馈麻烦再改成分型 |
+| video-9（c15，已做） | 按拍板「退出只提交 pending」；复核另提「按失败原因分永久 / 瞬时」没采纳。结果：Anki 没开这类瞬时失败退出后不再自动重试 | 已改（拍板 design-nmv-fyi-behavior）：确定没送到（`isUndeliveredMineFailure`）的行留作待办、记原因、这一轮停下，退出时自动再试；其余仍标失败不自动重试 |
 | 新增交互（已按建议编入） | gap-vidmisc-4（PiP 加播放 / 暂停，c22 已写）、gap-subpanels-10（远端生成开放语言选择，c35）、gap-subpanels-3（多选态点行只勾选，c23 已做）、novel-d6（网页小说会话内续拉，c30，L） | 知情即可；c30 先复现章末现状再动 |
 | c38 可否提前 | 被 #3670 压在第 3 波；#3670 对相关文件是纯增量 | 愿意承担合并冲突就提前。计划原话是「可提前到第 1 波」，那是在 c12 还没开 PR 时写的；现在 c38 依赖的 c12 #3701 没合，最早只能与第 2 波并行 |
 | #3466 合不合 | 外部作者的 PR，OPEN；c41 #3719 已提前做完，两边 hunk 不相交 | 所有者定。合的话决定它与 #3719 的先后，后合的一方调测试装配 |
@@ -599,17 +601,17 @@ Android 真机上不卸载、不覆盖用户的 app；改 `wm size` / `density` 
 
 | 事项 | 诉求 | 利弊 | 建议 |
 |---|---|---|---|
-| c09 manga-18b 真修 | 让页图空闲超时在真实 sidecar 上生效 | 利：真卡死的页不用等满 90 秒。弊：改 vendored 图片代理为流式并重编三端 sidecar | 与 manga-28 同批决定 |
+| c09 manga-18b 真修（2026-11-21 已做，同上） | 让页图空闲超时在真实 sidecar 上生效 | 利：真卡死的页不用等满 90 秒。弊：改 vendored 图片代理为流式并重编三端 sidecar | 与 manga-28 同批决定 |
 | c10 逐页缓存失效规则 | 过期的系统 OCR 逐页缓存不应回填到后来引擎判为无文字的页 | 两种规则：整卷落盘时清别的引擎的缓存（丢可复用结果）；恢复时比时间或比引擎（判据更复杂） | 材料只说两种各有代价、要另定。本文倾向「恢复时比引擎」，单开条目 |
 | c02 作品页头部下移 | 旧目录阶段头部缺简介，源站回来时列表下移可能误点 | 把简介等存进描述符（改持久化形态）或给头部预留高度（UI 改变） | 先在真机量下移量，够得上误点再选「预留高度」 |
 | c02 丢图提示 | 阅读器里提示丢图数量、已丢图章节自动重取 | 利：用户知道缺图。弊：新增 UI 与重取行为 | 以后做；现在已有错误日志 |
 | c01 预取让位 | 让未开始的预取延后启动或可中止，使「连跳两次」也变快 | 利：慢站点上更快。弊：预取命中率下降 | 先实测慢站点阻塞时长，再定 |
 | c18 EUC-KR | 桌面 / 服务端把韩文等其它双字节编码解成汉字 | 根治要新依赖（chardetng 一类） | 先看有没有真实反馈；有再评估依赖 |
-| c12 Kavita 恢复判定 | 「任何一次答话都结束不可达」，恢复后首次开章仍可能按离线放行 | 另一做法是探针答上来时若仍在起始页就补做对账，更复杂 | 维持现状，真机验过再说 |
+| c12 Kavita 恢复判定 | 「任何一次答话都结束不可达」，恢复后首次开章仍可能按离线放行 | 另一做法是探针答上来时若仍在起始页就补做对账，更复杂 | 已改（拍板 design-nmv-fyi-behavior）：探针在拉取预算内答上话就补做本章对账；采用服务器进度只在阅读器仍停在落点时跳页，否则不写 |
 | c14 一行抛出后结束本轮 | 偏离计划字面的「标失败并继续」 | 利：环境性错误不会把整条队列逐行标失败（失败行没有重试入口）。弊：剩下的行要等下一次空闲或手动跑 | 认可；gap-webvideo-6 做完后可改回继续 |
 | c08 搬家判据 | 比计划更严 | 利：不错绑。弊：部分真搬家另建 `X (2)` | 认可；根治走内容指纹 |
 | c07 启动清扫由谁接 | 接线点在被占的 `app_model.dart` | — | 指定由下一个要动 `app_model.dart` 启动段的分支顺手加 |
-| gap-scanner-6 的视频一半 | 给视频记内容指纹，解决搬家漏判 / 误判 | L，未立项 | 以后做，看 c08 合入后真实库上漏判多不多 |
+| gap-scanner-6 的视频一半 | 给视频记内容指纹，解决搬家漏判 / 误判 | L | 已做（拍板台 design-nmv-video-move-fingerprint，2026-11-20 拍「做」） |
 
 ---
 
@@ -664,3 +666,157 @@ Android 真机上不卸载、不覆盖用户的 app；改 `wm size` / `density` 
 - 「用户可见的行为变化都写在各自 PR 正文里」这句没有逐个 PR 核对；c41 的 PR 正文草稿写过「`disposeAll` 会挂住 `stop()`」「Windows 并发写只修一半」，后续记录显示两者都已修，#3719 线上正文是否同步更新没核对。
 - #3672 对应的 bug 号材料里前后不一致，本文只引 PR 号。
 - 本文的修法细节有一部分来自复核摘要而不是逐条重读代码；行号都是基准 `4c347287835` 上的。实施前回到代码重新定位，发现与本文不符以代码为准并更新本文。
+
+---
+
+## 8. 2026-11-20 实施结果
+
+> 这一节是 2026-11-20 一次性把剩余 33 组做完之后回填的，**以这一节为准**；第 1～7 节保留当时的原文，其中「未合并 / 闸未解 / 待定」的说法多数已过期。
+
+- 第 1 波 24 个 PR 与第 2 节点名的闸 PR（#3672、#3679、#3663、#3515、#3534、#3467、漫画有声四件经 #3681）在开工前都已合入 develop；#3466 仍 OPEN，已在拍板台（`pr3466`）。
+- 剩余 33 组全部开了 PR，另有 5 个遗留小组和 1 个返修中发现的独立修复，共 39 个 PR，**全部 OPEN、未合并**。每组实现后都由一个独立审查者做过反驳式审查，真问题已就地修掉。
+- **叠放**：后面波次的分支里并入了前置组的分支，PR 的 base 都是 develop。合并顺序照下表「先合」一栏；前置组合入后，后面 PR 的 diff 会自动缩到只剩自己的提交。
+- **真机 / 真 app / 模拟器 / Windows 离屏集成测试一项都没做**（所有者定本轮不做），各 PR 正文有「未做的设备验证」清单。第 4 节的口径与顺序仍适用，范围扩大到这 39 个 PR。
+- **bug 号相撞**：并行分支各自 `bug.dart new`，BUG-4984～BUG-4914 多处重号，合入后由 develop 上的 settle CI 收口；PR 标题与提交信息里的号不会跟着变。
+- 协调目录的 claim 一个都没登记（实施代理被 worktree 隔离拦住，写不到共享目录）。
+- c28 的 `gradlew :app:assembleRelease` 本机缺发布签名没跑成，由 PR 的 Android CI 把关。
+
+### 8.1 实施组 c24～c52
+
+| 组 | PR | 先合 | 条目结论 | 审查 |
+|---|---|---|---|---|
+| c24 | #3787 | — | 修 3、不成立 1 | 通过 |
+| c25 | #3777 | — | 修 2、不成立 1 | 通过 |
+| c26 | #3785 | — | 修 6、不成立 1、延后 1 | 有问题，已修 |
+| c27 | #3799 | — | 修 3、量后不改 1 | 通过 |
+| c28 | #3795 | — | 修 4 | 有问题，已修 |
+| c29 | #3784 | — | 修 4 | 留有待定项 |
+| c30 | #3805 | c25 | 修 1 | 有问题，已修 |
+| c31 | #3801 | — | 修 5 | 有问题，已修 |
+| c32 | #3782 | — | 修 8、量后不改 1、待拍板 1 | 通过 |
+| c33 | #3812 | c27 | 修 2 | 有问题，已修 |
+| c34 | #3779 | — | 修 1、量后不改 1、不成立 1 | 通过 |
+| c35 | #3781 | — | 修 5 | 有问题，已修 |
+| c36 | #3796 | — | 修 4 | 有问题，已修 |
+| c37 | #3792 | — | 修 3 | 有问题，已修 |
+| c38 | #3783 | — | 修 8 | 有问题，已修 |
+| c39 | #3808 | c26 | 修 3 | 有问题，已修 |
+| c40 | #3789 | — | 修 6 | 有问题，已修 |
+| c42 | #3793 | — | 修 1、不成立 2 | 留有待定项 |
+| c43 | #3814 | c38、c28 | 修 4 | 有问题，已修 |
+| c44 | #3807 | c35 | 修 1 | 有问题，已修 |
+| c45 | #3816 | c31、c36 | 修 4 | 有问题，已修 |
+| c46 | #3815 | c32 | 修 3 | 通过 |
+| c47 | #3817 | c31、c33、c42 | 修 6 | 有问题，已修 |
+| c48 | #3813 | c37 | 修 7 | 有问题，已修 |
+| c49 | #3806 | c37 | 不成立 2、修 4 | 通过 |
+| c50 | #3819 | c43、c37、c28、c49 | 修 7 | 留有待定项 |
+| c51 | #3821 | c45 | 修 3 | 有问题，已修 |
+| c52 | #3818 | c36、c45 | 修 1 | 通过 |
+
+审查后的返修（都已推回原分支并并进叠在上面的分支）：
+
+- c45 #3816：c51 发现它尖端有 4 条测试红。分型结论是测试侧问题（着色器目录改异步后 widget 测试没推进真实 IO；一条守卫钉着被改掉的注释），只改了测试，生产代码没动。已并进 c51、c52。
+- c42 #3793：Plex 连接探测在核对 machineIdentifier 之前就带着 token 发请求。改成身份核对一律不带凭据（`/identity` 官方文档标注无需认证，没对真 PMS 验证），登录挑线路、自动换线路、服务端 CLI 三处走同一入口。已并进 c47。
+- c43 #3814：两条作品页测试并发下不稳，根因是 develop 上既有的两处竞态（刷新整条写回冲掉途中的订阅 / 选章；下载状态旧读盖新读），单开 **#3827 `pr/manga-series-refresh-lost-update`**（base develop，与 c50 #3819 修的是同一处，谁先合都行），并进了 c43、c50。
+
+### 8.2 测量组与遗留小组
+
+| 组 | 分支 | PR | 叠在 | 条目结论 | 审查 |
+|---|---|---|---|---|---|
+| m1 | `pr/measure-reader-engine` | #3830 | origin/pr/reader-chapter-prefetch-restore (#3787, c24)；origin/pr/web-novel-session-continue (#3805, c30)；origin/pr/novel-heavy-work-off-ui (#3789, c40) | 修 3、本机量不了 3、已被别处修掉 1、量后不改 4、待拍板 2、延后 1、不成立 2 | 有问题，已修 |
+| m2 | `pr/measure-manga-runtime` | #3832 | #3819 pr/manga-series-entry-state（c50，内含 c43 #3814、c28 #3795、c38 #3783、c37 #3792、c49 #3806），上一轮叠的；#3817 pr/remote-stream-timeouts-resume（c47，内含 c27 #3799、c33 #3812），本轮叠的，因为 source_library_scanner.dart 被 c27/c33/c47 改过 | 量后不改 1、修 2、本机量不了 3、不成立 1 | 通过 |
+| m3 | `pr/measure-video-library` | #3829 | #3784 pr/web-video-builtin-host (c29)；#3817 pr/remote-stream-timeouts-resume (c47, contains c31/c42)；#3821 pr/video-page-rebuild-trims (c51, contains c31/c36/c45)；#3818 pr/srt-serialization-dedupe (c52) | 待拍板 1、量后不改 2、修 2、本机量不了 1、不成立 1 | 有问题，已修 |
+| m4 | `pr/measure-video-media` | #3828 | — | 修 1、待拍板 2、量后不改 3 | 通过 |
+| m5 | `pr/measure-stat-facts` | #3835 | pr/measure-manga-runtime (#3832, m2；已含 c38 pr/manga-reader-hotpath、c43 pr/manga-reader-settings-session、c49 pr/shelf-slim-read、c50 pr/manga-series-entry-state)——因为 manga_fushi_page.dart 被这几个分支改过 | 修 3、不成立 1 | 通过 |
+| L1 失败提示文案 | `pr/nmv-leftover-error-surfaces` | #3825 | #3784 pr/web-video-builtin-host (c29) | 修 6、不成立 1 | 有问题，已修 |
+| L2 漫画杂项 | `pr/nmv-leftover-manga-misc` | #3833 | #3814 pr/manga-reader-settings-session（已含 #3783 pr/manga-reader-hotpath、#3795 pr/manga-download-control、#3827 pr/manga-series-refresh-lost-update） | 已被别处修掉 2、修 14 | 有问题，已修 |
+| L3 视频杂项 | `pr/nmv-leftover-video-misc` | #3831 | #3821 (pr/video-page-rebuild-trims, contains #3801/#3796/#3816)；#3815 (pr/video-controller-mpv-batch, contains #3782)；#3784 (pr/web-video-builtin-host) | 修 13、不成立 1 | 有问题，已修 |
+| L4 小说 / 启动挂点 | `pr/nmv-leftover-novel-startup` | #3824 | #3805 pr/web-novel-session-continue (c30, contains #3777 c25)；#3808 pr/manga-import-dialog-async (c39, contains #3785 c26)；#3792 pr/book-delete-cleanup (c37) | 修 8、已被别处修掉 3 | 有问题，已修 |
+| L5 阅读器引擎 JS 与 Node 跑手 | `pr/nmv-leftover-reader-js` | #3826 | #3787 pr/reader-chapter-prefetch-restore (c24) | 修 3、不成立 1 | 有问题，已修 |
+
+遗留小组收的是第 3 节标「新开小组 / 新开 bug / 需协调方指定」的行，加上 c24～c52 各组新留下的；逐条处理表在各自 PR 正文里。第 3 节里标「暂不处理，记在案」「真机验证时补」的行没有动。`tts_render_runner.dart` 换音频不带 commit 的那一半仍没做（在途 PR #3794 占着文件）。
+
+### 8.3 测量结果
+
+测量只用了开发机上能自动化的装置（Node / headless Chrome 驱动生产 JS、Dart 合成基准、本机 ffmpeg 与 libmpv、桌面 sidecar），**没有任何手机 / 真 app 数字**。没给门槛的条目按「单次超过一帧预算或用户可感知」判。
+
+**m1（#3830）**
+
+- gap-readerjs1-3: 100k-char chapter (4749 text nodes), paged vertical, one fushiProgressDetails at chapter end, 5 runs × 30 calls: median 18.3 → 0.0 ms, P95 19.9 → 0.1 ms; fixed with the shared text index
+- gap-readerjs1-3: paged horizontal chapter end: 18.2 → 0.0 ms (P95 20.1 → 0.1)
+- gap-readerjs1-3: illustration page, horizontal (scan fallback, 3000 getClientRects): 50.2 → 0.1 ms (P95 54.9 → 0.2); vertical 9.0 → 0.0 ms
+- gap-readerjs1-3: single firstVisibleCharOffsetByScanPaged call: 41.9 → 0.0 ms, getClientRects calls 3000 → 12
+- gap-readerjs1-3: first sample after opening a chapter (includes index build): 19.5–20.5 → 20.5–21.1 ms, same order as before
+- gap-readerjs1-3: chapter open with 6599 text nodes, offsetsBuilt→restoreDone, 7 runs: paged 40.3 → 36.1 ms; continuous 36.4 → 46.3 ms (index build moved into restore, so the first sample saves ~20 ms)
+- gap-readerjs2-9: continuous mode at chapter end after BUG-2903: steady 0.1–0.2 ms (P95 0.3), first call 19–22 ms; already fixed
+- gap-readerjs2-2: 100k-char chapter, paged vertical caret line move: left 605 → 16.8 ms, right 576 → 14.2 ms; getClientRects per move 113,892 → 3,922; fixed
+- gap-readerjs2-2: continuous vertical caret line move: left 513 → 12.9 ms, right 479 → 11.9 ms; first-entry P95 623 → 12 ms; small chapter 7.6 → 2.3 ms
+- novel-17e: AOT, 31 runs per round × 5 rounds, linear lookup of the last chapter: 1000 chapters median 3.3–10 ms (P95 4.9–18.6), 3000 chapters median 12.4–23 ms (P95 14.7–30.7); after: table built once (1000 ch 4.0–4.4 ms, 3000 ch 11–13 ms), then lookups <0.001 ms; fixed
+- gap-readerjs1-5: 2100-cue chapter, offsetsBuilt→restoreDone, 7 runs: paged with cues 261.7 ms (P95 290.4) vs without 37.0; continuous 240.4 vs 39.3; reverse table 15.5 ms (P95 19.1) ≈ 7%, span wrapping dominates; no change
+- gap-readerjs2-5: VN 2100 screens: paginate at chapter start 4.4 / P95 6.4 ms, near chapter end 4.2 / 6.4 ms; at chapter end screenIndexForSentenceAudioCue 3.7 / 4.4 ms, highlight 8.1 / 10.7 ms; under one frame, no change
+- gap-readerjs2-7: VN open, small chapter 34.8 vs paged 41.8 ms; large chapters 410 vs 193, 367 vs 169 ms (about 2×); listed for the owner
+- gap-readerjs2-8: 105 sampled cues, hint exact / +3 / +30 characters: shared path errors 0/0/0, VN 0/105/105; reported to the owner
+- c06: chapter with 60 paragraphs and 4 illustrations restored to 0.5, 7 runs: paged 52.5 / P95 57.3 ms, VN 64.6 / 66.1 ms
+- c05: getScrollContext about 0.004 ms per call (100 calls 0.3–0.4 ms), 3–5 calls per sample; no change
+- 本机量不了：novel-20 —— Measuring build count and frame time from progress sampling needs a profile build plus a real WebView timeline. ReaderFushiPage cannot be mounted in flutter_test (InAppWebView platform view). Upper bound from the code: 50 ms throttle plus in-flight coalescing,
+- 本机量不了：c04-chapter-perf —— The sentenceAudioCues and audiobookBridge segments are on the Dart side (database reads plus WebView IPC). Measuring them needs the real app, an audiobook and a WebView. The JS-side cue cost is covered under gap-readerjs1-5.
+- 本机量不了：c06-stylesheet-cache —— Needs a rig with seamless continuous mode where EPUB stylesheets come through the fushi.local interceptor. The headless harness blocks .local resolution.
+
+**m2（#3832）**
+
+- gap-scanner-5（第二步，本轮）：用 flutter_test（JIT）量合成漫画来源（200 系列 × 10 个 cbz + 100 系列 × 10 卷 × 30 页 = 3.2 万文件），预热 1 次、实测 5 次。修前过滤 + 归类同步占住 UI isolate，中位 273 ms、P95 286 ms。修后放进 Isolate.run：调用方的同步段（spawn + 消息拷贝）中位 3.15 ms、P95 4.1 ms；用 1 ms 周期定时器量事件循环最长间隔，中位 16 ms、P95 17 ms，正好是 Windows 定时器精度下限；墙钟中位 282 ms，和同步版相当。结论：成立，已修。
+- gap-scanner-5（第一步，上一轮）：同一规模下引擎 planMangaFolders 是平方级，AOT 中位 2886 ms、P95 3523 ms，修后 101 ms、P95 109 ms。JIT 下 exclude + planScanFromFileList 中位 3149 → 220 ms。listFiles 墙钟中位 373～429 ms，事件循环最长停顿 18～45 ms（主要是最后给 3.2 万条排序）。逐卷 statSync 3000 次共 121～130 ms，约 40 µs/次。
+- manga-28（上一轮）：探针用和 sidecar 同版本的 NanoHTTPD 2.3.1 + Jackson，跑本机 127 个真实扩展 APK（中位 61 KB、P90 83 KB、最大 152 KB），每档预热 50 次、实测 200 次。中位 APK 带 APK 的往返中位 2.35 ms、P95 3.03 ms，不带是 0.57 / 0.90 ms；UI isolate 上序列化中位 0.32 ms、P95 0.52 ms。最大 APK 往返中位 3.61 ms，序列化 0.84 / 1.16 ms。结论：不改。
+- BUG-4914（上一轮）：探针发 2000 次请求，NanoHTTPD 删临时文件失败 1942 次；本机 %TEMP% 里已经残留 504 个 NanoHTTPD-* 文件（40 MB）和 13 个 mextensionserver* 目录（10 MB）。修后跑 3 次、每次 100 个请求，%TEMP% 新增 0 个，JVM 退出后 sidecar-tmp 下剩 0 项。
+- manga-s3-5 Windows（上一轮）：用生产版 ChildProcessContainment 强杀宿主 5 次，子进程 5/5 被带走，宿主死后 35～56 ms（中位 48 ms）消失。结论：Windows 上不成立。
+- 本机量不了：manga-s3-5 —— Windows 一半已量，不成立：强杀宿主 5 次，子进程 5 次都被带走，宿主死后中位 48 ms 消失。macOS 一半量不了，要在 mac 上强杀 app 看 java 进程有没有残留。代码上看，非 Windows 平台的子进程收容是空操作。
+- 本机量不了：manga-17b —— 要 Android 真机：全局搜索时在原生池上打排队时间日志。
+- 本机量不了：manga-20 —— 要真 WebView（Android 真机，或 Windows WebView2 的真 app），在 onLoadStop 和 _windowGate.complete 两处打时间戳。代码上数过，中间串行 6～8 次 evaluateJavascript。
+
+**m3（#3829）**
+
+- video-16: real library copy 1247 videos, one _refresh round (listForShelf + 15 full-table queries + aggregation) x20: wall median 103 ms / P95 123 ms, longest UI-isolate stall median 10.0 ms / P95 11.8 ms
+- video-16: scaled library 3000 videos x20: wall median 171 ms / P95 205 ms, aggregation sync section median 9.8 ms, longest UI-isolate stall median 19.8 ms / P95 35.3 ms. Over the 16 ms frame budget; a round is far below 2 s, so the 'invalidating refresh never lands' case does not trigger (desktop 9800X3D JIT)
+- video-27: synthetic 300 vs 3000 items, debug JIT, x30 setState frames: series 62.6 -> 50.3 ms, all videos 47.9 -> 54.2 ms (within noise); search per keystroke x27: series 55.2 -> 68.8 ms, all videos 51.3 -> 65.4 ms; growth with item count <=14 ms, no change
+- video-23 before: 10000 lines M3E, cue-change frame median 168 ms / P95 372 ms, follow-scroll frame median 120 ms / P95 286 ms, favorites predicate 126102 calls/frame; classic layout 72.7 / 45.6 ms; 300 lines M3E 44.9 / 5.9 ms (60 cue changes, 180 follow frames, debug JIT)
+- video-23 after: 10000 lines M3E 37.5 / 3.9 ms (predicate 5070 calls/frame); classic layout 26.1 / 3.6 ms; 300 lines M3E 43.7 / 1.9 ms, classic 22.8 / 1.7 ms. Fixed
+- gap-subpanels-8: search panel per-build derivations, 300 candidates median 0.94 ms; 1500 candidates median 3.27 ms / P95 15.5 ms (buildSubtitleVersionGroups alone median 2.71 ms), x30, no change
+- gap-remote-11: desktop only, 500-item Jellyfin page 742 KB x40: utf8+jsonDecode median 6.8 ms / P95 52 ms, parseItemsPage median 1.6 ms, total median 8.3 ms / P95 59.6 ms. The mid-range Android threshold cannot be measured on this machine
+- gap-remote-4: host offline, never resolved (accepts TCP, never answers): serial 4026 ms -> parallel 2006 ms; unroutable address 4008 -> 2077 ms; resolved, then host stops answering 17017 -> 15027 ms (startPositionFor 15014 ms + stream fetch re-probe 2003 ms). Fixed by running them in parallel
+- 本机量不了：gap-remote-11 —— The threshold is 'over one frame on a mid-range Android device', which this machine cannot measure; it needs a mid-range Android phone and a profile build. Desktop reference only: a synthetic 500-item Jellyfin page (742 KB), utf8+jsonDecode median 6.8 ms, pars
+
+**m4（#3828）**
+
+- video-33：生产 AnimeEpisodeDownloader，公网 Mux 720p（64 片 / 177 MB），各跑 3 次。改前 80.1 / 85.7 / 97.1 s（中位 85.7 s），改后（3 片在途）49.2 / 52.3 / 59.3 s（中位 52.3 s）。成立，已改（PR #3828）。
+- video-33 前置探针：同一条流的 1080p 版（40 片 / 305 MB），两批各 3 轮。串行中位约 41 s（25.9～165 s），3 片在途中位约 16.5 s（12.2～22.5 s）。
+- video-31：真实 1080p 片段转出 HDR10 / HLG 样片（x265 10-bit，白点 203 nit），对比 YAVG / YMAX / SATAVG：SDR 原帧 137 / 235 / 16.9；生产 ffmpeg 抽帧 HDR10 109 / 155 / 5.6，HLG 120 / 199 / 9.9；mpv screenshot（gpu-next，d3d11）HDR10 和 HLG 都是 131 / 236。结论：ffmpeg 制卡路径没有色调映射，成立；mpv 截帧已映射。修法待拍板。
+- gap-disc-5：1080p 帧加日文字幕，AOT 跑 11 次。像素循环 55 ms，encodePng 934 ms（p95 1140 ms），写盘 4 ms，读盘 0.5 ms；Windows.Media.Ocr 解码 25 ms、识别 48 ms（各 11 次）。PNG 编码 + 解码约占 95%，超过 30% 门槛，报立项。只降压缩档：level 1 + sub 为 300 ms，level 1 + none 为 361 ms。拍板 design-nmv-pause-ocr-png 选 a（RGBA 直传，2026-11-20），已做：截帧在截帧 isolate 上换成 RGBA，本地 ONNX / 系统 OCR / Lens / 大模型重读都直接吃像素，链上不再有 PNG 编解码。
+- gap-vidmisc-10：桌面 ffmpeg 代测 kit 的命令形状，各 3 次，按行数计（事件数的下限）。探测 89 行 / 0.07 s，字幕抽取 127 行 / 0.59 s，制卡音频 64 行 / 0.12 s，抽帧 75 行 / 0.19 s，120 s 转码 91 行 / 5.4 s（约 17 行/s，其中表头约 70 行，之后每秒约 2 行）。每秒只有几条，不做。
+- gap-webvideo-9：headless Edge，8100 节点合成页，2000 次 tick，网页档和播放器档各 3 次。Netflix tick 中位 0.8～1.0 ms、p95 1.1～1.4 ms，每条 2.3 KB；YouTube 中位 0.2～0.3 ms，每条 0.8 KB。Dart 侧 jsonDecode 中位 26 µs、parseWebVideoStatePayload 中位 10 µs（20000 次）。不做。
+- gap-vidmisc-6：真 libmpv（vo=null），720p 6 s 片段，200 张卡。每张新建 Player：首帧中位 24.1 ms（p95 30.5 ms），RSS 每张约 +52 MB，200 张时 8.3 GB，结束 5 s 后 251 MB（dispose 推迟 5 s 销毁）。复用一个 Player：首帧中位 18.6 ms，RSS 211～265 MB。不改；GPU 纹理那层没量。
+
+**m5（#3835）**
+
+- 装置：flutter test 里的 Dart 基准（JIT debug 模式），DB 与生产同形（createInBackground 临时文件），每场景热身 2 次后跑 15 次；指标是墙钟耗时和主 isolate 最长同步段（零延时 timer 链取最大间隔，空闲基线 3～7 ms）。REAL = 本机用户库的只读备份（8,338 段 / 75 个活跃日，收藏句偏好 425 KB）；Y1 = 按 REAL 节奏合成一年（40,515 段）；L = 21,900 段 + 1,500 本书 + 15,000 计数 + 5,000 收藏；XL = 60,225 段 + 3,000 本书 + 30,000 计数 + 10,000 收藏。
+- gap-vidmisc-5/gap-mangamisc-8 统计侧栏（loadStatFacts + summarizeReaderBookStats），中位数 / P95：REAL 改前耗时 96.9/114.1 ms、主 isolate 38.5/46.7 ms → 改后 10.9/12.0 ms、1.2/2.8 ms；成立，已改
+- 统计侧栏 Y1：改前 290.7/316.5 ms、主 isolate 67.1/81.1 ms → 改后 17.5/34.0 ms、1.9/8.7 ms
+- 统计侧栏 L：改前 217.0/329.0 ms、主 isolate 30.7/56.3 ms → 改后 9.0/10.7 ms、1.0/1.7 ms
+- 统计侧栏 XL：改前 543.9/623.6 ms、主 isolate 98.4/116.8 ms → 改后 16.5/20.3 ms、0.9/2.5 ms
+- gap-vidmisc-5 统计中心「观看」页签（每切一次都重载）：REAL 改前 113.1/126.4 ms、主 isolate 39.6/45.2 ms → 改后 64.8/74.3 ms、43.1/47.3 ms（主 isolate 被收藏句 JSON 解码卡住，没降）
+- 「观看」页签 Y1：改前 449.6/568.9 ms、主 isolate 158.3/227.9 ms → 改后 143.1/214.8 ms、39.5/76.8 ms；L：331.5/373.5 ms、108.1/123.7 ms → 132.6/161.6 ms、13.2/20.4 ms；XL：814.6/896.8 ms、287.4/335.9 ms → 287.8/308.0 ms、42.6/48.0 ms
+- 统计中心「总览」页签（需要全域，没改），耗时 / 主 isolate 中位数：Y1 345.9 / 121.3 ms，L 290.3 / 90.7 ms，XL 719.8 / 249.8 ms，REAL 86.3 / 30.6 ms
+- 主 isolate 时间来源（REAL）：收藏句偏好整段 jsonDecode（425 KB）27.6 ms 同步；getStudySegments 行映射 13.4 ms（Y1 38.7 ms，XL 62.7 ms）；其余各表都不到 2 ms。includeCounters 让 loadStatFacts 的主 isolate 时间从 5.1 ms 涨到 31.2 ms
+- 按书读口的下界（只读本书段 + 本书计数）：Y1 6.0 ms，L 5.3 ms，XL 9.2 ms，主 isolate < 1 ms
+
+### 8.4 待拍板
+
+第 5 节的事项与这一轮新冒出的取舍已登记进拍板台（<https://rank.fushi.moe/dev/decisions>），共 31 条，id 前缀 `design-nmv-`，其中 7 条附了设计图。登记时按现状改写或剔除了几条：c49 不用升 schema（随包 SQLite 带 JSON1，#3806 已验证）；c34 实测单段转码耗时是段长的 22～55%，只做了 LRU，台上问的是「是否仍要 host 预取」；「c38 可否提前」「开工前先看 #3672」已无意义；启动清扫接线、演职员头像解码上限、互联 host 侧删书清理、Plex 探测发 token 四件已直接做掉，不上台。第 5 节原文不再维护，以拍板台为准。
+
+### 8.5 第 7 节前提的核对结果
+
+- 随包 SQLite 带 JSON1（c49 已验证，不升 schema）。
+- mpv `chapter-list`：生产路径读 `track-list` / `demuxer-cache-state` 时已按 JSON 解析同一种 node 属性，c32 据此改成一次读；各端真机没核。
+- c51 的 video-36f 涉及的 part 文件已在 #3821 定位并改完。
+- c30 的章末现状已在测试层复现后才动（#3805）。
+- gap-webvideo-11 (b) 的前提（各发布通道的引擎是否一律带补丁）仍没核，事项在拍板台。

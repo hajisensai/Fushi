@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 
 import '../../helpers/epub_zip_reader.dart';
+import '../../helpers/event_loop_stall.dart';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -162,5 +164,49 @@ void main() {
     expect(chapter, contains('<p>一行目<br/>二行目</p>'));
     expect(chapter, contains('<p>&lt;タグ&gt; &amp; 次</p>'));
     expect(reader['OEBPS/content.opf'], contains('<dc:title>貼り付け</dc:title>'));
+  });
+  // c40 novel-14：切章 + XHTML 拼装 + ZIP 压缩与输入大小成正比，以前整段在调用方
+  // （UI）isolate 上同步跑，几 MB 的 TXT 导入时界面卡住。自校准：先量同样的
+  // 输入在本 isolate 同步转换的耗时 D，再断言经 convert 入口时本 isolate 最长的
+  // 一段卡顿不到 D 的一半，且产物（除 OPF 里的生成时间戳）与同步转换相同。
+  test('convert does the heavy assembly off the calling isolate', () async {
+    final StringBuffer text = StringBuffer();
+    for (int i = 0; i < 60000; i++) {
+      text
+        ..write('第$i段。吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。')
+        ..write(i.isEven ? '\n' : '\n\n');
+    }
+    final String content = text.toString();
+    final File file = File('${tmpDir.path}/big.txt')
+      ..writeAsStringSync(content);
+
+    late Uint8List syncBytes;
+    final Duration syncCost = measureSync(() {
+      syncBytes = TextToEpub.convertText(content: content, title: '大きい本');
+    });
+    expect(
+      syncCost,
+      greaterThan(const Duration(milliseconds: 40)),
+      reason: '输入要大到同步转换有可测的耗时，否则断言没有区分力',
+    );
+
+    final ({Uint8List result, Duration maxStall}) measured =
+        await measureEventLoopStall(
+          () => TextToEpub.convert(file: file, title: '大きい本'),
+        );
+    expect(
+      measured.maxStall,
+      lessThan(syncCost ~/ 2),
+      reason: 'sync=$syncCost stall=${measured.maxStall}',
+    );
+    // OPF 里带生成时间戳，其余条目（各章正文、目录）必须与同步转换一致。
+    final EpubZipReader background = EpubZipReader(measured.result);
+    final EpubZipReader reference = EpubZipReader(syncBytes);
+    expect(background.names, reference.names);
+    expect(background.names.length, greaterThan(10));
+    for (final String name in reference.names) {
+      if (name == 'OEBPS/content.opf') continue;
+      expect(background[name], reference[name], reason: name);
+    }
   });
 }

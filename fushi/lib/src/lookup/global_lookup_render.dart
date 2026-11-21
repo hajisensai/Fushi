@@ -11,6 +11,7 @@
 // no BuildContext needs to be threaded from the (UI-less) controller.
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -174,8 +175,24 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
 /// 旧实现共用一份——[retain] 只看当前宿主的栈，桌面一渲染就把游戏卡片还没取走的字节删掉
 /// （反之亦然），对面随即取回 404，又把 [fetchUnavailable] 置成全进程永久生效。现在地址
 /// 里带宿主键（`<prefix><hostKey>/<token>.json`），字节、保留与回退都只作用于本宿主。
+///
+/// **只有 Windows 宿主接得住这个地址**（BUG-4939）：[urlPrefix] 是 https 地址，靠的是
+/// WebView2 `WebResourceRequested` 拦截。macOS 的 WKWebView 不能给 https 装 scheme
+/// handler（`GlobalLookupOverlay.swift` 只拦 `fushi-popup` / `image` / `dictmedia`），
+/// Linux WebKitGTK 卡片（`card_overlay.cc`）同样只注册了自定义 scheme——请求会落到
+/// 真网络（macOS 上 `.local` 走 mDNS，要数秒才失败）。取回挂着时卡片 realm 里还是上一次
+/// 的词条，显示门的兜底计时一到就把旧卡亮出来；期间再查一次，令牌一换，旧取回的失败
+/// 回报被作废，回退永远触发不了。所以不支持的宿主从一开始就走字面量（与 in-app 的
+/// `kPopupEntriesFetchSupported` 同一判据形态）。
 class GlobalLookupEntriesStore {
-  GlobalLookupEntriesStore({this.hostKey = 'desktop'});
+  GlobalLookupEntriesStore({this.hostKey = 'desktop', bool? fetchSupported})
+    : fetchSupported = fetchSupported ?? globalLookupEntriesFetchSupported;
+
+  /// 本进程的应用外宿主能否拦截 [urlPrefix] 取回：只有 Windows（见类注释）。
+  static bool get globalLookupEntriesFetchSupported => Platform.isWindows;
+
+  /// 这个宿主的原生层能否接住 [urlPrefix] 地址；false 时 [register] 恒走字面量。
+  final bool fetchSupported;
 
   /// 原生拦截按这个前缀把请求转给 Dart（`global_lookup_window.cpp`
   /// `kGlobalLookupEntriesUrlPrefix`，两处字面量由守卫测试钉成一致）。
@@ -202,7 +219,9 @@ class GlobalLookupEntriesStore {
 
   /// 结果够大且取回可用时登记字节并返回取回地址；否则 null（走字面量）。
   String? register(int token, String entriesJson) {
-    if (fetchUnavailable || entriesJson.length < kPopupEntriesFetchMinChars) {
+    if (!fetchSupported ||
+        fetchUnavailable ||
+        entriesJson.length < kPopupEntriesFetchMinChars) {
       return null;
     }
     _bytes.putIfAbsent(token, () => utf8.encode(entriesJson));

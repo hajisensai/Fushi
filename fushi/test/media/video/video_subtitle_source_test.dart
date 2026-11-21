@@ -393,6 +393,128 @@ WEBVTT
     });
   });
 
+  // 拍板台 0jnNr_P5Rd：重叠的 srt 在 overlay 槽位里一句贴底一句在上、换句就跳。
+  // 纯文本字幕解析时把部分重叠收到下一句开始；ASS / 同起点 / 完整包住的不动。
+  group('纯文本字幕重叠收口（0jnNr_P5Rd）', () {
+    const String bookUid = 'video_book_x://book/overlap';
+    const String rollingSrt = '''
+1
+00:00:01,000 --> 00:00:04,500
+dal canto suo ha toccato con mano le
+
+2
+00:00:03,000 --> 00:00:06,500
+potenzialità di quella bevanda e gli
+
+3
+00:00:05,000 --> 00:00:08,000
+vende il sogno
+''';
+
+    List<(int, int)> spans(List<AudioCue> cues) => <(int, int)>[
+      for (final AudioCue c in cues) (c.startMs, c.endMs),
+    ];
+
+    test('srt 部分重叠：前一句收到下一句开始，最后一句不动', () {
+      final List<AudioCue> cues = parseSubtitleContent(
+        SubtitleFormat.srt,
+        content: rollingSrt,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[
+        (1000, 3000),
+        (3000, 5000),
+        (5000, 8000),
+      ]);
+    });
+
+    test('async 路径同语义（播放器外挂 / 内封都走这里）', () async {
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.srt,
+        content: rollingSrt,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[
+        (1000, 3000),
+        (3000, 5000),
+        (5000, 8000),
+      ]);
+    });
+
+    test('vtt 部分重叠同样收口', () async {
+      const String vtt = '''
+WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+一句目
+
+00:00:02.000 --> 00:00:05.000
+二句目
+''';
+      for (final List<AudioCue> cues in <List<AudioCue>>[
+        parseSubtitleContent(
+          SubtitleFormat.vtt,
+          content: vtt,
+          bookUid: bookUid,
+        ),
+        await parseSubtitleContentAsync(
+          SubtitleFormat.vtt,
+          content: vtt,
+          bookUid: bookUid,
+        ),
+      ]) {
+        expect(spans(cues), <(int, int)>[(1000, 2000), (2000, 5000)]);
+      }
+    });
+
+    test('完整包住（长注释 + 中间对白）与同起点并列不收口', () {
+      const String srt = '''
+1
+00:00:00,000 --> 00:00:10,000
+【注】招牌
+
+2
+00:00:02,000 --> 00:00:04,000
+台词一
+
+3
+00:00:20,000 --> 00:00:23,000
+甲：同时开口
+
+4
+00:00:20,000 --> 00:00:22,000
+乙：同时开口
+''';
+      final List<AudioCue> cues = parseSubtitleContent(
+        SubtitleFormat.srt,
+        content: srt,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[
+        (0, 10000),
+        (2000, 4000),
+        (20000, 23000),
+        (20000, 22000),
+      ]);
+    });
+
+    test('ASS 的重叠原样保留', () {
+      const String ass = '''
+[Script Info]
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,一句目
+Dialogue: 0,0:00:02.00,0:00:05.00,Default,,0,0,0,,二句目
+''';
+      final List<AudioCue> cues = parseSubtitleContent(
+        SubtitleFormat.ass,
+        content: ass,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[(1000, 4000), (2000, 5000)]);
+    });
+  });
+
   group('parseSubtitleContentAsync (TODO-475 async parser route)', () {
     const String bookUid = 'video_book_x://book/async';
 

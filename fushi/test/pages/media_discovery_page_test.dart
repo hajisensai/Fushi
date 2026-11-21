@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show RenderParagraph, RenderRepaintBoundary;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -230,6 +233,7 @@ void main() {
   Future<void> pumpPage(
     WidgetTester tester, {
     DiscoveryMediaKind kind = DiscoveryMediaKind.game,
+    VoidCallback? onManageSources,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -237,7 +241,10 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
-              body: MediaDiscoveryPage(kinds: <DiscoveryMediaKind>[kind]),
+              body: MediaDiscoveryPage(
+                kinds: <DiscoveryMediaKind>[kind],
+                onManageSources: onManageSources,
+              ),
             ),
           ),
         ),
@@ -264,6 +271,71 @@ void main() {
     expect(searchOnly.searchCalls, 0);
     expect(find.text('browsable-folder'), findsNothing);
   });
+
+  // 设计稿 11-20 #13：引导卡曾占三块来源卡的面积、大半空着。改成一行横幅，
+  // 来源块回到首行，空位换成与来源块同尺寸的「添加来源」块。
+  for (final Size size in const <Size>[Size(1280, 800), Size(402, 874)]) {
+    testWidgets('${size.width.toInt()} 宽：引导是一行横幅，网格末尾是同尺寸的「添加来源」块', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      int manage = 0;
+      await pumpPage(tester, onManageSources: () => manage++);
+
+      final Finder banner = find.byKey(
+        const ValueKey<String>('discovery_pick_banner'),
+      );
+      final Rect b = tester.getRect(banner);
+      expect(b.height, lessThan(kDiscoverySourceBlockHeight * 0.75));
+      final Finder add = find.byKey(
+        const ValueKey<String>('discovery_guide_manage'),
+      );
+      final Finder source = find.byKey(
+        const ValueKey<String>('discovery_source_pick_browsable'),
+      );
+      expect(add, findsOneWidget);
+      expect(tester.getSize(add), tester.getSize(source));
+      // 来源块紧跟横幅，不再排在一张大卡旁边。
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const ValueKey<String>('discovery_source_pick_search-only'),
+              ),
+            )
+            .dy,
+        greaterThan(b.bottom),
+      );
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(manage, 1);
+      final String? shotDir = Platform.environment['FUSHI_PREVIEW_DIR'];
+      if (shotDir != null) {
+        await tester.runAsync(() async {
+          final RenderRepaintBoundary boundary = tester
+              .renderObject<RenderRepaintBoundary>(
+                find
+                    .ancestor(
+                      of: find.byType(MediaDiscoveryPage),
+                      matching: find.byType(RepaintBoundary),
+                    )
+                    .last,
+              );
+          final ui.Image image = await boundary.toImage();
+          final ByteData? png = await image.toByteData(
+            format: ui.ImageByteFormat.png,
+          );
+          final File out = File(
+            '$shotDir/discovery_books_${size.width.toInt()}.png',
+          );
+          await out.parent.create(recursive: true);
+          await out.writeAsBytes(png!.buffer.asUint8List());
+        });
+      }
+    });
+  }
 
   testWidgets('头部走共享组件：来源下拉与搜索框同时在场', (WidgetTester tester) async {
     await pumpPage(tester);

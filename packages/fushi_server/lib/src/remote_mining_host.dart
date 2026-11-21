@@ -147,23 +147,70 @@ class ServerRemoteMiningService
 
   bool get _reviewAvailable => _srs?.defaultProfile != null;
 
-  /// 没带 Anki helper、也没有可用的复习库：制卡路由当没接线（`capabilities.mining: false`）。
+  /// 没带 Anki helper、也没有可用的复习库：制卡路由当没接线（`capabilities.mining: false`）。复习库正在升级 / 升级受阻
+  /// 时照样算接着：请求回类型化的「升级中 / 升级受阻」（[_upgradeLanding]），不是「主机没开制卡」。
   @override
-  bool get miningAvailable => _ankiAvailable || _reviewAvailable;
+  bool get miningAvailable =>
+      _ankiAvailable || _reviewAvailable || _reviewUpgradeRefusal != null;
   bool get _ankiAvailable => _mineCard != null;
 
-  /// 服务端默认落到哪一类。
-  String _defaultKind() {
+  /// 服务端默认落到哪一类。[reviewServed] = 复习库能用（升级中按「升级完就能用」算，见 [_upgradeRefusalFor]）。
+  String _defaultKind({bool? reviewServed}) {
     switch (_srsConfig().miningTarget) {
       case ServerMiningTarget.anki:
         return kRemoteMiningKindAnki;
       case ServerMiningTarget.review:
         return kRemoteMiningKindReview;
       case ServerMiningTarget.auto:
-        return _reviewAvailable && !_ankiReady()
+        return (reviewServed ?? _reviewAvailable) && !_ankiReady()
             ? kRemoteMiningKindReview
             : kRemoteMiningKindAnki;
     }
+  }
+
+  /// 复习库因换代不可用（[ServerSrs.upgradeRefusal]）且服务端选了 profile 时的回答；否则 null。
+  ServerSrsUpgradeRefusal? get _reviewUpgradeRefusal {
+    final ServerSrsUpgradeRefusal? refusal = _srs?.upgradeRefusal;
+    if (refusal == null || _srsConfig().profiles.isEmpty) return null;
+    return refusal;
+  }
+
+  /// 这次请求本该落进复习库、而复习库正在升级 / 升级受阻：回类型化的拒绝，不按「点名的给不了」退回 Anki（拍板
+  /// 2026-11-08 的退回只针对 profile / 牌组真的不在了；升级几分钟后同一份就回来，悄悄落进 Anki 是错的落点）。
+  /// 本该落复习 = 点名复习；或没点名类别、服务端默认（按复习库可用算）是复习；或 Anki 根本没接（只剩复习可落）。点名
+  /// Anki 且 Anki 可用的照常进 Anki。
+  ServerSrsUpgradeRefusal? _upgradeRefusalFor(RemoteMiningTarget? target) {
+    final ServerSrsUpgradeRefusal? refusal = _reviewUpgradeRefusal;
+    if (refusal == null) return null;
+    final String kind = target?.kind ?? _defaultKind(reviewServed: true);
+    return kind == kRemoteMiningKindReview || !_ankiAvailable ? refusal : null;
+  }
+
+  /// [refusal] 的制卡回包：`error` + 稳定分类码（[ServerSrsUpgradeRefusal.reason]：`srs_upgrading` /
+  /// `srs_upgrade_blocked`）+ 分型（升级中可自行恢复 = transient，升级受阻要管理员处理 = permanent）。
+  RemoteMineLanding _upgradeLanding(ServerSrsUpgradeRefusal refusal) {
+    final bool upgrading = refusal == ServerSrsUpgradeRefusal.upgrading;
+    final String message = upgrading
+        ? tr(
+            '服务端的复习库正在升级，升级完成后再制卡',
+            'The review library on the server is being upgraded; mine again once it finishes',
+          )
+        : tr(
+            '服务端的复习库升级没有完成，需要在服务端处理（ctl srs migration）',
+            'The review library on the server could not finish its upgrade; it needs attention on the server (ctl srs migration)',
+          );
+    engineLog.logDiagnostic('ServerMining', '${refusal.reason}: $message');
+    return RemoteMineLanding(
+      RemoteMineResult(
+        result: MineResult.error.name,
+        message: message,
+        detail: _srs?.generation.advice,
+        errorKind: upgrading
+            ? RemoteMineErrorKind.transient
+            : RemoteMineErrorKind.permanent,
+        errorCode: refusal.reason,
+      ),
+    );
   }
 
   /// [target] → 实际落点（与桌面 host 同一套语义：[resolveRemoteMiningTarget]）。手机没点名牌组时复习用配置给
@@ -197,6 +244,8 @@ class ServerRemoteMiningService
     AnkiMiningContext context,
     String source,
   ) async {
+    final ServerSrsUpgradeRefusal? refusal = _upgradeRefusalFor(target);
+    if (refusal != null) return _upgradeLanding(refusal);
     final RemoteMiningResolution? to = await _resolve(target);
     if (to == null) {
       return RemoteMineLanding(
@@ -312,6 +361,8 @@ class ServerRemoteMiningService
     RemoteMiningTarget? target,
   }) async {
     if (expression.isEmpty) return false;
+    // 本该查复习库、复习库在升级：查不了，回「不重复」（与后端不可用同口径），真制卡时回升级中。
+    if (_upgradeRefusalFor(target) != null) return false;
     try {
       final RemoteMiningResolution? to = await _resolve(target);
       if (to == null) return false;
@@ -330,7 +381,10 @@ class ServerRemoteMiningService
 
   @override
   Future<Map<String, Object?>> miningTargets() async {
-    final RemoteMiningResolution? def = await _resolve(null);
+    final ServerSrsUpgradeRefusal? refusal = _upgradeRefusalFor(null);
+    final RemoteMiningResolution? def = refusal != null
+        ? null
+        : await _resolve(null);
     final List<Map<String, Object?>> review = <Map<String, Object?>>[];
     for (final ServerSrsProfile prof
         in _srs?.readyProfiles ?? const <ServerSrsProfile>[]) {
@@ -359,6 +413,9 @@ class ServerRemoteMiningService
     return <String, Object?>{
       'default': def?.landing.toJson(),
       'review': review,
+      // 复习库在升级 / 升级受阻（[ServerSrsUpgradeRefusal.reason]）：此时 review 为空、默认落点不报，手机据此说明原因
+      // 而不是「主机没开复习」。老客户端忽略。
+      'reviewUnavailable': ?_reviewUpgradeRefusal?.reason,
       if (_ankiAvailable)
         'anki': <String, Object?>{
           'decks': <String>[

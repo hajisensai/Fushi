@@ -142,6 +142,23 @@ void main() {
     expect(await store.deleteDone(), 0);
   });
 
+  test('#3722 c15 遗留：读方法不带删除副作用，旧 done 行只由 sweepLegacyDone 清', () async {
+    final int legacy = await enqueue('video/stream/a', 1000);
+    final int pending = await enqueue('video/stream/b', 2000);
+    await markLegacyDone(<int>[legacy]);
+
+    expect(await store.pendingBookUids(), <String>['video/stream/b']);
+    expect(await store.openCount('video/stream/a'), 0);
+    expect(
+      await allIds(),
+      unorderedEquals(<int>[legacy, pending]),
+      reason: '读调度清单 / 角标不能顺手删行',
+    );
+
+    await store.sweepLegacyDone();
+    expect(await allIds(), <int>[pending]);
+  });
+
   test('BUG-4813：markDone 只删自己那一行，不顺带扫全表', () async {
     final int legacy = await enqueue('video/stream/a', 1000);
     final int current = await enqueue('video/stream/a', 2000);
@@ -152,19 +169,19 @@ void main() {
     expect(await allIds(), <int>[legacy]);
   });
 
-  test('BUG-4813：存量 done 行在调度入口收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
+  test('BUG-4813：存量 done 行由启动清扫收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
     final int legacy = await enqueue('book-a', 1000);
     final int pending = await enqueue('book-b', 2000);
     await markLegacyDone(<int>[legacy]);
 
-    // 没有任何一张卡写成功，只是调度来问了一次。
-    expect(await store.pendingBookUids(), <String>['book-b']);
+    // 没有任何一张卡写成功，只是启动时（首页首帧）清了一次。
+    await store.sweepLegacyDone();
     expect(await allIds(), <int>[pending]);
 
     // 同一个库不再扫第二遍（另一个 store 实例也一样：调用方到处都是现建的）。
     final int late = await enqueue('book-c', 3000);
     await markLegacyDone(<int>[late]);
-    await WebMineQueueStore(db).pendingBookUids();
+    await WebMineQueueStore(db).sweepLegacyDone();
     expect(await allIds(), unorderedEquals(<int>[pending, late]));
   });
 
@@ -241,5 +258,39 @@ void main() {
     expect(recorder.selects.single, contains('GROUP BY'));
     // 两边共用的按书待办不受这条过滤影响：暂存队列照样读得到自己的行。
     expect(await store.pending('remote/emby/1'), hasLength(2));
+  });
+  test('requeueFailed 跳过重复卡；requeueRow 单行排回（含重复卡），非失败行不动', () async {
+    final int dup = await enqueue('book-a', 1000);
+    final int bad = await enqueue('book-a', 2000);
+    final int other = await enqueue('book-b', 3000);
+    final int fresh = await enqueue('book-a', 4000);
+    await store.markFailed(dup, WebMineQueueStore.duplicateError);
+    await store.markFailed(bad, 'navigate_timeout');
+    await store.markFailed(other, 'navigate_timeout');
+
+    expect(
+      (await store.failed('book-a')).map((WebMineQueueRow r) => r.id),
+      <int>[dup, bad],
+    );
+    expect(await store.requeueFailed('book-a'), 1);
+    expect(
+      (await store.pending('book-a')).map((WebMineQueueRow r) => r.id),
+      <int>[bad, fresh],
+    );
+    final WebMineQueueRow requeued = (await store.pending('book-a')).first;
+    expect(requeued.error, isNull);
+    // 重复卡留在失败里；别的书的失败行不受影响。
+    expect(
+      (await store.failed('book-a')).single.error,
+      WebMineQueueStore.duplicateError,
+    );
+    expect((await store.failed('book-b')).single.id, other);
+
+    expect(await store.requeueRow(dup), isTrue);
+    expect(await store.requeueRow(dup), isFalse);
+    expect(await store.requeueRow(fresh), isFalse);
+    expect(await store.failed('book-a'), isEmpty);
+    expect(await store.pendingCount('book-a'), 3);
+    expect(await store.openCount('book-a'), 3);
   });
 }

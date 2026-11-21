@@ -14,7 +14,8 @@ const D3 = 'c'.repeat(64);
 
 function ask(env, body = {}, opts = {}) {
   return call(env, 'POST', '/v1/notices', {
-    body: { v: '2.12.0', p: 'android', c: 'stable', l: 'en-US', id: 'app.example.one', h: [D1], k: [D1], ...body },
+    // s: true = 用户开着「发送使用统计」；计数相关用例默认按开着测，关掉的情形单独测。
+    body: { v: '2.12.0', p: 'android', c: 'stable', l: 'en-US', id: 'app.example.one', h: [D1], k: [D1], s: true, ...body },
     headers: { 'CF-Connecting-IP': opts.ip ?? nextIp() },
     now: opts.now ?? NOW,
     cf: opts.cf,
@@ -88,7 +89,7 @@ describe('POST /v1/notices', () => {
     const banner = await addRule(env, { kind: 'all', level: 'banner' });
     const block = await addRule(env, { kind: 'h', value: D1, level: 'block' });
     const dialog = await addRule(env, { kind: 'id', value: 'app.example.one', level: 'dialog' });
-    const off = await addRule(env, { kind: 'all', level: 'block', enabled: false });
+    const off = await addRule(env, { kind: 'hk_disjoint', level: 'block', enabled: false });
     const r = await ask(env);
     expect(r.data.notices.map((n) => n.id)).toEqual([`r${block}`, `r${dialog}`, `r${banner}`]);
     expect(r.data.notices.map((n) => n.id)).not.toContain(`r${off}`);
@@ -141,7 +142,31 @@ describe('POST /v1/notices', () => {
 
   it('normalizeNoticeQuery dedupes and lowercases digests', () => {
     const q = normalizeNoticeQuery({ v: '1.0', p: 'windows', h: [D1, D1.toUpperCase()], k: null });
-    expect(q).toEqual({ v: '1.0', p: 'windows', c: null, l: null, id: null, h: [D1], k: [] });
+    expect(q).toEqual({ v: '1.0', p: 'windows', c: null, l: null, id: null, h: [D1], k: [], s: false });
+    expect(normalizeNoticeQuery({ v: '1.0', p: 'windows', s: 'yes' }).s).toBe(false);
+    expect(normalizeNoticeQuery({ v: '1.0', p: 'windows', s: true }).s).toBe(true);
+  });
+
+  it('counts only when the usage-stats switch is on, but answers either way', async () => {
+    const env = makeEnv();
+    await addRule(env, { kind: 'h_unlisted' });
+    expect((await ask(env, { s: false })).data.notices).toHaveLength(1);
+    expect((await ask(env, { s: undefined })).data.notices).toHaveLength(1);
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM notice_seen').get().n).toBe(0);
+    expect(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM budgets WHERE kind = 'notices'").get().n).toBe(0);
+    await ask(env, { s: true });
+    expect(env.DB.raw.prepare('SELECT SUM(n) AS n FROM notice_seen').get().n).toBe(1);
+  });
+
+  it('never sends a block notice to a request carrying a registered digest', async () => {
+    const env = makeEnv();
+    await addRule(env, { kind: 'hk_disjoint', level: 'block' });
+    await addRule(env, { kind: 'hk_disjoint', level: 'banner' });
+    // 未登记：block 与 banner 都下发。
+    expect((await ask(env, { h: [D1], k: [D2] })).data.notices.map((n) => n.level)).toEqual(['block', 'banner']);
+    expect((await admin(env, 'POST', '/known', { h: D1, label: 'official' })).status).toBe(200);
+    // 带着已登记摘要：只剩 banner。
+    expect((await ask(env, { h: [D1], k: [D2] })).data.notices.map((n) => n.level)).toEqual(['banner']);
   });
 
   it('upserts sightings without storing the client address', async () => {
@@ -255,6 +280,20 @@ describe('/admin/api/notices', () => {
     expect(code({ ...ok, title_zh: null })).toBe('empty_text');
     expect(code({ ...ok, title_zh: 'x'.repeat(NOTICE_LIMITS.titleMax + 1) })).toBe('bad_title_zh');
     expect(code({ ...ok, enabled: 'yes' })).toBe('bad_enabled');
+    expect(code({ ...ok, level: 'block' })).toBe('block_needs_unofficial_kind');
+    expect(code({ ...ok, kind: 'id', value: 'a.b', level: 'block' })).toBe('block_needs_unofficial_kind');
+    expect(normalizeRule({ ...ok, kind: 'h_unlisted', level: 'block' }).level).toBe('block');
+    expect(normalizeRule({ ...ok, kind: 'hk_disjoint', level: 'block' }).level).toBe('block');
+  });
+
+  it('refuses block rules aimed at a registered digest', async () => {
+    const env = makeEnv();
+    expect((await admin(env, 'POST', '/known', { h: D1 })).status).toBe(200);
+    const bad = await admin(env, 'POST', '/rules', { kind: 'h', value: D1, level: 'block', title_zh: 'x' });
+    expect(bad.status).toBe(400);
+    const id = await addRule(env, { kind: 'h', value: D1, level: 'dialog' });
+    expect((await admin(env, 'POST', `/rules/${id}`, { level: 'block' })).status).toBe(400);
+    await addRule(env, { kind: 'h', value: D2, level: 'block' });
   });
 
   it('maintains the registered digest list', async () => {

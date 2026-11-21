@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
@@ -11,6 +9,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart'
     show buildCardCreationDestination;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「设置 › 主屏幕小组件」（仅 Android）：小组件读的每日目标、默认隐私，以及怎么添加
 /// 小组件、复习小组件跟哪个应用。小组件本身的数据都来自 app（见
@@ -23,7 +22,7 @@ SettingsDestination buildWidgetsDestination() {
     title: t.widget_settings_title,
     summary: t.widget_settings_summary,
     icon: FushiIcons.widgets,
-    visible: (SettingsContext c) => Platform.isAndroid,
+    visible: (SettingsContext c) => hostPlatform.isAndroid,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'widgets.section.howto',

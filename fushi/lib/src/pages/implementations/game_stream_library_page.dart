@@ -116,6 +116,7 @@ class GameStreamLibraryServices {
             peer: host.peer,
             session: session,
             settings: settings,
+            dictionaryConfigFor: appModel.remoteLookupDictionaryConfigFor,
             onSettingsChanged: (GameStreamVideoSettings next) =>
                 unawaited(prefs.setGameStreamVideoSettings(next)),
             lookupLayout: prefs.gameStreamLookupLayout,
@@ -185,8 +186,9 @@ class GameStreamLibraryPage extends StatefulWidget {
 
   final GameStreamLibraryServices services;
 
-  /// Section tabs of the page that embeds this one (Windows games module).
-  /// Null where this page is the whole games module.
+  /// Header title slot from the library shell that embeds this page (zero-size
+  /// placeholder: the shell's floating toolbar draws tabs and actions). Null
+  /// only when mounted standalone, where the page draws its own header.
   final Widget? navigation;
 
   static const Key interconnectButtonKey = ValueKey<String>(
@@ -480,11 +482,9 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
       ),
     ];
     final Widget? navigation = widget.navigation;
-    // 作为首页外壳的顶层 tab（非 Windows 的串流接收端）时，外壳把大标题胶囊
-    // 叠在内容上方、经 [FushiFloatingChromeInset] 下发让位高度；这里必须让开，
-    // 否则页头（外壳已画标题时只剩副标题一行）整段压在标题胶囊底下
-    // （2026-10-09 用户截图：「游戏」胶囊挡住「在电脑上启动游戏并串流到这里」）。
-    // 嵌在游戏模块分区里时外层已消费过 inset（这里读到 0），不会重复让位。
+    // 嵌在库页壳里（非 Windows 的 `GameStreamClientPage`、Windows 游戏模块的
+    // 串流分区）时，壳的浮动工具栏叠在内容上方、经 [FushiFloatingChromeInset]
+    // 下发让位高度：这里按工具区此刻的可见下沿让开，收起后不留空白。
     // 库页材质（2026-10-25 用户定版，与本机游戏库同一套）：游戏卡走透明卡盒（材质作用域在 [_buildBody] 的滚动视图上）。
     return Scaffold(
       body: FushiFloatingChromeVisiblePadding(
@@ -499,26 +499,32 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
               )
             else
               FushiPageHeader.customTitle(title: navigation, actions: actions),
-            Expanded(
-              // 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
-              child: AnimatedSwitcher(
-                duration: motion.effectsDefault.duration,
-                switchInCurve: motion.effectsDefault.curve,
-                switchOutCurve: motion.effectsDefault.curve,
-                child: loading
-                    ? KeyedSubtree(
-                        key: const ValueKey<String>('game-stream-skeleton'),
-                        child: _buildLoadingSkeleton(context),
-                      )
-                    : KeyedSubtree(
-                        key: const ValueKey<String>('game-stream-body'),
-                        child: _buildBody(context),
-                      ),
-              ),
-            ),
+            Expanded(child: _buildSwitchedBody(context, loading, motion)),
           ],
         ),
       ),
+    );
+  }
+
+  /// 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
+  Widget _buildSwitchedBody(
+    BuildContext context,
+    bool loading,
+    FushiMotionScheme motion,
+  ) {
+    return AnimatedSwitcher(
+      duration: motion.effectsDefault.duration,
+      switchInCurve: motion.effectsDefault.curve,
+      switchOutCurve: motion.effectsDefault.curve,
+      child: loading
+          ? KeyedSubtree(
+              key: const ValueKey<String>('game-stream-skeleton'),
+              child: _buildLoadingSkeleton(context),
+            )
+          : KeyedSubtree(
+              key: const ValueKey<String>('game-stream-body'),
+              child: _buildBody(context),
+            ),
     );
   }
 

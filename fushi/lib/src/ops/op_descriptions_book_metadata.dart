@@ -57,6 +57,13 @@ List<OpDescription> describeBookMetadataOps(
         description: 'Metadata source; default bangumi.',
         enumValues: kBookScrapeSourceNames,
       ),
+      OpParam.boolean(
+        'nsfw',
+        description:
+            'Include candidates the source marks as NSFW (adult). Default '
+            'false: they are left out and only counted in hiddenNsfw. Pass '
+            'true only when the book itself is marked NSFW.',
+      ),
     ],
     availability: kit.whenModule(ModuleId.services),
   ),

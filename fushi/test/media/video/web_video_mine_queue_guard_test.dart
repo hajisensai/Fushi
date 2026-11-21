@@ -22,13 +22,27 @@ void main() {
   });
 
   group('BUG-4818：窗口宿主档会话不把可捕获档的旧 cookie 抄回共享罐', () {
-    test('WebVideoSession 整个类里没有回抄 / 复制 cookie 的调用', () {
+    test('WebVideoSession 不回抄；唯一的复制是可捕获档开页时从共享罐抄进本环境', () {
       final String code = maskComments(session);
       final int start = code.indexOf('class WebVideoSession {');
       expect(start, greaterThanOrEqualTo(0));
       final String body = code.substring(start);
       expect(body, isNot(contains('syncWebVideoLoginToBrowser(')));
-      expect(body, isNot(contains('copyWebVideoLoginCookies(')));
+      // gap-webvideo-11：内置档页改用本会话后，BUG-3801 的「开页从共享罐抄登录态」挪进了
+      // prepare，方向是共享罐 → 可捕获档（to: env），只在可捕获档发起；窗口宿主档就住在
+      // 共享罐里，从不复制。
+      final Iterable<RegExpMatch> copies = RegExp(
+        r'copyWebVideoLoginCookies\(',
+      ).allMatches(body);
+      expect(copies, hasLength(1));
+      final String prepare = compactCode(
+        methodBody(body, 'Future<void> prepare('),
+      );
+      expect(prepare, contains('if(hosting==WebVideoHosting.builtin){'));
+      expect(
+        prepare.indexOf('copyWebVideoLoginCookies(uri:site,to:env)'),
+        greaterThan(prepare.indexOf('if(hosting==WebVideoHosting.builtin){')),
+      );
     });
 
     test('内置档页的回抄只在非窗口档时发起', () {
@@ -72,6 +86,12 @@ void main() {
       final int finish = run.lastIndexOf('_finishMining(');
       expect(finish, greaterThan(round));
       expect(run.substring(finish), contains('WebMineAutoFinished('));
+      // BUG-5039：出错中止（准备步骤抛出 / 一行抛出 / 表面死亡）要带进结果，否则提示
+      // 仍是「已制卡 0，失败 0」。
+      expect(
+        compactCode(run.substring(finish)),
+        contains('errored:webMineRoundEndedOnError(rowsEnd),'),
+      );
       // 「无条件」= 这次调用是方法体顶层的语句，没有被 if (...) { } 之类的块包住
       // （包进一个只在正常跑完时才进的分支，BUG-4829 就原样回来了）。
       final String finishLine = run.substring(
@@ -116,7 +136,8 @@ void main() {
         compactCode(nav),
         contains(
           compactCode(
-            'if (!mounted || _mineStopRequested) {'
+            'if (!mounted || _mineStopRequested ||'
+            ' session.surfaceGeneration != surfaceGen) {'
             ' return WebMineNavigateOutcome.interrupted; }',
           ),
         ),
@@ -172,6 +193,81 @@ void main() {
       expect(gate, greaterThanOrEqualTo(0));
       // 判据与调用之间没有收口的花括号 = 调用在这个 if 块里。
       expect(code.substring(gate, at), isNot(contains('}')));
+    });
+  });
+
+  // 行为规则（表面换代后在途行留待办、不标 navigate_timeout）在
+  // test/mining/web_mine_queue_run_test.dart；这里钉页面把表面的代接进了那套规则。
+  group('BUG-4983：内置档页 WebView 进程死亡后恢复，重放循环知情', () {
+    // gap-webvideo-11：内置档页的 WebView 由共享会话建（WebVideoSurface），死亡守卫的恢复
+    // 钩子是会话的 recoverFromProcessGone，页面自己的那一半经 onProcessGone 接进去。
+    test('死亡守卫先跑恢复钩子；重建回到死前的页面而不是起始页', () {
+      final String sessionCode = compactCode(maskComments(session));
+      expect(
+        sessionCode,
+        contains('flushBeforeRebuild:widget.session.recoverFromProcessGone,'),
+      );
+      expect(sessionCode, contains('WebUri(session.surfaceUrl)'));
+      final String recover = compactCode(
+        maskComments(
+          methodBody(session, 'Future<void> recoverFromProcessGone('),
+        ),
+      );
+      for (final String stale in <String>[
+        '_surfaceGeneration+=1;',
+        '_abandonInflight();',
+        '_surfaceUrl=current;',
+        '_web=null;',
+        'awaitonProcessGone?.call();',
+        'discardWebVideoCapturableEnvironment();',
+      ]) {
+        expect(recover, contains(stale), reason: stale);
+      }
+      final String code = compactCode(maskComments(page));
+      expect(code, contains('WebVideoSurface(session:session)'));
+      expect(code, contains('onProcessGone:_onSurfaceGone,'));
+      final String gone = compactCode(
+        maskComments(methodBody(page, 'Future<void> _onSurfaceGone(')),
+      );
+      for (final String stale in <String>[
+        '_state=null;',
+        '_preStartFuture=null;',
+        '_shaderActive=false;',
+      ]) {
+        expect(gone, contains(stale), reason: stale);
+      }
+    });
+
+    test('一轮重放把表面的代交给 runWebMineQueueRows，录完先验表面再落卡', () {
+      final String run = compactCode(
+        maskComments(methodBody(page, 'Future<void> _runMineQueue(')),
+      );
+      expect(run, contains('surfaceLost:surfaceLost,'));
+      final int check = run.indexOf('if(surfaceLost())throw');
+      final int mine = run.indexOf('await_mineQueuedRow(');
+      expect(check, greaterThanOrEqualTo(0));
+      expect(mine, greaterThan(check));
+    });
+
+    test('页面调用随死表面作废，不挂在死进程上', () {
+      // 页面命令唯一出口委托给会话（两个宿主页同一个包装）。
+      expect(
+        compactCode(maskComments(methodBody(page, 'Future<Object?> _js('))),
+        contains('_session?.evaluate(expression)'),
+      );
+      final String js = compactCode(
+        maskComments(methodBody(session, 'Future<Object?> evaluate(')),
+      );
+      // 每次调用一个局部 Completer 登记进 _inflight、结束即移出；不在长寿 future 上挂监听
+      // （表面不死时那些监听只增不减）。
+      expect(js, contains('_inflight.add(call);'));
+      expect(js, contains('_inflight.remove(call);'));
+      expect(js, isNot(contains('Future.any')));
+      final String abandon = compactCode(
+        maskComments(methodBody(session, 'void _abandonInflight(')),
+      );
+      expect(abandon, contains('_inflight.clear();'));
+      expect(abandon, contains('call.complete(null);'));
     });
   });
 }

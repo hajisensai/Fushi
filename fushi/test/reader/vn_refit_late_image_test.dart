@@ -1,19 +1,19 @@
 @Tags(<String>['chrome'])
 library;
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// VN 屏表重切的两条行为，都用生产 VN shell + 生产 VN CSS 在真 Chrome 里跑。
 ///
@@ -24,7 +24,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///    一张不结束的图让首屏永远不出。现在先按已知信息切屏，图到了再复核归类并重切。
 void main() {
   Future<void> runHarness(String harness, String passLine) async {
-    final String? nodeExe = _resolveNode();
+    final String? nodeExe = resolveNodeExecutable();
     if (nodeExe == null) {
       markTestSkipped('node not found on PATH; skipping JS execution');
       return;
@@ -39,13 +39,14 @@ void main() {
     await settings.setWritingMode('vertical-rl');
     final String css = ReaderContentStyles.css(settings: settings);
 
-    final ({int exitCode, String stdout, String stderr}) result =
-        await _runNodeHarness(nodeExe, harness, <String, String>{
-          'shell': ReaderVisualNovelScripts.vnShellScript(),
-          'selection': ReaderSelectionScripts.source(),
-          'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
-          'css': css,
-        });
+    final NodeHarnessResult
+    result = await runNodeHarness(nodeExe, harness, <String, String>{
+      'shell': ReaderVisualNovelScripts.vnShellScript(),
+      'selection': ReaderSelectionScripts.source(),
+      'units':
+          '$kStudyUnitJs\n$kSentenceAudioOwnershipJs\n$kSentenceAudioRelocationJs',
+      'css': css,
+    });
     if (result.exitCode == 77) {
       markTestSkipped('Chrome unavailable: ${result.stdout}');
       return;
@@ -73,39 +74,18 @@ void main() {
     ),
     timeout: const Timeout(Duration(seconds: 90)),
   );
-}
 
-/// Runs a Node harness with [payload] piped as JSON on stdin (no file path
-/// crosses the process boundary) and returns its exit code, stdout and stderr.
-Future<({int exitCode, String stdout, String stderr})> _runNodeHarness(
-  String nodeExe,
-  String harness,
-  Map<String, String> payload,
-) async {
-  final Process process = await Process.start(nodeExe, <String>[harness]);
-  final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
-  final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
-  process.stdin.add(utf8.encode(jsonEncode(payload)));
-  await process.stdin.close();
-  return (
-    exitCode: await process.exitCode,
-    stdout: await stdout,
-    stderr: await stderr,
+  // BUG-5003：归类对象是脱离文档的源树，判据不能读 computed style（挂着与摘下结果不同）。
+  // 拍板台 design-nmv-fyi-tail ①：书本 CSS 排成块级的小图在摘下前记标记、算独立插图；
+  // 阅读器自己的 `:only-child` 规则不算。
+  test(
+    'VN standalone image classification does not depend on whether the '
+    'source tree is attached; book CSS display:block makes a small image '
+    'standalone, the reader stylesheet does not',
+    () => runHarness(
+      'test/reader/vn_standalone_image_classification_harness.mjs',
+      'PASS VN standalone image classification',
+    ),
+    timeout: const Timeout(Duration(seconds: 90)),
   );
-}
-
-/// Resolve Node before launching the browser harness so missing CI tools skip.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

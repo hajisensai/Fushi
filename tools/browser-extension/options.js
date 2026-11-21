@@ -38,6 +38,8 @@ const settingDefaults = Object.freeze({
   studyTrackVideo: true,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
   subtitleReplaceNative: false,
+  // YouTube 自动字幕按标点 / 停顿合成整句（默认关：日语 ASR 常无标点，断句是启发式，用户点头再开）。
+  subtitleMergeAsrSentences: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
   // 触屏查词：点按默认开（手机端没有 Shift 悬停，点按是主入口），长按默认关
@@ -84,6 +86,7 @@ const toggleIds = Object.freeze({
   subtitleOverlayBackground: 'subtitleOverlayBackground',
   studyTrackVideo: 'studyTrackVideo',
   subtitleReplaceNative: 'subtitleReplaceNative',
+  subtitleMergeAsrSentences: 'subtitleMergeAsrSentences',
   subtitleHidden: 'subtitleHidden',
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
