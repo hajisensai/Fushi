@@ -450,6 +450,11 @@ void main() {
   });
 
   testWidgets('专辑页：碟片分组 + 格式徽章 + Hi-Res', (WidgetTester tester) async {
+    // 逐碟曲目是色块（W 原型双格比例），默认 800×600 视口里第二碟标题在懒加载
+    // 列表视口外、不会被建出来；给一个能放下两碟的桌面视口。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 1600);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
