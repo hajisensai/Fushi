@@ -85,6 +85,7 @@ use super::weigh::{S_DISTRUSTED, S_PURGED};
 use crate::gen4::name::write_edit_key;
 use crate::gen4::op::{Body4, Log4};
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
+use crate::gen4_ids::alias::WriterBound;
 use crate::gen4_ids::alias::{
     DeckEv, DefEv, Dot, Evidence, How, Limits, LogEv, NoteEv, NoteTypeEv, WriterEv, resolve,
     strict_id,
@@ -94,6 +95,10 @@ use crate::sync2::codec::Writer;
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
+
+/// `derive_cfg` 里归回写入者证据撑得住的范围的键：值是 `{存量名字: WriterBound}` 的 JSON（`{"upto": n, "own": [...]}`），没有归回的写入者 = 没有这一行
+/// （[Index::rebuild_aliases] 写，`class.rs` 的 [Index::writer_aliases] 读）。
+pub const WRITER_UPTO_KEY: &str = "aliasWriterUpto";
 
 /// `alias_ix.how`：带盐的根规则验上。
 pub const A_SALTED: i64 = 1;
@@ -799,7 +804,7 @@ impl Index<'_, '_> {
         }
 
         // 写入者：有 `merged-…` 形状的名字才值得扫旧戳。
-        let mut writers: BTreeMap<String, Vec<Dot>> = BTreeMap::new();
+        let mut writers: BTreeMap<String, (Vec<Dot>, Vec<u64>)> = BTreeMap::new();
         let devices = t.devices(col)?;
         if self.merged_known()? {
             for d in &devices {
@@ -807,19 +812,19 @@ impl Index<'_, '_> {
                     if s.seq <= 0 {
                         return Ok(());
                     }
-                    let dots = match writers.get_mut(&s.writer) {
+                    let (dots, raw) = match writers.get_mut(&s.writer) {
                         Some(d) => d,
                         None => writers.entry(s.writer.clone()).or_default(),
                     };
-                    if let StampHlc::Parsed {
-                        physical, counter, ..
-                    } = &s.hlc
-                    {
-                        dots.push(Dot {
+                    match &s.hlc {
+                        StampHlc::Parsed {
+                            physical, counter, ..
+                        } => dots.push(Dot {
                             seq: s.seq as u64,
                             physical: *physical,
                             counter: *counter,
-                        });
+                        }),
+                        StampHlc::Raw(_) => raw.push(s.seq as u64),
                     }
                     Ok(())
                 })?;
@@ -833,7 +838,7 @@ impl Index<'_, '_> {
             logs,
             writers: writers
                 .into_iter()
-                .map(|(name, dots)| WriterEv { name, dots })
+                .map(|(name, (dots, raw))| WriterEv { name, dots, raw })
                 .collect(),
             ..Evidence::default()
         };
@@ -1315,6 +1320,25 @@ impl Index<'_, '_> {
                 put.execute(params![self.col, name, origin]).map_err(sql)?;
                 n += 1;
             }
+        }
+        // 归回写入者证据撑得住的范围（`gen4_ids::alias::WriterBound`）与 `alias_writer_ix` 同一次重建写下。存在
+        // `derive_cfg` 里而不给 `alias_writer_ix` 加列：派生层的口径记录本来就记在这里（`cache.rs` 的 `RULES_KEY`），
+        // 不升 schema、已迁移的新代库照常打开；`CACHE_RULES` 4 让这些库在下次打开时整层重建一次补上它。
+        let upto: BTreeMap<&str, &WriterBound> = aliases
+            .merged_writers()
+            .into_iter()
+            .filter_map(|(name, _)| aliases.writer_bound(name).map(|b| (name, b)))
+            .collect();
+        let text = (!upto.is_empty())
+            .then(|| serde_json::to_string(&upto).map_err(|e| e.to_string()))
+            .transpose()?;
+        // 名字表没变、只有范围变了（新到的旧戳把 `upto` 推高、清除让它缩回）也改判：缓存层按归回的写入者重看
+        // （同 [Index::alias_diff] 的 `writers_moved`）。
+        if self
+            .t
+            .set_derive_cfg(self.col, WRITER_UPTO_KEY, text.as_deref())?
+        {
+            self.writers_moved = true;
         }
         self.alias_dirty = false;
         self.alias_delta = AliasDelta::default();
