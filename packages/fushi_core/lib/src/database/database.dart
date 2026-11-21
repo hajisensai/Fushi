@@ -3462,6 +3462,11 @@ class FushiDatabase extends _$FushiDatabase
         }
         await _migrateFavoriteSentencesPrefToTable();
       }
+      // v167：表结构不变，只加单媒体统计读路径的四条索引（HBK-AUDIT-042：统计侧栏
+      // 只看一本书时，段 / 计数 / 视频 legacy 行 / 书表的等值条件没有可用索引，
+      // 扫本 Profile 全部段与整张计数表）。索引由下面的 _ensureStatIndexes 建——它在
+      // 阶梯末尾每次升 schema 都跑、按列存在性守卫、全幂等；升这一档就是为了让已在
+      // v166 的存量库也走一次 onUpgrade 补上。
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

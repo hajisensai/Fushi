@@ -334,6 +334,8 @@ mixin _FushiDbInfra on _$FushiDatabase {
   /// `profile_id` 列还不存在、CREATE INDEX 当场失败。这里按列存在性守卫，onCreate
   /// 与 onUpgrade 末尾各调一次：后者让「v105 后新装、缺索引」的存量库在下一次
   /// 升 schema 时自动补齐（全幂等，已有索引时是 no-op）。
+  ///
+  /// v167 起再带单媒体统计读路径的四条等值索引（HBK-AUDIT-042，见函数体）。
   Future<void> _ensureStatIndexes() async {
     if (await _tableExists('study_segments') &&
         await _columnExists('study_segments', 'profile_id')) {
@@ -347,6 +349,43 @@ mixin _FushiDbInfra on _$FushiDatabase {
       await customStatement(
         'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
         'ON galgame_sessions (profile_id, date_key)',
+      );
+    }
+    // v167（HBK-AUDIT-042 单媒体统计读放大）：统计侧栏只看一本书 / 一个视频时，
+    // 下面几条读路径的等值条件之前都没有可用索引——段表只能按 (profile_id) 扫本
+    // Profile 全部段，计数表 / 视频 legacy 行 / 书表的标题回退整表扫。列序按真实
+    // WHERE 的等值前缀排：
+    // - 段：`profile_id = ? AND media_kind = ? AND media_key = ?`，legacy 无身份段
+    //   再加 `media_key = '' AND title = ?`（getStudySegments 拆成两支各自全等值命中；
+    //   getStudySegmentsForMedia / 删段 / 每媒体最后一段也走这条前缀）；
+    // - 计数：`book_key = ?` 与 `book_key = '' AND title = ?`（MULTI-INDEX OR 两支）；
+    // - 视频 legacy 行：身份支走 (book_uid, date_key) 唯一索引，无身份支按 `title = ?`；
+    // - 书表：`book_key = ?` 走主键，同名判定 `title IN (…) / title = ?` 走 title。
+    if (await _tableExists('study_segments') &&
+        await _columnExists('study_segments', 'profile_id') &&
+        await _columnExists('study_segments', 'media_kind')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_media '
+        'ON study_segments (profile_id, media_kind, media_key, title)',
+      );
+    }
+    if (await _tableExists('lookup_mining_counters') &&
+        await _columnExists('lookup_mining_counters', 'book_key')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_lookup_mining_counters_book_title '
+        'ON lookup_mining_counters (book_key, title)',
+      );
+    }
+    if (await _tableExists('video_watch_statistics')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_video_watch_statistics_title '
+        'ON video_watch_statistics (title)',
+      );
+    }
+    if (await _tableExists('epub_books')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_epub_books_title '
+        'ON epub_books (title)',
       );
     }
   }
