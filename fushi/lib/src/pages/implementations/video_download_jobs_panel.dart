@@ -914,7 +914,7 @@ class _VideoDownloadJobList extends StatefulWidget {
     required this.metricsLoader,
     required this.selectedSizeLoader,
     required this.itemBuilder,
-    required this.unified,
+    required this.actionsFor,
     required this.snapshotRefresh,
     required this.unified,
     required this.additionalTasks,
