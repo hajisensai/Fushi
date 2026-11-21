@@ -330,6 +330,22 @@ void main() {
       expect(g.onScaleChanged(3.0), isNull);
     });
 
+    test('主文档换代（整页跳转）reset：全屏随旧页结束，不把旧页缩放套到新页', () {
+      final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard()
+        ..onScaleChanged(2.0)
+        ..onEnterFullscreen()
+        ..onScaleChanged(1.0)
+        ..reset();
+      expect(g.onExitFullscreen(), isNull);
+      expect(g.restoring, isFalse);
+      expect(g.onScaleChanged(1.0), isNull);
+      // 新页面自己的全屏从新页面的缩放起算。
+      g
+        ..onEnterFullscreen()
+        ..onScaleChanged(0.5);
+      expect(g.onExitFullscreen(), closeTo(2.0, 1e-9));
+    });
+
     test('没进过全屏 / 不知道全屏前缩放 → 什么都不做', () {
       final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard();
       expect(g.onExitFullscreen(), isNull);
