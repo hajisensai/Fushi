@@ -169,6 +169,37 @@ void main() {
     );
   });
 
+  test('逐格读跨页落点是装载时的导航输入：参与相等判定', () {
+    // 换窗重建时注入的落点（'first' / 'last'）装载后即被 JS 消费，判定时必须
+    // 用装载那一刻的值重建，不能拿 Dart 侧已清空的当前值。
+    const MangaWindowNavigation base = MangaWindowNavigation(
+      documentGeneration: 1,
+      currentSpread: 0,
+      restoreFraction: 0,
+      zoomPercent: 100,
+    );
+    const MangaWindowNavigation resumed = MangaWindowNavigation(
+      documentGeneration: 1,
+      currentSpread: 0,
+      restoreFraction: 0,
+      zoomPercent: 100,
+      bubbleFocusResume: 'first',
+    );
+    expect(base.bubbleFocusResume, '');
+    expect(resumed == base, isFalse);
+    expect(
+      resumed ==
+          const MangaWindowNavigation(
+            documentGeneration: 1,
+            currentSpread: 0,
+            restoreFraction: 0,
+            zoomPercent: 100,
+            bubbleFocusResume: 'first',
+          ),
+      isTrue,
+    );
+  });
+
   test('没有确知文档（装载中 / WebView 重建 / 销毁）时一律判为需重载', () {
     snapshot.invalidate();
     expect(snapshot.hasDocument, isFalse);
