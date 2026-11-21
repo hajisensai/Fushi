@@ -113,7 +113,7 @@ class HostRemoteMiningTargets {
   }
 
   /// [rethrowBlocked]：库在换代途中时原样抛出代际异常（这次落卡要落复习，必须把「去升级」带回对端，不能当成
-  /// 「复习不可用」悄悄退回 Anki，BUG-5069）；否则（列「保存到」、落 Anki 用不上复习）与复习不可用同样为 null。
+  /// 「复习不可用」悄悄退回 Anki，BUG-5085）；否则（列「保存到」、落 Anki 用不上复习）与复习不可用同样为 null。
   Future<HostReviewMiningCatalog?> _catalog({
     bool rethrowBlocked = false,
   }) async {
@@ -209,7 +209,7 @@ class HostRemoteMiningTargets {
     try {
       landing = await _landingFor(target);
     } on Object catch (e, st) {
-      // 复习库在换代途中（BUG-5069）：回带分类码的失败（`errorCode` 上 wire，对端据此提示「那台设备上的复习要先
+      // 复习库在换代途中（BUG-5085）：回带分类码的失败（`errorCode` 上 wire，对端据此提示「那台设备上的复习要先
       // 升级」），与远程复习的 `migrating` / `migration_failed` 同一口径（srs_app_runtime.dart readRemoteStore）。
       if (!isSrsGenerationBlocked(e)) rethrow;
       return RemoteMineLanding(_toResult(srsGenerationMineFailure(e, st)));

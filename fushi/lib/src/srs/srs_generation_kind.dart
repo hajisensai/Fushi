@@ -3,7 +3,7 @@
 ///
 /// 代际状态页（`srs_generation_view.dart`）按 [srsGenerationKindOf] 出内容；制卡链路（`srs_mining.dart`、互联主机
 /// 替对端制卡）按同一个分类给失败码（[srsGenerationMineErrorCode]），制卡失败提示据此说「去复习页完成升级」，而不是
-/// 笼统的「复习不可用」（BUG-5069）。纯逻辑，不依赖 UI。
+/// 笼统的「复习不可用」（BUG-5085）。纯逻辑，不依赖 UI。
 library;
 
 import 'package:fushi_anki/fushi_anki.dart'
