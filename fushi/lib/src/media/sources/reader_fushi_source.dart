@@ -538,41 +538,6 @@ class ReaderFushiSource extends ReaderMediaSource {
   MediaItem overrideTitleMediaItemForBookKey(String bookKey) =>
       overrideTitleMediaItemForIdentifier(mediaIdentifierFor(bookKey));
 
-  /// BUG-220: EPUB books carry an editable author column, so expose author
-  /// editing in the media edit dialog.
-  @override
-  bool get supportsAuthorEdit => true;
-
-  /// BUG-220: persist the edited author directly to the `epubBooks.author`
-  /// column (NOT the primary key, so no re-key is needed — unlike the title,
-  /// which is overridden via a preference). A blank author clears the column.
-  ///
-  /// BUG-1018 (A3): standalone SRT books (identity `hoshi://srtbook/<uid>`)
-  /// write through to the `srt_books.author` column instead of silently
-  /// no-opping like the old empty-bookKey identifier did.
-  @override
-  Future<void> setAuthorFromMediaItem({
-    required MediaItem item,
-    required String? author,
-  }) async {
-    final FushiDatabase? db = sharedDatabase;
-    if (db == null) return;
-    final String? bookKey = parseBookKey(item.mediaIdentifier);
-    if (bookKey != null) {
-      await db.updateEpubBookAuthor(bookKey, author);
-      return;
-    }
-    final String? srtUid = parseSrtBookUid(item.mediaIdentifier);
-    if (srtUid == null) return;
-    final SrtBookRepository repo = SrtBookRepository(db);
-    final SrtBook? book = await repo.findByUid(srtUid);
-    if (book == null) return;
-    // Mirror updateEpubBookAuthor's blank-clears semantics.
-    final String trimmed = (author ?? '').trim();
-    book.author = trimmed.isEmpty ? null : trimmed;
-    await repo.save(book);
-  }
-
   @override
   Future<void> prepareResources() async {}
 
