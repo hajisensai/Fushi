@@ -26,7 +26,16 @@ bool _manualCheckInFlight = false;
 /// `autoInstall: false`（发现新版只弹确认对话框，不沿用自动安装偏好静默装）。
 /// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
 /// UpdateChecker 既有对话框 → 应用内下载安装。
-Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
+///
+/// [channel] 为 null 时按 [appUpdateChannelOf]（设置 / 安装绑定）检查；调用方自己
+/// 代表某条时间线时显式传入（BUG-4987：调试版流水线面板的「更新」按钮恒按 debug
+/// 时间线查——通道设成 stable 却跑调试包的 TestFlight / 调试 APK 用户，面板说「有新
+/// 调试版」，按钮就不能拿 stable manifest 去比、回一句「已是最新」）。
+Future<void> checkAppUpdateNow(
+  BuildContext context,
+  AppModel appModel, {
+  UpdateChannel? channel,
+}) async {
   if (_manualCheckInFlight) {
     // 更新中心条目 / 系统通知也从这里进来：在飞时静默早退等于「点了没反应」。
     FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
@@ -43,7 +52,8 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
     appModel.packageInfo.version,
   );
   final String currentBuildNumber = appModel.packageInfo.buildNumber;
-  final UpdateChannel channel = appUpdateChannelOf(appModel);
+  final UpdateChannel effectiveChannel =
+      channel ?? appUpdateChannelOf(appModel);
   // BUG-846「谁后用谁」：缓存乐观比较用本机 release sequence（无后缀 `X.Y.Z` 正式版包 /
   // beta/debug 包都能取到），与网络路径 scheduleCheck 同源。远端 seq 从缓存的 latestTag 串
   // 自取（beta/debug 带尾号；正式版无 → 保守走基版本比较，网络刷新随后收口）。
@@ -53,13 +63,13 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
   );
   final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
     appModel.updateCheckCache,
-    channel,
+    effectiveChannel,
   );
   if (cached != null) {
     final bool newer = updateTagIsNewerThanCurrent(
       cached.latestTag,
       currentVersion,
-      channel,
+      effectiveChannel,
       localSeq: currentReleaseSeq,
     );
     FushiToast.show(
@@ -78,8 +88,8 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
       currentBuildNumber: currentBuildNumber,
       neverRemind: false,
       autoInstall: false,
-      betaChannel: appModel.updateBetaChannel,
-      debugChannel: appModel.updateDebugChannel,
+      betaChannel: effectiveChannel == UpdateChannel.beta,
+      debugChannel: effectiveChannel == UpdateChannel.debug,
       customProxy: appModel.updateCustomProxy,
       // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
       cacheWriter: appModel.setUpdateCheckCache,

@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_search.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover;
 
+import '../helpers/cover_block_title_finder.dart';
 import '../helpers/test_platform_services.dart';
 
 MusicTracksCompanion _track(
@@ -146,7 +147,7 @@ void main() {
     )) {
       expect(find.text(musicLibrarySectionLabel(s)), findsWidgets);
     }
-    expect(find.text('Night Album'), findsOneWidget);
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
     expect(find.textContaining('FLAC 24/96'), findsOneWidget);
 
     await tester.tap(find.text(t.music_section_songs));
@@ -315,7 +316,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(field, findsNothing);
       expect(open, findsOneWidget);
-      expect(find.text('Night Album'), findsOneWidget);
+      expect(findCoverBlockTitle('Night Album'), findsOneWidget);
       expect(find.byType(FushiSearchBar), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -617,7 +618,7 @@ void main() {
     expect(snap.searchable, isFalse);
     expect(snap.sorts, isEmpty);
 
-    Focus.of(tester.element(find.text('Night Album'))).requestFocus();
+    Focus.of(tester.element(findCoverBlockTitle('Night Album'))).requestFocus();
     await tester.pump();
     snap = CompanionLibraryMainSnapshot.fromJson(
       companionContexts.currentSnapshot!,

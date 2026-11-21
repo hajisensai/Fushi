@@ -163,7 +163,8 @@ Future<void> openSrsWordAudioBackfill(
   if (store == null || media == null || !context.mounted) return;
   final SrsMiner miner = SrsMiner(store: store, media: media);
   final SrsWordAudioBackfillFields fields =
-      SrsWordAudioBackfillFields.forProfile(store.profileUid);
+      await SrsWordAudioBackfillFields.ofStore(store);
+  if (!context.mounted) return;
   final SrsWordAudioBackfillController controller =
       SrsWordAudioBackfillController(
         scan: () => loadSrsWordAudioBackfillItems(store, deckId),

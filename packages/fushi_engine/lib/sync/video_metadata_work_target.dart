@@ -155,7 +155,7 @@ Future<RemoteVideoMetadataApplyResult> applyRemoteVideoMetadata(
       final VideoScrapeOperationLease? lease =
           VideoScrapeOperationGate.tryEnterOperation();
       if (lease == null) {
-        onError?.call(StateError('视频刮削资料正在清理'), StackTrace.current);
+        onError?.call(VideoScrapeMaintenanceActiveError(), StackTrace.current);
         break;
       }
       try {

@@ -474,6 +474,41 @@ void main() {
     );
   });
 
+  // BUG-4921：只导入了后半季（第 151 集起）时，续播标签的 N 是文件名里的真实
+  // 集号（与详情页集卡序号同判据），不是续播成员的顺位号。
+  testWidgets('BUG-4921 续播标签写真实集号，不写顺位号', (WidgetTester tester) async {
+    await seedEpisode(
+      'video/[Grp] Show - 151',
+      'Show - 151',
+      completedAt: DateTime(2026, 1, 2),
+      lastPositionMs: 1000,
+      lastPlayedAt: DateTime(2026, 2, 2).millisecondsSinceEpoch,
+    );
+    await seedEpisode('video/[Grp] Show - 152', 'Show - 152');
+    final int cid = await seedCollection(<String>[
+      'video/[Grp] Show - 151',
+      'video/[Grp] Show - 152',
+    ]);
+
+    await pumpPage(tester);
+    expect(
+      find.descendant(
+        of: cardFinder(cid),
+        matching: find.textContaining(t.collection_continue_progress(n: 152)),
+      ),
+      findsOneWidget,
+      reason: '151 看完 → 续播 152，标签写真实集号 152',
+    );
+    expect(
+      find.descendant(
+        of: cardFinder(cid),
+        matching: find.textContaining(t.collection_continue_progress(n: 2)),
+      ),
+      findsNothing,
+      reason: '顺位号 2 不是集号',
+    );
+  });
+
   testWidgets('点击合集卡 → 打开合集详情页（原「查看全部」行为）', (WidgetTester tester) async {
     await seedEpisode('video/ep1', '第1集');
     await seedEpisode('video/ep2', '第2集');

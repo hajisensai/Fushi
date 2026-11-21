@@ -32,6 +32,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { readPayload } = require('./reader_harness_support.js');
 
 // TODO-589 batch8: reader setup script (_buildReaderSetupScript, which owns
 // the full handler slice below) was extracted verbatim to
@@ -238,18 +239,19 @@ function touchEvt(x, y) {
   return { touches: [t], changedTouches: [t], target: null, preventDefault() {} };
 }
 
-// 阈值由 Dart 侧经 argv 传入，取自 ReaderSettings.swipePageTurnDistThresholds(1.0)
+// 阈值由 Dart 侧经 stdin payload 传入，取自 ReaderSettings.swipePageTurnDistThresholds(1.0)
 // ——**不在这里另抄一份**。这个 harness 以前硬编码 44/22，于是调整生产阈值时它既不会
 // 转红也不再验真正的判据（缺 swipeFastVelocity 时 `velocity >= undefined` 恒 false，
 // 快速门那条用例是靠距离门碰巧过的）。
-const SWIPE_DIST = Number(process.argv[2]);
-const SWIPE_FAST_DIST = Number(process.argv[3]);
-const SWIPE_FAST_VELOCITY = Number(process.argv[4]);
+const thresholds = readPayload();
+const SWIPE_DIST = Number(thresholds.dist);
+const SWIPE_FAST_DIST = Number(thresholds.fastDist);
+const SWIPE_FAST_VELOCITY = Number(thresholds.fastVelocity);
 const TAP_SLOP = 10;
 assert.ok(
   Number.isFinite(SWIPE_DIST) && Number.isFinite(SWIPE_FAST_DIST)
     && Number.isFinite(SWIPE_FAST_VELOCITY),
-  'thresholds must be passed in as argv: dist fastDist fastVelocity',
+  'thresholds must be passed in the payload: dist fastDist fastVelocity',
 );
 
 // 「短滑」位移：刻意落在 tap slop 与纯距离门**之间**，且不小于快速短滑距离门。

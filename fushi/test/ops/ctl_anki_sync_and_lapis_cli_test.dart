@@ -142,6 +142,17 @@ void main() {
       );
     }
 
+    /// 在真实 zone 里建会话：它的串行队列尾 `_tail` 是构造时建的已完成 future，`close()` 要 await 它；
+    /// 在 testWidgets 的 FakeAsync zone 里建的话，await 已完成 future 的回调排进 FakeAsync 的微任务队列，
+    /// `tester.runAsync(session.close)` 期间没人冲那个队列，close 永远不返回（10 分钟超时）。
+    Future<AnkiSyncSession> realZoneSession(WidgetTester tester) async =>
+        (await tester.runAsync(
+          () async => AnkiSyncSession(
+            root: () async => root,
+            startClient: () async => throw StateError('测试里不该启动同步助手'),
+          ),
+        ))!;
+
     setUp(() => root = Directory.systemTemp.createTempSync('anki_sync_cli_'));
     tearDown(() => root.deleteSync(recursive: true));
 
@@ -177,10 +188,7 @@ void main() {
     testWidgets('登录 AnkiWeb 必须显式确认；空用户名 / 密码拒绝；未登录状态', (
       WidgetTester tester,
     ) async {
-      final AnkiSyncSession session = AnkiSyncSession(
-        root: () async => root,
-        startClient: () async => throw StateError('测试里不该启动同步助手'),
-      );
+      final AnkiSyncSession session = await realZoneSession(tester);
       await capture(tester, session);
       final SettingsCliRun signIn = _syncAction(
         'card_creation.anki.sync_client.sign_in',
@@ -226,10 +234,7 @@ void main() {
     testWidgets('启用与设置节同一道闸：开关直接写 true 被拒，必须走带确认的 enable', (
       WidgetTester tester,
     ) async {
-      final AnkiSyncSession session = AnkiSyncSession(
-        root: () async => root,
-        startClient: () async => throw StateError('测试里不该启动同步助手'),
-      );
+      final AnkiSyncSession session = await realZoneSession(tester);
       await capture(tester, session);
       final SettingsSwitchItem toggle = buildCtlBodyPages()
           .expand((CtlBodyPage p) => p.items)

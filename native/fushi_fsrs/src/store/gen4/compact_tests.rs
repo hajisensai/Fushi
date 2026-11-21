@@ -3,7 +3,7 @@
 use super::*;
 use crate::gen4::segment::open_native;
 use crate::store::gen4::fork::tests::{T0, body, op, setup, write_own};
-use crate::sync2::segment::CHAIN_ZERO;
+use crate::sync2::segment::{CHAIN_ZERO, SEGMENT_MAX_RAW_BYTES};
 use crate::sync2::vv::{OpId, Vv};
 
 /// 首尾相接的段清单：边界 [bounds]（各段末 seq），体积都是 [bytes]，链值取自 [chains]（`chains[i]` = seq i+1 处）。
@@ -235,12 +235,47 @@ fn a_small_target_cuts_where_the_chain_is_known_and_the_pieces_link_up() {
     assert_eq!(next, (41, chains[39]));
     // 目标体积太小、切出的段不比原来少：这一组不合并。
     let c = cuts(&[8, 16, 24, 32, 40], &[100; 5], &chains);
-    assert!(compact_to(&t, col, &c, None, 300).unwrap().is_empty());
+    assert!(
+        compact_to(&t, col, &c, None, 300, SEGMENT_MAX_RAW_BYTES)
+            .unwrap()
+            .is_empty()
+    );
     // 目标够大：合成更少的几段。
-    let out = compact_to(&t, col, &c, None, 1500).unwrap();
+    let out = compact_to(&t, col, &c, None, 1500, SEGMENT_MAX_RAW_BYTES).unwrap();
     assert_eq!(out.len(), 1);
     assert!(out[0].segments.len() < 4);
     assert_eq!(out[0].segments.last().unwrap().0.last_chain, chains[31]);
+}
+
+/// 压缩后放得下、未压缩估计体积超过上限的整组不打成一段（K2 根治复核：读侧按 MAX_BODY_RAW 拒解压后过大的段，
+/// 写侧不能只看压缩后体积），按上限切成几段，每段都在上限内、首尾相接。
+#[test]
+fn a_group_that_compresses_small_but_is_large_uncompressed_is_cut() {
+    let (conn, col, chains) = purged_log();
+    let t = Truth::new(&conn);
+    let c = cuts(&[8, 16, 24, 32, 40], &[100; 5], &chains);
+    // 压缩后的目标很宽松：不看未压缩体积时整组是一段。
+    let loose = compact_to(&t, col, &c, None, 1 << 20, SEGMENT_MAX_RAW_BYTES).unwrap();
+    assert_eq!(loose.len(), 1);
+    assert_eq!(loose[0].segments.len(), 1);
+    let max_raw = 1500;
+    let out = compact_to(&t, col, &c, None, 1 << 20, max_raw).unwrap();
+    assert_eq!(out.len(), 1);
+    assert!(out[0].segments.len() > 1);
+    let me = t.self_identity(col).unwrap().unwrap();
+    let mut next = (1u64, CHAIN_ZERO);
+    for (h, bytes) in &out[0].segments {
+        assert_eq!((h.first, h.prev_chain), next);
+        let (_, items) = open_native(bytes, &me.public(), None).unwrap();
+        let raw: u64 = items.iter().map(item_bytes).sum();
+        let last = items.last().map_or(0, item_bytes);
+        assert!(
+            raw - last < max_raw,
+            "a piece closes once it reaches the limit"
+        );
+        next = (h.last + 1, h.last_chain);
+    }
+    assert_eq!(next.1, chains[31]);
 }
 
 #[test]

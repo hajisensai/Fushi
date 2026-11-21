@@ -128,6 +128,65 @@ WinSW（不写 `<onfailure>` 就不重启，必须显式配；它不分退出码
 
 直接在终端 / 计划任务里跑的 `serve` 退出后没人拉起，远程更新装完需要手动再起一次。
 
+### Docker
+
+[`docker/`](docker/) 里是镜像与 Compose 配置（Debian trixie-slim，带 `ffmpeg` / `ffprobe` / `7z`）。
+逐步上手（首次启动、admin_token、配对、加库、更新、NAS、排错）见英文的 [docker/README.md](docker/README.md)。
+
+```bash
+cd packages/fushi_server/docker
+cp .env.example .env             # PUID / PGID、端口、配置与媒体目录、首次语言、可选 API key
+docker compose up -d --build     # 从本仓源码构建（首次 30 分钟以上，之后走 BuildKit 缓存）
+docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PIN 也打在这里
+```
+
+- **构建方式**：默认 `docker-compose.yml` 用 `Dockerfile.source` 从本仓源码多阶段构建：`toolchain` 服务
+  （`scale: 0`，从不运行）构建 `tool/linux/Dockerfile` 工具链镜像，作为命名上下文给构建阶段；构建上下文是
+  仓库根，`Dockerfile.source.dockerignore` 挡掉构建产物与缓存。不用 Compose 时：
+  `bash packages/fushi_server/docker/build_source_image.sh`（只送 `git ls-files` 列出的源码）。
+  构建阶段跑的是 `tool/build_linux_bundle.sh all`，与 `release-server.yml` 出 Linux 发布包同一份
+  脚本，所以源码镜像与发布包的命令、布局一致，改构建只改这一处。
+  `docker-compose.bundle.yml` 改用 `Dockerfile` 打包已发布的 release（约 1 分钟，但只与最新 release 一样新）：
+  默认取 `FUSHI_SERVER_REPO` 最新一个带 linux-x64 包的 release，`FUSHI_SERVER_TAG` 钉版本，核对 GitHub
+  给的 SHA-256；`docker/dist/` 里放 `fushi_server-*-linux-x64.tar.gz` 则用本地包（`build-multiplatform.yml`
+  的 `linux-server` 工件可能要比 trixie 新的 glibc，`check_bundle_libs.sh` 在构建时就报错）。
+- **预构建镜像**：`server-docker-publish.yml` 只能手动触发：打包一个 fushi-server release（默认）或源码，
+  冒烟后**勾选 push 才**推到 `ghcr.io/<owner>/fushi-server`；在 hajisensai 以外的仓库推送必须显式填
+  `registry_owner`。发布后在 `.env` 设 `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest`，
+  `docker compose up -d`（不加 `--build`）。发布节奏：每次 fushi-server 发版后手动跑一次
+  （release 模式、留空 `release_tag` 即取最新带 linux-x64 包的版本，勾 `latest`）。
+- **架构**：只有 linux/amd64。发布包和全部原生库（libtorrent、Rust 内核、fushidicts、onnxruntime）
+  目前只出 x64，arm64（树莓派、部分 ARM NAS）暂不提供。
+- **语言**：`.env` 的 `FUSHI_LANGUAGE`（`en` / `zh`）只在首次启动时写进配置（`init --language`；打包的
+  release 早于语言设置时忽略）。之后以 WebUI「设置」为准：入口脚本与容器里的 `fushi_server` 包装都不把
+  这个变量交给服务端进程；临时用另一种语言跑一条命令用 `FUSHI_CLI_LANGUAGE`。
+- **数据**：全部在 `/config` 卷：`fushi_server.yaml` 与 `data/`（数据库、配对与 TLS 身份、封面、日志）。
+  首次启动由 `fushi_server init` 生成配置（`data_dir: /config/data`、随机 admin_token）。备份这一个目录即可。
+- **媒体库**：媒体目录挂到 `/media`（`FUSHI_MEDIA_DIR`），在 WebUI「库」里或 `libraries[]` 里按容器内
+  路径添加（如 `/media/anime`，kind `video`）。
+- **权限**：镜像不以 root 运行（默认 1000:1000，compose 用 `.env` 的 `PUID:PGID` 作 `user:`），也不改任何
+  文件属主：配置目录要对该用户可写，媒体目录可读（上传落盘的库根要可写）。首次启动前先以自己的用户
+  `mkdir -p config media`，否则 Docker 会以 root 建目录；目录不可写时日志会给出 `chown` 命令。
+  `docker compose exec fushi-server fushi_server ctl …` 同样以 `PUID:PGID` 运行。
+- **端口**：38765（互联，TLS）、38780（WebUI / admin API，`https://`）、6881 tcp+udp（内置 torrent）。
+  宿主侧端口可在 `.env` 改（`FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` / `FUSHI_TORRENT_PORT`），同机已有桌面 Fushi
+  占着 38765 时用得上；配对时输入改后的端口。健康检查打无鉴权的 `GET /api/ping`（互联端口）。
+- **配对**：容器不做局域网 mDNS 广播（镜像里没有 avahi，默认 bridge 网络也传不出组播），Fushi 的
+  局域网列表里看不到它：在 Fushi 里手动输入 `<宿主机地址>:38765`。`network_mode: host`（仅 Linux 宿主）
+  省掉端口映射，但同样不广播。
+- **配对链接 / 二维码**：bridge 网络里服务端只知道容器地址（`172.x.x.x`），手机连不上。先在 WebUI
+  「设置」→「远程访问」→ 公网地址里填手机能连的地址（如 `https://192.168.1.20:38765`，宿主机地址 +
+  `FUSHI_SYNC_PORT`），保存即生效，再到「配对」页生成链接。
+- **密钥**：`FUSHI_*` 环境变量（OpenSubtitles / SubDL / Jimaku / AniDB / Bangumi / Plex 等）写进 `.env`
+  （已 git-ignore），优先于服务端里存的值；不要写进镜像或 Dockerfile。
+- **更新**：`git pull` 后 `docker compose up -d --build`（或拉新的预构建镜像）。容器里的应用内远程更新被拒，
+  启动时也不做换包收尾（见「远程更新」）。新版升级过数据库后不能换回旧镜像（旧版拒开更高 schema 的库），
+  换版前备份 `/config`。
+- **NAS**：Unraid 模板 `docker/unraid/fushi-server.xml`（需要预构建镜像）；Synology / TrueNAS SCALE 的做法见
+  `docker/README.md`。
+- CI：`server-docker.yml` 在改到 `docker/` 的 PR 上构建发布包镜像、校验两个 Compose 文件并跑
+  `smoke_test.sh`（首启 init、属主、健康检查、admin API、工具），**不推送**任何镜像仓库。
+
 ## 配置文件 `fushi_server.yaml`
 
 ```yaml
@@ -190,6 +249,7 @@ srs:                          # Fushi 复习（见下文「Fushi 复习」）；
   rollover_hour: 4            # 换日时刻（配置文件自带设置时以它为准）
   mining_target: "auto"       # 已配对设备转发的卡落到哪：auto（没配好 Anki 时进复习）| review | anki
   mining_decks: {}            # uid → 制卡牌组全名；缺省 = 那份的默认牌组
+  profile_names: {}           # uid → 服务端发布的配置文件名；缺省 = 用设备报的名字
 ankiconnect:                  # AnkiConnect 兼容接口（Yomitan 等往复习库加卡），默认关
   enabled: false
   bind: "127.0.0.1"           # 非本机地址必须设 api_key 或 profile_keys，否则拒绝启动
@@ -231,6 +291,7 @@ fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，�
 fushi_server status                    打印库/配对概况
 fushi_server pair ls | revoke <peerId> 已配对设备（ls 里标 `[我的设备]`；revoke 同时清掉标记）
 fushi_server admin reset-token         重生成 admin_token
+fushi_server admin reset-tls           重签 TLS 证书（须先停服；旧版证书 Chrome 报 ERR_CERT_INVALID 时用，已配对设备需重新配对）
 fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
 fushi_server backup create -o <file> [--no-documents]   整机备份（服务停着时；在跑时用 ctl backup create）
@@ -387,7 +448,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
-| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`profileNames`（整份替换，`""` = 不起名；最长 100 字符、不收控制字符）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET srs/retained` / `POST srs/retained/delete {confirm: true}` | 旧版本保留副本（换代迁移时原位封存的协议 3 `srs.db`）：`{copy: sealed|tombstone|absent|other, bytes, dueAtMs, due, error}` / 立即删除（不可撤销；先核对新代库，核对不过 409 `retained_copy_kept`、什么都不动；不带 `confirm: true` 400）。WebUI 复习页「删除保留副本」与 `ctl srs retained [status] | delete --yes` 走的就是它 |
 | `GET|PUT upload?library=<id>&path=<相对路径>` / `GET upload/folders?library=<id>` | 分块上传 / 库根下已有子目录（下节） |
 | `GET|PUT dictionaries` / `PUT dictionaries/order {names}` / `PATCH dictionaries/<名> {hidden}` / `DELETE dictionaries/<名>` / `GET dictionaries/lookup?q=` | 词典（WebUI「词典」页）：引擎状态（`engine.available` / `reason` / `transformsLoaded`）+ 清单 / 正文为 Yomitan zip 的导入（同名视为更新；引擎没加载回 409，导入失败 422）/ 整份新顺序（必须恰好列全）/ 日语隐藏标记 / 删除 / 试查。改动与互联推送共用库锁，即时进引擎 |
 
@@ -533,6 +595,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
   （`<onfailure action="restart"/>`，见上文「Windows 服务」）拉起新版；
   新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
+- **容器里不可用**：镜像设 `FUSHI_CONTAINER=1`，端点一律回 `platform_unsupported`（`remote_update: true`
+  也一样）。程序文件属于镜像层，就地换包会在下次重建容器时丢掉；更新靠拉新镜像（见「Docker」）。
 
 ### 跟随已配对设备登录（`leaderboard_link`）
 

@@ -621,6 +621,13 @@ class LnReaderManager extends ChangeNotifier {
         (LnReaderInstalledPlugin p) => p.copyWith(pinned: pinned),
       );
 
+  /// 源级开关「合并段内换行」（拍板台 zCkIxtnwcV）。
+  Future<void> setMergeLineBreaks(LnReaderInstalledPlugin plugin, bool merge) =>
+      _update(
+        plugin.id,
+        (LnReaderInstalledPlugin p) => p.copyWith(mergeLineBreaks: merge),
+      );
+
   /// 与相邻源交换位置（[delta] = -1 上移 / +1 下移）。
   Future<void> move(LnReaderInstalledPlugin plugin, int delta) async {
     await ensureReady();

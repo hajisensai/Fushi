@@ -27,6 +27,10 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiCard;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -81,7 +85,11 @@ Future<AppModel> _buildAppModel() async {
     ..wireDatabaseForTesting(db);
 }
 
-Widget _wideSettings(AppModel appModel, ThemeNotifier themeNotifier) {
+Widget _wideSettings(
+  AppModel appModel,
+  ThemeNotifier themeNotifier, {
+  bool backdrop = false,
+}) {
   return ProviderScope(
     overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
     child: TranslationProvider(
@@ -94,7 +102,11 @@ Widget _wideSettings(AppModel appModel, ThemeNotifier themeNotifier) {
             FushiDesignSystemTheme(themeNotifier.designSystemTheme),
           ],
         ),
-        home: const Scaffold(body: SettingsHomePage(embedded: true)),
+        home: Scaffold(
+          body: backdrop
+              ? const FushiPageBackdrop(child: SettingsHomePage(embedded: true))
+              : const SettingsHomePage(embedded: true),
+        ),
       ),
     ),
   );
@@ -176,4 +188,61 @@ void main() {
       expect(insets.left, tokens.spacing.page);
     },
   );
+
+  // PR #3840：页底是用户的自定义图片时，宽屏左栏（搜索框 + 分类列表）垫一张与
+  // 右侧分组卡同款的卡，侧栏按卡的左外边距加宽一个 gap，卡里的搜索框与分类列表
+  // 仍是原宽；纯色 / 形状页底维持直接坐在页面底上（上一条用例）。
+  testWidgets('custom image backdrop: the wide nav pane sits on a card', (
+    WidgetTester tester,
+  ) async {
+    final PageBackdropSettings saved = pageBackdropSettings.value;
+    addTearDown(() => pageBackdropSettings.value = saved);
+    pageBackdropSettings.value = const PageBackdropSettings(
+      preset: PageBackdropPreset.custom,
+      // 不存在的文件：图片层走 errorBuilder 画空，这里只验 imageOf 分支。
+      landscapeImagePath: 'missing-wallpaper.png',
+    );
+    final AppModel appModel = await _buildAppModel();
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    await tester.pumpWidget(
+      _wideSettings(appModel, appModel.themeNotifier, backdrop: true),
+    );
+    await tester.pump();
+
+    final Finder panel = find.byKey(
+      const ValueKey<String>('settings_wide_nav_panel'),
+    );
+    expect(panel, findsOneWidget);
+    final Finder card = find.descendant(
+      of: panel,
+      matching: find.byType(FushiCard),
+    );
+    expect(card, findsOneWidget);
+    expect(
+      find.descendant(of: card, matching: find.byType(Md3SettingsNavList)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.byType(TextField)),
+      findsOneWidget,
+    );
+    final BuildContext context = tester.element(
+      find.byType(SettingsHomePage).first,
+    );
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Rect cardRect = tester.getRect(card);
+    expect(cardRect.left, greaterThanOrEqualTo(tokens.spacing.gap));
+    expect(
+      cardRect.right,
+      lessThanOrEqualTo(
+        MaterialSettingsRenderer.navPaneWidth + tokens.spacing.gap,
+      ),
+    );
+  });
 }

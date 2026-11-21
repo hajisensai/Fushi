@@ -406,9 +406,16 @@ class AppVideoSubtitleJob extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 管线已过专名表阶段（S0 生成 / 保存完）：之后它不再写专名表。
+  bool _glossarySettled = false;
+
   void _onProgress(VideoSubtitleProgress p) {
     if (!isRunning) return;
     progress = p;
+    if (p.stage.index > VideoSubtitleStage.glossary.index ||
+        (p.stage == VideoSubtitleStage.glossary && p.fraction >= 1)) {
+      _glossarySettled = true;
+    }
     final int? i = p.episodeIndex;
     if (i != null && i >= 0 && i < episodes.length) episodes[i].stage = p.stage;
     mirror.update(
@@ -622,6 +629,11 @@ class AppVideoSubtitleService {
   final AppVideoSubtitleCompleterFactory _completerFactory;
   final Future<Directory> Function() _jobsRoot;
   final AppVideoSubtitleDurationProbe _probeDurationMs;
+
+  /// 费用预估用的时长缓存（按媒体路径；存进行中的探测，并发刷新共用一次）。面板每次
+  /// 切开关 / 换语言都会重估，没识别过的集原先每次都串行跑一遍 ffprobe（BUG-4993）。
+  /// 探测失败（null / 非正）不缓存，下次重探。
+  final Map<String, Future<int?>> _estimateDurations = <String, Future<int?>>{};
   final AppVideoSubtitleAudioTrackProbe _probeAudioTracks;
   final VideoRemoteJobRegistry _jobRegistry;
   final WebKnowledgeClient Function(List<WebKnowledgeSite> sites) _webKnowledge;
@@ -1065,17 +1077,60 @@ class AppVideoSubtitleService {
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   }) => glossaryStore.load(language.glossaryKey(work.workKey));
 
+  /// 正在跑、而且还会写 [work] 的 [language] 专名表的任务（开了校对、S0 还没完成）；
+  /// 没有为 null。
+  ///
+  /// BUG-5008：S0 在开跑时读进旧表、生成完整表写回。这期间用户在编辑页保存 / 重新
+  /// 生成的表会被 S0 的写回整个盖掉（新条目与 `userEdited` 标记都丢）。S0 完成之后
+  /// 管线只用内存里的表，不再写，编辑照常。
+  AppVideoSubtitleJob? glossaryWriterFor(
+    SubtitleWorkContext work, {
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) {
+    final AppVideoSubtitleJob? active = _active;
+    if (active == null ||
+        !active.isRunning ||
+        !active.options.proofread ||
+        active._glossarySettled ||
+        active.options.language != language ||
+        active.target.work.workKey != work.workKey) {
+      return null;
+    }
+    return active;
+  }
+
+  void _refuseWhileGlossaryWriter(
+    SubtitleWorkContext work,
+    VideoSubtitleLanguage language,
+  ) {
+    final AppVideoSubtitleJob? writer = glossaryWriterFor(
+      work,
+      language: language,
+    );
+    if (writer != null) {
+      throw AppVideoSubtitleStartRefused(
+        AppVideoSubtitleStartProblem.busy,
+        activeJob: writer,
+      );
+    }
+  }
+
   /// 保存用户编辑后的表。与 [previous] 不同（新增 / 改过）的条目标 `userEdited`，
   /// 重新生成时原样保留；`userEditedAt` 记本次时刻。
   ///
   /// 指纹：沿用原表的；原表不存在（手填 / 改的是校验没过的候选表）时取当前资料的
   /// 指纹——用户认可的表在资料变化前一直被复用，不会下一次运行就被 AI 重新生成盖掉。
+  ///
+  /// 同作品同语言的生成任务还没过 S0（[glossaryWriterFor]）时抛
+  /// [AppVideoSubtitleStartRefused]（[AppVideoSubtitleStartProblem.busy]），不写。
   Future<SubtitleGlossary> saveGlossary(
     SubtitleWorkContext work,
     List<SubtitleGlossaryEntry> entries, {
     SubtitleGlossary? previous,
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
   }) async {
+    // 生成任务的 S0 还会写这张表：现在存会被它盖掉（[glossaryWriterFor]）。
+    _refuseWhileGlossaryWriter(work, language);
     final Map<String, SubtitleGlossaryEntry> before =
         <String, SubtitleGlossaryEntry>{
           for (final SubtitleGlossaryEntry e
@@ -1118,7 +1173,8 @@ class AppVideoSubtitleService {
       listEquals(a.misrecognitions, b.misrecognitions);
 
   /// 只重新生成专名表（编辑页「重新生成」）：ASR 文本取已识别的字幕稿（没有就只凭
-  /// 资料）。用户编辑过的条目保留。没指派提供商抛 [AppVideoSubtitleStartRefused]。
+  /// 资料）。用户编辑过的条目保留。没指派提供商、或同作品同语言的生成任务还没过
+  /// S0（[glossaryWriterFor]）时抛 [AppVideoSubtitleStartRefused]。
   Future<SubtitleGlossary> regenerateGlossary(
     AppVideoSubtitleTarget target, {
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
@@ -1130,6 +1186,7 @@ class AppVideoSubtitleService {
         AppVideoSubtitleStartProblem.noProvider,
       );
     }
+    _refuseWhileGlossaryWriter(target.work, language);
     final ({AiTextCompleter completer, void Function() close}) ai =
         _completerFactory(provider);
     final List<WebKnowledgeSite> sites = _settings.webKnowledgeSites;
@@ -1167,10 +1224,9 @@ class AppVideoSubtitleService {
 
   /// 预估 S3 校对的 token（S0 / S4 量级远小于 S3，不计）。已完成（`final.json`）
   /// 与整季里已有字幕的集不计；识别过的集按字幕稿逐批重建提示词，没识别的按时长
-  /// 粗估（[knownDurationsMs] 优先，其余现探测）。
+  /// 粗估（时长按路径缓存，见 [_estimateDurationMs]）。
   Future<AppVideoSubtitleCostEstimate> estimateCost(
     AppVideoSubtitleTarget target, {
-    Map<String, int> knownDurationsMs = const <String, int>{},
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
     bool frames = false,
   }) async {
@@ -1203,8 +1259,7 @@ class AppVideoSubtitleService {
         lists.add(drafts);
         continue;
       }
-      final int? durationMs =
-          knownDurationsMs[e.videoPath] ?? await _probeDurationMs(e.videoPath);
+      final int? durationMs = await _estimateDurationMs(e.videoPath);
       if (durationMs == null || durationMs <= 0) {
         unknown++;
         continue;
@@ -1244,6 +1299,20 @@ class AppVideoSubtitleService {
         frames: frames && proofreadAcceptsImages,
       ),
     );
+  }
+
+  /// [videoPath] 的时长：命中缓存不再探测；探测失败不进缓存。
+  Future<int?> _estimateDurationMs(String videoPath) async {
+    final Future<int?> probe = _estimateDurations.putIfAbsent(
+      videoPath,
+      () => _probeDurationMs(videoPath),
+    );
+    final int? durationMs = await probe;
+    if ((durationMs == null || durationMs <= 0) &&
+        identical(_estimateDurations[videoPath], probe)) {
+      _estimateDurations.remove(videoPath);
+    }
+    return durationMs;
   }
 
   /// 一集的目标字幕路径（`<导出目录>/<媒体名>.<语言>.srt`，导出目录见
@@ -1518,6 +1587,9 @@ class AppVideoSubtitleService {
         keepRecordedAudio: job.consistencyOnly,
       );
       job.result = result;
+      // 登记逐集独立（BUG-5008）：一集写库抛错不能让后面已经导出的集都不登记。
+      // 全部登记完再按第一处错误把任务判失败（原因照旧给人看、进错误日志）。
+      Object? registerError;
       for (final VideoSubtitleEpisodeResult r in result.episodes) {
         for (final AppVideoSubtitleEpisodeProgress e in job.episodes) {
           if (e.episode.videoPath == r.videoPath) e.result = r;
@@ -1539,7 +1611,21 @@ class AppVideoSubtitleService {
             .where((AppVideoSubtitleEpisode e) => e.videoPath == r.videoPath)
             .firstOrNull;
         if (episode == null) continue;
-        job.registeredBookUids.addAll(await sink.register(episode, r));
+        try {
+          job.registeredBookUids.addAll(await sink.register(episode, r));
+        } catch (error, stack) {
+          ErrorLogService.instance.log(
+            'video.subtitlePipeline.register',
+            '${r.videoPath}: $error',
+            stack,
+          );
+          registerError ??= error;
+        }
+      }
+      if (registerError != null) {
+        job.errorMessage = '$registerError';
+        job._finish(AppVideoSubtitleJobStatus.failed);
+        return;
       }
       job._finish(AppVideoSubtitleJobStatus.succeeded);
     } on SubtitlePipelineCancelled {

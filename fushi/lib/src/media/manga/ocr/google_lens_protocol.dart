@@ -10,7 +10,9 @@ import 'dart:ui';
 
 import 'package:characters/characters.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FushiComputeImage;
 import 'package:fushi_engine/media/image_kernels.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:image/image.dart' as img;
 
 const int kGoogleLensMaximumImageDimension = 1500;
@@ -264,6 +266,37 @@ class GoogleLensProtocol {
       height: resized.height,
       originalWidth: oriented.width,
       originalHeight: oriented.height,
+    );
+  }
+
+  /// [prepareImage] 的内存像素版：不解码，原生内核直接面积平均缩到长边
+  /// [maximumDimension] 并编 JPEG（视频暂停 OCR 的播放器截帧；同步、几十毫秒，调用方
+  /// 仍放后台 isolate）。
+  static GoogleLensPreparedImage prepareRgba(
+    OcrRgbaImage image, {
+    int maximumDimension = kGoogleLensMaximumImageDimension,
+  }) {
+    final int longest = math.max(image.width, image.height);
+    int width = image.width;
+    int height = image.height;
+    if (longest > maximumDimension) {
+      final double scale = maximumDimension / longest;
+      width = math.max(1, (image.width * scale).round());
+      height = math.max(1, (image.height * scale).round());
+    }
+    return GoogleLensPreparedImage(
+      data: FushiComputeImage.instance.rgbaFitJpeg(
+        image.rgba,
+        width: image.width,
+        height: image.height,
+        dstWidth: width,
+        dstHeight: height,
+        quality: 92,
+      ),
+      width: width,
+      height: height,
+      originalWidth: image.width,
+      originalHeight: image.height,
     );
   }
 

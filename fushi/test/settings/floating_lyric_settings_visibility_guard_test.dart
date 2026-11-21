@@ -111,7 +111,7 @@ void main() {
     test('app_icon picker is visible on Android and Windows', () {
       final String block = itemBlock('appearance.app_icon');
       expect(
-        block.contains('Platform.isAndroid || Platform.isWindows'),
+        block.contains('hostPlatform.isAndroid || hostPlatform.isWindows'),
         isTrue,
         reason:
             'app_icon picker now supports Windows runtime icon switching '

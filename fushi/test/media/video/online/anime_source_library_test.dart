@@ -176,6 +176,49 @@ void main() {
     expect(await playlistOrder(), ids);
   });
 
+  // BUG-5016：用户删掉作品合集后，被动刷新（探针 addMissing）不复活它；用户
+  // 再点「加入媒体库」或下载一集，合集重建、集重新归组。
+  group('a deleted anime playlist', () {
+    Future<void> deletePlaylist() async {
+      await database.deleteMediaCollection((await playlist()).id);
+      expect(
+        await database.getMediaCollectionByNaturalKey(anime.title, 'playlist'),
+        isNull,
+      );
+    }
+
+    test('stays deleted on a passive refresh but is recreated by an explicit '
+        'add', () async {
+      final AnimeSourceVideoClient c = await client();
+      await library.addToLibrary(c);
+      await deletePlaylist();
+
+      expect(await library.addMissing(c), isEmpty);
+      expect(
+        await database.getMediaCollectionByNaturalKey(anime.title, 'playlist'),
+        isNull,
+      );
+
+      expect(await library.addToLibrary(c), 0);
+      expect(await playlistOrder(), <String>[
+        for (final RemoteVideoInfo info in c.remoteVideos) info.id,
+      ]);
+    });
+
+    test('is recreated when an episode finishes downloading', () async {
+      final AnimeSourceVideoClient c = await client();
+      await library.addToLibrary(c);
+      await deletePlaylist();
+      final RemoteVideoInfo first = c.remoteVideos.first;
+      final File file = File(p.join(root.path, 'ep1.mp4'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+
+      await library.registerDownloaded(c, first, file);
+
+      expect(await playlistOrder(), <String>[first.id]);
+    });
+  });
+
   test('refreshing with a new episode only adds the new one', () async {
     await library.addToLibrary(await client(list: episodes.sublist(0, 2)));
     final AnimeSourceVideoClient full = await client();

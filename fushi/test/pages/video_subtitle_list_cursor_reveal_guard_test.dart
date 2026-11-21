@@ -133,7 +133,21 @@ void main() {
         reason: '侧栏内容必须经光标唤回包裹器，否则光标在侧栏残留 none',
       );
       final int wrapIdx = body.indexOf('_withSubtitleListCursorReveal(');
-      final int panelIdx = body.indexOf('VideoSubtitleJumpPanel(');
+      // 拍板台 P9AS-fvjJh：面板构造抽成 _buildSubtitleJumpPanel（竖屏页签复用），
+      // 侧栏这里包的是这个 builder 的调用；builder 本身必须直接构造面板。
+      final int builderStart = src.indexOf('Widget _buildSubtitleJumpPanel(');
+      expect(builderStart, greaterThanOrEqualTo(0));
+      final int builderEnd = src.indexOf('\n  Widget ', builderStart + 1);
+      expect(
+        src
+            .substring(
+              builderStart,
+              builderEnd > builderStart ? builderEnd : src.length,
+            )
+            .contains('VideoSubtitleJumpPanel('),
+        isTrue,
+      );
+      final int panelIdx = body.indexOf('_buildSubtitleJumpPanel(');
       expect(
         panelIdx,
         greaterThan(wrapIdx),

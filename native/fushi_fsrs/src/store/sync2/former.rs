@@ -19,14 +19,20 @@
 //! 不记任何「待删」状态：每次都从当下的目录与 head 内容重新推导，清到一半崩溃、几台设备同时清都只是各自重新推导。
 //! 唯一持久的是「这个目录多久没变过」的计时（[Watch]，`srs_meta`）。
 
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
 
+#[cfg(test)]
 use super::transport::OBSOLETE_GRACE_MS;
+#[cfg(test)]
 use super::{Local, id_of, in_savepoint, sql};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::id::Id;
+#[cfg(test)]
 use crate::sync2::segment::{self, Head};
 
 /// 旧身份目录要保持不变多久才动它，也是没事可做 / 证明不了时隔多久再看一次。
@@ -34,8 +40,10 @@ use crate::sync2::segment::{self, Head};
 /// 删被盖过的 head 本身不需要等（依据是另一份 head 在，见文件头）；等是礼让与节流：还有安装在往里写的目录由它按
 /// 自己的保留规则清（留两代：读者拿着稍旧的目录列表也读得到），本机不抢；稳定之后每个旧身份每个位置一天只列一次
 /// 目录。与本机目录里旧小段的宽限期（[OBSOLETE_GRACE_MS]）取同一个量。
+#[cfg(test)]
 pub(crate) const FORMER_QUIET_MS: i64 = OBSOLETE_GRACE_MS;
 
+#[cfg(test)]
 fn dir_of(device: &Id) -> String {
     format!("devices/{}/", device.text())
 }
@@ -44,6 +52,7 @@ fn dir_of(device: &Id) -> String {
 /// head；换了身份之后段不删（文件头）、head 每次从目录现状重新判，没有任何判据再用得上这些行。留着反而有害：
 /// 2026-11 之前的内核不看文件在谁的目录，按**新身份**的代号把它们交出去删（BUG-4324）——在这个版本上换过身份再
 /// 降级回去不能重蹈它。
+#[cfg(test)]
 pub(crate) fn drop_rows(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     c.prepare_cached(
         "DELETE FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND substr(name, 1, length(?2)) = ?2",
@@ -56,16 +65,19 @@ pub(crate) fn drop_rows(c: &Connection, profile: &str, device: &Id) -> Result<()
 
 /// 一个位置上一个旧身份目录的观察记录：上一次看到的目录指纹、这个指纹从什么时候起没变过、下次该看的时刻。
 /// `srs_meta` 里存成 `<指纹>|<起始时刻>|<下次时刻>`；指纹为空 = 没有可接着算的观察（刚给过清单 / 上次证明不了）。
+#[cfg(test)]
 struct Watch {
     fingerprint: String,
     since: i64,
     due: i64,
 }
 
+#[cfg(test)]
 fn watch_key(profile: &str, location: &str, device: &Id) -> String {
     format!("sync2_former/{profile}/{location}/{}", device.text())
 }
 
+#[cfg(test)]
 fn load_watch(c: &Connection, key: &str) -> Result<Option<Watch>, String> {
     let v: Option<String> = c
         .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
@@ -83,6 +95,7 @@ fn load_watch(c: &Connection, key: &str) -> Result<Option<Watch>, String> {
     }))
 }
 
+#[cfg(test)]
 fn save_watch(c: &Connection, key: &str, w: &Watch) -> Result<(), String> {
     c.prepare_cached(
         "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -101,6 +114,7 @@ fn save_watch(c: &Connection, key: &str, w: &Watch) -> Result<(), String> {
 /// 没看过的、到期的、以及记录的时刻比现在晚得不合理的（时钟被拨回过）都算该看。归档位置（[archive]，只写不删）不看。
 ///
 /// 顺带把这些身份目录下的待删行作废（[drop_rows]）：换身份时已经做过，这里收的是以前的版本换身份留下的。
+#[cfg(test)]
 pub(crate) fn due(
     c: &Connection,
     local: &Local,
@@ -135,6 +149,7 @@ pub(crate) fn due(
 }
 
 /// 旧目录的现状经得起推敲时的结论。
+#[cfg(test)]
 struct Proven {
     /// 目录列表的指纹。
     fingerprint: String,
@@ -143,6 +158,7 @@ struct Proven {
 }
 
 /// 判据的前四条（见 [SrsCore::sync2_obsolete_former]）；None = 证明不了。
+#[cfg(test)]
 fn examine(
     local: &Local,
     device: &Id,
@@ -220,6 +236,7 @@ impl SrsCore {
     /// 4. 没被盖过的每一份 head 引用的段，列表里都有文件（`seg-` 或转发来的 `rly-`）：不完整的目录不碰。
     /// 5. 目录列表与上一次看时完全相同，而且已经这样 [FORMER_QUIET_MS] 以上。目录有任何变化（有人写了 head / 段 /
     ///    转发件，或删了东西）都从头计时。
+    #[cfg(test)]
     pub fn sync2_obsolete_former(
         &self,
         profile: &str,

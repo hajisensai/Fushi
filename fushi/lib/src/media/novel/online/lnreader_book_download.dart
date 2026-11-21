@@ -9,7 +9,9 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
+import 'package:fushi/src/media/novel/online/lnreader_line_breaks.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -186,12 +188,16 @@ class LnReaderBookDownload {
   /// 插图与封面走同一套请求头（[lnReaderImageHeaders]：浏览器 UA、`Accept`、
   /// 插件头、Cloudflare 放行 cookie）。Referer 传章节页地址而不是站点首页——
   /// 防盗链按引用页判，章节页更准。
+  ///
+  /// [markMissingImages]：没取到的图换成占位标记（[replaceLnReaderImageWithMissingMarker]，
+  /// 在线书用，阅读器据此提示并补取）；false（下载成 EPUB）时直接摘掉 `<img>`。
   Future<LnReaderEpubChapter> fetchChapter({
     required HttpClient client,
     required LnReaderInstalledPlugin plugin,
     required LnReaderPluginInfo info,
     required LnReaderChapter chapter,
     required String imagePrefix,
+    bool markMissingImages = false,
   }) async {
     final LnReaderRuntime runtime = manager.runtime;
     final String html = await runtime.chapter(plugin.id, chapter.path);
@@ -206,27 +212,33 @@ class LnReaderBookDownload {
       imagePrefix: imagePrefix,
     );
     final List<LnReaderEpubImage> images = <LnReaderEpubImage>[];
-    String body = xhtml.xhtml;
+    // 源级开关「合并段内换行」（拍板台 zCkIxtnwcV）：在宿主清洗之后、落盘之前
+    // 接回句中折行；插件（上游 LNReader 仓库）不改。
+    String body = plugin.mergeLineBreaks
+        ? mergeLnReaderSoftLineBreaks(xhtml.xhtml)
+        : xhtml.xhtml;
     int dropped = 0;
     String? firstFailure;
     for (final ({String url, String fileName}) image in xhtml.images) {
-      final LnReaderEpubImage? fetched = await _fetchImage(
-        client,
-        image.url,
+      final LnReaderEpubImage? fetched = await fetchChapterImage(
+        client: client,
+        info: info,
+        referer: baseUrl,
+        url: image.url,
         fileName: image.fileName,
-        headersFor: (Uri uri) => lnReaderImageHeaders(
-          uri: uri,
-          referer: baseUrl,
-          pluginHeaders: _epubImageHeaders(info.imageHeaders),
-          cloudflare: manager.cloudflare,
-        ),
         onFailure: (String reason) {
           dropped++;
           firstFailure ??= reason;
         },
       );
       if (fetched == null) {
-        body = removeLnReaderImageReference(body, image.fileName);
+        body = markMissingImages
+            ? replaceLnReaderImageWithMissingMarker(
+                body,
+                fileName: image.fileName,
+                url: image.url,
+              )
+            : removeLnReaderImageReference(body, image.fileName);
       } else {
         images.add(fetched);
       }
@@ -240,6 +252,28 @@ class LnReaderBookDownload {
     }
     return (title: chapter.name, xhtmlBody: body, images: images);
   }
+
+  /// 下一张章节插图（与 [fetchChapter] 同一套请求头，[referer] 传章节页地址）；
+  /// 取不到返回 null，原因交给 [onFailure]。阅读器补取缺图也走这里。
+  Future<LnReaderEpubImage?> fetchChapterImage({
+    required HttpClient client,
+    required LnReaderPluginInfo info,
+    required String referer,
+    required String url,
+    required String fileName,
+    void Function(String reason)? onFailure,
+  }) => _fetchImage(
+    client,
+    url,
+    fileName: fileName,
+    headersFor: (Uri uri) => lnReaderImageHeaders(
+      uri: uri,
+      referer: referer,
+      pluginHeaders: _epubImageHeaders(info.imageHeaders),
+      cloudflare: manager.cloudflare,
+    ),
+    onFailure: onFailure,
+  );
 
   /// 下封面；插件占位图 / 取不到返回 null（书照样生成，只是没封面）。
   Future<LnReaderEpubImage?> fetchCover({

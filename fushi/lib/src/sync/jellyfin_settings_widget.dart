@@ -101,6 +101,31 @@ JellyfinApi _settingsJellyfinApi({
   client: httpClientFactory?.call(),
 );
 
+/// 自动换线路的探测（[JellyfinServerConfig.rerouteAfterFailure]）：用现有令牌经
+/// [url] 读一次媒体库（`/Users/{uid}/Views`），[timeout] 内答成功 = 线路通、还是这台
+/// 服务器、令牌有效；任何异常或超时都按不通算（返回 false）。
+Future<bool> probeJellyfinRoute(
+  JellyfinServerConfig config,
+  String url, {
+  Duration timeout = const Duration(seconds: 5),
+  http.Client Function()? httpClientFactory,
+}) async {
+  final JellyfinApi api = _settingsJellyfinApi(
+    serverUrl: url,
+    accessToken: config.accessToken,
+    deviceId: config.deviceId,
+    httpClientFactory: httpClientFactory,
+  );
+  try {
+    await api.views(config.userId).timeout(timeout);
+    return true;
+  } on Object {
+    return false;
+  } finally {
+    api.close();
+  }
+}
+
 /// 在 [probe] 给出的根地址上跑真正的认证请求 [op]，返回定案的根地址与结果。
 ///
 /// 探测已确认时只有一个根地址，[op] 的任何异常原样抛。探测未确认（公开端点

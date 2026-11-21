@@ -21,6 +21,7 @@ library;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -73,6 +74,13 @@ class ServerVideoScrape {
       controller: controller,
       isEnabled: () => _config().scanScrape,
       isHashReady: () => scrapeConfig.anidbHashReady,
+      // 标题目录摘要（catalogOnly）存量作品的 AniDB 详情补全：XML 拿得到才排队。
+      isAniDbDetailReady: () {
+        final VideoMetadataProvider? anidb = coordinator.registry.provider(
+          VideoMetadataProviderKind.anidb,
+        );
+        return anidb is AniDbVideoMetadataProvider && anidb.isHttpApiAvailable;
+      },
       ledger: ledger ?? VideoScrapeSweepLedger.inSupportDirectory(),
       configFingerprint: scrapeConfig.runtimeFingerprint,
       // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。

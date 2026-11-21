@@ -7,7 +7,9 @@ import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiPageHeader, FushiPageScaffold, FushiToolScaffold;
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
-    show FushiMastheadPanel, FushiMastheadTitleSize;
+    show FushiMastheadPanel;
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
+    show FushiPageTitleTier;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiAppBar;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -82,17 +84,17 @@ void main() {
 
   // 2026-11-20 用户截图「设置的字看着怪」：设置页名用二级字阶（52 / w700），
   // 库页仍是 84 / w900 大字。
-  testWidgets('titleSize: section 的页名是 52 / w700，默认 page 仍是 84 / w900', (
+  testWidgets('titleTier: section 的页名是 52 / w700，默认 page 仍是 84 / w900', (
     WidgetTester tester,
   ) async {
-    Future<TextStyle?> titleStyleFor(FushiMastheadTitleSize size) async {
+    Future<TextStyle?> titleStyleFor(FushiPageTitleTier size) async {
       await pumpHost(
         tester,
         Scaffold(
           body: FushiMastheadHeader(
-            key: ValueKey<FushiMastheadTitleSize>(size),
+            key: ValueKey<FushiPageTitleTier>(size),
             title: 'General',
-            titleSize: size,
+            titleTier: size,
             progress: 0,
           ),
         ),
@@ -104,14 +106,109 @@ void main() {
       return paragraph.text.style;
     }
 
-    final TextStyle? page = await titleStyleFor(FushiMastheadTitleSize.page);
+    final TextStyle? page = await titleStyleFor(FushiPageTitleTier.page);
     expect(page?.fontSize, 84);
     expect(page?.fontWeight, FontWeight.w900);
-    final TextStyle? section = await titleStyleFor(
-      FushiMastheadTitleSize.section,
-    );
+    final TextStyle? section = await titleStyleFor(FushiPageTitleTier.section);
     expect(section?.fontSize, 52);
     expect(section?.fontWeight, FontWeight.w700);
+  });
+
+  /// 手机窄窗（380 宽）里挂一个带一颗动作的二级页头，返回页名的 RenderParagraph。
+  Future<RenderParagraph> pumpPhoneHeader(
+    WidgetTester tester,
+    String title,
+  ) async {
+    tester.view.physicalSize = const Size(380, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: FushiMastheadScaffold(
+          title: title,
+          actions: <Widget>[
+            FushiIconButtonControl(
+              tooltip: 'Search',
+              onPressed: () {},
+              icon: const FushiIcon(FushiIcons.search),
+            ),
+          ],
+          body: const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return tester.renderObject(find.text(title));
+  }
+
+  testWidgets('手机窄窗：长页名先缩小到放得下，不省略成「Read…」', (WidgetTester tester) async {
+    const String title = 'Reading';
+    final RenderParagraph paragraph = await pumpPhoneHeader(tester, title);
+    // 整个页名一行排得下（没被省略号截断）……
+    expect(paragraph.maxLines, 1);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    // ……是靠缩小字号，不是画出页头：缩放后的页名在屏幕内、比满字号窄。
+    final Rect rect = tester.getRect(find.text(title));
+    expect(rect.right, lessThanOrEqualTo(380));
+    expect(rect.width, lessThan(paragraph.size.width));
+  });
+
+  testWidgets('手机窄窗：缩到收起态字号仍放不下的页名折成两行，不省略', (WidgetTester tester) async {
+    const String title = 'Reading controls';
+    final RenderParagraph paragraph = await pumpPhoneHeader(tester, title);
+    final double fontSize = paragraph.text.style!.fontSize!;
+    // 两行、完整排下（词不拆开、没有省略号）。
+    expect(paragraph.maxLines, 2);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(paragraph.size.height, greaterThan(1.5 * fontSize * 0.98));
+    // 缩放后仍在屏幕内。
+    expect(tester.getRect(find.text(title)).right, lessThanOrEqualTo(380));
+  });
+
+  // 裸图标行行高固定 48，装不下两行：长专辑名 / 曲名必须仍是收起态字号一行、
+  // 末尾省略，不能折成两行画到行外、压住正文顶部的大标题。
+  testWidgets('titleInBody 裸图标行：长页名一行省略，不折两行、不超出行高', (
+    WidgetTester tester,
+  ) async {
+    const String title =
+        'Symphony No. 9 in D minor Op. 125 Choral Complete Recording';
+    tester.view.physicalSize = const Size(380, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: FushiMastheadHeader(
+              title: title,
+              progress: 1,
+              titleInBody: true,
+              onBack: () {},
+              actions: <Widget>[
+                FushiIconButtonControl(
+                  tooltip: 'More',
+                  onPressed: () {},
+                  icon: const FushiIcon(FushiIcons.search),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final RenderParagraph paragraph = tester.renderObject(find.text(title));
+    expect(paragraph.maxLines, 1);
+    expect(paragraph.didExceedMaxLines, isTrue);
+    final Rect header = tester.getRect(find.byType(FushiMastheadHeader));
+    final Rect text = tester.getRect(find.text(title));
+    expect(header.height, kFushiMastheadBareRowExtent);
+    expect(text.height, lessThanOrEqualTo(kFushiMastheadBareRowExtent));
+    expect(text.top, greaterThanOrEqualTo(header.top));
+    expect(text.bottom, lessThanOrEqualTo(header.bottom));
   });
 
   testWidgets('titleInBody：页名在主滚动越过 titleRevealOffset 后才淡入', (

@@ -23,7 +23,6 @@ Widget _host(Widget child) => TranslationProvider(
 void _reset() {
   resetSyncTasksForTest();
   srsSyncProgress.value = null;
-  srsMigrationProgress.value = null;
 }
 
 void main() {
@@ -136,18 +135,6 @@ void main() {
         isEmpty,
         reason: '已结束的不进入口气泡 / 进度环',
       );
-    });
-
-    test('没有复习同步一轮在跑时显示旧文件迁移', () {
-      srsMigrationProgress.value = const SrsSyncProgress(
-        stage: SrsSyncStage.migrating,
-        done: 1850,
-        total: 29651,
-      );
-      final List<BackgroundTask> tasks = syncBackgroundTasks();
-      expect(tasks.single.id, 'srs-migration');
-      expect(tasks.single.line, contains('1850/29651'));
-      expect(backgroundTasksIcon(tasks), FushiIcons.storage);
     });
 
     test('常规同步还没有阶段 tick 时也有文字（BUG-1260）', () {

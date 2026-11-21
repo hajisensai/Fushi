@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
 const Duration _builtinDelay = Duration(seconds: 1);
@@ -69,6 +70,13 @@ class _SlowExternalRunner extends ExternalMokuroRunner {
 }
 
 class _SlowSystemOcr implements SystemOcrMangaRunner {
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
   int availableCalls = 0;
   int statusCalls = 0;
 

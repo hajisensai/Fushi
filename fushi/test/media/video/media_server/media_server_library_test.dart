@@ -432,6 +432,57 @@ void main() {
     );
   });
 
+  test('BUG-4980：起播详情在当前线路失败、换线路回调给出新配置时，按新配置重建 '
+      '客户端并在新线路上取详情，起播用新客户端', () async {
+    await library.addToLibrary(browser, series);
+    final VideoBookRow row = (await repository.getByBookUid('e2'))!;
+    // 旧线路：browser 没有 e2 的详情，itemDetail 抛。
+    final _CollectionBrowser rerouted = _CollectionBrowser();
+    rerouted.details['e2'] = const MediaServerItem(
+      id: 'e2',
+      name: 'Ep 2 (fresh)',
+      type: MediaServerItemType.episode,
+      seriesId: 'show',
+      seriesName: 'The Show',
+      seasonNumber: 1,
+      episodeNumber: 2,
+    );
+    final List<(String, Object)> rerouteCalls = <(String, Object)>[];
+    final launch = await buildMediaServerLaunch(
+      row: row,
+      database: database,
+      repository: repository,
+      loadConfigs: () async => <MediaServerConfig>[_FakeConfig(browser)],
+      rerouteAfterFailure: (MediaServerConfig config, Object error) async {
+        rerouteCalls.add((config.sourceId, error));
+        return _FakeConfig(rerouted);
+      },
+    );
+    expect(rerouteCalls, hasLength(1));
+    expect(rerouteCalls.single.$1, browser.serverId);
+    expect(rerouteCalls.single.$2, isA<StateError>());
+    expect(browser.launchItemDetailCalls, 1);
+    expect(rerouted.launchItemDetailCalls, 1);
+    expect(identical(launch.client, rerouted.playbackClient), isTrue);
+    expect(launch.info.title, 'Ep 2 (fresh)');
+  });
+
+  test('BUG-4980：换线路回调返回 null 时客户端照旧、只取一次详情', () async {
+    await library.addToLibrary(browser, series);
+    final VideoBookRow row = (await repository.getByBookUid('e2'))!;
+    final launch = await buildMediaServerLaunch(
+      row: row,
+      database: database,
+      repository: repository,
+      loadConfigs: () async => <MediaServerConfig>[_FakeConfig(browser)],
+      rerouteAfterFailure: (MediaServerConfig config, Object error) async =>
+          null,
+    );
+    expect(identical(launch.client, browser.playbackClient), isTrue);
+    expect(browser.launchItemDetailCalls, 1);
+    expect(launch.info.id, 'e2');
+  });
+
   test('VF5D4O_Tyx：入库后从库里起播，缺集号的集排在本季有号的集之后，同槽按条目 '
       'id 稳定（超过 32 条也不乱）', () async {
     // 服务器给的缺号集故意乱序：同槽平局只认条目身份，与 getCollectionItems /

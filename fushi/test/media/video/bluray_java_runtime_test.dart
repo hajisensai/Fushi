@@ -18,6 +18,40 @@ Map<String, Object> manifest({
 };
 
 void main() {
+  group('resolveBlurayJavaHomeForOpen', () {
+    test(
+      'a Java home verified before opening skips the second probe',
+      () async {
+        int probes = 0;
+        final String? home = await resolveBlurayJavaHomeForOpen(
+          verified: '/rt/verified-jre',
+          probe: () async {
+            probes++;
+            return '/rt/probed-jre';
+          },
+        );
+        expect(home, '/rt/verified-jre');
+        expect(probes, 0);
+      },
+    );
+
+    test(
+      'without a verified home it probes once and uses the result',
+      () async {
+        int probes = 0;
+        final String? home = await resolveBlurayJavaHomeForOpen(
+          verified: null,
+          probe: () async {
+            probes++;
+            return null;
+          },
+        );
+        expect(home, isNull);
+        expect(probes, 1);
+      },
+    );
+  });
+
   test('pinned archive manifest keeps URL and normalizes SHA256', () {
     final BlurayJavaArchive archive = BlurayJavaArchive.fromManifest(
       manifest(),

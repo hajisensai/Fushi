@@ -33,6 +33,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_recognition_cancellation.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler, screenOcrOverlayMiningHandler;
@@ -169,6 +170,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_session_notification': t.screen_ocr_session_notification,
   'ocr_session_hint': t.screen_ocr_session_hint,
   'ocr_session_stop': t.screen_ocr_session_stop,
+  // 识别中通知上的「取消」（BUG-4790，原生 ScreenOcrService.LABEL_CANCEL）。
+  'ocr_cancel': t.cancel,
 };
 
 /// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
@@ -526,12 +529,19 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           // 没有宿主时回 null：原生退回设备自带（ML Kit）。
           onScreenOcrEngine: () async => _current?._androidScreenOcrEngine(),
           onRecognizeScreenOcrFrame:
-              (Uint8List png, String engine, {required bool fallback}) async =>
-                  _current?._androidRecognizeScreenOcrFrame(
-                    png,
-                    engine,
-                    fallback: fallback,
-                  ),
+              (
+                Uint8List png,
+                String engine, {
+                required bool fallback,
+                required int flow,
+              }) async => _current?._androidRecognizeScreenOcrFrame(
+                png,
+                engine,
+                fallback: fallback,
+                flow: flow,
+              ),
+          onCancelScreenOcrRecognition: (int flow) =>
+              _current?._cancelAndroidScreenOcrRecognition(flow),
           onSystemBallClosedByUser: () => _current?._onSystemBallClosedByUser(),
           onSystemBallAction: (String id, Rect? anchor) =>
               _current?._onDesktopSystemBallAction(id, anchor),
@@ -1183,10 +1193,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           scene: GoogleLensDisclosureScene.mobileScreens,
         )) {
       // 手机上没有「显示器」：同意框用手机文案，同意记录与桌面共用。
-      if (mounted) {
+      // 宿主挂在 MaterialApp.builder 里、与 Navigator 平级，自己的 context 之上
+      // 没有 Navigator，同意框必须用导航器的 context 弹（反馈 zkQylCmcKq）。
+      final BuildContext? navigatorContext = _navigatorContext;
+      if (navigatorContext != null && navigatorContext.mounted) {
         unawaited(
           target.askLensConsent(
-            context,
+            navigatorContext,
             scene: GoogleLensDisclosureScene.mobileScreens,
           ),
         );
@@ -1204,10 +1217,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// [fallback]：设备自带 OCR（ML Kit）报模型不可用时原生退到本机模型再试一次
   /// （BUG-4508：有的机型 Play 服务报模块就绪、动态模块却加载失败）；本机模型也没
   /// 就绪时回 `{unavailable: true}`，原生照旧弹系统 OCR 模型配置。
+  ///
+  /// [flow]：原生流程编号。识别期间用户在通知上取消（BUG-4790）时原生按它点名
+  /// （[_cancelAndroidScreenOcrRecognition]），这里立刻回 `{cancelled: true}`。
   Future<Map<String, Object?>> _androidRecognizeScreenOcrFrame(
     Uint8List png,
     String engineName, {
     required bool fallback,
+    int flow = 0,
   }) async {
     final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
     final ScreenOcrEngine? engine = ScreenOcrEngine.values
@@ -1215,15 +1232,29 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (engine == null) {
       return <String, Object?>{'message': t.floating_ball_ocr_failed};
     }
-    if (fallback && !await target.localModelReady(_localScreenOcr)) {
-      return const <String, Object?>{'unavailable': true};
-    }
+    final ScreenOcrRecognitionCancellation cancellation =
+        ScreenOcrRecognitionCancellation(flow);
+    _androidScreenOcrCancellation?.cancel();
+    _androidScreenOcrCancellation = cancellation;
     final Stopwatch clock = Stopwatch()..start();
     try {
-      final SystemOcrPageResult result = await target.recognize(
-        png,
-        language: _ocrLanguage,
-        engine: _screenOcrRecognizer(engine),
+      if (fallback &&
+          !await cancellation.guard(target.localModelReady(_localScreenOcr))) {
+        return const <String, Object?>{'unavailable': true};
+      }
+      final SystemOcrPlatform recognizer = _screenOcrRecognizer(engine);
+      final GoogleLensMangaOcrService? lens =
+          engine == ScreenOcrEngine.googleLens ? _screenOcrLens : null;
+      if (lens != null) {
+        // 取消就断开这次的 Lens 连接（请求停在半路，不再等 60 秒超时）；下次用
+        // Lens 时重新建客户端。
+        cancellation.onCancel(() {
+          if (identical(_screenOcrLens, lens)) _screenOcrLens = null;
+          lens.close();
+        });
+      }
+      final SystemOcrPageResult result = await cancellation.guard(
+        target.recognize(png, language: _ocrLanguage, engine: recognizer),
       );
       ErrorLogService.instance.logDiagnostic(
         'floating_ball.screen_ocr_timing',
@@ -1233,6 +1264,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             'png=${png.length}B lines=${result.lines.length}',
       );
       return <String, Object?>{'lines': screenOcrLinesToNative(result.lines)};
+    } on ScreenOcrRecognitionCancelledException {
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_cancelled',
+        'engine=${engine.name} fallback=$fallback '
+            'after=${clock.elapsedMilliseconds}ms',
+      );
+      return const <String, Object?>{'cancelled': true};
     } on SystemOcrUnavailableException catch (error) {
       if (fallback) return const <String, Object?>{'unavailable': true};
       return <String, Object?>{
@@ -1243,7 +1281,23 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     } catch (error, stack) {
       ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
       return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    } finally {
+      if (identical(_androidScreenOcrCancellation, cancellation)) {
+        _androidScreenOcrCancellation = null;
+      }
     }
+  }
+
+  /// 正在识别的那次 Android 截屏识字（[_androidRecognizeScreenOcrFrame]）的取消令牌。
+  ScreenOcrRecognitionCancellation? _androidScreenOcrCancellation;
+
+  /// 用户在识别中的通知上取消了原生流程 [flow]（BUG-4790）：只取消点名的那一次，
+  /// 编号对不上（那次已经回话、或已换成下一次）就不动。
+  void _cancelAndroidScreenOcrRecognition(int flow) {
+    final ScreenOcrRecognitionCancellation? current =
+        _androidScreenOcrCancellation;
+    if (current == null || current.flow != flow) return;
+    current.cancel();
   }
 
   /// 解析出的引擎 → 识别器。
@@ -1270,9 +1324,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     DesktopSystemBallActionTarget target,
   ) async {
     await target.bringMainWindowToFront();
-    if (!mounted) return;
+    // 宿主与 Navigator 平级（MaterialApp.builder 的 Stack），用导航器的 context 弹。
+    final BuildContext? navigatorContext = _navigatorContext;
+    if (navigatorContext == null || !navigatorContext.mounted) return;
     await target.askLensConsent(
-      context,
+      navigatorContext,
       scene: GoogleLensDisclosureScene.desktopScreens,
     );
   }

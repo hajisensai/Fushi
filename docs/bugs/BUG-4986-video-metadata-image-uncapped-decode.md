@@ -1,0 +1,9 @@
+## BUG-4986 · 视频作品详情页与库页远程回落的刮削图（TMDB 原图）整帧解码，几张就压满 ImageCache
+- **报告**：2026-11-20（路线图 #3722 c33，审查条目 video-18 + video-s3-13，复核结论「部分成立」）
+- **真实性**：✅ 真 bug（复核收窄后的那一半）。刮削图默认存 TMDB 原图（BUG-1082 拍板默认满分辨率：海报常 2000×3000、背景 3840×2160），但取图时没有解码上限，整帧解进 Flutter `ImageCache`（默认 100MB；一张 4K 背景解码后约 33MB）：
+  - 作品详情页本地图与远程图都不封顶：`fushi/lib/src/pages/implementations/video_work_detail_page.dart:364`（本地 `FileImage(File(path))`）、`:367`（远程裸 `AppCachedHttpImage`）、`:867`（远端作品资料页裸 `AppCachedHttpImage`）。
+  - 库页两处远程回落不封顶（本地文件存在时走 `_localFileCover` 已是 720 宽，命中面是「刮削图没落到本地」的作品）：`fushi/lib/src/pages/implementations/home_video_page.dart:1841`（`_episodeStillProvider` 剧照远程回落）、`:1864`（`_canonicalWorkImageProvider` 海报 / 横版卡图远程回落）。
+  - 库页作品 hero 的 `workImage`（`home_video_page.dart:12366`）本来就带上限（背景 1280 / logo 640 / 海报 480），不在本条范围。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/media/video/metadata/video_metadata_image_provider.dart`：刮削图的取图链与解码上限收成一处——`videoMetadataImageDecodeWidth(kind)`（背景 1280、logo 640，与库页 hero 同口径；其余 720 = `kLocalCoverDecodePixelWidth`）、`metadataRemoteImage(url, width:)`（`ResizeImage(AppCachedHttpImage(url), allowUpscaling: false)`）、`videoMetadataRowImage(rows, kind, localExists:)`（本地已知存在 → `resizedFileImage`，否则远程封顶图）。详情页两个 `_image` 与库页两处远程回落、hero 的 `workImage` 都改走它。只降解码尺寸：不改 TMDB 尺寸档，不给 `AppCachedHttpImage` 传 `maxWidth`（那会另存一份缩放后的磁盘文件），磁盘缓存键不变。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_metadata_image_provider_test.dart`：真实写 2000×3000 / 3840×216 的 PNG 并真解码，断言海报解出 720 宽、背景 1280 宽；本地文件不在时回落到封顶的远程图；真页面 `RemoteVideoWorkDetailPage` 上 hero 拿到的封面 / 背景是带上限的 `ResizeImage(AppCachedHttpImage)`（变异实测：把 `:867` 改回裸 `AppCachedHttpImage` 后该用例红，`Expected: <Instance of 'ResizeImage'>`）。`fushi/test/pages/video_remote_cover_disk_cache_guard_test.dart` 清单加入新 helper 文件。
+- **备注**：没在真机量作品详情页剧照内存（所有者定本轮不做设备验证）；内存收益按解码尺寸推算：3840×2160 背景 RGBA ≈ 33MB → 1280×720 ≈ 3.7MB，2000×3000 海报 ≈ 24MB → 720×1080 ≈ 3.1MB。

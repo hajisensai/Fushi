@@ -893,3 +893,34 @@ test('pointInVideo：只认画面矩形内的有限坐标', () => {
   assert.ok(!PC.pointInVideo({ getBoundingClientRect: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }, 0, 0));
   assert.ok(!PC.pointInVideo(null, 1, 1));
 });
+
+test('menuModel：全屏项只在页面脚本可用时出现，且紧跟隐藏字幕之后', () => {
+  for (const state of [{}, { fullscreenAvailable: false }, { fullscreenAvailable: undefined, fullscreenActive: true }]) {
+    assert.ok(!PC.menuModel(state).some((i) => i.id === 'fullscreen'), '不可用时不出现');
+  }
+  const items = PC.menuModel({ fullscreenAvailable: true });
+  const ids = items.map((i) => i.id);
+  assert.strictEqual(ids.indexOf('fullscreen'), ids.indexOf('hidden') + 1);
+  const fs = items[ids.indexOf('fullscreen')];
+  assert.strictEqual(fs.kind, 'action');
+  assert.strictEqual(fs.label, FUSHI_T('pc_fullscreen_enter'));
+  assert.strictEqual(fs.icon, 'fullscreen');
+});
+
+test('menuModel：全屏项随 fullscreenActive 切换文案与图标', () => {
+  const on = PC.menuModel({ fullscreenAvailable: true, fullscreenActive: true }).find((i) => i.id === 'fullscreen');
+  assert.strictEqual(on.label, FUSHI_T('pc_fullscreen_exit'));
+  assert.strictEqual(on.icon, 'fullscreen_exit');
+  assert.notStrictEqual(on.label, FUSHI_T('pc_fullscreen_enter'));
+});
+
+test('menuModel：「自动字幕分句整合」只在 YouTube 出现，不随覆盖层置灰（97pds8EODm）', () => {
+  const ids = (s) => PC.menuModel(s).map((i) => i.id);
+  assert.ok(!ids({ overlayOn: true }).includes('mergeAsr'), '非 YouTube 没有 ASR 滚动行，不出现');
+  const yt = PC.menuModel({ overlayOn: false, asrMergeAvailable: true, mergeAsr: true });
+  const byId = Object.fromEntries(yt.map((i) => [i.id, i]));
+  assert.strictEqual(byId.mergeAsr.kind, 'switch');
+  assert.strictEqual(byId.mergeAsr.on, true);
+  assert.ok(!byId.mergeAsr.disabled, '改的是轨本身（侧边栏 / 查词 / 制卡也用），覆盖层关了照样有意义');
+  assert.strictEqual(yt.map((i) => i.id).indexOf('mergeAsr'), yt.map((i) => i.id).indexOf('replaceNative') + 1);
+});

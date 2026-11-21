@@ -102,6 +102,7 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     _preciseLocateQueue.clear();
     _pageTurnQueue.clear();
     _currentChapter = to;
+    _onlineMissingImages?.show(to);
     _initialProgress = 0.0;
     _initialCharOffset = -1;
     _initialCharOffsetEnd = -1;
@@ -163,7 +164,8 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     _ensureStudyClock();
     unawaited(_refreshProgress());
     _startProgressPoll();
-    _prefetchAdjacentChapter(to + _chapterAdvanceDirection);
+    final int? prefetchTarget = _htmlPrefetchTarget(to);
+    if (prefetchTarget != null) _prefetchAdjacentChapter(prefetchTarget);
     _prefetchAdjacentChapterImages(to + _chapterAdvanceDirection);
   }
 }

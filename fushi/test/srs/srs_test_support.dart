@@ -121,9 +121,7 @@ class SrsTestClock {
 /// [addTearDown]：关存储、删目录（Windows 句柄滞后时删除失败吞掉，临时目录留给系统清理）。
 Future<SrsStorage> openSrsTestStorage() async {
   final Directory dir = Directory.systemTemp.createTempSync('fushi_srs_test_');
-  final SrsStorage storage = await SrsStorage.open(
-    path: SrsStorage.pathIn(dir.path),
-  );
+  final SrsStorage storage = await SrsStorage.open(directory: dir.path);
   addTearDown(() async {
     await storage.close();
     try {

@@ -15,7 +15,7 @@ import '../helpers/source_guard.dart';
 /// - Windows / Linux CMake：缺库 `message(FATAL_ERROR ...)`，不在 `if(EXISTS)` 里静默跳过；
 /// - macOS Runner 构建阶段 `bundle_fushi_compute.sh`：缺库 `exit 1`；
 /// - iOS Runner 构建阶段 `check_fushi_compute.sh`（见 ios_native_umbrella_link_guard_test）；
-/// - Android：`checkFushiComputeNative` 挂在 `preBuild` 上，缺 ABI 抛 GradleException；
+/// - Android：`checkFushiComputeNative` 挂在 `merge<Variant>JniLibFolders`（打包 .so 的任务）上，缺 ABI 抛 GradleException；
 /// - 本地新 worktree：`tool/bootstrap.ps1`（经 `tool/native_libs.ps1`）/ `bootstrap.sh` 编它；
 /// - CI：凡是跑 `flutter test` / `flutter_test_failures.dart` 的 job 都用
 ///   `setup-fushi-compute` 或显式设 `FUSHI_COMPUTE_LIB`。
@@ -72,7 +72,7 @@ void main() {
     expect(pbx, contains('/* Bundle fushi_compute dylib */,'));
   });
 
-  test('Android：checkFushiComputeNative 挂在 preBuild 上并在缺库时抛错', () {
+  test('Android：checkFushiComputeNative 挂在打包 .so 的任务上并在缺库时抛错', () {
     final String gradle = maskComments(read('android/app/build.gradle'));
     expect(
       gradle,
@@ -86,7 +86,7 @@ void main() {
     expect(
       gradle,
       contains(
-        'if (task.name == "preBuild") {\n'
+        'if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {\n'
         '        task.dependsOn(checkFushiComputeNative)',
       ),
     );

@@ -21,7 +21,8 @@
 //!   `sync2_checkpoints` 的行），同一个 (设备, seq) 只出一次、以真相层为准。只读本机表会漏掉换代之后新写 / 新收的还原点。
 //! - **撤销校验**：判据只有一份（`registers::undo_verdict`）。「那次写入」按 dot（设备, seq）从真相层取
 //!   （[Truth::key_of] → [body_of]），现存记录是这个别名类在这个规范键上活着的修改行（[super::edit_rows]，笔记的 `tags`
-//!   是同一份合成行）。
+//!   是同一份合成行）。「唯一活着的那条因果上见没见过那次写入」不读行里的 `ctx`（不带旧戳的写入的投影上下文只覆盖别的
+//!   要输出的行，`derive.rs` `edit_lines_as`），按那条写入的依赖与旧闭包从真相层答（[Index::class_write_sees]）。
 //!
 //! # 与协议 3 的差别（都是按类 D24 带来的）
 //!
@@ -192,7 +193,7 @@ fn check_item(
     ix: &mut Index<'_, '_>,
     col: i64,
     profile: &str,
-    writers: &BTreeMap<String, String>,
+    writers: &crate::store::gen4::class::WriterAliases,
     it: &Value,
 ) -> Result<(bool, Value), String> {
     let kind = it["k"]
@@ -250,5 +251,22 @@ fn check_item(
         Some(v) => Some(ix.canonical_value(&ckey, v)?),
         None => None,
     };
-    undo_verdict(&items, &ckey, target.as_ref(), after.as_ref())
+    // 「唯一活着的那条见没见过那次写入」问真相层（[Index::class_write_sees]）：投影行的 ctx 只覆盖别的要输出的行，
+    // 被支配的旧写入（倒序撤到第二步时的那次写入）不在里面。
+    undo_verdict(
+        &items,
+        &ckey,
+        target.as_ref(),
+        after.as_ref(),
+        &mut |x, o| {
+            ix.class_write_sees(
+                kind,
+                &canon,
+                &ckey,
+                writers,
+                (x.writer, x.seq),
+                (o.writer, o.seq),
+            )
+        },
+    )
 }

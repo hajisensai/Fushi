@@ -41,6 +41,8 @@ import 'package:fushi/src/sync/remote_download_progress_badge.dart'
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show ShellClip, shellShape;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart'
+    show fushiBlockAppleColors, fushiBlockColorScheme;
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
     show coverColorSchemeCache;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
@@ -79,62 +81,15 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 ThemeData mediaPosterDetailTheme(ThemeData base, FushiCoverBlockColors colors) {
   final Color bg = colors.container;
   final Color on = colors.onContainer;
-  final Color accent = colors.accent;
   Color mix(double alpha) => Color.alphaBlend(on.withValues(alpha: alpha), bg);
-  final ColorScheme scheme = base.colorScheme.copyWith(
-    primary: accent,
-    onPrimary: bg,
-    primaryContainer: mix(0.2),
-    onPrimaryContainer: on,
-    secondary: accent,
-    onSecondary: bg,
-    secondaryContainer: mix(0.14),
-    onSecondaryContainer: on,
-    tertiary: accent,
-    onTertiary: bg,
-    tertiaryContainer: mix(0.18),
-    onTertiaryContainer: on,
-    surface: bg,
-    onSurface: on,
-    onSurfaceVariant: mix(0.74),
-    surfaceDim: mix(0.02),
-    surfaceBright: mix(0.1),
-    surfaceContainerLowest: mix(0.03),
-    surfaceContainerLow: mix(0.06),
-    surfaceContainer: mix(0.09),
-    surfaceContainerHigh: mix(0.12),
-    surfaceContainerHighest: mix(0.16),
-    outline: mix(0.45),
-    outlineVariant: mix(0.22),
-    surfaceTint: accent,
-    inverseSurface: on,
-    onInverseSurface: bg,
-    inversePrimary: bg,
-  );
+  // 配色与带色卡片的局部配色同一份（fushiBlockColorScheme / fushiBlockAppleColors）。
+  final ColorScheme scheme = fushiBlockColorScheme(base.colorScheme, colors);
   final FushiAppleColors? apple = base.extension<FushiAppleColors>();
   // ThemeData 按扩展类型建表、后者覆盖前者，所以把面板版 FushiAppleColors 追加
   // 在原扩展之后即可替换掉原值。不写 `ThemeExtension<dynamic>` 元素类型注解：前端编译器把它按上界展开，与
   // analyzer 的推断不一致，显式注解会编不过（video_side_panel.dart 同款写法）。
   final List<FushiAppleColors> panelApple = <FushiAppleColors>[
-    if (apple != null)
-      FushiAppleColors(
-        accent: accent,
-        onAccent: bg,
-        groupedBackground: bg,
-        secondaryGroupedBackground: mix(0.08),
-        tertiaryGroupedBackground: mix(0.14),
-        label: on,
-        secondaryLabel: on.withValues(alpha: 0.7),
-        tertiaryLabel: on.withValues(alpha: 0.4),
-        separator: on.withValues(alpha: 0.18),
-        opaqueSeparator: mix(0.2),
-        fill: on.withValues(alpha: 0.2),
-        secondaryFill: on.withValues(alpha: 0.16),
-        tertiaryFill: on.withValues(alpha: 0.12),
-        destructive: apple.destructive,
-        success: apple.success,
-        warning: apple.warning,
-      ),
+    if (apple != null) fushiBlockAppleColors(apple, colors),
   ];
   return base.copyWith(
     colorScheme: scheme,

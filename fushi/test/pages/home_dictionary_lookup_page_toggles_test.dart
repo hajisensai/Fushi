@@ -309,6 +309,50 @@ void main() {
       }
     });
 
+    // BUG-4930（反馈 r3wf1i68Qn）：有查询时 canPop=false，本页登记了系统返回；
+    // 键盘弹着时导航栏的收键盘 ﹀ 被当成返回分发进来，此前直接清空查询。
+    testWidgets('键盘弹着时系统返回只收键盘，查询与结果保留', (WidgetTester tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(tester.view.reset);
+      try {
+        await tester.pumpWidget(
+          _wrap(_TogglesAppModel(pullToClear: true, autoShowKeyboard: true)),
+        );
+        await tester.pump();
+        await _searchFor(tester, 'word');
+        expect(_resultEvidence, findsOneWidget);
+        await tester.tap(_searchField);
+        await tester.pump();
+        tester.view.viewInsets = const FakeViewPadding(bottom: 600);
+        await tester.pump();
+
+        tester.testTextInput.log.clear();
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          tester.testTextInput.log.map((MethodCall call) => call.method),
+          contains('TextInput.hide'),
+        );
+        expect(_searchFieldText(tester), 'word');
+        expect(_resultEvidence, findsOneWidget);
+        expect(_searchFieldFocused(tester), isTrue);
+
+        // 键盘收下去后再按返回：恢复原行为，清空查询。
+        tester.view.viewInsets = FakeViewPadding.zero;
+        await tester.pump();
+        await tester.binding.handlePopRoute();
+        await tester.pump();
+        await tester.pump();
+        expect(_searchFieldText(tester), isEmpty);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
     testWidgets('桌面没有软键盘：不出按钮', (WidgetTester tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(tester.view.reset);

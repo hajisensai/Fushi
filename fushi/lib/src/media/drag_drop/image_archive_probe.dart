@@ -1,10 +1,10 @@
-import 'dart:isolate';
-
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart'
+    show looksLikeImageArchiveInBackground;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
-import 'package:fushi/src/media/manga/manga_module.dart';
 
 /// 「拖进来的这个 `.zip` 到底是图片型漫画包，还是 Yomitan 词典包」的预判，**跑在
 /// 后台 isolate 上**。
@@ -24,12 +24,18 @@ import 'package:fushi/src/media/manga/manga_module.dart';
 ///
 /// [preferManga] 与 [classifyDroppedFiles] 的同名参数必须同值：漫画库落点连 `.epub`
 /// 也要开包（[kDragMangaSurfaceProbeExtensions]），两边扩展名集合同源。
+///
+/// [db]：生产判据（[looksLikeImageArchiveInBackground]）把 `.epub` 探测的解压落点
+/// 建在书库根下的 `.tmp-*`、用完即删，否决理由回主 isolate 记诊断日志（与漫画导入框
+/// 同一入口，BUG-5022）；不给才退回系统临时目录。
 Future<Map<String, bool>> probeDroppedImageArchives(
   List<String> paths, {
   Future<bool> Function(String path)? probe,
   bool preferManga = false,
+  FushiDatabase? db,
 }) async {
-  final Future<bool> Function(String path) run = probe ?? _probeInIsolate;
+  final Future<bool> Function(String path) run =
+      probe ?? (String path) => looksLikeImageArchiveInBackground(path, db: db);
   final Set<String> extensions = dragImageArchiveProbeExtensionsFor(
     preferManga: preferManga,
   );
@@ -45,7 +51,7 @@ Future<Map<String, bool>> probeDroppedImageArchives(
 /// 判定本身**永不抛**：包损坏 / 没权限 / 超大都只是「这不是图片包」，让它落回按
 /// 扩展名的常规分类（`.zip` → 词典包），而不是把整次拖放炸掉。
 ///
-/// 包在这里而不是包在 [_probeInIsolate] 里：注入的测试探针也要走同一条容错路径，
+/// 包在这里而不是包在生产判据里：注入的测试探针也要走同一条容错路径，
 /// 否则「生产吞、测试不吞」两套语义，守卫守的就不是真实行为。
 Future<bool> _neverThrows(
   String path,
@@ -68,7 +74,3 @@ bool _needsProbe(String path, Set<String> extensions) {
   if (extension.isEmpty) return false;
   return extensions.contains(extension.substring(1).toLowerCase());
 }
-
-/// 单个包的真读包判定，跑在后台 isolate 上。容错在 [_neverThrows]。
-Future<bool> _probeInIsolate(String path) =>
-    Isolate.run(() => MangaModule.isImageArchive(path));

@@ -200,7 +200,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 | `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
-| `test/build/ui_idle_wait_guard_test.dart` | `lib` + `../packages/*/lib`（循环动画那条只扫 `lib`） | 禁调 `SchedulerBinding.scheduleTask`（零延迟空转饿死 Windows 输入，等空闲用 `waitForUiIdle`）；每个 `.repeat(` 循环动画必须表态：常驻装饰走 ambient ticker，其余写明跟着什么停（BUG-4387 / BUG-4893，两处 `expectScanScale`） |
+| `test/build/ui_idle_wait_guard_test.dart` | `lib` + `../packages/*/lib`（循环动画那条只扫 `lib`） | 禁调裸 `WidgetsFlutterBinding.ensureInitialized()`（所有入口用带 `FramePacedTaskScheduler` 的 binding，裸 binding 碰上常驻动画零延迟空转饿死 Windows 输入）；每个 `.repeat(` 循环动画必须表态：常驻装饰走 ambient ticker，其余写明跟着什么停（BUG-4387 / BUG-4725 / BUG-4893，两处 `expectScanScale`） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
@@ -550,6 +550,7 @@ printf '%s\n' "$BODY"   # 先回显逐字确认，再喂给看板 / gh / git
 - 全量 test 在后台跑的**同时**，预解下一个 PR 的冲突和 i18n（流水线化，不是并行 merge）。
 - 多 PR 逐个 **rebase 叠加**，不做旧基底 merge——旧基底 merge 会静默删掉先落地 PR 的文件（并发合并竞态）。
 - 合并后核对以独立 `git diff --stat` 为准，不信子代理叙述。
+- **长期集成分支只在整批 PR 前合一次 `develop`**，与最后一批合流并成一步、只验证一次；中途不合、不量落后数、不在汇报里写落后数。两种例外与起因见 [rules-detail.md](rules-detail.md#集成分支不追-develop)。
 
 ## 等待与缓存
 
@@ -572,6 +573,7 @@ printf '%s\n' "$BODY"   # 先回显逐字确认，再喂给看板 / gh / git
 - ❌ 子代理里 `timeout 600000` 的前台命令、不带 `timeout 240` 的 `until … sleep` 等待——超过 5 分钟就整段上下文重写。
 - ❌ 开发会话推完 PR 后留下来等 CI、开 Auto-fix / PR 监视——交给合并任务。
 - ❌ 主会话把不到 2 分钟的命令丢后台然后干等通知；几条后台命令各发各的、各唤醒一次。
+- ❌ 集成分支每合完一批就顺手合一次 `develop` 再重跑全量；汇报里写「落后 develop N 个提交」——只在整批 PR 前合一次。
 - ❌ 同一疑点串行试三轮 grep——派一个搜索子代理一次扫完拿结论。
 - ❌ 测试跑完才开始写 bug 文档 / PR 描述。
 - ❌ 只为读几个文件就新建 worktree + full bootstrap——**只读/分析不需要 worktree**，直接在原工作区读。

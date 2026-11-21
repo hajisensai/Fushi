@@ -5,24 +5,34 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_local_video.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart'
+    show MusicPlayItem;
+import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show MusicPluginStreamUnavailable;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 
-MusicTrackRow _track(String path, {String? codec, int? bitrate}) =>
-    MusicTrackRow(
-      trackUid: path,
-      path: path,
-      title: 't',
-      codec: codec,
-      bitrate: bitrate,
-      isLossless: false,
-      fileMtimeAt: 1,
-      fileSize: 1,
-      hasEmbeddedCover: false,
-      addedAt: 1,
-    );
+MusicTrackRow _track(
+  String path, {
+  String? codec,
+  int? bitrate,
+  int? sourceId,
+}) => MusicTrackRow(
+  trackUid: path,
+  path: path,
+  sourceId: sourceId,
+  title: 't',
+  codec: codec,
+  bitrate: bitrate,
+  isLossless: false,
+  fileMtimeAt: 1,
+  fileSize: 1,
+  hasEmbeddedCover: false,
+  addedAt: 1,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -90,6 +100,63 @@ void main() {
     });
   });
 
+  // 拍板台 left3568：网络音乐来源的 MV 也能看画面——按来源取流交给视频播放页串流。
+  group('网络来源 MV 串流观看', () {
+    test('有 sourceId 的网络来源 MV 可串流看；服务器曲库 / 纯音频 / 本地 MV 不走串流', () {
+      for (final String path in <String>[
+        'https://dav.example/music/Song MV.mkv',
+        'sftp://nas:22/music/Song MV.mkv',
+        'http://alist.local/d/music/Song MV.mp4?sign=1',
+      ]) {
+        final MusicTrackRow track = _track(path, sourceId: 7);
+        expect(isMusicStreamVideoTrack(track), isTrue, reason: path);
+        expect(isMusicWatchableVideoTrack(track), isTrue, reason: path);
+      }
+      // 服务器曲库（Jellyfin / Subsonic）的 http 曲目没有 sourceId：不是网络来源条目。
+      expect(
+        isMusicWatchableVideoTrack(_track('https://jf.example/a.mkv')),
+        isFalse,
+      );
+      expect(
+        isMusicStreamVideoTrack(
+          _track('https://dav.example/music/a.flac', sourceId: 7),
+        ),
+        isFalse,
+      );
+      final MusicTrackRow local = _track('/m/Song MV.mkv', sourceId: 3);
+      expect(isMusicStreamVideoTrack(local), isFalse);
+      expect(isMusicWatchableVideoTrack(local), isTrue);
+    });
+
+    test('取流走音乐来源同一个解析器（带 sourceId 与条目地址），请求头原样交回', () async {
+      final _FakeResolver resolver = _FakeResolver((MusicPlayItem item) async {
+        return (
+          url: 'http://127.0.0.1:5000/relay/${item.sourceId}',
+          headers: <String, String>{'Authorization': 'Basic eA=='},
+        );
+      });
+      final MusicRemoteStream s = await resolveMusicStreamVideo(
+        _track('sftp://nas:22/music/Song MV.mkv', sourceId: 9),
+        resolver: resolver,
+      );
+      expect(s.url, 'http://127.0.0.1:5000/relay/9');
+      expect(s.headers, <String, String>{'Authorization': 'Basic eA=='});
+      expect(resolver.seen.single.path, 'sftp://nas:22/music/Song MV.mkv');
+      expect(resolver.seen.single.sourceId, 9);
+    });
+
+    test('来源已删 / 解析器不认（返回 null）时抛「这一首拿不到流」', () async {
+      LocaleSettings.setLocale(AppLocale.en);
+      await expectLater(
+        resolveMusicStreamVideo(
+          _track('https://dav.example/m/a.mkv', sourceId: 1),
+          resolver: _FakeResolver((_) async => null),
+        ),
+        throwsA(isA<MusicPluginStreamUnavailable>()),
+      );
+    });
+  });
+
   group('ensureMusicVideoInVideoLibrary', () {
     late FushiDatabase db;
     late VideoBookRepository repo;
@@ -141,4 +208,20 @@ void main() {
       expect((await db.select(db.videoBooks).get()).length, 1);
     });
   });
+}
+
+class _FakeResolver implements MusicRemoteMediaResolver {
+  _FakeResolver(this._resolve);
+
+  final Future<MusicRemoteStream?> Function(MusicPlayItem item) _resolve;
+  final List<MusicPlayItem> seen = <MusicPlayItem>[];
+
+  @override
+  Future<MusicRemoteStream?> resolve(MusicPlayItem item) {
+    seen.add(item);
+    return _resolve(item);
+  }
+
+  @override
+  void forgetSource(int sourceId) {}
 }

@@ -45,12 +45,13 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadActionGroup,
         FushiMastheadPanel,
         FushiMastheadTitle,
-        FushiMastheadTitleSize,
         fushiMastheadBadgeExtent,
         fushiMastheadCompact,
         fushiMastheadPaletteOf,
         fushiMastheadProgressOf,
         kFushiMastheadTrackedOffset;
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
+    show FushiPageTitleTier;
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -101,6 +102,14 @@ enum SettingsKitStyle {
       ? SettingsKitStyle.apple
       : SettingsKitStyle.expressive;
 }
+
+/// 玻璃设计系统里设置详情正文的水平内边距：桌面 28（macOS 详情窗格的留白）、触屏
+/// 16（iOS inset grouped 卡片离屏幕边 16）。放在 kit 层而不是
+/// `GlassSettingsRenderer`，是为了让手写设置页（TTS 文本规则页等）不必 import
+/// 整个设置 renderer——后者经 schema 连着各页面，会把这些页拖进 import 大环
+/// （import_cycle_guard_test）。
+double settingsGlassDetailHorizontalInset(BuildContext context) =>
+    FushiAppleMetrics.of(context).desktop ? 28 : 16;
 
 /// M3E 圆角分级：大容器 28 / 内卡 20 / 小件 12（Apple 走 iOS 的 12 / 10 / 8）。
 class SettingsKitRadii {
@@ -860,7 +869,7 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     return FushiMastheadHeader(
       title: widget.title,
       // 设置页满屏是小字行：页名用二级字阶，不用库页的 84 / w900 大字。
-      titleSize: FushiMastheadTitleSize.section,
+      titleTier: FushiPageTitleTier.section,
       progress: p,
       onBack: widget.onBack,
       actions: widget.actions,

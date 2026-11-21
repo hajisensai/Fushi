@@ -500,6 +500,15 @@ class AnkiRepository extends BaseAnkiRepository {
       // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
       await _ensurePermission();
       final settings = await loadSettings();
+      final AnkiNoteType? noteType = settings.selectedNoteType;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        noteType?.name ?? settings.selectedNoteTypeName,
+      );
+      // 拍板 lt2wobUYfE：一个字段都没勾就不渲染、不写，直接拒绝。
+      final MineOutcome? noneSelected = rejectNoOverwriteFieldsSelectedOutcome(
+        onlyFields,
+      );
+      if (noneSelected != null) return noneSelected;
       if (context.sourceLink != null ||
           settings.fieldMappings.values.any(
             (String mapping) => mapping.contains('{source-link}'),
@@ -526,10 +535,6 @@ class AnkiRepository extends BaseAnkiRepository {
         payload: payload,
         context: context,
         keepEmpty: true,
-      );
-      final AnkiNoteType? noteType = settings.selectedNoteType;
-      final Set<String>? onlyFields = settings.overwriteFieldsFor(
-        noteType?.name ?? settings.selectedNoteTypeName,
       );
       // 整卡覆写：只发映射字段，其余由 native 的 clearUnspecified 按位置写空（它握着
       // 整条 note，不必经通道回读）。只覆写选中字段：只点名选中字段，其余保留。

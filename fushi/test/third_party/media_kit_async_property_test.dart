@@ -151,4 +151,26 @@ void main() {
     skip: skip,
     timeout: const Timeout(Duration(seconds: 60)),
   );
+
+  // BUG-4911：setPropertyWithResult 把 libmpv 的结果码带回来，被拒的写入不再无声。
+  test(
+    'setPropertyWithResult reports accepted and rejected writes',
+    () async {
+      final dynamic native = await openPlayer();
+      expect(await native.setPropertyWithResult('volume', '42'), 0);
+      expect(await native.getPropertyAsync('volume'), startsWith('42'));
+      expect(
+        await native.setPropertyWithResult('no-such-property-bug-4911', '1'),
+        lessThan(0),
+        reason: '属性名不存在：mpv 拒绝',
+      );
+      expect(
+        await native.setPropertyWithResult('volume', 'not-a-number'),
+        lessThan(0),
+        reason: '值非法：mpv 拒绝',
+      );
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
 }

@@ -1,11 +1,8 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/updates/build_listing.dart';
 import 'package:fushi/src/updates/notice_feed.dart';
-
-String _sha(String s) => sha256.convert(utf8.encode(s)).toString();
+import 'package:fushi/src/utils/misc/official_links.dart';
 
 void main() {
   final String a = 'a' * 64;
@@ -68,57 +65,56 @@ void main() {
     });
   });
 
-  group('local text', () {
-    test('round trip', () {
-      for (final String s in <String>['', 'abc', '中文 · 混排 123', 'x' * 300]) {
-        expect(decodeLocalText(encodeLocalText(s)), s);
-      }
-      expect(encodeLocalText('abc'), isNot(contains('abc')));
+  group('localNoticeIdFor', () {
+    test('same digests in any order / case give the same id', () {
+      final String id = localNoticeIdFor(<String>[b], <String>[c]);
+      expect(id, startsWith(kLocalNoticeIdPrefix));
+      expect(localNoticeIdFor(<String>[c.toUpperCase()], <String>[b]), id);
+      expect(localNoticeIdFor(<String>[b, c], const <String>[]), id);
     });
 
-    test('zh text decodes to the expected content', () {
-      final LocalNoticeText zh = localNoticeText('zh-CN');
+    test('a different signing key gets a new id', () {
       expect(
-        _sha(zh.title),
-        '7014f2844301e7c2b57ff424d4048709c4624dcdb741b434e42fb40253c73479',
+        localNoticeIdFor(<String>[b], <String>[b]),
+        isNot(localNoticeIdFor(<String>[c], <String>[c])),
       );
-      expect(
-        _sha(zh.body),
-        '4674e1f2bfde5baa1b3e1dc2bc8bb4ce139a24ff9891f5a5e47a0c83b56acdee',
-      );
-      expect(localNoticeText('zh-HK').title, zh.title);
     });
 
-    test('other locales use en text', () {
-      final LocalNoticeText en = localNoticeText('ja');
-      expect(
-        _sha(en.title),
-        'ab03f1f7b6af59c41af824b01705ed6b0c42d81be7d877e670b5e1bc89fa3c84',
-      );
-      expect(
-        _sha(en.body),
-        '5f7a8881206cbdc248c3fef997a6b9b39ced5b1c670fa7bbe0a821405f9c458d',
-      );
-      expect(
-        _sha(en.url.toString()),
-        '2c63d77a2a652c765fc6a1f2a70365f19f6efc5b8d2fce2f281f53ee98dd3eeb',
-      );
-      expect(en.url.scheme, 'https');
+    test('the id does not reveal the digest', () {
+      expect(localNoticeIdFor(<String>[b], <String>[b]), isNot(contains(b)));
     });
   });
 
-  test('startup notice is handed out once per process', () async {
-    final RemoteNotice? first = await takeLocalStartupNotice(
-      active: () async => true,
-    );
-    expect(first, isNotNull);
-    expect(first!.level, RemoteNoticeLevel.dialog);
-    expect(first.id, kLocalNoticeId);
-    expect(first.url?.scheme, 'https');
-    expect(await takeLocalStartupNotice(active: () async => true), isNull);
+  test('notice text comes from i18n and is conditional', () {
+    final LocalNoticeText text = currentLocalNoticeText();
+    expect(text.title, t.notice_unofficial_build_title);
+    expect(text.body, t.notice_unofficial_build_body);
+    expect(text.url.toString(), kOfficialReleasesUrl);
+    // 条件式措辞：不对所有非官方构建一口咬定「被骗了」。
+    expect(text.body, contains('If you paid'));
   });
+
+  test(
+    'startup notice is handed out once per process with the digest id',
+    () async {
+      final RemoteNotice? first = await takeLocalStartupNotice(
+        id: () async => '${kLocalNoticeIdPrefix}abc',
+      );
+      expect(first, isNotNull);
+      expect(first!.level, RemoteNoticeLevel.dialog);
+      expect(first.id, '${kLocalNoticeIdPrefix}abc');
+      expect(first.url?.scheme, 'https');
+      expect(
+        await takeLocalStartupNotice(
+          id: () async => '${kLocalNoticeIdPrefix}x',
+        ),
+        isNull,
+      );
+    },
+  );
 
   test('outside release Android the state is inactive', () async {
     expect(await localNoticeActive(), isFalse);
+    expect(await localNoticeId(), isNull);
   });
 }

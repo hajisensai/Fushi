@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
-import 'package:drift/drift.dart' show Value, Variable;
+import 'package:drift/drift.dart' show QueryRow, Value, Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/backup_service.dart';
@@ -63,6 +63,22 @@ void main() {
                   .getSingle())
               .data['c']
           as int;
+
+  /// v166 起收藏句是表：插一条只带 id / 正文的收藏句。
+  Future<void> insertFavorite(FushiDatabase db, String id, String text) =>
+      db.customStatement(
+        'INSERT INTO favorite_sentences (id, sentence, created_at_us) '
+        'VALUES (?, ?, 1)',
+        <Object?>[id, text],
+      );
+
+  Future<List<String>> favoriteIds(FushiDatabase db) async => <String>[
+    for (final QueryRow r
+        in await db
+            .customSelect('SELECT id FROM favorite_sentences ORDER BY id')
+            .get())
+      r.read<String>('id'),
+  ];
 
   Future<String?> prefRaw(FushiDatabase db, String key) async {
     final rows = await db
@@ -163,12 +179,7 @@ void main() {
       ),
     );
     // Content-registry prefs, each owned by a content category.
-    await db.setPref(
-      'favorite_sentences',
-      jsonEncode(<Map<String, Object?>>[
-        <String, Object?>{'id': favMarker, 'text': 'a sentence'},
-      ]),
-    );
+    await insertFavorite(db, favMarker, 'a sentence');
     await db.setPref(
       'src:reader_fushi:font_catalog',
       jsonEncode(<String, Object?>{'version': 1, 'fonts': <Object?>[]}),
@@ -260,7 +271,7 @@ void main() {
 
         final FushiDatabase ex = await openBackupDb(zip);
         addTearDown(ex.close);
-        expect(await prefCount(ex, 'favorite_sentences'), 0);
+        expect(await favoriteIds(ex), isEmpty);
       },
     );
 
@@ -275,7 +286,7 @@ void main() {
 
       final FushiDatabase ex = await openBackupDb(zip);
       addTearDown(ex.close);
-      expect(await prefCount(ex, 'favorite_sentences'), 1);
+      expect(await favoriteIds(ex), <String>['srcfav']);
     });
 
     test(
@@ -378,12 +389,7 @@ void main() {
           pairedAtMs: 9,
         ),
       );
-      await cur0.setPref(
-        'favorite_sentences',
-        jsonEncode(<Map<String, Object?>>[
-          <String, Object?>{'id': 'mine', 'text': 'my own sentence'},
-        ]),
-      );
+      await insertFavorite(cur0, 'mine', 'my own sentence');
       await cur0.close();
 
       await BackupRestoreService.restoreBackup(
@@ -422,17 +428,12 @@ void main() {
         importCats: BackupCategory.values.toSet(),
       );
       addTearDown(cur.close);
-      final String? raw = await prefRaw(cur, 'favorite_sentences');
-      expect(raw, isNotNull);
       expect(
-        raw!.contains('mine'),
-        isTrue,
-        reason: 'device favorites preserved from bak',
-      );
-      expect(
-        raw.contains('srcfav'),
-        isFalse,
-        reason: 'the excluded backup carried no favorites',
+        await favoriteIds(cur),
+        <String>['mine'],
+        reason:
+            'device favorites preserved from bak; the excluded backup carried '
+            'no favorites',
       );
     });
 
@@ -444,13 +445,9 @@ void main() {
         importCats: BackupCategory.values.toSet(),
       );
       addTearDown(cur.close);
-      final String? raw = await prefRaw(cur, 'favorite_sentences');
-      expect(raw, isNotNull);
-      expect(
-        raw!.contains('srcfav'),
-        isTrue,
-        reason: 'backup favorites win in overwrite when books included',
-      );
+      expect(await favoriteIds(cur), <String>[
+        'srcfav',
+      ], reason: 'backup favorites win in overwrite when books included');
     });
   });
 }

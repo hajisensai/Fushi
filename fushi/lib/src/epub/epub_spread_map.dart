@@ -90,6 +90,21 @@ class EpubSpreadMap {
         entry.mergedImageChapters.contains(chapterIndex);
   }
 
+  /// novel-17f：从 [chapterIndex] 所在的虚拟页沿 [direction]（`1` 前进 / `-1` 后退）
+  /// 翻一页后会单独加载的章号——与阅读器翻页（`virtualPage ± 1`，见
+  /// `_navigateToVirtualPage`）走同一张表，所以「插图并入正文」时跳过被吸收的单图章、
+  /// 落到宿主文本章；倒着读时是上一页而不是下一页。越界、或那一页是双页（双页走
+  /// 拼页文档，不加载单章 HTML）时返回 null。
+  int? pageTurnTargetChapter(int chapterIndex, int direction) {
+    final int? virtual = _chapterToVirtual[chapterIndex];
+    if (virtual == null || direction == 0) return null;
+    final int target = virtual + direction.sign;
+    if (target < 0 || target >= _entries.length) return null;
+    final SpreadEntry entry = _entries[target];
+    if (entry.isSpread) return null;
+    return entry.chapterIndex;
+  }
+
   // ── Factories ─────────────────────────────────────────────────────
 
   factory EpubSpreadMap.build({

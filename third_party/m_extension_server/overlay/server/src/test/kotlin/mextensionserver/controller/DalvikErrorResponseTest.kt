@@ -3,6 +3,7 @@ package mextensionserver.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import eu.kanade.tachiyomi.network.HttpException
 import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
+import mextensionserver.impl.ApkNotRegisteredException
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,6 +41,17 @@ class DalvikErrorResponseTest {
             assertEquals(error.message, body["error"].asText())
             assertTrue(body["stackTrace"].asText().isNotEmpty())
         }
+    }
+
+    @Test
+    fun `an APK this process never received is a 409 apkUnknown, not a bridge failure`() {
+        val digest = "a".repeat(64)
+        // Wrapped the way a coroutine / Rx adapter would wrap it.
+        val response = DalvikHandler().errorResponse(RuntimeException(ApkNotRegisteredException(digest)))
+        assertEquals(409, response.status.requestStatus)
+        val body = response.data.use { jacksonObjectMapper().readTree(it) }
+        assertEquals("apkUnknown", body["errorKind"].asText())
+        assertEquals(digest, body["apkSha256"].asText())
     }
 
     @Test

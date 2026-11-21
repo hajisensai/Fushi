@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -104,6 +105,11 @@ std::string tmp_dir() {
   return std::string(tmp ? tmp : ".");
 }
 
+std::string read_text(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(in)), {});
+}
+
 std::string write_zip(const char* label, const std::vector<ZipFile>& files) {
   std::string path = tmp_dir() + "/fushi_v2fmt_" + label + ".zip";
   std::vector<uint8_t> bytes = build_zip(files);
@@ -191,7 +197,11 @@ int main() {
       ++g_fail;
     } else {
       kanji_dict_path = out_dir + "/" + r.title;
-      expect_true("A.marker v2 exists", fs::is_regular_file(kanji_dict_path + "/.fushidicts_2"));
+      // key.index 索引 → .fushidicts_3（文件体 = 记录布局版本 "2"），旧式名字一个都不留
+      // （拍板台 pr3554：旧引擎看到旧名字会去开不存在的 hash.table）。
+      expect_true("A.marker v3 exists", fs::is_regular_file(kanji_dict_path + "/.fushidicts_3"));
+      expect_true("A.marker v3 body = 2", read_text(kanji_dict_path + "/.fushidicts_3") == "2");
+      expect_true("A.marker v2 absent", !fs::exists(kanji_dict_path + "/.fushidicts_2"));
       expect_true("A.marker v1 absent", !fs::exists(kanji_dict_path + "/.fushidicts_1"));
 
       DictionaryQuery q;
@@ -222,8 +232,8 @@ int main() {
 
   // ----- B: marker 缺失 -> 拒载 -----
   if (!kanji_dict_path.empty()) {
-    const std::string marker = kanji_dict_path + "/.fushidicts_2";
-    const std::string hidden = kanji_dict_path + "/.fushidicts_2.bak";
+    const std::string marker = kanji_dict_path + "/.fushidicts_3";
+    const std::string hidden = kanji_dict_path + "/.fushidicts_3.bak";
     fs::rename(marker, hidden, ec);
     if (ec) {
       fail("B: could not rename marker");
@@ -251,6 +261,9 @@ int main() {
       legacy_kanji_path = out_dir + "/" + r.title;
       expect_true("C.legacy import writes bloom.filter", fs::is_regular_file(legacy_kanji_path + "/bloom.filter"));
       expect_true("C.legacy import writes no key.index", !fs::exists(legacy_kanji_path + "/key.index"));
+      // 退回旧式索引的仍写旧名字：旧引擎照读。
+      expect_true("C.legacy import writes .fushidicts_2", fs::is_regular_file(legacy_kanji_path + "/.fushidicts_2"));
+      expect_true("C.legacy import writes no .fushidicts_3", !fs::exists(legacy_kanji_path + "/.fushidicts_3"));
     }
   }
   if (!kanji_dict_path.empty()) {
@@ -298,7 +311,8 @@ int main() {
       ++g_fail;
     } else {
       const std::string dict_path = out_dir + "/" + r.title;
-      expect_true("D.marker v2 exists", fs::is_regular_file(dict_path + "/.fushidicts_2"));
+      expect_true("D.marker v3 exists", fs::is_regular_file(dict_path + "/.fushidicts_3"));
+      expect_true("D.marker v3 body = 2", read_text(dict_path + "/.fushidicts_3") == "2");
       const bool trained = fs::is_regular_file(dict_path + "/dict.zstd");
       std::fprintf(stderr, "INFO D: dict.zstd %s\n", trained ? "trained" : "not trained (fallback)");
 

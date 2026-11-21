@@ -33,6 +33,7 @@ void main() {
           h: <String>['aa'],
           k: <String>['bb', 'cc'],
         ),
+        usageStats: true,
       );
       expect(body, <String, Object?>{
         'v': '1.2.3',
@@ -42,6 +43,7 @@ void main() {
         'id': 'app.example',
         'h': <String>['aa'],
         'k': <String>['bb', 'cc'],
+        's': true,
       });
       // 可直接 JSON 编码。
       expect(jsonDecode(jsonEncode(body)), body);
@@ -54,7 +56,9 @@ void main() {
         channel: 'stable',
         locale: 'en',
         info: const BuildInfo(),
+        usageStats: false,
       );
+      expect(body['s'], isFalse);
       expect(body['id'], isNull);
       expect(body['h'], isEmpty);
       expect(body['k'], isEmpty);
@@ -163,9 +167,64 @@ void main() {
           body: 'B',
         ),
       ];
-      expect(decodeCachedNotices(encodeCachedNotices(notices)), notices);
-      expect(decodeCachedNotices(null), isEmpty);
-      expect(decodeCachedNotices('{broken'), isEmpty);
+      final DateTime at = DateTime.utc(2026, 11, 20);
+      expect(
+        decodeCachedNotices(encodeCachedNotices(notices, at: at), now: at),
+        notices,
+      );
+      expect(decodeCachedNotices(null, now: at), isEmpty);
+      expect(decodeCachedNotices('{broken', now: at), isEmpty);
+    });
+
+    test('缓存会过期：全屏层 1 天、其它 7 天；没有拉取时间的旧格式当作过期', () {
+      const RemoteNotice block = RemoteNotice(
+        id: 'k',
+        level: RemoteNoticeLevel.block,
+        title: 'K',
+        body: '',
+      );
+      const RemoteNotice banner = RemoteNotice(
+        id: 'b',
+        level: RemoteNoticeLevel.banner,
+        title: 'B',
+        body: '',
+      );
+      final DateTime at = DateTime.utc(2026, 11, 20);
+      final String cached = encodeCachedNotices(<RemoteNotice>[
+        block,
+        banner,
+      ], at: at);
+      expect(
+        decodeCachedNotices(cached, now: at.add(kNoticeBlockCacheMaxAge)),
+        <RemoteNotice>[block, banner],
+      );
+      expect(
+        decodeCachedNotices(
+          cached,
+          now: at.add(kNoticeBlockCacheMaxAge + const Duration(minutes: 1)),
+        ),
+        <RemoteNotice>[banner],
+      );
+      expect(
+        decodeCachedNotices(
+          cached,
+          now: at.add(kNoticeCacheMaxAge + const Duration(minutes: 1)),
+        ),
+        isEmpty,
+      );
+      // 时钟被拨回到拉取之前：不信任这份缓存。
+      expect(
+        decodeCachedNotices(
+          cached,
+          now: at.subtract(const Duration(minutes: 1)),
+        ),
+        isEmpty,
+      );
+      // 早期格式：裸数组，没有拉取时间。
+      expect(
+        decodeCachedNotices(jsonEncode(<Object?>[block.toJson()]), now: at),
+        isEmpty,
+      );
     });
   });
 
@@ -235,6 +294,7 @@ void main() {
         channel: () => 'stable',
         locale: () => 'en',
         buildInfo: () async => const BuildInfo(),
+        usageStats: () => false,
         operatingSystem: 'linux',
       );
 
@@ -271,7 +331,7 @@ void main() {
             title: 'T',
             body: '',
           ),
-        ]),
+        ], at: DateTime.now()),
       );
       final NoticeFeed feed = NoticeFeed(
         prefs: prefs,
@@ -280,12 +340,75 @@ void main() {
         channel: () => 'stable',
         locale: () => 'en',
         buildInfo: () async => const BuildInfo(),
+        usageStats: () => false,
         operatingSystem: 'windows',
       );
       feed.start();
       expect(await feed.refresh(), isFalse);
       expect(feed.notices.value.single.id, 'a');
       expect(prefs.getPref(kNoticesCachePrefKey), isNotNull);
+      await feed.stop();
+      feed.dispose();
+    });
+
+    test('统计开关每次请求现读，原样带在 s 字段里', () async {
+      final PreferencesRepository prefs = await makePrefs();
+      final List<Map<String, Object?>> requests = <Map<String, Object?>>[];
+      bool stats = true;
+      final NoticeFeed feed = NoticeFeed(
+        prefs: prefs,
+        post: (Map<String, Object?> body) async {
+          requests.add(body);
+          return '{"notices":[],"ttl":600}';
+        },
+        version: () => '1',
+        channel: () => 'stable',
+        locale: () => 'en',
+        buildInfo: () async => const BuildInfo(),
+        usageStats: () => stats,
+        operatingSystem: 'windows',
+      );
+      feed.start();
+      await feed.refresh();
+      stats = false;
+      await feed.refresh();
+      expect(requests.map((Map<String, Object?> r) => r['s']), <Object?>[
+        true,
+        false,
+      ]);
+      await feed.stop();
+      feed.dispose();
+    });
+
+    test('启动时不展示过期的全屏层缓存', () async {
+      final PreferencesRepository prefs = await makePrefs();
+      final DateTime fetchedAt = DateTime.utc(2026, 11, 1);
+      await prefs.setPref(
+        kNoticesCachePrefKey,
+        encodeCachedNotices(const <RemoteNotice>[
+          RemoteNotice(
+            id: 'k',
+            level: RemoteNoticeLevel.block,
+            title: 'K',
+            body: '',
+          ),
+        ], at: fetchedAt),
+      );
+      final NoticeFeed feed = NoticeFeed(
+        prefs: prefs,
+        post: (Map<String, Object?> body) async => throw StateError('offline'),
+        version: () => '1',
+        channel: () => 'stable',
+        locale: () => 'en',
+        buildInfo: () async => const BuildInfo(),
+        usageStats: () => false,
+        operatingSystem: 'windows',
+        clock: () => fetchedAt.add(const Duration(days: 2)),
+      );
+      feed.start();
+      expect(feed.notices.value, isEmpty);
+      expect(await feed.refresh(), isFalse);
+      expect(feed.notices.value, isEmpty);
       await feed.stop();
       feed.dispose();
     });
@@ -303,6 +426,7 @@ void main() {
         channel: () => 'stable',
         locale: () => 'en',
         buildInfo: () async => const BuildInfo(),
+        usageStats: () => false,
         operatingSystem: 'ios',
       );
       feed.start();
@@ -325,6 +449,7 @@ void main() {
         channel: () => 'stable',
         locale: () => 'en',
         buildInfo: () async => const BuildInfo(),
+        usageStats: () => false,
         operatingSystem: 'android',
       );
       feed.start();

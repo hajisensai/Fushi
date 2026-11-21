@@ -258,6 +258,17 @@
   --md-sys-typescale-font: "Google Sans Flex", "Google Sans", "Roboto Flex", "Roboto", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
 }
 
+/* 中文界面：汉字先落到中文字体，不让日文字体（Hiragino / Yu Gothic）按日文字形渲染中文、再和雅黑回退混排。
+   只列带真粗体字重的系统字体（苹方 / 雅黑 UI / 思源）：只装了 Regular 的第三方字体（如 MiSans）会被浏览器合成粗体，笔画发糊。
+   拉丁字母仍走上面同一组无衬线；简体 / 繁体各取对应地区字形。 */
+:root:lang(zh) {
+  --md-sys-typescale-font: "Google Sans Flex", "Google Sans", "Roboto Flex", "Roboto", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif;
+}
+
+:root:is(:lang(zh-Hant), :lang(zh-TW), :lang(zh-HK), :lang(zh-MO)) {
+  --md-sys-typescale-font: "Google Sans Flex", "Google Sans", "Roboto Flex", "Roboto", "Segoe UI Variable Text", "Segoe UI", "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC", system-ui, sans-serif;
+}
+
 /*
  *  ── ③ 外观风格（extensionStyle）：形状 / 表面 / 层次 / 动效 token ──
  *
@@ -306,7 +317,7 @@
   --fushi-mat-orb-3: transparent;
   --fushi-mat-orb-strength: 0%;
   --fushi-mat-field: var(--md-sys-color-surface-container-highest);
-  --fushi-mat-field-hover: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-highest));
+  --fushi-mat-field-hover: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-highest));
   --fushi-mat-field-focus: var(--md-sys-color-surface-container-highest);
   --fushi-mat-thumb: var(--md-sys-color-on-primary);
   --fushi-mat-thumb-shadow: none;

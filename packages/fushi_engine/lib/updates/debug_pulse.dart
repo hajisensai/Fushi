@@ -219,6 +219,35 @@ class DebugPulsePending extends DebugPulseChangeSet {
   bool get isEmpty => prNumbers.isEmpty && direct.isEmpty;
 }
 
+/// [DebugPulseReport.changesBetween] 的结果：一段序号区间内所有调试版的改动并集。
+class DebugPulseRange extends DebugPulseChangeSet {
+  DebugPulseRange({
+    required this.buildCount,
+    required this.prNumbers,
+    required this.direct,
+    required this.truncated,
+    required this.complete,
+  });
+
+  /// 区间内报告里有几个包。
+  final int buildCount;
+  @override
+  final List<int> prNumbers;
+  @override
+  final List<DebugPulseCommit> direct;
+  @override
+  final bool truncated;
+
+  /// 区间开头的包也在报告里（没被「只留最近 N 个包」截掉）。
+  final bool complete;
+
+  @override
+  Map<DebugPulsePlatform, DebugPulsePlatformStatus> get platforms =>
+      const <DebugPulsePlatform, DebugPulsePlatformStatus>{};
+
+  bool get isEmpty => prNumbers.isEmpty && direct.isEmpty;
+}
+
 class DebugPulseReport {
   DebugPulseReport({
     required this.generatedAt,
@@ -263,6 +292,41 @@ class DebugPulseReport {
   int newPrCount(int? installedSeq) => <int>{
     for (final DebugPulseBuild b in newerThan(installedSeq)) ...b.prNumbers,
   }.length;
+
+  /// 「本版新内容」：序号落在 `(afterSeq, throughSeq]` 的调试版合起来多了什么。
+  ///
+  /// PR 按包从新到旧去重；[DebugPulseRange.complete] 为 false 表示清单只保留了
+  /// 最近一批包、区间开头那部分已经不在报告里（调用方要说「更早的改动未列出」）。
+  DebugPulseRange changesBetween({
+    required int afterSeq,
+    required int throughSeq,
+  }) {
+    final List<DebugPulseBuild> inRange = builds
+        .where((DebugPulseBuild b) => b.seq > afterSeq && b.seq <= throughSeq)
+        .toList();
+    final List<int> prNumbers = <int>[];
+    final Set<int> seenPrs = <int>{};
+    final List<DebugPulseCommit> direct = <DebugPulseCommit>[];
+    bool truncated = false;
+    for (final DebugPulseBuild b in inRange) {
+      for (final int n in b.prNumbers) {
+        if (seenPrs.add(n)) prNumbers.add(n);
+      }
+      direct.addAll(b.direct);
+      truncated = truncated || b.truncated || b.unknown;
+    }
+    final int? oldestBase = inRange.isEmpty ? null : inRange.last.baseSeq;
+    final bool complete =
+        afterSeq >= throughSeq ||
+        (oldestBase != null && oldestBase <= afterSeq);
+    return DebugPulseRange(
+      buildCount: inRange.length,
+      prNumbers: prNumbers,
+      direct: direct,
+      truncated: truncated,
+      complete: complete,
+    );
+  }
 
   /// 本机平台最新一个**真出了包**的调试版：能更新到的就是它。
   DebugPulseBuild? latestAvailableFor(DebugPulsePlatform? platform) {

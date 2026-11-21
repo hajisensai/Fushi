@@ -56,16 +56,16 @@ pub(super) fn u(i: Id) -> Key {
 }
 
 /// 两份带盐的笔记，连同它们规范的那一套。
-pub(super) struct Twin {
+pub(in crate::store::gen4) struct Twin {
     pub(super) nt: [Id; 2],
     pub(super) field: [Id; 2],
     pub(super) tmpl: [Id; 2],
     pub(super) note: [Id; 2],
-    pub(super) card: [Id; 2],
+    pub(in crate::store::gen4) card: [Id; 2],
     pub(super) log: [Id; 2],
     pub(super) c_field: Id,
     pub(super) c_note: Id,
-    pub(super) c_card: Id,
+    pub(in crate::store::gen4) c_card: Id,
     pub(super) c_log: Id,
 }
 
@@ -188,7 +188,7 @@ pub(super) fn base_seen(w: &Twin) -> (u8, u64) {
 
 /// 灌进集合 [col]：0xa1 的定义，再 0xb1 / 0xb2 互不相见地各改一份的同一字段，0xc1 删待裁决的笔记、0xc2 没见过这条删除
 /// 就改它的字段（删除被扣住）。返回场景。`center_tests.rs` 的别名类场景也用它。
-pub(super) fn land(t: &Truth<'_>, col: i64) -> Twin {
+pub(in crate::store::gen4) fn land(t: &Truth<'_>, col: i64) -> Twin {
     let w = twin();
     let cfg = json!({"defaultDeck": id(DECK).text()}).to_string();
     t.tx(|t| {
@@ -1224,6 +1224,51 @@ fn training_reads_see_a_log_class_once_through_any_member() {
             !s.contains(&w.log[0].text()) && !s.contains(&w.log[1].text()),
             "{s}"
         );
+        assert!(t.conn().is_autocommit());
+    });
+}
+
+/// RWKV 尾巴只给**代表**出行（`cache.rs` `log_class_rep`：类里操作号最小的那份）：同一次 Anki 复习的两份带盐导入，承袭来的
+/// 那份（设备 0x11，操作号小）先落库、是代表；本机写的那份（0xa1）后落库。`since` 卡在两份之间时增量尾巴里只有后落库的
+/// 那份：它不是代表，不出行（指纹照数它）。代表规则改成「取操作号最大的」或「每份都算」都会多出一行。
+#[test]
+fn the_log_tail_names_a_class_only_through_its_smallest_op() {
+    use super::training::rwkv_log_tail;
+    use crate::store::gen4::derive::Ref;
+    with(|t, col| {
+        let w = land(t, col);
+        let seq = |lid: Id| -> i64 {
+            t.conn()
+                .query_row(
+                    "SELECT s.n FROM log_seq s JOIN log_ix l ON l.col = s.col AND l.card = s.card AND l.k = s.k \
+                     WHERE s.col = ?1 AND l.id = ?2",
+                    rusqlite::params![col, Ref::of(&u(lid))],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        let (rep, other) = (seq(w.log[0]), seq(w.log[1]));
+        assert!(
+            rep < other,
+            "the heritage copy lands first: {rep} / {other}"
+        );
+        let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+        // [count, maxN, newRows, tailRows]
+        let only_other = rwkv_log_tail(t, col, rep, true, true).unwrap();
+        assert_eq!(
+            (
+                word(&only_other, 0),
+                word(&only_other, 1),
+                word(&only_other, 2),
+                word(&only_other, 3)
+            ),
+            (1, other, 1, 0),
+            "the later copy is counted but is not the representative"
+        );
+        // 两份都在尾巴里：只出一行（代表那份，ID 是规范的）。
+        let both = rwkv_log_tail(t, col, rep - 1, true, true).unwrap();
+        assert_eq!((word(&both, 2), word(&both, 3)), (2, 1));
+        assert!(String::from_utf8_lossy(&both).contains(&w.c_log.text()));
         assert!(t.conn().is_autocommit());
     });
 }

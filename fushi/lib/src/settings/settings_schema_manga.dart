@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -23,6 +22,7 @@ import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「漫画」一级设置分类。
 ///
@@ -273,7 +273,7 @@ SettingsSection _mangaPagingSection() {
         title: t.manga_volume_key_paging,
         subtitle: t.manga_volume_key_paging_subtitle,
         icon: Icons.volume_up_outlined,
-        visible: (_) => Platform.isAndroid,
+        visible: (_) => hostPlatform.isAndroid,
         value: (SettingsContext c) => c.appModel.mangaVolumeKeyPaging,
         onChanged: (SettingsContext c, bool value) =>
             c.appModel.setMangaVolumeKeyPaging(value),
