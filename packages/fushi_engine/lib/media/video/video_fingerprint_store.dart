@@ -201,9 +201,9 @@ class VideoFingerprintStore {
               _diskLines + batch.length > 2 * map.length + _compactSlack) {
             await _compact(map);
           } else {
-            final String chunk = '${batch.join('\n')}\n';
-            await file.writeAsString(chunk, mode: FileMode.append, flush: true);
-            _bytesWritten += utf8.encode(chunk).length;
+            final List<int> chunk = utf8.encode('${batch.join('\n')}\n');
+            await file.writeAsBytes(chunk, mode: FileMode.append, flush: true);
+            _bytesWritten += chunk.length;
             _flushCount++;
             _diskLines += batch.length;
           }
@@ -220,6 +220,9 @@ class VideoFingerprintStore {
   }
 
   /// 把在用条目整份写成新日志（临时文件 + rename），丢掉失效行。
+  ///
+  /// 快照在第一个 await 之前同步取好：写盘期间进来的 put 只改内存表、行进
+  /// [_pendingLines]，由 [_flush] 下一轮追加，所以 [_diskLines] 只记快照里的行数。
   Future<void> _compact(Map<String, _StoredFingerprint> map) async {
     final StringBuffer out = StringBuffer();
     for (final MapEntry<String, _StoredFingerprint> e in map.entries) {
@@ -227,13 +230,14 @@ class VideoFingerprintStore {
         ..write(e.value.toLine(e.key))
         ..write('\n');
     }
-    final String text = out.toString();
+    final int lines = map.length;
+    final List<int> bytes = utf8.encode(out.toString());
     final File tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(text, flush: true);
+    await tmp.writeAsBytes(bytes, flush: true);
     await tmp.rename(file.path);
-    _bytesWritten += utf8.encode(text).length;
+    _bytesWritten += bytes.length;
     _flushCount++;
-    _diskLines = map.length;
+    _diskLines = lines;
     _needsCompact = false;
   }
 }
