@@ -40,7 +40,8 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show ValueNotifier, mapEquals, visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
@@ -63,6 +64,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/mokuro_sidecar.dart';
+
+/// 页图字节 → 真实宽高（解不出返回 null）。
+typedef MangaPageDimensions =
+    Future<({int width, int height})?> Function(Uint8List bytes);
 
 /// mokuro.moe 卷任务的 `runtime` 列值。
 const String kMokuroMoeDownloadRuntime = 'mokuro_moe';
@@ -388,8 +393,10 @@ class MangaDownloadService {
     DateTime Function()? clock,
     Future<void> Function(Duration duration)? wait,
     DownloadKeepAlive? keepAlive,
+    MangaPageDimensions pageDimensions = mangaImageDimensions,
     this.pageConcurrency = kMangaDownloadPageConcurrency,
   }) : _database = database,
+       _pageDimensions = pageDimensions,
        _serviceFor = serviceFor,
        _onChapterDownloaded = onChapterDownloaded,
        _sidecarFetcher = sidecarFetcher,
@@ -406,6 +413,9 @@ class MangaDownloadService {
   final MokuroMoeVolumeDownloaderFactory? _mokuroDownloader;
   final DateTime Function() _clock;
   final Future<void> Function(Duration duration) _wait;
+
+  /// 页图真实尺寸（全章页齐后写 manga.json 用）；测试注入以卡住全章校验。
+  final MangaPageDimensions _pageDimensions;
 
   /// BUG-2714：worker 有任务在跑就挂下载保活（Android 前台服务），队列排空 /
   /// 服务停止时撤。与其它下载来源经 [downloadKeepAliveHub] 汇总，互不撤对方。
@@ -637,14 +647,78 @@ class MangaDownloadService {
   }) => _database.listMangaDownloadJobs(statuses: statuses);
 
   /// 一本书的任务，按 chapterKey 索引（作品页 / 章节选择器一次取全量）。
-  Future<Map<String, MangaDownloadJobRow>> jobsForBook(String bookKey) async {
+  Future<Map<String, MangaDownloadJobRow>> jobsForBook(String bookKey) =>
+      _chapterJobsOf(bookKey);
+
+  Future<Map<String, MangaDownloadJobRow>> _chapterJobsOf(
+    String bookKey,
+  ) async {
     final List<MangaDownloadJobRow> rows = await _database
-        .listMangaDownloadJobs();
+        .listMangaDownloadJobsForBook(
+          kind: MangaDownloadJobKind.chapter,
+          bookKey: bookKey,
+        );
     return <String, MangaDownloadJobRow>{
-      for (final MangaDownloadJobRow row in rows)
-        if (row.bookKey == bookKey && row.kind == MangaDownloadJobKind.chapter)
-          row.chapterKey: row,
+      for (final MangaDownloadJobRow row in rows) row.chapterKey: row,
     };
+  }
+
+  /// 一本书的章节任务（按 chapterKey 索引）**变了**的流（HBK-AUDIT-050）。
+  ///
+  /// 作品页只关心本书：[watchJobs] 是全表信号，别的书每写一次进度都会叫醒它，让它
+  /// 重查任务、重判全部章节并重建。这里在服务侧收全表信号、只查本书的行（走索引），
+  /// 与上一次的结果逐行比较，**只有本书的行确实变了才发**；订阅时先取一次当基线，
+  /// 不发（订阅方自己取首屏）。查询串行：在跑的那次结束后最多补一次。
+  Stream<Map<String, MangaDownloadJobRow>> watchChapterJobsForBook(
+    String bookKey,
+  ) {
+    StreamSubscription<void>? table;
+    Map<String, MangaDownloadJobRow>? last;
+    bool querying = false;
+    bool dirty = false;
+    bool cancelled = false;
+    late final StreamController<Map<String, MangaDownloadJobRow>> changes;
+
+    Future<void> pump() async {
+      if (querying) {
+        dirty = true;
+        return;
+      }
+      querying = true;
+      try {
+        do {
+          dirty = false;
+          final Map<String, MangaDownloadJobRow> current = await _chapterJobsOf(
+            bookKey,
+          );
+          if (cancelled) return;
+          final Map<String, MangaDownloadJobRow>? previous = last;
+          last = current;
+          if (previous != null && !mapEquals(previous, current)) {
+            changes.add(current);
+          }
+        } while (dirty);
+      } on Object catch (error, stack) {
+        if (!cancelled) changes.addError(error, stack);
+      } finally {
+        querying = false;
+      }
+    }
+
+    changes = StreamController<Map<String, MangaDownloadJobRow>>(
+      onListen: () {
+        table = _database.watchMangaDownloadJobs().listen(
+          (_) => unawaited(pump()),
+          onError: changes.addError,
+        );
+        unawaited(pump());
+      },
+      onCancel: () async {
+        cancelled = true;
+        await table?.cancel();
+      },
+    );
+    return changes.stream;
   }
 
   /// 一个 mokuro.moe 系列的卷任务，按卷名索引（目录页渲染行内状态用）。
@@ -1224,10 +1298,13 @@ class MangaDownloadService {
         );
       };
     }
+    // 待取页按游标出队（单 isolate，worker 之间不会并发改游标）：头删 removeAt(0)
+    // 每次都要整体前移剩余元素，P 页一章共 P(P-1)/2 次搬移（HBK-AUDIT-046）。
+    int nextPending = 0;
     Future<void> worker() async {
-      while (pending.isNotEmpty && firstError == null) {
+      while (nextPending < pending.length && firstError == null) {
         if (token.isTripped) return;
-        final int index = pending.removeAt(0);
+        final int index = pending[nextPending++];
         inFlight.add(index);
         try {
           files[index] = await _fetchPage(pages, images, index, token);
@@ -1265,10 +1342,19 @@ class MangaDownloadService {
     }
     // 全部页齐 → 用真实字节尺寸写章 manga.json。
     final List<MokuroImage> payloadImages = <MokuroImage>[];
+    // 全章校验逐页读整页并解尺寸，几百页的高清章要好几秒：每页都与中止信号
+    // 赛跑，暂停 / 取消不必等校验走完（HBK-AUDIT-046）。
     for (final _PageFile? file in files) {
+      _throwIfCancelled(token);
       if (file == null) throw StateError('A page is missing after download');
-      final Uint8List bytes = await file.file.readAsBytes();
-      final ({int width, int height})? size = await mangaImageDimensions(bytes);
+      final Uint8List bytes = await _untilTripped(
+        file.file.readAsBytes(),
+        token,
+      );
+      final ({int width, int height})? size = await _untilTripped(
+        _pageDimensions(bytes),
+        token,
+      );
       if (size == null) {
         throw StateError('Undecodable page image: ${file.relativeUrl}');
       }
