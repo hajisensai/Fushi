@@ -1,5 +1,5 @@
 /// 设置 · 关于 ·「免费与开源声明」：Fushi 是 GPLv3 授权的免费开源软件、官方版本永久免费、
-/// 付了钱怎么办、官方获取渠道与附加条款 / 商标政策链接。本地构建提示生效时
+/// 付了钱怎么办、官方获取渠道与附加条款链接。本地构建提示生效时
 /// （build_listing.dart 的 [localNoticeActive]），页首多一行醒目提示。
 library;
 
@@ -18,16 +18,9 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/official_links.dart';
 
-/// GitHub Releases 下载页。
-const String kFushiReleasesUrl = 'https://github.com/hajisensai/Fushi/releases';
-
 /// 仓库里的 GPLv3 第 7 节附加条款。
 const String kFushiAdditionalTermsUrl =
     'https://github.com/hajisensai/Fushi/blob/develop/ADDITIONAL_TERMS.md';
-
-/// 仓库里的商标政策。
-const String kFushiTrademarkUrl =
-    'https://github.com/hajisensai/Fushi/blob/develop/TRADEMARK.md';
 
 /// 「免费与开源声明」页。[showLocalNotice] 为 null 时按 [localNoticeActive] 决定是否显示页首提示
 /// （测试可直接给定）。
@@ -115,7 +108,7 @@ class _StatementBody extends StatelessWidget {
           _link(
             id: 'releases',
             title: t.settings_free_software_github_releases,
-            url: kFushiReleasesUrl,
+            url: kOfficialReleasesUrl,
             icon: FushiIcons.download,
           ),
           _link(
@@ -134,12 +127,6 @@ class _StatementBody extends StatelessWidget {
             title: t.settings_free_software_additional_terms,
             url: kFushiAdditionalTermsUrl,
             icon: FushiIcons.code,
-          ),
-          _link(
-            id: 'trademark',
-            title: t.settings_free_software_trademark,
-            url: kFushiTrademarkUrl,
-            icon: FushiIcons.shield,
           ),
         ],
       ),

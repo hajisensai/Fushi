@@ -373,6 +373,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     final MangaAudioPlaybackDriver? driver = audio;
     if (driver == null) return;
     audio = null;
+    _lookupPause.drop();
     _session.removeListener(_onSessionChanged);
     _session.detachReader(_audioView);
     if (!driver.isDisposed) driver.detachHost(this);
@@ -392,8 +393,42 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
+  // ── 查词暂停 ────────────────────────────────────────────────────────
+
+  /// 查词按住播放的标记（BUG-4907 / 4908 / 4909，见 [MangaLookupPause]）。
+  final MangaLookupPause _lookupPause = MangaLookupPause();
+
+  /// 眼前在用的音源：成品音频优先（两者不会同时在），否则现场合成。
+  MangaLookupPausable? get _lookupPlayback {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null) return _DriverLookupPausable(driver);
+    final MangaReadAloudController? c = controller;
+    return c == null ? null : _ControllerLookupPausable(c);
+  }
+
+  /// 主屏点 OCR 字要查词了：记下被查的句子（查后从句首重播用）。
+  void noteLookupSentence(MangaLookupSentence? sentence) =>
+      _lookupPause.noteSentence(sentence);
+
+  /// [source] 的查词出现（每层弹窗 / 每个新查词都会来，幂等）。
+  void lookupOpened(MangaLookupSource source) => _lookupPause.lookupOpened(
+    source,
+    _lookupPlayback,
+    enabled: ReaderFushiSource.instance.pauseOnLookup,
+  );
+
+  /// [source] 的查词关闭（[resume]：用户关的）。另一来源还开着就继续按住。
+  void lookupClosed(MangaLookupSource source, {required bool resume}) =>
+      _lookupPause.lookupClosed(
+        source,
+        _lookupPlayback,
+        resume: resume,
+        restartSentence: ReaderFushiSource.instance.restartSentenceAfterLookup,
+      );
+
   /// 停掉成品音频的会话（不是暂停：播放条的「停止」与工具栏再点一次）。
   void stopAudio() {
+    _lookupPause.drop();
     _detachAudio();
     unawaited(_session.stop());
     unawaited(clearHighlight());
@@ -460,7 +495,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
         c = MangaReadAloudController(
           host: this,
           rig: rig,
-          pronunciation: _tts.pronunciation.load(),
+          pronunciation: _tts.textRules.load(TtsTextRuleKind.pronunciation),
+          preSynthesis: _tts.textRules.load(TtsTextRuleKind.preSynthesis),
           playToEnd: (String path, double speed) =>
               DesktopAudioPlayback.playFileToEnd(path, speed: speed),
           stopPlayback: DesktopAudioPlayback.stop,
@@ -507,7 +543,10 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     if (rebuild) _rebuild();
   }
 
-  void stop() => controller?.stop();
+  void stop() {
+    _lookupPause.drop();
+    controller?.stop();
+  }
 
   void pause() => controller?.pause();
 
@@ -565,6 +604,68 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     if (c == null) return;
     c.removeListener(_onControllerChanged);
     c.dispose();
+  }
+}
+
+/// 成品音频驱动的查词按住适配。从句首重播时被查那句按页 + 块在清单里找
+/// （与制卡取句子音频同一判据 [mangaMiningAudioLineIndex]）。
+class _DriverLookupPausable implements MangaLookupPausable {
+  _DriverLookupPausable(this._d);
+
+  final MangaAudioPlaybackDriver _d;
+
+  @override
+  bool get isRunning => !_d.isDisposed && _d.isPlaying;
+
+  @override
+  void pause() => unawaited(_d.pause());
+
+  @override
+  void resume({required bool restartSentence, MangaLookupSentence? sentence}) {
+    if (_d.isDisposed || _d.isPlaying) return;
+    if (!restartSentence) {
+      unawaited(_d.play());
+      return;
+    }
+    final int? line = sentence == null
+        ? null
+        : mangaMiningAudioLineIndex(
+            _d.manifest,
+            pageIndex: sentence.pageIndex,
+            blocks: sentence.blocks,
+          );
+    unawaited(_d.playFromLine(line));
+  }
+}
+
+/// 现场合成控制器的查词按住适配：等页文字 / 合成中也算在播。它的继续本来就从当前句
+/// 开头重读，所以「从句首重播」只在有被查句时换成那一句。
+class _ControllerLookupPausable implements MangaLookupPausable {
+  _ControllerLookupPausable(this._c);
+
+  final MangaReadAloudController _c;
+
+  @override
+  bool get isRunning =>
+      _c.isActive &&
+      switch (_c.state) {
+        MangaReadAloudState.preparingText ||
+        MangaReadAloudState.synthesizing ||
+        MangaReadAloudState.playing => true,
+        _ => false,
+      };
+
+  @override
+  void pause() => _c.pause();
+
+  @override
+  void resume({required bool restartSentence, MangaLookupSentence? sentence}) {
+    if (_c.state != MangaReadAloudState.paused) return;
+    if (restartSentence && sentence != null) {
+      _c.resumeFromSentence(sentence.pageIndex, sentence.blocks);
+    } else {
+      _c.resume();
+    }
   }
 }
 

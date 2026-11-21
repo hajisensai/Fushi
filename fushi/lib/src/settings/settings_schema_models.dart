@@ -7,10 +7,12 @@ import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_text_rules_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -244,9 +246,49 @@ SettingsDestination _buildTtsDestination() {
           ),
         ],
       ),
+      // 文本处理：与「制作有声书」页同一份规则（TtsServices.textRules），两边都是
+      // 它的视图。
+      SettingsSection(
+        id: 'models.section.tts_text_rules',
+        title: t.tts_text_rules_section,
+        footer: t.tts_text_rules_section_footer,
+        items: <SettingsItem>[
+          for (final TtsTextRuleKind kind in TtsTextRuleKind.values)
+            _ttsTextRulesItem(kind),
+        ],
+      ),
     ],
   );
 }
+
+/// 「文本处理」里一类规则的入口。副标题只读已建好的 [TtsServices]（同
+/// [_localTtsStatus] 的纪律）；还没建过就显示静态说明，点开后建好。
+SettingsActionItem _ttsTextRulesItem(TtsTextRuleKind kind) =>
+    SettingsActionItem(
+      id: switch (kind) {
+        TtsTextRuleKind.pronunciation => 'models.tts_pronunciation',
+        TtsTextRuleKind.preSynthesis => 'models.tts_pre_synthesis',
+        TtsTextRuleKind.postRecognition => 'models.tts_post_recognition',
+      },
+      title: ttsTextRuleKindTitle(kind),
+      subtitle: ttsTextRuleKindHint(kind),
+      icon: ttsTextRuleKindIcon(kind),
+      subtitleBuilder: (SettingsContext _) {
+        final TtsTextRulesStore? store = TtsServices.existing?.textRules;
+        return store == null
+            ? null
+            : ttsTextRulesSummary(kind, store.load(kind));
+      },
+      cli: const SettingsCliAction.unsupported('TTS 文本处理规则只在 app 里编辑'),
+      onTap: (SettingsContext settingsContext) async {
+        await openTtsTextRulesPage(
+          settingsContext.context,
+          TtsServices.of(settingsContext.appModel.prefsRepo).textRules,
+          kind,
+        );
+        settingsContext.refresh();
+      },
+    );
 
 /// 「发音兜底」分组：单词音频在本地与在线来源都找不到时，用哪个声音、多快的倍速
 /// 合成。用途只有制卡，所以挂在「制卡」页；项留在本文件，因为它们依赖这里的 TTS
@@ -281,7 +323,8 @@ SettingsSliderItem _ttsFallbackSpeedItem() => SettingsSliderItem(
 );
 
 /// 「制卡发音兜底」的声音选择（单词音频；句子音频不做 TTS 兜底，BUG-172）。
-/// 偏好设备本地（可能指向本机声音预设），见 [kMiningTtsFallbackVoicePref]。
+/// 偏好设备本地（可能指向本机声音预设），按配置记、切配置自动换（只在本机），见
+/// [kMiningTtsFallbackVoicePref] 与 `ProfileRepository.perProfileDeviceLocalPrefs`。
 SettingsActionItem _miningTtsFallbackVoiceItem() => SettingsActionItem(
   id: 'models.tts_fallback_voice',
   title: t.models_tts_fallback_voice,

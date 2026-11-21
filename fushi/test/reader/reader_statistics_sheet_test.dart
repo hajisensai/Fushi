@@ -10,6 +10,7 @@ import 'package:fushi/src/reader/reader_panel_chrome_kit.dart'
     show ReaderStatNumber;
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, LookupMiningCounterRow, kActivityMediaBook;
@@ -701,6 +702,56 @@ void main() {
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
+      await disposeSheet(tester);
+    });
+
+    // BUG-5051：loadBookTotals 失败曾是无人接的异步错误（`.then` 没有 onError）。
+    testWidgets('本书累计读取失败：记错误日志、停在空态、不抛未处理异常', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final int before = ErrorLogService.instance.entries
+          .where(
+            (ErrorLogEntry e) =>
+                e.source == 'ReaderStatisticsSheet.loadBookTotals',
+          )
+          .length;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReaderStatisticsSheet(
+              bookTitle: '',
+              sessionTotals: () => session,
+              loadBookTotals: () async => throw StateError('db closed'),
+              progress: () => (
+                chapterCurrent: null,
+                chapterTotal: null,
+                bookCurrent: null,
+                bookTotal: null,
+              ),
+              onTogglePause: () {},
+              onOpenFullRecords: () {},
+              tick: const Duration(days: 1),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull);
+      expect(
+        ErrorLogService.instance.entries
+            .where(
+              (ErrorLogEntry e) =>
+                  e.source == 'ReaderStatisticsSheet.loadBookTotals',
+            )
+            .length,
+        before + 1,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('fushi_reader_stats_week_empty')),
+        findsOneWidget,
+      );
       await disposeSheet(tester);
     });
   });

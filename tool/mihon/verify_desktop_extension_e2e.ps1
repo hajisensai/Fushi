@@ -105,16 +105,28 @@ try {
         throw "M-Extension-Server did not expose the required capability."
     }
 
-    $apkData = [Convert]::ToBase64String(
-        [IO.File]::ReadAllBytes($extensionApk)
-    )
+    # The APK travels once, as raw bytes, to PUT /apk/<sha256>; every call
+    # afterwards names only the digest (manga-28).
+    $apkBytes = [IO.File]::ReadAllBytes($extensionApk)
+    $apkData = (Get-FileHash -LiteralPath $extensionApk -Algorithm SHA256).Hash.ToLowerInvariant()
+    $upload = Invoke-WebRequest `
+        -Uri "$baseUri/apk/$apkData" `
+        -Method Put `
+        -Headers $authenticatedHeaders `
+        -ContentType "application/vnd.android.package-archive" `
+        -Body $apkBytes `
+        -SkipHttpErrorCheck `
+        -TimeoutSec 60
+    if ($upload.StatusCode -ne 200) {
+        throw "/apk upload returned HTTP $($upload.StatusCode): $($upload.Content)"
+    }
     $inspection = Invoke-MihonJson `
         -Path "/inspect" `
-        -Payload @{ data = $apkData }
+        -Payload @{ apkSha256 = $apkData }
     $sources = @(
         Invoke-MihonJson `
             -Path "/dalvik" `
-            -Payload @{ data = $apkData; method = "sourcesManga" }
+            -Payload @{ apkSha256 = $apkData; method = "sourcesManga" }
     )
     $source = $sources |
         Where-Object { $_.lang -eq $Language } |
@@ -132,7 +144,7 @@ try {
     $popular = Invoke-MihonJson `
         -Path "/dalvik" `
         -Payload @{
-            data = $apkData
+            apkSha256 = $apkData
             method = "getPopularManga"
             page = 1
             preferences = $preferences
@@ -144,7 +156,7 @@ try {
     $searchResult = Invoke-MihonJson `
         -Path "/dalvik" `
         -Payload @{
-            data = $apkData
+            apkSha256 = $apkData
             method = "getSearchManga"
             page = 1
             search = $Search
@@ -165,7 +177,7 @@ try {
             $candidateDetails = Invoke-MihonJson `
                 -Path "/dalvik" `
                 -Payload @{
-                    data = $apkData
+                    apkSha256 = $apkData
                     method = "getDetailsManga"
                     mangaData = $manga
                     preferences = $preferences
@@ -174,7 +186,7 @@ try {
                 Invoke-MihonJson `
                     -Path "/dalvik" `
                     -Payload @{
-                        data = $apkData
+                        apkSha256 = $apkData
                         method = "getChapterList"
                         mangaData = $candidateDetails
                         preferences = $preferences
@@ -201,7 +213,7 @@ try {
                 Invoke-MihonJson `
                     -Path "/dalvik" `
                     -Payload @{
-                        data = $apkData
+                        apkSha256 = $apkData
                         method = "getPageList"
                         chapterData = $chapter
                         preferences = $preferences

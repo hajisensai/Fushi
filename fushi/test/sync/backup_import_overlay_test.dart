@@ -256,6 +256,14 @@ void main() {
   });
 
   group('源码守卫 (TODO-1151)', () {
+    // 成功出口：`completeBackupImport(...)` 的实参里有成功文案 `t.backup_import_success`。G11-4 起合并里有没并入的
+    // 复习数据时换成 `t.backup_import_success_srs_declined(...)`（三元二选一，见 backup_srs_gen4_guard_test），所以
+    // 不再逐字锚 `completeBackupImport(t.backup_import_success)`；正则里的词边界让带后缀的那条文案不算数，纯成功文案
+    // 必须仍在。
+    final RegExp successExit = RegExp(
+      r'completeBackupImport\(\s*[^;]*\bt\.backup_import_success\b[^;]*\);',
+    );
+
     File readSource(String rel) {
       final File f = File(rel);
       expect(f.existsSync(), isTrue, reason: 'missing source file: $rel');
@@ -359,7 +367,7 @@ void main() {
         ).readAsStringSync();
         // 成功与失败两条路径都切到确认视图（TODO-1183：失败走 failed 态而非绿✓）。
         expect(
-          src.contains('completeBackupImport(t.backup_import_success)'),
+          successExit.hasMatch(src),
           isTrue,
           reason: '导入成功必须切到确认视图，而非直接退出',
         );
@@ -429,9 +437,7 @@ void main() {
       );
       final String importBody = src.substring(importIdx, nextTop);
       // 成功路径：completeBackupImport 之后延时(~1s)自动调 backupImportRestart。
-      final int completeIdx = importBody.indexOf(
-        'completeBackupImport(t.backup_import_success)',
-      );
+      final int completeIdx = successExit.firstMatch(importBody)?.start ?? -1;
       final int autoRestartIdx = importBody.indexOf(
         'await backupImportRestart(appModel)',
       );

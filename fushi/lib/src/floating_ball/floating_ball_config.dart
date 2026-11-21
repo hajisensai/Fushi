@@ -11,6 +11,7 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 测试缝，与 `GlobalLookupController.platformOverride` 同形：「这台机器有没有
 /// 桌面应用外球」与起停 / 按钮过滤 / 动作分发这些 Dart 逻辑正交。不覆盖的话，
@@ -22,9 +23,9 @@ bool? debugDesktopSystemBallPlatformOverride;
 /// 同时在）。Linux 只在 X11 会话里有：Wayland 不让程序摆放自己的窗口。
 bool get isDesktopSystemBallPlatform =>
     debugDesktopSystemBallPlatformOverride ??
-    (Platform.isWindows ||
-        Platform.isMacOS ||
-        (Platform.isLinux && linuxSessionIsX11(Platform.environment)));
+    (hostPlatform.isWindows ||
+        hostPlatform.isMacOS ||
+        (hostPlatform.isLinux && linuxSessionIsX11(Platform.environment)));
 
 /// Whether GTK on Linux talks to an X server: forced with `GDK_BACKEND=x11`, or
 /// an X display without a Wayland one (a Plasma X11 session, the Steam Deck's

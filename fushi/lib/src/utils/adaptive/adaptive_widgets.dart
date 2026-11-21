@@ -8,6 +8,7 @@ import 'package:fushi/src/stats/study_cover_tracker.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_popup_origin.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -355,19 +356,35 @@ Future<T?> adaptiveModalSheet<T>({
   // 的页面里（视频页开着整页的字幕工作台时起面板），开在最近的 navigator 上会被那条
   // 整页路由挡住。
   final ThemeData? sheetTheme = md3Theme;
+  // 弹层承接来源组件的配色（色块卡等，见 fushi_popup_origin.dart）：context 在
+  // 色块里时由主题捕获带进路由；经页面 State 转弹时按点按来源补包一层。
+  final FushiPopupOrigin? origin = fushiPopupOriginFor(context);
+  final WidgetBuilder sourceBuilder = builder;
+  builder = (BuildContext sheetContext) {
+    final Widget sheet = sourceBuilder(sheetContext);
+    return origin == null ? sheet : origin.wrap(sheet);
+  };
   Widget themed(Widget child) =>
       sheetTheme == null ? child : Theme(data: sheetTheme, child: child);
+  // showCupertinoModalPopup / showGeneralDialog 不捕获 InheritedTheme（Material
+  // 路由会）：这两条路径补上，色块里弹出的弹层才拿得到色块的局部主题。
+  CapturedThemes captureFor(bool rootNavigator) => InheritedTheme.capture(
+    from: context,
+    to: Navigator.of(context, rootNavigator: rootNavigator).context,
+  );
 
   final RouteSettings? routeSettings = studyClockRouteSettings(
     transparent: studyClockTransparent,
   );
   if (isCupertinoPlatform(context)) {
+    final CapturedThemes themes = captureFor(useRootNavigator ?? true);
     return showCupertinoModalPopup<T>(
       context: context,
       useRootNavigator: useRootNavigator ?? true,
       barrierDismissible: isDismissible,
       routeSettings: routeSettings,
-      builder: builder,
+      builder: (BuildContext sheetContext) =>
+          themes.wrap(builder(sheetContext)),
     );
   }
   final bool noMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
@@ -384,6 +401,7 @@ Future<T?> adaptiveModalSheet<T>({
       // macOS 26 sheet：从窗口顶部正中垂下的实色面板（宽 480–640、圆角 18、
       // 大半径柔和阴影），不是底部抽屉。走 RawDialogRoute：Esc（DismissIntent）
       // 关闭、点遮罩关闭、独立焦点作用域、pop 返回值与底部弹层一致。
+      final CapturedThemes themes = captureFor(useRootNavigator ?? true);
       return showGeneralDialog<T>(
         context: context,
         useRootNavigator: useRootNavigator ?? true,
@@ -401,7 +419,7 @@ Future<T?> adaptiveModalSheet<T>({
               BuildContext sheetContext,
               Animation<double> animation,
               Animation<double> secondaryAnimation,
-            ) => _AppleDesktopSheet(child: builder(sheetContext)),
+            ) => themes.wrap(_AppleDesktopSheet(child: builder(sheetContext))),
         transitionBuilder:
             (
               BuildContext context,

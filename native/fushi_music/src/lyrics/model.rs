@@ -207,6 +207,9 @@ pub struct Meta {
     pub is_user_edited: bool,
     /// ASS 里检测到 `\t` `\move` `\clip` 等特效 / templater 产物：推荐原样渲染（§6.3）。
     pub has_effects: bool,
+    /// 来源自带注音轨（QRC `[kana:]`），但和正文对不上、整首没挂：界面据此提示「注音对不上，
+    /// 已隐藏」，免得用户以为这首歌本来就没注音（拍板台 left3645 方案 B）。
+    pub ruby_dropped: bool,
     pub title: Option<String>,
     pub artist: Option<String>,
 }

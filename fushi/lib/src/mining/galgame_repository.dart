@@ -301,6 +301,16 @@ class GalgameRepository extends ChangeNotifier {
     await load();
   }
 
+  /// 只改「成人向」覆盖（卡菜单 NSFW 开关；与编辑页「成人向」同一字段
+  /// `GalgameCustomData.nsfw`）。写显式 true / false：覆盖层压过刮削源分级
+  /// （[mergeGalgameMetadata] 的 `overlay.nsfw ??`），关掉就真的关掉。不认识的 id
+  /// 什么都不做。
+  Future<void> setNsfw(String id, bool nsfw) async {
+    final GalgameEntry? game = byId(id);
+    if (game == null) return;
+    await setCustomData(id, game.customData.copyWith(nsfw: nsfw));
+  }
+
   /// 只改本地封面路径（null / 空串 = 回落默认手柄图标）。
   Future<void> setCoverPath(String id, String? path) async {
     await _db.setGalgameCoverPath(

@@ -64,7 +64,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         SpringBuilder,
         VelocitySpringBuilder;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiFilledButton, fushiClearGlassSettings;
+    show FushiFilledButton, FushiTextButton, fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
     show FushiTextFieldControl;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -273,6 +273,27 @@ const SpringDescription _kNavExpressiveSpatial = kNavExpressiveSpatial;
 /// MD3 展开 rail 一行的高度与收起 rail / 底栏指示器药丸的尺寸（M3 Expressive：
 /// 行 56、药丸 56×32，全圆角）。
 const double _kMaterialRailRowHeight = 56;
+
+/// 矮窗口紧凑档（BUG-4971）：展开 rail 的行高（仍 ≥48dp 命中区）。
+const double _kMaterialRailRowDenseHeight = 48;
+
+/// MD3 展开 rail 一行的高度：[dense] = 矮窗口紧凑档。
+double _materialRailRowHeight({required bool dense}) =>
+    dense ? _kMaterialRailRowDenseHeight : _kMaterialRailRowHeight;
+
+/// MD3 收起 rail 一格上下的留白（52 的形状槽 + 上下各 4 = 60 的行距）；紧凑档
+/// 去掉留白，行距 52。
+const double _kMaterialRailCellPadding = 4;
+
+/// MD3 侧栏一个目的地占的纵向高度（排版用的行距）。
+double _materialRailPitch({required bool extended, required bool dense}) =>
+    extended
+    ? _materialRailRowHeight(dense: dense)
+    : _kNavRailShapeSize + (dense ? 0 : 2 * _kMaterialRailCellPadding);
+
+@visibleForTesting
+double debugNavRailRowHeight({required bool dense}) =>
+    _materialRailRowHeight(dense: dense);
 const double _kMaterialPillWidth = 56;
 const double _kMaterialPillHeight = 32;
 
@@ -498,10 +519,12 @@ class _MaterialNavCluster extends StatelessWidget {
     bool iconOnly = false,
     double? cellWidth,
     bool glassOwnLens = false,
+    bool railDense = false,
   }) {
     return _NavFocusCell(
       id: FushiFocusId('$idPrefix-$i'),
       glassOwnLens: glassOwnLens,
+      railDense: railDense,
       item: items[i],
       selected: i == currentIndex,
       horizontal: axis == Axis.horizontal,
@@ -963,6 +986,73 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
+  /// MD3 侧栏目的地列表（视口内）的自然高度。
+  double _railListExtent({
+    required bool notchRail,
+    required bool railExtended,
+    required bool dense,
+  }) =>
+      (notchRail ? 0 : 8) +
+      items.length * _materialRailPitch(extended: railExtended, dense: dense);
+
+  /// 侧栏目的地的滚动视口：只有一枚在项间纵向滑动的指示器；镂空脊下滚动控制器
+  /// 交给缺口（[_RailNotchSurfaceState]）。
+  Widget _railList(
+    BuildContext context, {
+    required bool glassDesign,
+    required bool notchRail,
+    required bool railExtended,
+    required _RailLook? look,
+    required ColorScheme colors,
+    required bool dense,
+    required List<Widget> Function({required double? cellWidth, bool railDense})
+    buildTiles,
+  }) {
+    // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
+    // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
+    // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: _RailScrollView(
+        // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
+        // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
+        // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
+        // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
+        // 滑块不画。
+        child: _SlidingIndicatorScope(
+          selectedId: currentIndex >= 0 && currentIndex < items.length
+              ? FushiFocusId('$idPrefix-$currentIndex')
+              : null,
+          // MD3 侧栏是液态墨滴（M3E 组合方案，2026-10-23）：
+          // 收起态墨滴与落定后的专属形状同为 primary，展开态
+          // 是 secondaryContainer 整行药丸。
+          liquid: !glassDesign,
+          color: isEinkTheme(context)
+              ? colors.onSurface
+              : (look != null
+                    ? (railExtended ? look.rowFill : look.accent.indicator)
+                    : (railExtended
+                          ? colors.secondaryContainer
+                          : colors.primary)),
+          child: Column(
+            children: <Widget>[
+              // 镂空脊首尾的缺口余量在视口外（见 build），这里不再占位。
+              if (!notchRail) const SizedBox(height: 8),
+              for (final Widget tile in buildTiles(
+                cellWidth: null,
+                railDense: dense,
+              ))
+                Padding(
+                  padding: EdgeInsets.symmetric(vertical: glassDesign ? 1 : 0),
+                  child: tile,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
@@ -975,9 +1065,12 @@ class _MaterialNavCluster extends StatelessWidget {
     // 收窄、标签缩小一号并按格宽省略，而不是被硬压溢出；所有入口的标签恒显示
     // （2026-10-05 用户反馈：此前一度改成「仅选中项显示标签」，要求恢复全部文字）。
     // 侧栏与玻璃胶囊恒为完整形态（cellWidth: null）。
-    List<Widget> buildTiles({required double? cellWidth}) => <Widget>[
+    List<Widget> buildTiles({
+      required double? cellWidth,
+      bool railDense = false,
+    }) => <Widget>[
       for (int i = 0; i < items.length; i++)
-        _cell(context, i, cellWidth: cellWidth),
+        _cell(context, i, cellWidth: cellWidth, railDense: railDense),
     ];
 
     // 结构恒定：无论 MD3 / 毛玻璃 / 液态 / 玻璃设计系统，外层永远是同一个
@@ -1204,7 +1297,7 @@ class _MaterialNavCluster extends StatelessWidget {
                                     _kRailNotchStart + (railExtended ? 12 : 0),
                                     18,
                                     railExtended ? 12 : 0,
-                                    12,
+                                    _kRailNotchBottomInset,
                                   )
                                 : EdgeInsets.symmetric(
                                     horizontal: railExtended ? 12 : 0,
@@ -1213,70 +1306,37 @@ class _MaterialNavCluster extends StatelessWidget {
                       child: Column(
                         children: <Widget>[
                           if (menu != null || brand != null) header,
-                          // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
-                          // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
-                          // 过矮时滚动。
+                          // 镂空脊：缺口上沿的内凹圆角让在列表视口外（视口顶 −
+                          // bleed − fillet 仍在侧栏里），当前项滚到视口顶时缺口不被截。
+                          if (notchRail)
+                            const SizedBox(
+                              height: _kRailNotchFillet + _kRailNotchBleed,
+                            ),
+                          // 矮窗口下所有 tile 的总高可能超过可用高度（BUG-4971）：先
+                          // 换紧凑行距（收起 60→52、展开 56→48，命中区仍 ≥48dp），
+                          // 还放不下就在视口里滚动，不裁条目、不 RenderFlex 溢出。
                           Expanded(
-                            // 反馈 #ChIDEam2hf：桌面默认会给 SingleChildScrollView 画常驻滚动条，
-                            // 项高只差一点点溢出时就整条竖线立在侧栏上，既多余又难看。侧栏
-                            // 只靠滚轮 / 触摸 / 焦点自动滚入滚动，不画滚动条。
-                            child: ScrollConfiguration(
-                              behavior: ScrollConfiguration.of(
-                                context,
-                              ).copyWith(scrollbars: false),
-                              child: _RailScrollView(
-                                // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
-                                // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
-                                // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
-                                // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
-                                // 滑块不画。
-                                child: _SlidingIndicatorScope(
-                                  selectedId:
-                                      currentIndex >= 0 &&
-                                          currentIndex < items.length
-                                      ? FushiFocusId('$idPrefix-$currentIndex')
-                                      : null,
-                                  // MD3 侧栏是液态墨滴（M3E 组合方案，2026-10-23）：
-                                  // 收起态墨滴与落定后的专属形状同为 primary，展开态
-                                  // 是 secondaryContainer 整行药丸。
-                                  liquid: !glassDesign,
-                                  color: isEinkTheme(context)
-                                      ? colors.onSurface
-                                      : (look != null
-                                            ? (railExtended
-                                                  ? look.rowFill
-                                                  : look.accent.indicator)
-                                            : (railExtended
-                                                  ? colors.secondaryContainer
-                                                  : colors.primary)),
-                                  child: Column(
-                                    children: <Widget>[
-                                      // 镂空脊：首尾留出缺口内凹圆角的高度。
-                                      SizedBox(
-                                        height: notchRail
-                                            ? _kRailNotchFillet +
-                                                  _kRailNotchBleed
-                                            : 8,
+                            child: LayoutBuilder(
+                              builder:
+                                  (BuildContext context, BoxConstraints box) =>
+                                      _railList(
+                                        context,
+                                        glassDesign: glassDesign,
+                                        notchRail: notchRail,
+                                        railExtended: railExtended,
+                                        look: look,
+                                        colors: colors,
+                                        // Apple 设计系统的侧栏行另有尺寸，不走紧凑档。
+                                        dense:
+                                            !glassDesign &&
+                                            _railListExtent(
+                                                  notchRail: notchRail,
+                                                  railExtended: railExtended,
+                                                  dense: false,
+                                                ) >
+                                                box.maxHeight,
+                                        buildTiles: buildTiles,
                                       ),
-                                      for (final Widget tile in buildTiles(
-                                        cellWidth: null,
-                                      ))
-                                        Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            vertical: glassDesign ? 1 : 0,
-                                          ),
-                                          child: tile,
-                                        ),
-                                      if (notchRail)
-                                        const SizedBox(
-                                          height:
-                                              _kRailNotchFillet +
-                                              _kRailNotchBleed,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
                             ),
                           ),
                         ],
@@ -1971,6 +2031,9 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     super.initState();
     _progress.animation.addStatusListener(_onStatus);
     _progress.animation.addListener(_onProgress);
+    // 挂载时的当前项也要在可视区里（BUG-4971：矮窗口冷启动 / 侧栏重建时停在
+    // 「设置」这类末尾项，旧实现只在选中变化时滚入，缺口与指示器都在视口外）。
+    _revealSelected();
   }
 
   /// 离 [point] 最近的拖选目标（按槽矩形中心的横向距离）。
@@ -3348,10 +3411,14 @@ class _NavFocusCell extends StatefulWidget {
     this.glassOwnLens = false,
     this.railShape,
     this.order = 0,
+    this.railDense = false,
   });
 
   /// 在整排里的序号（速览卡据此判断内容上下交换的方向）。
   final int order;
+
+  /// MD3 侧栏矮窗口紧凑档（BUG-4971）：收起格去掉上下留白、展开行高 48。
+  final bool railDense;
 
   final FushiFocusId id;
   final AdaptiveNavItem item;
@@ -3438,6 +3505,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
       glyphKey: _glyphKey,
       glassOwnLens: widget.glassOwnLens,
       railShape: widget.railShape,
+      railDense: widget.railDense,
     );
     // MD3 收起 rail 纯图标（用户 2026-10-23「侧边栏收起不显示文字」）：名称进
     // tooltip / 速览卡标题与无障碍语义，与纯图标底栏同一规则。
@@ -3517,7 +3585,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
                 materialRailRow
                     ? (railLook != null
                           ? _kNavRailRowShapeSize / 2
-                          : _kMaterialRailRowHeight / 2)
+                          : _materialRailRowHeight(dense: widget.railDense) / 2)
                     : (collapsedMaterialRail
                           ? _kNavRailShapeSize / 2
                           : _materialBarShapeSize(
@@ -3561,7 +3629,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
               : EdgeInsets.symmetric(
                   // 底栏的多边形槽自己就是 48（纯图标）/ 40 + 标签，整格点击区
                   // 已足 48dp 触控目标，不再上下补边。
-                  vertical: horizontal ? 0 : 4,
+                  vertical: horizontal || widget.railDense
+                      ? 0
+                      : _kMaterialRailCellPadding,
                   horizontal: horizontal ? 4 : 0,
                 ),
           child: Align(
@@ -3655,10 +3725,14 @@ class _FushiNavTile extends StatelessWidget {
     this.glyphKey,
     this.glassOwnLens = false,
     this.railShape,
+    this.railDense = false,
   });
 
   final AdaptiveNavItem item;
   final bool selected;
+
+  /// MD3 展开 rail 矮窗口紧凑档：行高 48（见 [_materialRailRowHeight]）。
+  final bool railDense;
 
   /// MD3 侧栏选中形状（收起格 52、展开行图标后 40）。
   final RoundedPolygon? railShape;
@@ -3929,11 +4003,13 @@ class _FushiNavTile extends StatelessWidget {
       duration: duration,
       curve: FushiMotion.standard,
       width: double.infinity,
-      height: _kMaterialRailRowHeight,
+      height: _materialRailRowHeight(dense: railDense),
       padding: const EdgeInsetsDirectional.only(start: 8, end: 24),
       decoration: BoxDecoration(
         color: selected ? pillColor : pillColor.withValues(alpha: 0),
-        borderRadius: BorderRadius.circular(_kMaterialRailRowHeight / 2),
+        borderRadius: BorderRadius.circular(
+          _materialRailRowHeight(dense: railDense) / 2,
+        ),
       ),
       child: Row(
         children: <Widget>[

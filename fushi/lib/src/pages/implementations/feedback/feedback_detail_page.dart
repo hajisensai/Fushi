@@ -137,7 +137,14 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
 
   /// 汇报一次补传的结果，并在有附件传上去时刷新详情（缩略图才会出现）。
   Future<void> _reportRetry(FeedbackRetryResult r) async {
-    if (r.remaining > 0) {
+    if (r.quotaResetAt != null) {
+      _snack(
+        t.feedback_pending_quota(
+          n: r.remaining,
+          time: feedbackQuotaResetTime(r.quotaResetAt!),
+        ),
+      );
+    } else if (r.remaining > 0) {
       _snack(t.feedback_pending_retry_failed(n: r.remaining));
     } else if (r.dropped > 0) {
       _snack(t.feedback_pending_dropped(n: r.dropped));
@@ -227,6 +234,10 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     // 待传槽位在上传进行中时也在 [pending] 里（追加截图先落盘再传）：这时它们是「正在传」，
     // 不是「没传上去」，不能显示失败提示与重试按钮（#aiRZmYl5zS）。
     final bool uploading = service.attachInFlight(widget.feedbackId);
+    // 今天的上传额度用完：提醒几点后重试，而不是笼统的「没上传成功」。
+    final DateTime? quotaResetAt = service.uploadQuotaResetAt(
+      widget.feedbackId,
+    );
     // 截图只数截图槽位：视频（v0）、样本文件（f0..f2）与日志不占截图名额。
     final int shots =
         d.attachments
@@ -295,7 +306,15 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
         SizedBox(height: tokens.spacing.card),
         FushiInlineNotice(
           key: const ValueKey<String>('feedback-detail-pending'),
-          message: t.feedback_pending_attachments(n: pending.length),
+          severity: quotaResetAt == null
+              ? FushiNoticeSeverity.info
+              : FushiNoticeSeverity.warning,
+          message: quotaResetAt == null
+              ? t.feedback_pending_attachments(n: pending.length)
+              : t.feedback_pending_quota(
+                  n: pending.length,
+                  time: feedbackQuotaResetTime(quotaResetAt),
+                ),
           actions: <Widget>[
             FushiTextButton(
               key: const ValueKey<String>('feedback-detail-retry'),

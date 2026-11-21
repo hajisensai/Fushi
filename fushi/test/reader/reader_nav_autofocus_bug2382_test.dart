@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
@@ -20,11 +19,6 @@ import '../helpers/test_platform_services.dart';
 /// BUG-2382：移动端打开导航抽屉不再 autofocus 书内搜索框——软键盘一顶起来就把
 /// 抽屉里本来是主角的章节目录压掉半屏，用户得先收键盘才能点章节。桌面端（有物理
 /// 键盘、键盘不占屏）行为逐字不变。
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 AppModel _testAppModel(FushiDatabase db) {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
@@ -135,7 +129,6 @@ void main() {
                         readerProgress: const (1, 3),
                         onJumpSection: (_, __) async {},
                         onExitReader: () {},
-                        webViewController: _FakeInAppWebViewController(),
                         appModel: model,
                         ref: ref,
                         isFushiReader: true,

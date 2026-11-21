@@ -235,6 +235,24 @@ void main() {
           legacyPitch,
           legacyIpa,
         ];
+
+        // 只检查（拍板台 pr3554：先问再升级）：旧式词典报「待升级」，一个文件都不动；
+        // 新格式词典「已是最新」。
+        final Map<String, List<String>> filesBefore = <String, List<String>>{
+          for (final String d in dirs) d: _fileNames(d),
+        };
+        final FushiDictUpgradeReport checked =
+            await FushiDicts.tidyDictionaryFormats(<String>[
+              ...dirs,
+              freshTerm,
+            ]);
+        expect(checked.pending, dirs);
+        expect(checked.upToDate, <String>[freshTerm]);
+        for (final String d in dirs) {
+          expect(_fileNames(d), filesBefore[d], reason: '只检查不得改写 $d');
+        }
+        expect(File('$freshTerm/.fushidicts_3').existsSync(), isTrue);
+
         int callbacks = 0;
         final FushiDictUpgradeReport first =
             await FushiDicts.upgradeDictionaryFormats(
@@ -267,6 +285,14 @@ void main() {
         expect(again.results, <String, FushiDictUpgradeOutcome>{
           for (final String d in dirs) d: FushiDictUpgradeOutcome.upToDate,
         });
+        // 升级后标记换成 .fushidicts_3，旧名字不留（旧引擎整目录不加载）。
+        for (final String d in dirs) {
+          expect(File('$d/.fushidicts_3').existsSync(), isTrue, reason: d);
+          expect(File('$d/.fushidicts_2').existsSync(), isFalse, reason: d);
+        }
+        final FushiDictUpgradeReport tidied =
+            await FushiDicts.tidyDictionaryFormats(dirs);
+        expect(tidied.upToDate, dirs);
         loadLegacySet();
         expect(lookupAll(), before);
       });
@@ -352,6 +378,17 @@ void main() {
 /// 只看 C 运行时自己的环境表：POSIX 上整个进程共用 libc 的 `environ`；Windows 上
 /// fushidicts_ffi.dll 按 CMake 默认链动态 UCRT（`/MD`），与这里调的 `ucrtbase.dll`
 /// 是同一张表。
+/// [dir] 里的文件名（排序）。
+List<String> _fileNames(String dir) =>
+    Directory(dir)
+        .listSync()
+        .map(
+          (FileSystemEntity e) =>
+              e.uri.pathSegments.where((String s) => s.isNotEmpty).last,
+        )
+        .toList()
+      ..sort();
+
 void _setCEnv(String name, String? value) {
   final Pointer<Utf8> n = name.toNativeUtf8();
   final Pointer<Utf8> v = (value ?? '').toNativeUtf8();

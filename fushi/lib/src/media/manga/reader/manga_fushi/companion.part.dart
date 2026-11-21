@@ -46,6 +46,24 @@ class _MangaCompanionReader implements MangaCompanionReader {
   void countLookup() {
     if (_state.mounted) _state.recordCompanionLookup();
   }
+
+  /// The same "pause on lookup" as the in-page popup (BUG-4908).
+  @override
+  void lookupOpened() {
+    if (_state.mounted) {
+      _state._readAloud.lookupOpened(MangaLookupSource.companion);
+    }
+  }
+
+  @override
+  void lookupClosed({required bool resume}) {
+    if (_state.mounted) {
+      _state._readAloud.lookupClosed(
+        MangaLookupSource.companion,
+        resume: resume,
+      );
+    }
+  }
 }
 
 extension _MangaCompanion on _MangaFushiPageState {

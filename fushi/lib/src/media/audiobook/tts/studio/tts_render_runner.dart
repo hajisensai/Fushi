@@ -60,6 +60,7 @@ import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -88,12 +89,47 @@ const String kTtsRenderSrtFileName = 'tts_audiobook.srt';
 /// 已经重新合成好的音频又删掉）。
 const String _kRegeneratedMarker = 'regenerated.done';
 
-/// 合成一句要用的引擎实例；[group] = 预设 id，同组共用一个并发上限。
+/// 合成一句要用的引擎实例；[group] = 预设 id，同组共用一个并发上限；[gap] = 每个
+/// 实际发出的请求之后再等多久（在线声音的「每句间隔」）。
 typedef _SentenceVoice = ({
   TtsProvider provider,
   int maxConcurrency,
+  Duration gap,
   String group,
 });
+
+/// 一份声音在这次制作里的并发与每句间隔。任务的限流参数（「同时请求数」「每句间隔」）
+/// 只作用于在线引擎；本机 / 系统声音照声音预设自己的并发、不加间隔。
+({int concurrency, Duration gap}) ttsRenderVoicePacing(
+  TtsRenderJob job,
+  TtsProviderDescriptor descriptor,
+  TtsVoicePreset preset,
+) {
+  final int base = ttsEffectiveConcurrency(descriptor, preset);
+  if (descriptor.category != TtsProviderCategory.online) {
+    return (concurrency: base, gap: Duration.zero);
+  }
+  return (
+    concurrency: (job.onlineConcurrency ?? base).clamp(1, kTtsMaxConcurrency),
+    gap: Duration(milliseconds: job.sentenceGapMs),
+  );
+}
+
+/// 这次制作的重试策略：429 怎么处理由任务的「被限流时」决定
+/// （[TtsRateLimitAction]），其余临时失败照默认退避。
+TtsRetryPolicy ttsRenderRetryPolicy(TtsRenderJob job) =>
+    switch (job.rateLimitAction) {
+      TtsRateLimitAction.waitRetry => TtsRetryPolicy.patientRateLimit,
+      TtsRateLimitAction.pause => TtsRetryPolicy.pauseOnRateLimit,
+    };
+
+/// 合成失败 → 任务失败码。选了「被限流时暂停」的 429 记成 `rate_limited_paused`
+/// （界面提示稍后重试会接着做），其余 `tts_<码>`。
+String ttsRenderFailureCodeFor(TtsRenderJob job, TtsFailure failure) =>
+    failure.code == TtsFailureCode.rateLimited &&
+        job.rateLimitAction == TtsRateLimitAction.pause
+    ? 'rate_limited_paused'
+    : 'tts_${failure.code.name}';
 
 class AppTtsRenderRunner implements TtsRenderRunner {
   AppTtsRenderRunner({required this.appModel});
@@ -288,12 +324,15 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       voiceOf: (int planIndex) {
         final String presetId = presetOf[planIndex]!;
         if (!voices.containsKey(presetId)) return null;
+        final ({int concurrency, Duration gap}) pacing = ttsRenderVoicePacing(
+          job,
+          voices[presetId]!.descriptor,
+          voices[presetId]!.preset,
+        );
         return (
           provider: providers[presetId]!,
-          maxConcurrency: ttsEffectiveConcurrency(
-            voices[presetId]!.descriptor,
-            voices[presetId]!.preset,
-          ),
+          maxConcurrency: pacing.concurrency,
+          gap: pacing.gap,
           group: presetId,
         );
       },
@@ -490,6 +529,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             Map<String, Object> failures,
           })
           synth = await _synthesizeChapter(
+            job: job,
             chapter: chapter,
             keys: keys,
             textOf: textOf,
@@ -657,6 +697,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
   /// 停止派发新句、取消同章在途请求，抛第一个失败。
   Future<({Map<String, TtsCachedAudio> audio, Map<String, Object> failures})>
   _synthesizeChapter({
+    required TtsRenderJob job,
     required TtsRenderChapter chapter,
     required List<String> keys,
     required String Function(int planIndex) textOf,
@@ -716,30 +757,68 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     Object? firstError;
     StackTrace? firstStack;
 
+    final TtsRetryPolicy retryPolicy = ttsRenderRetryPolicy(job);
+
     Future<void> pool(List<String> voiceKeys) async {
       final _SentenceVoice voice = byKey[voiceKeys.first]!.voice;
       int next = 0;
+      // 同一份声音被限流后的冷却截止时刻：一路拿到 429，同池其它路在发下一个请求前
+      // 也等到这里（按服务端 Retry-After / 退避算出），不在冷却期里继续打服务端。
+      DateTime? cooldownUntil;
       Future<void> worker() async {
+        bool pendingGap = false;
         while (firstError == null && !chapterCancel.isCancelled) {
+          if (next >= voiceKeys.length) return;
+          // 每句间隔：上一个请求真的发出去了（不是命中缓存）才等。
+          if (pendingGap) {
+            pendingGap = false;
+            try {
+              await ttsCancellableDelay(voice.gap, chapterCancel);
+            } on TtsFailure {
+              return;
+            }
+          }
+          final DateTime? until = cooldownUntil;
+          if (until != null) {
+            final Duration wait = until.difference(DateTime.now());
+            if (wait > Duration.zero) {
+              try {
+                await ttsCancellableDelay(wait, chapterCancel);
+              } on TtsFailure {
+                return;
+              }
+            }
+          }
+          if (firstError != null || chapterCancel.isCancelled) return;
           if (next >= voiceKeys.length) return;
           final String key = voiceKeys[next++];
           await gate.acquire();
           try {
             if (firstError != null || chapterCancel.isCancelled) return;
             // 在线引擎的临时失败（断连 / 超时 / 429 / 5xx）先有限次退避重试，
-            // 与朗读调度共用 ttsWithRetry；用尽仍失败才判整章失败。
+            // 与朗读调度共用 ttsWithRetry；429 的处理按任务的「被限流时」
+            // （[ttsRenderRetryPolicy]）。用尽仍失败才判整章失败。
             results[key] = await ttsWithRetry(
-              () => cache.obtain(
-                key,
-                (String outputPath) => synthesizeWithDirection(
+              () => cache.obtain(key, (String outputPath) {
+                pendingGap = voice.gap > Duration.zero;
+                return synthesizeWithDirection(
                   voice.provider,
                   byKey[key]!.text,
                   outputPath: outputPath,
                   cancel: chapterCancel,
                   direction: byKey[key]!.direction,
-                ),
-              ),
+                );
+              }),
               cancel: chapterCancel,
+              policy: retryPolicy,
+              onRetry: (int retry, TtsFailure failure, Duration delay) {
+                if (failure.code != TtsFailureCode.rateLimited) return;
+                final DateTime end = DateTime.now().add(delay);
+                final DateTime? current = cooldownUntil;
+                if (current == null || end.isAfter(current)) {
+                  cooldownUntil = end;
+                }
+              },
             );
             breaker.recordSuccess();
             onSentencesDone(occurrences[key]!);
@@ -783,7 +862,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     final Object? error = firstError;
     if (error != null) {
       if (error is TtsFailure) {
-        throw TtsRenderFailure('tts_${error.code.name}', error.detail);
+        throw TtsRenderFailure(
+          ttsRenderFailureCodeFor(job, error),
+          error.detail,
+        );
       }
       Error.throwWithStackTrace(error, firstStack ?? StackTrace.current);
     }
@@ -821,6 +903,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     if (!asrPlan.modelReady) return skipped;
 
     final List<TtsRenderFlag> flags = <TtsRenderFlag>[];
+    // 识别后替换：与设置页 / 制作台同一份规则，开始校对时读一次。
+    final List<TtsPronunciationRule> heardRewrites = TtsServices.of(
+      appModel.prefsRepo,
+    ).textRules.load(TtsTextRuleKind.postRecognition);
     onProgress(TtsRenderJobPhase.verifying, 0, chapters.length);
     for (int c = 0; c < chapters.length; c++) {
       cancel.throwIfCancelled();
@@ -859,6 +945,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
                   ),
             ],
             heard: ttsHeardTokensFromAsr(asrCues, timings),
+            heardRewrites: heardRewrites,
           ),
         );
         // 识别任务目录只为这次校对存在（断点续跑靠它），用完即删。

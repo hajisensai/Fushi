@@ -91,10 +91,20 @@ class EpubParser {
   /// 这时若 [extractDir] 是本次新建的，连同写了一半的条目一起删掉。
   ///
   /// [includeSvgSpineDocuments]：见 [parseFromExtracted]。
+  ///
+  /// 以下三个参数只有漫画导入（`MangaArchiveImporter`）传，书籍导入不传、行为不变：
+  /// - [cap]：按实际解出字节封顶（[ZipExtractionCap]），超限抛
+  ///   [ZipExtractionLimitException]（不换成 [EpubArchiveCorruptException]）；
+  /// - [extractEntry]：返回 false 的文件条目不落盘（「是不是纯图漫画」的探测只要
+  ///   container / OPF / spine 文档，不必把每张页图解出来）；
+  /// - [onEntryExtracted]：每落盘一个文件条目回调一次，供进度条推进。
   static EpubBook parseSyncFromPath(
     String filePath,
     String extractDir, {
     bool includeSvgSpineDocuments = false,
+    ZipExtractionCap? cap,
+    bool Function(String entryName)? extractEntry,
+    void Function()? onEntryExtracted,
   }) {
     final Directory dir = Directory(extractDir);
     final bool createdHere = !dir.existsSync();
@@ -103,13 +113,13 @@ class EpubParser {
       final Archive archive = _corruptAsEpubException(
         () => ZipDecoder().decodeBuffer(input),
       );
-      _extractArchive(
-        archive,
-        extractDir,
-        (ArchiveFile file, String path) => _corruptAsEpubException(
-          () => extractZipEntryToFile(file, path, verifyCrc32: true),
-        ),
-      );
+      _extractArchive(archive, extractDir, (ArchiveFile file, String path) {
+        if (extractEntry != null && !extractEntry(file.name)) return;
+        _corruptAsEpubException(
+          () => extractZipEntryToFile(file, path, verifyCrc32: true, cap: cap),
+        );
+        onEntryExtracted?.call();
+      });
     } on EpubArchiveCorruptException {
       if (createdHere && dir.existsSync()) dir.deleteSync(recursive: true);
       rethrow;

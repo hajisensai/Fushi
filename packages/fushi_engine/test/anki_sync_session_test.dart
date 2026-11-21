@@ -659,6 +659,28 @@ void main() {
     expect(await unsynced(), 0);
   });
 
+  test('关闭等正在进行的同步收尾：返回之后不再写日志（调用方可以立刻删目录）', () async {
+    await session.signIn(username: 'u', password: 'pw');
+    await session.addNote(_note('猫'));
+    expect(await unsynced(), 1);
+    helper.holdSync = Completer<void>();
+    final Future<AnkiSyncState> running = session.syncNow();
+    unawaited(running.then((_) {}, onError: (Object _) {}));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    bool closed = false;
+    final Future<void> closing = session.close().then((_) => closed = true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(closed, isFalse, reason: '同步还在进行，close 不能先返回');
+
+    helper.holdSync!.complete();
+    helper.holdSync = null;
+    await closing;
+    // close 返回时同步已经收尾（出了日志）；之后日志不再变。
+    expect(await unsynced(), 0);
+    session = newSession(); // tearDown 关的是这个
+  });
+
   test('关闭后：不再拉起 helper', () async {
     await session.signIn(username: 'u', password: 'pw');
     await session.close();

@@ -9,6 +9,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteLookupDictionaryConfig;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -27,6 +29,7 @@ class GameStreamJoinPage extends StatefulWidget {
     required this.repository,
     required this.readSettings,
     required this.writeSettings,
+    required this.dictionaryConfigFor,
     this.readLookupLayout,
     this.writeLookupLayout,
     this.readButtonProfile,
@@ -41,6 +44,11 @@ class GameStreamJoinPage extends StatefulWidget {
   /// 串流参数的读写（生产接 `PreferencesRepository.gameStreamVideoSettings`）。
   final GameStreamVideoSettings Function() readSettings;
   final Future<void> Function(GameStreamVideoSettings settings) writeSettings;
+
+  /// 本机对每台 host 的词典选择（生产接 `AppModel.remoteLookupDictionaryConfigFor`），
+  /// 串流查词随请求发给 host，见 [openGameStreamSession]。
+  final RemoteLookupDictionaryConfig? Function(FushiClientUrl candidate)
+  dictionaryConfigFor;
 
   /// Lookup rail geometry stored on this device; null = defaults, unsaved.
   final GameStreamLookupLayout Function()? readLookupLayout;
@@ -131,6 +139,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
         peer: host.peer,
         session: session,
         settings: widget.readSettings(),
+        dictionaryConfigFor: widget.dictionaryConfigFor,
         clientId: _clientId,
         onSettingsChanged: (GameStreamVideoSettings next) =>
             unawaited(widget.writeSettings(next)),

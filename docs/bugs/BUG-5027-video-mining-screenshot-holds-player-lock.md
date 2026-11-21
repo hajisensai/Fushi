@@ -1,0 +1,11 @@
+## BUG-5027 · 制卡截帧整段占着 Player 串行锁，「制卡后立刻续播」要等 JPEG 编码跑完
+- **报告**：2026-11-20（路线图 #3722 c46 video-4，代码复核；非用户反馈）
+- **真实性**：✅ 真 bug，真 libmpv 复现。根因（基准 `7745effa2e`）：
+  - `ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart:1173-1236`（修前）：`NativePlayer.screenshot` 把整个 `function()` 放进 `lock.synchronized`，而 `function()` 里 `compute(_screenshot, …)` 的 `_screenshot`（`:3081` 起）在同一个辅助 isolate 上先 `screenshot-raw` 取帧、再用纯 Dart `encodeJpg` / `encodePng` 编码，锁要等编码结束才释放。`lock` 是 `static final`（`:3087`），所有 `play()` / `pause()` / `seek()` / `setRate()` 都排在它后面。
+  - 制卡入口 `VideoPlayerController.screenshot()`（`fushi/lib/src/media/video/video_player_controller.dart:1781`）走公开 `Player.screenshot`，默认持锁；`lookup_mining.part.dart` / `advanced_mining.part.dart` 截完紧接着续播。
+  - 实测（随包 libmpv，`testsrc2` 1920×1080 样片，`vo=null`）：取原始帧 8 ms，JPEG 编码约 160–190 ms；截帧请求后立刻排的 `pause()` 修前 193 ms 才完成（与截帧同一毫秒），修后 8 ms。
+- **[x] ① 已修复** — 补丁把截帧拆成两段：`_screenshotRaw`（辅助 isolate，登记进 `_offThreadNativeCalls`）只取帧并把 BGRA 拷进 `TransferableTypedData`，只有这一段在锁里；`_encodeScreenshot` 在锁释放后另起辅助 isolate 编码（不碰句柄，`dispose` 不必等它）。截到的仍是请求到达锁时的那一帧；`format: null` 照旧返回整帧 BGRA。
+- **[x] ② 已加自动化测试** — `fushi/test/third_party/media_kit_screenshot_lock_test.dart`（真 libmpv + ffmpeg，`FUSHI_TEST_LIBMPV` / `FUSHI_TEST_FFMPEG`）：截帧后立刻排的 `pause()` 必须先于截帧完成；修前实测顺序是 `[screenshot, pause]`（红）。CI 没有 libmpv 会跳过，故 `fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart` 另钉结构：锁只包 `capture`，取帧函数里没有编码调用，编码排在锁之后。
+- **备注**：
+  - 真机未验：1080p / 4K 片源「点制卡 → play() 生效」的体感延迟，以及截到的是否是查词那一帧（计划要求的设备验证，本轮不做）。
+  - 暂停 OCR 的 `captureFrameWithSubtitles` 仍按 BUG-3645 不持锁截帧，未改。

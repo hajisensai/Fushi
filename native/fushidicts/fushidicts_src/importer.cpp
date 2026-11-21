@@ -37,6 +37,7 @@
 #include "mdx/mdx_reader.hpp"
 #include "memory/memory.hpp"
 #include "stardict/stardict_reader.hpp"
+#include "util/dict_marker.hpp"
 #include "util/fs_utf8.hpp"
 #include "util/import_breadcrumb.hpp"
 #include "util/redirect_glossary.hpp"
@@ -1001,7 +1002,8 @@ void remove_previous_index(const std::string& path) {
 // 优先写 key.index（单记录的键直指记录、不写它的 offset 表）；key.index 装不下这本
 // 词典（offset 超 32 位等）时退回旧式 hash.table + bloom.filter。[legacy] 直接走这条
 // 回退路径（不试 key.index），所以旧式导入同时覆盖了「超 4 GiB 回退」的写侧。
-void write_index(const std::string& path, std::ofstream& blobs, std::vector<std::pair<uint64_t, uint64_t>>& offsets,
+// 返回 true = 写成了 key.index（完成标记据此选 .fushidicts_3，见 write_import_marker）。
+bool write_index(const std::string& path, std::ofstream& blobs, std::vector<std::pair<uint64_t, uint64_t>>& offsets,
                  uint64_t write_offset, bool legacy) {
   remove_previous_index(path);
   OffsetIndex index = build_offset_index(offsets, write_offset);
@@ -1010,7 +1012,7 @@ void write_index(const std::string& path, std::ofstream& blobs, std::vector<std:
   if (!legacy && hash::key_index::build_to_file(index.entries, hash::key_index::blobs_file::original,
                                                 hash::dict_file(path, hash::kKeyIndexFile))) {
     blobs.write(index.tables.data(), static_cast<std::streamsize>(index.tables.size()));
-    return;
+    return true;
   }
   index = without_single(index, write_offset);
   std::vector<std::pair<uint64_t, uint64_t>> hash_entries;
@@ -1027,6 +1029,29 @@ void write_index(const std::string& path, std::ofstream& blobs, std::vector<std:
   });
   blobs.write(index.tables.data(), static_cast<std::streamsize>(index.tables.size()));
   hash_thread.get();
+  return false;
+}
+
+// 导入的最后一步：写完成标记（util/dict_marker.hpp 的版本阶梯）。[key_index] = 索引写成了
+// key.index → .fushidicts_3（文件体记 [record_version]），旧引擎不认、整目录不加载；退回
+// 旧式索引的写旧名字，旧引擎照读。同目录里上一次导入留下的别的标记一并删掉，免得旧引擎
+// 按旧名字去读这次的 key.index。
+void write_import_marker(const std::string& path, bool key_index, int record_version) {
+  using namespace fushidicts::dict_marker;
+  if (key_index) {
+    (void)memory::remove_file(marker_file(path, kV2Marker));
+    (void)memory::remove_file(marker_file(path, kV1Marker));
+    (void)memory::remove_file(marker_file(path, kLegacyV1Marker));
+    if (!write_key_index_marker(path, record_version)) {
+      throw std::runtime_error("could not write the import marker");
+    }
+    return;
+  }
+  (void)memory::remove_file(marker_file(path, kKeyIndexMarker));
+  std::ofstream sui(fushi::fs_path(marker_file(path, record_version >= 2 ? kV2Marker : kV1Marker)), std::ios::binary);
+  if (!sui) {
+    throw std::runtime_error("could not write the import marker");
+  }
 }
 
 // Append one media record [u16 path_len][path][u32 blob_size][blob] to `media`,
@@ -2110,7 +2135,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
       throw std::runtime_error("empty dictionary");
     }
 
-    write_index(path, blobs, offsets, write_offset, legacy);
+    const bool key_index = write_index(path, blobs, offsets, write_offset, legacy);
 
     result.media_count = media_thread.get();
 
@@ -2124,10 +2149,11 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     // 查询期逐条检测）。同样写在 marker 之前；写失败只是读侧照旧检测。
     fushi::redirect_glossary::write_flag(path, result.redirect_glossary_present, blobs_size);
 
-    // v2 = 本批引入的格式阶梯（fork 首个版本升级）：kanji 记录带 stats 追加段 +
-    // term glossary 可能使用 dict.zstd 训练字典。旧引擎认不出 v2 marker 会整目录
-    // 不加载（降级后新导入词典不可见，不毁数据、重导可救）；v1 存量照读不变。
-    std::ofstream sui(fushi::fs_path(path + "/.fushidicts_2"), std::ios::binary);
+    // v2 记录 = 格式阶梯（fork 首个版本升级）：kanji 记录带 stats 追加段 + term
+    // glossary 可能使用 dict.zstd 训练字典。key.index 索引再升一级到 .fushidicts_3
+    // （util/dict_marker.hpp）。旧引擎认不出新 marker 会整目录不加载（降级后新导入词典
+    // 不可见，不毁数据、重导可救）；v1 存量照读不变。
+    write_import_marker(path, key_index, 2);
     result.success = true;
   } catch (const std::exception& e) {
     result.success = false;
@@ -2257,7 +2283,7 @@ void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, co
   }
 
   const std::string& path = sink.path;
-  write_index(path, sink.blobs, records.offsets, write_offset, legacy_index_forced());
+  const bool key_index = write_index(path, sink.blobs, records.offsets, write_offset, legacy_index_forced());
 
   // Simple dicts store the wildcard "*" on every term (SimpleEntryAccumulator),
   // so rules are always present; writing the flag just spares the reader the
@@ -2269,7 +2295,7 @@ void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, co
   fushi::term_rules_flag::write(path, true, blobs_size);
   fushi::redirect_glossary::write_flag(path, records.redirects_present, blobs_size);
 
-  std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
+  write_import_marker(path, key_index, 1);
 }
 
 }  // namespace

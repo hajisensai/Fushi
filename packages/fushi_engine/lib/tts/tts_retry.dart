@@ -29,10 +29,30 @@ class TtsRetryPolicy {
     this.baseDelay = const Duration(milliseconds: 600),
     this.maxDelay = const Duration(seconds: 8),
     this.maxRetryAfter = const Duration(seconds: 30),
+    this.rateLimited,
   });
 
   /// 不重试（只发一次）。
   static const TtsRetryPolicy none = TtsRetryPolicy(maxRetries: 0);
+
+  /// 整本书制作的「被限流时等待重试」：429 按服务端 `Retry-After` 等（最长 10 分钟），
+  /// 没给就指数退避到 1 分钟一次，最多 8 次；其余临时失败照默认策略。
+  static const TtsRetryPolicy patientRateLimit = TtsRetryPolicy(
+    rateLimited: TtsRetryPolicy(
+      maxRetries: 8,
+      baseDelay: Duration(seconds: 2),
+      maxDelay: Duration(minutes: 1),
+      maxRetryAfter: Duration(minutes: 10),
+    ),
+  );
+
+  /// 整本书制作的「被限流时暂停」：429 不重试，立刻上报（调用方停下整个任务）。
+  static const TtsRetryPolicy pauseOnRateLimit = TtsRetryPolicy(
+    rateLimited: TtsRetryPolicy.none,
+  );
+
+  /// [TtsFailureCode.rateLimited] 专用的子策略；null = 与其它临时失败同一套。
+  final TtsRetryPolicy? rateLimited;
 
   /// 第一次失败后最多再试几次。
   final int maxRetries;
@@ -46,9 +66,17 @@ class TtsRetryPolicy {
 
   /// 第 [retry] 次重试（从 1 起）前等多久；null = 不再重试。
   ///
+  /// 有 [rateLimited] 子策略时，[retry] 是**同一类别**里的序号：429 与其它临时
+  /// 失败各数各的（[ttsWithRetry] 分开计数），连着几次 429 不会吃掉默认策略对
+  /// 超时 / 5xx 的重试额度。
+  ///
   /// 抖动取「基准的一半 .. 基准」之间均匀分布（equal jitter）：并发两路同时失败时
   /// 不会同一瞬间一起重打服务端，又保证至少等基准的一半。
   Duration? delayBefore(int retry, TtsFailure failure, Random random) {
+    final TtsRetryPolicy? sub = rateLimited;
+    if (sub != null && failure.code == TtsFailureCode.rateLimited) {
+      return sub.delayBefore(retry, failure, random);
+    }
     if (retry > maxRetries) return null;
     final Duration? retryAfter = failure.retryAfter;
     if (retryAfter != null) {
@@ -69,7 +97,8 @@ class TtsRetryPolicy {
 ///
 /// - [cancel] 已取消（等待前或等待中）→ 抛 [TtsFailureCode.cancelled]。
 /// - 非 [TtsFailure] 的异常不重试，原样抛出。
-/// - [onRetry] 在每次决定重试、开始等待前调用（日志 / 测试观察用）。
+/// - [onRetry] 在每次决定重试、开始等待前调用（日志 / 测试观察用）；传入的序号是
+///   该失败所属类别里的序号（见 [TtsRetryPolicy.delayBefore]）。
 Future<T> ttsWithRetry<T>(
   Future<T> Function() attempt, {
   required TtsCancelToken cancel,
@@ -78,7 +107,9 @@ Future<T> ttsWithRetry<T>(
   void Function(int retry, TtsFailure failure, Duration delay)? onRetry,
 }) async {
   final Random rng = random ?? Random();
+  // 429 有专门子策略时与其它临时失败分开计数，各自对应自己那套的次数上限。
   int retry = 0;
+  int rateLimitedRetry = 0;
   while (true) {
     cancel.throwIfCancelled();
     try {
@@ -88,16 +119,20 @@ Future<T> ttsWithRetry<T>(
         throw const TtsFailure(TtsFailureCode.cancelled);
       }
       if (!failure.isTransient) rethrow;
-      retry++;
-      final Duration? delay = policy.delayBefore(retry, failure, rng);
+      final bool separateRateLimit =
+          policy.rateLimited != null &&
+          failure.code == TtsFailureCode.rateLimited;
+      final int n = separateRateLimit ? ++rateLimitedRetry : ++retry;
+      final Duration? delay = policy.delayBefore(n, failure, rng);
       if (delay == null) rethrow;
-      onRetry?.call(retry, failure, delay);
-      await _cancellableDelay(delay, cancel);
+      onRetry?.call(n, failure, delay);
+      await ttsCancellableDelay(delay, cancel);
     }
   }
 }
 
-Future<void> _cancellableDelay(Duration delay, TtsCancelToken cancel) {
+/// 等 [delay]；[cancel] 取消时立刻以 [TtsFailureCode.cancelled] 结束。
+Future<void> ttsCancellableDelay(Duration delay, TtsCancelToken cancel) {
   cancel.throwIfCancelled();
   if (delay <= Duration.zero) return Future<void>.value();
   final Completer<void> done = Completer<void>();

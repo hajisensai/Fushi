@@ -28,11 +28,14 @@ Future<T> _db<T>(WidgetTester tester, Future<T> Function() body) async =>
     (await tester.runAsync(body)) as T;
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
+  final SrsTestClock clock = SrsTestClock();
   final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
-    // 测试时钟（2026-10-01）在改缺省（kSrsLimitUnitDefaultChangedAtMs）之前：这时评的分算「存量牌组」。
-    () => openSrsTestStore(clock: SrsTestClock()),
+    () => openSrsTestStore(clock: clock),
   ))!;
   addTearDown(() => tester.runAsync(db.close));
+  // 开库时刻 = 本机升级时刻（limitUnitSince）；时钟拨回 30 天，之后评的分模拟升级之前（旧版按卡片数计上限时）的
+  // 复习，算「存量牌组」。
+  clock.advance(const Duration(days: -30));
   return store;
 }
 
@@ -83,7 +86,7 @@ Future<void> _unmount(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 1));
 }
 
-/// 默认牌组里加一张卡；[answer] 时（测试时钟在改缺省之前）评一次分。
+/// 默认牌组里加一张卡；[answer] 时（测试时钟在本机升级之前，见 [_openStore]）评一次分。
 Future<void> _seedDefaultDeck(
   WidgetTester tester,
   SrsDbStore store, {

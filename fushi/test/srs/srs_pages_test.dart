@@ -27,6 +27,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
+    show SrsAdaptiveSections;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -38,10 +40,13 @@ import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart'
     show fushiPosterColors, fushiPosterHue;
+import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -56,6 +61,7 @@ import 'srs_test_support.dart'
 import 'support/srs_write_settle.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
+import 'package:fushi_engine/srs/srs_stats.dart' show SrsRwkvNow;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -750,6 +756,26 @@ void main() {
       expect(find.text(t.srs_deck_rename), findsOneWidget, reason: '右键行出牌组菜单');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
+      // 反馈 Ne6WHI9TYE：右键菜单要在指针处弹出，不是行的右端。
+      final Offset click = tester.getCenter(find.text('Vocabulary'));
+      await tester.tapAt(click, buttons: kSecondaryButton);
+      await _settle(tester);
+      // 第一项（自定义学习）贴着按下点；不拿「重命名」，它排在第四项。
+      final Offset menuItem = tester.getTopLeft(
+        find.text(t.srs_custom_study_title),
+      );
+      expect(
+        (menuItem.dx - click.dx).abs(),
+        lessThan(80),
+        reason: '菜单左缘贴着右键按下点（$click），实际菜单项在 $menuItem',
+      );
+      expect(
+        (menuItem.dy - click.dy).abs(),
+        lessThan(80),
+        reason: '菜单顶边贴着右键按下点（$click），实际菜单项在 $menuItem',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
       await _unmount(tester);
     });
 
@@ -806,6 +832,86 @@ void main() {
       await _settle(tester);
       await _unmount(tester);
     });
+
+    testWidgets(
+      '[$ds] 复习首页：纯 RWKV 的库不画空的「未来 7 天」，改画「RWKV 此刻」（三段计数、停下后新增、回忆率分布）',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        await _addLapis(tester, store, '食べる');
+        final List<int> bins = List<int>.filled(20, 0)
+          ..[17] = 2
+          ..[18] = 3
+          ..[19] = 5;
+        final SrsHomeStats stats = SrsHomeStats(
+          doneToday: 0,
+          averageMsPerCard: 0,
+          streak: 0,
+          today: 20000,
+          forecast: const <int>[0, 0, 0, 0, 0, 0, 0],
+          rwkvNow: SrsRwkvNow(
+            total: 10,
+            due: 2,
+            near: 3,
+            dailyAverage: 1,
+            ahead: const <int>[1, 4, 6],
+            recallBins: bins,
+          ),
+          hasDueDateCards: false,
+          desiredRetention: 0.9,
+        );
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SrsDeckListPage(),
+          size: const Size(412, 915),
+          overrides: <Override>[
+            srsHomeStatsProvider.overrideWith((Ref ref) async => stats),
+          ],
+        );
+        await _settle(tester);
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(
+            const ValueKey<String>('srs-home-forecast'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+          reason: 'RWKV 卡没有到期日，未来 7 天恒为空，不画',
+        );
+        expect(
+          find.byKey(
+            const ValueKey<String>('srs-home-rwkv-now'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        String label(String key) => tester
+            .widget<Semantics>(
+              find.byKey(ValueKey<String>(key), skipOffstage: false),
+            )
+            .properties
+            .label!;
+        expect(label('srs-home-rwkv-due'), '${t.srs_stats_rwkv_now_due} 2');
+        expect(label('srs-home-rwkv-near'), '${t.srs_stats_rwkv_now_near} 3');
+        expect(label('srs-home-rwkv-safe'), '${t.srs_home_rwkv_safe} 5');
+        expect(
+          find.text(
+            t.srs_home_rwkv_ahead(h1: 1, h3: 4, day: 6),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey<String>('srs-home-rwkv-recall-chart'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        await _unmount(tester);
+      },
+    );
 
     testWidgets(
       '[$ds] 复习首页（手机）：点行进牌组详情、返回键逐层回退、播放 / 「开始复习」/ 详情「复习这个牌组」直接复习、长按出菜单',
@@ -1325,6 +1431,14 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('食べる'), findsWidgets);
+      // 按钮自带文字：悬停不弹重复的「文字 + 快捷键」提示（用户 11-20）。
+      expect(
+        find.ancestor(
+          of: find.byKey(const ValueKey<String>('srs-show-answer')),
+          matching: find.byType(FushiTooltip),
+        ),
+        findsNothing,
+      );
 
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
@@ -1334,6 +1448,13 @@ void main() {
       );
       for (int r = 1; r <= 4; r++) {
         expect(find.byKey(ValueKey<String>('srs-rate-$r')), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey<String>('srs-rate-$r')),
+            matching: find.byType(FushiTooltip),
+          ),
+          findsNothing,
+        );
       }
       // 「简单」直接毕业到复习队列：至少有一个按天计的间隔预览（带 fuzz，不钉具体值）。
       expect(
@@ -1878,7 +1999,8 @@ void main() {
         findsNothing,
       );
 
-      // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<id>）。
+      // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<牌组全名>：已配对设备上的同名
+      // 牌组与本机同色，设计稿 11-20 #17）。
       Color bandColor(String id) =>
           (tester
                       .widget<DecoratedBox>(
@@ -1895,10 +2017,7 @@ void main() {
       final BuildContext context = tester.element(band(parent));
       expect(
         bandColor(parent),
-        fushiPosterColors(
-          context,
-          fushiPosterHue('srs-deck:$parent'),
-        ).container,
+        fushiPosterColors(context, fushiPosterHue('srs-deck:Parent')).container,
       );
 
       // 计数是带语义色的 chip（每行一组）。
@@ -2491,6 +2610,30 @@ void main() {
       final Finder replay = find.byKey(
         const ValueKey<String>('srs-settings-replay-question-audio'),
         skipOffstage: false,
+      );
+      // 左栏是懒构建的 ListView：音频分组在首屏缓存区以外时还没构建，先把它滚出来
+      // （分段行在窄栏里换到标题下方后，前面的分组变高）。
+      await tester.scrollUntilVisible(
+        autoplay,
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byKey(SrsAdaptiveSections.primaryPaneKey),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      // 左栏是懒构建的 ListView：音频分组在缓存区以外时还没构建，先把它滚出来
+      // （分段行在窄栏里换到标题下方后，前面的分组变高）。
+      await tester.scrollUntilVisible(
+        autoplay,
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byKey(SrsAdaptiveSections.primaryPaneKey),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
       expect(autoplay, findsOneWidget);
       expect(replay, findsOneWidget);

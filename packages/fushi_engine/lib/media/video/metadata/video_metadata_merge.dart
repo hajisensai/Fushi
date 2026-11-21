@@ -1591,6 +1591,10 @@ const Set<VideoMetadataImageKind> kLanguageFirstImageKinds =
       VideoMetadataImageKind.clearart,
     };
 
+/// 1 = 图带语言标签（背景图上即「印着文字」），0 = 无标签。
+int _hasImageLanguage(VideoMetadataImage image) =>
+    (image.language?.trim().isNotEmpty ?? false) ? 1 : 0;
+
 int _compareImages(
   VideoMetadataImage a,
   VideoMetadataImage b,
@@ -1612,6 +1616,14 @@ int _compareImages(
   // 就是这条路径）。画面类图种评分继续做主。
   if (kLanguageFirstImageKinds.contains(a.kind) && language != 0) {
     return language;
+  }
+  // 背景图：TMDB 只给**印着文字**的 backdrop 打语言标签，无字版为 null
+  // （Jellyfin 据此把带字的分流成 Thumb）。背景图上要叠 logo / 标题，带字的会
+  // 和叠加标题重复成两份，所以无字版先于评分（2026-11-20 用户拍板设计稿 #3 ①）；
+  // 同为无字或同为带字时仍按评分。
+  if (a.kind == VideoMetadataImageKind.backdrop) {
+    final int text = _hasImageLanguage(a).compareTo(_hasImageLanguage(b));
+    if (text != 0) return text;
   }
   final int rating = (b.voteAverage ?? -1).compareTo(a.voteAverage ?? -1);
   if (rating != 0) return rating;

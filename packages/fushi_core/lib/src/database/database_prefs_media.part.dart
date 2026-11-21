@@ -12,6 +12,52 @@ mixin _FushiDbPrefsMedia
     return row?.value;
   }
 
+  /// [key] 这一条偏好的**值**变了就发一次（任何写入者：仓库、同步合并、备份恢复、
+  /// 控制通道……只要经本库写 `preferences` 表）。
+  ///
+  /// 同 [watchCollectionTablesChanged] 用手动 [StreamController] + [tableUpdates]，
+  /// 不用 drift keyed `.watch()`（BUG-834）。`preferences` 表任何一行写入都会唤醒，
+  /// 这里重读 [key] 那一行、与上次读到的值比较，没变就不发（别的偏好写入不惊动订阅方）。
+  /// 订阅时先读一次当基线；基线还没读完时到来的写入照发（宁可多刷一次）。读失败
+  /// （库已关闭等）作为错误事件交给订阅方。
+  Stream<void> watchPrefChanged(String key) {
+    late final StreamController<void> controller;
+    StreamSubscription<String?>? updatesSub;
+    String? last;
+    bool primed = false;
+    controller = StreamController<void>(
+      onListen: () {
+        getPref(key).then<void>(
+          (String? value) {
+            if (primed) return;
+            last = value;
+            primed = true;
+          },
+          onError: (Object error, StackTrace stack) {
+            if (!controller.isClosed) controller.addError(error, stack);
+          },
+        );
+        updatesSub = tableUpdates(TableUpdateQuery.onTable(preferences))
+            .asyncMap((_) => getPref(key))
+            .listen(
+              (String? value) {
+                if (primed && value == last) return;
+                last = value;
+                primed = true;
+                if (!controller.isClosed) controller.add(null);
+              },
+              onError: (Object error, StackTrace stack) {
+                if (!controller.isClosed) controller.addError(error, stack);
+              },
+            );
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 一次取回全部以 [prefix] 开头的偏好（key → value）。
   ///
   /// 「每本一个键」的偏好族（有声书健康度覆盖等）在列表页要为每本各查一次

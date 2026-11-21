@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+    show CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/home_tab.dart';
@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/adaptive/vetoed_back_swipe.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
 import 'package:fushi/src/utils/components/mascot_glow.dart'
@@ -583,7 +584,8 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
       context,
       dragging ? animation : kAlwaysCompleteAnimation,
       dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
-      child,
+      // 页面 `PopScope` 否决返回时侧滑转成 maybePop（墨水屏下不做阻尼位移）。
+      VetoedBackSwipe(route: route, child: child),
     );
   }
 }
@@ -3326,10 +3328,10 @@ ThemeData buildFushiThemeData({
                 FushiPredictiveBackPageTransitionsBuilder(),
               ),
               TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。

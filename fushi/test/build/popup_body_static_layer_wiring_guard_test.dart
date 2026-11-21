@@ -140,7 +140,7 @@ const Map<String, List<String>> _wired = <String, List<String>>{
   ],
   'lib/src/pages/implementations/web_video_fushi_page.dart': <String>[
     'implements PopupBodyWebViewProvider',
-    'Object? get popupBodyWebViewId => _web?.getViewId()',
+    'Object? get popupBodyWebViewId => _session?.controller?.getViewId()',
     '_popup.bodyStaticLayer.resolveBody = () => popupBodyWebViewId',
     '_popup.bodyStaticLayer.bodyChanged()',
   ],

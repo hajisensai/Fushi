@@ -1,5 +1,5 @@
-// 漫画朗读播放条：MD3 与 Apple 两套设计系统下都渲染全部按钮，名称进无障碍语义；
-// 状态行按控制器状态 / 失败原因给出对应文案。
+// 漫画朗读播放卡：MD3 与 Apple 两套设计系统下都渲染全部按钮，名称进无障碍语义；
+// 状态行按控制器状态 / 失败原因给出对应文案；成品音频卡顶行显示说话人。
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -259,6 +259,8 @@ void main() {
         findsNothing,
       );
       expect(find.text('hello'), findsOneWidget);
+      // 卡片顶行：说话人。
+      expect(find.text('A'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey<String>('manga_audio_play')));
       await tester.pump();

@@ -2,6 +2,8 @@
 //
 //  BUG-4820 / BUG-2979 ②  视频「搬家」要正证据：规格缓存里的字节数，或连着对得上的
 //            目录尾段（光是 `Season 01` 这种通用目录名不算）。
+//  拍板台 design-nmv-video-move-fingerprint：旧行记过内容指纹时只看内容（同一个文件才
+//            认，目录名不论），v165 `video_content_fingerprints`。
 //  BUG-4831  系统 / 垃圾条目不入库；一个读不了的子目录不再让整次扫描失败。
 //  BUG-4835  远端书：一本失败不中断其余（连接断了才整轮结束）、临时目录必删；被杀
 //            进程留下的临时来源行与临时目录能被认出并回收，活着的另一个实例的不动。
@@ -16,6 +18,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/source_library/source_scan_temp.dart';
@@ -23,6 +26,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_content_fingerprint.dart';
 import 'package:path/path.dart' as p;
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
@@ -47,9 +51,11 @@ Future<SourceLibraryRow> _source(
 Future<SourceScanSummary> _scan(FushiDatabase db, SourceLibraryRow source) =>
     SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
-File _video(String path, {int bytes = 4}) => File(path)
+/// [fill] 是文件内容的字节值：两部不同的剧要用不同的值，否则内容指纹相同、确实
+/// 是「同一个文件」。
+File _video(String path, {int bytes = 4, int fill = 7}) => File(path)
   ..parent.createSync(recursive: true)
-  ..writeAsBytesSync(List<int>.filled(bytes, 7));
+  ..writeAsBytesSync(List<int>.filled(bytes, fill));
 
 Future<void> _setProgress(FushiDatabase db, String bookUid, int ms) =>
     (db.update(db.videoBooks)..where((t) => t.bookUid.equals(bookUid))).write(
@@ -272,7 +278,7 @@ void main() {
       final String aFile = p.join(tmp.path, 'ShowA', 'Season 01', '01.mkv');
       final String bFile = p.join(tmp.path, 'ShowB', 'Season 01', '01.mkv');
       _video(aFile);
-      _video(bFile);
+      _video(bFile, fill: 8);
       final SourceLibraryRow source = await _source(db, tmp.path);
       await _scan(db, source);
       await _setProgress(db, 'video/01', 4242);
@@ -305,7 +311,7 @@ void main() {
 
       Directory(p.join(tmp.path, 'ShowA')).deleteSync(recursive: true);
       final String bFile = p.join(tmp.path, 'ShowB', 'Season 01', '01.mkv');
-      _video(bFile);
+      _video(bFile, fill: 8);
       final SourceScanSummary summary = await _scan(db, source);
 
       expect(summary.error, isNull);
@@ -340,7 +346,7 @@ void main() {
         'Extras',
         'NCOP.mkv',
       );
-      _video(bFile);
+      _video(bFile, fill: 8);
       await _scan(db, source);
 
       final Map<String, VideoBookRow> rows = await _rowsByUid(db);
@@ -420,6 +426,162 @@ void main() {
       );
     });
 
+    test('内容指纹：只对上一层目录的真搬家（没探过规格）也认出，进度保留', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String oldFile = p.join(tmp.path, 'dl', 'Show', '01.mkv');
+      _video(oldFile, bytes: 300 * 1024, fill: 3);
+      await _scan(db, await _source(db, p.join(tmp.path, 'dl')));
+      expect(
+        (await db.allVideoContentFingerprints())['video/01']?.fingerprint,
+        startsWith('osh:'),
+        reason: '入库当场记下指纹（≥128 KiB 用 OpenSubtitles 哈希）',
+      );
+      await _setProgress(db, 'video/01', 31337);
+
+      // `dl/Show/01.mkv` → `anime/Renamed/01.mkv`：目录尾段一层都对不上。
+      final String newFile = p.join(tmp.path, 'anime', 'Renamed', '01.mkv');
+      Directory(p.dirname(newFile)).createSync(recursive: true);
+      File(oldFile).renameSync(newFile);
+      await _scan(db, await _source(db, p.join(tmp.path, 'anime')));
+
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys, <String>['video/01'], reason: '不再另建 X (2)');
+      expect(rows['video/01']!.videoPath, newFile);
+      expect(rows['video/01']!.lastPositionMs, 31337);
+    });
+
+    test('内容指纹：名单外的目录名连着两层撞上、内容不同——不改指', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      // `Batch/Remux` 不在通用名单里，旧判据会当成目录链证据。
+      final String aFile = p.join(
+        tmp.path,
+        'ShowA',
+        'Batch',
+        'Remux',
+        '01.mkv',
+      );
+      _video(aFile, fill: 1);
+      final SourceLibraryRow source = await _source(db, tmp.path);
+      await _scan(db, source);
+      await _setProgress(db, 'video/01', 2024);
+
+      Directory(p.join(tmp.path, 'ShowA')).deleteSync(recursive: true);
+      final String bFile = p.join(
+        tmp.path,
+        'ShowB',
+        'Batch',
+        'Remux',
+        '01.mkv',
+      );
+      _video(bFile, fill: 2);
+      await _scan(db, source);
+
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/01', 'video/01 (2)'});
+      expect(rows['video/01']!.videoPath, aFile, reason: 'A 行没被改指到 B 的文件');
+      expect(rows['video/01']!.lastPositionMs, 2024);
+    });
+
+    test('内容指纹压过规格缓存与目录链：同尾段同大小但内容不同不算搬家', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String oldFile = p.join(tmp.path, 'old', 'Show', 'Arc', '01.mkv');
+      _video(oldFile, bytes: 10, fill: 1);
+      await _scan(db, await _source(db, p.join(tmp.path, 'old')));
+      await _recordSpec(db, oldFile, 10);
+      File(oldFile).deleteSync();
+
+      final String newFile = p.join(tmp.path, 'new', 'Show', 'Arc', '01.mkv');
+      _video(newFile, bytes: 10, fill: 2);
+      await _scan(db, await _source(db, p.join(tmp.path, 'new')));
+
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/01', 'video/01 (2)'});
+      expect(rows['video/01']!.videoPath, oldFile);
+    });
+
+    test('手动导入的行没有指纹：书架补算后搬家同样认得出', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String oldFile = p.join(tmp.path, 'manual', 'Inbox', '01.mkv');
+      _video(oldFile, fill: 5);
+      final VideoBookRepository repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/01'),
+          title: const Value<String>('01'),
+          videoPath: Value<String>(oldFile),
+        ),
+      );
+      await _setProgress(db, 'video/01', 4500);
+      expect(await db.allVideoContentFingerprints(), isEmpty);
+
+      expect(await backfillVideoContentFingerprints(db), 1);
+      expect(
+        (await db.allVideoContentFingerprints())['video/01']?.fingerprint,
+        startsWith('sha256:'),
+        reason: '不足 128 KiB 整份 SHA-256',
+      );
+
+      final String newFile = p.join(tmp.path, 'lib', 'Sorted', '01.mkv');
+      Directory(p.dirname(newFile)).createSync(recursive: true);
+      File(oldFile).renameSync(newFile);
+      await _scan(db, await _source(db, p.join(tmp.path, 'lib')));
+
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys, <String>['video/01']);
+      expect(rows['video/01']!.videoPath, newFile);
+      expect(rows['video/01']!.lastPositionMs, 4500);
+    });
+
+    test('文件原地换掉：重扫复查到大小变了就重算指纹', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String file = p.join(tmp.path, 'Show', '01.mkv');
+      _video(file, bytes: 10, fill: 1);
+      final SourceLibraryRow source = await _source(db, tmp.path);
+      await _scan(db, source);
+      final String before =
+          (await db.allVideoContentFingerprints())['video/01']!.fingerprint;
+
+      _video(file, bytes: 20, fill: 2);
+      await _scan(db, source);
+
+      final VideoContentFingerprintRow after = (await db
+          .allVideoContentFingerprints())['video/01']!;
+      expect(after.fingerprint, isNot(before));
+      expect(after.fileSizeBytes, 20);
+    });
+
+    test('computeVideoContentFingerprint：同内容同指纹，不是文件为 null', () async {
+      final File a = _video(p.join(tmp.path, 'a.mkv'), bytes: 200 * 1024);
+      final File b = _video(p.join(tmp.path, 'b.mkv'), bytes: 200 * 1024);
+      final File c = _video(
+        p.join(tmp.path, 'c.mkv'),
+        bytes: 200 * 1024,
+        fill: 9,
+      );
+      final VideoContentFingerprint fa = (await computeVideoContentFingerprint(
+        a.path,
+      ))!;
+      final VideoContentFingerprint fb = (await computeVideoContentFingerprint(
+        b.path,
+      ))!;
+      final VideoContentFingerprint fc = (await computeVideoContentFingerprint(
+        c.path,
+      ))!;
+      expect(fa.value, fb.value);
+      expect(fa.value, isNot(fc.value));
+      expect(fa.sizeBytes, 200 * 1024);
+      expect(
+        await computeVideoContentFingerprint(p.join(tmp.path, 'missing.mkv')),
+        isNull,
+      );
+      expect(await computeVideoContentFingerprint(tmp.path), isNull);
+    });
+
     test('isGenericVideoDirectoryName：季 / 分盘 / 特典目录是通用名，作品名不是', () {
       for (final String name in <String>[
         'Season 01',
@@ -463,6 +625,8 @@ void main() {
       expect(junk('#recycle/old.cbz'), isTrue);
       expect(junk('.Trash-1000/files/a.epub'), isTrue);
       expect(junk('.Trashes/501/a.mkv'), isTrue);
+      // 与引擎卷归组 / 页图枚举共用一份判据后，macOS 压缩包残渣目录也算。
+      expect(junk('Manga/__MACOSX/Vol1/001.jpg'), isTrue);
 
       expect(junk('Show/01.mkv'), isFalse);
       expect(junk('.hidden/01.mkv'), isFalse, reason: '隐藏目录里放媒体是合法用法');
@@ -696,6 +860,67 @@ void main() {
         (await db.getAllMediaSources()).map((MediaSourceRow r) => r.id).toSet(),
         <int>{normal.id, live},
       );
+    });
+
+    // 拍板台 design-nmv-fyi-tail ③：首页首帧的清扫不在任何来源锁里，以前只靠扫描入口
+    // 传 keep 排除「自己正在扫的那条」，首帧后对残留行发起的重扫会被清扫删掉脚下的行。
+    test('正被扫描（持有来源锁）的残留临时行不删，锁放开后的下一次清扫才删', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final int stale = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'temp',
+          mediaKind: 'video',
+          rootPath: p.join(tmp.path, 'stale'),
+          configJson: Value<String?>(oneShotSourceConfig(null)),
+          createdAt: 1000,
+        ),
+      );
+      final SourceScanActivity activity = SourceScanActivity();
+      final Completer<void> scanning = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      final Future<void> scan = activity.run<void>(stale, () async {
+        scanning.complete();
+        await release.future;
+      });
+      await scanning.future;
+
+      expect(await sweepStaleOneShotSources(db, activity: activity), 0);
+      expect(await db.getMediaSourceById(stale), isNotNull);
+
+      release.complete();
+      await scan;
+      expect(await sweepStaleOneShotSources(db, activity: activity), 1);
+      expect(await db.getMediaSourceById(stale), isNull);
+    });
+
+    test('扫描等锁期间来源行被删：拿到锁后不扫，返回 sourceRemoved', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _video(p.join(tmp.path, 'gone', '01.mkv'));
+      final SourceLibraryRow source = await _source(
+        db,
+        p.join(tmp.path, 'gone'),
+      );
+      final Completer<void> held = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      final Future<void> holder = sourceScanActivity.run<void>(
+        source.id,
+        () async {
+          held.complete();
+          await release.future;
+        },
+      );
+      await held.future;
+      final Future<SourceScanSummary> waiting = _scan(db, source);
+      await db.deleteMediaSource(source.id);
+      release.complete();
+      await holder;
+
+      final SourceScanSummary summary = await waiting;
+      expect(summary.blocked, SourceScanBlock.sourceRemoved);
+      expect(summary.importedMediaCount, 0);
+      expect(await _rowsByUid(db), isEmpty);
     });
 
     test('标记与 iOS 书签并存，书签刷新重写 configJson 后标记仍在', () {

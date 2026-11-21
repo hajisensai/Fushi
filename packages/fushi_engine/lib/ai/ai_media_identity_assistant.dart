@@ -161,9 +161,7 @@ Future<AiVideoIdentityDecision> requestAiMediaIdentity({
       AiChatMessage.system(
         buildAiMediaIdentitySystemPrompt(query.kind, locale: query.locale),
       ),
-      AiChatMessage.user(
-        const JsonEncoder.withIndent('  ').convert(query.toJson()),
-      ),
+      AiChatMessage.user(jsonEncode(query.toJson())),
     ],
     maxTokens: 512,
   );

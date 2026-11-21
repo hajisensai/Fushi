@@ -96,18 +96,29 @@ void main() {
     });
   });
 
-  group('reader 的 cue 变更回调（源码守卫，BUG-4811）', () {
-    // `_onCueChanged` 是播放器监听的同步回调，页面私有、要真 InAppWebView 才能
-    // 行为驱动；这里钉调用点：audiobook.part.dart 里每一处 highlight 调用要么被
-    // await，要么紧跟 `.catchError(AudiobookBridge.logHighlightError)`。
+  // reader 里放飞 highlight 的两个文件：audiobook.part.dart（cue 变更回调三处）与
+  // lyrics.part.dart（退出歌词模式后的显式 reveal，#3722 c48 收的第四处）。
+  _guardHighlightCallSites(
+    'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+    expectedCallSites: 3,
+  );
+  _guardHighlightCallSites(
+    'lib/src/pages/implementations/reader_fushi/lyrics.part.dart',
+    expectedCallSites: 1,
+  );
+}
+
+void _guardHighlightCallSites(String path, {required int expectedCallSites}) {
+  group('reader 里放飞的 highlight 调用点（源码守卫，BUG-4811）：$path', () {
+    // `_onCueChanged` / `_exitLyricsMode` 都是页面私有、要真 InAppWebView 才能
+    // 行为驱动；这里钉调用点：每一处 highlight 调用要么被 await，要么紧跟
+    // `.catchError(AudiobookBridge.logHighlightError)`。
     //
     // 语料先过 `maskComments`（行注释 + 块注释换成等长空白，下标与原文一致）：
     // 注释里提到的 `AudiobookBridge.highlight(` 不算调用点，注释里的
     // `.catchError(...)` 字面量也不能冒充已接错误处理。
     final String source = maskComments(
-      File(
-        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n'),
+      File(path).readAsStringSync().replaceAll('\r\n', '\n'),
     );
     const String call = 'AudiobookBridge.highlight(';
     const String handler = '.catchError(AudiobookBridge.logHighlightError)';
@@ -129,7 +140,7 @@ void main() {
     ];
 
     test('调用点可定位（守卫不因改名而空转）', () {
-      expect(callSites.length, 3);
+      expect(callSites.length, expectedCallSites);
     });
 
     test('每一处放飞的 highlight 都接了 logHighlightError', () {

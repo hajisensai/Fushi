@@ -23,7 +23,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
-    show RemoteVideoFingerprintSource;
+    show RemoteVideoFingerprintSource, RemoteVideoFingerprintUnavailable;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart'
     show buildCollectionReaderMediaItem;
@@ -73,8 +73,9 @@ RemoteVideoInfo? findRemoteVideoForCardSource(
 
 /// 远端条目的字节核验（拍板台 IFCPPprIpT）：链接带指纹时，用 host 对同一个文件算的
 /// 指纹比对（与本地卡同口径，防 host 上同名 bookUid 换成了别的片子）。链接不带指纹
-/// （在线内容身份，BUG-3490）或 host 不支持指纹（老 host 无该端点）时按 bookUid 身份
-/// 放行，与此前远端回跳一致。新 host 担保不了字节不会走到这里：
+/// （在线内容身份，BUG-3490）、host 不支持指纹（老 host 无该端点）或 host 还没算好
+/// （后台预热没轮到，拍板台 left3657：互联是用户自己的设备，不为核验让用户干等
+/// 整文件哈希）时按 bookUid 身份放行。新 host 担保不了字节不会走到这里：
 /// [RemoteVideoFingerprintSource.fetchRemoteVideoFingerprint] 抛
 /// `RemoteVideoFingerprintUnavailable`，按取不到来源处理（BUG-4782）。
 bool cardSourceHostFingerprintAccepted({
@@ -93,16 +94,22 @@ typedef RemoteCardSourceVideo = ({
 
 /// 去 host 找卡片来源的结果：[value] / [cancelled] 同 [CardSourceAwaited]；
 /// [fingerprintMismatch] 为 true 表示 host 上同 bookUid 的那份字节与卡片指纹不符
-/// （此时 [value] 为 null，调用方提示「指纹不符」而不是「没有来源」）。
+/// （此时 [value] 为 null，调用方提示「指纹不符」而不是「没有来源」）；
+/// [hostUnreadable] 为 true 表示 host 清单里有这条、却读不了它的文件（被移走 / 删除 /
+/// 读不了，BUG-4782 的 `RemoteVideoFingerprintUnavailable`），调用方提示
+/// `card_source_review_host_unreadable` 而不是笼统的「此设备没有对应来源」（拍板台
+/// left3657）。
 typedef RemoteCardSourceLookup = ({
   RemoteCardSourceVideo? value,
   bool cancelled,
   bool fingerprintMismatch,
+  bool hostUnreadable,
 });
 
 /// 在 [listing]（host 视频清单）里按 [link] 找条目，链接带指纹时再请 [fingerprints]
-/// 对 host 要串流的同一个文件核验字节。找不到 → `info == null`；host 字节不符 →
-/// `fingerprintMismatch == true`。网络失败原样抛给调用方。
+/// 对 host 要串流的同一个文件核验字节（`wait: false`：只要 host 已算好的，不让它当场
+/// 整文件哈希）。找不到 → `info == null`；host 字节不符 → `fingerprintMismatch == true`。
+/// host 读不了文件抛 `RemoteVideoFingerprintUnavailable`，网络失败原样抛给调用方。
 Future<({RemoteVideoInfo? info, bool fingerprintMismatch})>
 matchRemoteCardSourceVideo({
   required Future<List<RemoteVideoInfo>> listing,
@@ -121,6 +128,7 @@ matchRemoteCardSourceVideo({
       .fetchRemoteVideoFingerprint(
         info.id,
         episodeIndex: link.episodeIndex ?? 0,
+        wait: false,
       );
   return cardSourceHostFingerprintAccepted(
         linkFingerprint: linkFingerprint,
@@ -133,13 +141,15 @@ matchRemoteCardSourceVideo({
 /// 本地库没有该视频（或本地那份字节对不上）时，去已配对的互联 host 取它的清单并按
 /// [link] 找条目，再请 host 核验字节指纹（[matchRemoteCardSourceVideo]）。互联未启用 /
 /// 未配对 / host 不可达 / 清单里没有都是 `value: null`（调用方按「没有来源」提示，不吞
-/// 成别的错）；host 字节与卡片不符是 `fingerprintMismatch: true`；用户在等待时取消是
-/// `cancelled: true`（调用方静默放弃这次跳转）。
+/// 成别的错）；host 字节与卡片不符是 `fingerprintMismatch: true`；host 清单里有、却读
+/// 不了文件是 `hostUnreadable: true`；用户在等待时取消是 `cancelled: true`（调用方静默
+/// 放弃这次跳转）。
 ///
-/// 要真去 host 等结果时（清单缓存不新鲜：首次 / 过了 TTL / 有在途请求；或要请 host
-/// 对整份原文件算指纹，几 GB 的片子首次要几十秒），整段等待在 [navigator] 上挂可取消
-/// 的进度反馈（[awaitWithCardSourceOpeningFeedback]，反馈 7gkdbfCXQ0）；新鲜缓存命中
-/// 且不用核验指纹是立即可得的，不弹对话框免得闪一下。
+/// 要真去 host 等结果时（清单缓存不新鲜：首次 / 过了 TTL / 有在途请求；或要问 host
+/// 指纹——新 host 只答已算好的、立即返回，不认 `wait=0` 的老 host 仍会当场算完整个
+/// 文件，几 GB 的片子要几十秒），整段等待在 [navigator] 上挂可取消的进度反馈
+/// （[awaitWithCardSourceOpeningFeedback]，反馈 7gkdbfCXQ0）；新鲜缓存命中且不用核验
+/// 指纹是立即可得的，不弹对话框免得闪一下。
 Future<RemoteCardSourceLookup> resolveRemoteCardSourceVideo(
   AppModel app,
   WidgetRef ref,
@@ -150,6 +160,7 @@ Future<RemoteCardSourceLookup> resolveRemoteCardSourceVideo(
     value: null,
     cancelled: false,
     fingerprintMismatch: false,
+    hostUnreadable: false,
   );
   final SyncRepository syncRepo = SyncRepository(app.database);
   if (!await syncRepo.isInterconnectEnabled()) return unavailable;
@@ -184,13 +195,29 @@ Future<RemoteCardSourceLookup> resolveRemoteCardSourceVideo(
             ({RemoteVideoInfo? info, bool fingerprintMismatch})
           >(navigator: navigator, work: work);
     if (matched.cancelled) {
-      return (value: null, cancelled: true, fingerprintMismatch: false);
+      return (
+        value: null,
+        cancelled: true,
+        fingerprintMismatch: false,
+        hostUnreadable: false,
+      );
     }
     final RemoteVideoInfo? info = matched.value!.info;
     return (
       value: info == null ? null : (info: info, client: backend),
       cancelled: false,
       fingerprintMismatch: matched.value!.fingerprintMismatch,
+      hostUnreadable: false,
+    );
+  } on RemoteVideoFingerprintUnavailable catch (error, stack) {
+    // host 清单里有这条，却担保不了它的字节（文件被移走 / 删除 / 读不了，BUG-4782）：
+    // 不放行，但要说清是 host 那边读不了，不是「此设备没有对应来源」。
+    ErrorLogService.instance.log('card_source.remoteVideo', error, stack);
+    return (
+      value: null,
+      cancelled: false,
+      fingerprintMismatch: false,
+      hostUnreadable: true,
     );
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('card_source.remoteVideo', error, stack);
@@ -244,6 +271,9 @@ enum CardSourceVideoAction {
   /// 提示 `card_source_review_fingerprint_mismatch`。
   fingerprintMismatch,
 
+  /// 提示 `card_source_review_host_unreadable`（host 清单里有、却读不了文件）。
+  hostUnreadable,
+
   /// 提示 `card_source_review_local_required`。
   localRequired,
 
@@ -253,8 +283,9 @@ enum CardSourceVideoAction {
 
 /// 由本机核验结果 [local] 与去 host 找的结果 [lookup]（本机已核验通过时不去找，为
 /// null）决定视频卡片回跳的去向：本机通过 → 本地播；否则 host 有同一份字节 → 在线播；
-/// 都没有时，任一侧字节不符优先提示「不一致」，其次本机读不了提示「先下载」，最后
-/// 才是「没有来源」。
+/// 都没有时，任一侧字节不符优先提示「不一致」，其次 host 读不了文件提示「host 读不了」
+/// （本机那份也读不了时让用户去「先下载」也下不成），再次本机读不了提示「先下载」，
+/// 最后才是「没有来源」。
 CardSourceVideoAction decideCardSourceVideoAction({
   required CardSourceLocalVideoCheck local,
   required RemoteCardSourceLookup? lookup,
@@ -268,6 +299,9 @@ CardSourceVideoAction decideCardSourceVideoAction({
       (lookup?.fingerprintMismatch ?? false)) {
     return CardSourceVideoAction.fingerprintMismatch;
   }
+  if (lookup?.hostUnreadable ?? false) {
+    return CardSourceVideoAction.hostUnreadable;
+  }
   if (local == CardSourceLocalVideoCheck.unreadable) {
     return CardSourceVideoAction.localRequired;
   }
@@ -276,6 +310,18 @@ CardSourceVideoAction decideCardSourceVideoAction({
 
 /// Resolve a portable locator through the current library. URLs never supply
 /// paths, remote credentials, or arbitrary routes to the navigation layer.
+/// 「回到出处」的跳转动作签名（[openCardSource]）。
+typedef CardSourceOpener =
+    Future<void> Function({
+      required WidgetRef ref,
+      required CardSourceLink link,
+    });
+
+/// 复习页「回到出处」各入口（顶栏图标、媒体胶囊、例句卡 ↩、卡面来源链接）共用的跳转动作。
+/// 默认就是 [openCardSource]；做成 provider 是为了让 widget 测试能确认这些入口落到同一个动作上。
+final Provider<CardSourceOpener> cardSourceOpenerProvider =
+    Provider<CardSourceOpener>((Ref ref) => openCardSource);
+
 Future<void> openCardSource({
   required WidgetRef ref,
   required CardSourceLink link,
@@ -346,6 +392,9 @@ Future<void> _openCardSource({
         return;
       case CardSourceVideoAction.fingerprintMismatch:
         FushiToast.show(msg: t.card_source_review_fingerprint_mismatch);
+        return;
+      case CardSourceVideoAction.hostUnreadable:
+        FushiToast.show(msg: t.card_source_review_host_unreadable);
         return;
       case CardSourceVideoAction.localRequired:
         FushiToast.show(msg: t.card_source_review_local_required);

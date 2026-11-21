@@ -679,6 +679,10 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     Map<String, String> toWrite, {
     required Set<String>? onlyFields,
   }) {
+    final MineOutcome? none = rejectNoOverwriteFieldsSelectedOutcome(
+      onlyFields,
+    );
+    if (none != null) return none;
     if (toWrite.values.any((String v) => v.trim().isNotEmpty)) return null;
     if (onlyFields == null) {
       return MineOutcome.failure(

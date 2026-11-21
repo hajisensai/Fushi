@@ -19,9 +19,8 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   Future<RemoteMangaManifest> mangaManifest(String bookKey) async {
     _assertSafeName(bookKey);
     final EpubBookRow row = await _requireMangaRow(bookKey);
-    if (hasExportableMangaContent(row.extractDir)) {
-      return _volumeManifest(row, _readMangaPayload(row));
-    }
+    final MokuroPayload? volume = _readExportableVolume(row);
+    if (volume != null) return _volumeManifest(row, volume);
     final List<RemoteMangaChapterInfo> chapters = await _downloadedChapters(
       row,
     );
@@ -58,11 +57,12 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
         );
       }
     }
-    if (!hasExportableMangaContent(row.extractDir)) {
+    final MokuroPayload? volume = _readExportableVolume(row);
+    if (volume == null) {
       throw StateError('manga book has no volume pages: $bookKey');
     }
     return _pageFile(
-      payload: _readMangaPayload(row),
+      payload: volume,
       imagesRoot: imagesRoot,
       index: index,
       label: bookKey,
@@ -127,7 +127,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 只核对被请求的那一页，不再对整章每一页 stat（一章 N 页读完是 N² 次）。那一页
     // 不在（越界 / 文件被删）就回到下面的完整判定，结论与没有缓存时一致。
     final MokuroPayload? cached = _mangaPayloads.lookup(
-      _chapterJsonFile(chapterDir),
+      mangaChapterJsonFile(chapterDir),
     );
     if (cached != null && index >= 0 && index < cached.images.length) {
       final String? path = MangaStorage.resolvePageFilePath(
@@ -152,7 +152,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// （没过关的清掉旧记录）。stat 取在读之前：读的途中文件被重写，记下的是「旧
   /// stat + 新内容」，下次 stat 对不上自然重读，不会把旧内容配上新 stat。
   Future<MokuroPayload?> _readDownloadedChapter(Directory chapterDir) async {
-    final File json = _chapterJsonFile(chapterDir);
+    final File json = mangaChapterJsonFile(chapterDir);
     final FileStat stat = json.statSync();
     final MokuroPayload? payload = await readDownloadedChapterPayload(
       chapterDir,
@@ -160,10 +160,6 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     _mangaPayloads.store(json, stat, payload);
     return payload;
   }
-
-  /// 一章的 `manga.json`（与 `manga_chapter_storage.dart` 的 `mangaChapterJsonFile` 同一个文件）。
-  File _chapterJsonFile(Directory chapterDir) =>
-      File(p.join(chapterDir.path, MangaStorage.kMangaJsonFileName));
 
   /// 单卷 / 单章的页表：payload 的 `pages` 顺序，带 OCR 生产者报告的尺寸。
   RemoteMangaManifest _volumeManifest(EpubBookRow row, MokuroPayload payload) =>
@@ -417,12 +413,21 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     ),
   );
 
-  /// 读该书的 `manga.json` 并记进 [_mangaPayloads]。调用方须已确认
-  /// [hasExportableMangaContent]（缓存里的 payload 都是过了关的）。
-  MokuroPayload _readMangaPayload(EpubBookRow row) {
+  /// 单卷判据（[hasExportableMangaContent]）与页表一次读完：过关返回 payload 并记进
+  /// [_mangaPayloads]（缓存里的 payload 都是过了关的），不过关 null。
+  ///
+  /// 判据文件是根 [kMangaPackageMarker]；行里记的 `manga.json` 就是它时（常态）只读
+  /// 一遍。行里记的是别的文件名时判据与页表不是同一份文件，照旧判完再读页表文件。
+  /// stat 取在读之前，理由同 [_readDownloadedChapter]。
+  MokuroPayload? _readExportableVolume(EpubBookRow row) {
     final File json = _mangaJsonFile(row);
-    // stat 取在读之前，理由同 [_readDownloadedChapter]。
     final FileStat stat = json.statSync();
+    if (p.equals(json.path, p.join(row.extractDir, kMangaPackageMarker))) {
+      final MokuroPayload? payload = readExportableMangaPayload(row.extractDir);
+      if (payload != null) _mangaPayloads.store(json, stat, payload);
+      return payload;
+    }
+    if (!hasExportableMangaContent(row.extractDir)) return null;
     final MokuroPayload payload = parseMangaJson(json.readAsStringSync());
     _mangaPayloads.store(json, stat, payload);
     return payload;

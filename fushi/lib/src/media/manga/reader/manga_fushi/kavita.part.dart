@@ -20,6 +20,8 @@ extension _MangaKavitaSyncExtension on _MangaFushiPageState {
     if (_sourceReviewActive || !KavitaMangaSyncSession.appliesTo(entry)) {
       return null;
     }
+    // 开章时还挂着的正文（换章 = 上一章的）：迟到采用只认这之后装好的本章正文。
+    final MokuroPayload? payloadAtOpen = _payload;
     try {
       final KavitaMangaSyncSession? session =
           await KavitaMangaSyncSession.attach(
@@ -54,11 +56,46 @@ extension _MangaKavitaSyncExtension on _MangaFushiPageState {
         return null;
       }
       _kavitaMangaSync = session;
+      session?.onLateAdopt = (int page) =>
+          _acceptKavitaLateAdopt(session, payloadAtOpen, page);
       return session?.adoptedPage;
     } on Object catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.attachKavitaSync', e, stack);
     }
     return null;
+  }
+
+  /// 开章时服务器按不可达放行、随后探针及时带回了「采用服务器进度」的结论：本章已
+  /// 装好、仍是这一章、用户还停在落点（同一个跨页单元）时同意，并跳到 [page]（服务器
+  /// 那边读完的章不跳，与开章时「采用了读完的页就按续读点落页」一致）；否则拒绝，
+  /// 本章维持离线放行。
+  bool _acceptKavitaLateAdopt(
+    KavitaMangaSyncSession session,
+    MokuroPayload? payloadAtOpen,
+    int page,
+  ) {
+    if (!mounted || !identical(_kavitaMangaSync, session)) return false;
+    final int? landing = _kavitaLandingPage;
+    final MokuroPayload? payload = _payload;
+    if (landing == null ||
+        payload == null ||
+        identical(payload, payloadAtOpen) ||
+        payload.images.isEmpty ||
+        _spreads.isEmpty) {
+      return false;
+    }
+    final int landingSpread = MangaFushiPage.spreadIndexForPage(
+      _spreads,
+      landing.clamp(0, payload.images.length - 1),
+    );
+    if (_currentSpread != landingSpread) return false;
+    final int total = session.pageCount > 0
+        ? session.pageCount
+        : payload.images.length;
+    if (!isKavitaChapterFinished(page: page, totalPages: total)) {
+      unawaited(_jumpToPage(page + 1));
+    }
+    return true;
   }
 
   /// 章进度落库后转发给 Kavita 同步（防抖上报；非 Kavita 条目为空操作）。

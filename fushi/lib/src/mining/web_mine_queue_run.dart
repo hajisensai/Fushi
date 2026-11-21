@@ -57,7 +57,19 @@ enum WebMineQueueRowsEnd {
 
   /// 某一行抛出：那一行已标失败，其余行留在待办。
   rowThrew,
+
+  /// 重放用的 WebView 表面没了（渲染 / 浏览器进程死亡，或表面已经报废）：在途那一行没有
+  /// 任何结论、留在待办，其余行也留在待办。
+  surfaceLost,
 }
+
+/// 一轮是不是**出错中止**的：[end] 为 null（准备步骤或编排本身抛出，[runWebMineQueueRows]
+/// 根本没跑完）、某一行抛出、或重放表面死了。这三种都不是「跑完了」也不是「让位」：
+/// 计数只反映出错前处理掉的行（准备步骤抛出时就是 0 / 0），剩下的行原样留在待办。
+bool webMineRoundEndedOnError(WebMineQueueRowsEnd? end) =>
+    end == null ||
+    end == WebMineQueueRowsEnd.rowThrew ||
+    end == WebMineQueueRowsEnd.surfaceLost;
 
 /// 逐行跑 [rows]（应已 [groupWebMineRowsByVideo]），结果记进 [tally]，返回停下的原因。
 ///
@@ -77,6 +89,13 @@ enum WebMineQueueRowsEnd {
 ///
 /// [shouldStop] 每行开头与每次抛出后各问一次。[markFailed] 自己抛出时只记给 [onError]。
 /// 本函数不向外抛 [navigate] / [mineRow] / [markFailed] 的异常。
+///
+/// [surfaceLost]：重放用的 WebView 表面是否已经不是开跑时那一个（进程死亡后重建 / 报废）。
+/// 每行开头、导航回来之后、重放回来之后、抛出之后各问一次；一旦为真就结束本轮
+/// （[WebMineQueueRowsEnd.surfaceLost]）。导航期间表面死了：页面停在死页面或被重建回别处，
+/// 「没等到画面」不是这个视频到不了，不标 `navigate_timeout`、不报 [onUnreachable]；抛出时
+/// 表面已死：死进程上的调用本来就会抛，不是这一行的错，不标失败。[mineRow] 自己负责在落卡
+/// 之前发现表面换过（录到的是死页面 / 新页面的东西）并抛出，这一行于是留在待办。
 Future<WebMineQueueRowsEnd> runWebMineQueueRows({
   required List<WebMineQueueRow> rows,
   required WebMineQueueTally tally,
@@ -87,17 +106,21 @@ Future<WebMineQueueRowsEnd> runWebMineQueueRows({
   required Future<bool> Function(WebMineQueueRow row) mineRow,
   required Future<void> Function(WebMineQueueRow row, String error) markFailed,
   required void Function(Object error, StackTrace stack) onError,
+  bool Function()? surfaceLost,
   void Function(String videoKey)? onUnreachable,
   void Function()? onProgress,
 }) async {
+  bool lost() => surfaceLost?.call() ?? false;
   final Set<String> unreachable = <String>{};
   for (final WebMineQueueRow row in rows) {
+    if (lost()) return WebMineQueueRowsEnd.surfaceLost;
     if (shouldStop()) return WebMineQueueRowsEnd.stopped;
     if (unreachable.contains(row.videoKey)) continue;
     bool success;
     try {
       WebMineNavigateOutcome arrived = WebMineNavigateOutcome.ready;
       if (row.videoKey != currentVideoKey()) arrived = await navigate(row);
+      if (lost()) return WebMineQueueRowsEnd.surfaceLost;
       switch (arrived) {
         case WebMineNavigateOutcome.interrupted:
           return WebMineQueueRowsEnd.stopped;
@@ -111,6 +134,7 @@ Future<WebMineQueueRowsEnd> runWebMineQueueRows({
       }
     } catch (e, st) {
       onError(e, st);
+      if (lost()) return WebMineQueueRowsEnd.surfaceLost;
       if (shouldStop()) return WebMineQueueRowsEnd.stopped;
       try {
         await markFailed(row, '$e');
@@ -127,6 +151,8 @@ Future<WebMineQueueRowsEnd> runWebMineQueueRows({
       tally.failed++;
     }
     onProgress?.call();
+    // 这一行已经落定（落卡 / 标失败都发生在表面死亡之前或与之无关）；表面换了就不再碰下一行。
+    if (lost()) return WebMineQueueRowsEnd.surfaceLost;
   }
   return WebMineQueueRowsEnd.drained;
 }

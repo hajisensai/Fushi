@@ -199,6 +199,18 @@ class HeavyLeaseSuperseded implements Exception {
       'directory (pid $byPid) and has the place this run had in the queue';
 }
 
+/// Thrown while queued once whoever started this run is gone
+/// ([HeavyCallerWatch]): nobody reads its result any more, and a command
+/// started into a console that no longer exists dies at once
+/// (`0xC0000142`). No slot is held; the ticket and worktree lock are gone.
+class HeavyLeaseCallerGone implements Exception {
+  const HeavyLeaseCallerGone();
+  @override
+  String toString() =>
+      'heavy: the caller is gone (the console it started this run from no '
+      'longer exists); leaving the queue';
+}
+
 /// Slots this process holds. POSIX record locks do not conflict within one
 /// process (and closing any descriptor of the file drops them), so a process
 /// that runs two lanes at once must never reopen a slot it holds.
@@ -214,7 +226,9 @@ Future<void> _admissionChain = Future<void>.value();
 /// took the run, and a slot is only used once [HeavyLeaseRival.claimHere]
 /// said so. With a [runKey] (heavy_budget.dart heavyRunKey) a queued run of
 /// the same key is superseded: it leaves with [HeavyLeaseSuperseded] and this
-/// one queues in its place.
+/// one queues in its place. With [callerGone] (heavy.dart passes
+/// [HeavyCallerWatch.gone]) the wait ends in [HeavyLeaseCallerGone] once it
+/// says the caller is gone, checked before every admission attempt.
 Future<HeavyLease> acquireHeavyLease({
   required HeavyNeed need,
   required String label,
@@ -222,6 +236,7 @@ Future<HeavyLease> acquireHeavyLease({
   String? runKey,
   Duration? waitMax,
   HeavyLeaseRival? rival,
+  bool Function()? callerGone,
   void Function(String line)? log,
   Map<String, String>? environment,
   MemorySnapshot? Function() readMemory = readMemorySnapshot,
@@ -247,6 +262,7 @@ Future<HeavyLease> acquireHeavyLease({
       rival,
       state: dir,
       runKey: runKey,
+      callerGone: callerGone,
     );
   }
   try {
@@ -269,6 +285,7 @@ Future<HeavyLease> acquireHeavyLease({
         poll: poll,
         rival: rival,
         runKey: runKey,
+        callerGone: callerGone,
       );
     }
     final Completer<void> mine = Completer<void>();
@@ -289,6 +306,7 @@ Future<HeavyLease> acquireHeavyLease({
         poll: poll,
         rival: rival,
         runKey: runKey,
+        callerGone: callerGone,
       );
     } finally {
       mine.complete();
@@ -326,6 +344,7 @@ Future<_WorktreeLock> _waitWorktreeLock(
   HeavyLeaseRival? rival, {
   required Directory state,
   String? runKey,
+  bool Function()? callerGone,
 }) async {
   final Directory d = Directory('$root/.codex-test/heavy')
     ..createSync(recursive: true);
@@ -336,6 +355,7 @@ Future<_WorktreeLock> _waitWorktreeLock(
   int? inheritedUs;
   while (true) {
     if (rival != null && rival.tookIt) throw const HeavyLeaseWithdrawn();
+    if (callerGone != null && callerGone()) throw const HeavyLeaseCallerGone();
     // Held by this very process (another lane): do not even open the file --
     // POSIX would grant the lock again, and closing the probe would drop it.
     final RandomAccessFile? f = _heldWorktrees.contains(key)
@@ -545,6 +565,7 @@ Future<HeavyLease> _waitSlot(
   required Duration poll,
   HeavyLeaseRival? rival,
   String? runKey,
+  bool Function()? callerGone,
 }) async {
   String? lastReason;
   _Ticket? ticket;
@@ -553,6 +574,10 @@ Future<HeavyLease> _waitSlot(
       // Taken elsewhere: the ticket goes in the finally below, so --status
       // no longer lists the run as waiting here.
       if (rival != null && rival.tookIt) throw const HeavyLeaseWithdrawn();
+      // Nobody waits for it any more: it leaves before it could take a slot.
+      if (callerGone != null && callerGone()) {
+        throw const HeavyLeaseCallerGone();
+      }
       // One admission at a time across the machine: two waiters must not both
       // read the same slot as free and race over its holder info, and a
       // ticket is created, locked and swept only under this gate.
@@ -972,6 +997,95 @@ MemorySnapshot? _windowsMemory() {
     );
   } finally {
     calloc.free(p);
+  }
+}
+
+// The caller is gone (2026-11-20). Stopping a Claude Code Bash task kills
+// its bash and that bash's conhost.exe, but not a heavy.dart started through
+// Git Bash's `dart` shell script: msys's fork leaves an intermediate process
+// that is gone, so the Win32 parent chain breaks above `cmd /c dart.bat ->
+// dart.exe -> dartvm.exe` and a tree kill never finds it. heavy.dart lived on
+// in the queue, and once admitted started its command (inheritStdio) into a
+// console whose host was dead: 0xC0000142 within 0 s, the slot freed, the
+// next orphan admitted and dead the same way (21 of 24 such crashes in
+// history.jsonl, 11-16..11-20; reproduced three times by stopping a task).
+// What is left of the console tells: GetConsoleProcessList read 5 before the
+// stop and 0 after it, and still 5 for a task only moved to the background.
+
+/// How often a run checks its caller while it runs here or follows a run
+/// taken elsewhere (the queue checks on every poll).
+const Duration kHeavyCallerCheckEvery = Duration(seconds: 5);
+
+/// Readings of "no console" in a row before the caller counts as gone: one
+/// odd reading cancels nothing.
+const int kHeavyCallerGoneReads = 2;
+
+/// Whether whoever started this process is still there, judged by the
+/// console it was started from (Windows): a process started with a console
+/// whose console disappears was cancelled. A process started without one (CI,
+/// a service, DETACHED_PROCESS) is never judged; elsewhere it never is
+/// either.
+class HeavyCallerWatch {
+  /// [consoleProcesses] counts the processes attached to this process's
+  /// console, 0 when it has none or it is gone. Read once now: only a
+  /// process that has a console at this point is watched.
+  HeavyCallerWatch(int Function() consoleProcesses)
+    : _read = consoleProcesses,
+      watching = consoleProcesses() > 0;
+
+  /// This process's own console (GetConsoleProcessList); not watched off
+  /// 64-bit Windows.
+  factory HeavyCallerWatch.forThisProcess() => HeavyCallerWatch(
+    Platform.isWindows && sizeOf<IntPtr>() == 8
+        ? _consoleProcessCount
+        : () => 0,
+  );
+
+  final int Function() _read;
+
+  /// The process had a console when the watch began.
+  final bool watching;
+  int _zeros = 0;
+
+  /// Takes one reading; true once [kHeavyCallerGoneReads] readings in a row
+  /// found no console (and from then on, without reading again).
+  bool gone() {
+    if (!watching) return false;
+    if (_zeros >= kHeavyCallerGoneReads) return true;
+    _zeros = _read() == 0 ? _zeros + 1 : 0;
+    return _zeros >= kHeavyCallerGoneReads;
+  }
+
+  /// The last reading found no console but too few in a row to say so yet.
+  bool get suspect => watching && _zeros > 0 && _zeros < kHeavyCallerGoneReads;
+
+  /// Takes a reading, and while [suspect] more of them [gap] apart, until it
+  /// is settled: for a moment where the next poll is not coming (just before
+  /// a command starts, just after it ended). True when the caller is gone.
+  Future<bool> settle({Duration gap = const Duration(seconds: 1)}) async {
+    bool out = gone();
+    while (suspect) {
+      await Future<void>.delayed(gap);
+      out = gone();
+    }
+    return out;
+  }
+}
+
+final int Function(Pointer<Uint32>, int) _getConsoleProcessList = _kernel32
+    .lookupFunction<
+      Uint32 Function(Pointer<Uint32>, Uint32),
+      int Function(Pointer<Uint32>, int)
+    >('GetConsoleProcessList');
+
+/// GetConsoleProcessList with room for one: the count (all of them, as the
+/// buffer is too small for more), 0 without a usable console.
+int _consoleProcessCount() {
+  final Pointer<Uint32> buf = calloc<Uint32>(1);
+  try {
+    return _getConsoleProcessList(buf, 1);
+  } finally {
+    calloc.free(buf);
   }
 }
 

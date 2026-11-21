@@ -78,6 +78,8 @@ class SrsRwkvNow {
     required this.due,
     required this.near,
     required this.dailyAverage,
+    this.ahead,
+    this.recallBins = const <int>[],
   });
 
   /// 按 R 排队的复习卡（未暂停、归 Fushi 排程）。
@@ -92,7 +94,30 @@ class SrsRwkvNow {
   /// 过去 30 天（含今天）这些卡每天实际复习的张数。
   final double dailyAverage;
 
+  /// 停在这里的话：此刻还在目标线上、到 [SrsRwkvHorizon] 各个将来时刻（按枚举序）已掉到线下的张数。装载时没要
+  /// （`loadSrsStats(rwkvAhead: false)`）或 RWKV 打不了分时为 null。是模型对「不再作答」的推算，不是到期日。
+  final List<int>? ahead;
+
+  /// 此刻回忆率的直方图：第 i 格 = R 落在 [i/n, (i+1)/n) 的张数（n = [recallBins] 的长度，内核给 20 格、每格
+  /// 5%，R = 1 归最后一格）；没打出分的卡不计。
+  final List<int> recallBins;
+
+  /// 此刻还在目标线以上、也不算「接近」的张数。
+  int get safe => total - due - near;
+
   static const double nearMargin = 0.05;
+}
+
+/// 「停在这里的话」看的将来时刻（[SrsRwkvNow.ahead] 的下标，与内核 `RWKV_AHEAD` 同序同长）。
+enum SrsRwkvHorizon {
+  /// 1 小时后。
+  oneHour,
+
+  /// 3 小时后。
+  threeHours,
+
+  /// 今天结束（下一个翻日时刻前 1 ms，与复习页数「今天到期」同一时刻）。
+  dayEnd,
 }
 
 /// 未来到期预测。
@@ -469,6 +494,8 @@ class SrsStatsReport {
               due: rwkv[1]! as int,
               near: rwkv[2]! as int,
               dailyAverage: dbl(rwkv[3])!,
+              ahead: rwkv.length > 4 && rwkv[4] is List ? ints(rwkv[4]) : null,
+              recallBins: rwkv.length > 5 ? ints(rwkv[5]) : const <int>[],
             )
           : null,
       hasDueDateCards: j['hasDueDateCards']! as bool,

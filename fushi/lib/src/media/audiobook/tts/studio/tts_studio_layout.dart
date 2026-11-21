@@ -1,4 +1,8 @@
-/// 制作台的版面骨架：四步（内容 / 角色与配音 / 生成 / 结果）+ 常驻主操作。
+/// 有声制作的步骤外壳：左侧步骤栏（窄屏为顶部步骤选择片）+ 常驻主操作。
+///
+/// 「制作有声书」（[TtsStudioStep] 四步：内容 / 角色与配音 / 生成 / 结果）与
+/// 「有声漫画工作台」共用这一个外壳（设计 2026-11-20 #4：两个功能长得一样，学一次
+/// 就都会用）。步骤枚举是类型参数，各页只交步骤数据与回调。
 ///
 /// 按**可用宽度**分两形态（不按平台）：
 /// - 宽（≥ [kTtsStudioWideMinWidth]，骨架是共用的 [TtsTwoPaneLayout]）：左侧固定宽侧栏列步骤（图标 + 标题 + 一行
@@ -31,10 +35,16 @@ bool ttsStudioUsesWideLayout(double width) => ttsUsesWideLayout(width);
 /// 制作台的四个步骤（顺序即展示顺序）。
 enum TtsStudioStep { content, cast, generate, result }
 
+/// 「制作有声书」的步骤数据（[AudioProductionStepEntry] 的特化）。
+typedef TtsStudioStepEntry = AudioProductionStepEntry<TtsStudioStep>;
+
+/// 「制作有声书」的版面（[AudioProductionStepLayout] 的特化）。
+typedef TtsStudioLayout = AudioProductionStepLayout<TtsStudioStep>;
+
 /// 一个步骤在导航里的展示数据。
 @immutable
-class TtsStudioStepEntry {
-  const TtsStudioStepEntry({
+class AudioProductionStepEntry<S extends Enum> {
+  const AudioProductionStepEntry({
     required this.step,
     required this.icon,
     required this.title,
@@ -42,7 +52,7 @@ class TtsStudioStepEntry {
     this.attention = false,
   });
 
-  final TtsStudioStep step;
+  final S step;
   final IconData icon;
   final String title;
 
@@ -53,21 +63,26 @@ class TtsStudioStepEntry {
   final bool attention;
 }
 
-/// 制作台版面骨架。
-class TtsStudioLayout extends StatelessWidget {
-  const TtsStudioLayout({
+/// 有声制作的版面骨架。
+class AudioProductionStepLayout<S extends Enum> extends StatelessWidget {
+  const AudioProductionStepLayout({
     required this.steps,
     required this.selected,
     required this.onSelect,
     required this.body,
     required this.footerBuilder,
     this.header,
+    this.keyPrefix = 'tts-studio',
     super.key,
   });
 
-  final List<TtsStudioStepEntry> steps;
-  final TtsStudioStep selected;
-  final ValueChanged<TtsStudioStep> onSelect;
+  final List<AudioProductionStepEntry<S>> steps;
+  final S selected;
+  final ValueChanged<S> onSelect;
+
+  /// 骨架内各固定部件 key 的前缀（`<前缀>-step-<步骤名>`、`<前缀>-footer` 等），
+  /// 各页的测试按自己的前缀找部件。
+  final String keyPrefix;
 
   /// 选中步骤的内容（自带滚动视图）。
   final Widget body;
@@ -104,7 +119,7 @@ class TtsStudioLayout extends StatelessWidget {
       duration: fushiMotionDuration(context, FushiMotion.medium),
       switchInCurve: FushiMotion.standard,
       switchOutCurve: FushiMotion.standard,
-      child: KeyedSubtree(key: ValueKey<TtsStudioStep>(selected), child: body),
+      child: KeyedSubtree(key: ValueKey<S>(selected), child: body),
     );
     if (header == null) return switched;
     return Column(
@@ -119,15 +134,15 @@ class TtsStudioLayout extends StatelessWidget {
   Widget _buildWide(BuildContext context) {
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     return TtsTwoPaneLayout(
-      key: const ValueKey<String>('tts-studio-layout-wide'),
-      sidebarKey: const ValueKey<String>('tts-studio-sidebar'),
+      key: ValueKey<String>('$keyPrefix-layout-wide'),
+      sidebarKey: ValueKey<String>('$keyPrefix-sidebar'),
       sidebar: ListView(
-        key: const ValueKey<String>('tts-studio-step-nav'),
+        key: ValueKey<String>('$keyPrefix-step-nav'),
         padding: EdgeInsets.symmetric(vertical: gap),
         children: <Widget>[
           for (int i = 0; i < steps.length; i++)
-            _StepNavItem(
-              key: ValueKey<String>('tts-studio-step-${steps[i].step.name}'),
+            _StepNavItem<S>(
+              key: ValueKey<String>('$keyPrefix-step-${steps[i].step.name}'),
               entry: steps[i],
               index: i,
               selected: steps[i].step == selected,
@@ -136,7 +151,7 @@ class TtsStudioLayout extends StatelessWidget {
         ],
       ),
       sidebarFooter: KeyedSubtree(
-        key: const ValueKey<String>('tts-studio-footer'),
+        key: ValueKey<String>('$keyPrefix-footer'),
         child: footerBuilder(context, true),
       ),
       content: _content(context),
@@ -147,7 +162,7 @@ class TtsStudioLayout extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
     return Column(
-      key: const ValueKey<String>('tts-studio-layout-narrow'),
+      key: ValueKey<String>('$keyPrefix-layout-narrow'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         FocusTraversalGroup(
@@ -155,7 +170,7 @@ class TtsStudioLayout extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: gap / 2),
             child: HorizontalDragScrollable(
               child: SingleChildScrollView(
-                key: const ValueKey<String>('tts-studio-step-tabs'),
+                key: ValueKey<String>('$keyPrefix-step-tabs'),
                 scrollDirection: Axis.horizontal,
                 padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
                 child: Row(
@@ -165,7 +180,7 @@ class TtsStudioLayout extends StatelessWidget {
                         padding: EdgeInsets.only(left: i == 0 ? 0 : gap / 2),
                         child: FushiChoiceChip(
                           key: ValueKey<String>(
-                            'tts-studio-step-${steps[i].step.name}',
+                            '$keyPrefix-step-${steps[i].step.name}',
                           ),
                           avatar: FushiIcon(steps[i].icon, size: 18),
                           label: Text(
@@ -186,7 +201,7 @@ class TtsStudioLayout extends StatelessWidget {
         ),
         Expanded(child: FocusTraversalGroup(child: _content(context))),
         Material(
-          key: const ValueKey<String>('tts-studio-bottom-bar'),
+          key: ValueKey<String>('$keyPrefix-bottom-bar'),
           color: tokens.surfaces.card,
           child: Padding(
             padding: EdgeInsets.fromLTRB(
@@ -196,7 +211,7 @@ class TtsStudioLayout extends StatelessWidget {
               tokens.spacing.gap + bottomSafeInsetOf(context),
             ),
             child: FocusTraversalGroup(
-              key: const ValueKey<String>('tts-studio-footer'),
+              key: ValueKey<String>('$keyPrefix-footer'),
               child: footerBuilder(context, false),
             ),
           ),
@@ -207,7 +222,7 @@ class TtsStudioLayout extends StatelessWidget {
 }
 
 /// 侧栏里的一个步骤：序号 / 图标 + 标题 + 摘要，整行可聚焦、Enter 切换。
-class _StepNavItem extends StatelessWidget {
+class _StepNavItem<S extends Enum> extends StatelessWidget {
   const _StepNavItem({
     required this.entry,
     required this.index,
@@ -216,7 +231,7 @@ class _StepNavItem extends StatelessWidget {
     super.key,
   });
 
-  final TtsStudioStepEntry entry;
+  final AudioProductionStepEntry<S> entry;
   final int index;
   final bool selected;
   final VoidCallback onTap;

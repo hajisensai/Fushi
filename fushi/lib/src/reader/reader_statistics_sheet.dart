@@ -44,6 +44,7 @@ import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_stats_position.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart'
     show
         StatBarChartPainter,
@@ -342,10 +343,21 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
       if (snap == _lastSnapshot) return;
       setState(() => _lastSnapshot = snap);
     });
+    // 读失败（库被关 / 查询异常）不能成为无人接的异步错误：记进错误日志，今日 /
+    // 累计停在空态，侧栏其余实时读数照常（BUG-5051）。
     unawaited(
-      widget.loadBookTotals().then((ReaderBookStatTotals totals) {
-        if (mounted) setState(() => _book = totals);
-      }),
+      widget.loadBookTotals().then(
+        (ReaderBookStatTotals totals) {
+          if (mounted) setState(() => _book = totals);
+        },
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ReaderStatisticsSheet.loadBookTotals',
+            error,
+            stack,
+          );
+        },
+      ),
     );
   }
 

@@ -64,6 +64,16 @@ void main() {
       distBreakerReason(DistWorkerError('prepare failed (exit 1)')),
       isNull,
     );
+    // A push that went silent is the link, not the snapshot: asked again
+    // from heavy.dart's queue it would hang the full stall limit each time.
+    expect(
+      distBreakerReason(DistWorkerStalled('git push to wight-win printed ...')),
+      'push stalled',
+    );
+    expect(
+      distBreakerAnswered(DistWorkerStalled('git push to wight-win ...')),
+      isFalse,
+    );
   });
 
   test('a tripped machine is held, then asked again', () {

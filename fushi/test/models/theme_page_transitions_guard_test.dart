@@ -12,8 +12,6 @@
 //    Cupertino 的边缘滑动返回——没有任何报错，只有用户发现「滑不回去了」。
 import 'package:drift/drift.dart' hide isNotNull;
 import 'package:drift/native.dart';
-import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -65,13 +63,15 @@ void main() {
         reason: '$platform 缺 builder 会静默回落到 ZoomPageTransitionsBuilder',
       );
     }
+    // 原生 Cupertino 转场 + 被 PopScope 否决时侧滑转 maybePop（left3533），
+    // 行为测试见 test/utils/adaptive/vetoed_back_swipe_test.dart。
     expect(
       _transition(builders[TargetPlatform.iOS]),
-      isA<CupertinoPageTransitionsBuilder>(),
+      isA<FushiNativeCupertinoPageTransitionsBuilder>(),
     );
     expect(
       _transition(builders[TargetPlatform.macOS]),
-      isA<CupertinoPageTransitionsBuilder>(),
+      isA<FushiNativeCupertinoPageTransitionsBuilder>(),
     );
   });
 

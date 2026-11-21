@@ -102,7 +102,14 @@ void main() {
     expect(page, contains('video_home_continue_episode_number'));
     expect(page, contains('video_home_remaining_minutes'));
     expect(page, contains('_videoRowCardTextBlock'));
-    expect(page, contains('getAllVideoMetadataExtras()'));
+    // 刮削展示映射（含本地特典）收在 [VideoLibraryScrapeMaps]，整表与增量刷新共用。
+    expect(page, contains('VideoLibraryScrapeMaps.load('));
+    expect(
+      File(
+        'lib/src/media/video/video_library_scrape_maps.dart',
+      ).readAsStringSync(),
+      contains('getAllVideoMetadataExtras()'),
+    );
     expect(
       page,
       contains('_localExtraBookUids.contains(b.bookUid)'),

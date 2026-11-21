@@ -9,4 +9,11 @@
 - **[ ] ① 未修复** — 证据不足以确定根因，不做猜测性修改。
 - **[ ] ② 未加测试**
 - **下一步要的证据**：反馈人当时的阅读模式（分页 / 连续 / VN）与是否开了逐字显现；开「调试日志」后复现一次，取 `[806-TAP]` 点击坐标探针那几行；有 Mac 时用 WebView inspection 在坏状态下执行 `window.__fushiRevealRange`、`window.innerWidth/innerHeight`、`fushiSelection.visibleContentBox()`、`fushiSelection.getSelectableCharacterAtPoint(x, y)` 取值。
+- **2026-11-19 再现（应用内反馈 XD48lGxwUi，macOS 27.0.1 / Mac17,4 arm64，3.4.0-debug.29093，窗口 1440x837@2x，附 29 秒录像 + 日志）**：同一现象，「mac 小说阅读不能点击查词，退出重进后恢复」。录像逐帧（ffmpeg 1fps + 关键帧原尺寸裁剪）看到的新事实：
+  - 布局：**连续（滚动）模式、横排**，悬浮顶栏（点击时叠在正文上、正文不位移），有声书**在两次会话里都在播放**（坏会话状态胶囊 1:26→1:38 走动，重开后 0:00→0:09 走动，均未暂停）。所以「有声书在播」本身不区分好坏会话。
+  - 坏会话里注音**不是没上，而是贴错位**：`<rt>` 压进基字上沿（「窓際」的「まどぎわ」、「隣」的「となり」与基字字形重叠约 5 逻辑像素 ≈ 0.35 个注音字号）；重开后同一行注音完整浮在基字上方。注音的块轴位置在 Apple 端只由 `--fushi-ruby-pull` 决定（`fushi/lib/src/reader/reader_ruby_metrics_script.dart` `measure()` 写入，`ReaderContentStyles` 的 Apple 注音规则消费），差值大于「从未量过 → 缺省 0.1」能解释的量（≈0.1em），更像**量出了一个偏大的拉力值**。也就是说坏会话里有两套几何测量同时出错：注音度量（Range / `<rt>` 的 `getClientRects` 对 canvas 字体度量）和点词命中（`getSelectableCharacterAtPoint` → `charRangeVisible` / `visibleContentBox`），两者唯一的共同点是「本次页面会话里 DOM 几何读数」，与 BUG-4050 原推断「坏的是本次页面会话的 JS / DOM 状态」一致，并把方向从「`__fushiRevealRange` 残留」（VN 专属，本次是连续模式）进一步移向「几何读数在首开时不可信」。
+  - 点击路径：坏会话里每次点正文都只让悬浮顶栏显示 / 收起，即点击确实进了 DOM 手势处理（安装体里 `_gestureEnd` 在注音度量 IIFE 之后，故引擎安装至少跑过了这两段，排除「引擎安装中途抛异常」）。
+  - 日志（错误日志 7703 行）事发时段只有 `DictPopupWebview.popupEntriesFetch HTTP 0`、SRS 重操作与 AI 刮削失败，**没有任何阅读器条目**；阅读器 JS 异常只走 `console.error` → 调试日志，错误日志里看不到，本次未开调试日志。
+  - 仍未定位到具体代码行，**仍不做猜测性修改**。
+- **下一步要的证据（更新）**：在坏状态下（首开后点不了词时）用 Safari Web Inspector 连到阅读器 WebView 取：`getComputedStyle(document.documentElement).getPropertyValue('--fushi-ruby-pull')`（与重开后的值对比）、`window.innerWidth / innerHeight`、`window.visualViewport && [visualViewport.scale, visualViewport.width, visualViewport.height]`、`document.fonts.status`、`fushiSelection.visibleContentBox()`、对一个可见字 `fushiSelection.getSelectableCharacterAtPoint(x, y)` 与 `document.caretRangeFromPoint(x, y)`、`window.__fushiTapGate`；或开「调试日志」复现一次取 `[806-TAP]` 行与 `__FUSHI_JS_ERROR__` 行。
 - **备注**：日志尾部只有 popup `ResizeObserver loop completed` 噪声与一条前一天的 `DictPopupWebview.popupEntriesFetch HTTP 0`（落回内联字面量，与正文命中无关）。

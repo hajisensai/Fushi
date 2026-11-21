@@ -18,6 +18,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -30,6 +31,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -632,6 +634,20 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
     }
   }
 
+  /// 打开「怎么写解析规则」；规则框为空时允许一键填入通用模板（不覆盖已写的规则）。
+  Future<void> _showParserHelp() async {
+    final bool canUseTemplate = _parser.text.trim().isEmpty;
+    final bool? useTemplate = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext context) =>
+          BtSiteParserHelpDialog(canUseTemplate: canUseTemplate),
+    );
+    if (useTemplate != true || !mounted || _parser.text.trim().isNotEmpty) {
+      return;
+    }
+    _parser.text = kBtSiteParserRuleTemplate;
+  }
+
   /// 「解析规则」折叠区：规则 JSON（粘贴导入）+ 登录 Cookie。
   Widget _parserSection(ThemeData theme) {
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
@@ -684,6 +700,22 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
                         hintText: t.bt_site_parser_hint,
                         alignLabelWithHint: true,
                         border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FushiPressScale(
+                        enabled: !_detecting,
+                        child: FushiTextButton.icon(
+                          key: const ValueKey<String>(
+                            'bt-site-dialog-parser-help',
+                          ),
+                          onPressed: _detecting
+                              ? null
+                              : () => unawaited(_showParserHelp()),
+                          icon: const FushiIcon(FushiIcons.help, size: 18),
+                          label: Text(t.bt_site_parser_help_action),
+                        ),
                       ),
                     ),
                     if (_parser.text.trim().isNotEmpty) ...<Widget>[
@@ -852,6 +884,118 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
               ? null
               : () => unawaited(_submit()),
         ),
+      ],
+    );
+  }
+}
+
+/// 「怎么写解析规则」：通用写法说明 + 通用模板（[kBtSiteParserRuleTemplate]）。
+///
+/// 只讲通用写法、不给逐站示例（所有者 2026-11 拍板：站点改版就失效，维护不起）。
+/// 返回 true = 用户要把模板填进规则框（仅 [canUseTemplate] 时提供该按钮）。
+class BtSiteParserHelpDialog extends StatefulWidget {
+  const BtSiteParserHelpDialog({super.key, required this.canUseTemplate});
+
+  /// 规则框为空时才给「填入模板」，避免覆盖已写的规则。
+  final bool canUseTemplate;
+
+  @override
+  State<BtSiteParserHelpDialog> createState() => _BtSiteParserHelpDialogState();
+}
+
+class _BtSiteParserHelpDialogState extends State<BtSiteParserHelpDialog> {
+  bool _copied = false;
+
+  Future<void> _copyTemplate() async {
+    await Clipboard.setData(
+      const ClipboardData(text: kBtSiteParserRuleTemplate),
+    );
+    if (!mounted) return;
+    setState(() => _copied = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<String> paragraphs = <String>[
+      t.bt_site_parser_help_intro,
+      t.bt_site_parser_help_search,
+      t.bt_site_parser_help_rows,
+      t.bt_site_parser_help_fields,
+      t.bt_site_parser_help_detail,
+      t.bt_site_parser_help_extra,
+      t.bt_site_parser_help_cookie,
+    ];
+    final List<Widget> children = <Widget>[
+      for (final String text in paragraphs)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(text, style: theme.textTheme.bodyMedium),
+        ),
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              t.bt_site_parser_template_label,
+              style: theme.textTheme.labelLarge,
+            ),
+          ),
+          FushiPressScale(
+            child: FushiTextButton.icon(
+              key: const ValueKey<String>('bt-site-parser-help-copy'),
+              onPressed: () => unawaited(_copyTemplate()),
+              icon: FushiIcon(
+                _copied ? FushiIcons.check : FushiIcons.copy,
+                size: 18,
+              ),
+              label: Text(_copied ? t.copied : t.copy),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: FushiDesignTokens.of(context).surfaces.search,
+          borderRadius: FushiM3eShape.smallRadius,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SelectableText(
+            kBtSiteParserRuleTemplate,
+            key: const ValueKey<String>('bt-site-parser-help-template'),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+          ),
+        ),
+      ),
+    ];
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.help),
+      title: Text(t.bt_site_parser_help_title),
+      scrollable: true,
+      content: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < children.length; i++)
+              FushiStaggeredEntrance(index: i, child: children[i]),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        FushiDialogAction(
+          key: const ValueKey<String>('bt-site-parser-help-close'),
+          label: t.dialog_close,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        if (widget.canUseTemplate)
+          FushiDialogAction(
+            key: const ValueKey<String>('bt-site-parser-help-use-template'),
+            label: t.bt_site_parser_template_use_action,
+            kind: FushiDialogActionKind.primary,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
       ],
     );
   }

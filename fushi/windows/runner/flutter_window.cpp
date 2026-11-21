@@ -37,6 +37,7 @@
 #include "game_client_extent.h"
 #include "game_stream_input.h"
 #include "global_mouse_trigger.h"
+#include "hang_watchdog.h"
 #include "low_level_mouse_hook.h"
 #include "system_font_list.h"
 #include "system_transparency_channel.h"
@@ -5071,6 +5072,10 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // 主线程卡顿计量的心跳应答（hang_watchdog.h）：最先处理、不往下传。
+  if (::fushi::HandleHangWatchdogHeartbeat(message, wparam)) {
+    return 0;
+  }
   if (message == WM_TIMER && system_ocr_host_ &&
       system_ocr_host_->HandleTimer(wparam)) {
     return 0;

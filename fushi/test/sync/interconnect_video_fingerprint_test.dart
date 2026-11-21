@@ -20,11 +20,18 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
 /// 只实现本测试触达的 [resolveVideoFile]；其余经 noSuchMethod 抛（触达即协议走偏）。
 class _Host implements FushiLibraryHostService {
-  _Host(this.files);
+  _Host(this.files, {this.videos});
 
   /// `(id, episodeIndex)` → host 上的原文件。
   final Map<(String, int), File> files;
   final List<(String, int)> calls = <(String, int)>[];
+
+  /// 视频清单（后台预热用）；null = 本测试不触达清单。
+  final List<RemoteVideoInfo>? videos;
+
+  @override
+  Future<List<RemoteVideoInfo>> listVideos() async =>
+      videos ?? (throw UnimplementedError('listVideos'));
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
@@ -195,6 +202,89 @@ void main() {
     expect(
       (jsonDecode(unreadable.body) as Map<String, dynamic>)['reason'],
       kVideoFingerprintReasonUnreadable,
+    );
+  });
+
+  test('拍板台 left3657：回跳 wait: false 时 host 没算过就回 202、不干等，后台算完后答出指纹', () async {
+    final File fresh = File('${dir.path}/fresh.mkv')
+      ..writeAsBytesSync(List<int>.generate(150000, (int i) => i % 239));
+    host.files[('video/fresh', 0)] = fresh;
+    final String path =
+        '/api/library/videos/${Uri.encodeFull('video/fresh')}/fingerprint'
+        '?$kVideoFingerprintWaitQueryParam=0';
+    final ({int status, String body}) pending = await _rawRequest(
+      base,
+      path,
+      token: token,
+    );
+    expect(pending.status, kVideoFingerprintPendingStatus);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
+    // host 已在后台开算：等同一次在途计算落定后，wait: false 也能拿到真指纹。
+    final String expected = sha256.convert(fresh.readAsBytesSync()).toString();
+    expect(
+      await VideoSourceFingerprint.instance.fingerprint(fresh.path),
+      expected,
+    );
+    expect(
+      await backend.fetchRemoteVideoFingerprint('video/fresh', wait: false),
+      expected,
+    );
+  });
+
+  test('拍板台 left3657：wait: false 遇到 host 读不了照样 409，不当成「还没算好」', () async {
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
+    single.deleteSync();
+    await expectLater(
+      backend.fetchRemoteVideoFingerprint('video/夏目友人帳 第1話', wait: false),
+      throwsA(isA<RemoteVideoFingerprintUnavailable>()),
+    );
+  });
+
+  test('拍板台 left3657：host 起服务后后台预热视频库指纹并落盘到 sync-data 之外', () async {
+    final File warm = File('${dir.path}/warm.mkv')
+      ..writeAsBytesSync(List<int>.generate(120000, (int i) => i % 233));
+    final Directory root = Directory.systemTemp.createTempSync('hbk_vfp_warm');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: root.path,
+      port: 0,
+      token: token,
+      allowLan: false,
+      libraryService: _Host(
+        <(String, int), File>{('video/warm', 0): warm},
+        videos: const <RemoteVideoInfo>[
+          RemoteVideoInfo(id: 'video/warm', title: 'warm'),
+          RemoteVideoInfo(id: 'video/strm', title: 'strm', peerPlayable: false),
+        ],
+      ),
+      videoFingerprintWarmDelay: Duration.zero,
+    );
+    await server.start();
+    addTearDown(server.stop);
+    final String expected = sha256.convert(warm.readAsBytesSync()).toString();
+    final File store = File('${root.path}/video_fingerprints.json');
+    final Stopwatch clock = Stopwatch()..start();
+    while (!(store.existsSync() &&
+        store.readAsStringSync().contains(expected))) {
+      if (clock.elapsed > const Duration(seconds: 30)) {
+        fail('后台预热 30 秒内没有落盘');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(await VideoSourceFingerprint.instance.known(warm.path), expected);
+    expect(
+      Directory(server.syncDataDir)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('video_fingerprints.json')),
+      isEmpty,
+      reason: '落盘缓存不放进 WebDAV 根，不暴露给对端',
     );
   });
 

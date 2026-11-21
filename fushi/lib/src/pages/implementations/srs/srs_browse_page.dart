@@ -71,6 +71,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 「更改笔记类型」的入口（由别的模块提供）：传入要改的笔记 ID。
 typedef SrsChangeNoteTypeFlow =
@@ -968,7 +969,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return note?.field(field.id);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.loadCell', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return null;
     }
   }
@@ -989,7 +993,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       await _saveField(row.noteId, field.name, value);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.cellEdit', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -1362,7 +1369,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       opened = await readSrsStore(ref);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.batch.openStore', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (opened == null || !mounted) return;
@@ -1585,7 +1595,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       await _refresh();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.batch.${action.name}', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1603,7 +1616,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return await plan();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.plan.${action.name}', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return null;
     } finally {
       if (mounted) setState(() => _busy = false);

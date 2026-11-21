@@ -103,7 +103,7 @@ List<WebKnowledgePage> pickDiverseWebKnowledgePages(
 String buildAiVideoIdentityUserPrompt(
   AiVideoIdentityQuery query, {
   List<WebKnowledgePage> references = const <WebKnowledgePage>[],
-}) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+}) => jsonEncode(<String, Object?>{
   ...query.toJson(),
   if (references.isNotEmpty)
     'reference': <Map<String, Object?>>[

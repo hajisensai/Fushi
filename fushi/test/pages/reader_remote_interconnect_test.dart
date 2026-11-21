@@ -721,8 +721,9 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
+    // 本地卡接手的是**同一条下载任务**的进度遮罩（任务上记着落地书键）。
     const ValueKey<String> overlayKey = ValueKey<String>(
-      'audiobook_downloading_local-book-key',
+      'landed_download_local-book-key',
     );
     // 下载前：本地 SRT 卡在，无加载覆盖层。
     expect(find.byKey(overlayKey), findsNothing);
@@ -744,6 +745,15 @@ void main() {
       find.byKey(overlayKey),
       findsOneWidget,
       reason: 'BUG-990：有声书下载中本地卡必须显示加载覆盖层',
+    );
+    // 遮罩写清走到了哪一步（此前是不带任何文字 / 数字的转圈）。
+    expect(
+      find.descendant(
+        of: find.byKey(overlayKey),
+        matching: find.text(t.section_audiobook),
+      ),
+      findsOneWidget,
+      reason: '有声书阶段：遮罩环下写「有声书」',
     );
 
     // 放行有声书下载 → 完成 → 覆盖层清除。

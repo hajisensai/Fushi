@@ -3,9 +3,54 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+/// 一个批量动作的定义：底部批量操作栏（[batchActionButtons]）与多选态右键的
+/// 批量菜单（`showBatchItemActions`，#4b）共用这一份，不各写一套可用态判据。
+@immutable
+class BatchAction {
+  const BatchAction({
+    required this.key,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.enabled = true,
+    this.destructive = false,
+  });
+
+  /// 操作栏按钮的 widget key（测试与焦点定位靠它）。
+  final String key;
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  /// 当前选中集能不能做这件事；批量菜单只列可用的项。
+  final bool enabled;
+
+  /// 删除类：操作栏按钮用错误色，批量菜单排进危险段。
+  final bool destructive;
+}
+
+/// [BatchActionBar.actions] 的标准按钮排（每个 [BatchAction] 一枚图标钮）。
+List<Widget> batchActionButtons(
+  BuildContext context,
+  List<BatchAction> actions,
+) => <Widget>[
+  for (final BatchAction action in actions)
+    FushiIconButton(
+      key: ValueKey<String>(action.key),
+      enabled: action.enabled,
+      onTap: action.onPressed,
+      icon: action.icon,
+      tooltip: action.label,
+      enabledColor: action.destructive
+          ? Theme.of(context).colorScheme.error
+          : null,
+    ),
+];
 
 /// 批量操作栏：多选态下钉在页面底部的那条「已选 N · 全选 · 反选 · 若干动作」。
 ///

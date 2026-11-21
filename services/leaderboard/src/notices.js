@@ -1,20 +1,26 @@
 // 服务端下发的公告：App 带上构建信息来问，服务端按规则（D1，迁移 0022_notices.sql）匹配后下发公告与文案。
 // 规则、文案与匹配逻辑只在服务端；客户端只负责上报构建信息、按 level 显示收到的公告。
 //
-//   POST /v1/notices  {v, p, c, l, id, h, k} → 200 {notices: [{id, level, title, body, url}], ttl}
+//   POST /v1/notices  {v, p, c, l, id, h, k, s} → 200 {notices: [{id, level, title, body, url}], ttl}
 //     v   运行中的版本号            p  平台（android / windows / macos / linux）
 //     c   更新通道                  l  界面语言（BCP 47，如 zh-CN）
 //     id  Android applicationId（其它平台 null）
 //     h   系统 PackageManager 给出的各签名证书 SHA-256（小写 hex）
 //     k   App 自己从已安装 APK 的签名块解析出的各签名证书 SHA-256（小写 hex）
+//     s   App 里「发送使用统计」开关（usage_stats_enabled）的状态；只有明确为 true 才计数
 //     h / k 可以为空（非 Android 或读取失败）；不认识的字段忽略。请求不带安装 id、设备标识或账户。
 //   ttl：没有公告时 6 小时、有公告时 1 小时后再问。
+//
+// 官方构建永不被全屏锁：规则层面 normalizeRule 拒绝 block 搭配 all / id；管理端拒绝对已登记
+// 摘要（notice_known_h）建 block 级 h 规则；匹配层面只要请求里有任何一个已登记摘要，block 规则
+// 一律不下发（兜底规则写错、事后登记等情况）。
 //
 // 规则种类见迁移文件头。一个请求可能命中多条规则：全部返回（id = "r<规则 id>"），严重的在前
 // （block > dialog > banner，同级按规则 id）。文案：界面语言以 zh 开头取中文两列，否则取英文两列，
 // 英文标题与正文都空时回落中文。
 //
-// 计数（notice_seen）：每个请求按「UTC 日 × 应用 id × 首个摘要 × h/k 是否不相交 × 版本 × 平台 × 国家」
+// 计数（notice_seen）：只对 s === true 的请求（用户开着使用统计）计数，开关关掉或旧客户端没带 s
+// 的一律只匹配不计数。每个计数的请求按「UTC 日 × 应用 id × 首个摘要 × h/k 是否不相交 × 版本 × 平台 × 国家」
 // upsert 一次，让维护者看到外面有哪些构建在跑。不存 IP。写入扣 'notices' 日预算（budget.js），
 // 用完当天就只匹配不计数——公告照常下发，计数成为下限。
 //
@@ -105,7 +111,7 @@ export function normalizeNoticeQuery(body) {
     }
     id = body.id;
   }
-  return { v: body.v, p: body.p, c, l, id, h: digestList(body.h, 'h'), k: digestList(body.k, 'k') };
+  return { v: body.v, p: body.p, c, l, id, h: digestList(body.h, 'h'), k: digestList(body.k, 'k'), s: body.s === true };
 }
 
 /** h 与 k 都非空且没有共同摘要。 */
@@ -152,7 +158,10 @@ function bySeverity(a, b) {
   return (LEVEL_RANK[b.level] - LEVEL_RANK[a.level]) || (a.id - b.id);
 }
 
-/** 匹配：读平台相关的启用规则；有 'h_unlisted' 规则时才查已登记摘要。 */
+/**
+ * 匹配：读平台相关的启用规则；有 'h_unlisted' 或 block 级规则时才查已登记摘要。请求里带着已登记
+ * （官方）摘要时 block 规则一律不下发，官方构建不会被全屏锁住。
+ */
 export async function matchNotices(env, q) {
   const rules = (await env.DB.prepare(
     'SELECT * FROM notice_rules WHERE enabled = 1 AND (platform IS NULL OR platform = ?1)',
@@ -160,13 +169,16 @@ export async function matchNotices(env, q) {
   if (rules.length === 0) return [];
   const known = new Set();
   const all = [...q.h, ...q.k];
-  if (all.length > 0 && rules.some((r) => r.kind === 'h_unlisted')) {
+  if (all.length > 0 && rules.some((r) => r.kind === 'h_unlisted' || r.level === 'block')) {
     const rows = (await env.DB.prepare(
       'SELECT h FROM notice_known_h WHERE h IN (SELECT value FROM json_each(?1))',
     ).bind(JSON.stringify(all)).all()).results;
     for (const r of rows) known.add(r.h);
   }
-  return rules.filter((r) => ruleMatches(r, q, known)).sort(bySeverity).map((r) => noticeOf(r, q.l));
+  return rules
+    .filter((r) => ruleMatches(r, q, known) && !(r.level === 'block' && known.size > 0))
+    .sort(bySeverity)
+    .map((r) => noticeOf(r, q.l));
 }
 
 /**
@@ -192,7 +204,7 @@ export async function recordSeen(env, request, q, now) {
 export async function handleNotices(env, request, body, now) {
   const q = normalizeNoticeQuery(body);
   const notices = await matchNotices(env, q);
-  await recordSeen(env, request, q, now);
+  if (q.s) await recordSeen(env, request, q, now);
   return json(
     { notices, ttl: notices.length ? NOTICE_LIMITS.ttlMatched : NOTICE_LIMITS.ttlEmpty },
     200,
@@ -235,6 +247,8 @@ export function normalizeRule(body, base = null) {
   if (platform !== null && !PING_PLATFORMS.includes(platform)) throw new HttpError(400, 'bad_platform');
   const level = pick('level');
   if (!NOTICE_LEVELS.includes(level)) throw new HttpError(400, 'bad_level');
+  // 全屏锁只能对准非官方构建：all / id 都可能罩住官方用户（id 只是包名，官方包名谁都能用）。
+  if (level === 'block' && (kind === 'all' || kind === 'id')) throw new HttpError(400, 'block_needs_unofficial_kind');
   const L = NOTICE_LIMITS;
   const row = {
     kind,
@@ -286,6 +300,13 @@ export async function seenSummary(env, now, days = NOTICE_LIMITS.seenDays, limit
   ).bind(since, limit).all()).results;
 }
 
+/** block 级 h 规则不能对准已登记（官方）摘要。 */
+async function assertBlockTargetUnlisted(env, row) {
+  if (row.level !== 'block' || row.kind !== 'h') return;
+  const hit = await env.DB.prepare('SELECT 1 AS x FROM notice_known_h WHERE h = ?1').bind(row.value).first();
+  if (hit) throw new HttpError(400, 'block_targets_known_h');
+}
+
 /** /admin/api/notices/** 分派（调用方已过 Basic Auth）。 */
 export async function handleNoticesAdmin(env, request, path, body, now) {
   const method = request.method;
@@ -301,6 +322,7 @@ export async function handleNoticesAdmin(env, request, path, body, now) {
   if (method !== 'POST') throw new HttpError(405, 'method');
   if (path === '/admin/api/notices/rules') {
     const row = normalizeRule(body);
+    await assertBlockTargetUnlisted(env, row);
     const res = await env.DB.prepare(
       `INSERT INTO notice_rules (${RULE_COLUMNS.join(', ')}, created_at)
        VALUES (${RULE_COLUMNS.map((_, i) => `?${i + 1}`).join(', ')}, ?${RULE_COLUMNS.length + 1}) RETURNING id`,
@@ -310,6 +332,7 @@ export async function handleNoticesAdmin(env, request, path, body, now) {
   if ((r = /^\/admin\/api\/notices\/rules\/(\d+)$/.exec(path))) {
     const id = Number(r[1]);
     const row = normalizeRule(body, await ruleById(env, id));
+    await assertBlockTargetUnlisted(env, row);
     await env.DB.prepare(
       `UPDATE notice_rules SET ${RULE_COLUMNS.map((c, i) => `${c} = ?${i + 2}`).join(', ')} WHERE id = ?1`,
     ).bind(id, ...RULE_COLUMNS.map((c) => row[c])).run();

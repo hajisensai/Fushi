@@ -1,15 +1,14 @@
 @Tags(<String>['chrome'])
 library;
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show kContinuousWheelScrollJs, readerFushiEngineSourceUncompacted;
 
 import '../helpers/source_guard.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// 滚动（连续）模式的鼠标滚轮「无极滚动」+ 触控板按手机手势跟手。
 ///
@@ -19,30 +18,26 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 void main() {
   test('production smooth wheel helper eases, accumulates and keeps boundaries '
       'in real Chrome', () async {
-    final String? nodeExe = _resolveNode();
+    final String? nodeExe = resolveNodeExecutable();
     if (nodeExe == null) {
       markTestSkipped('node not found on PATH; skipping JS execution');
       return;
     }
-    final Directory temp = Directory.systemTemp.createTempSync('cwheel-');
-    try {
-      final File payload = File('${temp.path}/helper.json')
-        ..writeAsStringSync(
-          jsonEncode(<String, String>{'helper': kContinuousWheelScrollJs}),
-        );
-      final ProcessResult result = await Process.run(nodeExe, <String>[
-        'test/reader/continuous_wheel_smooth_scroll_harness.mjs',
-        payload.path,
-      ]).timeout(const Duration(seconds: 80));
-      if (result.exitCode == 77) {
-        markTestSkipped('Chrome unavailable: ${result.stdout}');
-        return;
-      }
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains('PASS 10 browser cases'));
-    } finally {
-      temp.deleteSync(recursive: true);
+    final Map<String, String> payload = <String, String>{
+      'helper': kContinuousWheelScrollJs,
+    };
+    final NodeHarnessResult result = await runNodeHarness(
+      nodeExe,
+      'test/reader/continuous_wheel_smooth_scroll_harness.mjs',
+      payload,
+      timeout: const Duration(seconds: 80),
+    );
+    if (result.exitCode == 77) {
+      markTestSkipped('Chrome unavailable: ${result.stdout}');
+      return;
     }
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('PASS 10 browser cases'));
   }, timeout: const Timeout(Duration(seconds: 90)));
 
   group('wheel listener wiring', () {
@@ -128,19 +123,4 @@ void main() {
       expect(swallow, lessThan(boundary), reason: '吞掉的 tick 不得判边界跨章');
     });
   });
-}
-
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

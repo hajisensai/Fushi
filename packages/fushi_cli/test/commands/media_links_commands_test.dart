@@ -172,6 +172,33 @@ void main() {
       ]),
       _usageError(),
     );
+    // 系列关系：sequel / side_story 各要自己那一对方向值，混用改编的方向值报错。
+    expect(
+      _build('links', 'add', <String>[
+        'book:一卷',
+        'book:续篇',
+        '--relation',
+        'sequel',
+        '--self-is',
+        'prequel',
+      ]).body,
+      <String, Object?>{
+        'other': 'book:续篇',
+        'relation': 'sequel',
+        'selfIs': 'prequel',
+      },
+    );
+    expect(
+      () => _build('links', 'add', <String>[
+        'game:本篇',
+        'game:fd',
+        '--relation',
+        'side_story',
+        '--self-is',
+        'original',
+      ]),
+      _usageError(),
+    );
     expect(
       () => _build('links', 'add', <String>[
         'book:原作',

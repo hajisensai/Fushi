@@ -109,6 +109,27 @@ void main() {
     expect(updates, 1);
   });
 
+  testWidgets('有新包但宿主不给 onUpdate（安装方式钉死在别的通道）：不给更新按钮', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        DebugPulsePanel(
+          service: DebugPulseService(fetchBody: () async => body),
+          installedSeq: 25010,
+          platform: DebugPulsePlatform.windows,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.updates_pulse_newer(builds: 1, prs: 1)), findsOneWidget);
+    expect(
+      find.text(t.updates_pulse_update_to(build: 'debug.25034')),
+      findsNothing,
+    );
+  });
+
   testWidgets('点包标题行展开 / 收起', (WidgetTester tester) async {
     await tester.pumpWidget(
       host(
