@@ -110,6 +110,7 @@
 | [BUG-5117](bugs/BUG-5117-media-server-resume-needs-strong-validator.md) | ✅ | ✅ | 断点续传把「总长相同」当版本身份，等长替换后拼成坏片 |
 | [BUG-5125](bugs/BUG-5125-web-novel-chapter-fetch-full-reparse.md) | ✅ | ✅ | web-novel-chapter-fetch-full-reparse |
 | [BUG-5124](bugs/BUG-5124-web-novel-merge-entries-overwrite.md) | ✅ | ✅ | web-novel-merge-entries-overwrite |
+| [BUG-5118](bugs/BUG-5118-audiobook-multitrack-cold-resume-tail.md) | ✅ | ✅ | audiobook-multitrack-cold-resume-tail |
 > 共 4414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
