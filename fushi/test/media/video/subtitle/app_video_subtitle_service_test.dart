@@ -1329,6 +1329,22 @@ void main() {
       await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
         SubtitleGlossaryEntry(ja: '梓'),
       ]);
+      // 取消：停在 AI 请求中间时取消，同样放开。
+      final _GatedCompleter gated = _GatedCompleter(FakeAiCompleter(answerAll));
+      completer = gated;
+      final SubtitleCancelSource cancel = SubtitleCancelSource();
+      final Future<SubtitleGlossary> cancelled = service.regenerateGlossary(
+        target,
+        cancel: cancel,
+      );
+      await gated.entered.future;
+      cancel.cancel();
+      gated.release.complete();
+      await expectLater(cancelled, throwsA(isA<SubtitlePipelineCancelled>()));
+      completer = FakeAiCompleter(answerAll);
+      await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
+        SubtitleGlossaryEntry(ja: '梓'),
+      ]);
       await service.regenerateGlossary(target);
     });
 
@@ -1426,7 +1442,6 @@ class _FlakySink implements AppSubtitleOutputSink {
   }
 }
 
-/// 识别停在半路，直到测试放行（任务停在 S0 之前）。
 /// 第一次请求停在 [release] 上：让「单独重新生成」停在异步生成中间。
 class _GatedCompleter implements AiTextCompleter {
   _GatedCompleter(this.inner);
@@ -1447,6 +1462,7 @@ class _GatedCompleter implements AiTextCompleter {
   }
 }
 
+/// 识别停在半路，直到测试放行（任务停在 S0 之前）。
 class _GatedRecognizer implements VideoSubtitleRecognizer {
   _GatedRecognizer(this.inner);
 
