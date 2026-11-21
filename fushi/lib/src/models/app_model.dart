@@ -178,6 +178,7 @@ import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -14239,7 +14240,8 @@ class AppModel
     return view == null ? null : _reviewMiningRepositoryForView(view);
   }
 
-  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null。
+  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null；库在换代途中原样抛出代际异常
+  /// （[SrsMinerResolver] 的契约，BUG-5069：替对端制卡回带分类码的失败，而不是「复习不可用」）。
   Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14256,6 +14258,7 @@ class AppModel
       );
       return view == null ? null : await extensionSrsMinerForView(view);
     } catch (e, stack) {
+      if (isSrsGenerationBlocked(e)) rethrow;
       ErrorLogService.instance.log('hostReviewMiningMiner', e, stack);
       return null;
     }
@@ -14280,7 +14283,8 @@ class AppModel
 
   /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
   /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
-  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。
+  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。库在换代途中
+  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5069）：制卡据它回「去复习页完成升级」。
   Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14291,8 +14295,20 @@ class AppModel
         fallbackRolloverHour: () => view.prefs.statDayResetHour,
       );
     } catch (e, stack) {
+      if (isSrsGenerationBlocked(e)) rethrow;
       ErrorLogService.instance.log('extensionSrsMinerForView', e, stack);
       return null;
+    }
+  }
+
+  /// 打开笔记 / 词状态这类探测用的 [extensionSrsMinerForView]：库在换代途中与复习不可用同一个答案（null → 打不开 /
+  /// 没有状态），与激活配置那条链的探测同口径（`SrsMiningAnkiRepository._probeMiner`）。
+  Future<SrsMiner?> _extensionSrsMinerProbe(ProfileSettingsView view) async {
+    try {
+      return await extensionSrsMinerForView(view);
+    } on Object catch (e) {
+      if (isSrsGenerationBlocked(e)) return null;
+      rethrow;
     }
   }
 
@@ -14303,7 +14319,7 @@ class AppModel
   ) async {
     final Future<bool> Function(SrsMiner, String)? open = srsProfileNoteOpener;
     if (open == null) return false;
-    final SrsMiner? miner = await extensionSrsMinerForView(view);
+    final SrsMiner? miner = await _extensionSrsMinerProbe(view);
     return miner != null && await open(miner, noteId);
   }
 
@@ -14312,7 +14328,7 @@ class AppModel
   SrsExtensionApi? extensionSrsApiForView(ProfileSettingsView view) {
     if (SrsAppHost.current == null) return null;
     return SrsAppHost(
-      readStore: () async => (await extensionSrsMinerForView(view))?.store,
+      readStore: () async => (await _extensionSrsMinerProbe(view))?.store,
       openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
       // 扩展不经这个入口打开浏览页。
       openBrowse: () async => false,
@@ -14888,7 +14904,10 @@ class AppModel
             msg: described.message,
             status: described.status,
             // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-            action: minedCardUndoToastAction(repo, outcome, expression: word),
+            action:
+                minedCardUndoToastAction(repo, outcome, expression: word) ??
+                // BUG-5069：复习库要升级时带「打开复习」。
+                mineFailureToastAction(outcome),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);

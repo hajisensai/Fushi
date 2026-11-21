@@ -166,6 +166,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
@@ -873,6 +874,22 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
+      // BUG-5069：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
+      // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
+      mineFailureOpenReview = () {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.srs)) return;
+        final ExternalMediaNavigation media = ExternalMediaNavigation.instance;
+        unawaited(
+          media.navigate(() async {
+            homeShellTabNotifier.value = HomeTab.srs;
+            final NavigatorState? navigator =
+                appModel.navigatorKey.currentState;
+            if (navigator != null) {
+              await unwindToHomeRoute(navigator, media: media);
+            }
+          }),
+        );
+      };
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>

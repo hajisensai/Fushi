@@ -19,6 +19,8 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsDeckTree, SrsDeckView;
 
+import 'package:fushi/src/srs/srs_generation_kind.dart';
+
 /// 本机复习里的一份配置。
 class HostReviewMiningProfile {
   const HostReviewMiningProfile({required this.uid, required this.name});
@@ -81,14 +83,14 @@ class HostRemoteMiningTargets {
   /// 裸本机 Anki 后端（激活配置的 Anki 设置）。
   final BaseAnkiRepository Function() _ankiRepository;
 
-  /// 复习不可用（模块关着 / 还没装配）时为 null。
+  /// 复习不可用（模块关着 / 还没装配）时为 null；库在换代途中抛代际异常（[isSrsGenerationBlocked]）。
   final Future<HostReviewMiningCatalog?> Function() _reviewCatalog;
 
   /// 落进 [profileUid] 那份复习的仓库（制卡 / 查重）；打不开时为 null。
   final Future<BaseAnkiRepository?> Function(String profileUid)
   _reviewRepository;
 
-  /// [profileUid] 那份复习的制卡器（列牌组、算默认牌组）；打不开时为 null。
+  /// [profileUid] 那份复习的制卡器（列牌组、算默认牌组）；打不开时为 null，库在换代途中抛代际异常。
   final Future<SrsMiner?> Function(String profileUid) _reviewMiner;
 
   /// [MineOutcome] → wire 结果（失败写错误日志，app 用 `remoteMineResultFromOutcome`）。
@@ -110,10 +112,15 @@ class HostRemoteMiningTargets {
     }
   }
 
-  Future<HostReviewMiningCatalog?> _catalog() async {
+  /// [rethrowBlocked]：库在换代途中时原样抛出代际异常（这次落卡要落复习，必须把「去升级」带回对端，不能当成
+  /// 「复习不可用」悄悄退回 Anki，BUG-5069）；否则（列「保存到」、落 Anki 用不上复习）与复习不可用同样为 null。
+  Future<HostReviewMiningCatalog?> _catalog({
+    bool rethrowBlocked = false,
+  }) async {
     try {
       return await _reviewCatalog();
     } catch (e, st) {
+      if (rethrowBlocked && isSrsGenerationBlocked(e)) rethrow;
       engineLog.log('HostMiningTargets.reviewCatalog', e, st);
       return null;
     }
@@ -124,6 +131,9 @@ class HostRemoteMiningTargets {
   ///
   /// 复习的配置清单只在可能落复习时才读（主机默认是复习，或手机点名复习）：查重每次查词都跑，主机默认是
   /// Anki 时手机带来的 `{profile}` 用不上它。[listing] = 列「保存到」，一律读。
+  ///
+  /// 这次要落复习（手机点名复习，或没点类别而主机默认是复习）而复习库在换代途中：抛出代际异常（[mine] 回带分类码
+  /// 的失败），不退回 Anki。
   Future<(RemoteMiningResolution?, HostReviewMiningCatalog?, String)> _resolve(
     RemoteMiningTarget? target, {
     bool listing = false,
@@ -133,7 +143,11 @@ class HostRemoteMiningTargets {
         listing ||
             hostKind == kRemoteMiningKindReview ||
             target?.kind == kRemoteMiningKindReview
-        ? await _catalog()
+        ? await _catalog(
+            rethrowBlocked:
+                !listing &&
+                (target?.kind ?? hostKind) == kRemoteMiningKindReview,
+          )
         : null;
     final String defaultKind = catalog == null
         ? kRemoteMiningKindAnki
@@ -191,7 +205,15 @@ class HostRemoteMiningTargets {
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
-    final _HostLanding landing = await _landingFor(target);
+    final _HostLanding landing;
+    try {
+      landing = await _landingFor(target);
+    } on Object catch (e, st) {
+      // 复习库在换代途中（BUG-5069）：回带分类码的失败（`errorCode` 上 wire，对端据此提示「那台设备上的复习要先
+      // 升级」），与远程复习的 `migrating` / `migration_failed` 同一口径（srs_app_runtime.dart readRemoteStore）。
+      if (!isSrsGenerationBlocked(e)) rethrow;
+      return RemoteMineLanding(_toResult(srsGenerationMineFailure(e, st)));
+    }
     final RemoteMiningResolution? to = landing.to;
     final BaseAnkiRepository? repo = landing.repository;
     final ({String raw, bool own}) withDeck = withRemoteMiningDeck(
