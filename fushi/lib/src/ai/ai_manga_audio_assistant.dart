@@ -499,10 +499,18 @@ class MangaAudioAnnotateSession {
     _editSeries((SeriesCastProfile p) => p.learnRoster(<TtsCastCharacter>[c]));
   }
 
-  /// 存盘（演出稿 + 账本 + 系列档案）。
-  Future<void> saveAll() async {
-    await save();
+  /// 制作台的存盘（演出稿 + 账本 + 系列档案）。演出稿按读盘修订写
+  /// （[MangaAudioScriptStore.saveIfCurrent]）：本会话读盘后这卷被别处存过（标注任务、
+  /// 生成回填、ctl）就什么都不写、返回 false，调用方应重开会话——账本与演出稿总是
+  /// 一起由标注写入方落盘，演出稿没被动过即说明这份账本也还是最新的。
+  Future<bool> saveEdits() async {
+    final bool written = await mangaAudioScriptStoreFor(
+      appModel,
+    ).saveIfCurrent(bookKey, script);
+    if (!written) return false;
+    await mangaAnnotationLedgerStoreFor(appModel).save(bookKey, ledger);
     await _saveSeries();
+    return true;
   }
 
   /// 逐句复核的存盘：只写复核会改的演出稿与系列档案改动，账本不动（复核不改账本，

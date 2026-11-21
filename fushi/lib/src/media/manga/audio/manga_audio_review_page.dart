@@ -384,6 +384,11 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
       await _load(load, page: line.page, keep: line);
       return;
     }
+    // 存盘期间会话已被重读换掉：新会话装上时已重数待复核、重排队列，这里不再改。
+    if (!identical(s, _session)) {
+      setState(() {});
+      return;
+    }
     final MangaScriptLine? saved = s.script.lineById(line.lineId);
     final bool nowPending = saved != null && mangaLineNeedsReview(saved);
     _pendingCount += (nowPending ? 1 : 0) - (wasPending ? 1 : 0);
@@ -412,7 +417,14 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
       labelText: t.manga_audio_line_speaker,
       icon: FushiIcons.personAdd,
     );
-    if (typed == null || typed.trim().isEmpty || !mounted) return;
+    // 对话框开着时任务可能开始、会话可能被重读换掉：新角色只能记进马上要存的那份会话。
+    if (typed == null ||
+        typed.trim().isEmpty ||
+        !mounted ||
+        _busy ||
+        !identical(s, _session)) {
+      return;
+    }
     s.addCharacter(typed.trim());
     await _commit(typed.trim());
   }

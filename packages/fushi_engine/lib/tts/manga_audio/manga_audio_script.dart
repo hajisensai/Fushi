@@ -835,7 +835,8 @@ class MangaAudioScriptStore {
   }
 
   /// 原子写：先写同目录临时文件并 flush，再 rename 覆盖。无条件覆盖盘上的稿子
-  /// （标注任务、导入、制作台这类本身持有最新稿的写入方用）。
+  /// （标注任务、ctl 这类自己持有最新稿的写入方用）。界面上的会话（制作台、逐句复核）
+  /// 读盘后可能被这些写入方抢先，一律走 [saveIfCurrent]。
   Future<void> save(String bookKey, MangaAudioScript script) {
     final File f = fileFor(bookKey);
     return _serialized(f, (_ScriptFileState state) => _write(f, state, script));
