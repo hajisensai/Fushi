@@ -51,6 +51,7 @@ import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -3495,7 +3496,7 @@ class _InBookFavoriteRow extends StatelessWidget {
       focusIdPrefix: 'reader-favorite',
       actions: <Widget>[
         // 改色态与常规动作互换，淡入淡出 + 尺寸过渡（时长取 FushiMotion）。
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: FushiMotion.enter,
           child: AnimatedSwitcher(
