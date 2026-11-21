@@ -62,6 +62,7 @@
   var subtitleHidden = false;
   var tracked = null;      // 当前追踪的 <video>
   var trackedKey = '';     // 追踪开始时的 mediaKey（换视频 = key 变）
+  var trackedTitle = '';   // 追踪开始时的页面标题（= app 侧这条统计段的标题快照）
   var timer = 0;
   var lastSentAt = 0;
   var pausedTicks = 0;
@@ -240,6 +241,7 @@
     if (tracked) release(true);
     tracked = v;
     trackedKey = mediaKey();
+    trackedTitle = pageTitle();
     v.addEventListener('pause', onPause);
     v.addEventListener('ended', onEnded);
     v.addEventListener('seeked', onSeeked);
@@ -262,6 +264,7 @@
     tracked = null;
     if (ended) send(sampleOf(v, true));
     trackedKey = '';
+    trackedTitle = '';
   }
 
   function onPause() { pausedTicks = 0; if (tracked) send(sampleOf(tracked, false)); }
@@ -318,5 +321,10 @@
     get condition() { return condition; },
     get tracked() { return tracked; },
     get lastSentAt() { return lastSentAt; },
+    // 此刻正在统计的那条视频 {mediaKey, title}；没在统计 = null。批量制卡入队时冻结进队列项
+    // （content.js fushiEnqueue），看完再生成的卡才记得到这条视频名下（反馈 PtsjrnVmH9）。
+    identity: function () {
+      return tracked && trackedKey ? { mediaKey: trackedKey, title: trackedTitle } : null;
+    },
   };
 })();

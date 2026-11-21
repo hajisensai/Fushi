@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/sync/background_task.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
+export 'package:fushi/src/sync/background_task.dart';
 export 'package:fushi/src/sync/sync_background_activity.dart'
     show hasActiveSyncTasks, syncBackgroundTasksListenable;
 
@@ -37,76 +38,6 @@ export 'package:fushi/src/sync/sync_background_activity.dart'
 /// 此前同步进度是每个库页列表上方的两行横幅（文字 + 4dp 波浪条，两项并存时
 /// 约 56dp），后台同步跑十几分钟就一直挤掉近一行封面；补刮入口则只有一枚图标、
 /// 看不到进度。两者在这里合并。
-
-/// 一项正在后台跑的任务（给入口与明细弹层看的那一层）。
-@immutable
-class BackgroundTask {
-  const BackgroundTask({
-    required this.id,
-    required this.icon,
-    required this.line,
-    this.fraction,
-    this.onOpen,
-    this.openLabel,
-    this.detail,
-    this.stageSince,
-    this.errors = const <String>[],
-    this.finished = false,
-  });
-
-  /// 稳定标识（明细行的 key）。
-  final String id;
-  final IconData icon;
-
-  /// 一行描述，如「同步阅读数据 (27/36) 书名」。
-  final String line;
-
-  /// 明细弹层里的第二行：哪条通道、在等谁（反馈 kM-Gb_Xnu-）。null = 不显示。
-  final String? detail;
-
-  /// 当前这一步从何时开始（毫秒）；明细行据此实时显示「这一步已多久」，分得清
-  /// 「在慢慢传」和「卡住了」。null = 不显示。
-  final int? stageSince;
-
-  /// 本轮记下的失败（每项一行，明细里可展开）。
-  final List<String> errors;
-
-  /// 这一轮已经结束、只是因为有失败才留在明细里。入口的进度环不画它。
-  final bool finished;
-
-  /// 0..1；null = 没有可测总数（不定态）。
-  final double? fraction;
-
-  /// 明细行尾的「去处理」动作（补刮任务面板）；null = 只展示。
-  final VoidCallback? onOpen;
-  final String? openLabel;
-
-  @override
-  bool operator ==(Object other) =>
-      other is BackgroundTask &&
-      other.id == id &&
-      other.icon == icon &&
-      other.line == line &&
-      other.fraction == fraction &&
-      other.openLabel == openLabel &&
-      other.detail == detail &&
-      other.stageSince == stageSince &&
-      listEquals(other.errors, errors) &&
-      other.finished == finished;
-
-  @override
-  int get hashCode => Object.hash(
-    id,
-    icon,
-    line,
-    fraction,
-    openLabel,
-    detail,
-    stageSince,
-    Object.hashAll(errors),
-    finished,
-  );
-}
 
 /// 条目种类的图标（书 / 视频 / 有声书 / 词典 / 本地音频 / 字体）；不知道是哪种时用
 /// 同步图标。

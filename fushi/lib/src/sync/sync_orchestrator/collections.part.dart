@@ -29,13 +29,10 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
           .getRemoteCollectionManifest();
       if (remote == null) {
         // 老 host 无 /api/library/collections 端点（对端 app 版本过旧）。以前静默
-        // return，用户只看见「合集没同步」却无任何线索（BUG-938 次因）。计入
-        // report.errors：错误日志留痕 + 手动「立即同步」按错误计数提示；其余维度
-        // 不受影响照常同步。
-        report.errors.add(
-          'collections live sync: host has no collections endpoint '
-          '(older app version) — update the host app to sync collections',
-        );
+        // return，用户只看见「合集没同步」却无任何线索（BUG-938 次因）。经统一的
+        // 「对端缺能力」提示记进报告：错误日志留痕 + 手动「立即同步」提示升级对端；
+        // 其余维度不受影响照常同步。
+        report.notePeerGap(SyncPeerGapDimension.collections, outdated: true);
         return;
       }
 

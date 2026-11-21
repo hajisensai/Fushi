@@ -1,8 +1,8 @@
 //! `ffc_hash_*`：流式哈希（AniDB ED2K、SHA-256）与 CRC-32（zip / IEEE 802.3）。
 //!
 //! 形态：`new` 建上下文 → 任意次 `update(ptr, len)` → `finish` 写结果 → `free`。
-//! 读文件、取消、进度与「读的过程中文件被改」的判定都留在 Dart 侧（调用方 isolate），
-//! 这里只做纯算术。原先的纯 Dart 实现（fushi_engine 的 `_Md4` / `AnidbEd2kAccumulator`、
+//! 流式接口只做纯算术，读文件、取消、进度与「读的过程中文件被改」的判定留在 Dart 侧（调用方 isolate）；
+//! 唯一例外是整文件一次算完的 `ffc_hash_*_file`（读盘也在这里，原因见 [hash_file]）。原先的纯 Dart 实现（fushi_engine 的 `_Md4` / `AnidbEd2kAccumulator`、
 //! fushi 的 `package:crypto` sha256）已删除；它们对确定性输入的输出冻结成
 //! `packages/fushi_compute/test/ffi_hash_test.dart` 的回归向量（ED2K 红 / 蓝两种整块边界
 //! 变体，见 https://wiki.anidb.net/Ed2k-hash）。
@@ -265,6 +265,111 @@ pub unsafe extern "C" fn ffc_hash_sha256_free(state: *mut Sha256State) {
     if !state.is_null() {
         drop(Box::from_raw(state));
     }
+}
+
+/// 整文件哈希（`ffc_hash_*_file`）每次读盘的块大小。
+const FILE_CHUNK: usize = 1 << 20;
+
+/// 读盘 + 哈希整个文件的接口（`ffc_hash_sha256_file` / `ffc_hash_crc32_file`）为什么在这里读盘：
+/// Dart 逐块 `RandomAccessFile.readIntoSync(buffer)` 时，VM 经 `Dart_TypedDataAcquireData` 持有目标
+/// 数组，整段磁盘读期间该线程**不进 GC 安全点**；后台 isolate 与 UI isolate 同属一个 isolate group，
+/// UI isolate 每次 GC 都得等这块读完，慢盘上单次能等一秒多（BUG-5088：后台视频指纹预热让整个界面
+/// 掉帧 / 卡死）。整段放进一次非叶 FFI 调用，线程全程处于 native 态，GC 不必等它。
+///
+/// 路径是 UTF-8 字节（`path_len` 字节，不要求 NUL 结尾）。失败：空指针 →
+/// [NULL_ARGUMENT](crate::status::NULL_ARGUMENT)；路径不是 UTF-8 →
+/// [INVALID_ARGUMENT](crate::status::INVALID_ARGUMENT)；打不开 / 读失败 →
+/// [IO_ERROR](crate::status::IO_ERROR)。读到的总字节数写进 `out_len`。
+///
+/// # Safety
+/// `path` 至少 `path_len` 字节可读；`out_len` 可写。
+unsafe fn hash_file(
+    path: *const u8,
+    path_len: usize,
+    out_len: *mut u64,
+    mut feed: impl FnMut(&[u8]),
+) -> i32 {
+    let Some(path) = input(path, path_len) else {
+        return status::NULL_ARGUMENT;
+    };
+    if out_len.is_null() {
+        return status::NULL_ARGUMENT;
+    }
+    let Ok(path) = std::str::from_utf8(path) else {
+        return status::INVALID_ARGUMENT;
+    };
+    match read_chunks(std::path::Path::new(path), &mut feed) {
+        Ok(len) => {
+            *out_len = len;
+            status::OK
+        }
+        Err(_) => status::IO_ERROR,
+    }
+}
+
+fn read_chunks(path: &std::path::Path, feed: &mut impl FnMut(&[u8])) -> std::io::Result<u64> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = vec![0u8; FILE_CHUNK];
+    let mut total = 0u64;
+    loop {
+        let n = match file.read(&mut buf) {
+            Ok(0) => return Ok(total),
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        feed(&buf[..n]);
+        total += n as u64;
+    }
+}
+
+/// 整个文件的 SHA-256（读盘也在这里，见 [hash_file]），32 字节摘要写进 `out`。
+///
+/// # Safety
+/// 同 [hash_file]；`out` 至少 32 字节可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_sha256_file(
+    path: *const u8,
+    path_len: usize,
+    out: *mut u8,
+    out_len: *mut u64,
+) -> i32 {
+    guard(|| {
+        if out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let mut hasher = Sha256::new();
+        let rc = hash_file(path, path_len, out_len, |b| hasher.update(b));
+        if rc == status::OK {
+            std::slice::from_raw_parts_mut(out, 32).copy_from_slice(&hasher.finalize());
+        }
+        rc
+    })
+}
+
+/// 整个文件的 CRC-32（IEEE，zip 用的那个；读盘也在这里，见 [hash_file]），写进 `out`。
+///
+/// # Safety
+/// 同 [hash_file]；`out` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_crc32_file(
+    path: *const u8,
+    path_len: usize,
+    out: *mut u32,
+    out_len: *mut u64,
+) -> i32 {
+    guard(|| {
+        if out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let mut hasher = crc32fast::Hasher::new();
+        let rc = hash_file(path, path_len, out_len, |b| hasher.update(b));
+        if rc == status::OK {
+            *out = hasher.finalize();
+        }
+        rc
+    })
 }
 
 /// CRC-32（IEEE，zip / PNG 用的那个）：在 `crc`（上一段的结果，首段传 0）之上续算
@@ -652,5 +757,48 @@ mod tests {
             );
             ffc_hash_sha256_free(sh);
         }
+    }
+    /// 整文件 SHA-256 / CRC-32：与内存里同一份字节的结果一致（跨 1 MiB 块边界、空文件），读到的字节数如实回报；
+    /// 打不开的路径回 IO_ERROR、非 UTF-8 回 INVALID_ARGUMENT、空指针回 NULL_ARGUMENT。
+    #[test]
+    fn whole_file_hashes_match_in_memory_digests_and_report_errors() {
+        let dir = std::env::temp_dir().join(format!("ffc_sha256_file_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for size in [0usize, 1, FILE_CHUNK, FILE_CHUNK * 2 + 7] {
+            let bytes: Vec<u8> = (0..size).map(|i| (i * 31 % 251) as u8).collect();
+            let path = dir.join(format!("f{size}.bin"));
+            std::fs::write(&path, &bytes).unwrap();
+            let p = path.to_str().unwrap().as_bytes();
+            let mut out = [0u8; 32];
+            let mut len = u64::MAX;
+            let rc =
+                unsafe { ffc_hash_sha256_file(p.as_ptr(), p.len(), out.as_mut_ptr(), &mut len) };
+            assert_eq!(rc, status::OK, "size {size}");
+            assert_eq!(len, size as u64);
+            let expected: [u8; 32] = Sha256::digest(&bytes).into();
+            assert_eq!(hex(&out), hex(&expected), "size {size}");
+            let (mut crc, mut crc_len) = (0u32, u64::MAX);
+            let rc = unsafe { ffc_hash_crc32_file(p.as_ptr(), p.len(), &mut crc, &mut crc_len) };
+            assert_eq!(rc, status::OK, "crc size {size}");
+            assert_eq!(crc_len, size as u64);
+            assert_eq!(crc, crc32fast::hash(&bytes), "crc size {size}");
+        }
+        let missing = dir.join("missing.bin");
+        let p = missing.to_str().unwrap().as_bytes();
+        let (mut out, mut len) = ([0u8; 32], 0u64);
+        assert_eq!(
+            unsafe { ffc_hash_sha256_file(p.as_ptr(), p.len(), out.as_mut_ptr(), &mut len) },
+            status::IO_ERROR
+        );
+        let bad = [0xffu8, 0xfe];
+        assert_eq!(
+            unsafe { ffc_hash_sha256_file(bad.as_ptr(), bad.len(), out.as_mut_ptr(), &mut len) },
+            status::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            unsafe { ffc_hash_sha256_file(p.as_ptr(), p.len(), std::ptr::null_mut(), &mut len) },
+            status::NULL_ARGUMENT
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

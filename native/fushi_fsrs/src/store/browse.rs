@@ -574,6 +574,10 @@ struct Type {
     slot_alias: Vec<Option<String>>,
     /// 模板 id → (名字, 序号)。
     tpls: HashMap<String, (String, i64)>,
+    /// 生效的排序字段 id（Dart `SrsNoteTypeView.effectiveSortFieldId`）：自动挑副字段时跳过它；没给 = 第一个字段。
+    sort: Option<String>,
+    /// 显式选的浏览副字段 id（Dart `SrsNoteTypeView.browseFieldIds`，已按字段顺序、去掉排序字段）；None = 自动。
+    preview: Option<Vec<String>>,
 }
 
 impl Type {
@@ -641,6 +645,17 @@ impl Type {
                 name: s("name")?,
                 cloze: v.get("cloze").and_then(Value::as_bool).unwrap_or(false),
                 deleted: v.get("deleted").and_then(Value::as_bool).unwrap_or(false),
+                sort: v
+                    .get("sort")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| fields.first().map(|f| f.0.clone())),
+                preview: v.get("preview").and_then(Value::as_array).map(|xs| {
+                    xs.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                }),
                 fields,
                 slot_names,
                 slot_ids,
@@ -648,6 +663,17 @@ impl Type {
                 tpls,
             },
         ))
+    }
+
+    /// 浏览行要露出的副字段 (id, 名字)：显式选了就是选的那几个（按字段顺序），否则排序字段之外按字段顺序的全部字段
+    /// （调用方取前两个非空的）。
+    fn preview_fields(&self) -> impl Iterator<Item = &(String, String)> {
+        self.fields
+            .iter()
+            .filter(move |(id, _)| match &self.preview {
+                Some(picked) => picked.iter().any(|p| p == id),
+                None => Some(id) != self.sort.as_ref(),
+            })
     }
 
     /// Dart `SrsCardSearchSubject.cardOrdinal`。
@@ -2525,10 +2551,10 @@ impl Session {
             let detail = self.detail.get(&n.id);
             let digest = |id: &str| detail.and_then(|d| d.fields.get(id));
             let fields: &[(String, String)] = ty.map_or(&[], |t| t.fields.as_slice());
-            // 摘要与它来自的字段名（表格原地改这两列时按名字写回）。
-            let (preview, preview_fields): (Vec<&str>, Vec<&str>) = fields
-                .iter()
-                .skip(1)
+            // 摘要与它来自的字段名（表格原地改这两列时按名字写回）：笔记类型选的副字段，没选时排序字段之外的字段。
+            let (preview, preview_fields): (Vec<&str>, Vec<&str>) = ty
+                .into_iter()
+                .flat_map(Type::preview_fields)
                 .filter_map(|(id, name)| digest(id).map(|f| (f.preview.as_str(), name.as_str())))
                 .filter(|(t, _)| !t.is_empty())
                 .take(2)
@@ -3993,6 +4019,34 @@ mod tests {
             "new card: no difficulty / retention"
         );
         assert_eq!(rows.s[rows.by_note(N3)][11], json!("manga:m1"));
+
+        // 笔记类型的排序字段换成第二个字段：自动副字段改取第一个字段；显式选的副字段只露出选的那几个。
+        {
+            let typed = |a: Value| {
+                json!({"sort": {"col": "created", "asc": true}, "types": [
+                    a,
+                    {"id": "B", "name": "Word", "fields": [["x", "Word"]], "tpls": [["t2", "C", 0]]},
+                    {"id": "C", "name": "Reverse", "fields": [["c1", "Front"], ["c2", "Back"]], "tpls": [["t3", "C", 0]]},
+                ]})
+            };
+            let (_, rows) = query_rows(
+                &d,
+                &deck,
+                typed(json!({"id": "A", "name": "Basic", "sort": "fb",
+                "fields": [["fa", "Front"], ["fb", "Back"]], "tpls": [["t1", "C", 0]]})),
+            );
+            let r = &rows.s[rows.by_note(N1)];
+            assert_eq!((&r[8], &r[14]), (&json!(["cat"]), &json!(["Front"])));
+            let (_, rows) = query_rows(
+                &d,
+                &deck,
+                typed(json!({"id": "A", "name": "Basic", "preview": [],
+                "fields": [["fa", "Front"], ["fb", "Back"]], "tpls": [["t1", "C", 0]]})),
+            );
+            let r = &rows.s[rows.by_note(N1)];
+            assert_eq!((&r[8], &r[14]), (&json!([]), &json!([])));
+            assert_eq!(r[9], json!("cat.png"), "media still comes from every field");
+        }
         let n4 = rows.by_note(N4);
         assert_eq!(
             (&rows.s[n4][11], &rows.s[n4][12], &rows.s[n4][13]),

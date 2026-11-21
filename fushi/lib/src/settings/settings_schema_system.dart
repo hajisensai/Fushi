@@ -55,6 +55,8 @@ import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/official_links.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart'
+    show kGitHubMirrorPrefixes;
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -148,6 +150,39 @@ ModuleId? _startupModuleOfToken(String token) {
   return null;
 }
 
+/// 更新下载来源下拉的选项：自动 / Cloudflare / GitHub，加上 [mirrorPrefixes] 里每个镜像。
+List<SettingsSegmentOption<String>> _updateDownloadSourceOptions(
+  List<String> mirrorPrefixes,
+) {
+  return <SettingsSegmentOption<String>>[
+    for (final String value in <String>[
+      updateDownloadSourceAutomatic,
+      updateDownloadSourceCloudflare,
+      updateDownloadSourceGitHub,
+      for (final String prefix in mirrorPrefixes)
+        updateDownloadSourceForProxy(prefix),
+    ])
+      SettingsSegmentOption<String>(
+        value: value,
+        label: updateDownloadSourceLabel(value),
+        tooltip: updateDownloadSourceLabel(value),
+      ),
+  ];
+}
+
+/// 下拉此刻该显示的来源：存的是某个镜像、而用户已关掉 GitHub 加速镜像时，下载计划
+/// 本就按「自动」的顺序走（所选镜像解析不出候选），这里如实显示「自动」。偏好原值
+/// 不改，重新打开镜像后用户的选择还在。
+String _effectiveUpdateDownloadSource(String stored) {
+  if (!stored.startsWith(updateDownloadSourceProxyPrefix)) return stored;
+  final String prefix = stored.substring(
+    updateDownloadSourceProxyPrefix.length,
+  );
+  return updateCheckProxyPrefixes.contains(prefix)
+      ? stored
+      : updateDownloadSourceAutomatic;
+}
+
 SettingsDestination buildSystemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
@@ -205,21 +240,14 @@ SettingsDestination buildSystemDestination() {
             dropdown: true,
             // 标签走 updateDownloadSourceLabel 这一份真相源：下载遮罩的「本次没用上
             // 所选来源」通告要说出同一个名字，两处各写一套迟早对不上。
-            options: <SettingsSegmentOption<String>>[
-              for (final String value in <String>[
-                updateDownloadSourceAutomatic,
-                updateDownloadSourceCloudflare,
-                updateDownloadSourceGitHub,
-                for (final String prefix in updateCheckProxyPrefixes)
-                  updateDownloadSourceForProxy(prefix),
-              ])
-                SettingsSegmentOption<String>(
-                  value: value,
-                  label: updateDownloadSourceLabel(value),
-                  tooltip: updateDownloadSourceLabel(value),
-                ),
-            ],
-            selected: (SettingsContext c) => c.appModel.updateDownloadSource,
+            // 静态值域列全部镜像（恢复默认的标签格式化按它查）；此刻可选的只列
+            // [updateCheckProxyPrefixes]——用户关掉 GitHub 加速镜像时它为空，下拉里
+            // 不再出现镜像项。
+            options: _updateDownloadSourceOptions(kGitHubMirrorPrefixes),
+            optionsBuilder: (_) =>
+                _updateDownloadSourceOptions(updateCheckProxyPrefixes),
+            selected: (SettingsContext c) =>
+                _effectiveUpdateDownloadSource(c.appModel.updateDownloadSource),
             onChanged: (SettingsContext c, String value) async {
               await c.appModel.setUpdateDownloadSource(value);
               c.refresh();
@@ -544,6 +572,22 @@ SettingsDestination buildSystemDestination() {
             onChanged: (SettingsContext c, String value) async {
               await c.appModel.setNetworkProxyPassword(value);
               resetSyncHttpClient();
+            },
+          ),
+          // GitHub 加速镜像（ghproxy 等第三方反代）是直连失败后的兜底，不是代理出口，
+          // 但同属「请求从哪儿走」，放在网络分区。默认开（中国网络的更新 / 词典下载靠
+          // 它）；关掉只剩直连与 jsDelivr——安全软件拦截镜像域名、或不愿请求经第三方
+          // 代理的用户用（拍板台 0E-r9q489Y）。读取端是请求时现读的闭包，不必重建 client。
+          SettingsSwitchItem(
+            id: 'system.network_github_mirrors',
+            title: t.network_github_mirrors_label,
+            subtitle: t.network_github_mirrors_hint,
+            icon: Icons.alt_route_outlined,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.gitHubMirrorsEnabled,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.appModel.setGitHubMirrorsEnabled(value);
+              c.refresh();
             },
           ),
           // P2P（torrent）传输单独列出：**默认直连**，用户明确改档才跟上面的

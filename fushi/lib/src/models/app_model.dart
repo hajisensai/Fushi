@@ -146,6 +146,7 @@ import 'package:fushi/src/utils/components/section_tab_order.dart'
         PrefsSectionTabOrderStore,
         SectionTabOrderStore,
         sectionTabOrderAppFallback;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -456,6 +457,9 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart'
+    show mediaServerRouteFailoverForRepository;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show mediaServerTrackingEpisodeOf;
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
@@ -4233,7 +4237,7 @@ class AppModel
     if (context == null || !context.mounted) return false;
     final bool accepted = await showFushiConfirmDialog(
       context: context,
-      icon: Icons.upgrade_rounded,
+      icon: FushiIcons.upgrade,
       title: t.dict_upgrade_format_prompt_title,
       message: t.dict_upgrade_format_prompt_body(count: pendingCount),
       confirmLabel: t.dict_upgrade_format_prompt_confirm,
@@ -5307,6 +5311,11 @@ class AppModel
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+      // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
+      // （拍板台 design-media-server-failover-transport）。
+      MediaServerRouteFailover.install(
+        mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
+      );
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
@@ -7256,6 +7265,12 @@ class AppModel
 
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
+
+  /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
+  bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;
+
+  Future<void> setVideoBackgroundPlay(bool value) =>
+      prefsRepo.setVideoBackgroundPlay(value);
 
   /// 记住每部作品上次手动转到的方向，默认关。
   bool get videoRememberOrientation => prefsRepo.videoRememberOrientation;
@@ -14070,6 +14085,9 @@ class AppModel
       // 扩展网页视频沉浸时间：每条播放样本喂给桥 → 每个 mediaKey 一个
       // VideoWatchTracker + StudyClock（只计首次覆盖，与视频页同口径）。
       onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+      // 反馈 PtsjrnVmH9：扩展在统计中的网页视频页上查词 / 制卡，记到该视频名下
+      // （查词 / 制卡计数与 app 内视频页同一张表、同一来源 video）。
+      onExtensionStudyActivity: _ensureBrowserVideoStudyBridge().onActivity,
       // BUG-3141：扩展查词弹窗 ☆/★ 收藏。浏览器同属「app 外查词表面」，与 app 外浮窗 /
       // 剪贴板面板的 favoriteEntry / favoriteCheck 走同一份读写（跨源判 / 跨源删 / 单源写）。
       onExtensionFavorite: _browserExtensionFavorite,
@@ -14979,6 +14997,12 @@ class AppModel
     await prefsRepo.setNetworkProxyMode(value);
     _applyEmbeddedTorrentProxy();
   }
+
+  /// 是否允许 GitHub 下载走第三方加速镜像（[kGitHubMirrorPrefixes]）。读取端
+  /// [gitHubMirrorsEnabledReader] 是请求时现读的闭包，改了不用另行下发。
+  bool get gitHubMirrorsEnabled => prefsRepo.gitHubMirrorsEnabled;
+  Future<void> setGitHubMirrorsEnabled(bool value) =>
+      prefsRepo.setGitHubMirrorsEnabled(value);
 
   String get networkProxyUsername => prefsRepo.networkProxyUsername;
   Future<void> setNetworkProxyUsername(String value) async {

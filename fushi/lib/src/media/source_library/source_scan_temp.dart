@@ -26,7 +26,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi/src/media/source_library/source_auto_scan.dart'
+import 'package:fushi/src/media/source_library/source_scan_activity.dart'
     show SourceScanActivity, sourceScanActivity;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;

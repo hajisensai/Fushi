@@ -523,51 +523,61 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
     );
     // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
     // 换成壳自己的，动作改由浮动动作组画（与视频库外壳同构）。
+    final bool inImport =
+        views[_currentIndex].kind == MediaLibraryViewKind.sources;
     return MediaLibraryShellScope(
       kinds: kinds,
       select: _select,
-      child: FushiShellTitleScope(
-        title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
-        actionsSlot: _actionsSlot,
-        child: FushiHeaderSearchKeys(
-          // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
-          // （焦点在页签、动作或内容上都认）。
-          resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
-          child: FushiFloatingChromeScope(
-            // 当前视图自己的工具栏状态（见 [_chromes]）。
-            controller: _chromeFor(views[_currentIndex].kind),
-            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
-            // 滚不动」的根因是收起改了视口高度，BUG-2975，见
-            // [FushiFloatingChromeOverlay]）。
-            child: FushiFloatingChromeOverlay(
-              // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
-              masthead: true,
-              chrome: FushiFloatingChromeBar(
-                tabs: navigation,
-                slot: _actionsSlot,
-                trailing: kinds.contains(MediaLibraryViewKind.sources)
-                    ? libraryImportChromeButton(
-                        selected:
-                            views[_currentIndex].kind ==
-                            MediaLibraryViewKind.sources,
-                        onTap: _toggleImport,
-                        focusIdPrefix: widget.focusIdPrefix,
-                      )
-                    : null,
-                // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
-                secondary: _buildSubTabs(views),
-              ),
-              // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-              // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
-              // 自动累加两行）；当前组只有一个视图（或在导入页）时不占高度。
-              // 滚动通知由各视图自己那一层喂给各自的 controller（[_chromeFeed]）。
+      // 系统返回键先退出导入页、回到进来前的视图（反馈 Ph8RkXJOWv：用户进了导入
+      // 视图不知道怎么退出）。导入页是壳内视图、不是独立路由，不拦的话 Android
+      // 返回键直接弹掉首页路由退出 App。只在所在 tab 可见时拦（HBK-AUDIT-017），
+      // 与导入钮「再点一次」走同一个回去的入口。
+      child: SectionPopScope(
+        intercepting: inImport,
+        onIntercept: _toggleImport,
+        child: FushiShellTitleScope(
+          title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
+          actionsSlot: _actionsSlot,
+          child: FushiHeaderSearchKeys(
+            // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
+            // （焦点在页签、动作或内容上都认）。
+            resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
+            child: FushiFloatingChromeScope(
+              // 当前视图自己的工具栏状态（见 [_chromes]）。
+              controller: _chromeFor(views[_currentIndex].kind),
+              // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+              // 滚不动」的根因是收起改了视口高度，BUG-2975，见
+              // [FushiFloatingChromeOverlay]）。
               child: FushiFloatingChromeOverlay(
-                // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
-                nestedGap: 0,
-                opaqueChrome: true,
+                // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
                 masthead: true,
-                chrome: _buildSubNavigation(context, views),
-                child: sections,
+                chrome: FushiFloatingChromeBar(
+                  tabs: navigation,
+                  slot: _actionsSlot,
+                  trailing: kinds.contains(MediaLibraryViewKind.sources)
+                      ? libraryImportChromeButton(
+                          selected:
+                              views[_currentIndex].kind ==
+                              MediaLibraryViewKind.sources,
+                          onTap: _toggleImport,
+                          focusIdPrefix: widget.focusIdPrefix,
+                        )
+                      : null,
+                  // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
+                  secondary: _buildSubTabs(views),
+                ),
+                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+                // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
+                // 自动累加两行）；当前组只有一个视图（或在导入页）时不占高度。
+                // 滚动通知由各视图自己那一层喂给各自的 controller（[_chromeFeed]）。
+                child: FushiFloatingChromeOverlay(
+                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                  nestedGap: 0,
+                  opaqueChrome: true,
+                  masthead: true,
+                  chrome: _buildSubNavigation(context, views),
+                  child: sections,
+                ),
               ),
             ),
           ),

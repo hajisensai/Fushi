@@ -413,11 +413,9 @@ class MediaServerLaunchUnavailable implements Exception {
 /// （`LaunchItemDetailMemo`）：成功则同一份详情不再重取，失败则取流立刻抛同一个
 /// 错——这里不判失败，也就不用分辨「连不上」和「条目不可播」。
 ///
-/// 换线路（gap-remote-7）：详情请求失败时交给 [rerouteAfterFailure]（配置 + 错误）。
-/// 它判出「当前线路不通、另一条已存线路可达」并已写回时返回新配置，这里按新配置
-/// **重建**客户端并在新线路上取这一次详情，起播用的客户端也是新的这个（流地址带
-/// 新线路的 host）；返回 null（不是传输失败 / 没有别的可达线路 / 该类型不自动切）
-/// 时一切照旧。缺省不换线路。
+/// 换线路（gap-remote-7）不在这里做：客户端的请求漏斗在传输失败时经
+/// `MediaServerRouteFailover` 换到另一条可达线路、把这次详情请求重试一遍，客户端
+/// 自己改走新线路（之后取的流地址带新 host），起播用的就是它。
 /// [playlistCollectionId] 为空时只有这一条。
 Future<
   ({
@@ -433,8 +431,6 @@ buildMediaServerLaunch({
   required VideoBookRepository repository,
   required Future<List<MediaServerConfig>> Function() loadConfigs,
   int? playlistCollectionId,
-  Future<MediaServerConfig?> Function(MediaServerConfig config, Object error)?
-  rerouteAfterFailure,
 }) async {
   final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
     row.streamSpecJson,
@@ -489,7 +485,7 @@ buildMediaServerLaunch({
       ..clear()
       ..add(spec.info);
   }
-  MediaServerBrowser browser = config.buildBrowser();
+  final MediaServerBrowser browser = config.buildBrowser();
   int startIndex = members.indexWhere(
     (RemoteVideoInfo m) => m.id == spec.itemId,
   );
@@ -508,22 +504,6 @@ buildMediaServerLaunch({
     await fetchLaunchDetail(browser);
   } on Object catch (error) {
     debugPrint('[media-server-library] detail ${spec.itemId} failed: $error');
-    final MediaServerConfig? rerouted = await rerouteAfterFailure?.call(
-      config,
-      error,
-    );
-    if (rerouted != null) {
-      debugPrint('[media-server-library] ${config.sourceId} switched route');
-      browser = rerouted.buildBrowser();
-      try {
-        await fetchLaunchDetail(browser);
-      } on Object catch (retryError) {
-        debugPrint(
-          '[media-server-library] detail ${spec.itemId} failed on the new '
-          'route: $retryError',
-        );
-      }
-    }
   }
   return (
     client: browser.playbackClient,

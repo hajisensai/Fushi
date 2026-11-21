@@ -52,7 +52,16 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
       }
       final InterconnectServiceConfigSnapshot? snapshot = await backend
           .getRemoteServiceConfig();
-      if (snapshot == null) return;
+      if (snapshot == null) {
+        // 老 host 无 service-config 端点（404）：记一条「对端版本过旧」（拍板
+        // other-sync-peer-version-errors），不静默跳过。
+        await _notePeerGapLive(
+          report,
+          backend,
+          SyncPeerGapDimension.serviceConfig,
+        );
+        return;
+      }
       report.serviceConfigsImported += await snapshot.applyTo(_db);
     } catch (e) {
       report.noteError('service config live sync', e);
