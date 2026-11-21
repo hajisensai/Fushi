@@ -1,12 +1,64 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T08:35:33Z",
+ "generatedAt": "2026-11-21T09:14:31Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "53303a6ea4d5cde262849da3f17d38af980e5963",
-  "seq": 30479
+  "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+  "seq": 30481
  },
  "builds": [
+  {
+   "seq": 30478,
+   "version": "3.4.0",
+   "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
+   "unknown": false,
+   "publishedAt": "2026-11-21T09:14:18Z",
+   "testflight": false,
+   "baseSeq": 30416,
+   "prs": [
+    3989,
+    3844,
+    3839,
+    3756,
+    3840,
+    3754,
+    3738,
+    3986,
+    3981,
+    3753,
+    3987,
+    3982,
+    3988
+   ],
+   "direct": [
+    {
+     "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
+     "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
+    },
+    {
+     "sha": "1d0c585a12a383d85df7dd4a7fa6076580806b43",
+     "subject": "docs(bugs): 集成后重建 BUGS.md 索引"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059655"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+    },
+    "ios": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+    }
+   }
+  },
   {
    "seq": 30416,
    "version": "3.4.0",
@@ -284,7 +336,7 @@
    "sha": "1f24907329152192e0dcdcec69fca8287cd63dd0",
    "unknown": false,
    "publishedAt": "2026-11-21T01:18:47Z",
-   "testflight": true,
+   "testflight": false,
    "baseSeq": 29224,
    "prs": [
     3894,
@@ -399,67 +451,51 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863162"
     },
     "macos": {
      "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863162"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863162"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "53303a6ea4d5cde262849da3f17d38af980e5963",
-  "headSeq": 30479,
-  "prs": [
-   3989,
-   3844,
-   3839,
-   3756,
-   3840,
-   3754,
-   3738,
-   3986,
-   3981,
-   3753,
-   3987,
-   3982,
-   3988
-  ],
+  "headSha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+  "headSeq": 30481,
+  "prs": [],
   "direct": [
    {
-    "sha": "53303a6ea4d5cde262849da3f17d38af980e5963",
-    "subject": "chore(bugs): settle BUG number collisions on 62a2ac132"
+    "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+    "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
    },
    {
-    "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
-    "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
-   },
-   {
-    "sha": "1d0c585a12a383d85df7dd4a7fa6076580806b43",
-    "subject": "docs(bugs): 集成后重建 BUGS.md 索引"
+    "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
+    "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059655"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118190"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
    }
   }
  },
