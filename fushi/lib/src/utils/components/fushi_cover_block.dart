@@ -855,6 +855,11 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
                 isEinkTheme(context) || widget.size == FushiCoverBlockSize.half
                 ? null
                 : widget.logo,
+            // 海报元数据层（有 logo 或背景图）的标题走固定标题槽：有没有 logo、
+            // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。
+            titleSlot:
+                widget.size != FushiCoverBlockSize.half &&
+                (widget.logo != null || widget.backdrop != null),
             eyebrow: widget.eyebrow,
             byline: widget.byline,
             overview: widget.overview,
@@ -1814,6 +1819,7 @@ class _BlockText extends StatelessWidget {
     required this.size,
     required this.titleLines,
     required this.logo,
+    required this.titleSlot,
     required this.eyebrow,
     required this.byline,
     required this.overview,
@@ -1834,6 +1840,9 @@ class _BlockText extends StatelessWidget {
   final FushiCoverBlockSize size;
   final int titleLines;
   final ImageProvider? logo;
+
+  /// 标题占固定标题槽（[FushiTitleSlot] / [FushiLogoTitle] 同高）。
+  final bool titleSlot;
   final String? eyebrow;
   final String? byline;
   final String? overview;
@@ -1883,9 +1892,11 @@ class _BlockText extends StatelessWidget {
           if (value != null) wavy ? 10 : 6,
           if (showAction) compact ? 44 : 52,
         ].fold<double>(0, math.max);
-        // 半高卡按标题行数留高（两行标题时先丢次要行，标题不被压成一行）。
-        final double titleMin = logo != null
-            ? 24
+        // 固定标题槽（有 logo 必走槽）：按槽高预算，空间不够先丢次要行——不然
+        // 次要行按更小的估计留下来，Flexible 的标题被压得比槽矮，一排卡的槽高
+        // 又错开。半高卡按标题行数留高（两行标题时先丢次要行，标题不被压成一行）。
+        final double titleMin = titleSlot
+            ? logoMaxHeight
             : textLine(titleSize, 1.15) * (half ? titleLines : 1);
         // 可丢的行，按丢弃顺序（先丢的在前）。
         final List<(String, double)> optional = <(String, double)>[
@@ -1997,6 +2008,7 @@ class _BlockText extends StatelessWidget {
                     style: titleStyle,
                     maxLines: titleLines,
                     logoMaxHeight: logoMaxHeight,
+                    slotted: titleSlot,
                   ),
                 ),
                 if (shown.contains('byline'))
@@ -2066,19 +2078,21 @@ class _BlockText extends StatelessWidget {
   }
 }
 
-/// 色块标题位 logo 的档位高度上限（[fushiLogoBoxSize] 的 maxHeight）：拼贴首块
-/// 92（窄窗 70）、规整块 78（窄窗 54）、半高卡 40。
+/// 色块标题槽的档位高度（[fushiLogoSlotSize] / [FushiTitleSlot] 的槽高）：拼贴
+/// 首块 84（窄窗 66）、规整块 64（窄窗 52）、半高卡 40。两行标题文字在各档都
+/// 放得下。
 double fushiCoverBlockLogoMaxHeight(
   FushiCoverBlockSize size, {
   required bool compact,
 }) => switch (size) {
-  FushiCoverBlockSize.hero => compact ? 70 : 92,
-  FushiCoverBlockSize.regular => compact ? 54 : 78,
+  FushiCoverBlockSize.hero => compact ? 66 : 84,
+  FushiCoverBlockSize.regular => compact ? 52 : 64,
   FushiCoverBlockSize.half => 40,
 };
 
-/// 标题位：有 logo 画 logo（[FushiLogoTitle]：按视觉面积定宽、限高，解码失败回落文字），否则是按剩余
-/// 高度定行数的标题文字（最多 [maxLines] 行）。
+/// 标题位：有 logo 画 logo（[FushiLogoTitle]：固定标题槽，解码失败回落文字），
+/// 否则是标题文字——[slotted] 时占同一个槽（[FushiTitleSlot]，最多两行），不然按
+/// 剩余高度定行数（最多 [maxLines] 行）。
 class _BlockTitle extends StatelessWidget {
   const _BlockTitle({
     required this.title,
@@ -2086,6 +2100,7 @@ class _BlockTitle extends StatelessWidget {
     required this.style,
     required this.maxLines,
     required this.logoMaxHeight,
+    required this.slotted,
   });
 
   final String title;
@@ -2093,6 +2108,7 @@ class _BlockTitle extends StatelessWidget {
   final TextStyle style;
   final int maxLines;
   final double logoMaxHeight;
+  final bool slotted;
 
   @override
   Widget build(BuildContext context) {
@@ -2104,12 +2120,19 @@ class _BlockTitle extends StatelessWidget {
         final int lines = constraints.maxHeight.isFinite
             ? (constraints.maxHeight / lineHeight).floor().clamp(1, maxLines)
             : maxLines;
-        final Widget text = Text(
-          title,
-          maxLines: lines,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        );
+        final Widget text = slotted
+            ? FushiTitleSlot(
+                title: title,
+                style: style,
+                height: logoMaxHeight,
+                maxLines: math.min(maxLines, 2),
+              )
+            : Text(
+                title,
+                maxLines: lines,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              );
         final ImageProvider? image = logo;
         if (image == null) return text;
         return FushiLogoTitle(

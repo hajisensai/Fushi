@@ -1484,6 +1484,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         widget.collection;
     final String saveDir = (await AppPaths.videoSubtitlesDirectory()).path;
     if (!mounted) return;
+    final CollectionSeasonSection<CollectionEpisodeSlot>? selected =
+        _selectedSection;
     await SubtitleWorkbenchPage.open(
       context,
       host: AppSubtitleWorkbenchHost(
@@ -1493,6 +1495,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       collection: SubtitleCollectionSpec(
         collection: collection,
         members: _members,
+        initialSeason: selected == null
+            ? null
+            : seasonNumberOfGroupKey(selected.groupKey),
       ),
       initialScope: SubtitleWorkbenchScope.collection,
     );
