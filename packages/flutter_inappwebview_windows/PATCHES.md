@@ -161,3 +161,29 @@ verified at runtime on this machine.
   The Linux fork carries the same helper (`linux/utils/content_type.h`).
 - Keep `content_type.h` pure ASCII: MSVC reads sources in the system code page
   and the plugin builds with `/WX`, so a non-ASCII comment fails with C4819.
+
+## Sync composition host visibility & clamp `WS_CHILD` position (2026-11-21)
+
+- `windows/in_app_webview/in_app_webview_manager.{h,cpp}`: register a
+  top-level `WindowProc` delegate listening to `WM_SIZE`, `WM_SHOWWINDOW`,
+  `WM_WINDOWPOSCHANGED`, and `WM_MOVE`, forwarding host window visibility to
+  all active and `keepAlive` WebViews (and initializing `createInAppWebView` /
+  `createSurface` from the live ancestor state). Without this, minimizing or
+  hiding the Fushi window left composition-mode WebView2 `Chrome_WidgetWin_1`
+  windows active on the desktop and swallowing mouse clicks (including when
+  `window_manager` swallows `WM_SIZE` `SIZE_MINIMIZED`).
+- `windows/custom_platform_view/custom_platform_view.cc` and
+  `windows/in_app_webview/in_app_webview.{h,cpp}`:
+  - Keep `hostWindowVisible_` and `isPaused_` orthogonal so `resume()` does not
+    call `put_IsVisible(true)` while the host window is hidden/minimized, and
+    un-minimizing does not unhide an explicitly paused WebView.
+  - Pass signed `double` coordinates from `setPosition` (validating
+    `std::isfinite`) instead of truncating via `static_cast<size_t>`.
+  - In composition mode (`surface_` non-null), compute `WS_CHILD` client
+    coordinates clamped inside the Flutter view client rect (no
+    `GetWindowRect` + `SM_CYCAPTION`/`SM_CXBORDER` screen offsets) and call
+    `NotifyParentWindowPositionChanged()` on position, surface-size, show, and
+    host move/resize events.
+- Guard tests:
+  `packages/flutter_inappwebview_windows/test/composition_host_visibility_position_test.dart`
+  and `fushi/test/widgets/inappwebview_windows_native_guards_test.dart`.
