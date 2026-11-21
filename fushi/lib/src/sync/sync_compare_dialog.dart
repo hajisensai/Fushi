@@ -19,7 +19,6 @@ import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
     show recordRemoteAudiobookPackageDownload;
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
-import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/paged_book_sync_position.dart';
@@ -619,14 +618,12 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
   final Map<String, int> statCountByTitle = <String, int>{};
   try {
     final Uint8List? body = await backend.getRemoteAggregateBody();
-    // HBK-AUDIT-028：整份快照在后台解码；顶层非 object 当空快照（无统计）。
-    final AggregateSnapshot? snapshot = body == null
-        ? null
-        : await AggregateSyncService.decodeWireSnapshotOff(body);
-    if (snapshot != null) {
-      for (final ReadingStatRecord r in snapshot.readingStats) {
-        statCountByTitle[r.title] = (statCountByTitle[r.title] ?? 0) + 1;
-      }
+    // HBK-AUDIT-028：整份快照在后台解码，只回「每本书几条统计」的小表；顶层非
+    // object 当空快照（无统计）。
+    if (body != null) {
+      statCountByTitle.addAll(
+        await AggregateSyncService.readingStatCountsByTitle(body),
+      );
     }
   } catch (e) {
     developer.log(

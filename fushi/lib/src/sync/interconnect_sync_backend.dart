@@ -2146,7 +2146,7 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// HBK-AUDIT-028：本 backend 只搬字节、不解码。整份快照的 UTF-8 / JSON 解码在
   /// [AggregateSyncService.syncOverClient] 里与折叠同一次后台计算完成（对比弹窗走
-  /// [AggregateSyncService.decodeWireSnapshotOff]），不落在调用方（UI）isolate。
+  /// [AggregateSyncService.readingStatCountsByTitle]），不落在调用方（UI）isolate。
   Future<Uint8List?> getRemoteAggregateBody() async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(

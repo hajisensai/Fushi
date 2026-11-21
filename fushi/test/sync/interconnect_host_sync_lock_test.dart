@@ -16,6 +16,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 
+import 'aggregate_host_wire_test_ext.dart';
+
 /// BUG-2717：本机当互联 host 时，对端的聚合 PUT / 合集 POST 不得排在本机整轮
 /// 自动同步（`runExclusiveWithSync`）后面；但仍须与本机出站同步的本地落库步骤
 /// 互斥（`runExclusiveWithSyncStateApply`），不能丢更新。

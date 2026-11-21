@@ -12,6 +12,7 @@ import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
+import 'package:fushi_engine/sync/aggregate_sync_owner.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
@@ -272,7 +273,12 @@ RemoteBookProgress _host(int norm, int updatedAt) => RemoteBookProgress(
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
+    // 「应用」会跑一轮互联聚合同步；testWidgets 的 FakeAsync 里推不动后台所有者上百
+    // 次跨 isolate 往返，这里让命令就地执行（执行位置另由
+    // aggregate_sync_off_ui_isolate_test.dart 用真后台所有者钉住）。
+    debugAggregateSyncOwnerInline = true;
   });
+  tearDown(() => debugAggregateSyncOwnerInline = false);
 
   Future<void> pumpDialog(
     WidgetTester tester,

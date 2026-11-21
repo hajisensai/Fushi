@@ -77,7 +77,6 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show hasExportablePdfContent, isPdfFile, pdfBookFilePath;
 import 'package:fushi_engine/stats/stat_facts.dart';
-import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';

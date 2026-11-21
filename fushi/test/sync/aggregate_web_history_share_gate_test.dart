@@ -12,6 +12,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
+import 'aggregate_host_wire_test_ext.dart';
 import 'fake_asset_store.dart';
 
 /// 浏览历史不跟「共享收藏夹」走（批量合并审查 B）：v128 把浏览历史挂在收藏族下，
@@ -173,7 +174,7 @@ void main() {
     });
   });
 
-  group('互联 host（getAggregateSnapshot / applyAggregateSnapshot）', () {
+  group('互联 host（getAggregateBody / applyAggregateBody）', () {
     LocalLibraryHostService host() => LocalLibraryHostService(
       db: db,
       dictionaryResourceRoot: Directory.systemTemp,

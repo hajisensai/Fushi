@@ -69,12 +69,12 @@ class _CapturingLibraryService implements FushiLibraryHostService {
       <String, RemoteBookProgress>{};
 
   @override
-  Future<AggregateSnapshot> getAggregateSnapshot() async =>
-      const AggregateSnapshot();
+  Future<Uint8List> getAggregateBody() async =>
+      encodeAggregateWireJson(const AggregateSnapshot().toJson());
 
   @override
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async =>
-      applied = snapshot;
+  Future<bool> applyAggregateBody(Uint8List body) async =>
+      (applied = decodeAggregateWireSnapshot(body)) != null;
 
   @override
   Future<CollectionManifest> getCollectionManifest() async =>
