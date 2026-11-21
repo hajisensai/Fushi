@@ -1,12 +1,76 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T13:14:14Z",
+ "generatedAt": "2026-11-21T13:51:56Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
-  "seq": 30651
+  "sha": "9f782cbde9ec0af9ce231dbf0665f3c8b156450b",
+  "seq": 30654
  },
  "builds": [
+  {
+   "seq": 30650,
+   "version": "3.4.0",
+   "sha": "c68133e6a430df425b0959828ec81dc89d5ce8ba",
+   "unknown": false,
+   "publishedAt": "2026-11-21T13:51:43Z",
+   "testflight": false,
+   "baseSeq": 30562,
+   "prs": [
+    4037,
+    4021,
+    4020,
+    4019,
+    4018,
+    4013,
+    4017,
+    4016,
+    4015,
+    4014,
+    4012,
+    4011,
+    4010,
+    4009,
+    4008,
+    4007,
+    4006,
+    4005,
+    4004,
+    4001,
+    4026
+   ],
+   "direct": [
+    {
+     "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
+     "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
+    },
+    {
+     "sha": "4e15eaadd412986420ca6bea4a39f859f30fa524",
+     "subject": "docs(bugs): 合并 #4001–#4026 后重建 BUGS 索引"
+    },
+    {
+     "sha": "b6c4ad00f13827d4694de454becb48daafbf04ad",
+     "subject": "test(srs): 更改笔记类型用例等编辑页重读落定再断言（机器忙时抢跑）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279888"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+    },
+    "ios": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+    }
+   }
+  },
   {
    "seq": 30562,
    "version": "3.4.0",
@@ -134,7 +198,8 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
     },
     "macos": {
      "state": "failed",
@@ -524,66 +589,34 @@
   }
  ],
  "pending": {
-  "headSha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
-  "headSeq": 30651,
+  "headSha": "9f782cbde9ec0af9ce231dbf0665f3c8b156450b",
+  "headSeq": 30654,
   "prs": [
-   4037,
-   4021,
-   4020,
-   4019,
-   4018,
-   4013,
-   4017,
-   4016,
-   4015,
-   4014,
-   4012,
-   4011,
-   4010,
-   4009,
-   4008,
-   4007,
-   4006,
-   4005,
-   4004,
-   4001,
-   4026
+   4038
   ],
   "direct": [
    {
     "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
     "subject": "chore(bugs): settle BUG number collisions on c68133e6a"
-   },
-   {
-    "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
-    "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
-   },
-   {
-    "sha": "4e15eaadd412986420ca6bea4a39f859f30fa524",
-    "subject": "docs(bugs): 合并 #4001–#4026 后重建 BUGS 索引"
-   },
-   {
-    "sha": "b6c4ad00f13827d4694de454becb48daafbf04ad",
-    "subject": "test(srs): 更改笔记类型用例等编辑页重读落定再断言（机器忙时抢跑）"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279888"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863008"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
    }
   }
  },
@@ -2918,6 +2951,15 @@
    "mergedAt": "2026-11-21T11:54:04Z",
    "additions": 165,
    "deletions": 3,
+   "labels": []
+  },
+  "4038": {
+   "number": 4038,
+   "title": "fix(compute): 整文件哈希下沉 Rust，修后台视频指纹预热让 UI 掉帧（BUG-5088）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T13:50:25Z",
+   "additions": 313,
+   "deletions": 40,
    "labels": []
   }
  }
