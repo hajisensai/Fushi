@@ -11811,6 +11811,8 @@
   "sync_now_module_disabled": "「同步与备份」模块已关闭",
   "sync_now_no_changes": "无新增",
   "sync_now_peer_outdated": "对端设备的 Fushi 版本过旧，$count 项没同步，请升级对端",
+  "sync_now_peer_outdated_degraded": "对端设备的 Fushi 版本过旧，$count 项只能降级同步，请升级对端",
+  "sync_now_peer_outdated_mixed": "对端设备的 Fushi 版本过旧，$missing 项没同步、$limited 项只能降级同步，请升级对端",
   "sync_now_service_configs_in": "↓$count 项服务配置",
   "sync_now_settings_in": "↓$count 项设置",
   "sync_now_settings_out": "↑$count 项设置",
