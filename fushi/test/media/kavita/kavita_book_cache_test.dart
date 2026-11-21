@@ -330,6 +330,42 @@ void main() {
       server.gate!.complete();
       await trimming;
     });
+
+    // HBK-AUDIT-041 的候选快照：淘汰进行中别的书被固定，可清理集合少了一本，开头拍的
+    // 快照已过时；必须按最新状态重排，不能照旧快照多删一本。
+    test(
+      'pinning a kept copy mid-trim re-plans; no extra copy is evicted',
+      () async {
+        final _Server server = _Server()..gate = Completer<void>();
+        // 排位（新 → 旧）：Keep 600、Newer 500、Victim 10（阅读位置时间）、Mid 5。
+        await insertBook(
+          'Victim',
+          _binding(1, lastOpenedAt: 1, lastPushedPage: 2),
+          localSection: 7,
+        );
+        await insertBook('Newer', _binding(2, lastOpenedAt: 500));
+        await insertBook('Mid', _binding(3, lastOpenedAt: 5));
+        await insertBook('Keep', _binding(4, lastOpenedAt: 600));
+        final KavitaBookService svc = service(
+          server: server,
+          cacheLimit: 2,
+          pushTimeout: const Duration(seconds: 30),
+        );
+        final Future<KavitaCacheCleanup> trimming = svc.trimCache();
+        await server.pushStarted.future;
+        // 快照里该删 Victim 与 Mid；Victim 推进度时用户把 Newer 固定成下载。
+        expect(await svc.pin('Newer'), isTrue);
+        server.gate!.complete();
+        final KavitaCacheCleanup result = await trimming;
+        expect(deleted, <String>['Victim']);
+        expect(result.removed, 1);
+        expect(
+          await db.getEpubBook('Mid'),
+          isNotNull,
+          reason: '固定 Newer 后缓存副本只剩 Keep / Mid，不超限，Mid 不该再删',
+        );
+      },
+    );
   });
 
   group('trimCache', () {
