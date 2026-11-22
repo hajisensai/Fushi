@@ -137,6 +137,11 @@
 | [BUG-5197](bugs/BUG-5197-video-collection-scroll-tab-switch-jank.md) | ✅ | ✅ | 视频合集滚动逐帧离屏重烘、切页派生数据每次 build 全量重算（合集滚动与切页卡顿） |
 | [BUG-5196](bugs/BUG-5196-mine-notice-refetch-audio-action.md) | 🚧 | 🚧 | mine-notice-refetch-audio-action |
 | [BUG-5195](bugs/BUG-5195-mine-notice-chrome-placement.md) | ✅ | ✅ | mine-notice-chrome-placement |
+> 共 4520 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5195](bugs/BUG-5195-retheme-drops-shell-theme.md) | 🚧 | 🚧 | retheme-drops-shell-theme |
 | [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
 | [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
