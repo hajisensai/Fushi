@@ -3138,6 +3138,7 @@
   "download_task_import_blocked_archive_failed": "No se pudo extraer el archivo comprimido (puede estar dañado o protegido con contraseña)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "Extraer este archivo comprimido requiere la herramienta de línea de comandos 7-Zip, que no está instalada",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "Este libro ya está en tu biblioteca. Los audiolibros aún no se pueden adjuntar automáticamente a un EPUB existente; abre el libro e importa el audiolibro manualmente",
   "download_task_import_blocked_audiobook_no_audio": "No se encontraron archivos de audio en la descarga del audiolibro",
   "download_task_import_blocked_audiobook_no_subtitle": "No hay archivo de subtítulos en la descarga del audiolibro, por lo que no se puede alinear el audio con el texto",
