@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart' show RendererBinding;
 import 'package:material_ui/material_ui.dart';
 
@@ -22,6 +23,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_audio_overlay.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_tuning.dart';
@@ -75,6 +77,20 @@ class _MonetStage extends StatefulWidget {
 class _MonetStageState extends State<_MonetStage> {
   final MonetRailController _rail = MonetRailController();
   late double _introStart = widget.ticks.value.elapsed;
+
+  /// 浮动装饰的粒子（按主题图标缓存）。
+  List<IconData>? _decorIcons;
+  List<MonetDecorParticle> _decor = const <MonetDecorParticle>[];
+
+  List<MonetDecorParticle> _decorFor(LyricVisualizerTheme? theme) {
+    final List<IconData> icons = theme?.glyphIcons ?? const <IconData>[];
+    if (_decorIcons == null || !listEquals(_decorIcons, icons)) {
+      _decorIcons = icons;
+      _decor = buildMonetDecorParticles(icons);
+    }
+    return _decor;
+  }
+
   late final double _mountStart = widget.ticks.value.elapsed;
   int _lastTimeMs = 0;
   bool _capsuleHovered = false;
@@ -180,7 +196,9 @@ class _MonetStageState extends State<_MonetStage> {
     final double ls = monetLargeScreenScale(w);
     final double lyricFont = monetLyricFontPx(w, fs);
     final double inactiveFont = monetInactiveFontPx(w, fs);
-    final double translationFont = monetTranslationFontPx(w, fs);
+    // 副字幕字号再乘全局字幕字号倍数（folia subtitleFontScale）。
+    final double translationFont =
+        monetTranslationFontPx(w, fs) * v.subtitle.effectiveFontScale;
     final bool mirrored = cfg.mirrored;
     final double side = mirrored ? -1 : 1;
     final bool showPortrait = cfg.showPortrait && monetShowsPortrait(w);
@@ -373,11 +391,14 @@ class _MonetStageState extends State<_MonetStage> {
                       fontWeight: v.theme?.fontWeight ?? FontWeight.w600,
                     ),
                   ),
-                  trackStyle: v.applyThemeFont(
+                  // 副字幕字体按全局字幕偏好（跟随歌词 = 主题字体）。
+                  trackStyle: v.subtitle.applyFont(
                     TextStyle(
                       fontWeight: v.theme?.fontWeight ?? FontWeight.w500,
                     ),
+                    v.theme,
                   ),
+                  subtitle: v.subtitle,
                 ),
               ),
             ),
@@ -398,9 +419,11 @@ class _MonetStageState extends State<_MonetStage> {
           cfg.descriptionVisibility == 'always',
           aDesc,
           motion,
-          cfg.customDescription.isNotEmpty
-              ? cfg.customDescription
-              : t.music_visualizer_mode_monet,
+          monetCapsuleLabel(
+            custom: cfg.customDescription,
+            theme: v.theme,
+            fallback: t.music_visualizer_mode_monet,
+          ),
         ),
     ];
 
@@ -435,9 +458,28 @@ class _MonetStageState extends State<_MonetStage> {
         ),
     ];
 
+    final List<MonetDecorParticle> decor = _decorFor(v.theme);
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
+        // 浮动装饰在文字与肖像下面（folia z-5 < z-10），入场 2.2 秒 easeOut 淡入。
+        if (decor.isNotEmpty)
+          IgnorePointer(
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: MonetFloatingDecorPainter(
+                particles: decor,
+                color: pal.secondary,
+                seconds: tick.elapsed - _introStart,
+                still: !motion,
+                fade: motion
+                    ? Curves.easeOut.transform(
+                        ((tick.elapsed - _introStart) / 2.2).clamp(0.0, 1.0),
+                      )
+                    : 1,
+              ),
+            ),
+          ),
         Center(
           child: SizedBox(
             width: rowW,

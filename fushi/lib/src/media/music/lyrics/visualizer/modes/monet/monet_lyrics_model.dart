@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:flutter/animation.dart' show Curves;
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 行状态（folia `MonetLineStatus`）。
 enum MonetLineStatus { waiting, active, passed }
@@ -330,17 +331,18 @@ double monetTextBoxHeight({
 }
 
 /// 译文盒子的保留高度（0 行即无译文）。
-double monetTranslationBoxHeight(double fontPx, int lineCount) {
-  if (lineCount <= 0) return 0;
-  final int visible = math.min(lineCount, kMonetTranslationLineLimit);
-  return visible * fontPx * kMonetTranslationLineHeightFactor +
-      monetTranslationPaddingTop(fontPx) +
-      monetTranslationPaddingBottom(fontPx);
+/// 描述胶囊的文字（folia `capsuleLabel`）：用户自定义 → 主题描述 → 主题名 → 样式名。
+String monetCapsuleLabel({
+  required String custom,
+  required LyricVisualizerTheme? theme,
+  required String fallback,
+}) {
+  for (final String? s in <String?>[custom, theme?.description, theme?.name]) {
+    final String v = s?.trim() ?? '';
+    if (v.isNotEmpty) return v;
+  }
+  return fallback;
 }
-
-/// 译文只显示含字母 / 数字的（`//`、`●●●` 之类占位不显示）。
-bool monetIsReadableSubtitle(String? text) =>
-    text != null && RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(text);
 
 // ---------------------------------------------------------------------------
 // 扫字与发光（folia `monetLyricMotion.ts` / `MonetRailTokens.tsx`）

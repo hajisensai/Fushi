@@ -137,20 +137,49 @@ class MonetWordGeom {
             .reduce((Rect a, Rect b) => a.expandToInclude(b));
 }
 
-/// 一行排好的字：白字 TextPainter、各词几何、译文。
+/// 当前句下面的一行副字幕（folia `MonetSubtitleTrackLayout`）：双行时第二行字号 0.88、上间距
+/// 0.25em、透明度再乘 0.82。
+class MonetSubtitleTrack {
+  MonetSubtitleTrack._({
+    required this.painter,
+    required this.fontPx,
+    required this.secondary,
+  });
+
+  final TextPainter painter;
+  final double fontPx;
+  final bool secondary;
+
+  int get lineCount => math.max(1, painter.computeLineMetrics().length);
+
+  double get paddingTop => secondary
+      ? fontPx * kLyricVisualizerSecondarySubtitleGapEm
+      : monetTranslationPaddingTop(fontPx);
+
+  /// 这一行的保留高度（上下内边距 + 可见行）。
+  double get height =>
+      paddingTop +
+      math.min(lineCount, kMonetTranslationLineLimit) *
+          fontPx *
+          kMonetTranslationLineHeightFactor +
+      monetTranslationPaddingBottom(fontPx);
+}
+
+/// 一行排好的字：白字 TextPainter、各词几何、副字幕。
 class MonetLineText {
   MonetLineText._({
     required this.painter,
     required this.words,
     required this.lineCount,
     required this.x0,
-    required this.track,
+    required this.tracks,
     required this.lineEndMs,
     this.isChorus = false,
   });
 
   /// 排版一行。[maxWidth] 为正文换行宽度，[contentWidth] 为栏宽（右对齐时用）。[theme] 有按词着色
-  /// 时给命中的词记上颜色；[textStyle] 带主题字体 / 字重。
+  /// 时给命中的词记上颜色；[textStyle] 带主题字体 / 字重。副字幕按 [subtitle]（全局字幕偏好：
+  /// 译文 / 罗马音 / 两行 / 不要）取行，[trackStyle] 已套字幕字体。
   factory MonetLineText.layout({
     required LyricVisualizerLine line,
     required double fontPx,
@@ -161,6 +190,8 @@ class MonetLineText {
     LyricVisualizerTheme? theme,
     TextStyle textStyle = const TextStyle(fontWeight: FontWeight.w600),
     TextStyle trackStyle = const TextStyle(fontWeight: FontWeight.w500),
+    LyricVisualizerSubtitleSettings subtitle =
+        LyricVisualizerSubtitleSettings.defaults,
   }) {
     final double maxW = math.max(contentWidth - 8, 60);
     List<LyricVisualizerGlyph> glyphs = line.glyphs;
@@ -268,36 +299,56 @@ class MonetLineText {
       }
     }
 
-    final String? sub = monetIsReadableSubtitle(line.translation)
-        ? line.translation!.trim()
-        : monetIsReadableSubtitle(line.romanization)
-        ? line.romanization!.trim()
-        : null;
-    TextPainter? track;
-    if (sub != null) {
-      track = TextPainter(
-        text: TextSpan(
-          text: sub,
-          style: trackStyle.copyWith(
-            color: trackColor,
-            fontSize: translationFontPx,
-            height: kMonetTranslationLineHeightFactor,
-            letterSpacing: 0,
-          ),
-        ),
-        maxLines: kMonetTranslationLineLimit,
-        ellipsis: '…',
-        textAlign: alignEnd ? TextAlign.right : TextAlign.left,
-        textDirection: TextDirection.ltr,
-      )..layout(minWidth: maxW, maxWidth: maxW);
-    }
+    final List<LyricVisualizerSubtitleRow> rows = subtitle.rowsFor(
+      lineText: line.text,
+      translation: line.translation,
+      romanization: line.romanization,
+    );
+    final List<MonetSubtitleTrack> tracks = <MonetSubtitleTrack>[
+      for (int r = 0; r < rows.length; r++)
+        () {
+          final bool secondary = r > 0;
+          final double px = secondary
+              ? translationFontPx * kLyricVisualizerSecondarySubtitleSize
+              : translationFontPx;
+          return MonetSubtitleTrack._(
+            fontPx: px,
+            secondary: secondary,
+            painter: TextPainter(
+              text: TextSpan(
+                text: rows[r].text,
+                style: trackStyle.copyWith(
+                  color: secondary
+                      ? trackColor.withValues(
+                          alpha:
+                              trackColor.a *
+                              kLyricVisualizerSecondarySubtitleOpacity,
+                        )
+                      : trackColor,
+                  fontSize: px,
+                  fontWeight: secondary
+                      ? theme?.fontWeight ??
+                            kLyricVisualizerSecondarySubtitleWeight
+                      : trackStyle.fontWeight,
+                  height: kMonetTranslationLineHeightFactor,
+                  letterSpacing: 0,
+                ),
+              ),
+              maxLines: kMonetTranslationLineLimit,
+              ellipsis: '…',
+              textAlign: alignEnd ? TextAlign.right : TextAlign.left,
+              textDirection: TextDirection.ltr,
+            )..layout(minWidth: maxW, maxWidth: maxW),
+          );
+        }(),
+    ];
 
     return MonetLineText._(
       painter: painter,
       words: geoms,
       lineCount: math.max(1, painter.computeLineMetrics().length),
       x0: alignEnd ? contentWidth - maxW : 0,
-      track: track,
+      tracks: tracks,
       // folia `getLineRenderEndTime`：光晕留到句尾离场窗口结束。
       lineEndMs: line.renderEndMs,
       isChorus: line.isChorus,
@@ -311,26 +362,32 @@ class MonetLineText {
   /// 正文在栏内的 x。
   final double x0;
 
-  /// 译文（没有为 null）。
-  final TextPainter? track;
+  /// 副字幕行（没有为空；只在当前句画）。
+  final List<MonetSubtitleTrack> tracks;
   final int lineEndMs;
 
   /// 副歌行（folia `line.isChorus`）：强调色光晕、扫字色混强调色、光晕更大。
   final bool isChorus;
 
-  int get trackLineCount =>
-      track == null ? 0 : math.max(1, track!.computeLineMetrics().length);
+  /// 副字幕各行合计的保留高度。
+  double get tracksHeight {
+    double h = 0;
+    for (final MonetSubtitleTrack t in tracks) {
+      h += t.height;
+    }
+    return h;
+  }
 
-  /// 整个盒子（正文 + 当前句的译文）的保留高度。
-  double visualHeight(double fontPx, double translationFontPx, bool active) =>
+  /// 整个盒子（正文 + 当前句的副字幕）的保留高度。
+  double visualHeight(double fontPx, bool active) =>
       monetTextBoxHeight(fontPx: fontPx, lineCount: lineCount, active: active) +
-      (active
-          ? monetTranslationBoxHeight(translationFontPx, trackLineCount)
-          : 0);
+      (active ? tracksHeight : 0);
 
   void dispose() {
     painter.dispose();
-    track?.dispose();
+    for (final MonetSubtitleTrack t in tracks) {
+      t.painter.dispose();
+    }
   }
 
   /// 没有字形时间（空音节）：按字形均分整行。
@@ -378,7 +435,11 @@ class MonetRailFrame {
     this.keywordColoring = true,
     this.textStyle = const TextStyle(fontWeight: FontWeight.w600),
     this.trackStyle = const TextStyle(fontWeight: FontWeight.w500),
+    this.subtitle = LyricVisualizerSubtitleSettings.defaults,
   });
+
+  /// 全局字幕偏好（取哪几行副字幕）。
+  final LyricVisualizerSubtitleSettings subtitle;
 
   /// 本首的歌词动画主题（按词着色）。
   final LyricVisualizerTheme? theme;
@@ -475,6 +536,7 @@ class MonetRailController {
       theme: f.keywordColoring ? f.theme : null,
       textStyle: f.textStyle,
       trackStyle: f.trackStyle,
+      subtitle: f.subtitle,
     );
     _texts[index] = made;
     while (_texts.length > _cacheLimit) {
@@ -499,6 +561,7 @@ class MonetRailController {
       f.keywordColoring ? f.theme : null,
       f.textStyle,
       f.trackStyle,
+      f.subtitle,
     );
     if (key != _cacheKey) {
       if (_cacheKey != null && !identical(f.runtime, _lastRuntime)) {
@@ -530,7 +593,6 @@ class MonetRailController {
       for (int i = 0; i < entries.length; i++)
         texts[i].visualHeight(
               f.fontPx,
-              f.translationFontPx,
               entries[i].status == MonetLineStatus.active,
             ) *
             tones[i].scale,
@@ -659,7 +721,7 @@ class MonetRailController {
     if (opacity <= 0.003) return;
     final double blur = math.max(0, item.blur.value(now));
     final double s = item.scale.value(now);
-    final double visual = lt.visualHeight(fontPx, f.translationFontPx, active);
+    final double visual = lt.visualHeight(fontPx, active);
     final double padTop = monetTextPaddingTop(fontPx);
     final double lh = fontPx * kMonetLineHeightFactor;
     final bool clipped = !active && lt.lineCount > kMonetInactiveTextLineLimit;
@@ -723,27 +785,32 @@ class MonetRailController {
       );
     }
 
-    final TextPainter? track = lt.track;
-    if (active && track != null) {
-      final double p = f.motion
-          ? kMonetFadeCurve.transform(
-              ((now - item.activeSince) / 0.28).clamp(0.0, 1.0),
-            )
-          : 1;
-      if (p > 0) {
-        final double ty =
-            monetTextBoxHeight(
-              fontPx: fontPx,
-              lineCount: lt.lineCount,
-              active: true,
-            ) +
-            monetTranslationPaddingTop(f.translationFontPx) +
-            8 * (1 - p);
-        if (p < 1) {
-          canvas.saveLayer(bounds, Paint()..color = Color.fromRGBO(0, 0, 0, p));
+    if (active && lt.tracks.isNotEmpty) {
+      double top = monetTextBoxHeight(
+        fontPx: fontPx,
+        lineCount: lt.lineCount,
+        active: true,
+      );
+      for (int r = 0; r < lt.tracks.length; r++) {
+        final MonetSubtitleTrack track = lt.tracks[r];
+        // 各行 0.28 秒淡入上移，第二行晚 0.04 秒（folia `MONET_SUBTITLE_TRACK_STAGGER_S`）。
+        final double p = f.motion
+            ? kMonetFadeCurve.transform(
+                ((now - item.activeSince - r * 0.04) / 0.28).clamp(0.0, 1.0),
+              )
+            : 1;
+        if (p > 0) {
+          final double ty = top + track.paddingTop + 8 * (1 - p);
+          if (p < 1) {
+            canvas.saveLayer(
+              bounds,
+              Paint()..color = Color.fromRGBO(0, 0, 0, p),
+            );
+          }
+          track.painter.paint(canvas, Offset(lt.x0, ty));
+          if (p < 1) canvas.restore();
         }
-        track.paint(canvas, Offset(lt.x0, ty));
-        if (p < 1) canvas.restore();
+        top += track.height;
       }
     }
     if (layer) canvas.restore();

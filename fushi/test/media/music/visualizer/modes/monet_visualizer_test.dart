@@ -8,8 +8,10 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_audio_overlay.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_tuning.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart';
 
@@ -178,9 +180,6 @@ void main() {
       );
       expect(five, two);
       expect(fiveActive, greaterThan(five));
-      expect(monetTranslationBoxHeight(16, 0), 0);
-      expect(monetIsReadableSubtitle('●●●'), isFalse);
-      expect(monetIsReadableSubtitle('你好'), isTrue);
     });
   });
 
@@ -307,7 +306,7 @@ void main() {
         expect(g.offsets.first, 0);
         expect(g.offsets.last, greaterThan(0));
       }
-      expect(a.track, isNotNull);
+      expect(a.tracks, hasLength(1));
       a.dispose();
 
       final LyricVisualizerRuntime lrc = LyricVisualizerRuntime(
@@ -324,9 +323,9 @@ void main() {
       expect(b.lineCount, greaterThan(1));
       expect(b.words.length, greaterThan(5));
       expect(b.words.first.startMs, 3000);
-      expect(b.track, isNull);
+      expect(b.tracks, isEmpty);
       expect(
-        b.visualHeight(30, 16, false),
+        b.visualHeight(30, false),
         monetTextBoxHeight(fontPx: 30, lineCount: 2, active: false),
       );
       b.dispose();
@@ -462,9 +461,147 @@ void main() {
     });
   });
 
+  group('主题与字幕偏好', () {
+    test('胶囊文字：自定义 → 主题描述 → 主题名 → 样式名', () {
+      const LyricVisualizerTheme both = LyricVisualizerTheme(
+        name: '夜航',
+        description: ' 深夜的海 ',
+      );
+      expect(
+        monetCapsuleLabel(custom: '  ', theme: both, fallback: 'Monet'),
+        '深夜的海',
+      );
+      expect(
+        monetCapsuleLabel(custom: '我的', theme: both, fallback: 'Monet'),
+        '我的',
+      );
+      expect(
+        monetCapsuleLabel(
+          custom: '',
+          theme: const LyricVisualizerTheme(name: '夜航'),
+          fallback: 'Monet',
+        ),
+        '夜航',
+      );
+      expect(
+        monetCapsuleLabel(custom: '', theme: null, fallback: 'Monet'),
+        'Monet',
+      );
+    });
+
+    test('浮动装饰：没图标不画；粒子按下标确定，关键帧首尾相接', () {
+      expect(buildMonetDecorParticles(const <IconData>[]), isEmpty);
+      final List<MonetDecorParticle> ps = buildMonetDecorParticles(
+        const <IconData>[FushiIcons.star, FushiIcons.cloud],
+      );
+      // folia：(i*37+11)%100 > 20 的槽位才有粒子（i = 0、8 空着）。
+      expect(ps.map((MonetDecorParticle p) => p.id), <int>[
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9,
+      ]);
+      expect(ps.first.icon, FushiIcons.cloud);
+      for (final MonetDecorParticle p in ps) {
+        expect(p.opacity, inInclusiveRange(0.06, 0.17));
+        final ({double dx, double dy, double rotation, double opacity}) start =
+            monetDecorPose(p, 0);
+        final ({double dx, double dy, double rotation, double opacity}) end =
+            monetDecorPose(p, p.delay + p.duration - 1e-6);
+        expect(end.dx, closeTo(start.dx, 1e-3));
+        expect(end.dy, closeTo(start.dy, 1e-3));
+        expect(start.dy, p.reverse ? -40 : 40);
+      }
+    });
+
+    test('双行字幕：罗马音在前、译文退一级；隐藏时没有副字幕', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        LyricTimeline(
+          format: 'ttml',
+          timingQuality: LyricTimingQuality.line,
+          lines: <LyricLine>[
+            const LyricLine(
+              startMs: 0,
+              endMs: 2000,
+              syllables: <LyricSyllable>[
+                LyricSyllable(text: '夜空', startMs: 0, endMs: 2000),
+              ],
+              romanization: 'yozora',
+              translations: <LyricTranslation>[LyricTranslation('zh', '夜空中的光')],
+            ),
+          ],
+        ),
+      );
+      MonetLineText lay(LyricVisualizerSubtitleSettings s) =>
+          MonetLineText.layout(
+            line: rt.lines[0],
+            fontPx: 30,
+            translationFontPx: 20,
+            contentWidth: 600,
+            alignEnd: false,
+            trackColor: const Color(0xFFFFFFFF),
+            subtitle: s,
+          );
+      final MonetLineText both = lay(
+        const LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.both,
+        ),
+      );
+      expect(both.tracks, hasLength(2));
+      expect(both.tracks[0].fontPx, 20);
+      expect(both.tracks[1].fontPx, closeTo(17.6, 1e-9));
+      expect(both.tracks[1].paddingTop, closeTo(4.4, 1e-9));
+      expect((both.tracks[0].painter.text! as TextSpan).text, 'yozora');
+      expect(
+        both.visualHeight(30, true),
+        closeTo(
+          monetTextBoxHeight(fontPx: 30, lineCount: 1, active: true) +
+              both.tracks[0].height +
+              both.tracks[1].height,
+          1e-9,
+        ),
+      );
+      final MonetLineText single = lay(
+        LyricVisualizerSubtitleSettings.defaults,
+      );
+      expect(single.tracks, hasLength(1));
+      expect((single.tracks[0].painter.text! as TextSpan).text, '夜空中的光');
+      final MonetLineText hidden = lay(
+        const LyricVisualizerSubtitleSettings(hideTranslation: true),
+      );
+      expect(hidden.tracks, isEmpty);
+      both.dispose();
+      single.dispose();
+      hidden.dispose();
+    });
+  });
+
   group('冒烟', () {
     testWidgets('默认参数', (WidgetTester tester) async {
       await pumpVisualizerAcross(tester, monetVisualizerEntry);
+    });
+
+    testWidgets('主题图标浮动装饰 + 双行字幕 + 字幕字号 / 字体', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        monetVisualizerEntry,
+        theme: const LyricVisualizerTheme(
+          name: '夜航',
+          lyricsIcons: <LyricVisualizerThemeIcon>[
+            LyricVisualizerThemeIcon.moon,
+            LyricVisualizerThemeIcon.flower,
+          ],
+        ),
+        subtitle: const LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.both,
+          fontScale: 1.4,
+          font: LyricVisualizerSubtitleFont.serif,
+        ),
+      );
     });
 
     testWidgets('镜像 + 长方形 + 线条频谱 + 常显描述', (WidgetTester tester) async {
