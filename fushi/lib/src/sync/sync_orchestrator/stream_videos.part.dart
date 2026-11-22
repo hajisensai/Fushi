@@ -14,19 +14,25 @@ part of '../sync_orchestrator.dart';
 ///
 /// 两边都有之后 [_syncVideoProgressLive] 原样接管进度、播放偏好与看完标记。
 extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
-  /// 对齐流媒体书的行，返回之后进度阶段该用的 host 清单：推过东西就重取（刚注册的
-  /// 行这一轮就要对上进度，也要进拉取基线），否则原样返回 [hostList]。
+  /// 对齐流媒体书的行。返回之后进度阶段该用的 host 清单（推过东西就重取：刚注册的
+  /// 行这一轮就要对上进度，也要进拉取基线；否则原样返回 [hostList]），以及本机是否
+  /// 新落了行（落了的话调用方手里的 [localRows] 已过时，要重读）。
+  ///
+  /// [localRows] / [prefs] 是调用方在 sweep 开头读的本机视频行与偏好快照：稳态一轮
+  /// （两端行已对齐）这里不再碰 DB，视频进度 sweep 的 SQL 条数保持常数。
   ///
   /// 整段错误进 [report] 不中断 sweep；失败时返回 [hostList]，进度照旧按它同步。
-  Future<List<RemoteVideoInfo>> _reconcileStreamVideosLive(
+  Future<({List<RemoteVideoInfo> hostList, bool pulled})>
+  _reconcileStreamVideosLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-    List<RemoteVideoInfo> hostList,
-  ) async {
+    List<RemoteVideoInfo> hostList, {
+    required List<VideoBookRow> localRows,
+    required Map<String, String> prefs,
+  }) async {
     final Set<String> hostUids = <String>{
       for (final RemoteVideoInfo info in hostList) info.id,
     };
-    final List<VideoBookRow> localRows = await _db.allVideoBooks();
     final Set<String> localUids = <String>{
       for (final VideoBookRow r in localRows) r.bookUid,
     };
@@ -61,15 +67,23 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
         ? await backend.listRemoteVideos()
         : hostList;
 
+    bool pulled = false;
     try {
-      await _pullStreamVideosLive(report, current, localUids);
+      pulled = await _pullStreamVideosLive(
+        report,
+        current,
+        localUids,
+        since: SyncRepository.streamVideoPullSinceMsFromPrefs(_scope, prefs),
+      );
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
       report.noteError('live pull stream videos', e);
+      // 中途抛出时可能已落了几行：按「落过」处理，调用方重读一次行表。
+      pulled = true;
     }
 
-    return current;
+    return (hostList: current, pulled: pulled);
   }
 
   /// 把 [rows]（本机有、host 没有的流媒体书）注册给 host。返回是否改变了 host 清单。
@@ -128,14 +142,15 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
     return changed;
   }
 
-  /// 把 host 新有、本机没有的流媒体书落到本机（见扩展注释的基线语义）。
-  Future<void> _pullStreamVideosLive(
+  /// 把 host 新有、本机没有的流媒体书落到本机（见扩展注释的基线语义）。[since] 是
+  /// 本机拉取基线（sweep 开头的偏好快照里读的）。返回是否落了新行。
+  Future<bool> _pullStreamVideosLive(
     SyncRunReport report,
     List<RemoteVideoInfo> hostList,
-    Set<String> localUids,
-  ) async {
+    Set<String> localUids, {
+    required int since,
+  }) async {
     final SyncRepository repo = SyncRepository(_db);
-    final int since = await repo.getStreamVideoPullSinceMs(_scope);
     Map<String, int>? localTombstones;
     int newest = since;
     bool incomplete = false;
@@ -180,7 +195,7 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
     if (!incomplete && newest > since) {
       await repo.setStreamVideoPullSinceMs(_scope, newest);
     }
-    if (created.isEmpty) return;
+    if (created.isEmpty) return false;
     // 封面尽力而为（YouTube 缩略图），失败只是占位，不进报告。
     try {
       final Directory coversDir = await VideoStorage.coversDir();
@@ -199,5 +214,6 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
     } catch (e) {
       debugPrint('[SyncOrchestrator] stream video covers skipped: $e');
     }
+    return true;
   }
 }

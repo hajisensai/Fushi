@@ -75,10 +75,9 @@ String summarizeSyncReport(SyncRunReport r) {
   String failed = '$done${t.sync_now_failed_suffix(count: r.errors.length)}';
   // 拍板 other-sync-peer-version-errors：对端版本过旧导致没同步的维度不能只混进
   // 「N 项失败」——该做的是升级对端，要直说。具体哪几项在同步任务面板逐行列出。
-  final int outdated = r.peerGaps.where((SyncPeerGap g) => g.outdated).length;
-  if (outdated > 0) {
-    failed = '$failed · ${t.sync_now_peer_outdated(count: outdated)}';
-  }
+  // 降级同步的维度（[SyncPeerGapDimension.degraded]）照样同步了，不能算进「没同步」。
+  final String? peerOutdated = _peerOutdatedSummary(r.peerGaps);
+  if (peerOutdated != null) failed = '$failed · $peerOutdated';
   // BUG-1324：鉴权类失败不能和网络抖动一样只计进「N 项失败」——那句话里
   // 没有任何可操作信息。「凭据不被接受」要说去重新登录；「服务端拒绝」要把
   // 服务端给的原因原样摆出来，并说明这不是登录问题（否则用户会去反复重配
@@ -88,6 +87,28 @@ String summarizeSyncReport(SyncRunReport r) {
   final SyncAuthFailure auth = r.authFailures.first;
   return '$failed · '
       '${friendlySyncAuthFailure(auth.kind, auth.serverReason)}';
+}
+
+/// 「对端版本过旧」那一句：没同步的与降级同步的分开数（拍板
+/// other-sync-peer-version-errors）。只算 [SyncPeerGap.outdated]——对端不支持（升级也
+/// 解决不了）不叫用户升级。没有就返回 null。
+String? _peerOutdatedSummary(List<SyncPeerGap> gaps) {
+  int missing = 0;
+  int limited = 0;
+  for (final SyncPeerGap g in gaps) {
+    if (!g.outdated) continue;
+    if (g.dimension.degraded) {
+      limited++;
+    } else {
+      missing++;
+    }
+  }
+  if (missing > 0 && limited > 0) {
+    return t.sync_now_peer_outdated_mixed(missing: missing, limited: limited);
+  }
+  if (missing > 0) return t.sync_now_peer_outdated(count: missing);
+  if (limited > 0) return t.sync_now_peer_outdated_degraded(count: limited);
+  return null;
 }
 
 /// 鉴权失败后是否应当登出。这是一个**判断**，不是一个副作用，故抽成纯函数：

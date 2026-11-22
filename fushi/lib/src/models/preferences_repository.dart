@@ -1426,6 +1426,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 电脑端（Windows）「缓存其他应用的声音」开关的偏好键（设备本地）。
+  static const String crossAppAudioCaptureDesktopKey =
+      'mining_app_audio_capture_desktop';
+
+  /// 电脑端「缓存其他应用的声音」（拍板 design-cross-app-audio-desktop）：开着时启动即
+  /// 常驻录系统混音环（与 galgame 会话共用同一路 loopback），应用外查词制卡带查词前最后
+  /// 一句语音。默认关。Android 不持久化（每次都要用户重新同意屏幕共享）。
+  bool get crossAppAudioCaptureDesktop =>
+      getPref(crossAppAudioCaptureDesktopKey, defaultValue: false);
+
+  Future<void> setCrossAppAudioCaptureDesktop(bool value) async {
+    await setPref(crossAppAudioCaptureDesktopKey, value);
+    notifyListeners();
+  }
+
   /// 桌面截屏识字的 OCR 引擎设置（反馈 Eemf0HOZhj）：出厂跟随全局 OCR 引擎偏好
   /// （[mangaOcrEnginePreference]），解析见 [resolveScreenOcrEngine]。
   ScreenOcrEngineSetting get screenOcrEngine =>
@@ -1440,6 +1455,12 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('screen_ocr.engine', value.storageValue);
     notifyListeners();
   }
+
+  /// OCR 游戏模式上次框选的台词区域（`GalOcrRegion.toJson` 的 JSON 串）；没框过为 null。
+  String? get galOcrRegionJson => getPref('gal_ocr_region') as String?;
+
+  Future<void> setGalOcrRegionJson(String json) =>
+      setPref('gal_ocr_region', json);
 
   /// 应用外悬浮球菜单里有没有「打开 Fushi」。默认有；习惯切屏回 Fushi 的人可以
   /// 关掉（反馈 9bdhVTgq3A）。
@@ -6198,14 +6219,23 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `mesh`。
+  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `pixi`（反馈
+  /// l1ERGmWxjF）。只在用户手选时落库：没有行 = 跟着出厂默认走，所以默认从 `mesh`
+  /// 改成 `pixi` 后，没手选过的老用户自动切过去，手选过 `mesh` 的保持不变。
   String get musicLyricsBackdropStyle =>
-      (getPref('music_lyrics_backdrop_style', defaultValue: 'mesh')
+      (getPref('music_lyrics_backdrop_style', defaultValue: 'pixi')
           as String?) ??
-      'mesh';
+      'pixi';
 
   Future<void> setMusicLyricsBackdropStyle(String value) async {
     await setPref('music_lyrics_backdrop_style', value);
+    notifyListeners();
+  }
+
+  /// 「恢复默认」：删掉这一行回到「跟着出厂默认走」，而不是把此刻的默认值钉死成
+  /// 显式选择（钉死后再改出厂默认就分不清「手选」与「默认」，BUG-5167）。
+  Future<void> clearMusicLyricsBackdropStyle() async {
+    await removePref('music_lyrics_backdrop_style');
     notifyListeners();
   }
 

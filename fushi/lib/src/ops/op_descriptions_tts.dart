@@ -1,6 +1,11 @@
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
+    show
+        audiobookRegistrationRevision,
+        captureAudiobookRegistration,
+        restoreAudiobookRegistration;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
@@ -16,6 +21,9 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 /// - 发起整卷生成：生成完成后新音频覆盖旧音频、旧的恢复不了，所以是 irreversible
 ///   （执行前确认），进行中可用 `tts.manga.render-cancel` 取消；
 /// - 取消标注：已标的页保留，没有可恢复的东西，irreversible。
+/// - 导入成品清单：执行前给登记（音频 / 对齐四列、整组 cue、断点）拍快照，撤销时登记
+///   还是导入后的样子（指纹相同）才放回，之后被重新生成 / 补句 / 再导入改过报
+///   superseded。只动登记，不删音频文件。
 List<OpDescription> describeTtsOps(OpDescribeKit kit) {
   final OpAvailability Function() manga = kit.whenModule(ModuleId.manga);
   final TtsCtlDeps deps = ttsCtlDeps(kit.context);
@@ -404,6 +412,81 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
           if (id == null) throw const CtlFailure.notFound('没有任务 id');
           await deps.renderQueue().retry('$id');
           return null;
+        },
+      ),
+    ),
+    OpDescription(
+      id: 'tts.manga.import',
+      method: 'POST',
+      pattern: '$item/import',
+      summary:
+          'Import a finished manga audio manifest (manifest.json made by an '
+          'external pipeline or another device) as the audio of a local manga '
+          'volume: same checks as the manga card import (structure, page count '
+          'and OCR signature match the volume, every audio file exists). '
+          'Replacing audio already registered for the volume needs confirm. '
+          'Audio files are referenced in place, not copied. Undo restores the '
+          'previous registration.',
+      risk: OpRisk.write,
+      availability: manga,
+      params: const <OpParam>[
+        _keyParam,
+        OpParam.string(
+          'manifest',
+          description: 'Absolute path of the manifest.json.',
+          required: true,
+        ),
+        OpParam.userGate(
+          'confirm',
+          description:
+              'User agreed to replace the audio already registered for this '
+              'volume (only needed when it has one).',
+        ),
+      ],
+      undo: opCustomUndo(
+        capture: (CtlCall call) async {
+          final String bookKey = await bookKeyOf(call);
+          return <String, Object?>{
+            'bookKey': bookKey,
+            'before': await captureAudiobookRegistration(
+              deps.appModel.database,
+              bookKey,
+            ),
+          };
+        },
+        payloadOf:
+            (CtlCall call, Map<String, Object?> before, Object? result) =>
+                <String, Object?>{
+                  ...before,
+                  if (result is Map) 'revision': result['revision'],
+                  if (result is Map) 'manifest': result['manifest'],
+                },
+        describe: (Map<String, Object?> p) =>
+            'manga audio of ${ttsMangaWireKey('${p['bookKey']}')} '
+            'from ${p['manifest']}',
+        revert: (Map<String, Object?> payload) async {
+          final String bookKey = '${payload['bookKey']}';
+          final TtsRenderJob? job = deps.renderQueue().latestFor(bookKey);
+          if (job != null && !job.isTerminal) {
+            return const OpUndoOutcome.failed('这一卷正在生成，结束后再撤销');
+          }
+          final String? now = await audiobookRegistrationRevision(
+            deps.appModel.database,
+            bookKey,
+          );
+          if (now == null || now != payload['revision']) {
+            return const OpUndoOutcome.superseded('导入之后这一卷的有声成品又被改过，没有覆盖');
+          }
+          final Object? before = payload['before'];
+          if (before is! Map) {
+            return const OpUndoOutcome.failed('撤销载荷里没有导入前的登记');
+          }
+          await restoreAudiobookRegistration(
+            deps.appModel.database,
+            bookKey,
+            Map<String, Object?>.from(before),
+          );
+          return const OpUndoOutcome.done();
         },
       ),
     ),

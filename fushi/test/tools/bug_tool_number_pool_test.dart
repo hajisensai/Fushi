@@ -452,6 +452,42 @@ void main() {
       expect(exists(root, 'docs/bugs/BUG-004-nogit-slug.md'), isTrue);
     });
 
+    repoTest('fixture 嵌在外层无关 git 仓库里 → 不爬进外层：照样按「不在仓库里」取号、不动外层预留计数', () async {
+      // dist 测试机的系统临时目录可能就在某个 git 工作区里：git 会一路往上找到外层仓库，
+      // 拿外层的基线 ref / 工作区 / 预留号计数来取号（上面两条「不在 git 仓库里」因此在
+      // 那台机器上变红，还把外层真仓库的预留计数推高了）。这里显式造出这种嵌套。
+      final outer = Directory.systemTemp.createTempSync('bug_outer_repo_');
+      temps.add(outer);
+      git(outer, <String>['init', '-q', '-b', 'main']);
+      git(outer, <String>['config', 'user.email', 'fixture@example.com']);
+      git(outer, <String>['config', 'user.name', 'fixture']);
+      git(outer, <String>['config', 'commit.gpgsign', 'false']);
+      writeFile(outer, 'docs/bugs/BUG-090-outer.md', bugDoc(90, '外层仓库的号'));
+      git(outer, <String>['add', '-A']);
+      git(outer, <String>['commit', '-qm', 'outer']);
+      final counter = File('${outer.path}/.git/${bug.reservedCounterFileName}')
+        ..writeAsStringSync('500\n');
+
+      final root = Directory('${outer.path}/nested')..createSync();
+      writeFile(root, 'docs/BUGS.md', indexShell);
+      writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
+      bug.bugRepoRoot = root.path;
+
+      await runBug(() => bug.cmdNew(<String>['nested-scan', '标题', '--scan']));
+      expect(warn.join('\n'), contains('未能扫描分支/工作区'));
+      expect(exists(root, 'docs/bugs/BUG-004-nested-scan.md'), isTrue);
+
+      await runBug(() => bug.cmdNew(<String>['nested-default', '标题']));
+      expect(warn.join('\n'), contains('拿不到基线'));
+      expect(exists(root, 'docs/bugs/BUG-005-nested-default.md'), isTrue);
+
+      expect(
+        counter.readAsStringSync().trim(),
+        '500',
+        reason: '外层仓库 .git/ 里的本机预留号计数不能被 fixture 推进',
+      );
+    });
+
     repoTest('默认口径不在 git 仓库里 → 只按本地取号，并说明拿不到基线', () async {
       final root = makeBareFixture('bug_nogit_default_');
       temps.add(root);

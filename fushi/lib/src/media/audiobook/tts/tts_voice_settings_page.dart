@@ -26,6 +26,7 @@ import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:just_audio/just_audio.dart';
@@ -865,8 +866,12 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       );
       final TtsCachedAudio audio = await cache.obtain(
         key,
-        (String out) =>
-            provider.synthesize(text, outputPath: out, cancel: cancel),
+        (String out) => ttsSynthesizeSplittingOnReject(
+          provider,
+          text,
+          outputPath: out,
+          cancel: cancel,
+        ),
       );
       if (!mounted || cancel.isCancelled) return;
       // 播完才释放：just_audio 的 play() 在桌面 media_kit 下发出命令即返回，

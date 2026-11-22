@@ -84,7 +84,9 @@ void main() {
     final int small = await selectsFor(2);
     final int large = await selectsFor(24);
     expect(large, small, reason: '24 集与 2 集的 SELECT 条数应相同（无逐集查询）');
-    expect(small, lessThanOrEqualTo(6));
+    // 6 条快照本体 + 2 条分栏批量查询（手动分栏 / 手动季集指定，拍板台
+    // iR6ccUys9H），都与集数无关。
+    expect(small, lessThanOrEqualTo(8));
   });
 
   test('按成员顺序返回，滤掉非视频与孤儿成员，集级刮削按 uid 对上', () async {

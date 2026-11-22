@@ -224,6 +224,7 @@ import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
+import 'package:fushi/src/media/video/remote_session_reload.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
@@ -492,6 +493,7 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
+        DictionaryPopupRealmKeyWebView,
         DictionaryPopupWebViewState,
         QueuedOverwriteReply,
         QueuedOverwriteSettled;
@@ -908,9 +910,16 @@ class _PlaylistEpisodeRef {
     this.completed = false,
     this.started = false,
     this.progress,
+    this.sectionKey,
   });
   final String? bookUid;
   final String title;
+
+  /// 生效分栏键：本地集是文件名派生叠上手动分栏 / 手动季集指定（见
+  /// `loadCollectionSections`）；互联远端合集成员是 host 下发的生效分栏
+  /// （`RemoteVideoInfo.collectionGroupKey`，BUG-5084）。null = 旧单行多集播放列表 /
+  /// 在线源集，面板按 [path] / [title] 现场派生。
+  final String? sectionKey;
 
   /// 剧集面板展示名（v68 Jellyfin 对齐：集级刮削集名）。null = 无集级集名，
   /// 面板回落 [title]。**刻意与 [title] 分开**：title 还流向制卡
@@ -1390,6 +1399,13 @@ abstract class VideoFushiTestHooks {
 
   /// 走与剧集面板 / 上下集同一条远端换集路径（[_loadRemoteEpisode]）载入第 [index] 集。
   Future<void> debugLoadRemoteEpisode(int index);
+
+  /// 走与播放器 EOF 回调同一条路径（[_handlePlaybackCompleted]）处理一次播完，
+  /// EOF 时的位置 / 时长由测试给（测试环境没有真实播放器）。
+  void debugHandlePlaybackEnded({
+    required int positionMs,
+    required int durationMs,
+  });
   bool get debugVideoFocusAttached;
   bool get debugVideoSurfaceHoldsFocus;
   VideoDiscNavigationState? get debugDiscNavigationState;
@@ -2099,6 +2115,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<void> debugLoadRemoteEpisode(int index) =>
       _loadRemoteEpisode(index, startIntent: EpisodeStartIntent.listSelect);
+
+  @override
+  void debugHandlePlaybackEnded({
+    required int positionMs,
+    required int durationMs,
+  }) => _handlePlaybackEnded(positionMs: positionMs, durationMs: durationMs);
 
   @override
   VideoDiscNavigationState? get debugDiscNavigationState =>
@@ -3542,7 +3564,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   DictionaryPopupWebViewState? get caretTopPopupState {
     final int idx = _topVisiblePopupIndex;
     if (idx < 0 || idx >= _popup.entries.length) return null;
-    return _popup.entries[idx].webViewKey.currentState;
+    return _popup.entries[idx].webViewKey.webViewState;
   }
 
   @override
@@ -4993,6 +5015,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _playlistCollectionImages = snapshot.images;
       final String? workTitle = snapshot.collectionMeta?.title.trim();
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
+      // 季分栏与合集详情页同一个入口（手动分栏 / 手动季集指定优先，拍板台
+      // iR6ccUys9H）：一次批量查齐。
+      final Map<String, String> sectionKeys = snapshot.sectionKeys;
       // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
       for (final VideoBookRow er in snapshot.episodes) {
         String? scrapedName;
@@ -5010,6 +5035,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             coverPath: er.coverPath,
             completed: er.completedAt != null,
             started: er.lastPositionMs > 0,
+            sectionKey: sectionKeys[er.bookUid],
           ),
         );
       }
@@ -5175,6 +5201,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             progress: (m.durationMs ?? 0) > 0 && m.positionMs > 0
                 ? (m.positionMs / m.durationMs!).clamp(0.0, 1.0)
                 : null,
+            // 分栏与合集详情页同口径：host 下发的生效分栏（BUG-5084）。
+            sectionKey: m.collectionGroupKey,
           ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];
@@ -6186,6 +6214,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (info == null || releaseClient is! RemoteVideoPlaybackRelease) return;
     if (!_remotePlaybackReleaseGenerations.add(generation)) return;
     unawaited(releaseClient.releaseRemoteVideoPlayback(info.id));
+  }
+
+  /// 在第 [generation] 次远端播放会话里把当前集重载到 [positionMs]：换线路 / 手动
+  /// 换档 / 自适应换档 / 换版本共用（HBK-AUDIT-005）。次序与每个异步边界的会话复核
+  /// 见 [reloadRemoteEpisodeInSession]；[generation] 由调用方在**发起时**（它自己的
+  /// 第一个 await 之前）取。会话的 info / client / 集号在这里一次取定，只在会话仍是
+  /// [generation] 时才被用到。返回本程是否收尾成功（false = 页面没了或已被换集接管）。
+  Future<bool> _reloadRemoteEpisodeInSession({
+    required int generation,
+    required int positionMs,
+  }) {
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final int episode = _currentEpisode < 0 ? 0 : _currentEpisode;
+    return reloadRemoteEpisodeInSession(
+      generation: generation,
+      currentGeneration: () => _remotePlaybackGeneration,
+      isMounted: () => mounted,
+      release: () => _releaseRemotePlayback(
+        info: info,
+        client: client,
+        generation: generation,
+      ),
+      reportStopped: () => _reportRemotePlaybackStopped(
+        info: info,
+        client: client,
+        positionMs: positionMs,
+        generation: generation,
+      ),
+      load: () => _loadRemoteEpisode(
+        episode,
+        // 必须是 explicitCue，否则 near-end 判据会把「快看完时换档 / 换线路」直接
+        // 归零回片头。
+        startIntent: EpisodeStartIntent.explicitCue,
+        initialPositionMsOverride: positionMs,
+      ),
+    );
   }
 
   /// Flush the local position and then report the remote session stop.
@@ -8910,7 +8975,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (index <= 0 &&
         _popup.entries.isNotEmpty &&
         _popup.entries.first.isWarmSlot) {
-      _popup.entries.first.webViewKey.currentState?.clearSelection();
+      _popup.entries.first.webViewKey.webViewState?.clearSelection();
     }
     setState(() => _popup.dismissAt(index));
     final bool stackEmpty = !_hasVisiblePopup;
@@ -9445,7 +9510,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int idx = _topVisiblePopupIndex;
     if (idx < 0) return; // 没有可见浮层：不消费，也没什么可制卡的
     final DictionaryPopupWebViewState? popup =
-        _popup.entries[idx].webViewKey.currentState;
+        _popup.entries[idx].webViewKey.webViewState;
     if (popup == null) return;
     unawaited(popup.mineFirstVisibleEntry());
   }

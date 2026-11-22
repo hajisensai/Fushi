@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -15,6 +17,7 @@ MusicScannedTrack _track(
   String path = '/m/a.flac',
   String? album = 'Album',
   String? albumUid = 'al',
+  String? albumArtist = 'X',
   String? cover,
   bool embedded = false,
   int? start,
@@ -39,7 +42,7 @@ MusicScannedTrack _track(
   artistCredit: 'X',
   albumTitle: album,
   albumTitleSort: null,
-  albumArtist: 'X',
+  albumArtist: albumArtist,
   albumUid: albumUid,
   discNo: 1,
   discTotal: 1,
@@ -81,6 +84,31 @@ class _ScriptedScanner {
     for (int i = 0; i < batches.length; i++) {
       yield MusicScanBatch(done: i == batches.length - 1, records: batches[i]);
     }
+  }
+}
+
+/// 数归组读了多少行：同时涉及曲目表与专辑表的查询（按目录 / 专辑名归组要两边一起读）
+/// 返回的行数。扫描开头取已知文件清单、收尾找消失曲目都只读曲目表，不算在内。
+class _MusicReadCounter extends QueryInterceptor {
+  int groupingRows = 0;
+
+  void reset() => groupingRows = 0;
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    final List<Map<String, Object?>> rows = await executor.runSelect(
+      statement,
+      args,
+    );
+    if (statement.contains('music_tracks') &&
+        statement.contains('music_albums')) {
+      groupingRows += rows.length;
+    }
+    return rows;
   }
 }
 
@@ -191,6 +219,213 @@ void main() {
         '${kMusicScanParserRevisionPrefKeyPrefix}3',
       ),
       isTrue,
+    );
+  });
+
+  test('BUG-5164：同目录同一张 CD 只有部分曲目写了专辑艺人，扫完并回一张；'
+      '不同目录、专辑艺人不止一位的不动', () async {
+    final _ScriptedScanner s = _ScriptedScanner(<List<MusicScanRecord>>[
+      <MusicScanRecord>[
+        // 第 1 首带专辑艺人 → (艺人, 专辑名) uid；2、3 首没写 → (目录, 专辑名) uid。
+        _track(
+          'h1',
+          path: '/m/CDBOX/01.flac',
+          album: 'Here, the world!',
+          albumUid: 'artist-uid',
+        ),
+        _track(
+          'h2',
+          path: '/m/CDBOX/02.flac',
+          album: 'Here，ｔｈｅ world! ',
+          albumUid: 'dir-uid',
+          albumArtist: null,
+        ),
+        _track(
+          'h3',
+          path: '/m/CDBOX/03.flac',
+          album: 'Here, the world!',
+          albumUid: 'dir-uid',
+          albumArtist: null,
+        ),
+        // 别的目录的同名无艺人专辑：不是同一张，不动。
+        _track(
+          'o1',
+          path: '/m/other/01.flac',
+          album: 'Here, the world!',
+          albumUid: 'other-dir-uid',
+          albumArtist: null,
+        ),
+        // 同目录两位不同专辑艺人 + 一张无艺人：说不清归谁，不动。
+        _track('v1', path: '/m/VA/01.flac', album: 'Best', albumUid: 'va-a'),
+        _track(
+          'v2',
+          path: '/m/VA/02.flac',
+          album: 'Best',
+          albumUid: 'va-b',
+          albumArtist: 'Y',
+        ),
+        _track(
+          'v3',
+          path: '/m/VA/03.flac',
+          album: 'Best',
+          albumUid: 'va-dir',
+          albumArtist: null,
+        ),
+      ],
+    ]);
+    await MusicLibraryScanner(
+      db,
+      scanner: s.call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    final Map<String, String?> albumOf = <String, String?>{
+      for (final MusicTrackRow t in await db.listMusicTracks())
+        t.trackUid: t.albumUid,
+    };
+    expect(albumOf['h1'], 'artist-uid');
+    expect(albumOf['h2'], 'artist-uid');
+    expect(albumOf['h3'], 'artist-uid');
+    expect(albumOf['o1'], 'other-dir-uid');
+    expect(
+      <String?>[albumOf['v1'], albumOf['v2'], albumOf['v3']],
+      <String>['va-a', 'va-b', 'va-dir'],
+    );
+    // 被并空的旧专辑行不再列出。
+    final Set<String> listed = <String>{
+      for (final MusicAlbumRow a in await db.listMusicAlbums()) a.albumUid,
+    };
+    expect(listed, isNot(contains('dir-uid')));
+    expect(listed, contains('artist-uid'));
+  });
+
+  test('HBK-AUDIT-027：并入后的无艺人曲目保留原始归属，增量扫描在受影响的组上重算——'
+      '新加第二位艺人的同名专辑就退回自己那张，那张再消失又并回去，带艺人的全没了也退回', () async {
+    MusicScannedTrack cd(
+      String uid,
+      String file,
+      String albumUid,
+      String? by,
+    ) => _track(
+      uid,
+      path: '/m/CD/$file',
+      album: 'Best',
+      albumUid: albumUid,
+      albumArtist: by,
+    );
+    Future<Map<String, String?>> scan(List<MusicScanRecord> records) async {
+      await MusicLibraryScanner(
+        db,
+        scanner: _ScriptedScanner(<List<MusicScanRecord>>[records]).call,
+      ).scanSource(sourceId: 1, rootPath: '/m');
+      return <String, String?>{
+        for (final MusicTrackRow t in await db.listMusicTracks())
+          t.trackUid: t.albumUid,
+      };
+    }
+
+    // 第一次：01 带专辑艺人 X，02 没写 → 02 并到 X 那张。
+    Map<String, String?> albumOf = await scan(<MusicScanRecord>[
+      cd('h1', '01.flac', 'x-uid', 'X'),
+      cd('h2', '02.flac', 'dir-uid', null),
+    ]);
+    expect(albumOf, <String, String?>{'h1': 'x-uid', 'h2': 'x-uid'});
+
+    // 增量：01 / 02 没变（不重新解析），新加 03 带另一位专辑艺人 Y：
+    // 同目录同名有两位艺人，说不清 02 归谁 → 02 退回按标签算出的原专辑。
+    albumOf = await scan(<MusicScanRecord>[
+      const MusicScanUnchanged('/m/CD/01.flac'),
+      const MusicScanUnchanged('/m/CD/02.flac'),
+      cd('y1', '03.flac', 'y-uid', 'Y'),
+    ]);
+    expect(albumOf, <String, String?>{
+      'h1': 'x-uid',
+      'h2': 'dir-uid',
+      'y1': 'y-uid',
+    });
+
+    // 03 被删：又只剩一位艺人 → 02 再并回 X。
+    albumOf = await scan(<MusicScanRecord>[
+      const MusicScanUnchanged('/m/CD/01.flac'),
+      const MusicScanUnchanged('/m/CD/02.flac'),
+    ]);
+    expect(albumOf, <String, String?>{'h1': 'x-uid', 'h2': 'x-uid'});
+
+    // 01 也被删：没有带艺人的了 → 02 回到自己那张，不再挂在 X 名下。
+    albumOf = await scan(<MusicScanRecord>[
+      const MusicScanUnchanged('/m/CD/02.flac'),
+    ]);
+    expect(albumOf, <String, String?>{'h2': 'dir-uid'});
+  });
+
+  test('HBK-AUDIT-027：零变化的增量扫描收尾不读整源做归组；'
+      '有变化时只读受影响目录', () async {
+    final _MusicReadCounter counter = _MusicReadCounter();
+    await db.close();
+    db = FushiDatabase.forTesting(
+      NativeDatabase.memory().interceptWith(counter),
+    );
+    final List<MusicScanRecord> first = <MusicScanRecord>[
+      for (int d = 0; d < 20; d++)
+        for (int i = 0; i < 10; i++)
+          _track(
+            'd$d-$i',
+            path: '/m/D$d/$i.flac',
+            album: 'Album $d',
+            albumUid: i == 0 ? 'tag-$d' : 'dir-$d',
+            albumArtist: i == 0 ? 'X' : null,
+          ),
+    ];
+    await MusicLibraryScanner(
+      db,
+      scanner: _ScriptedScanner(<List<MusicScanRecord>>[first]).call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    expect(
+      (await db.listMusicTracks())
+          .where((MusicTrackRow t) => t.albumUid!.startsWith('dir-'))
+          .toList(),
+      isEmpty,
+    );
+
+    // 200 首全没变。
+    counter.reset();
+    await MusicLibraryScanner(
+      db,
+      scanner: _ScriptedScanner(<List<MusicScanRecord>>[
+        <MusicScanRecord>[
+          for (int d = 0; d < 20; d++)
+            for (int i = 0; i < 10; i++) MusicScanUnchanged('/m/D$d/$i.flac'),
+        ],
+      ]).call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    // ignore: avoid_print
+    print('zero-change regroup rows read: ${counter.groupingRows}');
+    expect(counter.groupingRows, 0);
+
+    // 只有 D3 新加一首：归组只读 D3 这一个目录（10 + 1 行）。
+    counter.reset();
+    await MusicLibraryScanner(
+      db,
+      scanner: _ScriptedScanner(<List<MusicScanRecord>>[
+        <MusicScanRecord>[
+          for (int d = 0; d < 20; d++)
+            for (int i = 0; i < 10; i++) MusicScanUnchanged('/m/D$d/$i.flac'),
+          _track(
+            'new',
+            path: '/m/D3/new.flac',
+            album: 'Album 3',
+            albumUid: 'dir-3',
+            albumArtist: null,
+          ),
+        ],
+      ]).call,
+    ).scanSource(sourceId: 1, rootPath: '/m');
+    // ignore: avoid_print
+    print('one-dir-change regroup rows read: ${counter.groupingRows}');
+    expect(counter.groupingRows, lessThanOrEqualTo(11));
+    expect(
+      (await db.listMusicTracks(
+        albumUid: 'tag-3',
+      )).map((MusicTrackRow t) => t.trackUid),
+      contains('new'),
     );
   });
 

@@ -6,7 +6,9 @@
 /// - **一句失败不让整卷失败，也不悄悄跳过**：失败的句子写一段按字数估长的静音占位
 ///   （`placeholder: true`），记进 [CastVoicingLedger]；只有取消与「占位静音都写不出」
 ///   这类整卷级问题才往外抛；
-/// - 重跑时音频没变的句子（文字 / 声音 / 种子都相同、文件还在）原样沿用，不重录；
+/// - 重跑时音频没变的句子（文字 / 声音 / 种子 / 整形版本都相同、文件还在）原样沿用，
+///   不重录；整形版本由后端给（[MangaRenderBackend.shapeVersion]），历史清单没记版本的
+///   句子按版本不符重出；
 /// - 清单写完后清掉目录里清单不再引用的音频（换过声音的旧文件、被取代的占位、没保留的
 ///   候选）。
 library;
@@ -24,6 +26,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 一句出不了声的原因（[code] 进未配音账本，界面按它出文案）。
@@ -45,6 +48,11 @@ class MangaLineFailure implements Exception {
 abstract interface class MangaRenderBackend {
   /// 同时合成几句（引擎并发上限；自建 GPU 服务通常是 1）。
   int get parallelism;
+
+  /// [synthesizeLine] / [cutClip] 出的音频的整形版本：裁首尾静音、淡入淡出、响度归一与
+  /// 编码参数的可比较指纹，参数一变它就变。写进清单行（[MangaRenderedLine.shape]），
+  /// 重跑时与旧行比对，不同就不沿用旧音频（[MangaRenderItem.canReuse]）。
+  String get shapeVersion;
 
   /// 用声音 [voice] 依次合成 [segments]，拼成一个文件并裁掉首尾静音。[seed] 与短句
   /// 定长只在引擎支持时生效（`tts_direction.dart`）。
@@ -159,10 +167,14 @@ class MangaRegenerateCandidate {
     required this.durationMs,
     required this.voice,
     required this.text,
+    required this.shape,
   });
 
   final String lineId;
   final int seed;
+
+  /// 出候选时后端的整形版本（[MangaRenderBackend.shapeVersion]），保留时写进清单。
+  final String shape;
 
   /// 候选文件名（相对清单目录）。
   final String file;
@@ -226,6 +238,7 @@ class MangaAudioRenderer {
       defaultVoice: defaultVoice,
       narrator: await _narrator(script, pageBlocks, cancel),
     );
+    final String shape = backend.shapeVersion;
     final Map<String, MangaRenderedLine> before = <String, MangaRenderedLine>{
       for (final MangaRenderedLine l
           in previous?.lines ?? <MangaRenderedLine>[])
@@ -252,16 +265,17 @@ class MangaAudioRenderer {
         try {
           final MangaRenderedLine? old = before[item.lineId];
           if (old != null &&
-              item.canReuse(old) &&
+              item.canReuse(old, shape: shape) &&
               await File(_pathOf(old.file)).exists()) {
             ledger.resolve(item.lineId);
             reused++;
             results[i] = item.rendered(
               file: old.file,
               durationMs: old.durationMs,
+              shape: shape,
             );
           } else {
-            results[i] = await _renderOne(item, old, ledger, cancel);
+            results[i] = await _renderOne(item, old, shape, ledger, cancel);
             if (!results[i]!.placeholder) produced++;
           }
           done++;
@@ -280,7 +294,7 @@ class MangaAudioRenderer {
       final MangaRenderedLine? old = before[item.lineId];
       final bool reusable =
           old != null &&
-          item.canReuse(old) &&
+          item.canReuse(old, shape: shape) &&
           await File(_pathOf(old.file)).exists();
       if (!reusable) pending.add(item);
     }
@@ -326,6 +340,7 @@ class MangaAudioRenderer {
   Future<MangaRenderedLine> _renderOne(
     MangaRenderItem item,
     MangaRenderedLine? old,
+    String shape,
     CastVoicingLedger ledger,
     TtsRenderCancelToken cancel,
   ) async {
@@ -336,7 +351,11 @@ class MangaAudioRenderer {
         cancel,
       );
       ledger.resolve(item.lineId);
-      return item.rendered(file: r.file, durationMs: r.durationMs);
+      return item.rendered(
+        file: r.file,
+        durationMs: r.durationMs,
+        shape: shape,
+      );
     } catch (e, stack) {
       final MangaLineFailure failure = _lineFailure(e, stack, cancel);
       final CastVoicingEntry entry = ledger.recordFailure(
@@ -361,18 +380,34 @@ class MangaAudioRenderer {
         ms = await backend.writeSilence(ms: ms, outputPath: part.path);
         await _publish(part, target);
       }
-      return item.rendered(file: file, durationMs: ms, placeholder: true);
+      return item.rendered(
+        file: file,
+        durationMs: ms,
+        shape: null,
+        placeholder: true,
+      );
     }
   }
 
   /// 按计划出一句音频到 [fileName]（先写 `.part` 再改名）。
+  ///
+  /// 整句都是纯标点的气泡（「……」「！」，[ttsTextIsSilent]）没有要念的内容：出一段
+  /// 按字数估长的停顿（与小说整书制作同一口径），算配好了、不进未配音账本；文件是
+  /// WAV，扩展名随之换成 `.wav`。只有部分片段纯标点时照常合成，那几段由合成入口
+  /// （`ttsSynthesizeSplittingOnReject`）写成静音、在句中留出停顿。
   Future<({String file, int durationMs})> _produce(
     MangaRenderItem item,
     String fileName,
     TtsRenderCancelToken cancel,
   ) async {
     cancel.throwIfCancelled();
-    final File target = File(_pathOf(fileName));
+    final bool pause = switch (item.source) {
+      MangaRenderSynth(:final List<String> segments) =>
+        segments.isNotEmpty && segments.every(ttsTextIsSilent),
+      MangaRenderClip() => false,
+    };
+    final String file = pause ? p.setExtension(fileName, '.wav') : fileName;
+    final File target = File(_pathOf(file));
     final File part = File('${target.path}.part');
     if (await part.exists()) await part.delete();
     final int ms;
@@ -384,13 +419,18 @@ class MangaAudioRenderer {
           :final List<String> segments,
         ):
           if (segments.isEmpty) throw const MangaLineFailure('empty_text');
-          ms = await backend.synthesizeLine(
-            voice: voice,
-            seed: seed,
-            segments: segments,
-            outputPath: part.path,
-            cancel: cancel,
-          );
+          ms = pause
+              ? await backend.writeSilence(
+                  ms: estimatePlaceholderMs(item.text),
+                  outputPath: part.path,
+                )
+              : await backend.synthesizeLine(
+                  voice: voice,
+                  seed: seed,
+                  segments: segments,
+                  outputPath: part.path,
+                  cancel: cancel,
+                );
         case MangaRenderClip(:final MangaAudiobookClip clip):
           ms = await backend.cutClip(
             clip: clip,
@@ -406,7 +446,7 @@ class MangaAudioRenderer {
     } finally {
       if (await part.exists()) await part.delete();
     }
-    return (file: fileName, durationMs: ms);
+    return (file: file, durationMs: ms);
   }
 
   static Future<void> _publish(File part, File target) async {
@@ -546,6 +586,7 @@ class MangaAudioRenderer {
           voice: voice,
           seed: seed,
           text: text,
+          shape: backend.shapeVersion,
         ),
       );
       ledger.resolve(req.lineId);
@@ -609,6 +650,7 @@ class MangaAudioRenderer {
         durationMs: r.durationMs,
         voice: voice,
         text: text,
+        shape: backend.shapeVersion,
       );
     } catch (e, stack) {
       throw _lineFailure(e, stack, cancel);
@@ -632,6 +674,7 @@ class MangaAudioRenderer {
         voice: candidate.voice,
         seed: candidate.seed,
         text: candidate.text,
+        shape: candidate.shape,
       ),
     );
     if (!replaced) {

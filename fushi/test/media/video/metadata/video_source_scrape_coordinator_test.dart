@@ -1348,6 +1348,64 @@ void main() {
     expect((await db.getVideoMetadataWorkByBook('loose-movie'))?.title, '主源电影');
   });
 
+  // BUG：无来源范围的整批级问题（资料源整批不可用 / 整批异常）早先拿
+  // `source.label` 当 workTitle，无来源范围的 label 是空串，界面上显示空标题。
+  // 范围级问题必须带结构化的范围 id，并在 run 摘要 JSON 里往返保留，界面才能
+  // 映射成本地化名字。
+  test('无来源范围的整批级错误带结构化范围 id，run 摘要往返保留', () async {
+    final File video = File(p.join(root.path, 'Movie (2024).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('loose-movie'),
+        title: const Value<String>('Movie'),
+        videoPath: Value<String>(video.path),
+      ),
+    );
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+          // 一家资料源都没有：走整批「资料源不可用」快速失败门。
+          registry: VideoMetadataProviderRegistry(
+            const <VideoMetadataProvider>[],
+          ),
+        );
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      sourcelessLocalVideoScrapeScope,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 1);
+    final SourceScrapeIssue issue = report.errors.single;
+    expect(issue.isScopeLevel, isTrue);
+    expect(issue.scopeSourceId, kSourcelessLocalVideoScrapeScopeId);
+    expect(issue.workKey, isNull);
+
+    final VideoSourceScrapeRunRow run =
+        (await db.select(db.videoSourceScrapeRuns).get()).single;
+    final SourceScrapeIssue stored = decodeSourceScrapeReport(
+      run.summaryJson,
+    )!.errors.single;
+    expect(stored.isScopeLevel, isTrue);
+    expect(stored.scopeSourceId, kSourcelessLocalVideoScrapeScopeId);
+    expect(stored.message, issue.message);
+  });
+
+  test('作品级问题解码后不是范围级；损坏的 scope 字段退化成作品级', () {
+    final SourceScrapeReport decoded = decodeSourceScrapeReport(
+      '{"errors":[{"work":"A","message":"m"},'
+      '{"work":"B","message":"m","scope":"x"}]}',
+    )!;
+    expect(decoded.errors.map((SourceScrapeIssue i) => i.isScopeLevel), <bool>[
+      false,
+      false,
+    ]);
+  });
+
   // 无来源范围没有一次完整的来源扫描，库里的视频集合证明不了作品目录是专属的：
   // 手动导入的一集躺在混着别的（没导入的）视频的下载目录里时，tvshow.nfo /
   // season.nfo 不能写进去。专属与否按磁盘实况判。

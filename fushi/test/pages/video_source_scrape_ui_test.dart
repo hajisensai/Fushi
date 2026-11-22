@@ -14,7 +14,11 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show sourcelessLocalVideoScrapeScope;
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
+    show showVideoSourceScrapeRunDetailDialog;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
@@ -135,6 +139,24 @@ class _ReportRunner implements VideoSourceScrapeRunner {
       ],
     );
   }
+}
+
+/// 刮削直接返回给定报告、同时支持手动指定（让 run 详情显示「手动指定」按钮）。
+class _ScopeIssueRunner extends _ManualBindingRunner {
+  _ScopeIssueRunner(this.report);
+
+  final SourceScrapeReport report;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async => report;
 }
 
 class _ManualBindingRunner
@@ -945,6 +967,124 @@ void main() {
     expect(find.text('Unknown Show'), findsOneWidget);
     expect(
       find.widgetWithText(TextButton, 'Rescrape this source'),
+      findsOneWidget,
+    );
+  });
+
+  // 无来源范围的整批级问题（engine 没有 i18n，来源 label 是空串）按结构化范围 id
+  // 映射成本地化名字，不显示空标题；范围级问题不对应作品，不给「手动指定」。
+  testWidgets('scope-level issues show the localized scope name in run detail '
+      'and the task panel', (WidgetTester tester) async {
+    // 任务面板的问题列表是懒列表：屏幕放大到让四条问题都在可视区内。
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final SourceScrapeReport report = SourceScrapeReport(
+      sourceIds: <int>[sourceId],
+      totalWorks: 2,
+      failedWorks: 2,
+      warnings: <SourceScrapeIssue>[
+        SourceScrapeIssue.scope(source, message: 'registered scope warning'),
+      ],
+      errors: <SourceScrapeIssue>[
+        SourceScrapeIssue.scope(
+          sourcelessLocalVideoScrapeScope,
+          message: 'providers down',
+        ),
+        SourceScrapeIssue.scope(
+          sourcelessLocalVideoScrapeScope,
+          message: 'batch crashed',
+        ),
+        const SourceScrapeIssue(workTitle: 'Unknown Show', message: 'nope'),
+      ],
+    );
+    final int runId = await db.insertVideoSourceScrapeRun(
+      VideoSourceScrapeRunsCompanion.insert(
+        sourceId: Value<int?>(sourceId),
+        scope: 'source',
+        status: 'failed',
+        failedWorks: const Value<int>(2),
+        summaryJson: Value<String?>(encodeSourceScrapeReport(report)),
+        startedAt: 1,
+        updatedAt: 2,
+        finishedAt: const Value<int?>(2),
+      ),
+    );
+    final VideoSourceScrapeRunRow run = (await db.getVideoSourceScrapeRuns(
+      limit: 20,
+    )).singleWhere((VideoSourceScrapeRunRow r) => r.id == runId);
+    final _ScopeIssueRunner runner = _ScopeIssueRunner(report);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Column(
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => unawaited(
+                    showVideoSourceScrapeRunDetailDialog(
+                      context: context,
+                      run: run,
+                      source: source,
+                      controller: controller,
+                    ),
+                  ),
+                  child: const Text('Open run'),
+                ),
+                TextButton(
+                  onPressed: () => unawaited(
+                    showVideoSourceScrapeTaskPanel(
+                      context: context,
+                      controller: controller,
+                      loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                    ),
+                  ),
+                  child: const Text('Open tasks'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open run'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.video_scrape_scope_sourceless), findsNWidgets(2));
+    expect(find.text('Anime'), findsOneWidget);
+    expect(find.text('Unknown Show'), findsOneWidget);
+    // 只有作品级问题给「手动指定」。
+    expect(
+      find.byTooltip(t.video_source_scrape_manual_search_title),
+      findsOneWidget,
+    );
+    Navigator.of(tester.element(find.text('Unknown Show'))).pop();
+    await tester.pumpAndSettle();
+
+    await controller.scrapeSource(source);
+    await tester.tap(find.text('Open tasks'));
+    await tester.pumpAndSettle();
+    final Finder list = find.byKey(
+      const PageStorageKey<String>('video-source-activity-list'),
+    );
+    expect(
+      find.descendant(
+        of: list,
+        matching: find.text(t.video_scrape_scope_sourceless),
+      ),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Unknown Show')),
       findsOneWidget,
     );
   });

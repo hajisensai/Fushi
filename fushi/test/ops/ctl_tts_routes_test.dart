@@ -298,6 +298,7 @@ void main() {
                 durationMs: 900,
                 voice: voice,
                 text: 'おはよう',
+                shape: 'test-shape',
               );
             },
         stopPlayback: (List<String> keys) async {},
@@ -760,6 +761,165 @@ void main() {
     expect(queue.latestFor(bookKey)!.isTerminal, isFalse);
   });
 
+  /// 在 [dir] 下写一份外部做好的成品：清单 + 每句一个音频（[missing] 里的不写）。
+  Future<File> writeExternalManifest(
+    String dir, {
+    int pageCount = 3,
+    String? signature = 'sig-1',
+    List<String> lineIds = const <String>['p0b0', 'p0b1'],
+    Set<String> missing = const <String>{},
+  }) async {
+    final Directory root = Directory(p.join(tmp.path, dir))
+      ..createSync(recursive: true);
+    for (final String id in lineIds) {
+      if (!missing.contains(id)) {
+        File(p.join(root.path, '$id.m4a')).writeAsStringSync('audio-$id');
+      }
+    }
+    final File file = File(p.join(root.path, 'manifest.json'));
+    await MangaRenderManifest(
+      pageCount: pageCount,
+      engineSignature: signature,
+      lines: <MangaRenderedLine>[
+        for (int i = 0; i < lineIds.length; i++)
+          MangaRenderedLine(
+            lineId: lineIds[i],
+            page: 0,
+            blocks: <int>[i],
+            speaker: '太郎',
+            kind: CastLineKind.spoken,
+            beatMs: 0,
+            file: '${lineIds[i]}.m4a',
+            durationMs: 1000 + i,
+            text: 'line $i',
+          ),
+      ],
+    ).save(file);
+    return file;
+  }
+
+  Matcher coded(int status, String code, [String? inMessage]) => throwsA(
+    isA<CtlFailure>()
+        .having((CtlFailure f) => f.status, 'status', status)
+        .having((CtlFailure f) => f.code, 'code', code)
+        .having(
+          (CtlFailure f) => f.message ?? '',
+          'message',
+          contains(inMessage ?? ''),
+        ),
+  );
+
+  Future<Object?> importManifest(String manifest, {bool confirm = false}) =>
+      call(
+        'POST',
+        '$item/import',
+        body: <String, Object?>{
+          'manifest': manifest,
+          if (confirm) 'confirm': true,
+        },
+      );
+
+  test('导入成品：相对路径 400；读不出 / 页数 / OCR / 缺音频各自 422 带原因；不写库', () async {
+    await expectLater(importManifest('rel/manifest.json'), failure(400));
+    await expectLater(
+      importManifest(p.join(tmp.path, 'nope', 'manifest.json')),
+      coded(422, 'manga_audio_invalid'),
+    );
+    final File pages = await writeExternalManifest('pages', pageCount: 5);
+    await expectLater(
+      importManifest(pages.path),
+      coded(422, 'manga_audio_page_mismatch', '5 页'),
+    );
+    final File ocr = await writeExternalManifest('ocr', signature: 'sig-old');
+    await expectLater(
+      importManifest(ocr.path),
+      coded(422, 'manga_audio_ocr_mismatch'),
+    );
+    final File gap = await writeExternalManifest(
+      'gap',
+      missing: <String>{'p0b1'},
+    );
+    await expectLater(
+      importManifest(gap.path),
+      coded(422, 'manga_audio_missing_audio', 'p0b1.m4a'),
+    );
+    expect(await db.getAudiobookByBookKey(bookKey), isNull);
+  });
+
+  test('导入成品：首次直接登记；已有成品不带 confirm 409，带了才替换；撤销逐级放回', () async {
+    final File first = await writeExternalManifest('first');
+    final (
+      Object? r1,
+      Future<OpUndoOutcome> Function() undoFirst,
+    ) = await runOp(
+      'tts.manga.import',
+      body: <String, Object?>{'manifest': first.path},
+    );
+    expect(r1, containsPair('replaced', false));
+    expect(r1, containsPair('lines', 2));
+    expect(r1, containsPair('durationMs', 2001));
+    AudiobookRow? row = await db.getAudiobookByBookKey(bookKey);
+    expect(row!.alignmentFormat, kMangaAlignmentFormat);
+    expect(row.alignmentPath, first.absolute.path);
+    expect(await db.getCuesForBook(bookKey), hasLength(2));
+
+    final File second = await writeExternalManifest(
+      'second',
+      lineIds: <String>['p0b0', 'p0b1', 'p2b0'],
+    );
+    await expectLater(
+      importManifest(second.path),
+      coded(409, 'manga_audio_exists', first.absolute.path),
+    );
+    expect(
+      (await db.getAudiobookByBookKey(bookKey))!.alignmentPath,
+      first.absolute.path,
+    );
+
+    final (
+      Object? r2,
+      Future<OpUndoOutcome> Function() undoSecond,
+    ) = await runOp(
+      'tts.manga.import',
+      body: <String, Object?>{'manifest': second.path, 'confirm': true},
+    );
+    expect(r2, containsPair('replaced', true));
+    expect(r2, containsPair('previous', first.absolute.path));
+    expect(await db.getCuesForBook(bookKey), hasLength(3));
+
+    // 后一次还在：先撤前一次会覆盖后来的导入 → superseded，不动。
+    expect((await undoFirst()).status, OpUndoStatus.superseded);
+    expect(await db.getCuesForBook(bookKey), hasLength(3));
+
+    expect((await undoSecond()).status, OpUndoStatus.done);
+    row = await db.getAudiobookByBookKey(bookKey);
+    expect(row!.alignmentPath, first.absolute.path);
+    expect(jsonDecode(row.audioPathsJson!) as List<dynamic>, hasLength(2));
+    final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
+    expect(cues.map((AudioCueRow c) => c.cueText), <String>[
+      'line 0',
+      'line 1',
+    ]);
+
+    // 再撤第一次：回到没有登记。
+    expect((await undoFirst()).status, OpUndoStatus.done);
+    expect(await db.getAudiobookByBookKey(bookKey), isNull);
+    expect(await db.getCuesForBook(bookKey), isEmpty);
+    // 音频文件是原地引用，撤销不删。
+    expect(File(p.join(first.parent.path, 'p0b0.m4a')).existsSync(), isTrue);
+  });
+
+  test('导入成品：本卷在生成时 409', () async {
+    final File file = await writeExternalManifest('busy');
+    await queue.enqueue(
+      bookKey: bookKey,
+      title: 't',
+      presetId: 'v1',
+      kind: TtsRenderJobKind.manga,
+    );
+    await expectLater(importManifest(file.path), failure(409));
+  });
+
   test('描述：写操作都可撤销或标 irreversible；生成与标注是长任务', () {
     expect(catalog['tts.manga.render']!.risk, OpRisk.irreversible);
     expect(catalog['tts.manga.annotate']!.spec.needsConfirmation, isTrue);
@@ -770,6 +930,7 @@ void main() {
       'tts.manga.line.regenerate',
       'tts.manga.render-cancel',
       'tts.manga.annotate',
+      'tts.manga.import',
     ]) {
       expect(catalog[id]!.undo, isNotNull, reason: id);
     }

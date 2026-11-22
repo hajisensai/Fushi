@@ -148,6 +148,7 @@ String texthookerLineSourceLabel(TexthookerLineSource source) =>
     switch (source) {
       TexthookerLineSource.engineHook => t.game_text_source_engine,
       TexthookerLineSource.websocket => t.game_text_source_websocket,
+      TexthookerLineSource.screenOcr => t.game_text_source_screen_ocr,
       TexthookerLineSource.unknown => t.game_text_source_unknown,
     };
 

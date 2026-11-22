@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.d
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_dev_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -2038,6 +2039,178 @@ void main() {
       find.byKey(const ValueKey<String>('feedback-detail-pending')),
       findsNothing,
     );
+  });
+
+  // BUG-5172（反馈 Andv5A4gh6）：详情页追加截图只能从相册选，没有提交页那样的
+  // 「粘贴图片」按钮与 Ctrl+V。剪贴板经本仓自有通道 `clipboard_image` 的
+  // `readImage`，这里在通道层打桩（同 feedback_paste_image_test）。
+  group('反馈人详情：从剪贴板追加截图', () {
+    late Object? clipboard;
+    setUp(() {
+      clipboard = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(FushiChannels.clipboardImage, (
+            MethodCall call,
+          ) async {
+            if (call.method != 'readImage') return null;
+            return clipboard;
+          });
+    });
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(FushiChannels.clipboardImage, null);
+    });
+
+    /// 补传窗口内的本机回执：详情页才给追加入口。
+    Future<FeedbackService> openAttachable(
+      WidgetTester tester, {
+      Widget page = const FeedbackDetailPage(feedbackId: 'oldoldold0'),
+    }) async {
+      tallView(tester);
+      await tester.runAsync(() async {
+        await seedOld();
+        await FeedbackTicketStore(root).write(<FeedbackTicket>[
+          FeedbackTicket(
+            id: 'oldoldold0',
+            ticket: 'old-ticket',
+            title: '旧反馈',
+            category: FeedbackCategory.bug,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+            status: FeedbackStatus.open,
+            updatedAt: 100,
+            seenAt: 100,
+          ),
+        ]);
+      });
+      final LeaderboardService b = board();
+      final FeedbackService f = feedback(b);
+      await tester.runAsync(f.load);
+      await tester.pumpWidget(wrap(b, f, page));
+      final Finder paste = find.byKey(
+        const ValueKey<String>('feedback-detail-paste-shot'),
+      );
+      await settleIo(tester, () => paste.evaluate().isNotEmpty);
+      return f;
+    }
+
+    List<http.Request> puts() => server.requests
+        .where((http.Request r) => r.method == 'PUT')
+        .toList(growable: false);
+
+    testWidgets('点「粘贴图片」把剪贴板里的截图传成下一个截图槽位', (WidgetTester tester) async {
+      final FeedbackService f = await openAttachable(tester);
+      final Finder paste = find.byKey(
+        const ValueKey<String>('feedback-detail-paste-shot'),
+      );
+      expect(paste, findsOneWidget);
+      expect(
+        find.descendant(
+          of: paste,
+          matching: find.text(t.feedback_compose_paste_image),
+        ),
+        findsOneWidget,
+      );
+
+      clipboard = <String, Object?>{'bytes': _kOnePixelPng};
+      await tester.ensureVisible(paste);
+      await tester.tap(paste);
+      await settleIo(
+        tester,
+        () => puts().isNotEmpty && !f.attachInFlight('oldoldold0'),
+      );
+      expect(puts(), hasLength(1));
+      expect(puts().single.url.path, '/v1/feedback/oldoldold0/attachments/s1');
+      expect(f.pendingSlots('oldoldold0'), isEmpty);
+    });
+
+    testWidgets('剪贴板里没有图片：提示，不上传', (WidgetTester tester) async {
+      await openAttachable(tester);
+      final Finder paste = find.byKey(
+        const ValueKey<String>('feedback-detail-paste-shot'),
+      );
+      await tester.ensureVisible(paste);
+      await tester.tap(paste);
+      await settleIo(
+        tester,
+        () => find.text(t.feedback_compose_paste_none).evaluate().isNotEmpty,
+      );
+      expect(find.text(t.feedback_compose_paste_none), findsOneWidget);
+      expect(puts(), isEmpty);
+    });
+
+    testWidgets('桌面 Ctrl+V（macOS ⌘V）同样追加剪贴板里的截图', (WidgetTester tester) async {
+      final FeedbackService f = await openAttachable(tester);
+      clipboard = <String, Object?>{'bytes': _kOnePixelPng};
+      final LogicalKeyboardKey modifier = Platform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(modifier);
+      await settleIo(
+        tester,
+        () => puts().isNotEmpty && !f.attachInFlight('oldoldold0'),
+      );
+      expect(puts(), hasLength(1));
+      expect(puts().single.url.path, '/v1/feedback/oldoldold0/attachments/s1');
+    });
+
+    // 嵌在反馈中心右栏时，左栏搜索框与详情在同一路由：在搜索框里 Ctrl+V 是给搜索框
+    // 的，不能把剪贴板里的截图悄悄传到右栏这条反馈上；焦点离开搜索框后照常追加。
+    testWidgets('嵌入右栏：焦点在页外输入框时 Ctrl+V 不追加，离开后照常追加', (
+      WidgetTester tester,
+    ) async {
+      final FocusNode outside = FocusNode(debugLabel: 'outside-search');
+      addTearDown(outside.dispose);
+      final FeedbackService f = await openAttachable(
+        tester,
+        page: Scaffold(
+          body: Row(
+            children: <Widget>[
+              SizedBox(
+                width: 240,
+                child: TextField(
+                  key: const ValueKey<String>('outside-search'),
+                  focusNode: outside,
+                ),
+              ),
+              const Expanded(
+                child: FeedbackDetailPage(
+                  feedbackId: 'oldoldold0',
+                  embedded: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      clipboard = <String, Object?>{'bytes': _kOnePixelPng};
+      final LogicalKeyboardKey modifier = Platform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      Future<void> pressPaste() async {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+        await tester.sendKeyUpEvent(modifier);
+      }
+
+      outside.requestFocus();
+      await tester.pump();
+      expect(outside.hasPrimaryFocus, isTrue);
+      await pressPaste();
+      await settleIo(tester, () => false);
+      expect(puts(), isEmpty, reason: '页外输入框里的 Ctrl+V 不该传截图');
+
+      outside.unfocus();
+      await tester.pump();
+      await pressPaste();
+      await settleIo(
+        tester,
+        () => puts().isNotEmpty && !f.attachInFlight('oldoldold0'),
+      );
+      expect(puts(), hasLength(1));
+      expect(puts().single.url.path, '/v1/feedback/oldoldold0/attachments/s1');
+    });
   });
 
   testWidgets('反馈人详情：追加截图上传进行中显示「正在上传」，不显示「没上传成功」与重试（#aiRZmYl5zS）', (

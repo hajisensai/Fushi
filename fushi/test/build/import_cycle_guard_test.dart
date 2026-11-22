@@ -115,12 +115,20 @@ import 'package:test/test.dart';
 /// 却 import 了后台任务入口 UI——值类型挪到叶子 `background_task.dart`。最大环降到 623，剩下
 /// 新进环的 1 个是本就读 AppModel 的音乐 UI `music_listen_from_video`，上限随之下调到 623。
 ///
-/// 2026-11-22 学习目标记录（#3980）合入 develop 后：相对 develop 只多上面 11-20 那条记过的
-/// `settings_schema_study_goals`（设置 schema 整族本就在环里），上限 623 + 1 = 624。
+/// 2026-11-22 develop 实测 624：共用查词宿主 `shared_lookup_popup_host`（#4036）import 弹窗栈
+/// controller，而 controller 为了手柄四个动作直接持 `GlobalKey<DictionaryPopupWebViewState>`、
+/// import 读 AppModel 的 `dictionary_popup_webview`（逻辑对象反向依赖 UI）。反转依赖：窄接口
+/// `DictionaryPopupRealmState` 放叶子 `dictionary_popup_realm.dart`，WebView State 实现它，
+/// controller 只持接口；controller 与宿主一起出环，最大环 622，上限下调到 622。
+///
+/// 2026-11-22 学习目标记录（#3980）合入：相对 develop 只多 `settings_schema_study_goals`
+/// 一个文件（「目标」设置子页 schema；设置 schema 整族本就经 AppModel 在环里，同族其它
+/// schema 文件同样在环），上限 622 + 1 = 623。其余新目标文件都用窄接口
+/// （`study_goal_host.dart` / `stat_format.dart`）留在环外。
 ///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 624;
+const int kMaxCycleFiles = 623;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -140,6 +148,11 @@ const List<String> kLeafEntries = <String>[
   'lib/src/utils/misc/platform_utils.dart',
   'lib/src/utils/components/fushi_material_components.dart',
   'lib/src/utils/adaptive/adaptive_widgets.dart',
+  // 查词弹窗栈 controller 是纯逻辑对象，只经叶子接口 DictionaryPopupRealmState 持
+  // WebView 层；直接 import dictionary_popup_webview.dart（读 AppModel）会把它和
+  // 共用查词宿主 shared_lookup_popup_host 一起拖回大环（2026-11-22 实测 624）。
+  'lib/src/pages/implementations/dictionary_popup_controller.dart',
+  'lib/src/pages/implementations/dictionary_popup_realm.dart',
 ];
 
 const List<String> kBarrels = <String>[

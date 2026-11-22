@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 反向守卫（TODO-899）：桌面端「画面边缘竖拖调音量/亮度」手势（原 TODO-754）已移除。
@@ -20,13 +21,28 @@ void main() {
     final String page = readVideoFushiSource();
 
     test('GestureDetector 不再绑 onVerticalDrag*（接线已删）', () {
+      // 唯一合法的竖拖：移动端竖屏学习版式里查词卡顶上的拖动条（拍板台
+      // P9AS-fvjJh）。它在根 Overlay 浮层栈里、只拖查词卡高度，不碰画面、不调音量 /
+      // 亮度，与 TODO-754 的画面边缘手势无关——整段剔除这个方法后再扫，别处再出现
+      // 竖拖接线照样红。
+      const String portraitHandle =
+          'Widget _buildPortraitLookupDragHandle(Size screen, ColorScheme cs)';
+      final String handle = methodBody(page, portraitHandle);
       expect(
-        page.contains('onVerticalDragStart:'),
+        handle,
+        contains('_portraitLookupDragHeight'),
+        reason: '豁免只给查词卡拖动条：它的竖拖只能改查词卡高度',
+      );
+      expect(handle, isNot(contains('Volume')));
+      expect(handle, isNot(contains('Brightness')));
+      final String rest = maskComments(page.replaceFirst(handle, ''));
+      expect(
+        rest.contains('onVerticalDragStart:'),
         isFalse,
         reason: '桌面不应再有竖拖手势入口（TODO-899 已删 TODO-754 接线）',
       );
-      expect(page.contains('onVerticalDragUpdate:'), isFalse);
-      expect(page.contains('onVerticalDragEnd:'), isFalse);
+      expect(rest.contains('onVerticalDragUpdate:'), isFalse);
+      expect(rest.contains('onVerticalDragEnd:'), isFalse);
     });
 
     test('三个 edge-drag handler 定义已删', () {

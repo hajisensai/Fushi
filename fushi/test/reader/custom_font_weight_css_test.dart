@@ -386,6 +386,7 @@ void main() {
     });
   });
 
+  // 下面两条起真 headless Chrome：带 chrome 标签，dist_test 只派给声明了 chrome 能力的 worker。
   group('真 Chromium：字面选择与合成加粗', () {
     final String? chrome =
         <String?>[
@@ -537,6 +538,7 @@ Promise.all([
         expect(fixed['bold'], fixed['regular'], reason: '$fixed');
       },
       skip: skip ?? false,
+      tags: <String>['chrome'],
       timeout: const Timeout(Duration(seconds: 90)),
     );
 
@@ -572,6 +574,7 @@ Promise.all([
         expect(report['bold'], report['regular'], reason: '$report');
       },
       skip: skip ?? false,
+      tags: <String>['chrome'],
       timeout: const Timeout(Duration(seconds: 90)),
     );
   });

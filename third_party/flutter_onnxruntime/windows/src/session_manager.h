@@ -31,6 +31,8 @@ struct SessionInfo {
   // Whether the session was created with a GPU provider (DirectML / CUDA);
   // decides which worker queue its work is serialised on.
   bool is_gpu = false;
+  // Whether the session runs on the CUDA plugin EP (keeps the library loaded).
+  bool is_cuda = false;
 };
 
 // Model metadata structure
@@ -57,7 +59,10 @@ public:
   ~SessionManager();
 
   // Create a new session from a model file path
-  std::string createSession(const char *model_path, const Ort::SessionOptions &session_options, bool is_gpu = false);
+  // [is_cuda]: the options carry the CUDA plugin EP (appendCudaProvider), so
+  // the session keeps the plugin library loaded until it is closed.
+  std::string createSession(const char *model_path, const Ort::SessionOptions &session_options, bool is_gpu = false,
+                            bool is_cuda = false);
 
   // Whether the session runs on a GPU provider (false for unknown sessions).
   bool isGpuSession(const std::string &session_id);
@@ -93,8 +98,24 @@ public:
   CudaRegistrationResult registerCudaPlugin(const std::wstring &dir);
   bool isCudaRegistered();
   std::vector<std::string> registeredEpNames();
-  // Throws Ort::Exception when the plugin is not registered.
+  // Throws Ort::Exception when the plugin is not registered (or cannot be
+  // reloaded). The plugin calls this and createSession() in one GPU work
+  // queue task, so releaseCudaPlugin() (same queue) cannot run in between and
+  // free the appended device.
   void appendCudaProvider(Ort::SessionOptions &session_options, int device_index);
+
+  // Whether [session_id] runs on the CUDA plugin EP (false for unknown ids).
+  bool isCudaSession(const std::string &session_id);
+
+  // Open CUDA sessions, and a counter bumped by every CUDA session created:
+  // the idle release compares it to tell "still idle since the last close"
+  // from "a session came and went in between".
+  int openCudaSessions();
+  uint64_t cudaGeneration();
+
+  // Unloads the CUDA plugin library once no CUDA session is open (see
+  // CudaPluginRegistry::Release). [open_cuda_sessions] reports what blocked it.
+  CudaReleaseResult releaseCudaPlugin(bool reset_context, int *open_cuda_sessions);
 
   // Helper method to get element type string
   static const char *getElementTypeString(ONNXTensorElementDataType element_type);
@@ -108,6 +129,9 @@ private:
 
   // Counter for generating unique session IDs
   int next_session_id_;
+
+  // See cudaGeneration(). Guarded by mutex_.
+  uint64_t cuda_generation_ = 0;
 
   // Mutex for thread safety
   std::mutex mutex_;

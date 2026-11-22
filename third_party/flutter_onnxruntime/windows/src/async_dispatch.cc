@@ -22,7 +22,9 @@ WorkQueue::WorkQueue(const char *name) : thread_([this, name = std::string(name)
   Run();
 }) {}
 
-WorkQueue::~WorkQueue() {
+WorkQueue::~WorkQueue() { Shutdown(); }
+
+void WorkQueue::Shutdown() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     stopping_ = true;
@@ -34,16 +36,20 @@ WorkQueue::~WorkQueue() {
 }
 
 bool WorkQueue::Post(std::function<void()> task) {
-  if (PlatformThreadDispatcher::SyncModeRequested()) {
-    task();
-    return true;
-  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_) {
       return false;
     }
-    tasks_.push_back(std::move(task));
+    if (!PlatformThreadDispatcher::SyncModeRequested()) {
+      tasks_.push_back(std::move(task));
+      task = nullptr;
+    }
+  }
+  if (task) {
+    // Sync mode: run inline, outside the lock (the task may Post again).
+    task();
+    return true;
   }
   cv_.notify_one();
   return true;
@@ -62,6 +68,67 @@ void WorkQueue::Run() {
       tasks_.pop_front();
     }
     task();
+  }
+}
+
+// ── DelayedTask ──────────────────────────────────────────────────────────────
+
+DelayedTask::DelayedTask(std::function<void()> fire) : fire_(std::move(fire)), thread_([this]() {
+  SetThreadDescription(GetCurrentThread(), L"flutter_onnxruntime delayed task");
+  Run();
+}) {}
+
+DelayedTask::~DelayedTask() { Shutdown(); }
+
+void DelayedTask::Shutdown() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopping_ = true;
+    armed_ = false;
+  }
+  cv_.notify_all();
+  if (thread_.joinable()) {
+    thread_.join();
+  }
+}
+
+bool DelayedTask::Schedule(std::chrono::milliseconds delay) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stopping_) {
+      return false;
+    }
+    armed_ = true;
+    deadline_ = std::chrono::steady_clock::now() + delay;
+  }
+  cv_.notify_all();
+  return true;
+}
+
+void DelayedTask::Cancel() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    armed_ = false;
+  }
+  cv_.notify_all();
+}
+
+void DelayedTask::Run() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  for (;;) {
+    cv_.wait(lock, [this] { return stopping_ || armed_; });
+    if (stopping_) {
+      return;
+    }
+    // Wake on the deadline, or early when it moves / is cancelled / stopping.
+    const std::chrono::steady_clock::time_point deadline = deadline_;
+    if (cv_.wait_until(lock, deadline, [this, deadline] { return stopping_ || !armed_ || deadline_ != deadline; })) {
+      continue;
+    }
+    armed_ = false;
+    lock.unlock();
+    fire_();
+    lock.lock();
   }
 }
 

@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -195,17 +195,26 @@ void main() {
     });
   });
 
-  test('style pref round-trips; unknown falls back to mesh gradient', () {
+  // BUG-5167：出厂默认是 Pixi 渲染器（反馈 l1ERGmWxjF）。
+  test('style pref round-trips; unknown falls back to pixi', () {
     for (final MusicLyricsBackdropStyle s in MusicLyricsBackdropStyle.values) {
       expect(MusicLyricsBackdropStyle.fromPref(s.prefValue), s);
     }
     expect(
+      MusicLyricsBackdropStyle.defaultStyle,
+      MusicLyricsBackdropStyle.pixi,
+    );
+    expect(
       MusicLyricsBackdropStyle.fromPref('bogus'),
-      MusicLyricsBackdropStyle.meshGradient,
+      MusicLyricsBackdropStyle.pixi,
     );
     expect(
       MusicLyricsBackdropStyle.fromPref(null),
-      MusicLyricsBackdropStyle.meshGradient,
+      MusicLyricsBackdropStyle.pixi,
+    );
+    expect(
+      const MusicLyricsBackdrop(coverPath: null).style,
+      MusicLyricsBackdropStyle.pixi,
     );
   });
 
@@ -226,11 +235,45 @@ void main() {
       await db.close();
     });
 
-    test('defaults: flowing, mesh gradient, 100% saturation', () {
+    test('defaults: flowing, pixi, 100% saturation', () {
       expect(repo.musicLyricsBackdropAnimate, isTrue);
-      expect(repo.musicLyricsBackdropStyle, 'mesh');
+      expect(repo.musicLyricsBackdropStyle, 'pixi');
       expect(repo.musicLyricsBackdropSaturation, 1.0);
     });
+
+    // BUG-5167：偏好只在手选时落库。老库里没有这一行 = 从没手选过 → 跟着新默认
+    // 走到 pixi；老库里显式存了 'mesh' = 用户手选 → 保持 mesh。
+    test(
+      'legacy db: no row follows the new default, manual mesh is kept',
+      () async {
+        final PreferencesRepository untouched = PreferencesRepository(db);
+        await untouched.loadFromDb();
+        expect(untouched.musicLyricsBackdropStyle, 'pixi');
+        untouched.dispose();
+
+        // 旧版设置页手选 mesh 走的就是这条 setter（同一 PrefCodec 编码落库）。
+        await repo.setMusicLyricsBackdropStyle('mesh');
+        final PreferencesRepository manual = PreferencesRepository(db);
+        await manual.loadFromDb();
+        expect(manual.musicLyricsBackdropStyle, 'mesh');
+        manual.dispose();
+      },
+    );
+
+    test(
+      'clear removes the row so the style follows the default again',
+      () async {
+        await repo.setMusicLyricsBackdropStyle('mesh');
+        expect(repo.musicLyricsBackdropStyle, 'mesh');
+        await repo.clearMusicLyricsBackdropStyle();
+        expect(repo.musicLyricsBackdropStyle, 'pixi');
+        expect(repo.getPref('music_lyrics_backdrop_style'), isNull);
+        final PreferencesRepository reloaded = PreferencesRepository(db);
+        await reloaded.loadFromDb();
+        expect(reloaded.getPref('music_lyrics_backdrop_style'), isNull);
+        reloaded.dispose();
+      },
+    );
 
     test('values round-trip', () async {
       await repo.setMusicLyricsBackdropAnimate(false);
@@ -257,7 +300,9 @@ void main() {
     final SettingsSegmentedItem<MusicLyricsBackdropStyle> style =
         byId('music.lyrics_backdrop_style')
             as SettingsSegmentedItem<MusicLyricsBackdropStyle>;
-    expect(style.defaultValue, MusicLyricsBackdropStyle.meshGradient);
+    expect(style.defaultValue, MusicLyricsBackdropStyle.pixi);
+    // 恢复默认要删行（回到「跟出厂默认」），不能把默认值写成手选（BUG-5167）。
+    expect(style.resetToDefault, isNotNull);
     expect(style.options.map((o) => o.value), MusicLyricsBackdropStyle.values);
 
     final SettingsSliderItem saturation =

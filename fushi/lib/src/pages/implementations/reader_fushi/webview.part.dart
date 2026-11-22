@@ -225,15 +225,15 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
-    final OnlineNovelChapterLoader? onlineChapters = _onlineChapterLoader;
-    if (onlineChapters != null) {
-      await _ensureOnlineChapter(onlineChapters, filePath);
-    } else if (_onlineMissingImages
-        case final OnlineNovelMissingImagesController missing) {
-      // 没有取章加载器的网文书（LNReader 下载成的 EPUB）：正文本来就在盘上，
-      // 直接交给缺图状态机。
-      _noteOnlineChapterServed(missing.retrier.chapterIndexForFile(filePath));
-    }
+    // 没有取章加载器的网文书（LNReader 下载成的 EPUB）：正文本来就在盘上，
+    // 直接交给缺图接线（见 [prepareReaderChapterFile]）。
+    await prepareReaderChapterFile(
+      filePath: filePath,
+      chapterLoader: _onlineChapterLoader,
+      missingImages: _onlineMissingImages,
+      ensureOnlineChapter: (OnlineNovelChapterLoader loader) =>
+          _ensureOnlineChapter(loader, filePath),
+    );
     final File file = File(filePath);
     if (!file.existsSync()) {
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
@@ -370,7 +370,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
         filePath,
       );
-      _noteOnlineChapterServed(chapterIndex);
+      _onlineMissingImages?.chapterServed(chapterIndex);
       if (loaded == null) return;
       _sanitizedHtmlCache.remove(filePath);
       final EpubBook? book = _book;
@@ -397,20 +397,17 @@ extension _ReaderWebView on _ReaderFushiPageState {
     }
   }
 
-  /// 一章正文即将下发（正文已在盘上）：交给缺图状态机查缺图、按需自动补取；
-  /// 是本次导航的目标章就让提示跟到这一章。
-  void _noteOnlineChapterServed(int? index) {
-    final OnlineNovelMissingImagesController? missing = _onlineMissingImages;
-    if (missing == null || index == null) return;
-    unawaited(missing.chapterRequested(index));
-    if (_restoreInFlight && index == _currentChapter) missing.show(index);
-  }
-
-  OnlineNovelMissingImagesController _createOnlineMissingImagesController(
+  /// 缺图接线（[ReaderMissingImagesWiring]）：章节下发与补到图后的重载都在那里，
+  /// 页面只提供状态读取与缓存 / 重载动作。
+  ReaderMissingImagesWiring _createOnlineMissingImages(
     OnlineNovelMissingImagesRetrier retrier,
-  ) => OnlineNovelMissingImagesController(
+  ) => ReaderMissingImagesWiring(
     retrier: retrier,
-    onRecovered: _onOnlineChapterImagesRecovered,
+    isActive: () => mounted,
+    currentChapter: () => _currentChapter,
+    restoreInFlight: () => _restoreInFlight,
+    discardChapterCaches: _discardOnlineChapterCaches,
+    reloadCurrentChapter: _reloadWithCurrentSettings,
     onManualRetryFinished: (OnlineNovelMissingImagesRetry result) {
       if (!mounted) return;
       if (result.remaining == 0) {
@@ -436,23 +433,19 @@ extension _ReaderWebView on _ReaderFushiPageState {
     },
   );
 
-  /// 补取到了第 [index] 章的插图（文件已写回）：丢掉这一章的下发缓存与正文缓存；
-  /// 正在读这一章就按当前位置原地重载，让图显示出来。
-  void _onOnlineChapterImagesRecovered(int index) {
-    if (!mounted) return;
-    final OnlineNovelMissingImagesRetrier? retrier =
-        _onlineMissingImages?.retrier;
+  /// 补取到了第 [index] 章的插图（文件已写回）：丢掉这一章的下发缓存与正文缓存。
+  /// 书没就绪 / 章号越界返回 false（不重载）。
+  bool _discardOnlineChapterCaches(
+    int index,
+    bool Function(String filePath) inChapter,
+  ) {
     final EpubBook? book = _book;
-    if (retrier == null || book == null || index >= book.chapters.length) {
-      return;
-    }
+    if (book == null || index >= book.chapters.length) return false;
     _sanitizedHtmlCache.removeWhere(
-      (String path, Uint8List _) => retrier.chapterIndexForFile(path) == index,
+      (String path, Uint8List _) => inChapter(path),
     );
     book.chapters[index].discardCachedHtml();
-    if (index == _currentChapter && !_restoreInFlight) {
-      unawaited(_reloadWithCurrentSettings());
-    }
+    return true;
   }
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {

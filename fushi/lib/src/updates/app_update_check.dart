@@ -36,6 +36,9 @@ Future<void> checkAppUpdateNow(
   AppModel appModel, {
   UpdateChannel? channel,
 }) async {
+  // BUG-5168：下载浮层点过「隐藏」时，再点「检查更新」就是要回去看进度——直接把在途
+  // 下载的浮层拉回来，不再去查一遍网络、也不只回一句「正在下载」。
+  if (UpdateChecker.revealActiveDownload()) return;
   if (_manualCheckInFlight) {
     // 更新中心条目 / 系统通知也从这里进来：在飞时静默早退等于「点了没反应」。
     FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);

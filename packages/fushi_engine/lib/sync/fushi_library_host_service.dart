@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename, isValidCollectionSectionKey;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
@@ -206,7 +209,12 @@ class RemoteLocalAudioInfo {
 /// `/api/capabilities` 的 `liveLibrary` 里声明「本地音频清单带内容身份、单项端点
 /// 认 contentId」的能力位（拍板 pr3481）。老 host 无此位 → client 只能按显示名
 /// 匹配，并在同步报告里提示升级对端。
-const String kLiveLibraryLocalAudioContentIdCapability = 'localAudioContentId';
+///
+/// 位名带版本：身份算法从 `la1-`（不读音频 BLOB，HBK-AUDIT-001）换成 `la2-` 后，
+/// 只发 `la1-` 的 host 仍声明旧位 `localAudioContentId`，但它的身份本端不认——
+/// 必须按「对端版本过旧」报出来，而不是当成已支持、静默退回按名匹配。
+const String kLiveLibraryLocalAudioContentIdCapability =
+    'localAudioContentIdV2';
 
 /// [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）是否声明
 /// [kLiveLibraryLocalAudioContentIdCapability]。
@@ -2905,12 +2913,31 @@ class RemoteVideoInfo {
     this.collection,
     this.importedAt,
     this.fileName,
+    this.sectionKey,
     this.peerPlayable = true,
     this.stream,
   });
 
   final String id;
   final String title;
+
+  /// 这个文件在 host 上的**生效分栏**（`s<N>` / `extras`；BUG-5084）。
+  ///
+  /// host 的合集分栏 = 手动分栏 → 手动季集指定 → 文件名派生（引擎
+  /// `loadCollectionSections`，拍板台 iR6ccUys9H），前两张覆盖表只在 host 本机。
+  /// client 只拿得到 [fileName]（basename）去派生，认不出 host 上钉到 PV·特典的
+  /// 短篇，也看不到只写在 host 父目录上的季号——所以由 host 按同一入口算好下发，
+  /// client 的合集详情页 / 剧集面板直接用它（[collectionGroupKey]）。
+  ///
+  /// wire：`sectionKey`，只在非空时写；解析时形状不合法（[isValidCollectionSectionKey]）
+  /// 按缺省处理。null = 旧 host / 非互联来源，client 照旧按 [parseName] 派生；旧
+  /// client 不认识该键、按旧行为派生。
+  final String? sectionKey;
+
+  /// client 侧这一集的分栏键：host 下发了生效分栏就用它，否则按 [parseName]
+  /// 派生（与本机文件名派生同一判据）。
+  String get collectionGroupKey =>
+      sectionKey ?? collectionGroupKeyForFilename(parseName);
 
   /// 对端能否经 host 播放 / 下载这一条（host 有没有媒体字节可给）。
   ///
@@ -3099,6 +3126,7 @@ class RemoteVideoInfo {
     collection: collection,
     importedAt: importedAt,
     fileName: fileName,
+    sectionKey: sectionKey,
     peerPlayable: peerPlayable,
     stream: stream,
   );
@@ -3147,6 +3175,7 @@ class RemoteVideoInfo {
     if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
     if (collection != null) 'collection': collection!.toJson(),
     if (_isNonEmpty(fileName)) 'fileName': fileName,
+    if (_isNonEmpty(sectionKey)) 'sectionKey': sectionKey,
     if (!peerPlayable) 'peerPlayable': false,
     if (stream != null) kRemoteStreamVideoWireKey: stream!.toJson(),
   };
@@ -3206,6 +3235,7 @@ class RemoteVideoInfo {
     collection: collection ?? this.collection,
     importedAt: importedAt,
     fileName: fileName,
+    sectionKey: sectionKey,
     peerPlayable: peerPlayable,
     stream: stream,
   );
@@ -3255,10 +3285,18 @@ class RemoteVideoInfo {
       // 对齐 RemoteBookInfo.fromJson。旧 host 无该字段 → fromJson 返 null（向后兼容）。
       collection: RemoteCollectionMembership.fromJson(json['collection']),
       fileName: _jsonString(json['fileName']),
+      sectionKey: _jsonSectionKey(json['sectionKey']),
       peerPlayable: json['peerPlayable'] != false,
       stream: RemoteStreamVideoEntry.tryParse(json[kRemoteStreamVideoWireKey]),
     );
   }
+}
+
+/// 解析 host 下发的生效分栏键：只认 [isValidCollectionSectionKey] 的形状，其余
+/// （缺键 / 空串 / 将来的新键形状）一律 null，client 回落文件名派生。
+String? _jsonSectionKey(Object? value) {
+  final String? key = _jsonString(value);
+  return key != null && isValidCollectionSectionKey(key) ? key : null;
 }
 
 /// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。
@@ -3545,8 +3583,10 @@ abstract class FushiLibraryHostService {
   /// 回调为 null 时抛 [UnsupportedError]。
   Future<void> importLocalAudio(File packageFile);
 
-  /// 从 host 删除 [key] 指向的本地音频来源（同 [exportLocalAudio]：先按 contentId
-  /// 认、再按 displayName 认）。[key] 含路径穿越字符时抛 [ArgumentError]。
+  /// 从 host 删除内容身份为 [key] 的本地音频来源（HBK-AUDIT-022）。**只认
+  /// contentId**：显示名在各端可以不同，同名的可能是另一份库，按名删会删错——
+  /// [key] 不是合格内容身份时不删任何东西（幂等返回）。[key] 含路径穿越字符时抛
+  /// [ArgumentError]。
   Future<void> deleteLocalAudio(String key);
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
@@ -3719,18 +3759,22 @@ abstract class FushiLibraryHostService {
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
-  /// 读 host 端当前聚合快照（四张统计表 + 挖掘计数 + 收藏词 + 收藏句），供 client
-  /// 拉取 host 真相源做并集合并（TODO-1056 phase C 互联 live 通道）。纯读，无副作用。
+  /// 读 host 端当前聚合快照（四张统计表 + 挖掘计数 + 收藏词 + 收藏句），编码成互联
+  /// 报文体（UTF-8 JSON，`aggregate_wire_codec.dart`），供 client 拉取 host 真相源做
+  /// 并集合并（TODO-1056 phase C 互联 live 通道）。纯读，无副作用。
   ///
   /// 与云后端 phase B 用同一 [AggregateSnapshot] 形状（materialize 自 host DB），
-  /// 但通道是互联 live 端点而非云上 per-device 快照文件。
-  Future<AggregateSnapshot> getAggregateSnapshot();
+  /// 但通道是互联 live 端点而非云上 per-device 快照文件。HBK-AUDIT-028：交出的是
+  /// 编码好的字节，组装与编码由实现方放在后台做，不经 host 所在 isolate。
+  Future<Uint8List> getAggregateBody();
 
-  /// 把 client 上报的（已在 client 端与 host 并集合并的）聚合快照折叠进 host 自己的
-  /// DB（TODO-1056 phase C）。写入语义只用 MAX / 并集 upsert（统计逐桶取大、挖掘计数
-  /// MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，删除绝不跨端
-  /// 传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用同一实现）。
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot);
+  /// 把 client 上报的（已在 client 端与 host 并集合并的）聚合快照报文体折叠进 host
+  /// 自己的 DB（TODO-1056 phase C）。写入语义只用 MAX / 并集 upsert（统计逐桶取大、
+  /// 挖掘计数 MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，
+  /// 删除绝不跨端传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用
+  /// 同一实现）。返回 false = 报文体不是合法的 JSON object（非法 UTF-8 / JSON、顶层
+  /// 不是 object），什么都不写，端点据此回 400。
+  Future<bool> applyAggregateBody(Uint8List body);
 
   // ── 合集清单（多端库联合视图 §2.3 任务5.2）──────────────────────────────────
 

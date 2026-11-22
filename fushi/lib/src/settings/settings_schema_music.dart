@@ -336,6 +336,7 @@ SettingsDestination buildMusicDestination() {
                   'unmatched': r.unmatched,
                   'failed': r.failed,
                   'byMethod': r.byMethod,
+                  'dlsite': r.dlsite.toJson(),
                 };
               },
             ),
@@ -505,7 +506,10 @@ SettingsDestination buildMusicDestination() {
                 .appModel
                 .prefsRepo
                 .setMusicLyricsBackdropStyle(value.prefValue),
-            defaultValue: MusicLyricsBackdropStyle.meshGradient,
+            defaultValue: MusicLyricsBackdropStyle.defaultStyle,
+            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）。
+            resetToDefault: (SettingsContext c) =>
+                c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
           ),
           SettingsSliderItem(
             id: 'music.lyrics_backdrop_saturation',
@@ -621,6 +625,12 @@ Future<void> _identifyLibrary(SettingsContext c) async {
   FushiToast.show(msg: t.music_scrape_identifying);
   final MusicLibraryScrapeReport r = await c.appModel.musicScrape
       .scrapeLibrary();
+  if (r.dlsite.matched > 0) {
+    FushiToast.show(
+      msg: t.music_dlsite_library_done(count: r.dlsite.matched),
+      severity: ToastSeverity.success,
+    );
+  }
   FushiToast.show(
     msg: t.music_scrape_library_done(matched: r.matched, total: r.total),
     severity: r.failed > 0 ? ToastSeverity.warning : ToastSeverity.success,

@@ -134,6 +134,27 @@ List<OpDescription> _describeScrapeOps(
     ],
   ),
   OpDescription(
+    id: 'music.album.dlsite',
+    method: 'POST',
+    pattern: '$_root/albums/:uid/dlsite',
+    summary:
+        'Fetch (or refresh) DLsite work info for a voice / ASMR album, keyed '
+        'by the DLsite work number (RJ...) found in the album title, catalog '
+        'number or track folders: circle, voice actors, tags, DLsite rating, '
+        'downloads; fills the album cover from DLsite when it has none. '
+        'Fails with 400 when no work number is found.',
+    risk: OpRisk.irreversible,
+    availability: music,
+    params: const <OpParam>[
+      OpParam.string(
+        'uid',
+        description: 'Album uid from music.album.list.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  OpDescription(
     id: 'music.scrape.status',
     method: 'GET',
     pattern: '$_root/scrape',
@@ -147,7 +168,9 @@ List<OpDescription> _describeScrapeOps(
     summary:
         'Identify every track without a current identification, in the '
         'background (MusicBrainz 1 req/s; fingerprints go to AcoustID). '
-        'Returns taskId; progress via music.scrape.status.',
+        'First fetches DLsite work info for albums whose title / catalog '
+        'number / folder carries a DLsite work number (RJ...) and have none '
+        'yet. Returns taskId; progress via music.scrape.status.',
     risk: OpRisk.irreversible,
     longRunning: true,
     availability: music,

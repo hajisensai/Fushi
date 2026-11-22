@@ -3,6 +3,7 @@ export 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_book_meta.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
@@ -125,23 +126,12 @@ class AudiobookSessionLauncher {
     if (audiobook.alignmentFormat == kMangaAlignmentFormat) {
       final MangaAudioRegistration? manga = await loadMangaAudio(_db, bookKey);
       if (manga == null) return null;
-      final (String title, String? author, String? coverPath, BookFormat _) =
-          await _bookMeta(bookKey);
-      return resolveMangaAudioSessionRequest(
-        _db,
-        registration: manga,
-        title:
-            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
-            title,
-        author: author,
-        coverPath: coverPath,
-      );
+      return resolveMangaAudioSessionRequest(_db, registration: manga);
     }
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
-    final (String title, String? author, String? coverPath, BookFormat format) =
-        await _bookMeta(bookKey);
+    final SessionBookMeta meta = await loadSessionBookMeta(_db, bookKey);
     // 后台听书无 reader 喂 cue（reader 才调 setChapterCues）；这里一次性把全书 cue
     // 取出随 request 返回，让 session.start 直接灌进控制器，否则 _chapterCues 为空、
     // _updateCurrentCue 提前 return、currentCue 恒 null → 悬浮窗推空串（TODO-354
@@ -153,16 +143,14 @@ class AudiobookSessionLauncher {
       info: SessionBookInfo(
         bookKey: bookKey,
         audiobook: audiobook,
-        // BUG-1018 (A1)：通知/悬浮窗元数据走与书架同一 override 书名通道，
-        // 编辑对话框改名后媒体通知同步显示新名；无 override 回退 DB 原名。
-        title:
-            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
-            title,
+        // BUG-1018 (A1)：通知/悬浮窗元数据走与书架同一 override 书名通道
+        // （[loadSessionBookMeta]），编辑对话框改名后媒体通知同步显示新名。
+        title: meta.title,
         mediaIdentifier: 'fushi://book/$bookKey',
         isSrtBookSource: false,
-        author: author,
-        coverPath: coverPath,
-        format: format,
+        author: meta.author,
+        coverPath: meta.coverPath,
+        format: meta.format,
         // BUG-2558：统计身份 = 调用方传进来的 key，与阅读器 `widget.bookKey` 同源。
         statsMediaKey: bookKey,
       ),
@@ -263,39 +251,6 @@ class AudiobookSessionLauncher {
       onFollowAudioPersist: (bool value) =>
           repo.updateFollowAudio(bookKey: bookKey, value: value),
     );
-  }
-
-  Future<(String, String?, String?, BookFormat)> _bookMeta(
-    String bookKey,
-  ) async {
-    final EpubBookRow? row = await _db.getEpubBook(bookKey);
-    if (row == null) return ('Fushi', null, null, BookFormat.epub);
-    String? coverPath;
-    if (row.coverPath != null && row.coverPath!.isNotEmpty) {
-      String coverRel = row.coverPath!;
-      if (coverRel.startsWith('/')) coverRel = coverRel.substring(1);
-      final String candidate = '${row.extractDir}/$coverRel';
-      if (File(candidate).existsSync()) coverPath = candidate;
-    }
-    coverPath ??= _firstExistingCover(row.extractDir);
-    return (
-      row.title,
-      row.author,
-      coverPath,
-      BookFormat.parseOrEpub(row.format),
-    );
-  }
-
-  String? _firstExistingCover(String extractDir) {
-    for (final String name in const <String>[
-      'cover.jpg',
-      'cover.jpeg',
-      'cover.png',
-    ]) {
-      final String candidate = '$extractDir/$name';
-      if (File(candidate).existsSync()) return candidate;
-    }
-    return null;
   }
 
   /// 播放装载的文件解析在 fushi_audio 的 [resolveAudiobookPlaybackFiles]。

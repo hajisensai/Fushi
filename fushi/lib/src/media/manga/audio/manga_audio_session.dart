@@ -16,6 +16,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_book_meta.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
@@ -79,15 +80,17 @@ SessionPersistCallbacks mangaAudioPersistCallbacks(
 );
 
 /// 起会话的材料。静音文件在这里写好（按时长去重，放成品目录下）。
+///
+/// 书名 / 作者 / 封面在这里按 bookKey 统一取（[loadSessionBookMeta]），不由调用方
+/// 各自传：阅读器起播曾漏传封面，首页迷你播放条只能画兜底图标、没有封面取色，
+/// 和后台入口起播的样子不一致。
 Future<AudiobookSessionStartRequest> resolveMangaAudioSessionRequest(
   FushiDatabase db, {
   required MangaAudioRegistration registration,
-  required String title,
-  String? author,
-  String? coverPath,
   double pacing = 1.0,
 }) async {
   final String bookKey = registration.bookKey;
+  final SessionBookMeta meta = await loadSessionBookMeta(db, bookKey);
   final MangaAudioPlaybackPlan plan = MangaAudioPlaybackPlan.build(
     registration.manifest,
     pacing: pacing,
@@ -118,10 +121,10 @@ Future<AudiobookSessionStartRequest> resolveMangaAudioSessionRequest(
     info: SessionBookInfo(
       bookKey: bookKey,
       audiobook: audiobook,
-      title: title,
+      title: meta.title,
       mediaIdentifier: 'fushi://book/$bookKey',
-      author: author,
-      coverPath: coverPath,
+      author: meta.author,
+      coverPath: meta.coverPath,
       statsMediaKey: bookKey,
       format: BookFormat.manga,
       cueLayoutId: plan.layoutId,

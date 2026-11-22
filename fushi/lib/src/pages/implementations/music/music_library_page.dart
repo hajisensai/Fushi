@@ -1775,18 +1775,16 @@ class _AlbumCard extends ConsumerWidget {
         ],
         tintImage: tint,
         disc: discArt == null ? null : musicDiscArtImage(discArt),
-        albumPoster: true,
-        // 色块卡（设计稿 `.ab`）：副行「歌手 · 年份」，音频规格进 chip，光盘
-        // 规格徽标照旧排在文字区底部。唱片摆法只画右下角 chip「CD」。
-        subtitle: discArt != null
-            ? null
-            : <String>[
-                album.albumArtistCredit ?? t.music_artist_unknown,
-                ?_releaseYear(album.releaseDate),
-                if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
-              ].join(' · '),
+        // 与书架 / 漫画 / 视频同一套文字区：副行「歌手 · 年份」，音频规格进
+        // chip（有盘面图时 chip 是「CD」、规格不再重复），光盘规格徽标排在文字区
+        // 底部。
+        subtitle: <String>[
+          album.albumArtistCredit ?? t.music_artist_unknown,
+          ?_releaseYear(album.releaseDate),
+          if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
+        ].join(' · '),
         chip: discArt != null ? 'CD' : (badge.isEmpty ? null : badge),
-        trailing: discArt != null ? null : discBadge,
+        trailing: discBadge,
       ),
     );
   }

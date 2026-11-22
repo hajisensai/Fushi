@@ -541,8 +541,8 @@ class EmbeddedTorrentHost {
       enableNatpmp: discovery.natpmp,
       encPolicy: config.encryptionMode,
       anonymousMode: config.anonymousMode,
-      activeDownloads: config.maxActiveDownloads,
-      activeSeeds: config.maxActiveSeeds,
+      activeDownloads: libtorrentActiveLimitArg(config.maxActiveDownloads),
+      activeSeeds: libtorrentActiveLimitArg(config.maxActiveSeeds),
       maxUploadSlots: config.maxUploadSlots,
     );
     if (applied) {
@@ -674,7 +674,11 @@ class EmbeddedTorrentHost {
   }
 
   /// 按当前任务与做种策略协调 DHT/LSD/UPnP/NAT-PMP。仅目标状态变化时走一次
-  /// FFI；这个调用不会动端口、队列上限或上传槽位，因此不会覆盖关上传策略。
+  /// FFI；这个调用不会动端口或上传槽位，因此不会覆盖关上传策略。
+  ///
+  /// 活跃名额必须原样带上当前配置：native 每次都写名额全值（0 = libtorrent
+  /// 默认），漏传就会在每次 add / resume 唤醒时把「不限 / 自定义」静默冲回
+  /// 默认 3/5（HBK-AUDIT-020 修复的反面）。
   bool reconcileNetworkDiscoveryState() {
     try {
       final _NetworkDiscoveryState desired = _desiredNetworkDiscoveryState();
@@ -686,6 +690,10 @@ class EmbeddedTorrentHost {
         enableNatpmp: desired.natpmp,
         encPolicy: _sessionConfig.encryptionMode,
         anonymousMode: _sessionConfig.anonymousMode,
+        activeDownloads: libtorrentActiveLimitArg(
+          _sessionConfig.maxActiveDownloads,
+        ),
+        activeSeeds: libtorrentActiveLimitArg(_sessionConfig.maxActiveSeeds),
       );
       if (applied) {
         _appliedNetworkDiscovery = desired;
@@ -1322,6 +1330,17 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
     fushiDebugPrint('[torrent] user paused write failed: $e');
   }
 }
+
+/// 活跃名额配置值 → `ht_apply_session_settings` 的入参（BUG-5160）。
+///
+/// native 每次都写全值：`> 0` 原值、`0` = libtorrent 默认（取
+/// `lt::default_settings()`，从「不限 / 自定义」热切回 0 也真恢复默认，
+/// HBK-AUDIT-020）、`< 0` = 不限。「不限」（负数，见
+/// [QbConnectionConfig.activeLimitUnlimited]）仍换成 int32 最大值下发：
+/// libtorrent 读这两项时本来就把负数映射成 int 最大值，两者等价，且老 DLL
+/// （`<= 0` 不写）也走 `> 0` 分支生效。0 原样传。
+int libtorrentActiveLimitArg(int configured) =>
+    configured < 0 ? 0x7fffffff : configured;
 
 /// 平台默认内置 DLL 路径解析：flutter runner 把 native 依赖放在可执行文件
 /// 旁（Windows）。阶段2 未接进 windows runner 前，这里返回 null 让

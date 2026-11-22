@@ -99,7 +99,7 @@ class _SrsLegacyLapisMigrationPageState
           <SrsLegacyLapisMigrationPreview>[
             for (final SrsLegacyLapisSource s
                 in await store.legacyLapisSources())
-              await store.previewLegacyLapisMigration(s.type.id),
+              await store.previewLegacyLapisSource(s),
           ];
       final SrsLapisBackfillPreview backfill = await store
           .previewLapisBackfill();
@@ -199,7 +199,7 @@ class _SrsLegacyLapisMigrationPageState
 
   Future<void> _migrate(SrsLegacyLapisMigrationPreview p) async {
     final int n = p.source.noteIds.length;
-    final int dropped = p.change.droppedCards;
+    final int dropped = p.droppedCards;
     final String? targetDeckId = _targetDeckId;
     final String? deckName = _targetDeckName;
     final bool ok = await showFushiConfirmDialog(
@@ -207,7 +207,7 @@ class _SrsLegacyLapisMigrationPageState
       title: t.srs_lapis_migration_title,
       message:
           '${t.srs_lapis_migration_confirm(n: n, name: p.source.type.name)}\n'
-          '${t.srs_lapis_migration_cards(linked: p.change.linkedCards, dropped: dropped)}'
+          '${t.srs_lapis_migration_cards(linked: p.linkedCards, dropped: dropped)}'
           '${deckName == null ? '' : '\n${t.srs_lapis_migration_confirm_deck(deck: deckName)}'}',
       confirmLabel: t.srs_lapis_migration_migrate,
       cancelLabel: t.cancel,
@@ -469,10 +469,10 @@ class _SrsLegacyLapisMigrationPageState
           _note(
             context,
             t.srs_lapis_migration_cards(
-              linked: p.change.linkedCards,
-              dropped: p.change.droppedCards,
+              linked: p.linkedCards,
+              dropped: p.droppedCards,
             ),
-            error: p.change.droppedCards > 0,
+            error: p.droppedCards > 0,
           ),
           if (p.fallbackFills > 0)
             _note(context, t.srs_lapis_migration_fallback(n: p.fallbackFills)),

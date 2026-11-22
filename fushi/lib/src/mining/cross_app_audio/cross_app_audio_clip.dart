@@ -64,22 +64,61 @@ const int kCrossAppAudioMaxClipMs = 15000;
 /// 有声判据的绝对下限（dBFS）：峰值本身很轻时不把底噪当语音。
 const double kCrossAppAudioAbsFloorDb = -45.0;
 
-/// 查词那一刻落下的一段声音：原生写在 app 缓存目录的裸 PCM 文件 + 它的格式。
-class CrossAppAudioSnapshot {
-  const CrossAppAudioSnapshot({required this.pcmPath, required this.format});
+/// 查词那一刻落下的一段声音。两种来源：
+/// - [CrossAppAudioFileSnapshot]：Android 原生查词时就把裸 PCM 写进 app 缓存目录；
+/// - [CrossAppAudioPinnedSnapshot]：Windows 原生只把那一段钉在内存里（悬停查词每次都钉，
+///   不能每次落几 MB 盘），真制卡时才经 [materialize] 落到本次制卡的临时目录。
+sealed class CrossAppAudioSnapshot {
+  const CrossAppAudioSnapshot();
+
+  /// 把快照落成一个可读的裸 PCM 文件（必要时写进 [scratch]），返回文件 + 格式；
+  /// 快照已失效（被后来的查词顶替 / 原生已清掉）返回 null。
+  Future<CrossAppAudioFileSnapshot?> materialize(Directory scratch);
+}
+
+/// 已经在磁盘上的快照：原生写在 app 缓存目录的裸 PCM 文件 + 它的格式。
+final class CrossAppAudioFileSnapshot extends CrossAppAudioSnapshot {
+  const CrossAppAudioFileSnapshot({
+    required this.pcmPath,
+    required this.format,
+  });
 
   final String pcmPath;
   final PcmFormat format;
 
+  @override
+  Future<CrossAppAudioFileSnapshot?> materialize(Directory scratch) async =>
+      this;
+
   /// 解析原生 `snapshot` 的回包（`{path, sampleRate, channels, bitsPerSample, isFloat}`）；
   /// 缺字段 / 格式不合法返回 null。
-  static CrossAppAudioSnapshot? fromNative(Object? raw) {
+  static CrossAppAudioFileSnapshot? fromNative(Object? raw) {
     if (raw is! Map<Object?, Object?>) return null;
     final Object? path = raw['path'];
     if (path is! String || path.isEmpty) return null;
     final PcmFormat? format = parseGalPcmFormat(raw);
     if (format == null) return null;
-    return CrossAppAudioSnapshot(pcmPath: path, format: format);
+    return CrossAppAudioFileSnapshot(pcmPath: path, format: format);
+  }
+}
+
+/// 把原生钉住的快照 `id` 写成裸 PCM 文件 `path`，返回格式；已被顶替返回 null。
+typedef CrossAppAudioSnapshotSaver =
+    Future<PcmFormat?> Function(int id, String path);
+
+/// 原生内存里钉住的快照（Windows loopback 的 `pinSnapshot`），制卡时才落盘。
+final class CrossAppAudioPinnedSnapshot extends CrossAppAudioSnapshot {
+  const CrossAppAudioPinnedSnapshot({required this.id, required this.save});
+
+  final int id;
+  final CrossAppAudioSnapshotSaver save;
+
+  @override
+  Future<CrossAppAudioFileSnapshot?> materialize(Directory scratch) async {
+    final String path = p.join(scratch.path, 'snapshot.pcm');
+    final PcmFormat? format = await save(id, path);
+    if (format == null) return null;
+    return CrossAppAudioFileSnapshot(pcmPath: path, format: format);
   }
 }
 
@@ -187,44 +226,47 @@ List<double> _slidingPercentile(
 }
 
 /// 读 [snapshot] 的 PCM，截出 [range]（缺省 = [crossAppAudioDefaultRange]）并经 [encode]
-/// 编码成 `<新临时目录>/sentence.<extension>`。快照文件已被清掉 / 整段静音 / 编码失败返回
-/// null（这张卡不带句子音频，照常制）。调用方制卡后删 `dir`（[deleteCrossAppAudioDir]）。
+/// 编码成 `<新临时目录>/sentence.<extension>`。快照已失效（被后面的查词挤掉 / 顶替）/
+/// 整段静音 / 编码失败返回 null（这张卡不带句子音频，照常制）。调用方制卡后删 `dir`
+/// （[deleteCrossAppAudioDir]）；钉住型快照落盘的 PCM 也在这个目录里，一起删。
 Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
   CrossAppAudioSnapshot snapshot, {
   required CrossAppAudioEncoder encode,
   GalWaveformRange? range,
   String extension = 'm4a',
 }) async {
-  // 读几 MB 快照 + 逐帧 RMS / 滑动分位数都是毫秒级以上的活，放后台 isolate，
-  // 不卡查词窗的 UI isolate。
-  final ({Uint8List? clip, String? readError}) cut = await _cutInBackground(
-    snapshot.pcmPath,
-    snapshot.format,
-    range,
-  );
-  if (cut.readError != null) {
-    // 快照被后面的查词挤掉了（原生只留最近几份）：这张卡不带语音。
-    ErrorLogService.instance.log(
-      'CrossAppAudio.readSnapshot',
-      cut.readError!,
-      StackTrace.current,
-    );
-    return null;
-  }
-  final Uint8List? clip = cut.clip;
-  if (clip == null || clip.isEmpty) return null;
   final Directory dir = await Directory.systemTemp.createTemp(
     kCrossAppAudioTempPrefix,
   );
-  final String out = p.join(dir.path, 'sentence.$extension');
   bool ok = false;
   try {
-    ok = await encode(GalAudioSlice(pcm: clip, format: snapshot.format), out);
+    final CrossAppAudioFileSnapshot? file = await snapshot.materialize(dir);
+    if (file == null) return null;
+    // 读几 MB 快照 + 逐帧 RMS / 滑动分位数都是毫秒级以上的活，放后台 isolate，
+    // 不卡查词窗的 UI isolate。
+    final ({Uint8List? clip, String? readError}) cut = await _cutInBackground(
+      file.pcmPath,
+      file.format,
+      range,
+    );
+    if (cut.readError != null) {
+      // 快照被后面的查词挤掉了（原生只留最近几份）：这张卡不带语音。
+      ErrorLogService.instance.log(
+        'CrossAppAudio.readSnapshot',
+        cut.readError!,
+        StackTrace.current,
+      );
+      return null;
+    }
+    final Uint8List? clip = cut.clip;
+    if (clip == null || clip.isEmpty) return null;
+    final String out = p.join(dir.path, 'sentence.$extension');
+    ok = await encode(GalAudioSlice(pcm: clip, format: file.format), out);
     ok = ok && await File(out).exists();
+    return ok ? (path: out, dir: dir) : null;
   } finally {
     if (!ok) await deleteCrossAppAudioDir(dir);
   }
-  return ok ? (path: out, dir: dir) : null;
 }
 
 /// 单独一层函数：送进 isolate 的闭包只捕获这三个可发送的参数（不带调用方的编码器等）。

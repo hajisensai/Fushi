@@ -14,6 +14,8 @@ import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
     show kMangaChromeToolbarHeight;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:material_ui/material_ui.dart';
@@ -299,7 +301,15 @@ void main() {
       player.notifyListeners();
       await tester.pump();
       expect(find.text('later'), findsNothing);
-      expect(find.byTooltip('${t.manga_audio_unvoiced} · A'), findsOneWidget);
+      // 读数提示走 FushiTooltip（Apple 下是玻璃气泡、不是带 message 的 Tooltip），
+      // 按组件的 message 断言，两套设计系统同一判据。
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiTooltip && w.message == '${t.manga_audio_unvoiced} · A',
+        ),
+        findsOneWidget,
+      );
 
       // 倍速胶囊在条上方弹出倍速条，再点收起。
       expect(

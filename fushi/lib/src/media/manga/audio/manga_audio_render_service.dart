@@ -383,6 +383,9 @@ class _NoBackend implements MangaRenderBackend {
   int get parallelism => 1;
 
   @override
+  String get shapeVersion => throw UnsupportedError('no synthesis here');
+
+  @override
   Future<int> synthesizeLine({
     required String voice,
     required int seed,

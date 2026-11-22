@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -50,11 +52,11 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
   }
 
   @override
-  Future<AggregateSnapshot> getAggregateSnapshot() async =>
-      const AggregateSnapshot();
+  Future<Uint8List> getAggregateBody() async =>
+      encodeAggregateWireJson(const AggregateSnapshot().toJson());
 
   @override
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
+  Future<bool> applyAggregateBody(Uint8List body) async => true;
 
   @override
   Future<CollectionManifest> getCollectionManifest() async =>

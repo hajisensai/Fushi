@@ -476,7 +476,23 @@ pub(crate) struct LogState {
     reviewed_ms: HashMap<String, i64>,
     /// 今天的作答：日志 id → (卡, 时刻)。
     answers: HashMap<String, (String, i64)>,
+    /// [Self::answers] 按卡的索引：卡 → 今天对它的作答的日志 id。与 [Self::answers] 同增同删（[Self::apply] /
+    /// [Self::unapply]）：增量重读（`store/gen4/cmd/study.rs` `reread_logs`）按碰到的卡找今天的作答，不扫整张作答表
+    /// （HBK-AUDIT-010：以前每答一张整表扫三遍，今天答 N 次累计 O(N²)）。
+    answers_by_card: HashMap<String, HashSet<String>>,
     folded: HashMap<String, Fold>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 测试：本线程上整表遍历「今天的作答」（[LogState::answers]）访问过的条目数。普通出卡不该整表遍历（HBK-AUDIT-010）。
+    static ANSWER_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// 测试：本线程到现在为止整表遍历「今天的作答」访问过的条目数（[LogState::answers]）。
+#[cfg(test)]
+pub(crate) fn answer_visits() -> usize {
+    ANSWER_VISITS.with(std::cell::Cell::get)
 }
 
 /// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
@@ -530,14 +546,22 @@ impl LogState {
         self.introduced.keys()
     }
 
-    /// 今天的全部作答 (卡, 时刻)。
+    /// 今天的全部作答 (卡, 时刻)。整表遍历：只给确实要整份的读（自定义学习「会话里答过」、RWKV 间隔守卫）；按卡找用
+    /// [Self::answers_on]，按日志找用 [Self::answer_card]。
     pub(crate) fn answers(&self) -> impl Iterator<Item = (&String, i64)> {
+        #[cfg(test)]
+        ANSWER_VISITS.with(|v| v.set(v.get() + self.answers.len()));
         self.answers.values().map(|(c, at)| (c, *at))
     }
 
-    /// 今天的全部作答：(日志 id, 卡)。
-    pub(crate) fn answer_ids(&self) -> impl Iterator<Item = (&String, &String)> {
-        self.answers.iter().map(|(id, (c, _))| (id, c))
+    /// 今天对 [card] 的作答的日志 id（按卡的索引，不扫整张作答表）。
+    pub(crate) fn answers_on(&self, card: &str) -> impl Iterator<Item = &String> {
+        self.answers_by_card.get(card).into_iter().flatten()
+    }
+
+    /// 今天的作答 [id] 记在哪张卡上（不是今天的作答 = None）。
+    pub(crate) fn answer_card(&self, id: &str) -> Option<&String> {
+        self.answers.get(id).map(|(c, _)| c)
     }
 
     /// 整份扫一遍最近 30 天的日志（`idx_srs_review_logs_profile_kind_time` 区间）。
@@ -663,7 +687,13 @@ impl LogState {
             if f.introduced {
                 *self.introduced.entry(f.card.clone()).or_default() += 1;
             }
-            self.answers.insert(id.clone(), (f.card.clone(), f.at));
+            if let Some((old, _)) = self.answers.insert(id.clone(), (f.card.clone(), f.at)) {
+                self.unindex_answer(&old, &id);
+            }
+            self.answers_by_card
+                .entry(f.card.clone())
+                .or_default()
+                .insert(id.clone());
         }
         self.folded.insert(id, f);
     }
@@ -703,7 +733,19 @@ impl LogState {
             if f.introduced {
                 dec(&mut self.introduced, &f.card);
             }
-            self.answers.remove(id);
+            if let Some((card, _)) = self.answers.remove(id) {
+                self.unindex_answer(&card, id);
+            }
+        }
+    }
+
+    /// [Self::answers_by_card] 里去掉 [card] 上的作答 [id]（那张卡没有作答了就整条删掉）。
+    fn unindex_answer(&mut self, card: &str, id: &str) {
+        if let Some(ids) = self.answers_by_card.get_mut(card) {
+            ids.remove(id);
+            if ids.is_empty() {
+                self.answers_by_card.remove(card);
+            }
         }
     }
 
@@ -1597,5 +1639,82 @@ impl DueIndex {
             }
         }
         best
+    }
+}
+
+#[cfg(test)]
+mod answer_index_tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::LogState;
+    use crate::projection::Day;
+
+    const DAY: Day = Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    };
+    const TODAY: i64 = 20_000;
+
+    /// 按卡的索引（[LogState::answers_on] / [LogState::answer_card]）与整张「今天的作答」按卡分组逐项相同。
+    fn assert_index_matches(s: &LogState, cards: &[&str]) {
+        let mut want: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (id, (card, _)) in &s.answers {
+            want.entry(card.clone()).or_default().insert(id.clone());
+            assert_eq!(s.answer_card(id), Some(card), "{id}");
+        }
+        for c in cards {
+            let got: BTreeSet<String> = s.answers_on(c).cloned().collect();
+            assert_eq!(got, want.remove(*c).unwrap_or_default(), "card {c}");
+        }
+        assert!(
+            want.is_empty(),
+            "answers on cards outside the list: {want:?}"
+        );
+        assert_eq!(
+            s.answers_by_card.len(),
+            s.answers_by_card.values().filter(|v| !v.is_empty()).count(),
+            "no empty entries"
+        );
+    }
+
+    /// HBK-AUDIT-010：会话按卡的作答索引随加、减、同一条日志改记到别的卡（重读时归到的规范卡变了）、昨天的日志始终与
+    /// 整张作答表一致——增量重读靠它找碰到的卡上今天的作答。
+    #[test]
+    fn the_per_card_answer_index_follows_every_fold_and_forget() {
+        let (_, start) = LogState::window(DAY, TODAY);
+        let mut s = LogState::empty();
+        let cards = ["a", "b", "c"];
+        let fold = |s: &mut LogState, id: &str, card: &str, at: i64| {
+            s.fold(
+                id.into(),
+                card.into(),
+                at,
+                "review",
+                None,
+                Some(1_000),
+                DAY,
+                TODAY,
+                start,
+            );
+        };
+        fold(&mut s, "l1", "a", start + 10);
+        fold(&mut s, "l2", "a", start + 20);
+        fold(&mut s, "l3", "b", start + 30);
+        // 昨天的日志：进 30 天计数，不是今天的作答。
+        fold(&mut s, "old", "c", start - 10);
+        assert_index_matches(&s, &cards);
+        assert_eq!(s.answer_card("old"), None);
+        // 重读：先减旧的再加回，归到了另一张规范卡。
+        s.forget("l2");
+        fold(&mut s, "l2", "c", start + 20);
+        assert_index_matches(&s, &cards);
+        // 没先减就再记同一条（覆盖）：索引跟着换卡，不留旧卡上的残项。
+        fold(&mut s, "l3", "a", start + 30);
+        assert_index_matches(&s, &cards);
+        for id in ["l1", "l2", "l3", "old", "never"] {
+            s.forget(id);
+            assert_index_matches(&s, &cards);
+        }
+        assert!(s.answers_on("a").next().is_none());
     }
 }
