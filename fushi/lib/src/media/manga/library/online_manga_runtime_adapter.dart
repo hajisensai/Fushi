@@ -39,10 +39,12 @@ class OnlineMangaPageRefExpired implements Exception {
 ///
 /// 在线直读会话（`OnlineMangaReaderSession`）按页序取页，页数与每页的身份串
 /// （面板 / OCR 缓存键）在开会话时就定了；这里只持有可以换的那部分——取页引用。
-/// 取页撞上 [OnlineMangaPageRefExpired] 时重解析一次页表：页数一致就整份换新、
-/// 用新引用再取这一页；页数变了说明源端章节已不是开会话时那一份，按失败处理
-/// （[OnlineMangaUnavailable]，之后的取页都直接报这个错，不再反复重解析）。
-/// 并发撞上失效的取页共用同一次重解析。
+/// 取页撞上 [OnlineMangaPageRefExpired] 时重解析一次页表：新表与旧表**逐页**是
+/// 同一份（[sameSourcePages]：页数相同、每页源端身份 [OnlineMangaPageRef.pageKey]
+/// 都在且相等）才整份换新、用新引用再取这一页；否则源端章节已不是开会话时那一份
+/// （页数变了，或同页数换了 / 重排了页，audit-035），按失败处理
+/// （[OnlineMangaUnavailable]，之后的取页都直接报这个错，不再反复重解析）——
+/// 接着取只会把两版页图混进同一章。并发撞上失效的取页共用同一次重解析。
 class OnlineMangaChapterPageRefs {
   OnlineMangaChapterPageRefs({
     required this.adapter,
@@ -62,9 +64,9 @@ class OnlineMangaChapterPageRefs {
   /// 页数（开会话时定，之后不变）。
   int get length => _pages.length;
 
-  /// 重解析后发现源端页数已变：这份页表再也取不到页，持有者（缓存页表的互联
-  /// host）要丢掉它，下次按新页数重开。
-  bool get pageCountChanged => _mismatch != null;
+  /// 重解析后发现源端页表已变（页数或某页身份）：这份页表再也取不到页，持有者
+  /// （缓存页表的互联 host、下载服务）要丢掉它，按新页表重开。
+  bool get pageTableChanged => _mismatch != null;
 
   /// 当前有效的第 [index] 页引用（取消在飞请求要对得上当前引用）。
   OnlineMangaPageRef operator [](int index) => _pages[index];
@@ -101,11 +103,14 @@ class OnlineMangaChapterPageRefs {
       entry: entry,
       chapter: chapter,
     );
-    if (fresh.length != _pages.length) {
+    if (!sameSourcePages(_pages, fresh)) {
       final OnlineMangaUnavailable mismatch = OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.runtimeFailure,
-        'The chapter now has ${fresh.length} pages instead of '
-        '${_pages.length} after the runtime restarted',
+        fresh.length != _pages.length
+            ? 'The chapter now has ${fresh.length} pages instead of '
+                  '${_pages.length} after the runtime restarted'
+            : 'The chapter pages changed at the source after the runtime '
+                  'restarted',
         stage: 'pages',
       );
       _mismatch = mismatch;
@@ -113,6 +118,21 @@ class OnlineMangaChapterPageRefs {
     }
     _pages = List<OnlineMangaPageRef>.unmodifiable(fresh);
     return _pages;
+  }
+
+  /// [a] 与 [b] 是否源端同一份页表：页数相同，且逐页 [OnlineMangaPageRef.pageKey]
+  /// 都非 null 且相等。认不出身份（null）的页一律当作「可能变了」——宁可让持有者
+  /// 重开，也不把两版页图拼成一章。
+  static bool sameSourcePages(
+    List<OnlineMangaPageRef> a,
+    List<OnlineMangaPageRef> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (int index = 0; index < a.length; index++) {
+      final String? key = a[index].pageKey;
+      if (key == null || key != b[index].pageKey) return false;
+    }
+    return true;
   }
 }
 
@@ -139,6 +159,15 @@ sealed class OnlineMangaPageRef {
 
   /// Original provider URL, used only to match optional OCR sidecars.
   String? get sourceUrl => null;
+
+  /// 源端稳定页身份（audit-035）：同一个值 = 源端同一页图，**不随**运行时进程、
+  /// 取图令牌、代理端口变。下载续跑按它认磁盘上已落地的页还算不算数、页表重排后
+  /// 落到了哪一页；重解析页表时按它判源端章节有没有换页。
+  ///
+  /// null = 这个运行时给不出（旧宿主 / 对端没报）：续跑不复用这页、重解析一律
+  /// 当作已变。不要拿取图地址凑——桌面 sidecar 的代理地址每次重启都变、带令牌的
+  /// CDN 地址会轮换，凑出来的身份要么天天误判重下，要么认错页。
+  String? get pageKey;
 }
 
 /// Mihon：取图必须经扩展自己的 OkHttp 客户端（拦截器、cookie、按请求头）。
@@ -152,8 +181,18 @@ class MihonMangaPageRef extends OnlineMangaPageRef {
   final MihonSourceContext context;
   final MihonPage page;
 
+  /// 优先扩展原样给的图片地址：桌面上 [MihonPage.resolvedUrl] 是 sidecar 进程内的
+  /// 代理地址，既对不上 OCR sidecar 里的源站地址，也每次重启都变。
   @override
-  String? get sourceUrl => page.resolvedUrl;
+  String? get sourceUrl {
+    final String? original = page.sourceImageUrl;
+    return original != null && original.isNotEmpty
+        ? original
+        : page.resolvedUrl;
+  }
+
+  @override
+  String? get pageKey => page.pageKey;
 }
 
 /// 裸 http(s) 页：源补丁（quirk）产出的签名 URL（BUG-2514），以及网页漫画
@@ -180,6 +219,11 @@ class HttpMangaPageRef extends OnlineMangaPageRef {
 
   @override
   String? get sourceUrl => url;
+
+  /// 页图地址本身（网页漫画扫出来的图、quirk 产出的签名地址）。签名会轮换的源
+  /// 续跑时按变了处理、重取，宁慢不错。
+  @override
+  String? get pageKey => url;
 }
 
 /// 互联对端：`bookKey` + 页序即是端点路径段。
@@ -189,9 +233,14 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
     required this.bookKey,
     required this.remoteIndex,
     this.chapterDigest,
+    this.pageKey,
   });
 
   final String bookKey;
+
+  /// 对端页表报的源端页身份（`RemoteMangaPageInfo.key`）；旧对端不报 = null。
+  @override
+  final String? pageKey;
 
   /// 对端页表里的 `index`（通常与 [index] 相同，但以对端报的为准）。
   final int remoteIndex;
@@ -219,6 +268,10 @@ class KavitaMangaPageRef extends OnlineMangaPageRef {
 
   /// Kavita 侧页序（0 起，通常与 [index] 相同）。
   final int page;
+
+  /// Kavita 的章 id 是服务器侧稳定身份，章内页序由服务器按文件定。
+  @override
+  String get pageKey => 'kavita $serverConfigId $chapterId $page';
 
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,

@@ -26,8 +26,8 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
   /// 解析不留（下次重试），容量够覆盖「当前章 + 预取下一章」再加几章余量。
   ///
   /// 页表经 [OnlineMangaChapterPageRefs] 持有：桌面 sidecar 一重启（装 / 更新 /
-  /// 卸扩展），缓存里的取页引用整份作废，由它重解析换新（BUG-4917）；源端页数变了
-  /// 就把这份页表丢掉，对端下次按新页数重开。
+  /// 卸扩展），缓存里的取页引用整份作废，由它重解析换新（BUG-4917）；源端页表变了
+  /// （页数或某页身份，audit-035）就把这份页表丢掉，对端下次按新页表重开。
   final Map<String, Future<OnlineMangaChapterPageRefs>> _pageTables =
       <String, Future<OnlineMangaChapterPageRefs>>{};
   static const int _pageTableCapacity = 8;
@@ -42,11 +42,20 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
   }
 
   @override
-  Future<int> chapterPageCount({
+  Future<List<String?>> chapterPageKeys({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,
-  }) async => (await _pages(bookKey, sourceMetadata, chapter)).length;
+  }) async {
+    final OnlineMangaChapterPageRefs pages = await _pages(
+      bookKey,
+      sourceMetadata,
+      chapter,
+    );
+    return <String?>[
+      for (int index = 0; index < pages.length; index++) pages[index].pageKey,
+    ];
+  }
 
   @override
   Future<Uint8List> chapterPage({
@@ -65,7 +74,7 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
     try {
       return await pages.fetch(index);
     } catch (_) {
-      if (pages.pageCountChanged) {
+      if (pages.pageTableChanged) {
         _pageTables.removeWhere(
           (String _, Future<OnlineMangaChapterPageRefs> cached) =>
               identical(cached, table),

@@ -64,11 +64,13 @@ void main() {
     index: index,
   );
 
-  Future<int> count() => reader.chapterPageCount(
+  Future<List<String?>> keys() => reader.chapterPageKeys(
     bookKey: 'book',
     sourceMetadata: metadata,
     chapter: chapterJson,
   );
+
+  Future<int> count() async => (await keys()).length;
 
   test('页表缓存：同一章逐页取只解析一次', () async {
     expect(await count(), 3);
@@ -94,6 +96,33 @@ void main() {
     expect(await count(), 5);
     expect(await page(4), _bytesFor(process: 2, index: 4));
   });
+
+  test('页表报源端页身份，不随进程变（audit-035）', () async {
+    final List<String?> before = await keys();
+    expect(before, <String>[
+      'https://cdn.example/v1/0.jpg',
+      'https://cdn.example/v1/1.jpg',
+      'https://cdn.example/v1/2.jpg',
+    ]);
+    adapter.restart();
+    expect(await page(1), _bytesFor(process: 2, index: 1));
+    expect(await keys(), before, reason: '重启只换取图引用，页身份不变');
+  });
+
+  test('重启后页数相同但源端换了页：按失败，缓存丢掉，对端按新页表重开（audit-035）', () async {
+    expect(await page(0), _bytesFor(process: 1, index: 0));
+    adapter
+      ..version = 2
+      ..restart();
+    await expectLater(page(1), throwsA(isA<OnlineMangaUnavailable>()));
+    expect(await keys(), <String>[
+      'https://cdn.example/v2/0.jpg',
+      'https://cdn.example/v2/1.jpg',
+      'https://cdn.example/v2/2.jpg',
+    ]);
+    expect(await page(1), _bytesFor(process: 2, index: 1));
+    expect(adapter.resolveCalls, 3, reason: '首次 + 重启后重解析 + 丢缓存后重开');
+  });
 }
 
 Uint8List _bytesFor({required int process, required int index}) =>
@@ -105,6 +134,9 @@ class _RestartingAdapter extends Fake implements OnlineMangaRuntimeAdapter {
   int process = 1;
   int pageCount = 3;
   int resolveCalls = 0;
+
+  /// 源端这一章的版本：变了 = 源端换了页图（页身份跟着变）。
+  int version = 1;
 
   void restart() => process++;
 
@@ -118,21 +150,21 @@ class _RestartingAdapter extends Fake implements OnlineMangaRuntimeAdapter {
       for (int i = 0; i < pageCount; i++)
         HttpMangaPageRef(
           index: i,
-          url: 'http://127.0.0.1/image/$process/$i',
+          url: 'https://cdn.example/v$version/$i.jpg',
           referer: '',
+          // 发引用的「进程号」借请求头带着；页身份只看源端地址。
+          headers: <String, String>{'x-process': '$process'},
         ),
     ];
   }
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
-    final List<String> segments = Uri.parse(
-      (page as HttpMangaPageRef).url,
-    ).pathSegments;
-    final int issuer = int.parse(segments[1]);
+    final HttpMangaPageRef ref = page as HttpMangaPageRef;
+    final int issuer = int.parse(ref.headers['x-process']!);
     if (issuer != process) {
       throw const OnlineMangaPageRefExpired('issued by a restarted process');
     }
-    return _bytesFor(process: process, index: int.parse(segments[2]));
+    return _bytesFor(process: process, index: ref.index);
   }
 }

@@ -76,7 +76,12 @@ class _MangaHost extends Fake
       title: 'チェンソーマン',
       pages: <RemoteMangaPageInfo>[
         for (int i = 0; i < 2; i++)
-          RemoteMangaPageInfo(index: i, name: 'c${chapter}p$i.jpg'),
+          RemoteMangaPageInfo(
+            index: i,
+            name: 'c${chapter}p$i.jpg',
+            // 第 0 页报身份、第 1 页不报（旧 host 的样子）。
+            key: i == 0 ? 'src-c${chapter}p$i' : null,
+          ),
       ],
     );
   }
@@ -320,6 +325,14 @@ void main() {
       final InterconnectMangaPageRef ref =
           pages.last as InterconnectMangaPageRef;
       expect(ref.chapterDigest, mangaChapterDigest('/manga/csm/2'));
+      // 页身份（audit-035）：host 报的身份前缀 host 侧 bookKey + 章摘要；不报的
+      // 页认不出（续跑不复用）。
+      expect(
+        pages.first.pageKey,
+        '${ref.bookKey} ${mangaChapterDigest('/manga/csm/2')}'
+        ' src-c1p0',
+      );
+      expect(ref.pageKey, isNull);
       expect(await adapter.fetchChapterPage(pages.first), <int>[0xC0, 1, 0]);
       expect(await adapter.fetchChapterPage(pages.last), <int>[0xC0, 1, 1]);
     });

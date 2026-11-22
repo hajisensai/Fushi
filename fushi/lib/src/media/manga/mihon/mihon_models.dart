@@ -302,19 +302,44 @@ class MihonChapter {
 
 @immutable
 class MihonPage {
-  const MihonPage({required this.index, required this.url, this.imageUrl});
+  const MihonPage({
+    required this.index,
+    required this.url,
+    this.imageUrl,
+    this.sourceImageUrl,
+  });
 
   factory MihonPage.fromJson(Map<String, Object?> json) => MihonPage(
     index: (json['index'] as num?)?.toInt() ?? 0,
     url: json['url']?.toString() ?? '',
     imageUrl: json['imageUrl']?.toString(),
+    sourceImageUrl: json['sourceImageUrl']?.toString(),
   );
 
   final int index;
   final String url;
+
+  /// 取图用的地址。桌面 sidecar 上是它本进程的 `http://127.0.0.1:<端口>/image/<令牌>`
+  /// 代理地址（每次重启都变），Android 上是扩展原样给的值。
   final String? imageUrl;
 
+  /// 扩展在 `getPageList` 里原样给的图片地址（代理之前）；null = 源按页懒解析
+  /// （取图时才经 `getImageUrl` 从 [url] 换出来）。两个宿主都在桥上单独报这一项
+  /// （audit-035），不随运行时进程变。
+  final String? sourceImageUrl;
+
   String get resolvedUrl => imageUrl?.isNotEmpty == true ? imageUrl! : url;
+
+  /// 源端稳定页身份：扩展原样给的图片地址，懒解析的源退到页地址 [url]。
+  ///
+  /// 下载续跑按它认「磁盘上这页还是不是源端现在的这一页」（audit-035）。**不**看
+  /// [imageUrl]：桌面上那是进程内代理地址，sidecar 一重启就全变。都没有（旧宿主没报
+  /// [sourceImageUrl]、源又没给页地址）时为 null = 认不出，续跑不复用这页。
+  String? get pageKey {
+    final String? image = sourceImageUrl;
+    if (image != null && image.isNotEmpty) return image;
+    return url.isEmpty ? null : url;
+  }
 }
 
 enum MihonFilterKind {
