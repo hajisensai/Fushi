@@ -166,6 +166,11 @@ void main() {
       // v1 文件：每拍满强度，等于原始拍点冲击。
       final MusicAudioAnalysis old = MusicAudioAnalysis.tryParse(_goldenV1())!;
       expect(old.accentedBeatImpactAt(500), closeTo(1, 1e-9));
+      // 帧里带重音：有重音数据时 = accentedBeatImpactAt，旧文件为 null、退回原始拍点冲击。
+      expect(a.frameAt(0).accentImpact, closeTo(0.75, 1e-9));
+      expect(a.frameAt(0).accentOrBeat, closeTo(0.75, 1e-9));
+      expect(old.frameAt(500).accentImpact, isNull);
+      expect(old.frameAt(500).accentOrBeat, old.frameAt(500).beatImpact);
     });
   });
 }

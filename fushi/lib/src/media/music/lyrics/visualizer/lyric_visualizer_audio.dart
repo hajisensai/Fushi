@@ -25,6 +25,7 @@ class LyricVisualizerAudioFrame {
     required this.beatImpact,
     required this.downbeatImpact,
     required this.drumImpact,
+    this.accentImpact,
     this.bpm,
     this.envelopeReady = false,
     this.beatsReady = false,
@@ -74,6 +75,14 @@ class LyricVisualizerAudioFrame {
   /// 鼓击冲击（鼓 stem / 打击乐成分的击点；folia drum hits）。
   final double drumImpact;
 
+  /// 按重音加权的拍点冲击（folia `beatAccents`）：只在有节奏的听感拍上打，峰值 = 该拍强度 ×
+  /// 整首动感系数；前奏 / 无节奏段为 0。null = 没有重音数据（旧结果 / 歌词回落），样式退回
+  /// [beatImpact]，或直接用 [accentOrBeat]。
+  final double? accentImpact;
+
+  /// 有重音就用重音，否则用原始拍点冲击。
+  double get accentOrBeat => accentImpact ?? beatImpact;
+
   /// 整首速度（拍 / 分）；未知为 null。
   final double? bpm;
 
@@ -104,6 +113,7 @@ class LyricVisualizerAudioFrame {
       other.beatImpact == beatImpact &&
       other.downbeatImpact == downbeatImpact &&
       other.drumImpact == drumImpact &&
+      other.accentImpact == accentImpact &&
       other.bpm == bpm &&
       other.envelopeReady == envelopeReady &&
       other.beatsReady == beatsReady &&
@@ -122,6 +132,7 @@ class LyricVisualizerAudioFrame {
     beatImpact,
     downbeatImpact,
     drumImpact,
+    accentImpact,
     bpm,
     envelopeReady,
     beatsReady,
@@ -134,7 +145,7 @@ class LyricVisualizerAudioFrame {
   String toString() =>
       'LyricVisualizerAudioFrame(power: $power, low: $low, mid: $mid, '
       'high: $high, vocal: $vocal, beat: $beatImpact, downbeat: '
-      '$downbeatImpact, drum: $drumImpact, bpm: $bpm, fallback: $fallback)';
+      '$downbeatImpact, drum: $drumImpact, accent: $accentImpact, bpm: $bpm, fallback: $fallback)';
 }
 
 /// 一首歌的音频分析结果（实现方：音频分析服务）。只读；分析进度变化时实现方换一个新对象交给宿主

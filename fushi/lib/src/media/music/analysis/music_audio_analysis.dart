@@ -368,6 +368,7 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
         decayMs: kMusicDownbeatImpactDecayMs,
       ),
       drumImpact: drumImpactAt(audioMs),
+      accentImpact: hasBeatAccents ? accentedBeatImpactAt(audioMs) : null,
       bpm: bpm,
       envelopeReady: envelopeReady,
       beatsReady: beatsReady,
