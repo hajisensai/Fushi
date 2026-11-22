@@ -16,6 +16,8 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart'
         kLookupPopupMinHeight,
         kLookupPopupMinWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -1353,6 +1355,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
+    this.crossAppAudio,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.showMiningTargetSwitch = false,
@@ -1499,6 +1502,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 「高级制卡」：弹窗点某词条「高级制卡」→ 宿主弹 app 原生顶层对话框。透传给 webview；
   /// null 时弹窗不渲染该按钮（宿主只在制卡模块开着时接线）。
   final OpenAdvancedMiningCallback? onOpenAdvancedMining;
+
+  /// 跨应用语音缓存的查词快照，透传给 webview（见 [DictionaryPopupWebView.crossAppAudio]）。
+  final Future<CrossAppAudioSnapshot?>? crossAppAudio;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -2236,6 +2242,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onAppendSentence: onAppendSentence,
               onSetSentenceContext: onSetSentenceContext,
               onOpenAdvancedMining: onOpenAdvancedMining,
+              crossAppAudio: crossAppAudio,
               onClearSentenceDraft: onClearSentenceDraft,
               onScrolledToBottom: onScrolledToBottom,
               onScrolledUnderChanged: (bool under) =>

@@ -19,6 +19,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart'
+    show CrossAppAudioCapture;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -1346,6 +1348,24 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 释义来自已配对服务器时词典名旁小图标的说明（popup.js __fushiRemoteDictGlyph）。
     window.i18nRemoteDictionarySource = ${jsonEncode(t.dictionary_popup_remote_source)};
     window.i18nMinedActionFailed = ${jsonEncode(t.anki_card_action_failed)};
+    // 跨应用语音缓存「调整句子音频」面板（拍板 design-cross-app-audio-trim-ui）的文案。
+    // 入口门控 window.__fushiCrossAppAudioHost：app 外覆盖窗在下面按平台能力注入，
+    // Android 查词窗由 dictionary_popup_webview 的 in-app 固定块注入，其余宿主不注入。
+    window.i18nCrossAppAudio = ${jsonEncode(<String, String>{
+      'button': t.popup_cross_app_audio_button,
+      'title': t.popup_advanced_mining_audio_section,
+      'hint': t.popup_cross_app_audio_hint,
+      'loading': t.popup_cross_app_audio_loading,
+      'unavailable': t.popup_cross_app_audio_unavailable,
+      'play': t.popup_ctx_preview_audio,
+      'stop': t.popup_ctx_preview_stop,
+      'reset': t.popup_advanced_mining_reset,
+      'start': t.popup_advanced_mining_audio_start,
+      'end': t.popup_advanced_mining_audio_end,
+      'cancel': t.dialog_cancel,
+      'mine': t.popup_cross_app_audio_mine,
+    })};${options.globalLookup ? '
+    window.__fushiCrossAppAudioHost = ${CrossAppAudioCapture.instance.isDesktop};' : ''}
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
