@@ -12,6 +12,7 @@ import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';

@@ -17,6 +17,7 @@ import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';

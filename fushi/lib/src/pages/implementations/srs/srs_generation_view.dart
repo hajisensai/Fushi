@@ -32,6 +32,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
+    show openFeedbackComposeWith;
 import 'package:fushi/src/pages/implementations/srs/srs_gen4_report_actions.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
 import 'package:fushi/src/srs/srs_generation_kind.dart';
@@ -46,6 +48,14 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
 export 'package:fushi/src/srs/srs_generation_kind.dart';
+
+/// 恢复页用的报告动作（测试覆盖成假的）。放在页面这一层：它注入的反馈提交页在 import 大环里，
+/// 报告动作本身（`srs_gen4_report_actions.dart`）不跟着进环。
+final Provider<SrsGen4ReportActions> srsGen4ReportActionsProvider =
+    Provider<SrsGen4ReportActions>(
+      (Ref ref) =>
+          const SrsGen4ReportActions(openFeedback: openFeedbackComposeWith),
+    );
 
 /// 迁移步骤的显示名。
 String srsGen4StepLabel(SrsGen4MigrationStep step) => switch (step) {

@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_generation_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_gen4_report_actions.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
@@ -73,7 +74,12 @@ Future<void> pumpView(
 
 /// 报告的两个出口记下调用，不碰反馈服务与平台通道。
 class FakeReportActions extends SrsGen4ReportActions {
-  FakeReportActions({required this.desktop});
+  FakeReportActions({required this.desktop}) : super(openFeedback: _noFeedback);
+
+  static Future<void> _noFeedback(
+    BuildContext context,
+    FeedbackComposePrefill prefill,
+  ) async {}
 
   final bool desktop;
   final List<String> sent = <String>[];

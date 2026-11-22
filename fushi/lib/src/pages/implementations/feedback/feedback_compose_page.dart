@@ -24,6 +24,7 @@ import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
@@ -80,25 +81,6 @@ class FeedbackReopenSeed {
 
 /// [_FeedbackComposePageState._onDisk]：磁盘上没有草稿。
 const Object _kNoDraftOnDisk = Object();
-
-/// 从别处带着现场打开提交页（例如复习库升级没通过核对：分类、标题、正文预填好，诊断报告作样本文件自动附上，
-/// 用户不用自己去私有目录里找文件——手机上也找不到）。与 [FeedbackReopenSeed] 一样不读写草稿：草稿属于用户自己写到
-/// 一半的那条新反馈，不能被预填内容覆盖，提交后也不能被顺手删掉。
-class FeedbackComposePrefill {
-  const FeedbackComposePrefill({
-    required this.category,
-    required this.title,
-    required this.body,
-    this.files = const <File>[],
-  });
-
-  final FeedbackCategory category;
-  final String title;
-  final String body;
-
-  /// 自动附上的样本文件（按 [feedbackFileProblem] 过滤，超出 [FeedbackLimits.files] 的不附）。
-  final List<File> files;
-}
 
 /// 各分类的附件默认值（反馈 SDN2yTecu9 / LmIRnau_Fa）：只有「问题」默认附带
 /// 日志与打开反馈那一刻的自动截图——它们是复现现场；建议 / 其他一般用不到，
