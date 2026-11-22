@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4525 条。点号进各自文件。
+> 共 4530 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5205](bugs/BUG-5205-tooltip-ticker-error-filter-hides-leaks.md) | ✅ | ✅ | main.dart 吞 RawTooltip ticker 错误的过滤会藏掉真实 ticker 泄漏断言 |
 | [BUG-5204](bugs/BUG-5204-dart314-aot-deferred-final-switch-capture.md) | ✅ | ✅ | Dart 3.14.0 AOT 编译推迟 final + switch 赋值 + 闭包捕获时崩溃（全平台 release 红） |
-> 共 4526 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5203](bugs/BUG-5203-home-activity-rows-main-isolate-merge.md) | ✅ | ✅ | 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序 |
 | [BUG-5200](bugs/BUG-5200-windows-video-frames-wait-main-thread.md) | ✅ | ✅ | Windows 视频每一帧都要等主线程，主线程一忙就被下一帧覆盖丢掉（平移镜头一卡一卡） |
 | [BUG-5199](bugs/BUG-5199-media-lock-desktop-system-auth.md) | 🚧 | 🚧 | 上锁作品：Windows / Linux 没有系统验证（只有口令） |
