@@ -207,24 +207,17 @@ class TextToEpub {
     return blocks;
   }
 
-  /// HTML / XHTML 只取 `<body>` 的内容。良构的（X）HTML 按 XML 解析，保住
+  /// HTML / XHTML 只取正文（body）内容。良构的（X）HTML 按 XML 解析，保住
   /// `<a id="x"/>` 这类非空元素自闭合的写法；不良构的再交给 HTML5 解析器
-  /// （与浏览器同一套容错），两条路都重新序列化成良构 XHTML 再切章。
+  /// （与浏览器同一套容错），两条路都重新序列化成良构 XHTML 再切章。两条路的
+  /// 正文范围都按 HTML 的 body 规则定：`<body>`/`<head>` 标签可省略，XML 路径
+  /// 由 [_xmlBodyNodes] 复刻 HTML5 树构建的隐含 body 判定（HBK-AUDIT-003）。
   static List<_BodyNode> _htmlBlocks(String content) {
     content = _stripBom(content);
     final xml.XmlDocument? document = _tryParseXml(content);
     if (document != null) {
-      final xml.XmlElement? body = document.descendants
-          .whereType<xml.XmlElement>()
-          .where((xml.XmlElement e) => e.name.local.toLowerCase() == 'body')
-          .firstOrNull;
-      final Iterable<xml.XmlNode> nodes = body != null
-          ? body.children
-          : document.rootElement.name.local.toLowerCase() == 'html'
-          ? const <xml.XmlNode>[]
-          : <xml.XmlNode>[document.rootElement];
       return _trimEdgeWhitespace(<_BodyNode>[
-        for (final xml.XmlNode n in nodes) ?_fromXml(n),
+        for (final xml.XmlNode n in _xmlBodyNodes(document)) ?_fromXml(n),
       ]);
     }
     // 不良构输入同样可能带 kobo 式自闭合 <script/>：走章节解析入口先归一化，否则
@@ -234,6 +227,47 @@ class TextToEpub {
     return _trimEdgeWhitespace(<_BodyNode>[
       for (final dom.Node n in body.nodes) ?_fromDom(n),
     ]);
+  }
+
+  /// HTML 里只能出现在 head、且正文开始前遇到时归 head 的元素（HTML5 树构建
+  /// 「in head」插入模式处理的元素）。正文开始后再出现的同名元素留在 body。
+  static const Set<String> _headOnlyElements = <String>{
+    'base', 'basefont', 'bgsound', 'link', 'meta', 'noframes', 'noscript', //
+    'script', 'style', 'template', 'title',
+  };
+
+  /// HTML 的空白只有 ASCII 这 5 个（不是 Dart `trim` 认的全部 Unicode 空白）。
+  static final RegExp _htmlSpaceOnly = RegExp(r'^[\t\n\f\r ]*$');
+
+  /// 良构 XML 文档按 HTML5 树构建定 body 的规则取正文节点，与不良构输入走的
+  /// HTML5 解析器结论一致：`<html>` / `<head>` / `<body>` 三个标签本身都不进
+  /// 正文（可省略、可出现在「不该在」的位置），只看它们里面的节点按文档顺序
+  /// 逐个判定——正文开始前，空白文本与 [_headOnlyElements] 归 head；首个非空白
+  /// 文本、其他元素或 `<body>` 标签开始正文，此后的节点（含 `</body>` 之后、
+  /// 中途 `<head>` 里的）全归正文。注释 / 处理指令 / doctype 从不进正文。
+  static List<xml.XmlNode> _xmlBodyNodes(xml.XmlDocument document) {
+    final List<xml.XmlNode> out = <xml.XmlNode>[];
+    bool started = false;
+    void visit(xml.XmlNode node) {
+      if (node is xml.XmlElement) {
+        final String name = node.name.local.toLowerCase();
+        if (name == 'html' || name == 'head' || name == 'body') {
+          if (name == 'body') started = true;
+          node.children.forEach(visit);
+          return;
+        }
+        if (!started && _headOnlyElements.contains(name)) return;
+      } else if (node is xml.XmlText || node is xml.XmlCDATA) {
+        if (!started && _htmlSpaceOnly.hasMatch(node.value!)) return;
+      } else {
+        return;
+      }
+      started = true;
+      out.add(node);
+    }
+
+    document.children.forEach(visit);
+    return out;
   }
 
   /// 输入是否良构 XML：是就返回文档，不是返回 null（由调用方改走 HTML5 解析）。

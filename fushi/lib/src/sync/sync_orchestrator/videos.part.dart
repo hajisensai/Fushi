@@ -77,22 +77,32 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     // 对齐（本机独有的注册给 host、host 新有的落到本机，拍板台 Z2OhxAjKVv），下面
     // 的本地基底与 host 清单就都包含它们，进度 / 播放偏好照常同步。推过东西时
     // 返回的是推之后重取的清单。
-    final List<RemoteVideoInfo> hostList = await _reconcileStreamVideosLive(
-      report,
-      backend,
-      hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
-          ? hostVideos.videos
-          : await backend.listRemoteVideos(),
-    );
+    //
+    // 本机行表与整表偏好在这里各读一次，流媒体对齐与下面的进度 / 播放偏好共用（稳态
+    // 一轮 SQL 条数与视频数无关，interconnect_progress_sweep_db_ops_test 钉着）；只有
+    // 对齐真落了新行才重读行表。
+    List<VideoBookRow> localRows = await _db.allVideoBooks();
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    final ({List<RemoteVideoInfo> hostList, bool pulled}) aligned =
+        await _reconcileStreamVideosLive(
+          report,
+          backend,
+          hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
+              ? hostVideos.videos
+              : await backend.listRemoteVideos(),
+          localRows: localRows,
+          prefs: allPrefs,
+        );
+    final List<RemoteVideoInfo> hostList = aligned.hostList;
+    if (aligned.pulled) localRows = await _db.allVideoBooks();
 
     // 基底①：本地 VideoBooks 行（uid → lastPositionMs，向后兼容书架视频）。
     final Map<String, int> rowPositionByUid = <String, int>{};
-    for (final VideoBookRow video in await _db.allVideoBooks()) {
+    for (final VideoBookRow video in localRows) {
       rowPositionByUid[video.bookUid] = video.lastPositionMs;
     }
     // 基底②：本地看过的流式视频（有 video_remote_position_<uid> prefs 但无行）。
     final Set<String> localUids = <String>{...rowPositionByUid.keys};
-    final Map<String, String> allPrefs = await _db.getAllPrefs();
     for (final String key in allPrefs.keys) {
       final String? uid = videoUidFromRemotePositionPrefKey(key);
       if (uid != null) localUids.add(uid);

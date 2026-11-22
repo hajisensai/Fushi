@@ -97,6 +97,18 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
     }
   }
 
+  @override
+  Future<Map<String, dynamic>?> releaseCudaRuntime({bool resetContext = false}) async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('releaseCudaRuntime', {
+        'resetContext': resetContext,
+      });
+      return result == null ? null : _convertMapToStringDynamic(result);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   /// Get the available providers
   @override
   Future<List<String>> getAvailableProviders() async {

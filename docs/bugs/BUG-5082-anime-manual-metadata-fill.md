@@ -1,0 +1,18 @@
+## BUG-5082 · 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等
+- **报告**：2026-11-21（用户：应用内反馈 fMicnouU6V ②「其它方式都失败时可以手动填元数据」，拍板台「做」）
+- **真实性**：✅ 部分缺口。已有：书 / 漫画「编辑信息」可改标题、封面，作者只有 EPUB / 漫画能改（`fushi/lib/src/pages/implementations/media_item_edit_dialog_page.dart:64` `supportsAuthorEdit`）；动画可「手动指定作品」按标题或 AniDB / MAL / TMDB ID 绑定身份（`video_source_scrape_manual_*`），作品集可改名。缺：三家主源都查不到的作品无法手填简介 / 年份 / 类型等字段；PDF 不能改作者。
+- **根因**：
+  - 动画：作品资料只有刮削一个写入口。`video_metadata_works` 行只由 `VideoMetadataDatabaseStore.apply`（刮削）建出，刮削全失败就没有行；v99 字段锁对话框只能勾锁、不能改值，而且入口 `enabled: _canonicalWork != null`（develop `media_collection_detail_page.dart:3751`）——正是刮削全失败的作品点不了；散装视频详情页（`video_work_detail_page.dart` `_StandaloneVideoWorkDetail`）连锁入口都没有。可锁字段里也没有年份（`video_metadata_database_store.dart:257` `year` 恒写刮削值）。
+  - PDF 作者：作者能力是逐个子类覆盖的（`ReaderFushiSource` 一份、`MangaFushiSource` 后补一份委托），`ReaderPdfSource`（develop `reader_pdf_source.dart:31`）没覆盖，沿用 `MediaSource.supportsAuthorEdit => false`（`media_source.dart:841`），而 EPUB / 漫画 / PDF 是同一张 `EpubBooks` 表的同一 `author` 列。
+- **[x] ① 已修复**（分支 `claude/fix-bug-5082-manual-metadata`）：
+  - 「用户手填」作为一类资料来源接进同一张作品表与 v99 字段锁：`VideoMetadataDatabaseStore.applyManualEdit` / `currentManualEdit`（`packages/fushi_engine/lib/media/video/metadata/video_metadata_database_store.dart`），归属判定 `videoWorkManualTargetForCollection` / `ForBook`（`video_metadata_manual_edit.dart`，与刮削计划器 / `resolveVideoMetadataWorkForCollection` 同一口径：合集行优先、成员恰一条即它、多条不猜；无行时单成员合集挂在那一集上、多集挂合集上）。改过的字段写值并上锁（之后刮削保留，与封面锁同语义），清空的字段清值并解锁（下次刮削回填），没改的字段值与锁都不动。手填不写 provider 身份，作品仍算未识别、照常进自动补刮。
+  - `VideoMetadataLockableField` 新增 `year`，`apply()` 尊重年份锁；锁对话框随之多一行。
+  - UI：合集详情页管理菜单「编辑资料」（不要求已有作品行）、散装视频详情页次按钮「编辑资料」，共用 `fushi/lib/src/media/video/metadata/video_metadata_edit_dialog.dart`（标题 / 原名 / 年份 / 简介 / 标语 / 类型 / 制作公司）。
+  - 书：作者编辑能力上提到书族基类 `ReaderMediaSource`（单一实现），删掉 EPUB / 漫画两份覆盖，PDF 随之可改作者。
+- **[x] ② 已加自动化测试**：`fushi/test/media/video/metadata/video_metadata_manual_edit_test.dart`（无行时建行上锁且不算识别、重刮不覆盖手填、清空后回到刮削值、已刮作品只锁改过的字段且 country 词条保留、合集 / 单成员 / 多成员归属）、`fushi/test/pages/video_metadata_edit_dialog_test.dart`（对话框填写落库 + 合集菜单项不要求作品行）、`fushi/test/media/sources/reader_fushi_source_test.dart`（PDF 作者）。
+- **备注**：
+  - 不新增动画资料源（白名单只有 AniDB / MAL / TMDB）；手填不是资料源，不进 provider registry。
+  - 未做（已登记 BUG-5111）：书的**简介**手填——书的简介在 `item_scrape_meta`（条目刮削资料），要单独设计「手填覆盖条目刮削」的锁，本条只补作者。
+  - 已知遗留（已登记 BUG-5110；与既有字段锁同源，非本条引入）：合集从 1 个视频长到多集后，刮削按合集建新行时 `_removeBookOwnedWorksForCollection` 会删掉原挂在那一集上的作品行，手填值 / 字段锁随之丢失；修法是把唯一成员行「升格」为合集行，涉及季集 / 图 / 关系迁移，另开。
+  - #4076 审查补修：① 「改没改」以对话框打开时的初值为基准（`applyManualEdit(baseline:)`），不再拿库里此刻的值比——对话框开着时补刮落库，原实现会把没碰过的简介 / 类型按旧初值清空并解锁 / 上锁（丢失更新）；② 互联客户端合集唯一成员只在对端（本机无 `video_books` 行）时挂合集，原实现按单集建行会撞 `book_uid` 外键。
+  - 真机验证未做。

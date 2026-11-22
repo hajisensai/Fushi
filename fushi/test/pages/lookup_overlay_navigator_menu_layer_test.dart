@@ -273,19 +273,42 @@ void main() {
   });
 
   test('every root-overlay lookup host wraps its popup subtree', () {
-    const List<String> hosts = <String>[
-      'lib/src/pages/implementations/video_fushi_page.dart',
-      'lib/src/pages/implementations/web_video_fushi_page.dart',
+    // 查词 tab 与 texthooker 的浮层由共用宿主统一包（design-shared-lookup-webview），
+    // 两页只出 Stack 子项。
+    const Map<String, ({String fn, String wrap})> hosts =
+        <String, ({String fn, String wrap})>{
+          'lib/src/pages/implementations/video_fushi_page.dart': (
+            fn: 'Widget _buildPopupOverlay(BuildContext overlayContext) {',
+            wrap: 'return LookupOverlayNavigator(',
+          ),
+          'lib/src/pages/implementations/web_video_fushi_page.dart': (
+            fn: 'Widget _buildPopupOverlay(BuildContext overlayContext) {',
+            wrap: 'return LookupOverlayNavigator(',
+          ),
+          'lib/src/pages/implementations/shared_lookup_popup_host.dart': (
+            fn: 'Widget _buildOverlay(BuildContext overlayContext) {',
+            wrap: 'child: LookupOverlayNavigator(',
+          ),
+        };
+    for (final String page in <String>[
       'lib/src/pages/implementations/home_dictionary_page.dart',
       'lib/src/pages/implementations/texthooker_page.dart',
-    ];
-    for (final String path in hosts) {
-      final String src = File(path).readAsStringSync();
-      final int fn = src.indexOf(
-        'Widget _buildPopupOverlay(BuildContext overlayContext) {',
+    ]) {
+      final String src = File(page).readAsStringSync();
+      expect(
+        src.contains('SharedLookupPopupOwner') &&
+            src.contains('_popupHost.sync(context)'),
+        isTrue,
+        reason: '$page 的根 Overlay 浮层必须经 SharedLookupPopupHost 挂',
       );
-      expect(fn, isNonNegative, reason: '$path 缺 _buildPopupOverlay');
-      final int wrap = src.indexOf('return LookupOverlayNavigator(', fn);
+    }
+    for (final MapEntry<String, ({String fn, String wrap})> host
+        in hosts.entries) {
+      final String path = host.key;
+      final String src = File(path).readAsStringSync();
+      final int fn = src.indexOf(host.value.fn);
+      expect(fn, isNonNegative, reason: '$path 缺浮层 builder');
+      final int wrap = src.indexOf(host.value.wrap, fn);
       final int neutralizer = src.indexOf('FushiAppUiScaleNeutralizer(', fn);
       expect(
         wrap,

@@ -1,0 +1,14 @@
+## BUG-5178 · 有声漫画：查词不及时暂停、退出不停、键盘不接管、高亮不恢复
+- **报告**：2026-11-21（应用内反馈 #WrLFAXNkSw，开发者本人：「查词没自动暂停，暂停后关闭弹窗没自动恢复。前进后退和空格没有被有声漫画接管，至少默认应该接管吧，退出的时候没暂停音频……应该做的和有声书一样。而且翻页/点进来的时候高亮没有自动恢复」；追加「漫画的声音是关掉查词弹窗才暂停」）
+- **真实性**：✅ 真 bug，四处：
+  - ① 查词暂停时点挂错：`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:4838-4843`（`onDictionaryPopupRendered`）才调 `_readAloud.lookupOpened`，它只在弹窗 WebView 报 popupRendered 时来；热槽复用、渲染超时兜底等路径不报或报得很晚，于是查词时还在播，`_held` 没置上，关弹窗也就不恢复。小说阅读器在发起查词时同步暂停（`reader_fushi/lookup.part.dart:308` `_pauseForLookup`）。BUG-4907 时点选错，未修干净。
+  - ② 退出不停：`manga_fushi/read_aloud.part.dart:593` 的 `dispose` 无条件只 `_detachAudio`，不看「退出后续播」`appModel.audiobookBackgroundPlay`（默认关）；小说 / PDF 阅读器默认退出即停（TODO-702）。
+  - ③ 高亮不恢复：`manga_audio_playback_driver.dart:273` 的 `_show` 对静音条目（lead / gap / pad / hold）一律传空块、清掉高亮；翻页重定位落在页首 `lead`、进书续播落在句间，暂停时位置不再变，高亮就一直不回来。
+  - ④ 键盘：有声在场时裸空格 / 左右键仍是翻页（`shortcuts/shortcut_defaults.dart:435-449`），有声动作只绑了 K / J / L（`:492-494`）；小说有声书在场时裸空格是播放暂停（`shortcuts/reader_space_override.dart` `resolveReaderSpaceOverride`）。
+- **[x] ① 已修复** —
+  - 查词暂停挪到发起查词时：`processMangaSelection` 的 `search` 回调里、确定不走副屏路由之后、等查词结果之前同步 `lookupOpened(MangaLookupSource.page)`（与小说 `_pauseForLookup` 同一时点），渲染回调里删掉；关闭仍由 `onAllPopupsDismissed`（栈清空必经）放手。
+  - 退出：`_MangaReadAloudSupport.stopAudioUnlessBackground` 按 `audiobookBackgroundPlay` 分流（与小说 / PDF 同一开关同一判据），在 `onSourcePagePop` 第一个 await 之前与 `dispose` 各调一次，fire-and-forget（BUG-1273）。
+  - 高亮：驱动新增 `_displayLineAt`：句间停顿 / 页尾补齐框本页刚读完的那句，页首 lead 框本页马上要读的第一句，只有无台词页才清。
+  - 键盘：`resolveMangaAudioKeyTakeover`（`shortcuts/manga_arrow_override.dart`）——有声在场、无弹窗、无修饰时，空格复用 `resolveReaderSpaceOverride` 判据改作播放暂停，左右键按已校正的页序改作下一句 / 上一句（只接管出厂翻页绑定，用户改绑后让路）；PageUp / PageDown / 滚轮 / 点按仍翻页。
+- **[x] ② 已增加自动化测试** — `fushi/test/media/manga/audio/manga_audio_playback_test.dart`（翻页式 / 条漫各 2 项：暂停中翻页落到 lead 框首句、续播落在句间 / 页尾框刚读完那句、无台词页清空）；`fushi/test/shortcuts/manga_arrow_override_test.dart`（`resolveMangaAudioKeyTakeover` 3 项）；`fushi/test/media/manga/reader/manga_audio_reader_wiring_static_test.dart`（查词暂停时点、退出即停、键盘接线 3 项源码守卫：整页依赖 WebView 与会话，host 起不来）。变异实测：还原各处修复后对应测试全红，恢复后全绿。
+- **备注**：键盘接管是默认行为变化，按开发者本人反馈实现，没加开关（小说的空格接管也没有开关）；要关得另起设置项。真机未复测新构建。

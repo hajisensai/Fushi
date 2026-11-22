@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -204,8 +206,8 @@ void main() {
     ) async {
       int pushes = 0;
       await AggregateSyncService(db).syncOverClient(
-        fetchRemote: () async => hostJson,
-        pushMerged: (Object _) async => pushes++,
+        fetchRemote: () async => encodeAggregateWireJson(hostJson),
+        pushMerged: (Uint8List _) async => pushes++,
       );
       return pushes;
     }

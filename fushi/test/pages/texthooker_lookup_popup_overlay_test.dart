@@ -12,20 +12,27 @@ void main() {
       'lib/src/pages/implementations/texthooker_page.dart',
     ).readAsStringSync();
 
-    final int overlayBuilder = source.indexOf(
-      'Widget _buildPopupOverlay(BuildContext overlayContext)',
+    // 浮层 entry 与中和器归共用宿主（design-shared-lookup-webview），本页只出子项。
+    final String host = File(
+      'lib/src/pages/implementations/shared_lookup_popup_host.dart',
+    ).readAsStringSync();
+    expect(host, contains('Overlay.maybeOf(context, rootOverlay: true)'));
+    final int overlayBuilder = host.indexOf(
+      'Widget _buildOverlay(BuildContext overlayContext)',
     );
     expect(overlayBuilder, greaterThanOrEqualTo(0));
-    final int neutralizer = source.indexOf(
+    final int neutralizer = host.indexOf(
       'FushiAppUiScaleNeutralizer(',
       overlayBuilder,
     );
-    final int popupStack = source.indexOf(
-      'children: _buildPopups(context)',
+    final int popupStack = host.indexOf(
+      'buildSharedLookupPopupLayers(',
       overlayBuilder,
     );
     expect(neutralizer, greaterThan(overlayBuilder));
     expect(popupStack, greaterThan(neutralizer));
+    expect(source, contains('_popupHost.sync(context)'));
+    expect(source, contains(') => _buildPopups(context, screen);'));
 
     final int monitorBody = source.indexOf('Widget _buildMonitorBody(');
     final int selectedLine = source.indexOf(

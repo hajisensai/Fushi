@@ -286,6 +286,8 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
           t.video_subtitle_ai_no_local_episodes,
         AppVideoSubtitleStartProblem.nothingToRerun =>
           t.video_subtitle_ai_nothing_to_rerun,
+        AppVideoSubtitleStartProblem.glossaryRegenerating =>
+          t.video_subtitle_ai_glossary_regenerating,
       };
 
   void _onRerun() {

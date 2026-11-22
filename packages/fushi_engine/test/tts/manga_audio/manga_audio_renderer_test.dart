@@ -85,6 +85,10 @@ class _FakeBackend implements MangaRenderBackend {
   @override
   int parallelism = 1;
 
+  /// 整形版本（裁静音 / 淡变 / 响度参数的指纹）；测试里改它模拟「整形参数升级」。
+  @override
+  String shapeVersion = 'shape-a';
+
   @override
   Future<int> synthesizeLine({
     required String voice,
@@ -341,6 +345,51 @@ void main() {
       expect(backend.synthCalls, isEmpty);
     });
 
+    test('纯标点气泡（「……」「！」）出一段停顿：不送引擎、不算未配音，重跑沿用', () async {
+      final List<List<MokuroBlock>> pages = <List<MokuroBlock>>[
+        <MokuroBlock>[_block('……'), _block('！'), _block('……はい')],
+      ];
+      final MangaAudioScript script = MangaAudioScript(
+        lines: <MangaScriptLine>[
+          _line(0, <int>[0]),
+          _line(0, <int>[1]),
+          _line(0, <int>[2]),
+        ],
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      Future<MangaRenderOutcome> go(MangaRenderManifest? previous) =>
+          renderer.render(
+            script: script,
+            pageBlocks: pages,
+            defaultVoice: 'reading',
+            previous: previous,
+            ledger: ledger,
+            onProgress: (int done, int total) {},
+            cancel: TtsRenderCancelToken(),
+          );
+
+      final MangaRenderOutcome out = await go(null);
+      // 只有带可念文字的那句进引擎。
+      expect(backend.synthCalls, <String>['reading|0|……はい']);
+      expect(out.placeholders, isEmpty);
+      expect(ledger.entries, isEmpty);
+      final MangaRenderedLine dots = out.manifest.lines[0];
+      expect(dots.placeholder, isFalse);
+      expect(dots.file, 'p0b0.wav');
+      expect(dots.durationMs, estimatePlaceholderMs('……'));
+      expect(
+        File(p.join(renderer.directory.path, dots.file)).readAsStringSync(),
+        'silence ${estimatePlaceholderMs('……')}',
+      );
+      expect(out.manifest.lines[1].file, 'p0b1.wav');
+      expect(out.manifest.lines[2].file, 'p0b2.m4a');
+
+      final MangaRenderOutcome again = await go(out.manifest);
+      expect(again.reused, 3);
+      expect(again.produced, 0);
+      expect(backend.synthCalls, hasLength(1));
+    });
+
     test('重跑：没变的句子沿用；改了文字的重录；占位句再试一次，成功后出账', () async {
       backend.failVoices.add('bad');
       final CastVoicingLedger ledger = CastVoicingLedger();
@@ -372,6 +421,147 @@ void main() {
         File(p.join(renderer.directory.path, 'p0b1.ph.wav')).existsSync(),
         isFalse,
       );
+    });
+
+    group('整形版本（HBK-AUDIT-038）', () {
+      // 第 0 页第一句剪有声书（真人片段），第 2 页那句合成：存量演出重生成时两种音源都
+      // 必须跟着整形版本走，不能旧片段原样保留、新合成句却用新处理。
+      MangaAudioScript mixed() => MangaAudioScript(
+        audiobookSources: <String>['novel'],
+        lines: <MangaScriptLine>[
+          _line(
+            0,
+            <int>[0],
+            audio: const MangaAudiobookClip(
+              fileIndex: 0,
+              startMs: 0,
+              endMs: 1500,
+            ),
+          ),
+          _line(2, <int>[0]),
+        ],
+      );
+
+      test('清单行记整形版本并随 JSON 往返；占位静音不记', () async {
+        backend.failVoices.add('reading');
+        final MangaRenderOutcome out = await run(mixed(), CastVoicingLedger());
+        expect(out.manifest.lines[0].shape, 'shape-a');
+        expect(out.manifest.lines[1].placeholder, isTrue);
+        expect(out.manifest.lines[1].shape, isNull);
+        final MangaRenderManifest back = (await MangaRenderManifest.load(
+          renderer.manifestFile,
+        ))!;
+        expect(back.lines[0].shape, 'shape-a');
+        expect(back.lines[1].shape, isNull);
+      });
+
+      test('历史清单（行里没有整形版本）：有声书片段与合成句都按版本不符重出', () async {
+        final MangaRenderOutcome first = await run(
+          mixed(),
+          CastVoicingLedger(),
+        );
+        // 把清单降成整形版本出现之前的样子：行里没有 `shape`。
+        final Map<String, Object?> json = first.manifest.toJson();
+        for (final Object? l in json['lines']! as List<Object?>) {
+          (l! as Map<String, Object?>).remove('shape');
+        }
+        final MangaRenderManifest legacy = MangaRenderManifest.fromJson(json)!;
+        expect(legacy.lines.map((MangaRenderedLine l) => l.shape), <Object?>[
+          null,
+          null,
+        ]);
+        backend.synthCalls.clear();
+        backend.clipCalls = 0;
+
+        final MangaRenderOutcome second = await run(
+          mixed(),
+          CastVoicingLedger(),
+          previous: legacy,
+        );
+        expect(second.reused, 0);
+        expect(second.produced, 2);
+        expect(backend.clipCalls, 1);
+        expect(backend.synthCalls, <String>['reading|0|またね']);
+        expect(backend.prepared.last, <String>['p0b0', 'p2b0']);
+        expect(
+          second.manifest.lines.map((MangaRenderedLine l) => l.shape),
+          <String>['shape-a', 'shape-a'],
+        );
+      });
+
+      test('现代清单：整形版本相同就沿用；版本变了两种音源都重出并记新版本', () async {
+        final MangaRenderOutcome first = await run(
+          mixed(),
+          CastVoicingLedger(),
+        );
+        backend.synthCalls.clear();
+        backend.clipCalls = 0;
+
+        final MangaRenderOutcome same = await run(
+          mixed(),
+          CastVoicingLedger(),
+          previous: first.manifest,
+        );
+        expect(same.reused, 2);
+        expect(same.produced, 0);
+        expect(backend.clipCalls, 0);
+        expect(backend.synthCalls, isEmpty);
+
+        backend.shapeVersion = 'shape-b';
+        final MangaRenderOutcome upgraded = await run(
+          mixed(),
+          CastVoicingLedger(),
+          previous: same.manifest,
+        );
+        expect(upgraded.reused, 0);
+        expect(upgraded.produced, 2);
+        expect(backend.clipCalls, 1);
+        expect(backend.synthCalls, <String>['reading|0|またね']);
+        expect(
+          upgraded.manifest.lines.map((MangaRenderedLine l) => l.shape),
+          <String>['shape-b', 'shape-b'],
+        );
+      });
+
+      test('补回与保留候选写进当时的整形版本', () async {
+        backend.failVoices.add('reading');
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        final MangaAudioScript script = mixed();
+        final MangaRenderOutcome out = await run(script, ledger);
+        backend.failVoices.clear();
+        backend.shapeVersion = 'shape-b';
+        await renderer.backfill(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          manifest: out.manifest,
+          ledger: ledger,
+          requests: const <MangaBackfillRequest>[
+            MangaBackfillRequest(lineId: 'p2b0'),
+          ],
+          onProgress: (int done, int total) {},
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(out.manifest.lines[1].shape, 'shape-b');
+
+        backend.shapeVersion = 'shape-c';
+        final MangaRegenerateCandidate c = await renderer.regenerate(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          lineId: 'p2b0',
+          seed: 42,
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(c.shape, 'shape-c');
+        await renderer.keepCandidate(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          candidate: c,
+        );
+        expect(out.manifest.lines[1].shape, 'shape-c');
+      });
     });
 
     test('有声书片段走剪辑；关联的有声书剪不出来时这句占位', () async {

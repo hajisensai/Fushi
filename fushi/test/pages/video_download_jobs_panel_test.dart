@@ -314,7 +314,12 @@ void main() {
       panel: VideoDownloadJobsPanel(
         store: store,
         onRetry: (VideoDownloadJobRow job) async => retried.add(job.jobId),
-        onResume: (VideoDownloadJobRow job) async => resumed.add(job.jobId),
+        onResume: (List<VideoDownloadJobRow> jobs) async {
+          resumed.addAll(<String>[
+            for (final VideoDownloadJobRow j in jobs) j.jobId,
+          ]);
+          return const <String, Object>{};
+        },
         onCancel: (VideoDownloadJobRow job) async => cancelled.add(job.jobId),
       ),
     );

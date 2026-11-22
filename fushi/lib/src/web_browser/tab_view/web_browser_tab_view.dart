@@ -165,6 +165,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   final WebBrowserFullscreenZoomGuard _fullscreenZoom =
       WebBrowserFullscreenZoomGuard();
 
+  /// 页内全屏上报的主文档代际闸（整页导航后收尾全屏、拒收旧页面迟到上报）。
+  final WebBrowserFullscreenDocumentGate _fullscreenDocuments =
+      WebBrowserFullscreenDocumentGate();
+
   WebBrowserTab get _tab => widget.tab;
 
   /// initState 里取一次：dispose 期间不能再经 ref 往上查（Riverpod 禁止）。
@@ -709,6 +713,24 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     unawaited(_pullToRefresh?.controller.endRefreshing());
     _tab.update(loading: false);
     _tab.setError(classified);
+  }
+
+  /// 页内全屏脚本的上报（`fushiBrowserFullscreen`）。按主文档代际过闸：新文档提交时
+  /// 收尾标签页全屏（壳据此退沉浸模式、还原方向锁），旧页面的迟到上报丢弃。
+  @visibleForTesting
+  void handlePageFullscreenReport(List<dynamic> args) {
+    final WebBrowserPageFullscreenReport? report =
+        WebBrowserPageFullscreenReport.fromArgs(args);
+    if (report == null) return;
+    switch (_fullscreenDocuments.admit(report)) {
+      case WebBrowserFullscreenDocumentVerdict.ignore:
+        return;
+      case WebBrowserFullscreenDocumentVerdict.newDocument:
+        _fullscreenZoom.reset();
+        _setFullscreen(false);
+      case WebBrowserFullscreenDocumentVerdict.apply:
+        _setFullscreen(report.fullscreen, fit: report.fit);
+    }
   }
 
   void _setFullscreen(
@@ -1304,14 +1326,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         kWebBrowserFullscreenHandler,
         kWebPayloadTinyMaxChars,
         (List<dynamic> args) {
-          if (mounted && args.isNotEmpty && args.first is bool) {
-            _setFullscreen(
-              args.first as bool,
-              fit: WebBrowserFullscreenFit.fromWire(
-                args.length > 1 ? args[1] : null,
-              ),
-            );
-          }
+          if (mounted) handlePageFullscreenReport(args);
           return null;
         },
       ),

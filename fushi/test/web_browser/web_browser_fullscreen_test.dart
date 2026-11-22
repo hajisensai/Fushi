@@ -145,6 +145,95 @@ void main() {
     });
   });
 
+  group('文档代际闸（HBK-AUDIT-037）', () {
+    WebBrowserPageFullscreenReport rep(
+      bool on,
+      String? doc, {
+      bool start = false,
+    }) => WebBrowserPageFullscreenReport(
+      fullscreen: on,
+      document: doc,
+      documentStart: start,
+    );
+
+    test('新文档通告让新代际上位并要求收尾；旧页面迟到的进 / 退全屏丢弃', () {
+      final WebBrowserFullscreenDocumentGate g =
+          WebBrowserFullscreenDocumentGate();
+      expect(
+        g.admit(rep(false, 'a', start: true)),
+        WebBrowserFullscreenDocumentVerdict.newDocument,
+      );
+      expect(
+        g.admit(rep(true, 'a')),
+        WebBrowserFullscreenDocumentVerdict.apply,
+      );
+      // 整页导航：新文档 b 提交。
+      expect(
+        g.admit(rep(false, 'b', start: true)),
+        WebBrowserFullscreenDocumentVerdict.newDocument,
+      );
+      expect(g.currentDocument, 'b');
+      expect(
+        g.admit(rep(true, 'a')),
+        WebBrowserFullscreenDocumentVerdict.ignore,
+        reason: '旧页面卸载前发出、晚到的进全屏不能把壳拉回全屏',
+      );
+      expect(
+        g.admit(rep(false, 'a')),
+        WebBrowserFullscreenDocumentVerdict.ignore,
+      );
+      expect(
+        g.admit(rep(true, 'b')),
+        WebBrowserFullscreenDocumentVerdict.apply,
+      );
+    });
+
+    test('同号重复通告（桥就绪补报）不收尾；没见过代际时首个上报直接上位', () {
+      final WebBrowserFullscreenDocumentGate g =
+          WebBrowserFullscreenDocumentGate();
+      expect(
+        g.admit(rep(true, 'x')),
+        WebBrowserFullscreenDocumentVerdict.apply,
+      );
+      expect(g.currentDocument, 'x');
+      expect(
+        g.admit(rep(false, 'x', start: true)),
+        WebBrowserFullscreenDocumentVerdict.ignore,
+        reason: '同一文档重复通告不能把用户刚进的全屏退掉',
+      );
+    });
+
+    test('子框架上报（无代际号）照常应用；坏载荷解析为 null', () {
+      final WebBrowserFullscreenDocumentGate g =
+          WebBrowserFullscreenDocumentGate();
+      expect(
+        g.admit(rep(true, null)),
+        WebBrowserFullscreenDocumentVerdict.apply,
+      );
+      expect(WebBrowserPageFullscreenReport.fromArgs(<dynamic>['x']), isNull);
+      final WebBrowserPageFullscreenReport r =
+          WebBrowserPageFullscreenReport.fromArgs(<dynamic>[
+            true,
+            'portrait',
+            'd1',
+            false,
+          ])!;
+      expect(r.fullscreen, isTrue);
+      expect(r.fit, WebBrowserFullscreenFit.portrait);
+      expect(r.document, 'd1');
+      expect(r.documentStart, isFalse);
+      expect(
+        WebBrowserPageFullscreenReport.fromArgs(<dynamic>[
+          false,
+          '',
+          'd2',
+          true,
+        ])!.documentStart,
+        isTrue,
+      );
+    });
+  });
+
   group('页内全屏脚本（node 执行）', () {
     String? node;
     setUpAll(() => node = _resolveNode());
@@ -177,6 +266,47 @@ void main() {
       expect(r['toggleOn'], isTrue, reason: '扩展的全屏按钮能进');
       expect(r['toggleOff'], isTrue, reason: '再按一次退');
       expect(r['escExits'], isTrue, reason: '桌面 Esc 退伪全屏');
+    });
+
+    test('文档代际：新文档初始化即通告退出态，之后每条上报都带同一代际号', () async {
+      if (node == null) {
+        markTestSkipped('node not found on PATH; skipping JS execution');
+        return;
+      }
+      for (final bool takeover in <bool>[true, false]) {
+        final Map<String, dynamic> r = await _run(node!, takeover: takeover);
+        final List<dynamic> init = r['initCall'] as List<dynamic>;
+        expect(init.take(3), <Object?>[
+          kWebBrowserFullscreenHandler,
+          false,
+          '',
+        ]);
+        expect(init[3], isA<String>(), reason: '顶层文档带代际号');
+        expect(init[4], isTrue, reason: '是新文档通告');
+        expect(r['readyReannounce'], init, reason: '桥就绪后同号补报一次');
+        if (takeover) {
+          expect(r['enterDoc'], init[3]);
+          expect(r['enterStart'], isFalse);
+          final List<dynamic> restored = r['restoreCall'] as List<dynamic>;
+          expect(restored.take(3), <Object?>[
+            kWebBrowserFullscreenHandler,
+            false,
+            '',
+          ]);
+          expect(restored[4], isTrue);
+          expect(restored[3], isNot(init[3]), reason: '往返缓存恢复 = 新代际');
+          expect(r['pagehideExits'], isTrue, reason: '离开页面先退伪全屏');
+          expect(r['pagehideCall'], <Object?>[
+            kWebBrowserFullscreenHandler,
+            false,
+            '',
+            init[3],
+            false,
+          ]);
+        } else {
+          expect(r['nativeDoc'], init[3]);
+        }
+      }
     });
 
     test('不接管：不改全屏 API，只上报原生全屏变化', () async {
@@ -264,8 +394,9 @@ var winListeners = {};
 var window = {
   HTMLVideoElement: HTMLVideoElement,
   addEventListener: function(t, fn){ (winListeners[t] = winListeners[t] || []).push(fn); },
-  flutter_inappwebview: { callHandler: function(n, on, fit){ calls.push([n, on, fit]); } }
+  flutter_inappwebview: { callHandler: function(){ calls.push(Array.prototype.slice.call(arguments)); } }
 };
+window.top = window;
 var siteChanges = 0;
 document.addEventListener('fullscreenchange', function(){ siteChanges++; });
 var takeover = ${takeover ? 'true' : 'false'};
@@ -273,25 +404,32 @@ var origRequest = Element.prototype.requestFullscreen;
 
 ${webBrowserFullscreenScript(takeover: takeover)}
 
+function last3(){ return calls[calls.length - 1].slice(0, 3); }
+function fireWin(t, ev){ (winListeners[t] || []).forEach(function(fn){ fn(ev || {}); }); }
 var r = {};
+r.initCall = calls[0];
+fireWin('flutterInAppWebViewPlatformReady');
+r.readyReannounce = calls[calls.length - 1];
 r.patched = Element.prototype.requestFullscreen !== origRequest;
 r.api = !!window.fushiPageFullscreen;
 if (takeover) {
   video.webkitEnterFullscreen();
-  r.enterCall = calls[calls.length - 1];
+  r.enterCall = last3();
+  r.enterDoc = calls[calls.length - 1][3];
+  r.enterStart = calls[calls.length - 1][4];
   r.fsIsPlayer = document.fullscreenElement === player;
   r.playerMarked = player.hasAttribute('data-fushi-page-fullscreen');
   r.playsinline = video.hasAttribute('playsinline');
   r.siteSawChange = siteChanges;
   r.videoDisplaying = video.webkitDisplayingFullscreen === true;
   document.exitFullscreen();
-  r.exitCall = calls[calls.length - 1];
+  r.exitCall = last3();
   r.fsAfterExit = document.fullscreenElement;
   r.playerUnmarked = !player.hasAttribute('data-fushi-page-fullscreen');
   r.siteSawChangeAfterExit = siteChanges;
   video.videoWidth = 1080; video.videoHeight = 1920;
   player.requestFullscreen();
-  r.portraitCall = calls[calls.length - 1];
+  r.portraitCall = last3();
   document.exitFullscreen();
   window.fushiPageFullscreen.toggle(video);
   r.toggleOn = document.fullscreenElement === player;
@@ -300,10 +438,17 @@ if (takeover) {
   player.requestFullscreen();
   (winListeners.keydown || []).forEach(function(fn){ fn({key: 'Escape', defaultPrevented: false}); });
   r.escExits = document.fullscreenElement === null;
+  player.requestFullscreen();
+  fireWin('pagehide', {persisted: true});
+  r.pagehideExits = document.fullscreenElement === null;
+  r.pagehideCall = calls[calls.length - 1];
+  fireWin('pageshow', {persisted: true});
+  r.restoreCall = calls[calls.length - 1];
 } else {
   nativeFs = player;
   document.dispatchEvent(new Event('fullscreenchange'));
-  r.nativeCall = calls[calls.length - 1];
+  r.nativeCall = last3();
+  r.nativeDoc = calls[calls.length - 1][3];
 }
 process.stdout.write(JSON.stringify(r));
 ''');

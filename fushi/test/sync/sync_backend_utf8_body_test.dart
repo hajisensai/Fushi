@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -68,12 +69,12 @@ class _CapturingLibraryService implements FushiLibraryHostService {
       <String, RemoteBookProgress>{};
 
   @override
-  Future<AggregateSnapshot> getAggregateSnapshot() async =>
-      const AggregateSnapshot();
+  Future<Uint8List> getAggregateBody() async =>
+      encodeAggregateWireJson(const AggregateSnapshot().toJson());
 
   @override
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async =>
-      applied = snapshot;
+  Future<bool> applyAggregateBody(Uint8List body) async =>
+      (applied = decodeAggregateWireSnapshot(body)) != null;
 
   @override
   Future<CollectionManifest> getCollectionManifest() async =>
@@ -268,7 +269,7 @@ void main() {
   tearDown(() async => server.stop());
 
   test(
-    'putRemoteAggregate with Japanese title round-trips UTF-8 (no latin1 crash)',
+    'putRemoteAggregateBody with Japanese title round-trips UTF-8 (no latin1 crash)',
     () async {
       final InterconnectSyncBackend backend = await _buildBackend(
         base: base,
@@ -290,7 +291,9 @@ void main() {
       // On the old code, req.write(jsonEncode(...)) throws
       // "Invalid argument (string): Contains invalid characters." here; the
       // request never leaves the client.
-      await backend.putRemoteAggregate(snapshot.toJson());
+      await backend.putRemoteAggregateBody(
+        encodeAggregateWireJson(snapshot.toJson()),
+      );
 
       // Server UTF-8-decodes the body; the Japanese title must survive intact.
       expect(lib.applied, isNotNull);

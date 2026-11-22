@@ -266,13 +266,37 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 第 [index] 个条目上要框的句子（[MangaRenderManifest.lines] 下标）。
+  ///
+  /// 句子条目就是它自己。静音条目不清高亮：句间停顿 / 页尾补齐框本页刚读完的那句，
+  /// 页首 `lead` 框本页马上要读的第一句——用户翻页落到页段起点、进书续播落在句间、
+  /// 暂停停在这些静音里时，高亮都还在（反馈 WrLFAXNkSw：此前一律清空，暂停时位置
+  /// 不再变，高亮就一直不回来）。整页没有台词（页停留）才为 null。
+  int? _displayLineAt(int index) {
+    final List<MangaAudioItem> items = plan.items;
+    final MangaAudioItem item = items[index];
+    if (item.isLine) return item.lineIndex;
+    for (int i = index - 1; i >= 0 && items[i].page == item.page; i--) {
+      if (items[i].isLine) return items[i].lineIndex;
+    }
+    for (
+      int i = index + 1;
+      i < items.length && items[i].page == item.page;
+      i++
+    ) {
+      if (items[i].isLine) return items[i].lineIndex;
+    }
+    return null;
+  }
+
   void _show(MangaAudioItem item) {
     final MangaReadAloudHost? host = _host;
     final MangaSentenceFollower? follower = _follower;
     if (host == null || follower == null) return;
-    final List<int> blocks = item.isLine
-        ? manifest.lines[item.lineIndex].blocks
-        : const <int>[];
+    final int? line = _displayLineAt(_item);
+    final List<int> blocks = line == null
+        ? const <int>[]
+        : manifest.lines[line].blocks;
     if (item.isLine) host.markStudyActivity();
     if (_followPage && _readerVisible) {
       unawaited(follower.show(item.page, blocks));

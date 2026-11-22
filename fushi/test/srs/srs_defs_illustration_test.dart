@@ -25,7 +25,13 @@ void main() {
           '{width:max(var(--fushi-srs-illus-w), 200px)!important;}',
         ),
       );
-      expect(css, contains('$link{max-width:100%!important;}'));
+      // 栏宽是脚本量出来的像素值（表格单元格里百分比是循环引用，BUG-5181），没量到退回 100%。
+      expect(
+        css,
+        contains(
+          '$link{max-width:var(--fushi-srs-illus-avail, 100%)!important;}',
+        ),
+      );
       expect(css, isNot(contains('max-height:none')), reason: '原样保留导出的高度上限');
       expect(css, isNot(contains('75vh')));
       // 只作用于标记过的插图：不写裸 img / 链接规则（外字、小图标不受影响）。
@@ -56,15 +62,18 @@ void main() {
       expect(
         css,
         contains(
-          '$link{width:min(100%, calc(480px * '
-          'var(--fushi-srs-illus-ar)))!important;}',
+          '$link{width:calc(480px * '
+          'var(--fushi-srs-illus-ar))!important;}',
         ),
       );
+      // 宽度里不再写百分比：词典把插图放进表格单元格时 `min(100%, …)` 被算成 0 宽（BUG-5181）。
+      expect(css, isNot(contains('min(100%')));
+      expect(css, contains('var(--fushi-srs-illus-avail, 100%)'));
       expect(css, isNot(contains('--fushi-srs-illus-w)')));
       expect(css, contains('max-height:none!important'));
     });
 
-    test('排版脚本在分列前调分级脚本', () {
+    test('排版脚本在分列前调分级脚本、分列前后都量栏宽', () {
       const String layout = kSrsDefsLayoutScript;
       expect(
         layout,
@@ -76,6 +85,14 @@ void main() {
       expect(
         layout.indexOf('__fushiSrsMarkIllustrations(fc)'),
         lessThan(layout.indexOf('pack(list, groups, cols, lead)')),
+      );
+      expect(
+        layout.indexOf('__fushiSrsSizeIllustrations(fc)'),
+        lessThan(layout.indexOf('pack(list, groups, cols, lead)')),
+      );
+      expect(
+        layout.indexOf('__fushiSrsSizeIllustrations(list)'),
+        greaterThan(layout.indexOf('pack(list, groups, cols, lead)')),
       );
     });
 
@@ -102,8 +119,25 @@ void main() {
           ..writeAsStringSync('''
 const assert = require('assert');
 globalThis.window = {};
-// 最小 DOM：getComputedStyle 读桩上的 fs（算好的字号 px），style 记内联值。
+// 最小 DOM：getComputedStyle 读桩上的 fs（报出来的计算字号 px），style 记内联值；
+// 排版里 em 按 layoutFs 解析（默认同 fs）。Android WebView 的最小字号把计算字号 1px
+// 报成 8px、排版仍按 1px，用 fs: 8, layoutFs: 1 模拟（BUG-5181）。
 globalThis.getComputedStyle = (el) => ({ fontSize: el.fs + 'px' });
+globalThis.document = {
+  addEventListener(){},
+  // 分级脚本的长度探针：挂进盒子后 offsetWidth 按盒子的排版字号解析 width。
+  createElement(tag){
+    const probe = el(tag.toUpperCase(), {});
+    Object.defineProperty(probe, 'offsetWidth', { get(){
+      const m = /width:([0-9.]+)(em|px)\$/.exec(probe.style.cssText || '');
+      assert.ok(m, probe.style.cssText);
+      assert.ok(probe.parentElement, '探针要挂进盒子再量');
+      const n = parseFloat(m[1]);
+      return Math.round(m[2] === 'px' ? n : n * probe.parentElement.layoutFs);
+    } });
+    return probe;
+  },
+};
 function style(init){
   const s = Object.assign({}, init);
   s.setProperty = (k, v) => { s[k] = v; };
@@ -112,7 +146,8 @@ function style(init){
 function el(tag, opts, kids){
   const o = opts || {};
   const node = {
-    tagName: tag, fs: o.fs || 16, style: style(o.style), attrs: Object.assign({}, o.attrs),
+    tagName: tag, fs: o.fs || 16, layoutFs: o.layoutFs || o.fs || 16,
+    style: style(o.style), attrs: Object.assign({}, o.attrs),
     children: kids || [], parentElement: null, gaiji: !!o.gaiji,
     complete: o.complete !== false, naturalWidth: o.nw || 0, naturalHeight: o.nh || 0,
     listeners: {},
@@ -120,6 +155,8 @@ function el(tag, opts, kids){
     getAttribute(n){ return n in node.attrs ? node.attrs[n] : null; },
     setAttribute(n, v){ node.attrs[n] = v; },
     addEventListener(t, fn){ node.listeners[t] = fn; },
+    appendChild(k){ k.parentElement = node; node.children.push(k); },
+    removeChild(k){ node.children = node.children.filter((x) => x !== k); k.parentElement = null; },
     closest(sel){
       assert.equal(sel, '[data-sc-class="gaiji"]');
       for (let n = node; n; n = n.parentElement) if (n.gaiji) return n;
@@ -142,7 +179,7 @@ function el(tag, opts, kids){
 // 制卡导出的图片盒：<a><span 盒子 font-size/width><span sizer padding-top%><span 背景><img>。
 function exported(o){
   const img = el('IMG', { complete: o.complete, nw: o.nw, nh: o.nh, style: o.imgStyle || {} });
-  const box = el('SPAN', { fs: o.boxFs, style: { width: o.width } }, [
+  const box = el('SPAN', { fs: o.boxFs, layoutFs: o.boxLayoutFs, style: { width: o.width } }, [
     el('SPAN', { style: o.ratio ? { paddingTop: (o.ratio * 100) + '%' } : { display: 'none' } }),
     el('SPAN', { style: o.mono ? { 'mask-image': 'var(--image)' } : {} }),
     img,
@@ -203,10 +240,25 @@ assert.equal(tall.a.attrs['data-fushi-srs-illus'], 'color');
 assert.equal(icon.a.attrs['data-fushi-srs-illus'], undefined);
 assert.equal(icon.a.style['--fushi-srs-illus-w'], undefined);
 assert.equal(gaiji.a.attrs['data-fushi-srs-illus'], undefined);
+// 量完把探针摘掉，盒子里只剩导出的子元素。
+assert.equal(px.a.children[0].children.length, 3);
 // 每个链接只判一次：再跑不重复处理。
 px.a.attrs['data-fushi-srs-illus'] = 'x';
 run([px]);
 assert.equal(px.a.attrs['data-fushi-srs-illus'], 'x');
+''');
+    });
+
+    test('Android WebView 最小字号：声明宽度取排版宽度，不是 em × 被抬高的计算字号（BUG-5181）', () async {
+      await runJs(r'''
+// font-size:1px;width:239em：计算字号被最小字号抬成 8px，排版里 1em 仍是 1px。
+const fig = exported({ boxFs: 8, boxLayoutFs: 1, width: '239em', ratio: 320 / 239 });
+// 没量到真实尺寸、词典声明了 120em 宽的导出：同样按排版宽度算。
+const nat = exported({ boxFs: 8, boxLayoutFs: 1, width: 'auto', nw: 600, nh: 300, imgStyle: { width: '120em' } });
+run([fig, nat]);
+assert.equal(fig.a.attrs['data-fushi-srs-illus'], 'color');
+assert.equal(fig.a.style['--fushi-srs-illus-w'], '239px');
+assert.equal(nat.a.style['--fushi-srs-illus-w'], '120px');
 ''');
     });
 
@@ -215,9 +267,13 @@ assert.equal(px.a.attrs['data-fushi-srs-illus'], 'x');
 const late = exported({ boxFs: 1, width: 'auto', complete: false, nw: 300, nh: 150 });
 const oneDim = exported({ boxFs: 16, width: 'auto', nw: 200, nh: 100, imgStyle: { height: '10em' } });
 const small = exported({ boxFs: 1, width: 'auto', nw: 20, nh: 20 });
+const sized = [];
+window.__fushiSrsSizeIllustration = (a) => sized.push(a);
 run([late, oneDim, small]);
 assert.equal(late.a.attrs['data-fushi-srs-illus'], undefined, '未载入先不标');
 late.img.listeners.load();
+// 载入后才标上的插图当场量栏宽（不等下一轮排版）。
+assert.ok(sized.includes(late.a));
 assert.equal(late.a.attrs['data-fushi-srs-illus'], 'color');
 assert.equal(late.a.attrs['data-fushi-srs-natural'], '');
 assert.equal(late.a.style['--fushi-srs-illus-w'], '300px');

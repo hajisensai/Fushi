@@ -48,6 +48,10 @@ class _FakeAppModel extends AppModel {
 
   @override
   Color? get systemPrimaryColor => null;
+
+  // 70fa19f9f1：编辑页 hero 下按取色覆盖来源给提示，读 themeNotifier。
+  @override
+  ThemeAccentOverrideSource? get activeAccentOverrideSource => null;
 }
 
 Future<void> _pumpPage(

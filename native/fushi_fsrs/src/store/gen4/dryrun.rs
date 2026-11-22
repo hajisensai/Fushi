@@ -612,11 +612,18 @@ pub(crate) fn profile_stages(
     opts.note("rebuild", Some(profile));
     opts.stop.check()?;
     let started = Instant::now();
-    let settled = t.tx(|t| {
+    let (settled, stages) = t.tx(|t| {
         let mut idx = Index::new(t, col);
-        ingest_settle(t, &mut idx, col, Settle::Rebuild)
+        let settled = ingest_settle(t, &mut idx, col, Settle::Rebuild)?;
+        Ok((settled, std::mem::take(&mut idx.rebuild_stages)))
     })?;
     out.insert("rebuildS".into(), json!(secs(started)));
+    // 各阶段秒数（BUG-5137：重建慢只在用户的大库上出现，凭报告定位到阶段）。
+    let stages: serde_json::Map<String, Value> = stages
+        .into_iter()
+        .map(|(name, s)| (name.to_owned(), json!((s * 10.0).round() / 10.0)))
+        .collect();
+    out.insert("rebuildStages".into(), Value::Object(stages));
     out.insert("settled".into(), settled_json(&settled));
     out.insert("peakMbAfterRebuild".into(), json!(mb(peak_mem_mb().0)));
     let ix = Index::new(t, col);
@@ -895,6 +902,9 @@ fn known_json(k: &Known) -> Value {
         "cacheStatCardsMasked": k.stat_cols.len(),
         "cacheStatCardsAside": k.stats_aside.len(),
         "cacheStatCardsEventCopies": k.stats_event_copies.len(),
+        // 同一事件的副本两边选了不同代表、只换了日志 ID 那一格的统计行与卡行（BUG-5063）。
+        "cacheStatRepresentativeSwaps": k.stat_swaps.len(),
+        "cacheCardRepresentativeSwaps": k.card_swaps.len(),
         "cacheRowsMasked": k.rows,
         "cacheRowsMaskedDiffer": k.rows_differ,
         "entries": entries,
@@ -1244,12 +1254,10 @@ fn registers(
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     for (k, state) in ks {
-        let e = t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 dry run: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+        let Some(e) = t.edit_read(k, false)? else {
             return Err(format!("gen4 dry run: register row {k} is not an edit"));
         };
+        let ed = &e.head;
         let ent = format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text());
         if skip(&ent, &ed.key) {
             continue;
@@ -1919,6 +1927,22 @@ pub(crate) mod tests {
         assert_eq!(p["closures"]["different"], 0);
         assert_eq!(p["imported"]["devices"], 1);
         assert!(p["settled"]["cacheCards"].as_u64().unwrap() >= 4);
+        // 重建各阶段的秒数（BUG-5137：凭报告定位慢在哪一段）。
+        let rebuild = p["rebuildStages"].as_object().expect("rebuildStages");
+        for s in [
+            "scan",
+            "closures",
+            "aliases",
+            "registers",
+            "logs",
+            "digests",
+            "caches",
+        ] {
+            assert!(
+                rebuild.get(s).is_some_and(Value::is_number),
+                "{s}: {rebuild:?}"
+            );
+        }
         assert_eq!(bytes(&old), before);
         assert_eq!(bytes(&wal), wal_before);
         assert!(!d._dir.0.join("work").join(WORK_FILE).exists());

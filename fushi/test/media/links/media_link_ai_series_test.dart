@@ -1,6 +1,12 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show DatabaseConnection, Value;
+import 'package:drift/drift.dart'
+    show
+        ApplyInterceptor,
+        DatabaseConnection,
+        QueryExecutor,
+        QueryInterceptor,
+        Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/library_curate/library_curate_link_ops.dart';
@@ -777,6 +783,126 @@ void main() {
       expect(calls, 1);
       expect(await db.allMediaLinks(), isEmpty);
     });
+
+    // HBK-AUDIT-043：查少数候选不读整张有效期内的缓存；清过期按独立频率，不随批次走。
+    test('按候选端点对查缓存：读回行数 = 候选数、走主键；清过期一天一次、不随批次', () async {
+      final _VerdictTableCounter counter = _VerdictTableCounter();
+      final FushiDatabase db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory().interceptWith(counter)),
+      );
+      addTearDown(db.close);
+      int calls = 0;
+      final AiChatClient client = AiChatClient(
+        client: MockClient((http.Request request) async {
+          calls++;
+          return chat('{"v":[{"i":0,"r":"none","c":0.9}]}');
+        }),
+      );
+      addTearDown(client.close);
+      int now = kAiMediaLinkVerdictCacheTtl.inMilliseconds * 2;
+      AiMediaLinkJudge judge() => AiMediaLinkJudge(
+        client: client,
+        provider: provider(),
+        cache: MediaLinkVerdictCache(db, now: () => now),
+      );
+
+      // 表里先攒 300 对别的组合（有效期内）+ 1 条过期行。
+      const int unrelated = 300;
+      await db.upsertMediaLinkAiVerdicts(<MediaLinkAiVerdictsCompanion>[
+        for (int i = 0; i < unrelated; i++)
+          MediaLinkAiVerdictsCompanion.insert(
+            aKind: 'game',
+            aKey: 'other$i',
+            bKind: 'video_collection',
+            bKey: 'other$i',
+            fingerprint: 'f',
+            related: false,
+            confidence: 0.9,
+            judgedAt: now,
+          ),
+        MediaLinkAiVerdictsCompanion.insert(
+          aKind: 'game',
+          aKey: 'stale',
+          bKind: 'video_collection',
+          bKey: 'stale',
+          fingerprint: 'f',
+          related: false,
+          confidence: 0.9,
+          judgedAt: now - kAiMediaLinkVerdictCacheTtl.inMilliseconds - 1,
+        ),
+      ]);
+      Future<bool> staleRowPresent() async =>
+          (await db.mediaLinkAiVerdictsSince(
+            0,
+          )).any((MediaLinkAiVerdictRow r) => r.aKey == 'stale');
+
+      // 第一次：没缓存 → 问 → 记；这个数据库头一回记，顺带清过期。
+      await judge().judge(<MediaLinkCandidate>[pair('Clannad')]);
+      expect(calls, 1);
+      expect(counter.deletes, 1);
+      expect(await staleRowPresent(), isFalse);
+
+      // 第二次：命中。只读回这一对，不是整表 301 行；且走主键索引而非全表扫描。
+      counter.reset();
+      final AiMediaLinkJudge hit = judge();
+      await hit.judge(<MediaLinkCandidate>[pair('Clannad')]);
+      expect(hit.cacheHits, 1);
+      expect(calls, 1);
+      expect(counter.selects, 1);
+      expect(counter.rowsRead, 1, reason: '表里另有 $unrelated 对，不该读回');
+      expect(counter.plans, isNotEmpty);
+      expect(
+        counter.plans.where((String d) => d.startsWith('SCAN')),
+        isEmpty,
+        reason: '按主键逐对 SEARCH：${counter.plans}',
+      );
+
+      // 一次推断分三批记（45 条新候选），同一天内不再清：又插一条过期行，它留着。
+      await db.upsertMediaLinkAiVerdicts(<MediaLinkAiVerdictsCompanion>[
+        MediaLinkAiVerdictsCompanion.insert(
+          aKind: 'game',
+          aKey: 'stale',
+          bKind: 'video_collection',
+          bKey: 'stale',
+          fingerprint: 'f',
+          related: false,
+          confidence: 0.9,
+          judgedAt: now - kAiMediaLinkVerdictCacheTtl.inMilliseconds - 1,
+        ),
+      ]);
+      counter.reset();
+      final List<MediaLinkCandidate> batchOf45 = <MediaLinkCandidate>[
+        for (int i = 0; i < kAiMediaLinkMaxCandidatesPerRequest * 2 + 5; i++)
+          MediaLinkCandidate(
+            from: subject(MediaLinkKind.game, 'n$i', <String>['N$i']),
+            to: subject(MediaLinkKind.videoCollection, 'n$i', <String>['M$i']),
+            relation: MediaLinkRelation.sameWork,
+            source: kMediaLinkTitleMatchSource,
+            confidence: 0.35,
+            reason: 'r',
+          ),
+      ];
+      final AiMediaLinkJudge multi = judge();
+      await multi.judge(batchOf45);
+      expect(multi.requestCount, 3);
+      expect(counter.rowsRead, 0, reason: '45 对都没缓存，不读回别的组合');
+      expect(
+        counter.plans.where((String d) => d.startsWith('SCAN')),
+        isEmpty,
+        reason: '多对也逐对走主键：${counter.plans}',
+      );
+      expect(counter.deletes, 0, reason: '三批记录都不再清过期');
+      expect(await staleRowPresent(), isTrue);
+
+      // 过了清理间隔，下一次记录顺带清掉。
+      now += kAiMediaLinkVerdictPruneInterval.inMilliseconds;
+      counter.reset();
+      await judge().judge(<MediaLinkCandidate>[
+        pair('Clannad', videoTitle: 'CLANNAD After Story'),
+      ]);
+      expect(counter.deletes, 1);
+      expect(await staleRowPresent(), isFalse);
+    });
   });
 
   test('库管家一批端点：候选合并、同一对只问一次、整批一次裁决', () async {
@@ -857,5 +983,54 @@ class _FixedJudge implements MediaLinkJudge {
       for (int i = 0; i < candidates.length; i++)
         i < verdicts.length ? verdicts[i] : null,
     ];
+  }
+}
+
+/// 数 `media_link_ai_verdicts` 上的 SELECT 次数 / 读回行数 / DELETE 次数，并记下每条
+/// SELECT 的查询计划（EXPLAIN QUERY PLAN 的 detail 列）。
+class _VerdictTableCounter extends QueryInterceptor {
+  int selects = 0;
+  int rowsRead = 0;
+  int deletes = 0;
+  final List<String> plans = <String>[];
+
+  void reset() {
+    selects = 0;
+    rowsRead = 0;
+    deletes = 0;
+    plans.clear();
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    final List<Map<String, Object?>> rows = await executor.runSelect(
+      statement,
+      args,
+    );
+    if (statement.contains('FROM "media_link_ai_verdicts"')) {
+      selects++;
+      rowsRead += rows.length;
+      for (final Map<String, Object?> step in await executor.runSelect(
+        'EXPLAIN QUERY PLAN $statement',
+        args,
+      )) {
+        plans.add('${step['detail']}');
+      }
+    }
+    return rows;
+  }
+
+  @override
+  Future<int> runDelete(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    if (statement.contains('"media_link_ai_verdicts"')) deletes++;
+    return executor.runDelete(statement, args);
   }
 }

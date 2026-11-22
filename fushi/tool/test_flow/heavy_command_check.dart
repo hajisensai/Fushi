@@ -13,6 +13,8 @@
 // there, and the path that was checked (absolute, native separators) is the
 // one that is started.
 
+import 'package:path/path.dart' as p;
+
 /// Result of resolving a wrapped command's executable.
 class HeavyCommandCheck {
   const HeavyCommandCheck({required this.executable, this.error});
@@ -55,32 +57,18 @@ List<String> _pathExts(Map<String, String> environment) {
   ];
 }
 
-bool _isAbsolute(String path, {required bool isWindows}) {
-  if (path.startsWith('/')) return true;
-  if (!isWindows) return false;
-  return path.startsWith(r'\') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
-}
-
 /// [path] under [cwd] without `.` / `..` segments, with the platform's
-/// separator.
+/// separator. Windows paths go through `package:path`'s Windows rules, so a
+/// UNC share root (`\\server\share`) stays one root that `..` never climbs
+/// above, and a root-relative `\x` lands on [cwd]'s drive or share
+/// (HBK-AUDIT-047: a hand-rolled split folded `\\server` into `\server`).
 String _absolute(String cwd, String path, {required bool isWindows}) {
-  final String joined = _isAbsolute(path, isWindows: isWindows)
-      ? path
-      : '$cwd/$path';
-  final String unified = isWindows ? joined.replaceAll(r'\', '/') : joined;
-  final bool rooted = unified.startsWith('/');
-  final List<String> out = <String>[];
-  for (final String seg in unified.split('/')) {
-    if (seg.isEmpty || seg == '.') continue;
-    if (seg == '..') {
-      // Never above the drive / root.
-      if (out.length > (isWindows && !rooted ? 1 : 0)) out.removeLast();
-      continue;
-    }
-    out.add(seg);
-  }
-  final String sep = isWindows ? r'\' : '/';
-  return '${rooted ? sep : ''}${out.join(sep)}';
+  if (!isWindows) return p.posix.normalize(p.posix.join(cwd, path));
+  // Windows takes `/` and `\` alike; package:path keeps a root as written
+  // (`//nas/share`), so the separators are made native first.
+  return p.windows.normalize(
+    p.windows.join(cwd.replaceAll('/', r'\'), path.replaceAll('/', r'\')),
+  );
 }
 
 /// Finds the file [command]'s first word names, the way the shell that

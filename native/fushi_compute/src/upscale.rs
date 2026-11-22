@@ -19,7 +19,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 
 use crate::{guard, hand_over_bytes, status};
-use cache::DiskCache;
+use cache::{DiskCache, PendingPut};
 use pipeline::{Nets, Outcome, Tier};
 use queue::{Job, Queue};
 use runtime::{Backend, OnnxSr};
@@ -33,7 +33,8 @@ pub const EVENT_SKIPPED: i32 = 2;
 pub const EVENT_FAILED: i32 = 3;
 /// 事件：任务被丢弃（翻走了、被同键任务替换、清队列）。
 pub const EVENT_CANCELLED: i32 = 4;
-/// 事件：模型加载失败（配置的档位不可用，token = 0）。
+/// 事件：模型加载失败，token = 失败的那一代配置（[ffc_upscale_configure] 交出的代际）。调用方只在它等于
+/// 自己启用时拿到的代际才按「不可用」处理：换档后旧代迟到的失败不能关掉新档。
 pub const EVENT_MODELS_FAILED: i32 = 5;
 
 /// 返回码：ORT 运行时接不上（库不在 / 版本太旧）。
@@ -227,6 +228,14 @@ fn load_nets(config: &Config) -> Result<Nets, String> {
 }
 
 fn worker_loop(engine: &Engine) {
+    run_worker(engine, |config: &Config| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load_nets(config)))
+            .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))))
+    });
+}
+
+/// 工作线程本体（`load` 可注入：测试里用它卡住 / 失败模型加载，复现代际交错）。
+fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
     let mut nets: Option<(u64, Nets)> = None;
     loop {
         let (job, config, generation, callback) = {
@@ -248,24 +257,24 @@ fn worker_loop(engine: &Engine) {
         };
         if nets.as_ref().map(|n| n.0) != Some(generation) {
             nets = None;
-            let loaded =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load_nets(&config)))
-                    .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))));
-            match loaded {
+            match load(&config) {
                 Ok(loaded) => nets = Some((generation, loaded)),
                 Err(e) => {
                     log_error(&format!("load models: {e}"));
-                    // 同一配置不反复重载：记下这代失败（之后的提交返回没就绪）、清掉队列，等调用方重新
-                    // 配置。先落状态再发事件：调用方收到事件时查到的已经是「没就绪」。
+                    // 失败归属发起加载的那一代配置：只有它仍是当前代时才记「这代不可用」、清队列（队列里
+                    // 全是这代的任务）。加载期间调用方已经换了配置的话，队列里是新一代的任务、新一代还
+                    // 没加载过，一个都不能动。先落状态再发事件：调用方收到事件时查到的已经是新状态。
                     let dropped = {
                         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
                         state.running = None;
                         if state.generation == generation {
                             state.models_failed = Some(generation);
+                            state.queue.clear()
+                        } else {
+                            Vec::new()
                         }
-                        state.queue.clear()
                     };
-                    emit(callback, EVENT_MODELS_FAILED, 0);
+                    emit(callback, EVENT_MODELS_FAILED, generation);
                     emit(callback, EVENT_FAILED, job.token);
                     emit_all(callback, EVENT_CANCELLED, dropped);
                     continue;
@@ -278,22 +287,25 @@ fn worker_loop(engine: &Engine) {
             pipeline::process(&job.data, &job.boxes, loaded)
         }))
         .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))));
-        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
         let kind = match outcome {
-            Ok(Outcome::Done(jpeg)) => match state.cache.as_mut().map(|c| c.put(&job.key, &jpeg)) {
-                Some(Ok(_)) => EVENT_DONE,
-                Some(Err(e)) => {
-                    log_error(&format!("cache write: {e}"));
-                    EVENT_FAILED
+            Ok(Outcome::Done(jpeg)) => {
+                match store_result(engine, &job.key, &jpeg, |pending, bytes| {
+                    pending.write(bytes)
+                }) {
+                    Ok(()) => EVENT_DONE,
+                    Err(e) => {
+                        log_error(&format!("cache write: {e}"));
+                        EVENT_FAILED
+                    }
                 }
-                None => EVENT_FAILED,
-            },
+            }
             Ok(Outcome::Skipped) => EVENT_SKIPPED,
             Err(e) => {
                 log_error(&format!("page {}: {e}", job.page));
                 EVENT_FAILED
             }
         };
+        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
         state.running = None;
         // 配置在算的过程中变了：结论属于旧配置，不记。
         if state.generation == generation {
@@ -306,6 +318,95 @@ fn worker_loop(engine: &Engine) {
         let callback = state.callback;
         drop(state);
         emit(callback, kind, job.token);
+    }
+}
+
+/// 把一页结果写进磁盘缓存。**磁盘 I/O 一律在状态锁外**：锁里只取写入目标、登记条目与挑淘汰对象
+/// （纯内存），写临时文件 / 改名 / 删淘汰文件都在锁外——否则慢盘上 UI isolate 的同步 FFI（查询、
+/// 提交、换页）全排在这把锁后面。`write` 可注入（测试里模拟慢盘）。
+fn store_result(
+    engine: &Engine,
+    key: &str,
+    jpeg: &[u8],
+    write: impl FnOnce(&PendingPut, &[u8]) -> std::io::Result<()>,
+) -> Result<(), String> {
+    let pending = {
+        let state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.cache.as_ref().map(|c| c.stage(key))
+    }
+    .ok_or("cache not open")?;
+    write(&pending, jpeg).map_err(|e| e.to_string())?;
+    let victims = {
+        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
+        match state.cache.as_mut() {
+            Some(cache) => cache.commit(pending, jpeg.len() as u64),
+            None => return Err("cache not open".into()),
+        }
+    };
+    cache::remove_files(&victims);
+    Ok(())
+}
+
+impl Engine {
+    /// 换配置（[ffc_upscale_configure] 的本体），返回生效的代际。配置变了（或这代模型加载失败过、调用方
+    /// 重新启用 = 显式要求再试一次）就换一代：清空「判过 / 失败过」，丢掉队列里旧一代的任务（它们的键属于
+    /// 旧配置，拿新模型算出来会以旧键进缓存——内容与键不符），工作线程下一页前重载模型。
+    fn configure(&self, config: Config) -> u64 {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut dropped = Vec::new();
+        if state.config.as_ref() != Some(&config) || state.models_failed == Some(state.generation) {
+            state.config = Some(config);
+            state.generation += 1;
+            state.settled.clear();
+            state.models_failed = None;
+            dropped = state.queue.clear();
+        }
+        let generation = state.generation;
+        let callback = state.callback;
+        drop(state);
+        self.wake.notify_all();
+        emit_all(callback, EVENT_CANCELLED, dropped);
+        generation
+    }
+
+    /// 提交一页（[ffc_upscale_submit] 的本体；`job` 已在锁外复制好）。
+    fn submit(&self, job: Job) -> i32 {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match state.query(&job.key) {
+            UPSCALE_NOT_READY => return UPSCALE_NOT_READY,
+            QUERY_CACHED => return UPSCALE_ALREADY_CACHED,
+            QUERY_SKIPPED | QUERY_FAILED => return UPSCALE_SETTLED,
+            QUERY_PENDING if state.running.as_deref() == Some(job.key.as_str()) => {
+                return UPSCALE_IN_PROGRESS;
+            }
+            _ => {}
+        }
+        let dropped = state.queue.push(job);
+        let callback = state.callback;
+        drop(state);
+        self.wake.notify_all();
+        emit_all(callback, EVENT_CANCELLED, dropped);
+        status::OK
+    }
+
+    /// 缓存命中时返回结果路径并刷新为最近使用。锁里只改 LRU 顺序；查文件在不在、刷修改时间在锁外。
+    fn cached_path(&self, key: &str) -> Result<PathBuf, i32> {
+        let path = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(cache) = state.cache.as_mut() else {
+                return Err(UPSCALE_NOT_READY);
+            };
+            cache.touch(key).ok_or(UPSCALE_NOT_CACHED)?
+        };
+        if !cache::refresh_file(&path) {
+            // 文件被外部删了：条目作废。
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(cache) = state.cache.as_mut() {
+                cache.forget(key);
+            }
+            return Err(UPSCALE_NOT_CACHED);
+        }
+        Ok(path)
     }
 }
 
@@ -360,18 +461,38 @@ pub unsafe extern "C" fn ffc_upscale_start(
             return UPSCALE_RUNTIME_UNAVAILABLE;
         }
         let engine = engine();
-        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
-        match state.cache.as_mut() {
-            Some(cache) => cache.set_limit(cache_bytes),
-            None => match DiskCache::open(Path::new(cache_dir), cache_bytes) {
-                Ok(c) => state.cache = Some(c),
+        // 扫缓存目录（磁盘 I/O）在状态锁外；只有第一次启动要开。
+        let needs_open = engine
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .cache
+            .is_none();
+        let opened = if needs_open {
+            match DiskCache::open(Path::new(cache_dir), cache_bytes) {
+                Ok(c) => Some(c),
                 Err(e) => {
                     log_error(&format!("cache dir: {e}"));
                     return status::BAD_INPUT;
                 }
-            },
-        }
-        state.callback = callback;
+            }
+        } else {
+            None
+        };
+        let victims = {
+            let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
+            let victims = match (state.cache.as_mut(), opened) {
+                (Some(cache), _) => cache.set_limit(cache_bytes),
+                (None, Some(c)) => {
+                    state.cache = Some(c);
+                    Vec::new()
+                }
+                (None, None) => Vec::new(),
+            };
+            state.callback = callback;
+            victims
+        };
+        cache::remove_files(&victims);
         engine.wake.notify_all();
         status::OK
     })
@@ -401,16 +522,18 @@ pub extern "C" fn ffc_upscale_tier_supported(tier: u32, backend: u32) -> i32 {
 
 /// 配置档位（1 轻量 / 2 高质量）、后端与模型文件：轻量档 `outside` = ArtCNN C4F32，`inside` 为空；
 /// 高质量档 `inside` = swin_unet art scale2x，`outside` = swin_unet art noise1_scale2x。配置变了才重载
-/// 模型（在工作线程里、下一页之前）。
+/// 模型（在工作线程里、下一页之前）。`out_generation`（可空）写入生效的配置代际：
+/// [EVENT_MODELS_FAILED] 的 token 就是失败那一代，调用方拿它判断失败是不是自己这代的。
 ///
 /// # Safety
-/// 字符串为 NUL 结尾 UTF-8。
+/// 字符串为 NUL 结尾 UTF-8；`out_generation` 为空或可写。
 #[no_mangle]
 pub unsafe extern "C" fn ffc_upscale_configure(
     tier: u32,
     backend: u32,
     inside_model: *const c_char,
     outside_model: *const c_char,
+    out_generation: *mut u64,
 ) -> i32 {
     guard(|| {
         let (Some(tier), Some(backend)) = (Tier::from_code(tier), Backend::from_code(backend))
@@ -433,16 +556,10 @@ pub unsafe extern "C" fn ffc_upscale_configure(
             inside: inside.map(PathBuf::from),
             outside: PathBuf::from(outside),
         };
-        let engine = engine();
-        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
-        // 配置变了，或这代模型加载失败过（调用方重新启用 = 显式要求再试一次）：换一代，工作线程重载。
-        if state.config.as_ref() != Some(&config) || state.models_failed == Some(state.generation) {
-            state.config = Some(config);
-            state.generation += 1;
-            state.settled.clear();
-            state.models_failed = None;
+        let generation = engine().configure(config);
+        if !out_generation.is_null() {
+            *out_generation = generation;
         }
-        engine.wake.notify_all();
         status::OK
     })
 }
@@ -473,15 +590,7 @@ pub unsafe extern "C" fn ffc_upscale_submit(
         if box_count > UPSCALE_MAX_TEXT_BOXES {
             return status::INVALID_ARGUMENT;
         }
-        let engine = engine();
-        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
-        match state.query(key) {
-            UPSCALE_NOT_READY => return UPSCALE_NOT_READY,
-            QUERY_CACHED => return UPSCALE_ALREADY_CACHED,
-            QUERY_SKIPPED | QUERY_FAILED => return UPSCALE_SETTLED,
-            QUERY_PENDING if state.running.as_deref() == Some(key) => return UPSCALE_IN_PROGRESS,
-            _ => {}
-        }
+        // 整页字节在锁外复制（调用方只在查到「不认识」后才读原图提交，复制几乎不会白做）。
         let boxes: Vec<[f32; 4]> = if box_count == 0 {
             Vec::new()
         } else {
@@ -497,12 +606,7 @@ pub unsafe extern "C" fn ffc_upscale_submit(
             data: std::slice::from_raw_parts(data, len).to_vec(),
             boxes,
         };
-        let dropped = state.queue.push(job);
-        let callback = state.callback;
-        drop(state);
-        engine.wake.notify_all();
-        emit_all(callback, EVENT_CANCELLED, dropped);
-        status::OK
+        engine().submit(job)
     })
 }
 
@@ -590,13 +694,8 @@ pub unsafe extern "C" fn ffc_upscale_cached_path(
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
-        let engine = engine();
-        let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(cache) = state.cache.as_mut() else {
-            return UPSCALE_NOT_READY;
-        };
-        match cache.get(key) {
-            Some(path) => {
+        match engine().cached_path(key) {
+            Ok(path) => {
                 hand_over_bytes(
                     path.to_string_lossy().into_owned().into_bytes(),
                     out_ptr,
@@ -604,7 +703,7 @@ pub unsafe extern "C" fn ffc_upscale_cached_path(
                 );
                 status::OK
             }
-            None => UPSCALE_NOT_CACHED,
+            Err(code) => code,
         }
     })
 }
@@ -871,11 +970,11 @@ mod tests {
     fn ffi_rejects_bad_arguments_before_touching_the_runtime() {
         unsafe {
             assert_eq!(
-                ffc_upscale_configure(9, 0, std::ptr::null(), c"x".as_ptr()),
+                ffc_upscale_configure(9, 0, std::ptr::null(), c"x".as_ptr(), std::ptr::null_mut()),
                 status::INVALID_ARGUMENT
             );
             assert_eq!(
-                ffc_upscale_configure(2, 0, std::ptr::null(), c"x".as_ptr()),
+                ffc_upscale_configure(2, 0, std::ptr::null(), c"x".as_ptr(), std::ptr::null_mut()),
                 status::NULL_ARGUMENT
             );
             assert_eq!(
@@ -912,7 +1011,9 @@ mod tests {
         assert_eq!(ffc_upscale_tier_supported(2, 2), 0);
         assert_eq!(ffc_upscale_tier_supported(9, 0), 0);
         assert_eq!(
-            unsafe { ffc_upscale_configure(2, 2, c"a".as_ptr(), c"b".as_ptr()) },
+            unsafe {
+                ffc_upscale_configure(2, 2, c"a".as_ptr(), c"b".as_ptr(), std::ptr::null_mut())
+            },
             UPSCALE_UNSUPPORTED
         );
     }
@@ -958,6 +1059,164 @@ mod tests {
         state.generation += 1;
         assert!(state.ready());
         assert_eq!(state.query("c"), QUERY_CACHED);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn test_engine(tag: &str, callback: Option<Callback>) -> (Arc<Engine>, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("fushi_upscale_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut state = State::new();
+        state.cache = Some(DiskCache::open(&dir, 1 << 20).unwrap());
+        state.callback = callback;
+        let engine = Arc::new(Engine {
+            state: Mutex::new(state),
+            wake: Condvar::new(),
+        });
+        (engine, dir)
+    }
+
+    fn test_job(token: u64, key: &str) -> Job {
+        Job {
+            token,
+            key: key.into(),
+            page: 0,
+            data: vec![1],
+            boxes: Vec::new(),
+        }
+    }
+
+    fn config(tier: Tier, outside: &str) -> Config {
+        Config {
+            tier,
+            backend: Backend::DirectMl,
+            inside: (tier == Tier::High).then(|| PathBuf::from("inside.onnx")),
+            outside: PathBuf::from(outside),
+        }
+    }
+
+    /// 只有 [old_generation_model_failure_cannot_disable_the_new_configuration] 用这个回调。
+    static EVENTS: Mutex<Vec<(i32, u64)>> = Mutex::new(Vec::new());
+
+    extern "C" fn record_event(kind: i32, token: u64) {
+        EVENTS.lock().unwrap().push((kind, token));
+    }
+
+    fn events() -> Vec<(i32, u64)> {
+        EVENTS.lock().unwrap().clone()
+    }
+
+    /// HBK-AUDIT-006：模型加载失败归属发起加载的那一代配置。旧档在加载中、调用方换了新档并提交了新页，
+    /// 旧档随后失败——新档不能被记成不可用、新页不能被清掉，失败事件带旧代际（Dart 据此忽略）。
+    /// 换代时队列里旧一代的任务被丢弃（键属于旧配置，不能拿新模型算）。
+    #[test]
+    fn old_generation_model_failure_cannot_disable_the_new_configuration() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let (engine, dir) = test_engine("generation", Some(record_event));
+
+        // 换代丢掉旧一代排队的任务；同配置重复启用不换代、不丢。
+        let g0 = engine.configure(config(Tier::Light, "light.onnx"));
+        assert_eq!(engine.submit(test_job(5, "l|p5")), status::OK);
+        assert_eq!(engine.configure(config(Tier::Light, "light.onnx")), g0);
+        assert!(!events().contains(&(EVENT_CANCELLED, 5)));
+        let g1 = engine.configure(config(Tier::High, "high.onnx"));
+        assert_eq!(g1, g0 + 1);
+        assert!(events().contains(&(EVENT_CANCELLED, 5)));
+        assert_eq!(engine.state.lock().unwrap().query("l|p5"), QUERY_UNKNOWN);
+
+        // 回到轻量档（g2），提交一页；工作线程开始加载 g2 的模型时卡住。
+        let g2 = engine.configure(config(Tier::Light, "light.onnx"));
+        assert_eq!(engine.submit(test_job(11, "l|p0")), status::OK);
+        let (called_tx, called_rx) = mpsc::channel::<PathBuf>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let worker = Arc::clone(&engine);
+        thread::spawn(move || {
+            run_worker(&worker, move |c: &Config| {
+                let _ = called_tx.send(c.outside.clone());
+                let _ = release_rx.recv();
+                Err("injected load failure".into())
+            })
+        });
+        let wait = Duration::from_secs(10);
+        assert_eq!(
+            called_rx.recv_timeout(wait).unwrap(),
+            PathBuf::from("light.onnx")
+        );
+
+        // 加载期间换到高质量档（g3）并提交新页，然后让 g2 的加载失败。
+        let g3 = engine.configure(config(Tier::High, "high.onnx"));
+        assert_eq!(g3, g2 + 1);
+        assert_eq!(engine.submit(test_job(22, "h|p0")), status::OK);
+        release_tx.send(()).unwrap();
+
+        // 工作线程接着就去加载 g3：新页还在、g3 没被记成失败。
+        assert_eq!(
+            called_rx.recv_timeout(wait).unwrap(),
+            PathBuf::from("high.onnx"),
+            "the new generation's page was dropped by the old generation's failure"
+        );
+        {
+            let state = engine.state.lock().unwrap();
+            assert!(state.ready(), "new generation marked unavailable");
+            assert_eq!(state.models_failed, None);
+            assert_eq!(state.query("h|p0"), QUERY_PENDING);
+        }
+        let seen = events();
+        assert!(seen.contains(&(EVENT_MODELS_FAILED, g2)), "{seen:?}");
+        assert!(seen.contains(&(EVENT_FAILED, 11)), "{seen:?}");
+        assert!(!seen.contains(&(EVENT_CANCELLED, 22)), "{seen:?}");
+        assert!(
+            !seen.iter().any(|e| e.0 == EVENT_MODELS_FAILED && e.1 != g2),
+            "{seen:?}"
+        );
+
+        // g3 自己的失败才让 g3 不可用、清它的队列，事件带 g3。
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + wait;
+        while !events().contains(&(EVENT_MODELS_FAILED, g3)) {
+            assert!(Instant::now() < deadline, "g3 failure never reported");
+            thread::yield_now();
+        }
+        assert!(!engine.state.lock().unwrap().ready());
+        drop(release_tx);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// HBK-AUDIT-014：工作线程写缓存（临时文件 + 改名 + 删淘汰）时不持状态锁。模拟慢盘（写一次
+    /// [SLOW_DISK]），另一线程（相当于 UI isolate 的同步 FFI）此时拿锁查询的等待应远小于写盘耗时。
+    #[test]
+    fn cache_write_does_not_hold_the_state_lock() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        const SLOW_DISK: Duration = Duration::from_millis(400);
+        let (engine, dir) = test_engine("lock", None);
+        engine.configure(config(Tier::Light, "light.onnx"));
+        let (writing_tx, writing_rx) = mpsc::channel::<()>();
+        let worker = Arc::clone(&engine);
+        let writer = thread::spawn(move || {
+            store_result(&worker, "k", b"jpeg", |pending, bytes| {
+                writing_tx.send(()).unwrap();
+                thread::sleep(SLOW_DISK);
+                pending.write(bytes)
+            })
+        });
+        writing_rx.recv().unwrap();
+        let t = Instant::now();
+        let during = engine.state.lock().unwrap().query("k");
+        let waited = t.elapsed();
+        writer.join().unwrap().unwrap();
+        eprintln!("query waited {waited:?} while a {SLOW_DISK:?} cache write was in flight");
+        assert!(
+            waited < SLOW_DISK / 4,
+            "state lock held across disk I/O: waited {waited:?}"
+        );
+        assert_eq!(during, QUERY_UNKNOWN);
+        assert_eq!(engine.state.lock().unwrap().query("k"), QUERY_CACHED);
+        let path = engine.cached_path("k").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"jpeg");
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(engine.cached_path("k"), Err(UPSCALE_NOT_CACHED));
+        assert_eq!(engine.state.lock().unwrap().query("k"), QUERY_UNKNOWN);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

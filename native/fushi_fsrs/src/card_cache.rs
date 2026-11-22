@@ -760,8 +760,28 @@ pub fn card_front_is_empty(
     fields: &[(String, String)],
     ord: i64,
 ) -> Result<bool, String> {
-    let question = ids_to_names(front, id_to_name);
-    let nodes = parse_strict(&tokenize(&question))?;
+    CardFront::parse(front, id_to_name).is_empty(fields, ord)
+}
+
+/// 解析好的卡片正面（[card_front_is_empty] 的前一半）：模板只取决于笔记类型，同一类型的每条笔记共用一份，
+/// 不逐条笔记重新换名、分词、解析（缓存层整份物化时这是大头）。语法错误留到判空时报（同 [card_front_is_empty]）。
+pub(crate) struct CardFront(Result<Vec<Node>, String>);
+
+impl CardFront {
+    /// 字段 ID 换成名字（[ids_to_names]）后严格解析。
+    pub(crate) fn parse(front: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> CardFront {
+        let question = ids_to_names(front, id_to_name);
+        CardFront(parse_strict(&tokenize(&question)))
+    }
+
+    /// 这条笔记（[fields]：按名字的字段表）的第 [ord] 张卡正面是否为空；语法错误 = `Err`。
+    pub(crate) fn is_empty(&self, fields: &[(String, String)], ord: i64) -> Result<bool, String> {
+        let nodes = self.0.as_ref().map_err(Clone::clone)?;
+        Ok(front_nodes_empty(nodes, fields, ord))
+    }
+}
+
+fn front_nodes_empty(nodes: &[Node], fields: &[(String, String)], ord: i64) -> bool {
     let cn = format!("c{}", ord + 1);
     let value_of = |name: &str| -> Option<&str> {
         fields
@@ -786,7 +806,7 @@ pub fn card_front_is_empty(
             None => false,
         }
     };
-    Ok(template_is_empty(&non_empty, &nodes))
+    template_is_empty(&non_empty, nodes)
 }
 
 // ---------------------------------------------------------------- 媒体引用

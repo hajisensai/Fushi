@@ -19,6 +19,7 @@ import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_launch.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_session.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_voice.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -2678,6 +2679,66 @@ void main() {
       reason: 'v92 起 hook 字数不再写 activity_events（第二本账）',
     );
 
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  // OCR 游戏模式（拍板台 v5GSgDau9u）：打字机停顿先识别到半句、再识别到整句，台词流把续写
+  // 折进同一行（行 id 不变）。字数必须按整句计，不能停在第一次识别到的半句上。
+  test('OCR 续写折进同一行后字数按整句计（不停在半句）', () async {
+    final FushiDatabase db = await _openDbWithLibraryGame();
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    late void Function(String text) emitLine;
+    final GalHookSessionController controller = _buildAttachedLibraryController(
+      service: service,
+      endpoints: endpoints,
+      engine: _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+      ),
+      db: db,
+      ocrSourceFactory:
+          ({
+            required int hwnd,
+            required GalOcrRegion region,
+            required GalOcrRecognize recognize,
+            required void Function(String text) onLine,
+            required void Function(GalOcrSourceIssue issue, Object? detail)
+            onIssue,
+          }) {
+            emitLine = onLine;
+            return GalOcrLineSource(
+              hwnd: hwnd,
+              region: region,
+              recognize: recognize,
+              onLine: onLine,
+              interval: const Duration(hours: 1),
+              capture: (int _) async =>
+                  const WindowCaptureResult(error: 'test'),
+            );
+          },
+    );
+
+    await controller.startOcrCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: '窗口标题'),
+      region: GalOcrRegion.defaultDialogue,
+      recognize: (Uint8List rgba, int width, int height) async => '',
+    );
+    emitLine('今日はとても'); // 6 字
+    emitLine('今日はとてもいい天気ですね'); // 整句 13 字
+    expect(service.entries, hasLength(1), reason: '续写折进同一行');
+
+    List<StudySegmentRow> rows = const <StudySegmentRow>[];
+    for (int i = 0; i < 200 && (rows.isEmpty || rows.single.chars < 13); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      rows = await db.getStudySegments();
+    }
+    expect(rows, hasLength(1));
+    expect(rows.single.chars, 13, reason: '续写的新尾巴也要计入，不能只计第一次识别到的半句');
+
+    await controller.stopCapture();
     await controller.close();
     endpoints.dispose();
   });
@@ -5425,11 +5486,13 @@ GalHookSessionController _buildAttachedLibraryController({
   required _FakeEngineSource engine,
   required FushiDatabase db,
   DateTime Function()? now,
+  GalOcrLineSourceFactory? ocrSourceFactory,
 }) {
   final GalHookSessionController controller = GalHookSessionController(
     textService: service,
     isWindows: true,
     now: now,
+    ocrSourceFactory: ocrSourceFactory,
     targetWow64Probe: (_) async => false,
     targetImagePathProbe: (int pid) => pid == 909 ? _kLiveGameExe : null,
     injectorResolver: ({required bool is32Bit}) async => 'injector.exe',

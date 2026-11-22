@@ -1,6 +1,9 @@
 ## BUG-5064 · 查词历史 entries 存成对象的坏行每次启动重复报错不清理
 - **报告**：2026-11-21（分诊应用内反馈 8c2MAVz8hQ 时在日志中发现，Windows 3.3.0）
-- **真实性**：⏳ 待查。启动时 17 条 `DictRepo.historyLoad` 报错：查词历史里有 entries 存成对象（不是 JSON 字符串）的行；`fushi/lib/src/dictionary/dictionary_search_result.dart:9` 的 `List<String>.from` 解析失败后只跳过、不删除也不修复，每次启动都重复报错。写入来源尚未查明。
-- **[ ] ① 未修复** — 先查哪条写入路径会把 entries 写成对象（同步合并 / 备份恢复 / 旧版本迁移），在写入端修根因；读端对已有坏行做一次性修复或清除，不能每次启动重复报错。
-- **[ ] ② 未加自动化测试** — 坏行读取 + 写入端回归测试。
-- **备注**：
+- **真实性**：✅ 真实。反馈日志里同一次启动 18 条 `DictRepo.historyLoad`「type '_Map<String, dynamic>' is not a subtype of type 'String'」，栈顶 `DictionarySearchResult.fromJson`（`packages/fushi_dictionary/lib/src/models/dictionary_search_result.dart:9` 的 `List<String>.from(map['entries'])`）。
+- **根因**：
+  - **每次启动重报**（已验证）：装载端 `fushi/lib/src/models/dictionary_repository.dart` `_readAndDecodeHistory`（修前 :589-600；3.3.0 是 `loadFromDb` :183-191）对解析失败的行只记日志、在内存里跳过，库里原样留着；历史只有在查新词 / 删历史等变更后才落库（增量同步 / 3.3.0 的整表替换会顺带删掉内存里没有的行），用户不查词时坏行永远留在库里，每次启动整批重报。读端解码 `DictionarySearchResult.fromJson` 也只认规范的「逐条 `DictionaryEntry.toJson` 字符串」形式，`entries` 是对象的行明明字段齐全也整条丢。
+  - **写入来源**（未能定位，已穷举）：当前 develop、v3.3.0、最早的 Drift 版（71a9b1a155）里写 `dictionary_history` 的只有 `DictionaryRepository` 落库与 `fushi_server` 的 `ServerRemoteHistoryService`，两者都经 `DictionarySearchResult.toJson`（`entries` 恒为字符串）；备份导出 / 合并恒清空该表，覆盖导入只把本机 pre-restore.bak 的同表搬回；路径重定位不改该列；没有任何 ctl / AI 操作或 Rust 代码写这张表。日志里单次启动 18 条坏行也超过了 app（≤10）与 server（10）的上限，说明这些行不是当前代码的历史落库写出来的（推测是更早的外部 / 历史版本写入，无法再还原现场）。所以修复落在「读端认两种形式 + 装载时让库与内存对齐」，使任何来源的同类坏行都只出现一次。
+- **[x] ① 已修复** — `DictionarySearchResult.fromJson` 拆出 `fromMap`，`entries` 元素是字符串或对象都经同一份 `DictionaryEntry.fromMap` 还原，其它类型抛 `FormatException`；新增 `hasCanonicalEntries` 判断是否规范。`decodeDictionaryHistoryResults` 每条带 `canonical` 标记。装载时：能还原的非规范行进内存并标正文过期，读不回来的行不进内存且只汇总记一条日志，两种情况都立即排一次落库（增量同步按规范格式重写前者、删掉后者），退出 flush 兜底，下次启动不再重报。
+- **[x] ② 已加自动化测试** — `packages/fushi_dictionary/test/dictionary_search_result_json_test.dart`（两种形式还原、规范判定、非法元素报错）；`fushi/test/models/dictionary_history_deferred_load_test.dart` 两条 BUG-5064 用例（对象形式行还原并在无用户操作的 flush 后按规范重写、读不回来的行在 flush 后从库里删掉）。
+- **备注**：真机未复测（用户库不可得）；以真实 drift 内存库 + 真实装载 / 落库路径覆盖。

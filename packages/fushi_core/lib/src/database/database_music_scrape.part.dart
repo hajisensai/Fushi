@@ -64,27 +64,30 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
   }) => transaction(() async {
     await into(musicScrapeMeta).insertOnConflictUpdate(meta);
     for (final MusicMetadataRawSnapshotsCompanion s in snapshots) {
-      await into(musicMetadataRawSnapshots).insert(
-        s,
-        onConflict:
-            DoUpdate<
-              $MusicMetadataRawSnapshotsTable,
-              MusicMetadataRawSnapshotRow
-            >(
-              (_) => MusicMetadataRawSnapshotsCompanion(
-                rawJson: s.rawJson,
-                fetchedAt: s.fetchedAt,
-              ),
-              target: <Column>[
-                musicMetadataRawSnapshots.provider,
-                musicMetadataRawSnapshots.snapshotKind,
-                musicMetadataRawSnapshots.externalId,
-              ],
-            ),
-      );
+      await upsertMusicRawSnapshot(s);
     }
     await _reapplyMusicScrapeOverlaySql(this, <String>[meta.trackUid.value]);
   });
+
+  /// 写一条资料源原始快照（按 `(provider, snapshot_kind, external_id)` 覆盖）。专辑级
+  /// 资料源（DLsite 作品）不经曲目识别结论，单独用这个写。
+  Future<void> upsertMusicRawSnapshot(
+    MusicMetadataRawSnapshotsCompanion s,
+  ) => into(musicMetadataRawSnapshots).insert(
+    s,
+    onConflict:
+        DoUpdate<$MusicMetadataRawSnapshotsTable, MusicMetadataRawSnapshotRow>(
+          (_) => MusicMetadataRawSnapshotsCompanion(
+            rawJson: s.rawJson,
+            fetchedAt: s.fetchedAt,
+          ),
+          target: <Column>[
+            musicMetadataRawSnapshots.provider,
+            musicMetadataRawSnapshots.snapshotKind,
+            musicMetadataRawSnapshots.externalId,
+          ],
+        ),
+  );
 
   Future<MusicScrapeMetaRow?> getMusicScrapeMeta(String trackUid) =>
       (select(musicScrapeMeta)

@@ -1,0 +1,17 @@
+## BUG-5140 · 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间）
+- **报告**：2026-11-21（用户：应用内反馈 fMicnouU6V ④「书摘颜色可自定义」，拍板台「做」）
+- **真实性**：✅ 功能缺口。正文一直按 `FavoriteSentence.color` 画五色（`fushi/lib/src/media/audiobook/highlight_bridge.dart` `BASE_COLORS`），但此前没有任何入口写非默认色。分支 `claude/dec-fmicnouu6v` 已补「新收藏的颜色」偏好（`ReaderSettings.favoriteHighlightColor`，高亮样式页 → 收藏的色点），收藏时写入颜色；**已收藏的句子仍不能改色**。
+- **根因**：改色不能只改本机行。聚合同步与备份合并共用的 `AggregateMergeService.mergeFavoriteSentences`（`packages/fushi_engine/lib/sync/aggregate_merge_service.dart`，修前 `absorb` 里 `if (s.createdAt.isBefore(existing.createdAt)) byContent[key] = s;`）按内容键去重、同键只保留 createdAt 更早的整行：同一条收藏两端 createdAt 相同 → 各自保留本机行，改色永远传不到别的设备；删了重收藏（新 createdAt）则旧行更早、旧色赢。数据结构上缺颜色自己的时钟。
+- **[x] ① 已修复**（分支 `claude/fix-bug-5081-favorite-recolor`）：
+  - schema v167：`favorite_sentences.color_updated_at_us`（`packages/fushi_core/lib/src/database/tables.dart`，迁移按列存在性守卫幂等，存量 NULL）；`FavoriteSentence.colorUpdatedAt` + `colorClock`（`colorUpdatedAt ?? createdAt`），wire 上是可选字段 `colorUpdatedAt`（没改过色的条目字节不变，旧版本读到会忽略）。
+  - 合并：同键仍按 createdAt 更早的那条保留身份，颜色与颜色时钟取 `colorClock` 较新的一侧（同一微秒不同色按颜色名定胜负，结果与参数顺序无关、逐字节收敛）。备份合并（`BackupMergeEngine._mergeFavoriteSentences`）走同一纯函数，备份库先迁移到 v167，列随 `SELECT *` 映射带上。
+  - 写入口：`FavoriteSentenceRepository.setColor(id, color)` → `FushiDatabase.updateFavoriteSentenceColor`（写颜色 + 时钟）。
+  - UI：阅读器导航「收藏」行加「改颜色」（展开五个色点，`FavoriteHighlightColorDot`，与高亮样式页共用；动效 `FushiAnimatedSize` + `AnimatedSwitcher` + `FushiPressScale`，焦点根下每个色点是焦点停靠点），页面落库后 `_refreshSectionHighlights` 让正文按新颜色重绘（JS `__fushiApplyHighlights` 每次整章重建）。
+- **[x] ② 已加自动化测试**：
+  - `fushi/test/sync/favorite_sentence_recolor_sync_test.dart`：合并两端改色取较新者（两种参数顺序逐字节一致、再合不动）、本机更新保留本机色、删了重收藏取新色、同微秒定胜负、wire 往返、`setColor` 落库、备份合并导入两个方向取新。
+  - `fushi/test/database/migration_v167_favorite_color_clock_test.dart`：v166 → v167 加列、存量 NULL、重跑幂等。
+  - `fushi/test/media/audiobook/reader_favorite_recolor_sheet_test.dart`：收藏行展开色点 → 点粉色 → 回调 `(id, pink)`、色条换色、色点收起；没接回调不出入口。
+- **备注**：
+  - 正文里点已收藏的句子弹的菜单（`chrome.part.dart` 的 `'favorite'` 动作）仍是「取消收藏」开关，没在那里加改色——改色入口在导航「收藏」页；要不要在正文菜单再加一个，属于交互取舍，未做。
+  - 五色本身自定义 RGB（`kFavoriteHighlightColors` / `BASE_COLORS` / `reader_content_styles.dart` 兜底色三处）未做，属功能扩展。
+  - 「改色后正文重新上色」的 WebView 路径没有自动化（需要真实 WebView），未做真机 / 设备复测。

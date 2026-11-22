@@ -62,6 +62,15 @@ class _Offline {
   }
 }
 
+/// 只取可见候选（门面只暴露 [BookMetadataScrapeFacade.searchDetailed]：弹窗与控制
+/// 通道都走它）。
+Future<List<BookScrapeCandidate>> _search(
+  BookMetadataScrapeFacade facade, {
+  required BookScrapeSource source,
+  required String query,
+}) async =>
+    (await facade.searchDetailed(source: source, query: query)).candidates;
+
 void main() {
   const RakutenBooksCredentials creds = RakutenBooksCredentials(
     applicationId: 'app',
@@ -73,7 +82,8 @@ void main() {
     final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
       scraper: offline.scraper(),
     );
-    final List<BookScrapeCandidate> found = await facade.search(
+    final List<BookScrapeCandidate> found = await _search(
+      facade,
       source: BookScrapeSource.anilist,
       query: '薬屋のひとりごと',
     );
@@ -84,7 +94,8 @@ void main() {
     expect(c.bannerUrl, contains('/banner/'));
     expect(c.detailUrl, 'https://anilist.co/manga/99026');
 
-    await facade.search(
+    await _search(
+      facade,
       source: BookScrapeSource.anilist,
       query: 'https://anilist.co/manga/99026/Kusuriya',
     );
@@ -104,7 +115,8 @@ void main() {
       },
     );
     expect(
-      await facade.search(
+      await _search(
+        facade,
         source: BookScrapeSource.openbd,
         query: '私の愛人になりなさいっ!',
       ),
@@ -112,7 +124,8 @@ void main() {
     );
     expect(offline.requests, isEmpty);
 
-    final BookScrapeCandidate c = (await facade.search(
+    final BookScrapeCandidate c = (await _search(
+      facade,
       source: BookScrapeSource.openbd,
       query: 'ISBN978-4-06-514111-3',
     )).single;
@@ -128,7 +141,8 @@ void main() {
     final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
       scraper: offline.scraper(),
     );
-    final List<BookScrapeCandidate> found = await facade.search(
+    final List<BookScrapeCandidate> found = await _search(
+      facade,
       source: BookScrapeSource.ndl,
       query: '薬屋のひとりごと',
     );
@@ -151,7 +165,7 @@ void main() {
     expect(without.isSourceAvailable(BookScrapeSource.rakuten), isFalse);
     expect(without.isSourceAvailable(BookScrapeSource.ndl), isTrue);
     await expectLater(
-      without.search(source: BookScrapeSource.rakuten, query: 'x'),
+      _search(without, source: BookScrapeSource.rakuten, query: 'x'),
       throwsA(isA<BookScrapeException>()),
     );
     expect(offline.requests, isEmpty);
@@ -160,7 +174,8 @@ void main() {
       scraper: offline.scraper(rakuten: creds),
     );
     expect(withKey.isSourceAvailable(BookScrapeSource.rakuten), isTrue);
-    final BookScrapeCandidate c = (await withKey.search(
+    final BookScrapeCandidate c = (await _search(
+      withKey,
       source: BookScrapeSource.rakuten,
       query: '薬屋のひとりごと',
     )).single;
@@ -190,7 +205,7 @@ void main() {
       BookScrapeSource.ndl,
     ]) {
       await expectLater(
-        facade.search(source: source, query: '薬屋'),
+        _search(facade, source: source, query: '薬屋'),
         throwsA(
           isA<BookScrapeException>().having(
             (BookScrapeException e) => e.statusCode,
@@ -241,7 +256,8 @@ void main() {
     final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
       scraper: offline.scraper(),
     );
-    final List<BookScrapeCandidate> found = await facade.search(
+    final List<BookScrapeCandidate> found = await _search(
+      facade,
       source: BookScrapeSource.itunes,
       query: '米津玄師 Lemon',
     );
@@ -267,7 +283,8 @@ void main() {
     final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
       scraper: offline.scraper(),
     );
-    final List<BookScrapeCandidate> direct = await facade.search(
+    final List<BookScrapeCandidate> direct = await _search(
+      facade,
       source: BookScrapeSource.itunes,
       query: 'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
     );
@@ -275,7 +292,8 @@ void main() {
     expect(offline.requests.map((Uri u) => u.path), <String>['/lookup']);
 
     offline.requests.clear();
-    final List<BookScrapeCandidate> numeric = await facade.search(
+    final List<BookScrapeCandidate> numeric = await _search(
+      facade,
       source: BookScrapeSource.itunes,
       query: '22',
     );
@@ -287,7 +305,8 @@ void main() {
 
     offline.requests.clear();
     expect(
-      await facade.search(
+      await _search(
+        facade,
         source: BookScrapeSource.itunes,
         query: 'https://music.apple.com/jp/album/x/999',
       ),

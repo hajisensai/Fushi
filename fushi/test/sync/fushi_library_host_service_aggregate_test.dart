@@ -7,8 +7,10 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'aggregate_host_wire_test_ext.dart';
+
 /// TODO-1056 phase C host-service 聚合端点测试：互联 `/api/library/aggregate` 的
-/// service 层 getAggregateSnapshot / applyAggregateSnapshot 必须复用云后端 phase B
+/// service 层 getAggregateBody / applyAggregateBody 必须复用云后端 phase B
 /// 的 AggregateSyncService（materialize/apply），保证 MAX / 并集 / 幂等语义在互联
 /// 通道与云通道完全一致（不是第二套实现）。
 LocalLibraryHostService _svc(FushiDatabase db) => LocalLibraryHostService(

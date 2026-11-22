@@ -3,7 +3,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 
 /// 视频库整理命令（app 侧路由见 `fushi/lib/src/ops/ctl_video_organize_routes.dart`）：
-/// 作品明细、手动指定季集、按刮削资料整理文件名、把文件搬到点名的位置。
+/// 作品明细、手动指定季集、合集分栏、按刮削资料整理文件名、把文件搬到点名的位置。
 const List<CtlCommandSpec> videoOrganizeCommands = <CtlCommandSpec>[
   CtlCommandSpec(
     name: 'detail',
@@ -20,6 +20,21 @@ const List<CtlCommandSpec> videoOrganizeCommands = <CtlCommandSpec>[
     configure: _configurePin,
     build: _buildPin,
     render: _renderPin,
+  ),
+  CtlCommandSpec(
+    name: 'sections',
+    summary: '合集详情页的分栏（第 N 季 / PV·特典）：每个文件在哪一栏、为什么、可疑点',
+    usage: '<workId>',
+    build: _buildSections,
+    render: _renderSections,
+  ),
+  CtlCommandSpec(
+    name: 'section',
+    summary: '把文件钉到某一季（--season N）/ PV·特典（--extras），或 --auto 改回自动',
+    usage: '<bookUid...>',
+    configure: _configureSection,
+    build: _buildSection,
+    render: _renderSection,
   ),
   CtlCommandSpec(
     name: 'organize',
@@ -165,6 +180,119 @@ String _renderPin(Object? data) {
             '第 ${applied['season']} 季第 ${applied['episode']} 集'
             ' ${data['episodeTitle'] ?? ''}'
       : '完成';
+}
+
+// ── sections / section ───────────────────────────────────────────────────
+
+CtlRequestSpec _buildSections(CtlCommandContext context) {
+  final String id = context.positional(0, 'workId').trim();
+  if (!_isWorkId(id)) {
+    throw CtlUsageError(
+      '作品 id 格式不对：$id（book:<uid> 或 collection:<id>，见 video works）',
+    );
+  }
+  return CtlRequestSpec.get('/api/admin/video/works/${_seg(id)}/sections');
+}
+
+String _sectionLabel(Object? key) {
+  if (key == 'extras') return 'PV·特典';
+  final String raw = '$key';
+  if (raw.startsWith('s')) return '第 ${raw.substring(1)} 季';
+  return raw;
+}
+
+String _renderSections(Object? data) {
+  if (data is! Map) return '完成';
+  final List<String> lines = <String>['${data['id']}'];
+  final Object? sections = data['sections'];
+  if (sections is List) {
+    for (final Object? section in sections) {
+      if (section is! Map) continue;
+      final Object? files = section['files'];
+      lines.add(
+        '  ${_sectionLabel(section['key'])}：'
+        '${files is List ? files.length : 0} 个文件',
+      );
+    }
+  }
+  lines.add(
+    renderCtlTable(
+      data,
+      const <(String, String)>[
+        ('uid', 'uid'),
+        ('分栏', 'section'),
+        ('来源', 'source'),
+        ('绑定', 'boundTo'),
+        ('路径', 'path'),
+      ],
+      listKey: 'files',
+      empty: '没有本机文件',
+    ),
+  );
+  final Object? warnings = data['warnings'];
+  if (warnings is List && warnings.isNotEmpty) {
+    lines.add('可疑：');
+    for (final Object? w in warnings) {
+      if (w is Map) lines.add('  [${w['kind']}] ${w['message']}');
+    }
+  }
+  return lines.join('\n');
+}
+
+void _configureSection(ArgParser parser) {
+  parser
+    ..addOption('season', help: '钉到第 N 季（N ≥ 1；单季作品的正片是第 1 季）')
+    ..addFlag('extras', negatable: false, help: '钉到 PV·特典栏')
+    ..addFlag('auto', negatable: false, help: '清除手动分栏（回到手动季集 → 文件名）');
+}
+
+CtlRequestSpec _buildSection(CtlCommandContext context) {
+  final List<String> uids = <String>[
+    for (final String raw in context.rest)
+      if (raw.trim().isNotEmpty) raw.trim(),
+  ];
+  if (uids.isEmpty) throw const CtlUsageError('缺少 <bookUid...>');
+  final String? seasonRaw = context.option('season');
+  final bool extras = context.flag('extras');
+  final bool auto = context.flag('auto');
+  final int picked =
+      (seasonRaw != null ? 1 : 0) + (extras ? 1 : 0) + (auto ? 1 : 0);
+  if (picked != 1) {
+    throw const CtlUsageError('--season N、--extras、--auto 三选一');
+  }
+  const String path = '/api/admin/video/sections';
+  if (seasonRaw != null) {
+    final int? season = int.tryParse(seasonRaw);
+    if (season == null || season < 1) {
+      throw const CtlUsageError('--season 需要 ≥1 的整数（特别篇用 --extras）');
+    }
+    return CtlRequestSpec.post(
+      path,
+      body: <String, Object?>{
+        'items': uids,
+        'section': 'season',
+        'season': season,
+      },
+    );
+  }
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      'items': uids,
+      'section': extras ? 'extras' : 'auto',
+    },
+  );
+}
+
+String _renderSection(Object? data) {
+  if (data is! Map) return '完成';
+  final Object? items = data['items'];
+  if (items is! List) return '完成';
+  return <String>[
+    for (final Object? item in items)
+      if (item is Map)
+        '${item['uid']} → ${_sectionLabel(item['section'])}（${item['source']}）',
+  ].join('\n');
 }
 
 // ── organize / move ──────────────────────────────────────────────────────
