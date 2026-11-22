@@ -9490,6 +9490,8 @@
   "shortcut_action_reader_dismiss_dict": "關閉詞典",
   "shortcut_action_reader_enter_caret": "進入選字查詞遊標",
   "shortcut_action_reader_lookup_at_cursor": "查詞／啟用遊標",
+  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
+  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "開啟有聲書面板",
   "shortcut_action_reader_open_gallery": "開啟插圖畫廊",
   "shortcut_action_reader_open_menu": "Open Settings Menu",

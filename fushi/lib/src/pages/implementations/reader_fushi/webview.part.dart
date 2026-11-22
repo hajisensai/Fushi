@@ -1031,6 +1031,8 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
 
     final String caretJs = ReaderCaretScripts.source();
+    // 整句扫词（拍板台 5H922XeDHM）：只读 DOM 的取句 / 查词助手，依赖 fushiSelection。
+    final String wordSweepJs = ReaderWordSweepScripts.source();
 
     return '''
 window.__fushiEngine = {
@@ -1073,6 +1075,7 @@ install: function(C) {
   // BUG-2779: WebKit ruby annotations snap to the base by measured font metrics.
   $kReaderRubyMetricsJs
   $caretJs
+  $wordSweepJs
   // TODO-975：insetBottom 与 chromeBottomInset 同源 _readerBottomReserve
   // （悬浮 0 / 挤压含底栏），由 Dart 侧算好放进 C。
   window.fushiCaret.init({

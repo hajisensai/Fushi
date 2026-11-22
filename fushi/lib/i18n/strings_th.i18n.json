@@ -9490,6 +9490,8 @@
   "shortcut_action_reader_dismiss_dict": "ปิดพจนานุกรม",
   "shortcut_action_reader_enter_caret": "เข้าสู่เคอร์เซอร์ค้นหา",
   "shortcut_action_reader_lookup_at_cursor": "ค้นคำ / เปิดใช้งานเคอร์เซอร์",
+  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
+  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "เปิดแผงหนังสือเสียง",
   "shortcut_action_reader_open_gallery": "เปิดแกลเลอรีภาพประกอบ",
   "shortcut_action_reader_open_menu": "Open Settings Menu",
