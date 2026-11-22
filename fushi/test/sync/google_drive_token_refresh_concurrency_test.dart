@@ -192,4 +192,68 @@ void main() {
     expect(second.closeCount, 1);
     expect(first.closeCount, 1);
   });
+
+  group('移动端 client 缓存（GoogleDriveMobileClientCache）', () {
+    auth.AuthClient newClient(String token) => auth.authenticatedClient(
+      _FakeGoogle(validToken: token),
+      _staleCredentials(),
+    );
+
+    test('构造抛错（如 getTokens 网络错误）不留缓存，下次重新构造', () async {
+      int calls = 0;
+      final auth.AuthClient ok = newClient('a');
+      final GoogleDriveMobileClientCache cache = GoogleDriveMobileClientCache(
+        () async {
+          calls++;
+          if (calls == 1) throw StateError('network_error');
+          return ok;
+        },
+      );
+
+      await expectLater(cache.get(), throwsA(isA<StateError>()));
+      expect(cache.current, isNull);
+      expect(identical(await cache.get(), ok), isTrue);
+      expect(calls, 2);
+      expect(identical(cache.current, ok), isTrue);
+    });
+
+    test('未登录（返回 null）抛 GoogleDriveAuthError 且不留缓存', () async {
+      auth.AuthClient? next;
+      final GoogleDriveMobileClientCache cache = GoogleDriveMobileClientCache(
+        () async => next,
+      );
+      await expectLater(cache.get(), throwsA(isA<GoogleDriveAuthError>()));
+      next = newClient('a');
+      expect(identical(await cache.get(), next), isTrue);
+    });
+
+    test('并发首调共用一次构造；drop 后迟到完成的旧构造不回写 current', () async {
+      int calls = 0;
+      final Completer<auth.AuthClient?> slow = Completer<auth.AuthClient?>();
+      final auth.AuthClient stale = newClient('stale');
+      final auth.AuthClient fresh = newClient('fresh');
+      final GoogleDriveMobileClientCache cache = GoogleDriveMobileClientCache(
+        () {
+          calls++;
+          return calls == 1
+              ? slow.future
+              : Future<auth.AuthClient?>.value(fresh);
+        },
+      );
+
+      final Future<auth.AuthClient> a = cache.get();
+      final Future<auth.AuthClient> b = cache.get();
+      expect(identical(a, b), isTrue);
+      expect(calls, 1);
+
+      cache.drop();
+      slow.complete(stale);
+      expect(identical(await a, stale), isTrue);
+      expect(cache.current, isNull);
+
+      expect(identical(await cache.get(), fresh), isTrue);
+      expect(identical(cache.current, fresh), isTrue);
+      expect(calls, 2);
+    });
+  });
 }

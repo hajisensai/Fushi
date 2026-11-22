@@ -135,9 +135,9 @@ class GoogleDriveAuth {
 
   // 当前令牌对应的移动端 AuthClient（BUG-5169）。扩展的 `authenticatedClient()` 每调一次
   // 就新建一个 client，所以这里按令牌缓存：刷新 / 换账号 / 换 scope 才换新的，调用方
-  // 拿到的 client 身份不变就说明令牌没换过。缓存 in-flight future，并发首调共用一次构造。
-  Future<auth.AuthClient>? _mobileClientFuture;
-  auth.AuthClient? _mobileClient;
+  // 拿到的 client 身份不变就说明令牌没换过。
+  late final GoogleDriveMobileClientCache _mobileClients =
+      GoogleDriveMobileClientCache(() => _signIn.authenticatedClient());
   Future<void>? _mobileRefreshInFlight;
 
   // ── Desktop (googleapis_auth) ────────────────────────────────────
@@ -186,29 +186,14 @@ class GoogleDriveAuth {
   /// 当前令牌对应的 AuthClient。令牌没换过时两次调用返回同一个实例；刷新后返回新实例
   /// ——调用方不要长期缓存它，每次发请求前取（BUG-5169）。
   Future<auth.AuthClient> getAuthClient() async {
-    if (useMobileAuth) return _mobileClientFuture ??= _createMobileClient();
+    if (useMobileAuth) return _mobileClients.get();
     final client = _desktopClient;
     if (client == null) throw GoogleDriveAuthError('Not authenticated');
     return client;
   }
 
-  Future<auth.AuthClient> _createMobileClient() async {
-    final auth.AuthClient? client = await _signIn.authenticatedClient();
-    if (client == null) {
-      // 未登录不能钉进缓存，否则登录后仍复读这个错误。
-      _mobileClientFuture = null;
-      throw GoogleDriveAuthError('Not authenticated');
-    }
-    _mobileClient = client;
-    return client;
-  }
-
-  /// 丢弃缓存的移动端 client（换令牌 / 账号 / scope 时）。不 close 旧的：并行通道里的
-  /// 在途请求可能还在用它，没有引用后自然回收。
-  void _dropMobileClient() {
-    _mobileClientFuture = null;
-    _mobileClient = null;
-  }
+  /// 丢弃缓存的移动端 client（换令牌 / 账号 / scope 时），见 [GoogleDriveMobileClientCache.drop]。
+  void _dropMobileClient() => _mobileClients.drop();
 
   /// 装入一个新的桌面会话（登录 / 恢复）。上一个会话的底层连接在这里关——这是换会话，
   /// 不是刷新令牌。
@@ -439,7 +424,7 @@ class GoogleDriveAuth {
   /// 刷新（单飞），不会各自换一遍令牌（BUG-5169）。
   Future<void> refreshAuth({auth.AuthClient? rejected}) {
     if (useMobileAuth) {
-      if (rejected != null && !identical(rejected, _mobileClient)) {
+      if (rejected != null && !identical(rejected, _mobileClients.current)) {
         return Future<void>.value();
       }
       return _mobileRefreshInFlight ??= _refreshMobile().whenComplete(
@@ -561,5 +546,54 @@ class GoogleDriveAuth {
       (map['scopes'] as List?)?.cast<String>() ??
           <String>[GoogleDriveSyncSpace.appData.scope],
     );
+  }
+}
+
+/// 移动端按令牌缓存的 AuthClient（BUG-5169）。
+///
+/// - 并发首调共用一次构造（缓存 in-flight future）。
+/// - 构造失败（未登录返回 null、`getTokens` 抛网络 / PlatformException 等）**不留缓存**：
+///   失败的 future 一旦钉住，之后每次请求都复读同一个错误，401 刷新路径也走不到，
+///   同步卡死到重启——正是 BUG-5169 要消灭的那类症状。
+/// - [drop] 之后才完成的旧构造不会回写成 [current]，否则迟到的 401 会拿旧 client 与
+///   它比对成功、白白再刷新一次。
+class GoogleDriveMobileClientCache {
+  GoogleDriveMobileClientCache(this._create);
+
+  final Future<auth.AuthClient?> Function() _create;
+  Future<auth.AuthClient>? _pending;
+  auth.AuthClient? _current;
+
+  /// 当前缓存的 client（构造完成后才有）；[GoogleDriveAuth.refreshAuth] 用它判断
+  /// 被拒的 client 是否已被换掉。
+  auth.AuthClient? get current => _current;
+
+  Future<auth.AuthClient> get() {
+    final Future<auth.AuthClient>? cached = _pending;
+    if (cached != null) return cached;
+    final Future<auth.AuthClient> created = _build();
+    _pending = created;
+    // 先于调用方的 await 注册：调用方拿到 client 时 [current] 已经指向它。
+    created.then<void>(
+      (auth.AuthClient client) {
+        if (identical(_pending, created)) _current = client;
+      },
+      onError: (Object _) {
+        if (identical(_pending, created)) _pending = null;
+      },
+    );
+    return created;
+  }
+
+  Future<auth.AuthClient> _build() async {
+    final auth.AuthClient? client = await _create();
+    if (client == null) throw GoogleDriveAuthError('Not authenticated');
+    return client;
+  }
+
+  /// 丢弃缓存。不 close 旧 client：并行通道里的在途请求可能还在用它，没有引用后自然回收。
+  void drop() {
+    _pending = null;
+    _current = null;
   }
 }
