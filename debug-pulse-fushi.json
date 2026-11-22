@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T16:37:23Z",
+ "generatedAt": "2026-11-22T16:41:57Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
@@ -14,11 +14,9 @@
    "unknown": false,
    "publishedAt": "2026-11-22T16:32:32Z",
    "testflight": true,
-   "baseSeq": 31429,
+   "baseSeq": 31437,
    "prs": [
-    4186,
-    4178,
-    4180
+    4186
    ],
    "direct": [],
    "truncated": false,
@@ -35,6 +33,38 @@
     },
     "ios": {
      "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 31437,
+   "version": "3.4.0",
+   "sha": "6941e35eb80ed5e380256375757243001fa7d067",
+   "unknown": false,
+   "publishedAt": "2026-11-22T16:41:46Z",
+   "testflight": false,
+   "baseSeq": 31429,
+   "prs": [
+    4178,
+    4180
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45034809826"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45034809826"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45034809826"
     }
    }
   },
@@ -94,63 +124,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31363,
-   "version": "3.4.0",
-   "sha": "6a769b065115e168daeeea38eae45c9bca84182f",
-   "unknown": false,
-   "publishedAt": "2026-11-22T12:29:57Z",
-   "testflight": false,
-   "baseSeq": 31261,
-   "prs": [
-    4163,
-    4161,
-    4164,
-    4162,
-    4160,
-    4155,
-    4154,
-    4156,
-    4157,
-    4159,
-    4158,
-    4152,
-    4124,
-    4141,
-    4149,
-    4150,
-    4116,
-    4146
-   ],
-   "direct": [
-    {
-     "sha": "f28f4804afa4ea7412228638406fb90cdd0721bd",
-     "subject": "chore(bugs): settle BUG number collisions on fa3721a78"
-    },
-    {
-     "sha": "327713340f49445726dc33839151804976aee173",
-     "subject": "chore(bugs): settle BUG number collisions on 5f3c60d82"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
-    }
-   }
   }
  ],
  "pending": {
@@ -205,168 +178,6 @@
    "mergedAt": "2026-11-22T13:37:46Z",
    "additions": 3119,
    "deletions": 651,
-   "labels": []
-  },
-  "4116": {
-   "number": 4116,
-   "title": "perf(stats): 统计事实面派生迁到 Rust、读取挪进后台 isolate（BUG-4960）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:22:10Z",
-   "additions": 3034,
-   "deletions": 431,
-   "labels": []
-  },
-  "4124": {
-   "number": 4124,
-   "title": "feat(web-video): 默认 Fushi 播放，DRM 且原生高于 1080p 才默认站点原生播放",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:32:05Z",
-   "additions": 783,
-   "deletions": 72,
-   "labels": []
-  },
-  "4141": {
-   "number": 4141,
-   "title": "手柄查词统一：一套可改键查词模式、停下即查、右摇杆微调选区",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:29:06Z",
-   "additions": 4571,
-   "deletions": 1550,
-   "labels": []
-  },
-  "4146": {
-   "number": 4146,
-   "title": "制卡提示重做 + 通知避让页面 chrome（BUG-5195）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:15:07Z",
-   "additions": 2946,
-   "deletions": 691,
-   "labels": []
-  },
-  "4149": {
-   "number": 4149,
-   "title": "feat(library-agent): AI 管库 v3——长程 agent、整库地图、批量变更集",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:25:09Z",
-   "additions": 6509,
-   "deletions": 158,
-   "labels": []
-  },
-  "4150": {
-   "number": 4150,
-   "title": "feat(srs): 复习首页宽屏首行填满「今日」「连续天数」两块",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:24:32Z",
-   "additions": 692,
-   "deletions": 116,
-   "labels": []
-  },
-  "4152": {
-   "number": 4152,
-   "title": "perf(video): 合集滚动不再逐帧离屏重烘，切页派生数据记忆化、重活移出 UI 线程（BUG-5197）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:36:23Z",
-   "additions": 2522,
-   "deletions": 399,
-   "labels": []
-  },
-  "4154": {
-   "number": 4154,
-   "title": "feat(settings): 清除已记住的压缩包密码（拍板台 XjFxBeCmXV）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T11:10:25Z",
-   "additions": 243,
-   "deletions": 1,
-   "labels": []
-  },
-  "4155": {
-   "number": 4155,
-   "title": "fix(home): 编辑态页头「恢复默认」换成「退出编辑」×，恢复默认挪到底栏（BUG-5206）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T11:12:50Z",
-   "additions": 89,
-   "deletions": 9,
-   "labels": []
-  },
-  "4156": {
-   "number": 4156,
-   "title": "feat(archive): 分卷 7z / zip（.001 起）导入（拍板台 7c59jhhc8Q）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T10:37:39Z",
-   "additions": 527,
-   "deletions": 33,
-   "labels": []
-  },
-  "4157": {
-   "number": 4157,
-   "title": "fix(anki): 识别改版 AnkiDroid kuma3 Anki（BUG-5207）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T10:31:59Z",
-   "additions": 59,
-   "deletions": 2,
-   "labels": []
-  },
-  "4158": {
-   "number": 4158,
-   "title": "fix(guards): develop baseline guard reds after batch merge",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T10:26:42Z",
-   "additions": 300,
-   "deletions": 172,
-   "labels": []
-  },
-  "4159": {
-   "number": 4159,
-   "title": "fix(theme): Apple 深色档与书内查词弹窗保留用户外壳样式（BUG-5208）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T10:26:56Z",
-   "additions": 161,
-   "deletions": 7,
-   "labels": []
-  },
-  "4160": {
-   "number": 4160,
-   "title": "fix(srs): 升级没过核对的报告手机上可达、恢复页不再叠两种失败说明（BUG-5210）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T11:29:33Z",
-   "additions": 830,
-   "deletions": 84,
-   "labels": []
-  },
-  "4161": {
-   "number": 4161,
-   "title": "fix(srs): 默认牌组不随祖先牌组删除，开库复活带删除标记的默认牌组（BUG-5209）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T11:32:00Z",
-   "additions": 223,
-   "deletions": 5,
-   "labels": []
-  },
-  "4162": {
-   "number": 4162,
-   "title": "feat(srs): 默认手势两面三区单击都切换顶栏",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T11:30:48Z",
-   "additions": 30,
-   "deletions": 21,
-   "labels": []
-  },
-  "4163": {
-   "number": 4163,
-   "title": "fix(srs): 模板编辑器保存在途时返回不再误报「放弃修改」",
-   "author": "W1ght",
-   "mergedAt": "2026-11-22T11:33:21Z",
-   "additions": 158,
-   "deletions": 19,
-   "labels": []
-  },
-  "4164": {
-   "number": 4164,
-   "title": "fix(music): 真盘面按量出的印刷区对正，透明外缘与轮毂不再画成白",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T11:30:52Z",
-   "additions": 735,
-   "deletions": 100,
    "labels": []
   },
   "4167": {
