@@ -36,6 +36,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit_video/media_kit_video.dart' show Video;
+import 'package:window_manager/window_manager.dart';
 
 import 'helpers/library_fixture.dart';
 import 'support/test_app_launcher.dart';
@@ -111,10 +112,62 @@ Future<Map<String, int>?> _stats() async {
   return video.controller.notifier.value?.frameStats();
 }
 
+/// `-Visible`（FUSHI_TEST_ONSCREEN）时用 ffmpeg gdigrab 录下窗口所在的桌面区域——
+/// DWM 合成后真正上屏的像素，PrintWindow 抓不到 Flutter 的交换链。录像供离线量帧节奏
+/// （与反馈视频同一种量法），不参与断言；ffmpeg 不在 PATH 上就跳过。
+Future<Process?> _startScreenRecord(String label, double dpr) async {
+  if ((Platform.environment['FUSHI_TEST_ONSCREEN'] ?? '').isEmpty) return null;
+  if (_testRoot.isEmpty) return null;
+  final Rect b = await windowManager.getBounds();
+  int even(double v) => (v * dpr).round() & ~1;
+  final String out =
+      '$_testRoot${Platform.pathSeparator}present-probe-$label.mp4';
+  _log(
+    'record $label rect=${even(b.left)},${even(b.top)} '
+    '${even(b.width)}x${even(b.height)} -> $out',
+  );
+  try {
+    return await Process.start('ffmpeg', <String>[
+      '-y',
+      '-loglevel',
+      'error',
+      '-f',
+      'gdigrab',
+      '-framerate',
+      '60',
+      '-offset_x',
+      '${even(b.left)}',
+      '-offset_y',
+      '${even(b.top)}',
+      '-video_size',
+      '${even(b.width)}x${even(b.height)}',
+      '-i',
+      'desktop',
+      '-t',
+      '${_kWindowMs ~/ 1000}',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-qp',
+      '0',
+      out,
+    ]);
+  } on ProcessException catch (e) {
+    _log('record $label skipped: $e');
+    return null;
+  }
+}
+
 /// 一个窗口的增量；[busy] 时窗口内 Dart 主线程按节奏忙等。
-Future<Map<String, int>> _measure(String label, {required bool busy}) async {
+Future<Map<String, int>> _measure(
+  String label, {
+  required bool busy,
+  required double dpr,
+}) async {
   final Map<String, int>? before = await _stats();
   if (before == null) fail('原生出帧计数不可用（非 Windows 硬件输出？）');
+  final Process? recorder = await _startScreenRecord(label, dpr);
   Timer? hog;
   int stalls = 0;
   if (busy) {
@@ -126,6 +179,9 @@ Future<Map<String, int>> _measure(String label, {required bool busy}) async {
   }
   await _wait(_kWindowMs);
   hog?.cancel();
+  if (recorder != null) {
+    _log('record $label exit=${await recorder.exitCode}');
+  }
   final Map<String, int>? after = await _stats();
   if (after == null) fail('原生出帧计数不可用');
   int d(String k) => (after[k] ?? 0) - (before[k] ?? 0);
@@ -192,8 +248,9 @@ void main() {
       await hooks().debugPlay();
       await hooks().debugSeekMs(0);
       await _wait(3000);
-      idle = await _measure('idle', busy: false);
-      busy = await _measure('busy', busy: true);
+      final double dpr = tester.view.devicePixelRatio;
+      idle = await _measure('idle', busy: false, dpr: dpr);
+      busy = await _measure('busy', busy: true, dpr: dpr);
     }
 
     FlutterError.onError = frameworkOnError;
