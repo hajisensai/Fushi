@@ -9,6 +9,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -17,6 +18,7 @@ import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
@@ -58,6 +60,85 @@ bool graphicSubtitlePauseOcrStatusAutoHides(
   GraphicSubtitlePauseOcrStatus.idle ||
   GraphicSubtitlePauseOcrStatus.recognizing => false,
 };
+
+/// 一击落在哪个可点字上：返回 [charRects] 里的下标，没有字框盖住 [point] 时返回
+/// null（这一击不归本层，穿透给下面的视频控件）。
+///
+/// 多个字框都盖住落点时（BUG-5177，反馈 WgeFHwdQ65）取落点在框里「最深」的那个：
+/// 落点离框中心的偏移按半宽 / 半高归一后取较大的一维，越小越深；一样深再取面积小的，
+/// 还一样取排在后面的（与以前的叠放顺序一致）。以前每个字一个 [Positioned] 手势框，
+/// 框之间有重叠时全凭 [Stack] 的叠放顺序裁决——同一块里后一行的字永远压住前一行，
+/// 斜行的轴对齐字框、注音 / 下划线这类扁框盖到别的字上时，点中哪个字跟点在哪无关。
+/// 判据与截屏识字的 `screenOcrHitTest`（BUG-4069）同一个意思：人点的是字身，离
+/// 被点那个字的中心近、离别的字框的中心远。
+int? graphicSubtitleOcrHitTest({
+  required List<Rect> charRects,
+  required Offset point,
+}) {
+  int? best;
+  double bestDepth = double.infinity;
+  double bestArea = double.infinity;
+  for (int i = 0; i < charRects.length; i++) {
+    final Rect rect = charRects[i];
+    if (rect.isEmpty || !rect.contains(point)) continue;
+    final double depth = math.max(
+      (point.dx - rect.center.dx).abs() / (rect.width / 2),
+      (point.dy - rect.center.dy).abs() / (rect.height / 2),
+    );
+    final double area = rect.width * rect.height;
+    if (best == null ||
+        depth < bestDepth ||
+        (depth == bestDepth && area <= bestArea)) {
+      best = i;
+      bestDepth = depth;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+/// 暂停 OCR 点字的诊断（`video.pause_ocr_tap`，进错误日志随反馈上传）：落点、控件 /
+/// 显示 / 帧图三套尺寸与摆放方式、盖住落点的框数、命中的字及其帧图 / 控件字框、离
+/// 落点最近的几个字框、整句前 32 个字。反馈 WgeFHwdQ65 点「中」命中上一行的「u」，
+/// 当时这条路径什么都不记，分不清是字框摆错（识别几何 / 坐标映射）还是命中裁决错
+/// ——有了这一行，下一份同类反馈可以直接回放。
+String graphicSubtitleOcrTapDiagnostic({
+  required GraphicSubtitleOcrFrame frame,
+  required List<Rect> viewRects,
+  required Offset point,
+  required int hit,
+  required Size viewSize,
+  required Size displaySize,
+  required BoxFit fit,
+}) {
+  String rectOf(Rect r) =>
+      '${r.left.round()},${r.top.round()},${r.right.round()},${r.bottom.round()}';
+  String sizeOf(Size s) => '${s.width.round()}x${s.height.round()}';
+  String glyphOf(GraphicSubtitleOcrChar c) =>
+      c.sentence.characters.elementAtOrNull(c.graphemeIndex) ?? '?';
+  final int covering = viewRects
+      .where((Rect r) => !r.isEmpty && r.contains(point))
+      .length;
+  final List<int> nearest = List<int>.generate(viewRects.length, (int i) => i)
+    ..sort(
+      (int a, int b) => (viewRects[a].center - point).distance.compareTo(
+        (viewRects[b].center - point).distance,
+      ),
+    );
+  final GraphicSubtitleOcrChar picked = frame.chars[hit];
+  final String near = <String>[
+    for (final int i in nearest.take(4))
+      '#$i"${glyphOf(frame.chars[i])}"@${rectOf(frame.chars[i].rect)}',
+  ].join(' ');
+  return 'point=(${point.dx.round()},${point.dy.round()}) '
+      'view=${sizeOf(viewSize)} display=${sizeOf(displaySize)} '
+      'image=${sizeOf(frame.imageSize)} fit=${fit.name} '
+      'chars=${frame.chars.length} covering=$covering '
+      'hit=#$hit"${glyphOf(picked)}" grapheme=${picked.graphemeIndex} '
+      'charImage=${rectOf(picked.rect)} charView=${rectOf(viewRects[hit])} '
+      'near=[$near] '
+      'text="${picked.sentence.characters.take(32)}"';
+}
 
 /// 图形字幕 OCR 查词覆盖层。尺寸须与视频控件一致（挂在 controls 层里）。
 class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
@@ -167,6 +248,13 @@ class _VideoGraphicSubtitleOcrOverlayState
 
   /// 当前帧的识别是不是手动豁免出来的（决定「没有字」与不可用提示照报）。
   bool get _manualFrame => _manualKey != null && _manualKey == _key;
+
+  /// 可点字层（[Stack]）：点字时把全局落点换算进本层坐标。
+  final GlobalKey _charLayerKey = GlobalKey();
+
+  /// 最近一次布局的可点字层：哪一帧、各字在本层的框、控件 / 显示尺寸。点字时在这
+  /// 份几何上裁决命中（[graphicSubtitleOcrHitTest]）。
+  _CharLayout? _charLayout;
 
   @override
   void initState() {
@@ -467,18 +555,31 @@ class _VideoGraphicSubtitleOcrOverlayState
         final Size displaySize = dw != null && dh != null && dw > 0 && dh > 0
             ? Size(dw.toDouble(), dh.toDouble())
             : frame.imageSize;
+        final List<Rect> rects = <Rect>[
+          for (final GraphicSubtitleOcrChar char in frame.chars)
+            graphicSubtitleImageRectToView(
+              imageRect: char.rect,
+              imageSize: frame.imageSize,
+              displaySize: displaySize,
+              viewSize: viewSize,
+              fit: widget.fit,
+            ),
+        ];
+        _charLayout = (
+          frame: frame,
+          rects: rects,
+          viewSize: viewSize,
+          displaySize: displaySize,
+        );
+        // 每个字框只管「这一击归不归本层」与鼠标手形；点中哪个字由整层几何裁决
+        // （[_handleCharTap]），不看框的叠放顺序。
         return Stack(
+          key: _charLayerKey,
           children: <Widget>[
-            for (final GraphicSubtitleOcrChar char in frame.chars)
+            for (final Rect rect in rects)
               Positioned.fromRect(
-                rect: graphicSubtitleImageRectToView(
-                  imageRect: char.rect,
-                  imageSize: frame.imageSize,
-                  displaySize: displaySize,
-                  viewSize: viewSize,
-                  fit: widget.fit,
-                ),
-                child: _CharHitBox(char: char, onTap: widget.onCharTap),
+                rect: rect,
+                child: _CharHitBox(onTapUp: _handleCharTap),
               ),
             pill,
           ],
@@ -486,38 +587,64 @@ class _VideoGraphicSubtitleOcrOverlayState
       },
     );
   }
-}
 
-class _CharHitBox extends StatelessWidget {
-  const _CharHitBox({required this.char, required this.onTap});
-
-  final GraphicSubtitleOcrChar char;
-  final void Function(String sentence, int graphemeIndex, Rect globalRect)
-  onTap;
-
-  void _handleTap(BuildContext context) {
-    final RenderBox? box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
-    final Offset topLeft = box.localToGlobal(Offset.zero);
-    final Offset bottomRight = box.localToGlobal(
-      box.size.bottomRight(Offset.zero),
+  void _handleCharTap(Offset globalPosition) {
+    final _CharLayout? layout = _charLayout;
+    final RenderBox? layer =
+        _charLayerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (layout == null || layer == null || !layer.hasSize) return;
+    final Offset point = layer.globalToLocal(globalPosition);
+    final int? hit = graphicSubtitleOcrHitTest(
+      charRects: layout.rects,
+      point: point,
     );
-    onTap(
+    if (hit == null) return;
+    ErrorLogService.instance.logDiagnostic(
+      'video.pause_ocr_tap',
+      graphicSubtitleOcrTapDiagnostic(
+        frame: layout.frame,
+        viewRects: layout.rects,
+        point: point,
+        hit: hit,
+        viewSize: layout.viewSize,
+        displaySize: layout.displaySize,
+        fit: widget.fit,
+      ),
+    );
+    final GraphicSubtitleOcrChar char = layout.frame.chars[hit];
+    final Rect local = layout.rects[hit];
+    widget.onCharTap(
       char.sentence,
       char.graphemeIndex,
-      Rect.fromPoints(topLeft, bottomRight),
+      Rect.fromPoints(
+        layer.localToGlobal(local.topLeft),
+        layer.localToGlobal(local.bottomRight),
+      ),
     );
   }
+}
+
+/// 可点字层的几何快照（见 `_charLayout`）。
+typedef _CharLayout = ({
+  GraphicSubtitleOcrFrame frame,
+  List<Rect> rects,
+  Size viewSize,
+  Size displaySize,
+});
+
+class _CharHitBox extends StatelessWidget {
+  const _CharHitBox({required this.onTapUp});
+
+  /// 点在这个字框里（全局坐标）；命中哪个字由覆盖层整层裁决。
+  final void Function(Offset globalPosition) onTapUp;
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: Builder(
-        builder: (BuildContext context) => GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _handleTap(context),
-        ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (TapUpDetails details) => onTapUp(details.globalPosition),
       ),
     );
   }

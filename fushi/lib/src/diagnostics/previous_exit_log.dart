@@ -112,7 +112,8 @@ enum PreviousExitKind {
 
   /// 权限变更时被系统按 uid 结束（Android `PERMISSION_CHANGE`：撤销运行时权限；或
   /// `OTHER` + AOSP 框架描述 `[KILL UID] <OP> changed.`：在系统设置里改「所有文件访问
-  /// 权限」等 appop）。平台给了明确原因、是系统对用户操作的标准反应，不是闪退——否则
+  /// 权限」等 appop；或 `OTHER` + 厂商形态 `[KILL UID] Permission related app op changed`：
+  /// OnePlus ColorOS 15 改应用权限时记的，反馈 4u4HnlOcv2）。平台给了明确原因、是系统对用户操作的标准反应，不是闪退——否则
   /// 用户每改一次权限，下次启动都弹「意外退出」（反馈 DyamYE6bPL / g8AEGUyQBU）。
   permissionChanged,
 
@@ -648,9 +649,12 @@ const Set<String> kSevereAndroidExitReasons = <String>{
 /// `[KILL UID]`（`SUBREASON_KILL_UID`），原因码是 `REASON_OTHER`。子原因前缀可缺：华为
 /// EMUI / HarmonyOS 的 `AppExitInfoTracker` 不加前缀，只记 `MANAGE_EXTERNAL_STORAGE
 /// changed.`（反馈 w_dTs9eQ45，BUG-4491）。整串锚定，只认「全大写 appop 名 + changed」这一
-/// 形态：厂商 `OTHER`（`OneKeyClean`、`o-stop(40)` 等）不在此列。
+/// 形态，外加一条整串原样的权限类 appop 描述 `Permission related app op changed`
+/// （OnePlus ColorOS 15 / Android 15 在用户改应用权限时记下，前缀照样是 `[KILL UID]`；
+/// AOSP 源码里没查到这串，按观测到的形态收；反馈 4u4HnlOcv2，BUG-5165）。厂商 `OTHER`
+/// （`OneKeyClean`、`o-stop(40)` 等）与 `[KILL UID]` 下的其它原因（`malware` 等）不在此列。
 final RegExp _aospKillUidOpChanged = RegExp(
-  r'^(?:\[KILL UID\] )?[A-Z][A-Z0-9_]* changed\.?$',
+  r'^(?:\[KILL UID\] )?(?:[A-Z][A-Z0-9_]*|Permission related app op) changed\.?$',
 );
 
 /// 安全组件按 uid 结束「恶意软件」时写下的 `ApplicationExitInfo` 描述：原因码
@@ -873,19 +877,33 @@ Map<Object?, Object?>? _androidExitRecordOf(
   return null;
 }
 
-/// 会话标记那个进程死前界面可不可见（[androidUiVisibleAtDeath]）；没有对得上的退出记录
-/// （拿不到死亡时刻）或没有证据返回 null。
+/// 会话标记那个进程死前界面可不可见（[androidUiVisibleAtDeath]）；没有证据返回 null。
+///
+/// 死亡时刻优先取同一进程的 `ApplicationExitInfo` 记录。没有对得上的记录时——API < 30
+/// 根本没有 `reasons`（`ProcessExitChannel` 只在 R 及以上读），或者系统没留这条——用
+/// [nextProcessStartedAtMs]（本次进程启动、读会话标记的时刻）作死亡时刻的上界：同名进程
+/// 同时只活一个，旧进程一定死在它之前，上界是确定的事实。旧实现拿不到死亡时刻就直接
+/// 返回 null，把同一 pid 死前已收到的 UI_HIDDEN 丢掉，回落到停在 inactive 的标记，按前台
+/// 误报闪退（反馈 ywhUI7Adc1，realme RMX1971 / Android 10，BUG-5166）。
+///
+/// [currentPid]：本次进程的 pid。与 [pid] 相同（pid 复用）时用上界会把本次进程自己的
+/// trim / 可见性记录算到旧进程头上，这时不用上界。
 bool? androidSessionUiVisibleAtDeath(
   Map<Object?, Object?> payload, {
   required int pid,
   int startedAtMs = 0,
+  int? nextProcessStartedAtMs,
+  int? currentPid,
 }) {
-  final Object? deathMs = _androidExitRecordOf(
+  final Object? recordedDeathMs = _androidExitRecordOf(
     payload,
     pid: pid,
     startedAtMs: startedAtMs,
   )?['timestamp'];
-  if (deathMs is! int) return null;
+  final int? deathMs = recordedDeathMs is int
+      ? recordedDeathMs
+      : (pid == currentPid ? null : nextProcessStartedAtMs);
+  if (deathMs == null) return null;
   return androidUiVisibleAtDeath(
     payload,
     pid: pid,
@@ -2191,6 +2209,8 @@ abstract final class PreviousExitLog {
               androidPayload,
               pid: previous.pid,
               startedAtMs: previous.startedAt,
+              nextProcessStartedAtMs: now,
+              currentPid: pid,
             ),
     );
     for (final ActivityBreadcrumbRecord r in breadcrumbs) {

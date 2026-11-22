@@ -799,11 +799,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 也从同一个 x 起头。词条独占整行宽：手机上不再与右侧缩略图抢宽度（短词被折成两行）。
   ///
   /// 区块布局里词条与读音不相邻时各自成块（[term] / [reading] 只画其一）；发音键属读音区块。
+  /// [sourceJump]：「回到出处」入口落在这里（[_SrsSourceJumpSlot.header]），行尾画 ↩。
   Widget _header(
     _SrsCardStyle s,
     BoxConstraints c, {
     bool term = true,
     bool reading = true,
+    bool sourceJump = false,
   }) {
     final List<String> audio = reading ? _plan.media.word : const <String>[];
     final Widget main = Column(
@@ -842,6 +844,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               Expanded(child: main),
             ],
           );
+    final CardSourceLink? jumpLink = sourceJump ? _source?.link : null;
     return Padding(
       key: ValueKey<String>(
         term && reading
@@ -851,7 +854,21 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             : 'srs-fushi-header-reading',
       ),
       padding: EdgeInsets.symmetric(horizontal: s.pad),
-      child: body,
+      child: jumpLink == null
+          ? body
+          // 卡面既没有媒体胶囊也没有例句卡时，「回到出处」的 ↩ 落在词条行尾（unGQ8ykXGJ）。
+          : Row(
+              children: <Widget>[
+                Expanded(child: body),
+                Padding(
+                  padding: EdgeInsetsDirectional.only(start: s.gap / 2),
+                  child: SrsCardSourceJumpButton(
+                    color: s.scheme.primary,
+                    onPressed: () => _openSource(jumpLink),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -881,8 +898,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 图片 / 视频片段：宽版式左栏与窄版式同一套规则——常见比例铺满栏宽（窄版式就是整屏
   /// 宽），怪比例限高完整显示。窄版式以前是标题右侧 126×118 的缩略图，手机上视频片段
   /// 小得看不清、播放 / 放大 / 重播三个角标挤在一起。
-  Widget? _picture(_SrsCardStyle s) {
-    if (!_plan.shows(FushiCardBlock.picture)) return null;
+  /// [pill]：「回到出处」入口落在媒体上（[_SrsSourceJumpSlot.mediaPill]），左下角压胶囊。
+  Widget? _picture(_SrsCardStyle s, {required bool pill}) {
+    if (!_drawsPicture) return null;
     final String picture = widget.fields['Media']!;
     final SrsPictureLimits limits = srsPictureLimits(
       ref.watch(srsReviewImageSizeProvider),
@@ -896,6 +914,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     if (clip != null) {
       // 尺寸与图片同一套规则：常见比例铺满栏宽、超过高度上限等比缩小。
       return _withSourcePill(
+        pill: pill,
         reserveEnd: true,
         SrsCardVideoClip(
           key: const ValueKey<String>('srs-fushi-picture'),
@@ -907,9 +926,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         ),
       );
     }
-    final String? name = srsImageSources(picture).firstOrNull;
-    if (name == null) return null;
+    final String name = srsImageSources(picture).first;
     return _withSourcePill(
+      pill: pill,
       reserveEnd: false,
       _MediaImage(
         key: const ValueKey<String>('srs-fushi-picture'),
@@ -923,6 +942,34 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         radius: s.tokens.radiusSmall,
       ),
     );
+  }
+
+  /// 背面画不画图片区：区块可见且字段里真有片段或图片（[_picture] 与 [_sourceJumpSlot]
+  /// 同一判据——胶囊画没画在这里定，例句卡 ↩ 据此让位）。
+  bool get _drawsPicture =>
+      _plan.shows(FushiCardBlock.picture) &&
+      (_plan.media.clip != null ||
+          srsImageSources(widget.fields['Media']!).isNotEmpty);
+
+  /// 背面卡面上的「回到出处」入口画在哪（unGQ8ykXGJ）：每面只画一个，与顶栏图标是同一个
+  /// 动作。有媒体素材就是媒体胶囊（写明跳到哪）；没有媒体就是例句卡右侧的 ↩（小说、网页的
+  /// 卡）；连例句卡也没有就落在词条行尾。没有出处、或这一面三处都不画时返回 null。
+  /// [order] 是背面区块布局（[_backBlocks] 按它画）。
+  _SrsSourceJumpSlot? _sourceJumpSlot(List<FushiCardItem> order) {
+    if (_source == null) return null;
+    bool laidOut(FushiCardBlock b) =>
+        order.any((FushiCardItem x) => x is FushiCardBlockItem && x.block == b);
+    if (laidOut(FushiCardBlock.picture) && _drawsPicture) {
+      return _SrsSourceJumpSlot.mediaPill;
+    }
+    if (laidOut(FushiCardBlock.sentence) &&
+        _plan.shows(FushiCardBlock.sentence)) {
+      return _SrsSourceJumpSlot.sentence;
+    }
+    if (laidOut(FushiCardBlock.term) || laidOut(FushiCardBlock.reading)) {
+      return _SrsSourceJumpSlot.header;
+    }
+    return null;
   }
 
   /// 这张卡的出处：按字段顺序第一个可解析的 `fushi://source` 链接（与复习页顶栏「回到出处」
@@ -950,10 +997,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  /// 媒体素材左下角压一颗「回到出处」胶囊（设计稿 #15 方案 A）；没有出处时原样返回。
-  /// [reserveEnd]：视频片段右下角有重播角标（48dp），胶囊不伸进去（画面太窄时不让）。
-  Widget _withSourcePill(Widget media, {required bool reserveEnd}) {
-    final ({CardSourceLink link, String title})? source = _source;
+  /// 媒体素材左下角压一颗「回到出处」胶囊（设计稿 #15 方案 A）；[pill] 为假或没有出处时
+  /// 原样返回。[reserveEnd]：视频片段右下角有重播角标（48dp），胶囊不伸进去（画面太窄时不让）。
+  Widget _withSourcePill(
+    Widget media, {
+    required bool pill,
+    required bool reserveEnd,
+  }) {
+    final ({CardSourceLink link, String title})? source = pill ? _source : null;
     if (source == null) return media;
     return Stack(
       children: <Widget>[
@@ -1003,7 +1054,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  Widget? _sentence(_SrsCardStyle s) {
+  /// [sourceJump]：「回到出处」入口落在例句卡（[_SrsSourceJumpSlot.sentence]），右侧画 ↩。
+  Widget? _sentence(_SrsCardStyle s, {required bool sourceJump}) {
     final Map<String, String> f = widget.fields;
     if (!_plan.shows(FushiCardBlock.sentence)) return null;
     final bool showRuby = _sentenceRuby;
@@ -1100,13 +1152,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               ],
             ),
           ),
-          // 例句卡右侧的小 ↩：没有媒体素材的卡（小说、网页）也够得着「回到出处」。
-          if (_source case (link: final CardSourceLink link, title: _))
+          // 例句卡右侧的小 ↩：只在卡面没有媒体胶囊时画（没有媒体素材的卡：小说、网页），
+          // 有胶囊时不再重复一个入口（unGQ8ykXGJ）。
+          if (sourceJump && _source != null)
             Padding(
               padding: EdgeInsetsDirectional.only(start: s.gap / 2),
               child: SrsCardSourceJumpButton(
                 color: s.scheme.primary,
-                onPressed: () => _openSource(link),
+                onPressed: () => _openSource(_source!.link),
               ),
             ),
         ],
@@ -1222,6 +1275,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     required Widget Function(FushiCardItem item, Widget child, bool first) wrap,
   }) {
     final List<FushiCardItem> order = _plan.back;
+    final _SrsSourceJumpSlot? jump = _sourceJumpSlot(order);
+    final bool headerJump = jump == _SrsSourceJumpSlot.header;
+    final bool termLaidOut = order.any(
+      (FushiCardItem x) =>
+          x is FushiCardBlockItem && x.block == FushiCardBlock.term,
+    );
     bool isBlock(int i, FushiCardBlock b) =>
         i >= 0 &&
         i < order.length &&
@@ -1241,14 +1300,25 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       final Widget? w = switch (x) {
         FushiCardBlockItem(block: FushiCardBlock.term) =>
           isBlock(i + 1, FushiCardBlock.reading)
-              ? _header(s, c)
-              : _header(s, c, reading: false),
+              ? _header(s, c, sourceJump: headerJump)
+              : _header(s, c, reading: false, sourceJump: headerJump),
         FushiCardBlockItem(block: FushiCardBlock.reading) =>
           isBlock(i - 1, FushiCardBlock.term)
               ? null
-              : _header(s, c, term: false),
-        FushiCardBlockItem(block: FushiCardBlock.picture) => _picture(s),
-        FushiCardBlockItem(block: FushiCardBlock.sentence) => _sentence(s),
+              : _header(
+                  s,
+                  c,
+                  term: false,
+                  sourceJump: headerJump && !termLaidOut,
+                ),
+        FushiCardBlockItem(block: FushiCardBlock.picture) => _picture(
+          s,
+          pill: jump == _SrsSourceJumpSlot.mediaPill,
+        ),
+        FushiCardBlockItem(block: FushiCardBlock.sentence) => _sentence(
+          s,
+          sourceJump: jump == _SrsSourceJumpSlot.sentence,
+        ),
         FushiCardBlockItem(block: FushiCardBlock.frequency) => _metaRow(
           s,
           FushiCardBlock.frequency,
@@ -2619,4 +2689,16 @@ ImageProvider<Object>? srsCardImageProvider(String src, SrsMediaStore? store) {
   // AVIF 统一走原生内核（同 resizedFileImage / BUG-3643）：不依赖各平台引擎 codec 是否带
   // AVIF；动图在这里只取首帧（全屏查看用），卡面上的动图播放见 FushiAnimatedAvifImage。
   return isAvifPath(file.path) ? AvifFileImage(file) : FileImage(file);
+}
+
+/// 背面卡面上「回到出处」入口的位置（每面只画一个，见 `_sourceJumpSlot`，unGQ8ykXGJ）。
+enum _SrsSourceJumpSlot {
+  /// 媒体素材左下角的胶囊（[SrsCardSourceJumpPill]）。
+  mediaPill,
+
+  /// 例句卡右侧的 ↩（[SrsCardSourceJumpButton]）。
+  sentence,
+
+  /// 词条行尾的 ↩（既没有媒体也没有例句卡的卡）。
+  header,
 }

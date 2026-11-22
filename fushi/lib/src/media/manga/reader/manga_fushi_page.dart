@@ -2253,6 +2253,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  /// 「滚动收起界面」（JS `onMangaReaderHide`）：落点见 [mangaScrollHideEffect]——
+  /// 悬浮态只收临时底栏，不碰 M 键的持久隐藏（反馈 Yh8ukM6J_i）。
+  void _onReaderScrollHide(bool hide) {
+    switch (mangaScrollHideEffect(
+      floating: _chromeFloating,
+      chromeVisible: _chromeVisible,
+      hide: hide,
+    )) {
+      case MangaScrollHideEffect.none:
+        return;
+      case MangaScrollHideEffect.hideTransient:
+        _chrome.hideTransient();
+      case MangaScrollHideEffect.togglePersistent:
+        _toggleMangaChrome();
+    }
+  }
+
   Future<void> _readInitialFullscreenState() async {
     final bool? fullscreen = await readDesktopWindowFullscreen();
     if (!mounted || fullscreen == null || fullscreen == _isWindowFullscreen) {
@@ -2365,6 +2382,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   Future<void> onSourcePagePop() async {
+    // 有声漫画退出即停（默认）/ 后台续播（可选），与小说阅读器同一开关。放在第一个
+    // await 之前：书架迷你条从首帧就见空会话，不闪播放条（TODO-831）。
+    _readAloud.stopAudioUnlessBackground('MangaFushiPage.popStopAudio');
     if (_ownsWindowFullscreen) {
       await _setMangaFullscreen(false);
     }
@@ -4839,7 +4859,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     super.onDictionaryPopupRendered(index);
     _readerLookupOpen = true;
     unawaited(_syncAutoScrollPause());
-    _readAloud.lookupOpened(MangaLookupSource.page);
     _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
   }
 
@@ -4922,8 +4941,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           boundAction: bound,
         ) ??
         bound;
+    // 有声在场：裸空格 / 左右键默认改作播放暂停 / 上下句（与有声书同一惯例）。
+    final ShortcutAction? audio = resolveMangaAudioKeyTakeover(
+      key: key,
+      modifiers: modifiers,
+      pageAction: corrected,
+      audioActive: _readAloud.active,
+      dictionaryShown: isDictionaryShown,
+    );
     return MangaFushiPage.inputActionForShortcut(
-      action: corrected,
+      action: audio ?? corrected,
       crossPageStep:
           key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight,
@@ -5838,6 +5865,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           return;
         }
         if (!mounted) return;
+        // 查词时暂停在发起这一刻同步按住（与小说阅读器 `_pauseForLookup` 同一时点）：
+        // 不等弹窗报「渲染完成」——热槽复用 / 渲染超时兜底 / 无结果占位都不报或报得
+        // 很晚，播放会一直响到关弹窗（反馈 WrLFAXNkSw）。路由到副屏的查词由副屏那边
+        // 的 companion 来源按住，这里只管页内弹窗；关弹窗仍由 [onAllPopupsDismissed]
+        // 放手。
+        _readAloud.lookupOpened(MangaLookupSource.page);
         _popupVerticalWriting = verticalWriting;
         prunePopupStack(0);
         final int highlightCount = await searchDictionaryResult(
@@ -9388,8 +9421,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 args.first is! bool) {
               return;
             }
-            final bool hide = args.first as bool;
-            if (_chromeVisible == hide) _toggleMangaChrome();
+            _onReaderScrollHide(args.first as bool);
           },
         );
         // 裁白边要读像素；跨域无 CORS 的页图读不了，JS 侧保持原尺寸显示（安全
