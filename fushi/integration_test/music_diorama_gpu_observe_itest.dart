@@ -180,14 +180,25 @@ void main() {
       debugPrint('[diorama-gpu] FAILED: $e\n$st');
       rethrow;
     } finally {
-      debugPrint('[diorama-gpu] cleanup');
-      await appModel.prefsRepo.setMusicVisualizerMode(userMode);
-      await appModel.prefsRepo.setMusicVisualizerRandom(userRandom);
+      // 收尾每步限时并打点：哪一步卡住在日志里一眼可见，也不让收尾把整条用例挂死。
+      Future<void> step(String name, Future<void> Function() body) async {
+        try {
+          await body().timeout(const Duration(seconds: 15));
+          debugPrint('[diorama-gpu] cleanup $name ok');
+        } on TimeoutException {
+          debugPrint('[diorama-gpu] cleanup $name TIMEOUT');
+        }
+      }
+
+      await step('prefs', () async {
+        await appModel.prefsRepo.setMusicVisualizerMode(userMode);
+        await appModel.prefsRepo.setMusicVisualizerRandom(userRandom);
+      });
       if (nav.canPop()) nav.pop();
       await frames(5);
-      await appModel.musicSession.engine.pause();
-      debugPrint('[diorama-gpu] paused');
-      await appModel.musicSession.engine.stop();
+      debugPrint('[diorama-gpu] cleanup pop ok');
+      await step('pause', appModel.musicSession.engine.pause);
+      await step('stop', appModel.musicSession.engine.stop);
       debugPrint('[diorama-gpu] cleanup done');
     }
   });
