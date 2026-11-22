@@ -56,11 +56,11 @@ use serde_json::{Map, Value, json};
 use super::cache::Dirt;
 use super::class::RuleCanon;
 use super::schema::{DERIVED_TABLES, sql};
-use super::truth::{Entry, Head, Truth};
+use super::truth::{EditRead, Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
-use crate::gen4::op::{Body4, Edit4};
+use crate::gen4::op::{Body4, EditHead4};
 use crate::gen4::stamp::{HeritageStamp, SYNTHETIC_PREFIX};
 use crate::gen4::translate::applied_body;
 use crate::registers::{StoredEdit, judge_register};
@@ -348,6 +348,31 @@ pub struct Settled {
     pub cache_stats: u64,
 }
 
+/// [Index::rebuild_all] 的分段计时。
+struct Stages {
+    at: std::time::Instant,
+    done: Vec<(&'static str, f64)>,
+}
+
+impl Default for Stages {
+    fn default() -> Stages {
+        Stages {
+            at: std::time::Instant::now(),
+            done: Vec::new(),
+        }
+    }
+}
+
+impl Stages {
+    /// 记下从上一个点到现在这一段。
+    fn lap(&mut self, name: &'static str) {
+        let now = std::time::Instant::now();
+        self.done
+            .push((name, now.duration_since(self.at).as_secs_f64()));
+        self.at = now;
+    }
+}
+
 /// 一个集合的派生索引。
 pub struct Index<'t, 'c> {
     pub(super) t: &'t Truth<'c>,
@@ -409,6 +434,9 @@ pub struct Index<'t, 'c> {
     /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
     /// [Index::cache_log_flush]，浏览会话据此按笔记失效）。
     pub(super) cache_touched: BTreeSet<Ref>,
+    /// 最近一次 [Index::rebuild_all] 各阶段的耗时（阶段名, 秒），按执行顺序。迁移报告的 `rebuildStages` 读它：重建慢
+    /// 只在用户的大库上出现时（BUG-5137），凭报告就能定位到阶段。
+    pub rebuild_stages: Vec<(&'static str, f64)>,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -446,6 +474,7 @@ impl<'t, 'c> Index<'t, 'c> {
             rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
+            rebuild_stages: Vec::new(),
         }
     }
 
@@ -962,27 +991,15 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(false)
     }
 
-    /// 修改操作 [k]：(操作号, 修改体, HLC 墙钟, HLC 计数, 作者写的时候的完整上下文——依赖 + 自己之前的全部，协议 3
-    /// `Op::ctx`)。
-    fn edit_write(&self, k: i64) -> Result<(OpId, Edit4, i64, u32, Vv), String> {
-        let e = self
-            .t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-        let (wall, logical, deps) = match &e.body {
-            SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
-            SlotBody::Raw3(raw) => {
-                let v = raw.to_v3();
-                (v.hlc.wall, v.hlc.logical, v.deps)
-            }
-            _ => return Err(format!("gen4 index: register row {k} is not an op")),
-        };
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+    /// 修改操作 [k]：(信封与操作体头部——字段值只在 [with_value] 时读，[Truth::edit_read]；作者写的时候的完整上下文
+    /// ——依赖 + 自己之前的全部，协议 3 `Op::ctx`)。
+    fn edit_write(&self, k: i64, with_value: bool) -> Result<(EditRead, Vv), String> {
+        let Some(e) = self.t.edit_read(k, with_value)? else {
             return Err(format!("gen4 index: register row {k} is not an edit"));
         };
-        let mut full = (*deps).clone();
+        let mut full = (*e.deps).clone();
         full.set(e.id.device, e.id.seq - 1);
-        Ok((e.id, ed, wall, logical, full))
+        Ok((e, full))
     }
 
     /// 修改操作 [k] 的作者写的时候见没见过 dot `(w, q)`——因果事实，从真相层答（撤销校验，`cmd/center.rs`）：带旧戳的
@@ -998,8 +1015,8 @@ impl<'t, 'c> Index<'t, 'c> {
         q: i64,
         class: Option<&super::class::Canon>,
     ) -> Result<bool, String> {
-        let (_, ed, _, _, full) = self.edit_write(k)?;
-        match &ed.stamp {
+        let (e, full) = self.edit_write(k, false)?;
+        match &e.head.stamp {
             Some(s) => {
                 let ctx = s.ctx.to_dvv();
                 Ok(match class {
@@ -1139,20 +1156,23 @@ impl<'t, 'c> Index<'t, 'c> {
         struct Write {
             k: i64,
             id: OpId,
-            ed: Edit4,
+            ed: EditHead4,
+            /// 只有 [emit] 要的才读（不要的不会成为输出行，BUG-5137）。
+            value: Option<String>,
             wall: i64,
             logical: u32,
             full: Vv,
         }
         let mut writes = Vec::with_capacity(ks.len());
-        for &k in ks {
-            let (id, ed, wall, logical, full) = self.edit_write(k)?;
+        for (i, &k) in ks.iter().enumerate() {
+            let (e, full) = self.edit_write(k, emit(i))?;
             writes.push(Write {
                 k,
-                id,
-                ed,
-                wall,
-                logical,
+                id: e.id,
+                ed: e.head,
+                value: e.value,
+                wall: e.wall,
+                logical: e.logical,
                 full,
             });
         }
@@ -1218,7 +1238,11 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                 }
             };
-            let value = serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null);
+            let text = w
+                .value
+                .as_deref()
+                .ok_or_else(|| format!("gen4 index: emitted write {} has no value", w.k))?;
+            let value = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
                 Some(c) => {
@@ -1420,6 +1444,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let t = self.t;
         let conn = t.conn();
         self.reset();
+        let mut stages = Stages::default();
         // 语义摘要的标脏触发器逐行收一次费，重建不需要（最后整个重算）：先摘掉，收尾时装回。
         super::digest::set_triggers(conn, false)?;
         for table in DERIVED_TABLES {
@@ -1431,6 +1456,7 @@ impl<'t, 'c> Index<'t, 'c> {
         self.closure_steps.clear();
         self.bulk = Some(HashMap::new());
         let mut out = Settled::default();
+        stages.lap("clear");
         for d in t.devices(self.col)? {
             t.for_each(self.col, &d.id, 1, |e| {
                 out.scanned += 1;
@@ -1444,6 +1470,7 @@ impl<'t, 'c> Index<'t, 'c> {
         .map_err(sql)?
         .execute([self.col])
         .map_err(sql)?;
+        stages.lap("scan");
         let mut acc: Vec<(Id, Acc)> = self.bulk.take().unwrap_or_default().into_iter().collect();
         acc.sort_by_key(|(d, _)| *d);
         for (d, a) in acc {
@@ -1451,13 +1478,17 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
+        stages.lap("closures");
         let trust = self.weigh_purged(true, &mut out)?;
+        stages.lap("purged");
         // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
         // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。别名表在扣住之前定（同 [Index::settle]）。
         self.salts_dirty = false;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;
+        stages.lap("aliases");
         self.weigh_rest(true, trust, &mut out)?;
+        stages.lap("weighRest");
         let mut regs = std::mem::take(&mut self.regs);
         regs.extend(self.multi_regs()?);
         for r in &regs {
@@ -1466,18 +1497,24 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.judged += 1;
             }
         }
+        stages.lap("registers");
         for id in self.multi_ids("ent_ix")? {
             out.entities += 1;
             self.pick_entity(&id)?;
         }
+        stages.lap("entities");
         for id in self.multi_ids("log_ix")? {
             out.logs += 1;
             self.pick_log(&id)?;
         }
+        stages.lap("logs");
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
+        stages.lap("digests");
         self.materialize_caches(&mut out)?;
+        stages.lap("caches");
+        self.rebuild_stages = stages.done;
         Ok(out)
     }
 
@@ -1596,7 +1633,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::gen4::heritage::HeritageSlot;
     use crate::gen4::op::tests::{id, native_edit, sample_log};
-    use crate::gen4::op::{Log4, Op4};
+    use crate::gen4::op::{Edit4, Log4, Op4};
     use crate::gen4::stamp::{StampCtx, StampHlc};
     use crate::gen4::translate::T_VERSION;
     use crate::store::gen4::legacy::tests::{T0, migrate, pair, peak_mem_mb, sample};
