@@ -38,22 +38,30 @@ final StreamProvider<MediaNsfwSnapshot> mediaNsfwSnapshotProvider =
 /// [mediaNsfwSnapshotProvider] 的流本体：先发一份，之后每次相关表变更重读一份。
 /// 音乐专辑 / 曲目表也在里面（NSFW 专辑的封面图源随扫描变），这两张表写得勤
 /// （扫描分批落库），内容没变的重读不再发，免得整树封面跟着重建。
-Stream<MediaNsfwSnapshot> watchMediaNsfwSnapshot(FushiDatabase db) async* {
-  MediaNsfwSnapshot last = await MediaNsfwSnapshot.load(db);
-  yield last;
-  await for (final Set<TableUpdate> _ in db.tableUpdates(
+Stream<MediaNsfwSnapshot> watchMediaNsfwSnapshot(FushiDatabase db) {
+  MediaNsfwSnapshot? last;
+  return _nsfwReloadTriggers(
+    db,
+  ).asyncMap((_) => MediaNsfwSnapshot.load(db)).where((MediaNsfwSnapshot next) {
+    final MediaNsfwSnapshot? prev = last;
+    if (prev != null && next.sameAs(prev)) return false;
+    last = next;
+    return true;
+  });
+}
+
+/// 首份加载一次 + 之后每次相关表变更一次。用 `yield*` 转发表变更流：取消订阅时
+/// 直接取消内层订阅（`await for` 里取消要等下一次 yield，表一直不变就挂住）。
+Stream<void> _nsfwReloadTriggers(FushiDatabase db) async* {
+  yield null;
+  yield* db.tableUpdates(
     TableUpdateQuery.onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
       db.mediaNsfwFlags,
       db.mediaCollectionItems,
       db.musicAlbums,
       db.musicTracks,
     ]),
-  )) {
-    final MediaNsfwSnapshot next = await MediaNsfwSnapshot.load(db);
-    if (next.sameAs(last)) continue;
-    last = next;
-    yield next;
-  }
+  );
 }
 
 /// 全局「模糊 NSFW 封面」开关（偏好 `blur_nsfw_covers`，默认开）。
