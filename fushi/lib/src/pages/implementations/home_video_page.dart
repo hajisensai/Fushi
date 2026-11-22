@@ -2412,7 +2412,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     }
     if (state == null || state.failed) return const <RemoteVideoInfo>[];
     if (filter != null) return const <RemoteVideoInfo>[];
-    return state.videos;
+    // 对端上锁的视频（本次会话未解锁）不出占位卡（[MediaVisibility]）。
+    final MediaVisibility visibility = MediaVisibility.of(context);
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo v in state.videos)
+        if (!visibility.hidesRemoteVideo(v)) v,
+    ];
   }
 
   /// 标签改动（加/删/换书）后刷新：失效共享标签 provider + 重载视频列表。

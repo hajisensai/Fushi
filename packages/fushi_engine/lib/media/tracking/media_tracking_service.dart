@@ -276,6 +276,36 @@ class MediaTrackingHomeSnapshot {
   /// The server identities that track library rows added from a media
   /// server ([MediaTrackingRepository.loadMediaServerLibraryCoverage]).
   final MediaServerLibraryCoverage mediaServerCoverage;
+
+  /// 去掉 [hidden] 判为藏起来的本地作品（上锁且本次会话未解锁，判据由 app 端
+  /// `MediaVisibility.hidesTrackedMedia` 给）的链接与未链接条目。没有要藏的原样返回。
+  MediaTrackingHomeSnapshot withoutMedia(
+    bool Function(String mediaType, String mediaKey) hidden,
+  ) {
+    final List<MediaTrackingMappingRow> keptMappings =
+        <MediaTrackingMappingRow>[
+          for (final MediaTrackingMappingRow m in mappings)
+            if (!hidden(m.mediaType, m.mediaKey)) m,
+        ];
+    final List<MediaTrackingUnlinkedItem> keptUnlinked =
+        <MediaTrackingUnlinkedItem>[
+          for (final MediaTrackingUnlinkedItem u in unlinked)
+            if (!hidden(u.mediaType.value, u.mediaKey)) u,
+        ];
+    if (keptMappings.length == mappings.length &&
+        keptUnlinked.length == unlinked.length) {
+      return this;
+    }
+    return MediaTrackingHomeSnapshot(
+      sites: sites,
+      siteNames: siteNames,
+      mappings: keptMappings,
+      unlinked: keptUnlinked,
+      inertMappingIds: inertMappingIds,
+      mediaServerInertMappingIds: mediaServerInertMappingIds,
+      mediaServerCoverage: mediaServerCoverage,
+    );
+  }
 }
 
 /// How to undo one hand link ([MediaTrackingService.undoLink]): the site's

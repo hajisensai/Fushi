@@ -2729,7 +2729,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<RemoteBookInfo> remoteBooks = <RemoteBookInfo>[
       if (showRemote)
         for (final RemoteBookInfo b in remoteState.books)
+          // 对端上锁的书（本次会话未解锁）不出占位卡。
           if (!_landedRemoteDownloadIds.contains(b.downloadId) &&
+              !visibility.hidesRemoteBook(b) &&
               _matchesShelfSearch(<String>[b.title]))
             b,
     ];
@@ -2738,7 +2740,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<RemoteAudiobookInfo> remoteSrtBooks = <RemoteAudiobookInfo>[
       if (showRemote)
         for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
-          if (_matchesShelfSearch(<String>[b.title ?? b.identity])) b,
+          if (!visibility.hidesRemoteAudiobook(b) &&
+              _matchesShelfSearch(<String>[b.title ?? b.identity]))
+            b,
     ];
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups = _foldShelfUnits(
       srtBooks: srtBooks,
@@ -2773,10 +2777,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         remoteBooks: <RemoteBookInfo>[
           if (showRemote)
             for (final RemoteBookInfo b in remoteState.books)
-              if (!_landedRemoteDownloadIds.contains(b.downloadId)) b,
+              if (!_landedRemoteDownloadIds.contains(b.downloadId) &&
+                  !visibility.hidesRemoteBook(b))
+                b,
         ],
         remoteSrtBooks: <RemoteAudiobookInfo>[
-          if (showRemote) ...remoteState.srtAudiobooks,
+          if (showRemote)
+            for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
+              if (!visibility.hidesRemoteAudiobook(b)) b,
         ],
       ),
     );
@@ -4160,7 +4168,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   RemoteBookInfo? _remoteBookForEntry(String entryKey) {
     final _RemoteBookState? state = _detailRemoteState;
     if (state == null) return null;
+    final MediaVisibility visibility = MediaVisibility.of(context);
     for (final RemoteBookInfo book in state.books) {
+      if (visibility.hidesRemoteBook(book)) continue;
       if (book.downloadId == entryKey) return book;
       final String sanitized = sanitizeTtuFilename(book.title);
       if (sanitized == entryKey || _epubUidByKey[sanitized] == entryKey) {
@@ -4176,7 +4186,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   RemoteAudiobookInfo? _remoteSrtForEntry(String entryKey) {
     final _RemoteBookState? state = _detailRemoteState;
     if (state == null) return null;
+    final MediaVisibility visibility = MediaVisibility.of(context);
     for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
+      if (visibility.hidesRemoteAudiobook(book)) continue;
       if (book.identity == entryKey) return book;
     }
     return null;

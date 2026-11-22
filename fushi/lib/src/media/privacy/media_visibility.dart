@@ -25,8 +25,18 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart'
+    show TrackingMediaType;
 import 'package:fushi_engine/privacy/media_lock.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceScrapeWork;
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show
+        RemoteActivityEvent,
+        RemoteAudiobookInfo,
+        RemoteBookInfo,
+        RemoteVideoInfo;
 import 'package:material_ui/material_ui.dart';
 
 /// 本次会话的解锁状态（进程级单例）。冷启动恒为未解锁；[unlock] 只该由通过了
@@ -203,11 +213,59 @@ final class MediaVisibility {
     return snapshot.isTitleLocked(title);
   }
 
+  /// 进度追踪（Bangumi / AniList …）的本地作品键（`TrackingMediaType.value` +
+  /// mediaKey）：书 / 书的章、视频、视频合集 / 书系合集（合集 id）、游戏。媒体
+  /// 服务器上的远端条目不是本机作品，不藏。
+  bool hidesTrackedMedia(String mediaType, String mediaKey) {
+    if (!hidesAnything) return false;
+    final TrackingMediaType? type = TrackingMediaType.values
+        .where((TrackingMediaType t) => t.value == mediaType)
+        .firstOrNull;
+    return switch (type) {
+      TrackingMediaType.book ||
+      TrackingMediaType.bookChapter => hidesBook(mediaKey),
+      TrackingMediaType.video => hidesVideo(mediaKey),
+      TrackingMediaType.videoCollection ||
+      TrackingMediaType.bookCollection => switch (int.tryParse(mediaKey)) {
+        final int id => hidesCollection(id),
+        null => _pending,
+      },
+      TrackingMediaType.game => hidesGame(mediaKey),
+      TrackingMediaType.remoteVideo ||
+      TrackingMediaType.remoteSeries ||
+      null => false,
+    };
+  }
+
   /// 互联对端清单里的条目（远端占位卡 / 远端「继续」）：对端标了上锁
   /// （wire 字段 `locked`）且本机本次会话没解锁就藏。本机快照里有的同键条目照
   /// [hidesWork] 判。
   bool hidesRemoteEntry({required bool lockedOnHost, String? key}) =>
       (lockedOnHost && !_unlocked) || hidesWork(key: key);
+
+  /// 互联对端的书（远端占位卡 / 远端「继续」）。
+  bool hidesRemoteBook(RemoteBookInfo book) =>
+      hidesRemoteEntry(lockedOnHost: book.locked, key: book.bookKey);
+
+  /// 互联对端的视频。
+  bool hidesRemoteVideo(RemoteVideoInfo video) =>
+      hidesRemoteEntry(lockedOnHost: video.locked, key: video.id);
+
+  /// 互联对端的字幕书 / 有声书。
+  bool hidesRemoteAudiobook(RemoteAudiobookInfo book) =>
+      hidesRemoteEntry(lockedOnHost: book.locked, key: book.identity);
+
+  /// 互联对端的活动行（标题就在行里）。
+  bool hidesRemoteActivity(RemoteActivityEvent event) =>
+      hidesRemoteEntry(lockedOnHost: event.locked, key: event.mediaKey);
+
+  /// 视频刮削作品单元（控制通道 `video works`）：所属合集上锁或任一成员上锁就藏。
+  bool hidesVideoScrapeWork(VideoSourceScrapeWork work) {
+    if (_pending) return true;
+    final MediaCollectionRow? collection = work.collection;
+    if (collection != null && hidesCollection(collection.id)) return true;
+    return work.members.any((VideoBookRow m) => hidesVideo(m.bookUid));
+  }
 
   /// 统计事实（日面 / 小时面）是否属于上锁作品。复习事实不属于任何作品。
   bool hidesStatFact(StatFact fact) =>

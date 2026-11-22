@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_local_playlists.dart'
     show MusicPlaylistExportItem;
@@ -84,8 +85,8 @@ typedef _PlaylistData = ({
   Map<String, MusicAlbumRow> albums,
 });
 
-class _MusicLocalPlaylistPageState
-    extends ConsumerState<MusicLocalPlaylistPage> {
+class _MusicLocalPlaylistPageState extends ConsumerState<MusicLocalPlaylistPage>
+    with MediaVisibilityDependent<MusicLocalPlaylistPage> {
   late Future<_PlaylistData> _data = _load();
   _PlaylistData? _shown;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
@@ -123,6 +124,10 @@ class _MusicLocalPlaylistPageState
     super.dispose();
   }
 
+  /// 解锁 / 重新上锁 / 专辑上锁状态变了：重读（上锁专辑的曲目不列、不播）。
+  @override
+  void onMediaVisibilityChanged() => setState(() => _data = _load());
+
   Future<_PlaylistData> _load() async {
     final Future<List<MusicPlaylistItem>> Function()? loader =
         widget.itemsLoader;
@@ -135,7 +140,11 @@ class _MusicLocalPlaylistPageState
     }
     final FushiDatabase db = _app.database;
     final String uid = widget.playlist.playlistUid;
-    final List<MusicPlaylistItem> items = await loadMusicPlaylistItems(db, uid);
+    final List<MusicPlaylistItem> items = await loadMusicPlaylistItems(
+      db,
+      uid,
+      hiddenTrack: mediaVisibility.hidesMusicTrack,
+    );
     final Map<String, MusicAlbumRow> albums = <String, MusicAlbumRow>{};
     for (final MusicPlaylistItem i in items) {
       if (i.entry case MusicLocalEntry(:final MusicTrackRow track)) {

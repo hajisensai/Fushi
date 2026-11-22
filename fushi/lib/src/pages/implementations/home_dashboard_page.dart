@@ -830,8 +830,16 @@ class _HomeDashboardSnapshot {
   final Map<String, int> minedByDay;
 }
 
-class _HomeDashboardPageState
-    extends BaseModuleTabPageState<HomeDashboardPage> {
+class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
+    with MediaVisibilityDependent<HomeDashboardPage> {
+  /// 上锁口径变了：远端「继续」按新口径重算（本地卡片在 build 里现算）。
+  @override
+  void onMediaVisibilityChanged() {
+    _appliedRemoteBooks = null;
+    _appliedRemoteVideos = null;
+    if (_remoteGateAtLastLoad) unawaited(_loadRemoteDashboardData());
+  }
+
   /// 首页主纵向滚动区自己的控制器。滚轮平滑由根部 `SmoothWheelScrollScope`
   /// 统一处理（BUG-2834），这里不再需要特制控制器。
   final ScrollController _dashboardScrollController = ScrollController();
@@ -1000,6 +1008,10 @@ class _HomeDashboardPageState
   /// the local items no site is linked to
   /// ([MediaTrackingService.loadHomeSnapshot]).
   MediaTrackingHomeSnapshot _tracking = MediaTrackingHomeSnapshot.empty;
+
+  /// 读到的追踪快照（未按上锁过滤）；[_tracking] 是 build 里按 [MediaVisibility]
+  /// 去掉上锁作品后的那份（待链接拼贴块不露上锁作品的封面 / 标题）。
+  MediaTrackingHomeSnapshot _allTracking = MediaTrackingHomeSnapshot.empty;
 
   /// 订阅「数据变了」信号（阅读/观看/导入落库）以自动刷新，及其防抖定时器。
   /// 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
@@ -1527,7 +1539,7 @@ class _HomeDashboardPageState
     _statWindow = s.statWindow;
     _allVideos = s.videos;
     _allGames = s.games;
-    _tracking = s.tracking;
+    _allTracking = s.tracking;
     _readingRows = s.readingRows;
     _watchRows = s.watchRows;
     _gameRows = s.gameRows;
@@ -1645,18 +1657,27 @@ class _HomeDashboardPageState
       final Set<String> localVideoUids = <String>{
         for (final VideoBookRow v in _videos) v.bookUid,
       };
+      // 对端标了上锁 / 本机快照里上锁的条目不进远端「继续」（[MediaVisibility]
+      // 唯一入口）；口径变了由 [onMediaVisibilityChanged] 重算。
+      final MediaVisibility lockVisibility = mediaVisibility;
       final List<RemoteContinueCandidate> continueCandidates =
           remoteContinueCandidates(
             localBookKeys: localBookKeys,
             localVideoUids: localVideoUids,
             remoteBooks: filterOutLocallyDeletedRemoteBooks(
-              remote: remoteBooks,
+              remote: <RemoteBookInfo>[
+                for (final RemoteBookInfo b in remoteBooks)
+                  if (!lockVisibility.hidesRemoteBook(b)) b,
+              ],
               deletedKeys: deletedBookKeys,
               keyOf: sanitizeTtuFilename,
             ),
             remoteVideos: filterOutLocallyDeletedRemoteVideos(
               // 继续观看只给对端真能经 host 播放的条目（BUG-3875）。
-              remote: peerPlayableRemoteVideos(remoteVideos),
+              remote: peerPlayableRemoteVideos(<RemoteVideoInfo>[
+                for (final RemoteVideoInfo v in remoteVideos)
+                  if (!lockVisibility.hidesRemoteVideo(v)) v,
+              ]),
               deletedKeys: deletedVideoKeys,
             ),
           );
@@ -1909,6 +1930,9 @@ class _HomeDashboardPageState
               if (!lockVisibility.hidesGame(g.id)) g,
           ]
         : _allGames;
+    _tracking = lockVisibility.hidesAnything
+        ? _allTracking.withoutMedia(lockVisibility.hidesTrackedMedia)
+        : _allTracking;
     final Map<String, int> lastReadByKey =
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
     // v82：lastReadByKey 的键是书 uid；MediaItem 身份是 bookKey，查前经此表换算。
