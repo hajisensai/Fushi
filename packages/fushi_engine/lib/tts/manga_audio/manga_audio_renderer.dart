@@ -699,7 +699,7 @@ class MangaAudioRenderer {
           voice: voice,
           seed: seed,
           text: text,
-          spoken: texts.spoken,
+          spoken: item.spoken,
           shape: backend.shapeVersion,
         ),
       );
