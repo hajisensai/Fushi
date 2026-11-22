@@ -6,6 +6,8 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart'
     show
         mangaControllerBlockText,
         mangaControllerFirstTextBlock,
+        mangaControllerGraphemesFromCursor,
+        mangaControllerLookupQuery,
         mangaControllerNextTextBlock;
 import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart'
@@ -168,7 +170,7 @@ void main() {
         utf16: 7,
         color: 'rgba(1,2,3,0.95)',
       );
-      expect(place, endsWith('(4,2,7,"rgba(1,2,3,0.95)",false)'));
+      expect(place, endsWith('(4,2,7,"rgba(1,2,3,0.95)",false,0)'));
       expect(place, contains('.manga-page[data-page="'));
       expect(place, contains("querySelectorAll('.ocr-box')[block]"));
       expect(place, contains('data-utf16-start'));
@@ -179,13 +181,49 @@ void main() {
         color: 'red',
         lookup: true,
       );
-      expect(lookup, endsWith(',true)'));
+      expect(lookup, endsWith(',true,0)'));
       expect(lookup, contains('selection.clearSelection()'));
       expect(lookup, contains('selection.selectFromPosition(node, offset, 40'));
       expect(
         MangaControllerCursorScripts.clear(),
-        endsWith('(-1,0,0,"",false)'),
+        endsWith('(-1,0,0,"",false,0)'),
       );
+    });
+
+    test('a lookup stamps its token on that one payload and restores the '
+        'builder; no payload reports empty', () {
+      final String lookup = MangaControllerCursorScripts.place(
+        page: 1,
+        block: 0,
+        utf16: 3,
+        color: 'red',
+        lookup: true,
+        lookupToken: 42,
+      );
+      expect(lookup, endsWith(',true,42)'));
+      expect(lookup, contains('payload.controllerLookup = token'));
+      expect(lookup, contains('finally {'));
+      expect(lookup, contains('selection.buildSelectionPayload = build;'));
+      expect(lookup, contains("return text ? 'lookup' : 'empty';"));
+    });
+
+    test('the query is cut to the right-end cap in graphemes', () {
+      expect(mangaControllerLookupQuery('大丈夫だよな', null), '大丈夫だよな');
+      expect(mangaControllerLookupQuery('大丈夫だよな', 3), '大丈夫');
+      expect(mangaControllerLookupQuery('大丈夫', 9), '大丈夫');
+      // Graphemes, not UTF-16 units: a surrogate pair / combining mark stays
+      // whole.
+      expect(mangaControllerLookupQuery('𠮷野家です', 2), '𠮷野');
+      expect(mangaControllerLookupQuery('がきく', 1), 'が');
+    });
+
+    test('graphemes from the cursor to the block end', () {
+      expect(mangaControllerGraphemesFromCursor('大丈夫だよな', 0), 6);
+      expect(mangaControllerGraphemesFromCursor('大丈夫だよな', 3), 3);
+      expect(mangaControllerGraphemesFromCursor('大丈夫だよな', 5), 1);
+      expect(mangaControllerGraphemesFromCursor('大丈夫だよな', 6), 0);
+      expect(mangaControllerGraphemesFromCursor('𠮷野家', 2), 2);
+      expect(mangaControllerGraphemesFromCursor('', 0), 0);
     });
   });
 

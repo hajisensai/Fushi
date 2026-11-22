@@ -514,10 +514,13 @@ class MangaWindowGeneration {
 /// 是 OCR 几何重建出的完整句子，作为 Anki 句子；[ReaderSelectionData.verticalWriting]
 /// 决定根弹窗从文字左右还是上下避让；[ReaderSelectionData.mangaPageIndex] 把
 /// OCR 命中的精确页交给制卡图片解析，不能退化成双页 spread 的首页。
+/// [maxQueryGraphemes] 是手柄查词模式的选区右端上限：查询词截到这么多个字素
+/// （null = 不截，交给词典最长匹配），句子与矩形不变。
 /// text 为空是 no-op。
 Future<void> dispatchMangaSelection(
   ReaderSelectionData data, {
   required Size fallbackScreen,
+  int? maxQueryGraphemes,
   Offset viewportOrigin = Offset.zero,
   required Future<void> Function(int? pageIndex) selectPageForMining,
   required void Function(String sentence) setSentence,
@@ -553,7 +556,11 @@ Future<void> dispatchMangaSelection(
           mangaGlyphRectFromPayload(data, viewportOrigin: viewportOrigin),
           data.verticalWriting,
         );
-  await search(data.text, rect, data.verticalWriting);
+  await search(
+    mangaControllerLookupQuery(data.text, maxQueryGraphemes),
+    rect,
+    data.verticalWriting,
+  );
   await miningPage;
 }
 
@@ -5767,7 +5774,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           if (kDebugMode && mounted) {
             setState(() => _debugOcrSelectedText = data.text);
           }
-          await processMangaSelection(data);
+          await processMangaSelection(
+            data,
+            controllerLookup: payload['controllerLookup'],
+          );
         } catch (e, stack) {
           ErrorLogService.instance.log('MangaFushi.onTextSelected', e, stack);
           debugPrint('[MangaFushi] onTextSelected error: $e');
@@ -5825,8 +5835,35 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 处理 OCR 文字命中后的选词 payload：记录所在句子（喂制卡/收藏）并在选区矩形上开查词
   /// 弹窗。词/句/矩形契约由纯函数 [dispatchMangaSelection] 承担（可单测）。
-  Future<void> processMangaSelection(ReaderSelectionData data) async {
-    if (!mounted) return;
+  ///
+  /// [controllerLookup] 是手柄查词模式盖在 payload 上的令牌（点按 / 悬停为 null）：
+  /// 认领到对应请求时，查询词截到它的右端上限，查完把高亮长度（无结果 / 去了副屏
+  /// = 0）交回给模式。
+  Future<void> processMangaSelection(
+    ReaderSelectionData data, {
+    Object? controllerLookup,
+  }) async {
+    final _MangaControllerLookupRequest? request = _controllerLookupTarget
+        ?.takeRequest(controllerLookup);
+    int matched = 0;
+    try {
+      matched = await _processMangaSelection(
+        data,
+        maxQueryGraphemes: request?.maxGraphemes,
+      );
+    } finally {
+      request?.complete(matched);
+    }
+  }
+
+  /// [processMangaSelection] 的本体；返回页内弹窗的命中高亮长度（字素数），
+  /// 没查 / 无结果 / 路由去副屏时为 0。
+  Future<int> _processMangaSelection(
+    ReaderSelectionData data, {
+    int? maxQueryGraphemes,
+  }) async {
+    if (!mounted) return 0;
+    int matched = 0;
     _miningTextRect = _sentenceRectOf(data);
     _miningSentenceBlocks = _sentenceBlocksOf(data);
     // 查后从句首重播要知道查的是哪句（弹窗或副屏随后打开时认领，BUG-5024）。
@@ -5836,6 +5873,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       data,
       fallbackScreen: Size(screen.width, screen.height - _chromeTopInset),
       viewportOrigin: Offset(0, _chromeTopInset),
+      maxQueryGraphemes: maxQueryGraphemes,
       selectPageForMining: _selectPageForMining,
       // 弹窗栈与 WebView 同是全出血 sibling（见 build 里的「屏幕尺寸 Stack」），
       // 坐标空间就是整屏 [screen]。
@@ -5879,10 +5917,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           // Shift 悬停扫过 OCR 字时 JS 回传 fromHover，记成悬停查词。
           origin: data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit,
         );
+        matched = highlightCount;
         if (!mounted) return;
         unawaited(_highlightMangaSelection(highlightCount));
       },
     );
+    return matched;
   }
 
   /// 选区那句话在原页图上的归一化矩形：组号映射回该页 OCR 块求并集（同一次分组，

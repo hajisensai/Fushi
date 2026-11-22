@@ -17,29 +17,39 @@ import 'dart:convert';
 /// document's own `fushiSelection.selectFromPosition` — exactly the tap path
 /// (`_selectOcrCharDetail`), so `onTextSelected` carries the real rect,
 /// sentence group and page and the page's normal lookup / highlight /
-/// companion routing runs unchanged.
+/// companion routing runs unchanged. The only addition is the lookup's
+/// [place] `lookupToken`, stamped on that one `onTextSelected` payload as
+/// `controllerLookup` so the page can match the payload to the controller
+/// lookup that asked for it (its right-end cap and its awaited match length)
+/// whichever of the eval result and the handler call reaches Dart first.
 ///
-/// Every call returns a status string: `moved`, `lookup`, `cleared` or
-/// `miss` (page / block / character not in the document).
+/// Every call returns a status string: `moved`, `lookup` (a payload was sent
+/// to `onTextSelected`), `empty` (nothing selectable from that character, no
+/// payload sent), `cleared` or `miss` (page / block / character not in the
+/// document).
 class MangaControllerCursorScripts {
   MangaControllerCursorScripts._();
 
   /// Marks the character at [utf16] of block [block] on page [page] with a
   /// [color] (CSS colour) outline. With [lookup] it also starts a lookup
-  /// there.
+  /// there whose `onTextSelected` payload carries [lookupToken] as
+  /// `controllerLookup`.
   static String place({
     required int page,
     required int block,
     required int utf16,
     required String color,
     bool lookup = false,
-  }) => '$_function($page,$block,$utf16,${jsonEncode(color)},$lookup)';
+    int lookupToken = 0,
+  }) =>
+      '$_function($page,$block,$utf16,${jsonEncode(color)},$lookup,'
+      '$lookupToken)';
 
   /// Removes the cursor mark.
-  static String clear() => '$_function(-1,0,0,"",false)';
+  static String clear() => '$_function(-1,0,0,"",false,0)';
 
   static const String _function = r'''
-(function(page, block, at, color, lookup){
+(function(page, block, at, color, lookup, token){
   var marked = document.querySelectorAll('[data-fushi-ctl-cursor]');
   for (var i = 0; i < marked.length; i++) {
     marked[i].style.outline = '';
@@ -89,8 +99,26 @@ class MangaControllerCursorScripts {
   var selection = window.fushiSelection;
   if (!selection) return 'miss';
   selection.clearSelection();
-  selection.selectFromPosition(node, offset, 40,
-    rect.left + rect.width / 2, rect.top + rect.height / 2, false);
-  return 'lookup';
+  // Stamp the token on the payload this call builds (and only this call: the
+  // builder is restored before returning, the call is synchronous).
+  var build = selection.buildSelectionPayload;
+  selection.buildSelectionPayload = function(x, y) {
+    var payload = build.call(this, x, y);
+    if (payload) {
+      payload.controllerLookup = token;
+      if (payload.rubySnap && payload.rubySnap.selection) {
+        payload.rubySnap.selection.controllerLookup = token;
+      }
+    }
+    return payload;
+  };
+  var text = null;
+  try {
+    text = selection.selectFromPosition(node, offset, 40,
+      rect.left + rect.width / 2, rect.top + rect.height / 2, false);
+  } finally {
+    selection.buildSelectionPayload = build;
+  }
+  return text ? 'lookup' : 'empty';
 })''';
 }
