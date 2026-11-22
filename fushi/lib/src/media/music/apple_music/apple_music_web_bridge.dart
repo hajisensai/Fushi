@@ -213,6 +213,9 @@ InAppWebViewSettings appleMusicWebViewSettings() => InAppWebViewSettings(
   // 没有用户手势也要能出声（实测：被拦后 MusicKit 卡在 loading，PR #2725）。Windows fork 已在
   // 环境参数里全局放开（BUG-1091），这里管 Android。
   mediaPlaybackRequiresUserGesture: false,
+  // Windows 的 HeadlessInAppWebView 默认整页静音以防后台抓取广告出声；MusicKit 隐藏桥需要
+  // 显式放行音频输出（Android 侧同一开关也用于允许后台音频播放）。
+  allowBackgroundAudioPlaying: true,
   // authorize() 用 window.open 开 Apple ID 登录弹窗。
   javaScriptCanOpenWindowsAutomatically: true,
   supportMultipleWindows: true,
