@@ -1,10 +1,16 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_config.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart';
@@ -36,17 +42,30 @@ LyricTimeline _plainTimeline(int n) => LyricTimeline(
   ],
 );
 
+ui.Image _solidImage(Color color) {
+  final ui.PictureRecorder rec = ui.PictureRecorder();
+  Canvas(rec).drawRect(const Rect.fromLTWH(0, 0, 8, 8), Paint()..color = color);
+  final ui.Picture pic = rec.endRecording();
+  final ui.Image img = pic.toImageSync(8, 8);
+  pic.dispose();
+  return img;
+}
+
 CappellaSceneConfig _sceneConfig(
   List<CappellaLine> lines, {
   bool motion = true,
   bool showEmo = true,
+  CappellaAvatarSource avatarSource = CappellaAvatarSource.generated,
+  CappellaImagePool? avatarPool,
+  CappellaImagePool? emojiPool,
+  FontWeight fontWeight = kCappellaBubbleFontWeight,
 }) {
   final ColorScheme scheme = ColorScheme.fromSeed(
     seedColor: const Color(0xFF6750A4),
     brightness: Brightness.dark,
   );
   final CappellaIntensityConfig cfg = cappellaIntensityConfig(
-    CappellaIntensity.normal,
+    LyricVisualizerIntensity.normal,
   );
   return CappellaSceneConfig(
     lines: lines,
@@ -55,28 +74,48 @@ CappellaSceneConfig _sceneConfig(
       titleText: 'Song',
       sequencing: cfg.sequencing,
       showEmo: showEmo,
-      stickerPoolSize: kCappellaStickerCount,
+      stickerPoolSize: emojiPool?.length ?? kCappellaStickerCount,
     ),
     intensity: cfg,
     palette: LyricVisualizerPalette.fromScheme(scheme),
-    avatarSource: CappellaAvatarSource.generated,
+    avatarSource: avatarSource,
     seed: 7,
     fontScale: 1,
     motionEnabled: motion,
     initials: const <CappellaSender, String>{},
+    avatarPool: avatarPool,
+    emojiPool: emojiPool,
+    fontWeight: fontWeight,
   );
 }
 
 void main() {
   group('lines', () {
-    test('render end follows folia normal transition timing', () {
-      // 1s 行：exit = 0.18，passStart = 1.06 → exitStart = max(1.06, 0.82) → 1.24。
+    test('render end reads the shared render hints', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        sampleWordTimeline(),
+      );
+      final List<CappellaLine> lines = buildCappellaLines(rt.lines);
+      // 歌词行：直接用 runtime 的 renderEndMs。
+      expect(lines[0].renderEndMs, rt.lines[0].renderEndMs);
+      expect(cappellaRenderHintsOf(lines[0]), rt.lines[0].renderHints);
+      // 间奏行：按同一公式现算（1s 行 → 1.24s，folia normal 过渡）。
+      for (final CappellaLine l in lines.where(
+        (CappellaLine l) => l.isInterlude,
+      )) {
+        expect(
+          l.renderEndMs,
+          LyricVisualizerRenderHints.of(
+            startMs: l.startMs,
+            endMs: l.endMs,
+          ).renderEndMs,
+        );
+      }
       expect(
-        cappellaRenderEndMs(startMs: 0, endMs: 1000, lastWordEndMs: 1000),
+        LyricVisualizerRenderHints.of(startMs: 0, endMs: 1000).renderEndMs,
         1240,
       );
-      // micro 行：至少保留 67ms。
-      expect(cappellaRenderEndMs(startMs: 0, endMs: 50, lastWordEndMs: 50), 67);
+      expect(cappellaIsNormalTiming(lines[0]), isTrue);
     });
 
     test('long gaps get an interlude line, glyphs are trimmed', () {
@@ -132,7 +171,7 @@ void main() {
 
   group('messages', () {
     final CappellaSequencing seq = cappellaIntensityConfig(
-      CappellaIntensity.normal,
+      LyricVisualizerIntensity.normal,
     ).sequencing;
 
     test('TTML agents become stable senders: first agent on the right', () {
@@ -221,7 +260,7 @@ void main() {
         LyricVisualizerRuntime(_plainTimeline(48)).lines,
       );
       final CappellaSequencing chaotic = cappellaIntensityConfig(
-        CappellaIntensity.chaotic,
+        LyricVisualizerIntensity.chaotic,
       ).sequencing;
       final List<CappellaMessage> msgs = buildCappellaMessages(
         lines: lines,
@@ -243,7 +282,9 @@ void main() {
       final List<CappellaMessage> calm = buildCappellaMessages(
         lines: lines,
         titleText: 'Song',
-        sequencing: cappellaIntensityConfig(CappellaIntensity.calm).sequencing,
+        sequencing: cappellaIntensityConfig(
+          LyricVisualizerIntensity.calm,
+        ).sequencing,
         showEmo: true,
         stickerPoolSize: kCappellaStickerCount,
       );
@@ -377,7 +418,7 @@ void main() {
         LyricVisualizerRuntime(sampleLineTimeline()).lines,
       )[1];
       final CappellaMotion motion = cappellaIntensityConfig(
-        CappellaIntensity.normal,
+        LyricVisualizerIntensity.normal,
       ).motion;
       final CappellaBubbleStyle style = CappellaBubbleStyle.of(
         message: CappellaMessage(
@@ -461,6 +502,130 @@ void main() {
     });
   });
 
+  group('custom packs', () {
+    test('stable pool pick: right fixed, left rotates over the rest', () {
+      const CappellaSender right = CappellaSender(
+        right: true,
+        avatarIndex: kCappellaRightAvatarIndex,
+      );
+      final int r = cappellaStablePoolIndex(5, right, 7);
+      expect(r, inInclusiveRange(0, 4));
+      final Set<int> left = <int>{
+        for (int i = 0; i < 4; i++)
+          cappellaStablePoolIndex(
+            5,
+            CappellaSender(right: false, avatarIndex: i),
+            7,
+          ),
+      };
+      expect(left, isNot(contains(r)));
+      expect(left, hasLength(4));
+      expect(cappellaStablePoolIndex(1, right, 7), 0);
+      expect(
+        cappellaGeneratedAvatarIndex(right, 7),
+        cappellaStablePoolIndex(kCappellaGeneratedAvatarCount, right, 7),
+      );
+    });
+
+    test('custom sources fall back when the pack is empty', () {
+      final LyricVisualizerTuning custom =
+          LyricVisualizerTuning(cappellaTunings, const <String, Object?>{
+            kCappellaTuningAvatarSource: 'custom',
+            kCappellaTuningEmojiSource: 'custom',
+          });
+      expect(
+        cappellaEffectiveAvatarSource(custom, 0),
+        CappellaAvatarSource.cover,
+      );
+      expect(
+        cappellaEffectiveAvatarSource(custom, 3),
+        CappellaAvatarSource.custom,
+      );
+      expect(cappellaUsesCustomEmoji(custom, 0), isFalse);
+      expect(cappellaUsesCustomEmoji(custom, 2), isTrue);
+      final LyricVisualizerTuning defaults = LyricVisualizerTuning.defaults(
+        cappellaTunings,
+      );
+      expect(cappellaUsesCustomEmoji(defaults, 5), isFalse);
+      // 素材包参数只在选了自定义时显示。
+      final LyricVisualizerTuningSpec pack = cappellaTunings.firstWhere(
+        (LyricVisualizerTuningSpec s) => s.key == kCappellaTuningEmojiPack,
+      );
+      expect(pack, isA<LyricVisualizerAssetPackSpec>());
+      expect(pack.visibleWhen!(defaults), isFalse);
+      expect(pack.visibleWhen!(custom), isTrue);
+      expect(
+        cappellaTunings.map((LyricVisualizerTuningSpec s) => s.key),
+        isNot(contains('intensity')),
+      );
+      expect(
+        cappellaVisualizerEntry.backgroundFor(defaults),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+    });
+
+    testWidgets('scene paints custom avatars, custom emoji and theme weight', (
+      WidgetTester tester,
+    ) async {
+      final ui.Image a = _solidImage(const Color(0xFFFF0000));
+      final ui.Image b = _solidImage(const Color(0xFF00FF00));
+      addTearDown(a.dispose);
+      addTearDown(b.dispose);
+      final CappellaScene scene = CappellaScene(
+        _sceneConfig(
+          _wordLines(),
+          avatarSource: CappellaAvatarSource.custom,
+          avatarPool: CappellaFixedImagePool(<ui.Image?>[a, null]),
+          emojiPool: CappellaFixedImagePool(<ui.Image?>[b]),
+          fontWeight: FontWeight.w700,
+        ),
+      );
+      addTearDown(scene.dispose);
+      for (final int t in <int>[0, 1500, 3600, 8000, 12500]) {
+        final LyricVisualizerTick tick = LyricVisualizerTick(
+          timeMs: t,
+          elapsed: t / 1000,
+        );
+        scene.advance(const Size(1280, 720), tick);
+        final ui.PictureRecorder rec = ui.PictureRecorder();
+        scene.paint(Canvas(rec), const Size(1280, 720), tick);
+        rec.endRecording().dispose();
+      }
+      expect(scene.visibleIds, isNotEmpty);
+    });
+
+    testWidgets('asset pack lists and decodes images from the store', (
+      WidgetTester tester,
+    ) async {
+      final Directory root = Directory.systemTemp.createTempSync('cappella_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final CappellaAssetPack pack = CappellaAssetPack(
+        openStore: () async => LyricVisualizerAssetStore(root),
+      );
+      addTearDown(pack.dispose);
+      await tester.runAsync(() async {
+        final ui.Image img = _solidImage(const Color(0xFF0000FF));
+        final ByteData? png = await img.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+        img.dispose();
+        final Directory dir = Directory('${root.path}/cappella/emoji')
+          ..createSync(recursive: true);
+        File(
+          '${dir.path}/0000_smile.png',
+        ).writeAsBytesSync(png!.buffer.asUint8List());
+        pack.load('emoji');
+        for (int i = 0; i < 100 && pack.imageAt(0) == null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      expect(pack.length, 1);
+      expect(pack.imageAt(0), isNotNull);
+      pack.load(null);
+      expect(pack.length, 0);
+    });
+  });
+
   group('scene', () {
     testWidgets('visible messages follow the song and old rows scroll off', (
       WidgetTester tester,
@@ -497,10 +662,10 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         cappellaVisualizerEntry,
+        intensity: LyricVisualizerIntensity.chaotic,
         tuning: const <String, Object?>{
           kCappellaTuningAvatarSource: 'color',
           kCappellaTuningShowEmo: false,
-          kCappellaTuningIntensity: 'chaotic',
         },
       );
     });
@@ -509,10 +674,26 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         cappellaVisualizerEntry,
+        intensity: LyricVisualizerIntensity.calm,
+        tuning: const <String, Object?>{kCappellaTuningAvatarSource: 'builtin'},
+      );
+    });
+
+    testWidgets('custom packs selected (no store in tests) + theme + audio', (
+      WidgetTester tester,
+    ) async {
+      await pumpVisualizerAcross(
+        tester,
+        cappellaVisualizerEntry,
         tuning: const <String, Object?>{
-          kCappellaTuningAvatarSource: 'builtin',
-          kCappellaTuningIntensity: 'calm',
+          kCappellaTuningAvatarSource: 'custom',
+          kCappellaTuningEmojiSource: 'custom',
         },
+        theme: const LyricVisualizerTheme(
+          fontWeight: FontWeight.w700,
+          intensity: LyricVisualizerIntensity.chaotic,
+        ),
+        audio: SyntheticVisualizerAudio(),
       );
     });
 

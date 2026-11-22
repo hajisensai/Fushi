@@ -13,6 +13,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_config.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart';
@@ -136,6 +137,10 @@ class CappellaSceneConfig {
     required this.fontScale,
     required this.motionEnabled,
     required this.initials,
+    this.fontWeight = kCappellaBubbleFontWeight,
+    this.fontFamily,
+    this.avatarPool,
+    this.emojiPool,
   });
 
   final List<CappellaLine> lines;
@@ -149,6 +154,16 @@ class CappellaSceneConfig {
 
   /// 演唱者发送者 → 头像首字母（有名字时）。
   final Map<CappellaSender, String> initials;
+
+  /// 气泡字重 / 字体（主题）。
+  final FontWeight fontWeight;
+  final String? fontFamily;
+
+  /// 用户头像包（[avatarSource] 为 custom 时用）。
+  final CappellaImagePool? avatarPool;
+
+  /// 用户表情包；null = 内置（程序贴纸）。消息的 stickerIndex 是在这个池里的下标。
+  final CappellaImagePool? emojiPool;
 }
 
 /// 整个聊天流的状态机 + 绘制。
@@ -175,12 +190,21 @@ class CappellaScene {
   Size? _lastSize;
   List<_Row> _visibleRows = <_Row>[];
 
+  CappellaViewport _viewport(Size size) => CappellaViewport.of(
+    size,
+    _config.fontScale,
+    fontWeight: _config.fontWeight,
+    fontFamily: _config.fontFamily,
+  );
+
   /// 换配置：消息表变了就清掉行状态与测量缓存（下一帧当首帧处理，不播进出场）。
   void update(CappellaSceneConfig next) {
     final bool reset =
         !identical(next.messages, _config.messages) ||
         !identical(next.lines, _config.lines) ||
         next.fontScale != _config.fontScale ||
+        next.fontWeight != _config.fontWeight ||
+        next.fontFamily != _config.fontFamily ||
         !identical(next.intensity, _config.intensity);
     _config = next;
     _lastTick = null;
@@ -227,7 +251,7 @@ class CappellaScene {
     final double dt = _first ? 0 : (now - _lastElapsed).clamp(0.0, 0.1);
     _lastElapsed = now;
     final int t = tick.timeMs;
-    final CappellaViewport vp = CappellaViewport.of(size, c.fontScale);
+    final CappellaViewport vp = _viewport(size);
 
     final int activeIdx = cappellaActiveLineIndexAt(c.lines, t);
     final int visIdx = cappellaVisibleLineIndexAt(c.lines, t);
@@ -269,6 +293,8 @@ class CappellaScene {
             active: true,
             baseFontSize: vp.baseFontSize,
             motion: motion,
+            fontWeight: vp.fontWeight,
+            fontFamily: vp.fontFamily,
           ),
           vp.maxTextWidth,
         );
@@ -352,6 +378,8 @@ class CappellaScene {
         active: active,
         baseFontSize: vp.baseFontSize,
         motion: motion,
+        fontWeight: vp.fontWeight,
+        fontFamily: vp.fontFamily,
       );
       row.style = style;
       if (m.kind == CappellaMessageKind.lyric && active) {
@@ -428,7 +456,7 @@ class CappellaScene {
   /// 推进并画一帧。
   void paint(Canvas canvas, Size size, LyricVisualizerTick tick) {
     advance(size, tick);
-    final CappellaViewport vp = CappellaViewport.of(size, _config.fontScale);
+    final CappellaViewport vp = _viewport(size);
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     for (final _Row r in _exiting) {
@@ -528,6 +556,7 @@ class CappellaScene {
       opacity: avatarFade,
       cover: cover,
       initial: c.initials[m.sender],
+      customPool: c.avatarPool,
     );
 
     final double bubbleLeft = right
@@ -575,13 +604,21 @@ class CappellaScene {
     canvas.rotate(angle);
     canvas.scale(s);
     canvas.translate(-box.center.dx, -box.center.dy);
-    paintCappellaSticker(
-      canvas,
-      box,
-      r.message.stickerIndex,
-      _config.palette,
-      enter,
-    );
+    final CappellaImagePool? pool = _config.emojiPool;
+    final ui.Image? custom = pool == null || pool.length == 0
+        ? null
+        : pool.imageAt(r.message.stickerIndex % pool.length);
+    if (custom != null) {
+      paintCappellaPoolImage(canvas, box, custom, enter);
+    } else {
+      paintCappellaSticker(
+        canvas,
+        box,
+        r.message.stickerIndex,
+        _config.palette,
+        enter,
+      );
+    }
     canvas.restore();
   }
 
@@ -720,7 +757,12 @@ class CappellaScene {
         ? plan.characters.length
         : cappellaCharCountAt(plan.revealMs, timeMs);
     if (count == 0) return;
-    final TextStyle base = cappellaBubbleTextStyle(r.style!.fontSize, color);
+    final TextStyle base = cappellaBubbleTextStyle(
+      r.style!.fontSize,
+      color,
+      fontWeight: r.style!.fontWeight,
+      fontFamily: r.style!.fontFamily,
+    );
     final List<InlineSpan> spans = <InlineSpan>[];
     final StringBuffer run = StringBuffer();
     void flush() {
@@ -790,7 +832,15 @@ class CappellaScene {
     double maxTextWidth,
     Color color,
   ) {
-    final Object key = ('msg', m.id, fontSize, maxTextWidth, color);
+    final Object key = (
+      'msg',
+      m.id,
+      fontSize,
+      maxTextWidth,
+      color,
+      _config.fontWeight,
+      _config.fontFamily,
+    );
     final TextPainter? hit = _painters[key];
     if (hit != null) return hit;
     _evictPainters();
@@ -799,6 +849,8 @@ class CappellaScene {
       fontSize,
       maxTextWidth,
       color,
+      fontWeight: _config.fontWeight,
+      fontFamily: _config.fontFamily,
     );
   }
 

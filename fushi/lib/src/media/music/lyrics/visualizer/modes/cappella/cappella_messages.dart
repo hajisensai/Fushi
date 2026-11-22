@@ -2,8 +2,8 @@
 /// （发送者 / 左右侧 / 表情回复），逐字出现时间表，以及每个时刻的可见 / 当前消息。
 ///
 /// 对应 folia `cappellaMessages.ts`、`cappellaMessageSenders.ts`、`cappellaReveal.ts`、
-/// `cappellaMessageLayout.ts`（时间判定部分）与 `parserCore.attachInterludes`、
-/// `renderHints.buildLineRenderEndTime`。时间一律是歌词显示时间（毫秒）。
+/// `cappellaMessageLayout.ts`（时间判定部分）与 `parserCore.attachInterludes`；句尾离场窗口读
+/// 共享的 renderHints。时间一律是歌词显示时间（毫秒）。
 library;
 
 import 'dart:math' as math;
@@ -61,44 +61,15 @@ class CappellaLine {
   int get durationMs => endMs - startMs;
 }
 
-/// folia `buildLineRenderEndTime`（时间换成毫秒）。
-int cappellaRenderEndMs({
-  required int startMs,
-  required int endMs,
-  required int lastWordEndMs,
-}) {
-  final double raw = math.max(endMs - startMs, 0) / 1000;
-  final double start = startMs / 1000;
-  final double end = endMs / 1000;
-  final double lastWordEnd = lastWordEndMs / 1000;
-  double result;
-  if (raw < 0.10) {
-    // micro：不做过渡。
-    result = math.max(end, start + 0.067);
-  } else if (raw < 0.18) {
-    // short：快速过渡。
-    final double enter = (raw * 0.45).clamp(0.045, 0.06);
-    final double exit = (raw * 0.22).clamp(0.03, 0.04);
-    const double hold = 0.03;
-    final double passStart = math.max(lastWordEnd, start) + hold;
-    final double exitStart = math.max(
-      math.max(start + enter + 0.01, passStart),
-      end - exit,
-    );
-    result = math.max(end, exitStart + exit);
-  } else {
-    final double base = math.max(raw, 0.12);
-    final double exit = math.min(0.32, math.max(0.18, base * 0.18));
-    const double hold = 0.06;
-    final double passStart = math.max(lastWordEnd, start) + hold;
-    final double exitStart = math.max(passStart, end - exit);
-    result = math.max(end, exitStart + exit);
-  }
-  return (result * 1000).round();
-}
+/// 行的渲染提示：歌词行读 runtime 已算好的共享 renderHints，补出来的间奏行按同一公式现算。
+LyricVisualizerRenderHints cappellaRenderHintsOf(CappellaLine line) =>
+    line.source?.renderHints ??
+    LyricVisualizerRenderHints.of(startMs: line.startMs, endMs: line.endMs);
 
-/// 时长类别是否 normal（≥ 180ms；folia `timingClass === 'normal'`）。
-bool cappellaIsNormalTiming(CappellaLine line) => line.durationMs >= 180;
+/// 时长类别是否 normal（folia `timingClass === 'normal'`）。
+bool cappellaIsNormalTiming(CappellaLine line) =>
+    cappellaRenderHintsOf(line).timingClass ==
+    LyricVisualizerTimingClass.normal;
 
 CappellaLine _interlude(int index, int startMs, int endMs) {
   // folia 把间奏拆成 6 个等长「词」，每个点一个。
@@ -117,11 +88,10 @@ CappellaLine _interlude(int index, int startMs, int endMs) {
     startMs: startMs,
     endMs: endMs,
     chars: chars,
-    renderEndMs: cappellaRenderEndMs(
+    renderEndMs: LyricVisualizerRenderHints.of(
       startMs: startMs,
       endMs: endMs,
-      lastWordEndMs: endMs,
-    ),
+    ).renderEndMs,
   );
 }
 
@@ -143,18 +113,13 @@ CappellaLine _lyric(int index, LyricVisualizerLine l) {
   final String text = chars.isEmpty
       ? l.text
       : chars.map((CappellaChar c) => c.text).join();
-  final int lastWordEnd = l.words.isEmpty ? l.endMs : l.words.last.endMs;
   return CappellaLine(
     index: index,
     text: text,
     startMs: l.startMs,
     endMs: l.endMs,
     chars: chars,
-    renderEndMs: cappellaRenderEndMs(
-      startMs: l.startMs,
-      endMs: l.endMs,
-      lastWordEndMs: lastWordEnd,
-    ),
+    renderEndMs: l.renderEndMs,
     agent: l.agent,
     source: l,
   );

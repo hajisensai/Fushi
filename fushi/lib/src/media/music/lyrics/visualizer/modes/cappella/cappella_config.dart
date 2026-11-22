@@ -2,6 +2,11 @@
 /// `cappellaIntensity.ts`）。时间一律毫秒，长度一律逻辑像素（folia 的 CSS px 1:1）。
 library;
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
+
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart'
+    show LyricVisualizerIntensity;
+
 /// 「短句」字数上限：不超过这么多（去掉空白后）的句子可能沿用上一位发送者。
 const int kCappellaShortLineCharLimit = 12;
 
@@ -79,25 +84,6 @@ const double kCappellaAvatarFadeSeconds = 0.2;
 /// 表情摇摆：±1.6°，1.9s 一个来回。
 const double kCappellaEmoWiggleDegrees = 1.6;
 const double kCappellaEmoWiggleSeconds = 1.9;
-
-/// 动画强度（folia 主题的 `animationIntensity`；Fushi 没有 AI 主题，改成本样式的参数）。
-enum CappellaIntensity {
-  calm('calm'),
-  normal('normal'),
-  chaotic('chaotic');
-
-  const CappellaIntensity(this.value);
-
-  /// 落库值（冻结）。
-  final String value;
-
-  static CappellaIntensity fromValue(String value) {
-    for (final CappellaIntensity i in values) {
-      if (i.value == value) return i;
-    }
-    return normal;
-  }
-}
 
 /// 弹簧参数（framer-motion 的 stiffness / damping / mass）。
 class CappellaSpring {
@@ -330,10 +316,12 @@ const CappellaIntensityConfig _chaotic = CappellaIntensityConfig(
   ),
 );
 
-/// 按强度取参数表（folia `getCappellaIntensityConfig`）。
-CappellaIntensityConfig cappellaIntensityConfig(CappellaIntensity intensity) =>
-    switch (intensity) {
-      CappellaIntensity.calm => _calm,
-      CappellaIntensity.normal => _normal,
-      CappellaIntensity.chaotic => _chaotic,
-    };
+/// 按共享动画强度（`context.intensity`，folia `theme.animationIntensity`）取参数表（folia
+/// `getCappellaIntensityConfig`）。
+CappellaIntensityConfig cappellaIntensityConfig(
+  LyricVisualizerIntensity intensity,
+) => switch (intensity) {
+  LyricVisualizerIntensity.calm => _calm,
+  LyricVisualizerIntensity.normal => _normal,
+  LyricVisualizerIntensity.chaotic => _chaotic,
+};

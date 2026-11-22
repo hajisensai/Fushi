@@ -24,11 +24,18 @@ class CappellaViewport {
     required this.groupMaxWidth,
     required this.maxTextWidth,
     required this.baseFontSize,
+    this.fontWeight = kCappellaBubbleFontWeight,
+    this.fontFamily,
   });
 
   /// folia：`px-4 sm:px-8 lg:px-14`、`pt-12 sm:pt-16 lg:pt-20`、面板 `max-w-4xl`、
   /// 气泡组宽 78%（窄屏）/ 68%，文字宽 = 面板 × 比例 − 56。
-  factory CappellaViewport.of(Size size, double fontScale) {
+  factory CappellaViewport.of(
+    Size size,
+    double fontScale, {
+    FontWeight fontWeight = kCappellaBubbleFontWeight,
+    String? fontFamily,
+  }) {
     final double w = size.width;
     final double padX = w >= 1024 ? 56 : (w >= 640 ? 32 : 16);
     final double padTop = w >= 1024 ? 80 : (w >= 640 ? 64 : 48);
@@ -50,6 +57,8 @@ class CappellaViewport {
       groupMaxWidth: panelWidth * ratio,
       maxTextWidth: math.max(96, (maxPanel * ratio - 56).floorToDouble()),
       baseFontSize: (18 * fontScale).clamp(15, 26).toDouble(),
+      fontWeight: fontWeight,
+      fontFamily: fontFamily,
     );
   }
 
@@ -62,16 +71,22 @@ class CappellaViewport {
   final double maxTextWidth;
   final double baseFontSize;
 
+  /// 气泡字重 / 字体（主题：folia `resolveThemeFontWeight(theme, 400)` / `resolveThemeFontStack`）。
+  final FontWeight fontWeight;
+  final String? fontFamily;
+
   double get panelRight => panelLeft + panelWidth;
 
   @override
   bool operator ==(Object other) =>
       other is CappellaViewport &&
       other.size == size &&
-      other.baseFontSize == baseFontSize;
+      other.baseFontSize == baseFontSize &&
+      other.fontWeight == fontWeight &&
+      other.fontFamily == fontFamily;
 
   @override
-  int get hashCode => Object.hash(size, baseFontSize);
+  int get hashCode => Object.hash(size, baseFontSize, fontWeight, fontFamily);
 }
 
 /// 一种气泡排版（字号 + 内边距）。
@@ -83,6 +98,8 @@ class CappellaBubbleStyle {
     required this.padY,
     required this.minHeight,
     required this.minWidth,
+    this.fontWeight = kCappellaBubbleFontWeight,
+    this.fontFamily,
   });
 
   /// folia `CappellaMessageRow`：当前行放大字号与内边距、最小高 / 宽；标题用基准字号。
@@ -91,6 +108,8 @@ class CappellaBubbleStyle {
     required bool active,
     required double baseFontSize,
     required CappellaMotion motion,
+    FontWeight fontWeight = kCappellaBubbleFontWeight,
+    String? fontFamily,
   }) {
     final double fontSize = active
         ? baseFontSize * motion.activeFontMultiplier
@@ -112,6 +131,8 @@ class CappellaBubbleStyle {
         fontSize * kCappellaLineHeight + padY * 2,
       ),
       minWidth: active ? kCappellaActiveMinWidth : 0,
+      fontWeight: fontWeight,
+      fontFamily: fontFamily,
     );
   }
 
@@ -120,6 +141,8 @@ class CappellaBubbleStyle {
   final double padY;
   final double minHeight;
   final double minWidth;
+  final FontWeight fontWeight;
+  final String? fontFamily;
 
   double get lineHeightPx => fontSize * kCappellaLineHeight;
 
@@ -134,16 +157,27 @@ class CappellaBubbleStyle {
       other is CappellaBubbleStyle &&
       other.fontSize == fontSize &&
       other.padX == padX &&
-      other.padY == padY;
+      other.padY == padY &&
+      other.fontWeight == fontWeight &&
+      other.fontFamily == fontFamily;
 
   @override
-  int get hashCode => Object.hash(fontSize, padX, padY);
+  int get hashCode => Object.hash(fontSize, padX, padY, fontWeight, fontFamily);
 }
 
-/// 气泡文字的 TextStyle（字重 400、行高 1.45，行距上下均分同 CSS）。
-TextStyle cappellaBubbleTextStyle(double fontSize, Color color) => TextStyle(
+/// 气泡字重（folia `CAPPELLA_BUBBLE_FONT_WEIGHT`）。
+const FontWeight kCappellaBubbleFontWeight = FontWeight.w400;
+
+/// 气泡文字的 TextStyle（字重默认 400、行高 1.45，行距上下均分同 CSS）。
+TextStyle cappellaBubbleTextStyle(
+  double fontSize,
+  Color color, {
+  FontWeight fontWeight = kCappellaBubbleFontWeight,
+  String? fontFamily,
+}) => TextStyle(
   fontSize: fontSize,
-  fontWeight: FontWeight.w400,
+  fontWeight: fontWeight,
+  fontFamily: fontFamily,
   height: kCappellaLineHeight,
   leadingDistribution: TextLeadingDistribution.even,
   color: color,
@@ -154,9 +188,19 @@ TextPainter cappellaLayoutText(
   String text,
   double fontSize,
   double maxTextWidth,
-  Color color,
-) => TextPainter(
-  text: TextSpan(text: text, style: cappellaBubbleTextStyle(fontSize, color)),
+  Color color, {
+  FontWeight fontWeight = kCappellaBubbleFontWeight,
+  String? fontFamily,
+}) => TextPainter(
+  text: TextSpan(
+    text: text,
+    style: cappellaBubbleTextStyle(
+      fontSize,
+      color,
+      fontWeight: fontWeight,
+      fontFamily: fontFamily,
+    ),
+  ),
   textDirection: TextDirection.ltr,
   textWidthBasis: TextWidthBasis.longestLine,
 )..layout(maxWidth: math.max(1, maxTextWidth));
@@ -172,6 +216,8 @@ Size cappellaMeasureBubble(
     style.fontSize,
     maxTextWidth,
     const Color(0xFF000000),
+    fontWeight: style.fontWeight,
+    fontFamily: style.fontFamily,
   );
   final int lines = math.max(1, tp.computeLineMetrics().length);
   final double textWidth = math.max(tp.width, style.fontSize);
@@ -280,6 +326,8 @@ double cappellaEstimatedHeight({
     active: active,
     baseFontSize: viewport.baseFontSize,
     motion: motion,
+    fontWeight: viewport.fontWeight,
+    fontFamily: viewport.fontFamily,
   );
   final double h = style
       .clamp(cache.sizeFor(message.displayText, style, viewport.maxTextWidth))

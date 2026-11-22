@@ -3,7 +3,8 @@
 /// 歌词化成聊天气泡左右往返：TTML 有多位演唱者时按演唱者分配发送者（第一位在右侧当
 /// 「我」），否则按强度参数的左右序列 / 翻转 / 短句沿用规则确定性地编排；当前句气泡放大、
 /// 逐字淡入、气泡宽度提前补间、斜向高光扫过，唱完后在气泡外侧露出结束时间戳；长间奏
-/// 换成表情贴纸，偶尔在句后插一个表情回复。译文 / 下一句交给宿主的共享字幕。
+/// 换成表情贴纸，偶尔在句后插一个表情回复。头像 / 表情可换成用户自己的素材包。译文 / 下一句
+/// 交给宿主的共享字幕。
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -11,67 +12,93 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_config.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_messages.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart';
-import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart'
-    show musicLyricsBackdropCoverProvider;
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 参数键（落库，冻结；与 folia `CappellaTuning` 同名）。
 const String kCappellaTuningAvatarSource = 'avatarSource';
 const String kCappellaTuningShowEmo = 'showEmoMessages';
-const String kCappellaTuningIntensity = 'intensity';
+const String kCappellaTuningEmojiSource = 'emojiPackSource';
 
-/// 可调参数（folia `tuning.ts`：头像来源、显示表情包；动画强度在 folia 来自主题，这里作参数）。
-final List<LyricVisualizerTuningSpec> cappellaTunings =
-    <LyricVisualizerTuningSpec>[
-      LyricVisualizerChoiceSpec(
-        key: kCappellaTuningAvatarSource,
-        label: () => t.music_visualizer_cappella_avatar_source,
-        options: <(String, String Function())>[
-          (
-            CappellaAvatarSource.cover.value,
-            () => t.music_visualizer_cappella_avatar_cover,
-          ),
-          (
-            CappellaAvatarSource.generated.value,
-            () => t.music_visualizer_cappella_avatar_generated,
-          ),
-          (
-            CappellaAvatarSource.color.value,
-            () => t.music_visualizer_cappella_avatar_color,
-          ),
-        ],
-        initial: CappellaAvatarSource.cover.value,
+/// 素材包参数键（值是素材包名，见 `LyricVisualizerAssetPackSpec`）。
+const String kCappellaTuningAvatarPack = 'avatarPack';
+const String kCappellaTuningEmojiPack = 'emojiPack';
+
+/// 表情包来源（落库值冻结，与 folia `emojiPackSource` 一致）。
+const String kCappellaEmojiBuiltin = 'builtin';
+const String kCappellaEmojiCustom = 'custom';
+
+/// 可调参数（folia `tuning.ts`：头像来源、显示表情包、表情包来源，外加自定义头像 / 表情的素材包）。
+/// 动画强度读共享的 `context.intensity`。
+final List<LyricVisualizerTuningSpec>
+cappellaTunings = <LyricVisualizerTuningSpec>[
+  LyricVisualizerChoiceSpec(
+    key: kCappellaTuningAvatarSource,
+    label: () => t.music_visualizer_cappella_avatar_source,
+    options: <(String, String Function())>[
+      (
+        CappellaAvatarSource.cover.value,
+        () => t.music_visualizer_cappella_avatar_cover,
       ),
-      LyricVisualizerToggleSpec(
-        key: kCappellaTuningShowEmo,
-        label: () => t.music_visualizer_cappella_show_stickers,
-        initial: true,
+      (
+        CappellaAvatarSource.generated.value,
+        () => t.music_visualizer_cappella_avatar_generated,
       ),
-      LyricVisualizerChoiceSpec(
-        key: kCappellaTuningIntensity,
-        label: () => t.music_visualizer_cappella_intensity,
-        options: <(String, String Function())>[
-          (
-            CappellaIntensity.calm.value,
-            () => t.music_visualizer_cappella_intensity_calm,
-          ),
-          (
-            CappellaIntensity.normal.value,
-            () => t.music_visualizer_cappella_intensity_normal,
-          ),
-          (
-            CappellaIntensity.chaotic.value,
-            () => t.music_visualizer_cappella_intensity_chaotic,
-          ),
-        ],
-        initial: CappellaIntensity.normal.value,
+      (
+        CappellaAvatarSource.color.value,
+        () => t.music_visualizer_cappella_avatar_color,
       ),
-    ];
+      (
+        CappellaAvatarSource.custom.value,
+        () => t.music_visualizer_cappella_avatar_custom,
+      ),
+    ],
+    initial: CappellaAvatarSource.cover.value,
+  ),
+  LyricVisualizerAssetPackSpec(
+    key: kCappellaTuningAvatarPack,
+    label: () => t.music_visualizer_cappella_avatar_pack,
+    style: kCappellaAssetStyle,
+    initial: 'avatars',
+    maxFiles: kCappellaMaxPackImages,
+    visibleWhen: (LyricVisualizerTuning v) =>
+        v.choice(kCappellaTuningAvatarSource, '') ==
+        CappellaAvatarSource.custom.value,
+  ),
+  LyricVisualizerToggleSpec(
+    key: kCappellaTuningShowEmo,
+    label: () => t.music_visualizer_cappella_show_stickers,
+    initial: true,
+  ),
+  LyricVisualizerChoiceSpec(
+    key: kCappellaTuningEmojiSource,
+    label: () => t.music_visualizer_cappella_emoji_source,
+    options: <(String, String Function())>[
+      (kCappellaEmojiBuiltin, () => t.music_visualizer_cappella_emoji_builtin),
+      (kCappellaEmojiCustom, () => t.music_visualizer_cappella_emoji_custom),
+    ],
+    initial: kCappellaEmojiBuiltin,
+    visibleWhen: (LyricVisualizerTuning v) =>
+        v.flag(kCappellaTuningShowEmo, true),
+  ),
+  LyricVisualizerAssetPackSpec(
+    key: kCappellaTuningEmojiPack,
+    label: () => t.music_visualizer_cappella_emoji_pack,
+    style: kCappellaAssetStyle,
+    initial: 'emoji',
+    maxFiles: kCappellaMaxPackImages,
+    visibleWhen: (LyricVisualizerTuning v) =>
+        v.flag(kCappellaTuningShowEmo, true) &&
+        v.choice(kCappellaTuningEmojiSource, '') == kCappellaEmojiCustom,
+  ),
+];
 
 /// 注册项。
 final LyricVisualizerEntry cappellaVisualizerEntry = LyricVisualizerEntry(
@@ -80,16 +107,47 @@ final LyricVisualizerEntry cappellaVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_cappella_description,
   icon: FushiIcons.forum,
   tunings: cappellaTunings,
-  sharedBackdrop: true,
+  // folia cappella 不改背景：画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => CappellaVisualizer(context: c),
 );
 
+/// 生效的头像来源（folia：选了自定义但包里没有图时回落默认的封面）。
+CappellaAvatarSource cappellaEffectiveAvatarSource(
+  LyricVisualizerTuning tuning,
+  int customCount,
+) {
+  final CappellaAvatarSource s = CappellaAvatarSource.fromValue(
+    tuning.choice(
+      kCappellaTuningAvatarSource,
+      CappellaAvatarSource.cover.value,
+    ),
+  );
+  return s == CappellaAvatarSource.custom && customCount == 0
+      ? CappellaAvatarSource.cover
+      : s;
+}
+
+/// 是否用自定义表情包（folia：选了自定义且包里有图）。
+bool cappellaUsesCustomEmoji(LyricVisualizerTuning tuning, int customCount) =>
+    tuning.choice(kCappellaTuningEmojiSource, kCappellaEmojiBuiltin) ==
+        kCappellaEmojiCustom &&
+    customCount > 0;
+
 /// 群唱样式本体：纯展示，不接手势（点按退出由宿主处理）。
 class CappellaVisualizer extends StatefulWidget {
-  const CappellaVisualizer({super.key, required this.context});
+  const CappellaVisualizer({
+    super.key,
+    required this.context,
+    this.openAssetStore,
+  });
 
   final LyricVisualizerContext context;
+
+  /// 素材库入口（null = app 数据目录下的共享素材库；测试换成临时目录）。
+  final CappellaAssetStoreOpener? openAssetStore;
 
   @override
   State<CappellaVisualizer> createState() => _CappellaVisualizerState();
@@ -105,32 +163,82 @@ class _CappellaVisualizerState extends State<CappellaVisualizer> {
   Object? _messagesKey;
   List<CappellaMessage> _messages = const <CappellaMessage>[];
 
-  ImageStream? _coverStream;
-  ImageStreamListener? _coverListener;
-  ImageInfo? _coverInfo;
-  String? _coverPath;
+  final LyricVisualizerImageLoader _cover = LyricVisualizerImageLoader();
+  late final CappellaAssetPack _avatarPack;
+  late final CappellaAssetPack _emojiPack;
+
+  /// initState 跑完前（缓存命中时图会同步回调）只记下、不 setState。
+  bool _ready = false;
 
   @override
   void initState() {
     super.initState();
+    _avatarPack = CappellaAssetPack(openStore: widget.openAssetStore)
+      ..addListener(_assetsChanged);
+    _emojiPack = CappellaAssetPack(openStore: widget.openAssetStore)
+      ..addListener(_assetsChanged);
+    _cover.addListener(_coverChanged);
+    _loadPacks();
     _scene = CappellaScene(_buildConfig());
-    _loadCover();
+    _cover.load(widget.context.coverPath);
+    _ready = true;
   }
 
   @override
   void didUpdateWidget(covariant CappellaVisualizer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _loadPacks();
     _scene.update(_buildConfig());
     _revision++;
-    if (widget.context.coverPath != _coverPath) _loadCover();
+    _cover.load(widget.context.coverPath);
   }
 
   @override
   void dispose() {
-    _detachCover();
-    _coverInfo?.dispose();
+    _cover
+      ..removeListener(_coverChanged)
+      ..dispose();
+    _avatarPack
+      ..removeListener(_assetsChanged)
+      ..dispose();
+    _emojiPack
+      ..removeListener(_assetsChanged)
+      ..dispose();
     _scene.dispose();
     super.dispose();
+  }
+
+  /// 只在选了自定义来源时读素材包（folia 只在 custom 时用上传的图）。
+  void _loadPacks() {
+    final LyricVisualizerTuning tuning = widget.context.tuning;
+    final bool customAvatar =
+        tuning.choice(kCappellaTuningAvatarSource, '') ==
+        CappellaAvatarSource.custom.value;
+    _avatarPack.load(
+      customAvatar
+          ? tuning.assetPack(kCappellaTuningAvatarPack, 'avatars')
+          : null,
+    );
+    final bool customEmoji =
+        tuning.flag(kCappellaTuningShowEmo, true) &&
+        tuning.choice(kCappellaTuningEmojiSource, kCappellaEmojiBuiltin) ==
+            kCappellaEmojiCustom;
+    _emojiPack.load(
+      customEmoji ? tuning.assetPack(kCappellaTuningEmojiPack, 'emoji') : null,
+    );
+  }
+
+  void _coverChanged() {
+    if (!mounted) return;
+    _scene.cover = _cover.image;
+    if (_ready) setState(() => _revision++);
+  }
+
+  /// 素材包的图数变了（列完目录）要重排消息（表情池大小变了）；单张解完只需重画。
+  void _assetsChanged() {
+    if (!mounted || !_ready) return;
+    _scene.update(_buildConfig());
+    setState(() => _revision++);
   }
 
   CappellaSceneConfig _buildConfig() {
@@ -139,12 +247,15 @@ class _CappellaVisualizerState extends State<CappellaVisualizer> {
       _linesFor = c.runtime;
       _lines = buildCappellaLines(c.runtime.lines);
     }
-    final CappellaIntensity intensity = CappellaIntensity.fromValue(
-      c.tuning.choice(kCappellaTuningIntensity, CappellaIntensity.normal.value),
-    );
+    final LyricVisualizerIntensity intensity = c.intensity;
     final bool showEmo = c.tuning.flag(kCappellaTuningShowEmo, true);
+    final bool customEmoji = cappellaUsesCustomEmoji(
+      c.tuning,
+      _emojiPack.length,
+    );
+    final int pool = customEmoji ? _emojiPack.length : kCappellaStickerCount;
     final String title = cappellaTitleText(c);
-    final Object key = (_lines, intensity, showEmo, title);
+    final Object key = (_lines, intensity, showEmo, title, pool);
     if (key != _messagesKey) {
       _messagesKey = key;
       _messages = buildCappellaMessages(
@@ -152,7 +263,7 @@ class _CappellaVisualizerState extends State<CappellaVisualizer> {
         titleText: title,
         sequencing: cappellaIntensityConfig(intensity).sequencing,
         showEmo: showEmo,
-        stickerPoolSize: kCappellaStickerCount,
+        stickerPoolSize: pool,
       );
     }
     return CappellaSceneConfig(
@@ -160,55 +271,16 @@ class _CappellaVisualizerState extends State<CappellaVisualizer> {
       messages: _messages,
       intensity: cappellaIntensityConfig(intensity),
       palette: c.palette,
-      avatarSource: CappellaAvatarSource.fromValue(
-        c.tuning.choice(
-          kCappellaTuningAvatarSource,
-          CappellaAvatarSource.cover.value,
-        ),
-      ),
+      avatarSource: cappellaEffectiveAvatarSource(c.tuning, _avatarPack.length),
       seed: c.seed,
       fontScale: c.fontScale,
       motionEnabled: c.motion,
       initials: cappellaAgentInitials(_lines, c),
+      fontWeight: c.theme?.fontWeight ?? kCappellaBubbleFontWeight,
+      fontFamily: c.theme?.fontFamily,
+      avatarPool: _avatarPack,
+      emojiPool: customEmoji ? _emojiPack : null,
     );
-  }
-
-  void _detachCover() {
-    final ImageStreamListener? l = _coverListener;
-    if (l != null) _coverStream?.removeListener(l);
-    _coverStream = null;
-    _coverListener = null;
-  }
-
-  void _loadCover() {
-    _coverPath = widget.context.coverPath;
-    _detachCover();
-    _coverInfo?.dispose();
-    _coverInfo = null;
-    _scene.cover = null;
-    final ImageProvider? provider = musicLyricsBackdropCoverProvider(
-      _coverPath,
-    );
-    if (provider == null) return;
-    final ImageStream stream = provider.resolve(ImageConfiguration.empty);
-    final ImageStreamListener listener = ImageStreamListener(
-      (ImageInfo info, bool _) {
-        if (!mounted) {
-          info.dispose();
-          return;
-        }
-        _coverInfo?.dispose();
-        _coverInfo = info;
-        _scene.cover = info.image;
-        setState(() => _revision++);
-      },
-      onError: (Object _, StackTrace? _) {
-        // 封面读不出来就用生成头像，不报错。
-      },
-    );
-    _coverStream = stream;
-    _coverListener = listener;
-    stream.addListener(listener);
   }
 
   @override

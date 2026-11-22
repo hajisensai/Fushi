@@ -1,6 +1,6 @@
-/// 群唱的头像与表情贴纸（程序绘制）。folia 随包带了一套头像 / 表情 PNG，Fushi 不搬图片
-/// （许可与体积）：头像改为封面 3×3 切格、按调色板生成的人像剪影 / 首字母、或纯色块；
-/// 表情改为几种画出来的表情脸贴纸。
+/// 群唱的头像与表情贴纸。folia 随包带了一套头像 / 表情 PNG，Fushi 不搬图片（许可与体积）：
+/// 内置头像改为按调色板生成的人像剪影 / 首字母，另有封面 3×3 切格、纯色块与用户自己的头像包；
+/// 内置表情改为几种画出来的表情脸贴纸（用户表情包见 `cappella_assets.dart`）。
 library;
 
 import 'dart:math' as math;
@@ -10,14 +10,17 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_config.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/cappella/cappella_messages.dart';
 
-/// 头像来源（落库值冻结，与 folia 一致；`builtin` 在 Fushi 是程序生成的头像）。
+/// 头像来源（落库值冻结，与 folia 一致；`builtin` 在 Fushi 是程序生成的头像，`custom` 是用户
+/// 自己的头像包）。
 enum CappellaAvatarSource {
   cover('cover'),
   generated('builtin'),
-  color('color');
+  color('color'),
+  custom('custom');
 
   const CappellaAvatarSource(this.value);
 
@@ -44,16 +47,20 @@ int cappellaCoverCell(CappellaSender sender) => sender.right
     : kCappellaLeftAvatarIndices[sender.avatarIndex %
           kCappellaLeftAvatarIndices.length];
 
-/// 生成头像池里取哪一款（folia `pickStableBuiltinAvatarImage`：右侧按种子固定一款，
-/// 左侧在其余款式里按头像下标 + 种子偏移轮流）。
-int cappellaGeneratedAvatarIndex(CappellaSender sender, int seed) {
-  const int n = kCappellaGeneratedAvatarCount;
+/// 头像池（[n] 张）里取哪一张（folia `pickStableBuiltinAvatarImage`：右侧按种子固定一张，
+/// 左侧在其余张里按头像下标 + 种子偏移轮流；只有一张时都用它）。
+int cappellaStablePoolIndex(int n, CappellaSender sender, int seed) {
+  if (n <= 1) return 0;
   final int rightIndex = lyricVisualizerSeedOf('$seed|right|$n') % n;
   if (sender.right) return rightIndex;
   final int leftOffset = lyricVisualizerSeedOf('$seed|left|${n - 1}') % (n - 1);
   final int k = (sender.avatarIndex + leftOffset).abs() % (n - 1);
   return k >= rightIndex ? k + 1 : k;
 }
+
+/// 生成头像池里取哪一款。
+int cappellaGeneratedAvatarIndex(CappellaSender sender, int seed) =>
+    cappellaStablePoolIndex(kCappellaGeneratedAvatarCount, sender, seed);
 
 Color _hueShift(Color base, double degrees, double s, double l) {
   final HSLColor h = HSLColor.fromColor(base);
@@ -83,6 +90,7 @@ void paintCappellaAvatar(
   required double opacity,
   ui.Image? cover,
   String? initial,
+  CappellaImagePool? customPool,
 }) {
   if (opacity <= 0) return;
   final double r = rect.width / 2;
@@ -101,7 +109,18 @@ void paintCappellaAvatar(
     rect,
     Paint()..color = palette.secondary.withValues(alpha: opacity),
   );
-  if (source == CappellaAvatarSource.cover && cover != null) {
+  final ui.Image? custom =
+      source == CappellaAvatarSource.custom &&
+          customPool != null &&
+          customPool.length > 0
+      ? customPool.imageAt(
+          cappellaStablePoolIndex(customPool.length, sender, seed),
+        )
+      : null;
+  if (custom != null) {
+    // 自定义头像：整张图 cover 进圆里。
+    paintCappellaPoolImage(canvas, rect, custom, opacity, cover: true);
+  } else if (source == CappellaAvatarSource.cover && cover != null) {
     final int cell = cappellaCoverCell(sender);
     final double cw = cover.width / kCappellaAvatarGridSize;
     final double ch = cover.height / kCappellaAvatarGridSize;
