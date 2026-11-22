@@ -85,6 +85,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
@@ -2833,24 +2834,27 @@ class _SpinningDiscState extends State<_SpinningDisc>
     final double size = widget.size;
     final String? discArt = _discArtPath;
     if (discArt != null) {
-      return _buildCd(
-        size,
+      // 真盘面：按量出的印刷区圆心转（不晃），透明边与轮毂不画扫描底板的白。
+      return RepaintBoundary(
         key: const ValueKey<String>('music-player-real-disc'),
-        face: ClipOval(
-          child: musicDiscArtImage(
-            discArt,
-            decodeWidth: (size * MediaQuery.devicePixelRatioOf(context))
-                .round(),
+        child: SizedBox.square(
+          dimension: size,
+          child: MusicDiscFace(
+            path: discArt,
+            turns: _turn,
+            shadows: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: size * 0.1,
+                offset: Offset(0, size * 0.05),
+              ),
+            ],
           ),
         ),
       );
     }
     if (widget.fallback == _DiscFallback.silverCd) {
-      return _buildCd(
-        size,
-        key: const ValueKey<String>('music-player-silver-cd'),
-        face: const CustomPaint(painter: _SilverCdPainter()),
-      );
+      return _buildSilverCd(size);
     }
     // 黑胶（用户 2026-10-29：「唱片那个材质改成黑胶」）：密纹盘面 + 两道随盘面
     // 转动的扇形反光 + 中央圆形贴标（封面）+ 中心轴孔。整张一起转，反光跟着转
@@ -2908,17 +2912,16 @@ class _SpinningDiscState extends State<_SpinningDisc>
 }
 
 extension on _SpinningDiscState {
-  /// CD 盘：[face]（盘面扫描图 / 银色 CD 盘）铺满圆形整张转（扫图本身就有贴标与
-  /// 反光，不再叠黑胶纹路和假贴标）；外缘一道细亮边让浅色盘面在浅色背景上也有
-  /// 轮廓。中心轴孔挖空透出底下（用户 2026-11-22：扫描图的孔是扫描仪底板的白色，
-  /// 像贴了一块白片）。阴影也在挖孔之内裁掉，孔里看到的是底下本身而不是一团阴影。
-  Widget _buildCd(double size, {required Key key, required Widget face}) {
-    final double hole = size * _kDiscHoleFraction;
+  /// 银色 CD 盘（[_SilverCdPainter]）整张转；外缘一道细亮边让它在浅色背景上也有
+  /// 轮廓。中心轴孔挖空透出底下的封面，阴影也在挖孔之内裁掉。
+  Widget _buildSilverCd(double size) {
+    const Widget face = CustomPaint(painter: _SilverCdPainter());
+    final double hole = size * _kSilverCdHoleFraction;
     final double edge = math.max(1, size * 0.004);
     return RepaintBoundary(
-      key: key,
+      key: const ValueKey<String>('music-player-silver-cd'),
       child: ClipPath(
-        clipper: _DiscHoleClipper(holeFraction: _kDiscHoleFraction),
+        clipper: const MusicDiscHubClipper(hubFraction: _kSilverCdHoleFraction),
         child: SizedBox.square(
           dimension: size,
           child: DecoratedBox(
@@ -3063,35 +3066,9 @@ class _SilverCdPainter extends CustomPainter {
   bool shouldRepaint(covariant _SilverCdPainter oldDelegate) => false;
 }
 
-/// 真盘面中心挖孔占盘面直径的比例。实物 CD 轴孔 15mm / 盘径 120mm = 0.125，
-/// 放宽到 0.15 盖住扫描图裁切不正时孔边露出的那圈底板白。
-const double _kDiscHoleFraction = 0.15;
-
-/// 盘面中心挖孔：裁剪区是「组件外扩一圈（留给投影）减去中心圆孔」，所以孔里连
-/// 投影一起裁掉，而盘外的投影照常画出来。
-class _DiscHoleClipper extends CustomClipper<Path> {
-  const _DiscHoleClipper({required this.holeFraction});
-
-  final double holeFraction;
-
-  @override
-  Path getClip(Size size) {
-    final double side = size.shortestSide;
-    return Path()
-      ..fillType = PathFillType.evenOdd
-      ..addRect((Offset.zero & size).inflate(side * 0.5))
-      ..addOval(
-        Rect.fromCircle(
-          center: size.center(Offset.zero),
-          radius: side * holeFraction / 2,
-        ),
-      );
-  }
-
-  @override
-  bool shouldReclip(covariant _DiscHoleClipper oldClipper) =>
-      oldClipper.holeFraction != holeFraction;
-}
+/// 银色 CD 盘中心挖孔占盘径的比例（实物轴孔 15mm / 盘径 120mm = 0.125，放宽
+/// 一点留出孔边亮环）。
+const double _kSilverCdHoleFraction = 0.15;
 
 /// 黑胶盘面：近黑底、一圈圈细密纹（亮暗交替的同心圆）、外缘一道唇边、贴标外
 /// 一圈无纹带，再叠两道对角的扇形反光（SweepGradient）。
