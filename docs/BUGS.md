@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4530 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5209](bugs/BUG-5209-srs-default-deck-deleted-via-ancestor.md) | ✅ | ✅ | 浏览牌组空断言：默认牌组随祖先牌组被删，树里缺默认牌组 |
-> 共 4533 条。点号进各自文件。
+> 共 4534 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |
+| [BUG-5209](bugs/BUG-5209-srs-default-deck-deleted-via-ancestor.md) | ✅ | ✅ | 浏览牌组空断言：默认牌组随祖先牌组被删，树里缺默认牌组 |
 | [BUG-5208](bugs/BUG-5208-apple-dark-tier-drops-shell-theme.md) | ✅ | ✅ | Apple 深色档与书内查词弹窗重建主题时丢掉用户外壳样式 |
 | [BUG-5207](bugs/BUG-5207-ankidroid-kuma3-fork-package.md) | ✅ | ✅ | 装了改版 AnkiDroid（kuma3 Anki）时设置里一直显示「未安装 AnkiDroid」、权限框也不弹 |
 | [BUG-5206](bugs/BUG-5206-home-edit-exit-button-double-click-restore.md) | ✅ | ✅ | 首页编辑态页头「恢复默认」接住连点「编辑首页」的第二下，布局被换回默认 |
