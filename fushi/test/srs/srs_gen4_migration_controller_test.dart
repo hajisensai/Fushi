@@ -240,6 +240,60 @@ void main() {
     }
   });
 
+  test('the report on offer follows the latest verdict', () async {
+    final FakeGen4Backend b = FakeGen4Backend();
+    String? onDisk = 'dir/old-report.json';
+    final SrsGen4MigrationController c = SrsGen4MigrationController(
+      directory: 'dir',
+      profileUids: () async => <String>['p1'],
+      onCommitted: () async {},
+      backend: b,
+      nowMs: () => 1,
+      findAbortedReport: (String dir) async => onDisk,
+    );
+    addTearDown(c.dispose);
+    expect(c.savedReportChecked, isFalse);
+    expect(c.reportPath, isNull);
+    await c.loadSavedReport();
+    expect(c.savedReportChecked, isTrue);
+    expect(c.previousRunAborted, isTrue);
+    expect(c.reportPath, 'dir/old-report.json');
+
+    // 在跑：不给报告；又一次对拍不过：给这次的。
+    Future<void> done = c.start();
+    expect(c.reportPath, isNull);
+    b.finish(<String, Object?>{
+      'verdict': 'aborted',
+      'reportPath': 'dir/new-report.json',
+    });
+    await done;
+    expect(c.reportPath, 'dir/new-report.json');
+    expect(c.previousRunAborted, isTrue);
+
+    // 这次被拦下 / 出错：这次没有报告可给。
+    b.pending = Completer<SrsGen4MigrationOutcome>();
+    done = c.start();
+    b.finish(<String, Object?>{'verdict': 'blocked', 'code': 'busy'});
+    await done;
+    expect(c.reportPath, isNull);
+
+    // 目录里没有报告（只剩临时文件那一种）：不是「对拍不过」。
+    onDisk = null;
+    final SrsGen4MigrationController fresh = SrsGen4MigrationController(
+      directory: 'dir',
+      profileUids: () async => <String>['p1'],
+      onCommitted: () async {},
+      backend: FakeGen4Backend(),
+      nowMs: () => 1,
+      findAbortedReport: (String dir) async => onDisk,
+    );
+    addTearDown(fresh.dispose);
+    await fresh.loadSavedReport();
+    expect(fresh.savedReportChecked, isTrue);
+    expect(fresh.previousRunAborted, isFalse);
+    expect(fresh.reportPath, isNull);
+  });
+
   group('quiesce (before the database closes)', () {
     test('idle: returns at once, no cancel sent', () async {
       final FakeGen4Backend b = FakeGen4Backend();

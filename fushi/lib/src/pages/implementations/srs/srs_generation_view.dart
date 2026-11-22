@@ -8,7 +8,11 @@
 ///   正在关（覆盖恢复、换数据根、退出）时「开始升级」置灰并说明（[SrsGen4MigrationController.canStart] /
 ///   [SrsGen4MigrationController.databaseClosing]；启动还没初始化完只置灰、不说「正在关」，重新开库后恢复）。提交后存储
 ///   重开，页面随之换成正常内容。
-/// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。
+/// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。内核判它的两个原因分开说（互斥，不叠两段）：
+///   上次对拍不过、已撤回（目录里有报告，[SrsGen4MigrationController.previousRunAborted]）/ 只剩迁移临时文件。
+///   本进程里跑出了结论就只说结论（结论取代「上次」的说明，同一件事不说两遍）。
+/// - 对拍不过的诊断报告（只含 ID 与计数）不印私有目录路径（手机上用户拿不到）：给「把报告发给开发者」（反馈提交页，
+///   报告自动附上）与「分享报告 / 保存报告」（srs_gen4_report_actions.dart）。
 /// - [SrsGenState.sealedOldOnly]：只剩封存旧库，不自动重建，给恢复说明。
 /// - [SrsStoreMigrating]（-5）/ [SrsGenState.migratingElsewhere]：别的窗口在迁移，稍后重试。
 /// - [SrsStoreLegacyUnmigrated]（-6）：旁边有没迁移的旧库，两份都原样保留。
@@ -19,6 +23,8 @@
 /// 区块错峰进场（[FushiEntranceScope] + [FushiStaggeredEntrance]），按钮按压缩放（[FushiPressScale]）。
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_storage.dart'
     show SrsLegacyMainDatabasePending;
@@ -26,6 +32,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_gen4_report_actions.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
 import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -68,9 +75,7 @@ String srsGen4OutcomeText(SrsGen4MigrationOutcome o) => switch (o.verdict) {
   SrsGen4MigrationVerdict.noSpace => t.srs_gen4_no_space(
     size: FushiByteFormat.bytes(_shortBytes(o)),
   ),
-  SrsGen4MigrationVerdict.aborted => t.srs_gen4_aborted(
-    path: o.reportPath ?? '',
-  ),
+  SrsGen4MigrationVerdict.aborted => t.srs_gen4_aborted_report,
   SrsGen4MigrationVerdict.committed => t.srs_gen4_running,
 };
 
@@ -95,6 +100,8 @@ class SrsGenerationView extends ConsumerWidget {
   static const Key startKey = ValueKey<String>('srs-gen4-start');
   static const Key cancelKey = ValueKey<String>('srs-gen4-cancel');
   static const Key retryKey = ValueKey<String>('srs-gen4-retry');
+  static const Key reportSendKey = ValueKey<String>('srs-gen4-report-send');
+  static const Key reportExportKey = ValueKey<String>('srs-gen4-report-export');
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -188,22 +195,66 @@ class _StaticState extends StatelessWidget {
   }
 }
 
-/// 迁移面板：说明 → 进度（步骤 + 进度条 + 取消）→ 结论。
-class _MigrationPanel extends StatelessWidget {
+/// 迁移面板：说明 → 进度（步骤 + 进度条 + 取消）→ 结论（对拍不过时带报告的两个出口）。
+class _MigrationPanel extends StatefulWidget {
   const _MigrationPanel({required this.controller, required this.failedBefore});
 
   final SrsGen4MigrationController controller;
   final bool failedBefore;
 
   @override
+  State<_MigrationPanel> createState() => _MigrationPanelState();
+}
+
+class _MigrationPanelState extends State<_MigrationPanel> {
+  @override
+  void initState() {
+    super.initState();
+    _checkReport();
+  }
+
+  @override
+  void didUpdateWidget(_MigrationPanel old) {
+    super.didUpdateWidget(old);
+    if (old.controller != widget.controller ||
+        old.failedBefore != widget.failedBefore) {
+      _checkReport();
+    }
+  }
+
+  /// 「上次没完成」要先读一眼目录里有没有对拍不过的报告，才知道该说哪一种原因。
+  void _checkReport() {
+    if (widget.failedBefore && !widget.controller.savedReportChecked) {
+      unawaited(widget.controller.loadSavedReport());
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: widget.controller,
       builder: (BuildContext context, _) => _buildFor(context),
     );
   }
 
+  /// 页面上唯一一段主说明：在跑 > 本次结论 > 本次出错 > 上次没完成（按原因二选一）> 要升级。互斥，不叠说明。
+  String? _headline(SrsGen4MigrationController c) {
+    if (c.phase != SrsGen4MigrationPhase.idle) return t.srs_gen4_running;
+    final SrsGen4MigrationOutcome? outcome = c.outcome;
+    if (outcome != null) return srsGen4OutcomeText(outcome);
+    if (c.error != null) return t.srs_gen4_failed;
+    if (widget.failedBefore) {
+      // 报告还没读完：先不说原因（读一个小文件，下一帧就有），免得闪一下错的那句。
+      if (!c.savedReportChecked) return null;
+      return c.previousRunAborted
+          ? t.srs_gen4_aborted_report
+          : t.srs_gen4_migration_failed_state;
+    }
+    return t.srs_gen4_needs_migration;
+  }
+
   Widget _buildFor(BuildContext context) {
+    final SrsGen4MigrationController controller = widget.controller;
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     final bool running = controller.phase != SrsGen4MigrationPhase.idle;
     final SrsGen4MigrationOutcome? outcome = controller.outcome;
@@ -220,46 +271,51 @@ class _MigrationPanel extends StatelessWidget {
         reason.isNotEmpty;
     // 不能开始（主库正在关，或启动还没初始化完）：按钮置灰；只有真的在关才说「正在关闭数据库」。
     final bool blockedStart = !running && !controller.canStart;
+    final String? report = controller.reportPath;
     final List<String> details = <String>[
-      if (!running && outcome != null) srsGen4OutcomeText(outcome),
       if (!running && showReason) reason,
-      if (!running && error != null) ...<String>[t.srs_gen4_failed, '$error'],
+      if (!running && error != null) '$error',
       if (blockedStart && controller.databaseClosing) t.srs_gen4_closing,
     ];
+    final bool failed = !running && (error != null || report != null);
     final Widget head = FushiPlaceholderMessage(
       icon: running
           ? FushiIcons.sync
-          : (error != null ? FushiIcons.error : FushiIcons.storage),
-      tone: !running && error != null
-          ? FushiPlaceholderTone.error
-          : FushiPlaceholderTone.neutral,
+          : (failed ? FushiIcons.error : FushiIcons.storage),
+      tone: failed ? FushiPlaceholderTone.error : FushiPlaceholderTone.neutral,
       message: t.srs_gen4_title,
-      detail: running
-          ? t.srs_gen4_running
-          : (failedBefore
-                ? t.srs_gen4_migration_failed_state
-                : t.srs_gen4_needs_migration),
+      detail: _headline(controller),
       details: details,
       detailMaxLines: null,
     );
+    final VoidCallback? start = blockedStart ? null : controller.start;
     final List<Widget> blocks = <Widget>[
       head,
       if (running) _ProgressBlock(controller: controller),
+      if (report != null) _ReportActions(reportPath: report),
       if (!running && retryable)
         Center(
           child: FushiPressScale(
             enabled: !blockedStart,
-            child: FushiFilledButton.icon(
-              key: SrsGenerationView.startKey,
-              // 主库已关 / 正在关：置灰（关库前的静默已经等过这个控制器，之后开始的迁移没人等）。
-              onPressed: blockedStart ? null : controller.start,
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(
-                failedBefore || outcome != null || error != null
-                    ? t.srs_gen4_restart
-                    : t.srs_gen4_start,
-              ),
-            ),
+            // 主库已关 / 正在关：置灰（关库前的静默已经等过这个控制器，之后开始的迁移没人等）。有报告时「发给开发者」
+            // 是主动作：对拍不过多半每次都一样，重新升级退为次要。
+            child: report != null
+                ? FushiFilledButton.tonalIcon(
+                    key: SrsGenerationView.startKey,
+                    onPressed: start,
+                    icon: const FushiIcon(FushiIcons.refresh),
+                    label: Text(t.srs_gen4_restart),
+                  )
+                : FushiFilledButton.icon(
+                    key: SrsGenerationView.startKey,
+                    onPressed: start,
+                    icon: const FushiIcon(FushiIcons.refresh),
+                    label: Text(
+                      widget.failedBefore || outcome != null || error != null
+                          ? t.srs_gen4_restart
+                          : t.srs_gen4_start,
+                    ),
+                  ),
           ),
         ),
     ];
@@ -271,6 +327,48 @@ class _MigrationPanel extends StatelessWidget {
           if (i > 0) SizedBox(height: gap * 2),
           FushiStaggeredEntrance(index: i, child: blocks[i]),
         ],
+      ],
+    );
+  }
+}
+
+/// 对拍不过的报告的两个出口：发给开发者（主）、分享 / 保存（次）。
+class _ReportActions extends ConsumerWidget {
+  const _ReportActions({required this.reportPath});
+
+  final String reportPath;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final SrsGen4ReportActions actions = ref.watch(
+      srsGen4ReportActionsProvider,
+    );
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    final bool save = actions.savesToFile;
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: gap,
+      runSpacing: gap,
+      children: <Widget>[
+        FushiPressScale(
+          child: FushiFilledButton.icon(
+            key: SrsGenerationView.reportSendKey,
+            onPressed: () => unawaited(actions.send(context, reportPath)),
+            icon: const FushiIcon(FushiIcons.forum),
+            label: Text(t.srs_gen4_report_send),
+          ),
+        ),
+        FushiPressScale(
+          child: FushiTextButton.icon(
+            key: SrsGenerationView.reportExportKey,
+            onPressed: () => unawaited(actions.export(context, reportPath)),
+            icon: FushiIcon(save ? FushiIcons.save : FushiIcons.share),
+            label: Text(
+              save ? t.srs_gen4_report_save : t.srs_gen4_report_share,
+            ),
+          ),
+        ),
       ],
     );
   }

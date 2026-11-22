@@ -81,6 +81,25 @@ class FeedbackReopenSeed {
 /// [_FeedbackComposePageState._onDisk]：磁盘上没有草稿。
 const Object _kNoDraftOnDisk = Object();
 
+/// 从别处带着现场打开提交页（例如复习库升级没通过核对：分类、标题、正文预填好，诊断报告作样本文件自动附上，
+/// 用户不用自己去私有目录里找文件——手机上也找不到）。与 [FeedbackReopenSeed] 一样不读写草稿：草稿属于用户自己写到
+/// 一半的那条新反馈，不能被预填内容覆盖，提交后也不能被顺手删掉。
+class FeedbackComposePrefill {
+  const FeedbackComposePrefill({
+    required this.category,
+    required this.title,
+    required this.body,
+    this.files = const <File>[],
+  });
+
+  final FeedbackCategory category;
+  final String title;
+  final String body;
+
+  /// 自动附上的样本文件（按 [feedbackFileProblem] 过滤，超出 [FeedbackLimits.files] 的不附）。
+  final List<File> files;
+}
+
 /// 各分类的附件默认值（反馈 SDN2yTecu9 / LmIRnau_Fa）：只有「问题」默认附带
 /// 日志与打开反馈那一刻的自动截图——它们是复现现场；建议 / 其他一般用不到，
 /// 自动截图也多半不是要配的那张，默认不带（自动截图仍可一键附上）。用户手动
@@ -93,12 +112,23 @@ bool feedbackDefaultAttachAutoShot(FeedbackCategory category) =>
     category == FeedbackCategory.bug;
 
 class FeedbackComposePage extends ConsumerStatefulWidget {
-  const FeedbackComposePage({this.initialScreenshot, this.reopenOf, super.key});
+  const FeedbackComposePage({
+    this.initialScreenshot,
+    this.reopenOf,
+    this.prefill,
+    super.key,
+  }) : assert(reopenOf == null || prefill == null);
 
   final Uint8List? initialScreenshot;
 
   /// 非空 = 基于这条已结案的反馈重新提交（不读写草稿：草稿属于普通的新反馈）。
   final FeedbackReopenSeed? reopenOf;
+
+  /// 非空 = 带着现场预填（[FeedbackComposePrefill]，不读写草稿）。
+  final FeedbackComposePrefill? prefill;
+
+  /// 这一页读写草稿：只有普通的新反馈（不是重新提交、也不是预填）。
+  bool get usesDraft => reopenOf == null && prefill == null;
 
   @override
   ConsumerState<FeedbackComposePage> createState() =>
@@ -230,15 +260,53 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       },
     );
     final FeedbackReopenSeed? seed = widget.reopenOf;
-    if (seed == null) {
-      unawaited(_loadDraft());
-    } else {
+    final FeedbackComposePrefill? prefill = widget.prefill;
+    if (seed != null) {
       _category = seed.category;
       _includeLogs = feedbackDefaultIncludeLogs(seed.category);
       _title.text = seed.title;
       _body.text = seed.body;
       unawaited(_prefillContact());
+    } else if (prefill != null) {
+      _category = prefill.category;
+      _includeLogs = feedbackDefaultIncludeLogs(prefill.category);
+      _title.text = prefill.title;
+      _body.text = prefill.body;
+      unawaited(_prefillContact());
+      unawaited(_attachPrefillFiles(prefill.files));
+    } else {
+      unawaited(_loadDraft());
     }
+  }
+
+  /// 预填的样本文件：与手选的走同一道本机检查（[feedbackFileProblem]），传不上去的原因显示在表单错误行。
+  Future<void> _attachPrefillFiles(List<File> files) async {
+    final List<({File file, int bytes})> ok = <({File file, int bytes})>[];
+    String? problem;
+    for (final File f in files) {
+      final int bytes;
+      try {
+        bytes = await f.length();
+      } on FileSystemException catch (e, st) {
+        ErrorLogService.instance.log('feedback.prefill_file', e, st);
+        problem ??= e.message;
+        continue;
+      }
+      final FeedbackFileProblem? why = feedbackFileProblem(f.path, bytes);
+      if (why != null) {
+        problem ??= feedbackFileProblemText(p.basename(f.path), why);
+        continue;
+      }
+      ok.add((file: f, bytes: bytes));
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final ({File file, int bytes}) f in ok) {
+        if (_files.length >= FeedbackLimits.files) break;
+        _files.add(f);
+      }
+      _error ??= problem;
+    });
   }
 
   /// 联系方式默认带上次提交用的那个。必须在草稿读完之后做：草稿里的联系方式（哪怕
@@ -797,8 +865,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       // 视频已挪进待传区（或已传完）：压缩产物的工作目录可以删了。
       if (identical(_staged, staged)) _staged = null;
       unawaited(staged?.discard());
-      // 重新提交不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
-      if (widget.reopenOf == null) {
+      // 重新提交 / 预填不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
+      if (widget.usesDraft) {
         try {
           await (await _service.draftStore()).clear();
         } on Object catch (e, st) {
