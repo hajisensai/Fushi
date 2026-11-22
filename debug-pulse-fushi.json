@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T01:17:21Z",
+ "generatedAt": "2026-11-22T01:41:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2f621d3d84ea96ba81428fc5abb9fd1704d9ec9c",
-  "seq": 31070
+  "sha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
+  "seq": 31071
  },
  "builds": [
   {
@@ -678,15 +678,20 @@
   }
  ],
  "pending": {
-  "headSha": "2f621d3d84ea96ba81428fc5abb9fd1704d9ec9c",
-  "headSeq": 31070,
+  "headSha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
+  "headSeq": 31071,
   "prs": [
    4027,
    3999,
    4032,
    4077
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
+    "subject": "chore(bugs): settle BUG number collisions on 2f621d3d8"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
