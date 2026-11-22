@@ -78,11 +78,6 @@ double pendoloTargetIndexAt(LyricVisualizerRuntime runtime, int timeMs) {
   );
 }
 
-/// 这一帧鼓面读的鼓击冲击：只有真鼓击（鼓 stem 就绪、不是歌词代用帧）才算；folia 没有鼓击时
-/// 时计静止。
-double pendoloDrumImpactOf(LyricVisualizerAudioFrame f) =>
-    f.drumsReady && !f.fallback ? f.drumImpact : 0;
-
 class _PendoloStage extends StatefulWidget {
   const _PendoloStage({required this.visualizer, required this.ticks});
 
@@ -230,11 +225,14 @@ class _PendoloStageState extends State<_PendoloStage> {
     }
     // 仿真鼓面：关了动效 / 暂停 / 强度 0 时静止。
     if (_c.motion && _c.playing && _tuning.drumheadStrength > 0) {
+      // 拖进度 / 首帧只对齐，跳过的鼓击不补打（folia readDrumFrame 的 seek）。
       _drum.step(
         dt,
-        pendoloDrumImpactOf(audio),
+        jump
+            ? kPendoloNoDrums
+            : pendoloDrumFrameOf(LyricVisualizerBeats.of(_c), prevMs, timeMs),
         strength: _tuning.drumheadStrength,
-        jump: jump,
+        strikeAngle: _rng.nextDouble() * 2 * math.pi,
       );
     } else if (!_drum.idle) {
       _drum.reset();
@@ -283,7 +281,7 @@ class _PendoloStageState extends State<_PendoloStage> {
     required Color secondary,
   }) {
     final String key =
-        '${line.index}|${focal ? 1 : 0}|${chorus ? 1 : 0}|'
+        '${line.position}|${focal ? 1 : 0}|${chorus ? 1 : 0}|'
         '${maxWidth.round()}|${align.index}';
     final _CachedBlock? hit = _blocks[key];
     if (hit != null) {

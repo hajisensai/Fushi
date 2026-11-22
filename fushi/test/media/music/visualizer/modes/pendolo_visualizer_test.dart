@@ -64,6 +64,39 @@ class _DrumAudio implements LyricVisualizerAudio {
   double? get bpm => null;
 
   @override
+  List<LyricVisualizerBeat> get beats => const <LyricVisualizerBeat>[];
+
+  @override
+  bool get hasBeatAccents => false;
+
+  @override
+  double get trackScale => 1;
+
+  /// 每 500 ms 一下：底鼓 / 军鼓 / 底鼓 / 镲片轮着来。
+  @override
+  List<LyricVisualizerDrumHit> get drumHits => ready
+      ? <LyricVisualizerDrumHit>[
+          for (int i = 0; i < 120; i++)
+            LyricVisualizerDrumHit(
+              timeMs: i * 500,
+              kind: const <LyricVisualizerDrumKind>[
+                LyricVisualizerDrumKind.kick,
+                LyricVisualizerDrumKind.snare,
+                LyricVisualizerDrumKind.kick,
+                LyricVisualizerDrumKind.hat,
+              ][i % 4],
+              strength: 1,
+            ),
+        ]
+      : const <LyricVisualizerDrumHit>[];
+
+  @override
+  bool get drumsReady => ready;
+
+  @override
+  List<int> get vocalOnsetsMs => const <int>[];
+
+  @override
   LyricVisualizerAudioFrame frameAt(int audioMs) => LyricVisualizerAudioFrame(
     power: 0.4,
     low: 0.9,
@@ -302,51 +335,88 @@ void main() {
       expect(pendoloWavePunch(0.8, 2), greaterThan(pendoloWavePunch(0.8, 1)));
     });
 
-    test('鼓面：鼓击上升沿点亮光晕 / 宝石 / 表盘，强击抖屏、表盘鼓起，然后归静', () {
+    test('鼓面：底鼓点亮并鼓起、强的抖屏；军鼓往敲下的方向歪；镲片只亮刻度圈；然后归静', () {
       final PendoloDrumhead d = PendoloDrumhead();
-      // 首帧只对齐。
-      expect(d.step(1 / 60, 0.9, strength: 1), isFalse);
+      expect(d.step(1 / 60, kPendoloNoDrums, strength: 1), isFalse);
       expect(d.glow, 0);
-      expect(d.step(1 / 60, 0.1, strength: 1), isFalse);
-      expect(d.step(1 / 60, 0.9, strength: 1), isTrue);
+      // 强底鼓。
+      expect(
+        d.step(1 / 60, (kick: 0.9, snare: 0, hat: 0), strength: 1),
+        isTrue,
+      );
       expect(d.glow, greaterThan(0.5));
       expect(d.jewelFlare, d.glow);
       expect(d.tickDialLight, greaterThan(0.5));
       expect(d.outerDialLight, greaterThan(0.5));
       expect(d.shake, greaterThan(0.5));
       expect(d.haloScale, greaterThan(0.8));
-      d.step(1 / 60, 0.85, strength: 1);
+      expect(d.tilt, Offset.zero);
+      d.step(1 / 60, kPendoloNoDrums, strength: 1);
       expect(d.breath, isNot(1));
       expect(d.shakeOffset(math.Random(1)), isNot(Offset.zero));
-      // 衰减中的鼓击不再触发；2 秒后一切归零。
       for (int i = 0; i < 120; i++) {
-        expect(d.step(1 / 60, 0.85 * math.exp(-i / 10), strength: 1), isFalse);
+        d.step(1 / 60, kPendoloNoDrums, strength: 1);
       }
       expect(d.idle, isTrue);
-      // 拖进度不点亮；弱击不抖屏。
-      expect(d.step(1 / 60, 0.9, strength: 1, jump: true), isFalse);
-      d.step(1 / 60, 0, strength: 1);
-      d.step(1 / 60, 0.4, strength: 1);
+      // 强军鼓：歪向敲下的方向（这里朝右），不鼓起、不抖屏。
+      expect(
+        d.step(1 / 60, (kick: 0, snare: 0.8, hat: 0), strength: 1),
+        isTrue,
+      );
+      expect(d.tilt.dx, greaterThan(5));
+      expect(d.tilt.dy.abs(), lessThan(1e-9));
+      expect(d.shake, 0);
+      expect(d.breath, 1);
+      expect(d.shakeOffset(math.Random(1)), d.tilt);
+      for (int i = 0; i < 120; i++) {
+        d.step(1 / 60, kPendoloNoDrums, strength: 1);
+      }
+      expect(d.idle, isTrue);
+      // 镲片：只亮刻度圈，光晕 / 外圈不亮。
+      expect(d.step(1 / 60, (kick: 0, snare: 0, hat: 1), strength: 1), isFalse);
+      expect(d.tickDialLight, closeTo(0.7, 1e-9));
+      expect(d.glow, 0);
+      expect(d.outerDialLight, 0);
+      // 弱底鼓不抖屏；强度 0 什么都不亮。
+      d.reset();
+      d.step(1 / 60, (kick: 0.4, snare: 0, hat: 0), strength: 1);
       expect(d.glow, greaterThan(0));
       expect(d.shake, 0);
+      d.reset();
+      expect(d.step(1 / 60, (kick: 1, snare: 1, hat: 1), strength: 0), isFalse);
+      expect(d.idle, isTrue);
     });
 
-    test('鼓面只读真鼓击：歌词代用帧 / 鼓击没就绪都不算', () {
-      expect(pendoloDrumImpactOf(_DrumAudio().frameAt(1000)), 1);
-      expect(pendoloDrumImpactOf(_DrumAudio(ready: false).frameAt(1000)), 0);
-      const LyricVisualizerAudioFrame fallback = LyricVisualizerAudioFrame(
-        power: 1,
-        low: 1,
-        mid: 1,
-        high: 1,
-        vocal: 1,
-        onset: 1,
-        beatImpact: 1,
-        downbeatImpact: 1,
-        drumImpact: 1,
-        fallback: true,
+    test('鼓面只读共享鼓击表：按类取一帧里最强的一下；没就绪 / 没音频什么都没有', () {
+      LyricVisualizerContext ctx(LyricVisualizerAudio? audio) =>
+          visualizerContextFor(
+            pendoloVisualizerEntry,
+            clock: FakeVisualizerClock(),
+            audio: audio,
+          );
+      // _DrumAudio：0 底鼓、500 军鼓、1000 底鼓、1500 镲片……
+      final PendoloDrumFrame f = pendoloDrumFrameOf(
+        LyricVisualizerBeats.of(ctx(_DrumAudio())),
+        -1,
+        1500,
       );
-      expect(pendoloDrumImpactOf(fallback), 0);
+      expect(f, (kick: 1.0, snare: 1.0, hat: 1.0));
+      expect(
+        pendoloDrumFrameOf(LyricVisualizerBeats.of(ctx(_DrumAudio())), 0, 500),
+        (kick: 0.0, snare: 1.0, hat: 0.0),
+      );
+      expect(
+        pendoloDrumFrameOf(
+          LyricVisualizerBeats.of(ctx(_DrumAudio(ready: false))),
+          -1,
+          5000,
+        ),
+        kPendoloNoDrums,
+      );
+      expect(
+        pendoloDrumFrameOf(LyricVisualizerBeats.of(ctx(null)), -1, 5000),
+        kPendoloNoDrums,
+      );
     });
 
     test('效果色：强调色提亮提饱和；灰色主题用金色', () {

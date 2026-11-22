@@ -3,8 +3,9 @@
 ///
 /// folia 现行的随拍效果只剩「仿真鼓面」：鼓 stem 的每一下鼓击就地点亮轮心光晕、宝石轴承闪光、
 /// 两圈表盘亮起，强的一下还让整个表盘鼓起、屏幕抖一下（拍点列表驱动的冲击波 / 火花 / 齿轮随拍
-/// 2026-10-17 已被 folia 退役）。Fushi 的鼓击来自共享音频帧的 `drumImpact`（击点强度 × 衰减），
-/// 这里从它的上升沿还原出每一下鼓击。纯 Dart，可单测。
+/// 2026-10-17 已被 folia 退役）。鼓击来自共享鼓击表（`LyricVisualizerBeats.drumHitsBetween`，逐下带
+/// 底鼓 / 军鼓 / 镲片与力度）：底鼓鼓起表盘、强的抖屏；军鼓偏心敲下、强的让表盘往那边歪；镲片只点亮刻度圈。
+/// 纯 Dart，可单测。
 library;
 
 import 'dart:math' as math;
@@ -159,8 +160,37 @@ double pendoloWavePunch(double accent, double strength) {
   );
 }
 
-/// 鼓击上升沿的门限：`drumImpact` 一帧里涨这么多才算新的一下（衰减中的抖动不算）。
-const double _kHitRise = 0.04;
+/// 一帧里听到的最强底鼓 / 军鼓 / 镲片力度（0 = 这一类没有；folia `DrumFrame`）。
+typedef PendoloDrumFrame = ({double kick, double snare, double hat});
+
+/// 什么都没听到。
+const PendoloDrumFrame kPendoloNoDrums = (kick: 0, snare: 0, hat: 0);
+
+/// folia `readDrumFrame`：显示时间 `(fromMs, toMs]` 里每类鼓击的最强一下。没有鼓击表（没分析 / 判为没鼓 /
+/// 歌词回落）时什么都没有——folia 没有鼓击时时计静止。
+PendoloDrumFrame pendoloDrumFrameOf(
+  LyricVisualizerBeats beats,
+  int fromMs,
+  int toMs,
+) {
+  double kick = 0;
+  double snare = 0;
+  double hat = 0;
+  for (final LyricVisualizerDrumHitEvent h in beats.drumHitsBetween(
+    fromMs,
+    toMs,
+  )) {
+    switch (h.kind) {
+      case LyricVisualizerDrumKind.kick:
+        kick = math.max(kick, h.strength);
+      case LyricVisualizerDrumKind.snare:
+        snare = math.max(snare, h.strength);
+      case LyricVisualizerDrumKind.hat:
+        hat = math.max(hat, h.strength);
+    }
+  }
+  return (kick: kick, snare: snare, hat: hat);
+}
 
 /// folia 鼓面常量。
 const double _kGlowFallSeconds = 0.15;
@@ -174,12 +204,26 @@ const double _kShakePx = 8;
 const double _kFlareDecaySeconds = 0.25;
 const double _kDialDecaySeconds = 0.45;
 
+/// folia：军鼓至少这么强才让表盘往敲下的方向歪，最多 [_kTiltPx]；歪的抖动频率与回正速度。
+const double _kTiltShare = 0.4;
+const double _kTiltPx = 10;
+const double _kTiltDecay = 9;
+const double _kTiltHz = 8;
+
+/// folia `DRUM_HAT_LIGHT`：镲片点亮刻度圈的量（× 力度 × 强度）。
+const double _kHatLight = 0.7;
+
 /// 鼓面效果的跨帧状态。
 class PendoloDrumhead {
-  double _lastImpact = 0;
-  bool _primed = false;
   double _sinceSwell = 1e9;
   double _swellAmount = 0;
+  double _sinceTilt = 1e9;
+  double _tiltAmount = 0;
+  double _tiltX = 0;
+  double _tiltY = 0;
+
+  /// 军鼓让表盘歪向的位移（px），已含抖动与回正。
+  Offset tilt = Offset.zero;
 
   /// 轮心光晕亮度（0–1，瞬间点亮、0.15 秒落下）。
   double glow = 0;
@@ -200,14 +244,16 @@ class PendoloDrumhead {
       tickDialLight <= 0 &&
       outerDialLight <= 0 &&
       shake <= 0 &&
-      breath == 1;
+      breath == 1 &&
+      tilt == Offset.zero;
 
   /// 回到静止（换歌 / 拖进度 / 关掉效果）。
   void reset() {
-    _lastImpact = 0;
-    _primed = false;
     _sinceSwell = 1e9;
     _swellAmount = 0;
+    _sinceTilt = 1e9;
+    _tiltAmount = 0;
+    tilt = Offset.zero;
     glow = 0;
     jewelFlare = 0;
     tickDialLight = 0;
@@ -216,20 +262,15 @@ class PendoloDrumhead {
     breath = 1;
   }
 
-  /// 推进一帧。[drumImpact] 是共享音频帧的鼓击冲击（0–1），[strength] 是鼓面强度（0–2）。
-  /// [jump] 为 true（拖进度 / 首帧）时只对齐，不点亮。返回这一帧有没有新的一下鼓击。
+  /// 推进一帧（folia `usePendoloBeatFx` 的鼓击分支）。[hits] 是这一帧听到的鼓击（拖进度 / 首帧由调用方
+  /// 给 [kPendoloNoDrums]），[strength] 是鼓面强度（0–2），[strikeAngle] 是这一下军鼓敲在哪个方向（弧度，
+  /// 调用方给种子随机数）。返回这一帧有没有点亮光晕的一下（底鼓或军鼓）。
   bool step(
     double dt,
-    double drumImpact, {
+    PendoloDrumFrame hits, {
     required double strength,
-    bool jump = false,
+    double strikeAngle = 0,
   }) {
-    final double impact = drumImpact.clamp(0.0, 1.0);
-    final bool hit =
-        _primed && !jump && strength > 0 && impact - _lastImpact > _kHitRise;
-    _lastImpact = impact;
-    _primed = true;
-
     glow *= math.exp(-dt / _kGlowFallSeconds);
     final double flareDecay = math.exp(-dt / _kFlareDecaySeconds * 2.3);
     jewelFlare *= flareDecay;
@@ -238,19 +279,38 @@ class PendoloDrumhead {
     outerDialLight *= dialDecay;
     shake *= math.exp(-_kShakeDecay * dt);
     _sinceSwell += dt;
+    _sinceTilt += dt;
 
-    if (hit) {
-      final double punch = pendoloWavePunch(impact, strength);
+    final double hit = strength > 0 ? math.max(hits.kick, hits.snare) : 0;
+    if (hit > 0) {
+      // 瞬间点亮、很快落下；按分贝曲线读力度，宝石与两圈表盘一起亮。
+      final double punch = pendoloWavePunch(hit, strength);
       glow = math.max(glow, punch);
       jewelFlare = math.max(jewelFlare, punch);
       tickDialLight = math.max(tickDialLight, punch);
       outerDialLight = math.max(outerDialLight, punch);
-      // Fushi 的鼓击不分底鼓 / 军鼓：每一下都按底鼓处理（鼓起），强的一下再抖屏。
-      _swellAmount = impact * strength;
-      _sinceSwell = 0;
-      if (impact >= _kShakeShare) {
-        shake = math.max(shake, math.min(1.5, impact * strength));
+      if (hits.snare > hits.kick) {
+        // 偏心敲下：表盘往那边歪。
+        if (hits.snare >= _kTiltShare) {
+          _tiltX = math.cos(strikeAngle);
+          _tiltY = math.sin(strikeAngle);
+          _tiltAmount = hits.snare * strength;
+          _sinceTilt = 0;
+        }
+      } else {
+        _swellAmount = hits.kick * strength;
+        _sinceSwell = 0;
+        if (hits.kick >= _kShakeShare) {
+          shake = math.max(shake, math.min(1.5, hits.kick * strength));
+        }
       }
+    }
+    if (strength > 0 && hits.hat > 0) {
+      // 镲片只点亮刻度圈（刻度与其下的圈）。
+      tickDialLight = math.max(
+        tickDialLight,
+        math.min(1, _kHatLight * hits.hat * strength),
+      );
     }
 
     if (glow < 0.005) glow = 0;
@@ -263,17 +323,26 @@ class PendoloDrumhead {
         math.exp(-_sinceSwell / _kBreathSeconds) *
         math.cos(2 * math.pi * _kBreathHz * _sinceSwell);
     breath = swell.abs() < 0.01 ? 1 : 1 + _kBreath * swell;
-    return hit;
+    final double lean =
+        _tiltAmount *
+        math.exp(-_kTiltDecay * _sinceTilt) *
+        math.cos(2 * math.pi * _kTiltHz * _sinceTilt);
+    tilt = lean.abs() < 0.01
+        ? Offset.zero
+        : Offset(_tiltX * _kTiltPx * lean, _tiltY * _kTiltPx * lean);
+    return hit > 0;
   }
 
   /// folia `resolvePendoloShake`：这一帧的抖屏位移（px）。
+  /// 再叠上军鼓的歪（folia：歪叠在强底鼓的抖屏上）。
   Offset shakeOffset(math.Random random) {
-    if (shake < 0.01) return Offset.zero;
+    if (shake < 0.01) return tilt;
     final double amount = _kShakePx * shake;
-    return Offset(
-      (random.nextDouble() - 0.5) * 2 * amount,
-      (random.nextDouble() - 0.5) * 2 * amount,
-    );
+    return tilt +
+        Offset(
+          (random.nextDouble() - 0.5) * 2 * amount,
+          (random.nextDouble() - 0.5) * 2 * amount,
+        );
   }
 }
 
