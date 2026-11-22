@@ -97,6 +97,12 @@
 |---|:--:|:--:|---|
 | [BUG-5218](bugs/BUG-5218-lyrics-sleeve-disc-group-tilt.md) | ✅ | ✅ | lyrics-sleeve-disc-group-tilt |
 | [BUG-5217](bugs/BUG-5217-music-sources-switch-away-notify.md) | ✅ | ✅ | music-sources-switch-away-notify |
+> 共 4542 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5236](bugs/BUG-5236-srs-gen4-restore-sort-key-single-copy.md) | ✅ | ✅ | gen4 时间线恢复比同层前身先后时只看胜出 dot 的一份副本，与缓存层的钳位证据不同（HBK-AUDIT-204） |
+| [BUG-5235](bugs/BUG-5235-srs-gen4-cache-rules-not-bumped-for-layer-inheritance.md) | ✅ | ✅ | gen4 缓存推导口径没随 BUG-5190 升级：已物化的新代库原地重开留着按卡 ID 序继承的卡片标志（HBK-AUDIT-203） |
 | [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
 | [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |
