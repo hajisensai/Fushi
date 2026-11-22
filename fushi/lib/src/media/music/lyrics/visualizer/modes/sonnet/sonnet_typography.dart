@@ -106,17 +106,24 @@ List<int> findSonnetSemiHeroSegmentIndices(
 
 /// 文字测宽（TextPainter，跨场景共享缓存，FIFO 上限 20000）。
 class SonnetTextMeasurer {
-  SonnetTextMeasurer({this.fontFamily, this.fontFamilyFallback});
+  SonnetTextMeasurer({
+    this.fontFamily,
+    this.fontFamilyFallback,
+    this.manualWeight,
+  });
 
   final String? fontFamily;
   final List<String>? fontFamilyFallback;
+
+  /// 主题指定的字重（folia `resolveSonnetRoleFontWeight` 的 configuredFontWeight）：有就压过角色字重。
+  final FontWeight? manualWeight;
   final LinkedHashMap<String, double> _cache = LinkedHashMap<String, double>();
 
   TextStyle styleFor(int weight, double size) => TextStyle(
     fontFamily: fontFamily,
     fontFamilyFallback: fontFamilyFallback,
     fontSize: size,
-    fontWeight: sonnetFontWeightOf(weight),
+    fontWeight: manualWeight ?? sonnetFontWeightOf(weight),
     height: 1.0,
   );
 

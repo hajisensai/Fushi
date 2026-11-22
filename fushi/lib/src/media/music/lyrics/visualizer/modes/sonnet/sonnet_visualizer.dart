@@ -12,6 +12,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_painter.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_scene.dart';
@@ -172,7 +173,9 @@ final LyricVisualizerEntry sonnetVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_sonnet_description,
   icon: FushiIcons.quote,
   tunings: sonnetTuningSpecs,
-  sharedBackdrop: true,
+  // folia 商籁不指定背景：画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => SonnetVisualizer(context: c),
 );
@@ -192,6 +195,7 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
   LyricVisualizerRuntime? _runtime;
   int? _seed;
   String? _meta;
+  final SonnetBeatFxReader _beatReader = SonnetBeatFxReader();
 
   @override
   void initState() {
@@ -200,7 +204,9 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
   }
 
   SonnetDirector _directorFor(LyricVisualizerContext c) {
-    final String meta = '${c.title}\u0000${c.artist}\u0000${c.album}';
+    final String meta =
+        '${c.title}\u0000${c.artist}\u0000${c.album}\u0000'
+        '${c.theme?.fontFamily}\u0000${c.theme?.fontWeight}';
     final SonnetDirector? current = _director;
     if (current != null &&
         identical(_runtime, c.runtime) &&
@@ -221,6 +227,8 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
       title: c.title,
       artist: c.artist,
       album: c.album,
+      fontFamily: c.theme?.fontFamily,
+      fontWeight: c.theme?.fontWeight,
     );
   }
 
@@ -241,6 +249,11 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
       secondary: c.palette.secondary,
       accent: c.palette.accent,
       background: c.palette.background,
+      keywords: <String, Color>{
+        for (final MapEntry<String, Color> e
+            in (c.theme?.wordColors ?? const <String, Color>{}).entries)
+          e.key.toLowerCase(): e.value,
+      },
     );
     final double dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     return LyricVisualizerFrame(
@@ -256,6 +269,9 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
             fontScale: c.fontScale,
             motion: c.motion,
             devicePixelRatio: dpr,
+            visualizer: c,
+            beatReader: _beatReader,
+            animationScale: sonnetAnimationScale(c.intensity),
           ),
         ),
       ),

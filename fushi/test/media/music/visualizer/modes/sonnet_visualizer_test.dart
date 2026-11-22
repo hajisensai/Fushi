@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_graphics.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_motion.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_program.dart';
@@ -307,6 +309,168 @@ void main() {
         tester,
         sonnetVisualizerEntry,
         timeline: const LyricTimeline(format: 'lrc', lines: <LyricLine>[]),
+      );
+    });
+  });
+
+  group('共享框架接入', () {
+    test('分词来自共享词组：拉丁词各成一词，句号粘到前一词', () {
+      final SonnetSourceLine line = _line('夜明けの空を見上げていた。Hello world', 0, 4);
+      final List<String> words = <String>[
+        for (final SonnetSegment s in buildSonnetSegments(line))
+          if (s.isWordLike) s.text,
+      ];
+      expect(words, contains('Hello'));
+      expect(words, contains('world'));
+      expect(words.any((String w) => w.endsWith('。')), isTrue);
+      // 中文无词典逐字成词（与共享分词一致）。
+      final List<SonnetSegment> zh = buildSonnetSegments(_line('我爱你', 0, 3));
+      expect(zh.where((SonnetSegment s) => s.isWordLike).length, 3);
+    });
+
+    test('副歌行 → chorus 段；Bridge 标注 → break 段；段落编号变化即断段', () {
+      SonnetSourceLine tagged(
+        String text,
+        double start, {
+        bool chorus = false,
+        String? part,
+        int? block,
+      }) {
+        final SonnetSourceLine b = _line(text, start, start + 2.4);
+        return SonnetSourceLine(
+          text: b.text,
+          start: b.start,
+          end: b.end,
+          graphemes: b.graphemes,
+          isChorus: chorus,
+          songPart: part,
+          blockIndex: block,
+        );
+      }
+
+      final List<SonnetSourceLine> lines = <SonnetSourceLine>[
+        tagged('静かな夜に歩いてた', 0, part: 'Verse', block: 0),
+        tagged('君の声を探してた', 2.5, part: 'Verse', block: 0),
+        tagged('光の中へ飛び込んで', 5, chorus: true, part: 'Chorus', block: 1),
+        tagged('永遠に歌い続けて', 7.5, chorus: true, part: 'Chorus', block: 1),
+        tagged('ひとりきりの間奏', 10, part: 'Bridge', block: 2),
+        tagged('おわりのことば', 12.5, part: 'Outro', block: 3),
+      ];
+      final SonnetProgram p = compileSonnetProgram(lines, 'tags');
+      expect(p.paragraphs.length, 4);
+      expect(p.paragraphs[1].kind, SonnetParagraphKind.chorus);
+      expect(p.paragraphs[1].boundary, SonnetParagraphBoundary.metadata);
+      expect(p.paragraphs[2].kind, SonnetParagraphKind.breakPart);
+      expect(p.paragraphs[3].kind, SonnetParagraphKind.outro);
+    });
+
+    test('随拍特效：拍上推镜、强拍撕裂与光晕，没有节拍网格时不出随拍帧', () {
+      final LyricVisualizerContext withAudio = visualizerContextFor(
+        sonnetVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      final SonnetBeatFxReader reader = SonnetBeatFxReader();
+      final SonnetBeatFxFrame onBeat = reader.read(
+        withAudio,
+        withAudio.audioFrameAt(1000),
+        1000,
+        wallTimeSec: 1,
+      )!;
+      expect(onBeat.zoom, closeTo(1.06, 1e-3));
+      expect(onBeat.rotation.abs(), greaterThan(0));
+      expect(onBeat.tear, 0);
+      final SonnetBeatFxFrame onDown = reader.read(
+        withAudio,
+        withAudio.audioFrameAt(2000),
+        2000,
+        wallTimeSec: 2,
+      )!;
+      expect(onDown.tear, closeTo(0.6, 1e-6));
+      expect(onDown.flare, closeTo(0.7, 1e-6));
+      // 相邻两拍倾斜方向相反。
+      final SonnetBeatFxFrame next = reader.read(
+        withAudio,
+        withAudio.audioFrameAt(1500),
+        1500,
+        wallTimeSec: 1.5,
+      )!;
+      expect(onBeat.rotation.sign, isNot(next.rotation.sign));
+
+      final LyricVisualizerContext noAudio = visualizerContextFor(
+        sonnetVisualizerEntry,
+        clock: FakeVisualizerClock(),
+      );
+      final LyricVisualizerAudioFrame lyric = noAudio.audioFrameAt(1200);
+      expect(lyric.fallback, isTrue);
+      expect(reader.read(noAudio, lyric, 1200, wallTimeSec: 1), isNull);
+      // 没有节拍时图标按（歌词包络代用的）频段呼吸，目标值落在 0–1。
+      expect(resolveSonnetIconAudioTarget(lyric), inInclusiveRange(0, 1));
+    });
+
+    test('小节位置、起跳包络、线条闪亮与重音塑形', () {
+      final List<int> beats = <int>[0, 500, 1000, 1500, 2000];
+      final List<int> downs = <int>[0, 2000];
+      expect(sonnetBarPosition(beats, downs, 1600), 3);
+      expect(sonnetBarPosition(beats, downs, 2100), 0);
+      expect(
+        resolveSonnetBeatFxAccent(hasAccents: true, barPosition: 3).$2,
+        0.5,
+      );
+      expect(
+        resolveSonnetBeatFxAccent(hasAccents: false, barPosition: 3).$2,
+        1,
+      );
+      expect(resolveSonnetIconOnsetPop(1.0, <double>[0.2, 1.0]), 1);
+      expect(resolveSonnetIconOnsetPop(0.1, <double>[0.2]), 0);
+      expect(resolveSonnetIconPopScale(1), closeTo(1.4, 1e-9));
+      expect(resolveSonnetLineFlashAlpha(0), 0.78);
+      expect(resolveSonnetLineFlashAlpha(1), 1);
+    });
+
+    test('主题强度倍数与关键词着色', () {
+      expect(sonnetAnimationScale(LyricVisualizerIntensity.calm), 0.65);
+      expect(sonnetAnimationScale(LyricVisualizerIntensity.normal), 1);
+      expect(sonnetAnimationScale(LyricVisualizerIntensity.chaotic), 1.35);
+      const SonnetColors c = SonnetColors(
+        primary: Color(0xFFFFFFFF),
+        secondary: Color(0xFF000000),
+        accent: Color(0xFF000000),
+        background: Color(0xFF000000),
+        keywords: <String, Color>{'hello': Color(0xFFFF0000)},
+      );
+      expect(c.keywordColorOf('Hello'), const Color(0xFFFF0000));
+      expect(c.keywordColorOf('world'), isNull);
+    });
+
+    test('背景请求：用户选的共享背景', () {
+      expect(
+        sonnetVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(sonnetVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+    });
+
+    testWidgets('有音频分析 + AI 主题（关键词 / 字重）+ 热烈强度', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        sonnetVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'Sing': Color(0xFFFF4081)},
+          fontWeight: FontWeight.w500,
+        ),
+      );
+    });
+
+    testWidgets('只有节拍网格（包络未就绪）+ 舒缓强度', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        sonnetVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        intensity: LyricVisualizerIntensity.calm,
       );
     });
   });

@@ -120,6 +120,9 @@ class SonnetCompiledLine {
     required this.end,
     required this.renderEnd,
     required this.segments,
+    this.isChorus = false,
+    this.songPart,
+    this.blockIndex,
   });
 
   /// 在 `runtime.lines` 里的下标（虚拟间奏行为负数以外的自增号）。
@@ -129,7 +132,25 @@ class SonnetCompiledLine {
   final double end;
   final double renderEnd;
   final List<SonnetSegment> segments;
+  final bool isChorus;
+  final String? songPart;
+  final int? blockIndex;
 }
+
+/// 段落标注变了（folia `metadataChanged`）：两行都有编号且不同，或都有标注且不同。
+bool _metadataChanged(SonnetCompiledLine previous, SonnetCompiledLine next) =>
+    (previous.blockIndex != null &&
+        next.blockIndex != null &&
+        previous.blockIndex != next.blockIndex) ||
+    (previous.songPart != null &&
+        next.songPart != null &&
+        previous.songPart != next.songPart);
+
+final RegExp _chorusPartRe = RegExp('chorus|副歌', caseSensitive: false);
+final RegExp _breakPartRe = RegExp(
+  'bridge|break|間奏|ブリッジ',
+  caseSensitive: false,
+);
 
 class SonnetCamera {
   const SonnetCamera(this.x, this.y, this.zoom, this.rotation);
@@ -223,12 +244,28 @@ class SonnetSourceLine {
     required this.start,
     required this.end,
     required this.graphemes,
+    this.wordRanges,
+    this.isChorus = false,
+    this.songPart,
+    this.blockIndex,
   });
 
   final String text;
   final double start;
   final double end;
   final List<SonnetGrapheme> graphemes;
+
+  /// 词组的字形区间 `[start, end)`（共享分词 `LyricVisualizerLine.segments`）；null = 现算。
+  final List<(int, int)>? wordRanges;
+
+  /// 副歌行（folia `line.isChorus`）。
+  final bool isChorus;
+
+  /// 来源的段落标注原文（folia `line.songPart`）；没有为 null。
+  final String? songPart;
+
+  /// 来源段落编号（folia `line.blockIndex`）；来源没有段落标注时为 null（段落只按空隙切）。
+  final int? blockIndex;
 }
 
 /// runtime 行 → 编译输入。没有歌词（纯音乐）时与 folia 一样生成 60 行「♪」虚拟行，
@@ -245,6 +282,7 @@ List<SonnetSourceLine> sonnetSourceLinesOf(LyricVisualizerRuntime runtime) {
         ),
     ];
   }
+  final bool sourced = runtime.hasSourceSongParts;
   return <SonnetSourceLine>[
     for (final LyricVisualizerLine l in runtime.lines)
       SonnetSourceLine(
@@ -255,6 +293,13 @@ List<SonnetSourceLine> sonnetSourceLinesOf(LyricVisualizerRuntime runtime) {
           for (final LyricVisualizerGlyph g in l.glyphs)
             SonnetGrapheme(g.text, g.startMs / 1000, g.endMs / 1000),
         ],
+        wordRanges: <(int, int)>[
+          for (final LyricVisualizerSegment s in l.segments)
+            (s.firstGlyph, s.firstGlyph + s.glyphCount),
+        ],
+        isChorus: l.isChorus,
+        songPart: l.songPartLabel,
+        blockIndex: sourced ? l.blockIndex : null,
       ),
   ];
 }
@@ -286,127 +331,58 @@ double sonnetLineRenderEnd(SonnetSourceLine line) {
 }
 
 // ---------------------------------------------------------------------------
-// 语义切词（folia 用 Intl.Segmenter；这里按文字类别切）
+// 语义切词（folia `buildSonnetSemanticSegments`：词由共享分词给出，这里只补空白 / 标点并做粘连）
 // ---------------------------------------------------------------------------
 
-enum _CharClass { space, punct, han, hiragana, katakana, hangul, letter }
-
-final RegExp _letterRe = RegExp(r'[\p{L}\p{N}\p{M}]', unicode: true);
-
-_CharClass _classOf(String ch) {
-  if (ch.trim().isEmpty) return _CharClass.space;
-  final int c = ch.runes.first;
-  if ((c >= 0x4E00 && c <= 0x9FFF) ||
-      (c >= 0x3400 && c <= 0x4DBF) ||
-      (c >= 0xF900 && c <= 0xFAFF) ||
-      (c >= 0x20000 && c <= 0x2FA1F) ||
-      c == 0x3005) {
-    return _CharClass.han;
-  }
-  if (c >= 0x3041 && c <= 0x309F) return _CharClass.hiragana;
-  if ((c >= 0x30A0 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF)) {
-    return _CharClass.katakana;
-  }
-  if (c >= 0xAC00 && c <= 0xD7AF) return _CharClass.hangul;
-  if (_letterRe.hasMatch(ch)) return _CharClass.letter;
-  return _CharClass.punct;
+/// 字形 → 共享分词的词组区间（行里没带 [SonnetSourceLine.wordRanges] 时现算）。
+List<(int, int)> _sharedWordRanges(List<SonnetGrapheme> g) {
+  final List<LyricVisualizerGlyph> glyphs = <LyricVisualizerGlyph>[
+    for (int i = 0; i < g.length; i++)
+      LyricVisualizerGlyph(
+        text: g[i].char,
+        startMs: (g[i].start * 1000).round(),
+        endMs: (g[i].end * 1000).round(),
+        syllableIndex: i,
+        isSpace: g[i].char.trim().isEmpty,
+      ),
+  ];
+  return <(int, int)>[
+    for (final LyricVisualizerSegment s in buildLyricVisualizerSegments(glyphs))
+      (s.firstGlyph, s.firstGlyph + s.glyphCount),
+  ];
 }
 
 /// 一行切成语义片段（字形下标区间 + 是否成词），再把非空白标点粘到前一段
-/// （folia `buildSonnetSemanticSegments` 的 sticky 规则）。
-///
-/// CJK 没有词典切分：汉字串 ≤3 字成一词、更长按两字一词，后面最多带两个平假名（送假名 /
-/// 助词）；片假名串、谚文串、拉丁词各自成词；平假名串 ≤4 字成一词、更长三字一切。
+/// （folia `buildSonnetSemanticSegments` 的 sticky 规则）。词组来自共享分词
+/// （`LyricVisualizerLine.segments`）；词组之间的空白 / 孤立标点补成非词片段，整行不丢字。
 List<SonnetSegment> buildSonnetSegments(SonnetSourceLine line) {
   final List<SonnetGrapheme> g = line.graphemes;
   final int n = g.length;
-  final List<_CharClass> cls = <_CharClass>[
-    for (final SonnetGrapheme x in g) _classOf(x.char),
-  ];
+  final List<(int, int)> words = line.wordRanges ?? _sharedWordRanges(g);
   final List<(int, int, bool)> parts = <(int, int, bool)>[];
-  int runEnd(int from, bool Function(_CharClass c) test) {
-    int j = from;
-    while (j < n && test(cls[j])) {
-      j++;
+  int cursor = 0;
+  void gapUntil(int to) {
+    // 词组之间的空白与标点：空白、非空白各成一段。
+    while (cursor < to) {
+      final bool space = g[cursor].char.trim().isEmpty;
+      int j = cursor;
+      while (j < to && g[j].char.trim().isEmpty == space) {
+        j++;
+      }
+      parts.add((cursor, j, false));
+      cursor = j;
     }
-    return j;
   }
 
-  int takeHiragana(int from, int max) {
-    int j = from;
-    while (j < n && j - from < max && cls[j] == _CharClass.hiragana) {
-      j++;
-    }
-    return j;
+  for (final (int a, int b) in words) {
+    final int s = a.clamp(0, n);
+    final int e = b.clamp(s, n);
+    if (e <= cursor) continue;
+    gapUntil(math.max(cursor, s));
+    parts.add((math.max(cursor, s), e, true));
+    cursor = e;
   }
-
-  int i = 0;
-  while (i < n) {
-    final _CharClass c = cls[i];
-    switch (c) {
-      case _CharClass.space:
-        final int j = runEnd(i, (_CharClass x) => x == _CharClass.space);
-        parts.add((i, j, false));
-        i = j;
-      case _CharClass.punct:
-        final int j = runEnd(i, (_CharClass x) => x == _CharClass.punct);
-        parts.add((i, j, false));
-        i = j;
-      case _CharClass.letter:
-        int j = i;
-        while (j < n) {
-          if (cls[j] == _CharClass.letter) {
-            j++;
-          } else if ((g[j].char == "'" || g[j].char == '’') &&
-              j + 1 < n &&
-              cls[j + 1] == _CharClass.letter) {
-            j++;
-          } else {
-            break;
-          }
-        }
-        parts.add((i, j, true));
-        i = j;
-      case _CharClass.hangul:
-      case _CharClass.katakana:
-        final int j = runEnd(i, (_CharClass x) => x == c);
-        parts.add((i, j, true));
-        i = j;
-      case _CharClass.han:
-        final int j = runEnd(i, (_CharClass x) => x == _CharClass.han);
-        final int len = j - i;
-        if (len <= 3) {
-          final int end = takeHiragana(j, 2);
-          parts.add((i, end, true));
-          i = end;
-        } else {
-          int k = i;
-          while (k < j) {
-            final int chunkEnd = math.min(j, k + 2);
-            final bool last = chunkEnd >= j;
-            final int end = last ? takeHiragana(chunkEnd, 2) : chunkEnd;
-            parts.add((k, end, true));
-            k = end;
-          }
-          i = k;
-        }
-      case _CharClass.hiragana:
-        final int j = runEnd(i, (_CharClass x) => x == _CharClass.hiragana);
-        final int len = j - i;
-        if (len <= 4) {
-          parts.add((i, j, true));
-        } else {
-          int k = i;
-          while (k < j) {
-            int end = math.min(j, k + 3);
-            if (j - end == 1) end = j;
-            parts.add((k, end, true));
-            k = end;
-          }
-        }
-        i = j;
-    }
-  }
+  gapUntil(n);
 
   final List<SonnetSegment> out = <SonnetSegment>[];
   for (final (int s, int e, bool word) in parts) {
@@ -510,7 +486,17 @@ SonnetParagraphKind _classify(
   int index,
   int total,
 ) {
-  // Fushi 的歌词没有段落标记（副歌 / 间奏），这两类只能靠时长与字数推断。
+  if (lines.any(
+    (SonnetCompiledLine l) =>
+        l.isChorus || _chorusPartRe.hasMatch(l.songPart ?? ''),
+  )) {
+    return SonnetParagraphKind.chorus;
+  }
+  if (lines.any(
+    (SonnetCompiledLine l) => _breakPartRe.hasMatch(l.songPart ?? ''),
+  )) {
+    return SonnetParagraphKind.breakPart;
+  }
   if (index == total - 1) return SonnetParagraphKind.outro;
   final double duration = lines.last.renderEnd - lines.first.start;
   int segmentCount = 0;
@@ -658,6 +644,9 @@ SonnetProgram compileSonnetProgram(List<SonnetSourceLine> lines, String seed) {
           ),
         ),
         segments: buildSonnetSegments(lines[i]),
+        isChorus: lines[i].isChorus,
+        songPart: lines[i].songPart,
+        blockIndex: lines[i].blockIndex,
       ),
   ];
   final double threshold = resolveSonnetParagraphGapThreshold(lines);
@@ -670,9 +659,16 @@ SonnetProgram compileSonnetProgram(List<SonnetSourceLine> lines, String seed) {
     final SonnetCompiledLine line = compiled[i];
     final SonnetCompiledLine? previous = i > 0 ? compiled[i - 1] : null;
     final double gap = previous == null ? 0 : line.start - previous.renderEnd;
-    if (previous != null && gap >= threshold && current.lines.isNotEmpty) {
+    final SonnetParagraphBoundary? boundary = previous == null
+        ? null
+        : _metadataChanged(previous, line)
+        ? SonnetParagraphBoundary.metadata
+        : gap >= threshold
+        ? SonnetParagraphBoundary.timeGap
+        : null;
+    if (boundary != null && current.lines.isNotEmpty) {
       drafts.addAll(_splitOversized(current));
-      current = _Draft(<SonnetCompiledLine>[], SonnetParagraphBoundary.timeGap);
+      current = _Draft(<SonnetCompiledLine>[], boundary);
     }
     current.lines.add(line);
   }

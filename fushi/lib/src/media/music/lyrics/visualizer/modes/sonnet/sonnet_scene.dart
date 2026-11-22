@@ -5,6 +5,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_decor.dart';
@@ -115,6 +116,7 @@ class SonnetColors {
     required this.secondary,
     required this.accent,
     required this.background,
+    this.keywords = const <String, Color>{},
   });
 
   final Color primary;
@@ -122,16 +124,30 @@ class SonnetColors {
   final Color accent;
   final Color background;
 
+  /// 主题关键词着色（folia `theme.wordColors`），键已小写。
+  final Map<String, Color> keywords;
+
+  /// 片段整词命中关键词时的颜色（folia：`word.toLowerCase() === segment.text.toLowerCase()`）。
+  Color? keywordColorOf(String text) =>
+      keywords.isEmpty ? null : keywords[text.toLowerCase()];
+
   @override
   bool operator ==(Object other) =>
       other is SonnetColors &&
       other.primary == primary &&
       other.secondary == secondary &&
       other.accent == accent &&
+      mapEquals(other.keywords, keywords) &&
       other.background == background;
 
   @override
-  int get hashCode => Object.hash(primary, secondary, accent, background);
+  int get hashCode => Object.hash(
+    primary,
+    secondary,
+    accent,
+    background,
+    Object.hashAllUnordered(keywords.keys),
+  );
 }
 
 /// 发光强度：颜色最亮通道 110→160 之间平滑升到 1（暗色不发光，folia `resolveGlowColorStrength`）。
@@ -648,7 +664,10 @@ SonnetSegmentView _buildSegmentView({
   final bool emphasis = isSonnetEmphasisRole(role);
   final bool isDecoration = role == SonnetSegmentRole.decoration;
   final Color body = colors.primary;
-  final Color glowColor = emphasis ? colors.primary : colors.accent;
+  // 发光 / 描边用关键词色，否则强调词用字色、陪衬词用强调色。
+  final Color glowColor =
+      colors.keywordColorOf(segment.text) ??
+      (emphasis ? colors.primary : colors.accent);
   final int weight = sonnetRoleFontWeight(role);
   final SonnetRng depthRng = SonnetRng(normalSeed ^ 0x5a17);
   final double zDepth = isDecoration
@@ -680,7 +699,7 @@ SonnetSegmentView _buildSegmentView({
               : null,
         );
   final String styleKey =
-      '$weight|${fontSize.toStringAsFixed(2)}|${isDecoration ? 'd' : 'b'}|${glowStrength.toStringAsFixed(2)}';
+      '$weight|${fontSize.toStringAsFixed(2)}|${isDecoration ? 'd' : 'b'}|${glowStrength.toStringAsFixed(2)}|${glowColor.toARGB32()}';
   final bool isSemi = role == SonnetSegmentRole.semiHero;
   final TextStyle? ghostStyle = isSemi
       ? base.copyWith(

@@ -9,8 +9,10 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_decor.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_mg.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_motion.dart';
@@ -26,7 +28,13 @@ class SonnetDirector {
     this.title,
     this.artist,
     this.album,
-  }) : finalEnd = _finalEndOf(program);
+    String? fontFamily,
+    FontWeight? fontWeight,
+  }) : finalEnd = _finalEndOf(program),
+       measurer = SonnetTextMeasurer(
+         fontFamily: fontFamily,
+         manualWeight: fontWeight,
+       );
 
   final LyricVisualizerRuntime runtime;
   final SonnetProgram program;
@@ -37,7 +45,7 @@ class SonnetDirector {
   /// 末句结束（秒）；纯音乐的虚拟「♪」行不触发片尾。
   final double finalEnd;
 
-  final SonnetTextMeasurer measurer = SonnetTextMeasurer();
+  final SonnetTextMeasurer measurer;
   final Map<int, SonnetSceneView> _scenes = <int, SonnetSceneView>{};
   SonnetSceneInputs? _inputs;
   final List<TextPainter> _poster = <TextPainter>[];
@@ -199,6 +207,9 @@ class SonnetPainter extends CustomPainter {
     required this.fontScale,
     required this.motion,
     required this.devicePixelRatio,
+    required this.visualizer,
+    required this.beatReader,
+    this.animationScale = 1,
   }) : super(repaint: ticks);
 
   final SonnetDirector director;
@@ -208,6 +219,15 @@ class SonnetPainter extends CustomPainter {
   final double fontScale;
   final bool motion;
   final double devicePixelRatio;
+
+  /// 样式输入（取音频帧 / 节拍网格）。
+  final LyricVisualizerContext visualizer;
+
+  /// 随拍特效读取器（持有高频平滑状态，跨帧复用）。
+  final SonnetBeatFxReader beatReader;
+
+  /// 主题强度倍数（folia `resolveSonnetAnimationScale`）：乘在镜头与字效上。
+  final double animationScale;
 
   static final Paint _paint = Paint();
 
@@ -230,7 +250,7 @@ class SonnetPainter extends CustomPainter {
       scene.paragraph.shots,
       time,
     );
-    final SonnetTransitionFrame transition = motion
+    final SonnetTransitionFrame baseTransition = motion
         ? resolveSonnetSceneTransition(
             program,
             index,
@@ -243,7 +263,25 @@ class SonnetPainter extends CustomPainter {
       time,
       director.finalEnd,
     );
-    final double pulse = director.runtime.pulseAt(timeMs);
+    final LyricVisualizerAudioFrame audio = visualizer.audioFrameAt(timeMs);
+    final SonnetBeatFxFrame? beatFx = motion
+        ? beatReader.read(
+            visualizer,
+            audio,
+            timeMs,
+            wallTimeSec: ticks.value.elapsed,
+          )
+        : null;
+    // 强拍撕裂与转场故障条共用一个滤镜，取大者（folia `beatTearWins`）。
+    final SonnetTransitionFrame transition =
+        beatFx != null && beatFx.tear > baseTransition.glitch
+        ? SonnetTransitionFrame(
+            alpha: baseTransition.alpha,
+            blur: baseTransition.blur,
+            glitch: beatFx.tear,
+            glitchSeed: beatFx.tearSeed / 997,
+          )
+        : baseTransition;
 
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas sc = Canvas(recorder);
@@ -254,7 +292,8 @@ class SonnetPainter extends CustomPainter {
         scene.shots[shotIndex.clamp(0, scene.shots.length - 1)],
         time,
         size,
-        pulse,
+        audio,
+        beatFx,
       );
     }
     final ui.Picture picture = recorder.endRecording();
@@ -415,13 +454,14 @@ class SonnetPainter extends CustomPainter {
     SonnetShotView view,
     double time,
     Size size,
-    double pulse,
+    LyricVisualizerAudioFrame audio,
+    SonnetBeatFxFrame? beatFx,
   ) {
     final SonnetShot shot = view.shot;
     final double w = size.width;
     final double h = size.height;
-    final double typo = motion ? settings.typographyMotion : 0;
-    final double cam = motion ? settings.cameraIntensity : 0;
+    final double typo = motion ? settings.typographyMotion * animationScale : 0;
+    final double cam = motion ? settings.cameraIntensity * animationScale : 0;
     final bool onlyText = settings.showOnlyText;
     _prepareTracking(view);
 
@@ -429,15 +469,33 @@ class SonnetPainter extends CustomPainter {
       shot.kind,
       resolveSonnetShotProgress(shot, time),
     );
+    // 镜头结束后的空档里沿镜头末段的方向继续慢慢漂（folia gap drift），画面不至于定住。
+    final double gapTime = math.max(0, time - shot.end);
+    if (gapTime > 0 && motion) {
+      final SonnetMotionFrame tail = resolveSonnetShotMotionFrame(
+        shot.kind,
+        0.8,
+      );
+      final double drift = (1 - math.exp(-gapTime * 0.4)) * 2.0;
+      frame
+        ..x += (frame.x - tail.x) * drift
+        ..y += (frame.y - tail.y) * drift
+        ..scale += (frame.scale - tail.scale) * drift
+        ..rotation += (frame.rotation - tail.rotation) * drift;
+    }
     final double phase = (hashSonnetSeed(shot.id) % 1024) / 1024 * math.pi * 2;
     final SonnetMotionFrame breath = resolveSonnetCameraBreath(time, phase);
     final double bw = resolveSonnetBreathWeight(time, view.revealDone);
     final double dx = (frame.x + breath.x * bw) * w * cam;
     final double dy = (frame.y + breath.y * bw) * h * cam;
+    // 随拍推镜：绕跟焦点缩放，倾斜左右交替（外框不跟着动）。
     final double scale =
-        shot.camera.zoom * (1 + (frame.scale - 1 + breath.scale * bw) * cam);
+        shot.camera.zoom *
+        (1 + (frame.scale - 1 + breath.scale * bw) * cam) *
+        (beatFx?.zoom ?? 1);
     final double rotation =
-        (shot.camera.rotation + frame.rotation + breath.rotation * bw) * cam;
+        (shot.camera.rotation + frame.rotation + breath.rotation * bw) * cam +
+        (beatFx?.rotation ?? 0);
     double pivotX = view.basePivotX;
     double pivotY = view.basePivotY;
     if (cam > 0 && shot.kind != SonnetShotKind.posterBlocks) {
@@ -466,6 +524,30 @@ class SonnetPainter extends CustomPainter {
         ? sonnetClamp01((time - shot.start) / drawDuration)
         : 1;
     final Offset center = Offset(w / 2, h / 2);
+    // 图标：随拍帧时随词起跳，否则按频段呼吸（folia `sonnetShotMg.updateTime`）。
+    if (beatFx == null) {
+      final double target = resolveSonnetIconAudioTarget(audio);
+      view.smoothedIconAudio +=
+          (target - view.smoothedIconAudio) *
+          (target > view.smoothedIconAudio ? 0.34 : 0.16);
+    }
+    final double? onsetK = beatFx == null
+        ? null
+        : resolveSonnetIconOnsetPop(time, shot.cueTimes);
+    // MG 线条随高频闪亮。
+    final bool flash = beatFx != null && !onlyText;
+    if (flash) {
+      canvas.saveLayer(
+        null,
+        Paint()
+          ..color = Color.fromRGBO(
+            0,
+            0,
+            0,
+            resolveSonnetLineFlashAlpha(beatFx.lineLift),
+          ),
+      );
+    }
     if (!onlyText) {
       if (settings.showBackgroundMg) {
         canvas.save();
@@ -473,7 +555,6 @@ class SonnetPainter extends CustomPainter {
         view.bg.paint(canvas, mg);
         canvas.restore();
       }
-      view.smoothedIconAudio += (pulse - view.smoothedIconAudio) * 0.2;
       canvas.save();
       canvas.translate(center.dx + dx * 0.4, center.dy + dy * 0.4);
       canvas.rotate(motion ? (time - shot.start) * 0.05 * cam : 0);
@@ -486,10 +567,21 @@ class SonnetPainter extends CustomPainter {
         fixed.paint(canvas, mg);
         canvas.restore();
       }
-      if (settings.showBackgroundDecor) _paintParticles(canvas, view, time, mg);
+      if (settings.showBackgroundDecor) {
+        _paintParticles(canvas, view, time, mg, onsetK);
+      }
       canvas.restore();
     }
+    if (flash) canvas.restore();
 
+    final double flare = beatFx?.flare ?? 0;
+    final bool flaring = flare > 0.02 && !onlyText;
+    final Canvas outer = canvas;
+    ui.PictureRecorder? textRecorder;
+    if (flaring) {
+      textRecorder = ui.PictureRecorder();
+      canvas = Canvas(textRecorder);
+    }
     canvas.save();
     canvas.translate(view.baseX + dx, view.baseY + dy);
     canvas.rotate(rotation);
@@ -521,6 +613,26 @@ class SonnetPainter extends CustomPainter {
       }
     }
     canvas.restore();
+    if (textRecorder != null) {
+      // 强拍光晕增亮（folia 光晕层 alpha 抬高）：文字层再叠一份模糊的滤色副本。
+      final ui.Picture text = textRecorder.endRecording();
+      outer.drawPicture(text);
+      final double sigma = math.max(6, 18 * fontScale);
+      outer.saveLayer(
+        null,
+        Paint()
+          ..blendMode = BlendMode.screen
+          ..color = Color.fromRGBO(0, 0, 0, flare.clamp(0.0, 1.0))
+          ..imageFilter = ui.ImageFilter.blur(
+            sigmaX: sigma,
+            sigmaY: sigma,
+            tileMode: TileMode.decal,
+          ),
+      );
+      outer.drawPicture(text);
+      outer.restore();
+      text.dispose();
+    }
   }
 
   void _paintParticles(
@@ -528,6 +640,7 @@ class SonnetPainter extends CustomPainter {
     SonnetShotView view,
     double time,
     double mg,
+    double? onsetK,
   ) {
     final double dur = math.max(0.001, view.shot.end - view.shot.start);
     final double audio = view.smoothedIconAudio.clamp(0.0, 1.0);
@@ -547,9 +660,26 @@ class SonnetPainter extends CustomPainter {
         k = sonnetClamp01((time - view.shot.start - delay) / entry);
       }
       if (k <= 0) continue;
+      final double loopPulse = motion
+          ? (math.sin((time - view.shot.start) * math.pi * 0.7 + p.phase) + 1) *
+                0.5
+          : 0;
+      final double audioScale = onsetK != null
+          ? resolveSonnetIconPopScale(onsetK)
+          : 1 + audio * 0.42;
+      final double alphaLift = onsetK != null
+          ? 0.86 + onsetK * 0.24
+          : 0.72 + audio * 0.38;
       final double s =
-          (motion ? easeSonnetElasticOut(k) : 1) * (1 + audio * 0.18);
-      paintSonnetParticle(canvas, p, scale: s, alphaMul: k);
+          (motion ? easeSonnetElasticOut(k) : 1) *
+          audioScale *
+          (1 + loopPulse * 0.025);
+      paintSonnetParticle(
+        canvas,
+        p,
+        scale: s,
+        alphaMul: math.min(1, k * (alphaLift + loopPulse * 0.03)),
+      );
     }
   }
 
