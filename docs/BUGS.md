@@ -37,6 +37,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5174](bugs/BUG-5174-tag-chip-mouse-drag-scrolls-long-press-reorders.md) | ✅ | ✅ | 标签 chip 上鼠标按住拖只能重排、不能横滚标签条（鼠标也应长按才重排） |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
 | [BUG-5175](bugs/BUG-5175-popup-scan-delay-ignored.md) | ✅ | ✅ | 浏览器扩展词典弹窗内悬停扫词不认扫描延迟（侧栏 / 嵌套弹窗连触发键也不认） |
 > 共 4491 条。点号进各自文件。
 
