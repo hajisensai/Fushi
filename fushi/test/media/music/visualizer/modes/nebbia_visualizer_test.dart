@@ -425,6 +425,16 @@ void main() {
         nebbiaVocalCoverageEnd(withVocal, nebbiaVocalOnsetsOf(withVocal)),
         double.infinity,
       );
+      // 人声分离还在推进：契约给出覆盖到的位置，之后走词（加歌词偏移换成歌曲秒）。
+      final LyricVisualizerContext partial = visualizerContextFor(
+        nebbiaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(vocalCoveredUntilMs: 42000),
+      );
+      expect(
+        nebbiaVocalCoverageEnd(partial, nebbiaVocalOnsetsOf(partial)),
+        closeTo((42000 + partial.offsetMs) / 1000, 1e-9),
+      );
     });
 
     test('bumps shake then settle', () {

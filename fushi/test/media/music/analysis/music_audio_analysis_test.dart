@@ -55,6 +55,7 @@ void main() {
       expect(a.trackScale, 0.75);
       expect(a.stemsPartial, isFalse);
       expect(a.stemsUntilMs, 0);
+      expect(a.vocalCoveredUntilMs, isNull);
       expect(a.beatImpact(0), 1.0);
       expect(a.beatImpact(1), closeTo(0.2, 0.01));
       expect(a.beatImpact(3), 0.0);

@@ -308,6 +308,10 @@ abstract interface class LyricVisualizerAudio {
   /// 人声起音（音频时间毫秒，升序；只有人声分轨时有，否则为空）。
   List<int> get vocalOnsetsMs;
 
+  /// [vocalOnsetsMs] 覆盖到的音频时刻（毫秒）：人声分离还在从头往后推进时是已分到的位置，
+  /// 之后的部分还没有人声起音（样式应退回词的开唱时刻，同 folia）。null = 整首都已覆盖（或没有分离）。
+  int? get vocalCoveredUntilMs;
+
   /// 包络（power / 频段）已就绪。为 false 时 `audioFrameAt` 回落到歌词包络。
   bool get envelopeReady;
 

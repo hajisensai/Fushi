@@ -10,7 +10,14 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime
 
 /// 合成的音频分析（120 BPM、每 4 拍一个强拍、响度按拍起伏）：给样式测试「有音频」分支用。
 class SyntheticVisualizerAudio implements LyricVisualizerAudio {
-  SyntheticVisualizerAudio({this.envelopeReady = true, this.beatsReady = true});
+  SyntheticVisualizerAudio({
+    this.envelopeReady = true,
+    this.beatsReady = true,
+    this.vocalCoveredUntilMs,
+  });
+
+  @override
+  final int? vocalCoveredUntilMs;
 
   @override
   final bool envelopeReady;

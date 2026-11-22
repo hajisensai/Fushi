@@ -335,6 +335,9 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   @override
   final Int32List vocalOnsetsMs;
 
+  @override
+  int? get vocalCoveredUntilMs => stemsPartial ? stemsUntilMs : null;
+
   /// 拍点来自模型。
   bool get beatsFromModel => flags & MusicAudioAnalysisFlags.beatsModel != 0;
 

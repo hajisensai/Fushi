@@ -14,7 +14,6 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/music/analysis/music_audio_analysis.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_chars.dart';
@@ -46,16 +45,14 @@ List<(double, double)> nebbiaVocalOnsetsOf(LyricVisualizerContext c) =>
     ];
 
 /// 人声起音覆盖到哪一秒（歌曲秒）：没有人声起音为 −∞（整首走词）；人声分离还在跑
-/// （`MusicAudioAnalysis.stemsPartial`）时是分离已覆盖到的时刻，之后走词；分完为 +∞。
+/// （[LyricVisualizerAudio.vocalCoveredUntilMs]）时是分离已覆盖到的时刻，之后走词；分完为 +∞。
 double nebbiaVocalCoverageEnd(
   LyricVisualizerContext c,
   List<(double, double)> onsets,
 ) {
   if (onsets.isEmpty) return double.negativeInfinity;
-  final LyricVisualizerAudio? a = c.audio;
-  if (a is MusicAudioAnalysis && a.stemsPartial) {
-    return (a.stemsUntilMs + c.offsetMs) / 1000;
-  }
+  final int? until = c.audio?.vocalCoveredUntilMs;
+  if (until != null) return (until + c.offsetMs) / 1000;
   return double.infinity;
 }
 

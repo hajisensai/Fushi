@@ -97,6 +97,9 @@ class _DrumAudio implements LyricVisualizerAudio {
   List<int> get vocalOnsetsMs => const <int>[];
 
   @override
+  int? get vocalCoveredUntilMs => null;
+
+  @override
   LyricVisualizerAudioFrame frameAt(int audioMs) => LyricVisualizerAudioFrame(
     power: 0.4,
     low: 0.9,

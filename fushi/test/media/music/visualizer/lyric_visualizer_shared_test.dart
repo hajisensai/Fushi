@@ -82,6 +82,9 @@ class _FakeAudio implements LyricVisualizerAudio {
 
   @override
   List<int> get vocalOnsetsMs => const <int>[];
+
+  @override
+  int? get vocalCoveredUntilMs => null;
 }
 
 void main() {
