@@ -479,16 +479,24 @@ Future<Map<String, Object?>> regenerateMangaCharacterLines(
       expectSeed: seeds[l.lineId],
     );
   }
+  final List<TtsRenderLineRequest> requests = <TtsRenderLineRequest>[
+    for (final MapEntry<String, int> e in seeds.entries)
+      TtsRenderLineRequest(lineId: e.key, seed: e.value),
+  ];
   final TtsRenderJob job = await deps.renderQueue().enqueue(
     bookKey: bookKey,
     title: volume.row.title.isEmpty ? bookKey : volume.row.title,
     presetId: voice,
     kind: TtsRenderJobKind.manga,
-    lineRequests: <TtsRenderLineRequest>[
-      for (final MapEntry<String, int> e in seeds.entries)
-        TtsRenderLineRequest(lineId: e.key, seed: e.value),
-    ],
+    lineRequests: requests,
   );
+  // 入口的 requireNotRendering 与这里之间（逐句备份旧音频要花时间）别处可能已排上这一
+  // 卷的任务：enqueue 遇到同卷未结束的任务会原样返回它、不排我们的。那不是这次的批量
+  // 重生成——既不能报成功，也不能把它的 ID 记进撤销快照（撤销会把别人的整卷生成取消掉）。
+  if (!_isRerollJob(job, requests)) {
+    await backup.discard();
+    throw const CtlFailure.conflict('这一卷正在生成，等它结束或先取消（tts render-cancel）');
+  }
   final String? backupName = await backup.commit(jobId: job.id);
   return <String, Object?>{
     'taskId': ttsMangaWireKey(bookKey),
@@ -499,6 +507,21 @@ Future<Map<String, Object?>> regenerateMangaCharacterLines(
     'render': ttsRenderJobJson(job),
     'backup': ?backupName,
   };
+}
+
+/// [job] 是不是按 [requests] 新排的这次批量重生成（而不是 enqueue 原样返回的、同卷别处
+/// 排的任务）：逐句比行 ID 与种子（种子是这次随机取的）。
+bool _isRerollJob(TtsRenderJob job, List<TtsRenderLineRequest> requests) {
+  if (job.kind != TtsRenderJobKind.manga ||
+      job.lineRequests.length != requests.length) {
+    return false;
+  }
+  for (int i = 0; i < requests.length; i++) {
+    final TtsRenderLineRequest a = job.lineRequests[i];
+    final TtsRenderLineRequest b = requests[i];
+    if (a.lineId != b.lineId || a.seed != b.seed) return false;
+  }
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

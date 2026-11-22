@@ -208,6 +208,7 @@ void main() {
   late MangaAnnotateTasks tasks;
   late TtsRenderQueue queue;
   late _HangingRunner renderRunner;
+  late TtsRenderQueue Function() queueOf;
   late bool consent;
   late List<({String lineId, int seed})> regenerated;
   late List<CtlRoute> routes;
@@ -310,6 +311,7 @@ void main() {
     annotator = _FakeAnnotator(model);
     tasks = MangaAnnotateTasks(runner: annotator.call);
     renderRunner = _HangingRunner();
+    queueOf = () => queue;
     queue = TtsRenderQueue(
       store: File(p.join(tmp.path, 'jobs.json')),
       workRoot: Directory(p.join(tmp.path, 'work')),
@@ -323,7 +325,7 @@ void main() {
       TtsCtlDeps(
         app: () => model,
         annotateTasks: () => tasks,
-        renderQueue: () => queue,
+        renderQueue: () => queueOf(),
         provider: () => AiProviderConfig(
           id: 'p1',
           presetId: 'openai',
@@ -1221,6 +1223,45 @@ void main() {
       ),
       coded(409, 'manga_audio_external'),
     );
+  });
+
+  test('按角色批量重生成：门检查之后别处排上了这一卷的任务 → 409，不记撤销、撤销也不取消别人的任务', () async {
+    await writeRendered();
+    // 入口的「没在生成」检查看到的是空队列；轮到排队时这一卷已有别处排的整卷生成——
+    // enqueue 原样返回那个任务、不排这次的批量重生成。
+    final _HangingRunner otherRunner = _HangingRunner();
+    final TtsRenderQueue busy = TtsRenderQueue(
+      store: File(p.join(tmp.path, 'jobs-busy.json')),
+      workRoot: Directory(p.join(tmp.path, 'work-busy')),
+      runner: otherRunner,
+    );
+    final TtsRenderJob other = await busy.enqueue(
+      bookKey: bookKey,
+      title: 'vol',
+      presetId: 'v1',
+      kind: TtsRenderJobKind.manga,
+    );
+    await until(() => otherRunner.runs == 1);
+    int calls = 0;
+    queueOf = () => ++calls == 1 ? queue : busy;
+    await expectLater(
+      call(
+        'POST',
+        '$item/characters/:name/regenerate',
+        params: <String, String>{'key': wire, 'name': '太郎'},
+      ),
+      failure(409),
+    );
+    final Directory backups = mangaCtlBackupDir(model, bookKey);
+    expect(
+      backups.existsSync() ? backups.listSync() : const <FileSystemEntity>[],
+      isEmpty,
+    );
+    expect(busy.latestFor(bookKey)!.id, other.id);
+    expect(busy.latestFor(bookKey)!.isTerminal, isFalse);
+    await busy.cancel(other.id);
+    await until(() => busy.latestFor(bookKey)!.isTerminal);
+    await busy.close();
   });
 
   test('按角色批量重生成：预检列句子与跳过原因；排进队列；撤销取消任务、放回已换的句子', () async {
