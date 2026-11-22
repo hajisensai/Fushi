@@ -343,34 +343,49 @@ class MangaScriptLine {
     String? speaker,
     CastLineKind? kind,
     int? beatMs,
+    CastEmotion? emotion,
+    int? intensity,
     int? seed,
     Map<int, String>? textFixes,
     TtsCastSource? source,
     MangaLineAudioSource? audio,
     String? voice,
     String? say,
+    bool clearEmotion = false,
+    bool clearIntensity = false,
     bool clearVoice = false,
     bool clearSay = false,
     bool clearSeed = false,
-  }) => MangaScriptLine(
-    page: page,
-    blocks: blocks ?? this.blocks,
-    speaker: speaker ?? this.speaker,
-    kind: kind ?? this.kind,
-    beatMs: beatMs ?? this.beatMs,
-    emotion: emotion,
-    intensity: intensity,
-    rateOffset: rateOffset,
-    pitchOffset: pitchOffset,
-    volumeOffset: volumeOffset,
-    seed: clearSeed ? null : seed ?? this.seed,
-    textFixes: textFixes ?? this.textFixes,
-    source: source ?? this.source,
-    confidence: confidence,
-    audio: audio ?? this.audio,
-    voice: clearVoice ? null : voice ?? this.voice,
-    say: clearSay ? null : say ?? this.say,
-  );
+  }) {
+    // 强度只跟着情绪有意义：没有情绪时一并清掉（与 [CastLineDirection.fromJson] 同口径）。
+    final CastEmotion? nextEmotion = clearEmotion
+        ? null
+        : emotion ?? this.emotion;
+    return MangaScriptLine(
+      page: page,
+      blocks: blocks ?? this.blocks,
+      speaker: speaker ?? this.speaker,
+      kind: kind ?? this.kind,
+      beatMs: beatMs ?? this.beatMs,
+      emotion: nextEmotion,
+      intensity: nextEmotion == null || clearIntensity
+          ? null
+          : (intensity ?? this.intensity)?.clamp(
+              0,
+              CastLineLimits.maxIntensity,
+            ),
+      rateOffset: rateOffset,
+      pitchOffset: pitchOffset,
+      volumeOffset: volumeOffset,
+      seed: clearSeed ? null : seed ?? this.seed,
+      textFixes: textFixes ?? this.textFixes,
+      source: source ?? this.source,
+      confidence: confidence,
+      audio: audio ?? this.audio,
+      voice: clearVoice ? null : voice ?? this.voice,
+      say: clearSay ? null : say ?? this.say,
+    );
+  }
 
   Map<String, Object?> toJson() => <String, Object?>{
     'p': page,

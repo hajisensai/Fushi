@@ -15,7 +15,11 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart'
-    show MangaRenderItem, mangaCandidateFileName, mangaLocalAudioSourcePath;
+    show
+        MangaRenderItem,
+        mangaCandidateFileName,
+        mangaLocalAudioSourcePath,
+        mangaStagedFileName;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -348,10 +352,11 @@ void main() {
             }) async {
               regenerated.add((lineId: lineId, seed: seed));
               final String file = mangaCandidateFileName(lineId, seed);
+              // 与真生成端一致：候选先写暂存名，保留时才发布成 [file]。
               final File out = File(
                 p.join(
                   mangaRenderManifestFile(model, bookKey).parent.path,
-                  file,
+                  mangaStagedFileName(file),
                 ),
               );
               await out.writeAsString('new-$seed');
@@ -560,6 +565,65 @@ void main() {
       body: <String, Object?>{'say': ''},
     );
     expect((await undo2()).status, OpUndoStatus.superseded);
+  });
+
+  test('改一句的语气 / 强度：校验词表与范围；强度要跟着语气；none 清掉；撤销放回', () async {
+    for (final Map<String, Object?> bad in <Map<String, Object?>>[
+      <String, Object?>{'emotion': 'happy'},
+      <String, Object?>{'emotion': 'anger', 'intensity': 101},
+      <String, Object?>{'emotion': 'anger', 'intensity': -2},
+      <String, Object?>{'intensity': 50},
+    ]) {
+      await expectLater(
+        call(
+          'PUT',
+          '$item/lines/:line',
+          params: <String, String>{'key': wire, 'line': 'p0b0'},
+          body: bad,
+        ),
+        failure(400),
+      );
+    }
+
+    final (Object? result, Future<OpUndoOutcome> Function() undo) = await runOp(
+      'tts.manga.line.edit',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'emotion': 'anger', 'intensity': 80},
+    );
+    final Map<String, Object?> line =
+        (result! as Map<String, Object?>)['line']! as Map<String, Object?>;
+    expect(line['emotion'], 'anger');
+    expect(line['intensity'], 80);
+    MangaScriptLine edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.emotion, CastEmotion.anger);
+    expect(edited.intensity, 80);
+    expect(edited.source, TtsCastSource.user);
+
+    // 只清强度（-1，与操作目录同口径）：语气留着。
+    await call(
+      'PUT',
+      '$item/lines/:line',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'intensity': -1},
+    );
+    edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.emotion, CastEmotion.anger);
+    expect(edited.intensity, isNull);
+
+    // none 清掉语气（强度随之清掉）。
+    final (_, Future<OpUndoOutcome> Function() undoClear) = await runOp(
+      'tts.manga.line.edit',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'emotion': 'none'},
+    );
+    edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.emotion, isNull);
+    expect(edited.intensity, isNull);
+
+    expect((await undoClear()).status, OpUndoStatus.done);
+    expect((await readScript()).lineById('p0b0')!.emotion, CastEmotion.anger);
+    // 第一次改之后这一页又被改过：不覆盖。
+    expect((await undo()).status, OpUndoStatus.superseded);
   });
 
   test('改某角色：改名带走行与声音；声音要在列表里；撤销整份放回', () async {
