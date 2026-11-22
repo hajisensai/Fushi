@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "frame_clock.h"
 #include "util/direct3d11.interop.h"
 #include "../utils/wgc_log.h"
 
@@ -49,8 +50,6 @@ namespace flutter_inappwebview_plugin
   // 一次唤醒最多排空的帧数（只留最新一帧，其余立刻释放）。帧池只有 kNumBuffers 个
   // 缓冲，这里只是循环上界。
   const int kMaxFramesPerDrain = 8;
-  // 合成器时钟等待的超时：桌面静止时 DWM 不出节拍，超时后照常检查一次停止信号。
-  const DWORD kCompositorClockTimeoutMs = 100;
 
   // TODO-618 fix3: 进程级退出态总闸（详见 texture_bridge.h 声明处注释）。
   // 进程退出期间置位后，所有 TextureBridge::DeliverFrameLocked 的帧上报回调短路早返回。
@@ -151,141 +150,6 @@ namespace flutter_inappwebview_plugin
 
   namespace
   {
-    // BUG-4114：取帧线程的节拍。首选合成器时钟（DCompositionWaitForCompositorClock，
-    // Windows 11 起有），它在 DWM 每一帧开始时返回，可以和停止事件一起等、可超时；
-    // 没有这个导出（Windows 10）时退回高精度可等待定时器，周期取 DWM 刷新间隔。
-    typedef DWORD(WINAPI* WaitForCompositorClockFn)(UINT, const HANDLE*, DWORD);
-
-    WaitForCompositorClockFn ResolveCompositorClock()
-    {
-      static const WaitForCompositorClockFn fn = []() -> WaitForCompositorClockFn {
-        HMODULE dcomp = LoadLibraryExW(L"dcomp.dll", nullptr,
-          LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!dcomp) {
-          return nullptr;
-        }
-        return reinterpret_cast<WaitForCompositorClockFn>(
-          GetProcAddress(dcomp, "DCompositionWaitForCompositorClock"));
-        }();
-      return fn;
-    }
-
-    LONGLONG DwmFrameInterval100ns()
-    {
-      DWM_TIMING_INFO timing = {};
-      timing.cbSize = sizeof(timing);
-      if (SUCCEEDED(DwmGetCompositionTimingInfo(nullptr, &timing)) &&
-        timing.rateRefresh.uiNumerator > 0 &&
-        timing.rateRefresh.uiDenominator > 0) {
-        return static_cast<LONGLONG>(
-          10000000.0 * timing.rateRefresh.uiDenominator /
-          timing.rateRefresh.uiNumerator);
-      }
-      return 166667;
-    }
-
-    class FrameClock {
-    public:
-      explicit FrameClock(HANDLE stop_event) : stop_event_(stop_event)
-      {
-        compositor_wait_ = ResolveCompositorClock();
-        if (!compositor_wait_) {
-          StartTimerFallback();
-        }
-      }
-
-      ~FrameClock()
-      {
-        if (timer_) {
-          CloseHandle(timer_);
-        }
-      }
-
-      const char* Name() const
-      {
-        return compositor_wait_ ? "compositor" : "timer";
-      }
-
-      // true = 该取帧了；false = 停止事件已置位（或等待本身失败且无法恢复）。
-      bool Wait()
-      {
-        if (compositor_wait_) {
-          const DWORD r = compositor_wait_(1, &stop_event_,
-            kCompositorClockTimeoutMs);
-          if (r == WAIT_OBJECT_0) {
-            return false;
-          }
-          if (r != WAIT_FAILED) {
-            return true;  // 节拍（WAIT_OBJECT_0 + 1）或超时
-          }
-          WgcLog::Write("worker-clock-fallback", nullptr,
-            "reason=compositor_wait_failed");
-          compositor_wait_ = nullptr;
-          StartTimerFallback();
-        }
-        if (!timer_) {
-          // 连定时器都建不出来：只能按停止事件等一个刷新间隔。
-          const DWORD r = WaitForSingleObject(stop_event_,
-            static_cast<DWORD>(interval_100ns_ / 10000));
-          if (r == WAIT_TIMEOUT) {
-            return true;
-          }
-          if (r != WAIT_OBJECT_0) {
-            LogWaitFailed("sleep_wait_failed", r);
-          }
-          return false;
-        }
-        HANDLE handles[2] = { stop_event_, timer_ };
-        const DWORD r = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
-        if (r != WAIT_OBJECT_0 + 1) {
-          if (r != WAIT_OBJECT_0) {
-            // 不是停止事件却退出：取帧线程就此结束、WebView 冻结在最后一帧，
-            // 必须留一行日志说明原因。
-            LogWaitFailed("timer_wait_failed", r);
-          }
-          return false;
-        }
-        ArmTimer();
-        return true;
-      }
-
-    private:
-      static void LogWaitFailed(const char* reason, DWORD result)
-      {
-        const DWORD error = GetLastError();
-        char detail[96];
-        std::snprintf(detail, sizeof(detail), "reason=%s result=0x%08lX error=%lu",
-          reason, static_cast<unsigned long>(result),
-          static_cast<unsigned long>(error));
-        WgcLog::Write("worker-clock-exit", nullptr, detail);
-      }
-
-      void StartTimerFallback()
-      {
-        interval_100ns_ = DwmFrameInterval100ns();
-        timer_ = CreateWaitableTimerExW(nullptr, nullptr,
-          CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-        if (!timer_) {
-          timer_ = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_ALL_ACCESS);
-        }
-        if (timer_) {
-          ArmTimer();
-        }
-      }
-
-      void ArmTimer()
-      {
-        LARGE_INTEGER due;
-        due.QuadPart = -interval_100ns_;
-        SetWaitableTimer(timer_, &due, 0, nullptr, nullptr, FALSE);
-      }
-
-      HANDLE stop_event_;
-      WaitForCompositorClockFn compositor_wait_ = nullptr;
-      HANDLE timer_ = nullptr;
-      LONGLONG interval_100ns_ = 166667;
-    };
-
     // 把一帧的有效内容拷进 mailbox 的私有纹理。调用方持有该帧对象，拷贝提交并
     // Flush 之后才释放它（释放 = 缓冲还给帧池），所以 DWM 不会在拷贝期间改写源。
     bool StageFrame(WgcFrameWorkerShared& shared,
@@ -359,7 +223,11 @@ namespace flutter_inappwebview_plugin
       SetThreadDescription(GetCurrentThread(), L"fushi-wgc-frames");
       // WinRT 对象（free-threaded 帧池）在 MTA 里调用。
       const HRESULT co_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-      FrameClock clock(shared->stop_event);
+      const void* const pool_for_log = shared->pool_for_log;
+      FrameClock clock(shared->stop_event,
+        [pool_for_log](const char* event, const char* detail) {
+          WgcLog::Write(event, pool_for_log, detail);
+        });
       {
         char detail[96];
         std::snprintf(detail, sizeof(detail), "generation=%llu clock=%s",
