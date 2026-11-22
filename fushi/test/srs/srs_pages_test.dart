@@ -1134,6 +1134,24 @@ void main() {
         find.byKey(const ValueKey<String>('srs-home-forecast')),
         findsNothing,
       );
+      // 「今日」色块被同一行的牌组色块拉高时，近 7 天贴块底（不在大数字下留一截空）；
+      // 「连续天数」色块底部是累计统计。
+      final Rect todayBlock = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-home-today-poster')),
+      );
+      final Rect deckBlock = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-home-deck-poster')),
+      );
+      final Rect recent = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-home-today-recent')),
+      );
+      expect(todayBlock.top, moreOrLessEquals(deckBlock.top), reason: '同一行');
+      expect(todayBlock.height, moreOrLessEquals(deckBlock.height));
+      expect(recent.bottom, moreOrLessEquals(todayBlock.bottom - 22));
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-heatmap-totals')),
+        findsOneWidget,
+      );
 
       await tester.tap(
         find.descendant(of: row(spark), matching: find.text('Spark')),
