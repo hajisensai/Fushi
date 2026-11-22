@@ -11,8 +11,10 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.d
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_path.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_rig.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_gpu.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_math.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_particles.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_render_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_scene.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_scene_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_sequencer.dart';
@@ -425,6 +427,53 @@ void main() {
       expect(d, closeTo((target - eye).length, 1e-9));
     });
 
+    test('GPU 视图 / 投影矩阵与相机的透视投影逐点一致', () {
+      final DioramaQuat q = DioramaQuat.lookAt(
+        const DioramaVec(0.4, 0.6, 9),
+        const DioramaVec(-1, 0.2, -6),
+        DioramaVec.worldUp,
+      );
+      final DioramaCamera cam = DioramaCamera(
+        position: const DioramaVec(0.4, 0.6, 9),
+        orientation: q,
+        width: 1280,
+        height: 720,
+      );
+      final Float32List m = Float32List(32);
+      dioramaGpuWriteView(m, 0, cam);
+      dioramaGpuWriteProjection(m, 16, cam);
+      // 列主序 mat4 × vec4。
+      List<double> mul(int o, List<double> v) => <double>[
+        for (int r = 0; r < 4; r++)
+          m[o + r] * v[0] +
+              m[o + 4 + r] * v[1] +
+              m[o + 8 + r] * v[2] +
+              m[o + 12 + r] * v[3],
+      ];
+      for (final DioramaVec p in const <DioramaVec>[
+        DioramaVec(-1, 0.2, -6),
+        DioramaVec(2, -1, -3),
+        DioramaVec(-3, 1.5, -20),
+        DioramaVec(0.5, 0.5, 5),
+      ]) {
+        final List<double> clip = mul(16, mul(0, <double>[p.x, p.y, p.z, 1]));
+        final (double sx, double sy, double d) = cam.project(p);
+        final double ndcX = clip[0] / clip[3];
+        final double ndcY = clip[1] / clip[3];
+        final double ndcZ = clip[2] / clip[3];
+        expect((ndcX + 1) / 2 * 1280, closeTo(sx, 1e-2));
+        expect((1 - ndcY) / 2 * 720, closeTo(sy, 1e-2));
+        expect(clip[3], closeTo(d, 1e-4), reason: 'w = 视深');
+        expect(ndcZ, inInclusiveRange(0.0, 1.0));
+      }
+      // 近裁剪面映射到 0、远裁剪面到 1。
+      expect(m[16 + 10] * -DioramaCamera.near + m[16 + 14], closeTo(0, 1e-6));
+      expect(
+        (m[16 + 10] * -dioramaGpuFar + m[16 + 14]) / dioramaGpuFar,
+        closeTo(1, 1e-5),
+      );
+    });
+
     test('四元数 slerp 两端与基变换', () {
       final DioramaQuat a = DioramaQuat.axisAngle(
         const DioramaVec(0, 1, 0),
@@ -570,6 +619,91 @@ void main() {
       expect(scene.transitioning, isTrue);
       expect(scene.segmentCount, segs);
       scene.dispose();
+    });
+  });
+
+  group('与后端无关的帧', () {
+    testWidgets('step：邻行整行平面 + 当前行逐单元三层（字身 / 辉光 / 出窍）', (
+      WidgetTester tester,
+    ) async {
+      final FakeVisualizerClock clock = FakeVisualizerClock();
+      final DioramaScene scene = DioramaScene()
+        ..update(
+          visualizerContextFor(
+            dioramaVisualizerEntry,
+            clock: clock,
+            tuning: const <String, Object?>{
+              DioramaTuningKeys.soulEnabled: true,
+              DioramaTuningKeys.soulActiveEnabled: true,
+            },
+          ),
+        );
+      DioramaRenderFrame? f;
+      for (int i = 0; i <= 30; i++) {
+        f = scene.step(
+          const Size(1280, 720),
+          LyricVisualizerTick(timeMs: 1000 + i * 40, elapsed: i / 25),
+        );
+      }
+      expect(f, isNotNull);
+      final List<DioramaPlane> planes = f!.planes;
+      final Iterable<DioramaPlane> base = planes.where(
+        (DioramaPlane p) => p.renderOrder == DioramaRenderOrder.unitBase,
+      );
+      // 「夜空に光」四个字。
+      expect(base.length, 4);
+      expect(base.every((DioramaPlane p) => !p.depthTest && !p.additive), true);
+      expect(
+        planes.any(
+          (DioramaPlane p) =>
+              p.renderOrder == DioramaRenderOrder.unitGlow && p.additive,
+        ),
+        isTrue,
+        reason: '正在唱的字有辉光',
+      );
+      expect(
+        planes.any(
+          (DioramaPlane p) => p.renderOrder == DioramaRenderOrder.unitSoul,
+        ),
+        isTrue,
+        reason: '当前字出窍开着',
+      );
+      final Iterable<DioramaPlane> neighbors = planes.where(
+        (DioramaPlane p) => p.renderOrder == DioramaRenderOrder.neighbor,
+      );
+      expect(neighbors, isNotEmpty);
+      expect(
+        neighbors.every(
+          (DioramaPlane p) =>
+              p.layer == DioramaRasterLayer.line && p.depthTest && p.cpuFog,
+        ),
+        isTrue,
+      );
+      // 平面都在相机前方，且世界基向量正交单位。
+      for (final DioramaPlane p in planes) {
+        final (_, _, double d) = f.camera.project(p.world);
+        expect(d, greaterThan(DioramaCamera.near));
+        expect(p.right.length, closeTo(1, 1e-6));
+        expect(p.up.length, closeTo(1, 1e-6));
+        expect(p.right.dot(p.up).abs(), lessThan(1e-6));
+      }
+      expect(f.particles, isNotNull);
+      expect(f.motes, isNotNull);
+      scene.dispose();
+    });
+
+    test('GPU 场景跑满点云预算，Canvas 后备取一半', () {
+      final DioramaSurface cpu = dioramaSurface(
+        DioramaShapeKind.box,
+        dioramaNormalizeDensity(768 * dioramaCpuPointShare),
+        1,
+      );
+      final DioramaSurface full = dioramaSurface(
+        DioramaShapeKind.box,
+        dioramaNormalizeDensity(768),
+        1,
+      );
+      expect(full.count, greaterThan(cpu.count));
     });
   });
 

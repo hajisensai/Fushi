@@ -245,6 +245,9 @@ DioramaSurface dioramaSurface(
 /// 相位、颜色槽、远景、渐变静态相位、波坐标 w1/w2。
 const int _stride = 18;
 
+/// [DioramaParticleGeometry.data] 每点的 float 数（GPU 端按这个布局直接当实例缓冲上传）。
+const int dioramaParticleStride = _stride;
+
 class DioramaParticleGeometry {
   DioramaParticleGeometry._(this.data, this.count, this.spacing, this.corridor);
 
@@ -255,13 +258,15 @@ class DioramaParticleGeometry {
 
   double get waveNumberMax => (math.pi * 2) / math.max(1e-4, spacing * 4);
 
+  /// [share]：每个锚点取预算的多少（Canvas 后备逐点在 CPU 上算，取 [dioramaCpuPointShare]；
+  /// GPU 在顶点着色器里算，跑满 1.0，和 folia 一样）。
   static DioramaParticleGeometry clouds(
     List<DioramaCluster> clusters,
-    double density,
-  ) {
+    double density, {
+    double share = dioramaCpuPointShare,
+  }) {
     final int budget = dioramaNormalizeDensity(
-      math.min(density, _maxCloudPointsPerCluster.toDouble()) *
-          dioramaCpuPointShare,
+      math.min(density, _maxCloudPointsPerCluster.toDouble()) * share,
     );
     final List<DioramaSurface> surfaces = <DioramaSurface>[
       for (final DioramaCluster c in clusters)
@@ -315,12 +320,12 @@ class DioramaParticleGeometry {
 
   static DioramaParticleGeometry corridorTunnel(
     List<DioramaCorridorSpan> spans,
-    double density,
-  ) {
+    double density, {
+    double share = dioramaCpuPointShare,
+  }) {
     const double radius = dioramaCorridorRadius;
     final int perSpanBudget = dioramaNormalizeDensity(
-      math.min(density, _maxCorridorPointsPerSpan.toDouble()) *
-          dioramaCpuPointShare,
+      math.min(density, _maxCorridorPointsPerSpan.toDouble()) * share,
     );
     final int segs = math.max(
       12,

@@ -76,6 +76,15 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  # 真 3D 渲染（全屏歌词「镜台」）：Impeller 之上的 Flutter GPU。五端的启用开关见
+  # windows/runner/main.cpp、linux/runner、AndroidManifest、Info.plist。
+  # 着色器包由 hook/build.dart 经 flutter_gpu_shaders 调引擎自带 impellerc 编出
+  # （与引擎版本绑定，不入库），产物 build/shaderbundles/*.shaderbundle 登记在下方 assets。
+  flutter_gpu:
+    sdk: flutter
+  flutter_gpu_shaders: ^0.5.2
+  hooks: ^2.0.0
+  vector_math: ^2.1.4
   fushi_core:
     path: ../packages/fushi_core
   fushi_dictionary:
@@ -310,6 +319,9 @@ flutter:
     # 内置追踪插件（Bangumi）打好的包；源码在仓库根 plugins/tracking/bangumi/，
     # 与包不一致时 test/build/bundled_tracking_plugin_asset_guard_test.dart 判红。
     - assets/tracking_plugins/
+    # Flutter GPU 着色器包（全屏歌词「镜台」的真 3D 渲染）：hook/build.dart 每次构建用引擎自带
+    # impellerc 从 shaders/diorama.shaderbundle.json 编出，不入库（与引擎版本绑定）。
+    - build/shaderbundles/diorama.shaderbundle
 
   # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
   # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。

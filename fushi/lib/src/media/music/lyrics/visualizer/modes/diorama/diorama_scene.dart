@@ -1,6 +1,10 @@
 /// 镜台的逐帧场景（folia `VisualizerDiorama.tsx` 的状态机 + `DioramaScene.tsx` 的 useFrame +
-/// `dioramaSceneFrame.ts` 的逐帧写入）。持有走廊段、相机、栅格缓存、点云与尘埃；由
-/// CustomPainter 每帧调 [DioramaScene.paint]，全部逐帧值都在这里，不进 widget 状态。
+/// `dioramaSceneFrame.ts` 的逐帧写入）。持有走廊段、相机、栅格缓存、点云与尘埃，全部逐帧值都在
+/// 这里，不进 widget 状态。
+///
+/// [DioramaScene.step] 产出与后端无关的 [DioramaRenderFrame]：Flutter GPU 渲染器（真 3D，
+/// `diorama_gpu.dart`）直接吃它；[DioramaScene.paint] 是 GPU 不可用时的 Canvas 后备实现
+/// （2.5D：文字平面取局部仿射近似、点云逐点在 CPU 上投影）。
 library;
 
 import 'dart:math' as math;
@@ -14,6 +18,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.d
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_path.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_rig.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_render_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_math.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_particles.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_scene_layout.dart';
@@ -44,6 +49,11 @@ class _RasterEntry {
 }
 
 class DioramaScene {
+  /// [forGpu]：栅格产出 GPU 纹理、点云跑满预算（GPU 渲染器）；否则走 Canvas 后备实现。
+  DioramaScene({this.forGpu = false});
+
+  final bool forGpu;
+
   LyricVisualizerContext? _ctx;
   LyricVisualizerRuntime? _runtime;
   List<DioramaSceneLine> _lines = const <DioramaSceneLine>[];
@@ -98,18 +108,11 @@ class DioramaScene {
   double _flowTime = 0;
   double _formation = 1;
   double _locked = 0.4;
-  final DioramaPointBatch _contrast = DioramaPointBatch();
-  final DioramaPointBatch _glow = DioramaPointBatch();
-  final DioramaPointBatch _moteBatch = DioramaPointBatch();
-
   // 尘埃
   Float32List _motes = Float32List(0);
   List<int> _moteWritten = <int>[];
   String _moteKey = '';
-
-  ui.Image? _sprite;
-  ui.Image? _glowSprite;
-  static const double _spriteSize = 64;
+  int _moteRevision = 0;
 
   bool _disposed = false;
 
@@ -338,6 +341,7 @@ class DioramaScene {
       fontPx: 64 * pixelRatio.clamp(1.0, 2.0),
       wrapEm: wrapEm,
       withUnits: withUnits,
+      forGpu: forGpu,
     );
     e?.raster.dispose();
     _rasters[v.index] = _RasterEntry(r, identity, wrapEm, withUnits);
@@ -346,10 +350,11 @@ class DioramaScene {
 
   // ─── 每帧 ──────────────────────────────────────────────────────────────
 
-  void paint(Canvas canvas, Size size, LyricVisualizerTick tick) {
+  /// 推进一帧并产出要画的东西；没东西可画（未就绪 / 尺寸为空 / 已释放）时为 null。
+  DioramaRenderFrame? step(Size size, LyricVisualizerTick tick) {
     final LyricVisualizerContext? c = _ctx;
     final DioramaSettings? s = _settings;
-    if (_disposed || c == null || s == null || size.isEmpty) return;
+    if (_disposed || c == null || s == null || size.isEmpty) return null;
     final bool animate = c.motion;
     final double elapsed = tick.elapsed;
     final double delta = animate && _lastElapsed != null
@@ -429,8 +434,8 @@ class DioramaScene {
       height: size.height,
     );
 
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
+    DioramaMotesDraw? motes;
+    DioramaParticlesDraw? particles;
     if (animate) {
       final bool corridor = s.geometry.corridor;
       final double gain = motion.audioLevel;
@@ -454,9 +459,7 @@ class DioramaScene {
         3.2,
         delta,
       );
-      _sprite ??= buildDioramaSprite(glow: false);
-      _glowSprite ??= buildDioramaSprite(glow: true);
-      if (s.showParticles) _paintMotes(canvas, camera, s, elapsed);
+      if (s.showParticles) motes = _stepMotes(s, elapsed);
       if (s.geometry.enabled) {
         final double clusterPulse = math.min(
           dioramaParticleAudioScaleMax,
@@ -477,36 +480,38 @@ class DioramaScene {
           3.2,
           delta,
         );
-        _paintParticles(
-          canvas,
-          camera,
-          s,
-          mounted,
-          outgoing,
-          DioramaParticleFrame(
-            time: _flowTime,
-            amplitude:
-                gain *
-                (corridor
-                    ? math.min(0.45, 0.1 + _bassSus * 0.18 + _midSus * 0.08)
-                    : 0.34),
-            maxSwell: 0.85 * (corridor ? 0.45 : 0.34),
-            offsetGain: _midSus * gain,
-            flow: corridor ? 1 : 0,
-            formation: _formation,
-            scatter: corridor ? 6 : 1.4,
-            pulse: pulseScale,
-            sizeBase: corridor ? 0.072 : 0.05,
-            sizeGain: corridor ? 0.34 : 0.3,
-            glowIntensity: s.particleGlowIntensity,
-            centroid: 0.2,
-          ),
-        );
+        final DioramaParticleGeometry? g = _stepGeometry(s, mounted, outgoing);
+        if (g != null && g.count > 0) {
+          particles = DioramaParticlesDraw(
+            geometry: g,
+            pool: _pool,
+            palette: <ui.Color>[_pPrimary, _pAccent, _pSecondary],
+            frame: DioramaParticleFrame(
+              time: _flowTime,
+              amplitude:
+                  gain *
+                  (corridor
+                      ? math.min(0.45, 0.1 + _bassSus * 0.18 + _midSus * 0.08)
+                      : 0.34),
+              maxSwell: 0.85 * (corridor ? 0.45 : 0.34),
+              offsetGain: _midSus * gain,
+              flow: corridor ? 1 : 0,
+              formation: _formation,
+              scatter: corridor ? 6 : 1.4,
+              pulse: pulseScale,
+              sizeBase: corridor ? 0.072 : 0.05,
+              sizeGain: corridor ? 0.34 : 0.3,
+              glowIntensity: s.particleGlowIntensity,
+              centroid: 0.2,
+            ),
+          );
+        }
       }
     }
 
-    _paintNeighbors(
-      canvas,
+    final List<DioramaPlane> planes = <DioramaPlane>[];
+    _neighborPlanes(
+      planes,
       camera,
       visible,
       gi,
@@ -516,8 +521,8 @@ class DioramaScene {
       budget,
     );
     if (activeEntry != null && activeRaster != null) {
-      _paintActive(
-        canvas,
+      _activePlanes(
+        planes,
         camera,
         activeEntry,
         activeRaster,
@@ -529,7 +534,13 @@ class DioramaScene {
         s,
       );
     }
-    canvas.restore();
+    return DioramaRenderFrame(
+      camera: camera,
+      fogColor: _bg,
+      motes: motes,
+      particles: particles,
+      planes: planes,
+    );
   }
 
   static double _smooth(double e0, double e1, double v) {
@@ -564,20 +575,16 @@ class DioramaScene {
 
   // ─── 背景尘埃 ──────────────────────────────────────────────────────────
 
-  void _paintMotes(
-    Canvas canvas,
-    DioramaCamera camera,
-    DioramaSettings s,
-    double elapsed,
-  ) {
+  DioramaMotesDraw? _stepMotes(DioramaSettings s, double elapsed) {
     final DioramaSegment? seg = _seq.active;
-    if (seg == null) return;
+    if (seg == null) return null;
     final int per = s.moteCircumference * s.moteRadial;
     final String key = '${s.moteCircumference}x${s.moteRadial}@${seg.key}';
     if (key != _moteKey) {
       _moteKey = key;
       _motes = Float32List(dioramaMoteWindowLines * per * 3);
       _moteWritten = List<int>.filled(dioramaMoteWindowLines, -1 << 30);
+      _moteRevision++;
     }
     final int last = math.max(0, _seq.totalLines - 1);
     for (
@@ -599,58 +606,26 @@ class DioramaScene {
         seg.seed,
       );
       _moteWritten[slot] = line;
+      _moteRevision++;
     }
-    final double ox = math.sin(elapsed * 0.17) * 0.12;
-    final double oy = math.sin(elapsed * 0.11 + 1.7) * 0.09;
-    final double oz = math.cos(elapsed * 0.13) * 0.12;
-    final Color col = Color.lerp(_pSecondary, _pAccent, 0.3)!;
-    final double baseAlpha = 0.16 + 0.18 * _powerEnv;
-    final double sizeWorld = 0.03 * (1 + 0.42 * _trebleEnv);
-    final int n = _motes.length ~/ 3;
-    _moteBatch.reset(n, _spriteSize);
-    for (int i = 0; i < n; i++) {
-      final (double xc, double yc, double depth) = camera.toView(
-        _motes[i * 3] + ox,
-        _motes[i * 3 + 1] + oy,
-        _motes[i * 3 + 2] + oz,
-      );
-      if (depth <= DioramaCamera.near) continue;
-      final double sx = camera.width / 2 + xc / depth * camera.focal;
-      final double sy = camera.height / 2 - yc / depth * camera.focal;
-      if (sx < -8 ||
-          sy < -8 ||
-          sx > camera.width + 8 ||
-          sy > camera.height + 8) {
-        continue;
-      }
-      final double fog = dioramaFogFactor(depth);
-      final double a = baseAlpha * (1 - fog);
-      if (a < 0.01) continue;
-      final double px = (sizeWorld * camera.height / 2 / depth).clamp(1.0, 5.0);
-      _moteBatch.add(
-        sx,
-        sy,
-        px,
-        _spriteSize,
-        col.withValues(alpha: a).toARGB32(),
-      );
-    }
-    _moteBatch.draw(
-      canvas,
-      _sprite!,
-      Paint()..filterQuality = FilterQuality.low,
+    return DioramaMotesDraw(
+      positions: _motes,
+      revision: _moteRevision,
+      ox: math.sin(elapsed * 0.17) * 0.12,
+      oy: math.sin(elapsed * 0.11 + 1.7) * 0.09,
+      oz: math.cos(elapsed * 0.13) * 0.12,
+      color: Color.lerp(_pSecondary, _pAccent, 0.3)!,
+      alpha: 0.16 + 0.18 * _powerEnv,
+      sizeWorld: 0.03 * (1 + 0.42 * _trebleEnv),
     );
   }
 
   // ─── 点云阵列 / 长廊 ───────────────────────────────────────────────────
 
-  void _paintParticles(
-    Canvas canvas,
-    DioramaCamera camera,
+  DioramaParticleGeometry? _stepGeometry(
     DioramaSettings s,
     List<int> mounted,
     int? outgoing,
-    DioramaParticleFrame f,
   ) {
     final DioramaSegment? seg = _seq.active;
     final String key = <Object?>[
@@ -671,6 +646,7 @@ class DioramaScene {
     ].join('|');
     if (key != _geomKey) {
       _geomKey = key;
+      final double share = forGpu ? 1.0 : dioramaCpuPointShare;
       if (s.geometry.corridor) {
         final List<DioramaCorridorSpan> spans = <DioramaCorridorSpan>[
           if (outgoing != null) ...dioramaCorridorWindow(_seq, outgoing),
@@ -679,6 +655,7 @@ class DioramaScene {
         _geom = DioramaParticleGeometry.corridorTunnel(
           spans,
           s.particleDensity,
+          share: share,
         );
       } else {
         _geom = DioramaParticleGeometry.clouds(
@@ -690,91 +667,17 @@ class DioramaScene {
             s.particleScale,
           ),
           s.particleDensity,
+          share: share,
         );
       }
     }
-    final DioramaParticleGeometry? g = _geom;
-    if (g == null || g.count == 0) return;
-    dioramaEvaluateParticles(
-      geometry: g,
-      pool: _pool,
-      f: f,
-      camera: camera,
-      palette: <ui.Color>[_pPrimary, _pAccent, _pSecondary],
-      contrast: _contrast,
-      glow: _glow,
-      spriteSize: _spriteSize,
-    );
-    if (f.glowIntensity > 0) {
-      _glow.draw(canvas, _glowSprite!, Paint()..blendMode = BlendMode.plus);
-    }
-    _contrast.draw(
-      canvas,
-      _sprite!,
-      Paint()..filterQuality = FilterQuality.low,
-    );
+    return _geom;
   }
 
   // ─── 文字平面 ──────────────────────────────────────────────────────────
 
-  /// 把栅格平面（中心 [rasterCenter]、每像素 [worldPerPx] 世界单位、朝向 [q]）在 [world] 处
-  /// 的透视取局部仿射近似，返回画布矩阵；看不到（在镜头后、背面朝向）时为 null。
-  Float64List? _planeMatrix(
-    DioramaCamera camera,
-    DioramaVec world,
-    DioramaQuat q,
-    double worldPerPx,
-    Offset rasterCenter,
-  ) {
-    final (double xc, double yc, double depth) = camera.toView(
-      world.x,
-      world.y,
-      world.z,
-    );
-    if (depth <= 0.25) return null;
-    final double k = camera.focal;
-    final double sx = camera.width / 2 + xc / depth * k;
-    final double sy = camera.height / 2 - yc / depth * k;
-    if ((sx - camera.width / 2).abs() > camera.width * 2.5 ||
-        (sy - camera.height / 2).abs() > camera.height * 2.5) {
-      return null;
-    }
-    final (double rx, double ry, double rd) = camera.dirToView(
-      q.rotate(const DioramaVec(1, 0, 0)),
-    );
-    final (double ux, double uy, double ud) = camera.dirToView(
-      q.rotate(const DioramaVec(0, 1, 0)),
-    );
-    final double d2 = depth * depth;
-    final double a = k * (rx * depth - xc * rd) / d2 * worldPerPx;
-    final double b = -k * (ry * depth - yc * rd) / d2 * worldPerPx;
-    final double cc = -k * (ux * depth - xc * ud) / d2 * worldPerPx;
-    final double dd = k * (uy * depth - yc * ud) / d2 * worldPerPx;
-    if (a * dd - b * cc <= 0) return null;
-    final double tx = sx - (a * rasterCenter.dx + cc * rasterCenter.dy);
-    final double ty = sy - (b * rasterCenter.dx + dd * rasterCenter.dy);
-    return Float64List.fromList(<double>[
-      a,
-      b,
-      0,
-      0,
-      cc,
-      dd,
-      0,
-      0,
-      0,
-      0,
-      1,
-      0,
-      tx,
-      ty,
-      0,
-      1,
-    ]);
-  }
-
-  void _paintNeighbors(
-    Canvas canvas,
+  void _neighborPlanes(
+    List<DioramaPlane> out,
     DioramaCamera camera,
     List<DioramaVisibleLine> visible,
     int gi,
@@ -793,7 +696,8 @@ class DioramaScene {
       final DioramaLineRaster? r = _rasterFor(
         v,
         _wrapEm(aspect, v.placement, fontScale),
-        withUnits: false,
+        // GPU 纹理异步就绪：下一句连逐单元图集一起预热，轮到它当当前行时已经可画。
+        withUnits: forGpu && offset == 1 && !v.isOutgoing,
         force: v.isOutgoing && v.index == outgoing,
         budget: budget,
       );
@@ -809,36 +713,34 @@ class DioramaScene {
           v.placement.scale *
           fontScale;
       final double dist = v.position.distanceTo(camera.position);
-      final double fog = dioramaFogFactor(dist);
-      final double alpha = opacity * dioramaTextLife(dist) * (1 - fog);
+      final double alpha = opacity * dioramaTextLife(dist);
       if (alpha < 0.004) continue;
-      final Color tone = v.isOutgoing || offset < 0
-          ? _textPrimary
-          : _textSecondary;
-      final Float64List? m = _planeMatrix(
-        camera,
-        v.position,
-        v.orientation,
-        wpp * fit,
-        Offset(r.lineImage.width / 2, r.lineImage.height / 2),
+      final Rect full = Offset.zero & r.lineSize;
+      out.add(
+        DioramaPlane(
+          raster: r,
+          layer: DioramaRasterLayer.line,
+          src: full,
+          dst: full,
+          anchor: full.center,
+          world: v.position,
+          right: v.orientation.rotate(const DioramaVec(1, 0, 0)),
+          up: v.orientation.rotate(const DioramaVec(0, 1, 0)),
+          scale: wpp * fit,
+          color: v.isOutgoing || offset < 0 ? _textPrimary : _textSecondary,
+          alpha: alpha,
+          additive: false,
+          depthTest: true,
+          cpuFog: true,
+          renderOrder: DioramaRenderOrder.neighbor,
+          sortDepth: dist,
+        ),
       );
-      if (m == null) continue;
-      canvas.save();
-      canvas.transform(m);
-      canvas.drawImage(
-        r.lineImage,
-        Offset.zero,
-        Paint()
-          ..filterQuality = FilterQuality.medium
-          ..color = Color.from(alpha: alpha, red: 1, green: 1, blue: 1)
-          ..colorFilter = ColorFilter.mode(tone, BlendMode.srcIn),
-      );
-      canvas.restore();
     }
   }
 
-  void _paintActive(
-    Canvas canvas,
+  void _activePlanes(
+    List<DioramaPlane> out,
     DioramaCamera camera,
     DioramaVisibleLine entry,
     DioramaLineRaster raster,
@@ -849,9 +751,7 @@ class DioramaScene {
     bool animate,
     DioramaSettings s,
   ) {
-    final ui.Image? atlas = raster.unitAtlas;
-    final ui.Image? glowAtlas = raster.glowAtlas;
-    if (atlas == null) return;
+    if (raster.atlasSize == null) return;
     final List<DioramaUnit> units = entry.line.units;
     if (_unitsFor != entry.index || _light.length != units.length) {
       _unitsFor = entry.index;
@@ -862,9 +762,8 @@ class DioramaScene {
     final double scale = wpp * fit;
     final DioramaVec rt = entry.orientation.rotate(const DioramaVec(1, 0, 0));
     final DioramaVec ut = entry.orientation.rotate(const DioramaVec(0, 1, 0));
-    final double life = dioramaTextLife(
-      entry.position.distanceTo(camera.position),
-    );
+    final double dist = entry.position.distanceTo(camera.position);
+    final double life = dioramaTextLife(dist);
     final double breath = animate ? 0.9 + 0.1 * math.sin(elapsed * 1.9) : 1;
 
     // 跟唱色：一般就是强调色；强调色与主文字色几乎一样时（灰阶主题）往一个明度错开的中性灰靠。
@@ -932,44 +831,53 @@ class DioramaScene {
           entry.position +
           rt * (pu.layoutCenter.dx * scale) +
           ut * (-pu.layoutCenter.dy * scale);
-      final Float64List? m = _planeMatrix(
-        camera,
-        world,
-        entry.orientation,
-        scale,
-        pu.atlasCenter,
+      DioramaPlane plane(
+        DioramaRasterLayer layer,
+        Rect dst,
+        double alpha,
+        bool additive,
+        int order,
+      ) => DioramaPlane(
+        raster: raster,
+        layer: layer,
+        src: pu.atlasRect,
+        dst: dst,
+        anchor: pu.atlasCenter,
+        world: world,
+        right: rt,
+        up: ut,
+        scale: scale,
+        color: fill,
+        alpha: alpha,
+        additive: additive,
+        depthTest: false,
+        cpuFog: false,
+        renderOrder: order,
+        sortDepth: dist,
       );
-      if (m == null) continue;
-      canvas.save();
-      canvas.transform(m);
       if (baseOpacity > 0.004) {
-        canvas.drawImageRect(
-          atlas,
-          pu.atlasRect,
-          pu.atlasRect,
-          Paint()
-            ..filterQuality = FilterQuality.medium
-            ..color = Color.from(alpha: baseOpacity, red: 1, green: 1, blue: 1)
-            ..colorFilter = ColorFilter.mode(fill, BlendMode.srcIn),
+        out.add(
+          plane(
+            DioramaRasterLayer.units,
+            pu.atlasRect,
+            baseOpacity,
+            false,
+            DioramaRenderOrder.unitBase,
+          ),
         );
       }
       // 普通辉光：叠加的模糊字，永远不移位（移位是灵魂出窍的事）。
       final double glowLevel =
           _light[i] * life * breath * (0.6 + 0.4 * _powerEnv) * glowStrength;
-      if (glowAtlas != null && glowLevel > 0.012) {
-        canvas.drawImageRect(
-          glowAtlas,
-          pu.atlasRect,
-          pu.atlasRect,
-          Paint()
-            ..blendMode = BlendMode.plus
-            ..color = Color.from(
-              alpha: math.min(1.0, dioramaUnitGlowMaxOpacity * glowLevel),
-              red: 1,
-              green: 1,
-              blue: 1,
-            )
-            ..colorFilter = ColorFilter.mode(fill, BlendMode.srcIn),
+      if (glowLevel > 0.012) {
+        out.add(
+          plane(
+            DioramaRasterLayer.glow,
+            pu.atlasRect,
+            math.min(1.0, dioramaUnitGlowMaxOpacity * glowLevel),
+            true,
+            DioramaRenderOrder.unitGlow,
+          ),
         );
       }
       // 灵魂出窍：唱时按「当前字出窍」开关决定是否离体，唱完的字飘起、膨胀、淡去。
@@ -996,27 +904,194 @@ class DioramaScene {
               1 +
               dioramaSoulActiveSwell * onGlyph +
               dioramaSoulDetachSwell * flown;
-          canvas.translate(pu.atlasCenter.dx, pu.atlasCenter.dy - liftPx);
-          canvas.scale(swell);
-          canvas.translate(-pu.atlasCenter.dx, -pu.atlasCenter.dy);
-          canvas.drawImageRect(
-            atlas,
-            pu.atlasRect,
-            pu.atlasRect,
-            Paint()
-              ..blendMode = BlendMode.plus
-              ..filterQuality = FilterQuality.medium
-              ..color = Color.from(
-                alpha: soulOpacity,
-                red: 1,
-                green: 1,
-                blue: 1,
-              )
-              ..colorFilter = ColorFilter.mode(fill, BlendMode.srcIn),
+          // 以单元中心为原点放大 swell 倍、再上抬 liftPx（栅格像素）。
+          final Offset a = pu.atlasCenter;
+          final Rect r = pu.atlasRect;
+          final Rect dst = Rect.fromLTRB(
+            a.dx + (r.left - a.dx) * swell,
+            a.dy - liftPx + (r.top - a.dy) * swell,
+            a.dx + (r.right - a.dx) * swell,
+            a.dy - liftPx + (r.bottom - a.dy) * swell,
+          );
+          out.add(
+            plane(
+              DioramaRasterLayer.units,
+              dst,
+              soulOpacity,
+              true,
+              DioramaRenderOrder.unitSoul,
+            ),
           );
         }
       }
-      canvas.restore();
     }
+  }
+
+  // ─── Canvas 后备实现（GPU 不可用时） ────────────────────────────────────
+
+  final DioramaPointBatch _contrast = DioramaPointBatch();
+  final DioramaPointBatch _glow = DioramaPointBatch();
+  final DioramaPointBatch _moteBatch = DioramaPointBatch();
+  ui.Image? _sprite;
+  ui.Image? _glowSprite;
+  static const double _spriteSize = 64;
+
+  /// 推进一帧并用 Canvas 画出来（2.5D 近似）。
+  void paint(Canvas canvas, Size size, LyricVisualizerTick tick) {
+    final DioramaRenderFrame? f = step(size, tick);
+    if (f == null) return;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    final DioramaMotesDraw? motes = f.motes;
+    final DioramaParticlesDraw? particles = f.particles;
+    if (motes != null || particles != null) {
+      _sprite ??= buildDioramaSprite(glow: false);
+      _glowSprite ??= buildDioramaSprite(glow: true);
+    }
+    if (motes != null) _paintMotes(canvas, f.camera, motes);
+    if (particles != null) _paintParticles(canvas, f.camera, particles);
+    for (final DioramaPlane p in f.planes) {
+      _paintPlane(canvas, f.camera, p);
+    }
+    canvas.restore();
+  }
+
+  void _paintMotes(Canvas canvas, DioramaCamera camera, DioramaMotesDraw m) {
+    final Float32List pos = m.positions;
+    final int n = pos.length ~/ 3;
+    _moteBatch.reset(n, _spriteSize);
+    for (int i = 0; i < n; i++) {
+      final (double xc, double yc, double depth) = camera.toView(
+        pos[i * 3] + m.ox,
+        pos[i * 3 + 1] + m.oy,
+        pos[i * 3 + 2] + m.oz,
+      );
+      if (depth <= DioramaCamera.near) continue;
+      final double sx = camera.width / 2 + xc / depth * camera.focal;
+      final double sy = camera.height / 2 - yc / depth * camera.focal;
+      if (sx < -8 ||
+          sy < -8 ||
+          sx > camera.width + 8 ||
+          sy > camera.height + 8) {
+        continue;
+      }
+      final double fog = dioramaFogFactor(depth);
+      final double a = m.alpha * (1 - fog);
+      if (a < 0.01) continue;
+      final double px = (m.sizeWorld * camera.height / 2 / depth).clamp(
+        1.0,
+        5.0,
+      );
+      _moteBatch.add(
+        sx,
+        sy,
+        px,
+        _spriteSize,
+        m.color.withValues(alpha: a).toARGB32(),
+      );
+    }
+    _moteBatch.draw(
+      canvas,
+      _sprite!,
+      Paint()..filterQuality = FilterQuality.low,
+    );
+  }
+
+  void _paintParticles(
+    Canvas canvas,
+    DioramaCamera camera,
+    DioramaParticlesDraw p,
+  ) {
+    dioramaEvaluateParticles(
+      geometry: p.geometry,
+      pool: p.pool,
+      f: p.frame,
+      camera: camera,
+      palette: p.palette,
+      contrast: _contrast,
+      glow: _glow,
+      spriteSize: _spriteSize,
+    );
+    if (p.frame.glowIntensity > 0) {
+      _glow.draw(canvas, _glowSprite!, Paint()..blendMode = BlendMode.plus);
+    }
+    _contrast.draw(
+      canvas,
+      _sprite!,
+      Paint()..filterQuality = FilterQuality.low,
+    );
+  }
+
+  /// 把栅格平面在 [DioramaPlane.world] 处的透视取局部仿射近似，返回画布矩阵；看不到（在镜头
+  /// 后、背面朝向）时为 null。
+  static Float64List? _planeMatrix(DioramaCamera camera, DioramaPlane p) {
+    final (double xc, double yc, double depth) = camera.toView(
+      p.world.x,
+      p.world.y,
+      p.world.z,
+    );
+    if (depth <= 0.25) return null;
+    final double k = camera.focal;
+    final double sx = camera.width / 2 + xc / depth * k;
+    final double sy = camera.height / 2 - yc / depth * k;
+    if ((sx - camera.width / 2).abs() > camera.width * 2.5 ||
+        (sy - camera.height / 2).abs() > camera.height * 2.5) {
+      return null;
+    }
+    final (double rx, double ry, double rd) = camera.dirToView(p.right);
+    final (double ux, double uy, double ud) = camera.dirToView(p.up);
+    final double d2 = depth * depth;
+    final double s = p.scale;
+    final double a = k * (rx * depth - xc * rd) / d2 * s;
+    final double b = -k * (ry * depth - yc * rd) / d2 * s;
+    final double cc = -k * (ux * depth - xc * ud) / d2 * s;
+    final double dd = k * (uy * depth - yc * ud) / d2 * s;
+    if (a * dd - b * cc <= 0) return null;
+    final double tx = sx - (a * p.anchor.dx + cc * p.anchor.dy);
+    final double ty = sy - (b * p.anchor.dx + dd * p.anchor.dy);
+    return Float64List.fromList(<double>[
+      a,
+      b,
+      0,
+      0,
+      cc,
+      dd,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      tx,
+      ty,
+      0,
+      1,
+    ]);
+  }
+
+  void _paintPlane(Canvas canvas, DioramaCamera camera, DioramaPlane p) {
+    final ui.Image? image = switch (p.layer) {
+      DioramaRasterLayer.line => p.raster.lineImage,
+      DioramaRasterLayer.units => p.raster.unitAtlas,
+      DioramaRasterLayer.glow => p.raster.glowAtlas,
+    };
+    if (image == null) return;
+    final double alpha = p.cpuFog
+        ? p.alpha * (1 - dioramaFogFactor(p.sortDepth))
+        : p.alpha;
+    if (alpha < 0.004) return;
+    final Float64List? m = _planeMatrix(camera, p);
+    if (m == null) return;
+    canvas.save();
+    canvas.transform(m);
+    final Paint paint = Paint()
+      ..color = Color.from(alpha: alpha, red: 1, green: 1, blue: 1)
+      ..colorFilter = ColorFilter.mode(p.color, BlendMode.srcIn);
+    if (p.additive) paint.blendMode = BlendMode.plus;
+    if (p.layer != DioramaRasterLayer.glow) {
+      paint.filterQuality = FilterQuality.medium;
+    }
+    canvas.drawImageRect(image, p.src, p.dst, paint);
+    canvas.restore();
   }
 }

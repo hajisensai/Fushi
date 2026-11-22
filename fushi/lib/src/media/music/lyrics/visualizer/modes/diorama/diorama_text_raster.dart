@@ -6,11 +6,17 @@
 ///
 /// 只在一行第一次需要时栅格化一次，逐帧只改染色 / 透明度 / 变换。超长的行先按画面宽度折行
 /// （folia 单行不折，窄屏上会出画；这里保证窄屏也能读）。
+///
+/// 两种产物：Canvas 后备实现要 `toImageSync` 的 [ui.Image]；Flutter GPU 渲染器要 GPU 纹理，
+/// 走异步 `Picture.toImage` 再 `gpu.Texture.fromImage` 零拷贝包一层（`toImageSync` 的图在光栅
+/// 线程上懒生成，未必已有纹理，fromImage 会拒绝）。异步期间这一行不画——邻行在雾里提前栅格化，
+/// 当前行的逐单元图集也随下一行一起预热，正常播放里看不到这一两帧的空档。
 library;
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_sequencer.dart';
@@ -43,11 +49,10 @@ class DioramaLineRaster {
     required this.fontPx,
     required this.width,
     required this.height,
-    required this.lineImage,
+    required this.lineSize,
     required this.pad,
     required this.units,
-    required this.unitAtlas,
-    required this.glowAtlas,
+    required this.atlasSize,
   });
 
   /// 一个 em 的栅格像素（对应世界里的 `dioramaLineFontSize`）。
@@ -57,23 +62,66 @@ class DioramaLineRaster {
   final double width;
   final double height;
 
-  /// 整行白字图（四周留 [pad]）。
-  final ui.Image lineImage;
+  /// 整行白字图的像素尺寸（四周留 [pad]）。
+  final Size lineSize;
   final double pad;
 
   /// 当前行逐单元（与 [DioramaSceneLine.units] 一一对应；排不出的为 null）。
   final List<DioramaPlacedUnit?> units;
-  final ui.Image? unitAtlas;
-  final ui.Image? glowAtlas;
+
+  /// 逐单元图集与辉光图集的像素尺寸（两张同尺寸；没有逐单元时为 null）。
+  final Size? atlasSize;
+
+  /// Canvas 后备实现用的图（GPU 模式下为 null）。
+  ui.Image? lineImage;
+  ui.Image? unitAtlas;
+  ui.Image? glowAtlas;
+
+  /// GPU 模式的纹理（异步就绪；就绪前为 null）。
+  gpu.Texture? lineTexture;
+  gpu.Texture? unitTexture;
+  gpu.Texture? glowTexture;
+
+  /// GPU 纹理背后的图：纹理零拷贝共享它的存储，图要活得和纹理一样久。
+  final List<ui.Image> _gpuImages = <ui.Image>[];
 
   bool _disposed = false;
+
+  /// 某一层的 GPU 纹理（没就绪 / 没有这层时为 null）。
+  gpu.Texture? gpuTexture(bool glow, bool units) =>
+      glow ? glowTexture : (units ? unitTexture : lineTexture);
 
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    lineImage.dispose();
+    lineImage?.dispose();
     unitAtlas?.dispose();
     glowAtlas?.dispose();
+    lineTexture = null;
+    unitTexture = null;
+    glowTexture = null;
+    for (final ui.Image i in _gpuImages) {
+      i.dispose();
+    }
+    _gpuImages.clear();
+  }
+
+  /// 异步把 [pic] 变成 GPU 纹理交给 [assign]；栅格先被丢弃了就直接释放。
+  void _realizeGpu(
+    ui.Picture pic,
+    int w,
+    int h,
+    void Function(gpu.Texture texture) assign,
+  ) {
+    pic.toImage(w, h).then((ui.Image img) {
+      pic.dispose();
+      if (_disposed) {
+        img.dispose();
+        return;
+      }
+      _gpuImages.add(img);
+      assign(gpu.Texture.fromImage(gpu.gpuContext, img));
+    });
   }
 
   static const double _maxImageSide = 4000;
@@ -96,12 +144,14 @@ class DioramaLineRaster {
     return tp;
   }
 
-  /// 栅格化一行。[wrapEm] = 折行宽度（em）；[withUnits] = 同时出逐单元图集（当前行用）。
+  /// 栅格化一行。[wrapEm] = 折行宽度（em）；[withUnits] = 同时出逐单元图集（当前行用）；
+  /// [forGpu] = 产出 GPU 纹理（异步）而不是 Canvas 用的同步图。
   static DioramaLineRaster build(
     DioramaSceneLine line, {
     required double fontPx,
     required double wrapEm,
     required bool withUnits,
+    bool forGpu = false,
   }) {
     double px = fontPx;
     TextPainter tp = _layout(line.layoutText, px, wrapEm * px);
@@ -119,16 +169,15 @@ class DioramaLineRaster {
     final ui.PictureRecorder rec = ui.PictureRecorder();
     final Canvas c = Canvas(rec);
     tp.paint(c, Offset(pad, pad));
-    final ui.Picture pic = rec.endRecording();
-    final ui.Image lineImage = pic.toImageSync(
-      math.max(1, (w + pad * 2).ceil()),
-      math.max(1, (h + pad * 2).ceil()),
-    );
-    pic.dispose();
+    final ui.Picture linePic = rec.endRecording();
+    final int lineW = math.max(1, (w + pad * 2).ceil());
+    final int lineH = math.max(1, (h + pad * 2).ceil());
 
     final List<DioramaPlacedUnit?> placed = <DioramaPlacedUnit?>[];
-    ui.Image? unitAtlas;
-    ui.Image? glowAtlas;
+    ui.Picture? unitPic;
+    ui.Picture? glowPic;
+    int aw = 0;
+    int ah = 0;
     if (withUnits && line.units.isNotEmpty) {
       final double sigma = px * 0.14;
       final double gpad = (sigma * 3 + px * 0.06).ceilToDouble();
@@ -176,9 +225,8 @@ class DioramaLineRaster {
         atlasW = math.max(atlasW, cursorX);
       }
       final ui.Picture apic = arec.endRecording();
-      final int aw = math.max(1, atlasW.ceil());
-      final int ah = math.max(1, (cursorY + shelfH).ceil());
-      unitAtlas = apic.toImageSync(aw, ah);
+      aw = math.max(1, atlasW.ceil());
+      ah = math.max(1, (cursorY + shelfH).ceil());
       final ui.PictureRecorder grec = ui.PictureRecorder();
       final Canvas gc = Canvas(grec);
       gc.saveLayer(
@@ -188,22 +236,42 @@ class DioramaLineRaster {
       );
       gc.drawPicture(apic);
       gc.restore();
-      final ui.Picture gpic = grec.endRecording();
-      glowAtlas = gpic.toImageSync(aw, ah);
-      gpic.dispose();
-      apic.dispose();
+      unitPic = apic;
+      glowPic = grec.endRecording();
     }
     tp.dispose();
-    return DioramaLineRaster._(
+    final DioramaLineRaster r = DioramaLineRaster._(
       fontPx: px,
       width: w,
       height: h,
-      lineImage: lineImage,
+      lineSize: Size(lineW.toDouble(), lineH.toDouble()),
       pad: pad,
       units: placed,
-      unitAtlas: unitAtlas,
-      glowAtlas: glowAtlas,
+      atlasSize: unitPic == null ? null : Size(aw.toDouble(), ah.toDouble()),
     );
+    if (forGpu) {
+      r._realizeGpu(linePic, lineW, lineH, (gpu.Texture t) {
+        r.lineTexture = t;
+      });
+      if (unitPic != null && glowPic != null) {
+        r._realizeGpu(unitPic, aw, ah, (gpu.Texture t) {
+          r.unitTexture = t;
+        });
+        r._realizeGpu(glowPic, aw, ah, (gpu.Texture t) {
+          r.glowTexture = t;
+        });
+      }
+    } else {
+      r.lineImage = linePic.toImageSync(lineW, lineH);
+      linePic.dispose();
+      if (unitPic != null && glowPic != null) {
+        r.unitAtlas = unitPic.toImageSync(aw, ah);
+        r.glowAtlas = glowPic.toImageSync(aw, ah);
+        unitPic.dispose();
+        glowPic.dispose();
+      }
+    }
+    return r;
   }
 }
 
