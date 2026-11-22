@@ -48,8 +48,6 @@ const String kTemperaAssetStyle = 'tempera';
 /// 一个图层包最多几张（folia `TEMPERA_MAX_LAYER_IMAGES`）。
 const int kTemperaMaxLayerImages = 16;
 const String kTemperaLayerDepth = 'layerImageDepth';
-const String kTemperaLayerScale = 'layerImageScale';
-const String kTemperaLayerOpacity = 'layerImageOpacity';
 const String kTemperaDepth = 'depth';
 const String kTemperaDepthOfField = 'depthOfField';
 const String kTemperaDepthPan = 'depthPan';
@@ -128,12 +126,14 @@ final List<LyricVisualizerTuningSpec> temperaTunings =
         label: () => t.music_visualizer_tempera_cover_layer,
         initial: false,
       ),
-      // folia 用户上传的画布图层：图片进素材包，与封面图层一起组成图片池。
+      // folia 用户上传的画布图层：图片进素材包，与封面图层一起组成图片池。每张图的横 / 纵对齐、
+      // 大小、透明度在素材包里逐张设（folia `TemperaImageLayerDialog`），没设过的按默认摆放。
       LyricVisualizerAssetPackSpec(
         key: kTemperaLayerPack,
         label: () => t.music_visualizer_tempera_layer_images,
         style: kTemperaAssetStyle,
         maxFiles: kTemperaMaxLayerImages,
+        placement: LyricVisualizerAssetPlacement.defaults,
       ),
       LyricVisualizerSliderSpec(
         key: kTemperaLayerFrequency,
@@ -150,20 +150,6 @@ final List<LyricVisualizerTuningSpec> temperaTunings =
           ('front', () => t.music_visualizer_tempera_layer_front),
         ],
         initial: 'back',
-      ),
-      LyricVisualizerSliderSpec(
-        key: kTemperaLayerScale,
-        label: () => t.music_visualizer_tempera_layer_scale,
-        min: 0.1,
-        max: 1.5,
-        initial: 0.7,
-      ),
-      LyricVisualizerSliderSpec(
-        key: kTemperaLayerOpacity,
-        label: () => t.music_visualizer_tempera_layer_opacity,
-        min: 0,
-        max: 1,
-        initial: 1,
       ),
       LyricVisualizerToggleSpec(
         key: kTemperaDepth,
@@ -262,8 +248,6 @@ TemperaSettings temperaSettingsOf(LyricVisualizerTuning tuning) {
     coverLayer: tuning.flag(kTemperaCoverLayer, d.coverLayer),
     layerFrequency: tuning.number(kTemperaLayerFrequency, d.layerFrequency),
     layerFront: tuning.choice(kTemperaLayerDepth, 'back') == 'front',
-    layerScale: tuning.number(kTemperaLayerScale, d.layerScale),
-    layerOpacity: tuning.number(kTemperaLayerOpacity, d.layerOpacity),
     depth: tuning.flag(kTemperaDepth, d.depth),
     depthOfField: tuning.number(kTemperaDepthOfField, d.depthOfField),
     depthPan: tuning.number(kTemperaDepthPan, d.depthPan),
@@ -370,8 +354,12 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
 
   String? _pack;
   int _packToken = 0;
-  final List<LyricVisualizerImageLoader> _layerLoaders =
-      <LyricVisualizerImageLoader>[];
+
+  /// 素材包里的图（按文件路径，顺序同素材库列出顺序）与各自的摆放（键是文件名）。
+  final List<(String, LyricVisualizerImageLoader)> _layerLoaders =
+      <(String, LyricVisualizerImageLoader)>[];
+  Map<String, LyricVisualizerAssetPlacement> _layerPlacements =
+      const <String, LyricVisualizerAssetPlacement>{};
   LyricVisualizerAudio? _inkAudio;
   int? _inkOffset;
   bool _inkReady = false;
@@ -383,7 +371,11 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
     _engine = TemperaEngine(_buildConfig());
     _loadCover();
     _loadPack();
+    LyricVisualizerAssetStore.changes.addListener(_onAssetsChanged);
   }
+
+  /// 素材库变了（参数面板里加 / 删图、改摆放）：重读当前包，已解码的图不重新解码。
+  void _onAssetsChanged() => _loadPack(reuse: true);
 
   @override
   void didUpdateWidget(covariant TemperaVisualizer oldWidget) {
@@ -396,6 +388,7 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
 
   @override
   void dispose() {
+    LyricVisualizerAssetStore.changes.removeListener(_onAssetsChanged);
     _detachCover();
     _coverInfo?.dispose();
     _clearLayers();
@@ -449,8 +442,14 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
       cornerColor: c.palette.text,
       cover: _coverInfo?.image,
       layerImages: <ui.Image>[
-        for (final LyricVisualizerImageLoader l in _layerLoaders)
+        for (final (String _, LyricVisualizerImageLoader l) in _layerLoaders)
           if (l.image != null) l.image!,
+      ],
+      layerPlacements: <LyricVisualizerAssetPlacement>[
+        for (final (String path, LyricVisualizerImageLoader l) in _layerLoaders)
+          if (l.image != null)
+            _layerPlacements[File(path).uri.pathSegments.last] ??
+                LyricVisualizerAssetPlacement.defaults,
       ],
       title: c.title,
       artist: c.artist,
@@ -465,7 +464,7 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
       c.tuning.assetPack(kTemperaLayerPack, 'default');
 
   void _clearLayers() {
-    for (final LyricVisualizerImageLoader l in _layerLoaders) {
+    for (final (String _, LyricVisualizerImageLoader l) in _layerLoaders) {
       l
         ..removeListener(_refresh)
         ..dispose();
@@ -473,28 +472,54 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
     _layerLoaders.clear();
   }
 
-  /// 读素材包里的图层图片（folia 用户上传的画布图层）。素材库不可用（无数据目录）时按空包处理。
-  void _loadPack() {
+  /// 读素材包里的图层图片与逐张摆放（folia 用户上传的画布图层）。[reuse] 时已加载过的同一路径
+  /// 不重新解码。素材库不可用（无数据目录）时按空包处理。
+  void _loadPack({bool reuse = false}) {
     final String pack = _packOf(widget.context);
     _pack = pack;
     final int token = ++_packToken;
-    _clearLayers();
+    if (!reuse) {
+      _clearLayers();
+      _layerPlacements = const <String, LyricVisualizerAssetPlacement>{};
+    }
     unawaited(() async {
       List<File> files;
+      Map<String, LyricVisualizerAssetPlacement> placements;
       try {
         final LyricVisualizerAssetStore store =
             await LyricVisualizerAssetStore.open();
         files = await store.list(kTemperaAssetStyle, pack);
+        placements = await store.loadPlacements(kTemperaAssetStyle, pack);
       } on Object {
         files = const <File>[];
+        placements = const <String, LyricVisualizerAssetPlacement>{};
       }
       if (!mounted || token != _packToken) return;
+      final Map<String, LyricVisualizerImageLoader> old =
+          <String, LyricVisualizerImageLoader>{
+            for (final (String path, LyricVisualizerImageLoader l)
+                in _layerLoaders)
+              path: l,
+          };
+      _layerLoaders.clear();
       for (final File f in files.take(kTemperaMaxLayerImages)) {
+        final LyricVisualizerImageLoader? kept = old.remove(f.path);
+        if (kept != null) {
+          _layerLoaders.add((f.path, kept));
+          continue;
+        }
         final LyricVisualizerImageLoader loader = LyricVisualizerImageLoader()
           ..addListener(_refresh);
-        _layerLoaders.add(loader);
+        _layerLoaders.add((f.path, loader));
         loader.load(f.path);
       }
+      for (final LyricVisualizerImageLoader l in old.values) {
+        l
+          ..removeListener(_refresh)
+          ..dispose();
+      }
+      _layerPlacements = placements;
+      _refresh();
     }());
   }
 

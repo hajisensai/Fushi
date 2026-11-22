@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_compositions.dart';
@@ -40,8 +41,6 @@ class TemperaSettings {
     this.coverLayer = false,
     this.layerFrequency = 0.6,
     this.layerFront = false,
-    this.layerScale = 0.7,
-    this.layerOpacity = 1,
     this.depth = false,
     this.depthOfField = 1,
     this.depthPan = 1,
@@ -66,8 +65,6 @@ class TemperaSettings {
   final bool coverLayer;
   final double layerFrequency;
   final bool layerFront;
-  final double layerScale;
-  final double layerOpacity;
   final bool depth;
   final double depthOfField;
   final double depthPan;
@@ -89,8 +86,6 @@ class TemperaSettings {
     coverLayer,
     layerFrequency,
     layerFront,
-    layerScale,
-    layerOpacity,
   );
 }
 
@@ -276,7 +271,7 @@ List<Color?> temperaSegmentKeywordColors(
   return out;
 }
 
-/// 封面图层在一个分镜里的落位（folia `resolveTemperaImagePlacement`，pool 只有封面）。
+/// 图层图片在一个分镜里的落位（folia `TemperaImagePlacement`）。
 class _CoverPlacement {
   const _CoverPlacement(
     this.x,
@@ -311,28 +306,49 @@ int temperaPickLayerImage(int seed, int pool, int previous) {
   return pick;
 }
 
+/// 一张图在一个分镜里的落位（folia `resolveTemperaImagePlacement`）：图片只带「倾向」——按它自己的
+/// 横 / 纵对齐带（[LyricVisualizerAssetPlacement.horizontalBand] / `verticalBand`）加种子抖动取位置，
+/// 缩放 = 它的高度比例 × 0.9–1.1，透明度用它自己的。[placements] 与图片池一一对应。
 _CoverPlacement? _resolveCover(
   TemperaSettings s,
   int seed,
-  int pool,
+  List<LyricVisualizerAssetPlacement> placements,
   int previous,
 ) {
+  final int pool = placements.length;
   if (pool <= 0) return null;
   if (temperaHash01(seed, 6, 277) >= s.layerFrequency.clamp(0.0, 1.0)) {
     return null;
   }
-  // 对齐：横向自由（0.12–0.88），纵向靠下（0.68–0.86）。
+  final int pick = temperaPickLayerImage(seed, pool, previous);
+  final LyricVisualizerAssetPlacement p = placements[pick];
+  final (double x0, double x1) = p.horizontalBand;
+  final (double y0, double y1) = p.verticalBand;
   return _CoverPlacement(
-    0.12 + 0.76 * temperaHash01(seed, 1, 251),
-    0.68 + 0.18 * temperaHash01(seed, 2, 257),
-    s.layerScale * (0.9 + temperaHash01(seed, 3, 263) * 0.2),
+    x0 + (x1 - x0) * temperaHash01(seed, 1, 251),
+    y0 + (y1 - y0) * temperaHash01(seed, 2, 257),
+    p.scale * (0.9 + temperaHash01(seed, 3, 263) * 0.2),
     (temperaHash01(seed, 4, 269) - 0.5) * 0.08,
-    s.layerOpacity,
+    p.opacity,
     temperaHash01(seed, 5, 271) > 0.5,
     0.6 + temperaHash01(seed, 8, 283) * 0.8,
     s.layerFront,
-    temperaPickLayerImage(seed, pool, previous),
+    pick,
   );
+}
+
+/// 测试用：一张图在种子 [seed] 的分镜里落在哪（频率按 1、只有这一张）。
+({double x, double y, double scale, double opacity}) temperaLayerPlacementOf(
+  LyricVisualizerAssetPlacement placement,
+  int seed,
+) {
+  final _CoverPlacement c = _resolveCover(
+    const TemperaSettings(layerFrequency: 1),
+    seed,
+    <LyricVisualizerAssetPlacement>[placement],
+    -1,
+  )!;
+  return (x: c.x, y: c.y, scale: c.scale, opacity: c.opacity);
 }
 
 class _ShotView {
@@ -424,6 +440,7 @@ class TemperaSceneConfig {
     required this.cornerColor,
     this.cover,
     this.layerImages = const <ui.Image>[],
+    this.layerPlacements = const <LyricVisualizerAssetPlacement>[],
     this.title,
     this.artist,
     this.album,
@@ -443,6 +460,9 @@ class TemperaSceneConfig {
 
   /// 用户素材包里的图层图片（folia 用户上传的画布图层）。
   final List<ui.Image> layerImages;
+
+  /// 与 [layerImages] 一一对应的摆放（素材包 `placement.json`，没设过的用默认）；缺的按默认。
+  final List<LyricVisualizerAssetPlacement> layerPlacements;
   final String? title;
   final String? artist;
   final String? album;
@@ -461,6 +481,17 @@ class TemperaSceneConfig {
     if (settings.coverLayer && cover != null) cover!,
     ...layerImages,
   ];
+
+  /// 与 [layerPool] 一一对应的摆放：封面用默认摆放（folia 默认图层：横向自由、靠下、0.7 屏高）。
+  List<LyricVisualizerAssetPlacement> get layerPoolPlacements =>
+      <LyricVisualizerAssetPlacement>[
+        if (settings.coverLayer && cover != null)
+          LyricVisualizerAssetPlacement.defaults,
+        for (int i = 0; i < layerImages.length; i++)
+          i < layerPlacements.length
+              ? layerPlacements[i]
+              : LyricVisualizerAssetPlacement.defaults,
+      ];
 }
 
 /// 凝彩的场景缓存 + 逐帧绘制。
@@ -492,6 +523,7 @@ class TemperaEngine {
         prev.fontScale != next.fontScale ||
         !identical(prev.cover, next.cover) ||
         !_sameImages(prev.layerImages, next.layerImages) ||
+        !listEquals(prev.layerPlacements, next.layerPlacements) ||
         prev.theme != next.theme ||
         prev.title != next.title ||
         prev.artist != next.artist ||
@@ -555,7 +587,7 @@ class TemperaEngine {
             theme.colorRangesFor(l.text),
           ),
     };
-    final int pool = c.layerPool.length;
+    final List<LyricVisualizerAssetPlacement> pool = c.layerPoolPlacements;
     int previousImage = -1;
     for (int i = 0; i < paragraph.shots.length; i++) {
       final TemperaShot shot = paragraph.shots[i];

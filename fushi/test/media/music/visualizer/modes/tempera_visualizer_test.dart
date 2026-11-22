@@ -591,6 +591,48 @@ void main() {
       );
     });
 
+    test('图层图片按各自的摆放落位：对齐带、高度比例、透明度', () {
+      for (int seed = 0; seed < 60; seed++) {
+        final ({double x, double y, double scale, double opacity}) d =
+            temperaLayerPlacementOf(
+              LyricVisualizerAssetPlacement.defaults,
+              seed,
+            );
+        // 默认：横向自由、靠下、0.7 屏高、不透明（folia DEFAULT_TEMPERA_LAYER_IMAGE）。
+        expect(d.x, inInclusiveRange(0.12, 0.88));
+        expect(d.y, inInclusiveRange(0.68, 0.86));
+        expect(d.scale, inInclusiveRange(0.63, 0.77));
+        expect(d.opacity, 1);
+        final ({double x, double y, double scale, double opacity}) r =
+            temperaLayerPlacementOf(
+              const LyricVisualizerAssetPlacement(
+                align: LyricVisualizerAssetAlign.right,
+                verticalAlign: LyricVisualizerAssetVerticalAlign.top,
+                scale: 0.3,
+                opacity: 0.4,
+              ),
+              seed,
+            );
+        expect(r.x, inInclusiveRange(0.68, 0.86));
+        expect(r.y, inInclusiveRange(0.14, 0.32));
+        expect(r.scale, inInclusiveRange(0.27, 0.33));
+        expect(r.opacity, 0.4);
+      }
+      // 素材包行开了逐张摆放；全局的图层大小 / 透明度滑块已删。
+      final LyricVisualizerAssetPackSpec pack = temperaVisualizerEntry.tunings
+          .whereType<LyricVisualizerAssetPackSpec>()
+          .single;
+      expect(pack.placement, LyricVisualizerAssetPlacement.defaults);
+      expect(
+        temperaVisualizerEntry.tunings.map(
+          (LyricVisualizerTuningSpec s) => s.key,
+        ),
+        isNot(
+          anyOf(contains('layerImageScale'), contains('layerImageOpacity')),
+        ),
+      );
+    });
+
     testWidgets('audio + depth + AI theme + chaotic intensity', (
       WidgetTester tester,
     ) async {
