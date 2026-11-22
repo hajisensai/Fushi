@@ -7,6 +7,9 @@
 // - [SrsCardFaceSync] 把牌组开关随换卡下发（开关先于换卡），只改开关也会重放当前这一面。
 //
 // node / Chrome：本地缺时 skip 并写明原因，CI 上缺一律失败（见 test/helpers/node_runtime.dart）。
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
