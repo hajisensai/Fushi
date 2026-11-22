@@ -286,6 +286,45 @@ void main() {
       });
     });
 
+    test('长寿命信号：每次计算结束都摘掉自己挂的回调，不随请求数累积', () async {
+      // 预热器 / host 一次运行共用一个信号，单次计算挂上的回调若摘不掉，会在信号的
+      // 整个寿命里随请求数只增不减（每条还拽着那次计算的状态）。
+      final VideoFingerprintCancellation token = VideoFingerprintCancellation();
+      final List<VideoFingerprintCancellation> aborts =
+          <VideoFingerprintCancellation>[];
+      final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+        compute:
+            (
+              String absolutePath,
+              FileStat stat,
+              VideoFingerprintCancellation cancel,
+            ) async {
+              aborts.add(cancel);
+              return 'b' * 64;
+            },
+      );
+      for (int i = 0; i < 5; i++) {
+        final File file = await File(
+          '${directory.path}/long_$i.mkv',
+        ).writeAsBytes(List<int>.filled(64, i));
+        expect(await hashes.fingerprint(file.path, cancel: token), 'b' * 64);
+        expect(token.debugListenerCount, 0, reason: '第 $i 次计算结束后回调已摘');
+      }
+      expect(aborts, hasLength(5));
+      expect(token.isCancelled, isFalse);
+
+      // 默认计算：原生标志的回调在计算结束后同样摘掉。
+      final File native = await File(
+        '${directory.path}/long_native.mkv',
+      ).writeAsBytes(List<int>.filled(4096, 9));
+      await VideoSourceFingerprint.hashInIsolate(
+        native.absolute.path,
+        await native.stat(),
+        token,
+      );
+      expect(token.debugListenerCount, 0);
+    });
+
     test('已取消的信号不开算', () async {
       final File file = await File(
         '${directory.path}/pre.mkv',

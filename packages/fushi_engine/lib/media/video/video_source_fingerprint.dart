@@ -22,18 +22,54 @@ typedef VideoFingerprintCompute =
 
 /// 指纹计算的取消信号（拍板台 host-stop-fingerprint-cancel）：互联 host 停机时用它打断
 /// 自己发起的、正在整文件读盘的指纹计算，停机不必等几 GB 的片子算完。
+///
+/// 一个信号常常活得比单次计算长（预热器 / host 一次运行共用一个），所以单次计算挂的
+/// 回调走 [onCancel]、算完即摘；不往 [whenCancelled] 上挂 `then`——那种监听摘不掉，
+/// 会随请求数在信号的整个寿命里只增不减。
 final class VideoFingerprintCancellation {
   final Completer<void> _cancelled = Completer<void>();
+  final Set<_CancelListener> _listeners = <_CancelListener>{};
 
   bool get isCancelled => _cancelled.isCompleted;
 
-  /// 取消时完成（不会出错）。
+  /// 取消时完成（不会出错）。只给与信号同寿命的等待用；单次计算的回调用 [onCancel]。
   Future<void> get whenCancelled => _cancelled.future;
 
-  /// 取消（幂等）。
-  void cancel() {
-    if (!_cancelled.isCompleted) _cancelled.complete();
+  /// 取消时同步调用 [listener]（已取消则不登记、立即调用）。返回摘除函数（幂等），
+  /// 回调不再需要时必须调，否则它活到信号取消或被回收为止。
+  void Function() onCancel(void Function() listener) {
+    if (isCancelled) {
+      listener();
+      return _noop;
+    }
+    final _CancelListener entry = _CancelListener(listener);
+    _listeners.add(entry);
+    return () => _listeners.remove(entry);
   }
+
+  /// 还挂着的 [onCancel] 回调数（测试用：单次计算结束后应摘干净）。
+  @visibleForTesting
+  int get debugListenerCount => _listeners.length;
+
+  /// 取消（幂等）：完成 [whenCancelled]，并按登记顺序同步调用全部 [onCancel] 回调。
+  void cancel() {
+    if (_cancelled.isCompleted) return;
+    _cancelled.complete();
+    final List<_CancelListener> listeners = _listeners.toList();
+    _listeners.clear();
+    for (final _CancelListener entry in listeners) {
+      entry.callback();
+    }
+  }
+
+  static void _noop() {}
+}
+
+/// [VideoFingerprintCancellation.onCancel] 的一条登记（按身份摘除，同一函数登记两次也是两条）。
+final class _CancelListener {
+  _CancelListener(this.callback);
+
+  final void Function() callback;
 }
 
 /// 调用方经 [VideoFingerprintCancellation] 撤走了：这次没有指纹。
@@ -152,15 +188,8 @@ class VideoSourceFingerprint {
     pending.waiters++;
     if (cancel == null) return pending.digest;
     final Completer<String> result = Completer<String>();
-    pending.digest.then<void>(
-      (String digest) {
-        if (!result.isCompleted) result.complete(digest);
-      },
-      onError: (Object error, StackTrace stack) {
-        if (!result.isCompleted) result.completeError(error, stack);
-      },
-    );
-    cancel.whenCancelled.then<void>((_) {
+    // 信号常比这次计算活得长（预热器 / host 一次运行共用一个）：计算结束就摘掉回调。
+    final void Function() unregister = cancel.onCancel(() {
       if (result.isCompleted) return;
       if (--pending.waiters > 0) {
         // 还有别人在等：计算照常继续（文件归他们），本调用立即撤走。
@@ -168,12 +197,22 @@ class VideoSourceFingerprint {
         return;
       }
       // 最后一个等待方：打断计算，并让新请求不再并进来；本调用等它真正停下，结果由
-      // 上面 digest 的监听带回（停下前恰好算完就照常给出指纹）。
+      // 下面 digest 的监听带回（停下前恰好算完就照常给出指纹）。
       pending.abort.cancel();
       if (identical(_inFlight[absolutePath], pending)) {
         _inFlight.remove(absolutePath);
       }
     });
+    pending.digest.then<void>(
+      (String digest) {
+        unregister();
+        if (!result.isCompleted) result.complete(digest);
+      },
+      onError: (Object error, StackTrace stack) {
+        unregister();
+        if (!result.isCompleted) result.completeError(error, stack);
+      },
+    );
     return result.future;
   }
 
@@ -238,13 +277,14 @@ class VideoSourceFingerprint {
       throw VideoFingerprintCancelledException(absolutePath);
     }
     final FfcCancelFlag flag = FfcCancelFlag.create();
-    unawaited(cancel.whenCancelled.then<void>((_) => flag.cancel()));
+    final void Function() unregister = cancel.onCancel(flag.cancel);
     try {
       final String? hash = await _hashWorker(absolutePath, stat, flag.address);
       if (hash == null) throw VideoFingerprintCancelledException(absolutePath);
       return hash;
     } finally {
-      // worker 已返回、原生调用已结束，标志不再被读；之后的 cancel() 是空操作。
+      // worker 已返回、原生调用已结束，标志不再被读：先摘回调再释放内存。
+      unregister();
       flag.dispose();
     }
   }
