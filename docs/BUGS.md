@@ -103,6 +103,15 @@
 |---|:--:|:--:|---|
 | [BUG-5236](bugs/BUG-5236-srs-gen4-restore-sort-key-single-copy.md) | ✅ | ✅ | gen4 时间线恢复比同层前身先后时只看胜出 dot 的一份副本，与缓存层的钳位证据不同（HBK-AUDIT-204） |
 | [BUG-5235](bugs/BUG-5235-srs-gen4-cache-rules-not-bumped-for-layer-inheritance.md) | ✅ | ✅ | gen4 缓存推导口径没随 BUG-5190 升级：已物化的新代库原地重开留着按卡 ID 序继承的卡片标志（HBK-AUDIT-203） |
+> 共 4545 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5246](bugs/BUG-5246-dist-shader-warning-false-red.md) | ✅ | ✅ | Flutter 3.50 的着色器警告让 dist 把绿批次判红（「no done event」） |
+| [BUG-5242](bugs/BUG-5242-wait-slice-chain-wait-limit.md) | ✅ | ✅ | subagent_wait_slice：链式命令里一条 heavy 自带 --wait-max-min，其余 heavy 都拿不到默认时限 |
+| [BUG-5241](bugs/BUG-5241-gal-track-refresh-guard-reads-comments.md) | ✅ | ✅ | 音轨刷新定时器守卫从注释里也能找到 cancel，行为测试看不到存活的定时器 |
+| [BUG-5240](bugs/BUG-5240-chrome-tag-guard-misses-node-runtime-probe.md) | ✅ | ✅ | Chrome 标签守卫漏掉 `NodeTestRuntime.probe(needsChrome: true)`，7 个 SRS 卡面套件可被派到无 Chrome 机器 |
+| [BUG-5239](bugs/BUG-5239-heavy-wait-prediction-ignores-light-holders.md) | ✅ | ✅ | heavy.dart 排队预测不计轻槽持有者的内存，误判「等不完」提前 exit 75 |
 | [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
 | [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |

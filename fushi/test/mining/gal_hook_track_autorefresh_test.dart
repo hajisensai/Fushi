@@ -202,8 +202,16 @@ void main() {
       reason: '引擎 PCM 后端应有会话级低频自动刷新',
     );
 
+    expect(controller.trackAutoRefreshActive, isTrue);
     await controller.stopCapture();
     expect(controller.state.audioTracks, isEmpty);
+    // 离源后 refreshAudioTracks 提前返回、不再调引擎，只数引擎调用看不出定时器还活着
+    // （HBK-AUDIT-233），直接看定时器本身已注销。
+    expect(
+      controller.trackAutoRefreshActive,
+      isFalse,
+      reason: 'stopCapture 必须注销音轨刷新定时器',
+    );
     final int afterStop = engine.listCalls;
     await Future<void>.delayed(const Duration(milliseconds: 120));
     expect(engine.listCalls, afterStop, reason: 'stopCapture 后音轨刷新定时器必须停止');
