@@ -281,7 +281,7 @@ class StatFacts {
   /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行（写零的段不进）∪ 游玩会话
   /// 合成行，按精确时刻倒序、截到 [activityLimit]。游戏首页时间线与互联 host 的远端
   /// 活动端点都只吃它。加载时由 Rust 在后台 isolate 里一并排好、截好（`stats.rs`
-  /// `derive_activity`，BUG-5184），读方不再现算。
+  /// `derive_activity`，BUG-5203），读方不再现算。
   final List<ActivityEventRow> activityRows;
 
   /// **会话流的唯一数据源**（统计中心总览 + 三个域 tab + 按媒体的会话列表都吃它）：

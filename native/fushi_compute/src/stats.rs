@@ -11,7 +11,7 @@
 //!   （不稳定，并列元素的去向必须一致，见 [crate::dart::sort]）；
 //! - **按日合计**（总览的范围图 / 所选范围卡 / 学习日历 / 阅读速度）：全日面与阅读域日面各一份，
 //!   按 dateKey 首次出现的顺序；
-//! - **活动流**（`StatFacts.activityRows`，BUG-5184）：legacy 活动行 ∪ 非零段 ∪ 游玩会话骨架，按时刻
+//! - **活动流**（`StatFacts.activityRows`，BUG-5203）：legacy 活动行 ∪ 非零段 ∪ 游玩会话骨架，按时刻
 //!   倒序（照搬 `List.sort`）截到上限。只回来源 + 下标，行对象由调用方按原样复用 / 合成。
 //!
 //! 字符串全程是 UTF-16 码元（Dart `String` 的内部表示）：比较 = `String.compareTo`，

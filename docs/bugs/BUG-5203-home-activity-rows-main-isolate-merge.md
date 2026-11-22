@@ -1,4 +1,4 @@
-## BUG-5184 · 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序
+## BUG-5203 · 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序
 - **报告**：2026-11-22（BUG-4960 修复时发现，PR #4116 遗留项）
 - **真实性**：✅ 真问题（代码路径确认，未单独测量）。`packages/fushi_engine/lib/stats/stat_facts.dart` 的
   `StatFacts.activityRows` 是 getter：每次读都把 legacy 活动行 ∪ `segmentsAsActivityRows(segments)`（全部段）∪
