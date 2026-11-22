@@ -1,0 +1,6 @@
+## BUG-5247 · manga-audio-local-rebind-rollback-deletes-live
+- **报告**：2026-11-22（合并后审查 HBK-AUDIT-201，来源 PR #4136 `docs/reviews/2026-11-22-project-review.md`）
+- **真实性**：✅ 真 bug（P1，现有成品丢失）。`packages/fushi_engine/lib/tts/manga_audio/manga_audio_renderer.dart` 的 `bindLocalAudio`（develop@283a920286 `:855-875`）：同一段音频（同字节、同 sig）换了文件名再绑回原句时，`line.audio == e.value` 因 `name` 不同判为「变了」，`_produce` 把新整形结果**就地写到** `mangaLocalLineFileName(lineId, audio)`——这正是旧清单引用的文件（目标路径只由句 ID 与内容签名决定）。同批另一句整形失败时，`finally` 回滚按 `produced` 删文件，把旧清单仍引用的成品删掉，清单指向不存在的音频。同一类问题还在单句候选：`regenerate` 用同一个种子再出时候选文件名就是清单正在用的文件，`discardCandidate` 会把它删掉。
+- **[x] ① 已修复** — 与 BUG-5248 同一套「成品与清单一起提交」设计：生成端新增 `_AudioBatch`，所有新出的音频只写暂存文件 `mangaStagedFileName`（`p0b1.m4a` → `p0b1.stage.m4a`，清单从不引用），全部成功才 `publish` 改名到目标、紧接着存清单；没提交只删本批自己的暂存文件，绝不碰目标文件。`bindLocalAudio` 的回滚改为 `batch.discard()`；单句候选带 `stagedFile`，`keepCandidate` 才改名，`discardCandidate` 只删暂存文件，试听放暂存文件（`mangaCandidatePath`）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/tts/manga_audio/manga_audio_renderer_test.dart`「成品与清单一起提交」组：`同一段音频改名后再绑回原句、同批另一句整形失败：旧成品文件与清单都完好`（修复前红：`exists(live)` 为 false）、`同一个种子再出一次候选后撤回：清单正在用的文件不被删`。
+- **备注**：发布（改名）与存清单之间仍有一个进程崩溃窗口（新音频已到位、清单还是旧的）；要彻底消掉得让每个版本用不同文件名，会改动 AI 操作撤销按固定文件名认「是不是这次改的」的契约（`ctl_tts_batch.dart` `expectFile`），本轮不动。

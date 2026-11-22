@@ -71,6 +71,9 @@ class _FakeBackend implements MangaRenderBackend {
   final List<String> synthCalls = <String>[];
   int clipCalls = 0;
 
+  /// 每次合成开头收到要念的整句文字（测试在这里中途取消）。
+  void Function(String text)? onSynthesize;
+
   /// 每次 [prepare] 收到的行身份。
   final List<List<String>> prepared = <List<String>>[];
 
@@ -97,6 +100,7 @@ class _FakeBackend implements MangaRenderBackend {
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) async {
+    onSynthesize?.call(segments.join());
     cancel.throwIfCancelled();
     synthCalls.add('$voice|$seed|${segments.join('/')}');
     if (failVoices.contains(voice)) {
@@ -1276,6 +1280,259 @@ void main() {
           ),
         ),
       );
+    });
+
+    group('成品与清单一起提交（HBK-AUDIT-201 / 207 / 214）', () {
+      String read(String file) =>
+          File(p.join(renderer.directory.path, file)).readAsStringSync();
+
+      bool exists(String file) =>
+          File(p.join(renderer.directory.path, file)).existsSync();
+
+      List<String> stagedLeft() => <String>[
+        for (final FileSystemEntity e in renderer.directory.listSync())
+          if (e is File && e.path.contains('.stage.')) p.basename(e.path),
+      ];
+
+      MangaLocalAudio keep(String sig, String name, String content) {
+        final MangaLocalAudio audio = MangaLocalAudio(
+          sig: sig,
+          ext: '.wav',
+          name: name,
+        );
+        File(mangaLocalAudioSourcePath(renderer.directory.path, audio))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(content);
+        return audio;
+      }
+
+      test('同一段音频改名后再绑回原句、同批另一句整形失败：旧成品文件与清单都完好', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        final MangaAudioScript script = script0()..voices.byCharacter.clear();
+        final MangaRenderOutcome out = await run(script, ledger);
+        final MangaLocalAudio a = keep(
+          'aaaaaaaaaaaaaaaa',
+          'take1.wav',
+          'wav-a',
+        );
+        expect(
+          (await renderer.bindLocalAudio(
+            script: script,
+            manifest: out.manifest,
+            ledger: ledger,
+            bindings: <String, MangaLocalAudio>{'p0b0': a},
+            cancel: TtsRenderCancelToken(),
+          )).ok,
+          isTrue,
+        );
+        const String live = 'p0b0.faaaaaaaaaaaaaaaa.m4a';
+        final String liveBytes = read(live);
+        final String manifestBefore = await renderer.manifestFile
+            .readAsString();
+
+        // 同字节换了文件名：演出稿里的音源不再相等，这句要重新整形（目标还是 [live]）。
+        final MangaLocalAudio renamed = keep(
+          'aaaaaaaaaaaaaaaa',
+          'renamed.wav',
+          'wav-a',
+        );
+        final MangaLocalAudio bad = keep('cccccccccccccccc', 'bad.wav', 'bad');
+        final MangaLocalBindOutcome r = await renderer.bindLocalAudio(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          bindings: <String, MangaLocalAudio>{'p0b0': renamed, 'p2b0': bad},
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(r.ok, isFalse);
+        expect(r.failures.keys, <String>['p2b0']);
+        expect(exists(live), isTrue);
+        expect(read(live), liveBytes);
+        expect(await renderer.manifestFile.readAsString(), manifestBefore);
+        expect(out.manifest.lines[0].file, live);
+        expect(script.lineById('p0b0')!.audio, a);
+        expect(stagedLeft(), isEmpty);
+      });
+
+      test('补回中途取消：已处理的句子音频、清单、演出稿、账本都保持旧版本', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        final MangaAudioScript script = script0()..voices.byCharacter.clear();
+        final MangaRenderOutcome out = await run(script, ledger);
+        final String p0Before = read('p0b0.m4a');
+        final String manifestBefore = await renderer.manifestFile
+            .readAsString();
+        final List<Map<String, Object?>> linesBefore = <Map<String, Object?>>[
+          for (final MangaRenderedLine l in out.manifest.lines) l.toJson(),
+        ];
+
+        // 读法改了的两句（手填念法）排补回；合成到第二句时取消。
+        final TtsRenderCancelToken cancel = TtsRenderCancelToken();
+        backend.onSynthesize = (String text) {
+          if (text == '二句目') cancel.cancel();
+        };
+        await expectLater(
+          renderer.backfill(
+            script: script,
+            pageBlocks: _pages(),
+            defaultVoice: 'reading',
+            manifest: out.manifest,
+            ledger: ledger,
+            requests: const <MangaBackfillRequest>[
+              MangaBackfillRequest(lineId: 'p0b0', say: '一句目'),
+              MangaBackfillRequest(lineId: 'p2b0', say: '二句目'),
+            ],
+            onProgress: (int d, int t) {},
+            cancel: cancel,
+          ),
+          throwsA(isA<TtsRenderCancelled>()),
+        );
+        expect(backend.synthCalls.last, 'reading|5|一句目');
+        expect(read('p0b0.m4a'), p0Before);
+        expect(await renderer.manifestFile.readAsString(), manifestBefore);
+        expect(<Map<String, Object?>>[
+          for (final MangaRenderedLine l in out.manifest.lines) l.toJson(),
+        ], linesBefore);
+        expect(script.lineById('p0b0')!.say, isNull);
+        expect(stagedLeft(), isEmpty);
+      });
+
+      test('整卷重跑中途取消：旧清单引用的音频一个字节都不变', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        backend.failVoices.add('bad');
+        final MangaRenderOutcome out = await run(script0(), ledger);
+        final String p0Before = read('p0b0.m4a');
+        final String manifestBefore = await renderer.manifestFile
+            .readAsString();
+        backend.failVoices.clear();
+
+        // 换了默认种子：三句都要重出；出到第三句时取消。
+        final MangaAudioScript reseeded = script0()..defaultSeed = 6;
+        final TtsRenderCancelToken cancel = TtsRenderCancelToken();
+        backend.onSynthesize = (String text) {
+          if (text == 'またね') cancel.cancel();
+        };
+        await expectLater(
+          run(reseeded, ledger, previous: out.manifest, cancel: cancel),
+          throwsA(isA<TtsRenderCancelled>()),
+        );
+        expect(read('p0b0.m4a'), p0Before);
+        expect(exists('p0b1.ph.wav'), isTrue);
+        expect(await renderer.manifestFile.readAsString(), manifestBefore);
+        // 第二句这次其实配上了音，但没提交：账本里仍是未配音。
+        expect(ledger.entries.keys, <String>['p0b1']);
+        expect(stagedLeft(), isEmpty);
+      });
+
+      test('同一个种子再出一次候选后撤回：清单正在用的文件不被删', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        final MangaAudioScript script = script0()..voices.byCharacter.clear();
+        final MangaRenderOutcome out = await run(script, ledger);
+        Future<MangaRegenerateCandidate> regen() => renderer.regenerate(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          lineId: 'p2b0',
+          seed: 100,
+          cancel: TtsRenderCancelToken(),
+        );
+        await renderer.keepCandidate(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          candidate: await regen(),
+        );
+        expect(out.manifest.lines[2].file, 'p2b0.s100.m4a');
+        final String liveBytes = read('p2b0.s100.m4a');
+
+        final MangaRegenerateCandidate again = await regen();
+        expect(again.file, 'p2b0.s100.m4a');
+        expect(again.stagedFile, isNot(again.file));
+        expect(exists(again.stagedFile), isTrue);
+        await renderer.discardCandidate(again);
+        expect(read('p2b0.s100.m4a'), liveBytes);
+        expect(exists(again.stagedFile), isFalse);
+      });
+
+      test('改成「不读」的句子：不再单句合成 / 补回，从清单拿掉并清掉音频', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        backend.failVoices.add('bad');
+        final MangaAudioScript script = script0();
+        final MangaRenderOutcome out = await run(script, ledger);
+        script.replaceLine(
+          'p0b1',
+          (MangaScriptLine l) => l.copyWith(kind: CastLineKind.skip),
+        );
+        script.replaceLine(
+          'p2b0',
+          (MangaScriptLine l) => l.copyWith(kind: CastLineKind.skip),
+        );
+        backend.synthCalls.clear();
+
+        await expectLater(
+          renderer.regenerate(
+            script: script,
+            pageBlocks: _pages(),
+            defaultVoice: 'reading',
+            lineId: 'p2b0',
+            seed: 9,
+            cancel: TtsRenderCancelToken(),
+          ),
+          throwsA(
+            isA<MangaLineFailure>().having(
+              (MangaLineFailure f) => f.code,
+              'code',
+              'line_not_read',
+            ),
+          ),
+        );
+        final Map<String, MangaBackfillStatus> r = await renderer.backfill(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          manifest: out.manifest,
+          ledger: ledger,
+          requests: const <MangaBackfillRequest>[
+            MangaBackfillRequest(lineId: 'p0b1', voice: 'alt1'),
+          ],
+          onProgress: (int d, int t) {},
+          cancel: TtsRenderCancelToken(),
+        );
+        expect(r['p0b1'], MangaBackfillStatus.lineMissing);
+        expect(backend.synthCalls, isEmpty);
+
+        final List<String> dropped = await renderer.dropUnreadLines(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          lineIds: <String>['p0b0', 'p0b1', 'p2b0'],
+        );
+        expect(dropped, <String>['p0b1', 'p2b0']);
+        expect(
+          out.manifest.lines.map((MangaRenderedLine l) => l.lineId),
+          <String>['p0b0'],
+        );
+        expect(ledger.entries, isEmpty);
+        expect(exists('p2b0.m4a'), isFalse);
+        expect(exists('p0b1.ph.wav'), isFalse);
+        expect(exists('p0b0.m4a'), isTrue);
+        final MangaRenderManifest? saved = await MangaRenderManifest.load(
+          renderer.manifestFile,
+        );
+        expect(saved!.lines.map((MangaRenderedLine l) => l.lineId), <String>[
+          'p0b0',
+        ]);
+
+        // 与整卷生成同一判据：重跑也不把它们放回来。
+        final MangaRenderOutcome rerun = await run(
+          script,
+          ledger,
+          previous: out.manifest,
+        );
+        expect(
+          rerun.manifest.lines.map((MangaRenderedLine l) => l.lineId),
+          <String>['p0b0'],
+        );
+      });
     });
   });
 

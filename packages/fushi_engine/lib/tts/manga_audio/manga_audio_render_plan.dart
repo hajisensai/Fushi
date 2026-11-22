@@ -41,6 +41,13 @@ String mangaPlaceholderFileName(String lineId) => '$lineId.ph.wav';
 /// 单句换种子重生成的候选文件名（保留后就是这句的文件，撤回则删掉）。
 String mangaCandidateFileName(String lineId, int seed) => '$lineId.s$seed.m4a';
 
+/// 一句成品音频 [file] 提交前的暂存文件名（`p0b1.m4a` → `p0b1.stage.m4a`，扩展名不变，
+/// ffmpeg 照旧按它选封装）。清单从不引用暂存文件：生成 / 补回 / 换本地音频 / 单句候选
+/// 都先写到这里，提交时才改名成 [file]，没提交就删掉，旧清单引用的音频不会被半路改写
+/// 或误删（HBK-AUDIT-201 / 207）。残留的暂存文件由 `sweepUnreferenced` 清掉。
+String mangaStagedFileName(String file) =>
+    '${p.withoutExtension(file)}.stage${p.extension(file)}';
+
 /// 剪有声书的句子在清单 `voice` 字段里的标记（区分「合成」与「有声书片段」，也让片段
 /// 区间变了能被识别出来重剪）。
 const String kMangaClipVoicePrefix = 'audiobook:';
