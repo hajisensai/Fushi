@@ -70,7 +70,9 @@ class AsrHostJobRunner implements HostJobRunner {
       'languages': models,
       'acceptsVideoId': resolveVideoPath != null,
       'audioProfiles': <String>[
-        for (final asr.AsrAudioProfile profile in asr.AsrAudioProfile.values)
+        // 只报两种声学素材：`song`（混音 + 人声分离）是 app 音乐库歌词那条链路
+        // 自己选的档位，host 转录任务不收（[parseAsrAudioProfile]）。
+        for (final asr.AsrAudioProfile profile in asr.kAsrPackAudioProfiles)
           profile.name,
       ],
       'outputs': <String>[asr.AsrJobFiles.srt, asr.AsrJobFiles.cueTokens],
@@ -246,9 +248,12 @@ Future<bool> claimAsrServiceJobDir(
 }
 
 /// `cleanSpeech` / `mixedAudio`（大小写不敏感）→ 枚举；认不出返回 null。
+///
+/// 只认 [asr.kAsrPackAudioProfiles]：`song` 不是模型包属性（选包按混音），这里的
+/// 调用方（host 转录任务、服务端模型键 `<tag>@<profile>`）都按包 / 声学素材说话。
 asr.AsrAudioProfile? parseAsrAudioProfile(String value) {
   final String v = value.trim().toLowerCase();
-  for (final asr.AsrAudioProfile profile in asr.AsrAudioProfile.values) {
+  for (final asr.AsrAudioProfile profile in asr.kAsrPackAudioProfiles) {
     if (profile.name.toLowerCase() == v) return profile;
   }
   return null;

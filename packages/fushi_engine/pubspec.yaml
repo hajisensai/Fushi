@@ -50,7 +50,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 63881fd547769dea3c1a98b34f5519a984dc280e
+      ref: a5a9a90aacc1ea484f27c53d850104bf499d9225
   # 外挂字幕按内嵌参考轨对时间轴的算法（subtitle_reference_alignment /
   # subtitle_time_rewriter）住在上游；本包只留 ffmpeg 抽轨与原稿备份的装配层
   # （media/video/subtitle/embedded_reference_subtitle_sync.dart）。同仓同 sha。
@@ -58,7 +58,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 63881fd547769dea3c1a98b34f5519a984dc280e
+      ref: a5a9a90aacc1ea484f27c53d850104bf499d9225
   archive: ^3.6.1
   characters: ^1.3.0
   collection: any

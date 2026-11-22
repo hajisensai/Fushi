@@ -19,6 +19,26 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:path/path.dart' as p;
 
+/// 滑窗识别器在混音素材上的 id（存量任务目录里的 `drafts.sliding_mixed.json` 与
+/// `state.json` 的 `recognizer` 都是它，冻结不改）。
+const String kSlidingVideoSubtitleRecognizerId = 'sliding_mixed';
+
+/// 滑窗识别器在歌曲素材上的 id：识别的是人声分离后的音频，稿与混音不同，按识别器
+/// 分的 `drafts.<id>.json` 不能和 [kSlidingVideoSubtitleRecognizerId] 混用。
+const String kSlidingSongVideoSubtitleRecognizerId = 'sliding_song';
+
+/// 识别器转录用的素材档位只收混音与歌曲：`cleanSpeech` 的能量门限在带伴奏 / BGM
+/// 的音轨上前提不成立。
+void checkVideoSubtitleRecognizerProfile(asr.AsrAudioProfile profile) {
+  if (profile == asr.AsrAudioProfile.cleanSpeech) {
+    throw ArgumentError.value(
+      profile,
+      'audioProfile',
+      'video subtitle recognizers take mixedAudio or song',
+    );
+  }
+}
+
 /// 识别器进度：0~1 + 文本。
 typedef VideoSubtitleRecognizeProgress =
     void Function(double fraction, String message);
@@ -196,26 +216,30 @@ Future<File> extractVideoSubtitleAudio({
   return out;
 }
 
-/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（`mixedAudio`）跑
-/// plan → start → run →
+/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（[audioProfile]：
+/// 视频是 `mixedAudio`，音乐库歌词是 `song`）跑 plan → start → run →
 /// 读回 `transcript.srt` 与 `transcript.tokens.jsonl`。
 ///
 /// 切段由上游按模型架构决定（`buildAsrSegmenter`）：日语 Parakeet（NeMo CTC）是
 /// 15 s/3 s 滑窗；普通话 X-ASR zipformer 不是 NeMo CTC，上游在 `mixedAudio` 下给它的是
 /// Silero VAD 切段，不是滑窗（BGM 下 VAD 漏对白的已知短板在上游，要改去
-/// `hajisensai/fushi-subtitles`）。
+/// `hajisensai/fushi-subtitles`）。`song` 选包、切段都按混音，识别前先做人声分离
+/// （上游 `asr_vocal_separation.dart`）。
 ///
-/// 转录任务目录由上游服务管（按音频文件名 + 字节数 + 模型包派生），中途暂停 /
+/// 转录任务目录由上游服务管（按音频文件名 + 字节数 + 模型包 + 素材派生），中途暂停 /
 /// 进程重启后再调同一音频即从断点续。
 class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   SlidingWindowVideoSubtitleRecognizer({
     required this.serviceFactory,
     this.preference = asr.AsrAccelerationPreference.auto,
     this.language = VideoSubtitleLanguage.japanese,
-  });
+    this.audioProfile = asr.AsrAudioProfile.mixedAudio,
+  }) {
+    checkVideoSubtitleRecognizerProfile(audioProfile);
+  }
 
   /// 与 `AsrHostJobRunner.serviceFactory` 同形：按素材建服务。本识别器只用
-  /// [asr.AsrAudioProfile.mixedAudio]。
+  /// [audioProfile]。
   final asr.AsrTranscriptionService Function(asr.AsrAudioProfile profile)
   serviceFactory;
   final asr.AsrAccelerationPreference preference;
@@ -223,8 +247,13 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   /// 识别语言。不进 [id]：各语言的任务目录本来就分开（[VideoSubtitleLanguage.jobId]）。
   final VideoSubtitleLanguage language;
 
+  /// 转录素材：`mixedAudio`（视频）或 `song`（音乐库歌词，先做人声分离）。进 [id]。
+  final asr.AsrAudioProfile audioProfile;
+
   @override
-  String get id => 'sliding_mixed';
+  String get id => audioProfile.separatesVocals
+      ? kSlidingSongVideoSubtitleRecognizerId
+      : kSlidingVideoSubtitleRecognizerId;
 
   @override
   Future<List<SubtitleDraftCue>> recognize({
@@ -243,9 +272,7 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
       streamIndex: audioStreamIndex,
     );
     throwIfSubtitleCancelled(cancel);
-    final asr.AsrTranscriptionService service = serviceFactory(
-      asr.AsrAudioProfile.mixedAudio,
-    );
+    final asr.AsrTranscriptionService service = serviceFactory(audioProfile);
     final asr.AsrLanguage asrLanguage = language.asrLanguage;
     final asr.AsrTranscribePlan plan = await service.plan(
       language: asrLanguage,
@@ -253,7 +280,8 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     );
     if (!plan.modelReady) {
       throw VideoSubtitleRecognizeFailure(
-        'asr models for ${language.tag} (mixedAudio) are not downloaded',
+        'asr models for ${language.tag} (${audioProfile.name}) are not '
+        'downloaded',
       );
     }
     onProgress(0, 'loading model');

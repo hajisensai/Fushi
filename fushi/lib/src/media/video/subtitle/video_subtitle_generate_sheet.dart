@@ -10,7 +10,8 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
     show SubtitleAiUsageTally, kSubtitleAiReplyIncomplete;
@@ -383,6 +384,16 @@ class _VideoSubtitleGenerateSheetState
   /// 语言初值从哪一档来（提示「为什么选了它」）；用户自己选过 / 接回已有任务后为 null。
   VideoSubtitleLanguageSource? _languageSource;
 
+  /// 这次转录用的素材（[AppVideoSubtitleService.asrAudioProfileFor]：视频混音，音乐
+  /// 默认歌曲 = 人声分离，手机内存不够时退回混音）；null = 还在判定。模型就绪 / 下载
+  /// 都按它查，开跑也按它跑（[AppVideoSubtitleOptions.audioProfile]）。
+  AsrAudioProfile? _audioProfile;
+
+  /// 判定出来之前查下载进度用的猜测：音乐按歌曲（它的接回会兜到混音那条上）。
+  AsrAudioProfile get _profileGuess =>
+      _audioProfile ??
+      (_target.isMusic ? AsrAudioProfile.song : AsrAudioProfile.mixedAudio);
+
   /// 识别模型是否已下载；null = 还在查。
   bool? _modelReady;
   String? _planError;
@@ -446,6 +457,9 @@ class _VideoSubtitleGenerateSheetState
   Future<void> _applyLanguage(VideoSubtitleLanguage language) async {
     setState(() {
       _language = language;
+      // 素材按语言判（各语言的包与内存估算不同），沿用上一门语言的判定会在新判定
+      // 回来前拿错的素材查 / 下模型。
+      _audioProfile = null;
       _modelReady = null;
       _planError = null;
       _asrDownloadError = null;
@@ -453,7 +467,7 @@ class _VideoSubtitleGenerateSheetState
       _estimate = null;
     });
     final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload(language: language);
+        .resumeDownload(language: language, audioProfile: _profileGuess);
     if (asr != null) {
       setState(() => _asrDownload = _starting);
       unawaited(_followAsr(asr, language));
@@ -485,7 +499,7 @@ class _VideoSubtitleGenerateSheetState
     // 下载归全应用登记表、不归弹层（kZZmXQBv7E）：关掉再打开弹层时接回进行中的
     // 那条，进度照常显示、按钮不再亮——以前这里看不到它，再点一次就起第二条写者。
     final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload(language: _language);
+        .resumeDownload(language: _language, audioProfile: _profileGuess);
     if (asr != null) {
       _asrDownload = _starting;
       unawaited(_followAsr(asr, _language));
@@ -523,8 +537,15 @@ class _VideoSubtitleGenerateSheetState
   Future<void> _refreshPlan() async {
     final VideoSubtitleLanguage language = _language;
     try {
+      final AsrAudioProfile profile = await _service.asrAudioProfileFor(
+        _target,
+        language,
+      );
+      if (!mounted || language != _language) return;
+      setState(() => _audioProfile = profile);
       final bool ready = await _service.asrModelPort.isReady(
         language: language,
+        audioProfile: profile,
       );
       if (mounted && language == _language) {
         setState(() => _modelReady = ready);
@@ -608,7 +629,13 @@ class _VideoSubtitleGenerateSheetState
     });
     final VideoSubtitleLanguage language = _language;
     unawaited(
-      _followAsr(_service.asrModelPort.download(language: language), language),
+      _followAsr(
+        _service.asrModelPort.download(
+          language: language,
+          audioProfile: _profileGuess,
+        ),
+        language,
+      ),
     );
   }
 
@@ -781,6 +808,7 @@ class _VideoSubtitleGenerateSheetState
           language: _language,
           frames: frames,
           pinnedEvidence: widget.pinnedEvidence,
+          audioProfile: _audioProfile,
         ),
       );
       setState(() => _attach(job));
@@ -1026,23 +1054,47 @@ class _VideoSubtitleGenerateSheetState
     ],
   );
 
+  /// 音乐：说明这次做不做人声分离（做 = 要多下分离模型；不做 = 手机内存不够退回）。
+  Widget? _vocalSeparationHint() {
+    final AsrAudioProfile? profile = _audioProfile;
+    if (!_target.isMusic || profile == null) return null;
+    return profile.separatesVocals
+        ? _hint(
+            t.music_subtitle_vocal_separation_on,
+            key: const ValueKey<String>('music-subtitle-vocal-separation-on'),
+          )
+        : _hint(
+            t.music_subtitle_vocal_separation_low_memory,
+            key: const ValueKey<String>(
+              'music-subtitle-vocal-separation-low-memory',
+            ),
+          );
+  }
+
   Widget _modelStatus(BuildContext context) {
     final bool? ready = _modelReady;
     final bool zh = _language == VideoSubtitleLanguage.mandarin;
     if (_planError != null) return _hint(_planError!, error: true);
     if (ready == null) return const FushiLinearProgressIndicator();
+    final Widget? separation = _vocalSeparationHint();
     if (ready) {
-      return _hint(
+      final Widget readyHint = _hint(
         zh
             ? t.video_subtitle_ai_model_ready_zh
             : t.video_subtitle_ai_model_ready,
         key: const ValueKey<String>('video-subtitle-ai-model-ready'),
+      );
+      if (separation == null) return readyHint;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[readyHint, separation],
       );
     }
     final ModelDownloadEvent? progress = _asrDownload;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        ?separation,
         _hint(
           zh
               ? t.video_subtitle_ai_model_missing_zh

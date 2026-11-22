@@ -155,10 +155,41 @@ final SharedModelDownloads sharedModelDownloads = SharedModelDownloads();
 /// `vocab` 等文件，也不能并发写）。
 String asrPackDownloadKey(String packId) => 'asr:$packId';
 
+/// 歌曲素材（`song`）那条下载的单飞键：与混音同一个包 id，但还要多下一个人声分离
+/// 模型，单飞键另加后缀——挂到混音那条下载上会在缺分离模型时就宣告「下完」。
+String asrPackSongDownloadKey(String packId) =>
+    '${asrPackDownloadKey(packId)}+vocals';
+
 /// [language] 在 [profile] 素材下当前选中的那个包的单飞键（与转录服务
 /// `downloadModel` 落盘的目录一致：服务内部同样经 `asrModelPackFor` 取包）。
-String asrDownloadKeyFor(AsrLanguage language, AsrAudioProfile profile) =>
-    asrPackDownloadKey(asrModelPackFor(language, profile: profile).id);
+/// 歌曲素材见 [asrPackSongDownloadKey] 与 [joinSongModelDownload]。
+String asrDownloadKeyFor(AsrLanguage language, AsrAudioProfile profile) {
+  final String packId = asrModelPackFor(language, profile: profile).id;
+  return profile.separatesVocals
+      ? asrPackSongDownloadKey(packId)
+      : asrPackDownloadKey(packId);
+}
+
+/// 发起或挂上歌曲素材那条下载（单飞键 [songKey]）：混音包的识别文件 + 人声分离模型。
+///
+/// 识别文件**只由混音那条（[mixedKey]）写**：本条先挂上去等它下完（视频页 / 设置页
+/// 同时在下也只有一个写者），[mixedReady] 确认识别文件已就绪后才跑
+/// [downloadSongMissing]，那时下载器只剩分离模型要写。混音那条被取消（设置页按包
+/// 取消）时它的监听流照样正常结束，识别文件却没下完：本条到此为止，不能接着由
+/// [downloadSongMissing] 去写识别文件——那既违背了取消，之后再有人重开混音下载也会
+/// 成为同一批文件的第二个写者。
+Stream<ModelDownloadEvent> joinSongModelDownload(
+  SharedModelDownloads downloads, {
+  required String mixedKey,
+  required String songKey,
+  required Stream<ModelDownloadEvent> Function() downloadMixedMissing,
+  required Future<bool> Function() mixedReady,
+  required Stream<ModelDownloadEvent> Function() downloadSongMissing,
+}) => downloads.join(songKey, () async* {
+  yield* downloads.join(mixedKey, downloadMixedMissing);
+  if (!await mixedReady()) return;
+  yield* downloadSongMissing();
+});
 
 /// MOSS（audio.cpp 运行库 + 权重）的单飞键。各后端共用同一份权重，所以不分后端。
 const String kMossDownloadKey = 'moss';
