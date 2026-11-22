@@ -131,7 +131,9 @@ namespace flutter_inappwebview_plugin
     }
     void setSurfaceSize(size_t width, size_t height, float capture_scale_factor,
       float device_scale_factor);
-    void setPosition(size_t x, size_t y, float scale_factor);
+    void setPosition(double x, double y, float scale_factor);
+    void setHostWindowVisible(bool visible);
+    void onHostWindowBoundsChanged();
     // 窗口宿主模式：子 HWND 是否接收鼠标 / 触摸。关掉后（EnableWindow FALSE）命中测试跳过它，
     // 输入落到下面的 Flutter 视图（底层合成：Flutter 层画在它上面）。composition 档返回 false。
     bool setWindowedInputEnabled(bool enabled);
@@ -193,8 +195,8 @@ namespace flutter_inappwebview_plugin
     void callDevToolsProtocolMethod(const std::string& methodName, const std::optional<std::string>& parametersAsJson, const std::function<void(const HRESULT& errorCode, const std::optional<std::string>&)> completionHandler) const;
     void addDevToolsProtocolEventListener(const std::string& eventName);
     void removeDevToolsProtocolEventListener(const std::string& eventName);
-    void pause() const;
-    void resume() const;
+    void pause();
+    void resume();
     void getCertificate(const std::function<void(const std::optional<std::unique_ptr<SslCertificate>>)> completionHandler) const;
 
     std::string pageFrameId() const
@@ -223,6 +225,12 @@ namespace flutter_inappwebview_plugin
     void applyWindowedBounds();
     std::vector<std::array<double, 5>> windowedExclusions_;
     void applyWindowedRegion(HWND child);
+    bool hostWindowVisible_ = true;
+    bool isPaused_ = false;
+    double compositionLogicalX_ = 0.0;
+    double compositionLogicalY_ = 0.0;
+    bool hasCompositionPosition_ = false;
+    void syncCompositionHostPosition();
     POINT lastCursorPos_ = { 0, 0 };
     VirtualKeyState virtualKeys_;
 
