@@ -7528,6 +7528,26 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setLibraryCurateState(String value) =>
       setPref('library_curate_state', value);
 
+  /// AI 管库自动复查（spec docs/specs/2026-11-22-ai-library-agent-design.md §7，所有者
+  /// 2026-11-22 拍板「流水线打底 + agent 自动复查」，**默认开**）：库管家自动路径跑完
+  /// 后起一场无人值守的 AI 助手会话复查新条目，首次 / 累积改动较多 / 隔一个月复查
+  /// 全库。没指派「AI 助手」提供商时不发请求。设备本地。
+  bool get libraryAgentReviewAuto =>
+      getPref('library_agent_review_auto', defaultValue: true) as bool;
+
+  Future<void> setLibraryAgentReviewAuto(bool value) async {
+    await setPref('library_agent_review_auto', value);
+    notifyListeners();
+  }
+
+  /// 自动复查的本机状态（JSON，见 `LibraryAgentReviewState`）。设备本地，丢了只是
+  /// 下一次按首次（全库）复查。
+  String get libraryAgentReviewState =>
+      getPref('library_agent_review_state', defaultValue: '') as String;
+
+  Future<void> setLibraryAgentReviewState(String value) =>
+      setPref('library_agent_review_state', value);
+
   Future<void> setMangaOnlineCatalogEnabled(bool value) async {
     await setPref('manga_online_catalog_enabled', value);
     notifyListeners();
