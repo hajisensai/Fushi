@@ -662,6 +662,62 @@ fn deck_delete_matches_protocol_3() {
     }
 }
 
+/// BUG-5209：默认牌组被挪到 `Lang::JP` 下面，删 `Lang` 不连带删它——默认牌组留在树里、挂回顶层，它的卡不动；
+/// 子树里别的牌组照常删、卡照常移走。以前整棵子树连默认牌组一起写删除标记，树里从此缺默认牌组。
+#[test]
+fn deck_delete_keeps_the_default_deck_moved_into_the_subtree() {
+    for delete_cards in [false, true] {
+        let lib = decked();
+        let default = default_deck_id(P);
+        lib.apply(T1, vec![edit("deck", &default, "parent", json!(JP))]);
+        let w = W::new(&lib);
+        let tree = |w: &W<'_>| {
+            write(&w.t(), w.p.col, |s| {
+                let tree = s.deck_tree()?;
+                let canon = tree.default_deck.clone();
+                let mut v = json!({
+                    "default": canon,
+                    "decks": tree.decks.keys().cloned().collect::<Vec<_>>(),
+                    "parent": tree.decks.get(&canon).and_then(|d| d.parent.clone()),
+                });
+                let mut in_default = Vec::new();
+                for c in all_cards() {
+                    if s.card_deck(&c, None).ok().as_deref() == Some(canon.as_str()) {
+                        in_default.push(c);
+                    }
+                }
+                v["inDefault"] = json!(in_default);
+                Ok(v)
+            })
+            .unwrap()
+        };
+        let before = tree(&w);
+        let canon = before["default"].as_str().unwrap().to_owned();
+        assert_eq!(before["parent"], json!(JP), "{before}");
+        let base = json!({"deck": LANG, "deleteCards": delete_cards, "limit": 1, "deletedAt": T1 + 1, "ts": "anchored"});
+        let mut token = Value::Null;
+        for _ in 0..64 {
+            let mut r = base.clone();
+            r["token"] = token;
+            let v = writes_intent::deck_delete(&w.t(), w.p.col, &W::req(T1 + 1, r)).unwrap();
+            token = v["token"].clone();
+            if v["done"] == json!(true) {
+                break;
+            }
+        }
+        let after = tree(&w);
+        let decks: Vec<String> = serde_json::from_value(after["decks"].clone()).unwrap();
+        assert!(decks.contains(&canon), "默认牌组还在树里：{after}");
+        assert!(!decks.iter().any(|d| d == LANG || d == JP), "{after}");
+        assert_eq!(after["parent"], Value::Null, "默认牌组挂回顶层：{after}");
+        // 原本就在默认牌组里的卡一张没动（子树里别的卡移到 Lang 的父 = 默认牌组，所以只比包含关系）。
+        let was: Vec<String> = serde_json::from_value(before["inDefault"].clone()).unwrap();
+        let now: Vec<String> = serde_json::from_value(after["inDefault"].clone()).unwrap();
+        assert!(!was.is_empty(), "{before}");
+        assert!(was.iter().all(|c| now.contains(c)), "{before}\n{after}");
+    }
+}
+
 /// `sched`：重置 / 改期 / 撤销（只撤最后一条生效的）/ 按牌组重排。日志 ID 随机，比状态时去掉。
 #[test]
 fn sched_matches_protocol_3() {
