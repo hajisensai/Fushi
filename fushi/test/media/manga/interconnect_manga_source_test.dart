@@ -329,8 +329,8 @@ void main() {
       // 页认不出（续跑不复用）。
       expect(
         pages.first.pageKey,
-        '${ref.bookKey} ${mangaChapterDigest('/manga/csm/2')}'
-        ' src-c1p0',
+        '${ref.bookKey}\u0000${mangaChapterDigest('/manga/csm/2')}'
+        '\u0000src-c1p0',
       );
       expect(ref.pageKey, isNull);
       expect(await adapter.fetchChapterPage(pages.first), <int>[0xC0, 1, 0]);

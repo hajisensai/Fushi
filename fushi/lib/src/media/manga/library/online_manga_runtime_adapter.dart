@@ -271,7 +271,8 @@ class KavitaMangaPageRef extends OnlineMangaPageRef {
 
   /// Kavita 的章 id 是服务器侧稳定身份，章内页序由服务器按文件定。
   @override
-  String get pageKey => 'kavita $serverConfigId $chapterId $page';
+  String get pageKey =>
+      'kavita\u0000$serverConfigId\u0000$chapterId\u0000$page';
 
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,
