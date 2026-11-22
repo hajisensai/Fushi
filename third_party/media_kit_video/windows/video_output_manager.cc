@@ -68,6 +68,19 @@ void VideoOutputManager::Dispose(int64_t handle,
   }).detach();
 }
 
+std::optional<VideoOutputFrameStats> VideoOutputManager::FrameStats(
+    int64_t handle) {
+  std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    return std::nullopt;
+  }
+  auto it = video_outputs_.find(handle);
+  if (it == video_outputs_.end()) {
+    return std::nullopt;
+  }
+  return it->second->FrameStats();
+}
+
 VideoOutputManager::~VideoOutputManager() {
   std::lock_guard<std::mutex> lock(mutex_);
   // |VideoOutput| destructor will do the relevant cleanup.

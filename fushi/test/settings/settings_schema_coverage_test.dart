@@ -271,11 +271,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
   'appearance/Mascot glow':
       'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
-  // NSFW 两个开关（拍板台 w04vrhUAaX）：生效点是库页 / 继续卡的封面框（模糊）与
+  // NSFW 两个开关（拍板台 w04vrhUAaX；qiqSbvdxrk 起从外观挪到「通用 › 作品隐私」，
+  // id 与偏好键不变）：生效点是库页 / 继续卡的封面框（模糊）与
   // 制卡时的卡图（模糊副本）——harness 设置页里既没有库页封面也不制卡。封面框读
   // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
-  'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
-  'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  'general/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
+  'general/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  // 上锁作品（拍板台 qiqSbvdxrk）：「显示已上锁的作品」是内存里的会话状态（不落
+  // 偏好，打开要过口令 / 系统验证），口令摘要随上锁标记同步——harness 设置页里既
+  // 没有库页也没有上锁作品。解锁 / 重新藏、口令设 / 改 / 删的验证规则与显示口径由
+  // media_lock_test 咬住。
+  'general/Show locked titles': 'test/media/privacy/media_lock_test.dart',
+  'general/Unlock passcode': 'test/media/privacy/media_lock_test.dart',
+  'general/Remove unlock passcode': 'test/media/privacy/media_lock_test.dart',
   // 墨水屏每 N 页全刷：生效点是小说三种 view mode 与漫画阅读器的翻页计数和全刷画布，
   // harness 设置页里没有阅读器。间隔值 → 每 N 次翻页触发一次、0 = 关、阅读器接线由
   // eink_full_refresh_test 咬住。

@@ -256,6 +256,12 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   // v156 作品级 NSFW 标记：同上。
   'media_nsfw_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v171 上锁标记：同 media_privacy_flags / media_nsfw_flags（宿主逻辑外键）。
+  'media_locked_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v171 解锁口令摘要：跟着上锁标记走——导出副本里一条上锁记录都不剩就不带它。
+  'media_lock_credentials': BackupTableRule.rowLevel(
+    '_stripOrphanUserDataTables',
+  ),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',

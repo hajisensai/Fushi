@@ -61,6 +61,9 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // Apple Music 官方集成（MusicKit，macOS 14+ 才能整曲播放）。与 iOS 同一份实现。
       FushiAppleMusic.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // 上锁作品解锁的系统验证（Touch ID / 登录密码）。与 iOS 同一份实现。
+      FushiDeviceOwnerAuth.register(
+        binaryMessenger: controller.engine.binaryMessenger)
       // 桌面 / 通知中心小组件快照 + 菜单栏播放条（Live Activity 的 macOS 对应物）。
       // 与 iOS 同一份实现（apple/HomeWidgets/FushiHomeWidgets.swift）。
       FushiHomeWidgets.shared.install(

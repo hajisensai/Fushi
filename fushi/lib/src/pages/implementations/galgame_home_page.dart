@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -214,9 +215,29 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   /// 跟随游戏库「隐藏成人向」偏好（GA20：首页与随机推荐同一偏好）。
   late bool _hideNsfw = _readHideNsfw();
 
-  /// 首页各区块的数据源：整库去掉被隐藏的成人向条目。
-  List<GalgameEntry> get _visibleGames =>
-      _hideNsfw ? _games.where((GalgameEntry g) => !g.isNsfw).toList() : _games;
+  /// 上锁作品的显示口径（[MediaVisibility]，app 根广播）。解锁 / 重新隐藏时经
+  /// [didChangeDependencies] 重算首屏。
+  MediaVisibility _visibility = MediaVisibility.all;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final MediaVisibility next = MediaVisibility.of(context);
+    if (identical(next, _visibility)) return;
+    _visibility = next;
+    if (_loaded) unawaited(_recompute());
+  }
+
+  /// [g] 在首页可见：没被「隐藏成人向」藏、也不是上锁（未解锁）的作品。
+  bool _shows(GalgameEntry g, {required bool hideNsfw}) =>
+      !(hideNsfw && g.isNsfw) && !_visibility.hidesGame(g.id);
+
+  /// 首页各区块的数据源：整库去掉被隐藏的成人向条目与上锁的作品。
+  List<GalgameEntry> get _visibleGames => _hideNsfw || _visibility.hidesAnything
+      ? _games
+            .where((GalgameEntry g) => _shows(g, hideNsfw: _hideNsfw))
+            .toList()
+      : _games;
 
   @override
   void initState() {
@@ -260,9 +281,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   Future<void> _recompute() async {
     final List<GalgameEntry> games = _repo.games;
     final bool hideNsfw = _readHideNsfw();
-    final List<GalgameEntry> visible = hideNsfw
-        ? games.where((GalgameEntry g) => !g.isNsfw).toList()
-        : games;
+    final List<GalgameEntry> visible = <GalgameEntry>[
+      for (final GalgameEntry g in games)
+        if (_shows(g, hideNsfw: hideNsfw)) g,
+    ];
     final _GameKpis kpis = await _computeKpis(visible);
     final List<ActivityEventRow> rows = await _loadTimelineRows(games);
     if (!mounted) return;
@@ -1751,17 +1773,15 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     );
   }
 
-  /// 时间线原始事件去掉被隐藏的成人向游戏（GA20，与 [_visibleGames] 同一偏好）。
+  /// 时间线原始事件去掉被隐藏的成人向游戏（GA20，与 [_visibleGames] 同一偏好）
+  /// 与上锁的游戏。
   List<ActivityEventRow> get _visibleTimelineRows {
-    if (!_hideNsfw) return _timelineRows;
+    if (!_hideNsfw && !_visibility.hidesAnything) return _timelineRows;
     return <ActivityEventRow>[
       for (final ActivityEventRow r in _timelineRows)
-        if (!(findGalgameForActivity(
-              _games,
-              mediaKey: r.mediaKey,
-              title: r.title,
-            )?.isNsfw ??
-            false))
+        if (findGalgameForActivity(_games, mediaKey: r.mediaKey, title: r.title)
+            case final GalgameEntry? g
+            when g == null || _shows(g, hideNsfw: _hideNsfw))
           r,
     ];
   }

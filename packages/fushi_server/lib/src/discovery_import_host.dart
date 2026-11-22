@@ -69,8 +69,9 @@ DiscoveryDomainImporters buildServerDiscoveryImporters(FushiDatabase db) =>
 /// 管线的 `discoveryImporter` 端口。能力位之外的域（防御：旧行 / 手改 DB）在这里
 /// 同样按 `unsupportedOnThisHost` 挡下，而不是交给执行器去碰没有的原语。
 ///
-/// [extractor] 是测试缝；默认按 `FUSHI_7ZA` / 可执行文件旁 / PATH 找 7-Zip，
-/// 找不到时 zip 走内置解码，rar / 7z 报 `archiveToolMissing`。
+/// [extractor] 是测试缝；zip / 7z 由原生库解，rar 按 `FUSHI_7ZA` / 可执行文件旁 / PATH
+/// 找 7-Zip，找不到报 `archiveToolMissing`；加密包（服务端没有口令来源）报
+/// `archivePasswordRequired`。
 VideoDownloadDiscoveryImporter serverDiscoveryImporter(
   FushiDatabase db, {
   DiscoveryArchiveExtractor? extractor,

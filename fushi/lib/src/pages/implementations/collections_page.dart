@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -368,7 +369,8 @@ class CollectionsPage extends BasePage {
   BasePageState<CollectionsPage> createState() => _CollectionsPageState();
 }
 
-class _CollectionsPageState extends BasePageState<CollectionsPage> {
+class _CollectionsPageState extends BasePageState<CollectionsPage>
+    with MediaVisibilityDependent<CollectionsPage> {
   bool _loading = true;
   List<_CollectionItem> _items = [];
 
@@ -425,6 +427,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
+
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品的收藏 / 制卡不列、不导出）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_load());
+
+  /// 来源作品上锁（本次会话未解锁）的行：列表、导出、批量制卡都不出现
+  /// （[MediaVisibility.hidesWork]，唯一的上锁过滤入口）。网页收藏的 bookKey 是
+  /// 网址，不是作品身份。
+  bool _hiddenByLock({
+    required String? bookKey,
+    required String? title,
+    required String source,
+  }) => mediaVisibility.hidesWork(
+    key: source == kFavoriteSentenceSourceWeb ? null : bookKey,
+    title: title ?? '',
+  );
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -547,7 +565,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       );
     }
 
-    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    items
+      ..removeWhere(
+        (_CollectionItem i) => _hiddenByLock(
+          bookKey: i.bookKey,
+          title: i.bookTitle,
+          source: i.source,
+        ),
+      )
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     final allBookKeys = <String>{};
     for (final fav in allFavorites) {
@@ -1266,8 +1292,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<List<ExportMinedSentence>> _loadMinedForExport({
     Set<String> bookKeys = const <String>{},
   }) async {
-    final List<MinedSentenceRow> rows = await appModel.database
-        .getAllMinedSentences();
+    final List<MinedSentenceRow> rows = <MinedSentenceRow>[
+      for (final MinedSentenceRow r
+          in await appModel.database.getAllMinedSentences())
+        if (!_hiddenByLock(
+          bookKey: r.bookKey,
+          title: r.documentTitle,
+          source: r.source,
+        ))
+          r,
+    ];
     final List<ExportMinedSentence> mapped = rows
         .map(
           (r) => ExportMinedSentence(
@@ -1305,9 +1339,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<List<ExportSentence>> _loadFavoritesForExport({
     Set<String> bookKeys = const <String>{},
   }) async {
-    final List<FavoriteSentence> all = await FavoriteSentenceRepository(
-      appModel.database,
-    ).getAll();
+    final List<FavoriteSentence> all = <FavoriteSentence>[
+      for (final FavoriteSentence f in await FavoriteSentenceRepository(
+        appModel.database,
+      ).getAll())
+        if (!_hiddenByLock(
+          bookKey: f.bookKey,
+          title: f.bookTitle,
+          source: f.source,
+        ))
+          f,
+    ];
     final List<ExportSentence> mapped = all
         .map(
           (FavoriteSentence f) => ExportSentence(
@@ -1442,8 +1484,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 导出全部收藏词（按 sourceType 分组）。
   Future<void> _exportAllWords(ExportFormat format) async {
-    final List<FavoriteWordRow> rows = await appModel.database
-        .getAllFavoriteWords();
+    final List<FavoriteWordRow> rows = <FavoriteWordRow>[
+      for (final FavoriteWordRow w
+          in await appModel.database.getAllFavoriteWords())
+        if (!_hiddenByLock(
+          bookKey: w.bookKey,
+          title: w.title,
+          source: w.sourceType,
+        ))
+          w,
+    ];
     if (!mounted) return;
     if (rows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -47,7 +48,12 @@ class VideoStatisticsPage extends BasePage {
       _VideoStatisticsPageState();
 }
 
-class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
+class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage>
+    with MediaVisibilityDependent<VideoStatisticsPage> {
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品不进统计，[MediaVisibility]）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_loadFromDatabase());
+
   bool _loading = true;
   String? _error;
 
@@ -181,11 +187,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
       // activityLimit 0：统计页不需要活动流行。只读观看域（m5：书 / 游戏的段与
       // legacy 表本页一行不用）；计数面不收窄，「总览 = 各域之和」照旧成立。
-      final StatFacts facts = await loadStatFacts(
-        db,
-        activityLimit: 0,
-        includeCounters: true,
-        scope: const StatFactsScope.domain(kActivityMediaVideo),
+      // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）。
+      final StatFacts facts = mediaVisibility.visibleStatFacts(
+        await loadStatFacts(
+          db,
+          activityLimit: 0,
+          includeCounters: true,
+          scope: const StatFactsScope.domain(kActivityMediaVideo),
+        ),
       );
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;

@@ -58,6 +58,12 @@ fushi_asr_cue_post = { git = "https://github.com/hajisensai/fushi-subtitles", re
 # ort：MIT / Apache-2.0；libloading：ISC。
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "alternative-backend", "api-23"] }
 libloading = "0.8"
+# archive.rs：导入链路的 zip / 7z 解包（含 ZipCrypto / WinZip AES / 7z AES-256 口令）。纯 Rust，
+# 五端交叉编译不要 C 工具链：zstd（C）不开；bzip2 0.6 默认走 libbz2-rs-sys（纯 Rust）。
+# RAR 不在这里（UnRAR 许可不能链进 GPL 本体），Dart 侧交随包 7-Zip 命令行。
+# zip：MIT；sevenz-rust2：Apache-2.0。
+zip = { version = "9.8", default-features = false, features = ["aes-crypto", "deflate-flate2-zlib-rs", "deflate64", "bzip2", "lzma", "xz", "ppmd"] }
+sevenz-rust2 = { version = "0.25", default-features = false, features = ["aes256", "bzip2", "ppmd", "deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "alternative-backend", "api-23", "directml"] }

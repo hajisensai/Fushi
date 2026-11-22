@@ -40,6 +40,18 @@
 | [BUG-5202](bugs/BUG-5202-remote-download-register-cover-delete-flake-windows.md) | 🚧 | 🚧 | remote-download-register-cover-delete-flake-windows |
 | [BUG-5201](bugs/BUG-5201-drift-row-mapping-on-ui-isolate.md) | 🚧 | 🚧 | drift-row-mapping-on-ui-isolate |
 | [BUG-5197](bugs/BUG-5197-video-collection-scroll-tab-switch-jank.md) | ✅ | ✅ | video-collection-scroll-tab-switch-jank |
+> 共 4520 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5200](bugs/BUG-5200-windows-video-frames-wait-main-thread.md) | ✅ | ✅ | Windows 视频每一帧都要等主线程，主线程一忙就被下一帧覆盖丢掉（平移镜头一卡一卡） |
+> 共 4521 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5199](bugs/BUG-5199-media-lock-desktop-system-auth.md) | 🚧 | 🚧 | 上锁作品：Windows / Linux 没有系统验证（只有口令） |
+| [BUG-5198](bugs/BUG-5198-media-lock-remaining-consumers.md) | 🚧 | 🚧 | 上锁作品：剩余列出作品标题的次要消费端未接 MediaVisibility |
+| [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
 | [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
 | [BUG-5190](bugs/BUG-5190-srs-gen4-migration-card-row-parity.md) | ✅ | ✅ | gen4 迁移对拍：同一张卡的行只差继承来的卡片标志，整体回滚（多前身按卡 ID 排先后） |
