@@ -216,17 +216,20 @@ void main() {
         '  </div>\n'
         '</div>\n';
     expect(fushiCardFrontLayoutOf(legacy('TermAudio')), <FushiCardItem>[
-      FushiCardFieldItem(field: 'TermAudio'),
+      FushiCardFieldItem(field: 'TermAudio', style: FushiCardFieldStyle.audio),
     ]);
     expect(fushiCardFrontLayoutOf(legacy('Word Audio')), <FushiCardItem>[
-      FushiCardFieldItem(field: 'Word Audio'),
+      FushiCardFieldItem(field: 'Word Audio', style: FushiCardFieldStyle.audio),
     ]);
     // 与新预设生成的正面是同一布局。
     expect(
       fushiCardFrontLayoutOf(legacy('TermAudio')),
       fushiCardFrontLayoutOf(
         fushiCardTemplateFor(FushiCardSide.front, <FushiCardItem>[
-          FushiCardFieldItem(field: 'TermAudio'),
+          FushiCardFieldItem(
+            field: 'TermAudio',
+            style: FushiCardFieldStyle.audio,
+          ),
         ]),
       ),
     );

@@ -10422,6 +10422,7 @@
   "srs_fushi_block_html_unsupported": "原生画不了（$reason），带这个区块的卡复习时会回退网页卡面。",
   "srs_fushi_block_prompt": "题面（随卡型）",
   "srs_fushi_block_remove": "删除区块",
+  "srs_fushi_block_style_audio": "发音键",
   "srs_fushi_block_style_body": "正文",
   "srs_fushi_block_style_quote": "引用卡片",
   "srs_fushi_block_style_small": "小字",

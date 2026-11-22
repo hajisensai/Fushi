@@ -2,7 +2,8 @@
 /// 却各出一张卡、各自排期，复习量白白翻倍（Discord 反馈：给内置 Fushi 卡片加了第二个模板、正文照抄
 /// 第一个没改，10.9k 笔记出了 21k 张卡）。
 ///
-/// - 判重只看正面：正面一样 = 对每条笔记渲染出同一张题面；背面不同也还是同一道题。
+/// - 判重只看正面：正面一样 = 对每条笔记渲染出同一张题面；背面不同也还是同一道题。内置 Fushi 卡片的正面
+///   按区块布局比较（[srsTemplateFrontKeyIn]）。
 /// - 正面一个字段都不引用的模板（空白模板、只剩骨架的区块布局）对任何笔记都是空卡、不出卡，不算重复。
 /// - 删除重复模板（[SrsTemplateDuplicates.dedupeTemplates]）：被删模板上**有复习记录**的卡挂到同一笔记
 ///   保留模板那张卡上，作为它的前身（卡片修改记录 `historyFrom/<被删卡>`，与「更改笔记类型」「合并重复笔记」
@@ -12,9 +13,14 @@
 ///   模板顺序也不会把复习记录对到别的模板上。
 library;
 
+import 'dart:convert';
+
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show FushiCardItem, FushiCardSide, fushiCardLayoutOf, templateIdsToNames;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi_engine/srs/srs_builtin.dart' show kSrsBuiltinFushiCardKey;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
 final RegExp _comment = RegExp(r'<!--[\s\S]*?-->');
@@ -25,6 +31,24 @@ final RegExp _fieldRef = RegExp(r'\{\{[^{}]*fld:');
 /// 存储形态（`{{fld:<id>}}` 引用）。
 String srsTemplateFrontKey(String front) =>
     front.replaceAll(_comment, '').replaceAll(_space, ' ').trim();
+
+/// [type] 里判重用的正面键：内置 Fushi 卡片的正面认得出区块布局时按**布局**比较——同一布局对每条笔记
+/// 画出同一张题面，写法不同（修复前听力预设手写的正面 vs 区块骨架生成的，BUG-5200）也是同一道题；
+/// 认不出布局的、其它笔记类型按 [srsTemplateFrontKey]。[front] 是存储形态。
+String srsTemplateFrontKeyIn(SrsNoteTypeView type, String front) {
+  if (type.builtinKey == kSrsBuiltinFushiCardKey) {
+    final List<FushiCardItem>? items = fushiCardLayoutOf(
+      templateIdsToNames(front, <String, String>{
+        for (final SrsFieldDef f in type.fields) f.id: f.name,
+      }),
+      FushiCardSide.front,
+    );
+    if (items != null) {
+      return 'fushi-layout:${jsonEncode(<Object?>[for (final FushiCardItem x in items) x.toJson()])}';
+    }
+  }
+  return srsTemplateFrontKey(front);
+}
 
 /// 正面有没有引用字段（存储形态 `{{…fld:<id>}}`，含条件段）。没有 = 对任何笔记都是空卡。
 bool srsTemplateFrontUsesFields(String front) => _fieldRef.hasMatch(front);
@@ -37,7 +61,9 @@ List<List<SrsTemplateDef>> srsDuplicateFrontGroups(SrsNoteTypeView type) {
       <String, List<SrsTemplateDef>>{};
   for (final SrsTemplateDef tpl in type.templates) {
     if (!srsTemplateFrontUsesFields(tpl.front)) continue;
-    (byKey[srsTemplateFrontKey(tpl.front)] ??= <SrsTemplateDef>[]).add(tpl);
+    (byKey[srsTemplateFrontKeyIn(type, tpl.front)] ??= <SrsTemplateDef>[]).add(
+      tpl,
+    );
   }
   return <List<SrsTemplateDef>>[
     for (final List<SrsTemplateDef> g in byKey.values)
@@ -62,12 +88,12 @@ List<SrsTemplateDef> srsTemplatesWithSameFront(
   if (mine == null || !srsTemplateFrontUsesFields(mine)) {
     return const <SrsTemplateDef>[];
   }
-  final String key = srsTemplateFrontKey(mine);
+  final String key = srsTemplateFrontKeyIn(type, mine);
   return <SrsTemplateDef>[
     for (final SrsTemplateDef x in type.templates)
       if (x.id != templateId &&
           srsTemplateFrontUsesFields(x.front) &&
-          srsTemplateFrontKey(x.front) == key)
+          srsTemplateFrontKeyIn(type, x.front) == key)
         x,
   ];
 }

@@ -1382,6 +1382,24 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                 : AlignmentDirectional.centerStart,
             child: _Chip(text: srsPlainText(value), style: s),
           ),
+          // 大号发音键（听力预设正面）：与听力卡题面那颗同一按钮，每段音频一颗。
+          FushiCardFieldStyle.audio => switch (srsAudioSources(value)) {
+            final List<String> names when names.isNotEmpty => Wrap(
+              alignment: front ? WrapAlignment.center : WrapAlignment.start,
+              spacing: s.pad,
+              runSpacing: s.pad,
+              children: <Widget>[
+                for (final String name in names)
+                  _AudioButton(
+                    name: name,
+                    large: true,
+                    style: s,
+                    onPlay: (String n) => _playNames(<String>[n]),
+                  ),
+              ],
+            ),
+            _ => null,
+          },
           _ => _htmlFragment(
             srsFushiItemHtml(item, widget.fields) ?? '',
             '$key-body',

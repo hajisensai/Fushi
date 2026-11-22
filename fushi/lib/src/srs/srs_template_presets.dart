@@ -16,6 +16,7 @@ library;
 import 'package:fushi_anki/fushi_anki_core.dart'
     show
         FushiCardFieldItem,
+        FushiCardFieldStyle,
         FushiCardFields,
         FushiCardSide,
         fushiCardBackLayoutOf,
@@ -204,7 +205,10 @@ List<SrsTemplatePreset> srsTemplatePresets(SrsNoteTypeView type) {
         body: () => (
           front: ids(
             fushiCardTemplateFor(FushiCardSide.front, <FushiCardFieldItem>[
-              FushiCardFieldItem(field: termAudio!.name),
+              FushiCardFieldItem(
+                field: termAudio!.name,
+                style: FushiCardFieldStyle.audio,
+              ),
             ]),
           ),
           back: back,

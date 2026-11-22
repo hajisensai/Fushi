@@ -154,9 +154,16 @@ void main() {
       final SrsFushiCardPlan listening = srsFushiCardPlan(
         _fields(),
         a,
-        front: <FushiCardItem>[FushiCardFieldItem(field: 'TermAudio')],
+        front: <FushiCardItem>[
+          FushiCardFieldItem(
+            field: 'TermAudio',
+            style: FushiCardFieldStyle.audio,
+          ),
+        ],
       );
       expect(listening.media.front, <String>['w.mp3']);
+      // 大号发音键是原生按钮，不经 HTML 渲染器（不会因 HTML 子集判据回退 WebView）。
+      expect(srsFushiItemHtml(listening.front.single, _fields()), isNull);
 
       final SrsFushiCardPlan p = srsFushiCardPlan(
         _fields(<String, String>{

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
@@ -23,6 +24,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show templateNamesToIds;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -158,5 +160,40 @@ void main() {
       );
       expect(front, <String>['word.mp3']);
     }
+
+    // 新旧两份听力模板按区块布局是同一道题：判重认得出。
+    final SrsNoteTypeView now = (await store.noteType(typeId))!;
+    final List<String> twins = <String>[
+      for (final SrsTemplateDef x in srsTemplatesWithSameFront(now, newId))
+        x.name,
+    ];
+    debugPrint('[srs-listening] duplicates of "Listening": $twins');
+    expect(twins, <String>['Listening (old)']);
+
+    // 复习页只留新听力模板那张卡：看正面的大号发音键（真像素）。
+    for (final SrsCardCacheRow c in await store.cardsOfNote(noteId)) {
+      if (c.templateId != newId) await store.setSuspended(c.id, true);
+    }
+    container.read(srsRevisionProvider.notifier).state++;
+    unawaited(
+      appModel.navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) =>
+              SrsReviewPage(deckId: store.defaultDeckId, deckName: 'listening'),
+        ),
+      ),
+    );
+    await _pumpFor(tester, const Duration(seconds: 4));
+    final ObserveShot review = await captureFlutterFrame(
+      tester,
+      '03-review-listening-front',
+    );
+    expect(review.saved, isTrue);
+    final bool block = find
+        .byKey(const ValueKey<String>('srs-fushi-front-item-0'))
+        .evaluate()
+        .isNotEmpty;
+    debugPrint('[srs-listening] review front audio block=$block');
+    expect(block, isTrue, reason: '复习页正面应画出大号发音键区块');
   });
 }
