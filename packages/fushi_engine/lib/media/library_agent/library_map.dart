@@ -62,6 +62,7 @@ class LibraryMapQuery {
   const LibraryMapQuery({
     this.view = LibraryMapView.summary,
     this.q,
+    this.addedSince,
     this.offset = 0,
     this.limit = defaultLimit,
   });
@@ -72,7 +73,7 @@ class LibraryMapQuery {
   /// 每页行数上限：再大一页就会撑爆模型上下文，分页本来就是为此存在。
   static const int maxLimit = 2000;
 
-  /// 解析 wire 参数：`{view, q?, offset?, limit?}`。`view` 缺省 = `summary`；认不出的
+  /// 解析 wire 参数：`{view, q?, addedSince?, offset?, limit?}`。`view` 缺省 = `summary`；认不出的
   /// `view`、负的 `offset`、非正的 `limit` 抛 [FormatException]（路由转成参数错误）。
   /// `limit` 超过 [maxLimit] 时截到上限。
   factory LibraryMapQuery.fromJson(Map<String, Object?> json) {
@@ -87,6 +88,10 @@ class LibraryMapQuery {
     if (rawQ != null && rawQ is! String) {
       throw const FormatException('q must be a string');
     }
+    final int? addedSince = _intArg(json['addedSince'], 'addedSince');
+    if (addedSince != null && addedSince < 0) {
+      throw const FormatException('addedSince must be >= 0');
+    }
     final int offset = _intArg(json['offset'], 'offset') ?? 0;
     final int limit = _intArg(json['limit'], 'limit') ?? defaultLimit;
     if (offset < 0) throw const FormatException('offset must be >= 0');
@@ -95,6 +100,7 @@ class LibraryMapQuery {
     return LibraryMapQuery(
       view: view,
       q: q == null || q.isEmpty ? null : q,
+      addedSince: addedSince,
       offset: offset,
       limit: limit > maxLimit ? maxLimit : limit,
     );
@@ -104,6 +110,10 @@ class LibraryMapQuery {
 
   /// 标题过滤（按 [foldMediaTitle] 折叠后做子串匹配）；null = 不过滤。
   final String? q;
+
+  /// 只看这一刻（毫秒时间戳）之后入库的条目，连同它们所在合集的全部成员（AI 管库
+  /// 自动复查的增量范围，spec 2026-11-22 §7）；null = 不限。只作用于域视图。
+  final int? addedSince;
   final int offset;
   final int limit;
 
@@ -267,13 +277,38 @@ Future<Map<String, Object?>> _domainView(
   // 所在的合集。
   List<OrganizeCollectionFact> collections = map.collections;
   List<OrganizeEntry> entries = map.entries;
+  if (query.addedSince case final int since) {
+    // 新条目 + 它们所在合集的全部成员（同一系列的旧卷是判断「放对没有」的上下文）。
+    final Set<String> fresh = await organizeEntryKeysAddedSince(
+      db,
+      domain,
+      since,
+    );
+    bool isFresh(OrganizeEntry e) =>
+        fresh.contains('${e.mediaType}\u0000${e.entryKey}');
+    final Set<int> around = <int>{
+      for (final OrganizeEntry e in entries)
+        if (isFresh(e)) ...e.collectionIds,
+    };
+    entries = <OrganizeEntry>[
+      for (final OrganizeEntry e in entries)
+        if (isFresh(e) || e.collectionIds.any(around.contains)) e,
+    ];
+    final Set<int> shown = <int>{
+      for (final OrganizeEntry e in entries) ...e.collectionIds,
+    };
+    collections = <OrganizeCollectionFact>[
+      for (final OrganizeCollectionFact c in collections)
+        if (shown.contains(c.id)) c,
+    ];
+  }
   if (filter != null) {
     final Set<int> hitCollections = <int>{
-      for (final OrganizeCollectionFact c in map.collections)
+      for (final OrganizeCollectionFact c in collections)
         if (foldMediaTitle(c.name).contains(filter)) c.id,
     };
     entries = <OrganizeEntry>[
-      for (final OrganizeEntry e in map.entries)
+      for (final OrganizeEntry e in entries)
         if (_entryMatches(e, filter) ||
             e.collectionIds.any(hitCollections.contains))
           e,
@@ -283,7 +318,7 @@ Future<Map<String, Object?>> _domainView(
       for (final OrganizeEntry e in entries) ...e.collectionIds,
     };
     collections = <OrganizeCollectionFact>[
-      for (final OrganizeCollectionFact c in map.collections)
+      for (final OrganizeCollectionFact c in collections)
         if (shown.contains(c.id)) c,
     ];
   }
@@ -333,6 +368,7 @@ Future<Map<String, Object?>> _domainView(
   return <String, Object?>{
     'view': query.view.wireName,
     if (query.q != null) 'q': query.q,
+    if (query.addedSince != null) 'addedSince': query.addedSince,
     'total': total,
     'collectionCount': collections.length,
     'itemCount': sorted.length,

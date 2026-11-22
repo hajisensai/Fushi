@@ -408,6 +408,19 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.setLibraryCurateAuto(value),
             defaultValue: true,
           ),
+          // 流水线之后的 AI 助手自动复查（spec 2026-11-22 §7，默认开；没指派「AI
+          // 助手」提供商时不发请求，副标题写明发什么、全库复查请求多）。
+          SettingsSwitchItem(
+            id: 'ai.library_agent_review_auto',
+            title: t.library_agent_review_auto_setting,
+            subtitle: t.library_agent_review_auto_setting_notice,
+            icon: FushiIcons.aiAssistant,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.libraryAgentReviewAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setLibraryAgentReviewAuto(value),
+            defaultValue: true,
+          ),
           // AI 管库 v3（spec docs/specs/2026-11-22-ai-library-agent-design.md §3.5）：
           // 整库重排交给助手的长程模式（读全库 → 成批改 → 自查 → 汇报，每批可撤销）；
           // 下面的「立即整理」仍是库管家流水线（增量、便宜、步骤写死）。

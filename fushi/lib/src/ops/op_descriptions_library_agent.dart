@@ -47,6 +47,12 @@ List<OpDescription> describeLibraryAgentOps(
             'Title filter (folded: kana / width / case-insensitive). A '
             'matching collection brings all its members.',
       ),
+      OpParam.integer(
+        'addedSince',
+        description:
+            'Library pages only: just items added after this time (epoch ms) '
+            'plus every member of the collections they are in.',
+      ),
       OpParam.integer('offset', description: 'Row offset (nextOffset).'),
       OpParam.integer('limit', description: 'Rows per page (default 400).'),
     ],

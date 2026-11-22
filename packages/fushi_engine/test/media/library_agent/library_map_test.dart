@@ -325,6 +325,37 @@ void main() {
     );
   });
 
+  test('addedSince：新条目 + 它所在合集的全部成员（自动复查的增量范围）', () async {
+    // 夹具入库时刻默认是「现在」：先全压到很早，只让 b2 是新的。
+    await db.customStatement('UPDATE epub_books SET local_added_at = 1');
+    await db.customStatement(
+      'UPDATE epub_books SET local_added_at = 500 WHERE book_key = ?',
+      <Object?>['b2'],
+    );
+    final Map<String, Object?> fresh = await map(<String, Object?>{
+      'view': 'books',
+      'addedSince': 100,
+    });
+    expect(fresh['addedSince'], 100);
+    expect(
+      column(fresh['collections']! as Map<String, Object?>, 'ref'),
+      <String>['C1'],
+    );
+    expect(column(fresh['items']! as Map<String, Object?>, 'ref'), <String>[
+      epub('b1'),
+      epub('b2'),
+    ]);
+    final Map<String, Object?> none = await map(<String, Object?>{
+      'view': 'books',
+      'addedSince': 1000,
+    });
+    expect(none['total'], 0);
+    expect(
+      () => LibraryMapQuery.fromJson(<String, Object?>{'addedSince': -1}),
+      throwsFormatException,
+    );
+  });
+
   test('links 视图：作品 + 边（含卫星）+ 标题；墓碑与上锁端点的连接不出现', () async {
     final Map<String, Object?> r = await map(<String, Object?>{
       'view': 'links',
