@@ -836,6 +836,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         builder: (_) => CastSubstitutionsPage(
           seriesTitle: series.title,
           initial: series.substitutions,
+          roster: series.roster.values,
           save: (List<CastTextSubstitution> next) async {
             await _updateSeries(
               (SeriesCastProfile fresh) => fresh.substitutions
