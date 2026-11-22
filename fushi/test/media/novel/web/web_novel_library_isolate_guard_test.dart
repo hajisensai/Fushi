@@ -26,8 +26,8 @@ void main() {
   test('新建 / 并章 / 补占位都走后台组装', () {
     expect(
       'await buildWebNovelEpubInBackground('.allMatches(cls).length,
-      2,
-      reason: 'save 与 ensureTrailingPlaceholder 各一处',
+      3,
+      reason: 'save 的并进已有书 / 新建书与 ensureTrailingPlaceholder 各一处',
     );
     expect(src, contains('Isolate.run<Uint8List>('));
   });

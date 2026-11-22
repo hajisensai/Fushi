@@ -1172,7 +1172,7 @@ class _VideoSourceScrapeTaskPanelState
               size: 32,
               iconSize: 18,
             ),
-            title: Text(issues[index].$1.workTitle),
+            title: Text(videoScrapeIssueTitle(issues[index].$1)),
             subtitle: SelectableText(
               issues[index].$1.path == null
                   ? describeVideoScrapeIssueMessage(issues[index].$1.message)

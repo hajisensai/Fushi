@@ -28,6 +28,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     "radio",
     "artistSimilar",
     "collect",
+    "browse",
 ];
 
 /// 已知权限名。
@@ -576,6 +577,19 @@ mod tests {
         assert!(
             Manifest::parse(j.to_string().as_bytes()).is_ok(),
             "新能力随依赖声明"
+        );
+        // 浏览（带条件的作品列表 / 分类目录）不依赖别的能力：列表里的条目按各自种类进详情。
+        j["capabilities"] = serde_json::json!(["browse"]);
+        j["searchTypes"] = serde_json::json!([]);
+        assert!(
+            Manifest::parse(j.to_string().as_bytes()).is_ok(),
+            "browse 单独声明可以"
+        );
+        j["capabilities"] = serde_json::json!(["search", "home", "album", "browse"]);
+        j["searchTypes"] = serde_json::json!(["album"]);
+        assert!(
+            Manifest::parse(j.to_string().as_bytes()).is_ok(),
+            "browse 与 search / home / album 一起声明"
         );
         // 歌词插件：lyricsSearch / lyricsFetch 成对声明，可以只声明这两个。
         for caps in [

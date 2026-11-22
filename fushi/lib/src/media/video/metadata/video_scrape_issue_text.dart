@@ -8,8 +8,20 @@ library;
 
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show kSourcelessLocalVideoScrapeScopeId;
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
+    show SourceScrapeIssue;
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
+
+/// 刮削问题在界面上的标题：作品级问题是作品名；范围级问题
+/// （[SourceScrapeIssue.isScopeLevel]）按结构化的范围 id 映射，无来源范围显示
+/// 本地化文案，已登记来源显示它的 label。
+String videoScrapeIssueTitle(SourceScrapeIssue issue) =>
+    issue.scopeSourceId == kSourcelessLocalVideoScrapeScopeId
+    ? t.video_scrape_scope_sourceless
+    : issue.workTitle;
 
 String describeVideoScrapeIssueMessage(String message) {
   final VideoScrapePendingNote? pending = parseVideoScrapePendingNote(message);

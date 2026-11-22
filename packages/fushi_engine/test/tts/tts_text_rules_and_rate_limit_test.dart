@@ -226,6 +226,9 @@ void main() {
         workRoot: Directory(p.join(tmp.path, 'work')),
         runner: _NeverRunner(),
       );
+      // 后登记先执行：先关队列（等排队即开跑的任务与清单落盘收尾）再删目录。不关的话
+      // 任务在测试体返回后仍在写 jobs.json，Windows 上删目录报 errno 145（BUG-5075）。
+      addTearDown(queue.close);
       final TtsRenderJob job = await queue.enqueue(
         bookKey: 'b',
         title: 't',

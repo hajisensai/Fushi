@@ -106,9 +106,15 @@ import 'package:test/test.dart';
 /// 却 import 了后台任务入口 UI——值类型挪到叶子 `background_task.dart`。最大环降到 623，剩下
 /// 新进环的 1 个是本就读 AppModel 的音乐 UI `music_listen_from_video`，上限随之下调到 623。
 ///
+/// 2026-11-22 develop 实测 624：共用查词宿主 `shared_lookup_popup_host`（#4036）import 弹窗栈
+/// controller，而 controller 为了手柄四个动作直接持 `GlobalKey<DictionaryPopupWebViewState>`、
+/// import 读 AppModel 的 `dictionary_popup_webview`（逻辑对象反向依赖 UI）。反转依赖：窄接口
+/// `DictionaryPopupRealmState` 放叶子 `dictionary_popup_realm.dart`，WebView State 实现它，
+/// controller 只持接口；controller 与宿主一起出环，最大环 622，上限下调到 622。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 623;
+const int kMaxCycleFiles = 622;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -128,6 +134,11 @@ const List<String> kLeafEntries = <String>[
   'lib/src/utils/misc/platform_utils.dart',
   'lib/src/utils/components/fushi_material_components.dart',
   'lib/src/utils/adaptive/adaptive_widgets.dart',
+  // 查词弹窗栈 controller 是纯逻辑对象，只经叶子接口 DictionaryPopupRealmState 持
+  // WebView 层；直接 import dictionary_popup_webview.dart（读 AppModel）会把它和
+  // 共用查词宿主 shared_lookup_popup_host 一起拖回大环（2026-11-22 实测 624）。
+  'lib/src/pages/implementations/dictionary_popup_controller.dart',
+  'lib/src/pages/implementations/dictionary_popup_realm.dart',
 ];
 
 const List<String> kBarrels = <String>[

@@ -195,8 +195,23 @@ void main() {
       String body, {
       MangaReaderPreferences preferences = const MangaReaderPreferences(),
       MangaReadingMode mode = MangaReadingMode.spread,
+      MangaTextStripLayout layout = MangaTextStripLayout.strip,
+      bool realTextStrip = false,
     }) {
-      final String doc = buildDocument(preferences: preferences, mode: mode);
+      final String doc = buildDocument(
+        preferences: preferences,
+        mode: mode,
+        layout: layout,
+      );
+      // realTextStrip：文字条 / 台词栏用生成文档里的真实实现（_tsBuild、悬停、
+      // _bzSequenceOnScreen），DOM 由用例自己桩。
+      final String seqStub = realTextStrip
+          ? ''
+          : 'function _bzSequenceOnScreen(){ return SEQ; }';
+      final String stripStubs = realTextStrip
+          ? ''
+          : "function _tsBuild(){ calls.push('tsBuild'); }\n"
+                "function _tsSetCurrent(k){ calls.push('tsCurrent:'+k); }";
       final String tap = section(
         doc,
         '  var TAP_ZONE_PAGING',
@@ -274,7 +289,7 @@ $focus
 // DOM 桩（声明在后，覆盖生成文档里的同名函数）。
 var A={key:'0:1',l:250,t:100,r:350,b:200}, B={key:'0:3',l:100,t:100,r:200,b:300}, C={key:'0:5',l:20,t:400,r:120,b:500};
 var SEQ=[A,B,C];
-function _bzSequenceOnScreen(){ return SEQ; }
+$seqStub
 function _bzBubbleAt(x,y){
   for (var i=0;i<SEQ.length;i++){ var b=SEQ[i]; if(x>=b.l&&x<=b.r&&y>=b.t&&y<=b.b) return b; }
   return null;
@@ -284,8 +299,7 @@ function _bzAnimateIn(){}
 function _bzDestroy(){}
 var STRIP=false;
 function _tsScopeAt(x,y){ return STRIP && y>=760 ? {strip:true} : null; }
-function _tsBuild(){ calls.push('tsBuild'); }
-function _tsSetCurrent(k){ calls.push('tsCurrent:'+k); }
+$stripStubs
 bzPointerType='touch';
 function focusCalls(){ return calls.filter(function(c){ return c.indexOf('onMangaBubbleFocus')===0; }); }
 function press(x,y,type,target){
@@ -645,6 +659,105 @@ assert.equal(_bzScopeAt(10,100),null);
 // 文字条上的悬停不触发放大，悬停查词放行。
 assert.equal(_bzBlocksHoverLookup(10,790,false),false);
 ''', preferences: const MangaReaderPreferences(bubbleTextStrip: true)),
+      );
+    });
+
+    test('台词栏悬停：同一气泡内划过逐字节点不重量 OCR 框；换气泡只改一次描边；'
+        '索引随条目重建（HBK-AUDIT-045）', () async {
+      await runJs(
+        harness(
+          r"""
+// DOM 桩：一页 6 个 OCR 块；getBoundingClientRect 计数 = 几何请求次数，
+// document.querySelectorAll 计数 = 全窗口描边扫描次数。
+let geom=0, outlineScans=0;
+function classSet(el){
+  var set=new Set();
+  el.classList={add(){ for(var c of arguments) set.add(c); }, remove(){ for(var c of arguments) set.delete(c); },
+    toggle(c,on){ if(on===undefined?!set.has(c):on) set.add(c); else set.delete(c); }, contains(c){ return set.has(c); }};
+  Object.defineProperty(el,'className',{configurable:true,set(v){ set.clear(); String(v).split(/\s+/).filter(Boolean).forEach(function(c){ set.add(c); }); }});
+}
+function mkEl(){
+  var el={style:{},children:[],attrs:{},listeners:{},parentNode:null,
+    setAttribute(n,v){ this.attrs[n]=String(v); }, getAttribute(n){ return n in this.attrs ? this.attrs[n] : null; },
+    removeAttribute(n){ delete this.attrs[n]; },
+    appendChild(c){ c.parentNode=this; this.children.push(c); return c; },
+    addEventListener(t,f){ this.listeners[t]=f; },
+    closest(sel){ if(sel==='.manga-ts-item'&&this.classList.contains('manga-ts-item')) return this; return this.parentNode&&this.parentNode.closest?this.parentNode.closest(sel):null; },
+    querySelectorAll(sel){ return sel==='.manga-ts-item'?this.children.filter(function(c){ return c.classList.contains('manga-ts-item'); }):[]; },
+    getBoundingClientRect(){ return {left:0,top:760,right:400,bottom:800,width:400,height:40}; }};
+  Object.defineProperty(el,'textContent',{configurable:true,set(v){ this.children=[]; }, get(){ return ''; }});
+  classSet(el);
+  return el;
+}
+var PAGE=mkEl();
+PAGE.setAttribute('data-page','0');
+var BOXES=[1,2,3,4,5,6].map(function(n){
+  var b=mkEl();
+  b.setAttribute('data-manga-block',String(n));
+  Object.defineProperty(b,'textContent',{get(){ return 'セリフ'+n; }});
+  b.getBoundingClientRect=function(){ geom++; return {left:300-n*40,top:20+n*10,right:330-n*40,bottom:60+n*10,width:30,height:40}; };
+  b.cloneNode=function(){ var c=mkEl(); c.querySelectorAll=function(){ return []; }; return c; };
+  return b;
+});
+PAGE.querySelectorAll=function(sel){
+  if(sel==='.ocr-box') return BOXES;
+  var m=/data-manga-block="(\d+)"/.exec(sel);
+  return m ? BOXES.filter(function(b){ return b.getAttribute('data-manga-block')===m[1]; }) : [];
+};
+PAGE.getBoundingClientRect=function(){ geom++; return {left:0,top:0,right:400,bottom:760,width:400,height:760}; };
+function _bzVisiblePages(){ return [PAGE]; }
+document.createElement=function(){ return mkEl(); };
+document.querySelectorAll=function(sel){
+  var m=/^\.manga-page \.ocr-box\.(.+)$/.exec(sel);
+  if(!m) return [];
+  outlineScans++;
+  return BOXES.filter(function(b){ return b.classList.contains(m[1]); });
+};
+function hovered(){ return BOXES.filter(function(b){ return b.classList.contains('manga-ts-hover'); })
+  .map(function(b){ return b.getAttribute('data-manga-block'); }).join(','); }
+
+_tsBuild();
+var items=tsEl.children;
+assert.equal(items.length,6);
+// 每个条目里放 8 个逐字节点（克隆出的块下挂字格），pointerover 从字格冒泡上来。
+function charOf(item,k){ var ch=mkEl(); item.children[0].appendChild(ch); return ch; }
+var over=tsEl.listeners.pointerover, leave=tsEl.listeners.pointerleave;
+geom=0; outlineScans=0;
+var it=items.find(function(i){ return i.getAttribute('data-ts-key')==='0:b2'; });
+for(var k=0;k<40;k++) over({target:charOf(it,k)});
+assert.equal(geom,0,'同一气泡内划过逐字节点不再量 OCR 框');
+assert.equal(outlineScans,1,'同一气泡只描边一次');
+assert.equal(hovered(),'2');
+var it3=items.find(function(i){ return i.getAttribute('data-ts-key')==='0:b3'; });
+for(var k2=0;k2<10;k2++) over({target:charOf(it3,k2)});
+assert.equal(geom,0);
+assert.equal(outlineScans,2,'换气泡只改一次描边');
+assert.equal(hovered(),'3');
+// 条目之间的空隙（没有条目）= 取消描边，再回同一气泡要重新描。
+over({target:tsEl});
+assert.equal(hovered(),'');
+over({target:charOf(it3,0)});
+assert.equal(hovered(),'3');
+leave();
+assert.equal(hovered(),'');
+assert.equal(outlineScans,5);
+// 可见页 / OCR 数据变化 → _tsBuild 重建条目与索引（只在这里量几何）。
+BOXES[5].getBoundingClientRect=function(){ geom++; return {left:0,top:0,right:0,bottom:0,width:0,height:0}; };
+geom=0;
+_tsBuild();
+assert.equal(geom,7,'重建时每页 1 次 + 每个 OCR 块 1 次');
+assert.equal(tsEl.children.length,5);
+geom=0;
+var it1=tsEl.children.find(function(i){ return i.getAttribute('data-ts-key')==='0:b1'; });
+over({target:charOf(it1,0)});
+over({target:charOf(it1,1)});
+assert.equal(hovered(),'1');
+assert.equal(geom,0);
+""",
+          preferences: const MangaReaderPreferences(bubbleTextStrip: true),
+          layout: MangaTextStripLayout.panel,
+          realTextStrip: true,
+        ),
       );
     });
 

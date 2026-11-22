@@ -1,0 +1,6 @@
+## BUG-5159 · aggregate-cloud-snapshot-json-codec-on-caller
+- **报告**：2026-11-22（PR #4062 第二轮修 BUG-5149 / HBK-AUDIT-028 时分出的残余）
+- **真实性**：✅ 真问题（性能 / UI 卡顿，云通道）。BUG-5149 之后云聚合同步的 DB 读取、折叠、写回、裁剪、编码哈希都在后台所有者 `AggregateSyncOwner` 里，但传输层仍是 JSON 值级别：`packages/fushi_engine/lib/sync/sync_asset_store.dart` 的 `getJsonAsset` / `putJsonAsset` 由各云后端（`fushi/lib/src/sync/{webdav,google_drive,onedrive,dropbox,ftp,sftp,obfuscating,interconnect}_sync_backend.dart`、`packages/fushi_engine/lib/sync/local_directory_asset_store.dart`）在调用方（app 里即 UI isolate）做整份快照的 UTF-8 + JSON 编解码；对端快照缓存 `aggregate_peer_snapshot_cache.dart` 的读写同样在调用方编解码。于是 `AggregateSyncService._syncWithOwner`（`aggregate_sync_service.dart` 约 216 / 258 行）要把解码好的对端快照 Map 拷进所有者、真要上传时再把待上传 Map 拷回调用方。
+- **[ ] ① 未修复** — 方向：`SyncAssetStore` 加字节级的小资产读写（读回 `Uint8List`、写入 `Uint8List`），各后端用已有的下载 / 上传原语实现，对端快照缓存改存原始字节；聚合同步把对端报文体字节交给所有者解码、所有者直接产出上行字节（与互联通道同一 `aggregate_wire_codec.dart`）。涉及 9 个后端实现 + 约 60 个测试替身（`implements SyncAssetStore` / `SyncBackend`），范围大，已写进拍板台 `review-agg-cloud-bytes` 待定。
+- **[ ] ② 未加自动化测试** — 修时在 `fushi/test/sync/aggregate_sync_off_ui_isolate_test.dart` 的云通道用例里把 FakeAssetStore 换成字节级，断言调用方零编解码（`debugAggregateSnapshotWorkHook` 扩到后端编解码）。
+- **备注**：互联通道（client + host）已无此问题（BUG-5102 / BUG-5149）。

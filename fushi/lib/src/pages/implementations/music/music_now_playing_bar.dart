@@ -122,11 +122,13 @@ Widget _musicBar(
       _musicBarCloseButton(session),
     ],
     onMore: () => unawaited(_musicBarMoreMenu(context, appModel, session)),
-    onTap: () => _openPlayer(context),
+    onTap: () => openMusicPlayerPage(context),
   );
 }
 
-void _openPlayer(BuildContext context) => unawaited(
+/// 打开播放页（歌词 / 唱片 / 封面视图）。底部播放条点按、专辑与 CD 详情的「播放全部 /
+/// 随机播放」都走这里：开始播放一张专辑就直接进播放页。
+void openMusicPlayerPage(BuildContext context) => unawaited(
   Navigator.of(context).push<void>(
     adaptivePageRoute<void>(
       context: context,

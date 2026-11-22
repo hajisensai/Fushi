@@ -50,6 +50,17 @@ const int kAiMediaLinkPromptVersion = 2;
 /// 缓存的结论保留多久：过期后重新问一次（模型在进步，条目也可能早就删了）。
 const Duration kAiMediaLinkVerdictCacheTtl = Duration(days: 180);
 
+/// 过期行多久清一次（同一个数据库对象、同一进程内）。过期行不影响读取
+/// （[MediaLinkVerdictCache.lookup] 只认有效期内的行），清理只为不让表无限长，
+/// 频率与推断批次数无关。
+const Duration kAiMediaLinkVerdictPruneInterval = Duration(days: 1);
+
+/// 每个数据库对象上一次清过期的时刻（毫秒）。挂在数据库对象上而不是缓存实例上：
+/// 每次推断都新建 [MediaLinkVerdictCache]，记在实例里等于每次推断都清一遍。
+final Expando<int> _lastVerdictPruneAt = Expando<int>(
+  'mediaLinkAiVerdictPruneAt',
+);
+
 /// 解析「作品图谱裁决」当前可用的提供商；null = 未指派 / 已删 / 没配全（跳过 AI，
 /// 只剩确定性推断）。
 AiProviderConfig? resolveMediaLinkAiProvider(AiSettingsSource settings) =>
@@ -324,29 +335,37 @@ class MediaLinkVerdictCache {
   }
 
   /// [candidates] 各自缓存的结论（同序同长）；没缓存 / 已过期 / AI 输入变了为 null。
+  /// 只按本次候选的端点对（主键）查，读回的行数不超过候选数，与缓存表攒了多少别的
+  /// 组合无关。
   Future<List<MediaLinkVerdict?>> lookup(
     List<MediaLinkCandidate> candidates,
     String model,
   ) async {
-    final Map<String, MediaLinkAiVerdictRow> rows =
-        <String, MediaLinkAiVerdictRow>{
+    if (candidates.isEmpty) return <MediaLinkVerdict?>[];
+    final List<_CacheSlot> slots = <_CacheSlot>[
+      for (final MediaLinkCandidate c in candidates) _slot(c, model),
+    ];
+    final Map<MediaLinkAiVerdictPair, MediaLinkAiVerdictRow> rows =
+        <MediaLinkAiVerdictPair, MediaLinkAiVerdictRow>{
           for (final MediaLinkAiVerdictRow r
-              in await db.mediaLinkAiVerdictsSince(_notBefore))
-            '${r.aKind}\u0000${r.aKey}\u0001${r.bKind}\u0000${r.bKey}': r,
+              in await db.mediaLinkAiVerdictsForPairs(<MediaLinkAiVerdictPair>[
+                for (final _CacheSlot slot in slots) _pairOf(slot),
+              ], _notBefore))
+            (aKind: r.aKind, aKey: r.aKey, bKind: r.bKind, bKey: r.bKey): r,
         };
     return <MediaLinkVerdict?>[
-      for (final MediaLinkCandidate c in candidates) _read(c, model, rows),
+      for (final _CacheSlot slot in slots) _read(slot, rows[_pairOf(slot)]),
     ];
   }
 
-  MediaLinkVerdict? _read(
-    MediaLinkCandidate c,
-    String model,
-    Map<String, MediaLinkAiVerdictRow> rows,
-  ) {
-    final _CacheSlot slot = _slot(c, model);
-    final MediaLinkAiVerdictRow? row =
-        rows['${_endpointSortKey(slot.a)}\u0001${_endpointSortKey(slot.b)}'];
+  static MediaLinkAiVerdictPair _pairOf(_CacheSlot slot) => (
+    aKind: slot.a.kind.dbValue,
+    aKey: slot.a.key,
+    bKind: slot.b.kind.dbValue,
+    bKey: slot.b.key,
+  );
+
+  MediaLinkVerdict? _read(_CacheSlot slot, MediaLinkAiVerdictRow? row) {
     if (row == null || row.fingerprint != slot.fingerprint) return null;
     final MediaLinkRelation? relation = row.relation == null
         ? null
@@ -362,8 +381,9 @@ class MediaLinkVerdictCache {
     );
   }
 
-  /// 记下 [candidates] 各自刚拿到的结论（[verdicts] 同序；null = 没判出来，不记），
-  /// 顺带清掉过期行。
+  /// 记下 [candidates] 各自刚拿到的结论（[verdicts] 同序；null = 没判出来，不记）。
+  /// 距这个数据库上次清过期超过 [kAiMediaLinkVerdictPruneInterval] 才顺带清一次：
+  /// 一次推断分几十批记也只清一回。
   Future<void> store(
     List<MediaLinkCandidate> candidates,
     List<MediaLinkVerdict?> verdicts,
@@ -399,7 +419,12 @@ class MediaLinkVerdictCache {
     }
     if (rows.isEmpty) return;
     await db.upsertMediaLinkAiVerdicts(rows);
-    await db.pruneMediaLinkAiVerdicts(_notBefore);
+    final int? lastPrune = _lastVerdictPruneAt[db];
+    if (lastPrune == null ||
+        at - lastPrune >= kAiMediaLinkVerdictPruneInterval.inMilliseconds) {
+      _lastVerdictPruneAt[db] = at;
+      await db.pruneMediaLinkAiVerdicts(_notBefore);
+    }
   }
 }
 

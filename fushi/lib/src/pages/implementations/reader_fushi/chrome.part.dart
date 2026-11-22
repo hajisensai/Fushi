@@ -2967,6 +2967,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
           await _refreshSectionHighlights(fav.sectionIndex ?? _currentChapter);
         }
       },
+      // BUG-5081：已收藏的句子改色。仓库写颜色 + 颜色时钟（同步 / 备份合并按它取新），
+      // 正文按新颜色重新上色。
+      onRecolorFavorite: (FavoriteSentence fav, String color) async {
+        await favRepo.setColor(fav.id, color);
+        _invalidateFavoriteSentenceCache();
+        if (fav.sectionIndex == _currentChapter || _lyricsMode) {
+          await _refreshSectionHighlights(fav.sectionIndex ?? _currentChapter);
+        }
+      },
       onJumpToFavorite: _jumpToFavoriteSentence,
       // 书签：书的稳定 uid 缺失时整段不接线（面板按回调为空不出书签段）。加 / 删
       // 同步写回会话列表 [bookmarks]（见 [_openReaderPanel]）。

@@ -512,6 +512,39 @@ class EpubImporter {
     );
   }
 
+  /// 解压树里只改了少数章（[changedHrefs]，相对解压根，`/` 分隔）、或在 spine
+  /// 末尾加了章之后，刷新 `(chapterCount, chaptersJson, coverPath)` 三件套：**只**
+  /// 重读 OPF，[changedHrefs] 里的章、以及 [previousChaptersJson] 里没有（按 href）
+  /// 或口径版本不是 [kChapterCharCountCaliber] 的章才读正文数字数，其余章沿用
+  /// [previousChaptersJson] 里的字数。
+  ///
+  /// 给按需追章（网页小说书阅读器会话内续章，HBK-AUDIT-040）用：[reparseExtractedBook]
+  /// 每次都逐章读全部正文、重扫字数，连续追 N 章累计读 O(N²) 章。章节文件与 id
+  /// 仍以本次 OPF 为准（spine 变了照样跟上），只有字数是复用的。
+  static Future<({int chapterCount, String chaptersJson, String? coverPath})>
+  reindexExtractedBook({
+    required String extractDir,
+    required String previousChaptersJson,
+    required Set<String> changedHrefs,
+  }) async {
+    final _ReindexArgs args = _ReindexArgs(
+      extractDir: extractDir,
+      previousChaptersJson: previousChaptersJson,
+      changedHrefs: <String>{
+        for (final String href in changedHrefs)
+          normalizeHref(href.replaceAll('\\', '/')),
+      },
+    );
+    final _ParseResult result = await Isolate.run(
+      () => _reindexExtractedInIsolate(args),
+    );
+    return (
+      chapterCount: result.book.chapters.length,
+      chaptersJson: buildChaptersJson(result.book, result.characterCounts),
+      coverPath: result.book.coverHref,
+    );
+  }
+
   /// 书目录落位。实现已提到 [EpubStorage.moveDirIntoPlace]（漫画导入共用同一个
   /// 落位原语，BUG-4840），语义见那里；这里保留原名给既有调用方与测试。
   @visibleForTesting
@@ -580,6 +613,63 @@ _ParseResult _reparseExtractedInIsolate(String extractDir) {
     book: book,
     characterCounts: _computeCharacterCounts(book),
   );
+}
+
+class _ReindexArgs {
+  const _ReindexArgs({
+    required this.extractDir,
+    required this.previousChaptersJson,
+    required this.changedHrefs,
+  });
+
+  final String extractDir;
+  final String previousChaptersJson;
+  final Set<String> changedHrefs;
+}
+
+/// [EpubImporter.reindexExtractedBook] 的 isolate 体：OPF 照常解析（章节正文是懒读的，
+/// 见 `EpubChapter.lazy`），字数只对改过的 / 旧表里没有可信值的章重算。
+_ParseResult _reindexExtractedInIsolate(_ReindexArgs args) {
+  final EpubBook book = EpubParser.parseFromExtracted(args.extractDir);
+  final Map<String, int> reusable = _reusableCharacterCounts(
+    args.previousChaptersJson,
+  );
+  return _ParseResult(
+    book: book,
+    characterCounts: List<int>.generate(book.chapters.length, (int index) {
+      final String href = book.chapters[index].href;
+      final int? previous = args.changedHrefs.contains(href)
+          ? null
+          : reusable[href];
+      return previous ?? book.chapterCharacterCount(index);
+    }, growable: false),
+  );
+}
+
+/// 旧 `chaptersJson` 里按 href 可沿用的字数：只收当前口径（[kChapterCharCountCaliber]）
+/// 的非负整数；整体形状不对返回空表（等于全部重算）。
+Map<String, int> _reusableCharacterCounts(String chaptersJson) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(chaptersJson);
+  } on FormatException {
+    return const <String, int>{};
+  }
+  if (decoded is! List<Object?>) return const <String, int>{};
+  final Map<String, int> counts = <String, int>{};
+  for (final Object? entry in decoded) {
+    if (entry is! Map<String, Object?>) continue;
+    final Object? href = entry['href'];
+    final Object? characters = entry['characters'];
+    if (href is! String ||
+        characters is! int ||
+        characters < 0 ||
+        entry['charCaliber'] != kChapterCharCountCaliber) {
+      continue;
+    }
+    counts.putIfAbsent(normalizeHref(href), () => characters);
+  }
+  return counts;
 }
 
 _ParseResult _parseInIsolate(_ParseArgs args) {

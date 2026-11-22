@@ -131,6 +131,65 @@ void main() {
       ]);
     });
 
+    test('整形版本是整形参数的指纹；旁白参考音频文件名带上它', () {
+      expect(kMangaShapeVersion, matches(RegExp(r'^[0-9a-f]{12}$')));
+      // 版本取自三个参数构造器的完整输出（不只整形滤镜）：拼接前的统一采样 / 声道、
+      // 参考音频的编码变了也要换版本。
+      expect(
+        kMangaShapeVersion,
+        mangaShapeFingerprint(<List<String>>[
+          buildMangaLineEncodeArgs(
+            inputs: const <String>['in0', 'in1'],
+            outputPath: 'out',
+          ),
+          buildMangaClipArgs(
+            sourcePath: 'in',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: 'out',
+            shapeAsLine: true,
+          ),
+          buildMangaNarratorRefArgs(
+            sourcePath: 'in',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: 'out',
+          ),
+        ]),
+      );
+      expect(
+        mangaShapeFingerprint(<List<String>>[
+          <String>['a', 'b'],
+        ]),
+        isNot(
+          mangaShapeFingerprint(<List<String>>[
+            <String>['ab'],
+          ]),
+        ),
+      );
+      const MangaAudiobookClip clip = MangaAudiobookClip(
+        bookKey: 'novel',
+        fileIndex: 0,
+        startMs: 0,
+        endMs: 4000,
+      );
+      expect(
+        mangaNarratorRefFileName(clip),
+        '${mangaNarratorRefName(clip)}.$kMangaShapeVersion.wav',
+      );
+      // 旧版本（含没有版本号的历史文件）算过期；当前版本与在写的临时文件不算。
+      expect(
+        isStaleMangaNarratorRef('${mangaNarratorRefName(clip)}.wav'),
+        isTrue,
+      );
+      expect(isStaleMangaNarratorRef('0123.000000000000.wav'), isTrue);
+      expect(isStaleMangaNarratorRef(mangaNarratorRefFileName(clip)), isFalse);
+      expect(
+        isStaleMangaNarratorRef('${mangaNarratorRefFileName(clip)}.part'),
+        isFalse,
+      );
+    });
+
     test('旁白虚拟预设走声音包管线：不挂 LoRA，参考音频按顺序', () {
       final MangaNarratorVoice narrator = MangaNarratorVoice(
         const <MangaAudiobookClip>[

@@ -20,10 +20,11 @@
 /// 无服务器配置）就**保留**这本书，不丢本地进度。服务器进度本身在服务器上，绑定靠
 /// 「服务器配置 id + chapterId」由 Kavita 页重建，所以删掉本地行不丢同步身份。
 ///
-/// 删书原语会连带删掉书签 / 单书 CSS / 有声书与字幕配对 / 标签 / 合集成员身份，这些
-/// 只在本机、服务器上没有副本，所以**带这些用户数据的缓存副本不参与自动淘汰与一键
-/// 清理**（只有用户显式「移除下载」或在书架删书才删）。删除与打开 / 固定共用一把锁，
-/// 且每本删前在锁内按最新状态复核（见 [KavitaBookService.trimCache]）。
+/// 删书原语会连带删掉书签 / 单书 CSS / 有声书与字幕配对 / 标签 / 合集成员身份，以及
+/// 用户自定义的显示书名 / 封面（HBK-AUDIT-032），这些只在本机、服务器上没有副本，所以
+/// **带这些用户数据的缓存副本不参与自动淘汰与一键清理**（只有用户显式「移除下载」或
+/// 在书架删书才删）。删除与打开 / 固定共用一把锁，且每本删前在锁内按最新状态复核
+/// （见 [KavitaBookService.trimCache]）。
 library;
 
 import 'dart:io';
@@ -31,9 +32,13 @@ import 'dart:io';
 import 'package:drift/drift.dart'
     show
         BooleanExpressionOperators,
+        Expression,
+        GeneratedColumn,
         HasResultSet,
-        SimpleSelectStatement,
+        JoinedSelectStatement,
+        ResultSetImplementation,
         StringExpressionOperators,
+        TypedResult,
         Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
@@ -64,6 +69,10 @@ typedef KavitaBookDeleter = Future<bool> Function(String bookKey);
 /// 一轮删除（淘汰 / 一键清理 / 移除下载）真删掉至少一本后回收一次数据库空间。生产
 /// 实现走 `ReaderFushiSource.compactAfterBookDeleteBestEffort`（整库 VACUUM）。
 typedef KavitaDatabaseCompactor = Future<void> Function();
+
+/// 这本书有没有用户自定义的显示书名 / 封面（只在本机，删书原语会一起清掉）。生产
+/// 实现走 `ReaderFushiSource.hasBookCustomization`（HBK-AUDIT-032）。
+typedef KavitaBookCustomizationProbe = bool Function(String bookKey);
 
 /// 按服务器配置 id 取协议层客户端；服务器已删除 / 停用时返回 null。
 typedef KavitaApiResolver = KavitaApi? Function(String serverConfigId);
@@ -118,6 +127,9 @@ typedef _Entry = ({
   ReaderPositionRow? position,
 });
 
+/// 一本未固定的 Kavita 书行 + 绑定（候选快照的中间形态）。
+typedef _Cached = ({EpubBookRow row, KavitaBookBinding binding});
+
 /// 一次受保护删除的结局（比 [KavitaLocalRemoval] 多两种「不删」的情形）。
 enum _GuardedRemoval {
   removed,
@@ -133,14 +145,15 @@ enum _GuardedRemoval {
 
 class KavitaBookService {
   /// [appModel] 只有会删书的实例（详情页、设置页）需要：删书原语要它清 override
-  /// 封面。只做绑定读写 / 记同步的实例（进度同步、进度刷新）不给，对它调删除类方法
-  /// 抛 [StateError]。
+  /// 封面，判「有没有用户数据」要它查 override 书名 / 封面。只做绑定读写 / 记同步的
+  /// 实例（进度同步、进度刷新）不给，对它调删除类方法或用户数据判定抛 [StateError]。
   KavitaBookService({
     required FushiDatabase db,
     AppModel? appModel,
     Directory? tempRoot,
     KavitaEpubImporter? importEpub,
     KavitaBookDeleter? deleteBook,
+    KavitaBookCustomizationProbe? hasCustomization,
     KavitaDatabaseCompactor? compactDatabase,
     KavitaApiResolver? apiFor,
     int cacheLimit = kKavitaCachedBookLimit,
@@ -152,6 +165,9 @@ class KavitaBookService {
        _deleteBook =
            deleteBook ??
            (appModel == null ? null : _defaultDelete(db, appModel)),
+       _hasCustomization =
+           hasCustomization ??
+           (appModel == null ? null : _defaultCustomizationProbe(appModel)),
        _compactDatabase =
            compactDatabase ??
            (() => ReaderFushiSource.compactAfterBookDeleteBestEffort(db)),
@@ -166,6 +182,7 @@ class KavitaBookService {
   final Directory? _tempRoot;
   final KavitaEpubImporter _importEpub;
   final KavitaBookDeleter? _deleteBook;
+  final KavitaBookCustomizationProbe? _hasCustomization;
   final KavitaDatabaseCompactor _compactDatabase;
 
   /// 删之前推未同步进度用；null = 推不了（有未同步进度的书一律保留）。
@@ -187,6 +204,12 @@ class KavitaBookService {
     return run;
   }
 
+  /// 「可清理集合或最近使用排位」经本服务改变的代际（static，与 [_lock] 同范围）。
+  /// 记使用（[_touchUnlocked]）、固定 / 取消固定、新导入一本缓存副本时 +1；淘汰 /
+  /// 清理循环据此判断开头拍的候选快照是否还作数，变了才重拍（HBK-AUDIT-041）。
+  /// 只在 [_lock] 内改。
+  static int _evictionEpoch = 0;
+
   static KavitaEpubImporter _defaultImport(FushiDatabase db) =>
       (String filePath, String fileName) => EpubImporter.importFromPath(
         db: db,
@@ -203,6 +226,14 @@ class KavitaBookService {
         appModel: app,
         compactDatabase: false,
       )).deleted;
+
+  static KavitaBookCustomizationProbe _defaultCustomizationProbe(
+    AppModel app,
+  ) =>
+      (String bookKey) => ReaderFushiSource.instance.hasBookCustomization(
+        appModel: app,
+        bookKey: bookKey,
+      );
 
   /// 本地已绑定这一章的书的 bookKey；没有返回 null。
   Future<String?> findBookKey({
@@ -297,7 +328,10 @@ class KavitaBookService {
         cachedOnly: true,
         lastOpenedAt: _nowMs(),
       );
-      await _writeBinding(bookKey, binding);
+      await _serialized(() async {
+        await _writeBinding(bookKey, binding);
+        _evictionEpoch++;
+      });
       return bookKey;
     } finally {
       try {
@@ -316,11 +350,14 @@ class KavitaBookService {
   Future<bool> unpin(String bookKey) =>
       _serialized(() => _setCachedOnlyUnlocked(bookKey, true));
 
-  Future<bool> _setCachedOnlyUnlocked(String bookKey, bool cachedOnly) =>
-      _updateBinding(
-        bookKey,
-        (KavitaBookBinding b) => b.copyWith(cachedOnly: cachedOnly),
-      );
+  Future<bool> _setCachedOnlyUnlocked(String bookKey, bool cachedOnly) async {
+    final bool changed = await _updateBinding(
+      bookKey,
+      (KavitaBookBinding b) => b.copyWith(cachedOnly: cachedOnly),
+    );
+    if (changed) _evictionEpoch++;
+    return changed;
+  }
 
   /// 记一次进度交换（推 / 拉）后的绑定戳。
   ///
@@ -454,48 +491,51 @@ class KavitaBookService {
   /// 取最新）留前 `cacheLimit` 本，其余删除。[keep] 是刚打开的那本，无论如何不删。
   ///
   /// 只淘汰**可清理**的缓存副本：带书签 / 单书 CSS / 有声书或字幕配对 / 标签 / 合集
-  /// 成员身份的书不参与淘汰、也不占上限——这些是用户在本机产生、服务器上没有副本的
-  /// 数据，删书原语会把它们连同书一起删掉，自动淘汰不能替用户做这个决定。
-  /// 有未同步进度且推不出去的书保留，下一轮再试。
+  /// 成员身份 / 自定义书名或封面的书不参与淘汰、也不占上限——这些是用户在本机产生、
+  /// 服务器上没有副本的数据，删书原语会把它们连同书一起删掉，自动淘汰不能替用户做
+  /// 这个决定。有未同步进度且推不出去的书保留，下一轮再试。
   ///
-  /// 每删一本都在锁内重新读库选下一个目标（不是开头拍一次快照逐本删），所以淘汰
-  /// 期间被打开、读到、固定的书会按最新状态重新排位。
-  Future<KavitaCacheCleanup> trimCache({String? keep}) async {
-    KavitaCacheCleanup result = const KavitaCacheCleanup();
-    final Set<String> attempted = <String>{};
-    try {
-      while (true) {
-        final _Entry? victim = await _serialized(() async {
-          for (final _Entry e in await _trimVictims(keep)) {
-            if (!attempted.contains(e.row.bookKey)) return e;
-          }
-          return null;
-        });
-        if (victim == null) return result;
-        attempted.add(victim.row.bookKey);
-        final _GuardedRemoval outcome = await _removeGuarded(
-          victim,
-          stillRemovable: (_Entry fresh) async =>
-              _sameUse(victim, fresh) &&
-              (await _trimVictims(
-                keep,
-              )).any((_Entry e) => e.row.bookKey == fresh.row.bookKey),
-        );
-        result = _tally(result, outcome);
-      }
-    } finally {
-      if (result.removed > 0) await _compactDatabase();
-    }
-  }
+  /// 候选在锁内拍一次快照（批量查询，查询数与书数无关），之后逐本删、每本删前只在
+  /// 锁内复核这一本（[_evictCandidates]）。淘汰期间经本服务被打开 / 固定 / 新导入的
+  /// 书会让快照作废、按最新状态重新排位（[_evictionEpoch]）。
+  Future<KavitaCacheCleanup> trimCache({String? keep}) =>
+      _evictCandidates(() => _trimVictims(keep));
 
   /// 一键清理全部可清理的缓存副本（显式下载的、带用户数据的不动）。
-  Future<KavitaCacheCleanup> clearCache() async {
+  Future<KavitaCacheCleanup> clearCache() =>
+      _evictCandidates(_evictableEntries);
+
+  /// 淘汰 / 一键清理的共同循环（HBK-AUDIT-041）。
+  ///
+  /// 以前每删一本都在「选目标」与「锁内复核」各跑一次 [plan]（扫整个 Kavita 书架，
+  /// 逐本查阅读位置与 6 张用户数据表），清 M 本、N 本缓存时约 O(M·N) 次查询。现在：
+  /// - [plan] 在锁内跑一次得候选快照，按序逐本删；
+  /// - 每本删前在锁内只复核这一本：使用没变（[_sameUse]：仍是缓存副本、没被打开、
+  ///   阅读位置没动）且仍没有用户数据——都只查这一本的行；
+  /// - 快照作废才重拍：经本服务的打开 / 固定 / 新导入（[_evictionEpoch] 变了），或
+  ///   复核发现这本被别处改了 / 已被删（排位可能整体变了）。
+  ///
+  /// 已知边界：别的子系统（阅读器加书签等）在淘汰进行中给**另一本**未入选的书加了
+  /// 用户数据，可清理集合少了一本、快照不知道——最多多淘汰一本没有用户数据、进度已
+  /// 保住的缓存副本，不丢任何本机数据，下次打开时重新缓存。
+  Future<KavitaCacheCleanup> _evictCandidates(
+    Future<List<_Entry>> Function() plan,
+  ) async {
     KavitaCacheCleanup result = const KavitaCacheCleanup();
     final Set<String> attempted = <String>{};
+    List<_Entry> candidates = const <_Entry>[];
+    int cursor = 0;
+    int? plannedAt;
     try {
       while (true) {
         final _Entry? victim = await _serialized(() async {
-          for (final _Entry e in await _evictableEntries()) {
+          if (plannedAt != _evictionEpoch) {
+            plannedAt = _evictionEpoch;
+            candidates = await plan();
+            cursor = 0;
+          }
+          while (cursor < candidates.length) {
+            final _Entry e = candidates[cursor++];
             if (!attempted.contains(e.row.bookKey)) return e;
           }
           return null;
@@ -507,6 +547,10 @@ class KavitaBookService {
           stillRemovable: (_Entry fresh) async =>
               _sameUse(victim, fresh) && !await _hasUserData(fresh.row),
         );
+        if (outcome == _GuardedRemoval.changed ||
+            outcome == _GuardedRemoval.gone) {
+          plannedAt = null;
+        }
         result = _tally(result, outcome);
       }
     } finally {
@@ -638,67 +682,166 @@ class KavitaBookService {
     return _entryOf(row, binding);
   }
 
-  /// 可被自动淘汰 / 一键清理的缓存副本：未固定、且没有用户数据。
-  Future<List<_Entry>> _evictableEntries() async => <_Entry>[
-    for (final EpubBookRow row in await _kavitaRows())
-      if (KavitaBookBinding.tryParse(row.sourceMetadata)
-          case final KavitaBookBinding binding
-          when binding.cachedOnly && !await _hasUserData(row))
-        await _entryOf(row, binding),
-  ];
-
-  /// 这本书是否带着删书原语（`deleteEpubBook`）会一并删掉、而服务器上没有副本的
-  /// 用户数据：书签、单书自定义 CSS、有声书 / 字幕配对、标签、合集成员身份。阅读
-  /// 位置不算——它由 [_settleProgress] 先推到服务器。
-  Future<bool> _hasUserData(EpubBookRow row) async {
-    final String uid = row.uid;
-    final String key = row.bookKey;
-    if (uid.isNotEmpty) {
-      if (await _exists(
-        _db.select(_db.bookmarks)..where((t) => t.bookUid.equals(uid)),
-      )) {
-        return true;
-      }
-      if (await _exists(
-        _db.select(_db.bookCustomCss)
-          ..where((t) => t.bookUid.equals(uid) & t.deleted.equals(false)),
-      )) {
-        return true;
-      }
-      if (await _exists(
-        _db.select(_db.mediaCollectionItems)..where(
-          (t) =>
-              t.mediaType.equals(MediaKind.epub.dbValue) &
-              t.entryKey.equals(uid),
-        ),
-      )) {
-        return true;
-      }
-    }
-    if (await _exists(
-      _db.select(_db.audiobooks)..where((t) => t.bookKey.equals(key)),
-    )) {
-      return true;
-    }
-    if (await _exists(
-      _db.select(_db.srtBooks)..where((t) => t.bookKey.equals(key)),
-    )) {
-      return true;
-    }
-    return _exists(
-      _db.select(_db.tagAssignments)..where(
-        (t) =>
-            t.mediaKind.equals(TagHostKind.epub.dbValue) &
-            t.entryKey.equals(key),
-      ),
+  /// 可被自动淘汰 / 一键清理的缓存副本：未固定、且没有用户数据。一次书架扫描 +
+  /// 按表批量查用户数据与阅读位置，查询数与书数无关（HBK-AUDIT-041）。
+  Future<List<_Entry>> _evictableEntries() async {
+    final List<_Cached> cached = <_Cached>[
+      for (final EpubBookRow row in await _kavitaRows())
+        if (KavitaBookBinding.tryParse(row.sourceMetadata)
+            case final KavitaBookBinding binding when binding.cachedOnly)
+          (row: row, binding: binding),
+    ];
+    if (cached.isEmpty) return const <_Entry>[];
+    final Set<String> withData = await _bookKeysWithUserData(<EpubBookRow>[
+      for (final _Cached c in cached) c.row,
+    ]);
+    final List<_Cached> evictable = <_Cached>[
+      for (final _Cached c in cached)
+        if (!withData.contains(c.row.bookKey)) c,
+    ];
+    final Map<String, ReaderPositionRow> positions = await _positionsOf(
+      <String>[
+        for (final _Cached c in evictable)
+          if (c.row.uid.isNotEmpty) c.row.uid,
+      ],
     );
+    return <_Entry>[
+      for (final _Cached c in evictable)
+        (
+          row: c.row,
+          binding: c.binding,
+          position: c.row.uid.isEmpty ? null : positions[c.row.uid],
+        ),
+    ];
   }
 
-  static Future<bool> _exists<T extends HasResultSet, D>(
-    SimpleSelectStatement<T, D> query,
+  Future<Map<String, ReaderPositionRow>> _positionsOf(List<String> uids) async {
+    final Map<String, ReaderPositionRow> out = <String, ReaderPositionRow>{};
+    for (final List<String> chunk in _chunks(uids)) {
+      for (final ReaderPositionRow p in await (_db.select(
+        _db.readerPositions,
+      )..where((t) => t.bookUid.isIn(chunk))).get()) {
+        out[p.bookUid] = p;
+      }
+    }
+    return out;
+  }
+
+  /// 这本书是否带着删书原语（`deleteEpubBook` + override 清理）会一并删掉、而服务器
+  /// 上没有副本的用户数据。判据只在 [_bookKeysWithUserData] 写一次。
+  Future<bool> _hasUserData(EpubBookRow row) async =>
+      (await _bookKeysWithUserData(<EpubBookRow>[row])).isNotEmpty;
+
+  /// [rows] 里带用户数据的书的 bookKey：书签、单书自定义 CSS、合集成员身份、有声书 /
+  /// 字幕配对、标签，以及自定义显示书名 / 封面（HBK-AUDIT-032：删书原语按 bookKey 清
+  /// override，自动淘汰曾借此把用户换的封面一起删掉）。阅读位置不算——它由
+  /// [_settleProgress] 先推到服务器。每张表一条按键批量的查询，与 [rows] 多少无关。
+  Future<Set<String>> _bookKeysWithUserData(List<EpubBookRow> rows) async {
+    final KavitaBookCustomizationProbe? customized = _hasCustomization;
+    if (customized == null) {
+      throw StateError(
+        'KavitaBookService 构造时没给 appModel / hasCustomization，判不了用户数据',
+      );
+    }
+    final Set<String> out = <String>{
+      for (final EpubBookRow row in rows)
+        if (customized(row.bookKey)) row.bookKey,
+    };
+    final Map<String, String> keyByUid = <String, String>{
+      for (final EpubBookRow row in rows)
+        if (row.uid.isNotEmpty && !out.contains(row.bookKey))
+          row.uid: row.bookKey,
+    };
+    final List<String> uids = keyByUid.keys.toList();
+    final Set<String> uidsWithData = <String>{
+      ...await _distinct(
+        _db.bookmarks,
+        _db.bookmarks.bookUid,
+        uids,
+        (List<String> k) => _db.bookmarks.bookUid.isIn(k),
+      ),
+      ...await _distinct(
+        _db.bookCustomCss,
+        _db.bookCustomCss.bookUid,
+        uids,
+        (List<String> k) =>
+            _db.bookCustomCss.bookUid.isIn(k) &
+            _db.bookCustomCss.deleted.equals(false),
+      ),
+      ...await _distinct(
+        _db.mediaCollectionItems,
+        _db.mediaCollectionItems.entryKey,
+        uids,
+        (List<String> k) =>
+            _db.mediaCollectionItems.mediaType.equals(MediaKind.epub.dbValue) &
+            _db.mediaCollectionItems.entryKey.isIn(k),
+      ),
+    };
+    out.addAll(<String>[
+      for (final String uid in uidsWithData)
+        if (keyByUid[uid] case final String key) key,
+    ]);
+    final List<String> keys = <String>[
+      for (final EpubBookRow row in rows)
+        if (!out.contains(row.bookKey)) row.bookKey,
+    ];
+    out
+      ..addAll(
+        await _distinct(
+          _db.audiobooks,
+          _db.audiobooks.bookKey,
+          keys,
+          (List<String> k) => _db.audiobooks.bookKey.isIn(k),
+        ),
+      )
+      ..addAll(
+        await _distinct(
+          _db.srtBooks,
+          _db.srtBooks.bookKey,
+          keys,
+          (List<String> k) => _db.srtBooks.bookKey.isIn(k),
+        ),
+      )
+      ..addAll(
+        await _distinct(
+          _db.tagAssignments,
+          _db.tagAssignments.entryKey,
+          keys,
+          (List<String> k) =>
+              _db.tagAssignments.mediaKind.equals(TagHostKind.epub.dbValue) &
+              _db.tagAssignments.entryKey.isIn(k),
+        ),
+      );
+    return out;
+  }
+
+  /// [table] 里 [column] 落在一批键中的去重值；[where] 给出按一批键的过滤。
+  Future<Set<String>> _distinct(
+    ResultSetImplementation<HasResultSet, Object?> table,
+    GeneratedColumn<String> column,
+    List<String> keys,
+    Expression<bool> Function(List<String> chunk) where,
   ) async {
-    query.limit(1);
-    return (await query.get()).isNotEmpty;
+    final Set<String> out = <String>{};
+    for (final List<String> chunk in _chunks(keys)) {
+      final JoinedSelectStatement<HasResultSet, Object?> q =
+          _db.selectOnly(table, distinct: true)
+            ..addColumns(<Expression<Object>>[column])
+            ..where(where(chunk));
+      for (final TypedResult r in await q.get()) {
+        final String? v = r.read(column);
+        if (v != null) out.add(v);
+      }
+    }
+    return out;
+  }
+
+  /// SQLite 绑定变量有上限，按块分批。
+  static Iterable<List<String>> _chunks(List<String> xs) sync* {
+    const int size = 500;
+    for (int i = 0; i < xs.length; i += size) {
+      yield xs.sublist(i, i + size > xs.length ? xs.length : i + size);
+    }
   }
 
   static int _recencyOf(_Entry e) {
@@ -767,10 +910,14 @@ class KavitaBookService {
   }
 
   /// 记一次经 Kavita 页打开（缓存淘汰按它排最近使用）。调用方须已持锁。
-  Future<void> _touchUnlocked(String bookKey) => _updateBinding(
-    bookKey,
-    (KavitaBookBinding b) => b.copyWith(lastOpenedAt: _nowMs()),
-  );
+  Future<void> _touchUnlocked(String bookKey) async {
+    if (await _updateBinding(
+      bookKey,
+      (KavitaBookBinding b) => b.copyWith(lastOpenedAt: _nowMs()),
+    )) {
+      _evictionEpoch++;
+    }
+  }
 
   /// 读-改-写绑定放在一个事务里：进度同步（[recordSync]）与固定 / 记使用并发时，
   /// 互不覆盖对方刚写的字段（否则 recordSync 可能把刚固定的书写回缓存副本）。

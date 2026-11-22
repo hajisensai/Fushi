@@ -200,6 +200,13 @@ class SrsSync2Report {
   /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
   /// 目录里多留几份旧 head 不影响任何设备读到的内容，内核过一个周期再让看。只供记日志。
   final List<String> formerSweepErrors = <String>[];
+
+  /// 这一轮从位置目录里清掉的 v3.0.x 写入者目录（`<设备>#<化身号>`，`srsSweepLegacyWriters`，BUG-5017）。只供诊断。
+  final List<String> legacyWritersRemoved = <String>[];
+
+  /// 清 v3.0.x 写入者目录时没做成的（`srsSweepLegacyWriters`），每项 `<写入者目录>[/<文件>]: <原因>`。与
+  /// [formerSweepErrors] 同理不算这一轮失败（那些文件没有任何受支持的版本读），下一轮再清。只供记日志。
+  final List<String> legacyWriterErrors = <String>[];
 }
 
 /// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥

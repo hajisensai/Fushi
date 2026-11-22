@@ -77,11 +77,35 @@ class Report {
     if (!isObj(a)) return this.warn(path, 'not an object — dropped');
     if (!this.idField(path, a.id, 'id') || !this.idField(path, a.title, 'title')) return;
     this.bool(path, a.collected, 'collected');
+    this.bool(path, a.hasSubtitles, 'hasSubtitles');
+    this.tags(`${path}.tags`, a.tags);
+    this.num(path, a.durationMs, 'durationMs', { nonNegative: true });
+    if (a.sourceUrl !== undefined && !(str(a.sourceUrl) && a.sourceUrl.startsWith('https://'))) {
+      this.warn(path, 'sourceUrl must be an https:// URL — ignored');
+    }
+    if (a.related !== undefined) {
+      if (!Array.isArray(a.related)) this.warn(path, 'related must be an array of { label?, album }');
+      else
+        a.related.forEach((x, i) => {
+          if (!isObj(x) || !isObj(x.album)) this.warn(`${path}.related[${i}]`, 'needs { label?, album } — dropped');
+          else this.album(`${path}.related[${i}].album`, x.album);
+        });
+    }
     this.artists(`${path}.artists`, a.artists);
     this.num(path, a.year, 'year');
     this.num(path, a.trackCount, 'trackCount', { nonNegative: true });
     this.date(path, a.releaseDate, 'releaseDate');
     this.url(path, a.coverUrl, 'coverUrl');
+  }
+  tags(path, v) {
+    if (v === undefined) return;
+    if (!Array.isArray(v)) return this.warn(path, 'tags must be an array of { facet, id, name }');
+    v.forEach((x, i) => {
+      if (!isObj(x) || !str(x.facet) || !str(x.id) || !str(x.name)) {
+        this.warn(`${path}[${i}]`, 'tag needs string facet, id and name — dropped');
+      }
+    });
+    if (v.length > 40) this.warn(path, 'only the first 40 tags are kept');
   }
   artist(path, a) {
     if (!isObj(a)) return this.warn(path, 'not an object — dropped');
@@ -291,7 +315,39 @@ export function validateResult(method, args, value, policy) {
         if (!Array.isArray(s.items) || s.items.length === 0) return r.warn(sp, 'empty section — not shown');
         if (s.items.length > 50) r.warn(sp, 'only the first 50 items are shown');
         r.list(`${sp}.items`, s.items, kind);
+        if (s.more !== undefined && !isObj(s.more)) r.warn(sp, 'more must be a BrowseQuery object — ignored');
       });
+      break;
+    }
+    case 'browse': {
+      if (!obj(value)) break;
+      if (args?.op === 'schema') {
+        for (const f of ['facets', 'sorts', 'toggles']) {
+          if (value[f] === undefined) continue;
+          if (!Array.isArray(value[f])) r.warn(p, `${f} must be an array of { id, label }`);
+          else
+            value[f].forEach((o, i) => {
+              if (!isObj(o) || !str(o.id) || !str(o.label)) r.warn(`${p}.${f}[${i}]`, 'needs string id and label — dropped');
+            });
+        }
+        if (value.choices !== undefined && !Array.isArray(value.choices)) r.warn(p, 'choices must be an array of { id, label, values }');
+      } else if (args?.op === 'list') {
+        const kind = { tracks: 'track', playlists: 'playlist', albums: 'album' }[value.kind ?? 'albums'];
+        if (!kind) {
+          r.error(p, 'kind must be albums | tracks | playlists');
+          break;
+        }
+        r.page(p, value, kind);
+      } else if (args?.op === 'catalog') {
+        if (!Array.isArray(value.items)) {
+          r.error(p, 'missing "items" array');
+          break;
+        }
+        value.items.forEach((e, i) => {
+          if (!isObj(e) || !str(e.id) || !str(e.name)) r.warn(`${p}.items[${i}]`, 'needs string id and name — dropped');
+        });
+        if (typeof value.hasMore !== 'boolean') r.warn(p, 'hasMore should be a boolean (only true loads more)');
+      }
       break;
     }
     case 'account':

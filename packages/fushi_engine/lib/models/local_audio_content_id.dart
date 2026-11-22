@@ -1,32 +1,44 @@
-/// 本地音频库的**内容身份**（拍板 pr3481）：跨设备同步 / 导入去重认「库里装的是
-/// 什么」，不再认用户可改、各版本默认值也不同的显示名。
+/// 本地音频库的**内容身份**（拍板 pr3481）：跨设备同步 / 导入去重 / 删除墓碑认
+/// 「库里装的是什么」，不再认用户可改、各版本默认值也不同的显示名。
 ///
 /// 起因：本地音频跨设备同步原本只按 displayName 做 union。PR #3481 让新导入库的
 /// 默认显示名从 `android.db` 改成按子来源起名、推荐包里的库也改叫 Japanese audio，
 /// 新旧设备 / 新旧推荐包混用时，同一份 GB 级库会因为名字不同被两边各拉一次、在
 /// 各端留两份。身份改成内容指纹后，名字怎么改都不影响去重。
 ///
-/// 指纹只读 `entries` 元数据表（每行 expression / reading / source / file）加
-/// `android` 音频表的行数，**不读音频 BLOB**：GB 级库整读一遍太慢，而元数据表
-/// 完全一致、音频条数也一致的两份库实际上就是同一份库。不按文件字节算：绑定时
-/// `LocalAudioDb.ensureIndexes` 会往库文件里补索引，同一份库在两台设备上的字节
-/// 本来就会不同。
+/// **身份覆盖真实录音**（`la2`，HBK-AUDIT-001 / BUG 见 docs/BUGS.md）：第一版
+/// （`la1`）只读 `entries` 元数据和 `android` 行数、不读音频 BLOB，两份录音不同但
+/// 元数据与条数相同的库身份相同——启动整理会把其中一份当重复删掉，同步 / 导入会把
+/// 另一份当「已有」跳过，删除墓碑也会删到另一份。身份是去重、清理、删除的唯一依据，
+/// 只能对内容负责，所以 `la2` 把每一行的音频字节都算进去。代价是扫一遍整库（实测
+/// 见 BUG 文件）；身份在导入 / 回填时算一次就存进登记，之后不再扫。
 ///
-/// 行哈希用与顺序无关的组合（求和 + 异或），不需要排序整张表，VACUUM / 重建
-/// 索引改变扫描顺序也不影响结果。
+/// 规范化（与行序无关、与库文件字节无关）：
+/// * `entries` 按 (expression, reading, source, file) 排序后逐行入哈希；
+/// * `android` 先只把 (source, file, rowid) 三列小键排进 TEMP 表（不把 BLOB 拖进
+///   排序器），再按它驱动一条 rowid 连接查询顺序取 (source, file, data) 入哈希——
+///   取数在 SQLite 内部按主键查，不逐行回 Dart 发语句。完全同键的重复行按 rowid
+///   定序——顺序不同只会算出两个身份（多留一份），不会把不同的库认成一份。
+/// * 每个值带类型与长度前缀，字段边界与 NULL / 空串不会混淆。
+/// 不按文件字节算：绑定时 `LocalAudioDb.ensureIndexes` 会往库文件里补索引，同一份
+/// 库在两台设备上的字节本来就会不同。
+///
+/// 哈希是 native/fushi_compute 的流式 SHA-256（Rust 胖核心）：行数据攒进 1 MiB 原生
+/// 缓冲区，满了才跨一次 FFI，不逐行跨边界。
 library;
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' show sha256;
+import 'package:fushi_compute/fushi_compute.dart' show FfcSha256Hasher;
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 /// 指纹格式前缀；算法变了就换前缀（旧前缀的身份与新前缀互不相等，退回按名匹配
-/// 之前先各自重算）。
-const String kLocalAudioContentIdPrefix = 'la1-';
+/// 之前先各自重算）。`la1-`（不读音频 BLOB）已作废：不再被认作身份。
+const String kLocalAudioContentIdPrefix = 'la2-';
 
 /// [contentId] 是不是本版本认得的内容身份（防 wire 上来的任意串冒充）。
 bool isLocalAudioContentId(String? contentId) =>
@@ -37,80 +49,152 @@ bool isLocalAudioContentId(String? contentId) =>
       r'^[0-9a-f]+$',
     ).hasMatch(contentId.substring(kLocalAudioContentIdPrefix.length));
 
-const int _fnvOffset64 = 0xcbf29ce484222325;
-const int _fnvPrime64 = 0x100000001b3;
+/// 把 SQLite 值按「类型 + 长度 + 字节」写进原生哈希缓冲区，满了才 [FfcSha256Hasher.update]。
+/// 字节一律走 `Uint8List` → `Uint8List` 的 `setRange`（memmove），不走泛型 List 拷贝。
+final class _CanonicalHashSink {
+  _CanonicalHashSink(this._hasher) : _buffer = _hasher.buffer;
 
-int _fnv1a64(List<int> bytes) {
-  int h = _fnvOffset64;
-  for (final int b in bytes) {
-    h ^= b;
-    h *= _fnvPrime64; // Dart VM int 是 64 位补码，乘法按 2^64 回绕。
+  final FfcSha256Hasher _hasher;
+  final Uint8List _buffer;
+  int _fill = 0;
+  final ByteData _scratch = ByteData(8);
+  late final Uint8List _scratchBytes = _scratch.buffer.asUint8List(0, 8);
+
+  void _flush() {
+    if (_fill == 0) return;
+    _hasher.update(_fill);
+    _fill = 0;
   }
-  return h;
+
+  void _bytes(Uint8List bytes) {
+    final int len = bytes.length;
+    int offset = 0;
+    while (offset < len) {
+      if (_fill == _buffer.length) _flush();
+      final int room = _buffer.length - _fill;
+      final int n = (len - offset) < room ? len - offset : room;
+      _buffer.setRange(_fill, _fill + n, bytes, offset);
+      _fill += n;
+      offset += n;
+    }
+  }
+
+  void _byte(int b) {
+    if (_fill == _buffer.length) _flush();
+    _buffer[_fill++] = b;
+  }
+
+  void _u64(int v) {
+    _scratch.setUint64(0, v, Endian.little);
+    _bytes(_scratchBytes);
+  }
+
+  /// 行标记（区分 entries / android 两段）。
+  void tag(int t) => _byte(t);
+
+  void value(Object? v) {
+    switch (v) {
+      case null:
+        _byte(0);
+      case int():
+        _byte(1);
+        _u64(v);
+      case double():
+        _byte(2);
+        _scratch.setFloat64(0, v, Endian.little);
+        _bytes(_scratchBytes);
+      case String():
+        final Uint8List b = utf8.encode(v);
+        _byte(3);
+        _u64(b.length);
+        _bytes(b);
+      case Uint8List():
+        _byte(4);
+        _u64(v.length);
+        _bytes(v);
+      default:
+        final Uint8List b = utf8.encode(v.toString());
+        _byte(5);
+        _u64(b.length);
+        _bytes(b);
+    }
+  }
+
+  String finishHex() {
+    _flush();
+    return _hasher.finishHex();
+  }
 }
 
-String _hex64(int v) => v.toUnsigned(64).toRadixString(16).padLeft(16, '0');
-
 /// 同步计算 [dbPath] 的内容身份；文件不存在 / 不是本地音频库 / 读失败返回 null。
-/// 只读打开，不改动库文件。GB 级库要扫一遍元数据表，调用方放后台 isolate
-/// （见 [computeLocalAudioContentIdInBackground]）。
+/// 只读打开，不改动库文件（排序键落在连接私有的 TEMP 库）。要扫整库（含音频
+/// BLOB），调用方放后台 isolate（见 [computeLocalAudioContentIdInBackground]）。
+/// native/fushi_compute 缺失抛 `FushiComputeUnavailableError`（原生库是硬依赖，
+/// 不静默退回）。
 String? computeLocalAudioContentId(String dbPath) {
   if (dbPath.isEmpty || !File(dbPath).existsSync()) return null;
   Database? db;
+  FfcSha256Hasher? hasher;
+  final List<PreparedStatement> statements = <PreparedStatement>[];
   try {
     db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
     // 绑定期 app 会在库上后台补索引（持写锁）；读连接等它而不是直接 SQLITE_BUSY
     // ——忙着时返回 null 会让这份库被当成「没有身份」退回按名匹配。
     db.execute('PRAGMA busy_timeout = 60000');
-    int count = 0;
-    int sum = 0;
-    int xor = 0;
-    final Map<String, int> perSource = <String, int>{};
-    final PreparedStatement stmt = db.prepare(
-      "SELECT COALESCE(CAST(expression AS TEXT), ''), "
-      "COALESCE(CAST(reading AS TEXT), ''), "
-      "COALESCE(CAST(source AS TEXT), ''), "
-      "COALESCE(CAST(file AS TEXT), '') FROM entries",
+    // 排序键只含小列：不把音频 BLOB 拖进排序器。
+    db.execute(
+      'CREATE TEMP TABLE fushi_la_order AS SELECT rowid AS r FROM main.android '
+      'ORDER BY source, file, rowid',
     );
-    try {
-      final IteratingCursor cursor = stmt.selectCursor();
-      while (cursor.moveNext()) {
-        final Row row = cursor.current;
-        final String source = row.columnAt(2) as String;
-        final int h = _fnv1a64(
-          utf8.encode(
-            '${row.columnAt(0)}\u001f${row.columnAt(1)}\u001f'
-            '$source\u001f${row.columnAt(3)}',
-          ),
-        );
-        count++;
-        sum += h;
-        xor ^= h;
-        perSource[source] = (perSource[source] ?? 0) + 1;
+    final PreparedStatement entriesStmt = db.prepare(
+      'SELECT expression, reading, source, file FROM main.entries '
+      'ORDER BY expression, reading, source, file',
+    );
+    statements.add(entriesStmt);
+    // CROSS JOIN 固定 TEMP 表为外层（按其 rowid = 插入顺序扫描），内层按主键查。
+    final PreparedStatement androidStmt = db.prepare(
+      'SELECT a.source, a.file, a.data FROM temp.fushi_la_order AS k '
+      'CROSS JOIN main.android AS a ON a.rowid = k.r ORDER BY k.rowid',
+    );
+    statements.add(androidStmt);
+    hasher = FfcSha256Hasher.create();
+    final _CanonicalHashSink sink = _CanonicalHashSink(hasher)
+      ..value('fushi-local-audio-v2');
+    int entries = 0;
+    final IteratingCursor entryCursor = entriesStmt.selectCursor();
+    while (entryCursor.moveNext()) {
+      final Row row = entryCursor.current;
+      sink.tag(0x45); // 'E'
+      for (int c = 0; c < 4; c++) {
+        sink.value(row.columnAt(c));
       }
-    } finally {
-      stmt.close();
+      entries++;
     }
-    final int androidRows =
-        db.select('SELECT COUNT(*) AS n FROM android').first['n'] as int;
-    if (count == 0 && androidRows == 0) return null;
-    final List<String> sources = perSource.keys.toList()..sort();
-    final StringBuffer summary = StringBuffer()
-      ..writeln('fushi-local-audio-v1')
-      ..writeln('entries=$count')
-      ..writeln('sum=${_hex64(sum)}')
-      ..writeln('xor=${_hex64(xor)}')
-      ..writeln('android=$androidRows');
-    for (final String s in sources) {
-      summary.writeln('source=$s\t${perSource[s]}');
+    int androidRows = 0;
+    final IteratingCursor audioCursor = androidStmt.selectCursor();
+    while (audioCursor.moveNext()) {
+      final Row row = audioCursor.current;
+      sink
+        ..tag(0x41) // 'A'
+        ..value(row.columnAt(0))
+        ..value(row.columnAt(1))
+        ..value(row.columnAt(2));
+      androidRows++;
     }
-    final String digest = sha256
-        .convert(utf8.encode(summary.toString()))
-        .toString();
+    if (entries == 0 && androidRows == 0) return null;
+    sink
+      ..tag(0x2e) // '.'
+      ..value(entries)
+      ..value(androidRows);
+    final String digest = sink.finishHex();
     return '$kLocalAudioContentIdPrefix${digest.substring(0, 32)}';
   } on SqliteException {
     return null;
   } finally {
+    for (final PreparedStatement s in statements) {
+      s.close();
+    }
+    hasher?.close();
     db?.dispose();
   }
 }

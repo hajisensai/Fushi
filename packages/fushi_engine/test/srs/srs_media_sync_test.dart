@@ -673,6 +673,140 @@ void main() {
     expect(rb.downloaded, 1);
     expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[5, 5]);
   });
+
+  // HBK-AUDIT-011：预算以前只在开始传之前看，准备阶段（首次哈希整个媒体库、列位置上的 256 个前缀目录）不受约束。
+  // 慢清单 + 大媒体库：位置上每列一个目录记 1 秒（虚拟时钟，只记媒体目录），发段前那一步的预算 15 秒。
+  test('HBK-AUDIT-011：慢清单 + 大媒体库，发段前那一步列目录也守预算，复习记录段按时发出', () async {
+    final _SlowListStore loc = _SlowListStore();
+    // 别的设备早先传上去的内容，分在 200 个前缀目录里；本机还没列举过这个位置（日志里没有「已列举」）。
+    for (int i = 0; i < 200; i++) {
+      final String sha = i.toRadixString(16).padLeft(2, '0') + 'a' * 62;
+      loc.files[srsMediaContentPath(kSrsMediaFolder, sha)] = Uint8List(1);
+    }
+    final SrsDbStore a = await device('a');
+    final Directory mediaA = mediaDir('a');
+    const int n = 300;
+    final StringBuffer pics = StringBuffer();
+    for (int i = 0; i < n; i++) {
+      writeMedia(mediaA, 'p$i.png', <int>[i % 256, i ~/ 256, 7]);
+      pics.write('<img src="p$i.png">');
+    }
+    await addNote(a, '絵', pics.toString());
+    const int budgetMs = 15000;
+    SrsMediaSyncReport? early;
+    await srsSync2Round(
+      host: a,
+      location: loc,
+      locationId: 'loc',
+      nowMs: () => a.now().$1,
+      beforeUpload: (String? keyHex) async {
+        early = await srsSyncMedia(
+          location: loc,
+          store: a,
+          mediaRoot: mediaA,
+          locationId: 'loc',
+          uploadOnly: true,
+          deferRemaining: () => loc.ms >= budgetMs,
+        );
+      },
+    );
+    final int? segmentAt = loc.firstSegmentAtMs;
+    expect(segmentAt, isNotNull, reason: '这一轮有复习记录段要发');
+    expect(
+      segmentAt,
+      lessThanOrEqualTo(budgetMs + 1000),
+      reason: '列目录到点就停，段不等 200 个目录列完（修前约 ${200 * 1000 + 1000} ms）',
+    );
+    expect(early!.listedRemote, isFalse, reason: '没列全不算列举过');
+    expect(early!.deferred, greaterThan(0));
+
+    // 完整对账（发段之后）不在列举中途停：把列举做完、记「已列举」，本机的全部传上去。
+    final SrsMediaSyncReport full = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      locationId: 'loc',
+    );
+    expect(full.listedRemote, isTrue);
+    expect(full.deferred, 0);
+    expect(full.uploaded, n);
+    final int listsBefore = loc.mediaLists;
+    final SrsMediaSyncReport again = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      locationId: 'loc',
+      uploadOnly: true,
+      deferRemaining: () => false,
+    );
+    expect(again.listedRemote, isFalse, reason: '已列举记进日志，之后不再列');
+    expect(loc.mediaLists, listsBefore);
+    expect(again.uploaded, 0);
+  });
+
+  test(
+    'HBK-AUDIT-011：本机哈希分批，每批之前问 deferRemaining；没哈希的名字记 deferred、不当成本机没有',
+    () async {
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final Directory mediaA = mediaDir('a');
+      final SrsDbStore a = await device('a');
+      const int n = kSrsMediaPrepareBatch * 3 + 5;
+      final StringBuffer pics = StringBuffer();
+      for (int i = 0; i < n; i++) {
+        writeMedia(mediaA, 'p$i.png', <int>[i % 256, i ~/ 256, 9]);
+        pics.write('<img src="p$i.png">');
+      }
+      await addNote(a, '絵', pics.toString());
+      // 只放行第一次询问：准备阶段做完第一批就到点。
+      bool Function() oneBatch() {
+        bool first = true;
+        return () {
+          final bool stop = !first;
+          first = false;
+          return stop;
+        };
+      }
+
+      final List<(int, int)> progress = <(int, int)>[];
+      final SrsMediaSyncReport first = await srsSyncMedia(
+        location: loc,
+        store: a,
+        mediaRoot: mediaA,
+        uploadOnly: true,
+        onProgress: (int done, int total) => progress.add((done, total)),
+        deferRemaining: oneBatch(),
+      );
+      expect(progress.first, (
+        0,
+        kSrsMediaPrepareBatch,
+      ), reason: '到点之后不再哈希下一批（修前整个库哈希完才看预算：总数 = $n）');
+      expect(first.uploaded, 0);
+      expect(first.deferred, n);
+      expect(first.missing, isEmpty);
+
+      // 完整对账同样分批，没哈希的名字不当成「本机没有」：不报缺失、不下载、不清理。
+      final SrsMediaSyncReport partial = await srsSyncMedia(
+        location: loc,
+        store: a,
+        mediaRoot: mediaA,
+        deferRemaining: oneBatch(),
+      );
+      expect(partial.missing, isEmpty);
+      expect(partial.downloaded, 0);
+      expect(partial.deferred, n);
+
+      // 不限时：全部做完。
+      final SrsMediaSyncReport all = await srsSyncMedia(
+        location: loc,
+        store: a,
+        mediaRoot: mediaA,
+        uploadOnly: true,
+      );
+      expect(all.deferred, 0);
+      expect(all.uploaded, n);
+      expect(remoteMedia(loc), hasLength(n));
+    },
+  );
 }
 
 /// 文件夹位置：内容对象（`media/<2>/<sha256>`）若按内存字节写（[put]）就记下来——覆盖重传应当走 [putFile]。
@@ -688,6 +822,38 @@ class _StreamOnlyDirectory extends SrsDirectoryLocationStore {
         !path.endsWith(kSrsMediaSuspectSuffix)) {
       contentPuts.add(path);
     }
+    return super.put(path, bytes);
+  }
+}
+
+/// 慢清单的位置（HBK-AUDIT-011）：虚拟时钟 [ms]，媒体目录每列一次记 1 秒、每查 / 写一个媒体对象记 0.2 秒（同步本身的
+/// 读写不记）；记下第一个段写上去时的虚拟时刻。
+class _SlowListStore extends SrsMemoryLocationStore {
+  int ms = 0;
+  int mediaLists = 0;
+  int? firstSegmentAtMs;
+
+  bool _media(String path) => path.startsWith(kSrsMediaFolder);
+
+  @override
+  Future<List<SrsLocationEntry>> list(String dir) {
+    if (_media(dir)) {
+      ms += 1000;
+      mediaLists++;
+    }
+    return super.list(dir);
+  }
+
+  @override
+  Future<bool> exists(String path) {
+    if (_media(path)) ms += 200;
+    return super.exists(path);
+  }
+
+  @override
+  Future<void> put(String path, Uint8List bytes) {
+    if (_media(path)) ms += 200;
+    if (path.contains('/seg-')) firstSegmentAtMs ??= ms;
     return super.put(path, bytes);
   }
 }

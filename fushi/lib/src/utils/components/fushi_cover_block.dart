@@ -25,7 +25,8 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 // 字号、可换行、完整显示，放不下最小字号就不画；只给带封面的媒体块，调用方可用
 // [FushiCoverBlock.watermark] 关掉），前景是倾斜的封面（视频 / 书 / 漫画 / 专辑 /
 // 游戏各一种摆法；没封面时按标题生成 [FushiGeneratedCover]）+ 标题 + 副行 +
-// 进度条。给了 [FushiCoverBlock.disc] 时换成「封面 + 唱片」摆法（W 原型）。海报元数据层（设计稿 `.vb` 的背景图 / logo /
+// 进度条。给了 [FushiCoverBlock.disc] 时换成「唱片从封套里滑出半张」摆法（文字区
+// 与原摆法同一套）。海报元数据层（设计稿 `.vb` 的背景图 / logo /
 // 状态 chip / 概览 / 信息 chip / 波浪进度 + 主按钮，书的署名，游戏 / 漫画的大数字）
 // 都是可选参数：调用点只传库里已有的数据，没有的那一项整行不画。
 // 鼠标悬停时水印沿 X 轻移、封面各自换到悬停姿态，
@@ -269,13 +270,6 @@ const FushiSpringSpec kFushiCoverBlockWatermarkSpring = FushiSpringSpec(
 );
 
 /// 封面进入悬停姿态（设计稿 k220 / c14）。
-/// 唱片色块 / 专辑海报标题大字的悬停横移弹簧（W 原型 `.big`：`k 200, c 14`，
-/// 质量 1 → 阻尼比 14 / (2√200) ≈ 0.495）。
-const FushiSpringSpec kFushiCoverBlockPosterTitleSpring = FushiSpringSpec(
-  dampingRatio: 0.495,
-  stiffness: 200,
-);
-
 const FushiSpringSpec kFushiCoverBlockHoverSpring = FushiSpringSpec(
   dampingRatio: 0.47,
   stiffness: 220,
@@ -427,7 +421,6 @@ class FushiCoverBlock extends StatefulWidget {
     this.action,
     this.watermark = true,
     this.disc,
-    this.albumPoster = false,
     this.backdropAspectRatio,
     super.key,
   });
@@ -457,8 +450,8 @@ class FushiCoverBlock extends StatefulWidget {
   /// 概览行（`.vb.hero .ov`：类型 / 评分）。只在拼贴首块画。
   final String? overview;
 
-  /// 底行信息 chip（「TV · 2026 · 12 集」、音频规格等），与进度条同排。唱片
-  /// 摆法（[disc]）下是右下角的 chip（「CD」）。
+  /// 底行信息 chip（「TV · 2026 · 12 集」、音频规格、唱片摆法的「CD」等），与
+  /// 进度条同排。
   final String? chip;
 
   /// 底行的大数字（话数 / 游玩时长）。
@@ -471,19 +464,13 @@ class FushiCoverBlock extends StatefulWidget {
   /// 生成封面）时不画；统计 / 列表 / 空状态这类块调用方传 false。
   final bool watermark;
 
-  /// 唱片盘面图（专辑目录里真实的盘面扫描图；W 原型 `.dc`）。给了就换成「封面 +
-  /// 唱片」摆法：宽块（宽 ≥ 1.2 × 高）封面在左、唱片在右；竖块封面在左上、唱片
-  /// 叠在右侧之上（W 原型「扇形」：唱片压在封面上）。静止姿态封面 −14°、唱片 +16°；悬停时唱片弹簧转出到 +110°、封面
-  /// 再斜 3°。文字区换成装满下方盒子的强调色标题大字（[FushiFitTitle]，读屏读
-  /// 一遍），右下角是 [chip]（如「CD」）；副行 / 进度 / logo 等不画（放进详情页）。
-  /// 只画圆形裁切，不做假唱片——没有盘面图就别传。null = 原摆法。
+  /// 唱片盘面图（专辑目录里真实的盘面扫描图）。给了就换成「唱片从封套里滑出半张」
+  /// 摆法：方形封面立在起始侧，唱片垫在封面后面、从结束侧露出约四成；悬停时
+  /// 唱片再滑出一截并转动、封面再斜一点。文字区（水印 / 标题 / 副行 / chip）与
+  /// 原摆法同一套，只是从唱片之后起排（2026-11-21 用户：音乐页参照别的模块重做，
+  /// 原 W 原型的整块标题大字版式退役）。只画圆形裁切，不做假唱片——没有盘面图就
+  /// 别传。null = 原摆法。
   final Widget? disc;
-
-  /// W 原型的专辑海报版式（音乐专辑色块）：没有 [disc]、色块够宽（宽 ≥
-  /// [kFushiCoverBlockAlbumPosterMinAspect] × 高，原型的双格卡）时，方形封面占满整个高度立在起始侧（不斜放），标题大字铺满
-  /// 封面另一侧（[FushiFitTitle]，上限 0.3 × 高），底下一行副行（+ [trailing] /
-  /// [chip]）。窄块仍是原摆法。有 [disc] 时恒为唱片摆法，与本开关无关。
-  final bool albumPoster;
 
   /// 背景图的宽高比；null = 从 [backdrop]（横版摆法是 [covers] 首个）取图源
   /// 解码后的真实比例，取不到时按 16:9。
@@ -583,10 +570,8 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
           !_hasDisc &&
           widget.covers.length <= 1);
 
-  /// 画大字水印：开关打开、有真封面（生成封面不算）、不是唱片摆法（唱片摆法
-  /// 的大字就是标题本身）。
-  bool get _showWatermark =>
-      widget.watermark && widget.covers.isNotEmpty && !_hasDisc;
+  /// 画大字水印：开关打开、有真封面（生成封面不算）。
+  bool get _showWatermark => widget.watermark && widget.covers.isNotEmpty;
 
   FushiSpringSpec _spec(FushiSpringSpec spec) =>
       fushiMotionEnabled(context) ? spec : spec.reduced;
@@ -603,15 +588,10 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
       hovered ? 1 : 0,
       _spec(kFushiCoverBlockRestSpring),
     );
-    // W 原型 `.big` 悬停 `x: 6`：大字装在盒子里，只轻移一点，不滑出盒子被
-    // 色块裁成半个字。唱片 / 专辑海报的标题大字用原型那条弹簧，水印照旧。
+    // 水印装在盒子里，只轻移一点，不滑出盒子被色块裁成半个字。
     _watermark.fushiSpringTo(
       hovered ? 6 : 0,
-      _spec(
-        _hasDisc || widget.albumPoster
-            ? kFushiCoverBlockPosterTitleSpring
-            : kFushiCoverBlockWatermarkSpring,
-      ),
+      _spec(kFushiCoverBlockWatermarkSpring),
     );
   }
 
@@ -768,11 +748,7 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
           clipBehavior: Clip.hardEdge,
           children: <Widget>[
             if (_hasDisc)
-              ..._buildDiscBlock(colors, size, direction)
-            else if (widget.albumPoster &&
-                size.width >=
-                    size.height * kFushiCoverBlockAlbumPosterMinAspect)
-              ..._buildAlbumPosterBlock(colors, size, direction)
+              ..._buildDiscBlock(context, colors, size, direction)
             else
               ..._buildCoverBlock(context, colors, size, direction),
             if (selected)
@@ -832,208 +808,100 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ? ltrGeo.mirrored(size.width)
         : ltrGeo;
     return <Widget>[
-      if (_showWatermark) _buildWatermark(colors, size, ltrGeo, direction),
+      if (_showWatermark) _buildWatermark(colors, size, ltrGeo.text, direction),
       ..._buildArt(context, colors, geo, direction),
-      Positioned.fromRect(
-        rect: geo.text,
-        child: KeyedSubtree(
-          key: widget.metaKey,
-          child: _BlockText(
-            title: widget.title,
-            subtitle: widget.subtitle,
-            leadingIcon: widget.leadingIcon,
-            tone: widget.tone,
-            progress: widget.progress,
-            completed: widget.completed,
-            trailing: widget.trailing,
-            colors: colors,
-            size: widget.size,
-            titleLines: geo.titleLines,
-            // 半高卡（125 高）放不下作品 logo：logo 会压到副行 / 进度上
-            // （2026-11-12 用户截图 BLEACH 那块），改用两行标题文字。
-            logo:
-                isEinkTheme(context) || widget.size == FushiCoverBlockSize.half
-                ? null
-                : widget.logo,
-            // 海报元数据层（有 logo 或背景图）的标题走固定标题槽：有没有 logo、
-            // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。
-            titleSlot:
-                widget.size != FushiCoverBlockSize.half &&
-                (widget.logo != null || widget.backdrop != null),
-            eyebrow: widget.eyebrow,
-            byline: widget.byline,
-            overview: widget.overview,
-            chip: widget.chip,
-            figure: widget.figure,
-            action: widget.action,
-            // 窄窗：规整块 184、拼贴首块 250（宽窗 204 / 264），按钮与
-            // logo 换小一号（设计稿 `.phone` 那组规则）。
-            compact:
-                size.height < 200 ||
-                (widget.size == FushiCoverBlockSize.hero && size.height < 260),
-          ),
-        ),
-      ),
+      _buildText(context, colors, size, geo.text, geo.titleLines),
     ];
   }
 
-  /// 唱片摆法（W 原型 CD 色块）：封面 → 唱片（压在封面上）→ 标题大字 → 右下 chip。
+  /// 文字区（标题 / 副行 / 进度 / chip 等，[_BlockText]），原摆法与唱片摆法共用。
+  Widget _buildText(
+    BuildContext context,
+    FushiCoverBlockColors colors,
+    Size size,
+    Rect rect,
+    int titleLines,
+  ) => Positioned.fromRect(
+    rect: rect,
+    child: KeyedSubtree(
+      key: widget.metaKey,
+      child: _BlockText(
+        title: widget.title,
+        subtitle: widget.subtitle,
+        leadingIcon: widget.leadingIcon,
+        tone: widget.tone,
+        progress: widget.progress,
+        completed: widget.completed,
+        trailing: widget.trailing,
+        colors: colors,
+        size: widget.size,
+        titleLines: titleLines,
+        // 半高卡（125 高）放不下作品 logo：logo 会压到副行 / 进度上
+        // （2026-11-12 用户截图 BLEACH 那块），改用两行标题文字。
+        logo: isEinkTheme(context) || widget.size == FushiCoverBlockSize.half
+            ? null
+            : widget.logo,
+        // 海报元数据层（有 logo 或背景图）的标题走固定标题槽：有没有 logo、
+        // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。
+        titleSlot:
+            widget.size != FushiCoverBlockSize.half &&
+            (widget.logo != null || widget.backdrop != null),
+        eyebrow: widget.eyebrow,
+        byline: widget.byline,
+        overview: widget.overview,
+        chip: widget.chip,
+        figure: widget.figure,
+        action: widget.action,
+        // 窄窗：规整块 184、拼贴首块 250（宽窗 204 / 264），按钮与
+        // logo 换小一号（设计稿 `.phone` 那组规则）。
+        compact:
+            size.height < 200 ||
+            (widget.size == FushiCoverBlockSize.hero && size.height < 260),
+      ),
+    ),
+  );
+
+  /// 唱片摆法：水印 → 唱片（垫在后面、从封套结束侧滑出）→ 封面 → 文字区。
   List<Widget> _buildDiscBlock(
+    BuildContext context,
     FushiCoverBlockColors colors,
     Size size,
     TextDirection direction,
   ) {
-    final _DiscGeometry ltrGeo = _DiscGeometry.of(size);
+    final _DiscGeometry ltrGeo = _DiscGeometry.of(widget.size, size);
     final _DiscGeometry geo = direction == TextDirection.rtl
         ? ltrGeo.mirrored(size.width)
         : ltrGeo;
     final Widget cover = widget.covers.isEmpty
         ? FushiGeneratedCover(title: widget.title)
         : widget.covers.first;
-    final String? chip = widget.chip;
-    // W 原型「扇形」预设没有 `behind`：`innerPose` 给封面 z 1、唱片 z 2，唱片压在
-    // 封面之上（用户 11-20 指定按 w_proto 做）。
     return <Widget>[
+      if (_showWatermark) _buildWatermark(colors, size, ltrGeo.text, direction),
+      _posed(geo.disc, _DiscFace(child: widget.disc!)),
       _posed(
         geo.cover,
-        _CoverCard(radius: 14, overlay: widget.coverOverlay, child: cover),
+        _CoverCard(radius: 12, overlay: widget.coverOverlay, child: cover),
         animation: _coverPose,
       ),
-      _posed(geo.disc, _DiscFace(child: widget.disc!)),
-      Positioned.fromRect(
-        rect: geo.title,
-        child: KeyedSubtree(
-          key: widget.metaKey,
-          child: FushiFitTitle(
-            text: widget.title,
-            color: colors.accent,
-            maxSize: geo.titleMaxSize,
-            minSize: 10,
-            shift: _watermark,
-            direction: direction,
-            semantic: true,
-          ),
-        ),
-      ),
-      if (chip != null && chip.isNotEmpty)
-        PositionedDirectional(
-          end: geo.chipEnd,
-          bottom: geo.chipBottom,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: size.width * 0.4),
-            child: _BlockChip(label: chip, colors: colors, ghost: false),
-          ),
-        ),
-    ];
-  }
-
-  /// W 原型无盘双格卡（专辑海报版式，[FushiCoverBlock.albumPoster]）：方形封面
-  /// 占满高度立在起始侧 → 标题大字铺满另一侧 → 底下一行副行。原型里这块封面
-  /// 没有姿态（`innerPose` 只摆有盘的卡），悬停只有大字横移。
-  List<Widget> _buildAlbumPosterBlock(
-    FushiCoverBlockColors colors,
-    Size size,
-    TextDirection direction,
-  ) {
-    final _AlbumPosterGeometry ltrGeo = _AlbumPosterGeometry.of(size);
-    final _AlbumPosterGeometry geo = direction == TextDirection.rtl
-        ? ltrGeo.mirrored(size.width)
-        : ltrGeo;
-    final Widget cover = widget.covers.isEmpty
-        ? FushiGeneratedCover(title: widget.title)
-        : widget.covers.first;
-    final String? subtitle = widget.subtitle;
-    final String? chip = widget.chip;
-    final IconData? icon = widget.leadingIcon;
-    final Widget? trailing = widget.trailing;
-    final TextStyle metaStyle = TextStyle(
-      fontSize: context.fushiType.titleSmall.fontSize,
-      fontWeight: FontWeight.w800,
-      height: 1.1,
-      color: colors.onContainer,
-    );
-    return <Widget>[
-      Positioned.fromRect(
-        rect: geo.cover,
-        child: IgnorePointer(
-          child: _CoverCard(
-            radius: 14,
-            overlay: widget.coverOverlay,
-            child: cover,
-          ),
-        ),
-      ),
-      Positioned.fromRect(
-        rect: geo.title,
-        child: FushiFitTitle(
-          text: widget.title,
-          color: colors.accent,
-          maxSize: geo.titleMaxSize,
-          minSize: 10,
-          shift: _watermark,
-          direction: direction,
-          semantic: true,
-        ),
-      ),
-      Positioned.fromRect(
-        rect: geo.meta,
-        child: KeyedSubtree(
-          key: widget.metaKey,
-          child: Align(
-            alignment: AlignmentDirectional.bottomStart,
-            child: Row(
-              children: <Widget>[
-                if (icon != null) ...<Widget>[
-                  Icon(icon, size: 14, color: colors.onContainer),
-                  const SizedBox(width: 4),
-                ],
-                Expanded(
-                  child: subtitle == null || subtitle.isEmpty
-                      ? const SizedBox.shrink()
-                      : Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: metaStyle,
-                        ),
-                ),
-                if (trailing != null) ...<Widget>[
-                  const SizedBox(width: 6),
-                  Flexible(child: ClipRect(child: trailing)),
-                ],
-                if (chip != null && chip.isNotEmpty) ...<Widget>[
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: _BlockChip(
-                      label: chip,
-                      colors: colors,
-                      ghost: false,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+      _buildText(context, colors, size, geo.text, geo.titleLines),
     ];
   }
 
   /// 大字水印：纯装饰，不进语义、不参与命中。装在文字区上半的盒子里
   /// （[FushiFitTitle]：整段标题取放得下的最大字号、可换行、完整显示），连最小
-  /// 字号都放不下就不画——不再出血裁成半个字（设计稿 G2）。[geo] 是未镜像的
-  /// 几何，盒子按 LTR 量出来再镜像。
+  /// 字号都放不下就不画——不再出血裁成半个字（设计稿 G2）。[ltrText] 是未镜像的
+  /// 文字区，盒子按 LTR 量出来再镜像。
   Widget _buildWatermark(
     FushiCoverBlockColors colors,
     Size size,
-    _BlockGeometry geo,
+    Rect ltrText,
     TextDirection direction,
   ) {
     final double h = size.height;
     final Rect ltrBox = Rect.fromLTRB(
-      geo.text.left,
+      ltrText.left,
       h * 0.05,
-      geo.text.right,
+      ltrText.right,
       h * 0.62,
     );
     final Rect box = direction == TextDirection.rtl
@@ -1419,13 +1287,15 @@ class _BlockGeometry {
           titleLines: half ? 2 : 3,
         );
       case FushiCoverBlockArt.square:
-        // 专辑：左上方形封面（设计稿 `.ab .cv`），右侧文字。
-        final double s = h - (half ? 24 : 40);
+        // 专辑：起始侧方形封面（设计稿 `.ab .cv`），右侧文字。封面边长另限在块宽
+        // 的 0.42 以内并垂直居中：规整块（约 470 × 280）按块高给封面会占掉近一半
+        // 宽度，长专辑名只剩两三个词就被截断（2026-11-21 音乐页重做实测）。
+        final double s = math.min(h - (half ? 24 : 40), w * 0.42);
         final double left = half ? 12 : 20;
         return _BlockGeometry(
           slots: <_CoverSlot>[
             _CoverSlot(
-              rect: Rect.fromLTWH(left, half ? 12 : 18, s, s),
+              rect: Rect.fromLTWH(left, (h - s) / 2, s, s),
               rest: const _Pose(rotation: -5),
               hover: const _Pose(rotation: -9, scale: 1.04),
             ),
@@ -1556,175 +1426,66 @@ class _BlockGeometry {
   final double backdropFadeStart;
 }
 
-/// 专辑海报版式（[FushiCoverBlock.albumPoster]）要求的最小宽高比：封面边长
-/// 约等于块高，宽高比低于原型双格卡（486 / 281 ≈ 1.73）太多时封面右侧只剩一条
-/// 窄缝、大字与元信息放不下，退回原摆法。
-const double kFushiCoverBlockAlbumPosterMinAspect = 1.6;
-
-/// 低于这个高度（且宽 ≥ 2 × 高）的唱片色块走横排（[_DiscGeometry._row]）。
-const double kFushiCoverBlockDiscRowMaxHeight = 150;
-
-/// 唱片摆法的几何（W 原型 CD 色块，「扇形」角度预设）。封面 / 唱片的边长 S；
-/// 位移按 S 的倍数（原型以盘径为单位）：
-/// - 封面：静止 `x .04S, y .02S, r −14°`，悬停再斜 3°（−17°）；
-/// - 唱片：静止 `x −.14S, y .02S, r +16°`（压在封面右缘上），悬停转出到
-///   `x .02S, y −.04S, r +110°`。
-/// 宽块（宽 ≥ 1.2 × 高，原型 2 列）封面在左、唱片在右，标题大字装在两者下方；
-/// 竖块（原型 1 列）封面在左上、唱片叠在它右侧之上，标题在下。
+/// 唱片摆法的几何：方形封面（边长 S）在起始侧垂直居中，唱片（0.94 S）垫在封面
+/// 后面、圆心比封面中心往结束侧偏 0.42 S（露出约四成）；文字区从唱片右缘之后起排。
+/// S 取「块高减上下边距」与「块宽的 0.34（半高卡 0.3）」里较小者——宽色块里唱片 +
+/// 封面不会挤掉文字区。悬停：封面再斜 3° 并放大一点，唱片再滑出 0.14 S、转 70°。
 @immutable
 class _DiscGeometry {
   const _DiscGeometry({
     required this.cover,
     required this.disc,
-    required this.title,
-    required this.titleMaxSize,
-    required this.chipEnd,
-    required this.chipBottom,
+    required this.text,
+    required this.titleLines,
   });
 
-  factory _DiscGeometry.of(Size box) {
+  factory _DiscGeometry.of(FushiCoverBlockSize size, Size box) {
     final double w = box.width;
     final double h = box.height;
-    if (h < kFushiCoverBlockDiscRowMaxHeight && w >= h * 2) {
-      return _DiscGeometry._row(w, h);
-    }
-    final bool wide = w >= h * 1.2;
-    final double p = wide ? 16 : 10;
-    final double s = wide
-        ? math.min(h * 0.6, (w - p * 2) * 0.45)
-        : math.min(w * 0.6, h * 0.56);
-    final Rect coverRect = wide
-        ? Rect.fromLTWH(p + 4, p + 2, s, s)
-        : Rect.fromLTWH(p, p, s, s);
-    final Rect discRect = wide
-        ? Rect.fromLTWH(w - p - s - 6, p, s, s)
-        : Rect.fromLTWH(w - p - s, p + s * 0.1, s, s);
-    final Rect title = wide
-        ? Rect.fromLTRB(p + 2, p + s + 12, w - (p + 52), h - (p - 4))
-        : Rect.fromLTRB(p + 2, p + s * 1.14 + 4, w - (p + 34), h - (p - 2));
+    final bool half = size == FushiCoverBlockSize.half;
+    final double p = half ? 12 : 20;
+    final double s = math.max(0, math.min(h - p * 2, w * (half ? 0.3 : 0.34)));
+    final double top = (h - s) / 2;
+    final Rect coverRect = Rect.fromLTWH(p, top, s, s);
+    final double d = s * 0.94;
+    final Rect discRect = Rect.fromCenter(
+      center: coverRect.center.translate(s * 0.42, 0),
+      width: d,
+      height: d,
+    );
+    final double textLeft = math.min(discRect.right + (half ? 14 : 20), w - 80);
     return _DiscGeometry(
       cover: _CoverSlot(
         rect: coverRect,
-        rest: _Pose(dx: s * 0.04, dy: s * 0.02, rotation: -14),
-        hover: _Pose(dx: s * 0.04, dy: s * 0.02, rotation: -17),
+        rest: const _Pose(rotation: -4),
+        hover: const _Pose(rotation: -7, scale: 1.03),
       ),
       disc: _CoverSlot(
         rect: discRect,
-        rest: _Pose(dx: -s * 0.14, dy: s * 0.02, rotation: 16),
-        hover: _Pose(dx: s * 0.02, dy: -s * 0.04, rotation: 110),
+        rest: const _Pose(),
+        hover: _Pose(dx: s * 0.14, rotation: 70),
       ),
-      title: Rect.fromLTRB(
-        title.left,
-        title.top,
-        math.max(title.left, title.right),
-        math.max(title.top, title.bottom),
+      text: Rect.fromLTRB(
+        textLeft,
+        half ? 12 : 22,
+        math.max(textLeft, w - (half ? 12 : 18)),
+        h - (half ? 10 : 14),
       ),
-      titleMaxSize: h * (wide ? 0.24 : 0.2),
-      chipEnd: wide ? p : p - 2,
-      chipBottom: wide ? p - 4 : p - 5,
-    );
-  }
-
-  /// 矮块（拼贴首块旁的半高卡，高 125）：原型的「标题在封面下方」在这个高度里
-  /// 只剩不到 10 px 的标题盒，大字画不出来。改成横排：封面占满高度立在起始侧、
-  /// 唱片同尺寸压在它右半边上（同一套扇形角度与悬停转出），标题大字铺在唱片
-  /// 之后（上限 0.3 × 高，同原型无盘双格卡），右下角 chip。原型没有这一档，
-  /// 是按原型双格卡的比例外推的。
-  factory _DiscGeometry._row(double w, double h) {
-    const double p = 12;
-    final double s = h - p * 2;
-    final double titleLeft = p + s * 1.5 + 12;
-    return _DiscGeometry(
-      cover: _CoverSlot(
-        rect: Rect.fromLTWH(p, p, s, s),
-        rest: _Pose(dx: s * 0.04, dy: s * 0.02, rotation: -14),
-        hover: _Pose(dx: s * 0.04, dy: s * 0.02, rotation: -17),
-      ),
-      disc: _CoverSlot(
-        rect: Rect.fromLTWH(p + s * 0.5, p, s, s),
-        rest: _Pose(dx: -s * 0.14, dy: s * 0.02, rotation: 16),
-        hover: _Pose(dx: s * 0.02, dy: -s * 0.04, rotation: 110),
-      ),
-      title: Rect.fromLTRB(
-        titleLeft,
-        p,
-        math.max(titleLeft, w - p),
-        math.max(p, h - p - 22),
-      ),
-      titleMaxSize: h * 0.3,
-      chipEnd: p,
-      chipBottom: p - 4,
+      titleLines: half ? 2 : 3,
     );
   }
 
   final _CoverSlot cover;
   final _CoverSlot disc;
-
-  /// 标题大字的盒子（[FushiFitTitle] 在里面取放得下的最大字号）。
-  final Rect title;
-  final double titleMaxSize;
-
-  /// 右下 chip 到结束边 / 底边的距离（[PositionedDirectional]，RTL 自动翻）。
-  final double chipEnd;
-  final double chipBottom;
+  final Rect text;
+  final int titleLines;
 
   /// RTL 用：整块水平镜像。
   _DiscGeometry mirrored(double width) => _DiscGeometry(
     cover: cover.mirrored(width),
     disc: disc.mirrored(width),
-    title: _mirrorRect(title, width),
-    titleMaxSize: titleMaxSize,
-    chipEnd: chipEnd,
-    chipBottom: chipBottom,
-  );
-}
-
-/// 专辑海报版式的几何（W 原型无盘双格卡：`p = 16`，封面边长 `S = H − 2p` 在
-/// `(p + 4, p + 2)`；大字盒 `left S + 2p + 6, right p, top p, bottom p + 26`、
-/// 上限 0.3H；元信息行 `bottom p − 2`）。
-@immutable
-class _AlbumPosterGeometry {
-  const _AlbumPosterGeometry({
-    required this.cover,
-    required this.title,
-    required this.meta,
-    required this.titleMaxSize,
-  });
-
-  factory _AlbumPosterGeometry.of(Size box) {
-    final double w = box.width;
-    final double h = box.height;
-    const double p = 16;
-    final double s = math.max(0, h - p * 2);
-    final double textLeft = math.min(w - p, s + p * 2 + 6);
-    return _AlbumPosterGeometry(
-      cover: Rect.fromLTWH(p + 4, p + 2, s, s),
-      title: Rect.fromLTRB(
-        textLeft,
-        p,
-        math.max(textLeft, w - p),
-        math.max(p, h - (p + 26)),
-      ),
-      meta: Rect.fromLTRB(
-        textLeft,
-        math.max(p, h - (p + 26)),
-        math.max(textLeft, w - p),
-        h - (p - 2),
-      ),
-      titleMaxSize: h * 0.3,
-    );
-  }
-
-  final Rect cover;
-  final Rect title;
-  final Rect meta;
-  final double titleMaxSize;
-
-  _AlbumPosterGeometry mirrored(double width) => _AlbumPosterGeometry(
-    cover: _mirrorRect(cover, width),
-    title: _mirrorRect(title, width),
-    meta: _mirrorRect(meta, width),
-    titleMaxSize: titleMaxSize,
+    text: _mirrorRect(text, width),
+    titleLines: titleLines,
   );
 }
 

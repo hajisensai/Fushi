@@ -40,6 +40,11 @@ class _WatchedBackend extends _Backend implements FfmpegWatchedRunner {
   FfmpegWatch? lastWatch;
   Completer<void>? hold;
 
+  /// 拉取已真正起了 ffmpeg、脚本里的进度都报完时完成。测试等它，而不是 `pumpEventQueue`：
+  /// 起 ffmpeg 之前还有真实文件 IO（查副本、建目录），IO 完成不在微任务 / 零延时定时器
+  /// 队列里，机器一忙 20 轮事件循环就跑不到这里（dist 的 self-win 上读到 null 进度）。
+  final Completer<void> reported = Completer<void>();
+
   @override
   Future<FfmpegRunResult> runWatched(
     List<String> args,
@@ -50,6 +55,7 @@ class _WatchedBackend extends _Backend implements FfmpegWatchedRunner {
     for (final Duration d in progress) {
       watch.onProgress?.call(d);
     }
+    if (!reported.isCompleted) reported.complete();
     final Completer<void>? h = hold;
     if (h != null) {
       bool cancelled = false;
@@ -409,7 +415,7 @@ void main() {
         durationMs: 60000,
         prepare: () async => input,
       );
-      await pumpEventQueue();
+      await watched.reported.future;
       expect(staging.progress.value, closeTo(0.5, 1e-9));
       expect(
         watched.lastWatch!.stallTimeout,
