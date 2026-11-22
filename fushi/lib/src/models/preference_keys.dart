@@ -679,8 +679,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_backdrop_animate',
   // double（默认 1.0，0.5–2.0）：歌词页流体背景饱和度倍数。
   'music_lyrics_backdrop_saturation',
-  // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
-  // （MusicLyricsBackdropStyle.prefValue）。
+  // String（默认 'pixi'，只在手选时落库；无行 = 跟出厂默认）：歌词页流体背景算法
+  // pixi / mesh / classic（MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
   // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
   // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。
