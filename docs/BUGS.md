@@ -42,9 +42,11 @@
 | [BUG-5251](bugs/BUG-5251-bluray-volume-wrapper-dir-split-collections.md) | ✅ | ✅ | bluray-volume-wrapper-dir-split-collections |
 > 共 4541 条。点号进各自文件。
 > 共 4574 条。点号进各自文件。
+> 共 4575 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |
 | [BUG-5250](bugs/BUG-5250-srs-gen4-migration-stale-legacy-results.md) | ✅ | ✅ | gen4 迁移对拍：协议 3 一侧旧日志的结果被第一版协议 3 的重放改写过，卡与统计整片判不同、回滚 |
 | [BUG-5249](bugs/BUG-5249-manga-audio-not-read-line-still-plays.md) | ✅ | ✅ | manga-audio-not-read-line-still-plays |
 | [BUG-5248](bugs/BUG-5248-manga-audio-batch-cancel-overwrites-live.md) | ✅ | ✅ | manga-audio-batch-cancel-overwrites-live |

@@ -2371,7 +2371,9 @@ function testKanjiCardRendersAllFields() {
 
   const section = context.buildKanjiCards();
   assert.ok(section, 'kanji section should render for a non-empty payload');
-  assert.equal(section.className, 'kanji-card-section');
+  // 拍板台 6uasoIUvSR：根是可折叠的 <details>，沿用词典卡皮肤（glossary-group）。
+  assert.equal(section.className, 'kanji-card-section glossary-group');
+  assert.equal(section.tagName, 'DETAILS');
 
   const card = findByClass(section, 'kanji-card');
   assert.ok(card, 'a kanji card should be produced');
