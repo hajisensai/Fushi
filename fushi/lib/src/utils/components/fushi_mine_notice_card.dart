@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -201,7 +202,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
       container: eink
           ? Colors.white
           : glass != null
-          ? (dark ? const Color(0xFF2C2C2E) : Colors.white)
+          ? mineNoticeAppleContainer(dark: dark)
           : tone.container,
       onContainer: eink ? Colors.black : glass?.label ?? tone.onContainer,
       accent: eink ? Colors.black : tone.accent,
@@ -583,7 +584,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
       label: semantics,
       // 有按钮时不能吞掉子树语义，否则读屏 / 键盘用户够不到按钮。
       excludeSemantics: !trailingButtons,
-      child: AnimatedSize(
+      child: FushiAnimatedSize(
         duration: _motion ? FushiMotion.medium : Duration.zero,
         curve: FushiMotion.standard,
         alignment: Alignment.topCenter,
@@ -638,6 +639,11 @@ String? _nonEmpty(String? s) {
 }
 
 /// 结果卡此刻的五个颜色（底 / 字 / 强调块 / 强调块上的图标 / 文字按钮）。
+/// Apple 设计系统下通知卡的底色：白 / 深灰实色（结果色只落在圆形图标上）。卡片与
+/// 堆叠头条共用，两处同一块底。
+Color mineNoticeAppleContainer({required bool dark}) =>
+    dark ? const Color(0xFF2C2C2E) : Colors.white;
+
 @immutable
 class _CardColors {
   const _CardColors({

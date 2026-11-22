@@ -130,6 +130,17 @@ import 'package:test/test.dart';
 /// `manga_audio_session` 经漫画阅读器页进环。改由调用方注入 `SessionTitleOverride`，两个
 /// 文件出环，develop 回到 622。
 ///
+/// 2026-11-22 批量合并后 develop 实测 636（+13）。不调上限，拆三处：作品隐私口径
+/// `media_visibility`（几十个库页 import）为一个 StreamProvider 直接 import AppModel，
+/// 隐私对话框 / 上锁对话框 / 追踪页 / 合集管理页随它进环——Riverpod 接线挪到
+/// `media_visibility_providers.dart`（只有 app 根 import）；NSFW 封面件 `media_nsfw_cover`
+/// 同理（AppModel 只为 `watchMediaNsfwSnapshot` import 它，音乐封面 / 队列 / 歌词背景等
+/// 6 个音乐 UI 件经它进环），provider 挪到 `media_nsfw_providers.dart`；手柄查词的命中量长
+/// `lookup_match_measure` import AppModel 与 `base_source_page`——改收窄接口
+/// `LookupMatchSearchHost`（AppModel 实现），`lookupHighlightCharCount` 下沉到该文件。
+/// 剩下新进环的只有新分类 schema 文件 `settings_schema_media_privacy`（设置 schema 整族
+/// 本就在环里，同 2026-11-15 的理由），而 `media_nsfw_cover` 出环，回到 623。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
 const int kMaxCycleFiles = 623;
@@ -157,6 +168,13 @@ const List<String> kLeafEntries = <String>[
   // 共用查词宿主 shared_lookup_popup_host 一起拖回大环（2026-11-22 实测 624）。
   'lib/src/pages/implementations/dictionary_popup_controller.dart',
   'lib/src/pages/implementations/dictionary_popup_realm.dart',
+  // 作品隐私的口径本体与 NSFW 封面件被几十个库页 / 卡片 import；Riverpod 接线（读
+  // AppModel）在各自的 `*_providers.dart`。本体再 import AppModel 就把音乐封面等 UI 件
+  // 一起拖回大环（2026-11-22 实测 636）。
+  'lib/src/media/privacy/media_visibility.dart',
+  'lib/src/media/nsfw/media_nsfw_cover.dart',
+  // 查词命中量长只经窄接口 LookupMatchSearchHost（AppModel 实现）查词。
+  'lib/src/lookup/lookup_match_measure.dart',
 ];
 
 const List<String> kBarrels = <String>[

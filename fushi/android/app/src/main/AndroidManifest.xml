@@ -544,6 +544,8 @@
     <uses-permission android:name="com.ichi2.anki.d.permission.READ_WRITE_DATABASE"/>
     <uses-permission android:name="com.ichi2.anki.e.permission.READ_WRITE_DATABASE"/>
     <uses-permission android:name="com.ichi2.anki.debug.permission.READ_WRITE_DATABASE"/>
+    <!-- kuma3 Anki（AnkiDroid 分支）：release 包名 io.github.pedrubik2000.kuma3，权限同样带包名。 -->
+    <uses-permission android:name="io.github.pedrubik2000.kuma3.permission.READ_WRITE_DATABASE"/>
     <queries>
         <!-- Android 11+ 包可见性。没有这些声明时 resolveContentProvider 查不到并行版，
              isApiAvailable 恒 false，权限框一次都不会弹（BUG-2195 的直接根因）。
@@ -558,6 +560,7 @@
         <package android:name="com.ichi2.anki.d" />
         <package android:name="com.ichi2.anki.e" />
         <package android:name="com.ichi2.anki.debug" />
+        <package android:name="io.github.pedrubik2000.kuma3" />
         <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
         <package android:name="app.hibiki.reader" />
         <!-- 选区「网页搜索」要先解析出默认浏览器再定向 ACTION_WEB_SEARCH（BUG-2491）。

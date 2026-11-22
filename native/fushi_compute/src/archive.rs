@@ -12,6 +12,11 @@
 //!   [archive_status::WRONG_PASSWORD]。
 //! - 7z：AES-256 + SHA-256，含「加密文件名」（`-mhe=on`，不给口令连条目表都读不出）。
 //!
+//! 分卷：7-Zip「分卷」是把整个归档按字节切成 `name.7z.001`、`.002`…（zip 同理），这里把
+//! 第一卷及其后连续编号的各卷拼成一个连续的 `Read + Seek` 流（[VolumeReader]）再照常探测 /
+//! 解包，指纹也按拼接后的流算。只认第一卷（`.001`）：给的是后续卷、或拼出来的流比条目表声明
+//! 的短（缺卷），报 [archive_status::MISSING_VOLUME]。
+//!
 //! 安全：条目路径一律相对、不含 `..` / 盘符 / 绝对路径 / `:`（NTFS 备用流）/ NUL，否则整包
 //! 报 [archive_status::UNSAFE_ENTRY]（下载物与用户拖进来的包都是不可信输入）；符号链接条目
 //! 跳过不写；解出总字节数与文件数按调用方给的上限**按实际写出量**强制（声明大小可以谎报）。
@@ -55,8 +60,10 @@ pub mod archive_status {
     pub const UNSAFE_ENTRY: i32 = -22;
     /// 解出的总字节数或文件数超过调用方给的上限。
     pub const TOO_LARGE: i32 = -23;
-    /// 格式或压缩方法本库不支持（含 RAR、分卷 7z、未编进的压缩算法）。
+    /// 格式或压缩方法本库不支持（含 RAR、未编进的压缩算法）。
     pub const UNSUPPORTED: i32 = -24;
+    /// 分卷包拼不全：给的不是第一卷（`.001`），或后面缺卷。
+    pub const MISSING_VOLUME: i32 = -25;
 }
 
 /// 指纹取样：文件头尾各这么多字节。
@@ -109,22 +116,32 @@ pub struct ExtractStats {
     pub bytes: u64,
 }
 
-pub fn fingerprint(path: &Path) -> io::Result<[u8; 32]> {
-    let mut file = File::open(path)?;
-    let len = file.metadata()?.len();
+/// 归档指纹（见 [ArchiveInfo::fingerprint]）；分卷按拼接后的流算。
+pub fn fingerprint(path: &Path) -> Result<[u8; 32], i32> {
+    let mut source = open_source(path)?;
+    fingerprint_of(&mut source.reader).map_err(|_| status::IO_ERROR)
+}
+
+fn fingerprint_of<R: Read + Seek>(file: &mut R) -> io::Result<[u8; 32]> {
+    let len = file.seek(SeekFrom::End(0))?;
     let mut hasher = Sha256::new();
     hasher.update(b"fushi-archive-fp-v1");
     hasher.update(len.to_le_bytes());
     let head = len.min(FINGERPRINT_SAMPLE);
-    feed_range(&mut file, 0, head, &mut hasher)?;
+    feed_range(file, 0, head, &mut hasher)?;
     if len > head {
         let tail_start = len.saturating_sub(FINGERPRINT_SAMPLE).max(head);
-        feed_range(&mut file, tail_start, len - tail_start, &mut hasher)?;
+        feed_range(file, tail_start, len - tail_start, &mut hasher)?;
     }
     Ok(hasher.finalize().into())
 }
 
-fn feed_range(file: &mut File, start: u64, len: u64, hasher: &mut Sha256) -> io::Result<()> {
+fn feed_range<R: Read + Seek>(
+    file: &mut R,
+    start: u64,
+    len: u64,
+    hasher: &mut Sha256,
+) -> io::Result<()> {
     file.seek(SeekFrom::Start(start))?;
     let mut limited = file.take(len);
     let mut buf = vec![0u8; 64 * 1024];
@@ -138,9 +155,14 @@ fn feed_range(file: &mut File, start: u64, len: u64, hasher: &mut Sha256) -> io:
 }
 
 /// 按魔数定格式；都不是时再试一次 zip 中央目录（自解压 exe 等前面带东西的 zip）。
-pub fn sniff_format(path: &Path) -> io::Result<i32> {
+pub fn sniff_format(path: &Path) -> Result<i32, i32> {
+    let mut source = open_source(path)?;
+    sniff_format_of(&mut source.reader).map_err(|_| status::IO_ERROR)
+}
+
+fn sniff_format_of(file: &mut VolumeReader) -> io::Result<i32> {
     let mut head = [0u8; 8];
-    let mut file = File::open(path)?;
+    file.seek(SeekFrom::Start(0))?;
     let mut filled = 0;
     while filled < head.len() {
         let n = file.read(&mut head[filled..])?;
@@ -160,7 +182,7 @@ pub fn sniff_format(path: &Path) -> io::Result<i32> {
         return Ok(format::ZIP);
     }
     file.seek(SeekFrom::Start(0))?;
-    Ok(if zip::ZipArchive::new(file).is_ok() {
+    Ok(if zip::ZipArchive::new(&mut *file).is_ok() {
         format::ZIP
     } else {
         format::UNKNOWN
@@ -170,8 +192,10 @@ pub fn sniff_format(path: &Path) -> io::Result<i32> {
 /// 探测：格式、加密情况、条目数、声明大小、指纹。读不了文件 → `Err(IO_ERROR)`；格式认出来
 /// 但条目表坏 → `Err(BAD_INPUT)`。
 pub fn probe(path: &Path) -> Result<ArchiveInfo, i32> {
-    let fp = fingerprint(path).map_err(|_| status::IO_ERROR)?;
-    let fmt = sniff_format(path).map_err(|_| status::IO_ERROR)?;
+    let mut source = open_source(path)?;
+    let fp = fingerprint_of(&mut source.reader).map_err(|_| status::IO_ERROR)?;
+    let fmt = sniff_format_of(&mut source.reader).map_err(|_| status::IO_ERROR)?;
+    source.check_complete(fmt)?;
     let mut info = ArchiveInfo {
         format: fmt,
         encryption: encryption::NONE,
@@ -181,8 +205,7 @@ pub fn probe(path: &Path) -> Result<ArchiveInfo, i32> {
     };
     match fmt {
         format::ZIP => {
-            let file = File::open(path).map_err(|_| status::IO_ERROR)?;
-            let archive = zip::ZipArchive::new(file).map_err(|_| status::BAD_INPUT)?;
+            let archive = source.open_zip()?;
             for i in 0..archive.len() {
                 let entry = archive.by_index_data(i).map_err(|_| status::BAD_INPUT)?;
                 if entry.encrypted() {
@@ -194,7 +217,7 @@ pub fn probe(path: &Path) -> Result<ArchiveInfo, i32> {
                 }
             }
         }
-        format::SEVEN_Z => match open_7z_archive(path) {
+        format::SEVEN_Z => match open_7z_archive(path)? {
             Ok(archive) => {
                 for (i, entry) in archive.files.iter().enumerate() {
                     if archive.is_file_encrypted(i) {
@@ -221,10 +244,12 @@ pub fn probe(path: &Path) -> Result<ArchiveInfo, i32> {
 /// 留给调用方清理。
 pub fn extract(path: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<ExtractStats, i32> {
     fs::create_dir_all(dest).map_err(|_| status::IO_ERROR)?;
-    let fmt = sniff_format(path).map_err(|_| status::IO_ERROR)?;
+    let mut source = open_source(path)?;
+    let fmt = sniff_format_of(&mut source.reader).map_err(|_| status::IO_ERROR)?;
+    source.check_complete(fmt)?;
     let mut sink = Sink::new(dest, opts);
     match fmt {
-        format::ZIP => extract_zip(path, opts.password, &mut sink)?,
+        format::ZIP => extract_zip(source, opts.password, &mut sink)?,
         format::SEVEN_Z => extract_7z(path, opts.password, &mut sink)?,
         _ => return Err(archive_status::UNSUPPORTED),
     }
@@ -383,9 +408,8 @@ fn zip_entry_names<R: Read + Seek>(archive: &zip::ZipArchive<R>) -> Result<Vec<S
     Ok(out)
 }
 
-fn extract_zip(path: &Path, password: Option<&str>, sink: &mut Sink<'_>) -> Result<(), i32> {
-    let file = File::open(path).map_err(|_| status::IO_ERROR)?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|_| status::BAD_INPUT)?;
+fn extract_zip(source: Source, password: Option<&str>, sink: &mut Sink<'_>) -> Result<(), i32> {
+    let mut archive = source.open_zip()?;
     let names = zip_entry_names(&archive)?;
     let mut any_encrypted = false;
     // 先整包过一遍路径与加密：不安全的包、缺口令的包一个文件都不写。
@@ -458,7 +482,7 @@ fn sevenz_is_symlink(entry: &sevenz_rust2::ArchiveEntry) -> bool {
 fn extract_7z(path: &Path, password: Option<&str>, sink: &mut Sink<'_>) -> Result<(), i32> {
     use sevenz_rust2::{ArchiveReader, Error, Password};
     let pw = password.map(Password::new).unwrap_or_else(Password::empty);
-    let file = File::open(path).map_err(|_| status::IO_ERROR)?;
+    let file = open_source(path)?.reader;
     let mut reader = match ArchiveReader::new_with_memory_limit(file, pw, SEVEN_Z_MEMORY_LIMIT_KB) {
         Ok(r) => r,
         Err(Error::PasswordRequired) => return Err(archive_status::PASSWORD_REQUIRED),
@@ -527,21 +551,190 @@ fn extract_7z(path: &Path, password: Option<&str>, sink: &mut Sink<'_>) -> Resul
     }
 }
 
-/// 不给口令读 7z 条目表（带 [SEVEN_Z_MEMORY_LIMIT_KB] 上限）。
-fn open_7z_archive(path: &Path) -> Result<sevenz_rust2::Archive, sevenz_rust2::Error> {
-    let mut file = File::open(path)?;
-    sevenz_rust2::Archive::read_with_memory_limit(
+/// 不给口令读 7z 条目表（带 [SEVEN_Z_MEMORY_LIMIT_KB] 上限）。外层 `Err` 是打不开源文件 /
+/// 拼不全分卷（状态码），内层是 7z 解析结果。
+fn open_7z_archive(path: &Path) -> Result<Result<sevenz_rust2::Archive, sevenz_rust2::Error>, i32> {
+    let mut file = open_source(path)?.reader;
+    Ok(sevenz_rust2::Archive::read_with_memory_limit(
         &mut file,
         &sevenz_rust2::Password::empty(),
         SEVEN_Z_MEMORY_LIMIT_KB,
-    )
+    ))
 }
 
 fn sevenz_headers_encrypted(path: &Path) -> bool {
     matches!(
         open_7z_archive(path),
-        Err(sevenz_rust2::Error::PasswordRequired)
+        Ok(Err(sevenz_rust2::Error::PasswordRequired))
     )
+}
+
+// ── 分卷 ───────────────────────────────────────────────────────────────────────────────
+
+/// 分卷编号：文件名形如 `<名>.<归档扩展名>.<至少 3 位数字>`（`book.7z.001`），返回
+/// （去掉编号的文件名 `book.7z`、编号位数、编号）。`book.001`（编号前没有扩展名）不认。
+fn volume_number(path: &Path) -> Option<(String, usize, u64)> {
+    let name = path.file_name()?.to_str()?;
+    let (stem, digits) = name.rsplit_once('.')?;
+    if digits.len() < 3 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let (base, ext) = stem.rsplit_once('.')?;
+    if base.is_empty() || ext.is_empty() {
+        return None;
+    }
+    Some((stem.to_string(), digits.len(), digits.parse().ok()?))
+}
+
+/// 打开的归档源：单文件或拼好的分卷。
+struct Source {
+    reader: VolumeReader,
+    /// 来自 `*.NNN` 分卷（哪怕只有一卷）。
+    volumes: bool,
+}
+
+/// 打开 `path`：`*.001` 连同其后连续编号的各卷拼成一个流；给的是后续卷报
+/// [archive_status::MISSING_VOLUME]。
+fn open_source(path: &Path) -> Result<Source, i32> {
+    let Some((stem, width, number)) = volume_number(path) else {
+        let file = File::open(path).map_err(|_| status::IO_ERROR)?;
+        return Ok(Source {
+            reader: VolumeReader::new(vec![file]).map_err(|_| status::IO_ERROR)?,
+            volumes: false,
+        });
+    };
+    if number != 1 {
+        return Err(archive_status::MISSING_VOLUME);
+    }
+    let mut files = Vec::new();
+    for k in 1u64.. {
+        let part = path.with_file_name(format!("{stem}.{k:0width$}"));
+        if !part.is_file() {
+            break;
+        }
+        files.push(File::open(&part).map_err(|_| status::IO_ERROR)?);
+    }
+    if files.is_empty() {
+        return Err(status::IO_ERROR);
+    }
+    Ok(Source {
+        reader: VolumeReader::new(files).map_err(|_| status::IO_ERROR)?,
+        volumes: true,
+    })
+}
+
+impl Source {
+    /// 分卷拼出来的流够不够长：7z 起始头声明了条目表的偏移与长度，流比它短就是缺卷；zip 的
+    /// 中央目录在最后一卷，缺卷时读不出来。单文件不在这里判（截断的单文件照旧报坏包）。
+    fn check_complete(&mut self, fmt: i32) -> Result<(), i32> {
+        if !self.volumes {
+            return Ok(());
+        }
+        match fmt {
+            format::SEVEN_Z => {
+                let mut head = [0u8; 32];
+                self.reader
+                    .seek(SeekFrom::Start(0))
+                    .and_then(|_| self.reader.read_exact(&mut head))
+                    .map_err(|_| archive_status::MISSING_VOLUME)?;
+                let offset = u64::from_le_bytes(head[12..20].try_into().unwrap());
+                let size = u64::from_le_bytes(head[20..28].try_into().unwrap());
+                let needed = 32u64.saturating_add(offset).saturating_add(size);
+                if needed > self.reader.total {
+                    return Err(archive_status::MISSING_VOLUME);
+                }
+                Ok(())
+            }
+            format::ZIP => {
+                self.reader
+                    .seek(SeekFrom::Start(0))
+                    .map_err(|_| status::IO_ERROR)?;
+                zip::ZipArchive::new(&mut self.reader)
+                    .map(|_| ())
+                    .map_err(|_| archive_status::MISSING_VOLUME)
+            }
+            // 首卷认不出格式：不是分卷归档，交给调用方按「不认识」处理。
+            _ => Ok(()),
+        }
+    }
+
+    fn open_zip(mut self) -> Result<zip::ZipArchive<VolumeReader>, i32> {
+        self.reader
+            .seek(SeekFrom::Start(0))
+            .map_err(|_| status::IO_ERROR)?;
+        zip::ZipArchive::new(self.reader).map_err(|_| status::BAD_INPUT)
+    }
+}
+
+/// 把若干文件按顺序当成一个连续流读（单文件 = 一卷）。
+struct VolumeReader {
+    files: Vec<File>,
+    /// 每卷在拼接流里的起点（升序）。
+    starts: Vec<u64>,
+    total: u64,
+    pos: u64,
+    /// 文件读指针已对齐到 `pos` 的那一卷（`None` = 下次读前先定位）。
+    cursor: Option<usize>,
+}
+
+impl VolumeReader {
+    fn new(files: Vec<File>) -> io::Result<Self> {
+        let mut starts = Vec::with_capacity(files.len());
+        let mut total = 0u64;
+        for file in &files {
+            starts.push(total);
+            total = total.saturating_add(file.metadata()?.len());
+        }
+        Ok(Self {
+            files,
+            starts,
+            total,
+            pos: 0,
+            cursor: None,
+        })
+    }
+}
+
+impl Read for VolumeReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() || self.pos >= self.total {
+            return Ok(0);
+        }
+        // 起点 <= pos 的最后一卷（自然跳过长度为 0 的卷）。
+        let idx = self.starts.partition_point(|&s| s <= self.pos) - 1;
+        let end = self.starts.get(idx + 1).copied().unwrap_or(self.total);
+        if self.cursor != Some(idx) {
+            self.files[idx].seek(SeekFrom::Start(self.pos - self.starts[idx]))?;
+            self.cursor = Some(idx);
+        }
+        let want = (end - self.pos).min(buf.len() as u64) as usize;
+        let n = self.files[idx].read(&mut buf[..want])?;
+        if n == 0 {
+            // 打开之后卷被截短了。
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        self.pos += n as u64;
+        if self.pos == end {
+            self.cursor = None;
+        }
+        Ok(n)
+    }
+}
+
+impl Seek for VolumeReader {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        let target = match to {
+            SeekFrom::Start(n) => Some(n),
+            SeekFrom::End(d) => self.total.checked_add_signed(d),
+            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+        }
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+        if target != self.pos {
+            self.pos = target;
+            self.cursor = None;
+        }
+        Ok(self.pos)
+    }
 }
 
 // ── C ABI ──────────────────────────────────────────────────────────────────────────────
@@ -741,6 +934,96 @@ mod tests {
             assert_eq!(info.encryption, enc, "{name}");
             assert_eq!(info.entry_count, count, "{name}");
         }
+    }
+
+    /// 把夹具按字节切成 `name.001`、`.002`…（7-Zip「分卷」的切法），返回各卷路径。
+    fn split_fixture(name: &str, dir: &Path, parts: usize) -> Vec<PathBuf> {
+        let bytes = fs::read(fixture(name)).unwrap();
+        let chunk = bytes.len().div_ceil(parts);
+        bytes
+            .chunks(chunk)
+            .enumerate()
+            .map(|(i, part)| {
+                let path = dir.join(format!("{name}.{:03}", i + 1));
+                fs::write(&path, part).unwrap();
+                path
+            })
+            .collect()
+    }
+
+    #[test]
+    fn split_volumes_probe_and_extract_like_the_whole_archive() {
+        for name in [
+            "plain.7z",
+            "plain.zip",
+            "content_encrypted.7z",
+            "header_encrypted.7z",
+            "aes256.zip",
+        ] {
+            let src = temp_dir("split_src");
+            let volumes = split_fixture(name, &src, 3);
+            let whole = probe(&fixture(name)).unwrap();
+            let split = probe(&volumes[0]).unwrap();
+            assert_eq!(split.format, whole.format, "{name}");
+            assert_eq!(split.encryption, whole.encryption, "{name}");
+            assert_eq!(split.entry_count, whole.entry_count, "{name}");
+            // 指纹按拼接后的流算：分卷与整包是同一个包，记住的口令通用。
+            assert_eq!(split.fingerprint, whole.fingerprint, "{name}");
+            let dir = temp_dir("split_out");
+            let password = (whole.encryption != encryption::NONE).then_some(PASSWORD);
+            let stats = extract(&volumes[0], &dir, &opts(password)).unwrap();
+            assert_eq!(stats.files, 4, "{name}");
+            assert_pages(&dir);
+            fs::remove_dir_all(dir).ok();
+            fs::remove_dir_all(src).ok();
+        }
+    }
+
+    #[test]
+    fn split_volumes_need_first_volume_and_all_parts() {
+        for name in ["plain.7z", "header_encrypted.7z", "plain.zip"] {
+            let src = temp_dir("split_missing");
+            let volumes = split_fixture(name, &src, 3);
+            let dir = temp_dir("split_missing_out");
+            assert_eq!(
+                probe(&volumes[1]).map(|_| ()),
+                Err(archive_status::MISSING_VOLUME),
+                "{name} 给了第二卷"
+            );
+            assert_eq!(
+                extract(&volumes[1], &dir, &opts(None)).map(|_| ()),
+                Err(archive_status::MISSING_VOLUME),
+                "{name} 给了第二卷"
+            );
+            fs::remove_file(&volumes[2]).unwrap();
+            assert_eq!(
+                probe(&volumes[0]).map(|_| ()),
+                Err(archive_status::MISSING_VOLUME),
+                "{name} 缺最后一卷"
+            );
+            assert_eq!(
+                extract(&volumes[0], &dir, &opts(Some(PASSWORD))).map(|_| ()),
+                Err(archive_status::MISSING_VOLUME),
+                "{name} 缺最后一卷"
+            );
+            fs::remove_dir_all(dir).ok();
+            fs::remove_dir_all(src).ok();
+        }
+    }
+
+    #[test]
+    fn volume_names_need_an_archive_extension_before_the_number() {
+        assert_eq!(
+            volume_number(Path::new("a/book.7z.001")),
+            Some(("book.7z".into(), 3, 1))
+        );
+        assert_eq!(
+            volume_number(Path::new("book.zip.0002")),
+            Some(("book.zip".into(), 4, 2))
+        );
+        assert_eq!(volume_number(Path::new("book.001")), None);
+        assert_eq!(volume_number(Path::new("book.7z.01")), None);
+        assert_eq!(volume_number(Path::new("book.7z")), None);
     }
 
     #[test]

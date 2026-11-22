@@ -14,7 +14,8 @@ import 'package:fushi/src/media/media_type.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
+    show lookupHighlightCharCount;
 import 'package:fushi/src/pages/base_tab_page.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart';

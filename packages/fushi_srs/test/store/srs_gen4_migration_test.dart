@@ -31,6 +31,13 @@ void main() {
       expect(rust, SrsGen4BlockedReason.kernelCodes.toSet());
     });
 
+    test('the report file name is migrate.rs REPORT_FILE', () {
+      final RegExpMatch? m = RegExp(
+        r'pub const REPORT_FILE: &str = "([^"]+)";',
+      ).firstMatch(_migrateRs.readAsStringSync());
+      expect(m?.group(1), SrsGen4Migration.reportFileName);
+    });
+
     test('codes map to kinds; the reason text is never parsed', () {
       final Map<String, SrsGen4BlockedReason> want =
           <String, SrsGen4BlockedReason>{
@@ -184,6 +191,26 @@ void main() {
         }),
         throwsStateError,
       );
+    });
+  });
+
+  group('aborted report', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('srs4-report'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    File report() => File(
+      '${dir.path}${Platform.pathSeparator}${SrsGen4Migration.reportFileName}',
+    );
+
+    test('only an aborted report is offered', () async {
+      expect(await SrsGen4Migration.abortedReportPath(dir.path), isNull);
+      report().writeAsStringSync('{"verdict":"committed"}');
+      expect(await SrsGen4Migration.abortedReportPath(dir.path), isNull);
+      report().writeAsStringSync('not json');
+      expect(await SrsGen4Migration.abortedReportPath(dir.path), isNull);
+      report().writeAsStringSync('{"verdict":"aborted","profiles":[]}');
+      expect(await SrsGen4Migration.abortedReportPath(dir.path), report().path);
     });
   });
 }

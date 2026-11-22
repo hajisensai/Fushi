@@ -329,6 +329,10 @@ class MangaSevenZipExtractor {
         ArchiveUnpackFailure.tooLarge => const MangaImportException(
           'Manga archive is too large',
         ),
+        ArchiveUnpackFailure.missingVolume => const MangaImportException(
+          'Split archive: pick the first volume (.001) and keep all volumes '
+          'in the same folder',
+        ),
         ArchiveUnpackFailure.unsupported ||
         ArchiveUnpackFailure.corrupt => MangaImportException(
           'Could not extract manga archive (${e.detail ?? e.failure.name})',

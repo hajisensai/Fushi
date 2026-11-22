@@ -16,6 +16,21 @@ final class _MemoryVault implements ArchivePasswordVault {
 
   @override
   Future<void> write(String key, String value) async => values[key] = value;
+
+  @override
+  Future<int> deleteWithPrefix(String prefix) async {
+    final List<String> hit = values.keys
+        .where((String key) => key.startsWith(prefix))
+        .toList();
+    hit.forEach(values.remove);
+    return hit.length;
+  }
+}
+
+final class _UnreadableVault extends _MemoryVault {
+  @override
+  Future<int> deleteWithPrefix(String prefix) =>
+      Future<int>.error(StateError('no keyring'));
 }
 
 const String _fp =
@@ -123,6 +138,37 @@ void main() {
     expect(await provider.remembered(_fp), 'fushi-pw');
     await provider.forget(_fp);
     expect(vault.values, isEmpty);
+  });
+
+  test('清除全部只删压缩包口令的键，别的功能的键留着', () async {
+    final _MemoryVault vault = _MemoryVault();
+    final AppArchivePasswordProvider provider = AppArchivePasswordProvider(
+      vault: vault,
+      ask: (ArchivePasswordRequest request) async => null,
+    );
+    const String other =
+        'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+    await provider.remember(_fp, 'a');
+    await provider.remember(other, 'b');
+    vault.values['media_lock_passcode'] = 'keep';
+    expect(await forgetAllArchivePasswords(vault: vault), 2);
+    expect(vault.values, <String, String>{'media_lock_passcode': 'keep'});
+    expect(await provider.remembered(_fp), isNull);
+    expect(await forgetAllArchivePasswords(vault: vault), 0);
+  });
+
+  test('安全存储实现拒绝空前缀（否则会删掉同一存储里别的功能的键）', () async {
+    await expectLater(
+      const SecureArchivePasswordVault().deleteWithPrefix(''),
+      throwsArgumentError,
+    );
+  });
+
+  test('安全存储读不了时清除报错，不当作没有可删的', () async {
+    await expectLater(
+      forgetAllArchivePasswords(vault: _UnreadableVault()),
+      throwsStateError,
+    );
   });
 
   test('并发来问时一次只开一个对话框，按先后顺序', () async {

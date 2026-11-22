@@ -24,6 +24,7 @@ import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
@@ -93,12 +94,23 @@ bool feedbackDefaultAttachAutoShot(FeedbackCategory category) =>
     category == FeedbackCategory.bug;
 
 class FeedbackComposePage extends ConsumerStatefulWidget {
-  const FeedbackComposePage({this.initialScreenshot, this.reopenOf, super.key});
+  const FeedbackComposePage({
+    this.initialScreenshot,
+    this.reopenOf,
+    this.prefill,
+    super.key,
+  }) : assert(reopenOf == null || prefill == null);
 
   final Uint8List? initialScreenshot;
 
   /// 非空 = 基于这条已结案的反馈重新提交（不读写草稿：草稿属于普通的新反馈）。
   final FeedbackReopenSeed? reopenOf;
+
+  /// 非空 = 带着现场预填（[FeedbackComposePrefill]，不读写草稿）。
+  final FeedbackComposePrefill? prefill;
+
+  /// 这一页读写草稿：只有普通的新反馈（不是重新提交、也不是预填）。
+  bool get usesDraft => reopenOf == null && prefill == null;
 
   @override
   ConsumerState<FeedbackComposePage> createState() =>
@@ -230,15 +242,53 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       },
     );
     final FeedbackReopenSeed? seed = widget.reopenOf;
-    if (seed == null) {
-      unawaited(_loadDraft());
-    } else {
+    final FeedbackComposePrefill? prefill = widget.prefill;
+    if (seed != null) {
       _category = seed.category;
       _includeLogs = feedbackDefaultIncludeLogs(seed.category);
       _title.text = seed.title;
       _body.text = seed.body;
       unawaited(_prefillContact());
+    } else if (prefill != null) {
+      _category = prefill.category;
+      _includeLogs = feedbackDefaultIncludeLogs(prefill.category);
+      _title.text = prefill.title;
+      _body.text = prefill.body;
+      unawaited(_prefillContact());
+      unawaited(_attachPrefillFiles(prefill.files));
+    } else {
+      unawaited(_loadDraft());
     }
+  }
+
+  /// 预填的样本文件：与手选的走同一道本机检查（[feedbackFileProblem]），传不上去的原因显示在表单错误行。
+  Future<void> _attachPrefillFiles(List<File> files) async {
+    final List<({File file, int bytes})> ok = <({File file, int bytes})>[];
+    String? problem;
+    for (final File f in files) {
+      final int bytes;
+      try {
+        bytes = await f.length();
+      } on FileSystemException catch (e, st) {
+        ErrorLogService.instance.log('feedback.prefill_file', e, st);
+        problem ??= e.message;
+        continue;
+      }
+      final FeedbackFileProblem? why = feedbackFileProblem(f.path, bytes);
+      if (why != null) {
+        problem ??= feedbackFileProblemText(p.basename(f.path), why);
+        continue;
+      }
+      ok.add((file: f, bytes: bytes));
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final ({File file, int bytes}) f in ok) {
+        if (_files.length >= FeedbackLimits.files) break;
+        _files.add(f);
+      }
+      _error ??= problem;
+    });
   }
 
   /// 联系方式默认带上次提交用的那个。必须在草稿读完之后做：草稿里的联系方式（哪怕
@@ -797,8 +847,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       // 视频已挪进待传区（或已传完）：压缩产物的工作目录可以删了。
       if (identical(_staged, staged)) _staged = null;
       unawaited(staged?.discard());
-      // 重新提交不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
-      if (widget.reopenOf == null) {
+      // 重新提交 / 预填不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
+      if (widget.usesDraft) {
         try {
           await (await _service.draftStore()).clear();
         } on Object catch (e, st) {

@@ -25,7 +25,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show SynchronousFuture, ValueNotifier, immutable, visibleForTesting;
 import 'package:path/path.dart' as p;
 
 /// 认作盘面图的图片扩展名（小写，带点）。
@@ -458,7 +459,14 @@ bool isMusicDiscFace(MusicDiscFaceSample sample) {
 /// [MusicDiscFaceSampler] 的默认实现：先只读图头拿宽高（不是近似正方形就不解码），
 /// 再让引擎按 [kMusicDiscFaceSampleSize] 降采样解码（JPEG / WebP 走解码器的缩放
 /// 解码，几十兆像素的扫图也不在 Dart 堆里展开）。读不了 / 解不了为 null。
-Future<MusicDiscFaceSample?> sampleMusicDiscFace(String path) async {
+///
+/// [size] 是降采样边长；[squareOnly] 为 false 时不按宽高比提前放弃（量盘面几何
+/// [MusicDiscFaceGeometryCache] 用：已认定是盘面的图照样要量）。
+Future<MusicDiscFaceSample?> sampleMusicDiscFace(
+  String path, {
+  int size = kMusicDiscFaceSampleSize,
+  bool squareOnly = true,
+}) async {
   ui.ImmutableBuffer? buffer;
   ui.ImageDescriptor? descriptor;
   ui.Codec? codec;
@@ -468,10 +476,11 @@ Future<MusicDiscFaceSample?> sampleMusicDiscFace(String path) async {
     descriptor = await ui.ImageDescriptor.encoded(buffer);
     final int width = descriptor.width;
     final int height = descriptor.height;
-    if (!isMusicDiscFaceAspect(width, height)) return null;
+    if (width <= 0 || height <= 0) return null;
+    if (squareOnly && !isMusicDiscFaceAspect(width, height)) return null;
     codec = await descriptor.instantiateCodec(
-      targetWidth: kMusicDiscFaceSampleSize,
-      targetHeight: kMusicDiscFaceSampleSize,
+      targetWidth: size,
+      targetHeight: size,
     );
     image = (await codec.getNextFrame()).image;
     final ByteData? data = await image.toByteData(
@@ -481,7 +490,7 @@ Future<MusicDiscFaceSample?> sampleMusicDiscFace(String path) async {
     return MusicDiscFaceSample(
       sourceWidth: width,
       sourceHeight: height,
-      size: kMusicDiscFaceSampleSize,
+      size: size,
       rgba: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
     );
   } on Object {
@@ -697,5 +706,268 @@ class MusicDiscArtIndex {
       if (best != null) out[e.key] = best.path;
     }
     return out;
+  }
+}
+
+/// 印刷区外径占盘径的比例：CD 规格可印刷区最大直径 116mm / 盘径 120mm。外面那
+/// 1～2mm 是透明塑料边，平放扫描时透出底板，画出来就是盘外一圈白（用户
+/// 2026-11-22：「外面还是白色」）。
+const double kMusicDiscPrintFraction = 116 / 120;
+
+/// 中心轴孔半径占印刷区半径的比例：轴孔直径 15mm / 印刷区直径 116mm。
+const double kMusicDiscSpindleFraction = 15 / 116;
+
+/// 透明轮毂外缘（印刷区内缘）占印刷区半径比例的下限：量不出时也取它。留出轴孔
+/// 外一圈夹持环。
+const double kMusicDiscHubMinFraction = 0.18;
+
+/// 透明轮毂外缘占印刷区半径比例的上限：规格可印刷区最小内径 46mm 再放一点。
+const double kMusicDiscHubMaxFraction = 0.42;
+
+/// 量盘面几何时的降采样边长（1 个采样像素 ≈ 盘径的 0.4%）。
+const int kMusicDiscGeometrySampleSize = 256;
+
+/// 盘面扫描图里光盘的位置（用户 2026-11-22：「没有对准」）：扫描图里的盘不一定在
+/// 图片正中、也不一定内切（扫描仪底板留边不均），按内切圆裁出来转动会晃、外圈
+/// 露白。
+///
+/// 坐标都是原图的比例：[centerX] / [radiusX] 按原图宽，[centerY] / [radiusY]
+/// 按原图高（非正方形扫图也能直接换算）。半径是**印刷区**半径（已去掉透明塑料边）。
+/// [hubFraction] 是印刷区内缘 / 印刷区半径：内缘以内是透明轮毂，画成透明。
+@immutable
+class MusicDiscFaceGeometry {
+  const MusicDiscFaceGeometry({
+    required this.centerX,
+    required this.centerY,
+    required this.radiusX,
+    required this.radiusY,
+    required this.hubFraction,
+  });
+
+  /// 量不出时的退路：盘内切于原图（[width] × [height]），印刷区按规格比例。
+  factory MusicDiscFaceGeometry.inscribed(int width, int height) {
+    if (width <= 0 || height <= 0) return fallback;
+    final double r = math.min(width, height) / 2 * kMusicDiscPrintFraction;
+    return MusicDiscFaceGeometry(
+      centerX: 0.5,
+      centerY: 0.5,
+      radiusX: r / width,
+      radiusY: r / height,
+      hubFraction: kMusicDiscHubMinFraction,
+    );
+  }
+
+  /// 原图读不了时的退路（正方形内切）。
+  static const MusicDiscFaceGeometry fallback = MusicDiscFaceGeometry(
+    centerX: 0.5,
+    centerY: 0.5,
+    radiusX: 0.5 * kMusicDiscPrintFraction,
+    radiusY: 0.5 * kMusicDiscPrintFraction,
+    hubFraction: kMusicDiscHubMinFraction,
+  );
+
+  final double centerX;
+  final double centerY;
+  final double radiusX;
+  final double radiusY;
+  final double hubFraction;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicDiscFaceGeometry &&
+      other.centerX == centerX &&
+      other.centerY == centerY &&
+      other.radiusX == radiusX &&
+      other.radiusY == radiusY &&
+      other.hubFraction == hubFraction;
+
+  @override
+  int get hashCode =>
+      Object.hash(centerX, centerY, radiusX, radiusY, hubFraction);
+
+  @override
+  String toString() =>
+      'MusicDiscFaceGeometry(c: ${centerX.toStringAsFixed(4)}, '
+      '${centerY.toStringAsFixed(4)}, r: ${radiusX.toStringAsFixed(4)}, '
+      '${radiusY.toStringAsFixed(4)}, hub: ${hubFraction.toStringAsFixed(3)})';
+}
+
+/// 与背景色的距离超过它算「盘上的像素」（印刷色远在它以外）。
+const double _kDiscInkDistance = 36;
+
+/// 量 [sample] 里光盘的位置（[MusicDiscFaceGeometry]）；量不出（全图都是背景、
+/// 或盘上像素的外接框不像圆）为 null。纯函数。
+///
+/// - 背景色：内切圆外（r > 1.1）各通道中位数，同 [isMusicDiscFace]；
+/// - 盘的外接框：盘上像素（离背景色 > 36）占本行 / 本列 2% 以上的行列范围，其
+///   中心即盘心、半宽半高的均值即盘半径（含透明塑料边——边上有反光与阴影，离
+///   背景色不近）。印刷区半径按规格比例 [kMusicDiscPrintFraction] 收进去；
+/// - 轮毂：以盘心为圆心逐圈（1 个采样像素宽）统计盘上像素占比，从 0.06 半径往外
+///   第一圈「本圈及往外 3 圈都 ≥ 85%」的再往外一圈就是印刷区内缘（孔边阴影那种一两圈宽的
+///   细环不算）；量不出或越界按 [kMusicDiscHubMinFraction] /
+///   [kMusicDiscHubMaxFraction] 夹住。
+MusicDiscFaceGeometry? measureMusicDiscFace(MusicDiscFaceSample sample) {
+  final int n = sample.size;
+  final Uint8List px = sample.rgba;
+  if (n < 32 || px.length < n * n * 4) return null;
+  if (sample.sourceWidth <= 0 || sample.sourceHeight <= 0) return null;
+  final double c = (n - 1) / 2;
+  final double half = n / 2;
+
+  final List<int> rs = <int>[];
+  final List<int> gs = <int>[];
+  final List<int> bs = <int>[];
+  for (int y = 0; y < n; y++) {
+    for (int x = 0; x < n; x++) {
+      final double dx = x - c;
+      final double dy = y - c;
+      if (math.sqrt(dx * dx + dy * dy) / half <= 1.1) continue;
+      final int i = (y * n + x) * 4;
+      rs.add(px[i]);
+      gs.add(px[i + 1]);
+      bs.add(px[i + 2]);
+    }
+  }
+  if (rs.isEmpty) return null;
+  int median(List<int> v) => (v..sort())[v.length ~/ 2];
+  final int br = median(rs);
+  final int bg = median(gs);
+  final int bb = median(bs);
+
+  final Uint8List ink = Uint8List(n * n);
+  final List<int> rowInk = List<int>.filled(n, 0);
+  final List<int> colInk = List<int>.filled(n, 0);
+  const double limit = _kDiscInkDistance * _kDiscInkDistance;
+  for (int y = 0; y < n; y++) {
+    for (int x = 0; x < n; x++) {
+      final int i = (y * n + x) * 4;
+      final int dr = px[i] - br;
+      final int dg = px[i + 1] - bg;
+      final int db = px[i + 2] - bb;
+      if (dr * dr + dg * dg + db * db > limit) {
+        ink[y * n + x] = 1;
+        rowInk[y]++;
+        colInk[x]++;
+      }
+    }
+  }
+  final int need = math.max(2, (n * 0.02).floor());
+  final int top = rowInk.indexWhere((int v) => v >= need);
+  final int left = colInk.indexWhere((int v) => v >= need);
+  if (top < 0 || left < 0) return null;
+  final int bottom = rowInk.lastIndexWhere((int v) => v >= need);
+  final int right = colInk.lastIndexWhere((int v) => v >= need);
+
+  // 采样坐标（像素 i 占 [i, i+1)）→ 原图像素：非正方形原图两轴缩放不同。
+  final double sx = sample.sourceWidth / n;
+  final double sy = sample.sourceHeight / n;
+  final double cx = (left + right + 1) / 2;
+  final double cy = (top + bottom + 1) / 2;
+  final double rx = (right - left + 1) / 2 * sx;
+  final double ry = (bottom - top + 1) / 2 * sy;
+  final double ratio = rx / ry;
+  if (ratio < 0.9 || ratio > 1 / 0.9) return null;
+  final double outer = (rx + ry) / 2;
+  if (outer < math.min(sample.sourceWidth, sample.sourceHeight) * 0.2) {
+    return null;
+  }
+
+  // 逐圈盘上像素占比（圈宽 = 1 个采样像素）。
+  final double step = math.max(sx, sy);
+  final int rings = (outer / step).floor() + 2;
+  final List<int> total = List<int>.filled(rings, 0);
+  final List<int> hit = List<int>.filled(rings, 0);
+  for (int y = 0; y < n; y++) {
+    final double dy = (y + 0.5 - cy) * sy;
+    for (int x = 0; x < n; x++) {
+      final double dx = (x + 0.5 - cx) * sx;
+      final int ring = (math.sqrt(dx * dx + dy * dy) / step).floor();
+      if (ring >= rings) continue;
+      total[ring]++;
+      hit[ring] += ink[y * n + x];
+    }
+  }
+  bool dense(int ring) =>
+      ring >= rings || (total[ring] > 0 && hit[ring] / total[ring] >= 0.85);
+  double? innerEdge;
+  for (int ring = 0; ring < rings; ring++) {
+    final double r = ring * step;
+    if (r < outer * 0.06) continue;
+    if (r > outer * 0.5) break;
+    if (dense(ring) && dense(ring + 1) && dense(ring + 2) && dense(ring + 3)) {
+      // 判到的那圈常还掺着轮毂的底板色（半个采样像素），再往外一圈才是干净的印刷。
+      innerEdge = r + step;
+      break;
+    }
+  }
+  final double print = outer * kMusicDiscPrintFraction;
+  final double hub = innerEdge == null
+      ? kMusicDiscHubMinFraction
+      : (innerEdge / print).clamp(
+          kMusicDiscHubMinFraction,
+          kMusicDiscHubMaxFraction,
+        );
+  return MusicDiscFaceGeometry(
+    centerX: cx / n,
+    centerY: cy / n,
+    radiusX: print / sample.sourceWidth,
+    radiusY: print / sample.sourceHeight,
+    hubFraction: hub,
+  );
+}
+
+/// 盘面扫描图的几何缓存（路径 → [MusicDiscFaceGeometry]）：每张图量一次，进程内
+/// 缓存。曲库卡、播放页、CD 详情页共用。
+class MusicDiscFaceGeometryCache {
+  MusicDiscFaceGeometryCache._();
+
+  static final MusicDiscFaceGeometryCache instance =
+      MusicDiscFaceGeometryCache._();
+
+  final Map<String, MusicDiscFaceGeometry> _done =
+      <String, MusicDiscFaceGeometry>{};
+  final Map<String, Future<MusicDiscFaceGeometry>> _pending =
+      <String, Future<MusicDiscFaceGeometry>>{};
+
+  /// 读图降采样的实现（测试换成不碰引擎解码的假实现）。
+  @visibleForTesting
+  MusicDiscFaceSampler sampler = _sampleForGeometry;
+
+  static Future<MusicDiscFaceSample?> _sampleForGeometry(String path) =>
+      sampleMusicDiscFace(
+        path,
+        size: kMusicDiscGeometrySampleSize,
+        squareOnly: false,
+      );
+
+  /// 已量好的几何；还没量为 null。
+  MusicDiscFaceGeometry? peek(String path) => _done[path];
+
+  /// 量 [path]（同一路径只量一次）。读不了 / 量不出给退路几何，不抛。
+  Future<MusicDiscFaceGeometry> load(String path) {
+    final MusicDiscFaceGeometry? done = _done[path];
+    if (done != null) return SynchronousFuture<MusicDiscFaceGeometry>(done);
+    return _pending.putIfAbsent(path, () => _measure(path));
+  }
+
+  Future<MusicDiscFaceGeometry> _measure(String path) async {
+    final MusicDiscFaceSample? sample = await sampler(path);
+    final MusicDiscFaceGeometry geometry = sample == null
+        ? MusicDiscFaceGeometry.fallback
+        : await Isolate.run(() => measureMusicDiscFace(sample)) ??
+              MusicDiscFaceGeometry.inscribed(
+                sample.sourceWidth,
+                sample.sourceHeight,
+              );
+    _done[path] = geometry;
+    _pending.remove(path);
+    return geometry;
+  }
+
+  /// 丢掉缓存（扫图文件被替换后）。
+  @visibleForTesting
+  void invalidate() {
+    _done.clear();
+    _pending.clear();
   }
 }

@@ -206,7 +206,9 @@ class ArchiveUnpacker {
       return await _probe(archivePath);
     } on FfcArchiveException catch (e) {
       throw ArchiveUnpackException(
-        ArchiveUnpackFailure.corrupt,
+        e.failure == FfcArchiveFailure.missingVolume
+            ? ArchiveUnpackFailure.missingVolume
+            : ArchiveUnpackFailure.corrupt,
         archivePath,
         e.failure.name,
       );
@@ -277,6 +279,10 @@ class ArchiveUnpacker {
             ),
             FfcArchiveFailure.unsupported => ArchiveUnpackException(
               ArchiveUnpackFailure.unsupported,
+              archivePath,
+            ),
+            FfcArchiveFailure.missingVolume => ArchiveUnpackException(
+              ArchiveUnpackFailure.missingVolume,
               archivePath,
             ),
             FfcArchiveFailure.corrupt ||
