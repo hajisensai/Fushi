@@ -55,6 +55,9 @@ class TemperaCompiledLine {
     required this.text,
     required this.renderEndTime,
     required this.segments,
+    this.isChorus = false,
+    this.songPart,
+    this.blockIndex,
   });
 
   /// 在 runtime.lines 里的下标。
@@ -64,7 +67,31 @@ class TemperaCompiledLine {
   final String text;
   final double renderEndTime;
   final List<TemperaSegment> segments;
+
+  /// 副歌行（folia `line.isChorus`）。
+  final bool isChorus;
+
+  /// 来源段落标注原文（folia `line.songPart`）。
+  final String? songPart;
+
+  /// 来源段落编号；来源没有段落标注时 null（段落只按空隙切）。
+  final int? blockIndex;
 }
+
+/// 段落标注变了（folia `metadataChanged`）。
+bool _metadataChanged(TemperaCompiledLine previous, TemperaCompiledLine next) =>
+    (previous.blockIndex != null &&
+        next.blockIndex != null &&
+        previous.blockIndex != next.blockIndex) ||
+    (previous.songPart != null &&
+        next.songPart != null &&
+        previous.songPart != next.songPart);
+
+final RegExp _chorusPartRe = RegExp('chorus|副歌', caseSensitive: false);
+final RegExp _breakPartRe = RegExp(
+  'bridge|break|間奏|ブリッジ',
+  caseSensitive: false,
+);
 
 /// 镜头关键帧（视口比例位移）。
 class TemperaCameraKey {
@@ -239,93 +266,36 @@ class TemperaProgram {
 }
 
 // ---------------------------------------------------------------------------
-// 分词（folia 走 icu-folia：Intl.Segmenter + jieba + BudouX；这里是字符类启发式）
+// 分词（folia 走共享的 wordSegmentation：这里用框架的共享词组 `LyricVisualizerLine.segments`）
 // ---------------------------------------------------------------------------
 
-final RegExp _punctuationOnly = RegExp(r'^[\s\p{P}\p{S}]+$', unicode: true);
-final RegExp _han = RegExp(r'^\p{Script=Han}$', unicode: true);
-
-enum _CharClass { space, punct, han, hiragana, katakana, hangul, other }
-
-_CharClass _classify(String ch) {
-  if (ch.trim().isEmpty) return _CharClass.space;
-  final int c = ch.runes.first;
-  if (c >= 0x3040 && c <= 0x309F) return _CharClass.hiragana;
-  if ((c >= 0x30A0 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF)) {
-    return _CharClass.katakana;
-  }
-  if (c >= 0xAC00 && c <= 0xD7AF) return _CharClass.hangul;
-  if (_han.hasMatch(ch)) return _CharClass.han;
-  if (_punctuationOnly.hasMatch(ch)) return _CharClass.punct;
-  return _CharClass.other;
-}
-
-/// 「实词 + 后面粘着的虚词」一级的切分：拉丁连写成词；日文汉字 / 片假名串带上后面的平假名；
-/// 纯中文（行里没有假名）的汉字串两两成词；标点 / 空白单独成段（后面 sticky 合并）。
-List<(int, int, bool)> temperaSegmentRanges(List<String> chars) {
-  final List<_CharClass> cls = chars.map(_classify).toList();
-  final bool hasKana = cls.any(
-    (_CharClass c) => c == _CharClass.hiragana || c == _CharClass.katakana,
-  );
+/// 行里的字形区间切成「词 / 非词」段：词组来自共享分词，词组之间的空白、孤立标点补成非词段。
+List<(int, int, bool)> temperaSegmentRanges(LyricVisualizerLine line) {
+  final List<LyricVisualizerGlyph> g = line.glyphs;
+  final int n = g.length;
   final List<(int, int, bool)> out = <(int, int, bool)>[];
-  int i = 0;
-  bool isLetter(int k) =>
-      k < cls.length &&
-      (cls[k] == _CharClass.other ||
-          // 词中的撇号（don't）留在词里
-          (cls[k] == _CharClass.punct &&
-              (chars[k] == "'" || chars[k] == '’') &&
-              k + 1 < cls.length &&
-              cls[k + 1] == _CharClass.other &&
-              k > 0 &&
-              cls[k - 1] == _CharClass.other));
-  while (i < chars.length) {
-    final _CharClass c = cls[i];
-    final int start = i;
-    switch (c) {
-      case _CharClass.space:
-        while (i < chars.length && cls[i] == _CharClass.space) {
-          i++;
-        }
-        out.add((start, i, false));
-      case _CharClass.punct:
-        while (i < chars.length && cls[i] == _CharClass.punct && !isLetter(i)) {
-          i++;
-        }
-        out.add((start, i, false));
-      case _CharClass.other:
-        while (isLetter(i)) {
-          i++;
-        }
-        out.add((start, i, true));
-      case _CharClass.hangul:
-        while (i < chars.length && cls[i] == _CharClass.hangul) {
-          i++;
-        }
-        out.add((start, i, true));
-      case _CharClass.hiragana:
-        while (i < chars.length && cls[i] == _CharClass.hiragana) {
-          i++;
-        }
-        out.add((start, i, true));
-      case _CharClass.han:
-      case _CharClass.katakana:
-        while (i < chars.length && cls[i] == c) {
-          i++;
-        }
-        if (c == _CharClass.han && !hasKana) {
-          // 中文：两字一词（jieba 的常见词长）。
-          for (int k = start; k < i; k += 2) {
-            out.add((k, math.min(k + 2, i), true));
-          }
-          continue;
-        }
-        while (i < chars.length && cls[i] == _CharClass.hiragana) {
-          i++;
-        }
-        out.add((start, i, true));
+  int cursor = 0;
+  void gapUntil(int to) {
+    while (cursor < to) {
+      final bool space = g[cursor].text.trim().isEmpty;
+      int j = cursor;
+      while (j < to && g[j].text.trim().isEmpty == space) {
+        j++;
+      }
+      out.add((cursor, j, false));
+      cursor = j;
     }
   }
+
+  for (final LyricVisualizerSegment seg in line.segments) {
+    final int start = seg.firstGlyph.clamp(0, n);
+    final int end = (seg.firstGlyph + seg.glyphCount).clamp(start, n);
+    if (end <= cursor) continue;
+    gapUntil(math.max(cursor, start));
+    out.add((math.max(cursor, start), end, true));
+    cursor = end;
+  }
+  gapUntil(n);
   return out;
 }
 
@@ -337,7 +307,7 @@ List<TemperaSegment> buildTemperaSegments(LyricVisualizerLine line) {
       .map((LyricVisualizerGlyph g) => g.text)
       .toList();
   final List<TemperaSegment> segments = <TemperaSegment>[];
-  for (final (int s, int e, bool word) in temperaSegmentRanges(chars)) {
+  for (final (int s, int e, bool word) in temperaSegmentRanges(line)) {
     final List<TemperaGrapheme> gs = <TemperaGrapheme>[
       for (int k = s; k < e; k++)
         TemperaGrapheme(
@@ -392,30 +362,7 @@ List<TemperaSegment> buildTemperaSegments(LyricVisualizerLine line) {
   return sticky;
 }
 
-// ---------------------------------------------------------------------------
-// 行的渲染尾巴（folia `renderHints.ts` 的 getLineRenderEndTime）
-// ---------------------------------------------------------------------------
-
 double _clamp(double v, double lo, double hi) => math.min(hi, math.max(lo, v));
-
-/// 一行在画面上最多能停到几时（秒）：短行加一点离场时间。
-double temperaLineRenderEndTime(double start, double end, double lastWordEnd) {
-  final double raw = math.max(end - start, 0);
-  if (raw < 0.10) return math.max(end, start + 0.067);
-  final bool fast = raw < 0.18;
-  final double enter = fast
-      ? _clamp(raw * 0.45, 0.045, 0.06)
-      : math.min(0.42, math.max(0.22, math.max(raw, 0.12) * 0.34));
-  final double exit = fast
-      ? _clamp(raw * 0.22, 0.03, 0.04)
-      : math.min(0.32, math.max(0.18, math.max(raw, 0.12) * 0.18));
-  final double hold = fast ? 0.03 : 0.06;
-  final double passStart = math.max(lastWordEnd, start) + hold;
-  final double exitStart = fast
-      ? math.max(math.max(start + enter + 0.01, passStart), end - exit)
-      : math.max(passStart, end - exit);
-  return math.max(end, exitStart + exit);
-}
 
 // ---------------------------------------------------------------------------
 // 编译
@@ -477,6 +424,17 @@ TemperaParagraphKind _classifyParagraph(
   int index,
   int total,
 ) {
+  if (lines.any(
+    (TemperaCompiledLine l) =>
+        l.isChorus || _chorusPartRe.hasMatch(l.songPart ?? ''),
+  )) {
+    return TemperaParagraphKind.chorus;
+  }
+  if (lines.any(
+    (TemperaCompiledLine l) => _breakPartRe.hasMatch(l.songPart ?? ''),
+  )) {
+    return TemperaParagraphKind.breakPart;
+  }
   if (index == total - 1) return TemperaParagraphKind.outro;
   final double duration = lines.last.renderEndTime - lines.first.startTime;
   int segmentCount = 0;
@@ -509,6 +467,9 @@ class _Chunk {
   double endTime;
   final double lyricEndTime;
 }
+
+final RegExp _punctuationOnly = RegExp(r'^[\s\p{P}\p{S}]+$', unicode: true);
+final RegExp _han = RegExp(r'^\p{Script=Han}$', unicode: true);
 
 bool _renderable(TemperaSegment s) =>
     s.text.trim().isNotEmpty && s.graphemes.isNotEmpty;
@@ -890,13 +851,13 @@ TemperaProgram compileTemperaProgram(
   bool wholeLineLyrics = false,
 }) {
   final List<TemperaCompiledLine> compiled = <TemperaCompiledLine>[];
+  final bool sourced = lines.any(
+    (LyricVisualizerLine l) => l.source.songPart != null,
+  );
   for (int i = 0; i < lines.length; i++) {
     final LyricVisualizerLine l = lines[i];
     final double start = l.startMs / 1000;
     final double end = l.endMs / 1000;
-    final double lastWordEnd = l.words.isEmpty
-        ? end
-        : l.words.last.endMs / 1000;
     final double nextStart = i + 1 < lines.length
         ? lines[i + 1].startMs / 1000
         : double.infinity;
@@ -906,14 +867,15 @@ TemperaProgram compileTemperaProgram(
         startTime: start,
         endTime: end,
         text: l.text,
+        // 句尾离场窗口（共享 render hints），不越过下一行起点。
         renderEndTime: math.max(
           start,
-          math.min(
-            temperaLineRenderEndTime(start, end, lastWordEnd),
-            nextStart,
-          ),
+          math.min(l.renderEndMs / 1000, nextStart),
         ),
         segments: buildTemperaSegments(l),
+        isChorus: l.isChorus,
+        songPart: l.songPartLabel,
+        blockIndex: sourced ? l.blockIndex : null,
       ),
     );
   }
@@ -924,7 +886,7 @@ TemperaProgram compileTemperaProgram(
     final TemperaCompiledLine line = compiled[i];
     if (i > 0 && current.isNotEmpty) {
       final double gap = line.startTime - compiled[i - 1].renderEndTime;
-      if (gap >= threshold) {
+      if (_metadataChanged(compiled[i - 1], line) || gap >= threshold) {
         drafts.addAll(_splitOversized(current));
         current = <TemperaCompiledLine>[];
       }

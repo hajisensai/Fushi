@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_compositions.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_ink.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_motion.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_palette.dart';
@@ -58,6 +59,30 @@ TemperaPalette _palette(
   coverColors: cover,
 );
 
+LyricVisualizerLine _lineOf(String text) => LyricVisualizerRuntime(
+  LyricTimeline(
+    format: 'lrc',
+    lines: <LyricLine>[
+      LyricLine(
+        startMs: 0,
+        endMs: 2000,
+        syllables: <LyricSyllable>[
+          LyricSyllable(text: text, startMs: 0, endMs: 2000),
+        ],
+      ),
+    ],
+  ),
+).lines.first;
+
+LyricLine _tagged(int i, String text, String part) => LyricLine(
+  startMs: i * 2500,
+  endMs: i * 2500 + 2300,
+  songPart: part,
+  syllables: <LyricSyllable>[
+    LyricSyllable(text: text, startMs: i * 2500, endMs: i * 2500 + 2300),
+  ],
+);
+
 double _fakeMeasure(String text, double size) => text.runes.length * size * 0.6;
 
 void main() {
@@ -77,13 +102,13 @@ void main() {
   group('tempera program', () {
     test('segmenter splits CJK / Latin / mixed text', () {
       final List<(int, int, bool)> latin = temperaSegmentRanges(
-        'Hello world'.split(''),
+        _lineOf('Hello world'),
       );
       expect(latin.where(((int, int, bool) r) => r.$3).length, 2);
-      final List<(int, int, bool)> ja = temperaSegmentRanges('夜空に光'.split(''));
+      final List<(int, int, bool)> ja = temperaSegmentRanges(_lineOf('夜空に光'));
       expect(ja.where(((int, int, bool) r) => r.$3), isNotEmpty);
       final List<(int, int, bool)> mixed = temperaSegmentRanges(
-        '君とdance'.split(''),
+        _lineOf('君とdance'),
       );
       expect(
         mixed.where(((int, int, bool) r) => r.$3).length,
@@ -449,6 +474,144 @@ void main() {
       );
       expect(s.colorMode, TemperaColorMode.duo);
       expect(s.textInversion, isTrue);
+    });
+  });
+
+  group('tempera shared framework', () {
+    test('segments come from the shared word groups and cover every glyph', () {
+      final LyricVisualizerLine line = _lineOf('夜明けの空を見上げた。Hello');
+      final List<(int, int, bool)> r = temperaSegmentRanges(line);
+      expect(r.first.$1, 0);
+      expect(r.last.$2, line.glyphs.length);
+      for (int i = 1; i < r.length; i++) {
+        expect(r[i].$1, r[i - 1].$2);
+      }
+      expect(
+        r.where(((int, int, bool) x) => x.$3).length,
+        line.segments.length,
+      );
+    });
+
+    test('song parts: chorus / bridge kinds and metadata boundaries', () {
+      final TemperaProgram p = _program(
+        LyricTimeline(
+          format: 'ttml',
+          lines: <LyricLine>[
+            _tagged(0, '静かな夜に歩いてた', 'Verse'),
+            _tagged(1, '君の声を探してた', 'Verse'),
+            _tagged(2, '光の中へ飛び込んで', 'Chorus'),
+            _tagged(3, '永遠に歌い続けて', 'Chorus'),
+            _tagged(4, 'ひとりきりの間奏', 'Bridge'),
+            _tagged(5, 'おわりのことば', 'Outro'),
+          ],
+        ),
+      );
+      expect(p.paragraphs.length, 4);
+      expect(p.paragraphs[1].kind, TemperaParagraphKind.chorus);
+      expect(p.paragraphs[2].kind, TemperaParagraphKind.breakPart);
+      expect(p.paragraphs[3].kind, TemperaParagraphKind.outro);
+    });
+
+    test('keyword colours map onto segments by UTF-16 span', () {
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        wordColors: <String, Color>{'Hello': Color(0xFFFF0000)},
+      );
+      final TemperaProgram p = _program(
+        LyricTimeline(
+          format: 'lrc',
+          lines: <LyricLine>[
+            LyricLine(
+              startMs: 0,
+              endMs: 3000,
+              syllables: <LyricSyllable>[
+                LyricSyllable(text: '君と Hello world', startMs: 0, endMs: 3000),
+              ],
+            ),
+          ],
+        ),
+      );
+      final TemperaCompiledLine line = p.paragraphs.first.lines.first;
+      final List<Color?> colors = temperaSegmentKeywordColors(
+        line,
+        theme.colorRangesFor(line.text),
+      );
+      final int hello = line.segments.indexWhere(
+        (TemperaSegment s) => s.text.startsWith('Hello'),
+      );
+      expect(colors[hello], const Color(0xFFFF0000));
+      expect(colors.whereType<Color>().length, 1);
+    });
+
+    test('ink flash: envelope, gap filter, last hit, hits from beats', () {
+      expect(temperaInkFlashEnvelope(-0.1), 0);
+      expect(temperaInkFlashEnvelope(0.1), 1);
+      expect(temperaInkFlashEnvelope(0.6), lessThan(0.02));
+      expect(temperaInkFlashHits(<double>[0, 0.1, 0.25, 0.3, 1]), <double>[
+        0,
+        0.25,
+        1,
+      ]);
+      expect(temperaInkLastHit(<double>[0, 0.5, 1], 0.7), 1);
+      expect(temperaInkLastHit(<double>[0, 0.5, 1], -1), -1);
+      final LyricVisualizerContext withAudio = visualizerContextFor(
+        temperaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+        offsetMs: 100,
+      );
+      final List<double> hits = temperaInkHitsOf(withAudio);
+      expect(hits.take(2), <double>[0.1, 0.6]);
+      final LyricVisualizerContext noBeats = visualizerContextFor(
+        temperaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(beatsReady: false),
+      );
+      expect(temperaInkHitsOf(noBeats), isEmpty);
+    });
+
+    test('intensity scale, layer image pick and background request', () {
+      expect(temperaAnimationScale(LyricVisualizerIntensity.calm), 0.65);
+      expect(temperaAnimationScale(LyricVisualizerIntensity.chaotic), 1.35);
+      expect(temperaPickLayerImage(5, 0, -1), -1);
+      for (int seed = 0; seed < 40; seed++) {
+        final int a = temperaPickLayerImage(seed, 3, -1);
+        expect(a, inInclusiveRange(0, 2));
+        expect(temperaPickLayerImage(seed, 3, a), isNot(a));
+      }
+      expect(
+        temperaVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(temperaVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+    });
+
+    testWidgets('audio + depth + AI theme + chaotic intensity', (
+      WidgetTester tester,
+    ) async {
+      await pumpVisualizerAcross(
+        tester,
+        temperaVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        tuning: <String, Object?>{'depth': true, 'inkFlash': 2.0},
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'light': Color(0xFF40C4FF)},
+          fontWeight: FontWeight.w800,
+        ),
+      );
+    });
+
+    testWidgets('beats only (no envelope), ink off, calm', (
+      WidgetTester tester,
+    ) async {
+      await pumpVisualizerAcross(
+        tester,
+        temperaVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        intensity: LyricVisualizerIntensity.calm,
+        tuning: <String, Object?>{'inkFlash': 0.0},
+      );
     });
   });
 }

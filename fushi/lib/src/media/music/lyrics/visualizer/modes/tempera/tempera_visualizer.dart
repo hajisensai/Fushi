@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -15,13 +16,14 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_ink.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_palette.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_scene.dart';
-import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart'
-    show musicLyricsBackdropCoverProvider;
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 参数键（落库，冻结；与 folia `TemperaTuning` 同名，封面图层是本移植新增）。
@@ -37,6 +39,14 @@ const String kTemperaTextInversion = 'textInversion';
 const String kTemperaTransitions = 'enableTransitions';
 const String kTemperaCoverLayer = 'coverLayer';
 const String kTemperaLayerFrequency = 'layerImageFrequency';
+const String kTemperaLayerPack = 'layerImagePack';
+const String kTemperaInkFlash = 'inkFlash';
+
+/// 凝彩素材目录名（`visualizer_assets/tempera/<包>/`）。
+const String kTemperaAssetStyle = 'tempera';
+
+/// 一个图层包最多几张（folia `TEMPERA_MAX_LAYER_IMAGES`）。
+const int kTemperaMaxLayerImages = 16;
 const String kTemperaLayerDepth = 'layerImageDepth';
 const String kTemperaLayerScale = 'layerImageScale';
 const String kTemperaLayerOpacity = 'layerImageOpacity';
@@ -117,6 +127,13 @@ final List<LyricVisualizerTuningSpec> temperaTunings =
         key: kTemperaCoverLayer,
         label: () => t.music_visualizer_tempera_cover_layer,
         initial: false,
+      ),
+      // folia 用户上传的画布图层：图片进素材包，与封面图层一起组成图片池。
+      LyricVisualizerAssetPackSpec(
+        key: kTemperaLayerPack,
+        label: () => t.music_visualizer_tempera_layer_images,
+        style: kTemperaAssetStyle,
+        maxFiles: kTemperaMaxLayerImages,
       ),
       LyricVisualizerSliderSpec(
         key: kTemperaLayerFrequency,
@@ -200,6 +217,14 @@ final List<LyricVisualizerTuningSpec> temperaTunings =
         max: 2,
         initial: 0.85,
       ),
+      // folia 智能动感模式「墨染奥行」的强度（0 = 关）；随拍点出墨，没有节拍数据时不画。
+      LyricVisualizerSliderSpec(
+        key: kTemperaInkFlash,
+        label: () => t.music_visualizer_tempera_ink_flash,
+        min: 0,
+        max: 2,
+        initial: 1,
+      ),
     ];
 
 /// 注册项。
@@ -209,7 +234,9 @@ final LyricVisualizerEntry temperaVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_tempera_description,
   icon: FushiIcons.formatShapes,
   tunings: temperaTunings,
-  sharedBackdrop: true,
+  // folia 凝彩不指定背景：画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => TemperaVisualizer(context: c),
 );
@@ -245,7 +272,26 @@ TemperaSettings temperaSettingsOf(LyricVisualizerTuning tuning) {
     grain: tuning.number(kTemperaGrain, d.grain),
     contrast: tuning.number(kTemperaContrast, d.contrast),
     vignette: tuning.number(kTemperaVignette, d.vignette),
+    inkFlash: tuning.number(kTemperaInkFlash, d.inkFlash),
   );
+}
+
+/// 主题强度对镜头与逐字动势的倍数（folia `resolveAnimationScale`）。
+double temperaAnimationScale(LyricVisualizerIntensity intensity) =>
+    switch (intensity) {
+      LyricVisualizerIntensity.calm => 0.65,
+      LyricVisualizerIntensity.normal => 1,
+      LyricVisualizerIntensity.chaotic => 1.35,
+    };
+
+/// 墨染的击打（显示时间秒）：音频分析的拍点（音频时间）加上整首偏移，再按最小间隔筛。没有节拍网格
+/// 为空（folia：这首歌还没有鼓点时整层隐藏）。
+List<double> temperaInkHitsOf(LyricVisualizerContext c) {
+  final LyricVisualizerAudio? a = c.audio;
+  if (a == null || !a.beatsReady) return const <double>[];
+  return temperaInkFlashHits(<double>[
+    for (final int t in a.beatTimesMs) c.displayTimeOfAudio(t) / 1000,
+  ]);
 }
 
 /// 封面取色（gradient 模式用）：粗量化成 512 桶，按像素数取最多 4 个彼此拉得开的颜色。
@@ -316,17 +362,28 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
   List<Color> _coverColors = const <Color>[];
   int _coverToken = 0;
 
+  String? _pack;
+  int _packToken = 0;
+  final List<LyricVisualizerImageLoader> _layerLoaders =
+      <LyricVisualizerImageLoader>[];
+  LyricVisualizerAudio? _inkAudio;
+  int? _inkOffset;
+  bool _inkReady = false;
+  List<double> _inkHits = const <double>[];
+
   @override
   void initState() {
     super.initState();
     _engine = TemperaEngine(_buildConfig());
     _loadCover();
+    _loadPack();
   }
 
   @override
   void didUpdateWidget(covariant TemperaVisualizer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.context.coverPath != _coverPath) _loadCover();
+    if (_packOf(widget.context) != _pack) _loadPack();
     _engine.config = _buildConfig();
     _revision++;
   }
@@ -335,6 +392,7 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
   void dispose() {
     _detachCover();
     _coverInfo?.dispose();
+    _clearLayers();
     _engine.dispose();
     super.dispose();
   }
@@ -365,6 +423,16 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
         coverColors: _coverColors,
       );
     }
+    final LyricVisualizerAudio? audio = c.audio;
+    final bool ready = audio?.beatsReady ?? false;
+    if (!identical(audio, _inkAudio) ||
+        _inkOffset != c.offsetMs ||
+        _inkReady != ready) {
+      _inkAudio = audio;
+      _inkOffset = c.offsetMs;
+      _inkReady = ready;
+      _inkHits = temperaInkHitsOf(c);
+    }
     return TemperaSceneConfig(
       program: _program!,
       programSeed: programSeed,
@@ -374,10 +442,54 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
       fontScale: c.fontScale,
       cornerColor: c.palette.text,
       cover: _coverInfo?.image,
+      layerImages: <ui.Image>[
+        for (final LyricVisualizerImageLoader l in _layerLoaders)
+          if (l.image != null) l.image!,
+      ],
       title: c.title,
       artist: c.artist,
       album: c.album,
+      theme: c.theme,
+      animationScale: temperaAnimationScale(c.intensity),
+      inkHits: _inkHits,
     );
+  }
+
+  static String _packOf(LyricVisualizerContext c) =>
+      c.tuning.assetPack(kTemperaLayerPack, 'default');
+
+  void _clearLayers() {
+    for (final LyricVisualizerImageLoader l in _layerLoaders) {
+      l
+        ..removeListener(_refresh)
+        ..dispose();
+    }
+    _layerLoaders.clear();
+  }
+
+  /// 读素材包里的图层图片（folia 用户上传的画布图层）。素材库不可用（无数据目录）时按空包处理。
+  void _loadPack() {
+    final String pack = _packOf(widget.context);
+    _pack = pack;
+    final int token = ++_packToken;
+    _clearLayers();
+    unawaited(() async {
+      List<File> files;
+      try {
+        final LyricVisualizerAssetStore store =
+            await LyricVisualizerAssetStore.open();
+        files = await store.list(kTemperaAssetStyle, pack);
+      } on Object {
+        files = const <File>[];
+      }
+      if (!mounted || token != _packToken) return;
+      for (final File f in files.take(kTemperaMaxLayerImages)) {
+        final LyricVisualizerImageLoader loader = LyricVisualizerImageLoader()
+          ..addListener(_refresh);
+        _layerLoaders.add(loader);
+        loader.load(f.path);
+      }
+    }());
   }
 
   void _detachCover() {
@@ -394,9 +506,7 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
     _coverInfo = null;
     _coverColors = const <Color>[];
     _coverToken++;
-    final ImageProvider? provider = musicLyricsBackdropCoverProvider(
-      _coverPath,
-    );
+    final ImageProvider? provider = lyricVisualizerCoverProvider(_coverPath);
     if (provider == null) return;
     final ImageStream stream = provider.resolve(ImageConfiguration.empty);
     final ImageStreamListener listener = ImageStreamListener(

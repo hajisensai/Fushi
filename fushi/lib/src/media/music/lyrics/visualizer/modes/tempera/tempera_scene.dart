@@ -17,6 +17,8 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_co
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_geometry.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_motion.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_ink.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_palette.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/tempera/tempera_random.dart';
@@ -48,6 +50,7 @@ class TemperaSettings {
     this.grain = 0.2,
     this.contrast = 0,
     this.vignette = 0.85,
+    this.inkFlash = 1,
   });
 
   final double cameraIntensity;
@@ -74,6 +77,9 @@ class TemperaSettings {
   final double contrast;
   final double vignette;
 
+  /// 墨染（随鼓点的墨渍）强度 0–2；0 = 关。
+  final double inkFlash;
+
   /// 改了要重建场景的参数（其余逐帧读）。
   Object get sceneKey => (
     colorMode,
@@ -93,9 +99,15 @@ class TemperaSettings {
 // ---------------------------------------------------------------------------
 
 /// 凝彩用的字体样式（folia 取主题字体、字重 600）。
-TextStyle temperaTextStyle(double fontSize, Color color) => TextStyle(
+TextStyle temperaTextStyle(
+  double fontSize,
+  Color color, {
+  String? fontFamily,
+  FontWeight? fontWeight,
+}) => TextStyle(
   fontSize: fontSize,
-  fontWeight: FontWeight.w600,
+  fontFamily: fontFamily,
+  fontWeight: fontWeight ?? FontWeight.w600,
   color: color,
   height: 1,
 );
@@ -108,6 +120,24 @@ class TemperaTextCache {
   static const int _widthLimit = 20000;
   static const int _painterLimit = 1600;
 
+  String? _fontFamily;
+  FontWeight? _fontWeight;
+
+  /// 换主题字体（folia `resolveThemeFontStack` / 主题字重）：变了就清掉量宽与画笔缓存。
+  void setFont(String? family, FontWeight? weight) {
+    if (family == _fontFamily && weight == _fontWeight) return;
+    _fontFamily = family;
+    _fontWeight = weight;
+    dispose();
+  }
+
+  TextStyle _style(double fontSize, Color color) => temperaTextStyle(
+    fontSize,
+    color,
+    fontFamily: _fontFamily,
+    fontWeight: _fontWeight,
+  );
+
   /// 一段文字在 [fontSize] 下的宽度。
   double measure(String text, double fontSize) {
     final String key = '$fontSize|$text';
@@ -116,7 +146,7 @@ class TemperaTextCache {
     final TextPainter tp = TextPainter(
       text: TextSpan(
         text: text,
-        style: temperaTextStyle(fontSize, const Color(0xFF000000)),
+        style: _style(fontSize, const Color(0xFF000000)),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
@@ -139,7 +169,7 @@ class TemperaTextCache {
       _painters.clear();
     }
     final TextPainter tp = TextPainter(
-      text: TextSpan(text: text, style: temperaTextStyle(fontSize, color)),
+      text: TextSpan(text: text, style: _style(fontSize, color)),
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
@@ -217,11 +247,33 @@ List<double> temperaGlyphDepths(List<double> fontSizes) {
 }
 
 class _GlyphView {
-  _GlyphView(this.p, this.depth) : motion = p.motion;
+  _GlyphView(this.p, this.depth, [this.keyword]) : motion = p.motion;
 
   final TemperaGlyphPlacement p;
   final TemperaGlyphMotionInput motion;
   final double depth;
+
+  /// 主题关键词色（folia keywordLayer）：命中的字不参与反色，画在文字层之上。
+  final Color? keyword;
+}
+
+/// 一行各词段的关键词色（folia `buildWordColorRangesFromMatchers` + 区间求交）：词段的字形区间换成
+/// 行内 UTF-16 偏移，与主题着色范围重叠就取那个颜色。
+List<Color?> temperaSegmentKeywordColors(
+  TemperaCompiledLine line,
+  List<LyricVisualizerWordColorRange> ranges,
+) {
+  if (ranges.isEmpty) {
+    return List<Color?>.filled(line.segments.length, null);
+  }
+  final List<Color?> out = <Color?>[];
+  int offset = 0;
+  for (final TemperaSegment s in line.segments) {
+    final int start = offset;
+    offset += s.text.length;
+    out.add(LyricVisualizerTheme.colorForSpan(ranges, start, offset));
+  }
+  return out;
 }
 
 /// 封面图层在一个分镜里的落位（folia `resolveTemperaImagePlacement`，pool 只有封面）。
@@ -234,8 +286,9 @@ class _CoverPlacement {
     this.opacity,
     this.flip,
     this.creepScale,
-    this.front,
-  );
+    this.front, [
+    this.image = 0,
+  ]);
 
   final double x;
   final double y;
@@ -245,10 +298,26 @@ class _CoverPlacement {
   final bool flip;
   final double creepScale;
   final bool front;
+
+  /// 图层图片池里的下标。
+  final int image;
 }
 
-_CoverPlacement? _resolveCover(TemperaSettings s, int seed) {
-  if (!s.coverLayer) return null;
+/// 本分镜挑哪张图（folia：相邻两个分镜不落同一张）。[pool] 张数；没有图为 -1。
+int temperaPickLayerImage(int seed, int pool, int previous) {
+  if (pool <= 0) return -1;
+  int pick = (temperaHash01(seed, 9, 281) * pool).floor() % pool;
+  if (pool > 1 && pick == previous) pick = (pick + 1) % pool;
+  return pick;
+}
+
+_CoverPlacement? _resolveCover(
+  TemperaSettings s,
+  int seed,
+  int pool,
+  int previous,
+) {
+  if (pool <= 0) return null;
   if (temperaHash01(seed, 6, 277) >= s.layerFrequency.clamp(0.0, 1.0)) {
     return null;
   }
@@ -262,6 +331,7 @@ _CoverPlacement? _resolveCover(TemperaSettings s, int seed) {
     temperaHash01(seed, 5, 271) > 0.5,
     0.6 + temperaHash01(seed, 8, 283) * 0.8,
     s.layerFront,
+    temperaPickLayerImage(seed, pool, previous),
   );
 }
 
@@ -353,9 +423,13 @@ class TemperaSceneConfig {
     required this.fontScale,
     required this.cornerColor,
     this.cover,
+    this.layerImages = const <ui.Image>[],
     this.title,
     this.artist,
     this.album,
+    this.theme,
+    this.animationScale = 1,
+    this.inkHits = const <double>[],
   });
 
   final TemperaProgram program;
@@ -366,9 +440,27 @@ class TemperaSceneConfig {
   final double fontScale;
   final Color cornerColor;
   final ui.Image? cover;
+
+  /// 用户素材包里的图层图片（folia 用户上传的画布图层）。
+  final List<ui.Image> layerImages;
   final String? title;
   final String? artist;
   final String? album;
+
+  /// AI 主题（关键词着色、字体）。
+  final LyricVisualizerTheme? theme;
+
+  /// 主题强度倍数（folia `resolveAnimationScale`）：乘在镜头与逐字动势上。
+  final double animationScale;
+
+  /// 墨染的击打（显示时间秒，已按最小间隔筛过）；空 = 没有节拍数据，不画墨。
+  final List<double> inkHits;
+
+  /// 图层图片池：封面图层开着时封面在前，再接素材包。
+  List<ui.Image> get layerPool => <ui.Image>[
+    if (settings.coverLayer && cover != null) cover!,
+    ...layerImages,
+  ];
 }
 
 /// 凝彩的场景缓存 + 逐帧绘制。
@@ -381,6 +473,11 @@ class TemperaEngine {
   Size _size = Size.zero;
   _Credits? _credits;
   bool _creditsBuilt = false;
+  final TemperaInkLayer _ink = TemperaInkLayer();
+
+  /// 景深与运镜的混合量：开关切换时 0.6 秒内缓入缓出（folia `depthMix`）。
+  double _depthMix = -1;
+  double? _depthMixAt;
 
   TemperaSceneConfig get config => _config;
 
@@ -394,11 +491,21 @@ class TemperaEngine {
         prev.motion != next.motion ||
         prev.fontScale != next.fontScale ||
         !identical(prev.cover, next.cover) ||
+        !_sameImages(prev.layerImages, next.layerImages) ||
+        prev.theme != next.theme ||
         prev.title != next.title ||
         prev.artist != next.artist ||
         prev.album != next.album) {
       _invalidate();
     }
+  }
+
+  static bool _sameImages(List<ui.Image> a, List<ui.Image> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
   }
 
   void _invalidate() {
@@ -439,9 +546,21 @@ class TemperaEngine {
           )
         : null;
     final List<_ShotView> shots = <_ShotView>[];
+    final LyricVisualizerTheme? theme = c.theme;
+    final Map<int, List<Color?>> keywordsByLine = <int, List<Color?>>{
+      if (theme != null && theme.hasWordColors)
+        for (final TemperaCompiledLine l in paragraph.lines)
+          l.sourceIndex: temperaSegmentKeywordColors(
+            l,
+            theme.colorRangesFor(l.text),
+          ),
+    };
+    final int pool = c.layerPool.length;
+    int previousImage = -1;
     for (int i = 0; i < paragraph.shots.length; i++) {
       final TemperaShot shot = paragraph.shots[i];
       final List<List<TemperaSegment>> lines = <List<TemperaSegment>>[];
+      final List<List<Color?>> lineKeywords = <List<Color?>>[];
       for (final TemperaShotSlice slice in shot.slices) {
         TemperaCompiledLine? line;
         for (final TemperaCompiledLine l in paragraph.lines) {
@@ -453,11 +572,18 @@ class TemperaEngine {
         if (line == null) continue;
         final int start = slice.segmentStart.clamp(0, line.segments.length);
         final int end = slice.segmentEnd.clamp(start, line.segments.length);
-        final List<TemperaSegment> segs = line.segments
-            .sublist(start, end)
-            .where(temperaIsLayoutSegment)
-            .toList();
-        if (segs.isNotEmpty) lines.add(segs);
+        final List<Color?>? kw = keywordsByLine[line.sourceIndex];
+        final List<TemperaSegment> segs = <TemperaSegment>[];
+        final List<Color?> segColors = <Color?>[];
+        for (int k = start; k < end; k++) {
+          if (!temperaIsLayoutSegment(line.segments[k])) continue;
+          segs.add(line.segments[k]);
+          segColors.add(kw?[k]);
+        }
+        if (segs.isNotEmpty) {
+          lines.add(segs);
+          lineKeywords.add(segColors);
+        }
       }
       int maxGraphemes = 3;
       for (final List<TemperaSegment> segs in lines) {
@@ -516,24 +642,43 @@ class TemperaEngine {
           (double m, TemperaGlyphPlacement p) => math.max(m, p.settleTime),
         );
       }
+      final _CoverPlacement? image = _resolveCover(
+        s,
+        shotSeed,
+        pool,
+        previousImage,
+      );
+      if (image != null) previousImage = image.image;
       shots.add(
         _ShotView(
           shot: shot,
           blocks: TemperaBlocks(items, w, h, shot.flowAngle),
           glyphs: <_GlyphView>[
             for (int g = 0; g < placements.length; g++)
-              _GlyphView(placements[g], depths[g]),
+              _GlyphView(
+                placements[g],
+                depths[g],
+                _keywordOf(lineKeywords, placements[g]),
+              ),
           ],
           baseFontSize: baseFontSize,
           revealDoneTime: reveal,
           idHash: temperaHashSeed(shot.id),
-          cover: c.cover == null ? null : _resolveCover(s, shotSeed),
+          cover: image,
           textLeft: left.isFinite ? left : 0,
           textRight: right.isFinite ? right : w,
         ),
       );
     }
     return _SceneView(paragraph, shots, sceneSeed, screentone);
+  }
+
+  static Color? _keywordOf(List<List<Color?>> kw, TemperaGlyphPlacement p) {
+    if (p.lineIndex < 0 || p.lineIndex >= kw.length) return null;
+    final List<Color?> line = kw[p.lineIndex];
+    return p.segmentIndex >= 0 && p.segmentIndex < line.length
+        ? line[p.segmentIndex]
+        : null;
   }
 
   _Credits? _creditsPoster() {
@@ -561,6 +706,8 @@ class TemperaEngine {
       _invalidate();
     }
     final TemperaSceneConfig c = _config;
+    _text.setFont(c.theme?.fontFamily, c.theme?.fontWeight);
+    _stepDepthMix(elapsed);
     final List<TemperaParagraph> paragraphs = c.program.paragraphs;
     final double w = size.width, h = size.height;
     canvas.save();
@@ -613,10 +760,39 @@ class TemperaEngine {
           size,
         );
       }
+      // 墨在场景与片尾之上、边角线框之下（folia 舞台顺序）。
+      if (!_static) {
+        _ink.paint(
+          canvas,
+          size,
+          time,
+          hits: c.inkHits,
+          strength: c.settings.inkFlash,
+          paragraphIndex: index,
+          ink: c.palette.accent,
+        );
+      }
     }
     if (c.settings.cornerMarks) _paintCornerMarks(canvas, w, h, c.cornerColor);
     canvas.restore();
   }
+
+  void _stepDepthMix(double elapsed) {
+    final double target = _config.settings.depth && !_static ? 1 : 0;
+    final double? last = _depthMixAt;
+    _depthMixAt = elapsed;
+    if (_depthMix < 0 || last == null || _static) {
+      _depthMix = target;
+      return;
+    }
+    final double step = (elapsed - last).clamp(0.0, 0.1) / 0.6;
+    _depthMix = target > _depthMix
+        ? math.min(target, _depthMix + step)
+        : math.max(target, _depthMix - step);
+  }
+
+  /// 测试 / 诊断：当前景深混合量。
+  double get depthMix => _depthMix;
 
   void _paintScene(
     Canvas canvas,
@@ -697,8 +873,8 @@ class TemperaEngine {
     final bool still = _static;
     final double duration = math.max(shot.endTime - shot.startTime, 0.001);
     final double rawProgress = (time - shot.startTime) / duration;
-    final double camera = still ? 0 : s.cameraIntensity;
-    final double motion = still ? 0 : s.glyphMotion;
+    final double camera = still ? 0 : s.cameraIntensity * c.animationScale;
+    final double motion = still ? 0 : s.glyphMotion * c.animationScale;
     final TemperaCameraFrame frame = temperaCameraFrame(shot, rawProgress);
     final double breathWeight = temperaBreathWeight(time, view.revealDoneTime);
     if (breathWeight > 0) {
@@ -719,7 +895,7 @@ class TemperaEngine {
           );
     final double exit = still ? 0 : temperaEaseInOut(_shotExit(shot, time));
     final double travel = exit * span * 0.55 - (1 - enter) * span * 0.32;
-    final double depthMix = s.depth && !still ? 1 : 0;
+    final double depthMix = still ? 0 : math.max(0, _depthMix);
     final (double panX, double panY) =
         _panDirections[(view.idHash >>> 5) % _panDirections.length];
     final double panEnter =
@@ -833,6 +1009,7 @@ class TemperaEngine {
             double shade,
           )
           in frames) {
+        if (g.keyword != null) continue;
         _paintGlyph(
           canvas,
           g.p,
@@ -852,6 +1029,7 @@ class TemperaEngine {
           double shade,
         )
         in frames) {
+      if (g.keyword != null) continue;
       _paintGlyph(
         canvas,
         g.p,
@@ -880,6 +1058,27 @@ class TemperaEngine {
     if (recolor) {
       _recolorText(canvas, view, big);
       canvas.restore();
+    }
+    // 关键词层：主题色原样落下，不反色。
+    for (final (
+          _GlyphView g,
+          TemperaGlyphMotionFrame f,
+          double dx,
+          double dy,
+          double shade,
+        )
+        in frames) {
+      final Color? k = g.keyword;
+      if (k == null) continue;
+      _paintGlyph(
+        canvas,
+        g.p,
+        f,
+        g.p.x + f.x + dx,
+        g.p.y + f.y + dy,
+        k,
+        f.alpha * shade,
+      );
     }
     // 残影层（近景）
     if (s.showDecor && !still) {
@@ -980,8 +1179,10 @@ class TemperaEngine {
     double offsetY,
     double blur,
   ) {
-    final ui.Image? image = _config.cover;
-    if (image == null || image.height <= 0) return;
+    final List<ui.Image> pool = _config.layerPool;
+    if (cover.image < 0 || cover.image >= pool.length) return;
+    final ui.Image image = pool[cover.image];
+    if (image.height <= 0) return;
     final double w = _size.width, h = _size.height;
     final TemperaShot shot = view.shot;
     final double duration = math.max(shot.endTime - shot.startTime, 0.2);
