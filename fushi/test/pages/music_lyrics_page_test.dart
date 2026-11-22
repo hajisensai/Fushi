@@ -503,11 +503,71 @@ void main() {
       'music-player-real-disc',
     );
     expect(find.byKey(realDisc), findsOneWidget);
+    // 中心轴孔挖空（扫描图孔里的底板白不再露出来）。
+    final ClipPath hole = tester.widget<ClipPath>(
+      find
+          .descendant(of: find.byKey(realDisc), matching: find.byType(ClipPath))
+          .first,
+    );
+    final Path clip = hole.clipper!.getClip(const Size(400, 400));
+    expect(clip.contains(const Offset(200, 200)), isFalse);
+    expect(clip.contains(const Offset(200, 20)), isTrue);
 
     // 盘面图映射里没有这张专辑：回退黑胶。
     MusicDiscArtIndex.instance.publish(const <String, String>{});
     await tester.pump();
     expect(find.byKey(realDisc), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('分栏布局：唱片压在封面上（有盘面扫描图转真盘面，没有转银色 CD）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1424, 951);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await app.prefsRepo.setMusicLyricsLayout(MusicLyricsLayout.split.prefValue);
+    final String disc = '${dir.path}${Platform.pathSeparator}disc.png';
+    File(disc).writeAsBytesSync(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      ),
+    );
+    addTearDown(
+      () => MusicDiscArtIndex.instance.publish(const <String, String>{}),
+    );
+    MusicDiscArtIndex.instance.publish(<String, String>{'al-1': disc});
+    await app.musicSession.engine.playQueue(<MusicPlayItem>[
+      MusicPlayItem(
+        trackUid: 'uid-1',
+        path: '${dir.path}${Platform.pathSeparator}song.flac',
+        title: 'Night Run',
+        albumUid: 'al-1',
+        durationMs: 60000,
+      ),
+    ]);
+    await app.musicSession.engine.pause();
+    await pumpPage(tester);
+    const ValueKey<String> sleeve = ValueKey<String>(
+      'music-player-sleeve-disc',
+    );
+    expect(find.byKey(sleeve), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(sleeve),
+        matching: find.byKey(const ValueKey<String>('music-player-real-disc')),
+      ),
+      findsOneWidget,
+    );
+
+    // 没有盘面扫描图：转银色 CD 盘，不是黑胶。
+    MusicDiscArtIndex.instance.publish(const <String, String>{});
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(sleeve),
+        matching: find.byKey(const ValueKey<String>('music-player-silver-cd')),
+      ),
+      findsOneWidget,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
