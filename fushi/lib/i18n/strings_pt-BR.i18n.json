@@ -1871,6 +1871,7 @@
   "batch_tag_removed_video": "Tag \"$name\" removida de $n vídeo(s).",
   "batch_tag_title": "Gerenciar tags",
   "book_archive_import_importing": "Importing $name…",
+  "book_archive_import_manga_handoff": "Page images only — continues in manga import",
   "book_archive_import_no_books": "No EPUB, PDF or TXT inside",
   "book_archive_import_problem_item": "$name: $reason",
   "book_archive_import_result": "Imported $imported · already on the shelf $skipped · failed $failed",

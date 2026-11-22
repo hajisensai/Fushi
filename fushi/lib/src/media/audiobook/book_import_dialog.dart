@@ -340,6 +340,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       context: context,
       db: widget.db,
       paths: archives,
+      // 与本框的 [_handoffIfManga] 同口径：书籍框认出漫画就转交漫画导入，不另查模块开关。
+      mangaEnabled: true,
     );
     if (mounted) Navigator.pop(context, imported);
     return true;

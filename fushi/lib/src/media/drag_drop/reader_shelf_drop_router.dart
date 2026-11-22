@@ -151,7 +151,9 @@ Future<void> routeReaderShelfDrop({
       }
       unawaited(actions.openMangaImportPrefilled(mangaPaths: files.mangas));
     case DropIntent.importBookArchive:
-      // 一包书：解包后整批导入、给一份汇总。同批拖入的单本书一起交进去，不静默丢掉。
+      // 一包书 / 列不出名字的包（.7z、分卷第一卷）：解开一次按内容分流——书整批导入给一份
+      // 汇总，只有页图的交漫画导入（漫画模块关着时汇总里如实说明）。同批拖入的单本书一起
+      // 交进去，不静默丢掉。
       unawaited(
         actions.openBookArchiveImport(<String>[
           ...files.bookArchives,
@@ -293,12 +295,14 @@ class _ReaderShelfDropActions {
     }
   }
 
-  /// 拖入装着一批书的压缩包 → 解包整批导入（[showBookArchiveImportDialog]），一份汇总。
+  /// 拖入装着一批书的压缩包 → 解包整批导入（[showBookArchiveImportDialog]），一份汇总；
+  /// 解开是页图的包交漫画导入。
   Future<void> openBookArchiveImport(List<String> paths) async {
     final bool imported = await showBookArchiveImportDialog(
       context: context,
       db: appModel.database,
       paths: paths,
+      mangaEnabled: appModel.moduleVisibility.isEnabled(ModuleId.manga),
     );
     if (imported && context.mounted) onLibraryChanged();
   }

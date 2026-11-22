@@ -11,6 +11,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/book_archive_import_dialog.dart';
+import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -173,6 +174,128 @@ void main() {
     expect(find.byType(BookArchiveImportDialog), findsNothing);
     expect(find.byType(BookImportDialog), findsNothing);
     expect(bookDialogResult, isTrue);
+  });
+
+  testWidgets('拖分卷页图包（.zip.001，名字列不出来）进书籍导入框：解开一次，页图目录直接交漫画导入框，'
+      '书名取包名；漫画框关掉后删暂存', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 1000);
+    addTearDown(tester.view.reset);
+
+    final Directory root = Directory.systemTemp.createTempSync(
+      'book_archive_manga_',
+    );
+    final Archive pack = Archive();
+    for (int i = 1; i <= 6; i++) {
+      final List<int> bytes = utf8.encode('jpg$i');
+      pack.addFile(
+        ArchiveFile(
+          '第1巻/${i.toString().padLeft(3, '0')}.jpg',
+          bytes.length,
+          bytes,
+        ),
+      );
+    }
+    final List<int> zipBytes = ZipEncoder().encode(pack)!;
+    final int half = zipBytes.length ~/ 2;
+    final File first = File(p.join(root.path, '第1巻.zip.001'))
+      ..writeAsBytesSync(zipBytes.sublist(0, half));
+    File(
+      p.join(root.path, '第1巻.zip.002'),
+    ).writeAsBytesSync(zipBytes.sublist(half));
+
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final String library = p.join(root.path, 'library');
+    EpubStorage.debugBaseDirectoryOverride = library;
+    addTearDown(() async {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      await db.close();
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    bool? bookDialogResult;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () async {
+                    bookDialogResult = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute<bool>(
+                        builder: (_) => Scaffold(
+                          body: BookImportDialog(
+                            repo: SrtBookRepository(db),
+                            audiobookRepo: AudiobookRepository(db),
+                            db: db,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    final FushiFileDropTarget dropTarget = tester.widget<FushiFileDropTarget>(
+      find.byType(FushiFileDropTarget),
+    );
+    unawaited(
+      Future<void>.sync(
+        () => dropTarget.onDrop(<String>[first.path], Offset.zero),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      condition: () async =>
+          find.byType(MangaImportDialog).evaluate().isNotEmpty,
+    );
+    // 不停在一份「包里没有书」的空汇总上：批量导入框已关、漫画框接手。
+    expect(find.byType(BookArchiveImportDialog), findsNothing);
+    expect(find.text(t.book_archive_import_no_books), findsNothing);
+    final MangaImportDialog manga = tester.widget<MangaImportDialog>(
+      find.byType(MangaImportDialog),
+    );
+    final String pagesDir = manga.initialPaths.single;
+    expect(p.basename(pagesDir), '第1巻');
+    expect(p.isWithin(library, pagesDir), isTrue);
+    expect(
+      Directory(pagesDir)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.jpg')),
+      hasLength(6),
+    );
+    // 漫画框把它认成页图目录，书名取包名。
+    await _pumpUntil(
+      tester,
+      condition: () async => tester
+          .widgetList<EditableText>(find.byType(EditableText))
+          .any((EditableText e) => e.controller.text == '第1巻'),
+    );
+
+    Navigator.of(tester.element(find.byType(MangaImportDialog))).pop(false);
+    // 漫画框关掉 → 暂存删完 → 书籍框跟着关（页面路由的退场动画要推进假时钟）。
+    await _pumpUntil(tester, condition: () async => bookDialogResult != null);
+    await tester.pumpAndSettle();
+    expect(find.byType(BookImportDialog), findsNothing);
+    expect(bookDialogResult, isFalse);
+    // 暂存解包目录（书库根下的 `.tmp-*`）随漫画框关掉删掉。
+    expect(Directory(pagesDir).existsSync(), isFalse);
+    expect(
+      Directory(library).listSync().where(
+        (FileSystemEntity e) => p.basename(e.path).startsWith('.tmp'),
+      ),
+      isEmpty,
+    );
   });
 
   testWidgets('汇总列出没解开的包与导入失败的书', (WidgetTester tester) async {

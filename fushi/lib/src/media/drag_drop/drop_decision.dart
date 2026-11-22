@@ -21,9 +21,9 @@ enum DropIntent {
   /// 单列一个意图只为给明确提示，不再静默无反应。
   unsupportedMangaArchive,
 
-  /// 拖入装着一批书的压缩包（[DroppedFiles.bookArchives]）→ 解包后整批导入，一包多本给
-  /// 一份汇总结果（拍板 83Fe7zQbhv）。books 与 manga 两个表面都产出它；同批拖入的单本书
-  /// 一并交给这次批量导入，不被静默丢掉。
+  /// 拖入装着一批书的压缩包、或列不出名字的包（[DroppedFiles.bookArchives]）→ 解开一次
+  /// 按内容分流：书整批导入、一包多本给一份汇总；只有页图的交漫画导入（拍板 83Fe7zQbhv）。
+  /// books 与 manga 两个表面都产出它；同批拖入的单本书一并交给这次批量导入，不被静默丢掉。
   importBookArchive,
 
   importNewVideo,

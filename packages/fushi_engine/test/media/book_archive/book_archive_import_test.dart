@@ -111,7 +111,7 @@ void main() {
       expect(await looksLikeBookArchive('/x/a.epub'), isFalse);
     });
 
-    test('rar 经 7-Zip 列目录定性；没有 7-Zip 判不出 → false', () async {
+    test('rar 经 7-Zip 列目录定性；没有 7-Zip 列不出名字 → 交解包后定性', () async {
       const String listing =
           '7-Zip\n\n--\nPath = x.rar\nType = Rar\n\n----------\n'
           'Path = 合集\nFolder = +\n\nPath = 合集\\一.txt\nFolder = -\n\n'
@@ -134,7 +134,25 @@ void main() {
           '/x/x.rar',
           unpacker: ArchiveUnpacker(sevenZipOverride: ''),
         ),
-        isFalse,
+        isTrue,
+      );
+    });
+
+    test('rar 列目录时 7-Zip 子进程起不来（ProcessException）：不抛，按列不出名字交解包后定性', () async {
+      final ArchiveUnpacker unpacker = ArchiveUnpacker(
+        sevenZipOverride: r'C:\gone\7z.exe',
+        runProcess: (String exe, List<String> args, {String? stdin}) async =>
+            throw const ProcessException(
+              r'C:\gone\7z.exe',
+              <String>['l'],
+              'The system cannot find the file specified.',
+              2,
+            ),
+      );
+      expect(await unpacker.listEntryNamesWithCli('/x/x.rar'), isNull);
+      expect(
+        await looksLikeBookArchive('/x/x.rar', unpacker: unpacker),
+        isTrue,
       );
     });
   });
@@ -271,16 +289,76 @@ void main() {
       expectStagingCleaned();
     });
 
-    test('包里没有书 → archivesWithoutBooks', () async {
-      final File zip = writeZip('pages.zip', <String, String>{
-        '001.png': 'png',
+    test('包里既没有书也没有页图 → archivesWithoutBooks', () async {
+      final File zip = writeZip('misc.zip', <String, String>{
+        'readme.html': '<p>x</p>',
+        'index.json': '{}',
       });
       final BookArchiveImportSummary summary = await importer().importAll(
         <String>[zip.path],
       );
       expect(calls, isEmpty);
-      expect(summary.archivesWithoutBooks, <String>['pages.zip']);
+      expect(summary.archivesWithoutBooks, <String>['misc.zip']);
+      expect(summary.mangaHandoffs, isEmpty);
       expect(summary.hasProblems, isTrue);
+      expectStagingCleaned();
+    });
+
+    test('分卷第一卷解开是一包页图（夹一份 readme.txt）→ 交漫画导入：目录以包名命名、解一次、'
+        '暂存归交接方删', () async {
+      final File zip = writeZip('第1巻.zip', <String, String>{
+        for (int i = 1; i <= 12; i++)
+          'pages/${i.toString().padLeft(3, '0')}.jpg': 'jpg$i',
+        'readme.txt': 'scan by x',
+      });
+      final List<int> bytes = zip.readAsBytesSync();
+      zip.deleteSync();
+      final int half = bytes.length ~/ 2;
+      final String first = p.join(tmp.path, '第1巻.zip.001');
+      File(first).writeAsBytesSync(bytes.sublist(0, half));
+      File(
+        p.join(tmp.path, '第1巻.zip.002'),
+      ).writeAsBytesSync(bytes.sublist(half));
+
+      int extracts = 0;
+      final ArchiveUnpacker unpacker = ArchiveUnpacker();
+      final BookArchiveImporter counting = BookArchiveImporter(
+        importEpub: (String path) async => fail('not a book: $path'),
+        importText: (String path) async => fail('not a book: $path'),
+        importPdf: (String path) async => fail('not a book: $path'),
+        createStagingDir: () async {
+          extracts++;
+          final Directory dir = Directory(
+            p.join(tmp.path, 'library', '.tmp-$extracts'),
+          )..createSync(recursive: true);
+          stagingDirs.add(dir.path);
+          return dir.path;
+        },
+        unpacker: unpacker,
+      );
+      final BookArchiveImportSummary summary = await counting.importAll(
+        <String>[first],
+      );
+
+      expect(extracts, 1, reason: '只解一次');
+      expect(summary.items, isEmpty);
+      expect(summary.archivesWithoutBooks, isEmpty);
+      expect(summary.hasProblems, isFalse);
+      expect(summary.onlyMangaHandoffs, isTrue);
+      final BookArchiveMangaHandoff handoff = summary.mangaHandoffs.single;
+      expect(handoff.archiveName, '第1巻.zip.001');
+      expect(p.basename(handoff.directory), '第1巻');
+      expect(p.isWithin(handoff.stagingRoot, handoff.directory), isTrue);
+      final List<String> pages = <String>[
+        for (final FileSystemEntity e in Directory(
+          handoff.directory,
+        ).listSync(recursive: true))
+          if (e is File) p.basename(e.path),
+      ]..sort();
+      expect(pages.where((String n) => n.endsWith('.jpg')), hasLength(12));
+      // 交接后暂存还在（漫画导入要从这里拷页图），交接方 discard 才删。
+      expect(Directory(handoff.directory).existsSync(), isTrue);
+      await handoff.discard();
       expectStagingCleaned();
     });
   });

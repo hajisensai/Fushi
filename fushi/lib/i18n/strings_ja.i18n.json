@@ -1871,6 +1871,7 @@
   "batch_tag_removed_video": "$n 本の動画からタグ「$name」を削除しました。",
   "batch_tag_title": "タグを一括管理",
   "book_archive_import_importing": "$name を取り込み中…",
+  "book_archive_import_manga_handoff": "Page images only — continues in manga import",
   "book_archive_import_no_books": "EPUB・PDF・TXT が入っていません",
   "book_archive_import_problem_item": "$name：$reason",
   "book_archive_import_result": "取り込み $imported 冊 · 本棚に既存 $skipped 冊 · 失敗 $failed 冊",
