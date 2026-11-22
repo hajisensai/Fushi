@@ -8406,6 +8406,8 @@
   "popup_no_audio_available": "Geen audio beschikbaar",
   "popup_sentence_context_next_label": "Na",
   "popup_sentence_context_prev_label": "Vóór",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "Popup-scrollsnelheid",
   "popup_wheel_speed_hint": "Muiswiel-scrollsnelheid voor de woordenboekpopup (geldt ook voor de browserextensie).",
   "prev_sentence": "Vorige zin",

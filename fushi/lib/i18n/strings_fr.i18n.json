@@ -8406,6 +8406,8 @@
   "popup_no_audio_available": "Aucun audio disponible",
   "popup_sentence_context_next_label": "Après",
   "popup_sentence_context_prev_label": "Avant",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "Vitesse de défilement du pop-up",
   "popup_wheel_speed_hint": "Vitesse de défilement à la molette pour le pop-up du dictionnaire (s'applique aussi à l'extension navigateur).",
   "prev_sentence": "Phrase précédente",

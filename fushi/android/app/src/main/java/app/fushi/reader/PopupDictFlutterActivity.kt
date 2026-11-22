@@ -25,6 +25,9 @@ class PopupDictFlutterActivity : FlutterActivity() {
          */
         const val EXTRA_CHAR_INDEX: String = "charIndex"
 
+        /** Initial source visibility for this request only; never changes mining context. */
+        const val EXTRA_SOURCE_TEXT_COLLAPSED: String = "sourceTextCollapsed"
+
         /**
          * Intent extras carrying the tapped glyph's on-screen rectangle (physical
          * px) from the floating lyric/subtitle strip (TODO-872). Defined here, the
@@ -143,7 +146,10 @@ class PopupDictFlutterActivity : FlutterActivity() {
         val anchor: IntArray? = extractAnchorRect(intent)
         val subtitle: IntArray? = extractSubtitleRect(intent)
         val sourceBlock: PopupEngineHolder.SourceBlock? = extractSourceBlock(intent)
-        PopupEngineHolder.setPendingText(text, charIndex, anchor, subtitle, sourceBlock)
+        PopupEngineHolder.setPendingText(
+            text, charIndex, anchor, subtitle, sourceBlock,
+            sourceTextCollapsed = intent?.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false) == true,
+        )
         engineWasCold = PopupEngineHolder.ensureEngine(this)
         PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
@@ -155,11 +161,17 @@ class PopupDictFlutterActivity : FlutterActivity() {
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
-            PopupEngineHolder.pushProcessText(text, charIndex, anchor, subtitle, sourceBlock)
+            PopupEngineHolder.pushProcessText(
+                text, charIndex, anchor, subtitle, sourceBlock,
+                sourceTextCollapsed = intent?.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false) == true,
+            )
             // 悬浮球空查词窗：热引擎上把空词也推过去，清掉上一次的词。剪贴板查词等拿到
             // 焦点读完剪贴板再决定推什么，避免先清空再填词闪一下。
             if (text.isBlank() && !clipboardReadPending && wantsEmptySearch(intent)) {
-                PopupEngineHolder.pushProcessText("", allowBlank = true)
+                PopupEngineHolder.pushProcessText(
+                    "", allowBlank = true,
+                    sourceTextCollapsed = intent?.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false) == true,
+                )
             }
         }
     }
@@ -187,10 +199,14 @@ class PopupDictFlutterActivity : FlutterActivity() {
             extractAnchorRect(intent),
             extractSubtitleRect(intent),
             extractSourceBlock(intent),
+            sourceTextCollapsed = intent.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false),
         )
         clipboardReadPending = intent.getBooleanExtra(EXTRA_READ_CLIPBOARD, false)
         if (text.isBlank() && !clipboardReadPending && wantsEmptySearch(intent)) {
-            PopupEngineHolder.pushProcessText("", allowBlank = true)
+            PopupEngineHolder.pushProcessText(
+                "", allowBlank = true,
+                sourceTextCollapsed = intent.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false),
+            )
         }
         // singleTop 复用时窗口可能一直有焦点，onWindowFocusChanged 不会再来。
         if (hasWindowFocus()) consumeClipboardRequest()
@@ -211,9 +227,15 @@ class PopupDictFlutterActivity : FlutterActivity() {
         clipboardReadPending = false
         val clip: String = readClipboardText().trim()
         if (clip.isNotEmpty()) {
-            PopupEngineHolder.pushProcessText(clip)
+            PopupEngineHolder.pushProcessText(
+                clip,
+                sourceTextCollapsed = intent?.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false) == true,
+            )
         } else {
-            PopupEngineHolder.pushProcessText("", allowBlank = true)
+            PopupEngineHolder.pushProcessText(
+                "", allowBlank = true,
+                sourceTextCollapsed = intent?.getBooleanExtra(EXTRA_SOURCE_TEXT_COLLAPSED, false) == true,
+            )
         }
     }
 

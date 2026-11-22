@@ -8406,6 +8406,8 @@
   "popup_no_audio_available": "Ses mevcut değil",
   "popup_sentence_context_next_label": "Sonra",
   "popup_sentence_context_prev_label": "Önce",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "Açılır pencere kaydırma hızı",
   "popup_wheel_speed_hint": "Sözlük açılır penceresi için fare tekerleği kaydırma hızı (tarayıcı uzantısı için de geçerlidir).",
   "prev_sentence": "Önceki cümle",

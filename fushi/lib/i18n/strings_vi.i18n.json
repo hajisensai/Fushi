@@ -8406,6 +8406,8 @@
   "popup_no_audio_available": "Không có âm thanh khả dụng",
   "popup_sentence_context_next_label": "Sau",
   "popup_sentence_context_prev_label": "Trước",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "Tốc độ cuộn popup",
   "popup_wheel_speed_hint": "Tốc độ cuộn chuột cho popup từ điển (cũng áp dụng cho tiện ích mở rộng trình duyệt).",
   "prev_sentence": "Câu trước",
