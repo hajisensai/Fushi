@@ -552,8 +552,21 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final LyricVisualizerBackgroundEntry background =
-        lyricVisualizerBackgroundOf(widget.backgroundId);
+    // 「背景设置」对的是当前样式实际画的背景：样式请求了专属背景（如莫奈）时调那个，
+    // 否则调用户选的共享背景；样式要透明底时没有背景可调。
+    final LyricVisualizerEntry currentEntry = lyricVisualizerEntryOf(
+      widget.current,
+    );
+    final LyricVisualizerBackgroundEntry? background =
+        resolveLyricVisualizerBackground(
+          currentEntry.backgroundFor(
+            LyricVisualizerTuning(
+              currentEntry.tunings,
+              _tunings[widget.current.prefValue] ?? const <String, Object?>{},
+            ),
+          ),
+          widget.backgroundId,
+        );
     final List<LyricVisualizerEntry> entries = <LyricVisualizerEntry>[
       for (final LyricVisualizerMode m in LyricVisualizerMode.values)
         lyricVisualizerEntryOf(m),
@@ -577,7 +590,7 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
             title: Text(t.music_visualizer_random),
             subtitle: Text(t.music_visualizer_random_hint),
           ),
-          if (background.tunings.isNotEmpty)
+          if (background != null && background.tunings.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Align(
@@ -684,20 +697,33 @@ class _StyleTile extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const Spacer(),
-                  Text(
-                    entry.label(),
-                    style: text.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (entry.description != null)
-                    Text(
-                      entry.description!(),
-                      style: text.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  // 卡片高度固定：标题 + 说明贴底，字大（系统字号放大）时说明先收行，不溢出。
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.bottomStart,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            entry.label(),
+                            style: text.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (entry.description != null)
+                            Flexible(
+                              child: Text(
+                                entry.description!(),
+                                style: text.bodySmall,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
+                  ),
                 ],
               ),
             ),
