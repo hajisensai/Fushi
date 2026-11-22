@@ -151,8 +151,11 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   }
 
   /// One word step on the book / lyrics caret, under the caret busy flag like
-  /// every caret action. Falls back to a character step when the caret has no
-  /// text around it or sits on the block's first / last word.
+  /// every caret action ([ReaderControllerWordStepScripts.planStep]): to the
+  /// next / previous word start in the caret's block; from the block's last /
+  /// first word on into the next / previous block, landing on its first / last
+  /// word start ([ReaderControllerWordStepScripts.entryDelta]). Falls back to a
+  /// character step when the caret has no text around it.
   Future<void> _wordStep(int dir) async {
     final _ReaderFushiPageState s = _s;
     if (s._caretBusy || s._caretSurface == CaretSurface.popup) return;
@@ -164,41 +167,35 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
     final String physicalDir = dir > 0 ? 'forward' : 'backward';
     s._caretBusy = true;
     try {
-      final ({String text, int index})? context =
-          ReaderControllerWordStepScripts.parseContext(
-            await web.evaluateJavascript(
-              source: ReaderControllerWordStepScripts.contextInvocation(
-                lyrics: lyrics,
-              ),
-            ),
-          );
+      final ReaderWordStepContext? context = await _wordStepContext(
+        web,
+        lyrics: lyrics,
+      );
       if (!s.mounted) return;
-      final int? target = context == null
+      final ReaderWordStepMove? move = context == null
           ? null
-          : controllerLookupWordStep(context.text, context.index, dir);
-      if (target == null) {
-        // No word to go to in this block: one character step, which crosses
-        // into the next / previous block (or turns the page).
+          : ReaderControllerWordStepScripts.planStep(context, dir);
+      if (move == null) {
+        // No text at the caret (element stop), or the block runs past the
+        // context window: one character step.
         await s._caretMove(physicalDir);
         return;
       }
-      final Object? raw = await web.evaluateJavascript(
-        source: ReaderControllerWordStepScripts.stepInvocation(
-          lyrics: lyrics,
-          delta: target - context!.index,
-        ),
+      if (!await _wordStepMove(web, lyrics: lyrics, delta: move.delta)) return;
+      if (!move.crossesBlock) return;
+      // Entered the next / previous block (or turned the page): go on to its
+      // first / last word start, skipping leading whitespace / punctuation.
+      final ReaderWordStepContext? entered = await _wordStepContext(
+        web,
+        lyrics: lyrics,
       );
-      if (!s.mounted || s._controller == null) return;
-      switch (readerCaretMoveOutcome(
-        physicalDir,
-        ReaderCaretScripts.moveStatus(raw),
-      )) {
-        case ReaderCaretMoveOutcome.paginateForward:
-          await s._paginate(ReaderNavigationDirection.forward);
-        case ReaderCaretMoveOutcome.paginateBackward:
-          await s._paginate(ReaderNavigationDirection.backward);
-        case ReaderCaretMoveOutcome.none:
-          break;
+      if (!s.mounted || entered == null) return;
+      final int? snap = ReaderControllerWordStepScripts.entryDelta(
+        entered,
+        dir,
+      );
+      if (snap != null) {
+        await _wordStepMove(web, lyrics: lyrics, delta: snap);
       }
     } catch (e, stack) {
       // A half-torn-down WebView throws on evaluateJavascript (BUG-005 root
@@ -207,6 +204,48 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
     } finally {
       s._caretBusy = false;
     }
+  }
+
+  /// The text around the caret (from
+  /// [ReaderControllerWordStepScripts.contextInvocation]); null when the caret
+  /// is not on text.
+  Future<ReaderWordStepContext?> _wordStepContext(
+    InAppWebViewController web, {
+    required bool lyrics,
+  }) async => ReaderControllerWordStepScripts.parseContext(
+    await web.evaluateJavascript(
+      source: ReaderControllerWordStepScripts.contextInvocation(lyrics: lyrics),
+    ),
+  );
+
+  /// Moves the caret [delta] UTF-16 units
+  /// ([ReaderControllerWordStepScripts.stepInvocation]) and turns the page
+  /// when the move ran off it. False when the page went away meanwhile.
+  Future<bool> _wordStepMove(
+    InAppWebViewController web, {
+    required bool lyrics,
+    required int delta,
+  }) async {
+    final _ReaderFushiPageState s = _s;
+    final Object? raw = await web.evaluateJavascript(
+      source: ReaderControllerWordStepScripts.stepInvocation(
+        lyrics: lyrics,
+        delta: delta,
+      ),
+    );
+    if (!s.mounted || s._controller == null) return false;
+    switch (readerCaretMoveOutcome(
+      delta > 0 ? 'forward' : 'backward',
+      ReaderCaretScripts.moveStatus(raw),
+    )) {
+      case ReaderCaretMoveOutcome.paginateForward:
+        await s._paginate(ReaderNavigationDirection.forward);
+      case ReaderCaretMoveOutcome.paginateBackward:
+        await s._paginate(ReaderNavigationDirection.backward);
+      case ReaderCaretMoveOutcome.none:
+        break;
+    }
+    return s.mounted;
   }
 
   /// Whether lines of the surface holding the cursor run vertically (next

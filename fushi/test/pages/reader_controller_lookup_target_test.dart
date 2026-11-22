@@ -9,7 +9,11 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
         readerControllerCappedQuery,
         readerControllerCompanionLookup;
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
-import 'package:fushi/src/reader/reader_controller_word_step_scripts.dart';
+import 'package:fushi/src/reader/reader_controller_word_step_scripts.dart'
+    show
+        ReaderControllerWordStepScripts,
+        ReaderWordStepContext,
+        ReaderWordStepMove;
 import 'package:fushi/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 
@@ -258,19 +262,37 @@ void main() {
       expect(back, contains('window.fushiLyricsCaret'));
     });
 
-    test('parseContext reads {text, index}; anything else is null', () {
+    test('a long step may take a move per unit of its delta', () {
+      expect(
+        ReaderControllerWordStepScripts.stepInvocation(
+          lyrics: false,
+          delta: 150,
+        ),
+        contains('i < 214;'),
+      );
+    });
+
+    test('the context reports whether the block runs past the window', () {
+      final String book = ReaderControllerWordStepScripts.contextInvocation(
+        lyrics: false,
+      );
+      expect(book, contains('cutBefore: start > 0'));
+      expect(book, contains('cutAfter: end < text.length'));
+    });
+
+    test('parseContext reads {text, index, cut*}; anything else is null', () {
       expect(
         ReaderControllerWordStepScripts.parseContext(
-          '{"text":"私は先生","index":2}',
+          '{"text":"私は先生","index":2,"cutBefore":false,"cutAfter":true}',
         ),
-        (text: '私は先生', index: 2),
+        (text: '私は先生', index: 2, cutBefore: false, cutAfter: true),
       );
       expect(
         ReaderControllerWordStepScripts.parseContext(<String, Object>{
           'text': 'あい',
           'index': 1,
         }),
-        (text: 'あい', index: 1),
+        (text: 'あい', index: 1, cutBefore: false, cutAfter: false),
       );
       expect(ReaderControllerWordStepScripts.parseContext(null), isNull);
       expect(ReaderControllerWordStepScripts.parseContext('null'), isNull);
@@ -279,6 +301,119 @@ void main() {
         ReaderControllerWordStepScripts.parseContext('{"text":"あ","index":1}'),
         isNull,
         reason: 'index past the text',
+      );
+    });
+  });
+
+  group('word steps across blocks land on word starts', () {
+    List<String> Function(String) words(String marked) {
+      final List<String> parts = marked.split('|');
+      return (String text) {
+        expect(text, parts.join());
+        return parts;
+      };
+    }
+
+    ReaderWordStepContext ctx(
+      String text,
+      int index, {
+      bool cutBefore = false,
+      bool cutAfter = false,
+    }) => (text: text, index: index, cutBefore: cutBefore, cutAfter: cutAfter);
+
+    test('inside the block: the next / previous word start', () {
+      final List<String> Function(String) tok = words('私は|先生と|呼んだ');
+      expect(
+        ReaderControllerWordStepScripts.planStep(
+          ctx('私は先生と呼んだ', 0),
+          1,
+          tokenize: tok,
+        ),
+        (delta: 2, crossesBlock: false),
+      );
+      expect(
+        ReaderControllerWordStepScripts.planStep(
+          ctx('私は先生と呼んだ', 6),
+          -1,
+          tokenize: tok,
+        ),
+        (delta: -1, crossesBlock: false),
+      );
+    });
+
+    test('from the last word forward: out onto the next block\'s first '
+        'character, then on to its first word (leading 「 skipped)', () {
+      final ReaderWordStepMove? move = ReaderControllerWordStepScripts.planStep(
+        ctx('私は先生と呼んだ', 5),
+        1,
+        tokenize: words('私は|先生と|呼んだ'),
+      );
+      // 8 units long, caret at 5: 3 units lands just past the block's end.
+      expect(move, (delta: 3, crossesBlock: true));
+      expect(
+        ReaderControllerWordStepScripts.entryDelta(
+          ctx('「はい」', 0),
+          1,
+          tokenize: words('「|はい|」'),
+        ),
+        1,
+      );
+      // A block opening with its word: the first character already is it.
+      expect(
+        ReaderControllerWordStepScripts.entryDelta(
+          ctx('はい', 0),
+          1,
+          tokenize: words('はい'),
+        ),
+        isNull,
+      );
+    });
+
+    test('from the first word back: out onto the previous block\'s last '
+        'character, then back to its last word start', () {
+      final ReaderWordStepMove? move = ReaderControllerWordStepScripts.planStep(
+        ctx('私は先生', 0),
+        -1,
+        tokenize: words('私は|先生'),
+      );
+      expect(move, (delta: -1, crossesBlock: true));
+      // Previous block 「先生と呼んだ。」, caret on 。: back to 呼んだ.
+      expect(
+        ReaderControllerWordStepScripts.entryDelta(
+          ctx('先生と呼んだ。', 6),
+          -1,
+          tokenize: words('先生と|呼んだ|。'),
+        ),
+        -3,
+      );
+      // Mid-block window start: the caret index is relative to the window.
+      expect(
+        ReaderControllerWordStepScripts.planStep(
+          ctx('あ私は', 1),
+          -1,
+          tokenize: words('あ|私は'),
+        ),
+        (delta: -1, crossesBlock: false),
+      );
+    });
+
+    test('a block running past the context window on that side: one '
+        'character step instead (null)', () {
+      expect(
+        ReaderControllerWordStepScripts.planStep(
+          ctx('私は', 0, cutAfter: true),
+          1,
+          tokenize: words('私は'),
+        ),
+        isNull,
+      );
+      expect(
+        ReaderControllerWordStepScripts.planStep(
+          ctx('私は', 0, cutBefore: true),
+          -1,
+          tokenize: words('私は'),
+        ),
+        isNull,
       );
     });
   });
@@ -337,6 +472,16 @@ void main() {
         2,
       );
     });
+
+    test(
+      'a word step crossing blocks snaps onto the entered block\'s word',
+      () {
+        final String step = methodBody(src, 'Future<void> _wordStep(int dir)');
+        expect(step, contains('ReaderControllerWordStepScripts.planStep('));
+        expect(step, contains('move.crossesBlock'));
+        expect(step, contains('ReaderControllerWordStepScripts.entryDelta('));
+      },
+    );
 
     test('word steps are on; the gamepad caret entry is gone', () {
       expect(src, contains('bool get hasWordSteps => true;'));

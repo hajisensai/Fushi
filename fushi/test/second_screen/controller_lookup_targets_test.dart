@@ -71,6 +71,40 @@ void main() {
       expect(controllerLookupWordStep('', 0, 1), isNull);
     });
 
+    test('entering a block lands on its first / last word start, leading '
+        'whitespace and punctuation skipped', () {
+      final List<String> Function(String) tok = _words('「|私は|先生|」');
+      const String text = '「私は先生」';
+      // Forward: entered on the first character 「 -> the first word 私.
+      expect(controllerLookupBlockEntryWord(text, 0, 1, tokenize: tok), 1);
+      // Already on a word start: stays.
+      expect(controllerLookupBlockEntryWord(text, 1, 1, tokenize: tok), 1);
+      // Back: entered on the last character 」 -> the last word 先生.
+      expect(controllerLookupBlockEntryWord(text, 5, -1, tokenize: tok), 3);
+      // Back onto the inside of the last word -> that word's start.
+      expect(controllerLookupBlockEntryWord(text, 4, -1, tokenize: tok), 3);
+      // Ideographic space opening a block is skipped too.
+      expect(
+        controllerLookupBlockEntryWord(
+          '\u3000あの',
+          0,
+          1,
+          tokenize: _words('\u3000|あの'),
+        ),
+        1,
+      );
+      // A block without words: nowhere to land.
+      expect(
+        controllerLookupBlockEntryWord('……', 0, 1, tokenize: _words('…|…')),
+        isNull,
+      );
+      expect(
+        controllerLookupBlockEntryWord('……', 1, -1, tokenize: _words('…|…')),
+        isNull,
+      );
+      expect(controllerLookupBlockEntryWord('', 0, 1), isNull);
+    });
+
     test('subtitle word entry: same cue only, -1 at the ends, null to fall '
         'back to characters', () {
       final Object cueA = Object();

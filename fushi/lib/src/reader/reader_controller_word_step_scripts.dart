@@ -1,5 +1,25 @@
 import 'dart:convert';
 
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
+import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
+
+/// The text around the reader caret (from
+/// [ReaderControllerWordStepScripts.contextInvocation]): `text` is a window
+/// of the caret's block, `index` the caret's UTF-16 index in it; `cutBefore` /
+/// `cutAfter` = the block goes on past the window on that side.
+typedef ReaderWordStepContext = ({
+  String text,
+  int index,
+  bool cutBefore,
+  bool cutAfter,
+});
+
+/// The first move of a reader word step: [delta] UTF-16 units in the caret's
+/// text order; [crossesBlock] = it leaves the block (onto the next block's
+/// first / the previous block's last character), so the landing is snapped to
+/// a word start afterwards ([ReaderControllerWordStepScripts.entryDelta]).
+typedef ReaderWordStepMove = ({int delta, bool crossesBlock});
+
 /// Word steps of the controller lookup mode on the reader's JS carets
 /// (`window.fushiCaret` on the book, `window.fushiLyricsCaret` on the audiobook
 /// lyrics overlay).
@@ -23,6 +43,11 @@ import 'dart:convert';
 ///    three view modes (paginated / continuous / vn) and the lyrics rows: a
 ///    step that runs off the page returns the same `pageForward` /
 ///    `pageBackward` status as a character move and the host turns the page.
+///
+/// Past the block's last (first) word the step leaves the block ([planStep]):
+/// it moves onto the next block's first (the previous block's last) character
+/// and then on to that block's first (last) word start ([entryDelta]), so a
+/// step across blocks lands on a word start like a step inside one.
 class ReaderControllerWordStepScripts {
   ReaderControllerWordStepScripts._();
 
@@ -56,9 +81,12 @@ class ReaderControllerWordStepScripts {
   }
   if (index < 0) return null;
   var start = Math.max(0, index - $contextRadius);
+  var end = Math.min(text.length, index + $contextRadius);
   return JSON.stringify({
-    text: text.substring(start, Math.min(text.length, index + $contextRadius)),
-    index: index - start
+    text: text.substring(start, end),
+    index: index - start,
+    cutBefore: start > 0,
+    cutAfter: end < text.length
   });
 })()''';
 
@@ -69,6 +97,10 @@ class ReaderControllerWordStepScripts {
   /// could not continue).
   static String stepInvocation({required bool lyrics, required int delta}) {
     final bool forward = delta > 0;
+    // Character moves the step may take: one per unit of [delta] (a move never
+    // advances less than one unit) plus slack for stops the walker counts but
+    // the caret skips.
+    final int maxMoves = delta.abs() + 64;
     return '''
 (function() {
   var c = ${_caret(lyrics: lyrics)};
@@ -93,7 +125,7 @@ class ReaderControllerWordStepScripts {
     return (aNode.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
   };
   var result = {status: 'blocked'};
-  for (var i = 0; i < 64; i++) {
+  for (var i = 0; i < $maxMoves; i++) {
     result = c.move('${forward ? 'forward' : 'backward'}');
     if (!result || result.status !== 'moved' || !c.node) break;
     var d = cmp(c.node, c.offset);
@@ -104,7 +136,7 @@ class ReaderControllerWordStepScripts {
   }
 
   /// Parses a [contextInvocation] result; null when the caret has no text.
-  static ({String text, int index})? parseContext(Object? raw) {
+  static ReaderWordStepContext? parseContext(Object? raw) {
     Object? decoded = raw;
     if (decoded is String) {
       final String trimmed = decoded.trim();
@@ -121,6 +153,60 @@ class ReaderControllerWordStepScripts {
     if (text is! String || index is! num) return null;
     final int at = index.toInt();
     if (at < 0 || at >= text.length) return null;
-    return (text: text, index: at);
+    return (
+      text: text,
+      index: at,
+      cutBefore: decoded['cutBefore'] == true,
+      cutAfter: decoded['cutAfter'] == true,
+    );
+  }
+
+  /// The first move of a word step in [dir] from [context]: to the next /
+  /// previous word start inside the block ([controllerLookupWordStep]), or —
+  /// from the block's last / first word — out of the block, onto the next
+  /// block's first / the previous block's last character. Null when the block
+  /// runs past the context window on that side (the caller then makes one
+  /// character step). [tokenize] is for tests only.
+  static ReaderWordStepMove? planStep(
+    ReaderWordStepContext context,
+    int dir, {
+    SubtitleSweepTokenizer? tokenize,
+  }) {
+    final int? target = controllerLookupWordStep(
+      context.text,
+      context.index,
+      dir,
+      tokenize: tokenize,
+    );
+    if (target != null) {
+      return (delta: target - context.index, crossesBlock: false);
+    }
+    if (dir > 0 ? context.cutAfter : context.cutBefore) return null;
+    return (
+      delta: dir > 0
+          ? context.text.length - context.index
+          : -(context.index + 1),
+      crossesBlock: true,
+    );
+  }
+
+  /// After a step crossed into a block (moving in [dir]): the move from the
+  /// caret ([context], on the entered block's first / last character) on to
+  /// that block's first / last word start ([controllerLookupBlockEntryWord],
+  /// leading whitespace / punctuation skipped). Null when the caret already is
+  /// there or the block has no word on that side. [tokenize] is for tests only.
+  static int? entryDelta(
+    ReaderWordStepContext context,
+    int dir, {
+    SubtitleSweepTokenizer? tokenize,
+  }) {
+    final int? land = controllerLookupBlockEntryWord(
+      context.text,
+      context.index,
+      dir,
+      tokenize: tokenize,
+    );
+    if (land == null || land == context.index) return null;
+    return land - context.index;
   }
 }
