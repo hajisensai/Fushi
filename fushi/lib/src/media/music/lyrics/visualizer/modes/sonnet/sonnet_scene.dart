@@ -329,6 +329,9 @@ class SonnetSceneInputs {
     this.title,
     this.artist,
     this.album,
+    this.themeName,
+    this.themeDescription,
+    this.icons = const <IconData>[],
   });
 
   final SonnetProgram program;
@@ -341,6 +344,13 @@ class SonnetSceneInputs {
   final String? title;
   final String? artist;
   final String? album;
+
+  /// AI 主题的名字 / 描述（folia 角落的 `[ THEME ] 名字` 与描述）；没有时用曲名 / 艺人与专辑。
+  final String? themeName;
+  final String? themeDescription;
+
+  /// 主题图标字形（背景装饰粒子里的图标；没有时只有几何粒子）。
+  final List<IconData> icons;
 }
 
 /// 构建第 [index] 段的场景。
@@ -389,10 +399,15 @@ SonnetSceneView buildSonnetScene(SonnetSceneInputs inputs, int index) {
   TextPainter? metaTitle;
   TextPainter? metaDescription;
   if (!onlyText && s.outerFrameMode == 'full') {
-    final String title = (inputs.title ?? '').trim();
+    final String themeName = (inputs.themeName ?? '').trim();
+    final String title = themeName.isNotEmpty
+        ? '[ THEME ] ${themeName.toUpperCase()}'
+        : (inputs.title ?? '').trim().isNotEmpty
+        ? '[ TRACK ] ${inputs.title!.trim().toUpperCase()}'
+        : '';
     if (title.isNotEmpty) {
       metaTitle = painterFor(
-        '[ TRACK ] ${title.toUpperCase()}',
+        title,
         inputs.measurer
             .styleFor(700, 14)
             .copyWith(
@@ -402,10 +417,13 @@ SonnetSceneView buildSonnetScene(SonnetSceneInputs inputs, int index) {
         'meta-title',
       );
     }
-    final String desc = <String>[
-      (inputs.artist ?? '').trim(),
-      (inputs.album ?? '').trim(),
-    ].where((String x) => x.isNotEmpty).join(' — ');
+    final String themeDesc = (inputs.themeDescription ?? '').trim();
+    final String desc = themeDesc.isNotEmpty
+        ? themeDesc
+        : <String>[
+            (inputs.artist ?? '').trim(),
+            (inputs.album ?? '').trim(),
+          ].where((String x) => x.isNotEmpty).join(' — ');
     if (desc.isNotEmpty) {
       final TextPainter p = TextPainter(
         text: TextSpan(
@@ -514,7 +532,8 @@ SonnetSceneView buildSonnetScene(SonnetSceneInputs inputs, int index) {
       shotSeed,
       colors.primary,
       colors.secondary,
-      colors.accent,
+      icons: onlyText ? const <IconData>[] : inputs.icons,
+      iconColors: <Color>[colors.accent, colors.secondary, colors.primary],
     );
 
     final List<SonnetSegmentView> views = <SonnetSegmentView>[];

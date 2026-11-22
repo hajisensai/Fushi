@@ -28,6 +28,9 @@ class SonnetDirector {
     this.title,
     this.artist,
     this.album,
+    this.themeName,
+    this.themeDescription,
+    this.icons = const <IconData>[],
     String? fontFamily,
     FontWeight? fontWeight,
   }) : finalEnd = _finalEndOf(program),
@@ -41,6 +44,9 @@ class SonnetDirector {
   final String? title;
   final String? artist;
   final String? album;
+  final String? themeName;
+  final String? themeDescription;
+  final List<IconData> icons;
 
   /// 末句结束（秒）；纯音乐的虚拟「♪」行不触发片尾。
   final double finalEnd;
@@ -91,6 +97,9 @@ class SonnetDirector {
       title: title,
       artist: artist,
       album: album,
+      themeName: themeName,
+      themeDescription: themeDescription,
+      icons: icons,
     );
   }
 

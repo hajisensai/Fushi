@@ -9,6 +9,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_graphics.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_mg.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_motion.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_scene.dart';
@@ -221,6 +222,68 @@ void main() {
         );
       }
       scene.dispose();
+    });
+  });
+
+  group('主题名 / 描述 / 图标', () {
+    SonnetSceneView build({
+      String? themeName,
+      String? themeDescription,
+      List<IconData> icons = const <IconData>[],
+    }) => buildSonnetScene(
+      SonnetSceneInputs(
+        program: compileSonnetProgram(_song(), 'seed-t'),
+        size: const Size(1280, 720),
+        settings: const SonnetSettings(),
+        colors: _colors,
+        measurer: SonnetTextMeasurer(),
+        fontScale: 1,
+        motion: true,
+        title: 'Song',
+        artist: 'A',
+        album: 'B',
+        themeName: themeName,
+        themeDescription: themeDescription,
+        icons: icons,
+      ),
+      0,
+    );
+
+    test('角落元信息：有主题名 / 描述用主题的，没有回落曲名 / 艺人专辑', () {
+      final SonnetSceneView themed = build(
+        themeName: 'Night sea',
+        themeDescription: '深夜的海',
+      );
+      expect((themed.metaTitle!.text! as TextSpan).text, '[ THEME ] NIGHT SEA');
+      expect((themed.metaDescription!.text! as TextSpan).text, '深夜的海');
+      themed.dispose();
+      final SonnetSceneView plain = build();
+      expect((plain.metaTitle!.text! as TextSpan).text, '[ TRACK ] SONG');
+      expect((plain.metaDescription!.text! as TextSpan).text, 'A — B');
+      plain.dispose();
+    });
+
+    test('背景粒子：没有主题图标时全是几何粒子；有图标时约四分之一换成图标', () {
+      final SonnetSceneView none = build();
+      for (final SonnetShotView shot in none.shots) {
+        expect(shot.particles.where((SonnetParticle p) => p.icon), isEmpty);
+      }
+      none.dispose();
+      const List<IconData> icons = <IconData>[
+        IconData(0xe51c, fontFamily: 'FushiSymbols'),
+        IconData(0xe838, fontFamily: 'FushiSymbols'),
+      ];
+      final SonnetSceneView themed = build(icons: icons);
+      for (final SonnetShotView shot in themed.shots) {
+        final List<SonnetParticle> ic = shot.particles
+            .where((SonnetParticle p) => p.icon)
+            .toList();
+        expect(ic.length, greaterThanOrEqualTo(shot.particles.length ~/ 4));
+        for (final SonnetParticle p in ic) {
+          expect(icons, contains(p.glyph));
+        }
+      }
+      themed.dispose();
     });
   });
 

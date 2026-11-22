@@ -8,6 +8,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_graphics.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_program.dart';
 
@@ -1484,6 +1485,7 @@ class SonnetParticle {
     required this.alpha,
     required this.shape,
     this.icon = false,
+    this.glyph,
     this.preferredDuration = 0,
     this.phase = 0,
   });
@@ -1496,6 +1498,9 @@ class SonnetParticle {
   final double alpha;
   final _DecorShape shape;
   final bool icon;
+
+  /// 图标粒子画的主题图标字形（[icon] 为 true 时有）。
+  final IconData? glyph;
   final double preferredDuration;
   final double phase;
   double entryPhase = 0;
@@ -1531,19 +1536,26 @@ double resolveSonnetIconEntryPhase(int index, int count) {
   return 0.04 + (index.clamp(0, count - 1) / (count - 1)) * 0.82;
 }
 
+/// 背景装饰粒子（folia `buildSonnetBackgroundDecor`）。[icons] 是主题图标字形，[iconColors] 是第 i 个
+/// 图标的颜色（folia 按图标序号轮流取强调色 / 次色 / 主色）；没有主题图标时全是几何粒子。
 List<SonnetParticle> buildSonnetParticles(
   SonnetShotKind kind,
   double width,
   double height,
   int seed,
   Color primary,
-  Color secondary,
-  Color iconColor,
-) {
+  Color secondary, {
+  List<IconData> icons = const <IconData>[],
+  List<Color> iconColors = const <Color>[],
+}) {
   final int variant = resolveSonnetBackgroundDecorVariant(seed);
   final List<_DecorShape> palette = _palettes[variant];
   final int count = kind == SonnetShotKind.typeImpact ? 24 : 12;
-  final List<int?> iconSlots = buildSonnetIconParticleIndices(1, count, seed);
+  final List<int?> iconSlots = buildSonnetIconParticleIndices(
+    icons.length,
+    count,
+    seed,
+  );
   final double hw = width / 2;
   final double hh = height / 2;
   final double radius = math.min(width, height);
@@ -1589,7 +1601,8 @@ List<SonnetParticle> buildSonnetParticles(
         x = -hw + width * sonnetHash01(seed, i, 47);
         y = -hh + height * sonnetHash01(seed, i, 53);
     }
-    final bool isIcon = iconSlots[i] != null;
+    final int? iconIndex = iconSlots[i];
+    final bool isIcon = iconIndex != null;
     final int iconSeed = (seed + i * 17).abs();
     out.add(
       SonnetParticle(
@@ -1597,20 +1610,28 @@ List<SonnetParticle> buildSonnetParticles(
         y: y,
         rotation: rot,
         size: pSize,
-        color: isIcon ? iconColor : (i.isEven ? primary : secondary),
+        color: isIcon
+            ? (iconColors.isEmpty
+                  ? primary
+                  : iconColors[iconIndex % iconColors.length])
+            : (i.isEven ? primary : secondary),
         alpha: isIcon ? 0.85 : 0.55 + sonnetHash01(seed, i, 59) * 0.3,
         shape: palette[(seed + i) % palette.length],
         icon: isIcon,
+        glyph: isIcon ? icons[iconIndex] : null,
         preferredDuration: 0.62 + (iconSeed % 4) * 0.08,
         phase: (iconSeed % 31) * 0.2,
       ),
     );
   }
-  final List<SonnetParticle> icons = out
+  final List<SonnetParticle> iconParticles = out
       .where((SonnetParticle p) => p.icon)
       .toList();
-  for (int i = 0; i < icons.length; i++) {
-    icons[i].entryPhase = resolveSonnetIconEntryPhase(i, icons.length);
+  for (int i = 0; i < iconParticles.length; i++) {
+    iconParticles[i].entryPhase = resolveSonnetIconEntryPhase(
+      i,
+      iconParticles.length,
+    );
   }
   return out;
 }
@@ -1630,31 +1651,19 @@ void paintSonnetParticle(
   final double s = p.size;
   final Paint paint = _particlePaint;
   if (p.icon) {
-    // 描边花：七倍粒子大小的外接框里五瓣 + 花心。
+    // 主题图标：七倍粒子大小的方框（folia sprite 边长 pSize × 7）。
     final double box = s * 7 * scale;
     final double a = (p.alpha * alphaMul).clamp(0.0, 1.0);
-    if (a <= 0.001) {
-      canvas.restore();
-      return;
-    }
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1, box / 24 * 1.5)
-      ..color = p.color.withValues(alpha: a);
-    for (int k = 0; k < 5; k++) {
-      canvas.save();
-      canvas.rotate(k * math.pi * 2 / 5);
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(0, -box * 0.22),
-          width: box * 0.26,
-          height: box * 0.4,
-        ),
-        paint,
+    final IconData? glyph = p.glyph;
+    if (a > 0.001 && glyph != null) {
+      paintLyricVisualizerIconGlyph(
+        canvas,
+        glyph,
+        Offset.zero,
+        box,
+        p.color.withValues(alpha: p.color.a * a),
       );
-      canvas.restore();
     }
-    canvas.drawCircle(Offset.zero, box * 0.1, paint);
     canvas.restore();
     return;
   }

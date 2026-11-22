@@ -206,7 +206,9 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
   SonnetDirector _directorFor(LyricVisualizerContext c) {
     final String meta =
         '${c.title}\u0000${c.artist}\u0000${c.album}\u0000'
-        '${c.theme?.fontFamily}\u0000${c.theme?.fontWeight}';
+        '${c.theme?.fontFamily}\u0000${c.theme?.fontWeight}\u0000'
+        '${c.theme?.name}\u0000${c.theme?.description}\u0000'
+        '${c.theme?.lyricsIcons.map((LyricVisualizerThemeIcon i) => i.wire).join(',')}';
     final SonnetDirector? current = _director;
     if (current != null &&
         identical(_runtime, c.runtime) &&
@@ -227,6 +229,9 @@ class _SonnetVisualizerState extends State<SonnetVisualizer> {
       title: c.title,
       artist: c.artist,
       album: c.album,
+      themeName: c.theme?.name,
+      themeDescription: c.theme?.description,
+      icons: c.theme?.glyphIcons ?? const <IconData>[],
       fontFamily: c.theme?.fontFamily,
       fontWeight: c.theme?.fontWeight,
     );
