@@ -14,12 +14,12 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 /// 柱数。
 const int kMonetAudioBarCount = 72;
 
-/// 音频帧 → folia 的五段频带（bass / lowMid / mid / vocal / treble）。框架的 `mid` 覆盖 folia
-/// lowMid + mid，lowMid 取低频与中频的均值。
+/// 音频帧 → folia 的五段频带（bass / lowMid / mid / vocal / treble）：lowMid 150–400 Hz、mid 取
+/// 400–1200 Hz（框架 [LyricVisualizerAudioFrame.upperMid]）；旧结果没有分段时两段都回落到合并中频。
 List<double> monetAudioBands(LyricVisualizerAudioFrame f) => <double>[
   f.low,
-  (f.low + f.mid) / 2,
-  f.mid,
+  f.lowMid,
+  f.upperMid,
   f.vocal,
   f.high,
 ].map((double v) => v.clamp(0.0, 1.0)).toList();

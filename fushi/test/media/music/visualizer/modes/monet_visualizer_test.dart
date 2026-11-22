@@ -237,13 +237,22 @@ void main() {
         downbeatImpact: 0,
         drumImpact: 0,
       );
-      expect(monetAudioBands(f), <Object>[
-        0.8,
-        closeTo(0.6, 1e-9),
-        0.4,
-        0.6,
-        0.2,
-      ]);
+      // 没有分段数据：lowMid / mid 都回落到合并中频。
+      expect(monetAudioBands(f), <Object>[0.8, 0.4, 0.4, 0.6, 0.2]);
+      const LyricVisualizerAudioFrame split = LyricVisualizerAudioFrame(
+        power: 0.5,
+        low: 0.8,
+        mid: 0.4,
+        lowMid: 0.7,
+        upperMid: 0.3,
+        high: 0.2,
+        vocal: 0.6,
+        onset: 0,
+        beatImpact: 0,
+        downbeatImpact: 0,
+        drumImpact: 0,
+      );
+      expect(monetAudioBands(split), <Object>[0.8, 0.7, 0.3, 0.6, 0.2]);
       expect(
         monetAudioBands(LyricVisualizerAudioFrame.silent),
         everyElement(0),
