@@ -266,13 +266,8 @@ class _HanabiVisualizerState extends State<HanabiVisualizer> {
 
   /// 节拍表（分析就绪 / 换歌 / 改偏移时重算）。
   List<HanabiBeatEvent> _beatsFor(LyricVisualizerContext c) {
-    final LyricVisualizerAudio? a = c.audio;
-    final Object key = Object.hash(
-      identityHashCode(a),
-      a != null && a.beatsReady ? a.beatTimesMs.length : -1,
-      c.offsetMs,
-    );
-    if (key != _beatsKey) {
+    final LyricVisualizerBeats key = LyricVisualizerBeats.of(c);
+    if (!identical(key, _beatsKey)) {
       _beatsKey = key;
       _beats = hanabiBeatEventsOf(c);
     }

@@ -28,30 +28,14 @@ class HanabiBeatEvent {
   final double gain;
 }
 
-const double _weakBeatFloor = 0.35;
-
-/// 音频分析 → 节拍表（显示时间，秒）。每拍的重音读该拍那一刻的 `accentImpact`（正好在拍上时就是这一拍
-/// 的峰值）；没有重音数据时每拍按 1 算。没有节拍网格返回空表。
-List<HanabiBeatEvent> hanabiBeatEventsOf(LyricVisualizerContext c) {
-  final LyricVisualizerAudio? audio = c.audio;
-  if (audio == null || !audio.beatsReady) return const <HanabiBeatEvent>[];
-  final Set<int> downbeats = audio.downbeatTimesMs.toSet();
-  return <HanabiBeatEvent>[
-    for (final int ms in audio.beatTimesMs)
-      () {
-        final double? accent = audio.frameAt(ms).accentImpact;
-        return HanabiBeatEvent(
-          t: c.displayTimeOfAudio(ms) / 1000,
-          downbeat: downbeats.contains(ms),
-          gain: accent == null
-              ? 1
-              : accent <= 1e-3
-              ? 0
-              : _weakBeatFloor + (1 - _weakBeatFloor) * accent.clamp(0.0, 1.0),
-        );
-      }(),
-  ];
-}
+/// 共享拍点表 → 节拍表（显示时间，秒）。增益是共享的 folia `resolveBeatFxAccentGain`（重音、整曲动感系数、
+/// 无节奏段为 0，已去掉不是听感拍的拍）。没有节拍网格返回空表。
+List<HanabiBeatEvent> hanabiBeatEventsOf(
+  LyricVisualizerContext c,
+) => <HanabiBeatEvent>[
+  for (final LyricVisualizerBeatEvent e in LyricVisualizerBeats.of(c).events)
+    HanabiBeatEvent(t: e.seconds, downbeat: e.downbeat, gain: e.gain),
+];
 
 /// 一拍的烟花（画面坐标按比例给，场景再换算进那时所在的镜头）。
 class HanabiBeatShell {
@@ -171,25 +155,20 @@ const double _pulseKickDeg = 1.6;
   rotation: (_pulseKickDeg * math.pi / 180) * math.max(0, k) * sign,
 );
 
-/// 这一帧的推镜（[strength] 0 = 关；没有节拍网格时不推）。包络用音频帧的拍 / 重拍冲击（有重音时拍按重音），
-/// 摆的方向每拍换一次边。
+/// 这一帧的推镜（[strength] 0 = 关；没有节拍网格时不推）。包络是共享拍钟的拍 / 强拍冲击（每拍按重音增益冲顶，
+/// folia clock），摆的方向按 folia `rotationSign` 每拍换一次边。
 ({double scale, double rotation}) hanabiBeatPulseAt(
   LyricVisualizerContext c,
   int displayMs,
   double strength,
 ) {
-  final LyricVisualizerAudio? audio = c.audio;
-  if (strength <= 0 || audio == null || !audio.beatsReady) {
+  final LyricVisualizerBeats beats = LyricVisualizerBeats.of(c);
+  if (strength <= 0 || !beats.hasBeats) {
     return (scale: 1, rotation: 0);
   }
-  final LyricVisualizerAudioFrame f = c.audioFrameAt(displayMs);
-  final int beat = lyricVisualizerLastAtOrBefore(
-    audio.beatTimesMs,
-    c.audioTimeOf(displayMs),
-  );
   return resolveHanabiBeatPulse(
-    f.accentOrBeat * strength,
-    f.downbeatImpact * strength,
-    beat.isEven ? 1 : -1,
+    beats.beatImpactAt(displayMs) * strength,
+    beats.downbeatImpactAt(displayMs) * strength,
+    beats.rotationSignAt(displayMs),
   );
 }
