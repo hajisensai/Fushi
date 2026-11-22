@@ -144,4 +144,79 @@ void main() {
       const Duration(seconds: 60),
     );
   });
+
+  group('手柄查词模式（gamepad-unify）', () {
+    KaraokeLookupHit hitAt(String line, int index) => KaraokeLookupHit(
+      lineIndex: 0,
+      syllableIndex: 0,
+      charIndexInLine: index,
+      lineText: line,
+      globalRect: Rect.zero,
+    );
+
+    test('右端上限按字素截查询串，null 不截、至少 1 个', () {
+      final KaraokeLookupHit hit = hitAt('夜に駆ける', 2);
+      expect(musicLyricsLookupTerm(hit), '駆ける');
+      expect(musicLyricsLookupTerm(hit, maxGraphemes: 2), '駆け');
+      expect(musicLyricsLookupTerm(hit, maxGraphemes: 99), '駆ける');
+      expect(musicLyricsLookupTerm(hit, maxGraphemes: 0), '駆');
+      // 组合字素（emoji ZWJ 序列）算一个字素，不截断在中间。
+      expect(
+        musicLyricsLookupTerm(hitAt('a👨‍👩‍👧b', 1), maxGraphemes: 1),
+        '👨‍👩‍👧',
+      );
+      // 拉丁词中段：先回退到词首再截。
+      expect(
+        musicLyricsLookupTerm(hitAt('Hello world', 8), maxGraphemes: 3),
+        'wor',
+      );
+    });
+
+    test('副屏查询：不截原样整行 + 命中字；截了是行首到截断处 + 查词起点', () {
+      expect(musicLyricsCompanionQuery(hitAt('Hello world', 8)), (
+        text: 'Hello world',
+        charIndex: 8,
+      ));
+      expect(
+        musicLyricsCompanionQuery(hitAt('Hello world', 8), maxGraphemes: 1),
+        (text: 'Hello w', charIndex: 6),
+      );
+      expect(musicLyricsCompanionQuery(hitAt('夜に駆ける', 2), maxGraphemes: 2), (
+        text: '夜に駆け',
+        charIndex: 2,
+      ));
+    });
+
+    test('选区右端上界：光标的查词起点到行尾的字素数', () {
+      expect(musicLyricsGraphemesFromCursor('夜に駆ける', 2), 3);
+      expect(musicLyricsGraphemesFromCursor('夜に駆ける', 0), 5);
+      // 拉丁词中段从词首算，与真正查的串同起点。
+      expect(musicLyricsGraphemesFromCursor('Hello world', 8), 5);
+      expect(musicLyricsGraphemesFromCursor('a👨‍👩‍👧b', 1), 2);
+      expect(musicLyricsGraphemesFromCursor('', 0), 0);
+    });
+
+    test('命中高亮长度换算成字素，查不到 = 0', () {
+      expect(musicLyricsMatchedGraphemes('駆ける', 2), 2);
+      expect(musicLyricsMatchedGraphemes('駆ける', 9), 3);
+      expect(musicLyricsMatchedGraphemes('駆ける', 0), 0);
+      expect(musicLyricsMatchedGraphemes('', 3), 0);
+      expect(musicLyricsMatchedGraphemes('👨‍👩‍👧b', 8), 1);
+    });
+
+    test('查询串被截短：越过截断处的注音丢掉', () {
+      const List<LyricSyllable> syllables = <LyricSyllable>[
+        LyricSyllable(text: '星', startMs: 0, endMs: 1, ruby: 'ほし'),
+        LyricSyllable(text: '空', startMs: 1, endMs: 2, ruby: 'そら'),
+      ];
+      expect(musicLyricsRubySpans(syllables, 0), hasLength(2));
+      final List<FushiRubySpan> capped = musicLyricsRubySpans(
+        syllables,
+        0,
+        termLength: 1,
+      );
+      expect(capped, hasLength(1));
+      expect(capped.single.reading, 'ほし');
+    });
+  });
 }
