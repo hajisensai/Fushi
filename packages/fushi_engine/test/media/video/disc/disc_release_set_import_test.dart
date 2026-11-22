@@ -517,6 +517,12 @@ void main() {
           await db.addToCollection(id, MediaKind.video, uid, userIntent: false);
         }
       }
+      await db.markVideoCompleted('video/legacy-2-1', DateTime(2026, 11, 20));
+      await db.updateVideoBookPosition(
+        'video/legacy-2-2',
+        300 * 1000,
+        playedAt: 1794318869583,
+      );
 
       final DiscLibraryImportReport report = await import(<String>[
         volume(1),
@@ -538,6 +544,51 @@ void main() {
         isNotNull,
         reason: '沿用原行，进度与统计不丢',
       );
+      final VideoBookRow watched = (await db.getVideoBookByBookUid(
+        'video/legacy-2-1',
+      ))!;
+      expect(watched.completedAt, isNotNull, reason: '看完标记随原行保留');
+      final VideoBookRow resumed = (await db.getVideoBookByBookUid(
+        'video/legacy-2-2',
+      ))!;
+      expect(resumed.lastPositionMs, 300 * 1000, reason: '断点随原行保留');
+      expect(resumed.lastPlayedAt, 1794318869583);
+    });
+
+    test('切集判据改为不切（盘根外包 BD 目录）：其余分集行也从发布组合集解绑', () async {
+      // 解绑判「合集是不是这个发布目录的」与并组同一判据：修前解绑仍按盘根上一层
+      // （`… vol.1`）比，而合集成员的发布目录已跳过 `BD`，对不上，其余分集行留在
+      // 旧的发布组合集里。
+      final String solo = p.join(temp.path, 'Solo Release', 'Solo vol.1', 'BD');
+      writeEpisodicDisc(solo, episodes: 6, discName: 'SOLO 1');
+      final int collectionId = (await import(<String>[
+        solo,
+      ])).discs.single.collectionId;
+      File(p.join(solo, 'BDMV', 'PLAYLIST', '00001.mpls')).writeAsBytesSync(
+        buildMplsFixture(
+          playItems: <FixturePlayItem>[
+            for (int i = 0; i < 6; i++)
+              wholeClipItem(
+                (i + 3).toString().padLeft(5, '0'),
+                i.isEven ? 1442 : 1422,
+              ),
+          ],
+          marks: const <FixtureMark>[
+            FixtureMark(
+              playItemIndex: 0,
+              timestampTicks: kFixtureClipStartTicks,
+            ),
+          ],
+        ),
+      );
+
+      await import(<String>[solo]);
+      expect(await db.getMediaCollectionById(collectionId), isNull);
+      final MediaCollectionRow collection =
+          (await db.getAllMediaCollections()).single;
+      expect(await memberPaths(collection.id), <String>[
+        p.join(solo, 'BDMV', 'PLAYLIST', '00001.mpls'),
+      ]);
     });
   });
 }

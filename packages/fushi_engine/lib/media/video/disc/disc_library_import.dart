@@ -615,7 +615,8 @@ class DiscLibraryImporter {
     final Map<String, bool> belongsCache = <String, bool>{};
     for (final _RevertedEpisodes group in reverted) {
       final Set<String> uids = group.uids.toSet();
-      final String release = p.dirname(p.normalize(group.discRootPath));
+      // 与 [_collectionBelongsToRelease] 同一判据（跳过 `BD` 这类介质包装目录）。
+      final String release = discReleaseDirectory(group.discRootPath);
       for (final MediaCollectionItemRow item in items) {
         if (item.collectionId == keepCollectionId) continue;
         if (item.mediaType != MediaKind.video.dbValue) continue;
