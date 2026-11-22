@@ -1,0 +1,6 @@
+## BUG-5232 · v3.0.x 写入者目录的媒体只差大小写时被当成没人引用删掉
+- **报告**：2026-11-22（2026-11-22 项目审查 HBK-AUDIT-202，PR #4131）
+- **真实性**：✅ 真 bug（源码确认 + 真内核 / 真 LocalDirectoryAssetStore 测试复现）。`packages/fushi_engine/lib/srs/sync2/srs_location_runner.dart` 旧 :328 `_srsRescueLegacyMediaFile` 用 `live.contains(f.name)` 按精确文件名判存活：v3.0.x 写入者多在不分大小写的文件系统上，笔记引用 `cat.png`、写入者目录里唯一的副本叫 `CAT.png` 时被判成没人引用直接 `deleteAsset`，那张图的字节就此丢失。同一份「存活」口径在媒体同步清理（`srs_media_sync.dart` 的 `liveFolded`）里本来就按大小写折叠算，两处口径不一致。
+- **[x] ① 已修复** — 新增 `_SrsLegacyMediaNames`（`srs_location_runner.dart:390`）：存活引用名按小写折叠建索引，`resolve`（:402）同名优先，否则取只差大小写的唯一引用名；`_srsRescueLegacyMediaFile`（:331）按解析出的**引用名**判本机是否已有、下载落地、`media_landed` 记账（落地名就是笔记引用的名字，分大小写的文件系统上也能显示）。多份只差大小写的副本：第一份搬进来后其余的因本机已有该引用名而删，只留一份。只差大小写的引用名不止一个（`dog.png` 与 `Dog.png` 都有人引用）时归属认不出，不搬也不删；大小写不论都没人引用的照删。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/sync2/srs_legacy_writer_sweep_test.dart`「只差大小写的副本按引用名搬进本机，多份只留一份；归属认不出的留着；没人引用的照删」：两个写入者目录各有 `CAT.png` / `Cat.PNG`（笔记引用 `cat.png`）、一个有 `DOG.png`（引用 `dog.png` 与 `Dog.png`）与 `BIRD.png`（无引用），断言只搬一份并以 `cat.png` 落地、同一趟按内容传上位置、两个写入者目录整删、`DOG.png` 留着。还原修复后此用例红。
+- **备注**：PR #4131 的设计意图是「搬完再删、不丢用户文件」（拍板 bug-5017-legacy-writer-media），按精确名删除与该意图矛盾，按 bug 直接修。
