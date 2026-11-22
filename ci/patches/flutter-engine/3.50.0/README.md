@@ -209,6 +209,38 @@ surface 上。呈现过任意一帧之后行为与原版逐字相同。
 
 **删除条件**：上游让首帧前的 resize 不再同步等待（或整个 resize 同步改成不阻塞平台线程）时删掉。
 
+### `engine-texture-frame-raster-thread.patch`（flutter 仓库根目录，叠在前七份之上；BUG-5200）
+
+外部纹理的新帧不再经平台线程 / Dart UI 线程。原版
+`FlutterWindowsTextureRegistrar::MarkTextureFrameAvailable`
+（`shell/platform/windows/flutter_windows_texture_registrar.cc:103`）把每次 mark
+`RunNowOrPostTask` 到平台线程，`Shell::OnPlatformViewMarkTextureFrameAvailable`
+（`shell/common/shell.cc:1318`）在那里把 `MarkNewFrameAvailable` 排给 raster、再
+`ScheduleFrame` 让 Animator 等 vsync 出一帧。Windows 上平台线程与 Dart UI 线程默认合并，
+所以主线程只要忙过一个视频帧间隔（24 fps 是 41.7 ms），media_kit 就已把下一帧画进**同一块**
+共享纹理，这一帧永远不上屏（应用内反馈 q5f7uiRd__：平移镜头「一卡一卡」，同片源 PotPlayer 不卡）。
+
+补丁：embedder 加 `FlutterEngineMarkExternalTextureFrameAvailableOnRasterThread`（proc table
+末尾追加），`EmbedderEngine::MarkTextureFrameAvailableOnRasterThread` 在生产方线程上把纹理 id
+压进待标记集合；集合上已有排队的重画就合并，否则向 raster runner post 一个任务：同一把锁里
+swap 出集合并清 `scheduled`（之后到的 mark 能排下一次重画，不会被漏掉），逐个
+`MarkNewFrameAvailable`，再按 `Animator::DrawLastLayerTrees` 的方式补齐帧时记录器（vsync 区间按
+主显示器刷新率）调 `Rasterizer::DrawLastLayerTrees`。Windows 注册器的 mark 改调这个入口。
+Windows 上 DWM 合成、交换间隔 0（`NeedsVsync()` 为假），raster 线程直接呈现不需要等 vsync；
+resize 期间尺寸不符的帧仍被 `OnFrameGenerated` 拒掉，与原版同一条门。
+
+引擎单测（`flutter_windows_texture_registrar_unittests.cc`）：`RegisterUnregisterTexture` 改为
+mock 新入口、旧入口被调就失败；新增 `MarkFrameAvailableFromProducerThreadSkipsPlatformThread`
+（在独立线程上 mark，断言新入口在该线程上同步被调、不需要平台线程）。
+
+实测（Windows 离屏 runner、1080p 24 fps、Dart 主线程每 150 ms 忙等 60 ms，原生出帧计数，
+`fushi/integration_test/video_present_main_thread_busy_itest.dart`）：原版引擎 10 s 出 240 帧、
+上屏 202、丢 38；补丁引擎 240 / 240、丢 0，出帧到取走的平均延迟 9.8 ms → 0.1 ms。
+守卫 `fushi/test/build/texture_frame_raster_thread_engine_guard_test.dart`。
+
+**删除条件**：上游让外部纹理 mark 不经平台线程直接在 raster 线程重画（或 Windows 默认不再合并
+平台 / UI 线程且 mark 不再经 Animator）时删掉。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
@@ -226,7 +258,7 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe350 -PatchVersion hdr-output-1   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe350 -PatchVersion hdr-output-2   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 # 机器忙时限并发：-Jobs 8（每个 clang-cl 最多吃约 1 GB）
@@ -234,7 +266,7 @@ tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe350 -PatchVersion hdr-ou
 #   目录里用 junction 指回真 SDK 的各子目录，再放一份 Debuggers\x64\dbghelp.dll（只被拷进 out 目录，不进产物）
 ```
 
-步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（七份引擎补丁 + ANGLE 一份，干净树上按序打）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（八份引擎补丁 + ANGLE 一份，干净树上按序打）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
@@ -248,15 +280,22 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-3.50.0 的第一份补丁引擎是 `hdr-output-1`（2026-11-13 本机编，含上面全部七份引擎补丁与 ANGLE 补丁；
+3.50.0 的第一份补丁引擎是 `hdr-output-1`（2026-11-13 本机编，含前七份引擎补丁与 ANGLE 补丁，**不含**
+第八份 `engine-texture-frame-raster-thread`；
 三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-1.zip`，SHA-256
 `079bb3a75fc07217b52a6b3f3842dd69cce021c27aea6e6387334430ae750a0b`）。已发 release
 `flutter-engine-3.50.0-hdr-output-1`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
 `artifacts.json` 的 `engineVersion` / `url` / `sha256` 均指向它，CI 与
 `tool/engine_overlay.ps1 -Manifest` 可直接安装。
 
+**待办（BUG-5200 在 3.50 上未生效）**：第八份补丁是 develop 在 3.47.6 上 2026-11-22 加的（3.47.6 产物
+`hdr-output-5`），合进本分支时已移植到 3.50.0：在 3.50.0 源码上按序重放前七份后 `git apply` 干净通过（只有行号偏移），
+本目录的补丁按 3.50.0 基线重新生成。但 3.50.0 的产物还没重编，`artifacts.json` 仍是 `hdr-output-1`——
+在重编发布 `flutter-engine-3.50.0-hdr-output-2` 并改 `artifacts.json` 之前，用 3.50 出的 Windows 包
+回到「主线程一忙视频就丢帧」（BUG-5200 修复前的行为）。
+
 改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
-仍是旧引擎。旧 release 留着给旧提交复现用（3.47.6 时代：`flutter-engine-3.47.6-hdr-output-4` 是全部七份，
+仍是旧引擎。旧 release 留着给旧提交复现用（3.47.6 时代：`flutter-engine-3.47.6-hdr-output-5` 是全部八份，`-4` 是前七份，
 `-3` 是前四份补丁，`-2` 是前三份、无 keyed mutex，`-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
 `flutter-engine-3.44.0-hdr-output-2`）。
 

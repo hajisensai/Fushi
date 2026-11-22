@@ -4,10 +4,11 @@ import 'package:fushi/src/reader/reader_word_sweep_scripts.dart';
 
 /// 阅读器「整句扫词」的纯逻辑层（拍板台 5H922XeDHM；无 Flutter / 无页面状态）。
 ///
-/// 与视频页共用同一套词序列与游标规则（[buildSubtitleSweepTokens] /
-/// [resolveSubtitleSweepStop]：引擎最长匹配分词、句尾循环、跳过整词不可查的词），
-/// 区别只在坐标：JS 侧回传的停靠点是句子里的 **UTF-16 码元**下标，这里折算成
-/// grapheme 再交给共用函数，落点再折回码元交给 JS 查词。页面侧接线在
+/// 分词与手柄查词模式共用 [buildSubtitleSweepTokens]（引擎最长匹配）；游标规则
+/// （句尾循环、跳过整词不可查的词）见 [resolveReaderWordSweepStop]。视频页的同名
+/// 「整句扫词」已在 2026-11-22 手柄查词统一里删除，阅读器这一份是否随之删除待拍板。
+/// 坐标：JS 侧回传的停靠点是句子里的 **UTF-16 码元**下标，这里折算成 grapheme 定
+/// 落点，再折回码元交给 JS 查词。页面侧接线在
 /// `reader_fushi/word_sweep.part.dart`，WebView 侧在 [ReaderWordSweepScripts]。
 
 /// 扫词一步的落点：第几个词（[tokenIndex]）、在句子里哪个码元起查（[unit]）。
@@ -58,17 +59,40 @@ ReaderWordSweepStop? resolveReaderWordSweepStop({
     final int? known = firstStopOfGrapheme[g];
     if (known == null || unit < known) firstStopOfGrapheme[g] = unit;
   }
-  final SubtitleSweepStop? stop = resolveSubtitleSweepStop(
-    tokens: tokens,
-    index: index,
-    forward: forward,
-    selectableGraphemes: firstStopOfGrapheme.keys.toSet(),
-  );
-  if (stop == null) return null;
-  return (
-    tokenIndex: stop.tokenIndex,
-    unit: firstStopOfGrapheme[stop.graphemeIndex]!,
-  );
+  // 最多走一圈：词里有可停的字就停在该词第一个可停字（查到的仍是本词），整词
+  // 都不可停就跳过它继续同方向找；整句都不可停返回 null。
+  int cursor = index;
+  for (int step = 0; step < tokens.length; step++) {
+    cursor = advanceReaderWordSweepIndex(
+      cursor,
+      tokens.length,
+      forward: forward,
+    );
+    if (cursor < 0) return null;
+    final SubtitleSweepToken token = tokens[cursor];
+    for (int g = token.graphemeStart; g < token.graphemeEnd; g++) {
+      final int? unit = firstStopOfGrapheme[g];
+      if (unit != null) return (tokenIndex: cursor, unit: unit);
+    }
+  }
+  return null;
+}
+
+/// 扫词游标的下一格 / 上一格。
+///
+/// 句尾**循环**回句首（[length] 为 1 时恒停在 0）。[index] 传 -1 表示「尚未开始」：
+/// 前进落到 0、后退落到末词（首次按「上一词」落在句尾，而不是被夹到句首）。
+/// [length] <= 0（无词）恒返回 -1，调用方据此早退。
+int advanceReaderWordSweepIndex(
+  int index,
+  int length, {
+  required bool forward,
+}) {
+  if (length <= 0) return -1;
+  if (index < 0 || index >= length) {
+    return forward ? 0 : length - 1;
+  }
+  return forward ? (index + 1) % length : (index - 1 + length) % length;
 }
 
 /// 扫词会话（仅内存）：当前句的词序列与词游标。

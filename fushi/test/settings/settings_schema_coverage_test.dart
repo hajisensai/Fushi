@@ -862,7 +862,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'navigation/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
-  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（副屏在用 = 按住 L1、否则关）
+  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（一律按住 L1，单屏也是）
   // 和按键行为由 ControllerLookupMode 的专项测试钉死（生效点在手柄分派层）。
   'general/Controller lookup mode':
       'test/second_screen/controller_lookup_mode_test.dart',
@@ -1942,6 +1942,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 任何 AI 不调度、开着时接管旧自动整理的触发点，编排逻辑由引擎测试覆盖。
   'ai/Curate the library automatically':
       'test/ops/ctl_library_curate_routes_test.dart',
+  // AI 管库自动复查（默认开）：生效点是库管家自动路径跑完后的无人值守助手会话
+  // （harness 里没有导入、操作上下文与 AI 提供商）。专项测试咬住开关关 / 没指派
+  // 助手不跑、首次全库 → 无新条目不跑 → 增量、请求失败不推进水位、流水线关着也复查。
+  'ai/Review the library with the AI assistant after imports':
+      'test/media/library_curate/library_agent_review_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
   "interconnect/Use this device's AI assistant":

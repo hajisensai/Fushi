@@ -162,4 +162,74 @@ class GamepadTriggerKeySynthesizerTest {
         assertContentEquals(intArrayOf(1, 0), leftOnly.step(floatArrayOf(1f, Float.NaN), 1L))
         assertFalse(leftOnly.pressed[right])
     }
+
+    private val none = GamepadTriggerKeySynthesizer.STICK_NONE
+
+    @Test
+    fun rightStickAxisPrefersCentredZThenRx() {
+        assertEquals(
+            MotionEvent.AXIS_Z,
+            GamepadTriggerKeySynthesizer.resolveRightStickXAxis(
+                layout(MotionEvent.AXIS_Z to -1f, MotionEvent.AXIS_RX to -1f),
+            ),
+        )
+        // Unipolar Z is a trigger, not a stick: fall through to RX.
+        assertEquals(
+            MotionEvent.AXIS_RX,
+            GamepadTriggerKeySynthesizer.resolveRightStickXAxis(
+                layout(MotionEvent.AXIS_Z to 0f, MotionEvent.AXIS_RX to -1f),
+            ),
+        )
+        assertEquals(
+            MotionEvent.AXIS_RX,
+            GamepadTriggerKeySynthesizer.resolveRightStickXAxis(layout(MotionEvent.AXIS_RX to -1f)),
+        )
+        assertEquals(
+            -1,
+            GamepadTriggerKeySynthesizer.resolveRightStickXAxis(layout(MotionEvent.AXIS_Z to 0f)),
+        )
+        assertEquals(-1, GamepadTriggerKeySynthesizer.resolveRightStickXAxis(layout()))
+    }
+
+    @Test
+    fun stickPressReleaseHasHysteresisAndNoChatter() {
+        val t = GamepadTriggerKeySynthesizer.DeviceTriggers(layout(MotionEvent.AXIS_Z to -1f))
+        assertContentEquals(intArrayOf(none, none), t.stepStick(0.5f, 1L))
+        assertContentEquals(intArrayOf(none, right), t.stepStick(0.6f, 2L))
+        assertEquals(2L, t.stickDownTime)
+        // Hovering in the hysteresis band does not release or re-press.
+        assertContentEquals(intArrayOf(none, none), t.stepStick(0.4f, 3L))
+        assertContentEquals(intArrayOf(none, none), t.stepStick(0.9f, 4L))
+        assertContentEquals(intArrayOf(right, none), t.stepStick(0.3f, 5L))
+        assertContentEquals(intArrayOf(none, left), t.stepStick(-0.7f, 6L))
+        assertContentEquals(intArrayOf(none, none), t.stepStick(-0.4f, 7L))
+        assertContentEquals(intArrayOf(left, none), t.stepStick(-0.2f, 8L))
+    }
+
+    @Test
+    fun stickSwingAcrossReleasesOldBeforePressingNew() {
+        val t = GamepadTriggerKeySynthesizer.DeviceTriggers(layout(MotionEvent.AXIS_RX to -1f))
+        assertContentEquals(intArrayOf(none, left), t.stepStick(-1f, 1L))
+        assertContentEquals(intArrayOf(left, right), t.stepStick(1f, 2L))
+        assertEquals(1, t.stickHeld)
+        assertContentEquals(intArrayOf(right, left), t.stepStick(-1f, 3L))
+        assertEquals(-1, t.stickHeld)
+    }
+
+    @Test
+    fun stickStateIsPureAndSymmetric() {
+        assertEquals(0, GamepadTriggerKeySynthesizer.stickState(0, 0.59f))
+        assertEquals(1, GamepadTriggerKeySynthesizer.stickState(0, 0.6f))
+        assertEquals(-1, GamepadTriggerKeySynthesizer.stickState(0, -0.6f))
+        assertEquals(1, GamepadTriggerKeySynthesizer.stickState(1, 0.35f))
+        assertEquals(0, GamepadTriggerKeySynthesizer.stickState(1, 0.34f))
+        assertEquals(-1, GamepadTriggerKeySynthesizer.stickState(-1, -0.35f))
+        assertEquals(0, GamepadTriggerKeySynthesizer.stickState(-1, -0.34f))
+    }
+
+    @Test
+    fun deviceWithoutStickAxisIsNotBridged() {
+        val t = GamepadTriggerKeySynthesizer.DeviceTriggers(layout(MotionEvent.AXIS_LTRIGGER to 0f))
+        assertEquals(-1, t.stickAxis)
+    }
 }

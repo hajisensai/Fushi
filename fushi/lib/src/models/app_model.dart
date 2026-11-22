@@ -15063,17 +15063,18 @@ class AppModel
             bool success,
             bool record,
             MineToastStatus status,
+            String? detail,
           })
           described = describeMineOutcome(outcome);
           // 制卡结果走 showMine：过「制卡提示」开关。
           FushiToast.showMine(
             msg: described.message,
             status: described.status,
-            // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-            action:
-                minedCardUndoToastAction(repo, outcome, expression: word) ??
-                // BUG-5085：复习库要升级时带「打开复习」。
-                mineFailureToastAction(outcome),
+            detail: described.detail,
+            term: word,
+            reading: reading,
+            // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+            action: mineResultToastAction(repo, outcome, expression: word),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);

@@ -68,16 +68,23 @@ void main() {
       );
     });
 
-    test('进光标的 enter-trigger 把开关透传给纯函数 router（键盘 + 手柄两处）', () {
+    // 2026-11-22 手柄查词统一：手柄不再有进光标入口（isEnterTriggerGamepad 已删），
+    // 只剩键盘一处 enter-trigger。
+    test('进光标的 enter-trigger 把开关透传给纯函数 router（键盘）', () {
       final int count = 'focusNavEnabled: _focusNavEnabled'
           .allMatches(code)
           .length;
       expect(
         count,
-        greaterThanOrEqualTo(2),
+        greaterThanOrEqualTo(1),
         reason:
-            'isEnterTriggerKeyboard / isEnterTriggerGamepad 必须收到 '
+            'isEnterTriggerKeyboard 必须收到 '
             'focusNavEnabled: _focusNavEnabled，开关关闭时不进光标（BUG-161）。',
+      );
+      expect(
+        code.contains('isEnterTriggerGamepad'),
+        isFalse,
+        reason: '手柄进光标入口已删（手柄查词只走查词模式）。',
       );
     });
 

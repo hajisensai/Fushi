@@ -84,6 +84,8 @@ import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_stack.dart';
+import 'package:fushi/src/utils/misc/notice_placement.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/fushi_toast.dart' show FushiToastCapsule;
@@ -475,6 +477,7 @@ import 'package:fushi/src/media/video/video_speed_pref.dart';
 import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
@@ -594,7 +597,6 @@ part 'video_fushi/lookup_mining.part.dart';
 part 'video_fushi/disc_menu.part.dart';
 part 'video_fushi/mine_queue.part.dart';
 part 'video_fushi/subtitle_caret.part.dart';
-part 'video_fushi/word_sweep.part.dart';
 part 'video_fushi/fullscreen.part.dart';
 part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
@@ -794,6 +796,18 @@ bool isSameSubtitleHoverWord({
 int lookupHighlightGraphemeCount(String term, int matchedRunes) {
   if (matchedRunes <= 0 || term.isEmpty) return 0;
   return String.fromCharCodes(term.runes.take(matchedRunes)).characters.length;
+}
+
+/// 手柄查词模式的选区右端上限（`ControllerLookupTarget.lookupAtCursor` 的
+/// `maxGraphemes`）落到字幕查询串上：把 [term]（[subtitleLookupSpan] 的查询串，从
+/// 查词起点到句尾）截到前 [maxGraphemes] 个字素。null = 不截（交给词典最长匹配）；
+/// 上限至少 1 个字素；不超过串长时原样返回。按字素截，组合字符 / emoji 不会被劈开。
+String capSubtitleLookupTerm(String term, int? maxGraphemes) {
+  if (maxGraphemes == null) return term;
+  final Characters graphemes = term.characters;
+  final int cap = maxGraphemes < 1 ? 1 : maxGraphemes;
+  if (cap >= graphemes.length) return term;
+  return graphemes.take(cap).toString();
 }
 
 @visibleForTesting
@@ -1344,18 +1358,9 @@ class _VideoOsdMessage {
     this.progress,
     this.prominent = false,
     this.severity = ToastSeverity.neutral,
-    this.mineStatus,
-    this.mineAction,
   });
 
   final String message;
-
-  /// 制卡结果卡上的动作按钮（「撤销」，反馈 JNyykxvuY9）；非空时 OSD 接收指针。
-  final MineNoticeAction? mineAction;
-
-  /// 非空 = 制卡结果 OSD，画成与底部制卡 toast 同一张 M3E 结果卡
-  /// （[FushiMineNoticeCard]），而不是通用小角标。
-  final MineToastStatus? mineStatus;
   final IconData? icon;
   final double? progress;
 
@@ -2652,6 +2657,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
 
+  /// 制卡结果队列（左上角、OSD 下方）：与底部制卡 toast 同一个
+  /// [FushiMineNoticeStack]，处理中原地变成结果、连续几张叠起来。只经
+  /// [_showMineOsd] 写入。
+  final MineNoticeController _mineNotices = MineNoticeController();
+
   /// 「识别一次当前画面」请求序号（反馈 X3ozgOAx8v）：[_ocrCurrentFrame] 每次 +1，
   /// 暂停 OCR 覆盖层看到变化就手动识别当前暂停帧（见
   /// [VideoGraphicSubtitleOcrOverlay.manualRequestSerial]）。
@@ -3341,12 +3351,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final VideoSubtitleRevealHandle _subtitleRevealHandle =
       VideoSubtitleRevealHandle();
 
-  /// 暂停句「整句扫词」的会话状态（仅内存）：当前句 / 词序列 / 词游标。执行体见
-  /// `_VideoWordSweep`（`video_fushi/word_sweep.part.dart`）。它是有模态的字级选词
-  /// 光标之外的**无光标查词**路径——正因为不进 caret，浮层的 X=制卡 / Y=发音
-  /// 在扫词中才永远可达。
-  final _WordSweepState _wordSweep = _WordSweepState();
-
   /// 字幕**列表侧栏**字符命中句柄（BUG-874）：与 [_subtitleHitTester] 对称。查词浮层的
   /// dismiss barrier 盖在推挤式字幕列表侧栏之上、抢走点击，故 barrier 在底部字幕 miss 后再
   /// 用本句柄反查「点到的是不是列表里某行某个字符」，是则切换查词、保持浮层（见
@@ -3536,8 +3540,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 字级选词光标状态机（videoEnterCaret）：复用阅读器抽出的
   /// [DictionaryCaretController]（TODO-387 预留的跨页面复用点）。主面 =
-  /// [CaretSurface.video]（字幕 overlay 登记表下标 [_subtitleCaretEntry]），查词后
-  /// transfer 进顶层弹窗（[CaretSurface.popup]），与阅读器共用弹窗 caret 全套。
+  /// [CaretSurface.video]（字幕 overlay 登记表下标 [_subtitleCaretEntry]），键盘光标
+  /// 查词后 / 手柄查词模式「进入结果」后 transfer 进顶层弹窗（[CaretSurface.popup]），
+  /// 与阅读器共用弹窗 caret 全套。
   /// 域方法见 video_fushi/subtitle_caret.part.dart。
   late final DictionaryCaretController _videoCaret = DictionaryCaretController(
     this,
@@ -3585,8 +3590,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 弹窗层渲染完成（DictionaryPageMixin 钩子）：光标激活时把它 transfer 进刚显示
   /// 的顶层弹窗（与阅读器 onDictionaryPopupRendered → controller 同链路）。
+  ///
+  /// 手柄查词模式驱动的光标例外（2026-11-22 手柄查词统一）：光标还在字幕上时查词
+  /// 后**留在正文**，下一次十字键继续换词；要进弹窗按「进入结果」
+  /// （[_VideoControllerLookupTarget.enterResult]）。已在弹窗上（进入结果之后）的
+  /// 光标照旧跟随新渲染的嵌套层。
   @override
   void onNestedPopupRendered(int index) {
+    if (_controllerLookupHoldsCaret) return;
     _videoCaret.onDictionaryPopupRendered(index);
   }
 
@@ -8043,6 +8054,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _mineNotices.dispose();
     _manualFrameOcrRequests.dispose();
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
@@ -8523,12 +8535,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _barrierHoverLastSentence = sentence;
     _barrierHoverLastGrapheme = graphemeIndex;
     _barrierHoverLastSpanStart = spanStart;
-    _handleSubtitleLookupTap(
-      sentence,
-      graphemeIndex,
-      charRect,
-      cue,
-      fromHover: true,
+    unawaited(
+      _handleSubtitleLookupTap(
+        sentence,
+        graphemeIndex,
+        charRect,
+        cue,
+        fromHover: true,
+      ),
     );
   }
 
@@ -8710,11 +8724,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       topVisibleIndex: _topVisiblePopupIndex,
       hitSubtitle: hit != null,
     )) {
-      _handleSubtitleLookupTap(
-        hit!.sentence,
-        hit.graphemeIndex,
-        hit.charRect,
-        hit.cue,
+      unawaited(
+        _handleSubtitleLookupTap(
+          hit!.sentence,
+          hit.graphemeIndex,
+          hit.charRect,
+          hit.cue,
+        ),
       );
       return;
     }
@@ -8755,17 +8771,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [fromHover]：本次查词是不是悬停发起的（[_handleSubtitleHoverLookup] 传 true）。它
   /// 决定「指针离开后自动关栈续播」对本次会话是否生效；默认 false 使所有点击入口
   /// （`onCharTap` / barrier 点字换词）保持既有行为——鼠标移开不关浮层。
-  void _handleSubtitleLookupTap(
+  ///
+  /// [maxGraphemes]：手柄查词模式的选区右端上限，原样交给 [_lookupAt]（null = 不截）。
+  /// 返回 [_lookupAt] 的命中高亮长度（字素数；沉浸门控挡下 / 查不到 = 0）——点击入口
+  /// 不关心它，手柄查词模式据此算选区右端（[measureMatch] = true，副屏接手时也量）。
+  Future<int> _handleSubtitleLookupTap(
     String sentence,
     int graphemeIndex,
     Rect charRect,
     AudioCue? cue, {
     bool fromHover = false,
+    int? maxGraphemes,
+    bool measureMatch = false,
   }) {
-    if (!_immersiveAllowsLookup) return;
+    if (!_immersiveAllowsLookup) return Future<int>.value(0);
     _lookupOpenedByHover = fromHover;
     if (!fromHover) _cancelHoverLeaveResume();
-    unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
+    return _lookupAt(
+      sentence,
+      graphemeIndex,
+      charRect,
+      overrideCue: cue,
+      maxGraphemes: maxGraphemes,
+      measureMatch: measureMatch,
+    );
   }
 
   /// BUG-3319：暂停 OCR 层点字查词。图形字幕没有 Dart 侧 cue，以前这里传 null 锚点 →
@@ -8785,7 +8814,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     // 读 mpv 属性期间页面关闭 / 换集（controller 被替换）：不再查词。
     if (!mounted || !identical(_controller, controller)) return;
-    _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor);
+    unawaited(
+      _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor),
+    );
   }
 
   /// 图形字幕 OCR 查词层。引擎解析与漫画在线直读同一口径（引擎偏好 / Lens 上传
@@ -8868,43 +8899,42 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 Widget? _,
               ) {
                 final ThemeData theme = Theme.of(context);
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: _videoButtonBarHeight + 8 * _videoUiScale,
-                    ),
-                    child: Theme(
-                      data: theme.copyWith(
-                        colorScheme: _videoChromeColorScheme(context),
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.medium,
+                // 跟着顶栏显隐上下（[_followTopChrome]，与 OSD 同一口径）。
+                return _followTopChrome(
+                  (BuildContext context, double top) => Align(
+                    alignment: Alignment.topLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 16, right: 16, top: top),
+                      child: Theme(
+                        data: theme.copyWith(
+                          colorScheme: _videoChromeColorScheme(context),
                         ),
-                        switchInCurve: FushiMotion.enter,
-                        switchOutCurve: FushiMotion.exit,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, -0.15),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
+                        child: AnimatedSwitcher(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.medium,
+                          ),
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          transitionBuilder:
+                              (Widget child, Animation<double> animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, -0.15),
+                                        end: Offset.zero,
+                                      ).animate(animation),
+                                      child: child,
+                                    ),
                                   ),
+                          child: job == null
+                              ? const SizedBox.shrink()
+                              : VideoGraphicSubtitleOcrProgressCard(
+                                  state: job,
+                                  onCancel: _cancelGraphicSubtitleOcr,
                                 ),
-                        child: job == null
-                            ? const SizedBox.shrink()
-                            : VideoGraphicSubtitleOcrProgressCard(
-                                state: job,
-                                onCancel: _cancelGraphicSubtitleOcr,
-                              ),
+                        ),
                       ),
                     ),
                   ),
@@ -9578,10 +9608,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // videoEnterCaret：选词光标激活期不再「任一键先关浮层」（那会把正在手柄导航
     // 的弹窗关掉）；Enter=对光标查词/激活、Esc=光标语义退层，其余吞掉。
     if (_handleCaretPopupInputToken(action)) return true;
-    // 暂停句「整句扫词」：浮层持焦（键盘）或指针落在浮层 / barrier 上（鼠标侧键）时
-    // 输入只从这里回来。扫词每停一词就是换词重查，恰恰只在浮层可见时有意义，必须排在
-    // 「任一键先关浮层」之前——否则浮层一持焦，扫词键就退化成「关浮层」。
-    if (_runWordSweepAction(action)) return true;
     _dismissTopVisiblePopup();
     return true;
   }
@@ -9871,9 +9897,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoInputClock.elapsed,
     );
     final VideoPlayerController? controller = _controller;
-    // videoEnterCaret：选词光标激活期，方向/确认/退出等在注册表解析**之前**截获
-    // （阅读器 caret.part 同款 contextual 路由）；未激活返回 false 走正常解析
-    // （进入光标本身是注册表动作 videoEnterCaret，经下方 callback 执行）。
+    // 选词光标在弹窗面上时，方向/确认/退出等在注册表解析**之前**截获（阅读器
+    // caret.part 同款 contextual 路由）；其余返回 false 走正常解析。字幕主面上的
+    // 手柄查词归 ControllerLookupMode（它在页面派发之前消费自己的键）。
     if (_handleDiscMenuGamepad(button)) return true;
     if (_discOwnsInput) return true;
     if (_handleCaretGamepadButton(button)) return true;
@@ -9897,21 +9923,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         );
     if (action == null) return false;
     // 手柄重设计 P2：浮层可见时先给浮层自己的 dictionaryPopup 绑定一次消费机会，再落到
-    // 下面的扫词与「已绑键 = 关浮层」。少了这一步，dpad 上下 / X / Y 在 video scope 全都
+    // 下面的「已绑键 = 关浮层」。少了这一步，dpad 上下 / X / Y 在 video scope 全都
     // 有绑定（音量 / 上下条字幕），于是 P2 的词条导航 / 制卡 / 发音四个默认绑定在
     // 视频页**结构性不可达**——GamepadService 的弹窗兜底排在页面 Actions 之后，
     // 这里已经 return true 了，永远轮不到。设置里能配、按了没反应正是要禁的形态。
-    // 必须排在扫词之前：用户把扫词绑到浮层键（X/Y/方向上下）时，浮层动作照旧可用，
-    // 而不是被扫词静默抢走。B 不在 dictionaryPopup 绑定里，逐级退出关浮层的行为不变。
+    // B 不在 dictionaryPopup 绑定里，逐级退出关浮层的行为不变。
     if (_hasVisiblePopup &&
         tryDictionaryPopupGamepadButton(appModel.shortcutRegistry, button)) {
       return true;
     }
-    // 暂停句「整句扫词」：必须排在下面那条「浮层可见 → 已绑键先关浮层」**之前**。
-    // 扫词每停一词都复用/替换同一张浮层（replaceStack + reuseWarmSlot），浮层恒可见；
-    // 排在守卫之后就会变成「按一次只关浮层、不推进下一词」，功能完全失效。与键盘
-    // 通道把 popupMineEntry 绕开同一条守卫是同一个道理。
-    if (_runWordSweepAction(action)) return true;
     // BUG-924：词典浮层可见时，任一已绑手柄键先关顶层浮层并消费（对齐阅读器 + 键盘通道），
     // 而非穿透控制后台视频。放在解析出 action 之后——未绑定的键仍交回 GamepadService 兜底
     // （焦点移动等），不误吞导航。
@@ -10099,10 +10119,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _handleVideoEscapeAction();
         return true;
       }
-      // 暂停句「整句扫词」：执行体不碰播放器、也不在 videoActionCallbacks 里，与键盘 /
-      // 手柄同一个派发点，分流在 controller 门之前（侧键绑扫词此前按了无反应）。浮层
-      // 可见时本入口不可达，那半边由 [onDictionaryPopupInputToken] 接。
-      if (_runWordSweepAction(action)) return true;
       final VideoPlayerController? controller = _controller;
       if (controller == null) return false;
       // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
@@ -10163,11 +10179,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _mineFromTopPopup();
           return true;
         }
-        // 暂停句「整句扫词」：与制卡同族——恰恰只在浮层可见时才有意义（每停一词就是
-        // 一次换词重查），执行体不在 videoActionCallbacks 里，且必须绕开
-        // [resolveVideoKeyboardShortcut] 的「浮层可见 → 先关浮层」守卫（那里已同步
-        // 放行本动作）。手柄通道在 [_handleVideoGamepadButton] 有对应的前置分支。
-        if (_runWordSweepAction(action)) return true;
         // 「返回上一级」的执行体是本页的逐级退出阶梯，整条不碰播放器
         // （[_handleVideoEscapeAction]），所以它必须分流在下面那道 controller 门**之前**：
         // 加载态 / 资源缺失态下 `_controller` 恒为 null，跟着整表一起被挡在门外就等于

@@ -115,6 +115,18 @@ class SrsHomeStats {
   /// 全库未来 [kSrsHomeForecastDays] 天逐日到期（第 0 天含已逾期）。
   final List<int> forecast;
 
+  /// 截至今天最近 [days] 天（含今天，旧 → 新）逐日复习次数；没有记录的日子为 0。
+  List<int> recentCounts([int days = kSrsHomeForecastDays]) => <int>[
+    for (int d = today - days + 1; d <= today; d++) countsByDay[d] ?? 0,
+  ];
+
+  /// 有复习记录的天数（[countsByDay] 是全部历史，不限范围）。
+  int get studiedDays => countsByDay.values.where((int n) => n > 0).length;
+
+  /// 全部历史的复习次数。
+  int get totalReviews =>
+      countsByDay.values.fold<int>(0, (int sum, int n) => sum + n);
+
   /// 牌组 id（卡片直接所在的牌组，不含子牌组）→ 今天的复习次数。
   final Map<String, int> doneTodayByDeck;
 

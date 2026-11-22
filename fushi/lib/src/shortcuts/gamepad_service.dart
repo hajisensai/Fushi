@@ -414,7 +414,11 @@ class GamepadService {
     // Controller lookup mode (hold L1 / Select) and R1 panel drive of the
     // second-screen companion sit in front of page dispatch; a tapped L1 / R1
     // is replayed through the normal path on release.
-    ControllerLookupMode.instance.redispatch = _dispatchButtonCore;
+    ControllerLookupMode.instance
+      ..redispatch = _dispatchButtonCore
+      // The mode resolves its buttons against the controllerLookup scope of
+      // the same registry the pages use (remappable in shortcut settings).
+      ..shortcutRegistry = registry;
     _lookupBadge = ControllerLookupBadgeHost(navigatorKey: navigatorKey)
       ..install();
     // TODO-939: the input-device → highlight-strategy tracking runs on EVERY
@@ -463,6 +467,7 @@ class GamepadService {
         onButtonRelease: _dispatchButtonRelease,
         onLongPress: _dispatchLongPress,
         onStickMove: _dispatchStickMove,
+        onStickRelease: _dispatchStickRelease,
         onRightStickScroll: _dispatchRightStickScroll,
       ),
     )..start();
@@ -473,6 +478,9 @@ class GamepadService {
     _lookupBadge = null;
     if (ControllerLookupMode.instance.redispatch == _dispatchButtonCore) {
       ControllerLookupMode.instance.redispatch = null;
+    }
+    if (identical(ControllerLookupMode.instance.shortcutRegistry, registry)) {
+      ControllerLookupMode.instance.shortcutRegistry = null;
     }
     _poller?.dispose();
     _poller = null;
@@ -632,6 +640,13 @@ class GamepadService {
     if (ctx == null) return;
     _onGamepadNav();
     gamepadMoveFocusInDirection(ctx, dir);
+  }
+
+  /// The left stick's held direction ended: controller lookup mode looks up
+  /// once after a held push. Focus navigation needs no release.
+  void _dispatchStickRelease() {
+    if (GalIngameLookupGamepadRoute.current != null) return;
+    ControllerLookupMode.instance.onStickRelease();
   }
 
   /// 每 tick 满偏时滚动的 CSS 像素（60ms 一 tick ≈ 满偏 400px/s，半偏减半）。
@@ -1067,8 +1082,15 @@ class GamepadFrameProcessor {
     this.onButtonRelease,
     this.onLongPress,
     this.onStickMove,
+    this.onStickRelease,
     this.onRightStickScroll,
   });
+
+  /// The left stick's held direction ended (back to centre, or switched to
+  /// another direction — the new direction then arrives on [onStickMove]).
+  /// Controller lookup mode looks up once here after a held push ("look up
+  /// when the cursor stops"). Null = not reported.
+  final VoidCallback? onStickRelease;
 
   /// 手柄重设计 P2：右摇杆的**连续滚动**通道。每个采样 tick（60ms）在死区外都
   /// 发一次归一化纵向偏移（-1..1，**向下为正**——插件轴 +Y=上，滚动语义相反，
@@ -1148,6 +1170,9 @@ class GamepadFrameProcessor {
   // Hysteretic stick direction (null = stick centred).
   TraversalDirection? _stickDir;
 
+  // Right-stick horizontal virtual key currently held (null = none).
+  GamepadButton? _rightStickKey;
+
   // Repeating directional channel state — D-pad.
   TraversalDirection? _heldDir;
   int _heldSinceMs = 0;
@@ -1173,13 +1198,17 @@ class GamepadFrameProcessor {
       if (_prevRightTrigger) release(GamepadButton.rt);
       final TraversalDirection? held = _heldDir;
       if (held != null) release(dpadButtonFor(held));
+      final GamepadButton? rsKey = _rightStickKey;
+      if (rsKey != null) release(rsKey);
     }
+    if (_heldStickDir != null) onStickRelease?.call();
     _prevButtons = 0;
     _prevLeftTrigger = false;
     _prevRightTrigger = false;
     _aDownMs = 0;
     _aLongFired = false;
     _stickDir = null;
+    _rightStickKey = null;
     _heldDir = null;
     _heldStickDir = null;
   }
@@ -1262,18 +1291,63 @@ class GamepadFrameProcessor {
     }
 
     final TraversalDirection? stickDir = _readStickDirection(stickX, stickY);
+    final TraversalDirection? previousStickDir = _heldStickDir;
+    if (previousStickDir != null && previousStickDir != stickDir) {
+      // The held stick direction ended (centred, or switched): report it
+      // before the new direction's first step.
+      _heldStickDir = null;
+      onStickRelease?.call();
+    }
     if (stickDir != null) {
       _updateHeldStickDirection(stickDir, nowMs: nowMs);
     } else {
       _heldStickDir = null;
     }
 
+    // 右摇杆横轴 → 虚拟键 RS← / RS→（2026-11-22 手柄查词统一）：带滞回的边沿
+    // 检测，只出 press / release，不自动重复（按住的连发由消费方——查词模式——
+    // 自己跑）。纵轴照旧是下面的连续滚动。
+    _updateRightStickKey(rightStickX, rightStickY);
+
     // 右摇杆连续滚动（P2）：无边沿检测、无自动重复——它是速度量，每 tick 在死区
-    // 外都发（横轴暂不消费，只采纵轴）。
+    // 外都发（只采纵轴；横轴走上面的虚拟键）。
     final void Function(double dyNorm)? scrollEmit = onRightStickScroll;
     if (scrollEmit != null && rightStickY.abs() > rightStickDeadZone) {
       scrollEmit(-rightStickY / GamepadFrameBits.axisMax);
     }
+  }
+
+  /// Right-stick horizontal → [GamepadButton.rightStickLeft] /
+  /// [GamepadButton.rightStickRight] press / release edges, with the same
+  /// [stickEnter] / [stickExit] hysteresis as the left stick. Enters only when
+  /// the horizontal component dominates (a mostly-vertical push is the scroll
+  /// channel, not a key); once held, only dropping below [stickExit] or
+  /// flipping sides releases it.
+  void _updateRightStickKey(int rx, int ry) {
+    final GamepadButton? held = _rightStickKey;
+    GamepadButton? next = held;
+    if (held == null) {
+      if (rx.abs() >= stickEnter && rx.abs() > ry.abs()) {
+        next = rx > 0
+            ? GamepadButton.rightStickRight
+            : GamepadButton.rightStickLeft;
+      }
+    } else {
+      final bool heldRight = held == GamepadButton.rightStickRight;
+      final int along = heldRight ? rx : -rx;
+      if (along < stickExit) {
+        next = null;
+        if (rx.abs() >= stickEnter && rx.abs() > ry.abs()) {
+          next = rx > 0
+              ? GamepadButton.rightStickRight
+              : GamepadButton.rightStickLeft;
+        }
+      }
+    }
+    if (next == held) return;
+    if (held != null) onButtonRelease?.call(held);
+    _rightStickKey = next;
+    if (next != null) onButton(next);
   }
 
   TraversalDirection? _dpadDirection(int buttons) {
