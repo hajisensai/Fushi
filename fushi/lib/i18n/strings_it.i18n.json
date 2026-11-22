@@ -4747,6 +4747,7 @@
   "home_widget_edit": "Modifica home",
   "home_widget_edit_hint": "Invio per sollevare, frecce per spostare, Maiusc+frecce per la dimensione, Canc per rimuovere",
   "home_widget_empty": "Nessun widget nella home per ora",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "Obiettivi per lingua",
   "home_widget_no_results": "Nessun widget corrispondente",
   "home_widget_recent_empty": "Niente aggiunto di recente",

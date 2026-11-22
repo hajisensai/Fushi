@@ -4747,6 +4747,7 @@
   "home_widget_edit": "แก้ไขหน้าหลัก",
   "home_widget_edit_hint": "Enter เพื่อหยิบ ปุ่มลูกศรเพื่อย้าย Shift+ลูกศรเพื่อปรับขนาด Delete เพื่อลบ",
   "home_widget_empty": "ยังไม่มีวิดเจ็ตในหน้าหลัก",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "เป้าหมายตามภาษา",
   "home_widget_no_results": "ไม่มีวิดเจ็ตที่ตรงกัน",
   "home_widget_recent_empty": "ไม่มีรายการที่เพิ่มล่าสุด",

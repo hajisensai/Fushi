@@ -4747,6 +4747,7 @@
   "home_widget_edit": "编辑首页",
   "home_widget_edit_hint": "回车拿起，方向键移动，Shift+方向键调整尺寸，Delete 移除",
   "home_widget_empty": "首页还没有小组件",
+  "home_widget_exit_edit": "退出编辑",
   "home_widget_language_goals": "语言目标",
   "home_widget_no_results": "没有匹配的小组件",
   "home_widget_recent_empty": "最近没有新添加的内容",
