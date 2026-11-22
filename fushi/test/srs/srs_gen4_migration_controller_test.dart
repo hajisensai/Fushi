@@ -296,7 +296,8 @@ void main() {
       // 这次出错（内核报错）：同上。
       b.pending = Completer<SrsGen4MigrationOutcome>();
       done = c.start();
-      b.pending.completeError(StateError('boom'));
+      await settle();
+      b.pending.completeError(const SrsCoreException(-1, 'boom'));
       await done;
       expect(c.error, isNotNull);
       expect(c.failureFor(previous), isNull);
