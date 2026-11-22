@@ -9,7 +9,6 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/download/video_release_extras.dart';
 import 'package:fushi_engine/media/video/metadata/video_extra_markers.dart';
-import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
