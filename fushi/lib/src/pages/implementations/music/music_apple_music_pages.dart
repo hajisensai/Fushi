@@ -65,9 +65,14 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-/// 横排卡片的宽 / 行高（与服务器搜索页的专辑横排同一几何）。
-const double _kRowCardWidth = 160;
-const double _kRowHeight = 220;
+/// 横排卡片的宽（与服务器搜索页的专辑横排同一几何）。
+const double kMusicShelfCardWidth = 160;
+
+/// 方封面横排卡一行的高：封面边长 + 卡片副行（[ShelfCardMeta.heightFor]，随文字缩放）。
+/// 写死行高会让两行标题 + 副行的卡片底部溢出。
+double musicShelfRowHeight(BuildContext context) =>
+    kMusicShelfCardWidth / kShelfAlbumAspectRatio +
+    ShelfCardMeta.heightFor(context);
 
 /// 主页「榜单歌曲」「最近播放的歌曲」先露几首（其余进「查看全部」）。
 const int _kInlineSongs = 6;
@@ -267,7 +272,7 @@ class MusicShelfRow extends StatelessWidget {
       children: <Widget>[
         FushiSectionTitle(title),
         SizedBox(
-          height: _kRowHeight,
+          height: musicShelfRowHeight(context),
           child: ShelfCoverMaterialScope(
             material: ShelfCoverMaterial.glossyAlbum,
             // 桌面端默认 dragDevices 不含鼠标：横排要鼠标也拖得动。
@@ -278,7 +283,7 @@ class MusicShelfRow extends StatelessWidget {
                 separatorBuilder: (_, _) => SizedBox(width: tokens.spacing.gap),
                 itemBuilder: fushiStaggeredItemBuilder(
                   (BuildContext context, int i) =>
-                      SizedBox(width: _kRowCardWidth, child: children[i]),
+                      SizedBox(width: kMusicShelfCardWidth, child: children[i]),
                 ),
               ),
             ),

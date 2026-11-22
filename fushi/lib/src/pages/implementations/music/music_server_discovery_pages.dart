@@ -14,24 +14,28 @@ void _push(BuildContext context, Widget page) => unawaited(
 );
 
 /// 一组曲目 / 专辑排成的段：曲目走「先露几首 + 查看全部」的曲目段，专辑走横排卡。
+/// [title] 是整组的标题（主页「最常播放」等）：落在排在最前的那一段上，后面的段用
+/// 类别名；null（流派页 / 收藏）= 各段一律用类别名（歌曲 / 专辑 / 艺人）。
 List<Widget> _itemsSections(
   BuildContext context,
   MusicServerBrowser browser,
-  String title,
+  String? title,
   MusicServerItems items,
   String keyPrefix,
 ) => <Widget>[
   if (items.tracks.isNotEmpty)
     MusicServerSongSection(
       key: ValueKey<String>('$keyPrefix-tracks'),
-      title: title,
+      title: title ?? t.music_section_songs,
       browser: browser,
       tracks: items.tracks,
     ),
   if (items.albums.isNotEmpty)
     MusicShelfRow(
       key: ValueKey<String>('$keyPrefix-albums'),
-      title: items.tracks.isEmpty ? title : t.music_section_albums,
+      title: items.tracks.isEmpty && title != null
+          ? title
+          : t.music_section_albums,
       children: <Widget>[
         for (final MusicServerAlbum a in items.albums)
           MusicServerAlbumCard(
@@ -369,7 +373,7 @@ class _MusicServerGenrePageState extends State<MusicServerGenrePage> {
             ..._itemsSections(
               context,
               widget.browser,
-              t.music_section_songs,
+              null,
               items,
               'music-server-genre',
             ),
@@ -440,7 +444,7 @@ class _MusicServerFavoritesViewState extends State<MusicServerFavoritesView> {
         _itemsSections(
           context,
           widget.browser,
-          t.music_section_songs,
+          null,
           items,
           'music-server-favorites',
         ),

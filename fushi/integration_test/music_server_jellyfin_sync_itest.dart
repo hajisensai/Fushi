@@ -145,14 +145,30 @@ void main() {
         await tester.pump(const Duration(seconds: 2));
         await captureFlutterFrame(tester, 'jfm-01-home', settle: false);
 
+        // 分区页签（LibrarySectionTabs）是整排一个焦点停靠点：Enter 不切段，只认
+        // 左右方向键（重设计外壳下画成连体按钮组，不是 TabBar）。分区顺序：
+        // 主页 / 专辑 / 艺人 / 歌单 / 流派 / 收藏。
+        final List<String> sectionLabels = <String>[
+          t.music_apple_music_section_home,
+          t.music_section_albums,
+          t.music_section_artists,
+          t.music_section_playlists,
+          t.music_server_section_genres,
+          t.music_server_section_favorites,
+        ];
+        int currentSection = 0;
         Future<void> selectSection(String label) async {
-          final Finder tab = find.widgetWithText(Tab, label);
-          if (tab.evaluate().isNotEmpty) {
-            expect(await driver.selectTab(tab.first), isTrue);
-          } else {
-            expect(await driver.focusWidget(find.text(label).first), isTrue);
-            await driver.activate();
-          }
+          final int target = sectionLabels.indexOf(label);
+          expect(target, greaterThanOrEqualTo(0));
+          expect(
+            await driver.focusWidget(
+              find.text(sectionLabels[currentSection]).first,
+            ),
+            isTrue,
+            reason: '分区页签应可聚焦',
+          );
+          await driver.adjust(steps: target - currentSection);
+          currentSection = target;
           await tester.pump(const Duration(seconds: 2));
         }
 
@@ -170,6 +186,7 @@ void main() {
         for (final String g in <String>['J-Pop', 'Rock', 'Ambient']) {
           expect(find.text(g), findsWidgets, reason: '流派分区应列出 $g');
         }
+        await tester.pump(const Duration(seconds: 2));
         await captureFlutterFrame(tester, 'jfm-02-genres', settle: false);
         expect(await driver.focusWidget(find.text('J-Pop').first), isTrue);
         await driver.activate();
@@ -256,6 +273,9 @@ void main() {
             isTrue,
             reason: '收藏分区应列出刚收藏的专辑',
           );
+          // 收藏里只有专辑时那一段标题是「专辑」（不是「歌曲」）。
+          expect(find.text(t.music_section_albums), findsWidgets);
+          expect(find.text(t.music_section_songs), findsNothing);
           await tester.pump(const Duration(seconds: 1));
           await captureFlutterFrame(tester, 'jfm-05-favorites', settle: false);
         }

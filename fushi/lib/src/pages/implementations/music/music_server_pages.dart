@@ -1384,7 +1384,7 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
                           if (r.albums.isNotEmpty) ...<Widget>[
                             FushiSectionTitle(t.music_section_albums),
                             SizedBox(
-                              height: 220,
+                              height: musicShelfRowHeight(context),
                               // 桌面端默认 dragDevices 不含鼠标：专辑横排要鼠标也拖得动。
                               child: HorizontalDragScrollable(
                                 child: ListView.separated(
@@ -1394,7 +1394,7 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
                                       SizedBox(width: tokens.spacing.gap),
                                   itemBuilder: fushiStaggeredItemBuilder(
                                     (BuildContext context, int i) => SizedBox(
-                                      width: 160,
+                                      width: kMusicShelfCardWidth,
                                       child: MusicServerAlbumCard(
                                         browser: widget.browser,
                                         album: r.albums[i],
@@ -1408,7 +1408,7 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
                           if (r.playlists.isNotEmpty) ...<Widget>[
                             FushiSectionTitle(t.music_section_playlists),
                             SizedBox(
-                              height: 220,
+                              height: musicShelfRowHeight(context),
                               child: HorizontalDragScrollable(
                                 child: ListView.separated(
                                   scrollDirection: Axis.horizontal,
@@ -1417,7 +1417,7 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
                                       SizedBox(width: tokens.spacing.gap),
                                   itemBuilder: fushiStaggeredItemBuilder(
                                     (BuildContext context, int i) => SizedBox(
-                                      width: 160,
+                                      width: kMusicShelfCardWidth,
                                       child: MusicServerPlaylistCard(
                                         browser: widget.browser,
                                         playlist: r.playlists[i],
