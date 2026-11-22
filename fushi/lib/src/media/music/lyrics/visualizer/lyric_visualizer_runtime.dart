@@ -10,6 +10,14 @@ import 'dart:math' as math;
 import 'package:characters/characters.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_segments.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_structure.dart';
+
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart';
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_segments.dart';
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_structure.dart';
+
 /// 一个字形（grapheme）的时间：逐字歌词按音节拆，行级歌词按行时长均分。
 class LyricVisualizerGlyph {
   const LyricVisualizerGlyph({
@@ -82,7 +90,14 @@ class LyricVisualizerLine {
     required this.glyphs,
     required this.words,
     required this.backgroundLines,
-  });
+    this.isChorus = false,
+    this.songPart = LyricVisualizerSongPart.unknown,
+    this.blockIndex = 0,
+    this.chorusEffect,
+    LyricVisualizerRenderHints? renderHints,
+    List<LyricVisualizerSegment>? segments,
+  }) : _renderHints = renderHints,
+       _segments = segments;
 
   /// 在 `timeline.lines` 里的下标（主行）。
   final int index;
@@ -95,6 +110,41 @@ class LyricVisualizerLine {
 
   /// 挂在这一行下的和声行（`isBackground`）。
   final List<LyricLine> backgroundLines;
+
+  /// 副歌行（来源标注优先，否则 folia 文本启发式；见 `lyric_visualizer_structure.dart`）。
+  final bool isChorus;
+
+  /// 段落类别（来源没有标注时：副歌行为 chorus，其余 unknown）。原始标注字符串见 [songPartLabel]。
+  final LyricVisualizerSongPart songPart;
+
+  /// 段（stanza）编号：从 0 起，段落标注变化或空隙超过阈值时 +1。
+  final int blockIndex;
+
+  /// 副歌装饰（folia `chorusEffect`）；非副歌为 null。
+  final LyricVisualizerChorusEffect? chorusEffect;
+
+  final LyricVisualizerRenderHints? _renderHints;
+  final List<LyricVisualizerSegment>? _segments;
+
+  /// 来源的段落标注原文（`Verse` / `Chorus`…）；没有为 null。
+  String? get songPartLabel => source.songPart;
+
+  /// 渲染提示（行时长分级、句尾离场窗口、逐词显现）。runtime 建行时已算好。
+  LyricVisualizerRenderHints get renderHints =>
+      _renderHints ??
+      LyricVisualizerRenderHints.of(
+        startMs: startMs,
+        endMs: endMs,
+        lastWordEndMs: words.isEmpty ? null : words.last.endMs,
+      );
+
+  /// 词级分组（汉字 + 送假名、片假名连写、拉丁单词…，标点粘连；见 `lyric_visualizer_segments.dart`）。
+  /// 与 [words]（CJK 逐字）并存：要「按词」动画的样式用这个。
+  List<LyricVisualizerSegment> get segments =>
+      _segments ?? buildLyricVisualizerSegments(glyphs);
+
+  /// 这一行最晚可以留在屏上的时刻（含离场窗口）。
+  int get renderEndMs => renderHints.renderEndMs;
 
   /// 首选译文（没有为 null）。
   String? get translation => source.primaryTranslation;
@@ -221,42 +271,114 @@ class LyricVisualizerRuntime {
   bool get isSynced => timeline.isSynced;
 
   static List<LyricVisualizerLine> _build(LyricTimeline t) {
-    final List<LyricVisualizerLine> out = <LyricVisualizerLine>[];
+    // 第一遍：主行 + 挂上的和声行。
+    final List<(int, LyricLine, String, List<LyricLine>)> raw =
+        <(int, LyricLine, String, List<LyricLine>)>[];
     for (int i = 0; i < t.lines.length; i++) {
       final LyricLine l = t.lines[i];
-      if (l.isBackground && out.isNotEmpty) {
-        final LyricVisualizerLine prev = out.removeLast();
-        out.add(
-          LyricVisualizerLine(
-            index: prev.index,
-            source: prev.source,
-            text: prev.text,
-            startMs: prev.startMs,
-            endMs: prev.endMs,
-            glyphs: prev.glyphs,
-            words: prev.words,
-            backgroundLines: <LyricLine>[...prev.backgroundLines, l],
-          ),
+      if (l.isBackground && raw.isNotEmpty) {
+        final (int, LyricLine, String, List<LyricLine>) prev = raw.last;
+        raw[raw.length - 1] = (
+          prev.$1,
+          prev.$2,
+          prev.$3,
+          <LyricLine>[...prev.$4, l],
         );
         continue;
       }
       final String text = l.text.trim();
       if (text.isEmpty) continue;
-      final List<LyricVisualizerGlyph> glyphs = buildLyricVisualizerGlyphs(l);
-      out.add(
-        LyricVisualizerLine(
-          index: i,
-          source: l,
-          text: text,
-          startMs: l.startMs,
-          endMs: math.max(l.endMs, l.startMs),
-          glyphs: glyphs,
-          words: buildLyricVisualizerWords(glyphs),
-          backgroundLines: const <LyricLine>[],
-        ),
-      );
+      raw.add((i, l, text, const <LyricLine>[]));
     }
-    return out;
+    // 第二遍：字形 / 词 / 渲染提示，再按整首算结构（副歌 / 段落 / 段编号）。
+    final List<List<LyricVisualizerGlyph>> glyphs =
+        <List<LyricVisualizerGlyph>>[
+          for (final (int, LyricLine, String, List<LyricLine>) e in raw)
+            buildLyricVisualizerGlyphs(e.$2),
+        ];
+    final List<List<LyricVisualizerWord>> words = <List<LyricVisualizerWord>>[
+      for (final List<LyricVisualizerGlyph> g in glyphs)
+        buildLyricVisualizerWords(g),
+    ];
+    final List<LyricVisualizerRenderHints> hints = <LyricVisualizerRenderHints>[
+      for (int k = 0; k < raw.length; k++)
+        LyricVisualizerRenderHints.of(
+          startMs: raw[k].$2.startMs,
+          endMs: math.max(raw[k].$2.endMs, raw[k].$2.startMs),
+          lastWordEndMs: words[k].isEmpty ? null : words[k].last.endMs,
+        ),
+    ];
+    final List<LyricVisualizerStructureOutput> structure =
+        buildLyricVisualizerStructure(<LyricVisualizerStructureInput>[
+          for (int k = 0; k < raw.length; k++)
+            (
+              text: raw[k].$3,
+              startMs: raw[k].$2.startMs,
+              renderEndMs: hints[k].renderEndMs,
+              songPart: raw[k].$2.songPart,
+            ),
+        ]);
+    return <LyricVisualizerLine>[
+      for (int k = 0; k < raw.length; k++)
+        LyricVisualizerLine(
+          index: raw[k].$1,
+          source: raw[k].$2,
+          text: raw[k].$3,
+          startMs: raw[k].$2.startMs,
+          endMs: math.max(raw[k].$2.endMs, raw[k].$2.startMs),
+          glyphs: glyphs[k],
+          words: words[k],
+          backgroundLines: raw[k].$4,
+          isChorus: structure[k].isChorus,
+          songPart: structure[k].part,
+          blockIndex: structure[k].blockIndex,
+          chorusEffect: structure[k].chorusEffect,
+          renderHints: hints[k],
+          segments: buildLyricVisualizerSegments(glyphs[k]),
+        ),
+    ];
+  }
+
+  /// 来源是否带段落标注（否则 [LyricVisualizerLine.isChorus] 来自文本启发式）。
+  bool get hasSourceSongParts =>
+      lines.any((LyricVisualizerLine l) => l.source.songPart != null);
+
+  /// 画面上该显示的行（含句尾离场窗口，folia `renderEndTime`）：起点已到的最后一行，且还没过它的
+  /// [LyricVisualizerLine.renderEndMs]；否则 -1。离场窗口里下一行还没开始，所以不会和下一行重叠。
+  int displayedLineAt(int timeMs) {
+    final int i = lastStartedLineAt(timeMs);
+    if (i < 0) return -1;
+    return timeMs < lines[i].renderEndMs ? i : -1;
+  }
+
+  /// 行的视觉结束（folia `buildStructureLines` 的 `renderEndTime`）：可超出行尾，但不越过下一行起点。
+  int visualEndMsOf(int lineIndex) {
+    final LyricVisualizerLine l = lines[lineIndex];
+    final int next = lineIndex + 1 < lines.length
+        ? lines[lineIndex + 1].startMs
+        : 1 << 52;
+    return math.max(l.startMs, math.min(l.renderEndMs, next));
+  }
+
+  /// [timeMs] 是否在副歌行上（含离场窗口）。
+  bool isChorusAt(int timeMs) {
+    final int i = displayedLineAt(timeMs);
+    return i >= 0 && lines[i].isChorus;
+  }
+
+  /// 段 [blockIndex] 的行下标区间 [first, last]；没有该段为 null。
+  (int, int)? blockRange(int blockIndex) {
+    int first = -1;
+    int last = -1;
+    for (int i = 0; i < lines.length; i++) {
+      if (lines[i].blockIndex == blockIndex) {
+        if (first < 0) first = i;
+        last = i;
+      } else if (first >= 0) {
+        break;
+      }
+    }
+    return first < 0 ? null : (first, last);
   }
 
   /// 正在唱的行（起止之间），间奏里为 -1（folia `currentLineIndex` 语义）。
