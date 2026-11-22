@@ -59,6 +59,7 @@ class GoogleDriveAuth {
     if (space.id == _space.id) return;
     _space = space;
     _googleSignIn = null;
+    _dropMobileClient();
   }
 
   // 安装型应用（installed-app / PKCE）的 OAuth 凭据按 Google 设计属于非机密
@@ -132,10 +133,25 @@ class GoogleDriveAuth {
   // account rather than queried lazily (BUG-047).
   GoogleSignInAccount? _mobileUser;
 
+  // 当前令牌对应的移动端 AuthClient（BUG-5169）。扩展的 `authenticatedClient()` 每调一次
+  // 就新建一个 client，所以这里按令牌缓存：刷新 / 换账号 / 换 scope 才换新的，调用方
+  // 拿到的 client 身份不变就说明令牌没换过。缓存 in-flight future，并发首调共用一次构造。
+  Future<auth.AuthClient>? _mobileClientFuture;
+  auth.AuthClient? _mobileClient;
+  Future<void>? _mobileRefreshInFlight;
+
   // ── Desktop (googleapis_auth) ────────────────────────────────────
 
+  // 桌面会话的底层 HTTP 连接（BUG-5169）。整个会话只有这一个，令牌刷新只换外面那层
+  // [_desktopClient] 包装（`authenticatedClient` 默认不拥有底层 client），绝不关它：
+  // 同步各通道是并行跑的，刷新时别的通道手里的请求还在用这条连接。以前每次刷新都新建
+  // 底层 client 并 `close()` 旧包装（closeUnderlyingClient: true），并发的 401 各自刷新、
+  // 互相关掉对方刚换上的连接，handler 缓存下来的 DriveApi 指向已关闭的 client，之后每轮
+  // 同步全部报「Client is already closed」直到重启。只在换会话（登录 / 恢复）与登出时关。
+  http.Client? _desktopBaseClient;
   auth.AuthClient? _desktopClient;
   auth.AccessCredentials? _desktopCredentials;
+  Future<void>? _desktopRefreshInFlight;
   SyncRepository? _cachedRepo;
   String? _desktopEmail;
 
@@ -167,16 +183,59 @@ class GoogleDriveAuth {
     return _mobileUser != null;
   }
 
+  /// 当前令牌对应的 AuthClient。令牌没换过时两次调用返回同一个实例；刷新后返回新实例
+  /// ——调用方不要长期缓存它，每次发请求前取（BUG-5169）。
   Future<auth.AuthClient> getAuthClient() async {
-    if (useMobileAuth) {
-      final client = await _signIn.authenticatedClient();
-      if (client == null) throw GoogleDriveAuthError('Not authenticated');
-      return client;
-    }
+    if (useMobileAuth) return _mobileClientFuture ??= _createMobileClient();
     final client = _desktopClient;
     if (client == null) throw GoogleDriveAuthError('Not authenticated');
     return client;
   }
+
+  Future<auth.AuthClient> _createMobileClient() async {
+    final auth.AuthClient? client = await _signIn.authenticatedClient();
+    if (client == null) {
+      // 未登录不能钉进缓存，否则登录后仍复读这个错误。
+      _mobileClientFuture = null;
+      throw GoogleDriveAuthError('Not authenticated');
+    }
+    _mobileClient = client;
+    return client;
+  }
+
+  /// 丢弃缓存的移动端 client（换令牌 / 账号 / scope 时）。不 close 旧的：并行通道里的
+  /// 在途请求可能还在用它，没有引用后自然回收。
+  void _dropMobileClient() {
+    _mobileClientFuture = null;
+    _mobileClient = null;
+  }
+
+  /// 装入一个新的桌面会话（登录 / 恢复）。上一个会话的底层连接在这里关——这是换会话，
+  /// 不是刷新令牌。
+  auth.AuthClient _installDesktopSession(
+    http.Client baseClient,
+    auth.AccessCredentials credentials,
+  ) {
+    final http.Client? previousBase = _desktopBaseClient;
+    _desktopBaseClient = baseClient;
+    _desktopCredentials = credentials;
+    final auth.AuthClient authClient = auth.authenticatedClient(
+      baseClient,
+      credentials,
+    );
+    _desktopClient = authClient;
+    if (previousBase != null && !identical(previousBase, baseClient)) {
+      previousBase.close();
+    }
+    return authClient;
+  }
+
+  /// 测试用：不走 OAuth，直接用（假的）[baseClient] 与 [credentials] 装一个桌面会话。
+  @visibleForTesting
+  auth.AuthClient debugInstallDesktopSession(
+    http.Client baseClient,
+    auth.AccessCredentials credentials,
+  ) => _installDesktopSession(baseClient, credentials);
 
   Future<void> authenticate({SyncRepository? repo}) async {
     if (useMobileAuth) {
@@ -185,6 +244,7 @@ class GoogleDriveAuth {
         throw GoogleDriveAuthError('Sign-in cancelled', cancelled: true);
       }
       _mobileUser = account;
+      _dropMobileClient();
       return;
     }
     // Fail fast when the build has no real desktop OAuth secret (placeholder
@@ -210,6 +270,7 @@ class GoogleDriveAuth {
     final verifier = _createCodeVerifier();
     final challenge = _codeChallenge(verifier);
     final http.Client baseClient = await createSyncHttpClient();
+    bool installed = false;
     try {
       final result = await runDesktopOAuthLoopback(
         // 回环 **IP** 而非 `localhost`：Google 的桌面客户端接受任意回环 redirect（无需
@@ -240,22 +301,14 @@ class GoogleDriveAuth {
         );
       }
 
-      _desktopClient?.close();
-      _desktopCredentials = credentials;
-      // closeUnderlyingClient: a later _desktopClient.close() must also close
-      // baseClient — authenticatedClient does NOT own it by default, so without
-      // this every re-auth / refresh / signOut leaks the HTTP client.
-      final authClient = auth.authenticatedClient(
-        baseClient,
-        credentials,
-        closeUnderlyingClient: true,
-      );
-      _desktopClient = authClient;
+      // baseClient 从此归会话所有，下次换会话 / 登出时关；令牌刷新不关它（BUG-5169）。
+      final authClient = _installDesktopSession(baseClient, credentials);
+      installed = true;
       _cachedRepo = repo;
       await _fetchDesktopEmail(authClient);
       if (repo != null) await _persistDesktopCredentials(repo);
     } catch (e, st) {
-      baseClient.close();
+      if (!installed) baseClient.close();
       // 用户在等待对话框里自己取消的（BUG-2120）：不是失败，不记带栈的失败日志。
       if (e is SyncAuthError && e.kind == SyncAuthFailureKind.cancelled) {
         rethrow;
@@ -339,6 +392,7 @@ class GoogleDriveAuth {
     if (saved == null) return false;
 
     final http.Client baseClient = await createSyncHttpClient();
+    bool installed = false;
     try {
       final credentials = _deserializeCredentials(saved);
       if (credentials.refreshToken == null) {
@@ -352,20 +406,14 @@ class GoogleDriveAuth {
         baseClient,
       );
 
-      _desktopClient?.close();
-      _desktopCredentials = refreshed;
-      final authClient = auth.authenticatedClient(
-        baseClient,
-        refreshed,
-        closeUnderlyingClient: true,
-      );
-      _desktopClient = authClient;
+      final authClient = _installDesktopSession(baseClient, refreshed);
+      installed = true;
       _cachedRepo = repo;
       await _fetchDesktopEmail(authClient);
       await _persistDesktopCredentials(repo);
       return true;
     } catch (e, st) {
-      baseClient.close();
+      if (!installed) baseClient.close();
       developer.log(
         'Failed to restore desktop auth: ${e.runtimeType}: $e',
         error: e,
@@ -384,15 +432,38 @@ class GoogleDriveAuth {
     }
   }
 
-  Future<void> refreshAuth() async {
+  /// 刷新访问令牌。
+  ///
+  /// [rejected] 是被服务端拒掉（401）的那个 client：它已经不是当前 client，说明别的
+  /// 请求已经刷新过，直接返回，调用方重取 [getAuthClient] 重试即可。并发调用共用同一次
+  /// 刷新（单飞），不会各自换一遍令牌（BUG-5169）。
+  Future<void> refreshAuth({auth.AuthClient? rejected}) {
     if (useMobileAuth) {
-      _mobileUser =
-          await _signIn.signInSilently(reAuthenticate: true) ?? _mobileUser;
-      return;
+      if (rejected != null && !identical(rejected, _mobileClient)) {
+        return Future<void>.value();
+      }
+      return _mobileRefreshInFlight ??= _refreshMobile().whenComplete(
+        () => _mobileRefreshInFlight = null,
+      );
     }
+    if (rejected != null && !identical(rejected, _desktopClient)) {
+      return Future<void>.value();
+    }
+    return _desktopRefreshInFlight ??= _refreshDesktop().whenComplete(
+      () => _desktopRefreshInFlight = null,
+    );
+  }
 
+  Future<void> _refreshMobile() async {
+    _mobileUser =
+        await _signIn.signInSilently(reAuthenticate: true) ?? _mobileUser;
+    _dropMobileClient();
+  }
+
+  Future<void> _refreshDesktop() async {
     final creds = _desktopCredentials;
-    if (creds == null || creds.refreshToken == null) {
+    final http.Client? baseClient = _desktopBaseClient;
+    if (creds == null || creds.refreshToken == null || baseClient == null) {
       developer.log(
         'Cannot refresh: no credentials cached',
         name: 'GoogleDriveAuth',
@@ -400,24 +471,22 @@ class GoogleDriveAuth {
       return;
     }
 
-    final http.Client baseClient = await createSyncHttpClient();
     try {
+      // 用会话自己的底层连接换令牌，不新建、不关闭任何 client（BUG-5169）。
       final refreshed = await auth_io.refreshCredentials(
         _desktopClientId,
         creds,
         baseClient,
       );
+      // 刷新途中会话被登出 / 换成新会话：这份令牌属于旧会话，丢弃。
+      if (!identical(baseClient, _desktopBaseClient)) return;
       _desktopCredentials = refreshed;
-      _desktopClient?.close();
-      _desktopClient = auth.authenticatedClient(
-        baseClient,
-        refreshed,
-        closeUnderlyingClient: true,
-      );
+      // 旧包装不 close：它不拥有底层连接，close 释放不了任何资源，只会让并行通道里
+      // 还拿着它的请求失败。
+      _desktopClient = auth.authenticatedClient(baseClient, refreshed);
       final repo = _cachedRepo;
       if (repo != null) await _persistDesktopCredentials(repo);
     } catch (e) {
-      baseClient.close();
       developer.log(
         'Desktop token refresh failed',
         error: e,
@@ -430,9 +499,11 @@ class GoogleDriveAuth {
     if (useMobileAuth) {
       await _signIn.signOut();
       _mobileUser = null;
+      _dropMobileClient();
       return;
     }
-    _desktopClient?.close();
+    _desktopBaseClient?.close();
+    _desktopBaseClient = null;
     _desktopClient = null;
     _desktopCredentials = null;
     _desktopEmail = null;
