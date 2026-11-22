@@ -471,7 +471,7 @@ How to read this:
 | `music.lyrics_media_session` | Lyrics on the lock screen | 锁屏显示歌词 | Lyrics | bool |  | `true` | Show the current line as the subtitle of the media notification and lock screen |
 | `music.karaoke_ass_render` | ASS karaoke subtitles | ASS 卡拉 OK 字幕 | Lyrics | choice | `auto`, `original`, `structured` | `auto` | Automatic: subtitles with effects render as authored; plain karaoke timing uses synced lyrics. |
 | `music.lyrics_backdrop_animate` | Background motion | 背景动效 | Lyrics page background | choice | `true`, `false` | `true` |  |
-| `music.lyrics_backdrop_style` | Fluid style | 流体样式 | Lyrics page background | choice | `pixi`, `meshGradient`, `classic` | `meshGradient` | Switch the fluid background algorithm of the lyrics page |
+| `music.lyrics_backdrop_style` | Fluid style | 流体样式 | Lyrics page background | choice | `pixi`, `meshGradient`, `classic` | `pixi` | Switch the fluid background algorithm of the lyrics page |
 | `music.lyrics_backdrop_saturation` | Background saturation | 背景饱和度 | Lyrics page background | number | 50.0 – 200.0 | `100.0` | Saturation of the lyrics page's fluid background; adjust it if the lyrics are hard to read on a background that is too bright or too dark |
 | `music.effects.enabled` | Enable audio effects | 启用音效 | Audio effects | bool |  | `false` |  |
 | `music.effects.preset` | Preset | 预设 | Audio effects | choice | `custom`, `flat`, `pop`, `rock`, `classical`, `jazz`, `vocal`, `electronic`, `bassBoost`, `trebleBoost`, `headphones`, `smallSpeakers` | `flat` |  |

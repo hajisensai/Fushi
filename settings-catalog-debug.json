@@ -8895,7 +8895,7 @@
      }
     }
    ],
-   "default": "meshGradient"
+   "default": "pixi"
   },
   {
    "key": "music.lyrics_backdrop_saturation",
