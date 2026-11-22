@@ -106,6 +106,9 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
   BookArchiveImportSummary? _summary;
   Object? _error;
 
+  /// [_summary] 已随 pop 交给调用方：漫画暂存的所有权跟着转走，[dispose] 不再删。
+  bool _delivered = false;
+
   @override
   void initState() {
     super.initState();
@@ -114,9 +117,30 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
 
   @override
   void dispose() {
+    // 框被外部撤掉（路由被整栈替换等）而汇总没交出去：解开的漫画暂存没人接，就地删。
+    if (!_delivered) unawaited(_discardHandoffs(_summary));
     _progress.dispose();
     _message.dispose();
     super.dispose();
+  }
+
+  static Future<void> _discardHandoffs(
+    BookArchiveImportSummary? summary,
+  ) async {
+    if (summary == null) return;
+    for (final BookArchiveMangaHandoff handoff in summary.mangaHandoffs) {
+      try {
+        await handoff.discard();
+      } on Object catch (e) {
+        debugPrint('[book-archive-import] staging cleanup failed: $e');
+      }
+    }
+  }
+
+  /// 关框并把汇总（连同漫画暂存的所有权）交给 [showBookArchiveImportDialog]。
+  void _deliver(BookArchiveImportSummary? summary) {
+    _delivered = true;
+    Navigator.pop(context, summary);
   }
 
   Future<void> _run() async {
@@ -125,10 +149,14 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
         widget.paths,
         onProgress: _onProgress,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        // 导入跑完前框已被撤掉：汇总交不出去，暂存没人收。
+        await _discardHandoffs(summary);
+        return;
+      }
       if (widget.mangaEnabled && summary.onlyMangaHandoffs) {
         // 全是漫画：没有书的结果要看，直接交给漫画导入。
-        Navigator.pop(context, summary);
+        _deliver(summary);
         return;
       }
       setState(() => _summary = summary);
@@ -190,7 +218,7 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
         actions: <Widget>[
           if (!_running)
             FushiFilledButton(
-              onPressed: () => Navigator.pop(context, summary),
+              onPressed: () => _deliver(summary),
               child: Text(t.dialog_ok),
             ),
         ],

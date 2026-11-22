@@ -298,6 +298,68 @@ void main() {
     );
   });
 
+  testWidgets('汇总里有交给漫画导入的包、框却被外部撤掉（没经「确定」交出汇总）：'
+      '解开的漫画暂存随框删掉', (WidgetTester tester) async {
+    final Directory root = Directory.systemTemp.createTempSync(
+      'book_archive_dispose_',
+    );
+    addTearDown(() {
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+    final Archive pack = Archive();
+    for (int i = 1; i <= 3; i++) {
+      final List<int> bytes = utf8.encode('jpg$i');
+      pack.addFile(ArchiveFile('p/00$i.jpg', bytes.length, bytes));
+    }
+    final List<int> zipBytes = ZipEncoder().encode(pack)!;
+    final int half = zipBytes.length ~/ 2;
+    final File first = File(p.join(root.path, 'vol.zip.001'))
+      ..writeAsBytesSync(zipBytes.sublist(0, half));
+    File(
+      p.join(root.path, 'vol.zip.002'),
+    ).writeAsBytesSync(zipBytes.sublist(half));
+    final List<String> stagings = <String>[];
+    final BookArchiveImporter importer = BookArchiveImporter(
+      importEpub: (String path) async => null,
+      importText: (String path) async => null,
+      importPdf: (String path) async => null,
+      createStagingDir: () async {
+        final Directory dir = Directory(
+          p.join(root.path, '.tmp-${stagings.length}'),
+        )..createSync(recursive: true);
+        stagings.add(dir.path);
+        return dir.path;
+      },
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: BookArchiveImportDialog(
+              importer: importer,
+              paths: <String>[first.path],
+              // 漫画模块关着：停在汇总上，不自动交出。
+              mangaEnabled: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      condition: () async =>
+          find.textContaining(t.module_disabled_hint).evaluate().isNotEmpty,
+    );
+    expect(stagings, hasLength(1));
+    expect(Directory(stagings.single).existsSync(), isTrue);
+
+    await tester.pumpWidget(const SizedBox());
+    await _pumpUntil(
+      tester,
+      condition: () async => !Directory(stagings.single).existsSync(),
+    );
+  });
+
   testWidgets('汇总列出没解开的包与导入失败的书', (WidgetTester tester) async {
     final BookArchiveImporter importer = BookArchiveImporter(
       importEpub: (String path) async =>

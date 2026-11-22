@@ -320,103 +320,116 @@ class BookArchiveImporter {
     final List<BookArchiveMangaHandoff> mangaHandoffs =
         <BookArchiveMangaHandoff>[];
     final int total = paths.length;
-    for (int i = 0; i < total; i++) {
-      final String path = paths[i];
-      final String name = p.basename(path);
-      if (!isBookArchiveContainerPath(path)) {
-        // 同批拖入的单本书（任何书籍扩展名）：EPUB / PDF 各走各的，其余按文本转。
+    try {
+      for (int i = 0; i < total; i++) {
+        final String path = paths[i];
+        final String name = p.basename(path);
+        if (!isBookArchiveContainerPath(path)) {
+          // 同批拖入的单本书（任何书籍扩展名）：EPUB / PDF 各走各的，其余按文本转。
+          onProgress?.call(
+            BookArchiveImportProgress(
+              stage: BookArchiveImportStage.importing,
+              name: name,
+              done: i,
+              total: total,
+            ),
+          );
+          items.add(await _importOne(path, name));
+          continue;
+        }
         onProgress?.call(
           BookArchiveImportProgress(
-            stage: BookArchiveImportStage.importing,
+            stage: BookArchiveImportStage.unpacking,
             name: name,
             done: i,
             total: total,
           ),
         );
-        items.add(await _importOne(path, name));
-        continue;
-      }
-      onProgress?.call(
-        BookArchiveImportProgress(
-          stage: BookArchiveImportStage.unpacking,
-          name: name,
-          done: i,
-          total: total,
-        ),
-      );
-      final Directory staging = Directory(await _createStagingDir());
-      // 解进以包名命名的子目录：解出来若是一卷漫画，这个目录原样交给漫画导入（按目录名
-      // 起书名），不用再解一次、也不用改名搬家。
-      final String unpackDir = p.join(staging.path, _archiveStem(name));
-      bool handedOff = false;
-      try {
+        final Directory staging = Directory(await _createStagingDir());
+        // 解进以包名命名的子目录：解出来若是一卷漫画，这个目录原样交给漫画导入（按目录名
+        // 起书名），不用再解一次、也不用改名搬家。
+        final String unpackDir = p.join(staging.path, _archiveStem(name));
+        bool handedOff = false;
         try {
-          await _unpacker.extract(
-            path,
-            intoDir: unpackDir,
-            includeExtensions: const <String>{
-              ...kBookArchiveMemberExtensions,
-              ...kBookArchivePageImageExtensions,
-            },
-          );
-        } on ArchiveUnpackException catch (e) {
-          unpackFailures.add(
-            BookArchiveUnpackFailure(archiveName: name, failure: e.failure),
-          );
-          continue;
-        }
-        final Directory unpacked = Directory(unpackDir);
-        final List<String> files = <String>[
-          if (unpacked.existsSync())
-            for (final FileSystemEntity entity in unpacked.listSync(
-              recursive: true,
-              followLinks: false,
-            ))
-              if (entity is File) p.relative(entity.path, from: unpackDir),
-        ];
-        // 按解出来的内容定性（与按条目名的预判同一条规则）：有书导书；只有页图是一卷
-        // 漫画；都没有如实报。
-        if (!bookArchiveNamesHaveBooks(files)) {
-          if (files.any(
-            (String f) => kBookArchivePageImageExtensions.contains(_ext(f)),
-          )) {
-            mangaHandoffs.add(
-              BookArchiveMangaHandoff(
-                archiveName: name,
-                directory: unpackDir,
-                stagingRoot: staging.path,
+          try {
+            await _unpacker.extract(
+              path,
+              intoDir: unpackDir,
+              includeExtensions: const <String>{
+                ...kBookArchiveMemberExtensions,
+                ...kBookArchivePageImageExtensions,
+              },
+            );
+          } on ArchiveUnpackException catch (e) {
+            unpackFailures.add(
+              BookArchiveUnpackFailure(archiveName: name, failure: e.failure),
+            );
+            continue;
+          }
+          final Directory unpacked = Directory(unpackDir);
+          final List<String> files = <String>[
+            if (unpacked.existsSync())
+              for (final FileSystemEntity entity in unpacked.listSync(
+                recursive: true,
+                followLinks: false,
+              ))
+                if (entity is File) p.relative(entity.path, from: unpackDir),
+          ];
+          // 按解出来的内容定性（与按条目名的预判同一条规则）：有书导书；只有页图是一卷
+          // 漫画；都没有如实报。
+          if (!bookArchiveNamesHaveBooks(files)) {
+            if (files.any(
+              (String f) => kBookArchivePageImageExtensions.contains(_ext(f)),
+            )) {
+              mangaHandoffs.add(
+                BookArchiveMangaHandoff(
+                  archiveName: name,
+                  directory: unpackDir,
+                  stagingRoot: staging.path,
+                ),
+              );
+              handedOff = true;
+            } else {
+              withoutBooks.add(name);
+            }
+            continue;
+          }
+          final List<String> members = <String>[
+            for (final String file in files)
+              if (isBookArchiveMember(file)) p.join(unpackDir, file),
+          ]..sort();
+          for (final String member in members) {
+            final String memberName = p.join(
+              name,
+              p.relative(member, from: unpackDir),
+            );
+            onProgress?.call(
+              BookArchiveImportProgress(
+                stage: BookArchiveImportStage.importing,
+                name: memberName,
+                done: i,
+                total: total,
               ),
             );
-            handedOff = true;
-          } else {
-            withoutBooks.add(name);
+            items.add(await _importOne(member, memberName));
           }
-          continue;
-        }
-        final List<String> members = <String>[
-          for (final String file in files)
-            if (isBookArchiveMember(file)) p.join(unpackDir, file),
-        ]..sort();
-        for (final String member in members) {
-          final String memberName = p.join(
-            name,
-            p.relative(member, from: unpackDir),
-          );
-          onProgress?.call(
-            BookArchiveImportProgress(
-              stage: BookArchiveImportStage.importing,
-              name: memberName,
-              done: i,
-              total: total,
-            ),
-          );
-          items.add(await _importOne(member, memberName));
-        }
-      } finally {
-        if (!handedOff && staging.existsSync()) {
-          await staging.delete(recursive: true);
+        } finally {
+          if (!handedOff && staging.existsSync()) {
+            await staging.delete(recursive: true);
+          }
         }
       }
+    } on Object {
+      // 中途抛出（建暂存失败、列解出目录失败……）时汇总到不了调用方，已交接的漫画暂存
+      // 也就没人收：所有权还在本方，就地删掉再抛。
+      for (final BookArchiveMangaHandoff handoff in mangaHandoffs) {
+        try {
+          await handoff.discard();
+        } on FileSystemException {
+          // 删不掉的留给下次启动的 `.tmp-*` 清扫，不盖住原始错误。
+        }
+      }
+      rethrow;
     }
     return BookArchiveImportSummary(
       items: items,

@@ -361,5 +361,46 @@ void main() {
       await handoff.discard();
       expectStagingCleaned();
     });
+
+    test('已交接一包漫画后中途抛出（下一个包建暂存失败）：汇总到不了调用方，'
+        '已交接的暂存就地删掉再抛', () async {
+      final File zip = writeZip('第2巻.zip', <String, String>{
+        for (int i = 1; i <= 4; i++)
+          'p/${i.toString().padLeft(3, '0')}.jpg': 'jpg$i',
+      });
+      final List<int> bytes = zip.readAsBytesSync();
+      zip.deleteSync();
+      final int half = bytes.length ~/ 2;
+      final String first = p.join(tmp.path, '第2巻.zip.001');
+      File(first).writeAsBytesSync(bytes.sublist(0, half));
+      File(
+        p.join(tmp.path, '第2巻.zip.002'),
+      ).writeAsBytesSync(bytes.sublist(half));
+
+      int created = 0;
+      final BookArchiveImporter failing = BookArchiveImporter(
+        importEpub: (String path) async => fail('not a book: $path'),
+        importText: (String path) async => fail('not a book: $path'),
+        importPdf: (String path) async => fail('not a book: $path'),
+        createStagingDir: () async {
+          if (created++ > 0) {
+            throw const FileSystemException('disk full');
+          }
+          final Directory dir = Directory(p.join(tmp.path, 'library', '.tmp-0'))
+            ..createSync(recursive: true);
+          stagingDirs.add(dir.path);
+          return dir.path;
+        },
+        unpacker: ArchiveUnpacker(),
+      );
+
+      await expectLater(
+        failing.importAll(<String>[first, p.join(tmp.path, 'next.7z')]),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(created, 2);
+      expect(stagingDirs, hasLength(1));
+      expectStagingCleaned();
+    });
   });
 }
