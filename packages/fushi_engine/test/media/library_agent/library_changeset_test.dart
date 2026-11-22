@@ -371,6 +371,33 @@ void main() {
       expect((await db.getMediaCollectionById(ai))!.name, 'Old');
     });
 
+    test('改名后用户移出过的成员仍算否决（成员墓碑随合集改名搬走）', () async {
+      final String a = await book('A');
+      final String b = await book('B');
+      final int col = await db.createMediaCollection('Before');
+      await db.addToCollection(col, MediaKind.epub, a);
+      await db.addToCollection(col, MediaKind.epub, b, userIntent: false);
+      await db.removeFromCollectionRaw(col, 'epub', a);
+      final LibraryChangesetOutcome o = await apply(<Map<String, Object?>>[
+        <String, Object?>{
+          'op': 'rename',
+          'collection': 'C$col',
+          'name': 'After',
+        },
+        <String, Object?>{
+          'op': 'move',
+          'items': <String>['epub:$a'],
+          'to': 'C$col',
+        },
+      ]);
+      expect(o.applied.single['op'], 'rename');
+      expect(o.skipped.single['reason'], LibraryChangeSkip.vetoed);
+      expect(
+        await db.collectionMemberTombstoneKeysFor('After', 'collection'),
+        contains('epub A'),
+      );
+    });
+
     test('dryRun：报告会做什么，一行不写', () async {
       final String a = await book('A');
       final String b = await book('B');
