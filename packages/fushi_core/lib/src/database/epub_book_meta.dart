@@ -90,6 +90,7 @@ class EpubBookSeriesFacts {
     required this.title,
     required this.format,
     required this.sourceMetadata,
+    this.language,
   });
 
   final String bookKey;
@@ -97,4 +98,8 @@ class EpubBookSeriesFacts {
   final String title;
   final String format;
   final String? sourceMetadata;
+
+  /// 本书的内容语言（`epub_books.language`：手动指定或导入回填的 `dc:language`）；
+  /// null = 未知。归组用它把同名、不同语言的版本分开（BUG-5265）。
+  final String? language;
 }

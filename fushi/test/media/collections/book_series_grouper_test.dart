@@ -452,6 +452,66 @@ void main() {
       ];
     }
 
+    // BUG-5265：日文版与台版《化物語》同名，以前被并进同一个合集。
+    test('同名不同语言的版本各建一个合集，名字带语言；单一语言的系列照旧', () async {
+      Future<void> addIn(String title, String bookKey, String? language) async {
+        await db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: bookKey,
+            title: title,
+            epubPath: '/m/$bookKey',
+            extractDir: '/m/$bookKey',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1000,
+            format: const Value<String>('epub'),
+            language: Value<String?>(language),
+          ),
+        );
+      }
+
+      await addIn('化物語 1', 'ja1', 'ja');
+      await addIn('化物語 2', 'ja2', 'ja');
+      await addIn('化物語 1', 'zh1', 'zh-Hant');
+      await addIn('化物語 2', 'zh2', 'zh-TW');
+      // 已拆开的系列里语言未知的那本：不知道归哪个版本，留在外面。
+      await addIn('化物語 3', 'u3', null);
+      await addIn('傷物語 1', 'k1', 'ja');
+      await addIn('傷物語 2', 'k2', 'ja');
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, hasLength(3));
+      final Map<String, Set<String>> byName = <String, Set<String>>{};
+      for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+        byName[c.name] = <String>{
+          for (final MediaCollectionItemRow i in await db.getCollectionItems(
+            c.id,
+          ))
+            (await db.getEpubBookByUid(i.entryKey))!.bookKey,
+        };
+      }
+      expect(byName, <String, Set<String>>{
+        '化物語 (ja)': <String>{'ja1', 'ja2'},
+        '化物語 (zh)': <String>{'zh1', 'zh2'},
+        '傷物語': <String>{'k1', 'k2'},
+      });
+      expect((await grouper.groupAll()).createdCollectionIds, isEmpty);
+    });
+
+    test('语言未知的书不因有语言的同名书被拆开（只有一种已知语言时照旧并组）', () async {
+      await addBook('偽物語 1', format: 'epub');
+      await addBook('偽物語 2', format: 'epub');
+      await db.updateEpubBookLanguage('偽物語 1', 'ja');
+      final summary = await grouper.groupAll();
+      expect(summary.createdCollectionIds, hasLength(1));
+      final MediaCollectionRow c = (await db.getMediaCollectionById(
+        summary.createdCollectionIds.single,
+      ))!;
+      expect(c.name, '偽物語');
+      expect(await members(c.id), hasLength(2));
+    });
+
     // n4KC1azJvw：每卷副标题各不相同、书名里没有系列线索，只有 OPF 声明了系列。
     test('EPUB 声明的系列优先于书名：副标题各异的分卷按声明归组、按卷序排', () async {
       String declared(String name, num index) =>

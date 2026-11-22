@@ -254,6 +254,7 @@ class BookSeriesGrouper {
             ),
           ),
         ],
+        language: bookSeriesLanguageKey(book.language),
       );
       out.add(v);
       byBookKey[book.bookKey] = v;
@@ -275,9 +276,11 @@ class BookSeriesGrouper {
           key: key,
           shelf: 'book',
           members: <_Member>[member],
+          language: bookSeriesLanguageKey(srt.language),
         ),
       );
     }
+    _markLanguageSplits(out);
     return out;
   }
 
@@ -298,8 +301,13 @@ class BookSeriesGrouper {
     );
     // 合集名用规整过 slug 的可读系列名；同名 playlist / 删除墓碑新旧两种名字都认
     // （规整前建的同名合集、用户删过的旧名合集不因改口径而重复 / 复活）。
-    final String rawName = volumes.first.key.seriesTitle;
-    final String name = readableSeriesTitle(rawName);
+    final _Volume first = volumes.first;
+    // 按语言分开的系列：语言未知的卷不知道该归哪个版本，留在书架上不猜。
+    if (first.splitByLanguage && first.language.isEmpty) return null;
+    // 合集名带语言（「化物語 (zh)」），两个版本不会因同名被并进同一个 playlist。
+    final String suffix = first.splitByLanguage ? ' (${first.language})' : '';
+    final String rawName = '${first.key.seriesTitle}$suffix';
+    final String name = '${readableSeriesTitle(first.key.seriesTitle)}$suffix';
     collection ??= playlistByName[name] ?? playlistByName[rawName];
     if (collection == null) {
       if (volumes.length < 2) return null;
@@ -643,6 +651,7 @@ class _Volume {
     required this.key,
     required this.shelf,
     required this.members,
+    this.language = '',
   });
 
   final String title;
@@ -652,7 +661,47 @@ class _Volume {
   final String shelf;
   final List<_Member> members;
 
-  String get groupKey => '$shelf|${key.key}';
+  /// 本卷内容语言的主语言子标签（[bookSeriesLanguageKey]），未知为空串。
+  final String language;
+
+  /// 同系列（同书架、同系列名）的卷带着两种以上已知语言（BUG-5265：日文版与台版
+  /// 《化物語》同名）：按语言分成各自的系列。只有一种已知语言的系列不分（语言为空
+  /// 的卷照旧并进去），与修复前逐字节一致。由 [_markLanguageSplits] 设置。
+  bool splitByLanguage = false;
+
+  String get seriesKey => '$shelf|${key.key}';
+
+  String get groupKey =>
+      splitByLanguage ? '$seriesKey|lang:$language' : seriesKey;
+}
+
+/// 归组用的语言键：主语言子标签小写（`zh-Hant-TW` / `zh_TW` → `zh`，`ja-JP` →
+/// `ja`）；空、`und`、不像语言标签的值为空串（未知）。同一种语言写法不同不分家。
+String bookSeriesLanguageKey(String? raw) {
+  final String trimmed = raw?.trim() ?? '';
+  if (trimmed.isEmpty) return '';
+  final String primary = trimmed
+      .replaceAll('_', '-')
+      .split('-')
+      .first
+      .toLowerCase();
+  if (primary.length < 2 || primary.length > 8 || primary == 'und') return '';
+  for (final int unit in primary.codeUnits) {
+    if (unit < 0x61 || unit > 0x7a) return '';
+  }
+  return primary;
+}
+
+/// 给带两种以上已知语言的系列打上 [_Volume.splitByLanguage]。
+void _markLanguageSplits(List<_Volume> volumes) {
+  final Map<String, Set<String>> languages = <String, Set<String>>{};
+  for (final _Volume v in volumes) {
+    if (v.language.isEmpty) continue;
+    languages.putIfAbsent(v.seriesKey, () => <String>{}).add(v.language);
+  }
+  for (final _Volume v in volumes) {
+    v.splitByLanguage = (languages[v.seriesKey]?.length ?? 0) > 1;
+  }
 }
 
 /// 在线漫画（Mihon / mokuro 在线源的书架条目）：不归组、不交 AI 整理——它们的

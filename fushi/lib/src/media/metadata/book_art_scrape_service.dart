@@ -24,6 +24,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart'
+    show bookSeriesLanguageKey;
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
@@ -286,6 +288,8 @@ class BookArtScrapeService {
   /// 一次运行内的缓存。
   final Map<String, List<MangaBakaSeries>> _searchCache =
       <String, List<MangaBakaSeries>>{};
+  final Map<int, List<MangaBakaImage>> _allVolumeCache =
+      <int, List<MangaBakaImage>>{};
   final Map<int, List<MangaBakaImage>> _volumeCache =
       <int, List<MangaBakaImage>>{};
 
@@ -314,11 +318,28 @@ class BookArtScrapeService {
   }) async {
     final Map<String, List<EpubBookRow>> groups = <String, List<EpubBookRow>>{};
     final Map<String, String> groupTitles = <String, String>{};
+    // 同名、不同语言的版本（日文版与台版《化物語》）分成各自的组（BUG-5266，与书籍
+    // 归组 BUG-5265 同一判据）：同一系列名带两种以上已知语言时，组键加上语言。
+    final List<({EpubBookRow row, BookSeriesKey? series, String base})> found =
+        <({EpubBookRow row, BookSeriesKey? series, String base})>[];
+    final Map<String, Set<String>> languagesByBase = <String, Set<String>>{};
     for (final String key in bookKeys.toSet()) {
       final EpubBookRow? row = await database.getEpubBook(key);
       if (row == null) continue;
       final BookSeriesKey? series = parseBookSeriesKey(row.title);
-      final String groupKey = series?.key ?? row.title;
+      final String base = series?.key ?? row.title;
+      found.add((row: row, series: series, base: base));
+      final String language = bookSeriesLanguageKey(row.language);
+      if (language.isNotEmpty) {
+        languagesByBase.putIfAbsent(base, () => <String>{}).add(language);
+      }
+    }
+    for (final (:EpubBookRow row, :BookSeriesKey? series, :String base)
+        in found) {
+      final bool split = (languagesByBase[base]?.length ?? 0) > 1;
+      final String groupKey = split
+          ? '$base|lang:${bookSeriesLanguageKey(row.language)}'
+          : base;
       groups.putIfAbsent(groupKey, () => <EpubBookRow>[]).add(row);
       groupTitles.putIfAbsent(groupKey, () => series?.seriesTitle ?? row.title);
     }
@@ -329,6 +350,7 @@ class BookArtScrapeService {
       final BookArtSeriesPin? pin = pins[g.key] ?? _storedPin(g.value);
       final BookArtSeriesPlan plan = await _runGroup(
         groupKey: g.key,
+        language: _groupLanguage(g.value),
         seriesTitle: groupTitles[g.key]!,
         rows: g.value,
         dryRun: dryRun,
@@ -346,6 +368,15 @@ class BookArtScrapeService {
       snapshots: snapshots,
       mangaBakaRateLimited: _mangaBaka.isRateLimited,
     );
+  }
+
+  /// 一组书共同的主语言子标签（`ja` / `zh`）；不一致或都未知时为 `''`（按日文版处理，
+  /// 与修复前相同）。
+  static String _groupLanguage(List<EpubBookRow> rows) {
+    final Set<String> languages = <String>{
+      for (final EpubBookRow r in rows) bookSeriesLanguageKey(r.language),
+    }..remove('');
+    return languages.length == 1 ? languages.single : '';
   }
 
   /// 刮削层里这组书记下的用户钉死系列：钉死过的记录都指向同一个系列时沿用它。
@@ -366,6 +397,7 @@ class BookArtScrapeService {
 
   Future<BookArtSeriesPlan> _runGroup({
     required String groupKey,
+    required String language,
     required String seriesTitle,
     required List<EpubBookRow> rows,
     required bool dryRun,
@@ -373,6 +405,10 @@ class BookArtScrapeService {
     required List<BookArtSnapshot>? snapshots,
   }) async {
     final List<String> errors = <String>[];
+    // 这组书的版本语言：MangaBaka 的卷图与 Bangumi 的单行本都是按版本的，非日文版
+    // 只能用同语言的封面，找不到就保留书里的封面（BUG-5266）。
+    final String edition = language.isEmpty ? 'ja' : language;
+    final bool japaneseEdition = edition == 'ja';
     final ({Map<String, num> volumes, bool singleUnnumbered}) resolved =
         resolveLocalVolumes(<String, num?>{
           for (final EpubBookRow r in rows)
@@ -431,11 +467,24 @@ class BookArtScrapeService {
     }
 
     // ── Bangumi ──
+    List<MangaBakaImage> editionImages =
+        mb?.volumeImages ?? const <MangaBakaImage>[];
+    if (mb != null && !japaneseEdition) {
+      try {
+        editionImages = await _allVolumeImages(mb.series.id);
+      } on MangaBakaException catch (e) {
+        editionImages = const <MangaBakaImage>[];
+        errors.add('MangaBaka: ${e.message}');
+      }
+    }
     final Map<num, BookArtImageOption> mbVolumes = mb == null
         ? const <num, BookArtImageOption>{}
         : <num, BookArtImageOption>{
             for (final MapEntry<num, MangaBakaImage> e
-                in pickMangaBakaVolumeImages(mb.volumeImages).entries)
+                in pickMangaBakaVolumeImages(
+                  editionImages,
+                  language: edition,
+                ).entries)
               e.key: mangaBakaOption(e.value),
           };
     BookArtImageOption? mbOptionFor(String bookKey, num volume) {
@@ -443,12 +492,14 @@ class BookArtScrapeService {
       return o == null || rejected[bookKey]!.contains(o.url) ? null : o;
     }
 
+    // Bangumi 的单行本封面都是日文版：非日文版的组不用它补卷。
     final bool bangumiNeeded =
-        mb == null ||
-        resolved.volumes.entries.any(
-          (MapEntry<String, num> e) =>
-              bookArtNeedsBangumiProbe(mbOptionFor(e.key, e.value)),
-        );
+        japaneseEdition &&
+        (mb == null ||
+            resolved.volumes.entries.any(
+              (MapEntry<String, num> e) =>
+                  bookArtNeedsBangumiProbe(mbOptionFor(e.key, e.value)),
+            ));
     // 钉死 Bangumi：直接取那个条目。钉死 MangaBaka 且查到了：与追踪映射里固定的链接
     // 同口径，Bangumi 只按 MangaBaka 的种类补缺卷（用户钉的系列不会被换掉）；钉的
     // MangaBaka 查不到时不搜 Bangumi（否则会自动换成用户没选的系列）。
@@ -457,7 +508,7 @@ class BookArtScrapeService {
         : null;
     _BangumiMatch? bgm;
     BookArtMatchResult? bgmResult;
-    if (bangumiNeeded && (pin == null || bangumiPin != null || mb != null)) {
+    if ((bangumiNeeded && (pin == null || mb != null)) || bangumiPin != null) {
       try {
         if (bangumiPin != null) {
           bgm = await _bangumiPinned(bangumiPin.id, seriesTitle);
@@ -541,12 +592,13 @@ class BookArtScrapeService {
       }
     }
     final Map<num, BookArtImageOption> bgmVolumes = <num, BookArtImageOption>{
-      for (final BangumiTankobon t
-          in bgm?.tankobons ?? const <BangumiTankobon>[])
-        t.volume: BookArtImageOption(
-          source: BookArtSource.bangumi,
-          url: t.coverUrl,
-        ),
+      if (japaneseEdition)
+        for (final BangumiTankobon t
+            in bgm?.tankobons ?? const <BangumiTankobon>[])
+          t.volume: BookArtImageOption(
+            source: BookArtSource.bangumi,
+            url: t.coverUrl,
+          ),
     };
     final List<BookArtBookPlan> plans = <BookArtBookPlan>[];
     for (final EpubBookRow r in rows) {
@@ -874,6 +926,15 @@ class BookArtScrapeService {
         seriesId,
         type: 'volume',
         language: 'ja',
+      );
+
+  /// 系列 [seriesId] 全部语言的卷封面（非日文版的组按主语言子标签挑，MangaBaka 的
+  /// 中文码有 `zh` / `zh-tw` 等多种写法，所以不按单个码请求）。只用于选图：匹配系列时
+  /// 的卷号覆盖率校验仍按日文版（[_volumeImages]）。
+  Future<List<MangaBakaImage>> _allVolumeImages(int seriesId) async =>
+      _allVolumeCache[seriesId] ??= await _mangaBaka.fetchSeriesImages(
+        seriesId,
+        type: 'volume',
       );
 
   Future<_MangaBakaMatch?> _mangaBakaPinned(int? id) async {
