@@ -394,7 +394,7 @@ void main() {
       expect(o.skipped.single['reason'], LibraryChangeSkip.vetoed);
       expect(
         await db.collectionMemberTombstoneKeysFor('After', 'collection'),
-        contains('epub A'),
+        contains('epub\u0000A'),
       );
     });
 

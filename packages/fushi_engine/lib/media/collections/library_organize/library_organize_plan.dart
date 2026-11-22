@@ -456,7 +456,7 @@ OrganizePlan planOrganizeReply({
         mergedInto.containsKey(c.id)) {
       continue;
     }
-    final String name = _clampName(r.name);
+    final String name = clampOrganizeName(r.name);
     if (name.isEmpty || name == c.name) continue;
     final String natural = '$name\u0000${c.collectionType}';
     // 新名字已被别的合集（或删除墓碑）占着、或本次已改给别的合集：改过去会撞自然键，
@@ -537,7 +537,7 @@ OrganizePlan planOrganizeReply({
 
     if (facts.domain == CollectionShelfDomain.video &&
         level == AiOrganizeLevel.franchise) {
-      final String label = _clampName(g.name);
+      final String label = clampOrganizeName(g.name);
       if (label.isEmpty) continue;
       out.add(
         OrganizeAction(
@@ -570,8 +570,8 @@ OrganizePlan planOrganizeReply({
         if (groupable(e, null)) e,
     ];
     if (fresh.length < 2) continue;
-    String rawName = _clampName(g.name);
-    if (rawName.isEmpty) rawName = _clampName(g.originalTitle ?? '');
+    String rawName = clampOrganizeName(g.name);
+    if (rawName.isEmpty) rawName = clampOrganizeName(g.originalTitle ?? '');
     if (rawName.isEmpty) continue;
     const String type = 'playlist';
     final String? name = names.allocate(rawName, type, key);
@@ -595,7 +595,7 @@ OrganizePlan planOrganizeReply({
 String? _reasonOf(String? raw) {
   final String t = (raw ?? '').trim();
   if (t.isEmpty) return null;
-  return _clampCodePoints(t, 200);
+  return clampOrganizeCodePoints(t, 200);
 }
 
 /// 本地硬归组（spec §7.4，不花钱）：散条目里刮到**同一个**外部作品 id 的成组；
@@ -632,7 +632,7 @@ List<OrganizeAction> planFromRules({
       continue;
     }
     if (members.length < 2) continue;
-    final String rawName = _clampName(nameOf(members));
+    final String rawName = clampOrganizeName(nameOf(members));
     if (rawName.isEmpty) continue;
     final String? name = names.allocate(rawName, 'playlist', key);
     if (name == null) continue;
@@ -813,13 +813,16 @@ int _mergeWinnerOrder(OrganizeCollectionFact a, OrganizeCollectionFact b) {
   return byName != 0 ? byName : a.collectionType.compareTo(b.collectionType);
 }
 
-String _clampName(String raw) {
+/// 合集名规整：去首尾空白、连续空白折成一个空格、按码点截到
+/// [kOrganizeMaxNameLength]。AI 整理建议与 AI 管库变更集（`library_changeset.dart`）
+/// 共用这一处口径。
+String clampOrganizeName(String raw) {
   final String t = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
-  return _clampCodePoints(t, kOrganizeMaxNameLength);
+  return clampOrganizeCodePoints(t, kOrganizeMaxNameLength);
 }
 
 /// 按码点截到 [max] 个（合集名 / 理由的长度上限，不是学习字数）。
-String _clampCodePoints(String t, int max) {
+String clampOrganizeCodePoints(String t, int max) {
   if (t.runes.length <= max) return t;
   return String.fromCharCodes(t.runes.take(max)).trim();
 }

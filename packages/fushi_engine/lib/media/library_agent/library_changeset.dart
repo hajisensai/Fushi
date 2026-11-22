@@ -224,7 +224,7 @@ LibraryChange _parseChange(int i, Object? raw) {
       LibraryInvalidChange(index: i, rawOp: opText, detail: detail);
   if (op == null) return invalid('unknown_op');
   final String? why = switch (m['why']) {
-    final String w when w.trim().isNotEmpty => _clampCodePoints(
+    final String w when w.trim().isNotEmpty => clampOrganizeCodePoints(
       w.trim(),
       _kMaxWhyLength,
     ),
@@ -670,7 +670,7 @@ class _Executor {
     String? newName;
     final bool standalone = c.to == 'standalone';
     if (c.to.startsWith('new:')) {
-      final String name = _clampName(c.to.substring(4));
+      final String name = clampOrganizeName(c.to.substring(4));
       if (name.isEmpty) {
         return const _Result.skipped(LibraryChangeSkip.invalid, 'empty_name');
       }
@@ -1043,7 +1043,7 @@ class _Executor {
     if (col.folder) {
       return _Result.skipped(LibraryChangeSkip.folderCollection, col.ref);
     }
-    final String name = _clampName(c.name);
+    final String name = clampOrganizeName(c.name);
     if (name.isEmpty) {
       return const _Result.skipped(LibraryChangeSkip.invalid, 'empty_name');
     }
@@ -1509,14 +1509,4 @@ Future<int> undoLibraryChangeset(
   }
   if (rawRun is int) undone += await undoLibraryOrganizeRun(db, rawRun);
   return undone;
-}
-
-String _clampName(String raw) => _clampCodePoints(
-  raw.trim().replaceAll(RegExp(r'\s+'), ' '),
-  kOrganizeMaxNameLength,
-);
-
-String _clampCodePoints(String t, int max) {
-  if (t.runes.length <= max) return t;
-  return String.fromCharCodes(t.runes.take(max)).trim();
 }

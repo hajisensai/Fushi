@@ -20,8 +20,8 @@ List<OpDescription> describeLibraryAgentOps(
     summary:
         'Whole-library map for reorganizing, compact and paged. '
         'view=summary: counts per library page, loose items, collections '
-        'by origin, relation links by state, works. view=books|manga|'
-        'video|games: collections (ref C<id>, name, origin user|rule|ai|'
+        'by origin, relation links by state, works. view=books / manga / '
+        'video / games: collections (ref C<id>, name, origin user|rule|ai|'
         'folder, members, pinned members the AI must not move) and items '
         '(ref <mediaType>:<entryKey>, title, creator, year, video folder, '
         'collections, relation endpoint ref). view=links: works (connected '
