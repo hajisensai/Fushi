@@ -211,6 +211,9 @@ static void my_application_activate(GApplication* application) {
   gtk_window_set_default_size(window, 1280, 720);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
+  // Flutter GPU（package:flutter_gpu）：全屏歌词「镜台」的真 3D 渲染器；拿不到 GpuContext 时
+  // 样式自己退回 Canvas 实现（lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_gpu.dart）。
+  fl_dart_project_set_enable_flutter_gpu(project, TRUE);
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
