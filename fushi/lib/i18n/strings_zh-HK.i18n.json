@@ -2936,6 +2936,8 @@
   "download_batch_delete_confirm": "刪除 $n 個下載任務？",
   "download_batch_done": "已處理 $n 項",
   "download_batch_failed": "$n 項失敗",
+  "download_batch_failed_details": "Why",
+  "download_batch_failed_details_title": "Failed items",
   "download_batch_unsupported": "$n 項不支持此操作",
   "download_clear_completed_confirm": "清除 $n 個已完成的下載任務？不勾選下方選項時只移出列表，已下載的檔案保留。",
   "download_clear_completed_confirm_keeps_files": "其中 $n 個無法在這裡刪除檔案，勾選後也只會移出列表。",

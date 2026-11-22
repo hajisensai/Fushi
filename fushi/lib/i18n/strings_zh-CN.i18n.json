@@ -2936,6 +2936,8 @@
   "download_batch_delete_confirm": "删除 $n 个下载任务？",
   "download_batch_done": "已处理 $n 项",
   "download_batch_failed": "$n 项失败",
+  "download_batch_failed_details": "查看原因",
+  "download_batch_failed_details_title": "失败的任务",
   "download_batch_unsupported": "$n 项不支持此操作",
   "download_clear_completed_confirm": "清除 $n 个已完成的下载任务？不勾选下方选项时只移出列表，已下载的文件保留。",
   "download_clear_completed_confirm_keeps_files": "其中 $n 个无法在这里删除文件，勾选后也只会移出列表。",
