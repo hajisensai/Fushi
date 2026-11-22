@@ -92,7 +92,7 @@ const Map<String, String> _kQuotePairs = <String, String>{
 
 /// 句子是否以引号开头。句中引号多是强调 / 书名，不算。
 bool ttsCastLooksLikeDialogue(String text) {
-  final String trimmed = text.trimLeft().replaceFirst(RegExp(r'^　+'), '');
+  final String trimmed = text.trimLeft().replaceFirst(RegExp(r'^\u3000+'), '');
   return trimmed.isNotEmpty && _kOpenQuotes.contains(trimmed[0]);
 }
 
