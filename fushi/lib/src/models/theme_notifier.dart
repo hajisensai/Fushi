@@ -3984,8 +3984,14 @@ ThemeData buildFushiThemeData({
 
 /// 把已成型的 [base] 换成 [scheme] 重走一遍工厂：组件主题（菜单 / 对话框 / 弹层
 /// / 提示条 / 滑条……的底色与前景）全按新 scheme 重算，字阶、设计系统、玻璃材质、
-/// 墨水屏、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂产物同类型
-/// 的扩展优先）。
+/// 墨水屏、外壳样式、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂
+/// 产物同类型的扩展优先）。
+///
+/// 外壳样式（[FushiShellTheme]）必须显式传回工厂：工厂缺省是
+/// `const FushiShellTheme()`，它产出的同类扩展在合并时排在后面、会盖掉 [base]
+/// 上用户的那份——重新取色的子树（色块取色、歌词、视频面板、遥控页）里圆角
+/// 平滑、侧栏样式、库页布局、色块摆放全被打回默认；平滑圆角还烤进了组件形状。
+/// 单色强调色（`monochromeAccent`）不沿用：重新取色就是要换成新的强调色。
 ///
 /// 为什么不能 `base.copyWith(colorScheme: scheme)`：工厂把 scheme 颜色**烤进**了
 /// 各组件主题（popupMenuTheme.color = surfaceContainer 等），只换 colorScheme
@@ -4001,6 +4007,7 @@ ThemeData rethemeFushiWithScheme(ThemeData base, ColorScheme scheme) {
         FushiDesignSystem.auto,
     glass: glass?.material ?? FushiGlassMaterial.off,
     glassDesign: glass?.glassDesign ?? false,
+    shell: base.extension<FushiShellTheme>() ?? const FushiShellTheme(),
   );
   return rebuilt.copyWith(
     platform: base.platform,
