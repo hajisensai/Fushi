@@ -44,6 +44,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5168](bugs/BUG-5168-update-download-hidden-overlay-unreachable.md) | ✅ | ✅ | update-download-hidden-overlay-unreachable |
 | [BUG-5169](bugs/BUG-5169-gdrive-client-already-closed.md) | ✅ | ✅ | Google Drive 同步 / 比较数据全部报「Client is already closed」 |
 
 | BUG | 修复 | 测试 | 标题 |
