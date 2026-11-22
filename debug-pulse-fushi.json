@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T00:09:34Z",
+ "generatedAt": "2026-11-22T00:28:45Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
    "unknown": false,
-   "publishedAt": "2026-11-22T00:09:24Z",
-   "testflight": false,
+   "publishedAt": "2026-11-22T00:28:30Z",
+   "testflight": true,
    "baseSeq": 31026,
    "prs": [
     4099,
@@ -41,16 +41,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
+     "state": "ok"
     }
    }
   },
@@ -209,7 +206,7 @@
    "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
    "unknown": false,
    "publishedAt": "2026-11-21T19:49:17Z",
-   "testflight": true,
+   "testflight": false,
    "baseSeq": 30656,
    "prs": [
     4036,
@@ -233,13 +230,16 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
     }
    }
   },
