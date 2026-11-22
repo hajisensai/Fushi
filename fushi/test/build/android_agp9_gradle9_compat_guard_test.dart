@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// 守卫：Flutter 3.50 起 Android 工具链是 Gradle 9.3.1 / AGP 9.1.1 / KGP 2.4.10
-/// （3.50 Flutter Gradle 插件 `DependencyVersionChecker` 的硬下限，低了直接拒绝构建）。
+/// 守卫：Flutter 3.50 起 Android 工具链下限是 Gradle 9.5.0 / AGP 9.3.1 / KGP 2.4.20
+/// （3.50 Flutter Gradle 插件 `DependencyVersionChecker` 的硬下限是 9.3.1 / 9.1.1 / 2.4.10，低了直接拒绝构建；
+/// 低于 9.5.0 / 9.3.1 / 2.4.20 会报「即将不再支持」，BUG-5148 已升到这一档，守卫按它钉）。
 ///
 /// PR #3400 迁移时在 CI 上逐个撞出来的配置期 / 构建期失败，这里钉住不回退：
 ///
@@ -38,23 +39,23 @@ void main() {
     return true;
   }
 
-  test('Gradle wrapper >= 9.3.1', () {
+  test('Gradle wrapper >= 9.5.0', () {
     final List<int> v = versionOf(
       read('android/gradle/wrapper/gradle-wrapper.properties'),
       RegExp(r'gradle-(\d+\.\d+(?:\.\d+)?)-(?:all|bin)\.zip'),
       'Gradle wrapper',
     );
-    expect(atLeast(v, <int>[9, 3, 1]), isTrue, reason: 'Gradle $v < 9.3.1');
+    expect(atLeast(v, <int>[9, 5, 0]), isTrue, reason: 'Gradle $v < 9.5.0');
   });
 
-  test('settings.gradle：AGP >= 9.1.1，KGP 系插件 >= 2.4.10', () {
+  test('settings.gradle：AGP >= 9.3.1，KGP 系插件 >= 2.4.20', () {
     final String settings = maskComments(read('android/settings.gradle'));
     final List<int> agp = versionOf(
       settings,
       RegExp(r'id "com\.android\.application" version "([\d.]+)"'),
       'AGP',
     );
-    expect(atLeast(agp, <int>[9, 1, 1]), isTrue, reason: 'AGP $agp < 9.1.1');
+    expect(atLeast(agp, <int>[9, 3, 1]), isTrue, reason: 'AGP $agp < 9.3.1');
     final Iterable<RegExpMatch> kotlinPlugins = RegExp(
       r'id "org\.jetbrains\.kotlin\.[\w.]+" version "([\d.]+)"',
     ).allMatches(settings);
@@ -62,9 +63,9 @@ void main() {
     for (final RegExpMatch m in kotlinPlugins) {
       final List<int> v = m.group(1)!.split('.').map(int.parse).toList();
       expect(
-        atLeast(v, <int>[2, 4, 10]),
+        atLeast(v, <int>[2, 4, 20]),
         isTrue,
-        reason: '${m.group(0)} < 2.4.10',
+        reason: '${m.group(0)} < 2.4.20',
       );
     }
   });

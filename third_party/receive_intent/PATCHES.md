@@ -16,7 +16,7 @@ license, README, CHANGELOG); the upstream example app and tests are not.
    buildscript now uses `google()` + `mavenCentral()`, the
    `rootProject.allprojects { repositories { ... jcenter() } }` block is dropped
    (the app's root `build.gradle` already declares every repository), the
-   buildscript pins follow the app (AGP 9.1.1, Kotlin 2.4.10), and the library
+   buildscript pins follow the app (AGP 9.3.1, Kotlin 2.4.20 since BUG-5148), and the library
    declares `namespace 'com.bhikadia.receive_intent'` itself instead of relying
    on the app's manifest-package fallback. `compileSdk` is set to 34, which the
    app's root `build.gradle` forces for plugin subprojects anyway.

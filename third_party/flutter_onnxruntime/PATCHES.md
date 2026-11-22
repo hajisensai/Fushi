@@ -353,7 +353,7 @@ the four project deployment targets and the guard test move with it.
       `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart`.
 
 17. `android/build.gradle`: buildscript pins follow the app's Flutter 3.50 /
-    AGP 9 toolchain (AGP 9.1.1, Kotlin 2.4.10; the 3.50 Flutter Gradle plugin
+    AGP 9 toolchain (AGP 9.3.1, Kotlin 2.4.20 since BUG-5148; the 3.50 Flutter Gradle plugin
     requires Gradle >= 9.3.1, AGP >= 9.1.1, KGP >= 2.4.10). The module already
     uses `kotlin { compilerOptions { } }`, so no DSL change was needed.
 

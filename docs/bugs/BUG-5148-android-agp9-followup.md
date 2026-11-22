@@ -7,10 +7,12 @@
   另外 `fushi/android/gradle.properties:8,10` 的 `android.builtInKotlin=false` / `android.newDsl=false` 是 Flutter 3.50
   迁移器自动加的退出开关：app 与所有插件模块仍 apply `org.jetbrains.kotlin.android`，每个模块都报
   「Deprecated 'org.jetbrains.kotlin.android' plugin usage」。
-- **[ ] ① 未修复** — 待做：① 钉点升到 Flutter 3.50 建议的下限（Gradle 9.5.0 / AGP 9.3.1 / KGP 2.4.20，同步
-  `android_agp9_gradle9_compat_guard_test.dart` 的下限与 vendored 插件 buildscript）；② `:app` 迁 built-in Kotlin
-  （删 kotlin-android 插件、`kotlin { compilerOptions }` 改 AGP 内置写法），插件侧要等上游或在 `ci/patches/hosted` /
-  `third_party` 里逐个迁，全迁完才能删两个退出开关。升级后用 `release.yml` 的 Android 构建验证。
-- **[ ] ② 未加自动化测试** — 升级时把守卫下限同步上调即可；built-in Kotlin 迁完后加守卫禁止退出开关回流。
-- **备注**：不在 PR #3400 内做，原因是 3.50 切换本身已大，且本机 `assembleRelease` 在 16 GB 租约上限下撞内存（见 PR 评论），
-  版本钉点改动需要独立一轮 Android 出包验证。
+- **[ ] ① 部分修复**（2026-11-22，PR #3400）— 已做：钉点升到 Flutter 3.50 建议下限 Gradle 9.5.0 / AGP 9.3.1 / KGP 2.4.20
+  （`gradle-wrapper.properties`、`settings.gradle`、根 `build.gradle` 的 Kotlin 强制版本、`app/build.gradle` 的 kotlin-stdlib /
+  kotlin-test，vendored `desktop_drop` / `flutter_onnxruntime` / `receive_intent` / `fushi_launch_presence` 的 buildscript 同步）。
+  本机 Flutter 3.50.0 `:app:assembleRelease`：`BUILD SUCCESSFUL in 16m 37s`，heavy exit 0（峰值 17220 MB，24 GB 上限），
+  日志里不再出现 Gradle / AGP / KGP「soon be dropped」提示。仍待做：`:app` 迁 built-in Kotlin（删 kotlin-android 插件、
+  `kotlin { compilerOptions }` 改 AGP 内置写法），插件侧要等上游或在 `ci/patches/hosted` / `third_party` 里逐个迁，
+  全迁完才能删 `android.builtInKotlin=false` / `android.newDsl=false` 两个退出开关。
+- **[ ] ② 部分自动化** — 版本下限已由 `android_agp9_gradle9_compat_guard_test.dart` 按 9.5.0 / 9.3.1 / 2.4.20 钉住；built-in Kotlin 迁完后加守卫禁止退出开关回流。
+- **备注**：版本钉点随 PR #3400 一并升（本机出包已绿，16 GB 上限会撞内存、24 GB 够）；built-in Kotlin 迁移牵涉全部插件，单独做。
