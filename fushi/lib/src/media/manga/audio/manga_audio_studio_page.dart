@@ -10,6 +10,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart'
+    show mergedMangaRoster;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
@@ -122,6 +124,9 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   MangaAudioVolume? _volume;
   bool _loading = true;
   MangaRenderManifest? _manifest;
+
+  /// 已出音频、但按当前替换表 / 人名读法该念的文字已变的句子（载入与改表后重算）。
+  List<MangaSpokenTextChange> _readingChanges = const <MangaSpokenTextChange>[];
   CastVoicingLedger _ledger = CastVoicingLedger();
   List<TtsVoicePreset> _presets = const <TtsVoicePreset>[];
   String? _basePresetId;
@@ -191,7 +196,21 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       _ledger = ledger;
       _loading = false;
       if (volume?.series == null) _volumeOnly = true;
+      _readingChanges = _computeReadingChanges();
     });
+  }
+
+  List<MangaSpokenTextChange> _computeReadingChanges() {
+    final MangaAudioVolume? volume = _volume;
+    final MangaRenderManifest? manifest = _manifest;
+    if (volume == null || manifest == null) {
+      return const <MangaSpokenTextChange>[];
+    }
+    return mangaSpokenTextChanges(
+      script: volume.script,
+      pageBlocks: volume.pageBlocks,
+      manifest: manifest,
+    );
   }
 
   TtsRenderJob? get _job => _queue.latestFor(widget.bookKey);
@@ -424,6 +443,10 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
         builder: (_) => CastSubstitutionsPage(
           seriesTitle: series.title.isEmpty ? seriesKey : series.title,
           initial: series.substitutions,
+          roster: mergedMangaRoster(
+            series: series.roster,
+            volume: volume.script.roster,
+          ).values,
           save: (List<CastTextSubstitution> next) async {
             final SeriesCastProfile fresh =
                 await seriesCastStoreFor(widget.appModel).update(
@@ -441,7 +464,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
         ),
       ),
     );
-    if (mounted) setState(() {});
+    if (mounted) setState(() => _readingChanges = _computeReadingChanges());
   }
 
   Widget _seriesSection(BuildContext context, MangaAudioVolume volume) {
@@ -836,6 +859,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       _voiceSection(volume),
       _retrySection(volume),
       _unvoicedSection(volume),
+      if (_readingChanges.isNotEmpty) _readingChangesSection(),
       AdaptiveSettingsSection(
         key: const ValueKey<String>('manga-audio-lines-header'),
         title: t.manga_audio_section_lines,
@@ -1100,6 +1124,47 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
             titleMaxLines: 4,
             subtitle: _attemptText(line.lineId),
             onTap: _busy ? null : () => unawaited(_unvoicedActions(line)),
+          ),
+      ],
+    );
+  }
+
+  /// 读法变了的台词（拍板 TW9ete_FHX）：系列人名读法 / 用词替换改过后，已出音频还按
+  /// 旧文字念的句子。一键排补回（按当前表重新合成，声音与种子不变）。
+  Widget _readingChangesSection() {
+    final List<MangaSpokenTextChange> changes = _readingChanges;
+    return AdaptiveSettingsSection(
+      key: const ValueKey<String>('manga-audio-reading-changes'),
+      title: '${t.manga_audio_section_reading_changes} (${changes.length})',
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('manga-audio-reading-changes-regenerate'),
+          icon: FushiIcons.refresh,
+          showIcon: true,
+          title: t.manga_audio_reading_changes_regenerate,
+          onTap: _busy
+              ? null
+              : () => unawaited(
+                  _backfill(<TtsRenderLineRequest>[
+                    for (final MangaSpokenTextChange c in changes)
+                      TtsRenderLineRequest(lineId: c.rendered.lineId),
+                  ]),
+                ),
+        ),
+        for (final MangaSpokenTextChange c in changes)
+          AdaptiveSettingsRow(
+            key: ValueKey<String>(
+              'manga-audio-reading-change-${c.rendered.lineId}',
+            ),
+            icon: FushiIcons.voice,
+            showIcon: true,
+            title: c.rendered.text.isEmpty
+                ? c.rendered.lineId
+                : c.rendered.text,
+            titleMaxLines: 4,
+            subtitle: t.manga_audio_reading_changes_now(spoken: c.spoken),
+            subtitleMaxLines: 4,
+            onTap: () => unawaited(_lineActions(c.rendered)),
           ),
       ],
     );

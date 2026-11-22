@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
@@ -336,6 +337,20 @@ class GoogleDriveSyncBackend extends SyncBackend
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
       _wrapVoidErrors(() => _drive.uploadJsonInFolder(namespaceId, name, json));
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) => _wrapErrors(
+    () => _drive.downloadBytesById(assetId, maxBytes: kSyncBytesAssetMaxBytes),
+  );
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _wrapVoidErrors(
+    () => _drive.uploadBytesInFolder(namespaceId, name, bytes),
+  );
 
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>

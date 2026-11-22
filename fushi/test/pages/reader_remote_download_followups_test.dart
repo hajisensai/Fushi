@@ -598,6 +598,15 @@ class _TombstoneBackend implements SyncBackend {
   Future<List<AssetEntry>> listChildren(String namespaceId) =>
       _store.listChildren(namespaceId);
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _store.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _store.putBytesAsset(namespaceId, name, bytes);
+  @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>

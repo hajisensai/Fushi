@@ -18,7 +18,8 @@ abstract final class SenrenPreset {
     'word': '{expression}',
     'reading': '{reading}',
     'sentence': '{sentence}',
-    'selectionText': '{popup-selection-text}',
+    // 保留样式的选中内容（拍板 RdmYdegMPJ 选 a），与 Lapis / Fushi 卡片一致。
+    'selectionText': '{popup-selection-html}',
     'definition': '{glossary-first}',
     'wordAudio': '{audio}',
     'sentenceAudio': '{sentence-audio}',

@@ -29,6 +29,9 @@ object PopupEngineHolder {
     @Volatile
     private var pendingText: String = ""
 
+    @Volatile
+    private var pendingSourceTextCollapsed: Boolean = false
+
     /**
      * Character index of the tapped word inside [pendingText], or -1 when the
      * caller has no per-character hit (e.g. a whole-sentence PROCESS_TEXT from
@@ -99,12 +102,14 @@ object PopupEngineHolder {
         anchor: IntArray? = null,
         subtitle: IntArray? = null,
         sourceBlock: SourceBlock? = null,
+        sourceTextCollapsed: Boolean = false,
     ) {
         pendingText = text
         pendingCharIndex = charIndex
         pendingAnchor = anchor
         pendingSubtitle = subtitle
         pendingSourceBlock = sourceBlock
+        pendingSourceTextCollapsed = sourceTextCollapsed
     }
 
     /**
@@ -156,6 +161,7 @@ object PopupEngineHolder {
                     val map = HashMap<String, Any>()
                     map["text"] = pendingText
                     map["charIndex"] = pendingCharIndex
+                    map["sourceTextCollapsed"] = pendingSourceTextCollapsed
                     putAnchor(map, pendingAnchor)
                     putSubtitle(map, pendingSubtitle)
                     putSourceBlock(map, pendingSourceBlock)
@@ -196,6 +202,7 @@ object PopupEngineHolder {
         subtitle: IntArray? = null,
         sourceBlock: SourceBlock? = null,
         allowBlank: Boolean = false,
+        sourceTextCollapsed: Boolean = false,
     ) {
         if (text.isBlank() && !allowBlank) return
         pendingText = text
@@ -203,10 +210,12 @@ object PopupEngineHolder {
         pendingAnchor = anchor
         pendingSubtitle = subtitle
         pendingSourceBlock = sourceBlock
+        pendingSourceTextCollapsed = sourceTextCollapsed
         val ch = channel ?: return
         val args = HashMap<String, Any>()
         args["text"] = text
         args["charIndex"] = charIndex
+        args["sourceTextCollapsed"] = sourceTextCollapsed
         putAnchor(args, anchor)
         putSubtitle(args, subtitle)
         putSourceBlock(args, sourceBlock)

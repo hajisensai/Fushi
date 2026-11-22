@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
@@ -167,6 +168,15 @@ class _CacheTrackingBackend implements SyncBackend {
     File destination, {
     void Function(double progress)? onProgress,
   }) async => throw UnimplementedError();
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();

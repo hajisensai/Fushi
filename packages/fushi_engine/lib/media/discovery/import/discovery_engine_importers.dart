@@ -109,7 +109,6 @@ Future<String?> importDiscoveryAudiobook({
   }
   final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
     db: db,
-    repo: srtBookRepo,
     audiobookRepo: audiobookRepo,
     bookKey: bookKey,
     title: discoveryImportStem(plan.contentPath),
@@ -192,7 +191,6 @@ Future<String?> importTranscribedAudiobook({
     }
     final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
       db: db,
-      repo: srtBookRepo,
       audiobookRepo: audiobookRepo,
       bookKey: targetBookKey,
       title: row.title,
