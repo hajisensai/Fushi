@@ -108,8 +108,9 @@ class SeriesCastProfile {
 
   bool get isEmpty => roster.isEmpty && voices.isEmpty && substitutions.isEmpty;
 
-  /// 生成时实际念的文字：按本系列替换表改写 [text]。
-  String spokenText(String text) => applyCastSubstitutions(text, substitutions);
+  /// 生成时实际念的文字：按本系列替换表（含人名读法）改写 [text]。
+  String spokenText(String text) =>
+      applyCastSpokenSubstitutions(text, substitutions);
 
   /// 记住一卷里标注出的角色。
   void learnRoster(Iterable<TtsCastCharacter> found) =>

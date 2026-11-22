@@ -30,8 +30,8 @@ CastVoicingStore ttsVoicingStoreFor(AudioProductionHost appModel) =>
 /// 的文字（纯函数）。只在制作流程与补回里用；AI 标注在构造提示词时替换，不改原计划。
 /// 单句手动填写的念法（`TtsCast.sayFor`）在 `ttsSentenceSpokenText` 里优先，不过表。
 ///
-/// 送去合成的文字可能已被读音词典改写过（ruby 底本换成读音、词典规则）：两者相同时
-/// 直接用替换后的显示文字；不同时对念法单独替换（原文写法被读音改掉的就不再命中）。
+/// 送去合成的文字可能已被读音词典改写过（ruby 底本换成读音、词典规则），所以对它单独
+/// 替换（原文写法被读音改掉的就不再命中）。人名读法条目只改送去合成的文字。
 /// 选角表的行键是 `(section, matchStart)`，与文字无关，所以替换不影响选角与账本。
 TtsBookPlan ttsPlanWithSubstitutions(
   TtsBookPlan plan,
@@ -47,10 +47,9 @@ TtsPlanSentence _substituted(
   TtsPlanSentence s,
   List<CastTextSubstitution> table,
 ) {
+  // 显示文字（cue / 制卡）只过普通替换；念的文字再加人名读法（读法不进显示层）。
   final String text = applyCastSubstitutions(s.text, table);
-  final String spoken = s.spokenText == s.text
-      ? text
-      : applyCastSubstitutions(s.spokenText, table);
+  final String spoken = applyCastSpokenSubstitutions(s.spokenText, table);
   if (identical(text, s.text) && identical(spoken, s.spokenText)) return s;
   return TtsPlanSentence(
     section: s.section,
