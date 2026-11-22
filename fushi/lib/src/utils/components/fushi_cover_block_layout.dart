@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerEnterEvent, PointerExitEvent;
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
@@ -9,6 +8,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart'
     show kFushiHoverLiftOverflow;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
     show SectionSwipeCascade;
@@ -649,10 +649,9 @@ typedef FushiCoverBlockItemBuilder =
 /// 而 `scrollOffset` 每个滚动帧都在变（BUG-5253）：旧实现因此每帧重算整库排布、
 /// 交出一个新的 [SliverList.builder]（builder 委托的 `shouldRebuild` 恒为真），
 /// 视口里每一格的 [itemBuilder] 连同整张卡的 build 都在 UI 线程上逐帧重跑——
-/// 视频 / 书 / 游戏库页色块布局滚动掉帧的根因。现在按「本 widget 实例 + 横轴宽度
-/// + 摆放姿态」记住上次交出的 sliver，只有滚动位置变化时原样交回同一个实例，
-/// 框架据此整棵跳过更新。
-class SliverFushiCoverBlocks extends StatefulWidget {
+/// 视频 / 书 / 游戏库页色块布局滚动掉帧的根因。现在走 [FushiSliverWidthBuilder]：
+/// 只有横轴宽度、本 widget 实例或摆放姿态变了才重排，只滚动时子树原样保留。
+class SliverFushiCoverBlocks extends StatelessWidget {
   const SliverFushiCoverBlocks({
     required this.itemCount,
     required this.itemBuilder,
@@ -692,68 +691,39 @@ class SliverFushiCoverBlocks extends StatefulWidget {
   final int? maxRows;
 
   @override
-  State<SliverFushiCoverBlocks> createState() => _SliverFushiCoverBlocksState();
-}
-
-class _SliverFushiCoverBlocksState extends State<SliverFushiCoverBlocks> {
-  /// 上次交出的 sliver 与它的输入：[_builtFor] 是当时的 widget 实例（参数、
-  /// [SliverFushiCoverBlocks.itemBuilder] 闭包都随它换代），宽度与姿态另记。
-  SliverFushiCoverBlocks? _builtFor;
-  double? _builtWidth;
-  ShellBlockArrangement? _builtArrangement;
-  Widget? _built;
-
-  /// 滚动位置变化时原样交回上次的实例；排布输入变了才重建。
-  Widget _sliverFor(double width, ShellBlockArrangement arrangement) {
-    final Widget? cached = _built;
-    if (cached != null &&
-        identical(_builtFor, widget) &&
-        _builtWidth == width &&
-        _builtArrangement == arrangement) {
-      return cached;
-    }
-    final SliverFushiCoverBlocks w = widget;
-    final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlacement(
-      width: width,
-      itemCount: w.itemCount,
-      layout: w.layout,
-      targetWidth: w.targetWidth,
-      spacing: w.spacing,
-      narrowTargetWidth: w.narrowTargetWidth,
-      isWideItem: w.isWideItem,
-      uniformAfterHero: w.uniformAfterHero,
-      hoverBleed: w.hoverBleed,
-    ).rows;
-    final int? cap = w.maxRows;
-    final List<FushiCoverBlockRow> rows = cap == null
-        ? plan
-        : fushiCoverBlockRowsCapped(plan, cap);
-    final Widget sliver = SliverList.builder(
-      itemCount: rows.length,
-      itemBuilder: (BuildContext context, int r) => _blockRow(
-        context,
-        rows,
-        r,
-        arrangement: arrangement,
-        rowWidth: width,
-        spacing: w.spacing,
-        itemBuilder: w.itemBuilder,
-        staggerEntrance: true,
-      ),
-    );
-    _builtFor = w;
-    _builtWidth = width;
-    _builtArrangement = arrangement;
-    _built = sliver;
-    return sliver;
-  }
-
-  @override
   Widget build(BuildContext context) {
     final ShellBlockArrangement arrangement = shellBlockArrangementOf(context);
-    return SliverLayoutBuilder(
-      builder: (BuildContext context, SliverConstraints constraints) =>
-          _sliverFor(constraints.crossAxisExtent, arrangement),
+    return FushiSliverWidthBuilder(
+      builder: (BuildContext context, double width) {
+        final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlacement(
+          width: width,
+          itemCount: itemCount,
+          layout: layout,
+          targetWidth: targetWidth,
+          spacing: spacing,
+          narrowTargetWidth: narrowTargetWidth,
+          isWideItem: isWideItem,
+          uniformAfterHero: uniformAfterHero,
+          hoverBleed: hoverBleed,
+        ).rows;
+        final int? cap = maxRows;
+        final List<FushiCoverBlockRow> rows = cap == null
+            ? plan
+            : fushiCoverBlockRowsCapped(plan, cap);
+        return SliverList.builder(
+          itemCount: rows.length,
+          itemBuilder: (BuildContext context, int r) => _blockRow(
+            context,
+            rows,
+            r,
+            arrangement: arrangement,
+            rowWidth: width,
+            spacing: spacing,
+            itemBuilder: itemBuilder,
+            staggerEntrance: true,
+          ),
+        );
+      },
     );
   }
 }

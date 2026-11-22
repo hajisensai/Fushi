@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -21,6 +20,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 扩展仓库管理页（漫画 Mihon / 视频 Aniyomi / 小说 LNReader 三域共用）的
 /// 视觉零件：限宽居中、顶部动作、信任提示、仓库行、添加 / 改地址对话框。
@@ -45,11 +45,11 @@ class ExtensionStorePageSliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SliverLayoutBuilder(
-      builder: (BuildContext context, SliverConstraints constraints) {
+    return FushiSliverWidthBuilder(
+      builder: (BuildContext context, double crossAxisExtent) {
         final double inset = math.max(
           0,
-          (constraints.crossAxisExtent - kExtensionStorePageMaxWidth) / 2,
+          (crossAxisExtent - kExtensionStorePageMaxWidth) / 2,
         );
         return SliverPadding(
           padding: EdgeInsets.symmetric(horizontal: inset),
