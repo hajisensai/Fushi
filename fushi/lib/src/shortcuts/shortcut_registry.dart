@@ -27,9 +27,14 @@ const String kShortcutSchemaVersionKey = '__schema_version__';
 ///
 /// * `video_lookup_next_word` / `video_lookup_prev_word`：视频「整句扫词」，
 ///   2026-11-22 手柄查词统一时删除（由 ControllerLookupMode 取代）。
+/// * `reader_lookup_next_word` / `reader_lookup_prev_word`：阅读器「整句扫词」
+///   （拍板台 5H922XeDHM），2026-11-23 按拍板台 pr4141a 同样删除（查词模式的按词
+///   步进 + 停下即查覆盖其用法）。
 const Set<String> kRetiredShortcutActionKeys = <String>{
   'video_lookup_next_word',
   'video_lookup_prev_word',
+  'reader_lookup_next_word',
+  'reader_lookup_prev_word',
 };
 
 class FushiShortcutRegistry extends ChangeNotifier {

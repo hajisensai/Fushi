@@ -9679,8 +9679,6 @@
   "shortcut_action_reader_dismiss_dict": "사전 닫기",
   "shortcut_action_reader_enter_caret": "사전 찾기 커서 진입",
   "shortcut_action_reader_lookup_at_cursor": "단어 찾기 / 커서 활성화",
-  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "오디오북 패널 열기",
   "shortcut_action_reader_open_gallery": "삽화 갤러리 열기",
   "shortcut_action_reader_open_menu": "Open Settings Menu",

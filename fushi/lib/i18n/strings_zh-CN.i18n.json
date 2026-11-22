@@ -9679,8 +9679,6 @@
   "shortcut_action_reader_dismiss_dict": "关闭词典",
   "shortcut_action_reader_enter_caret": "进入选字查词光标",
   "shortcut_action_reader_lookup_at_cursor": "查词/激活光标",
-  "shortcut_action_reader_lookup_next_word": "下一个词（扫词）",
-  "shortcut_action_reader_lookup_prev_word": "上一个词（扫词）",
   "shortcut_action_reader_open_audiobook": "打开有声书面板",
   "shortcut_action_reader_open_gallery": "打开插图画廊",
   "shortcut_action_reader_open_menu": "打开设置菜单",

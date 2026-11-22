@@ -15,13 +15,8 @@ const String kLyricsKeyBridgeSpaceToken = ' ';
 ///
 /// 顺序决定反解析的 scope 次序（[spreadKeyBridgeScopes] 从本表导出）：reader →
 /// audiobook → universal，与 `_handleKeyEvent` 的「页面专属键优先、返回上一级兜底」同构。
-///
-/// 整句扫词（拍板台 5H922XeDHM）在歌词文档里以「一行 = 一句」取句（HBK-AUDIT-221）：漏了
-/// 它们，歌词 WebView 一抢到 OS 焦点（点过一个词 / 一行之后）扫词键就只到 DOM。
 const List<ShortcutAction> kLyricsBridgedActions = <ShortcutAction>[
   ShortcutAction.readerDismissDict,
-  ShortcutAction.readerLookupNextWord,
-  ShortcutAction.readerLookupPrevWord,
   ShortcutAction.audiobookPlayPause,
   ShortcutAction.audiobookPrevSentence,
   ShortcutAction.audiobookNextSentence,
@@ -1681,11 +1676,6 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       source: ReaderLyricsCaretScripts.source(),
     );
     if (!currentLyricsLoad()) return;
-    // 整句扫词（拍板台 5H922XeDHM）在歌词文档里以「一行 = 一句」取句。
-    await controller.evaluateJavascript(
-      source: ReaderWordSweepScripts.source(),
-    );
-    if (!currentLyricsLoad()) return;
     await controller.evaluateJavascript(
       source: ReaderLyricsCaretScripts.initInvocation(
         color: _caretRingColorCss(),
@@ -1827,7 +1817,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         );
         // 歌词文档的非左键 `mousedown`（idx = 所在行的 data-cue-index，行外为 -1）。与正文
         // `onPointerSeek` 同一条三级阶梯（HBK-AUDIT-221：此前只认「seek 到点击句」，非
-        // Windows 上绑到侧键的扫词 / 关词典 / 其余动作在歌词视图里全是死项）。
+        // Windows 上绑到侧键的关词典 / 其余动作在歌词视图里全是死项）。
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsPointerSeek',
           callback: (List<dynamic> args) {
@@ -1855,7 +1845,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             // ② 指针归宿主的平台（Windows）上其余绑定由页面根 Listener
             // （[_handleReaderPointerDown]）派发，这里再派一次就是同一次按下触发两回。
             if (hostOwnsWebViewPointerInput) return;
-            // ③ 其余一律走与键盘 / 手柄完全相同的执行体（扫词在其中经唯一派发点分流）。
+            // ③ 其余一律走与键盘 / 手柄完全相同的执行体。
             final ShortcutAction? action = resolveMouseBindingActionForButton(
               registry: registry,
               button: button,
