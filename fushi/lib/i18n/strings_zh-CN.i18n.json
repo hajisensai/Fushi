@@ -7788,6 +7788,8 @@
   "music_subtitle_plugin_fetch_title": "正在获取曲目音频",
   "music_subtitle_status_done": "完成：已为 ${n} 首写入字幕",
   "music_subtitle_unavailable_remote": "${title}：不是本机文件，跳过",
+  "music_subtitle_vocal_separation_low_memory": "本机空余内存不够做人声分离，这次直接识别原曲，伴奏重的句子可能漏掉。",
+  "music_subtitle_vocal_separation_on": "识别前先把人声从伴奏里分离出来（需额外下载约 28 MB 的分离模型）。",
   "music_tag_field_album": "专辑",
   "music_tag_field_album_artist": "专辑艺人",
   "music_tag_field_artist": "艺人",

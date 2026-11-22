@@ -157,8 +157,17 @@ String asrPackDownloadKey(String packId) => 'asr:$packId';
 
 /// [language] 在 [profile] 素材下当前选中的那个包的单飞键（与转录服务
 /// `downloadModel` 落盘的目录一致：服务内部同样经 `asrModelPackFor` 取包）。
-String asrDownloadKeyFor(AsrLanguage language, AsrAudioProfile profile) =>
-    asrPackDownloadKey(asrModelPackFor(language, profile: profile).id);
+///
+/// 歌曲素材（`song`）与混音同一个包 id，但还要多下一个人声分离模型，单飞键另加
+/// 后缀：挂到混音那条下载上会在缺分离模型时就宣告「下完」。歌曲那条下载先挂混音
+/// 键把识别文件下完，再只补分离模型（见 `AppVideoSubtitleAsrModelPort.download`），
+/// 同一批文件始终只有一个写者。
+String asrDownloadKeyFor(AsrLanguage language, AsrAudioProfile profile) {
+  final String key = asrPackDownloadKey(
+    asrModelPackFor(language, profile: profile).id,
+  );
+  return profile.separatesVocals ? '$key+vocals' : key;
+}
 
 /// MOSS（audio.cpp 运行库 + 权重）的单飞键。各后端共用同一份权重，所以不分后端。
 const String kMossDownloadKey = 'moss';

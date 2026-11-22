@@ -156,8 +156,10 @@ void main() {
 
     MossVideoSubtitleRecognizer recognizer(
       FakeAsrTranscriptionService asrService,
-      FakeProcessStarter starter,
-    ) => MossVideoSubtitleRecognizer(
+      FakeProcessStarter starter, {
+      asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.mixedAudio,
+    }) => MossVideoSubtitleRecognizer(
+      audioProfile: audioProfile,
       serviceFactory: (asr.AsrAudioProfile profile) {
         asrService.profiles.add(profile);
         return asrService;
@@ -240,6 +242,26 @@ void main() {
         cancel: const SubtitleNeverCancel(),
       );
       expect(again.calls, isEmpty);
+    });
+
+    test('歌曲素材（音乐库歌词）：按 song 建转录服务，稿另立 id 不与混音混用', () async {
+      final FakeAsrTranscriptionService asrService = service();
+      final MossVideoSubtitleRecognizer song = recognizer(
+        asrService,
+        FakeProcessStarter(fakeAudioCppCli(raw)),
+        audioProfile: asr.AsrAudioProfile.song,
+      );
+      expect(song.id, kMossSongVideoSubtitleRecognizerId);
+      expect(song.id, isNot(kMossVideoSubtitleRecognizerId));
+      await song.recognize(
+        videoPath: p.join(tmp.path, 'ep.mkv'),
+        workDir: work,
+        onProgress: (double f, String m) {},
+        cancel: const SubtitleNeverCancel(),
+      );
+      expect(asrService.profiles, <asr.AsrAudioProfile>[
+        asr.AsrAudioProfile.song,
+      ]);
     });
 
     test('Parakeet 模型没下载：跑 MOSS 之前就报错', () async {

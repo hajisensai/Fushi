@@ -7788,6 +7788,8 @@
   "music_subtitle_plugin_fetch_title": "Fetching track audio",
   "music_subtitle_status_done": "Done: subtitles written for ${n} tracks",
   "music_subtitle_unavailable_remote": "${title}: not a local file, skipped",
+  "music_subtitle_vocal_separation_low_memory": "Not enough free memory on this device to separate vocals; recognizing the original mix instead. Lines buried under the accompaniment may be missed.",
+  "music_subtitle_vocal_separation_on": "Vocals are separated from the accompaniment before recognition (needs an extra 28 MB separation model).",
   "music_tag_field_album": "Album",
   "music_tag_field_album_artist": "Album artist",
   "music_tag_field_artist": "Artist",

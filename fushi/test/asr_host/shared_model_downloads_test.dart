@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/asr_host/shared_model_downloads.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, AsrLanguage, ModelDownloadEvent, asrModelPackFor;
 
 /// kZZmXQBv7E：模型下载以前挂在弹层上，关掉再开、再点一次就起第二条写者，两条流
 /// 同时往同一个 `.part` 里 append，之后每次 Range 续传都是 HTTP 416。
@@ -125,5 +126,25 @@ void main() {
     await pumpEventQueue();
     expect(starts, 1);
     await again.cancel();
+  });
+
+  test('歌曲与混音同一个包，但下载单飞键分开（缺分离模型时不能挂到混音那条上算下完）', () {
+    final String mixed = asrDownloadKeyFor(
+      AsrLanguage.japanese,
+      AsrAudioProfile.mixedAudio,
+    );
+    final String song = asrDownloadKeyFor(
+      AsrLanguage.japanese,
+      AsrAudioProfile.song,
+    );
+    expect(
+      asrModelPackFor(AsrLanguage.japanese, profile: AsrAudioProfile.song).id,
+      asrModelPackFor(
+        AsrLanguage.japanese,
+        profile: AsrAudioProfile.mixedAudio,
+      ).id,
+    );
+    expect(song, isNot(mixed));
+    expect(song, startsWith(mixed));
   });
 }

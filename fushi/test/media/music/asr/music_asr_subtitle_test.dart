@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -44,7 +45,12 @@ void main() {
     outRoot: () async => out,
   );
 
-  AppVideoSubtitleService service() => AppVideoSubtitleService(
+  /// 每次挑识别器时收到的素材（音乐库歌词应为 `song`，手机内存不够时 `mixedAudio`）。
+  final List<AsrAudioProfile> resolvedProfiles = <AsrAudioProfile>[];
+
+  AppVideoSubtitleService service({
+    AsrAudioProfile musicProfile = AsrAudioProfile.song,
+  }) => AppVideoSubtitleService(
     database: db,
     settings: FakeVideoSubtitleSettings(),
     glossaryStore: MemoryGlossaryStore(),
@@ -58,7 +64,12 @@ void main() {
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
           VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
-        }) async => VideoSubtitleRecognizerChoice(recognizer: recognizer),
+          AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
+        }) async {
+          resolvedProfiles.add(audioProfile);
+          return VideoSubtitleRecognizerChoice(recognizer: recognizer);
+        },
+    musicAudioProfile: (VideoSubtitleLanguage _) async => musicProfile,
     completerFactory: (AiProviderConfig _) =>
         (completer: FakeAiCompleter(answerAll), close: () {}),
   );
@@ -113,6 +124,7 @@ void main() {
           .getSingleOrNull();
 
   setUp(() async {
+    resolvedProfiles.clear();
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     tmp = Directory.systemTemp.createTempSync('music_asr_');
     out = Directory(p.join(tmp.path, 'support', 'asr_jobs', 'music_subtitles'));
@@ -370,6 +382,55 @@ void main() {
       'ありがとう',
       'またね',
     ]);
+  });
+
+  group('歌曲素材（人声分离，拍板 I9ici7ZmKd）', () {
+    test('音乐目标按 song 挑识别器；面板查模型用同一个判定', () async {
+      final String song = audio('a/01.flac');
+      await addTrack('t1', song, trackNo: 1);
+      final AppVideoSubtitleService svc = service();
+      final AppVideoSubtitleTarget target = await targets().forTrack('t1');
+      expect(
+        await svc.asrAudioProfileFor(target, VideoSubtitleLanguage.japanese),
+        AsrAudioProfile.song,
+      );
+      final AppVideoSubtitleJob job = svc.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.song]);
+    });
+
+    test('手机内存放不下分离：判定退回 mixedAudio，任务按混音跑', () async {
+      final String song = audio('a/01.flac');
+      await addTrack('t1', song, trackNo: 1);
+      final AppVideoSubtitleService svc = service(
+        musicProfile: AsrAudioProfile.mixedAudio,
+      );
+      final AppVideoSubtitleJob job = svc.start(
+        await targets().forTrack('t1'),
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
+    });
+
+    test('面板定下的素材写进选项：开跑不再重判（两次判定之间内存变了也一致）', () async {
+      final String song = audio('a/01.flac');
+      await addTrack('t1', song, trackNo: 1);
+      // 开跑时的判定会说 song，但面板查 / 下模型时定的是 mixedAudio。
+      final AppVideoSubtitleService svc = service();
+      final AppVideoSubtitleJob job = svc.start(
+        await targets().forTrack('t1'),
+        const AppVideoSubtitleOptions(audioProfile: AsrAudioProfile.mixedAudio),
+      );
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
+    });
   });
 
   test('与视频生成共用单活跃任务：音乐任务在跑时视频目标被拒（busy）', () async {
