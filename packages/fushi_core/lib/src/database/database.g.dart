@@ -15042,6 +15042,17 @@ class $FavoriteSentencesTable extends FavoriteSentences
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _colorUpdatedAtUsMeta = const VerificationMeta(
+    'colorUpdatedAtUs',
+  );
+  @override
+  late final GeneratedColumn<int> colorUpdatedAtUs = GeneratedColumn<int>(
+    'color_updated_at_us',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _sourceMeta = const VerificationMeta('source');
   @override
   late final GeneratedColumn<String> source = GeneratedColumn<String>(
@@ -15097,6 +15108,7 @@ class $FavoriteSentencesTable extends FavoriteSentences
     normCharOffset,
     normCharLength,
     color,
+    colorUpdatedAtUs,
     source,
     dateKey,
     expression,
@@ -15192,6 +15204,15 @@ class $FavoriteSentencesTable extends FavoriteSentences
         color.isAcceptableOrUnknown(data['color']!, _colorMeta),
       );
     }
+    if (data.containsKey('color_updated_at_us')) {
+      context.handle(
+        _colorUpdatedAtUsMeta,
+        colorUpdatedAtUs.isAcceptableOrUnknown(
+          data['color_updated_at_us']!,
+          _colorUpdatedAtUsMeta,
+        ),
+      );
+    }
     if (data.containsKey('source')) {
       context.handle(
         _sourceMeta,
@@ -15265,6 +15286,10 @@ class $FavoriteSentencesTable extends FavoriteSentences
         DriftSqlType.string,
         data['${effectivePrefix}color'],
       ),
+      colorUpdatedAtUs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}color_updated_at_us'],
+      ),
       source: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}source'],
@@ -15305,6 +15330,12 @@ class FavoriteSentenceRow extends DataClass
   final int? normCharOffset;
   final int? normCharLength;
   final String? color;
+
+  /// [color] 最后一次被用户改的时刻（微秒，v167，BUG-5081）：同步 / 备份合并按内容键
+  /// 去重时，颜色取这个时钟较新的一侧（LWW）；NULL = 收藏后没改过色，时钟按
+  /// [createdAtUs] 算。没有它，同一条收藏两端 createdAt 相同、合并各留本机行，改色
+  /// 永远传不到别的设备。
+  final int? colorUpdatedAtUs;
   final String source;
   final String? dateKey;
   final String? expression;
@@ -15320,6 +15351,7 @@ class FavoriteSentenceRow extends DataClass
     this.normCharOffset,
     this.normCharLength,
     this.color,
+    this.colorUpdatedAtUs,
     required this.source,
     this.dateKey,
     this.expression,
@@ -15349,6 +15381,9 @@ class FavoriteSentenceRow extends DataClass
     }
     if (!nullToAbsent || color != null) {
       map['color'] = Variable<String>(color);
+    }
+    if (!nullToAbsent || colorUpdatedAtUs != null) {
+      map['color_updated_at_us'] = Variable<int>(colorUpdatedAtUs);
     }
     map['source'] = Variable<String>(source);
     if (!nullToAbsent || dateKey != null) {
@@ -15387,6 +15422,9 @@ class FavoriteSentenceRow extends DataClass
       color: color == null && nullToAbsent
           ? const Value.absent()
           : Value(color),
+      colorUpdatedAtUs: colorUpdatedAtUs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(colorUpdatedAtUs),
       source: Value(source),
       dateKey: dateKey == null && nullToAbsent
           ? const Value.absent()
@@ -15416,6 +15454,7 @@ class FavoriteSentenceRow extends DataClass
       normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
       normCharLength: serializer.fromJson<int?>(json['normCharLength']),
       color: serializer.fromJson<String?>(json['color']),
+      colorUpdatedAtUs: serializer.fromJson<int?>(json['colorUpdatedAtUs']),
       source: serializer.fromJson<String>(json['source']),
       dateKey: serializer.fromJson<String?>(json['dateKey']),
       expression: serializer.fromJson<String?>(json['expression']),
@@ -15436,6 +15475,7 @@ class FavoriteSentenceRow extends DataClass
       'normCharOffset': serializer.toJson<int?>(normCharOffset),
       'normCharLength': serializer.toJson<int?>(normCharLength),
       'color': serializer.toJson<String?>(color),
+      'colorUpdatedAtUs': serializer.toJson<int?>(colorUpdatedAtUs),
       'source': serializer.toJson<String>(source),
       'dateKey': serializer.toJson<String?>(dateKey),
       'expression': serializer.toJson<String?>(expression),
@@ -15454,6 +15494,7 @@ class FavoriteSentenceRow extends DataClass
     Value<int?> normCharOffset = const Value.absent(),
     Value<int?> normCharLength = const Value.absent(),
     Value<String?> color = const Value.absent(),
+    Value<int?> colorUpdatedAtUs = const Value.absent(),
     String? source,
     Value<String?> dateKey = const Value.absent(),
     Value<String?> expression = const Value.absent(),
@@ -15473,6 +15514,9 @@ class FavoriteSentenceRow extends DataClass
         ? normCharLength.value
         : this.normCharLength,
     color: color.present ? color.value : this.color,
+    colorUpdatedAtUs: colorUpdatedAtUs.present
+        ? colorUpdatedAtUs.value
+        : this.colorUpdatedAtUs,
     source: source ?? this.source,
     dateKey: dateKey.present ? dateKey.value : this.dateKey,
     expression: expression.present ? expression.value : this.expression,
@@ -15500,6 +15544,9 @@ class FavoriteSentenceRow extends DataClass
           ? data.normCharLength.value
           : this.normCharLength,
       color: data.color.present ? data.color.value : this.color,
+      colorUpdatedAtUs: data.colorUpdatedAtUs.present
+          ? data.colorUpdatedAtUs.value
+          : this.colorUpdatedAtUs,
       source: data.source.present ? data.source.value : this.source,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       expression: data.expression.present
@@ -15522,6 +15569,7 @@ class FavoriteSentenceRow extends DataClass
           ..write('normCharOffset: $normCharOffset, ')
           ..write('normCharLength: $normCharLength, ')
           ..write('color: $color, ')
+          ..write('colorUpdatedAtUs: $colorUpdatedAtUs, ')
           ..write('source: $source, ')
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
@@ -15542,6 +15590,7 @@ class FavoriteSentenceRow extends DataClass
     normCharOffset,
     normCharLength,
     color,
+    colorUpdatedAtUs,
     source,
     dateKey,
     expression,
@@ -15561,6 +15610,7 @@ class FavoriteSentenceRow extends DataClass
           other.normCharOffset == this.normCharOffset &&
           other.normCharLength == this.normCharLength &&
           other.color == this.color &&
+          other.colorUpdatedAtUs == this.colorUpdatedAtUs &&
           other.source == this.source &&
           other.dateKey == this.dateKey &&
           other.expression == this.expression &&
@@ -15578,6 +15628,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
   final Value<int?> normCharOffset;
   final Value<int?> normCharLength;
   final Value<String?> color;
+  final Value<int?> colorUpdatedAtUs;
   final Value<String> source;
   final Value<String?> dateKey;
   final Value<String?> expression;
@@ -15594,6 +15645,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.normCharOffset = const Value.absent(),
     this.normCharLength = const Value.absent(),
     this.color = const Value.absent(),
+    this.colorUpdatedAtUs = const Value.absent(),
     this.source = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.expression = const Value.absent(),
@@ -15611,6 +15663,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.normCharOffset = const Value.absent(),
     this.normCharLength = const Value.absent(),
     this.color = const Value.absent(),
+    this.colorUpdatedAtUs = const Value.absent(),
     this.source = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.expression = const Value.absent(),
@@ -15630,6 +15683,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Expression<int>? normCharOffset,
     Expression<int>? normCharLength,
     Expression<String>? color,
+    Expression<int>? colorUpdatedAtUs,
     Expression<String>? source,
     Expression<String>? dateKey,
     Expression<String>? expression,
@@ -15647,6 +15701,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       if (normCharOffset != null) 'norm_char_offset': normCharOffset,
       if (normCharLength != null) 'norm_char_length': normCharLength,
       if (color != null) 'color': color,
+      if (colorUpdatedAtUs != null) 'color_updated_at_us': colorUpdatedAtUs,
       if (source != null) 'source': source,
       if (dateKey != null) 'date_key': dateKey,
       if (expression != null) 'expression': expression,
@@ -15666,6 +15721,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Value<int?>? normCharOffset,
     Value<int?>? normCharLength,
     Value<String?>? color,
+    Value<int?>? colorUpdatedAtUs,
     Value<String>? source,
     Value<String?>? dateKey,
     Value<String?>? expression,
@@ -15683,6 +15739,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       normCharOffset: normCharOffset ?? this.normCharOffset,
       normCharLength: normCharLength ?? this.normCharLength,
       color: color ?? this.color,
+      colorUpdatedAtUs: colorUpdatedAtUs ?? this.colorUpdatedAtUs,
       source: source ?? this.source,
       dateKey: dateKey ?? this.dateKey,
       expression: expression ?? this.expression,
@@ -15724,6 +15781,9 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     if (color.present) {
       map['color'] = Variable<String>(color.value);
     }
+    if (colorUpdatedAtUs.present) {
+      map['color_updated_at_us'] = Variable<int>(colorUpdatedAtUs.value);
+    }
     if (source.present) {
       map['source'] = Variable<String>(source.value);
     }
@@ -15755,6 +15815,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
           ..write('normCharOffset: $normCharOffset, ')
           ..write('normCharLength: $normCharLength, ')
           ..write('color: $color, ')
+          ..write('colorUpdatedAtUs: $colorUpdatedAtUs, ')
           ..write('source: $source, ')
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
@@ -62489,6 +62550,296 @@ class VideoEpisodeBindingOverridesCompanion
   }
 }
 
+class $VideoCollectionSectionOverridesTable
+    extends VideoCollectionSectionOverrides
+    with
+        TableInfo<
+          $VideoCollectionSectionOverridesTable,
+          VideoCollectionSectionOverrideRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoCollectionSectionOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _sectionKeyMeta = const VerificationMeta(
+    'sectionKey',
+  );
+  @override
+  late final GeneratedColumn<String> sectionKey = GeneratedColumn<String>(
+    'section_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [bookUid, sectionKey, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_collection_section_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoCollectionSectionOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('section_key')) {
+      context.handle(
+        _sectionKeyMeta,
+        sectionKey.isAcceptableOrUnknown(data['section_key']!, _sectionKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sectionKeyMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  VideoCollectionSectionOverrideRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoCollectionSectionOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      sectionKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}section_key'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoCollectionSectionOverridesTable createAlias(String alias) {
+    return $VideoCollectionSectionOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class VideoCollectionSectionOverrideRow extends DataClass
+    implements Insertable<VideoCollectionSectionOverrideRow> {
+  final String bookUid;
+
+  /// 分栏键，与引擎派生键同一值域：`s<N>`（N ≥ 1，第 N 季）或 `extras`（PV·特典）。
+  /// 写入口只接受这两种形状（引擎 `isValidCollectionSectionKey`）；读到别的形状按
+  /// 「没有指定」处理。
+  final String sectionKey;
+  final int updatedAt;
+  const VideoCollectionSectionOverrideRow({
+    required this.bookUid,
+    required this.sectionKey,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['section_key'] = Variable<String>(sectionKey);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoCollectionSectionOverridesCompanion toCompanion(bool nullToAbsent) {
+    return VideoCollectionSectionOverridesCompanion(
+      bookUid: Value(bookUid),
+      sectionKey: Value(sectionKey),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoCollectionSectionOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoCollectionSectionOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      sectionKey: serializer.fromJson<String>(json['sectionKey']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'sectionKey': serializer.toJson<String>(sectionKey),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoCollectionSectionOverrideRow copyWith({
+    String? bookUid,
+    String? sectionKey,
+    int? updatedAt,
+  }) => VideoCollectionSectionOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    sectionKey: sectionKey ?? this.sectionKey,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  VideoCollectionSectionOverrideRow copyWithCompanion(
+    VideoCollectionSectionOverridesCompanion data,
+  ) {
+    return VideoCollectionSectionOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      sectionKey: data.sectionKey.present
+          ? data.sectionKey.value
+          : this.sectionKey,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoCollectionSectionOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('sectionKey: $sectionKey, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookUid, sectionKey, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoCollectionSectionOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.sectionKey == this.sectionKey &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoCollectionSectionOverridesCompanion
+    extends UpdateCompanion<VideoCollectionSectionOverrideRow> {
+  final Value<String> bookUid;
+  final Value<String> sectionKey;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoCollectionSectionOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.sectionKey = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoCollectionSectionOverridesCompanion.insert({
+    required String bookUid,
+    required String sectionKey,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       sectionKey = Value(sectionKey),
+       updatedAt = Value(updatedAt);
+  static Insertable<VideoCollectionSectionOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<String>? sectionKey,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (sectionKey != null) 'section_key': sectionKey,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoCollectionSectionOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<String>? sectionKey,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoCollectionSectionOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      sectionKey: sectionKey ?? this.sectionKey,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (sectionKey.present) {
+      map['section_key'] = Variable<String>(sectionKey.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoCollectionSectionOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('sectionKey: $sectionKey, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $PendingMineQueueTable extends PendingMineQueue
     with TableInfo<$PendingMineQueueTable, PendingMineRow> {
   @override
@@ -64613,6 +64964,614 @@ class MediaNsfwFlagsCompanion extends UpdateCompanion<MediaNsfwFlagRow> {
           ..write('entryKey: $entryKey, ')
           ..write('nsfwAt: $nsfwAt, ')
           ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaLockedFlagsTable extends MediaLockedFlags
+    with TableInfo<$MediaLockedFlagsTable, MediaLockedFlagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLockedFlagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lockedAtMeta = const VerificationMeta(
+    'lockedAt',
+  );
+  @override
+  late final GeneratedColumn<int> lockedAt = GeneratedColumn<int>(
+    'locked_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<int> clearedAt = GeneratedColumn<int>(
+    'cleared_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaKind,
+    entryKey,
+    lockedAt,
+    clearedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_locked_flags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLockedFlagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('locked_at')) {
+      context.handle(
+        _lockedAtMeta,
+        lockedAt.isAcceptableOrUnknown(data['locked_at']!, _lockedAtMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey};
+  @override
+  MediaLockedFlagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLockedFlagRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      lockedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}locked_at'],
+      ),
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cleared_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaLockedFlagsTable createAlias(String alias) {
+    return $MediaLockedFlagsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLockedFlagRow extends DataClass
+    implements Insertable<MediaLockedFlagRow> {
+  final String mediaKind;
+  final String entryKey;
+
+  /// 最近一次上锁的毫秒戳；NULL = 从没上过锁。
+  final int? lockedAt;
+
+  /// 最近一次解除上锁的毫秒戳；NULL = 从没解除过。
+  final int? clearedAt;
+  const MediaLockedFlagRow({
+    required this.mediaKind,
+    required this.entryKey,
+    this.lockedAt,
+    this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
+    if (!nullToAbsent || lockedAt != null) {
+      map['locked_at'] = Variable<int>(lockedAt);
+    }
+    if (!nullToAbsent || clearedAt != null) {
+      map['cleared_at'] = Variable<int>(clearedAt);
+    }
+    return map;
+  }
+
+  MediaLockedFlagsCompanion toCompanion(bool nullToAbsent) {
+    return MediaLockedFlagsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
+      lockedAt: lockedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lockedAt),
+      clearedAt: clearedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clearedAt),
+    );
+  }
+
+  factory MediaLockedFlagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLockedFlagRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      lockedAt: serializer.fromJson<int?>(json['lockedAt']),
+      clearedAt: serializer.fromJson<int?>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'lockedAt': serializer.toJson<int?>(lockedAt),
+      'clearedAt': serializer.toJson<int?>(clearedAt),
+    };
+  }
+
+  MediaLockedFlagRow copyWith({
+    String? mediaKind,
+    String? entryKey,
+    Value<int?> lockedAt = const Value.absent(),
+    Value<int?> clearedAt = const Value.absent(),
+  }) => MediaLockedFlagRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    entryKey: entryKey ?? this.entryKey,
+    lockedAt: lockedAt.present ? lockedAt.value : this.lockedAt,
+    clearedAt: clearedAt.present ? clearedAt.value : this.clearedAt,
+  );
+  MediaLockedFlagRow copyWithCompanion(MediaLockedFlagsCompanion data) {
+    return MediaLockedFlagRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      lockedAt: data.lockedAt.present ? data.lockedAt.value : this.lockedAt,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockedFlagRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('lockedAt: $lockedAt, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, entryKey, lockedAt, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLockedFlagRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
+          other.lockedAt == this.lockedAt &&
+          other.clearedAt == this.clearedAt);
+}
+
+class MediaLockedFlagsCompanion extends UpdateCompanion<MediaLockedFlagRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
+  final Value<int?> lockedAt;
+  final Value<int?> clearedAt;
+  final Value<int> rowid;
+  const MediaLockedFlagsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.lockedAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLockedFlagsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
+    this.lockedAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       entryKey = Value(entryKey);
+  static Insertable<MediaLockedFlagRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
+    Expression<int>? lockedAt,
+    Expression<int>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (lockedAt != null) 'locked_at': lockedAt,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLockedFlagsCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? entryKey,
+    Value<int?>? lockedAt,
+    Value<int?>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLockedFlagsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
+      lockedAt: lockedAt ?? this.lockedAt,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (lockedAt.present) {
+      map['locked_at'] = Variable<int>(lockedAt.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<int>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockedFlagsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('lockedAt: $lockedAt, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaLockCredentialsTable extends MediaLockCredentials
+    with TableInfo<$MediaLockCredentialsTable, MediaLockCredentialRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLockCredentialsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _credentialKeyMeta = const VerificationMeta(
+    'credentialKey',
+  );
+  @override
+  late final GeneratedColumn<String> credentialKey = GeneratedColumn<String>(
+    'credential_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _verifierMeta = const VerificationMeta(
+    'verifier',
+  );
+  @override
+  late final GeneratedColumn<String> verifier = GeneratedColumn<String>(
+    'verifier',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [credentialKey, verifier, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_lock_credentials';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLockCredentialRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('credential_key')) {
+      context.handle(
+        _credentialKeyMeta,
+        credentialKey.isAcceptableOrUnknown(
+          data['credential_key']!,
+          _credentialKeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_credentialKeyMeta);
+    }
+    if (data.containsKey('verifier')) {
+      context.handle(
+        _verifierMeta,
+        verifier.isAcceptableOrUnknown(data['verifier']!, _verifierMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {credentialKey};
+  @override
+  MediaLockCredentialRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLockCredentialRow(
+      credentialKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}credential_key'],
+      )!,
+      verifier: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}verifier'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaLockCredentialsTable createAlias(String alias) {
+    return $MediaLockCredentialsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLockCredentialRow extends DataClass
+    implements Insertable<MediaLockCredentialRow> {
+  final String credentialKey;
+
+  /// 口令摘要 JSON；NULL = 口令已删除。
+  final String? verifier;
+
+  /// 最近一次设置 / 修改 / 删除的毫秒戳。
+  final int updatedAt;
+  const MediaLockCredentialRow({
+    required this.credentialKey,
+    this.verifier,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['credential_key'] = Variable<String>(credentialKey);
+    if (!nullToAbsent || verifier != null) {
+      map['verifier'] = Variable<String>(verifier);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MediaLockCredentialsCompanion toCompanion(bool nullToAbsent) {
+    return MediaLockCredentialsCompanion(
+      credentialKey: Value(credentialKey),
+      verifier: verifier == null && nullToAbsent
+          ? const Value.absent()
+          : Value(verifier),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MediaLockCredentialRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLockCredentialRow(
+      credentialKey: serializer.fromJson<String>(json['credentialKey']),
+      verifier: serializer.fromJson<String?>(json['verifier']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'credentialKey': serializer.toJson<String>(credentialKey),
+      'verifier': serializer.toJson<String?>(verifier),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MediaLockCredentialRow copyWith({
+    String? credentialKey,
+    Value<String?> verifier = const Value.absent(),
+    int? updatedAt,
+  }) => MediaLockCredentialRow(
+    credentialKey: credentialKey ?? this.credentialKey,
+    verifier: verifier.present ? verifier.value : this.verifier,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  MediaLockCredentialRow copyWithCompanion(MediaLockCredentialsCompanion data) {
+    return MediaLockCredentialRow(
+      credentialKey: data.credentialKey.present
+          ? data.credentialKey.value
+          : this.credentialKey,
+      verifier: data.verifier.present ? data.verifier.value : this.verifier,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockCredentialRow(')
+          ..write('credentialKey: $credentialKey, ')
+          ..write('verifier: $verifier, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(credentialKey, verifier, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLockCredentialRow &&
+          other.credentialKey == this.credentialKey &&
+          other.verifier == this.verifier &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MediaLockCredentialsCompanion
+    extends UpdateCompanion<MediaLockCredentialRow> {
+  final Value<String> credentialKey;
+  final Value<String?> verifier;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const MediaLockCredentialsCompanion({
+    this.credentialKey = const Value.absent(),
+    this.verifier = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLockCredentialsCompanion.insert({
+    required String credentialKey,
+    this.verifier = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : credentialKey = Value(credentialKey),
+       updatedAt = Value(updatedAt);
+  static Insertable<MediaLockCredentialRow> custom({
+    Expression<String>? credentialKey,
+    Expression<String>? verifier,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (credentialKey != null) 'credential_key': credentialKey,
+      if (verifier != null) 'verifier': verifier,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLockCredentialsCompanion copyWith({
+    Value<String>? credentialKey,
+    Value<String?>? verifier,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLockCredentialsCompanion(
+      credentialKey: credentialKey ?? this.credentialKey,
+      verifier: verifier ?? this.verifier,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (credentialKey.present) {
+      map['credential_key'] = Variable<String>(credentialKey.value);
+    }
+    if (verifier.present) {
+      map['verifier'] = Variable<String>(verifier.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockCredentialsCompanion(')
+          ..write('credentialKey: $credentialKey, ')
+          ..write('verifier: $verifier, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -69152,6 +70111,17 @@ class $MusicTracksTable extends MusicTracks
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _scanAlbumUidMeta = const VerificationMeta(
+    'scanAlbumUid',
+  );
+  @override
+  late final GeneratedColumn<String> scanAlbumUid = GeneratedColumn<String>(
+    'scan_album_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _discNoMeta = const VerificationMeta('discNo');
   @override
   late final GeneratedColumn<int> discNo = GeneratedColumn<int>(
@@ -69367,6 +70337,7 @@ class $MusicTracksTable extends MusicTracks
     titleSort,
     artistCredit,
     albumUid,
+    scanAlbumUid,
     discNo,
     trackNo,
     year,
@@ -69510,6 +70481,15 @@ class $MusicTracksTable extends MusicTracks
       context.handle(
         _albumUidMeta,
         albumUid.isAcceptableOrUnknown(data['album_uid']!, _albumUidMeta),
+      );
+    }
+    if (data.containsKey('scan_album_uid')) {
+      context.handle(
+        _scanAlbumUidMeta,
+        scanAlbumUid.isAcceptableOrUnknown(
+          data['scan_album_uid']!,
+          _scanAlbumUidMeta,
+        ),
       );
     }
     if (data.containsKey('disc_no')) {
@@ -69727,6 +70707,10 @@ class $MusicTracksTable extends MusicTracks
         DriftSqlType.string,
         data['${effectivePrefix}album_uid'],
       ),
+      scanAlbumUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scan_album_uid'],
+      ),
       discNo: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}disc_no'],
@@ -69846,6 +70830,13 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
 
   /// 所属专辑（`MusicAlbums.albumUid`）；无专辑标签的散曲为 NULL。
   final String? albumUid;
+
+  /// 扫描时按这首曲目自己的标签算出的专辑 uid（schema v167，HBK-AUDIT-027）：归组前的
+  /// 原始归属。同一张 CD 只有部分曲目写了专辑艺人时，扫描落库按「同目录同名」把没写的
+  /// 那几首改挂到带艺人的那张上（[albumUid] 是归组后的生效值），这一列不动——之后同一组
+  /// 里艺人变了（新加第二位、带艺人的文件删了），没变的文件不重新解析也能从这里退回原专辑。
+  /// 只有扫描落库写它；光盘导入等别的写入方为 NULL，归组按 [albumUid] 认。设备本地。
+  final String? scanAlbumUid;
   final int? discNo;
   final int? trackNo;
   final int? year;
@@ -69902,6 +70893,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     this.titleSort,
     this.artistCredit,
     this.albumUid,
+    this.scanAlbumUid,
     this.discNo,
     this.trackNo,
     this.year,
@@ -69966,6 +70958,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     }
     if (!nullToAbsent || albumUid != null) {
       map['album_uid'] = Variable<String>(albumUid);
+    }
+    if (!nullToAbsent || scanAlbumUid != null) {
+      map['scan_album_uid'] = Variable<String>(scanAlbumUid);
     }
     if (!nullToAbsent || discNo != null) {
       map['disc_no'] = Variable<int>(discNo);
@@ -70061,6 +71056,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       albumUid: albumUid == null && nullToAbsent
           ? const Value.absent()
           : Value(albumUid),
+      scanAlbumUid: scanAlbumUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(scanAlbumUid),
       discNo: discNo == null && nullToAbsent
           ? const Value.absent()
           : Value(discNo),
@@ -70131,6 +71129,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       titleSort: serializer.fromJson<String?>(json['titleSort']),
       artistCredit: serializer.fromJson<String?>(json['artistCredit']),
       albumUid: serializer.fromJson<String?>(json['albumUid']),
+      scanAlbumUid: serializer.fromJson<String?>(json['scanAlbumUid']),
       discNo: serializer.fromJson<int?>(json['discNo']),
       trackNo: serializer.fromJson<int?>(json['trackNo']),
       year: serializer.fromJson<int?>(json['year']),
@@ -70172,6 +71171,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       'titleSort': serializer.toJson<String?>(titleSort),
       'artistCredit': serializer.toJson<String?>(artistCredit),
       'albumUid': serializer.toJson<String?>(albumUid),
+      'scanAlbumUid': serializer.toJson<String?>(scanAlbumUid),
       'discNo': serializer.toJson<int?>(discNo),
       'trackNo': serializer.toJson<int?>(trackNo),
       'year': serializer.toJson<int?>(year),
@@ -70211,6 +71211,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     Value<String?> titleSort = const Value.absent(),
     Value<String?> artistCredit = const Value.absent(),
     Value<String?> albumUid = const Value.absent(),
+    Value<String?> scanAlbumUid = const Value.absent(),
     Value<int?> discNo = const Value.absent(),
     Value<int?> trackNo = const Value.absent(),
     Value<int?> year = const Value.absent(),
@@ -70247,6 +71248,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     titleSort: titleSort.present ? titleSort.value : this.titleSort,
     artistCredit: artistCredit.present ? artistCredit.value : this.artistCredit,
     albumUid: albumUid.present ? albumUid.value : this.albumUid,
+    scanAlbumUid: scanAlbumUid.present ? scanAlbumUid.value : this.scanAlbumUid,
     discNo: discNo.present ? discNo.value : this.discNo,
     trackNo: trackNo.present ? trackNo.value : this.trackNo,
     year: year.present ? year.value : this.year,
@@ -70299,6 +71301,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           ? data.artistCredit.value
           : this.artistCredit,
       albumUid: data.albumUid.present ? data.albumUid.value : this.albumUid,
+      scanAlbumUid: data.scanAlbumUid.present
+          ? data.scanAlbumUid.value
+          : this.scanAlbumUid,
       discNo: data.discNo.present ? data.discNo.value : this.discNo,
       trackNo: data.trackNo.present ? data.trackNo.value : this.trackNo,
       year: data.year.present ? data.year.value : this.year,
@@ -70356,6 +71361,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           ..write('titleSort: $titleSort, ')
           ..write('artistCredit: $artistCredit, ')
           ..write('albumUid: $albumUid, ')
+          ..write('scanAlbumUid: $scanAlbumUid, ')
           ..write('discNo: $discNo, ')
           ..write('trackNo: $trackNo, ')
           ..write('year: $year, ')
@@ -70397,6 +71403,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     titleSort,
     artistCredit,
     albumUid,
+    scanAlbumUid,
     discNo,
     trackNo,
     year,
@@ -70437,6 +71444,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           other.titleSort == this.titleSort &&
           other.artistCredit == this.artistCredit &&
           other.albumUid == this.albumUid &&
+          other.scanAlbumUid == this.scanAlbumUid &&
           other.discNo == this.discNo &&
           other.trackNo == this.trackNo &&
           other.year == this.year &&
@@ -70475,6 +71483,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
   final Value<String?> titleSort;
   final Value<String?> artistCredit;
   final Value<String?> albumUid;
+  final Value<String?> scanAlbumUid;
   final Value<int?> discNo;
   final Value<int?> trackNo;
   final Value<int?> year;
@@ -70512,6 +71521,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.titleSort = const Value.absent(),
     this.artistCredit = const Value.absent(),
     this.albumUid = const Value.absent(),
+    this.scanAlbumUid = const Value.absent(),
     this.discNo = const Value.absent(),
     this.trackNo = const Value.absent(),
     this.year = const Value.absent(),
@@ -70550,6 +71560,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.titleSort = const Value.absent(),
     this.artistCredit = const Value.absent(),
     this.albumUid = const Value.absent(),
+    this.scanAlbumUid = const Value.absent(),
     this.discNo = const Value.absent(),
     this.trackNo = const Value.absent(),
     this.year = const Value.absent(),
@@ -70593,6 +71604,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Expression<String>? titleSort,
     Expression<String>? artistCredit,
     Expression<String>? albumUid,
+    Expression<String>? scanAlbumUid,
     Expression<int>? discNo,
     Expression<int>? trackNo,
     Expression<int>? year,
@@ -70631,6 +71643,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       if (titleSort != null) 'title_sort': titleSort,
       if (artistCredit != null) 'artist_credit': artistCredit,
       if (albumUid != null) 'album_uid': albumUid,
+      if (scanAlbumUid != null) 'scan_album_uid': scanAlbumUid,
       if (discNo != null) 'disc_no': discNo,
       if (trackNo != null) 'track_no': trackNo,
       if (year != null) 'year': year,
@@ -70671,6 +71684,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Value<String?>? titleSort,
     Value<String?>? artistCredit,
     Value<String?>? albumUid,
+    Value<String?>? scanAlbumUid,
     Value<int?>? discNo,
     Value<int?>? trackNo,
     Value<int?>? year,
@@ -70709,6 +71723,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       titleSort: titleSort ?? this.titleSort,
       artistCredit: artistCredit ?? this.artistCredit,
       albumUid: albumUid ?? this.albumUid,
+      scanAlbumUid: scanAlbumUid ?? this.scanAlbumUid,
       discNo: discNo ?? this.discNo,
       trackNo: trackNo ?? this.trackNo,
       year: year ?? this.year,
@@ -70784,6 +71799,9 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     }
     if (albumUid.present) {
       map['album_uid'] = Variable<String>(albumUid.value);
+    }
+    if (scanAlbumUid.present) {
+      map['scan_album_uid'] = Variable<String>(scanAlbumUid.value);
     }
     if (discNo.present) {
       map['disc_no'] = Variable<int>(discNo.value);
@@ -70865,6 +71883,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
           ..write('titleSort: $titleSort, ')
           ..write('artistCredit: $artistCredit, ')
           ..write('albumUid: $albumUid, ')
+          ..write('scanAlbumUid: $scanAlbumUid, ')
           ..write('discNo: $discNo, ')
           ..write('trackNo: $trackNo, ')
           ..write('year: $year, ')
@@ -78305,7 +79324,8 @@ class VideoContentFingerprintRow extends DataClass
 
   /// 内容指纹（带算法前缀，见引擎 `video_content_fingerprint.dart`）：
   /// `osh:<16 位十六进制>`（OpenSubtitles 文件哈希：大小 + 首尾各 64 KiB）或
-  /// `sha256:<64 位十六进制>`（不足 128 KiB 的小文件整份哈希）。
+  /// `sha256:<64 位十六进制>`（整文件 SHA-256：不足 128 KiB 的小文件当场算，大文件由
+  /// 后台把 `osh:` 升级而来）。`osh:` 相同不足以认定搬家。
   final String fingerprint;
 
   /// 本行写入时刻（毫秒）。
@@ -85336,6 +86356,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $AnidbFileIdentitiesTable(this);
   late final $VideoEpisodeBindingOverridesTable videoEpisodeBindingOverrides =
       $VideoEpisodeBindingOverridesTable(this);
+  late final $VideoCollectionSectionOverridesTable
+  videoCollectionSectionOverrides = $VideoCollectionSectionOverridesTable(this);
   late final $PendingMineQueueTable pendingMineQueue = $PendingMineQueueTable(
     this,
   );
@@ -85346,6 +86368,11 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
       $MediaPrivacyFlagsTable(this);
   late final $MediaNsfwFlagsTable mediaNsfwFlags = $MediaNsfwFlagsTable(this);
+  late final $MediaLockedFlagsTable mediaLockedFlags = $MediaLockedFlagsTable(
+    this,
+  );
+  late final $MediaLockCredentialsTable mediaLockCredentials =
+      $MediaLockCredentialsTable(this);
   late final $LibraryOrganizeRunsTable libraryOrganizeRuns =
       $LibraryOrganizeRunsTable(this);
   late final $LibraryOrganizeChangesTable libraryOrganizeChanges =
@@ -85510,11 +86537,14 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mangaDownloadJobs,
     anidbFileIdentities,
     videoEpisodeBindingOverrides,
+    videoCollectionSectionOverrides,
     pendingMineQueue,
     videoSubtitleGlossaries,
     videoSubtitleTextOverrides,
     mediaPrivacyFlags,
     mediaNsfwFlags,
+    mediaLockedFlags,
+    mediaLockCredentials,
     libraryOrganizeRuns,
     libraryOrganizeChanges,
     webBrowserHistory,
@@ -86049,6 +87079,18 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       ),
       result: [
         TableUpdate('video_episode_binding_overrides', kind: UpdateKind.delete),
+      ],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'video_books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [
+        TableUpdate(
+          'video_collection_section_overrides',
+          kind: UpdateKind.delete,
+        ),
       ],
     ),
     WritePropagation(
@@ -94534,6 +95576,36 @@ final class $$VideoBooksTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<
+    $VideoCollectionSectionOverridesTable,
+    List<VideoCollectionSectionOverrideRow>
+  >
+  _videoCollectionSectionOverridesRefsTable(
+    _$FushiDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.videoCollectionSectionOverrides,
+    aliasName:
+        'video_books__book_uid__video_collection_section_overrides__book_uid',
+  );
+
+  $$VideoCollectionSectionOverridesTableProcessedTableManager
+  get videoCollectionSectionOverridesRefs {
+    final manager =
+        $$VideoCollectionSectionOverridesTableTableManager(
+          $_db,
+          $_db.videoCollectionSectionOverrides,
+        ).filter(
+          (f) => f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!),
+        );
+
+    final cache = $_typedResult.readTableOrNull(
+      _videoCollectionSectionOverridesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -94819,6 +95891,35 @@ class $$VideoBooksTableFilterComposer
               }) => $$VideoEpisodeBindingOverridesTableFilterComposer(
                 $db: $db,
                 $table: $db.videoEpisodeBindingOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+
+  Expression<bool> videoCollectionSectionOverridesRefs(
+    Expression<bool> Function(
+      $$VideoCollectionSectionOverridesTableFilterComposer f,
+    )
+    f,
+  ) {
+    final $$VideoCollectionSectionOverridesTableFilterComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoCollectionSectionOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoCollectionSectionOverridesTableFilterComposer(
+                $db: $db,
+                $table: $db.videoCollectionSectionOverrides,
                 $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
                 joinBuilder: joinBuilder,
                 $removeJoinBuilderFromRootComposer:
@@ -95248,6 +96349,35 @@ class $$VideoBooksTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> videoCollectionSectionOverridesRefs<T extends Object>(
+    Expression<T> Function(
+      $$VideoCollectionSectionOverridesTableAnnotationComposer a,
+    )
+    f,
+  ) {
+    final $$VideoCollectionSectionOverridesTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoCollectionSectionOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoCollectionSectionOverridesTableAnnotationComposer(
+                $db: $db,
+                $table: $db.videoCollectionSectionOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager
@@ -95271,6 +96401,7 @@ class $$VideoBooksTableTableManager
             bool videoMetadataEpisodesRefs,
             bool videoMetadataExtrasRefs,
             bool videoEpisodeBindingOverridesRefs,
+            bool videoCollectionSectionOverridesRefs,
           })
         > {
   $$VideoBooksTableTableManager(_$FushiDatabase db, $VideoBooksTable table)
@@ -95401,6 +96532,7 @@ class $$VideoBooksTableTableManager
                 videoMetadataEpisodesRefs = false,
                 videoMetadataExtrasRefs = false,
                 videoEpisodeBindingOverridesRefs = false,
+                videoCollectionSectionOverridesRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -95412,6 +96544,8 @@ class $$VideoBooksTableTableManager
                     if (videoMetadataExtrasRefs) db.videoMetadataExtras,
                     if (videoEpisodeBindingOverridesRefs)
                       db.videoEpisodeBindingOverrides,
+                    if (videoCollectionSectionOverridesRefs)
+                      db.videoCollectionSectionOverrides,
                   ],
                   addJoins:
                       <
@@ -95574,6 +96708,27 @@ class $$VideoBooksTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (videoCollectionSectionOverridesRefs)
+                        await $_getPrefetchedData<
+                          VideoBookRow,
+                          $VideoBooksTable,
+                          VideoCollectionSectionOverrideRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$VideoBooksTableReferences
+                              ._videoCollectionSectionOverridesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$VideoBooksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).videoCollectionSectionOverridesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.bookUid == item.bookUid,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -95602,6 +96757,7 @@ typedef $$VideoBooksTableProcessedTableManager =
         bool videoMetadataEpisodesRefs,
         bool videoMetadataExtrasRefs,
         bool videoEpisodeBindingOverridesRefs,
+        bool videoCollectionSectionOverridesRefs,
       })
     >;
 typedef $$VideoWatchStatisticsTableCreateCompanionBuilder =
@@ -96419,6 +97575,7 @@ typedef $$FavoriteSentencesTableCreateCompanionBuilder =
       Value<int?> normCharOffset,
       Value<int?> normCharLength,
       Value<String?> color,
+      Value<int?> colorUpdatedAtUs,
       Value<String> source,
       Value<String?> dateKey,
       Value<String?> expression,
@@ -96437,6 +97594,7 @@ typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
       Value<int?> normCharOffset,
       Value<int?> normCharLength,
       Value<String?> color,
+      Value<int?> colorUpdatedAtUs,
       Value<String> source,
       Value<String?> dateKey,
       Value<String?> expression,
@@ -96500,6 +97658,11 @@ class $$FavoriteSentencesTableFilterComposer
 
   ColumnFilters<String> get color => $composableBuilder(
     column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get colorUpdatedAtUs => $composableBuilder(
+    column: $table.colorUpdatedAtUs,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -96583,6 +97746,11 @@ class $$FavoriteSentencesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get colorUpdatedAtUs => $composableBuilder(
+    column: $table.colorUpdatedAtUs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get source => $composableBuilder(
     column: $table.source,
     builder: (column) => ColumnOrderings(column),
@@ -96653,6 +97821,11 @@ class $$FavoriteSentencesTableAnnotationComposer
   GeneratedColumn<String> get color =>
       $composableBuilder(column: $table.color, builder: (column) => column);
 
+  GeneratedColumn<int> get colorUpdatedAtUs => $composableBuilder(
+    column: $table.colorUpdatedAtUs,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get source =>
       $composableBuilder(column: $table.source, builder: (column) => column);
 
@@ -96718,6 +97891,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<int?> normCharOffset = const Value.absent(),
                 Value<int?> normCharLength = const Value.absent(),
                 Value<String?> color = const Value.absent(),
+                Value<int?> colorUpdatedAtUs = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String?> dateKey = const Value.absent(),
                 Value<String?> expression = const Value.absent(),
@@ -96734,6 +97908,7 @@ class $$FavoriteSentencesTableTableManager
                 normCharOffset: normCharOffset,
                 normCharLength: normCharLength,
                 color: color,
+                colorUpdatedAtUs: colorUpdatedAtUs,
                 source: source,
                 dateKey: dateKey,
                 expression: expression,
@@ -96752,6 +97927,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<int?> normCharOffset = const Value.absent(),
                 Value<int?> normCharLength = const Value.absent(),
                 Value<String?> color = const Value.absent(),
+                Value<int?> colorUpdatedAtUs = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String?> dateKey = const Value.absent(),
                 Value<String?> expression = const Value.absent(),
@@ -96768,6 +97944,7 @@ class $$FavoriteSentencesTableTableManager
                 normCharOffset: normCharOffset,
                 normCharLength: normCharLength,
                 color: color,
+                colorUpdatedAtUs: colorUpdatedAtUs,
                 source: source,
                 dateKey: dateKey,
                 expression: expression,
@@ -129636,6 +130813,321 @@ typedef $$VideoEpisodeBindingOverridesTableProcessedTableManager =
       VideoEpisodeBindingOverrideRow,
       PrefetchHooks Function({bool bookUid})
     >;
+typedef $$VideoCollectionSectionOverridesTableCreateCompanionBuilder =
+    VideoCollectionSectionOverridesCompanion Function({
+      required String bookUid,
+      required String sectionKey,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoCollectionSectionOverridesTableUpdateCompanionBuilder =
+    VideoCollectionSectionOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<String> sectionKey,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+final class $$VideoCollectionSectionOverridesTableReferences
+    extends
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoCollectionSectionOverridesTable,
+          VideoCollectionSectionOverrideRow
+        > {
+  $$VideoCollectionSectionOverridesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) =>
+      db.videoBooks.createAlias(
+        'video_collection_section_overrides__book_uid__video_books__book_uid',
+      );
+
+  $$VideoBooksTableProcessedTableManager get bookUid {
+    final $_column = $_itemColumn<String>('book_uid')!;
+
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoCollectionSectionOverridesTable> {
+  $$VideoCollectionSectionOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get sectionKey => $composableBuilder(
+    column: $table.sectionKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoCollectionSectionOverridesTable> {
+  $$VideoCollectionSectionOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get sectionKey => $composableBuilder(
+    column: $table.sectionKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoCollectionSectionOverridesTable> {
+  $$VideoCollectionSectionOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get sectionKey => $composableBuilder(
+    column: $table.sectionKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoCollectionSectionOverridesTable,
+          VideoCollectionSectionOverrideRow,
+          $$VideoCollectionSectionOverridesTableFilterComposer,
+          $$VideoCollectionSectionOverridesTableOrderingComposer,
+          $$VideoCollectionSectionOverridesTableAnnotationComposer,
+          $$VideoCollectionSectionOverridesTableCreateCompanionBuilder,
+          $$VideoCollectionSectionOverridesTableUpdateCompanionBuilder,
+          (
+            VideoCollectionSectionOverrideRow,
+            $$VideoCollectionSectionOverridesTableReferences,
+          ),
+          VideoCollectionSectionOverrideRow,
+          PrefetchHooks Function({bool bookUid})
+        > {
+  $$VideoCollectionSectionOverridesTableTableManager(
+    _$FushiDatabase db,
+    $VideoCollectionSectionOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoCollectionSectionOverridesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoCollectionSectionOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoCollectionSectionOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<String> sectionKey = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoCollectionSectionOverridesCompanion(
+                bookUid: bookUid,
+                sectionKey: sectionKey,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                required String sectionKey,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoCollectionSectionOverridesCompanion.insert(
+                bookUid: bookUid,
+                sectionKey: sectionKey,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$VideoCollectionSectionOverridesTableReferences(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (bookUid) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.bookUid,
+                                referencedTable:
+                                    $$VideoCollectionSectionOverridesTableReferences
+                                        ._bookUidTable(db),
+                                referencedColumn:
+                                    $$VideoCollectionSectionOverridesTableReferences
+                                        ._bookUidTable(db)
+                                        .bookUid,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$VideoCollectionSectionOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoCollectionSectionOverridesTable,
+      VideoCollectionSectionOverrideRow,
+      $$VideoCollectionSectionOverridesTableFilterComposer,
+      $$VideoCollectionSectionOverridesTableOrderingComposer,
+      $$VideoCollectionSectionOverridesTableAnnotationComposer,
+      $$VideoCollectionSectionOverridesTableCreateCompanionBuilder,
+      $$VideoCollectionSectionOverridesTableUpdateCompanionBuilder,
+      (
+        VideoCollectionSectionOverrideRow,
+        $$VideoCollectionSectionOverridesTableReferences,
+      ),
+      VideoCollectionSectionOverrideRow,
+      PrefetchHooks Function({bool bookUid})
+    >;
 typedef $$PendingMineQueueTableCreateCompanionBuilder =
     PendingMineQueueCompanion Function({
       required String id,
@@ -130789,6 +132281,377 @@ typedef $$MediaNsfwFlagsTableProcessedTableManager =
         BaseReferences<_$FushiDatabase, $MediaNsfwFlagsTable, MediaNsfwFlagRow>,
       ),
       MediaNsfwFlagRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaLockedFlagsTableCreateCompanionBuilder =
+    MediaLockedFlagsCompanion Function({
+      required String mediaKind,
+      required String entryKey,
+      Value<int?> lockedAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLockedFlagsTableUpdateCompanionBuilder =
+    MediaLockedFlagsCompanion Function({
+      Value<String> mediaKind,
+      Value<String> entryKey,
+      Value<int?> lockedAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLockedFlagsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLockedFlagsTable> {
+  $$MediaLockedFlagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lockedAt => $composableBuilder(
+    column: $table.lockedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLockedFlagsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLockedFlagsTable> {
+  $$MediaLockedFlagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lockedAt => $composableBuilder(
+    column: $table.lockedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLockedFlagsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLockedFlagsTable> {
+  $$MediaLockedFlagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get lockedAt =>
+      $composableBuilder(column: $table.lockedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$MediaLockedFlagsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLockedFlagsTable,
+          MediaLockedFlagRow,
+          $$MediaLockedFlagsTableFilterComposer,
+          $$MediaLockedFlagsTableOrderingComposer,
+          $$MediaLockedFlagsTableAnnotationComposer,
+          $$MediaLockedFlagsTableCreateCompanionBuilder,
+          $$MediaLockedFlagsTableUpdateCompanionBuilder,
+          (
+            MediaLockedFlagRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaLockedFlagsTable,
+              MediaLockedFlagRow
+            >,
+          ),
+          MediaLockedFlagRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLockedFlagsTableTableManager(
+    _$FushiDatabase db,
+    $MediaLockedFlagsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLockedFlagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLockedFlagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaLockedFlagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<int?> lockedAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockedFlagsCompanion(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                lockedAt: lockedAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String entryKey,
+                Value<int?> lockedAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockedFlagsCompanion.insert(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                lockedAt: lockedAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLockedFlagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLockedFlagsTable,
+      MediaLockedFlagRow,
+      $$MediaLockedFlagsTableFilterComposer,
+      $$MediaLockedFlagsTableOrderingComposer,
+      $$MediaLockedFlagsTableAnnotationComposer,
+      $$MediaLockedFlagsTableCreateCompanionBuilder,
+      $$MediaLockedFlagsTableUpdateCompanionBuilder,
+      (
+        MediaLockedFlagRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaLockedFlagsTable,
+          MediaLockedFlagRow
+        >,
+      ),
+      MediaLockedFlagRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaLockCredentialsTableCreateCompanionBuilder =
+    MediaLockCredentialsCompanion Function({
+      required String credentialKey,
+      Value<String?> verifier,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLockCredentialsTableUpdateCompanionBuilder =
+    MediaLockCredentialsCompanion Function({
+      Value<String> credentialKey,
+      Value<String?> verifier,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLockCredentialsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLockCredentialsTable> {
+  $$MediaLockCredentialsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get credentialKey => $composableBuilder(
+    column: $table.credentialKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get verifier => $composableBuilder(
+    column: $table.verifier,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLockCredentialsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLockCredentialsTable> {
+  $$MediaLockCredentialsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get credentialKey => $composableBuilder(
+    column: $table.credentialKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get verifier => $composableBuilder(
+    column: $table.verifier,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLockCredentialsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLockCredentialsTable> {
+  $$MediaLockCredentialsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get credentialKey => $composableBuilder(
+    column: $table.credentialKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get verifier =>
+      $composableBuilder(column: $table.verifier, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MediaLockCredentialsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLockCredentialsTable,
+          MediaLockCredentialRow,
+          $$MediaLockCredentialsTableFilterComposer,
+          $$MediaLockCredentialsTableOrderingComposer,
+          $$MediaLockCredentialsTableAnnotationComposer,
+          $$MediaLockCredentialsTableCreateCompanionBuilder,
+          $$MediaLockCredentialsTableUpdateCompanionBuilder,
+          (
+            MediaLockCredentialRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaLockCredentialsTable,
+              MediaLockCredentialRow
+            >,
+          ),
+          MediaLockCredentialRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLockCredentialsTableTableManager(
+    _$FushiDatabase db,
+    $MediaLockCredentialsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLockCredentialsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLockCredentialsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaLockCredentialsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> credentialKey = const Value.absent(),
+                Value<String?> verifier = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockCredentialsCompanion(
+                credentialKey: credentialKey,
+                verifier: verifier,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String credentialKey,
+                Value<String?> verifier = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockCredentialsCompanion.insert(
+                credentialKey: credentialKey,
+                verifier: verifier,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLockCredentialsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLockCredentialsTable,
+      MediaLockCredentialRow,
+      $$MediaLockCredentialsTableFilterComposer,
+      $$MediaLockCredentialsTableOrderingComposer,
+      $$MediaLockCredentialsTableAnnotationComposer,
+      $$MediaLockCredentialsTableCreateCompanionBuilder,
+      $$MediaLockCredentialsTableUpdateCompanionBuilder,
+      (
+        MediaLockCredentialRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaLockCredentialsTable,
+          MediaLockCredentialRow
+        >,
+      ),
+      MediaLockCredentialRow,
       PrefetchHooks Function()
     >;
 typedef $$LibraryOrganizeRunsTableCreateCompanionBuilder =
@@ -133308,6 +135171,7 @@ typedef $$MusicTracksTableCreateCompanionBuilder =
       Value<String?> titleSort,
       Value<String?> artistCredit,
       Value<String?> albumUid,
+      Value<String?> scanAlbumUid,
       Value<int?> discNo,
       Value<int?> trackNo,
       Value<int?> year,
@@ -133347,6 +135211,7 @@ typedef $$MusicTracksTableUpdateCompanionBuilder =
       Value<String?> titleSort,
       Value<String?> artistCredit,
       Value<String?> albumUid,
+      Value<String?> scanAlbumUid,
       Value<int?> discNo,
       Value<int?> trackNo,
       Value<int?> year,
@@ -133459,6 +135324,11 @@ class $$MusicTracksTableFilterComposer
 
   ColumnFilters<String> get albumUid => $composableBuilder(
     column: $table.albumUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scanAlbumUid => $composableBuilder(
+    column: $table.scanAlbumUid,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -133647,6 +135517,11 @@ class $$MusicTracksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get scanAlbumUid => $composableBuilder(
+    column: $table.scanAlbumUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get discNo => $composableBuilder(
     column: $table.discNo,
     builder: (column) => ColumnOrderings(column),
@@ -133808,6 +135683,11 @@ class $$MusicTracksTableAnnotationComposer
   GeneratedColumn<String> get albumUid =>
       $composableBuilder(column: $table.albumUid, builder: (column) => column);
 
+  GeneratedColumn<String> get scanAlbumUid => $composableBuilder(
+    column: $table.scanAlbumUid,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get discNo =>
       $composableBuilder(column: $table.discNo, builder: (column) => column);
 
@@ -133927,6 +135807,7 @@ class $$MusicTracksTableTableManager
                 Value<String?> titleSort = const Value.absent(),
                 Value<String?> artistCredit = const Value.absent(),
                 Value<String?> albumUid = const Value.absent(),
+                Value<String?> scanAlbumUid = const Value.absent(),
                 Value<int?> discNo = const Value.absent(),
                 Value<int?> trackNo = const Value.absent(),
                 Value<int?> year = const Value.absent(),
@@ -133964,6 +135845,7 @@ class $$MusicTracksTableTableManager
                 titleSort: titleSort,
                 artistCredit: artistCredit,
                 albumUid: albumUid,
+                scanAlbumUid: scanAlbumUid,
                 discNo: discNo,
                 trackNo: trackNo,
                 year: year,
@@ -134003,6 +135885,7 @@ class $$MusicTracksTableTableManager
                 Value<String?> titleSort = const Value.absent(),
                 Value<String?> artistCredit = const Value.absent(),
                 Value<String?> albumUid = const Value.absent(),
+                Value<String?> scanAlbumUid = const Value.absent(),
                 Value<int?> discNo = const Value.absent(),
                 Value<int?> trackNo = const Value.absent(),
                 Value<int?> year = const Value.absent(),
@@ -134040,6 +135923,7 @@ class $$MusicTracksTableTableManager
                 titleSort: titleSort,
                 artistCredit: artistCredit,
                 albumUid: albumUid,
+                scanAlbumUid: scanAlbumUid,
                 discNo: discNo,
                 trackNo: trackNo,
                 year: year,
@@ -141676,6 +143560,12 @@ class $FushiDatabaseManager {
         _db,
         _db.videoEpisodeBindingOverrides,
       );
+  $$VideoCollectionSectionOverridesTableTableManager
+  get videoCollectionSectionOverrides =>
+      $$VideoCollectionSectionOverridesTableTableManager(
+        _db,
+        _db.videoCollectionSectionOverrides,
+      );
   $$PendingMineQueueTableTableManager get pendingMineQueue =>
       $$PendingMineQueueTableTableManager(_db, _db.pendingMineQueue);
   $$VideoSubtitleGlossariesTableTableManager get videoSubtitleGlossaries =>
@@ -141693,6 +143583,10 @@ class $FushiDatabaseManager {
       $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
   $$MediaNsfwFlagsTableTableManager get mediaNsfwFlags =>
       $$MediaNsfwFlagsTableTableManager(_db, _db.mediaNsfwFlags);
+  $$MediaLockedFlagsTableTableManager get mediaLockedFlags =>
+      $$MediaLockedFlagsTableTableManager(_db, _db.mediaLockedFlags);
+  $$MediaLockCredentialsTableTableManager get mediaLockCredentials =>
+      $$MediaLockCredentialsTableTableManager(_db, _db.mediaLockCredentials);
   $$LibraryOrganizeRunsTableTableManager get libraryOrganizeRuns =>
       $$LibraryOrganizeRunsTableTableManager(_db, _db.libraryOrganizeRuns);
   $$LibraryOrganizeChangesTableTableManager get libraryOrganizeChanges =>

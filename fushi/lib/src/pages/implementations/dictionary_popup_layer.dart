@@ -16,7 +16,10 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart'
         kLookupPopupMinHeight,
         kLookupPopupMinWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
@@ -790,7 +793,7 @@ const Size kParkedRealmSize = Size(360, 480);
 /// `keepWebViewWarm` 让 [DictionaryPopupLayer] 在无结果时也挂 WebView）；所有回调
 /// 都是 no-op——屏外隐藏层收不到任何用户输入。
 Widget parkedRealmPopupLayer({
-  required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+  required GlobalKey<DictionaryPopupRealmState> webViewKey,
   required Size screen,
   required bool isDark,
   Color? overrideFillColor,
@@ -832,13 +835,13 @@ Widget parkedRealmPopupLayer({
 /// `_takeRealmKey()` 接管到的是一把已死的键。测试全绿、analyze 全绿，
 /// 只有用户觉得慢。登记面由 `parked_realm_host_registration_guard_test.dart` 守。
 List<Widget> parkedRealmPopupLayers({
-  required Iterable<GlobalKey<DictionaryPopupWebViewState>> parkedRealms,
+  required Iterable<GlobalKey<DictionaryPopupRealmState>> parkedRealms,
   required Size screen,
   required bool isDark,
   Color? overrideFillColor,
 }) {
   return <Widget>[
-    for (final GlobalKey<DictionaryPopupWebViewState> key in parkedRealms)
+    for (final GlobalKey<DictionaryPopupRealmState> key in parkedRealms)
       parkedRealmPopupLayer(
         webViewKey: key,
         screen: screen,
@@ -1352,6 +1355,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
+    this.crossAppAudio,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.showMiningTargetSwitch = false,
@@ -1417,7 +1421,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// `window.__hasChildPopup`，让 popup.js 点卡片本体留白时据此关后代层（有子层才发
   /// tapOutside，叶子层不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生。
   final bool hasChildPopup;
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey;
+  final GlobalKey<DictionaryPopupRealmState> webViewKey;
   final VoidCallback onDismiss;
   final DictionaryTextSelected onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
@@ -1498,6 +1502,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 「高级制卡」：弹窗点某词条「高级制卡」→ 宿主弹 app 原生顶层对话框。透传给 webview；
   /// null 时弹窗不渲染该按钮（宿主只在制卡模块开着时接线）。
   final OpenAdvancedMiningCallback? onOpenAdvancedMining;
+
+  /// 跨应用语音缓存的查词快照，透传给 webview（见 [DictionaryPopupWebView.crossAppAudio]）。
+  final Future<CrossAppAudioSnapshot?>? crossAppAudio;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -2092,9 +2099,9 @@ class DictionaryPopupLayer extends StatelessWidget {
       onSelected: (_PopupTopBarOverflowAction action) {
         switch (action) {
           case _PopupTopBarOverflowAction.zoomOut:
-            webViewKey.currentState?.zoomFontStep(zoomIn: false);
+            webViewKey.webViewState?.zoomFontStep(zoomIn: false);
           case _PopupTopBarOverflowAction.zoomIn:
-            webViewKey.currentState?.zoomFontStep(zoomIn: true);
+            webViewKey.webViewState?.zoomFontStep(zoomIn: true);
         }
       },
       itemBuilder: (BuildContext context) =>
@@ -2151,7 +2158,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       tooltip: message,
       constraints: _topActionConstraints,
       padding: EdgeInsets.zero,
-      onTap: () => webViewKey.currentState?.zoomFontStep(zoomIn: zoomIn),
+      onTap: () => webViewKey.webViewState?.zoomFontStep(zoomIn: zoomIn),
     );
   }
 
@@ -2235,6 +2242,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onAppendSentence: onAppendSentence,
               onSetSentenceContext: onSetSentenceContext,
               onOpenAdvancedMining: onOpenAdvancedMining,
+              crossAppAudio: crossAppAudio,
               onClearSentenceDraft: onClearSentenceDraft,
               onScrolledToBottom: onScrolledToBottom,
               onScrolledUnderChanged: (bool under) =>

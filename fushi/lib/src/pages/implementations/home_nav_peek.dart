@@ -11,6 +11,7 @@ import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
@@ -241,9 +242,19 @@ Future<NavPeekFeed> _loadBooks({
   required bool manga,
   required BuildContext Function() contextOf,
 }) async {
-  final List<MediaItem> all = await ref.read(
-    fushiBooksProvider(JapaneseLanguage.instance).future,
+  // 上锁（未解锁）的书不进预览（[MediaVisibility]，唯一的上锁过滤入口）。
+  final MediaVisibility lockVisibility = await MediaVisibility.load(
+    appModel.database,
   );
+  final List<MediaItem> all = <MediaItem>[
+    for (final MediaItem item in await ref.read(
+      fushiBooksProvider(JapaneseLanguage.instance).future,
+    ))
+      if (ReaderFushiSource.parseBookKey(item.mediaIdentifier)
+          case final String? key
+          when key == null || !lockVisibility.hidesBook(key))
+        item,
+  ];
   final Map<String, int> lastReadByUid = await ref.read(
     bookLastReadAtProvider.future,
   );
@@ -372,9 +383,16 @@ Future<NavPeekFeed> _loadVideos({
 }) async {
   final _NavPeekCollections collections = await _loadCollections(appModel);
   final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+  final MediaVisibility lockVisibility = await MediaVisibility.load(
+    appModel.database,
+  );
   final List<VideoBookRow> rows =
       (await repo.listForShelf())
-          .where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0)
+          .where(
+            (VideoBookRow v) =>
+                (v.lastPlayedAt ?? 0) > 0 &&
+                !lockVisibility.hidesVideo(v.bookUid),
+          )
           .toList()
         ..sort(
           (VideoBookRow a, VideoBookRow b) =>
@@ -467,10 +485,19 @@ Future<NavPeekFeed> _loadGames({
       ? appModel.galgameRepo.games
       : await appModel.galgameRepo.load();
   final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+  final MediaVisibility lockVisibility = await MediaVisibility.load(
+    appModel.database,
+  );
   final List<GalgameEntry> played =
-      games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()..sort(
-        (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
-      );
+      games
+          .where(
+            (GalgameEntry g) =>
+                g.lastPlayedMs > 0 && !lockVisibility.hidesGame(g.id),
+          )
+          .toList()
+        ..sort(
+          (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
+        );
   NavPeekTimed entryOf(GalgameEntry g) {
     final String? cover = g.coverPath;
     return (
@@ -867,9 +894,13 @@ Future<AdaptiveNavPeekData> _loadMusic({
 }) async {
   final FushiDatabase db = appModel.database;
   final MusicPlayerEngine engine = appModel.musicSession.engine;
-  final List<MusicTrackRow> played = await db.listRecentlyPlayedMusicTracks(
-    limit: 30,
-  );
+  final MediaVisibility lockVisibility = await MediaVisibility.load(db);
+  final List<MusicTrackRow> played = <MusicTrackRow>[
+    for (final MusicTrackRow t in await db.listRecentlyPlayedMusicTracks(
+      limit: 30,
+    ))
+      if (t.albumUid == null || !lockVisibility.hidesMusicAlbum(t.albumUid!)) t,
+  ];
   final Map<String, MusicAlbumRow?> albums = <String, MusicAlbumRow?>{};
   Future<MusicAlbumRow?> albumOf(String? uid) async {
     if (uid == null) return null;

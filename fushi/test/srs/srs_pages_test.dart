@@ -892,7 +892,35 @@ void main() {
             )
             .properties
             .label!;
-        expect(label('srs-home-rwkv-due'), '${t.srs_stats_rwkv_now_due} 2');
+        // BUG-5170（应用内反馈 TcVEYa3z46）：第一项是「低于目标」，不叫「到期」——它和头部「N 到期」（今天的出卡
+        // 队列，含每天最少复习数补足、扣同日间隔暂缓）不是一个口径；两数不同时面板写明今天排队多少张。
+        expect(
+          label('srs-home-rwkv-below'),
+          '${t.srs_stats_rwkv_now_below_target} 2',
+        );
+        expect(
+          find.byKey(
+            const ValueKey<String>('srs-home-rwkv-due'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        final SrsDeckListData deckList = ProviderScope.containerOf(
+          tester.element(
+            find.byKey(
+              const ValueKey<String>('srs-home-rwkv-now'),
+              skipOffstage: false,
+            ),
+          ),
+        ).read(srsDeckListProvider).requireValue!;
+        expect(deckList.rwkvPending, isFalse);
+        final int queued = deckList.todayReview;
+        expect(queued, isNot(2));
+        expect(
+          find.text(t.srs_home_rwkv_queue_note(n: queued), skipOffstage: false),
+          findsOneWidget,
+          reason: '头部到期 $queued 与低于目标 2 不同，面板要写明今天排队的张数',
+        );
         expect(label('srs-home-rwkv-near'), '${t.srs_stats_rwkv_now_near} 3');
         expect(label('srs-home-rwkv-safe'), '${t.srs_home_rwkv_safe} 5');
         expect(

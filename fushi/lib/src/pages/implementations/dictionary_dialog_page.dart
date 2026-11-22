@@ -52,6 +52,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -1545,7 +1546,15 @@ class _DictionaryDialogPageState extends BasePageState {
 
     final List<String> paths = await pickSystemFilePaths(
       context: context,
-      allowedExtensions: const <String>{'zip', 'dsl', 'mdx', 'ifo', 'css'},
+      allowedExtensions: const <String>{
+        'zip',
+        '7z',
+        'rar',
+        'dsl',
+        'mdx',
+        'ifo',
+        'css',
+      },
     );
     if (paths.isEmpty) return;
     await _importDictionaryPaths(paths);
@@ -2175,9 +2184,9 @@ class _DictionaryDialogPageState extends BasePageState {
             builder: (_, DictionaryDownloadPhase phase, __) {
               final bool show =
                   pending > 0 && phase == DictionaryDownloadPhase.idle;
-              return AnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                curve: Curves.easeOutCubic,
+              return FushiAnimatedSize(
+                duration: context.fushiMotion.spatialDefault.duration,
+                curve: context.fushiMotion.spatialDefault.curve,
                 alignment: Alignment.topCenter,
                 child: !show
                     ? const SizedBox(width: double.infinity)
@@ -4100,7 +4109,14 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!mounted) return;
     final String? pickedPath = await pickSystemFilePath(
       context: context,
-      allowedExtensions: const <String>{'zip', 'dsl', 'mdx', 'ifo'},
+      allowedExtensions: const <String>{
+        'zip',
+        '7z',
+        'rar',
+        'dsl',
+        'mdx',
+        'ifo',
+      },
     );
     if (pickedPath == null) {
       if (Platform.isAndroid || Platform.isIOS) {

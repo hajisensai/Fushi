@@ -26,6 +26,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
@@ -55,6 +56,11 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_goal_language_scope.dart'
+    show loadStudyGoalMediaLanguagesFor;
+import 'package:fushi/src/stats/study_goal_record.dart'
+    show StudyGoal, encodeStudyGoals;
+import 'package:fushi/src/stats/study_goals.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
     show ServerContinueCandidate, ServerContinueSource;
@@ -234,14 +240,12 @@ class WidgetSnapshotSource {
       LocaleSettings.currentLocale.languageTag,
       for (final ModuleId id in ModuleId.values) modules.isEnabled(id) ? 1 : 0,
       appModel.srsMiningTarget.wire,
-      appModel.readingGoalActiveChars,
-      appModel.readingGoalPeriod.wire,
-      appModel.studyGoalDailyMinutes,
-      appModel.studyGoalDailyReadingMinutes,
-      appModel.studyGoalDailyListeningMinutes,
-      appModel.studyGoalDailyVideoMinutes,
-      appModel.srsGoalDailyReviews,
-      appModel.miningGoalDailyCards,
+      // 目标记录（含迁移态）+ 全局文字单位 + 默认内容语言（语言目标的兜底）。
+      encodeStudyGoals(appModel.studyGoals),
+      // 一周从星期几开始：每周目标的窗口与热力图的星期对齐都跟着它。
+      appModel.statWeekStart,
+      appModel.readingGoalTextUnit.wire,
+      appModel.defaultContentLanguage,
       appModel.widgetPrivacyHideTitles ? 1 : 0,
       appModel.widgetPrivacyHideDefinitions ? 1 : 0,
       appModel.widgetPrivacyHideProfile ? 1 : 0,
@@ -306,24 +310,33 @@ class WidgetSnapshotSource {
     final StatWindow window = StatWindow(now);
 
     final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+    final List<StudyGoal> goals = appModel.studyGoals;
+    final Map<String, String> goalMediaLanguages =
+        await loadStudyGoalMediaLanguagesFor(db, goals);
     final WidgetOnDeckInput onDeck = await _collectOnDeck(appModel);
+    // 桌面 / 锁屏小组件在 app 外面，更不能露出上锁（未解锁）的作品
+    // （[MediaVisibility]，唯一的上锁过滤入口）。
+    final MediaVisibility lockVisibility = await MediaVisibility.load(db);
     final List<WidgetMediaInput> media = <WidgetMediaInput>[
-      if (modules.isEnabled(ModuleId.books) ||
-          modules.isEnabled(ModuleId.manga))
-        ...await _collectBooks(appModel, facts, window),
-      if (modules.isEnabled(ModuleId.video)) ...await _collectVideos(db, facts),
-      if (modules.isEnabled(ModuleId.games)) ...await _collectGames(appModel),
-      ..._collectRemote(appModel),
-      ..._serverShelfItems(onDeck),
+      for (final WidgetMediaInput m in <WidgetMediaInput>[
+        if (modules.isEnabled(ModuleId.books) ||
+            modules.isEnabled(ModuleId.manga))
+          ...await _collectBooks(appModel, facts, window),
+        if (modules.isEnabled(ModuleId.video))
+          ...await _collectVideos(db, facts),
+        if (modules.isEnabled(ModuleId.games)) ...await _collectGames(appModel),
+        ..._collectRemote(appModel),
+        ..._serverShelfItems(onDeck),
+      ])
+        if (!_hiddenByLock(lockVisibility, m)) m,
     ];
 
     final WidgetSrsInput srs = await _collectSrs(appModel, now);
-    final WidgetImmersionInput immersion = _collectImmersion(facts, window);
-    int minedToday = 0;
-    // 制卡数口径同统计页：`mining_statistics` 按 (来源, 统计日) 聚合的计数（行很少）。
-    for (final MiningStatisticRow m in await db.getAllMiningStatistics()) {
-      if (m.dateKey == window.todayKey) minedToday += m.count;
-    }
+    final WidgetImmersionInput immersion = buildStudyImmersionInput(
+      facts.daily,
+      window,
+    );
+    final Map<String, int> minedByDay = await loadStudyMinedByDay(db, window);
     final Map<String, String> weekdayLabels = await _weekdayLabels(
       window.lastDayKeys(kWidgetWeekDays),
     );
@@ -334,21 +347,18 @@ class WidgetSnapshotSource {
       generatedAt: now.millisecondsSinceEpoch,
       labels: buildWidgetLabels(),
       categoryLabels: buildWidgetCategoryLabels(),
-      goalLabels: buildWidgetGoalLabels(),
       modules: _modulesInput(modules),
       nowPlaying: await _collectNowPlaying(appModel),
       media: await _withCovers(media, appModel),
       immersion: immersion,
-      goals: WidgetGoalsInput(
-        totalMinutes: appModel.studyGoalDailyMinutes,
-        readingMinutes: appModel.studyGoalDailyReadingMinutes,
-        listeningMinutes: appModel.studyGoalDailyListeningMinutes,
-        videoMinutes: appModel.studyGoalDailyVideoMinutes,
-        reviews: appModel.srsGoalDailyReviews,
-        minedCards: appModel.miningGoalDailyCards,
-        chars: appModel.readingGoalActiveChars,
-        charsWeekly: appModel.readingGoalPeriod == StudyGoalPeriod.weekly,
-        minedToday: minedToday,
+      // 目标：与首页「目标」格同一份装配（study_goals.dart）。
+      goals: buildStudyGoalsInput(
+        prefs: appModel.prefsRepo,
+        goals: goals,
+        mediaLanguages: goalMediaLanguages,
+        daily: facts.daily,
+        window: window,
+        minedByDay: minedByDay,
       ),
       srs: srs,
       vocab: await _collectVocab(db),
@@ -462,6 +472,24 @@ class WidgetSnapshotSource {
     } finally {
       _nowPlayingRunning = false;
     }
+  }
+
+  /// 本机条目是不是上锁（未解锁）的作品。远端 / 服务器条目（id 带前缀）不在本机
+  /// 上锁表里，不藏。
+  static bool _hiddenByLock(MediaVisibility visibility, WidgetMediaInput m) {
+    if (!visibility.hidesAnything) return false;
+    return switch (m.kind) {
+      WidgetMediaKind.book || WidgetMediaKind.manga =>
+        switch (ReaderFushiSource.parseSrtBookUid(m.id)) {
+          final String srtUid => visibility.hidesSrtBook(srtUid),
+          null => switch (ReaderFushiSource.parseBookKey(m.id)) {
+            final String bookKey => visibility.hidesBook(bookKey),
+            null => false,
+          },
+        },
+      WidgetMediaKind.video => visibility.hidesVideo(m.id),
+      WidgetMediaKind.game => visibility.hidesGame(m.id),
+    };
   }
 
   Future<WidgetNowPlayingInput?> _collectNowPlaying(AppModel appModel) async {
@@ -588,35 +616,6 @@ class WidgetSnapshotSource {
       debugPrint('WidgetSnapshotSource: now playing cover failed: $error');
       return '';
     }
-  }
-
-  /// 沉浸四类按统计日聚合（只认书 / 音乐 / 视频 / 游戏，复习不算沉浸）。毫秒与字数
-  /// 只留最近 [kWidgetHeatmapDays] 天（16 周热力图 + 月 + 周 + 上周环比都在里面），
-  /// 活跃日保留全部历史给连续天数。
-  WidgetImmersionInput _collectImmersion(StatFacts facts, StatWindow window) {
-    final String oldestKept = window.lastDayKeys(kWidgetHeatmapDays).first;
-    final Map<String, Map<WidgetImmersionCategory, int>> msByDay =
-        <String, Map<WidgetImmersionCategory, int>>{};
-    final Map<String, int> charsByDay = <String, int>{};
-    final Set<String> activeDays = <String>{};
-    for (final StatFact f in facts.daily) {
-      final WidgetImmersionCategory? category =
-          WidgetImmersionCategory.fromMediaKind(f.mediaKind);
-      if (category == null) continue;
-      if (f.ms > 0 || f.chars > 0 || f.pages > 0) activeDays.add(f.dateKey);
-      if (f.dateKey.compareTo(oldestKept) < 0) continue;
-      final Map<WidgetImmersionCategory, int> day = msByDay.putIfAbsent(
-        f.dateKey,
-        () => <WidgetImmersionCategory, int>{},
-      );
-      day[category] = (day[category] ?? 0) + f.ms;
-      charsByDay[f.dateKey] = (charsByDay[f.dateKey] ?? 0) + f.chars;
-    }
-    return WidgetImmersionInput(
-      msByDay: msByDay,
-      charsByDay: charsByDay,
-      activeDays: activeDays,
-    );
   }
 
   /// provider 规则（不另设开关，见 docs/agent/android-widgets.md）：制卡去向是 Anki

@@ -1,5 +1,5 @@
 /// 「通用」一级分类：不属于任何一种内容、每个人都会碰到的日常偏好——语言、
-/// 键盘与手柄、学习计时的口径、听力保护、性能与新手上手。
+/// 键盘与手柄、学习计时的口径、听力保护、作品隐私、性能与新手上手。
 ///
 /// 这里只做装配：每一项都留在它原来的 schema 文件里（那里有它依赖的私有
 /// helper），以顶层 builder 导出，本文件按分区排好。
@@ -11,8 +11,11 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
+import 'package:fushi/src/settings/settings_schema_media_privacy.dart';
 import 'package:fushi/src/settings/settings_schema_music.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
+import 'package:fushi/src/settings/settings_schema_study_goals.dart'
+    show buildStudyGoalsNavigationItem;
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -53,6 +56,7 @@ SettingsDestination buildGeneralDestination() {
         items: <SettingsItem>[
           ...buildStudyClockItems(),
           buildMusicListeningCountsAsStudyItem(),
+          buildStudyGoalsNavigationItem('general.study_goals'),
         ],
       ),
       // 听力保护：连续收听提醒对音乐 / 有声书 / 视频一视同仁，跨媒介所以放通用。
@@ -62,6 +66,9 @@ SettingsDestination buildGeneralDestination() {
         title: t.settings_general_section_hearing,
         items: buildListeningReminderItems(),
       ),
+      // 作品隐私：分级（公开 / 私密 / 上锁）与 NSFW 对书 / 视频 / 游戏 / 音乐一视同仁，
+      // 跨媒介所以放通用（NSFW 两个开关原在「外观」，拍板台 qiqSbvdxrk 合到这里）。
+      buildMediaPrivacySection(),
       SettingsSection(
         id: 'general.section.performance',
         presentation: SettingsSectionPresentation.alwaysExpanded,

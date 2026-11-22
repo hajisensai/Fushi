@@ -281,6 +281,142 @@ void main() {
     b.release();
   });
 
+  // 2026-11-22 (owner): a queue that already says the wait limit cannot be
+  // met is not waited out; without such a prediction the limit still runs.
+  group('a wait limit the queue cannot meet', () {
+    Future<HeavyLease> limited(Map<String, Duration> typical) =>
+        acquireHeavyLease(
+          need: heavyNeedFor(HeavyKind.other),
+          label: 'limited',
+          waitMax: const Duration(minutes: 10),
+          environment: env(1),
+          readMemory: () => roomy,
+          poll: const Duration(milliseconds: 50),
+          log: (_) {},
+          typicalRuns: typical,
+        );
+
+    test('gives up at once, names the prediction, leaves the queue', () async {
+      final HeavyLease a = await take(1);
+      final Stopwatch sw = Stopwatch()..start();
+      await expectLater(
+        limited(<String, Duration>{'other': const Duration(minutes: 40)}),
+        throwsA(
+          isA<HeavyLeaseTimeout>().having(
+            (HeavyLeaseTimeout e) => e.message,
+            'message',
+            allOf(contains('gives up now'), contains('10 min limit')),
+          ),
+        ),
+      );
+      expect(sw.elapsed, lessThan(const Duration(seconds: 10)));
+      expect(readHeavyQueue(Directory('${tmp.path}/state')), isEmpty);
+      a.release();
+    });
+
+    // The prediction is this machine's queue only: a run also offered to
+    // the other machines may be taken there any minute.
+    test('does not give up while another machine may take it', () async {
+      final HeavyLease a = await take(1);
+      final _FakeRival rival = _FakeRival();
+      bool settled = false;
+      final Future<HeavyLease> waiting = acquireHeavyLease(
+        need: heavyNeedFor(HeavyKind.other),
+        label: 'limited',
+        waitMax: const Duration(minutes: 10),
+        environment: env(1),
+        readMemory: () => roomy,
+        poll: const Duration(milliseconds: 50),
+        log: (_) {},
+        rival: rival,
+        typicalRuns: <String, Duration>{'other': const Duration(minutes: 40)},
+      )..whenComplete(() => settled = true).ignore();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(settled, isFalse);
+      rival.tookIt = true;
+      await expectLater(waiting, throwsA(isA<HeavyLeaseWithdrawn>()));
+      a.release();
+    });
+
+    // A waiter ahead that the memory budget keeps out may be passed
+    // (heavyMayGoAhead), so its typical run is not counted ahead.
+    test('does not count a waiter ahead it may go ahead of', () async {
+      final String? dart = _dartExecutable();
+      if (dart == null) {
+        markTestSkipped('no dart executable to hold a ticket in a child');
+        return;
+      }
+      final HeavyLease b = await take(1, kind: HeavyKind.build);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // The head: another process's run of 16 GB that does not fit next to
+      // the build's 16 GB within 30000 MB, queued after the build started.
+      final Directory queue = Directory('${tmp.path}/state/queue')
+        ..createSync(recursive: true);
+      final String head =
+          '${'${DateTime.now().microsecondsSinceEpoch}'.padLeft(20, '0')}'
+          '-1-0';
+      File('${queue.path}/$head.json').writeAsStringSync(
+        '{"pid":1,"label":"head","bookedMb":16384,"kind":"other"}',
+      );
+      final File holder = File('${tmp.path}/hold.dart')
+        ..writeAsStringSync(_holdLockScript);
+      final Process child = await Process.start(dart, <String>[
+        holder.path,
+        '${queue.path}/$head.ticket',
+      ]);
+      try {
+        await child.stdout
+            .transform(const SystemEncoding().decoder)
+            .firstWhere((String l) => l.contains('locked'))
+            .timeout(const Duration(seconds: 60));
+        bool gone = false;
+        bool settled = false;
+        // A 12 GB test may go ahead of it: counting the head's 40 min
+        // would predict 43 min and give up; without it, 3 min.
+        final Future<HeavyLease> waiting = acquireHeavyLease(
+          need: heavyNeedFor(HeavyKind.test),
+          label: 'limited',
+          waitMax: const Duration(minutes: 10),
+          environment: env(1, budgetMb: 30000),
+          readMemory: () => roomy,
+          poll: const Duration(milliseconds: 50),
+          log: (_) {},
+          callerGone: () => gone,
+          typicalRuns: <String, Duration>{
+            'build': const Duration(minutes: 3),
+            'other': const Duration(minutes: 40),
+          },
+        )..whenComplete(() => settled = true).ignore();
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        expect(settled, isFalse);
+        expect(
+          readHeavyQueue(Directory('${tmp.path}/state')).map((q) => q.label),
+          <String>['head', 'limited'],
+        );
+        gone = true;
+        await expectLater(waiting, throwsA(isA<HeavyLeaseCallerGone>()));
+      } finally {
+        await child.stdin.close();
+        await child.exitCode.timeout(const Duration(seconds: 30));
+        b.release();
+      }
+    }, timeout: const Timeout(Duration(seconds: 90)));
+
+    test('keeps waiting while the prediction fits the limit', () async {
+      final HeavyLease a = await take(1);
+      bool settled = false;
+      final Future<HeavyLease> waiting = limited(<String, Duration>{
+        'other': const Duration(minutes: 3),
+      })..whenComplete(() => settled = true).ignore();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(settled, isFalse);
+      a.release();
+      final HeavyLease b = await waiting;
+      expect(b.slot, 0);
+      b.release();
+    });
+  });
+
   // 2026-11-20: a stopped tool call left heavy.dart queued with nobody
   // waiting; once admitted its command died in the dead console
   // (0xC0000142) and the next orphan took the slot (heavy_lease.dart
@@ -918,3 +1054,12 @@ void main(List<String> args) {
   });
 }
 ''';
+
+/// The other machines' side of a queued run: takes it once [tookIt] is set.
+class _FakeRival implements HeavyLeaseRival {
+  @override
+  bool tookIt = false;
+
+  @override
+  bool claimHere() => !tookIt;
+}

@@ -94,15 +94,56 @@ void main() {
     );
   });
 
-  test('picker 能选到，且出厂预设的映射不被改动', () {
+  test('picker 能选到；三个预设的选中字段默认保留样式（拍板 RdmYdegMPJ 选 a）', () {
     expect(
       AnkiHandlebarOptions.coreOptions,
       contains('{popup-selection-html}'),
     );
     expect(
       LapisNoteType.defaultFieldMappings['SelectionText'],
-      '{popup-selection-text}',
+      '{popup-selection-html}',
     );
+    expect(
+      SenrenPreset.defaultFieldMappings['selectionText'],
+      '{popup-selection-html}',
+    );
+    expect(
+      FushiCardNoteType.defaultFieldMappings['LookupSelection'],
+      '{popup-selection-html}',
+    );
+  });
+
+  test('没有 HTML 快照只有纯文本 → 退回转义后的纯文本，不写空', () {
+    String renderOnly(Map<String, dynamic> json) =>
+        _TestRepo()
+            .renderFor(
+              settings: const AnkiSettings(
+                fieldMappings: <String, String>{
+                  'Styled': '{popup-selection-html}',
+                },
+              ),
+              payload: AnkiMiningPayload.fromJson(<String, dynamic>{
+                'expression': '点',
+                ...json,
+              }),
+              context: const AnkiMiningContext(sentence: ''),
+            )
+            // 空值字段不进结果 map。
+            .fields['Styled'] ??
+        '';
+
+    expect(
+      renderOnly(<String, dynamic>{'popupSelectionText': 'a<b>&c\n二行目'}),
+      'a&lt;b&gt;&amp;c<br>二行目',
+    );
+    expect(
+      renderOnly(<String, dynamic>{
+        'popupSelectionText': kText,
+        'popupSelectionHtml': kHtml,
+      }),
+      kHtml,
+    );
+    expect(renderOnly(const <String, dynamic>{}), isEmpty);
   });
 }
 

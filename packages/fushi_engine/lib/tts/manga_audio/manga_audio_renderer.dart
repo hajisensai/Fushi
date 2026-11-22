@@ -6,7 +6,9 @@
 /// - **一句失败不让整卷失败，也不悄悄跳过**：失败的句子写一段按字数估长的静音占位
 ///   （`placeholder: true`），记进 [CastVoicingLedger]；只有取消与「占位静音都写不出」
 ///   这类整卷级问题才往外抛；
-/// - 重跑时音频没变的句子（文字 / 声音 / 种子都相同、文件还在）原样沿用，不重录；
+/// - 重跑时音频没变的句子（文字 / 声音 / 种子 / 整形版本都相同、文件还在）原样沿用，
+///   不重录；整形版本由后端给（[MangaRenderBackend.shapeVersion]），历史清单没记版本的
+///   句子按版本不符重出；
 /// - 清单写完后清掉目录里清单不再引用的音频（换过声音的旧文件、被取代的占位、没保留的
 ///   候选）。
 library;
@@ -24,6 +26,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 一句出不了声的原因（[code] 进未配音账本，界面按它出文案）。
@@ -46,6 +49,11 @@ abstract interface class MangaRenderBackend {
   /// 同时合成几句（引擎并发上限；自建 GPU 服务通常是 1）。
   int get parallelism;
 
+  /// [synthesizeLine] / [cutClip] 出的音频的整形版本：裁首尾静音、淡入淡出、响度归一与
+  /// 编码参数的可比较指纹，参数一变它就变。写进清单行（[MangaRenderedLine.shape]），
+  /// 重跑时与旧行比对，不同就不沿用旧音频（[MangaRenderItem.canReuse]）。
+  String get shapeVersion;
+
   /// 用声音 [voice] 依次合成 [segments]，拼成一个文件并裁掉首尾静音。[seed] 与短句
   /// 定长只在引擎支持时生效（`tts_direction.dart`）。
   Future<int> synthesizeLine({
@@ -65,6 +73,15 @@ abstract interface class MangaRenderBackend {
 
   /// 写一段 [ms] 毫秒的静音。
   Future<int> writeSilence({required int ms, required String outputPath});
+
+  /// 把用户换上的一段本地音频（[sourcePath]，[MangaLocalAudio] 的保留副本）整形成
+  /// 成品句：与有声书片段同一套整形（裁首尾静音、淡变、响度、编码），版本同样记作
+  /// [shapeVersion]。读不了 / 解不出抛一句级失败。
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  });
 
   /// 能不能用参考音频克隆旁白音色（`manga_audio_narrator.dart`）。不能 = 合成句照旧用
   /// 各自指派的声音。
@@ -121,9 +138,15 @@ class MangaBackfillRequest {
     this.voice,
     this.say,
     this.nextRetryVoice = false,
+    this.seed,
   });
 
   final String lineId;
+
+  /// 换种子重出（批量重生成）：用这个种子重新合成一句**已生成**的句子，成功后种子写回
+  /// 演出稿、清单换成新文件（[mangaCandidateFileName]，与旧文件不同名）；失败时旧音频
+  /// 原样保留、不记进未配音账本（它本来就配好了音）。null = 补回未配音的句子。
+  final int? seed;
 
   /// 手动指定的声音；null = 不指定。
   final String? voice;
@@ -149,6 +172,36 @@ enum MangaBackfillStatus {
   lineMissing,
 }
 
+/// 补回一句的计划（[MangaAudioRenderer.backfill] 先整批算好、交后端预合成，再逐句出）。
+typedef _BackfillPlan = ({
+  MangaRenderItem item,
+  String voice,
+  String assigned,
+  String? say,
+  String text,
+  int seed,
+});
+
+/// [MangaAudioRenderer.bindLocalAudio] 的结果。
+class MangaLocalBindOutcome {
+  const MangaLocalBindOutcome({
+    required this.bound,
+    required this.unchanged,
+    required this.failures,
+  });
+
+  /// 换上了的句子 → 整形后的时长（毫秒）。有失败时为空（全有或全无）。
+  final Map<String, int> bound;
+
+  /// 已经是这段音频、原样没动的句子。
+  final Set<String> unchanged;
+
+  /// 没换成的句子与原因；非空 = 这次什么都没改。
+  final Map<String, MangaLineFailure> failures;
+
+  bool get ok => failures.isEmpty;
+}
+
 /// 单句换种子重生成的候选（试听后 [MangaAudioRenderer.keepCandidate] 或
 /// [MangaAudioRenderer.discardCandidate]）。
 class MangaRegenerateCandidate {
@@ -159,16 +212,24 @@ class MangaRegenerateCandidate {
     required this.durationMs,
     required this.voice,
     required this.text,
-  });
+    required this.shape,
+    String? spoken,
+  }) : spoken = spoken ?? text;
 
   final String lineId;
   final int seed;
+
+  /// 出候选时后端的整形版本（[MangaRenderBackend.shapeVersion]），保留时写进清单。
+  final String shape;
 
   /// 候选文件名（相对清单目录）。
   final String file;
   final int durationMs;
   final String voice;
   final String text;
+
+  /// 实际合成的文字（含人名读法；见 [MangaRenderItem.spoken]）。
+  final String spoken;
 }
 
 class MangaAudioRenderer {
@@ -226,6 +287,7 @@ class MangaAudioRenderer {
       defaultVoice: defaultVoice,
       narrator: await _narrator(script, pageBlocks, cancel),
     );
+    final String shape = backend.shapeVersion;
     final Map<String, MangaRenderedLine> before = <String, MangaRenderedLine>{
       for (final MangaRenderedLine l
           in previous?.lines ?? <MangaRenderedLine>[])
@@ -252,16 +314,17 @@ class MangaAudioRenderer {
         try {
           final MangaRenderedLine? old = before[item.lineId];
           if (old != null &&
-              item.canReuse(old) &&
+              item.canReuse(old, shape: shape) &&
               await File(_pathOf(old.file)).exists()) {
             ledger.resolve(item.lineId);
             reused++;
             results[i] = item.rendered(
               file: old.file,
               durationMs: old.durationMs,
+              shape: shape,
             );
           } else {
-            results[i] = await _renderOne(item, old, ledger, cancel);
+            results[i] = await _renderOne(item, old, shape, ledger, cancel);
             if (!results[i]!.placeholder) produced++;
           }
           done++;
@@ -280,7 +343,7 @@ class MangaAudioRenderer {
       final MangaRenderedLine? old = before[item.lineId];
       final bool reusable =
           old != null &&
-          item.canReuse(old) &&
+          item.canReuse(old, shape: shape) &&
           await File(_pathOf(old.file)).exists();
       if (!reusable) pending.add(item);
     }
@@ -326,6 +389,7 @@ class MangaAudioRenderer {
   Future<MangaRenderedLine> _renderOne(
     MangaRenderItem item,
     MangaRenderedLine? old,
+    String shape,
     CastVoicingLedger ledger,
     TtsRenderCancelToken cancel,
   ) async {
@@ -336,7 +400,11 @@ class MangaAudioRenderer {
         cancel,
       );
       ledger.resolve(item.lineId);
-      return item.rendered(file: r.file, durationMs: r.durationMs);
+      return item.rendered(
+        file: r.file,
+        durationMs: r.durationMs,
+        shape: shape,
+      );
     } catch (e, stack) {
       final MangaLineFailure failure = _lineFailure(e, stack, cancel);
       final CastVoicingEntry entry = ledger.recordFailure(
@@ -361,18 +429,34 @@ class MangaAudioRenderer {
         ms = await backend.writeSilence(ms: ms, outputPath: part.path);
         await _publish(part, target);
       }
-      return item.rendered(file: file, durationMs: ms, placeholder: true);
+      return item.rendered(
+        file: file,
+        durationMs: ms,
+        shape: null,
+        placeholder: true,
+      );
     }
   }
 
   /// 按计划出一句音频到 [fileName]（先写 `.part` 再改名）。
+  ///
+  /// 整句都是纯标点的气泡（「……」「！」，[ttsTextIsSilent]）没有要念的内容：出一段
+  /// 按字数估长的停顿（与小说整书制作同一口径），算配好了、不进未配音账本；文件是
+  /// WAV，扩展名随之换成 `.wav`。只有部分片段纯标点时照常合成，那几段由合成入口
+  /// （`ttsSynthesizeSplittingOnReject`）写成静音、在句中留出停顿。
   Future<({String file, int durationMs})> _produce(
     MangaRenderItem item,
     String fileName,
     TtsRenderCancelToken cancel,
   ) async {
     cancel.throwIfCancelled();
-    final File target = File(_pathOf(fileName));
+    final bool pause = switch (item.source) {
+      MangaRenderSynth(:final List<String> segments) =>
+        segments.isNotEmpty && segments.every(ttsTextIsSilent),
+      MangaRenderClip() || MangaRenderLocal() => false,
+    };
+    final String file = pause ? p.setExtension(fileName, '.wav') : fileName;
+    final File target = File(_pathOf(file));
     final File part = File('${target.path}.part');
     if (await part.exists()) await part.delete();
     final int ms;
@@ -384,16 +468,34 @@ class MangaAudioRenderer {
           :final List<String> segments,
         ):
           if (segments.isEmpty) throw const MangaLineFailure('empty_text');
-          ms = await backend.synthesizeLine(
-            voice: voice,
-            seed: seed,
-            segments: segments,
-            outputPath: part.path,
-            cancel: cancel,
-          );
+          ms = pause
+              ? await backend.writeSilence(
+                  ms: estimatePlaceholderMs(item.text),
+                  outputPath: part.path,
+                )
+              : await backend.synthesizeLine(
+                  voice: voice,
+                  seed: seed,
+                  segments: segments,
+                  outputPath: part.path,
+                  cancel: cancel,
+                );
         case MangaRenderClip(:final MangaAudiobookClip clip):
           ms = await backend.cutClip(
             clip: clip,
+            outputPath: part.path,
+            cancel: cancel,
+          );
+        case MangaRenderLocal(:final MangaLocalAudio audio):
+          final String source = mangaLocalAudioSourcePath(
+            directory.path,
+            audio,
+          );
+          if (!await File(source).exists()) {
+            throw const MangaLineFailure('local_audio_missing');
+          }
+          ms = await backend.shapeLocalAudio(
+            sourcePath: source,
             outputPath: part.path,
             cancel: cancel,
           );
@@ -406,7 +508,7 @@ class MangaAudioRenderer {
     } finally {
       if (await part.exists()) await part.delete();
     }
-    return (file: fileName, durationMs: ms);
+    return (file: file, durationMs: ms);
   }
 
   static Future<void> _publish(File part, File target) async {
@@ -455,19 +557,41 @@ class MangaAudioRenderer {
     final MangaNarratorVoice? narrator = requests.isEmpty
         ? null
         : await _narrator(script, pageBlocks, cancel);
+    final List<Object> plans = <Object>[
+      for (final MangaBackfillRequest req in requests)
+        _planBackfill(
+          script: script,
+          pageBlocks: pageBlocks,
+          defaultVoice: defaultVoice,
+          narrator: narrator,
+          manifest: manifest,
+          ledger: ledger,
+          req: req,
+        ),
+    ];
+    // 与整卷生成一样先把要出的句子整批交给后端（批处理引擎在这里一次合成完）。
+    final List<MangaRenderItem> pending = <MangaRenderItem>[
+      for (final Object plan in plans)
+        if (plan is _BackfillPlan) plan.item,
+    ];
+    if (pending.isNotEmpty) {
+      await backend.prepare(items: pending, cancel: cancel);
+    }
     for (int i = 0; i < requests.length; i++) {
       cancel.throwIfCancelled();
       final MangaBackfillRequest req = requests[i];
-      out[req.lineId] = await _backfillOne(
-        script: script,
-        pageBlocks: pageBlocks,
-        defaultVoice: defaultVoice,
-        narrator: narrator,
-        manifest: manifest,
-        ledger: ledger,
-        req: req,
-        cancel: cancel,
-      );
+      out[req.lineId] = switch (plans[i]) {
+        final _BackfillPlan plan => await _backfillOne(
+          script: script,
+          manifest: manifest,
+          ledger: ledger,
+          req: req,
+          plan: plan,
+          cancel: cancel,
+        ),
+        final MangaBackfillStatus status => status,
+        _ => throw StateError('unreachable'),
+      };
       onProgress(i + 1, requests.length);
     }
     await manifest.save(manifestFile);
@@ -475,7 +599,8 @@ class MangaAudioRenderer {
     return out;
   }
 
-  Future<MangaBackfillStatus> _backfillOne({
+  /// 补回一句要怎么出：[_BackfillPlan]，或出不了时的 [MangaBackfillStatus]。
+  Object _planBackfill({
     required MangaAudioScript script,
     required List<List<MokuroBlock>> pageBlocks,
     required String defaultVoice,
@@ -483,8 +608,7 @@ class MangaAudioRenderer {
     required MangaRenderManifest manifest,
     required CastVoicingLedger ledger,
     required MangaBackfillRequest req,
-    required TtsRenderCancelToken cancel,
-  }) async {
+  }) {
     final MangaScriptLine? line = script.lineById(req.lineId);
     final bool inManifest = manifest.lines.any(
       (MangaRenderedLine l) => l.lineId == req.lineId,
@@ -506,25 +630,55 @@ class MangaAudioRenderer {
     if (voice == null) return MangaBackfillStatus.noRetryVoice;
     final String? say = (req.say?.trim().isEmpty ?? true) ? null : req.say;
     final MangaScriptLine probe = say == null ? line : line.copyWith(say: say);
-    final String text = mangaLineText(
+    final ({String text, String spoken}) texts = mangaLineTexts(
       probe,
       pageBlocks,
       substitutions: script.substitutions,
     );
-    final int seed = line.effectiveSeed(script.defaultSeed);
+    final String text = texts.text;
+    final int seed = req.seed ?? line.effectiveSeed(script.defaultSeed);
     final MangaRenderItem item = MangaRenderItem(
       line: probe,
       text: text,
+      spoken: texts.spoken,
       source: MangaRenderSynth(
         voice: voice,
         seed: seed,
-        segments: splitMangaLineSegments(text),
+        segments: splitMangaLineSegments(texts.spoken),
       ),
     );
+    return (
+      item: item,
+      voice: voice,
+      assigned: assigned,
+      say: say,
+      text: text,
+      seed: seed,
+    );
+  }
+
+  Future<MangaBackfillStatus> _backfillOne({
+    required MangaAudioScript script,
+    required MangaRenderManifest manifest,
+    required CastVoicingLedger ledger,
+    required MangaBackfillRequest req,
+    required _BackfillPlan plan,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    final _BackfillPlan(
+      :MangaRenderItem item,
+      :String voice,
+      :String assigned,
+      :String? say,
+      :String text,
+      :int seed,
+    ) = plan;
     try {
       final ({String file, int durationMs}) r = await _produce(
         item,
-        mangaLineFileName(req.lineId),
+        req.seed == null
+            ? mangaLineFileName(req.lineId)
+            : mangaCandidateFileName(req.lineId, seed),
         cancel,
       );
       script.replaceLine(
@@ -532,9 +686,8 @@ class MangaAudioRenderer {
         (MangaScriptLine l) => l.copyWith(
           voice: voice != assigned ? voice : null,
           say: say,
-          audio: l.audio is MangaAudiobookClip
-              ? const MangaSynthesized()
-              : null,
+          seed: req.seed,
+          audio: l.audio is MangaSynthesized ? null : const MangaSynthesized(),
         ),
       );
       manifest.replaceLine(
@@ -546,12 +699,22 @@ class MangaAudioRenderer {
           voice: voice,
           seed: seed,
           text: text,
+          spoken: item.spoken,
+          shape: backend.shapeVersion,
         ),
       );
       ledger.resolve(req.lineId);
       return MangaBackfillStatus.voiced;
     } catch (e, stack) {
       final MangaLineFailure failure = _lineFailure(e, stack, cancel);
+      // 换种子重出一句配好了音的句子：失败只是这次没换成，旧音频还在，不算未配音。
+      final bool voicedBefore = manifest.lines.any(
+        (MangaRenderedLine l) => l.lineId == req.lineId && !l.placeholder,
+      );
+      if (req.seed != null && voicedBefore) {
+        engineLog.log('MangaAudioRenderer.reroll', failure, StackTrace.current);
+        return MangaBackfillStatus.failed;
+      }
       ledger.recordFailure(
         lineId: req.lineId,
         text: text,
@@ -575,11 +738,12 @@ class MangaAudioRenderer {
   }) async {
     final MangaScriptLine? line = script.lineById(lineId);
     if (line == null) throw const MangaLineFailure('line_missing');
-    final String text = mangaLineText(
+    final ({String text, String spoken}) texts = mangaLineTexts(
       line,
       pageBlocks,
       substitutions: script.substitutions,
     );
+    final String text = texts.text;
     final String voice = mangaSynthVoiceFor(
       script,
       line,
@@ -589,10 +753,11 @@ class MangaAudioRenderer {
     final MangaRenderItem item = MangaRenderItem(
       line: line,
       text: text,
+      spoken: texts.spoken,
       source: MangaRenderSynth(
         voice: voice,
         seed: seed,
-        segments: splitMangaLineSegments(text),
+        segments: splitMangaLineSegments(texts.spoken),
       ),
     );
     await directory.create(recursive: true);
@@ -609,6 +774,8 @@ class MangaAudioRenderer {
         durationMs: r.durationMs,
         voice: voice,
         text: text,
+        spoken: texts.spoken,
+        shape: backend.shapeVersion,
       );
     } catch (e, stack) {
       throw _lineFailure(e, stack, cancel);
@@ -632,6 +799,8 @@ class MangaAudioRenderer {
         voice: candidate.voice,
         seed: candidate.seed,
         text: candidate.text,
+        spoken: candidate.spoken,
+        shape: candidate.shape,
       ),
     );
     if (!replaced) {
@@ -642,13 +811,117 @@ class MangaAudioRenderer {
       candidate.lineId,
       (MangaScriptLine l) => l.copyWith(
         seed: candidate.seed,
-        audio: l.audio is MangaAudiobookClip ? const MangaSynthesized() : null,
+        audio: l.audio is MangaSynthesized ? null : const MangaSynthesized(),
       ),
     );
     ledger.resolve(candidate.lineId);
     await manifest.save(manifestFile);
     await sweepUnreferenced(manifest);
     return true;
+  }
+
+  /// 给已生成的句子换上用户的本地音频（[bindings]：lineId → 保留副本已放进
+  /// [kMangaLocalAudioDirName] 的 [MangaLocalAudio]）。全有或全无：先逐句整形出新文件
+  /// （[mangaLocalLineFileName]，与原文件不同名），有一句失败就删掉这次出的文件，清单 /
+  /// 演出稿 / 账本都不动，结果里带各句失败原因；全部成功才改清单（文件、时长、
+  /// `file:` 标记、整形版本）、演出稿（音源）与账本（这些句子不再是未配音），存清单
+  /// 并清掉不再引用的旧文件。清单里这句已经是同一段音频、同一整形版本且文件还在的
+  /// 原样不动（记进 [MangaLocalBindOutcome.unchanged]）。[script] / [ledger] 原地改，
+  /// 调用方落盘。
+  Future<MangaLocalBindOutcome> bindLocalAudio({
+    required MangaAudioScript script,
+    required MangaRenderManifest manifest,
+    required CastVoicingLedger ledger,
+    required Map<String, MangaLocalAudio> bindings,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    final String shape = backend.shapeVersion;
+    final Map<String, ({String file, int durationMs})> produced =
+        <String, ({String file, int durationMs})>{};
+    final Set<String> unchanged = <String>{};
+    final Map<String, MangaLineFailure> failures = <String, MangaLineFailure>{};
+    bool committed = false;
+    try {
+      for (final MapEntry<String, MangaLocalAudio> e in bindings.entries) {
+        final MangaScriptLine? line = script.lineById(e.key);
+        MangaRenderedLine? old;
+        for (final MangaRenderedLine l in manifest.lines) {
+          if (l.lineId == e.key) old = l;
+        }
+        if (line == null || old == null) {
+          failures[e.key] = const MangaLineFailure('line_missing');
+          continue;
+        }
+        final String file = mangaLocalLineFileName(e.key, e.value);
+        if (!old.placeholder &&
+            old.file == file &&
+            old.voice == mangaLocalVoiceTag(e.value) &&
+            old.shape == shape &&
+            line.audio == e.value &&
+            await File(_pathOf(file)).exists()) {
+          unchanged.add(e.key);
+          continue;
+        }
+        try {
+          produced[e.key] = await _produce(
+            MangaRenderItem(
+              line: line,
+              text: old.text,
+              source: MangaRenderLocal(e.value),
+            ),
+            file,
+            cancel,
+          );
+        } catch (err, stack) {
+          failures[e.key] = _lineFailure(err, stack, cancel);
+        }
+      }
+      if (failures.isNotEmpty) {
+        return MangaLocalBindOutcome(
+          bound: const <String, int>{},
+          unchanged: unchanged,
+          failures: failures,
+        );
+      }
+      for (final MapEntry<String, ({String file, int durationMs})> e
+          in produced.entries) {
+        final MangaLocalAudio audio = bindings[e.key]!;
+        manifest.replaceLine(
+          e.key,
+          (MangaRenderedLine l) => l.replaced(
+            file: e.value.file,
+            durationMs: e.value.durationMs,
+            placeholder: false,
+            voice: mangaLocalVoiceTag(audio),
+            shape: shape,
+          ),
+        );
+        script.replaceLine(
+          e.key,
+          (MangaScriptLine l) => l.copyWith(audio: audio),
+        );
+        ledger.resolve(e.key);
+      }
+      await manifest.save(manifestFile);
+      committed = true;
+      await sweepUnreferenced(manifest);
+      return MangaLocalBindOutcome(
+        bound: <String, int>{
+          for (final MapEntry<String, ({String file, int durationMs})> e
+              in produced.entries)
+            e.key: e.value.durationMs,
+        },
+        unchanged: unchanged,
+        failures: const <String, MangaLineFailure>{},
+      );
+    } finally {
+      if (!committed) {
+        for (final ({String file, int durationMs}) r in produced.values) {
+          final File f = File(_pathOf(r.file));
+          if (await f.exists()) await f.delete();
+        }
+      }
+    }
   }
 
   /// 撤回候选：删掉候选文件，清单与演出稿都不动。
@@ -668,6 +941,27 @@ class MangaAudioRenderer {
     };
     for (final FileSystemEntity e in directory.listSync()) {
       if (e is! File || keep.contains(p.basename(e.path))) continue;
+      try {
+        await e.delete();
+      } on FileSystemException catch (err, stack) {
+        engineLog.log('MangaAudioRenderer.sweep', err, stack);
+      }
+    }
+    // 本地音频的保留副本：清单里没有哪句还标着它（换回合成 / 换了另一段）就删。
+    final Directory local = Directory(
+      p.join(directory.path, kMangaLocalAudioDirName),
+    );
+    if (!await local.exists()) return;
+    final Set<String> sigs = <String>{
+      for (final MangaRenderedLine l in manifest.lines)
+        if (l.voice case final String v
+            when v.startsWith(kMangaLocalVoicePrefix))
+          v.substring(kMangaLocalVoicePrefix.length),
+    };
+    for (final FileSystemEntity e in local.listSync()) {
+      if (e is! File || sigs.contains(p.basenameWithoutExtension(e.path))) {
+        continue;
+      }
       try {
         await e.delete();
       } on FileSystemException catch (err, stack) {

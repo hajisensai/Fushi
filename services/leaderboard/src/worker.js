@@ -34,6 +34,7 @@
 //   GET    /img/<key>                                    R2 出图
 //   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
 //   /v1/ci/feedback/**                    [Bearer FEEDBACK_CI_TOKEN]  CI 回填修复 commit / 发布版本（同上）
+//   /v1/decisions/**                      [Bearer 开发者个人密钥 fdk_…] 拍板台 JSON API（decisions_api.js 文件头）
 //   POST /v1/ci/usage                     [Bearer USAGE_UPLOAD_TOKEN] 上传 AI 额度消耗日汇总（ai_usage.js；没配 token 则 404）
 //   POST /v1/notices                       {v, p, c, l, id, h, k} 按构建信息取服务端下发的公告（notices.js）
 //   GET  /v1/musickit/token                                Apple Music API developer token（musickit.js；没配 MUSICKIT_* 则 503）
@@ -72,6 +73,7 @@ import { issueMusicKitToken } from './musickit.js';
 import { isMusicKitPagePath, renderMusicKitPage } from './musickit_page.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
+import { isDecisionsApiPath, routeDecisionsApi } from './decisions_api.js';
 import { purgeInstallStats, recordPing, refreshInstallStatsSnapshot } from './installs.js';
 import { refreshProjectStats } from './project_stats.js';
 import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
@@ -222,6 +224,12 @@ async function route(request, env, now, ctx) {
   if (method === 'GET' && isMusicKitPagePath(path)) {
     await bindingLimit(env.READ_LIMITER, request);
     return renderMusicKitPage(path);
+  }
+
+  // ---- 拍板台 JSON API（decisions_api.js）：Bearer 开发者个人密钥；按 IP 过 READ_LIMITER，不进边缘缓存 ----
+  if (isDecisionsApiPath(path)) {
+    await bindingLimit(env.READ_LIMITER, request);
+    return routeDecisionsApi(request, env, url, now);
   }
 
   // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----

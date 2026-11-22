@@ -37,6 +37,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
     show registerMangaAudioWorkbenchEntry;
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -54,6 +55,8 @@ import 'package:fushi/src/srs/srs_app_runtime.dart'
 import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsCollectionJoin;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
+import 'package:fushi_engine/utils/archive/archive_passwords.dart'
+    show ArchivePasswords;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
@@ -178,6 +181,7 @@ import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi/src/media/import/android_open_with.dart';
+import 'package:fushi/src/media/import/archive_password_prompt.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
@@ -1391,6 +1395,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       unawaited(_startCtlServer());
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    // 加密归档（zip / 7z / rar）导入的口令来源：所有走归档解包的导入入口共用。
+    ArchivePasswords.provider = AppArchivePasswordProvider.forNavigator(
+      ref.read(appProvider).navigatorKey,
+    );
     FushiToast.mineNoticeFilter = ref.read(appProvider).mineNoticeShown;
     installAnkiVideoTemplateFallbackNotice(
       navigatorKey: ref.read(appProvider).navigatorKey,
@@ -2877,8 +2885,29 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // BUG-1899：「打不开」不是「坏了」。父目录不存在 / 无权限 / 只读介质 / 盘断链
       // 都会让 sqlite 报 SQLITE_CANTOPEN(14)，此前它们共用「数据库损坏，请恢复备份或
       // 清空数据」这句话——在磁盘完好的情况下把用户往清空数据上引。
-      final bool cannotOpen =
-          unrecoverable.kind == FushiDatabaseFailureKind.cannotOpen;
+      //
+      // BUG-5076：卷写满（SQLITE_FULL / ENOSPC）同理——此时 sqlite 报的 malformed(11)
+      // 只是「写不进去」的表象，引导必须是「腾空间再重试」，绝不能是恢复备份 / 清数据。
+      // kind 的判据只在 fushi_core 的 classifyFushiDatabaseOpenFailure 一处。
+      final FushiDatabaseFailureKind kind = unrecoverable.kind;
+      final IconData icon = switch (kind) {
+        FushiDatabaseFailureKind.cannotOpen => Icons.folder_off_outlined,
+        FushiDatabaseFailureKind.insufficientSpace =>
+          Icons.sd_card_alert_outlined,
+        FushiDatabaseFailureKind.corrupt => FushiIcons.brokenImage,
+      };
+      final String title = switch (kind) {
+        FushiDatabaseFailureKind.cannotOpen => t.db_cannot_open_title,
+        FushiDatabaseFailureKind.insufficientSpace =>
+          t.db_insufficient_space_title,
+        FushiDatabaseFailureKind.corrupt => t.db_unrecoverable_title,
+      };
+      final String message = switch (kind) {
+        FushiDatabaseFailureKind.cannotOpen => t.db_cannot_open_message,
+        FushiDatabaseFailureKind.insufficientSpace =>
+          t.db_insufficient_space_message,
+        FushiDatabaseFailureKind.corrupt => t.db_unrecoverable_message,
+      };
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
@@ -2895,18 +2924,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    FushiIcon(
-                      cannotOpen
-                          ? Icons.folder_off_outlined
-                          : Icons.broken_image_outlined,
-                      size: 48,
-                      color: cs.error,
-                    ),
+                    FushiIcon(icon, size: 48, color: cs.error),
                     const SizedBox(height: 16),
                     Text(
-                      cannotOpen
-                          ? t.db_cannot_open_title
-                          : t.db_unrecoverable_title,
+                      title,
                       style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
@@ -2914,9 +2935,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      cannotOpen
-                          ? t.db_cannot_open_message
-                          : t.db_unrecoverable_message,
+                      message,
                       style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
@@ -2930,6 +2949,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       ),
                       textAlign: TextAlign.center,
                     ),
+                    // 空间不足是可恢复的外部条件：腾出空间后重试会重新开库、重新按
+                    // 唯一判据分类（空间够了但库真坏了，才会落到「已损坏」专屏）。
+                    if (kind == FushiDatabaseFailureKind.insufficientSpace) ...[
+                      const SizedBox(height: 20),
+                      FushiFilledButton.icon(
+                        icon: const FushiIcon(FushiIcons.refresh, size: 18),
+                        label: Text(t.retry),
+                        onPressed: () => appModel.retryInitialise(),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2996,7 +3025,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const FushiIcon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(FushiIcons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
@@ -3063,7 +3092,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const FushiIcon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(FushiIcons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
@@ -3460,7 +3489,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                     child: AppleWidgetsHost(
                                       // NSFW 封面状态（拍板台 w04vrhUAaX）挂在
                                       // 导航器之上，所有路由 / 对话框都读得到。
-                                      child: MediaNsfwStateHost(child: child!),
+                                      // 上锁作品的显示口径（唯一过滤入口）与 NSFW
+                                      // 封面模糊并排挂在导航器之上，对话框 / 菜单
+                                      // 也读得到。
+                                      child: MediaVisibilityHost(
+                                        child: MediaNsfwStateHost(
+                                          child: child!,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   const AppFloatingBallHost(),

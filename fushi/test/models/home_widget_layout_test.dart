@@ -20,7 +20,7 @@ List<HomeWidgetKind> kinds(List<HomeWidgetItem> items) => <HomeWidgetKind>[
 
 void main() {
   group('目录', () {
-    test('11 种组件，持久化 id 冻结且唯一', () {
+    test('12 种组件，持久化 id 冻结且唯一', () {
       expect(
         HomeWidgetKind.values.map((HomeWidgetKind k) => k.id).toList(),
         <String>[
@@ -35,6 +35,7 @@ void main() {
           'tracking',
           'ai_agent',
           'panorama',
+          'language_goals',
         ],
       );
       for (final HomeWidgetKind k in HomeWidgetKind.values) {
@@ -64,6 +65,7 @@ void main() {
             HomeWidgetKind.tracking: (s11, HomeWidgetSize(6, 2)),
             HomeWidgetKind.aiAgent: (s11, HomeWidgetSize(3, 2)),
             HomeWidgetKind.panorama: (s11, HomeWidgetSize(6, 4)),
+            HomeWidgetKind.languageGoals: (s11, HomeWidgetSize(3, 2)),
           };
       expect(spec.keys.toSet(), HomeWidgetKind.values.toSet());
       for (final HomeWidgetKind k in HomeWidgetKind.values) {
@@ -511,6 +513,40 @@ void main() {
       );
     });
 
+    test('语言目标格：挑的目标（goals）往返；旧 zh-Hans 归一成 zh，带 lx 的保留', () {
+      const HomeWidgetItem picked = HomeWidgetItem(
+        HomeWidgetKind.languageGoals,
+        HomeWidgetSize(2, 2),
+        language: 'ja',
+        goals: <String>['g2', 'g1'],
+      );
+      const HomeWidgetItem hant = HomeWidgetItem(
+        HomeWidgetKind.languageGoals,
+        HomeWidgetSize(2, 1),
+        language: 'zh-Hant',
+      );
+      final String json = encodeHomeWidgetLayout(
+        const HomeWidgetLayout(wide: <HomeWidgetItem>[picked, hant]),
+      );
+      expect(json, contains('"goals":["g2","g1"]'));
+      expect(json, contains('"l":"zh-Hant","lx":true'));
+      expect(decodeHomeWidgetLayout(json).wide, const <HomeWidgetItem>[
+        picked,
+        hant,
+      ]);
+      // 旧布局：没有 goals = 自动；没有 lx 的 zh-Hans = 整门中文；goals 至多 3 条。
+      final List<HomeWidgetItem> old = decodeHomeWidgetLayout(
+        '{"v":1,"wide":[{"k":"language_goals","c":2,"r":2,"l":"zh-Hans"},'
+        '{"k":"language_goals","c":2,"r":2,"l":"ko","goals":["a","b","c","d",3]}]}',
+      ).wide!;
+      expect(old[0].language, 'zh');
+      expect(old[0].goals, isEmpty);
+      expect(old[1].goals, <String>['a', 'b', 'c']);
+      // 换语言 / 尺寸不丢挑的目标。
+      expect(picked.withSize(const HomeWidgetSize(2, 1)).goals, picked.goals);
+      expect(picked.withLanguage('ko').goals, picked.goals);
+    });
+
     test('容错：坏 JSON / 非对象 / 未知组件 / 重复 / 非法尺寸', () {
       expect(decodeHomeWidgetLayout('').compact, isNull);
       expect(decodeHomeWidgetLayout('not json').compact, isNull);
@@ -546,6 +582,93 @@ void main() {
       ]);
       expect(l.compact, <HomeWidgetItem>[
         item(HomeWidgetKind.recentlyAdded, const HomeWidgetSize(2, 4)),
+      ]);
+    });
+  });
+
+  group('可重复组件（语言目标）', () {
+    const HomeWidgetItem ja = HomeWidgetItem(
+      HomeWidgetKind.languageGoals,
+      s11,
+      language: 'ja',
+    );
+    const HomeWidgetItem ko = HomeWidgetItem(
+      HomeWidgetKind.languageGoals,
+      s21,
+      language: 'ko',
+    );
+    const HomeWidgetItem all = HomeWidgetItem(
+      HomeWidgetKind.languageGoals,
+      s11,
+    );
+
+    test('slot：普通组件 = id；语言目标 = id + 语言', () {
+      expect(HomeWidgetKind.languageGoals.repeatable, isTrue);
+      expect(HomeWidgetKind.today.repeatable, isFalse);
+      expect(item(HomeWidgetKind.today, s11).slot, 'today');
+      expect(ja.slot, 'language_goals:ja');
+      expect(all.slot, 'language_goals');
+      expect(ja == ja.withSize(s11), isTrue);
+      expect(ja == ja.withLanguage('ko'), isFalse);
+    });
+
+    test('添加按 slot 去重：不同语言可并存，同语言只一格', () {
+      List<HomeWidgetItem> items = addHomeWidget(<HomeWidgetItem>[], ja);
+      items = addHomeWidget(items, ko);
+      items = addHomeWidget(items, all);
+      expect(items, <HomeWidgetItem>[ja, ko, all]);
+      expect(addHomeWidget(items, ja.withSize(s21)), items);
+    });
+
+    test('改语言：换成已占的语言 / 非可重复组件时不变', () {
+      final List<HomeWidgetItem> items = <HomeWidgetItem>[
+        item(HomeWidgetKind.today, s11),
+        ja,
+        ko,
+      ];
+      expect(setHomeWidgetLanguage(items, 1, 'ko'), items);
+      expect(setHomeWidgetLanguage(items, 0, 'ko'), items);
+      expect(setHomeWidgetLanguage(items, 9, 'en'), items);
+      final List<HomeWidgetItem> next = setHomeWidgetLanguage(items, 1, 'en');
+      expect(next[1].language, 'en');
+      expect(next[1].size, s11);
+      expect(setHomeWidgetLanguage(items, 2, null)[2].slot, 'language_goals');
+    });
+
+    test('默认语言：第一个还没有格子的候选语言', () {
+      expect(
+        homeLanguageGoalsDefaultLanguage(
+          candidates: <String>['ja', 'ko', 'en'],
+          taken: <String>{'today', 'language_goals:ja'},
+        ),
+        'ko',
+      );
+      expect(
+        homeLanguageGoalsDefaultLanguage(
+          candidates: <String>['ja'],
+          taken: <String>{'language_goals:ja'},
+        ),
+        isNull,
+      );
+    });
+
+    test('编解码：语言写进 "l"，往返保持；同 slot 重复只留第一个', () {
+      const HomeWidgetLayout layout = HomeWidgetLayout(
+        compact: <HomeWidgetItem>[ja, ko, all],
+      );
+      final String json = encodeHomeWidgetLayout(layout);
+      expect(json, contains('"l":"ja"'));
+      expect(decodeHomeWidgetLayout(json).compact, layout.compact);
+      final HomeWidgetLayout dup = decodeHomeWidgetLayout(
+        '{"v":1,"compact":['
+        '{"k":"language_goals","c":1,"r":1,"l":"ja"},'
+        '{"k":"language_goals","c":2,"r":1,"l":"ja"},'
+        '{"k":"language_goals","c":1,"r":1,"l":"ko"}'
+        ']}',
+      );
+      expect(dup.compact!.map((HomeWidgetItem e) => e.slot), <String>[
+        'language_goals:ja',
+        'language_goals:ko',
       ]);
     });
   });

@@ -189,6 +189,15 @@ class _FakeSyncBackend implements SyncBackend {
     void Function(double progress)? onProgress,
   }) => _store.getAsset(assetId, destination, onProgress: onProgress);
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _store.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _store.putBytesAsset(namespaceId, name, bytes);
+  @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
@@ -1829,8 +1838,9 @@ void main() {
 class _OldPeerBackend extends InterconnectSyncBackend {
   _OldPeerBackend() : super.withProbe((String u, String t) async => true);
 
+  /// 老 host 没有 `/api/capabilities`（404 → null）。
   @override
-  Future<bool> hostReportsLocalAudioContentId() async => false;
+  Future<Object?> readHostCapabilities() async => null;
 }
 
 /// 写一个 Yomitan 本地音频库（entries + android），每个 [words] 一行。

@@ -136,6 +136,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'video_episode_binding_overrides': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
+  // v167：用户 / AI 钉死的合集分栏（拍板台 iR6ccUys9H），同手动季集指定。
+  'video_collection_section_overrides': BackupTableRule.follows(
+    <BackupCategory>{BackupCategory.videos},
+  ),
   'video_scrape_meta': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
@@ -252,6 +256,12 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   // v156 作品级 NSFW 标记：同上。
   'media_nsfw_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v171 上锁标记：同 media_privacy_flags / media_nsfw_flags（宿主逻辑外键）。
+  'media_locked_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v171 解锁口令摘要：跟着上锁标记走——导出副本里一条上锁记录都不剩就不带它。
+  'media_lock_credentials': BackupTableRule.rowLevel(
+    '_stripOrphanUserDataTables',
+  ),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',

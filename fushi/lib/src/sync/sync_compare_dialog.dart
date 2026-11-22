@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -18,7 +19,6 @@ import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
     show recordRemoteAudiobookPackageDownload;
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
-import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/paged_book_sync_position.dart';
@@ -617,13 +617,13 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
 ) async {
   final Map<String, int> statCountByTitle = <String, int>{};
   try {
-    final Map<String, dynamic>? json = await backend.getRemoteAggregate();
-    if (json != null) {
-      for (final ReadingStatRecord r in AggregateSnapshot.fromJson(
-        json,
-      ).readingStats) {
-        statCountByTitle[r.title] = (statCountByTitle[r.title] ?? 0) + 1;
-      }
+    final Uint8List? body = await backend.getRemoteAggregateBody();
+    // HBK-AUDIT-028：整份快照在后台解码，只回「每本书几条统计」的小表；顶层非
+    // object 当空快照（无统计）。
+    if (body != null) {
+      statCountByTitle.addAll(
+        await AggregateSyncService.readingStatCountsByTitle(body),
+      );
     }
   } catch (e) {
     developer.log(
@@ -1188,8 +1188,8 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           scope: syncChannelScopeOf(backend),
           localApplyLock: runExclusiveWithSyncStateApply,
         ).syncOverClient(
-          fetchRemote: backend.getRemoteAggregate,
-          pushMerged: backend.putRemoteAggregate,
+          fetchRemote: backend.getRemoteAggregateBody,
+          pushMerged: backend.putRemoteAggregateBody,
           shareStats: true,
           shareFavorites: false,
           shareWebHistory: false,

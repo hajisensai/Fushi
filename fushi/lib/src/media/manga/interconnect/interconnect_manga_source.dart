@@ -229,6 +229,12 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
           bookKey: bookKey,
           remoteIndex: manifest.pages[index].index,
           chapterDigest: digest,
+          // host 报的页身份前缀上 host 侧 bookKey + 章摘要：同一个源端身份在
+          // 不同的书 / 章里不是同一页。
+          pageKey: switch (manifest.pages[index].key) {
+            final String key => '$bookKey\u0000${digest ?? ''}\u0000$key',
+            null => null,
+          },
         ),
     ];
   }

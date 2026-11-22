@@ -74,6 +74,23 @@
   check(hides().length === 0,
       'zoom-out re-anchor scroll must not toggle the reader UI: ' + JSON.stringify(hides()));
 
+  // Reader-initiated scroll right after user input (jump to a spread / read-aloud
+  // following the audio, e.g. just after clicking the "reading mode" button) is
+  // not the reader scrolling: it must not hide the UI (feedback Yh8ukM6J_i).
+  calls.length = 0;
+  window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Shift'}));
+  var y3 = window.scrollY;
+  var allPages = document.querySelectorAll('.manga-page');
+  var lastSpread = Number(allPages[allPages.length - 1].dataset.spread);
+  window.__mangaScrollToSpread(lastSpread, 0);
+  scrolled();
+  check(Math.abs(window.scrollY - y3) > 100,
+      'jumping to spread ' + lastSpread + ' must scroll the strip: ' + y3 + ' -> ' +
+      window.scrollY);
+  check(hides().length === 0,
+      'a programmatic jump inside the input window must not toggle the reader UI: ' +
+      JSON.stringify(hides()));
+
   // Control: the reader really scrolling the strip still reports.
   var y2 = window.scrollY;
   var t = at(206, 700);

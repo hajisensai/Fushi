@@ -24,10 +24,15 @@ import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
     show kPopupSearchingPlaceholderResult;
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/after_mining_popup_action.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_preview.dart'
+    show crossAppAudioAvailableReply, crossAppAudioPreviewReply;
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/platform/selection_external_actions.dart';
@@ -460,6 +465,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
+    this.crossAppAudio,
     this.onScrolledToBottom,
     this.onScrolledUnderChanged,
     this.forwardScrollToHost = false,
@@ -627,6 +633,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 非空才在 popup 渲染这颗按钮（经 `window.advancedMiningEnabled`）；宿主只在制卡
   /// 模块开着时接线。参数语义见 [OpenAdvancedMiningCallback]。
   final OpenAdvancedMiningCallback? onOpenAdvancedMining;
+
+  /// 跨应用语音缓存（拍板 design-cross-app-audio-trim-ui）：应用外查词那一刻落下的最近一段
+  /// 其他 app 声音（Android `:popup` 查词窗）。非空 = 本表面可能有句子音频可调：注入
+  /// `window.__fushiCrossAppAudioHost = true`，popup.js 问 `crossAppAudioAvailable` 后在
+  /// 「+」旁渲染「调整句子音频」，面板经 `crossAppAudioPreview` 取波形与试听音频。
+  /// app 内表面为 null（不渲染、不发探测）。
+  final Future<CrossAppAudioSnapshot?>? crossAppAudio;
   final VoidCallback? onScrolledToBottom;
 
   /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
@@ -687,7 +700,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
       DictionaryPopupWebViewState();
 }
 
-class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
+class DictionaryPopupWebViewState
+    extends DictionaryPopupRealmState<DictionaryPopupWebView>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
 
@@ -1205,7 +1219,8 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// BUG-717 ③：最近一次已注入的 in-app 固定块（句子上下文 i18n 文案 + `advancedMiningEnabled`）的键。该块只随静态段
   /// 版本（含语言切换——locale 在 builder 的 memo 键里）与「高级制卡」回调的有无变化，
   /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
-  ({int revision, bool advancedMining})? _lastSentInAppExtrasKey;
+  ({int revision, bool advancedMining, bool crossAppAudio})?
+  _lastSentInAppExtrasKey;
 
   Future<T> _guardJsBridge<T>(
     String logTag,
@@ -1649,6 +1664,7 @@ JSON.stringify((function(){
   /// 'moved' when the focus advanced or 'blocked' at the first/last entry (or a
   /// single-entry / empty result). Orthogonal to the char caret — moves only the
   /// entry indicator + viewport, never the caret ring.
+  @override
   Future<String> focusEntryMove(bool forward) async {
     final Object? raw = await _controller?.evaluateJavascript(
       source:
@@ -1680,6 +1696,7 @@ JSON.stringify((function(){
     );
   }
 
+  @override
   Future<void> mineFirstVisibleEntry() async {
     await _controller?.evaluateJavascript(
       source:
@@ -1690,6 +1707,7 @@ JSON.stringify((function(){
 
   /// 手柄（dictionaryPopup scope）：播放第一个可见词条的发音——点既有发音按钮，
   /// 复用其全部音源解析/回退逻辑（与制卡同一「点按钮不另起桥」纪律）。
+  @override
   Future<void> playFirstVisibleAudio() async {
     await _controller?.evaluateJavascript(
       source:
@@ -1727,6 +1745,7 @@ JSON.stringify((function(){
   }
 
   /// 手柄右摇杆：连续滚动弹窗内容 [dy] CSS 像素（正=向下）。
+  @override
   Future<void> scrollContentBy(double dy) async {
     await _controller?.evaluateJavascript(
       source:
@@ -2321,16 +2340,22 @@ JSON.stringify((function(){
     // 「高级制卡」回调有无（热槽 WebView 换宿主 / 制卡模块开关翻转时，旧的
     // window.advancedMiningEnabled 会跨渲染残留，必须随之重发）。原来每次查词都重发这 1-2KB。
     final bool advancedMiningEnabled = widget.onOpenAdvancedMining != null;
-    final ({int revision, bool advancedMining}) extrasKey = (
-      revision: staticSettings.revision,
-      advancedMining: advancedMiningEnabled,
-    );
+    final bool crossAppAudioHost = widget.crossAppAudio != null;
+    final ({int revision, bool advancedMining, bool crossAppAudio}) extrasKey =
+        (
+          revision: staticSettings.revision,
+          advancedMining: advancedMiningEnabled,
+          crossAppAudio: crossAppAudioHost,
+        );
     final bool extrasChanged = extrasKey != _lastSentInAppExtrasKey;
     if (extrasChanged) {
       _lastSentInAppExtrasKey = extrasKey;
     }
     final String inAppExtrasJs = extrasChanged
-        ? _inAppStaticExtrasJs(advancedMiningEnabled: advancedMiningEnabled)
+        ? _inAppStaticExtrasJs(
+            advancedMiningEnabled: advancedMiningEnabled,
+            crossAppAudioHost: crossAppAudioHost,
+          )
         : '';
     final bool idle = identical(
       widget.result,
@@ -2427,7 +2452,10 @@ JSON.stringify((function(){
   /// [_lastSentInAppExtrasKey]（静态段 revision + 「高级制卡」回调有无）门控，热槽
   /// WebView 的 window.* 跨渲染持久。语言切换经静态段 revision 失效（builder memo
   /// 键含 locale），文案随之重发。
-  String _inAppStaticExtrasJs({required bool advancedMiningEnabled}) {
+  String _inAppStaticExtrasJs({
+    required bool advancedMiningEnabled,
+    required bool crossAppAudioHost,
+  }) {
     // `window.__fushiResetPopupScroll`（全量推送前的滚动归零）定义在 popup.js，与 app 外
     // 查词窗 / galgame 内嵌查词的常驻根 iframe 共用一份，不在这里另写。
     return '''
@@ -2448,6 +2476,8 @@ JSON.stringify((function(){
       window.i18nCtx = {
         advancedMining: ${jsonEncode(t.popup_advanced_mining_button)},
       };
+      // 跨应用语音缓存「调整句子音频」入口门控（见 [DictionaryPopupWebView.crossAppAudio]）。
+      window.__fushiCrossAppAudioHost = $crossAppAudioHost;
 ''';
   }
 
@@ -3844,6 +3874,28 @@ JSON.stringify((function(){
           },
         );
 
+        // 跨应用语音缓存 · 制卡前试听 + 调起止（拍板 design-cross-app-audio-trim-ui）：
+        // 面板画在 popup.js 里，这两根桥只给数据（与电脑端覆盖窗同一份实现，见
+        // cross_app_audio_preview.dart）。用户拖出的起止随 mineEntry 字段的覆盖项回来。
+        controller.addJavaScriptHandler(
+          handlerName: 'crossAppAudioAvailable',
+          callback: (args) async => _guardJsBridge<bool>(
+            'DictPopupWebview.crossAppAudioAvailable',
+            false,
+            ErrorLogService.instance,
+            () => crossAppAudioAvailableReply(widget.crossAppAudio),
+          ),
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'crossAppAudioPreview',
+          callback: (args) async => _guardJsBridge<Map<String, Object?>?>(
+            'DictPopupWebview.crossAppAudioPreview',
+            null,
+            ErrorLogService.instance,
+            () => crossAppAudioPreviewReply(widget.crossAppAudio),
+          ),
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'textSelected',
           callback: (args) async {
@@ -4622,4 +4674,17 @@ void logPopupJsError(ErrorLogService errorLogService, List<dynamic> rawArgs) {
     message.isEmpty ? '(no message)' : message,
     stack.isEmpty ? null : StackTrace.fromString(stack),
   );
+}
+
+/// 把查词弹窗栈里的层键（[DictionaryPopupController] 只按窄接口
+/// [DictionaryPopupRealmState] 持有）窄化回具体的 [DictionaryPopupWebViewState]，
+/// 供宿主调 WebView 的其余能力（滚动位置、高亮、制卡、缩放……）。语义同
+/// `GlobalKey<DictionaryPopupWebViewState>.currentState`：未挂载或挂的不是弹窗
+/// WebView 时为 null。
+extension DictionaryPopupRealmKeyWebView
+    on GlobalKey<DictionaryPopupRealmState> {
+  DictionaryPopupWebViewState? get webViewState {
+    final State<StatefulWidget>? state = currentState;
+    return state is DictionaryPopupWebViewState ? state : null;
+  }
 }

@@ -1,0 +1,6 @@
+## BUG-5116 · 漫画画质缩放：Rust 重采样为整张图留 f32 中间缓冲，长条页工作集上百 MB
+- **报告**：2026-11-22（Codex 2026-11-21 PR 审查 HBK-AUDIT-044，PR #3843）
+- **真实性**：✅ 真 bug。`native/fushi_compute/src/image/resample.rs` 的 `resample`（修前 167–169 行）横向结果整张存成 `h × dw × ch` 的 f32；`resample_text_aware` 再叠两份 uint8 输出、`text_mask` 一张 f32 遮罩、`gaussian_blur` 一张 f32 临时图。入口 `native/fushi_compute/src/image.rs` `fit_jpeg_hq` 只按 `FIT_HQ_MAX_PIXELS` 限目标像素数。实测（1600×12000 RGB → 1024×7680，Lanczos3，不含调用方持有的 54.9 MiB 源图）：工作集峰值普通 163.8 MiB、文字感知 186.3 MiB，输出本身只有 22.5 MiB。
+- **[x] ① 已修复** — 改成逐行出图的分块重采样：`RowResampler` 把横向结果放在按源行号取模的环形缓存里（容量 = 纵向最长的核），纵向第 y 行要哪几行算哪几行；文字遮罩 `MaskRows` 同样只留 `2r + 1` 行横向模糊结果；文字感知两路重采样与遮罩逐行混合，直接写进输出。算术顺序与原整张两遍实现相同，输出逐位不变。工作集 = 输出 `dw × dh × ch` 字节 + O(核长 × dw) 的行缓存。修后同一用例峰值：普通 23.3 MiB、文字感知 24.2 MiB。超分管线（`upscale/pipeline.rs`）用的 `resample` / `text_mask` 同步受益。
+- **[x] ② 已加自动化测试** — `image::resample::tests::long_strip_resample_working_set_stays_near_the_output_size`（按线程计的分配器量工作集峰值，须 ≤ 输出 + 8 MiB）；`streaming_matches_the_whole_image_reference_bit_for_bit`（保留旧整张实现作参照，各核 / 域 / 通道 / 放大缩小 / 极端比例 / 文字感知混合逐位相同）。测试分配器从 `font.rs` 挪到共用的 `src/test_alloc.rs`（一个测试二进制只能有一个）。变异实测：环容量改成整图高度后普通 163.9 MiB、文字感知 305.4 MiB，用例红。
+- **备注**：仍需整张持有的是解码后的源图与输出（JPEG 编码器要整块输入），这两块由 `FIT_HQ_MAX_PIXELS` 与解码器限额约束。手机真机峰值内存未实测。

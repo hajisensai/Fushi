@@ -79,6 +79,11 @@ int countDownloadTasksSupporting(
 ///
 /// **单条抛错不中断整批**：一条失败就整批停下，用户既不知道做成了几条，也不知道
 /// 从哪条开始没做——那比部分成功更难收拾。错误计入 [DownloadBatchOutcome.failed]。
+///
+/// **同组整批执行**（HBK-AUDIT-025）：带 [DownloadTaskActions.batchMember] 且其组
+/// 接管该动作的条目，在组内第一条的位置交给组**一次**执行（来源借此复用后端
+/// 枚举、整批只刷新一次），其余条目照旧逐条执行。组与组、组与散条之间仍是
+/// 串行，计数仍逐条。
 Future<DownloadBatchOutcome> runDownloadTaskBatch({
   required Iterable<DownloadTaskEntry> tasks,
   required DownloadBatchAction action,
@@ -88,7 +93,24 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
   int done = 0;
   int unsupported = 0;
   int failed = 0;
-  for (final DownloadTaskEntry task in tasks) {
+  final List<DownloadTaskEntry> taskList = tasks.toList(growable: false);
+  // 组 → 组内条目（只收对本动作有单条执行体的），按出现顺序。
+  final Map<Object, List<DownloadTaskBatchMember<Object?>>> groups =
+      Map<Object, List<DownloadTaskBatchMember<Object?>>>.identity();
+  for (final DownloadTaskEntry task in taskList) {
+    final DownloadTaskBatchMember<Object?>? member = task.actions.batchMember;
+    if (member == null ||
+        !member.group.handlesBatchAction(action) ||
+        downloadTaskBatchCallable(task, action, deleteFiles: deleteFiles) ==
+            null) {
+      continue;
+    }
+    groups
+        .putIfAbsent(member.group, () => <DownloadTaskBatchMember<Object?>>[])
+        .add(member);
+  }
+  final Set<Object> ranGroups = Set<Object>.identity();
+  for (final DownloadTaskEntry task in taskList) {
     final Future<void> Function()? callable = downloadTaskBatchCallable(
       task,
       action,
@@ -96,6 +118,37 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
     );
     if (callable == null) {
       unsupported++;
+      continue;
+    }
+    final DownloadTaskBatchMember<Object?>? member = task.actions.batchMember;
+    final List<DownloadTaskBatchMember<Object?>>? group = member == null
+        ? null
+        : groups[member.group];
+    if (member != null && group != null) {
+      if (!ranGroups.add(member.group)) continue;
+      List<DownloadTaskBatchFailure?> results;
+      try {
+        results = await member.runGroup(action, group);
+        if (results.length != group.length) {
+          throw StateError(
+            'batch group returned ${results.length} results '
+            'for ${group.length} items',
+          );
+        }
+      } on Object catch (error, stackTrace) {
+        results = List<DownloadTaskBatchFailure?>.filled(
+          group.length,
+          DownloadTaskBatchFailure(error, stackTrace),
+        );
+      }
+      for (final DownloadTaskBatchFailure? result in results) {
+        if (result == null) {
+          done++;
+        } else {
+          failed++;
+          onError?.call(result.error, result.stackTrace);
+        }
+      }
       continue;
     }
     try {

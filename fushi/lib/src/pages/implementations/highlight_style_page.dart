@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/reader/favorite_highlight_color_dot.dart';
 import 'package:fushi/src/reader/highlight_stroke_preview.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -359,7 +360,7 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                   children: <Widget>[
                     for (final MapEntry<String, Color> e
                         in kFavoriteHighlightColors.entries)
-                      _ColorDot(
+                      FavoriteHighlightColorDot(
                         key: ValueKey<String>('highlight_style_color_${e.key}'),
                         color: e.value,
                         selected: e.key == _favoriteColor,
@@ -533,51 +534,6 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                 _commit(_config.copyWith(animate: v), replay: v),
           ),
       ],
-    );
-  }
-}
-
-class _ColorDot extends StatelessWidget {
-  const _ColorDot({
-    super.key,
-    required this.color,
-    required this.selected,
-    required this.semanticLabel,
-    required this.onTap,
-  });
-
-  final Color color;
-  final bool selected;
-  final String semanticLabel;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: semanticLabel,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 20,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: AnimatedContainer(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? cs.onSurface : Colors.transparent,
-                width: 2.5,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

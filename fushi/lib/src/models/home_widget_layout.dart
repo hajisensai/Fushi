@@ -6,7 +6,8 @@
 /// 全部是纯函数：不碰 Flutter、不读偏好，页面与测试都只经这里算布局。
 ///
 /// 持久化：偏好 `home_widget_layout` 存
-/// `{"v":1,"compact":[{"k":"today","c":1,"r":1},...],"wide":[...]}`。键缺失或某份
+/// `{"v":1,"compact":[{"k":"today","c":1,"r":1},...],"wide":[...]}`（可配置的组件多一个
+/// 可选字段 `"l"`：「语言目标」格的语言，老版本读的时候忽略它）。键缺失或某份
 /// 布局缺失 = 用户没编辑过那份布局，渲染时由 [migrateHomeWidgetLayout] 现算（不落盘，
 /// 免得同步把迁移态带到别的设备覆盖）。kind id 与 JSON 字段冻结不追改。
 library;
@@ -17,6 +18,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show immutable, listEquals;
 
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalLanguage, resolveStudyGoalLanguage;
 
 /// 小组件在网格里占的格数（列 × 行）。
 @immutable
@@ -172,6 +175,17 @@ enum HomeWidgetKind {
     max: HomeWidgetSize(6, 4),
     compactDefault: HomeWidgetSize(2, 2),
     wideDefault: HomeWidgetSize(2, 2),
+  ),
+
+  /// 「语言目标」：一种语言的日 / 周 / 月目标环（[HomeWidgetItem.language]；null =
+  /// 不限语言的目标）。可以放多块，每块一种语言（[repeatable]）。
+  languageGoals(
+    'language_goals',
+    HomeWidgetCategory.study,
+    min: HomeWidgetSize(1, 1),
+    max: HomeWidgetSize(3, 2),
+    compactDefault: HomeWidgetSize(1, 1),
+    wideDefault: HomeWidgetSize(2, 1),
   );
 
   const HomeWidgetKind(
@@ -215,6 +229,9 @@ enum HomeWidgetKind {
   /// [grid] 里能不能调尺寸（范围不止一格）。
   bool resizableIn(HomeGridKind grid) => minFor(grid) != maxFor(grid);
 
+  /// 能放多块（每块配置不同）：身份是 kind + 配置（[HomeWidgetItem.slot]）。
+  bool get repeatable => this == languageGoals;
+
   static HomeWidgetKind? fromId(Object? id) {
     for (final HomeWidgetKind k in HomeWidgetKind.values) {
       if (k.id == id) return k;
@@ -223,25 +240,67 @@ enum HomeWidgetKind {
   }
 }
 
-/// 布局里的一项：哪种组件、占多大。
+/// [kind] + 配置的布局身份（[HomeWidgetItem.slot]）：不可重复的组件就是 kind id，
+/// 可重复的再带上配置（`language_goals:ja`；不限语言就是 kind id `language_goals`）。
+String homeWidgetSlot(HomeWidgetKind kind, {String? language}) =>
+    kind.repeatable && language != null ? '${kind.id}:$language' : kind.id;
+
+/// 布局里的一项：哪种组件、占多大、（可配置的组件）怎么配。
 @immutable
 class HomeWidgetItem {
-  const HomeWidgetItem(this.kind, this.size);
+  const HomeWidgetItem(
+    this.kind,
+    this.size, {
+    String? language,
+    this.goals = const <String>[],
+  }) : language = language == '' ? null : language;
 
   final HomeWidgetKind kind;
   final HomeWidgetSize size;
 
-  HomeWidgetItem withSize(HomeWidgetSize size) => HomeWidgetItem(kind, size);
+  /// 「语言目标」格的语言（BCP-47；null = 不限语言的目标）。别的组件恒为 null。
+  final String? language;
+
+  /// 「语言目标」格用户挑的目标（记录 id，按显示顺序，至多 3 条）；空 = 自动（这种
+  /// 语言的目标，按周期挑）。删掉的记录渲染时静默跳过，一条都不剩就回到自动。
+  final List<String> goals;
+
+  /// 布局里的身份：同一份布局里每个 slot 至多一块（见 [homeWidgetSlot]）。
+  String get slot => homeWidgetSlot(kind, language: language);
+
+  HomeWidgetItem withSize(HomeWidgetSize size) =>
+      HomeWidgetItem(kind, size, language: language, goals: goals);
+
+  HomeWidgetItem withLanguage(String? language) => HomeWidgetItem(
+    kind,
+    size,
+    language: kind.repeatable ? language : null,
+    goals: goals,
+  );
+
+  HomeWidgetItem withGoals(List<String> goals) => HomeWidgetItem(
+    kind,
+    size,
+    language: language,
+    goals: kind.repeatable
+        ? List<String>.unmodifiable(goals)
+        : const <String>[],
+  );
 
   @override
   bool operator ==(Object other) =>
-      other is HomeWidgetItem && other.kind == kind && other.size == size;
+      other is HomeWidgetItem &&
+      other.kind == kind &&
+      other.size == size &&
+      other.language == language &&
+      listEquals(other.goals, goals);
 
   @override
-  int get hashCode => Object.hash(kind, size);
+  int get hashCode => Object.hash(kind, size, language, Object.hashAll(goals));
 
   @override
-  String toString() => '${kind.id} $size';
+  String toString() =>
+      language == null ? '${kind.id} $size' : '${kind.id}($language) $size';
 }
 
 /// 用户存下的两份布局；某份为 null = 那份没编辑过（渲染时走迁移 / 默认模板）。
@@ -301,7 +360,8 @@ bool homeWidgetAvailable(
   HomeWidgetKind.today ||
   HomeWidgetKind.week ||
   HomeWidgetKind.recentlyAdded ||
-  HomeWidgetKind.panorama => true,
+  HomeWidgetKind.panorama ||
+  HomeWidgetKind.languageGoals => true,
 };
 
 // ── 尺寸 ────────────────────────────────────────────────────────────────
@@ -555,13 +615,47 @@ List<HomeWidgetItem> fillHomeWidgetGaps(
 
 // ── 编辑操作（全部返回新列表，不改入参） ─────────────────────────────────
 
-/// 追加到末尾（装箱后落到第一个能放下的空位）；同一种组件已在列表里则原样返回。
+/// 追加到末尾（装箱后落到第一个能放下的空位）；同一 slot（不可重复的组件 = 同一种，
+/// 「语言目标」= 同一种语言）已在列表里则原样返回。
 List<HomeWidgetItem> addHomeWidget(
   List<HomeWidgetItem> items,
   HomeWidgetItem item,
 ) {
-  if (items.any((HomeWidgetItem e) => e.kind == item.kind)) return items;
+  if (items.any((HomeWidgetItem e) => e.slot == item.slot)) return items;
   return <HomeWidgetItem>[...items, item];
+}
+
+/// 新加一块「语言目标」格时默认用的语言：[candidates] 里第一种还没有格子的
+/// （[taken] 是布局里已有的 slot）；都有了返回 null（调用方让用户挑）。
+String? homeLanguageGoalsDefaultLanguage({
+  required List<String> candidates,
+  required Set<String> taken,
+}) {
+  for (final String language in candidates) {
+    final String slot = homeWidgetSlot(
+      HomeWidgetKind.languageGoals,
+      language: language,
+    );
+    if (!taken.contains(slot)) return language;
+  }
+  return null;
+}
+
+/// 把第 [index] 项（可配置的组件）的语言换成 [language]；换成的 slot 已被别的块
+/// 占着、组件不可配置或没变时原样返回。
+List<HomeWidgetItem> setHomeWidgetLanguage(
+  List<HomeWidgetItem> items,
+  int index,
+  String? language,
+) {
+  if (index < 0 || index >= items.length) return items;
+  final HomeWidgetItem item = items[index];
+  if (!item.kind.repeatable) return items;
+  final HomeWidgetItem next = item.withLanguage(language);
+  if (next == item || items.any((HomeWidgetItem e) => e.slot == next.slot)) {
+    return items;
+  }
+  return <HomeWidgetItem>[...items]..[index] = next;
 }
 
 /// 移除第 [index] 项。
@@ -690,7 +784,7 @@ class HomeWidgetEditSession {
 const int kHomeWidgetLayoutVersion = 1;
 
 /// 解出一份布局列表：非 Map 项 / 未知 kind 丢弃，尺寸钳进该组件在这份网格里的可调范围，
-/// 重复 kind 只留第一个。
+/// 重复 slot（[HomeWidgetItem.slot]）只留第一个。
 List<HomeWidgetItem> _decodeItems(Object? raw, HomeGridKind grid) {
   final List<HomeWidgetItem> out = <HomeWidgetItem>[];
   if (raw is! List) return out;
@@ -698,7 +792,19 @@ List<HomeWidgetItem> _decodeItems(Object? raw, HomeGridKind grid) {
     if (entry is! Map) continue;
     final HomeWidgetKind? kind = HomeWidgetKind.fromId(entry['k']);
     if (kind == null) continue;
-    if (out.any((HomeWidgetItem e) => e.kind == kind)) continue;
+    final Object? l = entry['l'];
+    final String? language = kind.repeatable && l is String
+        ? _layoutLanguage(l, scriptExact: entry['lx'] == true)
+        : null;
+    final Object? g = entry['goals'];
+    final List<String> goals = kind.repeatable && g is List
+        ? <String>[
+            for (final Object? id in g)
+              if (id is String && id.isNotEmpty) id,
+          ].take(kHomeLanguageGoalsMaxGoals).toList()
+        : const <String>[];
+    final String slot = homeWidgetSlot(kind, language: language);
+    if (out.any((HomeWidgetItem e) => e.slot == slot)) continue;
     final Object? c = entry['c'];
     final Object? r = entry['r'];
     final HomeWidgetSize size = clampHomeWidgetSize(
@@ -706,9 +812,20 @@ List<HomeWidgetItem> _decodeItems(Object? raw, HomeGridKind grid) {
       grid,
       HomeWidgetSize(c is int ? c : 0, r is int ? r : 0),
     );
-    out.add(HomeWidgetItem(kind, size));
+    out.add(HomeWidgetItem(kind, size, language: language, goals: goals));
   }
   return out;
+}
+
+/// 「语言目标」格至多显示几条目标。
+const int kHomeLanguageGoalsMaxGoals = 3;
+
+/// 存盘的格子语言：没有 `lx` 标记的带文字写法（`zh-Hans`）是只按主语言匹配时期存的，
+/// 当时也算繁体 → 整门语言（`zh`）。与目标记录同一规则（`study_goal_record.dart`）。
+String _layoutLanguage(String tag, {required bool scriptExact}) {
+  if (scriptExact) return tag;
+  final StudyGoalLanguage? language = resolveStudyGoalLanguage(tag);
+  return language?.script == null ? tag : language!.combined.tag;
 }
 
 /// 解出偏好 `home_widget_layout`。空串 / 坏 JSON / 非对象 → 两份都为 null（走迁移）；
@@ -737,11 +854,19 @@ HomeWidgetLayout decodeHomeWidgetLayout(String json) {
 
 /// 编码布局；null 的那份不写（保持「没编辑过」）。两份都为 null 时返回空串。
 String encodeHomeWidgetLayout(HomeWidgetLayout layout) {
-  List<Map<String, Object>> items(List<HomeWidgetItem> list) =>
-      <Map<String, Object>>[
-        for (final HomeWidgetItem e in list)
-          <String, Object>{'k': e.kind.id, 'c': e.size.cols, 'r': e.size.rows},
-      ];
+  List<Map<String, Object>> items(
+    List<HomeWidgetItem> list,
+  ) => <Map<String, Object>>[
+    for (final HomeWidgetItem e in list)
+      <String, Object>{
+        'k': e.kind.id,
+        'c': e.size.cols,
+        'r': e.size.rows,
+        'l': ?e.language,
+        if (resolveStudyGoalLanguage(e.language)?.script != null) 'lx': true,
+        if (e.goals.isNotEmpty) 'goals': e.goals,
+      },
+  ];
   final List<HomeWidgetItem>? compact = layout.compact;
   final List<HomeWidgetItem>? wide = layout.wide;
   if (compact == null && wide == null) return '';

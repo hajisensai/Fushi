@@ -1,5 +1,6 @@
 import 'package:args/args.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 CtlCommandGroup _group() =>
@@ -36,8 +37,11 @@ void main() {
       'line',
       'character',
       'regenerate',
+      'regenerate-character',
+      'replace',
       'render',
       'render-cancel',
+      'import',
     ]);
   });
 
@@ -187,5 +191,85 @@ void main() {
       _build('render-cancel', <String>['book:vol-1']).path,
       '$_item/render/cancel',
     );
+  });
+
+  test('regenerate-character：角色名进路径；--kind / --dry-run 进 body', () {
+    final CtlRequestSpec all = _build('regenerate-character', <String>[
+      'book:vol-1',
+      '花 子',
+      '--kind',
+      'spoken',
+      '--dry-run',
+    ]);
+    expect(all.method, 'POST');
+    expect(all.path, '$_item/characters/%E8%8A%B1%20%E5%AD%90/regenerate');
+    expect(all.body, <String, Object?>{'kind': 'spoken', 'dryRun': true});
+    expect(
+      _build('regenerate-character', <String>['book:vol-1', 'narrator']).body,
+      isEmpty,
+    );
+    expect(
+      () => _build('regenerate-character', <String>['book:vol-1']),
+      _usageError(),
+    );
+  });
+
+  test('replace：行 id=路径（转绝对路径）或 --map 二选一；--dry-run 进 body', () {
+    final CtlRequestSpec pairs = _build('replace', <String>[
+      'book:vol-1',
+      'p0b0=out/a.wav',
+      'p2b0=out/b.wav',
+      '--dry-run',
+    ]);
+    expect(pairs.method, 'POST');
+    expect(pairs.path, '$_item/lines/replace');
+    expect(pairs.body, <String, Object?>{
+      'files': <String, String>{
+        'p0b0': p.normalize(p.absolute('out/a.wav')),
+        'p2b0': p.normalize(p.absolute('out/b.wav')),
+      },
+      'dryRun': true,
+    });
+    final CtlRequestSpec mapped = _build('replace', <String>[
+      'book:vol-1',
+      '--map',
+      'map.json',
+    ]);
+    expect(mapped.body, <String, Object?>{
+      'mapping': p.normalize(p.absolute('map.json')),
+    });
+    expect(() => _build('replace', <String>['book:vol-1']), _usageError());
+    expect(
+      () => _build('replace', <String>[
+        'book:vol-1',
+        'p0b0=a.wav',
+        '--map',
+        'm.json',
+      ]),
+      _usageError(),
+    );
+    expect(
+      () => _build('replace', <String>['book:vol-1', 'p0b0']),
+      _usageError(),
+    );
+  });
+
+  test('import：清单路径在 CLI 侧转绝对路径；--yes 才带 confirm；缺清单是用法错误', () {
+    final CtlRequestSpec plain = _build('import', <String>[
+      'book:vol-1',
+      'out/manifest.json',
+    ]);
+    expect(plain.method, 'POST');
+    expect(plain.path, '$_item/import');
+    expect(plain.body, <String, Object?>{
+      'manifest': p.normalize(p.absolute('out/manifest.json')),
+    });
+    final CtlRequestSpec yes = _build('import', <String>[
+      'book:vol-1',
+      'out/manifest.json',
+      '--yes',
+    ]);
+    expect(yes.body, containsPair('confirm', true));
+    expect(() => _build('import', <String>['book:vol-1']), _usageError());
   });
 }

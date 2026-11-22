@@ -36,6 +36,9 @@ import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show
@@ -352,6 +355,11 @@ class GlobalLookupController {
   // captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
   OverlayMiningHandler? _currentMiningHandler;
+  // 拍板 design-cross-app-audio-desktop：本次**应用外**查词那一刻钉住的最近一段其他 app
+  // 声音（跨应用语音缓存开着才有；调用方没给的表面——应用内文字、galgame——为 null）。
+  // 默认制卡 / 覆写据此截出查词前最后一句语音当句子音频，查词卡的「调整句子音频」面板
+  // 据此试听 + 调起止。每次根查词重置（_lookupExternal）。
+  Future<CrossAppAudioSnapshot?>? _currentSentenceAudio;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
@@ -1039,6 +1047,11 @@ class GlobalLookupController {
   Future<void> _onHotKeyRouted(GlobalLookupRoute route, String source) async {
     _activateRoute(route);
     glog('hotkey: FIRED (source=$source)');
+    // 跨应用语音缓存：按下的这一刻就钉住前台程序刚播过的声音，不被后面的选区捕获
+    // （UIA / 模拟 Ctrl+C，可能几百毫秒）推迟。没开缓存时秒回 null。
+    final Future<CrossAppAudioSnapshot?> sentenceAudio = CrossAppAudioCapture
+        .instance
+        .snapshot();
     // 只有查词窗真正显示出来，这条路由才继续活着（之后由关窗 [_onOverlayHidden] 作废）；
     // 任何中止（空选区 / 无辅助功能权限 / showAt 被拒 / 异常）都要在 finally 里结束它的
     // 生命周期，否则 [desktopLookupInFlight] 永远为真、台词浮窗预热被静默跳过。
@@ -1144,6 +1157,7 @@ class GlobalLookupController {
         physicalPlacement: null,
         autoRead: true,
         miningHandler: null,
+        sentenceAudio: sentenceAudio,
       );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
@@ -1328,6 +1342,9 @@ class GlobalLookupController {
   /// 打开的桌面弹窗必须带上游戏 HWND——「点卡外关闭」那一记 down/up 要成对
   /// 吞掉，不得穿透到游戏推进台词（与 direct galCard 同一条消费策略）。null =
   /// 普通桌面查词（热键 / 浮窗点词），不发这条 channel，点击照旧交给原应用。
+  ///
+  /// [sentenceAudio]：调用方在查词那一刻钉住的跨应用语音快照（只有查的是**其他应用**
+  /// 里的文字时才给，见 [CrossAppAudioCapture.snapshot]）；默认制卡路径据此带句子音频。
   Future<bool> lookupText(
     String text, {
     String sentence = '',
@@ -1337,6 +1354,7 @@ class GlobalLookupController {
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) async {
     final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
     final GlobalLookupRoute route = inherited.source == 'galCard'
@@ -1353,6 +1371,7 @@ class GlobalLookupController {
         miningHandler: miningHandler,
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
         rubySpans: rubySpans,
+        sentenceAudio: sentenceAudio,
       ),
     );
   }
@@ -1366,6 +1385,7 @@ class GlobalLookupController {
     required OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -1416,6 +1436,7 @@ class GlobalLookupController {
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
         rubySpans: termRubySpans,
         pendingSearch: search,
+        sentenceAudio: sentenceAudio,
       );
       return shown;
     } finally {
@@ -1535,6 +1556,7 @@ class GlobalLookupController {
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     Future<DictionarySearchResult>? pendingSearch,
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1572,6 +1594,10 @@ class GlobalLookupController {
       }
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
+      // 默认制卡路径据此带句子音频；带委托的表面（截屏识字、galgame、网页视频）由委托
+      // 自己决定（截屏识字的委托拿的是同一份快照）。查词卡的「调整句子音频」面板两种
+      // 表面都读它（拍板 design-cross-app-audio-trim-ui）——调用方不给就没有面板。
+      _currentSentenceAudio = sentenceAudio;
       // Retire every acknowledgement belonging to the previous lookup before
       // the asynchronous dictionary search yields. The renderer's epoch itself
       // is host-global and is intentionally NOT reset here.
@@ -2331,6 +2357,7 @@ class GlobalLookupController {
       // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
       sentenceContext: _currentSentence,
       miningHandler: _currentMiningHandler,
+      sentenceAudio: _currentSentenceAudio,
       // BUG-3652 续：本消息在发起它的查词 route 的 zone 里派发；回包时这张卡还在屏上
       // ⇔ 那条 route 仍是当前 route 且未作废（关窗、换词都会作废它）。
       isOriginOnScreen: _mineOriginProbe(GlobalLookupChannel.currentRoute),

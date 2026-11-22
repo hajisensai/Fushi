@@ -7,8 +7,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_session.dart'
+    show musicMediaSessionArtHidden;
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -460,6 +464,211 @@ void main() {
           entryKey: 'B',
         ),
         isNull,
+      );
+    });
+  });
+
+  group('音乐专辑（拍板台 NCzkl6oLnf-adult-cover）', () {
+    Future<void> album(String uid, {String? cover}) async {
+      await db.writeMusicScanBatch(
+        MusicScanBatchWrite(
+          tracks: <MusicTracksCompanion>[
+            for (final String n in <String>['01', '02'])
+              MusicTracksCompanion.insert(
+                trackUid: '$uid-$n',
+                path: '/m/$uid/$n.mp3',
+                title: n,
+                albumUid: Value<String?>(uid),
+                fileMtimeAt: 1,
+                fileSize: 1,
+                addedAt: 1,
+              ),
+          ],
+          albums: <MusicAlbumsCompanion>[
+            MusicAlbumsCompanion.insert(
+              albumUid: uid,
+              title: uid,
+              coverPath: Value<String?>(cover),
+              addedAt: 1,
+              updatedAt: 1,
+            ),
+          ],
+          artists: const <MusicArtistsCompanion>[],
+          credits: const <MusicTrackCreditsCompanion>[],
+        ),
+      );
+    }
+
+    test('快照：被标专辑的封面文件与曲目音频（内嵌封面图源）都认，别的专辑不认', () async {
+      await album('r18', cover: '/covers/dlsite_RJ1.jpg');
+      await album('safe', cover: '/covers/safe.jpg');
+      await db.setMediaNsfw(TagHostKind.musicAlbum, 'r18', true);
+      final MediaNsfwSnapshot snap = await MediaNsfwSnapshot.load(db);
+      expect(snap.isMusicAlbumNsfw('r18'), isTrue);
+      expect(snap.isNsfw(TagHostKind.musicAlbum, 'r18'), isTrue);
+      expect(snap.isMusicAlbumNsfw('safe'), isFalse);
+      expect(
+        snap.isMusicCoverNsfw(coverPath: '/covers/dlsite_RJ1.jpg'),
+        isTrue,
+      );
+      expect(snap.isMusicCoverNsfw(embeddedFromPath: '/m/r18/02.mp3'), isTrue);
+      expect(snap.isMusicCoverNsfw(coverPath: '/covers/safe.jpg'), isFalse);
+      expect(
+        snap.isMusicCoverNsfw(embeddedFromPath: '/m/safe/01.mp3'),
+        isFalse,
+      );
+      expect(snap.isEmpty, isFalse);
+      expect(
+        await nsfwCollectionsContaining(db, TagHostKind.musicAlbum, 'r18'),
+        isEmpty,
+      );
+    });
+
+    test('快照流：标专辑 / 专辑补上封面都重发，内容没变的表写入不重发', () async {
+      await album('a');
+      final List<MediaNsfwSnapshot> got = <MediaNsfwSnapshot>[];
+      final StreamController<void> tickCtl = StreamController<void>.broadcast();
+      final StreamSubscription<MediaNsfwSnapshot> sub =
+          watchMediaNsfwSnapshot(db).listen((MediaNsfwSnapshot s) {
+            got.add(s);
+            tickCtl.add(null);
+          });
+      Future<void> nextEmit() =>
+          tickCtl.stream.first.timeout(const Duration(seconds: 5));
+
+      await nextEmit();
+      expect(got.single.isMusicAlbumNsfw('a'), isFalse);
+
+      final Future<void> marked = nextEmit();
+      await db.setMediaNsfw(TagHostKind.musicAlbum, 'a', true);
+      await marked;
+      expect(
+        got.last.isMusicCoverNsfw(embeddedFromPath: '/m/a/01.mp3'),
+        isTrue,
+      );
+      expect(got.last.isMusicCoverNsfw(coverPath: '/c/a2.jpg'), isFalse);
+
+      final Future<void> recovered = nextEmit();
+      await db.setMusicAlbumScrapedCover(
+        albumUid: 'a',
+        coverPath: '/c/a2.jpg',
+        updatedAt: 2,
+      );
+      await recovered;
+      expect(got.last.isMusicCoverNsfw(coverPath: '/c/a2.jpg'), isTrue);
+
+      // 与 NSFW 无关的专辑入库：快照内容不变，不再广播。
+      final int before = got.length;
+      await album('other');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(got.length, before);
+      await sub.cancel();
+      await tickCtl.close();
+    });
+
+    testWidgets('MusicCover 按图源模糊：NSFW 专辑的封面 / 内嵌封面曲目模糊，别的不模糊', (
+      WidgetTester tester,
+    ) async {
+      final MediaNsfwSnapshot snap = (await tester.runAsync(() async {
+        await album('r18', cover: '/covers/r18.jpg');
+        await db.setMediaNsfw(TagHostKind.musicAlbum, 'r18', true);
+        return MediaNsfwSnapshot.load(db);
+      }))!;
+      await tester.pumpWidget(
+        MediaNsfwState(
+          blurCovers: true,
+          snapshot: snap,
+          child: MaterialApp(
+            theme: ThemeData(
+              extensions: const <ThemeExtension<dynamic>>[
+                FushiEinkTheme(false),
+              ],
+            ),
+            home: const Scaffold(
+              body: Column(
+                children: <Widget>[
+                  MusicCover(coverPath: '/covers/r18.jpg', size: 40),
+                  MusicCover(embeddedFromPath: '/m/r18/01.mp3', size: 40),
+                  MusicCover(coverPath: '/covers/other.jpg', size: 40),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        <bool>[
+          for (final ImageFiltered f in tester.widgetList<ImageFiltered>(
+            find.byKey(const ValueKey<String>('nsfw-cover-blur')),
+          ))
+            f.enabled,
+        ],
+        <bool>[true, true, false],
+      );
+    });
+
+    test('系统媒体控件：开关开 + NSFW 专辑不给封面；快照未到时本地专辑先不给', () async {
+      await album('r18', cover: '/covers/r18.jpg');
+      await album('safe', cover: '/covers/safe.jpg');
+      await db.setMediaNsfw(TagHostKind.musicAlbum, 'r18', true);
+      final MediaNsfwSnapshot snap = await MediaNsfwSnapshot.load(db);
+      MusicPlayItem item(String? albumUid, String? cover) => MusicPlayItem(
+        trackUid: 't',
+        path: '/x.mp3',
+        title: 't',
+        albumUid: albumUid,
+        coverPath: cover,
+      );
+      expect(
+        musicMediaSessionArtHidden(
+          blur: true,
+          snapshot: snap,
+          item: item('r18', '/covers/r18.jpg'),
+        ),
+        isTrue,
+      );
+      expect(
+        musicMediaSessionArtHidden(
+          blur: true,
+          snapshot: snap,
+          item: item('safe', '/covers/safe.jpg'),
+        ),
+        isFalse,
+      );
+      expect(
+        musicMediaSessionArtHidden(
+          blur: true,
+          snapshot: snap,
+          item: item(null, '/covers/r18.jpg'),
+        ),
+        isTrue,
+        reason: '没有专辑 uid 也按封面图源认',
+      );
+      expect(
+        musicMediaSessionArtHidden(
+          blur: false,
+          snapshot: snap,
+          item: item('r18', '/covers/r18.jpg'),
+        ),
+        isFalse,
+      );
+      expect(
+        musicMediaSessionArtHidden(
+          blur: true,
+          snapshot: null,
+          item: item('safe', '/covers/safe.jpg'),
+        ),
+        isTrue,
+        reason: 'fail-closed',
+      );
+      expect(
+        musicMediaSessionArtHidden(
+          blur: true,
+          snapshot: null,
+          item: item(null, 'https://srv/cover.jpg'),
+        ),
+        isFalse,
       );
     });
   });

@@ -63,11 +63,10 @@ use rusqlite::types::ValueRef;
 use serde_json::{Map, Value};
 
 use super::alias::{WRITER_UPTO_KEY, key_ids_by};
-use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref, body_of};
+use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref};
 use super::schema::sql;
 use crate::card_cache::ids_to_names;
 use crate::gen4::name::read_edit_key;
-use crate::gen4::op::Body4;
 use crate::gen4::stamp::StampHlc;
 use crate::gen4_ids::alias::WriterBound;
 use crate::gen4_ids::alias::strict_id;
@@ -318,6 +317,8 @@ pub struct ClassWinner {
     pub value: String,
     /// 有值不同的并发写入。
     pub conflict: bool,
+    /// 胜出写入的操作主键（`reg_ix.k`）。
+    pub(super) k: i64,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -371,6 +372,45 @@ impl<'t, 'c> Index<'t, 'c> {
             .into_iter()
             .next()
             .map(|w| w.value))
+    }
+
+    /// [Index::class_value_in] 连同生效写入的排序键（`registers::WriteOrder`）：卡片标志按血统继承时，同一层几张前身
+    /// 都有生效写入的取最新的（`registers::later`，新代恢复 `cmd/writes_restore.rs` 用）。排序键取自这条写入按类拼出的
+    /// 落库行（[Index::edit_lines_as]，写入者已归回），与缓存层喂给寄存器内核的那一行同一份。
+    pub(super) fn class_winner_in(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        canon_key: &str,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Option<(String, crate::registers::WriteOrder)>, String> {
+        let Some(w) = self
+            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+            .into_iter()
+            .next()
+        else {
+            return Ok(None);
+        };
+        let writers = self.writer_aliases()?;
+        let renamed = Renamed::default();
+        let c = Canon {
+            writers: &writers,
+            renamed: &renamed,
+            entity: self.canonical(canon)?.text(),
+            key: canon_key.to_owned(),
+            keys: None,
+        };
+        let lines = self.edit_lines_as(&[w.k], &|_| true, Some(&c))?;
+        let line = lines
+            .first()
+            .ok_or_else(|| format!("gen4 index: register row {} renders no line", w.k))?;
+        let order = crate::registers::register_winner(
+            &[(line.json.as_str(), line.server_time, None)],
+            canon_key,
+        )?
+        .map(|(_, o)| o)
+        .unwrap_or_default();
+        Ok(Some((w.value, order)))
     }
 
     /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
@@ -586,6 +626,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 op: self.t.id_of_key(k)?,
                 value,
                 conflict: state == R_CONFLICT,
+                k,
             });
         }
         Ok(out)
@@ -811,14 +852,10 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一条修改的 dot 与旧 HLC 的物理时刻、计数（带旧戳且 HLC 解得开时才有）。
     fn dot_of(&self, k: i64) -> Result<DotOf, String> {
-        let e = self
-            .t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+        let Some(e) = self.t.edit_read(k, false)? else {
             return Err(format!("gen4 index: register row {k} is not an edit"));
         };
-        Ok(match &ed.stamp {
+        Ok(match &e.head.stamp {
             Some(s) => DotOf {
                 writer: s.writer.clone(),
                 seq: s.seq,

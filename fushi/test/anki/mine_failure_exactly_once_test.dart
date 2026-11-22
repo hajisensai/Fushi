@@ -340,7 +340,7 @@ void main() {
         initialResult: _hit,
       );
       await tester.pumpWidget(_host(controller));
-      final mine = _startMine(entry.webViewKey.currentState!);
+      final mine = _startMine(entry.webViewKey.webViewState!);
 
       mine.complete(_failure());
       await tester.pump();
@@ -370,12 +370,12 @@ void main() {
         initialResult: _hit,
       );
       await tester.pumpWidget(_host(controller));
-      final mine = _startMine(entry.webViewKey.currentState!);
+      final mine = _startMine(entry.webViewKey.webViewState!);
 
       controller.clear();
       await tester.pump();
       expect(
-        entry.webViewKey.currentState,
+        entry.webViewKey.webViewState,
         isNull,
         reason: '前提：弹窗 WebView 已卸载',
       );
@@ -407,14 +407,14 @@ void main() {
       );
       expect(entry.isWarmSlot, isTrue, reason: '前提：复用的是常驻热槽');
       await tester.pumpWidget(_host(controller));
-      final DictionaryPopupWebViewState state = entry.webViewKey.currentState!;
+      final DictionaryPopupWebViewState state = entry.webViewKey.webViewState!;
       final mine = _startMine(state);
 
       // 用户关掉弹窗：热槽不销毁，只是停驻到屏外等下一次查词。
       controller.pruneToWarmSlot();
       await tester.pump();
       expect(
-        identical(entry.webViewKey.currentState, state),
+        identical(entry.webViewKey.webViewState, state),
         isTrue,
         reason: '前提：同一个 WebView 仍挂载——只看 mounted 会把它当成还在屏上',
       );

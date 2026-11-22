@@ -168,4 +168,82 @@ void main() {
       }
     });
   });
+
+  // 反馈 WrLFAXNkSw：有声在场时裸空格 / 左右键默认由有声接管（与有声书同一惯例）。
+  group('resolveMangaAudioKeyTakeover', () {
+    ShortcutAction? call(
+      LogicalKeyboardKey key, {
+      ShortcutAction? page = ShortcutAction.mangaPageForward,
+      bool audio = true,
+      bool dict = false,
+      Set<ModifierKey> modifiers = const <ModifierKey>{},
+    }) => resolveMangaAudioKeyTakeover(
+      key: key,
+      modifiers: modifiers,
+      pageAction: page,
+      audioActive: audio,
+      dictionaryShown: dict,
+    );
+
+    test('有声在场：空格 = 播放暂停，左右键按校正后的页序 = 下一句 / 上一句', () {
+      expect(
+        call(LogicalKeyboardKey.space),
+        ShortcutAction.mangaAudioPlayPause,
+      );
+      // rtl 下左键已被校正成前进 → 下一句；右键后退 → 上一句。
+      expect(
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          page: resolveMangaArrowPageTurn(
+            key: LogicalKeyboardKey.arrowLeft,
+            modifiers: const <ModifierKey>{},
+            rtl: true,
+            boundAction: ShortcutAction.mangaPageBackward,
+          ),
+        ),
+        ShortcutAction.mangaAudioNextLine,
+      );
+      expect(
+        call(
+          LogicalKeyboardKey.arrowRight,
+          page: ShortcutAction.mangaPageBackward,
+        ),
+        ShortcutAction.mangaAudioPreviousLine,
+      );
+    });
+
+    test('没有有声 / 弹窗可见 / 带修饰键：不接管', () {
+      expect(call(LogicalKeyboardKey.space, audio: false), isNull);
+      expect(call(LogicalKeyboardKey.arrowLeft, audio: false), isNull);
+      expect(call(LogicalKeyboardKey.space, dict: true), isNull);
+      expect(call(LogicalKeyboardKey.arrowRight, dict: true), isNull);
+      expect(
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+        ),
+        isNull,
+      );
+      expect(
+        call(
+          LogicalKeyboardKey.space,
+          modifiers: const <ModifierKey>{ModifierKey.shift},
+        ),
+        isNull,
+      );
+    });
+
+    test('左右键改绑成别的动作时让路；PageDown 等其它翻页键不接管', () {
+      expect(
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          page: ShortcutAction.mangaToggleBookmark,
+        ),
+        isNull,
+      );
+      expect(call(LogicalKeyboardKey.arrowLeft, page: null), isNull);
+      expect(call(LogicalKeyboardKey.pageDown), isNull);
+      expect(call(LogicalKeyboardKey.arrowDown), isNull);
+    });
+  });
 }

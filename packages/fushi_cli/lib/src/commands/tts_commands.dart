@@ -2,13 +2,15 @@ import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
 
-/// `fushi_cli tts …`：漫画有声——演出稿、AI 看图标注、整卷生成（app 侧路由见
+/// `fushi_cli tts …`：漫画有声——演出稿、AI 看图标注、整卷生成、导入外部做好的成品（app 侧路由见
 /// `fushi/lib/src/ops/ctl_tts_routes.dart`）。条目键用 `book:<bookKey>`（见 library ls），
 /// 只认本地漫画卷。
 const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'tts',
-    summary: '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句重生成 / 整卷生成',
+    summary:
+        '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句或按角色重生成 / 按句换本地音频 / '
+        '整卷生成 / 导入成品',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'voices',
@@ -73,6 +75,22 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
         build: _buildRegenerate,
       ),
       CtlCommandSpec(
+        name: 'regenerate-character',
+        summary: '按角色批量重生成：这个角色已生成的合成句各换新种子，排进制作队列（--dry-run 只列句子）',
+        usage: '<key> <角色名|narrator|unknown>',
+        configure: _configureRegenerateCharacter,
+        build: _buildRegenerateCharacter,
+        render: _renderRegenerateCharacter,
+      ),
+      CtlCommandSpec(
+        name: 'replace',
+        summary: '按句换上本地音频（全有或全无；--dry-run 只预检）：<行 id>=<音频路径> 或 --map 映射 JSON',
+        usage: '<key> [<行 id>=<音频路径> ...]',
+        configure: _configureReplace,
+        build: _buildReplace,
+        render: _renderReplace,
+      ),
+      CtlCommandSpec(
         name: 'render',
         summary: '排整卷生成（进制作队列；生成完会替换这卷原有的音频）',
         usage: '<key>',
@@ -85,6 +103,14 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
         summary: '取消这一卷在排队 / 在跑的生成任务',
         usage: '<key>',
         build: _buildRenderCancel,
+      ),
+      CtlCommandSpec(
+        name: 'import',
+        summary: '导入做好的成品清单 manifest.json（与漫画卡「导入漫画有声」同一套校验；已有成品要 --yes 才替换）',
+        usage: '<key> <manifest.json>',
+        configure: _configureImport,
+        build: _buildImport,
+        render: _renderImport,
       ),
     ],
   ),
@@ -252,6 +278,57 @@ CtlRequestSpec _buildRegenerate(CtlCommandContext c) {
   );
 }
 
+void _configureRegenerateCharacter(ArgParser parser) => parser
+  ..addOption(
+    'kind',
+    allowed: _kinds.where((String k) => k != 'skip'),
+    help: '只重生成这一类台词',
+  )
+  ..addFlag('dry-run', negatable: false, help: '只列出会重生成 / 跳过的句子，不动任何东西');
+
+CtlRequestSpec _buildRegenerateCharacter(CtlCommandContext c) {
+  final String path =
+      '${_item(c)}/characters/${Uri.encodeComponent(c.positional(1, '角色名').trim())}/regenerate';
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      if (c.option('kind') case final String kind) 'kind': kind,
+      if (c.flag('dry-run')) 'dryRun': true,
+    },
+  );
+}
+
+void _configureReplace(ArgParser parser) => parser
+  ..addOption('map', help: '映射 JSON 文件：{"行 id": "音频路径"}（相对路径按该文件所在目录）')
+  ..addFlag('dry-run', negatable: false, help: '只逐句预检，不动任何东西');
+
+CtlRequestSpec _buildReplace(CtlCommandContext c) {
+  final String path = '${_item(c)}/lines/replace';
+  final Map<String, String> files = <String, String>{};
+  for (final String raw in c.rest.skip(1)) {
+    final int eq = raw.indexOf('=');
+    if (eq <= 0 || eq == raw.length - 1) {
+      throw CtlUsageError('应为 <行 id>=<音频路径>，收到「$raw」');
+    }
+    files[raw.substring(0, eq).trim()] = ctlAbsolutePath(
+      raw.substring(eq + 1).trim(),
+    );
+  }
+  final String? map = c.option('map');
+  if ((map == null) == files.isEmpty) {
+    throw const CtlUsageError('给 <行 id>=<音频路径>（可多个）或 --map <映射 JSON>，二选一');
+  }
+  c.positional(0, 'key');
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      if (files.isNotEmpty) 'files': files,
+      if (map != null) 'mapping': ctlAbsolutePath(map),
+      if (c.flag('dry-run')) 'dryRun': true,
+    },
+  );
+}
+
 void _configureRender(ArgParser parser) =>
     parser.addOption('voice', help: '没有更细指派时用的声音 id（默认：上次生成的声音 / 当前朗读声音）');
 
@@ -264,6 +341,17 @@ CtlRequestSpec _buildRender(CtlCommandContext c) => CtlRequestSpec.post(
 
 CtlRequestSpec _buildRenderCancel(CtlCommandContext c) =>
     CtlRequestSpec.post('${_item(c)}/render/cancel');
+
+void _configureImport(ArgParser parser) =>
+    parser.addFlag('yes', negatable: false, help: '这一卷已有有声成品时确认替换');
+
+CtlRequestSpec _buildImport(CtlCommandContext c) => CtlRequestSpec.post(
+  '${_item(c)}/import',
+  body: <String, Object?>{
+    'manifest': ctlAbsolutePath(c.positional(1, 'manifest.json')),
+    if (c.flag('yes')) 'confirm': true,
+  },
+);
 
 // ── render ──────────────────────────────────────────────────────────────
 
@@ -322,4 +410,67 @@ String _renderStatusPart(Object? data) {
     return '${data['alreadyQueued'] == true ? '已在队列里' : '已排进队列'}：${_task(render)}';
   }
   return '已开始标注：${_task(data)}';
+}
+
+String _renderRegenerateCharacter(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final List<Object?> lines = data['lines'] is List
+      ? data['lines']! as List<Object?>
+      : const <Object?>[];
+  final List<Object?> skipped = data['skipped'] is List
+      ? data['skipped']! as List<Object?>
+      : const <Object?>[];
+  final StringBuffer out = StringBuffer(
+    data['dryRun'] == true
+        ? '${data['name']}：会重生成 ${lines.length} 句，跳过 ${skipped.length} 句\n'
+        : '${data['name']}：${lines.length} 句已排进队列（${_task(data['render'])}），'
+              '跳过 ${skipped.length} 句\n',
+  );
+  out.write(
+    renderCtlTable(lines, const <(String, String)>[
+      ('id', 'line'),
+      ('页', 'page'),
+      ('类型', 'kind'),
+      ('文字', 'text'),
+    ], empty: '没有要重生成的句子'),
+  );
+  if (skipped.isNotEmpty) {
+    out.write('\n跳过：\n');
+    out.write(
+      renderCtlTable(skipped, const <(String, String)>[
+        ('id', 'line'),
+        ('原因', 'reason'),
+      ]),
+    );
+  }
+  return out.toString();
+}
+
+String _renderReplace(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final String head = data['dryRun'] == true
+      ? (data['ok'] == true ? '预检通过，可以换' : '预检没通过（什么都没改）')
+      : '已换 ${data['replaced']} 句，原样 ${data['unchanged']} 句';
+  final List<(String, String)> columns = data['dryRun'] == true
+      ? const <(String, String)>[
+          ('id', 'line'),
+          ('结果', 'code'),
+          ('说明', 'message'),
+          ('文件', 'file'),
+        ]
+      : const <(String, String)>[
+          ('id', 'line'),
+          ('结果', 'status'),
+          ('时长', 'durationMs'),
+          ('原时长', 'previousDurationMs'),
+        ];
+  return '$head\n${renderCtlTable(data['lines'], columns, empty: '没有句子')}';
+}
+
+String _renderImport(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return '${data['replaced'] == true ? '已替换' : '已导入'}：${data['key']}，'
+      '${data['pages']} 页 ${data['lines']} 句，'
+      '共 ${((data['durationMs'] as num? ?? 0) / 1000).toStringAsFixed(1)} 秒'
+      '${data['replaced'] == true ? '（原成品：${data['previous']}）' : ''}';
 }

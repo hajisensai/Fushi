@@ -5091,3 +5091,65 @@ function testHeadwordClickEndingDragSelectionKeepsSelection() {
 
 testHeadwordClickEndingDragSelectionKeepsSelection();
 console.log('headword drag-selection tests passed');
+
+// 拍板 design-cross-app-audio-trim-ui：应用外查词卡的「调整句子音频」面板。
+// 区间几何（拖哪端只动哪端、整体平移保长度、不短于最短时长）与写进 payload 的覆盖项
+// （相对自动截句的偏移；没动 = 不带覆盖项），以及入口探测只在宿主声明有跨应用语音时才发。
+async function testCrossAppAudioPanelGeometryAndProbe() {
+  const context = loadPopup();
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  const clamp = context.crossAppAudioClampRange;
+
+  assert.deepStrictEqual(plain(clamp({startMs: 1950, endMs: 2000}, 5000, 100, 'start')),
+    {startMs: 1900, endMs: 2000}, 'dragging the start past the end keeps the minimum clip');
+  assert.deepStrictEqual(plain(clamp({startMs: 1000, endMs: 1020}, 5000, 100, 'end')),
+    {startMs: 1000, endMs: 1100}, 'dragging the end before the start keeps the minimum clip');
+  assert.deepStrictEqual(plain(clamp({startMs: -300, endMs: 700}, 5000, 100, 'move')),
+    {startMs: 0, endMs: 1000}, 'moving the whole clip keeps its length inside the snapshot');
+  assert.deepStrictEqual(plain(clamp({startMs: 4500, endMs: 5500}, 5000, 100, 'move')),
+    {startMs: 4000, endMs: 5000});
+  assert.deepStrictEqual(plain(clamp({startMs: 200, endMs: 9000}, 5000, 100, 'end')),
+    {startMs: 200, endMs: 5000});
+
+  const overrides = context.crossAppAudioOverrides;
+  const base = {startMs: 1000, endMs: 2000};
+  assert.equal(overrides(base, {startMs: 1000, endMs: 2000}), null,
+    'an untouched range must mine exactly like the one-click +');
+  assert.deepStrictEqual(plain(overrides(base, {startMs: 600, endMs: 2000})),
+    {audioStartDeltaMs: -400});
+  assert.deepStrictEqual(plain(overrides(base, {startMs: 1250, endMs: 2400})),
+    {audioStartDeltaMs: 250, audioEndDeltaMs: 400});
+
+  const payload = context.__fushiApplyPendingMineOverrides({expression: '猫'});
+  assert.equal(payload.miningOverrides, undefined,
+    'with no confirmed panel the mine payload carries no overrides');
+
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    calls.push(name);
+    return Promise.resolve(true);
+  };
+  assert.equal(await context.crossAppAudioAvailable(), false,
+    'hosts that never declared cross-app audio must not be probed');
+  assert.deepStrictEqual(calls, []);
+  context.window.__fushiCrossAppAudioHost = true;
+  assert.equal(await context.crossAppAudioAvailable(), true);
+  assert.equal(await context.crossAppAudioAvailable(), true);
+  assert.deepStrictEqual(calls, ['crossAppAudioAvailable'],
+    'one probe per render, shared by every entry button');
+  context.__fushiResetCrossAppAudioProbe();
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    calls.push(name);
+    return Promise.reject(new Error('bridge gone'));
+  };
+  assert.equal(await context.crossAppAudioAvailable(), false,
+    'a failing probe hides the entry instead of throwing');
+}
+
+testCrossAppAudioPanelGeometryAndProbe().then(
+  () => console.log('cross-app audio panel tests passed'),
+  (error) => {
+    console.error(error);
+    process.exitCode = 1;
+  },
+);

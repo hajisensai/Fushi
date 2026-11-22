@@ -27,6 +27,8 @@ import 'package:fushi/src/media/music/music_album_versions.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show openMusicPlayerPage;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart'
     show musicAlbumBadges;
@@ -218,6 +220,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
     List<MusicTrackRow> tracks, {
     int start = 0,
     bool shuffle = false,
+    bool openPlayer = false,
   }) {
     if (tracks.isEmpty) return;
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
@@ -233,6 +236,9 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
         source: _source,
       ),
     );
+    // 「播放全部 / 随机播放」= 开始听这张：直接进播放页（返回回到 CD 详情）。点单曲
+    // 只换曲，不离开详情。
+    if (openPlayer) openMusicPlayerPage(context);
   }
 
   void _close() => unawaited(Navigator.of(context).maybePop());
@@ -597,7 +603,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
               ),
               onPressed: first.tracks.isEmpty
                   ? null
-                  : () => _play(first.tracks),
+                  : () => _play(first.tracks, openPlayer: true),
               icon: const FushiIcon(FushiIcons.play),
               label: Text(t.music_play_all),
             ),
@@ -612,7 +618,7 @@ class _MusicCdDetailPanelState extends ConsumerState<MusicCdDetailPanel>
               ),
               onPressed: first.tracks.isEmpty
                   ? null
-                  : () => _play(first.tracks, shuffle: true),
+                  : () => _play(first.tracks, shuffle: true, openPlayer: true),
               icon: const FushiIcon(FushiIcons.shuffle),
               label: Text(t.music_shuffle_play),
             ),

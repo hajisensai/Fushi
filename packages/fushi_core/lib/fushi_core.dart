@@ -6,6 +6,7 @@ export 'src/database/collection_order.dart';
 export 'src/database/collection_organize.dart';
 export 'src/database/collection_book_identity.dart';
 export 'src/database/database.dart';
+export 'src/database/db_disk_space.dart';
 export 'src/database/db_schema_version.dart';
 export 'src/database/database_check.dart';
 export 'src/database/sql_functions.dart';

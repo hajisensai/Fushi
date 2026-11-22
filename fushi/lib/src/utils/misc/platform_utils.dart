@@ -116,24 +116,145 @@ ScrollPhysics desktopAwareScrollPhysics() {
 /// 手势竞技场，把「拖卡进合集」变成「拖动网格滚动」。横向区没有这个冲突——横拖
 /// 归滚动、纵拖归拖卡，两者都要过 `kTouchSlop`、方向先满足者胜，正好是自然分工。
 ///
-/// 同理，区内若有 `LongPressDraggable`（标签 chip）也不冲突：按下即动归滚动、
-/// 按住不动满 `kLongPressTimeout` 归拖拽。
+/// **区内有长按手势（如标签 chip 的长按拖动重排）时传 [mouseDragController]**
+/// （BUG-5174）：`Scrollable` 自带的横拖识别器对鼠标的起拖门槛只有
+/// `kPrecisePointerHitSlop`（1 px，`computeHitSlop` 对鼠标无视
+/// `DeviceGestureSettings`），长按计时里手一抖就被横滚抢走（BUG-4899）。传了
+/// 控制器后，鼠标拖动不再交给 `Scrollable`，改由本件以 [longPressTolerantHitSlop]
+/// （鼠标取 `kTouchSlop`）起滚并驱动该控制器的 position；区内长按识别用同一门槛
+/// 容忍抖动，于是「按下就拖 → 横滚、按住不动满长按 → 长按、不动松开 → 单击」
+/// 三者泾渭分明。触屏 / 触控板 / 触笔仍走 `Scrollable` 自己的识别器。
 class HorizontalDragScrollable extends StatelessWidget {
-  const HorizontalDragScrollable({required this.child, super.key});
+  const HorizontalDragScrollable({
+    required this.child,
+    this.mouseDragController,
+    super.key,
+  });
 
   final Widget child;
 
+  /// 非 null 时鼠标拖动按 [longPressTolerantHitSlop] 起滚、驱动这个控制器
+  /// （必须就是 [child] 里那个横向滚动件的控制器）。见类文档。
+  final ScrollController? mouseDragController;
+
   @override
-  Widget build(BuildContext context) => ScrollConfiguration(
-    behavior: ScrollConfiguration.of(context).copyWith(
-      dragDevices: const <PointerDeviceKind>{
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.stylus,
-        PointerDeviceKind.trackpad,
-      },
-    ),
-    child: child,
+  Widget build(BuildContext context) {
+    final ScrollController? mouseController = mouseDragController;
+    final Widget configured = ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(
+        dragDevices: <PointerDeviceKind>{
+          PointerDeviceKind.touch,
+          if (mouseController == null) PointerDeviceKind.mouse,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+        },
+      ),
+      child: child,
+    );
+    if (mouseController == null) return configured;
+    return _LongPressTolerantMouseDragScroller(
+      controller: mouseController,
+      child: configured,
+    );
+  }
+}
+
+/// 容忍长按计时内手抖的起拖门槛（BUG-5174）：鼠标取 `kTouchSlop`，其余指针沿用
+/// Flutter 的 [computeHitSlop]（触屏 / 触控板本来就是 `kTouchSlop` 量级）。
+///
+/// 同一区域里「长按」与「拖动滚动」两个识别器必须用**同一个**门槛：位移先超门槛
+/// 就是滚动（长按同一帧认输），位移不超门槛撑满长按时长就是长按（滚动认输）。
+double longPressTolerantHitSlop(
+  PointerDeviceKind kind,
+  DeviceGestureSettings? settings,
+) => kind == PointerDeviceKind.mouse
+    ? kTouchSlop
+    : computeHitSlop(kind, settings);
+
+/// 只认鼠标、门槛取 [longPressTolerantHitSlop] 的横拖识别器。
+class _LongPressTolerantHorizontalDragRecognizer
+    extends HorizontalDragGestureRecognizer {
+  _LongPressTolerantHorizontalDragRecognizer({super.debugOwner})
+    : super(
+        supportedDevices: const <PointerDeviceKind>{PointerDeviceKind.mouse},
+      );
+
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+    PointerDeviceKind pointerDeviceKind,
+    double? deviceTouchSlop,
+  ) =>
+      globalDistanceMoved.abs() >
+      longPressTolerantHitSlop(pointerDeviceKind, gestureSettings);
+}
+
+/// 用 [_LongPressTolerantHorizontalDragRecognizer] 驱动 [controller] 的
+/// position，拖动 / 按住 / 惯性与 `Scrollable` 自己的拖动处理同一套
+/// （`ScrollPosition.hold` / `drag`）。
+class _LongPressTolerantMouseDragScroller extends StatefulWidget {
+  const _LongPressTolerantMouseDragScroller({
+    required this.controller,
+    required this.child,
+  });
+
+  final ScrollController controller;
+  final Widget child;
+
+  @override
+  State<_LongPressTolerantMouseDragScroller> createState() =>
+      _LongPressTolerantMouseDragScrollerState();
+}
+
+class _LongPressTolerantMouseDragScrollerState
+    extends State<_LongPressTolerantMouseDragScroller> {
+  Drag? _drag;
+  ScrollHoldController? _hold;
+
+  void _handleDown(DragDownDetails details) {
+    if (!widget.controller.hasClients) return;
+    _hold = widget.controller.position.hold(_disposeHold);
+  }
+
+  void _handleStart(DragStartDetails details) {
+    if (!widget.controller.hasClients) return;
+    _drag = widget.controller.position.drag(details, _disposeDrag);
+    // 位置正在动画时 hold 仍在；drag 开始后它就没用了。
+    if (_hold != null) _disposeHold();
+  }
+
+  void _handleUpdate(DragUpdateDetails details) => _drag?.update(details);
+
+  void _handleEnd(DragEndDetails details) => _drag?.end(details);
+
+  void _handleCancel() {
+    if (!mounted) return;
+    _hold?.cancel();
+    _drag?.cancel();
+  }
+
+  void _disposeHold() => _hold = null;
+
+  void _disposeDrag() => _drag = null;
+
+  @override
+  Widget build(BuildContext context) => RawGestureDetector(
+    gestures: <Type, GestureRecognizerFactory>{
+      _LongPressTolerantHorizontalDragRecognizer:
+          GestureRecognizerFactoryWithHandlers<
+            _LongPressTolerantHorizontalDragRecognizer
+          >(
+            () => _LongPressTolerantHorizontalDragRecognizer(debugOwner: this),
+            (_LongPressTolerantHorizontalDragRecognizer instance) => instance
+              // 门槛内的位移在起滚时一并补上，内容跟手、不落后门槛那段距离。
+              ..dragStartBehavior = DragStartBehavior.down
+              ..onDown = _handleDown
+              ..onStart = _handleStart
+              ..onUpdate = _handleUpdate
+              ..onEnd = _handleEnd
+              ..onCancel = _handleCancel,
+          ),
+    },
+    child: widget.child,
   );
 }
 

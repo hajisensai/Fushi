@@ -19,8 +19,10 @@ abstract interface class OnlineMangaHostReader {
   /// `/api/library/books` 清单对每本漫画都会问一次，不得发网络请求。
   bool canServe(String sourceMetadata);
 
-  /// [chapter]（`EpubBooks.chaptersJson` 里的一项，原样）的页数。
-  Future<int> chapterPageCount({
+  /// [chapter]（`EpubBooks.chaptersJson` 里的一项，原样）的页表：长度即页数，
+  /// 第 i 项是第 i 页的源端稳定身份（运行时给不出就是 null），原样写进对端页表的
+  /// `RemoteMangaPageInfo.key`，对端下载续跑按它认页（audit-035）。
+  Future<List<String?>> chapterPageKeys({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,

@@ -185,29 +185,102 @@ void main() {
     ]);
   });
 
-  test('修复前（无 format 代号）写下的对端快照副本不再命中', () async {
-    final Directory root = await Directory.systemTemp.createTemp('peer_cache');
-    addTearDown(() => root.delete(recursive: true));
-    final DirectoryAggregatePeerSnapshotCache cache =
-        DirectoryAggregatePeerSnapshotCache(() async => root);
+  test('OneDrive：字节资产原样往返；超过 10 MiB 同样走上传会话分片', () async {
+    final _FakeOneDrive drive = _FakeOneDrive();
+    debugSetSyncHttpClient(MockClient(drive.handle));
+    final OneDriveSyncBackend backend = OneDriveSyncBackend.instance
+      ..debugSetAccessToken('t');
+    final Uint8List small = utf8.encode(jsonEncode(payload));
+
+    await backend.putBytesAsset('ns', 'agg.fushiaggregate', small);
+    expect(await backend.getBytesAsset('agg.fushiaggregate'), small);
+    expect(drive.calls.first, endsWith(':/agg.fushiaggregate:/content'));
+
+    final Uint8List big = Uint8List(kOneDriveSimpleUploadMaxBytes + 7)
+      ..fillRange(0, kOneDriveSimpleUploadMaxBytes + 7, 0x61);
+    drive.calls.clear();
+    await backend.putBytesAsset('ns', 'big.fushiaggregate', big);
+    expect(drive.calls.where((String c) => c.endsWith(':/content')), isEmpty);
+    expect(drive.files['big.fushiaggregate'], big);
+  });
+
+  test('Dropbox：getBytesAsset 交回 /files/download 的原样字节', () async {
+    final Uint8List stored = utf8.encode(jsonEncode(payload));
+    debugSetSyncHttpClient(
+      MockClient((http.Request req) async {
+        expect(req.url.path, '/2/files/download');
+        return http.Response.bytes(stored, 200, headers: _octet);
+      }),
+    );
+    final DropboxSyncBackend backend = DropboxSyncBackend.instance
+      ..debugSetAccessToken('t');
+
+    expect(await backend.getBytesAsset('/fushi/agg.json'), stored);
+  });
+
+  group('对端快照副本（字节级，BUG-5159）', () {
+    late Directory root;
+    late DirectoryAggregatePeerSnapshotCache cache;
     const AssetEntry entry = AssetEntry(
       id: 'id1',
       name: 'peer.json',
       isFolder: false,
       revision: 'r1',
     );
-    final File legacy = File('${root.path}/ch/peer.json.json');
-    await legacy.parent.create(recursive: true);
-    await legacy.writeAsString(
-      jsonEncode(<String, Object?>{
-        'id': 'id1',
-        'revision': 'r1',
-        'snapshot': <String, Object?>{'title': 'æ\u009c¬'},
-      }),
-    );
-    expect(await cache.read('ch', entry), isNull);
 
-    await cache.write('ch', entry, payload);
-    expect(await cache.read('ch', entry), payload);
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('peer_cache');
+      cache = DirectoryAggregatePeerSnapshotCache(() async => root);
+    });
+    tearDown(() => root.delete(recursive: true));
+
+    test('原样字节往返（含换行与非 UTF-8 字节），版本标记 / id 不同就不命中', () async {
+      final Uint8List body = Uint8List.fromList(<int>[
+        ...utf8.encode('{"a":"本"}\n'),
+        0xff,
+        0x0a,
+        0x00,
+      ]);
+      await cache.write('ch', entry, body);
+      expect(await cache.read('ch', entry), body);
+      expect(
+        await cache.read(
+          'ch',
+          const AssetEntry(id: 'id1', name: 'peer.json', revision: 'r2'),
+        ),
+        isNull,
+      );
+      expect(
+        await cache.read(
+          'ch',
+          const AssetEntry(id: 'id2', name: 'peer.json', revision: 'r1'),
+        ),
+        isNull,
+      );
+    });
+
+    test('旧格式（JSON 包裹，`.json` 后缀）副本不再命中，并在下次清理时删掉', () async {
+      final File legacy = File('${root.path}/ch/peer.json.json');
+      await legacy.parent.create(recursive: true);
+      await legacy.writeAsString(
+        jsonEncode(<String, Object?>{
+          'format': 2,
+          'id': 'id1',
+          'revision': 'r1',
+          'snapshot': payload,
+        }),
+      );
+      expect(await cache.read('ch', entry), isNull);
+
+      await cache.retainOnly('ch', <String>{entry.name});
+      expect(legacy.existsSync(), isFalse);
+    });
+
+    test('后端给不出版本标记就不缓存，并删掉旧副本', () async {
+      await cache.write('ch', entry, Uint8List.fromList(<int>[1]));
+      const AssetEntry noRevision = AssetEntry(id: 'id1', name: 'peer.json');
+      await cache.write('ch', noRevision, Uint8List.fromList(<int>[2]));
+      expect(await cache.read('ch', entry), isNull);
+    });
   });
 }

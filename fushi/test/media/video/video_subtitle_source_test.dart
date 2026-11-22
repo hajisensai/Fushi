@@ -5,6 +5,8 @@ import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/media/video/subtitle/plain_subtitle_overlap.dart'
+    show debugPlainTextOverlapClampRuns;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show EmbeddedSubtitleExtractFailure;
@@ -613,6 +615,54 @@ hello async vtt
       expect(SrtParser.shouldParseInIsolate(cjkSubtitle), isTrue);
       expect(AssParser.shouldParseInIsolate(cjkSubtitle), isTrue);
       expect(VttParser.shouldParseInIsolate(cjkSubtitle), isTrue);
+    });
+
+    // HBK-AUDIT-012：大字幕轨的整轨后处理（复制 + 排序 + 重叠收口）必须和解析同在
+    // 后台任务里做完；调用方 isolate（播放器页面 = UI isolate）只收结果。收口计数是
+    // isolate 局部的静态量，落在调用方就会 +1。
+    for (final SubtitleFormat format in <SubtitleFormat>[
+      SubtitleFormat.srt,
+      SubtitleFormat.vtt,
+    ]) {
+      test(
+        'large ${format.name}: overlap clamp runs inside the background parse '
+        'task, not on the caller isolate',
+        () async {
+          final String content = _largeOverlappingPlainText(
+            format,
+            cueCount: 3000,
+          );
+          expect(SrtParser.shouldParseInIsolate(content), isTrue);
+          debugPlainTextOverlapClampRuns = 0;
+
+          final List<AudioCue> cues = await parseSubtitleContentAsync(
+            format,
+            content: content,
+            bookUid: bookUid,
+          );
+
+          expect(debugPlainTextOverlapClampRuns, 0);
+          expect(cues, hasLength(3000));
+          // 收口语义不变：每句（倒序写入，所以先按起点排）尾巴收到下一句开头，末句不动。
+          final List<AudioCue> byStart = List<AudioCue>.of(cues)
+            ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+          for (int i = 0; i < byStart.length - 1; i++) {
+            expect(byStart[i].endMs, byStart[i + 1].startMs);
+          }
+          expect(byStart.last.endMs, byStart.last.startMs + 1500);
+        },
+      );
+    }
+
+    test('small content still clamps synchronously on the caller', () async {
+      debugPlainTextOverlapClampRuns = 0;
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.srt,
+        content: _largeOverlappingPlainText(SubtitleFormat.srt, cueCount: 3),
+        bookUid: bookUid,
+      );
+      expect(debugPlainTextOverlapClampRuns, 1);
+      expect(cues.map((AudioCue c) => c.endMs), <int>[3500, 2000, 1000]);
     });
 
     test('video subtitle load paths await the async parser entry point', () {
@@ -1456,6 +1506,12 @@ At least one output file must be specified
         return;
       }
       setFfmpegBackendForTesting(null);
+      // 被测代码要用的正是上面验过能跑的那一份：它可能只是随包统一 FFmpeg（PATH 上
+      // 没有 ffmpeg 的 worker，如 wight-mac），而生产解析是「覆盖 > app 旁捆绑 > PATH」，
+      // 测试进程旁没有捆绑件——不装配覆盖，合成成功、枚举却去 PATH 找 ffmpeg 起不来。
+      final String? previousFfmpeg = ffmpegPathOverride;
+      ffmpegPathOverride = ffmpeg;
+      addTearDown(() => ffmpegPathOverride = previousFfmpeg);
       final File srt = File(p.join(tempDir.path, 'sample.srt'))
         ..writeAsStringSync('''
 1
@@ -2047,6 +2103,31 @@ String _largeSrt({required int cueCount}) {
         '${_srtTimestamp(startMs + 750)}',
       )
       ..writeln('<i>large async srt cue $i</i> $filler')
+      ..writeln();
+  }
+  return buffer.toString();
+}
+
+/// 部分重叠的纯文本字幕：第 i 句 [i*1000, i*1000+1500)，**倒序**写入（文件顺序与
+/// 时间顺序不一致，收口必须先排序）。
+String _largeOverlappingPlainText(
+  SubtitleFormat format, {
+  required int cueCount,
+}) {
+  final String filler = List<String>.filled(120, 'z').join();
+  final bool vtt = format == SubtitleFormat.vtt;
+  final StringBuffer buffer = StringBuffer(vtt ? 'WEBVTT\n\n' : '');
+  for (int i = cueCount - 1; i >= 0; i--) {
+    final int startMs = i * 1000;
+    String stamp(int ms) {
+      final String srt = _srtTimestamp(ms);
+      return vtt ? srt.replaceAll(',', '.') : srt;
+    }
+
+    if (!vtt) buffer.writeln(cueCount - i);
+    buffer
+      ..writeln('${stamp(startMs)} --> ${stamp(startMs + 1500)}')
+      ..writeln('overlap cue $i $filler')
       ..writeln();
   }
   return buffer.toString();

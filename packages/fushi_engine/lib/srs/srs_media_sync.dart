@@ -32,11 +32,16 @@ const String kSrsMediaFolder = 'media';
 /// 被删笔记的媒体在同步 / 媒体位置上的保留期（设计 §10.5；本机媒体回收同一口径，见 srs_purge.dart）。
 const Duration kSrsMediaRetention = Duration(days: 90);
 
-/// 发段之前那一步媒体上传（[srsSyncMedia] 的 `uploadOnly`）最多占的时长：到点不再开始新的一项，剩下的交给发段之后
+/// 发段之前那一步媒体上传（[srsSyncMedia] 的 `uploadOnly`）最多占的时长：到点不再开始新的一项（准备阶段的本机哈希与
+/// 列位置目录同样分批守这个预算，HBK-AUDIT-011），剩下的交给发段之后
 /// 的完整对账 / 下一轮（BUG-5061，反馈 arw7eXO895：以前把本机全部没上传的媒体整份传完才发复习记录段，1 GB 媒体
 /// 连 Google Drive 慢时整轮停在「同步卡片媒体」，另一端一直看不到进度）。平时新加几张卡的媒体远用不到这么久，
 /// 「媒体先于引用它的段」照旧成立；积压很多时段先发出去，读者暂缺的媒体按缺失记、下一轮再拿（[srsSyncMedia]）。
 const Duration kSrsMediaBeforeUploadBudget = Duration(seconds: 15);
+
+/// 本机媒体哈希（内核 `media_hash`）一批的名字数：[srsSyncMedia] 每批开始前问一次 `deferRemaining`（HBK-AUDIT-011）。
+/// 缓存命中（大小与修改时间没变）的一批只是几十次 stat，毫秒级；首次哈希时一批的耗时由其中的文件大小定。
+const int kSrsMediaPrepareBatch = 64;
 
 /// [budget] 计时的「该收手了」判断（[srsSyncMedia] 的 `deferRemaining`）：从调用这一刻起满 [budget]，或
 /// [shouldStop] 为真。
@@ -77,12 +82,27 @@ class SrsMediaSyncReport {
   /// 整轮跑完（没有中途抛错）。
   bool completed = false;
 
-  /// `deferRemaining` 为真时还没开始、留给下一轮的媒体项数（[srsSyncMedia]）。大于 0 时这一轮也不做过期清理。
+  /// `deferRemaining` 为真时还没开始、留给下一轮的数目（[srsSyncMedia]）：准备阶段还没哈希的名字 + 已排进来但
+  /// 还没开始的媒体项。大于 0 时这一轮也不做过期清理，调用方也不记成已对账。
   int deferred = 0;
 
   /// 对账中途本机文件没了（列出来之后被删 / 被换走）而这一轮没传的名字。不中断整轮：下一轮哈希时它已不在本机，
   /// 不会再排进来（BUG-5061：以前一个这样的文件抛 PathNotFoundException 就让整趟媒体上传作废）。
   final Set<String> vanished = <String>{};
+
+  /// 这一趟从 v3.0.x 写入者目录搬进本机媒体目录的媒体数（`srsRescueLegacyWriterMedia`，拍板台
+  /// `bug-5017-legacy-writer-media`；也算在 [downloaded] 里）。
+  int legacyMediaImported = 0;
+
+  /// 这一趟从 v3.0.x 写入者目录删掉的、不必搬的媒体数（集合不引用 / 本机已有同名文件）。
+  int legacyMediaDropped = 0;
+
+  /// 这一趟收尾后整个删掉的 v3.0.x 写入者目录。只供诊断。
+  final List<String> legacyWritersRemoved = <String>[];
+
+  /// 收 v3.0.x 写入者目录媒体时没做成的（`<写入者目录>[/media/<名字>]: <原因>`）：那些文件留着，下一趟再来；不算
+  /// 这一趟媒体同步失败。只供记日志。
+  final List<String> legacyWriterErrors = <String>[];
 }
 
 /// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
@@ -302,8 +322,13 @@ class _MediaItem {
 /// 的一轮不调——调用方据此报「媒体」阶段，不在每轮发件前都闪一下。
 ///
 /// [onProgress] 报媒体项的进度：开始做之前一次 `(0, 总数)`，之后每做完一项一次（总数 = 筛掉已一致的之后真要做的项）。
-/// [deferRemaining] 每开始一项之前问一次，为真就不再开始新的（在途的做完），剩下的记进 [SrsMediaSyncReport.deferred]
-/// 留给下一轮，也不做过期清理（调用方用 [srsMediaDeadline] 给时间预算 / 收手）。
+/// [deferRemaining] 管整轮，准备阶段也算（HBK-AUDIT-011：以前只在开始传之前问，首次哈希整个媒体库、列位置上的
+/// 256 个前缀目录都不受预算约束，发段前那一步照样能把复习记录段挡几分钟）：
+/// - 本机哈希每 [kSrsMediaPrepareBatch] 个名字之前问一次，为真就停，没哈希的名字这一轮不处理；
+/// - [uploadOnly] 时列位置目录每个前缀目录之前问一次，为真就停（没列全不记「已列举」，见下）；
+/// - 每开始一项之前问一次，为真就不再开始新的（在途的做完）。
+/// 没做的都记进 [SrsMediaSyncReport.deferred] 留给下一轮，也不做过期清理（调用方用 [srsMediaDeadline] 给时间预算 /
+/// 收手）。
 ///
 /// [locationId]（位置的稳定身份，各设备相同）给出时，位置上有什么读日志投影（内核 `media_known`），不列目录：
 /// - 日志里还没有任何设备对这个位置的内容目录完整列举过 → 列一次（256 个前缀子目录），结果带「已列举」写进日志；
@@ -347,20 +372,36 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     store,
     deletedAfterMs: store.now().$1 - kSrsMediaRetention.inMilliseconds,
   )).toList()..sort();
+  bool stop() => deferRemaining?.call() ?? false;
 
-  // 1. 本机文件 → 内容（不进写锁：首次对账要把每个文件读一遍）→ 该做什么（写锁里，顺带写绑定）。
-  final Map<String, Object?> hashed = (await store.sync2Command(
-    <String, Object?>{
-      'op': 'media_hash',
-      'root': mediaRoot.path,
-      'names': names,
-    },
-  )).map;
+  // 1. 本机文件 → 内容（不进写锁：首次对账要把每个文件读一遍）→ 该做什么（写锁里，顺带写绑定）。哈希按
+  // [kSrsMediaPrepareBatch] 个名字一批、每批开始前问一次 [deferRemaining]（HBK-AUDIT-011：以前整个媒体库一次哈希完
+  // 才第一次看预算，首次对账的大库在发段前那一步就能占掉几分钟）。只把哈希过的名字交给 `media_scan`：没哈希的名字
+  // 这一轮不下结论（交给 scan 会被当成「本机没有」去下载），记进 [SrsMediaSyncReport.deferred]；scan 把哈希过的写进
+  // 本机文件缓存（`media_local`），下一轮这些只 stat、不重算，准备阶段逐轮往后推进。
+  final List<Object?> files = <Object?>[];
+  int prepared = 0;
+  while (prepared < names.length && !stop()) {
+    final List<String> batch = names.sublist(
+      prepared,
+      min(prepared + kSrsMediaPrepareBatch, names.length),
+    );
+    files.addAll(
+      (await store.sync2Command(<String, Object?>{
+            'op': 'media_hash',
+            'root': mediaRoot.path,
+            'names': batch,
+          })).map['files']!
+          as List<Object?>,
+    );
+    prepared += batch.length;
+  }
+  report.deferred += names.length - prepared;
   final Map<String, Object?> scanned =
       (await store.sync2Command(<String, Object?>{
         'op': 'media_scan',
-        'names': names,
-        'files': hashed['files'],
+        'names': names.sublist(0, prepared),
+        'files': files,
         'now': store.now().$1,
       })).map;
   final List<_MediaItem> items = <_MediaItem>[
@@ -377,6 +418,15 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     report.listedRemote = true;
     for (final SrsLocationEntry d in await location.list(folder)) {
       if (!d.isFolder || d.name.length != 2) continue;
+      // 发段前那一步：最多 256 个前缀目录、慢云盘上每个一次往返，同样守预算（HBK-AUDIT-011）。列到一半就停：已列到的
+      // 「在」照样是确认过的事实（写回日志），其余按「不知道」走逐个查；没列全就不算列举过（[content.listed]
+      // 置回 false，不写「已列举」）。完整对账不在这里停：它要把列举做完才能记「已列举」，否则慢位置上每轮都列到
+      // 一半、永远列不完。
+      if (uploadOnly && stop()) {
+        content.listed = false;
+        report.listedRemote = false;
+        break;
+      }
       for (final SrsLocationEntry f in await location.list(
         '$folder/${d.name}',
       )) {

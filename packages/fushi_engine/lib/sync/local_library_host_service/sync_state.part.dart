@@ -67,6 +67,8 @@ mixin _LocalLibraryHostSyncState
       _db,
       activityLimit: limit,
     )).activityRows;
+    // 上锁作品的活动行标 locked：对端未解锁时不显示（标题就在行里）。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
     return <RemoteActivityEvent>[
       for (final ActivityEventRow r in rows)
         RemoteActivityEvent(
@@ -78,32 +80,35 @@ mixin _LocalLibraryHostSyncState
           mediaKey: r.mediaKey,
           durationMs: r.durationMs,
           charsDelta: r.charsDelta,
+          locked: switch (r.mediaKey) {
+            final String key when key.isNotEmpty => locks.isSourceKeyLocked(
+              key,
+            ),
+            _ => locks.isTitleLocked(r.title),
+          },
         ),
     ];
   }
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
-  /// 读 host 端当前聚合快照。直接复用云后端 phase B 的
-  /// [AggregateSyncService.materializeLocalSnapshot]（同一 DB 读取逻辑），保证互联
-  /// 与云通道 materialize 结果字节等价、无第二套实现。
+  /// 读 host 端当前聚合快照的报文体。直接复用云后端 phase B 的
+  /// [AggregateSyncService.materializeLocalSnapshot]（同一 DB 读取逻辑，经
+  /// [AggregateSyncService.encodeLocalWireBody] 在后台所有者里组装 + 编码），保证
+  /// 互联与云通道 materialize 结果字节等价、无第二套实现。
   ///
   /// 浏览历史族按 **host 本机**的「同步浏览历史」裁（默认关）：host 用户没打开就不把
   /// 自己的浏览轨迹发给任何已配对设备，哪怕对端开着。统计 / 收藏仍由 client 侧许可
   /// 裁（既有行为）。
   @override
-  Future<AggregateSnapshot> getAggregateSnapshot() async {
-    final AggregateSnapshot snapshot = await AggregateSyncService(
-      _db,
-    ).materializeLocalSnapshot();
-    return snapshot.select(
-      stats: true,
-      favorites: true,
-      webHistory: await readWebHistorySyncEnabled(_db),
-    );
-  }
+  Future<Uint8List> getAggregateBody() async =>
+      AggregateSyncService(_db).encodeLocalWireBody(
+        stats: true,
+        favorites: true,
+        webHistory: await readWebHistorySyncEnabled(_db),
+      );
 
-  /// 把 client 上报的聚合快照折叠进 host DB。用
+  /// 把 client 上报的聚合快照报文体折叠进 host DB。用
   /// [AggregateSyncService.foldIntoLocal]（先 materialize host 自己 → MAX / 并集
   /// 合并 incoming → apply），保证 host 侧也满足 never-shrinks：client 上报的某字段
   /// 即便小于 host 当前值（并发 / GET 后 host 又涨），MAX 折叠让 host 值不被缩小；
@@ -113,17 +118,21 @@ mixin _LocalLibraryHostSyncState
   ///
   /// host 没打开「同步浏览历史」时，对端上报的历史族（含墓碑）整族丢弃不落库——与
   /// GET 同一判据，host 不参与历史同步就两个方向都不参与。
+  ///
+  /// HBK-AUDIT-028：解码、裁剪、重读、合并、写回都在
+  /// [AggregateSyncService.applyWireBody] 的后台所有者里做；写锁照旧包住「重读 →
+  /// 合并 → 写回」（解码在锁外，不拉长锁的持有时间）。
   @override
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {
-    final AggregateSnapshot incoming = snapshot.select(
-      stats: true,
-      favorites: true,
-      webHistory: await readWebHistorySyncEnabled(_db),
-    );
-    await _runSyncStateExclusive(
-      () => AggregateSyncService(_db).foldIntoLocal(incoming),
-    );
-  }
+  Future<bool> applyAggregateBody(Uint8List body) async =>
+      AggregateSyncService(
+        _db,
+        localApplyLock: _runSyncStateExclusive,
+      ).applyWireBody(
+        body,
+        stats: true,
+        favorites: true,
+        webHistory: await readWebHistorySyncEnabled(_db),
+      );
 
   // ── 合集清单（多端库联合视图 §2.3 任务5.2）──────────────────────────────────
 

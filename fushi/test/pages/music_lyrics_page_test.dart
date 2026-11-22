@@ -17,6 +17,7 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/music_disc_art.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
@@ -316,8 +317,14 @@ void main() {
         ),
       ),
     );
-    // sidecar 读文件 / 解析是真 IO：在真异步区里等它落地，再推帧。
-    for (int i = 0; i < 10; i++) {
+    // sidecar 读文件 / 解析、后台 isolate 找 .cdg 都是真 IO：交替让真异步区跑一拍、推一帧，
+    // 至少 10 拍，且推到页面报告这首的歌词已落地为止——不按真实时长猜（原先固定 10 × 20 ms，
+    // 满载的慢 worker 上歌词还没出来，后面按语义标签找行就扑空）。
+    final State<StatefulWidget> state = tester.state(
+      find.byType(MusicLyricsPage),
+    );
+    bool settled() => (state as dynamic).lyricsLoadSettled as bool;
+    for (int i = 0; i < 10 || !settled(); i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );
@@ -464,6 +471,104 @@ void main() {
     expect(playbackRouteMarks.isPlayback(route), isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
     expect(playbackRouteMarks.isPlayback(route), isFalse);
+  });
+
+  testWidgets('唱片模式：专辑有盘面扫描图就转真盘面，没有才画黑胶 + 封面贴标', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1424, 951);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await app.prefsRepo.setMusicLyricsLayout(MusicLyricsLayout.disc.prefValue);
+    final String disc = '${dir.path}${Platform.pathSeparator}disc.png';
+    File(disc).writeAsBytesSync(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      ),
+    );
+    addTearDown(
+      () => MusicDiscArtIndex.instance.publish(const <String, String>{}),
+    );
+    MusicDiscArtIndex.instance.publish(<String, String>{'al-1': disc});
+    await app.musicSession.engine.playQueue(<MusicPlayItem>[
+      MusicPlayItem(
+        trackUid: 'uid-1',
+        path: '${dir.path}${Platform.pathSeparator}song.flac',
+        title: 'Night Run',
+        albumUid: 'al-1',
+        durationMs: 60000,
+      ),
+    ]);
+    await app.musicSession.engine.pause();
+    await pumpPage(tester);
+    const ValueKey<String> realDisc = ValueKey<String>(
+      'music-player-real-disc',
+    );
+    expect(find.byKey(realDisc), findsOneWidget);
+    // 中心轴孔挖空（扫描图孔里的底板白不再露出来）。
+    final ClipPath hole = tester.widget<ClipPath>(
+      find
+          .descendant(of: find.byKey(realDisc), matching: find.byType(ClipPath))
+          .first,
+    );
+    final Path clip = hole.clipper!.getClip(const Size(400, 400));
+    expect(clip.contains(const Offset(200, 200)), isFalse);
+    expect(clip.contains(const Offset(200, 20)), isTrue);
+
+    // 盘面图映射里没有这张专辑：回退黑胶。
+    MusicDiscArtIndex.instance.publish(const <String, String>{});
+    await tester.pump();
+    expect(find.byKey(realDisc), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('分栏布局：唱片压在封面上（有盘面扫描图转真盘面，没有转银色 CD）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1424, 951);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await app.prefsRepo.setMusicLyricsLayout(MusicLyricsLayout.split.prefValue);
+    final String disc = '${dir.path}${Platform.pathSeparator}disc.png';
+    File(disc).writeAsBytesSync(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      ),
+    );
+    addTearDown(
+      () => MusicDiscArtIndex.instance.publish(const <String, String>{}),
+    );
+    MusicDiscArtIndex.instance.publish(<String, String>{'al-1': disc});
+    await app.musicSession.engine.playQueue(<MusicPlayItem>[
+      MusicPlayItem(
+        trackUid: 'uid-1',
+        path: '${dir.path}${Platform.pathSeparator}song.flac',
+        title: 'Night Run',
+        albumUid: 'al-1',
+        durationMs: 60000,
+      ),
+    ]);
+    await app.musicSession.engine.pause();
+    await pumpPage(tester);
+    const ValueKey<String> sleeve = ValueKey<String>(
+      'music-player-sleeve-disc',
+    );
+    expect(find.byKey(sleeve), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(sleeve),
+        matching: find.byKey(const ValueKey<String>('music-player-real-disc')),
+      ),
+      findsOneWidget,
+    );
+
+    // 没有盘面扫描图：转银色 CD 盘，不是黑胶。
+    MusicDiscArtIndex.instance.publish(const <String, String>{});
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(sleeve),
+        matching: find.byKey(const ValueKey<String>('music-player-silver-cd')),
+      ),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('宽屏歌词页有返回键（窄屏顶栏有关闭键，宽屏原本没有退出口）', (WidgetTester tester) async {

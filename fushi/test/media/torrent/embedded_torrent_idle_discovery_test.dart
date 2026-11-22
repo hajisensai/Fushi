@@ -21,6 +21,9 @@ import 'package:fushi_torrent/fushi_torrent.dart';
 final Pointer<Void> _fakeSession = Pointer<Void>.fromAddress(0x1645);
 final List<String> _calls = <String>[];
 
+/// 每次 ht_apply_session_settings 收到的活跃名额（`下载/做种`）。
+final List<String> _activeLimitArgs = <String>[];
+
 String _torrentsJson = '[]';
 String _addResultJson = jsonEncode(<String, Object>{
   'ok': false,
@@ -52,6 +55,7 @@ int _fakeApplySessionSettings(
   int maxUploadSlots,
 ) {
   _calls.add('settings:$enableDht$enableLsd$enableUpnp$enableNatpmp');
+  _activeLimitArgs.add('$activeDownloads/$activeSeeds');
   return 1;
 }
 
@@ -267,6 +271,7 @@ void main() {
   setUp(() {
     _tempDir = Directory.systemTemp.createTempSync('torrent_idle_discovery_');
     _calls.clear();
+    _activeLimitArgs.clear();
     _torrentsJson = '[]';
     _addResultJson = jsonEncode(<String, Object>{
       'ok': false,
@@ -466,6 +471,32 @@ void main() {
       expect(_settingsCalls, <String>[
         'settings:1010',
       ], reason: '恢复后首次状态读取失败也必须保留 restore wake，不能复用旧空快照');
+    });
+
+    test('发现协议开关不得把活跃名额冲回 libtorrent 默认（HBK-AUDIT-020 回归）', () {
+      // native 每次都写活跃名额全值（0 = libtorrent 默认），所以只切 DHT/LSD/
+      // UPnP/NAT-PMP 的 reconcile 也必须带上用户配置的名额；漏传就等于把
+      // 「不限 / 自定义」静默改回 3/5，每次 add 唤醒都会触发。
+      final EmbeddedTorrentHost host = _host();
+      final QbConnectionConfig config = _protocolConfig.copyWith(
+        maxActiveDownloads: QbConnectionConfig.activeLimitUnlimited,
+        maxActiveSeeds: 7,
+      );
+      expect(host.applySessionSettings(config), isTrue);
+
+      host.beginNetworkWake();
+      host.endNetworkWake();
+
+      expect(_settingsCalls, <String>[
+        'settings:0000',
+        'settings:1010',
+        'settings:0000',
+      ]);
+      expect(_activeLimitArgs, <String>[
+        '2147483647/7',
+        '2147483647/7',
+        '2147483647/7',
+      ]);
     });
 
     test('重复 reconcile 与嵌套 wake 幂等，不重复下发 FFI', () {

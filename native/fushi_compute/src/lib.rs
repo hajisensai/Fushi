@@ -2,7 +2,7 @@
 //!
 //! ABI 约定（Dart 侧见 packages/fushi_compute）：
 //! - 导出符号一律 `ffc_<域>_<动作>`，`#[no_mangle] pub extern "C"`；每个域一个模块文件
-//!   （`font.rs` / `galcal.rs` / `hash.rs` / `image.rs` / `ocr.rs` / `signal.rs` / `text.rs` / `ts.rs`），互不依赖；
+//!   （`archive.rs` / `font.rs` / `galcal.rs` / `hash.rs` / `image.rs` / `ocr.rs` / `ocrline.rs` / `signal.rs` / `text.rs` / `ts.rs`），互不依赖；
 //!   `dart.rs` 是共用的 Dart 数值语义复刻（`max` / `min` / `clamp` / `compareTo` / `List.sort`）。
 //! - 数据走原始缓冲区（指针 + 长度），不走 JSON：这些接口按块 / 像素 / 字符批量调用，
 //!   编码开销会吃掉收益（fushi_fsrs 实测逐次 JSON 往返 25～30 µs）。
@@ -14,7 +14,8 @@
 //!   从 Dart 迁过来的内核要先用旧 Dart 实现冻结输入 → 输出向量做回归测试，再删 Dart。
 //! - 新增符号不升 [ABI_VERSION]（Dart 侧按域 lookup，库比绑定旧时那个域抛缺符号异常）；
 //!   改动既有符号的签名或语义、或删掉符号才升（v2：有声书 cue 吸附 / 修边 / 余量的三个
-//!   `ffc_signal_cue_*` 迁到上游 crate 后删除，改由 `fcp_*` 提供）。
+//!   `ffc_signal_cue_*` 迁到上游 crate 后删除，改由 `fcp_*` 提供；v3：`ffc_upscale_configure` 加
+//!   `out_generation` 出参，`EVENT_MODELS_FAILED` 的 token 改为失败那一代的代际）。
 
 // 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
 // worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
@@ -23,6 +24,7 @@ const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+pub mod archive;
 pub mod crypto;
 pub mod dart;
 pub mod document_charset;
@@ -32,6 +34,7 @@ pub mod hash;
 pub mod image;
 pub mod legacy_text;
 pub mod ocr;
+pub mod ocrline;
 pub mod pano;
 pub mod parse;
 pub mod signal;
@@ -39,12 +42,15 @@ pub mod text;
 pub mod ts;
 pub mod upscale;
 
+#[cfg(test)]
+mod test_alloc;
+
 // 上游 crate 的 `fcp_*` C 导出随本库一起导出（cdylib / staticlib / iOS 伞形库都靠这一行把它
 // 链进来；不引用就会被当成没用的依赖丢掉）。见 Cargo.toml 的说明。
 pub extern crate fushi_asr_cue_post;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
-pub const ABI_VERSION: i32 = 2;
+pub const ABI_VERSION: i32 = 3;
 
 /// 各导出函数共用的返回码。
 pub mod status {
@@ -59,6 +65,8 @@ pub mod status {
     pub const BUFFER_TOO_SMALL: i32 = -4;
     /// 文件打不开 / 读失败（读盘的接口，如 `ffc_hash_sha256_file`）。
     pub const IO_ERROR: i32 = -5;
+    /// 调用方经取消标志取消（可取消的长调用，如 `ffc_hash_sha256_file_cancellable`）。
+    pub const CANCELLED: i32 = -6;
     /// Rust 侧 panic（已接住）。
     pub const PANIC: i32 = -100;
 }

@@ -30,8 +30,11 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_album_dlsite_section.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show openMusicPlayerPage;
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
@@ -384,6 +387,19 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     for (final MusicTrackRow t in tracks) musicPlayItemOf(t, album: album),
   ];
 
+  /// 「播放全部 / 随机播放」：从头放整张并直接进播放页（返回回到专辑页）。
+  void _playAll(MusicPlayerEngine engine, {bool shuffle = false}) {
+    unawaited(
+      engine.playQueue(
+        _items(),
+        context: MusicQueueContext.album,
+        shuffle: shuffle,
+        source: _source,
+      ),
+    );
+    openMusicPlayerPage(context);
+  }
+
   @override
   Widget build(BuildContext context) => MusicViewStyleBuilder(
     kind: MusicViewKind.tracks,
@@ -422,15 +438,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         child: FushiFilledButton.icon(
           size: FushiButtonSize.m,
           key: const ValueKey<String>('music_album_play'),
-          onPressed: tracks.isEmpty
-              ? null
-              : () => unawaited(
-                  engine.playQueue(
-                    _items(),
-                    context: MusicQueueContext.album,
-                    source: _source,
-                  ),
-                ),
+          onPressed: tracks.isEmpty ? null : () => _playAll(engine),
           icon: const FushiIcon(FushiIcons.play),
           label: Text(t.music_play_all),
         ),
@@ -441,15 +449,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
           key: const ValueKey<String>('music_album_shuffle'),
           onPressed: tracks.isEmpty
               ? null
-              : () => unawaited(
-                  engine.playQueue(
-                    _items(),
-                    context: MusicQueueContext.album,
-                    shuffle: true,
-                    source: _source,
-                  ),
-                ),
-          icon: const FushiIcon(FushiIcons.repeat),
+              : () => _playAll(engine, shuffle: true),
+          icon: const FushiIcon(FushiIcons.shuffle),
           label: Text(t.music_shuffle_play),
         ),
       ),
@@ -486,6 +487,20 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             ),
             icon: const FushiIcon(FushiIcons.subtitles),
             label: Text(t.music_subtitle_generate_album),
+          ),
+        ),
+      // 隐私：上锁与 NSFW（封面按「模糊 NSFW 封面」打模糊；DLsite 认出 R-18 时默认
+      // 已标上 NSFW）。
+      if (_app.isDatabaseReady)
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_album_privacy'),
+            onPressed: () => unawaited(
+              showMusicAlbumPrivacyDialog(context, _app.database, album),
+            ),
+            icon: const FushiIcon(FushiIcons.shield),
+            label: Text(t.media_privacy_action),
           ),
         ),
       if (disc != null) ...<Widget>[
@@ -609,6 +624,13 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
 
     final List<Widget> children = <Widget>[
       header,
+      // 音声 / ASMR 专辑：按作品编号（RJ…）显示 DLsite 资料；认不出编号整块不出现。
+      if (_app.isDatabaseReady && musicAlbumHasDlsiteWork(album, tracks))
+        MusicAlbumDlsiteSection(
+          album: album,
+          tracks: tracks,
+          scraper: _app.musicScrape.dlsite,
+        ),
       for (final MapEntry<int?, List<MusicTrackRow>> disc
           in discs.entries) ...<Widget>[
         if (disc.key != null)

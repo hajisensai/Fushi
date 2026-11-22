@@ -100,6 +100,12 @@ void main() {
     ]);
     expect(manifest.pages.first.width, 800);
     expect(manifest.pages.first.height, 1200);
+    // 页身份（audit-035）：已落盘的页按文件名 + 尺寸认，过 wire 原样往返。
+    expect(manifest.pages.first.key, 'file\u0000p1.jpg\u0000800x1200');
+    expect(
+      RemoteMangaPageInfo.fromJson(manifest.pages.first.toJson()).key,
+      manifest.pages.first.key,
+    );
   });
 
   test('页图按 index 解析到真实文件，字节与页序对应', () async {
@@ -596,6 +602,12 @@ void main() {
         1,
         2,
       ]);
+      // 现取章报运行时给的源端页身份；给不出的页不报（audit-035）。
+      expect(chapter.pages.map((RemoteMangaPageInfo e) => e.key), <String?>[
+        'source\u0000https://cdn.example/0.png',
+        null,
+        'source\u0000https://cdn.example/2.png',
+      ]);
       final File page = await online.mangaChapterPageFile(
         'mihon-none',
         digest,
@@ -651,6 +663,36 @@ void main() {
         ),
         isEmpty,
       );
+    });
+
+    test('现取页缓存按页身份定名：源端换了页就不再端旧版缓存（audit-035）', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      final File before = await online.mangaChapterPageFile(
+        'mihon-none',
+        digest,
+        0,
+      );
+      expect(reader.pageFetches, 1);
+      reader.keys = const <String?>[
+        'https://cdn.example/0-v2.png',
+        null,
+        'https://cdn.example/2.png',
+      ];
+      final File after = await online.mangaChapterPageFile(
+        'mihon-none',
+        digest,
+        0,
+      );
+      expect(after.path, isNot(before.path));
+      expect(reader.pageFetches, 2, reason: '换了身份的页重新现取');
+      await online.mangaChapterPageFile('mihon-none', digest, 2);
+      await online.mangaChapterPageFile('mihon-none', digest, 2);
+      expect(reader.pageFetches, 3, reason: '身份没变的页照旧复用缓存');
     });
 
     test('现取页缓存按章有界：只留最近的章，当前章必留，删空的书目录', () {
@@ -735,14 +777,21 @@ class _FakeOnlineReader implements OnlineMangaHostReader {
   bool canServe(String sourceMetadata) => serves;
 
   @override
-  Future<int> chapterPageCount({
+  Future<List<String?>> chapterPageKeys({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,
   }) async {
     lastChapter = chapter;
-    return 3;
+    return keys;
   }
+
+  /// 运行时报的页身份（第 1 页认不出）；测试改它模拟源端换页。
+  List<String?> keys = const <String?>[
+    'https://cdn.example/0.png',
+    null,
+    'https://cdn.example/2.png',
+  ];
 
   @override
   Future<Uint8List> chapterPage({

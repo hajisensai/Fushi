@@ -5,11 +5,17 @@ part of 'srs_deck_list_page.dart';
 ///
 /// RWKV 不知道一张卡哪天到期，这些卡不进「未来 7 天」；纯 RWKV 的范围不画那张空图，改画这一块
 /// （[srsHomeShowsForecast]）。全是统计内核（`stats_report` 的 `rwkvNow`）算好的数，这里只排版。
+///
+/// 第一项是「低于目标」，不叫「到期」：它是此刻回忆率的测量，和牌组列表上「N 到期」（今天的出卡队列）不是一个
+/// 口径——队列还会按「每天最少复习数」从高于目标的卡里补足、按同日间隔与每日复习上限暂缓一部分（Rust
+/// `study.rs` `instant_eligible` / `count_tree`）。[queued] 给了且与低于目标的张数不同时，在下面写明今天排队
+/// 多少张、差在哪（应用内反馈 TcVEYa3z46，BUG-5170）。
 class _SrsRwkvNowView extends StatelessWidget {
   const _SrsRwkvNowView({
     super.key,
     required this.now,
     required this.target,
+    this.queued,
     this.poster,
   });
 
@@ -17,6 +23,10 @@ class _SrsRwkvNowView extends StatelessWidget {
 
   /// 目标保留率（牌组设置的平均）：分布图按它分色；null = 不分色。
   final double? target;
+
+  /// 头部「N 到期」里这些 RWKV 卡今天排队的张数（[srsHomeRwkvQueued]）；头部还数了别的卡、或 RWKV 还没
+  /// 准备好时为 null，不写对账说明。
+  final int? queued;
 
   /// 画在海报色块里时的取色（文字配色随块）；null = 普通卡片。
   final FushiCoverBlockColors? poster;
@@ -62,6 +72,7 @@ class _SrsRwkvNowView extends StatelessWidget {
 
     final List<int>? ahead = now.ahead;
     final double? goal = target;
+    final int? queue = queued;
     final bool chart = now.recallBins.any((int n) => n > 0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -73,11 +84,22 @@ class _SrsRwkvNowView extends StatelessWidget {
           runSpacing: tokens.spacing.gap / 2,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            count('due', colors.again, now.due, t.srs_stats_rwkv_now_due),
+            count(
+              'below',
+              colors.again,
+              now.due,
+              t.srs_stats_rwkv_now_below_target,
+            ),
             count('near', colors.hard, now.near, t.srs_stats_rwkv_now_near),
             count('safe', colors.good, now.safe, t.srs_home_rwkv_safe),
           ],
         ),
+        if (queue != null && queue != now.due)
+          Text(
+            t.srs_home_rwkv_queue_note(n: queue),
+            key: const ValueKey<String>('srs-home-rwkv-queue-note'),
+            style: caption,
+          ),
         if (ahead != null && ahead.length >= SrsRwkvHorizon.values.length)
           Text(
             t.srs_home_rwkv_ahead(
@@ -137,7 +159,7 @@ class _SrsRecallChart extends StatelessWidget {
       showTotalInTooltip: false,
       bars: bars,
       series: <SrsChartSeries>[
-        SrsChartSeries(t.srs_stats_rwkv_now_due, colors.again),
+        SrsChartSeries(t.srs_stats_rwkv_now_below_target, colors.again),
         SrsChartSeries(t.srs_stats_rwkv_now_near, colors.hard),
         SrsChartSeries(t.srs_home_rwkv_safe, colors.good),
       ],
@@ -146,6 +168,17 @@ class _SrsRecallChart extends StatelessWidget {
     );
   }
 }
+
+/// 头部「N 到期」（[SrsDeckSummary.reviewCount] / [SrsDeckListData.todayReview]）里有多少是「RWKV 此刻」这些卡
+/// 今天排队的张数，给面板写对账说明用。头部只在范围里没有按到期日排队的卡（[hasDueDateCards] 为 false：
+/// 没有 FSRS 复习卡、学习中的卡）时才全是 RWKV 卡；RWKV 还没准备好（[rwkvPending]）时头部的数不全。这两种
+/// 情况返回 null，不写说明，免得拿不同范围的数硬对。
+@visibleForTesting
+int? srsHomeRwkvQueued({
+  required int reviewCount,
+  required bool hasDueDateCards,
+  required bool rwkvPending,
+}) => hasDueDateCards || rwkvPending ? null : reviewCount;
 
 /// [_SrsRecallChart] 的柱：每格三个值（低于目标 / 接近 / 远高于，只有所属那一段非零）。没有卡时为空。
 @visibleForTesting
@@ -177,10 +210,18 @@ List<SrsBarDatum> srsHomeRecallBars(List<int> bins, double? target) {
 
 /// 全库的「RWKV 此刻」卡（与「未来 7 天」并列的统计卡；只在库里有 RWKV 排队的复习卡时出现）。
 class _SrsRwkvNowCard extends StatelessWidget {
-  const _SrsRwkvNowCard({super.key, required this.stats, required this.now});
+  const _SrsRwkvNowCard({
+    super.key,
+    required this.stats,
+    required this.now,
+    this.queued,
+  });
 
   final SrsHomeStats stats;
   final SrsRwkvNow now;
+
+  /// 全库头部「N 到期」里这些卡今天排队的张数（[srsHomeRwkvQueued]）。
+  final int? queued;
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +251,7 @@ class _SrsRwkvNowCard extends StatelessWidget {
             _SrsRwkvNowView(
               now: now,
               target: stats.desiredRetention,
+              queued: queued,
               poster: colors,
             ),
           ],
@@ -230,7 +272,11 @@ class _SrsRwkvNowCard extends StatelessWidget {
               t.srs_stats_rwkv_now_title,
               style: context.fushiType.titleSmallEmphasized,
             ),
-            _SrsRwkvNowView(now: now, target: stats.desiredRetention),
+            _SrsRwkvNowView(
+              now: now,
+              target: stats.desiredRetention,
+              queued: queued,
+            ),
           ],
         ),
       ),
@@ -239,17 +285,24 @@ class _SrsRwkvNowCard extends StatelessWidget {
 }
 
 /// 首页统计卡里热力图之后的那几张：按到期日排队的卡有预测时画「未来 7 天」，有 RWKV 排队的复习卡时画
-/// 「RWKV 此刻」；纯 RWKV 的库只有后者（到期日预测对它们恒为空，[srsHomeShowsForecast]）。
-List<Widget> _srsHomeDueCards(SrsHomeStats stats) => <Widget>[
-  if (stats.showsForecast)
-    _SrsForecastCard(
-      key: const ValueKey<String>('srs-home-forecast'),
-      stats: stats,
-    ),
-  if (stats.rwkvNow case final SrsRwkvNow now)
-    _SrsRwkvNowCard(
-      key: const ValueKey<String>('srs-home-rwkv-now'),
-      stats: stats,
-      now: now,
-    ),
-];
+/// 「RWKV 此刻」；纯 RWKV 的库只有后者（到期日预测对它们恒为空，[srsHomeShowsForecast]）。[data] 是全库牌组
+/// 计数，给「RWKV 此刻」和头部「N 到期」对账（[srsHomeRwkvQueued]）。
+List<Widget> _srsHomeDueCards(SrsHomeStats stats, SrsDeckListData data) =>
+    <Widget>[
+      if (stats.showsForecast)
+        _SrsForecastCard(
+          key: const ValueKey<String>('srs-home-forecast'),
+          stats: stats,
+        ),
+      if (stats.rwkvNow case final SrsRwkvNow now)
+        _SrsRwkvNowCard(
+          key: const ValueKey<String>('srs-home-rwkv-now'),
+          stats: stats,
+          now: now,
+          queued: srsHomeRwkvQueued(
+            reviewCount: data.todayReview,
+            hasDueDateCards: stats.hasDueDateCards,
+            rwkvPending: data.rwkvPending,
+          ),
+        ),
+    ];

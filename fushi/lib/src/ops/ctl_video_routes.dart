@@ -47,6 +47,7 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart'
     show videoDiscoveryScrapeConfig;
 import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
@@ -292,6 +293,7 @@ class _VideoCtl {
   /// 作品及挂起原因（待确认面板同一个 `pendingWorksWithReasons`）。
   Future<Object?> listWorks(CtlCall call) async {
     if (call.optBool('pending') == true) {
+      final MediaVisibility visibility = await MediaVisibility.load(_db);
       final VideoScrapeRuntime runtime = _runtime();
       final List<VideoPendingScrapeWork> pending = await runtime.sweep
           .pendingWorksWithReasons();
@@ -299,21 +301,25 @@ class _VideoCtl {
         'pending': true,
         'works': <Map<String, Object?>>[
           for (final VideoPendingScrapeWork entry in pending)
-            <String, Object?>{
-              ..._workJson(entry.work, entry.source),
-              'reason': entry.pendingNote?.cause.wire,
-              if (entry.pendingNote != null)
-                'note': ctlVideoPendingNoteJson(entry.pendingNote!),
-            },
+            if (!visibility.hidesVideoScrapeWork(entry.work))
+              <String, Object?>{
+                ..._workJson(entry.work, entry.source),
+                'reason': entry.pendingNote?.cause.wire,
+                if (entry.pendingNote != null)
+                  'note': ctlVideoPendingNoteJson(entry.pendingNote!),
+              },
         ],
       };
     }
     _requireVideoModule();
+    // 上锁（未解锁）的视频 / 合集不给控制通道 / AI 看（[MediaVisibility] 唯一入口）。
+    final MediaVisibility visibility = await MediaVisibility.load(_db);
     final List<Map<String, Object?>> works = <Map<String, Object?>>[];
     for (final SourceLibraryRow source in await _localVideoSources()) {
       for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
         _db,
       ).plan(source)) {
+        if (visibility.hidesVideoScrapeWork(work)) continue;
         final VideoMetadataWorkRow? row = await _workRow(work);
         final VideoMetadataLookup? lookup = row == null
             ? null

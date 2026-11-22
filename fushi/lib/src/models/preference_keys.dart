@@ -401,6 +401,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
+  // String（JSON：客户区归一化 left/top/width/height）：OCR 游戏模式上次框选的台词区域
+  // （gal_ocr_line_source.dart 的 GalOcrRegion）。
+  'gal_ocr_region',
   'galgame_library',
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
@@ -419,6 +422,19 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
   // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
   'home_dashboard_panels',
+  // String 'focus' | 'overview'：首页「今日」格的版式（StudyGoalTodayLayout.wire）。
+  // 缺省 focus = 一条目标大环 + 左右滑；overview = 全部目标列表。随 Profile 走。
+  'home_today_layout',
+  // String：首页「今日」格的主目标 = 学习目标记录 id（StudyGoal.id，大环 + 大字）。只由
+  // 设置「主目标」改，左右滑不写（滑动位置见 home_today_page_goal）。'' / 指不到记录 =
+  // 第一页。随 Profile 走。
+  'home_today_main_goal',
+  // String：首页「今日」格翻页当前停在哪条目标（StudyGoal.id，左右滑 / 点圆点时写，下次
+  // 从它开始）。'' / 不在页集合里 = 主目标那页；改主目标时清空。随 Profile 走。
+  'home_today_page_goal',
+  // String 'daily' | 'all'：首页「今日」格左右滑显示哪些目标（StudyGoalSwipeScope.wire）。
+  // 缺省 daily = 只有每日目标。随 Profile 走。
+  'home_today_swipe_goals',
   // String（JSON，默认空）：首页小组件网格的两份布局 `{"v":1,"compact":[{"k":kind,
   // "c":列,"r":行},...],"wide":[...]}`（models/home_widget_layout.dart）。键或某份
   // 布局缺失 = 没编辑过，渲染时由旧键 `home_dashboard_panels` 迁移现算、不落盘。
@@ -588,6 +604,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',
+  // bool（默认 false）：电脑端（Windows）「缓存其他应用的声音」——开着时启动即常驻录
+  // 系统混音环，应用外查词制卡带查词前最后一句语音（拍板 design-cross-app-audio-desktop）。
+  // Android 不用它（每次都要重新同意屏幕共享）。设备本地。
+  'mining_app_audio_capture_desktop',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
@@ -672,8 +692,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_backdrop_animate',
   // double（默认 1.0，0.5–2.0）：歌词页流体背景饱和度倍数。
   'music_lyrics_backdrop_saturation',
-  // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
-  // （MusicLyricsBackdropStyle.prefValue）。
+  // String（默认 'pixi'，只在手选时落库；无行 = 跟出厂默认）：歌词页流体背景算法
+  // pixi / mesh / classic（MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
   // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
   // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。
@@ -817,9 +837,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
   'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
+  // String BCP-47（分支期，未发布）：旧「学习目标只算这种语言」。2026-11 起语言跟着
+  // 每条目标记录走（`study_goals`），本键只在迁移旧目标时读一次、不再写。
+  'reading_goal_language',
   // String 'daily' | 'weekly'：字数目标周期（StudyGoalPeriod.wire，反馈 CjIr9RGSCe：
   // 日目标与周目标二选一）。缺省 = daily。
   'reading_goal_period',
+  // String 'auto' | 'chars' | 'words'：文字目标的单位（全局，不分目标记录）（StudyGoalUnitChoice.wire）。
+  // auto = 按目标语言（空格分词的语言按词，其余按字）。缺省 auto。
+  'reading_goal_text_unit',
   // int：每周字数目标（2026-10-10 曾删除，2026-11 反馈 CjIr9RGSCe 复活：作为
   // `reading_goal_period = weekly` 时生效的目标值，首页 / 统计页 / 小组件按周显示进度）。
   'reading_goal_weekly_chars',
@@ -973,12 +999,20 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。
   // 设备本地键：值是本库自增 id，不进 Profile 快照、不随备份 / 分享出境。
   'stats_legacy_profile_id',
-  // int（0 = 关）：每日学习目标分钟数（沉浸总时长 / 阅读 / 听力 / 视频；Profile 内），
-  // 桌面小组件「目标」卡的数据源。
+  // int 1..7（DateTime.weekday，缺省 1 = 周一）：一周从星期几开始。每周目标、首页
+  // 「今日」格、统计「本周」与范围条的「周」共用（镜像到 StatWindow.weekStartDay）。
+  // 设置 › 目标 › 计数只给周一 / 周日 / 周六三项。随 Profile 走。
+  'stats_week_start',
+  // int（0 = 关）：每日学习目标分钟数（沉浸总时长 / 阅读 / 听力 / 视频；Profile 内）。
+  // 2026-11 起只是旧目标的迁移源（`study_goals` 缺失时现算记录），目标代码不再读。
   'study_goal_daily_listening_minutes',
   'study_goal_daily_minutes',
   'study_goal_daily_reading_minutes',
   'study_goal_daily_video_minutes',
+  // String（JSON 数组）：学习目标记录（StudyGoal，study_goal_record.dart）：
+  // `[{"id","metric","period":"daily|weekly|monthly","target","language"?,"days"?}]`。
+  // 缺失 = 没编辑过，由旧逐项目标偏好现算、不落盘。随 Profile 走。
+  'study_goals',
   // bool，默认 true：自动下载的外挂字幕按视频内嵌字幕轨对时间轴
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',

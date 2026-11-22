@@ -1033,7 +1033,6 @@ class LibraryScanner {
           final EpubBookRow? row = await db.getEpubBook(bookKey);
           await alignAndPersistAudiobook(
             db: db,
-            repo: SrtBookRepository(db),
             audiobookRepo: AudiobookRepository(db),
             bookKey: bookKey,
             title: row?.title ?? folder.title,
@@ -1170,7 +1169,6 @@ class LibraryScanner {
       if (subtitleChanged) {
         await alignAndPersistAudiobook(
           db: db,
-          repo: srtRepo,
           audiobookRepo: audiobookRepo,
           bookKey: bookKey,
           title: body.title,

@@ -240,6 +240,7 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
               voice: r.voice,
               say: r.say,
               nextRetryVoice: r.nextRetryVoice,
+              seed: r.seed,
             ),
         ],
         onProgress: (int done, int total) =>
@@ -270,16 +271,14 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
       manifestFile: renderer.manifestFile,
       manifest: manifest,
     );
-  } else {
-    for (final String lineId in updated) {
-      await updateMangaAudioLine(
-        appModel.database,
-        bookKey: job.bookKey,
-        manifestFile: renderer.manifestFile,
-        manifest: manifest,
-        lineId: lineId,
-      );
-    }
+  } else if (updated.isNotEmpty) {
+    await updateMangaAudioLines(
+      appModel.database,
+      bookKey: job.bookKey,
+      manifestFile: renderer.manifestFile,
+      manifest: manifest,
+      lineIds: updated,
+    );
   }
   onProgress(TtsRenderJobPhase.importing, 1, 1);
   return (verified: false, flags: const <TtsRenderFlag>[]);
@@ -312,6 +311,18 @@ Future<MangaRegenerateCandidate> regenerateMangaLine(
   } finally {
     await backend.dispose();
   }
+}
+
+/// 「按句替换本地音频」用的后端：只整形本地音频，不拉起 TTS 引擎。ffmpeg 不可用抛
+/// [TtsRenderFailure]（`ffmpeg_missing`）。
+Future<MangaRenderBackend> mangaLocalAudioBackend() async {
+  final FfmpegBackend ffmpeg = resolveFfmpegBackend();
+  await _ensureFfmpeg(ffmpeg);
+  return MangaLocalAudioBackend(
+    ffmpeg: ffmpeg,
+    log: (String source, String summary) =>
+        ErrorLogService.instance.log(source, summary, StackTrace.current),
+  );
 }
 
 /// 候选文件的绝对路径（试听用）。
@@ -383,6 +394,9 @@ class _NoBackend implements MangaRenderBackend {
   int get parallelism => 1;
 
   @override
+  String get shapeVersion => throw UnsupportedError('no synthesis here');
+
+  @override
   Future<int> synthesizeLine({
     required String voice,
     required int seed,
@@ -401,6 +415,13 @@ class _NoBackend implements MangaRenderBackend {
   @override
   Future<int> writeSilence({required int ms, required String outputPath}) =>
       throw UnsupportedError('no synthesis here');
+
+  @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('no synthesis here');
 
   @override
   Future<void> prepare({

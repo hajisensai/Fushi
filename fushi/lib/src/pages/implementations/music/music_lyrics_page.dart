@@ -28,8 +28,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, kStatSourceMusic;
+    show FushiDatabase, TagHostKind, kStatSourceMusic;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_audio/fushi_audio.dart' show AudioPlaybackRange;
@@ -37,6 +38,8 @@ import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/music/music_disc_art.dart'
+    show MusicDiscArtIndex, isLocalMusicTrackPath;
 import 'package:fushi/src/media/music/music_range_preview.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -118,6 +121,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -330,6 +334,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 音频旁同名 `.cdg`（CD+G 画面，§9.2）；CUE 曲目不认。
   String? _cdgPath;
   bool _loading = false;
+
+  /// 当前曲目的歌词解析（[_load]：sidecar 读文件、后台 isolate 找 `.cdg`）是否已落地。
+  /// 测试据此推帧到真 IO 跑完为止，而不是猜一段真实时长（慢机器上猜短了就是伪红）。
+  @visibleForTesting
+  bool get lyricsLoadSettled {
+    final String? uid = _engine.current?.trackUid;
+    return uid != null && uid == _loadedUid && !_loading;
+  }
 
   /// 在线搜歌词进行中（LRCLIB + 各歌词插件串行，装了插件可能要几秒）：歌词区显示进度、
   /// 「选择来源 / 搜索在线歌词」置灰，防止用户以为没反应重复触发叠出多个候选框。
@@ -1039,12 +1051,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           );
         }
       }
-      final String? cover = wantImage ? item?.coverPath : null;
+      final String? rawCover = wantImage ? item?.coverPath : null;
+      // NSFW 专辑 + 「制卡图片也模糊」：卡上用模糊副本（失败不带图，见
+      // resolveNsfwCardImagePath 的 fail-closed）。
+      final String? cover = rawCover != null && File(rawCover).existsSync()
+          ? await resolveNsfwCardImagePath(
+              db: appModel.database,
+              path: rawCover,
+              blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+              kind: TagHostKind.musicAlbum,
+              entryKey: item?.albumUid,
+            )
+          : null;
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,
         cueSentence: audioPath != null && sentence.isNotEmpty ? sentence : null,
         documentTitle: item?.title,
-        coverPath: cover != null && File(cover).existsSync() ? cover : null,
+        coverPath: cover,
         sentenceAudioPath: audioPath,
         // 音乐卡单独打 `music` 分类标签（所有者 2026-10-24），与收藏夹批量制卡
         // 的 ankiMiningSourceOf 同口径。
@@ -1503,9 +1526,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         // 歌手居中跟在下面，再往下是波浪进度与按钮组；右半歌词左对齐、从半区
         // 起点留一段空再开始。顶栏横贯整页：返回在左上，动作固定在右上角。
         final double cover = math
-            .min(c.maxWidth * 0.5 * 0.56, c.maxHeight * 0.42)
-            .clamp(180.0, 380.0);
-        final double controls = math.max(cover * 1.3, 320.0);
+            .min(c.maxWidth * 0.5 * 0.5, c.maxHeight * 0.42)
+            .clamp(180.0, 360.0);
+        // 列宽要装下封面 + 右侧露出的半张唱片（约 1.42 倍封面宽）。
+        final double controls = math.max(cover * 1.45, 320.0);
         final ColorScheme cs = Theme.of(context).colorScheme;
         return Column(
           children: <Widget>[
@@ -1531,10 +1555,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
-                              SizedBox.square(
-                                dimension: cover,
-                                child: _LyricsCover(item: item, size: cover),
-                              ),
+                              _buildSleeveWithDisc(context, item, cover),
                               const SizedBox(height: 40),
                               Text(
                                 item?.title ?? '',
@@ -1590,6 +1611,60 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
+  /// A 布局的封面：唱片压在封面（当封套）上、往右错出约四成，播放时转（用户
+  /// 2026-11-22：「显示歌词的这里也有 CD 好看一点」，对比示意后选「唱片压在上面」，
+  /// 整张盘面都看得到，中心孔里透出底下的封面）。有盘面扫描图转真盘面；没有就转
+  /// 银色 CD 盘（用户：「没有盘面的不能是黑胶，好难看」），不重复印一遍封面。
+  /// 进场时唱片从封面正中滑到右侧；整组随滑出量往左挪半个错出宽度，滑完后整体在
+  /// 左半区居中。3D 倾斜套在整组外面，封面和唱片一起倾斜，不会两层错开。
+  Widget _buildSleeveWithDisc(
+    BuildContext context,
+    MusicPlayItem? item,
+    double cover,
+  ) {
+    final double disc = cover * 0.94;
+    final double peek = cover * 0.42;
+    final double inset = (cover - disc) / 2;
+    final Widget sleeve = TweenAnimationBuilder<double>(
+      key: const ValueKey<String>('music-player-sleeve-disc'),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: fushiMotionDuration(context, FushiMotion.long),
+      curve: FushiMotion.enter,
+      builder: (BuildContext context, double t, Widget? child) =>
+          Transform.translate(
+            offset: Offset(-peek * t / 2, 0),
+            child: SizedBox.square(
+              dimension: cover,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  child!,
+                  Positioned(
+                    left: inset + peek * t,
+                    top: inset,
+                    child: _SpinningDisc(
+                      coverPath: item?.coverPath,
+                      albumUid: item?.albumUid,
+                      trackPath: item?.path,
+                      size: disc,
+                      spinning: _engine.isPlaying,
+                      fallback: _DiscFallback.silverCd,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      child: Positioned.fill(
+        child: _LyricsCover(item: item, size: cover, tilt: false),
+      ),
+    );
+    return FushiHoverLift(
+      scale: kMusicHoverLiftScale,
+      builder: (_, _) => sleeve,
+    );
+  }
+
   /// B：歌词居中占满舞台，底部停靠控件条（与宽屏迷你播放条同一套）。
   Widget _buildStage(BuildContext context, MusicPlayItem? item) {
     return Column(
@@ -1631,6 +1706,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 children: <Widget>[
                   _SpinningDisc(
                     coverPath: item?.coverPath,
+                    albumUid: item?.albumUid,
+                    trackPath: item?.path,
                     size: disc,
                     spinning: _engine.isPlaying,
                   ),
@@ -2531,11 +2608,15 @@ class _LyricsCover extends StatelessWidget {
     required this.item,
     required this.size,
     this.compact = false,
+    this.tilt = true,
   });
 
   final MusicPlayItem? item;
   final double size;
   final bool compact;
+
+  /// 大封面跟随指针 3D 倾斜；外层已有整组倾斜（封面 + 唱片）时传 false。
+  final bool tilt;
 
   @override
   Widget build(BuildContext context) => musicMaterialCover(
@@ -2543,19 +2624,37 @@ class _LyricsCover extends StatelessWidget {
     compact: compact,
     // 播放器里的大封面跟随指针 3D 倾斜（用户 2026-10-29：「加回去」）；顶行的
     // 小封面不倾斜。
-    tilt: !compact,
+    tilt: tilt && !compact,
   );
 }
 
-/// 唱片：深色同心纹盘面，中央嵌十二角饼干形封面；播放时匀速转，暂停停在原角度。
+/// 专辑没有盘面扫描图时 [_SpinningDisc] 转什么：C 布局保留黑胶 + 封面贴标；
+/// A 布局唱片压在封面上，转银色 CD 盘（不重复印封面、不用黑胶）。
+enum _DiscFallback { vinyl, silverCd }
+
+/// 唱片：专辑目录里有盘面扫描图（[MusicDiscArtIndex]）时转的就是那张真盘面；没有
+/// 才画黑胶盘面、中央贴圆形封面。播放时匀速转，暂停停在原角度。
 class _SpinningDisc extends StatefulWidget {
   const _SpinningDisc({
     required this.coverPath,
     required this.size,
     required this.spinning,
+    this.albumUid,
+    this.trackPath,
+    this.fallback = _DiscFallback.vinyl,
   });
 
   final String? coverPath;
+
+  /// 没有盘面扫描图时画什么。
+  final _DiscFallback fallback;
+
+  /// 当前曲目所属的曲库专辑（找盘面扫描图用）；插件 / 服务器曲目为 null。
+  final String? albumUid;
+
+  /// 当前曲目路径：曲库页还没发布过盘面图映射（从别处直接进播放页）时，按它所在的
+  /// 专辑目录现找一次。
+  final String? trackPath;
   final double size;
   final bool spinning;
 
@@ -2571,6 +2670,52 @@ class _SpinningDiscState extends State<_SpinningDisc>
     duration: const Duration(seconds: 12),
   );
 
+  /// 曲库页没发布到、按曲目目录现找出的盘面图（专辑 uid → 路径；找过没有记 null）。
+  final Map<String, String?> _lookedUp = <String, String?>{};
+
+  @override
+  void initState() {
+    super.initState();
+    MusicDiscArtIndex.instance.albums.addListener(_onDiscArt);
+    _lookUpDiscArt();
+  }
+
+  void _onDiscArt() {
+    if (mounted) setState(() {});
+  }
+
+  /// 当前专辑的盘面扫描图：先看曲库页发布的映射（含标签不一致拆开的版本共用，
+  /// BUG-5058），没有再看现找的结果。
+  String? get _discArtPath {
+    final String? album = widget.albumUid;
+    if (album == null) return null;
+    return MusicDiscArtIndex.instance.albums.value[album] ?? _lookedUp[album];
+  }
+
+  void _lookUpDiscArt() {
+    final String? album = widget.albumUid;
+    final String? path = widget.trackPath;
+    if (album == null ||
+        path == null ||
+        !isLocalMusicTrackPath(path) ||
+        _lookedUp.containsKey(album) ||
+        MusicDiscArtIndex.instance.albums.value.containsKey(album)) {
+      return;
+    }
+    _lookedUp[album] = null;
+    unawaited(
+      MusicDiscArtIndex.instance
+          .resolve(<String, List<String>>{
+            album: <String>[path],
+          })
+          .then((Map<String, String> found) {
+            final String? hit = found[album];
+            if (hit == null || !mounted) return;
+            setState(() => _lookedUp[album] = hit);
+          }),
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -2581,6 +2726,7 @@ class _SpinningDiscState extends State<_SpinningDisc>
   void didUpdateWidget(_SpinningDisc old) {
     super.didUpdateWidget(old);
     if (old.spinning != widget.spinning) _sync();
+    if (old.albumUid != widget.albumUid) _lookUpDiscArt();
   }
 
   void _sync() {
@@ -2594,6 +2740,7 @@ class _SpinningDiscState extends State<_SpinningDisc>
 
   @override
   void dispose() {
+    MusicDiscArtIndex.instance.albums.removeListener(_onDiscArt);
     _turn.dispose();
     super.dispose();
   }
@@ -2601,6 +2748,27 @@ class _SpinningDiscState extends State<_SpinningDisc>
   @override
   Widget build(BuildContext context) {
     final double size = widget.size;
+    final String? discArt = _discArtPath;
+    if (discArt != null) {
+      return _buildCd(
+        size,
+        key: const ValueKey<String>('music-player-real-disc'),
+        face: ClipOval(
+          child: musicDiscArtImage(
+            discArt,
+            decodeWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                .round(),
+          ),
+        ),
+      );
+    }
+    if (widget.fallback == _DiscFallback.silverCd) {
+      return _buildCd(
+        size,
+        key: const ValueKey<String>('music-player-silver-cd'),
+        face: const CustomPaint(painter: _SilverCdPainter()),
+      );
+    }
     // 黑胶（用户 2026-10-29：「唱片那个材质改成黑胶」）：密纹盘面 + 两道随盘面
     // 转动的扇形反光 + 中央圆形贴标（封面）+ 中心轴孔。整张一起转，反光跟着转
     // 读作「光打在转动的胶片上」。
@@ -2654,6 +2822,192 @@ class _SpinningDiscState extends State<_SpinningDisc>
       ),
     );
   }
+}
+
+extension on _SpinningDiscState {
+  /// CD 盘：[face]（盘面扫描图 / 银色 CD 盘）铺满圆形整张转（扫图本身就有贴标与
+  /// 反光，不再叠黑胶纹路和假贴标）；外缘一道细亮边让浅色盘面在浅色背景上也有
+  /// 轮廓。中心轴孔挖空透出底下（用户 2026-11-22：扫描图的孔是扫描仪底板的白色，
+  /// 像贴了一块白片）。阴影也在挖孔之内裁掉，孔里看到的是底下本身而不是一团阴影。
+  Widget _buildCd(double size, {required Key key, required Widget face}) {
+    final double hole = size * _kDiscHoleFraction;
+    final double edge = math.max(1, size * 0.004);
+    return RepaintBoundary(
+      key: key,
+      child: ClipPath(
+        clipper: _DiscHoleClipper(holeFraction: _kDiscHoleFraction),
+        child: SizedBox.square(
+          dimension: size,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: size * 0.1,
+                  offset: Offset(0, size * 0.05),
+                ),
+              ],
+            ),
+            child: RotationTransition(
+              turns: _turn,
+              child: Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  Positioned.fill(child: face),
+                  // 外缘与轴孔各一道细亮边（孔边只有外半道露在盘面上）。
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.28),
+                          width: edge,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox.square(
+                    dimension: hole + edge * 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          width: edge * 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 银色 CD 盘（没有盘面扫描图时 A 布局转它）：按实物比例（盘径 120mm）画——
+/// 33mm 以内是透明塑料轮毂（半透，底下的封面隐约透出来），46mm 起是银色反射层，
+/// 外缘一道细唇边；反射层上叠一层淡彩虹扇形光（SweepGradient，随盘面转动读作光
+/// 在盘上流动）和几道极淡的同心纹。
+class _SilverCdPainter extends CustomPainter {
+  const _SilverCdPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset c = size.center(Offset.zero);
+    final double r = size.shortestSide / 2;
+    final Rect box = Rect.fromCircle(center: c, radius: r);
+    // 透明轮毂：只铺一层淡白，叠一道夹持环。
+    canvas.drawCircle(
+      c,
+      r * 0.38,
+      Paint()..color = Colors.white.withValues(alpha: 0.22),
+    );
+    canvas.drawCircle(
+      c,
+      r * 0.3,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = r * 0.012
+        ..color = Colors.white.withValues(alpha: 0.4),
+    );
+    // 银色反射层（环带：外圆减内圆）。
+    final Path data = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addOval(box)
+      ..addOval(Rect.fromCircle(center: c, radius: r * 0.38));
+    canvas.drawPath(
+      data,
+      Paint()
+        ..shader = const RadialGradient(
+          colors: <Color>[Color(0xFFE9ECF0), Color(0xFFC9CDD4)],
+          stops: <double>[0.4, 1],
+        ).createShader(box),
+    );
+    // 彩虹扇形光：两组对角的淡彩楔。
+    canvas.drawPath(
+      data,
+      Paint()
+        ..shader = const SweepGradient(
+          colors: <Color>[
+            Color(0x00FFFFFF),
+            Color(0x3378C8FF),
+            Color(0x40B48CFF),
+            Color(0x33FFD27A),
+            Color(0x00FFFFFF),
+            Color(0x00FFFFFF),
+            Color(0x2E7AE0C8),
+            Color(0x38FF9CC8),
+            Color(0x2EFFE08A),
+            Color(0x00FFFFFF),
+          ],
+          stops: <double>[
+            0,
+            0.06,
+            0.12,
+            0.18,
+            0.26,
+            0.5,
+            0.56,
+            0.62,
+            0.68,
+            0.76,
+          ],
+        ).createShader(box),
+    );
+    // 极淡的同心纹，让反射层不是一块平板。
+    final Paint groove = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5
+      ..color = const Color(0x14000000);
+    for (final double f in <double>[0.45, 0.58, 0.71, 0.84]) {
+      canvas.drawCircle(c, r * f, groove);
+    }
+    // 反射层内缘与外缘唇边。
+    final Paint lip = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = r * 0.012
+      ..color = const Color(0x33000000);
+    canvas.drawCircle(c, r * 0.38, lip);
+    canvas.drawCircle(c, r * 0.99, lip);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SilverCdPainter oldDelegate) => false;
+}
+
+/// 真盘面中心挖孔占盘面直径的比例。实物 CD 轴孔 15mm / 盘径 120mm = 0.125，
+/// 放宽到 0.15 盖住扫描图裁切不正时孔边露出的那圈底板白。
+const double _kDiscHoleFraction = 0.15;
+
+/// 盘面中心挖孔：裁剪区是「组件外扩一圈（留给投影）减去中心圆孔」，所以孔里连
+/// 投影一起裁掉，而盘外的投影照常画出来。
+class _DiscHoleClipper extends CustomClipper<Path> {
+  const _DiscHoleClipper({required this.holeFraction});
+
+  final double holeFraction;
+
+  @override
+  Path getClip(Size size) {
+    final double side = size.shortestSide;
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect((Offset.zero & size).inflate(side * 0.5))
+      ..addOval(
+        Rect.fromCircle(
+          center: size.center(Offset.zero),
+          radius: side * holeFraction / 2,
+        ),
+      );
+  }
+
+  @override
+  bool shouldReclip(covariant _DiscHoleClipper oldClipper) =>
+      oldClipper.holeFraction != holeFraction;
 }
 
 /// 黑胶盘面：近黑底、一圈圈细密纹（亮暗交替的同心圆）、外缘一道唇边、贴标外

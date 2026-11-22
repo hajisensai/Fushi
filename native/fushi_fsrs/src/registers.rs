@@ -1003,16 +1003,18 @@ fn cards_group(
     }
     let mut wants = Vec::with_capacity(want.len());
     for (card, note_deck, fallback) in want {
-        // 血统：自己在前，再按广度优先列出全部前身（防环，最多 256 张）。
+        // 血统：自己在前，再按广度优先列出全部前身（防环，最多 256 张），各带层数（自己 0）。
         let mut lineage: Vec<&str> = Vec::new();
+        let mut depths: Vec<usize> = Vec::new();
         let mut seen: Vec<&str> = vec![card];
-        let mut queue: std::collections::VecDeque<&str> =
-            std::collections::VecDeque::from([card.as_str()]);
-        while let Some(id) = queue.pop_front() {
+        let mut queue: std::collections::VecDeque<(&str, usize)> =
+            std::collections::VecDeque::from([(card.as_str(), 0)]);
+        while let Some((id, depth)) = queue.pop_front() {
             if lineage.len() >= 256 {
                 break;
             }
             lineage.push(id);
+            depths.push(depth);
             let Some(&k) = by_id.get(id) else { continue };
             let ent = &entities[k];
             let mut preds: Vec<&str> = ent
@@ -1028,22 +1030,39 @@ fn cards_group(
             for p in preds {
                 if !seen.contains(&p) {
                     seen.push(p);
-                    queue.push_back(p);
+                    queue.push_back((p, depth + 1));
                 }
             }
         }
-        // 标志按血统继承：自己有记录的键用自己的，没有的取最近的前身的。
-        let mut inherited: HashMap<&str, &Value> = HashMap::new();
-        for id in lineage.iter().rev() {
+        // 标志按血统继承（[later]）：自己有记录的键用自己的，没有的取最近一层有记录的前身的；同一层几张前身
+        // 都有时取生效写入最新的那张。
+        // 键 → (层数, 实体下标, 生效写入下标)。
+        let mut picked: HashMap<&str, (usize, usize, Option<usize>)> = HashMap::new();
+        for (id, &depth) in lineage.iter().zip(&depths) {
             let Some(&k) = by_id.get(id) else { continue };
             let ent = &entities[k];
             for r in &ent.regs {
                 if r.key.starts_with(HISTORY_FROM) {
                     continue;
                 }
-                inherited.insert(&r.key, ent.value(&r.key));
+                let winner = r.live.first().copied();
+                let take = match picked.get(r.key.as_str()) {
+                    None => true,
+                    Some(&(d, pk, pw)) => {
+                        let order =
+                            |e: usize, w: Option<usize>| w.map(|w| entities[e].edits[w].sort_key());
+                        d == depth && later(order(k, winner), order(pk, pw))
+                    }
+                };
+                if take {
+                    picked.insert(&r.key, (depth, k, winner));
+                }
             }
         }
+        let inherited: HashMap<&str, &Value> = picked
+            .into_iter()
+            .map(|(key, (_, k, _))| (key, entities[k].value(key)))
+            .collect();
         let flags = card_flags(&inherited, note_deck.as_deref(), fallback)?;
         wants.push(json!({"l": lineage, "f": flags}));
     }
@@ -1051,6 +1070,77 @@ fn cards_group(
         "r": entities.iter().map(|e| entity_json(e, None)).collect::<Vec<_>>(),
         "w": wants,
     }))
+}
+
+/// 卡片标志按血统继承时，同一层两张前身都对一个键有生效写入：[a] 是不是比 [b] 新（排序键大，[SortKey]：HLC 物理
+/// 时刻、计数、写入者、修改记录 ID）。没有生效写入的算最旧。
+///
+/// 同一层的前身不按卡 ID 排先后：卡 ID 在协议 3 是原值（带盐）、在新代是规范 ID，两种 ID 的先后约一半相反，按 ID
+/// 取会让同一份历史在两边继承到不同前身的标志（BUG-5190，反馈 eZJEGqEt7K：迁移对拍卡行的 `new_position` / `flag`
+/// 不同而整体回滚）。排序键只由写入本身决定，与 ID 的写法无关。三处同一规则：这里、新代恢复
+/// （`store/gen4/cmd/writes_restore.rs` `card_inherited_at`）、协议 3 恢复的测试参照（`store/sync2/timeline.rs`）。
+pub(crate) fn later(a: Option<SortKey<'_>>, b: Option<SortKey<'_>>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a.cmp(&b) == std::cmp::Ordering::Greater,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
+/// [StoredEdit] 落库行的寄存器 [key] 的生效值与生效写入的排序键（[later] 比的那个）：(值, 物理时刻, 计数, HLC 写入者,
+/// 修改记录 ID, server_time)。没有记录 = None。
+pub(crate) fn register_winner(
+    edits: &[StoredEdit<'_>],
+    key: &str,
+) -> Result<Option<(Value, WriteOrder)>, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let Some(r) = ent.reg(key) else {
+        return Ok(None);
+    };
+    let order = r.live.first().map(|&i| WriteOrder::of(&parsed[i]));
+    Ok(Some((ent.value(key).clone(), order.unwrap_or_default())))
+}
+
+/// 一条生效写入的排序键（[SortKey] 的自有形，跨调用比较用；[later]）。`Default` = 没有生效写入（最旧）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct WriteOrder {
+    pub(crate) some: bool,
+    pub(crate) physical: i64,
+    pub(crate) counter: i64,
+    pub(crate) writer: String,
+    pub(crate) event_id: String,
+    pub(crate) server_time: Option<i64>,
+}
+
+impl WriteOrder {
+    fn of(e: &Edit<'_>) -> WriteOrder {
+        WriteOrder {
+            some: true,
+            physical: e.physical,
+            counter: e.counter,
+            writer: e.hlc_writer.clone(),
+            event_id: e.id.clone(),
+            server_time: e.server_time,
+        }
+    }
+
+    pub(crate) fn key(&self) -> Option<SortKey<'_>> {
+        self.some.then(|| {
+            SortKey::new(
+                self.physical,
+                self.counter,
+                &self.writer,
+                &self.event_id,
+                self.server_time,
+            )
+        })
+    }
+
+    /// [self] 比 [other] 新（[later]）。
+    pub(crate) fn later_than(&self, other: &WriteOrder) -> bool {
+        later(self.key(), other.key())
+    }
 }
 
 // ---------------------------------------------------------------- 落库前的支配裁剪
@@ -1337,6 +1427,17 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// [keys] 里每个字段键有没有修改记录（有任何一条就算，值是 null / 空串也算；Dart `SrsEntityEdits[key] != null`）。
+/// 一次解析，逐键回答。
+pub(crate) fn has_registers(
+    edits: &[StoredEdit<'_>],
+    keys: &[String],
+) -> Result<Vec<bool>, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(keys.iter().map(|k| ent.reg(k).is_some()).collect())
+}
+
 /// 往某实体的字段键 [key] 写 [value] 是不是什么都不改（Dart 旧 `srsEditIsNoop`）：这个键有生效记录、没有冲突，且
 /// 生效值与它「相同」（[same_value]）。没有记录、或有冲突待裁决的一律要写。
 pub(crate) fn write_is_noop(
@@ -1523,6 +1624,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         assert_eq!(vectors.len(), 300);
         let mut multi = 0;
+        let mut retie = 0;
         for v in &vectors {
             let server = v["server"].as_object().cloned().unwrap_or_default();
             let mut texts: Vec<(String, Vec<String>)> = Vec::new();
@@ -1588,7 +1690,29 @@ mod tests {
                 "newPosition": f["np"],
             });
             assert_eq!(got["w"][0]["l"], e["lineage"], "{v}");
-            assert_eq!(flags, e["flags"], "{v}");
+            // 同一层几张前身都对一个键有生效写入时，旧 Dart 取卡 ID 序在前的那张，现在取生效写入最新的（[later]，
+            // BUG-5190）：标志按新规则另算（[latest_inherited]，只用寄存器的公开读法），这类用例数目钉住；其余用例
+            // 两条规则给出同一个值，照旧 Dart 的期望逐字比。
+            let (oracle, retied) = latest_inherited(&cards, &want[0].0);
+            let f = card_flags(
+                &oracle.iter().map(|(k, v)| (k.as_str(), v)).collect(),
+                want[0].1.as_deref(),
+                &want[0].2,
+            )
+            .unwrap();
+            let by_latest = json!({
+                "deckId": f["dk"],
+                "suspended": f["su"] == Value::Bool(true),
+                "buriedUntilDay": f["bu"],
+                "flag": f["fl"],
+                "newPosition": f["np"],
+            });
+            assert_eq!(flags, by_latest, "{v}");
+            if retied {
+                retie += 1;
+            } else {
+                assert_eq!(flags, e["flags"], "{v}");
+            }
             let mut regs = Map::new();
             for (k, (id, items)) in texts.iter().enumerate() {
                 let ids: Vec<Option<String>> = items.iter().map(|j| id_of(j)).collect();
@@ -1615,6 +1739,97 @@ mod tests {
             }
         }
         assert!(multi > 60);
+        assert_eq!(retie, RETIED_VECTORS);
+    }
+
+    /// 旧 Dart 用例里「同一层几张前身都对同一个键有生效写入、最新的那张不是卡 ID 序在前的那张」的个数。
+    const RETIED_VECTORS: usize = 1;
+
+    /// [cards_group] 的标志继承的独立写法（测试参照）：血统按广度优先（前身按 UTF-16 序入队，防环，最多 256 张），每个
+    /// 非 `historyFrom/` 键取离 [card] 最近、有记录的一层；同一层几张都有时取生效写入最新的（[register_winner]）。
+    /// 第二项：有没有哪个键因为「取最新」而不是「取 ID 序在前」换了前身。
+    fn latest_inherited(
+        cards: &[(String, Vec<StoredEdit<'_>>)],
+        card: &str,
+    ) -> (HashMap<String, Value>, bool) {
+        let edits_of = |id: &str| -> Option<&Vec<StoredEdit<'_>>> {
+            cards.iter().find(|(c, _)| c == id).map(|(_, e)| e)
+        };
+        let keys_of = |es: &[StoredEdit<'_>]| -> Vec<String> {
+            let mut ks: Vec<String> = es
+                .iter()
+                .filter_map(|(j, _, _)| {
+                    serde_json::from_str::<Value>(j)
+                        .ok()
+                        .and_then(|x| x["f"].as_str().map(str::to_owned))
+                })
+                .collect();
+            ks.sort();
+            ks.dedup();
+            ks
+        };
+        let mut layers: Vec<(String, usize)> = Vec::new();
+        let mut seen: Vec<String> = vec![card.to_owned()];
+        let mut queue = std::collections::VecDeque::from([(card.to_owned(), 0usize)]);
+        while let Some((id, depth)) = queue.pop_front() {
+            if layers.len() >= 256 {
+                break;
+            }
+            layers.push((id.clone(), depth));
+            let Some(es) = edits_of(&id) else { continue };
+            let mut preds: Vec<String> = keys_of(es)
+                .into_iter()
+                .filter(|k| k.starts_with(HISTORY_FROM))
+                .filter(|k| register_winner(es, k).unwrap().map(|w| w.0) == Some(Value::Bool(true)))
+                .map(|k| k[HISTORY_FROM.len()..].to_owned())
+                .collect();
+            preds.sort_by(|a, b| cmp_utf16(a, b));
+            for p in preds {
+                if !seen.contains(&p) {
+                    seen.push(p.clone());
+                    queue.push_back((p, depth + 1));
+                }
+            }
+        }
+        let mut out: HashMap<String, Value> = HashMap::new();
+        let mut retied = false;
+        let mut keys: Vec<String> = Vec::new();
+        for (id, _) in &layers {
+            if let Some(es) = edits_of(id) {
+                keys.extend(
+                    keys_of(es)
+                        .into_iter()
+                        .filter(|k| !k.starts_with(HISTORY_FROM)),
+                );
+            }
+        }
+        keys.sort();
+        keys.dedup();
+        for key in keys {
+            // (层数, 值, 排序键)：第一张有记录的（ID 序在前）与最新的。
+            let mut first: Option<(usize, Value)> = None;
+            let mut best: Option<(usize, Value, WriteOrder)> = None;
+            for (id, depth) in &layers {
+                if best.as_ref().is_some_and(|b| b.0 < *depth) {
+                    break;
+                }
+                let Some(es) = edits_of(id) else { continue };
+                let Some((value, order)) = register_winner(es, &key).unwrap() else {
+                    continue;
+                };
+                if first.is_none() {
+                    first = Some((*depth, value.clone()));
+                }
+                if best.as_ref().is_none_or(|b| order.later_than(&b.2)) {
+                    best = Some((*depth, value, order));
+                }
+            }
+            if let Some((_, value, _)) = best {
+                retied |= first.is_some_and(|f| f.1 != value);
+                out.insert(key, value);
+            }
+        }
+        (out, retied)
     }
 
     #[test]

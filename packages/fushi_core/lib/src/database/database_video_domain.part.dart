@@ -772,16 +772,25 @@ mixin _FushiDbVideoDomain
   /// 一批文件的手动季集指定（刮削一个作品单元时按成员批量取）。
   Future<Map<String, VideoEpisodeBindingOverrideRow>>
   getVideoEpisodeBindingOverrides(Iterable<String> bookUids) async {
-    final List<String> uids = bookUids.toList(growable: false);
+    final List<String> uids = bookUids.toSet().toList(growable: false);
     if (uids.isEmpty) return const <String, VideoEpisodeBindingOverrideRow>{};
-    final List<VideoEpisodeBindingOverrideRow> rows =
-        await (select(videoEpisodeBindingOverrides)..where(
-              ($VideoEpisodeBindingOverridesTable t) => t.bookUid.isIn(uids),
-            ))
-            .get();
-    return <String, VideoEpisodeBindingOverrideRow>{
-      for (final VideoEpisodeBindingOverrideRow row in rows) row.bookUid: row,
-    };
+    final Map<String, VideoEpisodeBindingOverrideRow> out =
+        <String, VideoEpisodeBindingOverrideRow>{};
+    // SQLite 变量上限：互联 host 清单按整库取（BUG-5084），分块。
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 > uids.length ? uids.length : i + 500,
+      );
+      for (final VideoEpisodeBindingOverrideRow row
+          in await (select(videoEpisodeBindingOverrides)..where(
+                ($VideoEpisodeBindingOverridesTable t) => t.bookUid.isIn(chunk),
+              ))
+              .get()) {
+        out[row.bookUid] = row;
+      }
+    }
+    return out;
   }
 
   /// 写 / 覆盖某文件的手动季集指定。
@@ -804,6 +813,140 @@ mixin _FushiDbVideoDomain
             ($VideoEpisodeBindingOverridesTable t) => t.bookUid.equals(bookUid),
           ))
           .go();
+
+  // ── video_collection_section_overrides（v167，拍板台 iR6ccUys9H）──
+
+  /// 一批文件的手动分栏（`book_uid → section_key`）；没指定的不在结果里。
+  Future<Map<String, String>> getVideoCollectionSectionOverrides(
+    Iterable<String> bookUids,
+  ) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    if (uids.isEmpty) return const <String, String>{};
+    final Map<String, String> out = <String, String>{};
+    // SQLite 变量上限：大合集分块取。
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 > uids.length ? uids.length : i + 500,
+      );
+      for (final VideoCollectionSectionOverrideRow row
+          in await (select(videoCollectionSectionOverrides)..where(
+                ($VideoCollectionSectionOverridesTable t) =>
+                    t.bookUid.isIn(chunk),
+              ))
+              .get()) {
+        out[row.bookUid] = row.sectionKey;
+      }
+    }
+    return out;
+  }
+
+  /// 写 / 覆盖一批文件的手动分栏（同一事务）。键形状由调用方校验。
+  Future<void> setVideoCollectionSectionOverrides(
+    Iterable<String> bookUids,
+    String sectionKey,
+  ) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return transaction(() async {
+      for (final String uid in bookUids.toSet()) {
+        await into(videoCollectionSectionOverrides).insertOnConflictUpdate(
+          VideoCollectionSectionOverridesCompanion.insert(
+            bookUid: uid,
+            sectionKey: sectionKey,
+            updatedAt: now,
+          ),
+        );
+      }
+    });
+  }
+
+  /// 条件写（compare-and-set）：只有 [bookUid] 当前的手动分栏仍是 [expected]
+  /// （null = 没有指定）时才改成 [replacement]（null = 清掉），返回是否命中。
+  ///
+  /// 比较与写入是同一条 SQL，撤销不必「先读再写」：读和写之间别的写入方（同进程
+  /// 另一任务、控制通道、另一进程的连接）提交的新值不会被旧快照无声盖掉。
+  /// [expected] 为 null 写入时文件行已被删除（外键不在）同样算没命中。
+  Future<bool> compareAndSetVideoCollectionSectionOverride(
+    String bookUid, {
+    required String? expected,
+    required String? replacement,
+  }) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final Set<ResultSetImplementation<dynamic, dynamic>> touched =
+        <ResultSetImplementation<dynamic, dynamic>>{
+          videoCollectionSectionOverrides,
+        };
+    if (expected == null && replacement == null) {
+      final QueryRow? row = await customSelect(
+        'SELECT 1 FROM video_collection_section_overrides '
+        'WHERE book_uid = ? LIMIT 1',
+        variables: <Variable<Object>>[Variable<String>(bookUid)],
+        readsFrom: touched,
+      ).getSingleOrNull();
+      return row == null;
+    }
+    if (expected == null) {
+      return await customUpdate(
+            'INSERT INTO video_collection_section_overrides '
+            '(book_uid, section_key, updated_at) '
+            'SELECT ?1, ?2, ?3 WHERE EXISTS '
+            '(SELECT 1 FROM video_books WHERE book_uid = ?1) '
+            'ON CONFLICT(book_uid) DO NOTHING',
+            variables: <Variable<Object>>[
+              Variable<String>(bookUid),
+              Variable<String>(replacement!),
+              Variable<int>(now),
+            ],
+            updates: touched,
+            updateKind: UpdateKind.insert,
+          ) ==
+          1;
+    }
+    if (replacement == null) {
+      return await customUpdate(
+            'DELETE FROM video_collection_section_overrides '
+            'WHERE book_uid = ? AND section_key = ?',
+            variables: <Variable<Object>>[
+              Variable<String>(bookUid),
+              Variable<String>(expected),
+            ],
+            updates: touched,
+            updateKind: UpdateKind.delete,
+          ) ==
+          1;
+    }
+    return await customUpdate(
+          'UPDATE video_collection_section_overrides '
+          'SET section_key = ?, updated_at = ? '
+          'WHERE book_uid = ? AND section_key = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(replacement),
+            Variable<int>(now),
+            Variable<String>(bookUid),
+            Variable<String>(expected),
+          ],
+          updates: touched,
+          updateKind: UpdateKind.update,
+        ) ==
+        1;
+  }
+
+  /// 清除一批文件的手动分栏（回到按文件名 / 手动季集派生）。
+  Future<void> clearVideoCollectionSectionOverrides(
+    Iterable<String> bookUids,
+  ) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 > uids.length ? uids.length : i + 500,
+      );
+      await (delete(videoCollectionSectionOverrides)..where(
+            ($VideoCollectionSectionOverridesTable t) => t.bookUid.isIn(chunk),
+          ))
+          .go();
+    }
+  }
 
   /// 把 [bookUid] 立刻改绑到 [workId] 下的 (季, 集) 分集行：原先绑它的行解绑
   /// （AniDB 身份三列随之清），目标行绑上并继承该文件的 AniDB eid / 原生集号、

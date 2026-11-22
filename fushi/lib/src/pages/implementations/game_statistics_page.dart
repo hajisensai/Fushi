@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -48,7 +49,12 @@ class GameStatisticsPage extends BasePage {
   BasePageState<GameStatisticsPage> createState() => _GameStatisticsPageState();
 }
 
-class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
+class _GameStatisticsPageState extends BasePageState<GameStatisticsPage>
+    with MediaVisibilityDependent<GameStatisticsPage> {
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品不进统计，[MediaVisibility]）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_load());
+
   bool _loading = true;
   String? _error;
   GameStatsAggregate _aggregate = GameStatsAggregate();
@@ -182,11 +188,14 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       // 同一次加载：总览的跨域数字必须恰好等于三个域 tab 之和，各页各查一遍就会
       // 在口径漂移时静默对不上。只读游戏域（书 / 视频的段与 legacy 表本页一行不
       // 用，与观看页同形）；计数面不收窄，「总览 = 各域之和」照旧成立。
-      final StatFacts facts = await loadStatFacts(
-        db,
-        activityLimit: 0,
-        includeCounters: true,
-        scope: const StatFactsScope.domain(kActivityMediaGame),
+      // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）。
+      final StatFacts facts = mediaVisibility.visibleStatFacts(
+        await loadStatFacts(
+          db,
+          activityLimit: 0,
+          includeCounters: true,
+          scope: const StatFactsScope.domain(kActivityMediaGame),
+        ),
       );
       final StatCounterFacts counterFacts = facts.counters;
       _lookupEvents = counterFacts

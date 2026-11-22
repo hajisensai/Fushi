@@ -332,6 +332,50 @@ pub struct Edit4 {
     pub stamp: Option<HeritageStamp>,
 }
 
+/// 修改操作体里字段值以外的部分（[decode_edit_parts]）。派生层判寄存器 / dot / 撞车只用这些，不必把字段值（笔记正文）
+/// 解成 `String`（BUG-5137）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditHead4 {
+    pub kind: EntKind,
+    pub entity: Key,
+    pub key: String,
+    pub machine: bool,
+    pub anchored: bool,
+    pub stamp: Option<HeritageStamp>,
+}
+
+impl Edit4 {
+    /// 拆成头部与字段值。
+    pub fn into_parts(self) -> (EditHead4, String) {
+        (
+            EditHead4 {
+                kind: self.kind,
+                entity: self.entity,
+                key: self.key,
+                machine: self.machine,
+                anchored: self.anchored,
+                stamp: self.stamp,
+            },
+            self.value,
+        )
+    }
+}
+
+/// 只解修改操作体的头部，字段值借原字节、不复制。与 [Body4::decode] 的 `KIND_EDIT` 分支同一套规则（格式号、标志位、
+/// 尾随字节），解不开的情形两边一致；字段值原文仍按 UTF-8 校验。
+pub fn decode_edit_parts(fmt: u16, payload: &[u8]) -> DResult<(EditHead4, &str)> {
+    if fmt < BODY_FMT {
+        return Err(DecodeError("not a protocol 4 op body"));
+    }
+    let exact = fmt == BODY_FMT;
+    let mut r = Reader::new(payload);
+    let parts = read_edit_parts(&mut r, exact)?;
+    if exact && !r.is_empty() {
+        return Err(DecodeError("trailing bytes in op body"));
+    }
+    Ok(parts)
+}
+
 const EDIT_MACHINE: u8 = 1;
 const EDIT_ANCHORED: u8 = 2;
 const EDIT_STAMP: u8 = 4;
@@ -767,6 +811,20 @@ fn write_edit(w: &mut Writer, e: &Edit4) {
 }
 
 fn read_edit(r: &mut Reader<'_>, exact: bool) -> DResult<Edit4> {
+    let (h, value) = read_edit_parts(r, exact)?;
+    Ok(Edit4 {
+        kind: h.kind,
+        entity: h.entity,
+        key: h.key,
+        value: value.to_owned(),
+        machine: h.machine,
+        anchored: h.anchored,
+        stamp: h.stamp,
+    })
+}
+
+/// [read_edit] 与 [decode_edit_parts] 共用的读法：字段值借原字节。
+fn read_edit_parts<'a>(r: &mut Reader<'a>, exact: bool) -> DResult<(EditHead4, &'a str)> {
     let kind = ent_kind(r.u8()?)?;
     let entity = read_key(r)?;
     let key = read_edit_key(r)?;
@@ -774,21 +832,23 @@ fn read_edit(r: &mut Reader<'_>, exact: bool) -> DResult<Edit4> {
     if exact && flags & !EDIT_KNOWN != 0 {
         return Err(DecodeError("edit flags"));
     }
-    let value = str_min(r)?.to_owned();
+    let value = str_min(r)?;
     let stamp = if flags & EDIT_STAMP != 0 {
         Some(HeritageStamp::read(r)?)
     } else {
         None
     };
-    Ok(Edit4 {
-        kind,
-        entity,
-        key,
+    Ok((
+        EditHead4 {
+            kind,
+            entity,
+            key,
+            machine: flags & EDIT_MACHINE != 0,
+            anchored: flags & EDIT_ANCHORED != 0,
+            stamp,
+        },
         value,
-        machine: flags & EDIT_MACHINE != 0,
-        anchored: flags & EDIT_ANCHORED != 0,
-        stamp,
-    })
+    ))
 }
 
 /// 一个 Edit 操作体带不带旧戳（只读到标志位）。原生段据此拒收带旧戳的修改：协议 1 的因果数据只存在于承袭日志。

@@ -1046,6 +1046,12 @@ class FavoriteSentences extends Table {
   IntColumn get normCharOffset => integer().nullable()();
   IntColumn get normCharLength => integer().nullable()();
   TextColumn get color => text().nullable()();
+
+  /// [color] 最后一次被用户改的时刻（微秒，v167，BUG-5081）：同步 / 备份合并按内容键
+  /// 去重时，颜色取这个时钟较新的一侧（LWW）；NULL = 收藏后没改过色，时钟按
+  /// [createdAtUs] 算。没有它，同一条收藏两端 createdAt 相同、合并各留本机行，改色
+  /// 永远传不到别的设备。
+  IntColumn get colorUpdatedAtUs => integer().nullable()();
   TextColumn get source => text().withDefault(const Constant('book'))();
   TextColumn get dateKey => text().nullable()();
   TextColumn get expression => text().nullable()();
@@ -2279,6 +2285,31 @@ class VideoEpisodeBindingOverrides extends Table {
       text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
   IntColumn get seasonNumber => integer()();
   IntColumn get episodeNumber => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{bookUid};
+}
+
+// ── video_collection_section_overrides ──────────────────────────────
+/// v167：用户指定的「文件 → 合集分栏」（拍板台 iR6ccUys9H）。合集详情页 / 播放器
+/// 剧集面板 / 「为合集获取字幕」的季分栏默认按文件名现场派生（见引擎
+/// `collection_season_groups.dart`）；文件名推断不了或推断错（`01`–`08` 的短篇其实
+/// 是特典、NCOP 文件名里带集号）时，用户或 AI 在这里钉死它属于哪一栏。
+///
+/// **稀疏覆盖**：没有行 = 照旧派生（存量零迁移，派生语义原样保留）。身份是文件
+/// （`book_uid`），不是合集成员行：合并合集、拆并作品、重新刮削都不碰这张表，指定
+/// 跟着文件走。删视频随 FK 一起清；改回「自动」即删行。随备份「视频」类别走
+/// （同 `video_episode_binding_overrides`）。
+@DataClassName('VideoCollectionSectionOverrideRow')
+class VideoCollectionSectionOverrides extends Table {
+  TextColumn get bookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+
+  /// 分栏键，与引擎派生键同一值域：`s<N>`（N ≥ 1，第 N 季）或 `extras`（PV·特典）。
+  /// 写入口只接受这两种形状（引擎 `isValidCollectionSectionKey`）；读到别的形状按
+  /// 「没有指定」处理。
+  TextColumn get sectionKey => text()();
   IntColumn get updatedAt => integer()();
 
   @override
@@ -4125,6 +4156,63 @@ class MediaNsfwFlags extends Table {
 
   @override
   Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
+// ── media_locked_flags（v171：作品级「上锁」标记）──────────────────────
+/// 用户把一部作品「上锁」（拍板台 qiqSbvdxrk）：作品隐私分级的最高一级——
+/// 公开 < 私密（[MediaPrivacyFlags]，管出站）< 上锁（本表）。上锁蕴含私密（不上传
+/// 排行榜、不推 Bangumi，见 fushi_engine `media_privacy.dart`），并且在本次会话
+/// 解锁之前，库页 / 首页卡片 / 搜索 / 合集等所有列表消费端都不显示它（app 端
+/// `media_visibility.dart` 是唯一的过滤入口）。解锁只在内存里、每次启动都回到隐藏。
+///
+/// 与 [MediaPrivacyFlags] / [MediaNsfwFlags] 同形、同一套逻辑外键（[mediaKind] =
+/// `TagHostKind.dbValue`，[entryKey]：epub=bookKey / srt=uid / video=bookUid /
+/// collection=合集 id 字符串 / game=Galgames.id / musicAlbum=albumUid），跨端搭
+/// 互联标签同步清单（条目上的可选 `locked` 字段）：一台设备上锁的作品，别的设备
+/// 上同样藏起来。
+///
+/// 一行两只时钟（LWW）：[lockedAt] = 最近一次上锁，[clearedAt] = 最近一次解除；
+/// 上锁 ⇔ lockedAt 非空且（clearedAt 为空或 lockedAt > clearedAt），相等解除胜。
+/// 解除不删行（理由同 [MediaPrivacyFlags]）。宿主删除不级联：同键重新导入仍上锁
+/// （宁可多藏）。
+@DataClassName('MediaLockedFlagRow')
+class MediaLockedFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次上锁的毫秒戳；NULL = 从没上过锁。
+  IntColumn get lockedAt => integer().nullable()();
+
+  /// 最近一次解除上锁的毫秒戳；NULL = 从没解除过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
+// ── media_lock_credentials（v171：上锁作品的解锁口令摘要）────────────────
+/// 上锁作品的解锁口令（拍板台 qiqSbvdxrk）：只存 PBKDF2-HMAC-SHA256 的盐 + 摘要
+/// （[verifier] 是 `{"v","iter","salt","hash"}` JSON），不存口令本身。
+///
+/// **跟着上锁标记一起同步、一起进备份**：上锁标记会同步到别的设备，口令若只留在
+/// 本机，一台既没设口令、系统验证也不可用的设备上，任何人「新设一个口令」就能打开
+/// 同步来的锁。口令摘要随锁走，各设备认的是同一个口令。
+///
+/// 只有一行（[credentialKey] = `passcode`）。LWW：[updatedAt] 大的胜，相等时按
+/// [verifier] 文本取大（NULL 视为空串）保证各端收敛。删除口令不删行，写
+/// `verifier = NULL`（删除也要能同步出去）。
+@DataClassName('MediaLockCredentialRow')
+class MediaLockCredentials extends Table {
+  TextColumn get credentialKey => text()();
+
+  /// 口令摘要 JSON；NULL = 口令已删除。
+  TextColumn get verifier => text().nullable()();
+
+  /// 最近一次设置 / 修改 / 删除的毫秒戳。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{credentialKey};
 }
 
 // ── library_organize_runs / library_organize_changes（AI 整理记录，schema v124）──

@@ -4,22 +4,31 @@
 /// - 读：演出稿摘要（角色表、行数、未定说话人、要不要重新标注）、某页的行、标注 /
 ///   生成任务状态、可选的声音；
 /// - 写：发起 / 取消标注（进程级 `MangaAnnotateTasks`，复核页同一张表）、改某句、改某
-///   角色、单句换种子重生成（并保留）、发起 / 取消整卷生成（全应用唯一的制作队列）。
+///   角色、单句换种子重生成（并保留）、按角色批量重生成（排进制作队列）、按句换上本地
+///   音频（可只预检）、发起 / 取消整卷生成（全应用唯一的制作队列）、导入外部做好的成品
+///   清单（`manifest.json`，与漫画卡「导入漫画有声」同一套校验与登记）。批量两项的本体
+///   与撤销在 `ctl_tts_batch.dart`。
 ///
 /// 本卷标注在跑时改演出稿、重生成、发起生成一律 409（复核页同样锁住编辑）。业务与
 /// 快照逻辑在 `ctl_tts_support.dart`，路由只做参数与门。
 library;
 
+import 'dart:io';
+
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
+import 'package:fushi/src/ops/ctl_tts_batch.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
@@ -42,9 +51,12 @@ List<CtlRoute> buildTtsCtlRoutesFor(TtsCtlDeps deps) {
     CtlRoute.post('$item/annotate/cancel', h.cancelAnnotate),
     CtlRoute.put('$item/lines/:line', h.editLine),
     CtlRoute.post('$item/lines/:line/regenerate', h.regenerate),
+    CtlRoute.post('$item/lines/replace', h.replaceLines),
     CtlRoute.put('$item/characters/:name', h.editCharacter),
+    CtlRoute.post('$item/characters/:name/regenerate', h.regenerateCharacter),
     CtlRoute.post('$item/render', h.render),
     CtlRoute.post('$item/render/cancel', h.cancelRender),
+    CtlRoute.post('$item/import', h.importManifest),
   ];
 }
 
@@ -236,6 +248,7 @@ class _TtsHandlers {
     final String bookKey = await _writableBookKey(call);
     requireNotAnnotating(_deps, bookKey);
     requireNotRendering(_deps, bookKey);
+    await requireAppRenderedAudio(_deps, bookKey);
     final MangaAudioVolume volume = await loadTtsMangaVolume(_deps, bookKey);
     final String? blocker = mangaRenderBlocker(volume);
     if (blocker == 'manga_script_stale') {
@@ -246,6 +259,61 @@ class _TtsHandlers {
       volume,
       lineId: call.params['line'] ?? '',
       seed: call.optInt('seed'),
+    );
+  }
+
+  /// 按句换上本地音频：`files`（行 ID → 音频绝对路径）或 `mapping`（这样一个 JSON 文件的
+  /// 绝对路径），`dryRun` 只预检、返回逐句结果。只改本机生成的成品。
+  Future<Object?> replaceLines(CtlCall call) async {
+    final bool dryRun = call.optBool('dryRun') ?? false;
+    final String bookKey = dryRun
+        ? await _bookKey(call)
+        : await _writableBookKey(call);
+    requireNotAnnotating(_deps, bookKey);
+    requireNotRendering(_deps, bookKey);
+    await requireAppRenderedAudio(_deps, bookKey);
+    final Map<String, String> files = await mangaReplaceFilesOf(call.body);
+    final MangaAudioVolume volume = await loadTtsMangaVolume(_deps, bookKey);
+    if (mangaRenderBlocker(volume) == 'manga_script_stale') {
+      throw const CtlFailure.rejected('OCR 重跑过，演出稿要先重新标注');
+    }
+    return replaceMangaLinesWithLocalAudio(
+      _deps,
+      volume,
+      files: files,
+      dryRun: dryRun,
+    );
+  }
+
+  /// 按角色批量重生成：这个角色（`kind` 只要这一类台词）已生成的合成句各换一个新种子，
+  /// 排进制作队列；`dryRun` 只列出会重生成 / 跳过的句子。
+  Future<Object?> regenerateCharacter(CtlCall call) async {
+    final bool dryRun = call.optBool('dryRun') ?? false;
+    final String bookKey = dryRun
+        ? await _bookKey(call)
+        : await _writableBookKey(call);
+    requireNotAnnotating(_deps, bookKey);
+    requireNotRendering(_deps, bookKey);
+    await requireAppRenderedAudio(_deps, bookKey);
+    final String? kindRaw = call.optString('kind');
+    final CastLineKind? kind = kindRaw == null
+        ? null
+        : CastLineKind.parse(kindRaw.trim());
+    if (kindRaw != null && kind == null) {
+      throw CtlFailure.badRequest('不认得的台词类型「$kindRaw」');
+    }
+    final MangaAudioVolume volume = await loadTtsMangaVolume(_deps, bookKey);
+    if (mangaRenderBlocker(volume) == 'manga_script_stale') {
+      throw const CtlFailure.rejected('OCR 重跑过，演出稿要先重新标注');
+    }
+    final String name = (call.params['name'] ?? '').trim();
+    if (name.isEmpty) throw const CtlFailure.badRequest('缺角色名');
+    return regenerateMangaCharacterLines(
+      _deps,
+      volume,
+      name: name,
+      kind: kind,
+      dryRun: dryRun,
     );
   }
 
@@ -301,4 +369,94 @@ class _TtsHandlers {
       'render': ttsRenderJobJson(job),
     };
   }
+
+  /// 导入外部做好的成品清单（`manifest`：`manifest.json` 的绝对路径）：与漫画卡「导入
+  /// 漫画有声」同一套校验（结构、页数与 OCR 签名与本卷一致、音频都在）与登记。没过校验
+  /// 422（`code` 说明原因，消息带页数 / 缺失文件）；这一卷已有登记的有声成品时要
+  /// `confirm=true` 才替换（否则 409 `manga_audio_exists`）。只登记、不复制或删除音频。
+  Future<Object?> importManifest(CtlCall call) async {
+    final String bookKey = await _writableBookKey(call);
+    requireNotRendering(_deps, bookKey);
+    final String raw = (call.optString('manifest') ?? '').trim();
+    if (raw.isEmpty || !p.isAbsolute(raw)) {
+      throw CtlFailure.badRequest(
+        'manifest 应为成品清单 manifest.json 的绝对路径，收到「$raw」',
+      );
+    }
+    final File file = File(p.normalize(raw));
+    final FushiDatabase db = _deps.appModel.database;
+    final MangaAudioManifestCheck check = await checkMangaAudioManifest(
+      db,
+      bookKey: bookKey,
+      manifestFile: file,
+    );
+    if (check.failure case final MangaAudioImportResult failure) {
+      throw _importFailure(failure, check, file);
+    }
+    final MangaRenderManifest manifest = check.manifest!;
+    final AudiobookRow? existing = await db.getAudiobookByBookKey(bookKey);
+    // 已登记成品的对齐路径（漫画有声即清单路径）；null = 这一卷还没有有声成品。
+    final String? previous =
+        existing != null && audiobookRowHasRegistration(existing)
+        ? existing.alignmentPath
+        : null;
+    final bool replaces = previous != null;
+    if (replaces && call.optBool('confirm') != true) {
+      throw CtlFailure(
+        409,
+        'manga_audio_exists',
+        '这一卷已有有声成品（$previous），导入会替换它：确认后带 confirm=true 再导入',
+      );
+    }
+    await registerMangaAudio(
+      db,
+      bookKey: bookKey,
+      manifestFile: file,
+      manifest: manifest,
+    );
+    return <String, Object?>{
+      'key': ttsMangaWireKey(bookKey),
+      'imported': true,
+      'manifest': file.absolute.path,
+      'pages': manifest.pageCount,
+      'lines': manifest.lines.length,
+      'durationMs': manifest.lines.fold<int>(
+        0,
+        (int sum, MangaRenderedLine l) => sum + l.durationMs,
+      ),
+      'replaced': replaces,
+      'previous': ?previous,
+      'revision': await audiobookRegistrationRevision(db, bookKey),
+    };
+  }
+
+  CtlFailure _importFailure(
+    MangaAudioImportResult failure,
+    MangaAudioManifestCheck check,
+    File file,
+  ) => switch (failure) {
+    MangaAudioImportResult.invalid => CtlFailure(
+      422,
+      'manga_audio_invalid',
+      '读不出成品清单或结构不对：${file.path}',
+    ),
+    MangaAudioImportResult.pageMismatch => CtlFailure(
+      422,
+      'manga_audio_page_mismatch',
+      '清单 ${check.manifest?.pageCount} 页，这一卷 ${check.volumePages} 页：不是这一卷的成品',
+    ),
+    MangaAudioImportResult.ocrMismatch => const CtlFailure(
+      422,
+      'manga_audio_ocr_mismatch',
+      '清单记的 OCR 签名与这一卷当前的 OCR 不符（OCR 重跑过），高亮会错位：先按当前 OCR 重新生成',
+    ),
+    MangaAudioImportResult.missingAudio => CtlFailure(
+      422,
+      'manga_audio_missing_audio',
+      '清单引用的 ${check.missingFiles.length} 个音频文件不存在：'
+          '${check.missingFiles.take(5).join('、')}'
+          '${check.missingFiles.length > 5 ? ' …' : ''}',
+    ),
+    MangaAudioImportResult.imported => throw StateError('imported 不是失败'),
+  };
 }

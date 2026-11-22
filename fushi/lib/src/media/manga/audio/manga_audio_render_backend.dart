@@ -23,6 +23,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
@@ -75,6 +76,65 @@ String _mangaShapeChain({required bool fade}) => <String>[
   'aresample=$kTtsOutputSampleRate',
 ].join(',');
 
+/// 一句 / 有声书片段的输出编码：单声道 AAC 96k 的 MP4 容器。
+const List<String> _kMangaLineCodecArgs = <String>[
+  '-ac',
+  '1',
+  '-c:a',
+  'aac',
+  '-b:a',
+  '96k',
+  '-f',
+  'mp4',
+];
+
+/// 整形版本（[MangaRenderBackend.shapeVersion]）：出音频的三个 ffmpeg 参数构造器
+/// （[buildMangaLineEncodeArgs] 合成句、[buildMangaClipArgs] 有声书片段、
+/// [buildMangaNarratorRefArgs] 旁白参考音频）在固定取样输入下的完整输出的指纹。
+/// 拼接前的统一采样 / 声道、裁静音 / 淡变 / 响度、采样率、编码任何一项变了，它都会
+/// 跟着变，存量演出重生成时旧音频不再原样沿用（与新出的句子同一套处理），旁白参考
+/// 音频也按新版本重剪。不用手动维护的版本号：参数就是版本。
+final String kMangaShapeVersion = mangaShapeFingerprint(<List<String>>[
+  buildMangaLineEncodeArgs(
+    inputs: const <String>['in0', 'in1'],
+    outputPath: 'out',
+  ),
+  buildMangaClipArgs(
+    sourcePath: 'in',
+    startMs: 0,
+    endMs: 1000,
+    outputPath: 'out',
+    shapeAsLine: true,
+  ),
+  buildMangaNarratorRefArgs(
+    sourcePath: 'in',
+    startMs: 0,
+    endMs: 1000,
+    outputPath: 'out',
+  ),
+]);
+
+/// [argLists]（各 ffmpeg 参数表）的 12 位十六进制 sha1 指纹；参数里不会出现的控制字符
+/// 作分隔，参数边界不同的两组不会撞成同一串。纯函数，单测覆盖。
+String mangaShapeFingerprint(List<List<String>> argLists) => sha1
+    .convert(
+      utf8.encode(
+        argLists.map((List<String> args) => args.join('\u0001')).join('\u0002'),
+      ),
+    )
+    .toString()
+    .substring(0, 12);
+
+/// 旁白参考音频的文件名：片段身份 + 整形版本（整形参数变了就是另一个文件，Irodori 的
+/// 缓存键含参考音频路径，于是合成句也跟着重出）。
+String mangaNarratorRefFileName(MangaAudiobookClip clip) =>
+    '${mangaNarratorRefName(clip)}.$kMangaShapeVersion.wav';
+
+/// [fileName] 是不是旧整形版本留下的旁白参考音频（含整形版本出现之前、文件名里没有
+/// 版本的那批）；`.part` 等在写的临时文件不算。
+bool isStaleMangaNarratorRef(String fileName) =>
+    fileName.endsWith('.wav') && !fileName.endsWith('.$kMangaShapeVersion.wav');
+
 /// 一句（[inputs] 是它的各片段，按顺序）编码成 m4a 的 ffmpeg 参数：每个输入先统一成
 /// 44.1 kHz 单声道再拼接，拼完裁首尾静音、归一响度。纯函数，单测覆盖。
 List<String> buildMangaLineEncodeArgs({
@@ -103,14 +163,7 @@ List<String> buildMangaLineEncodeArgs({
     '-map',
     '[out]',
     '-vn',
-    '-ac',
-    '1',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '96k',
-    '-f',
-    'mp4',
+    ..._kMangaLineCodecArgs,
     outputPath,
   ];
 }
@@ -143,14 +196,7 @@ List<String> buildMangaClipArgs({
   shapeAsLine
       ? _mangaShapeChain(fade: true)
       : 'aresample=$kTtsOutputSampleRate',
-  '-ac',
-  '1',
-  '-c:a',
-  'aac',
-  '-b:a',
-  '96k',
-  '-f',
-  'mp4',
+  ..._kMangaLineCodecArgs,
   outputPath,
 ];
 
@@ -208,7 +254,7 @@ TtsVoicePreset mangaNarratorPreset(
   );
 }
 
-/// 参考音频放在 TTS 缓存根下的这个子目录（文件名 = `mangaNarratorRefName`）。
+/// 参考音频放在 TTS 缓存根下的这个子目录（文件名 = [mangaNarratorRefFileName]）。
 const String kMangaNarratorRefDirName = '.manga_narrator';
 
 /// 一次 ffmpeg 没进度多久算卡死。
@@ -327,6 +373,9 @@ class AppMangaRenderBackend implements MangaRenderBackend {
   @override
   int get parallelism => 4;
 
+  @override
+  String get shapeVersion => kMangaShapeVersion;
+
   Future<_MangaVoice> _voice(String presetId) =>
       _voices[presetId] ??= _resolve(presetId);
 
@@ -353,6 +402,24 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     );
   }
 
+  bool _narratorRefsSwept = false;
+
+  /// 删掉旧整形版本的旁白参考音频（新版本按 [mangaNarratorRefFileName] 另存，旧文件
+  /// 不会再被引用；TTS 缓存的 `clear` 不进子目录，不在这里删就永远留着）。每个后端
+  /// 实例只扫一次；删不掉（Windows 上被占用）记日志，下次再删。
+  Future<void> _sweepStaleNarratorRefs(Directory dir) async {
+    if (_narratorRefsSwept) return;
+    _narratorRefsSwept = true;
+    await for (final FileSystemEntity e in dir.list()) {
+      if (e is! File || !isStaleMangaNarratorRef(p.basename(e.path))) continue;
+      try {
+        await e.delete();
+      } on FileSystemException catch (err) {
+        _log('MangaRender.narrator', 'stale reference kept: ${err.osError}');
+      }
+    }
+  }
+
   /// 本机 Irodori 批处理环境就绪（声音包描述符可用）才能克隆旁白。
   @override
   bool get canCloneNarrator =>
@@ -370,10 +437,9 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     final List<String> refFiles = <String>[];
     try {
       await dir.create(recursive: true);
+      await _sweepStaleNarratorRefs(dir);
       for (final MangaAudiobookClip clip in narrator.refs) {
-        final File out = File(
-          p.join(dir.path, '${mangaNarratorRefName(clip)}.wav'),
-        );
+        final File out = File(p.join(dir.path, mangaNarratorRefFileName(clip)));
         if (!await out.exists()) {
           final List<String>? sources = clip.bookKey == null
               ? null
@@ -437,6 +503,8 @@ class AppMangaRenderBackend implements MangaRenderBackend {
         }
         if (!v.isVoicePack) continue;
         for (final String segment in segments) {
+          // 纯标点片段不送引擎：逐句合成时由 ttsSynthesizeSplittingOnReject 写静音。
+          if (ttsTextIsSilent(segment)) continue;
           final TtsDirection direction = v.directionFor(segment, seed);
           final String key = v.cacheKey(segment, direction);
           if (batch.containsKey(key) || await _cache.lookup(key) != null) {
@@ -620,6 +688,19 @@ class AppMangaRenderBackend implements MangaRenderBackend {
   }
 
   @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => shapeMangaLocalAudio(
+    _ffmpeg,
+    sourcePath: sourcePath,
+    outputPath: outputPath,
+    cancel: cancel,
+    log: _log,
+  );
+
+  @override
   Future<int> writeSilence({
     required int ms,
     required String outputPath,
@@ -646,6 +727,101 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     source: source,
     log: _log,
   );
+}
+
+/// 把用户换上的一段本地音频整形成漫画句（与有声书片段同一套参数：裁首尾静音、淡变、
+/// 响度、编码，所以整形版本同样是 [kMangaShapeVersion]），返回时长。解不出 / 写不出按
+/// `encode_failed` 失败。
+Future<int> shapeMangaLocalAudio(
+  FfmpegBackend ffmpeg, {
+  required String sourcePath,
+  required String outputPath,
+  required TtsRenderCancelToken cancel,
+  required void Function(String source, String summary) log,
+}) async {
+  await runMangaFfmpeg(
+    ffmpeg,
+    buildMangaClipArgs(
+      sourcePath: sourcePath,
+      startMs: 0,
+      endMs: null,
+      outputPath: outputPath,
+      shapeAsLine: true,
+    ),
+    outputPath: outputPath,
+    cancel: cancel,
+    source: 'MangaRender.local',
+    log: log,
+  );
+  return await readMp4PresentationDurationMs(outputPath) ??
+      (throw const MangaLineFailure('encode_failed', 'no duration'));
+}
+
+/// 只会整形本地音频的后端（控制通道「按句替换本地音频」：不合成、不剪有声书，不用拉起
+/// TTS 引擎）。
+class MangaLocalAudioBackend implements MangaRenderBackend {
+  MangaLocalAudioBackend({
+    required FfmpegBackend ffmpeg,
+    required void Function(String source, String summary) log,
+  }) : _ffmpeg = ffmpeg,
+       _log = log;
+
+  final FfmpegBackend _ffmpeg;
+  final void Function(String source, String summary) _log;
+
+  @override
+  int get parallelism => 1;
+
+  @override
+  String get shapeVersion => kMangaShapeVersion;
+
+  @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => shapeMangaLocalAudio(
+    _ffmpeg,
+    sourcePath: sourcePath,
+    outputPath: outputPath,
+    cancel: cancel,
+    log: _log,
+  );
+
+  @override
+  Future<int> synthesizeLine({
+    required String voice,
+    required int seed,
+    required List<String> segments,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('local audio only');
+
+  @override
+  Future<int> cutClip({
+    required MangaAudiobookClip clip,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('local audio only');
+
+  @override
+  Future<int> writeSilence({required int ms, required String outputPath}) =>
+      throw UnsupportedError('local audio only');
+
+  @override
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  }) async {}
+
+  @override
+  bool get canCloneNarrator => false;
+
+  @override
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  }) async => false;
 }
 
 /// 漫画有声的一次 ffmpeg：卡死（[kMangaEncodeStallTimeout] 没进度）或取消就停；退出

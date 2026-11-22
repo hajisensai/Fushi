@@ -86,7 +86,9 @@ void main() {
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('fushi_app_model_audio');
     appModel = AppModel(testPlatformServices())
-      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
+      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir)
+      // setAudioSourceConfigs 写 / 清本地音频删除墓碑（HBK-AUDIT-022）。
+      ..wireDatabaseForTesting(db);
 
     final Directory src = Directory.systemTemp.createTempSync(
       'fushi_app_model_audio_src',

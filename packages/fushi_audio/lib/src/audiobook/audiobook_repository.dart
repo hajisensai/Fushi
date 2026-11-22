@@ -167,6 +167,52 @@ class AudiobookRepository {
     );
   }
 
+  /// 文件结构不变、按下标换掉其中几个文件（漫画有声换某几句的音频 / 撤销放回）：
+  /// [cues] 是换完后的整组 cue（条数与文件下标不变），[paths] 是下标 → 新文件的绝对
+  /// 路径。cue、音频列表与断点在一个事务里一起改；断点按
+  /// [audiobookPositionAfterFilesSwapped] 换算——仍在同一句，落在被换的那句里就从它的
+  /// 开头接着听。不走 [replaceAudio] 的「断点之前有文件变了就归零」（那针对换了一套
+  /// 音频；这里每个下标还是同一句）。与换算一样不盖位置时间戳（用户听到哪一句没变）。
+  /// 这本书不是文件列表模式、或下标越界时抛 [ArgumentError]（调用方先确认库与清单
+  /// 对得上）。
+  Future<void> swapAudioFiles({
+    required String bookKey,
+    required List<AudioCue> cues,
+    required Map<int, String> paths,
+  }) => _db.transaction(() async {
+    final AudiobookRow? row = await _db.getAudiobookByBookKey(bookKey);
+    if (row == null || row.audioRoot != null) {
+      throw ArgumentError.value(bookKey, 'bookKey', 'not a file-list book');
+    }
+    final List<String> next = List<String>.of(_audioPathsOf(row));
+    for (final MapEntry<int, String> e in paths.entries) {
+      if (e.key < 0 || e.key >= next.length) {
+        throw RangeError.index(e.key, next, 'paths');
+      }
+      next[e.key] = e.value;
+    }
+    final List<int> oldDurations = audiobookFileDurationsFromCues(
+      await cuesForBook(bookKey),
+    );
+    await _db.replaceCuesForBook(
+      bookKey,
+      cues.map(AudioCue.toCompanion).toList(),
+    );
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(audioPathsJson: Value(jsonEncode(next))),
+    );
+    final String posKey = '$_kPositionMsKeyPrefix$bookKey';
+    final int current = await _db.getPrefTyped<int>(posKey, 0);
+    final int moved = audiobookPositionAfterFilesSwapped(
+      current,
+      oldDurations,
+      audiobookFileDurationsFromCues(cues),
+      paths.keys.toSet(),
+    );
+    if (moved != current) await _db.setPrefTyped(posKey, moved);
+  });
+
   /// 换对齐字幕（唯一写 alignment 两列的入口）。
   Future<void> replaceAlignment({
     required String bookKey,

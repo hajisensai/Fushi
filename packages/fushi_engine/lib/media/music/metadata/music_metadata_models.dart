@@ -10,7 +10,10 @@ enum MusicMetadataProviderKind {
   musicbrainz('musicbrainz'),
   acoustid('acoustid'),
   coverArtArchive('caa'),
-  vgmdb('vgmdb');
+  vgmdb('vgmdb'),
+
+  /// DLsite 作品资料（音声 / ASMR 专辑按 RJ 编号取，快照键 = 作品编号）。
+  dlsite('dlsite');
 
   const MusicMetadataProviderKind(this.wire);
 

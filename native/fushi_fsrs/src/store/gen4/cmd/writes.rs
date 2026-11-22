@@ -140,6 +140,9 @@ pub struct Session<'t, 'c> {
     edit_rows: bool,
     /// 库里有没有别的集合（实体归属闸 [Session::foreign] 用；None = 还没问过）。
     others: Option<bool>,
+    /// 落下的修改记录进不进回包 `edits`（默认进）。`change` 的换类型段（`writes_retype.rs`）关掉它：那一段由内核自己拼、
+    /// 可能是整个牌组的字段值，宿主用不上，回传只会让宿主把整批内容再解码一遍（BUG-5176）。
+    echo_edits: bool,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -188,12 +191,18 @@ impl<'t, 'c> Session<'t, 'c> {
             entity_writes: Vec::new(),
             edit_rows: false,
             others: None,
+            echo_edits: true,
         })
     }
 
     /// 请求带 `editRows: true` 就在回包里补上落库修改行（文件头「回包」）。
     pub(super) fn want_edit_rows(&mut self, req: &Value) {
         self.edit_rows = req.get("editRows") == Some(&Value::Bool(true));
+    }
+
+    /// 之后落下的修改记录进不进回包 `edits`（[Session::echo_edits] 字段）。
+    pub(super) fn set_echo_edits(&mut self, on: bool) {
+        self.echo_edits = on;
     }
 
     /// 本机身份（作者）的设备 ID。
@@ -299,7 +308,7 @@ impl<'t, 'c> Session<'t, 'c> {
         let (id, _) = self.native.write(&mut self.ix, b4, now)?;
         self.dirty = true;
         self.written += 1;
-        if let Some((kind, entity, key, value)) = edit {
+        if let Some((kind, entity, key, value)) = edit.filter(|_| self.echo_edits) {
             self.edits.push(json!([
                 kind.wire(),
                 entity,

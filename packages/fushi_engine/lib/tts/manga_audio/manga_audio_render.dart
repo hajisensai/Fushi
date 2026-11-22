@@ -60,9 +60,11 @@ class MangaRenderedLine {
     required this.file,
     required this.durationMs,
     required this.text,
+    this.spoken,
     this.placeholder = false,
     this.voice,
     this.seed,
+    this.shape,
   });
 
   /// [MangaScriptLine.lineId]。
@@ -82,12 +84,24 @@ class MangaRenderedLine {
   /// 生成时念的文字（cue 文本、制卡用；来自用户自己的 OCR 或手填）。
   final String text;
 
+  /// 实际送去合成的文字（人名读法只改这里，不改 [text]）；null = 与 [text] 相同。
+  final String? spoken;
+
+  /// 合成时念的文字（「读法改了的句子」据此与当前替换表比对）。
+  String get spokenText => spoken ?? text;
+
   /// 占位静音（没配上音）。
   final bool placeholder;
 
   /// 实际用的声音 id / 种子（重生成与诊断用）。
   final String? voice;
   final int? seed;
+
+  /// 出这段音频时的整形版本（裁静音 / 淡变 / 响度 / 编码参数的指纹，
+  /// `MangaRenderBackend.shapeVersion`）。整形参数变了，旧音频就不能和新出的句子混排，
+  /// 重跑时不沿用；没有这个字段的历史清单行一律按「版本不符」处理。占位静音不整形，
+  /// 记 null。
+  final String? shape;
 
   MangaTimedLine get timed => MangaTimedLine(
     page: page,
@@ -105,6 +119,8 @@ class MangaRenderedLine {
     String? voice,
     int? seed,
     String? text,
+    String? spoken,
+    String? shape,
   }) => MangaRenderedLine(
     lineId: lineId,
     page: page,
@@ -115,9 +131,11 @@ class MangaRenderedLine {
     file: file,
     durationMs: durationMs,
     text: text ?? this.text,
+    spoken: text == null ? spoken ?? this.spoken : spoken,
     placeholder: placeholder,
     voice: voice,
     seed: seed,
+    shape: shape,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -130,9 +148,11 @@ class MangaRenderedLine {
     'f': file,
     'ms': durationMs,
     't': text,
+    if (spoken != null && spoken != text) 'sp': spoken,
     if (placeholder) 'ph': true,
     if (voice != null) 'voice': voice,
     if (seed != null) 'seed': seed,
+    if (shape != null) 'shape': shape,
   };
 
   static MangaRenderedLine? fromJson(Object? raw) {
@@ -157,8 +177,10 @@ class MangaRenderedLine {
     }
     final Object? beat = raw['beat'];
     final Object? text = raw['t'];
+    final Object? spoken = raw['sp'];
     final Object? voice = raw['voice'];
     final Object? seed = raw['seed'];
+    final Object? shape = raw['shape'];
     return MangaRenderedLine(
       lineId: id,
       page: page,
@@ -172,9 +194,11 @@ class MangaRenderedLine {
       file: file,
       durationMs: ms,
       text: text is String ? text : '',
+      spoken: spoken is String ? spoken : null,
       placeholder: raw['ph'] == true,
       voice: voice is String ? voice : null,
       seed: seed is int ? seed : null,
+      shape: shape is String ? shape : null,
     );
   }
 }

@@ -961,6 +961,8 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.titleMaxLines,
     this.subtitleMaxLines,
     this.horizontalPadding,
+    this.leading,
+    this.subtitleLeading,
     this.animateSubtitle = false,
   });
 
@@ -968,6 +970,14 @@ class AdaptiveSettingsRow extends StatelessWidget {
   /// 淡入，行高随之弹簧过渡（时长取 [FushiMotion.medium]，减弱动态效果 / 墨水屏
   /// 下瞬间到位）。默认关：静态说明不需要多一层 AnimatedSwitcher。
   final bool animateSubtitle;
+
+  /// 行首的自定义件（例如目标行的进度环）；非空时取代 [icon] 图标位，三套外观
+  /// （MD3 / Cupertino / 玻璃）同一位置。宽度由调用方的件决定，堆叠判据按图标位估。
+  final Widget? leading;
+
+  /// 说明文字前面的行内件（例如目标行的语言小胶囊）：与 [subtitle] 排成一行，
+  /// [subtitle] 为空时单独一行。
+  final Widget? subtitleLeading;
 
   /// 覆盖本行的水平内边距；null = 用标准 `tokens.spacing.rowHorizontal`（16）。
   ///
@@ -1085,7 +1095,9 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 左栏图标占固定宽（badge ~30 + 间距 gap+4 = 12）：堆叠判断必须把它计入
     // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
     // 行内布局，label+trailing 少了一个图标位而右溢出。
-    final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
+    final double iconExtra = (leading != null || (showIcon && icon != null))
+        ? 42.0
+        : 0.0;
     // BUG-3501：LayoutBuilder 不支持 intrinsic 测量（release 恒答 0、debug 抛错），
     // 而 Material AlertDialog 把正文包在 IntrinsicWidth 里——设置行直接当对话框正文
     // 时对话框被量成只有标题 / 按钮那么宽。这里替 LayoutBuilder 回答：宽度按「行内
@@ -1216,7 +1228,10 @@ class AdaptiveSettingsRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (showIcon && icon != null) ...[
+          if (leading case final Widget lead) ...[
+            lead,
+            SizedBox(width: tokens.spacing.gap + 4),
+          ] else if (showIcon && icon != null) ...[
             _SettingsIcon(icon: icon!),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
@@ -1224,6 +1239,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
             child: _SettingsLabel(
               title: title,
               subtitle: subtitle,
+              subtitleLeading: subtitleLeading,
               titleMaxLines: titleMaxLines,
               subtitleMaxLines: subtitleMaxLines,
               animateSubtitle: animateSubtitle,
@@ -1270,7 +1286,10 @@ class AdaptiveSettingsRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              if (showIcon && icon != null) ...[
+              if (leading case final Widget lead) ...[
+                lead,
+                SizedBox(width: tokens.spacing.gap + 4),
+              ] else if (showIcon && icon != null) ...[
                 _SettingsIcon(icon: icon!),
                 SizedBox(width: tokens.spacing.gap + 4),
               ],
@@ -1278,6 +1297,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
                 child: _SettingsLabel(
                   title: title,
                   subtitle: subtitle,
+                  subtitleLeading: subtitleLeading,
                   titleMaxLines: titleMaxLines,
                   subtitleMaxLines: subtitleMaxLines,
                   animateSubtitle: animateSubtitle,
@@ -4617,6 +4637,7 @@ class _SettingsLabel extends StatelessWidget {
   const _SettingsLabel({
     required this.title,
     this.subtitle,
+    this.subtitleLeading,
     this.titleMaxLines,
     this.subtitleMaxLines,
     this.animateSubtitle = false,
@@ -4624,6 +4645,9 @@ class _SettingsLabel extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+
+  /// 说明前的行内件（[AdaptiveSettingsRow.subtitleLeading]）。
+  final Widget? subtitleLeading;
   final int? titleMaxLines;
   final int? subtitleMaxLines;
 
@@ -4657,7 +4681,8 @@ class _SettingsLabel extends StatelessWidget {
         ? theme.textTheme.bodySmall?.copyWith(color: subtitleColor)
         : theme.textTheme.bodyMedium?.copyWith(color: subtitleColor);
     final String? description = subtitle;
-    if (SettingsCompactRowsScope.of(context) &&
+    if (subtitleLeading == null &&
+        SettingsCompactRowsScope.of(context) &&
         description != null &&
         description.isNotEmpty) {
       return _CompactSettingsLabel(
@@ -4701,7 +4726,30 @@ class _SettingsLabel extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
         ),
-        if (animateSubtitle)
+        if (subtitleLeading case final Widget lead)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              children: <Widget>[
+                Flexible(flex: 0, child: lead),
+                if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 6),
+                  // 与下面的纯说明同一套行数 / 溢出规则（BUG-1184）。
+                  Flexible(
+                    child: Text(
+                      subtitle!,
+                      style: subtitleStyle,
+                      overflow: subtitleMaxLines == null
+                          ? null
+                          : TextOverflow.ellipsis,
+                      maxLines: subtitleMaxLines,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          )
+        else if (animateSubtitle)
           _AnimatedSettingsSubtitle(
             text: description ?? '',
             child: subtitleText ?? const SizedBox(width: double.infinity),

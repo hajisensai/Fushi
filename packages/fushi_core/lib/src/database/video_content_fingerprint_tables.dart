@@ -37,7 +37,8 @@ class VideoContentFingerprints extends Table {
 
   /// 内容指纹（带算法前缀，见引擎 `video_content_fingerprint.dart`）：
   /// `osh:<16 位十六进制>`（OpenSubtitles 文件哈希：大小 + 首尾各 64 KiB）或
-  /// `sha256:<64 位十六进制>`（不足 128 KiB 的小文件整份哈希）。
+  /// `sha256:<64 位十六进制>`（整文件 SHA-256：不足 128 KiB 的小文件当场算，大文件由
+  /// 后台把 `osh:` 升级而来）。`osh:` 相同不足以认定搬家。
   TextColumn get fingerprint => text()();
 
   /// 本行写入时刻（毫秒）。

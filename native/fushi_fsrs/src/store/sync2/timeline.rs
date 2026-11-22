@@ -433,7 +433,8 @@ fn restored_value(
 const HISTORY_FROM: &str = "historyFrom/";
 
 /// [card] 在 [target] 时从血统继承到的 [key]：与 registers.rs `cards_group` 同一规则——血统按广度优先（自己在前，
-/// 前身按 ID 排，防环，最多 256 张），第一张对这个键有生效记录的前身的值。只在 [card] 自己那时没有记录时调用。
+/// 防环，最多 256 张），离它最近、对这个键有生效记录的一层前身的值；同一层几张都有时取生效写入最新的
+/// （`registers::later`，BUG-5190）。只在 [card] 自己那时没有记录时调用。
 #[cfg(test)]
 fn card_inherited_at(
     conn: &Connection,
@@ -443,17 +444,22 @@ fn card_inherited_at(
     target: &Cut,
 ) -> Result<Option<Value>, String> {
     let mut seen: Vec<String> = vec![card.to_owned()];
-    let mut queue: std::collections::VecDeque<String> =
-        std::collections::VecDeque::from([card.to_owned()]);
+    let mut queue: std::collections::VecDeque<(String, usize)> =
+        std::collections::VecDeque::from([(card.to_owned(), 0)]);
     let mut visited = 0usize;
-    while let Some(id) = queue.pop_front() {
-        if visited >= 256 {
+    let mut best: Option<(usize, Value, crate::registers::WriteOrder)> = None;
+    while let Some((id, depth)) = queue.pop_front() {
+        if visited >= 256 || best.as_ref().is_some_and(|b| b.0 < depth) {
             break;
         }
         visited += 1;
         if id != card {
-            if let Some(v) = value_at(conn, profile, EntKind::Card, &id, key, Some(target))? {
-                return Ok(Some(v));
+            if let Some((v, order)) =
+                winner_at(conn, profile, EntKind::Card, &id, key, Some(target))?
+            {
+                if best.as_ref().is_none_or(|b| order.later_than(&b.2)) {
+                    best = Some((depth, v, order));
+                }
             }
         }
         let mut keys: Vec<String> = super::semantics::ops_of(conn, profile, "card", &id)?
@@ -474,11 +480,11 @@ fn card_inherited_at(
         for p in preds {
             if !seen.contains(&p) {
                 seen.push(p.clone());
-                queue.push_back(p);
+                queue.push_back((p, depth + 1));
             }
         }
     }
-    Ok(None)
+    Ok(best.map(|b| b.1))
 }
 
 /// 某寄存器在 [target]（None = 现在）时的生效值；那时没有任何生效记录 = None（与「记录了 null」区分，见 [restored_value]）。
@@ -496,6 +502,19 @@ fn value_at(
     key: &str,
     target: Option<&Cut>,
 ) -> Result<Option<Value>, String> {
+    Ok(winner_at(conn, profile, kind, entity, key, target)?.map(|(v, _)| v))
+}
+
+/// [value_at] 连同生效写入的排序键（`registers::WriteOrder`，卡片标志同一层前身之间比先后用）。
+#[cfg(test)]
+fn winner_at(
+    conn: &Connection,
+    profile: &str,
+    kind: EntKind,
+    entity: &str,
+    key: &str,
+    target: Option<&Cut>,
+) -> Result<Option<(Value, crate::registers::WriteOrder)>, String> {
     let Some(target) = target else {
         let rows: Vec<String> = conn
             .prepare_cached(
@@ -511,7 +530,7 @@ fn value_at(
         }
         let items: Vec<crate::registers::StoredEdit<'_>> =
             rows.iter().map(|r| (r.as_str(), None, None)).collect();
-        return crate::registers::register_value(&items, key).map(Some);
+        return crate::registers::register_winner(&items, key);
     };
     let mut rows: Vec<String> = Vec::new();
     let mut stmt = conn
@@ -574,7 +593,7 @@ fn value_at(
         .iter()
         .map(|&i| (rows[i].as_str(), None, None))
         .collect();
-    crate::registers::register_value(&live_rows, key).map(Some)
+    crate::registers::register_winner(&live_rows, key)
 }
 
 /// 某笔记在 [target] 时的标签（OR-Set 按那时已有的添加 / 观察删除重算）。

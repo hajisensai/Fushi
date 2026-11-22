@@ -17,6 +17,9 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 ///   因此满足 `fushi/CLAUDE.md` §13「AI 写操作必须可回滚」，不需要先确认。
 /// - 拆 / 并作品 = 按执行时记下的原合集、原位置、原分集绑定挪回去
 ///   （[revertVideoRegroup]）；之后又被挪过的文件保留现状。
+/// - 设置合集分栏 = 每个文件的手动分栏恢复成执行前
+///   （[restoreVideoCollectionSections]）；之后又被改过的文件保留现状，报 partial /
+///   superseded。
 List<OpDescription> describeVideoOrganizeOps(
   OpDescribeKit kit,
   OpAvailability Function() video,
@@ -127,6 +130,91 @@ List<OpDescription> describeVideoOrganizeOps(
               )
               ? const OpUndoOutcome.done()
               : const OpUndoOutcome.superseded('这个文件的季集之后又被手动改过');
+        },
+      ),
+    ),
+    OpDescription(
+      id: 'video.section.list',
+      method: 'GET',
+      pattern: '$kVideoOrganizeCtlRoot/works/:id/sections',
+      summary:
+          'How the collection page splits a work into sections: one tab per '
+          'season ("s1", "s2"...) plus "extras" (PV & extras), exactly as the '
+          'app shows them. Per file: its section, why it is there '
+          '(source=manual: set with video.section.set; pinnedEpisode: a '
+          'manual season/episode pin, season 0 counts as extras; filename: '
+          'guessed from the file name), the season/episode read from the file '
+          'name, the scraped episode(s) it is bound to and the match rating. '
+          'warnings[] flags what to check: bound_to_special = scraped as a '
+          'special but shown as a regular episode; duplicate_episode_number = '
+          'several files in one section share an episode number (shorts or '
+          'specials mixed into the main episodes). scrapedExtras[] are files '
+          'the scrape recognised as extras (NCOP etc.); the page lists them in '
+          'a separate extras row, not in a section. Use it after merging or '
+          're-scraping to verify the result.',
+      availability: video,
+      params: const <OpParam>[_workIdParam],
+    ),
+    OpDescription(
+      id: 'video.section.set',
+      method: 'POST',
+      pattern: '$kVideoOrganizeCtlRoot/sections',
+      summary:
+          'Put video files into a section of their collection page: '
+          'section=season with season=N (main episodes of a single-season '
+          'show are season 1), section=extras for PV & extras, or '
+          'section=auto to drop the manual choice (then a manual '
+          'season/episode pin decides, else the file name). The choice '
+          'belongs to the file: merging collections, regrouping works and '
+          're-scraping keep it. It only changes where the file is listed; '
+          'use video.episode.pin to change which scraped episode it is. '
+          'Answers each file\'s resulting section; check the whole work with '
+          'video.section.list.',
+      risk: OpRisk.write,
+      availability: video,
+      params: const <OpParam>[
+        OpParam.stringList(
+          'items',
+          description: 'Video file uids (files[].uid from video.section.list).',
+          required: true,
+        ),
+        OpParam.string(
+          'section',
+          description: 'season, extras, or auto.',
+          required: true,
+          enumValues: <String>['season', 'extras', 'auto'],
+        ),
+        OpParam.integer(
+          'season',
+          description: 'Season number, 1 or more (only with section=season).',
+        ),
+      ],
+      undo: opCustomUndo(
+        payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
+          final Map<Object?, Object?> m = result is Map ? result : const {};
+          return <String, Object?>{
+            'applied': m['applied'],
+            'previous': m['previous'],
+          };
+        },
+        describe: (Map<String, Object?> p) {
+          final Object? previous = p['previous'];
+          return '${previous is Map ? previous.length : 0} file(s) → '
+              '${p['applied'] ?? 'auto'}';
+        },
+        revert: (Map<String, Object?> payload) async {
+          final ({int reverted, int superseded}) r =
+              await restoreVideoCollectionSections(
+                kit.context.appModel.database,
+                applied: payload['applied'],
+                previous: payload['previous'],
+              );
+          if (r.superseded == 0) return const OpUndoOutcome.done();
+          return r.reverted == 0
+              ? const OpUndoOutcome.superseded('这些文件的分栏之后又被改过，保留现状')
+              : OpUndoOutcome.partial(
+                  '已恢复 ${r.reverted} 个；${r.superseded} 个之后又被改过，保留现状',
+                );
         },
       ),
     ),

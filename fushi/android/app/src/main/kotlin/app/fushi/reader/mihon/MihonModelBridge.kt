@@ -96,6 +96,9 @@ internal fun Page.toBridgeMap(): Map<String, Any?> = mapOf(
     "index" to index,
     "url" to url,
     "imageUrl" to imageUrl,
+    // 与桌面 sidecar 同名同义：扩展原样给的图片地址，Dart 侧按它认源端页身份
+    // （audit-035）。Android 上 imageUrl 本来就是原值，单列一项是为了两端口径一致。
+    "sourceImageUrl" to imageUrl,
 )
 
 internal fun filterListToBridge(filters: FilterList): List<Map<String, Any?>> =

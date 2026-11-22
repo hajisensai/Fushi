@@ -7,9 +7,10 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/video/video_content_fingerprint.dart'
-    show backfillVideoContentFingerprints;
+    show backfillVideoContentFingerprints, VideoContentFullHashUpgrader;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -126,6 +127,10 @@ typedef CollectionPlaybackSnapshot = ({
   Map<String, VideoScrapeMetaRow> episodeMeta,
   CollectionScrapeMetaRow? collectionMeta,
   List<MediaImageRow> images,
+
+  /// `book_uid → 生效分栏键`（[loadCollectionGroupKeysForVideos]：手动分栏 / 手动
+  /// 季集指定优先，否则文件名派生）。剧集面板的季 chip 与合集详情页同口径。
+  Map<String, String> sectionKeys,
 });
 
 typedef _DeletedVideoSnapshot = ({
@@ -151,6 +156,7 @@ class VideoBookRepository {
   /// `video_content_fingerprint.dart`）。指纹必须在文件搬走**之前**算好，所以视频书架
   /// 一打开就在后台补：升级后的存量行、手动导入的行都靠它。每行只读 128 KiB；进程内
   /// 只跑一次，之后新入库 / 搬家改指的行由来源扫描当场记、原地换文件由扫描复查。
+  /// 采样指纹补齐后接着请求后台整文件哈希升级（[requestContentFullHashUpgrade]）。
   /// 返回写入的行数；出错记日志并按 0 算（只是增强证据，不影响书架）。
   Future<int> backfillContentFingerprintsOncePerProcess() =>
       _contentFingerprintBackfill ??= backfillVideoContentFingerprints(_db)
@@ -162,7 +168,14 @@ class VideoBookRepository {
               stackTrace: stack,
             );
             return 0;
-          });
+          })
+          .whenComplete(requestContentFullHashUpgrade);
+
+  /// 请求后台把采样指纹（`osh:`）升级成整文件 SHA-256（拍板台
+  /// hbk-audit-004-video-move-full-hash，见 [VideoContentFullHashUpgrader]）：搬家只认
+  /// 整文件哈希，必须趁文件还在原处算好。在跑就跑完补一轮，立即返回。
+  void requestContentFullHashUpgrade() =>
+      VideoContentFullHashUpgrader.of(_db).request();
 
   /// 写入/更新一本视频书。
   ///
@@ -533,6 +546,7 @@ class VideoBookRepository {
         episodeMeta: const <String, VideoScrapeMetaRow>{},
         collectionMeta: collectionMeta,
         images: images,
+        sectionKeys: const <String, String>{},
       );
     }
     final (
@@ -554,6 +568,7 @@ class VideoBookRepository {
       episodeMeta: metas,
       collectionMeta: collectionMeta,
       images: images,
+      sectionKeys: await loadCollectionGroupKeysForVideos(_db, rows),
     );
   }
 

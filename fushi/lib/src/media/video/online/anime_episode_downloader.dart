@@ -7,8 +7,10 @@
 ///   另一个 hoster / 另一种画质，也可能源站换了文件。上次响应的 ETag / Last-Modified /
 ///   总长落在 `.part.validator` 侧车（[DirectStreamValidator]），续传以 `If-Range`
 ///   携带——服务器换了字节就回 200，旧 part 丢弃从 0 写；服务器无视 `If-Range` 照回
-///   206 时再拿 206 的 ETag / 总长比对侧车，不符就不带 Range 重开、同样从 0 写。没有
-///   侧车（旧版本留下的 part / 服务器一个验证器都不给）的 part 不续，直接从 0。
+///   206 时要求 206 回显 If-Range 用的验证器且相等（[ResumeValidator]），没回显或
+///   不符就不带 Range 重开、同样从 0 写。没有侧车、或侧车里没有**强验证器**（强
+///   ETag / Last-Modified；只有总长 / 弱 ETag 不能证明同一版本，BUG-5117）的 part
+///   不续，直接从 0。
 /// - **HLS**：Dart 端逐分片下载（不交给 ffmpeg 读网络：ffmpeg 后端没有进度也不能从
 ///   外部取消，移动端 kit 只能靠 timeout）——master 选最高码率变体、`#EXT-X-MAP`
 ///   初始化段先写、`#EXT-X-KEY` AES-128 解密、图片伪装分片剥前缀（BUG-2609，与播放
@@ -40,6 +42,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show parseHlsAttributeList;
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resume_validator.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 import 'package:fushi/src/sync/remote_video_client.dart'
@@ -243,37 +246,20 @@ class DirectStreamValidator {
     }
   }
 
-  /// 续传响应（206）是否仍是侧车记下的那份字节：两边都有的字段逐一比对，任一不同
-  /// 即不是；**一个可比的字段都没有也算不是**（宁可重下，也不拼坏片）。
-  bool sameStreamAs(ResumableDownloadResponse response) {
-    int compared = 0;
-    final String? etagNow = response.header(HttpHeaders.etagHeader);
-    if (etag != null && etagNow != null && etagNow.isNotEmpty) {
-      compared++;
-      if (etagNow != etag) return false;
-    }
-    final String? modifiedNow = response.header(HttpHeaders.lastModifiedHeader);
-    if (lastModified != null && modifiedNow != null && modifiedNow.isNotEmpty) {
-      compared++;
-      if (modifiedNow != lastModified) return false;
-    }
-    final int? totalNow = _contentRangeTotal(
-      response.header(HttpHeaders.contentRangeHeader),
-    );
-    if (totalBytes != null && totalNow != null) {
-      compared++;
-      if (totalNow != totalBytes) return false;
-    }
-    return compared > 0;
-  }
+  ResumeValidator get validator => ResumeValidator(
+    etag: etag,
+    lastModified: lastModified,
+    totalBytes: totalBytes,
+  );
 
-  static int? _contentRangeTotal(String? value) {
-    if (value == null) return null;
-    final RegExpMatch? match = RegExp(
-      r'^bytes\s+\d+-\d+/(\d+)$',
-    ).firstMatch(value.trim());
-    return match == null ? null : int.tryParse(match.group(1)!);
-  }
+  /// 有强验证器（强 ETag / Last-Modified）：凭它才能续传。只有总长 / 弱 ETag 不算
+  /// （BUG-5117：等长替换会被拼成坏片）。
+  bool get hasStrongValidator => validator.hasStrongValidator;
+
+  /// 续传响应（206）是否证明仍是侧车记下的那个版本：If-Range 用的强验证器必须
+  /// 回显且相等，其余共有字段任一不同即不是；缺证据算不是（宁可重下，不拼坏片）。
+  bool sameStreamAs(ResumableDownloadResponse response) =>
+      validator.provesSameRepresentation(response);
 }
 
 /// HLS 流指纹：媒体播放列表地址（去 query / fragment）+ 分片数 + 首分片地址（去
@@ -514,25 +500,17 @@ class AnimeComponentIdentity {
     }
   }
 
-  /// 是否同一份字节：HLS 比指纹；直链两边都有的字段逐一比对，任一不同即不是，
-  /// **一个可比字段都没有也算不是**（宁可重下，也不拿来路不明的分量去合成）。
+  /// 是否同一份字节：HLS 比指纹；直链两边都有的字段任一不同即不是，且必须有一个
+  /// **强验证器**（强 ETag / Last-Modified）两边都有且相等——只有总长 / 弱 ETag
+  /// 相等不算（BUG-5117：等长替换的分量会被拿去合成）。宁可重下，也不拿来路不明
+  /// 的分量去合成。
   bool matches(AnimeComponentIdentity other) {
     final String? stream = hlsStream;
     if (stream != null) return stream == other.hlsStream;
     final DirectStreamValidator? mine = direct;
     final DirectStreamValidator? theirs = other.direct;
     if (mine == null || theirs == null) return false;
-    int compared = 0;
-    bool same<T>(T? a, T? b) {
-      if (a == null || b == null) return true;
-      compared++;
-      return a == b;
-    }
-
-    if (!same<String>(mine.etag, theirs.etag)) return false;
-    if (!same<String>(mine.lastModified, theirs.lastModified)) return false;
-    if (!same<int>(mine.totalBytes, theirs.totalBytes)) return false;
-    return compared > 0;
+    return mine.validator.sameRepresentationAs(theirs.validator);
   }
 }
 
@@ -894,7 +872,7 @@ class AnimeEpisodeDownloader {
         return null;
       }
       final int? total = status == HttpStatus.partialContent
-          ? DirectStreamValidator._contentRangeTotal(
+          ? ResumeValidator.contentRangeTotal(
               response.header(HttpHeaders.contentRangeHeader),
             )
           : int.tryParse(
@@ -983,8 +961,9 @@ class AnimeEpisodeDownloader {
     final File part = File('${dest.path}.part');
     final File validatorFile = File('${dest.path}$kAnimeDirectValidatorSuffix');
     final DirectStreamValidator? stored = await _readValidator(validatorFile);
-    if ((stored == null || stored.isEmpty) && await part.exists()) {
-      // 没有可比对的身份（旧版本留下的 part / 上次服务器一个验证器都没给）：
+    if ((stored == null || !stored.hasStrongValidator) && await part.exists()) {
+      // 没有可证明同一版本的身份（旧版本留下的 part / 上次服务器只给了总长或弱
+      // ETag、一个强验证器都没给）：
       // 宁可从 0 重下，也不冒把两条流拼成坏片的险。
       await part.delete();
     }
@@ -993,12 +972,7 @@ class AnimeEpisodeDownloader {
       url: url,
       destination: dest,
       partFile: part,
-      resumeState: stored == null
-          ? null
-          : ResumableDownloadState(
-              etag: stored.etag,
-              lastModified: stored.lastModified,
-            ),
+      resumeState: stored?.validator.ifRangeState,
       firstByteTimeout: stallTimeout,
       bodyTimeout: stallTimeout,
       open: (Uri uri, Map<String, String> rangeHeaders) async {

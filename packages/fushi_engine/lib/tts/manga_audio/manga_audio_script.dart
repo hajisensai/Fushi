@@ -85,6 +85,21 @@ sealed class MangaLineAudioSource {
         );
       }
     }
+    if (raw is Map && raw['t'] == MangaLocalAudio.wireTag) {
+      final Object? sig = raw['sig'];
+      final Object? ext = raw['ext'];
+      final Object? name = raw['n'];
+      if (sig is String &&
+          MangaLocalAudio.isValidSig(sig) &&
+          ext is String &&
+          MangaLocalAudio.isValidExt(ext)) {
+        return MangaLocalAudio(
+          sig: sig,
+          ext: ext,
+          name: name is String && name.isNotEmpty ? name : null,
+        );
+      }
+    }
     return byUser
         ? const MangaSynthesized(byUser: true)
         : const MangaSynthesized();
@@ -166,10 +181,60 @@ final class MangaAudiobookClip extends MangaLineAudioSource {
   int get hashCode => Object.hash(bookKey, fileIndex, startMs, endMs, byUser);
 }
 
+/// 用户换上的一段本地音频（控制通道「按句替换本地音频」写下）。音频按内容寻址保留在
+/// 成品目录的 [kMangaLocalAudioDirName] 子目录里（`<sig><ext>`，见
+/// `mangaLocalAudioSourcePath`），不引用用户原路径：原文件之后被挪走 / 删掉，重跑整卷
+/// （例如整形版本变了要重新整形）也还拿得到。永远算用户亲手定的音源（[byUser]），重跑
+/// 有声书匹配不覆盖、不受作品音源策略约束；换种子重生成 / 补回会把它换回合成。
+final class MangaLocalAudio extends MangaLineAudioSource {
+  const MangaLocalAudio({required this.sig, required this.ext, this.name})
+    : super(byUser: true);
+
+  static const String wireTag = 'file';
+
+  /// 内容指纹（sha1 前 16 位十六进制）：保留副本的文件名，也进清单 `voice` 标记。
+  final String sig;
+
+  /// 原文件的扩展名（小写、带点，如 `.wav`），保留副本沿用它（ffmpeg 按它探测格式）。
+  final String ext;
+
+  /// 原文件名（只作展示 / 诊断）。
+  final String? name;
+
+  static bool isValidSig(String sig) => RegExp(r'^[0-9a-f]{16}$').hasMatch(sig);
+
+  static bool isValidExt(String ext) =>
+      RegExp(r'^\.[a-z0-9]{1,8}$').hasMatch(ext);
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    't': wireTag,
+    'sig': sig,
+    'ext': ext,
+    if (name != null) 'n': name,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is MangaLocalAudio &&
+      other.sig == sig &&
+      other.ext == ext &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(wireTag, sig, ext, name);
+}
+
+/// 本地音频保留副本所在的子目录（成品目录下；整卷清理只扫成品目录这一层，不进子目录）。
+const String kMangaLocalAudioDirName = '_local';
+
 /// 一句最终怎么出声（[MangaAudioScript.audioPlanFor]），生成端只认这个结果。
 enum MangaLineAudioPlan {
   /// 播放 / 导出关联有声书里的片段（[MangaScriptLine.audio] 是 [MangaAudiobookClip]）。
   audiobookClip,
+
+  /// 用户换上的本地音频（[MangaScriptLine.audio] 是 [MangaLocalAudio]）。
+  localAudio,
 
   /// 按声音指派表合成。
   synthesize,
@@ -251,8 +316,13 @@ class MangaScriptLine {
   final String? say;
 
   /// 稳定的行身份：页 + 块下标（不用行序号——增删句子后序号会整体错位）。
-  /// 音频文件名、未配音账本都按它。
-  String get lineId => 'p${page}b${blocks.join('.')}';
+  /// 音频文件名、未配音账本都按它。行不可变（改行一律 [copyWith] 出新对象），
+  /// 所以首次取用后缓存，查行时不再每次拼字符串。
+  late final String lineId = 'p${page}b${blocks.join('.')}';
+
+  /// 这一行的 JSON 文本（[toJson] 编码后缓存）。行不可变，整稿存盘时没改过的行直接
+  /// 复用，只有新行要重新编码（见 [MangaAudioScript.encode]）。
+  late final String jsonText = jsonEncode(toJson());
 
   /// 这句实际用的种子。
   int effectiveSeed(int defaultSeed) => seed ?? defaultSeed;
@@ -522,6 +592,7 @@ class MangaAudioScript {
   /// 没命中的句子不读。旧版没有 `k` 的片段在没有任何关联书时无从解释，按没命中处理。
   MangaLineAudioPlan audioPlanFor(MangaScriptLine line) {
     final MangaLineAudioSource audio = line.audio;
+    if (audio is MangaLocalAudio) return MangaLineAudioPlan.localAudio;
     final bool clipUsable =
         audio is MangaAudiobookClip &&
         (audio.bookKey != null || audiobookSources.isNotEmpty);
@@ -576,17 +647,36 @@ class MangaAudioScript {
   /// 「切配置重试」的候选声音（本卷在前、系列在后）。
   List<String> get retryVoices => voices.retryVoicesOver(series);
 
+  /// 读盘时店里这卷的修订（见 [MangaAudioScriptStore.saveIfCurrent]），每次经店存盘
+  /// 后更新；null = 不是从店里读出来的。只在内存里，不落盘。
+  int? storeRevision;
+
+  /// 行身份 → 在 [lines] 里的下标。[lines] 是公开可变列表（标注、重置都直接改它），
+  /// 所以这份索引只当提示：命中后核对该位置确实是这一行，对不上就整份重建。
+  Map<String, int>? _positions;
+
+  int _indexOf(String lineId) {
+    final int? at = _positions?[lineId];
+    if (at != null && at < lines.length && lines[at].lineId == lineId) {
+      return at;
+    }
+    final Map<String, int> rebuilt = <String, int>{};
+    for (int i = 0; i < lines.length; i++) {
+      rebuilt.putIfAbsent(lines[i].lineId, () => i);
+    }
+    _positions = rebuilt;
+    return rebuilt[lineId] ?? -1;
+  }
+
   /// 按行身份找行。
   MangaScriptLine? lineById(String lineId) {
-    for (final MangaScriptLine l in lines) {
-      if (l.lineId == lineId) return l;
-    }
-    return null;
+    final int i = _indexOf(lineId);
+    return i < 0 ? null : lines[i];
   }
 
   /// 替换一行（按行身份）；找不到返回 false。
   bool replaceLine(String lineId, MangaScriptLine Function(MangaScriptLine) f) {
-    final int i = lines.indexWhere((MangaScriptLine l) => l.lineId == lineId);
+    final int i = _indexOf(lineId);
     if (i < 0) return false;
     lines[i] = f(lines[i]);
     return true;
@@ -653,6 +743,26 @@ class MangaAudioScript {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
+    ..._headJson(),
+    'lines': <Object?>[for (final MangaScriptLine l in lines) l.toJson()],
+  };
+
+  /// 落盘用的 JSON 文本，与 `jsonEncode(toJson())` 等价；每行用缓存的
+  /// [MangaScriptLine.jsonText]，逐句复核改一句只重新编码这一句。
+  String encode() {
+    final String head = jsonEncode(_headJson());
+    final StringBuffer out = StringBuffer(head.substring(0, head.length - 1))
+      ..write(',"lines":[');
+    for (int i = 0; i < lines.length; i++) {
+      if (i > 0) out.write(',');
+      out.write(lines[i].jsonText);
+    }
+    out.write(']}');
+    return out.toString();
+  }
+
+  /// 除 `lines` 以外的字段（至少有 `v`，所以编码后不是空对象）。
+  Map<String, Object?> _headJson() => <String, Object?>{
     'v': schemaVersion,
     if (engineSignature != null) 'ocr': engineSignature,
     'seed': defaultSeed,
@@ -661,7 +771,6 @@ class MangaAudioScript {
     'roster': <Object?>[
       for (final TtsCastCharacter c in roster.values) c.toJson(),
     ],
-    'lines': <Object?>[for (final MangaScriptLine l in lines) l.toJson()],
     'pages': <String, Object?>{
       for (final MapEntry<int, MangaPageDirective> e in pages.entries)
         '${e.key}': e.value.toJson(),
@@ -749,23 +858,88 @@ class MangaAudioScriptStore {
     ),
   );
 
-  Future<MangaAudioScript> load(String bookKey) async {
-    final File f = fileFor(bookKey);
-    if (!await f.exists()) return MangaAudioScript();
-    try {
-      return MangaAudioScript.fromJson(jsonDecode(await f.readAsString()));
-    } on FormatException {
-      await f.rename('${f.path}.corrupt');
-      return MangaAudioScript();
-    }
+  /// 同一份演出稿文件在本进程里的读写闸与修订（按规范化路径）。店对象各处随用随建
+  /// （`mangaAudioScriptStoreFor`），所以状态挂在静态表上，而不是实例上。
+  static final Map<String, _ScriptFileState> _files =
+      <String, _ScriptFileState>{};
+
+  /// 同一卷的读写排成一队，按调用顺序执行：两次存盘不会同时写同一个临时文件，
+  /// 读盘也不会夹在别人的「写临时文件 → 改名」中间。排队在调用当下同步发生，
+  /// 先调用的先执行。[body] 的异常照常抛给调用方，只是不阻断后面排队的读写。
+  Future<T> _serialized<T>(
+    File f,
+    Future<T> Function(_ScriptFileState state) body,
+  ) {
+    final _ScriptFileState state = _files.putIfAbsent(
+      p.normalize(p.absolute(f.path)),
+      _ScriptFileState.new,
+    );
+    final Future<T> run = state.tail.then((_) => body(state));
+    state.tail = run.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return run;
   }
 
-  /// 原子写：先写同目录临时文件并 flush，再 rename 覆盖。
-  Future<void> save(String bookKey, MangaAudioScript script) async {
+  Future<MangaAudioScript> load(String bookKey) {
     final File f = fileFor(bookKey);
+    return _serialized(f, (_ScriptFileState state) async {
+      MangaAudioScript script;
+      if (!await f.exists()) {
+        script = MangaAudioScript();
+      } else {
+        try {
+          script = MangaAudioScript.fromJson(
+            jsonDecode(await f.readAsString()),
+          );
+        } on FormatException {
+          await f.rename('${f.path}.corrupt');
+          state.revision++;
+          script = MangaAudioScript();
+        }
+      }
+      return script..storeRevision = state.revision;
+    });
+  }
+
+  /// 原子写：先写同目录临时文件并 flush，再 rename 覆盖。无条件覆盖盘上的稿子
+  /// （标注任务、ctl 这类自己持有最新稿的写入方用）。界面上的会话（制作台、逐句复核）
+  /// 读盘后可能被这些写入方抢先，一律走 [saveIfCurrent]。
+  Future<void> save(String bookKey, MangaAudioScript script) {
+    final File f = fileFor(bookKey);
+    return _serialized(f, (_ScriptFileState state) => _write(f, state, script));
+  }
+
+  /// 只有 [script] 读盘（或上次经店存盘）之后本卷没被别处存过才写，返回是否写了。
+  /// 拿着旧稿的会话（标注任务刚在后台改过这卷）因此不会把整份旧稿写回去盖掉新结果；
+  /// 调用方拿到 false 应重读最新稿。
+  Future<bool> saveIfCurrent(String bookKey, MangaAudioScript script) {
+    final File f = fileFor(bookKey);
+    return _serialized(f, (_ScriptFileState state) async {
+      if (script.storeRevision == null ||
+          script.storeRevision != state.revision) {
+        return false;
+      }
+      await _write(f, state, script);
+      return true;
+    });
+  }
+
+  static Future<void> _write(
+    File f,
+    _ScriptFileState state,
+    MangaAudioScript script,
+  ) async {
     await f.parent.create(recursive: true);
     final File tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(script.toJson()), flush: true);
+    await tmp.writeAsString(script.encode(), flush: true);
     await tmp.rename(f.path);
+    script.storeRevision = ++state.revision;
   }
+}
+
+class _ScriptFileState {
+  /// 排在最后的一次读写（永不以错误结束）。
+  Future<void> tail = Future<void>.value();
+
+  /// 本进程里这份文件被写过几次。
+  int revision = 0;
 }

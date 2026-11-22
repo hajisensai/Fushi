@@ -1,4 +1,5 @@
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 
 /// 统计中心「范围」的粒度（对齐 Niratan 统计面板的年 / 月 / 周 / 日 + 全部历史），
 /// 外加用户任选起止日的「自定义」区间（[StatRangeSelection.customFromKey] ~
@@ -107,10 +108,7 @@ class StatRange {
         from = anchor;
         to = anchor;
       case StatRangeMode.week:
-        from = FushiDatabase.statDateKeyPlusDays(
-          anchor,
-          -(day.weekday - DateTime.monday),
-        );
+        from = StatWindow.weekStartOf(anchor);
         to = FushiDatabase.statDateKeyPlusDays(from, 6);
       case StatRangeMode.month:
         from = FushiDatabase.statCalendarDayKeyOf(

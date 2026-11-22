@@ -2,8 +2,12 @@ import 'dart:io';
 
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart'
+    show DlsiteException;
 
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/music/metadata/music_dlsite_scraper.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -47,6 +51,7 @@ List<CtlRoute> buildMusicCtlRoutes(OpContext context) => buildMusicCtlRoutesFor(
     return MusicCtlScraper(
       scrapeTrack: service.scrapeTrack,
       scrapeLibrary: service.scrapeLibrary,
+      scrapeAlbumDlsite: service.dlsite.scrapeAlbum,
     );
   },
   removeSource: (FushiDatabase db, int id) => removeSourceLibrary(
@@ -124,6 +129,7 @@ class MusicCtlScraper {
   const MusicCtlScraper({
     required this.scrapeTrack,
     required this.scrapeLibrary,
+    this.scrapeAlbumDlsite,
   });
 
   final Future<MusicScrapeOutcome> Function(
@@ -136,6 +142,10 @@ class MusicCtlScraper {
     bool Function()? cancelled,
   })
   scrapeLibrary;
+
+  /// 取（或重取）一张专辑的 DLsite 资料；认不出作品编号返回 null。null = 不支持。
+  final Future<MusicDlsiteAlbumInfo?> Function(String albumUid)?
+  scrapeAlbumDlsite;
 }
 
 /// 「识别整个曲库」后台任务的状态。
@@ -171,6 +181,7 @@ class MusicScrapeJob {
         'unmatched': report!.unmatched,
         'failed': report!.failed,
         'byMethod': report!.byMethod,
+        'dlsite': report!.dlsite.toJson(),
       },
     if (error != null) 'error': error,
   };
@@ -220,9 +231,13 @@ List<CtlRoute> buildMusicCtlRoutesFor({
     }
   }
 
+  /// 曲库快照；上锁（未解锁）的专辑与其曲目不给控制通道 / AI 助手看。
   Future<MusicLibrarySnapshot> snapshot() async {
     requireMusic();
-    return MusicLibrarySnapshot.load(database());
+    final FushiDatabase db = database();
+    return (await MusicLibrarySnapshot.load(
+      db,
+    )).withoutAlbums((await MediaVisibility.load(db)).hidesMusicAlbum);
   }
 
   Future<MusicTrackRow> requireTrack(CtlCall call) async {
@@ -291,6 +306,29 @@ List<CtlRoute> buildMusicCtlRoutesFor({
           for (final MusicTrackRow t in tracks) _trackJson(t),
         ],
       };
+    }),
+    CtlRoute.post('$kMusicCtlRoot/albums/:uid/dlsite', (CtlCall call) async {
+      requireWritable();
+      final MusicLibrarySnapshot snap = await snapshot();
+      final String uid = call.params['uid'] ?? '';
+      if (snap.albumByUid[uid] == null) {
+        throw CtlFailure.notFound('曲库里没有专辑 $uid');
+      }
+      final Future<MusicDlsiteAlbumInfo?> Function(String)? fetch =
+          scraper().scrapeAlbumDlsite;
+      if (fetch == null) throw const CtlFailure.unsupported('DLsite 资料不可用');
+      final MusicDlsiteAlbumInfo? info;
+      try {
+        info = await fetch(uid);
+      } on DlsiteException catch (e) {
+        throw CtlFailure.conflict('DLsite 请求失败，稍后再试：${e.message}');
+      }
+      if (info == null) {
+        throw CtlFailure.badRequest(
+          '专辑 $uid 的专辑名 / 目录编号 / 文件夹里认不出 DLsite 作品编号（RJ…）',
+        );
+      }
+      return <String, Object?>{'uid': uid, ...musicDlsiteInfoJson(info)};
     }),
     CtlRoute.get('$kMusicCtlRoot/artists', (CtlCall call) async {
       final MusicLibrarySnapshot snap = await snapshot();

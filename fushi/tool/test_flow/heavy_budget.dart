@@ -391,6 +391,7 @@ class HeavyHolder {
     required this.label,
     required this.cwd,
     this.capMb,
+    this.kind,
   });
 
   final int slot;
@@ -403,6 +404,9 @@ class HeavyHolder {
   /// its ceiling except for analyze); null when it recorded none.
   final int? capMb;
 
+  /// The [HeavyKind] name of the run; null when an older tool wrote none.
+  final String? kind;
+
   /// What this holder counts against the budget.
   int get bookedMb => capMb ?? kUnknownHolderCapMb;
 
@@ -412,6 +416,7 @@ class HeavyHolder {
     'label': label,
     'cwd': cwd,
     if (capMb != null) 'capMb': capMb!,
+    if (kind != null) 'kind': kind!,
   };
 
   static HeavyHolder? fromJson(int slot, Object? json) {
@@ -426,6 +431,7 @@ class HeavyHolder {
       label: '${json['label'] ?? ''}',
       cwd: '${json['cwd'] ?? ''}',
       capMb: json['capMb'] is int ? json['capMb'] as int : null,
+      kind: json['kind'] is String ? json['kind'] as String : null,
     );
   }
 }
