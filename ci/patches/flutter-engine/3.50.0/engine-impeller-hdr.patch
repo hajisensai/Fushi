@@ -1,8 +1,8 @@
 diff --git a/engine/src/flutter/impeller/display_list/canvas.cc b/engine/src/flutter/impeller/display_list/canvas.cc
-index e4496d8..c87ea56 100644
+index a892800d..d8ab3396 100644
 --- a/engine/src/flutter/impeller/display_list/canvas.cc
 +++ b/engine/src/flutter/impeller/display_list/canvas.cc
-@@ -1604,6 +1604,22 @@ void Canvas::SetupRenderPass() {
+@@ -1724,6 +1724,22 @@ void Canvas::SetupRenderPass() {
    renderer_.GetRenderTargetCache()->Start();
    ColorAttachment color0 = render_target_.GetColorAttachment(0);
  
@@ -25,7 +25,7 @@ index e4496d8..c87ea56 100644
    auto& stencil_attachment = render_target_.GetStencilAttachment();
    auto& depth_attachment = render_target_.GetDepthAttachment();
    if (!stencil_attachment.has_value() || !depth_attachment.has_value()) {
-@@ -2626,6 +2642,9 @@ void Canvas::EndReplay() {
+@@ -2765,6 +2781,9 @@ void Canvas::EndReplay() {
    }
    render_passes_.clear();
    renderer_.GetRenderTargetCache()->End();
@@ -36,10 +36,10 @@ index e4496d8..c87ea56 100644
  
    Reset();
 diff --git a/engine/src/flutter/impeller/display_list/canvas.h b/engine/src/flutter/impeller/display_list/canvas.h
-index 5647921..20d9e61 100644
+index 8ba4a82c..f6310ac9 100644
 --- a/engine/src/flutter/impeller/display_list/canvas.h
 +++ b/engine/src/flutter/impeller/display_list/canvas.h
-@@ -300,6 +300,9 @@ class Canvas {
+@@ -307,6 +307,9 @@ class Canvas {
    RenderTarget render_target_;
    const bool is_onscreen_;
    bool requires_readback_;
@@ -50,10 +50,10 @@ index 5647921..20d9e61 100644
  
    std::deque<CanvasStackEntry> transform_stack_;
 diff --git a/engine/src/flutter/impeller/entity/render_target_cache.cc b/engine/src/flutter/impeller/entity/render_target_cache.cc
-index edb1e4a..c5b08ec 100644
+index a58524bf..f397c05b 100644
 --- a/engine/src/flutter/impeller/entity/render_target_cache.cc
 +++ b/engine/src/flutter/impeller/entity/render_target_cache.cc
-@@ -74,10 +74,16 @@ RenderTarget RenderTargetCache::CreateOffscreen(
+@@ -78,10 +78,16 @@ RenderTarget RenderTargetCache::CreateOffscreen(
        .has_depth_stencil = stencil_attachment_config.has_value(),
    };
  
@@ -71,7 +71,7 @@ index edb1e4a..c5b08ec 100644
          render_target_data.used_this_frame = true;
          render_target_data.keep_alive_frame_count = keep_alive_frame_count_;
          ColorAttachment color0 =
-@@ -133,10 +139,16 @@ RenderTarget RenderTargetCache::CreateOffscreenMSAA(
+@@ -137,10 +143,16 @@ RenderTarget RenderTargetCache::CreateOffscreenMSAA(
        .has_msaa = true,
        .has_depth_stencil = stencil_attachment_config.has_value(),
    };
@@ -90,7 +90,7 @@ index edb1e4a..c5b08ec 100644
          render_target_data.keep_alive_frame_count = keep_alive_frame_count_;
          ColorAttachment color0 =
 diff --git a/engine/src/flutter/impeller/renderer/render_target.cc b/engine/src/flutter/impeller/renderer/render_target.cc
-index 2333242..6caa666 100644
+index 2333242c..6caa666e 100644
 --- a/engine/src/flutter/impeller/renderer/render_target.cc
 +++ b/engine/src/flutter/impeller/renderer/render_target.cc
 @@ -334,6 +334,18 @@ void RenderTargetAllocator::Start() {}
@@ -137,12 +137,12 @@ index 2333242..6caa666 100644
    // Create MSAA color texture.
    std::shared_ptr<Texture> color0_msaa_tex;
 diff --git a/engine/src/flutter/impeller/renderer/render_target.h b/engine/src/flutter/impeller/renderer/render_target.h
-index f4c1a14..9477a5a 100644
+index 8ae58c11..b6b8f066 100644
 --- a/engine/src/flutter/impeller/renderer/render_target.h
 +++ b/engine/src/flutter/impeller/renderer/render_target.h
-@@ -196,8 +196,29 @@ class RenderTargetAllocator {
-   ///        This may be used to deallocate any unused textures.
-   virtual void End();
+@@ -199,8 +199,29 @@ class RenderTargetAllocator {
+   /// @brief Drop all cached render target textures immediately.
+   virtual void Clear() {}
  
 +  /// @brief Fushi patch (HDR output): colour format used by `CreateOffscreen*`
 +  ///        when the caller passes no `target_pixel_format`. A frame rendered
@@ -171,10 +171,10 @@ index f4c1a14..9477a5a 100644
  
  }  // namespace impeller
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
-index 73196e1..575fd28 100644
+index add3af85..21c1b425 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
-@@ -1144,6 +1144,10 @@ static std::optional<impeller::PixelFormat> FlutterFormatToImpellerPixelFormat(
+@@ -1145,6 +1145,10 @@ static std::optional<impeller::PixelFormat> FlutterFormatToImpellerPixelFormat(
        return impeller::PixelFormat::kB8G8R8A8UNormInt;
      case GL_RGBA8:
        return impeller::PixelFormat::kR8G8B8A8UNormInt;
@@ -186,7 +186,7 @@ index 73196e1..575fd28 100644
        FML_LOG(ERROR) << "Cannot convert format " << format
                       << " to impeller::PixelFormat.";
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
-index dedd646..0c55979 100644
+index dedd646c..0c559794 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
 @@ -155,14 +155,19 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureImpeller(
@@ -213,7 +213,7 @@ index dedd646..0c55979 100644
    impeller::ContextGLES& context =
        impeller::ContextGLES::Cast(*aiks_context->GetContext());
 diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
-index f40a769..ce63b1c 100644
+index fd37b6a0..ec57b7eb 100644
 --- a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
 +++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
 @@ -4,6 +4,10 @@
@@ -245,6 +245,14 @@ index f40a769..ce63b1c 100644
    gl_->GenFramebuffers(1, &store->framebuffer_id);
    gl_->BindFramebuffer(GL_FRAMEBUFFER, store->framebuffer_id);
  
+-  if (enable_impeller_) {
+-    if (supports_implicit_msaa_) {
+-      gl_->GenTextures(1, &store->texture_id);
+-      gl_->BindTexture(GL_TEXTURE_2D, store->texture_id);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 +  // Fushi patch (HDR output): allocates the colour texture of |store|, 8-bit
 +  // or half float. Shared by the Skia branch and the texture-backed Impeller
 +  // branches; leaves GL_TEXTURE_2D unbound.
@@ -256,12 +264,13 @@ index f40a769..ce63b1c 100644
 +    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 +    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 +    if (!store->half_float) {
-+      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format,
-+                      config.size.width, config.size.height, 0,
-+                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
+       gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.internal_format,
+                       config.size.width, config.size.height, 0,
+                       format_.general_format, GL_UNSIGNED_BYTE, nullptr);
+-      gl_->BindTexture(GL_TEXTURE_2D, 0);
 +    } else if (half_float_sized_format_) {
-+      // ES 3.0 takes the sized internal format; an ES 2.0 context (what the
-+      // Windows embedder requests) needs the unsized form with
++      // ES 3.0 takes the sized internal format; an ES 2.0 context (the
++      // fallback when ANGLE cannot create ES 3.0) needs the unsized form with
 +      // OES_texture_half_float.
 +      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
 +                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
@@ -272,18 +281,8 @@ index f40a769..ce63b1c 100644
 +    gl_->BindTexture(GL_TEXTURE_2D, 0);
 +  };
 +
-   if (enable_impeller_) {
-     if (supports_implicit_msaa_) {
--      gl_->GenTextures(1, &store->texture_id);
--      gl_->BindTexture(GL_TEXTURE_2D, store->texture_id);
--      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
--      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
--      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
--      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
--      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format, config.size.width,
--                      config.size.height, 0, format_.general_format,
--                      GL_UNSIGNED_BYTE, nullptr);
--      gl_->BindTexture(GL_TEXTURE_2D, 0);
++  if (enable_impeller_) {
++    if (supports_implicit_msaa_) {
 +      allocate_color_texture();
  
        // MSAA color attachment
@@ -310,9 +309,9 @@ index f40a769..ce63b1c 100644
 -      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 -      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 -      gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
--      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format, config.size.width,
--                      config.size.height, 0, format_.general_format,
--                      GL_UNSIGNED_BYTE, nullptr);
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.internal_format,
+-                      config.size.width, config.size.height, 0,
+-                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
 -      gl_->BindTexture(GL_TEXTURE_2D, 0);
 +      allocate_color_texture();
  
@@ -329,13 +328,13 @@ index f40a769..ce63b1c 100644
 -    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 -    gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 -    if (!store->half_float) {
--      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.sized_format,
+-      gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.internal_format,
 -                      config.size.width, config.size.height, 0,
 -                      format_.general_format, GL_UNSIGNED_BYTE, nullptr);
 -    } else if (half_float_sized_format_) {
 -      // Fushi patch (HDR output): ES 3.0 takes the sized internal format; an
--      // ES 2.0 context (what the Windows embedder requests) needs the unsized
--      // form with OES_texture_half_float.
+-      // ES 2.0 context (the fallback when ANGLE cannot create ES 3.0) needs
+-      // the unsized form with OES_texture_half_float.
 -      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
 -                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
 -    } else {
@@ -371,7 +370,7 @@ index f40a769..ce63b1c 100644
    }
    if (surface->is_hdr() || store->half_float) {
      if (!DrawToSurface(store->texture_id, width, height,
-@@ -533,20 +534,52 @@ bool CompositorOpenGL::Initialize() {
+@@ -538,20 +539,52 @@ bool CompositorOpenGL::Initialize() {
  
  void CompositorOpenGL::ProbeBackingStore(uint32_t framebuffer_id,
                                           size_t width,
@@ -430,7 +429,7 @@ index f40a769..ce63b1c 100644
  
  bool CompositorOpenGL::InitializeOutputProgram() {
 diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.h b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
-index 0a16779..8c189c1 100644
+index 7bd555fb..6b3d95e3 100644
 --- a/engine/src/flutter/shell/platform/windows/compositor_opengl.h
 +++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
 @@ -6,6 +6,7 @@
@@ -441,7 +440,7 @@ index 0a16779..8c189c1 100644
  
  #include "flutter/fml/macros.h"
  #include "flutter/impeller/renderer/backend/gles/proc_table_gles.h"
-@@ -81,11 +82,22 @@ class CompositorOpenGL : public Compositor {
+@@ -84,11 +85,22 @@ class CompositorOpenGL : public Compositor {
    uint32_t output_vertex_buffer_ = 0;
    // Last backing store format reported in the log (-1 = none yet).
    int logged_half_float_ = -1;
@@ -467,7 +466,7 @@ index 0a16779..8c189c1 100644
    int32_t output_scale_location_ = -1;
    int32_t output_decode_location_ = -1;
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
-index 1995d72..8661bb5 100644
+index 1995d725..8661bb5a 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
 @@ -895,7 +895,7 @@ bool FlutterWindowsView::SetHdrOutput(bool enabled, float sdr_white_nits) {

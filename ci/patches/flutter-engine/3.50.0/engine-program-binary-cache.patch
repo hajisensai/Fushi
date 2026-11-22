@@ -1,5 +1,5 @@
 diff --git a/engine/src/flutter/shell/platform/windows/BUILD.gn b/engine/src/flutter/shell/platform/windows/BUILD.gn
-index a6af78f4..b5ec43e2 100644
+index bc46fedc..7dc703a1 100644
 --- a/engine/src/flutter/shell/platform/windows/BUILD.gn
 +++ b/engine/src/flutter/shell/platform/windows/BUILD.gn
 @@ -64,6 +64,8 @@ source_set("flutter_windows_source") {
@@ -11,7 +11,7 @@ index a6af78f4..b5ec43e2 100644
      "egl/surface.cc",
      "egl/surface.h",
      "egl/window_surface.cc",
-@@ -186,6 +188,7 @@ source_set("flutter_windows_source") {
+@@ -188,6 +190,7 @@ source_set("flutter_windows_source") {
      "//flutter/shell/platform/common/client_wrapper",
      "//flutter/shell/platform/embedder:embedder_as_internal_library",
      "//flutter/shell/platform/windows/client_wrapper:client_wrapper_windows",
@@ -19,19 +19,19 @@ index a6af78f4..b5ec43e2 100644
  
      # libEGL_static MUST be ordered before libGLESv2_static in this list. If
      # reversed, a linker error will occur, reporting DllMain already defined in
-@@ -228,6 +231,7 @@ executable("flutter_windows_unittests") {
-     "direct_manipulation_unittests.cc",
+@@ -232,6 +235,7 @@ executable("flutter_windows_unittests") {
      "display_manager_unittests.cc",
      "dpi_utils_unittests.cc",
+     "egl/manager_unittests.cc",
 +    "egl/program_binary_cache_unittests.cc",
      "flutter_project_bundle_unittests.cc",
      "flutter_window_unittests.cc",
      "flutter_windows_engine_unittests.cc",
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-index 07d7fd2a..47582b46 100644
+index 63b7f00e..b9189819 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-@@ -11,11 +11,35 @@
+@@ -11,6 +11,7 @@
  
  #include "flutter/fml/logging.h"
  #include "flutter/shell/platform/windows/egl/egl.h"
@@ -39,6 +39,8 @@ index 07d7fd2a..47582b46 100644
  
  namespace flutter {
  namespace egl {
+@@ -59,6 +60,29 @@ void AppendMaxFeatureLevel(std::optional<D3DFeatureLevel> max_feature_level,
+ }  // namespace
  
  int Manager::instance_count_ = 0;
 +bool Manager::program_binary_cache_installed_ = false;
@@ -65,9 +67,9 @@ index 07d7fd2a..47582b46 100644
 +
 +}  // namespace
  
- std::unique_ptr<Manager> Manager::Create(GpuPreference gpu_preference) {
-   std::unique_ptr<Manager> manager;
-@@ -33,6 +57,9 @@ Manager::Manager(GpuPreference gpu_preference) {
+ std::unique_ptr<Manager> Manager::Create(
+     GpuPreference gpu_preference,
+@@ -83,6 +107,9 @@ Manager::Manager(GpuPreference gpu_preference,
      return;
    }
  
@@ -77,7 +79,7 @@ index 07d7fd2a..47582b46 100644
    if (!InitializeConfig()) {
      return;
    }
-@@ -201,6 +228,40 @@ bool Manager::InitializeDisplay(GpuPreference gpu_preference) {
+@@ -284,6 +311,39 @@ bool Manager::InitializeDisplay(
    FML_UNREACHABLE();
  }
  
@@ -94,8 +96,7 @@ index 07d7fd2a..47582b46 100644
 +  }
 +  const char* extensions = ::eglQueryString(display_, EGL_EXTENSIONS);
 +  if (extensions == nullptr ||
-+      std::string(extensions).find("EGL_ANDROID_blob_cache") ==
-+          std::string::npos) {
++      !HasExtension(extensions, "EGL_ANDROID_blob_cache")) {
 +    return;
 +  }
 +  const auto set_blob_cache_funcs =
@@ -118,7 +119,7 @@ index 07d7fd2a..47582b46 100644
  bool Manager::InitializeConfig() {
    const EGLint config_attributes[] = {EGL_RED_SIZE,   8, EGL_GREEN_SIZE,   8,
                                        EGL_BLUE_SIZE,  8, EGL_ALPHA_SIZE,   8,
-@@ -349,6 +410,9 @@ void Manager::CleanUp() {
+@@ -451,6 +511,9 @@ void Manager::CleanUp() {
      // if destroying last instance
      if (instance_count_ == 1) {
        ::eglTerminate(display_);
@@ -129,10 +130,10 @@ index 07d7fd2a..47582b46 100644
      display_ = EGL_NO_DISPLAY;
    }
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
-index e669d868..555b0ad1 100644
+index f01ba992..142336ce 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.h
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
-@@ -137,6 +137,13 @@ class Manager {
+@@ -167,6 +167,13 @@ class Manager {
    // Number of active instances of Manager
    static int instance_count_;
  
@@ -1358,10 +1359,10 @@ index 00000000..0db49fed
 +}  // namespace egl
 +}  // namespace flutter
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-index 00409549..f5640829 100644
+index 24c9e225..bede1ab8 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-@@ -18,6 +18,7 @@
+@@ -19,6 +19,7 @@
  #include "flutter/shell/platform/common/path_utils.h"
  #include "flutter/shell/platform/embedder/embedder.h"
  #include "flutter/shell/platform/windows/dpi_utils.h"
@@ -1369,7 +1370,7 @@ index 00409549..f5640829 100644
  #include "flutter/shell/platform/windows/flutter_project_bundle.h"
  #include "flutter/shell/platform/windows/flutter_window.h"
  #include "flutter/shell/platform/windows/flutter_windows_engine.h"
-@@ -305,6 +306,14 @@ bool FlutterDesktopGpuSurfaceSupportsKeyedMutex() {
+@@ -311,6 +312,14 @@ bool FlutterDesktopGpuSurfaceSupportsKeyedMutex() {
    return true;
  }
  

@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4536 条。点号进各自文件。
+> 共 4540 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -44,6 +44,8 @@
 | [BUG-5208](bugs/BUG-5208-apple-dark-tier-drops-shell-theme.md) | ✅ | ✅ | Apple 深色档与书内查词弹窗重建主题时丢掉用户外壳样式 |
 | [BUG-5207](bugs/BUG-5207-ankidroid-kuma3-fork-package.md) | ✅ | ✅ | 装了改版 AnkiDroid（kuma3 Anki）时设置里一直显示「未安装 AnkiDroid」、权限框也不弹 |
 | [BUG-5206](bugs/BUG-5206-home-edit-exit-button-double-click-restore.md) | ✅ | ✅ | 首页编辑态页头「恢复默认」接住连点「编辑首页」的第二下，布局被换回默认 |
+| [BUG-5205](bugs/BUG-5205-tooltip-ticker-error-filter-hides-leaks.md) | ✅ | ✅ | main.dart 吞 RawTooltip ticker 错误的过滤会藏掉真实 ticker 泄漏断言 |
+| [BUG-5204](bugs/BUG-5204-dart314-aot-deferred-final-switch-capture.md) | ✅ | ✅ | Dart 3.14.0 AOT 编译推迟 final + switch 赋值 + 闭包捕获时崩溃（全平台 release 红） |
 | [BUG-5203](bugs/BUG-5203-home-activity-rows-main-isolate-merge.md) | ✅ | ✅ | 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序 |
 | [BUG-5202](bugs/BUG-5202-remote-download-register-cover-delete-flake-windows.md) | 🚧 | 🚧 | 远端下载登记测试在 Windows 上间歇红：删除被占用的封面文件失败 |
 | [BUG-5201](bugs/BUG-5201-drift-row-mapping-on-ui-isolate.md) | 🚧 | 🚧 | drift 行映射（`$Table.map`）仍在 UI isolate 上，大库查询回来逐行构造数据类卡帧 |
@@ -95,9 +97,11 @@
 | [BUG-5155](bugs/BUG-5155-music-plugin-search-artist-empty-page-stops-paging.md) | 🚧 | 🚧 | music-plugin-search-artist-empty-page-stops-paging |
 | [BUG-5154](bugs/BUG-5154-manga-render-backfill-overwrites-script-edits.md) | 🚧 | 🚧 | manga-render-backfill-overwrites-script-edits |
 | [BUG-5153](bugs/BUG-5153-subtitle-glossary-host-runner-unguarded-writer.md) | 🚧 | 🚧 | subtitle-glossary-host-runner-unguarded-writer |
+| [BUG-5152](bugs/BUG-5152-windows-shader-multi-return-angle-crash.md) | 🚧 | 🚧 | Windows Impeller(ANGLE) 下带采样器且 main() 多处 return 的片元着色器可能让 d3dcompiler_47 崩溃（flutter#190809） |
 | [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
 | [BUG-5150](bugs/BUG-5150-loopback-dead-capture-stale-ring-pinned.md) | ✅ | ✅ | loopback 采集线程自行退出后，环里的旧声音仍被当成「最近 N 秒」交出去；常驻的跨应用语音缓存从此再也起不来 |
 | [BUG-5149](bugs/BUG-5149-aggregate-live-snapshot-copy-materialize-on-caller.md) | ✅ | ✅ | aggregate-live-snapshot-copy-materialize-on-caller |
+| [BUG-5148](bugs/BUG-5148-android-agp9-followup.md) | 🚧 | 🚧 | Flutter 3.50 下 Android 构建仍用即将停支持的 Gradle 9.3.1 / AGP 9.1.1 / KGP 2.4.10，且关着 built-in Kotlin / newDsl |
 | [BUG-5147](bugs/BUG-5147-music-album-regroup-provenance-lost.md) | ✅ | ✅ | 专辑补归组后丢失原始归属，后续增量扫描无法纠正；收尾零变化也整源重读 |
 | [BUG-5146](bugs/BUG-5146-batch-seeding-toggle-relists-backend.md) | ✅ | ✅ | 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板 |
 | [BUG-5145](bugs/BUG-5145-manga-review-stale-session-overwrite.md) | ✅ | ✅ | manga-review-stale-session-overwrite |

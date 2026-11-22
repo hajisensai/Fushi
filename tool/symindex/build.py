@@ -25,7 +25,7 @@ HERE: Path = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from symdb import INCOMPLETE_KEY, Index, default_db_path  # noqa: E402
 
-DART: str = os.environ.get('FUSHI_DART', 'D:/flutter_sdk/flutter_3.47.6/bin/cache/dart-sdk/bin/dart.exe')
+DART: str = os.environ.get('FUSHI_DART', 'D:/flutter_sdk/flutter_3.50.0/bin/cache/dart-sdk/bin/dart.exe')
 RUST_ANALYZER: str = os.environ.get('FUSHI_RUST_ANALYZER', os.path.expanduser('~/.cargo/bin/rust-analyzer'))
 SCHEMA: str = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);

@@ -3,7 +3,7 @@
 //
 // Windows 上 Dart UI 线程与平台主线程默认合并。原版引擎里视频每出一帧，纹理 mark 要先排进
 // 主线程、再由主线程等 vsync 调一帧，主线程忙过一个视频帧间隔，这帧就被下一帧覆盖、永远
-// 不上屏。补丁引擎（ci/patches/flutter-engine/3.47.6/engine-texture-frame-raster-thread.patch）
+// 不上屏。补丁引擎（ci/patches/flutter-engine/3.50.0/engine-texture-frame-raster-thread.patch）
 // 让 mark 直接在 raster 线程上重画，不再经主线程。
 //
 // 真 app、真 media_kit 画面、真原生计数（`VideoOutputManager.FrameStats`：mpv 出了几帧、

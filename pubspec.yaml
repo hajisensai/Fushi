@@ -74,6 +74,12 @@ dependency_overrides:
   # native delta is tracked source. See third_party/desktop_drop/PATCHES.md.
   desktop_drop:
     path: third_party/desktop_drop
+  # Android intent bridge: the arianneorpilla fork (Jellyfin intent handling) of
+  # receive_intent 0.2.3. Vendored because its Gradle script used jcenter(),
+  # which Gradle 9 (Flutter 3.50 floor) removed. See
+  # third_party/receive_intent/PATCHES.md.
+  receive_intent:
+    path: third_party/receive_intent
   # 统一 FFmpeg 的移动端进程内命令运行器（FFmpegKitNext v9.0.0 插件，vendored）：
   # Android AAR / iOS xcframework 里的 FFmpeg 就是播放器 libmpv 链接的那一份，
   # 见 tool/ffmpeg-unified 与 docs/specs/2026-10-17-unified-ffmpeg.md。

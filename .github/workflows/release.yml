@@ -185,11 +185,11 @@ jobs:
     - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '21'
 
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -2026,7 +2026,7 @@ jobs:
 
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.

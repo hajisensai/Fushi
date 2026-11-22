@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 3.4.0+1369
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: "^3.47.0"
+  flutter: "^3.50.0"
 
 dependencies:
   # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/fushi-subtitles，GPL-3.0），本仓只留
@@ -186,10 +186,9 @@ dependencies:
   pdfrx: 2.4.5
   progress_indicators: ^1.0.0
   recase: ^4.1.0
-  receive_intent:
-    git:
-      url: https://github.com/arianneorpilla/receive_intent
-      ref: 3854d07f8f4e9d5a78589639b18b5d454ddf54a0
+  # Vendored fork (arianneorpilla 3854d07) via the workspace dependency_overrides:
+  # third_party/receive_intent/PATCHES.md.
+  receive_intent: ^0.2.3
   remove_emoji: ^0.0.7
   restart_app: ^1.1.2
   share_plus: ^7.2.2

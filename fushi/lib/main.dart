@@ -1065,13 +1065,7 @@ void main([List<String> args = const <String>[]]) {
 
       /// Capture Flutter framework errors with full details.
       FlutterError.onError = (details) {
-        // Suppress known Flutter framework bug: RawTooltipState creates
-        // multiple tickers from SingleTickerProviderStateMixin.
         final msg = details.exceptionAsString();
-        if (msg.contains('SingleTickerProviderStateMixin') &&
-            msg.contains('RawTooltipState')) {
-          return;
-        }
         FlutterError.presentError(details);
         // BUG-2496：框架自己标 `silent: true` 的错误（图片解码失败等
         // `MultiFrameImageStreamCompleter` 上报的非致命错误）不是崩溃前兆，

@@ -442,31 +442,40 @@ class _MediaCollectionGridDetailPageState
             : sort.name,
       );
 
+  /// 阅读时间排序没有一键整理比较器：按页内视图序排，视图外的成员保持原序接在后面。
+  List<MediaCollectionItemRow> _rowsInViewOrder(
+    List<CollectionMemberEntry> arranged,
+  ) {
+    final Set<String> shown = <String>{
+      for (final CollectionMemberEntry e in arranged) e.key,
+    };
+    return <MediaCollectionItemRow>[
+      for (final CollectionMemberEntry e in arranged) e.row,
+      for (final MediaCollectionItemRow r in _rows)
+        if (!shown.contains('${r.mediaType}|${r.entryKey}')) r,
+    ];
+  }
+
   /// 「存为手动顺序」（原一键整理，排序交互重设计层次 B2）：把当前视图排序写穿
   /// sortIndex（`reorderCollectionItems`），库页合集行同源立即同序。阅读时间排序
   /// 没有对应的一键整理比较器，按页内视图序落盘。
   Future<void> _saveViewOrder(List<CollectionMemberEntry> arranged) async {
-    final List<MediaCollectionItemRow> next;
-    switch (_sort) {
-      case CollectionMemberSort.manual:
-        return;
-      case CollectionMemberSort.volume:
-      case CollectionMemberSort.added:
-        next = await sortedCollectionRows(
-          db: widget.database,
-          rows: _rows,
-          byTitle: _sort == CollectionMemberSort.volume,
-        );
-      case CollectionMemberSort.read:
-        final Set<String> shown = <String>{
-          for (final CollectionMemberEntry e in arranged) e.key,
-        };
-        next = <MediaCollectionItemRow>[
-          for (final CollectionMemberEntry e in arranged) e.row,
-          for (final MediaCollectionItemRow r in _rows)
-            if (!shown.contains('${r.mediaType}|${r.entryKey}')) r,
-        ];
-    }
+    // 用 switch 表达式在声明处取值，不在 switch 语句里给推迟赋值的 final 赋值再让
+    // setState 闭包捕获（Dart 3.14.0 AOT 对该形状有 dart-lang/sdk#64917 崩溃，
+    // 修复 dart-lang/sdk@7848cfe821d；守卫
+    // test/build/aot_deferred_final_switch_capture_guard_test.dart）。
+    final List<MediaCollectionItemRow>? sorted = switch (_sort) {
+      CollectionMemberSort.manual => null,
+      CollectionMemberSort.volume ||
+      CollectionMemberSort.added => await sortedCollectionRows(
+        db: widget.database,
+        rows: _rows,
+        byTitle: _sort == CollectionMemberSort.volume,
+      ),
+      CollectionMemberSort.read => _rowsInViewOrder(arranged),
+    };
+    if (sorted == null) return;
+    final List<MediaCollectionItemRow> next = sorted;
     if (!mounted) return;
     setState(() {
       _rows = next;

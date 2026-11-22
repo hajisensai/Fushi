@@ -1,8 +1,8 @@
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
-index 575fd28b..4b2a8082 100644
+index 21c1b42..eba9a78 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
-@@ -3223,6 +3223,24 @@ FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailable(
+@@ -3248,6 +3248,24 @@ FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailable(
    return kSuccess;
  }
  
@@ -27,7 +27,7 @@ index 575fd28b..4b2a8082 100644
  FlutterEngineResult FlutterEngineUpdateSemanticsEnabled(
      FLUTTER_API_SYMBOL(FlutterEngine) engine,
      bool enabled) {
-@@ -3807,6 +3825,8 @@ FlutterEngineResult FlutterEngineGetProcAddresses(
+@@ -3832,6 +3850,8 @@ FlutterEngineResult FlutterEngineGetProcAddresses(
    SET_PROC(AddView, FlutterEngineAddView);
    SET_PROC(RemoveView, FlutterEngineRemoveView);
    SET_PROC(SendViewFocusEvent, FlutterEngineSendViewFocusEvent);
@@ -37,10 +37,10 @@ index 575fd28b..4b2a8082 100644
  
    return kSuccess;
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder.h b/engine/src/flutter/shell/platform/embedder/embedder.h
-index e9f37699..5e43868e 100644
+index 0c53cb5..a621c9a 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder.h
 +++ b/engine/src/flutter/shell/platform/embedder/embedder.h
-@@ -3247,6 +3247,25 @@ FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailable(
+@@ -3301,6 +3301,25 @@ FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailable(
      FLUTTER_API_SYMBOL(FlutterEngine) engine,
      int64_t texture_identifier);
  
@@ -66,7 +66,7 @@ index e9f37699..5e43868e 100644
  //------------------------------------------------------------------------------
  /// @brief      Enable or disable accessibility semantics.
  ///
-@@ -3690,6 +3709,10 @@ typedef FlutterEngineResult (
+@@ -3744,6 +3763,10 @@ typedef FlutterEngineResult (
      *FlutterEngineMarkExternalTextureFrameAvailableFnPtr)(
      FLUTTER_API_SYMBOL(FlutterEngine) engine,
      int64_t texture_identifier);
@@ -77,7 +77,7 @@ index e9f37699..5e43868e 100644
  typedef FlutterEngineResult (*FlutterEngineUpdateSemanticsEnabledFnPtr)(
      FLUTTER_API_SYMBOL(FlutterEngine) engine,
      bool enabled);
-@@ -3808,6 +3831,9 @@ typedef struct {
+@@ -3862,6 +3885,9 @@ typedef struct {
    FlutterEngineRemoveViewFnPtr RemoveView;
    FlutterEngineSendViewFocusEventFnPtr SendViewFocusEvent;
    FlutterEngineSendSemanticsActionFnPtr SendSemanticsAction;
@@ -88,7 +88,7 @@ index e9f37699..5e43868e 100644
  
  //------------------------------------------------------------------------------
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_engine.cc b/engine/src/flutter/shell/platform/embedder/embedder_engine.cc
-index d3e78ee5..32d2b4ef 100644
+index d3e78ee..32d2b4e 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_engine.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_engine.cc
 @@ -4,7 +4,9 @@
@@ -187,7 +187,7 @@ index d3e78ee5..32d2b4ef 100644
    if (!IsValid()) {
      return false;
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_engine.h b/engine/src/flutter/shell/platform/embedder/embedder_engine.h
-index c9c16ecb..ad36dfe5 100644
+index c9c16ec..ad36dfe 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_engine.h
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_engine.h
 @@ -6,7 +6,9 @@
@@ -232,10 +232,10 @@ index c9c16ecb..ad36dfe5 100644
  };
  
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc
-index d9f797ca..cfef9c1e 100644
+index f22ec26..c002c64 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc
-@@ -1004,6 +1004,12 @@ bool FlutterWindowsEngine::MarkExternalTextureFrameAvailable(
+@@ -1019,6 +1019,12 @@ bool FlutterWindowsEngine::MarkExternalTextureFrameAvailable(
                engine_, texture_id) == kSuccess);
  }
  
@@ -249,10 +249,10 @@ index d9f797ca..cfef9c1e 100644
    struct Captures {
      fml::closure callback;
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
-index 3b9f9474..5361df80 100644
+index d1f4ed5..c8673b3 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
-@@ -246,6 +246,11 @@ class FlutterWindowsEngine {
+@@ -247,6 +247,11 @@ class FlutterWindowsEngine {
    // given |texture_id|.
    bool MarkExternalTextureFrameAvailable(int64_t texture_id);
  
@@ -265,7 +265,7 @@ index 3b9f9474..5361df80 100644
    virtual bool PostRasterThreadTask(fml::closure callback) const;
  
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc
-index f71da67b..c6ca4f96 100644
+index f71da67..c6ca4f9 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc
 @@ -100,12 +100,22 @@ void FlutterWindowsTextureRegistrar::UnregisterTexture(int64_t texture_id,
@@ -296,7 +296,7 @@ index f71da67b..c6ca4f96 100644
  
  bool FlutterWindowsTextureRegistrar::PopulateTexture(
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc
-index a6c2448a..79c47a9b 100644
+index a6c2448..79c47a9 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc
 @@ -2,6 +2,8 @@

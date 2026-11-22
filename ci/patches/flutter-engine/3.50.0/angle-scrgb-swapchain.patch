@@ -1,22 +1,22 @@
 diff --git a/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp b/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp
-index 1569c08..781784d 100644
+index 0565a594..572fd419 100644
 --- a/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp
 +++ b/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp
-@@ -1423,6 +1423,13 @@ void Renderer11::generateDisplayExtensions(egl::DisplayExtensions *outExtensions
-     // D3D11 does not support present with dirty rectangles until DXGI 1.2.
-     outExtensions->postSubBuffer = mRenderer11DeviceCaps.supportsDXGI1_2;
+@@ -1377,6 +1377,13 @@ void Renderer11::generateDisplayExtensions(egl::DisplayExtensions *outExtensions
+ 
+     outExtensions->postSubBuffer = true;
  
 +#if !defined(ANGLE_ENABLE_WINDOWS_UWP)
 +    // Fushi patch: half-float HWND window surfaces can be tagged scRGB (see
 +    // NativeWindow11Win32::createScrgbSwapChain; needs DXGI 1.4 at creation
 +    // time, which fails the surface instead of silently ignoring the request).
-+    outExtensions->glColorspaceScrgbLinear = mRenderer11DeviceCaps.supportsDXGI1_2;
++    outExtensions->glColorspaceScrgbLinear = true;
 +#endif
 +
      outExtensions->image                 = true;
      outExtensions->imageBase             = true;
      outExtensions->glTexture2DImage      = true;
-@@ -1549,7 +1556,8 @@ NativeWindowD3D *Renderer11::createNativeWindow(EGLNativeWindowType window,
+@@ -1503,7 +1510,8 @@ NativeWindowD3D *Renderer11::createNativeWindow(EGLNativeWindowType window,
      {
          return new NativeWindow11Win32(
              window, config->alphaSize > 0,
@@ -27,7 +27,7 @@ index 1569c08..781784d 100644
  #endif
  
 diff --git a/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp b/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp
-index 722510a..1724a6a 100644
+index 07795e1f..ddf22a92 100644
 --- a/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp
 +++ b/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp
 @@ -11,6 +11,9 @@
@@ -40,23 +40,25 @@ index 722510a..1724a6a 100644
  // This header must be included before dcomp.h.
  #include <initguid.h>
  
-@@ -21,9 +24,11 @@ namespace rx
+@@ -21,8 +24,12 @@ namespace rx
  
  NativeWindow11Win32::NativeWindow11Win32(EGLNativeWindowType window,
                                           bool hasAlpha,
 -                                         bool directComposition)
+-    : NativeWindow11(window), mDirectComposition(directComposition), mHasAlpha(hasAlpha)
 +                                         bool directComposition,
 +                                         EGLAttrib colorSpace)
-     : NativeWindow11(window),
-       mDirectComposition(directComposition),
++    : NativeWindow11(window),
++      mDirectComposition(directComposition),
 +      mColorSpace(colorSpace),
-       mHasAlpha(hasAlpha),
-       mDevice(nullptr),
-       mCompositionTarget(nullptr),
-@@ -148,6 +153,19 @@ HRESULT NativeWindow11Win32::createSwapChain(ID3D11Device *device,
++      mHasAlpha(hasAlpha)
+ {}
+ 
+ NativeWindow11Win32::~NativeWindow11Win32() = default;
+@@ -136,6 +143,17 @@ HRESULT NativeWindow11Win32::createSwapChain(ID3D11Device *device,
      // Use IDXGIFactory2::CreateSwapChainForHwnd if DXGI 1.2 is available to create a
      // DXGI_SWAP_EFFECT_SEQUENTIAL swap chain.
-     IDXGIFactory2 *factory2 = d3d11::DynamicCastComObject<IDXGIFactory2>(factory);
+     angle::ComPtr<IDXGIFactory2> factory2 = angle::DynamicCastComObject<IDXGIFactory2>(factory);
 +    if (mColorSpace == EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT)
 +    {
 +        // No silent fallback: a surface that asked for scRGB but would be
@@ -65,15 +67,13 @@ index 722510a..1724a6a 100644
 +        {
 +            return DXGI_ERROR_UNSUPPORTED;
 +        }
-+        HRESULT result = createScrgbSwapChain(device, factory2, format, width, height, samples,
-+                                              swapChain);
-+        SafeRelease(factory2);
-+        return result;
++        return createScrgbSwapChain(device, factory2.Get(), format, width, height, samples,
++                                    swapChain);
 +    }
      if (factory2 != nullptr)
      {
          DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-@@ -202,6 +220,61 @@ HRESULT NativeWindow11Win32::createSwapChain(ID3D11Device *device,
+@@ -191,6 +209,58 @@ HRESULT NativeWindow11Win32::createSwapChain(ID3D11Device *device,
      return result;
  }
  
@@ -83,7 +83,7 @@ index 722510a..1724a6a 100644
 +                                                  UINT width,
 +                                                  UINT height,
 +                                                  UINT samples,
-+                                                  IDXGISwapChain **swapChain)
++                                                  angle::ComPtr<IDXGISwapChain> *swapChain)
 +{
 +    // DWM only honours a swap chain colour space on flip-model swap chains,
 +    // which cannot be multisampled.
@@ -105,7 +105,7 @@ index 722510a..1724a6a 100644
 +    swapChainDesc.SwapEffect    = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 +    swapChainDesc.AlphaMode     = DXGI_ALPHA_MODE_UNSPECIFIED;
 +    swapChainDesc.Flags         = 0;
-+    IDXGISwapChain1 *swapChain1 = nullptr;
++    angle::ComPtr<IDXGISwapChain1> swapChain1;
 +    HRESULT result = factory2->CreateSwapChainForHwnd(device, getNativeWindow(), &swapChainDesc,
 +                                                      nullptr, nullptr, &swapChain1);
 +    if (FAILED(result))
@@ -113,22 +113,19 @@ index 722510a..1724a6a 100644
 +        return result;
 +    }
 +
-+    IDXGISwapChain3 *swapChain3 = d3d11::DynamicCastComObject<IDXGISwapChain3>(swapChain1);
-+    UINT support                = 0;
++    angle::ComPtr<IDXGISwapChain3> swapChain3;
++    UINT support                           = 0;
 +    const DXGI_COLOR_SPACE_TYPE colorSpace = DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
-+    if (swapChain3 == nullptr ||
++    if (FAILED(swapChain1.As(&swapChain3)) ||
 +        FAILED(swapChain3->CheckColorSpaceSupport(colorSpace, &support)) ||
 +        (support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0 ||
 +        FAILED(swapChain3->SetColorSpace1(colorSpace)))
 +    {
-+        SafeRelease(swapChain3);
-+        SafeRelease(swapChain1);
 +        return DXGI_ERROR_UNSUPPORTED;
 +    }
-+    SafeRelease(swapChain3);
 +
 +    factory2->MakeWindowAssociation(getNativeWindow(), DXGI_MWA_NO_ALT_ENTER);
-+    *swapChain = static_cast<IDXGISwapChain *>(swapChain1);
++    *swapChain = std::move(swapChain1);
 +    return S_OK;
 +}
 +
@@ -136,7 +133,7 @@ index 722510a..1724a6a 100644
  {
      if (mDevice)
 diff --git a/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.h b/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.h
-index f67cfc7..880af04 100644
+index c5d1ce31..55eded7f 100644
 --- a/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.h
 +++ b/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.h
 @@ -21,7 +21,10 @@ namespace rx
@@ -163,10 +160,10 @@ index f67cfc7..880af04 100644
 +                                 UINT width,
 +                                 UINT height,
 +                                 UINT samples,
-+                                 IDXGISwapChain **swapChain);
++                                 angle::ComPtr<IDXGISwapChain> *swapChain);
 +
      bool mDirectComposition;
 +    EGLAttrib mColorSpace;
      bool mHasAlpha;
-     IDCompositionDevice *mDevice;
-     IDCompositionTarget *mCompositionTarget;
+     angle::ComPtr<IDCompositionDevice> mDevice;
+     angle::ComPtr<IDCompositionTarget> mCompositionTarget;
