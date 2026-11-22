@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T14:44:21Z",
+ "generatedAt": "2026-11-22T15:20:02Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "283a92028615e3ddf92cd510d316234ae2ecbf35",
-  "seq": 31429
+  "sha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
+  "seq": 31475
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "283a92028615e3ddf92cd510d316234ae2ecbf35",
    "unknown": false,
-   "publishedAt": "2026-11-22T14:44:12Z",
-   "testflight": false,
+   "publishedAt": "2026-11-22T15:19:47Z",
+   "testflight": true,
    "baseSeq": 31366,
    "prs": [
     3400,
@@ -26,16 +26,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486671"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486671"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486671"
+     "state": "ok"
     }
    }
   },
@@ -74,7 +71,7 @@
    "unknown": false,
    "publishedAt": "2026-11-22T12:40:14Z",
    "testflight": true,
-   "baseSeq": 31323,
+   "baseSeq": 31261,
    "prs": [
     4163,
     4161,
@@ -86,34 +83,7 @@
     4156,
     4157,
     4159,
-    4158
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 31323,
-   "version": "3.4.0",
-   "sha": "ce54f05ee90428ad6e14fdb34aa68817865b0dfb",
-   "unknown": false,
-   "publishedAt": "2026-11-22T11:38:31Z",
-   "testflight": true,
-   "baseSeq": 31261,
-   "prs": [
+    4158,
     4152,
     4124,
     4141,
@@ -135,15 +105,13 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368076"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
+     "state": "ok"
     },
     "ios": {
      "state": "ok"
@@ -151,7 +119,40 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
+  "headSeq": 31475,
+  "prs": [
+   4186,
+   4178,
+   4180
+  ],
+  "direct": [
+   {
+    "sha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
+    "subject": "chore(bugs): settle BUG number collisions on 3c8d64b87"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047097"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047095"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047095"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047095"
+   }
+  }
+ },
  "prs": {
   "3400": {
    "number": 3400,
@@ -340,6 +341,33 @@
    "mergedAt": "2026-11-22T13:32:56Z",
    "additions": 243,
    "deletions": 37,
+   "labels": []
+  },
+  "4178": {
+   "number": 4178,
+   "title": "fix(srs): 默认牌组复活挪进 Rust 内核开库路径，开库读命令回到 1（BUG-5209）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T14:48:23Z",
+   "additions": 198,
+   "deletions": 27,
+   "labels": []
+  },
+  "4180": {
+   "number": 4180,
+   "title": "fix(srs-gen4): 迁移对拍认出协议 3 一侧被旧重放改写过的日志结果（BUG-5250，反馈 RhMpA6bn8v）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T14:48:01Z",
+   "additions": 470,
+   "deletions": 13,
+   "labels": []
+  },
+  "4186": {
+   "number": 4186,
+   "title": "merge: 2026-11-22 合并后审查修复批（HBK-AUDIT-201~235）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:02:11Z",
+   "additions": 5689,
+   "deletions": 781,
    "labels": []
   }
  }
