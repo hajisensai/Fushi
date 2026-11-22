@@ -1,12 +1,48 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T09:13:09Z",
+ "generatedAt": "2026-11-22T10:02:07Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "327713340f49445726dc33839151804976aee173",
-  "seq": 31262
+  "sha": "ce54f05ee90428ad6e14fdb34aa68817865b0dfb",
+  "seq": 31323
  },
  "builds": [
+  {
+   "seq": 31261,
+   "version": "3.4.0",
+   "sha": "5f3c60d829141c182d44318cf41f384b732cdc79",
+   "unknown": false,
+   "publishedAt": "2026-11-22T10:01:56Z",
+   "testflight": false,
+   "baseSeq": 31255,
+   "prs": [
+    4151
+   ],
+   "direct": [
+    {
+     "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
+     "subject": "chore(bugs): settle BUG number collisions on 00145ef40"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
+    }
+   }
+  },
   {
    "seq": 31255,
    "version": "3.4.0",
@@ -84,7 +120,7 @@
    "unknown": false,
    "publishedAt": "2026-11-22T05:25:21Z",
    "testflight": true,
-   "baseSeq": 31122,
+   "baseSeq": 31104,
    "prs": [
     4134,
     4129,
@@ -103,7 +139,12 @@
     4119,
     4118,
     4117,
-    4114
+    4114,
+    4102,
+    4112,
+    4111,
+    4110,
+    4109
    ],
    "direct": [
     {
@@ -131,76 +172,47 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31122,
-   "version": "3.4.0",
-   "sha": "51073b3c5f1dae344b2721046cb9a7d7a0b33633",
-   "unknown": false,
-   "publishedAt": "2026-11-22T05:11:36Z",
-   "testflight": false,
-   "baseSeq": 31104,
-   "prs": [
-    4102,
-    4112,
-    4111,
-    4110,
-    4109
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "327713340f49445726dc33839151804976aee173",
-  "headSeq": 31262,
+  "headSha": "ce54f05ee90428ad6e14fdb34aa68817865b0dfb",
+  "headSeq": 31323,
   "prs": [
-   4151
+   4152,
+   4124,
+   4141,
+   4149,
+   4150,
+   4116,
+   4146
   ],
   "direct": [
    {
-    "sha": "327713340f49445726dc33839151804976aee173",
-    "subject": "chore(bugs): settle BUG number collisions on 5f3c60d82"
+    "sha": "f28f4804afa4ea7412228638406fb90cdd0721bd",
+    "subject": "chore(bugs): settle BUG number collisions on fa3721a78"
    },
    {
-    "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
-    "subject": "chore(bugs): settle BUG number collisions on 00145ef40"
+    "sha": "327713340f49445726dc33839151804976aee173",
+    "subject": "chore(bugs): settle BUG number collisions on 5f3c60d82"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892168"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368076"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
    }
   }
  },
@@ -268,6 +280,15 @@
    "deletions": 18,
    "labels": []
   },
+  "4116": {
+   "number": 4116,
+   "title": "perf(stats): 统计事实面派生迁到 Rust、读取挪进后台 isolate（BUG-4960）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:22:10Z",
+   "additions": 3034,
+   "deletions": 431,
+   "labels": []
+  },
   "4117": {
    "number": 4117,
    "title": "fix(ui): 光面封面倾斜离开时放慢回平面（拍板 vDzivBIEOw）",
@@ -329,6 +350,15 @@
    "mergedAt": "2026-11-22T03:24:21Z",
    "additions": 702,
    "deletions": 60,
+   "labels": []
+  },
+  "4124": {
+   "number": 4124,
+   "title": "feat(web-video): 默认 Fushi 播放，DRM 且原生高于 1080p 才默认站点原生播放",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:32:05Z",
+   "additions": 783,
+   "deletions": 72,
    "labels": []
   },
   "4125": {
@@ -475,6 +505,15 @@
    "deletions": 101,
    "labels": []
   },
+  "4141": {
+   "number": 4141,
+   "title": "手柄查词统一：一套可改键查词模式、停下即查、右摇杆微调选区",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:29:06Z",
+   "additions": 4571,
+   "deletions": 1550,
+   "labels": []
+  },
   "4142": {
    "number": 4142,
    "title": "fix(srs-gen4): 卡片标志按血统继承时同一层前身取最新写的，修迁移对拍 cards 行回滚（BUG-5190）",
@@ -502,6 +541,15 @@
    "deletions": 1101,
    "labels": []
   },
+  "4146": {
+   "number": 4146,
+   "title": "制卡提示重做 + 通知避让页面 chrome（BUG-5195）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:15:07Z",
+   "additions": 2946,
+   "deletions": 691,
+   "labels": []
+  },
   "4148": {
    "number": 4148,
    "title": "style(tool): dart format heavy_lease.dart，修 develop 格式检查红",
@@ -511,6 +559,24 @@
    "deletions": 4,
    "labels": []
   },
+  "4149": {
+   "number": 4149,
+   "title": "feat(library-agent): AI 管库 v3——长程 agent、整库地图、批量变更集",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:25:09Z",
+   "additions": 6509,
+   "deletions": 158,
+   "labels": []
+  },
+  "4150": {
+   "number": 4150,
+   "title": "feat(srs): 复习首页宽屏首行填满「今日」「连续天数」两块",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:24:32Z",
+   "additions": 692,
+   "deletions": 116,
+   "labels": []
+  },
   "4151": {
    "number": 4151,
    "title": "fix(video): Windows 视频帧改走 raster 线程，主线程忙时不再丢帧（BUG-5200）",
@@ -518,6 +584,15 @@
    "mergedAt": "2026-11-22T09:06:09Z",
    "additions": 1219,
    "deletions": 11,
+   "labels": []
+  },
+  "4152": {
+   "number": 4152,
+   "title": "perf(video): 合集滚动不再逐帧离屏重烘，切页派生数据记忆化、重活移出 UI 线程（BUG-5197）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:36:23Z",
+   "additions": 2522,
+   "deletions": 399,
    "labels": []
   }
  }
