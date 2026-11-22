@@ -63,6 +63,10 @@ final class SecureArchivePasswordVault implements ArchivePasswordVault {
   /// flutter_secure_storage 没有按前缀删的接口：列出本 app 的全部键再逐个删。
   @override
   Future<int> deleteWithPrefix(String prefix) async {
+    // 空前缀会命中同一存储里别的功能（上锁口令、音乐插件保险库）的全部键。
+    if (prefix.isEmpty) {
+      throw ArgumentError.value(prefix, 'prefix', 'must not be empty');
+    }
     final Map<String, String> all = await _storage.readAll();
     int deleted = 0;
     for (final String key in all.keys) {

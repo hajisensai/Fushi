@@ -157,6 +157,13 @@ void main() {
     expect(await forgetAllArchivePasswords(vault: vault), 0);
   });
 
+  test('安全存储实现拒绝空前缀（否则会删掉同一存储里别的功能的键）', () async {
+    await expectLater(
+      const SecureArchivePasswordVault().deleteWithPrefix(''),
+      throwsArgumentError,
+    );
+  });
+
   test('安全存储读不了时清除报错，不当作没有可删的', () async {
     await expectLater(
       forgetAllArchivePasswords(vault: _UnreadableVault()),
