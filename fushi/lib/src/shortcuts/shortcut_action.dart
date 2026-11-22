@@ -375,6 +375,15 @@ enum ShortcutAction {
   // resolveKeyboard 故无枚举顺序歧义，no-shadow 守卫显式排除它；resolve 路径按
   // 声明序先命中 readerLookupAtCursor（见枚举头部排序契约，勿排到它前面）。
   readerEnterCaret(ShortcutScope.reader, 'reader_enter_caret'),
+  // 整句扫词（拍板台 5H922XeDHM，照视频页 videoLookupNextWord / videoLookupPrevWord
+  // 的契约）：不进字级光标、不弹模态，只在**当前句**里移动一个数据词游标，每停一词
+  // 就复用光标 / 点击查词的同一条链路（`fushiSelection.selectFromPosition`）弹 / 换
+  // 同一张弹窗；X=制卡 / Y=发音等弹窗动词照常可达。正文（paginated / continuous /
+  // vn）与有声书歌词视图共用这一对动作。默认**空绑定**、由用户自配（reader 组的
+  // 手柄键已占满），执行体在 `reader_fushi/word_sweep.part.dart`。必须声明在
+  // readerEnterCaret 之后（不影响 A/Enter 别名对的声明序契约）。
+  readerLookupNextWord(ShortcutScope.reader, 'reader_lookup_next_word'),
+  readerLookupPrevWord(ShortcutScope.reader, 'reader_lookup_prev_word'),
 
   // 界面
   readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),

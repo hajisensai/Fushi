@@ -136,6 +136,83 @@ void main() {
         debugDefaultTargetPlatformOverride = null;
       },
     );
+
+    // BUG-5189：焦点已在目标子孙上（快捷键设置的行内录制区）时，在目标子树里按下
+    // 鼠标不能把焦点拽回外层目标——否则随后的 Esc 绕过录制器冒泡到全局返回。
+    testWidgets('a mouse press inside a target keeps focus on its focused '
+        'descendant', (WidgetTester tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+
+      final FocusNode row = FocusNode(debugLabel: 'row');
+      final FocusNode inner = FocusNode(debugLabel: 'inner');
+      addTearDown(row.dispose);
+      addTearDown(inner.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiFocusRoot(
+            child: Center(
+              child: FushiFocusTarget(
+                id: const FushiFocusId('row'),
+                focusNode: row,
+                child: SizedBox(
+                  width: 200,
+                  height: 80,
+                  child: Column(
+                    children: <Widget>[
+                      const ColoredBox(
+                        key: Key('row-title'),
+                        color: Color(0x00000000),
+                        child: SizedBox(width: 200, height: 40),
+                      ),
+                      Focus(
+                        focusNode: inner,
+                        child: const ColoredBox(
+                          key: Key('inner-region'),
+                          color: Color(0x00000000),
+                          child: SizedBox(width: 200, height: 40),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // 前置：点击确实会走到目标的 click-to-focus（焦点不在子孙上时照旧带过去），
+      // 否则下面的断言会在「点击根本没命中」时空转变绿。
+      await tester.tap(
+        find.byKey(const Key('row-title')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(row.hasPrimaryFocus, isTrue);
+
+      inner.requestFocus();
+      await tester.pump();
+      expect(inner.hasPrimaryFocus, isTrue);
+
+      await tester.tap(
+        find.byKey(const Key('inner-region')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(inner.hasPrimaryFocus, isTrue, reason: '按在聚焦子孙上');
+
+      await tester.tap(
+        find.byKey(const Key('row-title')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(inner.hasPrimaryFocus, isTrue, reason: '按在同一目标的别处');
+      expect(row.hasPrimaryFocus, isFalse);
+
+      debugDefaultTargetPlatformOverride = null;
+    });
   });
 
   group('GamepadService pointer ring behaviour (TODO-1113 P3)', () {

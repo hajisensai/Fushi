@@ -487,6 +487,8 @@ import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart'
+    show watchMediaNsfwSnapshot;
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
@@ -624,7 +626,18 @@ import 'package:fushi/src/platform/android/android_notification_channels.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/stat_window.dart' show StatWindow;
+import 'package:fushi/src/stats/study_goal_host.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
+import 'package:fushi/src/stats/study_goal_record.dart'
+    show
+        StudyGoal,
+        StudyGoalReviewsHidden,
+        StudyGoalSwipeScope,
+        StudyGoalTodayLayout,
+        studyGoalReviewsHiddenFor;
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnitChoice;
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/import/external_storage_access.dart';
 import 'package:fushi/src/platform/host_platform.dart';
@@ -1003,7 +1016,8 @@ class AppModel
         MusicAudioEffectsHost,
         MusicPluginQualityHost,
         AudioProductionHost,
-        ExternalStorageAccess {
+        ExternalStorageAccess,
+        StudyGoalHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -1060,6 +1074,13 @@ class AppModel
   void wirePreferencesForTesting(PreferencesRepository prefsRepo) {
     _prefsRepo = prefsRepo;
   }
+
+  /// Test seam：像 [initialise] 那样把偏好仓库的变更转发成本模型的通知（首页等
+  /// `ref.watch(appProvider)` 的页面靠它在偏好改动后重建）。只接了数据库 / 偏好的
+  /// 页面测试要验证「别处改偏好 → 页面跟上」时调用。
+  @visibleForTesting
+  void forwardPreferenceChangesForTesting() =>
+      prefsRepo.addListener(notifyListeners);
 
   /// Test seam：注入插件管理器（音乐页一初始化就读插件列表；只接了数据库、没有
   /// 数据目录的测试用它给一个临时目录下的空管理器）。
@@ -2450,6 +2471,9 @@ class AppModel
       audiobook: audiobookSession,
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
+      // NSFW 专辑的封面不进系统媒体控件 / 锁屏；偏好未就绪时按开关默认（开）处理。
+      watchNsfw: watchMediaNsfwSnapshot,
+      blurNsfwCovers: () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
       resumeMode: () => isPreferencesReady
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,
@@ -7457,6 +7481,7 @@ class AppModel
 
   /// 默认内容语言（`''` = 未设置）。见 [PreferencesRepository.defaultContentLanguage]；
   /// 与 [jimakuDefaultLanguage] 同理走 `_prefsRepo?`，偏好未就绪时不表态。
+  @override
   String get defaultContentLanguage => _prefsRepo?.defaultContentLanguage ?? '';
 
   Future<void> setJimakuDefaultLanguage(String langCode) async {
@@ -13097,10 +13122,100 @@ class AppModel
   Future<void> setReadingGoalPeriod(StudyGoalPeriod value) =>
       prefsRepo.setReadingGoalPeriod(value);
 
+  /// 文字目标单位（全局）。
+  @override
+  StudyGoalUnitChoice get readingGoalTextUnit => prefsRepo.readingGoalTextUnit;
+  Future<void> setReadingGoalTextUnit(StudyGoalUnitChoice value) =>
+      prefsRepo.setReadingGoalTextUnit(value);
+
+  /// 学习目标记录（没编辑过时由旧偏好现算，见 [PreferencesRepository.studyGoals]）。
+  @override
+  List<StudyGoal> get studyGoals => prefsRepo.studyGoals;
+  Future<void> setStudyGoals(List<StudyGoal> goals) =>
+      prefsRepo.setStudyGoals(goals);
+
+  /// 追加一条目标（列表末尾）。
+  @override
+  Future<void> addStudyGoal(StudyGoal goal) =>
+      setStudyGoals(<StudyGoal>[...studyGoals, goal]);
+
+  /// 按 id 整条替换；id 不在列表里时什么都不做。
+  @override
+  Future<void> updateStudyGoal(StudyGoal goal) async {
+    final List<StudyGoal> goals = studyGoals;
+    final int index = goals.indexWhere((StudyGoal g) => g.id == goal.id);
+    if (index < 0) return;
+    await setStudyGoals(<StudyGoal>[...goals]..[index] = goal);
+  }
+
+  /// 按 id 删除。
+  @override
+  Future<void> removeStudyGoal(String id) => setStudyGoals(<StudyGoal>[
+    for (final StudyGoal g in studyGoals)
+      if (g.id != id) g,
+  ]);
+
+  /// 把 [goal] 放回第 [index] 位（删除后「撤销」：回到原来的位置）。id 已在列表里时
+  /// 什么都不做；[index] 超出范围时夹到末尾。
+  @override
+  Future<void> insertStudyGoal(StudyGoal goal, int index) async {
+    final List<StudyGoal> goals = studyGoals;
+    if (goals.any((StudyGoal g) => g.id == goal.id)) return;
+    await setStudyGoals(
+      <StudyGoal>[...goals]..insert(index.clamp(0, goals.length), goal),
+    );
+  }
+
+  /// 按 [ids] 的先后重排目标记录（设置 › 目标的组内拖动 / 上移下移）。顺序只有记录
+  /// 列表这一份真值：[ids] 里没有的记录按原先后排在末尾，不认识的 id 忽略，记录本身
+  /// 一条不增不减；顺序没变时不写偏好。
+  Future<void> reorderStudyGoals(List<String> ids) async {
+    final List<StudyGoal> goals = studyGoals;
+    final Map<String, StudyGoal> byId = <String, StudyGoal>{
+      for (final StudyGoal g in goals) g.id: g,
+    };
+    final List<StudyGoal> next = <StudyGoal>[
+      for (final String id in ids.toSet())
+        if (byId[id] case final StudyGoal g) g,
+    ];
+    final Set<String> placed = <String>{for (final StudyGoal g in next) g.id};
+    next.addAll(goals.where((StudyGoal g) => !placed.contains(g.id)));
+    bool same = true;
+    for (int i = 0; i < goals.length; i++) {
+      if (goals[i].id != next[i].id) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return;
+    await setStudyGoals(next);
+  }
+
+  /// 复习目标为什么在首页上不出现（与 `srsMiningToReviewProvider` 同一判据：复习模块
+  /// 开着、挖词目标是 Fushi 复习时才有复习数）。
+  @override
+  StudyGoalReviewsHidden? get studyGoalReviewsHidden =>
+      studyGoalReviewsHiddenFor(
+        srsModuleEnabled: moduleVisibility.isEnabled(ModuleId.srs),
+        miningToAnki: srsMiningTarget != SrsMiningTarget.srs,
+      );
+
+  /// 首页「今日」格主目标（记录 id）与左右滑范围。
+  String get homeTodayMainGoal => prefsRepo.homeTodayMainGoal;
+  Future<void> setHomeTodayMainGoal(String goalId) =>
+      prefsRepo.setHomeTodayMainGoal(goalId);
+  String get homeTodayPageGoal => prefsRepo.homeTodayPageGoal;
+  Future<void> setHomeTodayPageGoal(String goalId) =>
+      prefsRepo.setHomeTodayPageGoal(goalId);
+  StudyGoalSwipeScope get homeTodaySwipeGoals => prefsRepo.homeTodaySwipeGoals;
+  Future<void> setHomeTodaySwipeGoals(StudyGoalSwipeScope value) =>
+      prefsRepo.setHomeTodaySwipeGoals(value);
+  StudyGoalTodayLayout get homeTodayLayout => prefsRepo.homeTodayLayout;
+  Future<void> setHomeTodayLayout(StudyGoalTodayLayout value) =>
+      prefsRepo.setHomeTodayLayout(value);
+
   /// 当前周期下生效的字数目标（0 = 未设）。
   int get readingGoalActiveChars => prefsRepo.readingGoalActiveChars;
-  Future<void> setReadingGoalActiveChars(int value) =>
-      prefsRepo.setReadingGoalActiveChars(value);
 
   // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
   int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
@@ -13276,11 +13391,20 @@ class AppModel
   static String _srsDayRolloverSeenKey(String profileUid) =>
       '$kSrsDayRolloverSeenPrefKeyPrefix$profileUid';
 
-  /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
-  /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）、偏好缓存整体重载后
+  /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入——与
+  /// [StatWindow.weekStartDay]（一周从星期几开始，「本周」窗口的唯一输入）。偏好
+  /// 加载后（主进程 / 弹窗进程两条初始化路径）、偏好缓存整体重载后
   /// （[refreshPrefCache]：切 Profile、别的进程改过偏好）与用户改设置时各调一次。
   void _applyStatDayResetHour() {
     FushiDatabase.statDayResetHour = statDayResetHour;
+    StatWindow.weekStartDay = statWeekStart;
+  }
+
+  /// 一周从星期几开始（[DateTime.weekday]，缺省周一）。偏好层未就绪时回落周一。
+  int get statWeekStart => _prefsRepo?.statWeekStart ?? DateTime.monday;
+  Future<void> setStatWeekStart(int day) async {
+    await prefsRepo.setStatWeekStart(day);
+    _applyStatDayResetHour();
   }
 
   /// 远端词典查词的总闸：**派生值**，至少一台已配对 host 开着「用这台服务器查词典」

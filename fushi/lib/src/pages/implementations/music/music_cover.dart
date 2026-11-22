@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -174,7 +175,18 @@ class MusicCover extends StatelessWidget {
       child: SizedBox(
         width: size,
         height: size,
-        child: AspectRatio(aspectRatio: 1, child: child),
+        child: AspectRatio(
+          aspectRatio: 1,
+          // NSFW 专辑的封面按图源认（拍板台 NCzkl6oLnf-adult-cover）：网格、详情、
+          // 曲目行、播放条、播放页、队列、艺人头像都经这里，不用逐处传专辑 uid。
+          child: MusicNsfwCover(
+            coverPath: file,
+            embeddedFromPath: embeddedFromPath,
+            // 列表行 / 播放条的小缩略图压不下「已隐藏」图标，只模糊。
+            showIcon: size == null || size! >= 64,
+            child: child,
+          ),
+        ),
       ),
     );
   }

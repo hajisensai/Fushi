@@ -1401,6 +1401,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       hit: hit.line,
       charIndex: hit.charIndex,
     );
+    // 拍板 design-cross-app-audio-desktop：点字这一刻钉住游戏刚播的声音。制卡委托与
+    // 查词卡的「调整句子音频」面板读同一份（面板拖出的起止才落在委托截的那段上）。
+    final Future<CrossAppAudioSnapshot?> sentenceAudio = CrossAppAudioCapture
+        .instance
+        .snapshot();
     unawaited(
       target.lookupText(
         lookup.text.substring(hit.charIndex),
@@ -1408,6 +1413,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         physicalPlacement: GlobalLookupPhysicalPlacement(
           anchorScreenRect: anchorScreenRect,
         ),
+        sentenceAudio: sentenceAudio,
         // 反馈 Gz7z6Y6Mbr：制卡带上截图里所点文字所在的文本块。
         miningHandler: screenOcrOverlayMiningHandler(
           model: ref.read(appProvider),
@@ -1417,8 +1423,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             hit: hit.line,
           ),
           sentenceContext: lookup.sentence,
-          // 拍板 design-cross-app-audio-desktop：点字这一刻钉住游戏刚播的声音。
-          sentenceAudio: CrossAppAudioCapture.instance.snapshot(),
+          sentenceAudio: sentenceAudio,
         ),
       ),
     );

@@ -28,8 +28,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, kStatSourceMusic;
+    show FushiDatabase, TagHostKind, kStatSourceMusic;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_audio/fushi_audio.dart' show AudioPlaybackRange;
@@ -1050,12 +1051,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           );
         }
       }
-      final String? cover = wantImage ? item?.coverPath : null;
+      final String? rawCover = wantImage ? item?.coverPath : null;
+      // NSFW 专辑 + 「制卡图片也模糊」：卡上用模糊副本（失败不带图，见
+      // resolveNsfwCardImagePath 的 fail-closed）。
+      final String? cover = rawCover != null && File(rawCover).existsSync()
+          ? await resolveNsfwCardImagePath(
+              db: appModel.database,
+              path: rawCover,
+              blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+              kind: TagHostKind.musicAlbum,
+              entryKey: item?.albumUid,
+            )
+          : null;
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,
         cueSentence: audioPath != null && sentence.isNotEmpty ? sentence : null,
         documentTitle: item?.title,
-        coverPath: cover != null && File(cover).existsSync() ? cover : null,
+        coverPath: cover,
         sentenceAudioPath: audioPath,
         // 音乐卡单独打 `music` 分类标签（所有者 2026-10-24），与收藏夹批量制卡
         // 的 ankiMiningSourceOf 同口径。

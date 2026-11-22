@@ -35,35 +35,41 @@ enum TtsRenderJobKind { book, manga }
 
 /// 补回一句未配音的台词（漫画按 `lineId` = `p<页>b<块…>`；小说可按行键）。
 /// 三种补法可以叠用：换重试候选里的下一个声音、手动指定声音、手动填写要念的文字。
+/// 带 [seed] = 换这个种子重出一句**已生成**的句子（漫画按角色批量重生成）。
 class TtsRenderLineRequest {
   const TtsRenderLineRequest({
     required this.lineId,
     this.voice,
     this.say,
     this.nextRetryVoice = false,
+    this.seed,
   });
 
   final String lineId;
   final String? voice;
   final String? say;
   final bool nextRetryVoice;
+  final int? seed;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': lineId,
     if (voice != null) 'v': voice,
     if (say != null) 'say': say,
     if (nextRetryVoice) 'next': true,
+    if (seed != null) 'seed': seed,
   };
 
   static TtsRenderLineRequest? fromJson(Object? raw) {
     if (raw is! Map || raw['id'] is! String) return null;
     final Object? v = raw['v'];
     final Object? say = raw['say'];
+    final Object? seed = raw['seed'];
     return TtsRenderLineRequest(
       lineId: raw['id'] as String,
       voice: v is String && v.isNotEmpty ? v : null,
       say: say is String ? say : null,
       nextRetryVoice: raw['next'] == true,
+      seed: seed is int && seed >= 0 ? seed : null,
     );
   }
 }

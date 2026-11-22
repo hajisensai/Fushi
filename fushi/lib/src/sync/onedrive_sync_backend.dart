@@ -512,6 +512,17 @@ class OneDriveSyncBackend extends SyncBackend
       _uploadJson(namespaceId, name, json);
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) async =>
+      (await _downloadItem(assetId)).bodyBytes;
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _uploadSmallFile(namespaceId, name, bytes, 'application/octet-stream');
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     // AssetEntry.id 对 OneDrive 是不透明 item id；Graph DELETE 对文件夹递归删，
     // _graphDelete 已把 404 当作成功，天然幂等，isFolder 无需分支。其它错误
@@ -610,7 +621,10 @@ class OneDriveSyncBackend extends SyncBackend
     return items;
   }
 
-  Future<dynamic> _downloadItemJson(String fileId) async {
+  Future<dynamic> _downloadItemJson(String fileId) async =>
+      decodeSyncJsonFileBody(await _downloadItem(fileId));
+
+  Future<http.Response> _downloadItem(String fileId) async {
     final metaResp = await _graphGet('/me/drive/items/$fileId');
     final meta = jsonDecode(metaResp.body) as Map<String, dynamic>;
     final downloadUrl = meta['@microsoft.graph.downloadUrl'] as String?;
@@ -624,15 +638,25 @@ class OneDriveSyncBackend extends SyncBackend
     if (resp.statusCode >= 400) {
       throw SyncBackendError('Download failed: HTTP ${resp.statusCode}');
     }
-    return decodeSyncJsonFileBody(resp);
+    return resp;
   }
 
-  Future<void> _uploadJson(
+  Future<void> _uploadJson(String folderId, String fileName, dynamic data) =>
+      _uploadSmallFile(
+        folderId,
+        fileName,
+        utf8.encode(jsonEncode(data)),
+        'application/json',
+      );
+
+  /// 内存里的一整份字节写成 [folderId] 下的 [fileName]（覆盖）：小的走单请求
+  /// `PUT :/content`，超过门槛的走上传会话分片。
+  Future<void> _uploadSmallFile(
     String folderId,
     String fileName,
-    dynamic data,
+    Uint8List bytes,
+    String contentType,
   ) async {
-    final Uint8List bytes = utf8.encode(jsonEncode(data));
     if (bytes.length > kOneDriveSimpleUploadMaxBytes) {
       // 单请求 `PUT :/content` 对大 JSON（聚合快照）会被 Graph 以
       // 「IO error during request payload read」拒掉，与内容文件同一个 10 MiB
@@ -648,7 +672,7 @@ class OneDriveSyncBackend extends SyncBackend
     await _graphPut(
       '/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/content',
       bytes,
-      contentType: 'application/json',
+      contentType: contentType,
     );
   }
 

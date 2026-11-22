@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -137,6 +138,95 @@ void main() {
   tearDown(() {
     DesktopLookupService.instance.debugReset();
   });
+
+  testWidgets(
+    'long in-app source scrolls in its own bounded viewport; definitions keep '
+    'a fixed size',
+    (tester) async {
+      final _ScanAppModel appModel = _ScanAppModel();
+      final String text = List<String>.generate(
+        1600,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(_wrap(appModel));
+      await tester.pump();
+      await _settle(tester, _debug(tester).debugSearch(text));
+      final Finder content = find.byKey(
+        const ValueKey<String>('home_dictionary_content'),
+      );
+      final Finder sourceViewport = find.byKey(
+        const ValueKey<String>('home_dictionary_source_scroll'),
+      );
+      final Finder scrollable = find
+          .descendant(of: sourceViewport, matching: find.byType(Scrollable))
+          .first;
+      final ScrollableState state = tester.state<ScrollableState>(scrollable);
+      final Finder webView = find.descendant(
+        of: content,
+        matching: find.byType(DictionaryPopupWebView),
+      );
+      expect(webView, findsOneWidget);
+      // 结果区 = WebView 所在的 Stack（Expanded 撑满的那块固定区域）。
+      final Finder definitions = find
+          .ancestor(of: webView, matching: find.byType(Stack))
+          .first;
+      // 原文限高：视口不超过卡身的一半，长原文只能在视口里滚。
+      final double viewportHeight = tester.getSize(sourceViewport).height;
+      expect(viewportHeight, greaterThan(0));
+      expect(
+        viewportHeight,
+        lessThanOrEqualTo(
+          tester.getSize(content).height * kInAppSourceViewportFraction + 0.5,
+        ),
+      );
+      expect(state.position.maxScrollExtent, greaterThan(0));
+      final Rect definitionsBefore = tester.getRect(definitions);
+      expect(definitionsBefore.height, greaterThan(0));
+      expect(
+        definitionsBefore.top,
+        greaterThanOrEqualTo(tester.getRect(sourceViewport).bottom),
+      );
+
+      final int queries = appModel.searchedTerms.length;
+      await tester.scrollUntilVisible(
+        find.text(text[1599]),
+        250,
+        scrollable: scrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, greaterThan(0));
+      expect(
+        appModel.searchedTerms.length,
+        queries,
+        reason: 'scrolling must not query a glyph',
+      );
+      // 原文在自己的视口里滚，结果区不跟着改尺寸（TODO-1152）、始终在原文视口下方。
+      // （位置可随宿主收起底栏等整页布局平移，那不是本区域在逐帧 resize。）
+      void expectDefinitionsStable() {
+        expect(tester.getSize(definitions), definitionsBefore.size);
+        expect(
+          tester.getRect(definitions).top,
+          greaterThanOrEqualTo(tester.getRect(sourceViewport).bottom),
+        );
+      }
+
+      expectDefinitionsStable();
+
+      await tester.tap(find.text(text[1599]));
+      await _settle(tester);
+      expect(appModel.searchedTerms.last, text.substring(1599));
+      expect(_panel(tester).text, text);
+      expect(_panel(tester).highlight?.start, 1599);
+      expectDefinitionsStable();
+
+      // 真实拖动手势能把原文滚回开头（原文视口一直露在结果区上方）。
+      final double scrolled = state.position.pixels;
+      await tester.drag(sourceViewport, const Offset(0, 300));
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, lessThan(scrolled));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('点源文本条的字：引擎吃「从该字起的后缀」，条上与搜索框里的整句都不动', (
     WidgetTester tester,

@@ -2858,6 +2858,140 @@ html.mined-action-open body {
 }
 
 /* =====================================================================
+ * 跨应用语音缓存「调整句子音频」面板（拍板 design-cross-app-audio-trim-ui，popup.js
+ * openCrossAppAudioPanel）。外框复用 .mined-action-backdrop / -panel / -btn（默认、M3E
+ * 两套主题都已写好），这里只加波形区、端点手柄、播放头与进出场动效。波形柱的颜色是
+ * canvas 的 CSS color（JS 读 getComputedStyle），不在 JS 里写死。
+ * ===================================================================== */
+.crossapp-audio-panel {
+    width: min(480px, 100%);
+    animation: fushi-crossapp-panel-in 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.crossapp-audio-wave {
+    position: relative;
+    height: 96px;
+    margin: 4px 0;
+    border-radius: 8px;
+    background: var(--md-surface-container, color-mix(in srgb, var(--text-color) 8%, transparent));
+    color: var(--md-primary, var(--primary-color));
+    cursor: pointer;
+    touch-action: none;
+}
+
+.crossapp-audio-wave.dragging {
+    cursor: ew-resize;
+}
+
+.crossapp-audio-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    color: inherit;
+}
+
+.crossapp-audio-selection {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    pointer-events: none;
+}
+
+.crossapp-audio-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--md-tertiary, var(--text-color));
+    pointer-events: none;
+}
+
+/* 端点手柄：命中区 24px 宽（拖动由波形区统一判），视觉是一条 2px 竖线 + 中部握把。 */
+.crossapp-audio-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    margin-left: -12px;
+    cursor: ew-resize;
+    outline: none;
+}
+
+.crossapp-audio-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 11px;
+    width: 2px;
+    background: currentColor;
+}
+
+.crossapp-audio-handle::after {
+    content: '';
+    position: absolute;
+    top: calc(50% - 12px);
+    left: 9px;
+    width: 6px;
+    height: 24px;
+    border-radius: 3px;
+    background: currentColor;
+}
+
+.crossapp-audio-handle:focus-visible::after {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.crossapp-audio-range {
+    font-size: 0.85em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
+
+/* 入口在探测到这次查词录到了声音后才露出：缩放淡入，不是突兀地跳出来。 */
+.crossapp-audio-button.crossapp-audio-revealed {
+    animation: fushi-crossapp-reveal 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.crossapp-audio-panel.no-motion,
+.crossapp-audio-button.no-motion {
+    animation: none;
+}
+
+@keyframes fushi-crossapp-panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes fushi-crossapp-reveal {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* 面板比「卡片已在 Anki 中」高（多一块波形）：撑出的最小高度也更高。 */
+html.crossapp-audio-open,
+html.crossapp-audio-open body {
+    min-height: 380px;
+}
+
+/* =====================================================================
  * 材质宿主 + 强调色（app 内弹窗 / 扩展玻璃弹窗）。
  *
  * html.fushi-glass-host：app 内弹窗（MD3 与 Apple 两套设计系统，墨水屏与桌面全局
@@ -3622,6 +3756,29 @@ html.fushi-m3e .mined-action-error {
 
 /* 「新增为重复卡」旁的次要动作：M3 outlined button（outline-variant 描边 + on-surface 字，同 app
    outlinedButtonTheme），不再用主色字。 */
+/* 「调整句子音频」面板的波形区：M3E 中圆角 + surfaceContainer 底，柱与端点用 primary，
+   播放头 tertiary，区间读数 onSurfaceVariant。 */
+html.fushi-m3e .crossapp-audio-wave {
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-primary);
+}
+
+html.fushi-m3e .crossapp-audio-playhead {
+    background: var(--md-sys-color-tertiary);
+}
+
+html.fushi-m3e .crossapp-audio-range {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 1;
+    font-size: var(--md-sys-typescale-body-medium-size);
+}
+
+html.fushi-m3e.fushi-reduced-motion .crossapp-audio-panel,
+html.fushi-m3e.fushi-reduced-motion .crossapp-audio-button {
+    animation: none;
+}
+
 html.fushi-m3e .mined-action-btn.ghost {
     color: var(--md-sys-color-on-surface);
     border-color: var(--md-sys-color-outline-variant);

@@ -22,6 +22,7 @@ typedef PopupProcessTextHandler =
       Rect? anchor,
       Rect? subtitle,
       PopupSourceBlock? sourceBlock,
+      bool sourceTextCollapsed,
     );
 
 class PopupChannel {
@@ -47,6 +48,7 @@ class PopupChannel {
           parsed.anchor,
           parsed.subtitle,
           parsed.sourceBlock,
+          parsed.sourceTextCollapsed,
         );
       }
     });
@@ -59,6 +61,7 @@ class PopupChannel {
             data.anchor,
             data.subtitle,
             data.sourceBlock,
+            data.sourceTextCollapsed,
           );
         }
       });
@@ -72,6 +75,7 @@ class PopupChannel {
       Rect? anchor,
       Rect? subtitle,
       PopupSourceBlock? sourceBlock,
+      bool sourceTextCollapsed,
     })
   >
   getInitialProcessText() async {
@@ -90,6 +94,7 @@ class PopupChannel {
           anchor: _parseAnchor(result['anchor']),
           subtitle: _parseAnchor(result['subtitle']),
           sourceBlock: _parseSourceBlock(result),
+          sourceTextCollapsed: result['sourceTextCollapsed'] == true,
         );
       }
       if (result is String) {
@@ -99,6 +104,7 @@ class PopupChannel {
           anchor: null,
           subtitle: null,
           sourceBlock: null,
+          sourceTextCollapsed: false,
         );
       }
       return (
@@ -107,6 +113,7 @@ class PopupChannel {
         anchor: null,
         subtitle: null,
         sourceBlock: null,
+        sourceTextCollapsed: false,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log(
@@ -121,6 +128,7 @@ class PopupChannel {
         anchor: null,
         subtitle: null,
         sourceBlock: null,
+        sourceTextCollapsed: false,
       );
     }
   }
@@ -137,6 +145,7 @@ class PopupChannel {
         anchor: _parseAnchor(args['anchor']),
         subtitle: _parseAnchor(args['subtitle']),
         sourceBlock: _parseSourceBlock(args),
+        sourceTextCollapsed: args['sourceTextCollapsed'] == true,
       );
     }
     if (args is String) {
@@ -146,6 +155,7 @@ class PopupChannel {
         anchor: null,
         subtitle: null,
         sourceBlock: null,
+        sourceTextCollapsed: false,
       );
     }
     return (
@@ -154,6 +164,7 @@ class PopupChannel {
       anchor: null,
       subtitle: null,
       sourceBlock: null,
+      sourceTextCollapsed: false,
     );
   }
 
@@ -220,4 +231,5 @@ typedef _ProcessText = ({
   Rect? anchor,
   Rect? subtitle,
   PopupSourceBlock? sourceBlock,
+  bool sourceTextCollapsed,
 });

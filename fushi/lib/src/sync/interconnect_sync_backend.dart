@@ -1295,6 +1295,27 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    await _ensureResolved();
+    return _ops!.downloadBytes(assetId, maxBytes: kSyncBytesAssetMaxBytes);
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    await _ensureResolved();
+    await _ops!.uploadBytes(
+      namespaceId,
+      name,
+      bytes,
+      'application/octet-stream',
+    );
+  }
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     await _ensureResolved();
     // 服务端 _handleDelete 对目录 recursive 删、对文件单删；同一原语。

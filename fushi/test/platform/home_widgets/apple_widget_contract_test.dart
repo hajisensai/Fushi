@@ -94,7 +94,16 @@ void main() {
       },
       activeDays: <String>{'2026-10-23'},
     ),
-    goals: const WidgetGoalsInput(totalMinutes: 30),
+    goals: WidgetGoalsInput(
+      goals: <StudyGoal>[
+        StudyGoal(
+          id: 'total',
+          metric: StudyGoalId.total,
+          period: StudyGoalPeriod.daily,
+          target: 30,
+        ),
+      ],
+    ),
     srs: const WidgetSrsInput(
       provider: WidgetSrsProvider.fushi,
       newCount: 1,

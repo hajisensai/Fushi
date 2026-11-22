@@ -110,11 +110,35 @@ Future<bool> updateMangaAudioLine(
   required File manifestFile,
   required MangaRenderManifest manifest,
   required String lineId,
+}) => updateMangaAudioLines(
+  db,
+  bookKey: bookKey,
+  manifestFile: manifestFile,
+  manifest: manifest,
+  lineIds: <String>[lineId],
+);
+
+/// 多句一起换过之后更新库（批量补回 / 换本地音频 / 按角色重生成 / 它们的撤销）：只把
+/// [lineIds] 这几句的音频路径、时长与文本写进库，一个事务写完；续听位置仍在同一句
+/// （`AudiobookRepository.swapAudioFiles`：落在被换的句子里就从它开头接着听，别的
+/// 句子里原样保留偏移）。规则同 [updateMangaAudioLine]：库与
+/// 清单行数对不上时整份重登记；[lineIds] 里有不在清单里的句子返回 false（什么都不写）。
+Future<bool> updateMangaAudioLines(
+  FushiDatabase db, {
+  required String bookKey,
+  required File manifestFile,
+  required MangaRenderManifest manifest,
+  required Iterable<String> lineIds,
 }) async {
-  final int index = manifest.lines.indexWhere(
-    (MangaRenderedLine l) => l.lineId == lineId,
-  );
-  if (index < 0) return false;
+  final Set<int> indexes = <int>{};
+  for (final String lineId in lineIds) {
+    final int index = manifest.lines.indexWhere(
+      (MangaRenderedLine l) => l.lineId == lineId,
+    );
+    if (index < 0) return false;
+    indexes.add(index);
+  }
+  if (indexes.isEmpty) return true;
   final AudiobookRepository repo = AudiobookRepository(db);
   final List<AudioCue> stored = await repo.cuesForBook(bookKey);
   final Audiobook? audiobook = await repo.findByBookKey(bookKey);
@@ -133,17 +157,26 @@ Future<bool> updateMangaAudioLine(
     return true;
   }
   stored.sort((AudioCue a, AudioCue b) => a.audioFileIndex - b.audioFileIndex);
-  final MangaRenderedLine line = manifest.lines[index];
-  final List<String> nextPaths = List<String>.of(paths)
-    ..[index] = mangaAudioLinePath(manifestFile.absolute, line);
+  final List<String> nextPaths = List<String>.of(paths);
+  for (final int index in indexes) {
+    nextPaths[index] = mangaAudioLinePath(
+      manifestFile.absolute,
+      manifest.lines[index],
+    );
+  }
   final List<AudioCue> nextCues = <AudioCue>[
     for (int i = 0; i < stored.length; i++)
-      i == index ? _cueFor(bookKey, line, i) : stored[i],
+      indexes.contains(i) ? _cueFor(bookKey, manifest.lines[i], i) : stored[i],
   ];
-  // 先换 cue 再换音频：saveCues 按旧 / 新 cue 换算进度（同一位置），replaceAudio 再按
-  // 新 cue 判断断点所在文件之前有没有变。
-  await repo.saveCues(bookKey: bookKey, cues: nextCues);
-  await repo.replaceAudio(bookKey: bookKey, audioPaths: nextPaths);
+  // 句子结构没变、只换了这几句的音频：cue、音频列表与续听位置一起改，断点仍在同一句
+  // （落在被换的句子里就从它开头接着听），不按「换了一套音频」归零。
+  await repo.swapAudioFiles(
+    bookKey: bookKey,
+    cues: nextCues,
+    paths: <int, String>{
+      for (final int index in indexes) index: nextPaths[index],
+    },
+  );
   return true;
 }
 

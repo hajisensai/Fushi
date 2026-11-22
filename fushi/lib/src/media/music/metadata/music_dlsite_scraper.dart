@@ -1,6 +1,7 @@
 /// 音声 / ASMR 专辑的 DLsite 资料（拍板台 NCzkl6oLnf）app 侧装配：专辑 → 作品编号
 /// （`musicAlbumDlsiteWorkId`）→ DLsite product.json + 评分端点 → 原始快照落
-/// `music_metadata_raw_snapshots` → 专辑没有封面时补 DLsite 主图。
+/// `music_metadata_raw_snapshots` → R-18 作品默认把专辑标成 NSFW → 专辑没有封面时补
+/// DLsite 主图（拍板台 NCzkl6oLnf-adult-cover：主图照补，封面归「模糊 NSFW 封面」管）。
 ///
 /// 只认作品编号（文件夹 / 专辑名 / 目录编号里带的 `RJ…`），不按名模糊搜。
 /// 出站经 `DlsiteClient`（全应用代理装配、跨实例 700 ms 节流）。
@@ -187,11 +188,38 @@ class MusicDlsiteScraper {
       ),
     );
     final MusicDlsiteAlbumInfo info = await _cached(db, id);
-    final String? coverUrl = info.snapshot?.work?.coverUrl;
+    await _applyToAlbum(db, album, tracks, id, info.snapshot?.work);
+    return info;
+  }
+
+  /// 把作品资料落到一张专辑上：先按分级标 NSFW，再补封面（先标后补，补上的 R-18
+  /// 主图一出现就是模糊的）。
+  Future<void> _applyToAlbum(
+    FushiDatabase db,
+    MusicAlbumRow album,
+    List<MusicTrackRow> tracks,
+    DlsiteWorkId id,
+    DlsiteWork? work,
+  ) async {
+    if (work == null) return;
+    if (work.ageCategory?.isAdult ?? false) {
+      await _markAdultByDefault(db, album.albumUid);
+    }
+    final String? coverUrl = work.coverUrl;
     if (coverUrl != null) {
       await _maybeSetCover(db, album, tracks, id, coverUrl);
     }
-    return info;
+  }
+
+  /// R-18 作品的专辑默认是 NSFW：只在这张专辑的 NSFW 标记从没动过（两只时钟都空）
+  /// 时标上。用户取消过（或别的设备同步来取消）就尊重用户，重取资料不再标回去。
+  Future<void> _markAdultByDefault(FushiDatabase db, String albumUid) async {
+    final MediaNsfwClock clock = await db.mediaNsfwClock(
+      TagHostKind.musicAlbum,
+      albumUid,
+    );
+    if (clock.nsfwAt != null || clock.clearedAt != null) return;
+    await db.setMediaNsfw(TagHostKind.musicAlbum, albumUid, true, at: _clock());
   }
 
   /// 专辑没有目录封面、曲目也没有内嵌封面、封面没上锁 → 用 DLsite 主图。
@@ -253,7 +281,7 @@ class MusicDlsiteScraper {
   }
 
   /// 曲库里认得出编号、还没取过资料的专辑逐张取（串行，DLsite 客户端自带节流）。
-  /// 同一部作品分在几张专辑里（分卷 / 特典）：资料只取一次，封面各自补。
+  /// 同一部作品分在几张专辑里（分卷 / 特典）：资料只取一次，分级标记与封面各自补。
   Future<MusicDlsiteLibraryReport> scrapeLibrary({
     bool Function()? cancelled,
   }) async {
@@ -275,10 +303,7 @@ class MusicDlsiteScraper {
       }
       final MusicDlsiteAlbumInfo cached = await _cached(db, id);
       if (cached.fetched) {
-        final String? coverUrl = cached.snapshot?.work?.coverUrl;
-        if (coverUrl != null) {
-          await _maybeSetCover(db, album, tracks, id, coverUrl);
-        }
+        await _applyToAlbum(db, album, tracks, id, cached.snapshot?.work);
         continue;
       }
       todo[id] = <_AlbumTracks>[(album: album, tracks: tracks)];
@@ -294,22 +319,14 @@ class MusicDlsiteScraper {
           first.tracks,
           job.key,
         );
-        final String? coverUrl = info.snapshot?.work?.coverUrl;
-        if (info.snapshot?.work != null) {
+        final DlsiteWork? work = info.snapshot?.work;
+        if (work != null) {
           report.matched++;
         } else {
           report.notFound++;
         }
-        if (coverUrl != null) {
-          for (final _AlbumTracks other in job.value.skip(1)) {
-            await _maybeSetCover(
-              db,
-              other.album,
-              other.tracks,
-              job.key,
-              coverUrl,
-            );
-          }
+        for (final _AlbumTracks other in job.value.skip(1)) {
+          await _applyToAlbum(db, other.album, other.tracks, job.key, work);
         }
       } on DlsiteException {
         report.failed++;

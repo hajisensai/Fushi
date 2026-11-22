@@ -36,9 +36,29 @@ import 'package:path/path.dart' as p;
 /// 假运行时：页表固定三页，取图返回真实 PNG 字节（尺寸随页序变，好核 manga.json）。
 ///
 /// [OnlineMangaPageRef] 是密封类，假适配器借用数据形状最简单的
-/// [InterconnectMangaPageRef] 当页引用——下载服务只看 `index`，不看里面是谁的。
+/// [InterconnectMangaPageRef] 当页引用——下载服务只看 `index` 与 `pageKey`，不看
+/// 里面是谁的。
 class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   static const int pageCount = 3;
+
+  /// 源端这一章此刻的页表：第 i 项是第 i 页的源端身份（`p<n>` 或 `p<n>v<m>`，
+  /// 页图尺寸由它定，见 [pngOfKey]）。测试改它模拟源端换页 / 重排。
+  List<String> sourcePages = <String>[
+    for (int i = 0; i < pageCount; i++) 'p$i',
+  ];
+
+  /// 按身份记的取页顺序（重排后页序会变，身份不变）。
+  final List<String> fetchedKeys = <String>[];
+
+  /// `p<n>` → 100+n × 150+n；带 `v<m>`（源端换过的版本）宽再加 10·m。
+  static Uint8List pngOfKey(String key) {
+    final RegExpMatch match = RegExp(r'^p(\d+)(?:v(\d+))?$').firstMatch(key)!;
+    final int n = int.parse(match.group(1)!);
+    final int version = int.parse(match.group(2) ?? '0');
+    return Uint8List.fromList(
+      img.encodePng(img.Image(width: 100 + n + 10 * version, height: 150 + n)),
+    );
+  }
 
   /// 每页被取了几次（续跑 / 幂等断言用）。
   final Map<int, int> fetchCounts = <int, int>{};
@@ -54,10 +74,6 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   /// 非空时取页（过了 [gate] 之后）抛它造出的错误（失败分型用）。
   Exception Function(int index)? pageError;
-
-  static Uint8List pngOf(int index) => Uint8List.fromList(
-    img.encodePng(img.Image(width: 100 + index, height: 150 + index)),
-  );
 
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.mihon;
@@ -81,25 +97,33 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   /// sidecar 重启）旧引用取页就抛 [OnlineMangaPageRefExpired]。
   int generation = 0;
 
+  /// 非空时用它改写解析出的页表（造认不出身份的页用）。
+  List<OnlineMangaPageRef> Function(List<OnlineMangaPageRef> pages)?
+  resolveOverride;
+
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
   }) async {
     resolveCount += 1;
-    return <OnlineMangaPageRef>[
-      for (int i = 0; i < pageCount; i++)
+    final List<OnlineMangaPageRef> pages = <OnlineMangaPageRef>[
+      for (int i = 0; i < sourcePages.length; i++)
         InterconnectMangaPageRef(
           index: i,
           bookKey: 'fake-gen$generation',
           remoteIndex: i,
+          pageKey: sourcePages[i],
         ),
     ];
+    return resolveOverride?.call(pages) ?? pages;
   }
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
     fetchCounts[page.index] = (fetchCounts[page.index] ?? 0) + 1;
+    final String key = page.pageKey ?? sourcePages[page.index];
+    fetchedKeys.add(key);
     final Completer<void>? pending = gate;
     if (pending != null) await pending.future;
     final Completer<void>? pageGate = gateFor?.call(page.index);
@@ -117,7 +141,7 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
     }
     final Uint8List? override = pageBytes?.call(page.index);
     if (override != null) return override;
-    return pngOf(page.index);
+    return pngOfKey(key);
   }
 
   /// 非空且对某页返回非 null 时，用它替换该页的字节（上限 / 空页用）。
@@ -1509,6 +1533,172 @@ void main() {
     expect(waits, isEmpty, reason: '没有退避');
     expect(adapter.resolveCount, 2, reason: '页表只多解析一次');
     downloads.dispose();
+  });
+
+  // 拍板台 audit-035：续跑只按页序认盘上的页，源端两次解析之间同页数换页 / 重排
+  // 会把两版页图混进同一章。现在按账本里的源端页身份对账。
+  group('续跑按源端页身份对账（audit-035）', () {
+    /// 跑到 [landed] 页落地、下一页卡住时暂停，返回任务行。
+    Future<MangaDownloadJobRow> pauseAfter(
+      MangaDownloadService downloads,
+      int landed,
+    ) async {
+      final Completer<void> hold = Completer<void>();
+      adapter.gateFor = (int index) => index == landed ? hold : null;
+      final MangaDownloadJobRow job = await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      while ((adapter.fetchCounts[landed] ?? 0) == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await downloads.pause(job.jobId);
+      hold.complete();
+      adapter.gateFor = null;
+      await downloads.whenIdle;
+      final MangaDownloadJobRow paused = await jobOf('/chapter/1');
+      expect(paused.status, MangaDownloadJobStatus.paused);
+      expect(paused.pagesDone, landed);
+      return job;
+    }
+
+    List<double> widthsOf(Directory chapterDir) => <double>[
+      for (final MokuroImage image in parseMangaJson(
+        mangaChapterJsonFile(chapterDir).readAsStringSync(),
+      ).images)
+        image.size.width,
+    ];
+
+    test('同页数换了一页：只重取那一页，其余已落地的页保留', () async {
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      final MangaDownloadJobRow job = await pauseAfter(downloads, 2);
+      adapter.fetchedKeys.clear();
+      // 源端把第 2 页换成了新版（页数不变）。
+      adapter.sourcePages = <String>['p0', 'p1v1', 'p2'];
+
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle;
+
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      expect(adapter.fetchedKeys, <String>['p1v1', 'p2'], reason: '第 1 页保留不重取');
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
+      expect(widthsOf(chapterDir), <double>[100, 111, 102], reason: '第 2 页是新版');
+      expect(
+        File(
+          p.join(chapterDir.path, '.fushi-download-pages.json'),
+        ).existsSync(),
+        isFalse,
+        reason: '章下完删掉续跑账本',
+      );
+      downloads.dispose();
+    });
+
+    test('源端在前面插了一页（页表整体后移）：已落地的页挪到新页序，不重取', () async {
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      final MangaDownloadJobRow job = await pauseAfter(downloads, 2);
+      adapter.fetchedKeys.clear();
+      adapter.sourcePages = <String>['p9', 'p0', 'p1', 'p2'];
+
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle;
+
+      final MangaDownloadJobRow done = await jobOf('/chapter/1');
+      expect(done.status, MangaDownloadJobStatus.done);
+      expect(done.pagesTotal, 4);
+      expect(adapter.fetchedKeys, <String>['p9', 'p2']);
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
+      expect(widthsOf(chapterDir), <double>[109, 100, 101, 102]);
+      expect(
+        Directory(
+          p.join(chapterDir.path, 'images'),
+        ).listSync().map((FileSystemEntity e) => p.basename(e.path)).toSet(),
+        <String>{
+          'page-000001.png',
+          'page-000002.png',
+          'page-000003.png',
+          'page-000004.png',
+        },
+        reason: '挪页不留暂存名、不留旧版文件',
+      );
+      downloads.dispose();
+    });
+
+    test('盘上有账本里没有的页（旧版本留下的半成品 / 落盘后没来得及记账）：删掉重取', () async {
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      final MangaDownloadJobRow job = await pauseAfter(downloads, 2);
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/chapter/1');
+      File(p.join(chapterDir.path, '.fushi-download-pages.json')).deleteSync();
+      adapter.fetchedKeys.clear();
+
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle;
+
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      expect(adapter.fetchedKeys, <String>['p0', 'p1', 'p2']);
+      expect(widthsOf(chapterDir), <double>[100, 101, 102]);
+      downloads.dispose();
+    });
+
+    test('认不出身份的页不复用：重下', () async {
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      final MangaDownloadJobRow job = await pauseAfter(downloads, 2);
+      adapter.fetchedKeys.clear();
+      adapter.resolveOverride = (List<OnlineMangaPageRef> pages) =>
+          <OnlineMangaPageRef>[
+            for (final OnlineMangaPageRef page in pages)
+              InterconnectMangaPageRef(
+                index: page.index,
+                bookKey: (page as InterconnectMangaPageRef).bookKey,
+                remoteIndex: page.remoteIndex,
+                pageKey: page.index == 0 ? null : page.pageKey,
+              ),
+          ];
+
+      await downloads.resume(job.jobId);
+      await downloads.whenIdle;
+
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      expect(adapter.fetchedKeys, <String>[
+        'p0',
+        'p2',
+      ], reason: '第 1 页身份认不出 → 重取；第 2 页对得上 → 保留');
+      downloads.dispose();
+    });
+
+    test('下载途中 sidecar 重启且源端换了页：按新页表重新对账接着下，不退避、不混版', () async {
+      final Completer<void> restart = Completer<void>();
+      adapter.gateFor = (int index) => index == 1 ? restart : null;
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      while ((adapter.fetchCounts[1] ?? 0) == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      adapter
+        ..generation = 1
+        ..sourcePages = <String>['p0', 'p1v1', 'p2'];
+      restart.complete();
+      await downloads.whenIdle;
+
+      final MangaDownloadJobRow job = await jobOf('/chapter/1');
+      expect(job.status, MangaDownloadJobStatus.done);
+      expect(job.attemptCount, 0, reason: '没有记任何一次失败');
+      expect(waits, isEmpty, reason: '没有退避');
+      expect(adapter.resolveCount, 3, reason: '首次 + 重启后重解析（判出换页）+ 按新页表重开');
+      expect(widthsOf(mangaChapterDirectory(bookDir, '/chapter/1')), <double>[
+        100,
+        111,
+        102,
+      ]);
+      expect(adapter.fetchedKeys.where((String k) => k == 'p0'), hasLength(1));
+      downloads.dispose();
+    });
   });
 
   test('下载侧也拒超过单页上限的页（与在线直读同一口径），不落盘', () async {
