@@ -1,10 +1,11 @@
 // 设计稿 11-20 #15（方案 A）：复习卡的「回到出处」不再只藏在会自动隐藏的顶栏里——
 //
 // - 媒体素材左下角常驻一颗胶囊「回到出处 · 定位」（拿不到定位时写来源名）；
-// - 例句卡右侧一个小 ↩（没有媒体素材的卡也够得着）；
+// - 没有媒体素材的卡：例句卡右侧一个小 ↩；连例句也没有：词条行尾一个 ↩；
 // - 顶栏原来的图标保留。
 //
-// 三个入口落到复习页同一个跳转动作（cardSourceOpenerProvider，复习页的 _openSource）。
+// 卡面上只画一个入口（应用内反馈 unGQ8ykXGJ，BUG-5182）：有胶囊时例句卡不再重复一个 ↩。
+// 入口都落到复习页同一个跳转动作（cardSourceOpenerProvider，复习页的 _openSource）。
 // 走真实路径：内存库 + 真复习页，MD3 / Apple 两套设计系统各跑一遍。
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -53,6 +54,7 @@ Future<void> _addCard(
   WidgetTester tester,
   SrsDbStore store, {
   required bool media,
+  bool sentence = true,
 }) async {
   String id(String field) => srsFushiCardFieldId(kSrsTestProfile, field);
   await tester.runAsync(
@@ -62,7 +64,7 @@ Future<void> _addCard(
         id('Term'): 'ベランダ',
         id('TermReading'): 'ベランダ',
         id('MainDefinition'): 'veranda',
-        id('Sentence'): '<b>ベランダ</b>をたどっていけば',
+        if (sentence) id('Sentence'): '<b>ベランダ</b>をたどっていけば',
         if (media) id('Media'): '<img src="$_png">',
         id('Source'): '<a href="${_link.toUri()}">ゆるゆり</a>',
       },
@@ -151,7 +153,7 @@ void main() {
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
-    testWidgets('[$ds] 媒体胶囊、例句卡 ↩、顶栏图标：三个入口落到同一个跳转动作', (
+    testWidgets('[$ds] 有媒体素材：卡面只画媒体胶囊（例句卡不再重复 ↩），与顶栏图标同一个跳转', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
@@ -174,7 +176,12 @@ void main() {
         const ValueKey<String>('srs_review_open_source'),
       );
       expect(pill, findsOneWidget);
-      expect(button, findsOneWidget);
+      expect(button, findsNothing, reason: '卡面上只留一个「回到出处」入口：有媒体胶囊时例句卡不画 ↩');
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+        findsOneWidget,
+        reason: '例句卡照常显示，只是不带 ↩',
+      );
       expect(topBar, findsOneWidget, reason: '顶栏图标保留（快捷入口）');
 
       // 胶囊压在媒体素材左下角，写明会跳到哪（音乐出处的定位 = 时间点）。
@@ -200,22 +207,11 @@ void main() {
           hasTapAction: true,
         ),
       );
-      // 例句卡右侧的 ↩ 在例句卡里。
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
-          matching: button,
-        ),
-        findsOneWidget,
-      );
-
       await tester.tap(pill);
-      await tester.pump();
-      await tester.tap(button);
       await tester.pump();
       await tester.tap(topBar);
       await tester.pump();
-      expect(opened, hasLength(3));
+      expect(opened, hasLength(2));
       for (final CardSourceLink l in opened) {
         expect(l.toUri(), _link.toUri());
       }
@@ -235,9 +231,53 @@ void main() {
         find.byKey(const ValueKey<String>('srs-card-source-jump-pill')),
         findsNothing,
       );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs-card-source-jump-button')),
+      final Finder button = find.byKey(
+        const ValueKey<String>('srs-card-source-jump-button'),
       );
+      expect(button, findsOneWidget, reason: '卡面上恰好一个入口');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+          matching: button,
+        ),
+        findsOneWidget,
+        reason: '↩ 在例句卡右侧',
+      );
+      await tester.tap(button);
+      await tester.pump();
+      expect(opened.single.toUri(), _link.toUri());
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 既没有媒体也没有例句的卡：↩ 落在词条行尾', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addCard(tester, store, media: false, sentence: false);
+      final List<CardSourceLink> opened = await _pumpReview(
+        tester,
+        store: store,
+        apple: apple,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-card-source-jump-pill')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+        findsNothing,
+      );
+      final Finder button = find.byKey(
+        const ValueKey<String>('srs-card-source-jump-button'),
+      );
+      expect(button, findsOneWidget, reason: '没有句子的卡也有且只有一个入口');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-header')),
+          matching: button,
+        ),
+        findsOneWidget,
+        reason: '↩ 在词条区（词条 + 读音）行尾',
+      );
+      await tester.tap(button);
       await tester.pump();
       expect(opened.single.toUri(), _link.toUri());
       await _unmount(tester);

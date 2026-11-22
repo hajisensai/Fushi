@@ -615,16 +615,20 @@ const String kSrsCardLinkHandler = 'onSrsCardLink';
 ///   文本（剥掉 `rt` / `rp` / `.ruby-rt` / `.ruby-reserve` 振假名，见 popup.js
 ///   `linkVisibleBaseText`，BUG-2456）。
 ///
-/// - `a.gloss-image-link`：词典插图（结构化内容图片；BUG-2825 起照上游 `_setImageData`
-///   导出成 `<a class="gloss-image-link" href="<媒体文件名>"><img></a>`，见 popup.js）。
+/// - 词典插图链接（[kSrsGlossImageLinkJs] 认）：结构化内容图片，BUG-2825 起照上游
+///   `_setImageData` 导出成 `<a href="<媒体文件名>"><span 图片盒>…<img></span></a>`（见 popup.js）。
 ///   href 是图片自己的文件名，既不是导航也不是查词目标：只拦默认导航，点按放大交给
-///   [kSrsCardImageTapScript]（BUG-4734）。
+///   [kSrsCardImageTapScript]（BUG-4734 / BUG-5181）。
 ///
 /// 不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
-const String kSrsCardLinkScript = r'''
+const String kSrsCardLinkScript =
+    r'''
 (function(){
   if (window.__fushiSrsLinks) return;
   window.__fushiSrsLinks = true;
+''' +
+    kSrsGlossImageLinkJs +
+    r'''
   function call(name, arg){
     try { window.flutter_inappwebview.callHandler(name, arg); } catch (err) {}
   }
@@ -658,7 +662,7 @@ const String kSrsCardLinkScript = r'''
     var href = (a.getAttribute('href') || '').trim();
     if (href.charAt(0) === '#' || /^javascript:/i.test(href)) return;
     e.preventDefault();
-    if (a.classList && a.classList.contains('gloss-image-link')) return;
+    if (glossImageLink(a)) return;
     if (/^fushi:\/\/source/i.test(href)) {
       call('onSrsSourceLink', href);
       return;
@@ -769,23 +773,50 @@ const String kSrsCardEditSelectionScript = r'''
 /// 页内图片点击 → 宿主（见 [kSrsCardImageTapScript]）。
 const String kSrsImageTapHandler = 'onSrsImageTap';
 
+/// 页内脚本片段：定义 `glossImageLink(a)`，认词典插图链接（[kSrsCardLinkScript] 与
+/// [kSrsCardImageTapScript] 共用同一条判据）。
+///
+/// 不能靠 class 认（BUG-5181）：制卡导出照 Yomitan 把插图写成
+/// `<a href="<媒体文件名>"><span 图片盒>…<img></span></a>`，随后把生成器的 `gloss-*` class
+/// 换成内联样式再剥掉（popup.js `inlineStructuredContentExportStyles`），卡面上没有
+/// `gloss-image-link`。BUG-4734 只认 class，2026-10 之后制的卡点插图一直没反应。判据是导出的
+/// 结构：href 是相对文件名（没有 scheme、不带 `?` 查询、不是 `#` 锚点）且第一个子元素是装着
+/// `<img>` 的 `<span>`。旧版导出还带 class，照认。
+const String kSrsGlossImageLinkJs = r'''
+  function glossImageLink(a){
+    if (!a) return false;
+    if (a.classList && a.classList.contains('gloss-image-link')) return true;
+    var href = (a.getAttribute('href') || '').trim();
+    if (!href || href.charAt(0) === '#' || href.indexOf('?') >= 0 ||
+        /^[a-z][a-z0-9+.\-]*:/i.test(href)) return false;
+    var box = a.firstElementChild;
+    return !!(box && box.tagName === 'SPAN' && box.querySelector('img'));
+  }
+''';
+
 /// 卡面图片点按放大：冒泡阶段收 `.card` 里 `<img>` 的点击，把 `currentSrc` 交给宿主。
 /// 卡片模板自己处理了的点击（链接里的图、带 `onclick` 的图或祖先、已
 /// `preventDefault`）不抢，模板的点图翻转 / 显示提示照常。
 ///
-/// 例外是词典插图链接 `a.gloss-image-link[href]`（BUG-4734）：它的 href 是图片自己的媒体
-/// 文件名，[kSrsCardLinkScript] 在捕获阶段已拦下它的默认导航（所以这里 `defaultPrevented`
-/// 恒真）且不查词；点在这个图片盒里任何位置（img 本身、盒内的底色 / 占位层）都认作点这张图。
-const String kSrsCardImageTapScript = r'''
+/// 例外是词典插图链接（[kSrsGlossImageLinkJs] 认，BUG-4734 / BUG-5181）：它的 href 是图片
+/// 自己的媒体文件名，[kSrsCardLinkScript] 在捕获阶段已拦下它的默认导航（所以这里
+/// `defaultPrevented` 恒真）且不查词；点在这个图片盒里任何位置（img 本身、盒内的底色 /
+/// 占位层）都认作点这张图。
+const String kSrsCardImageTapScript =
+    r'''
 (function(){
   if (window.__fushiSrsImageTap) return;
   window.__fushiSrsImageTap = true;
+''' +
+    kSrsGlossImageLinkJs +
+    r'''
   document.addEventListener('click', function(e){
     if (e.button !== 0) return;
     var t = e.target;
     if (!t || !t.closest || !t.closest('.card')) return;
     var img = null;
-    var gloss = t.closest('a.gloss-image-link[href]');
+    var gloss = t.closest('a[href]');
+    if (gloss && !glossImageLink(gloss)) gloss = null;
     if (gloss) {
       if (t.closest('button,[onclick]')) return;
       img = t.tagName === 'IMG' ? t : gloss.querySelector('img');

@@ -33,6 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4493 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |
+| [BUG-5181](bugs/BUG-5181-srs-defs-illustration-huge-and-untappable.md) | ✅ | ✅ | 复习卡释义里的词典插图巨大且点不开 |
 > 共 4494 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
