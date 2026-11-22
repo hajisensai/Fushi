@@ -9,6 +9,8 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show MangaPageChanged;
 
 /// BUG-4917 的互联 host 一侧：host 缓存最近几章的页表给对端逐页取图。桌面 sidecar
 /// 一重启（装 / 更新 / 卸扩展），缓存里的取页引用整份作废；以前缓存原样留着，对端
@@ -57,12 +59,14 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  Future<Uint8List> page(int index) => reader.chapterPage(
-    bookKey: 'book',
-    sourceMetadata: metadata,
-    chapter: chapterJson,
-    index: index,
-  );
+  Future<Uint8List> page(int index, {String? expectedPageKey}) =>
+      reader.chapterPage(
+        bookKey: 'book',
+        sourceMetadata: metadata,
+        chapter: chapterJson,
+        index: index,
+        expectedPageKey: expectedPageKey,
+      );
 
   Future<List<String?>> keys() => reader.chapterPageKeys(
     bookKey: 'book',
@@ -122,6 +126,28 @@ void main() {
     ]);
     expect(await page(1), _bytesFor(process: 2, index: 1));
     expect(adapter.resolveCalls, 3, reason: '首次 + 重启后重解析 + 丢缓存后重开');
+  });
+
+  test('取图在同一份页表上核对调用方给的页身份（HBK-AUDIT-205）', () async {
+    final List<String?> before = await keys();
+    expect(
+      await page(0, expectedPageKey: before[0]),
+      _bytesFor(process: 1, index: 0),
+    );
+    // host 重启（页表缓存清空）后重解析出的是换了页的一份：调用方手上第 0 页的
+    // 身份已不是这份页表的第 0 页，不能按页序把新表的第 0 页端出去。
+    reader = InterconnectOnlineMangaHostReader(
+      (OnlineMangaRuntimeKind _) => OnlineMangaLibraryService(
+        database: database,
+        rootDirectory: root,
+        adapter: adapter,
+      ),
+    );
+    adapter.version = 2;
+    await expectLater(
+      page(0, expectedPageKey: before[0]),
+      throwsA(isA<MangaPageChanged>()),
+    );
   });
 }
 
