@@ -33,12 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4507 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
-> 共 4521 条。点号进各自文件。
+> 共 4522 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -46,6 +41,7 @@
 | [BUG-5198](bugs/BUG-5198-media-lock-remaining-consumers.md) | 🚧 | 🚧 | 上锁作品：剩余列出作品标题的次要消费端未接 MediaVisibility |
 | [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
+| [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
 | [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
 | [BUG-5190](bugs/BUG-5190-srs-gen4-migration-card-row-parity.md) | ✅ | ✅ | gen4 迁移对拍：同一张卡的行只差继承来的卡片标志，整体回滚（多前身按卡 ID 排先后） |
 | [BUG-5189](bugs/BUG-5189-shortcut-inline-record-esc-pops-page.md) | ✅ | ✅ | shortcut-inline-record-esc-pops-page |
@@ -73,7 +69,6 @@
 | [BUG-5167](bugs/BUG-5167-music-backdrop-pixi-default.md) | ✅ | ✅ | music-backdrop-pixi-default |
 | [BUG-5166](bugs/BUG-5166-api29-background-kill-misreported-foreground.md) | ✅ | ✅ | Android 10 进程退到后台后被系统回收（死前已收到 UI_HIDDEN），下次启动误报前台闪退 |
 | [BUG-5165](bugs/BUG-5165-dht-nodes-multi-endpoint-overwrite.md) | ✅ | ✅ | 双栈 / 多网卡下 DHT 节点数被后到的实例覆盖，误报「DHT 一直连不上任何节点」 |
-| [BUG-5165](bugs/BUG-5165-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 | [BUG-5164](bugs/BUG-5164-music-split-album-partial-album-artist.md) | ✅ | ✅ | 同一张 CD 只有部分曲目写了专辑艺人，被拆成两张专辑 |
 | [BUG-5163](bugs/BUG-5163-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |
 | [BUG-5162](bugs/BUG-5162-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
