@@ -55,6 +55,8 @@ import 'package:fushi/src/srs/srs_app_runtime.dart'
 import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsCollectionJoin;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
+import 'package:fushi_engine/utils/archive/archive_passwords.dart'
+    show ArchivePasswords;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
@@ -179,6 +181,7 @@ import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi/src/media/import/android_open_with.dart';
+import 'package:fushi/src/media/import/archive_password_prompt.dart';
 import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicateChoice;
@@ -1398,6 +1401,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       unawaited(_startCtlServer());
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    // 加密归档（zip / 7z / rar）导入的口令来源：所有走归档解包的导入入口共用。
+    ArchivePasswords.provider = AppArchivePasswordProvider.forNavigator(
+      ref.read(appProvider).navigatorKey,
+    );
     FushiToast.mineNoticeFilter = ref.read(appProvider).mineNoticeShown;
     installAnkiVideoTemplateFallbackNotice(
       navigatorKey: ref.read(appProvider).navigatorKey,

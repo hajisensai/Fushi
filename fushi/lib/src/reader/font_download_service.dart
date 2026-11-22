@@ -1,11 +1,12 @@
 import 'dart:io';
 
-import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show readFontFamilyNameSync;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FfcArchiveFormat;
+import 'package:fushi_engine/utils/archive/archive_unpacker.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
@@ -81,12 +82,24 @@ bool isFontDownloadTransportFailure(DioError e) {
 /// **不碰目录偏好、不碰 UI**，只负责「多源回退下载 → 校验 → 复制/解包进 [fontsDir]」。
 /// 页面与浏览器扩展端点共用同一份，落地文件的命名规则只有这一处。
 class FontDownloadService {
-  FontDownloadService({required this.fontsDir, Dio Function()? dioFactory})
-    : _dioFactory = dioFactory ?? _createDefaultDio;
+  FontDownloadService({
+    required this.fontsDir,
+    Dio Function()? dioFactory,
+    ArchiveUnpacker? archiveUnpacker,
+  }) : _dioFactory = dioFactory ?? _createDefaultDio,
+       _archiveUnpacker = archiveUnpacker ?? ArchiveUnpacker();
 
   /// 字体落地目录（`<appDirectory>/custom_fonts`）。不存在时按需创建。
   final Directory fontsDir;
   final Dio Function() _dioFactory;
+
+  /// 字体包（zip / 7z / rar，含加密包）的解包点：导入链路唯一的 [ArchiveUnpacker]，
+  /// 口令对话框 / 记住的口令也走它。
+  final ArchiveUnpacker _archiveUnpacker;
+
+  /// 一个字体包解出字体的总字节上限（按实际写出量强制，防解压炸弹；整套 Noto CJK
+  /// 超级 OTC 也远小于它）。
+  static const int _kMaxFontArchiveBytes = 2 * 1024 * 1024 * 1024;
 
   // BUG-1498：字体全在 cdn.jsdelivr.net / raw.githubusercontent.com /
   // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
@@ -205,12 +218,13 @@ class FontDownloadService {
 
   /// 把 [src] 导入字体目录。
   ///
-  /// - zip（按魔数判）→ 解出其中所有字体条目；给了 [overrideName] 时只挑一个
-  ///   （优先 `regular` / `[wght]` 那一份）并以 [overrideName] 命名。
+  /// - 压缩包（zip / 7z 按魔数判，rar 交 7-Zip；含加密包）→ 经 [ArchiveUnpacker]
+  ///   解出其中所有字体条目；给了 [overrideName] 时只挑一个（优先 `regular` /
+  ///   `[wght]` 那一份）并以 [overrideName] 命名。解不开抛 [ArchiveUnpackException]。
   /// - 字体文件（按 [fileName] 扩展名或魔数判）→ 复制为
   ///   `<name>_<epochMs><ext>`，name 取 [overrideName]，否则取字体 `name` 表里的
   ///   家族名（[importedFontDisplayName]），读不出才退回去扩展名的 [fileName]。
-  /// - 都不是（如 7z/rar 或坏 zip）→ 抛 [FormatException]，由调用方决定怎么提示。
+  /// - 都不是 → 抛 [FormatException]，由调用方决定怎么提示。
   ///
   /// 只动文件，不写目录偏好。
   Future<List<ImportedFontFile>> importFile(
@@ -218,18 +232,18 @@ class FontDownloadService {
     required String fileName,
     String? overrideName,
   }) async {
-    if (await isZipFile(src)) {
+    final String ext = p.extension(fileName).toLowerCase();
+    final String? detected = await detectFontExtension(src);
+    if (detected == null && await _isArchive(src, ext)) {
       return _extractFontsFromArchive(src, overrideName: overrideName);
     }
-    final String ext = p.extension(fileName).toLowerCase();
     if (kFontFileExtensions.contains(ext)) {
       return <ImportedFontFile>[
         await _copySingleFont(src, fileName, ext, overrideName: overrideName),
       ];
     }
-    final String? detected = await detectFontExtension(src);
     if (detected == null) {
-      throw FormatException('Not a font file or zip archive', fileName);
+      throw FormatException('Not a font file or archive', fileName);
     }
     return <ImportedFontFile>[
       await _copySingleFont(
@@ -277,53 +291,94 @@ class FontDownloadService {
     return family == null || family.isEmpty ? fallback : family;
   }
 
+  /// [src] 是不是解包点认得的压缩包（zip / 7z 按魔数，rar 按魔数或扩展名）。条目表
+  /// 坏的包也算——交给解包点报它自己的错，不当成「不是字体」。
+  Future<bool> _isArchive(File src, String ext) async {
+    if (kRarArchiveExtensions.contains(ext)) return true;
+    try {
+      return (await _archiveUnpacker.probe(src.path)).format !=
+          FfcArchiveFormat.unknown;
+    } on ArchiveUnpackException {
+      return true;
+    }
+  }
+
   Future<List<ImportedFontFile>> _extractFontsFromArchive(
     File archiveFile, {
     String? overrideName,
   }) async {
-    final List<int> bytes = await archiveFile.readAsBytes();
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
-    final List<ArchiveFile> fontEntries = archive.files
-        .where(
-          (ArchiveFile entry) => entry.isFile && isFontFileName(entry.name),
-        )
-        .toList();
-    final Directory dir = _ensureFontsDir();
-    if (overrideName != null && fontEntries.isNotEmpty) {
-      final ArchiveFile entry = fontEntries.firstWhere((ArchiveFile entry) {
-        final String base = p
-            .basenameWithoutExtension(entry.name)
-            .toLowerCase();
-        return base.contains('regular') || base.contains('[wght]');
-      }, orElse: () => fontEntries.first);
-      final String ext = p.extension(entry.name);
-      final String destPath = p.join(
-        dir.path,
-        '${safeWindowsFileName(overrideName)}_${DateTime.now().millisecondsSinceEpoch}$ext',
+    final Directory work = await Directory.systemTemp.createTemp(
+      'fushi-font-archive-',
+    );
+    try {
+      final Directory unpacked = Directory(p.join(work.path, 'fonts'));
+      await _archiveUnpacker.extract(
+        archiveFile.path,
+        intoDir: unpacked.path,
+        includeExtensions: kFontFileExtensions,
+        maxTotalBytes: _kMaxFontArchiveBytes,
       );
-      File(destPath).writeAsBytesSync(entry.content as List<int>);
-      return <ImportedFontFile>[
-        ImportedFontFile(name: overrideName, path: destPath),
+      // 按包内相对路径排序：落地顺序（批量结果、同名家族的先后）不随文件系统枚举顺序变。
+      final List<File> fontFiles = <File>[
+        if (await unpacked.exists())
+          await for (final FileSystemEntity entity in unpacked.list(
+            recursive: true,
+            followLinks: false,
+          ))
+            if (entity is File && isFontFileName(entity.path)) entity,
       ];
-    }
-
-    final List<ImportedFontFile> imported = <ImportedFontFile>[];
-    final int ts = DateTime.now().millisecondsSinceEpoch;
-    for (final ArchiveFile entry in fontEntries) {
-      final String baseName = p.basenameWithoutExtension(entry.name);
-      final String ext = p.extension(entry.name);
-      final String destPath = p.join(dir.path, '${baseName}_$ts$ext');
-      File(destPath).writeAsBytesSync(entry.content as List<int>);
-      // 家族包（Google Fonts 的 zip 里 Regular + SemiBold …）按真实家族名落成同名
-      // 条目，自动合成一个多字重家族。
-      imported.add(
-        ImportedFontFile(
-          name: importedFontDisplayName(destPath, fallback: baseName),
-          path: destPath,
-        ),
+      fontFiles.sort(
+        (File a, File b) => p
+            .relative(a.path, from: unpacked.path)
+            .compareTo(p.relative(b.path, from: unpacked.path)),
       );
+      final Directory dir = _ensureFontsDir();
+      if (overrideName != null && fontFiles.isNotEmpty) {
+        final File font = fontFiles.firstWhere((File f) {
+          final String base = p.basenameWithoutExtension(f.path).toLowerCase();
+          return base.contains('regular') || base.contains('[wght]');
+        }, orElse: () => fontFiles.first);
+        final String destPath = p.join(
+          dir.path,
+          '${safeWindowsFileName(overrideName)}_${DateTime.now().millisecondsSinceEpoch}${p.extension(font.path)}',
+        );
+        await font.copy(destPath);
+        return <ImportedFontFile>[
+          ImportedFontFile(name: overrideName, path: destPath),
+        ];
+      }
+
+      final List<ImportedFontFile> imported = <ImportedFontFile>[];
+      final int ts = DateTime.now().millisecondsSinceEpoch;
+      for (final File font in fontFiles) {
+        final String baseName = p.basenameWithoutExtension(font.path);
+        final String destPath = p.join(
+          dir.path,
+          '${baseName}_$ts${p.extension(font.path)}',
+        );
+        await font.copy(destPath);
+        // 家族包（Google Fonts 的 zip 里 Regular + SemiBold …）按真实家族名落成同名
+        // 条目，自动合成一个多字重家族。
+        imported.add(
+          ImportedFontFile(
+            name: importedFontDisplayName(destPath, fallback: baseName),
+            path: destPath,
+          ),
+        );
+      }
+      return imported;
+    } finally {
+      try {
+        await work.delete(recursive: true);
+      } on FileSystemException catch (e, stack) {
+        // 系统临时目录里的残留不影响导入结果，记一笔即可。
+        ErrorLogService.instance.log(
+          'FontDownloadService.archiveCleanup',
+          e,
+          stack,
+        );
+      }
     }
-    return imported;
   }
 
   /// 下载执行体：按 [urls] 顺序多源回退（前一源失败或回的不是字体/zip 就试下一源），

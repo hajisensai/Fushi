@@ -622,7 +622,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     return rows.length;
   }
 
-  /// 文件选择器与桌面拖放共用的导入扩展名（字体 + 压缩包）。
+  /// 文件选择器与桌面拖放共用的导入扩展名（字体 + 导入链路解包点认得的压缩包；
+  /// 加密包弹口令框，rar 要 7-Zip，没有时导入报失败）。tar / gz 解包点不认，不列。
   static const List<String> _importExtensions = <String>[
     'ttf',
     'otf',
@@ -632,8 +633,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     'zip',
     '7z',
     'rar',
-    'tar',
-    'gz',
   ];
 
   Future<void> _importFontFile() async {

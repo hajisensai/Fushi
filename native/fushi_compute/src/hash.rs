@@ -107,7 +107,7 @@ pub struct Sha256State {
 
 /// # Safety
 /// `len > 0` 时 `data` 必须指向至少 `len` 个可读字节。
-unsafe fn input<'a>(data: *const u8, len: usize) -> Option<&'a [u8]> {
+pub(crate) unsafe fn input<'a>(data: *const u8, len: usize) -> Option<&'a [u8]> {
     if len == 0 {
         Some(&[])
     } else if data.is_null() {
@@ -346,7 +346,7 @@ fn read_chunks(
 ///
 /// # Safety
 /// 非 NULL 时 `flag` 指向 4 字节对齐、调用期间一直有效的 `u32`。
-unsafe fn cancel_flag<'a>(flag: *const u32) -> Option<&'a AtomicU32> {
+pub(crate) unsafe fn cancel_flag<'a>(flag: *const u32) -> Option<&'a AtomicU32> {
     if flag.is_null() {
         None
     } else {

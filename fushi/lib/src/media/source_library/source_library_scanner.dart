@@ -82,6 +82,8 @@ import 'package:fushi_engine/media/video/disc/disc_library_import.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_archive_probe.dart';
+import 'package:fushi_engine/utils/archive/archive_passwords.dart'
+    show StoredOnlyArchivePasswords;
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart'
@@ -2607,7 +2609,12 @@ class SourceLibraryScanner {
           title: title,
           sourceId: sourceId,
           policy: policy,
-          sevenZipExtractor: _mangaSevenZipExtractor,
+          // 后台扫描不弹口令框：加密包只用记住的口令（见 StoredOnlyArchivePasswords）。
+          sevenZipExtractor:
+              _mangaSevenZipExtractor ??
+              MangaSevenZipExtractor(
+                passwords: const StoredOnlyArchivePasswords(),
+              ),
         );
       case ImportCarrier.pdf:
         return importMangaFromPdf(
