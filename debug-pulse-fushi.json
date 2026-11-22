@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T13:41:38Z",
+ "generatedAt": "2026-11-22T13:43:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "283a92028615e3ddf92cd510d316234ae2ecbf35",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "8ea6084e7dcd5e6b34ac7010bc9eb46ed48fc243",
    "unknown": false,
-   "publishedAt": "2026-11-22T13:20:15Z",
-   "testflight": false,
+   "publishedAt": "2026-11-22T13:43:07Z",
+   "testflight": true,
    "baseSeq": 31363,
    "prs": [
     4167
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
+     "state": "ok"
     }
    }
   },
@@ -150,40 +147,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31261,
-   "version": "3.4.0",
-   "sha": "5f3c60d829141c182d44318cf41f384b732cdc79",
-   "unknown": false,
-   "publishedAt": "2026-11-22T10:13:19Z",
-   "testflight": true,
-   "baseSeq": 31255,
-   "prs": [
-    4151
-   ],
-   "direct": [
-    {
-     "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
-     "subject": "chore(bugs): settle BUG number collisions on 00145ef40"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892168"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
@@ -276,15 +239,6 @@
    "mergedAt": "2026-11-22T09:24:32Z",
    "additions": 692,
    "deletions": 116,
-   "labels": []
-  },
-  "4151": {
-   "number": 4151,
-   "title": "fix(video): Windows 视频帧改走 raster 线程，主线程忙时不再丢帧（BUG-5200）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T09:06:09Z",
-   "additions": 1219,
-   "deletions": 11,
    "labels": []
   },
   "4152": {
