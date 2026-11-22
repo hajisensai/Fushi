@@ -1513,9 +1513,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         // 歌手居中跟在下面，再往下是波浪进度与按钮组；右半歌词左对齐、从半区
         // 起点留一段空再开始。顶栏横贯整页：返回在左上，动作固定在右上角。
         final double cover = math
-            .min(c.maxWidth * 0.5 * 0.56, c.maxHeight * 0.42)
-            .clamp(180.0, 380.0);
-        final double controls = math.max(cover * 1.3, 320.0);
+            .min(c.maxWidth * 0.5 * 0.5, c.maxHeight * 0.42)
+            .clamp(180.0, 360.0);
+        // 列宽要装下封面 + 右侧露出的半张唱片（约 1.42 倍封面宽）。
+        final double controls = math.max(cover * 1.45, 320.0);
         final ColorScheme cs = Theme.of(context).colorScheme;
         return Column(
           children: <Widget>[
@@ -1541,10 +1542,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
-                              SizedBox.square(
-                                dimension: cover,
-                                child: _LyricsCover(item: item, size: cover),
-                              ),
+                              _buildSleeveWithDisc(context, item, cover),
                               const SizedBox(height: 40),
                               Text(
                                 item?.title ?? '',
@@ -1597,6 +1595,53 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           ],
         );
       },
+    );
+  }
+
+  /// A 布局的封面：唱片从封面（当封套）右侧滑出半张，播放时转（用户 2026-11-22：
+  /// 「显示歌词的这里也有 CD 好看一点」）。有盘面扫描图转真盘面，没有转黑胶，
+  /// 与 C 布局同一个 [_SpinningDisc]。进场时唱片从封面后面滑出；整组随滑出量往左
+  /// 挪半个露出宽度，滑完后封面 + 露出部分整体在左半区居中。
+  Widget _buildSleeveWithDisc(
+    BuildContext context,
+    MusicPlayItem? item,
+    double cover,
+  ) {
+    final double disc = cover * 0.94;
+    final double peek = cover * 0.42;
+    final double inset = (cover - disc) / 2;
+    return TweenAnimationBuilder<double>(
+      key: const ValueKey<String>('music-player-sleeve-disc'),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: fushiMotionDuration(context, FushiMotion.long),
+      curve: FushiMotion.enter,
+      builder: (BuildContext context, double t, Widget? child) =>
+          Transform.translate(
+            offset: Offset(-peek * t / 2, 0),
+            child: SizedBox.square(
+              dimension: cover,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  Positioned(
+                    left: inset + peek * t,
+                    top: inset,
+                    child: _SpinningDisc(
+                      coverPath: item?.coverPath,
+                      albumUid: item?.albumUid,
+                      trackPath: item?.path,
+                      size: disc,
+                      spinning: _engine.isPlaying,
+                    ),
+                  ),
+                  child!,
+                ],
+              ),
+            ),
+          ),
+      child: Positioned.fill(
+        child: _LyricsCover(item: item, size: cover),
+      ),
     );
   }
 
@@ -2729,46 +2774,107 @@ class _SpinningDiscState extends State<_SpinningDisc>
 }
 
 extension on _SpinningDiscState {
-  /// 真盘面：盘面扫描图铺满圆形整张转（扫图本身就有贴标、轴孔与反光，不再叠黑胶
-  /// 纹路和假贴标）；外缘一道细亮边让浅色盘面在浅色背景上也有轮廓。
-  Widget _buildRealDisc(double size, String discArt) => RepaintBoundary(
-    key: const ValueKey<String>('music-player-real-disc'),
-    child: SizedBox.square(
-      dimension: size,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: size * 0.1,
-              offset: Offset(0, size * 0.05),
-            ),
-          ],
-        ),
-        child: RotationTransition(
-          turns: _turn,
+  /// 真盘面：盘面扫描图铺满圆形整张转（扫图本身就有贴标与反光，不再叠黑胶纹路和
+  /// 假贴标）；外缘一道细亮边让浅色盘面在浅色背景上也有轮廓。中心轴孔挖空透出背景
+  /// （用户 2026-11-22：扫描图的孔是扫描仪底板的白色，像贴了一块白片）。阴影也在
+  /// 挖孔之内裁掉，孔里看到的是背景本身而不是一团阴影。
+  Widget _buildRealDisc(double size, String discArt) {
+    final double hole = size * _kDiscHoleFraction;
+    final double edge = math.max(1, size * 0.004);
+    return RepaintBoundary(
+      key: const ValueKey<String>('music-player-real-disc'),
+      child: ClipPath(
+        clipper: _DiscHoleClipper(holeFraction: _kDiscHoleFraction),
+        child: SizedBox.square(
+          dimension: size,
           child: DecoratedBox(
-            position: DecorationPosition.foreground,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.28),
-                width: math.max(1, size * 0.004),
-              ),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: size * 0.1,
+                  offset: Offset(0, size * 0.05),
+                ),
+              ],
             ),
-            child: ClipOval(
-              child: musicDiscArtImage(
-                discArt,
-                decodeWidth: (size * MediaQuery.devicePixelRatioOf(context))
-                    .round(),
+            child: RotationTransition(
+              turns: _turn,
+              child: Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  Positioned.fill(
+                    child: ClipOval(
+                      child: musicDiscArtImage(
+                        discArt,
+                        decodeWidth:
+                            (size * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                      ),
+                    ),
+                  ),
+                  // 外缘与轴孔各一道细亮边（孔边只有外半道露在盘面上）。
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.28),
+                          width: edge,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox.square(
+                    dimension: hole + edge * 2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          width: edge * 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+/// 真盘面中心挖孔占盘面直径的比例。实物 CD 轴孔 15mm / 盘径 120mm = 0.125，
+/// 放宽到 0.15 盖住扫描图裁切不正时孔边露出的那圈底板白。
+const double _kDiscHoleFraction = 0.15;
+
+/// 盘面中心挖孔：裁剪区是「组件外扩一圈（留给投影）减去中心圆孔」，所以孔里连
+/// 投影一起裁掉，而盘外的投影照常画出来。
+class _DiscHoleClipper extends CustomClipper<Path> {
+  const _DiscHoleClipper({required this.holeFraction});
+
+  final double holeFraction;
+
+  @override
+  Path getClip(Size size) {
+    final double side = size.shortestSide;
+    return Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRect((Offset.zero & size).inflate(side * 0.5))
+      ..addOval(
+        Rect.fromCircle(
+          center: size.center(Offset.zero),
+          radius: side * holeFraction / 2,
+        ),
+      );
+  }
+
+  @override
+  bool shouldReclip(covariant _DiscHoleClipper oldClipper) =>
+      oldClipper.holeFraction != holeFraction;
 }
 
 /// 黑胶盘面：近黑底、一圈圈细密纹（亮暗交替的同心圆）、外缘一道唇边、贴标外
