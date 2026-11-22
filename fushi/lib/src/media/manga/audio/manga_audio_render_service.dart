@@ -335,7 +335,8 @@ String mangaCandidatePath(
   candidate.stagedFile,
 );
 
-/// 保留候选：清单 / 演出稿 / 账本落盘，重新入库。返回 false = 这句已不在清单里。
+/// 保留候选：清单 / 演出稿 / 账本落盘，重新入库。返回 false = 这句已不在清单里，
+/// 或候选文件已被别的操作清掉（什么都没改）。
 Future<bool> keepMangaCandidate(
   AudioProductionHost appModel, {
   required MangaAudioVolume volume,

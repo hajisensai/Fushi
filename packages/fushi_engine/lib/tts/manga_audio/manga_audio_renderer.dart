@@ -853,7 +853,8 @@ class MangaAudioRenderer {
 
   /// 保留候选：候选的暂存文件改名成正式文件名，清单这句换成它，种子写回演出稿那一行
   /// （[script] 原地改，调用方落盘），从 [ledger] 删掉（候选是真音频）。找不到这句
-  /// 返回 false（候选删掉，什么都不改）。
+  /// 返回 false（候选删掉，什么都不改）；候选的暂存文件已被别的操作清扫掉也返回
+  /// false、什么都不改。
   Future<bool> keepCandidate({
     required MangaAudioScript script,
     required MangaRenderManifest manifest,
@@ -866,9 +867,12 @@ class MangaAudioRenderer {
       await discardCandidate(candidate);
       return false;
     }
-    await (_AudioBatch(
-      directory,
-    )..adopt(candidate.file, candidate.stagedFile)).publish();
+    final _AudioBatch batch = _AudioBatch(directory)
+      ..adopt(candidate.file, candidate.stagedFile);
+    // 等用户定夺时候选可能被别的操作（整卷生成 / 补回）的清扫删掉：没了就不保留，
+    // 不能让清单这句挂上不存在 / 旧内容的文件。
+    if (!await batch.allStaged()) return false;
+    await batch.publish();
     final bool replaced = manifest.replaceLine(
       candidate.lineId,
       (MangaRenderedLine l) => l.replaced(
@@ -1120,17 +1124,68 @@ class _AudioBatch {
     if (await f.exists()) await f.delete();
   }
 
-  /// 暂存文件改名成目标文件。暂存文件已不在（被清扫掉）的跳过，目标保持原样。
+  /// 本批的暂存文件都在吗（单句候选等用户定夺时可能被别的操作的清扫删掉）。
+  Future<bool> allStaged() async {
+    for (final String staged in _staged.values) {
+      if (!await File(p.join(directory.path, staged)).exists()) return false;
+    }
+    return true;
+  }
+
+  /// 暂存文件改名成目标文件，整批要么全换上、要么一个都不换：
+  /// - 先确认暂存文件都在，缺了（被别的操作清扫掉）就什么都不换、抛 [StateError]——
+  ///   不能拿旧文件冒充新音频去配新的时长 / 文本；
+  /// - 目标已存在（旧清单正引用）时先挪到备份名（[_backupName]）再换上新文件；中途
+  ///   有一步失败（Windows 上目标被占用等）就把已换上的逐个还原、往外抛，旧清单引用
+  ///   的音频保持原样，没发布的暂存文件留给 [discard]；
+  /// - 全部换上后删掉备份（删不掉的不引用，下次 `sweepUnreferenced` 清）。
   Future<void> publish() async {
-    for (final MapEntry<String, String> e in _staged.entries.toList()) {
-      final File staged = File(p.join(directory.path, e.value));
-      _staged.remove(e.key);
-      if (!await staged.exists()) continue;
-      final File target = File(p.join(directory.path, e.key));
-      if (await target.exists()) await target.delete();
-      await staged.rename(target.path);
+    final List<MapEntry<String, String>> entries = _staged.entries.toList();
+    if (!await allStaged()) {
+      throw StateError('manga audio: staged file vanished before commit');
+    }
+    final List<({File target, File? backup, bool placed})> done =
+        <({File target, File? backup, bool placed})>[];
+    try {
+      for (final MapEntry<String, String> e in entries) {
+        final File target = File(p.join(directory.path, e.key));
+        File? backup;
+        if (await target.exists()) {
+          backup = File(p.join(directory.path, _backupName(e.key)));
+          if (await backup.exists()) await backup.delete();
+          await target.rename(backup.path);
+        }
+        done.add((target: target, backup: backup, placed: false));
+        await File(p.join(directory.path, e.value)).rename(target.path);
+        done[done.length - 1] = (target: target, backup: backup, placed: true);
+      }
+    } catch (_) {
+      for (final ({File target, File? backup, bool placed}) d
+          in done.reversed) {
+        try {
+          if (d.placed && await d.target.exists()) await d.target.delete();
+          if (d.backup case final File b) await b.rename(d.target.path);
+        } on FileSystemException catch (err, stack) {
+          engineLog.log('MangaAudioRenderer.publishRollback', err, stack);
+        }
+      }
+      rethrow;
+    }
+    _staged.clear();
+    for (final ({File target, File? backup, bool placed}) d in done) {
+      if (d.backup case final File b) {
+        try {
+          await b.delete();
+        } on FileSystemException catch (err, stack) {
+          engineLog.log('MangaAudioRenderer.publish', err, stack);
+        }
+      }
     }
   }
+
+  /// 发布时目标文件的备份名（`p0b1.m4a` → `p0b1.prev.m4a`；清单从不引用）。
+  static String _backupName(String file) =>
+      '${p.withoutExtension(file)}.prev${p.extension(file)}';
 
   /// 删掉本批还没发布的暂存文件（发布过的已不在表里）。
   Future<void> discard() async {

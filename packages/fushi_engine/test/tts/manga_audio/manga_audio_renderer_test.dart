@@ -1453,6 +1453,65 @@ void main() {
         expect(exists(again.stagedFile), isFalse);
       });
 
+      test('发布到一半换不上（目标被占用等）：已换上的还原，旧清单引用的音频不变', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        backend.failVoices.add('bad');
+        final MangaRenderOutcome out = await run(script0(), ledger);
+        final String p0Before = read('p0b0.m4a');
+        final String p2Before = read('p2b0.m4a');
+        final String manifestBefore = await renderer.manifestFile
+            .readAsString();
+        backend.failVoices.clear();
+        // 最后一句的目标挪不到备份名（那里是个目录）：发布在它这里失败。
+        Directory(
+          p.join(renderer.directory.path, 'p2b0.prev.m4a'),
+        ).createSync();
+
+        final MangaAudioScript reseeded = script0()..defaultSeed = 6;
+        await expectLater(
+          run(reseeded, ledger, previous: out.manifest),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(read('p0b0.m4a'), p0Before);
+        expect(read('p2b0.m4a'), p2Before);
+        expect(exists('p0b1.m4a'), isFalse);
+        expect(exists('p0b0.prev.m4a'), isFalse);
+        expect(await renderer.manifestFile.readAsString(), manifestBefore);
+        expect(ledger.entries.keys, <String>['p0b1']);
+        expect(stagedLeft(), isEmpty);
+      });
+
+      test('候选等定夺时被别的操作清扫掉：保留返回 false，清单不挂上没有的文件', () async {
+        final CastVoicingLedger ledger = CastVoicingLedger();
+        final MangaAudioScript script = script0()..voices.byCharacter.clear();
+        final MangaRenderOutcome out = await run(script, ledger);
+        final String manifestBefore = await renderer.manifestFile
+            .readAsString();
+        final MangaRegenerateCandidate candidate = await renderer.regenerate(
+          script: script,
+          pageBlocks: _pages(),
+          defaultVoice: 'reading',
+          lineId: 'p2b0',
+          seed: 100,
+          cancel: TtsRenderCancelToken(),
+        );
+        await renderer.sweepUnreferenced(out.manifest);
+        expect(exists(candidate.stagedFile), isFalse);
+
+        expect(
+          await renderer.keepCandidate(
+            script: script,
+            manifest: out.manifest,
+            ledger: ledger,
+            candidate: candidate,
+          ),
+          isFalse,
+        );
+        expect(out.manifest.lines[2].file, 'p2b0.m4a');
+        expect(exists('p2b0.s100.m4a'), isFalse);
+        expect(await renderer.manifestFile.readAsString(), manifestBefore);
+      });
+
       test('改成「不读」的句子：不再单句合成 / 补回，从清单拿掉并清掉音频', () async {
         final CastVoicingLedger ledger = CastVoicingLedger();
         backend.failVoices.add('bad');
