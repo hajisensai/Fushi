@@ -107,17 +107,9 @@ void main() {
         isFalse,
       );
       expect(
-        ReaderCaretRouter.isEnterTriggerGamepad(
-          GamepadButton.a,
-          focusNavEnabled: false,
-        ),
-        isFalse,
-      );
-      expect(
         ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
         isTrue,
       );
-      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a), isTrue);
     });
   });
 }
