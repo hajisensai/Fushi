@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T03:05:50Z",
+ "generatedAt": "2026-11-22T03:40:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "fba5436937c5161b5c39e69263a90e05f841bba9",
-  "seq": 31123
+  "sha": "6f23fd74b34f2e788d9e21d84ff2d80a9171ea0b",
+  "seq": 31194
  },
  "builds": [
   {
@@ -244,9 +244,27 @@
   }
  ],
  "pending": {
-  "headSha": "fba5436937c5161b5c39e69263a90e05f841bba9",
-  "headSeq": 31123,
+  "headSha": "6f23fd74b34f2e788d9e21d84ff2d80a9171ea0b",
+  "headSeq": 31194,
   "prs": [
+   4134,
+   4129,
+   4131,
+   4135,
+   4127,
+   4128,
+   4132,
+   4133,
+   4130,
+   4115,
+   4126,
+   4123,
+   4122,
+   4121,
+   4119,
+   4118,
+   4117,
+   4114,
    4102,
    4112,
    4111,
@@ -266,6 +284,10 @@
   ],
   "direct": [
    {
+    "sha": "48cdc9667e63cfe037f7eef6431600ec220816c7",
+    "subject": "chore(bugs): settle BUG number collisions on 1fb51302b"
+   },
+   {
     "sha": "fba5436937c5161b5c39e69263a90e05f841bba9",
     "subject": "chore(bugs): settle BUG number collisions on 51073b3c5"
    },
@@ -278,19 +300,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262302"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651173"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651192"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651192"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651192"
    }
   }
  },
@@ -1049,6 +1071,168 @@
    "mergedAt": "2026-11-22T02:10:58Z",
    "additions": 708,
    "deletions": 88,
+   "labels": []
+  },
+  "4114": {
+   "number": 4114,
+   "title": "feat(music): 唱片中心轴孔挖空，分栏布局唱片压在封面上",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:14:51Z",
+   "additions": 516,
+   "deletions": 40,
+   "labels": []
+  },
+  "4115": {
+   "number": 4115,
+   "title": "tool(heavy): 排队预测等不完就立刻放弃，子代理不再硬等长队",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:29:55Z",
+   "additions": 539,
+   "deletions": 18,
+   "labels": []
+  },
+  "4117": {
+   "number": 4117,
+   "title": "fix(ui): 光面封面倾斜离开时放慢回平面（拍板 vDzivBIEOw）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:15:28Z",
+   "additions": 41,
+   "deletions": 5,
+   "labels": []
+  },
+  "4118": {
+   "number": 4118,
+   "title": "fix(windows): TerminateProcess on exit to avoid loader-shutdown deadlock (supersedes #4042)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:17:49Z",
+   "additions": 490,
+   "deletions": 5,
+   "labels": []
+  },
+  "4119": {
+   "number": 4119,
+   "title": "fix(windows): composition WebView2 proxy eats desktop clicks when minimized (supersedes #4041)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:20:35Z",
+   "additions": 387,
+   "deletions": 36,
+   "labels": []
+  },
+  "4121": {
+   "number": 4121,
+   "title": "fix(dictionary): make long source text scrollable in lookup views (supersedes #4100)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:22:08Z",
+   "additions": 1170,
+   "deletions": 143,
+   "labels": []
+  },
+  "4122": {
+   "number": 4122,
+   "title": "feat(manga-audio): 系列人名读法校对 + 读法变了的台词批量重生成（TW9ete_FHX）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:23:54Z",
+   "additions": 830,
+   "deletions": 76,
+   "labels": []
+  },
+  "4123": {
+   "number": 4123,
+   "title": "fix(audiobook): 配对有声书继承原书合集（supersedes #4039）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:24:21Z",
+   "additions": 702,
+   "deletions": 60,
+   "labels": []
+  },
+  "4126": {
+   "number": 4126,
+   "title": "fix(audiobook): accept empty AI cast replies (supersedes #3993)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:28:39Z",
+   "additions": 402,
+   "deletions": 136,
+   "labels": []
+  },
+  "4127": {
+   "number": 4127,
+   "title": "feat(sync): 停互联 host 时打断正在算的视频指纹（拍板台 host-stop-fingerprint-cancel）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:36:47Z",
+   "additions": 1074,
+   "deletions": 252,
+   "labels": []
+  },
+  "4128": {
+   "number": 4128,
+   "title": "feat(pdf): PDF 阅读器全文搜索（拍板 KN4kdP4JB8）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:36:05Z",
+   "additions": 1480,
+   "deletions": 3,
+   "labels": []
+  },
+  "4129": {
+   "number": 4129,
+   "title": "feat(music): 来源 / 插件并进音乐页「在线」组，去掉「⋯ → 来源」（拍板台 4GBgF6TrNr）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:38:06Z",
+   "additions": 521,
+   "deletions": 386,
+   "labels": []
+  },
+  "4130": {
+   "number": 4130,
+   "title": "feat(reader): 阅读器 / 有声书整句扫词（拍板台 5H922XeDHM）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:31:51Z",
+   "additions": 1192,
+   "deletions": 0,
+   "labels": []
+  },
+  "4131": {
+   "number": 4131,
+   "title": "fix(srs): v3.0.x 写入者目录里没搬完的媒体搬完再删（拍板 bug-5017-legacy-writer-media）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:37:18Z",
+   "additions": 448,
+   "deletions": 40,
+   "labels": []
+  },
+  "4132": {
+   "number": 4132,
+   "title": "feat(anki): 预设卡型选中字段默认保留样式（拍板 RdmYdegMPJ）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:34:25Z",
+   "additions": 66,
+   "deletions": 6,
+   "labels": []
+  },
+  "4133": {
+   "number": 4133,
+   "title": "fix(sync): 云同步聚合快照改成字节级传输（BUG-5159）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:34:16Z",
+   "additions": 967,
+   "deletions": 144,
+   "labels": []
+  },
+  "4134": {
+   "number": 4134,
+   "title": "fix(source-scan): 视频搬家只认整文件 SHA-256，采样指纹后台升级（hbk-audit-004）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:39:47Z",
+   "additions": 547,
+   "deletions": 25,
+   "labels": []
+  },
+  "4135": {
+   "number": 4135,
+   "title": "fix(storage): 存储页开页卡顿——清单走瘦投影、Anime4K 占用移出 UI isolate (BUG-5187)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:36:55Z",
+   "additions": 406,
+   "deletions": 15,
    "labels": []
   }
  }
