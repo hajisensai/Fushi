@@ -11,7 +11,6 @@ import 'dart:async';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
-import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -677,9 +676,10 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     final MangaAudioVolume? volume = _volume;
     final String? base = _basePresetId;
     if (volume == null || base == null || _busy) return;
-    await _player?.stop();
     setState(() => _regenerating = line.lineId);
     try {
+      await _player?.stop();
+      if (!mounted) return;
       await regenerateMangaLineWithReview(
         context,
         host: widget.appModel,
