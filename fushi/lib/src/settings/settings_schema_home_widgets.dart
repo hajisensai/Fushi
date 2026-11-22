@@ -1,6 +1,4 @@
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/preferences_repository.dart'
-    show PreferencesRepository;
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -8,6 +6,8 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart'
     show buildCardCreationDestination;
+import 'package:fushi/src/settings/settings_schema_study_goals.dart'
+    show buildStudyGoalsNavigationItem;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/platform/host_platform.dart';
 
@@ -41,76 +41,9 @@ SettingsDestination buildWidgetsDestination() {
         id: 'widgets.section.goals',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.widget_settings_section_goals,
-        footer: t.widget_settings_goals_footer,
         items: <SettingsItem>[
-          _goalItem(
-            id: 'widgets.goal_total_minutes',
-            title: t.widget_settings_goal_total,
-            unit: t.widget_settings_unit_minutes,
-            max: 24 * 60,
-            value: (SettingsContext c) => c.appModel.studyGoalDailyMinutes,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setStudyGoalDailyMinutes(v),
-          ),
-          _goalItem(
-            id: 'widgets.goal_reading_minutes',
-            title: t.widget_settings_goal_reading,
-            unit: t.widget_settings_unit_minutes,
-            max: 24 * 60,
-            value: (SettingsContext c) =>
-                c.appModel.studyGoalDailyReadingMinutes,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setStudyGoalDailyReadingMinutes(v),
-          ),
-          _goalItem(
-            id: 'widgets.goal_listening_minutes',
-            title: t.widget_settings_goal_listening,
-            unit: t.widget_settings_unit_minutes,
-            max: 24 * 60,
-            value: (SettingsContext c) =>
-                c.appModel.studyGoalDailyListeningMinutes,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setStudyGoalDailyListeningMinutes(v),
-          ),
-          _goalItem(
-            id: 'widgets.goal_video_minutes',
-            title: t.widget_settings_goal_video,
-            unit: t.widget_settings_unit_minutes,
-            max: 24 * 60,
-            value: (SettingsContext c) => c.appModel.studyGoalDailyVideoMinutes,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setStudyGoalDailyVideoMinutes(v),
-          ),
-          _goalItem(
-            id: 'widgets.goal_reviews',
-            title: t.widget_settings_goal_reviews,
-            unit: t.widget_settings_unit_cards,
-            max: 1000000,
-            value: (SettingsContext c) => c.appModel.srsGoalDailyReviews,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setSrsGoalDailyReviews(v),
-          ),
-          _goalItem(
-            id: 'widgets.goal_mined_cards',
-            title: t.widget_settings_goal_mined,
-            unit: t.widget_settings_unit_cards,
-            max: 1000000,
-            value: (SettingsContext c) => c.appModel.miningGoalDailyCards,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setMiningGoalDailyCards(v),
-          ),
-          // 与统计页 / 首页同一个目标，这里只是多一个入口：编辑**当前周期**
-          // （日 / 周，反馈 CjIr9RGSCe）生效的那一份（`readingGoalActiveChars`），
-          // 周期本身在首页目标对话框里切。上限取周目标上限，日目标由偏好层再钳。
-          _goalItem(
-            id: 'widgets.goal_chars',
-            title: t.widget_settings_goal_chars,
-            unit: t.stat_goal_unit_chars,
-            max: PreferencesRepository.readingGoalWeeklyCharsMax,
-            value: (SettingsContext c) => c.appModel.readingGoalActiveChars,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.setReadingGoalActiveChars(v),
-          ),
+          // 目标与首页「今日」格同一批偏好，只在「每日目标」子页里编辑一处。
+          buildStudyGoalsNavigationItem('widgets.study_goals'),
         ],
       ),
       SettingsSection(
@@ -181,30 +114,5 @@ SettingsDestination buildWidgetsDestination() {
         ],
       ),
     ],
-  );
-}
-
-SettingsNumberItem _goalItem({
-  required String id,
-  required String title,
-  required String unit,
-  required int max,
-  required int Function(SettingsContext) value,
-  required Future<void> Function(SettingsContext, int) onChanged,
-}) {
-  return SettingsNumberItem(
-    id: id,
-    title: title,
-    icon: FushiIcons.flag,
-    integer: true,
-    min: 0,
-    max: max,
-    suffixText: unit,
-    value: value,
-    resetValue: (SettingsContext c) => 0,
-    onChanged: (SettingsContext c, num v) async {
-      await onChanged(c, v.toInt());
-      c.refresh();
-    },
   );
 }

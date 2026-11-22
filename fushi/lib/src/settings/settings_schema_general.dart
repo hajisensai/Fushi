@@ -13,6 +13,8 @@ import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_music.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
+import 'package:fushi/src/settings/settings_schema_study_goals.dart'
+    show buildStudyGoalsNavigationItem;
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -53,6 +55,7 @@ SettingsDestination buildGeneralDestination() {
         items: <SettingsItem>[
           ...buildStudyClockItems(),
           buildMusicListeningCountsAsStudyItem(),
+          buildStudyGoalsNavigationItem('general.study_goals'),
         ],
       ),
       // 听力保护：连续收听提醒对音乐 / 有声书 / 视频一视同仁，跨媒介所以放通用。

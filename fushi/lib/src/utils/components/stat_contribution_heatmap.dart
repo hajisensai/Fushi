@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -66,12 +67,13 @@ class StatHeatmapCell {
   int get hashCode => Object.hash(dateKey, value, level);
 }
 
-/// 贡献热力图模型：按「周」分列（[weeks]，每列自上而下 周一..周日 共 7 天），
+/// 贡献热力图模型：按「周」分列（[weeks]，每列自上而下 周起始日..周末 共 7 天，
+/// 起始日 = [StatWindow.weekStartDay]，设置 › 目标 › 计数「一周从」），
 /// 末列含今天。纯数据，供 [StatContributionHeatmap] 渲染、可单测。
 class StatHeatmapModel {
   const StatHeatmapModel({required this.weeks, required this.maxValue});
 
-  /// 列表，每列 7 个 [StatHeatmapCell]（周一在上、周日在下）。
+  /// 列表，每列 7 个 [StatHeatmapCell]（周起始日在上）。
   final List<List<StatHeatmapCell>> weeks;
 
   /// 窗口内单日最大活动值（0 表示全窗口无活动）。用于等级分桶的分母。
@@ -114,7 +116,8 @@ class StatHeatmapModel {
 ///
 /// - [weekOffset]（单位=周，≥0）把窗口整体向前平移看历史：0 = 末列为本周（含今天）；
 ///   正值 = 末列往前推 [weekOffset] 周，此时窗口全在过去，无未来占位格。
-/// - 以（本周周一 − [weekOffset] 周）为末列起点，向前取 [weeks] 列（每列周一..周日）。
+/// - 以（本周第一天 − [weekOffset] 周）为末列起点，向前取 [weeks] 列（每列 7 天，
+///   从 [StatWindow.weekStartDay] 起）。
 /// - 每天的值取自 [valueByDateKey]（缺省 0）。
 /// - 今天之后的未来日（仅 [weekOffset]==0 的末列里 > 今天的格子）为占位格
 ///   （dateKey=null，level=0）。
@@ -127,15 +130,13 @@ StatHeatmapModel buildStatHeatmap({
   int weekOffset = 0,
 }) {
   final DateTime today = statTodayDay(now);
-  // 本周周一（DateTime.weekday: 周一=1..周日=7）。
-  final DateTime thisMonday = today.subtract(
-    Duration(days: today.weekday - DateTime.monday),
-  );
-  // 窗口末列的周一：翻页时整体向前平移 weekOffset 周。
-  final DateTime anchorMonday = thisMonday.subtract(
+  // 本周第一天（周起始日 = [StatWindow.weekStartDay]）。
+  final DateTime thisWeekStart = StatWindow.weekStartOfDay(today);
+  // 窗口末列的第一天：翻页时整体向前平移 weekOffset 周。
+  final DateTime anchorWeekStart = thisWeekStart.subtract(
     Duration(days: weekOffset * 7),
   );
-  final DateTime firstMonday = anchorMonday.subtract(
+  final DateTime firstWeekStart = anchorWeekStart.subtract(
     Duration(days: (weeks - 1) * 7),
   );
 
@@ -146,7 +147,7 @@ StatHeatmapModel buildStatHeatmap({
     final List<({String? dateKey, int value, DateTime day})> col =
         <({String? dateKey, int value, DateTime day})>[];
     for (int d = 0; d < 7; d++) {
-      final DateTime day = firstMonday.add(Duration(days: w * 7 + d));
+      final DateTime day = firstWeekStart.add(Duration(days: w * 7 + d));
       if (day.isAfter(today)) {
         col.add((dateKey: null, value: 0, day: day));
         continue;
@@ -228,22 +229,18 @@ int maxHeatmapPageOffset({
     earliest.day,
   );
   final DateTime today = statTodayDay(now);
-  final DateTime thisMonday = today.subtract(
-    Duration(days: today.weekday - DateTime.monday),
-  );
-  final DateTime earliestMonday = earliestDay.subtract(
-    Duration(days: earliestDay.weekday - DateTime.monday),
-  );
-  if (!earliestMonday.isBefore(thisMonday)) return 0;
+  final DateTime thisWeekStart = StatWindow.weekStartOfDay(today);
+  final DateTime earliestWeekStart = StatWindow.weekStartOfDay(earliestDay);
+  if (!earliestWeekStart.isBefore(thisWeekStart)) return 0;
   // 用小时/168 四舍五入求周数，规避 DST 让 inDays 少算 1 天。
   final int weeksBack =
-      (thisMonday.difference(earliestMonday).inHours + 84) ~/ 168;
+      (thisWeekStart.difference(earliestWeekStart).inHours + 84) ~/ 168;
   final int pages = weeksBack ~/ weeks;
   return pages * weeks;
 }
 
 /// 纯函数：把热力图局部坐标 [local]（自然坐标系，未经 [FittedBox] 缩放）反算成
-/// 命中的 (列, 行)。落在格子间隙或越界时返回 null；行固定 0..6（周一..周日）。
+/// 命中的 (列, 行)。落在格子间隙或越界时返回 null；行固定 0..6（周起始日起）。
 ({int col, int row})? hitStatHeatmapCell(
   Offset local, {
   required double cell,
