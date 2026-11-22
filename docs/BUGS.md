@@ -45,6 +45,12 @@
 | [BUG-5249](bugs/BUG-5249-manga-audio-not-read-line-still-plays.md) | ✅ | ✅ | manga-audio-not-read-line-still-plays |
 | [BUG-5248](bugs/BUG-5248-manga-audio-batch-cancel-overwrites-live.md) | ✅ | ✅ | manga-audio-batch-cancel-overwrites-live |
 | [BUG-5247](bugs/BUG-5247-manga-audio-local-rebind-rollback-deletes-live.md) | ✅ | ✅ | manga-audio-local-rebind-rollback-deletes-live |
+> 共 4542 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5222](bugs/BUG-5222-manga-audio-start-outlives-reader.md) | ✅ | ✅ | 漫画阅读器起播成品音频期间退出，迟到的加载留下没人接管的会话（可能顶掉别的书） |
+| [BUG-5220](bugs/BUG-5220-manga-audio-undo-clobbers-line-edits.md) | ✅ | ✅ | 漫画有声「换音」类操作撤销时整句放回旧稿，抹掉之后独立改的停顿 / 说话人 / 念的文字 |
 | [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
 | [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |
