@@ -251,7 +251,7 @@ void main() {
     final List<List<String>> calls = <List<String>>[];
     final DiscoveryArchiveExtractor extractor = DiscoveryArchiveExtractor(
       sevenZipOverride: '/fake/7za',
-      runProcess: (String exe, List<String> args) async {
+      runProcess: (String exe, List<String> args, {String? stdin}) async {
         calls.add(<String>[exe, ...args]);
         return ProcessResult(0, 2, '', 'ERROR: Data Error');
       },
@@ -278,12 +278,13 @@ void main() {
   test('rar 条目表加密且没有口令来源 → archivePasswordRequired', () async {
     final DiscoveryArchiveExtractor extractor = DiscoveryArchiveExtractor(
       sevenZipOverride: '/fake/7za',
-      runProcess: (String exe, List<String> args) async => ProcessResult(
-        0,
-        2,
-        '',
-        'ERROR: p.rar : Can not open encrypted archive. Wrong password?',
-      ),
+      runProcess: (String exe, List<String> args, {String? stdin}) async =>
+          ProcessResult(
+            0,
+            2,
+            '',
+            'ERROR: p.rar : Can not open encrypted archive. Wrong password?',
+          ),
     );
     final File archive = File('${tempDir.path}${Platform.pathSeparator}p.rar');
     await archive.writeAsBytes(<int>[0x52, 0x61, 0x72]);

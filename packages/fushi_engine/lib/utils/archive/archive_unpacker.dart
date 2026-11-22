@@ -2,8 +2,10 @@
 ///
 /// - zip / 7z（含 ZipCrypto / WinZip AES / 7z AES-256、加密文件名）：Rust 胖核心
 ///   `fushi_compute` 的 `ffc_archive_*`，五端都有；探测与解包各放一次后台 isolate。
-/// - RAR / CBR：UnRAR 许可不能链进 GPL 本体，交随包（Windows）或 PATH 上的 7-Zip 命令行，
-///   口令经 `-p` 传入；找不到 7-Zip → [ArchiveUnpackFailure.toolMissing]。
+/// - RAR / CBR：UnRAR 许可不能链进 GPL 本体，交随包（Windows）或 PATH 上的 7-Zip 命令行；
+///   找不到 7-Zip → [ArchiveUnpackFailure.toolMissing]。口令在 Windows 上经标准输入喂给 7-Zip
+///   的口令提示（不进命令行，别的进程从进程列表看不到）；其它平台见 [ArchiveUnpacker]
+///   的 `passwordViaStdin`。
 ///
 /// 加密包：探测出加密就走 [ArchivePasswordProvider]（构造注入，缺省用进程级
 /// [ArchivePasswords.provider]）——先试按归档指纹记住的口令，不对就删掉它再问用户；口令错
@@ -11,6 +13,7 @@
 /// 并进 `intoDir`，失败整目录删掉，所以错口令不会在目标目录里留下半截文件。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -21,9 +24,39 @@ import 'package:fushi_engine/utils/archive/archive_passwords.dart';
 
 export 'package:fushi_engine/utils/archive/archive_passwords.dart';
 
-/// 测试注入口：替换真实子进程执行。
+/// 测试注入口：替换真实子进程执行。[stdin] 非空时写进子进程标准输入后关掉（7-Zip 口令
+/// 走这里，见 [runArchiveProcess]）。
 typedef ArchiveProcessRunner =
-    Future<ProcessResult> Function(String executable, List<String> arguments);
+    Future<ProcessResult> Function(
+      String executable,
+      List<String> arguments, {
+      String? stdin,
+    });
+
+/// [ArchiveProcessRunner] 的缺省实现：没有 [stdin] 时就是 [Process.run]；有就起进程、把它
+/// 写进标准输入再关掉，输出与 [Process.run] 一样按系统编码解码。
+Future<ProcessResult> runArchiveProcess(
+  String executable,
+  List<String> arguments, {
+  String? stdin,
+}) async {
+  if (stdin == null) return Process.run(executable, arguments);
+  final Process process = await Process.start(executable, arguments);
+  final Future<String> out = process.stdout
+      .transform(systemEncoding.decoder)
+      .join();
+  final Future<String> err = process.stderr
+      .transform(systemEncoding.decoder)
+      .join();
+  try {
+    process.stdin.add(utf8.encode(stdin));
+    await process.stdin.close();
+  } on Object {
+    // 包不要口令时 7-Zip 不读标准输入、可能先退出，写端断开无害；结果以退出码与输出为准。
+  }
+  final int exitCode = await process.exitCode;
+  return ProcessResult(process.pid, exitCode, await out, await err);
+}
 
 /// 探测（缺省：后台 isolate 里 [ffcArchiveProbeSync]）。
 typedef ArchiveProbeFn = Future<FfcArchiveInfo> Function(String archivePath);
@@ -46,7 +79,7 @@ const Set<String> kRarArchiveExtensions = <String>{'.rar', '.cbr'};
 /// > 旧版随包 `7za.exe` > PATH 上的 `7z` / `7za`。结果按实例缓存。
 class SevenZipLocator {
   SevenZipLocator({ArchiveProcessRunner? runProcess, String? sevenZipOverride})
-    : _runProcess = runProcess ?? Process.run,
+    : _runProcess = runProcess ?? runArchiveProcess,
       _override = sevenZipOverride;
 
   final ArchiveProcessRunner _runProcess;
@@ -130,8 +163,10 @@ class ArchiveUnpacker {
     SevenZipLocator? sevenZipLocator,
     ArchiveProbeFn? probe,
     ArchiveNativeExtractFn? nativeExtract,
+    bool? passwordViaStdin,
   }) : _passwords = passwords,
-       _runProcess = runProcess ?? Process.run,
+       _runProcess = runProcess ?? runArchiveProcess,
+       _passwordViaStdin = passwordViaStdin ?? Platform.isWindows,
        _locator =
            sevenZipLocator ??
            SevenZipLocator(
@@ -146,6 +181,22 @@ class ArchiveUnpacker {
   final SevenZipLocator _locator;
   final ArchiveProbeFn _probe;
   final ArchiveNativeExtractFn _nativeExtract;
+
+  /// 7-Zip 的口令经标准输入给（缺省只在 Windows）。7-Zip 不给 `-p` 时会提示输入口令：
+  /// Windows 版标准输入不是控制台就从管道读一行（随包 7-Zip 25 实测）；类 Unix 的
+  /// p7zip / 7zz 编进 `getpass` 时直接读 `/dev/tty`，从终端启动的 app 会卡在终端上等输入，
+  /// 所以那边仍经 `-p` 传（命令行参数对同机其它进程可见，是这条外部工具限制的代价）。
+  final bool _passwordViaStdin;
+
+  /// 这次 7-Zip 调用的口令开关（经标准输入时不带开关）。
+  List<String> _passwordArgs(String? password) => _passwordViaStdin
+      ? const <String>[]
+      : <String>[password == null ? '-p-' : '-p$password'];
+
+  /// 这次 7-Zip 调用的标准输入：一行口令（没有口令就给空行，加密包按「口令不对」失败，
+  /// 与 `-p-` 一样不会挂起等输入）。
+  String? _passwordStdin(String? password) =>
+      _passwordViaStdin ? '${password ?? ''}\n' : null;
 
   SevenZipLocator get sevenZipLocator => _locator;
 
@@ -369,7 +420,8 @@ class ArchiveUnpacker {
     try {
       if (await dir.exists()) await dir.delete(recursive: true);
     } catch (_) {
-      // 清理失败不掩盖原错误；书库根下的 `.tmp-*` 残留由导入残留清扫兜底。
+      // 清理失败不掩盖原错误。暂存目录与目标同级（`<目标名>.unpacking-*`），调用方的
+      // 目标都在各自的临时 / 工作目录里，残留随那一层清理一起走。
     }
   }
 
@@ -420,14 +472,16 @@ class ArchiveUnpacker {
           'x',
           '-y',
           '-aoa',
-          password == null ? '-p-' : '-p$password',
+          ..._passwordArgs(password),
           '-sccUTF-8',
           '-ssc-',
           '-smemx2g',
           '-o${staging.path}',
           for (final String e in includeExtensions) '-ir!*$e',
+          // 之后一律按文件名解析：`-` 开头的包名不会被当成开关。
+          '--',
           archivePath,
-        ]);
+        ], stdin: _passwordStdin(password));
         if (result.exitCode != 0) {
           if (_wrongPassword.hasMatch('${result.stdout}\n${result.stderr}')) {
             throw const _NeedsPassword();
@@ -453,9 +507,10 @@ class ArchiveUnpacker {
       'l',
       '-slt',
       '-sccUTF-8',
-      password == null ? '-p-' : '-p$password',
+      ..._passwordArgs(password),
+      '--',
       archivePath,
-    ]);
+    ], stdin: _passwordStdin(password));
     if (result.exitCode != 0) {
       if (_wrongPassword.hasMatch('${result.stdout}\n${result.stderr}')) {
         return null;

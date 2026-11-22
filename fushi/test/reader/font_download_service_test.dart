@@ -12,6 +12,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/utils/archive/archive_unpacker.dart';
 import 'package:path/path.dart' as p;
 
 Uint8List _bytes(List<int> header, {int pad = 16}) =>
@@ -59,12 +60,36 @@ Future<File> _write(Directory dir, String name, List<int> bytes) async {
   return f;
 }
 
-Uint8List _zipOf(Map<String, List<int>> entries) {
+Uint8List _zipOf(Map<String, List<int>> entries, {String? password}) {
   final Archive archive = Archive();
   entries.forEach((String name, List<int> bytes) {
     archive.addFile(ArchiveFile(name, bytes.length, bytes));
   });
-  return Uint8List.fromList(ZipEncoder().encode(archive)!);
+  return Uint8List.fromList(ZipEncoder(password: password).encode(archive)!);
+}
+
+/// 依次作答的口令来源（null = 取消）。
+final class _AnswerPasswords implements ArchivePasswordProvider {
+  _AnswerPasswords(this.answers);
+
+  final List<String?> answers;
+  final List<bool> previousWrong = <bool>[];
+
+  @override
+  Future<ArchivePasswordAnswer?> ask(ArchivePasswordRequest request) async {
+    previousWrong.add(request.previousWrong);
+    final String? answer = answers.isEmpty ? null : answers.removeAt(0);
+    return answer == null ? null : ArchivePasswordAnswer(answer);
+  }
+
+  @override
+  Future<void> forget(String fingerprint) async {}
+
+  @override
+  Future<void> remember(String fingerprint, String password) async {}
+
+  @override
+  Future<String?> remembered(String fingerprint) async => null;
 }
 
 void main() {
@@ -198,7 +223,70 @@ void main() {
       expect(await File(out.single.path).readAsBytes(), kTtf);
     });
 
-    test('既不是字体也不是 zip → FormatException', () async {
+    test('加密 zip 走统一解包点：口令错了重问，对了解出全部字体', () async {
+      final File zip = await _write(
+        tmp,
+        'locked.zip',
+        _zipOf(<String, List<int>>{
+          'Foo-Regular.ttf': kTtf,
+          'sub/Foo-Bold.otf': kOtf,
+          'OFL.txt': utf8.encode('license'),
+        }, password: 'fushi-pw'),
+      );
+      final _AnswerPasswords passwords = _AnswerPasswords(<String?>[
+        'wrong',
+        'fushi-pw',
+      ]);
+      final FontDownloadService locked = FontDownloadService(
+        fontsDir: fontsDir,
+        dioFactory: () => Dio(),
+        archiveUnpacker: ArchiveUnpacker(passwords: passwords),
+      );
+      final List<ImportedFontFile> out = await locked.importFile(
+        zip,
+        fileName: 'locked.zip',
+      );
+      expect(out.map((ImportedFontFile f) => f.name).toList(), <String>[
+        'Foo-Regular',
+        'Foo-Bold',
+      ]);
+      expect(passwords.previousWrong, <bool>[false, true]);
+      expect(await File(out.first.path).readAsBytes(), kTtf);
+      expect(p.dirname(out.first.path), fontsDir.path);
+    });
+
+    test('加密 zip 取消口令框 → 抛解包异常，字体目录里什么都不落', () async {
+      final File zip = await _write(
+        tmp,
+        'locked.zip',
+        _zipOf(<String, List<int>>{
+          'Foo-Regular.ttf': kTtf,
+        }, password: 'fushi-pw'),
+      );
+      final FontDownloadService locked = FontDownloadService(
+        fontsDir: fontsDir,
+        dioFactory: () => Dio(),
+        archiveUnpacker: ArchiveUnpacker(
+          passwords: _AnswerPasswords(<String?>[null]),
+        ),
+      );
+      await expectLater(
+        locked.importFile(zip, fileName: 'locked.zip'),
+        throwsA(
+          isA<ArchiveUnpackException>().having(
+            (ArchiveUnpackException e) => e.failure,
+            'failure',
+            ArchiveUnpackFailure.passwordCancelled,
+          ),
+        ),
+      );
+      expect(
+        fontsDir.existsSync() ? fontsDir.listSync() : <FileSystemEntity>[],
+        isEmpty,
+      );
+    });
+
+    test('既不是字体也不是压缩包 → FormatException', () async {
       final File junk = await _write(tmp, 'x.7z', utf8.encode('7z?'));
       expect(
         () => service.importFile(junk, fileName: 'x.7z'),

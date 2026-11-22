@@ -65,6 +65,12 @@ const FINGERPRINT_SAMPLE: u64 = 1 << 20;
 /// 解包时的拷贝块大小。
 const COPY_CHUNK: usize = 256 * 1024;
 
+/// 7z 解码器（条目表缓冲、LZMA 字典、PPMd 模型）的内存上限，KiB。`sevenz-rust2` 缺省不设
+/// 上限：PPMd 模型按头里声明的大小一次分配，不可信的包声明几 GB 会让分配失败直接 abort
+/// 整个进程（`catch_unwind` 兜不住）。2 GiB 与 RAR 走 7-Zip 命令行时的 `-smemx2g` 一致，
+/// 盖得住 7-Zip 最大的 1536 MiB 字典；超了报 [archive_status::TOO_LARGE]。
+const SEVEN_Z_MEMORY_LIMIT_KB: usize = 2 * 1024 * 1024;
+
 const ZIP_MAGICS: [&[u8]; 3] = [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"];
 const SEVEN_Z_MAGIC: &[u8] = b"7z\xBC\xAF\x27\x1C";
 const RAR_MAGIC: &[u8] = b"Rar!\x1A\x07";
@@ -188,7 +194,7 @@ pub fn probe(path: &Path) -> Result<ArchiveInfo, i32> {
                 }
             }
         }
-        format::SEVEN_Z => match sevenz_rust2::Archive::open(path) {
+        format::SEVEN_Z => match open_7z_archive(path) {
             Ok(archive) => {
                 for (i, entry) in archive.files.iter().enumerate() {
                     if archive.is_file_encrypted(i) {
@@ -201,6 +207,9 @@ pub fn probe(path: &Path) -> Result<ArchiveInfo, i32> {
                 }
             }
             Err(sevenz_rust2::Error::PasswordRequired) => info.encryption = encryption::HEADERS,
+            Err(sevenz_rust2::Error::MaxMemLimited { .. }) => {
+                return Err(archive_status::TOO_LARGE);
+            }
             Err(_) => return Err(status::BAD_INPUT),
         },
         _ => {}
@@ -449,9 +458,11 @@ fn sevenz_is_symlink(entry: &sevenz_rust2::ArchiveEntry) -> bool {
 fn extract_7z(path: &Path, password: Option<&str>, sink: &mut Sink<'_>) -> Result<(), i32> {
     use sevenz_rust2::{ArchiveReader, Error, Password};
     let pw = password.map(Password::new).unwrap_or_else(Password::empty);
-    let mut reader = match ArchiveReader::open(path, pw) {
+    let file = File::open(path).map_err(|_| status::IO_ERROR)?;
+    let mut reader = match ArchiveReader::new_with_memory_limit(file, pw, SEVEN_Z_MEMORY_LIMIT_KB) {
         Ok(r) => r,
         Err(Error::PasswordRequired) => return Err(archive_status::PASSWORD_REQUIRED),
+        Err(Error::MaxMemLimited { .. }) => return Err(archive_status::TOO_LARGE),
         Err(Error::UnsupportedCompressionMethod(_)) | Err(Error::Unsupported(_)) => {
             return Err(archive_status::UNSUPPORTED);
         }
@@ -516,9 +527,19 @@ fn extract_7z(path: &Path, password: Option<&str>, sink: &mut Sink<'_>) -> Resul
     }
 }
 
+/// 不给口令读 7z 条目表（带 [SEVEN_Z_MEMORY_LIMIT_KB] 上限）。
+fn open_7z_archive(path: &Path) -> Result<sevenz_rust2::Archive, sevenz_rust2::Error> {
+    let mut file = File::open(path)?;
+    sevenz_rust2::Archive::read_with_memory_limit(
+        &mut file,
+        &sevenz_rust2::Password::empty(),
+        SEVEN_Z_MEMORY_LIMIT_KB,
+    )
+}
+
 fn sevenz_headers_encrypted(path: &Path) -> bool {
     matches!(
-        sevenz_rust2::Archive::open(path),
+        open_7z_archive(path),
         Err(sevenz_rust2::Error::PasswordRequired)
     )
 }

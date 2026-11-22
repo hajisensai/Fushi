@@ -231,91 +231,121 @@ Attributes = A
 Encrypted = +
 ''';
 
-    test('条目表加密：问口令，错了重问，口令经 -p 传给 7-Zip', () async {
-      final List<List<String>> calls = <List<String>>[];
-      final ArchiveUnpacker unpacker = ArchiveUnpacker(
-        sevenZipOverride: 'fake-7z',
-        passwords: _ScriptedPasswords(<ArchivePasswordAnswer?>[
-          const ArchivePasswordAnswer('nope'),
-          const ArchivePasswordAnswer(_password),
-        ]),
-        runProcess: (String exe, List<String> args) async {
-          calls.add(args);
-          final bool right = args.contains('-p$_password');
-          if (args.first == 'l') {
-            return right
-                ? ProcessResult(1, 0, listing, '')
-                : ProcessResult(
-                    1,
-                    2,
-                    '',
-                    'ERROR: book.rar : Can not open encrypted archive. Wrong password?',
-                  );
-          }
-          final String outDir = args
-              .firstWhere((String a) => a.startsWith('-o'))
-              .substring(2);
-          File(p.join(outDir, 'pages', '001.png'))
-            ..createSync(recursive: true)
-            ..writeAsStringSync('png');
-          return ProcessResult(1, 0, '', '');
-        },
-      );
-      final String out = p.join(tmp.path, 'out');
-      final ArchiveUnpackResult result = await unpacker.extract(
-        rar.path,
-        intoDir: out,
-        includeExtensions: <String>{'.png'},
-      );
-      expect(result.files, 1);
-      expect(File(p.join(out, 'pages', '001.png')).existsSync(), isTrue);
-      expect(calls.map((List<String> c) => c.first), <String>[
-        'l', // 不带口令：列不出
-        'l', // 错口令
-        'l', // 对口令
-        'x',
-      ]);
-      expect(calls[0], contains('-p-'));
-      expect(calls.last, contains('-p$_password'));
-      expect(calls.last, contains('-ir!*.png'));
-    });
+    // 两种口令通道：标准输入（Windows 缺省，口令不进命令行）与 `-p`（类 Unix）。
+    for (final bool viaStdin in <bool>[true, false]) {
+      final String mode = viaStdin ? '标准输入' : '-p';
 
-    test('条目内容加密：清单不带口令就能读，解压报口令错就重问', () async {
-      int extractCalls = 0;
-      final _ScriptedPasswords passwords =
-          _ScriptedPasswords(<ArchivePasswordAnswer?>[
+      /// 这次调用给 7-Zip 的口令（没给返回 null）。
+      String? passwordOf(List<String> args, String? stdin) {
+        if (viaStdin) {
+          expect(
+            args.where((String a) => a.startsWith('-p')),
+            isEmpty,
+            reason: '口令经标准输入时命令行里不能出现 -p',
+          );
+          expect(stdin, isNotNull);
+          expect(stdin, endsWith('\n'));
+          final String line = stdin!.substring(0, stdin.length - 1);
+          return line.isEmpty ? null : line;
+        }
+        expect(stdin, isNull);
+        final String flag = args.firstWhere((String a) => a.startsWith('-p'));
+        return flag == '-p-' ? null : flag.substring(2);
+      }
+
+      test('条目表加密：问口令，错了重问，口令经$mode传给 7-Zip', () async {
+        final List<List<String>> calls = <List<String>>[];
+        final List<String?> given = <String?>[];
+        final ArchiveUnpacker unpacker = ArchiveUnpacker(
+          sevenZipOverride: 'fake-7z',
+          passwordViaStdin: viaStdin,
+          passwords: _ScriptedPasswords(<ArchivePasswordAnswer?>[
             const ArchivePasswordAnswer('nope'),
             const ArchivePasswordAnswer(_password),
-          ]);
-      final ArchiveUnpacker unpacker = ArchiveUnpacker(
-        sevenZipOverride: 'fake-7z',
-        passwords: passwords,
-        runProcess: (String exe, List<String> args) async {
-          if (args.first == 'l') return ProcessResult(1, 0, listing, '');
-          extractCalls++;
-          if (!args.contains('-p$_password')) {
-            return ProcessResult(
-              1,
-              2,
-              'ERROR: Wrong password : pages\\001.png',
-              '',
-            );
-          }
-          final String outDir = args
-              .firstWhere((String a) => a.startsWith('-o'))
-              .substring(2);
-          File(p.join(outDir, '001.png')).writeAsStringSync('png');
-          return ProcessResult(1, 0, '', '');
-        },
-      );
-      await unpacker.extract(rar.path, intoDir: p.join(tmp.path, 'out'));
-      expect(extractCalls, 2);
-      expect(
-        passwords.asked.map((ArchivePasswordRequest r) => r.attempt),
-        <int>[0, 1],
-      );
-      expectNoStagingLeft();
-    });
+          ]),
+          runProcess: (String exe, List<String> args, {String? stdin}) async {
+            calls.add(args);
+            final String? password = passwordOf(args, stdin);
+            given.add(password);
+            // 包名前有 `--`：`-` 开头的包名不会被当成开关。
+            expect(args[args.length - 2], '--');
+            expect(args.last, rar.path);
+            if (args.first == 'l') {
+              return password == _password
+                  ? ProcessResult(1, 0, listing, '')
+                  : ProcessResult(
+                      1,
+                      2,
+                      '',
+                      'ERROR: book.rar : Can not open encrypted archive. Wrong password?',
+                    );
+            }
+            final String outDir = args
+                .firstWhere((String a) => a.startsWith('-o'))
+                .substring(2);
+            File(p.join(outDir, 'pages', '001.png'))
+              ..createSync(recursive: true)
+              ..writeAsStringSync('png');
+            return ProcessResult(1, 0, '', '');
+          },
+        );
+        final String out = p.join(tmp.path, 'out');
+        final ArchiveUnpackResult result = await unpacker.extract(
+          rar.path,
+          intoDir: out,
+          includeExtensions: <String>{'.png'},
+        );
+        expect(result.files, 1);
+        expect(File(p.join(out, 'pages', '001.png')).existsSync(), isTrue);
+        expect(calls.map((List<String> c) => c.first), <String>[
+          'l', // 不带口令：列不出
+          'l', // 错口令
+          'l', // 对口令
+          'x',
+        ]);
+        expect(given, <String?>[null, 'nope', _password, _password]);
+        expect(calls.last, contains('-ir!*.png'));
+      });
+
+      test('条目内容加密（$mode）：清单不带口令就能读，解压报口令错就重问', () async {
+        int extractCalls = 0;
+        final _ScriptedPasswords passwords =
+            _ScriptedPasswords(<ArchivePasswordAnswer?>[
+              const ArchivePasswordAnswer('nope'),
+              const ArchivePasswordAnswer(_password),
+            ]);
+        final ArchiveUnpacker unpacker = ArchiveUnpacker(
+          sevenZipOverride: 'fake-7z',
+          passwordViaStdin: viaStdin,
+          passwords: passwords,
+          runProcess: (String exe, List<String> args, {String? stdin}) async {
+            final String? password = passwordOf(args, stdin);
+            if (args.first == 'l') return ProcessResult(1, 0, listing, '');
+            extractCalls++;
+            if (password != _password) {
+              return ProcessResult(
+                1,
+                2,
+                'ERROR: Wrong password : pages\\001.png',
+                '',
+              );
+            }
+            final String outDir = args
+                .firstWhere((String a) => a.startsWith('-o'))
+                .substring(2);
+            File(p.join(outDir, '001.png')).writeAsStringSync('png');
+            return ProcessResult(1, 0, '', '');
+          },
+        );
+        await unpacker.extract(rar.path, intoDir: p.join(tmp.path, 'out'));
+        expect(extractCalls, 2);
+        expect(
+          passwords.asked.map((ArchivePasswordRequest r) => r.attempt),
+          <int>[0, 1],
+        );
+        expectNoStagingLeft();
+      });
+    }
 
     test('找不到 7-Zip → toolMissing', () async {
       await expectLater(

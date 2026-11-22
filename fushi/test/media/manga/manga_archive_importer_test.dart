@@ -679,10 +679,11 @@ void main() {
       final List<List<String>> calls = <List<String>>[];
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
-        runProcess: (String executable, List<String> arguments) async {
-          calls.add(arguments);
-          if (arguments.first == 'l') {
-            return ProcessResult(1, 0, '''
+        runProcess:
+            (String executable, List<String> arguments, {String? stdin}) async {
+              calls.add(arguments);
+              if (arguments.first == 'l') {
+                return ProcessResult(1, 0, '''
 Path = $archivePath
 Type = Rar
 
@@ -695,17 +696,17 @@ Path = notes.txt
 Size = 5000000000
 Attributes = A
 ''', '');
-          }
-          final String outputArg = arguments.firstWhere(
-            (String arg) => arg.startsWith('-o'),
-          );
-          final File page = File(
-            p.join(outputArg.substring(2), 'pages', '001.png'),
-          );
-          page.parent.createSync(recursive: true);
-          page.writeAsBytesSync(png);
-          return ProcessResult(2, 0, '', '');
-        },
+              }
+              final String outputArg = arguments.firstWhere(
+                (String arg) => arg.startsWith('-o'),
+              );
+              final File page = File(
+                p.join(outputArg.substring(2), 'pages', '001.png'),
+              );
+              page.parent.createSync(recursive: true);
+              page.writeAsBytesSync(png);
+              return ProcessResult(2, 0, '', '');
+            },
       );
 
       final String key = await MangaArchiveImporter.importArchive(
@@ -727,9 +728,10 @@ Attributes = A
     bool extracted = false;
     final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
       sevenZipOverride: 'fake-7z',
-      runProcess: (String executable, List<String> arguments) async {
-        if (arguments.first == 'l') {
-          return ProcessResult(1, 0, '''
+      runProcess:
+          (String executable, List<String> arguments, {String? stdin}) async {
+            if (arguments.first == 'l') {
+              return ProcessResult(1, 0, '''
 Path = $archivePath
 Type = Rar
 
@@ -738,10 +740,10 @@ Path = ..\\escape.png
 Size = 3
 Attributes = A
 ''', '');
-        }
-        extracted = true;
-        return ProcessResult(2, 0, '', '');
-      },
+            }
+            extracted = true;
+            return ProcessResult(2, 0, '', '');
+          },
     );
 
     await expectLater(
