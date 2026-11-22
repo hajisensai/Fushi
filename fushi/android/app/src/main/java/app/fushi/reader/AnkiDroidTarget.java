@@ -39,8 +39,19 @@ public final class AnkiDroidTarget {
     public static final String MAIN_PACKAGE = "com.ichi2.anki";
 
     /**
+     * kuma3 Anki（{@code Pedrubik2000/kuma3-anki-app}，带 RWKV / FSRS-7 的 AnkiDroid 分支）的
+     * release 包名。上游 {@code AnkiDroid/build.gradle} 用 {@code androidComponents.onVariants}
+     * 把 release 变体的 applicationId 设成它（注释写明「装上之后永不再改」），provider
+     * authority 与读写权限沿用 AnkiDroid 的 {@code ${applicationId}.flashcards} /
+     * {@code ${applicationId}.permission.READ_WRITE_DATABASE}，与并行版同一套三件套，
+     * 走 {@link DirectAnkiProvider}（反馈 4GcjYXFAJe / f8ING_Sh_m）。
+     */
+    public static final String KUMA3_PACKAGE = "io.github.pedrubik2000.kuma3";
+
+    /**
      * 候选包名，**按优先级**排列：主包永远第一（同时装了主包和并行版时行为与修复前
-     * 一致），随后是官方并行版 a–e，最后是开发者自编的 debug 版。
+     * 一致），随后是官方并行版 a–e、开发者自编的 debug 版，最后是改版 AnkiDroid
+     * （{@link #KUMA3_PACKAGE}）。
      *
      * <p><b>后缀必须小写。</b>并行版的**显示名**是大写的（用户桌面上那个图标写着
      * {@code AnkiDroid.E}），**包名后缀却是小写的**——上游
@@ -70,6 +81,7 @@ public final class AnkiDroidTarget {
         MAIN_PACKAGE + ".d",
         MAIN_PACKAGE + ".e",
         MAIN_PACKAGE + ".debug",
+        KUMA3_PACKAGE,
     };
 
 
