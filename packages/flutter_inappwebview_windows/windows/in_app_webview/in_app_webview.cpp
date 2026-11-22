@@ -1880,6 +1880,15 @@ namespace flutter_inappwebview_plugin
       }
     }
 
+    if (isHeadless && webView &&
+        fl_map_contains_not_null(newSettingsMap, "allowBackgroundAudioPlaying") &&
+        settings->allowBackgroundAudioPlaying != newSettings->allowBackgroundAudioPlaying) {
+      wil::com_ptr<ICoreWebView2_8> webView8;
+      if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView8))) && webView8) {
+        webView8->put_IsMuted(newSettings->allowBackgroundAudioPlaying ? FALSE : TRUE);
+      }
+    }
+
     settings = newSettings;
   }
 
