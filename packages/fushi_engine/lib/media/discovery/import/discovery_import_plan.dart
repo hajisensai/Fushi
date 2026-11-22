@@ -85,15 +85,19 @@ enum DiscoveryImportBlocker {
   /// 游戏包里找不到可执行文件。
   gameNoExecutable,
 
-  /// 7z/rar 需要 7-Zip 命令行而本机没有。
+  /// RAR 需要 7-Zip 命令行而本机没有（zip / 7z 由原生库解，五端都有）。
   archiveToolMissing,
 
-  /// 解压失败（损坏/带密码等）。
+  /// 解压失败（损坏 / 不安全的条目路径 / 超限等）。
   archiveExtractionFailed,
 
   /// 分类出来了，但执行这一步的宿主没有对应的导入器（如无头服务端没有 PDF
   /// 栅格化、没有游戏库）。换到 app 当 host 或本机下载即可。
   unsupportedOnThisHost,
+
+  /// 加密包没拿到口令（用户取消口令对话框，或宿主不能交互，如无头服务端）。
+  /// 追加在末尾：原因码按名字落库 / 上报，不改既有值的位置。
+  archivePasswordRequired,
 }
 
 /// 自动导入被挡下（分类不出/解压工具缺失/解压失败）。队列把它落成任务
