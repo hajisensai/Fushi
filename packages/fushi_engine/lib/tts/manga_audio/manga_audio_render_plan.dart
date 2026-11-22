@@ -313,7 +313,8 @@ String mangaLineText(
 }) => mangaLineTexts(line, pageBlocks, substitutions: substitutions).text;
 
 /// 一句的显示文字与实际念的文字。手动填写的念法（`say`）是用户写好的最终文字，两者
-/// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的再加人名读法。
+/// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的先把底本换成页面
+/// 印着的注音读音（[resolveMangaLineTexts]），再过替换表加人名读法。
 ({String text, String spoken}) mangaLineTexts(
   MangaScriptLine line,
   List<List<MokuroBlock>> pageBlocks, {
@@ -321,15 +322,15 @@ String mangaLineText(
 }) {
   final String? say = line.say;
   if (say != null) return (text: say.trim(), spoken: say.trim());
-  final String raw = resolveMangaLineText(
+  final ({String text, String spoken}) raw = resolveMangaLineTexts(
     line,
     line.page < pageBlocks.length
         ? pageBlocks[line.page]
         : const <MokuroBlock>[],
-  ).trim();
+  );
   return (
-    text: applyCastSubstitutions(raw, substitutions),
-    spoken: applyCastSpokenSubstitutions(raw, substitutions),
+    text: applyCastSubstitutions(raw.text.trim(), substitutions),
+    spoken: applyCastSpokenSubstitutions(raw.spoken.trim(), substitutions),
   );
 }
 

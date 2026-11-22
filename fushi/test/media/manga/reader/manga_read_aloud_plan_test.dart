@@ -123,6 +123,29 @@ void main() {
     expect(plan[1].spokenChunks, <String>['あいうえ', 'おかきく', 'けこ']);
   });
 
+  test('页面印着的注音：显示底本，合成按注音念（拉丁字母底本同样认）', () {
+    final MokuroImage page = _page(<MokuroBlock>[
+      _ruby,
+      ..._body,
+      _vertical(600, 100, 640, 540, 'CRYCHICじゃない', fontSize: 40),
+      _vertical(642, 140, 660, 340, 'クライシック', fontSize: 18),
+    ]);
+    final List<MangaReadAloudUtterance> plan = planMangaPageReadAloud(
+      page,
+      pageIndex: 0,
+      rightToLeft: true,
+      pronunciation: const <TtsPronunciationRule>[],
+      maxInputLength: 0,
+    );
+    expect(plan.map((MangaReadAloudUtterance u) => u.displayText), <String>[
+      'CRYCHICじゃない',
+      'なに?',
+      '大丈夫だよな?',
+    ]);
+    expect(plan[0].spokenChunks, <String>['クライシックじゃない']);
+    expect(plan[2].spokenChunks, <String>['だいじょうぶだよな?']);
+  });
+
   test('空页没有句子', () {
     expect(_texts(_page(const <MokuroBlock>[])), isEmpty);
   });
