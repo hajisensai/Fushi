@@ -643,7 +643,16 @@ typedef FushiCoverBlockItemBuilder =
 
 /// 色块布局 sliver：按行懒构建，每格包 [FushiStaggeredEntrance]（错峰进场由祖先
 /// [FushiEntranceScope] 管）。左右边距由调用点的 `SliverPadding` 给。
-class SliverFushiCoverBlocks extends StatelessWidget {
+///
+/// 排布只取决于横轴宽度（与本 widget 的参数、摆放姿态），**与滚动位置无关**。
+/// 但 [SliverLayoutBuilder] 在 [SliverConstraints] 任何一项变了都会重跑 builder，
+/// 而 `scrollOffset` 每个滚动帧都在变（BUG-5253）：旧实现因此每帧重算整库排布、
+/// 交出一个新的 [SliverList.builder]（builder 委托的 `shouldRebuild` 恒为真），
+/// 视口里每一格的 [itemBuilder] 连同整张卡的 build 都在 UI 线程上逐帧重跑——
+/// 视频 / 书 / 游戏库页色块布局滚动掉帧的根因。现在按「本 widget 实例 + 横轴宽度
+/// + 摆放姿态」记住上次交出的 sliver，只有滚动位置变化时原样交回同一个实例，
+/// 框架据此整棵跳过更新。
+class SliverFushiCoverBlocks extends StatefulWidget {
   const SliverFushiCoverBlocks({
     required this.itemCount,
     required this.itemBuilder,
@@ -683,39 +692,68 @@ class SliverFushiCoverBlocks extends StatelessWidget {
   final int? maxRows;
 
   @override
+  State<SliverFushiCoverBlocks> createState() => _SliverFushiCoverBlocksState();
+}
+
+class _SliverFushiCoverBlocksState extends State<SliverFushiCoverBlocks> {
+  /// 上次交出的 sliver 与它的输入：[_builtFor] 是当时的 widget 实例（参数、
+  /// [SliverFushiCoverBlocks.itemBuilder] 闭包都随它换代），宽度与姿态另记。
+  SliverFushiCoverBlocks? _builtFor;
+  double? _builtWidth;
+  ShellBlockArrangement? _builtArrangement;
+  Widget? _built;
+
+  /// 滚动位置变化时原样交回上次的实例；排布输入变了才重建。
+  Widget _sliverFor(double width, ShellBlockArrangement arrangement) {
+    final Widget? cached = _built;
+    if (cached != null &&
+        identical(_builtFor, widget) &&
+        _builtWidth == width &&
+        _builtArrangement == arrangement) {
+      return cached;
+    }
+    final SliverFushiCoverBlocks w = widget;
+    final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlacement(
+      width: width,
+      itemCount: w.itemCount,
+      layout: w.layout,
+      targetWidth: w.targetWidth,
+      spacing: w.spacing,
+      narrowTargetWidth: w.narrowTargetWidth,
+      isWideItem: w.isWideItem,
+      uniformAfterHero: w.uniformAfterHero,
+      hoverBleed: w.hoverBleed,
+    ).rows;
+    final int? cap = w.maxRows;
+    final List<FushiCoverBlockRow> rows = cap == null
+        ? plan
+        : fushiCoverBlockRowsCapped(plan, cap);
+    final Widget sliver = SliverList.builder(
+      itemCount: rows.length,
+      itemBuilder: (BuildContext context, int r) => _blockRow(
+        context,
+        rows,
+        r,
+        arrangement: arrangement,
+        rowWidth: width,
+        spacing: w.spacing,
+        itemBuilder: w.itemBuilder,
+        staggerEntrance: true,
+      ),
+    );
+    _builtFor = w;
+    _builtWidth = width;
+    _builtArrangement = arrangement;
+    _built = sliver;
+    return sliver;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ShellBlockArrangement arrangement = shellBlockArrangementOf(context);
     return SliverLayoutBuilder(
-      builder: (BuildContext context, SliverConstraints constraints) {
-        final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlacement(
-          width: constraints.crossAxisExtent,
-          itemCount: itemCount,
-          layout: layout,
-          targetWidth: targetWidth,
-          spacing: spacing,
-          narrowTargetWidth: narrowTargetWidth,
-          isWideItem: isWideItem,
-          uniformAfterHero: uniformAfterHero,
-          hoverBleed: hoverBleed,
-        ).rows;
-        final int? cap = maxRows;
-        final List<FushiCoverBlockRow> rows = cap == null
-            ? plan
-            : fushiCoverBlockRowsCapped(plan, cap);
-        return SliverList.builder(
-          itemCount: rows.length,
-          itemBuilder: (BuildContext context, int r) => _blockRow(
-            context,
-            rows,
-            r,
-            arrangement: arrangement,
-            rowWidth: constraints.crossAxisExtent,
-            spacing: spacing,
-            itemBuilder: itemBuilder,
-            staggerEntrance: true,
-          ),
-        );
-      },
+      builder: (BuildContext context, SliverConstraints constraints) =>
+          _sliverFor(constraints.crossAxisExtent, arrangement),
     );
   }
 }
