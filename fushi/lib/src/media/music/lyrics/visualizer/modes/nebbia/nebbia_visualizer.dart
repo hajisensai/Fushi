@@ -1,18 +1,90 @@
-/// 全屏歌词动画样式「nebbia」（移植自 folia-major `src/components/visualizer/nebbia/`）。
+/// 全屏歌词动画样式「雾笺」（移植自 folia-major `src/components/visualizer/nebbia/`）。
 ///
-/// TODO(visualizer-port): 占位实现，等移植完成后替换。
+/// 下雨天公交车起雾的车窗上，手指一笔一笔写歌词，写过的地方透出窗外的雨夜街景（或水族箱、
+/// 共用背景），擦痕边凝出水珠、偶尔淌下一颗，过一会儿重新起雾；雨点打在玻璃上，两盏聚光灯从
+/// 街上追着正在写的字。排版照商籁的主词 / 构图，字的笔画来自字体骨架追踪。
+///
+/// 文件：`nebbia_tuning.dart`（参数）、`nebbia_chars.dart`（逐字序列、分词、片尾）、
+/// `nebbia_layout.dart`（构图与整首排版）、`nebbia_glyphs.dart`（字形 / 骨架追踪）、
+/// `nebbia_scene.dart`（书写节奏、起雾、让位、手指抹除、哈气）、`nebbia_window.dart`（窗外）、
+/// `nebbia_glass.dart`（玻璃上的水、颠簸、雨点）、`nebbia_painter.dart`（每帧合成）。
 library;
+
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
-import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_painter.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_tuning.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 注册项。
+/// 注册项。窗外可选「共用背景」，所以宿主照常铺共享背景（街景 / 水族箱时被整个盖住）；
+/// 雾笺不画译文，底部字幕交给宿主。
 final LyricVisualizerEntry nebbiaVisualizerEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.nebbia,
   label: () => t.music_visualizer_mode_nebbia,
+  description: () => t.music_visualizer_nebbia_description,
   icon: FushiIcons.blurLinear,
-  sharedBackdrop: true,
-  builder: (LyricVisualizerContext c) => LyricVisualizerPlaceholder(context: c),
+  tunings: nebbiaTuningSpecs,
+  builder: (LyricVisualizerContext c) => NebbiaVisualizer(context: c),
 );
+
+class NebbiaVisualizer extends StatefulWidget {
+  const NebbiaVisualizer({super.key, required this.context});
+
+  final LyricVisualizerContext context;
+
+  @override
+  State<NebbiaVisualizer> createState() => _NebbiaVisualizerState();
+}
+
+class _NebbiaVisualizerState extends State<NebbiaVisualizer> {
+  final NebbiaController _controller = NebbiaController();
+
+  @override
+  void initState() {
+    super.initState();
+    NebbiaGlyphCache.instance.addListener(_onGlyphs);
+  }
+
+  /// 骨架追踪好一批：重画（场景按字形版本号自己重排）。
+  void _onGlyphs() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    NebbiaGlyphCache.instance.removeListener(_onGlyphs);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final LyricVisualizerContext c = widget.context;
+    final NebbiaSettings s = NebbiaSettings.from(c.tuning);
+    final TextStyle font = DefaultTextStyle.of(context).style;
+    return LyricVisualizerFrame(
+      context: c,
+      builder: (BuildContext bc, LyricVisualizerTicks ticks) => RepaintBoundary(
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: NebbiaPainter(
+            c: c,
+            s: s,
+            ticks: ticks,
+            controller: _controller,
+            font: TextStyle(
+              fontFamily: font.fontFamily,
+              fontFamilyFallback: font.fontFamilyFallback,
+              fontWeight: FontWeight.w500,
+              locale: font.locale,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
