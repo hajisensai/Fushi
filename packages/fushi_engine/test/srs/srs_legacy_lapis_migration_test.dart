@@ -217,8 +217,8 @@ void main() {
       expect(sources.map((SrsLegacyLapisSource x) => x.type.id), <String>[id]);
       final SrsLegacyLapisMigrationPreview p = await s
           .previewLegacyLapisMigration(id);
-      expect(p.change.linkedCards, 1);
-      expect(p.change.droppedCards, 0);
+      expect(p.linkedCards, 1);
+      expect(p.droppedCards, 0);
       expect(
         p.lostFieldNotes.map(
           (SrsFieldDef f, int c) => MapEntry<String, int>(f.name, c),
@@ -342,6 +342,105 @@ void main() {
       },
     );
   }
+
+  // BUG-5176：iPad 上大牌组打开迁移页 / 点迁移时 Dart 堆 Out of Memory——预演与迁移都把这一类型的全部笔记整批物化，
+  // 迁移还把整批修改记录攒成一个列表交给内核。现在迁移由内核逐条读、算、写，预演按块物化。
+  group('BUG-5176: Dart never holds the whole batch', () {
+    test(
+      'migration materializes no notes in Dart, across kernel chunks',
+      () async {
+        final SrsDbStore s = await device();
+        final String src = await s.addField(s.lapisNoteTypeId, '来源');
+        // 205 条：跨过内核一块 200 条的边界（writes_retype.rs CHUNK）。
+        final List<String> ids = <String>[
+          for (int i = 0; i < 205; i++)
+            await s.createNote(
+              noteTypeId: s.lapisNoteTypeId,
+              fieldsById: <String, String>{
+                lapis('Expression'): '語$i',
+                if (i.isEven) src: 'Book $i',
+                if (i % 3 == 0) lapis('MiscInfo'): 'misc $i',
+              },
+            ),
+        ];
+        final SrsNoteTypeView v = await type(s, s.lapisNoteTypeId);
+        final SrsReviewLog l = await s.answer(
+          SrsIds.card(ids.last, v.templates.single.id, 0),
+          3,
+        );
+
+        srsDebugMaxNotesPerRead = 0;
+        expect(await s.migrateLegacyLapis(s.lapisNoteTypeId), 205);
+        expect(
+          srsDebugMaxNotesPerRead,
+          0,
+          reason: 'the migration must not materialize the batch in Dart',
+        );
+
+        final Map<String, SrsNoteView?> after = await s.notes(ids);
+        for (int i = 0; i < ids.length; i++) {
+          final SrsNoteView n = after[ids[i]]!;
+          expect(n.noteTypeId, s.fushiCardNoteTypeId, reason: '#$i');
+          expect(n.field(fushi('Expression')), '語$i', reason: '#$i');
+          // 主映射（MiscInfo）有内容的不被覆盖；为空的由同槽的「来源」补上；都没有的留空。
+          expect(
+            n.field(fushi('MiscInfo')),
+            i % 3 == 0 ? 'misc $i' : (i.isEven ? 'Book $i' : ''),
+            reason: '#$i',
+          );
+        }
+        final SrsNoteTypeView fc = await type(s, s.fushiCardNoteTypeId);
+        expect(
+          (await s.history(
+            SrsIds.card(ids.last, fc.templates.single.id, 0),
+          )).all.map((SrsReviewLog x) => x.id),
+          contains(l.id),
+        );
+        expect(await s.legacyLapisSources(), isEmpty);
+        // 补迁同一笔做完了：再补没有可补的。
+        expect(await s.applyLapisBackfill(), 0);
+      },
+    );
+
+    test(
+      'preview materializes one chunk at a time with the same counts',
+      () async {
+        final SrsDbStore s = await device();
+        final String id = await importedLapis(s, 'Lapis');
+        final String comment = await s.addField(id, 'Comment');
+        final String src = await s.addField(id, '来源');
+        final SrsNoteTypeView v = await type(s, id);
+        for (int i = 0; i < 7; i++) {
+          await s.createNote(
+            noteTypeId: id,
+            fieldsById: <String, String>{
+              fieldNamed(v, 'Expression'): '語$i',
+              if (i.isOdd) comment: 'note $i',
+              if (i < 4) src: 'Book $i',
+            },
+          );
+        }
+        final SrsLegacyLapisSource source =
+            (await s.legacyLapisSources()).single;
+        srsDebugMaxNotesPerRead = 0;
+        final SrsLegacyLapisMigrationPreview chunked = await s
+            .previewLegacyLapisSource(source, chunk: 3);
+        expect(srsDebugMaxNotesPerRead, 3);
+        final SrsLegacyLapisMigrationPreview whole = await s
+            .previewLegacyLapisSource(source, chunk: 1000);
+        expect(chunked.linkedCards, 7);
+        expect(chunked.linkedCards, whole.linkedCards);
+        expect(chunked.droppedCards, whole.droppedCards);
+        expect(chunked.fallbackFills, 4);
+        expect(chunked.fallbackFills, whole.fallbackFills);
+        Map<String, int> lost(SrsLegacyLapisMigrationPreview p) => p
+            .lostFieldNotes
+            .map((SrsFieldDef f, int c) => MapEntry<String, int>(f.name, c));
+        expect(lost(chunked), <String, int>{'Comment': 3});
+        expect(lost(chunked), lost(whole));
+      },
+    );
+  });
 
   test('migration without a target deck leaves decks alone', () async {
     final SrsDbStore s = await device();

@@ -198,8 +198,10 @@ pub fn note_fields_if(
 // ---------------------------------------------------------------------- change
 
 /// `change`（结构性改动：更改笔记类型、删除重复模板、旧 Lapis 迁移；协议 3 `change.rs`）：还原点 + 一批修改记录
-/// （`chg` 项值没变的不写），带 `move` 时再把这些笔记连同它们此刻可见的卡移到一个牌组。[req]：
-/// `{"now", "checkpoint"?: {"name", "reason"}, "move"?: {"deck", "notes"}, "ts"?}`；[items] 同 `apply`。
+/// （`chg` 项值没变的不写）+ 带 `retype` 时由内核逐条笔记换类型 / 补迁（`writes_retype.rs`，回包另带 `retyped` /
+/// `filled`），带 `move` 时再把这些笔记连同它们此刻可见的卡移到一个牌组。[req]：
+/// `{"now", "checkpoint"?: {"name", "reason"}, "retype"?: {...}, "move"?: {"deck", "notes"}, "ts"?}`；[items] 同
+/// `apply`。
 ///
 /// 移牌组段要看换完类型之后有哪些可见卡（缓存层推导），所以在前一段收尾之后读 `cards`；三段同一个事务，任何一段出错
 /// 整笔回滚。
@@ -238,6 +240,12 @@ pub fn change(t: &Truth<'_>, col: i64, req: &Value, items: &[Value]) -> Result<V
                 v
             }
         };
+        // 换类型段（`writes_retype.rs`）：内核逐条笔记读现值、算、写，与上面的修改记录同一笔。
+        if req.get("retype").is_some_and(Value::is_object) {
+            let r = super::writes_retype::retype(s, now, req)?;
+            v["retyped"] = r["retyped"].clone();
+            v["filled"] = r["filled"].clone();
+        }
         fail_after(req, "apply")?;
         if req.get("move").is_some_and(Value::is_object) {
             let moved = move_notes(s, now, req)?;
@@ -288,7 +296,7 @@ fn move_notes(s: &mut Session<'_, '_>, now: i64, req: &Value) -> Result<Value, S
 // ---------------------------------------------------------------------- merge_notes
 
 /// Dart `String.trim().isEmpty`（协议 3 `merge_notes.rs` 同一个判据）。
-fn dart_blank(s: &str) -> bool {
+pub(super) fn dart_blank(s: &str) -> bool {
     s.chars().all(|c| is_js_space(c) || c == '\u{85}')
 }
 

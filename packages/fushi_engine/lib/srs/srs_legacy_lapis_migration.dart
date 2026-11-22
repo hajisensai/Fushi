@@ -22,6 +22,8 @@
 /// 也不碰**，重复执行不再写任何东西（幂等）。
 library;
 
+import 'dart:math' show min;
+
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -503,6 +505,9 @@ Map<String, String> srsPlanLapisFieldFill({
   return out;
 }
 
+/// 旧 Lapis 迁移预演一块物化的笔记数（[SrsLegacyLapisMigrationOps.previewLegacyLapisSource]）。
+const int kSrsLapisPreviewChunk = 500;
+
 /// 一种可迁移的旧 Lapis 变体（有笔记的）。
 class SrsLegacyLapisSource {
   const SrsLegacyLapisSource({
@@ -516,12 +521,14 @@ class SrsLegacyLapisSource {
   final List<String> noteIds;
 }
 
-/// 一种变体迁移到 Fushi 卡片的预演。
+/// 一种变体迁移到 Fushi 卡片的预演。只有计数，不留逐条笔记的计划（整批的计划带着每条笔记的全部字段值，大牌组
+/// 上撑爆 Dart 堆，BUG-5176）。
 class SrsLegacyLapisMigrationPreview {
   const SrsLegacyLapisMigrationPreview({
     required this.source,
     required this.fields,
-    required this.change,
+    required this.linkedCards,
+    required this.droppedCards,
     required this.lostFieldNotes,
     required this.fallbackFills,
   });
@@ -529,8 +536,11 @@ class SrsLegacyLapisMigrationPreview {
   final SrsLegacyLapisSource source;
   final SrsLapisFieldPlan fields;
 
-  /// 卡片继承 / 丢弃的预演（[SrsNoteTypeStoreOps.previewNoteTypeChange]）。
-  final SrsNoteTypeChangePreview change;
+  /// 继承复习历史的卡数（[SrsNoteTypeChangePreview.linkedCards] 的逐块合计）。
+  final int linkedCards;
+
+  /// 换类型后不再出现的卡数（[SrsNoteTypeChangePreview.droppedCards] 的逐块合计）。
+  final int droppedCards;
 
   /// 落不进新模板的源字段 → 其中有内容的笔记数（内容留在笔记上，不迁）。
   final Map<SrsFieldDef, int> lostFieldNotes;
@@ -639,20 +649,25 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
         'not a legacy Lapis note type with notes',
       ),
     );
+    return previewLegacyLapisSource(source);
+  }
+
+  /// [previewLegacyLapisMigration]，源已经在手（[legacyLapisSources] 的一项）。笔记按块（[chunk] 条）物化、统计完就
+  /// 丢，Dart 侧同时持有的笔记视图不超过一块（以前整批物化、还把整批的换类型计划留在结果里，大牌组在 iPad 上 Out of
+  /// Memory，BUG-5176）。
+  Future<SrsLegacyLapisMigrationPreview> previewLegacyLapisSource(
+    SrsLegacyLapisSource source, {
+    @visibleForTesting int chunk = kSrsLapisPreviewChunk,
+  }) async {
     final SrsNoteTypeView to = await _fushiCardType();
     final SrsLapisFieldPlan plan = srsLapisFieldPlan(
       profileUid,
       source.type,
       to,
     );
-    // 这批笔记只物化一次：换类型的计划与下面逐条的统计用同一份视图。
-    final Map<String, SrsNoteView?> views = await notes(source.noteIds);
-    final SrsNoteTypeChangePreview change = await previewNoteTypeChange(
-      noteIds: source.noteIds,
-      targetTypeId: to.id,
-      fieldMap: plan.fieldMap,
-      templateMap: srsLapisTemplateMap(source.type, to),
-      views: views,
+    final Map<String, String?> templateMap = srsLapisTemplateMap(
+      source.type,
+      to,
     );
     final Map<String, SrsLapisFieldCandidate> owners =
         <String, SrsLapisFieldCandidate>{
@@ -672,34 +687,52 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     };
     final Map<SrsFieldDef, int> lost = <SrsFieldDef, int>{};
     int fallback = 0;
-    for (final String id in source.noteIds) {
-      final SrsNoteView n = views[id]!;
-      final Map<String, String> mapped = <String, String>{
-        for (final MapEntry<String, String?> e in plan.fieldMap.entries)
-          e.key: e.value == null ? '' : n.field(e.value!),
-      };
-      if (srsPlanLapisFieldFill(
-        profileUid: profileUid,
-        target: to,
-        current: mapped,
-        values: _historicalValues(n, owners),
-      ).isNotEmpty) {
-        fallback++;
-      }
-      for (final SrsFieldDef f in plan.unmappedSources) {
-        final SrsLapisFieldSlot? slot = owners[f.id]!.slot;
-        final bool hasHome =
-            (slot != null && targetSlots.contains(slot.key)) ||
-            targetNames.contains(f.name.trim().toLowerCase());
-        if (!hasHome && n.field(f.id).trim().isNotEmpty) {
-          lost[f] = (lost[f] ?? 0) + 1;
+    int linked = 0;
+    int dropped = 0;
+    final List<String> ids = source.noteIds;
+    for (int at = 0; at < ids.length; at += chunk) {
+      final List<String> part = ids.sublist(at, min(at + chunk, ids.length));
+      // 这一块只物化一次：换类型的计划与下面逐条的统计用同一份视图。
+      final Map<String, SrsNoteView?> views = await notes(part);
+      final SrsNoteTypeChangePreview change = await previewNoteTypeChange(
+        noteIds: part,
+        targetTypeId: to.id,
+        fieldMap: plan.fieldMap,
+        templateMap: templateMap,
+        views: views,
+      );
+      linked += change.linkedCards;
+      dropped += change.droppedCards;
+      for (final String id in part) {
+        final SrsNoteView n = views[id]!;
+        final Map<String, String> mapped = <String, String>{
+          for (final MapEntry<String, String?> e in plan.fieldMap.entries)
+            e.key: e.value == null ? '' : n.field(e.value!),
+        };
+        if (srsPlanLapisFieldFill(
+          profileUid: profileUid,
+          target: to,
+          current: mapped,
+          values: _historicalValues(n, owners),
+        ).isNotEmpty) {
+          fallback++;
+        }
+        for (final SrsFieldDef f in plan.unmappedSources) {
+          final SrsLapisFieldSlot? slot = owners[f.id]!.slot;
+          final bool hasHome =
+              (slot != null && targetSlots.contains(slot.key)) ||
+              targetNames.contains(f.name.trim().toLowerCase());
+          if (!hasHome && n.field(f.id).trim().isNotEmpty) {
+            lost[f] = (lost[f] ?? 0) + 1;
+          }
         }
       }
     }
     return SrsLegacyLapisMigrationPreview(
       source: source,
       fields: plan,
-      change: change,
+      linkedCards: linked,
+      droppedCards: dropped,
       lostFieldNotes: lost,
       fallbackFills: fallback,
     );
@@ -759,28 +792,23 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     }
     final SrsNoteTypeView to = await _fushiCardType();
     final SrsLapisFieldPlan plan = srsLapisFieldPlan(profileUid, from, to);
-    // 换类型与补迁的修改记录都基于迁移前的状态一次算好——这批笔记只物化一次，两段用同一份视图；只有移牌组要看
-    // 换完类型后生成的卡，交给内核在同一笔里做。「值没变就不写」由内核在落库的那一笔里判（[SrsDbStore.writeChange]）。
-    final Map<String, SrsNoteView?> views = await notes(ids);
-    final SrsNoteTypeChangePreview change = await previewNoteTypeChange(
-      noteIds: ids,
-      targetTypeId: to.id,
-      fieldMap: plan.fieldMap,
-      templateMap: srsLapisTemplateMap(from, to),
-      views: views,
-    );
-    final bool retype = change.from.id != change.to.id;
-    await writeChange(
-      <SrsEditSpec>[
-        if (retype) ...change.edits,
-        ...await _lapisFillAfterChange(
-          ids,
+    final bool retype = from.id != to.id;
+    // 换类型、补迁都由内核逐条笔记读现值、算、写（[SrsDbStore.writeRetype]），Dart 只给类型层面的计划：以前这里把这批
+    // 笔记整批物化、攒成一个修改记录列表再整个编码交给内核，大牌组在 iPad 上 Out of Memory（BUG-5176）。补迁按换完
+    // 类型之后的值判，与换类型同一笔；移牌组要看换完类型后生成的卡，也在同一笔里做。
+    await writeRetype(
+      SrsRetypePlan(
+        noteIds: ids,
+        from: from,
+        to: to,
+        fieldMap: plan.fieldMap,
+        templateMap: srsLapisTemplateMap(from, to),
+        fill: _lapisFillCandidates(
           to,
-          retype ? change.plans : const <SrsNoteTypeChangePlan>[],
-          views,
+          await _lapisFieldOwners(exceptTypeId: to.id),
         ),
-      ],
-      checkpoint: retype ? (name: change.to.name, reason: 'note_type') : null,
+      ),
+      checkpoint: retype ? (name: to.name, reason: 'note_type') : null,
       moveNotes: targetDeckId == null
           ? null
           : (deckId: targetDeckId, noteIds: ids),
@@ -789,63 +817,26 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     return ids.length;
   });
 
-  /// [ids] 按 [plans] 换成 Fushi 卡片 [to] **之后**的「遗漏字段补迁」要写的修改记录，基于换类型之前的状态算：
-  /// 换类型只给每条笔记写 `plan.fieldValues` 这些字段，所以换完之后的字段值 = 现值叠上它们，「写过的字段」=
-  /// 已有修改记录的 ∪ 它们的键。判定与 [previewLapisBackfill] 逐条相同（那边的 SQL 预筛只是必要条件，这里的笔记
-  /// 反正都要读，不筛）。[views]：[ids] 换类型之前的视图——算 [plans] 时读的那一份。
-  Future<List<SrsEditSpec>> _lapisFillAfterChange(
-    List<String> ids,
+  /// 「遗漏字段补迁」的类型层面计划：Fushi 卡片 [to] 的每个字段 → 能补它的旧 Lapis 变体字段（含已删除的类型，按
+  /// [_compareCandidates] 的优先顺序），交给内核逐条判（[SrsRetypePlan.fill]；与 [srsPlanLapisFieldFill] 同一套判据：
+  /// 写过的不补、有内容的不补，取第一个有内容的候选）。没有旧 Lapis 变体 = 空。
+  /// [owners]：[_lapisFieldOwners] 对 `exceptTypeId: to.id` 的结果。
+  Map<String, List<String>> _lapisFillCandidates(
     SrsNoteTypeView to,
-    List<SrsNoteTypeChangePlan> plans,
-    Map<String, SrsNoteView?> views,
-  ) async {
-    final Map<String, SrsLapisFieldCandidate> owners = await _lapisFieldOwners(
-      exceptTypeId: to.id,
-    );
-    if (owners.isEmpty) return const <SrsEditSpec>[];
-    final Map<String, Map<String, String>> written =
-        <String, Map<String, String>>{
-          for (final SrsNoteTypeChangePlan p in plans) p.noteId: p.fieldValues,
-        };
-    final Map<String, Map<String, String>> fills =
-        <String, Map<String, String>>{};
-    for (final String id in ids) {
-      final SrsNoteView? n = views[id];
-      if (n == null || n.deletedAt != null) continue;
-      final Map<String, String> mapped =
-          written[id] ?? const <String, String>{};
-      final Map<String, String> current = <String, String>{
-        ...n.fields,
-        ...mapped,
-      };
-      final Map<String, String> fill = srsPlanLapisFieldFill(
-        profileUid: profileUid,
-        target: to,
-        current: current,
-        values: <SrsLapisFieldValue>[
-          for (final MapEntry<String, String> e in current.entries)
-            if (owners[e.key] case final SrsLapisFieldCandidate c)
-              SrsLapisFieldValue(c, e.value),
-        ],
-        authored: <String>{
-          for (final SrsFieldDef f in to.fields)
-            if (n.edits[SrsFieldKeys.noteField(f.id)] != null ||
-                mapped.containsKey(f.id))
-              f.id,
-        },
-      );
-      if (fill.isNotEmpty) fills[id] = fill;
+    Map<String, SrsLapisFieldCandidate> owners,
+  ) {
+    final List<SrsLapisFieldCandidate> ordered = owners.values.toList()
+      ..sort(_compareCandidates);
+    final Map<String, List<String>> out = <String, List<String>>{};
+    for (final SrsFieldDef f in to.fields) {
+      final String? key = _targetKey(profileUid, to, f);
+      final List<String> c = <String>[
+        for (final SrsLapisFieldCandidate x in ordered)
+          if (_fillsTarget(key, x, f)) x.field.id,
+      ];
+      if (c.isNotEmpty) out[f.id] = c;
     }
-    return <SrsEditSpec>[
-      for (final MapEntry<String, Map<String, String>> n in fills.entries)
-        for (final MapEntry<String, String> f in n.value.entries)
-          SrsEditSpec(
-            SrsEntityKind.note,
-            n.key,
-            SrsFieldKeys.noteField(f.key),
-            f.value,
-          ),
-    ];
+    return out;
   }
 
   /// 把名字里带独立单词「lapis」的牌组（不分大小写，只看牌组自己那一级的名字）改名：
@@ -928,24 +919,36 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     return SrsLapisBackfillPreview(fills: fills);
   }
 
-  /// 执行「遗漏字段补迁」（只写空字段，幂等）。返回补过的笔记数。
+  /// 执行「遗漏字段补迁」（只写空字段，幂等）。返回补过的笔记数。候选照 [previewLapisBackfill] 的 SQL 预筛找，逐条
+  /// 判定与写入交给内核（[SrsDbStore.writeRetype] 只补迁不换类型）：Dart 不物化候选笔记、不攒修改记录（BUG-5176）。
   Future<int> applyLapisBackfill({List<String>? noteIds}) =>
       runExclusive(() async {
-        final SrsLapisBackfillPreview p = await previewLapisBackfill(
+        final SrsNoteTypeView? to = await noteType(fushiCardNoteTypeId);
+        if (to == null || to.deletedAt != null) return 0;
+        final Map<String, SrsLapisFieldCandidate> owners =
+            await _lapisFieldOwners(exceptTypeId: to.id);
+        if (owners.isEmpty) return 0;
+        final Set<String> candidates = await _lapisBackfillCandidates(
+          to,
+          owners,
           noteIds: noteIds,
         );
-        if (p.fills.isEmpty) return 0;
-        await writeEdits(<SrsEditSpec>[
-          for (final MapEntry<String, Map<String, String>> n in p.fills.entries)
-            for (final MapEntry<String, String> f in n.value.entries)
-              SrsEditSpec(
-                SrsEntityKind.note,
-                n.key,
-                SrsFieldKeys.noteField(f.key),
-                f.value,
-              ),
-        ]);
-        return p.notes;
+        if (candidates.isEmpty) return 0;
+        final List<String> ids = noteIds == null
+            ? candidates.toList()
+            : <String>[
+                for (final String id in noteIds)
+                  if (candidates.contains(id)) id,
+              ];
+        final ({int retyped, int filled}) r = await writeRetype(
+          SrsRetypePlan(
+            noteIds: ids,
+            from: null,
+            to: to,
+            fill: _lapisFillCandidates(to, owners),
+          ),
+        );
+        return r.filled;
       });
 
   /// 「遗漏字段补迁」的候选笔记：当前是 Fushi 卡片（[noteIds] 为 null 时按笔记缓存的当前类型；
