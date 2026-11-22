@@ -261,4 +261,70 @@ void main() {
       expect(VideoFrameTimingAggregator().isJankyWindow(), isFalse);
     });
   });
+
+  group('VideoPresentStats（BUG-5200 原生出帧计数）', () {
+    VideoPresentStats stats(
+      int published,
+      int shown,
+      int lost,
+      int sum, [
+      int max = 0,
+    ]) {
+      return VideoPresentStats.fromMap(<String, int>{
+        'published': published,
+        'shown': shown,
+        'lost': lost,
+        'latencySumUs': sum,
+        'latencyMaxUs': max,
+      });
+    }
+
+    test('增量按窗口算，平均延迟只按被取走的帧算', () {
+      final VideoPresentStats d = stats(
+        124,
+        120,
+        3,
+        360000,
+        9000,
+      ).since(stats(100, 98, 1, 250000, 9000));
+      expect(d.published, 24);
+      expect(d.shown, 22);
+      expect(d.lost, 2);
+      expect(d.averageLatencyMs, closeTo(5.0, 1e-9));
+      expect(
+        d.describe(),
+        'published=24 shown=22 lost=2 latency_avg=5.0ms '
+        'latency_max_total=9.0ms',
+      );
+    });
+
+    test('换片后原生计数归零：不出负增量，按零基线算', () {
+      final VideoPresentStats d = stats(
+        10,
+        9,
+        0,
+        45000,
+      ).since(stats(500, 490, 7, 2000000));
+      expect(d.published, 10);
+      expect(d.shown, 9);
+      expect(d.lost, 0);
+    });
+
+    test('本窗口一帧都没取走：平均延迟写 -，不除零', () {
+      final VideoPresentStats d = stats(
+        5,
+        3,
+        0,
+        900,
+      ).since(stats(5, 3, 0, 900));
+      expect(d.averageLatencyMs, isNull);
+      expect(d.describe(), contains('latency_avg=-ms'));
+    });
+
+    test('缺字段按 0', () {
+      final VideoPresentStats s = VideoPresentStats.fromMap(<String, int>{});
+      expect(s.published, 0);
+      expect(s.latencyMaxUs, 0);
+    });
+  });
 }

@@ -175,6 +175,10 @@ if ($Steps -contains 'patch') {
   # window resize before any frame was presented no longer blocks the platform
   # thread for the 100 ms resize timeout (startup window placement).
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-resize-before-first-frame.patch')
+  # Applies on top of all of the above (embedder API + Windows texture
+  # registrar): external texture frames are marked and redrawn on the raster
+  # thread instead of waiting for the merged platform / UI thread (BUG-5200).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-texture-frame-raster-thread.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 
