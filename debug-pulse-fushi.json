@@ -1,12 +1,56 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T05:28:14Z",
+ "generatedAt": "2026-11-22T06:11:23Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6e9b2491365654977915fd2cc337dc953bb69477",
-  "seq": 31242
+  "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
+  "seq": 31256
  },
  "builds": [
+  {
+   "seq": 31242,
+   "version": "3.4.0",
+   "sha": "6e9b2491365654977915fd2cc337dc953bb69477",
+   "unknown": false,
+   "publishedAt": "2026-11-22T06:11:14Z",
+   "testflight": false,
+   "baseSeq": 31194,
+   "prs": [
+    4143,
+    4142,
+    4136,
+    4139,
+    4137,
+    4140,
+    4138,
+    4125,
+    4120
+   ],
+   "direct": [
+    {
+     "sha": "34de93b39ed3abc22f460ee66da917a7aa0547fe",
+     "subject": "chore(bugs): settle BUG number collisions on 55c7a325d"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971218"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971218"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971218"
+    }
+   }
+  },
   {
    "seq": 31194,
    "version": "3.4.0",
@@ -168,92 +212,38 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31044,
-   "version": "3.4.0",
-   "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
-   "unknown": false,
-   "publishedAt": "2026-11-22T00:09:24Z",
-   "testflight": false,
-   "baseSeq": 31026,
-   "prs": [
-    4099,
-    4094,
-    4098,
-    4092,
-    4095,
-    4097,
-    4096,
-    4093
-   ],
-   "direct": [
-    {
-     "sha": "e8d7878ace5b7ea77c19f84a328db82f19dbcad6",
-     "subject": "fix(ci): 回看早退守卫跟上 EOF 分层转调；扩展「自动字幕分句整合」开关搬进内置浏览器设置"
-    },
-    {
-     "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
-     "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "6e9b2491365654977915fd2cc337dc953bb69477",
-  "headSeq": 31242,
+  "headSha": "c1d0c1e0902a1611c8a043174216f0021530214f",
+  "headSeq": 31256,
   "prs": [
-   4143,
-   4142,
-   4136,
-   4139,
-   4137,
-   4140,
-   4138,
-   4125,
-   4120
+   4148,
+   4144
   ],
   "direct": [
    {
-    "sha": "34de93b39ed3abc22f460ee66da917a7aa0547fe",
-    "subject": "chore(bugs): settle BUG number collisions on 55c7a325d"
+    "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
+    "subject": "chore(bugs): settle BUG number collisions on 00145ef40"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971185"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397513"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971218"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971218"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44985971218"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
    }
   }
  },
@@ -292,78 +282,6 @@
    "mergedAt": "2026-11-22T01:12:49Z",
    "additions": 64,
    "deletions": 22,
-   "labels": []
-  },
-  "4092": {
-   "number": 4092,
-   "title": "fix(ci): galgame 守卫三条红（OCR 装配下沉 mining、夹具补总开关、停源守卫改结构判据）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 124,
-   "deletions": 20,
-   "labels": []
-  },
-  "4093": {
-   "number": 4093,
-   "title": "fix(ci): 查词弹窗 controller 改持窄接口，import 环 624 降到 622",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 141,
-   "deletions": 83,
-   "labels": []
-  },
-  "4094": {
-   "number": 4094,
-   "title": "fix(ci): 修 develop 全量的行为红（视频进度 sweep 多读、bug.dart 爬外层仓库、SRS 向量按 BUG-5052 重录等）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 178,
-   "deletions": 54,
-   "labels": []
-  },
-  "4095": {
-   "number": 4095,
-   "title": "fix(ci): 视频 / 网页播放器 / 源码锚点守卫 13 条红按根因修",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 247,
-   "deletions": 62,
-   "labels": []
-  },
-  "4096": {
-   "number": 4096,
-   "title": "fix(ci): 新合入代码改回共享组件 / token，UI 棘轮守卫转绿",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 133,
-   "deletions": 91,
-   "labels": []
-  },
-  "4097": {
-   "number": 4097,
-   "title": "fix(ci): 阅读器 / 制卡源码守卫跟上合法重构，引擎 shell 只剥外层 script 标签",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 182,
-   "deletions": 82,
-   "labels": []
-  },
-  "4098": {
-   "number": 4098,
-   "title": "fix(ci): 页面 widget 红——遥控查词词典仓库未就绪不再抛错，测试替身 / 菜单判据跟上合法改动",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:42:56Z",
-   "additions": 74,
-   "deletions": 27,
-   "labels": []
-  },
-  "4099": {
-   "number": 4099,
-   "title": "fix(test): wight-mac 上 4 个 dist 伪红按根因修",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-21T22:58:43Z",
-   "additions": 115,
-   "deletions": 7,
    "labels": []
   },
   "4101": {
@@ -724,6 +642,24 @@
    "mergedAt": "2026-11-22T04:38:50Z",
    "additions": 5500,
    "deletions": 438,
+   "labels": []
+  },
+  "4144": {
+   "number": 4144,
+   "title": "feat(privacy): 作品上锁 + 隐私统一入口（私密 / 上锁分级 + NSFW）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T05:38:39Z",
+   "additions": 7230,
+   "deletions": 1101,
+   "labels": []
+  },
+  "4148": {
+   "number": 4148,
+   "title": "style(tool): dart format heavy_lease.dart，修 develop 格式检查红",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T05:40:08Z",
+   "additions": 6,
+   "deletions": 4,
    "labels": []
   }
  }
