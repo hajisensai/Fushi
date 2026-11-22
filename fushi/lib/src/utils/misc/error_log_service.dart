@@ -719,7 +719,17 @@ String? localizeAnkiMineError(String? code) {
 ///   `card_overwritten`、且 `record=false`（覆盖不计入制卡统计）。此前 reader/video/
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
 ///   + 不记账），一并收口于此。
-({String message, bool success, bool record, MineToastStatus status})
+///
+/// [detail]：制卡结果卡第二行、状态标题后面的**短说明**（用户 2026-11-22 重设计：卡片
+/// 第一行是词、第二行「已制卡 · 日语::挖矿」）——成功给牌组名，有缺失给缺的原因，
+/// 重复给「本次未导出」，待写入复习给牌组名；null = 没有更短的说法，卡片用 [message]。
+({
+  String message,
+  String? detail,
+  bool success,
+  bool record,
+  MineToastStatus status,
+})
 describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
   switch (outcome.result) {
     case MineResult.success:
@@ -742,8 +752,14 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
         if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
         if (hasNotice) notice,
       ].join(' ');
+      final String detail = <String>[
+        if (!hasAudioWarning && !hasNotice && deckName.isNotEmpty) deckName,
+        if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
+        if (hasNotice) notice,
+      ].join(' ');
       return (
         message: message,
+        detail: detail.isEmpty ? null : detail,
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
@@ -758,6 +774,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.duplicate:
       return (
         message: t.card_duplicate,
+        detail: t.card_notice_detail_not_exported,
         success: false,
         record: false,
         status: MineToastStatus.duplicate,
@@ -765,6 +782,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.notConfigured:
       return (
         message: t.card_export_not_configured,
+        detail: null,
         success: false,
         record: false,
         status: MineToastStatus.failed,
@@ -782,6 +800,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
             : t.srs_mining_background_queued(
                 deck: queuedDeck.isEmpty ? t.srs_mining_target_srs : queuedDeck,
               ),
+        detail: queuedDeck == null || queuedDeck.isEmpty ? null : queuedDeck,
         success: true,
         record: !overwrite,
         status: MineToastStatus.queued,
@@ -789,6 +808,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.error:
       return (
         message: logMineFailure(outcome),
+        detail: null,
         success: false,
         record: false,
         status: MineToastStatus.failed,

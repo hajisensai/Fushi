@@ -59,7 +59,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
           } catch (_) {}
           final String message = t.card_export_failed_detail(reason: '$error');
           if (retry != null) {
-            _showMineOsd(message, MineToastStatus.failed, null, retry);
+            _showMineOsd(message, MineToastStatus.failed, retry: retry);
           } else {
             _showOsd(message, severity: ToastSeverity.error);
           }
@@ -168,14 +168,14 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             final bool mineBadgeShown =
                 _minesInFlight.value > 0 || _stagedMineCount.value > 0;
             final ColorScheme cs = _videoChromeColorScheme(context);
-            return Align(
+            // 跟着顶栏显隐上下（[_followTopChrome]）；制卡队列角标在时让到它下面一格。
+            return _followTopChrome(
+              (BuildContext context, double top) => Align(
               alignment: Alignment.topRight,
               child: Padding(
                 padding: EdgeInsets.only(
                   right: 16,
-                  top:
-                      _videoButtonBarHeight +
-                      (mineBadgeShown ? 48 : 8) * _videoUiScale,
+                  top: top + (mineBadgeShown ? 40 * _videoUiScale : 0),
                 ),
                 child: VideoLoopCueBadge(
                   active: controller.loopCurrentCue,
@@ -185,6 +185,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                   surfaceColor: _osdSurfaceColor(cs),
                   textColor: _osdTextColor(cs),
                 ),
+              ),
               ),
             );
           },
@@ -210,13 +211,11 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             final String label = staged > 0
                 ? t.video_mine_queue_badge(count: staged)
                 : t.video_mine_in_progress(count: inFlight);
-            return Align(
+            return _followTopChrome(
+              (BuildContext context, double top) => Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: EdgeInsets.only(
-                  right: 16,
-                  top: _videoButtonBarHeight + 8 * _videoUiScale,
-                ),
+                padding: EdgeInsets.only(right: 16, top: top),
                 child: Material(
                   key: const ValueKey<String>('video-mine-queue-badge'),
                   color: _osdSurfaceColor(cs),
@@ -261,6 +260,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                     ),
                   ),
                 ),
+              ),
               ),
             );
           },

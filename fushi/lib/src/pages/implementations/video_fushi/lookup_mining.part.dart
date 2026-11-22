@@ -1255,7 +1255,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
         );
         // 不陪等的制卡（[retry] 非空）：弹窗早关了，结果卡带「重试」。
         if (retry != null) {
-          _showMineOsd(message, MineToastStatus.failed, null, retry);
+          _showMineOsd(
+            message,
+            MineToastStatus.failed,
+            retry: retry,
+            term: expression,
+          );
         } else {
           _showOsd(message, severity: ToastSeverity.error);
         }
@@ -1317,8 +1322,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
     _showMineOsd(
       described.message,
       described.status,
-      undo,
-      described.status == MineToastStatus.failed ? retry : null,
+      undo: undo,
+      retry: described.status == MineToastStatus.failed ? retry : null,
+      term: expression,
+      detail: described.detail,
     );
     return result;
   }

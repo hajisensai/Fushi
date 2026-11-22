@@ -32,8 +32,6 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     double? progress,
     bool prominent = false,
     ToastSeverity severity = ToastSeverity.neutral,
-    MineToastStatus? mineStatus,
-    MineNoticeAction? mineAction,
   }) {
     if (!mounted) return;
     _osdNotifier.value = _VideoOsdMessage(
@@ -42,18 +40,12 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       progress: progress?.clamp(0.0, 1.0).toDouble(),
       prominent: prominent,
       severity: severity,
-      mineStatus: mineStatus,
-      mineAction: mineAction,
     );
     _osdTimer?.cancel();
     // TODO-971：突出 OSD（制卡成功）停留更久，普通通知仍 2.6s；带「撤销」按钮的
     // 再久一点，留出去点的时间。
     _osdTimer = Timer(
-      mineAction != null
-          ? kMineNoticeActionVisibleFor
-          : prominent
-          ? _kProminentOsdDuration
-          : const Duration(milliseconds: 2600),
+      prominent ? _kProminentOsdDuration : const Duration(milliseconds: 2600),
       () {
         _osdNotifier.value = null;
       },
@@ -61,51 +53,89 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   }
 
   /// 制卡结果的 OSD 出口：先过「制卡提示」开关（[MineNotices.shown]，与底部制卡
-  /// toast 同一个裁决点），再按结果语义着色、突出显示
-  /// （TODO-971：制卡成功居中放大、停留更久）。视频页所有制卡结果（成功 / 重复 /
-  /// 待发）都从这里出，不许直接 [_showOsd]（守卫
+  /// toast 同一个裁决点），再进左上角的制卡结果队列（[_mineNotices]，与底部 toast
+  /// 同一个 [FushiMineNoticeStack]：处理中原地变成结果、连续几张叠起来）。视频页所有
+  /// 制卡结果（成功 / 重复 / 待发 / 失败）都从这里出，不许直接 [_showOsd]（守卫
   /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
   ///
-  /// [undo]（反馈 JNyykxvuY9）：新制成功时卡片上出「撤销」，点下收起 OSD、删卡，
+  /// [term] / [reading] / [detail]：卡片第一行的词与第二行的短说明（见
+  /// [FushiMineNoticeCard]）。
+  ///
+  /// [undo]（反馈 JNyykxvuY9）：新制成功时卡片上出「撤销」，点下收起这张、删卡，
   /// 结局再用一条普通 OSD 说出来（视频页不走底部 toast，BUG-931）。
   ///
-  /// [retry]（反馈 OeS0m8tLHc）：不陪等的制卡失败时卡片上出「重试」，点下收起 OSD、
+  /// [retry]（反馈 OeS0m8tLHc）：不陪等的制卡失败时卡片上出「重试」，点下收起这张、
   /// 用那一次冻结的输入重跑。与 [undo] 互斥（成功才有撤销、失败才有重试）。
   void _showMineOsd(
     String message,
-    MineToastStatus status, [
+    MineToastStatus status, {
     MinedCardUndo? undo,
     VoidCallback? retry,
-  ]) {
+    String? term,
+    String? reading,
+    String? detail,
+  }) {
     if (!MineNotices.shown(status)) return;
-    _showOsd(
-      message,
-      prominent: true,
-      severity: mineToastSeverity(status),
-      mineStatus: status,
-      mineAction: retry != null
-          ? MineNoticeAction(
-              label: t.card_notice_retry,
-              onPressed: () {
-                _osdTimer?.cancel();
-                _osdNotifier.value = null;
-                retry();
-              },
-            )
-          : undo == null
-          ? null
-          : MineNoticeAction(
-              label: t.card_notice_undo,
-              onPressed: () async {
-                _osdTimer?.cancel();
-                _osdNotifier.value = null;
-                final MinedCardDeleteResult result = await undo.run();
-                _showOsd(
-                  minedCardDeleteResultText(result),
-                  severity: minedCardDeleteResultSeverity(result),
-                );
-              },
-            ),
+    if (!mounted) return;
+    _mineNotices.show(
+      MineNotice(
+        status: status,
+        message: message,
+        term: term,
+        reading: reading,
+        detail: detail,
+        action: retry != null
+            ? MineNoticeAction(label: t.card_notice_retry, onPressed: retry)
+            : undo == null
+            ? null
+            : MineNoticeAction(
+                label: t.card_notice_undo,
+                onPressed: () async {
+                  final MinedCardDeleteResult result = await undo.run();
+                  _showOsd(
+                    minedCardDeleteResultText(result),
+                    severity: minedCardDeleteResultSeverity(result),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  /// 顶部浮层（OSD、制卡结果、右上角角标、字幕转文字进度卡）离安全区顶边多远：
+  /// 顶栏显示时落在顶栏下沿下方，收起时贴到安全区顶端（用户 2026-11-22：此前恒为
+  /// 「顶栏高 + 8」，顶栏收起后照样空着那段）。与底部 toast 同一个纯函数
+  /// [noticeTopOffset]；顶栏是 media_kit 内部控件包不进 [FushiNoticeObstacle]，这里
+  /// 给出合成的顶栏矩形与显隐进度（[presence] 0..1）。
+  double _videoTopChromeInset(double presence) => noticeTopOffset(
+    fallback: kNoticeChromeGap * _videoUiScale,
+    obstacles: <NoticeObstacle>[
+      (
+        edge: NoticeObstacleEdge.top,
+        rect: Rect.fromLTWH(0, 0, 1, _videoButtonBarHeight),
+        presence: presence,
+      ),
+    ],
+    laneLeft: 0,
+    laneRight: 1,
+    gap: 8 * _videoUiScale,
+  );
+
+  /// 跟着顶栏显隐算顶部浮层的上边距：显隐进度与控制条同速过渡
+  /// （[_videoControlsTransitionDuration]），浮层随顶栏平滑上下，不跳。
+  Widget _followTopChrome(
+    Widget Function(BuildContext context, double top) builder,
+  ) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _videoControlsVisible,
+      builder: (BuildContext context, bool visible, Widget? _) =>
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: visible ? 1 : 0),
+            duration: _videoControlsTransitionDuration,
+            curve: FushiMotion.standard,
+            builder: (BuildContext context, double presence, Widget? _) =>
+                builder(context, _videoTopChromeInset(presence)),
+          ),
     );
   }
 
@@ -331,53 +361,80 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     );
   }
 
-  /// mpv 式左上角 OSD 通知层。监听 [_osdNotifier]，非空时淡入一条圆角半透明提示，
-  /// 2.6s 后自动淡出。[IgnorePointer] 确保它从不拦截点击（单击暂停 / 拖放 / 字幕
-  /// 查词都不受影响）——唯一例外是带「撤销」的制卡结果卡。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
+  /// mpv 式左上角 OSD 通知层。普通 OSD（监听 [_osdNotifier]）淡入一条圆角半透明
+  /// 提示，2.6s 后自动淡出，[IgnorePointer]，从不拦截点击（单击暂停 / 拖放 / 字幕
+  /// 查词都不受影响）。其下是制卡结果队列（[_mineNotices]，小号卡）：只有卡片本身
+  /// 吃指针（撤销 / 重试 / 悬停暂停）。整层跟着顶栏显隐上下（[_followTopChrome]），
+  /// 窗口与全屏复用。
   Widget _buildOsdOverlay() {
     return Positioned.fill(
       child: SafeArea(
-        child: ValueListenableBuilder<_VideoOsdMessage?>(
-          valueListenable: _osdNotifier,
-          // 只有带「撤销」的制卡结果卡接收指针（且只有卡片那一块：外层 Align 不拦），
-          // 其余 OSD 照旧从不拦截点击。
-          builder: (BuildContext _, _VideoOsdMessage? osd, __) {
-            return IgnorePointer(
-              ignoring: osd?.mineAction == null,
-              child: AnimatedSwitcher(
-                // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
-                duration: einkSafeDuration(
-                  context,
-                  const Duration(milliseconds: 180),
-                ),
-                // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角锚点由
-                // 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  return FadeTransition(
-                    opacity: CurvedAnimation(
-                      parent: animation,
-                      curve: FushiMotion.enter,
-                      reverseCurve: FushiMotion.exit,
-                    ),
-                    child: ScaleTransition(
-                      alignment: Alignment.topLeft,
-                      scale: Tween<double>(begin: 0.86, end: 1).animate(
-                        CurvedAnimation(
-                          parent: animation,
-                          curve: FushiMotion.release,
-                          reverseCurve: FushiMotion.exit,
+        child: _followTopChrome(
+          (BuildContext context, double top) => Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: EdgeInsets.only(left: 16, right: 16, top: top),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  ValueListenableBuilder<_VideoOsdMessage?>(
+                    valueListenable: _osdNotifier,
+                    builder: (BuildContext _, _VideoOsdMessage? osd, __) {
+                      return IgnorePointer(
+                        child: AnimatedSwitcher(
+                          // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
+                          duration: einkSafeDuration(
+                            context,
+                            const Duration(milliseconds: 180),
+                          ),
+                          // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角
+                          // 锚点由 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
+                          transitionBuilder:
+                              (Widget child, Animation<double> animation) {
+                                return FadeTransition(
+                                  opacity: CurvedAnimation(
+                                    parent: animation,
+                                    curve: FushiMotion.enter,
+                                    reverseCurve: FushiMotion.exit,
+                                  ),
+                                  child: ScaleTransition(
+                                    alignment: Alignment.topLeft,
+                                    scale: Tween<double>(begin: 0.86, end: 1)
+                                        .animate(
+                                          CurvedAnimation(
+                                            parent: animation,
+                                            curve: FushiMotion.release,
+                                            reverseCurve: FushiMotion.exit,
+                                          ),
+                                        ),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                          child: osd == null
+                              ? const SizedBox.shrink()
+                              : Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: _buildOsdCard(osd),
+                                ),
                         ),
-                      ),
-                      child: child,
+                      );
+                    },
+                  ),
+                  FushiMineNoticeStack(
+                    controller: _mineNotices,
+                    anchor: MineNoticeStackAnchor.top,
+                    compact: true,
+                    maxWidth: math.min(
+                      360,
+                      MediaQuery.sizeOf(context).width - 32,
                     ),
-                  );
-                },
-                child: osd == null
-                    ? const SizedBox.shrink()
-                    : _buildOsdCard(osd),
+                  ),
+                ],
               ),
-            );
-          },
+            ),
+          ),
         ),
       ),
     );
@@ -413,34 +470,11 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     );
   }
 
-  // 单条 OSD 卡片。普通通知沿用左上角小角标；TODO-971 突出变体（制卡成功）用更大字号、
-  // 更厚卡片、勾图标醒目区别于音量/亮度被动小角标。TODO-1254：突出变体不再居中
-  // （居中会遮挡画面、干扰观看），与被动 OSD 同锚点回归左上角，仅保留醒目卡片样式。
+  // 单条 OSD 卡片（不含定位：左上角锚点与避让顶栏的上边距由 [_buildOsdOverlay] 统一
+  // 给）。普通通知是小角标；TODO-971 突出变体用更大字号、更厚卡片醒目区别于音量 /
+  // 亮度被动小角标。TODO-1254：任何变体都不居中（居中会遮挡画面、干扰观看）。
+  // 制卡结果不走这里，走 [_mineNotices]。
   Widget _buildOsdCard(_VideoOsdMessage osd) {
-    final MineToastStatus? mineStatus = osd.mineStatus;
-    if (mineStatus != null) {
-      // 制卡结果：与底部制卡 toast 同一张 M3E 结果卡，锚点同普通 OSD（左上角、
-      // 顶栏下方）。key 带状态，连续两次同文案不同结果也会重新进场。
-      return Align(
-        alignment: Alignment.topLeft,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            top: _videoButtonBarHeight + 8 * _videoUiScale,
-          ),
-          child: FushiMineNoticeCard(
-            key: ValueKey<(String, MineToastStatus)>((osd.message, mineStatus)),
-            status: mineStatus,
-            message: osd.message,
-            visibleFor: osd.mineAction != null
-                ? kMineNoticeActionVisibleFor
-                : _kProminentOsdDuration,
-            action: osd.mineAction,
-            maxWidth: math.min(440, MediaQuery.sizeOf(context).width - 32),
-          ),
-        ),
-      );
-    }
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool prominent = osd.prominent;
     // 语义（severity）只落在前置图标上：OSD 压在画面上，整块饱和色既挡视线又和
@@ -452,14 +486,6 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     // 的勾。
     final IconData? leadingIcon =
         osd.icon ?? palette?.icon ?? (prominent ? Icons.check_circle : null);
-    const AlignmentGeometry alignment = Alignment.topLeft;
-    // OSD 顶部避让从顶栏几何推导（UI 巡检 PR-4）：顶栏高 = [_videoButtonBarHeight]
-    // （56×界面缩放）+ 8×缩放 呼吸间距——此前固定 52 不吃 [_videoUiScale]，缩放
-    // >1 时 OSD 压进顶栏按钮行。SafeArea 已在外层吃掉系统 inset。
-    final EdgeInsets outerPadding = EdgeInsets.only(
-      left: 16,
-      top: _videoButtonBarHeight + 8 * _videoUiScale,
-    );
     final double maxWidth = math.min(
       440,
       MediaQuery.sizeOf(context).width - 32,
@@ -468,21 +494,15 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       // Material：与底部 [FushiToast] 同一副 M3E 通知胶囊（全胶囊 + 语义图标色块），
       // 表面换成播放器浮层色，和顶栏 / 底栏胶囊同一族。M3E 进场：淡入 + 从 0.86
       // 弹到 1（见 [_buildOsdOverlay] 的 transitionBuilder）。
-      return Align(
-        alignment: alignment,
-        child: Padding(
-          padding: outerPadding,
-          child: FushiToastCapsule(
-            key: ValueKey<String>(osd.message),
-            message: osd.message,
-            icon: leadingIcon,
-            severity: osd.severity,
-            surfaceColor: _osdSurfaceColor(cs),
-            foregroundColor: _osdTextColor(cs),
-            progress: osd.progress,
-            maxWidth: maxWidth,
-          ),
-        ),
+      return FushiToastCapsule(
+        key: ValueKey<String>(osd.message),
+        message: osd.message,
+        icon: leadingIcon,
+        severity: osd.severity,
+        surfaceColor: _osdSurfaceColor(cs),
+        foregroundColor: _osdTextColor(cs),
+        progress: osd.progress,
+        maxWidth: maxWidth,
       );
     }
     const Color textColor = videoChromeNeutralForeground;
@@ -530,21 +550,15 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
         ),
       ],
     );
-    return Align(
-      alignment: alignment,
-      child: Padding(
-        padding: outerPadding,
-        child: ConstrainedBox(
-          key: ValueKey<String>(osd.message),
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
-          // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
-          child: VideoGlassHud(
-            radius: prominent ? 20 : 16,
-            padding: cardPadding,
-            child: content,
-          ),
-        ),
+    return ConstrainedBox(
+      key: ValueKey<String>(osd.message),
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
+      // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
+      child: VideoGlassHud(
+        radius: prominent ? 20 : 16,
+        padding: cardPadding,
+        child: content,
       ),
     );
   }
