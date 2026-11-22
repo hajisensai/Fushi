@@ -367,7 +367,10 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 4（嵌套并入的改名写入者）：按类判时改名写入者的旧上下文只换到归回证据撑得住的 seq 上界（`class.rs` 的
 ///   `Canon::dvv`，上界记在 `derive_cfg` 的 `alias::WRITER_UPTO_KEY`）。之前整段换：被并入两次的库里，中间那份库的
 ///   `{merged-…: n}` 把最初写入者名下 seq ≤ n、它其实没见过的写入判成已被覆盖（冲突变支配）。整层重建才写下上界。
-pub const CACHE_RULES: i64 = 4;
+/// - 5（BUG-5190 / HBK-AUDIT-203）：卡片标志按血统继承时，同一层几张前身都有记录的取生效写入最新的那张
+///   （`registers::cards_group` 的 `registers::later`）。之前取卡 ID 序在前的：按 4 物化过的库里这类后继卡的
+///   `flag` / `new_position` / 牌组……是按 ID 序继承的，原地重开与重建不同，要重建一次才换成新口径。
+pub const CACHE_RULES: i64 = 5;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -3347,10 +3350,16 @@ mod tests {
             );
         }
         // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
-        const ELSEWHERE: [(&str, i64); 1] = [(
-            "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
-            4,
-        )];
+        const ELSEWHERE: [(&str, i64); 2] = [
+            (
+                "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
+                4,
+            ),
+            (
+                "卡片标志同一层前身取最新写入（registers.rs 的 card_lineage_vectors_* 测试、sync_tests 的                  a_cache_with_card_flags_inherited_by_the_old_layer_rule_is_rebuilt_on_open）",
+                5,
+            ),
+        ];
         let latest = table
             .iter()
             .map(|r| r.8)
