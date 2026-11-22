@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/shell_style.dart' show shellShape;
@@ -60,6 +61,7 @@ class FushiPosterBlock extends StatelessWidget {
     this.blockSize = FushiCoverBlockSize.regular,
     this.padding = const EdgeInsets.all(22),
     this.hoverEnabled = true,
+    this.stretchContent = false,
     super.key,
   });
 
@@ -88,6 +90,11 @@ class FushiPosterBlock extends StatelessWidget {
   /// false = 不随悬停抬升 / 滑水印（块里有自己的可交互件、整块不是点按目标）。
   final bool hoverEnabled;
 
+  /// true = 前景内容拿到块的 minHeight（块被外层抬高时内容可以把多出的高度排进
+  /// 自己的版面，见 HomePosterSpread）；false（默认）= 内容高度放松到 0 起，块被
+  /// 抬高时多出的高度留在内容下面。宽度两种都放松、贴起始边。
+  final bool stretchContent;
+
   @override
   Widget build(BuildContext context) {
     final double? fixed = radius;
@@ -113,7 +120,11 @@ class FushiPosterBlock extends StatelessWidget {
             shape: shape,
             textDirection: Directionality.maybeOf(context),
           ),
+          // [stretchContent]：前景内容拿到块的 minHeight（loose Stack 会放松到
+          // 0）。宽度照旧放松、贴起始边（_PosterContentBox），与 loose Stack 的
+          // 横向版面一致。
           child: Stack(
+            fit: stretchContent ? StackFit.passthrough : StackFit.loose,
             children: <Widget>[
               if (watermark.isNotEmpty)
                 _PosterWatermark(
@@ -124,15 +135,17 @@ class FushiPosterBlock extends StatelessWidget {
                   start: watermarkStart,
                   shifted: hovering,
                 ),
-              Padding(
-                padding: padding,
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(color: colors.onContainer),
-                  child: IconTheme.merge(
-                    data: IconThemeData(color: colors.onContainer),
-                    // 子树（按钮 / 开关 / 胶囊 / 图表 / 弹层）取块自己的配色，
-                    // 不退回全局 primary / tertiary。
-                    child: FushiBlockColorScope(colors: colors, child: child),
+              _PosterContentBox(
+                child: Padding(
+                  padding: padding,
+                  child: DefaultTextStyle.merge(
+                    style: TextStyle(color: colors.onContainer),
+                    child: IconTheme.merge(
+                      data: IconThemeData(color: colors.onContainer),
+                      // 子树（按钮 / 开关 / 胶囊 / 图表 / 弹层）取块自己的配色，
+                      // 不退回全局 primary / tertiary。
+                      child: FushiBlockColorScope(colors: colors, child: child),
+                    ),
                   ),
                 ),
               ),
@@ -140,6 +153,63 @@ class FushiPosterBlock extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 色块前景内容的盒子：高度约束原样透传（含 minHeight），宽度放松到 0 起、按阅读
+/// 方向贴起始边——等于 loose Stack 的横向版面，只多保留了 minHeight。
+class _PosterContentBox extends SingleChildRenderObjectWidget {
+  // 外层 loose Stack（stretchContent = false）给的约束已经是 0 起，这里原样排。
+  const _PosterContentBox({required Widget super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPosterContentBox(textDirection: Directionality.maybeOf(context));
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPosterContentBox renderObject,
+  ) {
+    renderObject.textDirection = Directionality.maybeOf(context);
+  }
+}
+
+class _RenderPosterContentBox extends RenderShiftedBox {
+  _RenderPosterContentBox({TextDirection? textDirection})
+    : _textDirection = textDirection,
+      super(null);
+
+  TextDirection? _textDirection;
+  set textDirection(TextDirection? v) {
+    if (v == _textDirection) return;
+    _textDirection = v;
+    markNeedsLayout();
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final RenderBox? kid = child;
+    if (kid == null) return constraints.smallest;
+    return constraints.constrain(
+      kid.getDryLayout(constraints.copyWith(minWidth: 0)),
+    );
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? kid = child;
+    if (kid == null) {
+      size = constraints.smallest;
+      return;
+    }
+    kid.layout(constraints.copyWith(minWidth: 0), parentUsesSize: true);
+    size = constraints.constrain(kid.size);
+    final bool rtl = _textDirection == TextDirection.rtl;
+    (kid.parentData! as BoxParentData).offset = Offset(
+      rtl ? size.width - kid.size.width : 0,
+      0,
     );
   }
 }

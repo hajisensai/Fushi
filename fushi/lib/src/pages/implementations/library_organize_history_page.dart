@@ -5,6 +5,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart'
     show OrganizeProposalKind;
+import 'package:fushi_engine/media/library_agent/library_changeset.dart'
+    show kLibraryChangesetTrigger;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -230,10 +232,17 @@ class _LibraryOrganizeHistoryPageState
         .where((CollectionShelfDomain d) => d.name == run.run.domain)
         .firstOrNull;
     final String summary = t.library_organize_run_summary(
-      library: domain == null ? run.run.domain : _domainLabel(domain),
-      trigger: run.run.trigger == 'auto'
-          ? t.library_organize_trigger_auto
-          : t.library_organize_trigger_manual,
+      // 'all'：AI 助手的一份变更集跨了几个库页（library.changes.apply）。
+      library: domain != null
+          ? _domainLabel(domain)
+          : run.run.domain == 'all'
+          ? t.library_organize_domain_all
+          : run.run.domain,
+      trigger: switch (run.run.trigger) {
+        'auto' => t.library_organize_trigger_auto,
+        kLibraryChangesetTrigger => t.library_organize_trigger_agent,
+        _ => t.library_organize_trigger_manual,
+      },
       n: run.changes.length,
     );
     final bool anyLive = run.changes.any(
@@ -452,6 +461,14 @@ String libraryOrganizeChangeTitle(
       name: c.collectionName,
       n: n,
     ),
+    // 改名：记录挂在新名字上，原名在 payload.from（复用建议卡的「把 X 改名为 Y」）。
+    'rename' => t.library_organize_proposal_rename(
+      name: switch (payload['from']) {
+        final String from => from,
+        _ => '?',
+      },
+      newName: c.collectionName,
+    ),
     _ => t.library_organize_change_tag(name: c.collectionName, n: n),
   };
 }
@@ -463,6 +480,7 @@ IconData libraryOrganizeChangeIcon(String kind) => switch (kind) {
   'merge' => FushiIcons.merge,
   'evict' => FushiIcons.remove,
   'move' => FushiIcons.move,
+  'rename' => FushiIcons.rename,
   _ => FushiIcons.tag,
 };
 

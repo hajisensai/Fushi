@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 供 widget 层用 i18n 格式化（保持纯函数可单测、跨 17 语言一致）。
 ///
 /// v92 起事件流 = legacy `activity_events` 行（v92 前历史 + 导入事件）∪ 由
-/// `study_segments` 映射出的段行（`segmentsAsActivityRows`，一段 ≤ 1 小时、一坐
+/// `study_segments` 映射出的段行（`StatFacts.activityRows`，一段 ≤ 1 小时、一坐
 /// 多段）。故 session 数不能直接取行数——用 [kActivitySessionGap] 时间间隔归并
 /// （>gap 才算新 session），两侧统一。
 

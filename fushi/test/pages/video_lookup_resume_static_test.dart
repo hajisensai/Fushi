@@ -134,7 +134,7 @@ void main() {
     test('_lookupAt 仅在 isPlaying 时暂停并置位 _pausedForLookup', () {
       final String lookupAt = _functionSource(
         page,
-        'Future<void> _lookupAt(',
+        'Future<int> _lookupAt(',
         'void _pauseForLookup() {',
       );
       // 浮层与副屏查词页共用唯一暂停入口 `_pauseForLookup`（副屏路由前不暂停：

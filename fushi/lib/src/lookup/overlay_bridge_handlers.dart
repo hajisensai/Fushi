@@ -561,7 +561,13 @@ Future<Map<String, Object?>> _mineEntry(
 ///   浮窗的 ➕→✓ 已经表达了成功。这条路径宿主不弹结果 toast，提示不回浮窗就无处可见（BUG-4287）。
 Map<String, Object?> overlayMineReply(
   MineOutcome outcome,
-  ({String message, bool success, bool record, MineToastStatus status})
+  ({
+    String message,
+    String? detail,
+    bool success,
+    bool record,
+    MineToastStatus status,
+  })
   described,
 ) {
   final MinePopupResult reply = described.success

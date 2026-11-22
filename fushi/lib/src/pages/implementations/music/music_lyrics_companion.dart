@@ -175,9 +175,16 @@ Future<void> handleMusicCompanionCommand(
 /// tab when the companion is in use (true: skip the in-page popup), else
 /// false and the page shows its popup as on a single screen. Mining sentence
 /// = the line.
-Future<bool> routeMusicLyricLookup(KaraokeLookupHit hit) =>
-    routeCompanionLookup(
-      text: hit.lineText,
-      charIndex: hit.charIndexInLine,
-      sentence: hit.lineText,
-    );
+///
+/// [text] / [charIndex] override the query (default: the hit's line and
+/// character) — the controller lookup mode's right-end cap sends the line cut
+/// after the capped word; the mining sentence stays the whole line.
+Future<bool> routeMusicLyricLookup(
+  KaraokeLookupHit hit, {
+  String? text,
+  int? charIndex,
+}) => routeCompanionLookup(
+  text: text ?? hit.lineText,
+  charIndex: charIndex ?? hit.charIndexInLine,
+  sentence: hit.lineText,
+);

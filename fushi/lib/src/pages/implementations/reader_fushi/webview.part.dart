@@ -2504,7 +2504,10 @@ updateLive: function(patch) {
               hoverSettle = ReaderSelectionScripts.hoverLookupSettledInvocation(
                 payload,
               );
-              await _handleTextSelected(ReaderSelectionData.fromJson(payload));
+              await _handleTextSelected(
+                ReaderSelectionData.fromJson(payload),
+                controllerLookup: payload['controllerLookup'],
+              );
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'ReaderFushi.onTextSelected',

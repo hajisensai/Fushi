@@ -100,6 +100,9 @@ void main() {
       // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
       // _handleGamepadButton → _executeShortcut。
       'lib/src/pages/implementations/srs/srs_review_page.dart',
+      // 手柄查词模式（ShortcutScope.controllerLookup）的执行体：模式激活时
+      // `resolveGamepad(scope: controllerLookup)` → `_runAction`。
+      'lib/src/second_screen/input/controller_lookup_mode.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

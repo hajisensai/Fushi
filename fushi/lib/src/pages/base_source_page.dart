@@ -18,6 +18,7 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
@@ -445,19 +446,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Future<int> lookupMatchedCharCount(
     String term,
     List<FushiRubySpan> rubySpans,
-  ) async {
-    final DictionarySearchResult result = await appModel
-        .searchDictionaryWithRuby(
-          searchTerm: term,
-          rubySpans: rubySpans,
-          overrideMaximumTerms: appModel.maximumTerms,
-        );
-    return lookupHighlightCharCount(
-      result: result,
-      searchTerm: term,
-      language: JapaneseLanguage.instance,
-    );
-  }
+  ) => measureLookupMatchUnits(appModel, term, rubySpans: rubySpans);
 
   Future<int> searchDictionaryResult({
     required String searchTerm,

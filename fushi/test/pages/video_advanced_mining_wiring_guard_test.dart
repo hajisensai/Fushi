@@ -177,7 +177,7 @@ void main() {
     expect(body, contains('controller.seekMs(lookupMs)'));
     // 查词那一刻记下位置。
     expect(
-      maskComments(methodBody(src, 'Future<void> _lookupAt(')),
+      maskComments(methodBody(src, 'Future<int> _lookupAt(')),
       contains('_lastLookupPositionMs = controller.positionMs;'),
     );
   });

@@ -132,4 +132,59 @@ void main() {
       expect(HomePanelFlow.debugColumnChoices, before + 1);
     });
   });
+
+  group('HomePosterSpread', () {
+    Widget box(String key, double h) =>
+        SizedBox(key: ValueKey<String>(key), height: h);
+
+    testWidgets('拉到行高时多出的高度插在 split 前：前面贴顶、后面贴底', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: HomePosterRows(
+              gap: 10,
+              minColumnWidth: 100,
+              children: <Widget>[
+                HomePosterSpread(
+                  split: 1,
+                  gap: 12,
+                  children: <Widget>[box('a', 40), box('b', 30)],
+                ),
+                box('tall', 200),
+              ],
+            ),
+          ),
+        ),
+      );
+      final Rect a = tester.getRect(find.byKey(const ValueKey<String>('a')));
+      final Rect b = tester.getRect(find.byKey(const ValueKey<String>('b')));
+      expect(a.top, 0);
+      expect(b.bottom, 200, reason: '贴底：同行最高块 200');
+      expect(b.top, 170);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('自然高度就是最高时等同普通竖排（gap 间隔）', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 300,
+              child: HomePosterSpread(
+                split: 1,
+                gap: 12,
+                children: <Widget>[box('a', 40), box('b', 30)],
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.getRect(find.byKey(const ValueKey<String>('b'))).top, 52);
+      expect(tester.getSize(find.byType(HomePosterSpread)).height, 82);
+    });
+  });
 }

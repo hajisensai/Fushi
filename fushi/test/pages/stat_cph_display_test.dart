@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 
@@ -98,6 +99,26 @@ void main() {
     expect(statBookCphOf(daily, (String k) => k == '2026-09-10'), isNull);
   });
 
+  test('statBookCphOfTotals：阅读域按日合计版本与 statBookCphOf 同口径', () {
+    // 总览拿的是加载时算好的阅读域按日合计（StatFacts.bookDayTotals）。
+    const List<StatDayTotal> bookDays = <StatDayTotal>[
+      StatDayTotal(dateKey: '2026-09-12', chars: 8000, ms: 3600000),
+      StatDayTotal(dateKey: '2026-09-11', chars: 2000, ms: 3600000),
+    ];
+    expect(
+      statBookCphOfTotals(bookDays, (String k) => k == '2026-09-12'),
+      t.stat_speed_cph(n: '8000'),
+    );
+    expect(
+      statBookCphOfTotals(bookDays, (String _) => true),
+      t.stat_speed_cph(n: '5000'),
+    );
+    expect(
+      statBookCphOfTotals(bookDays, (String k) => k == '2026-09-10'),
+      isNull,
+    );
+  });
+
   test('会话行量纲末尾带速度；样本不足时不带', () {
     final String withSpeed = formatStatSessionMeta(
       _session(ms: 20 * 60000, chars: 3000),
@@ -116,7 +137,11 @@ void main() {
     final String center = File(
       'lib/src/pages/implementations/statistics_center_page.dart',
     ).readAsStringSync();
-    expect(center, contains('statBookCphOf(_daily, range.contains)'));
+    // 总览用加载时 Rust 算好的阅读域按日合计（BUG-4960），口径同 statBookCphOf。
+    expect(
+      center,
+      contains('statBookCphOfTotals(_bookDayTotals, range.contains)'),
+    );
     expect(center, contains('label: t.stat_reading_speed'));
 
     final String reading = File(
