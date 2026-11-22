@@ -1,28 +1,74 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:fushi_engine/media/video/video_fingerprint_store.dart';
+import 'package:meta/meta.dart';
 
 /// 对 [absolutePath]（调用前 stat 得到 [stat]）算全文件身份；返回前须确认文件状态
 /// 未变，变了就抛 [FileSystemException]。
+///
+/// [cancel] 被取消后应尽快停下、不再读文件，并抛 [VideoFingerprintCancelledException]
+/// （已经算完的照常返回结果）。返回的 Future 结束即表示这次计算不再碰文件——
+/// [VideoSourceFingerprint] 靠它兑现「取消返回后不再开着视频文件」。
 typedef VideoFingerprintCompute =
-    Future<String> Function(String absolutePath, FileStat stat);
+    Future<String> Function(
+      String absolutePath,
+      FileStat stat,
+      VideoFingerprintCancellation cancel,
+    );
+
+/// 指纹计算的取消信号（拍板台 host-stop-fingerprint-cancel）：互联 host 停机时用它打断
+/// 自己发起的、正在整文件读盘的指纹计算，停机不必等几 GB 的片子算完。
+final class VideoFingerprintCancellation {
+  final Completer<void> _cancelled = Completer<void>();
+
+  bool get isCancelled => _cancelled.isCompleted;
+
+  /// 取消时完成（不会出错）。
+  Future<void> get whenCancelled => _cancelled.future;
+
+  /// 取消（幂等）。
+  void cancel() {
+    if (!_cancelled.isCompleted) _cancelled.complete();
+  }
+}
+
+/// 调用方经 [VideoFingerprintCancellation] 撤走了：这次没有指纹。
+final class VideoFingerprintCancelledException implements Exception {
+  const VideoFingerprintCancelledException(this.path);
+
+  final String path;
+
+  @override
+  String toString() =>
+      'VideoFingerprintCancelledException: fingerprint cancelled ($path)';
+}
 
 /// 同一文件、同一状态正在算的那一次。
 final class _PendingFingerprint {
-  _PendingFingerprint(this.stat, this.digest);
+  _PendingFingerprint(this.stat);
 
   final FileStat stat;
-  final Future<String> digest;
+
+  /// 打断底层计算：最后一个可取消的等待方撤走、且没有不可取消的等待方时才置位。
+  final VideoFingerprintCancellation abort = VideoFingerprintCancellation();
+
+  /// 还在等这次结果的调用方数（不可取消的等待方永不减，所以有它在就不会被打断）。
+  int waiters = 0;
+
+  /// 计算 + 记缓存 + 落盘全部结束（成败都算）；[VideoSourceFingerprint.fingerprint]
+  /// 里由 `_run` 赋值。
+  late final Future<String> digest;
 }
 
 /// Full-file identity for card sources. The library UID alone is name-derived.
 class VideoSourceFingerprint {
   VideoSourceFingerprint({
     this.maxCachedFiles = 128,
-    VideoFingerprintCompute compute = _hashInIsolate,
+    VideoFingerprintCompute compute = hashInIsolate,
   }) : assert(maxCachedFiles > 0),
        _compute = compute;
 
@@ -46,31 +92,89 @@ class VideoSourceFingerprint {
       path.isNotEmpty &&
       !RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(path);
 
-  Future<String> fingerprint(String path) async {
+  /// [path] 当前状态下的全文件指纹：缓存命中直接答，否则算（同一文件同一状态的并发
+  /// 调用共用一次计算，BUG-4783）。
+  ///
+  /// 给了 [cancel] 的调用可以撤走（拍板台 host-stop-fingerprint-cancel）：取消后本调用抛
+  /// [VideoFingerprintCancelledException]。共用的那次计算只有在**所有**等待方都撤走时才被
+  /// 打断（不带 [cancel] 的等待方——如本机制卡——永远不撤，有它在就照常算完）；撤走的是
+  /// 最后一个等待方时，本调用等底层计算真正停下（不再开着文件、落盘也收尾）才结束，其余
+  /// 情况立即结束。打断后同一文件的新请求重新开算，不并进正在停下的那一次。
+  Future<String> fingerprint(
+    String path, {
+    VideoFingerprintCancellation? cancel,
+  }) async {
+    if (cancel?.isCancelled ?? false) {
+      throw VideoFingerprintCancelledException(path);
+    }
     final (String absolutePath, FileStat stat) = await _statLocal(path);
     final String? known = await _knownFor(absolutePath, stat);
     if (known != null) return known;
-    final _PendingFingerprint? running = _inFlight[absolutePath];
-    if (running != null && _sameFileState(stat, running.stat)) {
-      return running.digest;
+    if (cancel?.isCancelled ?? false) {
+      throw VideoFingerprintCancelledException(absolutePath);
     }
-    final _PendingFingerprint pending = _PendingFingerprint(
-      stat,
-      _compute(absolutePath, stat).then((String digest) async {
-        _remember(absolutePath, stat, digest);
-        await store?.put(absolutePath, stat, digest);
-        return digest;
-      }),
-    );
-    _inFlight[absolutePath] = pending;
+    _PendingFingerprint? pending = _inFlight[absolutePath];
+    if (pending == null || !_sameFileState(stat, pending.stat)) {
+      final _PendingFingerprint started = _PendingFingerprint(stat);
+      _inFlight[absolutePath] = started;
+      started.digest = _run(absolutePath, started);
+      // 等待方全部撤走后，被打断的那次以取消告终、可能没人再接它的错误。
+      started.digest.ignore();
+      pending = started;
+    }
+    return _join(absolutePath, pending, cancel);
+  }
+
+  Future<String> _run(String absolutePath, _PendingFingerprint pending) async {
     try {
-      return await pending.digest;
+      final String digest = await _compute(
+        absolutePath,
+        pending.stat,
+        pending.abort,
+      );
+      _remember(absolutePath, pending.stat, digest);
+      await store?.put(absolutePath, pending.stat, digest);
+      return digest;
     } finally {
       // 算的期间文件变了时，新状态的那一次已替换掉本条，不能把它摘掉。
       if (identical(_inFlight[absolutePath], pending)) {
         _inFlight.remove(absolutePath);
       }
     }
+  }
+
+  /// 作为一个等待方加入 [pending]；可取消的等待方撤走规则见 [fingerprint]。
+  Future<String> _join(
+    String absolutePath,
+    _PendingFingerprint pending,
+    VideoFingerprintCancellation? cancel,
+  ) {
+    pending.waiters++;
+    if (cancel == null) return pending.digest;
+    final Completer<String> result = Completer<String>();
+    pending.digest.then<void>(
+      (String digest) {
+        if (!result.isCompleted) result.complete(digest);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) result.completeError(error, stack);
+      },
+    );
+    cancel.whenCancelled.then<void>((_) {
+      if (result.isCompleted) return;
+      if (--pending.waiters > 0) {
+        // 还有别人在等：计算照常继续（文件归他们），本调用立即撤走。
+        result.completeError(VideoFingerprintCancelledException(absolutePath));
+        return;
+      }
+      // 最后一个等待方：打断计算，并让新请求不再并进来；本调用等它真正停下，结果由
+      // 上面 digest 的监听带回（停下前恰好算完就照常给出指纹）。
+      pending.abort.cancel();
+      if (identical(_inFlight[absolutePath], pending)) {
+        _inFlight.remove(absolutePath);
+      }
+    });
+    return result.future;
   }
 
   /// 不算、只查：[path] 当前状态下已经算过（内存或落盘缓存）的指纹，没算过返回 null。
@@ -114,24 +218,63 @@ class VideoSourceFingerprint {
     }
   }
 
-  Future<bool> matches(String path, String expected) async =>
+  Future<bool> matches(
+    String path,
+    String expected, {
+    VideoFingerprintCancellation? cancel,
+  }) async =>
       RegExp(r'^[a-f0-9]{64}$').hasMatch(expected) &&
-      await fingerprint(path) == expected;
+      await fingerprint(path, cancel: cancel) == expected;
 
-  static Future<String> _hashInIsolate(String absolutePath, FileStat stat) =>
-      Isolate.run<String>(() async {
-        final File file = File(absolutePath);
-        // SHA-256 runs in native/fushi_compute (ffc_hash_sha256_*), same
-        // lowercase hex as before; sync reads are fine on this worker isolate.
-        final String hash = ffcSha256FileSync(absolutePath);
-        if (!_sameFileState(stat, await file.stat())) {
-          throw FileSystemException(
-            'Video changed while calculating identity',
-            absolutePath,
-          );
-        }
-        return hash;
-      });
+  /// 默认计算：后台 isolate 里原生整文件 SHA-256，取消经原生取消标志打断读盘循环
+  /// （每 1 MiB 查一次，停下即关文件）。
+  @visibleForTesting
+  static Future<String> hashInIsolate(
+    String absolutePath,
+    FileStat stat,
+    VideoFingerprintCancellation cancel,
+  ) async {
+    if (cancel.isCancelled) {
+      throw VideoFingerprintCancelledException(absolutePath);
+    }
+    final FfcCancelFlag flag = FfcCancelFlag.create();
+    unawaited(cancel.whenCancelled.then<void>((_) => flag.cancel()));
+    try {
+      final String? hash = await _hashWorker(absolutePath, stat, flag.address);
+      if (hash == null) throw VideoFingerprintCancelledException(absolutePath);
+      return hash;
+    } finally {
+      // worker 已返回、原生调用已结束，标志不再被读；之后的 cancel() 是空操作。
+      flag.dispose();
+    }
+  }
+
+  /// 单独一个函数起 worker：闭包只捕获这里的三个可发送参数（与 [hashInIsolate] 里
+  /// 持有原生指针的标志对象不共用闭包上下文）。被取消返回 null。
+  static Future<String?> _hashWorker(
+    String absolutePath,
+    FileStat stat,
+    int cancelAddress,
+  ) => Isolate.run<String?>(() async {
+    final String hash;
+    try {
+      // SHA-256 runs in native/fushi_compute (ffc_hash_sha256_file_cancellable),
+      // same lowercase hex as before; sync reads are fine on this worker isolate.
+      hash = ffcSha256FileSync(
+        absolutePath,
+        cancel: FfcCancelFlag.attach(cancelAddress),
+      );
+    } on FfcCancelledException {
+      return null;
+    }
+    if (!_sameFileState(stat, await File(absolutePath).stat())) {
+      throw FileSystemException(
+        'Video changed while calculating identity',
+        absolutePath,
+      );
+    }
+    return hash;
+  });
 
   static bool _sameFileState(FileStat a, FileStat b) =>
       a.type == FileSystemEntityType.file &&

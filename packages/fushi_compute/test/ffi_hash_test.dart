@@ -166,40 +166,43 @@ void main() {
     expect(ffcCrc32FileSync(file.path), ffcCrc32(data));
   });
 
-  test('ffcSha256FileSync with a cancel flag: unset hashes, set throws', () async {
-    final Directory dir = await Directory.systemTemp.createTemp('ffc-sha-c-');
-    addTearDown(() => dir.delete(recursive: true));
-    final File file = File('${dir.path}${Platform.pathSeparator}f.bin');
-    final Uint8List data = Uint8List(_chunk + 1);
-    _fill(data, 0, data.length);
-    await file.writeAsBytes(data);
-    final FfcCancelFlag flag = FfcCancelFlag.create();
-    addTearDown(flag.dispose);
-    expect(
-      ffcSha256FileSync(file.path, cancel: flag),
-      '20b5c5508abef0cfd3784d2e210388efaa6bf03f1584aa1e501691bb1807da7a',
-    );
-    // 另一个 isolate 按地址包住同一面标志：在那边置位，这边的调用就被取消。
-    final int address = flag.address;
-    await Isolate.run(() => FfcCancelFlag.attach(address).cancel());
-    expect(
-      () => ffcSha256FileSync(file.path, cancel: flag),
-      throwsA(isA<FfcCancelledException>()),
-    );
-    // 没给标志的调用不受影响。
-    expect(
-      ffcSha256FileSync(file.path),
-      '20b5c5508abef0cfd3784d2e210388efaa6bf03f1584aa1e501691bb1807da7a',
-    );
-    expect(
-      () => FfcCancelFlag.attach(address).dispose(),
-      throwsStateError,
-      reason: 'attach 出来的视图不持有内存',
-    );
-    flag.dispose();
-    flag.cancel(); // dispose 之后是空操作
-    expect(() => flag.address, throwsStateError);
-  });
+  test(
+    'ffcSha256FileSync with a cancel flag: unset hashes, set throws',
+    () async {
+      final Directory dir = await Directory.systemTemp.createTemp('ffc-sha-c-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = File('${dir.path}${Platform.pathSeparator}f.bin');
+      final Uint8List data = Uint8List(_chunk + 1);
+      _fill(data, 0, data.length);
+      await file.writeAsBytes(data);
+      final FfcCancelFlag flag = FfcCancelFlag.create();
+      addTearDown(flag.dispose);
+      expect(
+        ffcSha256FileSync(file.path, cancel: flag),
+        '20b5c5508abef0cfd3784d2e210388efaa6bf03f1584aa1e501691bb1807da7a',
+      );
+      // 另一个 isolate 按地址包住同一面标志：在那边置位，这边的调用就被取消。
+      final int address = flag.address;
+      await Isolate.run(() => FfcCancelFlag.attach(address).cancel());
+      expect(
+        () => ffcSha256FileSync(file.path, cancel: flag),
+        throwsA(isA<FfcCancelledException>()),
+      );
+      // 没给标志的调用不受影响。
+      expect(
+        ffcSha256FileSync(file.path),
+        '20b5c5508abef0cfd3784d2e210388efaa6bf03f1584aa1e501691bb1807da7a',
+      );
+      expect(
+        () => FfcCancelFlag.attach(address).dispose(),
+        throwsStateError,
+        reason: 'attach 出来的视图不持有内存',
+      );
+      flag.dispose();
+      flag.cancel(); // dispose 之后是空操作
+      expect(() => flag.address, throwsStateError);
+    },
+  );
 
   test('whole-file hashes throw FileSystemException on unreadable paths', () {
     final String missing =

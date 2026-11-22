@@ -109,10 +109,9 @@ final class _HashBindings {
         'ffc_hash_sha256_file',
       ),
       sha256FileCancellable = lib
-          .lookupFunction<
-            _Sha256FileCancellableC,
-            _Sha256FileCancellableDart
-          >('ffc_hash_sha256_file_cancellable'),
+          .lookupFunction<_Sha256FileCancellableC, _Sha256FileCancellableDart>(
+            'ffc_hash_sha256_file_cancellable',
+          ),
       // 只做一次原子存储，可以是叶调用。
       cancel = lib.lookupFunction<_CancelC, _CancelDart>(
         'ffc_hash_cancel',

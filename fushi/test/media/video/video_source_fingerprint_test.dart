@@ -74,10 +74,15 @@ void main() {
         final Completer<String> gate = Completer<String>();
         final List<String> computed = <String>[];
         final VideoSourceFingerprint hashes = VideoSourceFingerprint(
-          compute: (String absolutePath, FileStat stat) {
-            computed.add(absolutePath);
-            return gate.future;
-          },
+          compute:
+              (
+                String absolutePath,
+                FileStat stat,
+                VideoFingerprintCancellation cancel,
+              ) {
+                computed.add(absolutePath);
+                return gate.future;
+              },
         );
         final Future<String> first = hashes.fingerprint(file.path);
         final Future<String> second = hashes.fingerprint(file.path);
@@ -101,11 +106,16 @@ void main() {
       await withInstantStat(file, () async {
         final List<Completer<String>> runs = <Completer<String>>[];
         final VideoSourceFingerprint hashes = VideoSourceFingerprint(
-          compute: (String absolutePath, FileStat stat) {
-            final Completer<String> run = Completer<String>();
-            runs.add(run);
-            return run.future;
-          },
+          compute:
+              (
+                String absolutePath,
+                FileStat stat,
+                VideoFingerprintCancellation cancel,
+              ) {
+                final Completer<String> run = Completer<String>();
+                runs.add(run);
+                return run.future;
+              },
         );
         final Future<String> first = hashes.fingerprint(file.path);
         final Future<String> second = hashes.fingerprint(file.path);
@@ -130,6 +140,196 @@ void main() {
         runs.last.complete('b' * 64);
         expect(await retry, 'b' * 64);
       });
+    });
+  });
+
+  group('拍板台 host-stop-fingerprint-cancel：可取消的等待方', () {
+    Future<void> withInstantStat(
+      File file,
+      Future<void> Function() body,
+    ) async {
+      final FileStat real = await file.stat();
+      await IOOverrides.runZoned<Future<void>>(
+        body,
+        stat: (String _) => Future<FileStat>.value(real),
+      );
+    }
+
+    /// 只在被打断或被放行时结束的假计算：被打断后还要等 settle（模拟原生读完当前
+    /// 这一块），再以取消告终。
+    ({
+      VideoFingerprintCompute compute,
+      List<VideoFingerprintCancellation> runs,
+      Completer<void> release,
+      Completer<void> settle,
+    })
+    gatedCompute() {
+      final List<VideoFingerprintCancellation> runs =
+          <VideoFingerprintCancellation>[];
+      final Completer<void> release = Completer<void>();
+      final Completer<void> settle = Completer<void>();
+      return (
+        compute:
+            (
+              String absolutePath,
+              FileStat stat,
+              VideoFingerprintCancellation cancel,
+            ) async {
+              runs.add(cancel);
+              await Future.any(<Future<void>>[
+                release.future,
+                cancel.whenCancelled,
+              ]);
+              if (!cancel.isCancelled) return 'a' * 64;
+              await settle.future;
+              throw VideoFingerprintCancelledException(absolutePath);
+            },
+        runs: runs,
+        release: release,
+        settle: settle,
+      );
+    }
+
+    test('唯一等待方取消：打断计算，等它停下才结束；之后重新开算', () async {
+      final File file = await File(
+        '${directory.path}/only.mkv',
+      ).writeAsBytes(List<int>.filled(1024, 1));
+      await withInstantStat(file, () async {
+        final g = gatedCompute();
+        final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+          compute: g.compute,
+        );
+        final VideoFingerprintCancellation token =
+            VideoFingerprintCancellation();
+        bool done = false;
+        final Future<void> call = expectLater(
+          hashes.fingerprint(file.path, cancel: token),
+          throwsA(isA<VideoFingerprintCancelledException>()),
+        ).then((_) => done = true);
+        await pumpEventQueue();
+        expect(g.runs, hasLength(1));
+        token.cancel();
+        await pumpEventQueue();
+        expect(g.runs.single.isCancelled, isTrue, reason: '没有别的等待方，打断计算');
+        expect(done, isFalse, reason: '计算还没停下（还开着文件），不能先返回');
+        g.settle.complete();
+        await call;
+        // 新请求不并进被打断的那次，重新开算。
+        final Future<String> again = hashes.fingerprint(file.path);
+        await pumpEventQueue();
+        expect(g.runs, hasLength(2));
+        expect(g.runs.last.isCancelled, isFalse);
+        g.release.complete();
+        expect(await again, 'a' * 64);
+      });
+    });
+
+    test('还有不可取消的等待方（本机制卡）：取消方立即撤走，计算照常算完', () async {
+      final File file = await File(
+        '${directory.path}/shared.mkv',
+      ).writeAsBytes(List<int>.filled(1024, 2));
+      await withInstantStat(file, () async {
+        final g = gatedCompute();
+        final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+          compute: g.compute,
+        );
+        final VideoFingerprintCancellation token =
+            VideoFingerprintCancellation();
+        final Future<String> host = hashes.fingerprint(
+          file.path,
+          cancel: token,
+        );
+        final Future<String> local = hashes.fingerprint(file.path);
+        await pumpEventQueue();
+        expect(g.runs, hasLength(1));
+        token.cancel();
+        await expectLater(
+          host,
+          throwsA(isA<VideoFingerprintCancelledException>()),
+        );
+        expect(g.runs.single.isCancelled, isFalse, reason: '本机制卡还在等');
+        g.release.complete();
+        expect(await local, 'a' * 64);
+      });
+    });
+
+    test('两个可取消的等待方：都撤走才打断', () async {
+      final File file = await File(
+        '${directory.path}/two.mkv',
+      ).writeAsBytes(List<int>.filled(1024, 3));
+      await withInstantStat(file, () async {
+        final g = gatedCompute();
+        final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+          compute: g.compute,
+        );
+        final VideoFingerprintCancellation first =
+            VideoFingerprintCancellation();
+        final VideoFingerprintCancellation second =
+            VideoFingerprintCancellation();
+        final Future<String> a = hashes.fingerprint(file.path, cancel: first);
+        final Future<String> b = hashes.fingerprint(file.path, cancel: second);
+        await pumpEventQueue();
+        first.cancel();
+        await expectLater(
+          a,
+          throwsA(isA<VideoFingerprintCancelledException>()),
+        );
+        expect(g.runs.single.isCancelled, isFalse);
+        second.cancel();
+        await pumpEventQueue();
+        expect(g.runs.single.isCancelled, isTrue);
+        g.settle.complete();
+        await expectLater(
+          b,
+          throwsA(isA<VideoFingerprintCancelledException>()),
+        );
+      });
+    });
+
+    test('已取消的信号不开算', () async {
+      final File file = await File(
+        '${directory.path}/pre.mkv',
+      ).writeAsBytes(List<int>.filled(1024, 4));
+      final g = gatedCompute();
+      final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+        compute: g.compute,
+      );
+      await expectLater(
+        hashes.fingerprint(
+          file.path,
+          cancel: VideoFingerprintCancellation()..cancel(),
+        ),
+        throwsA(isA<VideoFingerprintCancelledException>()),
+      );
+      expect(g.runs, isEmpty);
+    });
+
+    test('默认计算经原生取消标志停下（ffc_hash_sha256_file_cancellable）', () async {
+      final List<int> bytes = List<int>.generate(3 << 20, (int i) => i % 241);
+      final File file = await File(
+        '${directory.path}/native.mkv',
+      ).writeAsBytes(bytes);
+      final FileStat stat = await file.stat();
+      final VideoFingerprintCancellation token = VideoFingerprintCancellation();
+      final Future<String> run = VideoSourceFingerprint.hashInIsolate(
+        file.absolute.path,
+        stat,
+        token,
+      );
+      // 同步取消：标志在 worker isolate 起来、原生读盘开始之前就已置位。
+      token.cancel();
+      await expectLater(
+        run,
+        throwsA(isA<VideoFingerprintCancelledException>()),
+      );
+      expect(
+        await VideoSourceFingerprint.hashInIsolate(
+          file.absolute.path,
+          stat,
+          VideoFingerprintCancellation(),
+        ),
+        sha256.convert(bytes).toString(),
+      );
     });
   });
 
