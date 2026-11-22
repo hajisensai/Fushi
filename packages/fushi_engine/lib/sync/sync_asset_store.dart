@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 /// 后端命名空间下的一个条目（资产文件或子命名空间）。
 class AssetEntry {
@@ -55,8 +56,15 @@ SyncTransferProgress? syncTransferFractionOnly(
   void Function(double fraction)? onProgress,
 ) => onProgress == null ? null : (double f, [int? _]) => onProgress(f);
 
+/// [SyncAssetStore.getBytesAsset] 一次读进内存的上限（256 MiB）。
+///
+/// 聚合快照是这条路径上最大的东西：统计量大的多设备用户已有超过 10 MiB 的快照
+/// （OneDrive 上传要走分片会话，见反馈 UHkG_OhDxQ），所以不能沿用 JSON 元数据文件的
+/// 10 MiB 上限；但也不能不设防，否则坏 / 恶意远端能把进程内存撑爆。
+const int kSyncBytesAssetMaxBytes = 256 * 1024 * 1024;
+
 /// 与业务无关的资产存取层：在“命名空间”（文件夹/前缀）下存/取/列二进制资产，
-/// 外加通用 JSON 读写。每个 `SyncBackend` 都实现它，供同步编排器统一调用。
+/// 外加通用 JSON 读写与小资产的整份字节读写。每个 `SyncBackend` 都实现它，供同步编排器统一调用。
 abstract class SyncAssetStore {
   /// 确保根下存在名为 [name] 的顶层命名空间，返回其原生定位符。
   Future<String> ensureNamespace(String name);
@@ -87,6 +95,19 @@ abstract class SyncAssetStore {
 
   /// 读取 [assetId] 指向的 JSON 资产；不存在或非 JSON 返回 null。
   Future<Object?> getJsonAsset(String assetId);
+
+  /// 把 [assetId] 指向的小资产整份读进内存，返回**原样字节**（不解码）。
+  ///
+  /// 给「内容要交给别的 isolate 解码」的调用方用（聚合快照，BUG-5159）：走
+  /// [getJsonAsset] 会在调用方（app 里即 UI isolate）做整份 UTF-8 + JSON 解码。
+  /// 不存在时返回 null，或像 [getJsonAsset] 一样抛错（随后端：HTTP 类后端把 404
+  /// 报成错误），调用方两种都要接住。能边收边计数的后端在超过
+  /// [kSyncBytesAssetMaxBytes] 时抛错，防止坏 / 恶意远端把进程撑爆。
+  Future<Uint8List?> getBytesAsset(String assetId);
+
+  /// 在 [namespaceId] 下把 [bytes] 原样写成名为 [name] 的资产（覆盖）。与
+  /// [getBytesAsset] 配对；调用方自己负责编码。
+  Future<void> putBytesAsset(String namespaceId, String name, Uint8List bytes);
 
   /// 在 [namespaceId] 下写入名为 [name] 的 JSON 资产（覆盖）。
   Future<void> putJsonAsset(String namespaceId, String name, Object? json);

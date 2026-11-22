@@ -40,10 +40,14 @@
 | [BUG-5140](bugs/BUG-5140-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
 > 共 4509 条。点号进各自文件。
 > 共 4510 条。点号进各自文件。
+> 共 4513 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5187](bugs/BUG-5187-settings-storage-page-open-jank.md) | ✅ | ✅ | 打开 设置 › 存储 时卡顿（书 / 视频清单整行读大列拷回 UI isolate） |
+| [BUG-5186](bugs/BUG-5186-webview2-composition-proxy-eats-desktop-clicks-when-minimized.md) | ✅ | ✅ | 主窗最小化 / 藏托盘后桌面中央点击被吞（composition 档 WebView2 代理窗仍可命中） |
 | [BUG-5185](bugs/BUG-5185-windows-exit-loader-deadlock.md) | ✅ | ✅ | Windows 退出时 LdrShutdownProcess 卸载 DLL 死锁：进程变僵尸占着单实例互斥量，之后无法再启动 |
+| [BUG-5184](bugs/BUG-5184-external-popup-source-overflow.md) | ✅ | ✅ | 应用内外查词长原文无法完整浏览并挤占释义 |
 | [BUG-5183](bugs/BUG-5183-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 | [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |
 | [BUG-5181](bugs/BUG-5181-srs-defs-illustration-huge-and-untappable.md) | ✅ | ✅ | 复习卡释义里的词典插图巨大且点不开 |
@@ -68,7 +72,7 @@
 | [BUG-5162](bugs/BUG-5162-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
 | [BUG-5161](bugs/BUG-5161-torrent-resume-offline-save-path-zeroes-progress.md) | ✅ | ✅ | 重启时 save_path 暂不可达：fast-resume 被拒后在空路径全检得 0 片，周期快照把全 0 位图写回 .resume，路径恢复后永久跳过校验从 0% 重下 |
 | [BUG-5160](bugs/BUG-5160-server-torrent-upload-off-ignored.md) | ✅ | ✅ | 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配 |
-| [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | 🚧 | 🚧 | aggregate-cloud-snapshot-json-codec-on-caller |
+| [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | ✅ | ✅ | aggregate-cloud-snapshot-json-codec-on-caller |
 | [BUG-5158](bugs/BUG-5158-torrent-resume-save-alert-queue-overflow.md) | ✅ | ✅ | torrent-resume-save-alert-queue-overflow |
 | [BUG-5157](bugs/BUG-5157-web-pseudo-fullscreen-survives-navigation.md) | ✅ | ✅ | web-pseudo-fullscreen-survives-navigation |
 | [BUG-5156](bugs/BUG-5156-manga-audio-shape-version-reuse.md) | ✅ | ✅ | 重新生成存量漫画演出时复用旧响度片段（整形版本没进复用判据） |

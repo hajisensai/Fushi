@@ -733,6 +733,93 @@ void main() {
       expect(second.manifest.lines[0].text, 'おはよう。');
     });
 
+    test('人名读法只改合成文字：清单文本不变、读法改了的句子能定位并补回（TW9ete_FHX）', () async {
+      MangaAudioScript scriptWith(List<CastTextSubstitution> table) =>
+          MangaAudioScript(
+            lines: <MangaScriptLine>[
+              _line(0, <int>[0]),
+              _line(0, <int>[1], say: 'おはよう'),
+              _line(2, <int>[0]),
+            ],
+          )..substitutions = table;
+      const CastTextSubstitution name = CastTextSubstitution.name(
+        written: 'おはよう',
+        reading: 'オハヨウ',
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaRenderOutcome first = await run(
+        scriptWith(const <CastTextSubstitution>[]),
+        ledger,
+      );
+
+      // 加了人名读法：之前出的音频按旧文字念 → 定位出来（手填念法那句不算）。
+      final MangaAudioScript script = scriptWith(const <CastTextSubstitution>[
+        name,
+      ]);
+      final List<MangaSpokenTextChange> changes = mangaSpokenTextChanges(
+        script: script,
+        pageBlocks: _pages(),
+        manifest: first.manifest,
+      );
+      expect(
+        <String>[
+          for (final MangaSpokenTextChange c in changes) c.rendered.lineId,
+        ],
+        <String>['p0b0'],
+      );
+      expect(changes.single.spoken, 'オハヨウ。');
+
+      backend.synthCalls.clear();
+      final Map<String, MangaBackfillStatus> r = await renderer.backfill(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        manifest: first.manifest,
+        ledger: ledger,
+        requests: const <MangaBackfillRequest>[
+          MangaBackfillRequest(lineId: 'p0b0'),
+        ],
+        onProgress: (int d, int t) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(r['p0b0'], MangaBackfillStatus.voiced);
+      expect(backend.synthCalls, <String>['reading|0|オハヨウ。']);
+      // 显示文字（cue / 制卡）仍是原文，念的文字落进清单供下次比对。
+      final MangaRenderedLine line0 = first.manifest.lines[0];
+      expect(line0.text, 'おはよう。');
+      expect(line0.spokenText, 'オハヨウ。');
+      final MangaRenderManifest reloaded = (await MangaRenderManifest.load(
+        renderer.manifestFile,
+      ))!;
+      expect(reloaded.lines[0].spokenText, 'オハヨウ。');
+      expect(reloaded.lines[2].spoken, isNull);
+      expect(
+        mangaSpokenTextChanges(
+          script: script,
+          pageBlocks: _pages(),
+          manifest: reloaded,
+        ),
+        isEmpty,
+      );
+
+      // 整卷重跑沿用全部（念的文字没变）；删掉读法后那句再重做。
+      backend.synthCalls.clear();
+      final MangaRenderOutcome again = await run(
+        script,
+        ledger,
+        previous: reloaded,
+      );
+      expect(again.reused, 3);
+      expect(backend.synthCalls, isEmpty);
+      final MangaRenderOutcome reverted = await run(
+        scriptWith(const <CastTextSubstitution>[]),
+        ledger,
+        previous: again.manifest,
+      );
+      expect(reverted.reused, 2);
+      expect(backend.synthCalls, <String>['reading|0|おはよう。']);
+    });
+
     test('取消原样抛出，不写清单', () async {
       final TtsRenderCancelToken cancel = TtsRenderCancelToken()..cancel();
       await expectLater(

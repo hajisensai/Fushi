@@ -349,8 +349,13 @@ Future<List<StorageCategoryUsage>> scanAllStorageCategories(
 /// bookKey，字幕书音频用关联 SrtBooks.uid。音频的真相源是 DB 里记的路径
 /// （BUG-1893，`audioRoot` / `audioPathsJson`）。standalone 字幕书（bookKey 恒空）
 /// 没有 EpubBooks 行，单独成条（[StorageEntryKind.srtBook]）。
+///
+/// `epub_books` 只读瘦投影（[FushiDatabase.getEpubBookMetas]）：整行里每本几十 KB
+/// 的 `chaptersJson` / `tocJson` 这里用不上，几百本书整行读就是几十 MB 字符串经
+/// drift 后台 isolate 拷回 UI isolate 解码——开存储页卡顿的根因
+/// （settings-storage-page-open-jank）。
 Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
-  final List<EpubBookRow> rows = await db.getAllEpubBooks();
+  final List<EpubBookMeta> rows = await db.getEpubBookMetas();
   final List<SrtBookRow> srtRows = await db.getAllSrtBooks();
   final List<AudiobookRow> audiobookRows = await db.getAllAudiobooks();
   final Map<String, List<String>> audioPathsByBookKey =
@@ -374,7 +379,7 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
     );
   }
   return <StorageBookRef>[
-    for (final EpubBookRow row in rows)
+    for (final EpubBookMeta row in rows)
       StorageBookRef(
         id: row.bookKey,
         title: row.title,
@@ -403,7 +408,9 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
 /// 一条视频可属于多个合集：取 id 最小的那个（最早建立的，一般就是下载 / 导入时
 /// 自动建的作品合集），保证每条视频只出现在一个组里。
 Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
-  final List<VideoBookRow> rows = await db.allVideoBooks();
+  // 瘦投影（同 [loadStorageBookRefs]）：只取 uid / 标题 / 路径三列。
+  final List<({String bookUid, String title, String videoPath})> rows = await db
+      .allVideoBookPaths();
   final Map<int, String> collectionNames = <int, String>{
     for (final MediaCollectionRow c in await db.getAllMediaCollections())
       c.id: c.name,
@@ -418,12 +425,12 @@ Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
     }
   }
   return <StorageVideoRef>[
-    for (final VideoBookRow row in rows)
+    for (final (:String bookUid, :String title, :String videoPath) in rows)
       StorageVideoRef(
-        id: row.bookUid,
-        title: row.title,
-        videoPath: row.videoPath,
-        group: switch (collectionOf[row.bookUid]) {
+        id: bookUid,
+        title: title,
+        videoPath: videoPath,
+        group: switch (collectionOf[bookUid]) {
           final int id => collectionNames[id],
           null => null,
         },

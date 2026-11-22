@@ -716,23 +716,28 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           request.url.queryParameters[kVideoFingerprintWaitQueryParam] != '0';
       try {
         final VideoSourceFingerprint fingerprints = _videoFingerprints;
+        // 停机时取消（拍板台 host-stop-fingerprint-cancel）：本 host 发起的计算没有别的
+        // 等待方时被打断，stop 不再被一个几 GB 的文件拖住。
+        final VideoFingerprintCancellation cancel = _videoFingerprintCancel;
         final Future<String?>? lookup = wait
             ? _startVideoFingerprintWork(
-                () => fingerprints.fingerprint(file.path),
+                () => fingerprints.fingerprint(file.path, cancel: cancel),
               )
             : _startVideoFingerprintWork(() => fingerprints.known(file.path));
         if (lookup == null) return _videoFingerprintHostStopping();
         final String? digest = await lookup;
         if (digest == null) {
           final Future<String>? background = _startVideoFingerprintWork(
-            () => fingerprints.fingerprint(file.path),
+            () => fingerprints.fingerprint(file.path, cancel: cancel),
           );
           if (background == null) return _videoFingerprintHostStopping();
           unawaited(
             background.then<void>(
               (String _) {},
-              onError: (Object error, StackTrace stack) =>
-                  engineLog.log('video.fingerprint.background', error, stack),
+              onError: (Object error, StackTrace stack) {
+                if (error is VideoFingerprintCancelledException) return;
+                engineLog.log('video.fingerprint.background', error, stack);
+              },
             ),
           );
           return shelf.Response(
@@ -742,6 +747,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           );
         }
         return jsonResponse(<String, Object?>{'fingerprint': digest});
+      } on VideoFingerprintCancelledException {
+        // host 停机打断了这次计算。
+        return _videoFingerprintHostStopping();
       } on FileSystemException catch (error, stack) {
         // 文件不在 / 算指纹期间被改写：没有可担保的身份。
         engineLog.log('video.fingerprint', error, stack);
@@ -1852,6 +1860,7 @@ int _episodeIndexFromRequest(shelf.Request request) {
 extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
   void _startVideoFingerprintWarmup() {
     _videoFingerprintsClosed = false;
+    _videoFingerprintCancel = VideoFingerprintCancellation();
     _videoFingerprints.store = _videoFingerprintStore;
     final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return;
@@ -1867,10 +1876,13 @@ extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
   }
 
   /// 停机收尾：返回后本 host 发起的指纹计算全部结束（不再开着任何视频文件），落盘
-  /// 缓存也不再被写（BUG-5078 / BUG-5087）。最多等正在算的那一个文件。
+  /// 缓存也不再被写（BUG-5078 / BUG-5087）。正在算的文件被打断（拍板台
+  /// host-stop-fingerprint-cancel），最多等原生哈希读完当前 1 MiB；同一文件还有本机
+  /// 制卡等别的等待方时计算归它们、继续算，本 host 不再等。
   Future<void> _stopVideoFingerprintWarmup() async {
     // 先关闸再排空：之后到达的端点请求不再开算，排空循环看到的就是全部在途计算。
     _videoFingerprintsClosed = true;
+    _videoFingerprintCancel.cancel();
     _videoFingerprintWarmStart?.cancel();
     _videoFingerprintWarmStart = null;
     final VideoFingerprintWarmer? warmer = _videoFingerprintWarmer;
