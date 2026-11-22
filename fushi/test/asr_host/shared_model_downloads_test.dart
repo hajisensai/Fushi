@@ -147,4 +147,87 @@ void main() {
     expect(song, isNot(mixed));
     expect(song, startsWith(mixed));
   });
+
+  group('歌曲素材那条下载（识别文件只由混音那条写）', () {
+    test('混音那条下完、识别文件就绪后才补分离模型；视频页同时在下的混音只起一次', () async {
+      final SharedModelDownloads shared = SharedModelDownloads();
+      final StreamController<ModelDownloadEvent> mixedSource =
+          StreamController<ModelDownloadEvent>();
+      int mixedStarts = 0;
+      int songStarts = 0;
+      bool ready = false;
+      Stream<ModelDownloadEvent> mixed() {
+        mixedStarts++;
+        return mixedSource.stream;
+      }
+
+      // 视频页先起了混音那条。
+      final List<ModelDownloadEvent> videoSeen = <ModelDownloadEvent>[];
+      shared.join('asr:p', mixed).listen(videoSeen.add);
+      final List<ModelDownloadEvent> songSeen = <ModelDownloadEvent>[];
+      final Completer<void> songDone = Completer<void>();
+      joinSongModelDownload(
+        shared,
+        mixedKey: 'asr:p',
+        songKey: 'asr:p+vocals',
+        downloadMixedMissing: mixed,
+        mixedReady: () async => ready,
+        downloadSongMissing: () {
+          songStarts++;
+          return Stream<ModelDownloadEvent>.value(ev(100));
+        },
+      ).listen(songSeen.add, onDone: songDone.complete);
+      await pumpEventQueue();
+      expect(songStarts, 0, reason: '识别文件没下完前不碰分离模型');
+
+      mixedSource.add(ev(50));
+      ready = true;
+      await mixedSource.close();
+      await songDone.future;
+      expect(mixedStarts, 1, reason: '同一批识别文件只有一个写者');
+      expect(songStarts, 1);
+      expect(songSeen.map((ModelDownloadEvent e) => e.receivedBytes), <int>[
+        50,
+        100,
+      ]);
+      expect(shared.isActive('asr:p+vocals'), isFalse);
+    });
+
+    test('混音那条被取消（设置页按包取消）：歌曲那条随之结束，不由它接着去写识别文件', () async {
+      final SharedModelDownloads shared = SharedModelDownloads();
+      final StreamController<ModelDownloadEvent> mixedSource =
+          StreamController<ModelDownloadEvent>();
+      int songStarts = 0;
+      final Completer<void> songDone = Completer<void>();
+      joinSongModelDownload(
+        shared,
+        mixedKey: 'asr:p',
+        songKey: 'asr:p+vocals',
+        downloadMixedMissing: () => mixedSource.stream,
+        mixedReady: () async => false,
+        downloadSongMissing: () {
+          songStarts++;
+          return const Stream<ModelDownloadEvent>.empty();
+        },
+      ).listen((_) {}, onDone: songDone.complete);
+      await pumpEventQueue();
+      expect(shared.isActive('asr:p'), isTrue);
+
+      await shared.cancel('asr:p');
+      await songDone.future;
+      expect(songStarts, 0);
+      expect(shared.isActive('asr:p+vocals'), isFalse);
+    });
+  });
+
+  test('歌曲那条的单飞键 = 包键 + 后缀（设置页按包取消时据此一并停掉）', () {
+    final String packId = asrModelPackFor(
+      AsrLanguage.japanese,
+      profile: AsrAudioProfile.song,
+    ).id;
+    expect(
+      asrDownloadKeyFor(AsrLanguage.japanese, AsrAudioProfile.song),
+      asrPackSongDownloadKey(packId),
+    );
+  });
 }

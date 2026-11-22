@@ -33,7 +33,11 @@ import 'package:fushi/src/asr_host/asr_host.dart'
         appMossProvisionedDiskBytes,
         appMossProvisionStatus;
 import 'package:fushi/src/asr_host/shared_model_downloads.dart'
-    show asrDownloadKeyFor, kMossDownloadKey, sharedModelDownloads;
+    show
+        asrDownloadKeyFor,
+        joinSongModelDownload,
+        kMossDownloadKey,
+        sharedModelDownloads;
 
 /// 生成字幕用的识别模型（按 [VideoSubtitleLanguage] 与素材）：是否已下载 + 下载。
 ///
@@ -91,17 +95,25 @@ class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
     AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) {
-    Stream<ModelDownloadEvent> mixed() => sharedModelDownloads.join(
-      _key(language, AsrAudioProfile.mixedAudio),
-      () => _downloadMissing(language.asrLanguage, AsrAudioProfile.mixedAudio),
+    final AsrLanguage asrLanguage = language.asrLanguage;
+    final String mixedKey = _key(language, AsrAudioProfile.mixedAudio);
+    Stream<ModelDownloadEvent> downloadMixed() =>
+        _downloadMissing(asrLanguage, AsrAudioProfile.mixedAudio);
+    if (!audioProfile.separatesVocals) {
+      return sharedModelDownloads.join(mixedKey, downloadMixed);
+    }
+    // 歌曲 = 混音那个包 + 分离模型：识别文件只由混音那条写，就绪后本条只补分离模型。
+    return joinSongModelDownload(
+      sharedModelDownloads,
+      mixedKey: mixedKey,
+      songKey: _key(language, audioProfile),
+      downloadMixedMissing: downloadMixed,
+      mixedReady: () async => (await _plan(
+        _service(AsrAudioProfile.mixedAudio),
+        asrLanguage,
+      )).modelReady,
+      downloadSongMissing: () => _downloadMissing(asrLanguage, audioProfile),
     );
-    if (!audioProfile.separatesVocals) return mixed();
-    // 歌曲 = 混音那个包 + 分离模型：先挂到混音那条单飞上把识别文件下完（视频页同时
-    // 在下也只有一个写者），再只补分离模型（识别文件已就绪，下载器跳过）。
-    return sharedModelDownloads.join(_key(language, audioProfile), () async* {
-      yield* mixed();
-      yield* _downloadMissing(language.asrLanguage, audioProfile);
-    });
   }
 
   @override

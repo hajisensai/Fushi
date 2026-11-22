@@ -457,6 +457,9 @@ class _VideoSubtitleGenerateSheetState
   Future<void> _applyLanguage(VideoSubtitleLanguage language) async {
     setState(() {
       _language = language;
+      // 素材按语言判（各语言的包与内存估算不同），沿用上一门语言的判定会在新判定
+      // 回来前拿错的素材查 / 下模型。
+      _audioProfile = null;
       _modelReady = null;
       _planError = null;
       _asrDownloadError = null;

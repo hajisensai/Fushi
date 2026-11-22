@@ -50,9 +50,10 @@ void main() {
 
   AppVideoSubtitleService service({
     AsrAudioProfile musicProfile = AsrAudioProfile.song,
+    FakeVideoSubtitleSettings? settings,
   }) => AppVideoSubtitleService(
     database: db,
-    settings: FakeVideoSubtitleSettings(),
+    settings: settings ?? FakeVideoSubtitleSettings(),
     glossaryStore: MemoryGlossaryStore(),
     jobRegistry: registry,
     jobsRoot: () async => Directory(p.join(tmp.path, 'jobs')),
@@ -430,6 +431,37 @@ void main() {
       await job.done;
       expect(job.status, AppVideoSubtitleJobStatus.succeeded);
       expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
+    });
+    test('只重跑写法统一：按上次记的识别器（sliding_song）沿用歌曲素材，不随此刻判定换成混音', () async {
+      final String song = audio('a/01.flac');
+      await addTrack('t1', song, trackNo: 1);
+      recognizer = FakeVideoRecognizer(id: 'sliding_song');
+      final FakeVideoSubtitleSettings settings = FakeVideoSubtitleSettings()
+        ..provider = testProvider();
+      final AppVideoSubtitleTarget target = await targets().forTrack('t1');
+      final AppVideoSubtitleJob full = service(settings: settings).start(
+        target,
+        const AppVideoSubtitleOptions(
+          proofread: true,
+          audioProfile: AsrAudioProfile.song,
+        ),
+      );
+      await full.done;
+      expect(full.status, AppVideoSubtitleJobStatus.succeeded);
+      resolvedProfiles.clear();
+
+      // 内存变紧，此刻判定会退回混音；但重跑必须沿用 song，否则换识别器、整首重新识别。
+      final AppVideoSubtitleService rerunSvc = service(
+        musicProfile: AsrAudioProfile.mixedAudio,
+        settings: settings,
+      );
+      final AppVideoSubtitleJob rerun = await rerunSvc.startConsistencyRerun(
+        target,
+      );
+      await rerun.done;
+      expect(rerun.status, AppVideoSubtitleJobStatus.succeeded);
+      expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.song]);
+      expect(recognizer.calls, hasLength(1), reason: '识别稿走缓存');
     });
   });
 
