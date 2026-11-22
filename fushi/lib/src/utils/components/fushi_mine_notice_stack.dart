@@ -71,9 +71,8 @@ class MineNoticeController extends ChangeNotifier {
   bool _paused = false;
   bool _disposed = false;
 
-  List<MineNoticeEntry> get entries => List<MineNoticeEntry>.unmodifiable(
-    _entries,
-  );
+  List<MineNoticeEntry> get entries =>
+      List<MineNoticeEntry>.unmodifiable(_entries);
 
   bool get isEmpty => _entries.isEmpty;
   bool get paused => _paused;
@@ -89,7 +88,9 @@ class MineNoticeController extends ChangeNotifier {
       final String? term = notice.term;
       target =
           pending
-              .where((MineNoticeEntry e) => term != null && e.notice.term == term)
+              .where(
+                (MineNoticeEntry e) => term != null && e.notice.term == term,
+              )
               .firstOrNull ??
           pending.firstOrNull;
     }
@@ -240,6 +241,9 @@ const double _kPeekStep = 8;
 const double _kPeekInset = 14;
 const int _kMaxPeeks = 2;
 
+/// 计数徽标的命中方块边长：视觉 24 的徽标居中其中，方块中心压在最前那张卡的右上角。
+const double _kBadgeHit = 36;
+
 class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
   bool _hovering = false;
   bool _focused = false;
@@ -374,11 +378,16 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
       ),
       child: _card(front),
     );
-    return Padding(
+    final bool stacked = entries.length > 1;
+    // 叠放时给徽标在右上留出半个命中方块：徽标整个落在本组件的布局盒里。伸出父盒
+    // 的部分 Flutter 不做命中测试，压在卡角外的半边原本点不中。
+    const double reserve = _kBadgeHit / 2;
+    final double peekTop = bottom ? _kPeekStep * peeks : 0;
+    final Widget cards = Padding(
       padding: EdgeInsets.only(
-        top: bottom ? _kPeekStep * peeks : 0,
+        top: peekTop + (stacked ? reserve : 0),
         bottom: bottom ? 0 : _kPeekStep * peeks,
-        right: entries.length > 1 ? 10 : 0,
+        right: stacked ? reserve : 0,
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -417,20 +426,26 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
               ),
             ),
           frontCard,
-          if (entries.length > 1)
-            Positioned(
-              right: -10,
-              top: -10,
-              child: _CountBadge(
-                count: entries.length,
-                onPressed: () {
-                  setState(() => _pinnedOpen = true);
-                  _syncPause();
-                },
-              ),
-            ),
         ],
       ),
+    );
+    if (!stacked) return cards;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        cards,
+        Positioned(
+          right: 0,
+          top: peekTop,
+          child: _CountBadge(
+            count: entries.length,
+            onPressed: () {
+              setState(() => _pinnedOpen = true);
+              _syncPause();
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -522,21 +537,26 @@ class _CountBadge extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           key: const ValueKey<String>('mine-notice-stack-badge'),
-          customBorder: const StadiumBorder(),
+          customBorder: const CircleBorder(),
           onTap: onPressed,
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            alignment: Alignment.center,
-            decoration: ShapeDecoration(
-              color: eink ? Colors.black : cs.inverseSurface,
-              shape: const StadiumBorder(),
-            ),
-            child: Text(
-              '$count',
-              style: context.fushiType.labelMedium.copyWith(
-                color: eink ? Colors.white : cs.onInverseSurface,
-                fontWeight: FontWeight.w700,
+          child: SizedBox.square(
+            dimension: _kBadgeHit,
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                alignment: Alignment.center,
+                decoration: ShapeDecoration(
+                  color: eink ? Colors.black : cs.inverseSurface,
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  '$count',
+                  style: context.fushiType.labelMedium.copyWith(
+                    color: eink ? Colors.white : cs.onInverseSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ),

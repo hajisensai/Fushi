@@ -1326,6 +1326,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
       retry: described.status == MineToastStatus.failed ? retry : null,
       term: expression,
       detail: described.detail,
+      fallbackAction:
+          mineFailureToastAction(outcome) ?? mineQueuedToastAction(outcome),
     );
     return result;
   }

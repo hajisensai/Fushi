@@ -80,7 +80,6 @@ extension _VideoSentenceAudioSource on _VideoFushiPageState {
       icon: landed.icon,
       prominent: landed.prominent,
       severity: ToastSeverity.warning,
-      mineStatus: landed.mineStatus,
     );
   }
 }

@@ -374,7 +374,8 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
           foregroundColor: filled ? colors.onAccent : colors.action,
           backgroundColor: filled ? colors.accent : null,
           textStyle: buttonStyle,
-          minimumSize: Size(0, compact ? 30 : 36),
+          // 视觉 32 高（大小卡一致），命中区由 [FushiTouchTargetPadding] 补到 48dp。
+          minimumSize: const Size(0, 32),
           padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: const StadiumBorder(),
@@ -450,69 +451,61 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
     );
 
     final Widget details = Padding(
-            padding: EdgeInsetsDirectional.only(
-              start: iconBox + iconGap,
-              bottom: 12,
-              end: 4,
+      padding: EdgeInsetsDirectional.only(
+        start: iconBox + iconGap,
+        bottom: 12,
+        end: 4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: eink || glass
+                  ? null
+                  : Colors.white.withValues(alpha: 0.55),
+              border: eink || glass
+                  ? Border.all(color: colors.onContainer.withValues(alpha: 0.3))
+                  : null,
+              borderRadius: const BorderRadius.all(Radius.circular(14)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: eink || glass
-                        ? null
-                        : Colors.white.withValues(alpha: 0.55),
-                    border: eink || glass
-                        ? Border.all(
-                            color: colors.onContainer.withValues(alpha: 0.3),
-                          )
-                        : null,
-                    borderRadius: const BorderRadius.all(Radius.circular(14)),
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    child: SingleChildScrollView(
-                      child: SelectableText(
-                        widget.message,
-                        style: supportingStyle,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: <Widget>[
-                    if (action != null)
-                      textButton(
-                        action.label,
-                        action.onPressed,
-                        key: const ValueKey<String>('mine-notice-action'),
-                        filled: !eink,
-                      ),
-                    textButton(
-                      _copied ? t.card_notice_copied : t.card_notice_copy_error,
-                      () => _copyMessage(),
-                      key: const ValueKey<String>('mine-notice-copy'),
-                    ),
-                    textButton(
-                      t.card_notice_hide,
-                      () => onExpandedChanged?.call(false),
-                      key: const ValueKey<String>('mine-notice-collapse'),
-                    ),
-                  ],
-                ),
-              ],
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: SingleChildScrollView(
+                child: SelectableText(widget.message, style: supportingStyle),
+              ),
             ),
-          );
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              if (action != null)
+                textButton(
+                  action.label,
+                  action.onPressed,
+                  key: const ValueKey<String>('mine-notice-action'),
+                  filled: !eink,
+                ),
+              textButton(
+                _copied ? t.card_notice_copied : t.card_notice_copy_error,
+                () => _copyMessage(),
+                key: const ValueKey<String>('mine-notice-copy'),
+              ),
+              textButton(
+                t.card_notice_hide,
+                () => onExpandedChanged?.call(false),
+                key: const ValueKey<String>('mine-notice-collapse'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
 
     final BorderRadius borderRadius = BorderRadius.all(
       Radius.circular(expanded ? 24 : radius),

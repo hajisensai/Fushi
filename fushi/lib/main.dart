@@ -171,6 +171,9 @@ import 'package:fushi/src/anki/card_source_router.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
+    show adaptivePageRoute;
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -890,6 +893,20 @@ void main([List<String> args = const <String>[]]) {
               await unwindToHomeRoute(navigator, media: media);
             }
           }),
+        );
+      };
+      // 「已加入待发队列」提示上的「查看队列」：在主导航器上推待发卡片列表（与 Anki 设置页
+      // 「待发卡片」入口同一页）。
+      mineQueuedOpenPending = () {
+        final NavigatorState? navigator = appModel.navigatorKey.currentState;
+        if (navigator == null) return;
+        unawaited(
+          navigator.push<void>(
+            adaptivePageRoute<void>(
+              context: navigator.context,
+              builder: (BuildContext context) => const PendingMinesPage(),
+            ),
+          ),
         );
       };
       appModel.ankiRepositoryReader = () =>

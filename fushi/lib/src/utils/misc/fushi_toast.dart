@@ -202,10 +202,18 @@ abstract final class FushiToast {
   /// 解析尺寸与位置，而不是停在已经消失的区域角上。撤销通常发生在页面 dispose
   /// （树卸载阶段，此时不能 setState），所以挪到帧后再标脏。
   static void _onCornerAnchorsChanged() {
-    final OverlayEntry? entry = _currentEntry;
-    if (entry == null) return;
+    // 角落锚点只影响制卡结果卡（[anchorMineToCorner]）；通用条目一并标脏无害。
+    final List<OverlayEntry> entries = <OverlayEntry>[
+      ?_mineEntry,
+      ?_currentEntry,
+    ];
+    if (entries.isEmpty) return;
     SchedulerBinding.instance.addPostFrameCallback((Duration _) {
-      if (_currentEntry == entry && entry.mounted) entry.markNeedsBuild();
+      for (final OverlayEntry entry in entries) {
+        if ((entry == _mineEntry || entry == _currentEntry) && entry.mounted) {
+          entry.markNeedsBuild();
+        }
+      }
     });
     SchedulerBinding.instance.ensureVisualUpdate();
   }

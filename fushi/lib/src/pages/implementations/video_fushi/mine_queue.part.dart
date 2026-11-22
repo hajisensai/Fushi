@@ -171,21 +171,21 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             // 跟着顶栏显隐上下（[_followTopChrome]）；制卡队列角标在时让到它下面一格。
             return _followTopChrome(
               (BuildContext context, double top) => Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: 16,
-                  top: top + (mineBadgeShown ? 40 * _videoUiScale : 0),
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: 16,
+                    top: top + (mineBadgeShown ? 40 * _videoUiScale : 0),
+                  ),
+                  child: VideoLoopCueBadge(
+                    active: controller.loopCurrentCue,
+                    label: t.video_loop_cue_badge_label,
+                    tooltip: t.video_loop_cue_badge_tooltip,
+                    onTap: () => controller.setLoopCurrentCue(false),
+                    surfaceColor: _osdSurfaceColor(cs),
+                    textColor: _osdTextColor(cs),
+                  ),
                 ),
-                child: VideoLoopCueBadge(
-                  active: controller.loopCurrentCue,
-                  label: t.video_loop_cue_badge_label,
-                  tooltip: t.video_loop_cue_badge_tooltip,
-                  onTap: () => controller.setLoopCurrentCue(false),
-                  surfaceColor: _osdSurfaceColor(cs),
-                  textColor: _osdTextColor(cs),
-                ),
-              ),
               ),
             );
           },
@@ -213,54 +213,54 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
                 : t.video_mine_in_progress(count: inFlight);
             return _followTopChrome(
               (BuildContext context, double top) => Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: EdgeInsets.only(right: 16, top: top),
-                child: Material(
-                  key: const ValueKey<String>('video-mine-queue-badge'),
-                  color: _osdSurfaceColor(cs),
-                  shape: const StadiumBorder(),
-                  child: InkWell(
-                    customBorder: const StadiumBorder(),
-                    canRequestFocus: false,
-                    onTap: staged > 0
-                        ? () => unawaited(
-                            // 网页档：切到可捕获的内置档逐句重放落卡。
-                            _webMode
-                                ? _runWebMineQueue()
-                                : _openVideoMineQueue(),
-                          )
-                        : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          if (inFlight > 0)
-                            SizedBox.square(
-                              dimension: 14,
-                              child: FushiCircularProgressIndicator(
-                                strokeWidth: 2,
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(right: 16, top: top),
+                  child: Material(
+                    key: const ValueKey<String>('video-mine-queue-badge'),
+                    color: _osdSurfaceColor(cs),
+                    shape: const StadiumBorder(),
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      canRequestFocus: false,
+                      onTap: staged > 0
+                          ? () => unawaited(
+                              // 网页档：切到可捕获的内置档逐句重放落卡。
+                              _webMode
+                                  ? _runWebMineQueue()
+                                  : _openVideoMineQueue(),
+                            )
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (inFlight > 0)
+                              SizedBox.square(
+                                dimension: 14,
+                                child: FushiCircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: textColor,
+                                ),
+                              )
+                            else
+                              FushiIcon(
+                                Icons.playlist_add_check,
+                                size: 16,
                                 color: textColor,
                               ),
-                            )
-                          else
-                            FushiIcon(
-                              Icons.playlist_add_check,
-                              size: 16,
-                              color: textColor,
-                            ),
-                          const SizedBox(width: 6),
-                          Text(label, style: TextStyle(color: textColor)),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(label, style: TextStyle(color: textColor)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               ),
             );
           },

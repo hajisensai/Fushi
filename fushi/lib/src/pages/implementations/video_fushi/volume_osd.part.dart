@@ -74,6 +74,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     String? term,
     String? reading,
     String? detail,
+    MineNoticeAction? fallbackAction,
   }) {
     if (!MineNotices.shown(status)) return;
     if (!mounted) return;
@@ -87,7 +88,8 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
         action: retry != null
             ? MineNoticeAction(label: t.card_notice_retry, onPressed: retry)
             : undo == null
-            ? null
+            // 没有重试 / 撤销时：进待发队列给「查看队列」、复习库要升级给「打开复习」。
+            ? fallbackAction
             : MineNoticeAction(
                 label: t.card_notice_undo,
                 onPressed: () async {

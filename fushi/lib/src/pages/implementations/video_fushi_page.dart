@@ -8870,41 +8870,41 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 // 跟着顶栏显隐上下（[_followTopChrome]，与 OSD 同一口径）。
                 return _followTopChrome(
                   (BuildContext context, double top) => Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: EdgeInsets.only(left: 16, right: 16, top: top),
-                    child: Theme(
-                      data: theme.copyWith(
-                        colorScheme: _videoChromeColorScheme(context),
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.medium,
+                    alignment: Alignment.topLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 16, right: 16, top: top),
+                      child: Theme(
+                        data: theme.copyWith(
+                          colorScheme: _videoChromeColorScheme(context),
                         ),
-                        switchInCurve: FushiMotion.enter,
-                        switchOutCurve: FushiMotion.exit,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, -0.15),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
+                        child: AnimatedSwitcher(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.medium,
+                          ),
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          transitionBuilder:
+                              (Widget child, Animation<double> animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, -0.15),
+                                        end: Offset.zero,
+                                      ).animate(animation),
+                                      child: child,
+                                    ),
                                   ),
+                          child: job == null
+                              ? const SizedBox.shrink()
+                              : VideoGraphicSubtitleOcrProgressCard(
+                                  state: job,
+                                  onCancel: _cancelGraphicSubtitleOcr,
                                 ),
-                        child: job == null
-                            ? const SizedBox.shrink()
-                            : VideoGraphicSubtitleOcrProgressCard(
-                                state: job,
-                                onCancel: _cancelGraphicSubtitleOcr,
-                              ),
+                        ),
                       ),
                     ),
-                  ),
                   ),
                 );
               },

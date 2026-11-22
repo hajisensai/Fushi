@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -617,6 +618,36 @@ MineNoticeAction? mineFailureToastAction(MineOutcome outcome) {
     ),
     _ => null,
   };
+}
+
+/// 制卡进了**待发卡片**队列（Anki 连不上，卡冻结待补发）时，提示上「查看队列」做的事：打开
+/// 待发卡片列表。主窗口进程由 main.dart 装上；没装（弹窗 / 查词窗进程、测试）就不出按钮。
+VoidCallback? mineQueuedOpenPending;
+
+/// 「已加入待发队列」提示上的「查看队列」（用户 2026-11-22 重设计）。只给待发卡片队列
+/// （[MineOutcome.deckName] 为 null）；Fushi 复习的后台写入马上就落库，没有可看的队列。
+MineNoticeAction? mineQueuedToastAction(MineOutcome outcome) {
+  final VoidCallback? open = mineQueuedOpenPending;
+  if (open == null ||
+      outcome.result != MineResult.queued ||
+      outcome.deckName != null) {
+    return null;
+  }
+  return MineNoticeAction(label: t.card_notice_view_queue, onPressed: open);
+}
+
+/// 「已存在」提示上的「仍要添加」：[remine] 是调用方用同一份字段、拍上
+/// `AnkiMiningPayload.withAllowDuplicate` 再制一次（BUG-2605 同一约定）。只有结果是
+/// 重复、且调用方手里有字段可重发时才给。
+MineNoticeAction? mineAddAnywayToastAction(
+  MineOutcome outcome,
+  Future<void> Function()? remine,
+) {
+  if (remine == null || outcome.result != MineResult.duplicate) return null;
+  return MineNoticeAction(
+    label: t.card_notice_add_anyway,
+    onPressed: () => unawaited(remine()),
+  );
 }
 
 /// BUG-089 / BUG-4003：把一次没制成的 [MineOutcome] 的**完整诊断**写进
