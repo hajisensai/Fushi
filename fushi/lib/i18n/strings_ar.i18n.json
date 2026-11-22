@@ -4765,6 +4765,7 @@
   "home_widget_edit": "تعديل الرئيسية",
   "home_widget_edit_hint": "Enter للالتقاط، والأسهم للتحريك، وShift مع الأسهم لتغيير الحجم، وDelete للإزالة",
   "home_widget_empty": "لا توجد أدوات في الصفحة الرئيسية بعد",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "أهداف اللغات",
   "home_widget_no_results": "لا توجد أدوات مطابقة",
   "home_widget_recent_empty": "لم تتم إضافة شيء مؤخرًا",

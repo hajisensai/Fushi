@@ -4765,6 +4765,7 @@
   "home_widget_edit": "ホームを編集",
   "home_widget_edit_hint": "Enter で持ち上げ、矢印キーで移動、Shift+矢印キーでサイズ変更、Delete で削除",
   "home_widget_empty": "ホームにウィジェットがまだありません",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "言語別の目標",
   "home_widget_no_results": "一致するウィジェットはありません",
   "home_widget_recent_empty": "最近追加したものはありません",

@@ -4765,6 +4765,7 @@
   "home_widget_edit": "Modifier l'accueil",
   "home_widget_edit_hint": "Entrée pour saisir, flèches pour déplacer, Maj+flèches pour la taille, Suppr pour retirer",
   "home_widget_empty": "Aucun widget sur l'accueil pour l'instant",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "Objectifs par langue",
   "home_widget_no_results": "Aucun widget correspondant",
   "home_widget_recent_empty": "Rien ajouté récemment",

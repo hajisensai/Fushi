@@ -4765,6 +4765,7 @@
   "home_widget_edit": "編輯首頁",
   "home_widget_edit_hint": "Enter 拿起，方向鍵移動，Shift+方向鍵調整尺寸，Delete 移除",
   "home_widget_empty": "首頁還沒有小工具",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "語言目標",
   "home_widget_no_results": "沒有符合的小工具",
   "home_widget_recent_empty": "最近沒有新加入的內容",

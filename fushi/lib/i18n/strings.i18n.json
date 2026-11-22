@@ -4765,6 +4765,7 @@
   "home_widget_edit": "Edit home",
   "home_widget_edit_hint": "Enter to pick up, arrow keys to move, Shift+arrow keys to resize, Delete to remove",
   "home_widget_empty": "No widgets on your home page yet",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "Language goals",
   "home_widget_no_results": "No matching widgets",
   "home_widget_recent_empty": "Nothing added recently",

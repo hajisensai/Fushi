@@ -4765,6 +4765,7 @@
   "home_widget_edit": "Editar início",
   "home_widget_edit_hint": "Enter para pegar, setas para mover, Shift+setas para o tamanho, Delete para remover",
   "home_widget_empty": "Ainda não há widgets no início",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "Metas por idioma",
   "home_widget_no_results": "Nenhum widget correspondente",
   "home_widget_recent_empty": "Nada adicionado recentemente",

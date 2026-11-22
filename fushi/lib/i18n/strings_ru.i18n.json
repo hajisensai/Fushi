@@ -4765,6 +4765,7 @@
   "home_widget_edit": "Изменить главную",
   "home_widget_edit_hint": "Enter — взять, стрелки — переместить, Shift+стрелки — размер, Delete — удалить",
   "home_widget_empty": "На главной пока нет виджетов",
+  "home_widget_exit_edit": "Exit editing",
   "home_widget_language_goals": "Цели по языку",
   "home_widget_no_results": "Подходящих виджетов нет",
   "home_widget_recent_empty": "Недавно ничего не добавлено",
