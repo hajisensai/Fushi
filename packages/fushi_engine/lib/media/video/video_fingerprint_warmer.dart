@@ -18,6 +18,11 @@ typedef VideoFingerprintWarmPaths = Future<List<String>> Function();
 /// 一个；已算过的只 stat 一下就跳过。[request] 在跑的期间再来只记一笔、跑完补一轮；
 /// 两轮之间至少隔 [minInterval]，免得频繁的清单请求反复全库 stat——补的那一轮也走
 /// 同一道间隔（HBK-AUDIT-009：此前补跑在本轮结束后立刻开始，绕过了间隔）。
+///
+/// 停止（[dispose] / [close]）时打断正在算的那个文件（拍板台
+/// host-stop-fingerprint-cancel）：原生哈希每读 1 MiB 查一次取消标志，停机不再被一个
+/// 几 GB 的文件拖住几十秒。同一文件若还有别的等待方（本机制卡、回跳请求），计算照常
+/// 继续，只是预热不再等它。
 class VideoFingerprintWarmer {
   VideoFingerprintWarmer({
     required VideoFingerprintWarmPaths listPaths,
@@ -38,6 +43,9 @@ class VideoFingerprintWarmer {
 
   /// 一轮跑完到下一轮开始的最短间隔。
   final Duration minInterval;
+
+  /// 本预热发起 / 加入的指纹计算都带这一个取消信号，[dispose] 时取消。
+  final VideoFingerprintCancellation _cancel = VideoFingerprintCancellation();
 
   Future<void>? _running;
   bool _again = false;
@@ -101,7 +109,9 @@ class VideoFingerprintWarmer {
       if (_disposed) return;
       try {
         if (await _fingerprints.known(path) != null) continue;
-        await _fingerprints.fingerprint(path);
+        await _fingerprints.fingerprint(path, cancel: _cancel);
+      } on VideoFingerprintCancelledException {
+        return;
       } on FileSystemException {
         // 文件不在 / 算的期间被改写：跳过，回跳时 host 会照实答「读不了」。
         continue;
@@ -129,10 +139,11 @@ class VideoFingerprintWarmer {
     if (done != null && !done.isCompleted) done.complete();
   }
 
-  /// 停止：之后不再开新的文件，两文件间的歇息立即结束。当前在算的那个照常在后台
-  /// isolate 算完（原生整文件哈希不可打断）；要等它收尾用 [close]。
+  /// 停止：之后不再开新的文件，两文件间的歇息立即结束，当前在算的那个被打断（原生
+  /// 哈希在读下一块之前停下；还有别的等待方时计算继续、预热不再等它）。要等收尾用 [close]。
   void dispose() {
     _disposed = true;
+    _cancel.cancel();
     _deferred?.cancel();
     _deferred = null;
     _endRest();
@@ -141,7 +152,7 @@ class VideoFingerprintWarmer {
   /// [dispose] 并等当前这一轮收尾：返回后预热不再读任何视频文件、不再写指纹落盘缓存
   /// （BUG-5078 / BUG-5087：host 停机后预热仍开着视频文件、仍往 sync-data 旁写
   /// `video_fingerprints.json`，Windows 上删 host 目录报文件被占用 / 目录非空）。
-  /// 最多等正在算的那一个文件。
+  /// 在算的文件被打断，最多等原生哈希读完当前这一块（1 MiB）。
   Future<void> close() async {
     dispose();
     await _running;
