@@ -37,6 +37,7 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
+import 'package:fushi/src/media/video/web_video_hosting_default.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi/src/media/video/web_video_track_selection.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart'
@@ -340,6 +341,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 宿主档（`_init` 从参数 / 偏好解析）。窗口宿主档下 WebView2 自己绘制：Flutter 叠层
   /// 画不到它上面，字幕层走页面 DOM、查词走顶层窗口、制卡只入队。
   WebVideoHosting _hosting = WebVideoHosting.builtin;
+
+  /// 本次会话的实测探针（宿主档解析出来后建）。
+  WebVideoHostingProbe? _hostingProbe;
 
   /// 本页站点（登录 cookie 进出都按它的 host）；环境准备好之前为 null。
   Uri? _siteUri;
@@ -833,11 +837,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       setState(() => _failReason = t.video_load_failed_not_found);
       return;
     }
-    _hosting =
-        widget.hosting ??
-        webVideoHostingFromPref(
-          _appModel.prefsRepo.getPref(kWebVideoHostingPrefKey),
-        );
+    WebVideoHosting? hosting = widget.hosting;
+    if (hosting == null) {
+      final bool underlay = await underlayCompositionSupported();
+      if (!context.mounted) return;
+      hosting = resolveWebVideoHostingFromPrefs(
+        _appModel.prefsRepo.getPref,
+        siteKey: webVideoSiteKey(uri),
+        underlaySupported: underlay,
+        displayHeightPx: webVideoDisplayHeightPx(context),
+      );
+    }
+    _hosting = hosting;
+    _hostingProbe = WebVideoHostingProbe(hosting: hosting);
     _shaderTier = webVideoShaderTierFromPref(
       _appModel.prefsRepo.getPref(kWebVideoShaderTierPrefKey),
     );
@@ -980,7 +992,23 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (r.changed && mounted) setState(() {});
   }
 
+  /// 实测探针：结论按站点记下（下次默认播放方式据此定，见 web_video_hosting_default.dart）。
+  void _observeHosting(WebVideoPlaybackState state) {
+    final WebVideoHostingVerdict? verdict = _hostingProbe?.observe(state);
+    final Uri? site = _siteUri;
+    if (verdict == null || site == null) return;
+    unawaited(
+      recordWebVideoHostingVerdict(
+        getPref: _appModel.prefsRepo.getPref,
+        setPref: _appModel.prefsRepo.setPref,
+        siteKey: webVideoSiteKey(site),
+        verdict: verdict,
+      ),
+    );
+  }
+
   void _onState(WebVideoPlaybackState state) {
+    _observeHosting(state);
     final bool videoChanged = state.videoKey != _trackSel.videoKey;
     final bool fullscreenChanged = state.fullscreen != _fullscreen;
     _state = state;
@@ -2405,7 +2433,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   Future<void> _switchHosting(WebVideoHosting hosting) async {
     if (hosting == _hosting) return;
-    await _appModel.prefsRepo.setPref(kWebVideoHostingPrefKey, hosting.name);
+    final Uri? site = _siteUri;
+    if (site != null) {
+      await _appModel.prefsRepo.setPref(
+        kWebVideoHostingManualBySitePrefKey,
+        recordManualWebVideoHosting(
+          _appModel.prefsRepo.getPref(kWebVideoHostingManualBySitePrefKey),
+          webVideoSiteKey(site),
+          hosting,
+        ),
+      );
+    }
     await _flushPosition();
     await _reopen(hosting: hosting);
   }
@@ -3180,14 +3218,43 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     CheckedPopupMenuItem<WebVideoHosting>(
       value: WebVideoHosting.builtin,
       checked: !_windowed,
-      child: Text(t.web_video_hosting_builtin),
+      child: _hostingMenuLabel(
+        context,
+        t.web_video_hosting_builtin_title,
+        t.web_video_hosting_builtin_subtitle,
+      ),
     ),
     CheckedPopupMenuItem<WebVideoHosting>(
       value: WebVideoHosting.windowed,
       checked: _windowed,
-      child: Text(t.web_video_hosting_windowed),
+      child: _hostingMenuLabel(
+        context,
+        t.web_video_hosting_windowed_title,
+        t.web_video_hosting_windowed_subtitle,
+      ),
     ),
   ];
+
+  /// 播放方式菜单行：名字一行，差别放下面一行小字。
+  Widget _hostingMenuLabel(BuildContext context, String title, String sub) {
+    final ThemeData theme = Theme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(title),
+          Text(
+            sub,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// 超分档只有内置档有（窗口档画面归硬件 DRM，碰不到帧）。low = mpv 内置缩放档，
   /// 网页帧没有 mpv 缩放器，这里不列。
