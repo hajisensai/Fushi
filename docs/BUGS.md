@@ -33,25 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4543 条。点号进各自文件。
+> 共 4581 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
+| [BUG-5256](bugs/BUG-5256-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
+| [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |
+| [BUG-5254](bugs/BUG-5254-windows-apple-music-headless-webview-muted.md) | ✅ | ✅ | Windows Apple Music 网页桥完全无声（无头 WebView2 被一刀切静音） |
 | [BUG-5253](bugs/BUG-5253-cover-block-sliver-scroll-rebuild.md) | ✅ | ✅ | 色块布局 sliver 每个滚动帧重建视口内全部卡片（媒体库页滚动卡顿） |
 | [BUG-5252](bugs/BUG-5252-home-cover-block-logo-size-class.md) | ✅ | ✅ | home-cover-block-logo-size-class |
 | [BUG-5251](bugs/BUG-5251-bluray-volume-wrapper-dir-split-collections.md) | ✅ | ✅ | bluray-volume-wrapper-dir-split-collections |
-> 共 4541 条。点号进各自文件。
-> 共 4574 条。点号进各自文件。
-> 共 4575 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |
-> 共 4577 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5254](bugs/BUG-5254-windows-apple-music-headless-webview-muted.md) | ✅ | ✅ | Windows Apple Music 网页桥完全无声（无头 WebView2 被一刀切静音） |
 | [BUG-5250](bugs/BUG-5250-srs-gen4-migration-stale-legacy-results.md) | ✅ | ✅ | gen4 迁移对拍：协议 3 一侧旧日志的结果被第一版协议 3 的重放改写过，卡与统计整片判不同、回滚 |
 | [BUG-5249](bugs/BUG-5249-manga-audio-not-read-line-still-plays.md) | ✅ | ✅ | manga-audio-not-read-line-still-plays |
 | [BUG-5248](bugs/BUG-5248-manga-audio-batch-cancel-overwrites-live.md) | ✅ | ✅ | manga-audio-batch-cancel-overwrites-live |
@@ -103,7 +95,6 @@
 | [BUG-5198](bugs/BUG-5198-media-lock-remaining-consumers.md) | 🚧 | 🚧 | 上锁作品：剩余列出作品标题的次要消费端未接 MediaVisibility |
 | [BUG-5197](bugs/BUG-5197-video-collection-scroll-tab-switch-jank.md) | ✅ | ✅ | 视频合集滚动逐帧离屏重烘、切页派生数据每次 build 全量重算（合集滚动与切页卡顿） |
 | [BUG-5196](bugs/BUG-5196-mine-notice-refetch-audio-action.md) | 🚧 | 🚧 | mine-notice-refetch-audio-action |
-| [BUG-5195](bugs/BUG-5195-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
 | [BUG-5195](bugs/BUG-5195-mine-notice-chrome-placement.md) | ✅ | ✅ | mine-notice-chrome-placement |
 | [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
@@ -115,7 +106,6 @@
 | [BUG-5187](bugs/BUG-5187-settings-storage-page-open-jank.md) | ✅ | ✅ | 打开 设置 › 存储 时卡顿（书 / 视频清单整行读大列拷回 UI isolate） |
 | [BUG-5186](bugs/BUG-5186-webview2-composition-proxy-eats-desktop-clicks-when-minimized.md) | ✅ | ✅ | 主窗最小化 / 藏托盘后桌面中央点击被吞（composition 档 WebView2 代理窗仍可命中） |
 | [BUG-5185](bugs/BUG-5185-windows-exit-loader-deadlock.md) | ✅ | ✅ | Windows 退出时 LdrShutdownProcess 卸载 DLL 死锁：进程变僵尸占着单实例互斥量，之后无法再启动 |
-| [BUG-5184](bugs/BUG-5184-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
 | [BUG-5184](bugs/BUG-5184-external-popup-source-overflow.md) | ✅ | ✅ | 应用内外查词长原文无法完整浏览并挤占释义 |
 | [BUG-5183](bugs/BUG-5183-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 | [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |

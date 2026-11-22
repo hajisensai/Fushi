@@ -1,4 +1,4 @@
-## BUG-5184 · glass-settings-sidebar-scroll-black-band
+## BUG-5256 · glass-settings-sidebar-scroll-black-band
 - **报告**：2026-11-21（用户：Windows，设计系统「Cupertino」= 玻璃 + 自定义壁纸，宽屏设置滚左栏，内容区顶部整宽冒出一条黑线）
 - **真实性**：✅ 真 bug。离屏 itest 复现（壁纸 + 玻璃，左栏滚 120px 后顶部整宽黑带），修后同路径无黑带。两处根因叠加：
   1. 外壳 `FushiAppleScrollChrome.handleNotification`（`fushi/lib/src/utils/components/glass/fushi_apple_scroll_chrome.dart`）收任何可见竖向滚动，设置宽屏左栏（导航侧窗格）一滚就把 `contentUnderTop` 置真，`home_page.dart` `_withAppleTopEdge` 亮出整宽顶部 scroll edge 带；
