@@ -449,8 +449,9 @@ String _takingPlaceOf(HeavyQueued q) =>
 /// Runs [body] under the machine-wide admission gate. [body] must not await:
 /// the gate is one synchronous block per process (see [_admissionChain]).
 T _underGate<T>(Directory state, T Function() body) {
-  final RandomAccessFile gate = File('${state.path}/admission.lock')
-      .openSync(mode: FileMode.append);
+  final RandomAccessFile gate = File(
+    '${state.path}/admission.lock',
+  ).openSync(mode: FileMode.append);
   try {
     gate.lockSync(FileLock.blockingExclusive);
     return body();
@@ -599,8 +600,9 @@ Future<HeavyLease> _waitSlot(
       // One admission at a time across the machine: two waiters must not both
       // read the same slot as free and race over its holder info, and a
       // ticket is created, locked and swept only under this gate.
-      final RandomAccessFile gate = File('${dir.path}/admission.lock')
-          .openSync(mode: FileMode.append);
+      final RandomAccessFile gate = File(
+        '${dir.path}/admission.lock',
+      ).openSync(mode: FileMode.append);
       String reason;
       try {
         gate.lockSync(FileLock.blockingExclusive);
