@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/fume/fume_background.dart';
@@ -86,6 +87,36 @@ LyricTimeline _longTimeline() {
   );
 }
 
+/// 行级时间轴：「君の名を呼ぶ」唱三遍（共享启发式判成副歌），其余各不相同。
+LyricTimeline _chorusTimeline() {
+  const List<String> texts = <String>[
+    '遠い街の灯り',
+    '君の名を呼ぶ',
+    '風が吹いていた',
+    '君の名を呼ぶ',
+    '夜明けはまだ遠く',
+    '君の名を呼ぶ',
+    '最後のひとこと',
+  ];
+  return LyricTimeline(
+    format: 'lrc',
+    lines: <LyricLine>[
+      for (int i = 0; i < texts.length; i++)
+        LyricLine(
+          startMs: 1000 + i * 3000,
+          endMs: 3800 + i * 3000,
+          syllables: <LyricSyllable>[
+            LyricSyllable(
+              text: texts[i],
+              startMs: 1000 + i * 3000,
+              endMs: 3800 + i * 3000,
+            ),
+          ],
+        ),
+    ],
+  );
+}
+
 List<FumeLine> _linesOf(LyricTimeline t) =>
     fumeLinesOf(LyricVisualizerRuntime(t));
 
@@ -100,9 +131,16 @@ FumeArticle _article(List<FumeLine> lines, Size size) => buildFumeArticle(
 
 void main() {
   group('时序', () {
-    test('渲染结束：常规句加停留与离场，极短句有下限', () {
-      expect(fumeLineRenderEndTime(0, 2, 2), closeTo(2.38, 1e-9));
-      expect(fumeLineRenderEndTime(1, 1.05, 1.05), closeTo(1.067, 1e-9));
+    test('渲染结束取运行时共享的句尾离场窗口', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        sampleWordTimeline(),
+      );
+      final List<FumeLine> lines = fumeLinesOf(rt);
+      for (int i = 0; i < lines.length; i++) {
+        expect(lines[i].renderEnd, rt.lines[i].renderEndMs / 1000);
+        expect(lines[i].renderEnd, greaterThanOrEqualTo(lines[i].end));
+        expect(lines[i].hints, rt.lines[i].renderHints);
+      }
     });
 
     test('词区间吞掉其后空白，字形去首尾空白', () {
@@ -276,6 +314,24 @@ void main() {
       );
       expect(px2, 10);
       expect(count2, greaterThan(1));
+    });
+
+    test('副歌句（≤22 字）自然成大标题', () {
+      final List<FumeLine> lines = _linesOf(_chorusTimeline());
+      expect(lines[1].isChorus, isTrue);
+      expect(lines[0].isChorus, isFalse);
+      for (final int i in <int>[1, 3, 5]) {
+        expect(fumeNaturalVariant(lines[i], i, lines.length), FumeVariant.hero);
+      }
+      // 有了自然大标题就不再强行挑。
+      expect(fumeFallbackHeroIndex(lines), -1);
+      final FumeArticle a = _article(lines, const Size(1280, 720));
+      expect(
+        a.blocks
+            .where((FumeBlock b) => b.line.isChorus)
+            .every((FumeBlock b) => b.hero),
+        isTrue,
+      );
     });
 
     test('一句大标题都没挑中时强行挑一句', () {
@@ -536,6 +592,126 @@ void main() {
         fumeVisualizerEntry,
         timeline: const LyricTimeline(format: 'lrc', lines: <LyricLine>[]),
         timesMs: const <int>[0, 1000],
+      );
+    });
+
+    testWidgets('音频分析 + AI 主题（按词着色 / 字重）+ 各档强度', (WidgetTester tester) async {
+      for (final LyricVisualizerIntensity it
+          in LyricVisualizerIntensity.values) {
+        await pumpVisualizerAcross(
+          tester,
+          fumeVisualizerEntry,
+          audio: SyntheticVisualizerAudio(),
+          intensity: it,
+          theme: const LyricVisualizerTheme(
+            wordColors: <String, Color>{'夜空': Color(0xFFFF4081)},
+            fontWeight: FontWeight.w300,
+          ),
+        );
+      }
+    });
+
+    testWidgets('副歌时间轴', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        fumeVisualizerEntry,
+        timeline: _chorusTimeline(),
+        timesMs: const <int>[0, 1500, 4500, 7600, 13000, 19500, 26000],
+      );
+    });
+  });
+
+  group('共享框架', () {
+    test('强度：辉光底数照 folia（calm / normal / chaotic）乘辉光强度', () {
+      expect(fumeGlowBases(LyricVisualizerIntensity.calm, 1), (0.72, 0.35));
+      expect(fumeGlowBases(LyricVisualizerIntensity.normal, 1), (0.92, 0.62));
+      final (double a, double p) = fumeGlowBases(
+        LyricVisualizerIntensity.chaotic,
+        2,
+      );
+      expect(a, closeTo(2.3, 1e-9));
+      expect(p, closeTo(1.9, 1e-9));
+    });
+
+    test('音频帧 → 火花频段电平（10–200）', () {
+      final LyricVisualizerAudioFrame f = SyntheticVisualizerAudio().frameAt(
+        1000,
+      );
+      final FumeBackgroundLevels lv = fumeBackgroundLevelsOf(f);
+      expect(lv[FumeAudioBand.bass], closeTo(10 + 190 * f.low, 1e-9));
+      expect(lv[FumeAudioBand.mid], closeTo(10 + 190 * f.mid, 1e-9));
+      expect(lv[FumeAudioBand.lowMid], lv[FumeAudioBand.mid]);
+      expect(lv[FumeAudioBand.vocal], closeTo(10 + 190 * f.vocal, 1e-9));
+      expect(lv[FumeAudioBand.treble], closeTo(10 + 190 * f.high, 1e-9));
+      final FumeBackgroundLevels quiet = fumeBackgroundLevelsOf(
+        LyricVisualizerAudioFrame.silent,
+      );
+      expect(quiet[FumeAudioBand.bass], 10);
+    });
+
+    test('正在唱的字色：主题 wordColors 互相包含即命中，否则 accent', () {
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        wordColors: <String, Color>{'夜空': Color(0xFFFF4081)},
+      );
+      final List<FumeLine> lines = _linesOf(sampleWordTimeline());
+      final FumeArticle a = _article(lines, const Size(1280, 720));
+      FumeScene sceneWith(LyricVisualizerTheme? th) => FumeScene(
+        runtime: LyricVisualizerRuntime(sampleWordTimeline()),
+        lines: lines,
+        article: a,
+        viewport: const Size(1280, 720),
+        background: buildFumeBackgroundScene(
+          viewport: const Size(1280, 720),
+          world: Size(a.width, a.height),
+          paperBounds: a.paperBounds,
+          seed: 'x',
+        ),
+        overview: null,
+        overviewStartTime: double.infinity,
+        passedFadeDuration: double.infinity,
+        text: const Color(0xFFFFFFFF),
+        secondary: const Color(0xFF888888),
+        accent: const Color(0xFF00FF00),
+        cameraSpeed: 1,
+        tracking: FumeTrackingMode.smooth,
+        glowIntensity: 1,
+        backgroundObjectOpacity: 0.5,
+        showPrintStamp: true,
+        textHoldRatio: 1,
+        motion: true,
+        theme: th,
+      );
+      final FumeScene themed = sceneWith(theme);
+      expect(themed.activeColorFor('夜'), const Color(0xFFFF4081));
+      expect(themed.activeColorFor('夜空に'), const Color(0xFFFF4081));
+      expect(themed.activeColorFor('光'), const Color(0xFF00FF00));
+      expect(sceneWith(null).activeColorFor('夜'), const Color(0xFF00FF00));
+    });
+
+    test('主题字重 / 字体进字形样式与排版缓存键', () {
+      const FumeFont f = FumeFont(weight: FontWeight.w300, family: 'serif');
+      expect(fumeFontWeight(FumeVariant.hero, f), FontWeight.w300);
+      expect(fumeFontWeight(FumeVariant.hero), FontWeight.w800);
+      expect(fumeTextStyle(FumeVariant.body, 20, f).fontFamily, 'serif');
+      final List<FumeLine> lines = _linesOf(sampleWordTimeline());
+      String key(FumeFont font) => FumeArticleCache.keyOf(
+        lines: lines,
+        viewport: const Size(800, 600),
+        fontScale: 1,
+        heroScale: 1,
+        seedKey: 's',
+        textScale: 1,
+        font: font,
+      );
+      expect(key(f), isNot(key(FumeFont.standard)));
+    });
+
+    test('背景：用户选的共享背景', () {
+      expect(
+        fumeVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(fumeVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
       );
     });
   });

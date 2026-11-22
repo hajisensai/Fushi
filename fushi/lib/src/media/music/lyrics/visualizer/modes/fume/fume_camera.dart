@@ -6,6 +6,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/fume/fume_math.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/fume/fume_timeline.dart';
@@ -213,23 +215,17 @@ double fumeCameraScaleForBlock(FumeBlock block, Size viewport) {
 /// 换句过渡时长（随行的节奏：短句更快）。
 double fumeCameraRetargetDuration(FumeLine line) {
   final double raw = math.max(line.end - line.start, 0);
-  final FumeLineTransitionMode mode = fumeLineTransitionModeOf(raw);
-  final FumeLineTransitionTiming tt = fumeLineTransitionTiming(raw, mode);
-  switch (mode) {
-    case FumeLineTransitionMode.none:
+  final LyricVisualizerRenderHints h = line.hints;
+  final double enter = h.enterMs / 1000;
+  final double exit = h.exitMs / 1000;
+  final double hold = h.passHoldMs / 1000;
+  switch (h.lineTransition) {
+    case LyricVisualizerLineTransition.none:
       return fumeClamp(math.max(raw, 0.08) * 0.34, 0.04, 0.075);
-    case FumeLineTransitionMode.fast:
-      return fumeClamp(
-        tt.enterDuration * 0.5 + tt.exitDuration * 0.12,
-        0.055,
-        0.095,
-      );
-    case FumeLineTransitionMode.normal:
-      return fumeClamp(
-        tt.enterDuration * 0.44 + tt.linePassHold * 0.22,
-        0.075,
-        0.13,
-      );
+    case LyricVisualizerLineTransition.fast:
+      return fumeClamp(enter * 0.5 + exit * 0.12, 0.055, 0.095);
+    case LyricVisualizerLineTransition.normal:
+      return fumeClamp(enter * 0.44 + hold * 0.22, 0.075, 0.13);
   }
 }
 
@@ -381,6 +377,7 @@ FumeCameraStepResult fumeStepCamera(
   required double cameraSpeed,
   required FumeTrackingMode tracking,
   required bool motion,
+  LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
 }) {
   final FumeCamera cam = state.camera;
   final FumeRetarget rt = state.retarget;
@@ -474,10 +471,10 @@ FumeCameraStepResult fumeStepCamera(
     return FumeCameraStepResult(showOverview, showOverview ? 1 : 0);
   }
 
-  // 闲置漂浮（folia 「normal」强度）。
-  const double floatDistance = 18;
-  const double floatDuration = 7;
-  const double floatScaleAmp = 0.011;
+  // 闲置漂浮（folia 按主题强度：calm 14px / 8.5s、normal 18px / 7s、chaotic 24px / 5.8s）。
+  final double floatDistance = intensity.pick(14, 18, 24);
+  final double floatDuration = intensity.pick(8.5, 7, 5.8);
+  final double floatScaleAmp = intensity.pick(0.008, 0.011, 0.014);
   final double fp = (wallSeconds / floatDuration) * math.pi * 2;
   final double atten = showOverview ? 0.36 : 1;
   final double sfx = math.sin(fp * 0.74 + 0.8) * floatDistance * 0.34;

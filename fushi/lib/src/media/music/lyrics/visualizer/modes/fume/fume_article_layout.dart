@@ -160,10 +160,11 @@ class FumeArticle {
 int fumeRenderableGraphemes(FumeLine line) =>
     line.graphemes.where((String g) => g.trim().isNotEmpty).length;
 
-/// 自然挑出的大标题：短句里每第 6 句，或少量随机（folia 还看副歌标记，Fushi 没有）。
+/// 自然挑出的大标题：不长的副歌句（≤22 字），或短句里每第 6 句、少量随机。
 FumeVariant fumeNaturalVariant(FumeLine line, int index, int total) {
   final int count = fumeRenderableGraphemes(line);
   if (count == 0) return FumeVariant.body;
+  if (line.isChorus && count <= 22) return FumeVariant.hero;
   final bool shortEnough = count >= 4 && count <= 28;
   final double centered = (index - total / 2).abs() / math.max(total, 1);
   final double random = fumeSeeded('${line.text}:$index');
@@ -194,8 +195,10 @@ int fumeFallbackHeroIndex(List<FumeLine> entries) {
         : count <= 28
         ? 0.72
         : 0.36;
+    final double chorusScore = line.isChorus ? 0.28 : 0;
     final double jitter = fumeSeeded('${line.text}:$i:fallback-hero') * 0.04;
-    final double score = (1 - centered) * 0.62 + lengthScore * 0.34 + jitter;
+    final double score =
+        (1 - centered) * 0.62 + lengthScore * 0.34 + chorusScore + jitter;
     if (score > bestScore) {
       bestScore = score;
       bestIndex = i;
@@ -563,25 +566,58 @@ _Attempt _attempt({
 // TextPainter 量字
 // ---------------------------------------------------------------------------
 
-/// 两种块的字重（folia hero 780 / body 640）。
-FontWeight fumeFontWeight(FumeVariant v) =>
-    v == FumeVariant.hero ? FontWeight.w800 : FontWeight.w600;
+/// 主题的字重 / 字体（folia `resolveThemeFontWeight` / `resolveThemeFontStack`）；都为 null
+/// = 样式默认。
+@immutable
+class FumeFont {
+  const FumeFont({this.weight, this.family});
 
-TextStyle fumeTextStyle(FumeVariant v, double fontPx) =>
-    TextStyle(fontSize: fontPx, fontWeight: fumeFontWeight(v));
+  static const FumeFont standard = FumeFont();
+
+  final FontWeight? weight;
+  final String? family;
+
+  /// 排版缓存键的一部分。
+  String get key => '${weight?.value ?? ''}/${family ?? ''}';
+
+  @override
+  bool operator ==(Object other) =>
+      other is FumeFont && other.weight == weight && other.family == family;
+
+  @override
+  int get hashCode => Object.hash(weight, family);
+}
+
+/// 两种块的字重（folia hero 780 / body 640）；主题给了字重时两种都用主题的。
+FontWeight fumeFontWeight(FumeVariant v, [FumeFont font = FumeFont.standard]) =>
+    font.weight ?? (v == FumeVariant.hero ? FontWeight.w800 : FontWeight.w600);
+
+TextStyle fumeTextStyle(
+  FumeVariant v,
+  double fontPx, [
+  FumeFont font = FumeFont.standard,
+]) => TextStyle(
+  fontSize: fontPx,
+  fontWeight: fumeFontWeight(v, font),
+  fontFamily: font.family,
+);
 
 /// 真实量字：TextPainter。一次排版用一个实例（带缓存），用完 [dispose]。
 class FumeTextPainterMeasurer implements FumeTextMeasurer {
-  FumeTextPainterMeasurer({this.textScaler = TextScaler.noScaling});
+  FumeTextPainterMeasurer({
+    this.textScaler = TextScaler.noScaling,
+    this.font = FumeFont.standard,
+  });
 
   final TextScaler textScaler;
+  final FumeFont font;
   static const double _refPx = 100;
   final Map<String, double> _natural = <String, double>{};
   final Map<String, double> _heights = <String, double>{};
 
   TextPainter _painter(String text, FumeVariant v, double fontPx) =>
       TextPainter(
-        text: TextSpan(text: text, style: fumeTextStyle(v, fontPx)),
+        text: TextSpan(text: text, style: fumeTextStyle(v, fontPx, font)),
         textDirection: TextDirection.ltr,
         textScaler: textScaler,
       );
@@ -690,11 +726,12 @@ class FumeArticleCache {
     required double heroScale,
     required String seedKey,
     required double textScale,
+    FumeFont font = FumeFont.standard,
   }) {
     int h = 2166136261;
     for (final FumeLine l in lines) {
       h ^= fumeHashString(
-        '${l.start}:${l.end}:${l.text}:${l.ranges.length}:${l.index}',
+        '${l.start}:${l.end}:${l.text}:${l.ranges.length}:${l.index}:${l.isChorus ? 1 : 0}',
       );
       h = (h * 16777619) & 0xFFFFFFFF;
     }
@@ -705,6 +742,7 @@ class FumeArticleCache {
       heroScale.toStringAsFixed(4),
       textScale.toStringAsFixed(4),
       seedKey,
+      font.key,
       lines.length,
       h,
     ].join('|');

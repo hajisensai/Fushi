@@ -7,6 +7,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart';
@@ -37,6 +38,10 @@ class FumeScene {
     required this.showPrintStamp,
     required this.textHoldRatio,
     required this.motion,
+    this.font = FumeFont.standard,
+    this.theme,
+    this.intensity = LyricVisualizerIntensity.normal,
+    this.audioAt,
   });
 
   final LyricVisualizerRuntime runtime;
@@ -62,8 +67,54 @@ class FumeScene {
   final double textHoldRatio;
   final bool motion;
 
+  /// 主题字重 / 字体。
+  final FumeFont font;
+
+  /// 歌词动画主题（按词着色 `wordColors`）；null = 没有。
+  final LyricVisualizerTheme? theme;
+
+  /// 主题强度（folia `theme.animationIntensity`）：辉光底数与镜头漂浮幅度。
+  final LyricVisualizerIntensity intensity;
+
+  /// 一帧音频（歌词显示时间毫秒 → 帧；`LyricVisualizerContext.audioFrameAt`）；null = 静音。
+  final LyricVisualizerAudioFrame Function(int displayMs)? audioAt;
+
+  /// 正在唱的字色（folia `getActiveColor`：按词查主题 wordColors，CJK 互相包含即命中，没命中用
+  /// accent）。
+  Color activeColorFor(String word) =>
+      theme?.resolveWordColor(
+        word,
+        accent,
+        cjkMatch: LyricVisualizerCjkMatch.bidirectional,
+      ) ??
+      accent;
+
   double? nextLineStart(int lineIndex) =>
       lineIndex + 1 < lines.length ? lines[lineIndex + 1].start : null;
+}
+
+/// folia `resolveFumeGlowBases`：(当前句辉光, 唱过残光) 按主题强度取底数（calm 0.72 / 0.35、
+/// normal 0.92 / 0.62、chaotic 1.15 / 0.95），再乘「辉光强度」参数。
+(double, double) fumeGlowBases(
+  LyricVisualizerIntensity intensity,
+  double glowIntensity,
+) => (
+  intensity.pick(0.72, 0.92, 1.15) * glowIntensity,
+  intensity.pick(0.35, 0.62, 0.95) * glowIntensity,
+);
+
+/// 音频帧 → 背景火花的频段电平（folia `readFumeAudioLevels`，0–255 量级，下限 10）：bass ← 低频、
+/// lowMid / mid ← 中频（共享契约把 folia 的 lowMid + mid 合成一段）、vocal ← 人声、treble ← 高频。
+/// 没有音频分析时帧是歌词起字包络的代用品，各段衰减快慢不同。
+FumeBackgroundLevels fumeBackgroundLevelsOf(LyricVisualizerAudioFrame f) {
+  double lv(double v) => 10 + 190 * v.clamp(0.0, 1.0);
+  return <FumeAudioBand, double>{
+    FumeAudioBand.bass: lv(f.low),
+    FumeAudioBand.lowMid: lv(f.mid),
+    FumeAudioBand.mid: lv(f.mid),
+    FumeAudioBand.vocal: lv(f.vocal),
+    FumeAudioBand.treble: lv(f.high),
+  };
 }
 
 /// 一块此刻的时序与样式（folia `resolveFumeBlockTiming`）。
@@ -181,11 +232,17 @@ List<Shadow>? _shadows(double canvasBlur, Color color) {
   return <Shadow>[Shadow(color: color, blurRadius: r)];
 }
 
-TextStyle _style(FumeBlock b, Color fill, double blur, Color shadow) =>
-    fumeTextStyle(
-      b.variant,
-      b.fontPx,
-    ).copyWith(color: fill, shadows: _shadows(blur, shadow));
+TextStyle _style(
+  FumeBlock b,
+  FumeFont font,
+  Color fill,
+  double blur,
+  Color shadow,
+) => fumeTextStyle(
+  b.variant,
+  b.fontPx,
+  font,
+).copyWith(color: fill, shadows: _shadows(blur, shadow));
 
 class _CachedPainter {
   _CachedPainter(this.painter, this.frame);
@@ -198,6 +255,7 @@ class _CachedPainter {
 class FumeStage {
   final FumeCameraState cameraState = FumeCameraState();
   final FumeBackgroundPainter _background = FumeBackgroundPainter();
+  FumeFont _font = FumeFont.standard;
   final Map<String, _CachedPainter> _painters = <String, _CachedPainter>{};
   FumeArticle? _article;
   LyricVisualizerTick? _steppedTick;
@@ -208,6 +266,7 @@ class FumeStage {
 
   /// 场景换了：文章变了就清段落缓存、重新放镜头。
   void attach(FumeScene scene) {
+    _font = scene.font;
     if (!identical(scene.article, _article)) {
       _article = scene.article;
       _clearPainters();
@@ -240,7 +299,7 @@ class FumeStage {
     final TextPainter p = TextPainter(
       text: TextSpan(
         text: b.renderLines[lineIndex].text,
-        style: _style(b, s.fill, s.blur, s.shadow),
+        style: _style(b, _font, s.fill, s.blur, s.shadow),
       ),
       textDirection: TextDirection.ltr,
       textScaler: TextScaler.noScaling,
@@ -321,13 +380,14 @@ class FumeStage {
         time: t,
         wallSeconds: wall,
         dt: dt,
-        lineIndex: scene.runtime.activeLineAt(tick.timeMs),
+        lineIndex: scene.runtime.displayedLineAt(tick.timeMs),
         viewport: size,
         overview: scene.overview,
         overviewStartTime: scene.overviewStartTime,
         cameraSpeed: scene.cameraSpeed,
         tracking: scene.tracking,
         motion: scene.motion,
+        intensity: scene.intensity,
       );
     }
     final FumeCamera cam = cameraState.camera;
@@ -370,9 +430,10 @@ class FumeStage {
       ..translate(center.dx, center.dy)
       ..scale(cam.scale)
       ..translate(-cam.x, -cam.y);
-    // folia 主题强度「normal」：当前句辉光 0.92、唱过残光 0.62，各乘辉光强度。
-    final double activeGlowBoost = 0.92 * scene.glowIntensity;
-    final double passedGlowBase = 0.62 * scene.glowIntensity;
+    final (double activeGlowBoost, double passedGlowBase) = fumeGlowBases(
+      scene.intensity,
+      scene.glowIntensity,
+    );
     for (final FumeBlock b in article.blocks) {
       if (!_onScreen(b, cam, size)) continue;
       final FumeBlockTiming timing = FumeBlockTiming(
@@ -414,15 +475,9 @@ class FumeStage {
   }
 
   FumeBackgroundLevels _levels(FumeScene scene, int timeMs) {
-    if (!scene.motion) return const <FumeAudioBand, double>{};
-    final double p = scene.runtime.pulseAt(timeMs);
-    return <FumeAudioBand, double>{
-      FumeAudioBand.treble: 10 + 190 * p,
-      FumeAudioBand.vocal: 10 + 190 * p * 0.9,
-      FumeAudioBand.mid: 10 + 190 * p * 0.75,
-      FumeAudioBand.lowMid: 10 + 190 * p * 0.6,
-      FumeAudioBand.bass: 10 + 190 * p * 0.5,
-    };
+    final LyricVisualizerAudioFrame Function(int)? at = scene.audioAt;
+    if (!scene.motion || at == null) return const <FumeAudioBand, double>{};
+    return fumeBackgroundLevelsOf(at(timeMs));
   }
 
   static bool _onScreen(FumeBlock b, FumeCamera cam, Size viewport) {
@@ -554,7 +609,7 @@ class FumeStage {
               ? fumeClamp((t - gStart) / gDur + 0.16, 0, 1)
               : fumeClamp(wordProgress * glyphCount - gi + 0.16, 0, 1);
           final double eased = fumeEaseOutCubic(gp);
-          final Color active = scene.accent;
+          final Color active = scene.activeColorFor(range.text);
           final double trailStart = gStart + gDur * 0.18;
           final double trail = math
               .pow(
@@ -636,7 +691,7 @@ class FumeStage {
         if (key != runKey) {
           flush();
           runKey = key;
-          runStyle = _style(b, fill, worldBlur, shadow);
+          runStyle = _style(b, scene.font, fill, worldBlur, shadow);
         }
         run.write(g);
       }

@@ -87,14 +87,15 @@ final List<LyricVisualizerTuningSpec> fumeTunings = <LyricVisualizerTuningSpec>[
   ),
 ];
 
-/// 注册项。folia 的浮名下面铺共享背景（自己的几何物体另画），底部字幕也用共享的。
+/// 注册项。folia 的浮名下面铺用户选的共享背景（自己的几何物体另画），底部字幕也用共享的。
 final LyricVisualizerEntry fumeVisualizerEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.fume,
   label: () => t.music_visualizer_mode_fume,
   description: () => t.music_visualizer_fume_description,
   icon: FushiIcons.blur,
   tunings: fumeTunings,
-  sharedBackdrop: true,
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => FumeVisualizer(context: c),
 );
@@ -151,6 +152,10 @@ class _FumeVisualizerState extends State<FumeVisualizer> {
       c.palette,
       c.motion,
       c.seed,
+      c.theme,
+      c.intensity,
+      c.audio,
+      c.offsetMs,
     );
     final FumeScene? cached = _scene;
     if (cached != null && _sceneKey == key) return cached;
@@ -159,6 +164,10 @@ class _FumeVisualizerState extends State<FumeVisualizer> {
     final double heroScale = tu.number(FumeTuningKeys.heroScale, 1);
     final double hold = tu.number(FumeTuningKeys.textHoldRatio, 1);
     final String seedKey = 'fume:${c.seed}';
+    final FumeFont font = FumeFont(
+      weight: c.theme?.fontWeight,
+      family: c.theme?.fontFamily,
+    );
     final FumeArticle? article = FumeArticleCache.resolve(
       FumeArticleCache.keyOf(
         lines: _lines,
@@ -167,11 +176,12 @@ class _FumeVisualizerState extends State<FumeVisualizer> {
         heroScale: heroScale,
         seedKey: seedKey,
         textScale: 1,
+        font: font,
       ),
       () => buildFumeArticle(
         lines: _lines,
         viewport: size,
-        measurer: FumeTextPainterMeasurer(),
+        measurer: FumeTextPainterMeasurer(font: font),
         fontScale: c.fontScale,
         heroScale: heroScale,
         seedKey: seedKey,
@@ -211,6 +221,10 @@ class _FumeVisualizerState extends State<FumeVisualizer> {
       showPrintStamp: !tu.flag(FumeTuningKeys.hidePrintSymbols, false),
       textHoldRatio: hold,
       motion: c.motion,
+      font: font,
+      theme: c.theme,
+      intensity: c.intensity,
+      audioAt: c.audioFrameAt,
     );
     _stage.attach(scene);
     _scene = scene;

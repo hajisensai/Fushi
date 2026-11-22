@@ -1,5 +1,6 @@
-/// 浮名的歌词时序（folia `fumeReveal.ts` / `fumeTextStyle.ts` / `utils/lyrics/renderHints.ts`）：
-/// 词区间、已打印字数、行的「唱过」截止点、唱过文字的停留与淡出。
+/// 浮名的歌词时序（folia `fumeReveal.ts` / `fumeTextStyle.ts`）：词区间、已打印字数、行的
+/// 「唱过」截止点、唱过文字的停留与淡出。行的渲染提示（句尾离场、过渡节奏）取运行时共享的
+/// [LyricVisualizerRenderHints]（folia `utils/lyrics/renderHints.ts`）。
 ///
 /// 时间一律用**秒**（与 folia 常量一致，入口处把毫秒换成秒）。
 library;
@@ -50,6 +51,8 @@ class FumeLine {
     required this.end,
     required this.lastWordEnd,
     required this.ranges,
+    required this.hints,
+    this.isChorus = false,
   });
 
   /// 在 `runtime.lines` 里的下标（与 `activeLineAt` 同一套编号）。
@@ -61,8 +64,14 @@ class FumeLine {
   final double lastWordEnd;
   final List<FumeWordRange> ranges;
 
+  /// 行的渲染提示（运行时共享，folia `renderHints`）。
+  final LyricVisualizerRenderHints hints;
+
+  /// 副歌行（运行时共享的段落判据：来源标注优先，否则重复句启发式）。
+  final bool isChorus;
+
   /// 文字可以留在台上的最后时刻（folia `getLineRenderEndTime`）。
-  double get renderEnd => fumeLineRenderEndTime(start, end, lastWordEnd);
+  double get renderEnd => hints.renderEndMs / 1000;
 }
 
 bool _isSpace(String s) => s.trim().isEmpty;
@@ -92,6 +101,8 @@ FumeLine fumeLineFrom(LyricVisualizerLine line, int index) {
       end: end,
       lastWordEnd: end,
       ranges: const <FumeWordRange>[],
+      hints: line.renderHints,
+      isChorus: line.isChorus,
     );
   }
   final List<LyricVisualizerGlyph> kept = glyphs.sublist(lo, hi);
@@ -132,77 +143,12 @@ FumeLine fumeLineFrom(LyricVisualizerLine line, int index) {
     end: math.max(end, start),
     lastWordEnd: lastWordEnd,
     ranges: ranges,
+    hints: line.renderHints,
+    isChorus: line.isChorus,
   );
 }
 
 List<String> _splitGraphemes(String text) => text.characters.toList();
-
-// ---------------------------------------------------------------------------
-// renderHints（folia utils/lyrics/renderHints.ts）
-// ---------------------------------------------------------------------------
-
-enum FumeLineTransitionMode { normal, fast, none }
-
-/// 一行的过渡节奏（入场 / 离场 / 唱完停留）。
-class FumeLineTransitionTiming {
-  const FumeLineTransitionTiming(
-    this.enterDuration,
-    this.exitDuration,
-    this.linePassHold,
-  );
-
-  final double enterDuration;
-  final double exitDuration;
-  final double linePassHold;
-}
-
-FumeLineTransitionMode fumeLineTransitionModeOf(double rawDuration) {
-  if (rawDuration < 0.10) return FumeLineTransitionMode.none;
-  if (rawDuration < 0.18) return FumeLineTransitionMode.fast;
-  return FumeLineTransitionMode.normal;
-}
-
-FumeLineTransitionTiming fumeLineTransitionTiming(
-  double rawDuration,
-  FumeLineTransitionMode mode,
-) {
-  switch (mode) {
-    case FumeLineTransitionMode.none:
-      return const FumeLineTransitionTiming(0, 0, 0);
-    case FumeLineTransitionMode.fast:
-      return FumeLineTransitionTiming(
-        fumeClamp(rawDuration * 0.45, 0.045, 0.06),
-        fumeClamp(rawDuration * 0.22, 0.03, 0.04),
-        0.03,
-      );
-    case FumeLineTransitionMode.normal:
-      final double d = math.max(rawDuration, 0.12);
-      return FumeLineTransitionTiming(
-        math.min(0.42, math.max(0.22, d * 0.34)),
-        math.min(0.32, math.max(0.18, d * 0.18)),
-        0.06,
-      );
-  }
-}
-
-/// folia `buildLineRenderEndTime`。
-double fumeLineRenderEndTime(double start, double end, double lastWordEnd) {
-  final double raw = math.max(end - start, 0);
-  final FumeLineTransitionMode mode = fumeLineTransitionModeOf(raw);
-  if (mode == FumeLineTransitionMode.none) {
-    return math.max(end, start + 0.067);
-  }
-  final FumeLineTransitionTiming tt = fumeLineTransitionTiming(raw, mode);
-  final double passStart = math.max(lastWordEnd, start) + tt.linePassHold;
-  final double exitStart = mode == FumeLineTransitionMode.fast
-      ? <double>[
-          start + tt.enterDuration + 0.01,
-          passStart,
-          end - tt.exitDuration,
-        ].reduce(math.max)
-      : math.max(passStart, end - tt.exitDuration);
-  return math.max(end, exitStart + tt.exitDuration);
-}
 
 // ---------------------------------------------------------------------------
 // reveal（folia fumeReveal.ts）
