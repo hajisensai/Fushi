@@ -5,6 +5,9 @@ import 'package:drift/drift.dart' show Value;
 // StudyClock 就在子 barrel 里（fushi_audio_core.dart 导出 src/audiobook/study_clock.dart）。
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/stats/stat_derive.dart';
+import 'package:fushi_engine/stats/stat_facts.dart'
+    show StatFacts, kRecentGameSessionsLimit, loadStatFacts;
 
 /// 同一媒体相邻两段间隔不超过这个值就归成同一次会话（与首页活动流的
 /// `kActivitySessionGap` 同值：一条纪律，两处消费）。
@@ -270,157 +273,26 @@ class StudySession {
       : 'seg:${segmentUids.first}';
 }
 
-bool _isZero(StudySegmentRow s) =>
-    s.durationMs <= 0 && s.chars <= 0 && s.pages <= 0;
-
-/// 这一段属于「骨架窗口之外的游玩会话」吗？
+/// 从事实派生会话列表，按结束时刻倒序（派生在 Rust：`native/fushi_compute/src/stats.rs`
+/// 的 `derive_sessions`，BUG-4960 起没有 Dart 实现）。
 ///
-/// 游戏会话的时长只存在于 `galgame_sessions` 骨架行上；hook 记的字数段 `durationMs`
-/// 恒为 0。调用方按 `kRecentGameSessionsLimit` 截断骨架，所以更早的游玩会话**没有**
-/// 骨架行——它的字数段若掉进通用归并，产出的是「0 分钟、只有字数」的孤儿会话，
-/// 用户往下翻过那条线之后整片都是它们。窗口之外不做游戏会话，比做一个假的好。
-bool _outsideGameSkeleton(StudySegmentRow s, int? windowStartAt) =>
-    windowStartAt != null &&
-    s.mediaKind == kActivityMediaGame &&
-    s.startAt < windowStartAt;
-
-/// 从事实派生会话列表，按结束时刻倒序。
+/// 规则：游戏以 [gameSessions]（`galgame_sessions` 行）为骨架，一行一会话，吸收时间区间
+/// 相交的同游戏非零段；骨架窗口（最早一条骨架的起点）之前的游戏段不做会话（调用方按
+/// `kRecentGameSessionsLimit` 截断骨架，更早的游玩没有骨架行，做出来是「0 分钟、只有
+/// 字数」的孤儿会话）；其余段按 (deviceId, mediaKind, mediaKey) 分组、组内按起始时刻，
+/// 相邻间隔 ≤ [gap] 归并（会话 title 取组内最后一段非空的 title 快照）。[segments] 里写零
+/// 的行（用户已删）不进任何会话；legacy 日行没有 uid、没有起止时刻，本来就不在这里。
 ///
-/// [segments] 写零的行（用户已删）不进任何会话；legacy 日行没有 uid、没有起止时刻，
-/// 本来就不在这里——会话流只覆盖 v92 之后的数据。
+/// 统计页读的是 [StatFacts.sessions]（[loadStatFacts] 在后台 isolate 里一并派生）；
+/// 本函数是同一派生的小输入入口，会同步调原生库。
 List<StudySession> deriveStudySessions({
   required List<StudySegmentRow> segments,
   List<GalgameSessionRow> gameSessions = const <GalgameSessionRow>[],
   Map<String, String> gameNamesById = const <String, String>{},
   Duration gap = kStudySessionGap,
-}) {
-  final List<StudySession> out = <StudySession>[];
-  final Set<String> absorbed = <String>{};
-
-  // 1) 游戏骨架：galgame_sessions 一行一会话，吸收区间相交的同游戏字数段。
-  for (final GalgameSessionRow g in gameSessions) {
-    final List<StudySegmentRow> hits = <StudySegmentRow>[
-      for (final StudySegmentRow s in segments)
-        if (s.mediaKind == kActivityMediaGame &&
-            s.mediaKey == g.gameId &&
-            !_isZero(s) &&
-            s.startAt < g.endMs &&
-            s.endAt > g.startMs)
-          s,
-    ];
-    int chars = 0;
-    for (final StudySegmentRow s in hits) {
-      chars += s.chars;
-      absorbed.add(s.uid);
-    }
-    out.add(
-      StudySession(
-        mediaKind: kActivityMediaGame,
-        mediaKey: g.gameId,
-        title:
-            gameNamesById[g.gameId] ?? (hits.isEmpty ? '' : hits.first.title),
-        format: '',
-        deviceId: hits.isEmpty ? '' : hits.first.deviceId,
-        startAt: g.startMs,
-        endAt: g.endMs,
-        durationMs: g.durationSeconds * 1000,
-        chars: chars,
-        pages: 0,
-        segmentUids: <String>[for (final StudySegmentRow s in hits) s.uid],
-        gameSessionId: g.id,
-      ),
-    );
-  }
-
-  // 2) 其余段：同 (device, kind, key) 按起始时刻排序，gap 内相邻归并。
-  // 骨架窗口的左界：比它更早的游戏段没有骨架行，见 [_outsideGameSkeleton]。
-  int? gameWindowStartAt;
-  for (final GalgameSessionRow g in gameSessions) {
-    if (gameWindowStartAt == null || g.startMs < gameWindowStartAt) {
-      gameWindowStartAt = g.startMs;
-    }
-  }
-  final List<StudySegmentRow> rest =
-      <StudySegmentRow>[
-        for (final StudySegmentRow s in segments)
-          if (!_isZero(s) &&
-              !absorbed.contains(s.uid) &&
-              !_outsideGameSkeleton(s, gameWindowStartAt))
-            s,
-      ]..sort((StudySegmentRow a, StudySegmentRow b) {
-        final int c = _compareGroup(_groupKey(a), _groupKey(b));
-        return c != 0 ? c : a.startAt.compareTo(b.startAt);
-      });
-  final int gapMs = gap.inMilliseconds;
-  _Run? run;
-  for (final StudySegmentRow s in rest) {
-    if (run != null &&
-        run.groupKey == _groupKey(s) &&
-        s.startAt - run.endAt <= gapMs) {
-      run.add(s);
-      continue;
-    }
-    if (run != null) out.add(run.build());
-    run = _Run(s);
-  }
-  if (run != null) out.add(run.build());
-
-  out.sort((StudySession a, StudySession b) => b.endAt.compareTo(a.endAt));
-  return out;
-}
-
-/// 归并分组键：record 相等 / 比较按三段身份逐字段，不拼字符串（拼接分隔符要么撞
-/// 身份字符集，要么得写 NUL——源码含裸 NUL 会被 git 判 binary）。
-typedef _GroupKey = (String deviceId, String mediaKind, String mediaKey);
-
-_GroupKey _groupKey(StudySegmentRow s) => (s.deviceId, s.mediaKind, s.mediaKey);
-
-int _compareGroup(_GroupKey a, _GroupKey b) {
-  final int d = a.$1.compareTo(b.$1);
-  if (d != 0) return d;
-  final int k = a.$2.compareTo(b.$2);
-  if (k != 0) return k;
-  return a.$3.compareTo(b.$3);
-}
-
-class _Run {
-  _Run(StudySegmentRow first)
-    : groupKey = _groupKey(first),
-      first = first,
-      endAt = first.endAt {
-    add(first);
-  }
-
-  final _GroupKey groupKey;
-  final StudySegmentRow first;
-  int endAt;
-  int durationMs = 0;
-  int chars = 0;
-  int pages = 0;
-  final List<String> uids = <String>[];
-  String title = '';
-
-  void add(StudySegmentRow s) {
-    if (s.endAt > endAt) endAt = s.endAt;
-    durationMs += s.durationMs;
-    chars += s.chars;
-    pages += s.pages;
-    uids.add(s.uid);
-    // 最新一段的 title 快照最接近当前显示名。
-    if (s.title.isNotEmpty) title = s.title;
-  }
-
-  StudySession build() => StudySession(
-    mediaKind: first.mediaKind,
-    mediaKey: first.mediaKey,
-    title: title,
-    format: first.format,
-    deviceId: first.deviceId,
-    startAt: first.startAt,
-    endAt: endAt,
-    durationMs: durationMs,
-    chars: chars,
-    pages: pages,
-    segmentUids: uids,
-  );
-}
+}) => deriveStatFacts(
+  segments: segments,
+  gameSessions: gameSessions,
+  gameNames: gameNamesById,
+  gap: gap,
+).sessions;

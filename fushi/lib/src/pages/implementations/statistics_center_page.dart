@@ -23,6 +23,7 @@ import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/srs_statistics_page.dart';
@@ -192,6 +193,9 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   /// 跨域会话流（`StatFacts.sessions`：书 / 视频 / 游戏混排，按结束时刻倒序）。
   List<StudySession> _sessions = <StudySession>[];
 
+  /// 阅读域按日合计（所选范围卡的阅读速度）。
+  List<StatDayTotal> _bookDayTotals = const <StatDayTotal>[];
+
   Map<String, String> _epubUidByBookKey = <String, String>{};
   Map<String, int> _primaryCollectionByEntry = <String, int>{};
   Map<int, String> _collectionNamesById = <int, String>{};
@@ -267,8 +271,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         includeCounters: true,
         reviewsFrom: srs?.core,
       );
+      // 按日合计 / 阅读域按日合计 / 会话流都是加载时在后台 isolate 里由 Rust 一并
+      // 派生好的（BUG-4960），这里只换引用，不在 UI isolate 上遍历全域日面。
       _daily = facts.daily;
-      _byDay = sumStatDaysByKey(_daily);
+      _byDay = statDaysByKeyOf(facts.dayTotals);
+      _bookDayTotals = facts.bookDayTotals;
       _sessions = facts.sessions;
       final StatCounterFacts counters = facts.counters;
       _lookupEvents = counters.lookupEvents().toList();
@@ -394,10 +401,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           range,
           _byDay,
           extraLines: <StatSummaryLine>[
-            // 阅读速度只按阅读域算（[statBookCphOf]）：卡上的时长 / 字数是跨域
+            // 阅读速度只按阅读域算（[statBookCphOfTotals]）：卡上的时长 / 字数是跨域
             // 总和，视频只计时不计字、游戏 hook 只计字不计时，混算的「字/时」
             // 谁也解释不了。
-            if (statBookCphOf(_daily, range.contains) case final String cph)
+            if (statBookCphOfTotals(_bookDayTotals, range.contains)
+                case final String cph)
               StatSummaryLine(label: t.stat_reading_speed, value: cph),
             ...buildStatRangeCounterLines(
               range,

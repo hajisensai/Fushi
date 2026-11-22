@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -379,6 +380,16 @@ List<StatDayData> buildStatRangeChartData(
       return buckets.values.toList();
   }
 }
+
+/// 加载时已算好的按日合计（[StatFacts.dayTotals]，Rust 派生）→ 范围图表 / 日历热力图的
+/// 输入形状。统计中心总览用它，不再在 UI isolate 上逐条遍历全域日面。
+Map<String, StatDayData> statDaysByKeyOf(Iterable<StatDayTotal> totals) =>
+    <String, StatDayData>{
+      for (final StatDayTotal t in totals)
+        t.dateKey: StatDayData(dateKey: t.dateKey)
+          ..chars = t.chars
+          ..ms = t.ms,
+    };
 
 /// 纯函数：把日面行按 dateKey 汇总（范围图表 / 日历热力图共用的输入形状）。
 Map<String, StatDayData> sumStatDaysByKey(Iterable<StatFact> rows) {
