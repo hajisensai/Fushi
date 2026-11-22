@@ -39,13 +39,18 @@ void main() {
   ]) {
     final List<String> calls = <String>[];
     return (
-      compute: (String absolutePath, FileStat stat) async {
-        calls.add(absolutePath);
-        return digest.isEmpty
-            ? (absolutePath.hashCode.toRadixString(16).padLeft(8, '0') * 8)
-                  .substring(0, 64)
-            : digest;
-      },
+      compute:
+          (
+            String absolutePath,
+            FileStat stat,
+            VideoFingerprintCancellation cancel,
+          ) async {
+            calls.add(absolutePath);
+            return digest.isEmpty
+                ? (absolutePath.hashCode.toRadixString(16).padLeft(8, '0') * 8)
+                      .substring(0, 64)
+                : digest;
+          },
       calls: calls,
     );
   }
@@ -279,13 +284,18 @@ void main() {
       int active = 0;
       int peak = 0;
       final VideoSourceFingerprint hashes = VideoSourceFingerprint(
-        compute: (String absolutePath, FileStat stat) async {
-          active++;
-          if (active > peak) peak = active;
-          await Future<void>.delayed(const Duration(milliseconds: 5));
-          active--;
-          return 'f' * 64;
-        },
+        compute:
+            (
+              String absolutePath,
+              FileStat stat,
+              VideoFingerprintCancellation cancel,
+            ) async {
+              active++;
+              if (active > peak) peak = active;
+              await Future<void>.delayed(const Duration(milliseconds: 5));
+              active--;
+              return 'f' * 64;
+            },
       );
       final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
         listPaths: () async => <String>[for (final File f in files) f.path],
@@ -374,11 +384,16 @@ void main() {
       warmer = VideoFingerprintWarmer(
         listPaths: () async => <String>[for (final File f in files) f.path],
         fingerprints: VideoSourceFingerprint(
-          compute: (String absolutePath, FileStat stat) async {
-            computed.add(absolutePath);
-            warmer.dispose();
-            return 'a' * 64;
-          },
+          compute:
+              (
+                String absolutePath,
+                FileStat stat,
+                VideoFingerprintCancellation cancel,
+              ) async {
+                computed.add(absolutePath);
+                warmer.dispose();
+                return 'a' * 64;
+              },
         ),
         pause: Duration.zero,
       );
@@ -387,16 +402,26 @@ void main() {
       expect(computed, hasLength(1));
     });
 
-    test('BUG-5078 / BUG-5087：close 等在算的文件与落盘收尾才返回', () async {
+    test('close 打断在算的文件，等计算停下才返回、不再落盘（BUG-5078 / 5087）', () async {
       final File f = await video('a.mkv', 1);
       final Completer<void> started = Completer<void>();
-      final Completer<void> release = Completer<void>();
+      final Completer<void> cancelled = Completer<void>();
+      final Completer<void> settle = Completer<void>();
       final VideoSourceFingerprint hashes = VideoSourceFingerprint(
-        compute: (String absolutePath, FileStat stat) async {
-          started.complete();
-          await release.future;
-          return 'a' * 64;
-        },
+        compute:
+            (
+              String absolutePath,
+              FileStat stat,
+              VideoFingerprintCancellation cancel,
+            ) async {
+              started.complete();
+              // 几 GB 的片子：自己不会很快算完，只等打断（host-stop-fingerprint-cancel）。
+              await cancel.whenCancelled;
+              cancelled.complete();
+              // 原生读完当前这一块才停下。
+              await settle.future;
+              throw VideoFingerprintCancelledException(absolutePath);
+            },
       )..store = VideoFingerprintStore(storeFile);
       final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
         listPaths: () async => <String>[f.path],
@@ -407,11 +432,17 @@ void main() {
       await started.future;
       bool closed = false;
       final Future<void> close = warmer.close().then((_) => closed = true);
+      await cancelled.future.timeout(const Duration(seconds: 10));
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(closed, isFalse, reason: '还开着视频文件，close 不能先返回');
-      release.complete();
+      expect(closed, isFalse, reason: '计算还没停下（还开着视频文件），close 不能先返回');
+      settle.complete();
       await close;
-      expect(storeFile.readAsStringSync(), contains('a' * 64));
+      expect(warmer.running, isNull);
+      expect(
+        storeFile.existsSync() && storeFile.readAsStringSync().isNotEmpty,
+        isFalse,
+        reason: '被打断的那次不落盘',
+      );
     });
 
     test('两文件之间歇息时 close 立即结束歇息，不再开下一个文件', () async {
@@ -423,11 +454,16 @@ void main() {
       final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
         listPaths: () async => <String>[for (final File f in files) f.path],
         fingerprints: VideoSourceFingerprint(
-          compute: (String absolutePath, FileStat stat) async {
-            computed.add(absolutePath);
-            if (!first.isCompleted) first.complete();
-            return 'a' * 64;
-          },
+          compute:
+              (
+                String absolutePath,
+                FileStat stat,
+                VideoFingerprintCancellation cancel,
+              ) async {
+                computed.add(absolutePath);
+                if (!first.isCompleted) first.complete();
+                return 'a' * 64;
+              },
         ),
         pause: const Duration(hours: 1),
       );

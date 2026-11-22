@@ -58,7 +58,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 170);
+      expect(migrated.schemaVersion, 171);
       final MediaTrackingMappingRow old = await migrated
           .select(migrated.mediaTrackingMappings)
           .getSingle();
@@ -89,7 +89,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 170);
+      expect(probe.select('PRAGMA user_version').first.values.first, 171);
       expect(
         columnsOf(probe, 'media_tracking_mappings'),
         containsAll(<String>['sent_progress', 'sent_completed']),

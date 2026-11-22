@@ -72,6 +72,23 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/shell_style_settings_effect_test.dart（选交错 → 主题扩展带上所选值）',
   'appearance/Smooth corners':
       'test/settings/shell_style_settings_effect_test.dart（关平滑圆角 → 主题扩展跟着变）',
+  // 「目标」子页（通用 › 学习计时与小组件页两处入口）：生效点是首页「今日」格 /
+  // 「语言目标」格与小组件快照，harness 设置页里没有首页。目标记录的增删改走目标
+  // 面板（自绘行，焦点遍历不产出 id），由面板与首页专项测试咬住；主目标 / 左右
+  // 滑动 → 今日格由首页专项测试咬住；单位 → 快照 / 预设由快照与面板单测咬住。
+  // harness 里没有目标记录时主目标只有「第一个目标」一项、观测不到变化。
+  'general/Text unit':
+      'test/platform/widget_snapshot_test.dart（词数目标）+ test/stats/study_goal_language_scope_test.dart（单位 → 预设）',
+  'general/Main goal':
+      'test/pages/home_dashboard_page_test.dart（今日格目标翻页 / 主目标 / 其余目标行）',
+  'general/Swipe through':
+      'test/pages/home_dashboard_page_test.dart（左右滑动：每日 / 全部目标）',
+  'general/Layout':
+      'test/pages/home_dashboard_page_test.dart（今日格总览版式：全部目标列表、矮格「还有 N 个」）',
+  'general/Week starts on':
+      'test/stats/study_goal_period_test.dart（周从周一 / 周日 / 周六开始：周窗口与 weekFromKey）',
+  'general/Your goals':
+      'test/stats/study_goal_language_scope_test.dart（目标面板新建 / 编辑 / 删除）',
   // 桌面小组件隐私（仅 Android）：生效点是推给原生侧的快照 `privacy` 字段与 Glance
   // 小组件渲染，harness 设置页里没有小组件。偏好 → 快照字段由快照单测咬住，原生侧
   // 隐藏标题 / 释义 / Profile 名见 docs/agent/android-widgets.md（设备验证）。
@@ -254,11 +271,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
   'appearance/Mascot glow':
       'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
-  // NSFW 两个开关（拍板台 w04vrhUAaX）：生效点是库页 / 继续卡的封面框（模糊）与
+  // NSFW 两个开关（拍板台 w04vrhUAaX；qiqSbvdxrk 起从外观挪到「通用 › 作品隐私」，
+  // id 与偏好键不变）：生效点是库页 / 继续卡的封面框（模糊）与
   // 制卡时的卡图（模糊副本）——harness 设置页里既没有库页封面也不制卡。封面框读
   // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
-  'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
-  'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  'general/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
+  'general/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  // 上锁作品（拍板台 qiqSbvdxrk）：「显示已上锁的作品」是内存里的会话状态（不落
+  // 偏好，打开要过口令 / 系统验证），口令摘要随上锁标记同步——harness 设置页里既
+  // 没有库页也没有上锁作品。解锁 / 重新藏、口令设 / 改 / 删的验证规则与显示口径由
+  // media_lock_test 咬住。
+  'general/Show locked titles': 'test/media/privacy/media_lock_test.dart',
+  'general/Unlock passcode': 'test/media/privacy/media_lock_test.dart',
+  'general/Remove unlock passcode': 'test/media/privacy/media_lock_test.dart',
   // 墨水屏每 N 页全刷：生效点是小说三种 view mode 与漫画阅读器的翻页计数和全刷画布，
   // harness 设置页里没有阅读器。间隔值 → 每 N 次翻页触发一次、0 = 关、阅读器接线由
   // eink_full_refresh_test 咬住。

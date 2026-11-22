@@ -21,6 +21,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_playback_plan.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_silence.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
@@ -568,6 +569,15 @@ void main() {
         manifestFile: manifestFile,
         manifest: _manifest(),
       );
+      // 正在听第 4 句的 300 ms 处：换前面第 3 句的音频不归零，仍在第 4 句 300 ms。
+      final AudiobookRepository before = AudiobookRepository(db);
+      final List<int> oldMs = audiobookFileDurationsFromCues(
+        await before.cuesForBook('vol'),
+      );
+      await before.updatePositionMs(
+        bookKey: 'vol',
+        positionMs: oldMs[0] + oldMs[1] + oldMs[2] + 300,
+      );
       final MangaRenderManifest m = _manifest();
       m.replaceLine(
         'p2b1',
@@ -596,6 +606,7 @@ void main() {
       final Audiobook ab = (await repo.findByBookKey('vol'))!;
       expect(ab.audioPaths![2], endsWith('p2b1_s1.wav'));
       expect(ab.audioPaths![1], endsWith('p0b3.wav'));
+      expect(await repo.readPositionMs('vol'), 1200 + 800 + 1100 + 300);
       expect(
         await updateMangaAudioLine(
           db,
@@ -761,7 +772,11 @@ void main() {
       );
       final MangaAudioRegistration reg = (await loadMangaAudio(db, 'vol'))!;
       final AudiobookSessionStartRequest fromReader =
-          await resolveMangaAudioSessionRequest(db, registration: reg);
+          await resolveMangaAudioSessionRequest(
+            db,
+            registration: reg,
+            overrideTitleOf: ReaderFushiSource.instance.overrideTitleForBookKey,
+          );
       final AudiobookSessionStartRequest fromLauncher =
           (await AudiobookSessionLauncher(db).resolve('vol'))!;
       for (final AudiobookSessionStartRequest req

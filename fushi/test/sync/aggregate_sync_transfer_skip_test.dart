@@ -38,12 +38,12 @@ class _RevisionedStore extends FakeAssetStore {
   final List<String> downloads = <String>[];
 
   @override
-  Future<void> putJsonAsset(
+  Future<void> putBytesAsset(
     String namespaceId,
     String name,
-    Object? json,
+    Uint8List bytes,
   ) async {
-    await super.putJsonAsset(namespaceId, name, json);
+    await super.putBytesAsset(namespaceId, name, bytes);
     final String id = '$namespaceId/$name';
     _versions[id] = (_versions[id] ?? 0) + 1;
   }
@@ -64,9 +64,9 @@ class _RevisionedStore extends FakeAssetStore {
       ];
 
   @override
-  Future<Object?> getJsonAsset(String assetId) {
+  Future<Uint8List?> getBytesAsset(String assetId) {
     downloads.add(assetId);
-    return super.getJsonAsset(assetId);
+    return super.getBytesAsset(assetId);
   }
 }
 
@@ -172,9 +172,9 @@ void main() {
       name: 'dev-B.fushiaggregate',
       revision: 'r1',
     );
-    await cache.write('ch', original, <String, Object?>{'x': 1});
+    await cache.write('ch', original, Uint8List.fromList(<int>[1, 2, 3]));
 
-    expect(await cache.read('ch', original), <String, Object?>{'x': 1});
+    expect(await cache.read('ch', original), <int>[1, 2, 3]);
     expect(await cache.read('ch', moved), isNull);
     expect(await cache.read('other-channel', original), isNull);
   });
@@ -190,8 +190,8 @@ void main() {
       name: 'dev-C.fushiaggregate',
       revision: 'r1',
     );
-    await cache.write('ch', gone, <String, Object?>{});
-    await cache.write('ch', alive, <String, Object?>{});
+    await cache.write('ch', gone, Uint8List(0));
+    await cache.write('ch', alive, Uint8List(0));
 
     await cache.retainOnly('ch', <String>{alive.name});
 

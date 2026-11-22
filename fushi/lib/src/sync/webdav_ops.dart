@@ -640,7 +640,15 @@ class WebDavOps {
   // HBK-AUDIT-139.
   static const int maxJsonDownloadSize = 10 * 1024 * 1024; // 10 MB
 
-  Future<dynamic> downloadJson(String fileId) async {
+  Future<dynamic> downloadJson(String fileId) async => jsonDecode(
+    utf8.decode(await downloadBytes(fileId, maxBytes: maxJsonDownloadSize)),
+  );
+
+  /// GET [fileId] 的整份响应体（原样字节），超过 [maxBytes] 即中止并抛错。
+  Future<Uint8List> downloadBytes(
+    String fileId, {
+    required int maxBytes,
+  }) async {
     final request = await buildRequest('GET', fileId);
     final response = await closeRequest(request);
     checkStatus(response.statusCode, 'GET $fileId');
@@ -648,12 +656,12 @@ class WebDavOps {
     await _bounded(() async {
       await for (final List<int> chunk in response) {
         builder.add(chunk);
-        if (builder.length > maxJsonDownloadSize) {
+        if (builder.length > maxBytes) {
           throw SyncBackendError('GET $fileId failed: response too large');
         }
       }
     }());
-    return jsonDecode(utf8.decode(builder.takeBytes()));
+    return builder.takeBytes();
   }
 
   /// 按 `Range` 读 [url] 的 `[start, end]` 闭区间（[end] 为 null = 到文件尾）。
@@ -743,10 +751,22 @@ class WebDavOps {
     String fileName,
     dynamic data,
   ) async {
-    final path = '$folderId${Uri.encodeComponent(fileName)}';
-    final bytes = utf8.encode(jsonEncode(data));
-    await putBytes(path, bytes, 'application/json');
+    await uploadBytes(
+      folderId,
+      fileName,
+      utf8.encode(jsonEncode(data)),
+      'application/json',
+    );
   }
+
+  /// 把 [bytes] 原样 PUT 成 [folderId] 下的 [fileName]（覆盖）。
+  Future<void> uploadBytes(
+    String folderId,
+    String fileName,
+    List<int> bytes,
+    String contentType,
+  ) =>
+      putBytes('$folderId${Uri.encodeComponent(fileName)}', bytes, contentType);
 
   Future<void> putBytes(
     String path,

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart'
     show ExternalMediaNavigation;
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -168,14 +169,27 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   @override
   Future<List<CompanionLibraryRecord>> books() async {
     final AppModel app = _app;
-    final List<MediaItem> items = await readCompanionProviderFuture(
-      _ref,
-      fushiBooksProvider(JapaneseLanguage.instance).future,
-    );
-    final List<SrtBook> srtBooks = await readCompanionProviderFuture(
-      _ref,
-      srtBooksProvider.future,
-    );
+    // 伴屏同样不露上锁（未解锁）的作品（[MediaVisibility]，唯一的上锁过滤入口）。
+    final MediaVisibility lockVisibility = await MediaVisibility.load(_db);
+    final List<MediaItem> items = <MediaItem>[
+      for (final MediaItem item in await readCompanionProviderFuture(
+        _ref,
+        fushiBooksProvider(JapaneseLanguage.instance).future,
+      ))
+        if (ReaderFushiSource.parseBookKey(item.mediaIdentifier)
+            case final String? key
+            when key == null || !lockVisibility.hidesBook(key))
+          item,
+    ];
+    final List<SrtBook> srtBooks = <SrtBook>[
+      for (final SrtBook b in await readCompanionProviderFuture(
+        _ref,
+        srtBooksProvider.future,
+      ))
+        if (!lockVisibility.hidesSrtBook(b.uid) &&
+            (b.bookKey.isEmpty || !lockVisibility.hidesBook(b.bookKey)))
+          b,
+    ];
     final Set<String> completed = await readCompanionProviderFuture(
       _ref,
       completedEpubBookKeysProvider.future,
@@ -326,7 +340,11 @@ class AppCompanionLibraryData implements CompanionLibraryData {
 
   Future<_VideoLibrary> _videoLibrary() async {
     final VideoBookRepository repo = VideoBookRepository(_db);
-    final List<VideoBookRow> books = await repo.listForShelf();
+    final MediaVisibility lockVisibility = await MediaVisibility.load(_db);
+    final List<VideoBookRow> books = <VideoBookRow>[
+      for (final VideoBookRow v in await repo.listForShelf())
+        if (!lockVisibility.hidesVideo(v.bookUid)) v,
+    ];
     final List<MediaCollectionRow> collections = await _db
         .getAllMediaCollections();
     final List<MediaCollectionItemRow> items = await _db
@@ -396,6 +414,21 @@ class AppCompanionLibraryData implements CompanionLibraryData {
     );
   }
 
+  /// 全部合集去掉上锁（未解锁）的。
+  Future<List<MediaCollectionRow>> _visibleCollections() async {
+    final MediaVisibility lockVisibility = await MediaVisibility.load(_db);
+    return <MediaCollectionRow>[
+      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+        if (!lockVisibility.hidesCollection(c.id)) c,
+    ];
+  }
+
+  /// 曲库快照去掉上锁（未解锁）的专辑与其曲目。
+  Future<MusicLibrarySnapshot> _musicSnapshot() async =>
+      (await MusicLibrarySnapshot.load(
+        _db,
+      )).withoutAlbums((await MediaVisibility.load(_db)).hidesMusicAlbum);
+
   @override
   Future<List<CompanionLibraryRecord>> videos() async {
     final _VideoLibrary lib = await _videoLibrary();
@@ -408,7 +441,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   Future<List<CompanionLibraryCollection>> collections(
     CompanionLibrarySection section,
   ) async => <CompanionLibraryCollection>[
-    for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+    for (final MediaCollectionRow c in await _visibleCollections())
       CompanionLibraryCollection(
         section: section,
         id: c.id,
@@ -425,7 +458,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
 
   @override
   Future<CompanionMusicLibrary> music() async {
-    final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(_db);
+    final MusicLibrarySnapshot snap = await _musicSnapshot();
     final Map<String, int> trackCount = <String, int>{};
     for (final MusicTrackRow t in snap.tracks) {
       final String? album = t.albumUid;
@@ -485,7 +518,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   ) async {
     final CompanionLibraryItemKind? kind = CompanionLibraryRef.kindOf(ref);
     final String key = CompanionLibraryRef.keyOf(ref);
-    final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(_db);
+    final MusicLibrarySnapshot snap = await _musicSnapshot();
     if (kind == CompanionLibraryItemKind.musicArtist) {
       String? name;
       for (final MusicArtistRow a in snap.artists) {
@@ -1188,7 +1221,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   }
 
   Future<CompanionDetailsSource?> _albumDetails(String albumUid) async {
-    final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(_db);
+    final MusicLibrarySnapshot snap = await _musicSnapshot();
     final MusicAlbumRow? album = snap.albumByUid[albumUid];
     if (album == null) return null;
     final List<MusicTrackRow> tracks = snap.tracksOfAlbum(albumUid);
@@ -1527,7 +1560,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   /// The album page's "play" (from [startTrack] like tapping a track), then
   /// the player page on top (the mini bar's tap target).
   Future<bool> _playAlbum(String albumUid, {String? startTrack}) async {
-    final MusicLibrarySnapshot snap = await MusicLibrarySnapshot.load(_db);
+    final MusicLibrarySnapshot snap = await _musicSnapshot();
     final MusicAlbumRow? album = snap.albumByUid[albumUid];
     if (album == null) return false;
     final List<MusicTrackRow> tracks = snap.tracksOfAlbum(albumUid);

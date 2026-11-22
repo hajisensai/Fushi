@@ -1081,7 +1081,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     await repo.replaceAudio(bookKey: job.bookKey, audioPaths: persistedAudio);
     await repo.writeHealth(bookKey: job.bookKey, health: health);
     await writeEpubBackedSrtBook(
-      repo: SrtBookRepository(db),
+      db: db,
       bookKey: job.bookKey,
       title: row.title,
       author: row.author,

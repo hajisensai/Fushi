@@ -1507,6 +1507,56 @@ fn restore_matches_protocol_3_to_a_time() {
     assert_eq!(g.as_deref(), Some("null"));
 }
 
+/// BUG-5190：恢复到「后继卡自己还没记标志」的那一刻，写回血统继承到的值。同一层两张前身都记了 `flag`：继承的是生效
+/// 写入最新的那张，不是卡 ID 序在前的那张（与缓存层 `registers::cards_group` 同一规则，`registers::later`）。挑 ID 序
+/// 在前的那张先写，旧规则会取到它。两侧（协议 3 的测试参照、新代）的预览与恢复后的状态相同。
+#[test]
+fn restore_writes_back_the_flag_of_the_latest_written_predecessor_of_a_layer() {
+    let lib = library();
+    let (mut lo, mut hi) = (card(N2, "t2"), card(N3, "t2"));
+    if crate::ordering::cmp_utf16(&hi, &lo).is_lt() {
+        std::mem::swap(&mut lo, &mut hi);
+    }
+    let tail = card(N2, "t1");
+    let t = T0 + 2 * DAY;
+    lib.apply(t, vec![edit("card", &lo, "flag", json!(1))]);
+    lib.apply(t + 10, vec![edit("card", &hi, "flag", json!(2))]);
+    lib.apply(
+        t + 20,
+        vec![
+            edit("card", &tail, &format!("historyFrom/{lo}"), json!(true)),
+            edit("card", &tail, &format!("historyFrom/{hi}"), json!(true)),
+        ],
+    );
+    lib.apply(t + 30, vec![edit("card", &tail, "flag", json!(3))]);
+    let w = W::new(&lib);
+    let at = t + 25;
+    same_plan(
+        &w,
+        &crate::store::sync2::timeline::RestoreTarget::At(at),
+        &json!({"at": at}),
+        T1,
+    );
+    w.p3("restore", T1, json!({"at": at, "retract": true}), None);
+    writes_restore::restore(
+        &w.t(),
+        w.p.col,
+        &W::req(T1, json!({"at": at, "retract": true})),
+    )
+    .unwrap();
+    w.same_state(&[N1, N2, N3, N4], &all_cards(), true);
+    let g =
+        w.p.ix(|ix| {
+            ix.class_value(
+                crate::sync2::op::EntKind::Card,
+                &Ref::of(&Key::of(&tail)),
+                "flag",
+            )
+        })
+        .unwrap();
+    assert_eq!(g.as_deref(), Some("2"));
+}
+
 /// `restore` 的原子性与拒写：注入失败 / 还原点不存在 = 整笔回滚（还原点、补偿操作、`self_.hlc`、派生表一个不留）。
 #[test]
 fn a_failing_restore_writes_nothing() {

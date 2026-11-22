@@ -42,6 +42,9 @@
     <!-- 互联配对链接写 NFC 贴纸（普通权限，不弹运行时授权框）。required=false：
          没有 NFC 的设备照常能装，入口按 NfcAdapter 可用性自行降级。 -->
     <uses-permission android:name="android.permission.NFC"/>
+    <!-- 上锁作品解锁的系统验证（BiometricPrompt，普通权限、安装即授予；拍板台 qiqSbvdxrk，
+         DeviceOwnerAuthChannel.java）。 -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-feature android:name="android.hardware.nfc" android:required="false"/>
     <application
         android:label="Fushi"

@@ -3484,6 +3484,12 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
                   body.find("\"openInAnki\"") != std::string::npos ||
+                  // Cross-app audio cache: the "adjust sentence audio" panel is
+                  // drawn by popup.js inside THIS card (no foreground steal from
+                  // the game); the main Dart engine answers whether this lookup
+                  // captured any audio and ships the waveform + preview WAV.
+                  body.find("\"crossAppAudioAvailable\"") != std::string::npos ||
+                  body.find("\"crossAppAudioPreview\"") != std::string::npos ||
                   // Fushi review (SRS) word status + open-card badge: the main
                   // Dart engine answers from the SRS store (or null / false
                   // while the review module is off).

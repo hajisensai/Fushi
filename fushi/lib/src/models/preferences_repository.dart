@@ -46,7 +46,9 @@ import 'package:fushi/src/models/preference_keys.dart'
         kWhatsNewSeenSeqPrefKey,
         kWhatsNewSeenVersionPrefKey;
 import 'package:fushi/src/models/library_grid_columns.dart';
-import 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
+import 'package:fushi/src/stats/study_goal_record.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnitChoice;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
@@ -6217,14 +6219,23 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `mesh`。
+  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `pixi`（反馈
+  /// l1ERGmWxjF）。只在用户手选时落库：没有行 = 跟着出厂默认走，所以默认从 `mesh`
+  /// 改成 `pixi` 后，没手选过的老用户自动切过去，手选过 `mesh` 的保持不变。
   String get musicLyricsBackdropStyle =>
-      (getPref('music_lyrics_backdrop_style', defaultValue: 'mesh')
+      (getPref('music_lyrics_backdrop_style', defaultValue: 'pixi')
           as String?) ??
-      'mesh';
+      'pixi';
 
   Future<void> setMusicLyricsBackdropStyle(String value) async {
     await setPref('music_lyrics_backdrop_style', value);
+    notifyListeners();
+  }
+
+  /// 「恢复默认」：删掉这一行回到「跟着出厂默认走」，而不是把此刻的默认值钉死成
+  /// 显式选择（钉死后再改出厂默认就分不清「手选」与「默认」，BUG-5167）。
+  Future<void> clearMusicLyricsBackdropStyle() async {
+    await removePref('music_lyrics_backdrop_style');
     notifyListeners();
   }
 
@@ -7847,6 +7858,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 一周从星期几开始（[DateTime.weekday]，1 = 周一 … 7 = 周日；缺省周一）。AppModel
+  /// 把它镜像到 `StatWindow.weekStartDay`（与日界同一种做法），窗口谓词不各自读偏好。
+  int get statWeekStart {
+    final Object? raw = getPref('stats_week_start', defaultValue: 1);
+    final int day = raw is int ? raw : DateTime.monday;
+    return day >= DateTime.monday && day <= DateTime.sunday
+        ? day
+        : DateTime.monday;
+  }
+
+  Future<void> setStatWeekStart(int day) async {
+    await setPref(
+      'stats_week_start',
+      day >= DateTime.monday && day <= DateTime.sunday ? day : DateTime.monday,
+    );
+    notifyListeners();
+  }
+
   int get readingGoalDailyChars =>
       (getPref('reading_goal_daily_chars', defaultValue: 0) as int).clamp(
         0,
@@ -7886,18 +7915,97 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 当前周期下生效的字数目标值（0 = 未设）。
+  /// 旧偏好里当前周期生效的字数目标值（0 = 未设）。迁移源，目标代码读 [studyGoals]。
   int get readingGoalActiveChars => switch (readingGoalPeriod) {
-    StudyGoalPeriod.daily => readingGoalDailyChars,
     StudyGoalPeriod.weekly => readingGoalWeeklyChars,
+    StudyGoalPeriod.daily || StudyGoalPeriod.monthly => readingGoalDailyChars,
   };
 
-  /// 写当前周期下生效的那一份目标值（小组件设置页的「阅读字数」入口用）。
-  Future<void> setReadingGoalActiveChars(int value) =>
-      switch (readingGoalPeriod) {
-        StudyGoalPeriod.daily => setReadingGoalDailyChars(value),
-        StudyGoalPeriod.weekly => setReadingGoalWeeklyChars(value),
-      };
+  /// 分支期偏好 `reading_goal_language`（只算某语言，'' = 全部）：2026-11 起语言
+  /// 跟着每条目标走，只在迁移旧目标时读一次（[studyGoals]）。
+  String get _legacyReadingGoalLanguage =>
+      getPref('reading_goal_language', defaultValue: '') as String;
+
+  /// 文字目标的单位选择（auto = 按目标语言）。全局，不分目标。
+  StudyGoalUnitChoice get readingGoalTextUnit => StudyGoalUnitChoice.fromWire(
+    getPref('reading_goal_text_unit', defaultValue: 'auto') as String?,
+  );
+
+  Future<void> setReadingGoalTextUnit(StudyGoalUnitChoice value) async {
+    await setPref('reading_goal_text_unit', value.wire);
+    notifyListeners();
+  }
+
+  /// 学习目标记录（`study_goal_record.dart`）。键 `study_goals` 缺失 = 用户还没编辑过
+  /// 目标列表：由旧的逐项目标偏好现算（[migrateLegacyStudyGoals]，不落盘；旧偏好
+  /// 一个都没设 = 没有目标，和改版前一样）；之后目标代码不再读旧偏好。
+  List<StudyGoal> get studyGoals =>
+      decodeStudyGoals(
+        getPref('study_goals', defaultValue: '') as String? ?? '',
+      ) ??
+      _legacyStudyGoals;
+
+  List<StudyGoal> get _legacyStudyGoals => migrateLegacyStudyGoals(
+    totalMinutes: studyGoalDailyMinutes,
+    readingMinutes: studyGoalDailyReadingMinutes,
+    listeningMinutes: studyGoalDailyListeningMinutes,
+    videoMinutes: studyGoalDailyVideoMinutes,
+    reviews: srsGoalDailyReviews,
+    minedCards: miningGoalDailyCards,
+    dailyChars: readingGoalDailyChars,
+    weeklyChars: readingGoalWeeklyChars,
+    charsPeriod: readingGoalPeriod,
+    language: _legacyReadingGoalLanguage,
+  );
+
+  /// 整表写回（增删改都走这里；第一次写入后迁移态就固定下来）。
+  Future<void> setStudyGoals(List<StudyGoal> goals) async {
+    await setPref('study_goals', encodeStudyGoals(goals));
+    notifyListeners();
+  }
+
+  /// 首页「今日」格的主目标：记录 id（[StudyGoal.id]）；'' / 指不到记录 = 第一页。
+  /// 只由设置「主目标」改；左右滑动不写它（滑动位置在 [homeTodayPageGoal]），所以
+  /// 周 / 月主目标在「左右滑动 = 每日」时也一直留在翻页里。
+  String get homeTodayMainGoal =>
+      getPref('home_today_main_goal', defaultValue: '') as String? ?? '';
+
+  /// 改主目标 = 翻页跳到它：同时清掉滑动位置 [homeTodayPageGoal]。
+  Future<void> setHomeTodayMainGoal(String goalId) async {
+    await setPref('home_today_main_goal', goalId);
+    await setPref('home_today_page_goal', '');
+    notifyListeners();
+  }
+
+  /// 首页「今日」格翻页当前停在哪条目标（记录 id，左右滑动 / 点圆点时写）；
+  /// '' / 不在当前页集合里 = 回到主目标 [homeTodayMainGoal] 那页。
+  String get homeTodayPageGoal =>
+      getPref('home_today_page_goal', defaultValue: '') as String? ?? '';
+
+  Future<void> setHomeTodayPageGoal(String goalId) async {
+    await setPref('home_today_page_goal', goalId);
+    notifyListeners();
+  }
+
+  /// 首页「今日」格左右滑显示哪些目标（缺省只有每日目标）。
+  StudyGoalSwipeScope get homeTodaySwipeGoals => StudyGoalSwipeScope.fromWire(
+    getPref('home_today_swipe_goals', defaultValue: 'daily') as String?,
+  );
+
+  Future<void> setHomeTodaySwipeGoals(StudyGoalSwipeScope value) async {
+    await setPref('home_today_swipe_goals', value.wire);
+    notifyListeners();
+  }
+
+  /// 首页「今日」格的版式：聚焦（缺省）/ 总览。
+  StudyGoalTodayLayout get homeTodayLayout => StudyGoalTodayLayout.fromWire(
+    getPref('home_today_layout', defaultValue: 'focus') as String?,
+  );
+
+  Future<void> setHomeTodayLayout(StudyGoalTodayLayout value) async {
+    await setPref('home_today_layout', value.wire);
+    notifyListeners();
+  }
 
   // ── 每日目标（桌面小组件「目标」卡；0 = 关，随 Profile）─────────────────
   /// 目标上限：分钟 24h、张数 / 复习数 100 万，防误输入。

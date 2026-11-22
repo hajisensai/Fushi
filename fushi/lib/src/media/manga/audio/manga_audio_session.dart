@@ -87,10 +87,15 @@ SessionPersistCallbacks mangaAudioPersistCallbacks(
 Future<AudiobookSessionStartRequest> resolveMangaAudioSessionRequest(
   FushiDatabase db, {
   required MangaAudioRegistration registration,
+  required SessionTitleOverride overrideTitleOf,
   double pacing = 1.0,
 }) async {
   final String bookKey = registration.bookKey;
-  final SessionBookMeta meta = await loadSessionBookMeta(db, bookKey);
+  final SessionBookMeta meta = await loadSessionBookMeta(
+    db,
+    bookKey,
+    overrideTitleOf: overrideTitleOf,
+  );
   final MangaAudioPlaybackPlan plan = MangaAudioPlaybackPlan.build(
     registration.manifest,
     pacing: pacing,

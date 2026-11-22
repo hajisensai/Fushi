@@ -610,6 +610,30 @@ mixin _FushiDbPrefsMedia
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
+  /// 全部视频行的瘦投影：只取 `book_uid` / `title` / `video_path`，顺序同
+  /// [allVideoBooks]（rowid）。
+  ///
+  /// 设置 › 存储页开页时要整库视频清单，但只用这三列。整行读会把 `playlistJson`
+  /// 等几十列一起经 drift 后台 isolate 拷回 UI isolate 解码，库大时开页卡顿
+  /// （BUG：settings-storage-page-open-jank）。
+  Future<List<({String bookUid, String title, String videoPath})>>
+  allVideoBookPaths() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(videoBooks)..addColumns(<Expression<Object>>[
+          videoBooks.bookUid,
+          videoBooks.title,
+          videoBooks.videoPath,
+        ]);
+    return <({String bookUid, String title, String videoPath})>[
+      for (final TypedResult r in await query.get())
+        (
+          bookUid: r.read(videoBooks.bookUid)!,
+          title: r.read(videoBooks.title)!,
+          videoPath: r.read(videoBooks.videoPath)!,
+        ),
+    ];
+  }
+
   /// 按一批 bookUid 取行（`IN` 分块；不存在的 uid 不在结果里，顺序不保证）。
   /// 批量操作取删前快照用，代替逐条 [getVideoBookByBookUid]（BUG-4748）。
   Future<List<VideoBookRow>> getVideoBooksByBookUids(

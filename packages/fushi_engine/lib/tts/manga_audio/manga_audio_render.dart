@@ -60,6 +60,7 @@ class MangaRenderedLine {
     required this.file,
     required this.durationMs,
     required this.text,
+    this.spoken,
     this.placeholder = false,
     this.voice,
     this.seed,
@@ -82,6 +83,12 @@ class MangaRenderedLine {
 
   /// 生成时念的文字（cue 文本、制卡用；来自用户自己的 OCR 或手填）。
   final String text;
+
+  /// 实际送去合成的文字（人名读法只改这里，不改 [text]）；null = 与 [text] 相同。
+  final String? spoken;
+
+  /// 合成时念的文字（「读法改了的句子」据此与当前替换表比对）。
+  String get spokenText => spoken ?? text;
 
   /// 占位静音（没配上音）。
   final bool placeholder;
@@ -112,6 +119,7 @@ class MangaRenderedLine {
     String? voice,
     int? seed,
     String? text,
+    String? spoken,
     String? shape,
   }) => MangaRenderedLine(
     lineId: lineId,
@@ -123,6 +131,7 @@ class MangaRenderedLine {
     file: file,
     durationMs: durationMs,
     text: text ?? this.text,
+    spoken: text == null ? spoken ?? this.spoken : spoken,
     placeholder: placeholder,
     voice: voice,
     seed: seed,
@@ -139,6 +148,7 @@ class MangaRenderedLine {
     'f': file,
     'ms': durationMs,
     't': text,
+    if (spoken != null && spoken != text) 'sp': spoken,
     if (placeholder) 'ph': true,
     if (voice != null) 'voice': voice,
     if (seed != null) 'seed': seed,
@@ -167,6 +177,7 @@ class MangaRenderedLine {
     }
     final Object? beat = raw['beat'];
     final Object? text = raw['t'];
+    final Object? spoken = raw['sp'];
     final Object? voice = raw['voice'];
     final Object? seed = raw['seed'];
     final Object? shape = raw['shape'];
@@ -183,6 +194,7 @@ class MangaRenderedLine {
       file: file,
       durationMs: ms,
       text: text is String ? text : '',
+      spoken: spoken is String ? spoken : null,
       placeholder: raw['ph'] == true,
       voice: voice is String ? voice : null,
       seed: seed is int ? seed : null,

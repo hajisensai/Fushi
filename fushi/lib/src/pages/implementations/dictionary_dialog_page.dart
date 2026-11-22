@@ -1546,7 +1546,15 @@ class _DictionaryDialogPageState extends BasePageState {
 
     final List<String> paths = await pickSystemFilePaths(
       context: context,
-      allowedExtensions: const <String>{'zip', 'dsl', 'mdx', 'ifo', 'css'},
+      allowedExtensions: const <String>{
+        'zip',
+        '7z',
+        'rar',
+        'dsl',
+        'mdx',
+        'ifo',
+        'css',
+      },
     );
     if (paths.isEmpty) return;
     await _importDictionaryPaths(paths);
@@ -4101,7 +4109,14 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!mounted) return;
     final String? pickedPath = await pickSystemFilePath(
       context: context,
-      allowedExtensions: const <String>{'zip', 'dsl', 'mdx', 'ifo'},
+      allowedExtensions: const <String>{
+        'zip',
+        '7z',
+        'rar',
+        'dsl',
+        'mdx',
+        'ifo',
+      },
     );
     if (pickedPath == null) {
       if (Platform.isAndroid || Platform.isIOS) {

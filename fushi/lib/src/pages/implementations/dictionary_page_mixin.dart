@@ -746,21 +746,31 @@ mixin DictionaryPageMixin {
   Future<CrossAppAudioSnapshot?>? get miningAudioSnapshot => null;
 
   /// 按 [miningAudioSnapshot] 截出本次制卡的句子音频；没有快照 / 截不出返回 null。
-  Future<({String path, Directory dir})?> _prepareMiningSentenceAudio() async {
+  /// [overrides] 带着查词卡「调整句子音频」面板拖出的起止偏移（拍板
+  /// design-cross-app-audio-trim-ui），或高级制卡的「不要句子音频」。
+  Future<({String path, Directory dir})?> _prepareMiningSentenceAudio(
+    MiningRequestOverrides? overrides,
+  ) async {
     final Future<CrossAppAudioSnapshot?>? pending = miningAudioSnapshot;
     if (pending == null) return null;
     final CrossAppAudioSnapshot? snapshot = await pending;
     if (snapshot == null) return null;
-    return CrossAppAudioCapture.instance.prepareSentenceAudio(snapshot);
+    return CrossAppAudioCapture.instance.prepareSentenceAudio(
+      snapshot,
+      overrides: overrides,
+    );
   }
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
     final ({String path, Directory dir})? cover = await _prepareMiningCover(
-      MiningRequestOverrides.readFrom(fields),
+      overrides,
     );
     final ({String path, Directory dir})? audio =
-        await _prepareMiningSentenceAudio();
+        await _prepareMiningSentenceAudio(overrides);
     try {
       return await _mineEntryWithCover(repo, fields, cover?.path, audio?.path);
     } finally {
@@ -841,11 +851,14 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async {
     final repo = ref.read(ankiRepositoryProvider);
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
     final ({String path, Directory dir})? cover = await _prepareMiningCover(
-      MiningRequestOverrides.readFrom(fields),
+      overrides,
     );
     final ({String path, Directory dir})? audio =
-        await _prepareMiningSentenceAudio();
+        await _prepareMiningSentenceAudio(overrides);
     try {
       return await _updateEntryWithCover(
         repo,
@@ -1553,6 +1566,9 @@ mixin DictionaryPageMixin {
           // 不画在弹窗 WebView 内）；确认制卡回该层 WebView 精确点中该词条的「+」并带上
           // 覆盖项。只跟制卡模块走——纯查词页也有（对话框只有卡组分区）。
           onOpenAdvancedMining: advancedMiningOpenerFor(entry.webViewKey),
+          // 跨应用语音缓存：应用外查词窗（Android `:popup`）在「+」旁给「调整句子音频」
+          // 面板（拍板 design-cross-app-audio-trim-ui）；app 内表面为 null。
+          crossAppAudio: miningAudioSnapshot,
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
             appUiScale: mixinAppModel.popupUiScale,

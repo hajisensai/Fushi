@@ -7,6 +7,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.unit.ColorProvider
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.LocalSize
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.LinearProgressIndicator
@@ -26,6 +29,7 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import kotlin.math.roundToInt
 
@@ -165,10 +169,13 @@ class TodayReceiver : GlanceAppWidgetReceiver() {
 }
 
 // ---------------------------------------------------------------------------
-// Daily Learning Goals: one ring per configured goal
+// Learning goals: layout adapts to the widget's real size (GoalsLayoutPolicy)
 // ---------------------------------------------------------------------------
 
 class GoalsWidget : FushiGlanceWidget() {
+    /** Exact size: the column / row decision needs the real launcher size, not 4 buckets. */
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     @Composable
     override fun Content(context: Context, snapshot: WidgetSnapshot?, cfg: WidgetConfig) {
         if (snapshot == null) {
@@ -181,56 +188,270 @@ class GoalsWidget : FushiGlanceWidget() {
     }
 }
 
+/** Ring tint: reached = tertiary, rest day = muted, otherwise primary. */
 @Composable
-private fun GoalCell(goal: WidgetGoal, fresh: Boolean, ringSize: Dp, modifier: GlanceModifier) {
-    val frac = if (fresh) goal.frac else 0f
-    val done = fresh && goal.done
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(contentAlignment = Alignment.Center) {
-            Ring(frac, ringSize, if (done) GlanceTheme.colors.tertiary else GlanceTheme.colors.primary)
-            Text(
-                if (done) "✓" else "${(frac * 100).roundToInt()}%",
-                maxLines = 1,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontSize = if (ringSize >= 64.dp) 14.sp else 11.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
+private fun goalRingColor(goal: WidgetGoal, fresh: Boolean): ColorProvider = when {
+    fresh && goal.reached -> GlanceTheme.colors.tertiary
+    fresh && goal.restDay -> GlanceTheme.colors.outline
+    else -> GlanceTheme.colors.primary
+}
+
+@Composable
+private fun goalStatusColor(goal: WidgetGoal): ColorProvider =
+    if (goal.reached) GlanceTheme.colors.tertiary else GlanceTheme.colors.onSurfaceVariant
+
+/** Ring capped at 100 %, a check mark once reached, otherwise the floored percent. */
+@Composable
+private fun GoalRing(goal: WidgetGoal, fresh: Boolean, size: Dp, textSp: Int, px: Int = RING_PX) {
+    val reached = fresh && goal.reached
+    Box(contentAlignment = Alignment.Center) {
+        Ring(if (fresh) goal.frac else 0f, size, goalRingColor(goal, fresh), px = px)
+        Text(
+            if (reached) "✓" else "${if (fresh) goal.pct else 0}%",
+            maxLines = 1,
+            style = TextStyle(
+                color = if (fresh && goal.restDay) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface,
+                fontSize = (if (reached) textSp + 3 else textSp).sp,
+                fontWeight = FontWeight.Bold,
+            ),
+        )
+    }
+}
+
+private fun goalCompact(goal: WidgetGoal, fresh: Boolean): String =
+    if (fresh) goal.compact else "– / ${goal.targetShort}"
+
+/**
+ * Language; metric · period; value / target; status, sized by the caller. Weekly / monthly goals put
+ * today's share in the status line ("12 / 20 today · On track", [GoalsLayoutPolicy.statusText]),
+ * picked to fit [textW] (dp available for the lines). Same four lines, so row heights are unchanged.
+ */
+@Composable
+private fun GoalLines(
+    goal: WidgetGoal,
+    fresh: Boolean,
+    align: TextAlign,
+    languageSp: Int,
+    captionSp: Int,
+    captionLines: Int,
+    valueSp: Int,
+    statusSp: Int,
+    textW: Float,
+) {
+    val line = if (align == TextAlign.Center) GlanceModifier.fillMaxWidth() else GlanceModifier
+    if (goal.language.isNotEmpty()) {
+        Text(
+            goal.language,
+            modifier = line,
+            maxLines = 1,
+            style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = languageSp.sp, textAlign = align),
+        )
+    }
+    Text(
+        goal.caption,
+        modifier = line,
+        maxLines = captionLines,
+        style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = captionSp.sp, fontWeight = FontWeight.Medium, textAlign = align),
+    )
+    Text(
+        goalCompact(goal, fresh),
+        modifier = line,
+        maxLines = 1,
+        style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = valueSp.sp, fontWeight = FontWeight.Bold, textAlign = align),
+    )
+    val status = GoalsLayoutPolicy.statusText(goal, textW, statusSp)
+    if (fresh && status.isNotEmpty()) {
+        Text(
+            status,
+            modifier = line,
+            maxLines = 1,
+            style = TextStyle(color = goalStatusColor(goal), fontSize = statusSp.sp, textAlign = align),
+        )
+    }
+}
+
+/** Big ring + large text for a single goal, sized by [GoalsLayoutPolicy.heroSpec]. */
+@Composable
+private fun GoalHero(goal: WidgetGoal, fresh: Boolean, spec: GoalsHeroSpec, innerW: Float) {
+    if (spec.sideBySide) {
+        Row(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            GoalRing(goal, fresh, spec.ring.dp, spec.ringSp, spec.ringPx)
+            Spacer(GlanceModifier.width(14.dp))
+            Column(modifier = GlanceModifier.defaultWeight()) {
+                GoalLines(
+                    goal, fresh, TextAlign.Start, spec.languageSp, spec.captionSp, 2, spec.valueSp, spec.statusSp,
+                    innerW - spec.ring - 14f,
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = GlanceModifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GoalRing(goal, fresh, spec.ring.dp, spec.ringSp, spec.ringPx)
+            Gap(4)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                GoalLines(
+                    goal, fresh, TextAlign.Center, spec.languageSp, spec.captionSp, 2, spec.valueSp, spec.statusSp,
+                    innerW,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Grid cell sized by [tier]: ring left of language; metric · period; value / target; status. When
+ * [stacked] (tall, narrow cell) the ring sits above the centred lines.
+ */
+@Composable
+private fun GoalGridCell(
+    goal: WidgetGoal,
+    fresh: Boolean,
+    tier: GoalsTier,
+    stacked: Boolean,
+    cellW: Float,
+    modifier: GlanceModifier,
+) {
+    if (stacked) {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GoalRing(goal, fresh, tier.ring.dp, tier.ringSp, tier.ringPx)
+            Gap(GoalsTier.STACK_GAP.toInt())
+            GoalLines(
+                goal, fresh, TextAlign.Center, tier.languageSp, tier.captionSp, 1, tier.valueSp, tier.statusSp, cellW,
             )
         }
-        Gap(2)
-        Text(
-            goal.label,
-            maxLines = 1,
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Medium),
-        )
-        Label(if (fresh) "${goal.value} / ${goal.target}" else "– / ${goal.target}", size = 10)
+        return
+    }
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        GoalRing(goal, fresh, tier.ring.dp, tier.ringSp, tier.ringPx)
+        Spacer(GlanceModifier.width(GoalsTier.RING_GAP.dp))
+        Column(modifier = GlanceModifier.defaultWeight()) {
+            GoalLines(
+                goal, fresh, TextAlign.Start, tier.languageSp, tier.captionSp, 1, tier.valueSp, tier.statusSp,
+                cellW - tier.ring - GoalsTier.RING_GAP,
+            )
+        }
+    }
+}
+
+/** Compact row: small ring; language; metric · period; "value / target  status" on one line. */
+@Composable
+private fun GoalListRow(
+    goal: WidgetGoal,
+    fresh: Boolean,
+    showReachedStatus: Boolean,
+    textW: Float,
+    modifier: GlanceModifier,
+) {
+    val compact = goalCompact(goal, fresh)
+    // Today's share sits after the value on the same line: only the width left of it counts.
+    val status = GoalsLayoutPolicy.statusText(
+        goal,
+        textW - GoalsLayoutPolicy.estimateTextWidth(compact, 12) - 6f,
+        11,
+    )
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        GoalRing(goal, fresh, 32.dp, 9)
+        Spacer(GlanceModifier.width(8.dp))
+        Column(modifier = GlanceModifier.defaultWeight()) {
+            if (goal.language.isNotEmpty()) Label(goal.language, size = 11)
+            Text(
+                goal.caption,
+                maxLines = 1,
+                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Medium),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    compact,
+                    maxLines = 1,
+                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                )
+                if (fresh && status.isNotEmpty() && (goal.splits || showReachedStatus || !goal.reached)) {
+                    Spacer(GlanceModifier.width(6.dp))
+                    Label(status, goalStatusColor(goal), size = 11)
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun GoalsContent(s: WidgetSnapshot) {
-    val size = sizeClass()
+    val size = LocalSize.current
     val fresh = isFresh(s)
-    val perRow = if (size.wide) 4 else 2
-    val rows = if (size.tall) 2 else 1
-    val ringSize = if (size.wide && size.tall) 64.dp else if (size.wide) 52.dp else 56.dp
-    val goals = s.goals.take(perRow * rows)
+    val layout = GoalsLayoutPolicy.decide(size.width.value, size.height.value, s.goals.size)
+    val goals = s.goals.take(layout.visible)
+    val reachedStatus = GoalsLayoutPolicy.listShowsReachedStatus(size.width.value, layout.columns)
+    val cellW = GoalsLayoutPolicy.cellWidth(size.width.value, layout.columns)
+    val listTextW = GoalsLayoutPolicy.listTextWidth(size.width.value, layout.columns)
+    val title = if (GoalsLayoutPolicy.allDaily(s.goals.map { it.period })) {
+        s.label("goalsTitle", "Daily goals")
+    } else {
+        s.label("goalsTitleMixed", "Goals")
+    }
     WidgetRoot(url = "fushi://widget/stats") {
         Column(modifier = GlanceModifier.fillMaxSize()) {
-            Label(s.label("goalsTitle", "Daily goals"), GlanceTheme.colors.primary)
-            Gap(4)
-            goals.chunked(perRow).forEach { chunk ->
-                Row(
-                    modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    chunk.forEach { GoalCell(it, fresh, ringSize, GlanceModifier.defaultWeight()) }
-                    // Keep ring sizes constant on a short last row.
-                    repeat(perRow - chunk.size) { Spacer(GlanceModifier.defaultWeight()) }
+            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Label(title, GlanceTheme.colors.primary, GlanceModifier.defaultWeight())
+                if (!fresh) StaleHint(s)
+            }
+            Gap(6)
+            when (layout.mode) {
+                GoalsMode.HERO -> {
+                    val spec = GoalsLayoutPolicy.heroSpec(size.width.value, size.height.value)
+                    Box(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+                        GoalHero(goals.first(), fresh, spec, size.width.value - GoalsLayoutPolicy.PADDING)
+                    }
+                }
+                GoalsMode.GRID, GoalsMode.LIST -> {
+                    // Compact rows on a tall widget stay centred; bigger tiers share the height evenly.
+                    val fill = layout.tier != GoalsTier.COMPACT
+                    Column(
+                        modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        goals.chunked(layout.columns).forEachIndexed { i, chunk ->
+                            // Row gap as padding, not Spacer siblings: Glance caps a Column at 10 children.
+                            val gap = if (i > 0) GoalsLayoutPolicy.ROW_GAP.dp else 0.dp
+                            val rowModifier = GlanceModifier.fillMaxWidth().padding(top = gap)
+                            Row(
+                                modifier = if (fill) rowModifier.defaultWeight() else rowModifier,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                chunk.forEachIndexed { j, goal ->
+                                    if (j > 0) Spacer(GlanceModifier.width(GoalsLayoutPolicy.COLUMN_GAP.dp))
+                                    val cell = GlanceModifier.defaultWeight()
+                                    if (layout.mode == GoalsMode.GRID) {
+                                        GoalGridCell(goal, fresh, layout.tier, layout.stacked, cellW, cell)
+                                    } else {
+                                        GoalListRow(goal, fresh, reachedStatus, listTextW, cell)
+                                    }
+                                }
+                                // Keep cell widths constant on a short last row.
+                                repeat(layout.columns - chunk.size) {
+                                    Spacer(GlanceModifier.width(GoalsLayoutPolicy.COLUMN_GAP.dp))
+                                    Spacer(GlanceModifier.defaultWeight())
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            if (!fresh) StaleHint(s)
+            if (layout.more > 0) {
+                Label(
+                    s.template("goalsMore", "+{n} more", "n" to layout.more.toString()),
+                    GlanceTheme.colors.primary,
+                    GlanceModifier.fillMaxWidth(),
+                    11,
+                )
+            }
         }
     }
 }
@@ -278,10 +499,15 @@ private fun WeekDots(s: WidgetSnapshot, dot: Dp) {
     }
 }
 
-/** 5 rows x 7 columns, oldest first (row-major), today is the last cell. */
+/**
+ * 5 rows x 7 columns, one row per week (oldest first), columns start on the user's week start
+ * day. Today sits in the last row at [todayColumn] (`WidgetSnapshot.monthTodayColumn`); the
+ * cells after it are this week's remaining days and stay empty.
+ */
 @Composable
-internal fun Heatmap(minutes: List<Int>, cell: Dp, gap: Dp = 3.dp) {
+internal fun Heatmap(minutes: List<Int>, cell: Dp, gap: Dp = 3.dp, todayColumn: Int = 6) {
     val data = if (minutes.size >= 35) minutes.takeLast(35) else List(35 - minutes.size) { 0 } + minutes
+    val todayCell = 28 + todayColumn.coerceIn(0, 6)
     val peak = data.maxOrNull() ?: 0
     Column(modifier = GlanceModifier.fillMaxWidth()) {
         for (r in 0 until 5) {
@@ -291,7 +517,13 @@ internal fun Heatmap(minutes: List<Int>, cell: Dp, gap: Dp = 3.dp) {
             Row(modifier = GlanceModifier.fillMaxWidth()) {
                 for (c in 0 until 7) {
                     Box(modifier = GlanceModifier.defaultWeight().padding(start = if (c > 0) gap else 0.dp)) {
-                        HeatCell(heatLevel(data[r * 7 + c], peak), GlanceModifier.fillMaxWidth().height(cell))
+                        // Grid cell -> days before today; future days of this week stay blank.
+                        val ago = todayCell - (r * 7 + c)
+                        if (ago >= 0) {
+                            HeatCell(heatLevel(data[34 - ago], peak), GlanceModifier.fillMaxWidth().height(cell))
+                        } else {
+                            Spacer(GlanceModifier.fillMaxWidth().height(cell))
+                        }
                     }
                 }
             }
@@ -354,7 +586,7 @@ private fun StreakContent(s: WidgetSnapshot) {
                 WeekDots(s, if (size.wide) 16.dp else 10.dp)
                 if (size.tall && s.monthMinutes.isNotEmpty()) {
                     Gap(8)
-                    Heatmap(s.monthMinutes, if (size.wide) 14.dp else 10.dp)
+                    Heatmap(s.monthMinutes, if (size.wide) 14.dp else 10.dp, todayColumn = s.monthTodayColumn)
                 }
             }
         }
@@ -456,7 +688,7 @@ private fun WeekContent(s: WidgetSnapshot) {
                     if (s.monthTime.isNotEmpty()) Label(s.monthTime, size = 11)
                 }
                 Gap(3)
-                Heatmap(s.monthMinutes, 11.dp, 2.dp)
+                Heatmap(s.monthMinutes, 11.dp, 2.dp, todayColumn = s.monthTodayColumn)
             }
         }
     }

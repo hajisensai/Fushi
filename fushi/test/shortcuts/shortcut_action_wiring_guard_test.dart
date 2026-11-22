@@ -43,6 +43,9 @@ void main() {
     const List<String> executorFiles = <String>[
       'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/pages/implementations/reader_fushi/caret.part.dart',
+      // 阅读器整句扫词（拍板台 5H922XeDHM）：键盘 / 手柄 / 鼠标 / 弹窗 token 四条通道
+      // 的唯一派发点 `_runReaderWordSweepAction` 在这里。
+      'lib/src/pages/implementations/reader_fushi/word_sweep.part.dart',
       'lib/src/pages/implementations/home_page.dart',
       'lib/src/media/video/video_player_shortcuts.dart',
       // BUG-1995：视频页的**鼠标绑定通道**执行体（`_handleVideoPointerDown`）。

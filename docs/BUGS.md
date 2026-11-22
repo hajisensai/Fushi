@@ -38,6 +38,25 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
+> 共 4521 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5199](bugs/BUG-5199-media-lock-desktop-system-auth.md) | 🚧 | 🚧 | 上锁作品：Windows / Linux 没有系统验证（只有口令） |
+| [BUG-5198](bugs/BUG-5198-media-lock-remaining-consumers.md) | 🚧 | 🚧 | 上锁作品：剩余列出作品标题的次要消费端未接 MediaVisibility |
+| [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
+| [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
+| [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
+| [BUG-5190](bugs/BUG-5190-srs-gen4-migration-card-row-parity.md) | ✅ | ✅ | gen4 迁移对拍：同一张卡的行只差继承来的卡片标志，整体回滚（多前身按卡 ID 排先后） |
+| [BUG-5189](bugs/BUG-5189-shortcut-inline-record-esc-pops-page.md) | ✅ | ✅ | shortcut-inline-record-esc-pops-page |
+| [BUG-5188](bugs/BUG-5188-manga-audio-line-swap-resets-position.md) | ✅ | ✅ | manga-audio-line-swap-resets-position |
+| [BUG-5187](bugs/BUG-5187-settings-storage-page-open-jank.md) | ✅ | ✅ | 打开 设置 › 存储 时卡顿（书 / 视频清单整行读大列拷回 UI isolate） |
+| [BUG-5186](bugs/BUG-5186-webview2-composition-proxy-eats-desktop-clicks-when-minimized.md) | ✅ | ✅ | 主窗最小化 / 藏托盘后桌面中央点击被吞（composition 档 WebView2 代理窗仍可命中） |
+| [BUG-5185](bugs/BUG-5185-windows-exit-loader-deadlock.md) | ✅ | ✅ | Windows 退出时 LdrShutdownProcess 卸载 DLL 死锁：进程变僵尸占着单实例互斥量，之后无法再启动 |
+| [BUG-5184](bugs/BUG-5184-external-popup-source-overflow.md) | ✅ | ✅ | 应用内外查词长原文无法完整浏览并挤占释义 |
+| [BUG-5183](bugs/BUG-5183-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
+| [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |
+| [BUG-5181](bugs/BUG-5181-srs-defs-illustration-huge-and-untappable.md) | ✅ | ✅ | 复习卡释义里的词典插图巨大且点不开 |
 | [BUG-5180](bugs/BUG-5180-manga-audio-session-cover-missing.md) | ✅ | ✅ | 阅读器起播有声漫画不带封面，首页迷你播放条只有兜底图标 |
 | [BUG-5179](bugs/BUG-5179-manga-floating-chrome-scroll-hide.md) | ✅ | ✅ | 漫画悬浮底栏：切到条漫一滚动就再也点不出底栏 |
 | [BUG-5178](bugs/BUG-5178-manga-audio-lookup-exit-keys-highlight.md) | ✅ | ✅ | 有声漫画：查词不及时暂停、退出不停、键盘不接管、高亮不恢复 |
@@ -51,6 +70,7 @@
 | [BUG-5170](bugs/BUG-5170-rwkv-now-due-vs-queue-count.md) | ✅ | ✅ | 复习首页「RWKV 此刻」的「Due now 7」与牌组头部「19 due」对不上 |
 | [BUG-5169](bugs/BUG-5169-gdrive-client-already-closed.md) | ✅ | ✅ | Google Drive 同步 / 比较数据全部报「Client is already closed」 |
 | [BUG-5168](bugs/BUG-5168-update-download-hidden-overlay-unreachable.md) | ✅ | ✅ | update-download-hidden-overlay-unreachable |
+| [BUG-5167](bugs/BUG-5167-music-backdrop-pixi-default.md) | ✅ | ✅ | music-backdrop-pixi-default |
 | [BUG-5166](bugs/BUG-5166-api29-background-kill-misreported-foreground.md) | ✅ | ✅ | Android 10 进程退到后台后被系统回收（死前已收到 UI_HIDDEN），下次启动误报前台闪退 |
 | [BUG-5165](bugs/BUG-5165-dht-nodes-multi-endpoint-overwrite.md) | ✅ | ✅ | 双栈 / 多网卡下 DHT 节点数被后到的实例覆盖，误报「DHT 一直连不上任何节点」 |
 | [BUG-5165](bugs/BUG-5165-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
@@ -59,7 +79,7 @@
 | [BUG-5162](bugs/BUG-5162-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
 | [BUG-5161](bugs/BUG-5161-torrent-resume-offline-save-path-zeroes-progress.md) | ✅ | ✅ | 重启时 save_path 暂不可达：fast-resume 被拒后在空路径全检得 0 片，周期快照把全 0 位图写回 .resume，路径恢复后永久跳过校验从 0% 重下 |
 | [BUG-5160](bugs/BUG-5160-server-torrent-upload-off-ignored.md) | ✅ | ✅ | 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配 |
-| [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | 🚧 | 🚧 | aggregate-cloud-snapshot-json-codec-on-caller |
+| [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | ✅ | ✅ | aggregate-cloud-snapshot-json-codec-on-caller |
 | [BUG-5158](bugs/BUG-5158-torrent-resume-save-alert-queue-overflow.md) | ✅ | ✅ | torrent-resume-save-alert-queue-overflow |
 | [BUG-5157](bugs/BUG-5157-web-pseudo-fullscreen-survives-navigation.md) | ✅ | ✅ | web-pseudo-fullscreen-survives-navigation |
 | [BUG-5156](bugs/BUG-5156-manga-audio-shape-version-reuse.md) | ✅ | ✅ | 重新生成存量漫画演出时复用旧响度片段（整形版本没进复用判据） |
@@ -77,7 +97,7 @@
 | [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
 | [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
-| [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
+| [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | ✅ | ✅ | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
 | [BUG-5137](bugs/BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md) | 🚧 | 🚧 | gen4 迁移第 7/10 步重建在 683 万条操作的库上要 1537 秒 |
 | [BUG-5136](bugs/BUG-5136-loopback-shared-ring-stopped-by-other-holder.md) | ✅ | ✅ | loopback 一路被多方共用时，任何一方 stop（含失败 start 后的兜底 stop）都会停掉别人的环 |

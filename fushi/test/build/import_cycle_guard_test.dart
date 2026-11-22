@@ -90,6 +90,15 @@ import 'package:test/test.dart';
 /// `ExternalStorageAccess`；`AiSavedPromptButton` 的存取由调用方注入、不再读
 /// `appProvider`。最大环降到 622（剩下进环的是本就读 AppModel 的制作台页面），上限随之下调。
 ///
+/// 2026-11-20 学习目标记录（目标面板、「语言目标」格、设置「目标」子页）实测 627。拆掉
+/// 四条边：统计层的 `study_goals` / `study_goal_language_scope` 只读偏好与库，改收
+/// `PreferencesRepository` / `FushiDatabase`，不再 import AppModel；`study_goals` 为两个
+/// 文案函数 import 的 `stat_shared`（读 AppModel 的 UI 件）换成挪到统计层的
+/// `stats/stat_format.dart`（`stat_shared` 原样转出）；目标面板与共用视觉件改收窄接口
+/// `StudyGoalHost`（AppModel 实现）。剩下进环的只有新分类 schema 文件
+/// `settings_schema_study_goals`（设置 schema 整族本就在环里，同 2026-11-15 的理由），
+/// 上限 +1 到 623。
+///
 /// 2026-11-20 复习换代（协议 4）第六波合流合入 develop 实测 625（+4 −1）：新进环的 4 个是换代新加、本就读
 /// AppModel 的复习文件——迁移控制器 `srs_gen4_migration_controller`（主库开关 / 关库静默要读
 /// AppModel）、保留副本 `srs_retained_copy`（库目录按 AppModel 取）、迁移页 `srs_generation_view` 与载入失败页
@@ -112,9 +121,18 @@ import 'package:test/test.dart';
 /// `DictionaryPopupRealmState` 放叶子 `dictionary_popup_realm.dart`，WebView State 实现它，
 /// controller 只持接口；controller 与宿主一起出环，最大环 622，上限下调到 622。
 ///
+/// 2026-11-22 学习目标记录（#3980）合入：相对 develop 只多 `settings_schema_study_goals`
+/// 一个文件（「目标」设置子页 schema；设置 schema 整族本就经 AppModel 在环里，同族其它
+/// schema 文件同样在环），上限 622 + 1 = 623。其余新目标文件都用窄接口
+/// （`study_goal_host.dart` / `stat_format.dart`）留在环外。
+/// 同次合流时 develop 实测已是 624（守卫红）：有声漫画起播统一取书目元数据（b424304574）让
+/// `audiobook_session_book_meta` import `reader_fushi_source` 读书名 override，它与
+/// `manga_audio_session` 经漫画阅读器页进环。改由调用方注入 `SessionTitleOverride`，两个
+/// 文件出环，develop 回到 622。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 622;
+const int kMaxCycleFiles = 623;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

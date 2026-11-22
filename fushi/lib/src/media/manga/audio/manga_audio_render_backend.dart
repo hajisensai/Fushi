@@ -688,6 +688,19 @@ class AppMangaRenderBackend implements MangaRenderBackend {
   }
 
   @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => shapeMangaLocalAudio(
+    _ffmpeg,
+    sourcePath: sourcePath,
+    outputPath: outputPath,
+    cancel: cancel,
+    log: _log,
+  );
+
+  @override
   Future<int> writeSilence({
     required int ms,
     required String outputPath,
@@ -714,6 +727,101 @@ class AppMangaRenderBackend implements MangaRenderBackend {
     source: source,
     log: _log,
   );
+}
+
+/// 把用户换上的一段本地音频整形成漫画句（与有声书片段同一套参数：裁首尾静音、淡变、
+/// 响度、编码，所以整形版本同样是 [kMangaShapeVersion]），返回时长。解不出 / 写不出按
+/// `encode_failed` 失败。
+Future<int> shapeMangaLocalAudio(
+  FfmpegBackend ffmpeg, {
+  required String sourcePath,
+  required String outputPath,
+  required TtsRenderCancelToken cancel,
+  required void Function(String source, String summary) log,
+}) async {
+  await runMangaFfmpeg(
+    ffmpeg,
+    buildMangaClipArgs(
+      sourcePath: sourcePath,
+      startMs: 0,
+      endMs: null,
+      outputPath: outputPath,
+      shapeAsLine: true,
+    ),
+    outputPath: outputPath,
+    cancel: cancel,
+    source: 'MangaRender.local',
+    log: log,
+  );
+  return await readMp4PresentationDurationMs(outputPath) ??
+      (throw const MangaLineFailure('encode_failed', 'no duration'));
+}
+
+/// 只会整形本地音频的后端（控制通道「按句替换本地音频」：不合成、不剪有声书，不用拉起
+/// TTS 引擎）。
+class MangaLocalAudioBackend implements MangaRenderBackend {
+  MangaLocalAudioBackend({
+    required FfmpegBackend ffmpeg,
+    required void Function(String source, String summary) log,
+  }) : _ffmpeg = ffmpeg,
+       _log = log;
+
+  final FfmpegBackend _ffmpeg;
+  final void Function(String source, String summary) _log;
+
+  @override
+  int get parallelism => 1;
+
+  @override
+  String get shapeVersion => kMangaShapeVersion;
+
+  @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => shapeMangaLocalAudio(
+    _ffmpeg,
+    sourcePath: sourcePath,
+    outputPath: outputPath,
+    cancel: cancel,
+    log: _log,
+  );
+
+  @override
+  Future<int> synthesizeLine({
+    required String voice,
+    required int seed,
+    required List<String> segments,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('local audio only');
+
+  @override
+  Future<int> cutClip({
+    required MangaAudiobookClip clip,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('local audio only');
+
+  @override
+  Future<int> writeSilence({required int ms, required String outputPath}) =>
+      throw UnsupportedError('local audio only');
+
+  @override
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  }) async {}
+
+  @override
+  bool get canCloneNarrator => false;
+
+  @override
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  }) async => false;
 }
 
 /// 漫画有声的一次 ffmpeg：卡死（[kMangaEncodeStallTimeout] 没进度）或取消就停；退出

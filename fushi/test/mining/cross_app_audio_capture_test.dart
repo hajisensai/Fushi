@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 import 'package:fushi/src/mining/galgame_audio_encode.dart' show PcmFormat;
 import 'package:fushi/src/mining/galgame_audio_source.dart'
     show GalAudioSlice, LoopbackGalAudioSource;
@@ -366,5 +367,35 @@ void main() {
         expect(await out.dir.exists(), isFalse, reason: '落盘的快照随临时目录一起删');
       },
     );
+
+    // 拍板 design-cross-app-audio-trim-ui：查词卡「调整句子音频」面板 / 高级制卡的覆盖项
+    // 随制卡字段而来——「不要句子音频」连快照都不落盘、不编码。
+    test('omitAudio override skips the sentence audio entirely', () async {
+      bool encoded = false;
+      final CrossAppAudioCapture capture = CrossAppAudioCapture.forTesting(
+        channel,
+        desktopLoopbackChannel: loopback,
+        desktopEncoder: (GalAudioSlice clip, String outputPath) async {
+          encoded = true;
+          return true;
+        },
+      );
+      await capture.start();
+      final CrossAppAudioSnapshot snapshot = (await capture.snapshot())!;
+      final int savesBefore = native.calls
+          .where((MethodCall c) => c.method == 'saveSnapshot')
+          .length;
+      final ({String path, Directory dir})? out = await capture
+          .prepareSentenceAudio(
+            snapshot,
+            overrides: const MiningRequestOverrides(omitAudio: true),
+          );
+      expect(out, isNull);
+      expect(encoded, isFalse);
+      expect(
+        native.calls.where((MethodCall c) => c.method == 'saveSnapshot'),
+        hasLength(savesBefore),
+      );
+    });
   });
 }

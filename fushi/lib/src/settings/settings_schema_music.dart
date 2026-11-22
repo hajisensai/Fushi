@@ -37,8 +37,9 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 ///
 /// 也不放**来源管理**（本地文件夹、插件音源）：视频 / 书 / 漫画 / 有声书的设置分类里
 /// 都没有来源或扩展管理，它们只在模块页里（库页导航壳的「来源」「扩展」视图、浏览模块），
-/// 设置只管行为与凭据。音乐同理，来源管理只有曲库页顶栏「来源」这一个入口
-/// （`MusicSourcesPage`：本地文件夹 + 插件 / 服务器 / Apple Music + 歌词来源）。
+/// 设置只管行为与凭据。音乐同理：本地文件夹在曲库页的「导入」视图，在线音源的排序 /
+/// 开关与歌词来源在「在线 › 来源」（`MusicOnlineSourcesView`），插件在「在线 › 插件」
+/// （`MusicPluginsView`），与其它库页「在线」组同位（拍板台 4GBgF6TrNr）。
 /// 服务器曲库（OpenSubsonic / Apple Music 增删、混排开关、串流音质）也不在这里：它和
 /// Jellyfin / Plex / Audiobookshelf 一样是用户自填地址的服务器凭据，住设置 › 在线服务 ›
 /// 媒体服务器（`services.music_servers`，`buildMusicServersDestination`）。歌词来源留在
@@ -506,7 +507,10 @@ SettingsDestination buildMusicDestination() {
                 .appModel
                 .prefsRepo
                 .setMusicLyricsBackdropStyle(value.prefValue),
-            defaultValue: MusicLyricsBackdropStyle.meshGradient,
+            defaultValue: MusicLyricsBackdropStyle.defaultStyle,
+            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）。
+            resetToDefault: (SettingsContext c) =>
+                c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
           ),
           SettingsSliderItem(
             id: 'music.lyrics_backdrop_saturation',

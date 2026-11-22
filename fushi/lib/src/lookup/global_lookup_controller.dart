@@ -356,8 +356,9 @@ class GlobalLookupController {
   String _currentSentence = '';
   OverlayMiningHandler? _currentMiningHandler;
   // 拍板 design-cross-app-audio-desktop：本次**应用外**查词那一刻钉住的最近一段其他 app
-  // 声音（跨应用语音缓存开着才有；应用内表面与带制卡委托的表面为 null）。默认制卡 /
-  // 覆写据此截出查词前最后一句语音当句子音频。每次根查词重置（_lookupExternal）。
+  // 声音（跨应用语音缓存开着才有；调用方没给的表面——应用内文字、galgame——为 null）。
+  // 默认制卡 / 覆写据此截出查词前最后一句语音当句子音频，查词卡的「调整句子音频」面板
+  // 据此试听 + 调起止。每次根查词重置（_lookupExternal）。
   Future<CrossAppAudioSnapshot?>? _currentSentenceAudio;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
@@ -1593,8 +1594,10 @@ class GlobalLookupController {
       }
       _currentSentence = sentence;
       _currentMiningHandler = miningHandler;
-      // 带委托的表面（截屏识字、galgame、网页视频）自己决定句子音频，这里只给默认路径。
-      _currentSentenceAudio = miningHandler == null ? sentenceAudio : null;
+      // 默认制卡路径据此带句子音频；带委托的表面（截屏识字、galgame、网页视频）由委托
+      // 自己决定（截屏识字的委托拿的是同一份快照）。查词卡的「调整句子音频」面板两种
+      // 表面都读它（拍板 design-cross-app-audio-trim-ui）——调用方不给就没有面板。
+      _currentSentenceAudio = sentenceAudio;
       // Retire every acknowledgement belonging to the previous lookup before
       // the asynchronous dictionary search yields. The renderer's epoch itself
       // is host-global and is intentionally NOT reset here.

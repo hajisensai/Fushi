@@ -1556,7 +1556,7 @@ void main() {
         androidExitKind('OTHER', description: '[KILL UID] user cleanup'),
         isNull,
       );
-      // BUG-5165（反馈 4u4HnlOcv2）：OnePlus ColorOS 15 改应用权限时记的整串描述。
+      // BUG-5183（反馈 4u4HnlOcv2）：OnePlus ColorOS 15 改应用权限时记的整串描述。
       expect(
         androidExitKind(
           'OTHER',

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -49,6 +50,31 @@ void main() {
       expect(lastCol[2].dateKey, isNotNull); // 周三=今天
       expect(lastCol[3].dateKey, isNull); // 周四=未来
       expect(lastCol[6].dateKey, isNull); // 周日=未来
+    });
+
+    test('周起始日 = 周日：每列从周日起，末列今天之后是未来占位', () {
+      StatWindow.weekStartDay = DateTime.sunday;
+      addTearDown(() => StatWindow.weekStartDay = DateTime.monday);
+      final StatHeatmapModel m = buildStatHeatmap(
+        valueByDateKey: const <String, int>{},
+        now: now,
+        weeks: 3,
+      );
+      final List<StatHeatmapCell> lastCol = m.weeks.last;
+      // 2026-07-15 周三 → 本周 = 07-12（日）… 07-18（六），今天在第 4 格。
+      expect(lastCol[0].dateKey, '2026-07-12');
+      expect(lastCol[3].dateKey, '2026-07-15');
+      expect(lastCol[4].dateKey, isNull);
+      expect(m.weeks.first[0].dateKey, '2026-06-28');
+      // 翻页偏移按同一个周起始日数周：07-05（日）那周的数据在首屏，无需翻页。
+      expect(
+        maxHeatmapPageOffset(
+          valueByDateKey: const <String, int>{'2026-07-05': 1},
+          now: now,
+          weeks: 3,
+        ),
+        0,
+      );
     });
 
     test('「今日」重置时刻 = 4：凌晨 2 点的今日格是日历昨日，格子 key 仍是日历日', () {

@@ -206,6 +206,59 @@ int sourceGraphemeIndexOfUnit(String text, int unitIndex) {
   return (suffix: capped.skip(start).join(), start: start);
 }
 
+/// 应用外查词浮窗（Android 系统文本选择菜单）里原文视口占工具栏下可用高度的比例。
+const double kExternalSourceViewportFraction = 1 / 3;
+
+/// 应用内词典页与嵌入式词典（双屏伴屏）里原文视口占可用高度的比例。窗口更大、
+/// 原文是主角之一，上限比外部浮窗高；超过就和外部浮窗一样在原文区内独立滚动。
+const double kInAppSourceViewportFraction = 1 / 2;
+
+/// 查词原文的限高视口：短原文按内容高度显示，超过 [maxHeight] 就在自己的视口里
+/// 独立滚动（带滚动条），下方结果 WebView 始终是固定大小的兄弟节点。
+///
+/// 为什么不让原文与结果整页一起滚（PR #4100 初版做法）：结果是平台视图，放进
+/// `SliverFillRemaining` 会随外层滚动逐帧改高度（Windows WebView2 每帧 put_Bounds，
+/// 撞 TODO-1152 下半屏黑；Android 平台视图逐帧 resize 掉帧），而且原文滚出视口后
+/// 拖动 / 滚轮都被 WebView 吃掉，滚不回原文。限高视口让两块各滚各的，结果区尺寸
+/// 只随窗口变化。
+class BoundedSourceLookupViewport extends StatelessWidget {
+  const BoundedSourceLookupViewport({
+    required this.controller,
+    required this.maxHeight,
+    required this.child,
+    super.key,
+    this.scrollKey,
+  });
+
+  /// 原文视口自己的滚动控制器，由宿主持有（换请求时宿主负责 `jumpTo(0)`）。
+  final ScrollController controller;
+
+  /// 原文视口的高度上限，单位逻辑像素。
+  final double maxHeight;
+
+  /// 原文内容（通常是 [SourceLookupTextPanel]）。
+  final Widget child;
+
+  /// 挂在内层 [SingleChildScrollView] 上的 key，供测试与守卫定位视口。
+  final Key? scrollKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Scrollbar(
+        controller: controller,
+        child: SingleChildScrollView(
+          key: scrollKey,
+          controller: controller,
+          primary: false,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
 class SourceLookupTextPanel extends StatefulWidget {
   const SourceLookupTextPanel({
     required this.text,
@@ -216,9 +269,19 @@ class SourceLookupTextPanel extends StatefulWidget {
     this.globalCoordinates = false,
     this.highlight,
     this.tonalHighlight = false,
+    this.revealHighlight = false,
+    this.initialCharIndex = -1,
   });
 
   final String text;
+
+  /// 本条放在 [BoundedSourceLookupViewport] 里时置 true：被选中的字（[highlight]
+  /// 起点，没有高亮时取 [initialCharIndex]）不在原文视口内就只滚这个视口把它露出来，
+  /// 不动结果区或外层宿主。其他源文本条保持原行为。
+  final bool revealHighlight;
+
+  /// 还没有 [highlight] 时要露出的字素簇下标（外部入口被点的那个字）；-1 表示没有。
+  final int initialCharIndex;
 
   /// 点中（或 Shift 悬停）某个字：回报「从该字到串尾」的查询串、该字的矩形，以及
   /// 该字在本条渲染序列里的**字素簇下标**。
@@ -261,12 +324,58 @@ class SourceLookupTextPanel extends StatefulWidget {
 
 class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
   int? _lastShiftHoverIndex;
+  final GlobalKey _selectedGlyphKey = GlobalKey();
+  bool _revealPending = true;
+
+  @override
+  void didUpdateWidget(SourceLookupTextPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text ||
+        oldWidget.highlight?.start != widget.highlight?.start ||
+        oldWidget.initialCharIndex != widget.initialCharIndex ||
+        oldWidget.revealHighlight != widget.revealHighlight) {
+      _revealPending = true;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _revealPending = true;
+  }
+
+  void _revealSelectedGlyph() {
+    if (!mounted || !widget.revealHighlight) return;
+    final BuildContext? selected = _selectedGlyphKey.currentContext;
+    if (selected == null) return;
+    final RenderObject? render = selected.findRenderObject();
+    final ScrollableState? scrollable = Scrollable.maybeOf(selected);
+    final RenderObject? viewport = scrollable?.context.findRenderObject();
+    if (render is! RenderBox || viewport is! RenderBox) return;
+    final Offset top = render.localToGlobal(Offset.zero, ancestor: viewport);
+    if (top.dy >= 0 && top.dy + render.size.height <= viewport.size.height) {
+      return;
+    }
+    // Reveal only this source viewport, never the definition or its host.
+    scrollable!.position.ensureVisible(render, alignment: 0.5);
+  }
 
   @override
   Widget build(BuildContext context) {
     final String trimmed = widget.text.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
+    // 视口跟着窗口尺寸变（外部浮窗缩小、伴屏旋转）时被选中的字可能被挤出原文视口：
+    // 订阅窗口尺寸，尺寸一变就走 didChangeDependencies 重新排一次 reveal。
+    if (widget.revealHighlight) MediaQuery.sizeOf(context);
+    if (widget.revealHighlight && _revealPending) {
+      _revealPending = false;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _revealSelectedGlyph(),
+      );
+    }
+    final int selectedIndex =
+        widget.highlight?.start ?? widget.initialCharIndex;
     final ThemeData theme = Theme.of(context);
     // BUG-442：逐字符建一个可点 widget 塞进 Wrap，节点数 = 码点数。超长剪贴板
     // 文本（成千上万码点）会在构建期产出巨量 widget → 主 isolate OOM / 引擎崩溃。
@@ -317,6 +426,9 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
           children: <Widget>[
             for (int i = 0; i < chars.length; i++)
               Builder(
+                key: widget.revealHighlight && i == selectedIndex
+                    ? _selectedGlyphKey
+                    : null,
                 builder: (BuildContext charContext) {
                   final bool lit = i >= highlightStart && i < highlightEnd;
                   final Widget glyph = Text(

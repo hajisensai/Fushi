@@ -49,6 +49,7 @@ import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/download/manga_download_page_ledger.dart';
 import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
@@ -373,6 +374,19 @@ class _PageFile {
   final String relativeUrl;
   final File file;
 }
+
+/// 一次运行里页表被判「源端已换页」（[OnlineMangaChapterPageRefs.pageTableChanged]）：
+/// 带着那一次的取页错误，交给 `_download` 按新页表重新对账。
+class _PageTableChanged implements Exception {
+  const _PageTableChanged(this.error, this.stack);
+
+  final Object error;
+  final StackTrace stack;
+}
+
+/// 一次运行里最多按几份页表对账（首份 + 源端换页后的重来）。再换就把最后那次
+/// 的取页错误按一般失败交给退避重试。
+const int _kMaxPageTableRounds = 3;
 
 /// 一条因 Cloudflare 挑战失败的任务留下的解题材料：挑战本身（URL / User-Agent）
 /// 与解它的运行时。只在内存：重启后挑战多半已过期，行上照旧只有「重试」，重试
@@ -1231,114 +1245,50 @@ class MangaDownloadService {
     }
     _throwIfCancelled(token);
     final OnlineMangaRuntimeAdapter adapter = service.adapter;
-    // 页引用会随运行时进程失效（桌面 sidecar 整章下载途中重启，BUG-4908）：经
-    // [OnlineMangaChapterPageRefs] 取页，撞上失效就重解析一次页表换新引用接着取，
-    // 而不是整章按一般失败退避、重试时从头再解析。
-    final OnlineMangaChapterPageRefs pages = OnlineMangaChapterPageRefs(
-      adapter: adapter,
-      entry: entry,
-      chapter: chapter,
-      pages: await _untilTripped(
-        adapter.resolveChapterPages(entry: entry, chapter: chapter),
-        token,
-      ),
-    );
-    if (pages.length == 0) {
-      throw StateError('The chapter has no pages');
-    }
-    _throwIfCancelled(token);
     final Directory images = mangaChapterImagesDirectory(chapterDir);
-    await images.create(recursive: true);
-    final List<_PageFile?> files = List<_PageFile?>.filled(pages.length, null);
-    int done = 0;
-    // 续跑：磁盘上已完整落地的页直接认（暂存文件不算）。
-    for (int index = 0; index < pages.length; index++) {
-      final _PageFile? existing = await _existingPageFile(images, index);
-      if (existing != null) {
-        files[index] = existing;
-        done += 1;
-      }
-    }
     final _ProgressWriter progress = _ProgressWriter(
       database: _database,
       jobId: job.jobId,
       now: () => _now,
     );
-    await progress.report(done: done, total: pages.length);
-    _reportKeepAlive(job, done: done, total: pages.length);
-    final List<int> pending = <int>[
-      for (int index = 0; index < pages.length; index++)
-        if (files[index] == null) index,
-    ];
-    Object? firstError;
-    StackTrace? firstStack;
-    // 在飞的取页（页序）：暂停 / 取消时经 [OnlineMangaPageCancellable] 交给运行时
-    // 取消，释放运行时侧的取图通道（Android 取图线程池有限，见 MihonChannelHandler）。
-    // 记页序而不是引用：重解析后在飞的是新引用，取消时按页序取当前引用。
-    final Set<int> inFlight = <int>{};
-    if (adapter is OnlineMangaPageCancellable) {
-      final OnlineMangaPageCancellable cancellable =
-          adapter as OnlineMangaPageCancellable;
-      active.abort = () {
-        if (inFlight.isEmpty) return;
-        final List<OnlineMangaPageRef> requests = <OnlineMangaPageRef>[
-          for (final int index in inFlight) pages[index],
-        ];
-        unawaited(
-          cancellable.cancelChapterPages(requests).catchError((
-            Object error,
-            StackTrace stack,
-          ) {
-            ErrorLogService.instance.log(
-              'MangaDownloadService.cancelPages ${job.jobId}',
-              error,
-              stack,
-            );
-          }),
+    // 页引用会随运行时进程失效（桌面 sidecar 整章下载途中重启，BUG-4908）：经
+    // [OnlineMangaChapterPageRefs] 取页，撞上失效就重解析一次页表换新引用接着取，
+    // 而不是整章按一般失败退避、重试时从头再解析。重解析发现源端换了页
+    // （[OnlineMangaChapterPageRefs.pageTableChanged]，audit-035）就按新页表重新
+    // 对账接着下：身份对得上的页留着，变了的才重取，最多这么来几轮。
+    late OnlineMangaChapterPageRefs pages;
+    late List<_PageFile> files;
+    late MangaDownloadPageLedgerWriter ledger;
+    for (int round = 0; ; round++) {
+      pages = OnlineMangaChapterPageRefs(
+        adapter: adapter,
+        entry: entry,
+        chapter: chapter,
+        pages: await _untilTripped(
+          adapter.resolveChapterPages(entry: entry, chapter: chapter),
+          token,
+        ),
+      );
+      if (pages.length == 0) {
+        throw StateError('The chapter has no pages');
+      }
+      _throwIfCancelled(token);
+      try {
+        (files: files, ledger: ledger) = await _fetchChapterPages(
+          job: job,
+          active: active,
+          adapter: adapter,
+          pages: pages,
+          chapterDir: chapterDir,
+          images: images,
+          progress: progress,
         );
-      };
-    }
-    // 待取页按游标出队（单 isolate，worker 之间不会并发改游标）：头删 removeAt(0)
-    // 每次都要整体前移剩余元素，P 页一章共 P(P-1)/2 次搬移（HBK-AUDIT-046）。
-    int nextPending = 0;
-    Future<void> worker() async {
-      while (nextPending < pending.length && firstError == null) {
-        if (token.isTripped) return;
-        final int index = pending[nextPending++];
-        inFlight.add(index);
-        try {
-          files[index] = await _fetchPage(pages, images, index, token);
-          done += 1;
-          await progress.report(done: done, total: pages.length);
-          _reportKeepAlive(job, done: done, total: pages.length);
-        } on Object catch (error, stack) {
-          firstError ??= error;
-          firstStack ??= stack;
-        } finally {
-          inFlight.remove(index);
+        break;
+      } on _PageTableChanged catch (changed) {
+        if (round >= _kMaxPageTableRounds - 1) {
+          Error.throwWithStackTrace(changed.error, changed.stack);
         }
       }
-    }
-
-    final int concurrency = pageConcurrency < 1 ? 1 : pageConcurrency;
-    bool completed = false;
-    try {
-      await Future.wait<void>(<Future<void>>[
-        for (int i = 0; i < concurrency; i++) worker(),
-      ]);
-      completed = true;
-    } finally {
-      active.abort = null;
-      // 暂停 / 取消 / 失败停下时，节流攒着的最后进度也要落库（暂停行显示真实页数）。
-      await _flushStoppedProgress(
-        progress,
-        job.jobId,
-        stoppingWithError: !completed || token.isTripped || firstError != null,
-      );
-    }
-    _throwIfCancelled(token);
-    if (firstError != null) {
-      Error.throwWithStackTrace(firstError!, firstStack!);
     }
     // 全部页齐 → 用真实字节尺寸写章 manga.json。
     final List<MokuroImage> payloadImages = <MokuroImage>[];
@@ -1347,9 +1297,8 @@ class MangaDownloadService {
     // 读页**不**与令牌赛跑、要读完：赛跑会把仍开着句柄的读丢在后台，取消随即删
     // 章目录，Windows 上删有打开句柄的文件报 errno 32（ERROR_SHARING_VIOLATION），
     // 半成品就删不掉了。单页读是有界的本地 I/O，最多多等一页。
-    for (final _PageFile? file in files) {
+    for (final _PageFile file in files) {
       _throwIfCancelled(token);
-      if (file == null) throw StateError('A page is missing after download');
       final Uint8List bytes = await file.file.readAsBytes();
       _throwIfCancelled(token);
       final ({int width, int height})? size = await _untilTripped(
@@ -1412,7 +1361,146 @@ class MangaDownloadService {
       mangaJson.path,
       () => writeMangaJsonAtomically(mangaJson.path, payload),
     );
+    // 章已完整（判据是 manga.json）：续跑账本没用了。删不掉只记日志——留着的
+    // 账本不影响「已下载」判定。
+    try {
+      await ledger.discard();
+    } on FileSystemException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaDownloadService.ledger ${job.jobId}',
+        error,
+        stack,
+      );
+    }
     await _markDone(job, chapterDir, mangaJson, entry, chapter);
+  }
+
+  /// 按页表 [pages] 把一章的页取齐落盘：先按账本对账续跑，再并发补取缺的页。
+  /// 页表中途被判「源端已换页」时抛 [_PageTableChanged]。
+  Future<({List<_PageFile> files, MangaDownloadPageLedgerWriter ledger})>
+  _fetchChapterPages({
+    required MangaDownloadJobRow job,
+    required _ActiveJob active,
+    required OnlineMangaRuntimeAdapter adapter,
+    required OnlineMangaChapterPageRefs pages,
+    required Directory chapterDir,
+    required Directory images,
+    required _ProgressWriter progress,
+  }) async {
+    final _CancelToken token = active.token;
+    // 续跑：只认账本里源端身份与这份页表对得上的页（页表重排了就挪到新页序上），
+    // 其余盘上的文件删掉重取（audit-035）。按页序认会把两版页图混进同一章。
+    final ({Map<int, String> kept, MangaDownloadPageLedgerWriter ledger})
+    resumed = await reconcileMangaDownloadPages(
+      chapterDir: chapterDir,
+      images: images,
+      keys: <String?>[
+        for (int index = 0; index < pages.length; index++) pages[index].pageKey,
+      ],
+    );
+    final MangaDownloadPageLedgerWriter ledger = resumed.ledger;
+    _throwIfCancelled(token);
+    final List<_PageFile?> files = List<_PageFile?>.filled(pages.length, null);
+    int done = 0;
+    for (final MapEntry<int, String> kept in resumed.kept.entries) {
+      files[kept.key] = _PageFile(
+        relativeUrl: '${MangaStorage.kImagesDirName}/${kept.value}',
+        file: File(p.join(images.path, kept.value)),
+      );
+      done += 1;
+    }
+    await progress.report(done: done, total: pages.length);
+    _reportKeepAlive(job, done: done, total: pages.length);
+    final List<int> pending = <int>[
+      for (int index = 0; index < pages.length; index++)
+        if (files[index] == null) index,
+    ];
+    Object? firstError;
+    StackTrace? firstStack;
+    // 在飞的取页（页序）：暂停 / 取消时经 [OnlineMangaPageCancellable] 交给运行时
+    // 取消，释放运行时侧的取图通道（Android 取图线程池有限，见 MihonChannelHandler）。
+    // 记页序而不是引用：重解析后在飞的是新引用，取消时按页序取当前引用。
+    final Set<int> inFlight = <int>{};
+    if (adapter is OnlineMangaPageCancellable) {
+      final OnlineMangaPageCancellable cancellable =
+          adapter as OnlineMangaPageCancellable;
+      active.abort = () {
+        if (inFlight.isEmpty) return;
+        final List<OnlineMangaPageRef> requests = <OnlineMangaPageRef>[
+          for (final int index in inFlight) pages[index],
+        ];
+        unawaited(
+          cancellable.cancelChapterPages(requests).catchError((
+            Object error,
+            StackTrace stack,
+          ) {
+            ErrorLogService.instance.log(
+              'MangaDownloadService.cancelPages ${job.jobId}',
+              error,
+              stack,
+            );
+          }),
+        );
+      };
+    }
+    // 待取页按游标出队（单 isolate，worker 之间不会并发改游标）：头删 removeAt(0)
+    // 每次都要整体前移剩余元素，P 页一章共 P(P-1)/2 次搬移（HBK-AUDIT-046）。
+    int nextPending = 0;
+    Future<void> worker() async {
+      while (nextPending < pending.length && firstError == null) {
+        if (token.isTripped) return;
+        final int index = pending[nextPending++];
+        inFlight.add(index);
+        try {
+          final _PageFile file = await _fetchPage(pages, images, index, token);
+          // 先落盘、再记账（账本只列真实成立的页）。记的是取这页时用的那份页表
+          // 的身份：页表中途若换过，只会是逐页身份都相同的那种换法。
+          await ledger.record(
+            index: index,
+            file: p.basename(file.file.path),
+            key: pages[index].pageKey,
+          );
+          files[index] = file;
+          done += 1;
+          await progress.report(done: done, total: pages.length);
+          _reportKeepAlive(job, done: done, total: pages.length);
+        } on Object catch (error, stack) {
+          firstError ??= error;
+          firstStack ??= stack;
+        } finally {
+          inFlight.remove(index);
+        }
+      }
+    }
+
+    final int concurrency = pageConcurrency < 1 ? 1 : pageConcurrency;
+    bool completed = false;
+    try {
+      await Future.wait<void>(<Future<void>>[
+        for (int i = 0; i < concurrency; i++) worker(),
+      ]);
+      completed = true;
+    } finally {
+      active.abort = null;
+      // 暂停 / 取消 / 失败停下时，节流攒着的最后进度也要落库（暂停行显示真实页数）。
+      await _flushStoppedProgress(
+        progress,
+        job.jobId,
+        stoppingWithError: !completed || token.isTripped || firstError != null,
+      );
+    }
+    _throwIfCancelled(token);
+    if (firstError != null) {
+      // 源端在这次运行里换了页：交给调用方按新页表重新对账。
+      if (pages.pageTableChanged) {
+        throw _PageTableChanged(firstError!, firstStack!);
+      }
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
+    return (
+      files: <_PageFile>[for (final _PageFile? file in files) file!],
+      ledger: ledger,
+    );
   }
 
   /// mokuro.moe 卷：把 [MokuroMoeVolumeDownloader.run] 的事件流映射到任务行。
@@ -1644,25 +1732,6 @@ class MangaDownloadService {
 
   /// 下载侧嗅不出格式时的扩展名（直读缓存用 `.img`，那边不进章目录）。
   static const String _kUnknownPageExtension = '.jpg';
-
-  /// 续跑时找磁盘上已落地的第 [index] 页（扩展名表里任一个，暂存文件不算，空文件
-  /// 不算）。
-  Future<_PageFile?> _existingPageFile(Directory images, int index) async {
-    final String stem = mangaPageFileStem(index);
-    for (final String ext in <String>{
-      ...kMangaPageExtensionByContentType.values,
-      _kUnknownPageExtension,
-    }) {
-      final File file = File(p.join(images.path, '$stem$ext'));
-      if (await file.exists() && await file.length() > 0) {
-        return _PageFile(
-          relativeUrl: '${MangaStorage.kImagesDirName}/$stem$ext',
-          file: file,
-        );
-      }
-    }
-    return null;
-  }
 
   /// 用户取消后丢掉这条任务的半成品（issue #2720）。
   ///

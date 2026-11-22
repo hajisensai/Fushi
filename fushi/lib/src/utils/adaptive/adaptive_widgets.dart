@@ -812,6 +812,9 @@ Widget adaptiveSegmentedButton<T extends Object>({
     segments: segments,
     selected: selected,
     onSelectionChanged: onSelectionChanged,
+    // 同 Apple 分支：调用方给空选中（状态还没读到、不能假装选了哪项）时放行空选，
+    // 否则 SegmentedButton 的断言直接把宿主打崩。
+    emptySelectionAllowed: selected.isEmpty,
     style: style,
   );
 }

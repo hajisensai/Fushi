@@ -139,6 +139,7 @@
 | globalBack（universal） | Esc / Alt+← | B | 返回上一级：有弹窗关弹窗，否则退出书 |
 | readerToggleBookmark | Ctrl+D | X | 切换书签 |
 | readerToggleFurigana | （无键盘默认） | R3 | 切换振假名 |
+| readerLookupNextWord / readerLookupPrevWord | （无默认，用户自配） | （无默认） | 整句扫词：不进光标，在当前句里按词前进 / 后退并复用点词查词换同一张弹窗（句尾循环；光标激活时让位；正文三种视图 + 歌词视图共用；执行体 `reader_fushi/word_sweep.part.dart`，拍板台 5H922XeDHM） |
 
 ### home scope（首页解析 home + global）
 

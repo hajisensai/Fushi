@@ -618,6 +618,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
     LogicalKeyboardKey? keyboardTriggerKey,
     GamepadButton? gamepadTriggerButton,
   }) {
+    // 整句扫词（拍板台 5H922XeDHM）：键盘 / 手柄 / 鼠标三条通道都落到本执行体，扫词在
+    // 这里经唯一派发点分流；光标激活时执行体自己让位（仍消费，不让键冒泡去移焦点）。
+    if (_runReaderWordSweepAction(action)) return KeyEventResult.handled;
     switch (action) {
       case ShortcutAction.readerPageForward:
         _paginate(ReaderNavigationDirection.forward);

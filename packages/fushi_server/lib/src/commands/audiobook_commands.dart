@@ -199,7 +199,6 @@ class AudiobookCommands extends CliModule {
       }
       final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
         db: rt.db,
-        repo: SrtBookRepository(rt.db),
         audiobookRepo: AudiobookRepository(rt.db),
         bookKey: bookKey,
         title: row.title,
