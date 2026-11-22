@@ -1,4 +1,4 @@
-// 音乐「来源」页与「推荐」来源 chip：排序 / 开关写回偏好时保留暂时不在场的来源；
+// 音乐「在线 › 来源」视图与「推荐」来源 chip：排序 / 开关写回偏好时保留暂时不在场的来源；
 // 「全部」里服务器那排专辑跟着数据源（换 storefront = 换浏览器）重新拉取；选中的来源消失后
 // chip 与内容一起回到「全部」；服务器从推荐页 chip 进入：专辑 → 曲目。
 
@@ -208,7 +208,7 @@ void main() {
     tester.view.physicalSize = const Size(1200, 1600);
     addTearDown(tester.view.reset);
     final _Env env = await _env(tester);
-    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await tester.pumpWidget(_host(env.app, const MusicOnlineSourcesView()));
     await _settle(tester);
 
     await tester.tap(find.text(t.music_sources_add));
@@ -247,7 +247,7 @@ void main() {
         ]),
       );
     });
-    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await tester.pumpWidget(_host(env.app, const MusicOnlineSourcesView()));
     await _settle(tester);
 
     expect(
@@ -310,7 +310,10 @@ void main() {
     addTearDown(tester.view.reset);
     final _Env env = await _env(tester);
     expect(env.prefs.musicYoutubeEnabled, isFalse, reason: '默认关（显式 opt-in）');
-    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    int changed = 0;
+    await tester.pumpWidget(
+      _host(env.app, MusicOnlineSourcesView(onChanged: () => changed++)),
+    );
     await _settle(tester);
 
     final Finder toggle = find.descendant(
@@ -326,6 +329,7 @@ void main() {
     await _settle(tester);
     expect(env.prefs.musicYoutubeEnabled, isTrue);
     expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(changed, greaterThan(0), reason: '启用开关一变就告诉曲库页重读推荐 / 搜索来源');
     final List<MusicOrderedSource> loaded = (await tester.runAsync(
       () => loadOrderedMusicOnlineSources(env.app),
     ))!;
