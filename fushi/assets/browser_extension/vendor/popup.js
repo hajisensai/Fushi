@@ -6439,10 +6439,13 @@ function createEntryHeader(entry, idx) {
         ontouchstart: () => {
             snapshotSelection();
         },
-        // [miningOverrides]：只有 fushiPopupMineEntryByIndex(idx, overrides) 直接调本处理器时才有
-        // （「调整句子音频」面板确认）；DOM 派发的真实点击第二个参数恒为 undefined。它只属于
-        // 这一次请求，沿下面每一条组包路径显式传下去（HBK-AUDIT-211）。
-        onclick: async (_event, miningOverrides = null) => {
+        onclick: async () => {
+            // 本次请求的覆盖项（「调整句子音频」面板确认的起止偏移）：只有
+            // fushiPopupMineEntryByIndex(idx, overrides) 在调本处理器前一刻置一次性的
+            // __fushiMiningOverridesOnce；与 openChooser 同一纪律，第一个 await 之前先读后清，
+            // 之后只沿下面每一条组包路径显式传下去，不再经任何页面全局（HBK-AUDIT-211）。
+            const miningOverrides = mineButton.__fushiMiningOverridesOnce || null;
+            mineButton.__fushiMiningOverridesOnce = null;
             // openChooser：false = 单击；true = 「管理」手势（右键 / 长按 / 菜单键，只对已制卡的
             // ✓ 生效，见 bindMinedCardManageTriggers，它置一次性的 __fushiOpenChooserOnce 再调
             // 本处理器）——永远弹覆写 / 新增 / 查看的选择单，不走「最新可改」原地覆写，也不因
@@ -7047,7 +7050,7 @@ try {
 
 // BUG-763/766：确认「制卡前调整」原生对话框时，Dart 回点第 idx 个词条（:scope > .entry
 // DOM 序，与打开对话框时的 entryIndex 同源）的制卡按钮，复用其全部制卡/查重/覆写逻辑。
-// [miningOverrides]（可选）：这一笔制卡的覆盖项，原样交给「+」的处理器（见其 onclick）。
+// [miningOverrides]（可选）：这一笔制卡的覆盖项（「调整句子音频」面板），只随这一次回点交给「+」。
 window.fushiPopupMineEntryByIndex = function(idx, miningOverrides) {
     const root = __fushiRootNode();
     const first = root && root.querySelector('.entry');
@@ -7064,9 +7067,15 @@ window.fushiPopupMineEntryByIndex = function(idx, miningOverrides) {
     // 自动关栈 / 低内存 dismiss 会把弹窗连制卡草稿一起撤掉——卡制成了但上下文全丢，
     // 或 WebView 半路销毁回到「无卡无提示」。所以直接调 onclick 取回它的 promise，让
     // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
-    const result = typeof b.onclick === 'function'
-        ? b.onclick(undefined, miningOverrides || null)
-        : b.click();
+    // 覆盖项只交给这一次调用：处理器在第一个 await 之前就读走并清掉；这里调用后再清一次，
+    // 处理器提前返回（单飞守卫等）时也不会留给下一次普通点击。
+    b.__fushiMiningOverridesOnce = miningOverrides || null;
+    let result;
+    try {
+        result = typeof b.onclick === 'function' ? b.onclick() : b.click();
+    } finally {
+        b.__fushiMiningOverridesOnce = null;
+    }
     return Promise.resolve(result).then(() => true);
 };
 
