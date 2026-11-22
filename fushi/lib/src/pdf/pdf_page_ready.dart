@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'dart:ui' show Offset, Rect;
 import 'package:pdfrx/pdfrx.dart';
 
 /// PDF 逐步加载下「页真正就绪」的唯一入口（HBK-AUDIT-210）。
@@ -73,4 +74,21 @@ Future<PdfPageText?> pdfLoadPageText(
   );
   if (page == null) return null;
   return page.loadStructuredText();
+}
+
+/// 把按旧页框 [from] 给出的文档坐标 [position] 按页内相对位置搬到新页框 [to]。
+///
+/// 等页加载期间 pdfrx 会用真实尺寸重排布局（占位页的尺寸是猜的，整册宽度也可能
+/// 变），点下时的文档坐标在新布局里已不指向原来那一点；按比例换算才落回用户点的
+/// 那处内容。页框没变时原样返回。
+Offset pdfRemapToPageRect(
+  Offset position, {
+  required Rect from,
+  required Rect to,
+}) {
+  if (from == to || from.width <= 0 || from.height <= 0) return position;
+  return Offset(
+    to.left + (position.dx - from.left) / from.width * to.width,
+    to.top + (position.dy - from.top) / from.height * to.height,
+  );
 }

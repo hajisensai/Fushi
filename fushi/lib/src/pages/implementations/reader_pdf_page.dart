@@ -456,21 +456,28 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     final List<PdfPage> pages = _pdfController.pages;
 
     for (int i = 0; i < pages.length && i < layout.pageLayouts.length; i++) {
-      if (!layout.pageLayouts[i].contains(documentPosition)) continue;
+      final Rect tappedRect = layout.pageLayouts[i];
+      if (!tappedRect.contains(documentPosition)) continue;
 
       final PdfPageText? text = await _pageText(i);
       if (!mounted || !_pdfController.isReady) return false;
       // 等文本层时这页可能刚从逐步加载的占位实例换成真实例（尺寸 / 旋转与页框
-      // 这时才准），坐标换算一律用等完之后的实例与布局。
+      // 这时才准），坐标换算一律用等完之后的实例与布局；点击点是按点下时的旧
+      // 页框给的，按页内相对位置搬到新页框（布局重排后旧文档坐标已不在原处）。
       final PdfPage page = _pdfController.pages[i];
       final Rect pageRect = _pdfController.layout.pageLayouts[i];
       if (text == null || text.charRects.isEmpty) {
         _notifyNoTextLayer();
         return false;
       }
+      final Offset pagePosition = pdfRemapToPageRect(
+        documentPosition,
+        from: tappedRect,
+        to: pageRect,
+      );
 
       // 文档坐标 → 页内 PDF 坐标（原点左下、Y 轴向上、单位 point）。
-      final PdfPoint pt = documentPosition
+      final PdfPoint pt = pagePosition
           .translate(-pageRect.left, -pageRect.top)
           .toPdfPoint(page: page, scaledPageSize: pageRect.size);
 

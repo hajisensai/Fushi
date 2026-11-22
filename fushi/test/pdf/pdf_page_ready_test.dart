@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Offset, Rect;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pdf/pdf_page_ready.dart';
@@ -170,6 +171,32 @@ void main() {
 
       expect(search.status, PdfTextSearchStatus.done);
       expect(search.hits.map((PdfTextSearchHit h) => h.pageIndex), <int>[3]);
+    });
+  });
+
+  group('HBK-AUDIT-210 等页加载后点击点随页框重排换算', () {
+    test('页框未变原样返回', () {
+      const Rect r = Rect.fromLTWH(0, 100, 200, 300);
+      expect(
+        pdfRemapToPageRect(const Offset(50, 160), from: r, to: r),
+        const Offset(50, 160),
+      );
+    });
+
+    test('占位页框换成真实尺寸并整体下移：按页内相对位置落到新页框', () {
+      // 占位页猜的是 200x300，加载后真实是 400x600，且前面页重排使其下移 50。
+      const Rect from = Rect.fromLTWH(0, 100, 200, 300);
+      const Rect to = Rect.fromLTWH(0, 150, 400, 600);
+      // 点在旧页框的 (1/4, 1/3) 处。
+      final Offset mapped = pdfRemapToPageRect(
+        const Offset(50, 200),
+        from: from,
+        to: to,
+      );
+      expect(mapped.dx, closeTo(100, 1e-9));
+      expect(mapped.dy, closeTo(350, 1e-9));
+      // 不换算直接拿旧文档坐标，落点在新页框里是 (50, 50)，不是用户点的那处。
+      expect(mapped, isNot(const Offset(50, 200)));
     });
   });
 }
