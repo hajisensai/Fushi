@@ -180,13 +180,16 @@ void main() {
       debugPrint('[diorama-gpu] FAILED: $e\n$st');
       rethrow;
     } finally {
-      // 收尾每步限时并打点：哪一步卡住在日志里一眼可见，也不让收尾把整条用例挂死。
+      // 收尾每步限时并打点：哪一步卡住在日志里一眼可见。任何一步失败或超时都让用例失败
+      // （不吞掉：BUG-5270 就是收尾里出栈歌词页时平台线程卡死，吞掉就看不见了）。
+      final List<String> cleanupFailures = <String>[];
       Future<void> step(String name, Future<void> Function() body) async {
         try {
           await body().timeout(const Duration(seconds: 15));
           debugPrint('[diorama-gpu] cleanup $name ok');
-        } on TimeoutException {
-          debugPrint('[diorama-gpu] cleanup $name TIMEOUT');
+        } catch (e, st) {
+          debugPrint('[diorama-gpu] cleanup $name FAILED: $e\n$st');
+          cleanupFailures.add('$name: $e');
         }
       }
 
@@ -194,12 +197,14 @@ void main() {
         await appModel.prefsRepo.setMusicVisualizerMode(userMode);
         await appModel.prefsRepo.setMusicVisualizerRandom(userRandom);
       });
-      if (nav.canPop()) nav.pop();
-      await frames(5);
-      debugPrint('[diorama-gpu] cleanup pop ok');
+      await step('pop', () async {
+        if (nav.canPop()) nav.pop();
+        await frames(5);
+      });
       await step('pause', appModel.musicSession.engine.pause);
       await step('stop', appModel.musicSession.engine.stop);
       debugPrint('[diorama-gpu] cleanup done');
+      expect(cleanupFailures, isEmpty, reason: '收尾每一步都应完成');
     }
   });
 }
