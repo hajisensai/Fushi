@@ -10658,6 +10658,7 @@
   "srs_note_audio_pick": "选择音频文件",
   "srs_note_audio_record": "录音",
   "srs_note_audio_remove": "删除音频",
+  "srs_note_audio_tts": "用 TTS 生成",
   "srs_note_block_card_type": "卡型",
   "srs_note_block_definitions": "释义",
   "srs_note_block_frequency": "词频",

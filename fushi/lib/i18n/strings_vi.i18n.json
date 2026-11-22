@@ -10658,6 +10658,7 @@
   "srs_note_audio_pick": "Choose audio file",
   "srs_note_audio_record": "Record",
   "srs_note_audio_remove": "Remove audio",
+  "srs_note_audio_tts": "Generate with TTS",
   "srs_note_block_card_type": "Card type",
   "srs_note_block_definitions": "Definitions",
   "srs_note_block_frequency": "Frequency",
