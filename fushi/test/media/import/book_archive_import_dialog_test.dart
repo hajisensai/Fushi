@@ -190,7 +190,7 @@ void main() {
           home: Scaffold(
             body: BookArchiveImportDialog(
               importer: importer,
-              paths: <String>['/nowhere/a.epub', '/nowhere/b.txt'],
+              paths: const <String>['/nowhere/a.epub', '/nowhere/b.txt'],
             ),
           ),
         ),
