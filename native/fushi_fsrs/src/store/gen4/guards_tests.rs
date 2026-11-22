@@ -634,6 +634,11 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
         ],
     ),
     (
+        "stale.rs",
+        "对拍前认出协议 3 一侧被旧重放改写过的日志结果并在影子表 / SAVEPOINT 里改回（反馈 RhMpA6bn8v）",
+        &["srs_review_logs", "sync2_log_meta", "sync2_ops"],
+    ),
+    (
         "media.rs",
         "迁移时从协议 3 的 sync2_media_at / sync2_media_seeded 灌 media_at 种子（`seed_legacy` 一处）",
         &["sync2_media_at", "sync2_media_seeded"],
