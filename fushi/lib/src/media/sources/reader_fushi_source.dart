@@ -37,6 +37,8 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart'
     show onlineMangaShelfProgress;
+import 'package:fushi/src/media/collections/book_continue.dart'
+    show mergeMangaChapterReadRecency;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
@@ -103,6 +105,15 @@ final fushiBooksProvider = FutureProvider.family<List<MediaItem>, Language>((
   ref.watch(_epubBookKeysProvider);
   // BUG-4356：章已读集合一变（任一标记已读入口），在线漫画进度即时重算。
   ref.watch(_mangaChapterReadKeysProvider);
+  // BUG-5259：最近阅读时刻表（[bookLastReadAtProvider]）也认章 readAt，章已读集合
+  // 变了要一起重算。在这里转一手：时刻表自己再订一条 drift 流的话，没人监听时
+  // 首次出值会把还在加载的它标脏，`ref.read(...future)` 就永远等不到结果。
+  ref.listen<AsyncValue<List<String>>>(_mangaChapterReadKeysProvider, (
+    AsyncValue<List<String>>? previous,
+    AsyncValue<List<String>> next,
+  ) {
+    if (previous?.hasValue ?? false) ref.invalidate(bookLastReadAtProvider);
+  });
   return ReaderFushiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
   );
@@ -130,12 +141,26 @@ final srtBookMissingAudioUidsProvider = FutureProvider<Set<String>>((
 /// [epubBookUidByKeyProvider] 换算再查。BUG-777：继续阅读 hero 与书架「最近阅读」
 /// 排序的唯一 recency 真相源；关书时与 [fushiBooksProvider] 同点失效
 /// （[ReaderFushiSource.onSourceExit]），不会陈旧。
+///
+/// BUG-5259：在线漫画只在作品页「标记已读」（或 Kavita 对齐）过的章不写
+/// `reader_positions`，这里与各章 `manga_chapter_states.readAt` 取大
+/// （[mergeMangaChapterReadRecency]）。章已读集合一变由 [fushiBooksProvider] 转手
+/// 失效本表（它本来就订着那条流），本表不再自己订 drift 流。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   final FushiDatabase db = ref.watch(appProvider).database;
   final List<ReaderPositionRow> rows = await db.getAllReaderPositions();
-  return <String, int>{
-    for (final ReaderPositionRow r in rows) r.bookUid: r.updatedAt,
-  };
+  final Map<String, Map<String, MangaChapterStateRow>> chapterStates = await db
+      .getAllMangaChapterStatesByBook();
+  return mergeMangaChapterReadRecency(
+    readerPositionUpdatedAt: <String, int>{
+      for (final ReaderPositionRow r in rows) r.bookUid: r.updatedAt,
+    },
+    chapterStates: <({String bookUid, int? readAt})>[
+      for (final Map<String, MangaChapterStateRow> book in chapterStates.values)
+        for (final MangaChapterStateRow s in book.values)
+          (bookUid: s.bookUid, readAt: s.readAt),
+    ],
+  );
 });
 
 /// 「读完」的书的 bookKey 集合（`EpubBooks.completedAt` 非 null：手动标记或读到
