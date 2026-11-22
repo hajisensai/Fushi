@@ -1247,12 +1247,10 @@ fn registers(
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     for (k, state) in ks {
-        let e = t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 dry run: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+        let Some(e) = t.edit_read(k, false)? else {
             return Err(format!("gen4 dry run: register row {k} is not an edit"));
         };
+        let ed = &e.head;
         let ent = format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text());
         if skip(&ent, &ed.key) {
             continue;

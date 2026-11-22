@@ -56,11 +56,11 @@ use serde_json::{Map, Value, json};
 use super::cache::Dirt;
 use super::class::RuleCanon;
 use super::schema::{DERIVED_TABLES, sql};
-use super::truth::{Entry, Head, Truth};
+use super::truth::{EditRead, Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
-use crate::gen4::op::{Body4, Edit4};
+use crate::gen4::op::{Body4, EditHead4};
 use crate::gen4::stamp::{HeritageStamp, SYNTHETIC_PREFIX};
 use crate::gen4::translate::applied_body;
 use crate::registers::{StoredEdit, judge_register};
@@ -962,27 +962,15 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(false)
     }
 
-    /// 修改操作 [k]：(操作号, 修改体, HLC 墙钟, HLC 计数, 作者写的时候的完整上下文——依赖 + 自己之前的全部，协议 3
-    /// `Op::ctx`)。
-    fn edit_write(&self, k: i64) -> Result<(OpId, Edit4, i64, u32, Vv), String> {
-        let e = self
-            .t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-        let (wall, logical, deps) = match &e.body {
-            SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
-            SlotBody::Raw3(raw) => {
-                let v = raw.to_v3();
-                (v.hlc.wall, v.hlc.logical, v.deps)
-            }
-            _ => return Err(format!("gen4 index: register row {k} is not an op")),
-        };
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+    /// 修改操作 [k]：(信封与操作体头部——字段值只在 [with_value] 时读，[Truth::edit_read]；作者写的时候的完整上下文
+    /// ——依赖 + 自己之前的全部，协议 3 `Op::ctx`)。
+    fn edit_write(&self, k: i64, with_value: bool) -> Result<(EditRead, Vv), String> {
+        let Some(e) = self.t.edit_read(k, with_value)? else {
             return Err(format!("gen4 index: register row {k} is not an edit"));
         };
-        let mut full = (*deps).clone();
+        let mut full = (*e.deps).clone();
         full.set(e.id.device, e.id.seq - 1);
-        Ok((e.id, ed, wall, logical, full))
+        Ok((e, full))
     }
 
     /// 修改操作 [k] 的作者写的时候见没见过 dot `(w, q)`——因果事实，从真相层答（撤销校验，`cmd/center.rs`）：带旧戳的
@@ -998,8 +986,8 @@ impl<'t, 'c> Index<'t, 'c> {
         q: i64,
         class: Option<&super::class::Canon>,
     ) -> Result<bool, String> {
-        let (_, ed, _, _, full) = self.edit_write(k)?;
-        match &ed.stamp {
+        let (e, full) = self.edit_write(k, false)?;
+        match &e.head.stamp {
             Some(s) => {
                 let ctx = s.ctx.to_dvv();
                 Ok(match class {
@@ -1139,20 +1127,23 @@ impl<'t, 'c> Index<'t, 'c> {
         struct Write {
             k: i64,
             id: OpId,
-            ed: Edit4,
+            ed: EditHead4,
+            /// 只有 [emit] 要的才读（不要的不会成为输出行，BUG-5137）。
+            value: Option<String>,
             wall: i64,
             logical: u32,
             full: Vv,
         }
         let mut writes = Vec::with_capacity(ks.len());
-        for &k in ks {
-            let (id, ed, wall, logical, full) = self.edit_write(k)?;
+        for (i, &k) in ks.iter().enumerate() {
+            let (e, full) = self.edit_write(k, emit(i))?;
             writes.push(Write {
                 k,
-                id,
-                ed,
-                wall,
-                logical,
+                id: e.id,
+                ed: e.head,
+                value: e.value,
+                wall: e.wall,
+                logical: e.logical,
                 full,
             });
         }
@@ -1218,7 +1209,11 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                 }
             };
-            let value = serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null);
+            let text = w
+                .value
+                .as_deref()
+                .ok_or_else(|| format!("gen4 index: emitted write {} has no value", w.k))?;
+            let value = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
                 Some(c) => {
@@ -1596,7 +1591,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::gen4::heritage::HeritageSlot;
     use crate::gen4::op::tests::{id, native_edit, sample_log};
-    use crate::gen4::op::{Log4, Op4};
+    use crate::gen4::op::{Edit4, Log4, Op4};
     use crate::gen4::stamp::{StampCtx, StampHlc};
     use crate::gen4::translate::T_VERSION;
     use crate::store::gen4::legacy::tests::{T0, migrate, pair, peak_mem_mb, sample};
