@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T15:27:29Z",
+ "generatedAt": "2026-11-22T15:43:37Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
-  "seq": 31475
+  "sha": "023e72ef701a385f58b0b67796e365d9fbd0f0e9",
+  "seq": 31516
  },
  "builds": [
   {
@@ -120,9 +120,16 @@
   }
  ],
  "pending": {
-  "headSha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
-  "headSeq": 31475,
+  "headSha": "023e72ef701a385f58b0b67796e365d9fbd0f0e9",
+  "headSeq": 31516,
   "prs": [
+   4195,
+   4189,
+   4193,
+   4192,
+   4188,
+   4187,
+   4185,
    4186,
    4178,
    4180
@@ -137,19 +144,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047097"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782108"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047095"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782344"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047095"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782344"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047095"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782344"
    }
   }
  },
@@ -361,6 +368,15 @@
    "deletions": 13,
    "labels": []
   },
+  "4185": {
+   "number": 4185,
+   "title": "fix(media): 波奇蓝光多卷并成一个合集、首页色块 logo、媒体页滚动卡顿",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:33:40Z",
+   "additions": 1625,
+   "deletions": 177,
+   "labels": []
+  },
   "4186": {
    "number": 4186,
    "title": "merge: 2026-11-22 合并后审查修复批（HBK-AUDIT-201~235）",
@@ -368,6 +384,60 @@
    "mergedAt": "2026-11-22T15:02:11Z",
    "additions": 5689,
    "deletions": 781,
+   "labels": []
+  },
+  "4187": {
+   "number": 4187,
+   "title": "feat(audiobook): 选角让模型对括弧行显式回旁白，独立书名 / 标牌不再进复核",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:38:49Z",
+   "additions": 66,
+   "deletions": 12,
+   "labels": []
+  },
+  "4188": {
+   "number": 4188,
+   "title": "feat(collections): 合集详情 hero 背景带接上下到的系列横幅（#3467 拍板 a）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:38:53Z",
+   "additions": 193,
+   "deletions": 5,
+   "labels": []
+  },
+  "4189": {
+   "number": 4189,
+   "title": "refactor(reader): 删除阅读器整句扫词（拍板台 pr4141a）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:39:19Z",
+   "additions": 27,
+   "deletions": 1309,
+   "labels": []
+  },
+  "4192": {
+   "number": 4192,
+   "title": "feat(manga-audio): 单句编辑改语气 / 强度 + 导出包格式设计稿（bnAC_eferQ-2）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:39:01Z",
+   "additions": 829,
+   "deletions": 33,
+   "labels": []
+  },
+  "4193": {
+   "number": 4193,
+   "title": "feat(reader): 阅读器纸色可直接选（羊皮纸 / 护眼 / 深灰等，拍板台 vJSj4RsKFt）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:39:06Z",
+   "additions": 702,
+   "deletions": 57,
+   "labels": []
+  },
+  "4195": {
+   "number": 4195,
+   "title": "merge: 拍板台执行批（汉字卡默认折叠 #4190 + 外部 PR #4191）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:42:24Z",
+   "additions": 1497,
+   "deletions": 199,
    "labels": []
   }
  }
