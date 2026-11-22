@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -377,7 +378,13 @@ void main() {
         1000,
         wallTimeSec: 1,
       )!;
-      expect(onBeat.zoom, closeTo(1.06, 1e-3));
+      // 合成音频：1000 ms 是弱拍（impact 0.4、低频 0.2、高频 0.6），trackScale 0.8。
+      const double k = (0.35 + 0.65 * 0.4) * 0.8;
+      expect(onBeat.zoom, closeTo(1 + 0.06 * k * (0.85 + 0.3 * 0.2), 1e-3));
+      expect(
+        onBeat.rotation.abs(),
+        closeTo(0.6 * math.pi / 180 * k * (0.7 + 0.6 * 0.6), 1e-6),
+      );
       expect(onBeat.rotation.abs(), greaterThan(0));
       expect(onBeat.tear, 0);
       final SonnetBeatFxFrame onDown = reader.read(
@@ -386,8 +393,9 @@ void main() {
         2000,
         wallTimeSec: 2,
       )!;
-      expect(onDown.tear, closeTo(0.6, 1e-6));
-      expect(onDown.flare, closeTo(0.7, 1e-6));
+      // 强拍 impact 1 × trackScale 0.8。
+      expect(onDown.tear, closeTo(0.6 * 0.8, 1e-6));
+      expect(onDown.flare, closeTo(0.7 * 0.8, 1e-6));
       // 相邻两拍倾斜方向相反。
       final SonnetBeatFxFrame next = reader.read(
         withAudio,
@@ -408,19 +416,42 @@ void main() {
       expect(resolveSonnetIconAudioTarget(lyric), inInclusiveRange(0, 1));
     });
 
-    test('小节位置、起跳包络、线条闪亮与重音塑形', () {
-      final List<int> beats = <int>[0, 500, 1000, 1500, 2000];
-      final List<int> downs = <int>[0, 2000];
-      expect(sonnetBarPosition(beats, downs, 1600), 3);
-      expect(sonnetBarPosition(beats, downs, 2100), 0);
+    test('起跳包络、线条闪亮与重音塑形', () {
+      LyricVisualizerBeatEvent ev({
+        double? impact = 0.5,
+        int? barPos,
+        double low = 1 / 3,
+        double high = 1 / 3,
+      }) => LyricVisualizerBeatEvent(
+        audioMs: 0,
+        displayMs: 0,
+        downbeat: false,
+        gain: 1,
+        ordinal: 0,
+        impact: impact,
+        lowShare: low,
+        highShare: high,
+        barPos: barPos,
+      );
+      // 低频为主推得深，高频为主倾得多，小节第 4 拍倾斜减半。
       expect(
-        resolveSonnetBeatFxAccent(hasAccents: true, barPosition: 3).$2,
-        0.5,
+        resolveSonnetBeatFxAccent(ev(low: 1, high: 0)).$1,
+        closeTo(1.15, 1e-12),
       );
       expect(
-        resolveSonnetBeatFxAccent(hasAccents: false, barPosition: 3).$2,
-        1,
+        resolveSonnetBeatFxAccent(ev(low: 0, high: 1)).$2,
+        closeTo(1.3, 1e-12),
       );
+      expect(
+        resolveSonnetBeatFxAccent(ev(low: 0, high: 1, barPos: 3)).$2,
+        closeTo(0.65, 1e-12),
+      );
+      // 没有重音 / 还没打过拍：不塑形。
+      expect(resolveSonnetBeatFxAccent(ev(impact: null, barPos: 3)), (
+        1.0,
+        1.0,
+      ));
+      expect(resolveSonnetBeatFxAccent(null), (1.0, 1.0));
       expect(resolveSonnetIconOnsetPop(1.0, <double>[0.2, 1.0]), 1);
       expect(resolveSonnetIconOnsetPop(0.1, <double>[0.2]), 0);
       expect(resolveSonnetIconPopScale(1), closeTo(1.4, 1e-9));

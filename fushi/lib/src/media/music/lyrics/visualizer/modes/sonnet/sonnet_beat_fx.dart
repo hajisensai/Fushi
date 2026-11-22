@@ -1,13 +1,14 @@
 /// 商籁的随拍特效（folia `sonnetBeatFx.ts`，「智能动感模式」里的「推镜裂光」）与主题强度系数。
 ///
 /// 每种效果跟自己的信号：
-/// - 镜头推拉 + 左右交替的轻微倾斜 ← 拍点冲击（有重音时用重音，[LyricVisualizerAudioFrame.accentOrBeat]）；
+/// - 镜头推拉 + 左右交替的轻微倾斜 ← 共享拍钟的拍点冲击（`LyricVisualizerBeats`：每拍按重音增益冲顶），
+///   按最近一拍的音色与小节位置塑形；
 /// - 单色撕裂（与转场故障条共用，取大者）← 强拍冲击；
 /// - 光晕增亮 ← 强拍冲击；
 /// - 图标随词起跳（取代按频段呼吸）← 镜头里语义片段的起唱时刻；
 /// - MG 线条闪亮 ← 高频，平滑后连续变化。
 ///
-/// 只有**真节拍网格就绪**（`beatsReady`）时才算随拍帧；否则返回 null，商籁画原来的画面（图标按频段
+/// 只有**真节拍网格就绪**（共享拍点表非空）时才算随拍帧；否则返回 null，商籁画原来的画面（图标按频段
 /// 呼吸：有音频分析时是真频段，没有时是歌词起字包络），与 folia 没装上拍点时一致。
 library;
 
@@ -61,15 +62,17 @@ class SonnetBeatFxFrame {
   final double lineLift;
 }
 
-/// 最近一拍的重音塑形（folia `resolveSonnetBeatFxAccent`）：小节第 4 拍（强拍前一拍）倾斜减半，
-/// 镜头在强拍落下前先摆回来。folia 还按该拍的低频 / 高频占比微调推拉与倾斜，分析结果没有逐拍音色，
-/// 那一项按 1 计。没有重音数据时不塑形。
-(double zoom, double tilt) resolveSonnetBeatFxAccent({
-  required bool hasAccents,
-  required int? barPosition,
-}) {
-  if (!hasAccents) return (1, 1);
-  return (1, barPosition == 3 ? 0.5 : 1);
+/// 最近一拍的重音塑形（folia `resolveSonnetBeatFxAccent`）：低频为主的拍推得更深（0.85–1.15 倍），
+/// 高频为主的拍倾得更多（0.7–1.3 倍）；小节第 4 拍（强拍前一拍）倾斜再减半，镜头在强拍落下前先摆回来。
+/// 没有重音数据（或还没打过拍）时不塑形。
+(double zoom, double tilt) resolveSonnetBeatFxAccent(
+  LyricVisualizerBeatEvent? event,
+) {
+  if (event == null || !event.hasAccents) return (1, 1);
+  return (
+    0.85 + 0.3 * event.lowShare,
+    (0.7 + 0.6 * event.highShare) * (event.barPos == 3 ? 0.5 : 1),
+  );
 }
 
 /// 一帧的包络数学（folia `resolveSonnetBeatFxFrame`）。[k] 拍点冲击、[d] 强拍冲击、
@@ -151,8 +154,8 @@ class SonnetBeatFxReader {
     int displayMs, {
     required double wallTimeSec,
   }) {
-    final LyricVisualizerAudio? audio = c.audio;
-    if (audio == null || !frame.beatsReady) {
+    final LyricVisualizerBeats beats = LyricVisualizerBeats.of(c);
+    if (!beats.hasBeats) {
       _smoothedTreble = 0;
       return null;
     }
@@ -161,37 +164,18 @@ class SonnetBeatFxReader {
     final double target = ((treble - 0.04) / 0.35).clamp(0.0, 1.0);
     _smoothedTreble +=
         (target - _smoothedTreble) * (target > _smoothedTreble ? 0.25 : 0.08);
-    final int audioMs = c.audioTimeOf(displayMs);
-    final int beat = lyricVisualizerLastAtOrBefore(audio.beatTimesMs, audioMs);
-    final double sign = beat.isEven ? 1 : -1;
-    final int? barPos = sonnetBarPosition(
-      audio.beatTimesMs,
-      audio.downbeatTimesMs,
-      audioMs,
-    );
+    // 画面上的那一下是最近打的那一拍（强拍或普通拍）。
     final (double az, double at) = resolveSonnetBeatFxAccent(
-      hasAccents: frame.accentImpact != null,
-      barPosition: barPos,
+      beats.lastBeatAt(displayMs),
     );
     return resolveSonnetBeatFxFrame(
-      frame.accentOrBeat,
-      frame.downbeatImpact,
-      sign,
+      beats.beatImpactAt(displayMs),
+      beats.downbeatImpactAt(displayMs),
+      beats.rotationSignAt(displayMs),
       wallTimeSec,
       _smoothedTreble,
       accentZoom: az,
       accentTilt: at,
     );
   }
-}
-
-/// [audioMs] 所在拍在小节里的位置（强拍 0、之后每拍 +1）；还没到第一个强拍为 null。
-int? sonnetBarPosition(List<int> beats, List<int> downbeats, int audioMs) {
-  final int b = lyricVisualizerLastAtOrBefore(beats, audioMs);
-  final int d = lyricVisualizerLastAtOrBefore(downbeats, audioMs);
-  if (b < 0 || d < 0) return null;
-  final int downAt = downbeats[d];
-  final int downIndex = lyricVisualizerLastAtOrBefore(beats, downAt);
-  if (downIndex < 0) return null;
-  return b - downIndex;
 }
