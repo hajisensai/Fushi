@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registry.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
@@ -528,6 +530,53 @@ SettingsDestination buildMusicDestination() {
                 c.appModel.prefsRepo.musicLyricsBackdropSaturation * 100,
             onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
                 .setMusicLyricsBackdropSaturation((v / 10).round() / 10),
+          ),
+          // 全屏歌词动画（歌词页工具栏「歌词动画」进入；各样式参数在选择面板里调）。
+          SettingsSegmentedItem<LyricVisualizerMode>(
+            id: 'music.visualizer_mode',
+            dropdown: true,
+            title: t.music_visualizer_title,
+            icon: FushiIcons.animation,
+            options: <SettingsSegmentOption<LyricVisualizerMode>>[
+              for (final LyricVisualizerMode m in LyricVisualizerMode.values)
+                SettingsSegmentOption<LyricVisualizerMode>(
+                  value: m,
+                  label: lyricVisualizerEntryOf(m).label(),
+                ),
+            ],
+            selected: (SettingsContext c) => LyricVisualizerMode.fromPref(
+              c.appModel.prefsRepo.musicVisualizerMode,
+            ),
+            onChanged: (SettingsContext c, LyricVisualizerMode value) =>
+                c.appModel.prefsRepo.setMusicVisualizerMode(value.prefValue),
+            defaultValue: LyricVisualizerMode.defaultMode,
+          ),
+          SettingsSwitchItem(
+            id: 'music.visualizer_random',
+            title: t.music_visualizer_random,
+            subtitle: t.music_visualizer_random_hint,
+            icon: FushiIcons.shuffle,
+            defaultValue: false,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerRandom,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerRandom(value),
+          ),
+          SettingsSliderItem(
+            id: 'music.visualizer_font_scale',
+            title: t.music_visualizer_font_scale,
+            icon: FushiIcons.fontSize,
+            min: 60,
+            max: 200,
+            divisions: 14,
+            defaultValue: 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerFontScale * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicVisualizerFontScale((v / 10).round() / 10),
           ),
         ],
       ),
