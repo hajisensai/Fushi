@@ -1,0 +1,6 @@
+## BUG-5254 · Windows Apple Music 网页桥完全无声（无头 WebView2 被一刀切静音）
+- **报告**：2026-11-23（外部 PR #4153 作者报告：Windows 播放 Apple Music 进度与播放记录正常，但没有任何声音）
+- **真实性**：✅ 真 bug。`HeadlessInAppWebView::prepare`（`packages/flutter_inappwebview_windows/windows/headless_in_app_webview/headless_in_app_webview.cpp:22`）为防后台漫画 / 小说抓取页在共享环境 `--autoplay-policy=no-user-gesture-required` 下自动播放广告出声，对所有无头 WebView 无条件 `put_IsMuted(TRUE)`；Windows Apple Music 走隐藏 `HeadlessInAppWebView` 的 MusicKit 网页桥（`fushi/lib/src/media/music/apple_music/apple_music_web_bridge.dart`）因此天生无声。
+- **[x] ① 已修复** — fork 的 Windows 插件解析 platform interface 已有的 `allowBackgroundAudioPlaying`（`in_app_webview_settings.cpp/.h`），无头实例只在它为 false 时静音，`setSettings` 里对无头实例同步静音状态（`in_app_webview.cpp`）；`appleMusicWebViewSettings()` 打开该开关（`apple_music_web_bridge.dart:218`）。后台抓取器保持默认静音。Android 上同一开关让网页桥切后台不暂停媒体（音乐桥想要的行为）。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/inappwebview_windows_native_guards_test.dart`（原生源码守卫：解析开关、只在 false 时静音、只对无头实例同步、Apple Music 桥开启）；`fushi/test/media/video/web_video_shared_cookie_jar_test.dart`（漫画 / 小说抓取器不得开启 `allowBackgroundAudioPlaying: true`）；`fushi/test/media/music/apple_music/apple_music_output_backend_test.dart`。C++ 经 `flutter build windows --debug` 编译验证。
+- **备注**：Windows 真机验「Apple Music 有声、漫画 / 小说抓取仍静音」需人工复测（需 Apple Music 订阅账号）。

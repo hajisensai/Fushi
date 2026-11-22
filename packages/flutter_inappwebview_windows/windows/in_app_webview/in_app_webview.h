@@ -108,6 +108,9 @@ namespace flutter_inappwebview_plugin
     /// 由 InAppWebViewManager 置 true：宿主 hwnd 是它为本实例建的，析构时 DestroyWindow。
     /// 窗口宿主模式没有 compositionController 可当判据，故显式标记。
     bool destroyParentWindowOnClose = false;
+    // Set by HeadlessInAppWebView::prepare: only headless views apply the
+    // default-mute policy when allowBackgroundAudioPlaying is false.
+    bool isHeadless = false;
     std::unique_ptr<UserContentController> userContentController;
 
     InAppWebView(const FlutterInappwebviewWindowsPlugin* plugin, const InAppWebViewCreationParams& params, const HWND parentWindow,

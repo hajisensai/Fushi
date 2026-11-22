@@ -25,6 +25,7 @@ namespace flutter_inappwebview_plugin
     isInspectable = get_fl_map_value(encodableMap, "isInspectable", isInspectable);
     disableContextMenu = get_fl_map_value(encodableMap, "disableContextMenu", disableContextMenu);
     incognito = get_fl_map_value(encodableMap, "incognito", incognito);
+    allowBackgroundAudioPlaying = get_fl_map_value(encodableMap, "allowBackgroundAudioPlaying", allowBackgroundAudioPlaying);
   }
 
   flutter::EncodableMap InAppWebViewSettings::toEncodableMap() const
@@ -41,6 +42,7 @@ namespace flutter_inappwebview_plugin
       {"isInspectable", isInspectable},
       {"disableContextMenu", disableContextMenu},
       {"incognito", incognito},
+      {"allowBackgroundAudioPlaying", allowBackgroundAudioPlaying},
     };
   }
 
