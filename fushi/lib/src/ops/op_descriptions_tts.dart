@@ -7,6 +7,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
         captureAudiobookRegistration,
         restoreAudiobookRegistration;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/ops/ctl_tts_batch.dart' show revertMangaLineBatch;
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
 
@@ -17,6 +18,9 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 ///   演出稿还是改完时的样子才放回，之后被手改过报 superseded；
 /// - 发起标注：撤销 = 取消任务（还在跑时）+ 把演出稿与失败账本放回标注前；
 /// - 单句重生成：撤销 = 放回旧音频（保留前已备份）、清单 / 演出稿 / 账本恢复；
+/// - 按句换本地音频 / 按角色批量重生成：执行前把要动的句子与旧音频备份成一份快照，
+///   撤销时逐句核对还是这次改出来的样子才放回（批量重生成还在跑时先取消），之后又被
+///   改过的句子不覆盖（partial / superseded）；
 /// - 取消整卷生成：撤销 = 重新排上；
 /// - 发起整卷生成：生成完成后新音频覆盖旧音频、旧的恢复不了，所以是 irreversible
 ///   （执行前确认），进行中可用 `tts.manga.render-cancel` 取消；
@@ -365,6 +369,109 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
             'line ${p['lineId']} seed ${p['seed']}',
         revert: (Map<String, Object?> payload) =>
             revertMangaRegen(deps, payload),
+      ),
+    ),
+    OpDescription(
+      id: 'tts.manga.lines.replace',
+      method: 'POST',
+      pattern: '$item/lines/replace',
+      summary:
+          'Replace the audio of already rendered lines with local audio files '
+          '(line id -> absolute path; WAV / FLAC / MP3 / M4A / AAC / OGG / '
+          'OPUS). Every line is checked first (in the script and the rendered '
+          'audio, file exists, known format); dryRun only returns the per-line '
+          'check. All-or-nothing: the files are copied into the app, shaped '
+          'like the other lines, and the line keeps this audio on later '
+          're-renders; audio paths, cue durations and the resume position are '
+          'updated for these lines only. Only audio rendered on this device '
+          '(not an imported manifest). Undo puts the previous audio back.',
+      risk: OpRisk.write,
+      availability: manga,
+      params: const <OpParam>[
+        _keyParam,
+        OpParam.object(
+          'files',
+          description:
+              'Line id (tts.manga.page) -> absolute path of the local audio '
+              'file. Give this or mapping.',
+        ),
+        OpParam.string(
+          'mapping',
+          description:
+              'Absolute path of a JSON file holding the same object (relative '
+              'paths in it are resolved against its folder).',
+        ),
+        OpParam.boolean(
+          'dryRun',
+          description: 'Only check every line, change nothing.',
+        ),
+      ],
+      undo: opCustomUndo(
+        capture: (CtlCall call) async => <String, Object?>{
+          'bookKey': await bookKeyOf(call),
+        },
+        payloadOf:
+            (CtlCall call, Map<String, Object?> before, Object? result) =>
+                <String, Object?>{
+                  ...before,
+                  if (result is Map) 'backup': result['backup'],
+                  if (result is Map) 'replaced': result['replaced'],
+                },
+        describe: (Map<String, Object?> p) =>
+            '${p['replaced'] ?? 0} lines of '
+            '${ttsMangaWireKey('${p['bookKey']}')} to local audio',
+        revert: (Map<String, Object?> payload) =>
+            revertMangaLineBatch(deps, payload),
+      ),
+    ),
+    OpDescription(
+      id: 'tts.manga.character.regenerate',
+      method: 'POST',
+      pattern: '$item/characters/:name/regenerate',
+      summary:
+          'Re-synthesize every already rendered line of one character (only '
+          'one line kind with kind) with new seeds, queued as one render '
+          'task (same voices; lines from an audiobook or local audio are '
+          'skipped; a line that fails keeps its old audio). dryRun only lists '
+          'the lines. Undo cancels it while queued / running and puts the '
+          'previous audio back.',
+      risk: OpRisk.write,
+      longRunning: true,
+      taskStatus: (String id) => statusOf(id, 'render'),
+      availability: manga,
+      params: const <OpParam>[
+        _keyParam,
+        OpParam.string(
+          'name',
+          description:
+              'Cast name from tts.manga.script, or narrator / unknown.',
+          required: true,
+          inPath: true,
+        ),
+        OpParam.string(
+          'kind',
+          description: 'Only lines of this kind (spoken, thought, ...).',
+        ),
+        OpParam.boolean(
+          'dryRun',
+          description: 'Only list the lines, change nothing.',
+        ),
+      ],
+      undo: opCustomUndo(
+        capture: (CtlCall call) async => <String, Object?>{
+          'bookKey': await bookKeyOf(call),
+        },
+        payloadOf:
+            (CtlCall call, Map<String, Object?> before, Object? result) =>
+                <String, Object?>{
+                  ...before,
+                  if (result is Map) 'backup': result['backup'],
+                  'name': call.params['name'],
+                },
+        describe: (Map<String, Object?> p) =>
+            'regenerate ${p['name']} of ${ttsMangaWireKey('${p['bookKey']}')}',
+        revert: (Map<String, Object?> payload) =>
+            revertMangaLineBatch(deps, payload),
       ),
     ),
     OpDescription(

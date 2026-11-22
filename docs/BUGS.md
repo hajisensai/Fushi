@@ -33,6 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4511 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
+| [BUG-5188](bugs/BUG-5188-manga-audio-line-swap-resets-position.md) | ✅ | ✅ | manga-audio-line-swap-resets-position |
 > 共 4515 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

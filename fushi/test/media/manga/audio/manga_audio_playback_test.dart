@@ -569,6 +569,15 @@ void main() {
         manifestFile: manifestFile,
         manifest: _manifest(),
       );
+      // 正在听第 4 句的 300 ms 处：换前面第 3 句的音频不归零，仍在第 4 句 300 ms。
+      final AudiobookRepository before = AudiobookRepository(db);
+      final List<int> oldMs = audiobookFileDurationsFromCues(
+        await before.cuesForBook('vol'),
+      );
+      await before.updatePositionMs(
+        bookKey: 'vol',
+        positionMs: oldMs[0] + oldMs[1] + oldMs[2] + 300,
+      );
       final MangaRenderManifest m = _manifest();
       m.replaceLine(
         'p2b1',
@@ -597,6 +606,7 @@ void main() {
       final Audiobook ab = (await repo.findByBookKey('vol'))!;
       expect(ab.audioPaths![2], endsWith('p2b1_s1.wav'));
       expect(ab.audioPaths![1], endsWith('p0b3.wav'));
+      expect(await repo.readPositionMs('vol'), 1200 + 800 + 1100 + 300);
       expect(
         await updateMangaAudioLine(
           db,
