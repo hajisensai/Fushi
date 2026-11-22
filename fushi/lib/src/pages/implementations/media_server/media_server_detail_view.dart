@@ -24,10 +24,9 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
-import 'package:fushi/src/sync/remote_library_cache.dart'
-    show remoteLibraryCacheProvider;
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoPlayedMark;
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -98,7 +97,7 @@ class MediaServerDetailView extends StatefulWidget {
 }
 
 class _MediaServerDetailViewState extends State<MediaServerDetailView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, MediaServerUserDataRefresh {
   final ScrollController _scrollController = ScrollController();
 
   /// 季分段控制器：只在 ≥2 季时存在（季清单回来后建一次）。
@@ -574,10 +573,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       ],
       remoteMarker: marker,
     );
-    // 库页 / 首页读的是同一台服务器的清单缓存：作废它，下次读到新的「已播放」。
-    container
-        .read(remoteLibraryCacheProvider)
-        .invalidateSource(_browser.serverId);
     if (!mounted) return;
     FushiToast.show(
       msg: watchedMarkFeedback(result, watched: watched),
@@ -585,13 +580,26 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
           ? ToastSeverity.error
           : ToastSeverity.success,
     );
-    await _refreshEpisodesInPlace();
+    // 集卡跟上服务器：标记成功经 [MediaServerUserDataChanges] 触发
+    // [refreshUserDataInPlace]，不在这里另拉一次。
   }
 
-  Future<void> _playEpisode(MediaServerItem episode) async {
-    await widget.session.playItem(context, episode, siblings: _episodes);
-    // 播放页退回来：服务器上的断点 / 已看标记变了，原地重拉（BUG-3491）。
-    if (mounted) await _refreshEpisodesInPlace();
+  // 播放页退回来时 [MediaServerSession.playItem] 发 [MediaServerUserDataChanges]，
+  // 集清单 / 电影详情经 [refreshUserDataInPlace] 原地跟上（BUG-3491）。
+  Future<void> _playEpisode(MediaServerItem episode) =>
+      widget.session.playItem(context, episode, siblings: _episodes);
+
+  @override
+  String get userDataServerId => widget.session.serverId;
+
+  /// 服务器上的已播放 / 断点变了：重取详情（电影的断点 / 已看、剧的「N 集未看」），
+  /// 剧再原地重拉已加载的集。
+  @override
+  Future<void> refreshUserDataInPlace() async {
+    await Future.wait(<Future<void>>[
+      _loadDetail(),
+      if (_isSeries) _refreshEpisodesInPlace(),
+    ]);
   }
 
   /// 原地重拉当前季**已加载的那些集**（不清空、不出加载态、不动滚动位置）：
@@ -634,12 +642,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 「播放」：电影直接播；剧播续播那集（都看完就第一集）。
   void _playPrimary() {
     if (!_isSeries) {
-      unawaited(
-        widget.session.playItem(context, _detail).then((_) {
-          // 电影：退回来重取详情，断点 / 已看跟上服务器（BUG-3491）。
-          if (mounted) unawaited(_loadDetail());
-        }),
-      );
+      // 电影：退回来经 [refreshUserDataInPlace] 重取详情（BUG-3491）。
+      unawaited(widget.session.playItem(context, _detail));
       return;
     }
     if (_episodes.isEmpty) return;

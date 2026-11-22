@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_aggregate_search_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -71,7 +72,8 @@ class MediaServerHomeView extends StatefulWidget {
   State<MediaServerHomeView> createState() => _MediaServerHomeViewState();
 }
 
-class _MediaServerHomeViewState extends State<MediaServerHomeView> {
+class _MediaServerHomeViewState extends State<MediaServerHomeView>
+    with MediaServerUserDataRefresh {
   List<MediaServerLibrary>? _libraries;
   Object? _librariesError;
   List<MediaServerItem> _continueWatching = const <MediaServerItem>[];
@@ -120,6 +122,23 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
     for (final MediaServerLibrary library in libraries) {
       unawaited(_loadLibraryRow(generation, library));
     }
+  }
+
+  @override
+  String get userDataServerId => widget.session.serverId;
+
+  /// 服务器上的已播放 / 断点变了：「继续观看」与各库行原地重拉（不清空、不出
+  /// 骨架）。媒体库清单本身没变，不重取；还没取到媒体库时首屏本来就在拉新数据。
+  @override
+  Future<void> refreshUserDataInPlace() async {
+    final List<MediaServerLibrary>? libraries = _libraries;
+    if (libraries == null) return;
+    final int generation = _generation;
+    await Future.wait(<Future<void>>[
+      _loadContinueWatching(generation),
+      for (final MediaServerLibrary library in libraries)
+        _loadLibraryRow(generation, library),
+    ]);
   }
 
   Future<List<MediaServerItem>> _decor(
