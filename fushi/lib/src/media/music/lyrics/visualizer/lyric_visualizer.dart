@@ -41,7 +41,7 @@ enum LyricVisualizerMode {
   /// 群唱（folia cappella）：聊天气泡式。
   cappella('cappella'),
 
-  /// 环语（folia claddagh）：环形歌词。
+  /// 回环（folia claddagh）：环形歌词。
   claddagh('claddagh'),
 
   /// 莫奈（folia monet）。
@@ -56,7 +56,7 @@ enum LyricVisualizerMode {
   /// 商籁（folia sonnet）。
   sonnet('sonnet'),
 
-  /// 蛋彩（folia tempera）。
+  /// 凝彩（folia tempera）。
   tempera('tempera'),
 
   /// 绘光（folia lumiere）。
@@ -77,7 +77,7 @@ enum LyricVisualizerMode {
   /// 倾诉（folia tilt）。
   tilt('tilt'),
 
-  /// 静（folia still）：静止低占用，不画共享背景。
+  /// 静止（folia still）：静止低占用，不画共享背景。
   still('still');
 
   const LyricVisualizerMode(this.prefValue);
