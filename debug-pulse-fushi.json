@@ -1,12 +1,41 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T01:41:58Z",
+ "generatedAt": "2026-11-22T02:13:37Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
-  "seq": 31071
+  "sha": "974ded3838b72878a748034f704b8629200853ee",
+  "seq": 31099
  },
  "builds": [
+  {
+   "seq": 31049,
+   "version": "3.4.0",
+   "sha": "b0aef3d0b1e769a213c9ef13698b3606f5dcd56e",
+   "unknown": false,
+   "publishedAt": "2026-11-22T02:13:20Z",
+   "testflight": true,
+   "baseSeq": 31044,
+   "prs": [
+    4077
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44970378941"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 31044,
    "version": "3.4.0",
@@ -58,7 +87,7 @@
    "unknown": false,
    "publishedAt": "2026-11-21T23:37:20Z",
    "testflight": true,
-   "baseSeq": 30766,
+   "baseSeq": 30680,
    "prs": [
     4088,
     4033,
@@ -97,48 +126,7 @@
     4050,
     4048,
     4066,
-    4059
-   ],
-   "direct": [
-    {
-     "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
-     "subject": "docs(bugs): 合并第 8 批后重建 BUGS 索引"
-    },
-    {
-     "sha": "ffce0350223e84a30a52e9286b7d2d56154e7697",
-     "subject": "fix(manga-audio): 复核页缺图占位底色走共享 surface token（M3E 守卫）"
-    },
-    {
-     "sha": "0db9f53d2b84a336a62d865e0c4146fa01d4b085",
-     "subject": "docs(bugs): 合并第 7 批后重建 BUGS 索引"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857702"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 30766,
-   "version": "3.4.0",
-   "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
-   "unknown": false,
-   "publishedAt": "2026-11-21T22:32:56Z",
-   "testflight": true,
-   "baseSeq": 30680,
-   "prs": [
+    4059,
     4086,
     4067,
     4080,
@@ -158,6 +146,18 @@
     4073
    ],
    "direct": [
+    {
+     "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
+     "subject": "docs(bugs): 合并第 8 批后重建 BUGS 索引"
+    },
+    {
+     "sha": "ffce0350223e84a30a52e9286b7d2d56154e7697",
+     "subject": "fix(manga-audio): 复核页缺图占位底色走共享 surface token（M3E 守卫）"
+    },
+    {
+     "sha": "0db9f53d2b84a336a62d865e0c4146fa01d4b085",
+     "subject": "docs(bugs): 合并第 7 批后重建 BUGS 索引"
+    },
     {
      "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
      "subject": "test(tts): 整书分拣纯函数测试改用 package:test（纯 Dart 测试守卫）"
@@ -186,8 +186,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44942269234"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857702"
     },
     "windows": {
      "state": "ok"
@@ -678,13 +678,19 @@
   }
  ],
  "pending": {
-  "headSha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
-  "headSeq": 31071,
+  "headSha": "974ded3838b72878a748034f704b8629200853ee",
+  "headSeq": 31099,
   "prs": [
+   4107,
+   4106,
+   4105,
+   4104,
+   4103,
+   4101,
+   4113,
    4027,
    3999,
-   4032,
-   4077
+   4032
   ],
   "direct": [
    {
@@ -696,19 +702,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569815"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050336"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569855"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050256"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569855"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050256"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569855"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050256"
    }
   }
  },
@@ -3700,6 +3706,69 @@
    "mergedAt": "2026-11-21T22:58:43Z",
    "additions": 115,
    "deletions": 7,
+   "labels": []
+  },
+  "4101": {
+   "number": 4101,
+   "title": "fix(browser-extension): 词典弹窗内悬停扫词也认扫描延迟（BUG-5175）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:11:17Z",
+   "additions": 460,
+   "deletions": 20,
+   "labels": []
+  },
+  "4103": {
+   "number": 4103,
+   "title": "fix(tags): 标签 chip 鼠标也长按才重排，按下就拖归横滚（BUG-5174）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:11:54Z",
+   "additions": 374,
+   "deletions": 140,
+   "labels": []
+  },
+  "4104": {
+   "number": 4104,
+   "title": "fix(sync): Google Drive 令牌刷新不再关掉并行通道在用的连接（BUG-5169）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:12:14Z",
+   "additions": 447,
+   "deletions": 63,
+   "labels": []
+  },
+  "4105": {
+   "number": 4105,
+   "title": "fix: 整理记录页页头重叠、反馈详情页粘贴截图、书架继续卡右键菜单（BUG-5171/5172/5173）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:12:34Z",
+   "additions": 623,
+   "deletions": 34,
+   "labels": []
+  },
+  "4106": {
+   "number": 4106,
+   "title": "fix(update): 下载浮层点「隐藏」后再检查更新能拉回进度（BUG-5168）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:12:53Z",
+   "additions": 211,
+   "deletions": 47,
+   "labels": []
+  },
+  "4107": {
+   "number": 4107,
+   "title": "fix(diagnostics): ColorOS 权限变更杀进程与 API<30 后台回收不再误报闪退",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:13:12Z",
+   "additions": 167,
+   "deletions": 10,
+   "labels": []
+  },
+  "4113": {
+   "number": 4113,
+   "title": "perf(fsrs): gen4 派生层只解修改头部 + 重建分段计时与规模基准（BUG-5137）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:10:58Z",
+   "additions": 708,
+   "deletions": 88,
    "labels": []
   }
  }
