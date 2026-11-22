@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5175](bugs/BUG-5175-popup-scan-delay-ignored.md) | ✅ | ✅ | popup-scan-delay-ignored |
+| [BUG-5175](bugs/BUG-5175-popup-scan-delay-ignored.md) | ✅ | ✅ | 浏览器扩展词典弹窗内悬停扫词不认扫描延迟（侧栏 / 嵌套弹窗连触发键也不认） |
 | [BUG-5164](bugs/BUG-5164-music-split-album-partial-album-artist.md) | ✅ | ✅ | 同一张 CD 只有部分曲目写了专辑艺人，被拆成两张专辑 |
 | [BUG-5163](bugs/BUG-5163-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |
 | [BUG-5162](bugs/BUG-5162-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |

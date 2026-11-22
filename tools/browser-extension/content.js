@@ -2174,6 +2174,10 @@ function fushiEnsureContainer() {
       fushiPointerOverPopup = true;
       fushiPointerOutsideDocument = false;
       fushiCancelHoverLeave();
+      // 扫描延迟（反馈 r4tpeIzVuD）：指针已从网页进了弹窗，网页侧排着的待扫作废——host 截住
+      // mousemove，document 侧不会再收到移动来重新计时，不撤的话到点会替一个已在弹窗里的
+      // 指针查弹窗边上的网页词，把正在读的词条换掉。弹窗内的扫词由 popup.js 自己按延迟管。
+      fushiCancelScanDelay();
     });
     fushiHost.addEventListener('mouseleave', function () {
       fushiPointerOverPopup = false;

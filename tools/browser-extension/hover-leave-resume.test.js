@@ -365,6 +365,31 @@ test('横穿空白进弹窗：mouseenter 撤销在途判定；离开弹窗 mouse
   assert.strictEqual(h.video.playCount, 1, '离开弹窗到期后应续播');
 });
 
+// 反馈 r4tpeIzVuD：「不按键 + 扫描延迟」下指针从网页滑进弹窗。host 截住 mousemove，document 侧
+// 收不到后续移动来重新计时；网页侧排着的待扫若不撤，到点会按弹窗边上的网页坐标再查一次，
+// 把用户正在弹窗里读的词条换掉。
+test('scanDelay：指针进弹窗撤掉网页侧待扫，到点不替弹窗里的指针查网页词', () => {
+  const SCAN_MS = 300;
+  const h = loadContent({ stored: { scanModifier: 'none', scanDelay: SCAN_MS } });
+  const scanTimers = () => h.timers.filter((t) => t.delay === SCAN_MS);
+  const runScanTimers = () => {
+    const due = scanTimers();
+    for (const t of due) h.timers.splice(h.timers.indexOf(t), 1);
+    for (const t of due) t.fn();
+  };
+  h.move(300, 400, h.sourceEl);
+  assert.strictEqual(h.lookupTerms().length, 0, '设了延迟不得一划过就查');
+  runScanTimers();
+  assert.strictEqual(h.lookupTerms().length, 1, '停稳到点查词');
+  assert.ok(h.popupOpen());
+  h.move(320, 405, h.sourceEl); // 朝弹窗方向又划过一个字：网页侧重新排一笔待扫
+  assert.strictEqual(scanTimers().length, 1);
+  h.host().emit('mouseenter');
+  assert.strictEqual(scanTimers().length, 0, '进了弹窗必须撤掉网页侧待扫');
+  runScanTimers();
+  assert.strictEqual(h.lookupTerms().length, 1, '指针在弹窗里时不得再查网页词');
+});
+
 test('弹窗正好画在静止的指针底下（host 尚未收到 mouseenter）：几何兜底不关窗', () => {
   const h = loadContent();
   hoverThenLeave(h);
