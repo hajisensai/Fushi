@@ -46,17 +46,16 @@ final class _NoDeviceAuth implements DeviceOwnerAuth {
 void main() {
   late FushiDatabase db;
   late _FailingPrivacyReads interceptor;
-  late MediaLockAuth savedAuth;
 
   setUp(() {
     interceptor = _FailingPrivacyReads()..fail = false;
     db = FushiDatabase.forTesting(
       NativeDatabase.memory().interceptWith(interceptor),
     );
-    savedAuth = MediaLockAuth.instance;
+    MediaLockAuth.debugOverride = null;
   });
   tearDown(() async {
-    MediaLockAuth.instance = savedAuth;
+    MediaLockAuth.debugOverride = null;
     await db.close();
   });
 
@@ -251,16 +250,18 @@ void main() {
 
     testWidgets('$system：已有口令时选「上锁」只写上锁标记，不动私密标记', (WidgetTester tester) async {
       final MediaLockPasscode passcode = MediaLockPasscode(
-        store: MemoryMediaLockSecretStore(),
+        store: MemoryMediaLockCredentialStore(),
         iterations: 2,
       );
       await tester.runAsync(() async {
         await book('K');
         await passcode.set('1234');
       });
-      MediaLockAuth.instance = MediaLockAuth(
+      MediaLockAuth.debugOverride = MediaLockAuth(
         passcode: passcode,
         device: _NoDeviceAuth(),
+        throttle: MediaLockThrottle(store: MemoryMediaLockSecretStore()),
+        hasLockedWorks: () async => false,
       );
       await pumpDialog(tester, apple: apple, entryKey: 'K');
 

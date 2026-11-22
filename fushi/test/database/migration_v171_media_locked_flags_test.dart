@@ -20,51 +20,58 @@ void main() {
     <Object?>[table],
   ).isNotEmpty;
 
-  test('v170 → v171 建 media_locked_flags；重跑幂等、不清数据', () async {
-    final Directory directory = Directory.systemTemp.createTempSync(
-      'media_lock_v171',
-    );
-    addTearDown(() => directory.deleteSync(recursive: true));
-    final String path = '${directory.path}/test.db';
-    final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
-    await db.getAllTags(); // 触发建库
-    await db.close();
+  test(
+    'v170 → v171 建 media_locked_flags + media_lock_credentials；重跑幂等、不清数据',
+    () async {
+      final Directory directory = Directory.systemTemp.createTempSync(
+        'media_lock_v171',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final String path = '${directory.path}/test.db';
+      final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
+      await db.getAllTags(); // 触发建库
+      await db.close();
 
-    final sqlite.Database raw = sqlite.sqlite3.open(path);
-    raw.execute('DROP TABLE media_locked_flags');
-    raw.execute('PRAGMA user_version = 170');
-    raw.dispose();
+      final sqlite.Database raw = sqlite.sqlite3.open(path);
+      raw.execute('DROP TABLE media_locked_flags');
+      raw.execute('DROP TABLE media_lock_credentials');
+      raw.execute('PRAGMA user_version = 170');
+      raw.dispose();
 
-    final FushiDatabase migrated = FushiDatabase.atFile(
-      path,
-      isMainProcess: false,
-    );
-    expect(migrated.schemaVersion, 171);
-    await migrated.setMediaLocked(TagHostKind.video, 'v1', true, at: 10);
-    await migrated.close();
+      final FushiDatabase migrated = FushiDatabase.atFile(
+        path,
+        isMainProcess: false,
+      );
+      expect(migrated.schemaVersion, 171);
+      await migrated.setMediaLocked(TagHostKind.video, 'v1', true, at: 10);
+      await migrated.setMediaLockCredential('digest', at: 10);
+      await migrated.close();
 
-    final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
-    expect(tableExists(probe, 'media_locked_flags'), isTrue);
-    expect(
-      <String>{
-        for (final sqlite.Row row in probe.select(
-          "PRAGMA table_info('media_locked_flags')",
-        ))
-          row['name'] as String,
-      },
-      <String>{'media_kind', 'entry_key', 'locked_at', 'cleared_at'},
-    );
-    probe.execute('PRAGMA user_version = 170');
-    probe.dispose();
+      final sqlite.Database probe = sqlite.sqlite3.open(path);
+      expect(probe.select('PRAGMA user_version').first.values.first, 171);
+      expect(tableExists(probe, 'media_locked_flags'), isTrue);
+      expect(tableExists(probe, 'media_lock_credentials'), isTrue);
+      expect(
+        <String>{
+          for (final sqlite.Row row in probe.select(
+            "PRAGMA table_info('media_locked_flags')",
+          ))
+            row['name'] as String,
+        },
+        <String>{'media_kind', 'entry_key', 'locked_at', 'cleared_at'},
+      );
+      probe.execute('PRAGMA user_version = 170');
+      probe.dispose();
 
-    final FushiDatabase reopened = FushiDatabase.atFile(
-      path,
-      isMainProcess: false,
-    );
-    expect(await reopened.isMediaLocked(TagHostKind.video, 'v1'), isTrue);
-    await reopened.close();
-  });
+      final FushiDatabase reopened = FushiDatabase.atFile(
+        path,
+        isMainProcess: false,
+      );
+      expect(await reopened.isMediaLocked(TagHostKind.video, 'v1'), isTrue);
+      expect((await reopened.mediaLockCredential())?.verifier, 'digest');
+      await reopened.close();
+    },
+  );
 
   group('上锁标记 API 与快照', () {
     late FushiDatabase db;

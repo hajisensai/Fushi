@@ -770,5 +770,76 @@ void main() {
         isTrue,
       );
     });
+
+    test('口令摘要跟着上锁标记同步：没口令的设备收到摘要；LWW 新者胜；删除也传过去', () async {
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      await seedVideo(a, 'ep1');
+      await seedVideo(b, 'ep1');
+      await a.setMediaLocked(TagHostKind.video, 'ep1', true, at: 1000);
+      await a.setMediaLockCredential('digest-a', at: 1000);
+
+      await syncPair(b, a);
+      expect(await b.isMediaLocked(TagHostKind.video, 'ep1'), isTrue);
+      expect(
+        (await b.mediaLockCredential())?.verifier,
+        'digest-a',
+        reason: '锁到了、口令也到了——不能在 b 上新设口令打开',
+      );
+
+      // b 改口令（更新的戳）→ 回到 a。
+      await b.setMediaLockCredential('digest-b', at: 2000);
+      await syncPair(a, b);
+      expect((await a.mediaLockCredential())?.verifier, 'digest-b');
+
+      // a 上旧戳的改动不覆盖新者：setMediaLockCredential 给出的时间不晚于现有戳时
+      // 顺延到现有戳 + 1，保证本机改动总是最新。
+      await a.setMediaLockCredential(null, at: 10);
+      expect((await a.mediaLockCredential())?.updatedAt, 2001);
+      await syncPair(b, a);
+      expect(await b.mediaLockCredential(), isNotNull);
+      expect(
+        (await b.mediaLockCredential())?.verifier,
+        isNull,
+        reason: '删除传过去',
+      );
+      expect(
+        tagManifestCovers(
+          await loadLocalTagManifest(b),
+          await loadLocalTagManifest(a),
+        ),
+        isTrue,
+      );
+    });
+
+    test('TagManifest lockCredential：JSON 往返；本机记录更新时 covers=false', () async {
+      final FushiDatabase a = memDb();
+      await a.setMediaLockCredential('v1', at: 5);
+      final TagManifest local = await loadLocalTagManifest(a);
+      final TagManifest back = TagManifest.fromJson(local.toJson());
+      expect(back.lockCredential, (verifier: 'v1', updatedAt: 5));
+      expect(tagManifestCovers(back, local), isTrue);
+      await a.setMediaLockCredential('v2', at: 9);
+      expect(tagManifestCovers(back, await loadLocalTagManifest(a)), isFalse);
+      // 坏形状的 lockCredential 被丢弃而不是抛。
+      final Map<String, dynamic> bad = local.toJson()
+        ..['lockCredential'] = <String, Object>{'at': 'x'};
+      expect(TagManifest.fromJson(bad).lockCredential, isNull);
+      // 戳相等：摘要文本大的胜（null 视为空串），两端结果一致。
+      expect(
+        mergeLockCredentials(
+          (verifier: 'b', updatedAt: 3),
+          (verifier: 'a', updatedAt: 3),
+        ),
+        (verifier: 'b', updatedAt: 3),
+      );
+      expect(
+        mergeLockCredentials(
+          (verifier: null, updatedAt: 3),
+          (verifier: 'a', updatedAt: 3),
+        ),
+        (verifier: 'a', updatedAt: 3),
+      );
+    });
   });
 }
