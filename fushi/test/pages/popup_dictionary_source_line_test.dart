@@ -266,7 +266,8 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   testWidgets(
-    'embedded dictionary leaves source height natural and scrolls to definitions',
+    'embedded dictionary bounds the source like the external popup and keeps '
+    'definitions at a fixed size',
     (tester) async {
       final String text = List<String>.generate(
         1600,
@@ -283,19 +284,26 @@ void main() {
         ),
       );
       await _settle(tester);
-      final Finder content = find.byKey(
-        const ValueKey<String>('embedded_dictionary_content_scroll'),
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
       );
+      expect(viewport, findsOneWidget);
       final Finder scrollable = find
-          .descendant(of: content, matching: find.byType(Scrollable))
+          .descendant(of: viewport, matching: find.byType(Scrollable))
           .first;
-      expect(
-        find.byKey(const ValueKey<String>('popup_source_scroll')),
-        findsNothing,
-      );
+      final ScrollableState state = tester.state<ScrollableState>(scrollable);
+      final double viewportHeight = tester.getSize(viewport).height;
+      expect(viewportHeight, greaterThan(0));
       expect(
         tester.getSize(find.byType(SourceLookupTextPanel)).height,
-        greaterThan(tester.getSize(content).height),
+        greaterThan(viewportHeight),
+      );
+      final Finder definitions = find.byType(DictionaryPopupLayer).first;
+      final Rect definitionsBefore = tester.getRect(definitions);
+      expect(definitionsBefore.height, greaterThan(0));
+      expect(
+        definitionsBefore.top,
+        greaterThanOrEqualTo(tester.getRect(viewport).bottom),
       );
       await tester.scrollUntilVisible(
         find.text(text[1599]),
@@ -303,6 +311,8 @@ void main() {
         scrollable: scrollable,
       );
       await tester.pumpAndSettle();
+      expect(state.position.pixels, greaterThan(0));
+      expect(tester.getRect(definitions), definitionsBefore);
       await tester.tap(find.text(text[1599]));
       await _settle(tester);
       expect(appModel.searched.last, text.substring(1599));
@@ -312,13 +322,11 @@ void main() {
             .text,
         text,
       );
-      final ScrollableState state = tester.state<ScrollableState>(scrollable);
-      state.position.jumpTo(state.position.maxScrollExtent);
-      await tester.pump();
-      expect(
-        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
-        greaterThan(0),
-      );
+      expect(tester.getRect(definitions), definitionsBefore);
+      final double scrolled = state.position.pixels;
+      await tester.drag(viewport, const Offset(0, 300));
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, lessThan(scrolled));
       expect(tester.takeException(), isNull);
     },
   );
@@ -388,6 +396,51 @@ void main() {
             .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
             .text,
         text,
+      );
+    },
+  );
+
+  testWidgets(
+    'changing only the collapse flag toggles the source without a new lookup',
+    (tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final ValueNotifier<bool> collapsed = ValueNotifier<bool>(false);
+      addTearDown(collapsed.dispose);
+      const String text = '今日は良い天気ですね';
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appProvider.overrideWith((ref) => appModel),
+            ankiRepositoryProvider.overrideWithValue(_RecordingAnkiRepo()),
+            ...popupMiningTargetTestOverrides(anki: false),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: appModel.navigatorKey,
+              home: ValueListenableBuilder<bool>(
+                valueListenable: collapsed,
+                builder: (BuildContext context, bool value, Widget? _) =>
+                    PopupDictionaryPage(
+                      searchTerm: text,
+                      sourceCharIndex: 5,
+                      sourceTextCollapsed: value,
+                      closeInApp: () {},
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+      final int lookups = appModel.searched.length;
+      collapsed.value = true;
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(
+        appModel.searched.length,
+        lookups,
+        reason: 'the collapse flag changes visibility only, not the query',
       );
     },
   );

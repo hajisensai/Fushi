@@ -361,8 +361,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-951 症状C：宿主常驻本页、每次新 ProcessText 改 searchTerm/searchGeneration。
     // 复用常驻热槽原地查新词（reuseWarmSlot:true），不重建整页 → 不闪。term 与
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
+    // 折叠参数只决定原文初始显隐、不改查询：单独变了就只同步显隐，不重查。每个新请求
+    // 仍按本次请求的参数重置（下方 changed 分支）。
+    if (oldWidget.sourceTextCollapsed != widget.sourceTextCollapsed) {
+      _sourceTextCollapsed = widget.sourceTextCollapsed;
+    }
     final bool changed =
-        oldWidget.sourceTextCollapsed != widget.sourceTextCollapsed ||
         oldWidget.searchTerm != widget.searchTerm ||
         oldWidget.searchGeneration != widget.searchGeneration ||
         oldWidget.sourceCharIndex != widget.sourceCharIndex ||
@@ -372,7 +376,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         oldWidget.subtitleWindowRect != widget.subtitleWindowRect;
     if (!changed) return;
     _sourceTextCollapsed = widget.sourceTextCollapsed;
-    // A warm external request owns its source viewport, even for repeated text.
+    // 热复用下的新请求独占原文视口：即便原文与上次相同也从头开始，再由原文条把被点的字
+    // 滚进视口（[SourceLookupTextPanel.revealHighlight]）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _sourceScrollController.hasClients) {
         _sourceScrollController.jumpTo(0);
@@ -883,48 +888,34 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               thickness: 1,
               color: tokens.surfaces.outline,
             ),
+          // 原文与结果各滚各的：原文限高（外部浮窗 1/3、伴屏嵌入 1/2）在自己的视口里
+          // 滚，结果 WebView 是固定大小的 Expanded，不随原文滚动逐帧改尺寸（见
+          // [BoundedSourceLookupViewport]）。
           Expanded(
-            child: widget.embedded
-                ? CustomScrollView(
-                    key: const ValueKey<String>(
-                      'embedded_dictionary_content_scroll',
-                    ),
-                    primary: false,
-                    slivers: <Widget>[
-                      if (_sourceLookupText.trim().isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: _buildSourceRegion(tonalHighlight: m3e),
-                        ),
-                      SliverFillRemaining(
-                        child: _buildStack(
-                          context,
-                          fullCardHeight: fullCardHeight,
-                          webViewOverflowHeight: webViewOverflowHeight,
-                        ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                return Column(
+                  children: <Widget>[
+                    if (_sourceLookupText.trim().isNotEmpty)
+                      _buildSourceRegion(
+                        maxHeight:
+                            constraints.maxHeight *
+                            (widget.embedded
+                                ? kInAppSourceViewportFraction
+                                : kExternalSourceViewportFraction),
+                        tonalHighlight: m3e,
                       ),
-                    ],
-                  )
-                : LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) {
-                          return Column(
-                            children: <Widget>[
-                              if (_sourceLookupText.trim().isNotEmpty)
-                                _buildSourceRegion(
-                                  maxHeight: constraints.maxHeight / 3,
-                                  tonalHighlight: m3e,
-                                ),
-                              Expanded(
-                                child: _buildStack(
-                                  context,
-                                  fullCardHeight: fullCardHeight,
-                                  webViewOverflowHeight: webViewOverflowHeight,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                  ),
+                    Expanded(
+                      child: _buildStack(
+                        context,
+                        fullCardHeight: fullCardHeight,
+                        webViewOverflowHeight: webViewOverflowHeight,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -984,21 +975,28 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
-  Widget _buildSourceRegion({double? maxHeight, required bool tonalHighlight}) {
+  Widget _buildSourceRegion({
+    required double maxHeight,
+    required bool tonalHighlight,
+  }) {
+    // key 只随请求代数变：同一原文的新请求（热复用）重建本条以重新露出被点的字；窗口
+    // 尺寸变化不重建（本条订阅窗口尺寸自己重排 reveal），免得缩放窗口时逐帧重建整条。
     final Widget source = SourceLookupTextPanel(
-      key: ValueKey<(int, double?)>((widget.searchGeneration, maxHeight)),
+      key: ValueKey<int>(widget.searchGeneration),
       text: _sourceLookupText,
       tonalHighlight: tonalHighlight,
       coordinateSpaceKey: _resultStackKey,
       dictionaryHeadwordScale: _dictionaryHeadwordScale,
       highlight: _sourceHighlight,
-      revealHighlight: !widget.embedded,
+      revealHighlight: true,
       initialCharIndex: widget.sourceCharIndex < 0
           ? 0
           : sourceGraphemeIndexOfUnit(
               _sourceLookupText,
               widget.sourceCharIndex,
             ),
+      // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
+      // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
       onLookup: _lookupFromSourceStrip,
     );
     return FushiAnimatedSize(
@@ -1007,19 +1005,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       alignment: Alignment.topCenter,
       child: _sourceTextCollapsed
           ? const SizedBox.shrink()
-          : maxHeight == null
-          ? source
-          : ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight),
-              child: Scrollbar(
-                controller: _sourceScrollController,
-                child: SingleChildScrollView(
-                  key: const ValueKey<String>('popup_source_scroll'),
-                  controller: _sourceScrollController,
-                  primary: false,
-                  child: source,
-                ),
-              ),
+          : BoundedSourceLookupViewport(
+              controller: _sourceScrollController,
+              maxHeight: maxHeight,
+              scrollKey: const ValueKey<String>('popup_source_scroll'),
+              child: source,
             ),
     );
   }

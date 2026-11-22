@@ -30,20 +30,17 @@ void main() {
               alignment: Alignment.topLeft,
               child: SizedBox(
                 width: 240,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: height),
-                  child: SingleChildScrollView(
-                    key: const ValueKey<String>('viewport'),
-                    controller: controller,
-                    primary: false,
-                    child: SourceLookupTextPanel(
-                      text: source ?? text,
-                      coordinateSpaceKey: coordinateKey,
-                      highlight: highlight,
-                      initialCharIndex: initialCharIndex,
-                      revealHighlight: true,
-                      onLookup: onLookup,
-                    ),
+                child: BoundedSourceLookupViewport(
+                  maxHeight: height,
+                  scrollKey: const ValueKey<String>('viewport'),
+                  controller: controller,
+                  child: SourceLookupTextPanel(
+                    text: source ?? text,
+                    coordinateSpaceKey: coordinateKey,
+                    highlight: highlight,
+                    initialCharIndex: initialCharIndex,
+                    revealHighlight: true,
+                    onLookup: onLookup,
                   ),
                 ),
               ),
