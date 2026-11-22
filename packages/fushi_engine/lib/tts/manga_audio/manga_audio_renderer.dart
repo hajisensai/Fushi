@@ -213,7 +213,8 @@ class MangaRegenerateCandidate {
     required this.voice,
     required this.text,
     required this.shape,
-  });
+    String? spoken,
+  }) : spoken = spoken ?? text;
 
   final String lineId;
   final int seed;
@@ -226,6 +227,9 @@ class MangaRegenerateCandidate {
   final int durationMs;
   final String voice;
   final String text;
+
+  /// 实际合成的文字（含人名读法；见 [MangaRenderItem.spoken]）。
+  final String spoken;
 }
 
 class MangaAudioRenderer {
@@ -626,19 +630,21 @@ class MangaAudioRenderer {
     if (voice == null) return MangaBackfillStatus.noRetryVoice;
     final String? say = (req.say?.trim().isEmpty ?? true) ? null : req.say;
     final MangaScriptLine probe = say == null ? line : line.copyWith(say: say);
-    final String text = mangaLineText(
+    final ({String text, String spoken}) texts = mangaLineTexts(
       probe,
       pageBlocks,
       substitutions: script.substitutions,
     );
+    final String text = texts.text;
     final int seed = req.seed ?? line.effectiveSeed(script.defaultSeed);
     final MangaRenderItem item = MangaRenderItem(
       line: probe,
       text: text,
+      spoken: texts.spoken,
       source: MangaRenderSynth(
         voice: voice,
         seed: seed,
-        segments: splitMangaLineSegments(text),
+        segments: splitMangaLineSegments(texts.spoken),
       ),
     );
     return (
@@ -693,6 +699,7 @@ class MangaAudioRenderer {
           voice: voice,
           seed: seed,
           text: text,
+          spoken: texts.spoken,
           shape: backend.shapeVersion,
         ),
       );
@@ -731,11 +738,12 @@ class MangaAudioRenderer {
   }) async {
     final MangaScriptLine? line = script.lineById(lineId);
     if (line == null) throw const MangaLineFailure('line_missing');
-    final String text = mangaLineText(
+    final ({String text, String spoken}) texts = mangaLineTexts(
       line,
       pageBlocks,
       substitutions: script.substitutions,
     );
+    final String text = texts.text;
     final String voice = mangaSynthVoiceFor(
       script,
       line,
@@ -745,10 +753,11 @@ class MangaAudioRenderer {
     final MangaRenderItem item = MangaRenderItem(
       line: line,
       text: text,
+      spoken: texts.spoken,
       source: MangaRenderSynth(
         voice: voice,
         seed: seed,
-        segments: splitMangaLineSegments(text),
+        segments: splitMangaLineSegments(texts.spoken),
       ),
     );
     await directory.create(recursive: true);
@@ -765,6 +774,7 @@ class MangaAudioRenderer {
         durationMs: r.durationMs,
         voice: voice,
         text: text,
+        spoken: texts.spoken,
         shape: backend.shapeVersion,
       );
     } catch (e, stack) {
@@ -789,6 +799,7 @@ class MangaAudioRenderer {
         voice: candidate.voice,
         seed: candidate.seed,
         text: candidate.text,
+        spoken: candidate.spoken,
         shape: candidate.shape,
       ),
     );

@@ -87,6 +87,7 @@ import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/media/manga/reader/manga_lookup_pause.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -577,6 +578,7 @@ Future<String> ensureMangaCoverPng(String sourcePath) async {
 enum _MangaContextAction {
   copyText,
   copyPageText,
+  editAudioLine,
   previous,
   next,
   jump,
@@ -599,6 +601,9 @@ enum _MangaContextAction {
 
 /// 长按 / 右键落点可复制的 OCR 文本：[sentence] 点中那句，[page] 整页。
 typedef _MangaOcrCopyTexts = ({String? sentence, String? page});
+
+/// 长按 / 右键落点那句：所在页与它的 OCR 块下标。
+typedef _MangaHitSentence = ({int pageIndex, List<int> blocks});
 
 Future<int?> showMangaPageJumpDialog(
   BuildContext context, {
@@ -7490,6 +7495,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (pageIndex == null) return;
     final _MangaOcrCopyTexts texts = _ocrCopyTextsAt(decoded);
     fushiLiftHaptic(context);
+    final _MangaHitSentence? audioLine = await _audioLineTargetAt(decoded);
+    if (!mounted) return;
     final File? file = await _mangaPageFileAt(pageIndex);
     if (!mounted) return;
     if (file == null || !await file.exists()) {
@@ -7520,9 +7527,57 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             label: t.manga_ocr_copy_page_text,
             run: () => _copyOcrText(pageText),
           ),
+        if (audioLine != null)
+          ImageSheetExtraAction(
+            id: 'manga_edit_audio_line',
+            icon: FushiIcons.voice,
+            label: t.manga_audio_line_edit,
+            run: () => _editAudioLine(audioLine),
+          ),
       ],
     );
   }
+
+  /// 长按 / 右键落点那句（命中文本块的句子分组）的 OCR 块；没点中文本块为 null。
+  _MangaHitSentence? _hitSentenceAt(Map<dynamic, dynamic> hit) {
+    final MokuroPayload? payload = _payload;
+    final int? pageIndex = payload == null
+        ? null
+        : MangaFushiPage.mangaHitPageIndex(hit, payload.images.length);
+    final Object? group = hit['group'];
+    if (payload == null || pageIndex == null || group is! num) return null;
+    final List<int> blocks = mangaSentenceGroupBlockIndices(
+      payload.images[pageIndex],
+      group.toInt(),
+    );
+    return blocks.isEmpty ? null : (pageIndex: pageIndex, blocks: blocks);
+  }
+
+  /// 落点那句在这卷有声漫画演出稿里时返回它（菜单 / 长按面板据此列「编辑这句配音」，
+  /// 拍板 bnAC_eferQ）；没点中气泡、没有演出稿、旧版只读时为 null。
+  Future<_MangaHitSentence?> _audioLineTargetAt(
+    Map<dynamic, dynamic> hit,
+  ) async {
+    final _MangaHitSentence? target = _hitSentenceAt(hit);
+    if (target == null || appModel.isMigrationReadonly) return null;
+    final bool known = await mangaAudioHasLineAt(
+      appModel,
+      bookKey: widget.bookKey,
+      page: target.pageIndex,
+      blocks: target.blocks,
+    );
+    return known ? target : null;
+  }
+
+  /// 就地改这一句配音（不离开阅读页）；改动影响读法且这句已生成过时只重生成这一句。
+  Future<void> _editAudioLine(_MangaHitSentence target) =>
+      editMangaAudioLineInPlace(
+        context,
+        host: appModel,
+        bookKey: widget.bookKey,
+        page: target.pageIndex,
+        blocks: target.blocks,
+      );
 
   /// 长按 / 右键落点的可复制 OCR 文本（反馈 hjUlprxxKI：把漫画 OCR / mokuro 文本
   /// 复制出去，例如贴进 AI 聊天问意思）。JS 只回传落点页号 `page` 与命中文本块的
@@ -7592,6 +7647,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (decoded is! Map || !mounted) return;
     final _MangaOcrCopyTexts ocrTexts = _ocrCopyTextsAt(decoded);
+    final _MangaHitSentence? audioLine = await _audioLineTargetAt(decoded);
+    if (!mounted) return;
     // 图片项（复制 / 分享 / 保存 / 设为封面）绑右键落点那一页；没落在页上就不列，
     // 不回落当前页（跨页时当前页只是两页之一）。
     final int? hitPage = MangaFushiPage.mangaHitPageIndex(
@@ -7641,7 +7698,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 value: _MangaContextAction.copyPageText,
                 child: Text(t.manga_ocr_copy_page_text),
               ),
-            if (ocrTexts.sentence != null || ocrTexts.page != null)
+            // 右键点在已进演出稿的气泡上：就地改这句配音（拍板 bnAC_eferQ）。
+            if (audioLine != null)
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.editAudioLine,
+                child: Text(t.manga_audio_line_edit),
+              ),
+            if (ocrTexts.sentence != null ||
+                ocrTexts.page != null ||
+                audioLine != null)
               const PopupMenuDivider(),
             PopupMenuItem<_MangaContextAction>(
               value: _MangaContextAction.previous,
@@ -7698,6 +7763,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       case _MangaContextAction.copyPageText:
         final String? pageText = ocrTexts.page;
         if (pageText != null) await _copyOcrText(pageText);
+        return;
+      case _MangaContextAction.editAudioLine:
+        if (audioLine != null) await _editAudioLine(audioLine);
         return;
       case _MangaContextAction.previous:
         await (_mode.isContinuous

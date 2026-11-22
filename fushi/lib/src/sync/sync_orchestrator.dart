@@ -1,6 +1,7 @@
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
@@ -864,12 +865,29 @@ class SyncOrchestrator {
 
   /// 读一份 per-device 清单的 JSON：版本没变读镜像，否则下载并更新镜像。
   /// 下载失败 / 读回 null 的语义与直接 `getJsonAsset` 完全相同（照抛 / 照返 null）。
+  ///
+  /// 镜像存的是 UTF-8 JSON 字节（[AggregatePeerSnapshotCache] 是字节级的）；清单是
+  /// 每台设备一份的小文件，这里仍走 `getJsonAsset`，命中时就地解码。镜像解不开
+  /// （坏文件）当未命中，照常下载覆盖。
   Future<Object?> _readManifestJson(String family, AssetEntry entry) async {
     final String channel = '${_scope.id}.$family';
-    final Object? mirrored = await _manifestMirror.read(channel, entry);
-    if (mirrored != null) return mirrored;
+    final Uint8List? mirrored = await _manifestMirror.read(channel, entry);
+    if (mirrored != null) {
+      try {
+        final Object? json = jsonDecode(utf8.decode(mirrored));
+        if (json != null) return json;
+      } on FormatException {
+        // 坏镜像：下面重新下载并覆盖。
+      }
+    }
     final Object? json = await _backend.getJsonAsset(entry.id);
-    if (json != null) await _manifestMirror.write(channel, entry, json);
+    if (json != null) {
+      await _manifestMirror.write(
+        channel,
+        entry,
+        utf8.encode(jsonEncode(json)),
+      );
+    }
     return json;
   }
 

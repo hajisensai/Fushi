@@ -39,6 +39,15 @@
 |---|:--:|:--:|---|
 | [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
 | [BUG-5188](bugs/BUG-5188-manga-audio-line-swap-resets-position.md) | ✅ | ✅ | manga-audio-line-swap-resets-position |
+> 共 4515 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5189](bugs/BUG-5189-shortcut-inline-record-esc-pops-page.md) | ✅ | ✅ | shortcut-inline-record-esc-pops-page |
+| [BUG-5187](bugs/BUG-5187-settings-storage-page-open-jank.md) | ✅ | ✅ | 打开 设置 › 存储 时卡顿（书 / 视频清单整行读大列拷回 UI isolate） |
+| [BUG-5186](bugs/BUG-5186-webview2-composition-proxy-eats-desktop-clicks-when-minimized.md) | ✅ | ✅ | 主窗最小化 / 藏托盘后桌面中央点击被吞（composition 档 WebView2 代理窗仍可命中） |
+| [BUG-5185](bugs/BUG-5185-windows-exit-loader-deadlock.md) | ✅ | ✅ | Windows 退出时 LdrShutdownProcess 卸载 DLL 死锁：进程变僵尸占着单实例互斥量，之后无法再启动 |
+| [BUG-5184](bugs/BUG-5184-external-popup-source-overflow.md) | ✅ | ✅ | 应用内外查词长原文无法完整浏览并挤占释义 |
 | [BUG-5183](bugs/BUG-5183-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 | [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |
 | [BUG-5181](bugs/BUG-5181-srs-defs-illustration-huge-and-untappable.md) | ✅ | ✅ | 复习卡释义里的词典插图巨大且点不开 |
@@ -63,7 +72,7 @@
 | [BUG-5162](bugs/BUG-5162-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
 | [BUG-5161](bugs/BUG-5161-torrent-resume-offline-save-path-zeroes-progress.md) | ✅ | ✅ | 重启时 save_path 暂不可达：fast-resume 被拒后在空路径全检得 0 片，周期快照把全 0 位图写回 .resume，路径恢复后永久跳过校验从 0% 重下 |
 | [BUG-5160](bugs/BUG-5160-server-torrent-upload-off-ignored.md) | ✅ | ✅ | 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配 |
-| [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | 🚧 | 🚧 | aggregate-cloud-snapshot-json-codec-on-caller |
+| [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | ✅ | ✅ | aggregate-cloud-snapshot-json-codec-on-caller |
 | [BUG-5158](bugs/BUG-5158-torrent-resume-save-alert-queue-overflow.md) | ✅ | ✅ | torrent-resume-save-alert-queue-overflow |
 | [BUG-5157](bugs/BUG-5157-web-pseudo-fullscreen-survives-navigation.md) | ✅ | ✅ | web-pseudo-fullscreen-survives-navigation |
 | [BUG-5156](bugs/BUG-5156-manga-audio-shape-version-reuse.md) | ✅ | ✅ | 重新生成存量漫画演出时复用旧响度片段（整形版本没进复用判据） |
@@ -80,6 +89,7 @@
 | [BUG-5143](bugs/BUG-5143-video-section-undo-overwrites-concurrent-edit.md) | ✅ | ✅ | video-section-undo-overwrites-concurrent-edit |
 | [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
 | [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
+| [BUG-5140](bugs/BUG-5140-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |

@@ -66,7 +66,8 @@ class LapisNoteType {
     'ExpressionFurigana': '{furigana-plain}',
     'ExpressionReading': '{reading}',
     'ExpressionAudio': '{audio}',
-    'SelectionText': '{popup-selection-text}',
+    // 选中释义保留原词典的字体颜色与排版（拍板 RdmYdegMPJ 选 a）；只影响新建 / 重置映射。
+    'SelectionText': '{popup-selection-html}',
     'MainDefinition': '{glossary-first}',
     'Sentence': '{sentence}',
     'SentenceAudio': '{sentence-audio}',

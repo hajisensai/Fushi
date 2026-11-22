@@ -105,12 +105,16 @@ class MangaRenderItem {
     required this.line,
     required this.text,
     required this.source,
-  });
+    String? spoken,
+  }) : spoken = spoken ?? text;
 
   final MangaScriptLine line;
 
-  /// 要念的文字（手填 `say` 优先，否则 OCR 拼出来的）。
+  /// 这句的显示文字（cue / 制卡；手填 `say` 优先，否则 OCR 拼出来的过普通替换）。
   final String text;
+
+  /// 实际送去合成的文字（[text] 再过人名读法；手填 `say` 不过表）。
+  final String spoken;
   final MangaRenderSource source;
 
   String get lineId => line.lineId;
@@ -151,13 +155,15 @@ class MangaRenderItem {
     file: file,
     durationMs: durationMs,
     text: text,
+    spoken: spoken,
     placeholder: placeholder,
     voice: voiceTag,
     seed: seed,
     shape: shape,
   );
 
-  /// [old] 的音频能不能原样沿用：不是占位、念的文字 / 声音 / 种子都没变，且出音频时的
+  /// [old] 的音频能不能原样沿用：不是占位、念的文字（[spoken]，人名读法改了也算变）/
+  /// 声音 / 种子都没变，且出音频时的
   /// 整形版本就是这次的 [shape]（`MangaRenderBackend.shapeVersion`）。整形参数（裁静音 /
   /// 淡变 / 响度）变了，旧音频与新出的句子混排会忽大忽小，必须重出；没记整形版本的历史
   /// 清单行（null）一律算版本不符。说话人、类型、一拍这类不影响音频的字段变了照样沿用
@@ -165,7 +171,7 @@ class MangaRenderItem {
   bool canReuse(MangaRenderedLine old, {required String shape}) =>
       !old.placeholder &&
       old.lineId == lineId &&
-      old.text == text &&
+      old.spokenText == spoken &&
       old.voice == voiceTag &&
       old.seed == seed &&
       old.shape == shape;
@@ -219,7 +225,7 @@ String mangaSynthVoiceFor(
 MangaRenderSource? mangaRenderSourceFor({
   required MangaAudioScript script,
   required MangaScriptLine line,
-  required String text,
+  required String spoken,
   required String defaultVoice,
   MangaNarratorVoice? narrator,
 }) {
@@ -243,7 +249,7 @@ MangaRenderSource? mangaRenderSourceFor({
       return MangaRenderSynth(
         voice: mangaSynthVoiceFor(script, line, defaultVoice, narrator),
         seed: line.effectiveSeed(script.defaultSeed),
-        segments: splitMangaLineSegments(text),
+        segments: splitMangaLineSegments(spoken),
       );
   }
 }
@@ -267,7 +273,7 @@ MangaRenderPlan planMangaRender({
       outOfRange.add(line.lineId);
       continue;
     }
-    final String text = mangaLineText(
+    final ({String text, String spoken}) texts = mangaLineTexts(
       line,
       pageBlocks,
       substitutions: script.substitutions,
@@ -275,7 +281,7 @@ MangaRenderPlan planMangaRender({
     final MangaRenderSource? source = mangaRenderSourceFor(
       script: script,
       line: line,
-      text: text,
+      spoken: texts.spoken,
       defaultVoice: defaultVoice,
       narrator: narrator,
     );
@@ -283,7 +289,14 @@ MangaRenderPlan planMangaRender({
       notRead.add(line.lineId);
       continue;
     }
-    items.add(MangaRenderItem(line: line, text: text, source: source));
+    items.add(
+      MangaRenderItem(
+        line: line,
+        text: texts.text,
+        spoken: texts.spoken,
+        source: source,
+      ),
+    );
   }
   return MangaRenderPlan(
     items: items,
@@ -292,22 +305,61 @@ MangaRenderPlan planMangaRender({
   );
 }
 
-/// 一句要念的文字（页码越界时只认手填）。
+/// 一句的显示文字（cue / 制卡用；页码越界时只认手填）。
 String mangaLineText(
+  MangaScriptLine line,
+  List<List<MokuroBlock>> pageBlocks, {
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+}) => mangaLineTexts(line, pageBlocks, substitutions: substitutions).text;
+
+/// 一句的显示文字与实际念的文字。手动填写的念法（`say`）是用户写好的最终文字，两者
+/// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的再加人名读法。
+({String text, String spoken}) mangaLineTexts(
   MangaScriptLine line,
   List<List<MokuroBlock>> pageBlocks, {
   List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
 }) {
   final String? say = line.say;
-  // 手动填写的念法是用户写好的最终文字：不过替换表。
-  if (say != null) return say.trim();
-  return applyCastSubstitutions(
-    resolveMangaLineText(
-      line,
-      line.page < pageBlocks.length
-          ? pageBlocks[line.page]
-          : const <MokuroBlock>[],
-    ).trim(),
-    substitutions,
+  if (say != null) return (text: say.trim(), spoken: say.trim());
+  final String raw = resolveMangaLineText(
+    line,
+    line.page < pageBlocks.length
+        ? pageBlocks[line.page]
+        : const <MokuroBlock>[],
+  ).trim();
+  return (
+    text: applyCastSubstitutions(raw, substitutions),
+    spoken: applyCastSpokenSubstitutions(raw, substitutions),
   );
+}
+
+/// 读法改了的一句：清单里已出的音频按 [MangaRenderedLine.spokenText] 念的，按当前
+/// 替换表（含人名读法）该念 [spoken]。
+typedef MangaSpokenTextChange = ({MangaRenderedLine rendered, String spoken});
+
+/// 清单里已合成出真音频、但按当前替换表该念的文字已经变了的句子（系列人名读法 /
+/// 用词替换改过之后，从制作台定位并重生成）。占位静音（走未配音补回）、剪有声书的
+/// 片段、手填念法的句子、按当前音源策略不再合成的句子都不算。按清单顺序返回。
+List<MangaSpokenTextChange> mangaSpokenTextChanges({
+  required MangaAudioScript script,
+  required List<List<MokuroBlock>> pageBlocks,
+  required MangaRenderManifest manifest,
+}) {
+  final List<MangaSpokenTextChange> out = <MangaSpokenTextChange>[];
+  for (final MangaRenderedLine rendered in manifest.lines) {
+    if (rendered.placeholder) continue;
+    if (rendered.voice?.startsWith(kMangaClipVoicePrefix) ?? false) continue;
+    final MangaScriptLine? line = script.lineById(rendered.lineId);
+    if (line == null || line.say != null || !line.kind.isAudible) continue;
+    if (line.page >= pageBlocks.length) continue;
+    if (script.audioPlanFor(line) != MangaLineAudioPlan.synthesize) continue;
+    final String spoken = mangaLineTexts(
+      line,
+      pageBlocks,
+      substitutions: script.substitutions,
+    ).spoken;
+    if (spoken.isEmpty || spoken == rendered.spokenText) continue;
+    out.add((rendered: rendered, spoken: spoken));
+  }
+  return out;
 }

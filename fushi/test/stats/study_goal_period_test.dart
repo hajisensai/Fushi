@@ -1,23 +1,9 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
-import 'package:fushi_engine/stats/stat_facts.dart';
 
-/// 反馈 CjIr9RGSCe：字数目标日 / 周二选一。周目标分子 = 本自然周（周一起）学习域
-/// 字数，与 [StatWindow.inWeek] / 小组件 [StatWindow.mondayOf] 同一个「本周」。
-StatFact _fact(String kind, String dateKey, int chars) => StatFact(
-  mediaKind: kind,
-  mediaKey: 'k',
-  title: '',
-  format: '',
-  dateKey: dateKey,
-  hour: -1,
-  ms: 0,
-  chars: chars,
-  pages: 0,
-  lastActiveMs: 0,
-);
-
+/// 目标周期的窗口：每日 = 当天；每周 = 本自然周（周一起，与 [StatWindow.inWeek] /
+/// [StatWindow.weekStartOf] 同一个「本周」）；每月 = 本日历月 1 日起。
 void main() {
   group('StudyGoalPeriod wire', () {
     test('round-trips every value', () {
@@ -26,43 +12,132 @@ void main() {
       }
     });
 
-    test('missing / unknown wire falls back to daily (存量用户行为不变)', () {
+    test('missing / unknown wire falls back to daily', () {
       expect(StudyGoalPeriod.fromWire(null), StudyGoalPeriod.daily);
       expect(StudyGoalPeriod.fromWire(''), StudyGoalPeriod.daily);
-      expect(StudyGoalPeriod.fromWire('monthly'), StudyGoalPeriod.daily);
+      expect(StudyGoalPeriod.fromWire('yearly'), StudyGoalPeriod.daily);
     });
   });
 
-  group('studyGoalCharsForWeek', () {
-    // 2026-08-29 是周六 → 本周一 = 2026-08-24。
-    final StatWindow w = StatWindow(DateTime(2026, 8, 29, 15, 30));
-    final List<StatFact> daily = <StatFact>[
-      _fact('book', '2026-08-23', 9000), // 上周日：不计
-      _fact('book', '2026-08-24', 1000), // 周一
-      _fact('video', '2026-08-26', 500), // 字幕字也进学习域
-      _fact('game', '2026-08-27', 2000), // 游戏 hook
-      _fact('book', '2026-08-29', 300), // 今天
-      _fact('book', '2026-08-30', 7777), // 未来日期：不计
-    ];
-
-    test('sums Monday..today across all sources', () {
-      expect(studyGoalCharsForWeek(daily, w), 1000 + 500 + 2000 + 300);
+  group('studyGoalWindowStart / Contains', () {
+    test('daily = the day itself', () {
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.daily, '2026-08-29'),
+        '2026-08-29',
+      );
+      expect(
+        studyGoalWindowContains(
+          StudyGoalPeriod.daily,
+          '2026-08-29',
+          '2026-08-28',
+        ),
+        isFalse,
+      );
     });
 
-    test('Monday: only today counts', () {
-      final StatWindow monday = StatWindow(DateTime(2026, 8, 24, 9));
-      expect(studyGoalCharsForWeek(daily, monday), 1000);
+    test('weekly = Monday..day (2026-08-29 is a Saturday)', () {
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-08-29'),
+        '2026-08-24',
+      );
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-08-24'),
+        '2026-08-24',
+      );
+      // 周日仍属上周一开始的那周。
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-08-30'),
+        '2026-08-24',
+      );
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-08-29'),
+        StatWindow.weekStartOf('2026-08-29'),
+      );
+      for (final (String key, bool inside) in <(String, bool)>[
+        ('2026-08-23', false),
+        ('2026-08-24', true),
+        ('2026-08-29', true),
+        ('2026-08-30', false), // 未来日期不算
+      ]) {
+        expect(
+          studyGoalWindowContains(StudyGoalPeriod.weekly, '2026-08-29', key),
+          inside,
+          reason: key,
+        );
+      }
     });
 
-    test('domain is decided by the caller-supplied rows', () {
-      final Iterable<StatFact> books = daily.where((StatFact f) => f.isBook);
-      expect(studyGoalCharsForWeek(books, w), 1000 + 300);
+    test('weekly window crosses a month boundary', () {
+      // 2026-09-02 是周三 → 本周一 = 2026-08-31。
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-09-02'),
+        '2026-08-31',
+      );
     });
 
-    test('mondayOf matches weekFromKey', () {
-      expect(StatWindow.mondayOf(w.todayKey), w.weekFromKey);
-      expect(StatWindow.mondayOf('2026-08-24'), '2026-08-24');
-      expect(StatWindow.mondayOf('2026-08-30'), '2026-08-24');
+    test('monthly = 1st of the calendar month..day', () {
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.monthly, '2026-08-29'),
+        '2026-08-01',
+      );
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.monthly, '2026-09-01'),
+        '2026-09-01',
+      );
+      expect(
+        studyGoalWindowContains(
+          StudyGoalPeriod.monthly,
+          '2026-09-01',
+          '2026-08-31',
+        ),
+        isFalse,
+      );
+      expect(
+        studyGoalWindowContains(
+          StudyGoalPeriod.monthly,
+          '2026-12-31',
+          '2026-12-01',
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('week start (StatWindow.weekStartDay)', () {
+    tearDown(() => StatWindow.weekStartDay = DateTime.monday);
+
+    // 2026-08-29 是周六，2026-08-30 是周日。
+    test('Sunday start: the week of a Saturday begins the Sunday before', () {
+      StatWindow.weekStartDay = DateTime.sunday;
+      expect(StatWindow.weekStartOf('2026-08-29'), '2026-08-23');
+      expect(StatWindow.weekStartOf('2026-08-30'), '2026-08-30');
+      expect(
+        studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-08-29'),
+        '2026-08-23',
+      );
+    });
+
+    test('Saturday start: a Saturday starts its own week', () {
+      StatWindow.weekStartDay = DateTime.saturday;
+      expect(StatWindow.weekStartOf('2026-08-29'), '2026-08-29');
+      expect(StatWindow.weekStartOf('2026-08-28'), '2026-08-22');
+      expect(
+        studyGoalWindowContains(
+          StudyGoalPeriod.weekly,
+          '2026-08-30',
+          '2026-08-28',
+        ),
+        isFalse,
+      );
+    });
+
+    test('StatWindow.weekFromKey follows the week start', () {
+      StatWindow.weekStartDay = DateTime.sunday;
+      final StatWindow w = StatWindow(DateTime(2026, 8, 29, 12));
+      expect(w.weekFromKey, '2026-08-23');
+      expect(w.prevWeekFromKey, '2026-08-16');
+      expect(w.inWeek('2026-08-23'), isTrue);
+      expect(w.inWeek('2026-08-22'), isFalse);
     });
   });
 }

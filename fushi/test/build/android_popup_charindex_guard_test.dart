@@ -65,7 +65,9 @@ void main() {
       'PopupDictFlutterActivity reads charIndex from the intent and forwards it '
       'to PopupEngineHolder on both cold start and warm reuse',
       () {
-        final String activity = read('PopupDictFlutterActivity.kt');
+        final String activity = collapse(
+          read('PopupDictFlutterActivity.kt'),
+        ).replaceAll('( ', '(');
 
         expect(activity, contains('const val EXTRA_CHAR_INDEX'));
         expect(
@@ -161,7 +163,9 @@ void main() {
       'PopupDictFlutterActivity owns the anchor extras and forwards a nullable '
       'anchor on both cold start and warm reuse',
       () {
-        final String activity = read('PopupDictFlutterActivity.kt');
+        final String activity = collapse(
+          read('PopupDictFlutterActivity.kt'),
+        ).replaceAll('( ', '(');
 
         expect(activity, contains('const val EXTRA_ANCHOR_LEFT'));
         expect(activity, contains('const val EXTRA_ANCHOR_TOP'));

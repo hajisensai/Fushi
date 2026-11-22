@@ -37,6 +37,8 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 import 'heavy_budget.dart';
+import 'heavy_history.dart';
+import 'heavy_wait_estimate.dart';
 
 /// Where the slot locks live: one directory per machine (per user).
 Directory heavyStateDir([Map<String, String>? environment]) {
@@ -229,6 +231,10 @@ Future<void> _admissionChain = Future<void>.value();
 /// one queues in its place. With [callerGone] (heavy.dart passes
 /// [HeavyCallerWatch.gone]) the wait ends in [HeavyLeaseCallerGone] once it
 /// says the caller is gone, checked before every admission attempt.
+/// Under a [waitMax], a queued run that is predicted not to get a slot in
+/// time (heavy_wait_estimate.dart, at [typicalRuns]: kind name -> typical
+/// run, by default this machine's history) gives up at once with
+/// [HeavyLeaseTimeout] instead of waiting the limit out.
 Future<HeavyLease> acquireHeavyLease({
   required HeavyNeed need,
   required String label,
@@ -241,6 +247,7 @@ Future<HeavyLease> acquireHeavyLease({
   Map<String, String>? environment,
   MemorySnapshot? Function() readMemory = readMemorySnapshot,
   Duration poll = const Duration(seconds: 5),
+  Map<String, Duration>? typicalRuns,
 }) async {
   final Map<String, String> env = environment ?? Platform.environment;
   final void Function(String) say = log ?? (String l) => stderr.writeln(l);
@@ -250,6 +257,15 @@ Future<HeavyLease> acquireHeavyLease({
   }
   final Stopwatch sw = Stopwatch()..start();
   final Directory dir = heavyStateDir(env)..createSync(recursive: true);
+  final Map<String, Duration> typical = waitMax == null
+      ? const <String, Duration>{}
+      : typicalRuns ??
+            heavyTypicalRuns(
+              readHeavyHistory(
+                dir,
+                since: DateTime.now().subtract(kHeavyTypicalWindow),
+              ),
+            );
 
   _WorktreeLock? worktree;
   if (need.worktreeExclusive && worktreeRoot != null) {
@@ -286,6 +302,7 @@ Future<HeavyLease> acquireHeavyLease({
         rival: rival,
         runKey: runKey,
         callerGone: callerGone,
+        typical: typical,
       );
     }
     final Completer<void> mine = Completer<void>();
@@ -307,6 +324,7 @@ Future<HeavyLease> acquireHeavyLease({
         rival: rival,
         runKey: runKey,
         callerGone: callerGone,
+        typical: typical,
       );
     } finally {
       mine.complete();
@@ -431,9 +449,8 @@ String _takingPlaceOf(HeavyQueued q) =>
 /// Runs [body] under the machine-wide admission gate. [body] must not await:
 /// the gate is one synchronous block per process (see [_admissionChain]).
 T _underGate<T>(Directory state, T Function() body) {
-  final RandomAccessFile gate = File(
-    '${state.path}/admission.lock',
-  ).openSync(mode: FileMode.append);
+  final RandomAccessFile gate = File('${state.path}/admission.lock')
+      .openSync(mode: FileMode.append);
   try {
     gate.lockSync(FileLock.blockingExclusive);
     return body();
@@ -566,6 +583,7 @@ Future<HeavyLease> _waitSlot(
   HeavyLeaseRival? rival,
   String? runKey,
   bool Function()? callerGone,
+  Map<String, Duration> typical = const <String, Duration>{},
 }) async {
   String? lastReason;
   _Ticket? ticket;
@@ -581,9 +599,8 @@ Future<HeavyLease> _waitSlot(
       // One admission at a time across the machine: two waiters must not both
       // read the same slot as free and race over its holder info, and a
       // ticket is created, locked and swept only under this gate.
-      final RandomAccessFile gate = File(
-        '${dir.path}/admission.lock',
-      ).openSync(mode: FileMode.append);
+      final RandomAccessFile gate = File('${dir.path}/admission.lock')
+          .openSync(mode: FileMode.append);
       String reason;
       try {
         gate.lockSync(FileLock.blockingExclusive);
@@ -621,11 +638,88 @@ Future<HeavyLease> _waitSlot(
           '${sw.elapsed.inMinutes} min -- $reason. Not running it anyway.',
         );
       }
+      // Only this machine's queue is predicted: with a rival out, another
+      // machine may take the run any minute, so the wait here says nothing
+      // about whether it runs within the limit.
+      if (waitMax != null &&
+          ticket != null &&
+          rival == null &&
+          typical.isNotEmpty) {
+        final MemorySnapshot? memory = readMemory();
+        final String? hopeless = _hopelessWait(
+          dir,
+          ticket.name,
+          label,
+          sw.elapsed,
+          waitMax,
+          typical,
+          slots: heavySlotCount(memory, env),
+          budgetMb: heavyBudgetMb(memory, env),
+        );
+        if (hopeless != null) throw HeavyLeaseTimeout(hopeless);
+      }
       await Future<void>.delayed(poll);
     }
   } finally {
     ticket?.release();
   }
+}
+
+/// Why the queued run holding ticket [name] gives up now: the slots' holders
+/// and the waiters ahead of it, at their kinds' [typical] runs, will not let
+/// it in before [waitMax] (heavy_wait_estimate.dart); null while they may.
+/// Under a memory budget ([budgetMb]), a waiter ahead that does not fit it
+/// now may be passed (heavyMayGoAhead), so it is not counted ahead.
+String? _hopelessWait(
+  Directory dir,
+  String name,
+  String label,
+  Duration elapsed,
+  Duration waitMax,
+  Map<String, Duration> typical, {
+  required int slots,
+  required int? budgetMb,
+}) {
+  final List<HeavyQueued> queue = readHeavyQueue(dir, sweep: false);
+  final int at = queue.indexWhere((HeavyQueued q) => q.name == name);
+  if (at < 0) return null;
+  final int nowMs = DateTime.now().millisecondsSinceEpoch;
+  final List<HeavyHolder> holders = <HeavyHolder>[
+    for (final HeavyHolder h in readHeavyHolders(dir, slots))
+      if (h.slot < slots) h,
+  ];
+  final Duration wait = heavyPredictedWait(
+    slots: slots,
+    running: <HeavyRunningNow>[
+      for (final HeavyHolder h in holders)
+        (
+          held: Duration(
+            milliseconds: h.startedAtMs > 0 ? nowMs - h.startedAtMs : 0,
+          ),
+          typical: typical[h.kind],
+        ),
+    ],
+    ahead: <Duration?>[
+      for (final HeavyQueued q in queue.take(at))
+        if (budgetMb == null ||
+            (q.bookedMb != null &&
+                heavyBudgetBlocker(
+                      needMb: q.bookedMb!,
+                      heldCapsMb: <int>[
+                        for (final HeavyHolder h in holders) h.bookedMb,
+                      ],
+                      budgetMb: budgetMb,
+                    ) ==
+                    null))
+          typical[q.kind],
+    ],
+  );
+  if (elapsed + wait <= waitMax) return null;
+  return 'heavy: $label gives up now: predicted to wait about '
+      '${(wait.inSeconds / 60).ceil()} more min for a slot '
+      '(${holders.length}/$slots slots busy, $at run(s) ahead; typical run '
+      'times from heavy.dart --stats), over the ${waitMax.inMinutes} min '
+      'limit. Not running it.';
 }
 
 /// Under the admission gate: this run's ticket. A queued run of the same
@@ -654,6 +748,7 @@ _Ticket _queueUp(
     dir,
     label,
     bookedMb: need.bookedMb,
+    kind: need.kind.name,
     runKey: runKey,
     enqueuedUs: enqueuedUs,
   );
@@ -757,6 +852,7 @@ _Ticket _queueUp(
             label: label,
             cwd: Directory.current.path,
             capMb: need.bookedMb,
+            kind: need.kind.name,
           ).toJson(),
         ),
       );
@@ -808,6 +904,7 @@ class _Ticket {
     Directory state,
     String label, {
     required int bookedMb,
+    String? kind,
     String? runKey,
     int? enqueuedUs,
   }) {
@@ -826,6 +923,7 @@ class _Ticket {
         'pid': pid,
         'label': label,
         'bookedMb': bookedMb,
+        if (kind != null) 'kind': kind,
         if (runKey != null) 'runKey': runKey,
       }),
     );
@@ -874,10 +972,14 @@ class HeavyQueued {
     required this.label,
     this.bookedMb,
     this.runKey,
+    this.kind,
   });
   final String name;
   final int pid;
   final String label;
+
+  /// The [HeavyKind] name of the run; null when an older tool queued it.
+  final String? kind;
 
   /// What the run books; null when an older checkout's tool queued it.
   final int? bookedMb;
@@ -942,6 +1044,7 @@ HeavyQueued _queuedInfo(Directory dir, String name) {
         label: (j['label'] as String?) ?? '?',
         bookedMb: j['bookedMb'] is int ? j['bookedMb'] as int : null,
         runKey: j['runKey'] is String ? j['runKey'] as String : null,
+        kind: j['kind'] is String ? j['kind'] as String : null,
       );
     }
   } on Object {

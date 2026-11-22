@@ -533,6 +533,17 @@ class DropboxSyncBackend extends SyncBackend
   }
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _downloadFileBytes(assetId);
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _uploadBytes('$namespaceId/$name', bytes, mode: 'overwrite');
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     // AssetEntry.id 对 Dropbox 是路径串；delete_v2 对文件夹递归删，
     // _deleteFile 已吞 not-found，天然幂等，isFolder 无需分支。其它错误
@@ -618,7 +629,13 @@ class DropboxSyncBackend extends SyncBackend
     return entries;
   }
 
-  Future<dynamic> _downloadFileJson(String fileId) async {
+  Future<dynamic> _downloadFileJson(String fileId) async =>
+      decodeSyncJsonFileBody(await _downloadFile(fileId));
+
+  Future<Uint8List> _downloadFileBytes(String fileId) async =>
+      (await _downloadFile(fileId)).bodyBytes;
+
+  Future<http.Response> _downloadFile(String fileId) async {
     final apiArg = jsonEncode({'path': fileId});
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/download'),
@@ -632,7 +649,7 @@ class DropboxSyncBackend extends SyncBackend
         'Download failed: HTTP ${resp.statusCode} ${resp.body}',
       );
     }
-    return decodeSyncJsonFileBody(resp);
+    return resp;
   }
 
   Future<void> _uploadJsonFile(

@@ -406,7 +406,12 @@ void main() {
     const String good =
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     final VideoSourceFingerprint hashes = VideoSourceFingerprint(
-      compute: (String absolutePath, FileStat stat) async => good,
+      compute:
+          (
+            String absolutePath,
+            FileStat stat,
+            VideoFingerprintCancellation cancel,
+          ) async => good,
     );
 
     setUp(() {

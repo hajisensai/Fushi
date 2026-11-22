@@ -64,6 +64,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         onOpen: _openPanoramaWork,
         poster: poster,
       ),
+      HomeWidgetKind.languageGoals => _languageGoalsCell(tokens, item, poster),
     };
   }
 
@@ -753,7 +754,25 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
   ///   （≥ [_kTodayBarsBelowHeight]）时柱条挂在主体下面——格子变大不留空。
   /// 整块点按改目标（与原目标行同一个 key `home-goal-row`）。
   Widget _todayCell(FushiDesignTokens tokens, bool poster) {
-    void editGoal() => unawaited(_editGoal());
+    // 没有目标 / 只有一条全部语言的每日字数目标 = 原「今日」外观（点按开目标面板）；
+    // 其余 → 目标翻页，点按进「目标」设置子页。
+    final bool classic = _todayClassic;
+    final WidgetGoalsInput goalsInput = _studyGoalsInput();
+    // 总览版式列出全部目标（主目标 / 左右滑范围只管聚焦版式）。
+    final bool overview =
+        !classic &&
+        ref.read(appProvider).homeTodayLayout == StudyGoalTodayLayout.overview;
+    final List<StudyGoalProgress> goals = !_initialLoadDone || classic
+        ? const <StudyGoalProgress>[]
+        : overview
+        ? _studyGoalProgress(goalsInput)
+        : _todayGoals(goalsInput);
+    // 柱条跟着翻页当前那条目标走（滑动写当前页偏好 → 重建到这里）。
+    final StudyGoalProgress? shown = goals.isEmpty
+        ? null
+        : goals[_todayGoalIndex(goals)];
+    void editGoal() =>
+        unawaited(classic ? _editGoal() : _openStudyGoalsSettings());
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final bool dense = homeWidgetIsDense(c.maxHeight);
@@ -761,6 +780,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final Widget main;
         if (!_initialLoadDone) {
           main = const HomeWidgetOverflowClip(child: HomeGoalSkeleton());
+        } else if (overview) {
+          main = _todayOverview(tokens, goals, goalsInput);
+        } else if (!classic) {
+          main = _todayGoalsPager(tokens, goals, goalsInput, dense: dense);
         } else if (wide && !poster) {
           main = _fitCenter(_buildStudyHeader(tokens));
         } else {
@@ -768,7 +791,15 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         }
         return HomeWidgetFrame(
           key: const ValueKey<String>('home-study-card'),
-          title: t.stat_today,
+          // 总览里混了每周 / 每月目标时不叫「今日目标」（与系统小组件同一规则）。
+          title: !overview
+              ? t.stat_today
+              : goals.every(
+                  (StudyGoalProgress g) =>
+                      g.goal.period == StudyGoalPeriod.daily,
+                )
+              ? t.home_today_goals_title
+              : t.home_language_goals_mixed_title,
           icon: FushiIcons.barChart,
           hueKey: HomeWidgetKind.today.id,
           poster: poster,
@@ -777,12 +808,23 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           showHeader: !(dense && wide),
           onTap: editGoal,
           tapKey: const ValueKey<String>('home-goal-row'),
-          child: !_initialLoadDone
+          child: !_initialLoadDone || overview
               ? main
               : LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints box) {
                     Widget bars(double height) => Builder(
                       builder: (BuildContext context) {
+                        // 周 / 月目标：本周生效日柱条 + 每天份额（设计 B）。
+                        if (shown != null && shown.splitsPeriod) {
+                          return KeyedSubtree(
+                            key: const ValueKey<String>('home-today-week'),
+                            child: _buildGoalDayStrip(
+                              shown,
+                              goalsInput,
+                              height: height,
+                            ),
+                          );
+                        }
                         final FushiCoverBlockColors? colors =
                             HomeWidgetStyle.maybeOf(context)?.colors;
                         return KeyedSubtree(
@@ -794,8 +836,14 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                                   key: const ValueKey<String>(
                                     'home-today-week-bars',
                                   ),
+                                  goal: shown,
+                                  input: goalsInput,
                                 )
-                              : _buildWeekBars(height: height),
+                              : _buildWeekBars(
+                                  height: height,
+                                  goal: shown,
+                                  input: goalsInput,
+                                ),
                         );
                       },
                     );
@@ -822,7 +870,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                     }
                     if (box.maxHeight >= _kTodayBarsBelowHeight) {
                       final double mainHeight = math.min(
-                        _kTodayMainMaxHeight,
+                        classic
+                            ? _kTodayMainMaxHeight
+                            : _kTodayGoalsMainMaxHeight,
                         box.maxHeight * 0.5,
                       );
                       const double gap = 8;
@@ -849,6 +899,465 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
+  /// 「今日」格追踪了非字数目标时：每个目标一页（从主目标那页开始），页上是环 +
+  /// 大字 + 「已完成 / 目标」；格子够高时下面再列其余目标的进度行。滑到哪页就把它
+  /// 记成主目标。
+  Widget _todayGoalsPager(
+    FushiDesignTokens tokens,
+    List<StudyGoalProgress> goals,
+    WidgetGoalsInput input, {
+    required bool dense,
+  }) {
+    final AppModel appModel = ref.read(appProvider);
+    return Builder(
+      builder: (BuildContext context) {
+        final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+        final Color strong =
+            style?.colors?.onContainer ?? tokens.surfaces.onSurface;
+        return HomeTodayGoalPager(
+          key: const ValueKey<String>('home-today-goal-pager'),
+          count: goals.length,
+          page: _todayGoalIndex(goals),
+          dotColor: strong,
+          dotLabel: (int i) => t.home_today_goal_page(
+            goal: studyGoalSemanticsLabel(
+              goals[i],
+              studyGoalProgressLabel(goals[i], input),
+            ),
+          ),
+          // 滑动只记「停在哪页」，不改主目标：页集合（含周 / 月主目标）不随手势变。
+          onPageChanged: (int i) {
+            final String id = goals[i].goal.id;
+            if (id != appModel.homeTodayPageGoal) {
+              unawaited(appModel.setHomeTodayPageGoal(id));
+            }
+          },
+          pageBuilder: (BuildContext context, int i) => _todayGoalPage(
+            tokens,
+            goals[i],
+            <StudyGoalProgress>[
+              for (final StudyGoalProgress g in goals)
+                if (g.goal.id != goals[i].goal.id) g,
+            ],
+            input,
+            dense: dense,
+          ),
+        );
+      },
+    );
+  }
+
+  /// 「今日」目标翻页的一页（聚焦版式）：[goal] 是大环 + 「数值 / 目标」大字，上面
+  /// 一行「语言 · 度量 · 周期」，下面一行状态（「还差 400」「已完成」「+4.8K」
+  /// 「休息日」）；[others] 在格子够高时列成小行（与总览同一种行）。
+  Widget _todayGoalPage(
+    FushiDesignTokens tokens,
+    StudyGoalProgress goal,
+    List<StudyGoalProgress> others,
+    WidgetGoalsInput input, {
+    required bool dense,
+  }) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+        final FushiCoverBlockColors? colors = style?.colors;
+        final Color muted = style?.muted ?? tokens.surfaces.onVariant;
+        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final TextStyle caption = tokens.type.metadata.copyWith(color: muted);
+        final double ringSize = dense
+            ? 40
+            : box.maxHeight >= 96
+            ? 64
+            : 52;
+        final StudyGoalCompactText text = studyGoalCompactText(
+          goal,
+          unitChoice: input.unitChoice,
+        );
+        final String title = _todayGoalTitle(text, showLanguage: true);
+        // 周 / 月目标（设计 A）：大字 = 今天「12 / 20 今天」，小字 = 周期一行
+        // 「本周 99 / 100 · 还剩 3 天」；今天没有份额（休息日 / 周期已达成）时大字
+        // 回到周期数值，小字写「休息日 · 落后 40」/「本周已完成」。
+        final bool split = goal.splitsPeriod;
+        final bool hasShare = split && goal.todayShare > 0;
+        final bool reached = split
+            ? goal.todayState.reached
+            : goal.state.reached;
+        final String figureValue = hasShare ? text.todayValue : text.value;
+        final String figureUnit = hasShare
+            ? '/ ${text.todayShare} ${t.study_goal_today_word}'
+            : '/ ${text.target}';
+        // 小格（矮于 96）放不下柱条：小字换成进度差（设计 C）「落后 11.3K · 还剩 3 天」。
+        final String statusLine = !split
+            ? text.status
+            : !hasShare
+            ? text.todayLine
+            : dense
+            ? text.pace
+            : box.maxHeight < 96
+            ? '${text.pace} · ${text.daysLeft}'
+            : text.periodLine;
+        // 窄格（1 列宽）只留环 + 大字：整块等比缩小后小字读不清。
+        final bool lines = !dense && box.maxWidth >= _kTodayGoalLabelMinWidth;
+        // 矮格（一行高）只留环 + 大字；周 / 月目标在够宽时仍带一行进度差（设计 C：
+        // 大字已是「12 / 20 今天」，小字「按计划」）。
+        final bool paceOnly =
+            !lines && split && box.maxWidth >= _kTodayGoalLabelMinWidth;
+        final Widget head = Semantics(
+          key: ValueKey<String>('home-today-goal-${goal.goal.id}'),
+          container: true,
+          label: studyGoalSemanticsLabel(
+            goal,
+            studyGoalProgressLabel(goal, input),
+          ),
+          excludeSemantics: true,
+          child: Row(
+            children: <Widget>[
+              // 双环只在放得下柱条的高格里画；矮格整块会被等比缩小，两圈分不清。
+              _studyGoalRingFor(
+                context,
+                goal,
+                size: box.maxHeight < 96 ? math.min(ringSize, 40) : ringSize,
+                dual: true,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (lines)
+                      Text(
+                        title,
+                        key: const ValueKey<String>('home-today-goal-title'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: caption.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: HomeWidgetFigure(
+                        value: figureValue,
+                        unit: figureUnit,
+                        large: !dense,
+                      ),
+                    ),
+                    if (lines || paceOnly)
+                      Text(
+                        statusLine,
+                        key: const ValueKey<String>('home-today-goal-status'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: caption.copyWith(
+                          color: reached ? strong : muted,
+                          fontWeight: reached ? FontWeight.w700 : null,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+        // 主目标下面放得下几行其余目标就列几行（其余目标是小行）。
+        final int rows = dense
+            ? 0
+            : math.min(
+                others.length,
+                ((box.maxHeight - _kTodayGoalHeadHeight) / _kTodayGoalRowHeight)
+                    .floor(),
+              );
+        // 只有主目标：整块等比缩到格子里（矮格不裁掉大字 / 环）。
+        if (rows <= 0) {
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: SizedBox(width: box.maxWidth, child: head),
+          );
+        }
+        final bool showLanguage =
+            studyGoalsSharedLanguage(<StudyGoalProgress>[goal, ...others]) ==
+            null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            head,
+            const SizedBox(height: 6),
+            for (final StudyGoalProgress g in others.take(rows))
+              SizedBox(
+                height: _kTodayGoalRowHeight,
+                child: _todayGoalRow(
+                  tokens,
+                  g,
+                  input,
+                  keyPrefix: 'home-today-goal-row',
+                  showLanguage: showLanguage,
+                  bar: false,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 一条目标的标题：「中文 · Reading」「日本語 · Characters · Week」（每日目标不写
+  /// 周期；[showLanguage] 为 false 或不分语言的度量不写语言）。
+  String _todayGoalTitle(
+    StudyGoalCompactText text, {
+    required bool showLanguage,
+  }) {
+    final String language = showLanguage ? text.language : '';
+    return language.isEmpty ? text.caption : '$language · ${text.caption}';
+  }
+
+  /// 目标环（[StudyGoalRing]，带完成状态）：分区卡外观用目标语言的颜色，色块外观用
+  /// 色块的强调色 / 前景色。首页各格共用。
+  Widget _studyGoalRingFor(
+    BuildContext context,
+    StudyGoalProgress? goal, {
+    required double size,
+    bool showPercent = true,
+    String? language,
+    bool dual = false,
+  }) {
+    final FushiCoverBlockColors? colors = HomeWidgetStyle.maybeOf(
+      context,
+    )?.colors;
+    final StudyGoalColors goalColors = studyGoalColorsOf(
+      context,
+      language: goal?.goal.language ?? language,
+      metric: goal?.goal.metric,
+    );
+    final Color color = colors?.accent ?? goalColors.ring;
+    final Color track =
+        colors?.onContainer.withValues(alpha: 0.18) ?? goalColors.track;
+    final Color? label = colors?.onContainer;
+    if (goal == null) {
+      return StudyGoalRing(
+        fraction: 0,
+        color: color,
+        track: track,
+        size: size,
+        showPercent: false,
+        labelColor: label,
+      );
+    }
+    if (dual && goal.splitsPeriod && size < _kDualRingMinSize) {
+      // 小环里两圈分不清：只画今天这一圈（周期数值在旁边的文字里）。
+      return StudyGoalRing(
+        key: const ValueKey<String>('home-today-goal-today-ring'),
+        fraction: goal.todayFraction,
+        color: color,
+        track: track,
+        size: size,
+        showPercent: showPercent,
+        labelColor: label,
+        state: goal.todayState,
+      );
+    }
+    if (dual && goal.splitsPeriod) {
+      return StudyGoalDualRing(
+        key: const ValueKey<String>('home-today-goal-dual-ring'),
+        progress: goal,
+        color: color,
+        track: track,
+        size: size,
+        labelColor: label,
+      );
+    }
+    return StudyGoalRing.progress(
+      goal,
+      color: color,
+      track: track,
+      size: size,
+      showPercent: showPercent,
+      labelColor: label,
+    );
+  }
+
+  /// 「今日」格的一行目标（总览版式的行、聚焦版式主目标下面的小行）：起始侧语言色点 +
+  /// 标题（[_todayGoalTitle]），结束侧「数值 / 目标」（达成时前面一个对勾、超出时
+  /// 再带「+4.8K」，休息日写「休息日」）；[bar] 时下面一条进度条。
+  Widget _todayGoalRow(
+    FushiDesignTokens tokens,
+    StudyGoalProgress g,
+    WidgetGoalsInput input, {
+    required String keyPrefix,
+    required bool showLanguage,
+    required bool bar,
+  }) {
+    return Builder(
+      builder: (BuildContext context) {
+        final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+        final FushiCoverBlockColors? colors = style?.colors;
+        final Color muted = style?.muted ?? tokens.surfaces.onVariant;
+        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final StudyGoalColors goalColors = studyGoalColorsOf(
+          context,
+          language: g.goal.language,
+          metric: g.goal.metric,
+        );
+        final Color accent = colors?.accent ?? goalColors.ring;
+        final Color track =
+            colors?.onContainer.withValues(alpha: 0.18) ?? goalColors.track;
+        final StudyGoalCompactText text = studyGoalCompactText(
+          g,
+          unitChoice: input.unitChoice,
+        );
+        // 周 / 月目标（设计 C）：行尾写今天「12 / 20 今天 · 按计划」（休息日 / 周期
+        // 已达成换成状态），进度条仍是整个周期。
+        final bool split = g.splitsPeriod;
+        final StudyGoalState state = split ? g.todayState : g.state;
+        final bool rest = state == StudyGoalState.restDay;
+        final String value = split
+            ? text.todayLine
+            : switch (state) {
+                StudyGoalState.restDay => text.status,
+                StudyGoalState.exceeded =>
+                  '${text.value} / ${text.target} · ${text.status}',
+                _ => '${text.value} / ${text.target}',
+              };
+        final TextStyle caption = tokens.type.metadata.copyWith(
+          color: rest ? muted : strong,
+        );
+        final Widget line = Row(
+          children: <Widget>[
+            SizedBox.square(
+              dimension: 8,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: rest ? accent.withValues(alpha: 0.45) : accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                _todayGoalTitle(text, showLanguage: showLanguage),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: caption.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (state.reached) ...<Widget>[
+              FushiIcon(FushiIcons.check, size: 14, color: accent),
+              const SizedBox(width: 2),
+            ],
+            Flexible(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: caption.copyWith(
+                  fontWeight: state.reached ? FontWeight.w700 : null,
+                ),
+              ),
+            ),
+          ],
+        );
+        return Semantics(
+          key: ValueKey<String>('$keyPrefix-${g.goal.id}'),
+          container: true,
+          label: studyGoalSemanticsLabel(g, studyGoalProgressLabel(g, input)),
+          excludeSemantics: true,
+          child: !bar
+              ? line
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    line,
+                    const SizedBox(height: 5),
+                    StudyGoalProgressBar(
+                      progress: g,
+                      color: accent,
+                      track: track,
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  /// 「今日」格的总览版式（设置 › 目标 › 「今日」格 › 版式 = 总览）：全部目标一条一行
+  /// （[_todayGoalRow]，带进度条），按目标列表的顺序；格子矮时行去掉进度条，仍放
+  /// 不下就只列前几条 + 末行「还有 N 个」（不悄悄少画）。
+  Widget _todayOverview(
+    FushiDesignTokens tokens,
+    List<StudyGoalProgress> goals,
+    WidgetGoalsInput input,
+  ) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+        final Color muted = style?.muted ?? tokens.surfaces.onVariant;
+        final double height = box.maxHeight;
+        // 至少两行（或仅有的一行）带进度条、连同「还有 N 个」放得下才带条；否则
+        // 去掉进度条多列几行（只剩一行 + 「还有 7 个」读不出全貌）。
+        final bool bar =
+            height >=
+            _kTodayOverviewRowHeight * math.min(goals.length, 2) +
+                (goals.length > 2 ? _kTodayOverviewMoreHeight : 0);
+        final double rowHeight = bar
+            ? _kTodayOverviewRowHeight
+            : _kTodayGoalRowHeight;
+        int shown = goals.length;
+        if (goals.length * rowHeight > height) {
+          shown = math.max(
+            1,
+            ((height - _kTodayOverviewMoreHeight) / rowHeight).floor(),
+          );
+        }
+        final int more = goals.length - shown;
+        final bool showLanguage = studyGoalsSharedLanguage(goals) == null;
+        return ClipRect(
+          child: Column(
+            key: const ValueKey<String>('home-today-overview'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < shown; i++)
+                SizedBox(
+                  height: rowHeight,
+                  child: FushiStaggeredEntrance(
+                    index: i,
+                    child: _todayGoalRow(
+                      tokens,
+                      goals[i],
+                      input,
+                      keyPrefix: 'home-today-overview-row',
+                      showLanguage: showLanguage,
+                      bar: bar,
+                    ),
+                  ),
+                ),
+              if (more > 0)
+                SizedBox(
+                  height: _kTodayOverviewMoreHeight,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      t.widget_label_goals_more(n: more),
+                      key: const ValueKey<String>('home-today-overview-more'),
+                      maxLines: 1,
+                      style: tokens.type.metadata.copyWith(
+                        color: muted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// 「今日」的大字版：今日字数；不矮时下面一行是目标进度（没设目标时是时长）；
   /// [wide]（色块外观的宽格）时起始侧再挂目标环。
   Widget _todayFigure(
@@ -857,33 +1366,28 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     required bool dense,
   }) {
     final AppModel appModel = ref.read(appProvider);
-    final StudyGoalPeriod period = appModel.readingGoalPeriod;
-    final int goal = appModel.readingGoalActiveChars;
-    final StatWindow w = _statWindow;
-    final String todayKey = w.todayKey;
+    // 经典外观只在「没有目标 / 一条全部语言的每日字数目标」时出现（[_todayClassic]），
+    // 分子就是今日学习字数（全部语言）。
+    final StudyGoal? classicGoal = _classicCharsGoal;
+    final int goal = classicGoal?.target ?? 0;
+    final StudyGoalUnit unit = classicGoal == null
+        ? StudyGoalUnit.chars
+        : studyGoalUnitOf(classicGoal, appModel.readingGoalTextUnit);
+    final String todayKey = _statWindow.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
-    final int goalChars = switch (period) {
-      StudyGoalPeriod.daily => todayChars,
-      StudyGoalPeriod.weekly => studyGoalCharsForWeek(_dailyRows, w),
-    };
+    final int goalChars = todayChars;
     int todayMs = 0;
     for (final StatFact f in _dailyRows) {
       if (f.dateKey == todayKey) todayMs += f.ms;
     }
     final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
-    // 副行只写目标（设计稿 11-20 #12）：大字已经是今日字数（「2.2 万」），副行再写
-    // 一遍原始字数「21687 / 30000 字」只会把时长挤成省略号。读到多少由起始侧的
-    // 目标环给（环 = 已读 / 目标，读超了封顶 100%）。
-    final String goalFigure = formatStatCharsAxis(goal);
+    // 副行只写目标（设计稿 11-20 #12）：大字已经是今日字数，副行再写一遍
+    // 「800 / 1000 字」只会把时长挤成省略号；读到多少由起始侧的目标环给。经典外观
+    // 只承载一条每日字数目标（周 / 月目标走目标翻页），所以只有「目标 N」一种写法。
     final String? goalLine = !hasGoal
         ? null
-        : switch (period) {
-            StudyGoalPeriod.daily => t.home_today_goal_target(goal: goalFigure),
-            StudyGoalPeriod.weekly => t.home_today_goal_target_weekly(
-              goal: goalFigure,
-            ),
-          };
+        : t.home_today_goal_target(goal: formatStatCharsAxis(goal));
     return Builder(
       builder: (BuildContext context) {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
@@ -894,7 +1398,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           excludeSemantics: true,
           child: HomeWidgetFigure(
             value: formatStatCharsAxis(todayChars),
-            unit: t.stat_goal_unit_chars,
+            unit: statGoalUnitLabel(unit),
             large: !dense,
           ),
         );
@@ -950,8 +1454,15 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                 value: hasGoal ? (goalChars / goal).clamp(0.0, 1.0) : null,
                 colors: colors,
                 size: dense ? 40 : 52,
+                // 达成后环心是对勾（与目标环 [StudyGoalRing] 同一完成状态）。
                 center: hasGoal
-                    ? null
+                    ? (goalChars >= goal
+                          ? FushiIcon(
+                              FushiIcons.check,
+                              size: dense ? 18 : 24,
+                              color: colors.accent,
+                            )
+                          : null)
                     : FushiIcon(
                         FushiIcons.flag,
                         size: 18,
@@ -994,6 +1505,451 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       ),
     ),
   );
+
+  // ── 语言目标 ────────────────────────────────────────────────────────────
+
+  /// 「语言目标」格（设计 A，mockup 第三屏）：[item] 那种语言（null = 全部语言）的
+  /// 目标环（[studyGoalRingSlots]：每个周期至多一条时固定日 / 周 / 月三格，空周期是
+  /// 空环 +「—」；某周期有几条时一条目标一个环、最多三个、环下写度量短名），底下一行
+  /// 是「今日 6.2k / 10k」（第一条目标）。一行高、或矮到环不足
+  /// [_kLanguageGoalsMinRing] 时换成紧凑样子：每条目标一个小环 + 数值 / 目标 + 度量，并排放不下才分页。整块是这种语言的颜色（色块外观的底色、分区卡外观的环色，
+  /// [studyGoalHue]），标题「日本語 目标」。没有这种语言的目标时是「为 X 添加目标」，
+  /// 点按开目标面板并预填该语言；有目标时点按进「目标」设置子页。
+  ///
+  /// 用户在编辑态挑了目标（[HomeWidgetItem.goals]）时只画挑的那几条、照挑的顺序
+  /// （[studyGoalPickedRingSlots]）；挑的目标语言都相同时标题是那种语言，否则是「目标」。
+  /// 挑的记录都删了就回到自动。
+  Widget _languageGoalsCell(
+    FushiDesignTokens tokens,
+    HomeWidgetItem item,
+    bool poster,
+  ) {
+    final WidgetGoalsInput input = _studyGoalsInput();
+    final List<StudyGoalProgress> all = _initialLoadDone
+        ? _studyGoalProgress(input)
+        : const <StudyGoalProgress>[];
+    final List<StudyGoalProgress> picked = studyGoalPickedProgress(
+      all,
+      item.goals,
+    );
+    final ({String? language})? shared = picked.isEmpty
+        ? (language: item.language)
+        : studyGoalsSharedLanguage(picked);
+    final String? language = shared == null ? item.language : shared.language;
+    final String languageLabel = studyGoalLanguageLabel(language);
+    final List<StudyGoalProgress> mine = picked.isNotEmpty
+        ? picked
+        : <StudyGoalProgress>[
+            for (final StudyGoalProgress p in all)
+              if (studyGoalSameLanguage(p.goal.language, item.language)) p,
+          ];
+    final bool empty = _initialLoadDone && mine.isEmpty;
+    final String slotKey = item.language ?? 'all';
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final bool dense = homeWidgetIsDense(c.maxHeight);
+        final Widget child;
+        if (!_initialLoadDone) {
+          child = const HomeWidgetOverflowClip(child: HomeGoalSkeleton());
+        } else if (empty) {
+          child = _fitCenter(
+            Builder(
+              builder: (BuildContext context) {
+                final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+                final Color muted = style?.muted ?? tokens.surfaces.onVariant;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FushiIcon(FushiIcons.add, size: 16, color: muted),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        t.home_language_goals_empty(
+                          language: studyGoalLanguageLabel(item.language),
+                        ),
+                        key: const ValueKey<String>(
+                          'home-language-goals-empty',
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: tokens.type.metadata.copyWith(color: muted),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        } else {
+          child = _languageGoalsRings(
+            tokens,
+            mine,
+            input,
+            language: language,
+            dense: dense,
+            oneRow: item.size.rows <= 1,
+            picked: picked.isNotEmpty,
+            slotKey: slotKey,
+          );
+        }
+        return HomeWidgetFrame(
+          key: ValueKey<String>('home-language-goals-card/$slotKey'),
+          title: shared == null
+              ? t.home_language_goals_mixed_title
+              : t.home_language_goals_title(language: languageLabel),
+          icon: FushiIcons.language,
+          hueKey: item.slot,
+          hue: studyGoalHue(language),
+          poster: poster,
+          dense: dense,
+          onTap: () => unawaited(
+            empty ? _addLanguageGoal(item.language) : _openStudyGoalsSettings(),
+          ),
+          tapKey: ValueKey<String>('home-language-goals-open/$slotKey'),
+          child: child,
+        );
+      },
+    );
+  }
+
+  /// 「语言目标」格的环 + 底行（mockup `.rings3` + `.mini`）；环位见
+  /// [studyGoalRingSlots]。一行高（[oneRow]）或环小于 [_kLanguageGoalsMinRing] 时是
+  /// 紧凑样子（[_languageGoalsCompact]）；用户挑了几条目标（[picked]）时紧凑样子是
+  /// 一组可滑的页（与「今日」格同一个 [HomeTodayGoalPager]），一条目标一页。
+  Widget _languageGoalsRings(
+    FushiDesignTokens tokens,
+    List<StudyGoalProgress> goals,
+    WidgetGoalsInput input, {
+    required String? language,
+    required bool dense,
+    required bool oneRow,
+    required bool picked,
+    required String slotKey,
+  }) {
+    final List<StudyGoalRingSlot> slots = _languageGoalsSlots(
+      picked
+          ? studyGoalPickedRingSlots(goals, input)
+          : studyGoalRingSlots(goals, input),
+      input,
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+        final FushiCoverBlockColors? colors = style?.colors;
+        final Color muted = style?.muted ?? tokens.surfaces.onVariant;
+        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final TextStyle caption = tokens.type.metadata.copyWith(color: muted);
+        // 环色跟各自目标的语言（挑的目标可以混语言），带完成状态（[StudyGoalRing]）；
+        // 环够大时环心写百分数。
+        Widget ring(StudyGoalProgress? g, double size) => _studyGoalRingFor(
+          context,
+          g,
+          size: size,
+          showPercent: size >= 44,
+          language: language,
+          // 周 / 月目标：一行高的小环画今天的份额（与旁边「x / y 今天」同一个数）；
+          // 两行起的大环照旧是周期进度（环下另写今天一行）。
+          dual: size < _kDualRingMinSize,
+        );
+
+        // 环的大小随格子：等分的宽与（扣掉环下标签、底行后的）高里取小的。
+        const double labelExtent = 18;
+        const double lineExtent = 22;
+        final double byWidth =
+            (box.maxWidth - 8.0 * (slots.length + 1)) / slots.length;
+        final double byHeight =
+            box.maxHeight - labelExtent - (dense ? 0 : lineExtent);
+        final double fitted = math.min(byWidth, byHeight);
+        // 一行高的格子（用户 2026-11 拍板）或环放不下 → 紧凑样子；两行起照旧三环。
+        if (oneRow || fitted < _kLanguageGoalsMinRing) {
+          // 一行高：挑了几条就并排几条（环 + 已完成 / 目标 + 度量），放不下时分页
+          // 可滑（与「今日」格同一个 [HomeTodayGoalPager]）；自动挑的按日 → 周 → 月
+          // 取该语言的目标（与两行起的环位同一上限）。
+          final List<StudyGoalProgress> shown = picked
+              ? goals
+              : studyGoalProgressByPeriod(
+                  goals,
+                ).take(kStudyGoalRingSlots).toList();
+          final bool showLanguage = studyGoalsSharedLanguage(shown) == null;
+          final int perPage = math.max(
+            1,
+            (box.maxWidth / _kLanguageGoalsCompactMinWidth).floor(),
+          );
+          Widget row(List<StudyGoalProgress> part, BoxConstraints rowBox) =>
+              _languageGoalsCompact(
+                context,
+                part,
+                input,
+                ring: ring,
+                box: rowBox,
+                showLanguage: showLanguage,
+              );
+          if (shown.length <= perPage) return row(shown, box);
+          final int pages = (shown.length / perPage).ceil();
+          final int page = (_languageGoalsPage[slotKey] ?? 0).clamp(
+            0,
+            pages - 1,
+          );
+          List<StudyGoalProgress> part(int i) =>
+              shown.skip(i * perPage).take(perPage).toList();
+          return HomeTodayGoalPager(
+            key: ValueKey<String>('home-language-goals-pager/$slotKey'),
+            count: pages,
+            page: page,
+            dotColor: strong,
+            dotLabel: (int i) => t.home_today_goal_page(
+              goal: <String>[
+                for (final StudyGoalProgress g in part(i))
+                  studyGoalProgressLabel(g, input),
+              ].join(', '),
+            ),
+            onPageChanged: (int i) => _languageGoalsPage[slotKey] = i,
+            pageBuilder: (BuildContext context, int i) => LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints pageBox) =>
+                  row(part(i), pageBox),
+            ),
+          );
+        }
+        final double ringSize = math.min(fitted, 64);
+
+        Widget slotView(StudyGoalRingSlot slot) {
+          final StudyGoalProgress? g = slot.progress;
+          final bool done = g?.state.reached ?? false;
+          return Semantics(
+            key: ValueKey<String>('home-language-goals-ring-${slot.key}'),
+            container: true,
+            label: g == null
+                ? '${studyGoalPeriodShortLabel(StudyGoalPeriod.fromWire(slot.key))} · —'
+                : studyGoalSemanticsLabel(g, studyGoalProgressLabel(g, input)),
+            excludeSemantics: true,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Opacity(
+                  opacity: g == null ? 0.45 : 1,
+                  child: ring(g, ringSize),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  slot.caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: caption.copyWith(
+                    color: done ? strong : muted,
+                    fontWeight: done ? FontWeight.w700 : FontWeight.w600,
+                  ),
+                ),
+                // 每个环自己的「已完成 / 目标」（旧版只有一条底行写第一条目标，摆在别的环
+                // 下面容易看成那个环的数）。
+                if (g != null && !dense)
+                  Text(
+                    _studyGoalPairText(g),
+                    key: ValueKey<String>(
+                      'home-language-goals-pair-${slot.key}',
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: caption.copyWith(
+                      color: strong,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                // 周 / 月目标：今天的份额（「12 / 20 今天」/「休息日」/「本周已完成」）。
+                if (g != null && !dense && g.splitsPeriod)
+                  Text(
+                    studyGoalTodayText(g).short,
+                    key: ValueKey<String>(
+                      'home-language-goals-today-${slot.key}',
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: caption,
+                  ),
+              ],
+            ),
+          );
+        }
+
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox(
+            width: box.maxWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <Widget>[
+                    for (final StudyGoalRingSlot slot in slots)
+                      Flexible(child: slotView(slot)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 「数值 / 目标」紧凑写法（[studyGoalCompactPair]，与系统小组件、设置行同一个
+  /// 格式化：「3.7K / 10K」「24m / 30m」）。
+  String _studyGoalPairText(StudyGoalProgress g) {
+    final ({String value, String target}) pair = studyGoalCompactPair(
+      g.value,
+      g.target,
+      isTime: g.id.isTime,
+    );
+    return '${pair.value} / ${pair.target}';
+  }
+
+  /// 环位标签补度量名：固定「日 / 周 / 月」三环（每个周期至多一条目标）时环下只写
+  /// 周期，三条目标度量不同（中文：每日字数 + 每周观看）时认不出哪个环是什么——
+  /// 这时写成「字数 · 日」「观看 · 周」。度量都相同、或一条目标一环（标签本来就是
+  /// 度量）时原样。
+  List<StudyGoalRingSlot> _languageGoalsSlots(
+    List<StudyGoalRingSlot> slots,
+    WidgetGoalsInput input,
+  ) {
+    final List<StudyGoalProgress> present = <StudyGoalProgress>[
+      for (final StudyGoalRingSlot slot in slots) ?slot.progress,
+    ];
+    final bool byPeriod = slots.every(
+      (StudyGoalRingSlot slot) =>
+          StudyGoalPeriod.values.any((StudyGoalPeriod p) => p.wire == slot.key),
+    );
+    final bool mixedMetrics =
+        present.map((StudyGoalProgress g) => g.goal.metric).toSet().length > 1;
+    if (!byPeriod || !mixedMetrics) return slots;
+    return <StudyGoalRingSlot>[
+      for (final StudyGoalRingSlot slot in slots)
+        slot.progress == null
+            ? slot
+            : StudyGoalRingSlot(
+                key: slot.key,
+                caption:
+                    '${studyGoalMetricShortLabel(slot.progress!.goal.metric, unit: input.unitOf(slot.progress!.goal))}'
+                    ' · ${studyGoalPeriodAbbrLabel(slot.progress!.goal.period)}',
+                progress: slot.progress,
+              ),
+    ];
+  }
+
+  /// 「语言目标」格矮的时候（一行高）：[goals] 并排，每条是起始侧一个环 + 「已完成 /
+  /// 目标」+ 度量（「Watching · Today」「Chars / wk」；语言不全相同时 [showLanguage]
+  /// 带语言名）。用户 2026-11 反馈：只有环和「0 分钟」看不出是哪个目标、离目标多远。
+  Widget _languageGoalsCompact(
+    BuildContext context,
+    List<StudyGoalProgress> goals,
+    WidgetGoalsInput input, {
+    required Widget Function(StudyGoalProgress? goal, double size) ring,
+    required BoxConstraints box,
+    required bool showLanguage,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+    final Color muted = style?.muted ?? tokens.surfaces.onVariant;
+    final double ringSize = box.maxHeight.clamp(22.0, 40.0);
+    Widget entry(StudyGoalProgress goal) {
+      final ({String value, String? unit}) figure = studyGoalFigure(
+        goal,
+        input,
+      );
+      final StudyGoal labelled = showLanguage
+          ? goal.goal
+          : goal.goal.copyWith(language: () => null);
+      final String metric = studyGoalShortLabel(
+        labelled,
+        unitChoice: input.unitChoice,
+      );
+      // 周 / 月目标（设计 C）：大字是今天「12 / 20」，小字「度量 · 今天 · 按计划」；
+      // 今天没有份额（休息日 / 周期已达成）时大字回到周期数值、小字写状态。
+      final StudyGoalTodayText? today = goal.splitsPeriod
+          ? studyGoalTodayText(goal)
+          : null;
+      final bool todayFigure = today != null && goal.todayShare > 0;
+      return Semantics(
+        key: ValueKey<String>('home-language-goals-compact/${goal.goal.id}'),
+        container: true,
+        label: studyGoalSemanticsLabel(
+          goal,
+          studyGoalProgressLabel(goal, input),
+        ),
+        excludeSemantics: true,
+        child: Row(
+          children: <Widget>[
+            ring(goal, ringSize),
+            const SizedBox(width: 10),
+            Expanded(
+              // 数值缩放着放得下；度量那行保持可读字号，放不下就省略。格子矮于两行字时
+              // 整块等比缩小（不溢出）。
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints text) =>
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: SizedBox(
+                        width: text.maxWidth,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.centerStart,
+                              child: HomeWidgetFigure(
+                                value: todayFigure
+                                    ? '${today.value} / ${today.share}'
+                                    : _studyGoalPairText(goal),
+                                // 周 / 月目标的今天份额：单位处写「今天」（「1.2K / 7K
+                                // 今天」），小字只剩度量与进度。
+                                unit: todayFigure
+                                    ? t.study_goal_today_word
+                                    : goal.id.isTime
+                                    ? null
+                                    : figure.unit,
+                              ),
+                            ),
+                            Text(
+                              today != null
+                                  ? todayFigure
+                                        ? '$metric · ${today.pace}'
+                                        : '$metric · ${today.short}'
+                                  : goal.restDay && !goal.state.reached
+                                  ? '$metric · ${t.study_goal_status_rest_day}'
+                                  : goal.goal.period == StudyGoalPeriod.daily
+                                  ? '$metric · ${t.stat_today}'
+                                  : metric,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tokens.type.metadata.copyWith(
+                                color: muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return KeyedSubtree(
+      key: const ValueKey<String>('home-language-goals-compact'),
+      child: Row(
+        children: <Widget>[
+          for (int i = 0; i < goals.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(child: entry(goals[i])),
+          ],
+        ],
+      ),
+    );
+  }
 
   // ── 最近添加 / 追踪 ──────────────────────────────────────────────────────
 
@@ -1250,6 +2206,27 @@ const double _kMiniGap = 8;
 const double _kTodayBarsSideWidth = 380;
 const double _kTodayBarsBelowHeight = 130;
 const double _kTodayMainMaxHeight = 72;
+
+/// 「今日」目标翻页：主体要多高（柱条挂下面时）、主目标头部约占多高、其余目标每行多高。
+const double _kTodayGoalsMainMaxHeight = 140;
+const double _kTodayGoalHeadHeight = 82;
+const double _kTodayGoalRowHeight = 20;
+
+/// 「今日」目标翻页的一页窄于它时不写「标签 · 进度」小字行。
+const double _kTodayGoalLabelMinWidth = 150;
+
+/// 「今日」格总览版式：带进度条的一行高、末行「还有 N 个」的高。
+const double _kTodayOverviewRowHeight = 32;
+const double _kTodayOverviewMoreHeight = 18;
+
+/// 「语言目标」格的环小于它（一行高的格子）就换紧凑样子：一个环 + 数值。
+const double _kLanguageGoalsMinRing = 32;
+
+/// 周 / 月目标的双环（里圈今天、外圈周期）至少这么大才画两圈；更小只画今天一圈。
+const double _kDualRingMinSize = 48;
+
+/// 一行高「语言目标」格里并排的一条目标至少要这么宽（环 + 「800 / 1K 字」+ 度量）。
+const double _kLanguageGoalsCompactMinWidth = 170;
 
 /// 「今日」结束侧近 7 天柱条占内容宽的比例，与上限（7 根 12px 细柱 + 6 道 5px 间隔）。
 const double _kTodayBarsWidthShare = 0.2;

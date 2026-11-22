@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
@@ -115,6 +116,21 @@ class FakeAssetStore implements SyncAssetStore {
     Object? json,
   ) async {
     _files[_join(namespaceId, name)] = utf8.encode(jsonEncode(json));
+  }
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    final List<int>? bytes = _files[assetId];
+    return bytes == null ? null : Uint8List.fromList(bytes);
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    _files[_join(namespaceId, name)] = Uint8List.fromList(bytes);
   }
 
   @override

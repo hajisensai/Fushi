@@ -298,6 +298,17 @@ class WebDavSyncBackend extends SyncBackend
       _ops!.uploadJson(namespaceId, name, json);
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _ops!.downloadBytes(assetId, maxBytes: kSyncBytesAssetMaxBytes);
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _ops!.uploadBytes(namespaceId, name, bytes, 'application/octet-stream');
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     // WebDAV DELETE 对 collection（文件夹）递归删除，对文件单删；同一原语。
     // WebDavOps.deleteFile 已把 404/已删除当作成功（幂等）；其它错误（网络/权限/

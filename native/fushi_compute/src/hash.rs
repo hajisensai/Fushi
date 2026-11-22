@@ -2,13 +2,16 @@
 //!
 //! 形态：`new` 建上下文 → 任意次 `update(ptr, len)` → `finish` 写结果 → `free`。
 //! 流式接口只做纯算术，读文件、取消、进度与「读的过程中文件被改」的判定留在 Dart 侧（调用方 isolate）；
-//! 唯一例外是整文件一次算完的 `ffc_hash_*_file`（读盘也在这里，原因见 [hash_file]）。原先的纯 Dart 实现（fushi_engine 的 `_Md4` / `AnidbEd2kAccumulator`、
+//! 唯一例外是整文件一次算完的 `ffc_hash_*_file`（读盘也在这里，原因见 [hash_file]；可取消的
+//! 那一个见 [ffc_hash_sha256_file_cancellable]）。原先的纯 Dart 实现（fushi_engine 的 `_Md4` / `AnidbEd2kAccumulator`、
 //! fushi 的 `package:crypto` sha256）已删除；它们对确定性输入的输出冻结成
 //! `packages/fushi_compute/test/ffi_hash_test.dart` 的回归向量（ED2K 红 / 蓝两种整块边界
 //! 变体，见 https://wiki.anidb.net/Ed2k-hash）。
 //!
 //! 上下文指针只能被一个线程同时使用；`finish` 之后再 `update` / `finish` 返回
 //! [INVALID_ARGUMENT](crate::status::INVALID_ARGUMENT)，`free` 恒可调。
+
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use md4::{Digest, Md4};
 use sha1::Sha1;
@@ -287,6 +290,7 @@ unsafe fn hash_file(
     path: *const u8,
     path_len: usize,
     out_len: *mut u64,
+    cancel: Option<&AtomicU32>,
     mut feed: impl FnMut(&[u8]),
 ) -> i32 {
     let Some(path) = input(path, path_len) else {
@@ -298,29 +302,70 @@ unsafe fn hash_file(
     let Ok(path) = std::str::from_utf8(path) else {
         return status::INVALID_ARGUMENT;
     };
-    match read_chunks(std::path::Path::new(path), &mut feed) {
-        Ok(len) => {
+    match read_chunks(std::path::Path::new(path), cancel, &mut feed) {
+        Ok(Some(len)) => {
             *out_len = len;
             status::OK
         }
+        Ok(None) => status::CANCELLED,
         Err(_) => status::IO_ERROR,
     }
 }
 
-fn read_chunks(path: &std::path::Path, feed: &mut impl FnMut(&[u8])) -> std::io::Result<u64> {
+/// 逐 [FILE_CHUNK] 读完整个文件喂给 `feed`，返回总字节数。每读一块之前查一次 `cancel`，
+/// 已置位就立即关文件返回 `None`（取消的延迟最多一块的读 + 哈希）。
+fn read_chunks(
+    path: &std::path::Path,
+    cancel: Option<&AtomicU32>,
+    feed: &mut impl FnMut(&[u8]),
+) -> std::io::Result<Option<u64>> {
     use std::io::Read;
+    let cancelled = || cancel.is_some_and(|flag| flag.load(Ordering::Acquire) != 0);
+    if cancelled() {
+        return Ok(None);
+    }
     let mut file = std::fs::File::open(path)?;
     let mut buf = vec![0u8; FILE_CHUNK];
     let mut total = 0u64;
     loop {
+        if cancelled() {
+            return Ok(None);
+        }
         let n = match file.read(&mut buf) {
-            Ok(0) => return Ok(total),
+            Ok(0) => return Ok(Some(total)),
             Ok(n) => n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => return Err(e),
         };
         feed(&buf[..n]);
         total += n as u64;
+    }
+}
+
+/// 把调用方给的取消标志指针看成原子量（NULL = 不可取消）。
+///
+/// # Safety
+/// 非 NULL 时 `flag` 指向 4 字节对齐、调用期间一直有效的 `u32`。
+unsafe fn cancel_flag<'a>(flag: *const u32) -> Option<&'a AtomicU32> {
+    if flag.is_null() {
+        None
+    } else {
+        // AtomicU32 与 u32 布局相同（标准库保证）。
+        Some(&*(flag as *const AtomicU32))
+    }
+}
+
+/// 置位取消标志（Release 存储；重复调用无害，NULL 无操作）。标志是调用方分配的一个
+/// 4 字节对齐 `u32`、初值 0，传给 [ffc_hash_sha256_file_cancellable]；正在跑的那次调用
+/// 在读下一块之前看到它，立即关文件返回 [CANCELLED](crate::status::CANCELLED)。
+/// 可以从任何线程 / isolate 调——典型用法是 UI isolate 取消后台 isolate 里的整文件哈希。
+///
+/// # Safety
+/// 非 NULL 时 `flag` 指向 4 字节对齐、仍有效的 `u32`。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_cancel(flag: *mut u32) {
+    if let Some(flag) = cancel_flag(flag) {
+        flag.store(1, Ordering::Release);
     }
 }
 
@@ -335,12 +380,32 @@ pub unsafe extern "C" fn ffc_hash_sha256_file(
     out: *mut u8,
     out_len: *mut u64,
 ) -> i32 {
+    ffc_hash_sha256_file_cancellable(path, path_len, std::ptr::null(), out, out_len)
+}
+
+/// 可取消的整文件 SHA-256：同 [ffc_hash_sha256_file]，另带一个取消标志 `cancel`（NULL =
+/// 不可取消）。每读一块（[FILE_CHUNK]）之前查一次，被 [ffc_hash_cancel] 置位后立即关文件
+/// 返回 [CANCELLED](crate::status::CANCELLED)，`out` / `out_len` 不写。互联 host 停机时
+/// 用它打断正在算的几 GB 视频指纹，停机不必等整文件读完（拍板台 host-stop-fingerprint-cancel）。
+///
+/// # Safety
+/// 同 [ffc_hash_sha256_file]；非 NULL 时 `cancel` 指向 4 字节对齐、调用期间一直有效的 `u32`。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_hash_sha256_file_cancellable(
+    path: *const u8,
+    path_len: usize,
+    cancel: *const u32,
+    out: *mut u8,
+    out_len: *mut u64,
+) -> i32 {
     guard(|| {
         if out.is_null() {
             return status::NULL_ARGUMENT;
         }
         let mut hasher = Sha256::new();
-        let rc = hash_file(path, path_len, out_len, |b| hasher.update(b));
+        let rc = hash_file(path, path_len, out_len, cancel_flag(cancel), |b| {
+            hasher.update(b)
+        });
         if rc == status::OK {
             std::slice::from_raw_parts_mut(out, 32).copy_from_slice(&hasher.finalize());
         }
@@ -364,7 +429,7 @@ pub unsafe extern "C" fn ffc_hash_crc32_file(
             return status::NULL_ARGUMENT;
         }
         let mut hasher = crc32fast::Hasher::new();
-        let rc = hash_file(path, path_len, out_len, |b| hasher.update(b));
+        let rc = hash_file(path, path_len, out_len, None, |b| hasher.update(b));
         if rc == status::OK {
             *out = hasher.finalize();
         }
@@ -799,6 +864,52 @@ mod tests {
             unsafe { ffc_hash_sha256_file(p.as_ptr(), p.len(), std::ptr::null_mut(), &mut len) },
             status::NULL_ARGUMENT
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 可取消的整文件 SHA-256：标志没置位时与不可取消的结果一致；调用前已置位 → 不开文件、
+    /// 回 CANCELLED 且不写输出；读到一半置位 → 下一块之前停下（不读完整个文件）。
+    #[test]
+    fn cancellable_whole_file_sha256_stops_between_chunks() {
+        let dir = std::env::temp_dir().join(format!("ffc_sha256_cancel_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let size = FILE_CHUNK * 3 + 5;
+        let bytes: Vec<u8> = (0..size).map(|i| (i * 7 % 253) as u8).collect();
+        let path = dir.join("big.bin");
+        std::fs::write(&path, &bytes).unwrap();
+        let p = path.to_str().unwrap().as_bytes();
+
+        let mut flag = 0u32;
+        let (mut out, mut len) = ([0u8; 32], 0u64);
+        let rc = unsafe {
+            ffc_hash_sha256_file_cancellable(p.as_ptr(), p.len(), &flag, out.as_mut_ptr(), &mut len)
+        };
+        assert_eq!(rc, status::OK);
+        assert_eq!(len, size as u64);
+        let expected: [u8; 32] = Sha256::digest(&bytes).into();
+        assert_eq!(hex(&out), hex(&expected));
+
+        unsafe { ffc_hash_cancel(&mut flag) };
+        unsafe { ffc_hash_cancel(&mut flag) };
+        unsafe { ffc_hash_cancel(std::ptr::null_mut()) };
+        let (mut out, mut len) = ([0u8; 32], 7u64);
+        let rc = unsafe {
+            ffc_hash_sha256_file_cancellable(p.as_ptr(), p.len(), &flag, out.as_mut_ptr(), &mut len)
+        };
+        assert_eq!(rc, status::CANCELLED);
+        assert_eq!(len, 7, "取消时不写 out_len");
+        assert_eq!(out, [0u8; 32], "取消时不写摘要");
+
+        // 读完第一块后置位：第二块之前停下，只喂进去一块。
+        let live = AtomicU32::new(0);
+        let mut fed = 0usize;
+        let result = read_chunks(&path, Some(&live), &mut |b: &[u8]| {
+            fed += b.len();
+            live.store(1, Ordering::Release);
+        })
+        .unwrap();
+        assert_eq!(result, None);
+        assert_eq!(fed, FILE_CHUNK);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

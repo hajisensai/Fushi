@@ -13,6 +13,8 @@ import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart'
+    show LibrarySectionGroup;
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
@@ -157,6 +159,32 @@ void main() {
     );
   });
 
+  test('「在线」组：推荐按需、来源恒在、插件看本机能否跑插件；三者都归在线组', () {
+    expect(
+      musicOnlineSections(hasRecommend: false, pluginsAvailable: false),
+      <MusicLibrarySection>[MusicLibrarySection.sources],
+    );
+    expect(
+      musicOnlineSections(hasRecommend: true, pluginsAvailable: true),
+      <MusicLibrarySection>[
+        MusicLibrarySection.recommend,
+        MusicLibrarySection.sources,
+        MusicLibrarySection.plugins,
+      ],
+    );
+    for (final MusicLibrarySection s in <MusicLibrarySection>[
+      MusicLibrarySection.recommend,
+      MusicLibrarySection.sources,
+      MusicLibrarySection.plugins,
+    ]) {
+      expect(musicLibrarySectionGroupOf(s), LibrarySectionGroup.online);
+    }
+    expect(
+      musicLibrarySectionGroupOf(MusicLibrarySection.albums),
+      LibrarySectionGroup.library,
+    );
+  });
+
   testWidgets('五个分区；专辑网格 → 歌曲 → 作品空态', (WidgetTester tester) async {
     // 顶栏与其它库页同一套浮动 chrome：动作组至少占半行，窄窗时页签在胶囊里
     // 横滑。给一个桌面宽度，五个页签都在可视区内直接点。
@@ -165,14 +193,19 @@ void main() {
     addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
+    // 「在线 › 来源」读音源顺序与开关的偏好：与真机一样，音乐页出现时偏好已就绪。
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await tester.runAsync(prefs.loadFromDb);
     final AppModel app = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
+      ..wirePreferencesForTesting(prefs)
       ..wireMusicPluginManagerForTesting(_noPlugins());
     await _pump(tester, app, const MusicLibraryPage());
 
-    // 推荐页签只在装了带 `home` 能力的插件时出现，这里没有插件。
+    // 曲库组的五个分区都在二级页签里（在线组的推荐 / 来源 / 插件不在这一行）。
     for (final MusicLibrarySection s in MusicLibrarySection.values.where(
-      (MusicLibrarySection s) => s != MusicLibrarySection.recommend,
+      (MusicLibrarySection s) =>
+          musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library,
     )) {
       expect(find.text(musicLibrarySectionLabel(s)), findsWidgets);
     }
@@ -193,8 +226,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Singer'), findsOneWidget);
 
-    // 没有推荐时一级只剩「曲库」一组：不画一级页签（分区全在二级胶囊里）。
-    expect(find.text(t.music_library_tab), findsNothing);
+    // 一级恒为「曲库 / 在线」两组（与书 / 漫画 / 视频库壳同一分法）：没有推荐时在线组
+    // 仍有「来源」（拍板台 4GBgF6TrNr：来源 / 插件并进在线，不再藏在「⋯」里）。
+    expect(find.text(t.music_library_tab), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+      findsOneWidget,
+    );
     // 加文件夹 / 管理文件夹 / 加光盘不占顶栏动作位：入库动作都在工具栏右端导入钮
     // 切出的「导入」视图里（IM12，2026-11 导入稿 v2）。
     for (final String key in <String>[
@@ -243,15 +281,84 @@ void main() {
     );
     expect(find.text('Singer'), findsOneWidget);
 
-    // 顶栏只平铺 搜索 · 视图 · 添加：来源与重扫收在「⋯」里。
-    expect(find.byKey(const ValueKey<String>('music_sources')), findsNothing);
+    // 顶栏只平铺 搜索 · 视图 · 添加：本地曲库维护（重扫 / 已移除的曲目）收在「⋯」里；
+    // 「⋯」里不再有「来源」（拍板台 4GBgF6TrNr）。
     expect(find.byKey(const ValueKey<String>('music_rescan')), findsNothing);
     await tester.tap(find.byKey(const ValueKey<String>('music-library-more')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('music_sources')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('music_sources')), findsNothing);
     expect(find.byKey(const ValueKey<String>('music_rescan')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music_hidden_tracks')),
+      findsOneWidget,
+    );
     await tester.tapAt(Offset.zero);
     await tester.pumpAndSettle();
+
+    // 点「在线」组：没有推荐时落在「来源」（音源排序与开关 + 歌词来源），就地嵌在
+    // 音乐页里，不另推页面。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+    );
+    // 来源表读插件目录 / 偏好是真 IO：在真时钟里落地，再把帧推平。
+    for (int i = 0; i < 3; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.byKey(const ValueKey<String>('music-online-sources-view')),
+      findsOneWidget,
+    );
+    expect(find.text(t.music_sources_add), findsOneWidget);
+    expect(find.text('Singer'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('「继续收听」只在曲库 / 推荐：切到「在线 › 来源」不在管理页上方钉播放卡', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    await tester.runAsync(
+      () => db.startMusicPlayEvent(trackUid: 't1', startedAt: 1),
+    );
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await tester.runAsync(prefs.loadFromDb);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wirePreferencesForTesting(prefs)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(
+      find.byKey(const ValueKey<String>('music-continue-hero')),
+      findsOneWidget,
+      reason: '听过的曲目在曲库页上方给「继续收听」',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+    );
+    for (int i = 0; i < 3; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.byKey(const ValueKey<String>('music-online-sources-view')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-continue-hero')),
+      findsNothing,
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

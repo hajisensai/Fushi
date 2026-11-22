@@ -64,6 +64,8 @@ pub mod status {
     pub const BUFFER_TOO_SMALL: i32 = -4;
     /// 文件打不开 / 读失败（读盘的接口，如 `ffc_hash_sha256_file`）。
     pub const IO_ERROR: i32 = -5;
+    /// 调用方经取消标志取消（可取消的长调用，如 `ffc_hash_sha256_file_cancellable`）。
+    pub const CANCELLED: i32 = -6;
     /// Rust 侧 panic（已接住）。
     pub const PANIC: i32 = -100;
 }

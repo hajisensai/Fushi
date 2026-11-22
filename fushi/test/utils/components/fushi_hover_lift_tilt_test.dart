@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 3D 倾斜视差（[FushiTilt]）按**自己的盒子**判指针在哪一侧，不按整张卡：
 /// 封面只占宽卡起始侧一小块时，指针停在封面右缘，封面要朝右按下去
@@ -104,5 +105,29 @@ void main() {
         )
         .transform;
     expect(rest.isIdentity(), isTrue, reason: '静止倾斜层应为单位矩阵，实为 $rest');
+  });
+  // 拍板 vDzivBIEOw（2026-11-22）：跟随仍按 FushiMotion.short 跟手，离开时按
+  // 更从容的 FushiMotion.medium 缓回平面。
+  testWidgets('跟随按 short 跟手，离开按 medium 缓回平面', (WidgetTester tester) async {
+    final TestGesture mouse = await hoverAt(
+      tester,
+      const Offset(10, height / 2),
+    );
+    // 跟随：换到另一侧，short 走完就到位。
+    await mouse.moveTo(const Offset(90, height / 2));
+    await tester.pump();
+    await tester.pump(FushiMotion.short);
+    final double followed = tiltSinY(tester);
+    await tester.pumpAndSettle();
+    expect(followed, closeTo(tiltSinY(tester), 1e-9));
+    expect(followed, lessThan(0));
+
+    // 离开：short 时还没回平，medium 走完才回到单位矩阵。
+    await mouse.moveTo(const Offset(790, 390));
+    await tester.pump();
+    await tester.pump(FushiMotion.short);
+    expect(tiltSinY(tester), lessThan(-1e-3));
+    await tester.pump(FushiMotion.medium - FushiMotion.short);
+    expect(tiltSinY(tester), closeTo(0, 1e-9));
   });
 }

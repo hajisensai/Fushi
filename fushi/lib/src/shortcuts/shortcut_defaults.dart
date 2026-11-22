@@ -133,6 +133,11 @@ class ShortcutDefaults {
       [_key(LogicalKeyboardKey.enter)],
       [_gA],
     ),
+    // 整句扫词（拍板台 5H922XeDHM）：与视频页 videoLookupNextWord 同契约，默认空绑定
+    // （键盘与手柄都留空），用户在「设置 → 快捷键 → 阅读器」自配。执行体在
+    // reader_fushi/word_sweep.part.dart，空绑定不是死通道。
+    ShortcutAction.readerLookupNextWord: const ShortcutBindingSet(),
+    ShortcutAction.readerLookupPrevWord: const ShortcutBindingSet(),
     ShortcutAction.homeTabBooks: _kb([
       _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
     ]),

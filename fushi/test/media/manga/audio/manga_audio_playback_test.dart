@@ -21,6 +21,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_playback_plan.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_silence.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
@@ -771,7 +772,11 @@ void main() {
       );
       final MangaAudioRegistration reg = (await loadMangaAudio(db, 'vol'))!;
       final AudiobookSessionStartRequest fromReader =
-          await resolveMangaAudioSessionRequest(db, registration: reg);
+          await resolveMangaAudioSessionRequest(
+            db,
+            registration: reg,
+            overrideTitleOf: ReaderFushiSource.instance.overrideTitleForBookKey,
+          );
       final AudiobookSessionStartRequest fromLauncher =
           (await AudiobookSessionLauncher(db).resolve('vol'))!;
       for (final AudiobookSessionStartRequest req

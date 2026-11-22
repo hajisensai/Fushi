@@ -321,6 +321,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
             await resolveMangaAudioSessionRequest(
               db,
               registration: registration,
+              overrideTitleOf:
+                  ReaderFushiSource.instance.overrideTitleForBookKey,
             );
         await _session.start(
           info: req.info,

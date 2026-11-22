@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 
 /// 趋势聚合的粒度：日 / 周 / 月。阅读统计与视频统计共用。
 enum StatTrendGranularity { daily, weekly, monthly }
 
 /// 一个趋势数据点（按某粒度聚合后）：标签 + 字数 + 时长 + 阅读速度（cph）。
-/// [label] 是该桶在横轴上的简短标签（日=MM-DD，周=ISO 周号，月=YYYY-MM）。
+/// [label] 是该桶在横轴上的简短标签（日=MM-DD，周=周一起时 ISO 周号 `W25`、
+/// 其余起始日为该周第一天 MM-DD，月=MM）。
 /// [bucketKey] 是排序用的可字典序比较键（保证桶按时间升序）。
 class StatTrendPoint {
   StatTrendPoint({
@@ -109,7 +111,7 @@ List<StatTrendPoint> aggregateTrend(
   final List<String> order = <String>[];
   for (final StatDayData d in daily) {
     final String key = granularity == StatTrendGranularity.weekly
-        ? isoWeekKey(d.dateKey)
+        ? StatWindow.weekStartOf(d.dateKey)
         : monthKey(d.dateKey);
     final StatTrendPoint? existing = buckets[key];
     if (existing == null) {
@@ -133,11 +135,17 @@ List<StatTrendPoint> aggregateTrend(
   return order.map((String k) => buckets[k]!).toList();
 }
 
-/// 周/月桶的横轴短标签。周键 `2026-W25` 取 `W25`；月键 `2026-06` 取 `06`。
+/// 周/月桶的横轴短标签。周键是该周第一天的 dateKey（[StatWindow.weekStartOf]，
+/// 与「本周」/ 热力图同一个周起始日）：周一起时取 ISO 周号 `W25`（周一起的自然周
+/// 恰是 ISO 周），其余起始日没有通行周号，取第一天 `MM-DD`。月键 `2026-06` 取 `06`。
 String _trendLabel(String bucketKey, StatTrendGranularity granularity) {
   if (granularity == StatTrendGranularity.weekly) {
-    final int idx = bucketKey.indexOf('W');
-    return idx >= 0 ? bucketKey.substring(idx) : bucketKey;
+    if (StatWindow.weekStartDay == DateTime.monday) {
+      final String iso = isoWeekKey(bucketKey);
+      final int idx = iso.indexOf('W');
+      return idx >= 0 ? iso.substring(idx) : iso;
+    }
+    return bucketKey.length >= 10 ? bucketKey.substring(5) : bucketKey;
   }
   final int dash = bucketKey.indexOf('-');
   return dash >= 0 ? bucketKey.substring(dash + 1) : bucketKey;
