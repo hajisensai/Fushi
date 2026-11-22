@@ -97,8 +97,11 @@ const KANJI = [
   { character: '粉', onyomi: 'フン', kunyomi: 'こ', meanings: ['powder'], dictName: 'Mixed' },
 ];
 
+// Default: the lookup also has term entries (the kanji block sits above them).
+const TERMS = [{ expression: '粉', reading: 'こな', glossaries: [] }];
+
 function build(win) {
-  const sb = loadPopup(Object.assign({ kanjiResults: KANJI }, win));
+  const sb = loadPopup(Object.assign({ kanjiResults: KANJI, lookupEntries: TERMS }, win));
   return sb.window.__test.build();
 }
 
@@ -163,7 +166,20 @@ assert.strictEqual(
   assert.ok(text.includes('漢字辞典'), 'display name used: ' + text);
 }
 
-// 7. No kanji -> no block.
+// 7. Kanji-only result (finished lookup, no term entries): the block is the only
+//    result, so it opens like the first term dictionary would -- unless every
+//    dictionary is explicitly collapsed. While the lookup is still pending it stays
+//    collapsed so arriving terms do not snap it shut.
+assert.strictEqual(build({ collapseDictionaries: true, lookupEntries: [] }).open, true,
+  'kanji-only finished lookup opens the block');
+assert.strictEqual(
+  build({ collapseDictionaries: true, lookupEntries: [], kanjiCollapsedDictionaryNames: ['KANJIDIC', 'Mixed'] }).open,
+  false, 'explicit collapse still wins for a kanji-only result');
+assert.strictEqual(
+  build({ collapseDictionaries: true, lookupEntries: [], lookupPending: true }).open, false,
+  'pending lookup keeps the block collapsed');
+
+// 8. No kanji -> no block.
 assert.strictEqual(loadPopup({ kanjiResults: [] }).window.__test.build(), null);
 
 console.log('popup_kanji_collapse_test.js: all assertions passed');

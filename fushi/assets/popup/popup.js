@@ -8638,12 +8638,20 @@ function createKanjiCard(kanji) {
 // 折叠就成了摆设——单字查询的首屏应留给词条释义。名单由宿主按词典管理「汉字」分区
 // 的逐本设置注入（混合词典的汉字部分单记一份，不复用术语部分的名单，BUG-3573）。
 // window.collapseDictionaries 缺省（未注入的壳）按默认的「折叠」处理。
+// 例外：查询已结束且没有任何词条（只在汉字词典里有的生僻字）时，汉字区块就是唯一的
+// 结果，按术语词典「第一本自动展开」同理展开——没有词条可让首屏，只剩一行折叠条
+// 等于让用户多点一下才看得到唯一的结果。查询还在进行（lookupPending）时不算，免得
+// 词条随后到达时区块从展开跳回折叠。显式「折叠」仍压过这条（与 BUG-2158 同序）。
 function kanjiSectionInitiallyOpen(dictNames) {
     const expanded = window.kanjiExpandedDictionaryNames || [];
     const collapsed = window.kanjiCollapsedDictionaryNames || [];
     if (dictNames.some((name) => expanded.includes(name))) return true;
-    if (window.collapseDictionaries !== false) return false;
-    return !(dictNames.length > 0 && dictNames.every((name) => collapsed.includes(name)));
+    if (dictNames.length > 0 && dictNames.every((name) => collapsed.includes(name))) return false;
+    const entries = window.lookupEntries;
+    const onlyResult = !(Array.isArray(entries) && entries.length > 0)
+        && window.lookupPending !== true;
+    if (onlyResult) return true;
+    return window.collapseDictionaries === false;
 }
 
 // Builds the collapsible block holding every kanji card for the current lookup,
