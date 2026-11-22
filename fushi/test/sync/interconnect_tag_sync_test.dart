@@ -400,6 +400,66 @@ void main() {
       expect(await a.isMediaNsfw(TagHostKind.srt, 'srt1'), isTrue);
     });
 
+    test(
+      '音乐专辑的 NSFW 标记（拍板台 NCzkl6oLnf-adult-cover）进清单、两端同 uid 时生效，取消也传回；对端没有的专辑跳过',
+      () async {
+        Future<void> seedAlbum(FushiDatabase db, String uid) =>
+            db.writeMusicScanBatch(
+              MusicScanBatchWrite(
+                tracks: <MusicTracksCompanion>[
+                  MusicTracksCompanion.insert(
+                    trackUid: '$uid-t',
+                    path: '/m/$uid/01.mp3',
+                    title: '01',
+                    albumUid: Value<String?>(uid),
+                    fileMtimeAt: 1,
+                    fileSize: 1,
+                    addedAt: 1,
+                  ),
+                ],
+                albums: <MusicAlbumsCompanion>[
+                  MusicAlbumsCompanion.insert(
+                    albumUid: uid,
+                    title: uid,
+                    addedAt: 1,
+                    updatedAt: 1,
+                  ),
+                ],
+                artists: const <MusicArtistsCompanion>[],
+                credits: const <MusicTrackCreditsCompanion>[],
+              ),
+            );
+        final FushiDatabase a = memDb();
+        final FushiDatabase b = memDb();
+        await seedAlbum(a, 'alb');
+        await seedAlbum(b, 'alb');
+        await seedAlbum(a, 'only-a');
+        await a.setMediaNsfw(TagHostKind.musicAlbum, 'alb', true, at: 1000);
+        await a.setMediaNsfw(TagHostKind.musicAlbum, 'only-a', true, at: 1000);
+
+        final TagManifest manifest = await loadLocalTagManifest(a);
+        expect(
+          manifest.entries
+              .where((TagManifestEntry e) => e.kind == 'music_album')
+              .map((TagManifestEntry e) => e.key)
+              .toSet(),
+          <String>{'alb', 'only-a'},
+        );
+
+        await syncPair(b, a);
+        expect(await b.isMediaNsfw(TagHostKind.musicAlbum, 'alb'), isTrue);
+        expect(
+          await b.allNsfwClocksForKind(TagHostKind.musicAlbum),
+          isNot(contains('only-a')),
+          reason: '本机没有的专辑不落孤儿标记',
+        );
+
+        await b.setMediaNsfw(TagHostKind.musicAlbum, 'alb', false, at: 2000);
+        await syncPair(a, b);
+        expect(await a.isMediaNsfw(TagHostKind.musicAlbum, 'alb'), isFalse);
+      },
+    );
+
     test('tagManifestCovers：本机 NSFW 戳比远端新 → false，合并后 → true', () async {
       final FushiDatabase local = memDb();
       final FushiDatabase remote = memDb();

@@ -171,7 +171,7 @@ Future<List<MediaCollectionRow>> privateCollectionsContaining(
     TagHostKind.srt => MediaKind.srt.dbValue,
     TagHostKind.video => MediaKind.video.dbValue,
     TagHostKind.game => MediaKind.game.dbValue,
-    TagHostKind.collection => null,
+    TagHostKind.collection || TagHostKind.musicAlbum => null,
   };
   if (mediaType == null) return const <MediaCollectionRow>[];
   final Set<String> privateIds = await db.privateEntryKeys(
@@ -228,7 +228,10 @@ Future<MediaSourceRow?> privateSourceLibraryContaining(
             ..limit(1))
           .map((TypedResult r) => r.read(db.videoBooks.sourceId))
           .getSingleOrNull(),
-    TagHostKind.srt || TagHostKind.game || TagHostKind.collection => null,
+    TagHostKind.srt ||
+    TagHostKind.game ||
+    TagHostKind.collection ||
+    TagHostKind.musicAlbum => null,
   };
   if (sourceId == null) return null;
   final MediaSourceRow? source = await db.getMediaSourceById(sourceId);
