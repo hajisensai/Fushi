@@ -166,6 +166,8 @@
   "ai_feature_manga_ocr_summary": "用視覺大模型重讀漫畫文字框裡的字。在「漫畫 OCR」設定裡選了模式才會開啟；裁出的文字框會上傳給該供應商並由其計費。",
   "ai_feature_media_links": "Related works",
   "ai_feature_media_links_summary": "Let AI judge whether items from different modules are the same work",
+  "ai_feature_music_visualizer_theme": "Lyric animation theme",
+  "ai_feature_music_visualizer_theme_summary": "Let AI pick colors, keyword highlights and motion intensity for each song from its lyrics",
   "ai_feature_overrides_count": "${n} 項已單獨指定",
   "ai_feature_overrides_none": "全部跟隨預設提供商",
   "ai_feature_srs_note_field": "Review note fields",

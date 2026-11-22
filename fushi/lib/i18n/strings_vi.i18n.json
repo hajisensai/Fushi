@@ -166,6 +166,8 @@
   "ai_feature_manga_ocr_summary": "A vision model re-reads the text inside manga text boxes. Off until you pick a mode in Manga OCR settings; cropped text boxes are uploaded to this provider and billed by it.",
   "ai_feature_media_links": "Related works",
   "ai_feature_media_links_summary": "Let AI judge whether items from different modules are the same work",
+  "ai_feature_music_visualizer_theme": "Lyric animation theme",
+  "ai_feature_music_visualizer_theme_summary": "Let AI pick colors, keyword highlights and motion intensity for each song from its lyrics",
   "ai_feature_overrides_count": "${n} set individually",
   "ai_feature_overrides_none": "All features use the default provider",
   "ai_feature_srs_note_field": "Review note fields",

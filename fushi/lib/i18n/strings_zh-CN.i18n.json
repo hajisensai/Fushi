@@ -166,6 +166,8 @@
   "ai_feature_manga_ocr_summary": "用视觉大模型重读漫画文字框里的字。在「漫画 OCR」设置里选了档位才会开启；裁出的文字框会上传给该提供商并由其计费。",
   "ai_feature_media_links": "作品关联",
   "ai_feature_media_links_summary": "让 AI 判断不同模块的条目是否同一作品",
+  "ai_feature_music_visualizer_theme": "歌词动画主题",
+  "ai_feature_music_visualizer_theme_summary": "让 AI 按歌词给每首歌配色、给关键词着色并定动画强度",
   "ai_feature_overrides_count": "${n} 项已单独指定",
   "ai_feature_overrides_none": "全部跟随默认提供商",
   "ai_feature_srs_note_field": "复习笔记字段",

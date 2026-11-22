@@ -166,6 +166,8 @@
   "ai_feature_manga_ocr_summary": "漫画の文字枠の中の文字を画像対応モデルで読み直します。「漫画 OCR」設定でモードを選ぶまでは無効です。切り出した文字枠がこのプロバイダーに送信され、その料金が発生します。",
   "ai_feature_media_links": "Related works",
   "ai_feature_media_links_summary": "Let AI judge whether items from different modules are the same work",
+  "ai_feature_music_visualizer_theme": "Lyric animation theme",
+  "ai_feature_music_visualizer_theme_summary": "Let AI pick colors, keyword highlights and motion intensity for each song from its lyrics",
   "ai_feature_overrides_count": "${n} 件を個別に指定",
   "ai_feature_overrides_none": "すべての機能が既定のプロバイダーを使用",
   "ai_feature_srs_note_field": "Review note fields",
