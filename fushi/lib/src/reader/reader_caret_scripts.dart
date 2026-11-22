@@ -468,20 +468,85 @@ window.fushiCaret = {
     return rect.right > vp.left && rect.left < vp.right &&
            rect.bottom > vp.top && rect.top < vp.bottom;
   },
-  // Whether any of [node]'s line boxes intersects [vp]. A glyph's rect lies
-  // inside one of its text node's line-box rects, so a node with no box on the
-  // page cannot hold a visible stop — the per-glyph scans below skip it instead
-  // of measuring every character of the chapter (a 100k-char chapter cost one
-  // getClientRects per glyph, ~600 ms per D-pad line move in desktop Chrome).
-  _nodeTouchesViewport: function(node, vp) {
+  // The [start, end) UTF-16 offset span of [node] that can hold a glyph inside
+  // [vp], or null when none of its line boxes intersects [vp].
+  //
+  // A glyph's rect lies inside one of its text node's line-box rects (one per
+  // line fragment, in content order), so:
+  //  - a node with no line box on the page cannot hold a visible stop — the
+  //    per-glyph scans below skip it (BUG-5021: a 100k-char chapter cost one
+  //    getClientRects per glyph, ~600 ms per D-pad line move);
+  //  - inside a node that does touch the page, only glyphs on the visible line
+  //    boxes can be visible. A long paragraph (one text node spanning many
+  //    pages) must not be measured glyph by glyph from its first character to
+  //    its last (HBK-AUDIT-023), so the span is narrowed to the first / last
+  //    visible line box by binary search over glyph offsets: each probe measures
+  //    one glyph and maps it to its line box, which is monotone in the offset.
+  // Probes that cannot be mapped (zero-size glyph rects — collapsed whitespace,
+  // which is never a visible stop anyway) count as "inside", which can only
+  // widen the span, never drop a visible glyph.
+  _visibleSpan: function(node, text, vp) {
     var range = document.createRange();
     range.selectNodeContents(node);
-    var rects = range.getClientRects();
-    for (var i = 0; i < rects.length; i++) {
-      if (this._rectInViewport(rects[i], vp)) return true;
+    var lines = range.getClientRects();
+    var first = -1, last = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (this._rectInViewport(lines[i], vp)) {
+        if (first < 0) first = i;
+        last = i;
+      }
     }
-    return false;
+    if (first < 0) return null;
+    var len = text.length;
+    if (len <= this._spanScanMin || (first === 0 && last === lines.length - 1)) {
+      return { start: 0, end: len };
+    }
+    var self = this;
+    var lineOf = function(i) {
+      var r = self._charRect(node, i);
+      if (!r || r.width <= 0 || r.height <= 0) return -1;
+      var best = -1, bestArea = 0;
+      for (var j = 0; j < lines.length; j++) {
+        var l = lines[j];
+        var w = Math.min(r.right, l.right) - Math.max(r.left, l.left);
+        var h = Math.min(r.bottom, l.bottom) - Math.max(r.top, l.top);
+        if (w > 0 && h > 0 && w * h > bestArea) { best = j; bestArea = w * h; }
+      }
+      return best;
+    };
+    var start = 0;
+    if (first > 0) {
+      // smallest offset whose glyph sits on a line >= first
+      var lo = 0, hi = len;
+      while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        var lm = lineOf(mid);
+        if (lm < 0 || lm >= first) hi = mid; else lo = mid + 1;
+      }
+      start = lo;
+    }
+    var end = len;
+    if (last < lines.length - 1) {
+      // one past the largest offset whose glyph sits on a line <= last
+      var lo2 = start, hi2 = len;
+      while (lo2 < hi2) {
+        var mid2 = (lo2 + hi2) >> 1;
+        var lm2 = lineOf(mid2);
+        if (lm2 < 0 || lm2 <= last) lo2 = mid2 + 1; else hi2 = mid2;
+      }
+      end = lo2;
+    }
+    // Never start on the low half of a surrogate pair: the scan steps by
+    // code point from [start].
+    if (start > 0 && start < len) {
+      var c = text.charCodeAt(start);
+      if (c >= 0xDC00 && c <= 0xDFFF) start -= 1;
+    }
+    return { start: start, end: end };
   },
+  // Below this length a node is scanned whole: the binary search's ~2·log2(n)
+  // probes would not save measurements.
+  _spanScanMin: 64,
 
   // ── Stepping ───────────────────────────────────────────────────────
   _nextStop: function(node, offset) {
@@ -526,9 +591,10 @@ window.fushiCaret = {
     var seenRows = {};
     var vp = this._viewport();
     while (node = walker.nextNode()) {
-      if (!this._nodeTouchesViewport(node, vp)) continue;
       var text = node.textContent;
-      for (var i = 0; i < text.length;) {
+      var span = this._visibleSpan(node, text, vp);
+      if (!span) continue;
+      for (var i = span.start; i < span.end;) {
         var len = this._charLen(text, i);
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);
@@ -629,9 +695,10 @@ window.fushiCaret = {
     var node;
     var vp = this._viewport();
     while (node = walker.nextNode()) {
-      if (!this._nodeTouchesViewport(node, vp)) continue;
       var text = node.textContent;
-      for (var i = 0; i < text.length;) {
+      var span = this._visibleSpan(node, text, vp);
+      if (!span) continue;
+      for (var i = span.start; i < span.end;) {
         var len = this._charLen(text, i);
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);

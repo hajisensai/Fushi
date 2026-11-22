@@ -1,0 +1,17 @@
+## BUG-5151 · 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表
+- **报告**：2026-11-22（Codex 2026-11-21 PR 审查 HBK-AUDIT-030，PR #3998）
+- **真实性**：✅ 真 bug，三处：
+  - **根因一（挂载判据）**：`native/fushi_torrent/fushi_torrent_ffi.cpp:1762`（PR #3998 head f5f8ba4a9a，`ht_load_resume_dir`）只用 `std::filesystem::exists(save_path)` 判「数据可达」。盘 / 网络挂载不在而空挂载点目录还在时判据通过，种子照常开跑：fast-resume 因文件缺失被拒 → 在空目录上全检得 0 片 → 周期保存把全长全 0 位图写回 `.resume`（libtorrent 2.0.11 `contains_resume_data` 认它是有效 resume，`verify_resume_data` 只核置 1 的片，数据回来也不再校验）。修复前的桥上实测：空挂载点首次启动 `state=checking progress=0.0 have=0/128`。
+  - **根因二（离线期间的 resume 不冻结）**：即使判出离线保持暂停，未核对的种子 `write_resume_data` 写出的是空位图（`torrent.cpp:7087-7096`：未检查完则 `max_piece = 0`），周期保存照样落盘覆盖原 `.resume`；下次启动若数据仍不可达，空位图让 `holds_data` 为假 → 清 paused 开跑 → `contains_resume_data` 为假且 `has_any_file` 为假 → 不做检查直接在空挂载点上从 0 下载。即审查说的「连续启动两次」。
+  - **根因三（O(N²)）**：`UploadGatePlugin::new_torrent`（同文件 :360）每加一颗种子都持锁遍历整张 `gates_` 表清过期项，同批恢复 N 颗累计 N(N-1)/2 次；移除种子后的过期项要等下一次加种子才清。
+- **[x] ① 已修复** —
+  - 可达判据改成「真实数据可达」：`resume_data_reachable` 要求 save_path 是目录，且（有元数据时）至少一个非空、非 pad 的种子文件在盘上（与 libtorrent `has_any_file` 同口径，改名文件按 `renamed_files` 找）。
+  - 离线冻结：加载时判为离线的种子记入 `ht_session_ctx::offline_resume_frozen`，`ht_save_resume_data` 跳过它们，盘上原 `.resume` 原样保留，下次启动仍按原位图判断；数据回来后的下次启动按原 `.resume` 正常核对、进度原样。用户显式恢复（`ht_pause_torrent` pause=0）、移动存储成功、移除种子时解冻。
+  - 上传闸改为 `UploadGateRegistry`：登记 / 注销都是 O(log N)，种子销毁时由它的 `torrent_plugin` 析构精确注销自己那一项（登记表以 weak_ptr 持有，session 析构顺序无关）。
+  - `ht_session_status` 追加 `upload_gates` / `offline_resume_frozen` 诊断（Dart `FtSessionStatus.uploadGates` / `offlineResumeFrozen`）。
+- **[x] ② 已增加自动化测试** — `packages/fushi_torrent/test/resume_rejected_progress_test.dart`（真 DLL）：
+  - 「an empty mount point keeps the original resume across two offline restarts and the torrent seeds once the data is back」：空挂载点连续两次启动都保持暂停、保存不写、`.resume` 字节不变、空目录里没写任何东西；数据回来第三次启动做种且全片。修复前红：`boot 1 ... state=checking progress=0.0 have=0/128`。
+  - 「an explicit resume of an offline torrent unfreezes its resume」。
+  - 「upload gate registry tracks exactly the live torrents」：20 颗加入 → 登记 20；移除 15 颗 → 登记 5，剩余闸可用。
+  - 大批量耗时对比见 PR 描述（5000 颗 `ht_load_resume_dir`，修前 / 修后同一份 resume 目录）。
+- **备注**：数据回来时（同一会话内）种子仍保持暂停，要到下次启动或用户手动继续；恢复方式与「存储位置不可用」提示属行为取舍，已在拍板事项 `review-torrent-offline-save-path`。

@@ -43,10 +43,14 @@ int? subtitleSeasonFromName(String? name) {
 /// - [season] 为 null 或候选为空：返回首条（相关度最高，= 旧行为）；空列表返回 null。
 /// - [season] ≥ 2：取标题（romaji / english / native）季度记号**恰好**是该季的第一条
 ///   （同季分上下半时先取不带 Part / cour 记号的那条）；
-///   没有恰好的就取记号里**含**该季的第一条（「2nd Season Part 2」这类）；都没有
-///   （续作改了名、不带季号）回退首条——宁可维持旧行为，也不拿不相干的条目冒充。
+///   没有恰好的就取记号里**含**该季的第一条（「2nd Season Part 2」这类）。
 /// - [season] == 1：取第一条**不带其它季号**的候选（第一季在 AniList 上通常不写
 ///   「1st Season」），避免相关度排序偶尔把续作排到前面。
+/// - 给了 [season] 却没有一条对得上（续作改了名、不在这页结果里）：返回 null，
+///   **不回退首条**。挑出的系列 id 会和季号一起发给来源，Jimaku / AJATT 把「条目
+///   AniList id 与请求对上」当作「这个条目就是请求的那一季」（`jimakuEntrySeason`）；
+///   拿相关度首条（通常是第一季）冒充第二季，第一季字幕就会被自报成第二季写进去
+///   （HBK-AUDIT-049）。挑不出时调用方退回纯文本检索，季号交给条目名 / 文件名证明。
 AniListMedia? pickAniListSeriesForSeason(
   List<AniListMedia> matches, {
   required int? season,
@@ -63,7 +67,7 @@ AniListMedia? pickAniListSeriesForSeason(
         return matches[i];
       }
     }
-    return matches.first;
+    return null;
   }
   // 同一季分上下半（「2nd Season」与「2nd Season Part 2」记号都是 2）时先取不带
   // 分段记号的那条；集号怎么落到后半由 Jimaku 条目自己的文件决定，不在这里猜。
@@ -78,7 +82,7 @@ AniListMedia? pickAniListSeriesForSeason(
   for (int i = 0; i < matches.length; i++) {
     if (seasons[i].contains(season)) return matches[i];
   }
-  return matches.first;
+  return null;
 }
 
 /// 分段记号（Part / cour / 第N部 / 第Nクール）。`detectVideoSeasonsInText` 会把

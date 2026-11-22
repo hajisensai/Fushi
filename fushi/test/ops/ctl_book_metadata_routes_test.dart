@@ -378,6 +378,7 @@ void main() {
     expect(BookScrapeSource.tryParse('ndl'), BookScrapeSource.ndl);
     expect(BookScrapeSource.tryParse('openbd'), BookScrapeSource.openbd);
     expect(BookScrapeSource.tryParse('rakuten'), BookScrapeSource.rakuten);
+    expect(BookScrapeSource.tryParse('iTunes'), BookScrapeSource.itunes);
     expect(BookScrapeSource.tryParse('google'), isNull);
   });
 

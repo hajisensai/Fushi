@@ -104,6 +104,76 @@ void main() {
     });
   });
 
+  // HBK-AUDIT-047: the normalisation folded a UNC path's leading `\\` into
+  // one `\`, so a script on an SMB share was looked for under the current
+  // drive's root and refused before queueing although it exists.
+  group('UNC paths keep their share root', () {
+    test('an absolute UNC batch file with spaces passes as it is', () {
+      final HeavyCommandCheck c = windows(
+        <String>[r'\\nas\build share\tools\run build.bat', 'all'],
+        files: <String>{r'\\nas\build share\tools\run build.bat'},
+      );
+      expect(c.error, isNull);
+      expect(c.executable, r'\\nas\build share\tools\run build.bat');
+    });
+
+    test('forward-slash UNC gets native separators and a PATHEXT ext', () {
+      final HeavyCommandCheck c = windows(
+        <String>['//nas/build share/tools/run build'],
+        files: <String>{r'\\nas\build share\tools\run build.cmd'},
+      );
+      expect(c.error, isNull);
+      expect(c.executable, r'\\nas\build share\tools\run build.cmd');
+    });
+
+    test('relative to a working directory on a share', () {
+      final HeavyCommandCheck c = windows(
+        <String>[r'.\gradlew.bat', 'tasks'],
+        cwd: r'\\nas\build share\repo\fushi\android',
+        files: <String>{r'\\nas\build share\repo\fushi\android\gradlew.bat'},
+      );
+      expect(c.error, isNull);
+      expect(c.executable, r'\\nas\build share\repo\fushi\android\gradlew.bat');
+    });
+
+    test('.. never climbs above the share root', () {
+      final HeavyCommandCheck c = windows(
+        <String>[r'..\..\..\..\..\..\run.bat'],
+        cwd: r'\\nas\build share\repo\fushi',
+        files: <String>{r'\\nas\build share\run.bat'},
+      );
+      expect(c.error, isNull);
+      expect(c.executable, r'\\nas\build share\run.bat');
+    });
+
+    test('a bare name is found in a working directory on a share', () {
+      final HeavyCommandCheck c = windows(
+        <String>['gradlew.bat', 'tasks'],
+        cwd: r'\\nas\build share\repo\fushi\android',
+        files: <String>{r'\\nas\build share\repo\fushi\android\gradlew.bat'},
+      );
+      expect(c.error, isNull);
+      expect(c.executable, 'gradlew.bat');
+    });
+
+    test('a root-relative path stays on the working directory share', () {
+      final HeavyCommandCheck c = windows(
+        <String>[r'\tools\run.bat'],
+        cwd: r'\\nas\build share\repo\fushi',
+        files: <String>{r'\\nas\build share\tools\run.bat'},
+      );
+      expect(c.error, isNull);
+      expect(c.executable, r'\\nas\build share\tools\run.bat');
+    });
+
+    test('a missing UNC script is still refused', () {
+      final HeavyCommandCheck c = windows(<String>[
+        r'\\nas\build share\tools\gone.bat',
+      ]);
+      expect(c.error, contains('no such file'));
+    });
+  });
+
   group('a bare name', () {
     test('found on PATH: left for the shell to resolve', () {
       final HeavyCommandCheck c = windows(

@@ -15,10 +15,75 @@ part of '../video_fushi_page.dart';
 /// domain) keeps calling the extracted `_episodeOverlayPanel` through shared private
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
-  void _handlePlaybackCompleted() {
+  void _handlePlaybackCompleted() => _handlePlaybackEnded(
+    positionMs: _controller?.positionMs,
+    durationMs: _controller?.durationMs,
+  );
+
+  /// 播放器报 EOF（[_handlePlaybackCompleted]）：[positionMs] / [durationMs] 是 EOF
+  /// 那一刻的位置与时长。
+  void _handlePlaybackEnded({
+    required int? positionMs,
+    required int? durationMs,
+  }) {
     if (_controller?.isBlurayNavigationSession == true) return;
     if (_sourceReviewActive) return;
-    final int? positionMs = _controller?.positionMs;
+    // 媒体服务器的流在播放途中断了（EOF 远在片尾之前）：先问一次线路故障转移器，
+    // 换到另一条可达线路就按当前位置重新取流接着播；换不了才按「播完」处理
+    // （拍板台 design-media-server-failover-transport）。
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is RemoteVideoRouteFailover &&
+        !_streamRouteFailoverInFlight &&
+        isInterruptedStreamEnd(
+          positionMs: positionMs,
+          durationMs: durationMs,
+        )) {
+      unawaited(
+        _recoverInterruptedStream(
+          client as RemoteVideoRouteFailover,
+          positionMs!,
+        ),
+      );
+      return;
+    }
+    _finishPlaybackCompleted(positionMs);
+  }
+
+  /// 流断了之后换线路重载（[_handlePlaybackCompleted]）：[client] 改走新线路成功时
+  /// 与换档同一条路收尾旧会话、按 [positionMs] 重新取流（取流地址带新 host），弹
+  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。整程绑定发起时的
+  /// 播放会话（[_reloadRemoteEpisodeInSession]）：问线路、停止上报、重新取流任一
+  /// 等待期间用户换了集（播放代际变了）或退出页面，就什么都不做（HBK-AUDIT-005）。
+  Future<void> _recoverInterruptedStream(
+    RemoteVideoRouteFailover client,
+    int positionMs,
+  ) async {
+    final int generation = _remotePlaybackGeneration;
+    _streamRouteFailoverInFlight = true;
+    bool switched = false;
+    try {
+      switched = await client.failoverRemoteVideoRoute(
+        const MediaServerStreamInterrupted(),
+      );
+    } finally {
+      _streamRouteFailoverInFlight = false;
+    }
+    if (!mounted || generation != _remotePlaybackGeneration) return;
+    if (!switched) {
+      _finishPlaybackCompleted(positionMs);
+      return;
+    }
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
+      positionMs: positionMs,
+    )) {
+      return;
+    }
+    _showOsd(t.video_media_server_route_switched, icon: FushiIcons.swap);
+  }
+
+  /// 「播完」的收尾：上报停止，满足条件时进自动连播倒计时。
+  void _finishPlaybackCompleted(int? positionMs) {
     if (positionMs != null) {
       unawaited(
         _reportRemotePlaybackStopped(
@@ -348,6 +413,11 @@ extension _VideoEpisode on _VideoFushiPageState {
     _switchEpisode(index, intent: EpisodeStartIntent.listSelect);
   }
 
+  /// 选集面板（横屏轨道与竖屏「选集」页签同一个 [VideoEpisodePanel]）的字号：
+  /// 面板默认字号乘视频页自管的界面缩放（media_kit 控制层不吃全局「界面大小」，
+  /// 见 [_videoUiScale]）。两种版式共用这一处，不各写一份数字。
+  double get _episodePanelFontSize => 14 * _videoUiScale;
+
   /// 把内部集表示 [_PlaylistEpisodeRef] 解析成面板要的 [VideoEpisodeEntry]。
   ///
   /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
@@ -394,9 +464,12 @@ extension _VideoEpisode on _VideoFushiPageState {
           episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
           // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
           // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
-          groupKey: collectionGroupKeyForFilename(
-            e.path.isNotEmpty ? e.path : e.title,
-          ),
+          // 本地集带着预先解析好的生效分栏（手动分栏 / 季集指定优先）。
+          groupKey:
+              e.sectionKey ??
+              collectionGroupKeyForFilename(
+                e.path.isNotEmpty ? e.path : e.title,
+              ),
           cover:
               resolveMediaCoverImage(
                 kind: MediaKind.video,
@@ -508,7 +581,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                       title: t.video_episode_list,
                       emptyHint: t.video_episode_list_empty,
                       seasonLabelOf: _episodeSeasonLabel,
-                      fontSize: 14 * _videoUiScale,
+                      fontSize: _episodePanelFontSize,
                       visible: visible,
                     ),
                   ),

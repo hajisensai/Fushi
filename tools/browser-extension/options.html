@@ -97,8 +97,16 @@
             </label>
           </div>
           <details class="more" id="moreLookup">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">6</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">7</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
+              <label class="setting-row" for="scanDelay">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_scanDelay_title">扫描延迟（毫秒）</strong>
+                  <small data-i18n="opt_scanDelay_desc">查词按键为「不按键」时，指针停稳这么久才查词（0–2000，0 为立即）。</small>
+                </span>
+                <input class="size-input" id="scanDelay" type="number" min="0" max="2000" step="10"
+                       inputmode="numeric" placeholder="0">
+              </label>
               <label class="setting-row" for="popupFontSize">
                 <span class="setting-copy">
                   <strong data-i18n="opt_popupFontSize_title">词典字号</strong>

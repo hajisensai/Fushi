@@ -25,6 +25,24 @@ const List<String> kGitHubMirrorPrefixes = <String>[
   'https://gh.llkk.cc/',
 ];
 
+/// 用户是否允许走 [kGitHubMirrorPrefixes] 这些第三方加速镜像（设置「网络 → 使用 GitHub
+/// 加速镜像」，偏好键 `network_github_mirrors_enabled`，默认开）。
+///
+/// 进程级读取器，与 `app_proxy.dart` 的 `appUserProxyModeReader` 同一范式：由
+/// `PreferencesRepository.loadFromDb()`（偏好变得可读的那一刻）绑定成读偏好的闭包，
+/// 设置页改完立刻生效；没绑定的进程（纯测试、无偏好的工具）按默认开处理。
+/// 关掉的起因是安全软件（ESET）拦截 ghproxy.cc、用户不愿请求经第三方代理：关闭后
+/// 只剩 GitHub 直连与 jsDelivr（[kJsDelivrHosts]，公共 CDN、不是代理）。
+bool Function() gitHubMirrorsEnabledReader = _gitHubMirrorsEnabledByDefault;
+
+bool _gitHubMirrorsEnabledByDefault() => true;
+
+/// 此刻真正可用的镜像前缀：用户关掉镜像时为空，否则就是 [kGitHubMirrorPrefixes]。
+/// 所有**生成候选**的地方一律读它，不直接遍历 [kGitHubMirrorPrefixes]——那份常量只表示
+/// 「哪些前缀算镜像」（[isGitHubMirrorUrl] 分档用），不表示「现在能用哪些」。
+List<String> get activeGitHubMirrorPrefixes =>
+    gitHubMirrorsEnabledReader() ? kGitHubMirrorPrefixes : const <String>[];
+
 /// [url] 是否是套了 [kGitHubMirrorPrefixes] 的**中转**候选。
 ///
 /// 下载选源分两档（用户 2026-10-18 拍板）：官网 Cloudflare / GitHub 直连是首选档，
@@ -51,14 +69,14 @@ bool isGitHubDownloadHost(Uri url) =>
 /// **纯函数**：为 [url] 生成按优先级排序的候选列表。
 ///
 /// 非 GitHub 下载域 → 只有 [url] 自己。GitHub 下载域 → 直连 [url] 首位（有 VPN /
-/// 系统代理时最快、最权威），其后每个 [kGitHubMirrorPrefixes] 套在 [url] 前。直连只
-/// 出现一次、候选无重复。
+/// 系统代理时最快、最权威），其后每个 [activeGitHubMirrorPrefixes] 套在 [url] 前（用户
+/// 关掉镜像时只剩直连）。直连只出现一次、候选无重复。
 List<Uri> gitHubMirrorCandidates(Uri url) {
   if (!isGitHubDownloadHost(url)) return <Uri>[url];
   final String direct = url.toString();
   return <Uri>{
     url,
-    for (final String prefix in kGitHubMirrorPrefixes)
+    for (final String prefix in activeGitHubMirrorPrefixes)
       Uri.parse('$prefix$direct'),
   }.toList(growable: false);
 }
@@ -90,8 +108,8 @@ const List<String> kJsDelivrHosts = <String>[
 
 /// **纯函数**：GitHub 仓库 [repo]@[ref] 里的文件 [repoPath] 按优先级排序的下载 URL。
 ///
-/// 顺序：① jsDelivr 多 CDN 节点（[kJsDelivrHosts]）→ ② [kGitHubMirrorPrefixes] 套在
-/// raw 直链前 → ③ `raw.githubusercontent.com` 官方直连兜底。app 运行时下载**不走**
+/// 顺序：① jsDelivr 多 CDN 节点（[kJsDelivrHosts]）→ ② [activeGitHubMirrorPrefixes] 套在
+/// raw 直链前（用户关掉镜像时这一档为空）→ ③ `raw.githubusercontent.com` 官方直连兜底。app 运行时下载**不走**
 /// 本机命令行代理，中国大陆网络全靠前两档兜底（Anime4K 着色器、推荐字体共用）。
 ///
 /// [viaJsDelivr] 为 false 时跳过 ①：jsDelivr 对体积超过 50MB 的目录整目录 403
@@ -109,7 +127,7 @@ List<String> gitHubRepoFileUrls(
     if (viaJsDelivr)
       for (final String host in kJsDelivrHosts)
         'https://$host/gh/$repo@$ref/$repoPath',
-    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
+    for (final String prefix in activeGitHubMirrorPrefixes) '$prefix$rawUrl',
     rawUrl,
   ];
 }

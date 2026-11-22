@@ -50,12 +50,12 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
     // 改过名就会再传一次。两边都有库时才记——这时匹配结果才受影响。
     if (remoteEntries.isNotEmpty &&
         locals.isNotEmpty &&
-        !await backend.hostReportsLocalAudioContentId()) {
-      report.errors.add(
-        'local audio: the peer runs an older Fushi that does not report '
-        'library content identity, so libraries were matched by display name '
-        'only (a renamed copy of the same library may transfer again). '
-        'Update Fushi on the peer.',
+        !interconnectHostReportsLocalAudioContentId(
+          await _roundHostCapabilities(report, backend),
+        )) {
+      report.notePeerGap(
+        SyncPeerGapDimension.localAudioIdentity,
+        outdated: true,
       );
     }
 

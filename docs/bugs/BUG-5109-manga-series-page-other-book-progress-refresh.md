@@ -1,0 +1,6 @@
+## BUG-5109 · manga-series-page-other-book-progress-refresh
+- **报告**：2026-11-22（外部审计 HBK-AUDIT-050，Codex 2026-11-21 PR 审查，来源 PR #3819 / #3827：「其他作品的下载进度也会重算当前作品的章节」）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/manga/library/manga_series_page.dart` `_refreshDownloadStateOnce`（修前 562 行）订阅 `MangaDownloadService.watchJobs()`，它是整张 `manga_download_jobs` 表的信号（`packages/fushi_core/lib/src/database/database_manga_download.part.dart` `watchMangaDownloadJobs`）加 mokuro 字节进度信号；别的作品每写一次进度（`_ProgressWriter` 约每 500 ms 一次）都会让当前作品页跑一轮：全表 `listMangaDownloadJobs` 后在 Dart 里按书过滤（`jobsForBook`）、`MangaChapterDownloadVerdicts.resolve` 遍历全部章节、无条件 `setState` 重建整页。`CoalescedRefresh` 只合并重叠的请求，不重叠的信号照样一次一轮。
+- **[x] ① 已修复** — 服务新增 `watchChapterJobsForBook(bookKey)`：服务侧收全表信号，只查本书章节任务（新增 `listMangaDownloadJobsForBook`，走唯一索引前缀），与上次结果逐行比较，**只有本书的行确实变了才发**；订阅时先取一份当基线、不发。作品页改订它（书变了重订）；`_refreshDownloadStateOnce` 在任务行、已下载集合、书目录都没变时不 `setState`。`jobsForBook` 也改走按书查询，不再全表扫。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_download_service_test.dart`「按书订阅任务变化」：别的书入队 + 5 次写进度（全表信号 ≥6 次）本书订阅 0 次发；本书入队 / 写进度各发一次；同值重写不发。`fushi/test/media/manga/manga_series_page_download_first_test.dart`「别的书下载写进度不刷新本页」：真实作品页，别的书入队 + 5 次写进度后本页 `jobsForBook` 调用数不变，本书入队后照常刷新出「排队中」状态位。变异实测：作品页改回订全表信号、去掉逐行比较后对应测试变红。
+- **备注**：阅读器 `manga_fushi_page.dart` 的 `_downloadWatch` 仍订全表 `watchJobs()`，不在本条范围（只影响阅读器内下载按钮状态的刷新频率），未改。

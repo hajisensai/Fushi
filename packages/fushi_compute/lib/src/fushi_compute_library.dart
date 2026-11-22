@@ -5,7 +5,7 @@ import 'dart:io';
 const String kFushiComputeLibEnv = 'FUSHI_COMPUTE_LIB';
 
 /// Dart 绑定期望的 C ABI 版本，与 native/fushi_compute/src/lib.rs 的 `ABI_VERSION` 一致。
-const int kFushiComputeAbiVersion = 2;
+const int kFushiComputeAbiVersion = 3;
 
 /// FFI 状态码，与 lib.rs 的 `status` 模块一致。
 abstract final class FfcStatus {
@@ -14,6 +14,7 @@ abstract final class FfcStatus {
   static const int invalidArgument = -2;
   static const int badInput = -3;
   static const int bufferTooSmall = -4;
+  static const int ioError = -5;
   static const int panic = -100;
 }
 

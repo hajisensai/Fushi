@@ -1,6 +1,8 @@
 import 'dart:io';
 
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// 歌词覆盖层的两条生命周期不变式（源码守卫；阅读器整页依赖 WebView / DB，
 /// pumpWidget 过重，沿用本目录 `reader_lyrics_*_static_test` 的源码切片范式）。
@@ -102,12 +104,15 @@ void main() {
     });
 
     test('面板「退出」走 _exitReaderBook', () {
-      final String exit = slice(
+      // 按结构取 `onExitReader:` 实参的值（与相邻参数的名字 / 顺序无关）。
+      final List<String> exits = namedArgumentValues(
         read(chromePath),
-        'onExitReader:',
-        'webViewController:',
+        'onExitReader',
       );
-      expect(exit.contains('_exitReaderBook('), isTrue);
+      expect(exits, isNotEmpty, reason: '锚不到 `onExitReader:` 实参');
+      for (final String exit in exits) {
+        expect(exit.contains('_exitReaderBook('), isTrue);
+      }
     });
 
     test('重导入正文作废分支走 _exitReaderBook', () {

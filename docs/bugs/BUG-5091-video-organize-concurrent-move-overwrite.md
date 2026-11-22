@@ -1,0 +1,16 @@
+## BUG-5091 · 两次独立发起的视频整理 / 搬动落到同一目标时后一个 rename 静默覆盖先搬过去的视频；撤销不核对文件身份
+- **报告**：2026-11-22（外部审计 Codex 2026-11-21 PR 审查 HBK-AUDIT-031，来源 PR #3762）
+- **真实性**：✅ 真 bug（本机复现）。
+  - 覆盖：`packages/fushi_engine/lib/media/video/organize/video_filename_organize_service.dart` 修前 `_move`（develop cbdc2a45ed 第 668–692 行）先 `await FileSystemEntity.type(move.to)` 判目标空着，再 `await Directory.create` + `await File(from).rename(to)`。两次独立发起的 `apply`（ctl `video organize` / `files/:uid/move` 与库页对话框各一次，互不排队）落到同一目标时两边的检查都在对方 rename 之前通过；`File.rename` 在 POSIX（rename(2)）与 Windows（实测 Dart 的 rename 覆盖已有目标，`MOVEFILE_REPLACE_EXISTING`）上都静默覆盖，先搬过去的视频内容消失。回归测试修前 `renamedCount` 合计为 2（应为 1），一份内容丢失。
+  - 撤销：撤销计划只是正向步骤的逆向（修前 `undoPlan` 第 ~244 行），`fushi/lib/src/ops/ctl_video_organize_routes.dart` 修前 `videoOrganizeUndoStillApplies`（第 ~971 行）只看计划里至少一个视频路径存在。搬过去的位置之后换成了别的文件时，撤销会把那个无关文件当成当初的视频搬回原名。回归测试修前撤销 `renamedCount` 为 1（应为 0）。
+- **[x] ① 已修复** — 提交 4ae0e0771b：
+  - 本机搬动（含回滚、撤销，都走 `_move`）先在目标上 `File.create(exclusive: true)`（O_EXCL / CREATE_NEW，原子）占一个空占位，占到才把源 rename 到自己的占位上；占不到 = 目标被占，整步失败、整条回滚。rename 失败时收回占位，收不回就把原因并进错误原文报给用户，不吞。
+  - 进程内目标互斥 `_targetsInFlight`（按 `platformPathKey`）：同一目标同时只许一步处在「确认空着 → 搬进去」之间。做种文件由引擎改名、没法先放占位，靠它与本机搬动互斥。
+  - 执行时每一步搬完在目标上量 `VideoFileFingerprint`（大小 + 修改时间，rename 不变），记进 `VideoFilenameItemOutcome.undoMoves` 的 `sourceFingerprint`；回滚与撤销逐文件核对，对不上整条失败、不动磁盘。ctl 撤销载荷 JSON 带 `identity`；`videoOrganizeUndoStillApplies` 按身份判断。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/video/organize/video_filename_organize_test.dart`「并发两次搬到同一目标：只落地一个……」「撤销前核对文件身份……」；`fushi/test/ops/ctl_video_organize_routes_test.dart`「撤销载荷带文件身份……」。变异实测：同时撤掉占位与互斥 → 并发测试红；撤掉身份核对 → 撤销测试红；只撤其一时并发测试仍绿（进程内两层各自都足以挡住交错）。
+- **备注**：
+  - 占位的独有价值是挡住另一个进程 / isolate 的并发写入（互斥表只在本 isolate 内），这一点没有确定性的自动化测试（需跨进程精确交错）。
+  - 做种文件走引擎改名：引擎（libtorrent / qBittorrent）自己动磁盘，本进程之外的并发写入挡不住，只能靠检查 + 进程内互斥。
+  - 本修复之前落库的撤销载荷没有身份，只能按存在与否判断（不覆盖保护照样生效）。
+  - 进程在占位与 rename 之间崩溃会在目标上留一个 0 字节文件（下次整理判为占用，不会覆盖任何内容）。
+  - 真机验证未做（纯文件系统语义，Windows 本机已跑测试；POSIX 由 CI 的 Linux / macOS 跑）。

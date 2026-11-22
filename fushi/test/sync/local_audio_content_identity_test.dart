@@ -6,6 +6,9 @@
 /// - 同一份库换了文件名 / 显示名、被绑定期补了索引，身份不变；
 /// - 内容不同的库，名字相同也是两份；
 /// - 服务端登记时同一份库不登记第二份，撞名的另起名，旧重复启动时收掉。
+///
+/// HBK-AUDIT-001：身份必须覆盖真实录音（音频 BLOB）——元数据与条数相同、录音不同
+/// 的两份库不能被当成同一份去重 / 清理。HBK-AUDIT-022：删除只认内容身份。
 library;
 
 import 'dart:io';
@@ -25,8 +28,14 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
-/// 写一个 Yomitan 本地音频库（entries + android），每个 [words] 一行。
-void writeAudioDb(String path, List<String> words, {String source = 'nhk16'}) {
+/// 写一个 Yomitan 本地音频库（entries + android），每个 [words] 一行；每行录音
+/// 字节是 [audio]（默认 1,2,3）。
+void writeAudioDb(
+  String path,
+  List<String> words, {
+  String source = 'nhk16',
+  List<int> audio = const <int>[1, 2, 3],
+}) {
   final File f = File(path);
   if (f.existsSync()) f.deleteSync();
   f.parent.createSync(recursive: true);
@@ -45,11 +54,7 @@ void writeAudioDb(String path, List<String> words, {String source = 'nhk16'}) {
     );
     for (final String w in words) {
       e.execute(<Object?>[w, w, '$w.mp3', source]);
-      a.execute(<Object?>[
-        '$w.mp3',
-        source,
-        Uint8List.fromList(<int>[1, 2, 3]),
-      ]);
+      a.execute(<Object?>['$w.mp3', source, Uint8List.fromList(audio)]);
     }
     e.close();
     a.close();
@@ -96,6 +101,37 @@ void main() {
       expect(computeLocalAudioContentId(b), idA);
     });
 
+    test('HBK-AUDIT-001：元数据与条数相同、录音不同 → 身份不同', () {
+      final String a = p.join(work.path, 'a.db');
+      final String b = p.join(work.path, 'b.db');
+      writeAudioDb(a, <String>['猫', '犬'], audio: <int>[1, 2, 3]);
+      writeAudioDb(b, <String>['猫', '犬'], audio: <int>[9, 9, 9]);
+      final String? idA = computeLocalAudioContentId(a);
+      expect(isLocalAudioContentId(idA), isTrue);
+      expect(computeLocalAudioContentId(b), isNot(idA), reason: '录音不同就是两份库');
+      expect(idA, startsWith('la2-'), reason: '不读录音的 la1 身份作废，换前缀才能让旧身份全部重算');
+      expect(
+        isLocalAudioContentId('la1-0123456789abcdef0123456789abcdef'),
+        isFalse,
+      );
+    });
+
+    test('录音大于原生缓冲区（跨多次 FFI 分段）仍稳定、且与行序无关', () {
+      final List<int> big = <int>[
+        for (int i = 0; i < (3 << 20) + 17; i++) (i * 7) & 0xff,
+      ];
+      final String a = p.join(work.path, 'a.db');
+      final String b = p.join(work.path, 'b.db');
+      writeAudioDb(a, <String>['猫', '犬'], audio: big);
+      writeAudioDb(b, <String>['犬', '猫'], audio: big);
+      final String? idA = computeLocalAudioContentId(a);
+      expect(isLocalAudioContentId(idA), isTrue);
+      expect(computeLocalAudioContentId(b), idA);
+      final List<int> flipped = List<int>.of(big)..[big.length - 1] ^= 1;
+      writeAudioDb(b, <String>['猫', '犬'], audio: flipped);
+      expect(computeLocalAudioContentId(b), isNot(idA), reason: '末字节不同也要分得出');
+    });
+
     test('内容不同身份不同；不是音频库 / 不存在返回 null', () {
       final String a = p.join(work.path, 'a.db');
       final String b = p.join(work.path, 'b.db');
@@ -127,7 +163,7 @@ void main() {
       expect(id, computeLocalAudioContentId(a));
       expect(cachedLocalAudioContentId(a), id);
 
-      const String stored = 'la1-0123456789abcdef0123456789abcdef';
+      const String stored = 'la2-0123456789abcdef0123456789abcdef';
       expect(
         await resolveLocalAudioContentId(
           LocalAudioDbEntry(path: a, displayName: 'x', contentId: stored),
@@ -145,8 +181,8 @@ void main() {
   });
 
   test('isSameLocalAudioLibrary：两边都有身份只比身份，缺一边才比名字', () {
-    const String x = 'la1-00000000000000000000000000000001';
-    const String y = 'la1-00000000000000000000000000000002';
+    const String x = 'la2-00000000000000000000000000000001';
+    const String y = 'la2-00000000000000000000000000000002';
     expect(
       isSameLocalAudioLibrary(
         nameA: 'android.db',
@@ -191,7 +227,7 @@ void main() {
   });
 
   test('LocalAudioDbEntry / RemoteLocalAudioInfo 的 contentId 往返，缺省不出键', () {
-    const String x = 'la1-00000000000000000000000000000001';
+    const String x = 'la2-00000000000000000000000000000001';
     final LocalAudioDbEntry e = LocalAudioDbEntry.fromJson(
       const LocalAudioDbEntry(
         path: '/a',
@@ -334,6 +370,60 @@ void main() {
         isTrue,
       );
       expect(await store.normalizeContentIdentities(), 0, reason: '幂等');
+    });
+
+    test('HBK-AUDIT-001：元数据相同、录音不同的两份库，启动整理都保留、文件都不删', () async {
+      final String first = p.join(libDir.path, 'local_audio_1.db');
+      final String second = p.join(libDir.path, 'local_audio_2.db');
+      writeAudioDb(first, <String>['猫', '犬'], audio: <int>[1, 2, 3]);
+      writeAudioDb(second, <String>['猫', '犬'], audio: <int>[4, 5, 6]);
+      await prefs.setPref(
+        LocalAudioLibraryStore.entriesPrefKey,
+        '[{"path":"$first","displayName":"NHK","enabled":true},'
+                '{"path":"$second","displayName":"NHK 2","enabled":true}]'
+            .replaceAll(r'\', r'\\'),
+      );
+      expect(await store.normalizeContentIdentities(), 0);
+      expect(store.entries, hasLength(2));
+      expect(File(first).existsSync(), isTrue);
+      expect(File(second).existsSync(), isTrue, reason: '不同的录音不能当重复删掉');
+    });
+
+    test('HBK-AUDIT-001：推来的库元数据相同、录音不同 → 另起名登记，不当成已有', () async {
+      LocalAudioPackageContents withAudio(String name, List<int> audio) {
+        final String path = p.join(staging.path, '$name-${audio.first}.db');
+        writeAudioDb(path, <String>['猫'], audio: audio);
+        return LocalAudioPackageContents(
+          dbFile: File(path),
+          displayName: name,
+          enabled: true,
+          sources: const <LocalAudioSourcePref>[],
+        );
+      }
+
+      expect(await store.importPackage(withAudio('NHK', <int>[1])), isTrue);
+      expect(await store.importPackage(withAudio('NHK', <int>[2])), isTrue);
+      expect(
+        store.entries.map((LocalAudioDbEntry e) => e.displayName).toList(),
+        <String>['NHK', 'NHK (2)'],
+      );
+    });
+
+    test('HBK-AUDIT-022：remove 只认内容身份，按显示名不删', () async {
+      expect(await store.importPackage(staged('NHK', <String>['猫'])), isTrue);
+      expect(await store.importPackage(staged('Other', <String>['犬'])), isTrue);
+      final List<LocalAudioDbEntry> before = store.entries;
+      final String otherPath = before[1].path;
+
+      await store.remove('NHK');
+      expect(store.entries, hasLength(2), reason: '显示名不是身份，不删');
+
+      await store.remove(before[1].contentId!);
+      expect(
+        store.entries.map((LocalAudioDbEntry e) => e.displayName).toList(),
+        <String>['NHK'],
+      );
+      expect(File(otherPath).existsSync(), isFalse, reason: '内部副本一起删');
     });
   });
 }

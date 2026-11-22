@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 
 // 聚合同步写回只落「真正变化的行」：
 //  * 合并结果与本地内容相等（与 PUT 侧指纹同一「顺序无关」口径）→ 不进写回锁、
@@ -134,12 +135,12 @@ void main() {
     int pushes = 0;
     log.on = true;
     await svc.syncOverClient(
-      fetchRemote: () async => remote,
-      pushMerged: (Object _) async => pushes++,
+      fetchRemote: () async => encodeAggregateWireJson(remote),
+      pushMerged: (Uint8List _) async => pushes++,
     );
     await svc.syncOverClient(
-      fetchRemote: () async => remote,
-      pushMerged: (Object _) async => pushes++,
+      fetchRemote: () async => encodeAggregateWireJson(remote),
+      pushMerged: (Uint8List _) async => pushes++,
     );
     log.on = false;
 
@@ -187,8 +188,9 @@ void main() {
     final List<Object> pushed = <Object>[];
     log.on = true;
     await svc.syncOverClient(
-      fetchRemote: () async => remote,
-      pushMerged: (Object j) async => pushed.add(j),
+      fetchRemote: () async => encodeAggregateWireJson(remote),
+      pushMerged: (Uint8List b) async =>
+          pushed.add(decodeAggregateWireJson(b)!),
     );
     log.on = false;
 
@@ -233,8 +235,9 @@ void main() {
       ..reset()
       ..on = true;
     await svc.syncOverClient(
-      fetchRemote: () async => remote,
-      pushMerged: (Object j) async => pushed.add(j),
+      fetchRemote: () async => encodeAggregateWireJson(remote),
+      pushMerged: (Uint8List b) async =>
+          pushed.add(decodeAggregateWireJson(b)!),
     );
     log.on = false;
     expect(lockCalls, 1);

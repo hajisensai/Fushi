@@ -533,6 +533,66 @@ pub unsafe extern "C" fn ffc_image_to_rgba8(
     })
 }
 
+/// 就地把带行跨度的 BGRA（mpv `screenshot-raw` 的 `bgr0`：每像素 4 字节，第四字节未定义）
+/// 换成行紧排的不透明 RGBA8888（alpha 恒 255）。`buf` 里是 `h` 行、行跨度 `stride`、每行从
+/// 第 0 字节起取 `w` 个像素（末行只需 `w * 4` 字节）；结果从 `buf[0]` 起占 `w * h * 4` 字节。
+///
+/// 智能遮布每次抽样的裁块与暂停 OCR 的整帧都走这里（HBK-AUDIT-008：原先是截帧 isolate 上的
+/// Dart 逐像素循环）。就地做是为了截帧 isolate 只用一块暂存区：调用方把矩形覆盖的那段行
+/// 原样拷进来（一次 memmove），这里去掉行尾 / 矩形外的字节并换通道，结果再拷回 Dart 堆。
+///
+/// # Safety
+/// `buf` 按 `len` 可读写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_bgra_to_rgba8_inplace(
+    buf: *mut u8,
+    len: usize,
+    stride: usize,
+    w: u32,
+    h: u32,
+) -> i32 {
+    guard(|| {
+        if buf.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (w, h) = (w as usize, h as usize);
+        if w == 0 || h == 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let row_bytes = match w.checked_mul(4) {
+            Some(v) if v <= stride => v,
+            _ => return status::INVALID_ARGUMENT,
+        };
+        let need = (h - 1)
+            .checked_mul(stride)
+            .and_then(|v| v.checked_add(row_bytes));
+        match need {
+            Some(need) if need <= len => {
+                bgra_to_rgba8_in_place(slice_mut(buf, need), stride, row_bytes, h);
+                status::OK
+            }
+            Some(_) => status::BUFFER_TOO_SMALL,
+            None => status::INVALID_ARGUMENT,
+        }
+    })
+}
+
+/// [ffc_image_bgra_to_rgba8_inplace] 的内核。第 `y` 行从 `y * stride` 前移到 `y * row_bytes`
+/// （`row_bytes <= stride`，目标永远不越过还没读的源字节，`copy_within` 处理重叠），再在
+/// 紧排的位置上换通道。
+fn bgra_to_rgba8_in_place(buf: &mut [u8], stride: usize, row_bytes: usize, h: usize) {
+    for y in 0..h {
+        let (src, dst) = (y * stride, y * row_bytes);
+        if src != dst {
+            buf.copy_within(src..src + row_bytes, dst);
+        }
+        for px in buf[dst..dst + row_bytes].chunks_exact_mut(4) {
+            px.swap(0, 2);
+            px[3] = 255;
+        }
+    }
+}
+
 /// 就地给 RGBA8888 缓冲打码（`applyMosaicRgba` 的内核）。`rects` 是 `rect_count` 组
 /// `[x0, y0, x1, y1)`（像素、已夹进图像，即 `mosaicPixelBounds` 的结果），`block` 是块边长。
 ///
@@ -1664,6 +1724,69 @@ pub unsafe extern "C" fn ffc_image_to_jpeg(
     })
 }
 
+/// 解码（转正 EXIF / TIFF 方向标签）后**无损**编码成 PNG：导入阶段把阅读器 WebView 显示不了的
+/// 页图格式（TIFF——archive.org 老扫描的主流格式）落盘成 PNG。
+///
+/// 保留色彩类型以免体积白涨：灰度（含 1 位黑白扫描）→ 8 位灰度 PNG，灰度 + alpha → `La8`，
+/// 彩色 → `Rgb8` / `Rgba8`；16 位 / 浮点一律截成 8 位（WebView 与 OCR 都只按 8 位用）。多页
+/// TIFF 只取首页（`image` crate 只解第一个 IFD）。
+fn transcode_png(data: &[u8]) -> Result<Vec<u8>, i32> {
+    use image::{ColorType, ExtendedColorType, ImageDecoder, ImageEncoder};
+    if avif::is_avif(data) {
+        let d = decode_image(data, true)?;
+        return encode_png(&d.pixels, d.width, d.height, d.channels as usize);
+    }
+    let (mut decoder, _) = open_decoder(data)?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(|_| status::BAD_INPUT)?;
+    img.apply_orientation(orientation);
+    let (w, h) = (img.width(), img.height());
+    if w == 0 || h == 0 {
+        return Err(status::BAD_INPUT);
+    }
+    let (pixels, color) = match img.color() {
+        ColorType::L8 | ColorType::L16 => (img.into_luma8().into_raw(), ExtendedColorType::L8),
+        ColorType::La8 | ColorType::La16 => {
+            (img.into_luma_alpha8().into_raw(), ExtendedColorType::La8)
+        }
+        c if c.has_alpha() => (img.into_rgba8().into_raw(), ExtendedColorType::Rgba8),
+        _ => (img.into_rgb8().into_raw(), ExtendedColorType::Rgb8),
+    };
+    let mut out = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut out)
+        .write_image(&pixels, w, h, color)
+        .map_err(|_| status::BAD_INPUT)?;
+    Ok(out)
+}
+
+/// [transcode_png] 的 C ABI：PNG 字节经 `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes] 释放）。
+/// 认不出 / 解不开返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_to_png(
+    data: *const u8,
+    len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        match transcode_png(slice(data, len)) {
+            Ok(png) => {
+                crate::hand_over_bytes(png, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
 /// 漫画页图按显示尺寸降采样：解码（转正 EXIF 方向 / HEIF 显示变换）→ 面积平均
 /// （[INTERP_AVERAGE]）缩到 `dst_w × dst_h` → JPEG（`quality` 1..=100，4:4:4）。灰度源编单通道
 /// JPEG（漫画扫描多是灰度，体积与解码成本都只有 RGB 的约 1/3）。
@@ -2704,6 +2827,75 @@ pub unsafe extern "C" fn ffc_image_decode_png(
 mod tests {
     use super::*;
 
+    /// 带填充 stride 的 BGRA 帧：B = x、G = y、R = 200、第四字节 = 7（bgr0 未定义）、填充 = 0xEE。
+    fn bgra_frame(width: usize, height: usize, stride: usize) -> Vec<u8> {
+        let mut f = vec![0xEE_u8; stride * height];
+        for y in 0..height {
+            for x in 0..width {
+                let i = y * stride + x * 4;
+                f[i..i + 4].copy_from_slice(&[x as u8, y as u8, 200, 7]);
+            }
+        }
+        f
+    }
+
+    /// 按调用方的做法把帧里矩形覆盖的那段行拷出来：从 (x0, y0) 起到末行矩形右缘。
+    fn rect_span(f: &[u8], stride: usize, x0: usize, y0: usize, w: usize, h: usize) -> Vec<u8> {
+        let start = y0 * stride + x0 * 4;
+        f[start..start + (h - 1) * stride + w * 4].to_vec()
+    }
+
+    #[test]
+    fn bgra_to_rgba8_inplace_crops_with_stride_and_forces_alpha() {
+        let (width, height, stride) = (10usize, 10usize, 48usize);
+        let f = bgra_frame(width, height, stride);
+        for (x0, y0, w, h) in [(2, 5, 4, 3), (0, 0, 10, 10), (9, 9, 1, 1), (0, 3, 10, 7)] {
+            let mut buf = rect_span(&f, stride, x0, y0, w, h);
+            let code = unsafe {
+                ffc_image_bgra_to_rgba8_inplace(
+                    buf.as_mut_ptr(),
+                    buf.len(),
+                    stride,
+                    w as u32,
+                    h as u32,
+                )
+            };
+            assert_eq!(code, status::OK);
+            for y in 0..h {
+                for x in 0..w {
+                    let o = (y * w + x) * 4;
+                    let (fx, fy) = ((x0 + x) as u8, (y0 + y) as u8);
+                    assert_eq!(
+                        &buf[o..o + 4],
+                        &[200, fy, fx, 255],
+                        "rect ({x0},{y0},{w},{h}) at ({x},{y})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bgra_to_rgba8_inplace_rejects_bad_geometry() {
+        let mut f = bgra_frame(4, 2, 16);
+        let call = |buf: &mut [u8], stride: usize, w: u32, h: u32| unsafe {
+            ffc_image_bgra_to_rgba8_inplace(buf.as_mut_ptr(), buf.len(), stride, w, h)
+        };
+        // 一行越过 stride。
+        assert_eq!(call(&mut f, 8, 4, 2), status::INVALID_ARGUMENT);
+        // 缓冲短于 h 行。
+        assert_eq!(call(&mut f[..20], 16, 4, 2), status::BUFFER_TOO_SMALL);
+        // 空矩形。
+        assert_eq!(call(&mut f, 16, 0, 2), status::INVALID_ARGUMENT);
+        assert_eq!(call(&mut f, 16, 4, 0), status::INVALID_ARGUMENT);
+        assert_eq!(
+            unsafe { ffc_image_bgra_to_rgba8_inplace(std::ptr::null_mut(), 0, 16, 4, 2) },
+            status::NULL_ARGUMENT
+        );
+        // 末行只需读到矩形右缘，不要求整行 stride。
+        assert_eq!(call(&mut f[..16 + 16], 16, 4, 2), status::OK);
+    }
+
     /// 不透明 RGBA 测试图（带行尾填充，模拟 mpv 的行跨度）。
     fn opaque_rgba(w: usize, h: usize, pad: usize) -> (Vec<u8>, usize) {
         let stride = w * 4 + pad;
@@ -2938,6 +3130,42 @@ mod tests {
         let mut out = std::io::Cursor::new(Vec::new());
         img.write_to(&mut out, format).unwrap();
         out.into_inner()
+    }
+
+    #[test]
+    fn transcode_png_keeps_grayscale_tiff_single_channel_and_lossless() {
+        let src =
+            image::GrayImage::from_fn(37, 53, |x, y| image::Luma([((x * 7 + y) % 256) as u8]));
+        let tiff = encode(
+            image::DynamicImage::ImageLuma8(src.clone()),
+            image::ImageFormat::Tiff,
+        );
+        let png = transcode_png(&tiff).unwrap();
+        let out = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
+        assert_eq!(out.color(), image::ColorType::L8);
+        assert_eq!(out.into_luma8().into_raw(), src.into_raw());
+    }
+
+    #[test]
+    fn transcode_png_keeps_colour_tiff_pixels() {
+        let src =
+            image::RgbImage::from_fn(20, 10, |x, y| image::Rgb([x as u8 * 9, y as u8 * 20, 77]));
+        let tiff = encode(
+            image::DynamicImage::ImageRgb8(src.clone()),
+            image::ImageFormat::Tiff,
+        );
+        let png = transcode_png(&tiff).unwrap();
+        let out = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
+        assert_eq!(out.color(), image::ColorType::Rgb8);
+        assert_eq!(out.into_rgb8().into_raw(), src.into_raw());
+    }
+
+    #[test]
+    fn transcode_png_rejects_garbage() {
+        assert_eq!(
+            transcode_png(b"not an image at all"),
+            Err(status::BAD_INPUT)
+        );
     }
 
     #[test]

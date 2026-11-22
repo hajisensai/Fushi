@@ -1,9 +1,0 @@
-## BUG-5069 · 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级
-- **报告**：2026-11-21（用户：维护者应用内反馈 mF9yZkbWdo，截图「导出卡片失败：Fushi review is not available.」）
-- **真实性**：✅ 真 bug。复习库处在代际状态（要迁移 / 别的窗口在迁移 / 上次迁移失败 / 只剩封存旧库 / 旁边有没迁移的旧库 / 主库还有协议 1 数据）时，`srsStoreProvider`（`fushi/lib/src/srs/srs_providers.dart:282`）经 `SrsStorageHost.acquire` 抛 `SrsStoreOpenBlocked` 子类或 `SrsLegacyMainDatabasePending`，但制卡器解析全部 catch 后返回 null：
-  - `fushi/lib/src/anki/anki_view_model.dart` `_readSrsMiner` 的 catch（修前 :957 `return null`）；
-  - `fushi/lib/src/models/app_model.dart` `_hostReviewMiningMiner`（修前 :14259）与 `extensionSrsMinerForView`（修前 :14294）；
-  - 于是 `fushi/lib/src/srs/srs_mining.dart` `mineEntry` / `updateMinedNote`（修前 :146 / :263）只能回通用的 `_unavailable`（:123），用户不知道要去复习页完成升级；互联主机替对端制卡（`fushi/lib/src/sync/host_remote_mining_targets.dart`）同样拿不到原因，复习清单读失败时还会把点名复习的卡悄悄退回 Anki。
-- **[x] ① 已修复** — 根因修：解析器契约改为「库在换代途中原样抛出代际异常」（`SrsMinerResolver` 文档）。代际分类从 UI 页移到 `fushi/lib/src/srs/srs_generation_kind.dart`（`srsGenerationKindOf` 与代际状态页共用），新增 `srsGenerationMineErrorCode` 收成四个与 locale 无关的码（`AnkiErrorCode.srsNeedsMigration` / `srsMigrationFailed` / `srsMigrating` / `srsNeedsAttention`）。`SrsMiningAnkiRepository` 制卡 / 覆写回带码失败、必须读写复习的操作原样抛代际异常、查词探测（查重 / 反查 / 打开）照旧回「没有」；`mineFailureMessage` 按码给本地化文案，`mineFailureToastAction` 在主窗口进程给「打开复习」（main.dart 装 `mineFailureOpenReview`：切复习 tab 并退回首页层级）；互联主机落复习时把码回给对端（`errorCode` 上 wire），不再退回 Anki，对端把它包成 `pairedDeviceReviewBlocked`（「那台设备上的复习要先升级」）；收藏批量制卡遇到这类码整批中止。提交见 PR。
-- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_mining_generation_blocked_test.dart`（分类码、仓库各操作、提示动作、互联主机）、`fushi/test/srs/srs_mining_test.dart`（`ankiRepositoryProvider` 装饰链上 `srsStoreProvider` 抛代际异常时制卡带码）、`fushi/test/anki/remote_mining_anki_repository_test.dart`（对端收到主机的 `srs*` 码）。
-- **备注**：查词弹窗里就地显示的失败（`MinePopupResult.failed(message:)`）只有文字、没有按钮，「打开复习」只在 toast 上出；文案本身写明去主窗口复习页。`fushi_server` 的服务端复习有自己的升级拒绝（`_upgradeRefusalFor`），不在本条范围。

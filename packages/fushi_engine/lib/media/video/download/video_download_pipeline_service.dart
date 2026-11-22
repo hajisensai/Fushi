@@ -1698,6 +1698,22 @@ class VideoDownloadPipelineService {
   /// backends must still expose the recorded task; silently switching backend
   /// instances would resume or create the wrong torrent.
   Future<void> resumeJob(String jobId) async {
+    await _resumeJob(jobId, _BackendTorrentLookup());
+    wake();
+  }
+
+  /// 批量版 [resumeJob]：整批共用一次后端枚举（HBK-AUDIT-025——逐条调
+  /// [resumeJob] 时每条都要把整个后端的种子列一遍，N 条 × M 颗）。单条失败不
+  /// 中断整批；返回失败的 jobId → 错误（成功的不在表里）。整批结束才唤醒一次
+  /// 调度（逐条唤醒会让 drain 与批内后续恢复交错，各自再列一遍后端）。
+  Future<Map<String, Object>> resumeJobs(Iterable<String> jobIds) async {
+    final List<String> ids = jobIds.toList(growable: false);
+    final Map<String, Object> failures = await _runJobBatch(ids, _resumeJob);
+    if (failures.length < ids.length) wake();
+    return failures;
+  }
+
+  Future<void> _resumeJob(String jobId, _BackendTorrentLookup lookup) async {
     final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
     if (job == null) {
       throw const VideoDownloadPipelineActionRequired(
@@ -1717,8 +1733,7 @@ class VideoDownloadPipelineService {
       final VideoDownloadBackendBinding? binding = await backendResolver(job);
       _validateBackendBinding(job, binding);
       final TorrentBackend backend = binding!.backend;
-      final bool backendTaskExists =
-          await _findBackendTorrent(backend, torrentId) != null;
+      final bool backendTaskExists = await lookup.contains(backend, torrentId);
       if (backendTaskExists) {
         if (backend is TorrentPauseBackend && backend.pauseControlAvailable) {
           final bool resumed = await backend.resumeTorrent(torrentId);
@@ -1755,7 +1770,6 @@ class VideoDownloadPipelineService {
         'The download job changed while it was being resumed',
       );
     }
-    wake();
   }
 
   /// Cancels Fushi's durable workflow without deleting downloaded data.
@@ -1800,6 +1814,113 @@ class VideoDownloadPipelineService {
       if (current?.lifecycle == VideoDownloadJobLifecycle.cancelled) return;
       throw const VideoDownloadPipelineActionRequired(
         'The download job changed while it was being cancelled',
+      );
+    }
+  }
+
+  /// 停止一个**已完成**任务的做种（BUG-5072）：在它自己绑定的后端上把那颗
+  /// 种子按用户显式暂停（内置引擎 = `pauseTorrentByUser`，记进跨会话持久的
+  /// user_paused 集，上传策略下一轮不会把它恢复；外接 qb 是 stop；`fushi_host`
+  /// 由对端引擎执行同一原语）。
+  ///
+  /// 任务生命周期保持 `completed` 不动：做种与否只是后端种子的状态，真相在
+  /// 后端（快照的 paused 态），持久任务行不存镜像。后端按任务行的
+  /// kind/profile/fingerprint 校验（[_validateBackendBinding]），设置已切到别的
+  /// 后端时拒绝，不会去另一台下载器上暂停同 hash 的种子。
+  Future<void> pauseSeedingJob(String jobId) => _setCompletedJobSeedingPaused(
+    jobId,
+    _BackendTorrentLookup(),
+    paused: true,
+  );
+
+  /// 恢复 [pauseSeedingJob] 停掉的做种（用户显式恢复，清掉 user_paused 记录；
+  /// 做种超限的种子仍会被上传策略按策略语义再停）。
+  Future<void> resumeSeedingJob(String jobId) => _setCompletedJobSeedingPaused(
+    jobId,
+    _BackendTorrentLookup(),
+    paused: false,
+  );
+
+  /// 批量版 [pauseSeedingJob]：整批共用一次后端枚举（HBK-AUDIT-025）。单条
+  /// 失败不中断整批；返回失败的 jobId → 错误（成功的不在表里）。
+  Future<Map<String, Object>> pauseSeedingJobs(Iterable<String> jobIds) =>
+      _runJobBatch(
+        jobIds,
+        (String jobId, _BackendTorrentLookup lookup) =>
+            _setCompletedJobSeedingPaused(jobId, lookup, paused: true),
+      );
+
+  /// 批量版 [resumeSeedingJob]，语义同 [pauseSeedingJobs]。
+  Future<Map<String, Object>> resumeSeedingJobs(Iterable<String> jobIds) =>
+      _runJobBatch(
+        jobIds,
+        (String jobId, _BackendTorrentLookup lookup) =>
+            _setCompletedJobSeedingPaused(jobId, lookup, paused: false),
+      );
+
+  /// 串行跑一批单条动作，共用同一个 [_BackendTorrentLookup]：同一后端整批只
+  /// 枚举一次。串行是有意的——这些动作落到同一后端与同一张表的 CAS 上。
+  static Future<Map<String, Object>> _runJobBatch(
+    Iterable<String> jobIds,
+    Future<void> Function(String jobId, _BackendTorrentLookup lookup) action,
+  ) async {
+    final _BackendTorrentLookup lookup = _BackendTorrentLookup();
+    final Map<String, Object> failures = <String, Object>{};
+    for (final String jobId in jobIds) {
+      try {
+        await action(jobId, lookup);
+      } on Object catch (error) {
+        failures[jobId] = error;
+      }
+    }
+    return failures;
+  }
+
+  Future<void> _setCompletedJobSeedingPaused(
+    String jobId,
+    _BackendTorrentLookup lookup, {
+    required bool paused,
+  }) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The selected download job no longer exists',
+      );
+    }
+    if (job.lifecycle != VideoDownloadJobLifecycle.completed) {
+      throw const VideoDownloadPipelineActionRequired(
+        'Only completed download jobs can pause or resume seeding',
+      );
+    }
+    final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '')
+        .trim()
+        .toLowerCase();
+    if (torrentId.isEmpty) {
+      throw const VideoDownloadPipelineActionRequired(
+        'This download job has no torrent in the download backend',
+      );
+    }
+    final VideoDownloadBackendBinding? binding = await backendResolver(job);
+    _validateBackendBinding(job, binding);
+    final TorrentBackend backend = binding!.backend;
+    if (backend is! TorrentPauseBackend || !backend.pauseControlAvailable) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The original download backend cannot pause or resume seeding',
+      );
+    }
+    if (!await lookup.contains(backend, torrentId)) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The torrent is no longer available in the original backend',
+      );
+    }
+    final bool ok = paused
+        ? await backend.pauseTorrent(torrentId)
+        : await backend.resumeTorrent(torrentId);
+    if (!ok) {
+      throw VideoDownloadPipelineActionRequired(
+        paused
+            ? 'The original download backend could not pause seeding'
+            : 'The original download backend could not resume seeding',
       );
     }
   }
@@ -5477,4 +5598,32 @@ extension on VideoMediaReference {
         bangumiId: bangumiId,
         externalIds: externalIds,
       );
+}
+
+/// 一批动作内「这颗种子还在不在这个后端」的查询表（HBK-AUDIT-025）。
+///
+/// 每个后端实例在一批里只 `listTorrents` 一次，之后按 info hash 查集合；不跨
+/// 批复用——批外的状态随时在变，缓存只活一次批量调用。只答「在不在」：批内
+/// 的暂停 / 恢复不增删种子，所以集合在整批里一直成立。枚举失败时这一后端的
+/// 每条都以同一个错误失败（与 [VideoDownloadPipelineService.loadTaskSnapshots]
+/// 按后端分组降级同口径），不会对同一个坏后端重试 N 次。
+final class _BackendTorrentLookup {
+  final Map<TorrentBackend, Future<Set<String>>> _hashes =
+      Map<TorrentBackend, Future<Set<String>>>.identity();
+
+  Future<bool> contains(TorrentBackend backend, String torrentId) async {
+    final String id = torrentId.trim().toLowerCase();
+    if (id.isEmpty) return false;
+    final Set<String> hashes = await _hashes.putIfAbsent(
+      backend,
+      () async => <String>{
+        for (final TorrentSnapshot snapshot
+            in await VideoDownloadPipelineService._listBackendTorrentsForJobs(
+              backend,
+            ))
+          snapshot.hash.toLowerCase(),
+      },
+    );
+    return hashes.contains(id);
+  }
 }

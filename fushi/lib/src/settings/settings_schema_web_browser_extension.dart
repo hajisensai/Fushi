@@ -226,6 +226,14 @@ SettingsDestination _subtitleDestination() => SettingsDestination(
           label: 'opt_subtitleReplaceNative',
           icon: FushiIcons.swap,
         ),
+        // YouTube 自动字幕按标点 / 停顿整合成整句（扩展 22e50989ec，反馈 97pds8EODm）；
+        // 页内脚本 content.js 读同一个 storage 键。
+        _switch(
+          'subtitleMergeAsrSentences',
+          fallback: false,
+          label: 'opt_subtitleMergeAsrSentences',
+          icon: FushiIcons.merge,
+        ),
         _switch(
           'playerControls',
           fallback: true,

@@ -928,6 +928,19 @@ enum ShortcutAction {
     'global_external_galgame_speak_line',
   ),
 
+  // 反馈 fMicnouU6V（拍板台「做」）：显示 / 隐藏 galgame 台词浮窗（游戏内 overlay）
+  // 的全局快捷键。游戏窗口在前台时要能按，所以同样只能是 OS 级热键（本 scope）。
+  //
+  // 执行体登记在 GlobalLookupController._osHotKeyActions，落到
+  // `GalHookTextOverlayController.toggleVisibility`：浮窗可见时走浮窗「关闭」按钮
+  // （`onClose`）的同一个 `closeForCurrentSession`（本局不再自动弹），不可见时走
+  // 文本钩子页「显示 Hook 浮窗」的同一个 `showManually`。平台门、键盘-only、默认
+  // 不绑键的理由与 globalExternalGalgameSpeakLine 相同。
+  globalExternalGalgameOverlayToggle(
+    ShortcutScope.globalExternal,
+    'global_external_galgame_overlay_toggle',
+  ),
+
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
   // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
   // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
@@ -1017,9 +1030,9 @@ enum ShortcutAction {
     ShortcutAction.globalExternalAudiobookPrevSentence ||
     ShortcutAction.globalExternalAudiobookNextSentence ||
     ShortcutAction.globalExternalAudiobookReplaySentence ||
-    ShortcutAction.globalExternalGalgameSpeakLine => const <ShortcutChannel>{
-      ShortcutChannel.keyboard,
-    },
+    ShortcutAction.globalExternalGalgameSpeakLine ||
+    ShortcutAction.globalExternalGalgameOverlayToggle =>
+      const <ShortcutChannel>{ShortcutChannel.keyboard},
     _ => scope.channels,
   };
 

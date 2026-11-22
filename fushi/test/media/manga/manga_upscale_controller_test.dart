@@ -153,6 +153,42 @@ void main() {
     });
   });
 
+  // HBK-AUDIT-006：模型加载失败归属发起加载的那一代引擎配置。换档后旧代迟到的失败（token = 旧代际）
+  // 不能把本次启用的新档关掉；只有本代的失败才退回「不可用」。
+  test(
+    'a late model failure of an older engine generation keeps the active tier',
+    () {
+      final List<MangaUpscaleNotice> notices = <MangaUpscaleNotice>[];
+      final MangaUpscaleController controller = MangaUpscaleController(
+        requested: FfcUpscaleTier.high,
+        onReady: (int _) {},
+        onNotice: notices.add,
+        service: MangaUpscaleService.forTesting(
+          download: (Directory _, List<MangaUpscaleModelFile> _) async {},
+        ),
+      );
+      controller.debugActivate(
+        const MangaUpscaleActivation(
+          tier: FfcUpscaleTier.high,
+          backend: FfcUpscaleBackend.directMl,
+          downgraded: false,
+          generation: 7,
+        ),
+      );
+      controller.handleEvent(
+        const FfcUpscaleEvent(FfcUpscaleEventKind.modelsFailed, 6),
+      );
+      expect(controller.tier, FfcUpscaleTier.high);
+      expect(notices, isEmpty);
+      controller.handleEvent(
+        const FfcUpscaleEvent(FfcUpscaleEventKind.modelsFailed, 7),
+      );
+      expect(controller.tier, isNull);
+      expect(notices, <MangaUpscaleNotice>[MangaUpscaleNotice.unavailable]);
+      controller.dispose();
+    },
+  );
+
   test(
     'ensureModels completes after the download and shares one in flight',
     () async {

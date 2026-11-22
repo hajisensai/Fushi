@@ -112,6 +112,9 @@ typedef _ToRgbaC =
     );
 typedef _ToRgbaDart =
     int Function(Pointer<Uint8>, int, int, int, int, Pointer<Uint8>, int);
+typedef _BgraToRgbaC =
+    Int32 Function(Pointer<Uint8>, Size, Size, Uint32, Uint32);
+typedef _BgraToRgbaDart = int Function(Pointer<Uint8>, int, int, int, int);
 typedef _MosaicC =
     Int32 Function(
       Pointer<Uint8>,
@@ -155,6 +158,15 @@ typedef _DecodeDart =
       Pointer<Size>,
       Pointer<Uint32>,
     );
+typedef _ToPngC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _ToPngDart =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _ProbeC = Int32 Function(Pointer<Uint8>, Size, Int32, Pointer<Uint32>);
 typedef _ProbeDart = int Function(Pointer<Uint8>, int, int, Pointer<Uint32>);
 typedef _ToJpegC =
@@ -525,6 +537,31 @@ class FushiComputeImage {
     }
   }
 
+  _BgraToRgbaDart? _bgraToRgba;
+
+  _BgraToRgbaDart get _bgraToRgbaFunction {
+    try {
+      return _bgraToRgba ??= _lib.library
+          .lookupFunction<_BgraToRgbaC, _BgraToRgbaDart>(
+            'ffc_image_bgra_to_rgba8_inplace',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image bgra to rgba', e.message ?? e);
+    }
+  }
+
+  _ToPngDart? _toPng;
+
+  _ToPngDart get _toPngFunction {
+    try {
+      return _toPng ??= _lib.library.lookupFunction<_ToPngC, _ToPngDart>(
+        'ffc_image_to_png',
+      );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image to png', e.message ?? e);
+    }
+  }
+
   static FushiComputeImage? _instance;
 
   /// 默认库上的图像域绑定。库不可用或缺图像域符号抛 [FushiComputeUnavailableError]
@@ -770,6 +807,49 @@ class FushiComputeImage {
     );
   }
 
+  /// 带行跨度 [stride] 的 BGRA 帧（每像素 4 字节，第四字节不用，如 mpv `screenshot-raw`）
+  /// 里取 `[x, x + width) × [y, y + height)`，转成行紧排的不透明 RGBA8888（alpha 恒 255）。
+  ///
+  /// 结果前面留 [headerBytes] 字节（置 0，由调用方填自己的头），像素从该偏移起，省掉调用方
+  /// 再拼一次。[bgra] 可以是原生缓冲的视图（只在调用期间读）：只把矩形覆盖的那段行一次性
+  /// 拷进暂存区，不拷整帧。
+  Uint8List bgraToRgba8(
+    Uint8List bgra, {
+    required int stride,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    int headerBytes = 0,
+  }) {
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 || headerBytes < 0) {
+      throw ArgumentError('bad rect ($x, $y, $width, $height) / header');
+    }
+    if ((x + width) * 4 > stride) {
+      throw ArgumentError.value(stride, 'stride', 'row exceeds stride');
+    }
+    // 矩形覆盖的字节段：首行左缘到末行右缘（中间行带上 stride 余下的部分），一次 memmove
+    // 拷进暂存区；Rust 在同一块上就地去掉行尾并换通道，只用一块暂存区（截帧 isolate 每次
+    // 都是新的，多一块就多一轮缺页）。
+    final int start = y * stride + x * 4;
+    final int span = (height - 1) * stride + width * 4;
+    if (start + span > bgra.length) {
+      throw ArgumentError.value(bgra.length, 'bgra', 'shorter than the rect');
+    }
+    final _BgraToRgbaDart call = _bgraToRgbaFunction;
+    final Pointer<Uint8> buf = NativeScratch.input.reserve(span);
+    buf
+        .asTypedListOutOfLine(span)
+        .setRange(0, span, Uint8List.sublistView(bgra, start, start + span));
+    _check(
+      'ffc_image_bgra_to_rgba8_inplace',
+      call(buf, span, stride, width, height),
+    );
+    final int n = width * height * 4;
+    return Uint8List(headerBytes + n)
+      ..setRange(headerBytes, headerBytes + n, buf.asTypedListOutOfLine(n));
+  }
+
   /// 就地给 RGBA8888 缓冲 [rgba] 打码。[rects] 每项是已夹进图像的像素范围
   /// `[x0, x1) × [y0, y1)`，[blockSize] 为块边长。
   void mosaicRgba8(
@@ -932,6 +1012,24 @@ class FushiComputeImage {
       final int status = _toJpeg(src, bytes.length, quality, outPtr, outLen);
       if (status == FfcStatus.badInput) return null;
       _check('ffc_image_to_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 解码（转正 EXIF / TIFF 方向）后无损编码成 PNG（灰度源出 8 位灰度 PNG，16 位截成
+  /// 8 位，多页 TIFF 只取首页）；认不出 / 解不开返回 null。漫画导入把 TIFF 页图落盘成 PNG 用。
+  Uint8List? toPng(Uint8List bytes) {
+    final _ToPngDart toPng = _toPngFunction;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = toPng(src, bytes.length, outPtr, outLen);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_to_png', status);
       return _takeBytes(outPtr, outLen);
     } finally {
       malloc.free(outPtr);

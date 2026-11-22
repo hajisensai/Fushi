@@ -14,6 +14,16 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import '../../ops/book_metadata_test_fixture.dart';
 
 /// [BookMetadataScrapeFacade]：从弹窗搬出来的候选解析规则 + 写回 / 快照 / 恢复。
+
+/// 只取可见候选（门面只暴露 [BookMetadataScrapeFacade.searchDetailed]：弹窗与控制
+/// 通道都走它）。
+Future<List<BookScrapeCandidate>> _search(
+  BookMetadataScrapeFacade facade, {
+  required BookScrapeSource source,
+  required String query,
+}) async =>
+    (await facade.searchDetailed(source: source, query: query)).candidates;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -27,7 +37,8 @@ void main() {
           searchHits: <Map<String, Object?>>[bangumiSubject('9', 'Searched')],
         ),
       );
-      final List<BookScrapeCandidate> got = await facade.search(
+      final List<BookScrapeCandidate> got = await _search(
+        facade,
         source: BookScrapeSource.bangumi,
         query: 'https://bgm.tv/subject/42',
       );
@@ -46,7 +57,8 @@ void main() {
           ],
         ),
       );
-      final List<BookScrapeCandidate> got = await facade.search(
+      final List<BookScrapeCandidate> got = await _search(
+        facade,
         source: BookScrapeSource.bangumi,
         query: '1984',
       );
@@ -61,7 +73,7 @@ void main() {
         scraper: offlineScraper(),
       );
       expect(
-        await facade.search(source: BookScrapeSource.bangumi, query: '  '),
+        await _search(facade, source: BookScrapeSource.bangumi, query: '  '),
         isEmpty,
       );
     });
@@ -128,6 +140,83 @@ void main() {
       expect(await BookMetadataScrapeFacade.isNsfwHost(db, null), isFalse);
       await db.setMediaNsfw(TagHostKind.epub, 'nsfw-book', true);
       expect(await BookMetadataScrapeFacade.isNsfwHost(db, host), isTrue);
+    });
+  });
+
+  group('isSongForItem（导入的歌曲默认 iTunes）', () {
+    late FushiDatabase db;
+
+    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    MediaItem itemFor(String identifier) => MediaItem(
+      mediaIdentifier: identifier,
+      title: 'Lemon',
+      mediaTypeIdentifier: 'reader',
+      mediaSourceIdentifier: 'reader_fushi',
+      position: 0,
+      duration: 0,
+      canDelete: true,
+      canEdit: true,
+    );
+
+    Future<void> srtBook(String uid, String srtPath) => db.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: uid,
+        title: 'Lemon',
+        srtPath: srtPath,
+        importedAt: 0,
+      ),
+    );
+
+    test('字幕书：字幕文件是 .lrc 才算歌曲（大小写不敏感）', () async {
+      await srtBook('song', 'C:/music/Lemon.LRC');
+      await srtBook('drama', 'C:/books/drama.srt');
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('song')),
+        ),
+        isTrue,
+      );
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('drama')),
+        ),
+        isFalse,
+      );
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('missing')),
+        ),
+        isFalse,
+      );
+    });
+
+    test('EPUB 有声书：对齐格式 lrc 算歌曲；smil / 没挂有声书不算', () async {
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'epub-song',
+          alignmentFormat: 'lrc',
+          alignmentPath: 'C:/a/song.lrc',
+        ),
+      );
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'epub-novel',
+          alignmentFormat: 'smil',
+          alignmentPath: 'C:/a/novel.smil',
+        ),
+      );
+      Future<bool> isSong(String key) => BookMetadataScrapeFacade.isSongForItem(
+        db,
+        itemFor(ReaderFushiSource.mediaIdentifierFor(key)),
+      );
+      expect(await isSong('epub-song'), isTrue);
+      expect(await isSong('epub-novel'), isFalse);
+      expect(await isSong('epub-plain'), isFalse);
     });
   });
 

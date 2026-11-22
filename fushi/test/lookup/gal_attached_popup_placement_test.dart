@@ -17,6 +17,11 @@ class _LookupAppModel extends AppModel {
   @override
   double get appUiScale => 1.0;
 
+  // 夹具不初始化偏好仓库，controller.start 读到的每个偏好都要在这里给值；
+  // 应用外快捷键总开关取生产默认（开），保持热键注册路径与真实启动一致。
+  @override
+  bool get appExternalHotkeysEnabled => true;
+
   @override
   double get dictionaryFontSize => 16.0;
 

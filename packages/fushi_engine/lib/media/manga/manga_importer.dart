@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
@@ -211,27 +212,85 @@ class MangaImporter {
   /// [kPageSizeProbePrefixBytes] 字节，能凭前缀定论的格式（[probeImageSizeFromPrefix]：
   /// PNG、头部在前缀内的 JPEG）直接返回；其余读全量走 [_pageSize]（manga-29c，此前
   /// 每页整张读进内存只为读头）。
+  ///
+  /// 读全量时用**同一个句柄**接着读前缀之后的部分（HBK-AUDIT-051）：此前关掉句柄、
+  /// `readAsBytes` 从头再读整页，WebP / AVIF 每页开两次文件、前缀读两遍。
   static Future<MokuroSize> pageSizeOfFile(
     File file,
     String relativeUrl,
   ) async {
     final RandomAccessFile handle = await file.open();
-    final int length;
-    final Uint8List prefix;
+    final Uint8List bytes;
     try {
-      length = await handle.length();
-      prefix = await handle.read(kPageSizeProbePrefixBytes);
+      final int length = await handle.length();
+      final Uint8List prefix = await handle.read(kPageSizeProbePrefixBytes);
+      final ({int width, int height})? header = probeImageSizeFromPrefix(
+        prefix,
+      );
+      if (header != null) {
+        return MokuroSize(header.width.toDouble(), header.height.toDouble());
+      }
+      bytes = prefix.length >= length
+          ? prefix
+          : await _readRest(handle, prefix, length);
     } finally {
       await handle.close();
     }
-    final ({int width, int height})? header = probeImageSizeFromPrefix(prefix);
-    if (header != null) {
-      return MokuroSize(header.width.toDouble(), header.height.toDouble());
+    if (isMangaTranscodedPage(file.path)) {
+      // 导入时要转成 PNG 的页（TIFF）：尺寸必须与转码产物一致，而转码按原生解码器
+      // 读到的方向标签转正——尺寸也只问原生内核（Dart 头探测不看 TIFF 方向）。
+      return _nativePageSize(bytes, relativeUrl);
     }
-    final Uint8List bytes = prefix.length >= length
-        ? prefix
-        : await file.readAsBytes();
     return _pageSize(bytes, relativeUrl);
+  }
+
+  /// 已从 [handle] 读出 [prefix]：把剩余部分接着读进一块 [length] 大小的缓冲，返回
+  /// 整页字节。文件在两次读之间被截短时返回实际读到的部分（与 `readAsBytes` 读到
+  /// 什么算什么同一语义）。
+  static Future<Uint8List> _readRest(
+    RandomAccessFile handle,
+    Uint8List prefix,
+    int length,
+  ) async {
+    final Uint8List bytes = Uint8List(length)
+      ..setRange(0, prefix.length, prefix);
+    int filled = prefix.length;
+    while (filled < length) {
+      final int read = await handle.readInto(bytes, filled, length);
+      if (read <= 0) break;
+      filled += read;
+    }
+    return filled == length ? bytes : Uint8List.sublistView(bytes, 0, filled);
+  }
+
+  /// [path] 是不是导入时转码成 PNG 落盘的页图（[kMangaImportTranscodedPageExtensions]）。
+  static bool isMangaTranscodedPage(String path) =>
+      kMangaImportTranscodedPageExtensions.contains(
+        p.extension(path).toLowerCase(),
+      );
+
+  /// 把 [src]（[isMangaTranscodedPage] 的页图）在后台 isolate 里转成 PNG 写到 [dest]。
+  /// 解不开抛 [MangaImportException]（与探尺寸失败同一种「坏页」错误）。
+  static Future<void> transcodePageFile(
+    File src,
+    File dest,
+    String relativeUrl,
+  ) async {
+    final Uint8List bytes = await src.readAsBytes();
+    final Uint8List? png = await Isolate.run(() => encodeImageAsPng(bytes));
+    if (png == null) {
+      throw MangaImportException('Could not decode manga page: $relativeUrl');
+    }
+    await dest.writeAsBytes(png, flush: true);
+  }
+
+  static MokuroSize _nativePageSize(Uint8List bytes, String relativeUrl) {
+    final ({int width, int height, FfcImageFormat format})? native =
+        probeImageNative(bytes);
+    if (native == null) {
+      throw MangaImportException('Could not decode manga page: $relativeUrl');
+    }
+    return MokuroSize(native.width.toDouble(), native.height.toDouble());
   }
 
   /// 页图宽高（已按显示方向）：先走 Dart 头部探测（[probeOrientedImageSize]，JPEG /
@@ -269,6 +328,14 @@ class MangaImporter {
     for (final MokuroImage page in payload.images) {
       // sanitizeRelSegments 对含 `..` 的 img_path 抛 MangaImportException（防穿越红线）。
       final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
+      // TIFF 页落盘成 PNG（[copyMangaArtifacts] 转码），destRel 先换好扩展名：
+      // manga.json 的 url 与书目录里的文件名一致，且与同名 `.png` 页一起去重。
+      if (segments.isNotEmpty && isMangaTranscodedPage(segments.last)) {
+        final String last = segments.last;
+        segments[segments.length - 1] =
+            p.withoutExtension(last) +
+            mangaStoredPageExtension(p.extension(last));
+      }
       destRels.add(MangaStorage.uniqueDestRel(segments, usedDestRels));
       final File src = mokuroPageFile(srcDir.path, page.url);
       if (!src.existsSync()) {
@@ -304,6 +371,24 @@ class MangaImporter {
       final File src = mokuroPageFile(srcDir.path, page.url);
       final File dest = MangaStorage.destFile(bookDir, destRel);
       dest.parent.createSync(recursive: true);
+      if (isMangaTranscodedPage(src.path)) {
+        // TIFF：转成 PNG 写进书目录（destRel 已在 [planMangaDestRels] 换成 .png）。
+        // disposable 的源留在暂存目录里随它一起删；同一张源被多页引用时照样从书目录
+        // 里那份拷，不重复转码。
+        final String key = p.canonicalize(src.path);
+        final File? earlier = moved[key];
+        if (earlier != null) {
+          await earlier.copy(dest.path);
+        } else {
+          await transcodePageFile(src, dest, page.url);
+          moved[key] = dest;
+        }
+        rewritten.add(
+          MokuroImage(url: destRel, size: page.size, blocks: page.blocks),
+        );
+        onProgress?.call(i + 1, total);
+        continue;
+      }
       switch (pageSource) {
         case MangaPageSource.borrowed:
           await src.copy(dest.path);

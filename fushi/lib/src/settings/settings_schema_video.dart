@@ -1653,7 +1653,7 @@ SettingsDestination buildVideoPictureDestination() {
             id: 'video.playback.entry_orientation',
             title: t.video_setting_entry_orientation,
             subtitle: t.video_setting_entry_orientation_hint,
-            icon: Icons.screen_rotation_outlined,
+            icon: FushiIcons.screenRotation,
             visible: (_) => isMobilePlatform,
             video: VideoPlacement(group: VideoGroup.playback, order: 41),
             options: <SettingsSegmentOption<String>>[
@@ -1683,7 +1683,7 @@ SettingsDestination buildVideoPictureDestination() {
             id: 'video.playback.portrait_subtitle_list',
             title: t.video_setting_portrait_subtitle_list,
             subtitle: t.video_setting_portrait_subtitle_list_hint,
-            icon: Icons.splitscreen_outlined,
+            icon: FushiIcons.splitscreen,
             visible: (_) => isMobilePlatform,
             video: VideoPlacement(group: VideoGroup.playback, order: 42),
             value: (SettingsContext settingsContext) =>
@@ -1696,10 +1696,26 @@ SettingsDestination buildVideoPictureDestination() {
             defaultValue: true,
           ),
           SettingsSwitchItem(
+            id: 'video.playback.background_play',
+            title: t.video_setting_background_play,
+            subtitle: t.video_setting_background_play_hint,
+            icon: FushiIcons.audiobook,
+            // 桌面最小化本来就不暂停视频（BUG-2544 只在移动端的 `paused` 暂停），
+            // 这个开关只对手机 / 平板有意义（拍板台 42UUu_kcwD）。
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 44),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoBackgroundPlay,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoBackgroundPlay(value);
+            },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
             id: 'video.playback.remember_orientation',
             title: t.video_setting_remember_orientation,
             subtitle: t.video_setting_remember_orientation_hint,
-            icon: Icons.bookmark_outline,
+            icon: FushiIcons.bookmark,
             visible: (_) => isMobilePlatform,
             video: VideoPlacement(group: VideoGroup.playback, order: 43),
             value: (SettingsContext settingsContext) =>
@@ -1745,7 +1761,7 @@ SettingsDestination buildVideoPictureDestination() {
           SettingsSegmentedItem<int>(
             id: 'video.geometry.rotate',
             title: t.video_setting_mpv_rotate,
-            icon: Icons.screen_rotation_outlined,
+            icon: FushiIcons.screenRotation,
             dropdown: true,
             video: VideoPlacement(
               group: VideoGroup.mpv,

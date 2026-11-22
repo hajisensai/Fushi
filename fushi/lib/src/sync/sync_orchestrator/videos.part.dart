@@ -69,28 +69,47 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     InterconnectSyncBackend backend, {
     _HostVideoListSnapshot? hostVideos,
   }) async {
+    // 视频进度是 host-truth 模型：进度端点只对 host DB 里真实存在的视频可用。先取
+    // host 视频清单（条目已带 positionMs / positionUpdatedAtMs，省去逐视频 GET），
+    // 只对两端都有的视频同步；本地独有视频（host 无）无 host 真相可同步，跳过。
+    //
+    // 流媒体书（粘贴 URL / 网页视频站）没有字节可传、不走文件阶段，先在这里把行
+    // 对齐（本机独有的注册给 host、host 新有的落到本机，拍板台 Z2OhxAjKVv），下面
+    // 的本地基底与 host 清单就都包含它们，进度 / 播放偏好照常同步。推过东西时
+    // 返回的是推之后重取的清单。
+    //
+    // 本机行表与整表偏好在这里各读一次，流媒体对齐与下面的进度 / 播放偏好共用（稳态
+    // 一轮 SQL 条数与视频数无关，interconnect_progress_sweep_db_ops_test 钉着）；只有
+    // 对齐真落了新行才重读行表。
+    List<VideoBookRow> localRows = await _db.allVideoBooks();
+    final Map<String, String> allPrefs = await _db.getAllPrefs();
+    final ({List<RemoteVideoInfo> hostList, bool pulled}) aligned =
+        await _reconcileStreamVideosLive(
+          report,
+          backend,
+          hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
+              ? hostVideos.videos
+              : await backend.listRemoteVideos(),
+          localRows: localRows,
+          prefs: allPrefs,
+        );
+    final List<RemoteVideoInfo> hostList = aligned.hostList;
+    if (aligned.pulled) localRows = await _db.allVideoBooks();
+
     // 基底①：本地 VideoBooks 行（uid → lastPositionMs，向后兼容书架视频）。
     final Map<String, int> rowPositionByUid = <String, int>{};
-    for (final VideoBookRow video in await _db.allVideoBooks()) {
+    for (final VideoBookRow video in localRows) {
       rowPositionByUid[video.bookUid] = video.lastPositionMs;
     }
     // 基底②：本地看过的流式视频（有 video_remote_position_<uid> prefs 但无行）。
     final Set<String> localUids = <String>{...rowPositionByUid.keys};
-    final Map<String, String> allPrefs = await _db.getAllPrefs();
     for (final String key in allPrefs.keys) {
       final String? uid = videoUidFromRemotePositionPrefKey(key);
       if (uid != null) localUids.add(uid);
     }
     if (localUids.isEmpty) return;
 
-    // 视频进度是 host-truth 模型：进度端点只对 host DB 里真实存在的视频可用。先取
-    // host 视频清单（条目已带 positionMs / positionUpdatedAtMs，省去逐视频 GET），
-    // 只对两端都有的视频同步；本地独有视频（host 无）无 host 真相可同步，跳过。
     final Map<String, RemoteVideoInfo> hostById = <String, RemoteVideoInfo>{};
-    final List<RemoteVideoInfo> hostList =
-        hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
-        ? hostVideos.videos
-        : await backend.listRemoteVideos();
     for (final RemoteVideoInfo info in hostList) {
       hostById[info.id] = info;
     }
@@ -440,8 +459,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
 
     final int total = toPush.length;
     int index = 0;
-    // 老 host 无字幕端点（首个 404/405）后停止本轮后续字幕推送，只记一条可见提示
-    // （与合集端点缺失的可见性纪律一致），不把每条视频都刷成一条错误。
+    // 老 host 无字幕端点（首个 404/405）后停止本轮后续字幕推送，只记一条「对端版本
+    // 过旧」（统一提示，与合集端点缺失同一形态），不把每条视频都刷成一条错误。
     bool subtitleEndpointMissing = false;
     for (final ({VideoBookRow row, File file, bool pushVideo}) item in toPush) {
       final VideoBookRow v = item.row;
@@ -485,9 +504,9 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           sidecarDirCache: sidecarDirCache,
         );
         if (subtitleEndpointMissing) {
-          report.errors.add(
-            'live push subtitles: host has no subtitle endpoint (older app '
-            'version) — update the host app to sync video subtitles',
+          report.notePeerGap(
+            SyncPeerGapDimension.videoSubtitles,
+            outdated: true,
           );
         }
       }

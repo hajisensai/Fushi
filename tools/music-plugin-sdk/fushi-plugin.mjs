@@ -254,6 +254,18 @@ async function cmdSmoke(dir, flags) {
       if (l === null) console.log(c.dim('      (lyricsFetch returned null for the first candidate)'));
     }
   }
+  if (caps.has('browse')) {
+    const schema = await call(runner, 'browse', { op: 'schema' }, opt);
+    const facet = Array.isArray(schema?.facets) ? schema.facets.find((f) => typeof f?.id === 'string') : undefined;
+    let filters = [];
+    if (facet) {
+      const cat = await call(runner, 'browse', { op: 'catalog', facet: facet.id, page: 0, pageSize: 20 }, opt);
+      const e = first(cat, 'items');
+      if (e && typeof e.id === 'string') filters = [{ facet: facet.id, id: e.id, name: String(e.name ?? e.id) }];
+    }
+    const list = await call(runner, 'browse', { op: 'list', query: { filters }, page: 0, pageSize: 20 }, opt);
+    if (list?.hasMore === true) await call(runner, 'browse', { op: 'list', query: { filters }, page: 1, pageSize: 20 }, opt);
+  }
   if (caps.has('library')) await call(runner, 'library', { page: 0, pageSize: 50 }, opt);
   if (caps.has('like')) await call(runner, 'like', { op: 'list' }, opt);
   if (caps.has('login')) await call(runner, 'login', { op: 'methods', platform: 'windows' }, opt);

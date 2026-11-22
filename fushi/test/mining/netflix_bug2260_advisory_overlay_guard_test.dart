@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2260 守卫：Netflix 年龄分级/内容提示 overlay（左上角 "RATED 13+ / 暴力, 自杀"）的
 /// DOM 已改为
 ///   div.watch-video--advisories-container > div.advisory-container > div.advisory >
@@ -132,15 +134,34 @@ void main() {
     ).readAsStringSync();
 
     test('onLoadStop 按 _mineRunning 重挂 chrome 隐藏（整页换集不丢）', () {
-      final int start = page.indexOf('onLoadStop:');
-      expect(start, greaterThanOrEqualTo(0));
-      final int end = page.indexOf('onRenderProcessGone:', start);
-      expect(end, greaterThan(start));
+      // WebView 收进 WebVideoSession 之后，onLoadStop 在会话里，经
+      // `onDocumentReady` 回调交给页面的 `_onDocumentReady`。链上三环各钉一处。
+      final String session = maskComments(
+        File('lib/src/media/video/web_video_session.dart').readAsStringSync(),
+      );
+      final int loadStop = session.indexOf('onLoadStop:');
+      expect(loadStop, greaterThanOrEqualTo(0));
+      final int loadStopEnd = session.indexOf('onRenderProcessGone:', loadStop);
+      expect(loadStopEnd, greaterThan(loadStop));
       expect(
-        page
-            .substring(start, end)
-            .contains('_setPlayerChromeHidden(_mineRunning)'),
-        isTrue,
+        session.substring(loadStop, loadStopEnd),
+        contains('session._onLoadStop()'),
+        reason: '每个文档加载完都要走会话的 _onLoadStop',
+      );
+      expect(
+        methodBody(session, 'void _onLoadStop()'),
+        contains('onDocumentReady?.call()'),
+        reason: '会话的 _onLoadStop 必须把「文档就绪」交给页面',
+      );
+      final String code = maskComments(page);
+      expect(
+        code,
+        contains('onDocumentReady: _onDocumentReady'),
+        reason: '页面必须把自己的 _onDocumentReady 挂到会话上',
+      );
+      expect(
+        methodBody(code, 'void _onDocumentReady()'),
+        contains('_setPlayerChromeHidden(_mineRunning)'),
         reason: '换集 loadUrl 后上一份文档的 <style> 已没了，隐藏态归 Dart 所有，新文档必须重挂',
       );
     });

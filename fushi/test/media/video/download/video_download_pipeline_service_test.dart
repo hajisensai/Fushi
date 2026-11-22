@@ -3432,6 +3432,225 @@ void main() {
     },
   );
 
+  group('BUG-5072 completed job seeding pause / resume', () {
+    test('pauses and resumes the exact seeding torrent on its own backend '
+        'without touching the completed lifecycle', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_completeSnapshot()],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String jobId = 'seeding-completed-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.scrape,
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      );
+
+      await environment.service.pauseSeedingJob(jobId);
+      expect(backend.pausedTorrentIds, <String>[_torrentHash]);
+      expect(
+        (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+        VideoDownloadJobLifecycle.completed,
+      );
+
+      await environment.service.resumeSeedingJob(jobId);
+      expect(backend.resumedTorrentIds, <String>[_torrentHash]);
+      expect(
+        (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+        VideoDownloadJobLifecycle.completed,
+      );
+    });
+
+    test('refuses when the torrent is no longer in the backend', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend();
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String jobId = 'seed-removed-completed-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.scrape,
+        lifecycle: VideoDownloadJobLifecycle.completed,
+      );
+
+      await expectLater(
+        environment.service.pauseSeedingJob(jobId),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      expect(backend.pauseCalls, 0);
+    });
+
+    test(
+      'refuses a backend whose identity no longer matches the job',
+      () async {
+        final _FakeTorrentBackend backend = _FakeTorrentBackend(
+          snapshots: <TorrentSnapshot>[_completeSnapshot()],
+        );
+        final _PipelineEnvironment environment =
+            await _PipelineEnvironment.create(
+              backend: backend,
+              backendResolver: (_) async => VideoDownloadBackendBinding(
+                backend: backend,
+                identity: const VideoDownloadBackendIdentity(
+                  kind: 'embedded',
+                  profileId: 'embedded',
+                  fingerprint: 'another-installation',
+                ),
+              ),
+            );
+        addTearDown(environment.close);
+        const String jobId = 'seed-mismatched-backend';
+        await environment.insertJob(
+          jobId: jobId,
+          stage: VideoDownloadJobStage.scrape,
+          lifecycle: VideoDownloadJobLifecycle.completed,
+        );
+
+        await expectLater(
+          environment.service.pauseSeedingJob(jobId),
+          throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        );
+        await expectLater(
+          environment.service.resumeSeedingJob(jobId),
+          throwsA(isA<VideoDownloadPipelineActionRequired>()),
+        );
+        expect(backend.pauseCalls, 0);
+        expect(backend.resumeCalls, 0);
+      },
+    );
+
+    // HBK-AUDIT-025：批量停 / 续做种整批只枚举一次后端。修复前逐条
+    // pauseSeedingJob 每条都 listTorrents 一次（N 条 = N 次，每次遍历 M 颗）。
+    test('batch pause / resume seeding lists the backend once per batch and '
+        'reports per-job failures', () async {
+      final List<String> hashes = <String>[
+        for (int i = 0; i < 6; i++) i.toString() * 40,
+      ];
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[
+          // 第 6 颗不在后端：只有它失败，其余照常。
+          for (final String hash in hashes.take(5))
+            TorrentSnapshot(
+              hash: hash,
+              name: 'Show',
+              progress: 1,
+              state: 'uploading',
+              savePath: '/downloads',
+              contentPath: '/downloads/Show',
+              amountLeft: 0,
+            ),
+        ],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final List<String> jobIds = <String>[
+        for (int i = 0; i < hashes.length; i++) 'seed-batch-$i',
+      ];
+      for (int i = 0; i < hashes.length; i++) {
+        await environment.insertJob(
+          jobId: jobIds[i],
+          stage: VideoDownloadJobStage.scrape,
+          lifecycle: VideoDownloadJobLifecycle.completed,
+          torrentHash: hashes[i],
+        );
+      }
+
+      final Map<String, Object> pauseFailures = await environment.service
+          .pauseSeedingJobs(jobIds);
+      expect(backend.listTorrentsCalls, 1);
+      expect(backend.pausedTorrentIds, hashes.take(5).toList());
+      expect(pauseFailures.keys, <String>[jobIds.last]);
+      expect(
+        pauseFailures[jobIds.last],
+        isA<VideoDownloadPipelineActionRequired>(),
+      );
+
+      final Map<String, Object> resumeFailures = await environment.service
+          .resumeSeedingJobs(jobIds);
+      expect(backend.listTorrentsCalls, 2);
+      expect(backend.resumedTorrentIds, hashes.take(5).toList());
+      expect(resumeFailures.keys, <String>[jobIds.last]);
+      for (final String jobId in jobIds) {
+        expect(
+          (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+          VideoDownloadJobLifecycle.completed,
+        );
+      }
+    });
+
+    test('batch resume of user-paused jobs lists the backend once', () async {
+      final List<String> hashes = <String>[
+        for (int i = 0; i < 4; i++) i.toString() * 40,
+      ];
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[
+          for (final String hash in hashes)
+            TorrentSnapshot(
+              hash: hash,
+              name: 'Show',
+              progress: 0.4,
+              state: 'stoppedDL',
+              savePath: '/downloads',
+              contentPath: '/downloads/Show',
+              amountLeft: 100,
+            ),
+        ],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final List<String> jobIds = <String>[
+        for (int i = 0; i < hashes.length; i++) 'resume-batch-$i',
+      ];
+      for (int i = 0; i < hashes.length; i++) {
+        await environment.insertJob(
+          jobId: jobIds[i],
+          stage: VideoDownloadJobStage.download,
+          lifecycle: VideoDownloadJobLifecycle.cancelled,
+          torrentHash: hashes[i],
+        );
+      }
+
+      final Map<String, Object> failures = await environment.service.resumeJobs(
+        jobIds,
+      );
+      expect(failures, isEmpty);
+      // 批内 4 条恢复共用第 1 次枚举（整批结束才唤醒调度，drain 自己的枚举
+      // 发生在之后，不算）。
+      expect(backend.listTorrentsCallsAtResume, <int>[1, 1, 1, 1]);
+      expect(backend.resumedTorrentIds, hashes);
+      for (final String jobId in jobIds) {
+        expect(
+          (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+          VideoDownloadJobLifecycle.active,
+        );
+      }
+    });
+
+    test('refuses jobs that are not completed', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String jobId = 'seed-active-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+
+      await expectLater(
+        environment.service.pauseSeedingJob(jobId),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      expect(backend.pauseCalls, 0);
+    });
+  });
+
   test(
     'delete removes a stale task even when its backend cannot pause it',
     () async {
@@ -5742,6 +5961,7 @@ class _PipelineEnvironment {
     String category = _expectedCategory,
     String? identityJson,
     String? mediaKind,
+    String torrentHash = _torrentHash,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.upsertVideoDownloadJob(
@@ -5749,9 +5969,9 @@ class _PipelineEnvironment {
         jobId: jobId,
         resourceProvider: 'nyaa:test-instance',
         selectedResourceId: 'release-1',
-        magnetUri: const Value<String?>('magnet:?xt=urn:btih:$_torrentHash'),
+        magnetUri: Value<String?>('magnet:?xt=urn:btih:$torrentHash'),
         resourceTitle: const Value<String?>('Show S01E01'),
-        torrentHash: const Value<String?>(_torrentHash),
+        torrentHash: Value<String?>(torrentHash),
         metadataProvider: const Value<String?>('anilist'),
         externalId: const Value<String?>('100'),
         identityJson: Value<String?>(identityJson),
@@ -5761,7 +5981,7 @@ class _PipelineEnvironment {
         year: const Value<int?>(2026),
         season: const Value<int?>(1),
         backendKind: backendKind,
-        backendTaskId: const Value<String?>(_torrentHash),
+        backendTaskId: Value<String?>(torrentHash),
         backendProfileId: Value<String?>(_expectedIdentity.profileId),
         fingerprint: _expectedIdentity.fingerprint,
         category: Value<String?>(category),
@@ -6101,6 +6321,10 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   final List<String> pausedTorrentIds = <String>[];
   final List<String> resumedTorrentIds = <String>[];
 
+  /// 每次 resumeTorrent 时已发生的 listTorrents 次数（HBK-AUDIT-025：批内
+  /// 每条恢复看到的都应是同一次枚举）。
+  final List<int> listTorrentsCallsAtResume = <int>[];
+
   @override
   bool get pauseControlAvailable => true;
 
@@ -6115,6 +6339,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   Future<bool> resumeTorrent(String torrentId) async {
     resumeCalls += 1;
     resumedTorrentIds.add(torrentId);
+    listTorrentsCallsAtResume.add(listTorrentsCalls);
     return true;
   }
 

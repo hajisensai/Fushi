@@ -187,10 +187,14 @@ class MangaUpscaleActivation {
     required this.tier,
     required this.backend,
     required this.downgraded,
+    required this.generation,
   });
 
   final FfcUpscaleTier tier;
   final FfcUpscaleBackend backend;
+
+  /// 引擎为这次启用交出的配置代际：[FfcUpscaleEventKind.modelsFailed] 只有带的是这一代才属于本次启用。
+  final int generation;
 
   /// 选了高质量但这个后端跑不了（引擎 `tierSupported`：只有 DirectML 行），按轻量档做。
   final bool downgraded;
@@ -289,7 +293,7 @@ class MangaUpscaleService {
         ?inside,
         outside,
       ], onDownload);
-      final int status = engine.configure(
+      final (:int status, :int generation) = engine.configure(
         tier: tier,
         backend: backend,
         insideModel: inside == null ? null : p.join(dir.path, inside.fileName),
@@ -307,6 +311,7 @@ class MangaUpscaleService {
         tier: tier,
         backend: backend,
         downgraded: tier != requested,
+        generation: generation,
       );
     } on Object catch (error, stackTrace) {
       ErrorLogService.instance.log(
@@ -445,7 +450,7 @@ class MangaUpscaleController {
     }
     if (active.downgraded) onNotice(MangaUpscaleNotice.lightOnly);
     _active = active;
-    _events = _service.events.listen(_onEvent);
+    _events = _service.events.listen(handleEvent);
     // 引擎的队列按当前页取舍任务：先告诉它读者在哪，再收提交。
     FushiComputeUpscale.instance.focus(
       _focusPage,
@@ -454,7 +459,16 @@ class MangaUpscaleController {
     return active;
   }();
 
-  void _onEvent(FfcUpscaleEvent event) {
+  /// 测试用：跳过服务直接按 [active] 启用（不下载、不配置引擎）。
+  @visibleForTesting
+  void debugActivate(MangaUpscaleActivation active) {
+    _activation = Future<MangaUpscaleActivation?>.value(active);
+    _active = active;
+  }
+
+  /// 引擎事件（广播，进程里所有阅读器共用）：只认属于本次启用的。
+  @visibleForTesting
+  void handleEvent(FfcUpscaleEvent event) {
     if (_disposed) return;
     if (event.kind == FfcUpscaleEventKind.failed ||
         event.kind == FfcUpscaleEventKind.modelsFailed) {
@@ -468,6 +482,9 @@ class MangaUpscaleController {
       }
     }
     if (event.kind == FfcUpscaleEventKind.modelsFailed) {
+      // 失败归属发起加载的那一代配置：换档后旧代迟到的失败不能关掉本次启用的新档。
+      final MangaUpscaleActivation? active = _active;
+      if (active == null || event.token != active.generation) return;
       _active = null;
       onNotice(MangaUpscaleNotice.unavailable);
       return;

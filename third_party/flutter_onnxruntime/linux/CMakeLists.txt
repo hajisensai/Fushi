@@ -125,7 +125,8 @@ if(NOT USE_SYSTEM_ONNXRUNTIME)
   set(ONNXRUNTIME_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-${ONNXRUNTIME_RID}-${ONNXRUNTIME_VERSION}")
 
   if(NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/include/onnxruntime_cxx_api.h"
-     OR NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so")
+     OR NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so"
+     OR NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so.1")
     message(STATUS "Downloading ONNX Runtime from: ${ONNXRUNTIME_URL}")
     file(MAKE_DIRECTORY ${ONNXRUNTIME_DOWNLOAD_DIR})
     set(ONNXRUNTIME_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime.nupkg")
@@ -152,13 +153,19 @@ if(NOT USE_SYSTEM_ONNXRUNTIME)
     file(COPY ${_ort_headers} DESTINATION "${ONNXRUNTIME_EXTRACT_DIR}/include")
     file(COPY "${_ort_unpack}/runtimes/${ONNXRUNTIME_RID}/native/libonnxruntime.so"
          DESTINATION "${ONNXRUNTIME_EXTRACT_DIR}/lib")
+    # The plugin's DT_NEEDED is the SONAME libonnxruntime.so.1, resolved at the
+    # runner's link step through the plugin's build-tree RUNPATH (this lib
+    # dir). The nupkg has no SONAME file, so without this link ld fails with
+    # "libonnxruntime.so.1, needed by libflutter_onnxruntime_plugin.so, not
+    # found". The bundling block below also picks the SONAME up from here.
+    file(CREATE_LINK libonnxruntime.so "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so.1" SYMBOLIC)
     file(REMOVE_RECURSE ${_ort_unpack})
     file(REMOVE ${ONNXRUNTIME_NUPKG})
   endif()
 
   set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_EXTRACT_DIR}/include")
-  # The nupkg ships a single real file (no .so.1 / .so.1.x symlinks); the
-  # bundling block below falls back to the SONAME libonnxruntime.so.1.
+  # The nupkg ships a single real file; libonnxruntime.so.1 above is a
+  # symlink to it under its SONAME.
   set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so")
 
   set(ONNXRUNTIME_LIBRARIES ${ONNXRUNTIME_LIBRARY})

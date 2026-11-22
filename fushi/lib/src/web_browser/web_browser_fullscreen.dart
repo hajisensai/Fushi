@@ -77,3 +77,89 @@ double webBrowserFullscreenSplitVideoHeight({
   final double video = width * 9 / 16;
   return video.clamp(height * 0.2, height * 0.6);
 }
+
+/// 页内全屏脚本的一条上报（`fushiBrowserFullscreen(on, fit, document, documentStart)`）。
+class WebBrowserPageFullscreenReport {
+  const WebBrowserPageFullscreenReport({
+    required this.fullscreen,
+    this.fit = WebBrowserFullscreenFit.unknown,
+    this.document,
+    this.documentStart = false,
+  });
+
+  /// 页面现在是否在（伪 / 原生）全屏。
+  final bool fullscreen;
+
+  /// 全屏视频的方向。
+  final WebBrowserFullscreenFit fit;
+
+  /// 上报方所在顶层文档的代际号；子框架为 null（不参与代际）。
+  final String? document;
+
+  /// 这是新文档初始化时的「我来了」通告（此时 [fullscreen] 恒为 false）。
+  final bool documentStart;
+
+  /// 解析 JS 桥参数；首参不是 bool 视为坏载荷返回 null。
+  static WebBrowserPageFullscreenReport? fromArgs(List<dynamic> args) {
+    if (args.isEmpty || args.first is! bool) return null;
+    final Object? document = args.length > 2 ? args[2] : null;
+    return WebBrowserPageFullscreenReport(
+      fullscreen: args.first as bool,
+      fit: WebBrowserFullscreenFit.fromWire(args.length > 1 ? args[1] : null),
+      document: document is String && document.isNotEmpty ? document : null,
+      documentStart: args.length > 3 && args[3] == true,
+    );
+  }
+}
+
+/// [WebBrowserFullscreenDocumentGate.admit] 的结论。
+enum WebBrowserFullscreenDocumentVerdict {
+  /// 当前文档的上报：照常应用。
+  apply,
+
+  /// 主文档换代（整页导航提交 / 从往返缓存恢复）：收尾标签页全屏。
+  newDocument,
+
+  /// 旧文档的迟到上报，或当前文档的重复通告：丢弃。
+  ignore,
+}
+
+/// 页内全屏上报的文档代际闸（HBK-AUDIT-037）。
+///
+/// 伪全屏状态在页面 JS 里，整页导航后旧页面消失、不会再报退出；没有这道闸，外壳就
+/// 留在沉浸模式 / 方向锁里。规则：
+/// - 只有 `documentStart` 通告能让新代际上位，上位即 [WebBrowserFullscreenDocumentVerdict.newDocument]；
+/// - 非当前代际的普通上报（旧页面卸载前发出、晚到的进 / 退全屏）一律丢弃；
+/// - 还没见过任何代际时（错过首个通告）第一个带号上报直接上位并应用；
+/// - 子框架上报（document 为 null）不参与代际，照常应用。
+class WebBrowserFullscreenDocumentGate {
+  String? _current;
+
+  /// 当前主文档代际号（测试用）。
+  String? get currentDocument => _current;
+
+  WebBrowserFullscreenDocumentVerdict admit(
+    WebBrowserPageFullscreenReport report,
+  ) {
+    final String? document = report.document;
+    if (document == null) {
+      return report.documentStart
+          ? WebBrowserFullscreenDocumentVerdict.ignore
+          : WebBrowserFullscreenDocumentVerdict.apply;
+    }
+    if (document == _current) {
+      return report.documentStart
+          ? WebBrowserFullscreenDocumentVerdict.ignore
+          : WebBrowserFullscreenDocumentVerdict.apply;
+    }
+    if (report.documentStart) {
+      _current = document;
+      return WebBrowserFullscreenDocumentVerdict.newDocument;
+    }
+    if (_current == null) {
+      _current = document;
+      return WebBrowserFullscreenDocumentVerdict.apply;
+    }
+    return WebBrowserFullscreenDocumentVerdict.ignore;
+  }
+}

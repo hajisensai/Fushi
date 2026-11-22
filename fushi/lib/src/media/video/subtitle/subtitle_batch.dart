@@ -21,6 +21,8 @@ import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.d
     show probeUnlabeledVersionLanguages;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_source_season.dart'
+    show subtitleFileNameSeason;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:path/path.dart' as p;
@@ -151,42 +153,28 @@ int? resolveSubtitleBatchSeason(SubtitleBatchTarget target) {
   return null;
 }
 
-int? _seasonFromSubtitleFileName(String fileName) {
-  String stem = p.basename(fileName.trim());
-  if (stem.isEmpty) return null;
-  final int dot = stem.lastIndexOf('.');
-  if (dot > 0) {
-    final String ext = stem.substring(dot + 1).toLowerCase();
-    if (const <String>{
-      'srt',
-      'ass',
-      'ssa',
-      'vtt',
-      'zip',
-      'rar',
-      '7z',
-    }.contains(ext)) {
-      stem = stem.substring(0, dot);
-    }
-  }
-  final int dot2 = stem.lastIndexOf('.');
-  if (dot2 > 0) {
-    final String tail = stem.substring(dot2 + 1);
-    if (detectSubtitleLanguage('_.$tail.srt') != null) {
-      stem = stem.substring(0, dot2);
-    }
-  }
-  final int? season = parseVideoFilename(stem).season;
-  return season != null && season > 0 ? season : null;
+/// 从字幕候选取出它的季号：文件名写明的季号（`S02E01` 等）优先，否则用来源声明的
+/// [VideoSubtitleCandidate.season]；认不出为 null。纯函数。
+///
+/// 文件名是这份字幕自己的事实，比来源给整批候选标的季号更具体：来源标签与文件名
+/// 冲突时信文件名，不让标签把 `S01E01` 的字幕说成第二季（HBK-AUDIT-049）。
+int? subtitleCandidateSeason(VideoSubtitleCandidate candidate) {
+  final int? fromName = subtitleFileNameSeason(candidate.fileName);
+  if (fromName != null) return fromName;
+  final int? declared = candidate.season;
+  return declared != null && declared > 0 ? declared : null;
 }
 
-/// 从字幕候选取出它的季号：优先来源声明的 [VideoSubtitleCandidate.season]，
-/// 否则从文件名解析（`S02E01` 等）；认不出为 null。纯函数。
-int? subtitleCandidateSeason(VideoSubtitleCandidate candidate) {
-  final int? declared = candidate.season;
-  if (declared != null && declared > 0) return declared;
-  return _seasonFromSubtitleFileName(candidate.fileName);
-}
+/// 季号未知的候选能否配给 [season] 这一季。纯函数。
+///
+/// 合集本身跨季（[collectionSpansSeasons]：成员里有 ≥2 个真实季）时，季号未知的字幕
+/// 可能属于任何一季，哪怕这次只配其中一季也一样——不能因为「只点了第二季」就把
+/// 合集当成单季、把未标季的（常是第一季的）字幕写进第二季（HBK-AUDIT-049）。
+/// 目标季号也未知（PV·特典节）时仍然放行：那里没有「别的季」可串。
+bool subtitleSeasonAllowsUnseasoned({
+  required int? season,
+  required bool collectionSpansSeasons,
+}) => season == null || !collectionSpansSeasons;
 
 bool _matchesSeason(
   int? candidateSeason, {
@@ -400,7 +388,7 @@ class _ArchivePackSplitter {
       ArchivedSubtitle? fallbackUnseasoned;
       for (final ArchivedSubtitle entry in entries) {
         if (parseSubtitleEpisode(entry.fileName) != episode) continue;
-        final int? entrySeason = _seasonFromSubtitleFileName(entry.fileName);
+        final int? entrySeason = subtitleFileNameSeason(entry.fileName);
         if (season != null && entrySeason != null && entrySeason != season) {
           sawSeasonMismatch = true;
           continue;
@@ -422,7 +410,7 @@ class _ArchivePackSplitter {
       ArchivedSubtitle? picked = exactSeason ?? fallbackUnseasoned;
       if (picked == null && soleTarget && entries.length == 1) {
         final ArchivedSubtitle only = entries.single;
-        final int? entrySeason = _seasonFromSubtitleFileName(only.fileName);
+        final int? entrySeason = subtitleFileNameSeason(only.fileName);
         final bool conflict =
             season != null && entrySeason != null && entrySeason != season;
         final bool ambiguous =
@@ -502,6 +490,10 @@ typedef SubtitleBatchItemCallback =
 /// 对齐 / 落盘的那一集照常做完（不留半个字幕文件），其余集记
 /// [SubtitleBatchStatus.skipped] 并逐集回调 [onItemDone]（不回调 [onItemStart]）。
 /// 只有用户显式点「停止」才取消——关掉工作台不取消（BUG-4496）。
+///
+/// [collectionSpansSeasons]：[targets] 所在的合集本身有 ≥2 个真实季（面板只传选中
+/// 那一季的成员时，光看 [targets] 会误判成单季）。为 true 时季号未知的候选不配给
+/// 有季号的目标（[subtitleSeasonAllowsUnseasoned]，HBK-AUDIT-049）。
 Future<List<SubtitleBatchItem>> runSubtitleBatch({
   required VideoSubtitleRegistry registry,
   required List<VideoSubtitleCandidate> candidates,
@@ -516,6 +508,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   Map<String, SubtitleContentLanguage?> probedVersionLanguages =
       const <String, SubtitleContentLanguage?>{},
   bool Function()? isCancelled,
+  bool collectionSpansSeasons = false,
 }) async {
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
@@ -539,7 +532,16 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   final List<int?> targetSeasons = <int?>[
     for (final int? s in rawSeasons) hasMultipleTargetSeasons ? (s ?? 1) : s,
   ];
-  final bool allowUnseasoned = !hasMultipleTargetSeasons;
+  // 目标跨季，或合集本身跨季而这次只配其中一季（面板只传选中那一季的成员）：
+  // 季号未知的候选都不能静默套用（[subtitleSeasonAllowsUnseasoned]）。
+  final bool allowUnseasoned =
+      !hasMultipleTargetSeasons &&
+      knownSeasons.every(
+        (int s) => subtitleSeasonAllowsUnseasoned(
+          season: s,
+          collectionSpansSeasons: collectionSpansSeasons,
+        ),
+      );
 
   bool matchesTargetForProbe(VideoSubtitleCandidate c) {
     final int? candSeason = subtitleCandidateSeason(c);

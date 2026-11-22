@@ -1046,6 +1046,12 @@ class FavoriteSentences extends Table {
   IntColumn get normCharOffset => integer().nullable()();
   IntColumn get normCharLength => integer().nullable()();
   TextColumn get color => text().nullable()();
+
+  /// [color] 最后一次被用户改的时刻（微秒，v167，BUG-5081）：同步 / 备份合并按内容键
+  /// 去重时，颜色取这个时钟较新的一侧（LWW）；NULL = 收藏后没改过色，时钟按
+  /// [createdAtUs] 算。没有它，同一条收藏两端 createdAt 相同、合并各留本机行，改色
+  /// 永远传不到别的设备。
+  IntColumn get colorUpdatedAtUs => integer().nullable()();
   TextColumn get source => text().withDefault(const Constant('book'))();
   TextColumn get dateKey => text().nullable()();
   TextColumn get expression => text().nullable()();
@@ -2279,6 +2285,31 @@ class VideoEpisodeBindingOverrides extends Table {
       text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
   IntColumn get seasonNumber => integer()();
   IntColumn get episodeNumber => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{bookUid};
+}
+
+// ── video_collection_section_overrides ──────────────────────────────
+/// v167：用户指定的「文件 → 合集分栏」（拍板台 iR6ccUys9H）。合集详情页 / 播放器
+/// 剧集面板 / 「为合集获取字幕」的季分栏默认按文件名现场派生（见引擎
+/// `collection_season_groups.dart`）；文件名推断不了或推断错（`01`–`08` 的短篇其实
+/// 是特典、NCOP 文件名里带集号）时，用户或 AI 在这里钉死它属于哪一栏。
+///
+/// **稀疏覆盖**：没有行 = 照旧派生（存量零迁移，派生语义原样保留）。身份是文件
+/// （`book_uid`），不是合集成员行：合并合集、拆并作品、重新刮削都不碰这张表，指定
+/// 跟着文件走。删视频随 FK 一起清；改回「自动」即删行。随备份「视频」类别走
+/// （同 `video_episode_binding_overrides`）。
+@DataClassName('VideoCollectionSectionOverrideRow')
+class VideoCollectionSectionOverrides extends Table {
+  TextColumn get bookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+
+  /// 分栏键，与引擎派生键同一值域：`s<N>`（N ≥ 1，第 N 季）或 `extras`（PV·特典）。
+  /// 写入口只接受这两种形状（引擎 `isValidCollectionSectionKey`）；读到别的形状按
+  /// 「没有指定」处理。
+  TextColumn get sectionKey => text()();
   IntColumn get updatedAt => integer()();
 
   @override

@@ -96,10 +96,13 @@ void main() {
   });
 
   test('lib/ 不新增裸数字 fontSize（用 context.fushiType / textTheme）', () {
-    final List<String> offenders = overBudget(
-      scan(_fontSizePattern),
-      <String, int>{..._fontSizeBudget, ..._fontSpecimenBudget},
-    );
+    final List<String> offenders =
+        overBudget(scan(_fontSizePattern), <String, int>{
+          ..._fontSizeBudget,
+          ..._fontSpecimenBudget,
+          ..._subtitleContentBudget,
+          ..._typeScaleTokenBudget,
+        });
     expect(
       offenders,
       isEmpty,
@@ -135,6 +138,19 @@ int _curveCount(String path, String code) {
 /// 保持对照样张的固定字号，周围标题、按钮与说明仍须走主题字阶。
 const Map<String, int> _fontSpecimenBudget = <String, int>{
   'lib/src/pages/implementations/font_preview/font_library_widgets.dart': 5,
+};
+
+/// 竖屏学习版式的「当前字幕」条是字幕内容区（用户字幕字体链），按本文件头的
+/// 约定不走 UI 字阶；与横屏字幕层同一基线（22 × 视频页界面缩放）。
+const Map<String, int> _subtitleContentBudget = <String, int>{
+  'lib/src/pages/implementations/video_fushi/portrait.part.dart': 1,
+};
+
+/// 页头大字字阶表本身就是字号 token 的定义处（「页面里不写死字号」的那个来源，
+/// 设计稿 11-20 #18、用户拍板以书架为准）：这里的数字是 token 值，不是调用点的
+/// 裸字号。只豁免这一张表里 [FushiPageTitleScale] 两档的 `fontSize:`。
+const Map<String, int> _typeScaleTokenBudget = <String, int>{
+  'lib/src/utils/components/fushi_page_title_metrics.dart': 2,
 };
 
 /// 2026-10-05 存量：`Curves.` 每文件出现次数（只许减少）。
@@ -177,7 +193,7 @@ const Map<String, int> _fontSizeBudget = <String, int>{
   'lib/src/pages/implementations/reader_fushi/chrome.part.dart': 5,
   'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': 1,
   'lib/src/pages/implementations/video_fushi/controls_theme.part.dart': 2,
-  'lib/src/pages/implementations/video_fushi/episode.part.dart': 3,
+  'lib/src/pages/implementations/video_fushi/episode.part.dart': 2,
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart': 1,
   'lib/src/pages/implementations/video_fushi_page.dart': 7,
   'lib/src/reader/illustration_zoom_viewer.dart': 2,

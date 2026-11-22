@@ -395,6 +395,68 @@ void main() {
     });
   });
 
+  // HBK-AUDIT-032：Kavita 自动淘汰 / 一键清理走完整删书原语，原语按 bookKey 清掉
+  // override 封面与书名；而淘汰判据只保护书签 / CSS / 配对 / 标签 / 合集，漏了用户
+  // 自定义的封面与书名——缓存一满，用户改的封面随缓存副本一起没了，重新缓存也取不回。
+  // 真实删书原语 + 真实 override 落盘位置，不用桩。
+  group('HBK-AUDIT-032 Kavita 缓存淘汰不丢用户自定义封面 / 书名', () {
+    Future<void> insertCached(String key, int chapterId, int openedAt) =>
+        db.insertEpubBook(
+          bookRow(
+            key,
+            sourceMetadata: KavitaBookBinding(
+              serverConfigId: 'srv',
+              seriesId: 1,
+              volumeId: 2,
+              chapterId: chapterId,
+              libraryId: 4,
+              cachedOnly: true,
+              lastOpenedAt: openedAt,
+            ).encode(),
+          ),
+        );
+
+    KavitaBookService kavita({int cacheLimit = 1}) =>
+        KavitaBookService(db: db, appModel: app, cacheLimit: cacheLimit);
+
+    test('缓存超限：带自定义封面的最旧副本不淘汰，封面文件还在', () async {
+      await insertCached('Covered', 1, 1);
+      await insertCached('Plain', 2, 2);
+      await insertCached('Newest', 3, 3);
+      final File cover = writeOverrideCover('Covered');
+
+      final KavitaCacheCleanup result = await kavita().trimCache();
+
+      expect(await db.getEpubBook('Covered'), isNotNull);
+      expect(cover.existsSync(), isTrue, reason: '用户改的封面不能随缓存淘汰消失');
+      expect(await db.getEpubBook('Plain'), isNull, reason: '淘汰落到没有自定义的副本');
+      expect(await db.getEpubBook('Newest'), isNotNull);
+      expect(result.removed, 1);
+    });
+
+    test('自定义书名同样算用户数据：不淘汰、不被一键清理，确认框会警告', () async {
+      await insertCached('Renamed', 1, 1);
+      await insertCached('Plain', 2, 2);
+      await ReaderFushiSource.instance.setOverrideTitleFromMediaItem(
+        item: itemFor('Renamed'),
+        title: '我起的名字',
+      );
+      final KavitaBookService svc = kavita();
+
+      expect(await svc.cachedBookKeys(), <String>['Plain']);
+      expect(await svc.hasLocalUserData('Renamed'), isTrue);
+      expect(await svc.hasLocalUserData('Plain'), isFalse);
+      final KavitaCacheCleanup result = await svc.clearCache();
+
+      expect(result.removed, 1);
+      expect(await db.getEpubBook('Renamed'), isNotNull);
+      expect(
+        ReaderFushiSource.instance.overrideTitleForBookKey('Renamed'),
+        '我起的名字',
+      );
+    });
+  });
+
   group('BUG-4996 批删只回收一次数据库空间', () {
     test('单删默认照旧 VACUUM 一次', () async {
       await db.insertEpubBook(bookRow('One'));

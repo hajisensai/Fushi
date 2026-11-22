@@ -202,7 +202,11 @@ void main() {
     test('pin/unpin toggle cachedOnly; unbound books are untouched', () async {
       await _insertBook(db, 'Have', meta: _binding().encode());
       await _insertBook(db, 'Plain');
-      final KavitaBookService svc = KavitaBookService(db: db, tempRoot: tmp);
+      final KavitaBookService svc = KavitaBookService(
+        db: db,
+        tempRoot: tmp,
+        hasCustomization: (String _) => false,
+      );
       expect(await svc.cachedBookKeys(), <String>['Have']);
       expect(await svc.pin('Have'), isTrue);
       expect((await svc.bindingFor('Have'))!.cachedOnly, isFalse);

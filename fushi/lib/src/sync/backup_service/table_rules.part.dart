@@ -136,6 +136,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'video_episode_binding_overrides': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
+  // v167：用户 / AI 钉死的合集分栏（拍板台 iR6ccUys9H），同手动季集指定。
+  'video_collection_section_overrides': BackupTableRule.follows(
+    <BackupCategory>{BackupCategory.videos},
+  ),
   'video_scrape_meta': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),

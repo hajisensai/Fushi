@@ -19,11 +19,13 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_v2_client.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
@@ -190,12 +192,13 @@ class SyncRemoteException implements Exception {
   String toString() => message;
 }
 
-/// host 聚合端点的读写。
+/// host 聚合端点的读写。只搬报文体字节（UTF-8 JSON），编解码见
+/// `aggregate_wire_codec.dart`——与 app 互联通道同一契约（HBK-AUDIT-028）。
 abstract class AggregateRemote {
-  /// host 的聚合快照 JSON；老 host 无端点（404）返回 null。
-  Future<Object?> fetch();
+  /// host 的聚合快照报文体；老 host 无端点（404）返回 null。
+  Future<Uint8List?> fetch();
 
-  Future<void> push(Object json);
+  Future<void> push(Uint8List body);
 
   void close();
 }
@@ -225,7 +228,7 @@ class HttpAggregateRemote implements AggregateRemote {
 
   Uri get _endpoint => baseUrl.replace(path: '/api/library/aggregate');
 
-  Future<HttpClientResponse> _send(String method, {Object? body}) async {
+  Future<HttpClientResponse> _send(String method, {Uint8List? body}) async {
     try {
       final HttpClientRequest req = await _client
           .openUrl(method, _endpoint)
@@ -233,7 +236,8 @@ class HttpAggregateRemote implements AggregateRemote {
       req.headers.set(HttpHeaders.authorizationHeader, _auth);
       if (body != null) {
         req.headers.contentType = ContentType.json;
-        req.add(utf8.encode(jsonEncode(body)));
+        req.contentLength = body.length;
+        req.add(body);
       }
       return await req.close().timeout(_requestTimeout);
     } on TlsException catch (e) {
@@ -280,19 +284,23 @@ class HttpAggregateRemote implements AggregateRemote {
   }
 
   @override
-  Future<Object?> fetch() async {
+  Future<Uint8List?> fetch() async {
     final HttpClientResponse res = await _send('GET');
     if (res.statusCode == HttpStatus.notFound) {
       await res.drain<void>();
       return null;
     }
     _checkStatus(res, 'GET /api/library/aggregate');
-    return jsonDecode(await utf8.decodeStream(res));
+    final BytesBuilder body = await res.fold<BytesBuilder>(
+      BytesBuilder(copy: false),
+      (BytesBuilder b, List<int> chunk) => b..add(chunk),
+    );
+    return body.takeBytes();
   }
 
   @override
-  Future<void> push(Object json) async {
-    final HttpClientResponse res = await _send('PUT', body: json);
+  Future<void> push(Uint8List body) async {
+    final HttpClientResponse res = await _send('PUT', body: body);
     await res.drain<void>();
     _checkStatus(res, 'PUT /api/library/aggregate');
   }
@@ -328,12 +336,12 @@ Future<Map<String, Object?>> runAggregatePull(
 }) async {
   final AggregateSyncService service = AggregateSyncService(db);
   if (push) {
-    Object? fetched;
+    Uint8List? fetched;
     bool pushed = false;
     await service.syncOverClient(
       fetchRemote: () async => fetched = await remote.fetch(),
-      pushMerged: (Object json) async {
-        await remote.push(json);
+      pushMerged: (Uint8List body) async {
+        await remote.push(body);
         pushed = true;
       },
       shareStats: stats,
@@ -346,17 +354,19 @@ Future<Map<String, Object?>> runAggregatePull(
       'pulled': fetched == null
           ? null
           : aggregateSnapshotCounts(
-              AggregateSnapshot.fromJson(fetched).select(
-                stats: stats,
-                favorites: favorites,
-                webHistory: webHistory,
-              ),
+              (decodeAggregateWireSnapshot(fetched!) ??
+                      const AggregateSnapshot())
+                  .select(
+                    stats: stats,
+                    favorites: favorites,
+                    webHistory: webHistory,
+                  ),
             ),
       'pushed': pushed,
     };
   }
-  final Object? json = await remote.fetch();
-  if (json == null) {
+  final Uint8List? body = await remote.fetch();
+  if (body == null) {
     throw SyncRemoteException(
       _exitUnavailable,
       tr(
@@ -365,9 +375,13 @@ Future<Map<String, Object?>> runAggregatePull(
       ),
     );
   }
-  final AggregateSnapshot incoming = AggregateSnapshot.fromJson(
-    json,
-  ).select(stats: stats, favorites: favorites, webHistory: webHistory);
+  // 顶层非 object 的报文体按 fromJson 同律当空快照；非法 JSON 抛 FormatException。
+  final AggregateSnapshot incoming =
+      (decodeAggregateWireSnapshot(body) ?? const AggregateSnapshot()).select(
+        stats: stats,
+        favorites: favorites,
+        webHistory: webHistory,
+      );
   await service.foldIntoLocal(incoming);
   return <String, Object?>{
     'mode': 'pull',

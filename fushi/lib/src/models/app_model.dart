@@ -146,6 +146,7 @@ import 'package:fushi/src/utils/components/section_tab_order.dart'
         PrefsSectionTabOrderStore,
         SectionTabOrderStore,
         sectionTabOrderAppFallback;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -354,7 +355,6 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi_engine/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
@@ -456,6 +456,9 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart'
+    show mediaServerRouteFailoverForRepository;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show mediaServerTrackingEpisodeOf;
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
@@ -1398,15 +1401,11 @@ class AppModel
       extractVideoCover:
           ({required String videoPath, required String bookUid}) =>
               extractVideoCover(videoPath: videoPath, bookUid: bookUid),
-      removeLocalAudioEntry: (String displayName) async {
-        // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
-        // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
-        final int idx = _localAudioManager.entries.indexWhere(
-          (LocalAudioDbEntry e) => e.displayName == displayName,
-        );
-        if (idx < 0) return; // 不存在则幂等跳过
-        await _localAudioManager.remove(idx);
-        notifyListeners();
+      // 对端「从所有设备删除」：只按内容身份删（HBK-AUDIT-022），不存在则幂等跳过。
+      removeLocalAudioEntry: (String contentId) async {
+        if (await removeLocalAudioByContentId(contentId) > 0) {
+          notifyListeners();
+        }
       },
     ),
   );
@@ -1491,6 +1490,12 @@ class AppModel
       for (final MusicTrackRow r in await database.listMusicTracks())
         r.trackUid: r.title,
     };
+    // 本地音频库：itemKey 是内容身份（HBK-AUDIT-022），展示本机这份库的显示名。
+    final Map<String, String> localAudioTitles = <String, String>{};
+    for (final LocalAudioDbEntry e in localAudioDbsOnThisDevice) {
+      final String? id = await resolveLocalAudioContentId(e);
+      if (id != null) localAudioTitles.putIfAbsent(id, () => e.displayName);
+    }
     // 收藏句：itemKey 是内容键（用户看不懂），从本地在库收藏句解析回句子文本展示。
     // deleteLocal 候选必是本地仍在库者，映射通常命中；查不到退回 itemKey。
     final Map<String, String> favSentenceTexts = <String, String>{
@@ -1517,9 +1522,11 @@ class AppModel
             SyncTombstoneKind.favoritesentence =>
               favSentenceTexts[c.itemKey] ?? c.itemKey,
             SyncTombstoneKind.music => musicTitles[c.itemKey] ?? c.itemKey,
-            // localaudio: displayName 本身即可读；null = 未知种类原样展示。浏览器
-            // 历史 / 书签只经聚合快照传播、不进确认清单，到不了这里，兜底原样展示。
-            SyncTombstoneKind.localaudio ||
+            // localaudio：itemKey 是内容身份，展示本机这份库的显示名。
+            SyncTombstoneKind.localaudio =>
+              localAudioTitles[c.itemKey] ?? c.itemKey,
+            // null = 未知种类原样展示。浏览器历史 / 书签只经聚合快照传播、不进
+            // 确认清单，到不了这里，兜底原样展示。
             SyncTombstoneKind.webhistory ||
             SyncTombstoneKind.webbookmark ||
             null => c.itemKey,
@@ -1569,11 +1576,9 @@ class AppModel
             // 消费远端删除标记时绝不回写墓碑，否则形成传播循环。
             await SrtBookRepository(database).delete(c.itemKey);
           case SyncTombstoneKind.localaudio:
-            // 按 displayName 找到本地音频源并移除（不回写墓碑：keepLocalOnly 语义）。
-            final int idx = _localAudioManager.entries.indexWhere(
-              (LocalAudioDbEntry e) => e.displayName == c.itemKey,
-            );
-            if (idx >= 0) await _localAudioManager.remove(idx);
+            // 按内容身份找到本地音频源并移除（HBK-AUDIT-022；不回写墓碑：
+            // keepLocalOnly 语义）。旧版本按显示名写的墓碑不是身份，不删。
+            await removeLocalAudioByContentId(c.itemKey);
           case SyncTombstoneKind.favoriteword:
             // 解析 itemKey → 取消收藏。removeFavoriteWord 默认 propagateDeletion=true：
             // 本设备也需 favoriteword 墓碑抑制第三设备快照的并集复活（幂等，与源墓碑同键）。
@@ -4233,7 +4238,7 @@ class AppModel
     if (context == null || !context.mounted) return false;
     final bool accepted = await showFushiConfirmDialog(
       context: context,
-      icon: Icons.upgrade_rounded,
+      icon: FushiIcons.upgrade,
       title: t.dict_upgrade_format_prompt_title,
       message: t.dict_upgrade_format_prompt_body(count: pendingCount),
       confirmLabel: t.dict_upgrade_format_prompt_confirm,
@@ -5307,6 +5312,11 @@ class AppModel
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+      // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
+      // （拍板台 design-media-server-failover-transport）。
+      MediaServerRouteFailover.install(
+        mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
+      );
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
@@ -7257,6 +7267,12 @@ class AppModel
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
 
+  /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
+  bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;
+
+  Future<void> setVideoBackgroundPlay(bool value) =>
+      prefsRepo.setVideoBackgroundPlay(value);
+
   /// 记住每部作品上次手动转到的方向，默认关。
   bool get videoRememberOrientation => prefsRepo.videoRememberOrientation;
 
@@ -7556,37 +7572,9 @@ class AppModel
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
     final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     if (host == null) return;
-    final QbConnectionConfig effective = effectiveTorrentConfig(config);
-    host.post(
-      'applyLimits',
-      host.applyLimits(
-        downloadKbps: effective.downloadLimitKbps,
-        uploadKbps: effective.uploadLimitKbps,
-        maxConnections: effective.maxConnections,
-        limitLocalPeers: effective.limitLocalPeers,
-      ),
-    );
-    // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
-    // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
-    final TorrentMemorySettings mem = computeTorrentMemorySettings(
-      memoryLimitMb: effective.memoryLimitMb,
-      totalRamMb: detectTotalMemoryMb() ?? 0,
-    );
-    host.post(
-      'applyMemorySettings',
-      host.applyMemorySettings(
-        mem,
-        connectionsLimit: effective.maxConnections > 0
-            ? 0
-            : mem.connectionsLimit,
-      ),
-    );
-    // 会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
-    host.post('applySessionSettings', host.applySessionSettings(effective));
-    // 反吸血开关/阈值（用户可调）。
-    host.post('applyAntiLeechConfig', host.applyAntiLeechConfig(effective));
-    // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
-    host.post('setUploadPolicy', host.setUploadPolicy(effective));
+    // 限速 / 内存预算 / 会话级设置 / 反吸血 / 上传策略：与无头服务端共用同一份
+    // 下发序列（BUG-5160），见 [EmbeddedTorrentHostClient.postConfig]。
+    host.postConfig(effectiveTorrentConfig(config));
     // P2P 代理（默认直连；用户在系统设置里单独开启才跟全局代理）。
     _applyEmbeddedTorrentProxy();
   }
@@ -8742,10 +8730,7 @@ class AppModel
       onTick: () {
         // BUG-3577：两轮扫描在工作 isolate 里按序执行，这里只投递。
         final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
-        if (host != null) {
-          host.post('sweepAntiLeech', host.sweepAntiLeech());
-          host.post('sweepUploadPolicy', host.sweepUploadPolicy());
-        }
+        host?.postMaintenanceSweep();
         unawaited(_saveEmbeddedTorrentResume());
       },
     )..start();
@@ -11173,14 +11158,19 @@ class AppModel
   ///
   /// 普通远端查词、游戏串流与视频遥控查词共用这一份：用户在词典管理里对这台 host 做的
   /// 隐藏与排序在三条路径上一致生效（拍板台 pr3602：尊重接收端的选择）。
+  ///
+  /// 词典仓库未就绪（启动早期、重建窗口）且没给 [profileView] 时返回 null：本端此刻
+  /// 说不出选择，请求按旧版形状发、host 用自己的配置。不能去碰 late 的 [dictRepo]——
+  /// 那会让整次远端查词抛 LateInitializationError（遥控 / 串流查词直接失败），与
+  /// [lookupViewDictionaries] 同一条就绪门。
   RemoteLookupDictionaryConfig? remoteLookupDictionaryConfigFor(
     FushiClientUrl candidate, {
     ProfileSettingsView? profileView,
   }) {
     final String hostId = remoteDictionaryHostIdOf(candidate);
-    return profileView != null
-        ? profileView.filtersForHost(hostId)
-        : dictRepo.filtersForHost(hostId);
+    if (profileView != null) return profileView.filtersForHost(hostId);
+    if (!_dictionaryRepoReady) return null;
+    return dictRepo.filtersForHost(hostId);
   }
 
   Future<DictionarySearchResult?> _searchRemoteDictionary({
@@ -13721,42 +13711,34 @@ class AppModel
     final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
       for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
     };
-    // 删除传播：本地音频源的跨设备同步身份是内容身份 contentId（拍板 pr3481），但删除
-    // 墓碑的 itemKey 是冻结的 displayName（host 删除端点先认 contentId、再认显示名）。
-    // 检测本次保存移除/新增的本地音频源，按 scope 写/清删除墓碑（itemKey=displayName）。
+    // 删除传播：本地音频源的跨设备身份是内容身份 contentId（拍板 pr3481），删除墓碑
+    // 的 itemKey 也用它（HBK-AUDIT-022）——同一份库各端可以叫不同的名字，按显示名
+    // 删会落到对端恰好同名的另一份库上。检测本次保存移除的本地音频源，syncEverywhere
+    // 才写墓碑；读不出身份（文件不在本机且没存身份）就确认不了是哪份库，不传播并留痕。
     final Set<String> nextLocalPaths = <String>{
       for (final AudioSourceConfig s in sources)
         if (s.kind == AudioSourceKind.localAudio &&
             (s.path?.isNotEmpty ?? false))
           s.path!,
     };
-    for (final MapEntry<String, LocalAudioDbEntry> e in current.entries) {
-      if (!nextLocalPaths.contains(e.key)) {
-        // 被移除的本地音频源：syncEverywhere 才记墓碑传播。
-        if (scope == DeleteScope.syncEverywhere) {
-          try {
-            await database.writeSyncDeletionTombstone(
-              SyncTombstoneKind.localaudio.dbValue,
-              e.value.displayName,
-              DateTime.now().millisecondsSinceEpoch,
-            );
-          } catch (_) {
-            // best-effort。
-          }
-        }
-      }
-    }
-    // 新增/仍在的源清墓碑（防「删了又加、墓碑还在」）。
-    for (final AudioSourceConfig s in sources) {
-      if (s.kind == AudioSourceKind.localAudio) {
-        try {
-          await database.clearSyncDeletionTombstone(
-            SyncTombstoneKind.localaudio.dbValue,
-            s.displayLabel,
+    if (scope == DeleteScope.syncEverywhere) {
+      for (final MapEntry<String, LocalAudioDbEntry> e in current.entries) {
+        if (nextLocalPaths.contains(e.key)) continue;
+        final String? id = await _localAudioContentIdOf(e.value);
+        if (id == null) {
+          ErrorLogService.instance.log(
+            'AppModel.setAudioSourceConfigs',
+            'local audio "${e.value.displayName}" has no content identity; '
+                'delete-everywhere not propagated',
+            StackTrace.current,
           );
-        } catch (_) {
-          // best-effort。
+          continue;
         }
+        await database.writeSyncDeletionTombstone(
+          SyncTombstoneKind.localaudio.dbValue,
+          id,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       }
     }
     final List<LocalAudioDbEntry> nextDbs = <LocalAudioDbEntry>[
@@ -13778,10 +13760,50 @@ class AppModel
               ),
     ];
     await _localAudioManager.setEntries(nextDbs);
+    // 新增 / 仍在的源清墓碑（防「删了又加、墓碑还在」）：按内容身份清
+    // （HBK-AUDIT-022）；升级前按显示名写下的旧墓碑也一并清掉。setEntries 已从
+    // 进程内缓存补上新库的身份，读登记即可。
+    for (final LocalAudioDbEntry db in _localAudioManager.entries) {
+      if (!nextLocalPaths.contains(db.path)) continue;
+      for (final String key in <String>{
+        db.displayName,
+        if (isLocalAudioContentId(db.contentId)) db.contentId!,
+      }) {
+        await database.clearSyncDeletionTombstone(
+          SyncTombstoneKind.localaudio.dbValue,
+          key,
+        );
+      }
+    }
     // 回收所有不再被引用的本地音频副本（含曾持久化已移除 + 拷贝但从未持久化的孤儿）。
     await _localAudioManager.pruneOrphans(
       nextDbs.map((LocalAudioDbEntry db) => db.path),
     );
+  }
+
+  /// 登记条目 [e]（存储 path）的内容身份：登记里存了就用，否则按本机实际落点现算
+  /// （后台 isolate，带进程内缓存）。文件不在本机也没存身份返回 null。
+  Future<String?> _localAudioContentIdOf(LocalAudioDbEntry e) =>
+      resolveLocalAudioContentId(
+        e.copyWith(
+          path: LocalAudioManager.resolveInternalPath(
+            e.path,
+            databaseDirectory.path,
+          ),
+        ),
+      );
+
+  /// 删掉内容身份为 [contentId] 的所有本地音频登记（含内部副本文件），返回删掉的
+  /// 条数。删除墓碑与互联删除端点只认内容身份（HBK-AUDIT-022）：显示名在各端可以
+  /// 不同，同名的可能是另一份库。[contentId] 不是合格身份时什么都不删。
+  Future<int> removeLocalAudioByContentId(String contentId) async {
+    if (!isLocalAudioContentId(contentId)) return 0;
+    final Set<String> paths = <String>{
+      for (final LocalAudioDbEntry e in _localAudioManager.entries)
+        if (await _localAudioContentIdOf(e) == contentId) e.path,
+    };
+    if (paths.isEmpty) return 0;
+    return _localAudioManager.removeByStoredPaths(paths);
   }
 
   // 远端查词/查音频共用一个 http.Client，复用 keep-alive TLS 连接（TODO-744：
@@ -14070,6 +14092,9 @@ class AppModel
       // 扩展网页视频沉浸时间：每条播放样本喂给桥 → 每个 mediaKey 一个
       // VideoWatchTracker + StudyClock（只计首次覆盖，与视频页同口径）。
       onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+      // 反馈 PtsjrnVmH9：扩展在统计中的网页视频页上查词 / 制卡，记到该视频名下
+      // （查词 / 制卡计数与 app 内视频页同一张表、同一来源 video）。
+      onExtensionStudyActivity: _ensureBrowserVideoStudyBridge().onActivity,
       // BUG-3141：扩展查词弹窗 ☆/★ 收藏。浏览器同属「app 外查词表面」，与 app 外浮窗 /
       // 剪贴板面板的 favoriteEntry / favoriteCheck 走同一份读写（跨源判 / 跨源删 / 单源写）。
       onExtensionFavorite: _browserExtensionFavorite,
@@ -14258,7 +14283,7 @@ class AppModel
   }
 
   /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null；库在换代途中原样抛出代际异常
-  /// （[SrsMinerResolver] 的契约，BUG-5069：替对端制卡回带分类码的失败，而不是「复习不可用」）。
+  /// （[SrsMinerResolver] 的契约，BUG-5085：替对端制卡回带分类码的失败，而不是「复习不可用」）。
   Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14301,7 +14326,7 @@ class AppModel
   /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
   /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
   /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。库在换代途中
-  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5069）：制卡据它回「去复习页完成升级」。
+  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5085）：制卡据它回「去复习页完成升级」。
   Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14923,7 +14948,7 @@ class AppModel
             // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
             action:
                 minedCardUndoToastAction(repo, outcome, expression: word) ??
-                // BUG-5069：复习库要升级时带「打开复习」。
+                // BUG-5085：复习库要升级时带「打开复习」。
                 mineFailureToastAction(outcome),
           );
         } catch (e, stack) {
@@ -14979,6 +15004,12 @@ class AppModel
     await prefsRepo.setNetworkProxyMode(value);
     _applyEmbeddedTorrentProxy();
   }
+
+  /// 是否允许 GitHub 下载走第三方加速镜像（[kGitHubMirrorPrefixes]）。读取端
+  /// [gitHubMirrorsEnabledReader] 是请求时现读的闭包，改了不用另行下发。
+  bool get gitHubMirrorsEnabled => prefsRepo.gitHubMirrorsEnabled;
+  Future<void> setGitHubMirrorsEnabled(bool value) =>
+      prefsRepo.setGitHubMirrorsEnabled(value);
 
   String get networkProxyUsername => prefsRepo.networkProxyUsername;
   Future<void> setNetworkProxyUsername(String value) async {

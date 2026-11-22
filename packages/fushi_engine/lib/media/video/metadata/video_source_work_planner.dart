@@ -7,6 +7,7 @@ import 'package:fushi_engine/media/video/disc/disc_format.dart'
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_web_download_classifier.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
@@ -58,9 +59,14 @@ class VideoSourceScrapeWork {
 }
 
 /// [VideoSourceWorkPlanner.plan] 会不会为 [source] 产出作品单元：只有视频来源，
-/// 且不是目录分组模式（目录模式按导入目录组织，不按作品识别）。
+/// 且不是目录分组模式（目录模式按导入目录组织，不按作品识别），也不是「仅此一次」
+/// 导入的临时行（[isOneShotImportSource]：扫完即删，它的视频在行删掉后归无来源
+/// 范围刮削）。无来源范围（[sourcelessLocalVideoScrapeScope]）的目录模式按视频
+/// 自己记下的分组判（[videoBookInScrapeScope]）。
 bool videoSourcePlansScrapeWorks(SourceLibraryRow source) =>
-    source.mediaKind == 'video' && source.videoGroupingMode != 'folder';
+    source.mediaKind == 'video' &&
+    source.videoGroupingMode != 'folder' &&
+    !isOneShotImportSource(source);
 
 /// [VideoSourceWorkPlanner.plan] 会不会把 [book] 放进某个作品单元：NCOP/NCED/
 /// 预告/花絮仍是 VideoBook，但不是可独立识别的作品；纯音频（原声专辑曲目等）
@@ -102,6 +108,9 @@ class VideoSourceWorkPlanner {
 
   final FushiDatabase _database;
 
+  /// [source] 也可以是无来源范围（[sourcelessLocalVideoScrapeScope]），此时规划
+  /// `sourceId` 为 NULL 的本机视频。
+  ///
   /// [snapshot] 省略时自己读三张表（单来源调用方）；传入时不再读这三张表。
   Future<List<VideoSourceScrapeWork>> plan(
     SourceLibraryRow source, {
@@ -113,7 +122,7 @@ class VideoSourceWorkPlanner {
 
     final List<VideoBookRow> sourceBooks =
         (snapshot?.books ?? await _database.allVideoBooks())
-            .where((VideoBookRow row) => row.sourceId == source.id)
+            .where((VideoBookRow row) => videoBookInScrapeScope(row, source))
             .toList();
     if (sourceBooks.isEmpty) return const <VideoSourceScrapeWork>[];
     // 蓝光盘的特典（正片集合之外、远短于正片的标题，以及没被选成标题的播放
