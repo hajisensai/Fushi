@@ -33,61 +33,28 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4493 条。点号进各自文件。
+> 共 4509 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5183](bugs/BUG-5183-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 | [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |
 | [BUG-5181](bugs/BUG-5181-srs-defs-illustration-huge-and-untappable.md) | ✅ | ✅ | 复习卡释义里的词典插图巨大且点不开 |
-> 共 4494 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5180](bugs/BUG-5180-manga-audio-session-cover-missing.md) | ✅ | ✅ | 阅读器起播有声漫画不带封面，首页迷你播放条只有兜底图标 |
 | [BUG-5179](bugs/BUG-5179-manga-floating-chrome-scroll-hide.md) | ✅ | ✅ | 漫画悬浮底栏：切到条漫一滚动就再也点不出底栏 |
 | [BUG-5178](bugs/BUG-5178-manga-audio-lookup-exit-keys-highlight.md) | ✅ | ✅ | 有声漫画：查词不及时暂停、退出不停、键盘不接管、高亮不恢复 |
-> 共 4492 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5167](bugs/BUG-5167-music-backdrop-pixi-default.md) | ✅ | ✅ | music-backdrop-pixi-default |
-| [BUG-5176](bugs/BUG-5176-lapis-migration-oom.md) | ✅ | ✅ | iPad 旧 Lapis 迁移页 load / migrate 整批物化笔记，Dart 堆 Out of Memory 后闪退 |
-| [BUG-5170](bugs/BUG-5170-rwkv-now-due-vs-queue-count.md) | ✅ | ✅ | 复习首页「RWKV 此刻」的「Due now 7」与牌组头部「19 due」对不上 |
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5177](bugs/BUG-5177-video-pause-ocr-tap-wrong-line.md) | 🚧 | ✅ | 视频暂停 OCR 点「中」查词串却从上一行「@utaskyat」的 u 开始 |
-> 共 4493 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5166](bugs/BUG-5166-api29-background-kill-misreported-foreground.md) | ✅ | ✅ | Android 10 进程退到后台后被系统回收（死前已收到 UI_HIDDEN），下次启动误报前台闪退 |
-| [BUG-5165](bugs/BUG-5165-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
-> 共 4494 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5176](bugs/BUG-5176-lapis-migration-oom.md) | ✅ | ✅ | iPad 旧 Lapis 迁移页 load / migrate 整批物化笔记，Dart 堆 Out of Memory 后闪退 |
+| [BUG-5175](bugs/BUG-5175-popup-scan-delay-ignored.md) | ✅ | ✅ | 浏览器扩展词典弹窗内悬停扫词不认扫描延迟（侧栏 / 嵌套弹窗连触发键也不认） |
+| [BUG-5174](bugs/BUG-5174-tag-chip-mouse-drag-scrolls-long-press-reorders.md) | ✅ | ✅ | 标签 chip 上鼠标按住拖只能重排、不能横滚标签条（鼠标也应长按才重排） |
 | [BUG-5173](bugs/BUG-5173-shelf-continue-card-no-menu.md) | ✅ | ✅ | 书架「继续阅读」卡右键 / 长按没有任何菜单 |
 | [BUG-5172](bugs/BUG-5172-feedback-detail-paste-shot.md) | ✅ | ✅ | 反馈详情页追加截图只能选相册，没有「粘贴图片」与 Ctrl+V |
 | [BUG-5171](bugs/BUG-5171-organize-history-under-masthead.md) | ✅ | ✅ | 整理记录页首个分组头与第一行被页头大字盖住 |
-> 共 4492 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5168](bugs/BUG-5168-update-download-hidden-overlay-unreachable.md) | ✅ | ✅ | update-download-hidden-overlay-unreachable |
+| [BUG-5170](bugs/BUG-5170-rwkv-now-due-vs-queue-count.md) | ✅ | ✅ | 复习首页「RWKV 此刻」的「Due now 7」与牌组头部「19 due」对不上 |
 | [BUG-5169](bugs/BUG-5169-gdrive-client-already-closed.md) | ✅ | ✅ | Google Drive 同步 / 比较数据全部报「Client is already closed」 |
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5174](bugs/BUG-5174-tag-chip-mouse-drag-scrolls-long-press-reorders.md) | ✅ | ✅ | 标签 chip 上鼠标按住拖只能重排、不能横滚标签条（鼠标也应长按才重排） |
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5175](bugs/BUG-5175-popup-scan-delay-ignored.md) | ✅ | ✅ | 浏览器扩展词典弹窗内悬停扫词不认扫描延迟（侧栏 / 嵌套弹窗连触发键也不认） |
-> 共 4491 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5168](bugs/BUG-5168-update-download-hidden-overlay-unreachable.md) | ✅ | ✅ | update-download-hidden-overlay-unreachable |
+| [BUG-5167](bugs/BUG-5167-music-backdrop-pixi-default.md) | ✅ | ✅ | music-backdrop-pixi-default |
+| [BUG-5166](bugs/BUG-5166-api29-background-kill-misreported-foreground.md) | ✅ | ✅ | Android 10 进程退到后台后被系统回收（死前已收到 UI_HIDDEN），下次启动误报前台闪退 |
 | [BUG-5165](bugs/BUG-5165-dht-nodes-multi-endpoint-overwrite.md) | ✅ | ✅ | 双栈 / 多网卡下 DHT 节点数被后到的实例覆盖，误报「DHT 一直连不上任何节点」 |
 | [BUG-5164](bugs/BUG-5164-music-split-album-partial-album-artist.md) | ✅ | ✅ | 同一张 CD 只有部分曲目写了专辑艺人，被拆成两张专辑 |
 | [BUG-5163](bugs/BUG-5163-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |

@@ -651,7 +651,7 @@ const Set<String> kSevereAndroidExitReasons = <String>{
 /// changed.`（反馈 w_dTs9eQ45，BUG-4491）。整串锚定，只认「全大写 appop 名 + changed」这一
 /// 形态，外加一条整串原样的权限类 appop 描述 `Permission related app op changed`
 /// （OnePlus ColorOS 15 / Android 15 在用户改应用权限时记下，前缀照样是 `[KILL UID]`；
-/// AOSP 源码里没查到这串，按观测到的形态收；反馈 4u4HnlOcv2，BUG-5165）。厂商 `OTHER`
+/// AOSP 源码里没查到这串，按观测到的形态收；反馈 4u4HnlOcv2，BUG-5183）。厂商 `OTHER`
 /// （`OneKeyClean`、`o-stop(40)` 等）与 `[KILL UID]` 下的其它原因（`malware` 等）不在此列。
 final RegExp _aospKillUidOpChanged = RegExp(
   r'^(?:\[KILL UID\] )?(?:[A-Z][A-Z0-9_]*|Permission related app op) changed\.?$',
