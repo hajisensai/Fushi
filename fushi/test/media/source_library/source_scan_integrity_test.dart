@@ -4,6 +4,8 @@
 //            目录尾段（光是 `Season 01` 这种通用目录名不算）。
 //  拍板台 design-nmv-video-move-fingerprint：旧行记过内容指纹时只看内容（同一个文件才
 //            认，目录名不论），v165 `video_content_fingerprints`。
+//  拍板台 hbk-audit-004-video-move-full-hash：只有整文件 SHA-256 能认定；采样指纹
+//            （`osh:`）相同而中间不同的文件不改指、不合并。
 //  BUG-4831  系统 / 垃圾条目不入库；一个读不了的子目录不再让整次扫描失败。
 //  BUG-4835  远端书：一本失败不中断其余（连接断了才整轮结束）、临时目录必删；被杀
 //            进程留下的临时来源行与临时目录能被认出并回收，活着的另一个实例的不动。
@@ -48,8 +50,26 @@ Future<SourceLibraryRow> _source(
   return (await db.getMediaSourceById(id))!;
 }
 
+/// 后台整文件哈希升级不自动跑（测试里按需手动调
+/// [upgradeVideoContentFingerprintsToFullHash]，结果才确定）。
 Future<SourceScanSummary> _scan(FushiDatabase db, SourceLibraryRow source) =>
-    SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
+    SourceLibraryScanner(
+      db,
+      transcribeAudiobook: null,
+      requestVideoContentFullHash: () {},
+    ).scan(source);
+
+/// [bytes] 字节、每字节取 `i % 251` 的文件；`[middleFrom, middleTo)` 区间改填 0xEE。
+/// 首尾各 64 KiB 不动时 OpenSubtitles 采样哈希不变。
+File _patterned(String path, int bytes, {int? middleFrom, int? middleTo}) {
+  final List<int> data = List<int>.generate(bytes, (int i) => i % 251);
+  if (middleFrom != null && middleTo != null) {
+    data.fillRange(middleFrom, middleTo, 0xEE);
+  }
+  return File(path)
+    ..parent.createSync(recursive: true)
+    ..writeAsBytesSync(data);
+}
 
 /// [fill] 是文件内容的字节值：两部不同的剧要用不同的值，否则内容指纹相同、确实
 /// 是「同一个文件」。
@@ -438,6 +458,12 @@ void main() {
         reason: '入库当场记下指纹（≥128 KiB 用 OpenSubtitles 哈希）',
       );
       await _setProgress(db, 'video/01', 31337);
+      // 后台把采样指纹升级成整文件哈希（文件还在原处）。
+      expect(await upgradeVideoContentFingerprintsToFullHash(db), 1);
+      expect(
+        (await db.allVideoContentFingerprints())['video/01']?.fingerprint,
+        startsWith('sha256:'),
+      );
 
       // `dl/Show/01.mkv` → `anime/Renamed/01.mkv`：目录尾段一层都对不上。
       final String newFile = p.join(tmp.path, 'anime', 'Renamed', '01.mkv');
@@ -449,6 +475,161 @@ void main() {
       expect(rows.keys, <String>['video/01'], reason: '不再另建 X (2)');
       expect(rows['video/01']!.videoPath, newFile);
       expect(rows['video/01']!.lastPositionMs, 31337);
+      expect(
+        (await db.allVideoContentFingerprints())['video/01']?.fingerprint,
+        startsWith('sha256:'),
+        reason: '认定时算过的整文件哈希随改指记回，不降回采样指纹',
+      );
+    });
+
+    test('整文件哈希：首尾 64 KiB 相同、中间不同的同名同大小文件不改指也不合并', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      const int size = 1024 * 1024;
+      final String oldFile = p.join(tmp.path, 'old', 'Show', 'Arc', '01.mkv');
+      _patterned(oldFile, size);
+      await _scan(db, await _source(db, p.join(tmp.path, 'old')));
+      await _setProgress(db, 'video/01', 777);
+      await _recordSpec(db, oldFile, size);
+      expect(await upgradeVideoContentFingerprintsToFullHash(db), 1);
+      final String oldSampled = (await computeVideoContentFingerprint(
+        oldFile,
+      ))!.value;
+      File(oldFile).deleteSync();
+
+      // 同名、同大小、目录尾段 `Show/Arc` 也对得上，只有中间 400 KB 不同。
+      final String newFile = p.join(tmp.path, 'new', 'Show', 'Arc', '01.mkv');
+      _patterned(newFile, size, middleFrom: 300 * 1024, middleTo: 700 * 1024);
+      expect(
+        (await computeVideoContentFingerprint(newFile))!.value,
+        oldSampled,
+        reason: '采样指纹撞上（审查 HBK-AUDIT-004 的复现）',
+      );
+      final SourceLibraryRow newSource = await _source(
+        db,
+        p.join(tmp.path, 'new'),
+      );
+      await _scan(db, newSource);
+
+      Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/01', 'video/01 (2)'});
+      expect(rows['video/01']!.videoPath, oldFile, reason: '旧行没被改指');
+      expect(rows['video/01']!.lastPositionMs, 777);
+
+      // 已经有 `X (2)` 时重扫：同样不能把旧行并进去再删掉。
+      await _scan(db, newSource);
+      rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/01', 'video/01 (2)'});
+      expect(rows['video/01']!.lastPositionMs, 777);
+    });
+
+    test('整文件哈希还没算到：采样相同不下结论，按没指纹的行看目录链', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      const int size = 300 * 1024;
+      final String oldFile = p.join(tmp.path, 'dl', 'Show', '01.mkv');
+      _patterned(oldFile, size);
+      await _scan(db, await _source(db, p.join(tmp.path, 'dl')));
+      expect(
+        (await db.allVideoContentFingerprints())['video/01']?.fingerprint,
+        startsWith('osh:'),
+      );
+
+      // 只对上一层目录、没探过规格：没指纹的行也认不出，采样指纹相同不放宽。
+      final String renamed = p.join(tmp.path, 'anime', 'Renamed', '01.mkv');
+      Directory(p.dirname(renamed)).createSync(recursive: true);
+      File(oldFile).renameSync(renamed);
+      final VideoBookRow row = (await _rowsByUid(db))['video/01']!;
+      final VideoContentFingerprintRow known = (await db
+          .allVideoContentFingerprints())['video/01']!;
+      Future<int?> noSpec(String _) async => null;
+      expect(
+        await matchVideoContent(known, renamed),
+        VideoContentMatch.unconfirmed,
+      );
+      expect(
+        await videoRowMoveEvidence(
+          row,
+          renamed,
+          knownSizeOf: noSpec,
+          knownContent: known,
+        ),
+        VideoMoveEvidence.none,
+      );
+
+      // 整棵 `Show/01.mkv` 挪走（目录链对上）：与没指纹的行一样认。
+      final String chained = p.join(tmp.path, 'lib', 'dl', 'Show', '01.mkv');
+      Directory(p.dirname(chained)).createSync(recursive: true);
+      File(renamed).renameSync(chained);
+      expect(
+        await videoRowMoveEvidence(
+          row,
+          chained,
+          knownSizeOf: noSpec,
+          knownContent: known,
+        ),
+        VideoMoveEvidence.directoryChain,
+      );
+    });
+
+    test('整文件哈希：字节数不同不读新文件内容', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String oldFile = p.join(tmp.path, 'Show', '01.mkv');
+      _patterned(oldFile, 300 * 1024);
+      await _scan(db, await _source(db, tmp.path));
+      expect(await upgradeVideoContentFingerprintsToFullHash(db), 1);
+      final VideoContentFingerprintRow known = (await db
+          .allVideoContentFingerprints())['video/01']!;
+      final String other = p.join(tmp.path, 'Other', '01.mkv');
+      _patterned(other, 301 * 1024);
+      int fullReads = 0;
+      expect(
+        await matchVideoContent(
+          known,
+          other,
+          fullHashOf: (String path) async {
+            fullReads++;
+            return computeVideoContentFullHash(path);
+          },
+        ),
+        VideoContentMatch.different,
+      );
+      expect(fullReads, 0);
+      expect(
+        await matchVideoContent(known, oldFile),
+        VideoContentMatch.same,
+        reason: '同一个文件整文件哈希相等',
+      );
+    });
+
+    test('VideoContentFullHashUpgrader：后台升级、跑的期间请求补一轮', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _patterned(p.join(tmp.path, 'A', '01.mkv'), 200 * 1024);
+      _patterned(p.join(tmp.path, 'B', '02.mkv'), 10);
+      await _scan(db, await _source(db, tmp.path));
+      int calls = 0;
+      final VideoContentFullHashUpgrader upgrader =
+          VideoContentFullHashUpgrader(
+            db,
+            fullHashOf: (String path) async {
+              calls++;
+              return computeVideoContentFullHash(path);
+            },
+          );
+      upgrader
+        ..request()
+        ..request();
+      expect(await upgrader.running, 1, reason: '只有 ≥128 KiB 的那个是采样指纹');
+      expect(upgrader.running, isNull);
+      expect(calls, 1, reason: '补的那一轮没有要升级的行，不再读盘');
+      final Map<String, VideoContentFingerprintRow> all = await db
+          .allVideoContentFingerprints();
+      expect(
+        all.values.map((VideoContentFingerprintRow r) => r.fingerprint),
+        everyElement(startsWith('sha256:')),
+      );
     });
 
     test('内容指纹：名单外的目录名连着两层撞上、内容不同——不改指', () async {

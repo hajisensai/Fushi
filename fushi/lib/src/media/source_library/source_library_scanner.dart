@@ -1367,13 +1367,20 @@ class SourceLibraryScanner {
     MangaSevenZipExtractor? mangaSevenZipExtractor,
     SourceFolderAccess? folderAccess,
     MusicAudioIntake? musicAudioIntake,
+    void Function()? requestVideoContentFullHash,
   }) : _transcribeAudiobook = transcribeAudiobook,
        _videoRepo = VideoBookRepository(_db),
+       _requestVideoContentFullHashOverride = requestVideoContentFullHash,
        _mangaSevenZipExtractor = mangaSevenZipExtractor,
        _folderAccess = folderAccess ?? SourceFolderAccess.instance,
        _musicIntakeOverride = musicAudioIntake;
 
   final FushiDatabase _db;
+
+  /// 视频扫描记下采样指纹后请求后台整文件哈希升级（拍板台
+  /// hbk-audit-004-video-move-full-hash）；null = 走 [VideoBookRepository]
+  /// 的进程级调度。测试注入空函数，改为手动跑 `upgradeVideoContentFingerprintsToFullHash`。
+  final void Function()? _requestVideoContentFullHashOverride;
 
   /// 书籍来源里「配上了有声书音频却没有字幕」的书交给转录队列的端口（反馈
   /// z398R0ndAw）。null = 不转录（本机没有 ASR / 用户没开 / 调用方是音乐、视频这类
@@ -3054,6 +3061,14 @@ class SourceLibraryScanner {
         contentByPath.containsKey(path)
         ? contentByPath[path]
         : contentByPath[path] = await computeVideoContentFingerprint(path);
+    // 搬家候选（旧行有整文件哈希、新文件同大小）才整份读新文件；算过的随改指记回去，
+    // 后台升级不再重读（拍板台 hbk-audit-004-video-move-full-hash）。
+    final Map<String, VideoContentFingerprint?> fullByPath =
+        <String, VideoContentFingerprint?>{};
+    Future<VideoContentFingerprint?> fullContentOf(String path) async =>
+        fullByPath.containsKey(path)
+        ? fullByPath[path]
+        : fullByPath[path] = await computeVideoContentFullHash(path);
     // 本轮扫到、库里已有的行：扫描结束后复查它们的指纹（原地换了文件就重算）。
     final Set<String> seenUids = <String>{};
 
@@ -3082,6 +3097,7 @@ class SourceLibraryScanner {
                 knownSizeOf: _knownVideoFileSize,
                 knownContent: fingerprintByUid[moved.bookUid],
                 contentOf: contentOf,
+                fullContentOf: fullContentOf,
               );
         if (moved != null && evidence != VideoMoveEvidence.none) {
           final VideoBookRow? live = rowByPath[normalizedPath];
@@ -3098,10 +3114,11 @@ class SourceLibraryScanner {
                   : null,
             );
             await _videoRepo.assignSourceIfNull(moved.bookUid, sourceId);
-            // 指纹跟着行走：同一份内容，修改时刻按新位置刷新。
+            // 指纹跟着行走：同一份内容，修改时刻按新位置刷新；认定时算过整文件哈希
+            // 就记整文件哈希，不降回采样指纹。
             await _recordContentFingerprint(
               moved.bookUid,
-              await contentOf(item.videoPath),
+              fullByPath[item.videoPath] ?? await contentOf(item.videoPath),
             );
             existingPaths.add(normalizedPath);
             rowByPath[normalizedPath] = moved;
@@ -3227,6 +3244,9 @@ class SourceLibraryScanner {
             '$e\n$stack',
           );
         }
+        // 采样指纹只能排除、不能认定搬家：趁文件还在原处，后台逐个升级成整文件哈希。
+        (_requestVideoContentFullHashOverride ??
+            _videoRepo.requestContentFullHashUpgrade)();
       }
       return (
         createdPaths: createdPaths,
@@ -3612,8 +3632,8 @@ enum VideoMoveEvidence {
   /// 没有证据：不是搬家（或判不出来），新文件按新文件入库、旧行不动。
   none,
 
-  /// 旧行在文件还在原处时记过内容指纹（`video_content_fingerprints`），新文件算出来
-  /// 一模一样（字节数 + 指纹）。最强的证据，不看目录名。
+  /// 旧行在文件还在原处时记过整文件 SHA-256（`video_content_fingerprints`），新文件
+  /// 算出来一模一样。最强的证据，不看目录名；采样指纹（`osh:`）相同不算。
   sameContent,
 
   /// 新旧路径的目录尾段连着对得上，而且对上的名字里至少有一个不是通用目录名
@@ -3689,11 +3709,15 @@ final RegExp _numberedVideoDirectoryName = RegExp(
 /// 前提全是**反证**：通用文件名（`01.mkv`、`NCOP.mkv`）加上「旧文件没了」在这个 app
 /// 里是常态——扫描有意不回收已删文件的行（BUG-4055）。所以还要一条正证据：
 ///
-/// - [knownContent] 有（旧行记过内容指纹）且 [contentOf] 算得出新文件的指纹 → 只看
-///   内容：相同 = [VideoMoveEvidence.sameContent]，不同 = 不是同一个文件（目录名
-///   怎么对得上都不算）。拍板台 design-nmv-video-move-fingerprint：目录名判据会漏判
-///   （目录改了名）也会误判（名单外的通用名连着两层撞上），内容指纹两头都堵住；
-/// - 没有指纹时退回下面两条（升级后还没补算到的行、新文件读不了）：
+/// - [knownContent] 有（旧行记过内容指纹）→ 先看内容（[matchVideoContent]）：整文件
+///   哈希相同 = [VideoMoveEvidence.sameContent]，字节数或指纹不同 = 不是同一个文件
+///   （目录名怎么对得上都不算）。拍板台 design-nmv-video-move-fingerprint：目录名判据会
+///   漏判（目录改了名）也会误判（名单外的通用名连着两层撞上），内容指纹两头都堵住。
+///   拍板台 hbk-audit-004-video-move-full-hash：只有**整文件** SHA-256 能认定——采样
+///   指纹（`osh:`，首尾各 64 KiB）相同而中间不同的文件会被当成同一个，把旧片的进度
+///   绑过去、甚至并掉删旧行。旧行只有采样指纹（后台整文件哈希还没算到）且采样相同时
+///   不下结论，按没有指纹的行处理（下两条）：有采样指纹的行不比没指纹的行判得更松；
+/// - 没有指纹、采样待确认、或新文件读不了时退回下面两条：
 /// - [knownSizeOf] 给得出旧路径的字节数（规格缓存里探过）→ 只看大小：相等 =
 ///   [VideoMoveEvidence.sameSize]，不等 = 不是同一个文件；
 /// - 给不出（没探过）→ 比目录尾段（[_matchedTrailingDirectories]）：连着对上至少两层
@@ -3711,6 +3735,8 @@ Future<VideoMoveEvidence> videoRowMoveEvidence(
   VideoContentFingerprintRow? knownContent,
   Future<VideoContentFingerprint?> Function(String newPath) contentOf =
       computeVideoContentFingerprint,
+  Future<VideoContentFingerprint?> Function(String newPath) fullContentOf =
+      computeVideoContentFullHash,
 }) async {
   final String oldPath = row.videoPath;
   if (row.playlistJson != null || row.streamSpecJson != null) {
@@ -3734,11 +3760,19 @@ Future<VideoMoveEvidence> videoRowMoveEvidence(
   if (await videoMemberExists(oldPath)) return VideoMoveEvidence.none;
 
   if (knownContent != null) {
-    final VideoContentFingerprint? now = await contentOf(newPath);
-    if (now != null) {
-      return now.sameContentAs(knownContent)
-          ? VideoMoveEvidence.sameContent
-          : VideoMoveEvidence.none;
+    switch (await matchVideoContent(
+      knownContent,
+      newPath,
+      sampledOf: contentOf,
+      fullHashOf: fullContentOf,
+    )) {
+      case VideoContentMatch.same:
+        return VideoMoveEvidence.sameContent;
+      case VideoContentMatch.different:
+        return VideoMoveEvidence.none;
+      case VideoContentMatch.unconfirmed:
+      case VideoContentMatch.unknown:
+        break;
     }
   }
   final int? oldSize = await knownSizeOf(oldPath);
