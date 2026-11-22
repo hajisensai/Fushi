@@ -104,14 +104,15 @@ class FumeScene {
 );
 
 /// 音频帧 → 背景火花的频段电平（folia `readFumeAudioLevels`，0–255 量级，下限 10）：bass ← 低频、
-/// lowMid / mid ← 中频（共享契约把 folia 的 lowMid + mid 合成一段）、vocal ← 人声、treble ← 高频。
+/// lowMid ← 中低频（150–400 Hz）、mid ← 中高频（400–1200 Hz，folia `audioBands.mid`）、vocal ← 人声、
+/// treble ← 高频。旧分析结果没有分段时两段都回落到合并的中频。
 /// 没有音频分析时帧是歌词起字包络的代用品，各段衰减快慢不同。
 FumeBackgroundLevels fumeBackgroundLevelsOf(LyricVisualizerAudioFrame f) {
   double lv(double v) => 10 + 190 * v.clamp(0.0, 1.0);
   return <FumeAudioBand, double>{
     FumeAudioBand.bass: lv(f.low),
-    FumeAudioBand.lowMid: lv(f.mid),
-    FumeAudioBand.mid: lv(f.mid),
+    FumeAudioBand.lowMid: lv(f.lowMid),
+    FumeAudioBand.mid: lv(f.upperMid),
     FumeAudioBand.vocal: lv(f.vocal),
     FumeAudioBand.treble: lv(f.high),
   };

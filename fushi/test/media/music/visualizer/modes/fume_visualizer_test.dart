@@ -639,8 +639,25 @@ void main() {
       );
       final FumeBackgroundLevels lv = fumeBackgroundLevelsOf(f);
       expect(lv[FumeAudioBand.bass], closeTo(10 + 190 * f.low, 1e-9));
-      expect(lv[FumeAudioBand.mid], closeTo(10 + 190 * f.mid, 1e-9));
-      expect(lv[FumeAudioBand.lowMid], lv[FumeAudioBand.mid]);
+      expect(lv[FumeAudioBand.mid], closeTo(10 + 190 * f.upperMid, 1e-9));
+      expect(lv[FumeAudioBand.lowMid], closeTo(10 + 190 * f.lowMid, 1e-9));
+      // 有分段数据时 lowMid / mid 各读各的（folia 火花按 lowMid 与 mid 分别取）。
+      const LyricVisualizerAudioFrame split = LyricVisualizerAudioFrame(
+        power: 0.5,
+        low: 0.5,
+        mid: 0.5,
+        lowMid: 0.9,
+        upperMid: 0.1,
+        high: 0.5,
+        vocal: 0.5,
+        onset: 0,
+        beatImpact: 0,
+        downbeatImpact: 0,
+        drumImpact: 0,
+      );
+      final FumeBackgroundLevels sl = fumeBackgroundLevelsOf(split);
+      expect(sl[FumeAudioBand.lowMid], closeTo(10 + 190 * 0.9, 1e-9));
+      expect(sl[FumeAudioBand.mid], closeTo(10 + 190 * 0.1, 1e-9));
       expect(lv[FumeAudioBand.vocal], closeTo(10 + 190 * f.vocal, 1e-9));
       expect(lv[FumeAudioBand.treble], closeTo(10 + 190 * f.high, 1e-9));
       final FumeBackgroundLevels quiet = fumeBackgroundLevelsOf(
