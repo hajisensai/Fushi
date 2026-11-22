@@ -37,6 +37,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
     show registerMangaAudioWorkbenchEntry;
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -3487,7 +3488,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                     child: AppleWidgetsHost(
                                       // NSFW 封面状态（拍板台 w04vrhUAaX）挂在
                                       // 导航器之上，所有路由 / 对话框都读得到。
-                                      child: MediaNsfwStateHost(child: child!),
+                                      // 上锁作品的显示口径（唯一过滤入口）与 NSFW
+                                      // 封面模糊并排挂在导航器之上，对话框 / 菜单
+                                      // 也读得到。
+                                      child: MediaVisibilityHost(
+                                        child: MediaNsfwStateHost(child: child!),
+                                      ),
                                     ),
                                   ),
                                   const AppFloatingBallHost(),

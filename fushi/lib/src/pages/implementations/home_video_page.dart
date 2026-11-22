@@ -4964,16 +4964,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               unawaited(_listenToVideos(<VideoBookRow>[book]));
             },
           ),
-        // 私密：不上传排行榜、不推 Bangumi。整部剧要藏就标在合集上。
-        mediaPrivacyToggleAction(
-          context,
-          db: appModelNoUpdate.database,
-          kind: TagHostKind.video,
-          entryKey: book.bookUid,
-          title: book.title,
-        ),
-        // NSFW：封面按「模糊 NSFW 封面」打模糊。整部剧要标就标在合集上。
-        mediaNsfwToggleAction(
+        // 隐私：分级（公开 / 私密 / 上锁）与 NSFW。整部剧要藏 / 要标就标在合集上。
+        mediaPrivacyAction(
           context,
           db: appModelNoUpdate.database,
           kind: TagHostKind.video,

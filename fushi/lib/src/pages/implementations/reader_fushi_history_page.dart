@@ -4874,16 +4874,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () =>
             _showWorkLinks((kind: MediaLinkKind.book, key: bookKey)),
       ),
-      // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
-      mediaPrivacyToggleAction(
-        context,
-        db: appModel.database,
-        kind: TagHostKind.epub,
-        entryKey: bookKey,
-        title: item.title,
-      ),
-      // NSFW：「模糊 NSFW 封面」开着时书架 / 继续卡的封面打模糊。
-      mediaNsfwToggleAction(
+      // 隐私：分级（公开 / 私密 / 上锁）与 NSFW（本地书 / 漫画没有外部分级可依）。
+      mediaPrivacyAction(
         context,
         db: appModel.database,
         kind: TagHostKind.epub,
