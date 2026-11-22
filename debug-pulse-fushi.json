@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T13:20:29Z",
+ "generatedAt": "2026-11-22T13:34:51Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8ea6084e7dcd5e6b34ac7010bc9eb46ed48fc243",
-  "seq": 31366
+  "sha": "7b399e44e0d1fabb4dc183d2600299fcc84fcced",
+  "seq": 31369
  },
  "builds": [
   {
@@ -33,7 +33,7 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
     },
     "ios": {
-     "state": "building",
+     "state": "built",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
     }
    }
@@ -186,7 +186,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "7b399e44e0d1fabb4dc183d2600299fcc84fcced",
+  "headSeq": 31369,
+  "prs": [
+   4169
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064413"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064426"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064426"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064426"
+   }
+  }
+ },
  "prs": {
   "4116": {
    "number": 4116,
@@ -366,6 +392,15 @@
    "mergedAt": "2026-11-22T12:15:37Z",
    "additions": 941,
    "deletions": 425,
+   "labels": []
+  },
+  "4169": {
+   "number": 4169,
+   "title": "fix(develop): 修 develop 自带的 11 处测试红（根因）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T13:32:56Z",
+   "additions": 243,
+   "deletions": 37,
    "labels": []
   }
  }
