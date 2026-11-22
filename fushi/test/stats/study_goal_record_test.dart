@@ -226,11 +226,12 @@ void main() {
       mainGoalId: main,
       scope: scope,
     );
-    int index(List<StudyGoal> list, String main) =>
+    int index(List<StudyGoal> list, String main, [String page = '']) =>
         studyGoalTodayPageIndex<StudyGoal>(
           list,
           goalOf: self,
           mainGoalId: main,
+          pageGoalId: page,
         );
 
     test('weekly / monthly main goal coexists with daily goals', () {
@@ -250,6 +251,18 @@ void main() {
       expect(index(pages(goals, 'd2'), 'd2'), 1);
       expect(index(pages(goals, ''), ''), 0);
       expect(index(pages(goals, 'gone'), 'gone'), 0);
+    });
+
+    test('swiped page wins while it is a page; main goal stays a page', () {
+      // 周主目标 w、滑到每日目标 d2：页集合不变（w 仍在），停在 d2。
+      final List<StudyGoal> w = pages(goals, 'w');
+      expect(ids(w), <String>['d1', 'w', 'd2']);
+      expect(w[index(w, 'w', 'd2')].id, 'd2');
+      // 当前页不在页集合里（范围收窄 / 已删）→ 回主目标那页。
+      expect(w[index(w, 'w', 'm')].id, 'w');
+      expect(w[index(w, 'w', 'gone')].id, 'w');
+      // 没主目标也没当前页 → 第一页。
+      expect(index(w, '', ''), 0);
     });
 
     test('scope all = every goal; no daily goal = every goal', () {

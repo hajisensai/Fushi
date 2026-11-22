@@ -322,13 +322,24 @@ List<T> studyGoalTodayPages<T>(
   return hasDaily ? pages : goals;
 }
 
-/// [studyGoalTodayPages] 给出的 [pages] 里从哪页开始：主目标 [mainGoalId] 那页；
-/// 指不到（'' =「第一个目标」，或主目标已删）就是第一页。
+/// [studyGoalTodayPages] 给出的 [pages] 里显示哪页：滑动停下的那页 [pageGoalId]
+/// （偏好 `home_today_page_goal`）还在页里就是它；否则主目标 [mainGoalId] 那页；
+/// 都指不到（'' =「第一个目标」，或目标已删）就是第一页。
+///
+/// 页集合只由主目标与「左右滑动」范围决定（[studyGoalTodayPages]），滑动只改
+/// [pageGoalId]，所以滑走后周 / 月主目标仍在页里、滑得回去。
 int studyGoalTodayPageIndex<T>(
   List<T> pages, {
   required StudyGoal Function(T item) goalOf,
   required String mainGoalId,
-}) => math.max(0, pages.indexWhere((T g) => goalOf(g).id == mainGoalId));
+  String pageGoalId = '',
+}) {
+  if (pageGoalId.isNotEmpty) {
+    final int page = pages.indexWhere((T g) => goalOf(g).id == pageGoalId);
+    if (page >= 0) return page;
+  }
+  return math.max(0, pages.indexWhere((T g) => goalOf(g).id == mainGoalId));
+}
 
 /// 首页「今日」格的版式（偏好 `home_today_layout`）。
 enum StudyGoalTodayLayout {

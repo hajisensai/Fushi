@@ -1228,6 +1228,21 @@ void main() {
       expect(repo2.homeTodayMainGoal, 'g1');
       expect(repo2.homeTodaySwipeGoals, StudyGoalSwipeScope.all);
     });
+
+    test('home today page goal persists apart from the main goal; '
+        'setting the main goal resets it', () async {
+      expect(repo.homeTodayPageGoal, '');
+      await repo.setHomeTodayMainGoal('w');
+      await repo.setHomeTodayPageGoal('d');
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.homeTodayMainGoal, 'w');
+      expect(repo2.homeTodayPageGoal, 'd');
+      await repo2.setHomeTodayMainGoal('m');
+      expect(repo2.homeTodayMainGoal, 'm');
+      expect(repo2.homeTodayPageGoal, '');
+    });
     test('weekly goal clamps into 0..7000000', () async {
       await repo.setReadingGoalWeeklyChars(-1);
       expect(repo.readingGoalWeeklyChars, 0);

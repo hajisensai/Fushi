@@ -13199,6 +13199,9 @@ class AppModel
   String get homeTodayMainGoal => prefsRepo.homeTodayMainGoal;
   Future<void> setHomeTodayMainGoal(String goalId) =>
       prefsRepo.setHomeTodayMainGoal(goalId);
+  String get homeTodayPageGoal => prefsRepo.homeTodayPageGoal;
+  Future<void> setHomeTodayPageGoal(String goalId) =>
+      prefsRepo.setHomeTodayPageGoal(goalId);
   StudyGoalSwipeScope get homeTodaySwipeGoals => prefsRepo.homeTodaySwipeGoals;
   Future<void> setHomeTodaySwipeGoals(StudyGoalSwipeScope value) =>
       prefsRepo.setHomeTodaySwipeGoals(value);

@@ -767,7 +767,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         : overview
         ? _studyGoalProgress(goalsInput)
         : _todayGoals(goalsInput);
-    // 柱条跟着翻页当前那条目标走（滑动会写主目标 → 重建到这里）。
+    // 柱条跟着翻页当前那条目标走（滑动写当前页偏好 → 重建到这里）。
     final StudyGoalProgress? shown = goals.isEmpty
         ? null
         : goals[_todayGoalIndex(goals)];
@@ -925,10 +925,11 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               studyGoalProgressLabel(goals[i], input),
             ),
           ),
+          // 滑动只记「停在哪页」，不改主目标：页集合（含周 / 月主目标）不随手势变。
           onPageChanged: (int i) {
             final String id = goals[i].goal.id;
-            if (id != appModel.homeTodayMainGoal) {
-              unawaited(appModel.setHomeTodayMainGoal(id));
+            if (id != appModel.homeTodayPageGoal) {
+              unawaited(appModel.setHomeTodayPageGoal(id));
             }
           },
           pageBuilder: (BuildContext context, int i) => _todayGoalPage(

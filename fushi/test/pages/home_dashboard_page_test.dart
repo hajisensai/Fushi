@@ -3217,7 +3217,7 @@ void main() {
     expect(find.text(t.stat_goal_set), findsNothing);
   });
 
-  testWidgets('今日格目标翻页：从主目标那页开始，其余目标列在下面；点圆点切页并记成主目标', (
+  testWidgets('今日格目标翻页：从主目标那页开始，其余目标列在下面；点圆点切页并记成当前页（主目标不变）', (
     WidgetTester tester,
   ) async {
     useSize(tester, const Size(1280, 900));
@@ -3261,7 +3261,8 @@ void main() {
       tester.widget<Semantics>(page('m')).properties.label,
       contains('0 / 5'),
     );
-    expect(appModel.homeTodayMainGoal, 'm');
+    expect(appModel.homeTodayPageGoal, 'm');
+    expect(appModel.homeTodayMainGoal, 't');
   });
 
   testWidgets('今日格「左右滑动」：缺省只翻每日目标，选「全部目标」后周目标也进来', (WidgetTester tester) async {
@@ -3340,7 +3341,27 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     expect(page('d'), findsOneWidget);
-    expect(appModel.homeTodayMainGoal, 'd');
+    // 拍板 pr3980-today-main-goal-vs-swipe-page：滑动只记当前页，不改主目标。
+    expect(appModel.homeTodayPageGoal, 'd');
+    expect(appModel.homeTodayMainGoal, 'w');
+
+    // 重建（重开首页）后停在滑到的每日目标，周主目标仍在页里、滑得回去。
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(page('d'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(page('w'), findsOneWidget);
+    expect(appModel.homeTodayPageGoal, 'w');
+    expect(appModel.homeTodayMainGoal, 'w');
   });
 
   testWidgets('今日格目标翻页：点按格子进「目标」设置子页', (WidgetTester tester) async {
@@ -3434,9 +3455,9 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
-    expect(appModel.homeTodayMainGoal, 'c');
-    // 主目标写穿偏好（真 DB isolate）后才通知：真实事件循环里等写完，再走一帧
-    // 让首页按新主目标重建。
+    expect(appModel.homeTodayPageGoal, 'c');
+    // 当前页写穿偏好（真 DB isolate）后才通知：真实事件循环里等写完，再走一帧
+    // 让首页按新当前页重建。
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );

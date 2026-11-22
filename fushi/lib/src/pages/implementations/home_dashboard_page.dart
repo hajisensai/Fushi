@@ -4824,14 +4824,18 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 「今日」目标翻页当前显示的那页：主目标（[AppModel.homeTodayMainGoal]，左右滑时
-  /// 也写它）在 [goals] 里的位置，指不到就是第一页。翻页与旁边的近 7 天柱条都按它。
-  int _todayGoalIndex(List<StudyGoalProgress> goals) =>
-      studyGoalTodayPageIndex<StudyGoalProgress>(
-        goals,
-        goalOf: (StudyGoalProgress g) => g.goal,
-        mainGoalId: ref.read(appProvider).homeTodayMainGoal,
-      );
+  /// 「今日」目标翻页当前显示的那页：滑动停下的那页（[AppModel.homeTodayPageGoal]），
+  /// 不在页里就回主目标（[AppModel.homeTodayMainGoal]），都指不到是第一页。翻页与旁边
+  /// 的近 7 天柱条都按它。
+  int _todayGoalIndex(List<StudyGoalProgress> goals) {
+    final AppModel appModel = ref.read(appProvider);
+    return studyGoalTodayPageIndex<StudyGoalProgress>(
+      goals,
+      goalOf: (StudyGoalProgress g) => g.goal,
+      mainGoalId: appModel.homeTodayMainGoal,
+      pageGoalId: appModel.homeTodayPageGoal,
+    );
+  }
 
   /// 「今日」格的目标页：「左右滑动」范围内的目标再并上主目标，规则只在
   /// [studyGoalTodayPages] 写一次（选了周 / 月主目标时与每日目标共存）。

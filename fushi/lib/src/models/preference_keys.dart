@@ -425,9 +425,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String 'focus' | 'overview'：首页「今日」格的版式（StudyGoalTodayLayout.wire）。
   // 缺省 focus = 一条目标大环 + 左右滑；overview = 全部目标列表。随 Profile 走。
   'home_today_layout',
-  // String：首页「今日」格的主目标 = 学习目标记录 id（StudyGoal.id，大环 + 大字；左右滑
-  // 切到别的目标时也写这里，下次从它开始）。'' / 指不到记录 = 第一页。随 Profile 走。
+  // String：首页「今日」格的主目标 = 学习目标记录 id（StudyGoal.id，大环 + 大字）。只由
+  // 设置「主目标」改，左右滑不写（滑动位置见 home_today_page_goal）。'' / 指不到记录 =
+  // 第一页。随 Profile 走。
   'home_today_main_goal',
+  // String：首页「今日」格翻页当前停在哪条目标（StudyGoal.id，左右滑 / 点圆点时写，下次
+  // 从它开始）。'' / 不在页集合里 = 主目标那页；改主目标时清空。随 Profile 走。
+  'home_today_page_goal',
   // String 'daily' | 'all'：首页「今日」格左右滑显示哪些目标（StudyGoalSwipeScope.wire）。
   // 缺省 daily = 只有每日目标。随 Profile 走。
   'home_today_swipe_goals',

@@ -7965,11 +7965,25 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// 首页「今日」格的主目标：记录 id（[StudyGoal.id]）；'' / 指不到记录 = 第一页。
+  /// 只由设置「主目标」改；左右滑动不写它（滑动位置在 [homeTodayPageGoal]），所以
+  /// 周 / 月主目标在「左右滑动 = 每日」时也一直留在翻页里。
   String get homeTodayMainGoal =>
       getPref('home_today_main_goal', defaultValue: '') as String? ?? '';
 
+  /// 改主目标 = 翻页跳到它：同时清掉滑动位置 [homeTodayPageGoal]。
   Future<void> setHomeTodayMainGoal(String goalId) async {
     await setPref('home_today_main_goal', goalId);
+    await setPref('home_today_page_goal', '');
+    notifyListeners();
+  }
+
+  /// 首页「今日」格翻页当前停在哪条目标（记录 id，左右滑动 / 点圆点时写）；
+  /// '' / 不在当前页集合里 = 回到主目标 [homeTodayMainGoal] 那页。
+  String get homeTodayPageGoal =>
+      getPref('home_today_page_goal', defaultValue: '') as String? ?? '';
+
+  Future<void> setHomeTodayPageGoal(String goalId) async {
+    await setPref('home_today_page_goal', goalId);
     notifyListeners();
   }
 
