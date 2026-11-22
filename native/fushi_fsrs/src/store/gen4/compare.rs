@@ -199,6 +199,12 @@ pub(crate) struct Known {
     /// 「同一次复习的副本按规范卡成了一个事件」的卡 → 证出的那几条协议 3 多算的副本日志（[event_copies]）：只这几条
     /// 统计行不比，同卡其余统计行盖重放列、卡行盖 `CARD_DERIVED`。
     pub stats_event_copies: BTreeMap<String, BTreeSet<String>>,
+    /// 同一事件的几份副本里两边选了不同的代表（协议 3 按原值日志 ID 取最小、新代按规范日志 ID 取最小，带盐的原值与
+    /// 规范值先后可以相反；BUG-5063）：协议 3 一侧统计行的日志 → 新代同一行的日志（[stat_representative_swaps]）。
+    /// 只换这一格，行的其余列照比。
+    pub stat_swaps: BTreeMap<String, String>,
+    /// 同上、落在卡行 `last_log_id` 上的卡（[card_representative_swaps]）。
+    pub card_swaps: BTreeSet<String>,
     /// 盖了列 / 整行不比的行（两侧合计，按盖之前的原文去重）与其中两侧原文不同的。
     pub rows: u64,
     pub rows_differ: u64,
@@ -302,7 +308,8 @@ pub(crate) fn cache_effect(kind: EntKind, key: &str) -> Effect {
         "pending_decision",
     ];
     match (kind, head) {
-        (EntKind::NoteType, "name" | "css" | "fieldDesc") => NO_EFFECT,
+        // `browseFields` 只给浏览页挑副字段，不进任何缓存列。
+        (EntKind::NoteType, "name" | "css" | "fieldDesc" | "browseFields") => NO_EFFECT,
         (EntKind::NoteType, _) => Effect {
             note: &[
                 "term_key",
@@ -749,8 +756,8 @@ pub(crate) fn cache_pairs(
     };
     // 协议 3 一侧改写成规范 ID（模块文件头「按规范 ID 比」）；跳过 / 扣住的集合同样改写。
     let canon = CanonMap::load(t, col)?;
-    let canonical = canon.rows(&old);
-    let (old_notes, old_cards, old_stats) = (&canonical.0, &canonical.1, &canonical.2);
+    let (old_notes, mut old_cards, mut old_stats) = canon.rows(&old);
+    let old_notes = &old_notes;
     let held = &canon.kinded(held);
     let collided = &canon.kinded(collided);
     let skip = &Skip {
@@ -776,7 +783,30 @@ pub(crate) fn cache_pairs(
     // 同一次复习的副本按规范卡成了一个事件（[event_copies]）：这张卡的历史少了证出的那几条。只剔掉这几条统计行，
     // 同卡其余统计行照比、只盖由历史重放的列（同卡寄存器的已知差异同一口径，[cache_effect]），卡行盖重放列。
     let new_stats = new("stats", STAT_COLS)?;
-    known.stats_event_copies = event_copies(t, col, &canon, old_stats, &new_stats)?;
+    known.stats_event_copies = event_copies(t, col, &canon, &old_stats, &new_stats)?;
+    // 同一事件的副本两边选了不同的代表（[stat_representative_swaps]）：协议 3 一侧那一行的日志 ID 换成新代选的那份，
+    // 行的其余列照比。
+    known.stat_swaps = {
+        let copies: HashSet<&str> = known
+            .stats_event_copies
+            .values()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        stat_representative_swaps(t, col, &canon, &old_stats, &new_stats, &copies)?
+    };
+    {
+        let log = STAT_COLS
+            .iter()
+            .position(|c| c.0 == "log")
+            .expect("column listed in the constant");
+        for r in &mut old_stats {
+            if let Some(n) = known.stat_swaps.get(&r[log]) {
+                r[log] = n.clone();
+            }
+        }
+    }
+    let old_stats = &old_stats;
     for c in known.stats_event_copies.keys() {
         known
             .stat_cols
@@ -864,6 +894,18 @@ pub(crate) fn cache_pairs(
     let new_side = notes(&new_notes, &mut aside.1);
     push_pair(diff, ("notes", old_side, new_side));
     let new_cards = new("cards", CARD_COLS)?;
+    // 卡行的 `last_log_id` 同理（[card_representative_swaps]）：只换证出的那几张卡的这一格。
+    {
+        let swaps = card_representative_swaps(t, col, &canon, &old_cards, &new_cards)?;
+        let last = at(CARD_COLS, "last_log_id");
+        for r in &mut old_cards {
+            if let Some(n) = swaps.get(&r[0]) {
+                r[last] = n.clone();
+            }
+        }
+        known.card_swaps = swaps.into_keys().collect();
+    }
+    let old_cards = &old_cards;
     // 笔记类型的删除被扣住时同理：卡的 `hidden` 跟着笔记类型删没删（`caches.rs` 笔记行的 `gone`），协议 3 的
     // `deleted` 寄存器里留着哪几条同样取决于到达顺序，这些笔记的卡不比 `hidden`。
     let held_types: BTreeSet<&str> = held
@@ -982,29 +1024,9 @@ fn event_copies(
     for r in old_stats {
         by_card.entry(r[card].as_str()).or_default().push(r);
     }
-    let body = |id: &str| -> Result<Option<Log4>, String> {
-        let k: Option<i64> = t
-            .conn()
-            .prepare_cached("SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 ORDER BY k LIMIT 1")
-            .map_err(sql)?
-            .query_row(params![col, Ref::of(&Key::of(id))], |r| r.get(0))
-            .optional()
-            .map_err(sql)?;
-        let Some(k) = k else { return Ok(None) };
-        Ok(t.entry_by_key(k)?.and_then(|e| match body_of(&e) {
-            Some(Body4::Log(l)) => Some(l),
-            _ => None,
-        }))
-    };
+    let body = |id: &str| log_body(t, col, id);
     let same_event = |a: &Log4, b: &Log4| -> bool {
-        a.hlc.is_some()
-            && a.hlc == b.hlc
-            && a.at == b.at
-            && a.kind == b.kind
-            && a.origin == b.origin
-            && a.rtype == b.rtype
-            && a.rating == b.rating
-            && a.anki_id == b.anki_id
+        same_content(a, b)
             && a.card != b.card
             && canon.of(&Ref::of(&a.card)) == canon.of(&Ref::of(&b.card))
     };
@@ -1022,6 +1044,158 @@ fn event_copies(
                     }
                 }
             }
+        }
+    }
+    Ok(out)
+}
+
+/// 一条日志（规范 ID 文本，缓存行里的形）在新代里存的日志体。带盐的库里操作里只出现原值 ID（由带盐卡派生的导入日志），
+/// 规范 ID 本身不在 `log_ix` 里：先按它自己查，查不到再按别名类里的原值 ID 查（`alias_canon` 索引），取操作号最小的
+/// 那份。类里的各份是同一条日志，比 [same_content] 用哪份都一样。
+fn log_body(t: &Truth<'_>, col: i64, id: &str) -> Result<Option<Log4>, String> {
+    let r = Ref::of(&Key::of(id));
+    let mut ids = vec![r.clone()];
+    if let Ref::Uuid(b) = &r {
+        let members: Vec<Ref> = t
+            .conn()
+            .prepare_cached(
+                "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
+            )
+            .map_err(sql)?
+            .query_map(params![col, b.as_slice()], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?;
+        ids.extend(members);
+    }
+    let mut first: Option<i64> = None;
+    for id in &ids {
+        let k: Option<i64> = t
+            .conn()
+            .prepare_cached("SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 ORDER BY k LIMIT 1")
+            .map_err(sql)?
+            .query_row(params![col, id], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        first = match (first, k) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    let Some(k) = first else { return Ok(None) };
+    Ok(t.entry_by_key(k)?.and_then(|e| match body_of(&e) {
+        Some(Body4::Log(l)) => Some(l),
+        _ => None,
+    }))
+}
+
+/// 两条日志体是同一次真实复习的副本（卡片历史的 `EventKey`，`history.rs`）除卡以外的那几项：HLC（含写入者）、发生
+/// 时刻、种类、来源、评分类型、评分、Anki revlog 时刻逐个相同。没有 HLC 的不认（成组键靠它）。
+fn same_content(a: &Log4, b: &Log4) -> bool {
+    a.hlc.is_some()
+        && a.hlc == b.hlc
+        && a.at == b.at
+        && a.kind == b.kind
+        && a.origin == b.origin
+        && a.rtype == b.rtype
+        && a.rating == b.rating
+        && a.anki_id == b.anki_id
+}
+
+/// [a] 与 [b] 两条日志（规范 ID 文本）是不是卡片历史里同一事件的两份副本（`history.rs` `EventKey`：Anki 来源不比卡，
+/// 别的来源比规范卡）。日志体取不到的不认。
+fn copies_of_one_event(
+    t: &Truth<'_>,
+    col: i64,
+    canon: &CanonMap,
+    a: &str,
+    b: &str,
+) -> Result<bool, String> {
+    let (Some(x), Some(y)) = (log_body(t, col, a)?, log_body(t, col, b)?) else {
+        return Ok(false);
+    };
+    Ok(same_content(&x, &y)
+        && (x.origin == "anki" || canon.of(&Ref::of(&x.card)) == canon.of(&Ref::of(&y.card))))
+}
+
+/// 统计行上两边选了不同代表的事件（[Known::stat_swaps]）：协议 3 一侧的日志 → 新代一侧的日志。
+///
+/// 同一事件的几份副本（卡片历史的 `EventKey`；BUG-4254 的血统里同一条 Anki revlog 按两张带盐卡各派生一份日志）只算
+/// 一份，代表取 ID 最小的那份（`history.rs` `select`）。协议 3 比原值 ID、新代比规范 ID（重放读的是归一过的日志，
+/// `cache.rs` `log_at`），带盐的原值与规范值先后可以相反：两边算的是同一次复习，统计行只差日志 ID 这一格（BUG-5063：
+/// 带盐的 Anki 库几十万行都是这样，对拍判失败、回滚）。
+///
+/// 只认佐证得了的：同一张（规范）归属卡、同一发生时刻上，协议 3 一侧恰好一行的日志不在新代的统计里、新代一侧恰好
+/// 一行的日志不在协议 3 的统计里，且两条日志是同一事件的副本（[copies_of_one_event]）。[copies] 是 [event_copies]
+/// 证出的多算副本，不再参与。行的其余列（归属卡、评分、重放列……）照比。
+fn stat_representative_swaps(
+    t: &Truth<'_>,
+    col: i64,
+    canon: &CanonMap,
+    old_stats: &[Vec<String>],
+    new_stats: &[Vec<String>],
+    copies: &HashSet<&str>,
+) -> Result<BTreeMap<String, String>, String> {
+    let pos = |name: &str| -> usize {
+        STAT_COLS
+            .iter()
+            .position(|c| c.0 == name)
+            .expect("column listed in the constant")
+    };
+    let (log, card, at) = (pos("log"), pos("card"), pos("at"));
+    let logs =
+        |rows: &[Vec<String>]| -> HashSet<String> { rows.iter().map(|r| r[log].clone()).collect() };
+    let (old_logs, new_logs) = (logs(old_stats), logs(new_stats));
+    // (归属卡, 发生时刻) → (只在协议 3 一侧的日志, 只在新代一侧的日志)
+    type Sides<'a> = (Vec<&'a str>, Vec<&'a str>);
+    let mut by: BTreeMap<(&str, &str), Sides<'_>> = BTreeMap::new();
+    for r in old_stats {
+        if !new_logs.contains(&r[log]) && !copies.contains(r[log].as_str()) {
+            by.entry((&r[card], &r[at])).or_default().0.push(&r[log]);
+        }
+    }
+    for r in new_stats {
+        if !old_logs.contains(&r[log]) {
+            by.entry((&r[card], &r[at])).or_default().1.push(&r[log]);
+        }
+    }
+    let mut out = BTreeMap::new();
+    for (a, b) in by.into_values() {
+        if let ([a], [b]) = (a.as_slice(), b.as_slice()) {
+            if copies_of_one_event(t, col, canon, a, b)? {
+                out.insert((*a).to_owned(), (*b).to_owned());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 卡行 `last_log_id` 上两边选了不同代表的卡（[Known::card_swaps]）：（规范）卡 → 新代那一格。理由同
+/// [stat_representative_swaps]：卡的最后一条有效日志是同一事件的另一份副本。只认两边都有这张卡、两格都不空、
+/// 两条日志是同一事件的副本（[copies_of_one_event]）的；卡行的其余列照比。
+fn card_representative_swaps(
+    t: &Truth<'_>,
+    col: i64,
+    canon: &CanonMap,
+    old_cards: &[Vec<String>],
+    new_cards: &[Vec<String>],
+) -> Result<BTreeMap<String, String>, String> {
+    let last = CARD_COLS
+        .iter()
+        .position(|c| c.0 == "last_log_id")
+        .expect("column listed in the constant");
+    let new_last: HashMap<&str, &str> = new_cards
+        .iter()
+        .map(|r| (r[0].as_str(), r[last].as_str()))
+        .collect();
+    let mut out = BTreeMap::new();
+    for r in old_cards {
+        let Some(&n) = new_last.get(r[0].as_str()) else {
+            continue;
+        };
+        let o = r[last].as_str();
+        if o != n && o != "∅" && n != "∅" && copies_of_one_event(t, col, canon, o, n)? {
+            out.insert(r[0].clone(), n.to_owned());
         }
     }
     Ok(out)
@@ -1439,6 +1613,78 @@ mod tests {
         }
     }
 
+    /// BUG-5063：同一张归属卡、同一时刻上两边各剩一行、日志不同，两条日志是同一事件的副本（Anki 来源不比卡）才认成
+    /// 「代表选得不同」，换掉协议 3 那一格；内容不同、非 Anki 来源落在不同规范卡上、一侧不止一条候选的都不认。
+    #[test]
+    fn representative_swaps_are_known_only_for_copies_of_one_event() {
+        const AT: i64 = 1_792_431_298_815;
+        let anki = |l: Body4, rating: i64| -> Body4 {
+            match l {
+                Body4::Log(l) => Body4::Log(Log4 {
+                    origin: "anki".into(),
+                    anki_id: Some(AT),
+                    rating: Some(rating),
+                    ..l
+                }),
+                _ => unreachable!(),
+            }
+        };
+        for (case, origin_anki, b_rating, extra_old, want) in [
+            (
+                "anki copies on two cards of a lineage",
+                true,
+                1,
+                false,
+                true,
+            ),
+            ("another rating", true, 3, false, false),
+            ("native logs on two canonical cards", false, 1, false, false),
+            ("two candidates on the old side", true, 1, true, false),
+        ] {
+            with(|t, col| {
+                let w = land(t, col);
+                let other = Id::new_v7(AT as u64 + 7);
+                let (a, b, x) = (
+                    Id::new_v7(AT as u64),
+                    Id::new_v7(AT as u64 + 1),
+                    Id::new_v7(AT as u64 + 2),
+                );
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    let mut la = review(a, w.card[0], AT, (AT, 0, "anki"));
+                    let mut lb = review(b, other, AT, (AT, 0, "anki"));
+                    if origin_anki {
+                        la = anki(la, 1);
+                        lb = anki(lb, b_rating);
+                    }
+                    heritage(t, &mut ix, col, op(0xf1, 1, AT, &[], &la));
+                    heritage(t, &mut ix, col, op(0xf2, 1, AT, &[], &lb));
+                    ix.settle()?;
+                    Ok(())
+                })
+                .unwrap();
+                let canon = CanonMap::load(t, col).unwrap();
+                let mut old = vec![stat(a, w.c_card, AT)];
+                if extra_old {
+                    old.push(stat(x, w.c_card, AT));
+                }
+                let new = [stat(b, w.c_card, AT)];
+                let got =
+                    stat_representative_swaps(t, col, &canon, &old, &new, &HashSet::new()).unwrap();
+                let expect: BTreeMap<String, String> = if want {
+                    BTreeMap::from([(a.text(), b.text())])
+                } else {
+                    BTreeMap::new()
+                };
+                assert_eq!(got, expect, "{case}");
+                // 两边选的是同一份：不是差异，什么都不认。
+                let got =
+                    stat_representative_swaps(t, col, &canon, &old, &old, &HashSet::new()).unwrap();
+                assert!(got.is_empty(), "{case}: {got:?}");
+            });
+        }
+    }
+
     fn diff(
         kind: EntKind,
         key: &str,
@@ -1472,6 +1718,8 @@ mod tests {
             "tmplDef/x",
             "termField",
             "freqField",
+            "sortField",
+            "browseFields",
             "deleted",
             "f/x",
             "deck",

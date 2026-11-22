@@ -1,0 +1,7 @@
+## BUG-5119 · Kavita 缓存自动淘汰 / 一键清理把用户自定义的封面与书名一起删掉
+- **报告**：2026-11-22（外部审计 HBK-AUDIT-032，Codex 2026-11-21 PR 审查，PR #3792）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/kavita/kavita_book_service.dart` 的自动淘汰（`trimCache`）与一键清理（`clearCache`）经 `_defaultDelete`（cbdc2a45ed 上 :199）走完整删书原语 `ReaderFushiSource.deleteBook`，原语在删行后无条件调 `_clearBookOverridesLogged`（`fushi/lib/src/media/sources/reader_fushi_source.dart` cbdc2a45ed 上 :1270 / :1304），按 bookKey 清掉 override 书名偏好与 override 封面文件；而判「这本能不能自动删」的 `_hasUserData`（:653）只查书签 / 单书 CSS / 合集 / 有声书 / 字幕配对 / 标签，漏了用户自定义的书名与封面。于是用户给一本 Kavita 缓存副本换了封面（或改了名），缓存一超限（默认 8 本）或点「清理缓存」，书连同自定义一起被删；下次再缓存回来，自定义已经没了。新测试在撤掉修复后实测变红（`Covered` 被删、封面文件不存在；`Renamed` 计入可清理列表）。
+- **[x] ① 已修复** — 提交 9374a6f362。用户自定义书名 / 封面按「本机用户数据」处理，与书签等同一条规则：带它们的缓存副本不参与自动淘汰与一键清理、不占上限，「移除下载」确认框（`hasLocalUserData`）也会如实警告。`ReaderFushiSource.hasBookCustomization` 判定（内存偏好 + 一次文件 stat，与 `deleteBook` 清的是同一组 override），`KavitaBookService` 经 `KavitaBookCustomizationProbe` 注入，判据并入唯一的 `_bookKeysWithUserData`；没给 `appModel` 的实例调用户数据判定直接抛 `StateError`，不再静默当成「没有用户数据」。
+  - 没采用「淘汰时保留 override、只删书」：override 按 bookKey（= 净化后的书名）存，书行删了还留着，任何同名书导入都会把它「复活」（正是 BUG-4979 刚修掉的问题），从没再缓存的书则永远留孤儿文件。要让自定义真正独立于缓存副本存活，得把 override 身份改成 Kavita 身份（服务器 + chapterId）并迁移存量键，范围大且改变 override 的身份模型，不在本修复内。
+- **[x] ② 已加自动化测试** — `fushi/test/media/sources/reader_fushi_delete_cleanup_test.dart` 组「HBK-AUDIT-032 Kavita 缓存淘汰不丢用户自定义封面 / 书名」：真实删书原语 + 真实 override 落盘位置，缓存超限时带自定义封面的最旧副本保留且封面文件还在、淘汰落到没有自定义的副本；自定义书名的副本不进可清理列表、不被一键清理、`hasLocalUserData` 为真。
+- **备注**：刮削层（`BookArtStore`，删书时也会清）不算用户数据——它可重新刮削取回，没列入保护。

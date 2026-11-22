@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -1298,6 +1299,242 @@ void main() {
       await File(p.join(root.path, 'Movie (2024)-fanart.jpg')).readAsBytes(),
       expected,
     );
+  });
+
+  // 拍板台 gtpgyff3l7-oneshot-scrape 方案 b：「仅此一次」导入扫完删掉临时来源行后，
+  // 视频的 sourceId 归 NULL。它们走与来源视频同一条刮削链：计划器出单元、协调器
+  // 写 NFO，运行记录与 sidecar 记账的 source_id 记 NULL（不写不存在的来源 id）。
+  test('无来源本机视频按同一条链刮削，运行与 sidecar 记账的来源记 NULL', () async {
+    final Directory movieDir = Directory(p.join(root.path, 'Movie'));
+    await movieDir.create(recursive: true);
+    final File video = File(p.join(movieDir.path, 'Movie (2024).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('loose-movie'),
+        title: const Value<String>('Movie'),
+        videoPath: Value<String>(video.path),
+      ),
+    );
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            _PrimaryMovieProvider(),
+          ]),
+        );
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      sourcelessLocalVideoScrapeScope,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 1);
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final String nfo = p.join(movieDir.path, 'Movie (2024).nfo');
+    expect(await File(nfo).exists(), isTrue, reason: '${report.warnings}');
+    expect(await File(nfo).readAsString(), contains('主源电影'));
+    final VideoSidecarArtifactRow? artifact = await db
+        .getVideoSidecarArtifactByPath(p.normalize(p.absolute(nfo)));
+    expect(artifact, isNotNull);
+    expect(artifact!.sourceId, isNull);
+    final List<VideoSourceScrapeRunRow> runs = await db
+        .select(db.videoSourceScrapeRuns)
+        .get();
+    expect(runs.map((VideoSourceScrapeRunRow r) => r.sourceId), <int?>[null]);
+    expect((await db.getVideoMetadataWorkByBook('loose-movie'))?.title, '主源电影');
+  });
+
+  // BUG：无来源范围的整批级问题（资料源整批不可用 / 整批异常）早先拿
+  // `source.label` 当 workTitle，无来源范围的 label 是空串，界面上显示空标题。
+  // 范围级问题必须带结构化的范围 id，并在 run 摘要 JSON 里往返保留，界面才能
+  // 映射成本地化名字。
+  test('无来源范围的整批级错误带结构化范围 id，run 摘要往返保留', () async {
+    final File video = File(p.join(root.path, 'Movie (2024).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('loose-movie'),
+        title: const Value<String>('Movie'),
+        videoPath: Value<String>(video.path),
+      ),
+    );
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+          // 一家资料源都没有：走整批「资料源不可用」快速失败门。
+          registry: VideoMetadataProviderRegistry(
+            const <VideoMetadataProvider>[],
+          ),
+        );
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      sourcelessLocalVideoScrapeScope,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 1);
+    final SourceScrapeIssue issue = report.errors.single;
+    expect(issue.isScopeLevel, isTrue);
+    expect(issue.scopeSourceId, kSourcelessLocalVideoScrapeScopeId);
+    expect(issue.workKey, isNull);
+
+    final VideoSourceScrapeRunRow run =
+        (await db.select(db.videoSourceScrapeRuns).get()).single;
+    final SourceScrapeIssue stored = decodeSourceScrapeReport(
+      run.summaryJson,
+    )!.errors.single;
+    expect(stored.isScopeLevel, isTrue);
+    expect(stored.scopeSourceId, kSourcelessLocalVideoScrapeScopeId);
+    expect(stored.message, issue.message);
+  });
+
+  test('作品级问题解码后不是范围级；损坏的 scope 字段退化成作品级', () {
+    final SourceScrapeReport decoded = decodeSourceScrapeReport(
+      '{"errors":[{"work":"A","message":"m"},'
+      '{"work":"B","message":"m","scope":"x"}]}',
+    )!;
+    expect(decoded.errors.map((SourceScrapeIssue i) => i.isScopeLevel), <bool>[
+      false,
+      false,
+    ]);
+  });
+
+  // 无来源范围没有一次完整的来源扫描，库里的视频集合证明不了作品目录是专属的：
+  // 手动导入的一集躺在混着别的（没导入的）视频的下载目录里时，tvshow.nfo /
+  // season.nfo 不能写进去。专属与否按磁盘实况判。
+  group('无来源本机视频的作品级 sidecar 按磁盘实况判专属目录', () {
+    Future<SourceScrapeReport> scrapeSourcelessShow({
+      required bool strayUnimportedVideo,
+    }) async {
+      final Directory seasonDir = Directory(
+        p.join(root.path, 'Show', 'Season 01'),
+      );
+      await seasonDir.create(recursive: true);
+      final File episode1 = File(p.join(seasonDir.path, 'Show S01E01.mkv'));
+      final File episode2 = File(p.join(seasonDir.path, 'Show S01E02.mkv'));
+      await episode1.writeAsBytes(const <int>[0]);
+      await episode2.writeAsBytes(const <int>[0]);
+      if (strayUnimportedVideo) {
+        await File(
+          p.join(root.path, 'Show', 'Unrelated Movie (2020).mkv'),
+        ).writeAsBytes(const <int>[0]);
+      }
+      for (final (String uid, File file) in <(String, File)>[
+        ('e1', episode1),
+        ('e2', episode2),
+      ]) {
+        await db.upsertVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value<String>(uid),
+            title: Value<String>(p.basenameWithoutExtension(file.path)),
+            videoPath: Value<String>(file.path),
+          ),
+        );
+      }
+      final int collectionId = await db.createMediaCollection(
+        'Show',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(collectionId, MediaKind.video, 'e1');
+      await db.addToCollection(collectionId, MediaKind.video, 'e2');
+      final VideoSourceScrapeCoordinator coordinator =
+          VideoSourceScrapeCoordinator(
+            primaryProvider: VideoMetadataProviderKind.anidb,
+            database: db,
+            config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              _FakeAniDbProvider(),
+            ]),
+          );
+      return coordinator.scrapeSource(
+        sourcelessLocalVideoScrapeScope,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+    }
+
+    test('目录里混着没导入的视频：不写 tvshow.nfo / season.nfo，只写逐集', () async {
+      final SourceScrapeReport report = await scrapeSourcelessShow(
+        strayUnimportedVideo: true,
+      );
+
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(
+        File(p.join(root.path, 'Show', 'tvshow.nfo')).existsSync(),
+        isFalse,
+      );
+      expect(
+        File(
+          p.join(root.path, 'Show', 'Season 01', 'Show S01E01.nfo'),
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('专属作品目录：照常写 tvshow.nfo', () async {
+      final SourceScrapeReport report = await scrapeSourcelessShow(
+        strayUnimportedVideo: false,
+      );
+
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(
+        File(p.join(root.path, 'Show', 'tvshow.nfo')).existsSync(),
+        isTrue,
+        reason: '${report.warnings}',
+      );
+    });
+  });
+
+  test('「仅此一次」导入的临时来源行不立项（行删掉后写记账会撞 FK 787）', () async {
+    final File video = File(p.join(root.path, 'Movie (2024).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    final int tempId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'temp',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+        configJson: Value<String?>(
+          encodeSourceConfig(<String, Object?>{kSourceConfigOneShotKey: true}),
+        ),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('temp-movie'),
+        title: const Value<String>('Movie'),
+        videoPath: Value<String>(video.path),
+        sourceId: Value<int?>(tempId),
+      ),
+    );
+    final SourceLibraryRow temp = (await db.getMediaSourceById(tempId))!;
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            _PrimaryMovieProvider(),
+          ]),
+        );
+
+    expect(await VideoSourceWorkPlanner(db).plan(temp), isEmpty);
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      temp,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 0);
+    expect(await db.select(db.videoSourceScrapeRuns).get(), isEmpty);
+    expect(await File(p.join(root.path, 'Movie (2024).nfo')).exists(), isFalse);
   });
 
   test('单作品精确刮削使用 AniDB confirmed lookup 且不进行标题搜索', () async {

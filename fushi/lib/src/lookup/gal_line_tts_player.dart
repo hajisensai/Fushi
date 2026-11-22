@@ -16,6 +16,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_text_split.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 
 import 'package:fushi/src/lookup/gal_line_tts.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -414,8 +415,12 @@ Future<String> synthesizeGalLineTtsWithServices(
     );
     final TtsCachedAudio audio = await cache.obtain(
       key,
-      (String out) =>
-          provider.synthesize(text, outputPath: out, cancel: cancel),
+      (String out) => ttsSynthesizeSplittingOnReject(
+        provider,
+        text,
+        outputPath: out,
+        cancel: cancel,
+      ),
     );
     return audio.path;
   } finally {

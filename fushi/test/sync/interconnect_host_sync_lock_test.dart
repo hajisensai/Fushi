@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,10 +10,13 @@ import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+
+import 'aggregate_host_wire_test_ext.dart';
 
 /// BUG-2717：本机当互联 host 时，对端的聚合 PUT / 合集 POST 不得排在本机整轮
 /// 自动同步（`runExclusiveWithSync`）后面；但仍须与本机出站同步的本地落库步骤
@@ -193,7 +197,7 @@ void main() {
     });
 
     test('本机出站聚合同步卡在网络上时（持整轮锁），对端 PUT 不被窄锁挡住', () async {
-      final Completer<Object?> network = Completer<Object?>();
+      final Completer<Uint8List?> network = Completer<Uint8List?>();
       final Completer<void> fetchStarted = Completer<void>();
       // 按生产形状：出站同步整轮持 runExclusiveWithSync，本地落库步骤持窄锁。
       final Future<void> outbound = runExclusiveWithSync(() async {
@@ -205,7 +209,7 @@ void main() {
             fetchStarted.complete();
             return network.future;
           },
-          pushMerged: (Object json) async {},
+          pushMerged: (Uint8List body) async {},
         );
       });
       await fetchStarted.future;
@@ -301,7 +305,7 @@ void main() {
         count: 4,
       );
 
-      final Completer<Object?> network = Completer<Object?>();
+      final Completer<Uint8List?> network = Completer<Uint8List?>();
       final Completer<void> fetchStarted = Completer<void>();
       Object? pushed;
       final Future<void> outbound =
@@ -313,7 +317,8 @@ void main() {
               fetchStarted.complete();
               return network.future;
             },
-            pushMerged: (Object json) async => pushed = json,
+            pushMerged: (Uint8List body) async =>
+                pushed = decodeAggregateWireJson(body),
           );
       // 出站同步已 materialize 本地（100），卡在拉远端。
       await fetchStarted.future;
@@ -322,7 +327,7 @@ void main() {
       expect(await _localChars(db), 500);
       // 远端回来的是 200：merged 基于陈旧的本地 100 → 200。旧实现直接写回 merged
       // 会把 500 覆盖成 200。
-      network.complete(_readingSnapshot(200).toJson());
+      network.complete(encodeAggregateWireJson(_readingSnapshot(200).toJson()));
       await outbound.timeout(_prompt);
 
       expect(await _localChars(db), 500, reason: '统计只增不减：对端折进的值不得丢失');

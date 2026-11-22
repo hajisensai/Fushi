@@ -178,11 +178,19 @@ class QbConnectionConfig {
   /// 匿名模式（不在握手/tracker 暴露客户端指纹与本机 IP；会牺牲部分连通性）。
   final bool anonymousMode;
 
-  /// 最大活跃下载数（0 = 引擎默认）。
+  /// 最大活跃下载数（0 = 引擎默认，libtorrent 为 3；[activeLimitUnlimited] =
+  /// 不限）。种子一律 auto-managed，超出名额的下载会被队列管理器挂起（不连
+  /// peer、状态 pausedDL），见 BUG-5160。
   final int maxActiveDownloads;
 
-  /// 最大活跃做种数（0 = 引擎默认）。
+  /// 最大活跃做种数（0 = 引擎默认，libtorrent 为 5；[activeLimitUnlimited] =
+  /// 不限）。
   final int maxActiveSeeds;
+
+  /// [maxActiveDownloads] / [maxActiveSeeds] 的「不限」取值。app 偏好的 codec
+  /// 只收非负数（设置页没有这一档），目前只有无头服务端的
+  /// `torrent.max_active_*` 会写它。
+  static const int activeLimitUnlimited = -1;
 
   /// 最大上传槽位（同时上传的 peer 数，0 = 引擎默认）。
   final int maxUploadSlots;

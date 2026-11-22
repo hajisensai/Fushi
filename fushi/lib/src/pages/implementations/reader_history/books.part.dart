@@ -403,7 +403,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       if (modules.isEnabled(ModuleId.services))
         DialogListAction(
           label: t.book_scrape_cover,
-          icon: Icons.image_search_outlined,
+          icon: FushiIcons.imageSearch,
           slot: ItemMenuSlot.edit,
           onPressed: () async {
             Navigator.pop(dialogContext);
@@ -726,7 +726,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           picked: picked.length,
         ),
         confirmLabel: t.audiobook_relocate,
-        icon: Icons.audio_file_outlined,
+        icon: FushiIcons.audiobook,
       );
       if (!confirmed || !mounted) return;
       result = await repository.relocateAudioPaths(

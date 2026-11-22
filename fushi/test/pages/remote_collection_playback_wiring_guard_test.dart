@@ -53,6 +53,20 @@ void main() {
       true,
       reason: '合集模式应遍历 _remoteMembers 建剧集列表',
     );
+    // BUG-5084：远端成员的剧集面板分栏用 host 下发的生效分栏（host 的手动分栏 /
+    // 手动季集指定 / 父目录季号），不留空让面板按标题现场派生。
+    final int membersLoop = flat.indexOf(
+      'for(finalRemoteVideoInfomin_remoteMembers)',
+    );
+    expect(membersLoop, isNonNegative);
+    final int refEnd = flat.indexOf('_activeRemoteMember=', membersLoop);
+    expect(
+      flat
+          .substring(membersLoop, refEnd)
+          .contains('sectionKey:m.collectionGroupKey'),
+      true,
+      reason: '远端合集成员的 _PlaylistEpisodeRef 应带 host 下发的生效分栏（BUG-5084）',
+    );
   });
 
   test('播放器 _loadRemoteEpisode 合集模式换成员 id + 切当前成员指针', () {

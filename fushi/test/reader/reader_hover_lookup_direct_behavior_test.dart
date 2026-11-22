@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
+import '../helpers/node_runtime.dart';
+
 /// 查词卡顿（P0-2）：阅读器正文的悬停查词在 JS 里直接 `fushiSelection.selectText`，不再
 /// 经 `onShiftHover → Dart → evaluateJavascript` 绕一圈；一帧最多选一次，宿主回执
 /// （onTextSelected 的 Promise）到达前只留最后一个指针位置。
@@ -13,9 +15,17 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 /// 丢失时，宿主按序号显式调 `window.__fushiHoverLookupSettled(seq)` 释放；迟到的旧回执
 /// 不得放掉新一次。
 void main() {
+  // node 是外部依赖：本地 / 分布式 worker 没装（或不在 PATH 上）时明确 skip 并写出
+  // 原因，CI 上缺 node 照样失败（见 node_runtime.dart 的约定）。以前直接
+  // `Process.runSync('node', …)`，缺 node 的机器上抛 ProcessException 报红，
+  // 看不出是环境缺依赖还是行为回归。
+  final NodeTestRuntime runtime = NodeTestRuntime.probe();
+
   test(
     'hover lookup selects in JS, coalesces per frame and waits for the ack',
+    skip: runtime.skipReason,
     () {
+      final String node = runtime.requireNode();
       final String source = File(
         'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
@@ -35,7 +45,7 @@ void main() {
         final File payload = File('${temp.path}/block.json')
           ..writeAsStringSync(jsonEncode(<String, String>{'block': block}));
         final ProcessResult result = Process.runSync(
-          'node',
+          node,
           <String>['-e', _runner, payload.path],
           stdoutEncoding: utf8,
           stderrEncoding: utf8,

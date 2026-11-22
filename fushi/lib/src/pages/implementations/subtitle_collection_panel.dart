@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/anilist_failure_notice.dart';
@@ -57,6 +58,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -283,6 +285,70 @@ bool canRunSubtitleCollectionBatch({
     !running &&
     (!selected.index.isEmpty || selected.unpackablePackFormat != null);
 
+/// 合集成员的分季键（与合集详情页季 tab 同一规则）。
+///
+/// [sectionKeys] 是入口预先解析好的生效分栏（`book_uid → 键`，手动分栏 / 手动
+/// 季集指定优先，见 `loadCollectionSections`，拍板台 iR6ccUys9H），有就用它。
+/// 没有时按文件名派生（[collectionGroupKeyForFilename]）：先看完整路径（季号可能
+/// 只写在父目录 `Show/Season 2/01.mkv`）；路径解不出集号（流媒体成员的
+/// `anime-source://…` 描述等）再退到标题（远端标题常带 `S04E18`）。
+String subtitleCollectionSeasonKeyOf(
+  VideoBookRow member, {
+  Map<String, String> sectionKeys = const <String, String>{},
+}) {
+  if (sectionKeys[member.bookUid] case final String resolved) return resolved;
+  return subtitleCollectionDerivedSeasonKeyOf(member);
+}
+
+/// [subtitleCollectionSeasonKeyOf] 不看任何手动指定时的文件名派生键（入口把它喂给
+/// `loadCollectionSections` 当派生键）。
+String subtitleCollectionDerivedSeasonKeyOf(VideoBookRow member) {
+  final String fromPath = collectionGroupKeyForFilename(member.videoPath);
+  if (fromPath != kCollectionExtrasGroupKey) return fromPath;
+  return collectionGroupKeyForFilename(member.title);
+}
+
+/// 「为合集获取字幕」的分季：把有序成员按季聚成分节（季号升序、PV·特典殿后）。纯函数。
+///
+/// 多季合集**必须**逐季配字幕：字幕来源（AniList / Jimaku / AJATT 条目）一季一条，
+/// 而批量只按集号匹配——整张合集一起配时，第一季条目的第 1 集会同时被当成
+/// S02E01、S03E01 的字幕（集号都是 1），静默装到每一季上。返回不足 2 节 = 单季合集。
+List<CollectionSeasonSection<VideoBookRow>> subtitleCollectionSeasonSections(
+  List<VideoBookRow> members, {
+  Map<String, String> sectionKeys = const <String, String>{},
+}) => sortCollectionSeasonSections<VideoBookRow>(
+  buildCollectionSeasonSections<VideoBookRow>(
+    members: members,
+    keyOf: (VideoBookRow member) =>
+        subtitleCollectionSeasonKeyOf(member, sectionKeys: sectionKeys),
+  ),
+);
+
+/// 多季合集打开面板时先选哪一季：[preferredSeason] 对应的季存在就用它（入口带来的
+/// 「当前季」：详情页选中的 tab / 播放页正在播的这一集），否则第一个真实季（没有
+/// 真实季才落到 PV·特典）。单季合集返回 null。纯函数。
+String? initialSubtitleCollectionSeasonKey(
+  List<CollectionSeasonSection<VideoBookRow>> sections, {
+  int? preferredSeason,
+}) {
+  if (sections.length < 2) return null;
+  if (preferredSeason != null) {
+    final String wanted = collectionSeasonGroupKey(
+      season: preferredSeason,
+      episode: 1,
+    );
+    if (sections.any(
+      (CollectionSeasonSection<VideoBookRow> s) => s.groupKey == wanted,
+    )) {
+      return wanted;
+    }
+  }
+  for (final CollectionSeasonSection<VideoBookRow> s in sections) {
+    if (seasonNumberOfGroupKey(s.groupKey) != null) return s.groupKey;
+  }
+  return sections.first.groupKey;
+}
+
 class SubtitleCollectionPanel extends StatefulWidget {
   const SubtitleCollectionPanel({
     required this.database,
@@ -301,8 +367,18 @@ class SubtitleCollectionPanel extends StatefulWidget {
     this.onCancel,
     this.showTitle = true,
     this.subtitleAligner,
+    this.initialSeason,
+    this.sectionKeys = const <String, String>{},
     super.key,
   });
+
+  /// 多季合集打开时先选的季号（入口的「当前季」）；null / 合集里没有这一季 = 第一季。
+  /// 单季合集忽略。
+  final int? initialSeason;
+
+  /// 成员的生效分栏（`book_uid → 键`，手动分栏 / 手动季集指定优先）；缺的成员按
+  /// 文件名派生。见 [subtitleCollectionSeasonKeyOf]。
+  final Map<String, String> sectionKeys;
 
   /// 每集落盘前按该集视频的内嵌字幕轨对时间轴；null = 不对齐。
   final AutomaticSubtitleAligner? subtitleAligner;
@@ -367,6 +443,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   /// 能停批量——面板 / 工作台关掉不取消（BUG-4496）。
   bool _stopRequested = false;
   List<AniListMedia> _seriesMatches = const <AniListMedia>[];
+  String? _seriesMatchesQuery;
   int? _selectedSeriesId;
   bool _seriesLookupFailed = false;
 
@@ -397,6 +474,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
 
   /// 合集偏好的版本组键（`SubtitleVersionGroup.key`）；null = 不限版本。
   String? _releaseGroup;
+
+  /// 单季合集已落库的绑定快照（widget.collection 本身不可变，本页改完切去 PV·特典再切回时保留）。
+  int? _collectionAnilistId;
+  String? _collectionReleaseGroup;
 
   /// 文件名没写语言的版本按正文判出的语言（版本键 → 检测值），搜索后后台补。
   /// **探过但判不出的版本值为 null**：「判不出」也是结论，批量不再重探。
@@ -435,6 +516,85 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   final Map<String, SubtitleBatchItem> _statusByUid =
       <String, SubtitleBatchItem>{};
 
+  /// 成员的分季（[subtitleCollectionSeasonSections]）；不足 2 节 = 单季合集。
+  List<CollectionSeasonSection<VideoBookRow>> _seasonSections =
+      const <CollectionSeasonSection<VideoBookRow>>[];
+
+  /// 多季合集当前在配的季（分节组键）；单季合集为 null。
+  String? _seasonKey;
+
+  /// 合集是否被拆成多节（多季，或单季 + PV·特典）：此时界面提供切季、列表与批量
+  /// 只作用于 [_seasonKey] 这一节。
+  bool get _hasSeasonSections => _seasonSections.length >= 2;
+
+  /// 合集是否含 2 个及以上的**真实季**（如 S01 + S02）。
+  bool get _hasMultipleSeasons =>
+      _seasonSections
+          .where(
+            (CollectionSeasonSection<VideoBookRow> s) =>
+                seasonNumberOfGroupKey(s.groupKey) != null,
+          )
+          .length >=
+      2;
+
+  /// 合集级单一绑定（`anilistId` / `subtitleReleaseGroup`）是否适用于当前作用域：
+  /// 只有单季合集且不在 PV·特典节时才读/写它。多季合集（或 PV·特典）一季一条，
+  /// 不拿合集级单值直搜，也不把单季的选择覆写到整张合集上。
+  bool get _isCollectionBindingApplicable =>
+      !_hasMultipleSeasons &&
+      (_seasonKey == null || seasonNumberOfGroupKey(_seasonKey!) != null);
+
+  /// 当前在配的季号；单季合集或选中的是 PV·特典为 null。
+  int? get _selectedSeasonNumber =>
+      _seasonKey == null ? null : seasonNumberOfGroupKey(_seasonKey!);
+
+  /// 分节给出的季号能不能当成**显式**季号用（发给来源、过滤候选、钉批量目标）。
+  ///
+  /// 只有合集真有 ≥2 个真实季时才算：分季规则把没写季号的集一律归到 `s1`，
+  /// 「单季 + PV·特典」也会拆成两节，那个 `s1` 是推断出来的——把它当显式季号，
+  /// 合集名里的「4th season」就不再起作用，`season_number=1` 会发给
+  /// OpenSubtitles / SubDL，文件名带 `S04` 的正确候选还会被当成别季滤掉。
+  /// 单季时返回 null，季号回到成员文件名里的显式季号（[_memberSeason] /
+  /// [resolveSubtitleBatchSeason]）。
+  int? get _sectionSeasonOverride =>
+      _hasMultipleSeasons ? _selectedSeasonNumber : null;
+
+  /// 本面板实际作用的成员：分季时只取选中那一季，否则整张合集。
+  ///
+  /// **所有**按成员算的东西（目标集号、版本覆盖、行状态、批量目标）都读它而不是
+  /// `widget.members`：一季的字幕来源只对这一季的集号有意义。
+  List<VideoBookRow> get _members {
+    final String? key = _seasonKey;
+    if (key == null) return widget.members;
+    for (final CollectionSeasonSection<VideoBookRow> s in _seasonSections) {
+      if (s.groupKey == key) return s.items;
+    }
+    return widget.members;
+  }
+
+  /// 成员变化时重算分季；已选的季仍在就保留，否则回到初始季。
+  void _rebuildSeasonSections() {
+    _seasonSections = subtitleCollectionSeasonSections(
+      widget.members,
+      sectionKeys: widget.sectionKeys,
+    );
+    if (!_hasSeasonSections) {
+      _seasonKey = null;
+      return;
+    }
+    final String? current = _seasonKey;
+    if (current != null &&
+        _seasonSections.any(
+          (CollectionSeasonSection<VideoBookRow> s) => s.groupKey == current,
+        )) {
+      return;
+    }
+    _seasonKey = initialSubtitleCollectionSeasonKey(
+      _seasonSections,
+      preferredSeason: widget.initialSeason,
+    );
+  }
+
   String _initialQuery() {
     final String series = parseVideoFilename(widget.collection.name).series;
     return series.isEmpty ? widget.collection.name : series;
@@ -443,11 +603,20 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   @override
   void initState() {
     super.initState();
+    _rebuildSeasonSections();
     // 语言优先级：合集列（用户在这里配过）→ 该系列 prefs 记忆 → 不限。
     _language =
         widget.collection.subtitleLanguage ?? widget.initialPreferredLanguage;
-    _releaseGroup = widget.collection.subtitleReleaseGroup;
-    _selectedSeriesId = widget.collection.anilistId;
+    _collectionAnilistId = widget.collection.anilistId;
+    _collectionReleaseGroup = widget.collection.subtitleReleaseGroup;
+    _releaseGroup = _isCollectionBindingApplicable
+        ? _collectionReleaseGroup
+        : null;
+    // 多季合集上绑的 anilistId 只可能是其中一季的条目（AniList 一季一条），不能
+    // 当成每一季的身份：多季时按选中季现解析。
+    _selectedSeriesId = _isCollectionBindingApplicable
+        ? _collectionAnilistId
+        : null;
     _rederive();
     // 首搜由 [_loadCanonicalIdentity] 在读回规范身份**之后**发起（BUG-2008）：
     // `_searchSources` 在第一个 await 之前就把请求身份同步构造好了，先发后读
@@ -492,7 +661,12 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
     }
     if (!mounted) return;
-    final int? seedId = widget.collection.anilistId ?? _canonicalAnilistId;
+    // 多季合集不拿合集级 / 刮削快照里的 AniList id 直搜：它只能是其中一季的条目，
+    // 拿它配选中的那一季正是「一季字幕装到每一季」的源头。走 [_resolveSeries]
+    // 按选中季号挑对应那一季的条目。
+    final int? seedId = _isCollectionBindingApplicable
+        ? (_collectionAnilistId ?? _canonicalAnilistId)
+        : null;
     if (seedId != null && !_searching) {
       unawaited(_searchSources(anilistId: seedId));
       return;
@@ -540,9 +714,12 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       kind: work.mediaType == 'movie'
           ? VideoMetadataMediaKind.movie
           : VideoMetadataMediaKind.tv,
-      // 用户当场选定的系列压过刮削快照里的 anilist id。
+      // 用户当场选定的系列压过刮削快照里的 anilist id。多季合集的刮削快照只对得上
+      // 其中一季（AniList 一季一条），选中季没解析出条目时宁可不带，也不拿别季的。
       externalIds: <String, String>{
-        ..._canonicalIds,
+        for (final MapEntry<String, String> e in _canonicalIds.entries)
+          if (_isCollectionBindingApplicable || e.key != 'anilist')
+            e.key: e.value,
         if (anilistId != null) 'anilist': '$anilistId',
       },
       title: query,
@@ -555,6 +732,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   void didUpdateWidget(covariant SubtitleCollectionPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 成员（集号 / 内容语言）与全局默认语言都是派生状态的输入。
+    if (!identical(oldWidget.members, widget.members) ||
+        !identical(oldWidget.sectionKeys, widget.sectionKeys)) {
+      _rebuildSeasonSections();
+    }
     if (!identical(oldWidget.members, widget.members) ||
         oldWidget.globalDefaultContentLanguage !=
             widget.globalDefaultContentLanguage) {
@@ -590,19 +771,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   /// 批量真正采用的语言：显式选择 → 视频自身语言链（BUG-1700）。
   String? get _effectiveLanguage => resolveSubtitleDownloadLanguage(
     explicitSubtitlePreference: _language,
-    videoContentLanguage: widget.members.isEmpty
-        ? null
-        : widget.members.first.language,
+    videoContentLanguage: _members.isEmpty ? null : _members.first.language,
     globalDefaultContentLanguage: widget.globalDefaultContentLanguage,
   );
 
   /// 重算全部派生状态（集号 / 各来源版本排名 / 点名版本 / 各集计划）。
   ///
   /// 只在输入变化处调用：初始化、成员变化（[didUpdateWidget]）、搜索完成、探测
-  /// 回填、改语言、选版本。build 与成员行只读字段，不再每帧重排。
+  /// 回填、改语言、选版本、切季。build 与成员行只读字段，不再每帧重排。
   void _rederive() {
     final List<int> targets = <int>[
-      for (int i = 0; i < widget.members.length; i++)
+      for (int i = 0; i < _members.length; i++)
         resolveSubtitleBatchEpisode(_targetAt(i)),
     ];
     final String? preferred = _effectiveLanguage;
@@ -790,6 +969,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     setState(() {
       _resolving = true;
       _seriesMatches = const <AniListMedia>[];
+      _seriesMatchesQuery = null;
       _seriesLookupFailed = false;
       _seriesLookupKind = null;
       _notice = null;
@@ -808,6 +988,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       }
       setState(() {
         _seriesMatches = outcome.media;
+        _seriesMatchesQuery = outcome.degraded ? null : query;
         _seriesLookupFailed = outcome.degraded;
         _seriesLookupKind = outcome.kind;
       });
@@ -817,7 +998,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
       if (picked != null) {
         // **只搜不绑**：模糊搜索的首条命中是猜测，不是用户的选择。相关度首条恒为
-        // 第一季，按合集成员的季号挑对应那一季（挑不出才退回首条）。
+        // 第一季，按合集成员的季号挑对应那一季；挑不出就纯文本搜，不拿别季的 id 冒充
+        // 这一季的身份（HBK-AUDIT-049）。
         await _applySeries(picked, generation: generation);
       } else {
         setState(() => _selectedSeriesId = null);
@@ -840,16 +1022,84 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     );
   }
 
+  int? _seasonOfMemberPathOrTitle(VideoBookRow member) {
+    final int? fromPath = parseVideoPath(member.videoPath).season;
+    if (fromPath != null && fromPath > 0) return fromPath;
+    return subtitleSeasonFromName(member.title);
+  }
+
   /// 成员文件名一致解析出的**显式**季号（`S04E18`），不一致或解析不出为 null。
   /// 只有它会作为 `season_number` 发给 OpenSubtitles / SubDL：从查询词、合集名推断
   /// 的季号只用来挑 AniList 条目（标题记号与 TMDB 季号并不总对得上）。
   int? _memberSeason() {
+    // 多季合集只配选中的那一节，季号就是它（分季规则里没写季号的集算第 1 季，
+    // 与详情页季 tab 同口径）；选中 PV·特典时没有季号。单季（含「单季 + PV·特典」）
+    // 的分节季号是推断的，仍按成员文件名的显式季号走，见 [_sectionSeasonOverride]。
+    if (_hasMultipleSeasons) return _selectedSeasonNumber;
     final Set<int?> memberSeasons = <int?>{
-      for (final VideoBookRow member in widget.members)
-        subtitleSeasonFromName(p.basename(member.videoPath)) ??
-            subtitleSeasonFromName(member.title),
+      for (final VideoBookRow member in _members)
+        _seasonOfMemberPathOrTitle(member),
     };
     return memberSeasons.length == 1 ? memberSeasons.single : null;
+  }
+
+  /// 分季合集切到另一节：清掉上一季的来源 / 系列 / 行状态（它们只对上一季的集号
+  /// 有意义），丢弃在途的搜索结果，再按新季重新解析（或复用同查询词的 AniList 候选）
+  /// 并搜来源。批量下载途中不切。
+  Future<void> _selectSeason(String groupKey) async {
+    if (_running || groupKey == _seasonKey) return;
+    final int generation = ++_generation;
+    ++_probeGeneration;
+    final String query = _queryCtrl.text.trim();
+    final bool reuseSeries =
+        _seriesMatchesQuery == query && !_seriesLookupFailed;
+    setState(() {
+      _seasonKey = groupKey;
+      _sources = const <SubtitleCollectionSource>[];
+      _selectedSourceKey = null;
+      _releaseGroup = _isCollectionBindingApplicable
+          ? _collectionReleaseGroup
+          : null;
+      _searched = false;
+      _searching = false;
+      _resolving = false;
+      _notice = null;
+      _statusByUid.clear();
+      if (!reuseSeries) {
+        _seriesMatches = const <AniListMedia>[];
+        _seriesMatchesQuery = null;
+        _selectedSeriesId = _isCollectionBindingApplicable
+            ? _collectionAnilistId
+            : null;
+        _seriesLookupFailed = false;
+        _seriesLookupKind = null;
+      }
+      _rederive();
+    });
+    if (!await _hasConfiguredSubtitleSource()) return;
+    if (!mounted || generation != _generation) return;
+    if (_isCollectionBindingApplicable) {
+      final int? seedId = _collectionAnilistId ?? _canonicalAnilistId;
+      if (seedId != null) {
+        setState(() => _selectedSeriesId = seedId);
+        await _searchSources(anilistId: seedId, generation: generation);
+        return;
+      }
+    }
+    if (reuseSeries) {
+      final AniListMedia? picked = pickAniListSeriesForSeason(
+        _seriesMatches,
+        season: _seasonHint(query),
+      );
+      if (picked != null) {
+        await _applySeries(picked, generation: generation);
+      } else {
+        setState(() => _selectedSeriesId = null);
+        await _searchSources(anilistId: null, generation: generation);
+      }
+      return;
+    }
+    await _resolveSeries();
   }
 
   /// 「搜」这一半：把某个 AniList 候选当作**本次检索的身份**，不碰数据库。
@@ -871,10 +1121,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   ///
   /// `setMediaCollectionAnilistId` **只在这里**被调用，唯一调用方是系列
   /// ChoiceChip 的 `onSelected`——也就是用户的明确意图。
+  ///
+  /// 多季合集不写：用户点的只是**选中这一季**的条目，写进合集列等于把整张多季合集
+  /// 绑到这一季上（下次打开、番剧下载都按它走）。
   Future<void> _selectSeries(AniListMedia media) async {
     final int requestGeneration = ++_generation;
     setState(() => _selectedSeriesId = media.id);
-    if (widget.collection.anilistId != media.id) {
+    if (_isCollectionBindingApplicable && _collectionAnilistId != media.id) {
+      _collectionAnilistId = media.id;
       await widget.database.setMediaCollectionAnilistId(
         widget.collection.id,
         media.id,
@@ -883,7 +1137,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         // 旧选择的慢 DB 写可能晚于新选择落库；以当前 UI 选择重申一次，避免数据库
         // 最终回退到旧 AniList id。
         final int? latest = _selectedSeriesId;
-        if (latest != null) {
+        if (latest != null && _isCollectionBindingApplicable) {
+          _collectionAnilistId = latest;
           await widget.database.setMediaCollectionAnilistId(
             widget.collection.id,
             latest,
@@ -922,22 +1177,38 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     // 列里的旧版本键迁成的新键（见下方 resolvePinnedSubtitleVersion）；搜索收尾后写回。
     String? migratedPin;
     try {
+      final int? season = _memberSeason();
       // 规范身份优先（BUG-2008），构造见 [_searchIdentity]。
       final ProviderBatchResult<VideoSubtitleCandidate> result = await registry
           .search(
             VideoSubtitleSearchRequest(
               media: _searchIdentity(
                 query: query,
-                anilistId: anilistId ?? _canonicalAnilistId,
+                anilistId:
+                    anilistId ??
+                    (_isCollectionBindingApplicable
+                        ? _canonicalAnilistId
+                        : null),
               ),
               query: query,
-              season: _memberSeason(),
+              season: season,
             ),
           );
       if (!mounted || requestGeneration != _generation) return;
+      final List<VideoSubtitleCandidate> seasonCandidates =
+          filterSubtitleCandidatesForSeason(
+            result.items,
+            season: season,
+            // 合集跨季时只配一季也不收季号未知的字幕，与批量同一判据
+            // （[runSubtitleBatch] 的 collectionSpansSeasons，HBK-AUDIT-049）。
+            allowUnseasoned: subtitleSeasonAllowsUnseasoned(
+              season: season,
+              collectionSpansSeasons: _hasMultipleSeasons,
+            ),
+          );
       final List<SubtitleCollectionSource> sources =
           groupSubtitleCollectionSources(
-            result.items,
+            seasonCandidates,
             preferredLanguage: _effectiveLanguage,
           );
       final ExternalProviderFailure? failure = sources.isEmpty
@@ -995,7 +1266,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     // 放在搜索的 try 之外：写库失败不是「搜索失败」，不该冒充成搜索失败的提示，
     // 也不吞——与点版本行写列（[_selectVersion]）一样向调用方传播。
     final String? pinToPersist = migratedPin;
-    if (pinToPersist != null) {
+    if (pinToPersist != null && _isCollectionBindingApplicable) {
+      _collectionReleaseGroup = pinToPersist;
       await widget.database.updateMediaCollectionSubtitleReleaseGroup(
         widget.collection.id,
         pinToPersist,
@@ -1019,7 +1291,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   /// 聚合列表里点一行：选中 [source]，[versionKey] 为 null = 「自动」（整季一致
-  /// 自动挑），否则点名该版本。版本写合集列（下次打开仍是它）。
+  /// 自动挑），否则点名该版本。单季合集把版本写合集列（下次打开仍是它）。
   Future<void> _selectVersion(
     SubtitleCollectionSource source,
     String? versionKey,
@@ -1027,26 +1299,32 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     setState(() {
       _selectedSourceKey = source.key;
       _releaseGroup = versionKey;
+      if (_isCollectionBindingApplicable) {
+        _collectionReleaseGroup = versionKey;
+      }
       _rederive();
     });
-    await widget.database.updateMediaCollectionSubtitleReleaseGroup(
-      widget.collection.id,
-      versionKey,
-    );
+    if (_isCollectionBindingApplicable) {
+      await widget.database.updateMediaCollectionSubtitleReleaseGroup(
+        widget.collection.id,
+        versionKey,
+      );
+    }
   }
 
   List<SubtitleBatchTarget> _targets() => <SubtitleBatchTarget>[
-    for (int i = 0; i < widget.members.length; i++) _targetAt(i),
+    for (int i = 0; i < _members.length; i++) _targetAt(i),
   ];
 
   SubtitleBatchTarget _targetAt(int index) {
-    final VideoBookRow member = widget.members[index];
+    final VideoBookRow member = _members[index];
     return SubtitleBatchTarget(
       bookUid: member.bookUid,
       title: member.title,
       videoPath: member.videoPath,
       sortIndex: index,
       isStream: isStreamVideoBook(member),
+      season: _sectionSeasonOverride,
     );
   }
 
@@ -1077,6 +1355,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         download: _download,
         probedVersionLanguages: _probedLanguages,
         isCancelled: () => _stopRequested,
+        // 面板只传选中那一季的成员，合集跨季这件事要单独告诉批量（HBK-AUDIT-049）。
+        collectionSpansSeasons: _hasMultipleSeasons,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);
@@ -1110,11 +1390,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     );
     _setNotice(
       stopped
-          ? t.video_subtitle_batch_stopped(
-              done: done,
-              total: widget.members.length,
-            )
-          : t.video_jimaku_batch_done(done: done, total: widget.members.length),
+          ? t.video_subtitle_batch_stopped(done: done, total: _members.length)
+          : t.video_jimaku_batch_done(done: done, total: _members.length),
     );
   }
 
@@ -1596,6 +1873,40 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     );
   }
 
+  String _seasonLabel(CollectionSeasonSection<VideoBookRow> section) {
+    final int? season = seasonNumberOfGroupKey(section.groupKey);
+    final String base = season == null
+        ? t.collection_group_extras
+        : t.collection_group_season(n: season);
+    return '$base (${section.items.length})';
+  }
+
+  /// 多季合集切季条：逐季单选，选哪一季就只检索并批量配那一季的成员。
+  Widget _buildSeasonPicker() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        key: const ValueKey<String>('subtitle-collection-seasons'),
+        spacing: 8,
+        runSpacing: 8,
+        children: <Widget>[
+          for (final CollectionSeasonSection<VideoBookRow> section
+              in _seasonSections)
+            FushiChoiceChip(
+              key: ValueKey<String>(
+                'subtitle-collection-season-${section.groupKey}',
+              ),
+              label: Text(_seasonLabel(section)),
+              selected: section.groupKey == _seasonKey,
+              onSelected: _running
+                  ? null
+                  : (_) => unawaited(_selectSeason(section.groupKey)),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget? _buildNotice(ThemeData theme) {
     final String? notice = _notice;
     if (notice == null && !_seriesLookupFailed) return null;
@@ -1637,7 +1948,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         if (notice != null) notice,
         Expanded(
           child: FushiEntranceScope(
-            replayKey: widget.members.length,
+            replayKey: Object.hash(_seasonKey, _members.length),
             child: CustomScrollView(
               slivers: <Widget>[
                 SliverToBoxAdapter(
@@ -1647,6 +1958,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                     children: <Widget>[
                       JimakuApiKeyField(controller: _apiKeyCtrl, dense: true),
                       const SizedBox(height: 8),
+                      if (_hasSeasonSections) _buildSeasonPicker(),
                       Row(
                         children: <Widget>[
                           Expanded(
@@ -1690,15 +2002,15 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 // M3E：成员按集排成分段卡片（首尾大圆角、行间 2），行首状态图标
                 // 放进圆形色块，错峰进场。
                 SliverList.builder(
-                  itemCount: widget.members.length,
+                  itemCount: _members.length,
                   itemBuilder: fushiStaggeredItemBuilder((
                     BuildContext context,
                     int i,
                   ) {
-                    final VideoBookRow m = widget.members[i];
+                    final VideoBookRow m = _members[i];
                     return FushiGroupedListItem(
                       index: i,
-                      count: widget.members.length,
+                      count: _members.length,
                       child: FushiListItem(
                         density: FushiListDensity.compact,
                         leading: _statusBadge(m.bookUid, i),
@@ -1746,7 +2058,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       ? t.video_subtitle_batch_stopping
                       : t.video_subtitle_batch_stop(
                           current: _statusByUid.length,
-                          total: widget.members.length,
+                          total: _members.length,
                         ),
                 ),
               )

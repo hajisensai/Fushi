@@ -110,14 +110,12 @@ import 'package:fushi/src/media/video/video_subtitle_restore_plan.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
-import 'package:fushi/src/media/video/media_server/media_server_config.dart'
-    show MediaServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart'
+    show isInterruptedStreamEnd;
+import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart'
+    show MediaServerStreamInterrupted;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/plex_settings_widget.dart'
-    show rerouteMediaServerAfterFailure;
-import 'package:fushi/src/sync/remote_library_cache.dart'
-    show RemoteLibraryCache, remoteLibraryCacheProvider;
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
@@ -226,6 +224,7 @@ import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
+import 'package:fushi/src/media/video/remote_session_reload.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
@@ -494,6 +493,7 @@ import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
+        DictionaryPopupRealmKeyWebView,
         DictionaryPopupWebViewState,
         QueuedOverwriteReply,
         QueuedOverwriteSettled;
@@ -910,9 +910,16 @@ class _PlaylistEpisodeRef {
     this.completed = false,
     this.started = false,
     this.progress,
+    this.sectionKey,
   });
   final String? bookUid;
   final String title;
+
+  /// 生效分栏键：本地集是文件名派生叠上手动分栏 / 手动季集指定（见
+  /// `loadCollectionSections`）；互联远端合集成员是 host 下发的生效分栏
+  /// （`RemoteVideoInfo.collectionGroupKey`，BUG-5084）。null = 旧单行多集播放列表 /
+  /// 在线源集，面板按 [path] / [title] 现场派生。
+  final String? sectionKey;
 
   /// 剧集面板展示名（v68 Jellyfin 对齐：集级刮削集名）。null = 无集级集名，
   /// 面板回落 [title]。**刻意与 [title] 分开**：title 还流向制卡
@@ -1183,6 +1190,19 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required bool hasNativePlayer,
   }) => isPlaying && hasNativePlayer;
 
+  /// 拍板台 42UUu_kcwD：[shouldPauseForBackground] 成立（正在播、真播放器）之后，
+  /// 是「后台继续放声音」（只挂起视频轨）还是照 BUG-2544 暂停。
+  ///
+  /// [backgroundPlayEnabled]：视频设置「后台继续播放声音」（默认关）。
+  /// [isMobile]：只有手机 / 平板会走到真后台的 `paused`；桌面最小化本来就不暂停，
+  /// 这里显式要求移动端，免得哪天桌面也收到 `paused` 时被这个开关改了行为。
+  /// 纯函数，供单测直接验证。
+  @visibleForTesting
+  static bool shouldKeepAudioInBackground({
+    required bool backgroundPlayEnabled,
+    required bool isMobile,
+  }) => backgroundPlayEnabled && isMobile;
+
   /// BUG-2544：回前台（`resumed`）时是否把播放续上。
   ///
   /// [pausedForBackground]：本次确实是**我们**因进后台而暂停了正在播的视频
@@ -1379,6 +1399,13 @@ abstract class VideoFushiTestHooks {
 
   /// 走与剧集面板 / 上下集同一条远端换集路径（[_loadRemoteEpisode]）载入第 [index] 集。
   Future<void> debugLoadRemoteEpisode(int index);
+
+  /// 走与播放器 EOF 回调同一条路径（[_handlePlaybackCompleted]）处理一次播完，
+  /// EOF 时的位置 / 时长由测试给（测试环境没有真实播放器）。
+  void debugHandlePlaybackEnded({
+    required int positionMs,
+    required int durationMs,
+  });
   bool get debugVideoFocusAttached;
   bool get debugVideoSurfaceHoldsFocus;
   VideoDiscNavigationState? get debugDiscNavigationState;
@@ -2088,6 +2115,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<void> debugLoadRemoteEpisode(int index) =>
       _loadRemoteEpisode(index, startIntent: EpisodeStartIntent.listSelect);
+
+  @override
+  void debugHandlePlaybackEnded({
+    required int positionMs,
+    required int durationMs,
+  }) => _handlePlaybackEnded(positionMs: positionMs, durationMs: durationMs);
 
   @override
   VideoDiscNavigationState? get debugDiscNavigationState =>
@@ -3531,7 +3564,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   DictionaryPopupWebViewState? get caretTopPopupState {
     final int idx = _topVisiblePopupIndex;
     if (idx < 0 || idx >= _popup.entries.length) return null;
-    return _popup.entries[idx].webViewKey.currentState;
+    return _popup.entries[idx].webViewKey.webViewState;
   }
 
   @override
@@ -3660,6 +3693,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _currentEpisode = 0;
 
   bool _autoAdvanceInFlight = false;
+
+  /// 流断了之后正在问线路故障转移器（[_recoverInterruptedStream]）：期间再来的
+  /// EOF 不重复问。
+  bool _streamRouteFailoverInFlight = false;
 
   /// 本地换集（pushReplacement / 接管全屏路由）在飞标志，见 [_switchEpisode]。
   bool _localEpisodeSwitchInFlight = false;
@@ -4319,6 +4356,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _watchTracker?.start();
         _studyClockGate.setUnfocused(false);
         _studyClockGate.setLifecycleStopped(false);
+        // 拍板台 42UUu_kcwD：后台继续放声音时挂起的视频轨先还原，**排在解码链刷新
+        // 之前**——刷新是原地 seek，轨还关着时 seek 重建不了画面。未挂起时 no-op。
+        unawaited(_controller?.resumeVideoAfterBackground());
         // BUG-1863：从真后台回来先把视频解码链重建一次（详见
         // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
         _refreshDecodeAfterResumeIfNeeded();
@@ -4378,6 +4418,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isPlaying: controller.isPlaying,
       hasNativePlayer: controller.hasNativePlayer,
     )) {
+      return;
+    }
+    // 拍板台 42UUu_kcwD：开着「后台继续播放声音」时不暂停，只挂起视频轨（`vid=no`，
+    // 理由见 [VideoPlayerController.suspendVideoForBackground]），回前台在
+    // `resumed` 分支还原。不置 [_pausedForBackground]：没停过，回来也就不必续播。
+    if (VideoFushiPage.shouldKeepAudioInBackground(
+      backgroundPlayEnabled: appModel.videoBackgroundPlay,
+      isMobile: isMobilePlatform,
+    )) {
+      unawaited(controller.suspendVideoForBackground());
       return;
     }
     _pausedForBackground = true;
@@ -4776,10 +4826,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （流地址带令牌、换线路就变，不落库），合集里同一部剧的入库行作连播成员。
       if (isMediaServerVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
-        // 换线路要失效清单缓存：provider 在 await 之前取（跨 async gap 不碰 ref）。
-        final RemoteLibraryCache remoteCache = ref.read(
-          remoteLibraryCacheProvider,
-        );
+        // 当前线路不通时由客户端的请求漏斗自动换线路（MediaServerRouteFailover），
+        // 这里不用管。
         final SyncRepository syncRepo = SyncRepository(appModel.database);
         try {
           final ({
@@ -4794,13 +4842,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             repository: widget.repo,
             loadConfigs: syncRepo.getMediaServers,
             playlistCollectionId: widget.playlistCollectionId,
-            rerouteAfterFailure: (MediaServerConfig config, Object error) =>
-                rerouteMediaServerAfterFailure(
-                  config,
-                  error,
-                  repo: syncRepo,
-                  cache: remoteCache,
-                ),
           );
           if (!mounted) {
             // 页面在协商途中已关：这只现建的客户端没人会再用（BUG-5012）。
@@ -4974,6 +5015,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _playlistCollectionImages = snapshot.images;
       final String? workTitle = snapshot.collectionMeta?.title.trim();
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
+      // 季分栏与合集详情页同一个入口（手动分栏 / 手动季集指定优先，拍板台
+      // iR6ccUys9H）：一次批量查齐。
+      final Map<String, String> sectionKeys = snapshot.sectionKeys;
       // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
       for (final VideoBookRow er in snapshot.episodes) {
         String? scrapedName;
@@ -4991,6 +5035,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             coverPath: er.coverPath,
             completed: er.completedAt != null,
             started: er.lastPositionMs > 0,
+            sectionKey: sectionKeys[er.bookUid],
           ),
         );
       }
@@ -5156,6 +5201,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             progress: (m.durationMs ?? 0) > 0 && m.positionMs > 0
                 ? (m.positionMs / m.durationMs!).clamp(0.0, 1.0)
                 : null,
+            // 分栏与合集详情页同口径：host 下发的生效分栏（BUG-5084）。
+            sectionKey: m.collectionGroupKey,
           ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];
@@ -6167,6 +6214,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (info == null || releaseClient is! RemoteVideoPlaybackRelease) return;
     if (!_remotePlaybackReleaseGenerations.add(generation)) return;
     unawaited(releaseClient.releaseRemoteVideoPlayback(info.id));
+  }
+
+  /// 在第 [generation] 次远端播放会话里把当前集重载到 [positionMs]：换线路 / 手动
+  /// 换档 / 自适应换档 / 换版本共用（HBK-AUDIT-005）。次序与每个异步边界的会话复核
+  /// 见 [reloadRemoteEpisodeInSession]；[generation] 由调用方在**发起时**（它自己的
+  /// 第一个 await 之前）取。会话的 info / client / 集号在这里一次取定，只在会话仍是
+  /// [generation] 时才被用到。返回本程是否收尾成功（false = 页面没了或已被换集接管）。
+  Future<bool> _reloadRemoteEpisodeInSession({
+    required int generation,
+    required int positionMs,
+  }) {
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final int episode = _currentEpisode < 0 ? 0 : _currentEpisode;
+    return reloadRemoteEpisodeInSession(
+      generation: generation,
+      currentGeneration: () => _remotePlaybackGeneration,
+      isMounted: () => mounted,
+      release: () => _releaseRemotePlayback(
+        info: info,
+        client: client,
+        generation: generation,
+      ),
+      reportStopped: () => _reportRemotePlaybackStopped(
+        info: info,
+        client: client,
+        positionMs: positionMs,
+        generation: generation,
+      ),
+      load: () => _loadRemoteEpisode(
+        episode,
+        // 必须是 explicitCue，否则 near-end 判据会把「快看完时换档 / 换线路」直接
+        // 归零回片头。
+        startIntent: EpisodeStartIntent.explicitCue,
+        initialPositionMsOverride: positionMs,
+      ),
+    );
   }
 
   /// Flush the local position and then report the remote session stop.
@@ -8891,7 +8975,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (index <= 0 &&
         _popup.entries.isNotEmpty &&
         _popup.entries.first.isWarmSlot) {
-      _popup.entries.first.webViewKey.currentState?.clearSelection();
+      _popup.entries.first.webViewKey.webViewState?.clearSelection();
     }
     setState(() => _popup.dismissAt(index));
     final bool stackEmpty = !_hasVisiblePopup;
@@ -9426,7 +9510,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int idx = _topVisiblePopupIndex;
     if (idx < 0) return; // 没有可见浮层：不消费，也没什么可制卡的
     final DictionaryPopupWebViewState? popup =
-        _popup.entries[idx].webViewKey.currentState;
+        _popup.entries[idx].webViewKey.webViewState;
     if (popup == null) return;
     unawaited(popup.mineFirstVisibleEntry());
   }

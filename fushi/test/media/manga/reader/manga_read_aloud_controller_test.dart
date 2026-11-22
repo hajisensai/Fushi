@@ -509,4 +509,79 @@ void main() {
     expect(c.finish, MangaReadAloudFinish.noText);
     c.dispose();
   });
+
+  group('MangaReadAloudSessionWatch（页面的播放条 / 工具栏切换，BUG-5077）', () {
+    test('读到章末 playing → finished：通知页面重建（播放条退回工具栏）并提示章末', () async {
+      final _Host host = threePages();
+      final MangaReadAloudController c = controllerFor(host);
+      // 每次「重建」时页面看到的 isActive：页面按它在播放条与工具栏之间选。
+      final List<bool> rebuilds = <bool>[];
+      final List<MangaReadAloudFinish?> finished = <MangaReadAloudFinish?>[];
+      final MangaReadAloudSessionWatch watch = MangaReadAloudSessionWatch(
+        c,
+        onActiveChanged: () => rebuilds.add(c.isActive),
+        onFinished: finished.add,
+      );
+      c.start(fromPage: 0);
+      await _waitFor(() => player.playing);
+      expect(rebuilds, <bool>[true], reason: '开始朗读：底栏换成播放条');
+
+      // 会话内的状态变化（暂停 / 继续 / 换句）不惊动整页。
+      c.pause();
+      c.resume();
+      await _waitFor(() => player.played.length == 2 && player.playing);
+      player.finish();
+      await _waitFor(() => player.played.length == 3 && player.playing);
+      player.finish();
+      await _waitFor(() => player.played.length == 4 && player.playing);
+      expect(rebuilds, <bool>[true]);
+      expect(finished, isEmpty);
+
+      // 最后一句播完：playing → finished，不经过 idle。
+      expect(c.state, MangaReadAloudState.playing);
+      player.finish();
+      await _waitFor(() => c.state == MangaReadAloudState.finished);
+      expect(rebuilds, <bool>[
+        true,
+        false,
+      ], reason: '章末必须重建一次且此时 isActive 为 false，否则播放条停在底栏不退');
+      expect(finished, <MangaReadAloudFinish?>[
+        MangaReadAloudFinish.chapterEnd,
+      ]);
+
+      // 章末后再开一轮：又换回播放条；stop 回 idle：再退回工具栏。
+      c.start(fromPage: 0);
+      await _waitFor(() => player.playing);
+      c.stop();
+      expect(rebuilds, <bool>[true, false, true, false]);
+      expect(finished, hasLength(1));
+
+      watch.dispose();
+      c.start(fromPage: 0);
+      await _waitFor(() => player.playing);
+      expect(rebuilds, hasLength(4), reason: 'dispose 后不再回调');
+      c.dispose();
+    });
+
+    test('整章无字直接 finished(noText)：重建两次（起 / 止）并提示无字', () async {
+      final _Host host = _Host(<int, MangaPageTextResult>{
+        0: MangaPageTextReady(_image(const <String>['……'])),
+        1: MangaPageTextReady(_image(const <String>[])),
+      });
+      final MangaReadAloudController c = controllerFor(host);
+      final List<bool> rebuilds = <bool>[];
+      final List<MangaReadAloudFinish?> finished = <MangaReadAloudFinish?>[];
+      final MangaReadAloudSessionWatch watch = MangaReadAloudSessionWatch(
+        c,
+        onActiveChanged: () => rebuilds.add(c.isActive),
+        onFinished: finished.add,
+      );
+      c.start(fromPage: 0);
+      await _waitFor(() => c.state == MangaReadAloudState.finished);
+      expect(rebuilds, <bool>[true, false]);
+      expect(finished, <MangaReadAloudFinish?>[MangaReadAloudFinish.noText]);
+      watch.dispose();
+      c.dispose();
+    });
+  });
 }

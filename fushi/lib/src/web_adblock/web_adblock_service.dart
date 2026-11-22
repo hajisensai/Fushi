@@ -23,7 +23,8 @@ import 'package:fushi_web_core/fushi_web_core.dart';
 ///
 /// 原生库是硬依赖：缺库时第一次用到就抛 `FushiWebCoreLibraryMissing`（打包错误），没有
 /// 「判不可用」的降级分支。
-class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
+class WebAdblockService extends ChangeNotifier
+    implements WebAdblockPolicy, WebAdblockWarmup {
   /// [dataDir] 是**惰性**取的：第一次真要用核心时才求值；返回 null = 数据目录还没就绪
   /// （AppModel 还没初始化完，例如只渲染设置页的测试宿主），此时 [snapshot] 是
   /// [AdblockSnapshot.notOpened]、命令抛 [StateError]，不打开核心。
@@ -122,6 +123,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
 
   /// 按需同步一次：先暖机（[ensureEngineWarm]，不联网），再由 Rust 判断要不要联网 / 重编
   /// （缓存新鲜且引擎已是最新时什么也不做）。
+  @override
   Future<void> ensureLoaded() {
     if (_tryOpen() == null) return Future<void>.value();
     return ensureEngineWarm().then((_) {
@@ -142,6 +144,7 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   /// 正在跑的联网同步后面；暖机进行中再调共用同一个 future。所有联网同步入口
   /// （[ensureLoaded] / [setListEnabled] / [updateNow]）都先 await 这里，所以暖机本身也
   /// 不会排到某次联网同步后面。
+  @override
   Future<void> ensureEngineWarm() {
     if (_tryOpen() == null) return Future<void>.value();
     final Future<void>? pending = _warming;

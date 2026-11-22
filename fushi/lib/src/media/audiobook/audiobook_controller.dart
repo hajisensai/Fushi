@@ -1037,11 +1037,28 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 全书时间轴的末端要按它延长——[totalDuration] 与 [seekGlobalMs] 共用这一个口径，
   /// 否则进度条显示得出片尾却拖不进去（sGoT-tNpkx）。前序文件仍用 cue 估算（与持久化
   /// 的全书毫秒编码一致，不能改）。
+  ///
+  /// 真实时长还没报出（冷启动恢复后、首次激活平台前，平台根本没载入该文件）时，
+  /// 当前落在末文件里的位置本身就是它真实时长的下界：位置来自上次真实播放
+  /// （HBK-AUDIT-036：load 不再按 cue 估算夹末文件）。取它，保证时间轴末端
+  /// 永远盖住当前位置——否则进度条显示「1:10 / 0:18」，按 [totalDuration] 夹目标的
+  /// 跳转会把片尾位置拽回末句结束。真实时长到达后 just_audio 的位置被夹在时长内，
+  /// 两者取大即真实时长。
   int? get _knownLastFileDurationMs {
     if (_fileDurationsMs.isEmpty) return null;
-    if ((_player.currentIndex ?? 0) != _fileDurationsMs.length - 1) return null;
-    final int? ms = _player.duration?.inMilliseconds;
-    return ms == null || ms <= 0 ? null : ms;
+    final int lastIndex = _fileDurationsMs.length - 1;
+    int? known;
+    if ((_player.currentIndex ?? 0) == lastIndex) {
+      final int? ms = _player.duration?.inMilliseconds;
+      if (ms != null && ms > 0) known = ms;
+    }
+    final ({int fileIndex, int positionMs}) at = _effectiveFilePosition;
+    if (at.fileIndex == lastIndex &&
+        at.positionMs > 0 &&
+        (known == null || at.positionMs > known)) {
+      known = at.positionMs;
+    }
+    return known;
   }
 
   /// 末文件在全书时间轴上的跨度：cue 估算与已知真实时长取较大者。
@@ -1129,10 +1146,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// [lastFileDurationMs]：末文件的真实时长（已知时）。末文件的上界取它与 cue 估算的
   /// 较大者，与 [totalDuration] 同口径——否则拖到片尾会被夹回末句结束（sGoT-tNpkx）。
+  ///
+  /// [clampLastFile] 为假时末文件不设上界（落点在末文件内的偏移原样保留）：给末文件
+  /// 真实时长尚不可知、上界要等平台报出时长后再施加的调用方（冷启动恢复存档）。
   static ({int fileIndex, int offsetMs}) splitGlobalMs(
     int globalMs,
     List<int> fileDurationsMs, {
     int? lastFileDurationMs,
+    bool clampLastFile = true,
   }) {
     int remaining = globalMs < 0 ? 0 : globalMs;
     int fileIndex = 0;
@@ -1141,9 +1162,13 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (remaining < d) break;
       remaining -= d;
     }
+    final bool isLast = fileIndex >= fileDurationsMs.length - 1;
+    if (isLast && !clampLastFile) {
+      return (fileIndex: fileIndex, offsetMs: remaining);
+    }
     final int last = fileDurationsMs.isEmpty
         ? 0
-        : fileIndex == fileDurationsMs.length - 1
+        : isLast
         ? _lastFileSpanMs(fileDurationsMs, lastFileDurationMs)
         : fileDurationsMs[fileIndex];
     if (remaining > last) remaining = last;
@@ -1342,10 +1367,15 @@ class AudiobookPlayerController extends ChangeNotifier {
           if (_fileDurationsMs.isEmpty) {
             await _player.seek(Duration(milliseconds: savedMs));
           } else {
+            // HBK-AUDIT-036：新源刚设好、平台还没载入，末文件真实时长此刻不可知
+            // （[_knownLastFileDurationMs] 恒为 null）。按 cue 估算（末句结束）夹上界
+            // 会把存在片尾静音 / 音乐里的存档拽回末句——只保留目标文件与文件内偏移，
+            // 上界交给真正知道该文件时长的平台：越界落点在平台载入后落到文件末尾，
+            // 激活落点判定（[_updateCurrentCue] 的 unreachable 分支）随即放行。
             final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
               savedMs,
               _fileDurationsMs,
-              lastFileDurationMs: _knownLastFileDurationMs,
+              clampLastFile: false,
             );
             await _player.seek(
               Duration(milliseconds: target.offsetMs),
@@ -2394,6 +2424,8 @@ class AudiobookPlayerController extends ChangeNotifier {
         case ActivationRestoreTick.transient:
           return;
         case ActivationRestoreTick.unreachable:
+          // HBK-AUDIT-036：load() 不再按 cue 估算夹末文件；越界存档由平台按刚报出的
+          // 真实时长落到文件末尾，这里只解除挡板。
           _clearActivationRestore();
         case ActivationRestoreTick.landed:
           if ((_player.currentIndex ?? 0) > activation.fileIndex ||

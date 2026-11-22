@@ -985,9 +985,11 @@ function renderSrsMigration(g){
   if (c) c.onclick = guard(async()=>{ if(!await ask(T('叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。'), true)) return; await post('srs/migration/cancel'); toast(T('已请求叫停')); loadSrs(); });
 }
 // 旧版本保留副本（D32，engine srs_ctl_routes.dart 的 retained 路由）：迁移时封存在原位的协议 3 srs.db。只在还是封存的
-// 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。
+// 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。副本坏了
+// （copy = unreadable，BUG-5079）只提示、不给删除。
 function renderSrsRetained(r){
   const box = $('#srs-retained');
+  if (r && r.copy === 'unreadable') { box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml([[T('旧版本保留副本'), T('已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响')]])}</div>`; return; }
   if (!r || r.copy !== 'sealed') { box.innerHTML=''; return; }
   const due = r.dueAtMs ? T('{0} 到期后自动删除', fmtTime(r.dueAtMs)) : T('删除前一直保留（不会自动到期）');
   const kv = [[T('旧版本保留副本'), fmtBytes(r.bytes) + ' · ' + due]];
@@ -1115,6 +1117,7 @@ const FIELDS = [
   ['profileTransfer',T('允许已配对设备推送 / 拉取配置文件（Profile）'),'bool','access'],['remoteUpdate',T('允许已配对设备远程更新本服务端（仅发布包；装完退出码 10，由服务管理器重启）'),'bool','access'],['leaderboardLink',T('允许「我的设备」跟随本机 Fushi 排行榜账户自动登录'),'bool','access'],['lookupChineseScriptVariants',T('中文查词简繁互查（只管不自带开关的浏览器扩展 / 旧客户端；新版 app 用自己的开关）'),'bool','access'],
   ['ffmpeg',T('ffmpeg 路径（空=PATH）'),'text','tools'],['ffprobe',T('ffprobe 路径（空=PATH）'),'text','tools'],['onnxruntimeLibrary',T('onnxruntime 动态库'),'text','tools'],
   ['torrent.engine',T('torrent 引擎'),'select:auto,embedded,qbittorrent','downloads'],['torrent.library',T('内置引擎库路径（空=随包/系统）'),'text','downloads'],['torrent.listen',T('libtorrent 监听接口'),'text','downloads'],
+  ['torrent.uploadEnabled',T('允许上传 / 做种（关 = 不给任何 peer 上传，已完成的种子暂停做种）'),'bool','downloads'],['torrent.uploadLimitKbps',T('上传限速 KB/s（0 = 不限）'),'number','downloads'],['torrent.downloadLimitKbps',T('下载限速 KB/s（0 = 不限）'),'number','downloads'],['torrent.limitLocalPeers',T('限速也作用于局域网 peer'),'bool','downloads'],['torrent.maxActiveDownloads',T('同时下载的种子数（-1 = 不限，0 = libtorrent 默认 3）'),'number','downloads'],['torrent.maxActiveSeeds',T('同时做种的种子数（-1 = 不限，0 = libtorrent 默认 5）'),'number','downloads'],['torrent.maxConnections',T('最大连接数（0 = 按内存自动推导）'),'number','downloads'],['torrent.seedRatioLimit',T('分享率上限（0 = 不限；开上传时生效）'),'number','downloads'],['torrent.seedTimeLimitMinutes',T('做种时长上限 分钟（0 = 不限；开上传时生效）'),'number','downloads'],
   ['qbittorrent.url',T('qBittorrent WebUI 地址'),'text','downloads'],['qbittorrent.username',T('qBittorrent 用户名'),'text','downloads'],['qbittorrent.password',T('qBittorrent 密码'),'password','downloads'],
   ['ai.preset',T('AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）'),'dyn:aiPresets','ai'],['ai.apiKey','AI API key','secret:ai.apiKeySet','ai'],
   ['ai.model',T('AI 模型（空 = 预设起点模型）'),'aimodel','ai'],['ai.baseUrl',T('AI 接口地址（空 = 预设地址）'),'text','ai'],['ai.protocol',T('AI 协议（空 = 跟随预设）'),'select:,openAiCompatible,anthropicMessages,geminiGenerateContent','ai'],

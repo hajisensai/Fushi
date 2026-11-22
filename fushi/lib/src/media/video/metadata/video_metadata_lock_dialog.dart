@@ -25,6 +25,7 @@ String videoMetadataLockableFieldLabel(
   VideoMetadataLockableField.originalTitle => t.video_work_field_original_title,
   VideoMetadataLockableField.overview => t.video_work_field_overview,
   VideoMetadataLockableField.tagline => t.video_work_field_tagline,
+  VideoMetadataLockableField.year => t.video_work_field_year,
   VideoMetadataLockableField.genres => t.video_work_genres,
   VideoMetadataLockableField.studios => t.video_work_studios,
   VideoMetadataLockableField.rating => t.video_work_field_rating,

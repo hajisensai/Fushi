@@ -6,12 +6,14 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/sync_commands.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -29,10 +31,12 @@ class _MemoryRemote implements AggregateRemote {
   bool closed = false;
 
   @override
-  Future<Object?> fetch() async => snapshot;
+  Future<Uint8List?> fetch() async =>
+      snapshot == null ? null : encodeAggregateWireJson(snapshot);
 
   @override
-  Future<void> push(Object json) async => pushed.add(json);
+  Future<void> push(Uint8List body) async =>
+      pushed.add(decodeAggregateWireJson(body)!);
 
   @override
   void close() => closed = true;
@@ -346,8 +350,10 @@ void main() {
 
     test('Basic hibiki:<token>，GET / PUT 同一端点', () async {
       final HttpAggregateRemote c = client();
-      expect(await c.fetch(), <String, Object?>{'version': 1});
-      await c.push(<String, Object?>{'version': 1});
+      expect(decodeAggregateWireJson((await c.fetch())!), <String, Object?>{
+        'version': 1,
+      });
+      await c.push(encodeAggregateWireJson(<String, Object?>{'version': 1}));
       c.close();
       expect(auths.toSet(), <String>{
         'Basic ${base64Encode(utf8.encode('hibiki:tk'))}',

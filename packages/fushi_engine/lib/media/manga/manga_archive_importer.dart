@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart' hide ZLibDecoder;
@@ -644,50 +646,23 @@ abstract final class MangaArchiveImporter {
             archive.where((ArchiveFile e) => e.isFile).length,
             expectedPages: imageEntries,
           );
-          final EpubBook book;
-          try {
-            // BUG-3845：SVG 内容文档作 spine 的固定版式漫画也要收成页（与
-            // [imageEpubRejection] 同一解析口径，判得成就导得进）。
-            //
-            // [cap]：与 ZIP 分支同一套「按实际解出字节」的上限（manga-23）。此前
-            // 这里只有上面那遍中央目录声明大小的预检，谎报大小的条目要先整条写进
-            // 磁盘，解完才被大小核对拦下；诚实的超大条目也不受单条上限约束。两遍
-            // 共用同一个 cap（它按累计字节计），总量仍是一份预算。
-            final ZipExtractionCap cap = ZipExtractionCap(
-              maxTotalBytes: budget,
-              maxEntryBytes: limits.maxEntryBytes,
-            );
-            // 先只解 container / OPF / spine 文档、判纯图，再解页图（manga-3）：
-            // 「是不是漫画」由导入这一步自己判（批量导入不再对 `.epub` 预定性），
-            // 文字 EPUB 在页图落盘之前就被否决，不为一本小说把几百 MB 插图写进暂存。
-            final EpubBook skeleton = EpubParser.parseSyncFromPath(
-              archivePath,
-              epubExtraction.path,
-              includeSvgSpineDocuments: true,
-              cap: cap,
-              extractEntry: _isNotPageImageEntry,
-              onEntryExtracted: progress.entryExtracted,
-            );
-            final String? rejection = _pureImageEpubRejection(skeleton);
-            if (rejection != null) _rejectEpub(archivePath, rejection);
-            book = EpubParser.parseSyncFromPath(
-              archivePath,
-              epubExtraction.path,
-              includeSvgSpineDocuments: true,
-              cap: cap,
-              extractEntry: (String name) => !_isNotPageImageEntry(name),
-              onEntryExtracted: progress.entryExtracted,
-            );
-          } on ZipExtractionLimitException catch (e) {
-            throw MangaImportException(
-              'Manga archive is too large (${e.message})',
-            );
-          }
+          // HBK-AUDIT-013：解析、解压、定性、页图清单与挪页整段在一次后台 isolate
+          // 里做，中央目录与 OPF / spine 各只读 / 解析一次。此前在调用 isolate（App
+          // 里是 UI isolate）上同步跑两遍 parseSyncFromPath，再在 UI isolate 上逐章
+          // 扫页图引用，几百页的整卷导入期间界面卡住。
+          final ({String? rejection, String? seriesMetadata}) staged =
+              await _stageImageEpubInBackground(
+                archivePath: archivePath,
+                extractionPath: epubExtraction.path,
+                stagingPath: staging.path,
+                maxTotalBytes: budget,
+                maxEntryBytes: limits.maxEntryBytes,
+                onEntryExtracted: progress.entryExtracted,
+              );
+          final String? rejection = staged.rejection;
+          if (rejection != null) _rejectEpub(archivePath, rejection);
           progress.finishExtraction();
-          // 解压树本次独占、导入完即删：页图直接挪进 staging（同卷一次 rename），
-          // 不再「读进内存再写一遍」（manga-23：每页两次写盘 → 一次）。
-          await _copyEpubPages(book, staging, moveFromExtraction: true);
-          epubSeriesMetadata = encodeEpubSeriesMetadata(book.series);
+          epubSeriesMetadata = staged.seriesMetadata;
         } else {
           final int images = _imageEntryCount(archive);
           progress.beginExtraction(images, expectedPages: images);
@@ -724,6 +699,140 @@ abstract final class MangaArchiveImporter {
       }
     }
   }
+
+  /// 纯图 EPUB 整卷导入的 EPUB 段（HBK-AUDIT-013）：在 [extractionPath] 下读一次中央
+  /// 目录、先只解 container / OPF / spine 文档并解析一次，判纯图（manga-3：文字
+  /// EPUB 在页图落盘之前就被否决，不为一本小说把几百 MB 插图写进暂存）；是漫画才用
+  /// **同一份**中央目录与解析结果补解页图，按 spine 顺序把页图挪进 [stagingPath]
+  /// （`page_NNNNNN.<ext>`）。
+  ///
+  /// 返回否决理由（null = 是纯图漫画、页图已就位）与 OPF 系列声明
+  /// （[encodeEpubSeriesMetadata]）。只碰文件、不碰数据库与日志装配点，可在后台
+  /// isolate 里跑（[importArchive] 经 [_stageImageEpubInBackground] 调它）；直接调
+  /// 只供测试计数。
+  ///
+  /// [maxTotalBytes] / [maxEntryBytes]：与 ZIP 分支同一套「按实际解出字节」的上限
+  /// （manga-23），两段共用同一个 [ZipExtractionCap]（按累计字节计），总量仍是一份
+  /// 预算；超限抛 [MangaImportException]。
+  ///
+  /// BUG-3845：SVG 内容文档作 spine 的固定版式漫画也收成页（与 [imageEpubRejection]
+  /// 同一解析口径，判得成就导得进）。
+  @visibleForTesting
+  static Future<({String? rejection, String? seriesMetadata})> stageImageEpub({
+    required String archivePath,
+    required String extractionPath,
+    required String stagingPath,
+    required int maxTotalBytes,
+    required int maxEntryBytes,
+    required void Function() onEntryExtracted,
+  }) async {
+    final ZipExtractionCap cap = ZipExtractionCap(
+      maxTotalBytes: maxTotalBytes,
+      maxEntryBytes: maxEntryBytes,
+    );
+    final EpubStagedExtraction extraction;
+    try {
+      extraction = EpubParser.openStagedFromPath(
+        archivePath,
+        extractionPath,
+        includeSvgSpineDocuments: true,
+        cap: cap,
+        deferEntry: _isPageImageEntry,
+        onEntryExtracted: onEntryExtracted,
+      );
+    } on ZipExtractionLimitException catch (e) {
+      throw MangaImportException('Manga archive is too large (${e.message})');
+    }
+    try {
+      final EpubBook book = extraction.book;
+      final String? rejection = _pureImageEpubRejection(book);
+      if (rejection != null) {
+        return (rejection: rejection, seriesMetadata: null);
+      }
+      try {
+        extraction.extractDeferred();
+      } on ZipExtractionLimitException catch (e) {
+        throw MangaImportException('Manga archive is too large (${e.message})');
+      }
+      // 挪页之前先关源包句柄。解压树本次独占、导入完即删：页图直接挪进 staging
+      // （同卷一次 rename），不再「读进内存再写一遍」（manga-23）。
+      extraction.close();
+      await _copyEpubPages(
+        book,
+        Directory(stagingPath),
+        moveFromExtraction: true,
+      );
+      return (
+        rejection: null,
+        seriesMetadata: encodeEpubSeriesMetadata(book.series),
+      );
+    } finally {
+      extraction.close();
+    }
+  }
+
+  /// 在一次性后台 isolate 里跑 [stageImageEpub]。每落盘一个条目经端口回调一次
+  /// [onEntryExtracted]（解压段进度逐条推进）；返回前把端口里的进度事件收完。
+  static Future<({String? rejection, String? seriesMetadata})>
+  _stageImageEpubInBackground({
+    required String archivePath,
+    required String extractionPath,
+    required String stagingPath,
+    required int maxTotalBytes,
+    required int maxEntryBytes,
+    required void Function() onEntryExtracted,
+  }) async {
+    final ReceivePort events = ReceivePort('manga-epub-stage-progress');
+    final Completer<void> drained = Completer<void>();
+    events.listen((Object? message) {
+      if (message == null) {
+        drained.complete();
+      } else {
+        onEntryExtracted();
+      }
+    });
+    try {
+      final ({String? rejection, String? seriesMetadata}) result =
+          await _runStageImageEpubIsolate(
+            archivePath: archivePath,
+            extractionPath: extractionPath,
+            stagingPath: stagingPath,
+            maxTotalBytes: maxTotalBytes,
+            maxEntryBytes: maxEntryBytes,
+            progress: events.sendPort,
+          );
+      // 同一端口 FIFO：结束标记之前的进度事件都已投递。
+      await drained.future;
+      return result;
+    } finally {
+      events.close();
+    }
+  }
+
+  /// [Isolate.run] 的闭包单独放在只有可跨 isolate 参数的函数里：与
+  /// [_stageImageEpubInBackground] 里捕获 [Completer] / 回调的监听闭包不共享上下文。
+  static Future<({String? rejection, String? seriesMetadata})>
+  _runStageImageEpubIsolate({
+    required String archivePath,
+    required String extractionPath,
+    required String stagingPath,
+    required int maxTotalBytes,
+    required int maxEntryBytes,
+    required SendPort progress,
+  }) => Isolate.run(() async {
+    try {
+      return await stageImageEpub(
+        archivePath: archivePath,
+        extractionPath: extractionPath,
+        stagingPath: stagingPath,
+        maxTotalBytes: maxTotalBytes,
+        maxEntryBytes: maxEntryBytes,
+        onEntryExtracted: () => progress.send(true),
+      );
+    } finally {
+      progress.send(null);
+    }
+  }, debugName: 'manga-epub-stage');
 
   /// [archive] 里页图条目（扩展名在 [kMangaImageExtensions] 内的文件）的个数。
   static int _imageEntryCount(Archive archive) {
@@ -1144,6 +1253,9 @@ abstract final class MangaArchiveImporter {
   /// spine 文档，页图字节不必落盘。
   static bool _isNotPageImageEntry(String name) =>
       !kMangaImageExtensions.contains(p.extension(name).toLowerCase());
+
+  /// 条目名是页图（[_isNotPageImageEntry] 的反面）：整卷导入定性通过后才补解。
+  static bool _isPageImageEntry(String name) => !_isNotPageImageEntry(name);
 
   static bool _isPureImageEpub(EpubBook book) =>
       _pureImageEpubRejection(book) == null;

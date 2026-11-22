@@ -597,7 +597,12 @@ class _Exporter {
       'type': t.isCloze ? 1 : 0,
       'mod': nowSecs,
       'usn': -1,
-      'sortf': 0,
+      'sortf': switch (t.fields.indexWhere(
+        (SrsFieldDef f) => f.id == t.effectiveSortFieldId,
+      )) {
+        final int i when i > 0 => i,
+        _ => 0,
+      },
       'did': 1,
       'tmpls': tmpls,
       'flds': <Map<String, Object?>>[

@@ -78,7 +78,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     int index = 0;
     // host 能否收 PDF（`liveLibrary.pdfBooks`）：轮到第一本 PDF 时才问一次，没有
     // PDF 要推的轮次零额外请求。
-    bool? hostAcceptsPdf;
+    LiveLibraryCapabilityState? hostPdfState;
 
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
@@ -106,12 +106,22 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         final BookFormat format = BookFormat.parseOrEpub(row.format);
         // PDF（反馈 Jq1_ujHa4t）：包 = 书目录里的 PDF 原件，直接上传，不重打包。
         // 只推给显式宣称能收 PDF 的 host——老 host 会把它当 EPUB 导入失败，无头
-        // 服务端没有 PDF 引擎；这两种对端上 PDF 留在本机（能力边界，不是错误）。
+        // 服务端没有 PDF 引擎；这两种对端上 PDF 留在本机，报告里记一条（每轮至多
+        // 一条）说清楚：老 host 提示升级，无头服务端说明它收不了 PDF（拍板
+        // other-sync-peer-version-errors）。
         File? upload;
         if (format == BookFormat.pdf) {
-          final bool acceptsPdf = hostAcceptsPdf ??= await backend
-              .hostAcceptsPdfBooks();
-          if (!acceptsPdf) {
+          final LiveLibraryCapabilityState pdfState = hostPdfState ??=
+              liveLibraryCapabilityState(
+                await _roundHostCapabilities(report, backend),
+                kLiveLibraryPdfBooksCapability,
+              );
+          if (pdfState != LiveLibraryCapabilityState.supported) {
+            _notePeerGapFromState(
+              report,
+              SyncPeerGapDimension.pdfBooks,
+              pdfState,
+            );
             index++;
             continue;
           }

@@ -228,6 +228,10 @@ PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
 /// 用户重新同意屏幕共享，系统不允许复用授权）；服务在别处被停（通知栏「停止」、系统
 /// 收回共享）时经 [SettingsSection.liveListenable] 刷新。只能用户自己拨：打开会弹
 /// 系统授权框，AI 不该代按。
+///
+/// 电脑端（Windows，拍板 design-cross-app-audio-desktop）：录的是系统混音（不用授权），
+/// 开关持久化（[PreferencesRepository.crossAppAudioCaptureDesktop]），启动时按它恢复常驻
+/// 录环（`restoreDesktopCrossAppAudio`）。同样只让用户自己拨：常驻录音是隐私许可。
 SettingsSection _crossAppAudioSection() {
   final CrossAppAudioCapture capture = CrossAppAudioCapture.instance;
   return SettingsSection(
@@ -239,11 +243,17 @@ SettingsSection _crossAppAudioSection() {
       SettingsSwitchItem(
         id: 'floating_ball.app_audio_capture',
         title: t.mining_app_audio_capture,
-        subtitle: t.mining_app_audio_capture_hint,
+        subtitle: capture.isDesktop
+            ? t.mining_app_audio_capture_hint_desktop
+            : t.mining_app_audio_capture_hint,
         icon: FushiIcons.voice,
         userOnly: true,
         value: (SettingsContext c) => capture.running.value,
         onChanged: (SettingsContext c, bool value) async {
+          if (capture.isDesktop) {
+            await _setDesktopCrossAppAudio(c, value);
+            return;
+          }
           if (!value) {
             await capture.stop();
             c.refresh();
@@ -266,6 +276,27 @@ SettingsSection _crossAppAudioSection() {
       ),
     ],
   );
+}
+
+/// 电脑端开关：起停常驻录环并持久化。起不来时偏好不开（开关如实显示「没在录」）。
+Future<void> _setDesktopCrossAppAudio(SettingsContext c, bool value) async {
+  final CrossAppAudioCapture capture = CrossAppAudioCapture.instance;
+  if (!value) {
+    await _prefs(c).setCrossAppAudioCaptureDesktop(false);
+    await capture.stop();
+    c.refresh();
+    return;
+  }
+  final CrossAppAudioStartResult result = await capture.start();
+  if (result.running) {
+    await _prefs(c).setCrossAppAudioCaptureDesktop(true);
+  } else {
+    FushiToast.show(
+      msg: crossAppAudioStartErrorText(result.error),
+      severity: ToastSeverity.warning,
+    );
+  }
+  c.refresh();
 }
 
 /// [CrossAppAudioCapture.start] 失败原因码 → 提示文案。

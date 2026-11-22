@@ -39,11 +39,9 @@ import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show
-        DictionaryPopupWebViewState,
-        MinePopupResult,
-        OpenAdvancedMiningCallback;
+    show MinePopupResult, OpenAdvancedMiningCallback;
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart'
     show ReaderSelectionScripts;
@@ -392,7 +390,7 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
   /// 按表面传、不覆写宿主级 getter：收藏行为不变。
   @override
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
-    GlobalKey<DictionaryPopupWebViewState> webViewKey, {
+    GlobalKey<DictionaryPopupRealmState> webViewKey, {
     FavoriteLookupContext? Function()? lookupContext,
   }) => super.advancedMiningOpenerFor(
     webViewKey,

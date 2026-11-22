@@ -47,6 +47,7 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -134,6 +135,11 @@ public class ScreenOcrService extends Service {
     static final String LABEL_SESSION_STOP = "ocr_session_stop";
     /** 识别中通知上的「取消」（BUG-4790）。 */
     static final String LABEL_CANCEL = "ocr_cancel";
+    /**
+     * 选取层顶部提示条上「✕ 关闭」的无障碍名（反馈 Z0JMfFZXQ9：满屏文字时点哪都查词，
+     * 「点空白处关闭」找不到空白）。
+     */
+    static final String LABEL_CLOSE = "ocr_close";
     /** Dart `ScreenOcrEngine` 的名字（截屏识字引擎，决定 4BBSaB12zj）。 */
     static final String ENGINE_SYSTEM_OCR = "systemOcr";
     static final String ENGINE_LOCAL_MODEL = "localModel";
@@ -1060,7 +1066,8 @@ public class ScreenOcrService extends Service {
 
     private void showSelection(@NonNull List<ScreenOcrLayout.Line> lines) {
         selectionView = new SelectionView(this, lines, frozenFrame, label(LABEL_HINT,
-                "Tap text to look it up · tap elsewhere to close"));
+                "Tap text to look it up · tap elsewhere to close"),
+                label(LABEL_CLOSE, "Close"));
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -1099,6 +1106,12 @@ public class ScreenOcrService extends Service {
 
     private void onSelectionTap(int rawX, int rawY) {
         if (selectionView == null) return;
+        // 反馈 Z0JMfFZXQ9：顶部提示条（带 ✕）是关闭按钮，压在它下面的行不查词——
+        // 满屏文字时这是唯一保证点得到的关闭处，必须先于行命中判断。
+        if (selectionView.hitsCloseChip(rawX, rawY)) {
+            finishFlow();
+            return;
+        }
         List<ScreenOcrLayout.Line> lines = selectionView.lines;
         int slop = dpToPx(LINE_SLOP_DP);
         int index = ScreenOcrLayout.hitLine(lines, rawX, rawY, slop);
@@ -1251,10 +1264,18 @@ public class ScreenOcrService extends Service {
      * 才加深并描边（BUG-2901：此前每行都画实线框、整屏再压暗，满屏蓝框盖住要读的字）。
      * 坐标一律用屏幕物理像素（与截图 1:1）；画的时候减去本窗口在屏幕上的原点，点的
      * 时候直接用 getRawX/Y，两边都不依赖窗口是否真的铺到了 (0,0)。
+     *
+     * <p>顶部提示条同时是关闭按钮（反馈 Z0JMfFZXQ9）：条尾画 ✕，整条（命中高度补足
+     * {@link #CLOSE_MIN_TOUCH_DP}）点下去收尾，优先于压在它下面的文字行。满屏文字时
+     * 「点空白处关闭」没有空白可点，这是唯一一定点得到的出口（另有返回键与无障碍
+     * dismiss 动作）。
      */
     private final class SelectionView extends View {
+        /** 关闭条的最小命中高度（Material 触控目标 48dp）。 */
+        private static final int CLOSE_MIN_TOUCH_DP = 48;
         final List<ScreenOcrLayout.Line> lines;
         private final String hint;
+        private final String closeLabel;
         @Nullable private final Bitmap frame;
         private final Paint framePaint = new Paint(Paint.FILTER_BITMAP_FLAG);
         private final Paint restPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1262,7 +1283,14 @@ public class ScreenOcrService extends Service {
         private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final TextPaint hintPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         private final Paint hintBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint hintBgPressedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint closeGlyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int[] origin = new int[2];
+        /** 关闭条命中区，屏幕物理像素（与 getRawX/Y 同口径）；画过一帧才有值。 */
+        private final RectF closeHit = new RectF();
+        /** 手指按在关闭条上（画按下态，抬起时收尾）。 */
+        private boolean closePressed;
         private final RectF scratch = new RectF();
         private final int touchSlop;
         private float downX;
@@ -1272,11 +1300,12 @@ public class ScreenOcrService extends Service {
         private int pressedLine = -1;
 
         SelectionView(Context context, List<ScreenOcrLayout.Line> lines,
-                @Nullable Bitmap frame, String hint) {
+                @Nullable Bitmap frame, String hint, String closeLabel) {
             super(context);
             this.lines = lines;
             this.frame = frame;
             this.hint = hint;
+            this.closeLabel = closeLabel;
             restPaint.setColor(0x1A3D8BFF);
             pressedFillPaint.setColor(0x403D8BFF);
             strokePaint.setColor(0xFF3D8BFF);
@@ -1286,6 +1315,13 @@ public class ScreenOcrService extends Service {
             hintPaint.setTextSize(TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_SP, 14, getResources().getDisplayMetrics()));
             hintBgPaint.setColor(0xCC202124);
+            hintBgPressedPaint.setColor(0xF0303134);
+            closeGlyphPaint.setColor(Color.WHITE);
+            closeGlyphPaint.setStyle(Paint.Style.STROKE);
+            closeGlyphPaint.setStrokeCap(Paint.Cap.ROUND);
+            closeGlyphPaint.setStrokeWidth(dpToPx(2));
+            dividerPaint.setColor(0x66FFFFFF);
+            dividerPaint.setStrokeWidth(dpToPx(1));
             touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         }
 
@@ -1309,17 +1345,59 @@ public class ScreenOcrService extends Service {
                     canvas.drawRoundRect(scratch, radius, radius, restPaint);
                 }
             }
-            if (hint != null && !hint.isEmpty()) {
-                float textWidth = hintPaint.measureText(hint);
-                float padH = dpToPx(12);
-                float padV = dpToPx(8);
-                float top = topInset() + dpToPx(8);
-                float height = hintPaint.descent() - hintPaint.ascent() + padV * 2;
-                float left = (getWidth() - textWidth) / 2f - padH;
-                scratch.set(left, top, left + textWidth + padH * 2, top + height);
-                canvas.drawRoundRect(scratch, height / 2f, height / 2f, hintBgPaint);
-                canvas.drawText(hint, left + padH, top + padV - hintPaint.ascent(), hintPaint);
+            drawCloseChip(canvas);
+        }
+
+        /**
+         * 顶部「提示 | ✕」条：提示文字过长时省略号截断，整条不超出屏宽减两侧边距。
+         * 同时记下命中区（屏幕坐标，高度补足 48dp）。
+         */
+        private void drawCloseChip(@NonNull Canvas canvas) {
+            float padH = dpToPx(12);
+            float padV = dpToPx(8);
+            float glyph = dpToPx(12);
+            float gap = dpToPx(10);
+            float top = topInset() + dpToPx(8);
+            float height = hintPaint.descent() - hintPaint.ascent() + padV * 2;
+            float maxText = getWidth() - dpToPx(32) - padH * 2 - gap * 2 - glyph;
+            CharSequence text = hint == null ? "" : hint;
+            if (maxText <= 0) {
+                text = "";
+            } else if (hintPaint.measureText(text, 0, text.length()) > maxText) {
+                text = TextUtils.ellipsize(text, hintPaint, maxText, TextUtils.TruncateAt.END);
             }
+            float textWidth = hintPaint.measureText(text, 0, text.length());
+            boolean hasText = textWidth > 0;
+            float width = padH * 2 + glyph + (hasText ? textWidth + gap * 2 : 0);
+            float left = (getWidth() - width) / 2f;
+            scratch.set(left, top, left + width, top + height);
+            canvas.drawRoundRect(scratch, height / 2f, height / 2f,
+                    closePressed ? hintBgPressedPaint : hintBgPaint);
+            if (hasText) {
+                canvas.drawText(text, 0, text.length(), left + padH,
+                        top + padV - hintPaint.ascent(), hintPaint);
+                float dividerX = left + padH + textWidth + gap;
+                canvas.drawLine(dividerX, top + padV, dividerX, top + height - padV,
+                        dividerPaint);
+            }
+            float gx = left + width - padH - glyph;
+            float gy = top + (height - glyph) / 2f;
+            canvas.drawLine(gx, gy, gx + glyph, gy + glyph, closeGlyphPaint);
+            canvas.drawLine(gx + glyph, gy, gx, gy + glyph, closeGlyphPaint);
+            float extraV = Math.max(0f, (dpToPx(CLOSE_MIN_TOUCH_DP) - height) / 2f);
+            closeHit.set(left + origin[0], top - extraV + origin[1],
+                    left + width + origin[0], top + height + extraV + origin[1]);
+        }
+
+        /** 屏幕物理像素坐标是否落在顶部关闭条上。 */
+        boolean hitsCloseChip(int rawX, int rawY) {
+            return !closeHit.isEmpty() && closeHit.contains(rawX, rawY);
+        }
+
+        private void setClosePressed(boolean pressed) {
+            if (closePressed == pressed) return;
+            closePressed = pressed;
+            invalidate();
         }
 
         private float topInset() {
@@ -1339,8 +1417,13 @@ public class ScreenOcrService extends Service {
                     downX = event.getRawX();
                     downY = event.getRawY();
                     tapCandidate = true;
-                    setPressedLine(ScreenOcrLayout.hitLine(lines,
-                            (int) downX, (int) downY, dpToPx(LINE_SLOP_DP)));
+                    if (hitsCloseChip((int) downX, (int) downY)) {
+                        setPressedLine(-1);
+                        setClosePressed(true);
+                    } else {
+                        setPressedLine(ScreenOcrLayout.hitLine(lines,
+                                (int) downX, (int) downY, dpToPx(LINE_SLOP_DP)));
+                    }
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (Math.abs(event.getRawX() - downX) > touchSlop
@@ -1366,6 +1449,26 @@ public class ScreenOcrService extends Service {
 
         void clearPressed() {
             setPressedLine(-1);
+            setClosePressed(false);
+        }
+
+        // 无障碍：选取层整体暴露「关闭」动作（TalkBack 动作菜单），与顶部 ✕ 条、
+        // 返回键同一出口。
+        @Override
+        public void onInitializeAccessibilityNodeInfo(@NonNull AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setDismissable(true);
+            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(
+                    AccessibilityNodeInfo.ACTION_DISMISS, closeLabel));
+        }
+
+        @Override
+        public boolean performAccessibilityAction(int action, @Nullable Bundle arguments) {
+            if (action == AccessibilityNodeInfo.ACTION_DISMISS) {
+                finishFlow();
+                return true;
+            }
+            return super.performAccessibilityAction(action, arguments);
         }
 
         private void setPressedLine(int index) {

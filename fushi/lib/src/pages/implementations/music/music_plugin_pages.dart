@@ -19,6 +19,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_music/fushi_music.dart';
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/media/music/music_disc_art.dart'
@@ -90,6 +91,7 @@ import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -101,6 +103,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show showFushiConfirmDialog;
 
 part 'music_plugin_actions.dart';
+part 'music_plugin_browse_pages.dart';
 part 'music_plugin_detail_pages.dart';
 
 /// 打开某个插件音源的浏览页。
@@ -748,6 +751,7 @@ class _EntityRow extends StatelessWidget {
     this.cover,
     this.subtitle = '',
     this.roundCover = false,
+    this.extra,
   });
 
   final int index;
@@ -758,6 +762,25 @@ class _EntityRow extends StatelessWidget {
   final bool roundCover;
   final VoidCallback onTap;
 
+  /// 副行下面再一行（作品的可点标签）；null 不画。
+  final Widget? extra;
+
+  /// 副行 + [extra]；没有 [extra] 时为 null（行照旧只画文字副行）。
+  Widget? _subtitleWithExtra(BuildContext context) {
+    final Widget? more = extra;
+    if (more == null) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+      children: <Widget>[
+        if (subtitle.isNotEmpty)
+          Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        more,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => musicTrackRowSurfaceActive(context)
       // 与曲目行混排在同一列表（搜索结果 / 推荐段）里：同一种圆角条，悬停铺
@@ -765,6 +788,7 @@ class _EntityRow extends StatelessWidget {
       ? MusicTrackRowSurface(
           title: title,
           subtitle: subtitle,
+          subtitleWidget: _subtitleWithExtra(context),
           coverPath: cover,
           leading: _thumb(cover, round: roundCover),
           onTap: onTap,
@@ -780,9 +804,11 @@ class _EntityRow extends StatelessWidget {
       child: FushiListItem(
         leading: _thumb(cover, round: roundCover),
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: subtitle.isEmpty
-            ? null
-            : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle:
+            _subtitleWithExtra(context) ??
+            (subtitle.isEmpty
+                ? null
+                : Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis)),
         trailing: const FushiIcon(FushiIcons.chevronRight),
       ),
     ),
@@ -837,6 +863,15 @@ Widget _pluginEntityTile(
       cover: album.coverUrl,
       title: album.title,
       subtitle: _pluginAlbumSubtitle(album),
+      // 作品行只露前几个常用标签（插件按常用程度排序给），全部标签在详情里。
+      extra: album.tags.isEmpty
+          ? null
+          : MusicPluginTagChips(
+              manifest: manifest,
+              tags: album.tags,
+              maxCollapsed: 3,
+              expandable: false,
+            ),
       onTap: () => unawaited(
         _push(
           context,
@@ -880,11 +915,13 @@ Widget _pluginEntityTile(
   };
 }
 
-/// 插件专辑的副行：艺人 · 年份 · 曲目数。
+/// 插件专辑的副行：艺人 · 作品编号 · 年份 · 曲目数 · 字幕。
 String _pluginAlbumSubtitle(MusicPluginAlbum album) => <String>[
   if (album.artists.isNotEmpty) album.artistText,
+  ?album.code,
   if (album.year != null) '${album.year}',
   if (album.trackCount != null) t.music_tracks_count(count: album.trackCount!),
+  if (album.hasSubtitles == true) t.music_plugin_album_subtitles_yes,
 ].join(' · ');
 
 /// 插件艺人的副行：专辑数（插件没给为 null）。
@@ -937,6 +974,8 @@ Widget musicPluginItemBlock(
         size: size,
         title: album.title,
         subtitle: _pluginAlbumSubtitle(album),
+        // 色块只放得下一个标签（插件按常用程度排序给）；可点的全部标签在行与详情里。
+        chip: album.tags.firstOrNull?.name,
         coverPath: album.coverUrl,
         onTap: () => unawaited(
           _push(
@@ -1296,15 +1335,13 @@ class _PluginCoverBlockCard extends ConsumerWidget {
     if (target == null) return const SizedBox.shrink();
     return musicWithContextMenu(
       musicPluginEntityMenu(context, ref, manifest, item),
-      // 与曲库专辑同一个色块组件：在线插件没有盘面图来源，宽块走 W 原型的无盘
-      // 专辑海报版式。
+      // 与曲库专辑同一个色块组件（在线插件没有盘面图来源，不画唱片）。
       MusicCollectionBlock(
         size: size,
         title: target.title,
         subtitle: target.subtitle,
         coverPath: target.cover,
         onTap: () => unawaited(_push(context, target.page)),
-        albumPoster: true,
       ),
     );
   }
@@ -1611,20 +1648,28 @@ class _MusicPluginRecommendViewState
     final MusicPluginManager manager = ref.read(appProvider).musicPluginManager;
     return Future.wait(<Future<_HomeResult>>[
       for (final MusicPluginManifest m in widget.sources)
-        manager
-            .source(m.id)
-            .home(refresh: refresh)
-            .then<_HomeResult>(
-              (List<MusicPluginHomeSection> s) =>
-                  (manifest: m, sections: s, error: null),
-            )
-            .catchError(
-              (Object e) => (
-                manifest: m,
-                sections: const <MusicPluginHomeSection>[],
-                error: e,
+        // 只声明了 browse 的插件没有推荐段，只露浏览入口（[MusicPluginBrowseBar]）。
+        if (!m.can(MusicPluginCapability.home))
+          Future<_HomeResult>.value((
+            manifest: m,
+            sections: const <MusicPluginHomeSection>[],
+            error: null,
+          ))
+        else
+          manager
+              .source(m.id)
+              .home(refresh: refresh)
+              .then<_HomeResult>(
+                (List<MusicPluginHomeSection> s) =>
+                    (manifest: m, sections: s, error: null),
+              )
+              .catchError(
+                (Object e) => (
+                  manifest: m,
+                  sections: const <MusicPluginHomeSection>[],
+                  error: e,
+                ),
               ),
-            ),
     ]);
   }
 
@@ -1704,6 +1749,14 @@ class _MusicPluginRecommendViewState
         ],
       ),
     );
+    if (m.can(MusicPluginCapability.browse)) {
+      add(
+        MusicPluginBrowseBar(
+          key: ValueKey<String>('music-plugin-browse-bar-${m.id}'),
+          manifest: m,
+        ),
+      );
+    }
     if (r.error != null) {
       add(
         Padding(
@@ -1719,7 +1772,11 @@ class _MusicPluginRecommendViewState
       return out;
     }
     if (r.sections.isEmpty) {
-      add(Text(t.music_plugin_home_empty, style: context.fushiType.bodySmall));
+      if (m.can(MusicPluginCapability.home)) {
+        add(
+          Text(t.music_plugin_home_empty, style: context.fushiType.bodySmall),
+        );
+      }
       return out;
     }
     // 推荐页 A（用户 2026-10-29 定版，设计稿
@@ -1813,8 +1870,26 @@ class _MusicPluginRecommendViewState
                 kind: MusicSectionActionKind.play,
                 label: t.music_play_all,
                 onPressed: () => _playTracks(ref, m.id, tracks),
+              ),
+            // 段带了浏览条件（插件声明了 browse）：「查看全部」进保留这组条件、可续载的
+            // 列表（如「简中 · 带字幕」→ 语言 = 简中 + 只看带字幕）。
+            if (sec.more case final MusicPluginBrowseQuery more)
+              musicSectionAction(
+                key: ValueKey<String>(
+                  'music-plugin-home-view-all-${m.id}-${sec.id}',
+                ),
+                kind: MusicSectionActionKind.viewAll,
+                label: t.music_sources_view_all,
+                onPressed: () => unawaited(
+                  openMusicPluginBrowseList(
+                    context,
+                    manifest: m,
+                    query: more,
+                    title: sec.title,
+                  ),
+                ),
               )
-            else
+            else if (sec.kind != MusicPluginHomeKind.tracks)
               // 歌单 / 专辑栏目：与服务器来源那一排（`_ServerShelf`）同一个出口，
               // 进网格页看该栏目的完整列表（含被主卡 / 榜单卡占去的条目）。
               musicSectionAction(
@@ -3055,7 +3130,6 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         subtitle: e.subtitle,
         coverPath: e.cover,
         onTap: e.onTap,
-        albumPoster: true,
         disc: e.discArt == null ? null : musicDiscArtImage(e.discArt!),
       );
 

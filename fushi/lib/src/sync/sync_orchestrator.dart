@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
@@ -25,7 +27,10 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         isMangaPackage,
         repackageMangaBook;
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show hasExportablePdfContent, pdfBookFilePath;
+    show
+        hasExportablePdfContent,
+        kLiveLibraryPdfBooksCapability,
+        pdfBookFilePath;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -48,6 +53,7 @@ import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/sync_peer_gap.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryCatalogService;
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -75,6 +81,9 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+// 报告里的「对端缺能力」类型随 SyncRunReport 一起给到消费方。
+export 'package:fushi/src/sync/sync_peer_gap.dart';
+
 part 'sync_orchestrator/aggregate.part.dart';
 part 'sync_orchestrator/collections.part.dart';
 part 'sync_orchestrator/tags.part.dart';
@@ -83,10 +92,12 @@ part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
 part 'sync_orchestrator/videos.part.dart';
+part 'sync_orchestrator/stream_videos.part.dart';
 part 'sync_orchestrator/audiobooks.part.dart';
 part 'sync_orchestrator/dictionaries.part.dart';
 part 'sync_orchestrator/local_audio.part.dart';
 part 'sync_orchestrator/settings.part.dart';
+part 'sync_orchestrator/peer_gaps.part.dart';
 
 /// Reserved top-level folder (under the backend root) that holds dictionary
 /// packages. It lives alongside the per-book folders, so every place that
@@ -403,6 +414,14 @@ class SyncRunReport {
   /// >0 时合集详情页 / 视频卡的简介、评分、分集名会变，计入 [needsLocalLibraryRefresh]。
   int videoMetadataUpdated = 0;
 
+  /// 本轮从互联 host 落到本机的流媒体书（「粘贴 URL 导入」/ 网页视频站，拍板台
+  /// Z2OhxAjKVv）。视频库多出新行，计入 [needsLocalLibraryRefresh]。
+  int streamVideosPulled = 0;
+
+  /// 本轮注册到互联 host 的流媒体书（只推元数据，不传字节；export-only，不计入
+  /// [needsLocalLibraryRefresh]）。
+  int streamVideosPushed = 0;
+
   /// Host-owned external-service preferences imported over the authenticated
   /// interconnect channel. These require an AppModel preference-cache refresh
   /// even though no media row was imported.
@@ -479,6 +498,39 @@ class SyncRunReport {
   /// 本列表把类型保留到 UI，与 [errors] **并存**（日志行一字不变）。
   final List<SyncAuthFailure> authFailures = <SyncAuthFailure>[];
 
+  /// 本轮因对端版本过旧 / 不支持而没同步、或降级同步的维度（拍板
+  /// other-sync-peer-version-errors），每维度至多一条。与 [authFailures] 同理：
+  /// [errors] 里有同一句的日志行，这里把类型留给 UI（手动同步摘要据此提示升级对端）。
+  final List<SyncPeerGap> peerGaps = <SyncPeerGap>[];
+
+  /// 记一条「对端缺能力」：本轮该维度已记过就不再记（每轮每维度最多一条），否则
+  /// 进 [peerGaps] 并往 [errors] 写一行 [SyncPeerGap.message]。各维度统一走这里，
+  /// 不再各写各的提示句。
+  void notePeerGap(SyncPeerGapDimension dimension, {required bool outdated}) {
+    if (hasPeerGap(dimension)) return;
+    final SyncPeerGap gap = SyncPeerGap(
+      dimension: dimension,
+      outdated: outdated,
+    );
+    peerGaps.add(gap);
+    errors.add(gap.message);
+  }
+
+  /// 本轮是否已记过 [dimension] 的「对端缺能力」。
+  bool hasPeerGap(SyncPeerGapDimension dimension) =>
+      peerGaps.any((SyncPeerGap g) => g.dimension == dimension);
+
+  /// 本轮已经按能力位判过的维度——不论判下来记没记、能力表读没读到。同一维度在
+  /// 一轮里可能走不通很多次（删除推送逐条墓碑），判定与「能力表读不到」的错误行
+  /// 每轮每维度都只该出一次（`_notePeerGapLive`）。
+  final Set<SyncPeerGapDimension> _peerGapsJudged = <SyncPeerGapDimension>{};
+
+  /// 本轮对 host `/api/capabilities` 的那一次读取（连同它挂在哪个 backend 上）。各维度、
+  /// PDF 推送、本地音频身份判定共用，**每轮至多一次请求**；读取失败也复用同一个失败，
+  /// 不再为每个调用点重发。按轮持有、不跨轮：报告就是一轮的生命周期（host 换成老版本
+  /// 后下一轮必须重新读到）。
+  ({InterconnectSyncBackend backend, Future<Object?> read})? _hostCapabilities;
+
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
   /// 本轮消费远端删除标记算出的 deleteLocal 候选（远端已删 ∧ 本地仍在库，且
@@ -522,6 +574,7 @@ class SyncRunReport {
       collectionsUpdated > 0 ||
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
+      streamVideosPulled > 0 ||
       serviceConfigsImported > 0 ||
       sourcesShared > 0 ||
       settingsImported > 0;
@@ -551,6 +604,8 @@ class SyncRunReport {
     tagsUpdated += other.tagsUpdated;
     mediaLinksUpdated += other.mediaLinksUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
+    streamVideosPulled += other.streamVideosPulled;
+    streamVideosPushed += other.streamVideosPushed;
     serviceConfigsImported += other.serviceConfigsImported;
     sourcesShared += other.sourcesShared;
     sourceShareSignerChanged.addAll(other.sourceShareSignerChanged);
@@ -559,6 +614,10 @@ class SyncRunReport {
     errors.addAll(other.errors);
     for (final SyncAuthFailure f in other.authFailures) {
       _addAuthFailure(f);
+    }
+    // 日志行已随 errors 拼过来，这里只补类型（同维度不重复）。
+    for (final SyncPeerGap g in other.peerGaps) {
+      if (!hasPeerGap(g.dimension)) peerGaps.add(g);
     }
     conflicts.addAll(other.conflicts);
     deletionCandidates.addAll(other.deletionCandidates);
@@ -1346,6 +1405,13 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncAggregateLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncServiceConfigLive]。
+  @visibleForTesting
+  Future<void> syncServiceConfigLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncServiceConfigLive(report, backend);
 
   /// 合集双向同步（多端库联合视图 §2.3 任务4，云后端通道）。
   ///

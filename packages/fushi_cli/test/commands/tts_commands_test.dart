@@ -1,5 +1,6 @@
 import 'package:args/args.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 CtlCommandGroup _group() =>
@@ -38,6 +39,7 @@ void main() {
       'regenerate',
       'render',
       'render-cancel',
+      'import',
     ]);
   });
 
@@ -187,5 +189,24 @@ void main() {
       _build('render-cancel', <String>['book:vol-1']).path,
       '$_item/render/cancel',
     );
+  });
+
+  test('import：清单路径在 CLI 侧转绝对路径；--yes 才带 confirm；缺清单是用法错误', () {
+    final CtlRequestSpec plain = _build('import', <String>[
+      'book:vol-1',
+      'out/manifest.json',
+    ]);
+    expect(plain.method, 'POST');
+    expect(plain.path, '$_item/import');
+    expect(plain.body, <String, Object?>{
+      'manifest': p.normalize(p.absolute('out/manifest.json')),
+    });
+    final CtlRequestSpec yes = _build('import', <String>[
+      'book:vol-1',
+      'out/manifest.json',
+      '--yes',
+    ]);
+    expect(yes.body, containsPair('confirm', true));
+    expect(() => _build('import', <String>['book:vol-1']), _usageError());
   });
 }

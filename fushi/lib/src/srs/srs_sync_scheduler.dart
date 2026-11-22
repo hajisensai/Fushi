@@ -465,6 +465,18 @@ class SrsSyncScheduler {
         );
       }
     }
+    // 清 v3.0.x 写入者目录没做成的（[SrsSync2Report.legacyWriterErrors]，BUG-5017）：同理不算失败、同一个原因只记一次。
+    for (final String f in report.legacyWriterErrors) {
+      if (_loggedSkipped.add('legacy|$key|$f')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.legacyWriterSweep',
+          StateError(
+            'SRS sync could not remove a v3.0.x writer directory in $key: $f',
+          ),
+          StackTrace.current,
+        );
+      }
+    }
   }
 
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;

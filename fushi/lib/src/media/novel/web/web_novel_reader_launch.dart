@@ -223,7 +223,10 @@ Future<bool> readWebNovelPageInFushi({
     if (!confirmed || !context.mounted) return false;
 
     final WebNovelChapterContent content = await library.materialize(article);
-    final String bookKey = await library.save(
+    // 提交时在按书的锁里以最新书行为准重新并章（预览期间阅读器可能已追了新章，
+    // HBK-AUDIT-034），这一章的序号以返回的为准。
+    final ({String bookKey, int chapterIndex}) saved = await library.save(
+      page: (html: html, url: pageUrl),
       snapshot: snapshot,
       chapterIndex: ingest.index!,
       content: content,
@@ -234,7 +237,7 @@ Future<bool> readWebNovelPageInFushi({
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     if (!context.mounted) return true;
     final MediaItem item = buildCollectionReaderMediaItem(
-      bookKey: bookKey,
+      bookKey: saved.bookKey,
       title: target?.title ?? snapshot.workTitle ?? article.title,
       format: BookFormat.epub,
     );
@@ -244,7 +247,7 @@ Future<bool> readWebNovelPageInFushi({
       item: item,
       waitUntilClosed: false,
       initialBookmarkJump: Bookmark(
-        sectionIndex: ingest.index!,
+        sectionIndex: saved.chapterIndex,
         normCharOffset: 0,
         label: '',
         createdAt: DateTime.now(),

@@ -46,6 +46,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
         SourceScrapeReport,
         VideoSourceScrapeConfirmationCandidate,
         VideoSourceScrapeTaskController;
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart'
     show SourceLibraryRow;
@@ -54,6 +55,7 @@ import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_member_file.dart'
@@ -75,7 +77,6 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show hasExportablePdfContent, isPdfFile, pdfBookFilePath;
 import 'package:fushi_engine/stats/stat_facts.dart';
-import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
@@ -99,6 +100,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show CollectionSectionResolution, collectionGroupKeyForFilename;
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
@@ -179,7 +183,8 @@ abstract class _LocalLibraryHostBase
         VideoMetadataHost,
         VideoMetadataOrderingHost,
         TagSyncHost,
-        MediaLinkSyncHost {
+        MediaLinkSyncHost,
+        StreamVideoSyncHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;
@@ -205,7 +210,7 @@ abstract class _LocalLibraryHostBase
   Directory? get _localAudioStagingDir;
   Future<void> Function(LocalAudioPackageContents)? get _onLocalAudioImported;
   Directory? get _audioDatabaseRoot;
-  Future<void> Function(String displayName)? get _removeLocalAudioEntry;
+  Future<void> Function(String contentId)? get _removeLocalAudioEntry;
   String get _videoSubtitleLangCode;
   Directory? get _uploadedVideoRoot;
   Directory? get _videoCoversDirectory;
@@ -265,7 +270,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
-    Future<void> Function(String displayName)? removeLocalAudioEntry,
+    Future<void> Function(String contentId)? removeLocalAudioEntry,
     Future<bool> Function()? isProfileTransferEnabled,
     Future<String> Function()? exportActiveProfileJson,
     Future<String> Function(String json)? importProfileJson,
@@ -412,9 +417,10 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   final Directory? _audioDatabaseRoot;
 
   /// deleteLocalAudio 回调（可选；null 时 deleteLocalAudio 仅做名称校验，静默跳过删除）。
-  /// 生产传按 displayName 从 LocalAudioManager 移除条目的回调（T3.4 接线）。
+  /// 参数是要删的库的**内容身份**（HBK-AUDIT-022：不再按显示名删），回调删掉所有
+  /// 身份等于它的登记。生产传 AppModel / 服务端 `LocalAudioLibraryStore.remove`。
   @override
-  final Future<void> Function(String displayName)? _removeLocalAudioEntry;
+  final Future<void> Function(String contentId)? _removeLocalAudioEntry;
 
   // ── 视频（P4-1）──────────────────────────────────────────────────────────────
 

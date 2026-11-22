@@ -47,10 +47,11 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     switch (method) {
+      // HBK-AUDIT-028：快照的组装、裁剪、折叠与 JSON 编 / 解码都在 host 服务的
+      // 后台所有者里做（app 里 host 与 UI 同一个 isolate），这里只搬字节。
       case 'GET':
-        final AggregateSnapshot snapshot = await svc.getAggregateSnapshot();
         return shelf.Response.ok(
-          jsonEncode(snapshot.toJson()),
+          await svc.getAggregateBody(),
           // charset=utf-8 必带：快照里的书名/标题/义项含 CJK，client 用
           // package:http `.body` 默认按 latin1 解码会乱码（同 _jsonResponse）。
           headers: <String, String>{
@@ -58,11 +59,15 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
           },
         );
       case 'PUT':
-        final Map<String, dynamic>? json = await readJsonObjectBody(request);
-        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
-        // fromJson 容错：未知高版本 / 缺字段 / 坏行降级为空或跳过，绝不抛。
-        final AggregateSnapshot snapshot = AggregateSnapshot.fromJson(json);
-        await svc.applyAggregateSnapshot(snapshot);
+        final Uint8List body = await readBoundedRequestBody(
+          request.read(),
+          declaredLength: request.contentLength,
+          maxBytes: kInterconnectJsonBodyMaxBytes,
+        );
+        // 非法 UTF-8 / JSON、顶层不是 object（含空体）→ false，什么都没写。
+        if (!await svc.applyAggregateBody(body)) {
+          return shelf.Response(400, body: 'Invalid JSON');
+        }
         return shelf.Response(200);
       default:
         return shelf.Response(405);

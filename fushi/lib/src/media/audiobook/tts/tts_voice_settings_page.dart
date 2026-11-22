@@ -26,6 +26,7 @@ import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:just_audio/just_audio.dart';
@@ -73,6 +74,22 @@ const Set<String> _kReferenceAudioExtensions = <String>{
   'ogg',
   'm4a',
 };
+
+/// 把 [TtsProviderDescriptor.paramsForPickedOption] 的结果并进预设参数 [params]：
+/// 值为 null 的键删掉，其余覆盖写入。
+void ttsApplyPickedOptionParams(
+  Map<String, String> params,
+  Map<String, String?> picked,
+) {
+  for (final MapEntry<String, String?> e in picked.entries) {
+    final String? value = e.value;
+    if (value == null) {
+      params.remove(e.key);
+    } else {
+      params[e.key] = value;
+    }
+  }
+}
 
 /// 服务地址是不是本机回环地址：是的话服务端看得到本机文件，参考音频可以直接
 /// 在本机选；局域网 / 远端服务只能填服务端那台机器上的路径。
@@ -849,8 +866,12 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       );
       final TtsCachedAudio audio = await cache.obtain(
         key,
-        (String out) =>
-            provider.synthesize(text, outputPath: out, cancel: cancel),
+        (String out) => ttsSynthesizeSplittingOnReject(
+          provider,
+          text,
+          outputPath: out,
+          cancel: cancel,
+        ),
       );
       if (!mounted || cancel.isCancelled) return;
       // 播完才释放：just_audio 的 play() 在桌面 media_kit 下发出命令即返回，
@@ -938,6 +959,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     final String? picked = await showFushiChoiceDialog<String>(
       context: context,
       title: ttsParamLabel(spec.key),
+      message: ttsParamHint(_preset.providerId, spec.key),
       selected: current,
       options: <FushiChoiceOption<String>>[
         // 非必填的声音类参数（系统语音的引擎 / 声音）可以不选：空 = 引擎默认行为。
@@ -959,18 +981,25 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     );
     if (picked == null || !mounted) return;
     final Map<String, String> params = <String, String>{..._preset.params};
+    TtsVoice? chosen;
     if (picked.isEmpty) {
       params
         ..remove(spec.key)
         ..remove('${spec.key}$_kVoiceNameSuffix');
     } else {
-      final TtsVoice chosen = sorted.firstWhere((TtsVoice v) => v.id == picked);
+      final TtsVoice option = sorted.firstWhere((TtsVoice v) => v.id == picked);
+      chosen = option;
       // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
       params[spec.key] = picked;
-      params['${spec.key}$_kVoiceNameSuffix'] = chosen.displayName;
+      params['${spec.key}$_kVoiceNameSuffix'] = option.displayName;
       // 声音带语言（Edge / Azure / 系统语音等）：试听文本换成该语言的示例句。
-      if (chosen.locale.isNotEmpty) _followTestLanguage(chosen.locale);
+      if (option.locale.isNotEmpty) _followTestLanguage(option.locale);
     }
+    // 引擎要一并快照的服务端属性（Unsloth Studio 声音的文字稿 / 参考语言，进缓存键）。
+    ttsApplyPickedOptionParams(
+      params,
+      descriptor.paramsForPickedOption(spec.key, chosen),
+    );
     // 系统语音的声音属于某个引擎：换了引擎，旧引擎的声音名在新引擎里没有意义。
     if (_preset.providerId == SystemTtsDescriptor.providerId &&
         spec.key == SystemTtsDescriptor.engineKey &&
@@ -1065,6 +1094,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     final String? picked = await showFushiChoiceDialog<String>(
       context: context,
       title: ttsParamLabel(spec.key),
+      message: ttsParamHint(_preset.providerId, spec.key),
       selected: current,
       options: <FushiChoiceOption<String>>[
         for (final String c in spec.choices)
@@ -1463,6 +1493,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           key: ValueKey<String>('tts-voice-param-${spec.key}'),
           child: AdaptiveSettingsRow(
             title: label,
+            // 选择类参数没有输入框可挂说明：说明放副标题（声音类的副标题是当前值，
+            // 说明在选择对话框里）。
+            subtitle: ttsParamHint(_preset.providerId, spec.key),
+            subtitleMaxLines: 3,
             onTap: () => unawaited(_pickChoice(spec)),
             trailing: Text(
               ttsChoiceLabel(

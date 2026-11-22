@@ -1,6 +1,7 @@
 //! 卡片浏览与 AnkiConnect 兼容层的读命令的新代实现（协议 3 `store/browse.rs` 的 11 个 op：`browse_query` /
 //! `browse_rows` / `browse_ids` / `browse_targets` / `browse_close` / `browse_stats` / `browse_counts` /
-//! `browse_sources` / `anki_find` / `anki_dupes` / `anki_tags`）。**还没接分发器**（规划 §2.2 S1）。
+//! `browse_sources` / `anki_find` / `anki_dupes` / `anki_tags`）。已接分发器（`dispatch.rs`「浏览会话」一节：读连接上
+//! 跑，会话表是 `G4Core` 的 `browse`）。
 //!
 //! 会话、搜索语料、筛选、排序、成行、出处分组、AnkiConnect 的查找 / 查重 / 标签只有一份实现——协议 3 的
 //! [crate::store::browse]；那里把「从哪读」抽成了 [Source]，这里只给新代的读法（[G4]）与会话的失效判据。结果的 JSON
@@ -291,7 +292,8 @@ fn edits_with(
     Ok(())
 }
 
-/// 新代的浏览会话表：一个打开的库文件一份（命令层持有，接线时放在它自己的锁里）。会话按集合号分。
+/// 新代的浏览会话表：一个打开的库文件一份（命令层持有：`kernel.rs` `G4Core` 的 `browse`，在它自己的锁里）。会话按
+/// 集合号分。
 #[derive(Default)]
 pub struct Browse {
     sessions: Sessions,
@@ -435,8 +437,15 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
     };
     if let Some(Value::Array(types)) = obj.get_mut("types") {
         for t in types.iter_mut() {
-            if let Some(id) = t.get_mut("id") {
-                canon_str(id)?;
+            for k in ["id", "sort"] {
+                if let Some(id) = t.get_mut(k) {
+                    canon_str(id)?;
+                }
+            }
+            if let Some(Value::Array(xs)) = t.get_mut("preview") {
+                for x in xs.iter_mut() {
+                    canon_str(x)?;
+                }
             }
             for k in ["fields", "tpls"] {
                 if let Some(Value::Array(xs)) = t.get_mut(k) {

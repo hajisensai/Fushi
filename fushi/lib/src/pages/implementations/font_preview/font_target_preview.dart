@@ -5,6 +5,7 @@ import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -74,7 +75,7 @@ bool fontTargetUsesFirstFontOnly(FontTarget target) => switch (target) {
 };
 
 /// 各用途的实时样张：照着真实表面的形态画一块缩样，用该用途**实际生效**的字体链
-/// 渲染日文。用途与真实消费端一一对应（[FontTarget] 穷尽 switch，新增用途编译报错）。
+/// 渲染 [script] 文种的样文（默认日文；字体库页跟随样张工具栏所选文种）。用途与真实消费端一一对应（[FontTarget] 穷尽 switch，新增用途编译报错）。
 ///
 /// 全部是 Flutter 绘制，不起 WebView：字体库页要随勾选、排序即时刷新，WebView 的
 /// 字体注入（词典要把整个字体文件内联成 data: URL）重得多，而字形本身两边一致。
@@ -84,10 +85,14 @@ class FontTargetPreview extends StatelessWidget {
     required this.families,
     this.subtitleStyle = VideoSubtitleStyle.defaults,
     this.sampleText,
+    this.script = FontSampleScript.japanese,
     super.key,
   });
 
   final FontTarget target;
+
+  /// 样文文种：决定写死的内容文字，以及缺字回退到哪套系统字体。
+  final FontSampleScript script;
 
   /// [effectiveFontTargetFamilies] 的结果；空 = 该用途没配字体，走系统默认。
   final List<String> families;
@@ -95,7 +100,7 @@ class FontTargetPreview extends StatelessWidget {
   /// 视频字幕样张用的外观（字色 / 字重 / 阴影 / 底板），默认值同播放器。
   final VideoSubtitleStyle subtitleStyle;
 
-  /// 覆盖默认日文样张（系统字体浏览页允许用户输入自己的样字）。
+  /// 覆盖默认样张（系统字体浏览页允许用户输入自己的样字）。
   final String? sampleText;
 
   @override
@@ -120,20 +125,31 @@ class FontTargetPreview extends StatelessWidget {
           child: KeyedSubtree(
             key: ValueKey<String>('font-target-preview-${target.name}'),
             child: switch (target) {
-              FontTarget.appUi => _AppUiPreview(families: families),
+              FontTarget.appUi => _AppUiPreview(
+                families: families,
+                script: script,
+              ),
               FontTarget.body => _BodyPreview(
                 families: families,
+                script: script,
                 sampleText: sampleText,
               ),
-              FontTarget.dictionary ||
-              FontTarget.srsCard => _DictionaryPreview(families: families),
+              FontTarget.dictionary || FontTarget.srsCard => _DictionaryPreview(
+                families: families,
+                script: script,
+              ),
               FontTarget.videoSubtitle => _SubtitlePreview(
                 families: families,
+                script: script,
                 style: subtitleStyle,
                 sampleText: sampleText,
               ),
-              FontTarget.gameLookup || FontTarget.floatingLyric =>
-                _GameOverlayPreview(families: families, sampleText: sampleText),
+              FontTarget.gameLookup ||
+              FontTarget.floatingLyric => _GameOverlayPreview(
+                families: families,
+                script: script,
+                sampleText: sampleText,
+              ),
             },
           ),
         ),
@@ -147,14 +163,17 @@ class FontTargetPreview extends StatelessWidget {
   }
 }
 
-/// 内容（日文）文字的样式：主字体 = 链首，回退 = 链余下 + 平台日文字体。
+/// 内容文字的样式：主字体 = 链首，回退 = 链余下 + 该文种的平台字体
+/// （日文 → 日文字体、简 / 繁中文 → 对应中文字体），与真实消费端按内容语言选回退
+/// 同一口径。
 TextStyle _contentStyle(
   TextStyle base,
-  List<String> families, {
+  List<String> families,
+  FontSampleScript script, {
   CjkFontStyle cjkStyle = CjkFontStyle.sansSerif,
 }) {
   final List<String> chain = contentFontFamilies(
-    languageTag: 'ja',
+    languageTag: fontSampleLanguageTag(script),
     platform: defaultTargetPlatform,
     style: cjkStyle,
     customFamilies: families,
@@ -166,15 +185,17 @@ TextStyle _contentStyle(
 }
 
 class _AppUiPreview extends StatelessWidget {
-  const _AppUiPreview({required this.families});
+  const _AppUiPreview({required this.families, required this.script});
 
   final List<String> families;
+  final FontSampleScript script;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FontTargetSampleTexts samples = fontTargetSampleTexts(script);
     final List<String> chain = families.isEmpty
         ? const <String>[]
         : appUiFontChain(
@@ -202,7 +223,7 @@ class _AppUiPreview extends StatelessWidget {
               ),
               alignment: Alignment.center,
               child: Text(
-                '猫',
+                samples.coverGlyph,
                 style: ui(
                   theme.textTheme.titleLarge,
                 ).copyWith(color: fushiNeutralSecondaryForeground(context)),
@@ -221,7 +242,7 @@ class _AppUiPreview extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '吾輩は猫である',
+                    samples.bookTitle,
                     style: ui(theme.textTheme.bodyMedium),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -275,9 +296,14 @@ const List<(String, String?)> kJaFontRubySample = <(String, String?)>[
 ];
 
 class _BodyPreview extends StatefulWidget {
-  const _BodyPreview({required this.families, this.sampleText});
+  const _BodyPreview({
+    required this.families,
+    required this.script,
+    this.sampleText,
+  });
 
   final List<String> families;
+  final FontSampleScript script;
   final String? sampleText;
 
   @override
@@ -299,15 +325,22 @@ class _BodyPreviewState extends State<_BodyPreview> {
         fontWeight: FontWeight.w400,
       ),
       widget.families,
+      widget.script,
       cjkStyle: CjkFontStyle.serif,
     );
     final TextStyle ruby = body.copyWith(
       fontSize: (body.fontSize ?? 16) * 0.5,
       height: 1,
     );
-    final List<(String, String?)> segments = widget.sampleText == null
+    // 只有日文样张带振假名；其余文种是纯正文。
+    final String? override = widget.sampleText;
+    final List<(String, String?)> segments = override != null
+        ? <(String, String?)>[(override, null)]
+        : widget.script == FontSampleScript.japanese
         ? kJaFontRubySample
-        : <(String, String?)>[(widget.sampleText!, null)];
+        : <(String, String?)>[
+            (fontTargetSampleTexts(widget.script).bodyText, null),
+          ];
     return ColoredBox(
       color: tokens.surfaces.card,
       child: Padding(
@@ -501,17 +534,19 @@ class FontVerticalSpecimen extends StatelessWidget {
 }
 
 class _DictionaryPreview extends StatelessWidget {
-  const _DictionaryPreview({required this.families});
+  const _DictionaryPreview({required this.families, required this.script});
 
   final List<String> families;
+  final FontSampleScript script;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FontTargetSampleTexts samples = fontTargetSampleTexts(script);
     TextStyle content(TextStyle? style) =>
-        _contentStyle(style ?? const TextStyle(), families);
+        _contentStyle(style ?? const TextStyle(), families, script);
     return ColoredBox(
       color: tokens.surfaces.card,
       child: Padding(
@@ -520,7 +555,7 @@ class _DictionaryPreview extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'けんとう',
+              samples.dictionaryReading,
               style: content(
                 theme.textTheme.bodySmall,
               ).copyWith(color: scheme.onSurfaceVariant),
@@ -528,7 +563,10 @@ class _DictionaryPreview extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                Text('見当', style: content(theme.textTheme.headlineSmall)),
+                Text(
+                  samples.dictionaryHeadword,
+                  style: content(theme.textTheme.headlineSmall),
+                ),
                 SizedBox(width: tokens.spacing.gap),
                 Container(
                   padding: EdgeInsets.symmetric(
@@ -541,7 +579,7 @@ class _DictionaryPreview extends StatelessWidget {
                     borderRadius: tokens.radii.chipRadius,
                   ),
                   child: Text(
-                    '名詞',
+                    samples.dictionaryPartOfSpeech,
                     style: content(theme.textTheme.labelSmall).copyWith(
                       color: fushiNeutralTagColors(context).foreground,
                     ),
@@ -551,8 +589,7 @@ class _DictionaryPreview extends StatelessWidget {
             ),
             SizedBox(height: tokens.spacing.gap),
             Text(
-              '① 大体の方向や位置。「駅の見当がつかない」\n'
-              '② おおよその予想。見込み。「見当違い」',
+              samples.dictionaryDefinitions,
               style: content(
                 theme.textTheme.bodyMedium,
               ).copyWith(color: scheme.onSurface, height: 1.6),
@@ -565,15 +602,17 @@ class _DictionaryPreview extends StatelessWidget {
 }
 
 /// 视频字幕样张：仿浏览器扩展「字体、排版与底板」的预览舞台——21:9 的暗色渐变
-/// 画面，底部一句日文字幕，字色 / 字重 / 柔和投影 / 底板照播放器当前外观。
+/// 画面，底部一句字幕，字色 / 字重 / 柔和投影 / 底板照播放器当前外观。
 class _SubtitlePreview extends StatelessWidget {
   const _SubtitlePreview({
     required this.families,
+    required this.script,
     required this.style,
     this.sampleText,
   });
 
   final List<String> families;
+  final FontSampleScript script;
   final VideoSubtitleStyle style;
   final String? sampleText;
 
@@ -620,6 +659,7 @@ class _SubtitlePreview extends StatelessWidget {
                 ),
               ),
               families,
+              script,
             );
             return Align(
               alignment: const Alignment(0, 0.82),
@@ -635,7 +675,7 @@ class _SubtitlePreview extends StatelessWidget {
                         borderRadius: tokens.radii.controlRadius,
                       ),
                 child: Text(
-                  sampleText ?? 'こんなふうに字幕が表示されます。',
+                  sampleText ?? fontTargetSampleTexts(script).subtitleLine,
                   style: text,
                   textAlign: TextAlign.center,
                   maxLines: 2,
@@ -652,9 +692,14 @@ class _SubtitlePreview extends StatelessWidget {
 
 /// 游戏文本浮窗样张：半透明暗色浮窗叠在一帧「游戏画面」上。
 class _GameOverlayPreview extends StatelessWidget {
-  const _GameOverlayPreview({required this.families, this.sampleText});
+  const _GameOverlayPreview({
+    required this.families,
+    required this.script,
+    this.sampleText,
+  });
 
   final List<String> families;
+  final FontSampleScript script;
   final String? sampleText;
 
   static const LinearGradient _sceneGradient = LinearGradient(
@@ -667,12 +712,14 @@ class _GameOverlayPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FontTargetSampleTexts samples = fontTargetSampleTexts(script);
     final TextStyle line = _contentStyle(
       (theme.textTheme.titleMedium ?? const TextStyle()).copyWith(
         color: Colors.white,
         height: 1.5,
       ),
       families,
+      script,
     );
     return AspectRatio(
       aspectRatio: 16 / 7,
@@ -692,14 +739,14 @@ class _GameOverlayPreview extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
-                  '【ミカ】',
+                  samples.gameSpeaker,
                   style: line.copyWith(
                     fontSize: (line.fontSize ?? 16) * 0.8,
                     color: Colors.white70,
                   ),
                 ),
                 Text(
-                  sampleText ?? '「……ねえ、ここで待っていてくれる？すぐ戻るから。」',
+                  sampleText ?? samples.gameLine,
                   style: line,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

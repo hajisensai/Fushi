@@ -210,7 +210,7 @@ void main() {
       // 按语义匹配而不是钉死一行字面量：BUG-2634 第二轮给它加了必填的
       // releaseWhenPayloadConsumed，调用点换行了。要的仍是「await + 原样回传」。
       final RegExp call = RegExp(
-        r'await\s+webViewKey\.currentState\?\.mineEntryByIndex\(\s*'
+        r'await\s+webViewKey\.webViewState\?\.mineEntryByIndex\(\s*'
         r'entryIndex,[\s\S]{0,900}?\)\s*\?\?',
       );
       expect(

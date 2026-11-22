@@ -80,6 +80,7 @@ Future<SrsSync2Report> srsRunLocationRound(
 }) async {
   final String dir = await srsLocationDir(store);
   if (publishDeviceInfo != null) await publishDeviceInfo(store);
+  bool rooted = false;
   final SrsSync2Report r = await srsSync2Round(
     host: store,
     location: backend.location(dir, folder: kSrs4Root),
@@ -94,9 +95,113 @@ Future<SrsSync2Report> srsRunLocationRound(
     beforeUpload: beforeUpload,
     shouldStop: shouldStop,
     onStep: onStep,
+    onLocationRoot: (SrsLocationRoot _) => rooted = true,
   );
+  // 内核 `location_root` 认过这个位置的根（新根 `v4/` 在用、旧根围栏已立）才清 v3.0.x 写入者目录；没过（协议 1
+  // 位置、需要更新、密钥不对、meta 读不到）一个不碰。
+  if (rooted && !(shouldStop?.call() ?? false)) {
+    onStep?.call('legacy_writers');
+    await srsSweepLegacyWriters(backend.store, dir, r);
+  }
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
   return r;
+}
+
+/// v3.0.x 写入者目录名：`<设备>#<化身号>`（v3.0.x 旧事件同步与它的 profile 关联写在位置目录 `fushi-srs/<dir>/`
+/// 下，协议 1 起的版本都只写 `v2/` / `v3/` / `v4/`）。
+final RegExp _kSrsLegacyWriterDir = RegExp(r'^[^#/\\]+#[0-9]+$');
+
+/// v3.0.x 写入者目录里旧事件同步（`batch-<序号>` / `snapshot-<序号>` / `cursor` / `probe`）与它的 profile 关联
+/// （`profile.json`）写的文件。
+final RegExp _kSrsLegacyWriterFile = RegExp(
+  r'^(?:(?:batch|snapshot)-[0-9]+|cursor|probe|profile\.json)$',
+);
+
+/// v3.0.x 写入者目录里放媒体的子目录（协议 1 → 3 的迁移 v3.3.0 逐个文件搬进集合根、搬一个删一个）。
+const String _kSrsLegacyWriterMedia = 'media';
+
+/// 清掉位置目录 `fushi-srs/<[dir]>/`（同名的几份都算）下 v3.0.x 写入者目录里的死文件（BUG-5017）。只在内核认过这个
+/// 位置的根之后调（[srsRunLocationRound]）：新根 `v4/` 在用、旧根 `v3/` 与 `v2/` 都立着让旧版本停下的围栏。
+///
+/// 为什么这时删是安全的：
+/// - 能读这些文件的只有 v3.0.x。旧事件同步早已删掉（守卫 `fushi/test/build/srs_sync_v1_removed_guard_test.dart`），协议 1 起的版本从不
+///   读 `batch-*` / `snapshot-*` / `cursor` / `probe`，也从不往写入者目录写（profile 说明文件写在 `v2|v3|v4/devices/`）；
+///   v3.0.x 客户端所有者已拍板放弃（BUG-5017）。v3.0.x 写下的事件从来没有经文件迁进过 sync2（v3.3.0 的迁移只搬
+///   `media/`），所以这些文件里也没有哪个受支持的版本将来还能捡回来的东西。
+/// - `profile.json` 唯一的读者是 [srsListRemoteProfiles] 的最低优先级回退：这个位置的写入者已经在 `v3/devices/` /
+///   `v4/devices/` 下，删了只是不再把 v3.0.x 时代的旧名字 / 旧笔记数算进候选。
+/// - `media/` 是 v3.3.0 迁移还没搬完的媒体（现版本不读，但那是用户文件，没有证据说明它在集合里有副本）：**不删**，
+///   目录跟着留下；只有 `media/` 不在或为空时整个目录删掉。
+/// - 名字认不出的文件一律不删（目录也就留着）；不是 `<设备>#<化身号>` 形状的目录、`v2` / `v3` / `v4` 一个不碰。
+///
+/// 删掉的目录记进 [SrsSync2Report.legacyWritersRemoved]；列 / 删失败记进 [SrsSync2Report.legacyWriterErrors]（不算这一轮
+/// 失败，下一轮再清）。幂等：清完之后每轮只多列一次位置目录。
+Future<void> srsSweepLegacyWriters(
+  SyncAssetStore store,
+  String dir,
+  SrsSync2Report report,
+) async {
+  final List<AssetEntry> locations;
+  try {
+    final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+    locations = <AssetEntry>[
+      for (final AssetEntry e in await store.listChildren(ns))
+        if (e.isFolder && e.name == dir) e,
+    ];
+  } on Object catch (e) {
+    report.legacyWriterErrors.add('$dir: $e');
+    return;
+  }
+  for (final AssetEntry location in locations) {
+    final List<AssetEntry> writers;
+    try {
+      writers = <AssetEntry>[
+        for (final AssetEntry e in await store.listChildren(location.id))
+          if (e.isFolder && _kSrsLegacyWriterDir.hasMatch(e.name)) e,
+      ];
+    } on Object catch (e) {
+      report.legacyWriterErrors.add('$dir: $e');
+      continue;
+    }
+    for (final AssetEntry writer in writers) {
+      try {
+        await _srsSweepLegacyWriter(store, writer, report);
+      } on Object catch (e) {
+        report.legacyWriterErrors.add('${writer.name}: $e');
+      }
+    }
+  }
+}
+
+/// 清一个 v3.0.x 写入者目录（[srsSweepLegacyWriters]）：里面只有死文件与空的 `media/` 就整个删，否则只删死文件。
+Future<void> _srsSweepLegacyWriter(
+  SyncAssetStore store,
+  AssetEntry writer,
+  SrsSync2Report report,
+) async {
+  final List<AssetEntry> dead = <AssetEntry>[];
+  bool keep = false;
+  for (final AssetEntry e in await store.listChildren(writer.id)) {
+    if (e.isFolder && e.name == _kSrsLegacyWriterMedia) {
+      if ((await store.listChildren(e.id)).isNotEmpty) keep = true;
+    } else if (!e.isFolder && _kSrsLegacyWriterFile.hasMatch(e.name)) {
+      dead.add(e);
+    } else {
+      keep = true;
+    }
+  }
+  if (!keep) {
+    await store.deleteAsset(writer.id, isFolder: true);
+    report.legacyWritersRemoved.add(writer.name);
+    return;
+  }
+  for (final AssetEntry f in dead) {
+    try {
+      await store.deleteAsset(f.id);
+    } on Object catch (e) {
+      report.legacyWriterErrors.add('${writer.name}/${f.name}: $e');
+    }
+  }
 }
 
 /// 一轮媒体同步：见 srs_media_sync.dart。[uploadOnly] = 发段之前只传本机的媒体（[srsSyncMedia]）。媒体在哪个根由

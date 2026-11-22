@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_engine/models/local_audio_content_id.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -24,7 +25,11 @@ FushiDatabase _testDb() {
 /// [AppModel.importSyncedLocalAudioDb] → [LocalAudioManager.importFile] 的 BUG-779
 /// 内容校验通过。旧桩写 [1,2,3,4] 假字节现在会被 isUsableAudioSource 正确拒绝，故
 /// 同步库 fixture 改用真实最小音频库（用例意图=路径重建/双真相源/去重 不变）。
-void _writeValidAudioDb(String path, {String word = '猫'}) {
+void _writeValidAudioDb(
+  String path, {
+  String word = '猫',
+  List<int> audio = const <int>[1, 2, 3],
+}) {
   // 幂等：同名调用（如按 displayName 去重的用例会二次造同路径库）先删旧文件，
   // 复刻旧桩 writeAsBytesSync 的覆盖语义，避免在已建表的库上重复 CREATE TABLE。
   final File dbFile = File(path);
@@ -45,11 +50,7 @@ void _writeValidAudioDb(String path, {String word = '猫'}) {
     final PreparedStatement stmt = sdb.prepare(
       'INSERT INTO android (file, source, data) VALUES (?,?,?)',
     );
-    stmt.execute(<Object?>[
-      'neko.mp3',
-      'nhk16',
-      Uint8List.fromList(<int>[1, 2, 3]),
-    ]);
+    stmt.execute(<Object?>['neko.mp3', 'nhk16', Uint8List.fromList(audio)]);
     stmt.dispose();
   } finally {
     sdb.dispose();
@@ -97,7 +98,9 @@ void main() {
       ..wireLocalAudioForTesting(
         prefsRepo: prefs,
         databaseDirectory: libraryDir,
-      );
+      )
+      // setAudioSourceConfigs 写 / 清本地音频删除墓碑（HBK-AUDIT-022）。
+      ..wireDatabaseForTesting(db);
   });
 
   tearDown(() async {
@@ -406,4 +409,139 @@ void main() {
     );
     expect(await appModel.normalizeLocalAudioLibraries(), 0, reason: '幂等');
   });
+
+  // ── HBK-AUDIT-001 / 022：身份覆盖真实录音；删除只认内容身份 ──────────────
+
+  /// 导入一份本地库并登记成音频源，返回登记条目。
+  Future<LocalAudioDbEntry> addLibrary(
+    String file,
+    String label, {
+    List<int> audio = const <int>[1, 2, 3],
+  }) async {
+    final File f = File(p.join(stagingDir.path, file));
+    _writeValidAudioDb(f.path, audio: audio);
+    final LocalAudioDbEntry e = await appModel.importLocalAudioDbFile(
+      f.path,
+      displayName: label,
+    );
+    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+      ...appModel.audioSourceConfigs,
+      AudioSourceConfig.localAudio(label: label, path: e.path, enabled: true),
+    ]);
+    return appModel.localAudioDbs.singleWhere(
+      (LocalAudioDbEntry x) => x.path == e.path,
+    );
+  }
+
+  test('HBK-AUDIT-001: normalizeLocalAudioLibraries keeps libraries whose '
+      'metadata matches but whose recordings differ', () async {
+    final LocalAudioDbEntry a = await addLibrary('a.db', 'NHK');
+    final LocalAudioDbEntry b = await addLibrary(
+      'b.db',
+      'NHK other take',
+      audio: <int>[7, 7, 7],
+    );
+    expect(a.contentId, isNot(b.contentId));
+
+    expect(await appModel.normalizeLocalAudioLibraries(), 0);
+    expect(
+      localConfigs().map((AudioSourceConfig s) => s.displayLabel).toList(),
+      <String>['NHK', 'NHK other take'],
+    );
+    expect(File(a.path).existsSync(), isTrue);
+    expect(File(b.path).existsSync(), isTrue, reason: '不同录音不能被当重复删掉');
+  });
+
+  test('HBK-AUDIT-001: a pulled library with identical metadata but other '
+      'recordings is registered, not skipped as already present', () async {
+    await appModel.importSyncedLocalAudioDb(stagedContents(displayName: 'NHK'));
+    final File other = File(p.join(stagingDir.path, 'other.db'));
+    _writeValidAudioDb(other.path, audio: <int>[8, 8, 8]);
+    await appModel.importSyncedLocalAudioDb(
+      LocalAudioPackageContents(
+        dbFile: other,
+        displayName: 'android.db',
+        enabled: true,
+        sources: const <LocalAudioSourcePref>[],
+      ),
+    );
+    expect(
+      localConfigs().map((AudioSourceConfig s) => s.displayLabel).toList(),
+      <String>['NHK', 'android.db'],
+    );
+  });
+
+  test('HBK-AUDIT-022: delete-everywhere writes the tombstone under the '
+      'content identity, never the display name', () async {
+    final LocalAudioDbEntry keep = await addLibrary('a.db', 'Japanese audio');
+    final LocalAudioDbEntry gone = await addLibrary(
+      'b.db',
+      'android.db',
+      audio: <int>[5, 5, 5],
+    );
+    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+      for (final AudioSourceConfig s in appModel.audioSourceConfigs)
+        if (s.path != gone.path) s,
+    ], scope: DeleteScope.syncEverywhere);
+    final List<SyncDeletionTombstoneRow> rows = await db
+        .getSyncDeletionTombstonesOfType(SyncTombstoneKind.localaudio.dbValue);
+    expect(
+      rows.map((SyncDeletionTombstoneRow r) => r.itemKey).toList(),
+      <String>[gone.contentId!],
+    );
+    expect(isLocalAudioContentId(gone.contentId), isTrue);
+
+    // 删了又加回同一份库：按身份清掉墓碑。
+    final File again = File(p.join(stagingDir.path, 'b2.db'));
+    _writeValidAudioDb(again.path, audio: <int>[5, 5, 5]);
+    final LocalAudioDbEntry back = await appModel.importLocalAudioDbFile(
+      again.path,
+      displayName: 'renamed',
+    );
+    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+      ...appModel.audioSourceConfigs,
+      AudioSourceConfig.localAudio(
+        label: 'renamed',
+        path: back.path,
+        enabled: true,
+      ),
+    ]);
+    expect(
+      await db.getSyncDeletionTombstonesOfType(
+        SyncTombstoneKind.localaudio.dbValue,
+      ),
+      isEmpty,
+      reason: '同一份库换了名字加回来，墓碑也要清',
+    );
+    expect(File(keep.path).existsSync(), isTrue);
+  });
+
+  test(
+    'HBK-AUDIT-022: a peer deletion removes the library with that content '
+    'identity, not the local library that happens to share its name',
+    () async {
+      // 对端把内容 X 叫 android.db；本机 X 叫 Japanese audio，另一份内容 Y 恰好叫 android.db。
+      final LocalAudioDbEntry x = await addLibrary('x.db', 'Japanese audio');
+      final LocalAudioDbEntry y = await addLibrary(
+        'y.db',
+        'android.db',
+        audio: <int>[3, 3, 3],
+      );
+
+      expect(
+        await appModel.removeLocalAudioByContentId('android.db'),
+        0,
+        reason: '显示名不是身份：旧版本按名发来的删除不删任何库',
+      );
+      expect(appModel.localAudioDbs, hasLength(2));
+
+      expect(await appModel.removeLocalAudioByContentId(x.contentId!), 1);
+      expect(
+        appModel.localAudioDbs.map((LocalAudioDbEntry e) => e.displayName),
+        <String>['android.db'],
+      );
+      expect(File(x.path).existsSync(), isFalse);
+      expect(File(y.path).existsSync(), isTrue, reason: '同名的另一份库不能被删');
+    },
+  );
 }

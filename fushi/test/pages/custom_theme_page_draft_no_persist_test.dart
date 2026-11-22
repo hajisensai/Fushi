@@ -35,6 +35,12 @@ class _RecordingAppModel extends AppModel {
   final List<CustomThemeEntry> upserts = <CustomThemeEntry>[];
   final List<String> themeKeyWrites = <String>[];
 
+  /// 经用户选主题入口 [pickAppThemeKey] 的写入（色卡点选、编辑页「应用」）。
+  final List<String> themePicks = <String>[];
+
+  /// 当前覆盖主题配色的取色来源（测试可改）。
+  ThemeAccentOverrideSource? overrideSource;
+
   @override
   List<CustomThemeEntry> get customThemes =>
       List<CustomThemeEntry>.unmodifiable(_themes);
@@ -83,6 +89,17 @@ class _RecordingAppModel extends AppModel {
     themeKeyWrites.add(key);
     _themeKey = key;
   }
+
+  @override
+  Future<void> pickAppThemeKey(String key) async {
+    themePicks.add(key);
+    _themeKey = key;
+    overrideSource = null;
+    notifyListeners();
+  }
+
+  @override
+  ThemeAccentOverrideSource? get activeAccentOverrideSource => overrideSource;
 
   @override
   Future<void> setAudioHighlightColor(Color? color) async {}
@@ -317,7 +334,9 @@ void main() {
         expect(saved.bgColor, isNull);
         expect(saved.id, isNot(_existing.id));
         expect(appModel.customThemes, hasLength(2));
-        expect(appModel.themeKeyWrites, <String>['custom-theme:${saved.id}']);
+        // 「应用」走用户选主题入口（会关掉取色覆盖），不走只换键的 setAppThemeKey。
+        expect(appModel.themePicks, <String>['custom-theme:${saved.id}']);
+        expect(appModel.themeKeyWrites, isEmpty);
       },
     );
 
@@ -335,6 +354,7 @@ void main() {
       expect(appModel.upserts, isEmpty);
       expect(appModel.customThemes, isEmpty);
       expect(appModel.themeKeyWrites, isEmpty);
+      expect(appModel.themePicks, isEmpty);
     });
 
     testWidgets(
@@ -387,5 +407,81 @@ void main() {
         expect(appModel.customThemes, hasLength(1));
       },
     );
+  });
+
+  // pr3775（拍板台「做」）：取色覆盖主题时，主题选择行与编辑页都说明配色来源；
+  // 色卡点选 / 编辑页「应用」都走用户选主题的唯一入口 pickAppThemeKey。
+  group('accent override hint + user pick entry (pr3775)', () {
+    testWidgets('swatch row: override subtitle, tap picks through '
+        'pickAppThemeKey, subtitle follows the model live', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingAppModel appModel = _RecordingAppModel(
+        themes: <CustomThemeEntry>[_existing],
+      )..overrideSource = ThemeAccentOverrideSource.pageBackdrop;
+      await tester.pumpWidget(_swatchRowHost(appModel));
+      await tester.pumpAndSettle();
+      expect(find.text(t.theme_accent_override_page_backdrop), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('theme-preset-m3-blue')),
+      );
+      await tester.pumpAndSettle();
+      expect(appModel.themePicks, <String>['m3-blue']);
+      expect(appModel.themeKeyWrites, isEmpty);
+      expect(find.text(t.theme_accent_override_page_backdrop), findsNothing);
+      expect(find.text(t.custom_theme_long_press_hint), findsOneWidget);
+
+      // 取色是异步生效的：模型一通知，副标题就要跟上，不靠设置页 refresh。
+      appModel
+        ..overrideSource = ThemeAccentOverrideSource.appIcon
+        ..notifyListeners();
+      await tester.pump();
+      expect(find.text(t.theme_accent_override_app_icon), findsOneWidget);
+    });
+
+    testWidgets(
+      'editor shows the override note above Apply while an override is '
+      'active',
+      (WidgetTester tester) async {
+        final _RecordingAppModel appModel = _RecordingAppModel()
+          ..overrideSource = ThemeAccentOverrideSource.appIcon;
+        await tester.pumpWidget(_host(appModel, const CustomThemePage()));
+        await tester.pumpAndSettle();
+        final Finder note = find.byKey(
+          const ValueKey<String>('custom-theme-accent-override-note'),
+        );
+        await tester.scrollUntilVisible(
+          note,
+          300,
+          scrollable: _verticalScrollable,
+        );
+        expect(note, findsOneWidget);
+        expect(
+          find.descendant(
+            of: note,
+            matching: find.text(t.theme_accent_override_app_icon),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('editor shows no override note without an override', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingAppModel plain = _RecordingAppModel();
+      await tester.pumpWidget(_host(plain, const CustomThemePage()));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey<String>('custom-theme-apply')),
+        300,
+        scrollable: _verticalScrollable,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('custom-theme-accent-override-note')),
+        findsNothing,
+      );
+    });
   });
 }

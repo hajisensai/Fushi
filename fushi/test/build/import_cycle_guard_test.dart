@@ -97,9 +97,24 @@ import 'package:test/test.dart';
 /// 换代删掉的预演区块 `srs_gen4_rehearsal_section`。逐个核过：没有底层（models / utils / storage / 服务层）
 /// 文件因此被接进环，与 2026-11-05 / 11-15 那几次「新增的是本就读 AppModel 的 UI 文件」同理，上限按实测调到 625。
 ///
+/// 2026-11-21 develop 实测 627（+5 −3）。不调上限，拆掉三条把值类型 / 窄能力接进环的边：
+/// 网页视频会话（`web_video_session`）只为暖机两步 import 读 AppModel 的 `WebAdblockService`，
+/// 把会话与选轨 `web_video_track_selection` 拖进环——改收叶子接口 `WebAdblockWarmup`
+/// （`web_adblock_wiring.dart`，服务实现它）；扫描临时目录清理 `source_scan_temp` 只用
+/// 扫描占用表，却 import 了自动扫描调度器 `source_auto_scan`（它反向 import 扫描器）——占用表与
+/// 进度挪到叶子 `source_scan_activity.dart`；互联下载的任务映射只用值类型 `BackgroundTask`，
+/// 却 import 了后台任务入口 UI——值类型挪到叶子 `background_task.dart`。最大环降到 623，剩下
+/// 新进环的 1 个是本就读 AppModel 的音乐 UI `music_listen_from_video`，上限随之下调到 623。
+///
+/// 2026-11-22 develop 实测 624：共用查词宿主 `shared_lookup_popup_host`（#4036）import 弹窗栈
+/// controller，而 controller 为了手柄四个动作直接持 `GlobalKey<DictionaryPopupWebViewState>`、
+/// import 读 AppModel 的 `dictionary_popup_webview`（逻辑对象反向依赖 UI）。反转依赖：窄接口
+/// `DictionaryPopupRealmState` 放叶子 `dictionary_popup_realm.dart`，WebView State 实现它，
+/// controller 只持接口；controller 与宿主一起出环，最大环 622，上限下调到 622。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 625;
+const int kMaxCycleFiles = 622;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -119,6 +134,11 @@ const List<String> kLeafEntries = <String>[
   'lib/src/utils/misc/platform_utils.dart',
   'lib/src/utils/components/fushi_material_components.dart',
   'lib/src/utils/adaptive/adaptive_widgets.dart',
+  // 查词弹窗栈 controller 是纯逻辑对象，只经叶子接口 DictionaryPopupRealmState 持
+  // WebView 层；直接 import dictionary_popup_webview.dart（读 AppModel）会把它和
+  // 共用查词宿主 shared_lookup_popup_host 一起拖回大环（2026-11-22 实测 624）。
+  'lib/src/pages/implementations/dictionary_popup_controller.dart',
+  'lib/src/pages/implementations/dictionary_popup_realm.dart',
 ];
 
 const List<String> kBarrels = <String>[

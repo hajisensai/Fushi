@@ -17,7 +17,8 @@ const String kWebBrowserScrollHandler = 'fushiBrowserScroll';
 /// 滚动停顿超过它（毫秒）就重新允许上报（见 [kWebBrowserScrollScript]）。
 const int kWebBrowserScrollRunGapMs = 250;
 
-/// 全屏变化：`fushiBrowserFullscreen(bool)`。
+/// 全屏变化：`fushiBrowserFullscreen(on, fit, document, documentStart)`，参数含义见
+/// [webBrowserFullscreenScript] 与 `WebBrowserPageFullscreenReport.fromArgs`。
 const String kWebBrowserFullscreenHandler = 'fushiBrowserFullscreen';
 
 /// 桌面右键命中：`fushiBrowserContextMenu({link, linkText, image, x, y})`。
@@ -78,8 +79,16 @@ const String kWebBrowserScrollScript =
 })();
 ''';
 
-/// 全屏脚本：上报全屏变化 `fushiBrowserFullscreen(on, fit)`，fit 是全屏视频的方向
-/// （`WebBrowserFullscreenFit` 的值名）。
+/// 全屏脚本：上报全屏变化 `fushiBrowserFullscreen(on, fit, document, documentStart)`，
+/// fit 是全屏视频的方向（`WebBrowserFullscreenFit` 的值名）。
+///
+/// 文档代际：伪全屏状态活在页面 JS 里，整页导航后旧页面连同状态一起消失，没人会再报
+/// 「退出」。所以顶层文档每次初始化（含从往返缓存恢复）都生成一个新代际号 document，
+/// 立即报一次 `(false, '', document, true)`（桥还没就绪时等
+/// `flutterInAppWebViewPlatformReady` 再补报，同号重复无害）；之后每条上报都带这个号。
+/// Dart 侧见到新代际就收尾标签页全屏，并拒收旧代际的迟到上报
+/// （`WebBrowserFullscreenDocumentGate`）。子框架不参与代际（document 为 null）。
+/// 页面离开（pagehide）时先退掉自己的伪全屏。
 ///
 /// [takeover] 为 true（「Fushi 接管网页全屏」，默认）时还会把网站的全屏请求截下来，
 /// 换成**页内伪全屏**：被请求的元素（`<video>` 自己请求时取包住它的播放器容器）
@@ -102,6 +111,11 @@ String webBrowserFullscreenScript({required bool takeover}) =>
   var ANCESTOR = 'data-fushi-page-fullscreen-ancestor';
   var ROOT = 'data-fushi-page-fullscreen-root';
   var pseudo = null, fitSent = '';
+  var TOP = (function(){ try { return window.top === window; } catch (_) { return false; } })();
+  function newDoc(){
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  }
+  var DOC = TOP ? newDoc() : null;
   var DP = Document.prototype;
   function origGet(name){
     var d = Object.getOwnPropertyDescriptor(DP, name);
@@ -112,10 +126,17 @@ String webBrowserFullscreenScript({required bool takeover}) =>
   function call(get){
     try { return get ? get.call(document) : null; } catch (_) { return null; }
   }
-  function send(on, fit){
+  function send(on, fit, start){
     var b = window.flutter_inappwebview;
-    if (b && b.callHandler) b.callHandler('$kWebBrowserFullscreenHandler', on, fit);
+    if (b && b.callHandler) b.callHandler('$kWebBrowserFullscreenHandler', on, fit, DOC, !!start);
   }
+  // 新文档（新代际）：外壳据此收尾上一页面留下的全屏（沉浸模式、方向锁）。
+  function announce(){ if (TOP) send(false, '', true); }
+  announce();
+  window.addEventListener('flutterInAppWebViewPlatformReady', announce);
+  window.addEventListener('pageshow', function(e){
+    if (e && e.persisted && TOP) { DOC = newDoc(); announce(); }
+  });
   function videoOf(el){
     if (!el) return null;
     if (el.tagName === 'VIDEO') return el;
@@ -225,6 +246,8 @@ String webBrowserFullscreenScript({required bool takeover}) =>
     document.documentElement.removeAttribute(ROOT);
     if (notify) { fire(el); report(); }
   }
+  // 页面离开（进往返缓存 / 卸载）：退掉伪全屏，从往返缓存恢复时不带着铺满的播放器回来。
+  window.addEventListener('pagehide', function(){ if (pseudo) leave(true); });
   // 伪全屏元素被网站摘掉（SPA 换页）：当作退出。
   new MutationObserver(function(){
     if (pseudo && !pseudo.isConnected) leave(true);
