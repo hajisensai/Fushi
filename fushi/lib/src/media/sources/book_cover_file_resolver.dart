@@ -23,6 +23,44 @@ List<String> _listDirEntries(String dir) {
   }
 }
 
+/// [_listDirEntries] 的异步版：书架刷新（`ReaderFushiSource._resolveCoverUrl`）
+/// 跑在 UI isolate 上，同步 `listSync` 会把整段目录枚举压在帧里（实测切页时
+/// 7 ms+），异步枚举交给 IO 线程，UI 只等结果。语义同上：不存在 / 读不了返回空。
+Future<List<String>> _listDirEntriesAsync(String dir) async {
+  final Directory d = Directory(dir);
+  if (!await d.exists()) return const <String>[];
+  try {
+    return await d
+        .list(followLinks: false)
+        .map((FileSystemEntity e) => e.path)
+        .toList();
+  } on FileSystemException {
+    return const <String>[];
+  }
+}
+
+/// [rel] 拆成逐段待匹配的路径段；空串 / 绝对路径 / 拆完为空时返回 null（跳过）。
+List<String>? _relSegments(String rel) {
+  if (rel.isEmpty || p.isAbsolute(rel)) return null;
+  final List<String> segs = p
+      .split(rel)
+      .where((String s) => s.isNotEmpty && s != '.' && s != '/')
+      .toList();
+  return segs.isEmpty ? null : segs;
+}
+
+/// 在 [children] 里找名为 [seg] 的子项：先精确大小写，再大小写不敏感。
+String? _matchSegment(List<String> children, String seg) {
+  for (final String child in children) {
+    if (p.basename(child) == seg) return child;
+  }
+  final String segLower = seg.toLowerCase();
+  for (final String child in children) {
+    if (p.basename(child).toLowerCase() == segLower) return child;
+  }
+  return null;
+}
+
 /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-612).
 ///
 /// Walks each relative candidate in [relPaths] segment by segment under
@@ -44,45 +82,51 @@ String? resolveBookCoverCaseInsensitive({
   // `listSync` 一遍同一个目录，书架上每本无封面书一次刷新要列 4 次。
   final Map<String, List<String>> listed = <String, List<String>>{};
   for (final String rel in relPaths) {
-    if (rel.isEmpty || p.isAbsolute(rel)) continue;
-    final List<String> segs = p
-        .split(rel)
-        .where((String s) => s.isNotEmpty && s != '.' && s != '/')
-        .toList();
-    if (segs.isEmpty) continue;
-    String current = extractDir;
-    bool resolvedAll = true;
+    final List<String>? segs = _relSegments(rel);
+    if (segs == null) continue;
+    String? current = extractDir;
     for (final String seg in segs) {
-      final List<String> children = listed.putIfAbsent(
-        current,
-        () => listDir(current),
-      );
-      String? match;
-      for (final String child in children) {
-        if (p.basename(child) == seg) {
-          match = child;
-          break;
-        }
-      }
-      if (match == null) {
-        final String segLower = seg.toLowerCase();
-        for (final String child in children) {
-          if (p.basename(child).toLowerCase() == segLower) {
-            match = child;
-            break;
-          }
-        }
-      }
-      if (match == null) {
-        resolvedAll = false;
-        break;
-      }
-      current = match;
+      final String dir = current!;
+      current = _matchSegment(listed.putIfAbsent(dir, () => listDir(dir)), seg);
+      if (current == null) break;
     }
-    if (resolvedAll) return current;
+    if (current != null) return current;
   }
   return null;
 }
+
+/// [resolveBookCoverCaseInsensitive] 的异步版：逐段匹配规则与「一次调用内同一
+/// 目录只列一次」完全相同（共用 [_relSegments] / [_matchSegment]），只是目录枚举
+/// [listDir] 是异步的，供 UI isolate 上的书架刷新用，不在帧里同步列目录。
+Future<String?> resolveBookCoverCaseInsensitiveAsync({
+  required String extractDir,
+  required List<String> relPaths,
+  required Future<List<String>> Function(String dir) listDir,
+}) async {
+  final Map<String, List<String>> listed = <String, List<String>>{};
+  for (final String rel in relPaths) {
+    final List<String>? segs = _relSegments(rel);
+    if (segs == null) continue;
+    String? current = extractDir;
+    for (final String seg in segs) {
+      final String dir = current!;
+      final List<String> children =
+          listed[dir] ?? (listed[dir] = await listDir(dir));
+      current = _matchSegment(children, seg);
+      if (current == null) break;
+    }
+    if (current != null) return current;
+  }
+  return null;
+}
+
+/// [resolveBookCoverFilePath] 的候选顺序：声明封面优先，再 `cover.jpg/jpeg/png`。
+List<String> _bookCoverRelCandidates(String? coverPath) => <String>[
+  if (coverPath != null && coverPath.isNotEmpty) coverPath,
+  'cover.jpg',
+  'cover.jpeg',
+  'cover.png',
+];
 
 /// Resolve a book cover to its on-disk **file path** (not a `file://` URL),
 /// reusing the exact same case-insensitive resolution the library grid uses
@@ -108,15 +152,27 @@ String? resolveBookCoverFilePath({
 }) {
   final String? resolved = resolveBookCoverCaseInsensitive(
     extractDir: extractDir,
-    relPaths: <String>[
-      if (coverPath != null && coverPath.isNotEmpty) coverPath,
-      'cover.jpg',
-      'cover.jpeg',
-      'cover.png',
-    ],
+    relPaths: _bookCoverRelCandidates(coverPath),
     listDir: _listDirEntries,
   );
   if (resolved != null && File(resolved).existsSync()) return resolved;
+  return null;
+}
+
+/// [resolveBookCoverFilePath] 的异步版，结果与同步版逐字一致（同一候选顺序、
+/// 同一逐段解析、同样只认真实文件）。UI isolate 上的调用方（书架
+/// `ReaderFushiSource._resolveCoverUrl`，本就在 async 加载里）用它：目录枚举与
+/// 存在性探测都走异步 IO，不阻塞帧。
+Future<String?> resolveBookCoverFilePathAsync({
+  required String extractDir,
+  String? coverPath,
+}) async {
+  final String? resolved = await resolveBookCoverCaseInsensitiveAsync(
+    extractDir: extractDir,
+    relPaths: _bookCoverRelCandidates(coverPath),
+    listDir: _listDirEntriesAsync,
+  );
+  if (resolved != null && await File(resolved).exists()) return resolved;
   return null;
 }
 

@@ -2,10 +2,10 @@ import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 
-/// 视频暂停句「整句扫词」纯逻辑层的行为测试（无 WebView / 无页面态 / 不依赖词典引擎）。
+/// 字幕句分词纯逻辑层的行为测试（无 WebView / 无页面态 / 不依赖词典引擎）。
 ///
 /// 生产侧默认分词器是 [JapaneseLanguage.textToWords]（需要引擎就绪），这里注入确定性
-/// 的假分词器，把「分词结果 → grapheme 下标」的折算与「游标循环推进」两条契约钉死。
+/// 的假分词器，把「分词结果 → grapheme 下标」的折算契约钉死。
 void main() {
   // 假分词器：无视输入、直接返回给定切分。形状与生产一致（按序拼接回原文）。
   SubtitleSweepTokenizer fake(List<String> parts) =>
@@ -212,146 +212,6 @@ void main() {
       );
       expect(words(tokens), <String>['あい']);
       expect(ends(tokens), <int>[2]);
-    });
-  });
-
-  group('advanceSubtitleSweepIndex', () {
-    test('前进到句尾后循环回句首', () {
-      expect(advanceSubtitleSweepIndex(0, 3, forward: true), 1);
-      expect(advanceSubtitleSweepIndex(1, 3, forward: true), 2);
-      expect(advanceSubtitleSweepIndex(2, 3, forward: true), 0);
-    });
-
-    test('后退到句首后循环回句尾', () {
-      expect(advanceSubtitleSweepIndex(0, 3, forward: false), 2);
-      expect(advanceSubtitleSweepIndex(2, 3, forward: false), 1);
-    });
-
-    test('N=1 恒停在 0（两个方向都不越界）', () {
-      expect(advanceSubtitleSweepIndex(0, 1, forward: true), 0);
-      expect(advanceSubtitleSweepIndex(0, 1, forward: false), 0);
-    });
-
-    test('N=0 恒 -1（调用方据此早退）', () {
-      expect(advanceSubtitleSweepIndex(-1, 0, forward: true), -1);
-      expect(advanceSubtitleSweepIndex(0, 0, forward: false), -1);
-    });
-
-    test('尚未开始（-1）：前进落首词、后退落末词', () {
-      expect(advanceSubtitleSweepIndex(-1, 3, forward: true), 0);
-      expect(advanceSubtitleSweepIndex(-1, 3, forward: false), 2);
-    });
-
-    test('越界下标被夹回端点，不越界', () {
-      expect(advanceSubtitleSweepIndex(5, 3, forward: true), 0);
-      expect(advanceSubtitleSweepIndex(5, 3, forward: false), 2);
-    });
-
-    test('完整走一圈回到起点（N=5）', () {
-      int i = -1;
-      final List<int> visited = <int>[];
-      for (int step = 0; step < 5; step++) {
-        i = advanceSubtitleSweepIndex(i, 5, forward: true);
-        visited.add(i);
-      }
-      expect(visited, <int>[0, 1, 2, 3, 4]);
-      expect(advanceSubtitleSweepIndex(i, 5, forward: true), 0);
-    });
-  });
-
-  group('resolveSubtitleSweepStop', () {
-    // 「私、学生です」：、 是未登记字符（overlay 不给标点 / 空白登记命中项）。
-    final List<SubtitleSweepToken> tokens = buildSubtitleSweepTokens(
-      '私、学生です',
-      tokenize: fake(const <String>['私', '、', '学生', 'です']),
-    );
-
-    test('词内有已登记字：停在该词范围内第一个已登记字', () {
-      // 「学生」的「学」(2) 未登记、「生」(3) 已登记 → 停在 3，仍查本词。
-      final SubtitleSweepStop? stop = resolveSubtitleSweepStop(
-        tokens: tokens,
-        index: 1,
-        forward: true,
-        selectableGraphemes: <int>{0, 3, 4, 5},
-      );
-      expect(stop, (tokenIndex: 2, graphemeIndex: 3));
-    });
-
-    test('整个词都没有已登记字：跳过该词，不会两次停在同一个词', () {
-      const Set<int> selectable = <int>{0, 2, 3, 4, 5};
-      final SubtitleSweepStop? first = resolveSubtitleSweepStop(
-        tokens: tokens,
-        index: 0,
-        forward: true,
-        selectableGraphemes: selectable,
-      );
-      // 「、」整词无命中 → 直接跳到「学生」。
-      expect(first, (tokenIndex: 2, graphemeIndex: 2));
-      final SubtitleSweepStop? second = resolveSubtitleSweepStop(
-        tokens: tokens,
-        index: first!.tokenIndex,
-        forward: true,
-        selectableGraphemes: selectable,
-      );
-      expect(second, (tokenIndex: 3, graphemeIndex: 4));
-      // 后退同理跳过「、」。
-      expect(
-        resolveSubtitleSweepStop(
-          tokens: tokens,
-          index: 2,
-          forward: false,
-          selectableGraphemes: selectable,
-        ),
-        (tokenIndex: 0, graphemeIndex: 0),
-      );
-    });
-
-    test('跳过时照样循环：句尾无命中则绕回句首', () {
-      expect(
-        resolveSubtitleSweepStop(
-          tokens: tokens,
-          index: 2,
-          forward: true,
-          selectableGraphemes: <int>{0},
-        ),
-        (tokenIndex: 0, graphemeIndex: 0),
-      );
-    });
-
-    test('只有当前词可查：走满一圈回到它自己', () {
-      expect(
-        resolveSubtitleSweepStop(
-          tokens: tokens,
-          index: 2,
-          forward: true,
-          selectableGraphemes: <int>{2},
-        ),
-        (tokenIndex: 2, graphemeIndex: 2),
-      );
-    });
-
-    test('整句都没有已登记字：返回 null（最多一圈，不死循环）', () {
-      expect(
-        resolveSubtitleSweepStop(
-          tokens: tokens,
-          index: -1,
-          forward: true,
-          selectableGraphemes: const <int>{},
-        ),
-        isNull,
-      );
-    });
-
-    test('无词：返回 null', () {
-      expect(
-        resolveSubtitleSweepStop(
-          tokens: const <SubtitleSweepToken>[],
-          index: -1,
-          forward: false,
-          selectableGraphemes: const <int>{0},
-        ),
-        isNull,
-      );
     });
   });
 }

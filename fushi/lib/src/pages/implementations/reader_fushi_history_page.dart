@@ -4594,12 +4594,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         extraActions: removeFromCollection == null
             ? (MediaItem it) =>
                   _epubExtraActions(it, fromSeriesPage: fromSeriesPage)
+            // 「移出合集」排在整理段最前：整理段只平铺前
+            // [MediaItemDialogFrame.organizeMaxRows] 行、其余收进「更多 ›」，排在末尾
+            // 时书卡整理项一多它就被挤进二级菜单——而它正是合集语境的主操作。
             : (MediaItem it) => <DialogAction>[
-                ..._epubExtraActions(it, inCollectionDetail: true),
                 ..._removeFromCollectionActions(
                   dialogCtx,
                   removeFromCollection,
                 ),
+                ..._epubExtraActions(it, inCollectionDetail: true),
               ],
       ),
     );

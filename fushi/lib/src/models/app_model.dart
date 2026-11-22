@@ -243,6 +243,8 @@ export 'package:fushi/src/lookup/lookup_edge_punctuation.dart'
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
+    show LookupMatchSearchHost;
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
@@ -1017,6 +1019,7 @@ class AppModel
         MusicPluginQualityHost,
         AudioProductionHost,
         ExternalStorageAccess,
+        LookupMatchSearchHost,
         StudyGoalHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
@@ -10787,6 +10790,7 @@ class AppModel
   /// 单独一个入口而不是给 [searchDictionary] 加参数：后者是测试替身普遍覆写的面。
   /// [rubySpans] 为空时与 [searchDictionary] 完全等价。远端查词（remote-first）把对齐后的
   /// 区间随请求带给对端（`ruby` 字段），认识它的对端同样按读音排序。
+  @override
   Future<DictionarySearchResult> searchDictionaryWithRuby({
     required String searchTerm,
     required List<FushiRubySpan> rubySpans,
@@ -12375,6 +12379,7 @@ class AppModel
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
 
+  @override
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
@@ -15063,17 +15068,18 @@ class AppModel
             bool success,
             bool record,
             MineToastStatus status,
+            String? detail,
           })
           described = describeMineOutcome(outcome);
           // 制卡结果走 showMine：过「制卡提示」开关。
           FushiToast.showMine(
             msg: described.message,
             status: described.status,
-            // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-            action:
-                minedCardUndoToastAction(repo, outcome, expression: word) ??
-                // BUG-5085：复习库要升级时带「打开复习」。
-                mineFailureToastAction(outcome),
+            detail: described.detail,
+            term: word,
+            reading: reading,
+            // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+            action: mineResultToastAction(repo, outcome, expression: word),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);

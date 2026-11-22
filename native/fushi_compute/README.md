@@ -535,6 +535,17 @@ crate 的 AES 指令，跳过）。
 `sync_obfuscator_vectors_test.dart` 与 `crypto_vectors_v2_test.dart` 用删除前的冻结向量同时钉住 Dart 与 Rust 两侧。
 同一份脚本核对了签名与旧实现逐字节相同。
 
+## 学习统计派生域（`ffc_stats_*`，`src/stats.rs`，BUG-4960）
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_stats_derive(const i64* ints, usize, const u32* ends, usize, const u16* text, usize, u8** out, usize* out_len) -> i32` | 统计事实面的整份派生：legacy 四表 / 游戏日时长 / legacy 游戏字数 / 段 / 复习格子 / 游玩会话骨架 → 日面、小时面、会话流、全域与阅读域按日合计；输入是整数流 + UTF-16 字符串流，输出 `[nInts][nEnds][nText]` 头 + 整数流 + 去重字符串表（格式见文件头）。坏输入 `-3` |
+
+唯一调用方是 `packages/fushi_engine/lib/stats/stat_facts.dart` 的 `loadStatFacts`（在一次性后台 isolate 里，
+经 `stat_derive.dart` 打包 / 解快照）。迁自 Dart：字符串比较按 UTF-16 码元（= `String.compareTo`），会话两处排序
+用 `dart::sort`（`List.sort` 逐步复刻，并列元素去向一致）。回归向量是迁移前 Dart 实现冻结的
+`packages/fushi_engine/test/stats/fixtures/stat_facts_parity.json`。
+
 ## 构建
 
 | 平台 | 命令 | 产物 | 怎么进包（缺产物 = 构建失败） | 体积（2026-10-19 实测，含 parse 域） |

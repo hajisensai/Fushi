@@ -17,8 +17,9 @@ Future<Set<int>> applyOrganizeActions(
   required List<OrganizeAction> actions,
 }) async {
   final Set<int> touched = <int>{};
-  // 先移出 / 挪走、再合并、最后加 / 建 / 打标签：移出腾地方，合并决定胜方，加入落到
-  // 胜方（挪走的去处在裁决时已改成合并胜方，胜方合并前后都在）。
+  // 先移出 / 挪走、再合并、再加 / 建 / 打标签，最后改名：移出腾地方，合并决定胜方，
+  // 加入落到胜方（挪走的去处在裁决时已改成合并胜方，胜方合并前后都在）；改名放最后，
+  // 本批其它记录都按改名前的自然键记，整批倒序撤销时先改回原名、再撤其它。
   final List<OrganizeAction> ordered = <OrganizeAction>[
     for (final OrganizeActionKind k in const <OrganizeActionKind>[
       OrganizeActionKind.evict,
@@ -27,6 +28,7 @@ Future<Set<int>> applyOrganizeActions(
       OrganizeActionKind.add,
       OrganizeActionKind.create,
       OrganizeActionKind.tag,
+      OrganizeActionKind.rename,
     ])
       ...actions.where((OrganizeAction a) => a.kind == k),
   ];
@@ -197,6 +199,7 @@ Future<Set<int>> applyOrganizeActions(
           <String, Object?>{
             'sources': sources,
             'targetBefore': before.toList()..sort(),
+            if (a.reason != null) 'reason': a.reason,
           },
         );
       case OrganizeActionKind.add:
@@ -278,6 +281,41 @@ Future<Set<int>> applyOrganizeActions(
           'tag',
           a.organizeKey,
           <String, Object?>{'tagName': a.name, 'videos': hosts},
+        );
+      case OrganizeActionKind.rename:
+        final String? name = a.name;
+        if (name == null || name.isEmpty) continue;
+        // 查重与改名同一事务：目录合集（名字由磁盘目录决定）不改；新名字撞别的合集的
+        // 自然键不改（同名两行会让合集同步永不收敛）。
+        final MediaCollectionRow? before = await db.transaction(() async {
+          final MediaCollectionRow? c = await db.getMediaCollectionById(
+            a.targetCollectionId!,
+          );
+          if (c == null || c.sourceFolderPath != null || c.name == name) {
+            return null;
+          }
+          if (await db.getMediaCollectionByNaturalKey(name, c.collectionType) !=
+              null) {
+            return null;
+          }
+          // userIntent: false——AI 改名不把合集转成用户的、不碰成员 pinned。
+          await db.renameMediaCollection(c.id, name, userIntent: false);
+          return c;
+        });
+        if (before == null) continue;
+        touched.add(before.id);
+        // 记录挂在新名字上（撤销按它找合集），原名在 payload.from。
+        await _record(
+          db,
+          runId,
+          a,
+          name,
+          before.collectionType,
+          before.organizeKey,
+          <String, Object?>{
+            'from': before.name,
+            if (a.reason != null) 'reason': a.reason,
+          },
         );
     }
   }
@@ -364,7 +402,9 @@ Future<void> _record(
 ///   记录的来源重建；
 /// - 挪走：从去处移出这次放进去的成员（写成员墓碑，AI 不再放回；不钉住），放回来处
 ///   并钉住；
-/// - 标签：摘掉这次打的标签。
+/// - 标签：摘掉这次打的标签；
+/// - 改名：合集还叫这次改成的名字、原名也没被别的合集占着 → 改回原名（AI 身份，不转
+///   所有权）；之后又被改过名 / 删掉的跳过。
 /// 待确认建议（[kLibraryOrganizeProposalKind]）不是改动，不参与撤销。
 /// 找不到目标（已被删 / 改名）的那一处跳过，不报错。返回实际撤销的处数。
 Future<int> undoLibraryOrganizeChanges(
@@ -535,6 +575,20 @@ Future<int> undoLibraryOrganizeChanges(
           if (v is String) await db.removeTagFromVideoBook(v, tagId);
         }
         did = true;
+      case 'rename':
+        final Object? oldName = payload['from'];
+        if (c == null || oldName is! String || oldName.isEmpty) break;
+        did = await db.transaction(() async {
+          if (await db.getMediaCollectionByNaturalKey(
+                oldName,
+                r.collectionType,
+              ) !=
+              null) {
+            return false;
+          }
+          await db.renameMediaCollection(c.id, oldName, userIntent: false);
+          return true;
+        });
     }
     // 目标已不在（被删 / 改名）的那一处没撤成：不标「已撤销」，记录里照实留着。
     if (!did) continue;

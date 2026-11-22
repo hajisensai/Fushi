@@ -9,6 +9,7 @@
 #include "video_output.h"
 
 #include <algorithm>
+#include <chrono>
 
 // Limit the frame size to 1080p in software rendering.
 // This is for performance reasons & to avoid allocating too much memory.
@@ -270,6 +271,9 @@ void VideoOutput::Render() {
       };
       mpv_render_context_render(render_context_, params);
     }
+    // FUSHI FORK (BUG-5200): count before marking, so a resolve the mark
+    // triggers always sees this frame.
+    OnFramePublished();
     try {
       // Notify Flutter that a new frame is available.
       registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
@@ -277,6 +281,59 @@ void VideoOutput::Render() {
       // Prevent any redundant exceptions if the texture is unregistered etc.
     }
   }
+}
+
+namespace {
+uint64_t SteadyNowUs() {
+  return static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+}
+}  // namespace
+
+// FUSHI FORK (BUG-5200): frames rendered vs. frames Flutter's raster thread
+// actually sampled. Every frame is rendered into the same shared texture, so a
+// frame that is not resolved before the next one is rendered is never shown.
+// Field report: on Windows each mark used to wait for the platform thread
+// (merged with Dart's UI thread) before Flutter drew it; these counters make
+// such losses visible in the video diagnostics log instead of only on screen.
+void VideoOutput::OnFramePublished() {
+  last_publish_us_.store(SteadyNowUs(), std::memory_order_relaxed);
+  published_frames_.fetch_add(1, std::memory_order_release);
+}
+
+void VideoOutput::OnFrameResolved() {
+  const uint64_t published = published_frames_.load(std::memory_order_acquire);
+  if (published == last_resolved_published_) {
+    return;
+  }
+  const uint64_t skipped = published - last_resolved_published_ - 1;
+  last_resolved_published_ = published;
+  shown_frames_.fetch_add(1, std::memory_order_relaxed);
+  if (skipped > 0) {
+    lost_frames_.fetch_add(skipped, std::memory_order_relaxed);
+  }
+  const uint64_t published_at =
+      last_publish_us_.load(std::memory_order_relaxed);
+  const uint64_t now = SteadyNowUs();
+  if (published_at > 0 && now >= published_at) {
+    const uint64_t latency = now - published_at;
+    latency_sum_us_.fetch_add(latency, std::memory_order_relaxed);
+    if (latency > latency_max_us_.load(std::memory_order_relaxed)) {
+      latency_max_us_.store(latency, std::memory_order_relaxed);
+    }
+  }
+}
+
+VideoOutputFrameStats VideoOutput::FrameStats() {
+  VideoOutputFrameStats stats;
+  stats.published = published_frames_.load(std::memory_order_acquire);
+  stats.shown = shown_frames_.load(std::memory_order_relaxed);
+  stats.lost = lost_frames_.load(std::memory_order_relaxed);
+  stats.latency_sum_us = latency_sum_us_.load(std::memory_order_relaxed);
+  stats.latency_max_us = latency_max_us_.load(std::memory_order_relaxed);
+  return stats;
 }
 
 void VideoOutput::SetTextureUpdateCallback(
@@ -448,6 +505,7 @@ void VideoOutput::Resize(int64_t required_width, int64_t required_height) {
                 // FUSHI FORK (BUG-3888): no |surface_manager_->Read()| here —
                 // |Draw| already published the frame; this runs on Flutter's
                 // raster thread and must not wait on libmpv's render lock.
+                OnFrameResolved();
                 return textures_.at(texture_id_).get();
               } else {
                 return (FlutterDesktopGpuSurfaceDescriptor*)nullptr;
@@ -477,6 +535,7 @@ void VideoOutput::Resize(int64_t required_width, int64_t required_height) {
         flutter::PixelBufferTexture([&](auto, auto) {
           std::lock_guard<std::mutex> lock(textures_mutex_);
           if (texture_id_) {
+            OnFrameResolved();  // FUSHI FORK (BUG-5200)
             return pixel_buffer_textures_.at(texture_id_).get();
           } else {
             return (FlutterDesktopPixelBuffer*)nullptr;

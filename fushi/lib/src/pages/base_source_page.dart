@@ -18,6 +18,7 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
@@ -49,35 +50,6 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-
-/// Number of characters of the body text that the looked-up word actually
-/// occupies, used to drive the in-text lookup highlight (`fushiSelection
-/// .highlightSelection`).
-///
-/// BUG-206: this must be the length of the **inflected surface form as it
-/// appears in the body** (the deinflection's matched source), NOT the length of
-/// the dictionary headword. For 「うやうやしく」(6 chars in the body) the dictionary
-/// entry's [DictionaryEntry.word] is the headword 「恭しい」(3 runes); highlighting
-/// 3 chars covers only part of the word and — when the word is split across DOM
-/// text nodes on Android — renders as two misaligned bands ("multi-select").
-///
-/// [DictionarySearchResult.bestLength] already carries the matched source length
-/// (the FFI deinflection's `matched`, mirrored as Yomitan's `originalTextLength`)
-/// and [Language.getFinalHighlightLength] is the canonical way to read it
-/// (handling the space-delimited / non-space-delimited split). We only highlight
-/// when there is at least one term entry, preserving the previous "no entries →
-/// no highlight" behavior.
-int lookupHighlightCharCount({
-  required DictionarySearchResult result,
-  required String searchTerm,
-  required Language language,
-}) {
-  if (result.entries.isEmpty) return 0;
-  return language.getFinalHighlightLength(
-    result: result,
-    searchTerm: searchTerm,
-  );
-}
 
 /// 一次查词是怎么发起的。嵌套层不开新的查词诊断流水（见
 /// [BaseSourcePageState.searchDictionaryResult]）。
@@ -445,19 +417,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Future<int> lookupMatchedCharCount(
     String term,
     List<FushiRubySpan> rubySpans,
-  ) async {
-    final DictionarySearchResult result = await appModel
-        .searchDictionaryWithRuby(
-          searchTerm: term,
-          rubySpans: rubySpans,
-          overrideMaximumTerms: appModel.maximumTerms,
-        );
-    return lookupHighlightCharCount(
-      result: result,
-      searchTerm: term,
-      language: JapaneseLanguage.instance,
-    );
-  }
+  ) => measureLookupMatchUnits(appModel, term, rubySpans: rubySpans);
 
   Future<int> searchDictionaryResult({
     required String searchTerm,

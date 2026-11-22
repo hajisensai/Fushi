@@ -14,6 +14,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/notice_dwell.dart';
 
 /// 通知语义。
 ///
@@ -150,9 +151,11 @@ abstract final class MineNotices {
         icon: FushiIcons.filled(FushiIcons.warning),
       );
     case MineToastStatus.duplicate:
+      // 「已存在」不是警告也不是失败：用青色（M3 tertiary 系），与「有缺失」的琥珀
+      // 分开（用户 2026-11-22 重设计：两者此前同琥珀，意思却相反）。
       return (
-        background: const Color(0xFFEF6C00), // orange 800
-        foreground: Colors.black,
+        background: const Color(0xFF006874), // teal 40，白字约 6.1:1
+        foreground: Colors.white,
         icon: FushiIcons.filled(FushiIcons.libraryAdd),
       );
     case MineToastStatus.failed:
@@ -177,17 +180,17 @@ abstract final class MineNotices {
 }
 
 /// 制卡状态 → 通用语义。让视频页左上角 OSD 与底部制卡 toast 说同一门颜色语言
-/// （`duplicate` 是「已存在」而非失败，落在 warning 而不是 error）。
+/// （`duplicate` 是「已存在、不用管」，落在 info，不与「有缺失」同为 warning）。
 ToastSeverity mineToastSeverity(MineToastStatus status) {
   switch (status) {
     case MineToastStatus.added:
     case MineToastStatus.overwritten:
       return ToastSeverity.success;
     case MineToastStatus.addedWithWarning:
-    case MineToastStatus.duplicate:
       return ToastSeverity.warning;
     case MineToastStatus.failed:
       return ToastSeverity.error;
+    case MineToastStatus.duplicate:
     case MineToastStatus.pending:
     case MineToastStatus.queued:
       return ToastSeverity.info;
@@ -196,72 +199,97 @@ ToastSeverity mineToastSeverity(MineToastStatus status) {
 
 /// 制卡结果卡片（[FushiMineNoticeCard]）的 M3 tonal 三色 + 图标。
 ///
-/// * [container] / [onContainer]：卡片底与文字（浅色 tonal container，深字，正文对比
-///   ≥ 7:1）；
-/// * [accent]：图标色块与倒计时条（白色图标压在上面，图形对比 ≥ 3:1）。
+/// * [container] / [onContainer]：卡片底与文字（正文对比 ≥ 7:1）；
+/// * [accent]：图标色块与倒计时条；[onAccent] 是压在色块上的图标色（图形对比
+///   ≥ 3:1）；[actionColor] 是卡上文字按钮的颜色（在 [container] 上 ≥ 4.5:1）。
 ///
-/// 与 [mineToastPalette] 一样用固定色阶、不随主题：结果卡多半压在视频画面 / 正文
-/// 上，主题取色在深色主题下会退成深底深色块，在画面上反而不醒目。五种结果五种
-/// 颜色（新制绿 / 覆盖紫 / 已存在与缺东西琥珀 / 待发蓝 / 失败红），每种再配一个
-/// 不同形状的图标——墨水屏与色觉障碍下颜色塌掉时靠形状区分。
+/// 用固定色阶、不随主题取色：结果卡多半压在视频画面 / 正文上，主题取色在画面上
+/// 不醒目。但**分深浅两套**（用户 2026-11-22 重设计）：深色主题下浅色卡又亮又
+/// 刺眼，改用深 tonal 底 + 调亮的强调色、色块上换深色图标。六种结果六种颜色
+/// （新制绿 / 覆盖紫 / 缺东西琥珀 / 已存在青 / 处理中与待发蓝 / 失败红），每种再配
+/// 一个不同形状的图标——墨水屏与色觉障碍下颜色塌掉时靠形状区分。
 typedef MineNoticeTone = ({
   Color container,
   Color onContainer,
   Color accent,
+  Color onAccent,
+  Color actionColor,
   IconData icon,
 });
 
-MineNoticeTone mineNoticeTone(MineToastStatus status) {
+MineNoticeTone mineNoticeTone(MineToastStatus status, {bool dark = false}) {
   final IconData icon = mineToastPalette(status).icon;
+  MineNoticeTone tone(
+    int container,
+    int onContainer,
+    int accent,
+    int onAccent,
+    int action,
+  ) => (
+    container: Color(container),
+    onContainer: Color(onContainer),
+    accent: Color(accent),
+    onAccent: Color(onAccent),
+    actionColor: Color(action),
+    icon: icon,
+  );
   switch (status) {
     case MineToastStatus.added:
-      return (
-        container: const Color(0xFFC8F5D0),
-        onContainer: const Color(0xFF00210B),
-        accent: const Color(0xFF1E8E3E),
-        icon: icon,
-      );
+      return dark
+          ? tone(0xFF0F3A1E, 0xFFC8F5D0, 0xFF6DD58C, 0xFF00391A, 0xFF6DD58C)
+          : tone(0xFFC8F5D0, 0xFF00210B, 0xFF1E8E3E, 0xFFFFFFFF, 0xFF146C2E);
     case MineToastStatus.overwritten:
-      return (
-        container: const Color(0xFFE9DDFF),
-        onContainer: const Color(0xFF22005D),
-        accent: const Color(0xFF6750A4),
-        icon: icon,
-      );
+      return dark
+          ? tone(0xFF3A2770, 0xFFE9DDFF, 0xFFCFBCFF, 0xFF381E72, 0xFFCFBCFF)
+          : tone(0xFFE9DDFF, 0xFF22005D, 0xFF6750A4, 0xFFFFFFFF, 0xFF4F378B);
     case MineToastStatus.addedWithWarning:
+      return dark
+          ? tone(0xFF4A2C00, 0xFFFFDDB3, 0xFFFFB95C, 0xFF462A00, 0xFFFFB95C)
+          : tone(0xFFFFDDB3, 0xFF2A1800, 0xFFB26A00, 0xFFFFFFFF, 0xFF6E3F00);
     case MineToastStatus.duplicate:
-      return (
-        container: const Color(0xFFFFDDB3),
-        onContainer: const Color(0xFF2A1800),
-        accent: const Color(0xFFB26A00),
-        icon: icon,
-      );
+      return dark
+          ? tone(0xFF00363D, 0xFFCDE7EC, 0xFF4FD8EB, 0xFF00363D, 0xFF4FD8EB)
+          : tone(0xFFCDE7EC, 0xFF001F25, 0xFF006874, 0xFFFFFFFF, 0xFF004F58);
     case MineToastStatus.pending:
     case MineToastStatus.queued:
-      return (
-        container: const Color(0xFFD3E3FD),
-        onContainer: const Color(0xFF041E49),
-        accent: const Color(0xFF0B57D0),
-        icon: icon,
-      );
+      return dark
+          ? tone(0xFF0A2A5E, 0xFFD3E3FD, 0xFFA8C7FA, 0xFF062E6F, 0xFFA8C7FA)
+          : tone(0xFFD3E3FD, 0xFF041E49, 0xFF0B57D0, 0xFFFFFFFF, 0xFF0842A0);
     case MineToastStatus.failed:
-      return (
-        container: const Color(0xFFFFDAD6),
-        onContainer: const Color(0xFF410002),
-        accent: const Color(0xFFC5221F),
-        icon: icon,
-      );
+      return dark
+          ? tone(0xFF5C1411, 0xFFFFDAD6, 0xFFFFB4AB, 0xFF690005, 0xFFFFB4AB)
+          : tone(0xFFFFDAD6, 0xFF410002, 0xFFC5221F, 0xFFFFFFFF, 0xFFA50E0E);
   }
 }
 
-/// 结果卡第一行的状态标题；第二行是调用方传来的具体消息（牌组名 / 失败原因）。
-/// [MineToastStatus.pending] 没有标题——它的消息「制卡中…」本身就是状态。
-String? mineNoticeTitle(MineToastStatus status) => switch (status) {
+/// 一张结果卡停留多久（倒计时条与自动收起同长）。按严重程度分档（用户
+/// 2026-11-22 重设计）：成功 / 已存在一眼即过，待发多停一点，缺东西要读原因，
+/// 失败最久；带动作按钮的至少留出去点的时间。处理中正常会被结果原地替换，
+/// 时长只是兜底上限。
+Duration mineNoticeDwell(MineToastStatus status, {required bool hasAction}) {
+  final Duration base = switch (status) {
+    MineToastStatus.added ||
+    MineToastStatus.overwritten ||
+    MineToastStatus.duplicate => FushiNoticeDwell.mineResult,
+    MineToastStatus.queued => FushiNoticeDwell.mineQueued,
+    MineToastStatus.addedWithWarning => FushiNoticeDwell.mineWarning,
+    MineToastStatus.failed => FushiNoticeDwell.mineFailed,
+    MineToastStatus.pending => FushiNoticeDwell.minePending,
+  };
+  if (hasAction && base < FushiNoticeDwell.mineAction) {
+    return FushiNoticeDwell.mineAction;
+  }
+  return base;
+}
+
+/// 结果卡上**看得见**的状态标题（用户 2026-11-22 重设计：此前只进读屏 label）。
+/// 有词时它在第二行开头（粗体，后接牌组名 / 原因），没词时它就是第一行。
+String mineNoticeTitle(MineToastStatus status) => switch (status) {
   MineToastStatus.added => t.card_notice_title_added,
   MineToastStatus.overwritten => t.card_notice_title_overwritten,
   MineToastStatus.addedWithWarning => t.card_notice_title_warning,
   MineToastStatus.duplicate => t.card_notice_title_duplicate,
   MineToastStatus.queued => t.card_notice_title_queued,
   MineToastStatus.failed => t.card_notice_title_failed,
-  MineToastStatus.pending => null,
+  MineToastStatus.pending => t.card_notice_title_pending,
 };

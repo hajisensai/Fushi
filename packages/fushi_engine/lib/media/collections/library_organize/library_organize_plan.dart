@@ -6,9 +6,9 @@ import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 /// 裁决：新建合集、并入、合并整理器合集、给视频打系列标签，以及合集归属整理（AI 库管家
 /// 设计稿 §7）——把放错的条目从任何非目录合集（含用户合集）移出：单独放或挪进别的合集。
 /// 移出守「用户永远赢」：用户亲手放进来的成员（pinned）不移，同一对（合集, 成员）AI
-/// 只移出一次，移出用户合集必须带理由。用户合集的合并 / 改名不直接执行，只在手动整理时
-/// 产出待确认建议（[OrganizeProposal]）。用户拒绝过的分组不复活；用户移出过的成员不放回；
-/// 跨域、越界、重复一律丢弃（只丢那一条，不整批作废）。
+/// 只移出一次，移出用户合集必须带理由。用户合集的合并 / 改名也直接执行（AI 管库 v3
+/// §2.2，取代库管家 §8 的确认卡；自动路径只收 high），可撤销。用户拒绝过的分组不复活；
+/// 用户移出过的成员不放回；跨域、越界、重复一律丢弃（只丢那一条，不整批作废）。
 
 /// 整理怎么触发的（决定置信度门槛）。
 enum OrganizeTrigger { manual, auto }
@@ -174,7 +174,9 @@ class LibraryOrganizeFacts {
 
 /// `move`：从 [OrganizeAction.fromCollectionId] 移出并放进 [OrganizeAction.
 /// targetCollectionId]，一处记录、整体撤销。`evict` 不带去处 = 移出后单独放。
-enum OrganizeActionKind { create, add, merge, evict, move, tag }
+/// `rename`：把 [OrganizeAction.targetCollectionId] 改名为 [OrganizeAction.name]
+/// （AI 身份，不转所有权；目录合集与撞自然键的不改）。
+enum OrganizeActionKind { create, add, merge, evict, move, tag, rename }
 
 /// 一处要执行的改动。
 class OrganizeAction {
@@ -198,13 +200,13 @@ class OrganizeAction {
   final String source;
   final AiOrganizeConfidence confidence;
 
-  /// create：新合集名；tag：标签名。
+  /// create：新合集名；tag：标签名；rename：新名字。
   final String? name;
   final String collectionType;
   final String? organizeKey;
   final List<OrganizeEntry> entries;
 
-  /// add / merge / evict 的目标合集；move 的去处。
+  /// add / merge / evict / rename 的目标合集；move 的去处。
   final int? targetCollectionId;
 
   /// merge 的败方合集。
@@ -217,8 +219,8 @@ class OrganizeAction {
   final String? reason;
 }
 
-/// 合集级改动的待确认建议（AI 库管家设计稿 §8）：用户合集的合并 / 改名不直接执行，
-/// 手动整理时汇总给用户勾选，接受后以用户身份执行（一次用户写入）。
+/// 合集级改动的待确认建议（AI 库管家设计稿 §8）。AI 管库 v3（§2.2）起裁决不再产出
+/// 建议（合并 / 改名直接执行）；类型留给整理记录里存量的待确认建议（接受 / 拒绝）。
 enum OrganizeProposalKind { merge, rename }
 
 class OrganizeProposal {
@@ -245,12 +247,11 @@ class OrganizeProposal {
   final String? reason;
 }
 
-/// 一份 AI 回复的裁决结果：直接执行的改动 + 待用户确认的合集级建议。
+/// 一份 AI 回复的裁决结果：要直接执行的改动。
 class OrganizePlan {
-  const OrganizePlan({required this.actions, required this.proposals});
+  const OrganizePlan({required this.actions});
 
   final List<OrganizeAction> actions;
-  final List<OrganizeProposal> proposals;
 }
 
 /// 一次请求发给 AI 的那一块：下标 ↔ 本地对象。
@@ -307,7 +308,7 @@ List<OrganizeAction> planFromAiReply({
 ).actions;
 
 /// 裁决一份 AI 回复。[tagPrefix] 是视频系列标签名的前缀（UI 语言，如 `系列:`）。
-/// 用户合集的合并 / 改名只在手动触发时进 [OrganizePlan.proposals]，自动路径不产出。
+/// 合集级改动（合并、改名用户合集）与合并同一道门槛：自动只收 high。
 OrganizePlan planOrganizeReply({
   required LibraryOrganizeFacts facts,
   required OrganizeChunk chunk,
@@ -317,8 +318,6 @@ OrganizePlan planOrganizeReply({
 }) {
   final String domainName = facts.domain.name;
   final List<OrganizeAction> out = <OrganizeAction>[];
-  final List<OrganizeProposal> proposals = <OrganizeProposal>[];
-  final bool manual = trigger == OrganizeTrigger.manual;
   final _OrganizeNameAllocator names = _OrganizeNameAllocator(facts);
   final Map<int, OrganizeCollectionFact> byId = <int, OrganizeCollectionFact>{
     for (final OrganizeCollectionFact c in facts.collections) c.id: c,
@@ -350,34 +349,14 @@ OrganizePlan planOrganizeReply({
       for (final String id in m.collections)
         if (chunk.collectionById(id) case final OrganizeCollectionFact c) c,
     ];
-    // 目录合集不参与；用户合集至多一个且当胜方；其余必须是整理器合集。
+    // 目录合集不参与。胜方按收敛同口径（用户合集优先）：几个用户合集合并也直接
+    // 执行（AI 管库 v3 §2.2），撤销按快照把败方重建回来。
     if (cs.any((OrganizeCollectionFact c) => c.isFolder) || cs.length < 2) {
       continue;
     }
-    final List<OrganizeCollectionFact> users = <OrganizeCollectionFact>[
-      for (final OrganizeCollectionFact c in cs)
-        if (c.origin == CollectionOrigin.user) c,
-    ];
-    if (users.length > 1) {
-      // 合并两个以上用户合集是合集级改动：只出待确认建议（设计稿 §8），自动不做。
-      if (!manual) continue;
-      final List<OrganizeCollectionFact> sorted =
-          List<OrganizeCollectionFact>.of(cs)..sort(_mergeWinnerOrder);
-      proposals.add(
-        OrganizeProposal(
-          kind: OrganizeProposalKind.merge,
-          targetCollectionId: sorted.first.id,
-          sourceCollectionIds: <int>[
-            for (final OrganizeCollectionFact c in sorted.skip(1)) c.id,
-          ],
-          confidence: m.confidence,
-        ),
-      );
-      continue;
-    }
-    final OrganizeCollectionFact target = users.isNotEmpty
-        ? users.single
-        : (List<OrganizeCollectionFact>.of(cs)..sort(_mergeWinnerOrder)).first;
+    final OrganizeCollectionFact target = (List<OrganizeCollectionFact>.of(
+      cs,
+    )..sort(_mergeWinnerOrder)).first;
     final List<int> sources = <int>[
       for (final OrganizeCollectionFact c in cs)
         if (c.id != target.id && !mergedInto.containsKey(c.id)) c.id,
@@ -464,28 +443,39 @@ OrganizePlan planOrganizeReply({
     }
   }
 
-  // ── 改名：只对用户合集出待确认建议（设计稿 §8）─────────────────────────
-  if (manual) {
-    for (final AiOrganizeRenameProposal r in reply.renames) {
-      if (!organizeConfidenceAccepted(r.confidence, trigger)) continue;
-      final OrganizeCollectionFact? c = chunk.collectionById(r.collection);
-      if (c == null || c.origin != CollectionOrigin.user) continue;
-      final String name = _clampName(r.name);
-      if (name.isEmpty || name == c.name) continue;
-      // 新名字已被别的合集（或删除墓碑）占着：改过去会撞自然键，不提。
-      if (facts.takenNames.containsKey('$name\u0000${c.collectionType}')) {
-        continue;
-      }
-      proposals.add(
-        OrganizeProposal(
-          kind: OrganizeProposalKind.rename,
-          targetCollectionId: c.id,
-          newName: name,
-          confidence: r.confidence,
-          reason: _reasonOf(r.reason),
-        ),
-      );
+  // ── 改名：用户合集名字明显不对时直接改（AI 管库 v3 §2.2；门槛同合并）────────
+  final Set<String> renamedTo = <String>{};
+  for (final AiOrganizeRenameProposal r in reply.renames) {
+    if (!organizeConfidenceAccepted(r.confidence, trigger, isMerge: true)) {
+      continue;
     }
+    final OrganizeCollectionFact? c = chunk.collectionById(r.collection);
+    // 被合并掉的败方不改名（它马上就不在了）。
+    if (c == null ||
+        c.origin != CollectionOrigin.user ||
+        mergedInto.containsKey(c.id)) {
+      continue;
+    }
+    final String name = clampOrganizeName(r.name);
+    if (name.isEmpty || name == c.name) continue;
+    final String natural = '$name\u0000${c.collectionType}';
+    // 新名字已被别的合集（或删除墓碑）占着、或本次已改给别的合集：改过去会撞自然键，
+    // 不改。
+    if (facts.takenNames.containsKey(natural) || !renamedTo.add(natural)) {
+      continue;
+    }
+    out.add(
+      OrganizeAction(
+        kind: OrganizeActionKind.rename,
+        source: 'ai',
+        confidence: r.confidence,
+        targetCollectionId: c.id,
+        name: name,
+        collectionType: c.collectionType,
+        organizeKey: c.organizeKey,
+        reason: _reasonOf(r.reason),
+      ),
+    );
   }
 
   // 分组只动「散的或只在整理器合集里、且都能移出来」的条目：在用户合集里的条目换
@@ -547,7 +537,7 @@ OrganizePlan planOrganizeReply({
 
     if (facts.domain == CollectionShelfDomain.video &&
         level == AiOrganizeLevel.franchise) {
-      final String label = _clampName(g.name);
+      final String label = clampOrganizeName(g.name);
       if (label.isEmpty) continue;
       out.add(
         OrganizeAction(
@@ -580,8 +570,8 @@ OrganizePlan planOrganizeReply({
         if (groupable(e, null)) e,
     ];
     if (fresh.length < 2) continue;
-    String rawName = _clampName(g.name);
-    if (rawName.isEmpty) rawName = _clampName(g.originalTitle ?? '');
+    String rawName = clampOrganizeName(g.name);
+    if (rawName.isEmpty) rawName = clampOrganizeName(g.originalTitle ?? '');
     if (rawName.isEmpty) continue;
     const String type = 'playlist';
     final String? name = names.allocate(rawName, type, key);
@@ -599,13 +589,13 @@ OrganizePlan planOrganizeReply({
       ),
     );
   }
-  return OrganizePlan(actions: out, proposals: proposals);
+  return OrganizePlan(actions: out);
 }
 
 String? _reasonOf(String? raw) {
   final String t = (raw ?? '').trim();
   if (t.isEmpty) return null;
-  return _clampCodePoints(t, 200);
+  return clampOrganizeCodePoints(t, 200);
 }
 
 /// 本地硬归组（spec §7.4，不花钱）：散条目里刮到**同一个**外部作品 id 的成组；
@@ -642,7 +632,7 @@ List<OrganizeAction> planFromRules({
       continue;
     }
     if (members.length < 2) continue;
-    final String rawName = _clampName(nameOf(members));
+    final String rawName = clampOrganizeName(nameOf(members));
     if (rawName.isEmpty) continue;
     final String? name = names.allocate(rawName, 'playlist', key);
     if (name == null) continue;
@@ -823,13 +813,16 @@ int _mergeWinnerOrder(OrganizeCollectionFact a, OrganizeCollectionFact b) {
   return byName != 0 ? byName : a.collectionType.compareTo(b.collectionType);
 }
 
-String _clampName(String raw) {
+/// 合集名规整：去首尾空白、连续空白折成一个空格、按码点截到
+/// [kOrganizeMaxNameLength]。AI 整理建议与 AI 管库变更集（`library_changeset.dart`）
+/// 共用这一处口径。
+String clampOrganizeName(String raw) {
   final String t = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
-  return _clampCodePoints(t, kOrganizeMaxNameLength);
+  return clampOrganizeCodePoints(t, kOrganizeMaxNameLength);
 }
 
 /// 按码点截到 [max] 个（合集名 / 理由的长度上限，不是学习字数）。
-String _clampCodePoints(String t, int max) {
+String clampOrganizeCodePoints(String t, int max) {
   if (t.runes.length <= max) return t;
   return String.fromCharCodes(t.runes.take(max)).trim();
 }

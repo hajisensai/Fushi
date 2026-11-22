@@ -38,6 +38,17 @@ import java.util.Map;
  * #resolveTriggerAxes}) — Android's own layouts disagree on which axis a
  * trigger lives on, and a centred {@code AXIS_Z} / {@code AXIS_RZ} is the right
  * stick, not a trigger.
+ *
+ * <p>The right stick's horizontal axis is also bridged: pushing it left / right
+ * past {@link #STICK_PRESS} synthesizes {@link KeyEvent#KEYCODE_BUTTON_15} /
+ * {@link KeyEvent#KEYCODE_BUTTON_16} (Dart side: {@code GamepadButton.rightStickLeft}
+ * / {@code rightStickRight} map to {@code gameButton15} / {@code gameButton16}),
+ * so the stick becomes a bindable virtual key. The axis is {@code AXIS_Z} when
+ * the device has it and it is centred (range minimum &lt; 0), else {@code AXIS_RX}
+ * if present, else the stick is not bridged (see {@link #resolveRightStickXAxis}).
+ * Left and right are mutually exclusive: swinging straight across releases the
+ * old key before pressing the new one. Scan code is 0 (no Linux BTN exists for
+ * it). Like the triggers, these never consume the motion event.
  */
 public final class GamepadTriggerKeySynthesizer {
 
@@ -53,6 +64,14 @@ public final class GamepadTriggerKeySynthesizer {
     /** Linux {@code BTN_TL2} / {@code BTN_TR2}: what a button-type trigger scans as. */
     static final int SCAN_CODE_BTN_TL2 = 0x138;
     static final int SCAN_CODE_BTN_TR2 = 0x139;
+
+    /** Right-stick horizontal depth (absolute) at which a virtual key counts as pressed. */
+    static final float STICK_PRESS = 0.6f;
+
+    /** Absolute depth the stick must fall back below to release (hysteresis). */
+    static final float STICK_RELEASE = 0.35f;
+
+    static final int STICK_NONE = -1;
 
     static final int SIDE_LEFT = 0;
     static final int SIDE_RIGHT = 1;
@@ -106,6 +125,41 @@ public final class GamepadTriggerKeySynthesizer {
     }
 
     /**
+     * Picks the horizontal axis of the right stick: {@code AXIS_Z} when the
+     * device has it and it is centred (range minimum &lt; 0; a unipolar Z is a
+     * trigger), else {@code AXIS_RX} when present.
+     *
+     * @return the axis, or {@code -1} when the right stick cannot be bridged
+     */
+    static int resolveRightStickXAxis(AxisRanges ranges) {
+        if (ranges.hasAxis(MotionEvent.AXIS_Z) && ranges.minOf(MotionEvent.AXIS_Z) < 0f) {
+            return MotionEvent.AXIS_Z;
+        }
+        if (ranges.hasAxis(MotionEvent.AXIS_RX)) return MotionEvent.AXIS_RX;
+        return -1;
+    }
+
+    /**
+     * Stick hysteresis step. {@code state} is {@code -1} (left held), {@code 0}
+     * (neutral) or {@code 1} (right held).
+     *
+     * @return the new state
+     */
+    static int stickState(int state, float value) {
+        if (state == 0) {
+            if (value <= -STICK_PRESS) return -1;
+            if (value >= STICK_PRESS) return 1;
+            return 0;
+        }
+        if (state < 0) {
+            if (value >= STICK_PRESS) return 1;
+            return value > -STICK_RELEASE ? 0 : -1;
+        }
+        if (value <= -STICK_PRESS) return -1;
+        return value < STICK_RELEASE ? 0 : 1;
+    }
+
+    /**
      * Hysteresis step for one trigger. Pure so the press / release contract has
      * direct assertions.
      *
@@ -122,8 +176,14 @@ public final class GamepadTriggerKeySynthesizer {
         final int[][] axes = new int[2][];
         final boolean[] pressed = new boolean[2];
         final long[] downTime = new long[2];
+        /** Right-stick X axis, or {@code -1} when not bridged. */
+        final int stickAxis;
+        /** {@code -1} left held, {@code 0} neutral, {@code 1} right held. */
+        int stickHeld = 0;
+        long stickDownTime = 0;
 
         DeviceTriggers(AxisRanges ranges) {
+            stickAxis = resolveRightStickXAxis(ranges);
             axes[SIDE_LEFT] = resolveTriggerAxes(ranges, SIDE_LEFT);
             axes[SIDE_RIGHT] = resolveTriggerAxes(ranges, SIDE_RIGHT);
         }
@@ -152,10 +212,31 @@ public final class GamepadTriggerKeySynthesizer {
             }
             return edges;
         }
+
+        /**
+         * Applies one sampled right-stick X value. Pure, like {@link #step}.
+         *
+         * @return {@code {releasedSide, pressedSide}} using {@link #SIDE_LEFT} /
+         *         {@link #SIDE_RIGHT}, {@link #STICK_NONE} for "nothing". The
+         *         release (if any) must be emitted before the press.
+         */
+        int[] stepStick(float value, long time) {
+            final int next = stickState(stickHeld, value);
+            final int prev = stickHeld;
+            if (next == prev) return new int[] {STICK_NONE, STICK_NONE};
+            final int released = prev == 0 ? STICK_NONE : (prev < 0 ? SIDE_LEFT : SIDE_RIGHT);
+            final int pressed = next == 0 ? STICK_NONE : (next < 0 ? SIDE_LEFT : SIDE_RIGHT);
+            stickHeld = next;
+            if (pressed != STICK_NONE) stickDownTime = time;
+            return new int[] {released, pressed};
+        }
     }
 
     private static final int[] KEYCODES = {
         KeyEvent.KEYCODE_BUTTON_L2, KeyEvent.KEYCODE_BUTTON_R2,
+    };
+    private static final int[] STICK_KEYCODES = {
+        KeyEvent.KEYCODE_BUTTON_15, KeyEvent.KEYCODE_BUTTON_16,
     };
     private static final int[] SCAN_CODES = {SCAN_CODE_BTN_TL2, SCAN_CODE_BTN_TR2};
 
@@ -198,6 +279,15 @@ public final class GamepadTriggerKeySynthesizer {
                 emit(KeyEvent.ACTION_UP, side, deviceId, triggers.downTime[side], time);
             }
         }
+        if (triggers.stickAxis >= 0) {
+            final int[] stick = triggers.stepStick(event.getAxisValue(triggers.stickAxis), time);
+            if (stick[0] != STICK_NONE) {
+                emitStick(KeyEvent.ACTION_UP, stick[0], deviceId, triggers.stickDownTime, time);
+            }
+            if (stick[1] != STICK_NONE) {
+                emitStick(KeyEvent.ACTION_DOWN, stick[1], deviceId, triggers.stickDownTime, time);
+            }
+        }
     }
 
     /**
@@ -213,6 +303,11 @@ public final class GamepadTriggerKeySynthesizer {
                     triggers.pressed[side] = false;
                     emit(KeyEvent.ACTION_UP, side, entry.getKey(), triggers.downTime[side], time);
                 }
+            }
+            if (triggers.stickHeld != 0) {
+                final int side = triggers.stickHeld < 0 ? SIDE_LEFT : SIDE_RIGHT;
+                triggers.stickHeld = 0;
+                emitStick(KeyEvent.ACTION_UP, side, entry.getKey(), triggers.stickDownTime, time);
             }
         }
         devices.clear();
@@ -247,6 +342,23 @@ public final class GamepadTriggerKeySynthesizer {
                 return range(axis).getMin();
             }
         };
+    }
+
+    private void emitStick(int action, int side, int deviceId, long downTime, long eventTime) {
+        final Integer source = sources.get(deviceId);
+        final int keySource =
+                (source == null ? 0 : source) | InputDevice.SOURCE_GAMEPAD;
+        sink.dispatchSynthesizedKey(new KeyEvent(
+                downTime,
+                eventTime,
+                action,
+                STICK_KEYCODES[side],
+                /* repeat= */ 0,
+                /* metaState= */ 0,
+                deviceId,
+                /* scancode= */ 0,
+                /* flags= */ 0,
+                keySource));
     }
 
     private void emit(int action, int side, int deviceId, long downTime, long eventTime) {

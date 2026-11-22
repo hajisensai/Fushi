@@ -1,5 +1,7 @@
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 
+import 'package:fushi/src/ai/agent/ai_agent_library_skill.dart';
+
 /// AI 助手的组合技能（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
 /// §6.3）：确定性的多步配方。模型只负责选技能、填参数；每一步都调操作目录里的
 /// 现有操作（与按钮同一个 handler），照常走确认 / 记账 / 撤销。
@@ -11,6 +13,7 @@ List<AiAgentAppSkill> buildAiAgentSkills() => <AiAgentAppSkill>[
   ExtensionFindSkill(),
   SrsConflictsResolveSkill(),
   CurateLibrarySkill(),
+  ReorganizeLibrarySkill(),
 ];
 
 /// app 侧技能：声明它要用的操作；任一当前不可用（模块关、平台 / 合规不支持）时
@@ -745,12 +748,13 @@ class CurateLibrarySkill extends AiAgentAppSkill {
   AgentToolSpec get spec => const AgentToolSpec(
     name: 'skill.curate_library',
     description:
-        'Tidy the whole library in one go: organize collection membership, '
-        'identify unscraped video works, link related works across media '
-        '(novel / manga / anime / game / music) and refresh the work layer. '
-        'Only items added since the last run unless full=true. Use when the '
-        'user asks to organize / clean up / sort out the library. Undo '
-        'reverts the whole run.',
+        'Run the fixed, incremental curator pipeline once (the same one that '
+        'runs automatically after imports): organize collection membership '
+        'of new items, identify unscraped video works, link related works '
+        'and refresh the work layer. Only items added since the last run '
+        'unless full=true. Cheap but shallow; for a thorough reorganization '
+        'of the whole library (fix wrong collections, rewrite relations) use '
+        'skill.library.reorganize instead. Undo reverts the whole run.',
     parameters: <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{

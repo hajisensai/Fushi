@@ -188,7 +188,7 @@ void main() {
     test('BUG-2554：查词返回的 highlightCount 必须喂给高亮 eval', () {
       final String body = methodBody(
         code,
-        'Future<void> processMangaSelection(ReaderSelectionData data)',
+        'Future<int> _processMangaSelection(',
       );
       expect(
         body,

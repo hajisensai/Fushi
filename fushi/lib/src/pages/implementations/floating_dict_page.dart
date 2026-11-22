@@ -144,15 +144,15 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     FushiToast.showMine(
       msg: described.message,
       status: described.status,
-      // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-      action:
-          minedCardUndoToastAction(
-            repo,
-            outcome,
-            expression: fields['expression'],
-          ) ??
-          // BUG-5085：复习库要升级时带「打开复习」（主窗口进程才装得上）。
-          mineFailureToastAction(outcome),
+      detail: described.detail,
+      term: fields['expression'],
+      reading: fields['reading'],
+      // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+      action: mineResultToastAction(
+        repo,
+        outcome,
+        expression: fields['expression'],
+      ),
     );
   }
 

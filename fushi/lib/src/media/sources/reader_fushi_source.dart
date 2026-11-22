@@ -914,8 +914,10 @@ class ReaderFushiSource extends ReaderMediaSource {
     // declared cover (and the conventional fallbacks) case-insensitively against
     // the real extracted files as a last resort so the cover still shows.
     // Shared with card mining via [resolveCoverFilePath] (TODO-1388 / BUG-703)
-    // so both surfaces resolve to the identical on-disk cover file.
-    final String? resolved = resolveCoverFilePath(
+    // so both surfaces resolve to the identical on-disk cover file. 这里跑在 UI
+    // isolate 的书架加载里，用同一解析的异步版（目录枚举 / 存在性探测走异步 IO），
+    // 不在帧里同步 listSync。
+    final String? resolved = await resolveBookCoverFilePathAsync(
       extractDir: book.extractDir,
       coverPath: book.coverPath,
     );

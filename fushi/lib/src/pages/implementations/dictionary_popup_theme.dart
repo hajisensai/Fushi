@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show FushiDesignSystem, FushiEinkTheme, FushiGlassMaterial;
+import 'package:fushi/src/utils/adaptive/shell_style.dart' show FushiShellTheme;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
     show FushiAppleDarkTier;
 
@@ -50,6 +51,10 @@ class DictionaryPopupTheme {
 /// `FushiAppleColors`，书内查词弹窗在 Apple 设计系统下不回落成 MD3。墨水屏下 Apple
 /// 设计系统本就不生效（`buildFushiThemeData` 内 `glassDesign && !eink`）。
 ///
+/// [shell]：app 当前的外壳样式（`ThemeNotifier.shellTheme`），同样原样交给工厂
+/// （BUG-5208）——缺省的 `const FushiShellTheme()` 会把弹窗里的菜单 / 卡片 / 对话框
+/// 形状打回默认圆角，弹窗子树里读到的 [FushiShellTheme] 也不是用户那份。
+///
 /// [lyricsCoverScheme]：歌词模式（MD3）下歌词页按封面取色得到的那份 ColorScheme
 /// （`LyricsThemeHostState.coverScheme`，歌词页自己也是拿它经
 /// `rethemeFushiWithScheme` → [buildFushiThemeData] 重走工厂）。非 null 时弹窗
@@ -72,6 +77,7 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   bool glassDesign = false,
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool monochromeAccent = false,
+  FushiShellTheme shell = const FushiShellTheme(),
   ColorScheme? lyricsCoverScheme,
   bool lyricsMode = false,
 }) {
@@ -90,6 +96,7 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
         glass: glass,
         glassDesign: true,
         monochromeAccent: monochromeAccent,
+        shell: shell,
       ),
     );
     return DictionaryPopupTheme(
@@ -106,6 +113,7 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
     glass: eink ? FushiGlassMaterial.off : glass,
     glassDesign: apple,
     monochromeAccent: monochromeAccent,
+    shell: shell,
   );
   return DictionaryPopupTheme(
     theme: theme,

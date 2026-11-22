@@ -2932,6 +2932,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final BaseAnkiRepository repo = model.miningAnkiRepository;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
@@ -2977,7 +2979,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
           : result.failureReason != null
           ? '${t.external_window_capture_failed}：${result.failureReason}'
           : t.external_window_capture_failed;
-      FushiToast.showMine(msg: abortMessage, status: MineToastStatus.failed);
+      FushiToast.showMine(
+        msg: abortMessage,
+        status: MineToastStatus.failed,
+        term: fields['expression'],
+        reading: fields['reading'],
+      );
       // BUG-1908：同一句话也回给浮窗——游戏全屏时主 app 窗在后台，上面那个 toast
       // 用户看不见。
       return result.toPopupReply(message: abortMessage);
@@ -2990,16 +2997,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     FushiToast.showMine(
       msg: described.message,
       status: described.status,
-      // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-      action:
-          minedCardUndoToastAction(
-            repo,
-            outcome,
-            expression: fields['expression'],
-            overwrite: updateNoteId != null,
-          ) ??
-          // BUG-5085：复习库要升级时带「打开复习」。
-          mineFailureToastAction(outcome),
+      detail: described.detail,
+      term: fields['expression'],
+      reading: fields['reading'],
+      // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+      action: mineResultToastAction(
+        repo,
+        outcome,
+        expression: fields['expression'],
+        overwrite: updateNoteId != null,
+      ),
     );
     // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
     // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。

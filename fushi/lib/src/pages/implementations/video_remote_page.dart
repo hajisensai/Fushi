@@ -1478,6 +1478,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     try {
       final Map<String, dynamic> task = await _runRemoteMine(

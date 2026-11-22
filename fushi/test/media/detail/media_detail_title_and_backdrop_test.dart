@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -74,7 +75,11 @@ void main() {
     expect(find.text(_title), findsOneWidget);
   });
 
-  testWidgets('模糊封面背景被裁在 hero 框内（晕边不压到下方内容）', (WidgetTester tester) async {
+  // 2026-11-22 视频合集滚动卡顿：整页背景若用渲染期 [ImageFiltered]，Impeller 没有
+  // raster cache，滚动内容每一帧都要在整窗分辨率上把背景重新卷积一遍（4K 实测
+  // raster p90 ≈ 50 ms）。模糊背景必须走只烘焙一次的 [PrebakedBlurImage]，烘焙结果
+  // 只画在自身框内（也就不会晕出 hero 底边）。
+  testWidgets('模糊封面背景走预烘焙，不用渲染期 ImageFiltered', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: SizedBox(
@@ -84,14 +89,8 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(
-      find.ancestor(
-        of: find.byType(ImageFiltered),
-        matching: find.byType(ClipRect),
-      ),
-      findsOneWidget,
-      reason: 'ImageFiltered 默认不裁剪，模糊晕边会画到 hero 底边之外形成「阴影硬边」',
-    );
+    expect(find.byType(PrebakedBlurImage), findsOneWidget);
+    expect(find.byType(ImageFiltered), findsNothing);
   });
   // BUG-3355（反馈 kVwc9NMu2x「漫画点开顶上有莫名的毛玻璃」）：AnimatedSwitcher 的
   // 默认布局给子项松约束，Image 不铺满、按宽高比缩成居中的一条竖图——两栏详情页
@@ -113,7 +112,10 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(tester.getSize(find.byType(Image)), const Size(700, 400));
+      expect(
+        tester.getSize(find.byType(sigma > 0 ? PrebakedBlurImage : Image)),
+        const Size(700, 400),
+      );
     });
   }
 
@@ -239,7 +241,10 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(tester.getSize(find.byType(Image)), const Size(400, 560));
+    expect(
+      tester.getSize(find.byType(PrebakedBlurImage)),
+      const Size(400, 560),
+    );
   });
 
   group('MediaDetailSynopsis', () {
