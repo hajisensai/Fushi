@@ -511,6 +511,24 @@ Future<void> editMangaAudioLineInPlace(
       return;
     }
   }
+  // 这句是「不读」类型（刚改成的，或早就是、清单还没跟上）：不再出声，从成品里拿掉，
+  // 不重新合成（与整卷生成同一判据，HBK-AUDIT-214）。这卷正在生成时由那个任务持有
+  // 清单，这里不写，提示等它结束。
+  final MangaScriptLine? edited = session.script.lineById(line.lineId);
+  if (!(edited?.kind.isAudible ?? false)) {
+    if (mangaRenderBusy(host, bookKey)) {
+      FushiToast.show(msg: t.manga_audio_line_not_read_render_busy);
+      return;
+    }
+    await dropMangaUnreadLines(
+      host,
+      bookKey: bookKey,
+      script: session.script,
+      lineIds: <String>[line.lineId],
+    );
+    FushiToast.show(msg: t.manga_audio_line_not_read_dropped);
+    return;
+  }
   if (!context.mounted) return;
   if (mangaRenderBusy(host, bookKey)) {
     FushiToast.show(msg: t.manga_audio_line_saved_render_busy);
