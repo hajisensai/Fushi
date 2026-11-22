@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4540 条。点号进各自文件。
+> 共 4543 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5231](bugs/BUG-5231-update-check-reveal-other-channel-download.md) | ✅ | ✅ | 手动检查更新先唤回任意在途下载：stable 下载在途时，调试版面板按 debug 查被 stable 浮层截走 |
+| [BUG-5230](bugs/BUG-5230-ios-inbox-prefix-stem-cross-subtitle.md) | ✅ | ✅ | iOS 收件箱搬入根上文件：stem 互为前缀时放行交叉配对，较短 stem 的视频选上别人的日语字幕 |
+| [BUG-5228](bugs/BUG-5228-reading-stats-month-goal-week-facts.md) | ✅ | ✅ | 阅读统计页字数环回退到月目标时只读本周数据，漏掉本月更早的字数 |
 | [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
 | [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |

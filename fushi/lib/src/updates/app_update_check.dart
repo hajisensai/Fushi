@@ -36,9 +36,13 @@ Future<void> checkAppUpdateNow(
   AppModel appModel, {
   UpdateChannel? channel,
 }) async {
+  final UpdateChannel effectiveChannel =
+      channel ?? appUpdateChannelOf(appModel);
   // BUG-5168：下载浮层点过「隐藏」时，再点「检查更新」就是要回去看进度——直接把在途
   // 下载的浮层拉回来，不再去查一遍网络、也不只回一句「正在下载」。
-  if (UpdateChecker.revealActiveDownload()) return;
+  // HBK-AUDIT-230：只拉回**这次要查的通道**的下载。stable 下载在途时，调试版面板显式
+  // 按 debug 查（BUG-4987），必须照样去查 debug manifest，不能被 stable 浮层截走。
+  if (UpdateChecker.revealActiveDownload(channel: effectiveChannel)) return;
   if (_manualCheckInFlight) {
     // 更新中心条目 / 系统通知也从这里进来：在飞时静默早退等于「点了没反应」。
     FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
@@ -55,8 +59,6 @@ Future<void> checkAppUpdateNow(
     appModel.packageInfo.version,
   );
   final String currentBuildNumber = appModel.packageInfo.buildNumber;
-  final UpdateChannel effectiveChannel =
-      channel ?? appUpdateChannelOf(appModel);
   // BUG-846「谁后用谁」：缓存乐观比较用本机 release sequence（无后缀 `X.Y.Z` 正式版包 /
   // beta/debug 包都能取到），与网络路径 scheduleCheck 同源。远端 seq 从缓存的 latestTag 串
   // 自取（beta/debug 带尾号；正式版无 → 保守走基版本比较，网络刷新随后收口）。
