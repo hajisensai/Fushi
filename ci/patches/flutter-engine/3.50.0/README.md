@@ -280,22 +280,17 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-3.50.0 的第一份补丁引擎是 `hdr-output-1`（2026-11-13 本机编，含前七份引擎补丁与 ANGLE 补丁，**不含**
-第八份 `engine-texture-frame-raster-thread`；
-三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-1.zip`，SHA-256
-`079bb3a75fc07217b52a6b3f3842dd69cce021c27aea6e6387334430ae750a0b`）。已发 release
-`flutter-engine-3.50.0-hdr-output-1`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
+3.50.0 当前的补丁引擎是 `hdr-output-2`（2026-11-22 本机在全新源码树上编，**全部八份**引擎补丁 + ANGLE 补丁，
+与 3.47.6 的 `hdr-output-5` 同一功能集，含 BUG-5200 的 `engine-texture-frame-raster-thread`；
+三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-2.zip`，SHA-256
+`2fd147aa164c8269892a68e830827c0c5d339cf7d56e5b4fbea2537f0753ab58`）。已发 release
+`flutter-engine-3.50.0-hdr-output-2`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
 `artifacts.json` 的 `engineVersion` / `url` / `sha256` 均指向它，CI 与
 `tool/engine_overlay.ps1 -Manifest` 可直接安装。
 
-**待办（BUG-5200 在 3.50 上未生效）**：第八份补丁是 develop 在 3.47.6 上 2026-11-22 加的（3.47.6 产物
-`hdr-output-5`），合进本分支时已移植到 3.50.0：在 3.50.0 源码上按序重放前七份后 `git apply` 干净通过（只有行号偏移），
-本目录的补丁按 3.50.0 基线重新生成。但 3.50.0 的产物还没重编，`artifacts.json` 仍是 `hdr-output-1`——
-在重编发布 `flutter-engine-3.50.0-hdr-output-2` 并改 `artifacts.json` 之前，用 3.50 出的 Windows 包
-回到「主线程一忙视频就丢帧」（BUG-5200 修复前的行为）。
-
 改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
-仍是旧引擎。旧 release 留着给旧提交复现用（3.47.6 时代：`flutter-engine-3.47.6-hdr-output-5` 是全部八份，`-4` 是前七份，
+仍是旧引擎。旧 release 留着给旧提交复现用（3.50.0：`flutter-engine-3.50.0-hdr-output-1` 是前七份、不含
+BUG-5200 的第八份；3.47.6 时代：`flutter-engine-3.47.6-hdr-output-5` 是全部八份，`-4` 是前七份，
 `-3` 是前四份补丁，`-2` 是前三份、无 keyed mutex，`-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
 `flutter-engine-3.44.0-hdr-output-2`）。
 
