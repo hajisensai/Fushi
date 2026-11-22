@@ -1,5 +1,7 @@
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/video/video_continue_watching.dart'
+    show videoLocalExtraBookUids;
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoFileEpisodeStills, videoAirYear;
 
@@ -135,7 +137,7 @@ class VideoLibraryScrapeMaps {
       metadataImagesByWork: _buildImagesByWork(workImages),
       fileEpisodesByBook: fileEpisodes.byBook,
       runtimeMinutesByBookUid: fileEpisodes.runtimeMinutes,
-      localExtraBookUids: _buildLocalExtras(extras),
+      localExtraBookUids: videoLocalExtraBookUids(extras),
       mediaImagesByCollection: buckets.byCollection,
       mediaImagesByBookUid: buckets.byBook,
     );
@@ -192,7 +194,7 @@ class VideoLibraryScrapeMaps {
           ? localExtraBookUids
           : <String>{
               ...localExtraBookUids.where((String uid) => !books.contains(uid)),
-              ..._buildLocalExtras(
+              ...videoLocalExtraBookUids(
                 rows.extras,
               ).where((String uid) => books.contains(uid)),
             },
@@ -280,11 +282,6 @@ Map<int, List<VideoMetadataImageRow>> _buildImagesByWork(
   }
   return out;
 }
-
-Set<String> _buildLocalExtras(List<VideoMetadataExtraRow> extras) => <String>{
-  for (final VideoMetadataExtraRow extra in extras)
-    if (extra.bookUid case final String bookUid) bookUid,
-};
 
 class _FileEpisodes {
   const _FileEpisodes(this.byBook, this.runtimeMinutes);
