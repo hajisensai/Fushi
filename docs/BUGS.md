@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4492 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5177](bugs/BUG-5177-video-pause-ocr-tap-wrong-line.md) | 🚧 | ✅ | 视频暂停 OCR 点「中」查词串却从上一行「@utaskyat」的 u 开始 |
 > 共 4493 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
