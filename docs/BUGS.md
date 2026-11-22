@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4509 条。点号进各自文件。
+> 共 4510 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5184](bugs/BUG-5184-home-activity-rows-main-isolate-merge.md) | 🚧 | 🚧 | 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序 |
 | [BUG-5183](bugs/BUG-5183-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 | [BUG-5182](bugs/BUG-5182-srs-card-source-jump-duplicate.md) | ✅ | ✅ | 复习卡「回到出处」入口重复（媒体胶囊 + 例句旁 ↩） |
 | [BUG-5181](bugs/BUG-5181-srs-defs-illustration-huge-and-untappable.md) | ✅ | ✅ | 复习卡释义里的词典插图巨大且点不开 |
