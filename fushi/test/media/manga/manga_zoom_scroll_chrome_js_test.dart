@@ -102,7 +102,7 @@ void main() {
             jsonDecode(utf8.decode(base64Decode(payload!.group(1)!)))
                 as Map<String, dynamic>;
         expect(report['failures'], isEmpty, reason: '${report['failures']}');
-        expect(report['passed'] as int, 9);
+        expect(report['passed'] as int, 11);
       } finally {
         temp.deleteSync(recursive: true);
       }
