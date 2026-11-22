@@ -547,21 +547,37 @@ Duration fushiTiltEaseDuration(BuildContext context, Offset? pointer) =>
 /// 树结构恒定：没有 [FushiHoverLift] 祖先时原样返回 [child]；有祖先时不在倾斜态
 /// 也照样包着（单位变换）。墨水屏 / 减弱动态效果下 [FushiHoverLift] 不发指针
 /// 位置，这里自然不动。
+///
+/// [group] = 本层是一组元素（如歌词页「封面 + 压在上面的唱片」）的**共同**倾斜：
+/// 子树里的 [FushiTilt]（封面框自带的那层）不再各自倾斜，整组同一个变换，不会
+/// 只有其中一件跟着指针转、兄弟节点留在平面上。
 class FushiTilt extends StatelessWidget {
-  const FushiTilt({required this.child, this.enabled = true, super.key});
+  const FushiTilt({
+    required this.child,
+    this.enabled = true,
+    this.group = false,
+    super.key,
+  });
 
   final Widget child;
   final bool enabled;
 
+  /// 见类注释：true 时子树里的 [FushiTilt] 一律不再倾斜（由本层统一倾斜）。
+  final bool group;
+
   @override
   Widget build(BuildContext context) {
-    final ValueListenable<Offset?>? tilt = enabled
+    // 祖先已经整组倾斜：本层不再叠一次旋转（树结构不变，原样返回子树）。
+    final bool claimed =
+        context.getInheritedWidgetOfExactType<_FushiTiltGroupScope>() != null;
+    final ValueListenable<Offset?>? tilt = enabled && !claimed
         ? FushiHoverLift.tiltOf(context)
         : null;
-    if (tilt == null) return child;
+    final Widget body = group ? _FushiTiltGroupScope(child: child) : child;
+    if (tilt == null) return body;
     return ValueListenableBuilder<Offset?>(
       valueListenable: tilt,
-      child: child,
+      child: body,
       // 按 [FushiTilt] 自己的盒子归一化（builder 的 context 首个渲染对象就是下面
       // 那层 Transform，它的坐标系不含自身旋转）。
       builder: (BuildContext context, Offset? global, Widget? child) =>
@@ -593,6 +609,14 @@ class FushiTilt extends StatelessWidget {
           ),
     );
   }
+}
+
+/// [FushiTilt.group] 往下广播「这棵子树已由祖先整组倾斜」。
+class _FushiTiltGroupScope extends InheritedWidget {
+  const _FushiTiltGroupScope({required super.child});
+
+  @override
+  bool updateShouldNotify(_FushiTiltGroupScope oldWidget) => false;
 }
 
 /// 倾斜时跟着指针走的镜面高光：一团径向柔光落在指针位置，越靠边越亮一点，

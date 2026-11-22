@@ -734,7 +734,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   /// 「在线 › 来源」里音源的顺序 / 开关 / 启用 / 服务器变了：重读推荐与搜索用的来源，
   /// 以及混排进曲库的服务器专辑。
+  ///
+  /// 来源视图在写完偏好后才回调：那时用户可能已经切走（来源视图已 dispose），本页
+  /// 也可能已关掉，所以先判 mounted（之后的重读要经 ref 取 AppModel）。
   void _onOnlineSourcesChanged() {
+    if (!mounted) return;
     unawaited(_reloadOnlineSources());
     unawaited(_reloadServerAlbums());
   }
