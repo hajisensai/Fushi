@@ -121,6 +121,42 @@ void main() {
     expect(offenders, isEmpty, reason: offenders.join('\n'));
   });
 
+  // AGP 9.3 的 lint（lintVitalAnalyzeRelease）调 `List.removeLast()`——JDK 21 才有的
+  // SequencedCollection API。Gradle 跑在 JDK 17 上时 release 构建在 lint 阶段
+  // NoSuchMethodError（release.yml run 45007963917，google_sign_in_android）；本机 JDK 21 测不出。
+  // 字节码目标仍是 17（app/build.gradle），这里只管跑 Gradle 的 JDK。
+  test('跑 Android Gradle 的 workflow 用 JDK >= 21', () {
+    final List<File> workflows =
+        Directory('../.github/workflows')
+            .listSync()
+            .whereType<File>()
+            .where((File f) => f.path.endsWith('.yml'))
+            .toList()
+          ..sort((File a, File b) => a.path.compareTo(b.path));
+    final RegExp runsGradle = RegExp(
+      r'flutter build (apk|appbundle)|gradlew|fushi/android|--platform=android',
+    );
+    final RegExp javaVersion = RegExp(r'''java-version:\s*['"]?(\d+)['"]?''');
+    final List<String> gradleWorkflows = <String>[];
+    final List<String> offenders = <String>[];
+    for (final File f in workflows) {
+      final String text = f.readAsStringSync().replaceAll('\r\n', '\n');
+      if (!runsGradle.hasMatch(text)) continue;
+      gradleWorkflows.add(f.uri.pathSegments.last);
+      for (final RegExpMatch m in javaVersion.allMatches(text)) {
+        if (int.parse(m.group(1)!) < 21) {
+          offenders.add('${f.path}: ${m.group(0)}');
+        }
+      }
+    }
+    expect(
+      gradleWorkflows,
+      containsAll(<String>['main.yml', 'release.yml']),
+      reason: '识别跑 Gradle 的 workflow 的判据失效了',
+    );
+    expect(offenders, isEmpty, reason: offenders.join('\n'));
+  });
+
   test('根 build.gradle 不把插件 compileSdk 压到 36 以下', () {
     final String root = maskComments(read('android/build.gradle'));
     final Iterable<RegExpMatch> sets = RegExp(
