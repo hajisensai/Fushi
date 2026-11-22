@@ -212,6 +212,10 @@
     clearTimeout(scanDelayTimer);
     scanDelayTimer = null;
   }
+  // 侧栏里的查词弹窗（同 realm 的 vendor/popup.js）认同一个触发键与扫描延迟（反馈 r4tpeIzVuD）；
+  // 没有这两个钩子时 popup.js 退回「Shift、立即扫」，与设置不符。
+  window.__fushiScanModifierHeld = function (e) { return fushiScanModifierHeld(e, scanModifier); };
+  window.__fushiScanDelayMs = function () { return fushiEffectiveScanDelay(scanModifier, scanDelayMs); };
   try {
     chrome.storage.local.get(['shiftHoverLookup', 'scanModifier', 'scanDelay'], function (saved) {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }

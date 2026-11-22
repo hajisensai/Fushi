@@ -5,10 +5,10 @@ import 'package:fushi/src/media/tags/tag_chip_draggable.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 
-/// BUG-4899 / BUG-5066：库页标签条（横向、鼠标可拖滚的 `HorizontalDragScrollable`
-/// 列表）里 chip 的拖动重排按指针类型分流——鼠标即时拖（越过 slop 的同一帧先
-/// 认领，横滚抢不到；不动松开仍是单击），触屏长按拖（短滑仍归横滚）。不再需要
-/// chip 左侧的「⋮⋮」拖动柄。
+/// BUG-4899 / BUG-5066 / BUG-5174：库页标签条（横向、鼠标可拖滚的
+/// `HorizontalDragScrollable` 列表）里 chip 的拖动重排一律长按起拖——鼠标与
+/// 触屏都是「按下就拖 = 横滚、长按后拖 = 重排、不动松开 = 单击」。鼠标长按容忍
+/// 手抖（门槛 kTouchSlop，标签条横滚用同一门槛），不需要 chip 左侧的拖动柄。
 void main() {
   const List<String> tags = <String>['a', 'b', 'c', 'd'];
 
@@ -58,6 +58,7 @@ void main() {
             width: 260,
             height: 48,
             child: HorizontalDragScrollable(
+              mouseDragController: adaptive ? controller : null,
               child: ListView(
                 controller: controller,
                 scrollDirection: Axis.horizontal,
@@ -102,7 +103,9 @@ void main() {
     expect(controller.offset, greaterThan(0), reason: '同一下位移被横滚认领');
   });
 
-  testWidgets('鼠标在 chip 上按住即拖，横滚抢不到，放到另一枚标签上触发重排', (WidgetTester tester) async {
+  testWidgets('鼠标长按 chip（计时内手抖 2 px）后拖到另一枚标签上触发重排，标签条不滚', (
+    WidgetTester tester,
+  ) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
     final List<String> accepted = <String>[];
@@ -121,7 +124,7 @@ void main() {
       kind: PointerDeviceKind.mouse,
     );
     await gesture.moveBy(const Offset(2, 0));
-    await tester.pump();
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     await gesture.moveTo(tester.getCenter(labelOf('b')));
     await tester.pump();
     await gesture.up();
@@ -129,7 +132,39 @@ void main() {
 
     expect(accepted, <String>['a->b']);
     expect(tapped, isEmpty);
-    expect(controller.offset, 0, reason: 'chip 上的鼠标位移不滚动标签条');
+    expect(controller.offset, 0, reason: '长按判胜后位移归拖动，不滚标签条');
+  });
+
+  testWidgets('鼠标在 chip 上按下就拖：横滚标签条且跟手，不起拖、不点选', (WidgetTester tester) async {
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    final List<String> accepted = <String>[];
+    final List<String> tapped = <String>[];
+    await tester.pumpWidget(
+      harness(
+        adaptive: true,
+        controller: controller,
+        accepted: accepted,
+        tapped: tapped,
+      ),
+    );
+
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(labelOf('b')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-20, 0));
+    await tester.pump();
+    // 横滚已判胜：之后停够长按时长也不会改判成拖动。
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(accepted, isEmpty);
+    expect(tapped, isEmpty);
+    expect(controller.offset, closeTo(40, 0.01), reason: '门槛内的位移起滚时补上');
   });
 
   testWidgets('鼠标单击 chip（不移动）仍是点选，不起拖', (WidgetTester tester) async {
