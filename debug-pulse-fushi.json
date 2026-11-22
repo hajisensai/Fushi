@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T06:21:46Z",
+ "generatedAt": "2026-11-22T06:57:34Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
   "seq": 31256
  },
  "builds": [
+  {
+   "seq": 31255,
+   "version": "3.4.0",
+   "sha": "00145ef40004370c9824486ddb434a473b3fa528",
+   "unknown": false,
+   "publishedAt": "2026-11-22T06:57:25Z",
+   "testflight": false,
+   "baseSeq": 31242,
+   "prs": [
+    4148,
+    4144
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+    }
+   }
+  },
   {
    "seq": 31242,
    "version": "3.4.0",
@@ -181,46 +213,12 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31049,
-   "version": "3.4.0",
-   "sha": "b0aef3d0b1e769a213c9ef13698b3606f5dcd56e",
-   "unknown": false,
-   "publishedAt": "2026-11-22T03:05:36Z",
-   "testflight": false,
-   "baseSeq": 31044,
-   "prs": [
-    4077
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44970378957"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44970378957"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44970378957"
-    }
-   }
   }
  ],
  "pending": {
   "headSha": "c1d0c1e0902a1611c8a043174216f0021530214f",
   "headSeq": 31256,
-  "prs": [
-   4148,
-   4144
-  ],
+  "prs": [],
   "direct": [
    {
     "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
@@ -230,20 +228,16 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397513"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+    "state": "none"
    }
   }
  },
@@ -273,15 +267,6 @@
    "mergedAt": "2026-11-22T01:12:53Z",
    "additions": 2007,
    "deletions": 40,
-   "labels": []
-  },
-  "4077": {
-   "number": 4077,
-   "title": "fix(srs-gen4): 迁移对拍认出副本组换了代表（BUG-5063）+ 模板判空按类型解析一次（BUG-5137）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T01:12:49Z",
-   "additions": 64,
-   "deletions": 22,
    "labels": []
   },
   "4101": {
