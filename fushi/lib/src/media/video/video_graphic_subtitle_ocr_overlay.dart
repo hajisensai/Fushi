@@ -11,7 +11,6 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:characters/characters.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
