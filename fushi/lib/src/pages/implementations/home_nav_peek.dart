@@ -593,7 +593,7 @@ Future<NavPeekFeed> _loadVideos({
         final VideoBookRow? local = target.local;
         final RemoteVideoInfo? remote = target.remote;
         return AdaptiveNavPeekEntry(
-          title: c.collection.name,
+          title: c.title,
           subtitle: videoContinueSeriesSubtitle(c),
           blurCover:
               nsfw(MediaNsfwTarget.collection(cid)) ||

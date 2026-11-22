@@ -6806,11 +6806,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  String _workTitle(MediaCollectionRow collection) {
-    return _metadataWorkByCollection[collection.id]?.title ??
-        _collectionScrapeMetaById[collection.id]?.title ??
-        collection.name;
-  }
+  String _workTitle(MediaCollectionRow collection) => videoCollectionWorkTitle(
+    collection,
+    metadataWorkByCollection: _metadataWorkByCollection,
+    collectionScrapeMetaById: _collectionScrapeMetaById,
+  );
 
   /// hero / 行卡成员封面回落链：首个有本地封面的成员（组内序），全缺返回 null。
   ImageProvider? _collectionMembersCoverProvider(List<VideoBookRow> members) {
@@ -6867,6 +6867,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     legacyWatchAtByTitle: _legacyWatchAtByTitle,
     durationMsOf: _knownDurationMs,
     excludedUids: _localExtraBookUids,
+    metadataWorkByCollection: _metadataWorkByCollection,
+    collectionScrapeMetaById: _collectionScrapeMetaById,
   );
 
   /// 播放器记下的片长（BUG-3491，见 video_duration_pref.dart）；没播过 → null。
@@ -7645,7 +7647,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ),
       collectionId: collection.id,
       focusId: FushiFocusId('home-video-continue-collection-${collection.id}'),
-      title: _workTitle(collection),
+      title: candidate.title,
       subtitle: _continueCollectionSecondaryText(candidate),
       detailLine: completedCount > 0
           ? t.video_hero_episodes_watched(n: completedCount)

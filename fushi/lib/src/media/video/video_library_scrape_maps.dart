@@ -1,7 +1,5 @@
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/video/video_continue_watching.dart'
-    show videoLocalExtraBookUids;
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoFileEpisodeStills, videoAirYear;
 
@@ -129,10 +127,10 @@ class VideoLibraryScrapeMaps {
     final _MediaImageBuckets buckets = _bucketMediaImages(mediaImages);
     return VideoLibraryScrapeMaps(
       airYearByUid: _buildAirYears(scrapeMeta),
-      collectionScrapeMetaById: _buildCollectionScrapeMeta(
+      collectionScrapeMetaById: buildCollectionScrapeMetaById(
         collectionScrapeMeta,
       ),
-      metadataWorkByCollection: _buildWorksByCollection(works),
+      metadataWorkByCollection: buildVideoWorksByCollection(works),
       metadataWorkByBook: _buildWorksByBook(works),
       metadataImagesByWork: _buildImagesByWork(workImages),
       fileEpisodesByBook: fileEpisodes.byBook,
@@ -163,12 +161,12 @@ class VideoLibraryScrapeMaps {
       collectionScrapeMetaById: _replaceKeys(
         collectionScrapeMetaById,
         collections,
-        () => _buildCollectionScrapeMeta(rows.collectionScrapeMeta),
+        () => buildCollectionScrapeMetaById(rows.collectionScrapeMeta),
       ),
       metadataWorkByCollection: _replaceKeys(
         metadataWorkByCollection,
         collections,
-        () => _buildWorksByCollection(rows.works),
+        () => buildVideoWorksByCollection(rows.works),
       ),
       metadataWorkByBook: _replaceKeys(
         metadataWorkByBook,
@@ -250,13 +248,15 @@ Map<String, int> _buildAirYears(List<VideoScrapeMetaRow> rows) => <String, int>{
     if (videoAirYear(r.airDate) case final int year) r.bookUid: year,
 };
 
-Map<int, CollectionScrapeMetaRow> _buildCollectionScrapeMeta(
+/// 合集刮削元数据按合集 id 索引。
+Map<int, CollectionScrapeMetaRow> buildCollectionScrapeMetaById(
   List<CollectionScrapeMetaRow> rows,
 ) => <int, CollectionScrapeMetaRow>{
   for (final CollectionScrapeMetaRow r in rows) r.collectionId: r,
 };
 
-Map<int, VideoMetadataWorkRow> _buildWorksByCollection(
+/// 刮削作品按所属合集 id 索引（只收挂在合集上的作品）。
+Map<int, VideoMetadataWorkRow> buildVideoWorksByCollection(
   List<VideoMetadataWorkRow> works,
 ) => <int, VideoMetadataWorkRow>{
   for (final VideoMetadataWorkRow work in works)
@@ -361,3 +361,21 @@ _MediaImageBuckets _bucketMediaImages(List<MediaImageRow> rows) {
   }
   return _MediaImageBuckets(byCollection, byBook);
 }
+
+/// 刮削认定为特典的本地视频（不进继续观看）。
+Set<String> videoLocalExtraBookUids(List<VideoMetadataExtraRow> extras) =>
+    <String>{
+      for (final VideoMetadataExtraRow extra in extras)
+        if (extra.bookUid case final String bookUid) bookUid,
+    };
+
+/// 合集卡 / 继续观看上显示的作品名：刮削作品标题 → 合集刮削元数据标题 → 合集名。
+/// 视频首页与侧栏速览同一条回落链（BUG-5258）。
+String videoCollectionWorkTitle(
+  MediaCollectionRow collection, {
+  required Map<int, VideoMetadataWorkRow> metadataWorkByCollection,
+  required Map<int, CollectionScrapeMetaRow> collectionScrapeMetaById,
+}) =>
+    metadataWorkByCollection[collection.id]?.title ??
+    collectionScrapeMetaById[collection.id]?.title ??
+    collection.name;

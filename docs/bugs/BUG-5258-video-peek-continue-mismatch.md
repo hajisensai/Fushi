@@ -4,5 +4,11 @@
   - 首页 `_collectContinueItems`（改前 `fushi/lib/src/pages/implementations/home_video_page.dart:6836`）合并本机 `VideoBookRow` 与互联 host 的 `RemoteVideoInfo`，按主合集归组、按组内序排，用 `continueWatchingSeriesIndex`（Next-Up）选集，散片按 `CollectionMemberProgress.isFinished` 过滤；
   - 速览 `_loadVideos`（改前 `fushi/lib/src/pages/implementations/home_nav_peek.dart:379`）只读 `repo.listForShelf()` 里 `lastPlayedAt > 0` 的本机行，完全不认远端占位，「继续」取「最近播放的那条（看完也算）」而不是 Next-Up。host-only 合集在速览里根本不存在，于是空；本机合集最近那集看完时速览也指向已看完的那集。首页速览 `_loadHome` 复用 `_loadVideos`，同样错。
 - **[x] ① 已修复** — 选集抽成唯一纯函数 `selectVideoContinueCandidates`（`fushi/lib/src/media/video/video_continue_watching.dart`），输入快照 `VideoContinueInputs`，输出有序候选（合集 + 目标集 + 已看数 / 本地散片 / 远端散片）；副标题 `videoContinueSeriesSubtitle`、组内序 `buildVideoMemberSortIndex`、最近观看 `buildVideoWatchRecency`、特典 `videoLocalExtraBookUids`、首页可见远端 `visibleHomeRemoteVideos` 一并共享。视频页 `_collectContinueItems` 变成候选 → `_HomeHeroData` 的薄映射（`_VideoSlot` 改为共享 `VideoHomeSlot` 的 typedef），并把候选与远端清单发布到 `videoContinueShareProvider`。速览 `_loadVideos` 优先用视频页发布的候选（同一项、同一顺序）；没开过视频页时用 `loadVideoContinueLibrary` 现读同一批表、同一纯函数现算（远端只用视频页已取到的清单，悬停不发网络）。远端集经抽出的 `openRemoteVideoStream`（视频页 `_openRemote` 也走它）流播；来源无 live 能力（云盘）时切到视频页。
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_continue_watching_test.dart`：host-only 合集第 1 集打开过、进度 0 → 选中、文案「Next · Episode 1」且速览编排 `planVideoNavPeek` 的「继续」就是它；本地合集最近那集看完 → 下一集；看完的散片（本地 / 远端 / 进度到片尾区）与特典不进；速览「最近」去重；共享口按发布者清理。既有首页继续观看测试（`home_video_continue_row_nextup_test` / `home_video_home_rows_remote_test` 等）无回归。
-- **备注**：速览合集标题用合集名（首页用刮削作品名 `_workTitle`），速览打开远端集不弹首次 Anime4K 提示（页面专属）。未在真机 / 桌面肉眼复测悬停速览。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_continue_watching_test.dart`：host-only 合集第 1 集打开过、进度 0 → 选中、文案「Next · Episode 1」且速览编排 `planVideoNavPeek` 的「继续」就是它；本地合集最近那集看完 → 下一集；看完的散片（本地 / 远端 / 进度到片尾区）与特典不进；速览「最近」去重；共享口按发布者清理；合集作品名（刮削作品 → 合集刮削 → 合集名）在现读路径上与首页一致、速览条目取候选标题。既有首页继续观看测试（`home_video_continue_row_nextup_test` / `home_video_home_rows_remote_test` 等）无回归。
+- **作品名**：合集候选带 `title`，由共享的 `videoCollectionWorkTitle`（`fushi/lib/src/media/video/video_library_scrape_maps.dart`）解析，首页 `_workTitle` 与 hero、速览条目同用这一条回落链；速览现读路径从库里读同两张表（`video_metadata_works` / `collection_scrape_meta`）。
+- **已知差异**（刻意保留，记录在案）：
+  - 速览里已开播的本地目标集副标题只有「Playing episode N」，首页还拼「剩 M 分钟」（片长来自页面的刮削运行时长映射）；
+  - 速览打开远端集不弹首次 Anime4K 提示（页面专属行为）；
+  - 速览条目没有 ☁ 云角标（`AdaptiveNavPeekEntry` 无此字段）；
+  - 视频页从未打开过时，速览没有远端清单可用（远端只由视频页取数），host-only 合集要等视频页加载过一次才出现。
+- **备注**：未在真机 / 桌面肉眼复测悬停速览。

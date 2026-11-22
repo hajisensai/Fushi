@@ -12,9 +12,16 @@ import 'package:fushi/src/media/video/video_library_memo.dart'
     show entriesOfKind;
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show latestWatchAtByKey;
+import 'package:fushi/src/media/video/video_library_scrape_maps.dart'
+    show
+        buildCollectionScrapeMetaById,
+        buildVideoWorksByCollection,
+        videoCollectionWorkTitle,
+        videoLocalExtraBookUids;
 import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoSource;
 import 'package:fushi_core/fushi_core.dart'
     show
+        CollectionScrapeMetaRow,
         FushiDatabase,
         MediaCollectionItemRow,
         MediaCollectionRow,
@@ -22,6 +29,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaSourceRow,
         VideoBookRow,
         VideoMetadataExtraRow,
+        VideoMetadataWorkRow,
         VideoWatchStatisticRow,
         kActivityMediaVideo;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -66,6 +74,8 @@ class VideoContinueInputs {
     required this.legacyWatchAtByTitle,
     required this.durationMsOf,
     this.excludedUids = const <String>{},
+    this.metadataWorkByCollection = const <int, VideoMetadataWorkRow>{},
+    this.collectionScrapeMetaById = const <int, CollectionScrapeMetaRow>{},
   });
 
   final Map<String, int> collectionIdByUid;
@@ -79,6 +89,17 @@ class VideoContinueInputs {
 
   /// 不进继续观看的本地条目（刮削认定的特典）。
   final Set<String> excludedUids;
+
+  /// 作品名回落链的两张表（[videoCollectionWorkTitle]）。
+  final Map<int, VideoMetadataWorkRow> metadataWorkByCollection;
+  final Map<int, CollectionScrapeMetaRow> collectionScrapeMetaById;
+
+  /// 合集显示的作品名（与视频首页合集卡同一条回落链）。
+  String workTitleOf(MediaCollectionRow collection) => videoCollectionWorkTitle(
+    collection,
+    metadataWorkByCollection: metadataWorkByCollection,
+    collectionScrapeMetaById: collectionScrapeMetaById,
+  );
 
   /// 组内序（没有成员行的排最后）。
   int sortIndexOf(VideoHomeSlot slot) => sortIndexByUid[slot.uid] ?? 1 << 30;
@@ -129,12 +150,16 @@ final class VideoContinueSeriesCandidate extends VideoContinueCandidate {
   const VideoContinueSeriesCandidate({
     required super.recentMs,
     required this.collection,
+    required this.title,
     required this.members,
     required this.targetIndex,
     required this.completedCount,
   });
 
   final MediaCollectionRow collection;
+
+  /// 作品名（[VideoContinueInputs.workTitleOf]，刮削标题优先、回落合集名）。
+  final String title;
   final List<VideoHomeSlot> members;
   final int targetIndex;
   final int completedCount;
@@ -215,10 +240,12 @@ List<VideoContinueCandidate> selectVideoContinueCandidates({
     }
     final int? targetIndex = continueWatchingSeriesIndex(states);
     if (targetIndex == null) return;
+    final MediaCollectionRow collection = inputs.collectionsById[cid]!;
     items.add(
       VideoContinueSeriesCandidate(
         recentMs: recentMs,
-        collection: inputs.collectionsById[cid]!,
+        collection: collection,
+        title: inputs.workTitleOf(collection),
         members: members,
         targetIndex: targetIndex,
         completedCount: completed,
@@ -327,13 +354,6 @@ VideoWatchRecency buildVideoWatchRecency(
   ]),
 );
 
-/// 刮削认定为特典的本地视频（不进继续观看）。
-Set<String> videoLocalExtraBookUids(List<VideoMetadataExtraRow> extras) =>
-    <String>{
-      for (final VideoMetadataExtraRow extra in extras)
-        if (extra.bookUid case final String bookUid) bookUid,
-    };
-
 /// 首页可见的远端占位（不过任何筛选）：「显示远端条目」开着、清单没失败、对端没
 /// 上锁（或本次会话已解锁），且本机同一合集里没有同一集（BUG-2978）。首页与速览
 /// 同一判据。
@@ -366,6 +386,8 @@ class VideoContinueLibrary {
     required this.memberSortIndex,
     required this.recency,
     required this.localExtraBookUids,
+    required this.metadataWorkByCollection,
+    required this.collectionScrapeMetaById,
   });
 
   final List<VideoBookRow> books;
@@ -378,6 +400,8 @@ class VideoContinueLibrary {
   final Map<String, int> memberSortIndex;
   final VideoWatchRecency recency;
   final Set<String> localExtraBookUids;
+  final Map<int, VideoMetadataWorkRow> metadataWorkByCollection;
+  final Map<int, CollectionScrapeMetaRow> collectionScrapeMetaById;
 
   VideoContinueInputs inputs({
     required int? Function(String bookUid) durationMsOf,
@@ -392,11 +416,13 @@ class VideoContinueLibrary {
     legacyWatchAtByTitle: recency.legacyByTitle,
     durationMsOf: durationMsOf,
     excludedUids: localExtraBookUids,
+    metadataWorkByCollection: metadataWorkByCollection,
+    collectionScrapeMetaById: collectionScrapeMetaById,
   );
 }
 
 /// 读出 [VideoContinueLibrary]：与视频页 `_loadLibraryMapsInner` 同一批表、同一套
-/// 纯函数（文件夹合集策略 / 组内序 / 最近观看 / 特典）。
+/// 纯函数（文件夹合集策略 / 组内序 / 最近观看 / 特典 / 作品名回落链）。
 Future<VideoContinueLibrary> loadVideoContinueLibrary(
   FushiDatabase db, {
   required Future<List<VideoBookRow>> Function() listBooks,
@@ -417,7 +443,13 @@ Future<VideoContinueLibrary> loadVideoContinueLibrary(
   );
   final Future<List<VideoMetadataExtraRow>> extrasF = db
       .getAllVideoMetadataExtras();
+  final Future<List<VideoMetadataWorkRow>> worksF = db
+      .getAllVideoMetadataWorks();
+  final Future<List<CollectionScrapeMetaRow>> collectionScrapeMetaF = db
+      .getAllCollectionScrapeMeta();
   await Future.wait<Object?>(<Future<Object?>>[
+    worksF,
+    collectionScrapeMetaF,
     collectionsF,
     booksF,
     sourcesF,
@@ -449,6 +481,10 @@ Future<VideoContinueLibrary> loadVideoContinueLibrary(
     ),
     recency: buildVideoWatchRecency(await watchRowsF, await segmentsF),
     localExtraBookUids: videoLocalExtraBookUids(await extrasF),
+    metadataWorkByCollection: buildVideoWorksByCollection(await worksF),
+    collectionScrapeMetaById: buildCollectionScrapeMetaById(
+      await collectionScrapeMetaF,
+    ),
   );
 }
 

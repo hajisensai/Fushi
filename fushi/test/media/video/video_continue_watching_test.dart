@@ -1,10 +1,21 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_continue_watching.dart';
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart'
     show VideoNavPeekItem, planVideoNavPeek;
 import 'package:fushi_core/fushi_core.dart'
-    show MediaCollectionRow, MediaKind, VideoBookRow;
+    show
+        CollectionScrapeMetaCompanion,
+        FushiDatabase,
+        MediaCollectionRow,
+        MediaKind,
+        VideoBookRow,
+        VideoBooksCompanion,
+        VideoMetadataWorksCompanion;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
@@ -205,6 +216,7 @@ void main() {
     final VideoContinueSeriesCandidate first = VideoContinueSeriesCandidate(
       recentMs: 300,
       collection: a,
+      title: 'A',
       members: <VideoHomeSlot>[VideoHomeSlot(remote: _remote('a1'))],
       targetIndex: 0,
       completedCount: 0,
@@ -252,5 +264,99 @@ void main() {
     expect(share.remoteVideos, isNull);
     share.clearOwner(pageA);
     expect(share.candidates, isNull);
+  });
+
+  group('作品名：首页 hero 与速览同一条回落链（刮削作品 → 合集刮削 → 合集名）', () {
+    late FushiDatabase db;
+    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    Future<int> playedSeries(String name, String uid) async {
+      final int id = await db.createMediaCollection(
+        name,
+        collectionType: 'playlist',
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(uid),
+          title: Value<String>(uid),
+          videoPath: Value<String>('/videos/$uid.mkv'),
+          lastPositionMs: const Value<int>(1000),
+          lastPlayedAt: const Value<int?>(5000),
+        ),
+      );
+      await db.addToCollection(id, MediaKind.video, uid);
+      return id;
+    }
+
+    test('没开过视频页时速览现读同一批表：合集卡用刮削标题，不是合集名', () async {
+      final int scraped = await playedSeries('[Group] sousou_no_frieren', 'a');
+      await db.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          collectionId: Value<int?>(scraped),
+          mediaType: 'tv',
+          title: 'Frieren: Beyond Journey\'s End',
+          updatedAt: 1,
+        ),
+      );
+      final int metaOnly = await playedSeries('mushishi_bd', 'b');
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(metaOnly),
+          source: 'tmdb',
+          subjectId: '1',
+          title: 'Mushishi',
+          scrapedAt: DateTime(2026),
+        ),
+      );
+      final int plain = await playedSeries('Plain Show', 'c');
+
+      final VideoContinueLibrary library = await loadVideoContinueLibrary(
+        db,
+        listBooks: db.allVideoBooks,
+      );
+      final VideoContinueInputs inputs = library.inputs(
+        durationMsOf: (String _) => null,
+      );
+      final List<VideoContinueCandidate> candidates =
+          selectVideoContinueCandidates(
+            local: library.books,
+            remote: const <RemoteVideoInfo>[],
+            inputs: inputs,
+          );
+      final Map<int, String> titles = <int, String>{
+        for (final VideoContinueCandidate c in candidates)
+          if (c is VideoContinueSeriesCandidate) c.collection.id: c.title,
+      };
+      expect(titles, <int, String>{
+        scraped: 'Frieren: Beyond Journey\'s End',
+        metaOnly: 'Mushishi',
+        plain: 'Plain Show',
+      });
+      // 速览「继续」项的标题就是候选标题（home_nav_peek candidateEntry 用 c.title）。
+      final ({VideoContinueCandidate? resume, List<VideoNavPeekItem> recent})
+      plan = planVideoNavPeek(
+        candidates: candidates,
+        recentlyPlayed: const <VideoBookRow>[],
+        primaryCollectionIdByEntry: library.primaryCollectionByEntry,
+        collectionsById: library.collectionsById,
+      );
+      expect(
+        <String>[
+          for (final VideoContinueCandidate? c in <VideoContinueCandidate?>[
+            plan.resume,
+            for (final VideoNavPeekItem i in plan.recent) i.candidate,
+          ])
+            if (c is VideoContinueSeriesCandidate) c.title,
+        ]..sort(),
+        <String>['Frieren: Beyond Journey\'s End', 'Mushishi', 'Plain Show'],
+      );
+      // 速览把合集候选画成条目时取的就是这份标题，不另拼合集名。
+      final String peekSource = File(
+        'lib/src/pages/implementations/home_nav_peek.dart',
+      ).readAsStringSync();
+      expect(peekSource, contains('title: c.title,'));
+      expect(peekSource, isNot(contains('c.collection.name')));
+    });
   });
 }
