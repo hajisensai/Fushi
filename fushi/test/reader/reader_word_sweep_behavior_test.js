@@ -76,7 +76,10 @@ function setup(opts) {
       };
     },
     findParagraph(node) { return node.parentElement; },
-    isScanBoundary(ch) { return /^[\s　]$/.test(ch) || '。、「」！？.,!?'.includes(ch); },
+    isScanBoundary(ch) {
+      if (opts.japaneseOnly && /^[A-Za-z]$/.test(ch)) return true; // 「只扫日文」门控
+      return /^[\s　]$/.test(ch) || '。、「」！？.,!?'.includes(ch);
+    },
     isUnpunctuatedCueBoundary() { return false; },
     hasSkippedWhitespaceBetween() { return false; },
     isWordGapBetweenChars() { return false; },
@@ -96,7 +99,7 @@ function setup(opts) {
   const window = {
     fushiSelection: selection,
     fushiCaret: opts.firstVisible === undefined ? undefined : {
-      _firstVisibleStop() { return opts.firstVisible(); },
+      _firstVisibleStop(accept) { return opts.firstVisible(accept); },
     },
   };
   if (opts.lyricsIndex !== undefined) {
@@ -244,6 +247,35 @@ function bookParagraph() {
   const p = makeElement([]);
   const env = setup({ paragraphs: [p], firstVisible: () => null });
   assert.strictEqual(env.sentence(), null);
+}
+
+{
+  // ⑨ HBK-AUDIT-232：一屏双语、无选区、「只扫日文」。屏首是英文段落时，回退必须把扫词的
+  //    停靠点判据交给光标的屏首扫描当过滤条件——旧实现只取光标的第一个停靠点（英文）再建句，
+  //    那句零停靠点，每按一次都重建同一句英文，同屏日文永远扫不到。
+  const en = makeElement([]);
+  const enText = addText(en, 'Hello world.');
+  const ja = makeElement([]);
+  addText(ja, '日本語の文。');
+  const texts = [enText, ...ja.texts];
+  // 替身按真 `fushiCaret._firstVisibleStop(accept)` 的契约：文档序第一个非空白、且过 accept 的字。
+  const firstVisible = (accept) => {
+    for (const node of texts) {
+      for (let i = 0; i < node.textContent.length; i++) {
+        if (/^[\s　]$/.test(node.textContent[i])) continue;
+        if (!accept || accept(node, i)) return { node, offset: i };
+      }
+    }
+    return null;
+  };
+  const env = setup({ paragraphs: [en, ja], firstVisible, japaneseOnly: true });
+  const s1 = env.sentence();
+  assert.strictEqual(s1.text, '日本語の文。');
+  assert.deepStrictEqual(s1.stops, [0, 1, 2, 3, 4]);
+  // 连续扫词：第二次取句延续同一会话，仍有停靠点。
+  const s2 = env.sentence();
+  assert.strictEqual(s2.id, s1.id);
+  assert.deepStrictEqual(s2.stops, [0, 1, 2, 3, 4]);
 }
 
 console.log('all assertions passed');

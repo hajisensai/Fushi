@@ -10858,8 +10858,17 @@ function __fushiPopupMouseMove(e) {
     __fushiPopupCancelScanDelay();
     if (delay > 0) {
         var x = e.clientX, y = e.clientY;
+        // HBK-AUDIT-231：排着的扫描与「排它那一刻的弹窗 + 设置」绑定，到点先核对再扫。
+        // 只捕获坐标的话，Esc 关窗（宿主清 __fushiRoot、推进 _renderGeneration，不派 mouseout）、
+        // 换词重渲染、或热切换触发键 / 延迟之后计时照样触发，selectText 落到宿主网页的选区
+        // 或新开的弹窗上。三项任一变了 = 这次扫描所属的弹窗 / 设置已不存在，作废。
+        var root = window.__fushiRoot || null;
+        var generation = window._renderGeneration;
         _popupScanDelayTimer = setTimeout(function() {
             _popupScanDelayTimer = null;
+            if ((window.__fushiRoot || null) !== root) return;
+            if (window._renderGeneration !== generation) return;
+            if (__fushiPopupScanDelayMs() !== delay) return;
             __fushiPopupScanAt(x, y);
         }, delay);
         return;
