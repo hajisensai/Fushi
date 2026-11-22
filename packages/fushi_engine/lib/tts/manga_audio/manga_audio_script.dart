@@ -351,6 +351,7 @@ class MangaScriptLine {
     String? say,
     bool clearVoice = false,
     bool clearSay = false,
+    bool clearSeed = false,
   }) => MangaScriptLine(
     page: page,
     blocks: blocks ?? this.blocks,
@@ -362,7 +363,7 @@ class MangaScriptLine {
     rateOffset: rateOffset,
     pitchOffset: pitchOffset,
     volumeOffset: volumeOffset,
-    seed: seed ?? this.seed,
+    seed: clearSeed ? null : seed ?? this.seed,
     textFixes: textFixes ?? this.textFixes,
     source: source ?? this.source,
     confidence: confidence,
