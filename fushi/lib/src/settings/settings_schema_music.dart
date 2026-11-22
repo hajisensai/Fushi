@@ -14,6 +14,7 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_analysis_models_dialog.dart';
 import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart'
     show musicPluginQualityLabel;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginQuality;
@@ -623,6 +624,17 @@ SettingsDestination buildMusicDestination() {
                 c.appModel.prefsRepo.musicVisualizerFontScale * 100,
             onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
                 .setMusicVisualizerFontScale((v / 10).round() / 10),
+          ),
+          SettingsActionItem(
+            id: 'music.visualizer_models',
+            title: t.music_visualizer_models_title,
+            subtitle: t.music_visualizer_models_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '模型下载 / 删除只在界面里做（带下载进度与确认）',
+            ),
+            onTap: (SettingsContext c) =>
+                showMusicAnalysisModelsDialog(c.context),
           ),
         ],
       ),

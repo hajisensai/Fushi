@@ -23,6 +23,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
@@ -51,6 +52,13 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/analysis/music_audio_analysis_service.dart'
+    show
+        MusicAudioAnalysisService,
+        MusicAudioAnalysisSnapshot,
+        MusicAudioAnalysisTarget;
+import 'package:fushi/src/media/music/music_remote_media.dart'
+    show musicItemResolvesStream;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
@@ -145,6 +153,23 @@ part 'music_lyrics_controller_lookup.part.dart';
 
 /// 一次 ± 按钮调整的偏移步长。
 const int kMusicLyricsOffsetStepMs = 100;
+
+/// 播放项 → 整首音频分析的目标；本机没有这个文件的（插件 / 网络来源 / 服务器曲库 / 试听片段）
+/// 为 null，全屏歌词动画退回歌词包络。
+MusicAudioAnalysisTarget? musicAudioAnalysisTargetOf(MusicPlayItem? item) {
+  if (item == null || item.isPreview || item.path.isEmpty) return null;
+  if (musicItemResolvesStream(item) || item.path.contains('://')) return null;
+  final int? start = item.startMs;
+  final int? end = item.endMs;
+  return MusicAudioAnalysisTarget(
+    trackUid: item.trackUid,
+    path: item.path,
+    cueStartMs: start,
+    durationMs: start != null && end != null && end > start
+        ? end - start
+        : null,
+  );
+}
 
 /// 播放项 → 歌词解析所需的曲目信息。
 MusicLyricsTrackRef musicLyricsTrackRefOf(MusicPlayItem item) =>
@@ -514,6 +539,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     unawaited(_generatedSub?.cancel());
+    _releaseAnalysis();
     _clock.dispose();
     super.dispose();
   }
@@ -649,12 +675,72 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   void _exitVisualizer() {
     if (_visualizerOn) setState(() => _visualizerOn = false);
+    _releaseAnalysis();
+  }
+
+  /// 本首的整首音频分析（只在全屏歌词动画开着时要；样式经 `context.audio` 读）。
+  ValueListenable<MusicAudioAnalysisSnapshot>? _analysis;
+  MusicAudioAnalysisTarget? _analysisTarget;
+
+  /// 换到 [item] 这首的分析：同一首不重复请求；顺带预取队列里下一首，别的排队任务取消。
+  ValueListenable<MusicAudioAnalysisSnapshot>? _analysisFor(
+    MusicPlayItem? item,
+  ) {
+    final MusicAudioAnalysisTarget? target = musicAudioAnalysisTargetOf(item);
+    if (target == _analysisTarget) return _analysis;
+    final MusicAudioAnalysisService service =
+        MusicAudioAnalysisService.instance;
+    _analysisTarget = target;
+    if (target == null) {
+      _analysis = null;
+      service.cancelExcept(const <MusicAudioAnalysisTarget>{});
+      return null;
+    }
+    _analysis = service.analyze(target);
+    final List<MusicPlayItem> queue = _engine.queue;
+    final int next = _engine.index + 1;
+    final MusicAudioAnalysisTarget? ahead = next >= 0 && next < queue.length
+        ? musicAudioAnalysisTargetOf(queue[next])
+        : null;
+    service.cancelExcept(<MusicAudioAnalysisTarget>{
+      target,
+      if (ahead != null) ahead,
+    });
+    if (ahead != null) service.prefetch(<MusicAudioAnalysisTarget>[ahead]);
+    return _analysis;
+  }
+
+  /// 退出全屏动画 / 离开页面：不再要分析，排队和正在跑的都取消（已落盘的结果留着）。
+  void _releaseAnalysis() {
+    if (_analysisTarget == null) return;
+    _analysisTarget = null;
+    _analysis = null;
+    MusicAudioAnalysisService.instance.cancelExcept(
+      const <MusicAudioAnalysisTarget>{},
+    );
   }
 
   Widget _buildVisualizer(BuildContext context, MusicPlayItem? item) {
     final PreferencesRepository prefs = appModel.prefsRepo;
+    final ValueListenable<MusicAudioAnalysisSnapshot>? analysis = _analysisFor(
+      item,
+    );
+    if (analysis == null) return _visualizerView(item, prefs, null);
+    return ValueListenableBuilder<MusicAudioAnalysisSnapshot>(
+      valueListenable: analysis,
+      builder: (BuildContext context, MusicAudioAnalysisSnapshot s, _) =>
+          _visualizerView(item, prefs, s.audio),
+    );
+  }
+
+  Widget _visualizerView(
+    MusicPlayItem? item,
+    PreferencesRepository prefs,
+    LyricVisualizerAudio? audio,
+  ) {
     return MusicLyricVisualizerView(
       key: const ValueKey<String>('music_visualizer'),
+      audio: audio,
       mode: _visualizerModeFor(item),
       timeline: _lyrics?.timeline,
       clock: _clock,
