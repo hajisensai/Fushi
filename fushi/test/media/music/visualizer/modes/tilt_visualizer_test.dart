@@ -69,13 +69,30 @@ void main() {
       ]);
     });
 
-    test('像词的片段：拉丁连写、假名连写、汉字一字一词', () {
-      expect(tiltWordLikeSpans("don't 夜空 きらきら"), <(int, int)>[
+    test('词边界取框架共享的词级分组（假名连写、汉字连写、拉丁撇号不断）', () {
+      expect(tiltWordSpansOfText("don't 夜空 きらきら"), <(int, int)>[
         (0, 5),
-        (6, 7),
-        (7, 8),
+        (6, 8),
         (9, 13),
       ]);
+    });
+
+    test('二次切分只落在共享分组的词边界上', () {
+      const String text = '光る夜空を見上げた君の横顔';
+      final List<(int, int)> spans = tiltWordSpansOfText(text);
+      final Set<int> starts = <int>{for (final (int s, int _) in spans) s};
+      final List<String> parts = tiltSplitIntoSentences(text, 2);
+      expect(parts, hasLength(2));
+      expect(parts.join(), text);
+      expect(starts, contains(parts.first.length));
+    });
+
+    test('整句词边界按段截开后用于各段（与逐段现分一致）', () {
+      const String text = 'Hello world, again and again';
+      expect(
+        tiltSplitIntoSentences(text, 4, wordSpans: tiltWordSpansOfText(text)),
+        tiltSplitIntoSentences(text, 4),
+      );
     });
 
     test('拆出来拼回去等于原文', () {
@@ -238,7 +255,13 @@ void main() {
         tiltVisibleSegmentIndex(plans, line, line.endMs - 1),
         plans.length - 1,
       );
-      expect(tiltVisibleSegmentIndex(plans, line, line.endMs + 1), -1);
+      // 唱完后留到句尾离场（folia getLineRenderEndTime）才隐去。
+      expect(line.renderEndMs, greaterThan(line.endMs));
+      expect(
+        tiltVisibleSegmentIndex(plans, line, line.endMs + 1),
+        plans.length - 1,
+      );
+      expect(tiltVisibleSegmentIndex(plans, line, line.renderEndMs + 1), -1);
       expect(tiltSegmentRevealAt(plans, 0, line.startMs), line.startMs);
       expect(
         tiltSegmentRevealAt(plans, 1, line.startMs),
@@ -408,6 +431,31 @@ void main() {
         tester,
         tiltVisualizerEntry,
         size: const Size(390, 844),
+      );
+    });
+
+    testWidgets('AI 主题：字重 / 字体 / 配色覆盖', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        tiltVisualizerEntry,
+        theme: const LyricVisualizerTheme(
+          fontWeight: FontWeight.w700,
+          fontFamily: 'serif',
+          palette: LyricVisualizerPaletteOverride(
+            text: Color(0xFFFAFAFA),
+            accent: Color(0xFFFF4081),
+            primary: Color(0xFFFF4081),
+          ),
+        ),
+      );
+    });
+
+    test('背景：用户选的共享背景（folia VisualizerShell）', () {
+      expect(
+        tiltVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(tiltVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
       );
     });
   });

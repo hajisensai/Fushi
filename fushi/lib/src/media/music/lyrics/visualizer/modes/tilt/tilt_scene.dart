@@ -74,6 +74,7 @@ class TiltScene {
   TiltColors? _colors;
   double _width = -1;
   double _fontScale = 1;
+  LyricVisualizerTheme? _theme;
 
   final Map<int, TiltLinePlan> _plans = <int, TiltLinePlan>{};
   final Map<String, double> _measureCache = <String, double>{};
@@ -89,11 +90,13 @@ class TiltScene {
         colors.normal != _colors?.normal ||
         colors.tilt != _colors?.tilt ||
         c.fontScale != _fontScale ||
+        c.theme != _theme ||
         base != _base;
     _ctx = c;
     _tuning = tuning;
     _colors = colors;
     _fontScale = c.fontScale;
+    _theme = c.theme;
     _base = base;
     if (stale) _clear();
   }
@@ -108,17 +111,24 @@ class TiltScene {
 
   void dispose() => _clear();
 
+  /// 字重照 folia `resolveThemeFontWeight(theme, 400 / 300)`：主题给了字重就两种行都用主题的，
+  /// 字体族也取主题的（[LyricVisualizerContext.applyThemeFont]）。
   TextStyle _style(double px, bool tilt, {Color? color, double? spacing}) =>
-      _base.copyWith(
-        fontSize: px,
-        fontWeight: tilt ? FontWeight.w300 : FontWeight.w400,
-        fontStyle: tilt ? FontStyle.italic : FontStyle.normal,
-        letterSpacing: spacing ?? 0,
-        height: 1,
-        color: color,
-        decoration: TextDecoration.none,
-        shadows: const <Shadow>[],
+      _applyTheme(
+        _base.copyWith(
+          fontSize: px,
+          fontWeight: tilt ? FontWeight.w300 : FontWeight.w400,
+          fontStyle: tilt ? FontStyle.italic : FontStyle.normal,
+          letterSpacing: spacing ?? 0,
+          height: 1,
+          color: color,
+          decoration: TextDecoration.none,
+          shadows: const <Shadow>[],
+        ),
       );
+
+  TextStyle _applyTheme(TextStyle style) =>
+      _ctx?.applyThemeFont(style) ?? style;
 
   double _measure(String text, double px, bool tilt) {
     final String key = '${tilt ? 1 : 0}|${px.toStringAsFixed(2)}|$text';
@@ -152,6 +162,7 @@ class TiltScene {
       viewportWidth: viewportWidth,
       fontScale: c.fontScale,
       measure: _measure,
+      wordSpans: tiltLineWordSpans(line),
     );
     final List<TiltSegmentPlan> segPlans = buildTiltSegmentPlans(layout, line);
     final double k = c.fontScale * layout.scaleMultiplier;
@@ -216,31 +227,40 @@ class TiltScene {
     }
   }
 
-  /// 画一帧。
+  /// 画一帧。当前句 = folia `currentLineIndex`（起点已到、还没过句尾离场的最后一句，
+  /// [LyricVisualizerRuntime.displayedLineAt]）；一句不再是当前句时（下一句开始或过了句尾离场，
+  /// [LyricVisualizerRuntime.visualEndMsOf]）整组在 0.45s 里淡出（AnimatePresence popLayout，
+  /// 与新句叠在同一处）。
   void paint(Canvas canvas, Size size, int timeMs) {
     final LyricVisualizerContext? c = _ctx;
     if (c == null || size.isEmpty) return;
-    final List<LyricVisualizerLine> lines = c.runtime.lines;
-    final int i = c.runtime.lastStartedLineAt(timeMs);
-    if (i < 0) return;
+    final LyricVisualizerRuntime rt = c.runtime;
+    final int last = rt.lastStartedLineAt(timeMs);
+    if (last < 0) return;
+    final int cur = rt.displayedLineAt(timeMs);
     final bool motion = c.motion;
-    _evictExcept(<int>{i - 1, i, i + 1});
+    _evictExcept(<int>{last - 1, last, last + 1});
 
-    // 换句：上一句整组在 0.45s 里淡出（folia AnimatePresence popLayout，与新句叠在同一处）。
-    if (motion && i > 0) {
-      final int since = timeMs - lines[i].startMs;
-      if (since < kTiltGroupExitMs) {
+    if (motion) {
+      for (final int j in <int>[last - 1, last]) {
+        if (j < 0 || j == cur) continue;
+        final int since = timeMs - rt.visualEndMsOf(j);
+        if (since < 0 || since >= kTiltGroupExitMs) continue;
         final double fade =
             1 - Curves.easeInOut.transform(since / kTiltGroupExitMs);
-        _paintGroup(canvas, size, i - 1, timeMs, fade, motion);
+        _paintGroup(canvas, size, j, timeMs, fade, motion);
       }
     }
+    if (cur < 0) return;
     final double enter = motion
         ? Curves.easeOut.transform(
-            ((timeMs - lines[i].startMs) / kTiltGroupEnterMs).clamp(0.0, 1.0),
+            ((timeMs - rt.lines[cur].startMs) / kTiltGroupEnterMs).clamp(
+              0.0,
+              1.0,
+            ),
           )
         : 1;
-    _paintGroup(canvas, size, i, timeMs, enter, motion);
+    _paintGroup(canvas, size, cur, timeMs, enter, motion);
   }
 
   void _paintGroup(
@@ -255,6 +275,15 @@ class TiltScene {
     final LyricVisualizerLine line = _ctx!.runtime.lines[index];
     final TiltLinePlan plan = planFor(index, size.width);
     if (plan.segments.isEmpty) return;
+    // 自然离场（过了句尾离场时下一句还没开始）时各段跟着隐去；被下一句顶掉时段停在原样、
+    // 只随整组淡出（folia 退场中的元素保留最后一次的 props）。
+    final List<LyricVisualizerLine> lines = _ctx!.runtime.lines;
+    final int nextStart = index + 1 < lines.length
+        ? lines[index + 1].startMs
+        : 1 << 52;
+    final int hideAt = line.renderEndMs <= nextStart
+        ? line.renderEndMs
+        : 1 << 52;
 
     // folia：70vh 高的居中区域、p-8 内边距、行间 gap-y-3 / sm:gap-y-4。
     final double gap = size.width < 640 ? 12 : 16;
@@ -287,6 +316,7 @@ class TiltScene {
         si,
         seg,
         line,
+        hideAt,
         boxCenter,
         areaW / fit,
         timeMs,
@@ -303,6 +333,7 @@ class TiltScene {
     int si,
     TiltRenderSegment seg,
     LyricVisualizerLine line,
+    int hideAt,
     double boxCenter,
     double maxWidth,
     int timeMs,
@@ -314,7 +345,6 @@ class TiltScene {
       si,
       line.startMs,
     );
-    final int hideAt = line.endMs;
     final bool tilt = seg.isTilt;
     final double v = motion
         ? tiltTransition(

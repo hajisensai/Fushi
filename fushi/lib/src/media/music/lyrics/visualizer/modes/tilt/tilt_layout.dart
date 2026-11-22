@@ -184,6 +184,7 @@ TiltLayout buildTiltLayout({
   required double viewportWidth,
   required double fontScale,
   required TiltMeasure measure,
+  List<(int, int)>? wordSpans,
 }) {
   final double basePx = tiltMeasureFontPx(viewportWidth, fontScale);
   final double availableWidth = tiltAvailableWidth(viewportWidth);
@@ -198,7 +199,12 @@ TiltLayout buildTiltLayout({
       lineSeed,
       tuning.splitProbability,
     );
-    parts = tiltSplitIntoSentences(fullText, numLines, timeSeed: lineSeed);
+    parts = tiltSplitIntoSentences(
+      fullText,
+      numLines,
+      timeSeed: lineSeed,
+      wordSpans: wordSpans,
+    );
   }
 
   final List<int> candidates = <int>[
@@ -248,7 +254,12 @@ TiltLayout buildTiltLayout({
       );
       if (needed > segments.length) {
         List<TiltSegment> resplit = _toSegments(
-          tiltSplitIntoSentences(fullText, needed, timeSeed: lineSeed),
+          tiltSplitIntoSentences(
+            fullText,
+            needed,
+            timeSeed: lineSeed,
+            wordSpans: wordSpans,
+          ),
         );
         if (resplit.isNotEmpty &&
             tiltSeededRandom(lineSeed, 300) < tuning.tiltStyleProbability) {
@@ -340,8 +351,17 @@ String tiltLineFullText(LyricVisualizerLine line) => line.glyphs.isEmpty
     ? line.text
     : line.glyphs.map((LyricVisualizerGlyph g) => g.text).join();
 
+/// [tiltLineFullText] 的词边界：取运行时的共享词级分组（没有字形时间线时按行文字现分）。
+List<(int, int)> tiltLineWordSpans(LyricVisualizerLine line) =>
+    line.glyphs.isEmpty
+    ? tiltWordSpansOfText(line.text)
+    : tiltWordSpans(<String>[
+        for (final LyricVisualizerGlyph g in line.glyphs) g.text,
+      ], line.segments);
+
 /// 给每一段配上字与时间（folia `findSegmentWordRange` + `buildCharTimings`）。逐字歌词直接
-/// 取运行时的字形时间；没有字形时间线时在段时长（至少 0.3s）里均分。
+/// 取运行时的字形时间；没有字形时间线时段时长取整句起点到句尾离场（folia `getLineRenderEndTime`），
+/// 在其中（至少 0.3s）均分。
 List<TiltSegmentPlan> buildTiltSegmentPlans(
   TiltLayout layout,
   LyricVisualizerLine line,
@@ -359,7 +379,7 @@ List<TiltSegmentPlan> buildTiltSegmentPlans(
     final int to = seg.charOffset + seg.text.length;
     final List<TiltChar> chars = <TiltChar>[];
     int startMs = line.startMs;
-    int endMs = line.endMs;
+    int endMs = line.renderEndMs;
     if (glyphs.isNotEmpty) {
       int visual = 0;
       int? first;
@@ -439,13 +459,14 @@ double tiltCharPulse(int timeMs, int startMs, int endMs) {
 double tiltCharPulseScale(double intensity, bool tilt) =>
     1 + intensity * (tilt ? 0.18 : 0.15);
 
-/// 此刻显到第几段（folia `visibleSegmentIndex`；-1 = 都不显）。段 i 显 = 下标 ≤ 它。
+/// 此刻显到第几段（folia `visibleSegmentIndex`；-1 = 都不显）。段 i 显 = 下标 ≤ 它。过了句尾
+/// 离场（[LyricVisualizerLine.renderEndMs]，folia `getLineRenderEndTime`）全部隐去。
 int tiltVisibleSegmentIndex(
   List<TiltSegmentPlan> plans,
   LyricVisualizerLine line,
   int timeMs,
 ) {
-  if (timeMs < line.startMs - 100 || timeMs > line.endMs) return -1;
+  if (timeMs < line.startMs - 100 || timeMs > line.renderEndMs) return -1;
   int target = -1;
   for (int i = 0; i < plans.length; i++) {
     if (timeMs >= plans[i].startMs - kTiltSegmentLeadMs) target = i;

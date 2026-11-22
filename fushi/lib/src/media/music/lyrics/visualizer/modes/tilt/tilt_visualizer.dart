@@ -21,7 +21,9 @@ final LyricVisualizerEntry tiltVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_tilt_description,
   icon: FushiIcons.screenRotation,
   tunings: tiltTuningSpecs,
-  sharedBackdrop: true,
+  // folia Tilt 套 VisualizerShell：画用户选的共享背景。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => TiltVisualizer(context: c),
 );

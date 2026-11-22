@@ -5,6 +5,10 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:material_ui/material_ui.dart' show StringCharacters;
+
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+
 final RegExp _cjk = RegExp(r'[一-龥぀-ヿ가-힯]');
 final RegExp _westernChar = RegExp(r'[a-zA-Z0-9]');
 final RegExp _space = RegExp(r'\s');
@@ -13,10 +17,13 @@ final RegExp _allSpace = RegExp(r'^\s+$');
 bool _hasCjk(String text) => _cjk.hasMatch(text);
 
 /// 拆成至少 / 至多 [targetCount] 段（0–1 原样返回）。[timeSeed] 只在退回「随机对半切」时用。
+///
+/// [wordSpans] 是整句的词边界（[tiltWordSpans]）；缺省按 [text] 现算（[tiltWordSpansOfText]）。
 List<String> tiltSplitIntoSentences(
   String text,
   int targetCount, {
   double timeSeed = 0,
+  List<(int, int)>? wordSpans,
 }) {
   if (targetCount <= 1 && targetCount >= 0) return <String>[text];
   final int maxLevel = switch (targetCount) {
@@ -34,7 +41,12 @@ List<String> tiltSplitIntoSentences(
     ];
   }
   if (targetCount > 0 && sentences.length < targetCount) {
-    sentences = _secondarySplit(sentences, targetCount, timeSeed);
+    sentences = _secondarySplit(
+      sentences,
+      targetCount,
+      timeSeed,
+      wordSpans ?? tiltWordSpansOfText(text),
+    );
   }
   if (sentences.length > 1 &&
       sentences.length > targetCount &&
@@ -271,74 +283,44 @@ List<String> _splitBySpecialChars(String text) {
   return result.where((String r) => r.isNotEmpty).toList();
 }
 
-/// 「像词的」片段（代替 folia 的 `Intl.Segmenter` word 粒度）：拉丁 / 数字连写一词（词内的
-/// 撇号、连字符连着），平假名、片假名、谚文各自连写一词，汉字一字一词；空白与标点不算词。
-/// 返回 UTF-16 的 [start, end)。
-List<(int, int)> tiltWordLikeSpans(String text) {
-  final List<(int, int)> out = <(int, int)>[];
-  int i = 0;
-  while (i < text.length) {
-    final _WordClass cls = _classOf(text.codeUnitAt(i));
-    if (cls == _WordClass.none) {
-      i++;
-      continue;
-    }
-    final int start = i;
-    if (cls == _WordClass.han) {
-      i += _isHighSurrogate(text.codeUnitAt(i)) && i + 1 < text.length ? 2 : 1;
-      out.add((start, i));
-      continue;
-    }
-    i++;
-    while (i < text.length) {
-      final int u = text.codeUnitAt(i);
-      if (_classOf(u) == cls) {
-        i++;
-        continue;
-      }
-      // 词内撇号 / 连字符：后面还是同类字符才连上。
-      if (cls == _WordClass.latin &&
-          (u == 0x27 || u == 0x2019 || u == 0x2D) &&
-          i + 1 < text.length &&
-          _classOf(text.codeUnitAt(i + 1)) == cls) {
-        i += 2;
-        continue;
-      }
-      break;
-    }
-    out.add((start, i));
+/// 词边界（代替 folia 的 `Intl.Segmenter` word 粒度）：取框架共享的词级分组
+/// （`LyricVisualizerLine.segments`，汉字 + 送假名、片假名 / 谚文 / 拉丁连写成词，标点粘连），换成
+/// [glyphTexts] 拼起来的整句里的 UTF-16 区间 [start, end)。
+List<(int, int)> tiltWordSpans(
+  List<String> glyphTexts,
+  List<LyricVisualizerSegment> segments,
+) {
+  final List<int> offsets = <int>[];
+  int acc = 0;
+  for (final String g in glyphTexts) {
+    offsets.add(acc);
+    acc += g.length;
   }
-  return out;
+  offsets.add(acc);
+  return <(int, int)>[
+    for (final LyricVisualizerSegment s in segments)
+      if (s.glyphCount > 0 && s.firstGlyph + s.glyphCount <= glyphTexts.length)
+        (offsets[s.firstGlyph], offsets[s.firstGlyph + s.glyphCount]),
+  ];
 }
 
-enum _WordClass { none, latin, han, hiragana, katakana, hangul }
+/// 一段纯文字的词边界（没有字形时间线时）：按字形拆开后走同一套共享分组。
+List<(int, int)> tiltWordSpansOfText(String text) {
+  final List<String> chars = text.characters.toList();
+  final List<LyricVisualizerGlyph> glyphs = <LyricVisualizerGlyph>[
+    for (final String c in chars)
+      LyricVisualizerGlyph(
+        text: c,
+        startMs: 0,
+        endMs: 0,
+        syllableIndex: 0,
+        isSpace: c.trim().isEmpty,
+      ),
+  ];
+  return tiltWordSpans(chars, buildLyricVisualizerSegments(glyphs));
+}
 
 bool _isHighSurrogate(int u) => u >= 0xD800 && u <= 0xDBFF;
-
-_WordClass _classOf(int u) {
-  if ((u >= 0x30 && u <= 0x39) ||
-      (u >= 0x41 && u <= 0x5A) ||
-      (u >= 0x61 && u <= 0x7A) ||
-      (u >= 0xC0 && u <= 0x24F && u != 0xD7 && u != 0xF7) ||
-      (u >= 0x370 && u <= 0x52F) ||
-      (u >= 0xFF10 && u <= 0xFF19) ||
-      (u >= 0xFF21 && u <= 0xFF3A) ||
-      (u >= 0xFF41 && u <= 0xFF5A)) {
-    return _WordClass.latin;
-  }
-  if (u >= 0x3041 && u <= 0x309F) return _WordClass.hiragana;
-  if ((u >= 0x30A0 && u <= 0x30FF) || (u >= 0xFF66 && u <= 0xFF9F)) {
-    return _WordClass.katakana;
-  }
-  if (u >= 0xAC00 && u <= 0xD7AF) return _WordClass.hangul;
-  if ((u >= 0x3400 && u <= 0x4DBF) ||
-      (u >= 0x4E00 && u <= 0x9FFF) ||
-      (u >= 0xF900 && u <= 0xFAFF) ||
-      _isHighSurrogate(u)) {
-    return _WordClass.han;
-  }
-  return _WordClass.none;
-}
 
 double _pseudoRandom(double seed) {
   final double x = math.sin(seed) * 10000;
@@ -349,8 +331,16 @@ List<String> _secondarySplit(
   List<String> input,
   int targetCount,
   double timeSeed,
+  List<(int, int)> wordSpans,
 ) {
   final List<String> sentences = List<String>.of(input);
+  // 各段在整句里的起点（各级拆分都保持「拼回去等于原文」）。
+  final List<int> offsets = <int>[];
+  int acc = 0;
+  for (final String s in sentences) {
+    offsets.add(acc);
+    acc += s.length;
+  }
   while (sentences.length < targetCount) {
     final List<int> candidates = <int>[
       for (int i = 0; i < sentences.length; i++)
@@ -363,7 +353,11 @@ List<String> _secondarySplit(
     double bestScore = double.negativeInfinity;
     for (final int ci in candidates) {
       final String s = sentences[ci];
-      final List<(int, int)> words = tiltWordLikeSpans(s);
+      final List<(int, int)> words = _spansWithin(
+        wordSpans,
+        offsets[ci],
+        s.length,
+      );
       if (words.length < 2) continue;
       final double mid = s.length / 2;
       int bestGap = 1;
@@ -391,6 +385,7 @@ List<String> _secondarySplit(
         s.substring(0, bestSplit),
         s.substring(bestSplit),
       ]);
+      offsets.insert(bestIndex + 1, offsets[bestIndex] + bestSplit);
       continue;
     }
 
@@ -415,8 +410,20 @@ List<String> _secondarySplit(
       s.substring(0, midPoint),
       s.substring(midPoint),
     ]);
+    offsets.insert(pick + 1, offsets[pick] + midPoint);
   }
   return sentences;
+}
+
+/// 整句词边界里落在 [from, from + length) 的部分，换成段内下标（跨段的词按段边界截开，与 folia
+/// 对子串单独分词一致）。
+List<(int, int)> _spansWithin(List<(int, int)> spans, int from, int length) {
+  final int to = from + length;
+  return <(int, int)>[
+    for (final (int s, int e) in spans)
+      if (s < to && e > from)
+        (math.max(s, from) - from, math.min(e, to) - from),
+  ];
 }
 
 List<String> _mergeSentences(List<String> input, int targetCount) {
