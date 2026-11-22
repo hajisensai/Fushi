@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -73,15 +74,18 @@ List<({int start, int end})> pdfFindQueryInPage({
 
 /// 结果列表里显示的上下文片段：命中前后各取 [radius] 个码元，换行 / 回车剥掉
 /// （PDF 文本层按行断，日文正文里塞空格反而难读），截断处补省略号。返回片段与
-/// 命中在片段里的区间。
+/// 命中在片段里的区间。截取边界不落在代理对中间（`𠮟` 这类扩展 B 汉字、emoji
+/// 是两个码元），否则片段两端会出现孤立代理、渲染成乱码。
 ({String text, int matchStart, int matchEnd}) pdfSearchSnippet(
   String fullText, {
   required int start,
   required int end,
   int radius = 24,
 }) {
-  final int from = (start - radius).clamp(0, fullText.length);
-  final int to = (end + radius).clamp(end, fullText.length);
+  int from = (start - radius).clamp(0, fullText.length);
+  int to = (end + radius).clamp(end, fullText.length);
+  if (from > 0 && _isLowSurrogate(fullText.codeUnitAt(from))) from--;
+  if (to < fullText.length && _isLowSurrogate(fullText.codeUnitAt(to))) to++;
   final StringBuffer buf = StringBuffer();
   int matchStart = 0;
   int matchEnd = 0;
@@ -97,6 +101,8 @@ List<({int start, int end})> pdfFindQueryInPage({
   if (to < fullText.length) buf.write('…');
   return (text: buf.toString(), matchStart: matchStart, matchEnd: matchEnd);
 }
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;
 
 /// 一条搜索命中。
 @immutable
@@ -175,7 +181,10 @@ class PdfTextSearchController extends ChangeNotifier {
   String get query => _query;
 
   final List<PdfTextSearchHit> _hits = <PdfTextSearchHit>[];
-  List<PdfTextSearchHit> get hits => List<PdfTextSearchHit>.unmodifiable(_hits);
+
+  /// 只读视图（不拷贝）：页绘制回调每画一页都要读，上千条命中时拷贝一遍太浪费。
+  late final List<PdfTextSearchHit> hits =
+      UnmodifiableListView<PdfTextSearchHit>(_hits);
 
   /// 页（0 起）→ 该页命中在 [hits] 里的下标（画高亮用，免得每画一页扫全表）。
   final Map<int, List<int>> _hitsByPage = <int, List<int>>{};

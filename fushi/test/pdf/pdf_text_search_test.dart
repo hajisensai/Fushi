@@ -118,6 +118,20 @@ void main() {
       expect(s.text, '…cdef');
       expect(s.text.substring(s.matchStart, s.matchEnd), 'ef');
     });
+
+    test('截取边界不切开代理对（扩展 B 汉字 / emoji）', () {
+      // '𠮟' 是两个码元；radius 恰好落在它的两半之间。
+      const String raw = 'x𠮟abcd𠮟y';
+      final int start = raw.indexOf('ab');
+      final ({String text, int matchStart, int matchEnd}) s = pdfSearchSnippet(
+        raw,
+        start: start,
+        end: start + 4,
+        radius: 1,
+      );
+      expect(s.text, '…𠮟abcd𠮟…');
+      expect(s.text.substring(s.matchStart, s.matchEnd), 'abcd');
+    });
   });
 
   group('PdfTextSearchController', () {
