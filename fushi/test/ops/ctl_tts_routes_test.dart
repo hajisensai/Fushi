@@ -15,7 +15,11 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart'
-    show MangaRenderItem, mangaCandidateFileName, mangaLocalAudioSourcePath;
+    show
+        MangaRenderItem,
+        mangaCandidateFileName,
+        mangaLocalAudioSourcePath,
+        mangaStagedFileName;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -348,10 +352,11 @@ void main() {
             }) async {
               regenerated.add((lineId: lineId, seed: seed));
               final String file = mangaCandidateFileName(lineId, seed);
+              // 与真生成端一致：候选先写暂存名，保留时才发布成 [file]。
               final File out = File(
                 p.join(
                   mangaRenderManifestFile(model, bookKey).parent.path,
-                  file,
+                  mangaStagedFileName(file),
                 ),
               );
               await out.writeAsString('new-$seed');
