@@ -497,6 +497,10 @@ import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
     show appleMusicTokenSource, loadMusicServerBindings;
+import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
+import 'package:fushi/src/media/music/server/music_server_track_ref.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerBrowser, MusicServerLyricsProvider;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -537,7 +541,7 @@ import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
-    show musicServerBindingLoader;
+    show MusicServerBinding, musicServerBindingLoader;
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
@@ -2600,6 +2604,19 @@ class AppModel
     // Android 的早返回）。会话是进程级的，两处登记不注销。
     ExitFlushRegistry.instance.register(session.flushResumePoint);
     AppLifecycleListener(onPause: () => unawaited(session.flushResumePoint()));
+    // 服务器曲目的播放上报（播放次数 / 最近播放回写到 Jellyfin / Subsonic）；退出时把正在
+    // 播的这一首报停止。
+    final MusicServerPlaybackReporter
+    serverReporting = MusicServerPlaybackReporter(
+      engine: engine,
+      lookup: (MusicPlayItem item) =>
+          musicServerTracks.resolve(trackUid: item.trackUid, path: item.path),
+      onTargetFailure: musicServerTracks.invalidate,
+      onError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('MusicServerPlaybackReporter', e, st),
+    );
+    session.serverReporting = serverReporting;
+    ExitFlushRegistry.instance.register(serverReporting.flush);
     _musicStudy = MusicStudyTracker(
       engine: engine,
       database: () => isDatabaseReady ? database : null,
@@ -2665,7 +2682,20 @@ class AppModel
     await musicSession.engine.reapplySettings();
   }
 
-  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 插件自带 → LRCLIB。
+  /// 播放项 → 服务器曲目（播放上报、服务器歌词）：按当前配置的 Jellyfin / Subsonic 现建
+  /// 客户端，缓存到认不出或上报失败为止。
+  late final MusicServerTrackResolver musicServerTracks =
+      MusicServerTrackResolver(
+        () async => <MusicServerBrowser>[
+          for (final MusicServerBinding b
+              in (await (musicServerBindingLoader ??
+                      () => loadMusicServerBindings(this))())
+                  .values)
+            b.browser,
+        ],
+      );
+
+  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 服务器歌词 / 插件自带 → LRCLIB。
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
@@ -2677,6 +2707,17 @@ class AppModel
           path: path,
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
+    serverLyrics: (String trackUid, String path) async {
+      final MusicServerTrackRef? ref = await musicServerTracks.resolve(
+        trackUid: trackUid,
+        path: path,
+      );
+      final MusicServerBrowser? b = ref?.browser;
+      if (ref == null || b is! MusicServerLyricsProvider) return null;
+      return (
+        lyrics: await (b as MusicServerLyricsProvider).lyricsFor(ref.trackId),
+      );
+    },
     pluginLyrics: isMusicPluginSourcesUsable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)

@@ -29,6 +29,8 @@ import 'package:fushi/src/media/music/server/music_server_play_item.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart'
     show musicServerDownloadServiceOf, musicServerTrackDownloadActions;
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show musicServerItemActions;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -279,18 +281,27 @@ MusicItemMenu? musicServerTrackLibraryMenu(
     open: (MusicMenuAnchor? anchor) => unawaited(() async {
       // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
       final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
-      final List<MusicMenuAction> actions =
-          await musicServerTrackLibraryActions(
+      final List<MusicMenuAction> actions = <MusicMenuAction>[
+        // 收藏 / 即时混音（能收藏 / 能混音的服务器：OpenSubsonic；Jellyfin 由
+        // `musicServerTrackMenu` 出）。
+        ...musicServerItemActions(
+          browser,
+          MusicServerItemKind.track,
+          track.id,
+          reportedFavorite: track.favorite,
+        ),
+        ...await musicServerTrackLibraryActions(
+          app.database,
+          browser,
+          track,
+          albumTitle: albumTitle,
+          downloads: musicServerDownloadServiceOf(
+            context,
             app.database,
             browser,
-            track,
-            albumTitle: albumTitle,
-            downloads: musicServerDownloadServiceOf(
-              context,
-              app.database,
-              browser,
-            ),
-          );
+          ),
+        ),
+      ];
       if (!context.mounted) return;
       await showMusicActionMenu(
         context,

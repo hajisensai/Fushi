@@ -1,6 +1,7 @@
 /// 一首歌用哪份歌词（设计 §5.4）+ `music_lyrics` 落库（`timeline_cache` 二进制 + 版本）。
 ///
 /// 优先级：① 用户手动指定（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
+/// ③' 媒体服务器存的歌词（服务器曲目）/ 插件自带歌词 →
 /// ④ LRCLIB（精确匹配；失败不自动采用模糊结果，由用户挑）。
 ///
 /// - 解析与格式互转全在 Rust（`package:fushi_music`）；这里只做 IO 与编排；
@@ -17,6 +18,8 @@ import 'dart:isolate';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerLyrics;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
@@ -37,6 +40,19 @@ const int kPluginLyricsScriptProbeLimit = 3;
 /// 向在线音源插件要一首歌的歌词（app 装配：`MusicPluginManager.source(id).lyrics`）。
 typedef MusicPluginLyricsFetcher =
     Future<MusicPluginLyrics?> Function(String pluginId, String trackId);
+
+/// 服务器曲目的歌词（app 装配：播放项经 `MusicServerTrackResolver` 认回服务器后问
+/// `MusicServerLyricsProvider.lyricsFor`）。不是服务器曲目（或那台服务器不存歌词）回 null；
+/// 是服务器曲目时回 `(lyrics: …)`，`lyrics` 为 null = 服务器上这首没有歌词。网络 / 服务器
+/// 错误抛（不写负缓存，回落到在线来源）。
+typedef MusicServerLyricsFetcher =
+    Future<({MusicServerLyrics? lyrics})?> Function(
+      String trackUid,
+      String path,
+    );
+
+/// 服务器说「这首没有歌词」后多久再问（管理员会补 .lrc / 装歌词插件，与插件同档）。
+const Duration kServerLyricsNegativeCacheTtl = Duration(days: 1);
 
 /// 向歌词插件搜候选（app 装配：`MusicPluginManager.source(id).lyricsSearch`）。
 typedef MusicPluginLyricsSearcher =
@@ -305,6 +321,7 @@ class MusicLyricsService {
     Future<LyricTimeline> Function(Uint8List bytes, String hint, int? durMs)?
     parse,
     int Function()? now,
+    MusicServerLyricsFetcher? serverLyrics,
     MusicPluginLyricsFetcher? pluginLyrics,
     MusicPluginLyricsSearcher? pluginSearch,
     MusicPluginLyricsRefFetcher? pluginFetch,
@@ -312,6 +329,7 @@ class MusicLyricsService {
     MusicGeneratedSidecarCheck? isGeneratedSidecar,
   }) : _database = database,
        _isGeneratedSidecar = isGeneratedSidecar,
+       _serverLyrics = serverLyrics,
        _pluginLyrics = pluginLyrics,
        _pluginSearch = pluginSearch,
        _pluginFetch = pluginFetch,
@@ -337,6 +355,7 @@ class MusicLyricsService {
   final Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
   _parse;
   final int Function() _now;
+  final MusicServerLyricsFetcher? _serverLyrics;
   final MusicPluginLyricsFetcher? _pluginLyrics;
   final MusicPluginLyricsSearcher? _pluginSearch;
   final MusicPluginLyricsRefFetcher? _pluginFetch;
@@ -560,6 +579,21 @@ class MusicLyricsService {
       );
     }
 
+    // ③' 媒体服务器存的歌词（Jellyfin `/Audio/{id}/Lyrics`、OpenSubsonic
+    // `getLyricsBySongId`）：服务器曲目没有本地文件，服务器读到的 .lrc / 内嵌歌词就是
+    // 「文件自带」那一档，排在在线搜索前。缓存（含负缓存）→ 问服务器；服务器报错不写负缓存，
+    // 继续往在线来源回落。
+    final MusicServerLyricsFetcher? fetchServer = _serverLyrics;
+    if (fetchServer != null && !track.isLocalFile && !track.isCueTrack) {
+      final MusicLyricsResolution? hit = await _resolveServerLyrics(
+        db,
+        track,
+        rowOf(MusicLyricsSource.server),
+        fetchServer,
+      );
+      if (hit != null) return hit;
+    }
+
     // ③' 插件自带歌词（逐字歌词等）：缓存（含负缓存）→ 问插件。插件报错不吞成
     // 「没有歌词」：不写负缓存，继续往 LRCLIB 回落。
     final MusicPluginLyricsFetcher? fetchPlugin = _pluginLyrics;
@@ -676,6 +710,65 @@ class MusicLyricsService {
       Error.throwWithStackTrace(lrclibError, lrclibStack!);
     }
     return null;
+  }
+
+  /// 服务器歌词（③'）：有缓存且新鲜就用；负缓存在 [kServerLyricsNegativeCacheTtl] 内不再问；
+  /// 否则问服务器并落库（重取时保留用户调过的偏移）。不是服务器曲目 / 没有 / 出错回 null。
+  Future<MusicLyricsResolution?> _resolveServerLyrics(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    MusicLyricRow? prev,
+    MusicServerLyricsFetcher fetch,
+  ) async {
+    const String source = MusicLyricsSource.server;
+    if (prev != null && prev.format != kMusicLyricsNoneFormat) {
+      return MusicLyricsResolution(
+        timeline: await _timelineOf(db, prev, track.durationMs),
+        source: source,
+      );
+    }
+    if (prev != null &&
+        _now() - prev.updatedAt <
+            kServerLyricsNegativeCacheTtl.inMilliseconds) {
+      return null;
+    }
+    final ({MusicServerLyrics? lyrics})? got;
+    try {
+      got = await fetch(track.trackUid, track.path);
+    } on Exception {
+      return null;
+    }
+    if (got == null) return null;
+    final MusicServerLyrics? lyrics = got.lyrics;
+    if (lyrics == null) {
+      await _upsert(
+        db,
+        trackUid: track.trackUid,
+        source: source,
+        format: kMusicLyricsNoneFormat,
+        raw: Uint8List(0),
+      );
+      return null;
+    }
+    final ({String text, String format}) raw = lyrics.toRaw();
+    final Uint8List bytes = Uint8List.fromList(utf8.encode(raw.text));
+    final LyricTimeline t = (await _parse(
+      bytes,
+      raw.format,
+      track.durationMs,
+    )).copyWith(source: source);
+    await _upsert(
+      db,
+      trackUid: track.trackUid,
+      source: source,
+      format: raw.format,
+      raw: bytes,
+      timeline: t,
+    );
+    return MusicLyricsResolution(
+      timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
+      source: source,
+    );
   }
 
   /// 在线歌词来源的查询顺序：[MusicLyricsSource.lrclib] 或歌词插件 id。没装配来源列表
@@ -1267,6 +1360,8 @@ class MusicLyricsService {
             ? 'LRCLIB'
             : r.source == MusicLyricsSource.asr
             ? 'ASR'
+            : r.source == MusicLyricsSource.server
+            ? 'Server'
             : MusicLyricsSource.pluginIdOf(r.source) ??
                   MusicLyricsSource.lyricsPluginIdOf(r.source);
         if (label == null) continue;

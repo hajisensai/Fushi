@@ -17,7 +17,12 @@ class JellyfinMusicClient
     implements
         MusicServerBrowser,
         MusicServerPlaylistEditing,
-        MusicServerDownloading {
+        MusicServerDownloading,
+        MusicServerFavoriteEditing,
+        MusicServerDiscovery,
+        MusicServerInstantMix,
+        MusicServerPlaybackReporting,
+        MusicServerLyricsProvider {
   JellyfinMusicClient(this.config, {http.Client? httpClient})
     : _api = JellyfinApi(
         serverUrl: config.effectiveServerUrl,
@@ -419,6 +424,254 @@ class JellyfinMusicClient
         'api_key': config.accessToken,
       },
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 收藏（[MusicServerFavoriteEditing]）：`/Users/{uid}/FavoriteItems/{id}`（Emby 与
+  // Jellyfin 各版本都认；10.9 起的 `/UserFavoriteItems` 旧版与兼容层不认）。
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<void> setFavorite(
+    MusicServerItemKind kind,
+    String id, {
+    required bool favorite,
+  }) => _api.sendJson(
+    favorite ? 'POST' : 'DELETE',
+    '$_userPath/FavoriteItems/${Uri.encodeComponent(id)}',
+  );
+
+  @override
+  Future<MusicServerItems> listFavorites({
+    int limit = kMusicServerPageSize,
+  }) async {
+    Future<List<Map<String, Object?>>> favs(String type, String fields) async =>
+        jellyfinItemsOf(
+          await _api.getDecodedJson('$_userPath/Items', <String, String>{
+            'IncludeItemTypes': type,
+            'Recursive': 'true',
+            'Filters': 'IsFavorite',
+            'SortBy': 'SortName',
+            'SortOrder': 'Ascending',
+            'Limit': '$limit',
+            'Fields': fields,
+          }),
+        );
+    final List<Map<String, Object?>> albums = await favs(
+      'MusicAlbum',
+      _albumFields,
+    );
+    final List<Map<String, Object?>> artists = await favs(
+      'MusicArtist',
+      'ChildCount',
+    );
+    final List<Map<String, Object?>> tracks = await favs('Audio', _trackFields);
+    return MusicServerItems(
+      albums: <MusicServerAlbum>[
+        for (final Map<String, Object?> r in albums)
+          ?parseJellyfinMusicAlbum(r),
+      ],
+      artists: <MusicServerArtist>[
+        for (final Map<String, Object?> r in artists)
+          ?parseJellyfinMusicArtist(r),
+      ],
+      tracks: <MusicServerTrack>[
+        for (final Map<String, Object?> r in tracks)
+          ?parseJellyfinMusicTrack(r),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 流派 / 最近添加 / 播放统计（[MusicServerDiscovery]）。播放统计是服务器按本账号
+  // 记的（`UserData.PlayCount` / `LastPlayedDate`，本机播放经 [reportPlaybackStarted]
+  // 计入）。
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<MusicServerGenre>> listGenres() async {
+    final Object? json = await _api
+        .getDecodedJson('/MusicGenres', <String, String>{
+          'UserId': config.userId,
+          'SortBy': 'SortName',
+          'SortOrder': 'Ascending',
+          'EnableImageTypes': 'Primary',
+        });
+    return <MusicServerGenre>[
+      for (final Map<String, Object?> r in jellyfinItemsOf(json))
+        ?parseJellyfinMusicGenre(r),
+    ];
+  }
+
+  @override
+  Future<List<MusicServerAlbum>> genreAlbums(
+    MusicServerGenre genre, {
+    int limit = kMusicServerPageSize,
+  }) async => _albums(<String, String>{
+    'GenreIds': genre.id,
+    'SortBy': 'SortName',
+    'SortOrder': 'Ascending',
+    'Limit': '$limit',
+  });
+
+  @override
+  Future<List<MusicServerTrack>> genreTracks(
+    MusicServerGenre genre, {
+    int limit = kMusicServerPageSize,
+  }) => _tracks(<String, String>{
+    'GenreIds': genre.id,
+    'SortBy': 'AlbumArtist,Album,ParentIndexNumber,IndexNumber,SortName',
+    'SortOrder': 'Ascending',
+    'Limit': '$limit',
+  });
+
+  @override
+  Future<List<MusicServerAlbum>> recentlyAddedAlbums({int limit = 30}) =>
+      _albums(<String, String>{
+        'SortBy': 'DateCreated,SortName',
+        'SortOrder': 'Descending',
+        'Limit': '$limit',
+      });
+
+  @override
+  Future<MusicServerItems> mostPlayed({int limit = 30}) async =>
+      MusicServerItems(
+        tracks: await _tracks(<String, String>{
+          'Filters': 'IsPlayed',
+          'SortBy': 'PlayCount,SortName',
+          'SortOrder': 'Descending',
+          'Limit': '$limit',
+        }),
+      );
+
+  @override
+  Future<MusicServerItems> recentlyPlayed({int limit = 30}) async =>
+      MusicServerItems(
+        tracks: await _tracks(<String, String>{
+          'Filters': 'IsPlayed',
+          'SortBy': 'DatePlayed',
+          'SortOrder': 'Descending',
+          'Limit': '$limit',
+        }),
+      );
+
+  Future<List<MusicServerAlbum>> _albums(Map<String, String> query) async {
+    final Object? json = await _api
+        .getDecodedJson('$_userPath/Items', <String, String>{
+          'IncludeItemTypes': 'MusicAlbum',
+          'Recursive': 'true',
+          'Fields': _albumFields,
+          'EnableImageTypes': 'Primary',
+          ...query,
+        });
+    return <MusicServerAlbum>[
+      for (final Map<String, Object?> r in jellyfinItemsOf(json))
+        ?parseJellyfinMusicAlbum(r),
+    ];
+  }
+
+  /// 曲目列表保持服务器排序（不经 [sortMusicServerTracks]：最常 / 最近播放的顺序就是内容）。
+  Future<List<MusicServerTrack>> _tracks(Map<String, String> query) async {
+    final Object? json = await _api
+        .getDecodedJson('$_userPath/Items', <String, String>{
+          'IncludeItemTypes': 'Audio',
+          'Recursive': 'true',
+          'Fields': _trackFields,
+          ...query,
+        });
+    return <MusicServerTrack>[
+      for (final Map<String, Object?> r in jellyfinItemsOf(json))
+        ?parseJellyfinMusicTrack(r),
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // 即时混音（[MusicServerInstantMix]）：`/Items/{id}/InstantMix` 对曲目 / 专辑 / 艺人 /
+  // 流派都按条目种类出混音。
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<List<MusicServerTrack>> instantMix(
+    MusicServerItemKind kind,
+    String id, {
+    int limit = 50,
+  }) async {
+    final Object? json = await _api.getDecodedJson(
+      '/Items/${Uri.encodeComponent(id)}/InstantMix',
+      <String, String>{
+        'UserId': config.userId,
+        'Limit': '$limit',
+        'Fields': _trackFields,
+      },
+    );
+    return <MusicServerTrack>[
+      for (final Map<String, Object?> r in jellyfinItemsOf(json))
+        if ((r['Type'] as String? ?? 'Audio') == 'Audio')
+          ?parseJellyfinMusicTrack(r),
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // 播放上报（[MusicServerPlaybackReporting]）：复用视频的 `/Sessions/Playing*` 实现
+  // （[JellyfinApi.reportStarted] / [JellyfinApi.reportProgress] /
+  // [JellyfinApi.reportStopped]）。会话 id 由本机生成（音乐流不经 PlaybackInfo），
+  // MediaSourceId 就是条目 id（音频条目只有一个源）。
+  // ---------------------------------------------------------------------------
+
+  @override
+  MusicServerStreamRef? streamRefOf(Uri uri) => jellyfinStreamRefOf(uri);
+
+  static JellyfinPlaybackSession _session(MusicServerPlaybackReport r) =>
+      JellyfinPlaybackSession(
+        itemId: r.trackId,
+        mediaSourceId: r.trackId,
+        playSessionId: r.playSessionId,
+        playMethod: r.transcoded ? 'Transcode' : 'DirectPlay',
+      );
+
+  @override
+  Future<void> reportPlaybackStarted(MusicServerPlaybackReport report) => _api
+      .reportStarted(session: _session(report), positionMs: report.positionMs);
+
+  @override
+  Future<void> reportPlaybackProgress(
+    MusicServerPlaybackReport report, {
+    MusicServerPlaybackEvent? event,
+  }) => _api.reportProgress(
+    itemId: report.trackId,
+    positionMs: report.positionMs,
+    session: _session(report),
+    isPaused: report.paused,
+    eventName: event?.name,
+  );
+
+  @override
+  Future<void> reportPlaybackStopped(MusicServerPlaybackReport report) =>
+      _api.reportStopped(
+        itemId: report.trackId,
+        positionMs: report.positionMs,
+        session: _session(report),
+      );
+
+  // ---------------------------------------------------------------------------
+  // 服务器歌词（[MusicServerLyricsProvider]）：`/Audio/{id}/Lyrics`（Jellyfin 10.9+，读
+  // 音频旁的 .lrc / 内嵌歌词 / 歌词插件结果）。404 = 这首没有歌词。
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<MusicServerLyrics?> lyricsFor(String trackId) async {
+    final Object? json;
+    try {
+      json = await _api.getDecodedJson(
+        '/Audio/${Uri.encodeComponent(trackId)}/Lyrics',
+      );
+    } on JellyfinApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    } on FormatException {
+      return null; // 不认这个路由的兼容层（回 HTML 首页）：当没有。
+    }
+    return parseJellyfinLyrics(json);
   }
 
   @override

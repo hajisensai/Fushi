@@ -21,6 +21,7 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
+import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
@@ -205,6 +206,10 @@ class MusicSession extends ChangeNotifier {
   /// [AppleMusicFavorites.canFavorite] 为 false。变化时本会话也 [notifyListeners]。
   final AppleMusicFavorites? appleMusicFavorites;
 
+  /// 服务器曲目的播放上报（Jellyfin / Subsonic 的播放次数 / 最近播放）；app 装配，测试 /
+  /// 无头入口为 null。挂在本会话的曲目生命周期上（开播 / 换下 / 引擎状态）。
+  MusicServerPlaybackReporter? serverReporting;
+
   /// 这一首能不能收藏：声明了 `like` 的插件曲目，或已连接账号时的 Apple Music 整曲；
   /// 本地 / 其它服务器曲目为 false。
   bool canFavorite(MusicPlayItem item) =>
@@ -347,6 +352,7 @@ class MusicSession extends ChangeNotifier {
 
   void _onTrackStarted(MusicPlayItem item) {
     _startedProgressed = false;
+    serverReporting?.trackStarted(item);
     // 引擎此时已把位置清零给新曲：上一首播到哪要读它清零前存下的值（同步读，免得被后续
     // 位置推送覆盖）。
     unawaited(_rotatePlayEvent(item, listened: engine.listenedBeforeStart));
@@ -404,6 +410,7 @@ class MusicSession extends ChangeNotifier {
   }
 
   void _onEngineChanged() {
+    serverReporting?.engineChanged();
     _publishMediaSession();
     _maybeWriteResumePoint();
     notifyListeners();
@@ -487,6 +494,7 @@ class MusicSession extends ChangeNotifier {
   /// 这次打开还没放过（位置 0）不写（见 [_startedProgressed]）；后端自然推进换下的按
   /// 听完删行（交叉淡入推进时的位置停在淡入起点，见 [MusicTrackLeave.completed]）。
   void _onTrackLeft(MusicTrackLeave leave) {
+    serverReporting?.trackLeft(leave);
     final bool progressed = _startedProgressed;
     _startedProgressed = false;
     if (leave.restoring) return;

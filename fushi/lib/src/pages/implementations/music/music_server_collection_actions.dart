@@ -349,60 +349,6 @@ List<MusicMenuAction> musicServerTrackDownloadActions(
   ];
 }
 
-/// 服务器专辑卡 / 行的右键菜单（Jellyfin / Subsonic）：打开时取一次曲目与状态，给整张专辑的
-/// 入库 / 下载动作。不能入库的来源（Apple Music / YouTube）回 null。
-MusicItemMenu? musicServerAlbumMenu(
-  BuildContext context,
-  FushiDatabase? db,
-  MusicServerBrowser browser,
-  MusicServerAlbum album,
-) {
-  if (db == null || !musicServerKindStorable(browser.kind)) return null;
-  return MusicItemMenu(
-    buttonKey: ValueKey<String>('music-server-album-menu-${album.id}'),
-    open: (MusicMenuAnchor? anchor) => unawaited(() async {
-      // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
-      final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
-      final MusicServerDownloadService? downloads =
-          musicServerDownloadServiceOf(context, db, browser);
-      List<MusicMenuAction> actions;
-      try {
-        final List<MusicServerTrack> tracks = await browser.albumTracks(
-          album.id,
-        );
-        final Set<String> inLibrary = await db.musicRemoteLibraryUidsOf(
-          musicServerTrackUids(browser, tracks),
-        );
-        actions = musicServerCollectionActions(
-          db: db,
-          browser: browser,
-          tracks: tracks,
-          libraryUids: inLibrary,
-          batchTitle: album.title,
-          scope: 'album',
-          scopeId: album.id,
-          downloads: downloads,
-          album: album,
-          albumTitleOf: (_) => album.title,
-        );
-      } on Object catch (e) {
-        FushiToast.show(
-          msg: t.music_action_failed(error: '$e'),
-          severity: ToastSeverity.error,
-        );
-        return;
-      }
-      if (!context.mounted) return;
-      await showMusicActionMenu(
-        context,
-        anchor: at,
-        errorText: (Object e) => t.music_action_failed(error: '$e'),
-        actions: actions,
-      );
-    }()),
-  );
-}
-
 /// 专辑 / 艺人页头部的两颗状态按钮：入库（「加入音乐库」/「已在音乐库」/「已在音乐库：3 / 10
 /// 首」）与下载（「下载」/「下载中 40%」/「已下载」/「已下载：3 / 10 首」）。都不在 / 没下时点一下
 /// 直接做；其余状态点开菜单（加入其余 / 移出、下载其余 / 取消 / 删除下载）。状态随写路径实时
