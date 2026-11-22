@@ -1020,13 +1020,11 @@ class MangaAudioRenderer {
     required CastVoicingLedger ledger,
     required Iterable<String> lineIds,
   }) async {
-    final Set<String> wanted = lineIds.toSet();
-    final List<String> dropped = <String>[
-      for (final MangaRenderedLine l in manifest.lines)
-        if (wanted.contains(l.lineId) &&
-            !(script.lineById(l.lineId)?.kind.isAudible ?? false))
-          l.lineId,
-    ];
+    final List<String> dropped = mangaUnreadRenderedLines(
+      script: script,
+      manifest: manifest,
+      lineIds: lineIds,
+    );
     if (dropped.isEmpty) return dropped;
     manifest.lines.removeWhere(
       (MangaRenderedLine l) => dropped.contains(l.lineId),
@@ -1076,6 +1074,22 @@ class MangaAudioRenderer {
       }
     }
   }
+}
+
+/// [manifest] 里属于 [lineIds]、演出稿里却已是「不读」类型（或已删掉）的句子——
+/// [MangaAudioRenderer.dropUnreadLines] 要拿掉的那些（调用方据此决定要不要先停播）。
+List<String> mangaUnreadRenderedLines({
+  required MangaAudioScript script,
+  required MangaRenderManifest manifest,
+  required Iterable<String> lineIds,
+}) {
+  final Set<String> wanted = lineIds.toSet();
+  return <String>[
+    for (final MangaRenderedLine l in manifest.lines)
+      if (wanted.contains(l.lineId) &&
+          !(script.lineById(l.lineId)?.kind.isAudible ?? false))
+        l.lineId,
+  ];
 }
 
 /// 一次提交新出的音频（HBK-AUDIT-201 / 207）：目标文件名 → 暂存文件名（都相对

@@ -389,7 +389,15 @@ Future<bool> dropMangaUnreadLines(
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
   );
-  if (manifest == null) return false;
+  if (manifest == null ||
+      mangaUnreadRenderedLines(
+        script: script,
+        manifest: manifest,
+        lineIds: lineIds,
+      ).isEmpty) {
+    return false;
+  }
+  // 要删这几句的音频文件：先停掉这卷的播放（Windows 上被占用的文件删不掉）。
   await appModel.audiobookSession.stopIfPlayingAny(<String>[bookKey]);
   final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(bookKey);
