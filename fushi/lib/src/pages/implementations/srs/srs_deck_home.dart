@@ -321,6 +321,7 @@ class _SrsHomeView extends StatelessWidget {
         _SrsHeatmapCard(
           key: const ValueKey<String>('srs-home-heatmap'),
           stats: s,
+          totals: true,
         ),
     ];
     return LayoutBuilder(
@@ -774,7 +775,8 @@ class _SrsTodayPlan extends StatelessWidget {
 /// 首页仪表盘复习块同色）。左上是事实 chip（约几分钟 / 多个顶层牌组有活时「从
 /// 哪个开始」），右上是今日进度圆环（已完成 ÷ 已完成 + 剩余，中间带 %），正下方
 /// 一行「已完成 N 张」点明圆环的含义；正中是今天还剩的张数大字（全部完成 / 准备
-/// 中时换成状态大字），下面到期 / 学习中 / 新卡三个计数 chip。
+/// 中时换成状态大字），下面到期 / 学习中 / 新卡三个计数 chip；块底是近 7 天复习量
+/// （[_SrsRecentReviews]，同一行被拉高时贴底，见 [HomePosterSpread]）。
 ///
 /// 不画水印（用户 2026-11-13：被块裁掉半个字、压在内容上），也不放「开始复习」：
 /// 页头主按钮（[FushiMastheadCtaButton]，同一口径 [SrsDeckListData.firstRootWithWork]）
@@ -851,80 +853,181 @@ class _SrsTodayPoster extends StatelessWidget {
           );
     final List<String> facts = <String>[?minutes, ?startFrom];
     final String doneLabel = t.srs_home_done_count(n: done);
+    final SrsHomeStats? s = stats;
+    final List<Widget> top = <Widget>[
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 12,
+        children: <Widget>[
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <Widget>[
+                FushiPosterChip(
+                  colors: colors,
+                  icon: FushiIcons.repeat,
+                  label: t.stat_today,
+                ),
+                for (final String fact in facts)
+                  FushiPosterChip(colors: colors, label: fact),
+              ],
+            ),
+          ),
+          Semantics(
+            key: const ValueKey<String>('srs-home-today-ring'),
+            container: true,
+            label: '$doneLabel · ${_srsPercent(ratio)}',
+            excludeSemantics: true,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 6,
+              children: <Widget>[
+                FushiPosterRing(
+                  value: ratio,
+                  colors: colors,
+                  size: horizontal ? 72 : 60,
+                ),
+                Text(doneLabel, maxLines: 1, style: caption),
+              ],
+            ),
+          ),
+        ],
+      ),
+      figure,
+      if (!allDone)
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: <Widget>[
+            FushiPosterChip(
+              colors: colors,
+              solid: true,
+              label: pending && data.todayReview == 0
+                  ? '${t.srs_home_meta_due(n: 0)} '
+                        '(${t.srs_home_meta_pending})'
+                  : t.srs_home_meta_due(n: data.todayReview),
+            ),
+            FushiPosterChip(
+              colors: colors,
+              label: t.srs_home_meta_learning(n: data.todayLearn),
+            ),
+            FushiPosterChip(
+              colors: colors,
+              label: t.srs_home_meta_new(n: data.todayNew),
+            ),
+          ],
+        ),
+    ];
     return FushiPosterBlock(
       key: const ValueKey<String>('srs-home-today-poster'),
       watermark: '',
       colors: colors,
       // 块里没有点按目标（开始入口在页头），不随悬停抬升。
       hoverEnabled: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        spacing: 12,
+      // 同一行被「正在背」拉高时，近 7 天贴块底，空出来的高度落在大数字和它之间。
+      stretchContent: true,
+      child: HomePosterSpread(
+        split: top.length,
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: 12,
-            children: <Widget>[
-              Expanded(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    FushiPosterChip(
-                      colors: colors,
-                      icon: FushiIcons.repeat,
-                      label: t.stat_today,
-                    ),
-                    for (final String fact in facts)
-                      FushiPosterChip(colors: colors, label: fact),
-                  ],
-                ),
-              ),
-              Semantics(
-                key: const ValueKey<String>('srs-home-today-ring'),
-                container: true,
-                label: '$doneLabel · ${_srsPercent(ratio)}',
-                excludeSemantics: true,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 6,
-                  children: <Widget>[
-                    FushiPosterRing(
-                      value: ratio,
-                      colors: colors,
-                      size: horizontal ? 72 : 60,
-                    ),
-                    Text(doneLabel, maxLines: 1, style: caption),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          figure,
-          if (!allDone)
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
+          for (final Widget w in top)
+            Align(alignment: AlignmentDirectional.centerStart, child: w),
+          // 只在宽屏首行（与牌组色块同行拉齐）加：手机上一列竖排，没有空可填，
+          // 加了只会把牌组树往下推。
+          if (s != null && horizontal)
+            _SrsRecentReviews(
+              key: const ValueKey<String>('srs-home-today-recent'),
+              stats: s,
+              colors: colors,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 「今日」色块底部的近 7 天复习量：标题 + 日均、逐日柱（今天实色，悬停看当天次数）、
+/// 星期刻度。数据是全部历史的 [SrsHomeStats.countsByDay]，纯 RWKV 牌组也有。
+class _SrsRecentReviews extends StatelessWidget {
+  const _SrsRecentReviews({
+    super.key,
+    required this.stats,
+    required this.colors,
+  });
+
+  final SrsHomeStats stats;
+  final FushiCoverBlockColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final TextStyle caption = FushiPosterText.caption
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.85));
+    final TextStyle tick = FushiPosterText.badge
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.7));
+    final List<int> days = stats.recentCounts();
+    final int last = days.length - 1;
+    final int sum = days.fold<int>(0, (int a, int n) => a + n);
+    final String average =
+        '${t.srs_stats_avg_per_day} '
+        '${days.isEmpty ? 0 : (sum / days.length).round()}';
+    return Semantics(
+      container: true,
+      label:
+          '${t.srs_stats_period_week} · '
+          '${t.srs_stats_reviews_count(n: sum)} · $average',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 6,
+        children: <Widget>[
+          ExcludeSemantics(
+            child: Row(
+              spacing: 8,
               children: <Widget>[
-                FushiPosterChip(
-                  colors: colors,
-                  solid: true,
-                  label: pending && data.todayReview == 0
-                      ? '${t.srs_home_meta_due(n: 0)} '
-                            '(${t.srs_home_meta_pending})'
-                      : t.srs_home_meta_due(n: data.todayReview),
+                Expanded(
+                  child: Text(
+                    t.srs_stats_period_week,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: caption,
+                  ),
                 ),
-                FushiPosterChip(
-                  colors: colors,
-                  label: t.srs_home_meta_learning(n: data.todayLearn),
-                ),
-                FushiPosterChip(
-                  colors: colors,
-                  label: t.srs_home_meta_new(n: data.todayNew),
-                ),
+                Text(average, maxLines: 1, style: caption),
               ],
             ),
+          ),
+          FushiPosterBars(
+            values: days,
+            colors: colors,
+            highlightIndex: last,
+            height: 56,
+            labels: <String>[
+              for (int i = 0; i < days.length; i++)
+                '${_srsHomeDate(stats.today - last + i, DateFormat.MMMd)} · '
+                    '${t.srs_stats_reviews_count(n: days[i])}',
+            ],
+          ),
+          ExcludeSemantics(
+            child: Row(
+              spacing: 5,
+              children: <Widget>[
+                for (int i = 0; i < days.length; i++)
+                  Expanded(
+                    child: Text(
+                      _srsForecastLabel(stats.today, i - last),
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      textAlign: TextAlign.center,
+                      style: tick,
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1724,9 +1827,13 @@ class _SrsForecastChart extends StatelessWidget {
 
 /// 复习热力图卡：「连续 N 天 · 最长 M 天」+ 统计页同款日历热力图。
 class _SrsHeatmapCard extends StatelessWidget {
-  const _SrsHeatmapCard({super.key, required this.stats});
+  const _SrsHeatmapCard({super.key, required this.stats, this.totals = false});
 
   final SrsHomeStats stats;
+
+  /// 色块底部加累计统计（[_SrsStudyTotals]）：只有宽屏首行（与牌组色块同行拉齐、
+  /// 有空可填）给 true；手机树下的那张不加，免得把页面拉长。
+  final bool totals;
 
   @override
   Widget build(BuildContext context) {
@@ -1746,57 +1853,66 @@ class _SrsHeatmapCard extends StatelessWidget {
       );
       final TextStyle base =
           Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+      final List<Widget> top = <Widget>[
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiPosterChip(
+            colors: colors,
+            icon: FushiIcons.streak,
+            label: t.stat_streak,
+          ),
+        ),
+        Semantics(
+          label: t.srs_home_streak_longest(
+            n: stats.streak,
+            m: stats.longestStreak,
+          ),
+          excludeSemantics: true,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            spacing: 12,
+            children: <Widget>[
+              FushiPosterFigure(
+                value: '${stats.streak}',
+                unit: t.widget_label_streak_days,
+                colors: colors,
+                size: FushiPosterFigureSize.compact,
+              ),
+              Expanded(
+                child: Text(
+                  '${t.srs_stats_streak_longest} · '
+                  '${stats.longestStreak} ${t.widget_label_streak_days}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: FushiPosterText.caption
+                      .on(base)
+                      .copyWith(
+                        color: colors.onContainer.withValues(alpha: 0.85),
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        heatmap,
+      ];
+      // 同一行被「正在背」拉高时，累计统计贴块底，空出来的高度落在热力图和它之间。
       return FushiPosterBlock(
         watermark: '',
         colors: colors,
         hoverEnabled: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          spacing: 12,
+        stretchContent: true,
+        child: HomePosterSpread(
+          split: top.length,
           children: <Widget>[
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiPosterChip(
+            ...top,
+            if (totals)
+              _SrsStudyTotals(
+                key: const ValueKey<String>('srs-home-heatmap-totals'),
+                stats: stats,
                 colors: colors,
-                icon: FushiIcons.streak,
-                label: t.stat_streak,
               ),
-            ),
-            Semantics(
-              label: t.srs_home_streak_longest(
-                n: stats.streak,
-                m: stats.longestStreak,
-              ),
-              excludeSemantics: true,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                spacing: 12,
-                children: <Widget>[
-                  FushiPosterFigure(
-                    value: '${stats.streak}',
-                    unit: t.widget_label_streak_days,
-                    colors: colors,
-                    size: FushiPosterFigureSize.compact,
-                  ),
-                  Expanded(
-                    child: Text(
-                      '${t.srs_stats_streak_longest} · '
-                      '${stats.longestStreak} ${t.widget_label_streak_days}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                      style: FushiPosterText.caption
-                          .on(base)
-                          .copyWith(
-                            color: colors.onContainer.withValues(alpha: 0.85),
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            heatmap,
           ],
         ),
       );
@@ -1822,6 +1938,76 @@ class _SrsHeatmapCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 「连续天数」色块底部的累计统计：学习天数 / 复习量 / 学习日日均（全部历史，与统计页
+/// 「复习量」同一套标签）。
+class _SrsStudyTotals extends StatelessWidget {
+  const _SrsStudyTotals({super.key, required this.stats, required this.colors});
+
+  final SrsHomeStats stats;
+  final FushiCoverBlockColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final TextStyle value = FushiPosterText.name
+        .on(base)
+        .copyWith(
+          color: colors.accent,
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        );
+    final TextStyle caption = FushiPosterText.caption
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.85));
+    final NumberFormat number = NumberFormat.decimalPattern(
+      LocaleSettings.currentLocale.languageTag,
+    );
+    final int studied = stats.studiedDays;
+    final int total = stats.totalReviews;
+    final List<(String, String)> items = <(String, String)>[
+      (t.srs_stats_calendar_days_studied, t.srs_stats_days(n: studied)),
+      (t.srs_stats_reviews_title, number.format(total)),
+      (
+        t.srs_stats_avg_studied_day,
+        studied == 0 ? '—' : number.format((total / studied).round()),
+      ),
+    ];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 12,
+      children: <Widget>[
+        for (final (String label, String text) in items)
+          Expanded(
+            child: Semantics(
+              container: true,
+              label: '$label $text',
+              excludeSemantics: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                spacing: 2,
+                children: <Widget>[
+                  Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: value,
+                  ),
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: caption,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

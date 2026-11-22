@@ -21,7 +21,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart' show DateFormat;
+import 'package:intl/intl.dart' show DateFormat, NumberFormat;
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
@@ -117,7 +117,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart'
 import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart'
-    show HomePosterRows;
+    show HomePosterRows, HomePosterSpread;
 import 'package:fushi/src/utils/components/fushi_continue_blocks.dart'
     show FushiBlockSectionTitle;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'

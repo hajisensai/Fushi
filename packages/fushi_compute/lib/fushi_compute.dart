@@ -1,4 +1,4 @@
-/// native/fushi_compute 的 FFI 绑定。各域（归档 / 哈希 / 字体 / 图像 / OCR 后段 / TS 解复用 / 文本匹配 / 信号处理 / 解析 / 加密）在 `src/<域>/`，
+/// native/fushi_compute 的 FFI 绑定。各域（归档 / 哈希 / 字体 / 图像 / OCR 后段 / TS 解复用 / 文本匹配 / 信号处理 / 解析 / 加密 / 学习统计派生）在 `src/<域>/`，
 /// 硬依赖、没有 Dart 回退：库或某域符号缺失时抛 [FushiComputeUnavailableError]。
 library;
 
@@ -29,6 +29,7 @@ export 'src/parse/subtitle.dart';
 export 'src/parse/subtitle_timing.dart';
 export 'src/parse/tts_split.dart';
 export 'src/signal/ffc_signal.dart';
+export 'src/stats/fushi_compute_stats.dart';
 export 'src/text/cue_match.dart';
 export 'src/text/legacy_text.dart';
 export 'src/ts/fushi_compute_ts.dart';

@@ -361,5 +361,6 @@ void _showCompanionMinedOnTop(String? term) {
   FushiToast.showMine(
     msg: t.second_screen_lookup_mined(term: term ?? ''),
     status: MineToastStatus.added,
+    term: term,
   );
 }
