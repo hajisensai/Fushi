@@ -664,6 +664,7 @@ fn every_generation_state_opens_explicitly() {
     assert!(!dir.0.join(GEN4_FILE).exists());
     assert_eq!(std::fs::read(dir.0.join(LEGACY_FILE)).unwrap(), old);
     assert_eq!(gen_status(&dir.0)["state"], json!("needsMigration"));
+    assert_eq!(gen_status(&dir.0)["failure"], Value::Null);
     assert_eq!(gen_status(&dir.0)["running"], Value::Null);
     // 另一个进程拿着换代锁：迁移进行中。
     {
@@ -712,6 +713,41 @@ fn every_generation_state_opens_explicitly() {
     assert_eq!(state_of(&e), json!("sealedOldOnly"), "{e}");
     assert!(!dir.0.join(GEN4_FILE).exists());
     assert_eq!(gen_status(&dir.0)["state"], json!("sealedOldOnly"));
+}
+
+/// 上次迁移中止：打开错误与状态命令带同一个内核判定的原因（`{failure: {reason, reportPath}, state}`），调用方不另读
+/// 报告文件。
+#[test]
+fn the_open_error_carries_the_failure_reason() {
+    let d = library();
+    let dir = legacy_copy(&d, "s1reason");
+    let identity = {
+        let c =
+            Connection::open_with_flags(dir.0.join(LEGACY_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        crate::store::seal::legacy_identity(&c).unwrap()
+    };
+    let report = json!({
+        "version": 1,
+        "verdict": "aborted",
+        "profileVerdict": "incomplete",
+        "legacyIdentity": identity,
+    });
+    let path = dir.0.join(crate::store::gen4::migrate::REPORT_FILE);
+    std::fs::write(&path, report.to_string()).unwrap();
+    let (rc, e) = open(&dir.0, 0).unwrap_err();
+    assert_eq!(rc, STORE_NOT_MIGRATED, "{e}");
+    let at = e.find('{').unwrap_or_else(|| panic!("{e}"));
+    let payload: Value = serde_json::from_str(&e[at..]).unwrap();
+    assert_eq!(payload["state"], json!("migrationFailed"), "{e}");
+    assert_eq!(
+        payload["failure"],
+        json!({"reason": "incomplete", "reportPath": path.display().to_string()}),
+        "{e}"
+    );
+    let st = gen_status(&dir.0);
+    assert_eq!(st["state"], payload["state"]);
+    assert_eq!(st["failure"], payload["failure"]);
 }
 
 /// 全新安装建空库；旁边后来出现一份没封存、也不是迁移来源的协议 3 库：不开（不并入、不改它），单独的返回码。

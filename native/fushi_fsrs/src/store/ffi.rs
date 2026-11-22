@@ -219,17 +219,16 @@ pub extern "C" fn ffsrs_store_open_mode(
 }
 
 /// [ffsrs_store_open_mode] 打不开时的返回码与错误文本。没迁移的再按 `migrate::status` 区分「要迁移 / 只剩封存的旧库 /
-/// 上次迁移失败 / 还什么都没有（辅助进程先到）」：调用方据此选页面。
+/// 上次迁移失败（带原因，`migrate::Failure`）/ 还什么都没有（辅助进程先到）」：调用方据此选页面。错误文本末尾是
+/// `GenState::json` 的 `{failure, state}`（键按字母序）。
 fn open_error(dir: &Path, e: OpenError) -> (i32, String) {
     match e {
         OpenError::NotMigrated => {
-            let state = super::gen4::migrate::status(dir)
-                .map(|s| s.wire().to_owned())
-                .unwrap_or_else(|err| format!("unknown: {err}"));
-            (
-                STORE_NOT_MIGRATED,
-                format!("{e} {}", serde_json::json!({ "state": state })),
-            )
+            // 状态与上次没完成的原因一起带出去（`GenState::json`，与状态命令同一形状、同一次判定）：调用方不再另读报告。
+            let payload = super::gen4::migrate::status(dir)
+                .map(|s| s.json(dir))
+                .unwrap_or_else(|err| serde_json::json!({ "state": format!("unknown: {err}") }));
+            (STORE_NOT_MIGRATED, format!("{e} {payload}"))
         }
         OpenError::Migrating => (STORE_MIGRATING, e.to_string()),
         OpenError::LegacyNotMigrated => (STORE_LEGACY_UNMIGRATED, e.to_string()),

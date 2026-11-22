@@ -459,13 +459,20 @@ fn a_parity_failure_aborts_and_leaves_the_library_usable() {
     for _ in 0..2 {
         let out = migrate(&dir.0);
         let Outcome::Aborted {
+            reason,
             report_path,
             report,
         } = &out
         else {
             panic!("{out:?}")
         };
+        assert_eq!(*reason, AbortReason::Fail);
         assert_eq!(report_path, &dir.0.join(REPORT_FILE));
+        // 命令回包带与状态命令同一形状的原因：本进程刚跑出的与重启后读到的说同一件事。
+        assert_eq!(
+            out.json()["failure"],
+            GenState::MigrationFailed(Failure::Aborted(AbortReason::Fail)).json(&dir.0)["failure"]
+        );
         assert_eq!(report["verdict"], "aborted");
         assert_eq!(report["profiles"][0]["verdict"], "fail");
         assert_ne!(report["profiles"][0]["parity"], json!([]));
@@ -477,7 +484,12 @@ fn a_parity_failure_aborts_and_leaves_the_library_usable() {
             schema_of(&dir.0),
             crate::store::schema::SCHEMA_VERSION.to_string()
         );
-        assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+        assert_eq!(
+            status(&dir.0),
+            Ok(GenState::MigrationFailed(Failure::Aborted(
+                AbortReason::Fail
+            )))
+        );
     }
 }
 
@@ -867,9 +879,11 @@ fn an_incomplete_parity_aborts_like_a_failure() {
     drop(core);
     let before = masked(&dir.0);
     let out = migrate(&dir.0);
-    let Outcome::Aborted { report, .. } = &out else {
+    let Outcome::Aborted { reason, report, .. } = &out else {
         panic!("{out:?}")
     };
+    assert_eq!(*reason, AbortReason::Incomplete);
+    assert_eq!(out.json()["failure"]["reason"], "incomplete");
     assert_eq!(report["verdict"], "aborted");
     assert_eq!(report["profileVerdict"], "incomplete", "{report:#}");
     assert_eq!(report["profiles"][0]["verdict"], "incomplete", "{report:#}");
@@ -880,7 +894,12 @@ fn an_incomplete_parity_aborts_like_a_failure() {
         schema_of(&dir.0),
         crate::store::schema::SCHEMA_VERSION.to_string()
     );
-    assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+    assert_eq!(
+        status(&dir.0),
+        Ok(GenState::MigrationFailed(Failure::Aborted(
+            AbortReason::Incomplete
+        )))
+    );
 }
 
 /// 改名之后、封存之前被杀，之后退回旧版本往 `srs.db` 写了一笔（写锁随进程没了）：迁移来源的身份没变、日志水位
@@ -1494,7 +1513,12 @@ fn one_failing_profile_of_two_keeps_the_whole_file_uncommitted() {
             schema_of(&dir.0),
             crate::store::schema::SCHEMA_VERSION.to_string()
         );
-        assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+        assert_eq!(
+            status(&dir.0),
+            Ok(GenState::MigrationFailed(Failure::Aborted(
+                AbortReason::Fail
+            )))
+        );
     }
 }
 
@@ -1899,4 +1923,67 @@ fn a_card_inheriting_from_two_predecessors_whose_salted_and_canonical_order_diff
     assert_eq!(p["canonical"], json!([]), "{p:#}");
     assert_eq!(p["verdict"], "pass", "{p:#}");
     assert!(matches!(out, Outcome::Committed { .. }), "{out:?}");
+}
+
+/// 上次没完成的原因由状态命令判定（[GenState::MigrationFailed] 带 [Failure]），与「是不是失败」走同一份身份核对：
+/// 中止报告按 `profileVerdict` 分成 `fail` / `incomplete` / `error`（认不出的算 `error`），报告的身份不是旁边这份
+/// 旧库的不算失败（要迁移），提交时写的报告不算；旧库不见了、只剩临时文件 = `interrupted`（没有报告路径）。
+/// 线上形状 `{state, failure: {reason, reportPath?}}` 状态命令与打开错误共用（[GenState::json]）。
+#[test]
+fn the_failed_state_carries_the_kernel_reason() {
+    let dir = legacy_dir("g7-reason", &|_| {});
+    let identity = {
+        let c = open_ro(&dir.0.join(LEGACY_FILE)).unwrap();
+        seal::legacy_identity(&c).unwrap()
+    };
+    assert!(identity.is_some());
+    let write = |verdict: &str, profile_verdict: Value, legacy: Value| {
+        let r = json!({
+            "version": REPORT_VERSION,
+            "verdict": verdict,
+            "profileVerdict": profile_verdict,
+            "legacyIdentity": legacy,
+        });
+        std::fs::write(dir.0.join(REPORT_FILE), r.to_string()).unwrap();
+    };
+    assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
+    for (pv, want) in [
+        (json!("fail"), AbortReason::Fail),
+        (json!("incomplete"), AbortReason::Incomplete),
+        (json!("error"), AbortReason::Error),
+        (json!("blocked"), AbortReason::Error),
+        (Value::Null, AbortReason::Error),
+    ] {
+        write("aborted", pv.clone(), json!(identity));
+        let st = status(&dir.0).unwrap();
+        assert_eq!(
+            st,
+            GenState::MigrationFailed(Failure::Aborted(want)),
+            "{pv}"
+        );
+        let j = st.json(&dir.0);
+        assert_eq!(j["state"], "migrationFailed");
+        assert_eq!(j["failure"]["reason"], want.wire());
+        assert_eq!(
+            j["failure"]["reportPath"],
+            json!(dir.0.join(REPORT_FILE).display().to_string())
+        );
+    }
+    // 别的旧库的报告（身份不同）：不是这份旧库的失败，照常要迁移，不带原因。
+    write("aborted", json!("fail"), json!("someone-else"));
+    assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
+    assert_eq!(
+        GenState::NeedsMigration.json(&dir.0)["failure"],
+        Value::Null
+    );
+    // 提交时写的报告不是失败。
+    write("committed", json!("pass"), json!(identity));
+    assert_eq!(status(&dir.0), Ok(GenState::NeedsMigration));
+    // 旧库不见了、只剩迁移临时文件：上次跑到一半，没有报告路径。
+    std::fs::remove_file(dir.0.join(REPORT_FILE)).unwrap();
+    std::fs::rename(dir.0.join(LEGACY_FILE), dir.0.join(GEN4_TEMP)).unwrap();
+    let _ = std::fs::remove_file(dir.0.join(format!("{LEGACY_FILE}-wal")));
+    let st = status(&dir.0).unwrap();
+    assert_eq!(st, GenState::MigrationFailed(Failure::Interrupted));
+    assert_eq!(st.json(&dir.0)["failure"], json!({"reason": "interrupted"}));
 }

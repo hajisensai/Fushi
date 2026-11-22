@@ -8,10 +8,11 @@
 ///   正在关（覆盖恢复、换数据根、退出）时「开始升级」置灰并说明（[SrsGen4MigrationController.canStart] /
 ///   [SrsGen4MigrationController.databaseClosing]；启动还没初始化完只置灰、不说「正在关」，重新开库后恢复）。提交后存储
 ///   重开，页面随之换成正常内容。
-/// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。内核判它的两个原因分开说（互斥，不叠两段）：
-///   上次对拍不过、已撤回（目录里有报告，[SrsGen4MigrationController.previousRunAborted]）/ 只剩迁移临时文件。
-///   本进程里跑出了结论就只说结论（结论取代「上次」的说明，同一件事不说两遍）。
-/// - 对拍不过的诊断报告（只含 ID 与计数）不印私有目录路径（手机上用户拿不到）：给「把报告发给开发者」（反馈提交页，
+/// - [SrsGenState.migrationFailed]（主进程）：上次没完成，可重新升级。原因由内核判定、随打开错误带来
+///   （[SrsStoreNotMigrated.failure]，[SrsGen4MigrationFailureReason]），页面只按它说明、不读报告文件，四种各一句
+///   （互斥，不叠两段）：对拍有差异 / 对拍没法做全 / 准备时出错（三种都已撤回、有报告）/ 只剩迁移临时文件。
+///   本进程里跑出了结论就只说结论（结论取代「上次」的说明，同一件事不说两遍，[SrsGen4MigrationController.failureFor]）。
+/// - 中止的诊断报告（只含 ID 与计数）不印私有目录路径（手机上用户拿不到）：给「把报告发给开发者」（反馈提交页，
 ///   报告自动附上）与「分享报告 / 保存报告」（srs_gen4_report_actions.dart）。
 /// - [SrsGenState.sealedOldOnly]：只剩封存旧库，不自动重建，给恢复说明。
 /// - [SrsStoreMigrating]（-5）/ [SrsGenState.migratingElsewhere]：别的窗口在迁移，稍后重试。
@@ -85,8 +86,18 @@ String srsGen4OutcomeText(SrsGen4MigrationOutcome o) => switch (o.verdict) {
   SrsGen4MigrationVerdict.noSpace => t.srs_gen4_no_space(
     size: FushiByteFormat.bytes(_shortBytes(o)),
   ),
-  SrsGen4MigrationVerdict.aborted => t.srs_gen4_aborted_report,
+  SrsGen4MigrationVerdict.aborted => srsGen4FailureText(o.failure),
   SrsGen4MigrationVerdict.committed => t.srs_gen4_running,
+};
+
+/// 上次 / 这次迁移没完成的说明，按内核给的原因（[SrsGen4MigrationFailureReason]）一种一句：「没通过核对」只说对拍真有
+/// 差异的那种，没法核对全与准备出错不混进来。原因读不出来（坏数据）= 笼统的「出错停止了」。
+String srsGen4FailureText(SrsGen4MigrationFailure? f) => switch (f?.reason) {
+  SrsGen4MigrationFailureReason.fail => t.srs_gen4_aborted_fail,
+  SrsGen4MigrationFailureReason.incomplete => t.srs_gen4_aborted_incomplete,
+  SrsGen4MigrationFailureReason.error => t.srs_gen4_aborted_error,
+  SrsGen4MigrationFailureReason.interrupted => t.srs_gen4_interrupted,
+  null => t.srs_gen4_failed,
 };
 
 int? _shortBytes(SrsGen4MigrationOutcome o) {
@@ -124,6 +135,11 @@ class SrsGenerationView extends ConsumerWidget {
       SrsGenerationKind.retryFailed => _MigrationPanel(
         controller: ref.watch(srsGen4MigrationProvider),
         failedBefore: kind == SrsGenerationKind.retryFailed,
+        previousFailure: switch (error) {
+          SrsStoreNotMigrated(:final SrsGen4MigrationFailure? failure) =>
+            failure,
+          _ => null,
+        },
       ),
       _ => _StaticState(kind: kind, onRetry: onRetry),
     };
@@ -206,65 +222,38 @@ class _StaticState extends StatelessWidget {
 }
 
 /// 迁移面板：说明 → 进度（步骤 + 进度条 + 取消）→ 结论（对拍不过时带报告的两个出口）。
-class _MigrationPanel extends StatefulWidget {
-  const _MigrationPanel({required this.controller, required this.failedBefore});
+class _MigrationPanel extends StatelessWidget {
+  const _MigrationPanel({
+    required this.controller,
+    required this.failedBefore,
+    required this.previousFailure,
+  });
 
   final SrsGen4MigrationController controller;
   final bool failedBefore;
 
-  @override
-  State<_MigrationPanel> createState() => _MigrationPanelState();
-}
-
-class _MigrationPanelState extends State<_MigrationPanel> {
-  @override
-  void initState() {
-    super.initState();
-    _checkReport();
-  }
-
-  @override
-  void didUpdateWidget(_MigrationPanel old) {
-    super.didUpdateWidget(old);
-    if (old.controller != widget.controller ||
-        old.failedBefore != widget.failedBefore) {
-      _checkReport();
-    }
-  }
-
-  /// 「上次没完成」要先读一眼目录里有没有对拍不过的报告，才知道该说哪一种原因。
-  void _checkReport() {
-    if (widget.failedBefore && !widget.controller.savedReportChecked) {
-      unawaited(widget.controller.loadSavedReport());
-    }
-  }
+  /// 上次没完成的原因（内核判定，随打开错误带来）；不是 [SrsGenState.migrationFailed] = null。
+  final SrsGen4MigrationFailure? previousFailure;
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: controller,
       builder: (BuildContext context, _) => _buildFor(context),
     );
   }
 
-  /// 页面上唯一一段主说明：在跑 > 本次结论 > 本次出错 > 上次没完成（按原因二选一）> 要升级。互斥，不叠说明。
-  String? _headline(SrsGen4MigrationController c) {
+  /// 页面上唯一一段主说明：在跑 > 本次结论 > 本次出错 > 上次没完成（按内核给的原因四选一）> 要升级。互斥，不叠说明。
+  String _headline(SrsGen4MigrationController c) {
     if (c.phase != SrsGen4MigrationPhase.idle) return t.srs_gen4_running;
     final SrsGen4MigrationOutcome? outcome = c.outcome;
     if (outcome != null) return srsGen4OutcomeText(outcome);
     if (c.error != null) return t.srs_gen4_failed;
-    if (widget.failedBefore) {
-      // 报告还没读完：先不说原因（读一个小文件，下一帧就有），免得闪一下错的那句。
-      if (!c.savedReportChecked) return null;
-      return c.previousRunAborted
-          ? t.srs_gen4_aborted_report
-          : t.srs_gen4_migration_failed_state;
-    }
+    if (failedBefore) return srsGen4FailureText(previousFailure);
     return t.srs_gen4_needs_migration;
   }
 
   Widget _buildFor(BuildContext context) {
-    final SrsGen4MigrationController controller = widget.controller;
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     final bool running = controller.phase != SrsGen4MigrationPhase.idle;
     final SrsGen4MigrationOutcome? outcome = controller.outcome;
@@ -281,7 +270,7 @@ class _MigrationPanelState extends State<_MigrationPanel> {
         reason.isNotEmpty;
     // 不能开始（主库正在关，或启动还没初始化完）：按钮置灰；只有真的在关才说「正在关闭数据库」。
     final bool blockedStart = !running && !controller.canStart;
-    final String? report = controller.reportPath;
+    final String? report = controller.failureFor(previousFailure)?.reportPath;
     final List<String> details = <String>[
       if (!running && showReason) reason,
       if (!running && error != null) '$error',
@@ -321,7 +310,7 @@ class _MigrationPanelState extends State<_MigrationPanel> {
                     onPressed: start,
                     icon: const FushiIcon(FushiIcons.refresh),
                     label: Text(
-                      widget.failedBefore || outcome != null || error != null
+                      failedBefore || outcome != null || error != null
                           ? t.srs_gen4_restart
                           : t.srs_gen4_start,
                     ),
@@ -342,7 +331,7 @@ class _MigrationPanelState extends State<_MigrationPanel> {
   }
 }
 
-/// 对拍不过的报告的两个出口：发给开发者（主）、分享 / 保存（次）。
+/// 中止报告的两个出口：发给开发者（主）、分享 / 保存（次）。
 class _ReportActions extends ConsumerWidget {
   const _ReportActions({required this.reportPath});
 
