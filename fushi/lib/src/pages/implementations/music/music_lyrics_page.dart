@@ -61,6 +61,9 @@ import 'package:fushi/src/media/music/music_remote_media.dart'
     show musicItemResolvesStream;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_controller.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
+    show pushAiSettingsPage;
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
     show LyricsScript;
@@ -540,6 +543,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _engine.removeListener(_onEngine);
     unawaited(_generatedSub?.cancel());
     _releaseAnalysis();
+    _aiTheme.dispose();
     _clock.dispose();
     super.dispose();
   }
@@ -645,6 +649,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 正在全屏歌词动画里。不落库：每次进歌词页回到原布局。
   bool _visualizerOn = false;
 
+  /// 每首的 AI 主题（读缓存 / 生成 / 撤销），全屏动画的悬停条里有入口。
+  late final LyricVisualizerAiThemeController _aiTheme =
+      LyricVisualizerAiThemeController.forPrefs(
+        appModelNoUpdate.prefsRepo,
+        openAiSettings: pushAiSettingsPage,
+      );
+
   /// 本首实际用的样式：开了「每首随机」时按曲目种子挑。
   LyricVisualizerMode _visualizerModeFor(MusicPlayItem? item) {
     if (appModel.prefsRepo.musicVisualizerRandom && item != null) {
@@ -741,6 +752,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     return MusicLyricVisualizerView(
       key: const ValueKey<String>('music_visualizer'),
       audio: audio,
+      aiTheme: _aiTheme,
       mode: _visualizerModeFor(item),
       timeline: _lyrics?.timeline,
       clock: _clock,

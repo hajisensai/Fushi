@@ -6278,6 +6278,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 打开全屏歌词动画时给还没有 AI 主题的歌自动生成（`AiFeature.musicVisualizerTheme`），默认关。
+  bool get musicVisualizerAiThemeAuto =>
+      getPref('music_visualizer_ai_theme_auto', defaultValue: false) == true;
+
+  Future<void> setMusicVisualizerAiThemeAuto(bool value) async {
+    await setPref('music_visualizer_ai_theme_auto', value);
+    notifyListeners();
+  }
+
   /// 全屏歌词动画字号倍数（0.6–2.0），默认 1.0。
   double get musicVisualizerFontScale =>
       (getPref('music_visualizer_font_scale', defaultValue: 1.0) as num)

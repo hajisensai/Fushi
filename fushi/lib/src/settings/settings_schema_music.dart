@@ -563,6 +563,20 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.prefsRepo.setMusicVisualizerRandom(value),
           ),
+          // AI 主题（AiFeature.musicVisualizerTheme）：AI 模块关着整行不出现。
+          SettingsSwitchItem(
+            id: 'music.visualizer_ai_theme_auto',
+            title: t.music_visualizer_ai_theme_auto,
+            subtitle: t.music_visualizer_ai_theme_auto_hint,
+            icon: FushiIcons.aiAssistant,
+            defaultValue: false,
+            visible: (SettingsContext c) =>
+                isAiModuleEnabled(c.appModel.moduleVisibility),
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerAiThemeAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerAiThemeAuto(value),
+          ),
           SettingsSegmentedItem<LyricVisualizerIntensity>(
             id: 'music.visualizer_intensity',
             title: t.music_visualizer_intensity,

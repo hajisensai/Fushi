@@ -740,6 +740,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_subsonic_servers',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
+  // bool（默认 false）：打开全屏歌词动画时给还没有 AI 主题的歌自动生成一份
+  // （AiFeature.musicVisualizerTheme；没指派提供商时不发请求）。
+  'music_visualizer_ai_theme_auto',
   // String（默认 'fluid'）：全屏歌词动画的共享背景（LyricVisualizerBackgroundEntry.id）。
   // 背景自己的参数存在 music_visualizer_tunings 的 'background:<id>' 项里。
   'music_visualizer_background',

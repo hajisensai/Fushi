@@ -11,6 +11,8 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_controller.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_sheet.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registry.dart';
@@ -62,6 +64,7 @@ class MusicLyricVisualizerView extends StatefulWidget {
     this.backgroundId,
     this.theme,
     this.audio,
+    this.aiTheme,
   });
 
   final LyricVisualizerMode mode;
@@ -95,6 +98,9 @@ class MusicLyricVisualizerView extends StatefulWidget {
 
   /// 本首的音频分析；null = 样式回落歌词包络。
   final LyricVisualizerAudio? audio;
+
+  /// 每首的 AI 主题（[theme] 为 null 时用它的）；null = 不提供 AI 主题入口。
+  final LyricVisualizerAiThemeController? aiTheme;
 
   @override
   State<MusicLyricVisualizerView> createState() =>
@@ -130,9 +136,40 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
     });
   }
 
+  void _onAiTheme() {
+    if (mounted) setState(() {});
+  }
+
+  void _attachAiTheme() => unawaited(
+    widget.aiTheme?.attach(
+      LyricVisualizerAiThemeTrack(
+        uid: widget.trackUid,
+        title: widget.title,
+        artist: widget.artist,
+        timeline: widget.timeline,
+      ),
+    ),
+  );
+
+  @override
+  void didUpdateWidget(covariant MusicLyricVisualizerView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.aiTheme, widget.aiTheme)) {
+      oldWidget.aiTheme?.removeListener(_onAiTheme);
+      widget.aiTheme?.addListener(_onAiTheme);
+    }
+    if (!identical(oldWidget.aiTheme, widget.aiTheme) ||
+        oldWidget.trackUid != widget.trackUid ||
+        !identical(oldWidget.timeline, widget.timeline)) {
+      _attachAiTheme();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.aiTheme?.addListener(_onAiTheme);
+    _attachAiTheme();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focus.requestFocus();
     });
@@ -140,6 +177,7 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
 
   @override
   void dispose() {
+    widget.aiTheme?.removeListener(_onAiTheme);
     _hoverHide?.cancel();
     _focus.dispose();
     super.dispose();
@@ -158,7 +196,9 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
   Widget build(BuildContext context) {
     final LyricVisualizerEntry entry = lyricVisualizerEntryOf(widget.mode);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final LyricVisualizerTheme? visualTheme = widget.theme;
+    final LyricVisualizerTheme? visualTheme =
+        widget.theme ??
+        widget.aiTheme?.themeFor(widget.trackUid, scheme.brightness);
     final LyricVisualizerPalette palette = LyricVisualizerPalette.fromScheme(
       scheme,
     ).applyOverride(visualTheme?.palette);
@@ -272,6 +312,14 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
                     child: _HoverBar(
                       label: entry.label(),
                       onPickStyle: widget.onPickStyle,
+                      onAiTheme: widget.aiTheme?.available ?? false
+                          ? () => unawaited(
+                              showLyricVisualizerAiThemeSheet(
+                                context: context,
+                                controller: widget.aiTheme!,
+                              ),
+                            )
+                          : null,
                       onExit: widget.onExit,
                     ),
                   ),
@@ -303,10 +351,14 @@ class _HoverBar extends StatelessWidget {
     required this.label,
     required this.onPickStyle,
     required this.onExit,
+    this.onAiTheme,
   });
 
   final String label;
   final VoidCallback onPickStyle;
+
+  /// 「AI 主题」；null = 不显示（AI 模块关着 / 宿主没给控制器）。
+  final VoidCallback? onAiTheme;
   final VoidCallback onExit;
 
   @override
@@ -328,6 +380,13 @@ class _HoverBar extends StatelessWidget {
                 label: Text(label),
               ),
             ),
+            if (onAiTheme != null)
+              FushiIconButtonControl(
+                key: const ValueKey<String>('music_visualizer_ai_theme'),
+                tooltip: t.music_visualizer_ai_theme,
+                onPressed: onAiTheme,
+                icon: const Icon(FushiIcons.aiAssistant),
+              ),
             FushiIconButtonControl(
               key: const ValueKey<String>('music_visualizer_exit'),
               tooltip: t.music_visualizer_exit,
