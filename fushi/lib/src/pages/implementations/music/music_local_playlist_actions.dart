@@ -21,9 +21,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
+import 'package:fushi/src/media/music/server/music_server_download_index.dart';
+import 'package:fushi/src/media/music/server/music_server_downloads.dart'
+    show MusicServerDownloadService;
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart'
+    show musicServerDownloadServiceOf, musicServerTrackDownloadActions;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -135,12 +140,16 @@ Future<void> musicAddRemoteTrackToLibrary(
   );
 }
 
-/// 远程曲目移出音乐库（行留着：歌单可能还引用它）。
+/// 远程曲目移出音乐库（行留着：歌单可能还引用它）；服务器曲目的离线副本随之删掉（下载 ⊂
+/// 音乐库，v172）。
 Future<void> musicRemoveRemoteTrackFromLibrary(
   FushiDatabase db,
   String trackUid,
 ) async {
   await db.removeMusicRemoteTrackFromLibrary(trackUid, at: _now());
+  await MusicServerDownloadIndex.instance.dropDownloadsOutsideLibrary(<String>[
+    trackUid,
+  ]);
   FushiToast.show(
     msg: t.music_action_removed_from_library,
     severity: ToastSeverity.success,
@@ -276,6 +285,7 @@ MusicItemMenu? musicServerTrackLibraryMenu(
             browser,
             track,
             albumTitle: albumTitle,
+            downloads: musicServerDownloadServiceOf(context, browser),
           );
       if (!context.mounted) return;
       await showMusicActionMenu(
@@ -288,14 +298,16 @@ MusicItemMenu? musicServerTrackLibraryMenu(
   );
 }
 
-/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态）；
-/// 不能入库的来源回空。[playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
+/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态），给了
+/// [downloads] 再加离线副本的「下载 / 取消下载 / 删除下载」（v172）；不能入库的来源回空。
+/// [playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
 Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
   FushiDatabase db,
   MusicServerBrowser browser,
   MusicServerTrack track, {
   String? albumTitle,
   String? playlistLabel,
+  MusicServerDownloadService? downloads,
 }) async {
   final MusicRemoteTracksCompanion? row = musicServerRemoteTrackCompanion(
     browser,
@@ -306,10 +318,18 @@ Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
   final bool inLibrary =
       (await db.getMusicRemoteTrack(row.trackUid.value))?.libraryAddedAt !=
       null;
-  return musicRemoteTrackLibraryActions(
-    db,
-    row,
-    inLibrary: inLibrary,
-    playlistLabel: playlistLabel,
-  );
+  return <MusicMenuAction>[
+    ...musicRemoteTrackLibraryActions(
+      db,
+      row,
+      inLibrary: inLibrary,
+      playlistLabel: playlistLabel,
+    ),
+    ...musicServerTrackDownloadActions(
+      downloads,
+      browser,
+      track,
+      albumTitle: albumTitle,
+    ),
+  ];
 }

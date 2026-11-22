@@ -16,8 +16,26 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 
+/// 一首服务器曲目在本机的离线副本（v172 `music_server_downloads`：下完的原文件）。
+typedef MusicServerLocalCopy = ({
+  String path,
+  String? coverPath,
+  String? codec,
+});
+
+/// 按播放身份（[musicServerTrackUid]）查离线副本；没有回 null。
+typedef MusicServerLocalCopyLookup =
+    MusicServerLocalCopy? Function(String trackUid);
+
+/// 进程级装配点：`AppModel` 建音乐会话时装上（`music_server_downloads.dart` 的进程内索引，
+/// 只认文件确实在的行）。未装配（测试 / 无头入口）时服务器曲目一律串流。
+MusicServerLocalCopyLookup? musicServerLocalCopyLookup;
+
 /// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；源属性取服务器报的（转码时取转码后的：
 /// 信号路径面板据此不把转码流判 bit-perfect）。
+///
+/// 这首有离线副本（[musicServerLocalCopyLookup]）时路径是本机文件：不连服务器、不转码
+/// （码率上限只管串流），封面也优先用下好的那张——服务器离线照样能放、能显示。
 MusicPlayItem musicServerPlayItem(
   MusicServerBrowser browser,
   MusicServerTrack track, {
@@ -25,12 +43,27 @@ MusicPlayItem musicServerPlayItem(
   String? albumTitle,
   String? coverPath,
 }) {
+  final String uid = musicServerTrackUid(browser.serverId, track.id);
+  final MusicServerLocalCopy? local = musicServerLocalCopyLookup?.call(uid);
+  if (local != null) {
+    return musicServerLocalPlayItem(
+      uid,
+      local,
+      track,
+      albumUid: track.albumId == null
+          ? null
+          : musicServerAlbumUid(browser.serverId, track.albumId!),
+      albumTitle: albumTitle,
+      fallbackCoverPath:
+          coverPath ?? browser.coverUri(track.coverRef)?.toString(),
+    );
+  }
   final MusicServerStream stream = browser.streamFor(
     track,
     maxBitrateKbps: maxBitrateKbps,
   );
   return MusicPlayItem(
-    trackUid: musicServerTrackUid(browser.serverId, track.id),
+    trackUid: uid,
     path: stream.uri.toString(),
     title: track.title,
     artist: track.artist,
@@ -49,3 +82,29 @@ MusicPlayItem musicServerPlayItem(
     isPreview: stream.isPreview,
   );
 }
+
+/// 有离线副本的服务器曲目 → 播放项（不需要服务器配置：曲库里的这首在服务器删了 / 离线时
+/// 也能放）。uid 与串流时一致；封面优先本机那张，没有才用 [fallbackCoverPath]。
+MusicPlayItem musicServerLocalPlayItem(
+  String trackUid,
+  MusicServerLocalCopy local,
+  MusicServerTrack track, {
+  String? albumUid,
+  String? albumTitle,
+  String? fallbackCoverPath,
+}) => MusicPlayItem(
+  trackUid: trackUid,
+  path: local.path,
+  title: track.title,
+  artist: track.artist,
+  album: albumTitle ?? track.album,
+  albumUid: albumUid,
+  discNo: track.discNo,
+  trackNo: track.trackNo,
+  durationMs: track.durationMs,
+  coverPath: local.coverPath ?? fallbackCoverPath,
+  codec: local.codec ?? track.codec ?? track.container,
+  sampleRate: track.sampleRate,
+  bitDepth: track.bitDepth,
+  channels: track.channels,
+);

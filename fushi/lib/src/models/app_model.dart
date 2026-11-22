@@ -538,6 +538,7 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show musicServerBindingLoader;
+import 'package:fushi/src/media/music/server/music_server_download_index.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -5352,6 +5353,8 @@ class AppModel
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
       await _resetSrsStorageHost(isMainProcess: true);
+      // 服务器曲目的离线副本（v172）：进程内索引跟着表走，播放项据此换成本地文件。
+      MusicServerDownloadIndex.instance.attach(_database);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
       // 游戏来源扫完 → 游戏库缓存重载 + 新游戏后台补封面（反馈 9Rm_8JEkGM）。

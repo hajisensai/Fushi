@@ -272,6 +272,33 @@ abstract interface class MusicServerPlaylistEditing {
   Future<void> deletePlaylist(String playlistId);
 }
 
+/// 一首曲目原文件的下载地址（离线副本用）。
+class MusicServerDownloadSource {
+  const MusicServerDownloadSource({
+    required this.uri,
+    this.headers = const <String, String>{},
+    this.extensionHint,
+  });
+
+  /// 原文件地址。凭据可能在 query 里（与 [MusicServerStream.uri] 同理）：只在内存里用，
+  /// 不落库、不进日志 / 错误文本。
+  final Uri uri;
+
+  /// 额外请求头（没有为空）。
+  final Map<String, String> headers;
+
+  /// 服务器报的容器 / 扩展名（`flac` / `mp3` …，小写）：下完的文件头认不出时的回退。
+  final String? extensionHint;
+}
+
+/// 能下载曲目**原文件**的服务器（Jellyfin `/Items/{id}/Download`、Subsonic `download`）。
+/// 浏览器实现了它，曲目菜单 / 专辑页 / 艺人页才出现「下载」（离线副本）。下的是服务器上存的
+/// 那份文件（不转码、不受串流码率上限影响），标签与封面原样随文件走。
+abstract interface class MusicServerDownloading {
+  /// 一首曲目原文件的下载地址（只拼地址、不发请求）。
+  MusicServerDownloadSource downloadSourceFor(MusicServerTrack track);
+}
+
 /// 服务器曲库的浏览器。失败一律抛（断网 / 令牌失效 / 服务器 5xx），页面显示错误与重试。
 abstract interface class MusicServerBrowser {
   MusicServerKind get kind;

@@ -19,12 +19,15 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart'
     show AppleMusicNotSignedInException;
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicServerKindStorable;
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
@@ -620,10 +623,14 @@ class _AlbumGrid extends StatelessWidget {
     required this.albums,
     required this.style,
     this.loading = false,
+    this.header,
   });
 
   final MusicServerBrowser browser;
   final List<MusicServerAlbum> albums;
+
+  /// 网格上方的一行（艺人页的入库 / 下载按钮）。
+  final Widget? header;
 
   /// 色块（封面网格布局下是原有的唱片网格卡）/ 单列行。
   final MusicViewStyle style;
@@ -656,6 +663,8 @@ class _AlbumGrid extends StatelessWidget {
           tokens.spacing.section,
         ),
       ),
+      header: header,
+      headerGap: header == null ? 0 : tokens.spacing.gap,
       gridMaterial: ShelfCoverMaterial.glossyAlbum,
       gridDelegate: musicAlbumGridDelegate,
       gridCardBuilder: (BuildContext context, int i) => MusicServerAlbumCard(
@@ -710,6 +719,13 @@ class MusicServerAlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return musicWithContextMenu(
+      musicServerAlbumMenu(context, browser, album),
+      _buildCard(context),
+    );
+  }
+
+  Widget _buildCard(BuildContext context) {
     return FushiHoverLift(
       scale: kMusicHoverLiftScale,
       builder: (BuildContext context, bool _) => shelfCoverCard(
@@ -774,7 +790,12 @@ class MusicServerAlbumBlockCard extends StatelessWidget {
   final FushiCoverBlockSize size;
 
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) => musicWithContextMenu(
+    musicServerAlbumMenu(context, browser, album),
+    _buildBlock(context),
+  );
+
+  Widget _buildBlock(BuildContext context) => Semantics(
     label: browser.displayName,
     child: MusicCollectionBlock(
       size: size,
@@ -808,7 +829,12 @@ class MusicServerAlbumListRow extends StatelessWidget {
   final MusicServerAlbum album;
 
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) => musicWithContextMenu(
+    musicServerAlbumMenu(context, browser, album),
+    _buildRow(context),
+  );
+
+  Widget _buildRow(BuildContext context) => Semantics(
     label: browser.displayName,
     child: MusicCollectionRow(
       title: album.title,
@@ -932,6 +958,52 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
     widget.artist.id,
   );
 
+  /// 艺人全部专辑的曲目（入库 / 下载按钮用；专辑列表到了才取，各专辑串行）。
+  Future<_ArtistTracks>? _tracks;
+  List<MusicServerAlbum>? _tracksFor;
+
+  Future<_ArtistTracks> _loadTracks(List<MusicServerAlbum> albums) async {
+    final List<MusicServerTrack> tracks = <MusicServerTrack>[];
+    final Map<String, MusicServerAlbum> albumOf = <String, MusicServerAlbum>{};
+    for (final MusicServerAlbum a in albums) {
+      for (final MusicServerTrack t in await widget.browser.albumTracks(a.id)) {
+        if (albumOf.containsKey(t.id)) continue;
+        albumOf[t.id] = a;
+        tracks.add(t);
+      }
+    }
+    return (tracks: tracks, albumOf: albumOf);
+  }
+
+  Widget? _collectionHeader(List<MusicServerAlbum> albums) {
+    if (!musicServerKindStorable(widget.browser.kind) || albums.isEmpty) {
+      return null;
+    }
+    if (!identical(_tracksFor, albums)) {
+      _tracksFor = albums;
+      _tracks = _loadTracks(albums);
+    }
+    return FutureBuilder<_ArtistTracks>(
+      future: _tracks,
+      builder: (BuildContext context, AsyncSnapshot<_ArtistTracks> snap) {
+        final _ArtistTracks? data = snap.data;
+        if (data == null) return const SizedBox.shrink();
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: MusicServerCollectionButtons(
+            key: const ValueKey<String>('music-server-artist-collection'),
+            browser: widget.browser,
+            tracks: data.tracks,
+            title: widget.artist.name,
+            scope: 'artist',
+            scopeId: widget.artist.id,
+            albumTitleOf: (MusicServerTrack t) => data.albumOf[t.id]?.title,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) => switch (widget.browser) {
     final AppleMusicCatalogClient c => AppleMusicArtistPage(
@@ -976,12 +1048,19 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
                     browser: widget.browser,
                     albums: albums,
                     style: style,
+                    header: _collectionHeader(albums),
                   );
                 },
           ),
         ),
   );
 }
+
+/// 艺人页按专辑串起来的全部曲目与每首所在的专辑。
+typedef _ArtistTracks = ({
+  List<MusicServerTrack> tracks,
+  Map<String, MusicServerAlbum> albumOf,
+});
 
 /// 一张服务器专辑：封面、整碟播放 / 随机、曲目表。
 class MusicServerAlbumPage extends ConsumerStatefulWidget {
@@ -1095,6 +1174,20 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                   widget.browser,
                   album: album,
                 ),
+                // Jellyfin / Subsonic：整张专辑加入 / 移出音乐库、离线下载（状态按钮）。
+                if (musicServerKindStorable(widget.browser.kind))
+                  MusicServerCollectionButtons(
+                    key: const ValueKey<String>(
+                      'music-server-album-collection',
+                    ),
+                    browser: widget.browser,
+                    tracks: tracks,
+                    title: album.title,
+                    scope: 'album',
+                    scopeId: album.id,
+                    album: album,
+                    albumTitleOf: (_) => album.title,
+                  ),
               ];
               Widget tile(int i, {FushiCoverBlockSize? block}) =>
                   MusicServerTrackTile(
@@ -1503,6 +1596,7 @@ class MusicServerTrackTile extends StatelessWidget {
             coverPath: browser.coverUri(track.coverRef)?.toString(),
             badges: <Widget>[
               if (musicServerPreviewOnly(browser)) const MusicPreviewBadge(),
+              MusicServerTrackDownloadBadge(browser: browser, track: track),
             ],
             durationText: formatMusicDuration(track.durationMs),
             playing: playing,
@@ -1552,6 +1646,13 @@ class MusicServerTrackTile extends StatelessWidget {
                     padding: EdgeInsetsDirectional.only(end: 8),
                     child: MusicPreviewBadge(),
                   ),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: MusicServerTrackDownloadBadge(
+                    browser: browser,
+                    track: track,
+                  ),
+                ),
                 Text(
                   formatMusicDuration(track.durationMs),
                   style: context.fushiType.bodySmall,
@@ -1843,6 +1944,7 @@ MusicItemMenu? musicServerTrackMenu(
               track,
               albumTitle: albumTitle,
               playlistLabel: t.music_action_add_to_local_playlist,
+              downloads: musicServerDownloadServiceOf(context, browser),
             )
           : const <MusicMenuAction>[];
       if (!context.mounted) return;

@@ -11,6 +11,7 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
+import 'package:fushi/src/media/music/server/music_server_download_index.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';

@@ -74,13 +74,13 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 171);
+      expect(migrated.schemaVersion, 172);
       await migrated.customSelect('SELECT 1').get();
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 171);
+      expect(probe.select('PRAGMA user_version').first.values.first, 172);
       final Map<String, sqlite.Row> columns = columnsOf(probe);
       expect(columns.keys.toSet(), <String>{
         'profile_uid',

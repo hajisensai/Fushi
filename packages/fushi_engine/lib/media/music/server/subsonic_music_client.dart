@@ -70,7 +70,8 @@ class SubsonicApiException implements Exception {
 /// 单个请求的响应超时（流媒体本身不经这里：流地址交给 mpv）。
 const Duration kSubsonicRequestTimeout = Duration(seconds: 15);
 
-class SubsonicMusicClient implements MusicServerBrowser {
+class SubsonicMusicClient
+    implements MusicServerBrowser, MusicServerDownloading {
   SubsonicMusicClient(
     SubsonicServerConfig config, {
     http.Client? client,
@@ -368,6 +369,14 @@ class SubsonicMusicClient implements MusicServerBrowser {
       bitrateKbps: maxBitrateKbps,
     );
   }
+
+  /// 原文件（`download`：不转码，无视码率上限；需要账号有下载权限，没有时服务器回错误）。
+  @override
+  MusicServerDownloadSource downloadSourceFor(MusicServerTrack track) =>
+      MusicServerDownloadSource(
+        uri: _methodUri('download', <String, String>{'id': track.id}),
+        extensionHint: (track.container ?? track.codec)?.toLowerCase(),
+      );
 
   @override
   Uri? coverUri(String? coverRef, {int size = kMusicServerCoverSize}) {
