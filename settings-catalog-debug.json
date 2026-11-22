@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 898,
+ "count": 900,
  "settings": [
   {
    "key": "appearance.language",
@@ -181,8 +181,8 @@
     "zh-CN": "通用 › 键盘与手柄"
    },
    "description": {
-    "en": "Move a lookup cursor over text with the controller. Default: hold L1 while the second screen is in use, off otherwise.",
-    "zh-CN": "用手柄在文字上移动查词光标。默认：使用第二块屏时按住 L1，否则关闭。"
+    "en": "Move a lookup cursor over text with the controller. Default: hold L1.",
+    "zh-CN": "用手柄在文字上移动查词光标。默认：按住 L1。"
    },
    "options": [
     {
@@ -207,7 +207,7 @@
      }
     }
    ],
-   "default": "off"
+   "default": "holdL1"
   },
   {
    "key": "reading.stats_idle_timeout_minutes",
@@ -12242,6 +12242,42 @@
     "zh-CN": "导入或扫描之后：整理合集归属、认出没刮削的视频、连起跨媒体的同一作品。会把标题、作者或品牌、年份、卷数 / 集数和视频文件夹名发给你指派的 AI 提供商（可能计费）；没指派提供商的那一步什么都不发。每处改动都能撤销。只在一台设备上打开就够。"
    },
    "default": true
+  },
+  {
+   "key": "ai.library_agent_review_auto",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Review the library with the AI assistant after imports",
+    "zh-CN": "导入后让 AI 助手复查整个库"
+   },
+   "path": {
+    "en": "AI › Library organize",
+    "zh-CN": "AI › AI 整理库"
+   },
+   "description": {
+    "en": "After the fixed curation steps, the AI assistant checks the new items together with their series and works, fixes wrong collections and relations, and leaves unsure cases for you. The first time, and again after many changes or a month, it reviews the whole library. Sends titles, authors or brands, years and video folder names to the assistant's AI provider; a whole-library review uses many requests (may be billed). Every change can be undone from the AI action history.",
+    "zh-CN": "固定步骤整理完之后，AI 助手连同所在系列和作品一起复查新条目，纠正分错的合集和关系，拿不准的留给你。第一次、改动累积较多或隔一个月时复查整个库。会把标题、作者或品牌、年份和视频文件夹名发给 AI 助手的提供商；全库复查请求很多（可能计费）。每处改动都能在「AI 操作记录」里撤销。"
+   },
+   "default": true
+  },
+  {
+   "key": "ai.library_reorganize",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Reorganize the whole library with the AI assistant",
+    "zh-CN": "让 AI 助手重新整理整个库"
+   },
+   "path": {
+    "en": "AI › Library organize",
+    "zh-CN": "AI › AI 整理库"
+   },
+   "description": {
+    "en": "Reads the whole library, fixes collections and relations in batches and reports back. Every batch can be undone from the conversation.",
+    "zh-CN": "通读整个库，成批纠正合集归属与作品关系，做完汇报；每一批都能在对话里撤销。"
+   },
+   "hint": "整库重排是 AI 助手的对话任务；命令行可直接调 library.map / library.changes.apply"
   },
   {
    "key": "ai.library_curate_run",

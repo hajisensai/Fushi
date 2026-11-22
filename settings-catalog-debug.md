@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 898 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 900 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -17,7 +17,7 @@ How to read this:
 |---|---|---|---|---|---|---|---|
 | `appearance.language` | Interface language | 界面语言 | Language | choice | `en-US`, `zh-CN`, `zh-HK`, `ja`, `ko`, `es`, `fr`, `de`, `pt-BR`, `ru`, `vi`, `th`, `id`, `ar`, `nl`, `it`, `tr` | `en-US` |  |
 | `system.focus_navigation` | Keyboard & gamepad focus navigation | 键盘/手柄焦点导航 | Keyboard and gamepad | bool |  | `false` | Move focus with arrow keys or a gamepad and show a focus ring. |
-| `appearance.controller_lookup_style` | Controller lookup mode | 手柄查词模式 | Keyboard and gamepad | choice | `holdL1`, `selectToggle`, `off` | `off` | Move a lookup cursor over text with the controller. Default: hold L1 while the second screen is in use, off otherwise. |
+| `appearance.controller_lookup_style` | Controller lookup mode | 手柄查词模式 | Keyboard and gamepad | choice | `holdL1`, `selectToggle`, `off` | `holdL1` | Move a lookup cursor over text with the controller. Default: hold L1. |
 | `reading.stats_idle_timeout_minutes` | Idle timeout | 空闲判定时长 | Study timer | number | 1.0 – 120.0 | `10.0` | Stop counting study time after this many minutes without turning a page, scrolling, looking up a word or playing video. Applies to novels, PDFs, manga and video; video always counts while it plays. |
 | `reading.stats_clock_start_mode` | Reading timer start | 阅读计时开始方式 | Study timer | choice | `manual`, `onOpen`, `onPageTurn` | `onOpen` | When the reading timer starts after you open a book (applies the next time a book is opened). You can pause or resume it anytime with the timer button or P. |
 | `music.listening_counts_as_study` | Count listening as study time | 听歌计入学习 | Study timer | bool |  | `false` | When off, only listening after a lookup, card or loop on the lyrics page counts |
@@ -744,6 +744,8 @@ How to read this:
 | `ai.video_download_skip_extras` | Skip extras | 跳过特典 | AI video download | bool |  | `false` | PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked. · *only on android, windows, macos* |
 | `ai.video_download_subtitle_language` | Subtitle language | 字幕语言 | AI video download | choice | , `ask`, `original`, `ja`, `zh`, `en`, `ko`, `es`, `pt`, `fr`, `de`, `it`, `ru`, `ar`, `hi`, `th`, `vi`, `id`, `ms`, `tr`, `nl`, `pl`, `uk`, `sv`, `none` |  | Subtitles are always fetched; this decides which language. "Follow the work" uses the work's own language. · *only on android, windows, macos* |
 | `ai.library_curate_auto` | Curate the library automatically | 自动整理整个库 | Library organize | bool |  | `true` | After imports and scans: sort items into collections, identify unscraped videos and link related works across media. Sends titles, authors or brands, years, volume or episode counts and video folder names to the AI providers you assigned (may be billed); a step without an assigned provider sends nothing. Every change can be undone. Turn it on on one device only. |
+| `ai.library_agent_review_auto` | Review the library with the AI assistant after imports | 导入后让 AI 助手复查整个库 | Library organize | bool |  | `true` | After the fixed curation steps, the AI assistant checks the new items together with their series and works, fixes wrong collections and relations, and leaves unsure cases for you. The first time, and again after many changes or a month, it reviews the whole library. Sends titles, authors or brands, years and video folder names to the assistant's AI provider; a whole-library review uses many requests (may be billed). Every change can be undone from the AI action history. |
+| `ai.library_reorganize` | Reorganize the whole library with the AI assistant | 让 AI 助手重新整理整个库 | Library organize | action |  |  | Reads the whole library, fixes collections and relations in batches and reports back. Every batch can be undone from the conversation. |
 | `ai.library_curate_run` | Curate the whole library now | 立即整理整个库 | Library organize | action |  |  |  |
 | `ai.library_organize_auto` | Organize with AI after import | 导入后自动 AI 整理 | Library organize | bool |  | `false` | For new items that rules can't group, the title, author and folder name are sent to your chosen AI provider (may incur charges). Turning this on on one device is enough. |
 | `ai.library_organize_history` | Organize history | 整理记录 | Library organize | action |  |  |  |
