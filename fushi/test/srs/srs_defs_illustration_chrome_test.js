@@ -5,7 +5,8 @@
 // export shapes) inside a "picture | vertical caption" table, with Chromium's
 // minimum font size at 8px (Android WebView default), then checks that the
 // picture stays inside its box, the box stays inside the column, and a tap on
-// the picture or on the box hands the image to the host.
+// the picture or on the box hands the image to the host, while a plain relative
+// lookup link with an icon still looks up its text (HBK-AUDIT-222).
 (function () {
   var C = window.__srsTestCase;
   var failures = [];
@@ -86,26 +87,25 @@
     });
     check(calls.every(function (c) { return c[0] === 'onSrsImageTap'; }),
       'illustration taps never become lookups: ' + JSON.stringify(calls.map(function (c) { return c[0]; })));
+    var lookup = document.getElementById('lookup');
+    var before = calls.length;
+    click(lookup.querySelector('img'));
+    check(calls.length === before + 1 && calls[before][0] === 'onSrsCardLink' &&
+      calls[before][1].kind === 'lookup' && calls[before][1].query === 'ネクタイ',
+      'an icon inside a plain lookup link still looks the word up: ' +
+      JSON.stringify(calls.slice(before)));
   }
 
-  // A 239x320 picture: white with a black right edge.
-  var canvas = document.createElement('canvas');
-  canvas.width = C.w;
-  canvas.height = C.h;
-  var g = canvas.getContext('2d');
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, C.w, C.h);
-  g.fillStyle = '#000';
-  g.fillRect(C.w - 20, 0, 20, C.h);
-  var url = canvas.toDataURL('image/png');
-  var imgs = [].slice.call(document.querySelectorAll('#fushi-card-root img'));
-  var left = imgs.length;
-  imgs.forEach(function (img) {
-    img.addEventListener('load', function () {
-      if (--left > 0) return;
-      try { run(); } catch (err) { failures.push('threw: ' + (err && err.stack || err)); }
-      finish();
-    }, {once: true});
-    img.src = url;
-  });
+  // The pictures load from their media file names next to the page (the card
+  // face serves them by name too), so the illustration link's href names the
+  // picture it holds.
+  var started = false;
+  function start() {
+    if (started) return;
+    started = true;
+    try { run(); } catch (err) { failures.push('threw: ' + (err && err.stack || err)); }
+    finish();
+  }
+  if (document.readyState === 'complete') start();
+  else window.addEventListener('load', start, {once: true});
 })();

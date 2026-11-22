@@ -780,8 +780,12 @@ const String kSrsImageTapHandler = 'onSrsImageTap';
 /// `<a href="<媒体文件名>"><span 图片盒>…<img></span></a>`，随后把生成器的 `gloss-*` class
 /// 换成内联样式再剥掉（popup.js `inlineStructuredContentExportStyles`），卡面上没有
 /// `gloss-image-link`。BUG-4734 只认 class，2026-10 之后制的卡点插图一直没反应。判据是导出的
-/// 结构：href 是相对文件名（没有 scheme、不带 `?` 查询、不是 `#` 锚点）且第一个子元素是装着
-/// `<img>` 的 `<span>`。旧版导出还带 class，照认。
+/// 契约（上游 `_setImageData`：`node.href = url`，`img.src = url`，url 即媒体文件名）：href 是
+/// 相对文件名（没有 scheme、不带 `?` 查询、不是 `#` 锚点），且链接里有一张 `<img>` 的媒体文件名
+/// （卡面渲染把 src 改写成 `<媒体前缀><编码后的文件名>`，取最后一段解码）就是这个 href——链接
+/// 指向它自己装着的那张图。只看「首个子元素是装着 img 的 span」会把带图标的普通相对查词链接
+/// （`<a href="語彙"><span><img 图标></span>語彙</a>`）错认成插图、查词丢失（HBK-AUDIT-222）。
+/// 旧版导出还带 class，照认。
 const String kSrsGlossImageLinkJs = r'''
   function glossImageLink(a){
     if (!a) return false;
@@ -789,8 +793,17 @@ const String kSrsGlossImageLinkJs = r'''
     var href = (a.getAttribute('href') || '').trim();
     if (!href || href.charAt(0) === '#' || href.indexOf('?') >= 0 ||
         /^[a-z][a-z0-9+.\-]*:/i.test(href)) return false;
-    var box = a.firstElementChild;
-    return !!(box && box.tagName === 'SPAN' && box.querySelector('img'));
+    var name = mediaName(href);
+    var imgs = a.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      var src = imgs[i].getAttribute('src') || '';
+      if (mediaName(src.substring(src.lastIndexOf('/') + 1)) === name) return true;
+    }
+    return false;
+  }
+  function mediaName(s){
+    s = String(s || '').trim();
+    try { return decodeURIComponent(s); } catch (err) { return s; }
   }
 ''';
 
