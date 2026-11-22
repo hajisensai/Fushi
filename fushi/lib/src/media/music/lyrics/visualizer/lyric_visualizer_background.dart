@@ -8,6 +8,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/backgrounds.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -100,7 +101,7 @@ const String lyricVisualizerSolidBackgroundId = 'solid';
 String lyricVisualizerBackgroundTuningKey(String backgroundId) =>
     'background:$backgroundId';
 
-/// 全部背景（顺序即设置里的顺序）。
+/// 全部背景（顺序即设置里的顺序）：歌词页背景、纯色，再接 folia 移植的背景（`backgrounds/`）。
 final List<LyricVisualizerBackgroundEntry> lyricVisualizerBackgrounds =
     <LyricVisualizerBackgroundEntry>[
       LyricVisualizerBackgroundEntry(
@@ -118,6 +119,7 @@ final List<LyricVisualizerBackgroundEntry> lyricVisualizerBackgrounds =
         builder: (LyricVisualizerContext c, LyricVisualizerTuning _) =>
             ColoredBox(color: c.palette.background),
       ),
+      ...lyricVisualizerPortedBackgrounds,
     ];
 
 /// 按 id 取背景；不认识的回落默认（流体）。

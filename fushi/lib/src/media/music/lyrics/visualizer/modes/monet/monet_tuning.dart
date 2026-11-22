@@ -1,5 +1,5 @@
-/// 莫奈的可调参数（folia `monet/tuning.ts` + `backgrounds/monet/tuning.ts`）：键名沿用 folia
-/// 字段名（落库冻结），默认值与范围照搬。folia 里背景是另一套可选背景，这里并进样式自己画。
+/// 莫奈的可调参数（folia `monet/tuning.ts`）：键名沿用 folia 字段名（落库冻结），默认值与范围照搬。
+/// 背景参数在共享背景「莫奈」（`backgrounds/monet_background.dart`）里，样式请求那个背景。
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -15,19 +15,8 @@ abstract final class MonetTuningKeys {
   static const String portraitStyle = 'portraitStyle';
   static const String portraitOffsetX = 'portraitOffsetX';
   static const String mirrorLayout = 'mirrorLayout';
-  static const String backgroundLayout = 'backgroundLayout';
-  static const String backgroundBlurPx = 'backgroundBlurPx';
-  static const String backgroundOverlayOpacity = 'backgroundOverlayOpacity';
-  static const String backgroundGrayscale = 'backgroundGrayscale';
-  static const String backgroundSaturation = 'backgroundSaturation';
-  static const String backgroundWash = 'backgroundWash';
-  static const String backgroundHalfPaneOffsetX = 'backgroundHalfPaneOffsetX';
-  static const String backgroundDriftEnabled = 'backgroundDriftEnabled';
-  static const String backgroundDriftStrength = 'backgroundDriftStrength';
-  static const String backgroundStreaksEnabled = 'backgroundStreaksEnabled';
 }
 
-String _percent(double v) => '${(v * 100).round()}%';
 String _px(double v) => '${v.round()} px';
 String _times(double v) => '×${v.toStringAsFixed(2)}';
 
@@ -100,122 +89,7 @@ final List<LyricVisualizerTuningSpec> monetTuningSpecs =
         label: () => t.music_visualizer_monet_mirror,
         initial: false,
       ),
-      LyricVisualizerChoiceSpec(
-        key: MonetTuningKeys.backgroundLayout,
-        label: () => t.music_visualizer_monet_background_layout,
-        options: <(String, String Function())>[
-          ('full-overlay', () => t.music_visualizer_monet_layout_full),
-          ('half-pane-gradient', () => t.music_visualizer_monet_layout_half),
-        ],
-        initial: 'full-overlay',
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundBlurPx,
-        label: () => t.music_visualizer_monet_background_blur,
-        min: 0,
-        max: 60,
-        initial: 6,
-        divisions: 60,
-        format: _px,
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundOverlayOpacity,
-        label: () => t.music_visualizer_monet_background_overlay,
-        min: 0,
-        max: 1,
-        initial: 0.74,
-        divisions: 100,
-        format: _percent,
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundGrayscale,
-        label: () => t.music_visualizer_monet_background_grayscale,
-        min: 0,
-        max: 1,
-        initial: 0,
-        divisions: 100,
-        format: _percent,
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundSaturation,
-        label: () => t.music_visualizer_monet_background_saturation,
-        min: 0,
-        max: 2,
-        initial: 1.05,
-        divisions: 40,
-        format: _percent,
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundWash,
-        label: () => t.music_visualizer_monet_background_wash,
-        min: 0,
-        max: 1,
-        initial: 0.34,
-        divisions: 100,
-        format: _percent,
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundHalfPaneOffsetX,
-        label: () => t.music_visualizer_monet_background_offset,
-        min: -40,
-        max: 40,
-        initial: 0,
-        divisions: 80,
-        format: (double v) => '${v.round()}%',
-      ),
-      LyricVisualizerToggleSpec(
-        key: MonetTuningKeys.backgroundDriftEnabled,
-        label: () => t.music_visualizer_monet_background_drift,
-        initial: true,
-      ),
-      LyricVisualizerSliderSpec(
-        key: MonetTuningKeys.backgroundDriftStrength,
-        label: () => t.music_visualizer_monet_background_drift_strength,
-        min: 0,
-        max: 1,
-        initial: 0.5,
-        divisions: 20,
-        format: _percent,
-      ),
-      LyricVisualizerToggleSpec(
-        key: MonetTuningKeys.backgroundStreaksEnabled,
-        label: () => t.music_visualizer_monet_background_streaks,
-        initial: true,
-      ),
     ];
-
-/// 封面后处理（会触发重新烘焙背景图的那几项）。
-class MonetBackgroundTreatment {
-  const MonetBackgroundTreatment({
-    required this.blurPx,
-    required this.overlay,
-    required this.grayscale,
-    required this.saturation,
-    required this.wash,
-    required this.streaks,
-  });
-
-  final double blurPx;
-  final double overlay;
-  final double grayscale;
-  final double saturation;
-  final double wash;
-  final bool streaks;
-
-  @override
-  bool operator ==(Object other) =>
-      other is MonetBackgroundTreatment &&
-      other.blurPx == blurPx &&
-      other.overlay == overlay &&
-      other.grayscale == grayscale &&
-      other.saturation == saturation &&
-      other.wash == wash &&
-      other.streaks == streaks;
-
-  @override
-  int get hashCode =>
-      Object.hash(blurPx, overlay, grayscale, saturation, wash, streaks);
-}
 
 /// 读出来的整套参数。
 class MonetConfig {
@@ -232,21 +106,7 @@ class MonetConfig {
       squarePortrait =
           tu.choice(MonetTuningKeys.portraitStyle, 'square') == 'square',
       portraitOffsetX = tu.number(MonetTuningKeys.portraitOffsetX, 0),
-      mirrored = tu.flag(MonetTuningKeys.mirrorLayout, false),
-      halfPane =
-          tu.choice(MonetTuningKeys.backgroundLayout, 'full-overlay') ==
-          'half-pane-gradient',
-      halfPaneOffsetX = tu.number(MonetTuningKeys.backgroundHalfPaneOffsetX, 0),
-      driftEnabled = tu.flag(MonetTuningKeys.backgroundDriftEnabled, true),
-      driftStrength = tu.number(MonetTuningKeys.backgroundDriftStrength, 0.5),
-      treatment = MonetBackgroundTreatment(
-        blurPx: tu.number(MonetTuningKeys.backgroundBlurPx, 6),
-        overlay: tu.number(MonetTuningKeys.backgroundOverlayOpacity, 0.74),
-        grayscale: tu.number(MonetTuningKeys.backgroundGrayscale, 0),
-        saturation: tu.number(MonetTuningKeys.backgroundSaturation, 1.05),
-        wash: tu.number(MonetTuningKeys.backgroundWash, 0.34),
-        streaks: tu.flag(MonetTuningKeys.backgroundStreaksEnabled, true),
-      );
+      mirrored = tu.flag(MonetTuningKeys.mirrorLayout, false);
 
   final double fontScale;
 
@@ -260,9 +120,4 @@ class MonetConfig {
   /// ≤ 0：朝屏幕中间挪的 px（按原版方向记，镜像时翻过来）。
   final double portraitOffsetX;
   final bool mirrored;
-  final bool halfPane;
-  final double halfPaneOffsetX;
-  final bool driftEnabled;
-  final double driftStrength;
-  final MonetBackgroundTreatment treatment;
 }

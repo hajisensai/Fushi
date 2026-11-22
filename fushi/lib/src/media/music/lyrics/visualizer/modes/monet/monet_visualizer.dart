@@ -2,8 +2,8 @@
 /// `backgrounds/monet/`）。
 ///
 /// 海报式版面：左列是歌手（斜体）、竖线、标题、专辑、歌词栏和一枚描述胶囊；右列是封面
-/// 肖像（正方形向画面中间外扩，或带边框的竖长方形）；底部一条频谱。背景是处理过的封面
-/// （去色 / 饱和度 / 水洗重着色 + 模糊 + 主题叠色 + 竖向纹理），缓慢漂移。换歌时各块按
+/// 肖像（正方形向画面中间外扩，或带边框的竖长方形）；底部一条频谱。背景是共享背景「莫奈」
+/// （`backgrounds/monet_background.dart`，宿主画在样式下面）。换歌时各块按
 /// folia 的延时依次滑入。可镜像（肖像在左、文字靠右）。
 library;
 
@@ -15,23 +15,25 @@ import 'package:flutter/rendering.dart' show RendererBinding;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/monet_background.dart'
+    show kMonetBackgroundId;
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_audio_overlay.dart';
-import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_tuning.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 注册项。背景与译文都由样式自己画。
+/// 注册项。背景是共享背景「莫奈」（folia 里莫奈样式也是配这个背景），译文由样式自己画。
 final LyricVisualizerEntry monetVisualizerEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.monet,
   label: () => t.music_visualizer_mode_monet,
   description: () => t.music_visualizer_monet_description,
   icon: FushiIcons.image,
   tunings: monetTuningSpecs,
-  sharedBackdrop: false,
+  background: (LyricVisualizerTuning _) =>
+      const LyricVisualizerBackgroundRequest.specific(kMonetBackgroundId),
   sharedSubtitle: false,
   builder: (LyricVisualizerContext c) => MonetVisualizer(context: c),
 );
@@ -377,15 +379,6 @@ class _MonetStageState extends State<_MonetStage> {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        RepaintBoundary(
-          child: MonetBackground(
-            coverPath: v.coverPath,
-            palette: pal,
-            config: cfg,
-            elapsed: tick.elapsed,
-            motion: motion,
-          ),
-        ),
         Center(
           child: SizedBox(
             width: rowW,

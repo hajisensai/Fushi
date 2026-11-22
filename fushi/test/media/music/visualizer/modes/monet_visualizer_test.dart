@@ -1,12 +1,9 @@
-import 'dart:typed_data';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_audio_overlay.dart';
-import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_tuning.dart';
@@ -183,74 +180,6 @@ void main() {
     });
   });
 
-  group('背景', () {
-    test('水洗：暗端映射到阴影色、亮端映射到高光色', () {
-      const MonetRgb bg = (r: 10, g: 10, b: 12);
-      const MonetRgb accent = (r: 200, g: 40, b: 40);
-      const MonetRgb primary = (r: 245, g: 245, b: 245);
-      expect(monetWashColor(0, bg, accent, primary), bg);
-      expect(monetWashColor(0.55, bg, accent, primary), accent);
-      final MonetRgb hi = monetWashColor(1, bg, accent, primary);
-      expect(hi.r, closeTo(245, 1e-6));
-      expect(hi.g, closeTo(245, 1e-6));
-      expect(hi.b, closeTo(245, 1e-6));
-      // 浅色主题（背景比主色亮）两端对调。
-      expect(monetWashEndpoints(primary, bg).shadow, bg);
-    });
-
-    test('逐像素：恒等参数不动，全去色变灰，透明像素跳过', () {
-      final Uint8List px = Uint8List.fromList(<int>[
-        200,
-        100,
-        50,
-        255,
-        1,
-        2,
-        3,
-        0,
-      ]);
-      const MonetRgb c = (r: 0, g: 0, b: 0);
-      final Uint8List same = monetProcessPixels(
-        MonetPixelJob(
-          pixels: Uint8List.fromList(px),
-          grayscale: 0,
-          saturation: 1,
-          wash: 0,
-          background: c,
-          accent: c,
-          primary: c,
-        ),
-      );
-      expect(same, px);
-      final Uint8List gray = monetProcessPixels(
-        MonetPixelJob(
-          pixels: Uint8List.fromList(px),
-          grayscale: 1,
-          saturation: 1,
-          wash: 0,
-          background: c,
-          accent: c,
-          primary: c,
-        ),
-      );
-      expect(gray[0], gray[1]);
-      expect(gray[1], gray[2]);
-      expect(gray.sublist(4), <int>[1, 2, 3, 0]);
-    });
-
-    test('漂移：平移不超过预算，缩放始终盖住边缘', () {
-      for (double s = 0; s < 480; s += 3.7) {
-        final MonetDrift d = monetDriftAt(s, 1);
-        expect(d.txPercent.abs(), lessThanOrEqualTo(3.4 + 1e-9));
-        expect(d.tyPercent.abs(), lessThanOrEqualTo(3.4 + 1e-9));
-        expect(d.scale, greaterThanOrEqualTo(1 + 0.034 * 2));
-      }
-      final MonetDrift zero = monetDriftAt(10, 0);
-      expect(zero.txPercent, 0);
-      expect(zero.scale, closeTo(1.01, 1e-9));
-    });
-  });
-
   group('频谱', () {
     test('轮廓在 0–1，静态图案中间高两头低', () {
       final List<double> bands = monetSyntheticBands(1, 3);
@@ -347,12 +276,15 @@ void main() {
       expect(c.showPortrait, isTrue);
       expect(c.squarePortrait, isTrue);
       expect(c.mirrored, isFalse);
-      expect(c.halfPane, isFalse);
-      expect(c.treatment.blurPx, 6);
-      expect(c.treatment.overlay, 0.74);
-      expect(c.treatment.saturation, 1.05);
-      expect(c.treatment.wash, 0.34);
-      expect(c.driftStrength, 0.5);
+    });
+
+    test('背景交给共享背景「莫奈」', () {
+      expect(
+        monetVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(monetVisualizerEntry.tunings),
+        ),
+        const LyricVisualizerBackgroundRequest.specific('monet'),
+      );
     });
   });
 
@@ -361,7 +293,7 @@ void main() {
       await pumpVisualizerAcross(tester, monetVisualizerEntry);
     });
 
-    testWidgets('镜像 + 长方形 + 线条频谱 + 半屏背景 + 常显描述', (WidgetTester tester) async {
+    testWidgets('镜像 + 长方形 + 线条频谱 + 常显描述', (WidgetTester tester) async {
       await pumpVisualizerAcross(
         tester,
         monetVisualizerEntry,
@@ -370,14 +302,13 @@ void main() {
           MonetTuningKeys.portraitStyle: 'rectangular',
           MonetTuningKeys.portraitOffsetX: -120.0,
           MonetTuningKeys.audioStyle: 'line',
-          MonetTuningKeys.backgroundLayout: 'half-pane-gradient',
           MonetTuningKeys.descriptionVisibility: 'always',
           MonetTuningKeys.fontScale: 1.5,
         },
       );
     });
 
-    testWidgets('关肖像、关频谱、隐藏描述、关漂移', (WidgetTester tester) async {
+    testWidgets('关肖像、关频谱、隐藏描述', (WidgetTester tester) async {
       await pumpVisualizerAcross(
         tester,
         monetVisualizerEntry,
@@ -385,7 +316,6 @@ void main() {
           MonetTuningKeys.portraitSource: 'none',
           MonetTuningKeys.showAudioVisualization: false,
           MonetTuningKeys.descriptionVisibility: 'hidden',
-          MonetTuningKeys.backgroundDriftEnabled: false,
         },
       );
     });
