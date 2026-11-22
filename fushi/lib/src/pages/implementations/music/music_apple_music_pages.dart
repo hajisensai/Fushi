@@ -87,7 +87,7 @@ void _toastError(Object e) => FushiToast.show(
 );
 
 /// 一组服务器曲目从 [start] 开始播（专辑 / 歌单以外的「混排」队列）。
-void _playTracks(
+void playMusicServerTracks(
   BuildContext context,
   MusicServerBrowser browser,
   List<MusicServerTrack> tracks, {
@@ -251,8 +251,8 @@ class _SongCard extends StatelessWidget {
 }
 
 /// 一行横排卡片（标题 + 横向滚动的卡片）。
-class _ShelfRow extends StatelessWidget {
-  const _ShelfRow({super.key, required this.title, required this.children});
+class MusicShelfRow extends StatelessWidget {
+  const MusicShelfRow({super.key, required this.title, required this.children});
 
   final String title;
   final List<Widget> children;
@@ -307,7 +307,7 @@ Widget _styledSection(
   final bool gridLayout =
       shellContentLayoutOf(context) == ShellContentLayout.grid;
   if (style == MusicViewStyle.blocks && gridLayout && card != null) {
-    return _ShelfRow(
+    return MusicShelfRow(
       title: title,
       children: <Widget>[for (int i = 0; i < count; i++) card(context, i)],
     );
@@ -369,7 +369,7 @@ List<Widget> _itemCards(
         key: ValueKey<String>('apple-music-item-${item.key}'),
         catalog: sources.catalog,
         track: track,
-        onTap: () => _playTracks(
+        onTap: () => playMusicServerTracks(
           context,
           sources.catalog,
           songs,
@@ -382,8 +382,9 @@ List<Widget> _itemCards(
 }
 
 /// 几首歌（先露 [_kInlineSongs] 首，「查看全部」进整表）。
-class _SongSection extends StatelessWidget {
-  const _SongSection({
+class MusicServerSongSection extends StatelessWidget {
+  const MusicServerSongSection({
+    super.key,
     required this.title,
     required this.browser,
     required this.tracks,
@@ -403,7 +404,8 @@ class _SongSection extends StatelessWidget {
       tracks: inline,
       index: i,
       showAlbum: true,
-      onPlay: (int i) => _playTracks(context, browser, tracks, start: i),
+      onPlay: (int i) =>
+          playMusicServerTracks(context, browser, tracks, start: i),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -444,8 +446,8 @@ class _SongSection extends StatelessWidget {
 }
 
 /// 一个异步分区：加载中占一行高度，出错显示一行可重试的提示（不连坐整页）。
-class _AsyncSection<T> extends StatelessWidget {
-  const _AsyncSection({
+class MusicAsyncSection<T> extends StatelessWidget {
+  const MusicAsyncSection({
     super.key,
     required this.future,
     required this.builder,
@@ -511,7 +513,7 @@ class AppleMusicStationsFutureRow extends StatelessWidget {
           (BuildContext context, AsyncSnapshot<List<AppleMusicStation>> snap) {
             final List<AppleMusicStation> list =
                 snap.data ?? const <AppleMusicStation>[];
-            return _ShelfRow(
+            return MusicShelfRow(
               title: t.music_apple_music_section_stations,
               children: <Widget>[
                 for (final AppleMusicStation s in list)
@@ -593,7 +595,7 @@ class _AppleMusicHomeViewState extends State<AppleMusicHomeView> {
           subtitle: Text(t.music_apple_music_home_connect_hint),
         ),
       if (_radio != null || _personalStation != null)
-        _AsyncSection<List<Object?>>(
+        MusicAsyncSection<List<Object?>>(
           key: const ValueKey<String>('apple-music-home-radio'),
           future: Future.wait(<Future<Object?>>[
             _personalStation ?? Future<AppleMusicStation?>.value(),
@@ -608,7 +610,7 @@ class _AppleMusicHomeViewState extends State<AppleMusicHomeView> {
             final AppleMusicStation? mine = v[0] as AppleMusicStation?;
             final List<AppleMusicStation> live =
                 v[1]! as List<AppleMusicStation>;
-            return _ShelfRow(
+            return MusicShelfRow(
               title: t.music_apple_music_section_radio,
               children: <Widget>[
                 if (mine != null)
@@ -627,7 +629,7 @@ class _AppleMusicHomeViewState extends State<AppleMusicHomeView> {
             );
           },
         ),
-      _AsyncSection<List<AppleMusicShelf>>(
+      MusicAsyncSection<List<AppleMusicShelf>>(
         key: const ValueKey<String>('apple-music-home-for-you'),
         future: _recommendations,
         onRetry: () => setState(() {
@@ -639,7 +641,7 @@ class _AppleMusicHomeViewState extends State<AppleMusicHomeView> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 for (final AppleMusicShelf s in shelves)
-                  _ShelfRow(
+                  MusicShelfRow(
                     key: ValueKey<String>('apple-music-shelf-${s.title}'),
                     title: s.title,
                     children: _itemCards(context, sources, s.items),
@@ -647,51 +649,51 @@ class _AppleMusicHomeViewState extends State<AppleMusicHomeView> {
               ],
             ),
       ),
-      _AsyncSection<List<AppleMusicItem>>(
+      MusicAsyncSection<List<AppleMusicItem>>(
         key: const ValueKey<String>('apple-music-home-recent'),
         future: _recent,
         onRetry: () => setState(() {
           _recent = sources.personal?.recentlyPlayed();
         }),
         builder: (BuildContext context, List<AppleMusicItem> items) =>
-            _ShelfRow(
+            MusicShelfRow(
               title: t.music_recent_plays_title,
               children: _itemCards(context, sources, items),
             ),
       ),
-      _AsyncSection<List<MusicServerTrack>>(
+      MusicAsyncSection<List<MusicServerTrack>>(
         key: const ValueKey<String>('apple-music-home-recent-tracks'),
         future: _recentTracks,
         onRetry: () => setState(() {
           _recentTracks = sources.personal?.recentTracks();
         }),
         builder: (BuildContext context, List<MusicServerTrack> tracks) =>
-            _SongSection(
+            MusicServerSongSection(
               title: t.music_apple_music_section_recent_songs,
               browser: catalog,
               tracks: tracks,
             ),
       ),
-      _AsyncSection<List<AppleMusicItem>>(
+      MusicAsyncSection<List<AppleMusicItem>>(
         key: const ValueKey<String>('apple-music-home-heavy'),
         future: _heavy,
         onRetry: () => setState(() {
           _heavy = sources.personal?.heavyRotation();
         }),
         builder: (BuildContext context, List<AppleMusicItem> items) =>
-            _ShelfRow(
+            MusicShelfRow(
               title: t.music_apple_music_section_heavy_rotation,
               children: _itemCards(context, sources, items),
             ),
       ),
-      _AsyncSection<AppleMusicCharts>(
+      MusicAsyncSection<AppleMusicCharts>(
         key: const ValueKey<String>('apple-music-home-charts'),
         future: _charts,
         onRetry: () => setState(() => _charts = catalog.charts()),
         builder: (BuildContext context, AppleMusicCharts c) =>
             _ChartsSections(catalog: catalog, charts: c),
       ),
-      _AsyncSection<List<AppleMusicGenre>>(
+      MusicAsyncSection<List<AppleMusicGenre>>(
         key: const ValueKey<String>('apple-music-home-genres'),
         future: _genres,
         onRetry: () => setState(() => _genres = catalog.genres()),
@@ -726,12 +728,12 @@ class _ChartsSections extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
-      _SongSection(
+      MusicServerSongSection(
         title: charts.songsTitle ?? t.music_apple_music_chart_songs,
         browser: catalog,
         tracks: charts.songs,
       ),
-      _ShelfRow(
+      MusicShelfRow(
         title: charts.albumsTitle ?? t.music_apple_music_chart_albums,
         children: <Widget>[
           for (final MusicServerAlbum a in charts.albums)
@@ -742,7 +744,7 @@ class _ChartsSections extends StatelessWidget {
             ),
         ],
       ),
-      _ShelfRow(
+      MusicShelfRow(
         title: charts.playlistsTitle ?? t.music_apple_music_chart_playlists,
         children: <Widget>[
           for (final MusicServerPlaylist p in charts.playlists)
@@ -889,7 +891,7 @@ class AppleMusicTrackListPage extends StatelessWidget {
           FushiPressScale(
             child: FushiFilledButton.icon(
               size: FushiButtonSize.m,
-              onPressed: () => _playTracks(context, browser, tracks),
+              onPressed: () => playMusicServerTracks(context, browser, tracks),
               icon: const FushiIcon(FushiIcons.play),
               label: Text(t.music_play_all),
             ),
@@ -897,8 +899,12 @@ class AppleMusicTrackListPage extends StatelessWidget {
           FushiPressScale(
             child: FushiFilledButton.tonalIcon(
               size: FushiButtonSize.m,
-              onPressed: () =>
-                  _playTracks(context, browser, tracks, shuffle: true),
+              onPressed: () => playMusicServerTracks(
+                context,
+                browser,
+                tracks,
+                shuffle: true,
+              ),
               icon: const FushiIcon(FushiIcons.shuffle),
               label: Text(t.music_shuffle_play),
             ),
@@ -914,7 +920,8 @@ class AppleMusicTrackListPage extends StatelessWidget {
           leading: MusicServerTrackLeading.position,
           showAlbum: true,
           block: block,
-          onPlay: (int j) => _playTracks(context, browser, tracks, start: j),
+          onPlay: (int j) =>
+              playMusicServerTracks(context, browser, tracks, start: j),
         );
     return musicBrowseScaffold(
       context,
@@ -1029,7 +1036,7 @@ class _AppleMusicLibrarySongsViewState
           showAlbum: true,
           block: block,
           onPlay: (int j) =>
-              _playTracks(context, widget.library, tracks, start: j),
+              playMusicServerTracks(context, widget.library, tracks, start: j),
         );
     // 与服务器曲库「歌曲」分区同一份样式（服务器页头的切换键；那一页在样式
     // 变化时整页重建，本视图跟着重建）。
@@ -1160,7 +1167,7 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
           onPressed: () async {
             try {
               final List<MusicServerTrack> top = await _top;
-              if (context.mounted) _playTracks(context, catalog, top);
+              if (context.mounted) playMusicServerTracks(context, catalog, top);
             } on Object catch (e) {
               _toastError(e);
             }
@@ -1210,17 +1217,17 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
           ),
         ),
       ),
-      _AsyncSection<List<MusicServerTrack>>(
+      MusicAsyncSection<List<MusicServerTrack>>(
         future: _top,
         onRetry: () => setState(_load),
         builder: (BuildContext context, List<MusicServerTrack> tracks) =>
-            _SongSection(
+            MusicServerSongSection(
               title: t.music_artist_top_songs,
               browser: catalog,
               tracks: tracks,
             ),
       ),
-      _AsyncSection<List<MusicServerAlbum>>(
+      MusicAsyncSection<List<MusicServerAlbum>>(
         future: _albums,
         onRetry: () => setState(_load),
         builder: (BuildContext context, List<MusicServerAlbum> albums) {
@@ -1251,7 +1258,7 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
           );
         },
       ),
-      _AsyncSection<List<MusicServerPlaylist>>(
+      MusicAsyncSection<List<MusicServerPlaylist>>(
         future: _playlists,
         onRetry: () => setState(_load),
         builder: (BuildContext context, List<MusicServerPlaylist> ps) {
@@ -1278,7 +1285,7 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
           );
         },
       ),
-      _AsyncSection<List<MusicServerArtist>>(
+      MusicAsyncSection<List<MusicServerArtist>>(
         future: _similar,
         onRetry: () => setState(_load),
         builder: (BuildContext context, List<MusicServerArtist> artists) {

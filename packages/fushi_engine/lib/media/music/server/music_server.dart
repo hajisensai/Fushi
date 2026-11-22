@@ -1,5 +1,9 @@
 /// 服务器曲库（音乐方案 §13 P5「服务器曲库」）：Jellyfin（含 Emby / 飞牛等 MediaBrowser
-/// 兼容层）的音乐库与 OpenSubsonic（Navidrome / Gonic / Airsonic …）。**只读浏览 + 播放**。
+/// 兼容层）的音乐库与 OpenSubsonic（Navidrome / Gonic / Airsonic …）。浏览 + 播放是必备契约
+/// （[MusicServerBrowser]）；写回服务器的能力是可选接口，来源实现了才出现对应入口：改歌单
+/// （[MusicServerPlaylistEditing]）、收藏（[MusicServerFavoriteEditing]）、流派与播放统计
+/// （[MusicServerDiscovery]）、即时混音（[MusicServerInstantMix]）、播放上报
+/// （[MusicServerPlaybackReporting]）、服务器歌词（[MusicServerLyricsProvider]）。
 ///
 /// 契约形态照视频的 `MediaServerBrowser`（`fushi/lib/src/media/video/media_server/`）：服务器
 /// 有自己的树（专辑 / 艺人 / 曲目），按父级分页原样暴露，客户端只持有当前屏幕那一页，不把
@@ -55,6 +59,7 @@ class MusicServerAlbum {
     this.trackCount,
     this.durationMs,
     this.coverRef,
+    this.favorite,
   });
 
   final String id;
@@ -67,6 +72,10 @@ class MusicServerAlbum {
 
   /// 封面引用（交给 [MusicServerBrowser.coverUri]；没有封面为 null）。
   final String? coverRef;
+
+  /// 服务器上标了收藏（Jellyfin `UserData.IsFavorite` / Subsonic `starred`）；服务器没报为
+  /// null。只是读到时的快照，切换后以 app 侧的收藏状态表为准。
+  final bool? favorite;
 }
 
 /// 一位艺人。
@@ -76,12 +85,16 @@ class MusicServerArtist {
     required this.name,
     this.albumCount,
     this.coverRef,
+    this.favorite,
   });
 
   final String id;
   final String name;
   final int? albumCount;
   final String? coverRef;
+
+  /// 同 [MusicServerAlbum.favorite]。
+  final bool? favorite;
 }
 
 /// 一个歌单（服务器上的用户歌单 / Apple Music 编辑歌单与资料库歌单）。
@@ -134,6 +147,7 @@ class MusicServerTrack {
     this.coverRef,
     this.playlistEntryId,
     this.path,
+    this.favorite,
   });
 
   final String id;
@@ -164,6 +178,9 @@ class MusicServerTrack {
   /// 服务器上的文件路径（服务器愿意报时才有，Jellyfin 的 `Path`）。只用于导出 `.m3u8`；
   /// 播放一律走 [MusicServerBrowser.streamFor]。
   final String? path;
+
+  /// 同 [MusicServerAlbum.favorite]。
+  final bool? favorite;
 
   bool get isLossless => isLosslessMusicCodec(codec ?? container);
 }
@@ -270,6 +287,213 @@ abstract interface class MusicServerPlaylistEditing {
   Future<void> renamePlaylist(String playlistId, String name);
 
   Future<void> deletePlaylist(String playlistId);
+}
+
+/// 收藏 / 即时混音按条目种类发请求（Subsonic 的 `star` 分 `id` / `albumId` / `artistId`）。
+enum MusicServerItemKind { track, album, artist }
+
+/// 一种流派（Jellyfin `MusicGenre`；Subsonic 没有流派 id，[id] 就是流派名）。
+class MusicServerGenre {
+  const MusicServerGenre({
+    required this.id,
+    required this.name,
+    this.albumCount,
+    this.trackCount,
+    this.coverRef,
+  });
+
+  final String id;
+  final String name;
+  final int? albumCount;
+  final int? trackCount;
+  final String? coverRef;
+}
+
+/// 一组混排的专辑 / 艺人 / 曲目（收藏、最常播放、最近播放）。Jellyfin 按曲目统计播放，
+/// Subsonic 只按专辑统计（`getAlbumList2 frequent / recent`），所以「最常播放」在两边分别
+/// 落在 [tracks] / [albums]：页面有哪组画哪组。
+class MusicServerItems {
+  const MusicServerItems({
+    this.albums = const <MusicServerAlbum>[],
+    this.artists = const <MusicServerArtist>[],
+    this.tracks = const <MusicServerTrack>[],
+  });
+
+  final List<MusicServerAlbum> albums;
+  final List<MusicServerArtist> artists;
+  final List<MusicServerTrack> tracks;
+
+  bool get isEmpty => albums.isEmpty && artists.isEmpty && tracks.isEmpty;
+}
+
+/// 能收藏的服务器（Jellyfin `FavoriteItems` / Subsonic `star` · `unstar` · `getStarred2`）。
+abstract interface class MusicServerFavoriteEditing {
+  /// 标 / 取消收藏。失败抛。
+  Future<void> setFavorite(
+    MusicServerItemKind kind,
+    String id, {
+    required bool favorite,
+  });
+
+  /// 当前账号收藏的专辑 / 艺人 / 曲目（各自至多 [limit] 条）。
+  Future<MusicServerItems> listFavorites({int limit = kMusicServerPageSize});
+}
+
+/// 能按流派 / 最近添加 / 播放统计浏览的服务器（Jellyfin `MusicGenres` 与 `Items` 排序；
+/// Subsonic `getGenres` / `getSongsByGenre` / `getAlbumList2`）。
+abstract interface class MusicServerDiscovery {
+  Future<List<MusicServerGenre>> listGenres();
+
+  /// 一个流派的专辑（按名排）。
+  Future<List<MusicServerAlbum>> genreAlbums(
+    MusicServerGenre genre, {
+    int limit = kMusicServerPageSize,
+  });
+
+  /// 一个流派的曲目（「播放这个流派」用）。
+  Future<List<MusicServerTrack>> genreTracks(
+    MusicServerGenre genre, {
+    int limit = kMusicServerPageSize,
+  });
+
+  /// 最近加进服务器的专辑（新的在前）。
+  Future<List<MusicServerAlbum>> recentlyAddedAlbums({int limit = 30});
+
+  /// 播放次数最多的（服务器自己的统计；见 [MusicServerItems] 的曲目 / 专辑之分）。
+  Future<MusicServerItems> mostPlayed({int limit = 30});
+
+  /// 最近播放的（新的在前）。
+  Future<MusicServerItems> recentlyPlayed({int limit = 30});
+}
+
+/// 能按一首 / 一张专辑 / 一位艺人生成「即时混音」的服务器（Jellyfin `InstantMix`；
+/// Subsonic `getSimilarSongs`，服务器没接相似度数据源时可能为空）。
+abstract interface class MusicServerInstantMix {
+  Future<List<MusicServerTrack>> instantMix(
+    MusicServerItemKind kind,
+    String id, {
+    int limit = 50,
+  });
+}
+
+/// 服务器流地址里认出来的曲目（[MusicServerStreamIdentity.streamRefOf]）。
+class MusicServerStreamRef {
+  const MusicServerStreamRef({required this.trackId, required this.transcoded});
+
+  final String trackId;
+
+  /// 这条流是请服务器转码的（上报的 `PlayMethod` 据此）。
+  final bool transcoded;
+}
+
+/// 能从自己发出的流地址（[MusicServerBrowser.streamFor]）认回曲目 id 的服务器。播放项只带
+/// 流地址（从最近播放 / 曲库还原的也一样），播放上报与服务器歌词靠它找回服务器侧曲目；
+/// 调用方再用 [musicServerTrackUid] 核对播放项的 uid，别的服务器的同形地址不会认错。
+abstract interface class MusicServerStreamIdentity {
+  /// [uri] 不是本类服务器的流地址时回 null。
+  MusicServerStreamRef? streamRefOf(Uri uri);
+}
+
+/// 一次播放上报的状态。
+class MusicServerPlaybackReport {
+  const MusicServerPlaybackReport({
+    required this.trackId,
+    required this.playSessionId,
+    required this.positionMs,
+    required this.startedAtMs,
+    this.durationMs,
+    this.paused = false,
+    this.transcoded = false,
+  });
+
+  final String trackId;
+
+  /// 本机为这一次播放生成的会话 id（同一次播放的开始 / 进度 / 停止共用）。
+  final String playSessionId;
+  final int positionMs;
+
+  /// 开播时刻（epoch 毫秒；Subsonic scrobble 的 `time`）。
+  final int startedAtMs;
+  final int? durationMs;
+  final bool paused;
+  final bool transcoded;
+}
+
+/// 进度上报附带的事件（Jellyfin `EventName`）。
+enum MusicServerPlaybackEvent { pause, unpause }
+
+/// 能接收播放上报的服务器：播放次数 / 最近播放 / 「正在播放」由服务器自己统计。
+/// Jellyfin 走 `/Sessions/Playing*`（开播即计一次播放）；Subsonic 走 `scrobble`（开播报
+/// 「正在播放」，停止时听够一半或 4 分钟才提交一次播放），没有进度上报。上报失败一律抛，
+/// 由调用方吞掉记日志（不影响播放）。
+abstract interface class MusicServerPlaybackReporting
+    implements MusicServerStreamIdentity {
+  Future<void> reportPlaybackStarted(MusicServerPlaybackReport report);
+
+  Future<void> reportPlaybackProgress(
+    MusicServerPlaybackReport report, {
+    MusicServerPlaybackEvent? event,
+  });
+
+  Future<void> reportPlaybackStopped(MusicServerPlaybackReport report);
+}
+
+/// Subsonic / Last.fm 通行的「算听过一次」门槛：听够一半或 4 分钟（时长未知时只认 4 分钟）。
+bool musicScrobbleThresholdReached(int positionMs, int? durationMs) {
+  const int fourMinutes = 4 * 60 * 1000;
+  if (positionMs >= fourMinutes) return true;
+  return durationMs != null && durationMs > 0 && positionMs * 2 >= durationMs;
+}
+
+/// 服务器存的一行歌词。
+class MusicServerLyricLine {
+  const MusicServerLyricLine({required this.text, this.startMs});
+
+  final String text;
+
+  /// 行起点（毫秒）；不带时间的纯文本歌词为 null。
+  final int? startMs;
+}
+
+/// 服务器存的一首歌词（Jellyfin `/Audio/{id}/Lyrics`、OpenSubsonic `getLyricsBySongId`）。
+class MusicServerLyrics {
+  const MusicServerLyrics({required this.lines});
+
+  final List<MusicServerLyricLine> lines;
+
+  /// 每行都带时间（逐行同步歌词）。
+  bool get synced =>
+      lines.isNotEmpty &&
+      lines.every((MusicServerLyricLine l) => l.startMs != null);
+
+  /// 转成交给歌词解析器的原文：同步歌词 → LRC（`lrc`），否则纯文本（`txt`）。
+  ({String text, String format}) toRaw() {
+    if (!synced) {
+      return (
+        text: lines.map((MusicServerLyricLine l) => l.text).join('\n'),
+        format: 'txt',
+      );
+    }
+    final StringBuffer b = StringBuffer();
+    for (final MusicServerLyricLine l in lines) {
+      final int ms = l.startMs!;
+      final int min = ms ~/ 60000;
+      final int sec = (ms % 60000) ~/ 1000;
+      final int cs = (ms % 1000) ~/ 10;
+      b.writeln(
+        '[${min.toString().padLeft(2, '0')}:'
+        '${sec.toString().padLeft(2, '0')}.'
+        '${cs.toString().padLeft(2, '0')}]${l.text}',
+      );
+    }
+    return (text: b.toString(), format: 'lrc');
+  }
+}
+
+/// 存着歌词的服务器。这首没有歌词回 null；网络 / 服务器错误抛（调用方不当「没有」缓存）。
+abstract interface class MusicServerLyricsProvider
+    implements MusicServerStreamIdentity {
+  Future<MusicServerLyrics?> lyricsFor(String trackId);
 }
 
 /// 服务器曲库的浏览器。失败一律抛（断网 / 令牌失效 / 服务器 5xx），页面显示错误与重试。

@@ -1,7 +1,9 @@
 /// OpenSubsonic / Subsonic 音乐库客户端（`MusicServerBrowser` 的 Subsonic 实现）。
 ///
-/// 只读浏览 + 播放：getAlbumList2 / getAlbum / getArtists / getArtist / getPlaylists /
-/// getPlaylist / search3 / stream / getCoverArt。认证走 token 方式（`u` + `s` 盐 + `t = md5(password + salt)`，每个请求
+/// 浏览 + 播放：getAlbumList2 / getAlbum / getArtists / getArtist / getPlaylists /
+/// getPlaylist / search3 / stream / getCoverArt；收藏（star / unstar / getStarred2）、流派与
+/// 统计（getGenres / getSongsByGenre / getAlbumList2）、即时混音（getSimilarSongs）、播放上报
+/// （scrobble）、歌词（OpenSubsonic getLyricsBySongId）。认证走 token 方式（`u` + `s` 盐 + `t = md5(password + salt)`，每个请求
 /// 一个新盐，**从不发明文 `p=`**），或 OpenSubsonic `apiKeyAuthentication` 扩展的
 /// `apiKey`（此时不发 u/t/s）。
 ///
@@ -70,7 +72,14 @@ class SubsonicApiException implements Exception {
 /// 单个请求的响应超时（流媒体本身不经这里：流地址交给 mpv）。
 const Duration kSubsonicRequestTimeout = Duration(seconds: 15);
 
-class SubsonicMusicClient implements MusicServerBrowser {
+class SubsonicMusicClient
+    implements
+        MusicServerBrowser,
+        MusicServerFavoriteEditing,
+        MusicServerDiscovery,
+        MusicServerInstantMix,
+        MusicServerPlaybackReporting,
+        MusicServerLyricsProvider {
   SubsonicMusicClient(
     SubsonicServerConfig config, {
     http.Client? client,
@@ -339,6 +348,237 @@ class SubsonicMusicClient implements MusicServerBrowser {
     );
   }
 
+  // ---------------------------------------------------------------- 收藏
+
+  /// `star` / `unstar`：曲目用 `id`，专辑 `albumId`，艺人 `artistId`（ID3 模型）。
+  @override
+  Future<void> setFavorite(
+    MusicServerItemKind kind,
+    String id, {
+    required bool favorite,
+  }) => _call(favorite ? 'star' : 'unstar', <String, String>{
+    switch (kind) {
+      MusicServerItemKind.track => 'id',
+      MusicServerItemKind.album => 'albumId',
+      MusicServerItemKind.artist => 'artistId',
+    }: id,
+  });
+
+  /// `getStarred2` 不分页：一次全取，各组截到 [limit]。
+  @override
+  Future<MusicServerItems> listFavorites({
+    int limit = kMusicServerPageSize,
+  }) async {
+    final Map<String, Object?> r = await _call('getStarred2');
+    final Map<String, Object?>? s = _obj(r['starred2']);
+    return MusicServerItems(
+      albums: <MusicServerAlbum>[
+        for (final Map<String, Object?> a in _maps(s?['album']).take(limit))
+          _album(a),
+      ],
+      artists: <MusicServerArtist>[
+        for (final Map<String, Object?> a in _maps(s?['artist']).take(limit))
+          _artist(a),
+      ],
+      tracks: <MusicServerTrack>[
+        for (final Map<String, Object?> t in _maps(s?['song']).take(limit))
+          _track(t),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------- 流派 / 统计
+
+  /// Subsonic 的流派没有 id：[MusicServerGenre.id] 就是流派名。
+  @override
+  Future<List<MusicServerGenre>> listGenres() async {
+    final Map<String, Object?> r = await _call('getGenres');
+    final List<MusicServerGenre> out = <MusicServerGenre>[
+      for (final Map<String, Object?> g in _maps(_obj(r['genres'])?['genre']))
+        if (_str(g['value']) case final String name)
+          MusicServerGenre(
+            id: name,
+            name: name,
+            albumCount: _int(g['albumCount']),
+            trackCount: _int(g['songCount']),
+          ),
+    ];
+    return out..sort(
+      (MusicServerGenre a, MusicServerGenre b) =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+  }
+
+  @override
+  Future<List<MusicServerAlbum>> genreAlbums(
+    MusicServerGenre genre, {
+    int limit = kMusicServerPageSize,
+  }) => _albumList('byGenre', limit, <String, String>{'genre': genre.id});
+
+  @override
+  Future<List<MusicServerTrack>> genreTracks(
+    MusicServerGenre genre, {
+    int limit = kMusicServerPageSize,
+  }) async {
+    final Map<String, Object?> r = await _call(
+      'getSongsByGenre',
+      <String, String>{'genre': genre.id, 'count': '${limit.clamp(1, 500)}'},
+    );
+    return <MusicServerTrack>[
+      for (final Map<String, Object?> s in _maps(
+        _obj(r['songsByGenre'])?['song'],
+      ))
+        _track(s),
+    ];
+  }
+
+  @override
+  Future<List<MusicServerAlbum>> recentlyAddedAlbums({int limit = 30}) =>
+      _albumList('newest', limit);
+
+  /// Subsonic 只按专辑统计播放（`frequent`）。
+  @override
+  Future<MusicServerItems> mostPlayed({int limit = 30}) async =>
+      MusicServerItems(albums: await _albumList('frequent', limit));
+
+  @override
+  Future<MusicServerItems> recentlyPlayed({int limit = 30}) async =>
+      MusicServerItems(albums: await _albumList('recent', limit));
+
+  Future<List<MusicServerAlbum>> _albumList(
+    String type,
+    int limit, [
+    Map<String, String> extra = const <String, String>{},
+  ]) async {
+    final Map<String, Object?> r = await _call(
+      'getAlbumList2',
+      <String, String>{
+        'type': type,
+        'size': '${limit.clamp(1, _kMaxAlbumPage)}',
+        ...extra,
+      },
+    );
+    return <MusicServerAlbum>[
+      for (final Map<String, Object?> a in _maps(
+        _obj(r['albumList2'])?['album'],
+      ))
+        _album(a),
+    ];
+  }
+
+  // ---------------------------------------------------------------- 即时混音
+
+  /// `getSimilarSongs` 认曲目 / 专辑 / 艺人 id（服务器没接 Last.fm 等相似度来源时为空）。
+  @override
+  Future<List<MusicServerTrack>> instantMix(
+    MusicServerItemKind kind,
+    String id, {
+    int limit = 50,
+  }) async {
+    final Map<String, Object?> r = await _call(
+      'getSimilarSongs',
+      <String, String>{'id': id, 'count': '$limit'},
+    );
+    return <MusicServerTrack>[
+      for (final Map<String, Object?> s in _maps(
+        _obj(r['similarSongs'])?['song'],
+      ))
+        _track(s),
+    ];
+  }
+
+  // ---------------------------------------------------------------- 播放上报
+
+  /// [streamFor] 拼的 `…/rest/stream?id=…`（`format=raw` 直出，否则请求了转码）。
+  @override
+  MusicServerStreamRef? streamRefOf(Uri uri) {
+    final List<String> seg = uri.pathSegments;
+    if (seg.length < 2) return null;
+    final String method = seg.last.toLowerCase();
+    if (seg[seg.length - 2].toLowerCase() != 'rest' ||
+        (method != 'stream' && method != 'stream.view')) {
+      return null;
+    }
+    final String? id = uri.queryParameters['id'];
+    if (id == null || id.isEmpty) return null;
+    final String format = uri.queryParameters['format'] ?? 'raw';
+    return MusicServerStreamRef(trackId: id, transcoded: format != 'raw');
+  }
+
+  /// 开播：`scrobble submission=false`（「正在播放」，不计次数）。
+  @override
+  Future<void> reportPlaybackStarted(MusicServerPlaybackReport report) => _call(
+    'scrobble',
+    <String, String>{'id': report.trackId, 'submission': 'false'},
+  );
+
+  /// Subsonic 没有进度上报。
+  @override
+  Future<void> reportPlaybackProgress(
+    MusicServerPlaybackReport report, {
+    MusicServerPlaybackEvent? event,
+  }) async {}
+
+  /// 停止：听够门槛（[musicScrobbleThresholdReached]）才 `scrobble submission=true`
+  /// 提交一次播放（`time` = 开播时刻），否则什么都不发。
+  @override
+  Future<void> reportPlaybackStopped(MusicServerPlaybackReport report) async {
+    if (!musicScrobbleThresholdReached(report.positionMs, report.durationMs)) {
+      return;
+    }
+    await _call('scrobble', <String, String>{
+      'id': report.trackId,
+      'time': '${report.startedAtMs}',
+      'submission': 'true',
+    });
+  }
+
+  // ---------------------------------------------------------------- 歌词
+
+  /// OpenSubsonic `songLyrics` 扩展的 `getLyricsBySongId`：取第一份同步歌词，没有同步的取
+  /// 第一份。服务器不支持（纯 Subsonic：错误码 / 404）或这首没有歌词回 null。
+  @override
+  Future<MusicServerLyrics?> lyricsFor(String trackId) async {
+    final Map<String, Object?> r;
+    try {
+      r = await _call('getLyricsBySongId', <String, String>{'id': trackId});
+    } on SubsonicApiException catch (e) {
+      // 不支持的方法：HTTP 404 / 501，或协议层错误（code 0 通用、70 不存在）。
+      final bool unsupported = e.httpStatus == 404 || e.httpStatus == 501;
+      final bool noData =
+          e.httpStatus == null &&
+          (e.code == null || e.code == 0 || e.code == 70);
+      if (unsupported || noData) {
+        return null;
+      }
+      rethrow;
+    }
+    final List<Map<String, Object?>> all = _maps(
+      _obj(r['lyricsList'])?['structuredLyrics'],
+    );
+    if (all.isEmpty) return null;
+    final Map<String, Object?> pick = all.firstWhere(
+      (Map<String, Object?> l) => l['synced'] == true,
+      orElse: () => all.first,
+    );
+    final bool synced = pick['synced'] == true;
+    final int offset = _int(pick['offset']) ?? 0;
+    final List<MusicServerLyricLine> lines = <MusicServerLyricLine>[
+      for (final Map<String, Object?> l in _maps(pick['line']))
+        MusicServerLyricLine(
+          text: '${l['value'] ?? ''}'.trimRight(),
+          startMs: synced && _int(l['start']) != null
+              // OpenSubsonic：offset 为正 = 歌词提前显示（与 LRC `[offset:]` 同号）。
+              ? (_int(l['start'])! - offset).clamp(0, 1 << 31)
+              : null,
+        ),
+    ];
+    if (lines.every((MusicServerLyricLine l) => l.text.trim().isEmpty)) {
+      return null;
+    }
+    return MusicServerLyrics(lines: lines);
+  }
+
   // ---------------------------------------------------------------- 播放 / 封面
 
   /// 注意：服务器不支持转码时会无视 `format` / `maxBitRate` 原样返回，所以带码率上限
@@ -396,14 +636,19 @@ class SubsonicMusicClient implements MusicServerBrowser {
       trackCount: _int(a['songCount']),
       durationMs: durationSec == null ? null : durationSec * 1000,
       coverRef: _str(a['coverArt']),
+      favorite: _starred(a),
     );
   }
+
+  /// `starred`（收藏时刻）在 = 收藏了；Subsonic 只在收藏了时才带这个字段，不带就是没收藏。
+  static bool _starred(Map<String, Object?> j) => _str(j['starred']) != null;
 
   MusicServerArtist _artist(Map<String, Object?> a) => MusicServerArtist(
     id: '${a['id']}',
     name: (a['name'] as String?) ?? '',
     albumCount: _int(a['albumCount']),
     coverRef: _str(a['coverArt']),
+    favorite: _starred(a),
   );
 
   MusicServerPlaylist _playlist(Map<String, Object?> p) {
@@ -450,6 +695,7 @@ class SubsonicMusicClient implements MusicServerBrowser {
       channels: _int(s['channelCount']),
       sizeBytes: _int(s['size']),
       coverRef: _str(s['coverArt']),
+      favorite: _starred(s),
     );
   }
 
