@@ -505,7 +505,8 @@ Map<String, String> srsPlanLapisFieldFill({
   return out;
 }
 
-/// 旧 Lapis 迁移预演一块物化的笔记数（[SrsLegacyLapisMigrationOps.previewLegacyLapisSource]）。
+/// 旧 Lapis 迁移预演 / 补迁预演一块物化的笔记数（[SrsLegacyLapisMigrationOps.previewLegacyLapisSource]、
+/// [SrsLegacyLapisMigrationOps.previewLapisBackfill]）。
 const int kSrsLapisPreviewChunk = 500;
 
 /// 一种可迁移的旧 Lapis 变体（有笔记的）。
@@ -869,9 +870,11 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   });
 
   /// 预演「遗漏字段补迁」：当前是 Fushi 卡片的笔记（缺省全部，或只看 [noteIds]），新字段
-  /// 为空、迁移前所属的旧 Lapis 变体里同语义的字段有内容的。不写库。
+  /// 为空、迁移前所属的旧 Lapis 变体里同语义的字段有内容的。不写库。候选按块（[chunk] 条）物化、判完就丢，
+  /// Dart 侧同时持有的笔记视图不超过一块（BUG-5176：整批物化在大牌组上撑爆 Dart 堆）。
   Future<SrsLapisBackfillPreview> previewLapisBackfill({
     List<String>? noteIds,
+    @visibleForTesting int chunk = kSrsLapisPreviewChunk,
   }) async {
     final SrsNoteTypeView? to = await noteType(fushiCardNoteTypeId);
     if (to == null || to.deletedAt != null) {
@@ -900,21 +903,26 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
             for (final String id in noteIds)
               if (candidates.contains(id)) id,
           ];
-    final Map<String, SrsNoteView?> views = await notes(ids);
-    for (final String id in ids) {
-      final SrsNoteView? n = views[id];
-      if (n == null || n.deletedAt != null || n.noteTypeId != to.id) continue;
-      final Map<String, String> fill = srsPlanLapisFieldFill(
-        profileUid: profileUid,
-        target: to,
-        current: n.fields,
-        values: _historicalValues(n, owners),
-        authored: <String>{
-          for (final SrsFieldDef f in to.fields)
-            if (n.edits[SrsFieldKeys.noteField(f.id)] != null) f.id,
-        },
-      );
-      if (fill.isNotEmpty) fills[id] = fill;
+    for (int at = 0; at < ids.length; at += chunk) {
+      final List<String> part = ids.sublist(at, min(at + chunk, ids.length));
+      final Map<String, SrsNoteView?> views = await notes(part);
+      for (final String id in part) {
+        final SrsNoteView? n = views[id];
+        if (n == null || n.deletedAt != null || n.noteTypeId != to.id) {
+          continue;
+        }
+        final Map<String, String> fill = srsPlanLapisFieldFill(
+          profileUid: profileUid,
+          target: to,
+          current: n.fields,
+          values: _historicalValues(n, owners),
+          authored: <String>{
+            for (final SrsFieldDef f in to.fields)
+              if (n.edits[SrsFieldKeys.noteField(f.id)] != null) f.id,
+          },
+        );
+        if (fill.isNotEmpty) fills[id] = fill;
+      }
     }
     return SrsLapisBackfillPreview(fills: fills);
   }

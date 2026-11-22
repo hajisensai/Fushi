@@ -479,6 +479,14 @@ void main() {
         );
         await oldStyleMigrate(s, <String>[lost, kept]);
         expect((await s.note(lost))!.field(fushi('MiscInfo')), '');
+        // BUG-5176：候选按块物化，单次只读一块，结果与整块相同。
+        srsDebugMaxNotesPerRead = 0;
+        final SrsLapisBackfillPreview chunked = await s.previewLapisBackfill(
+          chunk: 1,
+        );
+        expect(srsDebugMaxNotesPerRead, 1);
+        expect(chunked.notes, 2);
+        expect(chunked.fills, (await s.previewLapisBackfill()).fills);
         // 迁移后用户自己写过来源：绝不覆盖。
         await s.editFields(SrsEntityKind.note, kept, <String, Object?>{
           SrsFieldKeys.noteField(fushi('MiscInfo')): 'mine',
