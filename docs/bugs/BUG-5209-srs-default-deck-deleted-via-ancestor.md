@@ -1,0 +1,14 @@
+## BUG-5209 · 浏览牌组空断言：默认牌组随祖先牌组被删，树里缺默认牌组
+- **报告**：2026-11-22（应用内反馈 -U8Zeewe6f：Windows 3.4.0-debug.31044，打开浏览牌组显示「Null check operator used on a null value」，日志里同一个栈从 11-17 一直到 11-22）
+- **真实性**：✅ 真 bug。栈：`SrsBrowsePage._computeOnce` → `SrsBrowseSession.query` → `srsBrowseContext.recall('\u0000')`（`packages/fushi_engine/lib/srs/srs_browse.dart` 给「牌组已不存在」的卡兜底）→ `SrsDbStore.instantActiveFor` → `_schedulingConfigIn`（`effectiveDeckOf` 回落到 `defaultDeckId`）→ `SrsDeckTree.schedulingConfig`（`packages/fushi_srs/lib/src/deck.dart:717` `_byId[id]!`）。说明牌组树里没有内核规范 ID 的默认牌组。
+  - **根因**：默认牌组可以拖到别的牌组下面（`SrsDbStore.placeDeck` 不拦），而删牌组只拦「直接删默认牌组」：内核 `deck_delete`（`native/fushi_fsrs/src/store/gen4/cmd/writes_intent.rs` 原 `:664`；协议 3 的 `store/sync2/deck_delete.rs:162` 同样）取 `tree.subtree(deck)` 后给子树里**每个**牌组写删除标记，默认牌组在子树里就连带被删。牌组树（`SrsDeckTree` 构造、内核 `DeckTree::of_views`）不收带删除标记的牌组，于是树里从此缺默认牌组；开库的 `ensureBuiltins`（`srs_db_store.dart`）只看身份记录在不在（`entities` 读不看删除标记），认为默认牌组「已存在」不重建，坏状态永久保留，gen4 迁移也原样带过去。用户的报错从 11-17（gen4 迁移之前）就开始，与协议 3 时代就已删掉一致。
+  - 没拿到用户的库，「默认牌组带删除标记」是按代码路径推出的唯一能同时满足「身份记录在（`ensureBuiltins` 不重建）、树里没有」的状态；规范 ID 与别名对不上的方向已排除（`entities` 按 ID 读与按种类读都回同一个类代表 `c.text()`，若对不上 `ensureBuiltins` 会每次重发身份记录，树里也会有）。
+- **[x] ① 已修复** —
+  - 内核 `deck_delete`：子树里去掉默认牌组——它和它的卡都不动，收尾那一步把它挂回顶层（写 `parent = null`）；它下面的子牌组照常随子树删除（Anki 删除含 Default 的父牌组同语义）。
+  - 开库 `SrsDbStore.ensureBuiltins`：默认牌组身份记录在却带删除标记时，写 `deleted = null`、`parent = null` 复活并挂回顶层；修改记录随同步传到别的设备。已坏的库下次打开即自愈，卡片不丢（它们本来就按「有效牌组」回落到默认牌组）。
+  - 没在 `schedulingConfig` 里加特判：不变式由写入侧与开库保证。
+- **[x] ② 已增加自动化测试** —
+  - Rust `store/gen4/cmd/writes_tests.rs` `deck_delete_keeps_the_default_deck_moved_into_the_subtree`：默认牌组挪到 `Lang::JP` 下，分步删 `Lang`（只移卡 / 连笔记删两种），默认牌组仍在树里、父为空、原本在它里面的卡都还在。
+  - engine `packages/fushi_engine/test/srs/srs_default_deck_invariant_test.dart`：①把默认牌组挪进 `Lang` 再删 `Lang`，默认牌组留下挂回顶层、卡不动、浏览会话正常出行；②直接写出旧版留下的坏状态（默认牌组带删除标记），先断言 `schedulingConfigFor('\u0000')` 抛错（即反馈里的空断言），重开库后默认牌组复活、浏览页兜底项与查询都正常。
+- **缺口**：没拿到用户的库，修复随下一个 debug 包发出、用户打开一次即是复核。
+- **备注**：

@@ -25,7 +25,9 @@
 //!    `carry.rs`）→ 切点 `log_marks` → 新身份（新设备 ID、沿用签名钥匙、`prev` = 旧设备的日志末尾，先核对它指得到灌进来的那一槽、链指纹相同）+ `Salts`
 //!    （[Step::Salts]）→ `ingest_settle(Rebuild)`（[Step::Rebuild]）→ 对拍（[Step::Parity]：G4 的口径 + 按规范 ID 的比较）。
 //! 5. **对拍有一项不过（或某个 profile 的缓存基准拿不到）就中止**（[Outcome::Aborted]）：不提交、不封存，旧库原样可用；
-//!    报告写到目录里的 [REPORT_FILE]，临时文件留作诊断（下次开跑时删掉重来）。同机多 profile 一个不过整个文件不提交
+//!    报告写到目录里的 [REPORT_FILE]（只有 ID 与计数，用户在恢复页一键附进反馈 / 分享出去），临时文件当场删掉：它是旧库
+//!    内容的派生副本，手机上用户拿不到、也发不出去，留着只占空间，还会让目录看起来「上次没做完」（BUG：恢复页同时说
+//!    「留下了未完成的文件」与「没通过核对已撤回」）。同机多 profile 一个不过整个文件不提交
 //!    （设计 §6.3）。
 //! 6. **提交**（[Step::Commit]）：临时文件里记下迁移来源（`files::record_migrated_from`，设计 §6.1 第 7 步的「已核对」
 //!    标记：身份 + 日志水位）→ 检查点并关掉（确认没有残留 WAL）→ 落盘 → 改名成 `srs4.db` 并落盘
@@ -132,7 +134,7 @@ impl Step {
 pub enum Outcome {
     /// 提交了（含「之前已经提交、这次只补了封存 / 什么也不用做」，`report` 里 `resumed` 为真）。
     Committed { report: Value },
-    /// 对拍不过：没提交、没封存。报告在 [report_path]，临时文件留作诊断。
+    /// 对拍不过：没提交、没封存。报告在 [report_path]，临时文件已删（目录里只多一份报告）。
     Aborted { report_path: PathBuf, report: Value },
     /// 前提补不了 / 迁移在别处进行 / 旧库正忙 / 状态不对：没有迁移，旧库没动（前提补完只写副本）。[code] 是机器可读的
     /// 分类（线上 `code`），[reason] 是给人看的原文。
@@ -788,13 +790,10 @@ fn migrate_locked(dir: &Path, mut opts: Options<'_>) -> Result<Outcome, String> 
     drop(held);
     // 补完副本不论结论都删（提交了的已经封存原件、记的是原件的指纹；没提交的下次从原件重拷）。
     let _ = seal::remove_sqlite_files(&copy);
-    match &out {
-        Ok(Outcome::Aborted { .. }) => {}
-        Ok(Outcome::Committed { .. }) => {}
-        // 拦下、叫停、出错：临时文件没有诊断价值，删掉。
-        _ => {
-            let _ = seal::remove_sqlite_files(&tmp);
-        }
+    // 没提交的一律删临时文件（中止、拦下、叫停、出错）：诊断全在报告里，临时文件是旧库内容的派生副本，留着既占空间
+    // 又让目录处在「对拍不过」与「上次没做完」两种状态之间。删不掉（被占用等）不影响结论：下次开跑前照样整份删掉重来。
+    if !matches!(out, Ok(Outcome::Committed { .. })) {
+        let _ = seal::remove_sqlite_files(&tmp);
     }
     out
 }

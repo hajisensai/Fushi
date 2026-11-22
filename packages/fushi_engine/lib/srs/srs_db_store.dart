@@ -2654,16 +2654,29 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 内置实体的 ID 是规范 ID（[srsBuiltinEntities] 向内核要，不带盐，G9-7），与 `entities` 读回的直接比：全新库里
   /// 就是它；迁移来的库里协议 3 按 uid 加盐的内置实体被派生层归到同一个规范 ID，读回的也是它，所以不会另建一份。
+  ///
+  /// 默认牌组是不变式：牌组树（[deckTree]）里恒有它，「有效牌组」与排程配置都回落到它。身份记录在、却带着删除标记
+  /// 的（旧版删一个牌组时把挪进它子树的默认牌组连带删了，内核 `deck_delete` 已不再这样做）照样不在树里，这里复活它
+  /// 并挂回顶层；修改记录随同步传到别的设备，那边也一起好。BUG-5209。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
     final Set<String> present = (await _entityIdsWhere(
       ids: <String>[for (final SrsEntityRecord r in builtins) r.id],
     )).toSet();
-    final List<SrsEventDraft> missing = <SrsEventDraft>[
+    final String defaultDeck = kernelIds.defaultDeck;
+    final SrsEntityEdits deckEdits = present.contains(defaultDeck)
+        ? await _entityEdits(SrsEntityKind.deck, defaultDeck)
+        : SrsEntityEdits.empty();
+    final List<SrsEventDraft> drafts = <SrsEventDraft>[
       for (final SrsEntityRecord r in builtins)
         if (!present.contains(r.id)) SrsReadyDraft(SrsEntityEvent(r)),
+      if (deckEdits.deletedAt != null)
+        ...newEditDrafts(SrsEntityKind.deck, defaultDeck, <String, Object?>{
+          SrsFieldKeys.deleted: null,
+          SrsFieldKeys.deckParent: null,
+        }, current: deckEdits),
     ];
-    if (missing.isNotEmpty) await _emit(missing);
+    if (drafts.isNotEmpty) await _emit(drafts);
   });
 
   /// [canonicalIds] 发过几次 `canonical_ids`（测试用：读路径按回包的 `canon` / `keyCanon` 对，不另发这条命令）。

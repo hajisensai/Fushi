@@ -4634,6 +4634,52 @@ void main() {
     );
   });
 
+  testWidgets('BUG-5206：连点「编辑首页」第二下落在「退出编辑」上，不会恢复默认；恢复默认在底栏', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    const List<HomeWidgetItem> custom = <HomeWidgetItem>[
+      HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+    ];
+    await storeHomeLayout(wide: custom);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    final Finder enter = find.byKey(
+      const ValueKey<String>('home-toolbar-edit-home'),
+    );
+    expect(enter, findsOneWidget);
+    final Offset at = tester.getCenter(enter);
+    await tester.tap(enter);
+    await pumpDashboard(tester);
+
+    // 编辑态页头：只剩「退出编辑」，且正好占着「编辑首页」原来的位置（连点的第二下落在它上面）。
+    final Finder exit = find.byKey(
+      const ValueKey<String>('home-toolbar-exit-widget-edit'),
+    );
+    expect(exit, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-toolbar-restore-widgets')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-edit-restore')),
+      findsOneWidget,
+    );
+    expect(tester.getCenter(exit), at);
+
+    // 第二下：退出编辑态，布局原样保留（不是被换回默认模板）。
+    await tester.tapAt(at);
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-edit-toolbar')),
+      findsNothing,
+    );
+    expect(enter, findsOneWidget);
+    expect(appModel.homeWidgetLayout.wide, custom);
+  });
+
   testWidgets('焦点可遍历：Tab 能落到主角卡（整卡是唯一停靠点）与横滑行封面卡', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();

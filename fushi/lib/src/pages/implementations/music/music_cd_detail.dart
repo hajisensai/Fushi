@@ -14,7 +14,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
@@ -33,6 +32,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart'
     show musicAlbumBadges;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart'
     show musicQueueDurationLabel;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
@@ -754,34 +754,22 @@ class _CdPaletteState extends State<_CdPalette> {
   }
 }
 
-/// 唱片盘面：真实扫描图裁成圆，带投影。
+/// 唱片盘面：真实扫描图按量出的印刷区对正（[MusicDiscFace]），带投影。
 class _DiscFace extends StatelessWidget {
   const _DiscFace({required this.path});
 
   final String path;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      shape: BoxShape.circle,
-      boxShadow: <BoxShadow>[
-        BoxShadow(
-          color: Color(0x99000000),
-          offset: Offset(0, 20),
-          blurRadius: 50,
-        ),
-      ],
-    ),
-    child: ClipOval(
-      child: Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        cacheWidth: 1024,
-        excludeFromSemantics: true,
-        // 扫描图损坏 / 被删时只剩投影圆，不让解码失败冒成 FlutterError（BUG-2496）。
-        errorBuilder: (_, _, _) => const SizedBox.expand(),
+  Widget build(BuildContext context) => MusicDiscFace(
+    path: path,
+    shadows: const <BoxShadow>[
+      BoxShadow(
+        color: Color(0x99000000),
+        offset: Offset(0, 20),
+        blurRadius: 50,
       ),
-    ),
+    ],
   );
 }
 

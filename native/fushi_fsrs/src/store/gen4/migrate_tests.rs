@@ -445,7 +445,7 @@ fn held_rows_are_copied_with_text_entity_ids() {
 }
 
 /// 对拍不过（投影与日志不一致：手删一条活着的字段修改）：不提交、不封存，旧库逐字节不变、协议 3 照常能开；报告写进
-/// 目录（中止、带对拍差异），临时文件留作诊断，状态报迁移失败。旧库没动过，协议 3 的内核照旧能开。再跑一次同样中止（从头重来，不在留下的半份上续做）。
+/// 目录（中止、带对拍差异），临时文件当场删掉（目录里只多一份报告），状态报迁移失败。旧库没动过，协议 3 的内核照旧能开。再跑一次同样中止（从头重来，不在留下的半份上续做）。
 #[test]
 fn a_parity_failure_aborts_and_leaves_the_library_usable() {
     let dir = legacy_dir("g72-abort", &|_| {});
@@ -470,7 +470,7 @@ fn a_parity_failure_aborts_and_leaves_the_library_usable() {
         assert_eq!(report["profiles"][0]["verdict"], "fail");
         assert_ne!(report["profiles"][0]["parity"], json!([]));
         assert_eq!(report_file(&dir.0)["verdict"], "aborted");
-        assert!(dir.0.join(GEN4_TEMP).exists());
+        assert!(!dir.0.join(GEN4_TEMP).exists());
         assert!(!dir.0.join(GEN4_FILE).exists());
         assert_eq!(masked(&dir.0), before);
         assert_eq!(
@@ -874,6 +874,7 @@ fn an_incomplete_parity_aborts_like_a_failure() {
     assert_eq!(report["profileVerdict"], "incomplete", "{report:#}");
     assert_eq!(report["profiles"][0]["verdict"], "incomplete", "{report:#}");
     assert!(!dir.0.join(GEN4_FILE).exists());
+    assert!(!dir.0.join(GEN4_TEMP).exists());
     assert_eq!(masked(&dir.0), before);
     assert_eq!(
         schema_of(&dir.0),
@@ -1487,6 +1488,7 @@ fn one_failing_profile_of_two_keeps_the_whole_file_uncommitted() {
             .collect();
         assert_eq!(verdicts, vec![(P, "pass"), (Q, "fail")], "{report:#}");
         assert!(!dir.0.join(GEN4_FILE).exists());
+        assert!(!dir.0.join(GEN4_TEMP).exists());
         assert_eq!(masked(&dir.0), before);
         assert_eq!(
             schema_of(&dir.0),

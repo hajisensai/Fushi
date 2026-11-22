@@ -39,6 +39,7 @@ use crate::sync2::sched::Queue;
 /// Dart `SrsFieldKeys`：`noteDeck` / `cardDeck`、`deleted`、`noteTags`、`cardHistoryFromPrefix`。
 const KEY_DECK: &str = "deck";
 const KEY_DELETED: &str = "deleted";
+const KEY_PARENT: &str = "parent";
 const KEY_TAGS: &str = "tags";
 const HISTORY_FROM: &str = "historyFrom/";
 
@@ -651,6 +652,9 @@ impl Mover<'_> {
 /// - 之后每步最多 `limit` 个实体：先删笔记（`deleteCards`），再把子树里的卡移到被删牌组的父牌组（没有则默认牌组），
 ///   都按 ID 游标往后走（`token`，原样带回）。卡取完的那一步收尾：不带游标重扫（期间放进子树的），再给子树里每个
 ///   牌组写删除标记，回包 `done: true`。回包另带 `token` / `notes`（这一步删掉的笔记）/ `count`（处理的实体数）。
+/// - 默认牌组恒在树里（宿主的「有效牌组」回落到它）：它被挪进这棵子树时不随之删除——它自己和它的卡都不动，收尾时
+///   把它挂回顶层；它下面的子牌组照常随子树删除（Anki 删除含 Default 的父牌组同语义）。以前整棵子树连默认牌组一起
+///   写了删除标记，树里从此缺默认牌组，按它取排程配置的浏览页空断言（BUG-5209）。
 ///
 /// 每步一个事务（[write]）；子树与目标牌组每步都重读。
 pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
@@ -659,19 +663,24 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
     let delete_cards = req["deleteCards"] == Value::Bool(true);
     write(t, col, |s| {
         let deck = s.canon_text(deck_in)?;
-        let (known, sub, name, parent) = {
+        let (known, sub, name, parent, held_default) = {
             let tree = s.deck_tree()?;
             if deck == tree.default_deck {
                 return Err("deck_delete: the default deck cannot be deleted".into());
             }
+            let mut sub = tree.subtree(&deck);
+            let before = sub.len();
+            sub.retain(|d| *d != tree.default_deck);
+            let held_default = (sub.len() != before).then(|| tree.default_deck.clone());
             (
                 tree.decks.contains_key(&deck),
-                tree.subtree(&deck),
+                sub,
                 full_name(tree, &deck),
                 tree.decks
                     .get(&deck)
                     .and_then(|d| d.parent.clone())
                     .unwrap_or_else(|| tree.default_deck.clone()),
+                held_default,
             )
         };
         let sub_json = ids_json(&sub);
@@ -792,6 +801,18 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
                     &deleted,
                     &mut items,
                 )?;
+                // 默认牌组留下、挂回顶层（它原来的祖先这一步都删了）。
+                if let Some(default) = &held_default {
+                    push_edits(
+                        s,
+                        &ts,
+                        EntKind::Deck,
+                        std::slice::from_ref(default),
+                        KEY_PARENT,
+                        &Value::Null,
+                        &mut items,
+                    )?;
+                }
                 out.apply(s, now, &items)?;
                 done = true;
             }
