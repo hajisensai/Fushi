@@ -69,10 +69,7 @@ class MediaPrivacySnapshot {
       );
     }
     final Set<int> collections = <int>{
-      for (final String k in await _privateOrLocked(
-        db,
-        TagHostKind.collection,
-      ))
+      for (final String k in await _privateOrLocked(db, TagHostKind.collection))
         ?collectionIdOfTagEntryKey(k),
     };
     final Map<String, Set<int>> collectionsOfEntry = <String, Set<int>>{};

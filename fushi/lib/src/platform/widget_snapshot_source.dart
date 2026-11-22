@@ -26,6 +26,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
@@ -313,14 +314,21 @@ class WidgetSnapshotSource {
     final Map<String, String> goalMediaLanguages =
         await loadStudyGoalMediaLanguagesFor(db, goals);
     final WidgetOnDeckInput onDeck = await _collectOnDeck(appModel);
+    // 桌面 / 锁屏小组件在 app 外面，更不能露出上锁（未解锁）的作品
+    // （[MediaVisibility]，唯一的上锁过滤入口）。
+    final MediaVisibility lockVisibility = await MediaVisibility.load(db);
     final List<WidgetMediaInput> media = <WidgetMediaInput>[
-      if (modules.isEnabled(ModuleId.books) ||
-          modules.isEnabled(ModuleId.manga))
-        ...await _collectBooks(appModel, facts, window),
-      if (modules.isEnabled(ModuleId.video)) ...await _collectVideos(db, facts),
-      if (modules.isEnabled(ModuleId.games)) ...await _collectGames(appModel),
-      ..._collectRemote(appModel),
-      ..._serverShelfItems(onDeck),
+      for (final WidgetMediaInput m in <WidgetMediaInput>[
+        if (modules.isEnabled(ModuleId.books) ||
+            modules.isEnabled(ModuleId.manga))
+          ...await _collectBooks(appModel, facts, window),
+        if (modules.isEnabled(ModuleId.video))
+          ...await _collectVideos(db, facts),
+        if (modules.isEnabled(ModuleId.games)) ...await _collectGames(appModel),
+        ..._collectRemote(appModel),
+        ..._serverShelfItems(onDeck),
+      ])
+        if (!_hiddenByLock(lockVisibility, m)) m,
     ];
 
     final WidgetSrsInput srs = await _collectSrs(appModel, now);
@@ -464,6 +472,24 @@ class WidgetSnapshotSource {
     } finally {
       _nowPlayingRunning = false;
     }
+  }
+
+  /// 本机条目是不是上锁（未解锁）的作品。远端 / 服务器条目（id 带前缀）不在本机
+  /// 上锁表里，不藏。
+  static bool _hiddenByLock(MediaVisibility visibility, WidgetMediaInput m) {
+    if (!visibility.hidesAnything) return false;
+    return switch (m.kind) {
+      WidgetMediaKind.book || WidgetMediaKind.manga =>
+        switch (ReaderFushiSource.parseSrtBookUid(m.id)) {
+          final String srtUid => visibility.hidesSrtBook(srtUid),
+          null => switch (ReaderFushiSource.parseBookKey(m.id)) {
+            final String bookKey => visibility.hidesBook(bookKey),
+            null => false,
+          },
+        },
+      WidgetMediaKind.video => visibility.hidesVideo(m.id),
+      WidgetMediaKind.game => visibility.hidesGame(m.id),
+    };
   }
 
   Future<WidgetNowPlayingInput?> _collectNowPlaying(AppModel appModel) async {

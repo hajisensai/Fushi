@@ -3492,7 +3492,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                       // 封面模糊并排挂在导航器之上，对话框 / 菜单
                                       // 也读得到。
                                       child: MediaVisibilityHost(
-                                        child: MediaNsfwStateHost(child: child!),
+                                        child: MediaNsfwStateHost(
+                                          child: child!,
+                                        ),
                                       ),
                                     ),
                                   ),

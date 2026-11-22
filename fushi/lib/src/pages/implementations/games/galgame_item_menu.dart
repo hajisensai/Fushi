@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/privacy/media_nsfw.dart' show nsfwCollectionsContaining;
+import 'package:fushi_engine/privacy/media_nsfw.dart'
+    show nsfwCollectionsContaining;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';

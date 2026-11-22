@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -109,8 +110,15 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
     final bool apple = isGlassDesign(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     final double leadingWidth = apple ? metrics.leadingIconSize : 40;
+    // 上锁（未解锁）的合集不列（[MediaVisibility]，唯一的上锁过滤入口）。
+    final MediaVisibility lockVisibility = MediaVisibility.of(context);
     final List<MediaCollectionRow> visible = filterByMediaSearch(
-      _collections,
+      lockVisibility.hidesAnything
+          ? <MediaCollectionRow>[
+              for (final MediaCollectionRow c in _collections)
+                if (!lockVisibility.hidesCollection(c.id)) c,
+            ]
+          : _collections,
       _search.text,
       (MediaCollectionRow c) => <String>[c.name],
     );

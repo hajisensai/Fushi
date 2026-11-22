@@ -96,17 +96,18 @@ class MediaLockSnapshot {
     );
   }
 
-  static Future<Map<String, String>> _bookKeyByUid(FushiDatabase db) async =>
-      <String, String>{
-        for (final TypedResult r
-            in await (db.selectOnly(db.epubBooks)..addColumns(
-                  <Expression<Object>>[db.epubBooks.uid, db.epubBooks.bookKey],
-                ))
-                .get())
-          if (r.read(db.epubBooks.uid) case final String uid
-              when uid.isNotEmpty)
-            uid: r.read(db.epubBooks.bookKey)!,
-      };
+  static Future<Map<String, String>> _bookKeyByUid(
+    FushiDatabase db,
+  ) async => <String, String>{
+    for (final TypedResult r
+        in await (db.selectOnly(db.epubBooks)..addColumns(<Expression<Object>>[
+              db.epubBooks.uid,
+              db.epubBooks.bookKey,
+            ]))
+            .get())
+      if (r.read(db.epubBooks.uid) case final String uid when uid.isNotEmpty)
+        uid: r.read(db.epubBooks.bookKey)!,
+  };
 
   final Set<String> _books;
   final Set<String> _srtBooks;

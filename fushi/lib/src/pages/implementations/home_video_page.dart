@@ -1,4 +1,5 @@
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart'
     show MediaLinkEntry;
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
@@ -5932,6 +5933,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
+  /// 视频所属的（有效）合集上锁了：按文件夹 / 刮削归组的合集成员不一定在成员表
+  /// 里，快照的成员继承认不到，这里按页面算出的有效合集再问一次。
+  bool _hidesVideoByCollection(MediaVisibility visibility, VideoBookRow b) {
+    if (!visibility.hidesAnything) return false;
+    final int? collectionId = _effectiveCollectionIdForBook(b);
+    return collectionId != null && visibility.hidesCollection(collectionId);
+  }
+
   Widget _buildVideoLibraryBody() {
     return FutureBuilder<List<VideoBookRow>>(
       future: _future,
@@ -5946,7 +5955,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         // 首屏要列表与映射**都**到位才画真卡（见 [_libraryMapsReady]）；任一未到
         // 都画同几何骨架。后续刷新用旧列表 / 旧映射顶住，不闪屏。
         final bool firstPaintPending = loaded == null || !_libraryMapsReady;
-        final List<VideoBookRow> all = loaded ?? const <VideoBookRow>[];
+        // 上锁（未解锁）的视频与上锁合集里的视频先拿掉：之后的标签 / 搜索 / 筛选、
+        // 合集折叠、继续观看都只见到可见的条目。
+        final MediaVisibility visibility = MediaVisibility.of(context);
+        final List<VideoBookRow> all = <VideoBookRow>[
+          for (final VideoBookRow b in loaded ?? const <VideoBookRow>[])
+            if (!visibility.hidesVideo(b.bookUid) &&
+                !_hidesVideoByCollection(visibility, b))
+              b,
+        ];
         final Set<String>? filter = ref
             .watch(filteredVideoBookUidsProvider)
             .valueOrNull;

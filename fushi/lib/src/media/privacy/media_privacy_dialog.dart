@@ -417,7 +417,9 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                       icon: FushiIcon(_levelIcon(level), size: 18),
                       label: Text(
                         _levelLabel(level),
-                        key: ValueKey<String>('media-privacy-level-${level.name}'),
+                        key: ValueKey<String>(
+                          'media-privacy-level-${level.name}',
+                        ),
                       ),
                     ),
                 ],
@@ -457,7 +459,9 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                   : (bool v) => unawaited(_setNsfw(v)),
               contentPadding: EdgeInsets.zero,
               secondary: FushiIcon(
-                nsfwEffective ? FushiIcons.visibilityOff : FushiIcons.visibility,
+                nsfwEffective
+                    ? FushiIcons.visibilityOff
+                    : FushiIcons.visibility,
               ),
               title: Text(t.media_nsfw_switch),
               subtitle: Text(t.media_nsfw_hint),

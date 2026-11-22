@@ -84,6 +84,30 @@ class MusicLibrarySnapshot {
           if (t.albumUid == albumUid) t,
       ]);
 
+  /// 去掉 [hiddenAlbum] 判为藏起来的专辑与它们的曲目（上锁且未解锁的专辑，
+  /// 拍板台 qiqSbvdxrk；判据由调用方经 `MediaVisibility.hidesMusicAlbum` 给）。没有
+  /// 要藏的就原样返回。
+  MusicLibrarySnapshot withoutAlbums(
+    bool Function(String albumUid) hiddenAlbum,
+  ) {
+    if (!albums.any((MusicAlbumRow a) => hiddenAlbum(a.albumUid))) return this;
+    return MusicLibrarySnapshot(
+      albums: <MusicAlbumRow>[
+        for (final MusicAlbumRow a in albums)
+          if (!hiddenAlbum(a.albumUid)) a,
+      ],
+      tracks: <MusicTrackRow>[
+        for (final MusicTrackRow t in tracks)
+          if (t.albumUid == null || !hiddenAlbum(t.albumUid!)) t,
+      ],
+      artists: artists,
+      playlists: playlists,
+      discs: discByUid.values.toList(),
+      playlistTrackCounts: playlistTrackCounts,
+      remoteTracks: remoteTracks,
+    );
+  }
+
   /// [remoteAvailable] 缺省按真实平台的合规门（[musicRemoteTracksAvailable]）；[servers] 缺省
   /// 走进程级装配点 [musicServerBindingLoader]（只在有服务器曲目时才读）。
   static Future<MusicLibrarySnapshot> load(

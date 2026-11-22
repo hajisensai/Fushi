@@ -2,6 +2,7 @@ import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
@@ -485,9 +486,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     _reload();
   }
 
+  /// 上锁作品的显示口径（[MediaVisibility]）；变了（解锁 / 重新隐藏）重载成员。
+  MediaVisibility? _lockVisibility;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final MediaVisibility lockVisibility = MediaVisibility.of(context);
+    final MediaVisibility? previous = _lockVisibility;
+    _lockVisibility = lockVisibility;
+    if (previous != null && !identical(previous, lockVisibility)) {
+      unawaited(_reload());
+    }
     // ModalRoute.of 依赖路由的 isCurrent：上面压了播放页 / 播放页退回来都会
     // 通知到这里。
     final bool current = ModalRoute.of(context)?.isCurrent ?? true;
@@ -508,7 +518,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Future<void> _reload() async {
-    final List<CollectionEpisodeSlot> slots = await widget.loadEpisodes();
+    // 上锁（未解锁）的本地集不进成员槽：列表、继续观看、批量动作都见不到它。
+    final List<CollectionEpisodeSlot> slots = <CollectionEpisodeSlot>[
+      for (final CollectionEpisodeSlot slot in await widget.loadEpisodes())
+        if (slot.local == null ||
+            !(_lockVisibility ?? MediaVisibility.pending).hidesVideo(
+              slot.local!.bookUid,
+            ))
+          slot,
+    ];
     // 下面这一整段刮削 / 元数据解析全是**本地库**的事（sourceId 索引、集级刮削行、
     // 附加图），远端槽在本机没有行可查，故按本地子集跑，与远端支持引入前逐字节相同。
     final List<VideoBookRow> members = <VideoBookRow>[

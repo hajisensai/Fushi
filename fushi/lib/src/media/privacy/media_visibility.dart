@@ -113,9 +113,8 @@ final class MediaVisibility {
     : _pending = pending;
 
   /// 按快照藏上锁的作品（快照为空时等同 [all]）。
-  factory MediaVisibility.fromSnapshot(MediaLockSnapshot snapshot) => snapshot.isEmpty
-      ? all
-      : MediaVisibility._(snapshot, pending: false);
+  factory MediaVisibility.fromSnapshot(MediaLockSnapshot snapshot) =>
+      snapshot.isEmpty ? all : MediaVisibility._(snapshot, pending: false);
 
   /// 什么都不藏（已解锁 / 没有上锁作品 / 树上没挂 [MediaVisibilityHost]）。
   static const MediaVisibility all = MediaVisibility._(null, pending: false);

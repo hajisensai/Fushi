@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart'
     show DlsiteException;
 
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/metadata/music_dlsite_scraper.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
@@ -230,9 +231,13 @@ List<CtlRoute> buildMusicCtlRoutesFor({
     }
   }
 
+  /// 曲库快照；上锁（未解锁）的专辑与其曲目不给控制通道 / AI 助手看。
   Future<MusicLibrarySnapshot> snapshot() async {
     requireMusic();
-    return MusicLibrarySnapshot.load(database());
+    final FushiDatabase db = database();
+    return (await MusicLibrarySnapshot.load(
+      db,
+    )).withoutAlbums((await MediaVisibility.load(db)).hidesMusicAlbum);
   }
 
   Future<MusicTrackRow> requireTrack(CtlCall call) async {
