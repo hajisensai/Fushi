@@ -8,4 +8,5 @@
   - 没拿到用户的库，未在真库上跑 `gen4_dryrun` 复核 162960 行全部被认出；修复随下一个 debug 包发出后用户「重新升级」即是复核。
   - 跨归属组的同一事件（`caches.rs` `anki_duplicate_log_ids`，两张没有血统链接、可见性相同的卡）若两边留了不同的那份，归属卡也会不同，这一类仍照报差异（用户报告里 `canonicalStats` 无差异，说明没有发生）；需要时另按证据加。
   - 测试装置 `store/gen4/parity.rs` `imported_from` 不写 profile 的盐（真实迁移在 `dryrun.rs:586` 写），装置里带盐 ID 全部「没验上」、原值即规范值，所以几百个协议 3 场景的对拍从来覆盖不到带盐的别名差异，这次的 bug 因此没被装置发现。让装置也写盐是测试基础设施的扩面（会让全部场景按带盐口径重跑、可能冒出别的差异），单独做。
-- **备注**：第 7/10 步重建 6.8M 条操作耗时 1537 秒，慢的问题另看。junction 路径显示不算 bug。
+- **备注**：第 7/10 步重建 6.8M 条操作耗时 1537 秒，已拆成 [BUG-5137](BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md)。junction 路径显示不算 bug。
+- **重复修复**：PR #4077 曾另写一版（`representative_swaps` + `apply_swaps`，日志体只按规范 ID 查 `log_ix`，带盐库里查不到），与上面已合入的修复重复，合并 develop 时撤下，以本版为准。

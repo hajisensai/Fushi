@@ -40,6 +40,7 @@
 | [BUG-5133](bugs/BUG-5133-ios-inbox-adopt-splits-video-sidecar-stem.md) | ✅ | ✅ | ios-inbox-adopt-splits-video-sidecar-stem |
 > 共 4414 条。点号进各自文件。
 > 共 4488 条。点号进各自文件。
+> 共 4489 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -68,6 +69,7 @@
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
+| [BUG-5137](bugs/BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md) | 🚧 | 🚧 | gen4 迁移第 7/10 步重建在 683 万条操作的库上要 1537 秒 |
 | [BUG-5136](bugs/BUG-5136-loopback-shared-ring-stopped-by-other-holder.md) | ✅ | ✅ | loopback 一路被多方共用时，任何一方 stop（含失败 start 后的兜底 stop）都会停掉别人的环 |
 | [BUG-5135](bugs/BUG-5135-torrent-active-slots-hot-reset-zero.md) | ✅ | ✅ | 活跃下载 / 做种名额热更新回 0（引擎默认）不生效 |
 | [BUG-5134](bugs/BUG-5134-jimaku-season-filter.md) | ✅ | ✅ | 合集字幕只点第二季批量下载仍可能写入第一季字幕（Jimaku 把请求季号抄成候选季号） |
@@ -134,6 +136,7 @@
 | [BUG-5072](bugs/BUG-5072-completed-seeding-not-pausable.md) | ✅ | ✅ | 下载页已完成仍做种的视频任务无法暂停/恢复做种（单条与批量） |
 | [BUG-5071](bugs/BUG-5071-torrent-upload-block-starves-download.md) | ✅ | ✅ | 单种子停上传（分享率达标）用 set_upload_limit(1) 把下载一起饿死 |
 | [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
+| [BUG-5070](bugs/BUG-5070-dht-nodes-multi-endpoint-overwrite.md) | ✅ | ✅ | 双栈 / 多网卡下 DHT 节点数被后到的实例覆盖，误报「DHT 一直连不上任何节点」 |
 | [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5068](bugs/BUG-5068-interconnect-mdns-fallback-new-network.md) | ✅ | ✅ | 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它） |
 | [BUG-5067](bugs/BUG-5067-ios-flutter-logs-enospc-abort.md) | ✅ | ✅ | ios-flutter-logs-enospc-abort |

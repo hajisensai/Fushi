@@ -336,6 +336,7 @@ SettingsDestination buildMusicDestination() {
                   'unmatched': r.unmatched,
                   'failed': r.failed,
                   'byMethod': r.byMethod,
+                  'dlsite': r.dlsite.toJson(),
                 };
               },
             ),
@@ -621,6 +622,12 @@ Future<void> _identifyLibrary(SettingsContext c) async {
   FushiToast.show(msg: t.music_scrape_identifying);
   final MusicLibraryScrapeReport r = await c.appModel.musicScrape
       .scrapeLibrary();
+  if (r.dlsite.matched > 0) {
+    FushiToast.show(
+      msg: t.music_dlsite_library_done(count: r.dlsite.matched),
+      severity: ToastSeverity.success,
+    );
+  }
   FushiToast.show(
     msg: t.music_scrape_library_done(matched: r.matched, total: r.total),
     severity: r.failed > 0 ? ToastSeverity.warning : ToastSeverity.success,

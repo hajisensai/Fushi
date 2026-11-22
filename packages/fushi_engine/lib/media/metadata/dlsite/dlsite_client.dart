@@ -16,6 +16,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show IOException;
 
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
@@ -283,7 +284,12 @@ class DlsiteWork {
 
 /// 评分（ajax 端点）。
 class DlsiteRating {
-  const DlsiteRating({this.average, this.count, this.downloads});
+  const DlsiteRating({
+    this.average,
+    this.count,
+    this.downloads,
+    this.wishlists,
+  });
 
   /// 平均分，满分 5（`rate_average_2dp`）。
   final double? average;
@@ -293,6 +299,9 @@ class DlsiteRating {
 
   /// 销量（下载数）。
   final int? downloads;
+
+  /// 收藏数（加入愿望单的人数，`wishlist_count`）。
+  final int? wishlists;
 
   /// 归一到 0-10（与 galgame 评分列同口径）。
   double? get scoreOutOfTen => average == null ? null : average! * 2;
@@ -402,8 +411,19 @@ DlsiteRating? parseDlsiteRatingJson(String body, DlsiteWorkId id) {
       _double(entry['rate_average_2dp']) ?? _double(entry['rate_average']);
   final int? count = _asInt(entry['rate_count']);
   final int? downloads = _asInt(entry['dl_count']);
-  if (average == null && count == null && downloads == null) return null;
-  return DlsiteRating(average: average, count: count, downloads: downloads);
+  final int? wishlists = _asInt(entry['wishlist_count']);
+  if (average == null &&
+      count == null &&
+      downloads == null &&
+      wishlists == null) {
+    return null;
+  }
+  return DlsiteRating(
+    average: average,
+    count: count,
+    downloads: downloads,
+    wishlists: wishlists,
+  );
 }
 
 /// 解析 suggest 端点。
@@ -490,25 +510,31 @@ class DlsiteClient {
     DlsiteWorkId id, {
     bool withRating = false,
   }) async {
-    final Uri uri =
-        Uri.parse('$baseUrl/${id.site.pathSegment}/api/=/product.json').replace(
-          queryParameters: <String, String>{
-            'workno': id.value,
-            'locale': locale,
-          },
-        );
-    final DlsiteWork? work = parseDlsiteProductJson(await _get(uri), id);
+    final DlsiteWork? work = parseDlsiteProductJson(
+      await fetchProductBody(id),
+      id,
+    );
     if (work == null || !withRating) return work;
     return work.withRating(await fetchRating(id));
   }
 
   /// 抓评分 / 销量。查无此作返回 null。
-  Future<DlsiteRating?> fetchRating(DlsiteWorkId id) async {
-    final Uri uri = Uri.parse(
+  Future<DlsiteRating?> fetchRating(DlsiteWorkId id) async =>
+      parseDlsiteRatingJson(await fetchRatingBody(id), id);
+
+  /// product.json 的原始响应体（调用方要落原始快照时用，解析交 [parseDlsiteProductJson]）。
+  Future<String> fetchProductBody(DlsiteWorkId id) => _get(
+    Uri.parse('$baseUrl/${id.site.pathSegment}/api/=/product.json').replace(
+      queryParameters: <String, String>{'workno': id.value, 'locale': locale},
+    ),
+  );
+
+  /// 评分端点的原始响应体（解析交 [parseDlsiteRatingJson]）。
+  Future<String> fetchRatingBody(DlsiteWorkId id) => _get(
+    Uri.parse(
       '$baseUrl/${id.site.pathSegment}/product/info/ajax',
-    ).replace(queryParameters: <String, String>{'product_id': id.value});
-    return parseDlsiteRatingJson(await _get(uri), id);
-  }
+    ).replace(queryParameters: <String, String>{'product_id': id.value}),
+  );
 
   /// 按名搜作品。[categories] 非空时只留这些大类（如 galgame 只要 [DlsiteWorkCategory.game]）。
   /// 输入本身就是作品编号时直接返回该编号的候选（标题取详情）。
@@ -570,6 +596,12 @@ class DlsiteClient {
       throw DlsiteException('request timed out: ${uri.path}');
     } on http.ClientException catch (e) {
       throw DlsiteException('network error: ${e.message}');
+    } on IOException catch (e) {
+      // `IOClient` 只把 SocketException / HttpException 包成 ClientException；TLS 握手
+      // 失败（HandshakeException，代理 / 证书问题）等其它传输层错误原样漏出。这里一并
+      // 归成 DlsiteException：调用方（专辑页、整库识别的 DLsite 段）只按它处理网络失败，
+      // 漏出去会打断整段曲库识别。
+      throw DlsiteException('network error: $e');
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw DlsiteException(
