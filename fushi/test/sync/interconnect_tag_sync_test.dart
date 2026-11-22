@@ -732,4 +732,43 @@ void main() {
       expect(await names(clientDb.getTagsForVideoBook('v')), <String>{'重温'});
     });
   });
+
+  group('作品上锁标记（拍板台 qiqSbvdxrk）', () {
+    test('TagManifestEntry JSON：locked 往返；缺省不出键', () {
+      const TagManifestEntry e = TagManifestEntry(
+        kind: 'game',
+        key: 'g',
+        locked: (lockedAt: 10, clearedAt: 20),
+      );
+      final TagManifestEntry back = TagManifestEntry.fromJson(e.toJson());
+      expect(back.locked, (lockedAt: 10, clearedAt: 20));
+      expect(back.nsfw, isNull);
+      expect(e.toJson()['locked'], <String, int>{'set': 10, 'cleared': 20});
+      const TagManifestEntry none = TagManifestEntry(kind: 'game', key: 'g');
+      expect(none.toJson().containsKey('locked'), isFalse);
+      expect(TagManifestEntry.fromJson(none.toJson()).locked, isNull);
+    });
+
+    test('只上锁的视频也进清单；到对端后生效，解锁也传回', () async {
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      await seedVideo(a, 'ep1');
+      await seedVideo(b, 'ep1');
+      await a.setMediaLocked(TagHostKind.video, 'ep1', true, at: 1000);
+
+      await syncPair(b, a);
+      expect(await b.isMediaLocked(TagHostKind.video, 'ep1'), isTrue);
+
+      await b.setMediaLocked(TagHostKind.video, 'ep1', false, at: 2000);
+      await syncPair(a, b);
+      expect(await a.isMediaLocked(TagHostKind.video, 'ep1'), isFalse);
+      expect(
+        tagManifestCovers(
+          await loadLocalTagManifest(b),
+          await loadLocalTagManifest(a),
+        ),
+        isTrue,
+      );
+    });
+  });
 }

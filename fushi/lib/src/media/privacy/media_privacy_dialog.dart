@@ -415,12 +415,7 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
                       // 低于继承下限的选项改不动（要到合集 / 来源库里改）。
                       enabled: loaded && !_writing && level >= floor,
                       icon: FushiIcon(_levelIcon(level), size: 18),
-                      label: Text(
-                        _levelLabel(level),
-                        key: ValueKey<String>(
-                          'media-privacy-level-${level.name}',
-                        ),
-                      ),
+                      label: Text(_levelLabel(level)),
                     ),
                 ],
                 selected: loaded
