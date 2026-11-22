@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T17:49:14Z",
+ "generatedAt": "2026-11-22T17:58:41Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
    "unknown": false,
-   "publishedAt": "2026-11-22T17:49:01Z",
+   "publishedAt": "2026-11-22T17:58:30Z",
    "testflight": false,
    "baseSeq": 31474,
    "prs": [
@@ -39,8 +39,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071038"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -143,37 +142,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31366,
-   "version": "3.4.0",
-   "sha": "8ea6084e7dcd5e6b34ac7010bc9eb46ed48fc243",
-   "unknown": false,
-   "publishedAt": "2026-11-22T13:20:15Z",
-   "testflight": false,
-   "baseSeq": 31363,
-   "prs": [
-    4167
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
-    }
-   }
   }
  ],
  "pending": null,
@@ -185,15 +153,6 @@
    "mergedAt": "2026-11-22T13:37:46Z",
    "additions": 3119,
    "deletions": 651,
-   "labels": []
-  },
-  "4167": {
-   "number": 4167,
-   "title": "fix(srs): 升级失败的原因只由内核判定（BUG-5214）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T12:15:37Z",
-   "additions": 941,
-   "deletions": 425,
    "labels": []
   },
   "4169": {
