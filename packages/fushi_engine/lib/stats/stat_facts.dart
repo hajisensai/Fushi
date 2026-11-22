@@ -5,6 +5,8 @@ import 'package:drift/drift.dart';
 import 'package:drift/isolate.dart' show DriftIsolate;
 import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/stats/stat_derive.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalLanguageScope;
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_srs/fushi_srs.dart'
     show SrsColumns, SrsCore, SrsIntColumn;
@@ -774,10 +776,17 @@ Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
 /// 游戏日目标恒 0、与上方热力图对不上（BUG-1993）——现在函数只按 dateKey 求和，
 /// 域由调用方传的行集决定，没有特殊情况。目标偏好键沿用 `readingGoalDailyChars`
 /// （存量持久化名冻结，语义已是学习目标）。
-int studyGoalCharsForDay(Iterable<StatFact> daily, String dateKey) {
+///
+/// [scope] 是目标的语言范围（`study_goal_language.dart`）：开了「只算目标语言」时
+/// 跳过内容语言已知且不同的媒体；缺省不过滤。
+int studyGoalCharsForDay(
+  Iterable<StatFact> daily,
+  String dateKey, {
+  StudyGoalLanguageScope scope = StudyGoalLanguageScope.all,
+}) {
   int total = 0;
   for (final StatFact f in daily) {
-    if (f.dateKey == dateKey) total += f.chars;
+    if (f.dateKey == dateKey && scope.includes(f)) total += f.chars;
   }
   return total;
 }

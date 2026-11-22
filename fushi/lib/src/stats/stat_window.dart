@@ -6,7 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 实际含 8 个自然日、「近 30 天」含 31 天，而环比的「上周」窗口 `[now-14d, now-7d)`
 /// 恰 7 天——本周系统性偏大、环比结构性偏正（阅读页 / 视频页 / 游戏页 / 首页各一份，
 /// 还互相不一致）。这里只有一个定义：`days(n)` = 含今日在内的 **恰 n 个自然日**；
-/// 「本周」= 自然周（周一起，2026-10-09），上周 = 上周同期（与本周已过天数同长）。
+/// 「本周」= 自然周（起始日 = [weekStartDay]，缺省周一，2026-10-09；2026-11 起可在
+/// 设置 › 目标 › 计数里改成周日 / 周六），上周 = 上周同期（与本周已过天数同长）。
 ///
 /// dateKey 是零填充的 `yyyy-MM-dd`，字典序即时间序，比较全走字符串。
 ///
@@ -19,8 +20,11 @@ class StatWindow {
 
   StatWindow._(DateTime now, String today)
     : todayKey = today,
-      weekFromKey = mondayOf(today),
-      prevWeekFromKey = FushiDatabase.statDateKeyPlusDays(mondayOf(today), -7),
+      weekFromKey = weekStartOf(today),
+      prevWeekFromKey = FushiDatabase.statDateKeyPlusDays(
+        weekStartOf(today),
+        -7,
+      ),
       prevWeekToKey = FushiDatabase.statDateKeyPlusDays(today, -7),
       monthFromKey = _keyDaysAgo(now, 29),
       _now = now;
@@ -35,13 +39,13 @@ class StatWindow {
   /// 今日。
   final String todayKey;
 
-  /// 本周起点（含）= 今日所在**自然周的周一**（统计日口径）：`[weekFromKey,
-  /// todayKey]` 是本周已过的 1–7 天。与统计中心范围条「周」粒度（`StatRange`，
-  /// 周一起）同一口径——2026-10-09 起「本周」只有这一个意思（此前是滚动近 7 天，
-  /// 与范围条的「周」数字对不上）。滚动近 7 天用 [lastDayKeys]`(7)`。
+  /// 本周起点（含）= 今日所在**自然周的第一天**（[weekStartOf]，统计日口径）：
+  /// `[weekFromKey, todayKey]` 是本周已过的 1–7 天。与统计中心范围条「周」粒度
+  /// （`StatRange`）同一口径——2026-10-09 起「本周」只有这一个意思（此前是滚动近
+  /// 7 天，与范围条的「周」数字对不上）。滚动近 7 天用 [lastDayKeys]`(7)`。
   final String weekFromKey;
 
-  /// 上周同期起点（含）= 上周一。
+  /// 上周同期起点（含）= 上周的第一天。
   final String prevWeekFromKey;
 
   /// 上周同期终点（含）= 今日 - 7 天：`[prevWeekFromKey, prevWeekToKey]` 与本周
@@ -76,12 +80,29 @@ class StatWindow {
   static Duration untilNextStatDayBoundary(DateTime now) =>
       FushiDatabase.untilNextStatDayBoundary(now);
 
-  /// [dateKey] 所在自然周的周一（dateKey 口径）。[weekFromKey] 与桌面小组件的
-  /// 周目标分子（`widget_snapshot.dart`）都从这一处取，「本周」只有一个定义。
-  static String mondayOf(String dateKey) => FushiDatabase.statDateKeyPlusDays(
-    dateKey,
-    -(FushiDatabase.statDateKeyToDay(dateKey).weekday - DateTime.monday),
-  );
+  /// 一周从星期几开始（[DateTime.monday] / [DateTime.sunday] / [DateTime.saturday]…，
+  /// 1–7）。偏好 `stat_week_start`（随 Profile）的镜像：AppModel 在偏好加载后、切
+  /// Profile 与用户改设置时写这里，与 [FushiDatabase.statDayResetHour] 同一种做法
+  /// ——它和日界一样是「统计日 key → 窗口」派生的输入，各处窗口谓词不该各自读偏好。
+  static int weekStartDay = DateTime.monday;
+
+  /// [dateKey] 所在自然周的第一天（dateKey 口径，周起始日 = [weekStartDay]）。
+  /// [weekFromKey]、学习目标的周窗口（`study_goal_period.dart`，首页 / 小组件 / 统计
+  /// 页同一个分子）与范围条的「周」都从这一处取，「本周」只有一个定义。
+  static String weekStartOf(String dateKey) {
+    final int weekday = FushiDatabase.statDateKeyToDay(dateKey).weekday;
+    return FushiDatabase.statDateKeyPlusDays(dateKey, -dayOfWeek(weekday));
+  }
+
+  /// [weekday]（[DateTime.weekday]，1 = 周一 … 7 = 周日）在本周里是第几天
+  /// （0 = 周起始日 [weekStartDay] … 6）。热力图的行、趋势的周桶、小组件热力图的
+  /// 首行偏移都从这里取，不各自假设周一。
+  static int dayOfWeek(int weekday) => (weekday - weekStartDay) % 7;
+
+  /// [day]（日历日，本地午夜）所在自然周的第一天（本地午夜）。按日历日做加减，
+  /// 不受夏令时切换影响。
+  static DateTime weekStartOfDay(DateTime day) =>
+      DateTime(day.year, day.month, day.day - dayOfWeek(day.weekday));
 
   static String _keyDaysAgo(DateTime now, int days) =>
       FushiDatabase.statDateKeyPlusDays(

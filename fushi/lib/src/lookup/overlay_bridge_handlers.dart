@@ -22,6 +22,7 @@ import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_preview.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -158,6 +159,30 @@ bool maybeHandleOverlayDeferredBridge({
       return true;
     case 'overwriteTargetNoteId':
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
+      return true;
+    // 跨应用语音缓存 · 制卡前试听 + 调起止（拍板 design-cross-app-audio-trim-ui）：
+    // popup.js 的「调整句子音频」面板画在这张查词卡自己的 WebView 里（不抢游戏前台
+    // 焦点），这两根桥只给数据——有没有录到声音、波形 + 默认区间 + 试听 WAV。用户拖出的
+    // 起止随 mineEntry / updateEntry 字段里的覆盖项回来，没有新的写路径。
+    case 'crossAppAudioAvailable':
+      unawaited(
+        _resolveBridgeValue(
+          message,
+          resolveBridge,
+          () => crossAppAudioAvailableReply(sentenceAudio),
+          fallback: false,
+        ),
+      );
+      return true;
+    case 'crossAppAudioPreview':
+      unawaited(
+        _resolveBridgeValue(
+          message,
+          resolveBridge,
+          () => crossAppAudioPreviewReply(sentenceAudio),
+          fallback: null,
+        ),
+      );
       return true;
     case 'updateEntry':
       unawaited(
@@ -498,7 +523,7 @@ Future<Map<String, Object?>> _mineEntry(
   final ({String gameId, String? title})? game =
       overlayMinedSentenceGameOrigin();
   final ({String path, Directory dir})? audio =
-      await prepareOverlaySentenceAudio(sentenceAudio);
+      await prepareOverlaySentenceAudio(sentenceAudio, fields: fields);
   final MineOutcome outcome;
   try {
     outcome = await repo.mineEntry(
@@ -956,7 +981,7 @@ Future<Map<String, Object?>> _updateEntry(
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.miningAnkiRepository;
   final ({String path, Directory dir})? audio =
-      await prepareOverlaySentenceAudio(sentenceAudio);
+      await prepareOverlaySentenceAudio(sentenceAudio, fields: fields);
   final MineOutcome outcome;
   try {
     outcome = await repo.updateMinedNote(
@@ -985,17 +1010,43 @@ Future<Map<String, Object?>> _updateEntry(
   };
 }
 
+/// 只读数据桥的通用收尾：算 [compute]，异常记日志回 [fallback]；有 `__bridgeId` 才回包。
+/// 永远回包，popup.js 那头的 await 不会挂住。
+Future<void> _resolveBridgeValue(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+  Future<Object?> Function() compute, {
+  required Object? fallback,
+}) async {
+  final int? id = _bridgeIdOf(message);
+  Object? value = fallback;
+  try {
+    value = await compute();
+  } on Exception catch (error, stack) {
+    ErrorLogService.instance.log('overlay.crossAppAudioBridge', error, stack);
+  }
+  if (id != null) unawaited(resolveBridge(id, value));
+}
+
 /// 跨应用语音缓存：把应用外查词那一刻钉住的 [snapshot] 截出查词前最后一句语音、编码成
 /// 句子音频（拍板 design-cross-app-audio-desktop）。没开缓存 / 快照已被顶替 / 整段静音 /
 /// 编码失败返回 null——这张卡照常制，只是不带句子音频。调用方制卡后删 `dir`。
+///
+/// [fields] 是这次制卡的字段：查词卡「调整句子音频」面板拖出的起止偏移（或高级制卡的
+/// 「不要句子音频」）作为 [MiningRequestOverrides] 随它而来（拍板
+/// design-cross-app-audio-trim-ui）。
 Future<({String path, Directory dir})?> prepareOverlaySentenceAudio(
-  Future<CrossAppAudioSnapshot?>? snapshot,
-) async {
+  Future<CrossAppAudioSnapshot?>? snapshot, {
+  Map<String, String> fields = const <String, String>{},
+}) async {
   if (snapshot == null) return null;
   try {
     final CrossAppAudioSnapshot? taken = await snapshot;
     if (taken == null) return null;
-    return await CrossAppAudioCapture.instance.prepareSentenceAudio(taken);
+    return await CrossAppAudioCapture.instance.prepareSentenceAudio(
+      taken,
+      overrides: MiningRequestOverrides.readFrom(fields),
+    );
   } on Exception catch (error, stack) {
     // 句子音频是附加项：取不到要留痕，但不能让整张卡制不出来。
     ErrorLogService.instance.log('overlay.crossAppAudio', error, stack);

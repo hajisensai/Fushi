@@ -459,6 +459,8 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        // 上锁作品的系统验证（API 24–28 的确认锁屏页）。
+        if (DeviceOwnerAuthChannel.onActivityResult(requestCode, resultCode)) return;
         if (requestCode == SAF_PICK_DIR_REQUEST) {
             if (pendingSafResult == null) return;
             final MethodChannel.Result safResult = pendingSafResult;
@@ -654,6 +656,8 @@ public class MainActivity extends AudioServiceActivity {
         // 文件分享：Dart 侧先异步落好快照，这里只拼 Intent，主线程不做文件 I/O（BUG-4740）。
         FushiShareChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
+        // 上锁作品解锁的系统验证（生物识别 / 设备锁屏，拍板台 qiqSbvdxrk）。
+        DeviceOwnerAuthChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         // 墨水屏全刷的厂商 EPD 通道（反射探测，需要 Activity 的 decorView）。
         EinkRefreshChannel.registerWith(flutterEngine, this);

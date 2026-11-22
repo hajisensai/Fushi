@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 
 StatDayData _day(String dateKey, int chars, int ms) =>
     StatDayData(dateKey: dateKey)
@@ -206,18 +207,41 @@ void main() {
       expect(pts[2].bucketKey, '2026-06-22');
     });
 
-    test('weekly granularity buckets by ISO week, sorted ascending', () {
-      final List<StatTrendPoint> pts = aggregateTrend(
-        daily,
-        StatTrendGranularity.weekly,
-      );
-      expect(pts.length, 2);
-      expect(pts[0].bucketKey, '2026-W25');
-      expect(pts[0].chars, 300); // 100 + 200
-      expect(pts[0].ms, 7200000);
-      expect(pts[0].label, 'W25');
-      expect(pts[1].bucketKey, '2026-W26');
-      expect(pts[1].chars, 300);
+    test(
+      'weekly granularity buckets by Monday weeks (ISO labels), sorted ascending',
+      () {
+        final List<StatTrendPoint> pts = aggregateTrend(
+          daily,
+          StatTrendGranularity.weekly,
+        );
+        expect(pts.length, 2);
+        expect(pts[0].bucketKey, '2026-06-15');
+        expect(pts[0].chars, 300); // 100 + 200
+        expect(pts[0].ms, 7200000);
+        expect(pts[0].label, 'W25');
+        expect(pts[1].bucketKey, '2026-06-22');
+        expect(pts[1].chars, 300);
+      },
+    );
+
+    test('weekly buckets follow the week start setting (Sunday)', () {
+      StatWindow.weekStartDay = DateTime.sunday;
+      addTearDown(() => StatWindow.weekStartDay = DateTime.monday);
+      // 周日起：06-14（日）… 06-20（六）一周，06-21（日）起下一周。
+      final List<StatTrendPoint> pts = aggregateTrend(<StatDayData>[
+        _day('2026-06-15', 100, 0),
+        _day('2026-06-20', 200, 0),
+        _day('2026-06-21', 300, 0),
+      ], StatTrendGranularity.weekly);
+      expect(pts.map((StatTrendPoint p) => p.bucketKey), <String>[
+        '2026-06-14',
+        '2026-06-21',
+      ]);
+      expect(pts.map((StatTrendPoint p) => p.chars), <int>[300, 300]);
+      expect(pts.map((StatTrendPoint p) => p.label), <String>[
+        '06-14',
+        '06-21',
+      ]);
     });
 
     test('monthly granularity buckets by month', () {

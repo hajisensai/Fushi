@@ -511,4 +511,142 @@ void main() {
       expect(_isValidWgcLifecycleLog(successLog), isTrue);
     });
   });
+
+  // BUG-5186: minimizing / hiding the main window left composition-mode
+  // WebView2 proxy windows (Chrome_WidgetWin_1) hit-testable on the desktop,
+  // swallowing clicks. Host visibility is synced from the top-level window;
+  // the WS_CHILD host (BUG-3871) is positioned in Flutter-view client pixels.
+  group('composition host visibility and position (BUG-5186)', () {
+    const String pkg = 'packages/flutter_inappwebview_windows/windows';
+    String readPkg(String rel) =>
+        _read(<String>['$pkg/$rel', '../$pkg/$rel'], rel);
+
+    /// Slices a C++ member function body: from [signature] to the first
+    /// closing brace at member indentation ("\n  }\n").
+    String fn(String src, String signature) => _body(src, signature, '\n  }\n');
+
+    test('manager forwards top-level show/hide/minimize without consuming '
+        'messages, never caches registration-time visibility, and '
+        'unregisters', () {
+      final String hdr = readPkg('in_app_webview/in_app_webview_manager.h');
+      final String src = readPkg('in_app_webview/in_app_webview_manager.cpp');
+      final String ctor = _body(
+        src,
+        'InAppWebViewManager::InAppWebViewManager(',
+        'void InAppWebViewManager::HandleMethodCall(',
+      );
+      final String delegate = ctor.substring(
+        ctor.indexOf('host_window_proc_delegate_id_ ='),
+      );
+      expect(delegate, contains('RegisterTopLevelWindowProcDelegate('));
+      // WM_WINDOWPOSCHANGED is the one message every show / hide / minimize /
+      // restore goes through (window_manager eats WM_SIZE SIZE_MINIMIZED).
+      expect(delegate, contains('WM_WINDOWPOSCHANGED'));
+      expect(delegate, contains('SWP_HIDEWINDOW'));
+      expect(delegate, contains('IsIconic'));
+      // A child of the Flutter view moves with the top-level window; WM_MOVE
+      // duplicated WM_WINDOWPOSCHANGED on every drag step.
+      expect(delegate, isNot(contains('WM_MOVE')));
+      // Observe only: never swallow the main window's messages.
+      expect(delegate, contains('return std::nullopt;'));
+      expect(
+        RegExp(r'return\s+(0|TRUE|FALSE|\d+)\s*;').hasMatch(delegate),
+        isFalse,
+      );
+
+      // Plugins register before the main window is shown, so a cached
+      // registration-time flag would start every WebView hidden.
+      expect(hdr, isNot(contains('host_window_visible_')));
+      final String create = _body(
+        src,
+        'void InAppWebViewManager::createInAppWebView(',
+        'void InAppWebViewManager::disposeKeepAlive(',
+      );
+      expect(
+        'setHostWindowVisible(isHostWindowVisible())'.allMatches(create).length,
+        2,
+        reason: 'keepAlive reuse and fresh create both read live host state',
+      );
+
+      final String visitors = fn(
+        src,
+        'void InAppWebViewManager::forEachManagedWebView(',
+      );
+      expect(visitors, contains('keepAliveWebViews'));
+
+      final String dtor = _body(
+        src,
+        'InAppWebViewManager::~InAppWebViewManager()',
+        'void InAppWebViewManager::releaseSharedCompositionResources()',
+      );
+      expect(
+        dtor,
+        contains(
+          'UnregisterTopLevelWindowProcDelegate(host_window_proc_delegate_id_)',
+        ),
+      );
+    });
+
+    test('WebView visibility = host visible AND not paused', () {
+      final String src = readPkg('in_app_webview/in_app_webview.cpp');
+      final String resume = fn(src, 'void InAppWebView::resume()');
+      expect(resume, contains('surface_ && !hostWindowVisible_'));
+
+      final String setVisible = fn(
+        src,
+        'void InAppWebView::setHostWindowVisible(bool visible)',
+      );
+      expect(setVisible, contains('if (!isPaused_)'));
+      expect(setVisible, contains('put_IsVisible(TRUE)'));
+      expect(setVisible, contains('put_IsVisible(FALSE)'));
+
+      final String createSurface = _body(
+        src,
+        'bool InAppWebView::createSurface(',
+        'return true;\n  }',
+      );
+      expect(createSurface, contains('hostWindowVisible_ && !isPaused_'));
+      expect(
+        createSurface,
+        isNot(
+          contains(RegExp(r'webViewController->put_IsVisible\((true|TRUE)\)')),
+        ),
+      );
+    });
+
+    test('host HWND sits at Flutter-view client coords: logical * window DPR, '
+        'unclamped', () {
+      final String pv = readPkg('custom_platform_view/custom_platform_view.cc');
+      final String setPosCall = _body(
+        pv,
+        'method_name.compare(kMethodSetPosition) == 0',
+        'return result->Success();',
+      );
+      expect(setPosCall, contains('std::isfinite(x)'));
+      expect(setPosCall, isNot(contains('static_cast<size_t>')));
+
+      final String src = readPkg('in_app_webview/in_app_webview.cpp');
+      final String sync = fn(
+        src,
+        'void InAppWebView::syncCompositionHostPosition()',
+      );
+      expect(sync, contains('deviceScaleFactor_'));
+      // captureScaleFactor_ is the texture raster scale (dpr x ancestor
+      // scale), not the window DPR; clamping pushed popups / IME anchors off
+      // when the UI scale != 100% or the WebView was scrolled partly out.
+      expect(sync, isNot(contains('captureScaleFactor_')));
+      expect(sync, isNot(contains('std::clamp')));
+      expect(sync, isNot(contains('GetWindowRect')));
+      expect(sync, isNot(contains('SM_CYCAPTION')));
+      expect(sync, contains('NotifyParentWindowPositionChanged()'));
+
+      // Top-level moves carry the child along: only notify WebView2.
+      final String bounds = fn(
+        src,
+        'void InAppWebView::onHostWindowBoundsChanged()',
+      );
+      expect(bounds, isNot(contains('SetWindowPos')));
+      expect(bounds, contains('NotifyParentWindowPositionChanged()'));
+    });
+  });
 }

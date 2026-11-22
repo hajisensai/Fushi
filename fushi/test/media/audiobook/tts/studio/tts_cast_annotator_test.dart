@@ -702,4 +702,73 @@ void main() {
       expect(recent[recent.length - 3], (speaker: 'エミリア', text: '「台詞7」'));
     });
   });
+
+  group('回复可用性校验', () {
+    test('第一遍回复：缺数组 / 复读 / 非空全废判错，空数组 `[]` 与有效操作放行', () {
+      expect(ttsRosterReplyFailureReason(null), 'no JSON array');
+      expect(
+        ttsRosterReplyFailureReason((
+          ops: const <TtsRosterOp>[],
+          rawCount: 1,
+          looping: true,
+        )),
+        'looping output',
+      );
+      expect(
+        ttsRosterReplyFailureReason(parseTtsRosterReply('[{"bad":1}]')),
+        'no usable entries',
+      );
+      expect(ttsRosterReplyFailureReason(parseTtsRosterReply('[]')), isNull);
+      expect(
+        ttsRosterReplyFailureReason(
+          parseTtsRosterReply('[{"op":"add","name":"スバル"}]'),
+        ),
+        isNull,
+      );
+    });
+
+    test('第二遍回复：缺数组 / 复读 / 非空全废判错，空数组 `[]` 放行', () {
+      expect(ttsCastReplyFailureReason(null), 'no JSON array');
+      expect(
+        ttsCastReplyFailureReason((
+          labels: const <TtsCastLabel>[],
+          rawCount: 1,
+          looping: true,
+        )),
+        'looping output',
+      );
+      expect(
+        ttsCastReplyFailureReason(
+          parseTtsCastReply('[{"i":99,"s":"スバル"}]', 3, speakers: _index),
+        ),
+        'no usable entries',
+      );
+      expect(
+        ttsCastReplyFailureReason(
+          parseTtsCastReply(
+            '[{"line":1,"speaker":"スバル"}]',
+            3,
+            speakers: _index,
+          ),
+        ),
+        'no usable entries',
+      );
+      // 块内哪怕含独立书名 / 标牌（如『書名』、「立ち入り禁止」），模型按规则返回 [] 也不应判为坏输出。
+      final TtsCastChunk standaloneQuotedChunk = _chunk(<TtsPlanSentence>[
+        _s(0, 0, '『ドレスな僕がやんごとなき方々の家庭教師様な件』'),
+        _s(0, 30, '「立ち入り禁止」'),
+      ]);
+      expect(standaloneQuotedChunk.hasDialogue, isTrue);
+      expect(
+        ttsCastReplyFailureReason(parseTtsCastReply('[]', 2, speakers: _index)),
+        isNull,
+      );
+      expect(
+        ttsCastReplyFailureReason(
+          parseTtsCastReply('[{"i":1,"s":"スバル"}]', 3, speakers: _index),
+        ),
+        isNull,
+      );
+    });
+  });
 }

@@ -1,4 +1,5 @@
 import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-894：为一条 EPUB-backed 有声书补写配对的 srt_books 行。
 ///
@@ -16,8 +17,12 @@ import 'package:fushi_audio/fushi_audio_core.dart';
 /// 原寄生在 book_import_dialog.dart 里被反向依赖，迁出到共享目录（审计 §1-K）。
 String epubBackedSrtBookUid(String bookKey) => 'srtbook_epub_$bookKey';
 
+///
+/// 配对行与「继承原书所属合集」（[FushiDatabase.inheritPairedSrtCollections]）同一
+/// 事务落库：书架上 SRT 卡顶替原书卡，配对行一出现就必须已在原书的合集里，否则这一
+/// 卷脱离合集变散卡、合集详情页少一卷。
 Future<void> writeEpubBackedSrtBook({
-  required SrtBookRepository repo,
+  required FushiDatabase db,
   required String bookKey,
   required String title,
   required String? author,
@@ -25,6 +30,7 @@ Future<void> writeEpubBackedSrtBook({
   required List<String> audioPaths,
 }) async {
   final String uid = epubBackedSrtBookUid(bookKey);
+  final SrtBookRepository repo = SrtBookRepository(db);
   // Re-import of the same bookKey must update the existing paired row in place
   // (idempotent), not collide on UNIQUE(uid).
   // BUG-1678：行已存在时走**局部更新**，只写本次真的带来的列。以前这里凭空造
@@ -35,28 +41,31 @@ Future<void> writeEpubBackedSrtBook({
   // 手抄一遍「把旧值搬过来」也能修，但那是纪律不是结构：新增列照样会漏抄。
   // `importedAt` 是原始入库时刻（跨设备保留、导入时间排序用），只在建行时写：换字幕 /
   // 换音频重新对齐不是新导入，不能让这本书在本机和对端书架上跳到「刚导入」。
-  final bool patched = await repo.patchByUid(
-    uid,
-    title: title,
-    srtPath: srtPath,
-    bookKey: bookKey,
-    author: author,
-    audioPaths: audioPaths.isNotEmpty ? List<String>.of(audioPaths) : null,
-  );
-  if (patched) return;
-
-  // 行不存在：这才是真正的整行创建。cover_path 刻意留空（见上文）。
-  final SrtBook book = SrtBook()
-    ..uid = uid
-    ..title = title
-    ..srtPath = srtPath
-    ..importedAt = DateTime.now().millisecondsSinceEpoch
-    ..bookKey = bookKey;
-  if (audioPaths.isNotEmpty) {
-    book.audioPaths = List<String>.of(audioPaths);
-  }
-  if (author != null) {
-    book.author = author;
-  }
-  await repo.save(book);
+  await db.transaction(() async {
+    final bool patched = await repo.patchByUid(
+      uid,
+      title: title,
+      srtPath: srtPath,
+      bookKey: bookKey,
+      author: author,
+      audioPaths: audioPaths.isNotEmpty ? List<String>.of(audioPaths) : null,
+    );
+    if (!patched) {
+      // 行不存在：这才是真正的整行创建。cover_path 刻意留空（见上文）。
+      final SrtBook book = SrtBook()
+        ..uid = uid
+        ..title = title
+        ..srtPath = srtPath
+        ..importedAt = DateTime.now().millisecondsSinceEpoch
+        ..bookKey = bookKey;
+      if (audioPaths.isNotEmpty) {
+        book.audioPaths = List<String>.of(audioPaths);
+      }
+      if (author != null) {
+        book.author = author;
+      }
+      await repo.save(book);
+    }
+    await db.inheritPairedSrtCollections(srtUid: uid);
+  });
 }

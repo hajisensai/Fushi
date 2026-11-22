@@ -88,11 +88,12 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       row,
       chapterDigest,
     );
-    final int count = await source.reader.chapterPageCount(
+    final List<String?> keys = await source.reader.chapterPageKeys(
       bookKey: row.bookKey,
       sourceMetadata: source.sourceMetadata,
       chapter: source.chapter,
     );
+    final int count = keys.length;
     if (count <= 0) {
       throw StateError(
         'online manga chapter has no pages: $bookKey/$chapterDigest',
@@ -104,7 +105,13 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       readingMode: row.mangaReadingMode,
       pages: <RemoteMangaPageInfo>[
         for (int i = 0; i < count; i++)
-          RemoteMangaPageInfo(index: i, name: '$i', width: 0, height: 0),
+          RemoteMangaPageInfo(
+            index: i,
+            name: '$i',
+            width: 0,
+            height: 0,
+            key: keys[i] == null ? null : 'source\u0000${keys[i]}',
+          ),
       ],
     );
   }
@@ -162,21 +169,29 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   }
 
   /// 单卷 / 单章的页表：payload 的 `pages` 顺序，带 OCR 生产者报告的尺寸。
-  RemoteMangaManifest _volumeManifest(EpubBookRow row, MokuroPayload payload) =>
-      RemoteMangaManifest(
-        bookKey: row.bookKey,
-        title: row.title,
-        readingMode: row.mangaReadingMode,
-        pages: <RemoteMangaPageInfo>[
-          for (int i = 0; i < payload.images.length; i++)
-            RemoteMangaPageInfo(
-              index: i,
-              name: MangaStorage.pageRelativePath(payload.images[i].url),
-              width: payload.images[i].size.width.round(),
-              height: payload.images[i].size.height.round(),
-            ),
-        ],
-      );
+  RemoteMangaManifest _volumeManifest(
+    EpubBookRow row,
+    MokuroPayload payload,
+  ) => RemoteMangaManifest(
+    bookKey: row.bookKey,
+    title: row.title,
+    readingMode: row.mangaReadingMode,
+    pages: <RemoteMangaPageInfo>[
+      for (int i = 0; i < payload.images.length; i++)
+        RemoteMangaPageInfo(
+          index: i,
+          name: MangaStorage.pageRelativePath(payload.images[i].url),
+          width: payload.images[i].size.width.round(),
+          height: payload.images[i].size.height.round(),
+          // 已落盘的页图：文件名 + 尺寸认页（同一份下载里不会变；整章重下换了
+          // 内容的，尺寸几乎总会跟着变）。
+          key:
+              'file\u0000${MangaStorage.pageRelativePath(payload.images[i].url)}'
+              '\u0000${payload.images[i].size.width.round()}'
+              'x${payload.images[i].size.height.round()}',
+        ),
+    ],
+  );
 
   /// 第 [index] 页的页图文件。路径解析 + 穿越守卫恒在 host 侧（client 只送 index，
   /// 从不送路径）。用的是本仓阅读器读本地漫画时的**同一个**
@@ -244,7 +259,9 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// 没下载的章第 [index] 页：经本机运行时现取，落成临时文件交给
   /// `serveFileWithRange`（与已下载页同一条响应路径，Range / Content-Type 不分叉）。
   ///
-  /// 临时文件按 (bookKey, 章, 页) 定名、同页复用：对端翻回来不重复打源站。文件在
+  /// 临时文件按 (bookKey, 章, 页序 + 源端页身份) 定名、同页复用：对端翻回来不重复
+  /// 打源站；源端换了页（页身份变了，audit-035）就是另一个文件，不会把旧版的页图
+  /// 当新页表的这一页端出去。运行时给不出身份的页只按页序定名（旧口径）。文件在
   /// [onlineMangaPageCacheRoot] 下、按章有界保留（[pruneOnlineMangaPageCache]），
   /// 不进书目录（那是「已下载」的判据，混进去会让半章冒充下载完成）。
   ///
@@ -269,13 +286,26 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
         chapterDigest,
       ),
     );
-    final File? cached = _cachedOnlinePage(dir, index);
+    // 页表在运行时那边有缓存，这里取身份不打源站。
+    final List<String?> pageKeys = await source.reader.chapterPageKeys(
+      bookKey: row.bookKey,
+      sourceMetadata: source.sourceMetadata,
+      chapter: source.chapter,
+    );
+    if (index >= pageKeys.length) {
+      throw StateError('manga page out of range: ${row.bookKey}#$index');
+    }
+    final String? pageKey = pageKeys[index];
+    final String stem = pageKey == null
+        ? '$index'
+        : '$index-${mangaChapterDigest(pageKey)}';
+    final File? cached = _cachedOnlinePage(dir, stem);
     if (cached != null) return cached;
     // 判缓存与登记在途之间没有 await：同一 isolate 内这两步是原子的。
-    final String key = p.join(dir.path, '$index');
+    final String key = p.join(dir.path, stem);
     final Future<File>? running = _onlinePageFetches[key];
     if (running != null) return running;
-    final Future<File> fetch = _fetchOnlinePage(source, row, dir, index);
+    final Future<File> fetch = _fetchOnlinePage(source, row, dir, index, stem);
     _onlinePageFetches[key] = fetch;
     try {
       return await fetch;
@@ -291,6 +321,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     EpubBookRow row,
     Directory dir,
     int index,
+    String stem,
   ) async {
     final Uint8List bytes;
     try {
@@ -312,7 +343,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       pruneOnlineMangaPageCache(onlineMangaPageCacheRoot(), keep: dir);
     }
     final File file = File(
-      p.join(dir.path, '$index${onlineMangaPageExtension(bytes)}'),
+      p.join(dir.path, '$stem${onlineMangaPageExtension(bytes)}'),
     );
     // 暂存名带进程内唯一后缀：同进程的并发已在上面合并，这里防的是另一个进程
     // （同机另开的 host）同时写同一页。扩展名仍是 `.part`，[_cachedOnlinePage] 不认。
@@ -334,13 +365,14 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
   }
 
-  /// [dir] 里第 [index] 页已落好的缓存文件（暂存 `.part` 与空文件不算）。
-  File? _cachedOnlinePage(Directory dir, int index) {
+  /// [dir] 里名为 [stem]（页序 + 页身份摘要）的已落好的缓存文件（暂存 `.part` 与
+  /// 空文件不算）。
+  File? _cachedOnlinePage(Directory dir, String stem) {
     if (!dir.existsSync()) return null;
     for (final FileSystemEntity entity in dir.listSync()) {
       if (entity is File &&
           p.extension(entity.path) != '.part' &&
-          p.basenameWithoutExtension(entity.path) == '$index' &&
+          p.basenameWithoutExtension(entity.path) == stem &&
           entity.lengthSync() > 0) {
         return entity;
       }

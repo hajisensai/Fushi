@@ -802,7 +802,8 @@ fn alias_json(a: &AliasCounts) -> Value {
 }
 
 /// 差异的报告形：每类只给条数与前几个例子。默认例子只取行的身份（`notes` / `cards` / `stats` 行的第一列、`tags` 的
-/// 笔记 ID、`media` 的内容哈希），不带笔记内容。
+/// 笔记 ID、`media` 的内容哈希），不带笔记内容。卡行与统计行另给「同一身份两侧都有的行按列名的差异计数」与前几行的
+/// 「列: 旧 -> 新」（[compare::column_diffs]；这两类的列不含笔记内容）。
 fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
     let ex = |what: &str, xs: &[String]| -> Vec<String> {
         xs.iter()
@@ -819,13 +820,25 @@ fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
     Value::Array(
         diff.iter()
             .map(|(what, old_only, new_only)| {
-                json!({
+                let mut v = json!({
                     "what": what,
                     "onlyOld": old_only.len(),
                     "onlyNew": new_only.len(),
                     "examplesOld": ex(what, old_only),
                     "examplesNew": ex(what, new_only),
-                })
+                });
+                // 卡行 / 统计行：同一身份两侧都有的，哪几列不同（列全是调度数值与 ID，默认就带）。
+                if let Some(c) = compare::column_diffs(what, old_only, new_only) {
+                    v["sameIdRows"] = json!(c.rows);
+                    v["columns"] = json!(c.columns);
+                    v["columnExamples"] = json!(
+                        c.examples
+                            .into_iter()
+                            .take(opts.examples)
+                            .collect::<Vec<_>>()
+                    );
+                }
+                v
             })
             .collect(),
     )

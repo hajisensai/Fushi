@@ -288,4 +288,73 @@ void main() {
 
     expect(await prefs.readPositionMs('srtbook_1'), 120000 + 30000);
   });
+
+  test('AudiobookRepository.swapAudioFiles：换某几句的音频，续听仍在同一句', () async {
+    final AudiobookRepository repo = AudiobookRepository(db);
+    List<AudioCue> lines(List<int> ms) => <AudioCue>[
+      for (int i = 0; i < ms.length; i++)
+        cue(key: 'Vol', index: i, file: i, startMs: 0, endMs: ms[i]),
+    ];
+    await repo.ensureAudiobook('Vol');
+    await repo.saveCues(bookKey: 'Vol', cues: lines(<int>[1000, 1000, 1000]));
+    await repo.replaceAudio(
+      bookKey: 'Vol',
+      audioPaths: <String>['/a/0.m4a', '/a/1.m4a', '/a/2.m4a'],
+    );
+    // 第 3 句的 400 ms 处；换掉它之前的第 1 句（变长）——不归零，仍在第 3 句 400 ms。
+    await repo.updatePositionMs(bookKey: 'Vol', positionMs: 2400);
+    final int stamp = await repo.readPositionUpdatedAtMs('Vol');
+    await repo.swapAudioFiles(
+      bookKey: 'Vol',
+      cues: lines(<int>[1500, 1000, 1000]),
+      paths: <int, String>{0: '/a/0.new.m4a'},
+    );
+    expect(await repo.readPositionMs('Vol'), 1500 + 1000 + 400);
+    expect((await repo.findByBookKey('Vol'))!.audioPaths, <String>[
+      '/a/0.new.m4a',
+      '/a/1.m4a',
+      '/a/2.m4a',
+    ]);
+    expect(await repo.readPositionUpdatedAtMs('Vol'), stamp);
+    // 换掉断点所在的第 3 句：从它开头接着听。
+    await repo.swapAudioFiles(
+      bookKey: 'Vol',
+      cues: lines(<int>[1500, 1000, 800]),
+      paths: <int, String>{2: '/a/2.new.m4a'},
+    );
+    expect(await repo.readPositionMs('Vol'), 1500 + 1000);
+    expect(
+      () => repo.swapAudioFiles(
+        bookKey: 'Vol',
+        cues: lines(<int>[1500, 1000, 800]),
+        paths: <int, String>{5: '/x.m4a'},
+      ),
+      throwsRangeError,
+    );
+  });
+
+  test('audiobookPositionAfterFilesSwapped：没听过 / 别的句子 / 被换的句子', () {
+    expect(
+      audiobookPositionAfterFilesSwapped(0, <int>[10], <int>[20], <int>{0}),
+      0,
+    );
+    expect(
+      audiobookPositionAfterFilesSwapped(
+        1500,
+        <int>[1000, 1000],
+        <int>[700, 1000],
+        <int>{0},
+      ),
+      700 + 500,
+    );
+    expect(
+      audiobookPositionAfterFilesSwapped(
+        1500,
+        <int>[1000, 1000],
+        <int>[700, 900],
+        <int>{1},
+      ),
+      700,
+    );
+  });
 }

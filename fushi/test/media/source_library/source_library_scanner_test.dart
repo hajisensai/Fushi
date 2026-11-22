@@ -2658,9 +2658,10 @@ sub_b/ep2.mp4
       final List<int> png = img.encodePng(img.Image(width: 20, height: 40));
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
-        runProcess: (String executable, List<String> arguments) async {
-          if (arguments.first == 'l') {
-            return ProcessResult(1, 0, '''
+        runProcess:
+            (String executable, List<String> arguments, {String? stdin}) async {
+              if (arguments.first == 'l') {
+                return ProcessResult(1, 0, '''
 Path = ${rar.path}
 Type = Rar
 
@@ -2669,13 +2670,15 @@ Path = 001.png
 Size = ${png.length}
 Attributes = A
 ''', '');
-          }
-          final String outputArg = arguments.firstWhere(
-            (String arg) => arg.startsWith('-o'),
-          );
-          File(p.join(outputArg.substring(2), '001.png')).writeAsBytesSync(png);
-          return ProcessResult(2, 0, '', '');
-        },
+              }
+              final String outputArg = arguments.firstWhere(
+                (String arg) => arg.startsWith('-o'),
+              );
+              File(
+                p.join(outputArg.substring(2), '001.png'),
+              ).writeAsBytesSync(png);
+              return ProcessResult(2, 0, '', '');
+            },
       );
 
       final int sid = await db.insertMediaSource(
@@ -3026,13 +3029,14 @@ Attributes = A
       Map<String, String>? indexAtKill;
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
-        runProcess: (String executable, List<String> arguments) async {
-          if (!killed) {
-            killed = true;
-            indexAtKill = await db.getPrefsByPrefix(indexKey);
-          }
-          return ProcessResult(1, 2, '', 'killed');
-        },
+        runProcess:
+            (String executable, List<String> arguments, {String? stdin}) async {
+              if (!killed) {
+                killed = true;
+                indexAtKill = await db.getPrefsByPrefix(indexKey);
+              }
+              return ProcessResult(1, 2, '', 'killed');
+            },
       );
 
       await SourceLibraryScanner(
@@ -3113,13 +3117,14 @@ Attributes = A
       String? indexAfterClaims;
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
-        runProcess: (String executable, List<String> arguments) async {
-          if (!reached) {
-            reached = true;
-            indexAfterClaims = await db.getPref(indexKey);
-          }
-          return ProcessResult(1, 2, '', 'broken archive');
-        },
+        runProcess:
+            (String executable, List<String> arguments, {String? stdin}) async {
+              if (!reached) {
+                reached = true;
+                indexAfterClaims = await db.getPref(indexKey);
+              }
+              return ProcessResult(1, 2, '', 'broken archive');
+            },
       );
 
       final SourceScanSummary again = await SourceLibraryScanner(

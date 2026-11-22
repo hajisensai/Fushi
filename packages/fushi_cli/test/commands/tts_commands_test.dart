@@ -37,6 +37,8 @@ void main() {
       'line',
       'character',
       'regenerate',
+      'regenerate-character',
+      'replace',
       'render',
       'render-cancel',
       'import',
@@ -188,6 +190,67 @@ void main() {
     expect(
       _build('render-cancel', <String>['book:vol-1']).path,
       '$_item/render/cancel',
+    );
+  });
+
+  test('regenerate-character：角色名进路径；--kind / --dry-run 进 body', () {
+    final CtlRequestSpec all = _build('regenerate-character', <String>[
+      'book:vol-1',
+      '花 子',
+      '--kind',
+      'spoken',
+      '--dry-run',
+    ]);
+    expect(all.method, 'POST');
+    expect(all.path, '$_item/characters/%E8%8A%B1%20%E5%AD%90/regenerate');
+    expect(all.body, <String, Object?>{'kind': 'spoken', 'dryRun': true});
+    expect(
+      _build('regenerate-character', <String>['book:vol-1', 'narrator']).body,
+      isEmpty,
+    );
+    expect(
+      () => _build('regenerate-character', <String>['book:vol-1']),
+      _usageError(),
+    );
+  });
+
+  test('replace：行 id=路径（转绝对路径）或 --map 二选一；--dry-run 进 body', () {
+    final CtlRequestSpec pairs = _build('replace', <String>[
+      'book:vol-1',
+      'p0b0=out/a.wav',
+      'p2b0=out/b.wav',
+      '--dry-run',
+    ]);
+    expect(pairs.method, 'POST');
+    expect(pairs.path, '$_item/lines/replace');
+    expect(pairs.body, <String, Object?>{
+      'files': <String, String>{
+        'p0b0': p.normalize(p.absolute('out/a.wav')),
+        'p2b0': p.normalize(p.absolute('out/b.wav')),
+      },
+      'dryRun': true,
+    });
+    final CtlRequestSpec mapped = _build('replace', <String>[
+      'book:vol-1',
+      '--map',
+      'map.json',
+    ]);
+    expect(mapped.body, <String, Object?>{
+      'mapping': p.normalize(p.absolute('map.json')),
+    });
+    expect(() => _build('replace', <String>['book:vol-1']), _usageError());
+    expect(
+      () => _build('replace', <String>[
+        'book:vol-1',
+        'p0b0=a.wav',
+        '--map',
+        'm.json',
+      ]),
+      _usageError(),
+    );
+    expect(
+      () => _build('replace', <String>['book:vol-1', 'p0b0']),
+      _usageError(),
     );
   });
 

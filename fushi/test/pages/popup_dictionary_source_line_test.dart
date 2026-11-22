@@ -172,6 +172,8 @@ Widget _buildApp({
   String? sourceBlock,
   int sourceBlockOffset = -1,
   ValueChanged<String>? onHeadword,
+  bool sourceTextCollapsed = false,
+  bool embedded = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -187,6 +189,8 @@ Widget _buildApp({
           sourceCharIndex: charIndex,
           sourceBlock: sourceBlock,
           sourceBlockOffset: sourceBlockOffset,
+          sourceTextCollapsed: sourceTextCollapsed,
+          embedded: embedded,
           closeInApp: () {},
           onHeadword: onHeadword,
         ),
@@ -260,6 +264,218 @@ Future<String?> _mineSentence(
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  testWidgets(
+    'embedded dictionary bounds the source like the external popup and keeps '
+    'definitions at a fixed size',
+    (tester) async {
+      final String text = List<String>.generate(
+        1600,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 0,
+          embedded: true,
+        ),
+      );
+      await _settle(tester);
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      expect(viewport, findsOneWidget);
+      final Finder scrollable = find
+          .descendant(of: viewport, matching: find.byType(Scrollable))
+          .first;
+      final ScrollableState state = tester.state<ScrollableState>(scrollable);
+      final double viewportHeight = tester.getSize(viewport).height;
+      expect(viewportHeight, greaterThan(0));
+      expect(
+        tester.getSize(find.byType(SourceLookupTextPanel)).height,
+        greaterThan(viewportHeight),
+      );
+      final Finder definitions = find.byType(DictionaryPopupLayer).first;
+      final Rect definitionsBefore = tester.getRect(definitions);
+      expect(definitionsBefore.height, greaterThan(0));
+      expect(
+        definitionsBefore.top,
+        greaterThanOrEqualTo(tester.getRect(viewport).bottom),
+      );
+      await tester.scrollUntilVisible(
+        find.text(text[1599]),
+        250,
+        scrollable: scrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, greaterThan(0));
+      expect(tester.getRect(definitions), definitionsBefore);
+      await tester.tap(find.text(text[1599]));
+      await _settle(tester);
+      expect(appModel.searched.last, text.substring(1599));
+      expect(
+        tester
+            .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
+            .text,
+        text,
+      );
+      expect(tester.getRect(definitions), definitionsBefore);
+      final double scrolled = state.position.pixels;
+      await tester.drag(viewport, const Offset(0, 300));
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, lessThan(scrolled));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'source selection stays visible when the external window shrinks',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 700);
+      addTearDown(tester.view.reset);
+      final String text = List<String>.generate(
+        400,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 360,
+        ),
+      );
+      await _settle(tester);
+      tester.view.physicalSize = const Size(700, 300);
+      await tester.pumpAndSettle();
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      expect(
+        tester
+            .getRect(viewport)
+            .contains(tester.getCenter(find.text(text[360]))),
+        isTrue,
+      );
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(0),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'collapsed source keeps the complete mining sentence and can reopen',
+    (tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      const String text = '今日は良い天気ですね';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: text,
+          charIndex: 5,
+          sourceTextCollapsed: true,
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(await _mineSentence(tester, repo), text);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('popup_source_toggle')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
+            .text,
+        text,
+      );
+    },
+  );
+
+  testWidgets(
+    'changing only the collapse flag toggles the source without a new lookup',
+    (tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final ValueNotifier<bool> collapsed = ValueNotifier<bool>(false);
+      addTearDown(collapsed.dispose);
+      const String text = '今日は良い天気ですね';
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appProvider.overrideWith((ref) => appModel),
+            ankiRepositoryProvider.overrideWithValue(_RecordingAnkiRepo()),
+            ...popupMiningTargetTestOverrides(anki: false),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: appModel.navigatorKey,
+              home: ValueListenableBuilder<bool>(
+                valueListenable: collapsed,
+                builder: (BuildContext context, bool value, Widget? _) =>
+                    PopupDictionaryPage(
+                      searchTerm: text,
+                      sourceCharIndex: 5,
+                      sourceTextCollapsed: value,
+                      closeInApp: () {},
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+      final int lookups = appModel.searched.length;
+      collapsed.value = true;
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(
+        appModel.searched.length,
+        lookups,
+        reason: 'the collapse flag changes visibility only, not the query',
+      );
+    },
+  );
+
+  testWidgets(
+    'long external source is bounded and leaves a definition viewport',
+    (tester) async {
+      final String text = List<String>.generate(
+        400,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 360,
+        ),
+      );
+      await _settle(tester);
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      final double height = tester.getSize(viewport).height;
+      expect(height, greaterThan(0));
+      expect(height, lessThan(200));
+      final Rect selected = tester.getRect(find.text(text[360]));
+      expect(tester.getRect(viewport).contains(selected.center), isTrue);
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(height),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'BUG-2899: tapped-glyph entry keeps the whole line on the source strip '
@@ -694,7 +910,13 @@ void main() {
           TestDefaultBinaryMessengerBinding.instance;
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
-        (MethodCall call) async => null,
+        (MethodCall call) async => call.method == 'getInitialProcessText'
+            ? <String, Object>{
+                'text': 'initial sentence',
+                'charIndex': 0,
+                'sourceTextCollapsed': true,
+              }
+            : null,
       );
       addTearDown(
         () => binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -713,11 +935,25 @@ void main() {
       );
       await _settle(tester);
 
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsNothing,
+        reason: 'the cold request can initially collapse the source',
+      );
+      expect(
+        tester
+            .widget<PopupDictionaryPage>(find.byType(PopupDictionaryPage))
+            .sourceTextCollapsed,
+        isTrue,
+      );
+      appModel.searched.clear();
+
       Future<void> nativePush(
         String text,
         int charIndex, {
         String? block,
         int blockOffset = -1,
+        bool? sourceTextCollapsed,
       }) async {
         final ByteData message = const StandardMethodCodec().encodeMethodCall(
           MethodCall('onNewProcessText', <String, Object>{
@@ -725,6 +961,8 @@ void main() {
             'charIndex': charIndex,
             if (block != null) 'sourceBlock': block,
             if (block != null) 'sourceBlockOffset': blockOffset,
+            if (sourceTextCollapsed != null)
+              'sourceTextCollapsed': sourceTextCollapsed,
           }),
         );
         unawaited(
@@ -751,6 +989,16 @@ void main() {
       expect(appModel.searched.last, '雨が降る');
       panel = tester.widget(find.byType(SourceLookupTextPanel));
       expect(panel.text, '明日は雨が降る');
+
+      await nativePush('明日は雨が降る', 3, sourceTextCollapsed: true);
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      await nativePush('明日は雨が降る', 3);
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsOneWidget,
+        reason:
+            'omitted visibility on an identical warm request restores the default',
+      );
 
       // BUG-3487：截屏识字带上所属块，页面拿到块全文与本行起点。
       const String block = '朝から\n明日は雨が降る\nらしい。';

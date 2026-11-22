@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -183,7 +184,12 @@ class _StatsOverviewTab extends ConsumerStatefulWidget {
   ConsumerState<_StatsOverviewTab> createState() => _StatsOverviewTabState();
 }
 
-class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
+class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab>
+    with MediaVisibilityDependent<_StatsOverviewTab> {
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品不进统计，[MediaVisibility]）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_load());
+
   bool _loading = true;
   String? _error;
 
@@ -265,11 +271,14 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       final SrsStorage? srs = ref.read(srsModuleEnabledProvider)
           ? await ref.read(srsStorageProvider.future)
           : null;
-      final StatFacts facts = await loadStatFacts(
-        db,
-        activityLimit: 0,
-        includeCounters: true,
-        reviewsFrom: srs?.core,
+      // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）。
+      final StatFacts facts = mediaVisibility.visibleStatFacts(
+        await loadStatFacts(
+          db,
+          activityLimit: 0,
+          includeCounters: true,
+          reviewsFrom: srs?.core,
+        ),
       );
       // 按日合计 / 阅读域按日合计 / 会话流都是加载时在后台 isolate 里由 Rust 一并
       // 派生好的（BUG-4960），这里只换引用，不在 UI isolate 上遍历全域日面。

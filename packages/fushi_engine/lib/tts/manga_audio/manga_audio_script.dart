@@ -85,6 +85,21 @@ sealed class MangaLineAudioSource {
         );
       }
     }
+    if (raw is Map && raw['t'] == MangaLocalAudio.wireTag) {
+      final Object? sig = raw['sig'];
+      final Object? ext = raw['ext'];
+      final Object? name = raw['n'];
+      if (sig is String &&
+          MangaLocalAudio.isValidSig(sig) &&
+          ext is String &&
+          MangaLocalAudio.isValidExt(ext)) {
+        return MangaLocalAudio(
+          sig: sig,
+          ext: ext,
+          name: name is String && name.isNotEmpty ? name : null,
+        );
+      }
+    }
     return byUser
         ? const MangaSynthesized(byUser: true)
         : const MangaSynthesized();
@@ -166,10 +181,60 @@ final class MangaAudiobookClip extends MangaLineAudioSource {
   int get hashCode => Object.hash(bookKey, fileIndex, startMs, endMs, byUser);
 }
 
+/// 用户换上的一段本地音频（控制通道「按句替换本地音频」写下）。音频按内容寻址保留在
+/// 成品目录的 [kMangaLocalAudioDirName] 子目录里（`<sig><ext>`，见
+/// `mangaLocalAudioSourcePath`），不引用用户原路径：原文件之后被挪走 / 删掉，重跑整卷
+/// （例如整形版本变了要重新整形）也还拿得到。永远算用户亲手定的音源（[byUser]），重跑
+/// 有声书匹配不覆盖、不受作品音源策略约束；换种子重生成 / 补回会把它换回合成。
+final class MangaLocalAudio extends MangaLineAudioSource {
+  const MangaLocalAudio({required this.sig, required this.ext, this.name})
+    : super(byUser: true);
+
+  static const String wireTag = 'file';
+
+  /// 内容指纹（sha1 前 16 位十六进制）：保留副本的文件名，也进清单 `voice` 标记。
+  final String sig;
+
+  /// 原文件的扩展名（小写、带点，如 `.wav`），保留副本沿用它（ffmpeg 按它探测格式）。
+  final String ext;
+
+  /// 原文件名（只作展示 / 诊断）。
+  final String? name;
+
+  static bool isValidSig(String sig) => RegExp(r'^[0-9a-f]{16}$').hasMatch(sig);
+
+  static bool isValidExt(String ext) =>
+      RegExp(r'^\.[a-z0-9]{1,8}$').hasMatch(ext);
+
+  @override
+  Map<String, Object?> toJson() => <String, Object?>{
+    't': wireTag,
+    'sig': sig,
+    'ext': ext,
+    if (name != null) 'n': name,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is MangaLocalAudio &&
+      other.sig == sig &&
+      other.ext == ext &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(wireTag, sig, ext, name);
+}
+
+/// 本地音频保留副本所在的子目录（成品目录下；整卷清理只扫成品目录这一层，不进子目录）。
+const String kMangaLocalAudioDirName = '_local';
+
 /// 一句最终怎么出声（[MangaAudioScript.audioPlanFor]），生成端只认这个结果。
 enum MangaLineAudioPlan {
   /// 播放 / 导出关联有声书里的片段（[MangaScriptLine.audio] 是 [MangaAudiobookClip]）。
   audiobookClip,
+
+  /// 用户换上的本地音频（[MangaScriptLine.audio] 是 [MangaLocalAudio]）。
+  localAudio,
 
   /// 按声音指派表合成。
   synthesize,
@@ -527,6 +592,7 @@ class MangaAudioScript {
   /// 没命中的句子不读。旧版没有 `k` 的片段在没有任何关联书时无从解释，按没命中处理。
   MangaLineAudioPlan audioPlanFor(MangaScriptLine line) {
     final MangaLineAudioSource audio = line.audio;
+    if (audio is MangaLocalAudio) return MangaLineAudioPlan.localAudio;
     final bool clipUsable =
         audio is MangaAudiobookClip &&
         (audio.bookKey != null || audiobookSources.isNotEmpty);

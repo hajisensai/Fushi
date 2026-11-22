@@ -754,4 +754,6 @@ String libraryCtlBlockerMessage(DiscoveryImportBlocker blocker) =>
       DiscoveryImportBlocker.archiveToolMissing => '解压需要 7-Zip 命令行',
       DiscoveryImportBlocker.archiveExtractionFailed => '解压失败',
       DiscoveryImportBlocker.unsupportedOnThisHost => '本机不支持这种导入',
+      DiscoveryImportBlocker.archivePasswordRequired =>
+        '压缩包有密码，没拿到口令（取消了口令对话框或当前不能交互）',
     };

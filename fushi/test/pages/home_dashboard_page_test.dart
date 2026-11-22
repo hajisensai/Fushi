@@ -21,6 +21,9 @@ import 'package:fushi/src/media/media_cover_source.dart'
     show mediaCoverFallbackIcon;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnitChoice;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
@@ -44,12 +47,26 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiDialogHeroIcon;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show FushiConnectedButtonGroup;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
-    show StatGoalEditDialog, formatStatChars, formatStatTime;
+    show formatStatChars, formatStatTime;
+import 'package:fushi/src/pages/implementations/stat_charts.dart'
+    show formatStatCharsAxis;
+import 'package:fushi/src/stats/study_goal_record.dart';
+import 'package:fushi/src/pages/implementations/study_goal_visuals.dart'
+    show StudyGoalDayStrip, StudyGoalProgressBar, StudyGoalRing;
+import 'package:fushi/src/platform/widget_snapshot.dart'
+    show StudyGoalDay, StudyGoalState;
+import 'package:fushi/src/stats/study_goals.dart'
+    show
+        formatStudyGoalDuration,
+        studyGoalCompactPair,
+        studyGoalLanguageLabel,
+        studyGoalReviewsHiddenNote,
+        studyGoalShortLabel;
+import 'package:fushi/src/pages/implementations/reading_statistics_page.dart'
+    show ReadingStatisticsPage;
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show FushiShellTheme, ShellContentLayout;
@@ -61,7 +78,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
-import '../helpers/glass_unwrap.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
@@ -570,7 +586,6 @@ void main() {
         t.reading_activity,
         t.home_activity,
         t.home_filter_all,
-        t.stat_goal_daily,
         if (!twoColumn) '刚导入的视频',
         if (!twoColumn) t.home_recently_added,
       ]) {
@@ -2807,11 +2822,350 @@ void main() {
     expect(tm.left, greaterThan(g.right));
   });
 
-  testWidgets('今日目标：未设目标只显示设定入口；对话框设 1000 后进度行 = 800/1000', (
+  /// 等目标面板（自适应底部面板）开 / 关的动画与它的异步数据加载。
+  Future<void> pumpSheet(WidgetTester tester) async {
+    await tester.pump();
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
+
+  StudyGoal goalRecord(
+    String id,
+    StudyGoalId metric,
+    int target, {
+    StudyGoalPeriod period = StudyGoalPeriod.daily,
+    String? language,
+  }) => StudyGoal(
+    id: id,
+    metric: metric,
+    period: period,
+    target: target,
+    language: language,
+  );
+
+  /// 「数值 / 目标」的紧凑写法（与首页 / 小组件 / 设置行同一个格式化，随界面语言）。
+  String pairText(int value, int target, {bool time = false}) {
+    final ({String value, String target}) p = studyGoalCompactPair(
+      value,
+      target,
+      isTime: time,
+    );
+    return '${p.value} / ${p.target}';
+  }
+
+  /// 今天不在其中的一个生效日（让每日目标今天是休息日）。
+  Set<int> notToday() => <int>{DateTime.now().weekday % 7 + 1};
+
+  Finder checkIn(Finder root) => find.descendant(
+    of: root,
+    matching: find.byWidgetPredicate(
+      (Widget w) => w is FushiIcon && w.icon == FushiIcons.check,
+    ),
+  );
+
+  testWidgets('今日格总览版式：列出全部目标（混了每周目标时标题是「目标」），完成 / 超出带对勾、休息日写明', (
     WidgetTester tester,
   ) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('t', StudyGoalId.total, 20),
+      goalRecord('c', StudyGoalId.chars, 500),
+      goalRecord('m', StudyGoalId.mined, 5),
+      StudyGoal(
+        id: 'r',
+        metric: StudyGoalId.watching,
+        period: StudyGoalPeriod.daily,
+        target: 30,
+        activeWeekdays: notToday(),
+      ),
+      goalRecord('w', StudyGoalId.chars, 5000, period: StudyGoalPeriod.weekly),
+    ]);
+    await appModel.setHomeTodayLayout(StudyGoalTodayLayout.overview);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(3, 3)),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    final Finder card = find.byKey(const ValueKey<String>('home-study-card'));
+    // 有一条每周目标 → 标题「目标」，不是「今日目标」。
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.text(t.home_language_goals_mixed_title),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.text(t.home_today_goals_title)),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-pager')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-today-overview')),
+      findsOneWidget,
+    );
+    // 每日 + 每周都在（总览不按「左右滑动」只取每日），列表顺序。
+    final List<double> tops = <double>[
+      for (final String id in <String>['t', 'c', 'm', 'r', 'w'])
+        tester
+            .getTopLeft(
+              find.byKey(ValueKey<String>('home-today-overview-row-$id')),
+            )
+            .dy,
+    ];
+    expect(tops, orderedEquals(<double>[...tops]..sort()));
+    expect(
+      find.byKey(const ValueKey<String>('home-today-overview-more')),
+      findsNothing,
+    );
+    String label(String id) => tester
+        .widget<Semantics>(
+          find.byKey(ValueKey<String>('home-today-overview-row-$id')),
+        )
+        .properties
+        .label!;
+    // 进行中：10 / 20 分钟，还差 10 分钟（紧凑数值对 + 状态）。
+    expect(label('t'), contains(pairText(600000, 1200000, time: true)));
+    expect(
+      label('t'),
+      contains(
+        t.study_goal_status_left(
+          amount: formatStudyGoalDuration(600000, roundUp: true),
+        ),
+      ),
+    );
+    // 超出：800 / 500，「+300」，行里一个对勾。
+    expect(label('c'), contains(pairText(800, 500)));
+    expect(label('c'), contains('+300'));
+    expect(
+      checkIn(find.byKey(const ValueKey<String>('home-today-overview-row-c'))),
+      findsOneWidget,
+    );
+    expect(
+      checkIn(find.byKey(const ValueKey<String>('home-today-overview-row-t'))),
+      findsNothing,
+    );
+    // 休息日：写「休息日」，不是失败。
+    expect(label('r'), contains(t.study_goal_status_rest_day));
+    // 带进度条（格子够高）。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home-today-overview')),
+        matching: find.byType(StudyGoalProgressBar),
+      ),
+      findsNWidgets(5),
+    );
+  });
+
+  testWidgets('今日格总览版式：格子矮时只列放得下的几条 + 「还有 N 个」', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      for (int i = 0; i < 6; i++)
+        goalRecord('g$i', StudyGoalId.total, 20 + i * 10),
+    ]);
+    await appModel.setHomeTodayLayout(StudyGoalTodayLayout.overview);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    int rows = 0;
+    for (int i = 0; i < 6; i++) {
+      if (find
+          .byKey(ValueKey<String>('home-today-overview-row-g$i'))
+          .evaluate()
+          .isNotEmpty) {
+        rows++;
+      }
+    }
+    expect(rows, inInclusiveRange(1, 5));
+    // 前几条按顺序画，没画的数写在末行。
+    expect(
+      find.byKey(const ValueKey<String>('home-today-overview-row-g0')),
+      findsOneWidget,
+    );
+    final Finder more = find.byKey(
+      const ValueKey<String>('home-today-overview-more'),
+    );
+    expect(more, findsOneWidget);
+    expect(
+      tester.widget<Text>(more).data,
+      t.widget_label_goals_more(n: 6 - rows),
+    );
+    // 行与「还有 N 个」都在格子里（不溢出）。
+    final Rect cardRect = tester.getRect(
+      find.byKey(const ValueKey<String>('home-study-card')),
+    );
+    expect(tester.getRect(more).bottom, lessThanOrEqualTo(cardRect.bottom));
+  });
+
+  testWidgets('今日格聚焦版式：标题行「语言 · 度量」、大字「数值 / 目标」、状态行；达成画对勾', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('c', StudyGoalId.chars, 500),
+      goalRecord('t', StudyGoalId.total, 20),
+    ]);
+    await appModel.setHomeTodayMainGoal('c');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(3, 2)),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    final Finder page = find.byKey(const ValueKey<String>('home-today-goal-c'));
+    expect(page, findsOneWidget);
+    expect(
+      tester.widget<Text>(
+        find.byKey(const ValueKey<String>('home-today-goal-status')),
+      ),
+      isA<Text>().having((Text w) => w.data, 'status', '+300'),
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('home-today-goal-title')),
+          )
+          .data,
+      '${studyGoalLanguageLabel(null)} · ${t.widget_goal_chars}',
+    );
+    // 环是共用的目标环，超出 → 对勾、只画满一圈。
+    final Finder ring = find.descendant(
+      of: page,
+      matching: find.byType(StudyGoalRing),
+    );
+    expect(ring, findsOneWidget);
+    expect(tester.widget<StudyGoalRing>(ring).state, StudyGoalState.exceeded);
+    expect(checkIn(ring), findsOneWidget);
+    // 其余目标的小行：同一种行，写紧凑数值对。
+    expect(
+      tester
+          .widget<Semantics>(
+            find.byKey(const ValueKey<String>('home-today-goal-row-t')),
+          )
+          .properties
+          .label,
+      contains(pairText(600000, 1200000, time: true)),
+    );
+  });
+
+  testWidgets('「语言目标」格：日 / 周 / 月三环度量不同时环下带度量名；达成的环画对勾', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await prefs.setDefaultContentLanguage('ja');
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('jd', StudyGoalId.chars, 500, language: 'ja'),
+      goalRecord(
+        'jw',
+        StudyGoalId.watching,
+        180,
+        period: StudyGoalPeriod.weekly,
+        language: 'ja',
+      ),
+    ]);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(3, 2),
+          language: 'ja',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    final Finder ja = find.byKey(
+      const ValueKey<String>('home-language-goals-card/ja'),
+    );
+    Finder slot(String key) => find.descendant(
+      of: ja,
+      matching: find.byKey(ValueKey<String>('home-language-goals-ring-$key')),
+    );
+    expect(
+      find.descendant(
+        of: slot('daily'),
+        matching: find.text(
+          '${t.study_goal_metric_short_chars} · ${t.study_goal_period_abbr_daily}',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: slot('weekly'),
+        matching: find.textContaining(t.study_goal_period_abbr_weekly),
+      ),
+      findsOneWidget,
+    );
+    // 每日字数 800 / 500：超出 → 环心对勾；每周观看没做完 → 没有对勾。
+    expect(checkIn(slot('daily')), findsOneWidget);
+    expect(checkIn(slot('weekly')), findsNothing);
+    // 每个环下面写自己的紧凑数值对（不再有一条只写第一条目标的底行）。
+    expect(
+      find.descendant(
+        of: slot('daily'),
+        matching: find.text(pairText(800, 500)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: ja,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-line'),
+        ),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('新装：没有任何目标（和改版前一样），今日格是经典外观、字数 + 设定入口', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(appModel.studyGoals, isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-pager')),
+      findsNothing,
+    );
+    expect(find.text(formatStatChars(800)), findsOneWidget);
+    expect(find.text(t.stat_goal_set), findsOneWidget);
+  });
+
+  testWidgets('今日目标：删光目标只显示设定入口；目标面板设 1000 后进度行 = 800/1000', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    // 删光目标 = 写入空表：与新装同一个空状态。
+    await appModel.setStudyGoals(const <StudyGoal>[]);
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
     expect(find.text(t.stat_goal_set), findsOneWidget);
@@ -2821,23 +3175,37 @@ void main() {
     );
 
     await tester.tap(find.text(t.stat_goal_set));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    // 缺省周期 = 按日：只显示每日输入框（周目标框在切到「按周」后才换上来）。
+    await pumpSheet(tester);
+    // 新建预填：字数 · 每日 · 全部语言。
     expect(
-      find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
+      find.byKey(const ValueKey<String>('study-goal-save')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-delete')),
       findsNothing,
     );
     await tester.enterText(
-      find.byKey(const ValueKey<String>('stat-goal-daily-field')),
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('study-goal-target-field')),
+        matching: find.byType(EditableText),
+      ),
       '1000',
     );
-    await tester.tap(find.byKey(const ValueKey<String>('stat-goal-save')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('study-goal-save')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('study-goal-save')));
+    await pumpSheet(tester);
 
     expect(tester.takeException(), isNull);
+    final StudyGoal saved = appModel.studyGoals.single;
+    expect(saved.metric, StudyGoalId.chars);
+    expect(saved.period, StudyGoalPeriod.daily);
+    expect(saved.language, isNull);
+    expect(saved.target, 1000);
     expect(
       find.text(t.stat_goal_progress(read: 800, goal: 1000)),
       findsOneWidget,
@@ -2849,86 +3217,679 @@ void main() {
     expect(find.text(t.stat_goal_set), findsNothing);
   });
 
-  testWidgets('设定目标弹窗（M3E 重做）：hero 图标 + 大号填充输入 + 近 7 日日均建议 chip + '
-      '连接按钮组预设（选中态随输入联动）+ 实心保存按钮', (WidgetTester tester) async {
-    useSize(tester, const Size(1280, 900));
-    // 今天读了 800 字（seedSampleData）→ 近 7 日日均 = 800 ~/ 7 = 114。
-    await seedSampleData();
-    await tester.pumpWidget(buildApp());
-    await pumpDashboard(tester);
-
-    await tester.tap(find.text(t.stat_goal_set));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    final Finder dialog = find.byType(AlertDialog);
-    expect(
-      find.descendant(of: dialog, matching: find.byType(FushiDialogHeroIcon)),
-      findsOneWidget,
-    );
-    // 缺省「按日」：只显示每日一个输入框，单位后缀一个。
-    expect(
-      find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
-      findsOneWidget,
-    );
-    final Finder dailyFinder = glassUnwrap<TextField>(
-      find.byKey(const ValueKey<String>('stat-goal-daily-field')),
-    );
-    expect(tester.widget<TextField>(dailyFinder).decoration?.filled, isTrue);
-
-    // 近 7 日日均是一颗可点的建议 chip：点一下就填进去。
-    final Finder average = find.byKey(
-      const ValueKey<String>('stat-goal-average-chip'),
-    );
-    expect(
-      find.descendant(
-        of: average,
-        matching: find.text(t.stat_goal_recent_average(n: 114)),
-      ),
-      findsOneWidget,
-    );
-    await tester.tap(average);
-    await tester.pump();
-    expect(tester.widget<TextField>(dailyFinder).controller?.text, '114');
-
-    // 预设：连接按钮组，点「5000」填入且该格变成选中态。
-    final Finder presets = find.byKey(
-      const ValueKey<String>('stat-goal-presets'),
-    );
-    await tester.tap(find.descendant(of: presets, matching: find.text('5000')));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(tester.widget<TextField>(dailyFinder).controller?.text, '5000');
-    expect(
-      tester.widget<FushiConnectedButtonGroup<int>>(presets).selected,
-      <int>{5000},
-    );
-    // 手输一个非预设值：选中态清空。
-    await tester.enterText(dailyFinder, '4321');
-    await tester.pump();
-    expect(
-      tester.widget<FushiConnectedButtonGroup<int>>(presets).selected,
-      isEmpty,
-    );
-    await tester.enterText(dailyFinder, '5000');
-    await tester.pump();
-
-    await tester.tap(find.byKey(const ValueKey<String>('stat-goal-save')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(tester.takeException(), isNull);
-    expect(
-      find.text(t.stat_goal_progress(read: 800, goal: 5000)),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('周目标（CjIr9RGSCe）：切「按周」设 2000 → 进度行按本自然周字数显示「本周 X / 2000」', (
+  testWidgets('今日格目标翻页：从主目标那页开始，其余目标列在下面；点圆点切页并记成当前页（主目标不变）', (
     WidgetTester tester,
   ) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('t', StudyGoalId.total, 20),
+      goalRecord('m', StudyGoalId.mined, 5),
+      goalRecord('c', StudyGoalId.chars, 1000),
+    ]);
+    await appModel.setHomeTodayMainGoal('t');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    Finder page(String id) =>
+        find.byKey(ValueKey<String>('home-today-goal-$id'));
+    // 页序 = 记录顺序（t, m, c）；起始页 = 主目标 t。
+    expect(page('t'), findsOneWidget);
+    // 今天读了 10 分钟（seedSampleData），目标 20 分钟。
+    expect(
+      tester.widget<Semantics>(page('t')).properties.label,
+      contains(pairText(600000, 1200000, time: true)),
+    );
+    // 旧的「设定目标」入口不再出现。
+    expect(find.text(t.stat_goal_set), findsNothing);
+    // 三个目标 → 三个圆点。
+    for (int i = 0; i < 3; i++) {
+      expect(
+        find.byKey(ValueKey<String>('home-today-goal-dot-$i')),
+        findsOneWidget,
+      );
+    }
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(page('m'), findsOneWidget);
+    expect(
+      tester.widget<Semantics>(page('m')).properties.label,
+      contains('0 / 5'),
+    );
+    expect(appModel.homeTodayPageGoal, 'm');
+    expect(appModel.homeTodayMainGoal, 't');
+  });
+
+  testWidgets('今日格「左右滑动」：缺省只翻每日目标，选「全部目标」后周目标也进来', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('d', StudyGoalId.total, 20),
+      goalRecord('w', StudyGoalId.chars, 5000, period: StudyGoalPeriod.weekly),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-d')),
+      findsOneWidget,
+    );
+    // 只有一个每日目标：没有圆点，周目标不出现。
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-0')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-row-w')),
+      findsNothing,
+    );
+
+    await appModel.setHomeTodaySwipeGoals(StudyGoalSwipeScope.all);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('HBK-AUDIT-021 今日格：「左右滑动」缺省每日时选了周主目标，主目标照样显示、与每日目标共存', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('d', StudyGoalId.total, 20),
+      goalRecord('w', StudyGoalId.chars, 5000, period: StudyGoalPeriod.weekly),
+      goalRecord(
+        'm',
+        StudyGoalId.chars,
+        20000,
+        period: StudyGoalPeriod.monthly,
+      ),
+    ]);
+    await appModel.setHomeTodayMainGoal('w');
+    expect(appModel.homeTodaySwipeGoals, StudyGoalSwipeScope.daily);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    Finder page(String id) =>
+        find.byKey(ValueKey<String>('home-today-goal-$id'));
+    // 起始页是用户选的周主目标，不是第一条每日目标。
+    expect(page('w'), findsOneWidget);
+    expect(page('d'), findsNothing);
+    // 页 = 每日目标 d + 主目标 w（记录顺序）；没选作主目标的月目标不进来。
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-2')),
+      findsNothing,
+    );
+
+    // 翻回每日目标那页：每日目标照常可翻到。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-0')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(page('d'), findsOneWidget);
+    // 拍板 pr3980-today-main-goal-vs-swipe-page：滑动只记当前页，不改主目标。
+    expect(appModel.homeTodayPageGoal, 'd');
+    expect(appModel.homeTodayMainGoal, 'w');
+
+    // 重建（重开首页）后停在滑到的每日目标，周主目标仍在页里、滑得回去。
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(page('d'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(page('w'), findsOneWidget);
+    expect(appModel.homeTodayPageGoal, 'w');
+    expect(appModel.homeTodayMainGoal, 'w');
+  });
+
+  testWidgets('今日格目标翻页：点按格子进「目标」设置子页', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('r', StudyGoalId.reading, 20),
+    ]);
+    await appModel.setHomeTodayMainGoal('r');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final Finder reading = find.byKey(
+      const ValueKey<String>('home-today-goal-r'),
+    );
+    expect(reading, findsOneWidget);
+    // 只有一个目标：不画圆点。
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-0')),
+      findsNothing,
+    );
+    await tester.tap(reading);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text(t.settings_study_goals_title), findsWidgets);
+    expect(find.text(t.settings_study_goals_section_today), findsWidgets);
+    // 目标列表里有这条记录。
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-row-r')),
+      findsOneWidget,
+    );
+  });
+
+  /// 今日格近 7 天柱条的读屏文案（卡片风格 = [HomeWeekBars]；色块风格 = 带键的
+  /// Semantics），两种风格同一份数据。
+  String todayBarsLabel(WidgetTester tester) {
+    final Finder card = find.descendant(
+      of: find.byKey(const ValueKey<String>('home-today-week')),
+      matching: find.byType(HomeWeekBars),
+    );
+    if (card.evaluate().isNotEmpty) {
+      return tester.widget<HomeWeekBars>(card).semanticLabel;
+    }
+    return tester
+            .widget<Semantics>(
+              find.byKey(const ValueKey<String>('home-today-week-bars')),
+            )
+            .properties
+            .label ??
+        '';
+  }
+
+  testWidgets('今日格柱条跟随当前目标：时长目标按分钟、切到字数目标按字数，参考线 = 每日份额', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    // 与真实 app 一样：偏好变更转发成 AppModel 通知（首页 ref.watch 靠它重建）。
+    appModel.forwardPreferenceChangesForTesting();
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('t', StudyGoalId.total, 20),
+      goalRecord('c', StudyGoalId.chars, 1000),
+    ]);
+    await appModel.setHomeTodayMainGoal('t');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(3, 2)),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    // 时长目标页：今天 10 分钟（seedSampleData），柱条按时长写。
+    final String timeLabel = todayBarsLabel(tester);
+    expect(timeLabel, contains(formatStatTime(600000)));
+    final Finder cardBars = find.descendant(
+      of: find.byKey(const ValueKey<String>('home-today-week')),
+      matching: find.byType(HomeWeekBars),
+    );
+    if (cardBars.evaluate().isNotEmpty) {
+      final HomeWeekBars bars = tester.widget<HomeWeekBars>(cardBars);
+      expect(bars.values.last, 600000);
+      // 每日 20 分钟目标 → 参考线 20 分钟。
+      expect(bars.reference, 1200000);
+    }
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-today-goal-dot-1')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(appModel.homeTodayPageGoal, 'c');
+    // 当前页写穿偏好（真 DB isolate）后才通知：真实事件循环里等写完，再走一帧
+    // 让首页按新当前页重建。
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final String charsLabel = todayBarsLabel(tester);
+    expect(charsLabel, isNot(timeLabel));
+    expect(charsLabel, contains(formatStatCharsAxis(800)));
+    expect(charsLabel, isNot(contains(formatStatTime(600000))));
+    if (cardBars.evaluate().isNotEmpty) {
+      final HomeWeekBars bars = tester.widget<HomeWeekBars>(cardBars);
+      expect(bars.values.last, 800);
+      expect(bars.reference, 1000);
+    }
+  });
+
+  testWidgets('今日格周目标（设计 A + B）：双环、大字是今天的份额、小字是本周一行；柱条是本周生效日 + 份额', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('w', StudyGoalId.chars, 5000, period: StudyGoalPeriod.weekly),
+    ]);
+    await appModel.setHomeTodayMainGoal('w');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(3, 2)),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    final Finder card = find.byKey(const ValueKey<String>('home-study-card'));
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('home-today-goal-dual-ring'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    // 本周此前没有量：今天的份额 = 5000 摊给今天起剩下的天数；今天做了 800。
+    final String today = FushiTimeFormat.dayKey(DateTime.now());
+    final int daysLeft = studyGoalWindowDays(
+      StudyGoalPeriod.weekly,
+      today,
+    ).where((String k) => k.compareTo(today) >= 0).length;
+    final int share = (5000 + daysLeft - 1) ~/ daysLeft;
+    final Text status = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('home-today-goal-status')),
+    );
+    expect(
+      status.data,
+      startsWith(t.study_goal_period_week_pair(pair: pairText(800, 5000))),
+    );
+    final Finder figure = find.descendant(
+      of: card,
+      matching: find.byType(HomeWidgetFigure),
+    );
+    final HomeWidgetFigure big = tester.widget<HomeWidgetFigure>(figure.first);
+    final ({String value, String target}) todayPair = studyGoalCompactPair(
+      800,
+      share,
+      isTime: false,
+    );
+    expect(big.value, todayPair.value);
+    expect(big.unit, '/ ${todayPair.target} ${t.study_goal_today_word}');
+    // 柱条换成本周生效日（7 格，今天那格有柱），不是近 7 天柱条。
+    final Finder strip = find.byKey(
+      const ValueKey<String>('home-today-day-strip'),
+    );
+    expect(strip, findsOneWidget);
+    expect(find.byType(HomeWeekBars), findsNothing);
+    final StudyGoalDayStrip w = tester.widget<StudyGoalDayStrip>(strip);
+    expect(w.days, hasLength(7));
+    final StudyGoalDay todayCell = w.days.singleWhere(
+      (StudyGoalDay d) => d.isToday,
+    );
+    expect(todayCell.value, 800);
+    expect(todayCell.share, share);
+  });
+
+  testWidgets('小格里的周目标：只画今天一圈；一行高的语言目标格大字写「x / y 今天」、小字是度量 + 进度', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord(
+        'w',
+        StudyGoalId.chars,
+        5000,
+        period: StudyGoalPeriod.weekly,
+        language: 'ja',
+      ),
+    ]);
+    await appModel.setHomeTodayMainGoal('w');
+    await prefs.setDefaultContentLanguage('ja');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 1),
+          language: 'ja',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    // 一行高的「今日」格：环小于双环下限，只剩今天那一圈。
+    final Finder card = find.byKey(const ValueKey<String>('home-study-card'));
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('home-today-goal-today-ring'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.byKey(
+          const ValueKey<String>('home-today-goal-dual-ring'),
+        ),
+      ),
+      findsNothing,
+    );
+
+    // 语言目标格：大字「800 / 份额」+ 单位「今天」；小字不再重复「今天」。
+    final Finder entry = find.byKey(
+      const ValueKey<String>('home-language-goals-compact/w'),
+    );
+    final HomeWidgetFigure big = tester.widget<HomeWidgetFigure>(
+      find.descendant(of: entry, matching: find.byType(HomeWidgetFigure)),
+    );
+    expect(big.unit, t.study_goal_today_word);
+    final Iterable<String> lines = tester
+        .widgetList<Text>(
+          find.descendant(of: entry, matching: find.byType(Text)),
+        )
+        .map((Text w) => w.data ?? '');
+    expect(
+      lines.where((String l) => l.contains(' · ${t.study_goal_today_word} · ')),
+      isEmpty,
+    );
+  });
+
+  testWidgets('今日格周目标今天休息：内环淡下去写「休息日」，大字回到本周数值', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      StudyGoal(
+        id: 'w',
+        metric: StudyGoalId.chars,
+        period: StudyGoalPeriod.weekly,
+        target: 5000,
+        activeWeekdays: notToday(),
+      ),
+    ]);
+    await appModel.setHomeTodayMainGoal('w');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(3, 2)),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    final Text status = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('home-today-goal-status')),
+    );
+    expect(status.data, startsWith(t.study_goal_status_rest_day));
+    final HomeWidgetFigure big = tester.widget<HomeWidgetFigure>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('home-study-card')),
+            matching: find.byType(HomeWidgetFigure),
+          )
+          .first,
+    );
+    expect('${big.value} ${big.unit}', pairText(800, 5000));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home-today-goal-dual-ring')),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is FushiIcon && w.icon == FushiIcons.darkMode,
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('今日格翻页跟主目标走：设置里改主目标 / 删掉前面的目标后首页立刻跟上', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    // 与真实 app 一样：偏好变更转发成 AppModel 通知（首页 ref.watch 靠它重建）。
+    appModel.forwardPreferenceChangesForTesting();
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('t', StudyGoalId.total, 20),
+      goalRecord('m', StudyGoalId.mined, 5),
+      goalRecord('c', StudyGoalId.chars, 1000),
+    ]);
+    await appModel.setHomeTodayMainGoal('t');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    Finder page(String id) =>
+        find.byKey(ValueKey<String>('home-today-goal-$id'));
+    expect(page('t'), findsOneWidget);
+
+    // 别处（设置页）改主目标：不重开首页，翻页直接跳过去。
+    await appModel.setHomeTodayMainGoal('c');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(tester.takeException(), isNull);
+    expect(page('c'), findsOneWidget);
+    expect(page('t'), findsNothing);
+
+    // 删掉排在前面的目标：页号变了，显示的仍是同一条主目标。
+    await appModel.removeStudyGoal('t');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(tester.takeException(), isNull);
+    expect(page('c'), findsOneWidget);
+    expect(appModel.homeTodayMainGoal, 'c');
+  });
+
+  testWidgets('设置「你的目标」：删除立即生效，提示条「撤销」把目标放回原位', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    // 与真实 app 一样：偏好变更转发成 AppModel 通知（首页 ref.watch 靠它重建）。
+    appModel.forwardPreferenceChangesForTesting();
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('t', StudyGoalId.total, 20),
+      goalRecord('m', StudyGoalId.mined, 5),
+      goalRecord('c', StudyGoalId.chars, 1000),
+    ]);
+    await appModel.setHomeTodayMainGoal('t');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    await tester.tap(find.byKey(const ValueKey<String>('home-today-goal-t')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    final Finder row = find.byKey(const ValueKey<String>('study-goal-row-m'));
+    expect(row, findsOneWidget);
+    // 行首是进度环（字数目标也有）。
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-row-ring-c')),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(row);
+    await tester.pump();
+    await tester.tap(row);
+    await pumpSheet(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('study-goal-delete')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('study-goal-delete')));
+    await pumpSheet(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(appModel.studyGoals.map((StudyGoal g) => g.id), <String>['t', 'c']);
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-row-m')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-deleted-snackbar')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('study-goal-undo-delete')),
+    );
+    await pumpSheet(tester);
+    expect(tester.takeException(), isNull);
+    expect(appModel.studyGoals.map((StudyGoal g) => g.id), <String>[
+      't',
+      'm',
+      'c',
+    ]);
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-row-m')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('复习目标在首页不出现时：设置行与目标面板写明原因', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    appModel.forwardPreferenceChangesForTesting();
+    await seedSampleData();
+    await appModel.setSrsMiningTarget(SrsMiningTarget.anki);
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('t', StudyGoalId.total, 20),
+      goalRecord('r', StudyGoalId.reviews, 50),
+    ]);
+    // 挖词目标是 Anki（测试环境里复习模块是否开着都一样：复习数给不出）。
+    final StudyGoalReviewsHidden? reason = appModel.studyGoalReviewsHidden;
+    expect(reason, isNotNull);
+    final String note = studyGoalReviewsHiddenNote(reason!);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    // 首页没有复习那页（复习数给不出）。
+    expect(
+      find.byKey(const ValueKey<String>('home-today-goal-r')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('home-today-goal-t')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    final Finder row = find.byKey(const ValueKey<String>('study-goal-row-r'));
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.textContaining(note)),
+      findsOneWidget,
+    );
+    // 别的目标行没有这句。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('study-goal-row-t')),
+        matching: find.textContaining(note),
+      ),
+      findsNothing,
+    );
+
+    await tester.ensureVisible(row);
+    await tester.pump();
+    await tester.tap(row);
+    await pumpSheet(tester);
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-reviews-hidden')),
+      findsOneWidget,
+    );
+    // 换成别的度量，说明消失。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('study-goal-metric-chars')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-reviews-hidden')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  test('复习目标隐藏原因：复习模块关着优先，其次卡发往 Anki', () {
+    expect(
+      studyGoalReviewsHiddenFor(srsModuleEnabled: false, miningToAnki: false),
+      StudyGoalReviewsHidden.srsModuleOff,
+    );
+    expect(
+      studyGoalReviewsHiddenFor(srsModuleEnabled: false, miningToAnki: true),
+      StudyGoalReviewsHidden.srsModuleOff,
+    );
+    expect(
+      studyGoalReviewsHiddenFor(srsModuleEnabled: true, miningToAnki: true),
+      StudyGoalReviewsHidden.cardsGoToAnki,
+    );
+    expect(
+      studyGoalReviewsHiddenFor(srsModuleEnabled: true, miningToAnki: false),
+      isNull,
+    );
+  });
+
+  testWidgets('阅读统计页：点「今天」的字数目标环打开目标面板（编辑那条字数目标）', (WidgetTester tester) async {
+    // 高窗口：趋势栏（含「分析」折叠区）整列都建出来。
+    useSize(tester, const Size(1280, 3200));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('c', StudyGoalId.chars, 1000),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    unawaited(
+      Navigator.of(tester.element(find.byType(HomeDashboardPage))).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => const ReadingStatisticsPage(),
+        ),
+      ),
+    );
+    await pumpSheet(tester);
+    // 统计页经 DB isolate 载入：真实事件循环里等到「分析」折叠头出现。
+    final Finder fold = find.text(t.stat_analysis);
+    for (int i = 0; i < 30 && fold.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    // 「今天」面板在「分析」折叠区里，先展开。
+    await tester.ensureVisible(fold);
+    await tester.pump();
+    await tester.tap(fold);
+    await pumpSheet(tester);
+    final Finder ring = find.byKey(
+      const ValueKey<String>('reading-stats-goal-ring'),
+    );
+    await tester.ensureVisible(ring);
+    await tester.pump();
+    await tester.tap(ring);
+    await pumpSheet(tester);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-save')),
+      findsOneWidget,
+    );
+    // 编辑已有的字数目标（有删除按钮），不是新建。
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-delete')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('目标面板：切「每周」→ 预设换成周量级，保存后今日格按本自然周字数显示', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    // 从没有目标开始（删光过）：经典外观的「设定目标」入口。
+    await appModel.setStudyGoals(const <StudyGoal>[]);
     // 本周一（若今天不是周一）再读 500 字：周目标分子要把它算进去，日目标不算。
     final StatWindow w = StatWindow(DateTime.now());
     final int weekChars = w.weekFromKey == w.todayKey ? 800 : 800 + 500;
@@ -2944,48 +3905,732 @@ void main() {
     await pumpDashboard(tester);
 
     await tester.tap(find.text(t.stat_goal_set));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(
-      find.byKey(const ValueKey<String>('stat-goal-period-weekly')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await pumpSheet(tester);
+    // 近 7 天日均提示（今天读了字）。
     expect(
-      find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
+      find.byKey(const ValueKey<String>('study-goal-recent')),
       findsOneWidget,
     );
-    // 周目标预设换成周量级。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('study-goal-period-weekly')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     final Finder presets = find.byKey(
-      const ValueKey<String>('stat-goal-presets'),
+      const ValueKey<String>('study-goal-presets'),
     );
     expect(
       tester
           .widget<FushiConnectedButtonGroup<int>>(presets)
           .segments
           .map((ButtonSegment<int> s) => s.value),
-      StatGoalEditDialog.weeklyPresets,
+      <int>[20000, 35000, 70000, 140000],
     );
     await tester.enterText(
-      find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('study-goal-target-field')),
+        matching: find.byType(EditableText),
+      ),
       '2000',
     );
-    await tester.tap(find.byKey(const ValueKey<String>('stat-goal-save')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      tester.widget<FushiConnectedButtonGroup<int>>(presets).selected,
+      isEmpty,
+    );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('study-goal-save')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('study-goal-save')));
+    await pumpSheet(tester);
 
     expect(tester.takeException(), isNull);
-    expect(appModel.readingGoalPeriod, StudyGoalPeriod.weekly);
-    expect(appModel.readingGoalWeeklyChars, 2000);
-    expect(appModel.readingGoalDailyChars, 0);
+    final StudyGoal saved = appModel.studyGoals.single;
+    expect(saved.period, StudyGoalPeriod.weekly);
+    expect(saved.target, 2000);
+    // 周目标不是经典外观 → 今日格换成目标页，进度按本周字数。
+    final Finder page = find.byKey(
+      ValueKey<String>('home-today-goal-${saved.id}'),
+    );
+    expect(page, findsOneWidget);
     expect(
-      find.text(t.stat_goal_progress_weekly(read: weekChars, goal: 2000)),
+      tester.widget<Semantics>(page).properties.label,
+      contains(pairText(weekChars, 2000)),
+    );
+  });
+
+  testWidgets('「语言目标」格：按记录顺序画该语言的目标环；没有该语言目标时是添加空态', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await prefs.setDefaultContentLanguage('ja');
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord(
+        'jw',
+        StudyGoalId.chars,
+        5000,
+        period: StudyGoalPeriod.weekly,
+        language: 'ja',
+      ),
+      goalRecord('jd', StudyGoalId.chars, 1000, language: 'ja'),
+      goalRecord('all', StudyGoalId.total, 30),
+    ]);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'ja',
+        ),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'ko',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    final Finder ja = find.byKey(
+      const ValueKey<String>('home-language-goals-card/ja'),
+    );
+    expect(ja, findsOneWidget);
+    // 固定「日 / 周 / 月」三个槽，日在左；不限语言的时长目标不进日语格；
+    // 没有月目标的槽画淡出的空环（读屏「月 · —」）。
+    Finder slot(String period) => find.descendant(
+      of: ja,
+      matching: find.byKey(
+        ValueKey<String>('home-language-goals-ring-$period'),
+      ),
+    );
+    final Finder dayRing = slot('daily');
+    final Finder weekRing = slot('weekly');
+    expect(dayRing, findsOneWidget);
+    expect(weekRing, findsOneWidget);
+    expect(slot('monthly'), findsOneWidget);
+    expect(
+      tester.widget<Semantics>(slot('monthly')).properties.label,
+      endsWith('—'),
+    );
+    expect(
+      tester.widget<Semantics>(weekRing).properties.label,
+      contains(pairText(800, 5000)),
+    );
+    // 每个有目标的环下面一行「x / y」；空周期没有。
+    expect(
+      find.descendant(
+        of: ja,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-pair-daily'),
+        ),
+      ),
       findsOneWidget,
     );
     expect(
-      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
-      weekChars / 2000,
+      find.descendant(
+        of: ja,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-pair-monthly'),
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.getCenter(dayRing).dx,
+      lessThan(tester.getCenter(weekRing).dx),
+    );
+    // 今天读的 800 字按默认内容语言（日语）计入。
+    expect(
+      tester.widget<Semantics>(dayRing).properties.label,
+      contains(pairText(800, 1000)),
+    );
+
+    final Finder ko = find.byKey(
+      const ValueKey<String>('home-language-goals-card/ko'),
+    );
+    expect(
+      find.descendant(
+        of: ko,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-empty'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    // 空态点按：新建目标面板，预填韩语。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-language-goals-open/ko')),
+    );
+    await pumpSheet(tester);
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-save')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-language-ko')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('「语言目标」格：同一周期几条目标 → 一条一环、环下度量短名；跨周期带周期缩写', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await prefs.setDefaultContentLanguage('ja');
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      // 日语：两条每日 + 一条每周 + 一条每月（多于三条只画前三条）。
+      goalRecord(
+        'jm',
+        StudyGoalId.chars,
+        90000,
+        period: StudyGoalPeriod.monthly,
+        language: 'ja',
+      ),
+      goalRecord(
+        'jw',
+        StudyGoalId.chars,
+        5000,
+        period: StudyGoalPeriod.weekly,
+        language: 'ja',
+      ),
+      goalRecord('jd', StudyGoalId.chars, 1000, language: 'ja'),
+      goalRecord('jl', StudyGoalId.listening, 30, language: 'ja'),
+      // 中文：两条每日（同一周期 → 只写度量短名）。
+      goalRecord('zd', StudyGoalId.chars, 2000, language: 'zh'),
+      goalRecord('zw', StudyGoalId.watching, 20, language: 'zh'),
+    ]);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'ja',
+        ),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'zh',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    Finder ring(String card, String key) => find.descendant(
+      of: find.byKey(ValueKey<String>('home-language-goals-card/$card')),
+      matching: find.byKey(ValueKey<String>('home-language-goals-ring-$key')),
+    );
+    Finder caption(String card, String text) => find.descendant(
+      of: find.byKey(ValueKey<String>('home-language-goals-card/$card')),
+      matching: find.text(text),
+    );
+    final String day = t.study_goal_period_abbr_daily;
+    final String week = t.study_goal_period_abbr_weekly;
+
+    // 日语：每日 → 每周，同周期按列表顺序；第四条（每月）不画；没有日 / 周 / 月三格。
+    expect(ring('ja', 'jd'), findsOneWidget);
+    expect(ring('ja', 'jl'), findsOneWidget);
+    expect(ring('ja', 'jw'), findsOneWidget);
+    expect(ring('ja', 'jm'), findsNothing);
+    expect(ring('ja', 'daily'), findsNothing);
+    expect(
+      tester.getCenter(ring('ja', 'jd')).dx,
+      lessThan(tester.getCenter(ring('ja', 'jl')).dx),
+    );
+    expect(
+      tester.getCenter(ring('ja', 'jl')).dx,
+      lessThan(tester.getCenter(ring('ja', 'jw')).dx),
+    );
+    expect(
+      caption('ja', '${t.study_goal_metric_short_chars} · $day'),
+      findsOneWidget,
+    );
+    expect(caption('ja', '${t.widget_label_listening} · $day'), findsOneWidget);
+    expect(
+      caption('ja', '${t.study_goal_metric_short_chars} · $week'),
+      findsOneWidget,
+    );
+
+    // 中文：两条每日 → 两个环，只写度量短名。
+    expect(ring('zh', 'zd'), findsOneWidget);
+    expect(ring('zh', 'zw'), findsOneWidget);
+    expect(caption('zh', t.study_goal_metric_short_chars), findsOneWidget);
+    expect(caption('zh', t.widget_label_watching), findsOneWidget);
+    expect(caption('zh', t.study_goal_period_short_daily), findsNothing);
+  });
+
+  testWidgets('「语言目标」格一行高：旧「今日」格的紧凑样子（一个环 + 数值，没有日 / 周 / 月）', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await prefs.setDefaultContentLanguage('ja');
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('jd', StudyGoalId.chars, 1000, language: 'ja'),
+      goalRecord('jl', StudyGoalId.listening, 60, language: 'ja'),
+      goalRecord('zd', StudyGoalId.chars, 2000, language: 'zh'),
+      goalRecord(
+        'zw',
+        StudyGoalId.chars,
+        5000,
+        period: StudyGoalPeriod.weekly,
+        language: 'zh',
+      ),
+    ]);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 1),
+          language: 'ja',
+        ),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'zh',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    // 矮的那格（一行高）：紧凑样子，第一条目标（每日字数 800 / 1000）。
+    final Finder short = find.byKey(
+      const ValueKey<String>('home-language-goals-card/ja'),
+    );
+    final Finder tall = find.byKey(
+      const ValueKey<String>('home-language-goals-card/zh'),
+    );
+    expect(tester.getSize(short).height, lessThan(tester.getSize(tall).height));
+    final Finder compact = find.descendant(
+      of: short,
+      matching: find.byKey(
+        const ValueKey<String>('home-language-goals-compact'),
+      ),
+    );
+    expect(compact, findsOneWidget);
+    expect(
+      tester
+          .widget<Semantics>(
+            find.byKey(
+              const ValueKey<String>('home-language-goals-compact/jd'),
+            ),
+          )
+          .properties
+          .label,
+      contains(pairText(800, 1000)),
+    );
+    // 自动挑的目标也全部并排（用户 2026-11-20：一行高的格子只显示了第一条）。
+    expect(
+      find.descendant(
+        of: short,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-compact/jl'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    // 整点时长目标写「1h」（紧凑数值对，与小组件同一个格式化），不写「1h 0m」。
+    expect(
+      find.descendant(
+        of: short,
+        matching: find.textContaining(
+          formatStudyGoalDuration(60 * 60000 + 1),
+          findRichText: true,
+        ),
+      ),
+      findsWidgets,
+    );
+    expect(
+      find.descendant(
+        of: short,
+        matching: find.textContaining(
+          '${t.stat_axis_hours(n: 1)} ${t.stat_axis_minutes(n: 0)}',
+          findRichText: true,
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: short,
+        matching: find.textContaining(
+          pairText(0, 60 * 60000, time: true),
+          findRichText: true,
+        ),
+      ),
+      findsWidgets,
+    );
+    // 看得出是哪个目标、离目标多远：「已完成 / 目标」+ 度量。
+    expect(
+      find.descendant(
+        of: short,
+        matching: find.text(
+          '${t.study_goal_metric_short_chars} · ${t.stat_today}',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: short,
+        matching: find.text(t.study_goal_period_short_daily),
+      ),
+      findsNothing,
+    );
+    // 两行高：照旧日 / 周 / 月三环。
+    expect(
+      find.descendant(
+        of: tall,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-ring-daily'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: tall,
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-compact'),
+        ),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('语言表：中文只有一项「中文」，简体 / 繁体是它下面的「只算」两项', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    // 默认内容语言 zh-TW → 候选取整门中文。
+    await prefs.setDefaultContentLanguage('zh-TW');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'ja',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    await tester.longPress(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'ja'),
+      ),
+    );
+    await pumpDashboard(tester);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('home-widget-configure/language_goals:ja'),
+      ),
+    );
+    await pumpSheet(tester);
+    Finder pick(String tag) =>
+        find.byKey(ValueKey<String>('study-goal-language-pick-$tag'));
+    expect(pick('zh'), findsOneWidget);
+    expect(pick('zh-Hans'), findsOneWidget);
+    expect(pick('zh-Hant'), findsOneWidget);
+    expect(pick('zh-TW'), findsNothing);
+    expect(
+      tester.getTopLeft(pick('zh')).dy,
+      lessThan(tester.getTopLeft(pick('zh-Hans')).dy),
+    );
+    expect(
+      find.descendant(
+        of: pick('zh-Hant'),
+        matching: find.text(t.study_goal_language_script_only_hint),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: pick('zh'),
+        matching: find.text(t.study_goal_language_script_only_hint),
+      ),
+      findsNothing,
+    );
+    // 改已有格子时多一项「挑选目标…」。
+    expect(pick('goals'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('「语言目标」格挑目标：编辑态 → 挑选目标 → 按勾选顺序显示、混语言标题「目标」', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await prefs.setDefaultContentLanguage('ja');
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('jd', StudyGoalId.chars, 1000, language: 'ja'),
+      goalRecord('jl', StudyGoalId.listening, 30, language: 'ja'),
+      goalRecord('zd', StudyGoalId.chars, 2000, language: 'zh'),
+    ]);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'ja',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    await tester.longPress(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'ja'),
+      ),
+    );
+    await pumpDashboard(tester);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('home-widget-configure/language_goals:ja'),
+      ),
+    );
+    await pumpSheet(tester);
+    final Finder chooseGoals = find.byKey(
+      const ValueKey<String>('study-goal-language-pick-goals'),
+    );
+    await tester.ensureVisible(chooseGoals);
+    await tester.pump();
+    await tester.tap(chooseGoals);
+    await pumpSheet(tester);
+
+    Finder item(String id) =>
+        find.byKey(ValueKey<String>('home-tile-goals-item-$id'));
+    // 先只列格子语言（日语）的目标；打开「显示全部语言」才有中文那条。
+    expect(item('jd'), findsOneWidget);
+    expect(item('zd'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-tile-goals-all-languages')),
+    );
+    await tester.pump();
+    expect(item('zd'), findsOneWidget);
+    // 勾选顺序：中文字数 → 日语听力。
+    await tester.tap(item('zd'));
+    await tester.pump();
+    await tester.tap(item('jl'));
+    await tester.pump();
+    await tester.tap(find.text(t.dialog_done));
+    await pumpSheet(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-widget-edit-done')),
+    );
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(appModel.homeWidgetLayout.wide!.single.goals, <String>['zd', 'jl']);
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('home-language-goals-card/ja'),
+    );
+    Finder ring(String key) => find.descendant(
+      of: card,
+      matching: find.byKey(ValueKey<String>('home-language-goals-ring-$key')),
+    );
+    expect(ring('zd'), findsOneWidget);
+    expect(ring('jl'), findsOneWidget);
+    expect(ring('jd'), findsNothing);
+    expect(
+      tester.getCenter(ring('zd')).dx,
+      lessThan(tester.getCenter(ring('jl')).dx),
+    );
+    // 混语言：标题「目标」，环下带语言名。
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.text(t.home_language_goals_mixed_title),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.text(
+          '${studyGoalLanguageLabel('zh')} · ${t.study_goal_metric_short_chars}',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('「语言目标」格挑了几条、一行高：宽的并排、窄的分页可滑；挑的都删了回到自动', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await prefs.setDefaultContentLanguage('ja');
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord('jd', StudyGoalId.chars, 1000, language: 'ja'),
+      goalRecord('jl', StudyGoalId.listening, 30, language: 'ja'),
+    ]);
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(4, 1),
+          language: 'ja',
+          goals: <String>['jl', 'jd'],
+        ),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(1, 1),
+          language: 'zh',
+          goals: <String>['jd', 'jl'],
+        ),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 2),
+          language: 'ko',
+          goals: <String>['gone'],
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    // 宽的一行格：两条并排（听力在前），没有分页。
+    final Finder wide = find.byKey(
+      const ValueKey<String>('home-language-goals-card/ja'),
+    );
+    Finder entry(Finder card, String id) => find.descendant(
+      of: card,
+      matching: find.byKey(ValueKey<String>('home-language-goals-compact/$id')),
+    );
+    expect(entry(wide, 'jl'), findsOneWidget);
+    expect(entry(wide, 'jd'), findsOneWidget);
+    expect(
+      tester.getCenter(entry(wide, 'jl')).dx,
+      lessThan(tester.getCenter(entry(wide, 'jd')).dx),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-language-goals-pager/ja')),
+      findsNothing,
+    );
+    // 窄的（1×1）放不下两条：分页可滑。
+    expect(
+      find.byKey(const ValueKey<String>('home-language-goals-pager/zh')),
+      findsOneWidget,
+    );
+    // 挑的记录已删 → 自动：韩语没有目标，是「为韩语添加目标」。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('home-language-goals-card/ko')),
+        matching: find.byKey(
+          const ValueKey<String>('home-language-goals-empty'),
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  test('小组件短标签：度量短名 + 「/ 周」「/ 月」，限定语言时前面带语言名', () {
+    StudyGoal g(StudyGoalId m, StudyGoalPeriod p, [String? language]) =>
+        StudyGoal(
+          id: 'x',
+          metric: m,
+          period: p,
+          target: 10,
+          language: language,
+        );
+    const StudyGoalUnitChoice auto = StudyGoalUnitChoice.auto;
+    expect(
+      studyGoalShortLabel(
+        g(StudyGoalId.chars, StudyGoalPeriod.weekly, 'ja'),
+        unitChoice: auto,
+      ),
+      '${studyGoalLanguageLabel('ja')} · '
+      '${t.study_goal_label_short_weekly(metric: t.study_goal_metric_short_chars)}',
+    );
+    expect(
+      studyGoalShortLabel(
+        g(StudyGoalId.listening, StudyGoalPeriod.monthly),
+        unitChoice: auto,
+      ),
+      t.study_goal_label_short_monthly(metric: t.widget_label_listening),
+    );
+    expect(
+      studyGoalShortLabel(
+        g(StudyGoalId.chars, StudyGoalPeriod.daily, 'ja'),
+        unitChoice: auto,
+      ),
+      '${studyGoalLanguageLabel('ja')} · ${t.study_goal_metric_short_chars}',
+    );
+  });
+
+  testWidgets('编辑态改「语言目标」格的语言：角标 → 语言表 → 完成后布局里记住', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    // 韩语是默认内容语言 → 进候选表；日语已有格子 → 标「首页已有」不可选。
+    await prefs.setDefaultContentLanguage('ko');
+    await storeHomeLayout(
+      wide: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(2, 1),
+          language: 'ja',
+        ),
+      ],
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    await tester.longPress(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'ja'),
+      ),
+    );
+    await pumpDashboard(tester);
+    final Finder badge = find.byKey(
+      const ValueKey<String>('home-widget-configure/language_goals:ja'),
+    );
+    expect(badge, findsOneWidget);
+    // 「今日」不是可重复组件，没有配置角标。
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-configure/today')),
+      findsNothing,
+    );
+    await tester.tap(badge);
+    await pumpSheet(tester);
+    expect(
+      find.byKey(const ValueKey<String>('study-goal-language-pick-other')),
+      findsOneWidget,
+    );
+    final Finder korean = find.byKey(
+      const ValueKey<String>('study-goal-language-pick-ko'),
+    );
+    await tester.ensureVisible(korean);
+    await tester.pump();
+    await tester.tap(korean);
+    await pumpSheet(tester);
+    expect(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'ko'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('home-widget-edit-done')),
+    );
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    final List<HomeWidgetItem> wide = appModel.homeWidgetLayout.wide!;
+    expect(
+      wide
+          .where((HomeWidgetItem e) => e.kind == HomeWidgetKind.languageGoals)
+          .map((HomeWidgetItem e) => e.language),
+      <String?>['ko'],
     );
   });
 

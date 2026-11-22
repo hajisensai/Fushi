@@ -540,10 +540,10 @@ struct FushiHeatmapView: View {
           // 16 周 × 7 天（Dart 给好固定阈值的档位）；旧快照没有 `heatmap` 时退回 35 天。
           if let heatmap = snapshot.heatmap, !heatmap.levels.isEmpty {
             FushiWidgetTag(text: entry.label("recentHeatmapDays", "Last 112 days"))
-            FushiHeatGrid(cells: heatmap.levels, firstWeekday: heatmap.firstWeekday)
+            FushiHeatGrid(cells: heatmap.levels, firstWeekday: heatmap.firstWeekday, weekStart: heatmap.weekStart)
           } else {
             FushiWidgetTag(text: entry.label("recentDays", "Last 35 days"))
-            FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday)
+            FushiHeatGrid(cells: FushiHeatGrid.levels(month.minutes), firstWeekday: month.firstWeekday, weekStart: month.weekStart)
           }
         }
         // 右侧统计与网格同一口径：有 16 周热力图就用它的总时长 / 活跃天数，
@@ -575,13 +575,16 @@ struct FushiHeatmapView: View {
   }
 }
 
-/// 一列一周（周一在上），最旧 → 今天；首列按 `firstWeekday` 留空，对齐星期。最后一格是
+/// 一列一周（用户的周起始日在上），最旧 → 今天；首列按 `firstWeekday` 相对 `weekStart`
+/// 留空，对齐星期。最后一格是
 /// 今天：还没学时画虚线框（不是「没数据」，是「今天还空着」）。
 struct FushiHeatGrid: View {
   /// 每天 0…4 档。
   let cells: [Int]
   /// `cells[0]` 的 ISO 星期（周一 = 1）。
   let firstWeekday: Int
+  /// 一周从 ISO 星期几开始（偏好 `stats_week_start`，缺省周一）。
+  var weekStart: Int = 1
 
   /// 分钟数 → 0…4 档：0 = 没学；其余按本窗口最大值四等分（只是颜色深浅，不是统计数字）。
   static func levels(_ minutes: [Int]) -> [Int] {
@@ -591,7 +594,7 @@ struct FushiHeatGrid: View {
   }
 
   var body: some View {
-    let lead = max(0, min(6, firstWeekday - 1))
+    let lead = ((firstWeekday - weekStart) % 7 + 7) % 7
     let total = lead + cells.count
     let columns = max((total + 6) / 7, 1)
     GeometryReader { proxy in

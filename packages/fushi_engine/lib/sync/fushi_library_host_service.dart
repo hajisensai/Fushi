@@ -298,7 +298,14 @@ class RemoteAudiobookInfo {
     this.importedAt,
     this.hasAudio,
     this.contentRevision,
+    this.locked = false,
   });
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   final String bookKey;
 
@@ -358,6 +365,7 @@ class RemoteAudiobookInfo {
     if (importedAt != null) 'importedAt': importedAt,
     if (hasAudio != null) 'hasAudio': hasAudio,
     if (contentRevision != null) 'contentRevision': contentRevision,
+    if (locked) 'locked': true,
   };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -380,6 +388,7 @@ class RemoteAudiobookInfo {
                 (json['contentRevision']! as String).isNotEmpty)
             ? json['contentRevision']! as String
             : null,
+        locked: json['locked'] == true,
       );
 }
 
@@ -824,7 +833,14 @@ class RemoteBookInfo {
     this.mangaReaderOverrides = const <String, Object?>{},
     this.mangaReaderOverrideUpdatedAt = 0,
     this.mangaReaderOverrideDeleted = false,
+    this.locked = false,
   });
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   /// 书身份格式（`EpubBooks.format` 值域：'epub'/'pdf'/'manga'，见 [BookFormat]）。
   /// additive wire 字段 `'format'`：epub 缺省不写键（旧清单 wire 字节不变），缺失
@@ -989,6 +1005,7 @@ class RemoteBookInfo {
     if (mangaReaderOverrideUpdatedAt > 0)
       'mangaReaderOverrideUpdatedAt': mangaReaderOverrideUpdatedAt,
     if (mangaReaderOverrideDeleted) 'mangaReaderOverrideDeleted': true,
+    if (locked) 'locked': true,
   };
 
   RemoteBookInfo copyWith({
@@ -1016,6 +1033,7 @@ class RemoteBookInfo {
     Map<String, Object?>? mangaReaderOverrides,
     int? mangaReaderOverrideUpdatedAt,
     bool? mangaReaderOverrideDeleted,
+    bool? locked,
   }) => RemoteBookInfo(
     title: title,
     hasContent: hasContent,
@@ -1045,6 +1063,7 @@ class RemoteBookInfo {
         mangaReaderOverrideUpdatedAt ?? this.mangaReaderOverrideUpdatedAt,
     mangaReaderOverrideDeleted:
         mangaReaderOverrideDeleted ?? this.mangaReaderOverrideDeleted,
+    locked: locked ?? this.locked,
   );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -1091,6 +1110,7 @@ class RemoteBookInfo {
         json['mangaReaderOverrideUpdatedAt'],
       ),
       mangaReaderOverrideDeleted: json['mangaReaderOverrideDeleted'] == true,
+      locked: json['locked'] == true,
     );
   }
 }
@@ -1108,7 +1128,14 @@ class RemoteActivityEvent {
     this.mediaKey,
     this.durationMs,
     this.charsDelta,
+    this.locked = false,
   });
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   /// 'read' / 'watch' / 'added' / 'game'（同 ActivityEvents.eventType 值域）。
   final String eventType;
@@ -1137,6 +1164,7 @@ class RemoteActivityEvent {
     if (mediaKey != null) 'mediaKey': mediaKey,
     if (durationMs != null) 'durationMs': durationMs,
     if (charsDelta != null) 'charsDelta': charsDelta,
+    if (locked) 'locked': true,
   };
 
   /// 宽容解码：字段缺失/类型错给安全默认（坏一条不拖垮整个列表由调用方 skip）。
@@ -1150,6 +1178,7 @@ class RemoteActivityEvent {
       mediaKey: _jsonString(json['mediaKey']),
       durationMs: json['durationMs'] is int ? json['durationMs'] as int : null,
       charsDelta: json['charsDelta'] is int ? json['charsDelta'] as int : null,
+      locked: json['locked'] == true,
     );
   }
 }
@@ -1438,6 +1467,7 @@ class RemoteMangaPageInfo {
     required this.name,
     this.width = 0,
     this.height = 0,
+    this.key,
   });
 
   /// 0 基页序，同时是页图端点的路径段。
@@ -1450,11 +1480,19 @@ class RemoteMangaPageInfo {
   final int width;
   final int height;
 
+  /// 这一页的稳定身份（audit-035）：同一个值 = 同一张页图。对端下载这一章、暂停后
+  /// 续跑时按它认已落地的页还算不算数——[index] 只是页序，host 那边源端换了页、
+  /// 重排了页，页序照旧。host 现取的在线章报源端页身份（扩展原始图片地址等），已下载
+  /// 的章 / 本地卷报页图文件身份；认不出就不报（null），对端续跑不复用这页。旧 host
+  /// 不写这个键，旧 client 不读它，wire 双向兼容。
+  final String? key;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,
     'name': name,
     if (width > 0) 'width': width,
     if (height > 0) 'height': height,
+    if (key != null) 'key': key,
   };
 
   static RemoteMangaPageInfo fromJson(Map<String, Object?> json) =>
@@ -1463,6 +1501,10 @@ class RemoteMangaPageInfo {
         name: json['name']?.toString() ?? '',
         width: _jsonInt(json['width']) ?? 0,
         height: _jsonInt(json['height']) ?? 0,
+        key: switch (json['key']) {
+          final String key when key.isNotEmpty => key,
+          _ => null,
+        },
       );
 }
 
@@ -2915,6 +2957,7 @@ class RemoteVideoInfo {
     this.fileName,
     this.sectionKey,
     this.peerPlayable = true,
+    this.locked = false,
     this.stream,
   });
 
@@ -2951,6 +2994,12 @@ class RemoteVideoInfo {
   /// wire：只在 false 时写 `peerPlayable: false`；缺省 = true，旧 host（不带该键）
   /// 与改动前逐字节同行为；旧 client 不认识该键，按旧行为照常列出。
   final bool peerPlayable;
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   /// 流媒体书（「粘贴 URL 导入」/ 网页视频站，[isSyncableStreamVideo]）的重开信息：
   /// URL + 重开规格 + host 拥有时刻。client 据此在本机落一本同 uid 的流媒体书，行两端
@@ -3128,6 +3177,7 @@ class RemoteVideoInfo {
     fileName: fileName,
     sectionKey: sectionKey,
     peerPlayable: peerPlayable,
+    locked: locked,
     stream: stream,
   );
 
@@ -3177,6 +3227,7 @@ class RemoteVideoInfo {
     if (_isNonEmpty(fileName)) 'fileName': fileName,
     if (_isNonEmpty(sectionKey)) 'sectionKey': sectionKey,
     if (!peerPlayable) 'peerPlayable': false,
+    if (locked) 'locked': true,
     if (stream != null) kRemoteStreamVideoWireKey: stream!.toJson(),
   };
 
@@ -3199,6 +3250,7 @@ class RemoteVideoInfo {
     int? completedAt,
     int? completedMarkedAtMs,
     RemoteCollectionMembership? collection,
+    bool? locked,
   }) => RemoteVideoInfo(
     id: id,
     title: title,
@@ -3237,6 +3289,7 @@ class RemoteVideoInfo {
     fileName: fileName,
     sectionKey: sectionKey,
     peerPlayable: peerPlayable,
+    locked: locked ?? this.locked,
     stream: stream,
   );
 
@@ -3287,6 +3340,7 @@ class RemoteVideoInfo {
       fileName: _jsonString(json['fileName']),
       sectionKey: _jsonSectionKey(json['sectionKey']),
       peerPlayable: json['peerPlayable'] != false,
+      locked: json['locked'] == true,
       stream: RemoteStreamVideoEntry.tryParse(json[kRemoteStreamVideoWireKey]),
     );
   }

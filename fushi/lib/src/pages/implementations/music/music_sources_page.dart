@@ -1,9 +1,17 @@
-/// 音乐「来源」页（曲库页右上角入口，设计稿 fushi/build/music_design/music_sources.html ①）：
+/// 音乐「在线」组的两个视图（与书 / 漫画 / 视频库「在线」组的「来源」「扩展」同构，
+/// 拍板台 4GBgF6TrNr：音乐的来源 / 插件入口并进「在线」，不再是曲库页「⋯」里单独推出
+/// 的一页）：
 ///
-/// - **音源**：本地文件夹 + 在线来源（插件音源、Jellyfin / Emby、OpenSubsonic、Apple Music）
-///   一张可排序、可开关的表；顺序与开关决定它们在「推荐」来源 chip 与统一搜索里的出现顺序
-///   （偏好 `music_online_sources`）。Apple Music 的开关就是它的启用开关，开着时下面跟地区选择。
-/// - **歌词**：歌词来源（与 设置 › 音乐 › 歌词来源 同一份）。
+/// - [MusicOnlineSourcesView]「来源」：
+///   - **音源**：在线来源（插件音源、Jellyfin / Emby、OpenSubsonic、Apple Music、YouTube）
+///     一张可排序、可开关的表；顺序与开关决定它们在「推荐」来源 chip 与统一搜索里的出现
+///     顺序（偏好 `music_online_sources`）。Apple Music 的开关就是它的启用开关，开着时
+///     下面跟地区选择。
+///   - **歌词来源**（与 设置 › 音乐 › 歌词来源 同一份）。
+/// - [MusicPluginsView]「插件」：插件安装 / 启停 / 登录（对应其它库页的「扩展」）。
+///
+/// 本地文件夹不在这里：它是「把音乐放进库里」，住导入视图的常驻来源区（与书 / 视频 /
+/// 漫画一样，导入管本地、在线管在线）。
 library;
 
 import 'dart:async';
@@ -21,16 +29,12 @@ import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
-    show showMusicSourcesDialog;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
-    show MusicPluginDropTarget;
+    show MusicPluginDropTarget, MusicPluginSettingsBody;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
-import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
-    show MusicHiddenTracksPage;
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart'
     show buildMusicServersDestination;
@@ -51,15 +55,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-
-/// 推入「来源」页；返回后调用方重读来源（开关 / 顺序 / 新加的服务器都可能变了）。
-Future<void> openMusicSourcesPage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const MusicSourcesPage(),
-      ),
-    );
 
 /// 读齐本机全部在线来源（插件音源 + 服务器），未排序。插件含本机装的与经互联中继的
 /// （[isMusicPluginSourcesUsable]）；两者都没有的平台没有插件。
@@ -114,18 +109,29 @@ final class _YoutubeOffSource extends MusicOnlineSource {
   String get name => 'YouTube';
 }
 
-enum _SourcesTab { music, lyrics }
+/// 音乐「在线 › 来源」：音源的排序 / 开关（+ Apple Music 地区）与歌词来源，一页滚完。
+///
+/// 嵌在曲库页的「在线」组里（与书 / 漫画 / 视频库的「来源」视图同位），不另推页面。
+/// 页面体收 `.fushiplug` 拖放（BUG-4712；歌词来源的 [MusicLyricsProvidersBody] 自己不挂
+/// 落点，免得同一次拖放装两遍）。
+class MusicOnlineSourcesView extends ConsumerStatefulWidget {
+  const MusicOnlineSourcesView({super.key, this.onChanged, this.onOpenPlugins});
 
-class MusicSourcesPage extends ConsumerStatefulWidget {
-  const MusicSourcesPage({super.key});
+  /// 音源的顺序 / 开关 / 启用 / 新加的服务器变了：宿主（曲库页）据此重读「推荐」与搜索
+  /// 用的来源。
+  final VoidCallback? onChanged;
+
+  /// 「添加来源 › 音源插件」：宿主就地切到「在线 › 插件」（与其它库页「来源」空态去
+  /// 「扩展」同一做法）；null 时推插件管理页，不留死按钮。
+  final VoidCallback? onOpenPlugins;
 
   @override
-  ConsumerState<MusicSourcesPage> createState() => _MusicSourcesPageState();
+  ConsumerState<MusicOnlineSourcesView> createState() =>
+      _MusicOnlineSourcesViewState();
 }
 
-class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
-  _SourcesTab _tab = _SourcesTab.music;
-
+class _MusicOnlineSourcesViewState
+    extends ConsumerState<MusicOnlineSourcesView> {
   /// null = 还在加载。
   List<MusicOrderedSource>? _rows;
   final GlobalKey _addAnchor = GlobalKey(debugLabel: 'music-sources-add');
@@ -186,6 +192,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
         ),
       ),
     );
+    widget.onChanged?.call();
   }
 
   void _move(int from, int to) {
@@ -202,21 +209,27 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     if (row.source.key == kAppleMusicSourceKey) {
       // Apple Music 的开关就是启用开关：关着时没有浏览器实例，条目本身恒为显示。
       await _app.prefsRepo.setMusicAppleMusicEnabled(on);
-      if (!mounted) return;
-      await _load();
+      await _reloadAndNotify();
       return;
     }
     if (row.source.key == kYoutubeMusicSourceKey) {
       // 同上：YouTube 内置音源的开关就是启用开关。
       await _app.prefsRepo.setMusicYoutubeEnabled(on);
-      if (!mounted) return;
-      await _load();
+      await _reloadAndNotify();
       return;
     }
     await _commit(<MusicOrderedSource>[
       for (final MusicOrderedSource r in rows)
         identical(r, row) ? (source: r.source, enabled: on) : r,
     ]);
+  }
+
+  /// 来源集合本身变了（启用开关 / 地区 / 新加服务器）：重读本页并告诉宿主。
+  Future<void> _reloadAndNotify() async {
+    if (!mounted) return;
+    await _load();
+    if (!mounted) return;
+    widget.onChanged?.call();
   }
 
   bool _isOn(MusicOrderedSource row) => switch (row.source.key) {
@@ -227,8 +240,16 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
 
   Future<void> _setStorefront(String sf) async {
     await _app.prefsRepo.setMusicAppleMusicStorefront(sf);
-    if (!mounted) return;
-    await _load();
+    await _reloadAndNotify();
+  }
+
+  Future<void> _openPlugins() async {
+    final VoidCallback? select = widget.onOpenPlugins;
+    if (select != null) {
+      select();
+      return;
+    }
+    await openMusicPluginManagement(context, appModel: _app);
   }
 
   Future<void> _openAddMenu() async {
@@ -264,7 +285,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
                 'music_sources_add_plugin',
                 FushiIcons.browserExtension,
                 t.music_sources_add_plugin,
-                () => openMusicPluginManagement(context, appModel: _app),
+                _openPlugins,
               ),
             item(
               'music_sources_add_server',
@@ -272,18 +293,11 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
               t.music_sources_add_server,
               _openServerSettings,
             ),
-            item(
-              'music_sources_add_local',
-              FushiIcons.folderOpen,
-              t.music_sources_local,
-              () => showMusicSourcesDialog(context),
-            ),
           ],
         );
     if (action == null || !mounted) return;
     await action();
-    if (!mounted) return;
-    await _load();
+    await _reloadAndNotify();
   }
 
   /// 「添加 › 服务器」：推设置 › 在线服务 › 媒体服务器里那一页（同一棵
@@ -318,158 +332,80 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     _ => FushiIcons.server,
   };
 
-  Widget _musicTab(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<MusicOrderedSource>? rows = _rows;
-    final String storefront = _app.prefsRepo.musicAppleMusicStorefront;
-    return FushiEntranceScope(
+  Widget _sourceRow(
+    BuildContext context,
+    List<MusicOrderedSource> rows,
+    int i,
+    String storefront,
+  ) {
+    final MusicOrderedSource r = rows[i];
+    final bool am = r.source.key == kAppleMusicSourceKey;
+    final bool on = _isOn(r);
+    return FushiStaggeredEntrance(
+      index: i + 1,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: tokens.spacing.gap,
         children: <Widget>[
-          FushiStaggeredEntrance(
-            index: 0,
-            child: AdaptiveSettingsRow(
-              key: const ValueKey<String>('music-sources-local'),
-              icon: FushiIcons.folderOpen,
-              showIcon: true,
-              title: t.music_sources_local,
-              subtitle: t.music_sources_local_hint,
-              trailing: const FushiIcon(FushiIcons.chevronRight, size: 20),
-              onTap: () => unawaited(showMusicSourcesDialog(context)),
-            ),
-          ),
-          // 从音乐库移除过的本地曲目（墓碑，拍板台 IDeN5PYaI7）：在这里恢复。
-          FushiStaggeredEntrance(
-            index: 1,
-            child: AdaptiveSettingsRow(
-              key: const ValueKey<String>('music-sources-hidden-tracks'),
-              icon: FushiIcons.visibilityOff,
-              showIcon: true,
-              title: t.music_hidden_tracks_title,
-              subtitle: t.music_hidden_tracks_hint,
-              trailing: const FushiIcon(FushiIcons.chevronRight, size: 20),
-              onTap: () => unawaited(
-                Navigator.of(context).push<void>(
-                  adaptivePageRoute<void>(
-                    context: context,
-                    builder: (_) => const MusicHiddenTracksPage(),
-                  ),
+          Row(
+            children: <Widget>[
+              const FushiIcon(FushiIcons.dragHandle, size: 20),
+              Expanded(
+                child: AdaptiveSettingsSwitchRow(
+                  key: ValueKey<String>('music-source-toggle-${r.source.key}'),
+                  icon: _iconOf(r.source),
+                  showIcon: true,
+                  title: am ? 'Apple Music' : r.source.name,
+                  subtitle: _subtitleOf(r.source),
+                  value: on,
+                  onChanged: (bool v) => unawaited(_toggle(r, v)),
                 ),
               ),
-            ),
-          ),
-          Text(t.music_sources_online_hint, style: context.fushiType.bodySmall),
-          if (rows == null)
-            const FushiLinearProgressIndicator()
-          else
-            FushiReorderableColumn(
-              itemCount: rows.length,
-              spacing: tokens.spacing.gap,
-              keyForIndex: (int i) =>
-                  ValueKey<String>('music-source-${rows[i].source.key}'),
-              onReorder: _move,
-              itemBuilder: (BuildContext context, int i) {
-                final MusicOrderedSource r = rows[i];
-                final bool am = r.source.key == kAppleMusicSourceKey;
-                final bool on = _isOn(r);
-                return FushiStaggeredEntrance(
-                  index: i + 2,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          const FushiIcon(FushiIcons.dragHandle, size: 20),
-                          Expanded(
-                            child: AdaptiveSettingsSwitchRow(
-                              key: ValueKey<String>(
-                                'music-source-toggle-${r.source.key}',
-                              ),
-                              icon: _iconOf(r.source),
-                              showIcon: true,
-                              title: am ? 'Apple Music' : r.source.name,
-                              subtitle: _subtitleOf(r.source),
-                              value: on,
-                              onChanged: (bool v) => unawaited(_toggle(r, v)),
-                            ),
-                          ),
-                          FushiIconButton(
-                            key: ValueKey<String>(
-                              'music-source-up-${r.source.key}',
-                            ),
-                            icon: FushiIcons.expandLess,
-                            tooltip: t.music_lyrics_providers_move_up,
-                            padTouchTarget: true,
-                            enabled: i > 0,
-                            onTap: () => _move(i, i - 1),
-                          ),
-                          FushiIconButton(
-                            key: ValueKey<String>(
-                              'music-source-down-${r.source.key}',
-                            ),
-                            icon: FushiIcons.expandMore,
-                            tooltip: t.music_lyrics_providers_move_down,
-                            padTouchTarget: true,
-                            enabled: i < rows.length - 1,
-                            onTap: () => _move(i, i + 1),
-                          ),
-                        ],
-                      ),
-                      FushiAnimatedSize(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.short,
-                        ),
-                        curve: FushiMotion.standard,
-                        alignment: Alignment.topCenter,
-                        child: am && on
-                            ? Padding(
-                                padding: const EdgeInsetsDirectional.only(
-                                  start: 20,
-                                ),
-                                child: AdaptiveSettingsPickerRow<String>(
-                                  key: const ValueKey<String>(
-                                    'music-sources-apple-music-region',
-                                  ),
-                                  title: t.music_sources_region,
-                                  subtitle: t.music_apple_music_storefront_hint,
-                                  options:
-                                      <AdaptiveSettingsPickerOption<String>>[
-                                        for (final String sf
-                                            in kAppleMusicStorefrontChoices)
-                                          AdaptiveSettingsPickerOption<String>(
-                                            value: sf,
-                                            label: sf.toUpperCase(),
-                                          ),
-                                      ],
-                                  selected:
-                                      kAppleMusicStorefrontChoices.contains(
-                                        storefront,
-                                      )
-                                      ? storefront
-                                      : kAppleMusicStorefrontChoices.first,
-                                  onChanged: (String v) =>
-                                      unawaited(_setStorefront(v)),
-                                ),
-                              )
-                            : const SizedBox(width: double.infinity),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiPressScale(
-              child: FushiOutlinedButton.icon(
-                key: _addAnchor,
-                onPressed: () => unawaited(_openAddMenu()),
-                icon: const FushiIcon(FushiIcons.add),
-                label: Text(t.music_sources_add),
+              FushiIconButton(
+                key: ValueKey<String>('music-source-up-${r.source.key}'),
+                icon: FushiIcons.expandLess,
+                tooltip: t.music_lyrics_providers_move_up,
+                padTouchTarget: true,
+                enabled: i > 0,
+                onTap: () => _move(i, i - 1),
               ),
-            ),
+              FushiIconButton(
+                key: ValueKey<String>('music-source-down-${r.source.key}'),
+                icon: FushiIcons.expandMore,
+                tooltip: t.music_lyrics_providers_move_down,
+                padTouchTarget: true,
+                enabled: i < rows.length - 1,
+                onTap: () => _move(i, i + 1),
+              ),
+            ],
+          ),
+          FushiAnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            alignment: Alignment.topCenter,
+            child: am && on
+                ? Padding(
+                    padding: const EdgeInsetsDirectional.only(start: 20),
+                    child: AdaptiveSettingsPickerRow<String>(
+                      key: const ValueKey<String>(
+                        'music-sources-apple-music-region',
+                      ),
+                      title: t.music_sources_region,
+                      subtitle: t.music_apple_music_storefront_hint,
+                      options: <AdaptiveSettingsPickerOption<String>>[
+                        for (final String sf in kAppleMusicStorefrontChoices)
+                          AdaptiveSettingsPickerOption<String>(
+                            value: sf,
+                            label: sf.toUpperCase(),
+                          ),
+                      ],
+                      selected:
+                          kAppleMusicStorefrontChoices.contains(storefront)
+                          ? storefront
+                          : kAppleMusicStorefrontChoices.first,
+                      onChanged: (String v) => unawaited(_setStorefront(v)),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
           ),
         ],
       ),
@@ -479,51 +415,84 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return musicBrowseScaffold(
-      context,
-      title: t.music_sources_title,
-      // 两个分页（音源 / 歌词）都收 .fushiplug 拖放（BUG-4712）；歌词分页的
-      // [MusicLyricsProvidersBody] 自己不挂落点，免得同一次拖放装两遍。
-      body: (BuildContext context) => MusicPluginDropTarget(
-        manager: _app.musicPluginManager,
-        child: SingleChildScrollView(
-          padding: musicBrowsePagePadding(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: tokens.spacing.gap,
-            children: <Widget>[
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: adaptiveSegmentedButton<_SourcesTab>(
-                  context: context,
-                  segments: <ButtonSegment<_SourcesTab>>[
-                    ButtonSegment<_SourcesTab>(
-                      value: _SourcesTab.music,
-                      label: Text(t.music_sources_tab_music),
-                    ),
-                    ButtonSegment<_SourcesTab>(
-                      value: _SourcesTab.lyrics,
-                      label: Text(t.music_sources_tab_lyrics),
-                    ),
-                  ],
-                  selected: <_SourcesTab>{_tab},
-                  onSelectionChanged: (Set<_SourcesTab> v) =>
-                      setState(() => _tab = v.first),
+    final List<MusicOrderedSource>? rows = _rows;
+    final String storefront = _app.prefsRepo.musicAppleMusicStorefront;
+    final Widget body = SingleChildScrollView(
+      key: const ValueKey<String>('music-online-sources-view'),
+      padding: musicBrowsePagePadding(context),
+      child: FushiEntranceScope(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            FushiStaggeredEntrance(
+              index: 0,
+              child: Text(
+                t.music_sources_online_hint,
+                style: context.fushiType.bodySmall,
+              ),
+            ),
+            if (rows == null)
+              const FushiLinearProgressIndicator()
+            else
+              FushiReorderableColumn(
+                itemCount: rows.length,
+                spacing: tokens.spacing.gap,
+                keyForIndex: (int i) =>
+                    ValueKey<String>('music-source-${rows[i].source.key}'),
+                onReorder: _move,
+                itemBuilder: (BuildContext context, int i) =>
+                    _sourceRow(context, rows, i, storefront),
+              ),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiPressScale(
+                child: FushiOutlinedButton.icon(
+                  key: _addAnchor,
+                  onPressed: () => unawaited(_openAddMenu()),
+                  icon: const FushiIcon(FushiIcons.add),
+                  label: Text(t.music_sources_add),
                 ),
               ),
-              AnimatedSwitcher(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                child: KeyedSubtree(
-                  key: ValueKey<_SourcesTab>(_tab),
-                  child: switch (_tab) {
-                    _SourcesTab.music => _musicTab(context),
-                    _SourcesTab.lyrics => MusicLyricsProvidersBody(
-                      appModel: _app,
-                    ),
-                  },
-                ),
+            ),
+            // 歌词来源是歌词插件（与 设置 › 音乐 › 歌词来源 同一份、同一道门）。
+            if (isMusicPluginSourcesUsable) ...<Widget>[
+              SettingsSectionHeader(
+                t.music_lyrics_providers_title,
+                key: const ValueKey<String>('music-sources-lyrics-header'),
+              ),
+              MusicLyricsProvidersBody(
+                appModel: _app,
+                canInstall: isMusicPluginSourcesAvailable,
               ),
             ],
+          ],
+        ),
+      ),
+    );
+    if (!isMusicPluginSourcesAvailable) return body;
+    return MusicPluginDropTarget(manager: _app.musicPluginManager, child: body);
+  }
+}
+
+/// 音乐「在线 › 插件」：插件的安装（含 `.fushiplug` 拖放，BUG-4712）/ 启停 / 登录，
+/// 与其它库页「在线 › 扩展」同位。只在本机能跑插件时出现
+/// （[isMusicPluginSourcesAvailable]）。
+class MusicPluginsView extends ConsumerWidget {
+  const MusicPluginsView({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppModel app = ref.read(appProvider);
+    return MusicPluginDropTarget(
+      manager: app.musicPluginManager,
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('music-plugins-view'),
+        padding: musicBrowsePagePadding(context),
+        child: FushiEntranceScope(
+          child: FushiStaggeredEntrance(
+            index: 0,
+            child: MusicPluginSettingsBody(appModel: app),
           ),
         ),
       ),

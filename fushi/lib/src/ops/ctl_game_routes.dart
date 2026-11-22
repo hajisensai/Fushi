@@ -12,6 +12,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
@@ -382,7 +383,16 @@ class _AppGameCtlHost implements GameCtlHost {
   Future<List<GalgameEntry>> loadGames() async {
     final GalgameRepository repo = _app.galgameRepo;
     if (!repo.isLoaded) await repo.load();
-    return repo.games;
+    // 上锁（未解锁）的游戏控制通道 / AI 一律看不见、也启动不了（[MediaVisibility]，
+    // 与游戏库页同一个过滤入口）。
+    final MediaVisibility visibility = await MediaVisibility.load(
+      _app.database,
+    );
+    if (!visibility.hidesAnything) return repo.games;
+    return <GalgameEntry>[
+      for (final GalgameEntry game in repo.games)
+        if (!visibility.hidesGame(game.id)) game,
+    ];
   }
 
   @override

@@ -1789,3 +1789,112 @@ fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_
     assert_eq!(k["cacheStatRepresentativeSwaps"], json!(1), "{p:#}");
     assert_eq!(k["cacheCardRepresentativeSwaps"], json!(1), "{p:#}");
 }
+
+/// BUG-5190（反馈 eZJEGqEt7K）：一张卡有两个前身（并入重复笔记、删光重导……），两个前身记着不同的卡片标志
+/// （`newPos` / `deck` / `suspended` / `flag`），后继卡自己没记。卡片标志按血统继承时同一层的前身怎么排，决定了
+/// 后继卡继承谁的。挑带盐与规范先后相反的一对前身：迁移的对拍不能因此判卡行不同。
+#[test]
+fn a_card_inheriting_from_two_predecessors_whose_salted_and_canonical_order_differ_migrates_cleanly()
+ {
+    use crate::gen4_ids::rules::{self, CANONICAL};
+    use crate::store::sync2::config::default_deck_id;
+    use crate::store::sync2::tests::{deck_entity, edit};
+
+    const ANKI_NT: i64 = 1_700_000_000_556;
+    let card_of = |salt: Option<&str>, guid: &str| -> Id {
+        let nt = rules::note_type(salt, ANKI_NT);
+        rules::card(&rules::note(salt, guid), &rules::template(&nt, 0), 0)
+    };
+    // 带盐的两张前身卡与规范的两张先后相反的一对 guid。
+    let (g1, g2) = (0..)
+        .map(|i| (format!("lineage2-a-{i}"), format!("lineage2-b-{i}")))
+        .find(|(a, b)| {
+            (card_of(Some(P), a).text() < card_of(Some(P), b).text())
+                != (card_of(CANONICAL, a).text() < card_of(CANONICAL, b).text())
+        })
+        .unwrap();
+    let g3 = "lineage2-merged".to_owned();
+    let nt = rules::note_type(Some(P), ANKI_NT);
+    let (field, tmpl) = (rules::field(&nt, 0), rules::template(&nt, 0));
+    let note = |g: &str| rules::note(Some(P), g).text();
+    let (c1, c2, c3) = (
+        card_of(Some(P), &g1).text(),
+        card_of(Some(P), &g2).text(),
+        card_of(Some(P), &g3).text(),
+    );
+    let deck2 = rules::deck(Some(P), "lineage2-other").text();
+
+    let d = Device::new("lineage2");
+    d.core.sync2_identity(P, T0).unwrap();
+    while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    let mut events = vec![
+        deck_entity(&default_deck_id(P)),
+        deck_entity(&deck2),
+        json!({"t": "entity", "x": {"id": nt.text(), "p": P, "k": "notetype",
+               "d": {"createdAt": 1, "ntKind": "standard", "ankiNum": ANKI_NT}}}),
+        edit(
+            "notetype",
+            &nt.text(),
+            &format!("fieldDef/{}", field.text()),
+            json!({"ankiNum": 0, "name": "E", "ord": 0}),
+        ),
+        edit(
+            "notetype",
+            &nt.text(),
+            &format!("tmplDef/{}", tmpl.text()),
+            json!({"ankiNum": 0, "name": "A", "ord": 0, "front": "{{E}}"}),
+        ),
+    ];
+    for (g, w) in [(&g1, "猫"), (&g2, "犬"), (&g3, "猫犬")] {
+        events.push(
+            json!({"t": "entity", "x": {"id": note(g), "p": P, "k": "note",
+                           "d": {"createdAt": 1, "guid": g, "noteTypeId": nt.text()}}}),
+        );
+        events.push(edit(
+            "note",
+            &note(g),
+            &format!("f/{}", field.text()),
+            json!(w),
+        ));
+    }
+    d.apply(T0, events);
+    d.apply(
+        T0 + 1,
+        vec![
+            edit("card", &c1, "newPos", json!(1)),
+            edit("card", &c1, "flag", json!(1)),
+            edit("card", &c2, "newPos", json!(2)),
+            edit("card", &c2, "flag", json!(2)),
+            edit("card", &c2, "deck", json!(deck2)),
+            edit("card", &c2, "suspended", json!(true)),
+        ],
+    );
+    d.apply(
+        T0 + 2,
+        vec![
+            edit("note", &note(&g1), "deleted", json!(T0 + 2)),
+            edit("note", &note(&g2), "deleted", json!(T0 + 2)),
+            edit("card", &c3, &format!("historyFrom/{c1}"), json!(true)),
+            edit("card", &c3, &format!("historyFrom/{c2}"), json!(true)),
+        ],
+    );
+    let Device { core, _dir: dir } = d;
+    core.close();
+    drop(core);
+
+    let canonical = BTreeMap::from([(
+        P.to_owned(),
+        json!({"defaultDeck": rules::builtin_default_deck(CANONICAL).text()}).to_string(),
+    )]);
+    let out = migrate_with(&dir.0, &canonical, &Stop::new(), &mut Vec::new());
+    let report = match &out {
+        Outcome::Committed { report } => report.clone(),
+        Outcome::Aborted { report, .. } => report.clone(),
+        other => panic!("{other:?}"),
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+    assert_eq!(p["verdict"], "pass", "{p:#}");
+    assert!(matches!(out, Outcome::Committed { .. }), "{out:?}");
+}

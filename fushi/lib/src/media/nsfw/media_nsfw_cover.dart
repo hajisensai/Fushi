@@ -17,7 +17,7 @@
 library;
 
 import 'package:drift/drift.dart'
-    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
+    show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
@@ -36,16 +36,32 @@ final StreamProvider<MediaNsfwSnapshot> mediaNsfwSnapshotProvider =
     });
 
 /// [mediaNsfwSnapshotProvider] 的流本体：先发一份，之后每次相关表变更重读一份。
-Stream<MediaNsfwSnapshot> watchMediaNsfwSnapshot(FushiDatabase db) async* {
-  yield await MediaNsfwSnapshot.load(db);
-  await for (final Set<TableUpdate> _ in db.tableUpdates(
+/// 音乐专辑 / 曲目表也在里面（NSFW 专辑的封面图源随扫描变），这两张表写得勤
+/// （扫描分批落库），内容没变的重读不再发，免得整树封面跟着重建。
+Stream<MediaNsfwSnapshot> watchMediaNsfwSnapshot(FushiDatabase db) {
+  MediaNsfwSnapshot? last;
+  return _nsfwReloadTriggers(
+    db,
+  ).asyncMap((_) => MediaNsfwSnapshot.load(db)).where((MediaNsfwSnapshot next) {
+    final MediaNsfwSnapshot? prev = last;
+    if (prev != null && next.sameAs(prev)) return false;
+    last = next;
+    return true;
+  });
+}
+
+/// 首份加载一次 + 之后每次相关表变更一次。用 `yield*` 转发表变更流：取消订阅时
+/// 直接取消内层订阅（`await for` 里取消要等下一次 yield，表一直不变就挂住）。
+Stream<void> _nsfwReloadTriggers(FushiDatabase db) async* {
+  yield null;
+  yield* db.tableUpdates(
     TableUpdateQuery.onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
       db.mediaNsfwFlags,
       db.mediaCollectionItems,
+      db.musicAlbums,
+      db.musicTracks,
     ]),
-  )) {
-    yield await MediaNsfwSnapshot.load(db);
-  }
+  );
 }
 
 /// 全局「模糊 NSFW 封面」开关（偏好 `blur_nsfw_covers`，默认开）。
@@ -73,6 +89,10 @@ class MediaNsfwTarget {
 
   const MediaNsfwTarget.game(String gameId, {required bool adult})
     : this(TagHostKind.game, gameId, alsoNsfw: adult);
+
+  /// 本地音乐专辑（`music_albums.album_uid`）。
+  const MediaNsfwTarget.musicAlbum(String albumUid)
+    : this(TagHostKind.musicAlbum, albumUid);
 
   /// 合集成员行（`media_collection_items` 的 mediaType / entryKey；EPUB 成员键是
   /// uid，快照两种键都认）。认不出的 mediaType 为 null（不模糊）。游戏的成人向标记
@@ -173,6 +193,38 @@ class MediaNsfwCoverScope extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       ShelfCoverNsfw(blur: mediaNsfwBlurOf(context, target), child: child);
+}
+
+/// 音乐封面的 NSFW 模糊：封面图源（目录 / 缓存 / DLsite 封面文件、内嵌封面所在的
+/// 音频文件）属于任一 NSFW 专辑且开关开着时打模糊。音乐专辑的封面在网格、详情、
+/// 曲目行、播放条、播放页、队列、艺人头像里都按图源画，按图源判定一处就全覆盖。
+class MusicNsfwCover extends StatelessWidget {
+  const MusicNsfwCover({
+    required this.coverPath,
+    required this.embeddedFromPath,
+    required this.child,
+    this.showIcon = true,
+    super.key,
+  });
+
+  final String? coverPath;
+  final String? embeddedFromPath;
+  final Widget child;
+  final bool showIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final MediaNsfwState? state = MediaNsfwState.maybeOf(context);
+    final bool blur =
+        state != null &&
+        state.blurCovers &&
+        !ShelfCoverNsfw.blurOf(context) &&
+        state.snapshot.isMusicCoverNsfw(
+          coverPath: coverPath,
+          embeddedFromPath: embeddedFromPath,
+        );
+    return NsfwCoverBlur(blur: blur, showIcon: showIcon, child: child);
+  }
 }
 
 /// 不经卡壳作用域的封面（继续卡、详情页 hero、合集卡里逐张判定的成员封面等）：

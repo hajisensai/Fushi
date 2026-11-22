@@ -28,6 +28,8 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 | `ffc_hash_ed2k_free(ctx*)` | 释放（NULL 无操作） |
 | `ffc_hash_sha256_new / _update / _finish(ctx*, u8 out[32]) / _free` | SHA-256，同上形态 |
 | `ffc_hash_sha256_file(const u8* path, usize, u8 out[32], u64* out_len) -> i32` | 整文件 SHA-256，读盘也在 Rust（路径 UTF-8）；打不开 / 读失败回 `-5`（IO_ERROR）。Dart 以非叶调用，不挡 GC 安全点（BUG-5088） |
+| `ffc_hash_sha256_file_cancellable(const u8* path, usize, const u32* cancel, u8 out[32], u64* out_len) -> i32` | 可取消的整文件 SHA-256：`cancel` 是调用方分配的 4 字节对齐 `u32`（初值 0，NULL = 不可取消），每读 1 MiB 之前原子读一次，置位后关文件回 `-6`（CANCELLED）、不写输出。互联 host 停机打断视频指纹预热（拍板台 host-stop-fingerprint-cancel） |
+| `ffc_hash_cancel(u32* cancel)` | 置位取消标志（原子 Release 存储，幂等，NULL 无操作；任意线程 / isolate 可调） |
 | `ffc_hash_crc32_file(const u8* path, usize, u32* out, u64* out_len) -> i32` | 整文件 CRC-32，同上 |
 | `ffc_hash_crc32(u32 crc, const u8*, usize) -> u32` | CRC-32（zip / IEEE），在上一段结果上续算，首段传 0 |
 | `ffc_hash_uuid_v5_batch(const u8* ns[16n], const u8* names, const u64* offsets[n+1], usize n, u8* out[16n]) -> i32` | 批量 RFC 9562 UUIDv5（SHA-1）；名字是打包的 UTF-8（第 i 个 = `names[offsets[i]..offsets[i+1]]`） |

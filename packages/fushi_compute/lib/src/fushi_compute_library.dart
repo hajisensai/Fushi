@@ -15,6 +15,7 @@ abstract final class FfcStatus {
   static const int badInput = -3;
   static const int bufferTooSmall = -4;
   static const int ioError = -5;
+  static const int cancelled = -6;
   static const int panic = -100;
 }
 

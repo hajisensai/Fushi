@@ -206,8 +206,16 @@ class _FushiFocusTargetState extends State<FushiFocusTarget> {
   ///
   /// 不 reveal：指针按得到的目标就在屏幕上，reveal 只会把页面滚走（右键唤菜单时
   /// 库页下滚、浮动顶栏收起，反馈 1120 #i10）。
+  ///
+  /// BUG-5189：焦点已经在本目标的**子孙**上时（行内录制区、卡片里的输入框），按下
+  /// 本目标子树里的任何位置都不改焦点——那个子孙是此刻的键盘所有者，点击本来就落
+  /// 在它所在的这块里。旧实现无条件 `requestById`，快捷键设置页开着焦点导航时，
+  /// 录制中点一下录制条就把主焦点从录制器拽回整行，随后的 Esc 绕过录制器冒泡到
+  /// 全局「返回」，整页被弹出。
   void _handleMousePointerDown(PointerDownEvent event) {
     if (event.kind != PointerDeviceKind.mouse) return;
+    final FocusNode node = _focusNode;
+    if (node.hasFocus && !node.hasPrimaryFocus) return;
     _controller?.requestById(widget.id, reveal: false);
   }
 

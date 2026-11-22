@@ -526,8 +526,19 @@ Offset? fushiTiltPointerIn(BuildContext context, Offset? global) {
 /// 3D 倾斜视差的最大偏转角（度）。
 const double kFushiTiltMaxDegrees = 9;
 
-/// 倾斜跟随指针的缓动时长。
-const Duration kFushiTiltFollowDuration = Duration(milliseconds: 160);
+/// 倾斜层 / 高光这一步缓动的时长：跟随指针用 [FushiMotion.short]，指针离开
+/// （[pointer] 为 null）缓回平面用更从容的 [FushiMotion.medium]。
+///
+/// 2026-11-22 拍板 vDzivBIEOw（用户反馈「光面封面鼠标放上去的角度变化，回弹太快，
+/// 稍微慢一点」）：此前跟随与回平面共用 160ms，离开时一下就弹平，读不出实物缓
+/// 缓回正的质感；跟随仍要跟手，所以只放慢回平面这一段。[FushiTilt] 与
+/// [FushiTiltGlare] 共用本函数，倾斜与高光同步回位。墨水屏 / 减弱动态效果下
+/// [fushiMotionDuration] 归零。
+Duration fushiTiltEaseDuration(BuildContext context, Offset? pointer) =>
+    fushiMotionDuration(
+      context,
+      pointer == null ? FushiMotion.medium : FushiMotion.short,
+    );
 
 /// 3D 倾斜视差（2026-10-29 用户：「全部媒体选中都要网上那种 3D 斜视差，PC 跟
 /// 鼠标位置」）：读最近一层 [FushiHoverLift] 的指针位置，把 [child] 朝指针一侧
@@ -558,7 +569,7 @@ class FushiTilt extends StatelessWidget {
             tween: Tween<Offset>(
               end: fushiTiltPointerIn(context, global) ?? Offset.zero,
             ),
-            duration: kFushiTiltFollowDuration,
+            duration: fushiTiltEaseDuration(context, global),
             curve: FushiSpringCurve.effects,
             child: child,
             builder: (BuildContext context, Offset v, Widget? child) {
@@ -610,7 +621,7 @@ class FushiTiltGlare extends StatelessWidget {
           final Offset? p = fushiTiltPointerIn(context, global);
           return TweenAnimationBuilder<Offset>(
             tween: Tween<Offset>(end: p ?? Offset.zero),
-            duration: kFushiTiltFollowDuration,
+            duration: fushiTiltEaseDuration(context, p),
             curve: FushiSpringCurve.effects,
             builder: (BuildContext context, Offset v, Widget? _) {
               final Widget glow = DecoratedBox(
@@ -631,7 +642,7 @@ class FushiTiltGlare extends StatelessWidget {
               );
               return AnimatedOpacity(
                 opacity: p == null ? 0 : 1,
-                duration: kFushiTiltFollowDuration,
+                duration: fushiTiltEaseDuration(context, p),
                 child: radius == null
                     ? glow
                     : ClipRRect(borderRadius: radius, child: glow),

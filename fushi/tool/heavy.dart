@@ -30,7 +30,10 @@
 // (test_flow/heavy_command_check.dart). Exit code: the
 // command's; 2 for a mismatched SDK; 127 for a command that cannot start;
 // 75 when an
-// explicit --wait-max-min ran out before admission; 79 when the same command
+// explicit --wait-max-min ran out before admission, or the queue already
+// predicts it will (holders and runs ahead at this machine's typical run
+// times, test_flow/heavy_wait_estimate.dart: a `gives up now` line); 79 when
+// the same command
 // was submitted again from this directory and took this run's place in the
 // queue; 124 when --max-minutes cut it off; 78 (kHeavyCallerGoneExit) when
 // whoever started it is gone -- on Windows, the console it was started from

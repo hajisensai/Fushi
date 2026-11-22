@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 
 /// 统计中心的范围条（对齐 Niratan 统计面板的「Range」）：日 / 周 / 月 / 年 / 全部
 /// 粒度 + 上一段 / 下一段 + 当前区间文字。四个 tab 共用一份 [StatRangeSelection]
@@ -354,17 +355,13 @@ List<StatDayData> buildStatRangeChartData(
       final Map<String, StatDayData> buckets = <String, StatDayData>{};
       for (final String key in keys) {
         final String bucket = weekly
-            ? FushiDatabase.statDateKeyPlusDays(
-                key,
-                -(FushiDatabase.statDateKeyToDay(key).weekday -
-                    DateTime.monday),
-              )
+            ? StatWindow.weekStartOf(key)
             : key.substring(0, 7);
         final StatDayData data = buckets.putIfAbsent(
           bucket,
           () => StatDayData(
             dateKey: bucket,
-            // 周桶键是周一，可能早于区间起点（自定义区间从周中开始）；标签夹到
+            // 周桶键是周的第一天，可能早于区间起点（自定义区间从周中开始）；标签夹到
             // 区间起点，免得首柱写着区间外的日期。
             label: weekly
                 ? (bucket.compareTo(range.fromKey) < 0 ? range.fromKey : bucket)

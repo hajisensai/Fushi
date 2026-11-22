@@ -276,6 +276,9 @@ class _DictStylePreviewState extends State<DictStylePreview> {
 /// 守卫测试：`fushi/test/pages/dict_style_preview_handler_coverage_test.dart`。
 const List<String> kDictStylePreviewNoopHandlers = <String>[
   'clearSentenceDraft',
+  // 跨应用语音缓存「调整句子音频」：预览从不注入 __fushiCrossAppAudioHost，不会真发。
+  'crossAppAudioAvailable',
+  'crossAppAudioPreview',
   'duplicateCheck',
   'favoriteCheck',
   'favoriteEntry',

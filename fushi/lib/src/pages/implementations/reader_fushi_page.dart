@@ -154,7 +154,10 @@ import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_word_sweep.dart';
+import 'package:fushi/src/reader/reader_word_sweep_scripts.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
@@ -315,6 +318,7 @@ part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
 part 'reader_fushi/seamless.part.dart';
+part 'reader_fushi/word_sweep.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -2986,6 +2990,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   set _caretSurface(CaretSurface value) => _caret.surface = value;
 
   bool get _caretActive => _caret.active;
+
+  /// 整句扫词的会话态（拍板台 5H922XeDHM，见 `reader_fushi/word_sweep.part.dart`）。
+  final _ReaderWordSweepState _wordSweep = _ReaderWordSweepState();
   bool get _caretOnReader => _caret.onReader;
   bool get _caretOnLyrics => _caret.onLyrics;
 
@@ -5938,7 +5945,25 @@ $liveConfigJs
         // 「只关词典」的专用动作（默认无键盘绑定，用户可绑鼠标侧键）——BUG-1071
         // 那条鼠标通道的唯一消费者，保留。
         ShortcutAction.readerDismissDict,
+        // 整句扫词（拍板台 5H922XeDHM）：每停一词就换同一张弹窗，恰恰只在弹窗可见时有
+        // 意义。弹窗持焦（键盘）或指针压在弹窗 / barrier 上（鼠标侧键）时输入只从弹窗
+        // 回传，不转发就等于「点过弹窗一次，扫词键就失效」。
+        ShortcutAction.readerLookupNextWord,
+        ShortcutAction.readerLookupPrevWord,
       };
+
+  /// 弹窗回传 token 的落地点：扫词排在基类「转发动作 = 关整条弹窗栈」**之前**——
+  /// 否则弹窗一持焦，扫词键就退化成「关弹窗」（与视频页同一条约束）。
+  @override
+  bool onDictionaryPopupInputToken(String token) {
+    final ShortcutAction? action = resolveDictionaryPopupInputToken(
+      registry: appModel.shortcutRegistry,
+      token: token,
+      scope: ShortcutScope.reader,
+    );
+    if (action != null && _runReaderWordSweepAction(action)) return true;
+    return super.onDictionaryPopupInputToken(token);
+  }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

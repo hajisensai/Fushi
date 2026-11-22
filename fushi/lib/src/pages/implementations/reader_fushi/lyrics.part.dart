@@ -1676,6 +1676,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       source: ReaderLyricsCaretScripts.source(),
     );
     if (!currentLyricsLoad()) return;
+    // 整句扫词（拍板台 5H922XeDHM）在歌词文档里以「一行 = 一句」取句。
+    await controller.evaluateJavascript(
+      source: ReaderWordSweepScripts.source(),
+    );
+    if (!currentLyricsLoad()) return;
     await controller.evaluateJavascript(
       source: ReaderLyricsCaretScripts.initInvocation(
         color: _caretRingColorCss(),

@@ -56,9 +56,10 @@ final ValueNotifier<bool> homeWidgetEditRequested = ValueNotifier<bool>(false);
 typedef HomeWidgetCellBuilder =
     Widget Function(BuildContext context, HomeWidgetItem item);
 
-/// 格子里一块小组件的测试 / 定位 key。
-ValueKey<String> homeWidgetTileKey(HomeWidgetKind kind) =>
-    ValueKey<String>('home-widget/${kind.id}');
+/// 格子里一块小组件的测试 / 定位 key（可重复的组件按 [language] 区分，见
+/// [homeWidgetSlot]）。
+ValueKey<String> homeWidgetTileKey(HomeWidgetKind kind, {String? language}) =>
+    ValueKey<String>('home-widget/${homeWidgetSlot(kind, language: language)}');
 
 class HomeWidgetGrid extends StatefulWidget {
   const HomeWidgetGrid({
@@ -73,7 +74,8 @@ class HomeWidgetGrid extends StatefulWidget {
     required this.onMove,
     required this.onRemove,
     required this.onResize,
-    this.revealKind,
+    this.onConfigure,
+    this.revealSlot,
     this.onRevealed,
   });
 
@@ -83,8 +85,8 @@ class HomeWidgetGrid extends StatefulWidget {
   final bool editing;
   final HomeWidgetCellBuilder cellBuilder;
 
-  /// 组件名（读屏 / 提示用）。
-  final String Function(HomeWidgetKind kind) labelOf;
+  /// 组件名（读屏 / 提示用；可配置的组件带上配置）。
+  final String Function(HomeWidgetItem item) labelOf;
 
   /// 非编辑态长按任意组件：进入编辑态。
   final VoidCallback onEnterEdit;
@@ -101,8 +103,13 @@ class HomeWidgetGrid extends StatefulWidget {
   /// 第 [index] 块改成 [size]（网格已钳进可调范围）。
   final void Function(int index, HomeWidgetSize size) onResize;
 
-  /// 非空：下一帧把这块滚进视野（刚添加的组件），完成后回调 [onRevealed]。
-  final HomeWidgetKind? revealKind;
+  /// 改第 [index] 块的配置（「语言目标」格的语言）；只对可重复的组件
+  /// （[HomeWidgetKind.repeatable]）出现右上角标 / 手柄 Y / 菜单键。
+  final void Function(int index)? onConfigure;
+
+  /// 非空：下一帧把这块（[HomeWidgetItem.slot]）滚进视野（刚添加的组件），完成后
+  /// 回调 [onRevealed]。
+  final String? revealSlot;
   final VoidCallback? onRevealed;
 
   @override
@@ -111,24 +118,22 @@ class HomeWidgetGrid extends StatefulWidget {
 
 class _HomeWidgetGridState extends State<HomeWidgetGrid>
     with SingleTickerProviderStateMixin {
-  final Map<HomeWidgetKind, FocusNode> _focusNodes =
-      <HomeWidgetKind, FocusNode>{};
-  final Map<HomeWidgetKind, GlobalKey> _tileKeys =
-      <HomeWidgetKind, GlobalKey>{};
+  final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
+  final Map<String, GlobalKey> _tileKeys = <String, GlobalKey>{};
   final GlobalKey _stackKey = GlobalKey();
 
   /// 键盘 / 手柄拿起的组件。
-  HomeWidgetKind? _lifted;
+  String? _lifted;
 
   /// 指针拖动中的组件、它当前的目标下标、跟手位置（网格坐标里的左上角）与按下点
   /// 在块内的偏移。
-  HomeWidgetKind? _dragKind;
+  String? _dragKind;
   int? _dragTarget;
   Offset _dragTopLeft = Offset.zero;
   Offset _dragGrab = Offset.zero;
 
   /// 拖右下角改尺寸中的组件、按下时的尺寸、累计位移（逻辑方向）与吸附后的目标。
-  HomeWidgetKind? _resizeKind;
+  String? _resizeKind;
   HomeWidgetSize? _resizeStart;
   Offset _resizeDelta = Offset.zero;
   HomeWidgetSize? _resizePreview;
@@ -143,12 +148,12 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
     duration: FushiMotion.long,
   );
 
-  FocusNode _nodeOf(HomeWidgetKind kind) => _focusNodes.putIfAbsent(
+  FocusNode _nodeOf(String kind) => _focusNodes.putIfAbsent(
     kind,
-    () => FocusNode(debugLabel: 'home-widget/${kind.id}'),
+    () => FocusNode(debugLabel: 'home-widget/$kind'),
   );
 
-  GlobalKey _tileKeyOf(HomeWidgetKind kind) =>
+  GlobalKey _tileKeyOf(String kind) =>
       _tileKeys.putIfAbsent(kind, GlobalKey.new);
 
   @override
@@ -161,18 +166,16 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
       _resizeKind = null;
       _resizePreview = null;
     }
-    final Set<HomeWidgetKind> present = <HomeWidgetKind>{
-      for (final HomeWidgetItem e in widget.items) e.kind,
+    final Set<String> present = <String>{
+      for (final HomeWidgetItem e in widget.items) e.slot,
     };
     if (_lifted != null && !present.contains(_lifted)) _lifted = null;
-    _focusNodes.removeWhere((HomeWidgetKind k, FocusNode n) {
+    _focusNodes.removeWhere((String k, FocusNode n) {
       if (present.contains(k)) return false;
       n.dispose();
       return true;
     });
-    _tileKeys.removeWhere(
-      (HomeWidgetKind k, GlobalKey _) => !present.contains(k),
-    );
+    _tileKeys.removeWhere((String k, GlobalKey _) => !present.contains(k));
   }
 
   @override
@@ -195,7 +198,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   void _scheduleReveal() {
-    final HomeWidgetKind? kind = widget.revealKind;
+    final String? kind = widget.revealSlot;
     if (kind == null) return;
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
       if (!mounted) return;
@@ -213,17 +216,17 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
     });
   }
 
-  int _indexOf(HomeWidgetKind kind) =>
-      widget.items.indexWhere((HomeWidgetItem e) => e.kind == kind);
+  int _indexOf(String kind) =>
+      widget.items.indexWhere((HomeWidgetItem e) => e.slot == kind);
 
-  void _remove(HomeWidgetKind kind) {
+  void _remove(String kind) {
     final int index = _indexOf(kind);
     if (index < 0) return;
     // 焦点交给后一块（没有就前一块），不让焦点掉出网格。
     final List<HomeWidgetItem> items = widget.items;
-    final HomeWidgetKind? next = index + 1 < items.length
-        ? items[index + 1].kind
-        : (index > 0 ? items[index - 1].kind : null);
+    final String? next = index + 1 < items.length
+        ? items[index + 1].slot
+        : (index > 0 ? items[index - 1].slot : null);
     if (_lifted == kind) _lifted = null;
     widget.onRemove(index);
     if (next != null) {
@@ -233,7 +236,18 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
     }
   }
 
-  KeyEventResult _onKey(HomeWidgetKind kind, KeyEvent event) {
+  bool _configurable(HomeWidgetItem item) =>
+      widget.onConfigure != null && item.kind.repeatable;
+
+  /// 改配置（「语言目标」格的语言）：角标点按、手柄 Y、键盘菜单键。
+  void _configure(String kind) {
+    final int index = _indexOf(kind);
+    if (index < 0 || !_configurable(widget.items[index])) return;
+    if (_lifted == kind) setState(() => _lifted = null);
+    widget.onConfigure?.call(index);
+  }
+
+  KeyEventResult _onKey(String kind, KeyEvent event) {
     if (!widget.editing) return KeyEventResult.ignored;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
@@ -256,6 +270,11 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
       if (key == LogicalKeyboardKey.delete ||
           key == LogicalKeyboardKey.backspace) {
         _remove(kind);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.contextMenu &&
+          _configurable(widget.items[index])) {
+        _configure(kind);
         return KeyEventResult.handled;
       }
     }
@@ -289,7 +308,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   /// Esc / B：拿着时放下，否则退出编辑。
-  void _back(HomeWidgetKind kind) {
+  void _back(String kind) {
     if (_lifted == kind) {
       setState(() => _lifted = null);
     } else {
@@ -298,7 +317,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   /// 拿着的块按方向移动（左右 = 列表前后一位，上下 = 装箱后上 / 下一行最近处）。
-  void _moveLifted(HomeWidgetKind kind, _Direction direction) {
+  void _moveLifted(String kind, _Direction direction) {
     final int index = _indexOf(kind);
     if (index < 0) return;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
@@ -317,7 +336,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   /// 逐格改尺寸（键盘 Shift+方向键 / 手柄肩键扳机）。
-  void _resizeBy(HomeWidgetKind kind, {int dCols = 0, int dRows = 0}) {
+  void _resizeBy(String kind, {int dCols = 0, int dRows = 0}) {
     final int index = _indexOf(kind);
     if (index < 0) return;
     final List<HomeWidgetItem> next = resizeHomeWidgetBy(
@@ -333,7 +352,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
 
   /// 手柄（[GamepadButtonIntent]，桌面轮询与 Android 原生按键同一条路）：编辑态下
   /// 消费 A / B / X / LB / RB / LT / RT（拿着时再加十字键），其余交还祖先。
-  bool _onGamepad(HomeWidgetKind kind, GamepadButton button) {
+  bool _onGamepad(String kind, GamepadButton button) {
     if (!widget.editing || _indexOf(kind) < 0) return false;
     final bool lifted = _lifted == kind;
     switch (button) {
@@ -345,6 +364,9 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
         return true;
       case GamepadButton.x:
         _remove(kind);
+        return true;
+      case GamepadButton.y when _configurable(widget.items[_indexOf(kind)]):
+        _configure(kind);
         return true;
       case GamepadButton.lb:
         _resizeBy(kind, dCols: -1);
@@ -377,11 +399,11 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
 
   // ── 改尺寸：拖右下角 / 点柄弹网格 ─────────────────────────────────────────
 
-  void _resizeStartDrag(HomeWidgetKind kind) {
+  void _resizeStartDrag(String kind) {
     final int index = _indexOf(kind);
     if (index < 0) return;
     final HomeWidgetSize start = clampHomeWidgetSize(
-      kind,
+      widget.items[index].kind,
       widget.grid,
       widget.items[index].size,
     );
@@ -397,13 +419,15 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   void _resizeUpdateDrag(Offset delta) {
-    final HomeWidgetKind? kind = _resizeKind;
+    final String? kind = _resizeKind;
     final HomeWidgetSize? start = _resizeStart;
     if (kind == null || start == null) return;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
     _resizeDelta += Offset(rtl ? -delta.dx : delta.dx, delta.dy);
+    final int index = _indexOf(kind);
+    if (index < 0) return;
     final HomeWidgetSize next = homeWidgetDragSize(
-      kind: kind,
+      kind: widget.items[index].kind,
       grid: widget.grid,
       start: start,
       dx: _resizeDelta.dx,
@@ -416,7 +440,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   void _resizeEndDrag({required bool commit}) {
-    final HomeWidgetKind? kind = _resizeKind;
+    final String? kind = _resizeKind;
     final HomeWidgetSize? start = _resizeStart;
     final HomeWidgetSize? preview = _resizePreview;
     setState(() {
@@ -432,15 +456,15 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
     if (index >= 0) widget.onResize(index, preview);
   }
 
-  Future<void> _openSizePicker(HomeWidgetKind kind) async {
+  Future<void> _openSizePicker(String kind) async {
     final int index = _indexOf(kind);
     if (index < 0) return;
     final HomeWidgetSize? picked = await showHomeWidgetSizePicker(
       context,
-      kind: kind,
+      kind: widget.items[index].kind,
       grid: widget.grid,
       current: widget.items[index].size,
-      label: '${t.home_widget_resize} · ${widget.labelOf(kind)}',
+      label: '${t.home_widget_resize} · ${widget.labelOf(widget.items[index])}',
     );
     if (picked == null || !mounted || !widget.editing) return;
     final int now = _indexOf(kind);
@@ -452,11 +476,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
 
   // ── 指针拖动 ────────────────────────────────────────────────────────────
 
-  void _dragStart(
-    HomeWidgetKind kind,
-    LongPressStartDetails details,
-    Rect slot,
-  ) {
+  void _dragStart(String kind, LongPressStartDetails details, Rect slot) {
     // 按在改尺寸柄上：柄自己接管（它的手势在竞技场里先赢），这里不起换位拖动。
     if (_resizeKind != null) return;
     setState(() {
@@ -471,7 +491,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   void _dragUpdate(LongPressMoveUpdateDetails details, List<_Slot> displayed) {
     final RenderBox? box =
         _stackKey.currentContext?.findRenderObject() as RenderBox?;
-    final HomeWidgetKind? kind = _dragKind;
+    final String? kind = _dragKind;
     if (box == null || kind == null) return;
     final Offset local = box.globalToLocal(details.globalPosition);
     int? target = _dragTarget;
@@ -492,7 +512,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
   }
 
   void _dragEnd() {
-    final HomeWidgetKind? kind = _dragKind;
+    final String? kind = _dragKind;
     final int? target = _dragTarget;
     setState(() {
       _dragKind = null;
@@ -520,17 +540,17 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
         _rowExtent = rowExtent;
         final bool rtl = Directionality.of(context) == TextDirection.rtl;
 
-        final HomeWidgetKind? dragKind = _dragKind;
+        final String? dragKind = _dragKind;
         final int dragFrom = dragKind == null ? -1 : _indexOf(dragKind);
         List<HomeWidgetItem> shown = dragFrom >= 0 && _dragTarget != null
             ? moveHomeWidget(widget.items, dragFrom, _dragTarget!)
             : widget.items;
         // 拖角改尺寸中：按吸附后的目标尺寸装箱，其余块按结果让位。
-        final HomeWidgetKind? resizeKind = _resizeKind;
+        final String? resizeKind = _resizeKind;
         final HomeWidgetSize? resizePreview = _resizePreview;
         if (resizeKind != null && resizePreview != null) {
           final int at = shown.indexWhere(
-            (HomeWidgetItem e) => e.kind == resizeKind,
+            (HomeWidgetItem e) => e.slot == resizeKind,
           );
           if (at >= 0) {
             shown = <HomeWidgetItem>[...shown]
@@ -548,7 +568,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
 
         final List<_Slot> slots = <_Slot>[
           for (final HomeWidgetPlacement p in packing.placements)
-            _Slot(p.item.kind, rectOf(p)),
+            _Slot(p.item.slot, rectOf(p)),
         ];
         final double height = packing.rowCount == 0
             ? 0
@@ -559,7 +579,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
         Widget? resizeOverlay;
         for (int i = 0; i < packing.placements.length; i++) {
           final HomeWidgetPlacement p = packing.placements[i];
-          final HomeWidgetKind kind = p.item.kind;
+          final String kind = p.item.slot;
           final Rect rect = slots[i].rect;
           final Widget tile = _GridTile(
             key: _tileKeyOf(kind),
@@ -570,10 +590,11 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
             lifted: _lifted == kind || dragKind == kind,
             jiggle: _jiggle,
             focusNode: _nodeOf(kind),
-            label: widget.labelOf(kind),
+            label: widget.labelOf(p.item),
             onKey: (KeyEvent e) => _onKey(kind, e),
             onEnterEdit: widget.onEnterEdit,
             onRemove: () => _remove(kind),
+            onConfigure: _configurable(p.item) ? () => _configure(kind) : null,
             onGamepad: (GamepadButton b) => _onGamepad(kind, b),
             resizing: resizeKind == kind,
             onOpenSizePicker: () => unawaited(_openSizePicker(kind)),
@@ -602,7 +623,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
             // 原装箱位置画虚线占位，块本身跟手（画在最上层）。
             children.add(
               AnimatedPositioned(
-                key: ValueKey<String>('home-widget-placeholder/${kind.id}'),
+                key: ValueKey<String>('home-widget-placeholder/$kind'),
                 duration: slide,
                 curve: FushiMotion.standard,
                 left: rect.left,
@@ -613,7 +634,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
               ),
             );
             dragged = Positioned(
-              key: ValueKey<HomeWidgetKind>(kind),
+              key: ValueKey<String>('home-widget-slot/$kind'),
               left: _dragTopLeft.dx,
               top: _dragTopLeft.dy,
               width: rect.width,
@@ -624,7 +645,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
           }
           children.add(
             AnimatedPositioned(
-              key: ValueKey<HomeWidgetKind>(kind),
+              key: ValueKey<String>('home-widget-slot/$kind'),
               duration: slide,
               curve: FushiMotion.standard,
               left: rect.left,
@@ -653,7 +674,8 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
 class _Slot {
   const _Slot(this.kind, this.rect);
 
-  final HomeWidgetKind kind;
+  /// [HomeWidgetItem.slot]。
+  final String kind;
   final Rect rect;
 }
 
@@ -672,6 +694,7 @@ class _GridTile extends StatefulWidget {
     required this.onKey,
     required this.onEnterEdit,
     required this.onRemove,
+    this.onConfigure,
     required this.resizing,
     required this.onOpenSizePicker,
     required this.onResizeStart,
@@ -695,6 +718,9 @@ class _GridTile extends StatefulWidget {
   final KeyEventResult Function(KeyEvent event) onKey;
   final VoidCallback onEnterEdit;
   final VoidCallback onRemove;
+
+  /// 非空 = 可配置的组件：编辑态右上角标「设置」。
+  final VoidCallback? onConfigure;
 
   /// 正在拖右下角改尺寸（柄高亮）。
   final bool resizing;
@@ -763,7 +789,7 @@ class _GridTileState extends State<_GridTile> {
             top: -_kEditBadgeHang,
             start: -_kEditBadgeHang,
             child: _EditBadge(
-              key: ValueKey<String>('home-widget-remove/${kind.id}'),
+              key: ValueKey<String>('home-widget-remove/${widget.item.slot}'),
               icon: FushiIcons.remove,
               tooltip: t.home_widget_remove,
               background: scheme.error,
@@ -771,12 +797,27 @@ class _GridTileState extends State<_GridTile> {
               onTap: widget.onRemove,
             ),
           ),
+          if (widget.onConfigure case final VoidCallback configure)
+            PositionedDirectional(
+              top: -_kEditBadgeHang,
+              end: -_kEditBadgeHang,
+              child: _EditBadge(
+                key: ValueKey<String>(
+                  'home-widget-configure/${widget.item.slot}',
+                ),
+                icon: FushiIcons.language,
+                tooltip: t.stat_goal_language,
+                background: scheme.secondaryContainer,
+                foreground: scheme.onSecondaryContainer,
+                onTap: configure,
+              ),
+            ),
           if (resizable)
             PositionedDirectional(
               bottom: -_kEditBadgeHang,
               end: -_kEditBadgeHang,
               child: _ResizeHandle(
-                key: ValueKey<String>('home-widget-resize/${kind.id}'),
+                key: ValueKey<String>('home-widget-resize/${widget.item.slot}'),
                 tooltip: t.home_widget_resize,
                 background: scheme.primary,
                 foreground: scheme.onPrimary,
@@ -867,7 +908,10 @@ class _GridTileState extends State<_GridTile> {
           container: true,
           label: editing ? '${widget.label} · $size' : null,
           hint: editing ? t.home_widget_edit_hint : null,
-          child: KeyedSubtree(key: homeWidgetTileKey(kind), child: content),
+          child: KeyedSubtree(
+            key: homeWidgetTileKey(kind, language: widget.item.language),
+            child: content,
+          ),
         ),
       ),
     );

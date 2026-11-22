@@ -12,6 +12,7 @@ library;
 import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/tracking/page/tracking_filter_bar.dart';
 import 'package:fushi/src/media/tracking/page/tracking_link_dialog.dart';
 import 'package:fushi/src/media/tracking/page/tracking_local_targets.dart';
@@ -81,7 +82,8 @@ class TrackingPage extends StatefulWidget {
   State<TrackingPage> createState() => _TrackingPageState();
 }
 
-class _TrackingPageState extends State<TrackingPage> {
+class _TrackingPageState extends State<TrackingPage>
+    with MediaVisibilityDependent<TrackingPage> {
   TrackingPageData? _data;
   TrackingPageTab? _tab;
   Set<TrackingRowKind> _kinds = const <TrackingRowKind>{};
@@ -143,6 +145,11 @@ class _TrackingPageState extends State<TrackingPage> {
 
   void _onStatusChanged() => unawaited(_reload());
 
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品的链接 / 未链接 / 忽略 / 活动
+  /// 行都不列，[MediaVisibility]）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_reload());
+
   Future<void> _reload() async {
     if (_loading) {
       _reloadAgain = true;
@@ -166,12 +173,19 @@ class _TrackingPageState extends State<TrackingPage> {
           widget.database,
         );
         if (!mounted) return;
+        final MediaVisibility visibility = mediaVisibility;
         final TrackingPageData data = TrackingPageData.of(
-          snapshot,
-          ignored: ignored,
+          snapshot.withoutMedia(visibility.hidesTrackedMedia),
+          ignored: <MediaTrackingIgnoredRow>[
+            for (final MediaTrackingIgnoredRow r in ignored)
+              if (!visibility.hidesTrackedMedia(r.mediaType, r.mediaKey)) r,
+          ],
           ignoreIndex: ignoreIndex,
           seriesIndex: seriesIndex,
-          activity: activity,
+          activity: <MediaTrackingActivityRow>[
+            for (final MediaTrackingActivityRow r in activity)
+              if (!visibility.hidesTrackedMedia(r.mediaType, r.mediaKey)) r,
+          ],
           facts: facts,
         );
         setState(() {

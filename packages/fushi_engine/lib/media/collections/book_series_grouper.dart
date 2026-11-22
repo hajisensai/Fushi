@@ -47,6 +47,10 @@ class BookSeriesGrouper {
     final List<int> updated = <int>[];
     // 存量书补读 OPF 系列声明（每本只读一次）；之后导入的书由导入器直接写。
     await backfillEpubSeries(_database);
+    // 存量已脱离的配对有声书补齐继承原书所属合集（一条集合查询，稳态空集），确保
+    // 下面加载成员与卷序自愈能一次看到完整成员。
+    final List<int> pairedSrtBackfilled = await _database
+        .inheritPairedSrtCollections();
     final List<_Volume> volumes = await _loadVolumes();
     final Map<String, _Volume> byMember = <String, _Volume>{
       for (final _Volume v in volumes)
@@ -129,6 +133,11 @@ class BookSeriesGrouper {
       final List<MediaCollectionItemRow>? members = itemsByCollection[c.id];
       if (members == null) continue; // 无分卷成员：不可能被定序。
       if (await _healSeriesOrder(c, members, order)) updated.add(c.id);
+    }
+    for (final int id in pairedSrtBackfilled) {
+      if (!created.contains(id) && !updated.contains(id)) {
+        updated.add(id);
+      }
     }
     return (
       createdCollectionIds: List<int>.unmodifiable(created),

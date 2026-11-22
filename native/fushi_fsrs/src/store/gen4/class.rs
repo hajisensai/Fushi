@@ -317,6 +317,8 @@ pub struct ClassWinner {
     pub value: String,
     /// 有值不同的并发写入。
     pub conflict: bool,
+    /// 胜出写入的操作主键（`reg_ix.k`）。
+    pub(super) k: i64,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -370,6 +372,45 @@ impl<'t, 'c> Index<'t, 'c> {
             .into_iter()
             .next()
             .map(|w| w.value))
+    }
+
+    /// [Index::class_value_in] 连同生效写入的排序键（`registers::WriteOrder`）：卡片标志按血统继承时，同一层几张前身
+    /// 都有生效写入的取最新的（`registers::later`，新代恢复 `cmd/writes_restore.rs` 用）。排序键取自这条写入按类拼出的
+    /// 落库行（[Index::edit_lines_as]，写入者已归回），与缓存层喂给寄存器内核的那一行同一份。
+    pub(super) fn class_winner_in(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        canon_key: &str,
+        keep: &dyn Fn(i64) -> bool,
+    ) -> Result<Option<(String, crate::registers::WriteOrder)>, String> {
+        let Some(w) = self
+            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+            .into_iter()
+            .next()
+        else {
+            return Ok(None);
+        };
+        let writers = self.writer_aliases()?;
+        let renamed = Renamed::default();
+        let c = Canon {
+            writers: &writers,
+            renamed: &renamed,
+            entity: self.canonical(canon)?.text(),
+            key: canon_key.to_owned(),
+            keys: None,
+        };
+        let lines = self.edit_lines_as(&[w.k], &|_| true, Some(&c))?;
+        let line = lines
+            .first()
+            .ok_or_else(|| format!("gen4 index: register row {} renders no line", w.k))?;
+        let order = crate::registers::register_winner(
+            &[(line.json.as_str(), line.server_time, None)],
+            canon_key,
+        )?
+        .map(|(_, o)| o)
+        .unwrap_or_default();
+        Ok(Some((w.value, order)))
     }
 
     /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
@@ -585,6 +626,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 op: self.t.id_of_key(k)?,
                 value,
                 conflict: state == R_CONFLICT,
+                k,
             });
         }
         Ok(out)
