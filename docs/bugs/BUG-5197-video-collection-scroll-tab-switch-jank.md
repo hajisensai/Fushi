@@ -1,4 +1,4 @@
-## BUG-5197 · video-collection-scroll-tab-switch-jank
+## BUG-5197 · 视频合集滚动逐帧离屏重烘、切页派生数据每次 build 全量重算（合集滚动与切页卡顿）
 - **报告**：2026-11-22（用户：视频合集滚动很卡、很多页面切换很卡，要求该丢 Rust / 后台的丢出去，别全压在 UI 线程）
 - **真实性**：✅ 真 bug。Windows profile 包 + 1.6 万条视频的测试库（`integration_test/video_collection_perf_itest.dart`，VM CPU 采样 + FrameTiming）实测，UI isolate 上的热点：
   - `fushi/lib/src/pages/implementations/home_video_page.dart` `_passesLocalFilters` / 合集折叠 / 排序：每次 build 对全库逐条重算过滤、合集归属（按成员线性扫）、排序键；切到视频 tab 一帧 build 最长 85 ms。
