@@ -11,7 +11,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
-import 'package:fushi_engine/utils/archive/native_zip.dart';
+import 'package:fushi_engine/utils/archive/archive_unpacker.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 
 class DictionaryImportManager {
@@ -19,13 +19,26 @@ class DictionaryImportManager {
     required DictionaryRepository dictRepo,
     required Directory resourceDirectory,
     required Map<String, DictionaryFormat> formats,
+    ArchiveUnpacker? archiveUnpacker,
   }) : _dictRepo = dictRepo,
        _resourceDirectory = resourceDirectory,
-       _formats = formats;
+       _formats = formats,
+       _archiveUnpacker = archiveUnpacker ?? ArchiveUnpacker();
 
   final DictionaryRepository _dictRepo;
   final Directory _resourceDirectory;
   final Map<String, DictionaryFormat> _formats;
+
+  /// 词典包的解包点：导入链路唯一的 [ArchiveUnpacker]（zip / 7z 原生库、rar 交 7-Zip，
+  /// 加密包的口令对话框 / 记住的口令也在它里面）。native 词典导入器（fushidicts，C++）
+  /// 只读未加密 zip，不往里加解密 / 7z——那会在 C++ 里再造一套解包与口令流程。
+  final ArchiveUnpacker _archiveUnpacker;
+
+  /// 必须先经 [_archiveUnpacker] 解开、不能直接交 native 的词典包扩展名（小写带点）。
+  static const Set<String> kUnpackFirstDictionaryExtensions = <String>{
+    '.7z',
+    '.rar',
+  };
 
   /// BUG-1903：压缩包里**每个各自成典**的条目（`.mdx` / `.dsl`）。
   ///
@@ -176,7 +189,10 @@ class DictionaryImportManager {
     // 的平台顺序不能当稳定输入——同文件 _importArchivedDictionaries 已经这么做。
     final zipFiles = entities.whereType<File>().where((f) {
       final ext = path.extension(f.path).toLowerCase();
-      return ext == '.zip' || ext == '.dsl' || ext == '.mdx';
+      return ext == '.zip' ||
+          ext == '.dsl' ||
+          ext == '.mdx' ||
+          kUnpackFirstDictionaryExtensions.contains(ext);
     }).toList()..sort((File a, File b) => a.path.compareTo(b.path));
 
     if (zipFiles.isNotEmpty) {
@@ -399,6 +415,27 @@ class DictionaryImportManager {
     }
   }
 
+  /// [file] 是否必须先经统一解包点解开：7z / rar（native 不认），或加密的 zip（native
+  /// 不解密）。探测不了的坏 zip 交原路径，由 native 报它自己的错。
+  Future<bool> _needsUnpackFirst(File file) async {
+    final String ext = path.extension(file.path).toLowerCase();
+    if (kUnpackFirstDictionaryExtensions.contains(ext)) return true;
+    if (ext != '.zip') return false;
+    try {
+      return (await _archiveUnpacker.probe(file.path)).encryption.isEncrypted;
+    } on ArchiveUnpackException {
+      return false;
+    }
+  }
+
+  /// 一本词典同目录下的样式表（MDX 的 css 就躺在它自己那本的目录里）。
+  static List<File> _sameDirectoryCss(File dictionary) =>
+      Directory(path.dirname(dictionary.path))
+          .listSync()
+          .whereType<File>()
+          .where((File f) => f.path.toLowerCase().endsWith('.css'))
+          .toList();
+
   /// 整合包内层 zip 递归解包的最大深度（外层不计）。
   static const int _kMaxNestedBundleDepth = 4;
 
@@ -409,12 +446,21 @@ class DictionaryImportManager {
   ///
   /// 单本失败不中断其余（与 [importFromDirectory] 同策略）：三本里坏一本，另外两本
   /// 照样进库，最后用同一套汇总提示告诉用户哪本没进去。
+  ///
+  /// 解出来只有一本时（加密 / 7z / rar 包里装的就是一本词典）就是一次普通导入：
+  /// `single*` 参数（调用方给的 css / 字体目录与更新语义）原样带给它，失败照常抛给
+  /// 调用方，不走多本汇总提示。
   Future<void> _importArchivedDictionaries({
     required File archive,
     required ValueNotifier<String> progressNotifier,
     required Function() onImportSuccess,
     required bool lowMemoryMode,
     VoidCallback? onMemoryError,
+    List<File> singleCssFiles = const <File>[],
+    List<Directory> singleFontDirs = const <Directory>[],
+    bool singleForceReplaceExisting = false,
+    Map<String, String>? singleSourceOverride,
+    Dictionary? singleReplaceTarget,
   }) async {
     final String baseWork = path.join(
       _resourceDirectory.path,
@@ -441,18 +487,19 @@ class DictionaryImportManager {
     try {
       progressNotifier.value = t.import_extract;
       await Future<void>.delayed(Duration.zero);
-      // 后台 isolate + 原生 zlib 逐条目流式落盘：archive 的 extractFileToDisk 在
-      // 主 isolate 上把每个条目整个解压进内存再写（几百 MB 的 MDD 直接卡 UI / OOM）。
-      final String zipPath = archive.path;
-      final String workPath = work.path;
-      await Isolate.run(() => extractZipFileToDirectory(zipPath, workPath));
+      // 导入链路唯一的解包点：后台 isolate 里一次原生调用逐条目流式落盘（几百 MB 的
+      // MDD 不进内存），zip / 7z / rar 与加密包（口令对话框）都在这里。
+      await _archiveUnpacker.extract(archive.path, intoDir: work.path);
 
       final List<File> dictionaries = work
           .listSync(recursive: true)
           .whereType<File>()
           .where((File f) {
             final String ext = path.extension(f.path).toLowerCase();
-            return ext == '.mdx' || ext == '.dsl' || ext == '.zip';
+            return ext == '.mdx' ||
+                ext == '.dsl' ||
+                ext == '.zip' ||
+                kUnpackFirstDictionaryExtensions.contains(ext);
           })
           .toList();
       // BUG-2952：多份 index.json 的整合包——每个带 index.json 的目录是一本
@@ -467,7 +514,9 @@ class DictionaryImportManager {
           )
           .map((File f) => f.parent)
           .toList();
-      if (yomitanRoots.length > 1 || dictionaries.isNotEmpty) {
+      // 只有一份 index.json、别无其它词典的情形只会从加密 / 7z / rar 包来（未加密 zip
+      // 不算整合包、直接交 native），同样打包成一本。
+      if (yomitanRoots.isNotEmpty) {
         // 根目录本身就可能是一个 Yomitan 根（根上有 index.json、旁边还有内层 zip / MDX）：
         // 打包时必须避开别的词典（内层 zip / MDX / MDD / DSL、嵌套的其它 Yomitan 根、
         // 先打好的临时包与正在写的这份 zip 自己），否则整包重复进这一本的 media。
@@ -493,7 +542,31 @@ class DictionaryImportManager {
           dictionaries.add(File(packed));
         }
       }
+      if (dictionaries.isEmpty) {
+        // 没有 index.json / MDX / DSL / 内层包（如 Migaku 的散 JSON）：整个解出目录打成
+        // 一个 zip 交 native，格式由它判，判不出照常报错。
+        final String packed = path.join(work.path, '_bundle_dict_all.zip');
+        final String root = work.path;
+        await Isolate.run(() => packDirectoryToZip(root, packed));
+        dictionaries.add(File(packed));
+      }
       dictionaries.sort((File a, File b) => a.path.compareTo(b.path));
+      if (dictionaries.length == 1) {
+        final File dictionary = dictionaries.single;
+        await importFromFile(
+          file: dictionary,
+          progressNotifier: progressNotifier,
+          cssFiles: <File>[..._sameDirectoryCss(dictionary), ...singleCssFiles],
+          fontDirs: singleFontDirs,
+          onImportSuccess: onImportSuccess,
+          lowMemoryMode: lowMemoryMode,
+          onMemoryError: onMemoryError,
+          forceReplaceExisting: singleForceReplaceExisting,
+          sourceOverride: singleSourceOverride,
+          replaceTarget: singleReplaceTarget,
+        );
+        return;
+      }
       if (dictionaries.length > 1) {
         progressNotifier.value = t.dict_import_bundle_detected(
           n: dictionaries.length,
@@ -504,11 +577,7 @@ class DictionaryImportManager {
       final List<DictionaryTaskFailure> failedNames = <DictionaryTaskFailure>[];
       for (int i = 0; i < dictionaries.length; i++) {
         final File dictionary = dictionaries[i];
-        final List<File> cssFiles = Directory(path.dirname(dictionary.path))
-            .listSync()
-            .whereType<File>()
-            .where((File f) => f.path.toLowerCase().endsWith('.css'))
-            .toList();
+        final List<File> cssFiles = _sameDirectoryCss(dictionary);
         try {
           await importFromFile(
             file: dictionary,
@@ -586,6 +655,25 @@ class DictionaryImportManager {
     // 多出一本，另外两本无声无息（实测：三本 MDX 的包导入后只剩旺文社一本）。
     // 拆开逐本走同一条 [importFromFile]，与目录导入的循环同形。
     //
+    // native 只读未加密 zip：7z / rar 与加密 zip 先经统一解包点解开（口令对话框 / 记住
+    // 的口令在那里），解出来的按整合包同一条路逐本导入。解出来恰好一本时更新语义
+    // （强制重导 / 来源回填 / 替换目标）原样带给那一本。
+    if (await _needsUnpackFirst(file)) {
+      await _importArchivedDictionaries(
+        archive: file,
+        progressNotifier: progressNotifier,
+        onImportSuccess: onImportSuccess,
+        lowMemoryMode: lowMemoryMode,
+        onMemoryError: onMemoryError,
+        singleCssFiles: cssFiles,
+        singleFontDirs: fontDirs,
+        singleForceReplaceExisting: forceReplaceExisting,
+        singleSourceOverride: sourceOverride,
+        singleReplaceTarget: replaceTarget,
+      );
+      return;
+    }
+
     // 三个「这是在更新某一本」的入口（强制重导 / 来源回填 / 显式替换目标）不分流：
     // 它们的语义是「用这个包替换那一本」，拆包会把一次更新变成多次追加。
     if (replaceTarget == null &&

@@ -46,6 +46,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart'
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
@@ -1249,9 +1250,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           _remoteGateAtLastLoad = _shouldLoadRemoteBooks;
                           _remoteBooksFuture ??= _loadRemoteBooks();
                           _shelfMapsFuture ??= _loadShelfMaps();
+                          // 上锁的作品（未解锁时）先拿掉：之后的标签 / 搜索 /
+                          // 阅读状态筛选、合集折叠、继续阅读都只见到可见的书。
+                          final MediaVisibility visibility = MediaVisibility.of(
+                            context,
+                          );
                           final List<MediaItem> shelfBooks =
                               filterShelfEntriesByMangaSplit(
-                                bookList,
+                                visibility.hidesAnything
+                                    ? bookList
+                                          .where(
+                                            (MediaItem item) =>
+                                                !_hidesShelfBook(
+                                                  visibility,
+                                                  item,
+                                                ),
+                                          )
+                                          .toList()
+                                    : bookList,
                                 mangaOnly: _mangaOnly,
                               );
                           final Set<String>? filterSet =
@@ -2661,9 +2677,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
     // BUG-2327：SRT 卡与 EPUB 卡同口径过搜索（显示名 + DB 原名双匹配）。
     // 阅读状态按配对 bookKey 借 EPUB 的读完标记与进度（与卡片进度条同源）。
+    final MediaVisibility visibility = MediaVisibility.of(context);
     final List<SrtBook> srtBooks = <SrtBook>[
       for (final SrtBook b in tagFilteredSrtBooks)
-        if (_matchesShelfSearch(<String>[_srtDisplayTitle(b), b.title]) &&
+        // 上锁：字幕书自己，或它配对的书上锁都不显示。
+        if (!visibility.hidesSrtBook(b.uid) &&
+            (b.bookKey.isEmpty || !visibility.hidesBook(b.bookKey)) &&
+            _matchesShelfSearch(<String>[_srtDisplayTitle(b), b.title]) &&
             _matchesReadStatusFilter(
               bookKey: b.bookKey,
               progress: epubProgressByBookKey[b.bookKey],
@@ -2709,7 +2729,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<RemoteBookInfo> remoteBooks = <RemoteBookInfo>[
       if (showRemote)
         for (final RemoteBookInfo b in remoteState.books)
+          // 对端上锁的书（本次会话未解锁）不出占位卡。
           if (!_landedRemoteDownloadIds.contains(b.downloadId) &&
+              !visibility.hidesRemoteBook(b) &&
               _matchesShelfSearch(<String>[b.title]))
             b,
     ];
@@ -2718,7 +2740,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<RemoteAudiobookInfo> remoteSrtBooks = <RemoteAudiobookInfo>[
       if (showRemote)
         for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
-          if (_matchesShelfSearch(<String>[b.title ?? b.identity])) b,
+          if (!visibility.hidesRemoteAudiobook(b) &&
+              _matchesShelfSearch(<String>[b.title ?? b.identity]))
+            b,
     ];
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups = _foldShelfUnits(
       srtBooks: srtBooks,
@@ -2733,23 +2757,34 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 还挂着删除。全量输入 = 本书架全部 EPUB（去掉以 SRT 卡出现的有声书）+ 全部
     // SRT + 未落地的远端占位（只过「显示远端条目」门，不过搜索）。
     _collectionDisplayCounts.publish<_ShelfBookSlot>(
+      // 上锁（未解锁）的作品不计数：管理页的成员数不该透露藏起来的书。
       _foldShelfUnits(
-        srtBooks: allSrtBooks,
+        srtBooks: <SrtBook>[
+          for (final SrtBook b in allSrtBooks)
+            if (!visibility.hidesSrtBook(b.uid) &&
+                (b.bookKey.isEmpty || !visibility.hidesBook(b.bookKey)))
+              b,
+        ],
         epubBooks: <MediaItem>[
           for (final MediaItem item in filterShelfEntriesByMangaSplit(
             allEpubBooksForBorrow,
             mangaOnly: _mangaOnly,
           ))
-            if (!srtBookKeys.contains(_parseBookKey(item.mediaIdentifier)))
+            if (!srtBookKeys.contains(_parseBookKey(item.mediaIdentifier)) &&
+                !_hidesShelfBook(visibility, item))
               item,
         ],
         remoteBooks: <RemoteBookInfo>[
           if (showRemote)
             for (final RemoteBookInfo b in remoteState.books)
-              if (!_landedRemoteDownloadIds.contains(b.downloadId)) b,
+              if (!_landedRemoteDownloadIds.contains(b.downloadId) &&
+                  !visibility.hidesRemoteBook(b))
+                b,
         ],
         remoteSrtBooks: <RemoteAudiobookInfo>[
-          if (showRemote) ...remoteState.srtAudiobooks,
+          if (showRemote)
+            for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
+              if (!visibility.hidesRemoteAudiobook(b)) b,
         ],
       ),
     );
@@ -4133,7 +4168,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   RemoteBookInfo? _remoteBookForEntry(String entryKey) {
     final _RemoteBookState? state = _detailRemoteState;
     if (state == null) return null;
+    final MediaVisibility visibility = MediaVisibility.of(context);
     for (final RemoteBookInfo book in state.books) {
+      if (visibility.hidesRemoteBook(book)) continue;
       if (book.downloadId == entryKey) return book;
       final String sanitized = sanitizeTtuFilename(book.title);
       if (sanitized == entryKey || _epubUidByKey[sanitized] == entryKey) {
@@ -4149,7 +4186,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   RemoteAudiobookInfo? _remoteSrtForEntry(String entryKey) {
     final _RemoteBookState? state = _detailRemoteState;
     if (state == null) return null;
+    final MediaVisibility visibility = MediaVisibility.of(context);
     for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
+      if (visibility.hidesRemoteAudiobook(book)) continue;
       if (book.identity == entryKey) return book;
     }
     return null;
@@ -4874,16 +4913,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () =>
             _showWorkLinks((kind: MediaLinkKind.book, key: bookKey)),
       ),
-      // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
-      mediaPrivacyToggleAction(
-        context,
-        db: appModel.database,
-        kind: TagHostKind.epub,
-        entryKey: bookKey,
-        title: item.title,
-      ),
-      // NSFW：「模糊 NSFW 封面」开着时书架 / 继续卡的封面打模糊。
-      mediaNsfwToggleAction(
+      // 隐私：分级（公开 / 私密 / 上锁）与 NSFW（本地书 / 漫画没有外部分级可依）。
+      mediaPrivacyAction(
         context,
         db: appModel.database,
         kind: TagHostKind.epub,
@@ -5345,6 +5376,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       case BookConvertBlocker.sourceMissing:
         return t.book_convert_blocked_source_missing;
     }
+  }
+
+  /// 书架卡是不是上锁作品（未解锁时不显示）。认不出 bookKey 的条目不藏。
+  bool _hidesShelfBook(MediaVisibility visibility, MediaItem item) {
+    final String? key = _parseBookKey(item.mediaIdentifier);
+    return key != null && visibility.hidesBook(key);
   }
 
   String? _parseBookKey(String mediaIdentifier) =>

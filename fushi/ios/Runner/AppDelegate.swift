@@ -263,6 +263,9 @@ final class FushiRemotePush {
     // Apple Music 官方集成：MusicKit 授权 / 订阅 / 整曲播放（apple/FushiAppleMusic.swift，
     // docs/specs/2026-10-31-apple-music-musickit.md）。与 macOS 同一份实现。
     FushiAppleMusic.register(binaryMessenger: binaryMessenger)
+    // 上锁作品解锁的系统验证（Face ID / Touch ID / 设备密码，apple/FushiDeviceOwnerAuth.swift，
+    // 拍板台 qiqSbvdxrk）。与 macOS 同一份实现。
+    FushiDeviceOwnerAuth.register(binaryMessenger: binaryMessenger)
     // 词典包后台下载（系统后台 URLSession）+ 下载保活（beginBackgroundTask），BUG-3887。
     FushiBackgroundDownload.register(binaryMessenger: binaryMessenger)
     FushiDownloadKeepAlive.register(binaryMessenger: binaryMessenger)

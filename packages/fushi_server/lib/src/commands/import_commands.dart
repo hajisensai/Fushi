@@ -19,8 +19,10 @@
 ///   与代下载同口径以 `unsupportedOnThisHost` 报失败，不假装导入了。
 /// - `import auto` 对 zip / rar / 7z 小说包沿用代下载执行器的行为：解到**压缩包旁**
 ///   的同名目录再分类（执行器为下载目录设计，会在输入目录里留下解压产物）。
-/// - 7z / rar 需要 7-Zip 命令行（`FUSHI_7ZA` / 可执行文件旁 / PATH），找不到时
-///   rar 漫画包报 `archiveToolMissing`。
+/// - zip / 7z（含加密包）由原生库 `fushi_compute` 解；rar 需要 7-Zip 命令行
+///   （`FUSHI_7ZA` / 可执行文件旁 / PATH），找不到时报 `archiveToolMissing`。无头服务端
+///   没有口令来源，加密包报 `archivePasswordRequired`（漫画包抛
+///   `MangaArchivePasswordException`）。
 library;
 
 import 'dart:io';
@@ -79,7 +81,7 @@ books backfill-isbn                                  backfill ISBN for existing 
 );
 
 /// 漫画图包载体（与 `MangaArchiveImporter.importArchive` 能吃的格式一致；`.7z` 不在内：
-/// 它只认 ZIP 容器 + 7-Zip 处理的 rar/cbr/cb7）。
+/// 它只认 ZIP 容器 + 归档解包点处理的 rar/cbr/cb7）。
 const Set<String> _kMangaArchiveExtensions = <String>{
   '.cbz',
   '.zip',

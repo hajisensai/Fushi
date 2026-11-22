@@ -10,6 +10,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/utils/archive/archive_passwords.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -678,10 +679,11 @@ void main() {
       final List<List<String>> calls = <List<String>>[];
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
-        runProcess: (String executable, List<String> arguments) async {
-          calls.add(arguments);
-          if (arguments.first == 'l') {
-            return ProcessResult(1, 0, '''
+        runProcess:
+            (String executable, List<String> arguments, {String? stdin}) async {
+              calls.add(arguments);
+              if (arguments.first == 'l') {
+                return ProcessResult(1, 0, '''
 Path = $archivePath
 Type = Rar
 
@@ -694,17 +696,17 @@ Path = notes.txt
 Size = 5000000000
 Attributes = A
 ''', '');
-          }
-          final String outputArg = arguments.firstWhere(
-            (String arg) => arg.startsWith('-o'),
-          );
-          final File page = File(
-            p.join(outputArg.substring(2), 'pages', '001.png'),
-          );
-          page.parent.createSync(recursive: true);
-          page.writeAsBytesSync(png);
-          return ProcessResult(2, 0, '', '');
-        },
+              }
+              final String outputArg = arguments.firstWhere(
+                (String arg) => arg.startsWith('-o'),
+              );
+              final File page = File(
+                p.join(outputArg.substring(2), 'pages', '001.png'),
+              );
+              page.parent.createSync(recursive: true);
+              page.writeAsBytesSync(png);
+              return ProcessResult(2, 0, '', '');
+            },
       );
 
       final String key = await MangaArchiveImporter.importArchive(
@@ -726,9 +728,10 @@ Attributes = A
     bool extracted = false;
     final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
       sevenZipOverride: 'fake-7z',
-      runProcess: (String executable, List<String> arguments) async {
-        if (arguments.first == 'l') {
-          return ProcessResult(1, 0, '''
+      runProcess:
+          (String executable, List<String> arguments, {String? stdin}) async {
+            if (arguments.first == 'l') {
+              return ProcessResult(1, 0, '''
 Path = $archivePath
 Type = Rar
 
@@ -737,10 +740,10 @@ Path = ..\\escape.png
 Size = 3
 Attributes = A
 ''', '');
-        }
-        extracted = true;
-        return ProcessResult(2, 0, '', '');
-      },
+            }
+            extracted = true;
+            return ProcessResult(2, 0, '', '');
+          },
     );
 
     await expectLater(
@@ -753,6 +756,62 @@ Attributes = A
     );
     expect(extracted, isFalse);
     expect(await db.getAllEpubBooks(), isEmpty);
+  });
+
+  group('encrypted archives', () {
+    const String fixtures = '../packages/fushi_compute/test/fixtures/archive';
+
+    for (final (String fixture, String extension) in <(String, String)>[
+      ('aes256.zip', '.cbz'),
+      ('zipcrypto.zip', '.zip'),
+      ('header_encrypted.7z', '.cb7'),
+    ]) {
+      test(
+        '$fixture as $extension imports after the password prompt',
+        () async {
+          final String archivePath = p.join(root.path, 'locked$extension');
+          File(p.join(fixtures, fixture)).copySync(archivePath);
+          final _AnswerPasswords passwords = _AnswerPasswords(<String?>[
+            'wrong',
+            'fushi-pw',
+          ]);
+
+          final String key = await MangaArchiveImporter.importArchive(
+            db: db,
+            archivePath: archivePath,
+            sevenZipExtractor: MangaSevenZipExtractor(passwords: passwords),
+          );
+
+          expect(await db.getEpubBook(key), isNotNull);
+          expect(passwords.previousWrong, <bool>[false, true]);
+          expect(passwords.rememberedPasswords, <String>['fushi-pw']);
+        },
+      );
+    }
+
+    test('cancelling the prompt fails with a password error and imports '
+        'nothing', () async {
+      final String archivePath = p.join(root.path, 'locked.cbz');
+      File(p.join(fixtures, 'aes256.zip')).copySync(archivePath);
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: archivePath,
+          sevenZipExtractor: MangaSevenZipExtractor(
+            passwords: _AnswerPasswords(<String?>[null]),
+          ),
+        ),
+        throwsA(
+          isA<MangaArchivePasswordException>().having(
+            (MangaArchivePasswordException e) => e.cancelled,
+            'cancelled',
+            isTrue,
+          ),
+        ),
+      );
+      expect(await db.getAllEpubBooks(), isEmpty);
+    });
   });
 
   for (final String extension in <String>['.cbz', '.zip']) {
@@ -1366,4 +1425,32 @@ Uint8List _buildZip(List<_ZipSpec> entries, {bool zip64 = false}) {
     ..add(u32(zip64 ? 0xFFFFFFFF : directoryOffset))
     ..add(u16(0));
   return out.takeBytes();
+}
+
+/// 依次作答的口令来源（null = 取消）；答对的都勾「记住」。
+final class _AnswerPasswords implements ArchivePasswordProvider {
+  _AnswerPasswords(this.answers);
+
+  final List<String?> answers;
+  final List<bool> previousWrong = <bool>[];
+  final List<String> rememberedPasswords = <String>[];
+
+  @override
+  Future<ArchivePasswordAnswer?> ask(ArchivePasswordRequest request) async {
+    previousWrong.add(request.previousWrong);
+    final String? answer = answers.isEmpty ? null : answers.removeAt(0);
+    return answer == null
+        ? null
+        : ArchivePasswordAnswer(answer, remember: true);
+  }
+
+  @override
+  Future<void> forget(String fingerprint) async {}
+
+  @override
+  Future<void> remember(String fingerprint, String password) async =>
+      rememberedPasswords.add(password);
+
+  @override
+  Future<String?> remembered(String fingerprint) async => null;
 }

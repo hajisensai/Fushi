@@ -18,6 +18,8 @@ mixin _LocalLibraryHostAudiobooks
     // 清单内联断点 + 调轴（互联完整支持批次）：与视频清单同范式，sweep/下载回填
     // 免逐本 GET（旧实现 N 本书 = N 次网络往返）。一趟 prefs 批读。
     final Map<String, String> allPrefs = await _db.getAllPrefs();
+    // 上锁的字幕书 / 有声书（按 uid 或配对正文书的 bookKey）标 locked。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
     RemoteAudiobookInfo build(
       String bookKey,
       String uid,
@@ -51,6 +53,9 @@ mixin _LocalLibraryHostAudiobooks
         // `SrtBooks.importedAt`：client 书架的远端占位卡据此排进「导入时间」序
         // （与 [RemoteBookInfo.importedAt] 同范式）。
         importedAt: importedAt,
+        locked:
+            locks.isSrtBookLocked(uid) ||
+            (bookKey.isNotEmpty && locks.isBookLocked(bookKey)),
       );
     }
 
