@@ -111,6 +111,15 @@ abstract final class MediaLinkSource {
   /// MusicBrainz 刮削数据（release / release group 标题、release group 的
   /// Soundtrack 类别）里带作品名（§4.4 第 1 / 2 条，建议）。
   static const String musicbrainz = 'musicbrainz';
+
+  /// **墓碑专用**：AI 改关系类型 / 方向（`library.changes.apply` 的 `relink`）时被换掉
+  /// 的旧行——它不是用户否决，而是被同一对端点上的新关系取代。否决判据
+  /// （[mediaLinkIsVetoTombstone]）不把它算作否决，新关系才不会被「一对端点有墓碑就
+  /// 不许 AI 生效」的不变量收掉。只出现在 `deleted_at` 非空的行上。
+  ///
+  /// 旧版对端不认识这个值：照常按否决处理（它们的 `enforceMediaLinkVetoes` 会把新
+  /// 关系写成墓碑，经 LWW 同步回来后这次改类型在全网退化成「断开」——宁可少连）。
+  static const String superseded = 'superseded';
 }
 
 /// 谁让一条连接生效（`media_links.confirmed_by`，schema v159）。NULL = 建议。

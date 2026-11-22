@@ -865,7 +865,11 @@ Future<bool> _openSrsNote(
 /// 后台制卡（[SrsMiningAnkiRepository] 的后台队列）写完一张后的提示：入队时已经提示过
 /// 「已加入后台制卡」，成功且无音频警告时不再打扰；失败 / 重复 / 音频缺失必须让用户看见
 /// （失败原因经 [describeMineOutcome] 同时进错误日志）。
-void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
+void showSrsBackgroundMineOutcome(
+  String expression,
+  MineOutcome outcome, {
+  Future<void> Function()? addAnyway,
+}) {
   final described = describeMineOutcome(outcome);
   if (outcome.result == MineResult.success &&
       described.status != MineToastStatus.addedWithWarning) {
@@ -881,8 +885,12 @@ void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
     status: described.success || outcome.result == MineResult.duplicate
         ? described.status
         : MineToastStatus.failed,
-    // BUG-5085：复习库要升级时带「打开复习」。
-    action: mineFailureToastAction(outcome),
+    term: expression,
+    detail: described.detail,
+    // BUG-5085：复习库要升级时带「打开复习」；重复时带「仍要添加」（同一份冻结载荷允许重复再排）。
+    action:
+        mineFailureToastAction(outcome) ??
+        mineAddAnywayToastAction(outcome, addAnyway),
   );
 }
 

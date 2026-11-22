@@ -75,7 +75,42 @@ class ReaderCaretScripts {
       "JSON.stringify(window.fushiCaret.reanchor('$edge'))";
 
   /// Look up the word at the caret (reuses the tap dictionary pipeline).
-  static String lookupInvocation() => 'window.fushiCaret.lookup()';
+  ///
+  /// A controller lookup passes its [token] (> 0): the one `onTextSelected`
+  /// payload this call sends carries it as `controllerLookup`
+  /// ([controllerLookupSelectJs]), so the page claims exactly the lookup it
+  /// asked for, never a tap / hover lookup that lands in between.
+  static String lookupInvocation({int token = 0}) => token > 0
+      ? 'window.fushiCaret.lookup($token)'
+      : 'window.fushiCaret.lookup()';
+
+  /// JS function expression `(selection, node, offset, token)` shared by the
+  /// book caret and the lyrics caret ([ReaderLyricsCaretScripts]): selects from
+  /// the caret like a tap (`selectFromPosition`, 400 chars) and, with a
+  /// non-zero `token`, stamps it as `controllerLookup` on the payload this one
+  /// synchronous call builds (the ruby-snap alternative selection included);
+  /// the payload builder is restored before returning. Same stamp as the manga
+  /// controller cursor (`MangaControllerCursorScripts.place`).
+  static const String controllerLookupSelectJs = r'''
+(function(s, node, offset, token) {
+  if (!token) return s.selectFromPosition(node, offset, 400);
+  var build = s.buildSelectionPayload;
+  s.buildSelectionPayload = function() {
+    var payload = build.apply(this, arguments);
+    if (payload) {
+      payload.controllerLookup = token;
+      if (payload.rubySnap && payload.rubySnap.selection) {
+        payload.rubySnap.selection.controllerLookup = token;
+      }
+    }
+    return payload;
+  };
+  try {
+    return s.selectFromPosition(node, offset, 400);
+  } finally {
+    s.buildSelectionPayload = build;
+  }
+})''';
 
   /// Context "click" at the caret: follow a hyperlink, click an interactive
   /// control (popup audio/expand buttons), or — on plain text — look up the
@@ -164,7 +199,8 @@ class ReaderCaretScripts {
   // 同步）：_isStop（本文件含弹窗标点/scope/clickable 门控）、_ensureRing（ring id fushi-caret-ring
   // vs fushi-lyrics-caret-ring）、_drawRing（本文件做视口 clamp）、_walker（本文件走 document.body
   // 全文）。
-  static String source() => r"""
+  static String source() =>
+      r"""
 window.fushiCaret = {
   active: false,
   node: null,
@@ -1114,12 +1150,16 @@ window.fushiCaret = {
     return { ok: true, rect: this._rectJson(pos.rect) };
   },
 
-  lookup: function() {
+  // token (optional, controller lookup mode): stamped on this lookup's
+  // onTextSelected payload as controllerLookup (see controllerLookupSelectJs).
+  lookup: function(token) {
     if (!this.active || !this.node) return false;
     var s = window.fushiSelection;
     if (!s || typeof s.selectFromPosition !== 'function') return false;
     s.clearSelection();
-    var text = s.selectFromPosition(this.node, this.offset, 400);
+    var text = (""" +
+      controllerLookupSelectJs +
+      r""")(s, this.node, this.offset, token || 0);
     return !!text;
   },
 

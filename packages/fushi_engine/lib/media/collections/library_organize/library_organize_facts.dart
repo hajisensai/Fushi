@@ -20,11 +20,16 @@ import 'package:path/path.dart' as p;
 /// 本域合集照常全部带上（只发名字与前几个成员标题），让 AI 能把新条目并进去。
 ///
 /// [allowedKeys]：设备本地「允许再次建议」的分组键，从拒绝表里减掉。
+///
+/// [includeFolderMembers]：目录合集里的条目也进 [LibraryOrganizeFacts.entries]（默认
+/// 不进：整理器不动它们）。整库地图（`library_agent/library_map.dart`）要的是全库
+/// 一览，打开它；整理器的调用方保持默认。
 Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
   FushiDatabase db,
   CollectionShelfDomain domain, {
   Set<String>? onlyEntryKeys,
   Set<String> allowedKeys = const <String>{},
+  bool includeFolderMembers = false,
 }) async {
   final CollectionBookIdentityIndex identities =
       await CollectionBookIdentityIndex.load(db);
@@ -110,7 +115,10 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
     final List<int> holders = <int>[...?collectionsOfMember[c.memberKey]]
       ..sort();
     // 目录合集的成员由磁盘目录决定（设计稿 §7）：在目录合集里的条目不交给 AI 动。
-    if (holders.any((int id) => factById[id]?.isFolder ?? false)) continue;
+    if (!includeFolderMembers &&
+        holders.any((int id) => factById[id]?.isFolder ?? false)) {
+      continue;
+    }
     final int? managed = <int>[
       for (final int id in holders)
         if (factById[id]?.origin.isOrganizerManaged == true) id,

@@ -133,6 +133,18 @@ void main() {
       expect(s.countsByDay[19996], 1);
     });
 
+    test('近 7 天逐日（旧 → 新，缺的日子补 0）与全部历史的学习天数 / 复习量', () {
+      final SrsHomeStats s = srsHomeStatsOf(
+        report(
+          countsByDay: const <int, int>{20000: 2, 19996: 1, 19000: 5, 19500: 0},
+        ),
+      );
+      expect(s.recentCounts(), <int>[0, 0, 1, 0, 0, 0, 2]);
+      expect(s.recentCounts(3), <int>[0, 0, 2]);
+      expect(s.studiedDays, 3, reason: '0 次的日子不算学习天数');
+      expect(s.totalReviews, 8, reason: '7 天窗口之外的历史也算');
+    });
+
     test('每个牌组今天的复习次数：父牌组含子牌组', () {
       final SrsHomeStats s = srsHomeStatsOf(
         report(todayByDeck: const <String, int>{'parent': 2, 'child': 1}),

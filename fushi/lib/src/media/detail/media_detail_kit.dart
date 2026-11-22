@@ -23,7 +23,6 @@
 library;
 
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -49,6 +48,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -149,23 +149,16 @@ class MediaDetailBackdrop extends StatelessWidget {
                       gaplessPlayback: true,
                       errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     )
-                  // ClipRect：模糊会把封面边缘的颜色向外晕开，ImageFiltered 默认
-                  // 不裁剪，晕出的部分落在 hero 底边之外、压在下方内容上，看起来
-                  // 就是 hero 底部一条带阴影的硬边（渐隐 scrim 只盖得住框内）。
-                  : ClipRect(
-                      child: ImageFiltered(
-                        imageFilter: ui.ImageFilter.blur(
-                          sigmaX: blurSigma,
-                          sigmaY: blurSigma,
-                          tileMode: TileMode.decal,
-                        ),
-                        child: Image(
-                          image: image,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                        ),
-                      ),
+                  // 预烘焙模糊（[PrebakedBlurImage]），不用渲染期 [ImageFiltered]：
+                  // 整页背景在滚动内容底下，Impeller 没有 raster cache，渲染期
+                  // 模糊每滚一帧都要在整窗分辨率上重新卷积（2026-11-22 实测合集页
+                  // 4K 滚动 raster p90 ≈ 50 ms）。烘焙结果只画在自身框内，也就没有
+                  // 旧实现要 ClipRect 兜的「模糊晕出 hero 底边」问题；decal 边缘
+                  // 语义原样保留。
+                  : PrebakedBlurImage(
+                      image: image,
+                      sigma: blurSigma,
+                      tileMode: TileMode.decal,
                     ),
             ),
           );

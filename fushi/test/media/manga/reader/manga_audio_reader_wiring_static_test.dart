@@ -8,8 +8,8 @@
 // [mangaScrollHideEffect]）另有行为测试。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 String _read(List<String> parts) => File(
   p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]),
@@ -35,7 +35,7 @@ void main() {
   test('查词暂停在发起查词时同步按住，不等弹窗渲染信号（与小说 _pauseForLookup 同一时点）', () {
     final String select = _methodBody(
       page,
-      'Future<void> processMangaSelection(ReaderSelectionData data) async {',
+      'Future<int> _processMangaSelection(',
     );
     final int opened = select.indexOf(
       '_readAloud.lookupOpened(MangaLookupSource.page)',

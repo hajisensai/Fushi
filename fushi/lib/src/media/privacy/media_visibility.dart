@@ -6,12 +6,13 @@
 /// 结构：
 /// - [MediaLockSession]：本次会话是否已解锁。**只在内存里**，每次启动都回到隐藏，
 ///   解锁要过口令或系统验证（`media_lock_auth.dart`）；
-/// - [mediaLockSnapshotProvider]：`media_locked_flags` + 上锁合集成员的只读快照，表
+/// - `mediaLockSnapshotProvider`（Riverpod 接线都在 `media_visibility_providers.dart`，
+///   只有那一层读 AppModel）：`media_locked_flags` + 上锁合集成员的只读快照，表
 ///   变更时自动重载；
-/// - [mediaVisibilityProvider]：上面两样合成的 [MediaVisibility]——已解锁 = 什么都
+/// - `mediaVisibilityProvider`（同上）：上面两样合成的 [MediaVisibility]——已解锁 = 什么都
 ///   不藏；快照没读完 = [MediaVisibility.pending]（fail-closed：宁可先藏一瞬，也不让
 ///   上锁的作品闪出来）；
-/// - [MediaVisibilityHost]：挂在 app 根（`main.dart`，与 `MediaNsfwStateHost` 并排），
+/// - `MediaVisibilityHost`（同上）：挂在 app 根（`main.dart`，与 `MediaNsfwStateHost` 并排），
 ///   把 [MediaVisibility] 经 InheritedWidget 广播给所有路由。列表消费端（书架 / 视频库 /
 ///   游戏库 / 音乐库 / 合集 / 首页卡片 / 搜索）在算出条目列表的地方用
 ///   [MediaVisibility.of] 拿到它、按作品身份问 `hides*`，不自己判上锁；
@@ -22,8 +23,6 @@ library;
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart'
     show TrackingMediaType;
@@ -64,25 +63,7 @@ final class MediaLockSession {
   void resetForTest() => _unlocked.value = false;
 }
 
-/// [MediaLockSession] 的 Riverpod 桥：解锁 / 重新上锁时重算依赖它的 provider。
-final Provider<bool> mediaLockUnlockedProvider = Provider<bool>((Ref ref) {
-  final ValueListenable<bool> unlocked = MediaLockSession.instance.unlocked;
-  void listener() => ref.invalidateSelf();
-  unlocked.addListener(listener);
-  ref.onDispose(() => unlocked.removeListener(listener));
-  return unlocked.value;
-});
-
-/// 上锁标记快照（按 `media_locked_flags` / 合集成员表变更重载）。
-final StreamProvider<MediaLockSnapshot> mediaLockSnapshotProvider =
-    StreamProvider<MediaLockSnapshot>((Ref ref) {
-      final FushiDatabase db = ref.watch(
-        appProvider.select((AppModel m) => m.database),
-      );
-      return watchMediaLockSnapshot(db);
-    });
-
-/// [mediaLockSnapshotProvider] 的流本体：先发一份，之后每次相关表变更重读一份，
+/// `mediaLockSnapshotProvider` 的流本体：先发一份，之后每次相关表变更重读一份，
 /// 内容没变的不再发。
 Stream<MediaLockSnapshot> watchMediaLockSnapshot(FushiDatabase db) {
   MediaLockSnapshot? last;
@@ -108,17 +89,6 @@ Stream<void> _lockReloadTriggers(FushiDatabase db) async* {
   );
 }
 
-//// 当前的显示口径（解锁状态 × 上锁快照）。
-final Provider<MediaVisibility> mediaVisibilityProvider =
-    Provider<MediaVisibility>((Ref ref) {
-      if (ref.watch(mediaLockUnlockedProvider)) return MediaVisibility.all;
-      final MediaLockSnapshot? snapshot = ref
-          .watch(mediaLockSnapshotProvider)
-          .valueOrNull;
-      if (snapshot == null) return MediaVisibility.pending;
-      return MediaVisibility.fromSnapshot(snapshot);
-    });
-
 /// 一份显示口径：哪些作品此刻要从列表里拿掉。
 ///
 /// 三种基本状态：[all]（本次会话已解锁 / 树上没挂 host）什么都不藏；[pending]（快照
@@ -139,7 +109,7 @@ final class MediaVisibility {
       ? nothingLocked
       : MediaVisibility._(snapshot, pending: false, unlocked: false);
 
-  /// 什么都不藏（本次会话已解锁 / 树上没挂 [MediaVisibilityHost]）。
+  /// 什么都不藏（本次会话已解锁 / 树上没挂 `MediaVisibilityHost`）。
   static const MediaVisibility all = MediaVisibility._(
     null,
     pending: false,
@@ -338,17 +308,17 @@ final class MediaVisibility {
     return MediaLockSession.instance.isUnlocked ? all : loaded;
   }
 
-  /// [context] 下的显示口径；树上没有 [MediaVisibilityHost]（独立的伴屏 / 弹窗
+  /// [context] 下的显示口径；树上没有 `MediaVisibilityHost`（独立的伴屏 / 弹窗
   /// app、纯 UI 测试）时什么都不藏。
   static MediaVisibility of(BuildContext context) =>
       context
-          .dependOnInheritedWidgetOfExactType<_MediaVisibilityScope>()
+          .dependOnInheritedWidgetOfExactType<MediaVisibilityScope>()
           ?.visibility ??
       all;
 }
 
 /// 在异步 loader 里算列表、存进 State 的页面（统计页 / 收藏 / 歌单）用：
-/// [mediaVisibility] 是此刻的口径（依赖 [MediaVisibilityHost]），口径一变（解锁 /
+/// [mediaVisibility] 是此刻的口径（依赖 `MediaVisibilityHost`），口径一变（解锁 /
 /// 重新上锁 / 上锁标记改了）就调 [onMediaVisibilityChanged] 让页面重读。
 mixin MediaVisibilityDependent<T extends StatefulWidget> on State<T> {
   MediaVisibility? _mediaVisibility;
@@ -372,28 +342,20 @@ mixin MediaVisibilityDependent<T extends StatefulWidget> on State<T> {
   }
 }
 
-class _MediaVisibilityScope extends InheritedWidget {
-  const _MediaVisibilityScope({required this.visibility, required super.child});
+/// 把一份 [MediaVisibility] 广播给子树（[MediaVisibility.of] 读）。app 根由
+/// `MediaVisibilityHost`（`media_visibility_providers.dart`）挂。
+class MediaVisibilityScope extends InheritedWidget {
+  const MediaVisibilityScope({
+    required this.visibility,
+    required super.child,
+    super.key,
+  });
 
   final MediaVisibility visibility;
 
   @override
-  bool updateShouldNotify(_MediaVisibilityScope oldWidget) =>
+  bool updateShouldNotify(MediaVisibilityScope oldWidget) =>
       !identical(oldWidget.visibility, visibility);
-}
-
-/// app 根挂的 [MediaVisibility] 来源：watch 解锁状态与上锁快照，变了整树里读它的
-/// 列表重建。也让快照从启动起就开始读，库页第一次打开时通常已经读完。
-class MediaVisibilityHost extends ConsumerWidget {
-  const MediaVisibilityHost({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => _MediaVisibilityScope(
-    visibility: ref.watch(mediaVisibilityProvider),
-    child: child,
-  );
 }
 
 /// 测试 / 独立子树里直接给定口径。
@@ -401,4 +363,4 @@ class MediaVisibilityHost extends ConsumerWidget {
 Widget mediaVisibilityScopeForTest({
   required MediaVisibility visibility,
   required Widget child,
-}) => _MediaVisibilityScope(visibility: visibility, child: child);
+}) => MediaVisibilityScope(visibility: visibility, child: child);

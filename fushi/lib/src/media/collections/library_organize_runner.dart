@@ -270,6 +270,8 @@ void scheduleAutomaticLibraryOrganize(CollectionShelfDomain domain) {
     scheduleAutomaticLibraryCurate();
     return;
   }
+  // 库管家关着时它只排 AI 助手自动复查（开着才排；流水线那一段按它自己的开关不跑）。
+  scheduleAutomaticLibraryCurate();
   final LibraryOrganizeAutoHost? host = _autoHost;
   if (!_autoEnabled(host)) return;
   _debounce[domain]?.cancel();

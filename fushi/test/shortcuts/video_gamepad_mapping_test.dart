@@ -157,6 +157,16 @@ void main() {
         ),
         isNull,
       );
+      // Select used to enter the subtitle caret (videoEnterCaret); the 2026-11-22
+      // gamepad lookup unification removed that gamepad entry (the controller
+      // lookup mode is the only gamepad lookup), so Select is free again.
+      expect(
+        registry.resolveGamepad(
+          GamepadButton.select,
+          scope: ShortcutScope.video,
+        ),
+        isNull,
+      );
     });
   });
 

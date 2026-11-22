@@ -3,22 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'video_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
-/// TODO-1254：视频制卡成功提示（`card_exported` / `card_overwritten`，走
-/// `_showOsd(..., prominent: true)`）的定位守卫。
+/// 视频页顶部浮层（OSD + 制卡结果卡）的定位守卫。
 ///
 /// media_kit 跑不了 headless，全屏视频 + OSD 无法在 widget 测试里真实驱动，故把
-/// 「制卡成功 OSD 锚在左上角、不居中遮挡画面」的不变量钉在 `volume_osd.part.dart`
-/// 的 `_buildOsdCard` 接线点（参照 TODO-101 沉浸锁 / TODO-069 字幕守卫范式）。
+/// 不变量钉在 `volume_osd.part.dart` 的接线点：
 ///
-/// TODO-971 曾把突出变体（制卡成功）改成 `Alignment.center`，居中会遮挡正在看的画面；
-/// 用户报「卡片已覆盖到『…』提示挡在屏幕正中」。修复后突出变体保留醒目卡片样式
-/// （更大字号 / 厚卡片 / 勾图标），但定位回归左上角（与被动 OSD 同锚点）。
-String _osdCardBody(String src) {
-  final int start = src.indexOf('Widget _buildOsdCard(');
-  expect(start, greaterThanOrEqualTo(0), reason: '缺 _buildOsdCard');
-  // 方法自身的 2 空格闭合作段终点（照搬本仓库其它合并语料守卫的段截断范式）。
-  final int end = src.indexOf('\n  }', start);
-  expect(end, greaterThan(start), reason: '_buildOsdCard 未闭合');
+/// * TODO-1254：制卡提示锚在左上角，不居中遮挡画面（TODO-971 曾改成居中，用户报
+///   「卡片已覆盖到『…』提示挡在屏幕正中」）。
+/// * 用户 2026-11-22：上边距此前恒为「顶栏高 + 8」，顶栏收起后照样空着那段。改成随
+///   顶栏显隐过渡（`_followTopChrome` → `noticeTopOffset`，与底部 toast 避让 chrome
+///   同一个纯函数），顶栏收起时贴到安全区顶端。
+/// * 制卡结果不再挤在 OSD 单槽里：经 `_showMineOsd` 进 [MineNoticeController] 队列，
+///   由 `FushiMineNoticeStack` 画在 OSD 下方（处理中原地变结果、连续几张叠起来）。
+String _section(String src, String signature) {
+  final int start = src.indexOf(signature);
+  expect(start, greaterThanOrEqualTo(0), reason: '缺 $signature');
+  // 方法自身的 2 空格闭合作段终点（`  }) {` 形参收尾不算）。
+  final int end = src.indexOf('\n  }\n', start);
+  expect(end, greaterThan(start), reason: '$signature 未闭合');
   return src.substring(start, end);
 }
 
@@ -29,47 +31,55 @@ void main() {
     src = readVideoFushiSource();
   });
 
-  test('制卡成功 OSD 触发保留：_showMineOsd → _showOsd(prominent: true)', () {
-    // 只改定位、不动内容 / 触发：突出制卡提示仍走 prominent 变体。制卡结果统一经
-    // _showMineOsd（先过「制卡提示」开关，反馈 iH6RY1kqQn），由它发 prominent OSD。
+  test('制卡结果经 _showMineOsd 进制卡队列，先过「制卡提示」开关', () {
     expect(
       compactCode(src).contains(
-        // 允许尾随可选实参（新制成功带撤销：`_showMineOsd(..., undo)`）。
         compactCode('_showMineOsd(described.message, described.status'),
       ),
       isTrue,
       reason: '制卡结果必须经 _showMineOsd 出（内容 / 触发不得改）',
     );
+    final String body = _section(src, 'void _showMineOsd(');
+    expect(body.contains('if (!MineNotices.shown(status)) return;'), isTrue);
+    expect(body.contains('_mineNotices.show('), isTrue);
+  });
+
+  test('OSD 与制卡队列锚定左上角，不居中（TODO-1254）', () {
+    final String body = _section(src, 'Widget _buildOsdOverlay(');
+    expect(body.contains('alignment: Alignment.topLeft'), isTrue);
+    expect(body.contains('Alignment.center'), isFalse);
+    expect(body.contains('FushiMineNoticeStack('), isTrue);
+    expect(body.contains('anchor: MineNoticeStackAnchor.top'), isTrue);
     expect(
-      compactCode(
-        src,
-      ).contains(compactCode('_showOsd(message, prominent: true,')),
-      isTrue,
-      reason: '制卡成功提示必须仍走 prominent OSD',
+      _section(src, 'Widget _buildOsdCard(').contains('Alignment.center'),
+      isFalse,
     );
   });
 
-  test('OSD 卡片锚定左上角，突出变体不再居中（TODO-1254）', () {
-    final String body = _osdCardBody(src);
-    // 定位常量必须是左上角。
+  test('顶部浮层上边距随顶栏显隐过渡，不再恒避顶栏（用户 2026-11-22）', () {
+    final String overlay = _section(src, 'Widget _buildOsdOverlay(');
+    expect(overlay.contains('_followTopChrome('), isTrue);
     expect(
-      body.contains('AlignmentGeometry alignment = Alignment.topLeft'),
-      isTrue,
-      reason: 'OSD 卡片必须锚在左上角（Alignment.topLeft）',
-    );
-    // 防回归：不得再把（任何变体的）OSD 定位设成居中。
-    expect(
-      body.contains('Alignment.center'),
+      compactCode(src).contains(compactCode('top: _videoButtonBarHeight + 8')),
       isFalse,
-      reason: 'OSD 卡片不得居中（TODO-1254 回归：居中会遮挡画面）',
+      reason: '写死的「顶栏高 + 8」顶栏收起后照样空着，不许回来',
     );
-    // 突出变体不得再用 all(24) 的居中式外边距，改与被动 OSD 同款左上外边距。
-    // UI 巡检 PR-4：top 从固定 52 改为顶栏几何推导（_videoButtonBarHeight +
-    // 8×_videoUiScale），吃界面缩放；守卫断言推导式而非字面值。
-    expect(
-      body.contains('top: _videoButtonBarHeight + 8 * _videoUiScale'),
-      isTrue,
-      reason: 'OSD 卡片外边距应锚左上且 top 由顶栏高推导（避开顶栏、吃界面缩放）',
-    );
+    final String follow = _section(src, 'Widget _followTopChrome(');
+    expect(follow.contains('_videoControlsVisible'), isTrue);
+    expect(follow.contains('_videoControlsTransitionDuration'), isTrue);
+    final String inset = _section(src, 'double _videoTopChromeInset(');
+    expect(inset.contains('noticeTopOffset('), isTrue);
+    expect(inset.contains('presence: presence'), isTrue);
+    // 角标与字幕转文字进度卡同一口径。
+    for (final String sig in <String>[
+      'Widget _buildLoopCueBadgeOverlay(',
+      'Widget _buildMineQueueBadgeOverlay(',
+    ]) {
+      expect(
+        _section(src, sig).contains('_followTopChrome('),
+        isTrue,
+        reason: sig,
+      );
+    }
   });
 }

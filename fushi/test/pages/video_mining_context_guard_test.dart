@@ -43,7 +43,7 @@ void main() {
     // c51：`_refreshVideoSentenceFavorite` 改成同步读收藏镜像后签名变了，
     // 不再拿它当 end marker。
     final String lookup = region(
-      'Future<void> _lookupAt(',
+      'Future<int> _lookupAt(',
       'void _pauseForLookup(',
     );
     // BUG-966: 查词那一刻快照锚定 cue，解析收口到顶层纯函数 resolveVideoLookupAnchorCue

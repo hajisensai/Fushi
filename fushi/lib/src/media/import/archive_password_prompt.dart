@@ -12,6 +12,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -209,9 +210,9 @@ class _ArchivePasswordDialogState extends State<ArchivePasswordDialog> {
               name: p.basename(widget.request.archivePath),
             ),
           ),
-          AnimatedSize(
+          FushiAnimatedSize(
             duration: motion,
-            curve: Curves.easeOutCubic,
+            curve: FushiMotion.standard,
             child: AnimatedSwitcher(
               duration: motion,
               child: notice == null
@@ -300,7 +301,7 @@ class _ShakeOnMount extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
       duration: duration,
-      curve: Curves.easeOut,
+      curve: FushiMotion.enter,
       builder: (BuildContext context, double progress, Widget? child) {
         // 三个来回、振幅随进度衰减。
         final double dx =
