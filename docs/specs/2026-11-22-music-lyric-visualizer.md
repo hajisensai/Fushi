@@ -1,314 +1,222 @@
 # 音乐歌词页：全屏歌词动画（移植 folia-major 的歌词动画样式）
 
 - 日期：2026-11-22。所有者拍板：照 [folia-major](https://github.com/chthollyphile/folia-major)（commit `a772a97`）的
-  全屏歌词动画做，**18 套样式全做**；全屏动画里**纯观赏、不点词查词**，点一下 / Esc / 返回键退出回原布局；
-  **镜台（Diorama）用 flutter_gpu 做真 3D**（「大不了 fork」），拿不到 GPU 上下文的平台退回 CPU 版。
+  全屏歌词动画做，**18 套样式全做**，「缺的能补齐就补齐」；全屏动画里**纯观赏、不点词查词**，点一下 / Esc / 返回键
+  退出回原布局；**镜台（Diorama）用 flutter_gpu 做真 3D**（「大不了 fork」），拿不到 GPU 上下文的平台退回 CPU 版。
 - 许可：folia 是 AGPL-3.0，本仓是 GPL-3.0。各样式是读懂 folia 算法后用 Dart 重写的移植（衍生作品），
-  folia 的图片（头像 / 表情 / 纹理）与字体一律没有搬进来，用封面与程序绘制代替。
+  folia 的图片（头像 / 表情 / 纹理 / 图标）与字体一律没有搬进来，用封面、程序绘制、用户素材包和 Material 图标代替。
 
 ## 结构
 
 | 位置 | 作用 |
 |---|---|
-| `fushi/lib/src/media/music/lyrics/visualizer/lyric_visualizer.dart` | 契约：`LyricVisualizerMode`（落库值 = folia 模式 id，冻结）、`LyricVisualizerContext`、配色、最小时钟接口、可调参数声明（滑杆 / 开关 / 单选）、注册项 |
-| `.../lyric_visualizer_runtime.dart` | 共享运行时：当前行 / 间奏 / 上一句 / 下一句、逐字与逐词时间线（行级歌词按行均分）、`pulseAt` 歌词节拍包络、种子随机 |
-| `.../lyric_visualizer_frame.dart` | 唯一的逐帧驱动（Ticker → `LyricVisualizerTicks`，画家 `repaint: ticks`） |
-| `.../lyric_visualizer_subtitle.dart` | 共享底部字幕（译文 + 下一句） |
-| `.../lyric_visualizer_registry.dart` | 样式 → 注册项；守卫测试核对与枚举一一对应 |
-| `.../modes/<样式>/` | 各样式实现（每个样式一个目录，测试在 `fushi/test/media/music/visualizer/modes/`） |
-| `fushi/lib/src/pages/implementations/music/music_lyric_visualizer_view.dart` | 宿主：背景之上画样式、共享字幕、悬停条（换样式 / 退出）、选择面板、通用参数面板 |
-| 歌词页 `music_lyrics_page.dart` | 工具栏「歌词动画」→ 选择面板 → 页内全屏层；返回键先退出动画 |
-| 设置 › 音乐 | 样式、每首随机、字号；各样式参数在选择面板的齿轮里调 |
+| `fushi/lib/src/media/music/lyrics/visualizer/lyric_visualizer.dart` | 契约：`LyricVisualizerMode`（落库值 = folia 模式 id，冻结）、`LyricVisualizerContext`（音频 / 主题 / 强度 / 字幕 / 背景）、配色、可调参数（滑杆 / 开关 / 单选 / 颜色 / 文本 / 素材包，分组、条件显隐、预设）、注册项 |
+| `.../lyric_visualizer_runtime.dart` + `_structure` / `_render_hints` / `_segments` | 共享运行时：当前行 / 间奏 / 离场窗口、逐字与逐词时间线（行级歌词按 folia 权重分配）、副歌 / 段落（来源标注优先，否则 folia 启发式）、renderHints、词级分组（按文字类别，无词典） |
+| `.../lyric_visualizer_audio.dart` + `_beats.dart` | 音频契约：逐帧包络（power / low / lowMid / mid / upperMid / high / vocal / onset）、拍与强拍、每拍重音与音色、鼓击（底鼓 / 军鼓 / 镲）、人声起音；共享每拍特效强度（folia `resolveBeatFxAccentGain`）；没有分析时回落歌词包络 |
+| `.../lyric_visualizer_theme.dart` + `ai_theme/` | 主题契约（配色覆盖、按词着色、强度、字体、名称 / 描述、图标闭集）；AI 主题（`AiFeature.musicVisualizerTheme`，每首缓存，可撤销） |
+| `.../lyric_visualizer_background.dart` + `backgrounds/` | 背景层注册（fluid / solid / common / latent / monet / nomand / sora / url），样式按请求取背景并可覆盖背景参数 |
+| `.../lyric_visualizer_subtitle*.dart` | 共享字幕（译文 / 罗马音 / 双行，全局隐藏 / 字号 / 字体） |
+| `.../lyric_visualizer_assets*.dart` / `_cover.dart` | 用户素材库（`visualizer_assets/<样式>/<包>/`，逐张摆放）、共享封面加载 |
+| `.../lyric_visualizer_frame.dart` | 唯一的逐帧驱动（Ticker → `LyricVisualizerTicks`，带 dt） |
+| `.../modes/<样式>/` | 各样式实现（测试在 `fushi/test/media/music/visualizer/modes/`）；镜台另有 flutter_gpu 管线与 `shaders/diorama.shaderbundle.json` |
+| `fushi/lib/src/media/music/analysis/` + `native/fushi_compute/src/music_analysis/` | 整首离线音频分析（Rust，`ffc_mana_*`）：DSP 退路 + Beat This! 节拍 / htdemucs 鼓与人声（ONNX，模型按需下载，GPU 执行器同漫画超分），结果 `.fma`（v3）缓存 |
+| `fushi/lib/src/pages/implementations/music/music_lyric_visualizer_view.dart` | 宿主：背景 → 样式 → 共享字幕，悬停条（换样式 / AI 主题 / 退出）、选择面板、通用参数面板 |
+| 歌词页 `music_lyrics_page.dart` | 工具栏「歌词动画」→ 选择面板 → 页内全屏层；进入时请求本首分析并预取下一首，退出即取消 |
+| 设置 › 音乐 | 样式、每首随机、强度、背景、字号、字幕、自动 AI 主题、分析模型下载 / 删除 |
 
-偏好键：`music_visualizer_mode` / `music_visualizer_random` / `music_visualizer_font_scale` /
-`music_visualizer_tunings`（JSON，只存改过的项）。
+偏好键：`music_visualizer_mode` / `_random` / `_font_scale` / `_intensity` / `_background` / `_tunings`（JSON，
+只存改过的项，背景参数在 `background:<id>` 下）/ `_subtitle_*` / `_ai_theme_auto`。
 
-## 共性缺口（待补，登记于此）
+## 共性部分现状
 
-1. **实时音频分析**：Fushi 没有实时频谱 / 节拍检测（folia 有 `audioPower` / `audioBands` 和「智能动感模式」
-   beat FX，含 beat_this / htdemucs 模型）。现由 `runtime.pulseAt`（歌词起字包络）代替，各样式的随拍效果都是
-   「跟唱词」而不是「跟鼓点」。补法：音频引擎侧出低成本的 RMS / 频段流（Rust 胖核心，一条事件流），各样式
-   换接；节拍检测模型另议。
-2. **副歌 / 段落标记**：`LyricLine` 没有 `isChorus` / `songPart`。云阶、流光、回环、时计、花火、町景、隐喻
-   等依赖副歌的效果要么缺、要么各自用「重复句」启发式。补法：在 runtime 统一提供副歌判据（来源格式带标记时用
-   标记，否则共享启发式），删掉各样式里的本地实现。
-3. **render hints**（folia `renderHints.ts`：micro / short / normal 行分级、`renderEndTime` 句尾离场窗口）：
-   流光、云阶、心象、群唱各自本地移植了一份。补法：收进 `LyricVisualizerRuntime`。
-4. **词级分词**（folia `Intl.Segmenter` + AI 分词）：runtime 把每个 CJK 字当一个词，商籁 / 雾笺 / 花火等
-   自己做了近似分组。补法：框架提供共享分词结果。
-5. **主题强度 / 按词着色**（folia AI 主题的 `animationIntensity`、`wordColors`）：没有对应数据；强度在
-   群唱 / 云阶 / 流光 / 心象里各成一个「动画强度」参数（键名重复）。补法：上收为共享参数。
-6. **参数类型**：缺文本输入、颜色、预设、条件显隐、嵌套（町景的多视角）。
-7. **背景独立组合**：folia 的背景可以和任意样式组合（如莫奈背景配别的样式）；这里背景是样式的一部分
-   （`sharedBackdrop` 只是开关，且不能按参数计算，雾笺在街景 / 水族箱下多画了一层宿主背景）。
-8. **封面加载工具**：群唱 / 凝彩直接用了页面层的 `musicLyricsBackdropCoverProvider`，时计只读本地封面。
-   补法：挪到框架层共享。
-9. folia 的用户上传素材（群唱头像包 / 表情包、凝彩画布图层、莫奈人像）、OBS / mod / 预览模式不移植。
+最初登记的 9 项共性缺口（实时音频、副歌段落、renderHints、词级分词、强度 / 按词着色、参数类型、背景独立组合、
+封面工具、用户素材）都已补上，见上表。仍存的共性差异：
 
-## 各样式与 folia 的差异（移植代理逐条报告）
+- **分词没有词典**：功能黑名单禁止形态素分析，词级分组按文字类别（汉字 + 送假名、片假名串、拉丁词、中文逐字），
+  与 folia 的 `Intl.Segmenter` 在中文多字词上不完全一致。
+- **不搬 folia 素材**：内置头像 / 表情 / 装饰件 / 图标用程序绘制或 Material 图标代替，用户可用素材包替换。
+- **按设计不做**：拖动 / 点句跳转等交互（纯观赏）；OBS / mod 钩子、设置页内预览模式；渲染分辨率 / 抗锯齿参数
+  （由宿主管）。
+- **动画近似**：framer-motion 弹簧按解析曲线近似；动画按歌曲时间推进（拖进度结果确定）；换歌时场景重建，
+  没有 folia 的 songHandoff 过渡。
+- **镜台真 app 观察**：Windows 真机上 flutter_gpu 管线已建起（截图证据在 `fushi/.codex-test/windows-itest/diorama-gpu-*`）；
+  Linux / Android / iOS / macOS 的 Flutter GPU 开关已配，未实机验证。
+- **未在真机量帧耗**：CPU 近似重的样式（绘光、隐喻、花火、雾笺）低端机帧率未测。
+
+## 待所有者拍板
+
+- CI 每次在 shard 0 装 mesa（lavapipe）跑 flutter-gpu 标签测试，拿不到 GPU 判红：是否接受这份开销与依赖。
+- 分析模型托管：目前从第三方 Hugging Face 仓库 `HUAI4236/folia-models` 下载（sha256 锁定）；是否迁到
+  hajisensai/Fushi 的 release。
+
+## 各样式与 folia 仍存的差异
 
 
 ### 流光（luminous）
 
-- Chorus ripple (the expanding ring on active words in isChorus lines) is not drawn: Fushi's LyricLine / runtime has no chorus flag.
-- Per-word colouring (theme.wordColors via resolveWordColor) is not ported: Fushi has no word-colour table, so every active word uses palette.accent and the base colour is palette.text.
-- Folia's animationIntensity is a global theme setting; here it is a per-style choice tuning 'animationIntensity' (calm/normal/chaotic, default normal).
-- useLegacyLayout is stored as the choice tuning 'layoutMode' (adaptive/legacy) instead of a boolean; defaults and the other tuning keys and ranges match folia (enableWordRotation, breathingFloatMultiplier 0-2 default 1, wordSpacing 0-2 default 0.7, avoidOverlap).
-- Adaptive layout only does the sticky-punctuation / direct-contraction merge. Folia's Intl.Segmenter CJK semantic grouping is not ported; for classic it only influences wrap units, since semantic units still render per character.
-- framer-motion's default transitions for the line enter are approximated (opacity/blur 0.3 s ease-out tween, scale critically-damped spring k=100). Word layout, body and glow variants follow folia's exact durations and keyframes.
-- chaotic alignSelf (flex-start/flex-end) and the container perspective are dropped: all word boxes have the same height and nothing uses 3D, so they have no visible effect.
-- Text glow uses TextStyle.shadows on a transparent glyph (folia's text-shadow path) with the CSS radius converted to a Flutter blurRadius; the Linux drop-shadow variant is not needed.
-- Addition over folia: a single unbreakable word wider than the container is scaled down (floor 0.3) so long Latin words don't run off narrow screens.
-- Seeking or scrubbing jumps straight to the time-derived state (no animation from the previous frame), because every animation is a pure function of lyric time. During forward playback this matches folia's motion.
-- No audio reactivity is lost: classic does not read audioPower; shared backdrop and shared subtitle (translation / next line) stay with the host, as in folia's VisualizerShell / VisualizerSubtitleOverlay.
+- 流光：framer-motion 弹簧 / 缓动按解析曲线近似，不逐帧模拟弹簧物理（Flutter 侧无 framer 运行时，视觉差异肉眼难辨）
 
 ### 心象（mindscape）
 
-- folia 用 audioPower 驱动的整体上下浮动（verticalLift）和每个词的漂浮（localFloat），这里改由 runtime.pulseAt(t) 的起字包络乘 motionAmount 驱动，不是实时频谱。
-- tuning 里的 beamIntensity（folia 自己已经恒为 0）和 render（画布分辨率覆盖）没有移植，Flutter 按设备像素比绘制，这两项没有意义。
-- folia 的 theme.animationIntensity（calm/normal/chaotic）在 Fushi 没有对应的主题属性，改成本样式的单选参数 animationIntensity，默认 normal。
-- theme.wordColors 关键词着色在 Fushi 没有对应数据，所有词的高亮色统一用 palette.accent，底色用 palette.text。
-- 副歌判定：folia 的 isChorus 来自歌词源提供的 chorus 区间或 detectChorusLines；这里只在本地移植了「重复次数最多的歌词文本算副歌」这一条启发式，不读歌词源的 chorus 时间区间。
-- 文字测量和换行由 pretext 换成自写的贪心换行，每个单位用 TextPainter 量宽，字形步进按比例分摊。断行规则不完全等同于 pretext（例如避头只是一张简单的标点表）。
-- 三层 40px text-shadow 合成为一层同半径的阴影，透明度按 over 叠加，再用 saveLayer 的透明度控制强弱。效果相近，不逐层一致。
-- folia 的 lineLayer perspective 对 2D 旋转没有作用，chaotic 下随机透视距离这一项没有移植。
-- folia 的 waitingForMusic 文案本来就是空串，没有画间奏占位文字。
-- 减弱动态效果时，未唱的词按 0.35 透明度静止显示（folia 原本是隐身），这样一帧静止画面能看到整句。这是按任务规格的取舍。
-- zh-TW / zh-HK 两个 json 里这批新 key 的值是英文（i18n_sync --add 只给 en/zh-CN 写值），需要协调方决定要不要补繁体。
+- 心象：pretext 断行用 TextPainter 近似，极端长词断点可能与 folia 不同（Flutter 无 pretext 库）
+- 心象：多层阴影合并成单层模糊绘制（逐层 shadow 在 Canvas 上开销过大）
+- 心象：逐行透视变换未移植，只保留平面位移 / 缩放（CustomPainter 内逐行 3D 透视代价高，留待需要时再做）
+- 心象：动效关闭时非当前行透明度取 0.35 为自定值，folia 无对应规格
 
 ### 浮名（fume）
 
-- Audio reactivity: Fushi has no spectrum, so spark size and opacity follow runtime.pulseAt() mapped onto fixed band weights (treble 1, vocal 0.9, mid 0.75, lowMid 0.6) instead of real audioBands.
-- Dropped tuning disableGeometricBackground: it only toggles the geometric shapes of folia's shared shell backdrop, and the Fushi host backdrop has none. FumeBackground's own shapes are always drawn and are controlled by backgroundObjectOpacity, as in folia. The render-quality override and mod hooks are dropped too.
-- Fushi lyrics carry no chorus flag, so folia's 'isChorus -> hero' and chorus score in hero selection are dropped. Heroes come from the every-6th-line / seeded-random / fallback rules only.
-- Per-word colours (theme.wordColors via resolveWordColor) are not available: active glyphs always use palette.accent. The folia theme is mapped as primaryColor -> palette.text, secondaryColor -> palette.secondary, accentColor -> palette.accent.
-- animationIntensity is fixed at folia's 'normal' constants (glow 0.92/0.62, float 18px/7s), because Fushi themes have no calm/chaotic intensity.
-- Text measuring: folia uses @chenglou/pretext. Here the font-size fit uses one TextPainter natural-width measurement at 100px, scaled linearly, and wrapping and glyph offsets come from TextPainter. The default app font is used, with weights w800 (hero) / w600 (body) instead of folia's 780/640.
-- Layout runs synchronously when the scene is first built, not in time slices. folia's 'laying out' hourglass card is therefore not ported, and a very long song may cost one slow first frame.
-- The passed-text cross-fade (standard -> dimmed) is drawn as one interpolated style, quantized to 1/32, instead of two blended snapshot layers. Glyph shapes are identical, so the look is equivalent.
-- Canvas 2D shadowBlur is in screen pixels. Live glyph glow and stamp blur are divided by the camera scale to match. Static passed-block glow stays in world units, like folia's scaled snapshots.
-- folia's Linux glyph-cache workaround (FumeLiveRaster) and the first-frame transition signal are not ported; they are Chromium-specific.
-- The scale-in from 0.985 to 1 when printing starts is an exponential approach of about 0.45s, not framer-motion's easeOut tween.
+- 按词着色的「词」是运行时的词（CJK 一字一词）而非 folia 的歌词音节词，配合互相包含匹配，单字词命中含该字的关键字（如关键字「夜空」会染「夜」）
+- 量字：folia 用 @chenglou/pretext；这里字号适配用 100px 的 TextPainter 自然宽度线性缩放，折行与字形偏移来自 TextPainter；主题未给字重时用 w800 / w600 近似 780 / 640
+- 排版在首帧同步完成，不分时间片；folia 的「排版中」沙漏卡未移植，很长的歌首帧可能慢一次
+- 唱过文字的标准→变暗交叉淡化画成一个插值样式（量化到 1/32），不是两层快照混合；字形相同，观感等价
+- Canvas 2D shadowBlur 是屏幕像素：活动字辉光与方块模糊按镜头缩放折算，静态唱过块辉光保持世界单位（同 folia 缩放快照）
+- folia 的 Linux 字形缓存绕行（FumeLiveRaster）与首帧过渡信号是 Chromium 专属，未移植
+- 开始打印时 0.985→1 的放大是约 0.45s 的指数逼近，不是 framer-motion easeOut 补间
+- 渲染质量覆盖（render.scale / antialias）与 mod 钩子不移植
 
 ### 云阶（partita）
 
-- CJK semantic layout: folia uses Intl.Segmenter / AI word segmentation (with the user's saved split). Here a script heuristic groups runs of adjacent single-character CJK runtime words: a Hangul run or a Katakana run is one unit; Han characters go in pairs, with a leftover one joining the last pair; 1–2 hiragana directly after Han/Katakana join that unit; other hiragana go in groups of up to 3. Word boundaries can therefore differ from a real dictionary segmentation.
-- Parser words are replaced by Fushi runtime words: CJK one per character, Latin split on spaces, so 'It's' is already one word. Sticky-punctuation rules are ported unchanged and mostly fire for full-width CJK punctuation and space-separated commas or contractions.
-- Animation intensity came from folia's AI/cover theme (theme.animationIntensity). Here it is an extra choice tuning 'intensity' (calm/normal/chaotic, default normal). With motion off it is forced to calm.
-- Per-word colours (theme.wordColors / resolveWordColor) are dropped. The active colour is always palette.accent and the base colour palette.text.
-- Chorus ripple (isChorus) is not drawn: Fushi's LyricLine has no chorus flag.
-- folia's audioPower/audioBands only feed VisualizerShell's backdrop. Partita itself is not audio-reactive and the backdrop is the host's shared fluid backdrop, so pulseAt is not used.
-- framer-motion behaviour is approximated with closed-form functions: springs (stiffness/damping 200/20 for words and rows, 500/25 as the default for line scale), with unspecified transitions assumed to be framer's default easeInOut tween. An interrupted transition restarts from the pose computed at the state-switch time, not from live velocity.
-- Glow is drawn as Flutter text Shadows on transparent text (CSS radius r converted to Flutter blurRadius via sigma = r/2), with alpha quantised to 1/32 steps. folia's Linux drop-shadow fallback is not needed.
-- The 'fit to area' shrink always applies (min 0.3) so long or narrow layouts stay on screen. folia only shrinks when avoidOverlap is on and otherwise lets nowrap rows overflow.
-- The avoidOverlap spacing is computed in px from measured TextPainter widths, not with folia's em+px CSS calc. The algorithm is the same: pair reaches, row reaches and turn estimate.
-- folia's 'Waiting for music' empty-state text is an empty string in its locales, so nothing is drawn between lines, same as folia.
-- Mod hooks (modKeys/modPatch), quick-control chip and command-palette entry are dropped. A swapped staggerMin/staggerMax is reordered when read, not when the slider moves.
+- 云阶：中文没有词典分词，共享分词按单字切，中文语义分组只能按连续单字 CJK 词合并，与 folia 的 Intl.Segmenter 结果不完全一致（框架分词能力限制）
 
 ### 群唱（cappella）
 
-- folia 的内置头像 PNG 没有搬过来，换成按调色板生成的圆形头像：渐变底 + 人像剪影；演唱者有名字时显示首字母。设置里的选项值仍是 'builtin'，界面上叫「生成头像」。
-- folia 的「自定义」头像来源和用户上传头像 / 表情包的功能（IndexedDB 存储的头像包、表情包，以及 emojiPackSource 参数）没有移植。
-- 表情 PNG 换成 8 种程序绘制的表情脸贴纸（微笑 / 大笑 / 眨眼 / 惊讶 / 心心眼 / 落泪 / 墨镜 / 唱歌加音符），白描边，脸色从调色板取；每条消息选哪一种仍用 folia 的种子算法。
-- 封面头像来源下，没有封面或封面还没加载完时，用生成头像代替（folia 是退到内置图）。
-- folia 的动画强度来自 AI 主题的 animationIntensity，Fushi 没有这个概念，改成本样式的「动画强度」参数（平静 / 标准 / 混乱，默认标准）。
-- 主题色对应关系：folia 的 primaryColor（前景字色）对应 palette.text，accentColor 对应 palette.primary，secondaryColor 对应 palette.secondary。另外加了一条 folia 没有的规则：气泡字色和底色对比度低于 3:1 时，字色换成另一端（背景色或前景色），因为封面取色不保证对比度。
-- framer-motion 的 layout="position" 换位动画用指数平滑近似（时间常数 0.09s），不是逐帧还原 framer 的布局补间。
-- 从激活切回普通状态时，字号和内边距瞬时切换、气泡框 0.2s 补间，这和 folia 一致；字在框补间期间被裁剪。
-- 减弱动态效果时，当前句整句直接显示，没有逐字淡入；folia 没有这个模式。
-- folia 的字体和字重主题（resolveThemeFontStack / Weight）没有接，用 App 默认字体、字重 400。
-- folia 的 cappella 本身不读 audioPower / 节拍，所以没有需要用 pulseAt 代替的音频响应部分。
-- 预览模式下强制插入表情（isPreviewMode / forcePreviewEmo）没有移植，Fushi 的宿主没有这个模式。
+- 群唱：没有内置 PNG 头像 / 表情素材，内置项仍用程序生成头像与程序贴纸代替（仓库不收 folia 美术素材，用户可用自定义素材包替换）
+- 群唱：folia 的预览模式（设置页静态示例聊天）未移植（宿主设置页不渲染样式内预览）
+- 群唱：气泡位置弹簧用解析阻尼曲线近似，不逐帧模拟 framer 弹簧
+- 群唱：气泡文字对比度沿用固定深浅色规则，未接主题关键词着色（聊天气泡整段单色是 folia 原设计，按词着色会破坏可读性）
+- 群唱：样式不使用音频帧（folia 群唱本身无节拍特效）
 
 ### 回环（claddagh）
 
-- Fushi 没有实时频谱：folia 平滑后的低音 / 人声能量（环半径鼓起、中轴线变色伸缩）改用 runtime.pulseAt（衰减 320ms）加一段 70ms 起音的闭式包络代替，峰值约 0.56；暂停或关闭动效时为 0。
-- Fushi 的歌词数据没有副歌（isChorus）标记，folia 副歌专属效果全部画不出来：奇偶字上下错位、三层副歌发光、中轴线副歌光晕。
-- theme.wordColors（按词着色）在 Fushi 没有对应数据，已唱的字统一用 palette.accent。
-- theme.animationIntensity 固定按 folia 的 normal 档（倍率 0.25，上限 1.25），calm / chaotic 两档没有设置项。
-- 字号：folia 固定 72px×字号倍数；这里画布不到 1100 宽时再按宽度缩小（最小一半），中轴线长度同比缩，好让 390 宽的手机放得下。
-- 主题字体和副字幕字体都换成应用默认字体，歌词 w700、译文 w600。
-- 环切换弹簧的时钟用歌词显示时间，不用墙钟：暂停时停在半路，向后拖进度直接到位。
-- folia 的「播放重置时冻结一帧」（shouldHoldCladdaghFrameForPlaybackReset）是为 React 提交滞后打的补丁，这里没有这个问题，不移植。
-- 关闭动效时：环不跟唱词转，当前行居中静止，后面的行停在背面；不做闪光冲高和能量脉动，逐字变色照常。
-- 整体透明度（CSS opacity）分别乘进字色和发光色的 alpha，不对整个字做合成；发光与字形重叠处和 CSS 会有细微差别。
-- 为了缓存，颜色 alpha 按 1/64、模糊按 0.25px、发光半径按 0.5px 量化。
-- 共享背景和底部共享字幕沿用宿主的（sharedBackdrop / sharedSubtitle 都为 true），与 folia 用 VisualizerShell 加字幕浮层一致。
-- 没有用 shader，全部走 CPU 绘制，没有照搬任何 folia 素材。
+- 弹簧在显示时间上推进（folia 在 rAF 真实时间上），拖动进度时会直接对齐，不走弹簧过渡。
+- 主题字体没装时回落系统字体（框架不负责下载字体）。
+- 字形缓存按量化后的半径 / 颜色建，极细微的颜色渐变会有台阶。
+- 没有 folia 的 reset-hold 帧（换歌时先停一帧再起）：Fushi 换歌时整个场景重建。
+- 译文环不做副歌错位（folia 只对主歌词环错位，译文环本来就不错位；保持一致）。
 
 ### 莫奈（monet）
 
-- 频谱与音频脉动：Fushi 没有实时频谱。folia 读 audioBands / audioPower 的地方，改用 runtime.pulseAt(t)（唱词起字包络）合成五段频带（monetSyntheticBands），所以频谱跟着唱词冲高回落，不跟真实音乐走。
-- 关键字着色（keywordColoringEnabled）已去掉：它依赖 folia AI 主题的 wordColors，Fushi 没有对应数据，所有计时词都用主色@0.98。
-- 副歌光晕（isChorus 的椭圆强调色光晕，以及副歌行扫字色混入强调色）没有实现：Fushi 的 LyricLine 没有 chorus 标记。
-- 浮动装饰（MonetFloatingDecor）没有实现：folia 只画主题自带的 lyricsIcons，主题没有图标时本来就不画；Fushi 主题没有图标，所以没有装饰。
-- 封面在 chaotic 强度下的晃动动画没有实现：Fushi 没有 theme.animationIntensity。
-- 描述胶囊的文字原本是 AI 主题描述（theme.description / name）或用户自定义文本，这里统一显示样式名「莫奈 / MONET」（folia 的最终兜底值）；customDescription 无法用现有参数规格表达（框架没有文本输入），已去掉。
-- 肖像拖拽（拖动挂钩按钮、方向键微调、虚线编辑框）和 portraitHangerVisibility 已去掉：可视化页内不处理交互；portraitOffsetX 改成 -150..0 的滑杆，键名和语义与 folia 一致。
-- 肖像来源去掉了 custom（用户上传立绘），背景来源去掉了 uploaded-global（上传背景图），水洗色去掉了 custom 及自定义色（框架没有取色器）：一律用封面和主题色。
-- 分辨率覆盖（render）、歌词栏的滚轮 / 触摸手动滚动、点击行跳转、混音交接（songHandoff）都已去掉：前三项是交互或渲染档位，交接是 Fushi 没有的宿主能力。换歌时只重播海报入场，肖像用 900ms 交叉淡入。
-- 译文只显示一轨：优先显示 translation，没有译文时显示 romanization。folia 的「罗马音 + 译文」双轨（subtitleContentMode='both'）来自全局设置，这里没有接。
-- RTL 歌词（阿拉伯文、维吾尔文）的扫字方向没有特殊处理，始终从左往右扫；镜像布局时整体右对齐。
-- 描述胶囊的 backdrop-blur 磨砂效果没有画：每帧做 BackdropFilter 太贵，只保留半透明底色和描边。
-- 背景烘焙在 1280×720（folia 是 1920×1080），模糊半径按比例缩小；封面解码时长边上限 960px。
-- 字体使用应用默认字体；folia 的主题字体栈和字重设置没有接（统一用 w600，译文 w500）。
-- 测试里没有封面，所以封面解码、isolate 逐像素处理、烘焙和肖像加载这条路径在 flutter test 中没有执行；逐像素处理、水洗映射和漂移的纯函数单独做了单测，烘焙结果没有在真机上看过。
+- 没有 backdrop-filter 毛玻璃（Flutter 只能整层 BackdropFilter，开销大，用半透明底代替）。
+- RTL 文本的扫光方向没处理（Fushi 歌词全按 LTR 排）。
+- 拖拽交互（拖动轨道 / 点句跳转）按设计不做：可视化只显示。
+- 没有 songHandoff 换歌过渡动画（换歌时整个场景重建）。
+- chaotic 切到 normal 时抖动直接归零，没有 folia 的 0.8 秒回正动画。
+- 背景图按 1280×720 烘焙一次，超大屏放大略糊。
+- 主题图标用 Material 实心字形，不是 folia 的 Lucide 描边图标（不搬 folia 素材）。
 
 ### 镜台（diorama）
 
-- 没有真实音频分析：涟漪、脉冲、持续音由歌词时间代替，节拍特效（歌词跳动、节拍涟漪、Mirror Ripples）没有移植。
-- 关键词着色没有移植（时间线里没有 wordColors）；folia 的渲染质量覆盖选项也去掉了。
-- folia 跟随主题的 animationIntensity 换成了本模式自己的 cameraStyle 调参（平静 / 普通 / 激烈）。
-- 2.5D 的近似：文字平面用局部仿射代替真透视，没有深度缓冲和排序（点云总画在文字下面），雾化用透明度渐隐模拟。
-- CPU 点云只用 folia 点数的一半（dioramaCpuPointShare=0.5）；颜色对比度调整简化为最低对比度 3。
-- 没带 folia 的自定义字体；整行放不下时会折行（folia 不折行，而是缩放）。
-- 没有 folia 的「等待音乐」占位和就绪门；纯音乐用 96 条每条 5 秒的空行走镜头。
-- i18n json 与 strings.g.dart 已经由加锁脚本写入，但按规范没提交，由委托方汇总。
-- 没在真机或模拟器上看过实际帧率和画面效果，只跑了单元测试和挂载冒烟测试。
+- CPU 回退路径没有细纹贴图（只有 GPU shader 有 detail），CPU 点数占比固定 0.5。
+- 2.5D 近似：没有真正的深度缓冲遮挡，按层序画。
+- 没有 folia 的「等待音乐」占位与就绪门。
+- 关键词对比度在 sRGB 空间算（folia 在 THREE 线性空间），个别颜色修正量略有差别。
 
 ### 时计（pendolo）
 
-- Audio: folia's balance wheel speed and swing follow realtime bass. Here they follow runtime.pulseAt(t)*0.6, the lyric-onset envelope, through the same 0.12 smoothing.
-- Beat effects dropped: drumhead halo, shockwave lens, sparks, screen shake, jewel flares and gear-on-beat. Folia retired the beat-list effects anyway, and the drumhead effect needs HTDemucs drum stems.
-- Theme animationIntensity (calm/normal/chaotic motion profiles) does not exist in Fushi, so the 'normal' profile is fixed (every multiplier = 1).
-- Chorus emphasis dropped: halo, glow, accent mix 0.58 and the chorus marker during manual scroll. Fushi's LyricLine has no isChorus. Fill uses the non-chorus accent mix of 0.32.
-- Per-word colours (theme.wordColors) are not supported. The fill is one colour, mix(text, primary, 0.32).
-- Interaction dropped by design (display-only visualizer): wheel/touch manual scrolling of the arc and tap-to-seek on a line.
-- Balance icon: folia draws the theme's lucide icon (Star fallback). Here it is always a procedural outline 5-point star.
-- Cover on the watch face: loaded from local coverPath with FileImage, resized to 512 px and centre-cropped square. folia stretches the image. http cover URLs are not loaded.
-- Hub view: lines stand upright, facing the screen at their projected anchor, scaled by perspective depth. This replaces folia's DOM rotateX/preserve-3d. Parts behind the camera are clipped with a half-plane in plane space. There is no depth-buffer occlusion between layers; parts are drawn in order of height.
-- Tilt/parallax: folia hides the clockwork behind the lyric layer using depth/stencil. Here layers are painted in height order with no occlusion.
-- Line glow: a blurred, tinted copy of the recorded clockwork Picture (sigma 6 at 0.3 and sigma 2 at 0.65) stands in for the CSS drop-shadow 4px/12px.
-- Dropped tuning: render (resolution/antialias override), which is meaningless here. folia's presets 1-3 are not exposed because the framework has no preset buttons. Every individual tuning is declared with folia's defaults and ranges (wheelCenterX uses tuning.ts's -0.3..0.5).
-- Subtitle row: translation, or romanization when there is no translation. folia's 'both' mode, which stacks two rows, and its separate subtitle font scale are not ported; the lyric fontScale is used.
-- Rotation pivot: each line's text rotation and scale pivot on the arc anchor. In folia the pivot is the box's left-center before the -50% shift, which differs by half a block height.
-- No-lyrics mode: the wheel steps every 5 s right away, without folia's 3 s READY_GRACE wait for instrumental detection.
-- Non-focal to focal font size change is instant. folia has a 200 ms CSS transition on the non-focal div.
+- 拍点列表驱动的冲击波透镜、齿轮火花、齿轮随拍步进不做：folia 2026-10-17 已退役（代码保留但关闭）。
+- 封面在表盘上按 512px 缩放后居中裁成正方形（folia 直接拉伸）。
+- 副歌光晕用遮罩后模糊叠两层近似 CSS mask 后的 drop-shadow，扫光前沿处光晕略被裁短。
+- 手动滚轮 / 触摸转动弧线、点句跳转、手动滚动时的副歌标记点按设计不做（可视化只显示）。
+- 轮心视角用透视投影近似 folia 的 DOM rotateX / preserve-3d，没有层间深度遮挡；倾斜 / 视差也按层高顺序画，不做深度 / 模板遮挡。
+- 线条发光用录制机芯 Picture 后模糊着色两层（sigma 6 / 2）代替 CSS drop-shadow 4px / 12px。
+- 去掉了 render（分辨率 / 抗锯齿）参数：Flutter 下没有意义。
+- 句子旋转 / 缩放以弧上锚点为轴，folia 以盒子左中点（-50% 平移前）为轴，相差半个块高。
+- 没有歌词时轮盘立即每 5 秒走一格，没有 folia 3 秒 READY_GRACE 等纯音乐判定。
+- 非焦点句变焦点句时字号直接切换，没有 folia 200ms 的 CSS 过渡。
+- 摆轮图标用 Material 实心字形，不是 Lucide 描边，且不随镜像翻转。
 
 ### 商籁（sonnet）
 
-- folia 的 100 种几何主图只移植了 0–17，变体号按 % 18 回落；18–99 是主题插画类，没有移植。
-- 节拍特效（镜头撕裂、缩放冲击）没做。图标随音乐放大改用歌词节拍 runtime.pulseAt，不是 folia 的音频能量。
-- folia 的 Lucide 主题图标换成了程序画的五瓣描边花；没有复制 folia 的素材和字体。
-- folia 的主题名 / 描述（AI 主题）换成了曲名、艺人、专辑。
-- CJK 分词是启发式规则，没有 Intl.Segmenter；Fushi 也没有副歌 / 段落结构的元数据，所以副歌相关分类没有生效。
-- textureResolution 和渲染覆盖类参数没移植。
-- 着色器加载失败时，CPU 回退只有 RGB 错位和暗角，没有镜头扭曲、色散和网点。
-- 故障条转场只做了 14 条粗带（重画画面并平移，58 条细带合并成带内的次级偏移）；胶片颗粒用随机点近似。
-- 导引线和圆的起笔用种子随机，不用 Math.random，所以每次播放都一样。
-- 镜头之间空档时的漂移（gap drift）没做，深度视差也比 folia 简化了。
-- 移植只靠单元测试和 widget 冒烟测试验证，没有在真机或模拟器上看过画面效果。
+- folia 100 种几何主图只移植 0–17，18–99 是主题插画类素材，按「不复制 folia 素材」不移植
+- textureResolution 与渲染覆盖类参数不移植：分辨率 / 抗锯齿归宿主管
+- 着色器加载失败时 CPU 回退只有 RGB 错位和暗角，镜头扭曲、色散、网点需要逐像素着色器
+- 故障条转场合并成 14 条粗带、胶片颗粒用随机点近似：CPU 逐条重画 58 条细带开销过大
+- 导引线和圆的起笔用种子随机而非 Math.random：仓库规定随机必须可复现，属有意差异
+- 深度视差比 folia 简化：没有深度缓冲
+- 只有单元测试与 widget 冒烟测试，未在真机上看过画面
+- 主题图标粒子用 Material 实心字形；主题没有名字时角标回落曲目信息（曲名 / 艺人 — 专辑）。
 
 ### 凝彩（tempera）
 
-- Audio: folia tempera's only audio-driven effect is the drum-triggered ink flash. It is not ported, and runtime.pulseAt is not used.
-- User-uploaded image layers are out of scope. The image layer pool contains only the cover, with alignment fixed to free horizontally and bottom vertically. Layer scale and opacity are exposed as sliders.
-- Text inversion is emulated on the CPU, not as folia's per-pixel shader. Text is recoloured to ink or paper for each block shape of the same shot, using the block's alpha-mixed colour (alpha below 0.34 is ignored). The ground counts as paper. Blocks from a shot that is handing off, the cover image and the host backdrop showing through holes do not affect the decision. The 5-tap smoothing is not reproduced.
-- Post-processing: lens distortion, RGB shift and texture compression or resolution are not ported. Grain is seeded per-frame points; vignette and contrast are a radial gradient and a colour matrix inside the scene layer.
-- The depth toggle switches instantly instead of easing in over time. Depth blur uses ImageFilter.blur at draw time instead of being baked into textures.
-- No word segmenter is available, so word splitting uses a heuristic: Latin runs, Hangul runs, Han or katakana plus trailing hiragana, and Chinese Han split into pairs.
-- Fushi has no song-part metadata, so paragraph kinds chorus and break and metadata-driven paragraph boundaries never occur. Paragraphs split on gaps and line count only.
-- The theme wordColors keyword layer is not available, so the keyword colour layer is never filled.
-- The animationIntensity theme multiplier (calm / chaotic) is not mapped; the camera and glyph-motion sliders cover it.
-- Fonts: the default theme family is used at weight 600, with TextPainter measuring instead of pretext. Glyph TextPainters are cached with alpha quantised to 1/32.
-- A cross-session song-swap handoff and a one-task-per-frame scene preloading scheduler are not ported. The scene cache builds lazily and keeps the active paragraph plus or minus one.
+- 文字反色在 CPU 上按块形近似，没有 folia 的逐像素着色器和 5 点平滑
+- 后处理（镜头扭曲、RGB 错位、纹理压缩 / 分辨率）不移植：需要全屏着色器，分辨率归宿主管
+- 景深模糊在绘制时用 ImageFilter.blur，没有预烘焙进纹理
+- 用 TextPainter 量字而非 pretext，字形缓存按 1/32 量化透明度
+- 跨会话换歌交接与逐帧一项的场景预加载调度器未移植：场景缓存按需懒建、保留当前段 ±1 已够用
+- 墨块是 CPU 曲线，不是噪声纹理 + 片元着色器；封面图层固定默认摆放。
 
 ### 绘光（lumiere）
 
-- 没有真实音频分析：音乐驱动只用 runtime.pulseAt 的歌词起音包络代替 folia 的 bass/power。
-- Fushi 的 LyricLine 没有 songPart/isChorus/blockIndex，不会判成 chorus（副歌）段，也不能按元数据分段，只能按时间间隔分段。
-- 没用片元着色器：光场在 CPU 上按网格顶点算再插值，窄光丝、焦散细纹和干涉条纹比 folia 的逐像素渲染软；全画质下每帧约 3000 个网格顶点加每束光最多约 1800 个顶点，低端机建议选均衡或省电，没在真机上测帧率。
-- 图形辉光与文字辉光是近似做法（加宽描边、光点光晕、眩光放大），没有 folia 的全屏模糊 bloom 后处理。
-- 背景歌词碎片用实心字低透明度画，不是 folia 的空心描边字。
-- 竖排只在当前行以 CJK 为主时启用，拉丁文行退回横排（folia 会转写）。纵横（crossed）排版的自由落点简化成当前行两侧的固定槽位，没有完整移植 lineClearance / windowProtection 的避让计算。
-- folia 原文里 prismTriangle 线稿的函数体被截断，按名称和调用参数重建。
-- 去掉的调节项：渲染倍率与抗锯齿覆盖、keywordColors、themeIcons（Fushi 主题没有 wordColors/lyricsIcons）；不带 folia 的自定义字体，用应用默认字体。
-- folia 用 pretext 量字，这里改用 TextPainter 的字宽；切块、错峰等时间常数照搬，但 STACK_GAP 等槽位间距按字号重新标定，不是逐像素复刻。
-- 没在真机上看过实际画面，只有 widget 冒烟测试（默认、非默认组合、仅文字、行级歌词、关动态、390x844 竖屏）。
+- 光场在 CPU 上按网格顶点算再插值，没用片元着色器：窄光丝、焦散、干涉条纹偏软；低端机建议均衡 / 省电画质，未在真机测帧率
+- 图形辉光与文字辉光是近似做法（加宽描边、光点光晕、眩光放大），没有全屏模糊 bloom 后处理
+- 响度在这里抬的是烟雾受光增益，folia 抬的是烟雾密度系数：本移植的雾密度在网格着色里已固定，视觉效果相近
+- 背景歌词碎片用实心字低透明度画，不是 folia 的空心描边字
+- 竖排只在当前行以 CJK 为主时启用（拉丁行不转写）；纵横排版简化为固定槽位，没有完整移植 lineClearance / windowProtection 避让
+- folia 原文 prismTriangle 线稿函数体被截断，按名称和调用参数重建
+- folia 用户上传的自定义字体不移植（主题字体已接上）
+- 用 TextPainter 量字而非 pretext，槽位间距按字号重新标定
+- 只有单元测试与 widget 冒烟测试，未在真机上看过画面
+- 主题图标整体淡入，不逐笔描绘；避让的是分镜自身的文字区，不是单元领句区域。
 
 ### 雾笺（nebbia）
 
-- 音频联动：folia 的人声包络（audioBands.vocal / HTDemucs 人声轨）在这里换成 runtime.pulseAt(decayMs 400)：小雨点按每 20 ms 一格的泊松速率落，大雨点在 60% 的词开唱处砸（folia 没分析音轨时的退路），没有真实起音和整首响度倍数。
-- 智能动感模式的两项没移植：「疏雨轻车」的鼓点颠簸和「舞潮踏拍」跟拍时水母收缩、水草摆动、冒排泡、光斑放大。颠簸一律按种子随机（平均 7.5 秒一下）。
-- 没有 AnimCJK 笔顺数据（APL 授权，folia 也不入库）：中日文和拉丁字一样走字体骨架追踪，笔顺按从上到下、从左到右估。骨架是异步生成的，好之前（以及测试里）用扫笔字形：字形是真的，笔画顺序是几道横扫；扫笔字形的擦痕边上不挂小水珠，只有收笔水珠和下淌水珠。
-- complexScale（10 笔以上的字放大）依赖笔顺数据，没有实现，所有字都按 1 倍。
-- 分词用的是本地近似算法：中文汉字两字一词、虚词单独成词；日文按「汉字 + 送假名」和片假名串切、格助词断开；拉丁按空格切。folia 走的是 Intl.Segmenter 或用户保存的分词，所以主词选择可能和 folia 不同。
-- 图标和 emoji 不复制 lucide 资源，改成自己画的 10 种线稿（心、星、月、太阳、音符、花、闪光、伞、笑脸、叶子）。folia 用主题的 lyricsIcons，这里固定只用这一组。
-- 折射是近似的：水珠画成比雾暗的身子、底部一弯折上来的灯光、左上一点高光，不是真正去采样折射的窗外。雾的浓淡噪声改成几团大软斑慢慢飘；擦痕的毛边改成 MaskFilter 模糊，没有用噪声阈值。
-- 颠簸后的弹簧甩动和甩出的印子（smears）没有移植，只保留整体位移、水珠细颤、大水珠震落和水痕。被震落的水珠淌完、回雾后回到原处重新凝出，不像 folia 那样停在落点。
-- 融雪是简化版：窗外两层落雪，玻璃上的雪按透视飞来、粘住、化成一颗水珠再干掉。没有分珠合并物理、冰珠和冰点、火彩折射，写字的笔尖和抹字的手指扫过时也不会吸走雪水。凝露的水珠被写字吸走这一点同样没做（但擦开的地方没有水珠）。
-- 水族箱：水母位置直接按时钟算出（不积分），只画伞盖、拖尾和光晕，水母的跟拍分项没有。气泡分成泉眼细泡（对应窗外的雨开关）和大泡（对应车灯开关）。
-- 舍弃的 tuning：render（分辨率 / 抗锯齿，归宿主管）。多选项改了形式：出现 / 消失按 folia 快捷按钮的预设做成单选（auto/write/fade/breath，fog/fingers/mix）；9 种构图、5 样窗外显示改成逐项开关，构图全关时按全开处理。
-- 减弱动态效果时：窗外静止，不颠簸、没有雨点和下淌水珠；字在开唱时整字显出（不逐笔写），手指抹除改为起雾，起雾和哈气照常按歌词时间走。
-- 共用背景（behind=backdrop）时雾是半透明的雾色（深色主题用深灰、浅色主题用白），擦开处透出宿主背景，宿主背景本身不做模糊。
+- 小雨点没乘 folia 的整首响度归一（songLoudness）：框架人声包络已归一到 0..1
+- 舞潮踏拍的冒泡排（bubble rows）没做；folia 各分项独立强度合成一个滑块
+- 没有 AnimCJK 笔顺数据（APL 授权，folia 也不入库）：笔顺按字体骨架从上到下、从左到右估，骨架生成好之前用扫笔字形
+- complexScale（10 笔以上的字放大）依赖笔顺数据，未实现
+- 折射、雾浓淡、擦痕毛边是 CPU 近似（暗色水珠身 + 折光 + 高光、软斑、MaskFilter 模糊），没有噪声阈值与真实折射采样
+- 颠簸后的弹簧甩动与甩出的印子（smears）未移植；震落的水珠回雾后回原处重新凝出
+- 融雪简化：没有分珠合并物理、冰珠冰点、火彩折射，笔尖和手指不吸雪水；凝露水珠不被写字吸走
+- 水族箱水母位置按时钟直接算（不积分），只画伞盖、拖尾、光晕
+- render 分辨率 / 抗锯齿归宿主管；出现 / 消失与构图 / 窗外的多选按 folia 快捷预设改成单选 + 逐项开关
+- 主题强度与按词着色不接：folia 雾笺本身不读 animationIntensity / wordColors，不算差异
+- 只画有线稿的 10 种主题图标，其余跳过（不搬 Lucide 资源）。
+- 水母上浮没有加跟拍的额外速度（folia 0.06×kick）：上浮位置按时间直接算、没有逐帧累计状态。
+- 水母自身节奏 1→0.4 直接切换，没有 folia 1.5 秒渐变；水草仍跟连续拍点包络，没有移植每拍左右交替的弹簧。
 
 ### 隐喻（metaphor）
 
-- Audio: Fushi has no realtime loudness. folia's smoothed audioPower (it swells the blobs and strengthens the flow field) is replaced by runtime.pulseAt(t, decayMs: 600) × 0.6.
-- Dropped the 'annihilation collision' beat effect (metaphorBeatFx.ts: collisions snapped to beats, small rings on every beat). There is no beat grid; collisions stay on word onsets, as folia does when the effect is off.
-- Dropped the keywordColors tuning and the per-keyword tint output (uTint). Fushi's cover palette has no wordColors keyword list, so accent glyphs never occur and the accent channel is used only by accent blobs and rings.
-- Dropped the render tuning (resolution multiplier). The ink field is drawn at logical resolution, capped at 960 px on the long side.
-- No chorus flag in fushi_music LyricLine, so the chorus extras (more negative shots, more cuts, macro/dutch bias, flood/smash into the chorus) never trigger.
-- No theme animationIntensity, so the pace factor is fixed at 1 (folia: calm 0.75 / chaotic 1.3).
-- Word segmentation uses the runtime's split: one token per CJK character, Latin split on spaces. folia uses Intl.Segmenter word segmentation, so Japanese words like 夜空 become two tokens here, which affects the hero/scatter picks and camera word focus.
-- No custom fonts shipped: lyrics use the default app font at w300, as in folia when the theme sets no weight. Notes use an italic serif fallback chain (Cambria Math / STIX / Georgia / Noto Serif / serif) and may render differently per platform.
-- Threshold noise, grain and specks are pre-baked periodic tiles shifted per frame instead of per-pixel shader hashes. The grain tile shifts as a whole 6 times a second, so the paper mottle moves with the fine grain instead of staying still.
-- The flow warp is a mesh of about 48 cells along the long side with texture coordinates displaced by the same value noise, not per-pixel. The fine 9× noise layer is sampled coarsely.
-- Line-art edges are plain strokes (2× half-width × 1.1) plus one wider G-channel stroke for the halftone fringe, not the shader's smoothstep falloff. Bands wider than 0.06 world units are drawn unwobbled. Notes wobble as whole glyphs, not per pixel.
-- The wide glyph blur is a text shadow (σ≈0.09 em) with a colour-matrix gain, standing in for folia's three-pass box blur. The atlas cell is 100 px with a 56 px em.
-- Dropped the detail where an accent blob over unsung text darkens dots toward ink (`dots*accent*smoothstep(0.85,1,field.g)`).
-- The ink field is 8-bit, not half-float, so overlapping blobs saturate at 1. folia's own fallback behaves the same way.
-- Idle-time preparation of the next cue is replaced by building it synchronously in paint once it is less than 2.5 s away.
-- The general font size setting (fontScale) is ignored, as in folia: the camera sets text size. Translation and next line are left to the host's shared subtitle (sharedSubtitle true), and sharedBackdrop is false because the style lays its own paper.
-- Not checked on a real device, so Impeller frame cost is unmeasured. Each frame does one toImageSync of the field plus about 4 full-screen saveLayers.
+- 渲染分辨率倍数没搬：Flutter 按设备像素比画，这一项没有意义
+- 墨场是 8 位 / CPU 近似（阈值噪声贴图、流场网格、线稿描边、文字阴影模糊），没有 folia 的 GPU 浮点墨场
+- 强调融球压在未唱字上让网点变暗的细节没做
+- 关键字着色用 srcOver 叠色近似 folia 的 tint.rgb / tint.a 混合
+- 没有自带字体，注记字体回落到系统字体
+- 下一个 cue 的预备是同步构建，没有放到空闲帧
+- 没在真机上量帧耗
 
 ### 花火（hanabi）
 
-- 节拍特效（hanabiBeatFx）没做：Fushi 拿不到音频分析，也没有用 runtime.pulseAt 代替，烟花和镜头只按歌词时间走
-- 副歌靠「相邻且在全曲重复出现的行」推断（folia 用歌词自带的副歌 / 段落标记）；段落结构靠行间隔和标点判断
-- 分词按字符类别（汉字 / 假名 / 拉丁 / 韩文）粗切，folia 用 Intl.Segmenter，日文词界会有出入
-- 21 种装饰件里，ring / spokes / orbit 照 folia 的参数移植，其余 18 种按 folia 的形状和节奏用 Canvas 自己重画（没逐行对照 ornamentShapes / Lines / Particles.ts）
-- 拼贴层（collage：每镜头标题贴纸、爆点贴纸、whoosh 等）只保留了左缘胶片孔和右下角网点块两样
-- 副歌整屏泛光用「把整层录成 Picture、模糊后用 plus 混合叠一遍」近似，没有 folia 的亮度阈值滤镜；low 画质不画泛光
-- 烟花辉光滤镜（mg/glow.ts）改成每个光点额外叠一圈加色大光晕（SparkBatch.halo）
-- 去掉了 folia 的渲染分辨率 / 抗锯齿调节项、开场标题卡和 lucide 图标；没用 folia 的字体或素材，字体跟随宿主 DefaultTextStyle
-- 镜头坐标换算（screenToShot）没算镜头进场那一刻的世界漂移和转角，sky 型主烟花和间奏烟花的位置会和 folia 有几个像素到几十像素的偏差
-- PREPARE_AHEAD 预备是在绘制里同步做的（下一段落提前 1.5 秒建装配、画字形图集），没有放到空闲帧里分摊，段落切换前一帧可能稍重
-- 没有在真机 / 模拟器上看过实际画面，只跑了 widget 冒烟测试（不抛异常、卸载干净）
+- 18 种装饰件是重画的近似，不是 folia 原图
+- 拼贴层做了简化
+- 泛光与辉光滤镜是近似实现
+- 去掉了分辨率 / 抗锯齿 / 开场卡几项（Flutter 侧没有对应意义）
+- 镜头坐标换算不含漂移与转角，随拍烟花落点同样有这个偏差
+- 下一段预备是同步构建
+- 分词没有词典，按文字种类近似
+- 没在真机上量帧耗
 
 ### 町景（machi）
 
-- three.js 3D 改成 Canvas 2.5D：正交投影加画家算法（按物件中心深度排序），没有深度缓冲，相互穿插的物体可能叠错；圆柱用方杆代替；没有阴影贴图（folia 的阴影档位已去掉）
-- 景深 / 移轴是近似：folia 按每个像素的深度算散景圆，这里按画面高度切 12 条横带分档高斯模糊，歌词屏所在的多边形不参与模糊；灯光不会虚成圆形光斑
-- 后处理效果从简：bloom 改成加色径向光晕，没有横向镜头光条、色差、颗粒、FXAA/SMAA；墨线是给面描边，不是按深度二阶差分算的
-- 湿地面倒影改成把发光体和灯在底座顶面上镜像成竖向模糊光带（不做真正的镜像渲染），水洼是按 seed 摆的半透明椭圆
-- 音频驱动改用替代源：霓虹随拍 / 大屏闪拍用 folia 的固定节拍（simulated_beat，按氛围时钟走），屏幕亮度和点唱机读 runtime.pulseAt（歌词起字包络）；没有实时节拍检测、没有 HTDemucs 鼓点涟漪（machiDrumRipple 整个缺失）
-- 副歌检测：Fushi 歌词没有 isChorus / songPart，改成把整首里唱过两次及以上的句子认作副歌（去掉标点、不分大小写）
-- 自定义视角只存一份共享的五项滑块，没有按场景各存一份；不能在画面上拖动、滚轮缩放，也没有取景控制条 MachiCameraBar（拍板过：样式内不接手势）
-- 画质类 tuning 去掉了（分辨率、抗锯齿、阴影、自动降级）；倒影和辉光留成两个开关
-- 资源替换：folia 的主题图标（lucide）和自定义字体没带过来，店招 logo 改成封面色圆章加曲名首字母，字用应用默认字体；关键词着色（theme.wordColors）没做
-- 细节简化：雨水沿屋檐的滴水、空调滴水和墙上水渍、白气（steam）、场地光柱、云与闪电的着色器没做，云和闪电改成模糊椭圆加整屏闪白；のぼり旗用剪切近似随风飘
-- 字号：沿用 folia 的规则，场景里的字按屏幕和招牌大小自动排、不读 fontScale；fontScale 只作用于宿主的底部字幕（sharedSubtitle: true）
-- 减弱动态效果时画静态帧：不画雨雪粒子、车、运镜、闪烁、节拍和闪电，湿地面、雾、积雪和换行照常显示
+- 2.5D 场景、后处理、倒影和细节都做了简化
+- 没接手势和取景条
+- 画质项去掉了
+- 资源是替换品，不是 folia 原资源
+- 字号规则做了近似
 
 ### 倾诉（tilt）
 
-- 二次切分在 folia 里用 Intl.Segmenter 的 word 粒度（ICU 词典）。Dart 没有这个，改用近似规则（tiltWordLikeSpans）：拉丁和数字连写算一个词，平假名、片假名、谚文各自连写算一个词，汉字一字一词。中文多字词因此可能在词中间被切开。
-- 字和段的时间取自运行时的字形时间线，不走 folia 的「按 words 找段的词范围」那套。逐字歌词下效果相同；行级（LRC）歌词在 folia 里所有段会同时出现，这里因为字形时间按行均分，各段会依次出现。
-- 所有动画都按歌曲时间算，不按墙钟。暂停时过渡停在当前帧（folia 的 framer 动画暂停后还会继续播完）；拖进度时直接跳到目标时刻的状态。
-- 上一句淡出时长、新句 0.3s 淡入取自 framer 默认 opacity 过渡（easeOut）。folia 里 activeLine 在句与句之间的空档是否为 null 没完全核实；这里一句起点一过就算当前句，唱完后各行淡出，但整组留到下一句开始。
-- 新增两道防溢出兜底：整组高于 70% 屏高时整体缩小；单行宽于可用宽度时只压这一行。folia 窄屏下缩放有下限、会溢出被裁，这里改为保证完整显示。
-- folia 量字宽时不计字距（pretext），这里照做；实际绘制带 0.08em / 0.15em 字距，由上面的单行兜底防止溢出。
-- 字体用应用默认字体（folia 用主题字体栈），正体 w400、斜体 w300 加 italic；字体本身没有斜体字形时由引擎合成斜体。
-- 这个样式本身不读音频；共享背景的 audioPower/audioBands 由宿主处理，与本样式无关。
-- 未移植：OBS 和 mod 的 modKeys、播放面板里循环切换配色的快捷胶囊（Fushi 用通用参数面板代替）、「参数已重置」提示。
+- 共享词级分组无词典：中文按字切、日文长汉字复合词（>4 字）退回逐字，与 ICU 带词典的 Intl.Segmenter word 粒度仍有出入，二次切分可能落在中文多字词中间（框架明确不接形态素分析，功能黑名单）
+- 所有动画按歌曲时间而非墙钟：暂停时过渡停在当前帧、拖进度直接跳到目标状态（folia framer 动画暂停后仍会播完）——有意为之，保证拖进度结果确定
+- 新增两道防溢出兜底（整组过高整体缩小、单行过宽单独压缩），folia 窄屏会溢出被裁
+- folia 自定义字体栈未搬入（只用主题 fontFamily 或应用默认字体），字体无斜体字形时由引擎合成斜体
+- 不移植：OBS / mod 的 modKeys、播放面板循环切换配色的快捷胶囊（用通用参数面板代替）、「参数已重置」提示
 
 ### 静止（still）
 
-- folia Still 本身没有 tuning.ts，所以没有可调参数；规范要求的「非默认 tuning 组合」用两项代替：传一个无效 tuning 键的冒烟测试，加一个窄屏、fontScale 2.5 的测试
-- folia 用 CSS scale 缩放（只改视觉、不重新排版），这里改成直接乘字号（会重新排版换行），长句在窄屏上能正确换行
-- folia 的 theme.secondaryColor（译文色）在 Fushi 配色里没有对应项，用 Color.lerp(palette.text, palette.secondary, 0.35) 代替
-- folia 的 hideTranslationSubtitle（全局隐藏译文）、subtitleTheme / subtitleFontScale（字幕单独的配色和字号）在 Fushi 框架里没有对应，译文总是显示，并跟随歌词字号倍数
-- folia 的自定义字体栈（resolveThemeFontStack）和主题字重没有搬过来，用默认 app 字体加固定字重
-- folia 的 effectiveIndex 用 state 记住上一句；这里改成纯按时间算（间奏里停在最近开始的那句），拖进度到间奏时结果更准确；正常往前播放时和 folia 行为一致
+- folia 用 CSS scale 只改视觉不重排；这里直接乘字号重新排版换行（有意：窄屏长句能正确换行）
+- 只有封面取色（无 AI 主题）时译文色是正文色与 secondary 的 35% 混色，非 folia 封面主题的 secondaryColor（封面 ColorScheme 的 secondary 是 M3 色调，暗底上常不可读）
+- folia 的 effectiveIndex 用 state 记上一句；这里纯按时间算（间奏停在最近开始的那句），拖进度到间奏更准，正常播放一致
+- folia 自定义字体栈（resolveThemeFontStack 的主题名 → 字体栈映射）未搬入，只认主题 fontFamily
 - drop-shadow-md / drop-shadow-sm 用近似的 Text shadows 代替
+- folia Still 无 tuning.ts，没有可调参数
+- 会显示罗马音行和双字幕，比 folia 静止多（全局字幕设置统一）。
