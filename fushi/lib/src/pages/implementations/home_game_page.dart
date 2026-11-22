@@ -38,7 +38,7 @@ import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -182,7 +182,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
   bool _onScroll(ScrollNotification notification) {
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 
