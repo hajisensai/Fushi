@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 895,
+ "count": 898,
  "settings": [
   {
    "key": "appearance.language",
@@ -549,6 +549,97 @@
     }
    ],
    "default": "60"
+  },
+  {
+   "key": "general.media_lock_show",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Show locked titles",
+    "zh-CN": "显示已上锁的作品"
+   },
+   "path": {
+    "en": "General › Title privacy",
+    "zh-CN": "通用 › 作品隐私"
+   },
+   "description": {
+    "en": "Off every time the app starts. Turning it on asks for your passcode or system verification.",
+    "zh-CN": "每次启动 app 都会关闭；打开时要输入口令或通过系统验证。"
+   },
+   "default": false,
+   "userOnly": true
+  },
+  {
+   "key": "general.media_lock_passcode",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Unlock passcode",
+    "zh-CN": "解锁口令"
+   },
+   "path": {
+    "en": "General › Title privacy",
+    "zh-CN": "通用 › 作品隐私"
+   },
+   "description": {
+    "en": "Set or change the passcode for showing locked titles. Changing it asks you to verify first.",
+    "zh-CN": "设置或修改显示上锁作品用的口令；修改前要先验证。"
+   },
+   "hint": "The unlock passcode can only be set in the app (it must be verified and typed by the user)."
+  },
+  {
+   "key": "general.media_lock_passcode_remove",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Remove unlock passcode",
+    "zh-CN": "删除解锁口令"
+   },
+   "path": {
+    "en": "General › Title privacy",
+    "zh-CN": "通用 › 作品隐私"
+   },
+   "description": {
+    "en": "Asks you to verify first. While titles are still locked, only possible on devices with system verification.",
+    "zh-CN": "要先验证。还有上锁作品时，只能在能用系统验证的设备上删。"
+   },
+   "hint": "The unlock passcode can only be removed in the app (the owner must verify first)."
+  },
+  {
+   "key": "appearance.nsfw_blur_covers",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Blur NSFW covers",
+    "zh-CN": "模糊 NSFW 封面"
+   },
+   "path": {
+    "en": "General › Title privacy",
+    "zh-CN": "通用 › 作品隐私"
+   },
+   "description": {
+    "en": "Covers of titles marked NSFW (title menu › Privacy; games also follow Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards.",
+    "zh-CN": "标为 NSFW 的作品（作品菜单 › 隐私；游戏也认编辑页的「成人向」）以及 NSFW 合集里的全部作品，封面在库页和「继续」卡上模糊显示。"
+   },
+   "default": true
+  },
+  {
+   "key": "appearance.nsfw_blur_card_images",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Blur card images too",
+    "zh-CN": "制卡图片也模糊"
+   },
+   "path": {
+    "en": "General › Title privacy",
+    "zh-CN": "通用 › 作品隐私"
+   },
+   "description": {
+    "en": "Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made.",
+    "zh-CN": "从 NSFW 书或漫画制的卡，卡上的封面或页图用模糊后的图片。卡里存的就是模糊图，以后取消 NSFW 也不会恢复已制的卡。"
+   },
+   "default": false
   },
   {
    "key": "system.low_memory_mode",
@@ -1515,42 +1606,6 @@
    "description": {
     "en": "Take the accent color from your custom icon image. Turn off to return to the theme you picked.",
     "zh-CN": "从自定义图标图片取强调色；关闭后恢复你原先选择的主题色。"
-   },
-   "default": false
-  },
-  {
-   "key": "appearance.nsfw_blur_covers",
-   "kind": "value",
-   "type": "bool",
-   "title": {
-    "en": "Blur NSFW covers",
-    "zh-CN": "模糊 NSFW 封面"
-   },
-   "path": {
-    "en": "Appearance › NSFW content",
-    "zh-CN": "外观 › NSFW 内容"
-   },
-   "description": {
-    "en": "Covers of titles marked NSFW (long-press menu › NSFW; games: Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards.",
-    "zh-CN": "标为 NSFW 的作品（长按菜单 › NSFW；游戏为编辑页的「成人向」）以及 NSFW 合集里的全部作品，封面在库页和「继续」卡上模糊显示。"
-   },
-   "default": true
-  },
-  {
-   "key": "appearance.nsfw_blur_card_images",
-   "kind": "value",
-   "type": "bool",
-   "title": {
-    "en": "Blur card images too",
-    "zh-CN": "制卡图片也模糊"
-   },
-   "path": {
-    "en": "Appearance › NSFW content",
-    "zh-CN": "外观 › NSFW 内容"
-   },
-   "description": {
-    "en": "Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made.",
-    "zh-CN": "从 NSFW 书或漫画制的卡，卡上的封面或页图用模糊后的图片。卡里存的就是模糊图，以后取消 NSFW 也不会恢复已制的卡。"
    },
    "default": false
   },

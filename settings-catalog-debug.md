@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 895 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 898 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -29,6 +29,11 @@ How to read this:
 | `study_goals.today_swipe` | Swipe through | 左右滑动 | Study timer › Goals › Today tile | choice | `daily`, `all` | `daily` | Which goals the Today tile shows when you swipe it |
 | `general.listening_reminder` | Listening break reminder | 连续收听提醒 | Hearing care | bool |  | `false` | When music, audiobooks or video have played continuously for the chosen time, remind you once to rest your ears. Volume and playback are left alone. |
 | `general.listening_reminder_minutes` | Remind after | 提醒间隔 | Hearing care | choice | `15`, `30`, `45`, `60`, `90`, `120` | `60` |  |
+| `general.media_lock_show` | Show locked titles | 显示已上锁的作品 | Title privacy | bool |  | `false` | Off every time the app starts. Turning it on asks for your passcode or system verification. · *user only* |
+| `general.media_lock_passcode` | Unlock passcode | 解锁口令 | Title privacy | action |  |  | Set or change the passcode for showing locked titles. Changing it asks you to verify first. |
+| `general.media_lock_passcode_remove` | Remove unlock passcode | 删除解锁口令 | Title privacy | action |  |  | Asks you to verify first. While titles are still locked, only possible on devices with system verification. |
+| `appearance.nsfw_blur_covers` | Blur NSFW covers | 模糊 NSFW 封面 | Title privacy | bool |  | `true` | Covers of titles marked NSFW (title menu › Privacy; games also follow Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards. |
+| `appearance.nsfw_blur_card_images` | Blur card images too | 制卡图片也模糊 | Title privacy | bool |  | `false` | Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made. |
 | `system.low_memory_mode` | Low memory mode | 小内存模式 | Performance and getting started | bool |  | `false` | Reduce cache and memory usage for low-end devices. Some changes take effect after restart. |
 | `system.recommended_pack_download` | Recommended pack | 推荐包 | Performance and getting started | custom |  |  | Japanese dictionaries, pitch accent, word frequency and JA/EN pronunciation audio in one download. Learning another language? Skip this and import your own dictionaries. |
 | `appearance.steam_shortcut` | Add to Steam | 添加到 Steam | Performance and getting started | action |  |  | Show Fushi in your Steam library, so you can start it in Steam Deck Game Mode · *destructive* |
@@ -76,8 +81,6 @@ How to read this:
 | `appearance.tint_app_logo` | Logo follows theme color | 图标跟随主题色 | App icon | bool |  | `false` | Recolor the built-in mascot icon to match the accent color. When off, the original artwork is always shown. |
 | `appearance.mascot_glow` | Mascot glow | 吉祥物光晕 | App icon | bool |  | `false` | A soft breathing glow around the mascot on the floating ball. It brightens and speeds up while background sync is running. |
 | `appearance.follow_app_icon_accent` | Theme color follows custom icon | 主题色跟随图标 | App icon | bool |  | `false` | Take the accent color from your custom icon image. Turn off to return to the theme you picked. |
-| `appearance.nsfw_blur_covers` | Blur NSFW covers | 模糊 NSFW 封面 | NSFW content | bool |  | `true` | Covers of titles marked NSFW (long-press menu › NSFW; games: Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards. |
-| `appearance.nsfw_blur_card_images` | Blur card images too | 制卡图片也模糊 | NSFW content | bool |  | `false` | Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made. |
 | `appearance.font_catalog.cli.fonts` | Font library | 字体库 | Font library | list |  |  |  |
 | `appearance.font_catalog.cli.target.appUi` | Font library · appUi | 字体库 · appUi | Font library | text |  |  | 该用途使用的字体显示名（或 id），逗号分隔；顺序跟随目录顺序（用 items set --position 调）；空串 = 清空 |
 | `appearance.font_catalog.cli.target.body` | Font library · body | 字体库 · body | Font library | text |  |  | 该用途使用的字体显示名（或 id），逗号分隔；顺序跟随目录顺序（用 items set --position 调）；空串 = 清空 |
