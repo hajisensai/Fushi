@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -138,6 +139,62 @@ void main() {
     DesktopLookupService.instance.debugReset();
   });
 
+  testWidgets(
+    'long in-app source scrolls naturally to the last glyph and definitions',
+    (tester) async {
+      final _ScanAppModel appModel = _ScanAppModel();
+      final String text = List<String>.generate(
+        1600,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(_wrap(appModel));
+      await tester.pump();
+      await _settle(tester, _debug(tester).debugSearch(text));
+      final Finder content = find.byKey(
+        ValueKey<String>('home_dictionary_content_$text'),
+      );
+      final Finder scrollable = find
+          .descendant(of: content, matching: find.byType(Scrollable))
+          .first;
+      final ScrollableState state = tester.state<ScrollableState>(scrollable);
+      expect(
+        tester.getSize(find.byType(SourceLookupTextPanel)).height,
+        greaterThan(tester.getSize(content).height),
+      );
+      final int queries = appModel.searchedTerms.length;
+      await tester.scrollUntilVisible(
+        find.text(text[1599]),
+        250,
+        scrollable: scrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, greaterThan(0));
+      expect(
+        appModel.searchedTerms.length,
+        queries,
+        reason: 'scrolling must not query a glyph',
+      );
+      await tester.tap(find.text(text[1599]));
+      await _settle(tester);
+      expect(appModel.searchedTerms.last, text.substring(1599));
+      expect(_panel(tester).text, text);
+      expect(_panel(tester).highlight?.start, 1599);
+      state.position.jumpTo(state.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final Finder definitions = find.descendant(
+        of: content,
+        matching: find.byType(DictionaryPopupWebView),
+      );
+      expect(definitions, findsOneWidget);
+      expect(tester.getSize(definitions).height, greaterThan(0));
+      expect(
+        tester.getRect(content).overlaps(tester.getRect(definitions)),
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('点源文本条的字：引擎吃「从该字起的后缀」，条上与搜索框里的整句都不动', (
     WidgetTester tester,
   ) async {
@@ -241,7 +298,7 @@ void main() {
 
     final int panelStart = page.indexOf('SourceLookupTextPanel(');
     expect(panelStart, greaterThan(0), reason: '首页词典 tab 必须挂源文本条。');
-    final int panelEnd = page.indexOf('Expanded(', panelStart);
+    final int panelEnd = page.indexOf('SliverFillRemaining(', panelStart);
     expect(panelEnd, greaterThan(panelStart));
     final String wiring = page.substring(panelStart, panelEnd);
 

@@ -8375,6 +8375,8 @@
   "popup_no_audio_available": "لا يوجد صوت متاح",
   "popup_sentence_context_next_label": "بعد",
   "popup_sentence_context_prev_label": "قبل",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "سرعة التمرير في النافذة المنبثقة",
   "popup_wheel_speed_hint": "سرعة تمرير عجلة الماوس في نافذة القاموس المنبثقة (ينطبق أيضاً على إضافة المتصفح).",
   "prev_sentence": "الجملة السابقة",

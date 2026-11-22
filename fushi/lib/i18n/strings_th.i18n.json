@@ -8375,6 +8375,8 @@
   "popup_no_audio_available": "ไม่มีเสียงที่ใช้ได้",
   "popup_sentence_context_next_label": "หลัง",
   "popup_sentence_context_prev_label": "ก่อน",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "ความเร็วเลื่อนป๊อปอัป",
   "popup_wheel_speed_hint": "ความเร็วเลื่อนล้อเมาส์สำหรับป๊อปอัปพจนานุกรม (ใช้กับส่วนขยายเบราว์เซอร์ด้วย)",
   "prev_sentence": "ประโยคก่อนหน้า",

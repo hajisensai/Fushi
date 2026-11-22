@@ -8375,6 +8375,8 @@
   "popup_no_audio_available": "Keine Audiowiedergabe verfügbar",
   "popup_sentence_context_next_label": "Danach",
   "popup_sentence_context_prev_label": "Davor",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "Popup-Scrollgeschwindigkeit",
   "popup_wheel_speed_hint": "Mausrad-Scrollgeschwindigkeit für das Wörterbuch-Popup (gilt auch für die Browser-Erweiterung).",
   "prev_sentence": "Vorheriger Satz",

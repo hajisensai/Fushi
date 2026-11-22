@@ -2056,38 +2056,47 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       borderRadius: _resultCardRadius(),
       pressScale: false,
       clipBehavior: Clip.none,
-      child: Column(
-        children: [
-          if (hasSourceText) ...<Widget>[
-            Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: SourceLookupTextPanel(
-                text: _sourceLookupText,
-                // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
-                // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
-                tonalHighlight:
-                    !isGlassDesign(context) && !isEinkTheme(context),
-                dictionaryHeadwordScale:
-                    appModel.dictionaryFontSize /
-                    appModel.defaultDictionaryFontSize,
-                highlight: _sourceHighlight,
-                // 点字换的是下方那份结果（Yomitan 式扫描），不再压一张浮在字上的查词卡，
-                // 所以本条不再需要回报任何弹窗坐标系的 rect——rect 与 globalCoordinates
-                // 都随之退场。结果卡内部选词 / 点链才继续走弹窗栈（见下方 WebView）。
-                onLookup: (String query, Rect _, int charIndex) =>
-                    _lookupFromSourceStrip(query, charIndex),
+      child: CustomScrollView(
+        key: ValueKey<String>('home_dictionary_content_$_sourceLookupText'),
+        primary: false,
+        slivers: <Widget>[
+          if (hasSourceText)
+            SliverToBoxAdapter(
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.gap),
+                    child: SourceLookupTextPanel(
+                      text: _sourceLookupText,
+                      // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
+                      // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
+                      tonalHighlight:
+                          !isGlassDesign(context) && !isEinkTheme(context),
+                      dictionaryHeadwordScale:
+                          appModel.dictionaryFontSize /
+                          appModel.defaultDictionaryFontSize,
+                      highlight: _sourceHighlight,
+                      // 点字换的是下方那份结果（Yomitan 式扫描），不再压一张浮在字上的查词卡，
+                      // 所以本条不再需要回报任何弹窗坐标系的 rect——rect 与 globalCoordinates
+                      // 都随之退场。结果卡内部选词 / 点链才继续走弹窗栈（见下方 WebView）。
+                      onLookup: (String query, Rect _, int charIndex) =>
+                          _lookupFromSourceStrip(query, charIndex),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tokens.spacing.page,
+                    ),
+                    child: const FushiDivider(),
+                  ),
+                ],
               ),
             ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: const FushiDivider(),
-            ),
-          ],
           // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
           // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
           // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
           // 限宽 + padding + 默认 hardEdge 裁住），改由 [SharedLookupPopupHost] 渲染在根 Overlay。
-          Expanded(
+          SliverFillRemaining(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
                 bodySideInset,
@@ -2098,6 +2107,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               child: FushiAppUiScaleNeutralizer(
                 child: Stack(
                   key: _resultStackKey,
+                  fit: StackFit.expand,
                   children: [
                     const SizedBox.shrink(
                       key: ValueKey<String>('home_dictionary_result_evidence'),
@@ -2167,7 +2177,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
                       // 转发给外壳，底栏随下滑收起与库页 ListView 同一台状态机。
                       forwardScrollToHost: true,
-                      // TODO-1152：结果区 WebView 填满 [Expanded]（全高固定大区域）。
+                      // TODO-1152：结果区 WebView 填满剩余页面视口。
                       // Windows 上 WebView2 内容在 put_Bounds 撑高后 render 完即 idle 无
                       // damage，宿主 WGC 帧池采不到新暴露下半区（下半屏黑）。渲染完补一次
                       // 表面重绘 nudge 逼出完整视口帧。嵌套弹窗内容自适应、无此问题，不开。

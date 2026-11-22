@@ -8375,6 +8375,8 @@
   "popup_no_audio_available": "暫無發音",
   "popup_sentence_context_next_label": "下",
   "popup_sentence_context_prev_label": "上",
+  "popup_source_text_collapse": "Collapse source text",
+  "popup_source_text_expand": "Expand source text",
   "popup_wheel_speed": "彈窗滾輪速度",
   "popup_wheel_speed_hint": "查詞彈窗的滑鼠滾輪滾動速度（瀏覽器擴展彈窗同樣生效）。",
   "prev_sentence": "上一句",

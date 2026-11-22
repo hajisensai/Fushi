@@ -33,6 +33,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
@@ -59,6 +60,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.closeInApp,
     this.autoSearchOnOpen = true,
     this.showSearchBar = true,
+    this.sourceTextCollapsed = false,
     this.embedded = false,
     this.onMined,
     this.onLookupStarted,
@@ -117,6 +119,9 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 搜索栏隐藏）。源文本面板（[SourceLookupTextPanel]）不受此参数影响，保留点选重查。
   final bool showSearchBar;
 
+  /// Initial source visibility for each external request; mining keeps the full text.
+  final bool sourceTextCollapsed;
+
   /// Dual-screen companion: the card fills its host (the companion's Lookup
   /// tab) instead of floating at the top of a transparent full-screen window;
   /// there is no tap-outside-to-close layer (nothing is behind it).
@@ -151,6 +156,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   final GlobalKey _resultStackKey = GlobalKey();
   bool _isClosing = false;
   String _sourceLookupText = '';
+  late bool _sourceTextCollapsed;
+  final ScrollController _sourceScrollController = ScrollController();
 
   /// BUG-2900：外部入口带来的整行原文，基础层制卡时补进 `{sentence}`。只在
   /// [PopupDictionaryPage.sourceCharIndex] >= 0 时非空；用户在搜索栏另查别的词即清空
@@ -213,6 +220,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void initState() {
     super.initState();
     _preloadCardImage();
+    _sourceTextCollapsed = widget.sourceTextCollapsed;
     _searchController = TextEditingController(text: widget.searchTerm);
     _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
@@ -353,6 +361,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 复用常驻热槽原地查新词（reuseWarmSlot:true），不重建整页 → 不闪。term 与
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
     final bool changed =
+        oldWidget.sourceTextCollapsed != widget.sourceTextCollapsed ||
         oldWidget.searchTerm != widget.searchTerm ||
         oldWidget.searchGeneration != widget.searchGeneration ||
         oldWidget.sourceCharIndex != widget.sourceCharIndex ||
@@ -361,6 +370,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         oldWidget.anchorRect != widget.anchorRect ||
         oldWidget.subtitleWindowRect != widget.subtitleWindowRect;
     if (!changed) return;
+    _sourceTextCollapsed = widget.sourceTextCollapsed;
+    // A warm external request owns its source viewport, even for repeated text.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _sourceScrollController.hasClients) {
+        _sourceScrollController.jumpTo(0);
+      }
+    });
     // TODO-1336：warm 复用（Android 侧 FlutterEngineCache 缓存 :popup 引擎、finishPopup 只
     // 隐藏 Activity 不销毁本 State；同一 PopupDictionaryPage 实例经 didUpdateWidget 反复复用）
     // 下，宿主再次推来新词 == 重新打开这张常驻热页。_close() 首次关闭把 _isClosing 置 true
@@ -396,6 +412,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   void dispose() {
     _imeBinding.detach();
+    _sourceScrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
@@ -841,6 +858,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               children: <Widget>[
                 _buildCloseButton(),
                 Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+                if (_sourceLookupText.trim().isNotEmpty) _buildSourceToggle(),
                 if (miningTarget != null) miningTarget,
               ],
             )
@@ -851,6 +869,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             Row(
               children: <Widget>[
                 Expanded(child: _buildSwipeChrome(const SizedBox(height: 36))),
+                if (_sourceLookupText.trim().isNotEmpty) _buildSourceToggle(),
                 if (miningTarget != null) miningTarget,
                 _buildCloseButton(),
               ],
@@ -863,23 +882,48 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               thickness: 1,
               color: tokens.surfaces.outline,
             ),
-          if (_sourceLookupText.trim().isNotEmpty)
-            SourceLookupTextPanel(
-              text: _sourceLookupText,
-              tonalHighlight: m3e,
-              coordinateSpaceKey: _resultStackKey,
-              dictionaryHeadwordScale: _dictionaryHeadwordScale,
-              highlight: _sourceHighlight,
-              // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
-              // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
-              onLookup: _lookupFromSourceStrip,
-            ),
           Expanded(
-            child: _buildStack(
-              context,
-              fullCardHeight: fullCardHeight,
-              webViewOverflowHeight: webViewOverflowHeight,
-            ),
+            child: widget.embedded
+                ? CustomScrollView(
+                    key: const ValueKey<String>(
+                      'embedded_dictionary_content_scroll',
+                    ),
+                    primary: false,
+                    slivers: <Widget>[
+                      if (_sourceLookupText.trim().isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: _buildSourceRegion(null, m3e),
+                        ),
+                      SliverFillRemaining(
+                        child: _buildStack(
+                          context,
+                          fullCardHeight: fullCardHeight,
+                          webViewOverflowHeight: webViewOverflowHeight,
+                        ),
+                      ),
+                    ],
+                  )
+                : LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) {
+                          return Column(
+                            children: <Widget>[
+                              if (_sourceLookupText.trim().isNotEmpty)
+                                _buildSourceRegion(
+                                  constraints.maxHeight / 3,
+                                  m3e,
+                                ),
+                              Expanded(
+                                child: _buildStack(
+                                  context,
+                                  fullCardHeight: fullCardHeight,
+                                  webViewOverflowHeight: webViewOverflowHeight,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                  ),
           ),
         ],
       ),
@@ -916,11 +960,65 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             children: <Widget>[
               FushiPressScale(child: _buildCloseButton()),
               Expanded(child: _buildSwipeChrome(_buildSearchBar())),
+              if (_sourceLookupText.trim().isNotEmpty) _buildSourceToggle(),
               if (miningTarget != null) FushiPressScale(child: miningTarget),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSourceToggle() {
+    return FushiIconButton(
+      key: const ValueKey<String>('popup_source_toggle'),
+      icon: _sourceTextCollapsed
+          ? FushiIcons.expandMore
+          : FushiIcons.expandLess,
+      tooltip: _sourceTextCollapsed
+          ? t.popup_source_text_expand
+          : t.popup_source_text_collapse,
+      padTouchTarget: true,
+      onTap: () => setState(() => _sourceTextCollapsed = !_sourceTextCollapsed),
+    );
+  }
+
+  Widget _buildSourceRegion(double? maxHeight, bool tonalHighlight) {
+    final Widget source = SourceLookupTextPanel(
+      key: ValueKey<(int, double?)>((widget.searchGeneration, maxHeight)),
+      text: _sourceLookupText,
+      tonalHighlight: tonalHighlight,
+      coordinateSpaceKey: _resultStackKey,
+      dictionaryHeadwordScale: _dictionaryHeadwordScale,
+      highlight: _sourceHighlight,
+      revealHighlight: !widget.embedded,
+      initialCharIndex: widget.sourceCharIndex < 0
+          ? 0
+          : sourceGraphemeIndexOfUnit(
+              _sourceLookupText,
+              widget.sourceCharIndex,
+            ),
+      onLookup: _lookupFromSourceStrip,
+    );
+    return AnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      alignment: Alignment.topCenter,
+      child: _sourceTextCollapsed
+          ? const SizedBox.shrink()
+          : maxHeight == null
+          ? source
+          : ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: Scrollbar(
+                controller: _sourceScrollController,
+                child: SingleChildScrollView(
+                  key: const ValueKey<String>('popup_source_scroll'),
+                  controller: _sourceScrollController,
+                  primary: false,
+                  child: source,
+                ),
+              ),
+            ),
     );
   }
 

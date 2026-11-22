@@ -172,6 +172,8 @@ Widget _buildApp({
   String? sourceBlock,
   int sourceBlockOffset = -1,
   ValueChanged<String>? onHeadword,
+  bool sourceTextCollapsed = false,
+  bool embedded = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -187,6 +189,8 @@ Widget _buildApp({
           sourceCharIndex: charIndex,
           sourceBlock: sourceBlock,
           sourceBlockOffset: sourceBlockOffset,
+          sourceTextCollapsed: sourceTextCollapsed,
+          embedded: embedded,
           closeInApp: () {},
           onHeadword: onHeadword,
         ),
@@ -260,6 +264,165 @@ Future<String?> _mineSentence(
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  testWidgets(
+    'embedded dictionary leaves source height natural and scrolls to definitions',
+    (tester) async {
+      final String text = List<String>.generate(
+        1600,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 0,
+          embedded: true,
+        ),
+      );
+      await _settle(tester);
+      final Finder content = find.byKey(
+        const ValueKey<String>('embedded_dictionary_content_scroll'),
+      );
+      final Finder scrollable = find
+          .descendant(of: content, matching: find.byType(Scrollable))
+          .first;
+      expect(
+        find.byKey(const ValueKey<String>('popup_source_scroll')),
+        findsNothing,
+      );
+      expect(
+        tester.getSize(find.byType(SourceLookupTextPanel)).height,
+        greaterThan(tester.getSize(content).height),
+      );
+      await tester.scrollUntilVisible(
+        find.text(text[1599]),
+        250,
+        scrollable: scrollable,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(text[1599]));
+      await _settle(tester);
+      expect(appModel.searched.last, text.substring(1599));
+      expect(
+        tester
+            .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
+            .text,
+        text,
+      );
+      final ScrollableState state = tester.state<ScrollableState>(scrollable);
+      state.position.jumpTo(state.position.maxScrollExtent);
+      await tester.pump();
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(0),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'source selection stays visible when the external window shrinks',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 700);
+      addTearDown(tester.view.reset);
+      final String text = List<String>.generate(
+        400,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 360,
+        ),
+      );
+      await _settle(tester);
+      tester.view.physicalSize = const Size(700, 300);
+      await tester.pumpAndSettle();
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      expect(
+        tester
+            .getRect(viewport)
+            .contains(tester.getCenter(find.text(text[360]))),
+        isTrue,
+      );
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(0),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'collapsed source keeps the complete mining sentence and can reopen',
+    (tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      const String text = '今日は良い天気ですね';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: text,
+          charIndex: 5,
+          sourceTextCollapsed: true,
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(await _mineSentence(tester, repo), text);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('popup_source_toggle')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
+            .text,
+        text,
+      );
+    },
+  );
+
+  testWidgets(
+    'long external source is bounded and leaves a definition viewport',
+    (tester) async {
+      final String text = List<String>.generate(
+        400,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 360,
+        ),
+      );
+      await _settle(tester);
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      final double height = tester.getSize(viewport).height;
+      expect(height, greaterThan(0));
+      expect(height, lessThan(200));
+      final Rect selected = tester.getRect(find.text(text[360]));
+      expect(tester.getRect(viewport).contains(selected.center), isTrue);
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(height),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'BUG-2899: tapped-glyph entry keeps the whole line on the source strip '
@@ -694,7 +857,13 @@ void main() {
           TestDefaultBinaryMessengerBinding.instance;
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
-        (MethodCall call) async => null,
+        (MethodCall call) async => call.method == 'getInitialProcessText'
+            ? <String, Object>{
+                'text': 'initial sentence',
+                'charIndex': 0,
+                'sourceTextCollapsed': true,
+              }
+            : null,
       );
       addTearDown(
         () => binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -713,11 +882,25 @@ void main() {
       );
       await _settle(tester);
 
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsNothing,
+        reason: 'the cold request can initially collapse the source',
+      );
+      expect(
+        tester
+            .widget<PopupDictionaryPage>(find.byType(PopupDictionaryPage))
+            .sourceTextCollapsed,
+        isTrue,
+      );
+      appModel.searched.clear();
+
       Future<void> nativePush(
         String text,
         int charIndex, {
         String? block,
         int blockOffset = -1,
+        bool? sourceTextCollapsed,
       }) async {
         final ByteData message = const StandardMethodCodec().encodeMethodCall(
           MethodCall('onNewProcessText', <String, Object>{
@@ -725,6 +908,8 @@ void main() {
             'charIndex': charIndex,
             if (block != null) 'sourceBlock': block,
             if (block != null) 'sourceBlockOffset': blockOffset,
+            if (sourceTextCollapsed != null)
+              'sourceTextCollapsed': sourceTextCollapsed,
           }),
         );
         unawaited(
@@ -751,6 +936,16 @@ void main() {
       expect(appModel.searched.last, '雨が降る');
       panel = tester.widget(find.byType(SourceLookupTextPanel));
       expect(panel.text, '明日は雨が降る');
+
+      await nativePush('明日は雨が降る', 3, sourceTextCollapsed: true);
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      await nativePush('明日は雨が降る', 3);
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsOneWidget,
+        reason:
+            'omitted visibility on an identical warm request restores the default',
+      );
 
       // BUG-3487：截屏识字带上所属块，页面拿到块全文与本行起点。
       const String block = '朝から\n明日は雨が降る\nらしい。';

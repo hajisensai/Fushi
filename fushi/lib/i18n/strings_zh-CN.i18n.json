@@ -8375,6 +8375,8 @@
   "popup_no_audio_available": "暂无发音",
   "popup_sentence_context_next_label": "下",
   "popup_sentence_context_prev_label": "上",
+  "popup_source_text_collapse": "折叠原文",
+  "popup_source_text_expand": "展开原文",
   "popup_wheel_speed": "弹窗滚轮速度",
   "popup_wheel_speed_hint": "查词弹窗的鼠标滚轮滚动速度（浏览器扩展弹窗同样生效）。",
   "prev_sentence": "上一句",

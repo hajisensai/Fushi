@@ -216,9 +216,16 @@ class SourceLookupTextPanel extends StatefulWidget {
     this.globalCoordinates = false,
     this.highlight,
     this.tonalHighlight = false,
+    this.revealHighlight = false,
+    this.initialCharIndex = -1,
   });
 
   final String text;
+
+  /// Bounded external windows reveal the selected glyph in their own viewport.
+  /// Other source strips retain their existing behavior.
+  final bool revealHighlight;
+  final int initialCharIndex;
 
   /// 点中（或 Shift 悬停）某个字：回报「从该字到串尾」的查询串、该字的矩形，以及
   /// 该字在本条渲染序列里的**字素簇下标**。
@@ -261,12 +268,55 @@ class SourceLookupTextPanel extends StatefulWidget {
 
 class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
   int? _lastShiftHoverIndex;
+  final GlobalKey _selectedGlyphKey = GlobalKey();
+  bool _revealPending = true;
+
+  @override
+  void didUpdateWidget(SourceLookupTextPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text ||
+        oldWidget.highlight?.start != widget.highlight?.start ||
+        oldWidget.initialCharIndex != widget.initialCharIndex ||
+        oldWidget.revealHighlight != widget.revealHighlight) {
+      _revealPending = true;
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _revealPending = true;
+  }
+
+  void _revealSelectedGlyph() {
+    if (!mounted || !widget.revealHighlight) return;
+    final BuildContext? selected = _selectedGlyphKey.currentContext;
+    if (selected == null) return;
+    final RenderObject? render = selected.findRenderObject();
+    final ScrollableState? scrollable = Scrollable.maybeOf(selected);
+    final RenderObject? viewport = scrollable?.context.findRenderObject();
+    if (render is! RenderBox || viewport is! RenderBox) return;
+    final Offset top = render.localToGlobal(Offset.zero, ancestor: viewport);
+    if (top.dy >= 0 && top.dy + render.size.height <= viewport.size.height) {
+      return;
+    }
+    // Reveal only this source viewport, never the definition or its host.
+    scrollable!.position.ensureVisible(render, alignment: 0.5);
+  }
 
   @override
   Widget build(BuildContext context) {
     final String trimmed = widget.text.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
+    if (widget.revealHighlight && _revealPending) {
+      _revealPending = false;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _revealSelectedGlyph(),
+      );
+    }
+    final int selectedIndex =
+        widget.highlight?.start ?? widget.initialCharIndex;
     final ThemeData theme = Theme.of(context);
     // BUG-442：逐字符建一个可点 widget 塞进 Wrap，节点数 = 码点数。超长剪贴板
     // 文本（成千上万码点）会在构建期产出巨量 widget → 主 isolate OOM / 引擎崩溃。
@@ -317,6 +367,9 @@ class _SourceLookupTextPanelState extends State<SourceLookupTextPanel> {
           children: <Widget>[
             for (int i = 0; i < chars.length; i++)
               Builder(
+                key: widget.revealHighlight && i == selectedIndex
+                    ? _selectedGlyphKey
+                    : null,
                 builder: (BuildContext charContext) {
                   final bool lit = i >= highlightStart && i < highlightEnd;
                   final Widget glyph = Text(
