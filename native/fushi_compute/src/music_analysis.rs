@@ -10,6 +10,7 @@
 //!
 //! 模型（Beat This! / htdemucs，[models]）是可选下载项：没配置时只跑 DSP 退路（[pipeline]）。
 
+pub(crate) mod accents;
 pub(crate) mod beats;
 pub(crate) mod drums;
 pub(crate) mod features;
@@ -30,6 +31,8 @@ use crate::{guard, hand_over_bytes, status};
 use format::Analysis;
 use pipeline::{ModelPaths, Sink};
 
+use crate::upscale::runtime::Backend;
+
 /// 事件回调：`(kind, token, value)`。
 pub type ManaCallback = extern "C" fn(kind: i32, token: u64, value: u32);
 
@@ -47,6 +50,9 @@ pub const EVENT_FAILED: i32 = 5;
 pub const EVENT_CANCELLED: i32 = 6;
 /// 模型那一步失败了、结果留 DSP 的（之后照常 DONE）；详情 [ffc_mana_last_error]。
 pub const EVENT_MODEL_FAILED: i32 = 7;
+/// 加速执行器不行、这个模型改用 CPU（结果不受影响，只是慢）：`value` = 失败的执行器代码。
+/// 每个进程每个模型每个执行器只发一次；原因在 [ffc_mana_last_error]。
+pub const EVENT_BACKEND_FALLBACK: i32 = 8;
 
 /// 提交标志：插到队头。
 pub const SUBMIT_URGENT: u32 = 1;
@@ -144,6 +150,11 @@ impl Sink for FileSink {
     fn warn(&mut self, message: String) {
         set_error(message);
         emit(EVENT_MODEL_FAILED, self.token, 0);
+    }
+
+    fn backend_fallback(&mut self, backend: Backend, message: String) {
+        set_error(message);
+        emit(EVENT_BACKEND_FALLBACK, self.token, backend as u32);
     }
 }
 
@@ -250,6 +261,9 @@ pub extern "C" fn ffc_mana_start(callback: Option<ManaCallback>) -> i32 {
 /// 配置模型（之后出队的任务生效）。两个模型都为空时不碰 ORT；否则先接上 ORT（`ort_path` 为空 = 从本进程
 /// 符号找，Apple 静态链接），接不上返回 [STATUS_RUNTIME_UNAVAILABLE] 并清空模型（只剩 DSP）。
 ///
+/// `backend` 与超分同一套代码（`ffc_upscale_backend_available`：0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK）：
+/// 这份 ORT 里没有就静默用 CPU；有但建会话或跑模型失败就退回 CPU，发一次 [EVENT_BACKEND_FALLBACK]。
+///
 /// # Safety
 /// 字符串参数为空或指向 NUL 结尾的 UTF-8。
 #[no_mangle]
@@ -258,12 +272,14 @@ pub unsafe extern "C" fn ffc_mana_configure(
     beat_this_model: *const c_char,
     htdemucs_model: *const c_char,
     threads: u32,
+    backend: u32,
 ) -> i32 {
     guard(|| {
         let models = ModelPaths {
             beat_this: opt_path(beat_this_model),
             htdemucs: opt_path(htdemucs_model),
             threads: threads.max(1) as usize,
+            backend: Backend::from_code(backend).unwrap_or(Backend::Cpu),
         };
         if models.beat_this.is_some() || models.htdemucs.is_some() {
             let ort = opt_path(ort_path);
@@ -378,6 +394,9 @@ pub unsafe extern "C" fn ffc_mana_analyze_file(
             fn warn(&mut self, message: String) {
                 set_error(message);
             }
+            fn backend_fallback(&mut self, _: Backend, message: String) {
+                set_error(message);
+            }
         }
         let models = lock().models.clone();
         let job = Job {
@@ -449,7 +468,7 @@ mod tests {
         let out_c = CString::new(out_path.to_str().unwrap()).unwrap();
         unsafe {
             assert_eq!(
-                ffc_mana_configure(std::ptr::null(), std::ptr::null(), std::ptr::null(), 1),
+                ffc_mana_configure(std::ptr::null(), std::ptr::null(), std::ptr::null(), 1, 0),
                 status::OK
             );
             assert_eq!(
@@ -492,6 +511,12 @@ mod tests {
             threads: std::thread::available_parallelism()
                 .map_or(4, |n| n.get() / 2)
                 .max(1),
+            // FUSHI_MANA_BACKEND = 0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK。
+            backend: std::env::var("FUSHI_MANA_BACKEND")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .and_then(Backend::from_code)
+                .unwrap_or(Backend::Cpu),
         };
         if models.beat_this.is_some() || models.htdemucs.is_some() {
             let ort = std::env::var("FUSHI_MANA_ORT").ok();
@@ -560,6 +585,18 @@ mod tests {
                     iv.iter().min(),
                     iv.iter().max(),
                 );
+                let acc = &a.accents;
+                println!(
+                    "           accents: track_scale {:.3} mean impact {:.3} rhythmic {}/{} pulse {}/{} | stems_until {} ms partial {}",
+                    acc.track_scale,
+                    acc.impact.iter().sum::<f32>() / acc.impact.len().max(1) as f32,
+                    acc.rhythmic.iter().filter(|r| **r).count(),
+                    acc.rhythmic.len(),
+                    acc.pulse.iter().filter(|r| **r).count(),
+                    acc.pulse.len(),
+                    a.stems_until_ms,
+                    a.flags & format::FLAG_STEMS_PARTIAL != 0,
+                );
                 if let Ok(out) = std::env::var("FUSHI_MANA_OUT") {
                     format::write_atomic(Path::new(&out), &a.encode())
                         .map_err(|e| e.to_string())?;
@@ -571,6 +608,9 @@ mod tests {
             }
             fn warn(&mut self, message: String) {
                 println!("WARN {message}");
+            }
+            fn backend_fallback(&mut self, backend: Backend, message: String) {
+                println!("FALLBACK {backend:?}: {message}");
             }
         }
         let job = Job {

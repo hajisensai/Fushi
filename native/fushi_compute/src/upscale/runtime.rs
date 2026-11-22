@@ -165,6 +165,54 @@ fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// 建会话的起点：优化级别 + 后端执行器（超分与音频分析共用同一套选择）。EP 注册失败即返回 Err
+/// （`error_on_failure`），由调用方决定退回 CPU 还是报错。
+pub(crate) fn session_builder(
+    backend: Backend,
+    threads: usize,
+) -> Result<ort::session::builder::SessionBuilder, String> {
+    let environment = environment()?;
+    let mut builder = Session::builder(&environment)
+        .map_err(err)?
+        .with_optimization_level(GraphOptimizationLevel::Level3)
+        .map_err(err)?;
+    builder = match backend {
+        Backend::Cpu => builder.with_intra_threads(threads.max(1)).map_err(err)?,
+        #[cfg(windows)]
+        Backend::DirectMl => builder
+            .with_memory_pattern(false)
+            .map_err(err)?
+            .with_parallel_execution(false)
+            .map_err(err)?
+            .with_execution_providers([ep::DirectML::default().build().error_on_failure()])
+            .map_err(err)?,
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        Backend::CoreMl => builder
+            .with_intra_threads(threads.max(1))
+            .map_err(err)?
+            // MLProgram：默认的 NeuralNetwork 格式在 ORT 1.23 的 CoreML EP 里建 ArtCNN 会话直接段错误
+            // （M4 / macOS 实测，设计文档 §4.2）；MLProgram 正常且与 CPU 输出一致。
+            .with_execution_providers([ep::CoreML::default()
+                .with_model_format(ep::coreml::ModelFormat::MLProgram)
+                .build()
+                .error_on_failure()])
+            .map_err(err)?,
+        #[cfg(target_os = "android")]
+        Backend::Xnnpack => builder
+            .with_intra_threads(1)
+            .map_err(err)?
+            .with_execution_providers([ep::XNNPACK::default().build().error_on_failure()])
+            .map_err(err)?,
+        #[allow(unreachable_patterns)]
+        other => {
+            return Err(format!(
+                "backend {other:?} is not available on this platform"
+            ));
+        }
+    };
+    Ok(builder)
+}
+
 /// 一个 ONNX 超分模型的会话。
 pub(crate) struct OnnxSr {
     session: Session,
@@ -185,56 +233,7 @@ impl OnnxSr {
         calib: usize,
         threads: usize,
     ) -> Result<Self, String> {
-        let environment = {
-            let guard = RUNTIME
-                .get()
-                .ok_or("onnxruntime not loaded")?
-                .lock()
-                .map_err(|_| "runtime lock poisoned")?;
-            guard
-                .as_ref()
-                .ok_or("onnxruntime not loaded")?
-                .environment
-                .clone()
-        };
-        let mut builder = Session::builder(&environment)
-            .map_err(err)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(err)?;
-        builder = match backend {
-            Backend::Cpu => builder.with_intra_threads(threads.max(1)).map_err(err)?,
-            #[cfg(windows)]
-            Backend::DirectMl => builder
-                .with_memory_pattern(false)
-                .map_err(err)?
-                .with_parallel_execution(false)
-                .map_err(err)?
-                .with_execution_providers([ep::DirectML::default().build().error_on_failure()])
-                .map_err(err)?,
-            #[cfg(any(target_os = "macos", target_os = "ios"))]
-            Backend::CoreMl => builder
-                .with_intra_threads(threads.max(1))
-                .map_err(err)?
-                // MLProgram：默认的 NeuralNetwork 格式在 ORT 1.23 的 CoreML EP 里建 ArtCNN 会话直接段错误
-                // （M4 / macOS 实测，设计文档 §4.2）；MLProgram 正常且与 CPU 输出一致。
-                .with_execution_providers([ep::CoreML::default()
-                    .with_model_format(ep::coreml::ModelFormat::MLProgram)
-                    .build()
-                    .error_on_failure()])
-                .map_err(err)?,
-            #[cfg(target_os = "android")]
-            Backend::Xnnpack => builder
-                .with_intra_threads(1)
-                .map_err(err)?
-                .with_execution_providers([ep::XNNPACK::default().build().error_on_failure()])
-                .map_err(err)?,
-            #[allow(unreachable_patterns)]
-            other => {
-                return Err(format!(
-                    "backend {other:?} is not available on this platform"
-                ));
-            }
-        };
+        let mut builder = session_builder(backend, threads)?;
         let session = builder.commit_from_file(path).map_err(err)?;
         let first = session.inputs().first().ok_or("model has no input")?;
         let input = first.name().to_string();

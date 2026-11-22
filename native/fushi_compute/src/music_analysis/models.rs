@@ -7,46 +7,121 @@
 //!   （demucs_onnx `_chunked_separate_single`，folia `electron/analysis/htdemucs.cjs`）：步长 3/4 段、
 //!   重叠的 1/4 线性渐变、除以总权重。
 //!
-//! ORT 不另带：用 [crate::upscale::runtime] 接上的本进程那一份（CPU 执行器；音频分析在后台慢慢跑，
-//! 不抢 GPU）。
+//! ORT 不另带：用 [crate::upscale::runtime] 接上的本进程那一份；执行器与超分同一套选择
+//! （[runtime::session_builder]：Windows DirectML / Apple CoreML MLProgram / Android XNNPACK，调用方传哪个用哪个）。
+//! 加速执行器建会话失败（或跑模型失败，见 [super::pipeline]）就退回 CPU，并记进 [disable_backend]：
+//! 同一进程同一模型不再试那个执行器，失败原因只报一次。
 
 use std::path::Path;
 
+use std::sync::Mutex;
+
 use ort::session::Session;
-use ort::session::builder::GraphOptimizationLevel;
 use ort::value::TensorRef;
 
-use crate::upscale::runtime;
+use crate::upscale::runtime::{self, Backend};
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
-fn cpu_session(path: &Path, threads: usize) -> Result<Session, String> {
-    let environment = runtime::environment()?;
-    Session::builder(&environment)
-        .map_err(err)?
-        .with_optimization_level(GraphOptimizationLevel::Level3)
-        .map_err(err)?
-        .with_intra_threads(threads.max(1))
-        .map_err(err)?
-        .commit_from_file(path)
-        .map_err(|e| format!("{}: {e}", path.display()))
+/// 模型种类（执行器失效表的键）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ModelKind {
+    BeatThis,
+    Htdemucs,
+}
+
+static DISABLED: Mutex<Vec<(ModelKind, Backend)>> = Mutex::new(Vec::new());
+
+/// 这个模型在这个执行器上失败过：本进程之后直接走 CPU。返回 true = 第一次记（调用方据此只报一次）。
+pub(crate) fn disable_backend(kind: ModelKind, backend: Backend) -> bool {
+    let mut list = DISABLED.lock().unwrap_or_else(|e| e.into_inner());
+    if list.contains(&(kind, backend)) {
+        return false;
+    }
+    list.push((kind, backend));
+    true
+}
+
+fn backend_disabled(kind: ModelKind, backend: Backend) -> bool {
+    DISABLED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&(kind, backend))
+}
+
+/// 建好的会话与实际用上的执行器；`fallback` = 这次退回了 CPU 且是第一次（要报的原因）。
+pub(crate) struct Opened {
+    pub(crate) session: Session,
+    pub(crate) backend: Backend,
+    pub(crate) fallback: Option<String>,
+}
+
+/// 按请求的执行器建会话；它不可用（ORT 里没有）就静默用 CPU，可用但建会话失败就退回 CPU 并记失效。
+pub(crate) fn open_session(
+    kind: ModelKind,
+    path: &Path,
+    threads: usize,
+    wanted: Backend,
+) -> Result<Opened, String> {
+    let commit = |backend: Backend| -> Result<Session, String> {
+        runtime::session_builder(backend, threads)?
+            .commit_from_file(path)
+            .map_err(|e| format!("{}: {e}", path.display()))
+    };
+    let mut fallback = None;
+    if wanted != Backend::Cpu
+        && !backend_disabled(kind, wanted)
+        && runtime::backend_available(wanted)
+    {
+        match commit(wanted) {
+            Ok(session) => {
+                return Ok(Opened {
+                    session,
+                    backend: wanted,
+                    fallback: None,
+                });
+            }
+            Err(e) => {
+                if disable_backend(kind, wanted) {
+                    fallback = Some(format!("{kind:?} on {wanted:?} failed, using CPU: {e}"));
+                }
+            }
+        }
+    }
+    Ok(Opened {
+        session: commit(Backend::Cpu)?,
+        backend: Backend::Cpu,
+        fallback,
+    })
 }
 
 /// Beat This! 会话。
 pub(crate) struct BeatThis {
     session: Session,
+    pub(crate) backend: Backend,
 }
 
 impl BeatThis {
-    pub(crate) fn load(path: &Path, threads: usize) -> Result<Self, String> {
-        let session = cpu_session(path, threads)?;
-        let names: Vec<&str> = session.outputs().iter().map(|o| o.name()).collect();
+    /// 返回会话与（第一次退回 CPU 时的）原因。
+    pub(crate) fn load(
+        path: &Path,
+        threads: usize,
+        backend: Backend,
+    ) -> Result<(Self, Option<String>), String> {
+        let opened = open_session(ModelKind::BeatThis, path, threads, backend)?;
+        let names: Vec<&str> = opened.session.outputs().iter().map(|o| o.name()).collect();
         if !names.contains(&"beat") || !names.contains(&"downbeat") {
             return Err(format!("beat_this outputs {names:?}"));
         }
-        Ok(Self { session })
+        Ok((
+            Self {
+                session: opened.session,
+                backend: opened.backend,
+            },
+            opened.fallback,
+        ))
     }
 
     /// 一块梅尔谱（frames × 128）→ (beat, downbeat) logit。
@@ -80,12 +155,21 @@ const SOURCES: usize = 4;
 pub(crate) struct Htdemucs {
     session: Session,
     segment: usize,
+    pub(crate) backend: Backend,
 }
 
 /// 分离结果：鼓轨与人声轨（44.1 kHz，左右声道平均成单声道——下游只看单声道）。
 pub(crate) struct Stems {
     pub(crate) drums: Vec<f32>,
     pub(crate) vocals: Vec<f32>,
+}
+
+/// 分离进度：第 `done` / `chunks` 段跑完，`drums` / `vocals` 是已定稿的前缀（44.1 kHz 单声道，最终值）。
+pub(crate) struct SeparationProgress<'a> {
+    pub(crate) done: usize,
+    pub(crate) chunks: usize,
+    pub(crate) drums: &'a [f32],
+    pub(crate) vocals: &'a [f32],
 }
 
 /// 参考实现的三角叠加窗：两端各 1/4 段线性渐变。
@@ -101,8 +185,14 @@ pub(crate) fn overlap_window(segment: usize) -> Vec<f32> {
 }
 
 impl Htdemucs {
-    pub(crate) fn load(path: &Path, threads: usize) -> Result<Self, String> {
-        let session = cpu_session(path, threads)?;
+    /// 返回会话与（第一次退回 CPU 时的）原因。
+    pub(crate) fn load(
+        path: &Path,
+        threads: usize,
+        backend: Backend,
+    ) -> Result<(Self, Option<String>), String> {
+        let opened = open_session(ModelKind::Htdemucs, path, threads, backend)?;
+        let session = opened.session;
         // 段长焊死在图里（形状、位置表、叠加归一都按一段切），从模型读，不在这里另写一份。
         let segment = session
             .inputs()
@@ -110,7 +200,14 @@ impl Htdemucs {
             .and_then(|i| i.dtype().tensor_shape().and_then(|s| s.get(2).copied()))
             .filter(|s| *s > 0)
             .ok_or("htdemucs input is not [1, 2, segment]")? as usize;
-        Ok(Self { session, segment })
+        Ok((
+            Self {
+                session,
+                segment,
+                backend: opened.backend,
+            },
+            opened.fallback,
+        ))
     }
 
     /// 一共几段（进度用）。
@@ -119,12 +216,15 @@ impl Htdemucs {
         total.div_ceil(stride).max(1)
     }
 
-    /// 整首分离。`on_segment(i, n)` 每段完成回调一次，返回 false 即取消（返回 Err("cancelled")）。
+    /// 整首分离。每段跑完回调一次 `on_segment(&进度)`，返回 false 即取消（返回 Err("cancelled")）。
+    ///
+    /// 进度里带**已定稿的前缀**：第 c 段之后的段都从 `(c + 1) · 步长` 起，前面的样本不会再被叠加，
+    /// 就地除以权重后即最终值——调用方可以拿它边分边出结果（folia 的流式鼓点同理）。
     pub(crate) fn separate(
         &mut self,
         left: &[f32],
         right: &[f32],
-        on_segment: &mut dyn FnMut(usize, usize) -> bool,
+        on_segment: &mut dyn FnMut(&SeparationProgress<'_>) -> bool,
     ) -> Result<Stems, String> {
         let total = left.len();
         let segment = self.segment;
@@ -135,44 +235,56 @@ impl Htdemucs {
         let mut vocals = vec![0.0f32; total];
         let mut weight = vec![0.0f32; total];
         let mut input = vec![0.0f32; 2 * segment];
+        let mut finalized = 0usize;
         for c in 0..chunks {
             let start = c * stride;
             let end = (start + segment).min(total);
-            if end <= start {
-                break;
-            }
-            let n = end - start;
-            input.fill(0.0);
-            input[..n].copy_from_slice(&left[start..end]);
-            input[segment..segment + n].copy_from_slice(&right[start..end]);
-            let tensor =
-                TensorRef::from_array_view(([1usize, 2, segment], &input[..])).map_err(err)?;
-            let outputs = self
-                .session
-                .run(ort::inputs!["mix" => tensor])
-                .map_err(err)?;
-            let (_, stems) = outputs[0].try_extract_tensor::<f32>().map_err(err)?;
-            if stems.len() != SOURCES * 2 * segment {
-                return Err(format!("htdemucs output has {} values", stems.len()));
-            }
-            for (source, out) in [(DRUMS, &mut drums), (VOCALS, &mut vocals)] {
-                let l = &stems[(source * 2) * segment..(source * 2 + 1) * segment];
-                let r = &stems[(source * 2 + 1) * segment..(source * 2 + 2) * segment];
+            if end > start {
+                let n = end - start;
+                input.fill(0.0);
+                input[..n].copy_from_slice(&left[start..end]);
+                input[segment..segment + n].copy_from_slice(&right[start..end]);
+                let tensor =
+                    TensorRef::from_array_view(([1usize, 2, segment], &input[..])).map_err(err)?;
+                let outputs = self
+                    .session
+                    .run(ort::inputs!["mix" => tensor])
+                    .map_err(err)?;
+                let (_, stems) = outputs[0].try_extract_tensor::<f32>().map_err(err)?;
+                if stems.len() != SOURCES * 2 * segment {
+                    return Err(format!("htdemucs output has {} values", stems.len()));
+                }
+                for (source, out) in [(DRUMS, &mut drums), (VOCALS, &mut vocals)] {
+                    let l = &stems[(source * 2) * segment..(source * 2 + 1) * segment];
+                    let r = &stems[(source * 2 + 1) * segment..(source * 2 + 2) * segment];
+                    for i in 0..n {
+                        out[start + i] += 0.5 * (l[i] + r[i]) * win[i];
+                    }
+                }
                 for i in 0..n {
-                    out[start + i] += 0.5 * (l[i] + r[i]) * win[i];
+                    weight[start + i] += win[i];
                 }
             }
-            for i in 0..n {
-                weight[start + i] += win[i];
+            let done = if c + 1 == chunks {
+                total
+            } else {
+                ((c + 1) * stride).min(total)
+            };
+            for i in finalized..done {
+                let w = weight[i].max(1e-8);
+                drums[i] /= w;
+                vocals[i] /= w;
             }
-            if !on_segment(c + 1, chunks) {
+            finalized = done;
+            let progress = SeparationProgress {
+                done: c + 1,
+                chunks,
+                drums: &drums[..finalized],
+                vocals: &vocals[..finalized],
+            };
+            if !on_segment(&progress) {
                 return Err("cancelled".into());
             }
-        }
-        for i in 0..total {
-            let w = weight[i].max(1e-8);
-            drums[i] /= w;
-            vocals[i] /= w;
         }
         Ok(Stems { drums, vocals })
     }
