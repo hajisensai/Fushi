@@ -146,6 +146,16 @@ const double _inlineTagPad = 4;
 class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   final MenuController _ownSortMenu = MenuController();
 
+  /// 标签条横滚的控制器：交给 [HorizontalDragScrollable] 让鼠标横滚与 chip 的
+  /// 长按重排用同一个起拖门槛（BUG-5174）。
+  final ScrollController _tagScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _tagScrollController.dispose();
+    super.dispose();
+  }
+
   MenuController get _sortMenu =>
       widget.sortMenuController?.menu ?? _ownSortMenu;
 
@@ -249,7 +259,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     ];
     final int lead = leadingChips.length;
     final Widget tags = HorizontalDragScrollable(
+      mouseDragController: _tagScrollController,
       child: ListView.separated(
+        controller: _tagScrollController,
         scrollDirection: Axis.horizontal,
         // 拆段形态与库页工具行（`LibraryToolbar`，左右取页边）左缘对齐。
         padding: EdgeInsets.symmetric(
@@ -294,9 +306,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             borderRadius: tokens.radii.chipRadius,
             child: _tagFilterChip(tag: tag, isSelected: true, isDimmed: false),
           );
-          // BUG-4899 / BUG-5066：chip 本身按指针类型分流起拖——鼠标 / 触控板即时
-          // 拖（精确指针 hit slop 只有 1 px，长按计时里手一抖就输给标签条横滚），
-          // 触屏长按拖；落点是 chip 上的 DragTarget。
+          // BUG-4899 / BUG-5066 / BUG-5174：chip 本身长按起拖（鼠标与触屏一致），
+          // 按下就拖归标签条横滚、不动松开归单击筛选；长按与鼠标横滚共用一个
+          // 容忍手抖的门槛；落点是 chip 上的 DragTarget。
           return FushiTagChipDraggable<BookTagRow>(
             key: ValueKey<String>('library_tag_draggable_${tag.id}'),
             data: tag,
@@ -361,10 +373,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         ),
       ),
       // 标签多了必须横向拖动才够用，而桌面默认 dragDevices 不含鼠标（拖不动，
-      // 只能 Shift+滚轮）。HorizontalDragScrollable 放开鼠标拖动：鼠标在 chip 上
-      // 按住拖归拖标签（即时 Draggable 更深、先认领），在 chip 间空白处拖 /
-      // Shift+滚轮归横滚；
-      // 触屏短滑归横滚、长按归拖标签。
+      // 只能 Shift+滚轮）。HorizontalDragScrollable 放开鼠标拖动：鼠标 / 触屏
+      // 按下就拖归横滚（含 chip 上），长按 chip 后拖归重排标签。
       child: widget.pinActions
           ? Row(
               children: <Widget>[
