@@ -10,7 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_generation_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_gen4_report_actions.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -36,6 +38,7 @@ Future<void> pumpView(
   required bool apple,
   bool main = true,
   SrsGen4MigrationController? controller,
+  SrsGen4ReportActions? reportActions,
 }) async {
   LocaleSettings.setLocale(AppLocale.en);
   await tester.pumpWidget(
@@ -44,6 +47,8 @@ Future<void> pumpView(
         srsGen4IsMainProcessProvider.overrideWithValue(main),
         if (controller != null)
           srsGen4MigrationProvider.overrideWithValue(controller),
+        if (reportActions != null)
+          srsGen4ReportActionsProvider.overrideWithValue(reportActions),
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -66,6 +71,39 @@ Future<void> pumpView(
   // 不用 pumpAndSettle：不定进度条一直在动。
   await tester.pump(const Duration(seconds: 1));
 }
+
+/// 报告的两个出口记下调用，不碰反馈服务与平台通道。
+class FakeReportActions extends SrsGen4ReportActions {
+  FakeReportActions({required this.desktop}) : super(openFeedback: _noFeedback);
+
+  static Future<void> _noFeedback(
+    BuildContext context,
+    FeedbackComposePrefill prefill,
+  ) async {}
+
+  final bool desktop;
+  final List<String> sent = <String>[];
+  final List<String> exported = <String>[];
+
+  @override
+  bool get savesToFile => desktop;
+
+  @override
+  Future<void> send(BuildContext context, String reportPath) async =>
+      sent.add(reportPath);
+
+  @override
+  Future<void> export(BuildContext context, String reportPath) async =>
+      exported.add(reportPath);
+}
+
+const String reportPath =
+    '/data/user/0/app.fushi.reader/files/srs4-migration-report.json';
+
+const SrsStoreNotMigrated failedBefore = SrsStoreNotMigrated(
+  'x',
+  SrsGenState.migrationFailed,
+);
 
 void main() {
   test('every open error maps to one kind per process role', () {
@@ -241,29 +279,106 @@ void main() {
       },
     );
 
-    testWidgets('a failed previous run offers an upgrade again ($design)', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('a previous run that only left a temp file says so, once '
+        '($design)', (WidgetTester tester) async {
       final FakeGen4Backend b = FakeGen4Backend();
+      final FakeReportActions actions = FakeReportActions(desktop: apple);
+      final List<String> looked = <String>[];
       final SrsGen4MigrationController c = SrsGen4MigrationController(
         directory: 'dir',
         profileUids: () async => <String>['p1'],
         onCommitted: () async {},
         backend: b,
         nowMs: () => 1,
+        findAbortedReport: (String dir) async {
+          looked.add(dir);
+          return null;
+        },
       );
       addTearDown(c.dispose);
       await pumpView(
         tester,
         apple: apple,
         controller: c,
-        child: const SrsLoadErrorView(
-          error: SrsStoreNotMigrated('x', SrsGenState.migrationFailed),
-          onRetry: null,
-        ),
+        reportActions: actions,
+        child: const SrsLoadErrorView(error: failedBefore, onRetry: null),
       );
+      expect(looked, <String>['dir']);
       expect(find.text(t.srs_gen4_migration_failed_state), findsOneWidget);
+      expect(find.text(t.srs_gen4_aborted_report), findsNothing);
+      expect(find.byKey(SrsGenerationView.reportSendKey), findsNothing);
+      expect(find.byKey(SrsGenerationView.reportExportKey), findsNothing);
       expect(find.text(t.srs_gen4_restart), findsOneWidget);
+    });
+
+    testWidgets('a previous run that failed verification offers its report, '
+        'never both explanations ($design)', (WidgetTester tester) async {
+      final FakeGen4Backend b = FakeGen4Backend();
+      final FakeReportActions actions = FakeReportActions(desktop: apple);
+      final SrsGen4MigrationController c = SrsGen4MigrationController(
+        directory: 'dir',
+        profileUids: () async => <String>['p1'],
+        onCommitted: () async {},
+        backend: b,
+        nowMs: () => 1,
+        findAbortedReport: (String dir) async => reportPath,
+      );
+      addTearDown(c.dispose);
+      await pumpView(
+        tester,
+        apple: apple,
+        controller: c,
+        reportActions: actions,
+        child: const SrsLoadErrorView(error: failedBefore, onRetry: null),
+      );
+      expect(find.text(t.srs_gen4_aborted_report), findsOneWidget);
+      expect(find.text(t.srs_gen4_migration_failed_state), findsNothing);
+      // 私有目录路径不上屏（手机上用户拿不到）。
+      expect(find.textContaining('/data/user/0'), findsNothing);
+      expect(find.text(t.srs_gen4_report_send), findsOneWidget);
+      expect(
+        find.text(apple ? t.srs_gen4_report_save : t.srs_gen4_report_share),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(SrsGenerationView.reportSendKey));
+      await tester.pump();
+      expect(actions.sent, <String>[reportPath]);
+      await tester.tap(find.byKey(SrsGenerationView.reportExportKey));
+      await tester.pump();
+      expect(actions.exported, <String>[reportPath]);
+
+      // 重新升级：跑的时候报告动作收起；又一次对拍不过 → 只说这次的结论（不再叠「上次没做完」），报告换成这次的。
+      await tester.tap(find.byKey(SrsGenerationView.startKey));
+      await tester.pump();
+      expect(find.byKey(SrsGenerationView.reportSendKey), findsNothing);
+      expect(find.text(t.srs_gen4_aborted_report), findsNothing);
+      const String again = 'dir/srs4-migration-report.json';
+      b.finish(<String, Object?>{
+        'verdict': 'aborted',
+        'reportPath': again,
+        'report': <String, Object?>{'verdict': 'aborted'},
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text(t.srs_gen4_aborted_report), findsOneWidget);
+      expect(find.text(t.srs_gen4_migration_failed_state), findsNothing);
+      expect(find.textContaining(again), findsNothing);
+      await tester.tap(find.byKey(SrsGenerationView.reportSendKey));
+      await tester.pump();
+      expect(actions.sent, <String>[reportPath, again]);
+
+      // 这次被取消：说「已取消」，不给报告动作（这次没有新报告），也不叠「上次」的说明。
+      b.pending = Completer<SrsGen4MigrationOutcome>();
+      await tester.tap(find.byKey(SrsGenerationView.startKey));
+      await tester.pump();
+      b.finish(<String, Object?>{'verdict': 'cancelled'});
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text(t.srs_gen4_cancelled), findsOneWidget);
+      expect(find.text(t.srs_gen4_aborted_report), findsNothing);
+      expect(find.text(t.srs_gen4_migration_failed_state), findsNothing);
+      expect(find.byKey(SrsGenerationView.reportSendKey), findsNothing);
     });
 
     testWidgets('blocked outcomes say why, by code ($design)', (

@@ -53,6 +53,7 @@ import 'package:fushi_engine/media/source_library/book_library_prune.dart'
     show listEpubSourceFiles;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName, kMangaOcrOutputFileName;
+import 'package:fushi_engine/utils/archive/archive_volumes.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/discovery_import_host.dart';
@@ -217,6 +218,19 @@ Future<AutoImportRoute> routeAutoImport(
   }
   if (ext == '.7z' || ext == '.pdf' || _isText(path)) {
     return const AutoImportRoute(AutoImportKind.novel);
+  }
+  // 分卷包：第一卷当整个包（执行器解开再分类），后续卷随第一卷解开、不单独导入。
+  if (isFirstSplitArchiveVolume(path)) {
+    return const AutoImportRoute(AutoImportKind.novel);
+  }
+  if (isLaterSplitArchiveVolume(path)) {
+    return AutoImportRoute(
+      AutoImportKind.unsupported,
+      reason: tr(
+        '分卷压缩包的后续卷：从第一卷（.001）导入',
+        'Later volume of a split archive: import the first volume (.001)',
+      ),
+    );
   }
   if (AudiobookStorage.audioExtensions.contains(ext) ||
       kDiscoverySubtitleExtensions.contains(ext)) {

@@ -10,6 +10,8 @@
 /// [SrsGenState.sealedOldOnly] / [SrsGenState.migrationFailed] 给恢复页，不自动重跑。
 library;
 
+import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'srs_core.dart';
@@ -220,6 +222,29 @@ final class SrsGen4MigrationOutcome {
 
 /// 迁移的三条全局命令。全部按库目录 [dir]（`<数据库目录>`，与 [SrsCore.open] 同一个）。
 abstract final class SrsGen4Migration {
+  /// 迁移报告在库目录里的文件名（migrate.rs `REPORT_FILE`，测试核对两边一致）。只有 ID 与计数，不含笔记内容。
+  static const String reportFileName = 'srs4-migration-report.json';
+
+  /// [dir] 里那份「对拍不过、已撤回」的迁移报告（[SrsGen4MigrationVerdict.aborted]）的路径；没有报告、报告是提交时写的、
+  /// 或读出来不是一份报告 = null。内核判 [SrsGenState.migrationFailed] 的两个原因（上次对拍不过 / 只剩迁移临时文件）
+  /// 靠它分开：恢复页按它说「没通过核对、已撤回」并给出报告，而不是笼统地说「上次没做完」。
+  static Future<String?> abortedReportPath(String dir) async {
+    final File file = File('$dir${Platform.pathSeparator}$reportFileName');
+    final String text;
+    try {
+      text = await file.readAsString();
+    } on PathNotFoundException {
+      return null;
+    }
+    final Object? json;
+    try {
+      json = jsonDecode(text);
+    } on FormatException {
+      return null;
+    }
+    return json is Map && json['verdict'] == 'aborted' ? file.path : null;
+  }
+
   /// 目录的代际状态与本进程里正在跑的进度（只读，快：只看文件与锁、读旧库的一行 schema，可在 UI isolate 上轮询）。
   static SrsGen4MigrationStatus status(String dir, {String? libraryPath}) {
     final Object? r = SrsCoreBindings.load(
