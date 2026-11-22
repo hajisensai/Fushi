@@ -1612,8 +1612,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         final double cover = math
             .min(c.maxWidth * 0.5 * 0.5, c.maxHeight * 0.42)
             .clamp(180.0, 360.0);
-        // 列宽要装下封面 + 右侧露出的半张唱片（约 1.42 倍封面宽）。
-        final double controls = math.max(cover * 1.45, 320.0);
+        // 列宽要装下斜放的封面 + 右侧抽出的唱片（[MusicSleeveLayout.width]）。
+        final double controls = math.max(
+          MusicSleeveLayout.of(cover).width,
+          320.0,
+        );
         final ColorScheme cs = Theme.of(context).colorScheme;
         return Column(
           children: <Widget>[
@@ -1695,52 +1698,56 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
-  /// A 布局的封面：唱片压在封面（当封套）上、往右错出约四成，播放时转（用户
-  /// 2026-11-22：「显示歌词的这里也有 CD 好看一点」，对比示意后选「唱片压在上面」，
-  /// 整张盘面都看得到，中心孔里透出底下的封面）。有盘面扫描图转真盘面；没有就转
-  /// 银色 CD 盘（用户：「没有盘面的不能是黑胶，好难看」），不重复印一遍封面。
-  /// 进场时唱片从封面正中滑到右侧；整组随滑出量往左挪半个错出宽度，滑完后整体在
-  /// 左半区居中。3D 倾斜套在整组外面，封面和唱片一起倾斜，不会两层错开。
+  /// A 布局的封面 + 唱片（用户 2026-11-22 手绘草图后定）：封面往左斜
+  /// [_kSleeveTiltDegrees] 放在左边，唱片垫在封面**后面**、往右抽出，和封面中心
+  /// 在同一条水平线上，只在封面右缘交叠一小块，封面与盘面都完整可见；播放时唱片
+  /// 转。有盘面扫描图转真盘面（中心透明轮毂透出背景）；没有就转银色 CD 盘（用户：
+  /// 「没有盘面的不能是黑胶，好难看」）。进场时唱片从封面后面滑出来。
+  /// [cover] 是这一列给封面区的基准边长，封面本身取它的 [_kSleeveCoverScale]。
   Widget _buildSleeveWithDisc(
     BuildContext context,
     MusicPlayItem? item,
     double cover,
   ) {
-    final double disc = cover * 0.94;
-    final double peek = cover * 0.42;
-    final double inset = (cover - disc) / 2;
+    final MusicSleeveLayout layout = MusicSleeveLayout.of(cover);
+    final double s = layout.coverSide;
+    final double disc = layout.discSize;
     final Widget sleeve = TweenAnimationBuilder<double>(
       key: const ValueKey<String>('music-player-sleeve-disc'),
       tween: Tween<double>(begin: 0, end: 1),
       duration: fushiMotionDuration(context, FushiMotion.long),
       curve: FushiMotion.enter,
-      builder: (BuildContext context, double t, Widget? child) =>
-          Transform.translate(
-            offset: Offset(-peek * t / 2, 0),
-            child: SizedBox.square(
-              dimension: cover,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  child!,
-                  Positioned(
-                    left: inset + peek * t,
-                    top: inset,
-                    child: _SpinningDisc(
-                      coverPath: item?.coverPath,
-                      albumUid: item?.albumUid,
-                      trackPath: item?.path,
-                      size: disc,
-                      spinning: _engine.isPlaying,
-                      fallback: _DiscFallback.silverCd,
-                    ),
-                  ),
-                ],
+      builder: (BuildContext context, double t, Widget? child) => SizedBox(
+        width: layout.width,
+        height: layout.height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: layout.coverCenter.dx + layout.discReach * t - disc / 2,
+              top: layout.coverCenter.dy - disc / 2,
+              child: _SpinningDisc(
+                coverPath: item?.coverPath,
+                albumUid: item?.albumUid,
+                trackPath: item?.path,
+                size: disc,
+                spinning: _engine.isPlaying,
+                fallback: _DiscFallback.silverCd,
               ),
             ),
-          ),
-      child: Positioned.fill(
-        child: _LyricsCover(item: item, size: cover, tilt: false),
+            child!,
+          ],
+        ),
+      ),
+      child: Positioned(
+        left: layout.coverCenter.dx - s / 2,
+        top: layout.coverCenter.dy - s / 2,
+        width: s,
+        height: s,
+        child: Transform.rotate(
+          angle: _kSleeveTiltDegrees * math.pi / 180,
+          child: _LyricsCover(item: item, size: s, tilt: false),
+        ),
       ),
     );
     return FushiHoverLift(
@@ -2710,6 +2717,59 @@ class _LyricsCover extends StatelessWidget {
     // 小封面不倾斜。
     tilt: tilt && !compact,
   );
+}
+
+/// A 布局封面倾斜角（度，负 = 逆时针，封面往左斜）。
+const double _kSleeveTiltDegrees = -10;
+
+/// A 布局封面边长 / 封面区基准边长（唱片在右边还要占地方，封面收小一点）。
+const double _kSleeveCoverScale = 0.78;
+
+/// A 布局唱片直径 / 封面边长。
+const double _kSleeveDiscRatio = 0.96;
+
+/// A 布局唱片圆心离封面中心的水平距离 / 封面边长（只在封面右缘交叠一小块）。
+const double _kSleeveDiscReach = 0.8;
+
+/// A 布局封面 + 唱片这一组的几何（纯计算，测试直接量）：封面倾斜后的外接框
+/// 左缘到唱片右缘是 [width]；封面中心与唱片圆心在同一条水平线（[coverCenter]
+/// 的 dy）上。
+@immutable
+@visibleForTesting
+class MusicSleeveLayout {
+  const MusicSleeveLayout._({
+    required this.coverSide,
+    required this.discSize,
+    required this.discReach,
+    required this.coverCenter,
+    required this.width,
+    required this.height,
+  });
+
+  factory MusicSleeveLayout.of(double base) {
+    final double s = base * _kSleeveCoverScale;
+    final double a = _kSleeveTiltDegrees.abs() * math.pi / 180;
+    // 倾斜后封面外接框的半宽 / 半高（正方形，两者相等）。
+    final double half = s * (math.cos(a) + math.sin(a)) / 2;
+    final double disc = s * _kSleeveDiscRatio;
+    final double reach = s * _kSleeveDiscReach;
+    final double height = math.max(half * 2, disc);
+    return MusicSleeveLayout._(
+      coverSide: s,
+      discSize: disc,
+      discReach: reach,
+      coverCenter: Offset(half, height / 2),
+      width: half + reach + disc / 2,
+      height: height,
+    );
+  }
+
+  final double coverSide;
+  final double discSize;
+  final double discReach;
+  final Offset coverCenter;
+  final double width;
+  final double height;
 }
 
 /// 专辑没有盘面扫描图时 [_SpinningDisc] 转什么：C 布局保留黑胶 + 封面贴标；

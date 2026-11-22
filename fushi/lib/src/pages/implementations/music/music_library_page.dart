@@ -56,7 +56,7 @@ import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dar
     show musicImportPlaylistFile;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicBarReserve, MusicFloatingBarHost;
+    show MusicBarReserve, MusicFloatingBarHost, openMusicPlayerPage;
 import 'package:fushi_engine/media/media_extensions.dart'
     show kAudioExtensions, kVideoExtensions;
 import 'package:fushi_engine/media/music/server/music_server.dart'
@@ -607,10 +607,25 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   /// 「继续收听」：从上次那首所在专辑、那一首起播（引擎不持久化播放位置，曲内
   /// 从头开始）；散曲只播它自己。
+  ///
+  /// 这张卡已经在放（当前曲目就是它、或它所在专辑正在放）时再点，进播放页而不是
+  /// 重新起播（用户 2026-11-22：「点这里的继续收听，只会把底下的继续播放。多次
+  /// 点击不会进到播放界面」）；暂停着就顺手接着放。
   void _continueListening(MusicTrackRow track, MusicLibrarySnapshot snap) {
     final MusicAlbumRow? album = track.albumUid == null
         ? null
         : snap.albumByUid[track.albumUid];
+    if (isContinueCardAlreadyPlaying(
+      _app.musicSession.engine.current,
+      trackUid: track.trackUid,
+      albumUid: album?.albumUid,
+    )) {
+      if (!_app.musicSession.engine.isPlaying) {
+        unawaited(_app.musicSession.engine.play());
+      }
+      openMusicPlayerPage(context);
+      return;
+    }
     final List<MusicTrackRow> tracks = album == null
         ? <MusicTrackRow>[track]
         : snap.tracksOfAlbum(album.albumUid);
@@ -2579,4 +2594,18 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
       },
     );
   }
+}
+
+/// 「继续收听」卡（上次那首 [trackUid]，所在专辑 [albumUid]，散曲为 null）是否
+/// 已经是正在放的那个：当前曲目就是它，或当前曲目和它同一张专辑（播放已经往后
+/// 走了几首）。是的话点卡进播放页，不重新起播。
+@visibleForTesting
+bool isContinueCardAlreadyPlaying(
+  MusicPlayItem? current, {
+  required String trackUid,
+  required String? albumUid,
+}) {
+  if (current == null) return false;
+  if (current.trackUid == trackUid) return true;
+  return albumUid != null && current.albumUid == albumUid;
 }

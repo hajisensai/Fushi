@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4531 条。点号进各自文件。
+> 共 4533 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5215](bugs/BUG-5215-music-library-test-apple-music-channel-mac.md) | 🚧 | 🚧 | 曲库页测试在 macOS 主机上因 Apple Music 事件通道无插件实现而红 |
+| [BUG-5213](bugs/BUG-5213-music-continue-card-reopens-player.md) | ✅ | ✅ | 曲库「继续收听」卡正在播放时再点只续播、进不了播放页 |
 | [BUG-5208](bugs/BUG-5208-apple-dark-tier-drops-shell-theme.md) | ✅ | ✅ | Apple 深色档与书内查词弹窗重建主题时丢掉用户外壳样式 |
 | [BUG-5207](bugs/BUG-5207-ankidroid-kuma3-fork-package.md) | ✅ | ✅ | 装了改版 AnkiDroid（kuma3 Anki）时设置里一直显示「未安装 AnkiDroid」、权限框也不弹 |
 | [BUG-5203](bugs/BUG-5203-home-activity-rows-main-isolate-merge.md) | ✅ | ✅ | 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序 |
