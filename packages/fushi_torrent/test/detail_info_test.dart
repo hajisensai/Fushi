@@ -108,8 +108,8 @@ void main() {
     // 双栈监听下 libtorrent 每个端点各一个 DHT 实例、各投一条
     // dht_stats_alert；旧桥逐条赋值，后到的实例会覆盖先到的。这里让
     // B 的 IPv4 / IPv6 两个实例各认识一个节点：汇总必须是 2，旧实现
-    // 恒定只报 1（无论 alert 先后）。全回环，零外网（回环源地址的包
-    // 出不了本机，引导域名即便解析成功也连不上）。
+    // 恒定只报 1（无论 alert 先后）。节点全在回环上；建号时写死的引导
+    // 域名会被 DNS 解析，但回环源地址的包出不了本机，解析成功也连不上。
     final bool hasV6Loopback = await _canBindUdp(InternetAddress.loopbackIPv6);
     if (!hasV6Loopback) {
       markTestSkipped('本机没有 IPv6 回环 ::1');
@@ -149,16 +149,21 @@ void main() {
       ]),
       2,
     );
-    int lastNodes = -1;
+    // DHT 是异步起来的：libtorrent 的 session_impl::start_dht 在引导域名
+    // （ht_session_create 写死的 dht_bootstrap_nodes）DNS 解析完成前直接
+    // return，m_outstanding_router_lookups 归零后才建 dht_tracker；期间
+    // dhtRunning 为 false，addDhtNodes 的节点先排在 m_dht_nodes 里、起来
+    // 后再灌进去。所以 dhtRunning 是要等的条件，不是每轮都成立的断言
+    // （CI 首轮就会撞上解析未完成）。解析失败同样会把计数减到 0，离线
+    // 机器也能起来，只是要等解析器超时，故给 60 秒上限。
+    FtSessionStatus? last;
     await _pollUntil(
-      () => lastNodes >= 2,
-      timeout: const Duration(seconds: 30),
-      what: 'aggregated dhtNodes >= 2',
+      () => last != null && last!.dhtRunning && last!.dhtNodes >= 2,
+      timeout: const Duration(seconds: 60),
+      what: 'DHT running with aggregated dhtNodes >= 2',
       onTick: () {
-        final FtSessionStatus? status = b.sessionStatus();
-        expect(status, isNotNull);
-        expect(status!.dhtRunning, isTrue);
-        lastNodes = status.dhtNodes;
+        last = b.sessionStatus();
+        expect(last, isNotNull);
       },
     );
   }, skip: skip);
