@@ -88,9 +88,13 @@ Future<bool> importAudioCdIfPresent(
 /// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
 bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
   AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
-  AudioCdLayout.macCddafs =>
-    Platform.isMacOS || Platform.isWindows || Platform.isLinux,
+  AudioCdLayout.macCddafs => audioCdRipAvailableOnHost,
 };
+
+/// 本机能否抓轨（[_canRip] 任一布局可能成立的平台集合）。视频「导入文件夹」块的
+/// 音频 CD 附注按它显示，两处不再各写一份平台判据。
+bool get audioCdRipAvailableOnHost =>
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
 /// 音频 CD 判定里的「旁边有真媒体」（[audioCdLayoutOf] 的 `isImportableMedia`）：视频或
 /// 纯音频都算，与最终由哪个库收它无关（纯音频归音乐库，反馈 QAondMh4M5）。
