@@ -1403,9 +1403,9 @@ class AnkiHandlebarRenderer {
     }
     final String text = payload.popupSelectionText;
     if (text.isEmpty) return '';
-    return const HtmlEscape(HtmlEscapeMode.element)
-        .convert(text)
-        .replaceAll(RegExp(r'\r\n|\r|\n'), '<br>');
+    return const HtmlEscape(
+      HtmlEscapeMode.element,
+    ).convert(text).replaceAll(RegExp(r'\r\n|\r|\n'), '<br>');
   }
 
   static String _singleGlossaryForDictionary(
@@ -1876,8 +1876,9 @@ class AnkiAudioData {
 }
 
 String ankiInlineMediaReference(String addMediaResult) {
-  final imageSrc = RegExp(r'''<img\s+[^>]*src=["']([^"']+)["'][^>]*>''')
-      .firstMatch(addMediaResult);
+  final imageSrc = RegExp(
+    r'''<img\s+[^>]*src=["']([^"']+)["'][^>]*>''',
+  ).firstMatch(addMediaResult);
   if (imageSrc != null) {
     final src = imageSrc.group(1);
     if (src != null && src.isNotEmpty) return src;
