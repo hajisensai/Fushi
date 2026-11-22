@@ -1,7 +1,7 @@
 // 拍板台 vJSj4RsKFt：阅读器纸色（羊皮纸 / 护眼 / 深灰等）可直接选，与 app 主题
 // 种子色无关；默认跟随 app 主题，显式选择覆盖；存量 app_theme_key 里的旧纸色 id
 // 照旧生效。
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
