@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
@@ -679,9 +680,22 @@ List<String> deleteAnime4kFilesIn(Directory dir) {
 }
 
 /// 默认着色器目录里的 Anime4K 占用字节数。
-Future<int> anime4kInstalledBytes() async =>
-    anime4kInstalledBytesIn(await mpvShaderDirectory());
+///
+/// 逐文件 stat 是同步 IO，放后台 isolate 跑：存储页开页就调它，不能在 UI isolate
+/// 上做同步 IO（settings-storage-page-open-jank）。[shaderDirectory] 只给测试注
+/// 临时目录，默认 [mpvShaderDirectory]。
+Future<int> anime4kInstalledBytes({
+  Future<Directory> Function() shaderDirectory = mpvShaderDirectory,
+}) async {
+  final String path = (await shaderDirectory()).path;
+  return Isolate.run(() => anime4kInstalledBytesIn(Directory(path)));
+}
 
-/// 删除默认着色器目录里的 Anime4K 已下载文件，返回删掉的文件名。
-Future<List<String>> deleteAnime4kShaderFiles() async =>
-    deleteAnime4kFilesIn(await mpvShaderDirectory());
+/// 删除默认着色器目录里的 Anime4K 已下载文件，返回删掉的文件名（同步删除在后台
+/// isolate 跑，理由同 [anime4kInstalledBytes]）。
+Future<List<String>> deleteAnime4kShaderFiles({
+  Future<Directory> Function() shaderDirectory = mpvShaderDirectory,
+}) async {
+  final String path = (await shaderDirectory()).path;
+  return Isolate.run(() => deleteAnime4kFilesIn(Directory(path)));
+}
