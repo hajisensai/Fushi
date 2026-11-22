@@ -104,8 +104,23 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
         );
     if (hostTombstones == null) return false;
     bool changed = false;
-    for (final VideoBookRow row in rows) {
+    for (final VideoBookRow snapshotRow in rows) {
       _checkpoint();
+      // [rows] 来自 sweep 开头的快照，之后还隔着能力探测、墓碑 GET 和前面几条 PUT
+      // 的网络往返：这期间本机删掉的（仅本机删除不写墓碑，「从所有设备删除」的墓碑
+      // 也还没送到 host）不能再发布出去，否则它在别的设备上复活（HBK-AUDIT-213）。
+      // 发布前按 uid 读当下的行，没了就跳过，还在就用当下的内容注册。只有待推的
+      // 行才走到这里，稳态一轮（两端已对齐）不多读。
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(
+        snapshotRow.bookUid,
+      );
+      if (row == null ||
+          !isSyncableStreamVideo(
+            bookUid: row.bookUid,
+            videoPath: row.videoPath,
+          )) {
+        continue;
+      }
       if (_hostVetoesPush(
         hostTombstones,
         kinds: const <SyncTombstoneKind>[SyncTombstoneKind.video],
