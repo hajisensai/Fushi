@@ -23,6 +23,9 @@ import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/book_archive/book_archive_import.dart'
+    show isBookArchiveContainerPath, looksLikeBookArchive;
+import 'package:fushi/src/media/import/book_archive_import_dialog.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/import/import_dialog_blocks.dart';
@@ -90,6 +93,7 @@ class BookImportDialog extends StatefulWidget {
     this.initialSubtitlePath,
     this.initialAudioPaths,
     this.imageArchiveProbe,
+    this.bookArchiveProbe,
     this.requireBook = false,
     this.pickAudioFirst = false,
     super.key,
@@ -113,6 +117,11 @@ class BookImportDialog extends StatefulWidget {
   /// 对话框没有重复执行昂贵的整包载体判定。
   @visibleForTesting
   final Future<bool> Function(String path)? imageArchiveProbe;
+
+  /// 测试缝：「这个压缩包是不是装着一批书」。生产走引擎 [looksLikeBookArchive]
+  /// （zip 读条目名、rar 经 7-Zip 列目录、7z / 分卷第一卷解开后再定性）。
+  @visibleForTesting
+  final Future<bool> Function(String path)? bookArchiveProbe;
 
   /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
   /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
@@ -299,6 +308,64 @@ class _BookImportDialogState extends State<BookImportDialog>
     );
   }
 
+  /// 选/拖进来的压缩包若装着一批书（一包 EPUB / TXT / PDF，含加密包与分卷包），关掉本框、
+  /// 转交「从压缩包导入书」整批导入并给一份汇总（拍板 83Fe7zQbhv）。返回 `true` 表示
+  /// 已接手（或这次选择已过期），书籍侧不再收下这个路径。
+  ///
+  /// 本框只导一本书、要定书名与字幕 / 音频，一包多本放不进这些字段；而一包书逐本弹框
+  /// 又正是汇总要消灭的体验，所以整包转交，不在本框里排队。
+  Future<bool> _handoffIfBookArchives(
+    List<String> paths,
+    int generation,
+  ) async {
+    final List<String> candidates = <String>[
+      for (final String path in paths)
+        if (isBookArchiveContainerPath(path)) path,
+    ];
+    if (candidates.isEmpty || !mounted) return false;
+    final Future<bool> Function(String path) probe =
+        widget.bookArchiveProbe ?? looksLikeBookArchive;
+    final List<String> archives = <String>[];
+    setState(() => _classifyingCount++);
+    try {
+      for (final String path in candidates) {
+        if (await probe(path)) archives.add(path);
+      }
+    } finally {
+      if (mounted) setState(() => _classifyingCount--);
+    }
+    if (!mounted || _isStaleSelection(generation)) return true;
+    if (archives.isEmpty) return false;
+    final bool imported = await showBookArchiveImportDialog(
+      context: context,
+      db: widget.db,
+      paths: archives,
+    );
+    if (mounted) Navigator.pop(context, imported);
+    return true;
+  }
+
+  /// 先问「是不是一包书」还是先问「是不是漫画」：`.rar` 光看扩展名就是漫画载体，
+  /// 必须先看条目名（一包 TXT 的 rar 不能被转交漫画）；`.zip` 与拖放分类同序，页图包
+  /// 优先归漫画。
+  static bool _bookArchiveProbeFirst(String path) =>
+      p.extension(path).toLowerCase() == '.rar';
+
+  /// 收下一个选 / 拖进来的主文件之前的两道闸门（一包书 / 漫画）。返回 `true` = 已被
+  /// 别的流程接手，书籍侧不要再收下它。
+  Future<bool> _handoffIfNotSingleBook(String path, int generation) async {
+    if (_bookArchiveProbeFirst(path) &&
+        await _handoffIfBookArchives(<String>[path], generation)) {
+      return true;
+    }
+    if (await _handoffIfManga(path, generation)) return true;
+    if (!_bookArchiveProbeFirst(path) &&
+        await _handoffIfBookArchives(<String>[path], generation)) {
+      return true;
+    }
+    return false;
+  }
+
   /// 选/拖进来的路径若其实是漫画载体，弹一次明确确认并转交 [MangaImportDialog]。
   ///
   /// 返回 `true` 表示「本路径已被漫画流程接手，书籍侧不要再收下它」——用户在确认
@@ -413,6 +480,10 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
   Future<void> _handleDialogDrop(List<String> paths, Offset _) async {
     if (importing) return;
+    // 拖进来的是装着一批书的压缩包（.7z / 一包 EPUB 的 zip / 分卷第一卷……）→ 整包转交
+    // 批量导入。分类表里 `.zip` 归词典包、`.rar` 归漫画包，不先问就会被下面静默忽略。
+    if (await _handoffIfBookArchives(paths, ++_selectionGeneration)) return;
+    if (!mounted) return;
     final DroppedFiles files = classifyDroppedFiles(paths);
     final BookDialogDropResult r = resolveBookDialogDrop(files);
     if (r.isEmpty) return;
@@ -835,6 +906,11 @@ class _BookImportDialogState extends State<BookImportDialog>
     'mokuro',
     'cbz',
     'zip',
+    // 装着一批书的压缩包（拍板 83Fe7zQbhv）：选中后 [_handoffIfNotSingleBook] 按包里装的
+    // 是什么转交整批导入（或漫画流程）。`001` 是分卷包的第一卷（`book.7z.001`）。
+    '7z',
+    'rar',
+    '001',
     ...TextToEpub.supportedExtensions,
   ];
 
@@ -849,9 +925,9 @@ class _BookImportDialogState extends State<BookImportDialog>
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
       if (path != null && file != null && mounted) {
-        // 选中的其实是漫画载体 → 明确确认后转交漫画流程，不再静默按书导入。
+        // 选中的其实是一包书 / 漫画载体 → 转交对应流程，不再静默按一本书导入。
         final int generation = ++_selectionGeneration;
-        if (await _handoffIfManga(path, generation)) return;
+        if (await _handoffIfNotSingleBook(path, generation)) return;
         setState(() {
           _epubPath = path;
           _epubName = file.name;

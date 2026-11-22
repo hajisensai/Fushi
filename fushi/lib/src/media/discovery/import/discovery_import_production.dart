@@ -14,6 +14,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/book_archive/book_archive_import.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart';
@@ -22,6 +24,31 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
+
+/// PDF：`PdfImporter.importFromPath`，同名已在库跳过（返回 null）。
+Future<String?> importDiscoveryPdf(FushiDatabase db, String filePath) async {
+  try {
+    return await PdfImporter.importFromPath(
+      db: db,
+      filePath: filePath,
+      fileName: discoveryImportFileName(filePath),
+      title: discoveryImportStem(filePath),
+      policy: const DuplicatePolicy.skip(),
+    );
+  } on DuplicateImportCancelledException {
+    return null;
+  }
+}
+
+/// 书架「一包书」批量导入（拍板 83Fe7zQbhv）的生产装配：与发现页下载同一份
+/// EPUB / 文本 / PDF 导入原语，解包暂存在书库根下的 `.tmp-*`。
+BookArchiveImporter buildProductionBookArchiveImporter(FushiDatabase db) =>
+    BookArchiveImporter(
+      importEpub: (String filePath) => importDiscoveryEpub(db, filePath),
+      importText: (String filePath) => importDiscoveryText(db, filePath),
+      importPdf: (String filePath) => importDiscoveryPdf(db, filePath),
+      createStagingDir: () => EpubImporter.createStagingDir(db),
+    );
 
 DiscoveryDomainImporters buildProductionDiscoveryImporters({
   required FushiDatabase db,
@@ -34,19 +61,7 @@ DiscoveryDomainImporters buildProductionDiscoveryImporters({
   return DiscoveryDomainImporters(
     importEpub: (String filePath) => importDiscoveryEpub(db, filePath),
     importText: (String filePath) => importDiscoveryText(db, filePath),
-    importPdf: (String filePath) async {
-      try {
-        return await PdfImporter.importFromPath(
-          db: db,
-          filePath: filePath,
-          fileName: discoveryImportFileName(filePath),
-          title: discoveryImportStem(filePath),
-          policy: const DuplicatePolicy.skip(),
-        );
-      } on DuplicateImportCancelledException {
-        return null;
-      }
-    },
+    importPdf: (String filePath) => importDiscoveryPdf(db, filePath),
     importAudiobook: (AlignAudiobookPlan plan) => importDiscoveryAudiobook(
       db: db,
       srtBookRepo: srtBookRepo,
