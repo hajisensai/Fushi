@@ -77,12 +77,23 @@ test('withHeavyWaitLimit leaves set limits, reports and other commands alone', (
     'dart tool/heavy.dart --replay',
     'flutter test a_test.dart',
     'cat tool/heavy.dart.bak x',
+    'grep -n heavy.dart docs/agent/heavy-lease.md',
+    'git diff origin/develop -- fushi/tool/heavy.dart fushi/tool/test_flow',
+    'cat fushi/tool/heavy.dart | head',
   ]) {
     assert.equal(withHeavyWaitLimit(c), null, c);
   }
   assert.equal(
     withHeavyWaitLimit('dart ../tool/heavy.dart --check-only -- .\\gradlew.bat x'),
     'dart ../tool/heavy.dart --wait-max-min=10 --check-only -- .\\gradlew.bat x',
+  );
+  assert.equal(
+    withHeavyWaitLimit('cd fushi; dart run tool/heavy.dart -- flutter test a.dart'),
+    'cd fushi; dart run tool/heavy.dart --wait-max-min=10 -- flutter test a.dart',
+  );
+  assert.equal(
+    withHeavyWaitLimit('dart.exe D:/r/fushi/tool/heavy.dart -- flutter analyze'),
+    'dart.exe D:/r/fushi/tool/heavy.dart --wait-max-min=10 -- flutter analyze',
   );
 });
 

@@ -9,8 +9,11 @@
 // 15/30 分钟肯定弄不完，那不弄不是更好"). The prediction leans short on
 // purpose, so that it only gives up on a wait that is long for sure: a
 // holder already past its typical run counts as finishing now, a run of a
-// kind without enough history counts as taking no time, and the memory
-// budget (which can only add to the wait) is left out.
+// kind without enough history counts as taking no time, the memory budget's
+// own pacing is left out, and a waiter ahead that the budget keeps waiting
+// is not counted (a later run may go ahead of it, heavyMayGoAhead). Only
+// this machine's queue is predicted: a run also offered to other machines
+// (heavy_offload_rival.dart) is not given up on this way.
 import 'heavy_history.dart';
 
 /// How many recent runs of one kind here it takes to call their median

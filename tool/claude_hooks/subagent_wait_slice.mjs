@@ -51,7 +51,11 @@ export const SUBAGENT_HEAVY_WAIT_MAX_MIN = 10;
  */
 export function withHeavyWaitLimit(command) {
   if (command.includes('--wait-max-min')) return null;
-  const run = /(\bheavy\.dart)(?=\s)(?!\s+--(?:status|stats|replay)\b)/g;
+  // Only a run of it (`dart [run] <path>/heavy.dart`), not a mention such as
+  // `grep -n heavy.dart x` or `git diff -- fushi/tool/heavy.dart y`, which
+  // the inserted flag would break.
+  const run =
+    /(\bdart(?:\.exe)?\s+(?:run\s+)?["']?[^\s"']*\bheavy\.dart["']?)(?=\s)(?!\s+--(?:status|stats|replay)\b)/g;
   if (!run.test(command)) return null;
   return command.replace(run, `$1 --wait-max-min=${SUBAGENT_HEAVY_WAIT_MAX_MIN}`);
 }

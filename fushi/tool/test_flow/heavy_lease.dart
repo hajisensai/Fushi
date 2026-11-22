@@ -449,9 +449,8 @@ String _takingPlaceOf(HeavyQueued q) =>
 /// Runs [body] under the machine-wide admission gate. [body] must not await:
 /// the gate is one synchronous block per process (see [_admissionChain]).
 T _underGate<T>(Directory state, T Function() body) {
-  final RandomAccessFile gate = File(
-    '${state.path}/admission.lock',
-  ).openSync(mode: FileMode.append);
+  final RandomAccessFile gate = File('${state.path}/admission.lock')
+      .openSync(mode: FileMode.append);
   try {
     gate.lockSync(FileLock.blockingExclusive);
     return body();
@@ -600,9 +599,8 @@ Future<HeavyLease> _waitSlot(
       // One admission at a time across the machine: two waiters must not both
       // read the same slot as free and race over its holder info, and a
       // ticket is created, locked and swept only under this gate.
-      final RandomAccessFile gate = File(
-        '${dir.path}/admission.lock',
-      ).openSync(mode: FileMode.append);
+      final RandomAccessFile gate = File('${dir.path}/admission.lock')
+          .openSync(mode: FileMode.append);
       String reason;
       try {
         gate.lockSync(FileLock.blockingExclusive);
@@ -640,7 +638,14 @@ Future<HeavyLease> _waitSlot(
           '${sw.elapsed.inMinutes} min -- $reason. Not running it anyway.',
         );
       }
-      if (waitMax != null && ticket != null && typical.isNotEmpty) {
+      // Only this machine's queue is predicted: with a rival out, another
+      // machine may take the run any minute, so the wait here says nothing
+      // about whether it runs within the limit.
+      if (waitMax != null &&
+          ticket != null &&
+          rival == null &&
+          typical.isNotEmpty) {
+        final MemorySnapshot? memory = readMemory();
         final String? hopeless = _hopelessWait(
           dir,
           ticket.name,
@@ -648,7 +653,8 @@ Future<HeavyLease> _waitSlot(
           sw.elapsed,
           waitMax,
           typical,
-          slots: heavySlotCount(readMemory(), env),
+          slots: heavySlotCount(memory, env),
+          budgetMb: heavyBudgetMb(memory, env),
         );
         if (hopeless != null) throw HeavyLeaseTimeout(hopeless);
       }
@@ -662,6 +668,8 @@ Future<HeavyLease> _waitSlot(
 /// Why the queued run holding ticket [name] gives up now: the slots' holders
 /// and the waiters ahead of it, at their kinds' [typical] runs, will not let
 /// it in before [waitMax] (heavy_wait_estimate.dart); null while they may.
+/// Under a memory budget ([budgetMb]), a waiter ahead that does not fit it
+/// now may be passed (heavyMayGoAhead), so it is not counted ahead.
 String? _hopelessWait(
   Directory dir,
   String name,
@@ -670,6 +678,7 @@ String? _hopelessWait(
   Duration waitMax,
   Map<String, Duration> typical, {
   required int slots,
+  required int? budgetMb,
 }) {
   final List<HeavyQueued> queue = readHeavyQueue(dir, sweep: false);
   final int at = queue.indexWhere((HeavyQueued q) => q.name == name);
@@ -691,7 +700,18 @@ String? _hopelessWait(
         ),
     ],
     ahead: <Duration?>[
-      for (final HeavyQueued q in queue.take(at)) typical[q.kind],
+      for (final HeavyQueued q in queue.take(at))
+        if (budgetMb == null ||
+            (q.bookedMb != null &&
+                heavyBudgetBlocker(
+                      needMb: q.bookedMb!,
+                      heldCapsMb: <int>[
+                        for (final HeavyHolder h in holders) h.bookedMb,
+                      ],
+                      budgetMb: budgetMb,
+                    ) ==
+                    null))
+          typical[q.kind],
     ],
   );
   if (elapsed + wait <= waitMax) return null;
