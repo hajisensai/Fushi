@@ -1,12 +1,67 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T05:23:56Z",
+ "generatedAt": "2026-11-22T05:25:35Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6e9b2491365654977915fd2cc337dc953bb69477",
   "seq": 31242
  },
  "builds": [
+  {
+   "seq": 31194,
+   "version": "3.4.0",
+   "sha": "6f23fd74b34f2e788d9e21d84ff2d80a9171ea0b",
+   "unknown": false,
+   "publishedAt": "2026-11-22T05:25:21Z",
+   "testflight": true,
+   "baseSeq": 31122,
+   "prs": [
+    4134,
+    4129,
+    4131,
+    4135,
+    4127,
+    4128,
+    4132,
+    4133,
+    4130,
+    4115,
+    4126,
+    4123,
+    4122,
+    4121,
+    4119,
+    4118,
+    4117,
+    4114
+   ],
+   "direct": [
+    {
+     "sha": "48cdc9667e63cfe037f7eef6431600ec220816c7",
+     "subject": "chore(bugs): settle BUG number collisions on 1fb51302b"
+    },
+    {
+     "sha": "fba5436937c5161b5c39e69263a90e05f841bba9",
+     "subject": "chore(bugs): settle BUG number collisions on 51073b3c5"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651173"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 31122,
    "version": "3.4.0",
@@ -119,8 +174,8 @@
    "version": "3.4.0",
    "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
    "unknown": false,
-   "publishedAt": "2026-11-22T00:28:30Z",
-   "testflight": true,
+   "publishedAt": "2026-11-22T00:09:24Z",
+   "testflight": false,
    "baseSeq": 31026,
    "prs": [
     4099,
@@ -148,13 +203,16 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
     }
    }
   }
@@ -171,38 +229,12 @@
    4140,
    4138,
    4125,
-   4120,
-   4134,
-   4129,
-   4131,
-   4135,
-   4127,
-   4128,
-   4132,
-   4133,
-   4130,
-   4115,
-   4126,
-   4123,
-   4122,
-   4121,
-   4119,
-   4118,
-   4117,
-   4114
+   4120
   ],
   "direct": [
    {
     "sha": "34de93b39ed3abc22f460ee66da917a7aa0547fe",
     "subject": "chore(bugs): settle BUG number collisions on 55c7a325d"
-   },
-   {
-    "sha": "48cdc9667e63cfe037f7eef6431600ec220816c7",
-    "subject": "chore(bugs): settle BUG number collisions on 1fb51302b"
-   },
-   {
-    "sha": "fba5436937c5161b5c39e69263a90e05f841bba9",
-    "subject": "chore(bugs): settle BUG number collisions on 51073b3c5"
    }
   ],
   "truncated": false,
