@@ -547,7 +547,7 @@ void main() {
       expect(colors.whereType<Color>().length, 1);
     });
 
-    test('ink flash: envelope, gap filter, last hit, hits from beats', () {
+    test('ink flash: envelope, gap filter, last hit, hits from drum hits', () {
       expect(temperaInkFlashEnvelope(-0.1), 0);
       expect(temperaInkFlashEnvelope(0.1), 1);
       expect(temperaInkFlashEnvelope(0.6), lessThan(0.02));
@@ -564,14 +564,14 @@ void main() {
         audio: SyntheticVisualizerAudio(),
         offsetMs: 100,
       );
+      // 合成音频：底鼓 / 军鼓落在每拍上，镲片在反拍（不出墨）。
       final List<double> hits = temperaInkHitsOf(withAudio);
-      expect(hits.take(2), <double>[0.1, 0.6]);
-      final LyricVisualizerContext noBeats = visualizerContextFor(
+      expect(hits.take(3), <double>[0.1, 0.6, 1.1]);
+      final LyricVisualizerContext noAudio = visualizerContextFor(
         temperaVisualizerEntry,
         clock: FakeVisualizerClock(),
-        audio: SyntheticVisualizerAudio(beatsReady: false),
       );
-      expect(temperaInkHitsOf(noBeats), isEmpty);
+      expect(temperaInkHitsOf(noAudio), isEmpty);
     });
 
     test('intensity scale, layer image pick and background request', () {

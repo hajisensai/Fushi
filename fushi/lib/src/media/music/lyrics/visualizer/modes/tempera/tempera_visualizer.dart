@@ -284,15 +284,21 @@ double temperaAnimationScale(LyricVisualizerIntensity intensity) =>
       LyricVisualizerIntensity.chaotic => 1.35,
     };
 
-/// 墨染的击打（显示时间秒）：音频分析的拍点（音频时间）加上整首偏移，再按最小间隔筛。没有节拍网格
-/// 为空（folia：这首歌还没有鼓点时整层隐藏）。
-List<double> temperaInkHitsOf(LyricVisualizerContext c) {
-  final LyricVisualizerAudio? a = c.audio;
-  if (a == null || !a.beatsReady) return const <double>[];
-  return temperaInkFlashHits(<double>[
-    for (final int t in a.beatTimesMs) c.displayTimeOfAudio(t) / 1000,
-  ]);
-}
+/// folia `HIT_FLOOR`：力度不到它的鼓击不出墨。
+const double kTemperaInkHitFloor = 0.4;
+
+/// 墨染的击打（显示时间秒，folia `resolveFlashIndices`）：共享鼓击表里的底鼓、军鼓（镲片不算），力度不到
+/// [kTemperaInkHitFloor] 的不算，再按最小间隔筛。没有鼓击（没分析 / 判为没鼓）为空（folia：这首歌还没有
+/// 鼓点时整层隐藏）。
+List<double> temperaInkHitsOf(LyricVisualizerContext c) =>
+    temperaInkFlashHits(<double>[
+      for (final LyricVisualizerDrumHitEvent h in LyricVisualizerBeats.of(
+        c,
+      ).drumHits)
+        if (h.kind != LyricVisualizerDrumKind.hat &&
+            h.strength >= kTemperaInkHitFloor)
+          h.seconds,
+    ]);
 
 /// 封面取色（gradient 模式用）：粗量化成 512 桶，按像素数取最多 4 个彼此拉得开的颜色。
 List<Color> temperaCoverColors(Uint8List rgba, int width, int height) {
@@ -424,7 +430,7 @@ class _TemperaVisualizerState extends State<TemperaVisualizer> {
       );
     }
     final LyricVisualizerAudio? audio = c.audio;
-    final bool ready = audio?.beatsReady ?? false;
+    final bool ready = audio?.drumsReady ?? false;
     if (!identical(audio, _inkAudio) ||
         _inkOffset != c.offsetMs ||
         _inkReady != ready) {
