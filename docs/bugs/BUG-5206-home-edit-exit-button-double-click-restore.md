@@ -1,4 +1,4 @@
-## BUG-5206 · home-edit-exit-button-double-click-restore
+## BUG-5206 · 首页编辑态页头「恢复默认」接住连点「编辑首页」的第二下，布局被换回默认
 - **报告**：2026-11-22（用户：开发者自报，应用内反馈 0i8iO2LwXj）
 - **真实性**：✅ 真 bug。页头「编辑首页」是动作组最后一颗；进编辑态后 `_toolbarItems`（`fushi/lib/src/pages/implementations/home_dashboard_page.dart` 编辑态分支）把动作组换成唯一一颗「恢复默认」，正好落在同一位置，连点「编辑首页」的第二下直接把当前网格换回默认模板。
 - **[x] ① 已修复** — 编辑态页头只放「退出编辑」（×，与系统返回同一出口 `_finishWidgetEdit`，保存并退出）；「恢复默认」挪进底部编辑工具栏（添加 · 撤销 · 恢复默认 · 完成），仍可撤销。
