@@ -224,13 +224,13 @@ final LyricVisualizerBackgroundEntry latentBackgroundEntry =
 /// 暂停时的速度比例（folia `PAUSED_SPEED_SCALE`）。
 const double kLatentPausedSpeedScale = 0.12;
 
-/// 宽频能量（folia `resolveLatentBroadbandEnergy`；输入已是 0–1）。folia 的 lowMid / mid 两段
-/// 这里都取中频。
+/// 宽频能量（folia `resolveLatentBroadbandEnergy`；输入已是 0–1）。lowMid / mid 两段分开取
+/// （[LyricVisualizerAudioFrame.lowMid] / [LyricVisualizerAudioFrame.upperMid]）。
 double latentBroadbandEnergy(LyricVisualizerAudioFrame f) {
   final double e =
       f.low * 0.22 +
-      f.mid * 0.18 +
-      f.mid * 0.22 +
+      f.lowMid * 0.18 +
+      f.upperMid * 0.22 +
       f.vocal * 0.28 +
       f.high * 0.1;
   return math.pow(e.clamp(0.0, 1.0), 0.55).toDouble();
@@ -579,7 +579,7 @@ class LatentBackgroundScene extends LyricVisualizerBackgroundScene {
     final double energy = paused ? 0 : latentBroadbandEnergy(f);
     final double tPower = paused ? 0 : f.power;
     final double tBass = paused ? 0 : f.low;
-    final double tMid = paused ? 0 : math.max(f.mid, f.vocal);
+    final double tMid = paused ? 0 : math.max(f.upperMid, f.vocal);
     _power = lyricBgEase(_power, tPower, 0.12, dt);
     _bass = lyricBgEase(_bass, tBass, 0.16, dt);
     _mid = lyricBgEase(_mid, tMid, 0.13, dt);

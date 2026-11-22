@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -31,6 +32,24 @@ void main() {
       expect(
         latentBroadbandEnergy(_frame(0.3)),
         lessThan(latentBroadbandEnergy(_frame(0.6))),
+      );
+      // lowMid 权重 0.18、mid（400–1200 Hz）权重 0.22，分开取。
+      const LyricVisualizerAudioFrame lowOnly = LyricVisualizerAudioFrame(
+        power: 0,
+        low: 0,
+        mid: 0.5,
+        lowMid: 1,
+        upperMid: 0,
+        high: 0,
+        vocal: 0,
+        onset: 0,
+        beatImpact: 0,
+        downbeatImpact: 0,
+        drumImpact: 0,
+      );
+      expect(
+        latentBroadbandEnergy(lowOnly),
+        closeTo(math.pow(0.18, 0.55), 1e-9),
       );
     });
 
