@@ -13,8 +13,16 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
-    show FushiPlaybackClock;
+
+/// 播放位置读口（只读、无副作用）。框架契约自带这一个最小接口，不从 app 组件层引入时钟类型：
+/// 否则契约文件会连带导入整个 app（含注册表与全部样式），任何一个样式编不过，所有样式的单测都零执行。
+abstract interface class LyricVisualizerClock {
+  /// 当前播放位置（逐帧连续）。
+  Duration get position;
+
+  /// 整首时长；未知为 [Duration.zero]。
+  Duration get duration;
+}
 
 /// 样式清单。[prefValue] 是落库值（冻结）；与 folia 的模式 id 一致，便于对照源码。
 enum LyricVisualizerMode {
@@ -319,7 +327,7 @@ class LyricVisualizerContext {
   final LyricVisualizerRuntime runtime;
 
   /// 插值播放时钟（每帧连续）。
-  final FushiPlaybackClock clock;
+  final LyricVisualizerClock clock;
 
   /// 整首偏移：显示时间 = 播放位置 + [offsetMs]。
   final int offsetMs;

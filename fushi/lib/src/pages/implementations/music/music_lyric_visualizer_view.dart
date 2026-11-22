@@ -78,6 +78,9 @@ class MusicLyricVisualizerView extends StatefulWidget {
 }
 
 class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
+  late final _PlaybackClockAdapter _clock = _PlaybackClockAdapter(
+    () => widget.clock,
+  );
   LyricVisualizerRuntime? _runtime;
   LyricTimeline? _runtimeOf;
   bool _hover = false;
@@ -145,7 +148,7 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
       final LyricVisualizerContext c = LyricVisualizerContext(
         timeline: timeline,
         runtime: _runtimeFor(timeline),
-        clock: widget.clock,
+        clock: _clock,
         offsetMs: widget.offsetMs,
         playing: widget.playing,
         palette: palette,
@@ -221,6 +224,19 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
       ),
     );
   }
+}
+
+/// app 的播放时钟 → 框架的最小时钟接口（读当前 widget 的时钟，换时钟不用重建 context）。
+class _PlaybackClockAdapter implements LyricVisualizerClock {
+  _PlaybackClockAdapter(this._source);
+
+  final FushiPlaybackClock Function() _source;
+
+  @override
+  Duration get position => _source().position;
+
+  @override
+  Duration get duration => _source().duration;
 }
 
 class _HoverBar extends StatelessWidget {

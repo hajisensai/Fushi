@@ -38,6 +38,12 @@ class LyricVisualizerTicks extends ChangeNotifier
     _value = v;
     notifyListeners();
   }
+
+  /// 输入（参数 / 配色 / 字号…）变了而时间没动：照样通知一次，让 `repaint: ticks` 的画家重画。
+  void forceNotify(LyricVisualizerTick v) {
+    _value = v;
+    notifyListeners();
+  }
 }
 
 /// 驱动器：挂一个 Ticker，播放中或开着动态效果时每帧推 [LyricVisualizerTicks]；
@@ -96,7 +102,7 @@ class _LyricVisualizerFrameState extends State<LyricVisualizerFrame>
   void didUpdateWidget(covariant LyricVisualizerFrame oldWidget) {
     super.didUpdateWidget(oldWidget);
     _sync();
-    _onTick(Duration.zero);
+    _ticks.forceNotify(_read(_wall.elapsedMicroseconds / 1e6));
   }
 
   @override

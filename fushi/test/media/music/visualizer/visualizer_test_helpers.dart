@@ -7,11 +7,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
-    show FushiPlaybackClock;
 
 /// 手动拨的时钟。
-class FakeVisualizerClock implements FushiPlaybackClock {
+class FakeVisualizerClock implements LyricVisualizerClock {
   FakeVisualizerClock([this.positionMs = 0]);
 
   int positionMs;
