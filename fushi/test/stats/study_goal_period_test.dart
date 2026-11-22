@@ -1,7 +1,8 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
-import 'package:fushi/src/stats/study_goal_record.dart';
+import 'package:fushi/src/stats/study_goal_record.dart'
+    show StudyGoal, StudyGoalId;
 import 'package:fushi/src/stats/study_goals.dart'
     show studyGoalStatsCharsFactsFrom;
 
