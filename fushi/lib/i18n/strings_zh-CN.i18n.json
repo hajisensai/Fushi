@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "关闭词典",
   "shortcut_action_video_enter_caret": "进入字幕选词光标",
   "shortcut_action_video_hold_speed": "按住临时倍速",
-  "shortcut_action_video_lookup_next_word": "下一个词（扫词）",
-  "shortcut_action_video_lookup_prev_word": "上一个词（扫词）",
   "shortcut_action_video_next_chapter": "下一章",
   "shortcut_action_video_next_frame": "下一帧",
   "shortcut_action_video_next_subtitle": "下一句字幕",

@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "Fechar dicionário",
   "shortcut_action_video_enter_caret": "Entrar no cursor de consulta de legendas",
   "shortcut_action_video_hold_speed": "Manter para velocidade temporária",
-  "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_video_next_chapter": "Próximo capítulo",
   "shortcut_action_video_next_frame": "Próximo quadro",
   "shortcut_action_video_next_subtitle": "Próxima legenda",

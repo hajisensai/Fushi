@@ -29,24 +29,31 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 不再换算到缩放画布——界面任意缩放下定位都不偏（BUG-051）。
   ///
   /// 查词/递归查词/单词发音/auto-read/制卡全部走 [DictionaryPageMixin]，与书内一致。
-  Future<void> _lookupAt(
+  ///
+  /// [maxGraphemes]：手柄查词模式的选区右端上限（null = 不截，交给词典最长匹配）。
+  /// 只把查询串截到前 [maxGraphemes] 个字素（[capSubtitleLookupTerm]），其余不变。
+  ///
+  /// 返回命中高亮长度（字素数，= 字幕高亮的 `graphemeCount`）；查不到、没查（门控 /
+  /// 空词）或查词交给了副屏查词页（副屏不回报命中长度）时返回 0。
+  Future<int> _lookupAt(
     String sentence,
     int graphemeIndex,
     Rect charRect, {
     AudioCue? overrideCue,
+    int? maxGraphemes,
   }) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) return 0;
     // BUG-3685：本页（或全屏路由）被别的页面盖住时不起新查词——浮层此刻停靠在屏外，
     // 起了也看不见，却会暂停视频、改高亮。
-    if (lookupOwnerRouteCovered) return;
+    if (lookupOwnerRouteCovered) return 0;
     final ({int start, String term}) span = subtitleLookupSpan(
       sentence,
       graphemeIndex,
     );
-    final String term = span.term;
+    final String term = capSubtitleLookupTerm(span.term, maxGraphemes);
     // 先判空再暂停：空词不弹浮层，不能暂停后无浮层可关→恢复路径永不触发（卡暂停）。
-    if (term.isEmpty) return;
+    if (term.isEmpty) return 0;
     // Second screen (companion up): the lookup shows on the companion's Lookup
     // tab instead of the in-page popup. The pause still happens, through the
     // same [_pauseForLookup] (the companion registry runs it when it takes the
@@ -55,16 +62,20 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     // draft (they feed the popup's mining and favourite star; the companion
     // mines from its own lookup), no highlight (it needs the popup's match
     // length). The synchronous isActive check keeps the single-screen path
-    // free of an extra await.
+    // free of an extra await. With a right-end cap the companion gets the
+    // capped query itself (charIndex -1 = text is the query), the sentence
+    // stays whole for mining.
     if (_companionHook.isActive &&
         await routeCompanionLookup(
-          text: sentence,
-          charIndex: videoCompanionCharIndex(sentence, graphemeIndex),
+          text: maxGraphemes == null ? sentence : term,
+          charIndex: maxGraphemes == null
+              ? videoCompanionCharIndex(sentence, graphemeIndex)
+              : -1,
           sentence: sentence,
         )) {
-      return;
+      return 0;
     }
-    if (!mounted) return;
+    if (!mounted) return 0;
     // 「高级制卡」的「查词时画面」就是这一刻；对话框试听挪走播放头后也据此放回。
     _lastLookupPositionMs = controller.positionMs;
     _pauseForLookup();
@@ -110,7 +121,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       reuseWarmSlot: true,
       autoRead: true,
     );
-    if (!mounted) return;
+    if (!mounted) return 0;
     // BUG-2091：按引擎回报的匹配长度在字幕上高亮被查词（阅读器正文查词同语义）。
     // 锚在被点字符所属的 cue（overlay / 字幕列表都经 overrideCue 带出；缺省回落按位置
     // 解析的锚点 cue）；查无结果（0）即不高亮，与阅读器「无词条不高亮」一致。
@@ -130,6 +141,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     }
     // 刷新查词浮层顶部收藏星标：读收藏镜像同步判定（video-25）。
     _refreshVideoSentenceFavorite();
+    return graphemeCount;
   }
 
   /// 查词暂停（浮层与副屏查词页同一入口）：仅当视频正在播放才暂停并标记，浮层全关 /

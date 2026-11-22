@@ -5,12 +5,15 @@ import 'package:fushi/src/shortcuts/reader_caret_router.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
-/// The char-level reading cursor keeps A / Enter as configurable reader-scope
-/// defaults via [ShortcutAction.readerLookupAtCursor]. The reader page still
-/// handles them contextually (enter caret when inactive, activate when active),
+/// The char-level reading cursor keeps Enter as a configurable reader-scope
+/// default via [ShortcutAction.readerLookupAtCursor]. The reader page still
+/// handles it contextually (enter caret when inactive, activate when active),
 /// and [ReaderCaretRouter] gates that caret behavior on the global focus
-/// navigation switch. These tests pin the registry consequences: A belongs to
-/// reader lookup, audiobook play/pause stays on L3, and bookmark stays on X.
+/// navigation switch. The gamepad has no caret entry since the 2026-11-22
+/// gamepad lookup unification (the controller lookup mode is the gamepad's only
+/// lookup), so A no longer resolves to reader lookup. These tests pin the
+/// registry consequences: A is not reader lookup, audiobook play/pause stays on
+/// L3, and bookmark stays on X.
 void main() {
   group('caret control bindings', () {
     FushiShortcutRegistry registryFor(TargetPlatform platform) =>
@@ -23,26 +26,21 @@ void main() {
       TargetPlatform.android,
       TargetPlatform.iOS,
     ]) {
-      test(
-        'controller A resolves to reader lookup, not audiobook, on $platform',
-        () {
-          final registry = registryFor(platform);
-          expect(
-            registry.resolveGamepad(
-              GamepadButton.a,
-              scope: ShortcutScope.reader,
-            ),
-            ShortcutAction.readerLookupAtCursor,
-          );
-          expect(
-            registry.resolveGamepad(
-              GamepadButton.a,
-              scope: ShortcutScope.audiobook,
-            ),
-            isNull,
-          );
-        },
-      );
+      test('controller A resolves to neither reader lookup nor audiobook on '
+          '$platform', () {
+        final registry = registryFor(platform);
+        expect(
+          registry.resolveGamepad(GamepadButton.a, scope: ShortcutScope.reader),
+          isNull,
+        );
+        expect(
+          registry.resolveGamepad(
+            GamepadButton.a,
+            scope: ShortcutScope.audiobook,
+          ),
+          isNull,
+        );
+      });
 
       test('audiobook play/pause is on L3, not A, on $platform', () {
         final registry = registryFor(platform);

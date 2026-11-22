@@ -631,27 +631,11 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_secondary_subtitle_hide',
   ),
-  // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕
-  // 首个可见字符，D-pad/方向键逐字移动、A/Enter 对光标字符查词（浮层内继续用手柄
-  // 翻词条/跳词典/制卡）、B/Esc 退出。激活期的方向/确认/退出键在页面侧**先于**注册
-  // 表截获（reader caret 同款contextual 路由），见 video_fushi/subtitle_caret.part.dart。
+  // 键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕首个可见
+  // 字符，方向键逐字移动、Enter 对光标字符查词、Esc 退出。激活期的光标键在页面侧
+  // **先于**注册表截获，见 video_fushi/subtitle_caret.part.dart。只有键盘通道（见
+  // [channels]）：手柄查词统一走 ControllerLookupMode（2026-11-22）。
   videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
-
-  // 暂停句「整句扫词」（2026-10-09）：手柄查词的无光标形态，把「选谁」与「做什么」
-  // 正交——扫词只在数据层移动一个**词游标**（暂停句分词后的词序列下标），每停一词
-  // 就复用点击查词链路弹/换同一张浮层；动词（翻词条 / 制卡 / 发音）全部交给既有
-  // dictionaryPopup 表，不新增任何模态。
-  //
-  // 与 videoEnterCaret 的关系是**互不依赖**：扫词不进 caret，故浮层的 X=制卡 /
-  // Y=发音在扫词中永远可达——进了 caret 就被 `_handleCaretGamepadButton` 的模态
-  // 路由吞掉（见 video_fushi/subtitle_caret.part.dart），这正是本动作存在的理由。
-  //
-  // 默认**空绑定**、由用户自配：video scope 内的手柄键已占满（B 另属 universal
-  // 的「返回上一级」），唯一空闲的 L3/R3 是摇杆按下键、易误触，且
-  // `video_gamepad_mapping_test` 明确断言它们保持空闲，故不设默认。二者是同一
-  // 件事的两个方向（上一词 / 下一词），句尾按用户要求**循环**回句首。
-  videoLookupNextWord(ShortcutScope.video, 'video_lookup_next_word'),
-  videoLookupPrevWord(ShortcutScope.video, 'video_lookup_prev_word'),
 
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
@@ -1107,6 +1091,15 @@ enum ShortcutAction {
     ShortcutAction.globalExternalGalgameSpeakLine ||
     ShortcutAction.globalExternalGalgameOverlayToggle =>
       const <ShortcutChannel>{ShortcutChannel.keyboard},
+    // 手柄查词统一（2026-11-22，docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：
+    // 手柄只剩 ControllerLookupMode 一套查词，光标模式的三个入口去掉手柄通道（默认
+    // 手柄绑定已删；老快照里的自定义手柄绑定在 [FushiShortcutRegistry] 装载时剥掉）。
+    // 键盘与鼠标通道照旧。
+    ShortcutAction.videoEnterCaret ||
+    ShortcutAction.readerEnterCaret ||
+    ShortcutAction.readerLookupAtCursor => scope.channels.difference(
+      const <ShortcutChannel>{ShortcutChannel.gamepad},
+    ),
     _ => scope.channels,
   };
 

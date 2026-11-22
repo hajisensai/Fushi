@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "Закрыть словарь",
   "shortcut_action_video_enter_caret": "Включить курсор поиска по субтитрам",
   "shortcut_action_video_hold_speed": "Удерживать для временной скорости",
-  "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_video_next_chapter": "Следующая глава",
   "shortcut_action_video_next_frame": "Следующий кадр",
   "shortcut_action_video_next_subtitle": "Следующий субтитр",

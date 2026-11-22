@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "Dismiss dictionary",
   "shortcut_action_video_enter_caret": "Enter subtitle lookup cursor",
   "shortcut_action_video_hold_speed": "Hold for temporary speed",
-  "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_video_next_chapter": "Next chapter",
   "shortcut_action_video_next_frame": "Next frame",
   "shortcut_action_video_next_subtitle": "Next subtitle",

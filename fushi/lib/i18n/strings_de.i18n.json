@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "Wörterbuch schließen",
   "shortcut_action_video_enter_caret": "Untertitel-Nachschlagecursor aktivieren",
   "shortcut_action_video_hold_speed": "Halten für temporäre Geschwindigkeit",
-  "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_video_next_chapter": "Nächstes Kapitel",
   "shortcut_action_video_next_frame": "Nächstes Bild",
   "shortcut_action_video_next_subtitle": "Nächster Untertitel",

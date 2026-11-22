@@ -23,7 +23,7 @@ void main() {
         src,
         'Future<void> _handleTextSelected(ReaderSelectionData data) async {',
       );
-      final int routed = select.indexOf('_routeLookupToCompanion(data)');
+      final int routed = select.indexOf('_routeLookupToCompanion(data');
       final int pause = select.indexOf('_pauseForLookup();');
       expect(routed, isNonNegative);
       expect(pause, greaterThan(routed), reason: 'popup path after routing');
@@ -63,7 +63,7 @@ void main() {
     final String src = maskComments(readVideoFushiSource());
 
     test('popup, caret and companion share the pause entry', () {
-      final String lookupAt = methodBody(src, 'Future<void> _lookupAt(');
+      final String lookupAt = methodBody(src, 'Future<int> _lookupAt(');
       expect(
         lookupAt.indexOf('_pauseForLookup();'),
         greaterThan(lookupAt.indexOf('routeCompanionLookup(')),

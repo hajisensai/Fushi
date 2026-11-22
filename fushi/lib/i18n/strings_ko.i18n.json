@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "사전 닫기",
   "shortcut_action_video_enter_caret": "자막 조회 커서 진입",
   "shortcut_action_video_hold_speed": "길게 눌러 임시 속도 변경",
-  "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_video_next_chapter": "다음 챕터",
   "shortcut_action_video_next_frame": "다음 프레임",
   "shortcut_action_video_next_subtitle": "다음 자막",

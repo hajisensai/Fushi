@@ -238,10 +238,6 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_align_subtitle_to_next;
       case ShortcutAction.videoEnterCaret:
         return t.shortcut_action_video_enter_caret;
-      case ShortcutAction.videoLookupNextWord:
-        return t.shortcut_action_video_lookup_next_word;
-      case ShortcutAction.videoLookupPrevWord:
-        return t.shortcut_action_video_lookup_prev_word;
       case ShortcutAction.webBrowserNewTab:
         return t.shortcut_action_web_browser_new_tab;
       case ShortcutAction.webBrowserCloseTab:
@@ -646,11 +642,6 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.timer;
       case ShortcutAction.videoEnterCaret:
         return FushiIcons.textFields;
-      // 扫词：同一根「逐词移动」的语义，用前后向的小三角图标区分方向。
-      case ShortcutAction.videoLookupNextWord:
-        return FushiIcons.stepForward;
-      case ShortcutAction.videoLookupPrevWord:
-        return FushiIcons.stepBackward;
 
       // 全 app 共用「返回上一级」：视频页把它解释成逐级退出阶梯。
       case ShortcutAction.globalBack:

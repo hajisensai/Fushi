@@ -9533,8 +9533,6 @@
   "shortcut_action_video_dismiss_dict": "Fermer le dictionnaire",
   "shortcut_action_video_enter_caret": "Activer le curseur de recherche dans les sous-titres",
   "shortcut_action_video_hold_speed": "Maintenir pour vitesse temporaire",
-  "shortcut_action_video_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_video_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_video_next_chapter": "Chapitre suivant",
   "shortcut_action_video_next_frame": "Image suivante",
   "shortcut_action_video_next_subtitle": "Sous-titre suivant",
