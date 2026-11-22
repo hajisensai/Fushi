@@ -52,7 +52,7 @@ double dioramaFrameHalfWidth(
 
 // ─── 运动参数：调参 + 风格 → 一组缩放 ──────────────────────────────────────
 
-/// 运镜风格（folia 跟随主题的 animationIntensity；Fushi 没有主题强度，做成本样式的调参）。
+/// 运镜风格（folia 跟随主题的 animationIntensity：`LyricVisualizerContext.intensity`）。
 enum DioramaSubMode { calm, normal, chaotic }
 
 class DioramaMotionParams {

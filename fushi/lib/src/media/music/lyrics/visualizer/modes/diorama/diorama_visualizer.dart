@@ -31,7 +31,9 @@ final LyricVisualizerEntry dioramaVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_diorama_description,
   icon: FushiIcons.viewColumn,
   tunings: dioramaTuningSpecs,
-  sharedBackdrop: true,
+  // folia 的镜台不另配背景：画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => DioramaVisualizer(context: c),
 );

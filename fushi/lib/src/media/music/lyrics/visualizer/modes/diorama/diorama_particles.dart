@@ -486,6 +486,7 @@ class DioramaParticleFrame {
     required this.sizeGain,
     required this.glowIntensity,
     required this.centroid,
+    this.detail = 0,
   });
 
   final double time;
@@ -502,6 +503,9 @@ class DioramaParticleFrame {
   /// 点云整体辉光（0 = 关）。
   final double glowIntensity;
   final double centroid;
+
+  /// 浪尖上的细纹（folia `uDetail`：高频持续能量 × 音频响应；只在已有起伏处生效）。
+  final double detail;
 }
 
 double _smoothstep(double e0, double e1, double v) {

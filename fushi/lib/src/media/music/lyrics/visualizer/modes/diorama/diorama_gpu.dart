@@ -483,7 +483,7 @@ class DioramaGpuRenderer {
     u[39] = fr.maxSwell;
     // p1: wave_number_max, detail, offset_gain, flow
     u[40] = g.waveNumberMax;
-    u[41] = 0;
+    u[41] = fr.detail;
     u[42] = fr.offsetGain;
     u[43] = fr.flow;
     // p2: formation, scatter, pulse, centroid

@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_audio.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_path.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_rig.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_gpu.dart';
@@ -622,6 +623,159 @@ void main() {
     });
   });
 
+  group('音频', () {
+    test('频段追踪器：首帧只对齐不触发，稳定鼓点一直出起音', () {
+      final DioramaBandTracker t = DioramaBandTracker();
+      expect(t.step(0.2, 1 / 60).onset, isFalse);
+      int onsets = 0;
+      // 2 Hz 的鼓点（每 0.5 秒 0.1 秒高电平），跑 20 秒。
+      for (int i = 0; i < 1200; i++) {
+        final double tt = i / 60;
+        final bool hit = (tt % 0.5) < 0.1;
+        if (t.step(hit ? 0.9 : 0.15, 1 / 60).onset) onsets++;
+      }
+      // 每拍一个（前一两拍可能还在对齐）。
+      expect(onsets, inInclusiveRange(36, 40));
+    });
+
+    test('拍点触发：普通拍 / 强拍各自报，拖进度不报', () {
+      final List<int> beats = <int>[for (int t = 0; t < 10000; t += 500) t];
+      final List<int> downs = <int>[for (int t = 0; t < 10000; t += 2000) t];
+      expect(dioramaBeatTriggers(beats, downs, 480, 520, jump: false), (
+        true,
+        false,
+      ));
+      expect(dioramaBeatTriggers(beats, downs, 1990, 2010, jump: false), (
+        false,
+        true,
+      ));
+      expect(dioramaBeatTriggers(beats, downs, 520, 560, jump: false), (
+        false,
+        false,
+      ));
+      expect(dioramaBeatTriggers(beats, downs, 480, 2600, jump: true), (
+        false,
+        false,
+      ));
+    });
+
+    test('拍上呼吸与歌词跳动有上限', () {
+      expect(dioramaBeatClusterPulse(1, 1), closeTo(1.44, 1e-9));
+      expect(dioramaBeatClusterPulse(1, 0), closeTo(1.2, 1e-9));
+      expect(dioramaLyricHop(1, 0), closeTo(0.25, 1e-9));
+      expect(dioramaLyricHop(2, 2), 0.8);
+      expect(dioramaPulseTarget(1.4, 1, true), closeTo(1.048, 1e-9));
+      expect(dioramaPulseTarget(1.4, 1, false), closeTo(1.4, 1e-9));
+    });
+
+    test('关键词颜色：与正文拉开、在背景上看得清', () {
+      const Color bg = Color(0xFF101018);
+      const Color primary = Color(0xFFEEEEEE);
+      const Color accent = Color(0xFF8AB4F8);
+      final Color c = dioramaKeywordColor(
+        const Color(0xFF200000),
+        primary,
+        accent,
+        bg,
+      );
+      expect(dioramaKeywordDisplayedContrast(c, bg), greaterThanOrEqualTo(4.5));
+      final Map<int, Color> units = dioramaKeywordUnitColors(
+        const LyricVisualizerTheme(
+          wordColors: <String, Color>{'空': Color(0xFFFF3030)},
+        ),
+        '夜空に光',
+        const <(int, int)>[(0, 1), (1, 2), (2, 3), (3, 4)],
+        primary,
+        accent,
+        bg,
+      );
+      expect(units.keys, <int>[1]);
+      expect(
+        dioramaKeywordUnitColors(
+          null,
+          '夜空に光',
+          const <(int, int)>[(0, 1)],
+          primary,
+          accent,
+          bg,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('运镜风格随生效强度', () {
+      final LyricVisualizerTuning tu = LyricVisualizerTuning.defaults(
+        dioramaTuningSpecs,
+      );
+      expect(DioramaSettings.read(tu).motion.subMode, DioramaSubMode.normal);
+      expect(
+        DioramaSettings.read(
+          tu,
+          LyricVisualizerIntensity.chaotic,
+        ).motion.subMode,
+        DioramaSubMode.chaotic,
+      );
+      expect(
+        DioramaSettings.read(tu, LyricVisualizerIntensity.calm).motion.subMode,
+        DioramaSubMode.calm,
+      );
+      expect(DioramaSettings.read(tu).keywordColoring, isTrue);
+    });
+
+    testWidgets('真拍点：拍上生波纹、正在唱的字随拍跳起；关键词以主题色为跟唱目标', (
+      WidgetTester tester,
+    ) async {
+      final FakeVisualizerClock clock = FakeVisualizerClock();
+      DioramaScene sceneWith({
+        LyricVisualizerAudio? audio,
+        LyricVisualizerTheme? theme,
+      }) => DioramaScene()
+        ..update(
+          visualizerContextFor(
+            dioramaVisualizerEntry,
+            clock: clock,
+            audio: audio,
+            theme: theme,
+          ),
+        );
+      final DioramaScene withAudio = sceneWith(
+        audio: SyntheticVisualizerAudio(),
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'空': Color(0xFFFF0000)},
+        ),
+      );
+      final DioramaScene plain = sceneWith();
+      DioramaRenderFrame? a;
+      DioramaRenderFrame? b;
+      // 1000 → 1520ms：1500ms 落一拍，'空'（1300–1600）正在唱。
+      for (int i = 0; i <= 13; i++) {
+        final LyricVisualizerTick tick = LyricVisualizerTick(
+          timeMs: 1000 + i * 40,
+          elapsed: i / 25,
+        );
+        a = withAudio.step(const Size(1280, 720), tick);
+        b = plain.step(const Size(1280, 720), tick);
+      }
+      expect(a!.particles!.pool.spawned, greaterThan(0));
+      List<DioramaPlane> baseOf(DioramaRenderFrame f) => f.planes
+          .where(
+            (DioramaPlane p) => p.renderOrder == DioramaRenderOrder.unitBase,
+          )
+          .toList();
+      final List<DioramaPlane> pa = baseOf(a);
+      final List<DioramaPlane> pb = baseOf(b!);
+      expect(pa.length, pb.length);
+      // 跳起的是正在唱的「空」，别的字不动。
+      expect((pa[1].world - pb[1].world).length, greaterThan(1e-4));
+      expect((pa[0].world - pb[0].world).length, lessThan(1e-9));
+      // 关键词：跟唱目标换成主题的红色。
+      expect(pa[1].color.r - pa[1].color.g, greaterThan(0.5));
+      expect(pb[1].color.r - pb[1].color.g, lessThan(0.5));
+      withAudio.dispose();
+      plain.dispose();
+    });
+  });
+
   group('与后端无关的帧', () {
     testWidgets('step：邻行整行平面 + 当前行逐单元三层（字身 / 辉光 / 出窍）', (
       WidgetTester tester,
@@ -722,12 +876,26 @@ void main() {
           DioramaTuningKeys.geometryMode: 'corridor',
           DioramaTuningKeys.gradientEnabled: true,
           DioramaTuningKeys.soulActiveEnabled: true,
-          DioramaTuningKeys.cameraStyle: 'chaotic',
           DioramaTuningKeys.particleGlowEnabled: false,
           DioramaTuningKeys.glowEnabled: false,
           DioramaTuningKeys.particleDensity: 1536.0,
           DioramaTuningKeys.moteCircumference: 48.0,
           DioramaTuningKeys.moteRadial: 4.0,
+        },
+        intensity: LyricVisualizerIntensity.chaotic,
+      );
+    });
+
+    testWidgets('真音频 + 主题关键词 + 长廊', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        dioramaVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'空': Color(0xFFFF0000)},
+        ),
+        tuning: const <String, Object?>{
+          DioramaTuningKeys.geometryMode: 'corridor',
         },
       );
     });
@@ -736,8 +904,8 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         dioramaVisualizerEntry,
+        intensity: LyricVisualizerIntensity.calm,
         tuning: <String, Object?>{
-          DioramaTuningKeys.cameraStyle: 'calm',
           DioramaTuningKeys.geometryStrands: false,
           DioramaTuningKeys.geometryBlobs: false,
           DioramaTuningKeys.geometryRibbons: false,

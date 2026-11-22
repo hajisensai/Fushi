@@ -1,8 +1,7 @@
 /// 镜台的可调参数（folia `diorama/tuning.ts` + `types.ts` 的 `DioramaTuning`，默认值与范围一致）。
 ///
-/// 去掉的：分辨率 / 抗锯齿覆盖（Fushi 没有这层全局挡位）、关键字着色（依赖 folia AI 主题的
-/// `wordColors`，Fushi 没有）。加上的：运镜风格（folia 跟随主题的 animationIntensity，
-/// Fushi 没有主题强度，做成本样式的参数）。
+/// 去掉的：分辨率 / 抗锯齿覆盖（Fushi 没有这层全局挡位）。运镜风格跟 folia 一样随主题强度
+/// （`LyricVisualizerContext.intensity`：AI 主题指定的，否则全局偏好），不是本样式的参数。
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -13,7 +12,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_sc
 
 /// 落库键（冻结）。
 abstract final class DioramaTuningKeys {
-  static const String cameraStyle = 'cameraStyle';
+  static const String keywordColoringEnabled = 'keywordColoringEnabled';
   static const String cameraSpeed = 'cameraSpeed';
   static const String motionAmount = 'motionAmount';
   static const String audioReactivity = 'audioReactivity';
@@ -43,15 +42,11 @@ String _int(double v) => v.round().toString();
 
 final List<LyricVisualizerTuningSpec> dioramaTuningSpecs =
     <LyricVisualizerTuningSpec>[
-      LyricVisualizerChoiceSpec(
-        key: DioramaTuningKeys.cameraStyle,
-        label: () => t.music_visualizer_diorama_camera_style,
-        initial: 'normal',
-        options: <(String, String Function())>[
-          ('calm', () => t.music_visualizer_diorama_camera_style_calm),
-          ('normal', () => t.music_visualizer_diorama_camera_style_normal),
-          ('chaotic', () => t.music_visualizer_diorama_camera_style_chaotic),
-        ],
+      // folia：主题 wordColors 里的关键词，跟唱时染成自己的颜色（按对比度修正）。
+      LyricVisualizerToggleSpec(
+        key: DioramaTuningKeys.keywordColoringEnabled,
+        label: () => t.music_visualizer_diorama_keyword_coloring,
+        initial: true,
       ),
       LyricVisualizerSliderSpec(
         key: DioramaTuningKeys.cameraSpeed,
@@ -222,19 +217,22 @@ class DioramaSettings {
     required this.soulIntensity,
     required this.soulActiveEnabled,
     required this.gradientIntensity,
+    this.keywordColoring = true,
   });
 
-  factory DioramaSettings.read(LyricVisualizerTuning tu) {
-    final DioramaSubMode sub = switch (tu.choice(
-      DioramaTuningKeys.cameraStyle,
-      'normal',
-    )) {
-      'calm' => DioramaSubMode.calm,
-      'chaotic' => DioramaSubMode.chaotic,
-      _ => DioramaSubMode.normal,
+  /// [intensity] 是生效的动画强度（folia `theme.animationIntensity`），决定运镜风格。
+  factory DioramaSettings.read(
+    LyricVisualizerTuning tu, [
+    LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
+  ]) {
+    final DioramaSubMode sub = switch (intensity) {
+      LyricVisualizerIntensity.calm => DioramaSubMode.calm,
+      LyricVisualizerIntensity.chaotic => DioramaSubMode.chaotic,
+      LyricVisualizerIntensity.normal => DioramaSubMode.normal,
     };
     final bool soulOn = tu.flag(DioramaTuningKeys.soulEnabled, true);
     return DioramaSettings(
+      keywordColoring: tu.flag(DioramaTuningKeys.keywordColoringEnabled, true),
       motion: resolveDioramaMotionParams(
         cameraSpeed: tu.number(DioramaTuningKeys.cameraSpeed, 1),
         motionAmount: tu.number(DioramaTuningKeys.motionAmount, 1),
@@ -293,4 +291,7 @@ class DioramaSettings {
   final double soulIntensity;
   final bool soulActiveEnabled;
   final double gradientIntensity;
+
+  /// folia `keywordColoringEnabled`。
+  final bool keywordColoring;
 }

@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_audio.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_path.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_camera_rig.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/diorama/diorama_render_frame.dart';
@@ -60,6 +61,7 @@ class DioramaScene {
   final List<DioramaSceneLine> _phantom = buildDioramaPhantomLines();
   DioramaSettings? _settings;
   LyricVisualizerTuning? _settingsFor;
+  LyricVisualizerIntensity? _intensityFor;
 
   /// 栅格的设备像素比（字图清晰度）。
   double pixelRatio = 1;
@@ -71,7 +73,6 @@ class DioramaScene {
   int _epoch = 0;
   _Transition? _transition;
   int _globalIndex = 0;
-  int _readHead = -1;
 
   double? _lastElapsed;
   double? _prevPlayback;
@@ -92,13 +93,26 @@ class DioramaScene {
   Float64List _soul = Float64List(0);
   int _unitsFor = -1;
 
-  // 音频代用品（歌词起字）。
-  double? _lastBassOnset;
-  double? _lastMidOnset;
+  // 音频（folia 的三个频段追踪器、整体呼吸、歌词跳动）。
+  DioramaBandTracker _bassTracker = DioramaBandTracker();
+  DioramaBandTracker _midTracker = DioramaBandTracker();
+  DioramaBandTracker _trebleTracker = DioramaBandTracker();
+  int? _prevAudioMs;
   double _bassSus = 0;
   double _midSus = 0;
+  double _trebleSus = 0;
+  double _clusterPulse = 1;
   double _powerEnv = 0;
   double _trebleEnv = 0;
+
+  /// 随拍跳起的单元（当前行内下标，-1 = 没有）与它所在的全局行；跳起高度（行高倍数）。
+  int _hopUnit = -1;
+  int _hopFor = -1;
+  double _hop = 0;
+
+  /// 当前行各单元的关键词颜色（folia `keywordUnitColors`），按 [_keywordKey] 缓存。
+  Map<int, Color> _keywordColors = const <int, Color>{};
+  Object? _keywordKey;
 
   // 点云
   DioramaParticleGeometry? _geom;
@@ -130,10 +144,16 @@ class DioramaScene {
     if (!identical(c.runtime, _runtime)) {
       _runtime = c.runtime;
       _lines = buildDioramaSceneLines(c.runtime);
+      // 新歌有自己的响度：追踪器从头对上它，不带上一首的谷底 / 峰值。
+      _bassTracker = DioramaBandTracker();
+      _midTracker = DioramaBandTracker();
+      _trebleTracker = DioramaBandTracker();
+      _prevAudioMs = null;
     }
-    if (_settingsFor != c.tuning) {
+    if (_settingsFor != c.tuning || _intensityFor != c.intensity) {
       _settingsFor = c.tuning;
-      _settings = DioramaSettings.read(c.tuning);
+      _intensityFor = c.intensity;
+      _settings = DioramaSettings.read(c.tuning, c.intensity);
     }
   }
 
@@ -161,7 +181,7 @@ class DioramaScene {
             dioramaInstrumentalFrames - 1,
           )
         : c.runtime.activeLineAt(timeMs);
-    _readHead = readHead;
+
     final DioramaSegment? out = _seq.active;
     final int outLocal = out == null ? 0 : _lastLocal.clamp(0, out.span - 1);
     final int outGlobal = out == null ? 0 : out.globalStart + outLocal;
@@ -218,61 +238,93 @@ class DioramaScene {
     _seq.prune(pruneFrom - _pruneMarginBehind);
   }
 
-  // ─── 音频代用品：歌词起字触发波纹，唱 / 停决定持续能量 ─────────────────────
+  // ─── 音频：频段追踪器生波纹，拍点就绪后拍点接管低 / 中频波纹与整体呼吸 ──────────
 
-  void _stepAudio(double now, double delta, bool corridor, double gain) {
+  /// folia `DioramaParticleField` 的 useFrame 音频部分 + `DioramaScene` 的歌词跳动选字。
+  void _stepAudio(
+    LyricVisualizerContext c,
+    int timeMs,
+    double now,
+    double delta,
+    bool corridor,
+    double gain,
+  ) {
     final double? prev = _prevPlayback;
     final bool jump = prev == null || now - prev < -0.05 || now - prev > 0.5;
     final double readHeadAlong =
         _globalIndex * (dioramaStepDistance / dioramaCorridorRadius);
-    final double flowSpeed = math.min(1.55, 0.3 + _bassSus * 1.25);
+    final LyricVisualizerAudioFrame f = c.audioFrameAt(timeMs);
+    // folia：bass、(lowMid + mid) / 2、treble 三个频段；框架的 mid 已经覆盖 lowMid + mid。
+    final DioramaBandSignal bass = _bassTracker.step(f.low, delta);
+    final DioramaBandSignal mid = _midTracker.step(f.mid, delta);
+    final DioramaBandSignal treble = _trebleTracker.step(f.high, delta);
+    final (double flowSpeed, double bandPulse) = dioramaParticleAudioResponse(
+      bass,
+      mid,
+    );
+    final LyricVisualizerAudio? audio = c.audio;
+    final bool beatFx = audio != null && audio.beatsReady;
+    final int audioMs = c.audioTimeOf(timeMs);
+    final (bool beat, bool downbeat) = beatFx && _prevAudioMs != null
+        ? dioramaBeatTriggers(
+            audio.beatTimesMs,
+            audio.downbeatTimesMs,
+            _prevAudioMs!,
+            audioMs,
+            jump: jump,
+          )
+        : (false, false);
+    _prevAudioMs = audioMs;
     if (jump) {
       _flowTime = now * 0.28;
       _pool = DioramaRipplePool();
     } else if (now > prev) {
-      final DioramaResolvedLine? r = _seq.resolve(_globalIndex);
-      if (r != null && gain > 0.001) {
-        final List<DioramaSceneLine> lines = r.segment.lines;
-        final bool phantom =
-            lines.isNotEmpty && !lines.first.hasText && _lines.isEmpty;
-        for (
-          int li = math.max(0, r.localIndex - 1);
-          li <= math.min(lines.length - 1, r.localIndex + 1);
-          li++
-        ) {
-          final DioramaSceneLine l = lines[li];
-          if (l.start > prev && l.start <= now) {
-            _pool.spawn(
-              0,
-              1.0,
-              _flowTime,
-              corridor: corridor,
-              readHeadAlong: readHeadAlong,
-            );
-            _lastBassOnset = now;
-          }
-          for (final DioramaUnit u in l.units) {
-            if (u.start > prev && u.start <= now) {
-              _pool.spawn(
-                1,
-                0.75,
-                _flowTime,
-                corridor: corridor,
-                readHeadAlong: readHeadAlong,
-              );
-              _lastMidOnset = now;
-              if (u.end - u.start >= 1.3) {
-                _pool.spawn(
-                  2,
-                  0.8,
-                  _flowTime,
-                  corridor: corridor,
-                  readHeadAlong: readHeadAlong,
-                );
-              }
-            }
-          }
+      if (gain > 0.001) {
+        final List<DioramaBandSignal> bands = <DioramaBandSignal>[
+          bass,
+          mid,
+          treble,
+        ];
+        for (int i = 0; i < bands.length; i++) {
+          if (!bands[i].onset) continue;
+          // 拍点就绪后低 / 中频的波纹归拍点，只有高频还跟频段起音（踩镲不是拍）。
+          if (beatFx && i < 2) continue;
+          _pool.spawn(
+            i,
+            bands[i].transient,
+            _flowTime,
+            corridor: corridor,
+            readHeadAlong: readHeadAlong,
+          );
         }
+        // 每拍的强度：有重音数据时就是这一拍的重音（无节奏段为 0，不生波纹），否则满强度。
+        final double accent = f.accentImpact ?? 1;
+        if (downbeat && accent > 0) {
+          _pool.spawn(
+            0,
+            dioramaDownbeatRippleStrength * accent,
+            _flowTime,
+            corridor: corridor,
+            readHeadAlong: readHeadAlong,
+          );
+        }
+        if (beat && accent > 0) {
+          _pool.spawn(
+            1,
+            dioramaBeatRippleStrength * accent,
+            _flowTime,
+            corridor: corridor,
+            readHeadAlong: readHeadAlong,
+          );
+        }
+        // 纯音乐、也没有音频分析时：没有任何起音可读，按 1.25 秒一下给走廊一点起伏。
+        final DioramaResolvedLine? r = _seq.resolve(_globalIndex);
+        final bool phantom =
+            f.fallback &&
+            _lines.isEmpty &&
+            r != null &&
+            r.segment.lines.isNotEmpty &&
+            !r.segment.lines.first.hasText;
         if (phantom && (now / 1.25).floor() > (prev / 1.25).floor()) {
           _pool.spawn(
             1,
@@ -281,25 +333,46 @@ class DioramaScene {
             corridor: corridor,
             readHeadAlong: readHeadAlong,
           );
-          _lastMidOnset = now;
         }
       }
       _flowTime += (now - prev) * flowSpeed;
     }
     _prevPlayback = now;
-    final bool singing = _readHead >= 0;
-    _bassSus = dioramaStepEnvelope(
-      _bassSus,
-      singing ? 0.75 : 0.15,
-      3,
-      0.8,
+    _bassSus = bass.sustained;
+    _midSus = mid.sustained;
+    _trebleSus = treble.sustained;
+    _clusterPulse = beatFx
+        ? dioramaBeatClusterPulse(f.accentOrBeat, f.downbeatImpact)
+        : bandPulse;
+    // 歌词跳动：拍落下时选中正在唱的单元（拍落在字之间就取最后开唱的），跳到拍衰减完。
+    if (beat || downbeat) {
+      final DioramaResolvedLine? r = _seq.resolve(_globalIndex);
+      int picked = -1;
+      if (r != null && r.localIndex < r.segment.lines.length) {
+        final List<DioramaUnit> units = r.segment.lines[r.localIndex].units;
+        for (int i = 0; i < units.length; i++) {
+          if (units[i].start <= now) picked = i;
+        }
+      }
+      _hopUnit = picked;
+      _hopFor = _globalIndex;
+    }
+    _hop = beatFx ? dioramaLyricHop(f.accentOrBeat, f.downbeatImpact) : 0;
+    _powerEnv = dioramaStepEnvelope(
+      _powerEnv,
+      math.min(1, f.power) * gain,
+      18,
+      3.5,
       delta,
     );
-    _midSus = dioramaStepEnvelope(_midSus, singing ? 0.5 : 0.1, 4, 1.2, delta);
+    _trebleEnv = dioramaStepEnvelope(
+      _trebleEnv,
+      math.min(1, f.high) * gain,
+      14,
+      3.2,
+      delta,
+    );
   }
-
-  double _transient(double? onset, double now, double decay) =>
-      onset == null || now < onset ? 0 : math.exp(-(now - onset) / decay);
 
   // ─── 栅格缓存 ──────────────────────────────────────────────────────────
 
@@ -439,36 +512,11 @@ class DioramaScene {
     if (animate) {
       final bool corridor = s.geometry.corridor;
       final double gain = motion.audioLevel;
-      _stepAudio(now, delta, corridor, gain);
-      final double bassT = _transient(_lastBassOnset, now, 0.35);
-      final double midT = _transient(_lastMidOnset, now, 0.26);
-      final double pulse = _lines.isEmpty
-          ? midT
-          : c.runtime.pulseAt(tick.timeMs);
-      _powerEnv = dioramaStepEnvelope(
-        _powerEnv,
-        math.min(1, pulse) * gain,
-        18,
-        3.5,
-        delta,
-      );
-      _trebleEnv = dioramaStepEnvelope(
-        _trebleEnv,
-        midT * 0.6 * gain,
-        14,
-        3.2,
-        delta,
-      );
+      _stepAudio(c, tick.timeMs, now, delta, corridor, gain);
       if (s.showParticles) motes = _stepMotes(s, elapsed);
       if (s.geometry.enabled) {
-        final double clusterPulse = math.min(
-          dioramaParticleAudioScaleMax,
-          1 +
-              _smooth(0.1, 0.9, bassT) * 0.14 +
-              _smooth(0.15, 0.95, midT) * 0.05,
-        );
         final double pulseScale = _elastic.step(
-          1 + (clusterPulse - 1) * gain * (corridor ? 0.12 : 1),
+          dioramaPulseTarget(_clusterPulse, gain, corridor),
           delta,
         );
         final bool transitioning = _transition != null;
@@ -502,7 +550,9 @@ class DioramaScene {
               sizeBase: corridor ? 0.072 : 0.05,
               sizeGain: corridor ? 0.34 : 0.3,
               glowIntensity: s.particleGlowIntensity,
-              centroid: 0.2,
+              // folia：高频持续能量当亮度代理（调色板偏热色）、也决定浪尖上的细纹。
+              centroid: math.min(1, 0.2 + _trebleSus * 0.8),
+              detail: math.min(1, _trebleSus * gain),
             ),
           );
         }
@@ -541,11 +591,6 @@ class DioramaScene {
       particles: particles,
       planes: planes,
     );
-  }
-
-  static double _smooth(double e0, double e1, double v) {
-    final double a = ((v - e0) / (e1 - e0)).clamp(0.0, 1.0);
-    return a * a * (3 - 2 * a);
   }
 
   void _stepColors(LyricVisualizerPalette p, double delta) {
@@ -766,6 +811,31 @@ class DioramaScene {
     final double life = dioramaTextLife(dist);
     final double breath = animate ? 0.9 + 0.1 * math.sin(elapsed * 1.9) : 1;
 
+    // 关键词配色：主题 wordColors 命中的单元以自己的颜色为跟唱目标（按目标配色算、换行 / 换主题
+    // 才重算）。
+    final LyricVisualizerContext? ctx = _ctx;
+    final Object kwKey = Object.hash(
+      entry.index,
+      entry.line.layoutText,
+      s.keywordColoring ? ctx?.theme : null,
+      ctx?.palette,
+    );
+    if (kwKey != _keywordKey) {
+      _keywordKey = kwKey;
+      final LyricVisualizerPalette? p = ctx?.palette;
+      _keywordColors = s.keywordColoring && p != null
+          ? dioramaKeywordUnitColors(
+              ctx?.theme,
+              entry.line.layoutText,
+              <(int, int)>[
+                for (final DioramaUnit u in units) (u.charStart, u.charEnd),
+              ],
+              dioramaEnsureContrast(p.primary, p.background),
+              dioramaEnsureContrast(p.accent, p.background),
+              p.background,
+            )
+          : const <int, Color>{};
+    }
     // 跟唱色：一般就是强调色；强调色与主文字色几乎一样时（灰阶主题）往一个明度错开的中性灰靠。
     final Color primary = _textPrimary;
     Color sungTint = _textAccent;
@@ -821,16 +891,21 @@ class DioramaScene {
                 0.08 * math.min(1.0, gradEnergy)) *
             life,
       );
-      final Color target = s.gradientIntensity > 0 ? gradDeep : sungTint;
+      final Color target =
+          _keywordColors[i] ?? (s.gradientIntensity > 0 ? gradDeep : sungTint);
       final double progress = s.gradientIntensity > 0
           ? gradEnergy
           : _light[i] * 1.15;
       final Color fill = Color.lerp(primary, target, dioramaClamp01(progress))!;
 
+      // 随拍跳起（folia 歌词跳动）：只有拍落下时正在唱的那个单元，跳单元高度的 _hop 倍。
+      final double lift = animate && _hopFor == entry.index && i == _hopUnit
+          ? _hop * pu.height * scale
+          : 0;
       final DioramaVec world =
           entry.position +
           rt * (pu.layoutCenter.dx * scale) +
-          ut * (-pu.layoutCenter.dy * scale);
+          ut * (-pu.layoutCenter.dy * scale + lift);
       DioramaPlane plane(
         DioramaRasterLayer layer,
         Rect dst,
