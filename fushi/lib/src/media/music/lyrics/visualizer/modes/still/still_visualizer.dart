@@ -229,8 +229,16 @@ class _StillSlot extends StatelessWidget {
       return const SizedBox(height: StillMetrics.emptySlotHeight);
     }
     final double lyricSize = style.fontSize * fontScale;
-    final double transSize = style.translationFontSize * fontScale;
-    final String? translation = l.translation?.trim();
+    // 副字幕：按全局字幕偏好取行（隐藏 / 不要时没有；字号再乘字幕字号倍数，folia
+    // `lyricsFontScale * subtitleFontScale`）。folia 静止只读译文，这里按偏好也能显示罗马音 / 两行。
+    final LyricVisualizerSubtitleSettings sub = visualizer.subtitle;
+    final double transSize =
+        style.translationFontSize * fontScale * sub.effectiveFontScale;
+    final List<LyricVisualizerSubtitleRow> rows = sub.rowsFor(
+      lineText: l.text,
+      translation: l.translation,
+      romanization: l.romanization,
+    );
     // folia：原文 theme.primaryColor（drop-shadow-md），译文 secondaryColor（drop-shadow-sm）。
     final Color lyricColor = palette.text.withValues(
       alpha: palette.text.a * style.opacity,
@@ -266,15 +274,31 @@ class _StillSlot extends StatelessWidget {
             ),
           ),
         ),
-        if (translation != null && translation.isNotEmpty) ...<Widget>[
-          SizedBox(height: style.translationGap * fontScale),
+        for (int r = 0; r < rows.length; r++) ...<Widget>[
+          SizedBox(
+            height: r == 0
+                ? style.translationGap * fontScale
+                : transSize *
+                      kLyricVisualizerSecondarySubtitleSize *
+                      kLyricVisualizerSecondarySubtitleGapEm,
+          ),
           Text(
-            translation,
+            rows[r].text,
+            key: ValueKey<String>('still_subtitle_${rows[r].kind.name}'),
             textAlign: TextAlign.center,
-            style: visualizer.applyThemeFont(
+            // 双行时第二行退一级（字号 0.88、透明度 0.82，folia subtitleTrackStyle）。
+            style: sub.applyFont(
               TextStyle(
-                color: transColor,
-                fontSize: transSize,
+                color: r == 0
+                    ? transColor
+                    : transColor.withValues(
+                        alpha:
+                            transColor.a *
+                            kLyricVisualizerSecondarySubtitleOpacity,
+                      ),
+                fontSize: r == 0
+                    ? transSize
+                    : transSize * kLyricVisualizerSecondarySubtitleSize,
                 height: 1.33,
                 letterSpacing: transSize * StillMetrics.translationTrackingEm,
                 fontWeight: style.translationWeight,
@@ -286,6 +310,7 @@ class _StillSlot extends StatelessWidget {
                   ),
                 ],
               ),
+              visualizer.theme,
             ),
           ),
         ],

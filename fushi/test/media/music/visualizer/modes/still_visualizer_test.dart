@@ -16,6 +16,8 @@ Future<FakeVisualizerClock> _mountAt(
   bool playing = false,
   Size size = const Size(1280, 720),
   LyricVisualizerTheme? theme,
+  LyricVisualizerSubtitleSettings subtitle =
+      LyricVisualizerSubtitleSettings.defaults,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -38,6 +40,7 @@ Future<FakeVisualizerClock> _mountAt(
     motion: base.motion,
     fontScale: fontScale,
     theme: theme,
+    subtitle: subtitle,
   );
   await tester.pumpWidget(
     MaterialApp(
@@ -159,6 +162,35 @@ void main() {
         expect(text.style?.fontWeight, FontWeight.w300);
         expect(text.style?.fontFamily, 'serif');
       }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('全局字幕偏好：隐藏、字号倍数、单独字体', (WidgetTester tester) async {
+      await _mountAt(tester, timeMs: 1500);
+      final double base = tester
+          .widget<Text>(find.text('夜空中的光'))
+          .style!
+          .fontSize!;
+      await _mountAt(
+        tester,
+        timeMs: 1500,
+        subtitle: const LyricVisualizerSubtitleSettings(
+          fontScale: 1.5,
+          font: LyricVisualizerSubtitleFont.mono,
+        ),
+      );
+      final Text big = tester.widget<Text>(find.text('夜空中的光'));
+      expect(big.style!.fontSize, closeTo(base * 1.5, 1e-9));
+      expect(big.style!.fontFamily, 'monospace');
+      // 原文不受字幕偏好影响。
+      expect(tester.widget<Text>(find.text('夜空に光')).style!.fontFamily, isNull);
+      await _mountAt(
+        tester,
+        timeMs: 1500,
+        subtitle: const LyricVisualizerSubtitleSettings(hideTranslation: true),
+      );
+      expect(find.text('夜空中的光'), findsNothing);
+      expect(find.text('夜空に光'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
