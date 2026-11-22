@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T12:32:26Z",
+ "generatedAt": "2026-11-22T12:40:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "8ea6084e7dcd5e6b34ac7010bc9eb46ed48fc243",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "6a769b065115e168daeeea38eae45c9bca84182f",
    "unknown": false,
-   "publishedAt": "2026-11-22T12:29:57Z",
-   "testflight": false,
+   "publishedAt": "2026-11-22T12:40:14Z",
+   "testflight": true,
    "baseSeq": 31327,
    "prs": [
     4163,
@@ -33,16 +33,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
+     "state": "ok"
     }
    }
   },
@@ -155,36 +152,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31255,
-   "version": "3.4.0",
-   "sha": "00145ef40004370c9824486ddb434a473b3fa528",
-   "unknown": false,
-   "publishedAt": "2026-11-22T07:11:52Z",
-   "testflight": true,
-   "baseSeq": 31242,
-   "prs": [
-    4148,
-    4144
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397513"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
@@ -242,15 +209,6 @@
    "deletions": 1550,
    "labels": []
   },
-  "4144": {
-   "number": 4144,
-   "title": "feat(privacy): 作品上锁 + 隐私统一入口（私密 / 上锁分级 + NSFW）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T05:38:39Z",
-   "additions": 7230,
-   "deletions": 1101,
-   "labels": []
-  },
   "4146": {
    "number": 4146,
    "title": "制卡提示重做 + 通知避让页面 chrome（BUG-5195）",
@@ -258,15 +216,6 @@
    "mergedAt": "2026-11-22T09:15:07Z",
    "additions": 2946,
    "deletions": 691,
-   "labels": []
-  },
-  "4148": {
-   "number": 4148,
-   "title": "style(tool): dart format heavy_lease.dart，修 develop 格式检查红",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T05:40:08Z",
-   "additions": 6,
-   "deletions": 4,
    "labels": []
   },
   "4149": {
