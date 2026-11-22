@@ -408,6 +408,23 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.setLibraryCurateAuto(value),
             defaultValue: true,
           ),
+          // AI 管库 v3（spec docs/specs/2026-11-22-ai-library-agent-design.md §3.5）：
+          // 整库重排交给助手的长程模式（读全库 → 成批改 → 自查 → 汇报，每批可撤销）；
+          // 下面的「立即整理」仍是库管家流水线（增量、便宜、步骤写死）。
+          SettingsActionItem(
+            id: 'ai.library_reorganize',
+            title: t.library_reorganize_action,
+            subtitle: t.library_reorganize_action_subtitle,
+            icon: FushiIcons.aiAssistant,
+            cli: const SettingsCliAction.unsupported(
+              '整库重排是 AI 助手的对话任务；命令行可直接调 library.map / '
+              'library.changes.apply',
+            ),
+            onTap: (SettingsContext c) => openAiAgent(
+              c.context,
+              initialPrompt: t.library_reorganize_prompt,
+            ),
+          ),
           SettingsActionItem(
             id: 'ai.library_curate_run',
             title: t.library_curate_run_action,
