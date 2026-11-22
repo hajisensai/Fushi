@@ -67,6 +67,18 @@ void main() {
       expect(out.sentences[1].matchStart, 10);
       expect(out.sentences[1].endsParagraph, isTrue);
     });
+
+    test('人名读法只改念法，显示文字（cue / 制卡）不变（TW9ete_FHX）', () {
+      final TtsBookPlan out = ttsPlanWithSubstitutions(
+        TtsBookPlan(<TtsPlanSentence>[_s(0, 0, '祥子ちゃん、祥ちゃん')]),
+        const <CastTextSubstitution>[
+          CastTextSubstitution.name(written: '祥子', reading: 'さきこ'),
+          CastTextSubstitution.name(written: '祥', reading: 'さき'),
+        ],
+      );
+      expect(out.sentences.single.text, '祥子ちゃん、祥ちゃん');
+      expect(out.sentences.single.spokenText, 'さきこちゃん、さきちゃん。');
+    });
   });
 
   group('setTtsCastVoice', () {

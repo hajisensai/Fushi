@@ -435,6 +435,26 @@ class SftpSyncBackend extends SyncBackend
       });
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    // 与 getJsonAsset 同律：缺失的文件经 `_guarded` 变成 SyncBackendError，映射成 null。
+    try {
+      return await _downloadBytes(assetId);
+    } on SyncBackendError {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _guarded(() async {
+    final SftpClient sftp = await _ensureConnected();
+    await _writeBytes(sftp, '$namespaceId/$name', bytes);
+  });
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
       _guarded(() async {
         final SftpClient sftp = await _ensureConnected();
@@ -667,13 +687,14 @@ class SftpSyncBackend extends SyncBackend
     }
   }
 
-  Future<dynamic> _downloadJson(String fileId) => _guarded(() async {
+  Future<dynamic> _downloadJson(String fileId) async =>
+      jsonDecode(utf8.decode(await _downloadBytes(fileId)));
+
+  Future<Uint8List> _downloadBytes(String fileId) => _guarded(() async {
     final sftp = await _ensureConnected();
     final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
     try {
-      final bytes = await handle.readBytes();
-      final text = utf8.decode(bytes);
-      return jsonDecode(text);
+      return await handle.readBytes();
     } finally {
       await handle.close();
     }

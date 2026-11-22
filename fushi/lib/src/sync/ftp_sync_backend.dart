@@ -640,6 +640,21 @@ class FtpSyncBackend extends SyncBackend
   });
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      // Delegates to the already-locking _downloadBytes; do not re-wrap.
+      _downloadBytes(assetId);
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _opLock.withLock(() async {
+    await _ensureConnected();
+    await _uploadBytesImpl(namespaceId, name, bytes);
+  });
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
       _opLock.withLock(() async {
         await _ensureConnected();
@@ -824,11 +839,21 @@ class FtpSyncBackend extends SyncBackend
 
   // ── Private helpers ───────────────────────────────────────────────
 
-  Future<dynamic> _downloadJson(String fileId) => _opLock.withLock(() async {
+  Future<dynamic> _downloadJson(String fileId) async {
+    final Uint8List bytes = await _downloadBytes(fileId);
+    try {
+      return jsonDecode(utf8.decode(bytes));
+    } on FormatException catch (e) {
+      throw SyncBackendError('Failed to download JSON: $e', isRetryable: true);
+    }
+  }
+
+  /// 整份下载 [fileId]（经临时文件；ftpconnect 只会下载到文件）。
+  Future<Uint8List> _downloadBytes(String fileId) => _opLock.withLock(() async {
     await _ensureConnected();
     final dir = _parentPath(fileId);
     final name = _fileName(fileId);
-    final tmpFile = _uniqueTempFile('ftp_dl', '.json');
+    final tmpFile = _uniqueTempFile('ftp_dl', '.tmp');
     try {
       await _client!.changeDirectory(dir);
       final ok = await _client!.downloadFile(name, tmpFile);
@@ -838,12 +863,11 @@ class FtpSyncBackend extends SyncBackend
           isRetryable: true,
         );
       }
-      final content = await tmpFile.readAsString(encoding: utf8);
-      return jsonDecode(content);
+      return await tmpFile.readAsBytes();
     } catch (e) {
       if (e is SyncBackendError || e is SyncAuthError) rethrow;
       _resetConnection();
-      throw SyncBackendError('Failed to download JSON: $e', isRetryable: true);
+      throw SyncBackendError('Failed to download: $e', isRetryable: true);
     } finally {
       await _deleteTempFile(tmpFile);
     }
@@ -853,8 +877,13 @@ class FtpSyncBackend extends SyncBackend
     String folderId,
     String fileName,
     dynamic data,
+  ) => _uploadBytesImpl(folderId, fileName, utf8.encode(jsonEncode(data)));
+
+  Future<void> _uploadBytesImpl(
+    String folderId,
+    String fileName,
+    List<int> bytes,
   ) async {
-    final bytes = utf8.encode(jsonEncode(data));
     final tmpFile = await _writeTempFile(bytes, 'ftp_ul');
     try {
       await _client!.changeDirectory(folderId);
@@ -865,7 +894,7 @@ class FtpSyncBackend extends SyncBackend
     } catch (e) {
       if (e is SyncBackendError || e is SyncAuthError) rethrow;
       _resetConnection();
-      throw SyncBackendError('Failed to upload JSON: $e', isRetryable: true);
+      throw SyncBackendError('Failed to upload: $e', isRetryable: true);
     } finally {
       await _deleteTempFile(tmpFile);
     }

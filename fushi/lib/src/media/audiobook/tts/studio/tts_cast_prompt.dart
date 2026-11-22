@@ -396,6 +396,17 @@ TtsRosterParseResult? parseTtsRosterReply(
   );
 }
 
+/// 第一遍回复的失败原因；null 表示可用。
+///
+/// 空数组 `[]`（`rawCount == 0`）表示本块没有可登记的新角色 / 别名，是合法回复；
+/// 非空数组但一条都没解析出来（`rawCount > 0 && ops.isEmpty`）才是坏输出。
+String? ttsRosterReplyFailureReason(TtsRosterParseResult? parsed) {
+  if (parsed == null) return 'no JSON array';
+  if (parsed.looping) return 'looping output';
+  if (parsed.ops.isEmpty && parsed.rawCount > 0) return 'no usable entries';
+  return null;
+}
+
 /// 把第一遍的操作依次并进 [cast]：
 /// - add / update 同一口径：名字（或它的别名）已在表里就补别名 / 空特征（不覆盖
 ///   已有值——那可能是用户改的），否则新增；
@@ -621,6 +632,19 @@ TtsCastParseResult? parseTtsCastReply(
     rawCount: array.length,
     looping: _looksLooping(array, lineCount * 2 + 10),
   );
+}
+
+/// 第二遍回复的失败原因；null 表示可用。
+///
+/// 空数组 `[]`（`rawCount == 0`）表示模型按提示词判断本块没有角色说出口的台词
+/// （如著者简介、后记、既刊案内、引言或纯旁白里的书名 / 标牌），属于合法回复；
+/// 只有缺少 JSON 数组、复读或非空数组全不合格（`rawCount > 0 && labels.isEmpty`）
+/// 才判为坏输出。
+String? ttsCastReplyFailureReason(TtsCastParseResult? parsed) {
+  if (parsed == null) return 'no JSON array';
+  if (parsed.looping) return 'looping output';
+  if (parsed.labels.isEmpty && parsed.rawCount > 0) return 'no usable entries';
+  return null;
 }
 
 /// 本地校验 AI 给的台词类型：不在词表、或是旁白专用的「叙述」/ 小说没有的「不读」，

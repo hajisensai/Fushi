@@ -87,6 +87,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// （系统 PROCESS_TEXT / fushi://lookup）。BUG-2899：整行原样交给查词页，由它在
   /// 源文本条上做扫描查词，不再在这里切成单词把整行丢掉。
   int _sourceCharIndex = -1;
+  bool _sourceTextCollapsed = false;
 
   /// BUG-3487：截屏识字带来的被点字所在 OCR text block（全文 + 本行起点），制卡句子
   /// 据此截整句；其它入口为 null。
@@ -126,6 +127,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             Rect? anchor,
             Rect? subtitle,
             PopupSourceBlock? sourceBlock,
+            bool sourceTextCollapsed,
           ) async {
             // 先于任何 await 发起：快照要的是「查词这一刻」之前的声音，不能被偏好刷新
             // 推迟；不等它，查词照常秒出。
@@ -162,6 +164,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             setState(() {
               _searchTerm = text;
               _sourceCharIndex = charIndex;
+              _sourceTextCollapsed = sourceTextCollapsed;
               _sourceBlock = sourceBlock;
               _miningAudio = miningAudio;
               _anchorPhysical = anchor;
@@ -282,6 +285,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           searchTerm: _searchTerm,
           searchGeneration: _searchGeneration,
           sourceCharIndex: _sourceCharIndex,
+          sourceTextCollapsed: _sourceTextCollapsed,
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
           cardImage: _sourceBlock?.cardImage,
