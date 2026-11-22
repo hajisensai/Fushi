@@ -13,6 +13,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/common_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
@@ -32,6 +33,10 @@ abstract final class FumeTuningKeys {
   static const String cameraSpeed = 'cameraSpeed';
   static const String glowIntensity = 'glowIntensity';
   static const String heroScale = 'heroScale';
+
+  /// 「通用」背景的几何图形显示与否。folia 存的是反义的 `disableGeometricBackground`（默认 true，
+  /// 面板开关显示的是它的反面）；这里直接存开关的值（默认 false = 不显示）。
+  static const String geometricBackground = 'geometricBackground';
 }
 
 /// folia `DEFAULT_FUME_TUNING` 与 `tuning.ts` 的取值范围。
@@ -39,6 +44,11 @@ final List<LyricVisualizerTuningSpec> fumeTunings = <LyricVisualizerTuningSpec>[
   LyricVisualizerToggleSpec(
     key: FumeTuningKeys.hidePrintSymbols,
     label: () => t.music_visualizer_fume_hide_print_symbols,
+    initial: false,
+  ),
+  LyricVisualizerToggleSpec(
+    key: FumeTuningKeys.geometricBackground,
+    label: () => t.music_visualizer_fume_geometric_background,
     initial: false,
   ),
   LyricVisualizerSliderSpec(
@@ -87,6 +97,18 @@ final List<LyricVisualizerTuningSpec> fumeTunings = <LyricVisualizerTuningSpec>[
   ),
 ];
 
+/// 浮名的背景请求（folia `fumeBackgroundConfig`）：用户选的共享背景；没开「通用几何图形」时把
+/// 「通用」背景的几何图形关掉（覆盖只压不放：用户在背景里自己关了的照样关着）。
+LyricVisualizerBackgroundRequest fumeBackgroundRequest(
+  LyricVisualizerTuning tuning,
+) => tuning.flag(FumeTuningKeys.geometricBackground, false)
+    ? LyricVisualizerBackgroundRequest.selected
+    : LyricVisualizerBackgroundRequest.selected.withTuning(
+        const <String, Object>{
+          CommonBackgroundKeys.disableGeometricBackground: true,
+        },
+      );
+
 /// 注册项。folia 的浮名下面铺用户选的共享背景（自己的几何物体另画），底部字幕也用共享的。
 final LyricVisualizerEntry fumeVisualizerEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.fume,
@@ -94,8 +116,7 @@ final LyricVisualizerEntry fumeVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_fume_description,
   icon: FushiIcons.blur,
   tunings: fumeTunings,
-  background: (LyricVisualizerTuning _) =>
-      LyricVisualizerBackgroundRequest.selected,
+  background: fumeBackgroundRequest,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => FumeVisualizer(context: c),
 );

@@ -765,6 +765,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         prefs.musicVisualizerIntensity,
       ),
       backgroundId: prefs.musicVisualizerBackground,
+      subtitle: LyricVisualizerSubtitleSettings(
+        content: LyricVisualizerSubtitleContent.fromPref(
+          prefs.musicVisualizerSubtitleContent,
+        ),
+        hideTranslation: prefs.musicVisualizerSubtitleHide,
+        fontScale: prefs.musicVisualizerSubtitleFontScale,
+        font: LyricVisualizerSubtitleFont.fromPref(
+          prefs.musicVisualizerSubtitleFont,
+        ),
+      ),
       coverPath: item?.coverPath,
       title: item?.title,
       artist: item?.artist,

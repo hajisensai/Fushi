@@ -143,7 +143,7 @@ MindscapeSourceLine mindscapeSourceOf(LyricVisualizerLine line) {
       : sourceWords.last.time.endTime;
   final String text = graphemes.join();
   return MindscapeSourceLine(
-    lineIndex: line.index,
+    lineIndex: line.position,
     text: text,
     graphemes: graphemes,
     words: sourceWords,

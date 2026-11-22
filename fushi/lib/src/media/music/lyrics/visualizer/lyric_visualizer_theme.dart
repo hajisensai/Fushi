@@ -5,8 +5,12 @@
 /// 按词着色移植自 folia `src/components/visualizer/wordColoring.ts`（匹配规则逐条一致）。
 library;
 
-import 'package:flutter/foundation.dart' show immutable, mapEquals;
+import 'package:flutter/foundation.dart' show immutable, listEquals, mapEquals;
 import 'package:material_ui/material_ui.dart';
+
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme_icons.dart';
+
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme_icons.dart';
 
 /// 动画强度（folia `Theme.animationIntensity`）。[prefValue] 落库（冻结）。
 enum LyricVisualizerIntensity {
@@ -136,6 +140,9 @@ class LyricVisualizerTheme {
     this.intensity,
     this.fontWeight,
     this.fontFamily,
+    this.name,
+    this.description,
+    this.lyricsIcons = const <LyricVisualizerThemeIcon>[],
   });
 
   /// 关键字 → 颜色（顺序有意义：同优先级先写的先匹配，与 folia 数组一致）。
@@ -153,7 +160,22 @@ class LyricVisualizerTheme {
   /// 字体族提示（folia `fontFamily`；本机没有该字体时由 Flutter 回落默认字体）。
   final String? fontFamily;
 
+  /// 主题名（folia `Theme.name`，AI 按歌曲起的短名；已截短）；没有为 null。
+  final String? name;
+
+  /// 一句话描述（folia `Theme.description`：听者的第一反应；已截短）；没有为 null。
+  final String? description;
+
+  /// 主题图标集（folia `lyricsIcons`，封闭集合，见 `lyric_visualizer_theme_icons.dart`）。
+  final List<LyricVisualizerThemeIcon> lyricsIcons;
+
   bool get hasWordColors => wordColors.isNotEmpty;
+
+  /// 有字形可画的主题图标（只认字形的样式用它；花 / 叶等无字形的项被跳过）。
+  List<IconData> get glyphIcons => <IconData>[
+    for (final LyricVisualizerThemeIcon i in lyricsIcons)
+      if (i.glyph != null) i.glyph!,
+  ];
 
   /// 单个词的颜色（folia `resolveWordColor`）：CJK 词按 [cjkMatch] 比对关键字，拉丁词规整成
   /// 小写字母数字后与关键字拆出的单词比对；没命中回 [fallback]。
@@ -299,12 +321,18 @@ class LyricVisualizerTheme {
     LyricVisualizerIntensity? intensity,
     FontWeight? fontWeight,
     String? fontFamily,
+    String? name,
+    String? description,
+    List<LyricVisualizerThemeIcon>? lyricsIcons,
   }) => LyricVisualizerTheme(
     wordColors: wordColors ?? this.wordColors,
     palette: palette ?? this.palette,
     intensity: intensity ?? this.intensity,
     fontWeight: fontWeight ?? this.fontWeight,
     fontFamily: fontFamily ?? this.fontFamily,
+    name: name ?? this.name,
+    description: description ?? this.description,
+    lyricsIcons: lyricsIcons ?? this.lyricsIcons,
   );
 
   @override
@@ -314,7 +342,10 @@ class LyricVisualizerTheme {
       other.palette == palette &&
       other.intensity == intensity &&
       other.fontWeight == fontWeight &&
-      other.fontFamily == fontFamily;
+      other.fontFamily == fontFamily &&
+      other.name == name &&
+      other.description == description &&
+      listEquals(other.lyricsIcons, lyricsIcons);
 
   @override
   int get hashCode => Object.hash(
@@ -327,5 +358,8 @@ class LyricVisualizerTheme {
     intensity,
     fontWeight,
     fontFamily,
+    name,
+    description,
+    Object.hashAll(lyricsIcons),
   );
 }

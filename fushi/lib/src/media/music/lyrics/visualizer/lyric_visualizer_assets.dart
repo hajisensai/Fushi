@@ -3,14 +3,19 @@
 /// （安卓 file_picker 给的是缓存副本）。素材是设备本地数据，不进备份 / 同步。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart'
-    show lyricVisualizerIsValidPackName;
+    show LyricVisualizerAssetPlacement, lyricVisualizerIsValidPackName;
+
+/// 包目录里存逐张摆放的文件名（不是图片扩展名，[LyricVisualizerAssetStore.list] 不会列出它）。
+const String kLyricVisualizerPlacementFile = 'placement.json';
 
 /// 认的图片扩展名（Flutter 能解的）。
 const Set<String> kLyricVisualizerAssetExtensions = <String>{
@@ -29,6 +34,14 @@ class LyricVisualizerAssetStore {
   final Directory root;
 
   static LyricVisualizerAssetStore? _shared;
+
+  static final ValueNotifier<int> _changes = ValueNotifier<int>(0);
+
+  /// 任何素材包内容变了（加 / 删图、改摆放、删包）就加一：正在画的样式（凝彩图层）听它重读，
+  /// 不用等换包或换歌。
+  static ValueListenable<int> get changes => _changes;
+
+  static void _changed() => _changes.value++;
 
   /// app 数据目录下的共享实例。
   static Future<LyricVisualizerAssetStore> open() async {
@@ -116,22 +129,95 @@ class LyricVisualizerAssetStore {
       seq++;
       next++;
     }
+    if (added.isNotEmpty) _changed();
     return added;
   }
 
-  /// 删一张图（只认包目录里的文件，防误删别处）。
+  /// 删一张图（只认包目录里的文件，防误删别处）；它的摆放记录一起删。
   Future<void> delete(String style, String pack, File file) async {
     final Directory dir = packDir(style, pack);
     if (!p.isWithin(dir.path, file.path)) {
       throw ArgumentError.value(file.path, 'file', 'not inside $pack');
     }
     if (file.existsSync()) await file.delete();
+    final Map<String, Object?> raw = await _readPlacements(dir);
+    if (raw.remove(p.basename(file.path)) != null) {
+      await _writePlacements(dir, raw);
+    }
+    _changed();
+  }
+
+  Future<Map<String, Object?>> _readPlacements(Directory dir) async {
+    final File f = File(p.join(dir.path, kLyricVisualizerPlacementFile));
+    if (!f.existsSync()) return <String, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(await f.readAsString());
+      return decoded is Map
+          ? <String, Object?>{
+              for (final MapEntry<Object?, Object?> e in decoded.entries)
+                if (e.key is String) e.key! as String: e.value,
+            }
+          : <String, Object?>{};
+    } on FormatException {
+      return <String, Object?>{};
+    } on FileSystemException {
+      return <String, Object?>{};
+    }
+  }
+
+  Future<void> _writePlacements(Directory dir, Map<String, Object?> raw) async {
+    final File f = File(p.join(dir.path, kLyricVisualizerPlacementFile));
+    if (raw.isEmpty) {
+      if (f.existsSync()) await f.delete();
+      return;
+    }
+    await dir.create(recursive: true);
+    final File tmp = File('${f.path}.tmp');
+    await tmp.writeAsString(jsonEncode(raw), flush: true);
+    await tmp.rename(f.path);
+  }
+
+  /// 包里每张图的摆放（键是文件名）；没设过的图不在表里，用 [fallback]。坏文件当空表。
+  Future<Map<String, LyricVisualizerAssetPlacement>> loadPlacements(
+    String style,
+    String pack, {
+    LyricVisualizerAssetPlacement fallback =
+        LyricVisualizerAssetPlacement.defaults,
+  }) async {
+    final Map<String, Object?> raw = await _readPlacements(
+      packDir(style, pack),
+    );
+    return <String, LyricVisualizerAssetPlacement>{
+      for (final MapEntry<String, Object?> e in raw.entries)
+        e.key: LyricVisualizerAssetPlacement.fromJson(
+          e.value,
+          fallback: fallback,
+        ),
+    };
+  }
+
+  /// 存一张图的摆放（[file] 必须在包目录里）。
+  Future<void> savePlacement(
+    String style,
+    String pack,
+    File file,
+    LyricVisualizerAssetPlacement placement,
+  ) async {
+    final Directory dir = packDir(style, pack);
+    if (!p.isWithin(dir.path, file.path)) {
+      throw ArgumentError.value(file.path, 'file', 'not inside $pack');
+    }
+    final Map<String, Object?> raw = await _readPlacements(dir);
+    raw[p.basename(file.path)] = placement.toJson();
+    await _writePlacements(dir, raw);
+    _changed();
   }
 
   /// 删整个包。
   Future<void> deletePack(String style, String pack) async {
     final Directory dir = packDir(style, pack);
     if (dir.existsSync()) await dir.delete(recursive: true);
+    _changed();
   }
 }
 

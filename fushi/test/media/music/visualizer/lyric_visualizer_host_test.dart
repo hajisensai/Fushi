@@ -123,6 +123,49 @@ void main() {
   });
 
   group('背景层', () {
+    test('请求带参数覆盖：叠在用户值上、只认背景声明过的键、不改用户存的值', () {
+      final LyricVisualizerBackgroundEntry common = lyricVisualizerBackgroundOf(
+        'common',
+      );
+      expect(common.id, 'common');
+      final LyricVisualizerBackgroundRequest r =
+          LyricVisualizerBackgroundRequest.selected.withTuning(
+            const <String, Object>{
+              'disableGeometricBackground': true,
+              'notDeclared': 1,
+            },
+          );
+      expect(r.kind, LyricVisualizerBackgroundKind.selected);
+      expect(r, isNot(LyricVisualizerBackgroundRequest.selected));
+      expect(
+        LyricVisualizerBackgroundRequest.selected.withTuning(
+          const <String, Object>{},
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+      final Map<String, Object?> stored = <String, Object?>{
+        'disableGeometricBackground': false,
+        'disableVignette': true,
+      };
+      final LyricVisualizerTuning t = lyricVisualizerBackgroundTuning(
+        common,
+        stored,
+        r,
+      );
+      expect(t.flag('disableGeometricBackground', false), isTrue);
+      expect(t.flag('disableVignette', false), isTrue);
+      expect(t.toMap().containsKey('notDeclared'), isFalse);
+      expect(stored['disableGeometricBackground'], false);
+      expect(
+        lyricVisualizerBackgroundTuning(
+          common,
+          stored,
+          LyricVisualizerBackgroundRequest.selected,
+        ).flag('disableGeometricBackground', true),
+        isFalse,
+      );
+    });
+
     test('请求解析', () {
       expect(
         resolveLyricVisualizerBackground(
@@ -400,6 +443,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(results.single, <String, Object?>{'show': false, 'size': 0.9});
     });
+
+    test('预设的保留项取用户当前值，其余照预设；没给当前值时取默认', () {
+      const LyricVisualizerTuningPreset p = LyricVisualizerTuningPreset(
+        id: 'p1',
+        label: _l,
+        values: <String, Object>{'show': true, 'size': 0.9},
+        preserve: <String>{'show'},
+      );
+      final Map<String, Object> applied = p.apply(
+        _specs,
+        current: <String, Object?>{'show': false},
+      );
+      expect(applied['show'], false);
+      expect(applied['size'], 0.9);
+      expect(p.apply(_specs)['show'], true);
+    });
+
+    testWidgets('面板套带保留项的预设：保留项不被覆盖', (WidgetTester tester) async {
+      final List<Map<String, Object?>?> results = await pumpPanel(
+        tester,
+        stored: const <String, Object?>{'show': false},
+        presets: const <LyricVisualizerTuningPreset>[
+          LyricVisualizerTuningPreset(
+            id: 'p1',
+            label: _l,
+            values: <String, Object>{'show': true, 'size': 0.9},
+            preserve: <String>{'show'},
+          ),
+        ],
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('music_visualizer_preset_p1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('music_visualizer_tuning_done')),
+      );
+      await tester.pumpAndSettle();
+      expect(results.single, <String, Object?>{'show': false, 'size': 0.9});
+    });
   });
 
   group('素材库', () {
@@ -444,6 +527,116 @@ void main() {
       );
       await store.deletePack('cappella', 'avatars');
       expect(await store.listPacks('cappella'), isEmpty);
+    });
+
+    test('逐张摆放：存取、坏值回落、删图连带删记录', () async {
+      await store.importFiles('tempera', 'default', <String>[
+        src('a.png').path,
+        src('b.png').path,
+      ]);
+      final List<File> files = await store.list('tempera', 'default');
+      expect(await store.loadPlacements('tempera', 'default'), isEmpty);
+      const LyricVisualizerAssetPlacement left = LyricVisualizerAssetPlacement(
+        align: LyricVisualizerAssetAlign.left,
+        verticalAlign: LyricVisualizerAssetVerticalAlign.top,
+        scale: 0.4,
+        opacity: 0.5,
+      );
+      await store.savePlacement('tempera', 'default', files.first, left);
+      // placement.json 不算图片。
+      expect(await store.list('tempera', 'default'), hasLength(2));
+      expect(
+        await store.loadPlacements('tempera', 'default'),
+        <String, LyricVisualizerAssetPlacement>{
+          files.first.uri.pathSegments.last: left,
+        },
+      );
+      expect(left.horizontalBand, (0.14, 0.32));
+      expect(left.verticalBand, (0.14, 0.32));
+      expect(
+        LyricVisualizerAssetPlacement.fromJson(<String, Object?>{
+          'align': 'sideways',
+          'scale': 99,
+          'opacity': 'x',
+        }),
+        const LyricVisualizerAssetPlacement(
+          scale: LyricVisualizerAssetPlacement.maxScale,
+        ),
+      );
+      await store.delete('tempera', 'default', files.first);
+      expect(await store.loadPlacements('tempera', 'default'), isEmpty);
+      await expectLater(
+        store.savePlacement('tempera', 'default', src('outside.png'), left),
+        throwsArgumentError,
+      );
+    });
+
+    testWidgets('面板里逐张设摆放：点图出编辑器，改对齐即落盘', (WidgetTester tester) async {
+      await tester.runAsync(
+        () => store.importFiles('tempera', 'default', <String>[
+          src('a.png').path,
+        ]),
+      );
+      const List<LyricVisualizerTuningSpec> specs = <LyricVisualizerTuningSpec>[
+        LyricVisualizerAssetPackSpec(
+          key: 'pack',
+          label: _l,
+          style: 'tempera',
+          placement: LyricVisualizerAssetPlacement.defaults,
+        ),
+      ];
+      await tester.binding.setSurfaceSize(const Size(800, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LyricVisualizerTuningPanel.specs(
+              title: _l,
+              specs: specs,
+              stored: const <String, Object?>{},
+              assetStore: () async => store,
+            ),
+          ),
+        ),
+      );
+      // 真实文件 IO 要在 runAsync 里推进，每一步 await 都要再推一次帧；等到 [until] 成立为止。
+      Future<void> settleIo([bool Function()? until]) async {
+        for (int i = 0; i < 60; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+          if (until != null && until()) return;
+        }
+      }
+
+      final Finder thumb = find.byKey(
+        const ValueKey<String>('music_visualizer_asset_select_0000_a.png'),
+      );
+      await settleIo(() => thumb.evaluate().isNotEmpty);
+      final Finder editor = find.byKey(
+        const ValueKey<String>('music_visualizer_asset_placement_pack'),
+      );
+      expect(thumb, findsOneWidget);
+      expect(editor, findsNothing);
+      // 逐张摆放时角标删除钮不画（会盖住缩略图），删图在编辑器里。
+      final Finder delete = find.byKey(
+        const ValueKey<String>('music_visualizer_asset_delete_0000_a.png'),
+      );
+      expect(delete, findsNothing);
+      await tester.tap(thumb);
+      await tester.pump();
+      expect(editor, findsOneWidget);
+      expect(find.descendant(of: editor, matching: delete), findsOneWidget);
+      await tester.tap(
+        find.descendant(of: editor, matching: find.text('Right')),
+      );
+      Map<String, LyricVisualizerAssetPlacement>? saved;
+      await settleIo(() => false);
+      saved = await tester.runAsync(
+        () => store.loadPlacements('tempera', 'default'),
+      );
+      expect(saved!['0000_a.png']!.align, LyricVisualizerAssetAlign.right);
     });
 
     test('拒绝越界路径与非法名', () async {

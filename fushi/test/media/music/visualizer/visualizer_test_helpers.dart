@@ -211,6 +211,8 @@ LyricVisualizerContext visualizerContextFor(
   LyricVisualizerTheme? theme,
   LyricVisualizerAudio? audio,
   int offsetMs = 0,
+  LyricVisualizerSubtitleSettings subtitle =
+      LyricVisualizerSubtitleSettings.defaults,
 }) {
   final LyricTimeline t = timeline ?? sampleWordTimeline();
   final ColorScheme scheme = ColorScheme.fromSeed(
@@ -236,6 +238,7 @@ LyricVisualizerContext visualizerContextFor(
     intensity: theme?.intensity ?? intensity,
     theme: theme,
     audio: audio,
+    subtitle: subtitle,
   );
 }
 
@@ -265,6 +268,8 @@ Future<void> pumpVisualizerAcross(
   LyricVisualizerTheme? theme,
   LyricVisualizerAudio? audio,
   int offsetMs = 0,
+  LyricVisualizerSubtitleSettings subtitle =
+      LyricVisualizerSubtitleSettings.defaults,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -281,6 +286,7 @@ Future<void> pumpVisualizerAcross(
     theme: theme,
     audio: audio,
     offsetMs: offsetMs,
+    subtitle: subtitle,
   );
   await tester.pumpWidget(
     MaterialApp(

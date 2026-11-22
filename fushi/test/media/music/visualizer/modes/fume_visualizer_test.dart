@@ -706,10 +706,21 @@ void main() {
       expect(key(f), isNot(key(FumeFont.standard)));
     });
 
-    test('背景：用户选的共享背景', () {
+    test('背景：用户选的共享背景；默认关掉几何背景层（folia fumeBackgroundConfig），开关打开才画', () {
+      final LyricVisualizerBackgroundRequest off = fumeVisualizerEntry
+          .backgroundFor(
+            LyricVisualizerTuning.defaults(fumeVisualizerEntry.tunings),
+          );
+      expect(off.kind, LyricVisualizerBackgroundKind.selected);
+      expect(off.tuningOverrides, <String, Object>{
+        'disableGeometricBackground': true,
+      });
       expect(
         fumeVisualizerEntry.backgroundFor(
-          LyricVisualizerTuning.defaults(fumeVisualizerEntry.tunings),
+          LyricVisualizerTuning(
+            fumeVisualizerEntry.tunings,
+            const <String, Object?>{FumeTuningKeys.geometricBackground: true},
+          ),
         ),
         LyricVisualizerBackgroundRequest.selected,
       );

@@ -62,6 +62,7 @@ class MusicLyricVisualizerView extends StatefulWidget {
     this.onSeek,
     this.intensity = LyricVisualizerIntensity.normal,
     this.backgroundId,
+    this.subtitle = LyricVisualizerSubtitleSettings.defaults,
     this.theme,
     this.audio,
     this.aiTheme,
@@ -92,6 +93,9 @@ class MusicLyricVisualizerView extends StatefulWidget {
 
   /// 用户选的共享背景（`music_visualizer_background`）；null = 默认（歌词页背景）。
   final String? backgroundId;
+
+  /// 全局字幕偏好（`music_visualizer_subtitle_*`），原样进样式 context。
+  final LyricVisualizerSubtitleSettings subtitle;
 
   /// 本首的歌词动画主题（AI 主题）；null = 封面取色。
   final LyricVisualizerTheme? theme;
@@ -236,15 +240,18 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
         intensity: visualTheme?.intensity ?? widget.intensity,
         theme: visualTheme,
         audio: widget.audio,
+        subtitle: widget.subtitle,
       );
       final LyricVisualizerContext c = fresh == _lastContext
           ? _lastContext!
           : fresh;
       _lastContext = c;
       // 背景层（folia 背景独立组合）：样式按参数请求，宿主画在样式下面。
+      final LyricVisualizerBackgroundRequest backgroundRequest = entry
+          .backgroundFor(tuning);
       final LyricVisualizerBackgroundEntry? background =
           resolveLyricVisualizerBackground(
-            entry.backgroundFor(tuning),
+            backgroundRequest,
             widget.backgroundId,
           );
       body = Stack(
@@ -258,12 +265,13 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
               child: IgnorePointer(
                 child: background.builder(
                   c,
-                  LyricVisualizerTuning(
-                    background.tunings,
+                  lyricVisualizerBackgroundTuning(
+                    background,
                     widget.tunings[lyricVisualizerBackgroundTuningKey(
                           background.id,
                         )] ??
                         const <String, Object?>{},
+                    backgroundRequest,
                   ),
                 ),
               ),
@@ -990,9 +998,11 @@ class _LyricVisualizerTuningPanelState
             FushiChoiceChip(
               key: ValueKey<String>('music_visualizer_preset_${p.id}'),
               label: Text(p.label()),
-              selected: same(p.apply(widget.specs)),
+              selected: same(p.apply(widget.specs, current: _values)),
               onSelected: (_) => setState(
-                () => _values = Map<String, Object>.of(p.apply(widget.specs)),
+                () => _values = Map<String, Object>.of(
+                  p.apply(widget.specs, current: _values),
+                ),
               ),
             ),
         ],
@@ -1210,6 +1220,11 @@ class _AssetPackTuningRow extends StatefulWidget {
 class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
   List<String> _packs = const <String>[];
   List<File> _files = const <File>[];
+  Map<String, LyricVisualizerAssetPlacement> _placements =
+      const <String, LyricVisualizerAssetPlacement>{};
+
+  /// 正在设摆放的那张（只在 spec 允许逐张摆放时有）。
+  String? _editing;
   bool _busy = false;
 
   @override
@@ -1228,11 +1243,183 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
     final LyricVisualizerAssetStore store = await widget.store();
     final List<String> packs = await store.listPacks(widget.spec.style);
     final List<File> files = await store.list(widget.spec.style, widget.pack);
+    final LyricVisualizerAssetPlacement? fallback = widget.spec.placement;
+    final Map<String, LyricVisualizerAssetPlacement> placements =
+        fallback == null
+        ? const <String, LyricVisualizerAssetPlacement>{}
+        : await store.loadPlacements(
+            widget.spec.style,
+            widget.pack,
+            fallback: fallback,
+          );
     if (!mounted) return;
     setState(() {
       _packs = packs;
       _files = files;
+      _placements = placements;
+      if (!files.any((File f) => _nameOf(f) == _editing)) _editing = null;
     });
+  }
+
+  static String _nameOf(File f) => f.uri.pathSegments.last;
+
+  LyricVisualizerAssetPlacement _placementOf(String name) =>
+      _placements[name] ??
+      widget.spec.placement ??
+      LyricVisualizerAssetPlacement.defaults;
+
+  /// 改一张图的摆放：先改界面，[persist] 时落盘（滑杆拖动中只改界面，松手再写）。
+  Future<void> _setPlacement(
+    File f,
+    LyricVisualizerAssetPlacement placement, {
+    bool persist = true,
+  }) async {
+    setState(
+      () => _placements = <String, LyricVisualizerAssetPlacement>{
+        ..._placements,
+        _nameOf(f): placement,
+      },
+    );
+    if (!persist) return;
+    final LyricVisualizerAssetStore store = await widget.store();
+    await store.savePlacement(widget.spec.style, widget.pack, f, placement);
+  }
+
+  Widget _placementSlider({
+    required File file,
+    required String label,
+    required String keySuffix,
+    required double value,
+    required double min,
+    required double max,
+    required LyricVisualizerAssetPlacement Function(double v) apply,
+  }) {
+    final int percent = (value * 100).round();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(child: Text(label)),
+            Text('$percent%'),
+          ],
+        ),
+        FushiSlider(
+          key: ValueKey<String>(
+            'music_visualizer_asset_${keySuffix}_${widget.spec.key}',
+          ),
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          onChanged: (double v) =>
+              unawaited(_setPlacement(file, apply(v), persist: false)),
+          onChangeEnd: (double v) => unawaited(_setPlacement(file, apply(v))),
+        ),
+      ],
+    );
+  }
+
+  Widget _placementEditor(BuildContext context, File f) {
+    final LyricVisualizerAssetPlacement pl = _placementOf(_nameOf(f));
+    return Column(
+      key: ValueKey<String>(
+        'music_visualizer_asset_placement_${widget.spec.key}',
+      ),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: 8),
+        Text(t.music_visualizer_assets_placement_horizontal),
+        const SizedBox(height: 4),
+        adaptiveSegmentedButton<LyricVisualizerAssetAlign>(
+          context: context,
+          segments: <ButtonSegment<LyricVisualizerAssetAlign>>[
+            for (final LyricVisualizerAssetAlign a
+                in LyricVisualizerAssetAlign.values)
+              ButtonSegment<LyricVisualizerAssetAlign>(
+                value: a,
+                label: Text(switch (a) {
+                  LyricVisualizerAssetAlign.free =>
+                    t.music_visualizer_assets_placement_free,
+                  LyricVisualizerAssetAlign.left =>
+                    t.music_visualizer_assets_placement_left,
+                  LyricVisualizerAssetAlign.center =>
+                    t.music_visualizer_assets_placement_center,
+                  LyricVisualizerAssetAlign.right =>
+                    t.music_visualizer_assets_placement_right,
+                }),
+              ),
+          ],
+          selected: <LyricVisualizerAssetAlign>{pl.align},
+          onSelectionChanged: (Set<LyricVisualizerAssetAlign> v) {
+            if (v.isNotEmpty) {
+              unawaited(_setPlacement(f, pl.copyWith(align: v.first)));
+            }
+          },
+        ),
+        const SizedBox(height: 8),
+        Text(t.music_visualizer_assets_placement_vertical),
+        const SizedBox(height: 4),
+        adaptiveSegmentedButton<LyricVisualizerAssetVerticalAlign>(
+          context: context,
+          segments: <ButtonSegment<LyricVisualizerAssetVerticalAlign>>[
+            for (final LyricVisualizerAssetVerticalAlign a
+                in LyricVisualizerAssetVerticalAlign.values)
+              ButtonSegment<LyricVisualizerAssetVerticalAlign>(
+                value: a,
+                label: Text(switch (a) {
+                  LyricVisualizerAssetVerticalAlign.free =>
+                    t.music_visualizer_assets_placement_free,
+                  LyricVisualizerAssetVerticalAlign.top =>
+                    t.music_visualizer_assets_placement_top,
+                  LyricVisualizerAssetVerticalAlign.center =>
+                    t.music_visualizer_assets_placement_center,
+                  LyricVisualizerAssetVerticalAlign.bottom =>
+                    t.music_visualizer_assets_placement_bottom,
+                }),
+              ),
+          ],
+          selected: <LyricVisualizerAssetVerticalAlign>{pl.verticalAlign},
+          onSelectionChanged: (Set<LyricVisualizerAssetVerticalAlign> v) {
+            if (v.isNotEmpty) {
+              unawaited(_setPlacement(f, pl.copyWith(verticalAlign: v.first)));
+            }
+          },
+        ),
+        const SizedBox(height: 8),
+        _placementSlider(
+          file: f,
+          label: t.music_visualizer_assets_placement_scale,
+          keySuffix: 'scale',
+          value: pl.scale,
+          min: LyricVisualizerAssetPlacement.minScale,
+          max: LyricVisualizerAssetPlacement.maxScale,
+          apply: (double v) => pl.copyWith(scale: v),
+        ),
+        _placementSlider(
+          file: f,
+          label: t.music_visualizer_assets_placement_opacity,
+          keySuffix: 'opacity',
+          value: pl.opacity,
+          min: 0,
+          max: 1,
+          apply: (double v) => pl.copyWith(opacity: v),
+        ),
+        // 逐张摆放时删图放进编辑器：角标删除钮的命中区会盖住大半张缩略图，点图选中容易误删。
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiPressScale(
+            child: FushiTextButton.icon(
+              key: ValueKey<String>(
+                'music_visualizer_asset_delete_${_nameOf(f)}',
+              ),
+              onPressed: _busy ? null : () => unawaited(_delete(f)),
+              icon: const Icon(FushiIcons.delete),
+              label: Text(t.music_visualizer_assets_delete),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _add() async {
@@ -1258,6 +1445,47 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
     final LyricVisualizerAssetStore store = await widget.store();
     await store.delete(widget.spec.style, widget.pack, f);
     await _reload();
+  }
+
+  Widget _thumbnail(BuildContext context, File f) {
+    final Widget image = ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.file(
+        f,
+        width: 64,
+        height: 64,
+        fit: BoxFit.cover,
+        cacheWidth: 128,
+        errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
+            const SizedBox(width: 64, height: 64),
+      ),
+    );
+    if (widget.spec.placement == null) return image;
+    final String name = _nameOf(f);
+    final bool selected = name == _editing;
+    return FushiPressScale(
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          key: ValueKey<String>('music_visualizer_asset_select_$name'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _editing = selected ? null : name),
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: selected
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    )
+                  : null,
+            ),
+            child: image,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1304,36 +1532,34 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
                 for (final File f in _files)
                   Stack(
                     children: <Widget>[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          f,
-                          width: 64,
-                          height: 64,
-                          fit: BoxFit.cover,
-                          cacheWidth: 128,
-                          errorBuilder:
-                              (BuildContext _, Object _, StackTrace? _) =>
-                                  const SizedBox(width: 64, height: 64),
-                        ),
-                      ),
-                      Positioned(
-                        right: -8,
-                        top: -8,
-                        child: FushiIconButtonControl(
-                          key: ValueKey<String>(
-                            'music_visualizer_asset_delete_${f.uri.pathSegments.last}',
+                      _thumbnail(context, f),
+                      if (widget.spec.placement == null)
+                        Positioned(
+                          right: -8,
+                          top: -8,
+                          child: FushiIconButtonControl(
+                            key: ValueKey<String>(
+                              'music_visualizer_asset_delete_${f.uri.pathSegments.last}',
+                            ),
+                            tooltip: t.music_visualizer_assets_delete,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => unawaited(_delete(f)),
+                            icon: const Icon(FushiIcons.delete, size: 16),
                           ),
-                          tooltip: t.music_visualizer_assets_delete,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => unawaited(_delete(f)),
-                          icon: const Icon(FushiIcons.delete, size: 16),
                         ),
-                      ),
                     ],
                   ),
               ],
             ),
+          if (widget.spec.placement != null && _files.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 4),
+            Text(
+              t.music_visualizer_assets_placement_hint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          for (final File f in _files)
+            if (_nameOf(f) == _editing) _placementEditor(context, f),
           const SizedBox(height: 8),
           FushiPressScale(
             child: FushiTextButton.icon(

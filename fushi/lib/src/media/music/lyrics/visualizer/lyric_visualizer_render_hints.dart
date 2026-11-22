@@ -2,8 +2,8 @@
 /// normal 三档，决定行过渡（无 / 快 / 正常）、逐词显现（瞬显 / 快 / 正常），并算出句尾离场窗口
 /// `renderEndMs`（这一行最晚可以留在屏上的时刻）。
 ///
-/// folia 的时间是秒，这里一律毫秒；内部按秒的同一公式算，结果四舍五入成整数毫秒。原先流光 / 云阶 /
-/// 心象 / 群唱各自带了一份本地移植，语义与这里一致（流光 `LuminousRenderProfile` 是逐字同一公式）。
+/// folia 的时间是秒，这里一律毫秒；内部按秒的同一公式算，结果四舍五入成整数毫秒。各样式直接读
+/// `LyricVisualizerLine.renderHints`，不再各带本地移植。
 library;
 
 import 'dart:math' as math;

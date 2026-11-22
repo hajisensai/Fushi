@@ -18,7 +18,7 @@ export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_segments.dart';
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_structure.dart';
 
-/// 一个字形（grapheme）的时间：逐字歌词按音节拆，行级歌词按行时长均分。
+/// 一个字形（grapheme）的时间：逐字歌词按音节拆，行级歌词按 folia 的词权重估时。
 class LyricVisualizerGlyph {
   const LyricVisualizerGlyph({
     required this.text,
@@ -82,7 +82,8 @@ class LyricVisualizerWord {
 /// 预处理过的一行。
 class LyricVisualizerLine {
   const LyricVisualizerLine({
-    required this.index,
+    required this.position,
+    required this.timelineIndex,
     required this.source,
     required this.text,
     required this.startMs,
@@ -99,8 +100,13 @@ class LyricVisualizerLine {
   }) : _renderHints = renderHints,
        _segments = segments;
 
-  /// 在 `timeline.lines` 里的下标（主行）。
-  final int index;
+  /// 在 [LyricVisualizerRuntime.lines] 里的位置：`runtime.lines[position]` 就是这一行。样式按行
+  /// 取下标、做缓存键、算上一句 / 下一句一律用它。
+  final int position;
+
+  /// 在原始 `timeline.lines` 里的下标。时间轴里有和声行 / 空行时与 [position] 不同，**不能**拿它
+  /// 索引 `runtime.lines`；只在要回查原始时间轴（查词、跳转到原始行）时用。
+  final int timelineIndex;
   final LyricLine source;
   final String text;
   final int startMs;
@@ -180,7 +186,8 @@ bool lyricVisualizerIsCjk(String ch) {
 bool _isSpace(String ch) => ch.trim().isEmpty;
 
 /// 把一行拆成字形时间线（folia `buildLineGraphemeTimeline`）：每个音节内按字形数均分
-/// 音节时长；行级歌词（单音节或没有音节时间）按整行均分。
+/// 音节时长；行级歌词（单音节盖住整行）按 folia `buildTimedWords` 的权重估词时间
+/// （[buildLyricVisualizerLineLevelGlyphs]）。
 List<LyricVisualizerGlyph> buildLyricVisualizerGlyphs(LyricLine line) {
   final List<LyricVisualizerGlyph> out = <LyricVisualizerGlyph>[];
   final List<LyricSyllable> syl = line.syllables;
@@ -189,16 +196,20 @@ List<LyricVisualizerGlyph> buildLyricVisualizerGlyphs(LyricLine line) {
       syl.length == 1 &&
       syl.first.startMs <= line.startMs &&
       syl.first.endMs >= line.endMs;
+  if (lineLevel) {
+    return buildLyricVisualizerLineLevelGlyphs(
+      syl.first.text,
+      line.startMs,
+      math.max(line.endMs, line.startMs),
+      ruby: syl.first.ruby,
+    );
+  }
   for (int si = 0; si < syl.length; si++) {
     final LyricSyllable s = syl[si];
     final List<String> chars = s.text.characters.toList();
     if (chars.isEmpty) continue;
-    int start = s.startMs;
+    final int start = s.startMs;
     int end = s.endMs;
-    if (lineLevel) {
-      start = line.startMs;
-      end = line.endMs;
-    }
     if (end < start) end = start;
     // 空白不占时长：只在非空白字形间均分。
     final int voiced = chars.where((String c) => !_isSpace(c)).length;
@@ -215,12 +226,116 @@ List<LyricVisualizerGlyph> buildLyricVisualizerGlyphs(LyricLine line) {
           text: c,
           startMs: gs,
           endMs: ge,
-          syllableIndex: lineLevel ? 0 : si,
+          syllableIndex: si,
           isSpace: space,
           ruby: ci == 0 ? s.ruby : null,
         ),
       );
     }
+  }
+  return out;
+}
+
+/// folia `buildTimedWords` 认作 CJK 的字（汉字 / 假名 / 谚文）。
+final RegExp _timedCjk = RegExp(r'[一-龥぀-ヿ가-힯]');
+
+/// folia `buildTimedWords` 里不占时长的标点（CJK 词里）：，。！？、：；"'）
+final RegExp _timedPunct = RegExp(r'''[，。！？、：；"'）]''');
+
+/// 行级（LRC）歌词的字形时间（folia `estimatedLineTiming.buildTimedWords`）：按空白切词，含 CJK
+/// 的词每个字形权重 1（标点 0），其余整词权重 `1 + 0.15 × 长度`；行时长的 90% 按权重分给各词，
+/// 0 权重的标点占 50 ms，超出行尾时整体按比例压回去。拉丁词内部按字形均分该词的时间；空白不占时长。
+List<LyricVisualizerGlyph> buildLyricVisualizerLineLevelGlyphs(
+  String text,
+  int startMs,
+  int endMs, {
+  String? ruby,
+}) {
+  final List<String> chars = text.characters.toList();
+  // 每个「词」是一段字形下标区间 [first, end) 加权重。
+  final List<(int, int, double)> tokens = <(int, int, double)>[];
+  int i = 0;
+  while (i < chars.length) {
+    if (_isSpace(chars[i])) {
+      i++;
+      continue;
+    }
+    final int first = i;
+    while (i < chars.length && !_isSpace(chars[i])) {
+      i++;
+    }
+    final String token = chars.sublist(first, i).join();
+    if (_timedCjk.hasMatch(token)) {
+      for (int k = first; k < i; k++) {
+        tokens.add((k, k + 1, _timedPunct.hasMatch(chars[k]) ? 0 : 1));
+      }
+    } else {
+      tokens.add((first, i, 1 + token.length * 0.15));
+    }
+  }
+  double total = 0;
+  for (final (int, int, double) t in tokens) {
+    total += t.$3;
+  }
+  if (total == 0) total = 1;
+  final double duration = math.max(endMs - startMs, 100).toDouble();
+  final double perWeight = duration * 0.9 / total;
+  final List<double> tStart = List<double>.filled(tokens.length, 0);
+  final List<double> tEnd = List<double>.filled(tokens.length, 0);
+  double cursor = startMs.toDouble();
+  for (int k = 0; k < tokens.length; k++) {
+    final double d = tokens[k].$3 * perWeight;
+    tStart[k] = cursor;
+    tEnd[k] = cursor + math.max(d, 50);
+    cursor += tokens[k].$3 > 0 ? d : 50;
+  }
+  if (tokens.isNotEmpty && tEnd.last > endMs && tEnd.last > startMs) {
+    final double scale = (endMs - startMs) / (tEnd.last - startMs);
+    for (int k = 0; k < tokens.length; k++) {
+      tStart[k] = startMs + (tStart[k] - startMs) * scale;
+      tEnd[k] = startMs + (tEnd[k] - startMs) * scale;
+    }
+  }
+  // 字形 → 所属词。
+  final List<int> owner = List<int>.filled(chars.length, -1);
+  for (int k = 0; k < tokens.length; k++) {
+    for (int g = tokens[k].$1; g < tokens[k].$2; g++) {
+      owner[g] = k;
+    }
+  }
+  final List<LyricVisualizerGlyph> out = <LyricVisualizerGlyph>[];
+  int lastEnd = startMs;
+  for (int g = 0; g < chars.length; g++) {
+    final int k = owner[g];
+    if (k < 0) {
+      out.add(
+        LyricVisualizerGlyph(
+          text: chars[g],
+          startMs: lastEnd,
+          endMs: lastEnd,
+          syllableIndex: 0,
+          isSpace: true,
+          ruby: g == 0 ? ruby : null,
+        ),
+      );
+      continue;
+    }
+    final int n = tokens[k].$2 - tokens[k].$1;
+    final int at = g - tokens[k].$1;
+    final double step = (tEnd[k] - tStart[k]) / n;
+    final int gs = (tStart[k] + step * at).round();
+    final int ge = (tStart[k] + step * (at + 1)).round();
+    lastEnd = ge;
+    out.add(
+      LyricVisualizerGlyph(
+        text: chars[g],
+        startMs: gs,
+        endMs: ge,
+        syllableIndex: 0,
+        isSpace: false,
+        ruby: g == 0 ? ruby : null,
+      ),
+    );
   }
   return out;
 }
@@ -321,7 +436,8 @@ class LyricVisualizerRuntime {
     return <LyricVisualizerLine>[
       for (int k = 0; k < raw.length; k++)
         LyricVisualizerLine(
-          index: raw[k].$1,
+          position: k,
+          timelineIndex: raw[k].$1,
           source: raw[k].$2,
           text: raw[k].$3,
           startMs: raw[k].$2.startMs,

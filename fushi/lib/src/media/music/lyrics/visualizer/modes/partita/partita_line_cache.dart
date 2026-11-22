@@ -187,7 +187,7 @@ class PartitaLineCache {
     required int seed,
   }) {
     final String key =
-        '${line.index}|${area.width.round()}x${(area.height / 24).round()}|'
+        '${line.position}|${area.width.round()}x${(area.height / 24).round()}|'
         '$fontScale|${settings.cacheKey}|${style.hashCode}';
     final PartitaLinePaint? hit = _map.remove(key);
     if (hit != null) {
@@ -230,7 +230,7 @@ PartitaLinePaint buildPartitaLinePaint({
   required int seed,
 }) {
   final LyricVisualizerRandom rng = LyricVisualizerRandom(
-    seed ^ (line.index * 0x9E3779B1),
+    seed ^ (line.position * 0x9E3779B1),
   );
   final PartitaLinePlan plan = planPartitaLine(
     line,

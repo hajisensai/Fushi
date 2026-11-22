@@ -10,15 +10,15 @@
 ///   提示词里要求对比度，这里落地前真的量一遍——模型偶尔给出看不清的组合）；
 /// - 关键词必须在歌词（纯音乐时是歌名）里出现，且是本地按词着色（`LyricVisualizerTheme`）
 ///   认得出的形式；最多 [kAiVisualizerMaxWordColors] 个；
-/// - 强度 / 字体风格是封闭枚举，认不出的取默认；名字与描述截短。
-///
-/// folia 的 `lyricsIcons`（Lucide 图标名）不要：本 app 没有这套图标，也没有样式用它。
+/// - 强度 / 字体风格是封闭枚举，认不出的取默认；名字与描述截短；
+/// - 主题图标（folia `lyricsIcons`）只认封闭集合 [LyricVisualizerThemeIcon]（本集合 id 或 folia 常见的
+///   Lucide 名），认不出的丢掉，最多 [LyricVisualizerThemeIcon.maxPerTheme] 个。
 library;
 
 import 'dart:collection' show LinkedHashMap;
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show mapEquals;
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_reply_json.dart';
@@ -141,12 +141,16 @@ class AiMusicVisualizerTheme {
     required this.dark,
     this.intensity = LyricVisualizerIntensity.normal,
     this.fontStyle = AiVisualizerFontStyle.sans,
+    this.lyricsIcons = const <LyricVisualizerThemeIcon>[],
   });
 
   final AiVisualizerThemeVariant light;
   final AiVisualizerThemeVariant dark;
   final LyricVisualizerIntensity intensity;
   final AiVisualizerFontStyle fontStyle;
+
+  /// 主题图标（folia：明暗两套共用同一组）。
+  final List<LyricVisualizerThemeIcon> lyricsIcons;
 
   AiVisualizerThemeVariant variantFor(Brightness brightness) =>
       brightness == Brightness.dark ? dark : light;
@@ -166,6 +170,9 @@ class AiMusicVisualizerTheme {
       ),
       intensity: intensity,
       fontFamily: fontStyle.fontFamily,
+      name: v.name.isEmpty ? null : v.name,
+      description: v.description.isEmpty ? null : v.description,
+      lyricsIcons: lyricsIcons,
     );
   }
 
@@ -174,6 +181,9 @@ class AiMusicVisualizerTheme {
     'dark': dark.toJson(),
     'animationIntensity': intensity.prefValue,
     'fontStyle': fontStyle.wire,
+    'lyricsIcons': <String>[
+      for (final LyricVisualizerThemeIcon i in lyricsIcons) i.wire,
+    ],
   };
 
   /// 读本机缓存：与 AI 回复走同一份校验（不再查关键词是否在歌词里——写入时已查过）。
@@ -187,10 +197,17 @@ class AiMusicVisualizerTheme {
       other.light == light &&
       other.dark == dark &&
       other.intensity == intensity &&
-      other.fontStyle == fontStyle;
+      other.fontStyle == fontStyle &&
+      listEquals(other.lyricsIcons, lyricsIcons);
 
   @override
-  int get hashCode => Object.hash(light, dark, intensity, fontStyle);
+  int get hashCode => Object.hash(
+    light,
+    dark,
+    intensity,
+    fontStyle,
+    Object.hashAll(lyricsIcons),
+  );
 }
 
 // ── 本地校验（folia themeSanitizer.mjs） ─────────────────────────────────────
@@ -416,6 +433,7 @@ AiMusicVisualizerTheme? sanitizeAiMusicVisualizerTheme(
       pick('animationIntensity') as String?,
     ),
     fontStyle: AiVisualizerFontStyle.fromWire(pick('fontStyle')),
+    lyricsIcons: LyricVisualizerThemeIcon.listFrom(pick('lyricsIcons')),
   );
 }
 
@@ -450,7 +468,12 @@ String aiVisualizerLyricsSnippet(LyricTimeline? timeline) {
       : s.substring(0, kAiVisualizerSourceMaxChars);
 }
 
-String buildAiMusicVisualizerThemeSystemPrompt() => '''
+String _iconChoices() => LyricVisualizerThemeIcon.values
+    .map((LyricVisualizerThemeIcon i) => i.wire)
+    .join(', ');
+
+String buildAiMusicVisualizerThemeSystemPrompt() =>
+    '''
 Analyze the mood of the provided song source text and generate TWO visual theme
 configurations for a full-screen animated lyrics view - one for LIGHT mode and
 one for DARK mode. Both capture the SAME emotional essence of the song, with
@@ -498,6 +521,9 @@ ALSO DECIDE:
   aggressive / very energetic ones, otherwise "normal".
 - "fontStyle": "serif" for classical / literary / nostalgic moods, "mono" for
   electronic / glitchy / technical moods, otherwise "sans".
+- "lyricsIcons": 3-5 visual concepts or objects mentioned in or strongly
+  implied by the source text, each chosen ONLY from this list:
+  ${_iconChoices()}.
 
 Colours are CSS hex strings "#rrggbb" only - no names, rgb(), alpha or
 gradients. Theme "name" is at most 10 characters and "description" is one
@@ -506,7 +532,7 @@ short first-person sentence of a listener's immediate emotional reaction
 both written in the language given as "Write names in".
 
 Answer with a single JSON object and nothing else:
-{"animationIntensity": "normal", "fontStyle": "sans",
+{"animationIntensity": "normal", "fontStyle": "sans", "lyricsIcons": ["moon", "star"],
  "light": {"name": "...", "description": "...", "backgroundColor": "#rrggbb",
    "primaryColor": "#rrggbb", "accentColor": "#rrggbb",
    "secondaryColor": "#rrggbb", "wordColors": [{"word": "...", "color": "#rrggbb"}]},

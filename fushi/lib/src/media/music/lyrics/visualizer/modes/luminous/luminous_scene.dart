@@ -49,7 +49,7 @@ List<LuminousVisibleLine> luminousVisibleLines(
     final LyricVisualizerLine line = lines[i];
     final double start = line.startMs / 1000;
     final double exitAt = luminousLineExitAt(runtime, i);
-    final LuminousRenderProfile p = LuminousRenderProfile.ofLine(line);
+    final LyricVisualizerRenderHints p = line.renderHints;
     if (t < exitAt) {
       out.add(
         LuminousVisibleLine(
@@ -213,7 +213,7 @@ class _LineRender {
     required this.isChorus,
   });
 
-  final LuminousRenderProfile profile;
+  final LyricVisualizerRenderHints profile;
   final List<_WordRender> words;
   final double fontSize;
   final bool rtl;
@@ -388,7 +388,7 @@ class LuminousScene {
     );
     final bool rtl = luminousIsRtl(line.text);
     final TextDirection dir = rtl ? TextDirection.rtl : TextDirection.ltr;
-    final LuminousRenderProfile profile = LuminousRenderProfile.ofLine(line);
+    final LyricVisualizerRenderHints profile = line.renderHints;
     final TextStyle style = _style(layout.fontSize);
     final double mount = line.startMs / 1000;
     final List<_WordRender> words = <_WordRender>[];
@@ -429,7 +429,7 @@ class LuminousScene {
           word: w,
           config: layout.plan.configs[i],
           schedule: LuminousWordSchedule.of(
-            profile: profile,
+            hints: profile,
             wordStart: w.startMs / 1000,
             wordEnd: w.endMs / 1000,
             mountAt: mount,

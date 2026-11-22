@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
@@ -19,6 +20,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_pr
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_rig.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_text.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_theme_icons.dart';
 
 // ---------------------------------------------------------------------------
 // 调色
@@ -93,6 +95,7 @@ class LumiereSettings {
     this.echo = 1,
     this.fogOctaves = 5,
     this.lineArt = true,
+    this.themeIcons = true,
     this.frontBokeh = true,
     this.trails = true,
     this.hideTrails = false,
@@ -113,6 +116,9 @@ class LumiereSettings {
   final double echo;
   final int fogOctaves;
   final bool lineArt;
+
+  /// 主题图标（folia `themeIcons`，独立于线稿开关；只画文字时不画）。
+  final bool themeIcons;
   final bool frontBokeh;
   final bool trails;
   final bool hideTrails;
@@ -517,6 +523,45 @@ class LumiereScene {
 
   final Map<String, _ShotRig> _rigs = <String, _ShotRig>{};
   double _rigAspect = -1;
+
+  /// 主题图标（每帧由样式写入；变了清掉各镜头的落点）。
+  List<IconData> _themeIcons = const <IconData>[];
+  final Map<String, List<LumierePlacedIcon>> _iconsByShot =
+      <String, List<LumierePlacedIcon>>{};
+  double _iconAspect = -1;
+
+  List<IconData> get themeIcons => _themeIcons;
+  set themeIcons(List<IconData> icons) {
+    if (listEquals(icons, _themeIcons)) return;
+    _themeIcons = icons;
+    _iconsByShot.clear();
+  }
+
+  /// 镜头 [shotIndex]（段内序号）的主题图标落点（folia `buildShotIconArts`：按
+  /// `种子:镜头:光位:icons` 播种，各镜头从第 `序号 × 2` 个图标开始轮流取，避开该光位的文字区）。
+  List<LumierePlacedIcon> _iconsOf(
+    LumiereShot shot,
+    int shotIndex,
+    _ShotRig rig,
+    double aspect,
+  ) {
+    if (_themeIcons.isEmpty) return const <LumierePlacedIcon>[];
+    if ((aspect - _iconAspect).abs() > 1e-3) {
+      _iconsByShot.clear();
+      _iconAspect = aspect;
+    }
+    return _iconsByShot.putIfAbsent(shot.id, () {
+      final TextRegion r = rig.profile.region;
+      return placeLumiereThemeIcons(
+        icons: _themeIcons,
+        aspect: aspect,
+        avoid: TextRegion(r.cx * aspect, r.cy, r.w * aspect, r.h),
+        random: lumiereRng('$seed:$shotIndex:${shot.kind}:icons'),
+        offset: shotIndex * 2,
+      );
+    });
+  }
+
   final Map<int, (String, LineShape)> _shapes = <int, (String, LineShape)>{};
   final Map<int, List<double>> _scales = <int, List<double>>{};
   final Map<int, GlyphRandoms> _randoms = <int, GlyphRandoms>{};
@@ -752,6 +797,28 @@ class LumiereScene {
           _paintLineArt(canvas, size, f, prev, 1 - handoff, local + 99);
         }
         _paintLineArt(canvas, size, f, cur, handoff, local);
+      }
+      if (s.themeIcons && _themeIcons.isNotEmpty) {
+        if (prev != null && handoff < 1) {
+          _paintThemeIcons(
+            canvas,
+            size,
+            f,
+            _iconsOf(shots[si - 1], si - 1, prev, aspect),
+            prev,
+            1 - handoff,
+            local + 99,
+          );
+        }
+        _paintThemeIcons(
+          canvas,
+          size,
+          f,
+          _iconsOf(shots[si], si, cur, aspect),
+          cur,
+          handoff,
+          local,
+        );
       }
       if (f.motion) {
         _paintStars(canvas, size, f, cur, handoff, unit, shots, unitLocal);
@@ -1251,6 +1318,42 @@ class LumiereScene {
       );
     }
     _batch.flush(canvas, _sprites, Paint()..blendMode = BlendMode.plus);
+  }
+
+  /// 主题图标：与线稿同色同节奏（镜头开始前 0.6 秒起、1.2 秒淡入），每枚错开 0.12 秒、0.32 秒
+  /// 显出（folia `themeIconsArt` 的描线时序，这里画字形整枚淡入而非逐笔描），透明度 0.5。
+  void _paintThemeIcons(
+    Canvas canvas,
+    Size size,
+    LumiereFrame f,
+    List<LumierePlacedIcon> icons,
+    _ShotRig rig,
+    double weight,
+    double local,
+  ) {
+    if (weight <= 0.01 || icons.isEmpty) return;
+    final double h = size.height;
+    final double drawT = f.motion ? (local + 0.6) / 3.6 : 99;
+    final double fade = f.motion ? smooth((local + 0.6) / 1.2) * weight : 1;
+    final double gain = math.min(1.6, rig.profile.artGain);
+    final Rgb color = f.palette.lit;
+    for (int i = 0; i < icons.length; i++) {
+      final LumierePlacedIcon icon = icons[i];
+      final double p = smooth((drawT - 0.18 - i * 0.12) / 0.32);
+      final double alpha = clamp01(0.5 * gain * fade * 0.8 * p);
+      if (alpha <= 0.004) continue;
+      canvas.save();
+      canvas.translate(icon.cx * h, icon.cy * h);
+      canvas.rotate(icon.rotation);
+      paintLyricVisualizerIconGlyph(
+        canvas,
+        icon.icon,
+        Offset.zero,
+        icon.size * h,
+        color.toColor(alpha),
+      );
+      canvas.restore();
+    }
   }
 
   Path _partialPath(LinePath path, double progress, double h) {
@@ -1786,7 +1889,7 @@ class LumiereScene {
   ) {
     final LyricVisualizerLine line = unitLines[focus];
     final double t = f.time;
-    final LumiereRng r = lumiereRng('$seed:${line.index}:burst');
+    final LumiereRng r = lumiereRng('$seed:${line.position}:burst');
     int shown = 0;
     int visible = 0;
     final List<GlyphPlacement> current = glyphs

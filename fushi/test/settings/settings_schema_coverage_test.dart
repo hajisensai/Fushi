@@ -136,6 +136,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
   'music/Animated lyrics text size':
       'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Hide animated lyrics subtitles':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle content':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle size':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle font':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
   'music/Animation background':
       'test/media/music/visualizer/lyric_visualizer_host_test.dart（宿主按请求画背景）',
   // 动作行：打开模型管理对话框；下载 / 删除与状态由专项测试咬住。

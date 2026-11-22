@@ -639,6 +639,103 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
                 .setMusicVisualizerFontScale((v / 10).round() / 10),
           ),
+          // 全局字幕偏好（folia subtitleContentMode / hideTranslationSubtitle / subtitleFontScale /
+          // subtitleTheme）：共享底部字幕与自己排译文的样式（静止 / 莫奈 / 时计）都读。
+          SettingsSwitchItem(
+            id: 'music.visualizer_subtitle_hide',
+            title: t.music_visualizer_subtitle_hide,
+            subtitle: t.music_visualizer_subtitle_hide_hint,
+            icon: FushiIcons.subtitlesOff,
+            defaultValue: false,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerSubtitleHide,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerSubtitleHide(value),
+          ),
+          SettingsSegmentedItem<LyricVisualizerSubtitleContent>(
+            id: 'music.visualizer_subtitle_content',
+            dropdown: true,
+            title: t.music_visualizer_subtitle_content,
+            subtitle: t.music_visualizer_subtitle_content_hint,
+            icon: FushiIcons.subtitles,
+            options: <SettingsSegmentOption<LyricVisualizerSubtitleContent>>[
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.translation,
+                label: t.music_visualizer_subtitle_content_translation,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.romanization,
+                label: t.music_visualizer_subtitle_content_romanization,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.both,
+                label: t.music_visualizer_subtitle_content_both,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.none,
+                label: t.music_visualizer_subtitle_content_none,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                LyricVisualizerSubtitleContent.fromPref(
+                  c.appModel.prefsRepo.musicVisualizerSubtitleContent,
+                ),
+            onChanged:
+                (SettingsContext c, LyricVisualizerSubtitleContent value) => c
+                    .appModel
+                    .prefsRepo
+                    .setMusicVisualizerSubtitleContent(value.prefValue),
+            defaultValue: LyricVisualizerSubtitleContent.defaultContent,
+          ),
+          SettingsSliderItem(
+            id: 'music.visualizer_subtitle_font_scale',
+            title: t.music_visualizer_subtitle_font_scale,
+            icon: FushiIcons.textFields,
+            min: 60,
+            max: 200,
+            divisions: 14,
+            defaultValue: 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerSubtitleFontScale * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicVisualizerSubtitleFontScale((v / 10).round() / 10),
+          ),
+          SettingsSegmentedItem<LyricVisualizerSubtitleFont>(
+            id: 'music.visualizer_subtitle_font',
+            dropdown: true,
+            title: t.music_visualizer_subtitle_font,
+            icon: FushiIcons.font,
+            options: <SettingsSegmentOption<LyricVisualizerSubtitleFont>>[
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.inherit,
+                label: t.music_visualizer_subtitle_font_inherit,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.sans,
+                label: t.music_visualizer_subtitle_font_sans,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.serif,
+                label: t.music_visualizer_subtitle_font_serif,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.mono,
+                label: t.music_visualizer_subtitle_font_mono,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                LyricVisualizerSubtitleFont.fromPref(
+                  c.appModel.prefsRepo.musicVisualizerSubtitleFont,
+                ),
+            onChanged: (SettingsContext c, LyricVisualizerSubtitleFont value) =>
+                c.appModel.prefsRepo.setMusicVisualizerSubtitleFont(
+                  value.prefValue,
+                ),
+            defaultValue: LyricVisualizerSubtitleFont.defaultFont,
+          ),
           SettingsActionItem(
             id: 'music.visualizer_models',
             title: t.music_visualizer_models_title,

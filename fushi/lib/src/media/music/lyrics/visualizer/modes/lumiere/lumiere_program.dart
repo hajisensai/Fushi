@@ -35,7 +35,7 @@ class LumiereLine {
     bool sourced = false,
     int? index,
   }) => LumiereLine(
-    index: index ?? line.index,
+    index: index ?? line.position,
     start: line.startMs / 1000,
     end: line.endMs / 1000,
     text: line.text,

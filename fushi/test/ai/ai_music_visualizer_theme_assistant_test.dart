@@ -246,6 +246,86 @@ void main() {
     });
   });
 
+  group('主题名 / 描述 / 图标', () {
+    test('图标只认封闭集合（id 或 Lucide 名），去重、保序、截到上限', () {
+      final AiMusicVisualizerTheme t = sanitizeAiMusicVisualizerTheme(
+        <String, Object?>{
+          ..._dual(),
+          'lyricsIcons': <Object?>[
+            'Moon',
+            'cloud-rain',
+            'TrainFront',
+            'moon',
+            7,
+            'Sparkles',
+            'Heart',
+            'Flame',
+            'Star',
+            'Music',
+            'Zap',
+          ],
+        },
+        source: _lyrics,
+      )!;
+      expect(t.lyricsIcons, <LyricVisualizerThemeIcon>[
+        LyricVisualizerThemeIcon.moon,
+        LyricVisualizerThemeIcon.cloud,
+        LyricVisualizerThemeIcon.sparkles,
+        LyricVisualizerThemeIcon.heart,
+        LyricVisualizerThemeIcon.flame,
+        LyricVisualizerThemeIcon.star,
+      ]);
+      expect(t.lyricsIcons, hasLength(LyricVisualizerThemeIcon.maxPerTheme));
+      // folia 把图标放在每套里：顶层没有就取任一套的。
+      final AiMusicVisualizerTheme nested = sanitizeAiMusicVisualizerTheme(
+        _dual(
+          dark: <String, Object?>{
+            ..._variant(),
+            'lyricsIcons': <String>['Umbrella', 'Leaf'],
+          },
+        ),
+        source: _lyrics,
+      )!;
+      expect(nested.lyricsIcons, <LyricVisualizerThemeIcon>[
+        LyricVisualizerThemeIcon.umbrella,
+        LyricVisualizerThemeIcon.leaf,
+      ]);
+      final AiMusicVisualizerTheme back = AiMusicVisualizerTheme.fromJson(
+        jsonDecode(jsonEncode(t.toJson())),
+      )!;
+      expect(back.lyricsIcons, t.lyricsIcons);
+    });
+
+    test('转成框架主题带上本模式的名字、描述与图标；空名字为 null', () {
+      final AiMusicVisualizerTheme t = sanitizeAiMusicVisualizerTheme(
+        <String, Object?>{
+          ..._dual(light: <String, Object?>{..._variant(), 'name': ''}),
+          'lyricsIcons': <String>['Moon', 'Flower'],
+        },
+        source: _lyrics,
+      )!;
+      final LyricVisualizerTheme dark = t.toVisualizerTheme(Brightness.dark);
+      expect(dark.name, '夜');
+      expect(dark.description, '耳机里的夜晚');
+      expect(dark.lyricsIcons, <LyricVisualizerThemeIcon>[
+        LyricVisualizerThemeIcon.moon,
+        LyricVisualizerThemeIcon.flower,
+      ]);
+      // 花没有语义字形：只认字形的样式只拿到月亮。
+      expect(dark.glyphIcons, <IconData>[LyricVisualizerThemeIcon.moon.glyph!]);
+      expect(t.toVisualizerTheme(Brightness.light).name, isNull);
+    });
+
+    test('提示词列出全部可选图标 id', () {
+      final String prompt = buildAiMusicVisualizerThemeSystemPrompt();
+      for (final LyricVisualizerThemeIcon i
+          in LyricVisualizerThemeIcon.values) {
+        expect(prompt, contains(i.wire));
+      }
+      expect(prompt, contains('"lyricsIcons"'));
+    });
+  });
+
   group('提示词', () {
     test('歌词片段跳过和声行与空行并截长', () {
       final LyricTimeline tl = LyricTimeline(

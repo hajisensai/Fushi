@@ -26,6 +26,8 @@ Future<void> _pump(
   required LyricVisualizerMode mode,
   LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
   double fontScale = 1,
+  LyricVisualizerSubtitleSettings subtitle =
+      LyricVisualizerSubtitleSettings.defaults,
 }) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pumpWidget(
@@ -41,6 +43,7 @@ Future<void> _pump(
           tunings: const <String, Map<String, Object?>>{},
           fontScale: fontScale,
           intensity: intensity,
+          subtitle: subtitle,
           onExit: () {},
           onPickStyle: () {},
         ),
@@ -80,6 +83,46 @@ void main() {
     final StillVisualizer w2 = tester.widget(find.byType(StillVisualizer));
     expect(w2.context.intensity, LyricVisualizerIntensity.calm);
     expect(w2.context.fontScale, 0.8);
+  });
+
+  testWidgets('字幕偏好进样式 context，共享字幕按它显隐、换字号', (WidgetTester tester) async {
+    const LyricVisualizerSubtitleSettings custom =
+        LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.both,
+          fontScale: 1.5,
+          font: LyricVisualizerSubtitleFont.serif,
+        );
+    await _pump(tester, mode: LyricVisualizerMode.still, subtitle: custom);
+    final StillVisualizer w = tester.widget(find.byType(StillVisualizer));
+    expect(w.context.subtitle, custom);
+
+    final Finder row = find.byKey(
+      const ValueKey<String>('lyric_visualizer_subtitle_translation'),
+    );
+    await _pump(tester, mode: LyricVisualizerMode.luminous);
+    expect(row, findsOneWidget);
+    expect(tester.widget<Text>(row).data, '夜空中的光');
+    final double base = tester.widget<Text>(row).style!.fontSize!;
+
+    await _pump(tester, mode: LyricVisualizerMode.luminous, subtitle: custom);
+    expect(row, findsOneWidget);
+    expect(tester.widget<Text>(row).style!.fontSize, closeTo(base * 1.5, 1e-9));
+    expect(tester.widget<Text>(row).style!.fontFamily, 'serif');
+
+    await _pump(
+      tester,
+      mode: LyricVisualizerMode.luminous,
+      subtitle: const LyricVisualizerSubtitleSettings(hideTranslation: true),
+    );
+    expect(row, findsNothing);
+    await _pump(
+      tester,
+      mode: LyricVisualizerMode.luminous,
+      subtitle: const LyricVisualizerSubtitleSettings(
+        content: LyricVisualizerSubtitleContent.none,
+      ),
+    );
+    expect(row, findsNothing);
   });
 
   test('每首随机：按曲目确定、不同曲目能抽到不同样式', () {

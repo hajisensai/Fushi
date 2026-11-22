@@ -6308,6 +6308,48 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 全屏歌词动画的副字幕内容（`LyricVisualizerSubtitleContent.prefValue`），默认 `translation`。
+  String get musicVisualizerSubtitleContent =>
+      (getPref('music_visualizer_subtitle_content', defaultValue: 'translation')
+          as String?) ??
+      'translation';
+
+  Future<void> setMusicVisualizerSubtitleContent(String value) async {
+    await setPref('music_visualizer_subtitle_content', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画隐藏副字幕（folia `hideTranslationSubtitle`），默认关。
+  bool get musicVisualizerSubtitleHide =>
+      getPref('music_visualizer_subtitle_hide', defaultValue: false) == true;
+
+  Future<void> setMusicVisualizerSubtitleHide(bool value) async {
+    await setPref('music_visualizer_subtitle_hide', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画副字幕字号倍数（0.6–2.0），默认 1.0。
+  double get musicVisualizerSubtitleFontScale =>
+      (getPref('music_visualizer_subtitle_font_scale', defaultValue: 1.0)
+              as num)
+          .toDouble();
+
+  Future<void> setMusicVisualizerSubtitleFontScale(double value) async {
+    await setPref('music_visualizer_subtitle_font_scale', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画副字幕字体（`LyricVisualizerSubtitleFont.prefValue`），默认 `inherit`。
+  String get musicVisualizerSubtitleFont =>
+      (getPref('music_visualizer_subtitle_font', defaultValue: 'inherit')
+          as String?) ??
+      'inherit';
+
+  Future<void> setMusicVisualizerSubtitleFont(String value) async {
+    await setPref('music_visualizer_subtitle_font', value);
+    notifyListeners();
+  }
+
   /// 全屏歌词动画的共享背景（`LyricVisualizerBackgroundEntry.id`），默认 `fluid`（歌词页背景）。
   String get musicVisualizerBackground =>
       (getPref('music_visualizer_background', defaultValue: 'fluid')

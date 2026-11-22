@@ -17,6 +17,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_asset_placement.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle_settings.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 // 音频契约（`LyricVisualizerAudio` / `LyricVisualizerAudioFrame`）与主题契约
@@ -24,6 +26,8 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.d
 // 样式与实现方只 import 本文件即可。
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_background.dart';
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_asset_placement.dart';
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle_settings.dart';
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 播放位置读口（只读、无副作用）。框架契约自带这一个最小接口，不从 app 组件层引入时钟类型：
@@ -394,11 +398,17 @@ class LyricVisualizerAssetPackSpec extends LyricVisualizerTuningSpec {
     super.visibleWhen,
     super.section,
     this.maxFiles = 64,
+    this.placement,
   });
 
   /// 素材目录名（一般是样式的 `LyricVisualizerMode.name`）。
   final String style;
   final String initial;
+
+  /// 非 null = 面板里能逐张设摆放（对齐 / 纵向对齐 / 缩放 / 透明度，folia 凝彩的图层摆放编辑器），
+  /// 值是没设过的图用的默认摆放。存在包目录的 `placement.json`，样式用
+  /// `LyricVisualizerAssetStore.loadPlacements` 读。
+  final LyricVisualizerAssetPlacement? placement;
 
   /// 一个包最多几张图（导入时超出的丢掉）。
   final int maxFiles;
@@ -457,15 +467,31 @@ class LyricVisualizerTuningPreset {
     required this.id,
     required this.label,
     required this.values,
+    this.preserve = const <String>{},
   });
 
   final String id;
   final String Function() label;
   final Map<String, Object> values;
 
-  /// 套用后的完整值（默认值叠上预设）。
-  Map<String, Object> apply(List<LyricVisualizerTuningSpec> specs) =>
-      LyricVisualizerTuning(specs, values).toMap();
+  /// 套用时保留用户当前值的参数（folia 时计的预设保留左右镜像：预设只换视角和轮盘）。
+  final Set<String> preserve;
+
+  /// 套用后的完整值：默认值叠上预设，[preserve] 里的键再换回 [current] 的值（[current] 为
+  /// null 或缺这一项时取默认）。
+  Map<String, Object> apply(
+    List<LyricVisualizerTuningSpec> specs, {
+    Map<String, Object?>? current,
+  }) {
+    if (preserve.isEmpty || current == null) {
+      return LyricVisualizerTuning(specs, values).toMap();
+    }
+    return LyricVisualizerTuning(specs, <String, Object?>{
+      ...values,
+      for (final String k in preserve)
+        if (current.containsKey(k)) k: current[k],
+    }).toMap();
+  }
 }
 
 /// 某个样式当前生效的参数（落库值按声明规整过，缺的取默认）。
@@ -556,6 +582,7 @@ class LyricVisualizerContext {
     this.intensity = LyricVisualizerIntensity.normal,
     this.theme,
     this.audio,
+    this.subtitle = LyricVisualizerSubtitleSettings.defaults,
   });
 
   final LyricTimeline timeline;
@@ -600,6 +627,9 @@ class LyricVisualizerContext {
 
   /// 本首的音频分析；null = 没有（样式经 [audioFrameAt] 自动回落歌词包络）。
   final LyricVisualizerAudio? audio;
+
+  /// 全局字幕偏好（副字幕内容 / 隐藏译文 / 字号 / 字体）。共享字幕与自己排译文的样式都读它。
+  final LyricVisualizerSubtitleSettings subtitle;
 
   /// 当前帧的歌词显示时间（毫秒）。
   int displayTimeMs() => clock.position.inMilliseconds + offsetMs;
@@ -670,6 +700,7 @@ class LyricVisualizerContext {
     LyricVisualizerIntensity? intensity,
     LyricVisualizerTheme? theme,
     LyricVisualizerAudio? audio,
+    LyricVisualizerSubtitleSettings? subtitle,
     bool clearTheme = false,
     bool clearAudio = false,
   }) => LyricVisualizerContext(
@@ -691,6 +722,7 @@ class LyricVisualizerContext {
     intensity: intensity ?? this.intensity,
     theme: clearTheme ? null : (theme ?? this.theme),
     audio: clearAudio ? null : (audio ?? this.audio),
+    subtitle: subtitle ?? this.subtitle,
   );
 
   /// 值相等：时间线 / 运行时 / 时钟 / 音频按同一对象比（它们本身就是按首缓存的），其余按值。
@@ -715,7 +747,8 @@ class LyricVisualizerContext {
       other.album == album &&
       other.onSeek == onSeek &&
       other.intensity == intensity &&
-      other.theme == theme;
+      other.theme == theme &&
+      other.subtitle == subtitle;
 
   @override
   int get hashCode => Object.hash(
@@ -736,6 +769,7 @@ class LyricVisualizerContext {
     album,
     intensity,
     theme,
+    subtitle,
   );
 }
 

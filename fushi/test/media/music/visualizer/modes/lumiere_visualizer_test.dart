@@ -15,7 +15,10 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_pr
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_rig.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_text.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_theme_icons.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_visualizer.dart';
+
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../visualizer_test_helpers.dart';
 
@@ -330,7 +333,7 @@ void main() {
           shapes: shapes,
           randoms: <GlyphRandoms>[
             for (final LyricVisualizerLine l in runtime.lines)
-              GlyphRandoms('g${l.index}', l.glyphs.length),
+              GlyphRandoms('g${l.position}', l.glyphs.length),
           ],
           time: t,
           animTime: t,
@@ -379,6 +382,72 @@ void main() {
     test('词的字号：关键词放大、虚词缩小', () {
       final List<double> s = glyphScalesOf(runtime.lines.first, 'k');
       expect(s.reduce(math.max), 1.45);
+    });
+  });
+
+  group('主题图标', () {
+    test('落点：按种子确定、避开文字区与画面边缘、彼此不重叠；没图标时为空', () {
+      const TextRegion avoid = TextRegion(0.89, 0.5, 0.8, 0.3);
+      List<LumierePlacedIcon> place(String key) => placeLumiereThemeIcons(
+        icons: const <IconData>[
+          FushiIcons.star,
+          FushiIcons.cloud,
+          FushiIcons.favorite,
+        ],
+        aspect: 16 / 9,
+        avoid: avoid,
+        random: lumiereRng(key),
+        offset: 2,
+      );
+      final List<LumierePlacedIcon> a = place('s:0:k:icons');
+      final List<LumierePlacedIcon> again = place('s:0:k:icons');
+      expect(a, isNotEmpty);
+      expect(a.length, lessThanOrEqualTo(3));
+      expect(a.first.icon, FushiIcons.favorite);
+      for (int i = 0; i < a.length; i++) {
+        final LumierePlacedIcon p = a[i];
+        expect(p.cx, again[i].cx);
+        expect(p.size, inInclusiveRange(0.085, 0.13));
+        final double half = p.size * 0.72;
+        expect(p.cx - half, greaterThanOrEqualTo(0.05 - 1e-9));
+        expect(p.cy + half, lessThanOrEqualTo(0.95 + 1e-9));
+        final bool overlaps =
+            (p.cx - avoid.cx).abs() < half + avoid.w / 2 + 0.05 &&
+            (p.cy - avoid.cy).abs() < half + avoid.h / 2 + 0.05;
+        expect(overlaps, isFalse);
+        for (int j = 0; j < i; j++) {
+          final LumierePlacedIcon o = a[j];
+          final double d = math.sqrt(
+            math.pow(o.cx - p.cx, 2) + math.pow(o.cy - p.cy, 2),
+          );
+          expect(d, greaterThanOrEqualTo((o.size + p.size) * 0.9));
+        }
+      }
+      expect(
+        placeLumiereThemeIcons(
+          icons: const <IconData>[],
+          aspect: 1.7,
+          avoid: avoid,
+          random: lumiereRng('x'),
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('带主题图标冒烟（开 / 关）', (WidgetTester tester) async {
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        lyricsIcons: <LyricVisualizerThemeIcon>[
+          LyricVisualizerThemeIcon.moon,
+          LyricVisualizerThemeIcon.star,
+        ],
+      );
+      await pumpVisualizerAcross(tester, lumiereVisualizerEntry, theme: theme);
+      await pumpVisualizerAcross(
+        tester,
+        lumiereVisualizerEntry,
+        theme: theme,
+        tuning: const <String, Object?>{LumiereTuningKeys.themeIcons: false},
+      );
     });
   });
 

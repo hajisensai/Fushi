@@ -129,7 +129,7 @@ class LineShape {
 List<double> glyphScalesOf(LyricVisualizerLine line, String seed) {
   final List<double> out = List<double>.filled(line.glyphs.length, 1);
   if (line.words.length < 2) return out;
-  final LumiereRng random = lumiereRng('$seed:${line.index}:words');
+  final LumiereRng random = lumiereRng('$seed:${line.position}:words');
   int key = -1;
   int keyLength = 0;
   for (int w = 0; w < line.words.length; w++) {

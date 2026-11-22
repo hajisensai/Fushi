@@ -756,6 +756,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_visualizer_mode',
   // bool（默认 false）：每首歌随机换一个全屏歌词动画样式。
   'music_visualizer_random',
+  // String（默认 'translation'）：全屏歌词动画的副字幕内容
+  // （LyricVisualizerSubtitleContent.prefValue：translation / romanization / both / none，
+  // 与 folia subtitleContentMode 同名）。
+  'music_visualizer_subtitle_content',
+  // String（默认 'inherit'）：全屏歌词动画副字幕字体（LyricVisualizerSubtitleFont.prefValue：
+  // inherit = 跟随歌词 / sans / serif / mono；folia subtitleTheme）。
+  'music_visualizer_subtitle_font',
+  // double（默认 1.0，0.6–2.0）：全屏歌词动画副字幕字号倍数（folia subtitleFontScale）。
+  'music_visualizer_subtitle_font_scale',
+  // bool（默认 false）：全屏歌词动画隐藏副字幕（folia hideTranslationSubtitle）。
+  'music_visualizer_subtitle_hide',
   // String（JSON，默认空）：各全屏歌词动画样式的可调参数
   // {样式 prefValue: {参数 key: 值}}，只存改过的项。
   'music_visualizer_tunings',

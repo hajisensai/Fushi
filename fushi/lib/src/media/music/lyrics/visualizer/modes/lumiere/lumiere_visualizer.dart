@@ -27,6 +27,7 @@ abstract final class LumiereTuningKeys {
   static const String echo = 'echo';
   static const String fogOctaves = 'fogOctaves';
   static const String lineArt = 'lineArt';
+  static const String themeIcons = 'themeIcons';
   static const String frontBokeh = 'frontBokeh';
   static const String trails = 'trails';
   static const String hideTrails = 'hideTrails';
@@ -163,6 +164,12 @@ final List<LyricVisualizerTuningSpec> lumiereTunings =
         label: () => t.music_visualizer_lumiere_line_art,
         initial: true,
       ),
+      // folia `themeIcons`：AI 主题的图标散落在文字区外，独立于线稿开关。
+      LyricVisualizerToggleSpec(
+        key: LumiereTuningKeys.themeIcons,
+        label: () => t.music_visualizer_lumiere_theme_icons,
+        initial: true,
+      ),
       LyricVisualizerToggleSpec(
         key: LumiereTuningKeys.frontBokeh,
         label: () => t.music_visualizer_lumiere_front_bokeh,
@@ -240,6 +247,7 @@ LumiereSettings lumiereSettingsOf(LyricVisualizerTuning tuning) =>
           .round()
           .clamp(2, 6),
       lineArt: tuning.flag(LumiereTuningKeys.lineArt, true),
+      themeIcons: tuning.flag(LumiereTuningKeys.themeIcons, true),
       frontBokeh: tuning.flag(LumiereTuningKeys.frontBokeh, true),
       trails: tuning.flag(LumiereTuningKeys.trails, true),
       hideTrails: tuning.flag(LumiereTuningKeys.hideTrails, false),
@@ -327,6 +335,7 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
       c.applyThemeFont(DefaultTextStyle.of(buildContext).style),
     );
     final LyricVisualizerTheme? theme = c.theme;
+    scene.themeIcons = theme?.glyphIcons ?? const <IconData>[];
     final bool keywords =
         theme != null &&
         theme.hasWordColors &&

@@ -7,7 +7,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
-import 'package:fushi/src/media/music/lyrics/visualizer/modes/luminous/luminous_timing.dart';
 
 import 'visualizer_test_helpers.dart';
 
@@ -62,9 +61,161 @@ class _FakeAudio implements LyricVisualizerAudio {
 
   @override
   double? get bpm => 120;
+
+  @override
+  List<LyricVisualizerBeat> get beats => <LyricVisualizerBeat>[
+    for (final int t in beatTimesMs)
+      LyricVisualizerBeat(timeMs: t, downbeat: downbeatTimesMs.contains(t)),
+  ];
+
+  @override
+  bool get hasBeatAccents => false;
+
+  @override
+  double get trackScale => 1;
+
+  @override
+  List<LyricVisualizerDrumHit> get drumHits => const <LyricVisualizerDrumHit>[];
+
+  @override
+  bool get drumsReady => false;
+
+  @override
+  List<int> get vocalOnsetsMs => const <int>[];
 }
 
 void main() {
+  group('字幕偏好', () {
+    test('双行：罗马音在前译文在后；重复、与原文相同、不可读的不要', () {
+      const LyricVisualizerSubtitleSettings both =
+          LyricVisualizerSubtitleSettings(
+            content: LyricVisualizerSubtitleContent.both,
+          );
+      expect(
+        both.rowsFor(
+          lineText: '夜空',
+          translation: '夜空中的光',
+          romanization: 'yozora',
+        ),
+        <LyricVisualizerSubtitleRow>[
+          (kind: LyricVisualizerSubtitleRowKind.romanization, text: 'yozora'),
+          (kind: LyricVisualizerSubtitleRowKind.translation, text: '夜空中的光'),
+        ],
+      );
+      expect(
+        both.rowsFor(lineText: 'a', translation: ' x ', romanization: 'x'),
+        <LyricVisualizerSubtitleRow>[
+          (kind: LyricVisualizerSubtitleRowKind.romanization, text: 'x'),
+        ],
+      );
+      expect(
+        both.rowsFor(lineText: 'same', translation: 'same', romanization: '//'),
+        isEmpty,
+      );
+      expect(
+        const LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.romanization,
+        ).rowsFor(lineText: 'a', translation: 't', romanization: 'r'),
+        <LyricVisualizerSubtitleRow>[
+          (kind: LyricVisualizerSubtitleRowKind.romanization, text: 'r'),
+        ],
+      );
+      expect(
+        const LyricVisualizerSubtitleSettings(
+          hideTranslation: true,
+        ).rowsFor(lineText: 'a', translation: 't', romanization: 'r'),
+        isEmpty,
+      );
+      expect(
+        LyricVisualizerSubtitleContent.fromPref('bogus'),
+        LyricVisualizerSubtitleContent.translation,
+      );
+      expect(
+        const LyricVisualizerSubtitleSettings(fontScale: 9).effectiveFontScale,
+        LyricVisualizerSubtitleSettings.maxFontScale,
+      );
+    });
+
+    test('字体：跟随歌词套主题字体，单独选只换字族', () {
+      const TextStyle base = TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+      );
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        fontFamily: 'serif',
+        fontWeight: FontWeight.w800,
+      );
+      expect(
+        LyricVisualizerSubtitleSettings.defaults.applyFont(base, theme),
+        base.copyWith(fontFamily: 'serif', fontWeight: FontWeight.w800),
+      );
+      expect(
+        const LyricVisualizerSubtitleSettings(
+          font: LyricVisualizerSubtitleFont.mono,
+        ).applyFont(base, theme),
+        base.copyWith(fontFamily: 'monospace'),
+      );
+      expect(
+        const LyricVisualizerSubtitleSettings(
+          font: LyricVisualizerSubtitleFont.sans,
+        ).applyFont(base, theme),
+        base,
+      );
+    });
+  });
+
+  group('主题图标', () {
+    test('认 id 与 Lucide 名、去重保序、封顶', () {
+      expect(
+        LyricVisualizerThemeIcon.fromName('CloudRain'),
+        LyricVisualizerThemeIcon.cloud,
+      );
+      expect(
+        LyricVisualizerThemeIcon.fromName('party-popper'),
+        LyricVisualizerThemeIcon.party,
+      );
+      expect(LyricVisualizerThemeIcon.fromName('nope'), isNull);
+      expect(LyricVisualizerThemeIcon.fromName(3), isNull);
+      expect(
+        LyricVisualizerThemeIcon.listFrom(<Object?>[
+          'moon',
+          'Moon',
+          'star',
+          'x',
+          'sun',
+          'heart',
+          'cloud',
+          'music',
+          'mic',
+        ]),
+        <LyricVisualizerThemeIcon>[
+          LyricVisualizerThemeIcon.moon,
+          LyricVisualizerThemeIcon.star,
+          LyricVisualizerThemeIcon.sun,
+          LyricVisualizerThemeIcon.heart,
+          LyricVisualizerThemeIcon.cloud,
+          LyricVisualizerThemeIcon.music,
+        ],
+      );
+      // wire 唯一（落盘冻结）。
+      expect(
+        LyricVisualizerThemeIcon.values
+            .map((LyricVisualizerThemeIcon i) => i.wire)
+            .toSet(),
+        hasLength(LyricVisualizerThemeIcon.values.length),
+      );
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        lyricsIcons: <LyricVisualizerThemeIcon>[
+          LyricVisualizerThemeIcon.flower,
+          LyricVisualizerThemeIcon.moon,
+        ],
+      );
+      expect(theme.glyphIcons, <IconData>[
+        LyricVisualizerThemeIcon.moon.glyph!,
+      ]);
+    });
+  });
+
   group('渲染提示（folia renderHints）', () {
     test('按时长分三档', () {
       expect(
@@ -89,33 +240,35 @@ void main() {
       );
     });
 
-    test('与流光的本地移植逐值一致', () {
-      for (final (int s, int e, int w) in <(int, int, int)>[
-        (0, 50, 50),
-        (0, 150, 120),
-        (1000, 3000, 2600),
-        (1000, 1200, 1200),
-        (0, 9000, 4000),
-      ]) {
-        final LyricVisualizerRenderHints h = LyricVisualizerRenderHints.of(
-          startMs: s,
-          endMs: e,
-          lastWordEndMs: w,
-        );
-        final LuminousRenderProfile l = LuminousRenderProfile.fromTimes(
-          startS: s / 1000,
-          endS: e / 1000,
-          lastWordEndS: w / 1000,
-        );
-        expect(
-          h.renderEndMs,
-          (l.lineRenderEnd * 1000).round(),
-          reason: '$s-$e',
-        );
-        expect(h.wordLookaheadMs, (l.wordLookahead * 1000).round());
-        expect(h.lineTransition.name, l.lineTransition.name);
-        expect(h.wordReveal.name, l.wordReveal.name);
-      }
+    test('行分级与离场窗口（folia renderHints 逐值）', () {
+      // normal：passStart = 3060，exit = min(320, max(180, 2*180)) = 320。
+      final LyricVisualizerRenderHints normal = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 3000,
+        lastWordEndMs: 3000,
+      );
+      expect(normal.lineTransition, LyricVisualizerLineTransition.normal);
+      expect(normal.wordReveal, LyricVisualizerWordReveal.normal);
+      expect(normal.wordLookaheadMs, 150);
+      expect(normal.renderEndMs, 3380);
+      final LyricVisualizerRenderHints fast = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 1150,
+        lastWordEndMs: 1150,
+      );
+      expect(fast.lineTransition, LyricVisualizerLineTransition.fast);
+      expect(fast.wordReveal, LyricVisualizerWordReveal.fast);
+      expect(fast.wordLookaheadMs, 80);
+      final LyricVisualizerRenderHints micro = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 1020,
+        lastWordEndMs: 1020,
+      );
+      expect(micro.lineTransition, LyricVisualizerLineTransition.none);
+      expect(micro.wordReveal, LyricVisualizerWordReveal.instant);
+      expect(micro.renderEndMs, 1067);
+      // 瞬显：词一直亮到行的离场窗口结束。
+      expect(micro.wordActiveEndMs(1000, 1010), micro.renderEndMs);
     });
 
     test('displayedLineAt 含句尾离场窗口', () {

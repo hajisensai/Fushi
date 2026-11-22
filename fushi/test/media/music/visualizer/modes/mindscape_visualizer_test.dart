@@ -264,13 +264,13 @@ void main() {
       )!;
       expect(p.layout.lines.length, greaterThan(2));
       expect(p.maxWidth, lessThanOrEqualTo(390 - 48));
-      // 行级歌词的词时间按行均分，单调递增。
+      // 行级歌词的词时间按 folia buildTimedWords 加权估出，单调递增；只占行时长（3–6 s）的 90%。
       double last = -1;
       for (final MindscapeSourceWord w in long.words) {
         expect(w.time.startTime, greaterThanOrEqualTo(last));
         last = w.time.startTime;
       }
-      expect(long.words.last.time.endTime, closeTo(6, 1e-9));
+      expect(long.words.last.time.endTime, closeTo(5.7, 1e-9));
     });
 
     test('副歌读共享歌曲结构；行时序读共享 renderHints', () {

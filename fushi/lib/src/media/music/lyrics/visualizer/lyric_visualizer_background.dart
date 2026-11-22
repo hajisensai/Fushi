@@ -5,6 +5,7 @@
 /// 表里（偏好 `music_visualizer_tunings`），键是 [lyricVisualizerBackgroundTuningKey]。
 library;
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -30,11 +31,21 @@ enum LyricVisualizerBackgroundKind {
 /// 样式的背景请求（`LyricVisualizerEntry.background` 按参数算出来）。
 @immutable
 class LyricVisualizerBackgroundRequest {
-  const LyricVisualizerBackgroundRequest._(this.kind) : id = null;
+  const LyricVisualizerBackgroundRequest._(this.kind)
+    : id = null,
+      tuningOverrides = const <String, Object>{};
+
+  const LyricVisualizerBackgroundRequest._full(
+    this.kind,
+    this.id,
+    this.tuningOverrides,
+  );
 
   /// 指定某个背景；[id] 不认识时回落用户选的。
-  const LyricVisualizerBackgroundRequest.specific(String this.id)
-    : kind = LyricVisualizerBackgroundKind.specific;
+  const LyricVisualizerBackgroundRequest.specific(
+    String this.id, {
+    this.tuningOverrides = const <String, Object>{},
+  }) : kind = LyricVisualizerBackgroundKind.specific;
 
   static const LyricVisualizerBackgroundRequest selected =
       LyricVisualizerBackgroundRequest._(
@@ -50,14 +61,37 @@ class LyricVisualizerBackgroundRequest {
   final LyricVisualizerBackgroundKind kind;
   final String? id;
 
+  /// 叠在用户背景参数上的覆盖（folia 样式的 `background` 配置，如浮名把「通用」背景的几何图形关掉：
+  /// `{'disableGeometricBackground': true}`）。只对画出来的那个背景声明过的参数生效，其余键忽略；
+  /// 不落库，用户存的值不变。
+  final Map<String, Object> tuningOverrides;
+
+  /// 同一请求，再叠上 [overrides]（后写的赢）。
+  LyricVisualizerBackgroundRequest withTuning(Map<String, Object> overrides) =>
+      overrides.isEmpty
+      ? this
+      : LyricVisualizerBackgroundRequest._full(kind, id, <String, Object>{
+          ...tuningOverrides,
+          ...overrides,
+        });
+
   @override
   bool operator ==(Object other) =>
       other is LyricVisualizerBackgroundRequest &&
       other.kind == kind &&
-      other.id == id;
+      other.id == id &&
+      mapEquals(other.tuningOverrides, tuningOverrides);
 
   @override
-  int get hashCode => Object.hash(kind, id);
+  int get hashCode => Object.hash(
+    kind,
+    id,
+    Object.hashAllUnordered(
+      tuningOverrides.entries.map(
+        (MapEntry<String, Object> e) => Object.hash(e.key, e.value),
+      ),
+    ),
+  );
 }
 
 /// 一个背景的注册项。
@@ -151,3 +185,16 @@ LyricVisualizerBackgroundEntry? resolveLyricVisualizerBackground(
       return null;
   }
 }
+
+/// 背景 [background] 这一帧生效的参数：用户存的值（[stored]）叠上样式请求里的覆盖
+/// （[LyricVisualizerBackgroundRequest.tuningOverrides]），再按背景声明规整。
+LyricVisualizerTuning lyricVisualizerBackgroundTuning(
+  LyricVisualizerBackgroundEntry background,
+  Map<String, Object?> stored,
+  LyricVisualizerBackgroundRequest request,
+) => LyricVisualizerTuning(
+  background.tunings,
+  request.tuningOverrides.isEmpty
+      ? stored
+      : <String, Object?>{...stored, ...request.tuningOverrides},
+);

@@ -40,36 +40,36 @@ double _fakeMeasure(String text, double fontSize) =>
 void main() {
   group('时序', () {
     test('渲染提示按行长分档', () {
-      final LuminousRenderProfile normal = LuminousRenderProfile.fromTimes(
-        startS: 1,
-        endS: 3,
-        lastWordEndS: 3,
+      final LyricVisualizerRenderHints normal = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 3000,
+        lastWordEndMs: 3000,
       );
       expect(normal.lineTransition, LyricVisualizerLineTransition.normal);
       expect(normal.wordReveal, LyricVisualizerWordReveal.normal);
-      expect(normal.wordLookahead, 0.15);
+      expect(normal.wordLookaheadMs, 150);
       // 尾巴：passStart = 3.06，exit = min(.32, max(.18, 2*.18)) = .32
-      expect(normal.lineRenderEnd, closeTo(3.38, 1e-9));
+      expect(normal.renderEndMs, 3380);
 
-      final LuminousRenderProfile fast = LuminousRenderProfile.fromTimes(
-        startS: 1,
-        endS: 1.15,
-        lastWordEndS: 1.15,
+      final LyricVisualizerRenderHints fast = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 1150,
+        lastWordEndMs: 1150,
       );
       expect(fast.lineTransition, LyricVisualizerLineTransition.fast);
       expect(fast.wordReveal, LyricVisualizerWordReveal.fast);
-      expect(fast.wordLookahead, 0.08);
+      expect(fast.wordLookaheadMs, 80);
 
-      final LuminousRenderProfile micro = LuminousRenderProfile.fromTimes(
-        startS: 1,
-        endS: 1.02,
-        lastWordEndS: 1.02,
+      final LyricVisualizerRenderHints micro = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 1020,
+        lastWordEndMs: 1020,
       );
       expect(micro.lineTransition, LyricVisualizerLineTransition.none);
       expect(micro.wordReveal, LyricVisualizerWordReveal.instant);
-      expect(micro.lineRenderEnd, closeTo(1.067, 1e-9));
+      expect(micro.renderEndMs, 1067);
       // instant：词一直亮到行尾
-      expect(micro.activeEnd(1, 1.01), micro.lineRenderEnd);
+      expect(micro.wordActiveEndMs(1000, 1010), micro.renderEndMs);
     });
 
     test('弹簧：0 起步、过冲、收敛到 1', () {
@@ -116,13 +116,13 @@ void main() {
     });
 
     test('词三态姿态', () {
-      final LuminousRenderProfile p = LuminousRenderProfile.fromTimes(
-        startS: 1,
-        endS: 3,
-        lastWordEndS: 3,
+      final LyricVisualizerRenderHints p = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 3000,
+        lastWordEndMs: 3000,
       );
       final LuminousWordSchedule s = LuminousWordSchedule.of(
-        profile: p,
+        hints: p,
         wordStart: 1.5,
         wordEnd: 2,
         mountAt: 1,
@@ -150,7 +150,7 @@ void main() {
 
       // 足够长的 active 区间后贴近 active 姿态
       final LuminousWordSchedule longActive = LuminousWordSchedule.of(
-        profile: p,
+        hints: p,
         wordStart: 1.5,
         wordEnd: 3,
         mountAt: 1,
@@ -189,13 +189,13 @@ void main() {
     });
 
     test('正文颜色与光晕包络', () {
-      final LuminousRenderProfile p = LuminousRenderProfile.fromTimes(
-        startS: 0,
-        endS: 4,
-        lastWordEndS: 4,
+      final LyricVisualizerRenderHints p = LyricVisualizerRenderHints.of(
+        startMs: 0,
+        endMs: 4000,
+        lastWordEndMs: 4000,
       );
       final LuminousWordSchedule s = LuminousWordSchedule.of(
-        profile: p,
+        hints: p,
         wordStart: 1,
         wordEnd: 2,
         mountAt: 0,
@@ -559,13 +559,13 @@ void main() {
     });
 
     test('副歌涟漪：active 时 0.5 秒从 0.2 倍扩开淡出，唱完后淡掉', () {
-      final LuminousRenderProfile p = LuminousRenderProfile.fromTimes(
-        startS: 1,
-        endS: 3,
-        lastWordEndS: 3,
+      final LyricVisualizerRenderHints p = LyricVisualizerRenderHints.of(
+        startMs: 1000,
+        endMs: 3000,
+        lastWordEndMs: 3000,
       );
       final LuminousWordSchedule s = LuminousWordSchedule.of(
-        profile: p,
+        hints: p,
         wordStart: 1.2,
         wordEnd: 2,
         mountAt: 1,
@@ -601,11 +601,6 @@ void main() {
         _line(1000, <(String, int)>[('a', 1000)]),
         _line(9000, <(String, int)>[('b', 1000)]),
       ]);
-      final LuminousRenderProfile p = LuminousRenderProfile.ofLine(
-        rt.lines.first,
-      );
-      expect(p.hints, rt.lines.first.renderHints);
-      expect(p.lineRenderEnd, rt.lines.first.renderEndMs / 1000);
       expect(luminousLineExitAt(rt, 0), rt.visualEndMsOf(0) / 1000);
     });
 

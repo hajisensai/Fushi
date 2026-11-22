@@ -26,64 +26,6 @@ const Cubic luminousEaseInOut = Cubic(0.42, 0.0, 0.58, 1.0);
 
 double _clampD(double v, double lo, double hi) => math.min(math.max(v, lo), hi);
 
-/// 一行的渲染提示（folia `resolveGlowWordRenderProfile`）：公式全在共享的
-/// [LyricVisualizerRenderHints] 里，这里只把毫秒换成流光时序用的秒。
-@immutable
-class LuminousRenderProfile {
-  const LuminousRenderProfile(this.hints);
-
-  /// [startS] / [endS] 是行起止，[lastWordEndS] 是最后一个词的结束（秒）。
-  factory LuminousRenderProfile.fromTimes({
-    required double startS,
-    required double endS,
-    required double lastWordEndS,
-  }) => LuminousRenderProfile(
-    LyricVisualizerRenderHints.of(
-      startMs: (startS * 1000).round(),
-      endMs: (endS * 1000).round(),
-      lastWordEndMs: (lastWordEndS * 1000).round(),
-    ),
-  );
-
-  /// runtime 建行时已算好的提示。
-  factory LuminousRenderProfile.ofLine(LyricVisualizerLine line) =>
-      LuminousRenderProfile(line.renderHints);
-
-  final LyricVisualizerRenderHints hints;
-
-  LyricVisualizerLineTransition get lineTransition => hints.lineTransition;
-  LyricVisualizerWordReveal get wordReveal => hints.wordReveal;
-
-  /// 这一行最晚可以留在屏上的时刻（秒）。
-  double get lineRenderEnd => hints.renderEndMs / 1000;
-
-  /// 词提前多少秒进入 active。
-  double get wordLookahead => hints.wordLookaheadMs / 1000;
-
-  /// 词的 active 结束时刻（秒；folia `getGlowWordActiveEndTime`）。
-  double activeEnd(double wordStart, double wordEnd) =>
-      hints.wordActiveEndMs(
-        (wordStart * 1000).round(),
-        (wordEnd * 1000).round(),
-      ) /
-      1000;
-
-  /// 词的显示时长（秒；folia `getGlowWordDisplayDuration`）。
-  double displayDuration(double wordStart, double wordEnd) =>
-      hints.wordDisplayDurationMs(
-        (wordStart * 1000).round(),
-        (wordEnd * 1000).round(),
-      ) /
-      1000;
-
-  @override
-  bool operator ==(Object other) =>
-      other is LuminousRenderProfile && other.hints == hints;
-
-  @override
-  int get hashCode => hints.hashCode;
-}
-
 // ---------------------------------------------------------------------------
 // 曲线工具
 // ---------------------------------------------------------------------------
@@ -237,17 +179,19 @@ class LuminousWordSchedule {
 
   /// [mountAt] = 行挂上的时刻（行起点）：folia 的词在行挂载后才开始监听时间。
   factory LuminousWordSchedule.of({
-    required LuminousRenderProfile profile,
+    required LyricVisualizerRenderHints hints,
     required double wordStart,
     required double wordEnd,
     required double mountAt,
   }) {
-    final double activeEnd = profile.activeEnd(wordStart, wordEnd);
+    final int startMs = (wordStart * 1000).round();
+    final int endMs = (wordEnd * 1000).round();
+    final double activeEnd = hints.wordActiveEndMs(startMs, endMs) / 1000;
     return LuminousWordSchedule(
-      activeAt: math.max(mountAt, wordStart - profile.wordLookahead),
+      activeAt: math.max(mountAt, wordStart - hints.wordLookaheadMs / 1000),
       passedAt: math.max(mountAt, activeEnd),
       wordStart: wordStart,
-      duration: profile.displayDuration(wordStart, wordEnd),
+      duration: hints.wordDisplayDurationMs(startMs, endMs) / 1000,
     );
   }
 
