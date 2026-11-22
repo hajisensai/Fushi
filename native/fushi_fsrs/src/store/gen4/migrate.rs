@@ -134,8 +134,13 @@ impl Step {
 pub enum Outcome {
     /// 提交了（含「之前已经提交、这次只补了封存 / 什么也不用做」，`report` 里 `resumed` 为真）。
     Committed { report: Value },
-    /// 对拍不过：没提交、没封存。报告在 [report_path]，临时文件已删（目录里只多一份报告）。
-    Aborted { report_path: PathBuf, report: Value },
+    /// 对拍不过 / 没做全 / profile 准备出错（[reason]）：没提交、没封存。报告在 [report_path]，临时文件已删（目录里
+    /// 只多一份报告）。之后 [status] 从这份报告判出同一个 [AbortReason]。
+    Aborted {
+        reason: AbortReason,
+        report_path: PathBuf,
+        report: Value,
+    },
     /// 前提补不了 / 迁移在别处进行 / 旧库正忙 / 状态不对：没有迁移，旧库没动（前提补完只写副本）。[code] 是机器可读的
     /// 分类（线上 `code`），[reason] 是给人看的原文。
     Blocked { code: BlockCode, reason: String },
@@ -165,12 +170,21 @@ impl Outcome {
                 m.insert("report".into(), report.clone());
             }
             Outcome::Aborted {
+                reason,
                 report_path,
                 report,
             } => {
                 m.insert(
                     "reportPath".into(),
                     json!(report_path.display().to_string()),
+                );
+                // 与状态命令同一形状（[Failure::json]）：本进程刚跑出的结论与重启后读到的状态说的是同一件事。
+                m.insert(
+                    "failure".into(),
+                    json!({
+                        "reason": reason.wire(),
+                        "reportPath": report_path.display().to_string(),
+                    }),
                 );
                 m.insert("report".into(), report.clone());
             }
@@ -278,8 +292,73 @@ pub enum GenState {
     MigratingElsewhere,
     /// 只有封存了的旧库（`srs4.db` 不见了）：迁移不了、也不能当新库用，要用户处理。
     SealedOldOnly,
-    /// 上一次迁移对拍不过（报告在 [REPORT_FILE]，针对的就是旁边这份旧库），或只剩一份迁移临时文件、旧库不见了。
-    MigrationFailed,
+    /// 上一次迁移没完成，原因由内核在这里判定（[Failure]）：调用方只按它说明，不自己读报告文件。
+    MigrationFailed(Failure),
+}
+
+/// [GenState::MigrationFailed] 的原因。判定只在 [status] 一处（与「是不是失败」用同一份身份核对），状态命令
+/// （`gen4_migrate_status`）与打开错误（`store/ffi.rs` `open_error`）都把它原样带出去（[GenState::json]）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// 上一次迁移中止、已撤回：报告在 [REPORT_FILE]，针对的就是旁边这份旧库（按报告的 `legacyIdentity` 认）。
+    Aborted(AbortReason),
+    /// 旧库不见了、只剩迁移临时文件 `srs4.db-migrating`：上一次跑到一半进程没了。没有报告。
+    Interrupted,
+}
+
+/// [Failure::Aborted] 的分类，按报告的 `profileVerdict`（[run] 中止时写的整体结论，`dryrun::overall`）分：
+/// 三种对用户的说法不同（对拍有差异 / 对拍没法做全 / profile 准备出错），不能都说成「没通过核对」。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AbortReason {
+    /// 对拍有差异（某个 profile 的 `verdict` 是 `fail`）。
+    Fail,
+    /// 对拍没做全（协议 3 一侧的缓存基准拿不到，例如笔记身份记录缺 `noteTypeId`；`verdict` 是 `incomplete`）。
+    Incomplete,
+    /// 某个 profile 的阶段准备出错（`error`），以及前提与阶段判得不一样的 `blocked`（bug）/ 认不出的结论。
+    Error,
+}
+
+impl AbortReason {
+    /// 报告的 `profileVerdict` → 分类。中止只发生在整体结论不是 `pass` / `empty` 时，余下认不出的一律算 [Self::Error]。
+    pub fn of_profile_verdict(verdict: Option<&str>) -> Self {
+        match verdict {
+            Some("fail") => AbortReason::Fail,
+            Some("incomplete") => AbortReason::Incomplete,
+            _ => AbortReason::Error,
+        }
+    }
+
+    pub fn wire(self) -> &'static str {
+        match self {
+            AbortReason::Fail => "fail",
+            AbortReason::Incomplete => "incomplete",
+            AbortReason::Error => "error",
+        }
+    }
+}
+
+impl Failure {
+    /// 线上名（Dart `SrsGen4MigrationFailureReason`，测试读本文件核对两边一致）：`fail` / `incomplete` / `error` /
+    /// `interrupted`。
+    pub fn wire(self) -> &'static str {
+        match self {
+            Failure::Aborted(r) => r.wire(),
+            Failure::Interrupted => "interrupted",
+        }
+    }
+
+    /// `{reason, reportPath?}`：中止的带报告路径（[dir] 里的 [REPORT_FILE]），只剩临时文件的没有。
+    pub fn json(self, dir: &Path) -> Value {
+        let mut m = Map::new();
+        m.insert("reason".into(), json!(self.wire()));
+        if let Failure::Aborted(_) = self {
+            m.insert(
+                "reportPath".into(),
+                json!(dir.join(REPORT_FILE).display().to_string()),
+            );
+        }
+        Value::Object(m)
+    }
 }
 
 impl GenState {
@@ -289,8 +368,20 @@ impl GenState {
             GenState::NeedsMigration => "needsMigration",
             GenState::MigratingElsewhere => "migratingElsewhere",
             GenState::SealedOldOnly => "sealedOldOnly",
-            GenState::MigrationFailed => "migrationFailed",
+            GenState::MigrationFailed(_) => "migrationFailed",
         }
+    }
+
+    /// 状态的线上形状 `{state, failure}`（`failure` 只有 [GenState::MigrationFailed] 有，其余 = null）：状态命令与
+    /// 打开错误共用，两处给的原因一定一样。
+    pub fn json(self, dir: &Path) -> Value {
+        json!({
+            "state": self.wire(),
+            "failure": match self {
+                GenState::MigrationFailed(f) => f.json(dir),
+                _ => Value::Null,
+            },
+        })
     }
 }
 
@@ -367,7 +458,7 @@ pub fn status(dir: &Path) -> Result<GenState, String> {
     let legacy = dir.join(LEGACY_FILE);
     if !legacy.exists() {
         return Ok(if dir.join(GEN4_TEMP).exists() {
-            GenState::MigrationFailed
+            GenState::MigrationFailed(Failure::Interrupted)
         } else {
             GenState::Ready
         });
@@ -385,18 +476,18 @@ pub fn status(dir: &Path) -> Result<GenState, String> {
     // 报告针对的是不是旁边这份旧库：按身份认（报告的 `legacyIdentity`）。原件没有协议 3 身份时报告里记的是 null，
     // 与这里的 None 相等也算——认不出「是不是同一份」，但当成「上次失败」只多一次手动重试（恢复页给「重新升级」），
     // 当成「要迁移」则服务端每次启动都自动重迁、每次再中止（交接 §11 已知项，第五波修）。按内容摘要认要扫整个旧库，
-    // 不能放进 UI isolate 上轮询的状态命令。
+    // 不能放进 UI isolate 上轮询的状态命令。认下的报告同时给出中止的原因（[AbortReason]），调用方不再自己读报告。
     let identity = seal::legacy_identity(&c)?;
-    let failed = std::fs::read_to_string(dir.join(REPORT_FILE))
+    let aborted = std::fs::read_to_string(dir.join(REPORT_FILE))
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .is_some_and(|r| {
+        .filter(|r| {
             r["verdict"] == "aborted" && r["legacyIdentity"].as_str() == identity.as_deref()
-        });
-    Ok(if failed {
-        GenState::MigrationFailed
-    } else {
-        GenState::NeedsMigration
+        })
+        .map(|r| AbortReason::of_profile_verdict(r["profileVerdict"].as_str()));
+    Ok(match aborted {
+        Some(reason) => GenState::MigrationFailed(Failure::Aborted(reason)),
+        None => GenState::NeedsMigration,
     })
 }
 
@@ -945,6 +1036,7 @@ fn with_snapshot(
         let report_path = dir.join(REPORT_FILE);
         write_json_atomically(&report_path, &report)?;
         return Ok(Outcome::Aborted {
+            reason: AbortReason::of_profile_verdict(Some(verdict)),
             report_path,
             report,
         });
