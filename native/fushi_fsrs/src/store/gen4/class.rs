@@ -63,11 +63,10 @@ use rusqlite::types::ValueRef;
 use serde_json::{Map, Value};
 
 use super::alias::{WRITER_UPTO_KEY, key_ids_by};
-use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref, body_of};
+use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref};
 use super::schema::sql;
 use crate::card_cache::ids_to_names;
 use crate::gen4::name::read_edit_key;
-use crate::gen4::op::Body4;
 use crate::gen4::stamp::StampHlc;
 use crate::gen4_ids::alias::WriterBound;
 use crate::gen4_ids::alias::strict_id;
@@ -811,14 +810,10 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一条修改的 dot 与旧 HLC 的物理时刻、计数（带旧戳且 HLC 解得开时才有）。
     fn dot_of(&self, k: i64) -> Result<DotOf, String> {
-        let e = self
-            .t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+        let Some(e) = self.t.edit_read(k, false)? else {
             return Err(format!("gen4 index: register row {k} is not an edit"));
         };
-        Ok(match &ed.stamp {
+        Ok(match &e.head.stamp {
             Some(s) => DotOf {
                 writer: s.writer.clone(),
                 seq: s.seq,
