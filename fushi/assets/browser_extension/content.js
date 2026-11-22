@@ -612,6 +612,8 @@ function fushiApplyShiftHoverLookupPref(saved) {
 }
 // 弹窗内嵌套查词（vendor/popup.js，与 app 共用）经这个钩子认同一个触发键；app 内无此钩子时它退回 Shift。
 window.__fushiScanModifierHeld = (e) => fushiScanModifierHeld(e, fushiScanModifier);
+// 弹窗内悬停也认同一个扫描延迟（反馈 r4tpeIzVuD）：与网页侧同一判据，popup.js 停稳后才扫。
+window.__fushiScanDelayMs = () => fushiEffectiveScanDelay(fushiScanModifier, fushiScanDelayMs);
 try {
   const fushiShiftPrefPromise = chrome.storage.local.get(
     ['shiftHoverLookup', 'scanModifier', 'scanDelay'],
