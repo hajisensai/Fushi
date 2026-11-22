@@ -67,6 +67,8 @@ mixin _LocalLibraryHostSyncState
       _db,
       activityLimit: limit,
     )).activityRows;
+    // 上锁作品的活动行标 locked：对端未解锁时不显示（标题就在行里）。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
     return <RemoteActivityEvent>[
       for (final ActivityEventRow r in rows)
         RemoteActivityEvent(
@@ -78,6 +80,12 @@ mixin _LocalLibraryHostSyncState
           mediaKey: r.mediaKey,
           durationMs: r.durationMs,
           charsDelta: r.charsDelta,
+          locked: switch (r.mediaKey) {
+            final String key when key.isNotEmpty => locks.isSourceKeyLocked(
+              key,
+            ),
+            _ => locks.isTitleLocked(r.title),
+          },
         ),
     ];
   }

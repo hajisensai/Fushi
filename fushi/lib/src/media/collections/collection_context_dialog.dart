@@ -192,16 +192,8 @@ Future<void> showCollectionContextDialog({
                 ),
               ),
             ),
-            // 私密：整个合集（全部成员，书或视频）不上传排行榜、不推 Bangumi。
-            mediaPrivacyToggleAction(
-              context,
-              db: db,
-              kind: TagHostKind.collection,
-              entryKey: collectionTagEntryKey(collection.id),
-              title: collection.name,
-            ),
-            // NSFW：整个合集（全部成员）的封面按「模糊 NSFW 封面」打模糊。
-            mediaNsfwToggleAction(
+            // 隐私：分级（公开 / 私密 / 上锁）与 NSFW 都作用于整个合集（全部成员）。
+            mediaPrivacyAction(
               context,
               db: db,
               kind: TagHostKind.collection,

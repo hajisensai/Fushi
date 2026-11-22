@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -87,9 +88,16 @@ Future<List<CompanionContinueCandidate>> _bookCandidates(
   AppModel appModel,
 ) async {
   final FushiDatabase db = appModel.database;
-  final List<MediaItem> books = await ReaderFushiSource.instance.getBooksFromDb(
-    appModel: appModel,
-  );
+  // 上锁（未解锁）的书不进伴屏「继续」（[MediaVisibility]）。
+  final MediaVisibility lockVisibility = await MediaVisibility.load(db);
+  final List<MediaItem> books = <MediaItem>[
+    for (final MediaItem item
+        in await ReaderFushiSource.instance.getBooksFromDb(appModel: appModel))
+      if (ReaderFushiSource.parseBookKey(item.mediaIdentifier)
+          case final String? key
+          when key == null || !lockVisibility.hidesBook(key))
+        item,
+  ];
   final Map<String, int> lastReadByUid = <String, int>{
     for (final ReaderPositionRow r in await db.getAllReaderPositions())
       r.bookUid: r.updatedAt,
@@ -142,9 +150,11 @@ Future<List<CompanionContinueCandidate>> _videoCandidates(
   FushiDatabase db,
   StatFacts facts,
 ) async {
-  final List<VideoBookRow> videos = await VideoBookRepository(
-    db,
-  ).listForShelf();
+  final MediaVisibility lockVisibility = await MediaVisibility.load(db);
+  final List<VideoBookRow> videos = <VideoBookRow>[
+    for (final VideoBookRow v in await VideoBookRepository(db).listForShelf())
+      if (!lockVisibility.hidesVideo(v.bookUid)) v,
+  ];
   final List<VideoBookRow> watching = <VideoBookRow>[
     for (final VideoBookRow v in videos)
       if (v.lastPositionMs > 0 && v.completedAt == null) v,

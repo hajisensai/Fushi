@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
@@ -871,7 +872,12 @@ class _MediaCollectionGridDetailPageState
   Widget build(BuildContext context) {
     final Map<String, Widget> cards = <String, Widget>{};
     final List<CollectionMemberEntry> entries = <CollectionMemberEntry>[];
+    // 上锁（未解锁）的成员不画（[MediaVisibility]，唯一的上锁过滤入口）。
+    final MediaVisibility lockVisibility = MediaVisibility.of(context);
     for (final MediaCollectionItemRow r in _rows) {
+      if (lockVisibility.hidesCollectionMember(r.mediaType, r.entryKey)) {
+        continue;
+      }
       final Widget? card = widget.memberCardBuilder(
         r.mediaType,
         r.entryKey,

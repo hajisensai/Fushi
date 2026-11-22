@@ -12,7 +12,6 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
-import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase, TagHostKind;
 import 'package:fushi/src/media/types/reader_media_type.dart';
@@ -229,51 +228,38 @@ final class DialogDangerAction extends DialogAction {
   bool get enabled => disabledReason == null;
 }
 
-/// 「私密」开关行（书 / 视频 / 合集 / 游戏共用一份定义）：右键菜单里直接拨动，
-/// 状态被合集 / 来源库锁定时点行打开完整的说明对话框（[showMediaPrivacyDialog]）。
-DialogToggleAction mediaPrivacyToggleAction(
+/// 「隐私」菜单项（书 / 漫画 / 字幕书 / 视频 / 合集 / 游戏 / 音乐专辑共用一份定义，
+/// 拍板台 qiqSbvdxrk）：一个入口打开 [showMediaPrivacyDialog]，里面是隐私分级（公开 /
+/// 私密 / 上锁）与 NSFW 开关——原先并排的「私密」「NSFW」两行开关合到这里。
+/// [nsfw] 缺省读写通用 NSFW 表（游戏传自己的「成人向」绑定）。
+DialogListAction mediaPrivacyAction(
   BuildContext context, {
   required FushiDatabase db,
   required TagHostKind kind,
   required String entryKey,
   required String title,
-}) => DialogToggleAction(
+  MediaNsfwBinding? nsfw,
+  VoidCallback? onChanged,
+  VoidCallback? beforeOpen,
+}) => DialogListAction(
   label: t.media_privacy_action,
-  icon: FushiIcons.lock,
-  onPressed: () => unawaited(
-    showMediaPrivacyDialog(
-      context,
-      db: db,
-      kind: kind,
-      entryKey: entryKey,
-      title: title,
-    ),
-  ),
-  loadState: () => loadMediaPrivacyToggleState(db, kind, entryKey),
-  onChanged: (bool value) => writeMediaPrivacy(db, kind, entryKey, value),
-);
-
-/// 「NSFW」开关行（书 / 视频 / 合集共用；游戏走编辑页的「成人向」）。
-DialogToggleAction mediaNsfwToggleAction(
-  BuildContext context, {
-  required FushiDatabase db,
-  required TagHostKind kind,
-  required String entryKey,
-  required String title,
-}) => DialogToggleAction(
-  label: t.media_nsfw_action,
-  icon: FushiIcons.visibilityOff,
-  onPressed: () => unawaited(
-    showMediaNsfwDialog(
-      context,
-      db: db,
-      kind: kind,
-      entryKey: entryKey,
-      title: title,
-    ),
-  ),
-  loadState: () => loadMediaNsfwToggleState(db, kind, entryKey),
-  onChanged: (bool value) => writeMediaNsfw(db, kind, entryKey, value),
+  icon: FushiIcons.shield,
+  group: DialogActionGroup.organize,
+  subtitle: t.media_privacy_action_hint,
+  onPressed: () {
+    beforeOpen?.call();
+    unawaited(
+      showMediaPrivacyDialog(
+        context,
+        db: db,
+        kind: kind,
+        entryKey: entryKey,
+        title: title,
+        nsfw: nsfw,
+        onChanged: onChanged,
+      ),
+    );
+  },
 );
 
 /// 删除类动作不可用时写在按钮 / 菜单行下方的原因说明。
