@@ -14,7 +14,10 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 
 class JellyfinMusicClient
-    implements MusicServerBrowser, MusicServerPlaylistEditing {
+    implements
+        MusicServerBrowser,
+        MusicServerPlaylistEditing,
+        MusicServerDownloading {
   JellyfinMusicClient(this.config, {http.Client? httpClient})
     : _api = JellyfinApi(
         serverUrl: config.effectiveServerUrl,
@@ -391,6 +394,18 @@ class JellyfinMusicClient
       bitrateKbps: req.transcoded ? maxBitrateKbps : track.bitrateKbps,
     );
   }
+
+  /// 原文件（`/Items/{id}/Download`：服务器上存的那份字节，支持 Range 续传；账号没有
+  /// 「允许下载媒体」权限时服务器回 401 / 403）。
+  @override
+  MusicServerDownloadSource downloadSourceFor(
+    MusicServerTrack track,
+  ) => MusicServerDownloadSource(
+    uri: Uri.parse(
+      '${config.effectiveServerUrl}/Items/${Uri.encodeComponent(track.id)}/Download',
+    ).replace(queryParameters: <String, String>{'api_key': config.accessToken}),
+    extensionHint: (track.container ?? track.codec)?.toLowerCase(),
+  );
 
   @override
   Uri? coverUri(String? coverRef, {int size = kMusicServerCoverSize}) {

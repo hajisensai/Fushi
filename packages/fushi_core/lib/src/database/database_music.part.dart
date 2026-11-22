@@ -1423,15 +1423,165 @@ mixin _FushiDbMusic on _$FushiDatabase {
   Future<void> removeMusicRemoteTrackFromLibrary(
     String trackUid, {
     required int at,
-  }) =>
-      (update(musicRemoteTracks)
-            ..where(($MusicRemoteTracksTable t) => t.trackUid.equals(trackUid)))
-          .write(
-            MusicRemoteTracksCompanion(
-              libraryAddedAt: const Value<int?>(null),
-              updatedAt: Value<int>(at),
-            ),
-          );
+  }) => removeMusicRemoteTracksFromLibrary(<String>[trackUid], at: at);
+
+  /// 一批远程曲目整体加入音乐库（专辑 / 艺人「加入音乐库」）：同一个事务，已在库的不改入库
+  /// 时刻、只刷新元数据。
+  Future<void> addMusicRemoteTracksToLibrary(
+    List<MusicRemoteTracksCompanion> tracks, {
+    required int at,
+  }) => transaction(() async {
+    final Map<String, MusicRemoteTrackRow> existing =
+        await listMusicRemoteTracks(<String>[
+          for (final MusicRemoteTracksCompanion t in tracks) t.trackUid.value,
+        ]);
+    for (final MusicRemoteTracksCompanion t in tracks) {
+      await upsertMusicRemoteTrack(
+        t.copyWith(
+          libraryAddedAt: Value<int?>(
+            existing[t.trackUid.value]?.libraryAddedAt ?? at,
+          ),
+        ),
+        at: at,
+      );
+    }
+  });
+
+  /// 一批远程曲目整体移出音乐库（只清入库时刻，行留着）。同一个事务。离线副本不在这里删：
+  /// 调用方过了撤销窗口再删（[listMusicServerDownloadsOutsideLibrary]）。
+  Future<void> removeMusicRemoteTracksFromLibrary(
+    Iterable<String> trackUids, {
+    required int at,
+  }) => transaction(() async {
+    final List<String> uids = trackUids.toSet().toList();
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      await (update(
+        musicRemoteTracks,
+      )..where(($MusicRemoteTracksTable t) => t.trackUid.isIn(part))).write(
+        MusicRemoteTracksCompanion(
+          libraryAddedAt: const Value<int?>(null),
+          updatedAt: Value<int>(at),
+        ),
+      );
+    }
+  });
+
+  /// 不在音乐库里的离线副本行（下载 ⊂ 音乐库：移出曲库后过了撤销窗口、或撤销窗口里进程
+  /// 被杀留下的，由调用方连文件一起删）。[trackUids] 给了只看这几首。
+  Future<List<MusicServerDownloadRow>> listMusicServerDownloadsOutsideLibrary([
+    Iterable<String>? trackUids,
+  ]) async {
+    final List<MusicServerDownloadRow> rows = trackUids == null
+        ? await select(musicServerDownloads).get()
+        : (await listMusicServerDownloadsOf(trackUids)).values.toList();
+    if (rows.isEmpty) return rows;
+    final Set<String> inLibrary = await musicRemoteLibraryUidsOf(<String>[
+      for (final MusicServerDownloadRow r in rows) r.trackUid,
+    ]);
+    return <MusicServerDownloadRow>[
+      for (final MusicServerDownloadRow r in rows)
+        if (!inLibrary.contains(r.trackUid)) r,
+    ];
+  }
+
+  /// 一批曲目里已在音乐库的 uid（专辑 / 艺人页的「全部 / 部分 / 不在库」）。按块查询。
+  Future<Set<String>> musicRemoteLibraryUidsOf(
+    Iterable<String> trackUids,
+  ) async {
+    final Set<String> out = <String>{};
+    for (final MusicRemoteTrackRow r in (await listMusicRemoteTracks(
+      trackUids,
+    )).values) {
+      if (r.libraryAddedAt != null) out.add(r.trackUid);
+    }
+    return out;
+  }
+
+  /// 盯一批曲目里已在音乐库的 uid（专辑 / 艺人页的入库状态随任何写路径实时更新）。一条
+  /// 查询（一张专辑 / 一位艺人的曲目数远低于 SQLite 变量上限）。
+  Stream<Set<String>> watchMusicRemoteLibraryUidsOf(List<String> trackUids) {
+    if (trackUids.isEmpty) return Stream<Set<String>>.value(const <String>{});
+    return (selectOnly(musicRemoteTracks)
+          ..addColumns(<Expression<Object>>[musicRemoteTracks.trackUid])
+          ..where(
+            musicRemoteTracks.trackUid.isIn(trackUids) &
+                musicRemoteTracks.libraryAddedAt.isNotNull(),
+          ))
+        .watch()
+        .map(
+          (List<TypedResult> rows) => <String>{
+            for (final TypedResult r in rows)
+              r.read(musicRemoteTracks.trackUid)!,
+          },
+        );
+  }
+
+  /// 记一份下完的离线副本：同一个事务里把这首写进音乐库（已在库不改入库时刻）并落副本行
+  /// （同一首重下覆盖旧行）。
+  Future<void> recordMusicServerDownload(
+    MusicServerDownloadsCompanion download, {
+    required MusicRemoteTracksCompanion track,
+    required int at,
+  }) => transaction(() async {
+    await addMusicRemoteTrackToLibrary(track, at: at);
+    await into(
+      musicServerDownloads,
+    ).insertOnConflictUpdate(download.copyWith(downloadedAt: Value<int>(at)));
+  });
+
+  /// 删一批离线副本行（文件由调用方删）。返回被删的行。
+  Future<List<MusicServerDownloadRow>> deleteMusicServerDownloads(
+    Iterable<String> trackUids,
+  ) => transaction(() async {
+    final List<String> uids = trackUids.toSet().toList();
+    final List<MusicServerDownloadRow> rows = (await listMusicServerDownloadsOf(
+      uids,
+    )).values.toList();
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      await (delete(
+        musicServerDownloads,
+      )..where(($MusicServerDownloadsTable t) => t.trackUid.isIn(part))).go();
+    }
+    return rows;
+  });
+
+  /// 一批曲目的离线副本行（按块查询）。
+  Future<Map<String, MusicServerDownloadRow>> listMusicServerDownloadsOf(
+    Iterable<String> trackUids,
+  ) async {
+    final List<String> uids = trackUids.toSet().toList();
+    final Map<String, MusicServerDownloadRow> out =
+        <String, MusicServerDownloadRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      for (final MusicServerDownloadRow r
+          in await (select(
+                musicServerDownloads,
+              )..where(($MusicServerDownloadsTable t) => t.trackUid.isIn(part)))
+              .get()) {
+        out[r.trackUid] = r;
+      }
+    }
+    return out;
+  }
+
+  /// 全部离线副本（进程内索引的初值与变化：任何写路径改了表都会推新快照）。
+  Stream<List<MusicServerDownloadRow>> watchMusicServerDownloads() =>
+      select(musicServerDownloads).watch();
 
   Future<MusicRemoteTrackRow?> getMusicRemoteTrack(String trackUid) =>
       (select(musicRemoteTracks)

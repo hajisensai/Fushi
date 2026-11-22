@@ -77129,6 +77129,543 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
   }
 }
 
+class $MusicServerDownloadsTable extends MusicServerDownloads
+    with TableInfo<$MusicServerDownloadsTable, MusicServerDownloadRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicServerDownloadsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceKeyMeta = const VerificationMeta(
+    'sourceKey',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKey = GeneratedColumn<String>(
+    'source_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _coverPathMeta = const VerificationMeta(
+    'coverPath',
+  );
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+    'cover_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sizeBytesMeta = const VerificationMeta(
+    'sizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> sizeBytes = GeneratedColumn<int>(
+    'size_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _codecMeta = const VerificationMeta('codec');
+  @override
+  late final GeneratedColumn<String> codec = GeneratedColumn<String>(
+    'codec',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _downloadedAtMeta = const VerificationMeta(
+    'downloadedAt',
+  );
+  @override
+  late final GeneratedColumn<int> downloadedAt = GeneratedColumn<int>(
+    'downloaded_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    sourceKey,
+    itemId,
+    filePath,
+    coverPath,
+    sizeBytes,
+    codec,
+    downloadedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_server_downloads';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicServerDownloadRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('source_key')) {
+      context.handle(
+        _sourceKeyMeta,
+        sourceKey.isAcceptableOrUnknown(data['source_key']!, _sourceKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKeyMeta);
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_filePathMeta);
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(
+        _coverPathMeta,
+        coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta),
+      );
+    }
+    if (data.containsKey('size_bytes')) {
+      context.handle(
+        _sizeBytesMeta,
+        sizeBytes.isAcceptableOrUnknown(data['size_bytes']!, _sizeBytesMeta),
+      );
+    }
+    if (data.containsKey('codec')) {
+      context.handle(
+        _codecMeta,
+        codec.isAcceptableOrUnknown(data['codec']!, _codecMeta),
+      );
+    }
+    if (data.containsKey('downloaded_at')) {
+      context.handle(
+        _downloadedAtMeta,
+        downloadedAt.isAcceptableOrUnknown(
+          data['downloaded_at']!,
+          _downloadedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_downloadedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid};
+  @override
+  MusicServerDownloadRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicServerDownloadRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      sourceKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_key'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      )!,
+      coverPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_path'],
+      ),
+      sizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size_bytes'],
+      ),
+      codec: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}codec'],
+      ),
+      downloadedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}downloaded_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicServerDownloadsTable createAlias(String alias) {
+    return $MusicServerDownloadsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicServerDownloadRow extends DataClass
+    implements Insertable<MusicServerDownloadRow> {
+  final String trackUid;
+
+  /// 服务器配置身份（`MusicServerBrowser.serverId`），与 [MusicRemoteTracks.sourceKey] 同义。
+  final String sourceKey;
+
+  /// 服务器侧曲目 id。
+  final String itemId;
+
+  /// 离线副本的绝对路径（本机）。
+  final String filePath;
+
+  /// 同目录里下好的专辑封面（本机绝对路径）；没有为 NULL。
+  final String? coverPath;
+
+  /// 文件大小（字节）。
+  final int? sizeBytes;
+
+  /// 文件的容器 / 编码（按文件头认出的扩展名，`flac` / `mp3` …）。
+  final String? codec;
+
+  /// 下完的时刻（毫秒）。
+  final int downloadedAt;
+  const MusicServerDownloadRow({
+    required this.trackUid,
+    required this.sourceKey,
+    required this.itemId,
+    required this.filePath,
+    this.coverPath,
+    this.sizeBytes,
+    this.codec,
+    required this.downloadedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['source_key'] = Variable<String>(sourceKey);
+    map['item_id'] = Variable<String>(itemId);
+    map['file_path'] = Variable<String>(filePath);
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    if (!nullToAbsent || sizeBytes != null) {
+      map['size_bytes'] = Variable<int>(sizeBytes);
+    }
+    if (!nullToAbsent || codec != null) {
+      map['codec'] = Variable<String>(codec);
+    }
+    map['downloaded_at'] = Variable<int>(downloadedAt);
+    return map;
+  }
+
+  MusicServerDownloadsCompanion toCompanion(bool nullToAbsent) {
+    return MusicServerDownloadsCompanion(
+      trackUid: Value(trackUid),
+      sourceKey: Value(sourceKey),
+      itemId: Value(itemId),
+      filePath: Value(filePath),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      sizeBytes: sizeBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sizeBytes),
+      codec: codec == null && nullToAbsent
+          ? const Value.absent()
+          : Value(codec),
+      downloadedAt: Value(downloadedAt),
+    );
+  }
+
+  factory MusicServerDownloadRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicServerDownloadRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      sourceKey: serializer.fromJson<String>(json['sourceKey']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      filePath: serializer.fromJson<String>(json['filePath']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      sizeBytes: serializer.fromJson<int?>(json['sizeBytes']),
+      codec: serializer.fromJson<String?>(json['codec']),
+      downloadedAt: serializer.fromJson<int>(json['downloadedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'sourceKey': serializer.toJson<String>(sourceKey),
+      'itemId': serializer.toJson<String>(itemId),
+      'filePath': serializer.toJson<String>(filePath),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'sizeBytes': serializer.toJson<int?>(sizeBytes),
+      'codec': serializer.toJson<String?>(codec),
+      'downloadedAt': serializer.toJson<int>(downloadedAt),
+    };
+  }
+
+  MusicServerDownloadRow copyWith({
+    String? trackUid,
+    String? sourceKey,
+    String? itemId,
+    String? filePath,
+    Value<String?> coverPath = const Value.absent(),
+    Value<int?> sizeBytes = const Value.absent(),
+    Value<String?> codec = const Value.absent(),
+    int? downloadedAt,
+  }) => MusicServerDownloadRow(
+    trackUid: trackUid ?? this.trackUid,
+    sourceKey: sourceKey ?? this.sourceKey,
+    itemId: itemId ?? this.itemId,
+    filePath: filePath ?? this.filePath,
+    coverPath: coverPath.present ? coverPath.value : this.coverPath,
+    sizeBytes: sizeBytes.present ? sizeBytes.value : this.sizeBytes,
+    codec: codec.present ? codec.value : this.codec,
+    downloadedAt: downloadedAt ?? this.downloadedAt,
+  );
+  MusicServerDownloadRow copyWithCompanion(MusicServerDownloadsCompanion data) {
+    return MusicServerDownloadRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      sourceKey: data.sourceKey.present ? data.sourceKey.value : this.sourceKey,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      sizeBytes: data.sizeBytes.present ? data.sizeBytes.value : this.sizeBytes,
+      codec: data.codec.present ? data.codec.value : this.codec,
+      downloadedAt: data.downloadedAt.present
+          ? data.downloadedAt.value
+          : this.downloadedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerDownloadRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('itemId: $itemId, ')
+          ..write('filePath: $filePath, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('codec: $codec, ')
+          ..write('downloadedAt: $downloadedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackUid,
+    sourceKey,
+    itemId,
+    filePath,
+    coverPath,
+    sizeBytes,
+    codec,
+    downloadedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicServerDownloadRow &&
+          other.trackUid == this.trackUid &&
+          other.sourceKey == this.sourceKey &&
+          other.itemId == this.itemId &&
+          other.filePath == this.filePath &&
+          other.coverPath == this.coverPath &&
+          other.sizeBytes == this.sizeBytes &&
+          other.codec == this.codec &&
+          other.downloadedAt == this.downloadedAt);
+}
+
+class MusicServerDownloadsCompanion
+    extends UpdateCompanion<MusicServerDownloadRow> {
+  final Value<String> trackUid;
+  final Value<String> sourceKey;
+  final Value<String> itemId;
+  final Value<String> filePath;
+  final Value<String?> coverPath;
+  final Value<int?> sizeBytes;
+  final Value<String?> codec;
+  final Value<int> downloadedAt;
+  final Value<int> rowid;
+  const MusicServerDownloadsCompanion({
+    this.trackUid = const Value.absent(),
+    this.sourceKey = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.codec = const Value.absent(),
+    this.downloadedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicServerDownloadsCompanion.insert({
+    required String trackUid,
+    required String sourceKey,
+    required String itemId,
+    required String filePath,
+    this.coverPath = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.codec = const Value.absent(),
+    required int downloadedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       sourceKey = Value(sourceKey),
+       itemId = Value(itemId),
+       filePath = Value(filePath),
+       downloadedAt = Value(downloadedAt);
+  static Insertable<MusicServerDownloadRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? sourceKey,
+    Expression<String>? itemId,
+    Expression<String>? filePath,
+    Expression<String>? coverPath,
+    Expression<int>? sizeBytes,
+    Expression<String>? codec,
+    Expression<int>? downloadedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (sourceKey != null) 'source_key': sourceKey,
+      if (itemId != null) 'item_id': itemId,
+      if (filePath != null) 'file_path': filePath,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (sizeBytes != null) 'size_bytes': sizeBytes,
+      if (codec != null) 'codec': codec,
+      if (downloadedAt != null) 'downloaded_at': downloadedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicServerDownloadsCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? sourceKey,
+    Value<String>? itemId,
+    Value<String>? filePath,
+    Value<String?>? coverPath,
+    Value<int?>? sizeBytes,
+    Value<String?>? codec,
+    Value<int>? downloadedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicServerDownloadsCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      sourceKey: sourceKey ?? this.sourceKey,
+      itemId: itemId ?? this.itemId,
+      filePath: filePath ?? this.filePath,
+      coverPath: coverPath ?? this.coverPath,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      codec: codec ?? this.codec,
+      downloadedAt: downloadedAt ?? this.downloadedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (sourceKey.present) {
+      map['source_key'] = Variable<String>(sourceKey.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (filePath.present) {
+      map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (sizeBytes.present) {
+      map['size_bytes'] = Variable<int>(sizeBytes.value);
+    }
+    if (codec.present) {
+      map['codec'] = Variable<String>(codec.value);
+    }
+    if (downloadedAt.present) {
+      map['downloaded_at'] = Variable<int>(downloadedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerDownloadsCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('itemId: $itemId, ')
+          ..write('filePath: $filePath, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('codec: $codec, ')
+          ..write('downloadedAt: $downloadedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MusicPlayEventsTable extends MusicPlayEvents
     with TableInfo<$MusicPlayEventsTable, MusicPlayEventRow> {
   @override
@@ -86405,6 +86942,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MusicPlaylistEntriesTable(this);
   late final $MusicRemoteTracksTable musicRemoteTracks =
       $MusicRemoteTracksTable(this);
+  late final $MusicServerDownloadsTable musicServerDownloads =
+      $MusicServerDownloadsTable(this);
   late final $MusicPlayEventsTable musicPlayEvents = $MusicPlayEventsTable(
     this,
   );
@@ -86564,6 +87103,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlaylists,
     musicPlaylistEntries,
     musicRemoteTracks,
+    musicServerDownloads,
     musicPlayEvents,
     musicResumePoints,
     videoThemeSongSpans,
@@ -138867,6 +139407,282 @@ typedef $$MusicRemoteTracksTableProcessedTableManager =
       MusicRemoteTrackRow,
       PrefetchHooks Function()
     >;
+typedef $$MusicServerDownloadsTableCreateCompanionBuilder =
+    MusicServerDownloadsCompanion Function({
+      required String trackUid,
+      required String sourceKey,
+      required String itemId,
+      required String filePath,
+      Value<String?> coverPath,
+      Value<int?> sizeBytes,
+      Value<String?> codec,
+      required int downloadedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicServerDownloadsTableUpdateCompanionBuilder =
+    MusicServerDownloadsCompanion Function({
+      Value<String> trackUid,
+      Value<String> sourceKey,
+      Value<String> itemId,
+      Value<String> filePath,
+      Value<String?> coverPath,
+      Value<int?> sizeBytes,
+      Value<String?> codec,
+      Value<int> downloadedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicServerDownloadsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicServerDownloadsTable> {
+  $$MusicServerDownloadsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+    column: $table.coverPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get codec => $composableBuilder(
+    column: $table.codec,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get downloadedAt => $composableBuilder(
+    column: $table.downloadedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicServerDownloadsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicServerDownloadsTable> {
+  $$MusicServerDownloadsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+    column: $table.coverPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get codec => $composableBuilder(
+    column: $table.codec,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get downloadedAt => $composableBuilder(
+    column: $table.downloadedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicServerDownloadsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicServerDownloadsTable> {
+  $$MusicServerDownloadsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceKey =>
+      $composableBuilder(column: $table.sourceKey, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<int> get sizeBytes =>
+      $composableBuilder(column: $table.sizeBytes, builder: (column) => column);
+
+  GeneratedColumn<String> get codec =>
+      $composableBuilder(column: $table.codec, builder: (column) => column);
+
+  GeneratedColumn<int> get downloadedAt => $composableBuilder(
+    column: $table.downloadedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MusicServerDownloadsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicServerDownloadsTable,
+          MusicServerDownloadRow,
+          $$MusicServerDownloadsTableFilterComposer,
+          $$MusicServerDownloadsTableOrderingComposer,
+          $$MusicServerDownloadsTableAnnotationComposer,
+          $$MusicServerDownloadsTableCreateCompanionBuilder,
+          $$MusicServerDownloadsTableUpdateCompanionBuilder,
+          (
+            MusicServerDownloadRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicServerDownloadsTable,
+              MusicServerDownloadRow
+            >,
+          ),
+          MusicServerDownloadRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicServerDownloadsTableTableManager(
+    _$FushiDatabase db,
+    $MusicServerDownloadsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicServerDownloadsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicServerDownloadsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicServerDownloadsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> sourceKey = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<String> filePath = const Value.absent(),
+                Value<String?> coverPath = const Value.absent(),
+                Value<int?> sizeBytes = const Value.absent(),
+                Value<String?> codec = const Value.absent(),
+                Value<int> downloadedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerDownloadsCompanion(
+                trackUid: trackUid,
+                sourceKey: sourceKey,
+                itemId: itemId,
+                filePath: filePath,
+                coverPath: coverPath,
+                sizeBytes: sizeBytes,
+                codec: codec,
+                downloadedAt: downloadedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String sourceKey,
+                required String itemId,
+                required String filePath,
+                Value<String?> coverPath = const Value.absent(),
+                Value<int?> sizeBytes = const Value.absent(),
+                Value<String?> codec = const Value.absent(),
+                required int downloadedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerDownloadsCompanion.insert(
+                trackUid: trackUid,
+                sourceKey: sourceKey,
+                itemId: itemId,
+                filePath: filePath,
+                coverPath: coverPath,
+                sizeBytes: sizeBytes,
+                codec: codec,
+                downloadedAt: downloadedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicServerDownloadsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicServerDownloadsTable,
+      MusicServerDownloadRow,
+      $$MusicServerDownloadsTableFilterComposer,
+      $$MusicServerDownloadsTableOrderingComposer,
+      $$MusicServerDownloadsTableAnnotationComposer,
+      $$MusicServerDownloadsTableCreateCompanionBuilder,
+      $$MusicServerDownloadsTableUpdateCompanionBuilder,
+      (
+        MusicServerDownloadRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicServerDownloadsTable,
+          MusicServerDownloadRow
+        >,
+      ),
+      MusicServerDownloadRow,
+      PrefetchHooks Function()
+    >;
+
 typedef $$MusicPlayEventsTableCreateCompanionBuilder =
     MusicPlayEventsCompanion Function({
       Value<int> id,
@@ -143628,6 +144444,8 @@ class $FushiDatabaseManager {
       $$MusicPlaylistEntriesTableTableManager(_db, _db.musicPlaylistEntries);
   $$MusicRemoteTracksTableTableManager get musicRemoteTracks =>
       $$MusicRemoteTracksTableTableManager(_db, _db.musicRemoteTracks);
+  $$MusicServerDownloadsTableTableManager get musicServerDownloads =>
+      $$MusicServerDownloadsTableTableManager(_db, _db.musicServerDownloads);
   $$MusicPlayEventsTableTableManager get musicPlayEvents =>
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
   $$MusicResumePointsTableTableManager get musicResumePoints =>

@@ -1215,6 +1215,7 @@ void _requireOneVideoMetadataOwner({
     MusicPlaylists,
     MusicPlaylistEntries,
     MusicRemoteTracks,
+    MusicServerDownloads,
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
@@ -3678,6 +3679,14 @@ class FushiDatabase extends _$FushiDatabase
         // 同版本的解锁口令摘要表（随上锁标记同步 / 备份）。
         if (!await _tableExists('media_lock_credentials')) {
           await m.createTable(mediaLockCredentials);
+        }
+      }
+      if (from < 172) {
+        // v172：music_server_downloads——Jellyfin / Subsonic 曲目的离线副本（设备本地，
+        // 一首一行：本机文件路径 + 服务器身份 + 条目 id，不存带凭据的地址）。纯新表、
+        // 不动数据；幂等守卫同 v148。
+        if (!await _tableExists('music_server_downloads')) {
+          await m.createTable(musicServerDownloads);
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

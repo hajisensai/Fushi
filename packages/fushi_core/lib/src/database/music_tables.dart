@@ -353,6 +353,45 @@ class MusicRemoteTracks extends Table {
   Set<Column> get primaryKey => <Column>{trackUid};
 }
 
+/// 服务器曲目的离线副本（schema v172）：Jellyfin / Subsonic 曲目下载到本机的原文件，一首
+/// 一行。**设备本地**（不进备份、不同步）：[filePath] 是这台设备上的绝对路径。
+///
+/// 身份 [trackUid] 与 [MusicRemoteTracks] 同一个（`musicServerTrackUid(serverId, itemId)`），
+/// 播放这首时只要这里有行、文件还在，就放本地文件而不串流——歌词缓存 / 断点 / 统计仍挂在
+/// 同一个 uid 上；服务器离线或这台设备上的配置删了也照样能放。表里只有服务器配置身份与
+/// 服务器侧条目 id（[sourceKey] / [itemId]），**不存任何带凭据的地址**。
+///
+/// 下完的曲目同时在音乐库里（[MusicRemoteTracks.libraryAddedAt] 非空，离线时从曲库进入）；
+/// 「从音乐库移除」连带删掉离线副本。
+@DataClassName('MusicServerDownloadRow')
+class MusicServerDownloads extends Table {
+  TextColumn get trackUid => text()();
+
+  /// 服务器配置身份（`MusicServerBrowser.serverId`），与 [MusicRemoteTracks.sourceKey] 同义。
+  TextColumn get sourceKey => text()();
+
+  /// 服务器侧曲目 id。
+  TextColumn get itemId => text()();
+
+  /// 离线副本的绝对路径（本机）。
+  TextColumn get filePath => text()();
+
+  /// 同目录里下好的专辑封面（本机绝对路径）；没有为 NULL。
+  TextColumn get coverPath => text().nullable()();
+
+  /// 文件大小（字节）。
+  IntColumn get sizeBytes => integer().nullable()();
+
+  /// 文件的容器 / 编码（按文件头认出的扩展名，`flac` / `mp3` …）。
+  TextColumn get codec => text().nullable()();
+
+  /// 下完的时刻（毫秒）。
+  IntColumn get downloadedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{trackUid};
+}
+
 /// 逐曲断点续播（v146，反馈 QAondMh4M5）：每首曲目上次停在哪，一首一行。
 ///
 /// 与 [MusicPlayEvents] 同一身份（`trackUid`：路径 + 起点 + 音频属性派生，改标签不换；
