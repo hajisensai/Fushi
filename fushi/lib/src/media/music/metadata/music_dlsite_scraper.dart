@@ -213,14 +213,10 @@ class MusicDlsiteScraper {
 
   /// R-18 作品的专辑默认是 NSFW：只在这张专辑的 NSFW 标记从没动过（两只时钟都空）
   /// 时标上。用户取消过（或别的设备同步来取消）就尊重用户，重取资料不再标回去。
-  Future<void> _markAdultByDefault(FushiDatabase db, String albumUid) async {
-    final MediaNsfwClock clock = await db.mediaNsfwClock(
-      TagHostKind.musicAlbum,
-      albumUid,
-    );
-    if (clock.nsfwAt != null || clock.clearedAt != null) return;
-    await db.setMediaNsfw(TagHostKind.musicAlbum, albumUid, true, at: _clock());
-  }
+  /// 「没动过才标」在库里一条语句判定并写入，与并发落库的取消之间没有空档
+  /// （HBK-AUDIT-216）。
+  Future<void> _markAdultByDefault(FushiDatabase db, String albumUid) => db
+      .markMediaNsfwIfUndecided(TagHostKind.musicAlbum, albumUid, at: _clock());
 
   /// 专辑没有目录封面、曲目也没有内嵌封面、封面没上锁 → 用 DLsite 主图。
   /// 目录图 / 内嵌图是用户自己文件里的，优先级更高，不覆盖。
@@ -282,15 +278,24 @@ class MusicDlsiteScraper {
 
   /// 曲库里认得出编号、还没取过资料的专辑逐张取（串行，DLsite 客户端自带节流）。
   /// 同一部作品分在几张专辑里（分卷 / 特典）：资料只取一次，分级标记与封面各自补。
+  ///
+  /// 分两趟：第一趟只读（认编号、查缓存），不下载不写库；第二趟逐项落地，**每一项
+  /// （缓存命中的专辑、要联网取的作品、同作品的其余专辑）开始前都查 [cancelled]**——
+  /// 取消后不再有任何下载、改元数据或写 NSFW（HBK-AUDIT-229）。
   Future<MusicDlsiteLibraryReport> scrapeLibrary({
     bool Function()? cancelled,
   }) async {
     final MusicDlsiteLibraryReport report = MusicDlsiteLibraryReport();
     final FushiDatabase? db = _database();
     if (db == null) return report;
+    bool isCancelled() => cancelled?.call() ?? false;
+    final List<_CachedApply> cachedHits = <_CachedApply>[];
     final Map<DlsiteWorkId, List<_AlbumTracks>> todo =
         <DlsiteWorkId, List<_AlbumTracks>>{};
+    final Map<DlsiteWorkId, DlsiteWork?> cachedWorks =
+        <DlsiteWorkId, DlsiteWork?>{};
     for (final MusicAlbumRow album in await db.listMusicAlbums()) {
+      if (isCancelled()) return report;
       final List<MusicTrackRow> tracks = await db.listMusicTracks(
         albumUid: album.albumUid,
       );
@@ -301,16 +306,33 @@ class MusicDlsiteScraper {
         pending.add((album: album, tracks: tracks));
         continue;
       }
-      final MusicDlsiteAlbumInfo cached = await _cached(db, id);
-      if (cached.fetched) {
-        await _applyToAlbum(db, album, tracks, id, cached.snapshot?.work);
-        continue;
+      if (!cachedWorks.containsKey(id)) {
+        final MusicDlsiteAlbumInfo cached = await _cached(db, id);
+        if (!cached.fetched) {
+          todo[id] = <_AlbumTracks>[(album: album, tracks: tracks)];
+          continue;
+        }
+        cachedWorks[id] = cached.snapshot?.work;
       }
-      todo[id] = <_AlbumTracks>[(album: album, tracks: tracks)];
+      cachedHits.add((
+        target: (album: album, tracks: tracks),
+        id: id,
+        work: cachedWorks[id],
+      ));
     }
     report.total = todo.length;
+    for (final _CachedApply hit in cachedHits) {
+      if (isCancelled()) return report;
+      await _applyToAlbum(
+        db,
+        hit.target.album,
+        hit.target.tracks,
+        hit.id,
+        hit.work,
+      );
+    }
     for (final MapEntry<DlsiteWorkId, List<_AlbumTracks>> job in todo.entries) {
-      if (cancelled?.call() ?? false) break;
+      if (isCancelled()) break;
       final _AlbumTracks first = job.value.first;
       try {
         final MusicDlsiteAlbumInfo info = await _scrape(
@@ -326,6 +348,7 @@ class MusicDlsiteScraper {
           report.notFound++;
         }
         for (final _AlbumTracks other in job.value.skip(1)) {
+          if (isCancelled()) return report;
           await _applyToAlbum(db, other.album, other.tracks, job.key, work);
         }
       } on DlsiteException {
@@ -337,6 +360,13 @@ class MusicDlsiteScraper {
 }
 
 typedef _AlbumTracks = ({MusicAlbumRow album, List<MusicTrackRow> tracks});
+
+/// 资料已缓存的专辑：第二趟直接按缓存的作品资料补分级标记与封面。
+typedef _CachedApply = ({
+  _AlbumTracks target,
+  DlsiteWorkId id,
+  DlsiteWork? work,
+});
 
 /// 控制通道输出的 JSON 形状（`music.album.dlsite`）。
 Map<String, Object?> musicDlsiteInfoJson(MusicDlsiteAlbumInfo info) {

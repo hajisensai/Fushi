@@ -22,6 +22,7 @@ import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -2475,8 +2476,13 @@ class AppModel
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
       // NSFW 专辑的封面不进系统媒体控件 / 锁屏；偏好未就绪时按开关默认（开）处理。
+      // 从 AppModel 自身派生：它转发当前偏好仓库的每次变化（换档案换仓库也跟得上），
+      // 开关值真的变了才通知会话重发媒体卡（HBK-AUDIT-217）。
       watchNsfw: watchMediaNsfwSnapshot,
-      blurNsfwCovers: () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
+      blurNsfwCovers: DerivedValueListenable<bool>(
+        this,
+        () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
+      ),
       resumeMode: () => isPreferencesReady
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,

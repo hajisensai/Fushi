@@ -84,6 +84,13 @@
 |---|:--:|:--:|---|
 | [BUG-5225](bugs/BUG-5225-sync-bytes-asset-cap-unenforced.md) | ✅ | ✅ | 同步字节资产 256 MiB 读取上限在 OneDrive / Dropbox / SFTP / FTP / 本机目录上没生效 |
 | [BUG-5224](bugs/BUG-5224-stream-video-push-deleted-during-host-get.md) | ✅ | ✅ | 互联流媒体书：等 host 清单期间本机删掉的仍被注册给 host |
+> 共 4543 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5245](bugs/BUG-5245-music-media-session-blur-toggle-stale-art.md) | ✅ | ✅ | 暂停时切换「模糊 NSFW 封面」，锁屏 / 媒体卡不更新，仍显示原图 |
+| [BUG-5244](bugs/BUG-5244-music-dlsite-library-cancel-cached.md) | ✅ | ✅ | DLsite 整库识别取消后，缓存命中的专辑仍继续下载主图、写封面和 NSFW |
+| [BUG-5243](bugs/BUG-5243-music-dlsite-adult-mark-race.md) | ✅ | ✅ | DLsite 整库识别的 R-18 自动标记与并发取消有空档，取消可被盖回 NSFW |
 | [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
 | [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |
