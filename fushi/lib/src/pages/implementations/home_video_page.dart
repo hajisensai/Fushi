@@ -3463,6 +3463,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 仅为穷尽 switch。
       case DropIntent.importNewManga:
       case DropIntent.unsupportedMangaArchive:
+      case DropIntent.importBookArchive:
       case DropIntent.ignore:
         break;
     }
