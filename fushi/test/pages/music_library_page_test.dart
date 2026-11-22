@@ -318,6 +318,52 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('「继续收听」只在曲库 / 推荐：切到「在线 › 来源」不在管理页上方钉播放卡', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    await tester.runAsync(
+      () => db.startMusicPlayEvent(trackUid: 't1', startedAt: 1),
+    );
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await tester.runAsync(prefs.loadFromDb);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wirePreferencesForTesting(prefs)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(
+      find.byKey(const ValueKey<String>('music-continue-hero')),
+      findsOneWidget,
+      reason: '听过的曲目在曲库页上方给「继续收听」',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+    );
+    for (int i = 0; i < 3; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.byKey(const ValueKey<String>('music-online-sources-view')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-continue-hero')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('专辑卡右键「从音乐库移除」：整张专辑写墓碑、从专辑墙消失，撤销放回（拍板台 mmXVwo0Ibv）', (
     WidgetTester tester,
   ) async {

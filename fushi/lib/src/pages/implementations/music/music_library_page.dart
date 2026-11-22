@@ -374,6 +374,13 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// `MediaQuery` 顶部内边距让位（[musicBrowsePagePadding]），能接住页头的让位；曲库
   /// 各分区的列表顶部只留固定间距（`music_track_list.dart` 等），接不住，保持排在
   /// 大字下面。
+  /// 停在「在线 › 来源 / 插件」这两个管理视图：它们自挂 `.fushiplug` 落点，也不带
+  /// 「继续收听」卡。
+  bool get _inOnlineManageView =>
+      !_importOpen &&
+      (_section == MusicLibrarySection.sources ||
+          _section == MusicLibrarySection.plugins);
+
   bool _chromeFloats(BuildContext context) =>
       shellRedesignActive(context) &&
       !_importOpen &&
@@ -1190,7 +1197,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     final bool redesign = shellRedesignActive(context);
     final bool floats = _chromeFloats(context);
     _floatingNow = floats;
-    final Widget? hero = snap == null || _importOpen
+    // 「继续收听」属于曲库与推荐：「在线 › 来源 / 插件」是管理页，不在其上方钉播放卡。
+    final Widget? hero = snap == null || _importOpen || _inOnlineManageView
         ? null
         : _buildContinueHero(snap);
     final Widget sections = _importOpen
@@ -1212,10 +1220,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     return FushiFileDropTarget(
       debugLabel: 'music-library',
       // 「在线 › 来源 / 插件」自己挂 .fushiplug 落点（BUG-4712），同理让位。
-      enabled:
-          !_importOpen &&
-          _section != MusicLibrarySection.sources &&
-          _section != MusicLibrarySection.plugins,
+      enabled: !_importOpen && !_inOnlineManageView,
       onDrop: _handleMusicDrop,
       child: MusicBarReserve(
         child: Focus(
