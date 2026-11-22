@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 896,
+ "count": 895,
  "settings": [
   {
    "key": "appearance.language",
@@ -287,6 +287,192 @@
     "zh-CN": "关闭时只计歌词页上查词、制卡或循环之后的收听时间"
    },
    "default": false
+  },
+  {
+   "key": "study_goals.list",
+   "kind": "custom",
+   "type": "custom",
+   "title": {
+    "en": "Your goals",
+    "zh-CN": "我的目标"
+   },
+   "path": {
+    "en": "General › Study timer › Goals › Your goals",
+    "zh-CN": "通用 › 学习计时 › 目标 › 我的目标"
+   }
+  },
+  {
+   "key": "study_goals.text_unit",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Text unit",
+    "zh-CN": "文字单位"
+   },
+   "path": {
+    "en": "General › Study timer › Goals › What to count",
+    "zh-CN": "通用 › 学习计时 › 目标 › 计什么"
+   },
+   "description": {
+    "en": "Auto counts words for languages written with spaces (English, French…) and characters for the rest.",
+    "zh-CN": "自动：用空格分词的语言（英语、法语等）按词计，其余按字计。"
+   },
+   "options": [
+    {
+     "value": "auto",
+     "label": {
+      "en": "Auto",
+      "zh-CN": "自动"
+     }
+    },
+    {
+     "value": "chars",
+     "label": {
+      "en": "Characters",
+      "zh-CN": "字数"
+     }
+    },
+    {
+     "value": "words",
+     "label": {
+      "en": "Words",
+      "zh-CN": "词数"
+     }
+    }
+   ],
+   "default": "auto"
+  },
+  {
+   "key": "study_goals.week_start",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Week starts on",
+    "zh-CN": "每周开始于"
+   },
+   "path": {
+    "en": "General › Study timer › Goals › What to count",
+    "zh-CN": "通用 › 学习计时 › 目标 › 计什么"
+   },
+   "description": {
+    "en": "Used by weekly goals, the Today tile and weekly statistics",
+    "zh-CN": "每周目标、「今日」格和每周统计都按它算"
+   },
+   "options": [
+    {
+     "value": "1",
+     "label": {
+      "en": "Monday",
+      "zh-CN": "周一"
+     }
+    },
+    {
+     "value": "7",
+     "label": {
+      "en": "Sunday",
+      "zh-CN": "周日"
+     }
+    },
+    {
+     "value": "6",
+     "label": {
+      "en": "Saturday",
+      "zh-CN": "周六"
+     }
+    }
+   ],
+   "default": "1"
+  },
+  {
+   "key": "study_goals.today_layout",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Layout",
+    "zh-CN": "布局"
+   },
+   "path": {
+    "en": "General › Study timer › Goals › Today tile",
+    "zh-CN": "通用 › 学习计时 › 目标 › 「今日」格"
+   },
+   "description": {
+    "en": "Focus shows one goal large; swipe to see the others. Overview lists all your goals at once.",
+    "zh-CN": "聚焦：大字显示一个目标，左右滑动看其他目标。总览：一次列出所有目标。"
+   },
+   "options": [
+    {
+     "value": "focus",
+     "label": {
+      "en": "Focus",
+      "zh-CN": "聚焦"
+     }
+    },
+    {
+     "value": "overview",
+     "label": {
+      "en": "Overview",
+      "zh-CN": "总览"
+     }
+    }
+   ],
+   "default": "focus"
+  },
+  {
+   "key": "study_goals.today_main",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Main goal",
+    "zh-CN": "主目标"
+   },
+   "path": {
+    "en": "General › Study timer › Goals › Today tile",
+    "zh-CN": "通用 › 学习计时 › 目标 › 「今日」格"
+   },
+   "options": [
+    {
+     "value": "",
+     "label": {
+      "en": "First goal",
+      "zh-CN": "第一个目标"
+     }
+    }
+   ],
+   "default": ""
+  },
+  {
+   "key": "study_goals.today_swipe",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Swipe through",
+    "zh-CN": "左右滑动"
+   },
+   "path": {
+    "en": "General › Study timer › Goals › Today tile",
+    "zh-CN": "通用 › 学习计时 › 目标 › 「今日」格"
+   },
+   "description": {
+    "en": "Which goals the Today tile shows when you swipe it",
+    "zh-CN": "「今日」格左右滑动时显示哪些目标"
+   },
+   "options": [
+    {
+     "value": "daily",
+     "label": {
+      "en": "Daily goals",
+      "zh-CN": "每日目标"
+     }
+    },
+    {
+     "value": "all",
+     "label": {
+      "en": "All goals",
+      "zh-CN": "全部目标"
+     }
+    }
+   ],
+   "default": "daily"
   },
   {
    "key": "general.listening_reminder",
@@ -13887,139 +14073,6 @@
     "en": "Long-press your home screen, choose Widgets, then pick Fushi.",
     "zh-CN": "长按主屏幕，选择「小组件」，再选 Fushi。"
    },
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_total_minutes",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Study time",
-    "zh-CN": "学习时长"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 1440,
-   "default": 0,
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_reading_minutes",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Reading time",
-    "zh-CN": "阅读时长"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 1440,
-   "default": 0,
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_listening_minutes",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Listening time",
-    "zh-CN": "听力时长"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 1440,
-   "default": 0,
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_video_minutes",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Video time",
-    "zh-CN": "视频时长"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 1440,
-   "default": 0,
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_reviews",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Reviews",
-    "zh-CN": "复习张数"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 1000000,
-   "default": 0,
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_mined_cards",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Cards mined",
-    "zh-CN": "制卡张数"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 1000000,
-   "default": 0,
-   "platforms": [
-    "android"
-   ]
-  },
-  {
-   "key": "widgets.goal_chars",
-   "kind": "value",
-   "type": "number",
-   "title": {
-    "en": "Characters read",
-    "zh-CN": "阅读字数"
-   },
-   "path": {
-    "en": "Home-screen widgets › Daily goals",
-    "zh-CN": "主屏幕小组件 › 每日目标"
-   },
-   "min": 0,
-   "max": 7000000,
-   "default": 0,
    "platforms": [
     "android"
    ]

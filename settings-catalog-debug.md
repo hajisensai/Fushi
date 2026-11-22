@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 896 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 895 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -21,6 +21,12 @@ How to read this:
 | `reading.stats_idle_timeout_minutes` | Idle timeout | 空闲判定时长 | Study timer | number | 1.0 – 120.0 | `10.0` | Stop counting study time after this many minutes without turning a page, scrolling, looking up a word or playing video. Applies to novels, PDFs, manga and video; video always counts while it plays. |
 | `reading.stats_clock_start_mode` | Reading timer start | 阅读计时开始方式 | Study timer | choice | `manual`, `onOpen`, `onPageTurn` | `onOpen` | When the reading timer starts after you open a book (applies the next time a book is opened). You can pause or resume it anytime with the timer button or P. |
 | `music.listening_counts_as_study` | Count listening as study time | 听歌计入学习 | Study timer | bool |  | `false` | When off, only listening after a lookup, card or loop on the lyrics page counts |
+| `study_goals.list` | Your goals | 我的目标 | Study timer › Goals › Your goals | custom |  |  |  |
+| `study_goals.text_unit` | Text unit | 文字单位 | Study timer › Goals › What to count | choice | `auto`, `chars`, `words` | `auto` | Auto counts words for languages written with spaces (English, French…) and characters for the rest. |
+| `study_goals.week_start` | Week starts on | 每周开始于 | Study timer › Goals › What to count | choice | `1`, `7`, `6` | `1` | Used by weekly goals, the Today tile and weekly statistics |
+| `study_goals.today_layout` | Layout | 布局 | Study timer › Goals › Today tile | choice | `focus`, `overview` | `focus` | Focus shows one goal large; swipe to see the others. Overview lists all your goals at once. |
+| `study_goals.today_main` | Main goal | 主目标 | Study timer › Goals › Today tile | choice |  |  |  |
+| `study_goals.today_swipe` | Swipe through | 左右滑动 | Study timer › Goals › Today tile | choice | `daily`, `all` | `daily` | Which goals the Today tile shows when you swipe it |
 | `general.listening_reminder` | Listening break reminder | 连续收听提醒 | Hearing care | bool |  | `false` | When music, audiobooks or video have played continuously for the chosen time, remind you once to rest your ears. Volume and playback are left alone. |
 | `general.listening_reminder_minutes` | Remind after | 提醒间隔 | Hearing care | choice | `15`, `30`, `45`, `60`, `90`, `120` | `60` |  |
 | `system.low_memory_mode` | Low memory mode | 小内存模式 | Performance and getting started | bool |  | `false` | Reduce cache and memory usage for low-end devices. Some changes take effect after restart. |
@@ -905,13 +911,6 @@ How to read this:
 | Key | Name | 名称 | Where | Type | Values | Default | Notes |
 |---|---|---|---|---|---|---|---|
 | `widgets.howto` | How to add | 如何添加 | Add a widget | status |  |  | Long-press your home screen, choose Widgets, then pick Fushi. · *only on android* |
-| `widgets.goal_total_minutes` | Study time | 学习时长 | Daily goals | number | 0 – 1440 | `0` | *only on android* |
-| `widgets.goal_reading_minutes` | Reading time | 阅读时长 | Daily goals | number | 0 – 1440 | `0` | *only on android* |
-| `widgets.goal_listening_minutes` | Listening time | 听力时长 | Daily goals | number | 0 – 1440 | `0` | *only on android* |
-| `widgets.goal_video_minutes` | Video time | 视频时长 | Daily goals | number | 0 – 1440 | `0` | *only on android* |
-| `widgets.goal_reviews` | Reviews | 复习张数 | Daily goals | number | 0 – 1000000 | `0` | *only on android* |
-| `widgets.goal_mined_cards` | Cards mined | 制卡张数 | Daily goals | number | 0 – 1000000 | `0` | *only on android* |
-| `widgets.goal_chars` | Characters read | 阅读字数 | Daily goals | number | 0 – 7000000 | `0` | *only on android* |
 | `widgets.hide_titles` | Hide titles | 隐藏标题 | Privacy | bool |  | `false` | Hide book and video titles on widgets by default. Each widget can override this. · *only on android* |
 | `widgets.hide_definitions` | Hide definitions | 隐藏释义 | Privacy | bool |  | `false` | Hide word definitions on the vocabulary widget by default. · *only on android* |
 | `widgets.hide_profile` | Hide profile name | 隐藏配置名 | Privacy | bool |  | `false` | Do not show the profile name on widgets. · *only on android* |
