@@ -50,6 +50,9 @@ import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
     show LyricsScript;
@@ -609,6 +612,64 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     if (layout == _layout) return;
     setState(() => _layout = layout);
     unawaited(appModel.prefsRepo.setMusicLyricsLayout(layout.prefValue));
+  }
+
+  // ── 全屏歌词动画（folia-major 式样式；纯观赏，点一下退出） ─────────────────
+
+  /// 正在全屏歌词动画里。不落库：每次进歌词页回到原布局。
+  bool _visualizerOn = false;
+
+  /// 本首实际用的样式：开了「每首随机」时按曲目种子挑。
+  LyricVisualizerMode _visualizerModeFor(MusicPlayItem? item) {
+    if (appModel.prefsRepo.musicVisualizerRandom && item != null) {
+      return lyricVisualizerRandomModeFor(item.trackUid);
+    }
+    return LyricVisualizerMode.fromPref(appModel.prefsRepo.musicVisualizerMode);
+  }
+
+  /// 选样式（工具栏按钮 / 全屏里的悬停条）。选中即进入全屏。
+  Future<void> _pickVisualizer() async {
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    final LyricVisualizerPick? pick = await showLyricVisualizerPicker(
+      context: _themedContext,
+      current: LyricVisualizerMode.fromPref(prefs.musicVisualizerMode),
+      random: prefs.musicVisualizerRandom,
+      tunings: prefs.musicVisualizerTunings,
+      onTuningsChanged: (String mode, Map<String, Object?> values) async {
+        await prefs.setMusicVisualizerTuning(mode, values);
+        if (mounted) setState(() {});
+      },
+    );
+    if (pick == null || !mounted) return;
+    await prefs.setMusicVisualizerMode(pick.mode.prefValue);
+    await prefs.setMusicVisualizerRandom(pick.random);
+    if (mounted) setState(() => _visualizerOn = true);
+  }
+
+  void _exitVisualizer() {
+    if (_visualizerOn) setState(() => _visualizerOn = false);
+  }
+
+  Widget _buildVisualizer(BuildContext context, MusicPlayItem? item) {
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    return MusicLyricVisualizerView(
+      key: const ValueKey<String>('music_visualizer'),
+      mode: _visualizerModeFor(item),
+      timeline: _lyrics?.timeline,
+      clock: _clock,
+      offsetMs: _offsetMs,
+      playing: _engine.isPlaying,
+      trackUid: item?.trackUid ?? '',
+      tunings: prefs.musicVisualizerTunings,
+      fontScale: prefs.musicVisualizerFontScale,
+      coverPath: item?.coverPath,
+      title: item?.title,
+      artist: item?.artist,
+      album: item?.album,
+      onExit: _exitVisualizer,
+      onPickStyle: () => unawaited(_pickVisualizer()),
+      onSeek: (int ms) => unawaited(_engine.seek(Duration(milliseconds: ms))),
+    );
   }
 
   Future<void> _load(MusicPlayItem item) async {
@@ -1532,8 +1593,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                         FushiMotion.medium,
                       ),
                       child: KeyedSubtree(
-                        key: ValueKey<String>('${_layout.name}-$wide'),
+                        key: ValueKey<String>(
+                          _visualizerOn
+                              ? 'visualizer'
+                              : '${_layout.name}-$wide',
+                        ),
                         child: switch ((_layout, wide)) {
+                          _ when _visualizerOn => _buildVisualizer(
+                            context,
+                            item,
+                          ),
                           (MusicLyricsLayout.split, true) => _buildSplit(
                             context,
                             item,
@@ -1944,6 +2013,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   : t.music_lyrics_title,
               onPressed: () => setState(() => _showLyrics = !_showLyrics),
             ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('music_lyrics_visualizer'),
+            icon: FushiIcons.animation,
+            label: t.music_visualizer_open,
+            onPressed: () => unawaited(_pickVisualizer()),
+          ),
           if (_hasKaraokeStage)
             FushiToolbarItem(
               key: const ValueKey<String>('music_lyrics_karaoke'),

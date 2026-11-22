@@ -6259,6 +6259,71 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 全屏歌词动画样式（`LyricVisualizerMode.prefValue`），默认 `classic`（流光）。
+  String get musicVisualizerMode =>
+      (getPref('music_visualizer_mode', defaultValue: 'classic') as String?) ??
+      'classic';
+
+  Future<void> setMusicVisualizerMode(String value) async {
+    await setPref('music_visualizer_mode', value);
+    notifyListeners();
+  }
+
+  /// 每首歌随机换一个全屏歌词动画样式，默认关。
+  bool get musicVisualizerRandom =>
+      getPref('music_visualizer_random', defaultValue: false) == true;
+
+  Future<void> setMusicVisualizerRandom(bool value) async {
+    await setPref('music_visualizer_random', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画字号倍数（0.6–2.0），默认 1.0。
+  double get musicVisualizerFontScale =>
+      (getPref('music_visualizer_font_scale', defaultValue: 1.0) as num)
+          .toDouble();
+
+  Future<void> setMusicVisualizerFontScale(double value) async {
+    await setPref('music_visualizer_font_scale', value);
+    notifyListeners();
+  }
+
+  /// 各样式的可调参数：`{样式 prefValue: {参数 key: 值}}`（JSON 串）。只存用户改过的项，
+  /// 读时按样式声明规整、缺的取默认。坏 JSON 当空表。
+  Map<String, Map<String, Object?>> get musicVisualizerTunings {
+    final Object? raw = getPref('music_visualizer_tunings', defaultValue: '');
+    if (raw is! String || raw.isEmpty) {
+      return const <String, Map<String, Object?>>{};
+    }
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, Map<String, Object?>>{};
+      return <String, Map<String, Object?>>{
+        for (final MapEntry<Object?, Object?> e in decoded.entries)
+          if (e.key is String && e.value is Map)
+            e.key! as String: Map<String, Object?>.from(e.value! as Map),
+      };
+    } on FormatException {
+      return const <String, Map<String, Object?>>{};
+    }
+  }
+
+  /// 改某个样式的参数；[values] 为空 = 恢复该样式默认。
+  Future<void> setMusicVisualizerTuning(
+    String mode,
+    Map<String, Object?> values,
+  ) async {
+    final Map<String, Map<String, Object?>> all =
+        <String, Map<String, Object?>>{...musicVisualizerTunings};
+    if (values.isEmpty) {
+      all.remove(mode);
+    } else {
+      all[mode] = values;
+    }
+    await setPref('music_visualizer_tunings', jsonEncode(all));
+    notifyListeners();
+  }
+
   /// ReplayGain 预放大（dB，-15…+15，设计 §7.3）。默认 0。
   double get musicReplayGainPreampDb =>
       (getPref('music_replaygain_preamp_db', defaultValue: 0.0) as num)
