@@ -1989,7 +1989,7 @@ fn the_failed_state_carries_the_kernel_reason() {
 }
 
 /// 反馈 RhMpA6bn8v：迁移进协议 3 之前的旧日志（操作里没有生效配置快照 `sc`）的投影行，结果被旧代码的重放改写过
-/// （2026-10-25 develop 上第一版协议 3 在迁移时用当时的牌组配置重放全部派生日志，7eeb05bc7c 之后不再改写，但改写过
+/// （2026-10-25 第一版协议 3 `829a67b942` 在迁移时用当时的牌组配置重放全部派生日志，7eeb05bc7c 之后不再改写，但改写过
 /// 的行没人改回来：没有 `sc` 的日志重放时按投影行里的结果照抄）。新代按操作里作者给的结果算，协议 3 的现成日志行是
 /// 旧代码留下的。卡的调度列、之后带 `sc` 的复习的统计分类（`kind`）与成熟变化（`maturity_delta`）跟着不同。
 ///
@@ -2070,7 +2070,8 @@ fn library_with_a_rewritten_legacy_result(
             let mut row: Value = serde_json::from_str(&json).unwrap();
             row["res"] = stale(&row["res"]);
             w.execute(
-                "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at,                  review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+                "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, \
+                 review_type, origin, duration_ms) WHERE id = srs_id(?1)",
                 params![id, row.to_string()],
             )
             .unwrap();

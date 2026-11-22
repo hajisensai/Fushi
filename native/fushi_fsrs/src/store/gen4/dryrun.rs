@@ -1094,7 +1094,8 @@ fn old_caches_with(
             let cols = log_cols.join(", ");
             src.execute(
                 &format!(
-                    "INSERT INTO temp.{LOG_TABLE} ({cols}) SELECT {cols} FROM main.{LOG_TABLE}                      WHERE profile_uid = srs_id(?1)"
+                    "INSERT INTO temp.{LOG_TABLE} ({cols}) SELECT {cols} FROM main.{LOG_TABLE} \
+                     WHERE profile_uid = srs_id(?1)"
                 ),
                 [profile],
             )
