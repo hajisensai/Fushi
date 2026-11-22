@@ -9495,6 +9495,8 @@
   "shortcut_action_reader_dismiss_dict": "Dismiss dictionary",
   "shortcut_action_reader_enter_caret": "Enter lookup cursor",
   "shortcut_action_reader_lookup_at_cursor": "Lookup / activate cursor",
+  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
+  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "Open audiobook panel",
   "shortcut_action_reader_open_gallery": "Open illustrations gallery",
   "shortcut_action_reader_open_menu": "Open settings menu",
