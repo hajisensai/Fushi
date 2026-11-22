@@ -32,6 +32,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
+import 'package:fushi/src/pdf/pdf_search_sheet.dart';
+import 'package:fushi/src/pdf/pdf_text_search.dart';
 import 'package:fushi/src/pdf/pdf_text_sections.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
@@ -179,7 +181,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 画高亮的回调列表必须是同一个实例：[PdfViewerParams] 按值比较，每次 build
   /// 新建列表会让 pdfrx 认为参数变了。
   late final List<PdfViewerPagePaintCallback> _pagePaintCallbacks =
-      <PdfViewerPagePaintCallback>[_paintCueHighlight];
+      <PdfViewerPagePaintCallback>[_paintCueHighlight, _paintSearchHighlight];
+
+  /// 全文搜索会话（拍板台 KN4kdP4JB8）：本页持有，关掉搜索面板再打开结果还在；
+  /// 命中 / 当前命中一变就让 pdfrx 重画页上高亮。
+  late final PdfTextSearchController _search = PdfTextSearchController(
+    loadPage: _searchPageSource,
+  )..addListener(_onSearchChanged);
 
   /// 命中判定容差（PDF point）。点在字符矩形外但足够近仍算命中；超出即视为点在
   /// 空白/图片上不查词（对齐 pdfrx 自身 `_findTextAndIndexForPoint` 的 8pt）。
@@ -217,6 +225,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // 时钟为空 = 本页从没开始计时，整段跳过。
     _studyClockGate.dispose();
     _studyClock?.detach();
+    _search
+      ..removeListener(_onSearchChanged)
+      ..dispose();
     ExitFlushRegistry.instance.defer(_flushPosition);
     super.dispose();
   }
@@ -595,6 +606,101 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (_noTextLayerNotified) return;
     _noTextLayerNotified = true;
     FushiToast.show(msg: t.pdf_no_text_layer, severity: ToastSeverity.error);
+  }
+
+  // ── 全文搜索（拍板台 KN4kdP4JB8）─────────────────────────────────────
+
+  /// 其他命中的底色（浅黄）与当前命中（橙）：正片叠底画在页上，黑字照常透出；
+  /// 与有声书字幕句的高亮黄（[FushiColor.defaultHighlightYellow]）错开，两者同时
+  /// 出现时分得清。
+  static const Color _kSearchHitColor = Color(0xFFFFF59D);
+  static const Color _kSearchActiveHitColor = Color(0xFFFFB74D);
+
+  /// 搜索读第 [pageIndex] 页（0 起）的文本层。已因查词 / 有声书高亮缓存过的页直接
+  /// 复用；其余页现读现丢（不进 [_pageTextCache]：整本书逐字矩形常驻内存太重），
+  /// 命中的逐行矩形在这一刻算好随结果留下。
+  Future<PdfSearchPageSource?> _searchPageSource(int pageIndex) async {
+    if (!mounted || !_pdfController.isReady) return null;
+    try {
+      final PdfPageText? text =
+          _pageTextCache[pageIndex] ??
+          await _pdfController.useDocument<PdfPageText?>((
+            PdfDocument document,
+          ) async {
+            if (pageIndex >= document.pages.length) return null;
+            return document.pages[pageIndex].loadStructuredText();
+          });
+      if (text == null) return null;
+      return (
+        fullText: text.fullText,
+        rectsFor: (int start, int end) => <PdfRect>[
+          for (final PdfTextFragmentBoundingRect r in PdfPageTextRange(
+            pageText: text,
+            start: start,
+            end: end,
+          ).enumerateFragmentBoundingRects())
+            r.bounds,
+        ],
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPdfPage.searchPageText', e, stack);
+      return null;
+    }
+  }
+
+  void _onSearchChanged() {
+    if (mounted && _pdfController.isReady) _pdfController.invalidate();
+  }
+
+  /// 打开搜索面板；点结果 = 关面板、跳到该命中并高亮。
+  Future<void> _openSearch() async {
+    if (!_pdfController.isReady) return;
+    final int pageCount = _pdfController.pageCount;
+    await adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) => PdfSearchSheet(
+        controller: _search,
+        pageCount: pageCount,
+        onSelect: (int index) {
+          Navigator.of(sheetContext).pop();
+          unawaited(_revealSearchHit(_search.select(index)));
+        },
+      ),
+    );
+  }
+
+  /// 把命中滚进视口（跨页即跳页）；没算出矩形时退回跳到所在页。
+  Future<void> _revealSearchHit(PdfTextSearchHit? hit) async {
+    if (hit == null || !mounted || !_pdfController.isReady) return;
+    if (hit.rects.isEmpty) {
+      await _pdfController.goToPage(pageNumber: hit.pageIndex + 1);
+      return;
+    }
+    final Rect target = _pdfController.calcRectForRectInsidePage(
+      pageNumber: hit.pageIndex + 1,
+      rect: hit.rects.boundingRect(),
+    );
+    await _pdfController.ensureVisible(target, margin: 48);
+  }
+
+  /// pdfrx 每画一页调一次：这页上的搜索命中画浅黄，当前命中画橙。
+  void _paintSearchHighlight(ui.Canvas canvas, Rect pageRect, PdfPage page) {
+    final List<int> onPage = _search.hitIndicesOnPage(page.pageNumber - 1);
+    if (onPage.isEmpty) return;
+    final int? current = _search.currentIndex;
+    final List<PdfTextSearchHit> hits = _search.hits;
+    final Paint paint = Paint()
+      ..blendMode = BlendMode.multiply
+      ..style = PaintingStyle.fill;
+    for (final int i in onPage) {
+      paint.color = i == current ? _kSearchActiveHitColor : _kSearchHitColor;
+      for (final PdfRect rect in hits[i].rects) {
+        canvas.drawRect(
+          rect.toRectInDocument(page: page, pageRect: pageRect),
+          paint,
+        );
+      }
+    }
   }
 
   // ── Phase 5：书签（复用 EPUB 的 Bookmarks 表）───────────────────────
@@ -1259,6 +1365,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
                 actions: <List<FushiToolbarItem>>[
                   <FushiToolbarItem>[
                     FushiToolbarItem(
+                      key: const ValueKey<String>('pdf_search'),
+                      icon: FushiIcons.search,
+                      label: t.pdf_search,
+                      onPressed: () => unawaited(_openSearch()),
+                    ),
+                    FushiToolbarItem(
                       icon: FushiIcons.bookmarkAdd,
                       label: t.pdf_bookmarks,
                       onPressed: () => unawaited(_addBookmarkAtCurrentPage()),
@@ -1365,10 +1477,23 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
                       ),
                     ),
             );
-            // 有声书播放条叠在翻页胶囊上方（本书挂了有声书才出现）。
+            // 有声书播放条叠在翻页胶囊上方（本书挂了有声书才出现）；搜索有结果时
+            // 命中导航胶囊夹在中间。
             return Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[_buildAudiobookBar(), pager],
+              children: <Widget>[
+                _buildAudiobookBar(),
+                PdfSearchNavigator(
+                  controller: _search,
+                  visible: _chromeShown,
+                  onPrevious: () =>
+                      unawaited(_revealSearchHit(_search.previous())),
+                  onNext: () => unawaited(_revealSearchHit(_search.next())),
+                  onShowResults: () => unawaited(_openSearch()),
+                  onClose: _search.clear,
+                ),
+                pager,
+              ],
             );
           },
         ),
