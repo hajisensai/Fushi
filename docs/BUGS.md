@@ -33,6 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4494 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5173](bugs/BUG-5173-shelf-continue-card-no-menu.md) | ✅ | ✅ | 书架「继续阅读」卡右键 / 长按没有任何菜单 |
+| [BUG-5172](bugs/BUG-5172-feedback-detail-paste-shot.md) | ✅ | ✅ | 反馈详情页追加截图只能选相册，没有「粘贴图片」与 Ctrl+V |
+| [BUG-5171](bugs/BUG-5171-organize-history-under-masthead.md) | ✅ | ✅ | 整理记录页首个分组头与第一行被页头大字盖住 |
 > 共 4492 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
