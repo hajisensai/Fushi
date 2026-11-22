@@ -740,8 +740,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_subsonic_servers',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
+  // String（默认 'fluid'）：全屏歌词动画的共享背景（LyricVisualizerBackgroundEntry.id）。
+  // 背景自己的参数存在 music_visualizer_tunings 的 'background:<id>' 项里。
+  'music_visualizer_background',
   // double（默认 1.0，0.6–2.0）：全屏歌词动画字号倍数。
   'music_visualizer_font_scale',
+  // String（默认 'normal'）：全屏歌词动画强度（LyricVisualizerIntensity.prefValue：
+  // calm / normal / chaotic）；AI 主题可按歌曲覆盖。
+  'music_visualizer_intensity',
   // String（默认 'classic'）：全屏歌词动画样式（LyricVisualizerMode.prefValue，
   // 与 folia-major 的模式 id 同名）。设备本地观感偏好。
   'music_visualizer_mode',

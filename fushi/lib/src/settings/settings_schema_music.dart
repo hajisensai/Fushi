@@ -562,6 +562,52 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.prefsRepo.setMusicVisualizerRandom(value),
           ),
+          SettingsSegmentedItem<LyricVisualizerIntensity>(
+            id: 'music.visualizer_intensity',
+            title: t.music_visualizer_intensity,
+            subtitle: t.music_visualizer_intensity_hint,
+            icon: FushiIcons.animation,
+            options: <SettingsSegmentOption<LyricVisualizerIntensity>>[
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.calm,
+                label: t.music_visualizer_intensity_calm,
+              ),
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.normal,
+                label: t.music_visualizer_intensity_normal,
+              ),
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.chaotic,
+                label: t.music_visualizer_intensity_chaotic,
+              ),
+            ],
+            selected: (SettingsContext c) => LyricVisualizerIntensity.fromPref(
+              c.appModel.prefsRepo.musicVisualizerIntensity,
+            ),
+            onChanged: (SettingsContext c, LyricVisualizerIntensity value) => c
+                .appModel
+                .prefsRepo
+                .setMusicVisualizerIntensity(value.prefValue),
+            defaultValue: LyricVisualizerIntensity.defaultIntensity,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'music.visualizer_background',
+            dropdown: true,
+            title: t.music_visualizer_background,
+            subtitle: t.music_visualizer_background_hint,
+            icon: FushiIcons.image,
+            options: <SettingsSegmentOption<String>>[
+              for (final LyricVisualizerBackgroundEntry b
+                  in lyricVisualizerBackgrounds)
+                SettingsSegmentOption<String>(value: b.id, label: b.label()),
+            ],
+            selected: (SettingsContext c) => lyricVisualizerBackgroundOf(
+              c.appModel.prefsRepo.musicVisualizerBackground,
+            ).id,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.prefsRepo.setMusicVisualizerBackground(value),
+            defaultValue: lyricVisualizerFluidBackgroundId,
+          ),
           SettingsSliderItem(
             id: 'music.visualizer_font_scale',
             title: t.music_visualizer_font_scale,

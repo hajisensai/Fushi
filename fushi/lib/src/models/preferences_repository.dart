@@ -6288,6 +6288,28 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 全屏歌词动画强度（`LyricVisualizerIntensity.prefValue`），默认 `normal`。
+  String get musicVisualizerIntensity =>
+      (getPref('music_visualizer_intensity', defaultValue: 'normal')
+          as String?) ??
+      'normal';
+
+  Future<void> setMusicVisualizerIntensity(String value) async {
+    await setPref('music_visualizer_intensity', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画的共享背景（`LyricVisualizerBackgroundEntry.id`），默认 `fluid`（歌词页背景）。
+  String get musicVisualizerBackground =>
+      (getPref('music_visualizer_background', defaultValue: 'fluid')
+          as String?) ??
+      'fluid';
+
+  Future<void> setMusicVisualizerBackground(String value) async {
+    await setPref('music_visualizer_background', value);
+    notifyListeners();
+  }
+
   /// 各样式的可调参数：`{样式 prefValue: {参数 key: 值}}`（JSON 串）。只存用户改过的项，
   /// 读时按样式声明规整、缺的取默认。坏 JSON 当空表。
   Map<String, Map<String, Object?>> get musicVisualizerTunings {

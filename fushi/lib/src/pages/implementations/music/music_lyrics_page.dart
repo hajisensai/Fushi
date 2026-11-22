@@ -635,6 +635,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       current: LyricVisualizerMode.fromPref(prefs.musicVisualizerMode),
       random: prefs.musicVisualizerRandom,
       tunings: prefs.musicVisualizerTunings,
+      backgroundId: prefs.musicVisualizerBackground,
       onTuningsChanged: (String mode, Map<String, Object?> values) async {
         await prefs.setMusicVisualizerTuning(mode, values);
         if (mounted) setState(() {});
@@ -662,6 +663,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       trackUid: item?.trackUid ?? '',
       tunings: prefs.musicVisualizerTunings,
       fontScale: prefs.musicVisualizerFontScale,
+      intensity: LyricVisualizerIntensity.fromPref(
+        prefs.musicVisualizerIntensity,
+      ),
+      backgroundId: prefs.musicVisualizerBackground,
       coverPath: item?.coverPath,
       title: item?.title,
       artist: item?.artist,

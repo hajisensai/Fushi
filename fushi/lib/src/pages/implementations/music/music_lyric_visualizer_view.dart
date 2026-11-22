@@ -4,6 +4,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -11,17 +12,24 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registry.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiTextField;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart'
+    show FushiChoiceChip;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiExpansionTile;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -50,6 +58,10 @@ class MusicLyricVisualizerView extends StatefulWidget {
     this.artist,
     this.album,
     this.onSeek,
+    this.intensity = LyricVisualizerIntensity.normal,
+    this.backgroundId,
+    this.theme,
+    this.audio,
   });
 
   final LyricVisualizerMode mode;
@@ -72,6 +84,18 @@ class MusicLyricVisualizerView extends StatefulWidget {
   final String? album;
   final ValueChanged<int>? onSeek;
 
+  /// 全局动画强度偏好（`music_visualizer_intensity`）；[theme] 指定了强度时以主题为准。
+  final LyricVisualizerIntensity intensity;
+
+  /// 用户选的共享背景（`music_visualizer_background`）；null = 默认（歌词页背景）。
+  final String? backgroundId;
+
+  /// 本首的歌词动画主题（AI 主题）；null = 封面取色。
+  final LyricVisualizerTheme? theme;
+
+  /// 本首的音频分析；null = 样式回落歌词包络。
+  final LyricVisualizerAudio? audio;
+
   @override
   State<MusicLyricVisualizerView> createState() =>
       _MusicLyricVisualizerViewState();
@@ -83,6 +107,9 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
   );
   LyricVisualizerRuntime? _runtime;
   LyricTimeline? _runtimeOf;
+
+  /// 上一帧交给样式的输入：值没变就沿用同一个对象，样式的 didUpdateWidget 不白跑。
+  LyricVisualizerContext? _lastContext;
   bool _hover = false;
   Timer? _hoverHide;
   final FocusNode _focus = FocusNode(debugLabel: 'music_visualizer');
@@ -131,9 +158,10 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
   Widget build(BuildContext context) {
     final LyricVisualizerEntry entry = lyricVisualizerEntryOf(widget.mode);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final LyricVisualizerTheme? visualTheme = widget.theme;
     final LyricVisualizerPalette palette = LyricVisualizerPalette.fromScheme(
       scheme,
-    );
+    ).applyOverride(visualTheme?.palette);
     final LyricTimeline? timeline = widget.timeline;
     final bool hasLyrics =
         timeline != null && timeline.isSynced && timeline.lines.isNotEmpty;
@@ -145,17 +173,18 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
         palette: palette,
       );
     } else {
-      final LyricVisualizerContext c = LyricVisualizerContext(
+      final LyricVisualizerTuning tuning = LyricVisualizerTuning(
+        entry.tunings,
+        widget.tunings[widget.mode.prefValue] ?? const <String, Object?>{},
+      );
+      final LyricVisualizerContext fresh = LyricVisualizerContext(
         timeline: timeline,
         runtime: _runtimeFor(timeline),
         clock: _clock,
         offsetMs: widget.offsetMs,
         playing: widget.playing,
         palette: palette,
-        tuning: LyricVisualizerTuning(
-          entry.tunings,
-          widget.tunings[widget.mode.prefValue] ?? const <String, Object?>{},
-        ),
+        tuning: tuning,
         seed: lyricVisualizerSeedOf(widget.trackUid),
         motion: fushiMotionEnabled(context),
         fontScale: widget.fontScale,
@@ -164,11 +193,41 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
         artist: widget.artist,
         album: widget.album,
         onSeek: widget.onSeek,
+        intensity: visualTheme?.intensity ?? widget.intensity,
+        theme: visualTheme,
+        audio: widget.audio,
       );
+      final LyricVisualizerContext c = fresh == _lastContext
+          ? _lastContext!
+          : fresh;
+      _lastContext = c;
+      // 背景层（folia 背景独立组合）：样式按参数请求，宿主画在样式下面。
+      final LyricVisualizerBackgroundEntry? background =
+          resolveLyricVisualizerBackground(
+            entry.backgroundFor(tuning),
+            widget.backgroundId,
+          );
       body = Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          if (!entry.sharedBackdrop) ColoredBox(color: palette.background),
+          if (background != null && !background.drawsNothing)
+            RepaintBoundary(
+              key: ValueKey<String>(
+                'music_visualizer_background_${background.id}',
+              ),
+              child: IgnorePointer(
+                child: background.builder(
+                  c,
+                  LyricVisualizerTuning(
+                    background.tunings,
+                    widget.tunings[lyricVisualizerBackgroundTuningKey(
+                          background.id,
+                        )] ??
+                        const <String, Object?>{},
+                  ),
+                ),
+              ),
+            ),
           // 样式本体在 RepaintBoundary 里：逐帧重绘不连带页面其余部分。
           RepaintBoundary(child: entry.builder(c)),
           if (entry.sharedSubtitle)
@@ -345,6 +404,8 @@ class LyricVisualizerPick {
 
 /// 打开样式选择面板。选了样式返回它（并立即进入全屏）；关掉返回 null。
 /// [onTuningsChanged] 在面板里改参数时落库。
+/// [backgroundId] 是用户选的共享背景：它有参数时面板里多一个「背景设置」入口，改动经
+/// [onTuningsChanged] 落在 `lyricVisualizerBackgroundTuningKey(id)` 下。
 Future<LyricVisualizerPick?> showLyricVisualizerPicker({
   required BuildContext context,
   required LyricVisualizerMode current,
@@ -352,6 +413,7 @@ Future<LyricVisualizerPick?> showLyricVisualizerPicker({
   required Map<String, Map<String, Object?>> tunings,
   required Future<void> Function(String mode, Map<String, Object?> values)
   onTuningsChanged,
+  String? backgroundId,
 }) {
   return adaptiveModalSheet<LyricVisualizerPick>(
     context: context,
@@ -360,6 +422,7 @@ Future<LyricVisualizerPick?> showLyricVisualizerPicker({
       random: random,
       tunings: tunings,
       onTuningsChanged: onTuningsChanged,
+      backgroundId: backgroundId,
     ),
   );
 }
@@ -370,6 +433,7 @@ class _LyricVisualizerPicker extends StatefulWidget {
     required this.random,
     required this.tunings,
     required this.onTuningsChanged,
+    this.backgroundId,
   });
 
   final LyricVisualizerMode current;
@@ -377,6 +441,7 @@ class _LyricVisualizerPicker extends StatefulWidget {
   final Map<String, Map<String, Object?>> tunings;
   final Future<void> Function(String mode, Map<String, Object?> values)
   onTuningsChanged;
+  final String? backgroundId;
 
   @override
   State<_LyricVisualizerPicker> createState() => _LyricVisualizerPickerState();
@@ -404,9 +469,32 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
     await widget.onTuningsChanged(entry.mode.prefValue, next);
   }
 
+  Future<void> _openBackgroundTuning(
+    LyricVisualizerBackgroundEntry background,
+  ) async {
+    final String key = lyricVisualizerBackgroundTuningKey(background.id);
+    final Map<String, Object?>? next =
+        await showLyricVisualizerBackgroundTuningSheet(
+          context: context,
+          background: background,
+          stored: _tunings[key] ?? const <String, Object?>{},
+        );
+    if (next == null || !mounted) return;
+    setState(() {
+      if (next.isEmpty) {
+        _tunings.remove(key);
+      } else {
+        _tunings[key] = next;
+      }
+    });
+    await widget.onTuningsChanged(key, next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final LyricVisualizerBackgroundEntry background =
+        lyricVisualizerBackgroundOf(widget.backgroundId);
     final List<LyricVisualizerEntry> entries = <LyricVisualizerEntry>[
       for (final LyricVisualizerMode m in LyricVisualizerMode.values)
         lyricVisualizerEntryOf(m),
@@ -430,6 +518,27 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
             title: Text(t.music_visualizer_random),
             subtitle: Text(t.music_visualizer_random_hint),
           ),
+          if (background.tunings.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiPressScale(
+                  child: FushiTextButton.icon(
+                    key: const ValueKey<String>(
+                      'music_visualizer_background_tuning',
+                    ),
+                    onPressed: () =>
+                        unawaited(_openBackgroundTuning(background)),
+                    icon: Icon(background.icon),
+                    label: Text(
+                      '${t.music_visualizer_background_tuning} · '
+                      '${background.label()}',
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Flexible(
             child: FushiEntranceScope(
               child: GridView.builder(
@@ -541,7 +650,7 @@ class _StyleTile extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 参数面板（通用：按样式声明的 spec 画）
+// 参数面板（通用：按样式 / 背景声明的 spec 画）
 // ---------------------------------------------------------------------------
 
 /// 打开某样式的参数面板。返回改动后要落库的值（空表 = 恢复默认），关掉不改返回 null。
@@ -557,16 +666,55 @@ Future<Map<String, Object?>?> showLyricVisualizerTuningSheet({
   );
 }
 
-/// 参数面板本体（可单测）。
+/// 打开某个背景的参数面板（返回值同 [showLyricVisualizerTuningSheet]；落库键是
+/// `lyricVisualizerBackgroundTuningKey(background.id)`）。
+Future<Map<String, Object?>?> showLyricVisualizerBackgroundTuningSheet({
+  required BuildContext context,
+  required LyricVisualizerBackgroundEntry background,
+  required Map<String, Object?> stored,
+}) {
+  return adaptiveModalSheet<Map<String, Object?>>(
+    context: context,
+    builder: (BuildContext context) => LyricVisualizerTuningPanel.specs(
+      title: background.label,
+      specs: background.tunings,
+      stored: stored,
+    ),
+  );
+}
+
+/// 参数面板本体（可单测）：滑杆 / 开关 / 单选 / 颜色 / 文本 / 素材包，条件显隐、分组折叠、预设。
 class LyricVisualizerTuningPanel extends StatefulWidget {
-  const LyricVisualizerTuningPanel({
+  LyricVisualizerTuningPanel({
     super.key,
-    required this.entry,
+    required LyricVisualizerEntry entry,
     required this.stored,
+    this.assetStore = LyricVisualizerAssetStore.open,
+    this.pickAssetFiles = pickLyricVisualizerAssetFiles,
+  }) : title = entry.label,
+       specs = entry.tunings,
+       presets = entry.tuningPresets;
+
+  const LyricVisualizerTuningPanel.specs({
+    super.key,
+    required this.title,
+    required this.specs,
+    required this.stored,
+    this.presets = const <LyricVisualizerTuningPreset>[],
+    this.assetStore = LyricVisualizerAssetStore.open,
+    this.pickAssetFiles = pickLyricVisualizerAssetFiles,
   });
 
-  final LyricVisualizerEntry entry;
+  final String Function() title;
+  final List<LyricVisualizerTuningSpec> specs;
+  final List<LyricVisualizerTuningPreset> presets;
   final Map<String, Object?> stored;
+
+  /// 素材库（测试注入临时目录）。
+  final Future<LyricVisualizerAssetStore> Function() assetStore;
+
+  /// 选图（测试注入）。
+  final Future<List<String>> Function() pickAssetFiles;
 
   @override
   State<LyricVisualizerTuningPanel> createState() =>
@@ -575,16 +723,41 @@ class LyricVisualizerTuningPanel extends StatefulWidget {
 
 class _LyricVisualizerTuningPanelState
     extends State<LyricVisualizerTuningPanel> {
-  late Map<String, Object> _values = LyricVisualizerTuning(
-    widget.entry.tunings,
-    widget.stored,
-  ).toMap();
+  // 可写副本：`toMap()` 是只读视图，直接往里写会抛（旧面板任何一项一改就抛）。
+  late Map<String, Object> _values = Map<String, Object>.of(
+    LyricVisualizerTuning(widget.specs, widget.stored).toMap(),
+  );
 
   /// 只存与默认不同的项。
   Map<String, Object?> _diff() => <String, Object?>{
-    for (final LyricVisualizerTuningSpec s in widget.entry.tunings)
+    for (final LyricVisualizerTuningSpec s in widget.specs)
       if (_values[s.key] != s.defaultValue) s.key: _values[s.key],
   };
+
+  LyricVisualizerTuning get _current =>
+      LyricVisualizerTuning(widget.specs, _values);
+
+  void _set(String key, Object value) => setState(() => _values[key] = value);
+
+  bool _visible(LyricVisualizerTuningSpec s, LyricVisualizerTuning current) =>
+      s.visibleWhen?.call(current) ?? true;
+
+  Widget _labelled(String label, Widget child, {Widget? trailing}) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(child: Text(label)),
+            ?trailing,
+          ],
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    ),
+  );
 
   Widget _row(LyricVisualizerTuningSpec spec) {
     final Object value = _values[spec.key] ?? spec.defaultValue;
@@ -609,7 +782,7 @@ class _LyricVisualizerTuningPanelState
               min: spec.min,
               max: spec.max,
               divisions: spec.divisions,
-              onChanged: (double v) => setState(() => _values[spec.key] = v),
+              onChanged: (double v) => _set(spec.key, v),
             ),
           ],
         ),
@@ -617,36 +790,135 @@ class _LyricVisualizerTuningPanelState
       LyricVisualizerToggleSpec() => FushiSwitchListTile(
         key: ValueKey<String>('music_visualizer_tuning_${spec.key}'),
         value: value as bool,
-        onChanged: (bool v) => setState(() => _values[spec.key] = v),
+        onChanged: (bool v) => _set(spec.key, v),
         title: Text(spec.label()),
       ),
-      LyricVisualizerChoiceSpec() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(spec.label()),
-            const SizedBox(height: 6),
-            adaptiveSegmentedButton<String>(
-              context: context,
-              segments: <ButtonSegment<String>>[
-                for (final (String v, String Function() label) in spec.options)
-                  ButtonSegment<String>(value: v, label: Text(label())),
-              ],
-              selected: <String>{value as String},
-              onSelectionChanged: (Set<String> s) {
-                if (s.isNotEmpty) setState(() => _values[spec.key] = s.first);
-              },
-            ),
+      LyricVisualizerChoiceSpec() => _labelled(
+        spec.label(),
+        adaptiveSegmentedButton<String>(
+          context: context,
+          segments: <ButtonSegment<String>>[
+            for (final (String v, String Function() label) in spec.options)
+              ButtonSegment<String>(value: v, label: Text(label())),
           ],
+          selected: <String>{value as String},
+          onSelectionChanged: (Set<String> s) {
+            if (s.isNotEmpty) _set(spec.key, s.first);
+          },
         ),
       ),
+      LyricVisualizerColorSpec() => _ColorTuningRow(
+        key: ValueKey<String>('music_visualizer_tuning_${spec.key}'),
+        spec: spec,
+        value: Color(value as int),
+        onChanged: (Color c) => _set(spec.key, spec.normalize(c.toARGB32())),
+      ),
+      LyricVisualizerTextSpec() => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        child: FushiTextField(
+          key: ValueKey<String>('music_visualizer_tuning_${spec.key}'),
+          initialValue: value as String,
+          labelText: spec.label(),
+          hintText: spec.hint?.call(),
+          maxLength: spec.maxLength,
+          onChanged: (String v) => _set(spec.key, spec.normalize(v)),
+        ),
+      ),
+      LyricVisualizerAssetPackSpec() => _AssetPackTuningRow(
+        key: ValueKey<String>('music_visualizer_tuning_${spec.key}'),
+        spec: spec,
+        pack: value as String,
+        store: widget.assetStore,
+        pickFiles: widget.pickAssetFiles,
+        onPackChanged: (String pack) => _set(spec.key, pack),
+      ),
     };
+  }
+
+  /// 按分组链画：同一分组的相邻项收进一个折叠区块，分组可嵌套。
+  List<Widget> _items(
+    List<LyricVisualizerTuningSpec> specs,
+    int depth,
+    LyricVisualizerTuning current,
+  ) {
+    final List<Widget> out = <Widget>[];
+    int i = 0;
+    while (i < specs.length) {
+      final LyricVisualizerTuningSpec s = specs[i];
+      final List<LyricVisualizerTuningSection> path =
+          s.section?.path ?? const <LyricVisualizerTuningSection>[];
+      if (path.length <= depth) {
+        if (_visible(s, current)) out.add(_row(s));
+        i++;
+        continue;
+      }
+      final LyricVisualizerTuningSection section = path[depth];
+      final List<LyricVisualizerTuningSpec> group =
+          <LyricVisualizerTuningSpec>[];
+      while (i < specs.length) {
+        final List<LyricVisualizerTuningSection> p =
+            specs[i].section?.path ?? const <LyricVisualizerTuningSection>[];
+        if (p.length <= depth || p[depth] != section) break;
+        group.add(specs[i]);
+        i++;
+      }
+      final List<Widget> children = _items(group, depth + 1, current);
+      if (children.isEmpty) continue;
+      out.add(
+        FushiExpansionTile(
+          key: ValueKey<String>('music_visualizer_section_${section.key}'),
+          title: Text(section.label()),
+          initiallyExpanded: section.initiallyExpanded,
+          tilePadding: EdgeInsets.only(left: 24.0 + depth * 12, right: 16),
+          children: children,
+        ),
+      );
+    }
+    return out;
+  }
+
+  Widget _presets() {
+    final Map<String, Object> defaults = LyricVisualizerTuning.defaults(
+      widget.specs,
+    ).toMap();
+    bool same(Map<String, Object> m) =>
+        m.length == _values.length &&
+        m.entries.every(
+          (MapEntry<String, Object> e) => _values[e.key] == e.value,
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text(t.music_visualizer_tuning_presets),
+          FushiChoiceChip(
+            key: const ValueKey<String>('music_visualizer_preset_default'),
+            label: Text(t.music_visualizer_tuning_preset_default),
+            selected: same(defaults),
+            onSelected: (_) =>
+                setState(() => _values = Map<String, Object>.of(defaults)),
+          ),
+          for (final LyricVisualizerTuningPreset p in widget.presets)
+            FushiChoiceChip(
+              key: ValueKey<String>('music_visualizer_preset_${p.id}'),
+              label: Text(p.label()),
+              selected: same(p.apply(widget.specs)),
+              onSelected: (_) => setState(
+                () => _values = Map<String, Object>.of(p.apply(widget.specs)),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final LyricVisualizerTuning current = _current;
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -654,18 +926,13 @@ class _LyricVisualizerTuningPanelState
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
-            child: Text(
-              widget.entry.label(),
-              style: theme.textTheme.titleLarge,
-            ),
+            child: Text(widget.title(), style: theme.textTheme.titleLarge),
           ),
+          if (widget.presets.isNotEmpty) _presets(),
           Flexible(
             child: ListView(
               shrinkWrap: true,
-              children: <Widget>[
-                for (final LyricVisualizerTuningSpec s in widget.entry.tunings)
-                  _row(s),
-              ],
+              children: _items(widget.specs, 0, current),
             ),
           ),
           Padding(
@@ -675,9 +942,9 @@ class _LyricVisualizerTuningPanelState
                 FushiTextButton(
                   key: const ValueKey<String>('music_visualizer_tuning_reset'),
                   onPressed: () => setState(
-                    () => _values = LyricVisualizerTuning.defaults(
-                      widget.entry.tunings,
-                    ).toMap(),
+                    () => _values = Map<String, Object>.of(
+                      LyricVisualizerTuning.defaults(widget.specs).toMap(),
+                    ),
                   ),
                   child: Text(t.music_visualizer_tuning_reset),
                 ),
@@ -688,6 +955,309 @@ class _LyricVisualizerTuningPanelState
                   child: Text(MaterialLocalizations.of(context).okButtonLabel),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 颜色：配色色板（当前主题的主色 / 辅色 / 强调色 / 底色 / 字色 + 样式自带的预置色）+ 十六进制输入。
+class _ColorTuningRow extends StatefulWidget {
+  const _ColorTuningRow({
+    super.key,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final LyricVisualizerColorSpec spec;
+  final Color value;
+  final ValueChanged<Color> onChanged;
+
+  @override
+  State<_ColorTuningRow> createState() => _ColorTuningRowState();
+}
+
+class _ColorTuningRowState extends State<_ColorTuningRow> {
+  late final TextEditingController _hex = TextEditingController(
+    text: lyricVisualizerHexOf(widget.value),
+  );
+  bool _invalid = false;
+
+  @override
+  void didUpdateWidget(covariant _ColorTuningRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value &&
+        lyricVisualizerParseHexColor(_hex.text) != widget.value) {
+      _hex.text = lyricVisualizerHexOf(widget.value);
+      _invalid = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _hex.dispose();
+    super.dispose();
+  }
+
+  void _onHex(String text) {
+    final Color? c = lyricVisualizerParseHexColor(text);
+    setState(() => _invalid = c == null);
+    if (c != null) widget.onChanged(c);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final List<Color> swatches = <Color>[
+      scheme.primary,
+      scheme.secondary,
+      scheme.tertiary,
+      scheme.surface,
+      scheme.onSurface,
+      ...widget.spec.swatches,
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(widget.spec.label())),
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: widget.value,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.outline),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: <Widget>[
+              for (int i = 0; i < swatches.length; i++)
+                FushiPressScale(
+                  child: Semantics(
+                    button: true,
+                    selected: swatches[i].toARGB32() == widget.value.toARGB32(),
+                    label: lyricVisualizerHexOf(swatches[i]),
+                    child: InkWell(
+                      key: ValueKey<String>(
+                        'music_visualizer_swatch_${widget.spec.key}_$i',
+                      ),
+                      customBorder: const CircleBorder(),
+                      onTap: () {
+                        _hex.text = lyricVisualizerHexOf(swatches[i]);
+                        _onHex(_hex.text);
+                      },
+                      child: SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Center(
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: swatches[i],
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                width:
+                                    swatches[i].toARGB32() ==
+                                        widget.value.toARGB32()
+                                    ? 3
+                                    : 1,
+                                color: scheme.outline,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          FushiTextField(
+            key: ValueKey<String>('music_visualizer_hex_${widget.spec.key}'),
+            controller: _hex,
+            labelText: t.music_visualizer_tuning_color_hex,
+            errorText: _invalid
+                ? t.music_visualizer_tuning_color_invalid
+                : null,
+            onChanged: _onHex,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 素材包：选用哪个包（已有的包 + 当前值），往当前包里加图 / 删图。
+class _AssetPackTuningRow extends StatefulWidget {
+  const _AssetPackTuningRow({
+    super.key,
+    required this.spec,
+    required this.pack,
+    required this.store,
+    required this.pickFiles,
+    required this.onPackChanged,
+  });
+
+  final LyricVisualizerAssetPackSpec spec;
+  final String pack;
+  final Future<LyricVisualizerAssetStore> Function() store;
+  final Future<List<String>> Function() pickFiles;
+  final ValueChanged<String> onPackChanged;
+
+  @override
+  State<_AssetPackTuningRow> createState() => _AssetPackTuningRowState();
+}
+
+class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
+  List<String> _packs = const <String>[];
+  List<File> _files = const <File>[];
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_reload());
+  }
+
+  @override
+  void didUpdateWidget(covariant _AssetPackTuningRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pack != widget.pack) unawaited(_reload());
+  }
+
+  Future<void> _reload() async {
+    final LyricVisualizerAssetStore store = await widget.store();
+    final List<String> packs = await store.listPacks(widget.spec.style);
+    final List<File> files = await store.list(widget.spec.style, widget.pack);
+    if (!mounted) return;
+    setState(() {
+      _packs = packs;
+      _files = files;
+    });
+  }
+
+  Future<void> _add() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final List<String> picked = await widget.pickFiles();
+      if (picked.isEmpty) return;
+      final LyricVisualizerAssetStore store = await widget.store();
+      await store.importFiles(
+        widget.spec.style,
+        widget.pack,
+        picked,
+        maxFiles: widget.spec.maxFiles,
+      );
+      await _reload();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete(File f) async {
+    final LyricVisualizerAssetStore store = await widget.store();
+    await store.delete(widget.spec.style, widget.pack, f);
+    await _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> packs = <String>{widget.pack, ..._packs}.toList()
+      ..sort();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(widget.spec.label())),
+              Text(t.music_visualizer_assets_count(n: _files.length)),
+            ],
+          ),
+          if (packs.length > 1)
+            Wrap(
+              spacing: 8,
+              children: <Widget>[
+                for (final String p in packs)
+                  FushiChoiceChip(
+                    key: ValueKey<String>(
+                      'music_visualizer_pack_${widget.spec.key}_$p',
+                    ),
+                    label: Text(p),
+                    selected: p == widget.pack,
+                    onSelected: (_) => widget.onPackChanged(p),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 8),
+          if (_files.isEmpty)
+            Text(
+              t.music_visualizer_assets_empty,
+              style: Theme.of(context).textTheme.bodySmall,
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final File f in _files)
+                  Stack(
+                    children: <Widget>[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          f,
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.cover,
+                          cacheWidth: 128,
+                          errorBuilder:
+                              (BuildContext _, Object _, StackTrace? _) =>
+                                  const SizedBox(width: 64, height: 64),
+                        ),
+                      ),
+                      Positioned(
+                        right: -8,
+                        top: -8,
+                        child: FushiIconButtonControl(
+                          key: ValueKey<String>(
+                            'music_visualizer_asset_delete_${f.uri.pathSegments.last}',
+                          ),
+                          tooltip: t.music_visualizer_assets_delete,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => unawaited(_delete(f)),
+                          icon: const Icon(FushiIcons.delete, size: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          const SizedBox(height: 8),
+          FushiPressScale(
+            child: FushiTextButton.icon(
+              key: ValueKey<String>(
+                'music_visualizer_asset_add_${widget.spec.key}',
+              ),
+              onPressed: _busy ? null : () => unawaited(_add()),
+              icon: const Icon(FushiIcons.addImage),
+              label: Text(t.music_visualizer_assets_add),
             ),
           ),
         ],

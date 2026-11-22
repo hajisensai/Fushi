@@ -8,6 +8,50 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 
+/// 合成的音频分析（120 BPM、每 4 拍一个强拍、响度按拍起伏）：给样式测试「有音频」分支用。
+class SyntheticVisualizerAudio implements LyricVisualizerAudio {
+  SyntheticVisualizerAudio({this.envelopeReady = true, this.beatsReady = true});
+
+  @override
+  final bool envelopeReady;
+
+  @override
+  final bool beatsReady;
+
+  @override
+  final List<int> beatTimesMs = <int>[for (int t = 0; t < 240000; t += 500) t];
+
+  @override
+  late final List<int> downbeatTimesMs = <int>[
+    for (int i = 0; i < beatTimesMs.length; i += 4) beatTimesMs[i],
+  ];
+
+  @override
+  double? get bpm => 120;
+
+  @override
+  LyricVisualizerAudioFrame frameAt(int audioMs) {
+    final double beat = lyricVisualizerImpactAt(beatTimesMs, audioMs);
+    final double down = lyricVisualizerImpactAt(downbeatTimesMs, audioMs);
+    return LyricVisualizerAudioFrame(
+      power: 0.3 + 0.6 * beat,
+      low: beat,
+      mid: 0.5,
+      high: 0.2 + 0.3 * beat,
+      vocal: 0.4,
+      onset: beat,
+      beatImpact: beat,
+      downbeatImpact: down,
+      drumImpact: beat,
+      bpm: 120,
+      envelopeReady: envelopeReady,
+      beatsReady: beatsReady,
+      drumsReady: true,
+      vocalReady: true,
+    );
+  }
+}
+
 /// 手动拨的时钟。
 class FakeVisualizerClock implements LyricVisualizerClock {
   FakeVisualizerClock([this.positionMs = 0]);
@@ -115,6 +159,11 @@ LyricVisualizerContext visualizerContextFor(
   bool motion = true,
   bool playing = true,
   Map<String, Object?> tuning = const <String, Object?>{},
+  double fontScale = 1,
+  LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
+  LyricVisualizerTheme? theme,
+  LyricVisualizerAudio? audio,
+  int offsetMs = 0,
 }) {
   final LyricTimeline t = timeline ?? sampleWordTimeline();
   final ColorScheme scheme = ColorScheme.fromSeed(
@@ -125,15 +174,21 @@ LyricVisualizerContext visualizerContextFor(
     timeline: t,
     runtime: LyricVisualizerRuntime(t),
     clock: clock,
-    offsetMs: 0,
+    offsetMs: offsetMs,
     playing: playing,
-    palette: LyricVisualizerPalette.fromScheme(scheme),
+    palette: LyricVisualizerPalette.fromScheme(
+      scheme,
+    ).applyOverride(theme?.palette),
     tuning: LyricVisualizerTuning(entry.tunings, tuning),
     seed: lyricVisualizerSeedOf('test-track'),
     motion: motion,
     title: 'Test title',
     artist: 'Test artist',
     album: 'Test album',
+    fontScale: fontScale,
+    intensity: theme?.intensity ?? intensity,
+    theme: theme,
+    audio: audio,
   );
 }
 
@@ -158,6 +213,11 @@ Future<void> pumpVisualizerAcross(
     30000,
   ],
   Map<String, Object?> tuning = const <String, Object?>{},
+  double fontScale = 1,
+  LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
+  LyricVisualizerTheme? theme,
+  LyricVisualizerAudio? audio,
+  int offsetMs = 0,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -169,6 +229,11 @@ Future<void> pumpVisualizerAcross(
     motion: motion,
     playing: playing,
     tuning: tuning,
+    fontScale: fontScale,
+    intensity: intensity,
+    theme: theme,
+    audio: audio,
+    offsetMs: offsetMs,
   );
   await tester.pumpWidget(
     MaterialApp(

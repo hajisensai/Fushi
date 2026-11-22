@@ -15,6 +15,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
@@ -22,6 +23,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.d
 // （`LyricVisualizerTheme` / `LyricVisualizerIntensity`）各在自己的文件里，这里一并导出：
 // 样式与实现方只 import 本文件即可。
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_background.dart';
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 播放位置读口（只读、无副作用）。框架契约自带这一个最小接口，不从 app 组件层引入时钟类型：
@@ -193,12 +195,24 @@ class LyricVisualizerPalette {
 /// 一项可调参数的声明。样式在注册项里列出，宿主据此画通用的参数面板并落库；样式用
 /// [LyricVisualizerTuning] 读取当前值。[key] 落库（冻结）。
 sealed class LyricVisualizerTuningSpec {
-  const LyricVisualizerTuningSpec({required this.key, required this.label});
+  const LyricVisualizerTuningSpec({
+    required this.key,
+    required this.label,
+    this.visibleWhen,
+    this.section,
+  });
 
   final String key;
 
   /// 显示名（i18n getter，面板构建时才取，跟随语言切换）。
   final String Function() label;
+
+  /// 条件显隐（folia tuning 的 `visible`）：按面板里当前的值判断这一项要不要显示；null = 总显示。
+  /// 隐藏的项照样落库、照样生效，只是不画。
+  final bool Function(LyricVisualizerTuning values)? visibleWhen;
+
+  /// 所属分组（可嵌套）；null = 顶层。面板把同一分组的项收进一个可折叠区块。
+  final LyricVisualizerTuningSection? section;
 
   Object get defaultValue;
 
@@ -211,6 +225,8 @@ class LyricVisualizerSliderSpec extends LyricVisualizerTuningSpec {
   const LyricVisualizerSliderSpec({
     required super.key,
     required super.label,
+    super.visibleWhen,
+    super.section,
     required this.min,
     required this.max,
     required this.initial,
@@ -241,6 +257,8 @@ class LyricVisualizerToggleSpec extends LyricVisualizerTuningSpec {
   const LyricVisualizerToggleSpec({
     required super.key,
     required super.label,
+    super.visibleWhen,
+    super.section,
     required this.initial,
   });
 
@@ -258,6 +276,8 @@ class LyricVisualizerChoiceSpec extends LyricVisualizerTuningSpec {
   const LyricVisualizerChoiceSpec({
     required super.key,
     required super.label,
+    super.visibleWhen,
+    super.section,
     required this.options,
     required this.initial,
   });
@@ -276,6 +296,176 @@ class LyricVisualizerChoiceSpec extends LyricVisualizerTuningSpec {
     }
     return initial;
   }
+}
+
+/// 颜色（folia tuning 的 color）：面板里是配色色板 + 十六进制输入。落库为 ARGB 整数；也认
+/// `#RRGGBB` / `#AARRGGBB` 字符串（AI 主题、手写 JSON）。
+class LyricVisualizerColorSpec extends LyricVisualizerTuningSpec {
+  const LyricVisualizerColorSpec({
+    required super.key,
+    required super.label,
+    required this.initial,
+    super.visibleWhen,
+    super.section,
+    this.swatches = const <Color>[],
+    this.allowAlpha = false,
+  });
+
+  final Color initial;
+
+  /// 额外的预置色（面板里排在配色色板后面）。
+  final List<Color> swatches;
+
+  /// false = 落库前把透明度钉到不透明。
+  final bool allowAlpha;
+
+  @override
+  Object get defaultValue => initial.toARGB32();
+
+  @override
+  Object normalize(Object? raw) {
+    int? v;
+    if (raw is int) {
+      v = raw & 0xFFFFFFFF;
+    } else if (raw is String) {
+      v = lyricVisualizerParseHexColor(raw)?.toARGB32();
+    }
+    if (v == null) return initial.toARGB32();
+    return allowAlpha ? v : (v | 0xFF000000);
+  }
+}
+
+/// `#RGB` / `#RRGGBB` / `#AARRGGBB`（`#` 可省）→ 颜色；格式不对为 null。
+Color? lyricVisualizerParseHexColor(String raw) {
+  String h = raw.trim();
+  if (h.startsWith('#')) h = h.substring(1);
+  if (h.length == 3) {
+    h = h.split('').map((String c) => '$c$c').join();
+  }
+  if (h.length == 6) h = 'FF$h';
+  if (h.length != 8) return null;
+  final int? v = int.tryParse(h, radix: 16);
+  return v == null ? null : Color(v);
+}
+
+/// 颜色 → `#RRGGBB`（不透明）或 `#AARRGGBB`。
+String lyricVisualizerHexOf(Color c) {
+  final int v = c.toARGB32();
+  final String hex = v.toRadixString(16).padLeft(8, '0').toUpperCase();
+  return (v >> 24) == 0xFF ? '#${hex.substring(2)}' : '#$hex';
+}
+
+/// 文本输入（folia tuning 的 text：如时计的自定义标题、群唱的昵称）。
+class LyricVisualizerTextSpec extends LyricVisualizerTuningSpec {
+  const LyricVisualizerTextSpec({
+    required super.key,
+    required super.label,
+    this.initial = '',
+    super.visibleWhen,
+    super.section,
+    this.maxLength = 120,
+    this.hint,
+  });
+
+  final String initial;
+  final int maxLength;
+
+  /// 输入框占位提示。
+  final String Function()? hint;
+
+  @override
+  Object get defaultValue => initial;
+
+  @override
+  Object normalize(Object? raw) {
+    if (raw is! String) return initial;
+    return raw.length > maxLength ? raw.substring(0, maxLength) : raw;
+  }
+}
+
+/// 用户素材包（群唱头像 / 表情、凝彩图层、莫奈人像）：值是选中的素材包名；面板里能往包里加图、删图。
+/// 文件在 app 数据目录 `visualizer_assets/<[style]>/<包名>/`（见 `lyric_visualizer_assets.dart`）。
+class LyricVisualizerAssetPackSpec extends LyricVisualizerTuningSpec {
+  const LyricVisualizerAssetPackSpec({
+    required super.key,
+    required super.label,
+    required this.style,
+    this.initial = 'default',
+    super.visibleWhen,
+    super.section,
+    this.maxFiles = 64,
+  });
+
+  /// 素材目录名（一般是样式的 `LyricVisualizerMode.name`）。
+  final String style;
+  final String initial;
+
+  /// 一个包最多几张图（导入时超出的丢掉）。
+  final int maxFiles;
+
+  @override
+  Object get defaultValue => initial;
+
+  @override
+  Object normalize(Object? raw) =>
+      raw is String && lyricVisualizerIsValidPackName(raw) ? raw : initial;
+}
+
+/// 素材包名只许字母数字、`_`、`-`（1–40 个），直接当目录名用。
+bool lyricVisualizerIsValidPackName(String name) =>
+    RegExp(r'^[A-Za-z0-9_-]{1,40}$').hasMatch(name);
+
+/// 参数分组（可嵌套：[parent] 是上一层）。[key] 只用于识别，不落库。
+@immutable
+class LyricVisualizerTuningSection {
+  const LyricVisualizerTuningSection({
+    required this.key,
+    required this.label,
+    this.parent,
+    this.initiallyExpanded = false,
+  });
+
+  final String key;
+  final String Function() label;
+  final LyricVisualizerTuningSection? parent;
+  final bool initiallyExpanded;
+
+  /// 从顶层到自己的分组链。
+  List<LyricVisualizerTuningSection> get path {
+    final List<LyricVisualizerTuningSection> out =
+        <LyricVisualizerTuningSection>[];
+    LyricVisualizerTuningSection? s = this;
+    while (s != null) {
+      out.insert(0, s);
+      s = s.parent;
+    }
+    return out;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is LyricVisualizerTuningSection && other.key == key;
+
+  @override
+  int get hashCode => key.hashCode;
+}
+
+/// 一组命名的参数值（folia 时计的「默认 / 预设 1–3」）。[values] 只需列与默认不同的项。
+@immutable
+class LyricVisualizerTuningPreset {
+  const LyricVisualizerTuningPreset({
+    required this.id,
+    required this.label,
+    required this.values,
+  });
+
+  final String id;
+  final String Function() label;
+  final Map<String, Object> values;
+
+  /// 套用后的完整值（默认值叠上预设）。
+  Map<String, Object> apply(List<LyricVisualizerTuningSpec> specs) =>
+      LyricVisualizerTuning(specs, values).toMap();
 }
 
 /// 某个样式当前生效的参数（落库值按声明规整过，缺的取默认）。
@@ -309,6 +499,21 @@ class LyricVisualizerTuning {
     final Object? v = _values[key];
     return v is String ? v : fallback;
   }
+
+  /// 颜色参数（[LyricVisualizerColorSpec]）。
+  Color color(String key, Color fallback) {
+    final Object? v = _values[key];
+    return v is int ? Color(v) : fallback;
+  }
+
+  /// 文本参数（[LyricVisualizerTextSpec]）。
+  String text(String key, String fallback) {
+    final Object? v = _values[key];
+    return v is String ? v : fallback;
+  }
+
+  /// 素材包名（[LyricVisualizerAssetPackSpec]）。
+  String assetPack(String key, String fallback) => text(key, fallback);
 
   Map<String, Object> toMap() => Map<String, Object>.unmodifiable(_values);
 
@@ -576,6 +781,8 @@ class LyricVisualizerEntry {
     this.tunings = const <LyricVisualizerTuningSpec>[],
     this.sharedBackdrop = true,
     this.sharedSubtitle = true,
+    this.background,
+    this.tuningPresets = const <LyricVisualizerTuningPreset>[],
   });
 
   final LyricVisualizerMode mode;
@@ -589,8 +796,26 @@ class LyricVisualizerEntry {
   final Widget Function(LyricVisualizerContext context) builder;
   final List<LyricVisualizerTuningSpec> tunings;
 
-  /// true = 宿主在样式下面画歌词页的流体背景；false = 样式自己画全部背景（Still、Diorama…）。
+  /// 旧开关（过渡期保留，样式迁到 [background] 后删除）：true = 用用户选的共享背景；false = 样式
+  /// 自己画全部背景，宿主只铺一层纯色底。[background] 非 null 时忽略它。
   final bool sharedBackdrop;
+
+  /// 按当前参数决定背景（folia 背景独立组合）：用户选的共享背景 / 不要 / 指定某个背景 / 透明。
+  /// null = 按 [sharedBackdrop]。
+  final LyricVisualizerBackgroundRequest Function(LyricVisualizerTuning tuning)?
+  background;
+
+  /// 参数预设（面板顶部一排，点一下整组套用）。
+  final List<LyricVisualizerTuningPreset> tuningPresets;
+
+  /// 生效的背景请求。
+  LyricVisualizerBackgroundRequest backgroundFor(
+    LyricVisualizerTuning tuning,
+  ) =>
+      background?.call(tuning) ??
+      (sharedBackdrop
+          ? LyricVisualizerBackgroundRequest.selected
+          : LyricVisualizerBackgroundRequest.none);
 
   /// true = 宿主在底部画共享的译文 / 下一句字幕；样式自己排译文时填 false。
   final bool sharedSubtitle;
