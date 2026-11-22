@@ -1733,8 +1733,18 @@ String _mangaGestureJs({
   // （scrollY 变小）把界面弹出来，捏合同理（反馈 P2jQzOBBag 排查）。回写后把那条
   // 监听的基线同步到新位置，这段位移就不计入用户滚动距离。
   function _zoomAnchorScrollTo(y){
-    window.scrollTo(0, y);
+    _programScrollTo(y);
+  }
+  // 阅读器自己发起的滚动（跳页 / 有声跟随翻页 / 朗读露出句子 / 分镜聚焦 / 自动滚动）：
+  // 滚完把「滚动收起界面」监听的基线同步到新位置，这段位移不算读者在滚。否则它落在
+  // 一次点击后的 1200ms 用户输入窗口里（点「阅读模式」切条漫、点播放条），就被当成
+  // 用户滚动回报 onMangaReaderHide（反馈 Yh8ukM6J_i）。
+  function _syncReaderScrollBaseline(){
     lastReaderScroll = window.scrollY;
+  }
+  function _programScrollTo(y){
+    window.scrollTo(0, y);
+    _syncReaderScrollBaseline();
   }
   var doubleTapZoomFrame=null;
   function _cancelDoubleTapZoom(){
@@ -2241,7 +2251,7 @@ String _mangaGestureJs({
     var step = function(now){
       if (t0 === null) t0 = now;
       var p = Math.min(1, (now - t0) / ms);
-      window.scrollTo(0, y0 + (top - y0) * _ease(p));
+      _programScrollTo(y0 + (top - y0) * _ease(p));
       if (p < 1) { _scrollAnimRaf = requestAnimationFrame(step); return; }
       _scrollAnimRaf = null;
       // 动画期间的滚动上报被挡住了（中途的 topPage 是半路的页）：落定后补报一次。
@@ -2273,7 +2283,7 @@ String _mangaGestureJs({
       _animateScrollTo(top, ms);
       return;
     }
-    window.scrollTo(0, top);
+    _programScrollTo(top);
   };
   // 聚焦一个页面内的归一化分镜矩形。Dart 侧只传原图坐标，避免把 WebView
   // 缩放/双页布局细节泄漏到检测器；这里用页面实际 client rect 计算视口中心。
@@ -2318,7 +2328,7 @@ String _mangaGestureJs({
       PAN_X = vw * 0.5 - localX * ZOOM;
       PAN_Y = 0;
       _applyCanvas();
-      window.scrollTo(0, Math.max(0, localY * ZOOM - vh * 0.5));
+      _programScrollTo(Math.max(0, localY * ZOOM - vh * 0.5));
     } else {
       var localPanelX = (cx - PAN_X) / ZOOM;
       var localPanelY = (cy - PAN_Y) / ZOOM;
@@ -2390,6 +2400,7 @@ String _mangaGestureJs({
     // 条漫是一整条长图：读到的句子不在视口里就滚到刚好露出它。
     if (scroll && IS_WEBTOON && boxes.length && boxes[0].scrollIntoView) {
       boxes[0].scrollIntoView({block: 'nearest'});
+      _syncReaderScrollBaseline();
     }
   };
   // blocks 为空 / 非数组 = 清除高亮。
@@ -3687,7 +3698,7 @@ String _mangaGestureJs({
     if(!document.hidden && !autoScrollPaused && !has && !pinch && !rightDrag){
       if(lastAutoTime!==null){
         var dt=Math.min(100,time-lastAutoTime);
-        if(IS_WEBTOON) window.scrollBy(0,${preferences.autoScrollSpeed.clamp(5, 200)}*dt/1000);
+        if(IS_WEBTOON){window.scrollBy(0,${preferences.autoScrollSpeed.clamp(5, 200)}*dt/1000);_syncReaderScrollBaseline();}
         else {
           autoPageTime+=dt;
           if(autoPageTime>=window.innerHeight/${preferences.autoScrollSpeed.clamp(5, 200)}*1000){

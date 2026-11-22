@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/reader_space_override.dart'
+    show resolveReaderSpaceOverride;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 /// 漫画左右方向键的跨页方向校正。
@@ -32,6 +34,46 @@ ShortcutAction? resolveMangaArrowPageTurn({
   final bool isRight = key == LogicalKeyboardKey.arrowRight;
   if (!isLeft && !isRight) return null;
   return _directionalPageTurn(isLeft: isLeft, rtl: rtl);
+}
+
+/// 有声漫画 / 漫画朗读在场时，裸空格与裸左右方向键默认由有声接管（反馈 WrLFAXNkSw，
+/// 与有声书同一惯例）：
+///
+///  * 裸空格 → 播放 / 暂停。判据直接复用小说阅读器的 [resolveReaderSpaceOverride]
+///    （有声在场 + 无修饰 + Space），两个阅读器不各写一套；
+///  * 裸左 / 右 → 上一句 / 下一句。方向取 [resolveMangaArrowPageTurn] 已按跨页方向
+///    校正好的页序（前进 = 下一句），所以只在该键仍是出厂翻页绑定时接管——用户改绑
+///    / 解绑过就让路，与翻页方向校正同一判据。[pageAction] 传校正后的动作。
+///
+/// 不接管的情形：没有在场的有声（[audioActive] 假）、带修饰键、查词弹窗可见
+/// （[dictionaryShown]：空格归弹窗、左右键是「关弹窗并翻页」）。PageUp / PageDown /
+/// 滚轮 / 点按翻页一律不受影响，播放中照样能翻页（有声跟到新页页首）。返回 null
+/// 表示不接管，交回原解析。
+ShortcutAction? resolveMangaAudioKeyTakeover({
+  required LogicalKeyboardKey key,
+  required Set<ModifierKey> modifiers,
+  required ShortcutAction? pageAction,
+  required bool audioActive,
+  required bool dictionaryShown,
+}) {
+  if (!audioActive || dictionaryShown || modifiers.isNotEmpty) return null;
+  if (resolveReaderSpaceOverride(
+        key: key,
+        modifiers: modifiers,
+        hasActiveAudiobook: audioActive,
+      ) !=
+      null) {
+    return ShortcutAction.mangaAudioPlayPause;
+  }
+  if (key != LogicalKeyboardKey.arrowLeft &&
+      key != LogicalKeyboardKey.arrowRight) {
+    return null;
+  }
+  return switch (pageAction) {
+    ShortcutAction.mangaPageForward => ShortcutAction.mangaAudioNextLine,
+    ShortcutAction.mangaPageBackward => ShortcutAction.mangaAudioPreviousLine,
+    _ => null,
+  };
 }
 
 /// 漫画手柄 D-pad 左/右的跨页方向校正——[resolveMangaArrowPageTurn] 的手柄同构。
