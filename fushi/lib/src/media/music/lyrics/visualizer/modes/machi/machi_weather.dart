@@ -110,11 +110,11 @@ void paintMachiPrecipitation(
   MachiSceneModel scene,
 ) {
   final double rain = machiClamp(
-    f.env.rain * (0.8 + 0.2 * f.chorus + 0.15 * f.audio),
+    f.env.rain * (0.8 + 0.2 * f.chorus + 0.15 * f.audio) * f.intensity,
     0,
     1.3,
   );
-  final double snow = f.env.snow;
+  final double snow = f.env.snow * (0.75 + 0.25 * f.intensity);
   const double topY = 9.5;
   if (rain > 0.02) {
     final int count = (420 * rain).round();

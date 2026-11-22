@@ -323,6 +323,9 @@ class MachiFrame {
   double song = 0;
   double chorus = 0;
   double audio = 0;
+
+  /// 动画强度对雨雪的倍数（folia `INTENSITY_SCALE`：平静 0.7 / 普通 1 / 激烈 1.3）。
+  double intensity = 1;
   double flicker = 1;
   double lightning = 0;
   double doorOpen = 0;
@@ -898,7 +901,7 @@ class MachiRenderer {
           lamp.position,
           lamp.radius * (1 + 0.3 * frame.look.mist),
           lamp.color,
-          0.55 * s * (0.45 + frame.look.bloom * 1.6),
+          0.55 * s * (0.45 + frame.look.bloom * frame.beat.bloom * 1.6),
         );
       }
     }

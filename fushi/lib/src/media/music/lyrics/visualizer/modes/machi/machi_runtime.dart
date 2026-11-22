@@ -58,7 +58,8 @@ class MachiRuntime {
   MachiFrame? _frame;
 
   LyricVisualizerRuntime? _linesOf;
-  List<bool> _chorus = const <bool>[];
+  List<MachiBeatEvent> _beats = const <MachiBeatEvent>[];
+  Object? _beatsKey;
   List<double> _lightningTimes = const <double>[];
   List<double> _paragraphs = const <double>[];
 
@@ -82,21 +83,30 @@ class MachiRuntime {
   void configure(LyricVisualizerContext ctx, TextStyle base) {
     _ctx = ctx;
     _settings = MachiSettings(ctx.tuning);
-    final TextStyle style = base.copyWith(
-      decoration: TextDecoration.none,
-      shadows: null,
+    final TextStyle style = ctx.applyThemeFont(
+      base.copyWith(decoration: TextDecoration.none, shadows: null),
     );
     if (style != text.base) {
       text.reset(style);
       _screen?.invalidate();
     }
     final MachiSceneId id = resolveMachiSceneId(_settings.scene, ctx.seed);
-    final int key = Object.hash(id, ctx.seed, ctx.palette);
+    final List<Color> keywords = <Color>[...?ctx.theme?.wordColors.values];
+    final int key = Object.hash(
+      id,
+      ctx.seed,
+      ctx.palette,
+      Object.hashAll(keywords),
+    );
     if (_scene == null || key != _sceneKey) {
       _sceneKey = key;
       final bool sameScene = _sceneId == id;
       _sceneId = id;
-      final MachiPalette palette = resolveMachiPalette(ctx.palette, ctx.seed);
+      final MachiPalette palette = resolveMachiPalette(
+        ctx.palette,
+        ctx.seed,
+        keywordColors: keywords,
+      );
       final (double w, double h) = machiScreenSizeOf(id);
       _screen = MachiLyricScreen(w, h);
       _scene = buildMachiScene(id, palette, ctx.seed, _screen!);
@@ -105,12 +115,24 @@ class MachiRuntime {
     }
     if (!identical(_linesOf, ctx.runtime)) {
       _linesOf = ctx.runtime;
-      _chorus = buildMachiChorusFlags(ctx.runtime.lines);
-      _lightningTimes = buildMachiLightningTimes(ctx.runtime.lines, _chorus);
+      _lightningTimes = buildMachiLightningTimes(ctx.runtime.lines);
       _paragraphs = buildMachiParagraphStarts(ctx.runtime.lines);
       _screen?.invalidate();
     }
+    final LyricVisualizerAudio? audio = ctx.audio;
+    final Object beatsKey = Object.hash(
+      identityHashCode(audio),
+      audio != null && audio.beatsReady ? audio.beatTimesMs.length : -1,
+      ctx.offsetMs,
+    );
+    if (beatsKey != _beatsKey) {
+      _beatsKey = beatsKey;
+      _beats = machiBeatEventsOf(ctx);
+    }
   }
+
+  /// 本首的节拍表（显示时间，秒）；没有节拍网格为空。
+  List<MachiBeatEvent> get beats => _beats;
 
   /// 推进一帧。
   void step(LyricVisualizerTick tick, Size size) {
@@ -143,7 +165,7 @@ class MachiRuntime {
     final List<LyricVisualizerLine> lines = ctx.runtime.lines;
     final double song = tick.timeMs / 1000;
     final MachiBoardTarget board = resolveMachiBoardTarget(lines, song);
-    final double chorus = resolveMachiChorus(_chorus, board);
+    final double chorus = resolveMachiChorus(lines, board);
     _chorusSmooth = motion
         ? _chorusSmooth +
               (chorus - _chorusSmooth) * (1 - math.exp(-realDelta * 3))
@@ -158,7 +180,8 @@ class MachiRuntime {
       ..glow = _settings.glow
       ..reflections = _settings.reflections
       ..chorus = _chorusSmooth
-      ..audio = motion ? ctx.runtime.pulseAt(tick.timeMs) : 0
+      ..audio = motion ? ctx.audioFrameAt(tick.timeMs).power : 0
+      ..intensity = ctx.intensity.pick(0.7, 1, 1.3)
       ..flicker = motion ? resolveMachiFlicker(_ambient, ctx.seed) : 1
       ..lightning = motion && _env!.rain > 0.5
           ? resolveMachiLightning(_lightningTimes, song) * _env!.rain
@@ -169,17 +192,20 @@ class MachiRuntime {
       ..doorOpen = scene.id == MachiSceneId.konbini
           ? resolveMachiDoorOpen(_paragraphs, song)
           : 0
-      ..car = motion ? resolveMachiCar(_ambient, ctx.seed, scene.lanes) : null
+      ..car = motion
+          ? resolveMachiCar(
+              _ambient,
+              ctx.seed,
+              scene.lanes,
+              // folia TRAFFIC_CHANCE：平静 0.4 / 普通 0.6 / 激烈 0.78
+              chance: ctx.intensity.pick(0.4, 0.6, 0.78),
+            )
+          : null
       ..positionSec = ctx.clock.position.inMilliseconds / 1000
       ..durationSec = ctx.clock.duration.inMilliseconds / 1000
       ..lineCount = lines.length
       ..lineNumber = board.lineIndex == null ? 0 : board.lineIndex! + 1;
-    if (motion && _settings.simulatedBeat) {
-      resolveMachiSteadyNeonPulse(_ambient, 1, f.beat);
-      resolveMachiSteadyScreenFlash(_ambient, 1, f.beat);
-    } else {
-      f.beat.reset();
-    }
+    _stepBeat(f, song, motion);
     final String title = f.title.isEmpty ? 'Machi' : f.title;
     f.tickerText = scene.id == MachiSceneId.kowloon
         ? _kowloonTicker(board, lines, title, f.artist)
@@ -233,13 +259,15 @@ class MachiRuntime {
     _motionTime += ambientDelta * _settings.motionSpeed;
     final MachiViewOffset d = resolveMachiDrift(_motionTime);
     final double w = _driftWeight * _driftWeight * (3 - 2 * _driftWeight);
-    final bool custom = _settings.customView;
+    final MachiCustomView view = _settings.customView
+        ? _settings.viewOf(scene.id)
+        : const MachiCustomView();
     final MachiViewOffset offset = MachiViewOffset(
-      azimuth: (custom ? _settings.azimuth : 0) + d.azimuth * w,
-      elevation: (custom ? _settings.elevation : 0) + d.elevation * w,
-      zoom: (custom ? _settings.zoom : 1) * math.pow(d.zoom, w).toDouble(),
-      panX: (custom ? _settings.panX : 0) + d.panX * w,
-      panZ: (custom ? _settings.panZ : 0) + d.panZ * w,
+      azimuth: view.azimuth + d.azimuth * w,
+      elevation: view.elevation + d.elevation * w,
+      zoom: view.zoom * math.pow(d.zoom, w).toDouble(),
+      panX: view.panX + d.panX * w,
+      panZ: view.panZ + d.panZ * w,
     );
     _camera = machiFitCamera(
       framing: scene.framing,
@@ -256,6 +284,24 @@ class MachiRuntime {
         look: f.look,
         lightning: f.lightning,
       );
+  }
+
+  /// 节拍（folia `stepBeat`）：有节拍网格且「霓虹随拍」开着时霓虹跟真拍子（按歌曲时间取，暂停时回常态）；
+  /// 否则开着「模拟节拍」时霓虹按氛围时钟上的固定节拍走。大屏闪拍按固定节拍（军鼓击点不在音频契约里）。
+  void _stepBeat(MachiFrame f, double song, bool motion) {
+    f.beat.reset();
+    if (!motion) return;
+    final bool real = _beats.isNotEmpty && _settings.neonPulse > 0;
+    if (real) {
+      if (_ctx.playing) {
+        resolveMachiNeonPulse(_beats, song, _settings.neonPulse, f.beat);
+      }
+    } else if (_settings.simulatedBeat) {
+      resolveMachiSteadyNeonPulse(_ambient, 1, f.beat);
+    }
+    if (_settings.simulatedBeat) {
+      resolveMachiSteadyScreenFlash(_ambient, 1, f.beat);
+    }
   }
 
   /// 城寨的跑马灯：这一句的译文，没有译文时滚曲名、歌手。

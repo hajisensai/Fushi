@@ -23,8 +23,9 @@ final LyricVisualizerEntry machiVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_machi_description,
   icon: FushiIcons.home,
   tunings: machiTuningSpecs,
-  // 天空自己画（folia `background: false`）。
-  sharedBackdrop: false,
+  // 天空自己画（folia `background: false`）：不要共享背景。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.none,
   // 底部字幕照常（folia 里通用字号只影响底部字幕，场景里的字按屏幕大小排）。
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => MachiVisualizer(context: c),

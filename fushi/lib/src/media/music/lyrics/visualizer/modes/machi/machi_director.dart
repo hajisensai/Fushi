@@ -6,6 +6,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_math.dart';
 
@@ -290,39 +291,24 @@ MachiBoardTarget resolveMachiBoardTarget(
   return MachiBoardTarget.line(index);
 }
 
-/// 副歌标记。Fushi 的歌词没有 folia 的 `isChorus` / `songPart`：按“同一句在整首里
-/// 唱过至少两次”认副歌（去掉空格标点、不分大小写，至少两个字）。
-List<bool> buildMachiChorusFlags(List<LyricVisualizerLine> lines) {
-  String norm(String s) =>
-      s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
-  final Map<String, int> counts = <String, int>{};
-  final List<String> keys = <String>[
-    for (final LyricVisualizerLine l in lines) norm(l.text),
-  ];
-  for (final String k in keys) {
-    if (k.length < 2) continue;
-    counts[k] = (counts[k] ?? 0) + 1;
-  }
-  return <bool>[
-    for (final String k in keys) k.length >= 2 && (counts[k] ?? 0) >= 2,
-  ];
-}
-
-/// 副歌权重：牌面在副歌行上为 1（运行时再做平滑）。
-double resolveMachiChorus(List<bool> chorus, MachiBoardTarget target) {
+/// 副歌权重（folia `resolveMachiChorus`）：牌面在副歌行上为 1（运行时再做平滑）。副歌取运行时的
+/// `isChorus`（来源带段落标注时用标注，否则 folia 的文本启发式）。
+double resolveMachiChorus(
+  List<LyricVisualizerLine> lines,
+  MachiBoardTarget target,
+) {
   final int? i = target.lineIndex;
-  if (i == null || i < 0 || i >= chorus.length) return 0;
-  return chorus[i] ? 1 : 0;
+  if (i == null || i < 0 || i >= lines.length) return 0;
+  return lines[i].isChorus ? 1 : 0;
 }
 
 /// 每段副歌的开头（相邻副歌行算一段），秒。
-List<double> buildMachiLightningTimes(
-  List<LyricVisualizerLine> lines,
-  List<bool> chorus,
-) => <double>[
-  for (int i = 0; i < lines.length; i++)
-    if (chorus[i] && (i == 0 || !chorus[i - 1])) lines[i].startMs / 1000,
-];
+List<double> buildMachiLightningTimes(List<LyricVisualizerLine> lines) =>
+    <double>[
+      for (int i = 0; i < lines.length; i++)
+        if (lines[i].isChorus && (i == 0 || !lines[i - 1].isChorus))
+          lines[i].startMs / 1000,
+    ];
 
 /// 闪电亮度 0..1：两下闪，第二下略弱，一秒多收尽。
 double resolveMachiLightning(List<double> times, double time) {
@@ -438,6 +424,9 @@ class MachiBeatFrame {
   final List<double> neonGroups = List<double>.filled(machiNeonGroups, 1);
   double neon = 1;
   double warm = 1;
+
+  /// 辉光强度的倍数（跟三组霓虹的平均走）。
+  double bloom = 1;
   final List<double> swellAt = List<double>.filled(4, 0.5);
   final List<double> swellAmp = List<double>.filled(4, 0);
 
@@ -445,6 +434,7 @@ class MachiBeatFrame {
     neonGroups.fillRange(0, machiNeonGroups, 1);
     neon = 1;
     warm = 1;
+    bloom = 1;
     swellAt.fillRange(0, 4, 0.5);
     swellAmp.fillRange(0, 4, 0);
   }
@@ -459,43 +449,159 @@ class MachiBeatFrame {
 const double _beatPeriod = 0.75;
 const int _beatsPerBar = 4;
 
-/// 固定节拍的霓虹随拍：第 k 拍轮到第 k % 3 组，约 0.4 秒亮起、1.5 秒暗下；别的组按
-/// 与平均的差暗一点（此起彼伏，整体不一跳一跳）；小节第一拍店里暖灯涨一点。
-void resolveMachiSteadyNeonPulse(
-  double time,
-  double strength,
-  MachiBeatFrame out,
-) {
+/// 一拍（folia `BeatFxEvent` 里用得到的那几项；显示时间，秒）。
+class MachiBeatEvent {
+  const MachiBeatEvent({
+    required this.t,
+    required this.downbeat,
+    required this.gain,
+  });
+
+  final double t;
+  final bool downbeat;
+
+  /// folia `resolveBeatFxAccentGain`：0 = 没有节奏的小节里的拍，不亮。
+  final double gain;
+}
+
+/// 音频分析 → 节拍表（显示时间，秒）。每拍的重音读该拍那一刻的 `accentImpact`（正好在拍上时就是这一拍的
+/// 峰值，folia 弱拍底 0.35）；没有重音数据时每拍按 1 算。没有节拍网格返回空表。
+List<MachiBeatEvent> machiBeatEventsOf(LyricVisualizerContext c) {
+  final LyricVisualizerAudio? audio = c.audio;
+  if (audio == null || !audio.beatsReady) return const <MachiBeatEvent>[];
+  final Set<int> downbeats = audio.downbeatTimesMs.toSet();
+  return <MachiBeatEvent>[
+    for (final int ms in audio.beatTimesMs)
+      () {
+        final double? accent = audio.frameAt(ms).accentImpact;
+        return MachiBeatEvent(
+          t: c.displayTimeOfAudio(ms) / 1000,
+          downbeat: downbeats.contains(ms),
+          gain: accent == null
+              ? 1
+              : accent <= 1e-3
+              ? 0
+              : 0.35 + 0.65 * accent.clamp(0.0, 1.0),
+        );
+      }(),
+  ];
+}
+
+const double _neonAttack = 0.4;
+const double _neonFall = 1.5;
+const double _neonLift = 0.2;
+const double _neonContrast = 0.2;
+const double _neonDownbeat = 1.2;
+const double _warmAttack = 0.6;
+const double _warmFall = 2.2;
+const double _warmLift = 0.08;
+const double _bloomLift = 0.1;
+const double _neonLife = 2.8; // max(0.4 + 1.5, 0.6 + 2.2)
+
+void _resetNeon(MachiBeatFrame out) {
   out.neonGroups.fillRange(0, machiNeonGroups, 1);
   out.neon = 1;
   out.warm = 1;
-  if (strength <= 0 || time < 0) return;
-  const double life = 2.8; // max(0.4 + 1.5, 0.6 + 2.2)
-  final List<double> swells = List<double>.filled(machiNeonGroups, 0);
-  double bar = 0;
-  for (int index = (time / _beatPeriod).floor(); index >= 0; index--) {
-    final double age = time - index * _beatPeriod;
-    if (age >= life) break;
-    final bool downbeat = index % _beatsPerBar == 0;
-    final int group = index % machiNeonGroups;
-    final double swell = (downbeat ? 1.2 : 1) * machiSwell(age, 0.4, 1.5);
-    swells[group] = math.max(swells[group], swell);
-    if (downbeat) bar = math.max(bar, machiSwell(age, 0.6, 2.2));
-  }
-  final double k = strength * 0.8;
+  out.bloom = 1;
+}
+
+/// 把一拍叠进 [swells]：第 index 拍轮到 index % 组数 那组；返回这拍给店里暖灯的量（不是小节第一拍为 0）。
+double _addNeonBeat(
+  List<double> swells,
+  int index,
+  double age,
+  double gain,
+  bool downbeat,
+) {
+  final int group = index % machiNeonGroups;
+  final double swell =
+      gain *
+      (downbeat ? _neonDownbeat : 1) *
+      machiSwell(age, _neonAttack, _neonFall);
+  swells[group] = math.max(swells[group], swell);
+  if (!downbeat) return 0;
+  return gain * machiSwell(age, _warmAttack, _warmFall);
+}
+
+/// 每组的倍数 = 1 + 强度 ×（lift × 这组 + contrast ×（这组 − 三组平均）），三组一样亮时只是轮流。
+void _writeNeon(
+  List<double> swells,
+  double strength,
+  double bar,
+  MachiBeatFrame out,
+) {
   double mean = 0;
-  for (final double s in swells) {
-    mean += s;
+  for (final double v in swells) {
+    mean += v;
   }
   mean /= machiNeonGroups;
   for (int g = 0; g < machiNeonGroups; g++) {
     out.neonGroups[g] = math.max(
       0,
-      1 + k * (0.2 * swells[g] + 0.2 * (swells[g] - mean)),
+      1 +
+          strength *
+              (_neonLift * swells[g] + _neonContrast * (swells[g] - mean)),
     );
   }
-  out.neon = 1 + k * 0.2 * mean;
-  out.warm = 1 + k * 0.08 * bar;
+  out.neon = 1 + strength * _neonLift * mean;
+  out.warm = 1 + strength * _warmLift * bar;
+  out.bloom = 1 + strength * _bloomLift * mean;
+}
+
+/// 霓虹随拍（folia `resolveMachiNeonPulse`）：[events] 是整张节拍表（升序），按拍在表里的序号轮到第几组
+/// （拖进度也是同一组）；没有节奏的小节里的拍不亮。
+void resolveMachiNeonPulse(
+  List<MachiBeatEvent> events,
+  double time,
+  double strength,
+  MachiBeatFrame out,
+) {
+  _resetNeon(out);
+  if (events.isEmpty || strength <= 0) return;
+  final List<double> swells = List<double>.filled(machiNeonGroups, 0);
+  double bar = 0;
+  int last = -1;
+  int lo = 0;
+  int hi = events.length - 1;
+  while (lo <= hi) {
+    final int mid = (lo + hi) >> 1;
+    if (events[mid].t <= time) {
+      last = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  for (int index = last; index >= 0; index--) {
+    final MachiBeatEvent e = events[index];
+    final double age = time - e.t;
+    if (age >= _neonLife) break;
+    if (e.gain <= 0) continue;
+    bar = math.max(bar, _addNeonBeat(swells, index, age, e.gain, e.downbeat));
+  }
+  _writeNeon(swells, strength, bar, out);
+}
+
+/// 固定节拍的霓虹随拍（folia `resolveMachiSteadyNeonPulse`）：第 k 拍在 k × 0.75 秒，每 4 拍一个小节第一拍，
+/// 别的与 [resolveMachiNeonPulse] 一样；强度再乘 0.8。
+void resolveMachiSteadyNeonPulse(
+  double time,
+  double strength,
+  MachiBeatFrame out,
+) {
+  _resetNeon(out);
+  if (strength <= 0 || time < 0) return;
+  final List<double> swells = List<double>.filled(machiNeonGroups, 0);
+  double bar = 0;
+  for (int index = (time / _beatPeriod).floor(); index >= 0; index--) {
+    final double age = time - index * _beatPeriod;
+    if (age >= _neonLife) break;
+    bar = math.max(
+      bar,
+      _addNeonBeat(swells, index, age, 1, index % _beatsPerBar == 0),
+    );
+  }
+  _writeNeon(swells, strength * 0.8, bar, out);
 }
 
 /// 第 index 下在屏上的位置（0..1）：黄金分割步进，先后几下左右错开。

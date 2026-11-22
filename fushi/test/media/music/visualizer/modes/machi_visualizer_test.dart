@@ -14,6 +14,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_palett
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_render.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_screen.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_tuning.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_visualizer.dart';
 
 import '../visualizer_test_helpers.dart';
@@ -27,7 +28,13 @@ double _measure(String s) {
   return w;
 }
 
-LyricVisualizerLine _line(String text, int start, int end, {int index = 0}) {
+LyricVisualizerLine _line(
+  String text,
+  int start,
+  int end, {
+  int index = 0,
+  bool chorus = false,
+}) {
   final LyricLine l = LyricLine(
     startMs: start,
     endMs: end,
@@ -45,6 +52,7 @@ LyricVisualizerLine _line(String text, int start, int end, {int index = 0}) {
     glyphs: g,
     words: buildLyricVisualizerWords(g),
     backgroundLines: const <LyricLine>[],
+    isChorus: chorus,
   );
 }
 
@@ -138,9 +146,9 @@ void main() {
 
   group('编排', () {
     final List<LyricVisualizerLine> lines = <LyricVisualizerLine>[
-      _line('サビの歌詞', 1000, 3000, index: 0),
+      _line('サビの歌詞', 1000, 3000, index: 0, chorus: true),
       _line('別の歌詞', 3500, 5000, index: 1),
-      _line('サビの歌詞', 20000, 22000, index: 2),
+      _line('サビの歌詞', 20000, 22000, index: 2, chorus: true),
       _line('♪', 23000, 24000, index: 3),
     ];
 
@@ -152,14 +160,55 @@ void main() {
       expect(resolveMachiBoardTarget(lines, 23.5).isCard, isTrue);
     });
 
-    test('副歌：唱过两次的句子；闪电落在每段副歌开头，一秒多收尽', () {
-      final List<bool> chorus = buildMachiChorusFlags(lines);
-      expect(chorus, <bool>[true, false, true, false]);
-      final List<double> times = buildMachiLightningTimes(lines, chorus);
+    test('副歌取运行时 isChorus；闪电落在每段副歌开头，一秒多收尽', () {
+      final List<double> times = buildMachiLightningTimes(lines);
       expect(times, <double>[1, 20]);
       expect(resolveMachiLightning(times, 1.04), greaterThan(0.8));
       expect(resolveMachiLightning(times, 2.5), 0);
-      expect(resolveMachiChorus(chorus, const MachiBoardTarget.line(2)), 1);
+      expect(resolveMachiChorus(lines, const MachiBoardTarget.line(2)), 1);
+      expect(resolveMachiChorus(lines, const MachiBoardTarget.line(1)), 0);
+      expect(resolveMachiChorus(lines, const MachiBoardTarget.card()), 0);
+    });
+
+    test('霓虹随拍（真节拍）：按拍序轮组、重拍更亮带暖灯与辉光；没节奏不亮；强度 0 回常态', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        machiVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      final List<MachiBeatEvent> events = machiBeatEventsOf(c);
+      expect(events, isNotEmpty);
+      expect(events.first.downbeat, isTrue);
+      expect(events[1].downbeat, isFalse);
+      expect(
+        machiBeatEventsOf(
+          visualizerContextFor(
+            machiVisualizerEntry,
+            clock: FakeVisualizerClock(),
+          ),
+        ),
+        isEmpty,
+      );
+      final MachiBeatFrame f = MachiBeatFrame();
+      // 第 5 拍（2.5 秒）刚过 0.4 秒：第 5 % 3 组最亮
+      resolveMachiNeonPulse(events, events[5].t + 0.4, 1, f);
+      const int lit = 5 % machiNeonGroups;
+      for (int g = 0; g < machiNeonGroups; g++) {
+        if (g != lit) expect(f.neonGroups[lit], greaterThan(f.neonGroups[g]));
+      }
+      expect(f.bloom, greaterThan(1));
+      // 小节第一拍（第 4 拍）后暖灯起来
+      resolveMachiNeonPulse(events, events[4].t + 0.6, 1, f);
+      expect(f.warm, greaterThan(1));
+      resolveMachiNeonPulse(events, events[4].t + 0.6, 0, f);
+      expect(f.neonGroups, everyElement(1.0));
+      expect(f.bloom, 1);
+      const List<MachiBeatEvent> silent = <MachiBeatEvent>[
+        MachiBeatEvent(t: 0, downbeat: true, gain: 0),
+      ];
+      resolveMachiNeonPulse(silent, 0.4, 1, f);
+      expect(f.neonGroups, everyElement(1.0));
+      expect(f.warm, 1);
     });
 
     test('跑马灯：下一句加译文；曲名卡是曲名与歌手', () {
@@ -376,6 +425,92 @@ void main() {
     });
   });
 
+  group('调色板与设置', () {
+    test('AI 主题关键字色进店招候选与商品色最前面', () {
+      final LyricVisualizerPalette theme = _palette(
+        const Color(0xFF2E7D32),
+        Brightness.dark,
+      );
+      final MachiPalette plain = resolveMachiPalette(theme, 3);
+      final MachiPalette keyed = resolveMachiPalette(
+        theme,
+        3,
+        keywordColors: const <Color>[Color(0xFFE53935)],
+      );
+      final HSLColor first = HSLColor.fromColor(keyed.products.first);
+      expect(
+        first.hue,
+        closeTo(HSLColor.fromColor(const Color(0xFFE53935)).hue, 2),
+      );
+      // 灰的关键字不进
+      expect(
+        resolveMachiPalette(
+          theme,
+          3,
+          keywordColors: const <Color>[Color(0xFF808080)],
+        ).products.first,
+        plain.products.first,
+      );
+    });
+
+    test('自定义视角每个场景各一份，只在选了自定义且场景是自动或本场景时显示', () {
+      final MachiSettings s = MachiSettings(
+        LyricVisualizerTuning(machiTuningSpecs, const <String, Object?>{
+          'camera': 'custom',
+          'view_konbini_azimuth': -60.0,
+          'view_station_zoom': 2.0,
+        }),
+      );
+      expect(s.customView, isTrue);
+      expect(s.viewOf(MachiSceneId.konbini).azimuth, -60);
+      expect(s.viewOf(MachiSceneId.konbini).zoom, 1);
+      expect(s.viewOf(MachiSceneId.station).zoom, 2);
+      expect(s.viewOf(MachiSceneId.kowloon).azimuth, 0);
+      expect(s.neonPulse, 1);
+
+      LyricVisualizerTuningSpec spec(String key) => machiTuningSpecs.firstWhere(
+        (LyricVisualizerTuningSpec x) => x.key == key,
+      );
+      bool visible(String key, Map<String, Object?> values) => spec(
+        key,
+      ).visibleWhen!(LyricVisualizerTuning(machiTuningSpecs, values));
+      expect(
+        visible('view_konbini_azimuth', const <String, Object?>{}),
+        isFalse,
+      );
+      expect(
+        visible('view_konbini_azimuth', const <String, Object?>{
+          'camera': 'custom',
+        }),
+        isTrue,
+      );
+      expect(
+        visible('view_konbini_azimuth', const <String, Object?>{
+          'camera': 'custom',
+          'scene': 'station',
+        }),
+        isFalse,
+      );
+      expect(
+        visible('view_station_pan_z', const <String, Object?>{
+          'camera': 'custom',
+          'scene': 'station',
+        }),
+        isTrue,
+      );
+      expect(spec('view_kowloon_zoom').section!.parent!.key, 'machi_view');
+    });
+
+    test('背景：不用共享背景（自己画整座城）', () {
+      expect(
+        machiVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(machiVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.none,
+      );
+    });
+  });
+
   group('调色板', () {
     test('亮色主题是白底彩字的屏幕，字与底对比够', () {
       final MachiPalette p = resolveMachiPalette(
@@ -421,6 +556,34 @@ void main() {
       await pumpVisualizerAcross(tester, machiVisualizerEntry);
     });
 
+    testWidgets('有音频分析：霓虹随拍拉满、AI 主题关键字与字重、激烈', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        machiVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'夜空': Color(0xFFE53935)},
+          fontWeight: FontWeight.w700,
+        ),
+        tuning: const <String, Object?>{
+          'neon_pulse': 2.0,
+          'weather': 'rain',
+          'motion': true,
+        },
+      );
+    });
+
+    testWidgets('只有节拍、没有包络 + 平静 + 关霓虹随拍', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        machiVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        intensity: LyricVisualizerIntensity.calm,
+        tuning: const <String, Object?>{'neon_pulse': 0.0, 'weather': 'snow'},
+      );
+    });
+
     for (final String scene in <String>['konbini', 'station', 'kowloon']) {
       testWidgets('场景 $scene：雨夜、运镜、景深', (WidgetTester tester) async {
         await pumpVisualizerAcross(
@@ -450,10 +613,10 @@ void main() {
           'time_of_day': 'day',
           'weather': 'snow',
           'camera': 'custom',
-          'view_azimuth': -60.0,
-          'view_elevation': 30.0,
-          'view_zoom': 2.5,
-          'view_pan_x': 3.0,
+          'view_station_azimuth': -60.0,
+          'view_station_elevation': 30.0,
+          'view_station_zoom': 2.5,
+          'view_station_pan_x': 3.0,
           'focus': 'manual',
           'focus_offset': -6.0,
           'reflections': false,

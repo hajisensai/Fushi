@@ -167,12 +167,20 @@ Color machiAdjustForContrast(Color c, Color against, double ratio) {
 }
 
 /// 封面配色 + seed → 町景调色板。同样的输入总得到同样的结果。
-MachiPalette resolveMachiPalette(LyricVisualizerPalette theme, int seed) {
+///
+/// [keywordColors] 是 AI 主题的关键字色（folia `theme.wordColors`）：进店招候选（排在主色、强调色之后），
+/// 有颜色的再拉鲜后排进商品色的最前面。
+MachiPalette resolveMachiPalette(
+  LyricVisualizerPalette theme,
+  int seed, {
+  List<Color> keywordColors = const <Color>[],
+}) {
   final Color background = theme.background;
   final bool isLight = machiLuminance(background) > machiLightThemeLuminance;
   final List<Color> candidates = <Color>[
     theme.primary,
     theme.accent,
+    ...keywordColors,
     theme.secondary,
   ].where(_isChromatic).toList();
 
@@ -242,6 +250,14 @@ MachiPalette resolveMachiPalette(LyricVisualizerPalette theme, int seed) {
   final int offset =
       machiHashString('$seed:products') % _productFallback.length;
   final List<Color> pool = <Color>[
+    for (final Color c in keywordColors)
+      if (_isChromatic(c))
+        machiVivid(
+          c,
+          minSaturation: 0.45,
+          minLightness: 0.45,
+          maxLightness: 0.7,
+        ),
     brand[0],
     brand[2],
     for (int i = 0; i < _productFallback.length; i++)

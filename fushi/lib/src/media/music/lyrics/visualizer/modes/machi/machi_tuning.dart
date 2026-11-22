@@ -1,20 +1,27 @@
 /// 町景的可调参数（folia `machi/types.ts` + `tuning.ts`）：场景 / 时间 / 天气（都可以“自动”）、
-/// 视角（默认 / 自定义，自定义的五项滑块）、运镜与快慢、景深（光圈、强度、清晰范围、移轴、
-/// 对焦）、模拟节拍、倒影、辉光。默认值与范围照 folia。
+/// 视角（默认 / 自定义；自定义视角按场景各存一份五项滑块，folia `views`）、运镜与快慢、景深（光圈、强度、
+/// 清晰范围、移轴、对焦）、模拟节拍、霓虹随拍强度、倒影、辉光。默认值与范围照 folia。
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/machi/machi_director.dart';
 
 const String machiKeyScene = 'scene';
 const String machiKeyTimeOfDay = 'time_of_day';
 const String machiKeyWeather = 'weather';
 const String machiKeyCamera = 'camera';
-const String machiKeyViewAzimuth = 'view_azimuth';
-const String machiKeyViewElevation = 'view_elevation';
-const String machiKeyViewZoom = 'view_zoom';
-const String machiKeyViewPanX = 'view_pan_x';
-const String machiKeyViewPanZ = 'view_pan_z';
+
+/// 自定义视角的五项（每个场景各一份，键 `view_<场景>_<项>`）。
+const String machiViewAzimuth = 'azimuth';
+const String machiViewElevation = 'elevation';
+const String machiViewZoom = 'zoom';
+const String machiViewPanX = 'pan_x';
+const String machiViewPanZ = 'pan_z';
+
+/// 场景 [scene] 的视角项 [field] 的落库键。
+String machiViewKey(MachiSceneId scene, String field) =>
+    'view_${scene.name}_$field';
 const String machiKeyMotion = 'motion';
 const String machiKeyMotionSpeed = 'motion_speed';
 const String machiKeyAperture = 'aperture';
@@ -24,12 +31,99 @@ const String machiKeyTiltShift = 'tilt_shift';
 const String machiKeyFocus = 'focus';
 const String machiKeyFocusOffset = 'focus_offset';
 const String machiKeySimulatedBeat = 'simulated_beat';
+const String machiKeyNeonPulse = 'neon_pulse';
 const String machiKeyReflections = 'reflections';
 const String machiKeyGlow = 'glow';
 
 String _deg(double v) => '${v.round()}°';
 String _times(double v) => '${v.toStringAsFixed(2)}×';
 String _meters(double v) => '${v.toStringAsFixed(1)} m';
+
+bool _customView(LyricVisualizerTuning v) =>
+    v.choice(machiKeyCamera, 'default') == 'custom';
+
+const LyricVisualizerTuningSection _viewSection = LyricVisualizerTuningSection(
+  key: 'machi_view',
+  label: _viewSectionLabel,
+);
+
+String _viewSectionLabel() => t.music_visualizer_machi_view_group;
+
+String Function() _sceneLabel(MachiSceneId id) => switch (id) {
+  MachiSceneId.konbini => () => t.music_visualizer_machi_scene_konbini,
+  MachiSceneId.station => () => t.music_visualizer_machi_scene_station,
+  MachiSceneId.kowloon => () => t.music_visualizer_machi_scene_kowloon,
+};
+
+/// 一个场景的五项视角滑块：收在「自定义视角」下按场景分组；只在选了自定义、且场景是「自动」或就是这个
+/// 场景时显示。
+List<LyricVisualizerTuningSpec> _viewSpecs(MachiSceneId id) {
+  final LyricVisualizerTuningSection section = LyricVisualizerTuningSection(
+    key: 'machi_view_${id.name}',
+    label: _sceneLabel(id),
+    parent: _viewSection,
+  );
+  bool visible(LyricVisualizerTuning v) {
+    if (!_customView(v)) return false;
+    final String scene = v.choice(machiKeyScene, 'auto');
+    return scene == 'auto' || scene == id.name;
+  }
+
+  return <LyricVisualizerTuningSpec>[
+    LyricVisualizerSliderSpec(
+      key: machiViewKey(id, machiViewAzimuth),
+      label: () => t.music_visualizer_machi_view_azimuth,
+      section: section,
+      visibleWhen: visible,
+      min: -75,
+      max: 75,
+      initial: 0,
+      divisions: 150,
+      format: _deg,
+    ),
+    LyricVisualizerSliderSpec(
+      key: machiViewKey(id, machiViewElevation),
+      label: () => t.music_visualizer_machi_view_elevation,
+      section: section,
+      visibleWhen: visible,
+      min: -12,
+      max: 40,
+      initial: 0,
+      divisions: 52,
+      format: _deg,
+    ),
+    LyricVisualizerSliderSpec(
+      key: machiViewKey(id, machiViewZoom),
+      label: () => t.music_visualizer_machi_view_zoom,
+      section: section,
+      visibleWhen: visible,
+      min: 0.5,
+      max: 2.8,
+      initial: 1,
+      format: _times,
+    ),
+    LyricVisualizerSliderSpec(
+      key: machiViewKey(id, machiViewPanX),
+      label: () => t.music_visualizer_machi_view_pan_x,
+      section: section,
+      visibleWhen: visible,
+      min: -5,
+      max: 5,
+      initial: 0,
+      format: _meters,
+    ),
+    LyricVisualizerSliderSpec(
+      key: machiViewKey(id, machiViewPanZ),
+      label: () => t.music_visualizer_machi_view_pan_z,
+      section: section,
+      visibleWhen: visible,
+      min: -5,
+      max: 5,
+      initial: 0,
+      format: _meters,
+    ),
+  ];
+}
 
 final List<LyricVisualizerTuningSpec> machiTuningSpecs =
     <LyricVisualizerTuningSpec>[
@@ -76,48 +170,7 @@ final List<LyricVisualizerTuningSpec> machiTuningSpecs =
           ('custom', () => t.music_visualizer_machi_camera_custom),
         ],
       ),
-      LyricVisualizerSliderSpec(
-        key: machiKeyViewAzimuth,
-        label: () => t.music_visualizer_machi_view_azimuth,
-        min: -75,
-        max: 75,
-        initial: 0,
-        divisions: 150,
-        format: _deg,
-      ),
-      LyricVisualizerSliderSpec(
-        key: machiKeyViewElevation,
-        label: () => t.music_visualizer_machi_view_elevation,
-        min: -12,
-        max: 40,
-        initial: 0,
-        divisions: 52,
-        format: _deg,
-      ),
-      LyricVisualizerSliderSpec(
-        key: machiKeyViewZoom,
-        label: () => t.music_visualizer_machi_view_zoom,
-        min: 0.5,
-        max: 2.8,
-        initial: 1,
-        format: _times,
-      ),
-      LyricVisualizerSliderSpec(
-        key: machiKeyViewPanX,
-        label: () => t.music_visualizer_machi_view_pan_x,
-        min: -5,
-        max: 5,
-        initial: 0,
-        format: _meters,
-      ),
-      LyricVisualizerSliderSpec(
-        key: machiKeyViewPanZ,
-        label: () => t.music_visualizer_machi_view_pan_z,
-        min: -5,
-        max: 5,
-        initial: 0,
-        format: _meters,
-      ),
+      for (final MachiSceneId id in MachiSceneId.values) ..._viewSpecs(id),
       LyricVisualizerToggleSpec(
         key: machiKeyMotion,
         label: () => t.music_visualizer_machi_motion,
@@ -184,6 +237,16 @@ final List<LyricVisualizerTuningSpec> machiTuningSpecs =
         label: () => t.music_visualizer_machi_simulated_beat,
         initial: true,
       ),
+      // folia 智能动感「霓虹随拍」的强度（folia 是全局设置，这里收成本样式的一项）：有节拍网格时霓虹跟真拍子；
+      // 0 = 关（关了以后有「模拟节拍」时仍按固定节拍）。
+      LyricVisualizerSliderSpec(
+        key: machiKeyNeonPulse,
+        label: () => t.music_visualizer_machi_neon_pulse,
+        min: 0,
+        max: 2,
+        initial: 1,
+        format: _times,
+      ),
       LyricVisualizerToggleSpec(
         key: machiKeyReflections,
         label: () => t.music_visualizer_machi_reflections,
@@ -203,11 +266,16 @@ class MachiSettings {
       timeOfDay = tuning.choice(machiKeyTimeOfDay, 'auto'),
       weather = tuning.choice(machiKeyWeather, 'auto'),
       customView = tuning.choice(machiKeyCamera, 'default') == 'custom',
-      azimuth = tuning.number(machiKeyViewAzimuth, 0),
-      elevation = tuning.number(machiKeyViewElevation, 0),
-      zoom = tuning.number(machiKeyViewZoom, 1),
-      panX = tuning.number(machiKeyViewPanX, 0),
-      panZ = tuning.number(machiKeyViewPanZ, 0),
+      views = <MachiSceneId, MachiCustomView>{
+        for (final MachiSceneId id in MachiSceneId.values)
+          id: MachiCustomView(
+            azimuth: tuning.number(machiViewKey(id, machiViewAzimuth), 0),
+            elevation: tuning.number(machiViewKey(id, machiViewElevation), 0),
+            zoom: tuning.number(machiViewKey(id, machiViewZoom), 1),
+            panX: tuning.number(machiViewKey(id, machiViewPanX), 0),
+            panZ: tuning.number(machiViewKey(id, machiViewPanZ), 0),
+          ),
+      },
       motion = tuning.flag(machiKeyMotion, false),
       motionSpeed = tuning.number(machiKeyMotionSpeed, 1),
       aperture = tuning.number(machiKeyAperture, 8),
@@ -217,6 +285,7 @@ class MachiSettings {
       focus = tuning.choice(machiKeyFocus, 'center'),
       focusOffset = tuning.number(machiKeyFocusOffset, 0),
       simulatedBeat = tuning.flag(machiKeySimulatedBeat, true),
+      neonPulse = tuning.number(machiKeyNeonPulse, 1),
       reflections = tuning.flag(machiKeyReflections, true),
       glow = tuning.flag(machiKeyGlow, true);
 
@@ -224,11 +293,12 @@ class MachiSettings {
   final String timeOfDay;
   final String weather;
   final bool customView;
-  final double azimuth;
-  final double elevation;
-  final double zoom;
-  final double panX;
-  final double panZ;
+
+  /// 每个场景自己的自定义视角。
+  final Map<MachiSceneId, MachiCustomView> views;
+
+  /// 场景 [id] 的自定义视角。
+  MachiCustomView viewOf(MachiSceneId id) => views[id]!;
   final bool motion;
   final double motionSpeed;
   final double aperture;
@@ -238,6 +308,26 @@ class MachiSettings {
   final String focus;
   final double focusOffset;
   final bool simulatedBeat;
+
+  /// 霓虹随拍强度（0..2）。
+  final double neonPulse;
   final bool reflections;
   final bool glow;
+}
+
+/// 一个场景的自定义视角（folia `MachiCameraView`）。
+class MachiCustomView {
+  const MachiCustomView({
+    this.azimuth = 0,
+    this.elevation = 0,
+    this.zoom = 1,
+    this.panX = 0,
+    this.panZ = 0,
+  });
+
+  final double azimuth;
+  final double elevation;
+  final double zoom;
+  final double panX;
+  final double panZ;
 }
