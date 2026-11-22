@@ -266,6 +266,83 @@ void main() {
     expect(pageBackdropSettings.value.imagePathFor(portrait: true), second);
   });
 
+  test('背景图按配置记：旧图还被别的配置用着就不删，没人用了才删', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    Future<int> profile(String name) => database.insertProfile(
+      ProfilesCompanion.insert(name: name, createdAt: now, updatedAt: now),
+    );
+    final int a = await profile('A');
+    final int b = await profile('B');
+    final String uidA = await database.profileUidOf(a);
+    final String uidB = await database.profileUidOf(b);
+    const String parkedPrefix = 'page_backdrop_image_landscape::';
+
+    /// 与 ProfileRepository 切配置时同一结果：live 值停放到 [fromUid] 名下，[restore] 换回 live。
+    Future<void> switchProfile(String fromUid, int to, String? restore) async {
+      final String? live = await database.getPref(
+        kPageBackdropLandscapeImagePrefKey,
+      );
+      await database.setPref('$parkedPrefix$fromUid', live ?? '');
+      await database.setPref(kActiveProfileIdPrefKey, '$to');
+      if (restore != null) {
+        await database.setPref(kPageBackdropLandscapeImagePrefKey, restore);
+      }
+      await notifier.refreshFromDb();
+    }
+
+    await database.setPref(kActiveProfileIdPrefKey, '$a');
+    notifier = build();
+    await notifier.importPageBackdropImage(source('x.png'), portrait: false);
+    final String x = pageBackdropSettings.value.landscapeImagePath!;
+
+    // 切到 B（没停放过，沿用 x），B 换成 y：x 还是 A 的图，不能删。
+    await switchProfile(uidA, b, null);
+    expect(pageBackdropSettings.value.landscapeImagePath, x);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    await notifier.importPageBackdropImage(source('y.png'), portrait: false);
+    final String y = pageBackdropSettings.value.landscapeImagePath!;
+    expect(File(x).existsSync(), isTrue, reason: 'A 还停放着 x');
+
+    // 切回 A：拿回 x。A 换成 z：x 只剩 A 自己的旧停放值指着，删；y 是 B 的，留。
+    await switchProfile(uidB, a, PrefCodec.encode(x));
+    expect(pageBackdropSettings.value.landscapeImagePath, x);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    await notifier.importPageBackdropImage(source('z.png'), portrait: false);
+    final String z = pageBackdropSettings.value.landscapeImagePath!;
+    expect(File(x).existsSync(), isFalse);
+    expect(File(y).existsSync(), isTrue, reason: 'B 还停放着 y');
+    expect(File(z).existsSync(), isTrue);
+
+    // B 被删掉（停放键随之清掉）：y 成了孤儿，下一次换图时收掉。
+    await database.deletePref('$parkedPrefix$uidB');
+    await notifier.importPageBackdropImage(source('p.png'), portrait: true);
+    expect(File(y).existsSync(), isFalse);
+    expect(File(z).existsSync(), isTrue);
+  });
+
+  test('并发换图排队执行：后一次刚复制的文件不会被前一次的清扫删掉', () async {
+    notifier = build();
+    await Future.wait(<Future<void>>[
+      notifier.importPageBackdropImage(source('l.png'), portrait: false),
+      notifier.importPageBackdropImage(source('p.png'), portrait: true),
+      notifier.importPageBackdropModuleImage(
+        HomeTab.video,
+        source('v.png'),
+        portrait: false,
+      ),
+    ]);
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    expect(File(settings.landscapeImagePath!).existsSync(), isTrue);
+    expect(File(settings.portraitImagePath!).existsSync(), isTrue);
+    expect(
+      File(
+        pageBackdropModuleOverrides.value[HomeTab.video]!.landscapeImagePath!,
+      ).existsSync(),
+      isTrue,
+    );
+    expect(store.listSync().whereType<File>(), hasLength(3));
+  });
+
   test('冷启动先用取色缓存，文件没变不重取', () async {
     final File image = File('${scratch.path}/kept.png')
       ..writeAsBytesSync(<int>[9, 9, 9]);

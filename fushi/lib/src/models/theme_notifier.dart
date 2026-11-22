@@ -1355,30 +1355,28 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 把用户选的图片复制进 app 数据目录当背景（[portrait] = 竖屏单独用的那张），
   /// 并切到「自定义图片」预设。每次换图都写新文件名（[FileImage] 按路径缓存解码
-  /// 结果，同名覆盖会继续显示旧图），旧文件随后删除。
-  Future<void> importPageBackdropImage(
-    File source, {
-    required bool portrait,
-  }) async {
-    final Directory dir = await pageBackdropImageDirectory();
-    final String target = await _copyPageBackdropImage(
-      source,
-      dir,
-      portrait ? 'portrait' : 'landscape',
-    );
-    final String key = portrait
-        ? kPageBackdropPortraitImagePrefKey
-        : kPageBackdropLandscapeImagePrefKey;
-    final Object? previous = _get(key);
-    await _set(key, target);
-    if (!portrait) await _set(kPageBackdropPresetPrefKey, 'custom');
-    await _deleteOwnedPageBackdropImage(previous, dir);
-    _publishPageBackdrop();
-    if (!portrait) {
-      await _set(kPageBackdropAccentIndexPrefKey, 0);
-      await refreshPageBackdropSeeds();
-    }
-  }
+  /// 结果，同名覆盖会继续显示旧图）；旧文件没有别的配置再用时随后删除
+  /// （[_sweepUnreferencedPageBackdropImages]）。
+  Future<void> importPageBackdropImage(File source, {required bool portrait}) =>
+      _serializePageBackdropImageMutation(() async {
+        final Directory dir = await pageBackdropImageDirectory();
+        final String target = await _copyPageBackdropImage(
+          source,
+          dir,
+          portrait ? 'portrait' : 'landscape',
+        );
+        final String key = portrait
+            ? kPageBackdropPortraitImagePrefKey
+            : kPageBackdropLandscapeImagePrefKey;
+        await _set(key, target);
+        if (!portrait) await _set(kPageBackdropPresetPrefKey, 'custom');
+        await _sweepUnreferencedPageBackdropImages();
+        _publishPageBackdrop();
+        if (!portrait) {
+          await _set(kPageBackdropAccentIndexPrefKey, 0);
+          await refreshPageBackdropSeeds();
+        }
+      });
 
   /// 把 [source] 复制进 [dir]（文件名 `<slot>-<毫秒>.<扩展名>`，每次换图都是新名字），
   /// 记为存在，返回目标路径。
@@ -1410,7 +1408,7 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> setPageBackdropModulePreset(
     HomeTab tab,
     PageBackdropPreset? preset,
-  ) async {
+  ) => _serializePageBackdropImageMutation(() async {
     final Map<HomeTab, PageBackdropPreset> presets =
         decodePageBackdropModulePresets(
           _get(kPageBackdropModulePresetsPrefKey),
@@ -1431,9 +1429,7 @@ class ThemeNotifier extends ChangeNotifier {
           kPageBackdropModuleImagesPrefKey,
           encodePageBackdropModuleImages(images),
         );
-        final Directory dir = await pageBackdropImageDirectory();
-        await _deleteOwnedPageBackdropImage(removed.landscape, dir);
-        await _deleteOwnedPageBackdropImage(removed.portrait, dir);
+        await _sweepUnreferencedPageBackdropImages();
       }
     } else {
       presets[tab] = preset;
@@ -1443,7 +1439,7 @@ class ThemeNotifier extends ChangeNotifier {
       );
     }
     _publishPageBackdrop();
-  }
+  });
 
   /// 把用户选的图片复制进 app 数据目录当 [tab] 的背景（[portrait] = 竖屏单独用的
   /// 那张）。换横屏图同时把这个模块切到「自定义图片」。模块图片不参与取色。
@@ -1451,7 +1447,7 @@ class ThemeNotifier extends ChangeNotifier {
     HomeTab tab,
     File source, {
     required bool portrait,
-  }) async {
+  }) => _serializePageBackdropImageMutation(() async {
     final Directory dir = await pageBackdropImageDirectory();
     final String wire = pageBackdropModuleWire(tab);
     final String target = await _copyPageBackdropImage(
@@ -1463,7 +1459,6 @@ class ThemeNotifier extends ChangeNotifier {
         decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
     final PageBackdropModuleImages current =
         images[tab] ?? (landscape: null, portrait: null);
-    final String? previous = portrait ? current.portrait : current.landscape;
     images[tab] = portrait
         ? (landscape: current.landscape, portrait: target)
         : (landscape: target, portrait: current.portrait);
@@ -1482,60 +1477,118 @@ class ThemeNotifier extends ChangeNotifier {
         encodePageBackdropModulePresets(presets),
       );
     }
-    await _deleteOwnedPageBackdropImage(previous, dir);
+    await _sweepUnreferencedPageBackdropImages();
     _publishPageBackdrop();
-  }
+  });
 
   /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
-  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) async {
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
-    final PageBackdropModuleImages? current = images[tab];
-    if (current == null || current.portrait == null) return;
-    images[tab] = (landscape: current.landscape, portrait: null);
-    await _set(
-      kPageBackdropModuleImagesPrefKey,
-      encodePageBackdropModuleImages(images),
-    );
-    await _deleteOwnedPageBackdropImage(
-      current.portrait,
-      await pageBackdropImageDirectory(),
-    );
-    _publishPageBackdrop();
-  }
+  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) =>
+      _serializePageBackdropImageMutation(() async {
+        final Map<HomeTab, PageBackdropModuleImages> images =
+            decodePageBackdropModuleImages(
+              _get(kPageBackdropModuleImagesPrefKey),
+            );
+        final PageBackdropModuleImages? current = images[tab];
+        if (current == null || current.portrait == null) return;
+        images[tab] = (landscape: current.landscape, portrait: null);
+        await _set(
+          kPageBackdropModuleImagesPrefKey,
+          encodePageBackdropModuleImages(images),
+        );
+        await _sweepUnreferencedPageBackdropImages();
+        _publishPageBackdrop();
+      });
 
   /// 去掉竖屏单独的那张图（竖屏回到与横屏共用）。
-  Future<void> clearPageBackdropPortraitImage() async {
-    final Object? previous = _get(kPageBackdropPortraitImagePrefKey);
-    await _set(kPageBackdropPortraitImagePrefKey, '');
-    await _deleteOwnedPageBackdropImage(
-      previous,
-      await pageBackdropImageDirectory(),
-    );
-    _publishPageBackdrop();
+  Future<void> clearPageBackdropPortraitImage() =>
+      _serializePageBackdropImageMutation(() async {
+        await _set(kPageBackdropPortraitImagePrefKey, '');
+        await _sweepUnreferencedPageBackdropImages();
+        _publishPageBackdrop();
+      });
+
+  /// 删掉背景图目录里已经没人引用的复制件（只扫 [pageBackdropImageDirectory]，绝不碰用户原图）。
+  ///
+  /// 背景图按配置记（[kPageBackdropProfileParkedPrefKeyPrefixes]）：同一个文件可能同时是几份配置的
+  /// 背景——没停放过的配置沿用切换前的图，复制配置会共用同一路径——所以换图时不能直接删旧文件，
+  /// 要看偏好表里 live 键与各配置的停放值还有没有人指着它。激活配置自己的停放值是旧值，不算
+  /// （[pageBackdropReferencedImagePaths]）。删掉的配置留下的孤儿文件在下一次换图时一并收掉。
+  /// 只在 [_serializePageBackdropImageMutation] 里调用：并发换图时别的调用刚复制、还没写进偏好的
+  /// 新文件会被当成孤儿。
+  Future<void> _sweepUnreferencedPageBackdropImages() async {
+    final Directory dir = await pageBackdropImageDirectory();
+    final Map<String, String> prefs = await _db.getAllPrefs();
+    String? activeUid;
+    try {
+      activeUid = await _db.resolveActiveProfileUid();
+    } on StateError {
+      // 激活配置行不在（只在纯 DB 测试里出现）：所有停放值都算引用，宁可多留。
+      activeUid = null;
+    }
+    final Set<String> referenced = <String>{
+      for (final String path in pageBackdropReferencedImagePaths(
+        prefs,
+        skipParkedUid: activeUid == null || activeUid.isEmpty
+            ? null
+            : activeUid,
+      ))
+        _pageBackdropPathKey(path),
+    };
+    final List<File> orphans = <File>[];
+    try {
+      await for (final FileSystemEntity entity in dir.list(
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        if (referenced.contains(_pageBackdropPathKey(entity.path))) continue;
+        orphans.add(entity);
+      }
+    } on PathNotFoundException {
+      // 目录还没建过：没有可收的文件。
+      return;
+    }
+    for (final File file in orphans) {
+      _pageBackdropImagePresence.remove(file.path);
+      try {
+        await file.delete();
+      } on PathNotFoundException {
+        // 已经不在了：要的结果就是「没有这个文件」。
+        continue;
+      } on FileSystemException catch (error, stack) {
+        // 删不掉只是留下一个孤儿文件，不影响当前背景；记进应用日志以便排查。
+        ErrorLogService.instance.log(
+          'page_backdrop.cleanup_old_image',
+          error,
+          stack,
+        );
+      }
+    }
   }
 
-  /// 只删本功能自己复制进来的文件（路径在 [dir] 下），绝不碰用户原图。
-  Future<void> _deleteOwnedPageBackdropImage(
-    Object? path,
-    Directory dir,
-  ) async {
-    if (path is! String || path.isEmpty) return;
-    if (!File(path).absolute.path.startsWith(dir.absolute.path)) return;
-    _pageBackdropImagePresence.remove(path);
-    try {
-      await File(path).delete();
-    } on PathNotFoundException {
-      // 已经不在了：要的结果就是「没有这个文件」。
-      return;
-    } on FileSystemException catch (error, stack) {
-      // 删不掉只是留下一个孤儿文件，不影响当前背景；记进应用日志以便排查。
-      ErrorLogService.instance.log(
-        'page_backdrop.cleanup_old_image',
-        error,
-        stack,
-      );
-    }
+  /// 路径比较用的键：绝对路径，Windows / macOS 默认文件系统不分大小写时统一小写。
+  static String _pageBackdropPathKey(String path) {
+    final String absolute = File(path).absolute.path;
+    return Platform.isWindows || Platform.isMacOS
+        ? absolute.toLowerCase()
+        : absolute;
+  }
+
+  /// 背景图的写操作排队执行：一次换图的「复制 → 写偏好 → 收孤儿」不与另一次交错，
+  /// 否则后者刚复制、还没写进偏好的文件会被前者的清扫当孤儿删掉。
+  Future<void> _pageBackdropImageMutationTail = Future<void>.value();
+
+  Future<void> _serializePageBackdropImageMutation(
+    Future<void> Function() action,
+  ) {
+    final Future<void> run = _pageBackdropImageMutationTail.then(
+      (_) => action(),
+    );
+    // 队尾吞掉失败只为不卡住后面的操作；失败本身照常从 [run] 抛给调用方。
+    _pageBackdropImageMutationTail = run.then<void>(
+      (_) {},
+      onError: (Object _) {},
+    );
+    return run;
   }
 
   /// 按当前横屏图重取候选种子色（没选自定义图片时清空），并异步核对全局与各模块

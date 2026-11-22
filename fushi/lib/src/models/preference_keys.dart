@@ -1366,6 +1366,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   kSrsDayRolloverPendingPrefKeyPrefix,
   kSrsDayRolloverSeenPrefKeyPrefix,
   kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+  // 各配置停放的页面背景图片 / 取色缓存（后缀 = profile uid，
+  // page_backdrop_style.dart 的 kPageBackdropProfileParkedPrefKeyPrefixes）。设备本地。
+  'page_backdrop_image_landscape::',
+  'page_backdrop_image_portrait::',
+  'page_backdrop_module_images::',
+  'page_backdrop_seed_cache::',
   kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
