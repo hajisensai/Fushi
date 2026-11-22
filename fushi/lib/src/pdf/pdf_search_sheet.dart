@@ -10,10 +10,10 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -271,7 +271,7 @@ class _PdfSearchSheetState extends State<PdfSearchSheet> {
 
 /// 有结果时浮在翻页胶囊上方的命中导航胶囊：关闭搜索 / 「3 / 27」（点开结果列表）/
 /// 上一个 / 下一个。与翻页胶囊同一套悬浮胶囊 + 弹簧显隐（[FushiChromeReveal]），
-/// 按钮带按压回弹（[FushiIconButtonControl] / [FushiPressScale]）。
+/// 按钮走设计系统按钮（[FushiIconButtonControl] / [FushiTextButton]，自带按压反馈）。
 class PdfSearchNavigator extends StatelessWidget {
   const PdfSearchNavigator({
     super.key,
@@ -331,32 +331,18 @@ class PdfSearchNavigator extends StatelessWidget {
                 icon: const FushiIcon(FushiIcons.close),
                 onPressed: onClose,
               ),
-              Tooltip(
+              FushiTooltip(
                 message: t.pdf_search_show_results,
-                child: FushiPressScale(
-                  child: InkWell(
-                    key: const ValueKey<String>('pdf_search_position'),
-                    customBorder: const StadiumBorder(),
-                    onTap: onShowResults,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 48),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Center(
-                          widthFactor: 1,
-                          child: Text(
-                            position,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: fushiFloatingToolbarPalette(
-                                context,
-                              ).foreground,
-                              fontFeatures: const <FontFeature>[
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                child: FushiTextButton(
+                  key: const ValueKey<String>('pdf_search_position'),
+                  onPressed: onShowResults,
+                  child: Text(
+                    position,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: fushiFloatingToolbarPalette(context).foreground,
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
                     ),
                   ),
                 ),
