@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T03:41:30Z",
+ "generatedAt": "2026-11-22T04:02:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6f23fd74b34f2e788d9e21d84ff2d80a9171ea0b",
-  "seq": 31194
+  "sha": "953439347fb3f86dd1fa8e4efb572f48751df794",
+  "seq": 31237
  },
  "builds": [
   {
@@ -259,9 +259,17 @@
   }
  ],
  "pending": {
-  "headSha": "6f23fd74b34f2e788d9e21d84ff2d80a9171ea0b",
-  "headSeq": 31194,
+  "headSha": "953439347fb3f86dd1fa8e4efb572f48751df794",
+  "headSeq": 31237,
   "prs": [
+   4142,
+   4136,
+   4139,
+   4137,
+   4140,
+   4138,
+   4125,
+   4120,
    4134,
    4129,
    4131,
@@ -288,6 +296,10 @@
   ],
   "direct": [
    {
+    "sha": "34de93b39ed3abc22f460ee66da917a7aa0547fe",
+    "subject": "chore(bugs): settle BUG number collisions on 55c7a325d"
+   },
+   {
     "sha": "48cdc9667e63cfe037f7eef6431600ec220816c7",
     "subject": "chore(bugs): settle BUG number collisions on 1fb51302b"
    },
@@ -300,19 +312,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651173"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44982568008"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651192"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44982567933"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651192"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44982567933"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44981651192"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44982567933"
    }
   }
  },
@@ -1118,6 +1130,15 @@
    "deletions": 36,
    "labels": []
   },
+  "4120": {
+   "number": 4120,
+   "title": "feat(goals): 按语言的学习目标记录 + 今日格主目标 / 当前页拆分（supersedes #3980）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:41:50Z",
+   "additions": 17847,
+   "deletions": 1662,
+   "labels": []
+  },
   "4121": {
    "number": 4121,
    "title": "fix(dictionary): make long source text scrollable in lookup views (supersedes #4100)",
@@ -1143,6 +1164,15 @@
    "mergedAt": "2026-11-22T03:24:21Z",
    "additions": 702,
    "deletions": 60,
+   "labels": []
+  },
+  "4125": {
+   "number": 4125,
+   "title": "feat(manga-audio): 阅读页气泡右键 / 长按就地编辑这句配音（拍板 bnAC_eferQ）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:42:14Z",
+   "additions": 853,
+   "deletions": 274,
    "labels": []
   },
   "4126": {
@@ -1233,6 +1263,60 @@
    "mergedAt": "2026-11-22T03:36:55Z",
    "additions": 406,
    "deletions": 15,
+   "labels": []
+  },
+  "4136": {
+   "number": 4136,
+   "title": "feat(tts): 漫画有声按句换本地音频与按角色批量重生成（拍板 isATnQZ_eN）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:50:07Z",
+   "additions": 2664,
+   "deletions": 72,
+   "labels": []
+  },
+  "4137": {
+   "number": 4137,
+   "title": "feat(mining): 应用外查词卡「调整句子音频」——制卡前试听 + 调起止（拍板 design-cross-app-audio-trim-ui）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:45:06Z",
+   "additions": 3458,
+   "deletions": 46,
+   "labels": []
+  },
+  "4138": {
+   "number": 4138,
+   "title": "fix(focus): 行内录制中点击录制条后 Esc 不再退出快捷键设置页（BUG-5189）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:44:02Z",
+   "additions": 250,
+   "deletions": 8,
+   "labels": []
+  },
+  "4139": {
+   "number": 4139,
+   "title": "fix(manga): 章下载续跑按源端页身份对账，源端换页不混版（audit-035）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:46:33Z",
+   "additions": 1257,
+   "deletions": 182,
+   "labels": []
+  },
+  "4140": {
+   "number": 4140,
+   "title": "feat(music-nsfw): 音乐专辑接入 NSFW 宿主，DLsite R-18 作品默认标 NSFW（拍板 NCzkl6oLnf-adult-cover）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:45:04Z",
+   "additions": 746,
+   "deletions": 101,
+   "labels": []
+  },
+  "4142": {
+   "number": 4142,
+   "title": "fix(srs-gen4): 卡片标志按血统继承时同一层前身取最新写的，修迁移对拍 cards 行回滚（BUG-5190）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T03:52:27Z",
+   "additions": 558,
+   "deletions": 41,
    "labels": []
   }
  }
