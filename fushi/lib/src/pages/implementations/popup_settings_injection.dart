@@ -1255,6 +1255,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   );
 
   final String iconFontJs = options.globalLookup ? _globalLookupIconFontJs : '';
+  // 跨应用语音缓存「调整句子音频」入口门控：app 外覆盖窗按本平台有没有这项能力注入
+  // （Windows loopback）。Android 查词窗走 dictionary_popup_webview 的 in-app 固定块；
+  // 其余 in-app 宿主不注入（undefined ⇒ popup.js 不建入口、不发探测）。
+  final String crossAppAudioHostJs = options.globalLookup
+      ? 'window.__fushiCrossAppAudioHost = '
+            '${CrossAppAudioCapture.instance.isDesktop};'
+      : '';
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
@@ -1351,21 +1358,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 跨应用语音缓存「调整句子音频」面板（拍板 design-cross-app-audio-trim-ui）的文案。
     // 入口门控 window.__fushiCrossAppAudioHost：app 外覆盖窗在下面按平台能力注入，
     // Android 查词窗由 dictionary_popup_webview 的 in-app 固定块注入，其余宿主不注入。
-    window.i18nCrossAppAudio = ${jsonEncode(<String, String>{
-      'button': t.popup_cross_app_audio_button,
-      'title': t.popup_advanced_mining_audio_section,
-      'hint': t.popup_cross_app_audio_hint,
-      'loading': t.popup_cross_app_audio_loading,
-      'unavailable': t.popup_cross_app_audio_unavailable,
-      'play': t.popup_ctx_preview_audio,
-      'stop': t.popup_ctx_preview_stop,
-      'reset': t.popup_advanced_mining_reset,
-      'start': t.popup_advanced_mining_audio_start,
-      'end': t.popup_advanced_mining_audio_end,
-      'cancel': t.dialog_cancel,
-      'mine': t.popup_cross_app_audio_mine,
-    })};${options.globalLookup ? '
-    window.__fushiCrossAppAudioHost = ${CrossAppAudioCapture.instance.isDesktop};' : ''}
+    window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine})};
+    $crossAppAudioHostJs
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
