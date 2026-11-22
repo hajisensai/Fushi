@@ -24,8 +24,9 @@ void main() {
         ShortcutScope.webBrowser,
         ShortcutScope.music,
         ShortcutScope.srsReview,
-        // 输入设备
+        // 输入设备（焦点导航 → 手柄查词模式）
         ShortcutScope.gamepad,
+        ShortcutScope.controllerLookup,
         // 查词弹窗
         ShortcutScope.dictionaryPopup,
       ]),

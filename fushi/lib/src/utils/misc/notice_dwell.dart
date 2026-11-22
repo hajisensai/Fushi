@@ -19,9 +19,22 @@ abstract final class FushiNoticeDwell {
   /// 普通长提示（`Toast.LENGTH_LONG`）。
   static const Duration long = Duration(milliseconds: 3500);
 
-  /// 制卡结果（成功 / 重复 / 失败 / 待发）。
+  /// 制卡结果（新制 / 覆盖 / 重复）。
   static const Duration mineResult = Duration(milliseconds: 2400);
 
-  /// 制卡中（等结果卡顶替）。
-  static const Duration minePending = Duration(milliseconds: 4000);
+  /// 已存入待发队列：比新制多停一点，说明「还没进 Anki」。
+  static const Duration mineQueued = Duration(milliseconds: 3000);
+
+  /// 带动作按钮（撤销 / 仍要添加 / 查看队列…）的结果卡：留出去点的时间。
+  static const Duration mineAction = Duration(milliseconds: 4000);
+
+  /// 卡建成了但缺东西（单词音频下载失败等）：要读原因，停更久。
+  static const Duration mineWarning = Duration(milliseconds: 6000);
+
+  /// 制卡失败：最严重，停最久；展开详情后不再自动收起。
+  static const Duration mineFailed = Duration(milliseconds: 8000);
+
+  /// 制卡中：正常由同一张卡原地变成结果；结果迟迟不来（调用方异常退出）时的兜底
+  /// 上限，免得「制卡中」一直挂着。
+  static const Duration minePending = Duration(milliseconds: 15000);
 }

@@ -25,19 +25,30 @@
 > - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`fallback_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
 >   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
 
-> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6）：**
+> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6；键位以 2026-11-22 统一为准）：**
 >
 > - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
 >   `GamepadService._dispatchButton`，Android 在 `FocusManager` 早期按键处理器
->   （`interceptNativeControllerLookupKey`）。不进注册表，开启方式是设备本地偏好
->   `controller_lookup_style`（设置「通用 › 键盘与手柄」：按住 L1 / Select 切换 / 关）。**未设时：副屏伴侣在用 =
->   按住 L1，否则关**——单屏手柄行为在用户自己打开前完全不变。
-> - 查词模式内（阅读器 / 视频字幕 / 漫画 OCR / 歌词页挂了目标时）：十字键 / 左摇杆左右 = 按词（Y 切按字）
->   移光标，上下 = 上 / 下一行；A 查词（有查词结果时 A = 制卡）；X 发音；RT / LT 下 / 上一词条；右摇杆
->   滚结果；B 先关查词、再退出模式。结果去副屏「查词」页，副屏不在时走页内弹窗。
+>   （`interceptNativeControllerLookupKey`）。进入方式是设备本地偏好 `controller_lookup_style`
+>   （设置「通用 › 键盘与手柄」：按住 L1 / Select 切换 / 关）。**未设时一律按住 L1**（单屏也是，
+>   原来单屏默认关）。
+> - 查词模式内的键位是 `controllerLookup` scope 的注册表动作，**全部可在快捷键设置里改键**（进入模式的键
+>   不进注册表）。默认：十字键 ←/→ 按词 / 字、↑/↓ 换行；L3 切换按词 / 按字；右摇杆 ←/→ 选区右端 −1/+1 字；
+>   X 制卡；Y 发音；RT / LT 下 / 上一词条；A 进入结果；B 先关结果、再退出模式。**停下即查**（光标停到新位置
+>   自动查词，不再先按 A）。结果去副屏「查词」页，副屏不在时走页内弹窗。
+> - 右摇杆左 / 右是新的可绑定虚拟键 `RS←` / `RS→`（`gameButton15` / `gameButton16`），桌面由轮询器横轴
+>   边沿检测，Android 由 `GamepadTriggerKeySynthesizer` 合成；只有查词模式消费。
 > - 副屏伴侣在用时**按住 R1** = 十字键 / 左摇杆 / A / B 驱动副屏面板的焦点（其它键吞掉），松开回到上屏。
-> - 行为变化（仅副屏伴侣在用、或用户打开了查词模式时）：L1（有查词目标时）与 R1 的**轻点**改在**松开**时
->   按原绑定补发（按住期间没有别的输入才算轻点）。阅读器 RB/LB 翻页等因此在松开时触发。
+> - 行为变化：L1（有查词目标时）与 R1 的**轻点**改在**松开**时按原绑定补发（按住期间没有别的输入才算轻点）。
+>   阅读器 RB/LB 翻页等因此在松开时触发。
+
+> **2026-11-22 增补（手柄查词统一）：** 设计见 `docs/specs/2026-11-22-gamepad-lookup-unification-design.md`。
+>
+> - 删掉视频整句扫词动作 `videoLookupNextWord` / `videoLookupPrevWord`（旧持久化 key
+>   `video_lookup_next_word` / `video_lookup_prev_word` 加载时忽略）。
+> - `videoEnterCaret` / `readerEnterCaret` / `readerLookupAtCursor` 去掉手柄通道，只剩键盘（已存的自定义手柄
+>   绑定失效且不再显示）。手柄查词只有查词模式这一条路。
+> - 单屏默认按住 L1 带来的行为变化见上条：L1 轻点改在松开时补发。不想要的用户改成「Select 切换」或「关」。
 
 > **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
 >

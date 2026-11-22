@@ -442,6 +442,10 @@ void main() {
       expect(moduleOfShortcutScope(ShortcutScope.dictionaryPopup), isNull);
     });
 
+    test('手柄查词模式恒在——跨阅读器 / 视频 / 漫画 / 歌词，属于查词能力', () {
+      expect(moduleOfShortcutScope(ShortcutScope.controllerLookup), isNull);
+    });
+
     test('app 内浏览器恒在——视频站点入口也会打开它，不只属于 web 模块', () {
       expect(moduleOfShortcutScope(ShortcutScope.webBrowser), isNull);
     });

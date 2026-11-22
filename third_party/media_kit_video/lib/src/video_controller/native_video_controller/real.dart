@@ -263,6 +263,29 @@ class NativeVideoController extends PlatformVideoController {
     }
   }
 
+  /// FUSHI FORK (BUG-5200): see [PlatformVideoController.frameStats].
+  @override
+  Future<Map<String, int>?> frameStats() async {
+    if (!Platform.isWindows) return null;
+    final handle = await player.handle;
+    try {
+      final dynamic stats = await _channel.invokeMethod(
+        'VideoOutputManager.FrameStats',
+        {'handle': handle.toString()},
+      );
+      if (stats is! Map) return null;
+      return <String, int>{
+        for (final MapEntry<dynamic, dynamic> e in stats.entries)
+          if (e.key is String && e.value is int)
+            e.key as String: e.value as int,
+      };
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
   /// Disposes the instance. Releases allocated resources back to the system.
   Future<void> _dispose() async {
     super.dispose();

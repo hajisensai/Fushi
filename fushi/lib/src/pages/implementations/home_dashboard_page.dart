@@ -60,6 +60,7 @@ import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 export 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_dashboard_derived.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
 import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
 import 'package:fushi/src/media/panorama/panorama_library.dart'
@@ -775,6 +776,14 @@ class _ContinueEntry {
 /// 渲染（旧数据先上屏），后台照常重拉一轮再替换，体感从「每次都等」变成「瞬开」。
 /// 只存本地聚合，远端补位（互联）仍由 [_loadRemoteDashboardData] 增量到达。
 /// 近 7 天柱条的一份数据（[_HomeDashboardPageState._weekBarsData]）。
+/// 「继续」视频卡的封面候选与签名（[_HomeDashboardPageState._videoCoverCandidates]）。
+typedef _VideoCoverCandidates = ({
+  List<String> collection,
+  List<String?> members,
+  String? own,
+  String key,
+});
+
 typedef _WeekBarsData = ({
   List<int> values,
   List<String> labels,
@@ -910,6 +919,36 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 按候选签名缓存：重载后候选不变就直接复用，不会每次重载都闪占位。
   final Map<String, String?> _videoCoverByCandidates = <String, String?>{};
   final Set<String> _videoCoverResolving = <String>{};
+
+  /// 视频行的合集索引（[_videoIndex]，每轮 [_videos] / 归属 / 组内序只建一次）。
+  HomeDashboardVideoIndex? _videoIndexCache;
+
+  /// 合集 id → 续播目标（[_collectionResumeTarget] 的结果，null = 不出卡）。跟着
+  /// [_videoIndexCache] 失效：成员行 / 组内序换了一轮才重算。
+  final Map<int, ({VideoBookRow row, int index, int count})?>
+  _resumeTargetByCollection =
+      <int, ({VideoBookRow row, int index, int count})?>{};
+
+  /// 「继续」视频卡封面候选（[_videoCoverCandidates]）：'<cid>|<bookUid>' → 候选
+  /// 与签名。随 [_videoIndexCache] / [_collectionCoverById] 换代清空。
+  final Map<String, _VideoCoverCandidates> _videoCoverCandidatesByEntry =
+      <String, _VideoCoverCandidates>{};
+  Map<int, List<String>>? _videoCoverCandidatesCoverMap;
+
+  /// 书 mediaIdentifier → 合集归属键（[_bookCollectionKey]）；随
+  /// [_epubUidByBookKey] / [_primaryCollectionByEntry] 换代清空。
+  final Map<String, String> _bookCollectionKeyCache = <String, String>{};
+  Map<String, String>? _bookCollectionKeyUidMap;
+  Map<String, int>? _bookCollectionKeyPrimaryMap;
+
+  /// 「继续」「最近添加」「近 7 天柱条（学习字数）」按输入身份记忆：build 频繁
+  /// （AppModel 任一通知、封面 / 元数据到达的 setState），输入没换就直接复用。
+  final HomeDashboardMemo<List<_ContinueEntry>> _continueMemo =
+      HomeDashboardMemo<List<_ContinueEntry>>();
+  final HomeDashboardMemo<List<_ContinueEntry>> _recentMemo =
+      HomeDashboardMemo<List<_ContinueEntry>>();
+  final HomeDashboardMemo<_WeekBarsData> _weekBarsMemo =
+      HomeDashboardMemo<_WeekBarsData>();
 
   /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
   /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
@@ -3121,7 +3160,74 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 关掉的模块先出局，取前 10 条。不做分类筛选（用户反馈「主界面没必要分四类，
   /// 查看分类留给统计中心」）。顺带写入 [_resumeEntry]（FAB）与
   /// [_continueVisible]（「最近添加」去重）。
+  ///
+  /// 按输入身份记忆（[_continueMemo]）：书 / 视频 / 游戏 / 归属表 / 远端补位 /
+  /// 门控 / 模块开关 / 语言都没换就复用上一次的结果，不在每次 build 全库重算。
   List<_ContinueEntry> _collectContinueEntries(
+    AppModel appModel,
+    List<MediaItem> books,
+    Map<String, int> lastReadByKey,
+    Map<String, String> epubUidByKey,
+    Set<String> completedBookKeys,
+  ) {
+    final List<_ContinueEntry> visible = _continueMemo.get(
+      <Object?>[
+        books,
+        lastReadByKey,
+        epubUidByKey,
+        completedBookKeys,
+        _videoIndex,
+        _games,
+        _epubUidByBookKey,
+        _collectionNamesById,
+        _videoWatchAtByUid,
+        _videoDurationMsByPath,
+        _remoteContinue,
+        _serverContinue,
+        _serverContinueGates(appModel).signature,
+        _moduleVisibilityMask(appModel.moduleVisibility),
+        t,
+      ],
+      () => _computeContinueEntries(
+        appModel,
+        books,
+        lastReadByKey,
+        epubUidByKey,
+        completedBookKeys,
+      ),
+    );
+    _resumeEntry = visible.isEmpty ? null : visible.first;
+    _continueVisible = visible;
+    return visible;
+  }
+
+  /// 模块开关的位掩码（[ModuleVisibility] 每次读都是新对象，记忆依赖比它的值）。
+  static int _moduleVisibilityMask(ModuleVisibility visibility) {
+    int mask = 0;
+    for (final ModuleId id in ModuleId.values) {
+      if (visibility.isEnabled(id)) mask |= 1 << id.index;
+    }
+    return mask;
+  }
+
+  /// 视频行的合集索引：[_videos] / [_primaryCollectionByEntry] / [_memberSortIndex]
+  /// 任一换代才重建（同时清掉挂在它上面的续播目标 / 封面候选缓存）。
+  HomeDashboardVideoIndex get _videoIndex {
+    final HomeDashboardVideoIndex? cached = _videoIndexCache;
+    if (cached != null &&
+        cached.isFor(_videos, _primaryCollectionByEntry, _memberSortIndex)) {
+      return cached;
+    }
+    _resumeTargetByCollection.clear();
+    _videoCoverCandidatesByEntry.clear();
+    return _videoIndexCache = HomeDashboardVideoIndex.build(
+      videos: _videos,
+      primaryCollectionByEntry: _primaryCollectionByEntry,
+      memberSortIndex: _memberSortIndex,
+    );
+  }
+
+  List<_ContinueEntry> _computeContinueEntries(
     AppModel appModel,
     List<MediaItem> books,
     Map<String, int> lastReadByKey,
@@ -3244,19 +3350,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     // 语义）；整组看完/整组没看过不出卡。散卡保持「有断点且未看完」现行为。
     // 单行多集形态（playlistJson/currentEpisode 行内集数）completedAt 按整行，
     // 天然沿用现行为。
-    final Map<int, List<VideoBookRow>> videosByCollection =
-        <int, List<VideoBookRow>>{};
-    final List<VideoBookRow> standaloneVideos = <VideoBookRow>[];
-    for (final VideoBookRow v in _videos) {
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
-      if (cid == null) {
-        standaloneVideos.add(v);
-      } else {
-        (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
-      }
-    }
-    for (final VideoBookRow v in standaloneVideos) {
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    for (final VideoBookRow v in videoIndex.standalone) {
       if (v.lastPositionMs > 0 && v.completedAt == null) {
         final int recent = _videoWatchAtByUid[v.bookUid] ?? v.importedAt ?? 0;
         entries.add(
@@ -3264,16 +3359,15 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         );
       }
     }
-    for (final MapEntry<int, List<VideoBookRow>> ce
-        in videosByCollection.entries) {
+    for (final int collectionId in videoIndex.collectionIds) {
       final ({VideoBookRow row, int index, int count})? target =
-          _collectionResumeTarget(ce.value);
+          _collectionResumeTarget(collectionId);
       if (target == null) continue;
       final VideoBookRow resume = target.row;
       // 单元活跃时刻 = 成员观看时刻最大值（含已完成集——Next-Up 卡按「刚看完
       // 上一集」的时间参与混排），无统计行回退续播目标导入时间。
       int recent = 0;
-      for (final VideoBookRow m in ce.value) {
+      for (final VideoBookRow m in videoIndex.membersOf(collectionId)) {
         final int at = _videoWatchAtByUid[m.bookUid] ?? 0;
         if (at > recent) recent = at;
       }
@@ -3283,8 +3377,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       entries.add(
         _videoContinueEntry(
           resume,
-          collectionName: _collectionNamesById[ce.key],
-          collectionId: ce.key,
+          collectionName: _collectionNamesById[collectionId],
+          collectionId: collectionId,
           recentMs: recent,
           // 合集里的第几集（组内 sortIndex 序，1 起）；只有一集的合集不标集数。
           collectionEpisode: target.count >= 2 ? target.index + 1 : null,
@@ -3408,8 +3502,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         .where((_ContinueEntry e) => visibility.isEnabled(e.module))
         .take(10)
         .toList();
-    _resumeEntry = visible.isEmpty ? null : visible.first;
-    _continueVisible = visible;
     return visible;
   }
 
@@ -3537,22 +3629,18 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     StudyGoalProgress? goal,
     WidgetGoalsInput? input,
   }) {
-    final List<String> keys = _statWindow.lastDayKeys(7);
     if (goal == null || input == null) {
-      final List<int> values = <int>[
-        for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
-      ];
-      final List<String> labels = <String>[
-        for (int i = 0; i < keys.length; i++)
-          '${keys[i]} · ${formatStatChars(values[i])}',
-      ];
-      return (
-        values: values,
-        labels: labels,
-        reference: null,
-        semantic: '${t.stat_week_past} · ${labels.join(', ')}',
-      );
+      // 学习字数版只依赖日面三份行集与统计窗口（及界面语言）：按身份记忆，日面
+      // 重载前的每次 build 直接复用，不再每帧对整张日面扫 7 遍。
+      return _weekBarsMemo.get(<Object?>[
+        _readingRows,
+        _watchRows,
+        _gameRows,
+        _statWindow,
+        t,
+      ], _computeStudyCharsWeekBars);
     }
+    final List<String> keys = _statWindow.lastDayKeys(7);
     final List<int> values = studyGoalDailySeries(
       goal: goal.goal,
       goals: input,
@@ -3577,6 +3665,24 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       semantic:
           '${t.stat_week_past} · ${studyGoalProgressLabel(goal, input)} · '
           '${labels.join(', ')}',
+    );
+  }
+
+  /// [_weekBarsData] 的学习字数版（全部语言），由 [_weekBarsMemo] 记忆。
+  _WeekBarsData _computeStudyCharsWeekBars() {
+    final List<String> keys = _statWindow.lastDayKeys(7);
+    final List<int> values = <int>[
+      for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
+    ];
+    final List<String> labels = <String>[
+      for (int i = 0; i < keys.length; i++)
+        '${keys[i]} · ${formatStatChars(values[i])}',
+    ];
+    return (
+      values: values,
+      labels: labels,
+      reference: null,
+      semantic: '${t.stat_week_past} · ${labels.join(', ')}',
     );
   }
 
@@ -3957,7 +4063,24 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
 
   /// 「最近添加」要列的条目（按加入时间倒序、去掉「继续」里已有的、只留模块
   /// 开着的，最多 [_kRecentLimit] 条）。列表卡与色块共用。
+  ///
+  /// 按输入身份记忆（[_recentMemo]）：「继续」结果（去重用）、书 / 视频 / 游戏与
+  /// 归属表、模块开关都没换就复用。
   List<_ContinueEntry> _recentlyAddedEntries(
+    AppModel appModel,
+    List<MediaItem> books,
+  ) => _recentMemo.get(<Object?>[
+    books,
+    _continueVisible,
+    _videoIndex,
+    _games,
+    _epubUidByBookKey,
+    _epubLocalAddedAtByKey,
+    _collectionNamesById,
+    _moduleVisibilityMask(appModel.moduleVisibility),
+  ], () => _computeRecentlyAddedEntries(appModel, books));
+
+  List<_ContinueEntry> _computeRecentlyAddedEntries(
     AppModel appModel,
     List<MediaItem> books,
   ) {
@@ -4006,15 +4129,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       entries.add(_recentBookEntry(group));
     }
 
-    final Map<int, List<VideoBookRow>> videosByCollection =
-        <int, List<VideoBookRow>>{};
-    for (final VideoBookRow v in _videos) {
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
-      if (cid != null) {
-        (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
-        continue;
-      }
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    for (final VideoBookRow v in videoIndex.standalone) {
       final int addedAt = v.localAddedAt ?? 0;
       if (addedAt <= 0 || shownVideos.contains(v.bookUid)) continue;
       entries.add(
@@ -4026,27 +4142,23 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         ),
       );
     }
-    for (final MapEntry<int, List<VideoBookRow>> ce
-        in videosByCollection.entries) {
-      if (shownVideoCollections.contains(ce.key)) continue;
+    for (final int collectionId in videoIndex.collectionIds) {
+      if (shownVideoCollections.contains(collectionId)) continue;
+      final List<VideoBookRow> members = videoIndex.membersOf(collectionId);
       int addedAt = 0;
-      for (final VideoBookRow m in ce.value) {
+      for (final VideoBookRow m in members) {
         final int at = m.localAddedAt ?? 0;
         if (at > addedAt) addedAt = at;
       }
       if (addedAt <= 0) continue;
       // 点开落到组内第一集（sortIndex 序，缺失沉底）——新加的合集还没看过，从头
       // 开始；播放器按主合集建剧集面板，上下集照常可切。
-      final VideoBookRow first = ce.value.reduce((
+      final VideoBookRow first = members.reduce((
         VideoBookRow a,
         VideoBookRow b,
       ) {
-        final int ai =
-            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
-            1 << 30;
-        final int bi =
-            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-            1 << 30;
+        final int ai = videoIndex.sortIndexOf(a.bookUid);
+        final int bi = videoIndex.sortIndexOf(b.bookUid);
         if (ai != bi) return ai < bi ? a : b;
         return a.bookUid.compareTo(b.bookUid) <= 0 ? a : b;
       });
@@ -4055,10 +4167,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           kind: MediaKind.video,
           title: first.title,
           recentMs: addedAt,
-          collectionName: _collectionNamesById[ce.key],
-          collectionId: ce.key,
+          collectionName: _collectionNamesById[collectionId],
+          collectionId: collectionId,
           video: first,
-          seriesCount: ce.value.length,
+          seriesCount: members.length,
         ),
       );
     }
@@ -4123,7 +4235,21 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// [FushiDatabase.getLocalPrimaryCollectionMembership] 两种键都收，这里 uid 键
   /// 查不中归属时退到 bookKey 键，否则旧合集在「继续」区按散书逐本判、续读推进
   /// 不到下一卷。
+  ///
+  /// 结果按 mediaIdentifier 缓存（[_bookCollectionKeyCache]），两张换算 / 归属表
+  /// 换代时清空。
   String _bookCollectionKey(MediaItem item) {
+    if (!identical(_bookCollectionKeyUidMap, _epubUidByBookKey) ||
+        !identical(_bookCollectionKeyPrimaryMap, _primaryCollectionByEntry)) {
+      _bookCollectionKeyCache.clear();
+      _bookCollectionKeyUidMap = _epubUidByBookKey;
+      _bookCollectionKeyPrimaryMap = _primaryCollectionByEntry;
+    }
+    return _bookCollectionKeyCache[item.mediaIdentifier] ??=
+        _computeBookCollectionKey(item);
+  }
+
+  String _computeBookCollectionKey(MediaItem item) {
     final String? bookKey = ReaderFushiSource.parseBookKey(
       item.mediaIdentifier,
     );
@@ -4210,20 +4336,25 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 它已完成则推进下一集）。整组无痕迹（没看过，不劝人从头开始）或目标仍是
   /// 已完成集（整季看完）→ null 不出卡（自然滚出继续区）。返回续播目标与它在
   /// 组内的序号 / 组大小（「继续」卡的集数角标）。
+  ///
+  /// 结果按合集缓存在 [_resumeTargetByCollection]，随视频索引换代（[_videos]
+  /// 重载）失效。片长偏好（BUG-3491）由播放器写入，它同时写观看进度触发首页
+  /// 重载，故不会读到过期片长。
   ({VideoBookRow row, int index, int count})? _collectionResumeTarget(
-    List<VideoBookRow> members,
+    int collectionId,
   ) {
-    final List<VideoBookRow> sorted = List<VideoBookRow>.of(members)
-      ..sort((VideoBookRow a, VideoBookRow b) {
-        final int ai =
-            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
-            1 << 30;
-        final int bi =
-            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-            1 << 30;
-        if (ai != bi) return ai.compareTo(bi);
-        return a.bookUid.compareTo(b.bookUid);
-      });
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    if (_resumeTargetByCollection.containsKey(collectionId)) {
+      return _resumeTargetByCollection[collectionId];
+    }
+    return _resumeTargetByCollection[collectionId] = _computeResumeTarget(
+      videoIndex.sortedMembersOf(collectionId),
+    );
+  }
+
+  ({VideoBookRow row, int index, int count})? _computeResumeTarget(
+    List<VideoBookRow> sorted,
+  ) {
     final bool anyTrace = sorted.any(
       (VideoBookRow m) => m.completedAt != null || m.lastPositionMs > 0,
     );
@@ -4431,24 +4562,17 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     }
     final VideoBookRow? video = entry.video;
     if (video == null) return null;
-    final int? cid = entry.collectionId;
-    final List<String> collectionCovers = cid == null
-        ? const <String>[]
-        : _collectionCoverById[cid] ?? const <String>[];
-    final List<String?> memberCovers = cid == null
-        ? const <String?>[]
-        : _collectionMemberCovers(cid, except: video.bookUid).toList();
-    final String key = _videoCoverCandidateKey(
-      collectionCovers,
-      video.coverPath,
-      memberCovers,
+    final _VideoCoverCandidates candidates = _videoCoverCandidates(
+      entry.collectionId,
+      video,
     );
+    final String key = candidates.key;
     if (!_videoCoverByCandidates.containsKey(key)) {
       _resolveVideoCover(
         key,
-        collectionCovers: collectionCovers,
-        ownCover: video.coverPath,
-        memberCovers: memberCovers,
+        collectionCovers: candidates.collection,
+        ownCover: candidates.own,
+        memberCovers: candidates.members,
       );
       return null; // 解析完成前画占位，解析完 setState 重建。
     }
@@ -4500,20 +4624,36 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     }());
   }
 
-  /// 同一主合集里其它集的封面路径（懒序列，[dashboardVideoCoverPath] 找到第一张
-  /// 存在的就停，不会把整部作品的文件都探一遍）。
-  Iterable<String?> _collectionMemberCovers(
-    int collectionId, {
-    required String except,
-  }) sync* {
-    for (final VideoBookRow v in _videos) {
-      if (v.bookUid == except) continue;
-      if (_primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)] !=
-          collectionId) {
-        continue;
-      }
-      yield v.coverPath;
+  /// 视频卡的封面候选（作品海报层 → 本集封面 → 同主合集其它集封面，
+  /// [dashboardVideoCoverPath] 按序探、找到第一张存在的就停）与其签名。同合集
+  /// 其它集取自视频索引（不再逐卡扫整库），结果按「合集 | bookUid」缓存（本集
+  /// 封面变了就重建），视频索引或 [_collectionCoverById] 换代时清空。
+  _VideoCoverCandidates _videoCoverCandidates(int? cid, VideoBookRow video) {
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    if (!identical(_videoCoverCandidatesCoverMap, _collectionCoverById)) {
+      _videoCoverCandidatesByEntry.clear();
+      _videoCoverCandidatesCoverMap = _collectionCoverById;
     }
+    final String cacheKey = '${cid ?? ''}|${video.bookUid}';
+    final _VideoCoverCandidates? cached =
+        _videoCoverCandidatesByEntry[cacheKey];
+    if (cached != null && cached.own == video.coverPath) return cached;
+    final List<String> collectionCovers = cid == null
+        ? const <String>[]
+        : _collectionCoverById[cid] ?? const <String>[];
+    final List<String?> memberCovers = cid == null
+        ? const <String?>[]
+        : videoIndex.memberCoversOf(cid, except: video.bookUid);
+    return _videoCoverCandidatesByEntry[cacheKey] = (
+      collection: collectionCovers,
+      members: memberCovers,
+      own: video.coverPath,
+      key: _videoCoverCandidateKey(
+        collectionCovers,
+        video.coverPath,
+        memberCovers,
+      ),
+    );
   }
 
   /// 游戏封面（BUG-1111 / BUG-1112）：目录扫描 / exe 图标 / 刮削最终都落到
@@ -4777,7 +4917,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     final AppModel appModel = ref.read(appProvider);
     final StudyGoal? goal = _classicCharsGoal;
     // BUG-2219：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
-    final String todayKey = _statWindow.todayKey;
+    final StatWindow w = _statWindow;
+    final String todayKey = w.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
     int todayMs = 0;
     for (final StatFact f in _dailyRows) {

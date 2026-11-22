@@ -93,6 +93,9 @@ List<bool> _memberScope(List<String> lines) {
   return out;
 }
 
+/// 工厂构造声明行（`factory Foo.attach(...)`）。
+final RegExp _factoryDecl = RegExp(r'^\s*(?:const\s+)?factory\s');
+
 void main() {
   test('long-lived native memory is owned by NativeScratch only', () {
     // 成员级（顶层 / 类体）的 Pointer 声明直接初始化成 malloc / calloc。
@@ -154,7 +157,12 @@ void main() {
         final bool holdsScratch = c.body.any(
           (String l) => scratchField.hasMatch(l) && !l.contains('static'),
         );
-        final bool attaches = c.body.any((String l) => l.contains('.attach('));
+        // 挂 NativeFinalizer 是 `<finalizer>.attach(...)` 调用；名叫 `attach` 的工厂构造
+        // （FfcCancelFlag.attach：在别的 isolate 里包住一面不归自己的标志，不挂 finalizer）
+        // 不算。
+        final bool attaches = c.body.any(
+          (String l) => l.contains('.attach(') && !_factoryDecl.hasMatch(l),
+        );
         if (!holdsScratch && !attaches) continue;
         owners.add(c.name);
         if (!RegExp(r'implements[^{]*\bFinalizable\b').hasMatch(c.header)) {

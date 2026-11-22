@@ -477,6 +477,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-22 拍板）：AI 管库自动复查——库管家自动路径跑完
+  // 后起一场无人值守的 AI 助手会话（library_agent_review.dart）。设备本地。
+  'library_agent_review_auto',
+  // String（JSON：lastReviewAt / lastFullAt / itemsSinceFull）：自动复查的本机水位
+  // （LibraryAgentReviewState）。设备本地，丢了只是下次按首次全库复查。
+  'library_agent_review_state',
   // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
   // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
   'library_curate_auto',

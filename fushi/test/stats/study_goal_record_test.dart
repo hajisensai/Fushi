@@ -1,5 +1,5 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/stats/study_goal_record.dart';
+import 'package:test/test.dart';
 
 /// 学习目标记录（设计 A）：JSON 往返、容错解析、旧偏好迁移、规范化与排序。
 void main() {

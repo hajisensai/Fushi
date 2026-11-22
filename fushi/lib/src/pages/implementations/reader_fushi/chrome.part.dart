@@ -4282,6 +4282,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       glassDesign: appModel.themeNotifier.designSystem == 'glass',
       glass: appModel.themeNotifier.glassMaterial,
       monochromeAccent: appModel.themeNotifier.appThemeKey == 'system-theme',
+      shell: appModel.themeNotifier.shellTheme,
       // 歌词模式：弹窗跟歌词页同一份封面取色 scheme（MD3）；退出后这里回到 null，
       // 弹窗恢复 app ColorScheme。
       lyricsCoverScheme: _lyricsMode ? _lyricsThemeHost?.coverScheme : null,

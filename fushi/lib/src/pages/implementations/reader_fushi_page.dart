@@ -1,3 +1,4 @@
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_co
 import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_hook.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_schema.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'dart:ui' as ui show Image;
@@ -156,6 +158,7 @@ import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_controller_word_step_scripts.dart';
 import 'package:fushi/src/reader/reader_word_sweep.dart';
 import 'package:fushi/src/reader/reader_word_sweep_scripts.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
@@ -5850,7 +5853,9 @@ $liveConfigJs
   /// 查词收尾序列：清栈热槽 → deferDisplay 查词 → 高亮并展示弹窗。reader 选词的
   /// 歌词模式与普通模式两分支共用（前后各自的 cue 解析 / cached-range 设置保留在
   /// 各分支，因时机不同：歌词从 fragment 提前设，普通从 data 在其后设）。
-  Future<void> _runLookupAndHighlight(
+  /// Returns the highlighted match length (what the controller lookup mode
+  /// keeps as the selection's right end).
+  Future<int> _runLookupAndHighlight(
     String searchTerm,
     Rect selectionRect, {
     LookupOrigin origin = LookupOrigin.explicit,
@@ -5865,6 +5870,7 @@ $liveConfigJs
       rubySpans: rubySpans,
     );
     await _highlightAndShowPopup(highlightCount, selectionRect);
+    return highlightCount;
   }
 
   // ── Key Navigation ────────────────────────────────────────────────
@@ -5898,10 +5904,15 @@ $liveConfigJs
   void onDictionaryStackChanged() => _caret.onDictionaryStackChanged();
 
   /// Hand the char-level cursor to the freshly rendered top popup when in cursor
-  /// mode. Pure-touch users (surface == none) are unaffected.
+  /// mode. Pure-touch users (surface == none) are unaffected. The controller
+  /// lookup mode keeps its cursor in the text (the next D-pad press changes
+  /// the word); its "enter result" button moves it into the popup instead
+  /// ([_ReaderControllerLookupTarget.enterResult]).
   @override
   void onDictionaryPopupRendered(int index) {
-    _caret.onDictionaryPopupRendered(index);
+    if (!(_controllerLookupTarget?.holdsCursorInText ?? false)) {
+      _caret.onDictionaryPopupRendered(index);
+    }
     // BUG-1071 ②：指针（触摸/鼠标点词）唤出的弹窗此前**没有任何 Flutter 焦点持有者**
     // —— 弹窗是纯原生平台 WebView（无 Flutter FocusNode），点词后 OS 焦点落在原生
     // WebView 上，Esc/关词典键被它吞或到不了 [_handleKeyEvent] → 用户报「键盘关词典

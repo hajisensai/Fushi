@@ -24,7 +24,6 @@
 library;
 
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -68,6 +67,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 // =============================================================================
@@ -1290,19 +1290,15 @@ class _HeroBand extends StatelessWidget {
     } else if (fallback != null) {
       art = KeyedSubtree(
         key: const ValueKey<String>('collection-hero-cover'),
-        child: ImageFiltered(
-          imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-          child: Transform.scale(
-            scale: 1.25,
-            child: Image(
-              image: fallback,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: height,
-              excludeFromSemantics: true,
-              errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
-                  const SizedBox.shrink(),
-            ),
+        // 预烘焙模糊（[PrebakedBlurImage]）：hero 跟着正文滚，渲染期
+        // [ImageFiltered] 在 Impeller 上每帧重卷积。原实现是「先放大 1.25 倍再
+        // 模糊 32」，烘焙在放大之前做，sigma 相应除以 1.25，屏上等效模糊不变。
+        child: Transform.scale(
+          scale: 1.25,
+          child: SizedBox(
+            width: double.infinity,
+            height: height,
+            child: PrebakedBlurImage(image: fallback, sigma: 32 / 1.25),
           ),
         ),
       );
@@ -1496,17 +1492,8 @@ class _HeroPoster extends StatelessWidget {
       children: <Widget>[
         IgnorePointer(
           child: ExcludeSemantics(
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Image(
-                image: provider,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                excludeFromSemantics: true,
-                errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
-                    const SizedBox.shrink(),
-              ),
-            ),
+            // 预烘焙模糊：同 hero 背景，跟着正文滚的渲染期模糊每帧重卷积。
+            child: PrebakedBlurImage(image: provider, sigma: 18),
           ),
         ),
         Center(

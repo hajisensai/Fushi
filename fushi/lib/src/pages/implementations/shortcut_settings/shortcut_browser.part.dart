@@ -1220,6 +1220,7 @@ IconData _scopeIcon(ShortcutScope scope) => switch (scope) {
   // 与底栏「复习」同一字形。
   ShortcutScope.srsReview => FushiIcons.repeat,
   ShortcutScope.gamepad => FushiIcons.games,
+  ShortcutScope.controllerLookup => FushiIcons.textFields,
   ShortcutScope.dictionaryPopup => FushiIcons.language,
 };
 

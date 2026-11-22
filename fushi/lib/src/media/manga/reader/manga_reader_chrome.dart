@@ -40,6 +40,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/notice_placement.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -434,9 +435,14 @@ class _MangaChromeRevealState extends State<MangaChromeReveal>
             excluding: !widget.visible,
             child: Opacity(
               opacity: t.clamp(0.0, 1.0),
-              child: Transform.translate(
-                offset: Offset(0, (1 - t) * _travel * direction),
-                child: child,
+              // 登记成通知要让开的 chrome（用户 2026-11-22：有声模式下制卡结果卡
+              // 压在底部播放条上）。包在位移外面，见 [FushiNoticeObstacle]。
+              child: FushiNoticeObstacle(
+                presence: t.clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: Offset(0, (1 - t) * _travel * direction),
+                  child: child,
+                ),
               ),
             ),
           ),

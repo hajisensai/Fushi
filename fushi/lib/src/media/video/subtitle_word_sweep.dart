@@ -1,16 +1,13 @@
 import 'package:characters/characters.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// 视频暂停句「整句扫词」的纯逻辑层（无 Flutter / 无页面状态，可直接单测）。
+/// 字幕句分词的纯逻辑层（无 Flutter / 无页面状态，可直接单测）。
 ///
-/// 设计：把「选谁」与「做什么」正交——扫词只在数据层移动一个**词游标**（暂停句分词
-/// 后的词序列下标），每停一词就复用点击查词链路弹/换同一张浮层；动词（翻词条 /
-/// 制卡 / 发音）全部交给既有 `dictionaryPopup` 表。因为不进 caret，浮层的
-/// X=制卡 / Y=发音在扫词中永远可达（进 caret 会被模态路由吞掉）。
-///
-/// 本文件回答三个问题：① 一句话怎么切成词、每个词覆盖哪段 grapheme；② 游标怎么
-/// 前进/后退（句尾按用户要求循环回句首）；③ 一步该停在哪个词的哪个字（跳过整个词
-/// 都没有可查字符的词）。页面侧的接线在 `video_fushi/word_sweep.part.dart`。
+/// 回答一个问题：一句话怎么切成词、每个词覆盖哪段 grapheme。消费方是统一手柄查词
+/// 模式的按词步进（`controller_lookup_steps.dart`，视频 / 歌词 / 漫画同一分词）。
+/// 曾经的视频「整句扫词」动作已在 2026-11-22 手柄查词统一中删除
+/// （docs/specs/2026-11-22-gamepad-lookup-unification-design.md），名字里的 sweep
+/// 是历史沿用。
 
 /// 一个扫词单元：词本身 + 它在整句 **grapheme 序列**里覆盖的区间
 /// `[graphemeStart, graphemeEnd)`。
@@ -123,50 +120,4 @@ List<SubtitleSweepToken> buildSubtitleSweepTokens(
         word: piece.word,
       ),
   ];
-}
-
-/// 扫词游标的下一格 / 上一格。
-///
-/// 句尾按用户拍板**循环**回句首（[length] 为 1 时恒停在 0）。[index] 传 -1 表示
-/// 「尚未开始」：前进落到 0、后退落到末词（用户首次按「上一词」也应落在句尾，而不是
-/// 被夹到句首）。[length] <= 0（无词）恒返回 -1，调用方据此早退。
-int advanceSubtitleSweepIndex(int index, int length, {required bool forward}) {
-  if (length <= 0) return -1;
-  if (index < 0 || index >= length) {
-    return forward ? 0 : length - 1;
-  }
-  return forward ? (index + 1) % length : (index - 1 + length) % length;
-}
-
-/// 扫词一步的落点：停在第几个词（[tokenIndex]）、实际查哪个 grapheme（[graphemeIndex]）。
-typedef SubtitleSweepStop = ({int tokenIndex, int graphemeIndex});
-
-/// 从游标 [index] 朝 [forward] 方向走一步，决定这一步停在哪。
-///
-/// 字幕 overlay 只给**可选**字符登记命中项（[selectableGraphemes]：空白 / 被模糊遮住
-/// 的字没有），所以一个词可能只有部分字、甚至一个字都查不到：
-///
-/// * 词里有已登记的字：停在该词范围内**第一个**已登记字（查词从那里起，查到的仍是
-///   本词——而不是退到下一个词的首字，那会让两次按键查同一个词）。
-/// * 整个词都没有已登记的字：跳过它，继续同方向找下一个词。
-/// * 最多走一圈（`tokens.length` 步）：整句都没有可查字时返回 null，调用方无反馈地
-///   停下，游标保持不动。
-SubtitleSweepStop? resolveSubtitleSweepStop({
-  required List<SubtitleSweepToken> tokens,
-  required int index,
-  required bool forward,
-  required Set<int> selectableGraphemes,
-}) {
-  int cursor = index;
-  for (int step = 0; step < tokens.length; step++) {
-    cursor = advanceSubtitleSweepIndex(cursor, tokens.length, forward: forward);
-    if (cursor < 0) return null;
-    final SubtitleSweepToken token = tokens[cursor];
-    for (int g = token.graphemeStart; g < token.graphemeEnd; g++) {
-      if (selectableGraphemes.contains(g)) {
-        return (tokenIndex: cursor, graphemeIndex: g);
-      }
-    }
-  }
-  return null;
 }

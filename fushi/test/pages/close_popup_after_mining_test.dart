@@ -402,15 +402,15 @@ void main() {
         reason: '只有真失败挂重试，重复卡片不挂',
       );
       expect(
-        mining.contains(
-          '_showMineOsd(message, MineToastStatus.failed, null, retry);',
-        ),
+        RegExp(
+          r'_showMineOsd\(\s*message,\s*MineToastStatus\.failed,\s*retry: retry,',
+        ).hasMatch(mining),
         isTrue,
         reason: '句子音频抽取中止也要能重试',
       );
       expect(
         tracker.contains(
-          '_showMineOsd(message, MineToastStatus.failed, null, retry);',
+          '_showMineOsd(message, MineToastStatus.failed, retry: retry);',
         ),
         isTrue,
       );

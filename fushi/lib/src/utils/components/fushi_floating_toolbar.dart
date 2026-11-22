@@ -38,6 +38,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/misc/notice_placement.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
@@ -2353,16 +2354,21 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
         final double v = _t.value;
         final double opacity = _fade.value.clamp(0.0, 1.0);
         final bool hidden = !widget.visible && v <= 0.001 && opacity <= 0.001;
+        Widget moved = Transform.translate(offset: _offsetFor(v), child: child);
+        // 顶 / 底栏登记成通知要让开的 chrome（制卡结果卡、底部 toast 抬到栏上方，
+        // 用户 2026-11-22：卡片压在漫画有声播放条上）。包在位移外面：矩形取栏落定
+        // 后的位置，显隐进度取透明度（不过冲），栏进退场时卡片跟着平滑移动。
+        if (widget.from == AxisDirection.up ||
+            widget.from == AxisDirection.down) {
+          moved = FushiNoticeObstacle(presence: opacity, child: moved);
+        }
         return Offstage(
           offstage: hidden,
           child: IgnorePointer(
             ignoring: !widget.visible,
             child: ExcludeSemantics(
               excluding: !widget.visible,
-              child: Opacity(
-                opacity: opacity,
-                child: Transform.translate(offset: _offsetFor(v), child: child),
-              ),
+              child: Opacity(opacity: opacity, child: moved),
             ),
           ),
         );
