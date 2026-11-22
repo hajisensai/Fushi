@@ -759,7 +759,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 未来到期
 
-  /// RWKV 牌组：此刻该复习 / 接近目标线的张数与过去 30 天日均（都是测量，RWKV 不预测到期日）。
+  /// RWKV 牌组：此刻低于目标 / 接近目标线的张数与过去 30 天日均（都是测量，RWKV 不预测到期日）。「低于目标」不叫
+  /// 「到期」：牌组列表的到期数是今天的出卡队列，另按「每天最少复习数」补足、按同日间隔与上限暂缓（BUG-5170）。
   Widget _rwkvNowSection(SrsRwkvNow now) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return StatSectionCard(
@@ -770,12 +771,15 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           _statLine(<(String, String)>[
-            (t.srs_stats_rwkv_now_due, '${now.due}'),
+            (t.srs_stats_rwkv_now_below_target, '${now.due}'),
             (t.srs_stats_rwkv_now_near, '${now.near}'),
             (t.srs_stats_rwkv_now_avg, _decimal(now.dailyAverage)),
           ]),
           SizedBox(height: tokens.spacing.gap),
-          Text(t.srs_stats_rwkv_now_hint, style: context.fushiType.bodySmall),
+          Text(
+            t.srs_stats_rwkv_now_explain,
+            style: context.fushiType.bodySmall,
+          ),
         ],
       ),
     );

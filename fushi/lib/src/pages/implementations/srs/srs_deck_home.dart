@@ -401,7 +401,7 @@ class _SrsHomeView extends StatelessWidget {
                 key: const ValueKey<String>('srs-home-heatmap'),
                 stats: s,
               ),
-              ..._srsHomeDueCards(s),
+              ..._srsHomeDueCards(s, data),
             ],
           ];
           // 两栏时热力图（宽）跟在树下面，未来 7 天 / RWKV 此刻（窄）跟在详情下面，两栏高度大致平衡；
@@ -488,6 +488,7 @@ class _SrsHomeView extends StatelessWidget {
             _SrsHomeStatsPair(
               key: const ValueKey<String>('srs-home-stats'),
               stats: s,
+              data: data,
             ),
         ],
         padding: padding,
@@ -1368,6 +1369,11 @@ class _SrsDeckDetail extends StatelessWidget {
                   key: const ValueKey<String>('srs-home-detail-rwkv'),
                   now: rwkvNow,
                   target: d?.desiredRetention,
+                  queued: srsHomeRwkvQueued(
+                    reviewCount: deck.reviewCount,
+                    hasDueDateCards: d?.hasDueDateCards ?? true,
+                    rwkvPending: deck.rwkvPending,
+                  ),
                 ),
               ],
               SizedBox(height: tokens.spacing.gap / 2),
@@ -1667,6 +1673,11 @@ class _SrsDeckPoster extends StatelessWidget {
                   key: const ValueKey<String>('srs-home-detail-rwkv'),
                   now: rwkvNow,
                   target: target,
+                  queued: srsHomeRwkvQueued(
+                    reviewCount: deck.reviewCount,
+                    hasDueDateCards: d?.hasDueDateCards ?? true,
+                    rwkvPending: deck.rwkvPending,
+                  ),
                   poster: colors,
                 ),
               ],
@@ -1901,9 +1912,12 @@ class _SrsForecastCard extends StatelessWidget {
 /// 手机树下的两张小卡：热力图 + 未来 7 天，一律上下排（用户 2026-11-06：窄屏并排时
 /// 热力图只剩三个月、到期图横轴挤掉一半星期，两张都读不清）。
 class _SrsHomeStatsPair extends StatelessWidget {
-  const _SrsHomeStatsPair({super.key, required this.stats});
+  const _SrsHomeStatsPair({super.key, required this.stats, required this.data});
 
   final SrsHomeStats stats;
+
+  /// 全库牌组计数（「RWKV 此刻」与头部「N 到期」对账用）。
+  final SrsDeckListData data;
 
   @override
   Widget build(BuildContext context) {
@@ -1916,7 +1930,7 @@ class _SrsHomeStatsPair extends StatelessWidget {
           key: const ValueKey<String>('srs-home-heatmap'),
           stats: stats,
         ),
-        ..._srsHomeDueCards(stats),
+        ..._srsHomeDueCards(stats, data),
       ],
     );
   }

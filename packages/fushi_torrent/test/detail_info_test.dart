@@ -104,7 +104,7 @@ void main() {
     expect(status.downRate, greaterThanOrEqualTo(-1));
   }, skip: skip);
 
-  test('sessionStatus.dhtNodes（BUG-5070）：双端点各一个 DHT 实例时报两者之和', () async {
+  test('sessionStatus.dhtNodes（BUG-5165）：双端点各一个 DHT 实例时报两者之和', () async {
     // 双栈监听下 libtorrent 每个端点各一个 DHT 实例、各投一条
     // dht_stats_alert；旧桥逐条赋值，后到的实例会覆盖先到的。这里让
     // B 的 IPv4 / IPv6 两个实例各认识一个节点：汇总必须是 2，旧实现

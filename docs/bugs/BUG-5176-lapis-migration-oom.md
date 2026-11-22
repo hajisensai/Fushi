@@ -1,0 +1,9 @@
+## BUG-5176 · iPad 旧 Lapis 迁移页 load / migrate 整批物化笔记，Dart 堆 Out of Memory 后闪退
+- **报告**：2026-11-22（应用内反馈 #JIwdpjfRrt，iPad，3.3.0-debug.28434）
+- **真实性**：✅ 真 bug。同一进程（memoryPressure=22x）先后记 `SrsLegacyLapisMigration.migrate: Out of Memory`（UI isolate）与 `SrsLegacyLapisMigration.load: Out of Memory`，随后 signal 6 退出。根因：
+  - 预演 `packages/fushi_engine/lib/srs/srs_legacy_lapis_migration.dart:649`（修前）`previewLegacyLapisMigration` 一次 `notes(source.noteIds)` 物化这一类型的全部笔记（含每个字段的全部修改记录），再把整批的换类型计划（每条笔记的全部目标字段值）留在结果 `SrsLegacyLapisMigrationPreview.change` 里；迁移页 load（`srs_legacy_lapis_migration_page.dart:98-102`）对每个旧 Lapis 类型各做一遍。
+  - 迁移 `srs_legacy_lapis_migration.dart:764`（修前）`_migrateLegacyLapisLocal` 同样 `notes(ids)` 整批物化，算出整批换类型 + 补迁修改记录，在 `SrsDbStore.writeChange` 里再变成草稿、输入 Map、一个 JSON 字符串、一份 UTF-8 字节交给内核 `change`，内核回包 `edits` 又把每条落下的值带回来——同一份牌组内容在 Dart 堆上同时有好几份。
+  - signal 6 落点未符号化（推测是 OOM 状态下原生分配失败中止），本修复针对 OOM 本身。
+- **[x] ① 已修复** — 换类型 / 补迁收进 Rust 内核（胖核心）：`change` 命令新增 `retype` 段（`native/fushi_fsrs/src/store/gen4/cmd/writes_retype.rs`），宿主只给类型层面的计划（字段映射、模板映射、补迁候选），内核逐块（200 条）读现值、按与 Dart `srsPlanNoteTypeChange` / `srsPlanLapisFieldFill` 相同的判据算、写，整段仍在 `change` 的那一笔里（还原点、移牌组、注入失败、整笔回滚不变）；这一段落下的修改记录不再回传 `edits`。Dart：`SrsDbStore.writeRetype` + `SrsRetypePlan`；`migrateLegacyLapis` 与 `applyLapisBackfill`（补迁，同样整批物化候选）都改走它；迁移页预演 `previewLegacyLapisSource` 按 500 条一块物化、只留计数（`linkedCards` / `droppedCards` 取代整批计划）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_legacy_lapis_migration_test.dart` 组「BUG-5176」：205 条旧 Lapis 笔记（跨内核一块 200 条的边界）迁移后 Dart 侧单次物化笔记数为 0（`srsDebugMaxNotesPerRead`），逐条核对类型、字段、补迁、复习历史；预演按 3 条一块时单次物化 ≤ 3 且计数与整块相同。内核 `writes_retype.rs` 单测核对卡片链接四个分支与 Dart 同口径。原有迁移 / 补迁 / 注入失败回滚用例全部改走内核路径仍绿。
+- **备注**：`previewLapisBackfill`（迁移页 / 角标计数用）仍在 Dart 物化 SQL 预筛出的候选，审查时补成按 500 条一块物化（同一组测试核对 `chunk: 1` 单次只读一条、结果与整块相同）；`changeNoteType`（浏览器里手动改笔记类型）仍是 Dart 整批算计划，同样可改走 `writeRetype`，未在本次范围。

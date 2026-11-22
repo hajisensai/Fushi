@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -17,6 +18,7 @@ import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_plan.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_silence.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -386,6 +388,58 @@ void main() {
       });
     }
 
+    // 反馈 WrLFAXNkSw：翻页落到页段起点（lead）、进书续播落在句间停顿、暂停停在静音
+    // 里时高亮一律被清空，暂停时位置不再变就一直不回来。
+    for (final bool pairs in <bool>[true, false]) {
+      final String mode = pairs ? '翻页式' : '条漫';
+      test('$mode：暂停中翻页落到 lead → 框本页第一句', () async {
+        final _Host host = _Host(pairs: pairs);
+        host.onPageChanged = driver.onPageChanged;
+        player.at(plan.lineStartMs(0) + 10);
+        driver.attachHost(host, visible: true);
+        await Future<void>.delayed(Duration.zero);
+        expect(player.playing, isFalse);
+        host.visible = 4;
+        driver.onPageChanged(4);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(player.seeks, <int>[plan.pageStartMs(4)]);
+        expect(
+          plan.items[plan.itemIndexAt(plan.pageStartMs(4))].kind,
+          MangaAudioItemKind.lead,
+          reason: '落点是页首 lead，不是句子本身',
+        );
+        _expectShown(host, 4, <int>[0, 2]);
+      });
+
+      test('$mode：进书续播落在句间停顿 / 页尾补齐 → 框本页刚读完的那句', () async {
+        final int gap = plan.items.indexWhere(
+          (MangaAudioItem i) => i.kind == MangaAudioItemKind.gap && i.page == 0,
+        );
+        expect(gap, greaterThanOrEqualTo(0));
+        player.at(plan.items[gap].startMs + 1);
+        final _Host host = _Host(pairs: pairs);
+        host.onPageChanged = driver.onPageChanged;
+        driver.attachHost(host, visible: true);
+        await Future<void>.delayed(Duration.zero);
+        final int line = plan.items
+            .sublist(0, gap)
+            .lastWhere((MangaAudioItem i) => i.isLine)
+            .lineIndex;
+        _expectShown(host, 0, _manifest().lines[line].blocks);
+        // 页尾之后的静音（同页）同样保留刚读完那句；无台词页才清。
+        final MangaAudioItem lastOnPage0 = plan.items.lastWhere(
+          (MangaAudioItem i) => i.page == 0,
+        );
+        player.at(lastOnPage0.startMs + 1);
+        await Future<void>.delayed(Duration.zero);
+        _expectShown(host, 0, <int>[3, 4]);
+        player.at(plan.pageStartMs(1) + 10);
+        await Future<void>.delayed(Duration.zero);
+        _expectShown(host, 1, <int>[]);
+      });
+    }
+
     test('纯听（无宿主 / 阅读器不可见）跳过页时间，边看边听不跳', () async {
       final _Host host = _Host(pairs: true);
       driver.attachHost(host, visible: true);
@@ -676,6 +730,48 @@ void main() {
       // 会话写进度时换回「只数句子」的口径。
       await req.persist.onPositionWrite('vol', plan.pageStartMs(1) + 10);
       expect(await repo.readPositionMs('vol'), 1200 + 800);
+    });
+
+    // 反馈 Wi5MxmIT24：阅读器起播漏传封面，首页迷你播放条只能画兜底图标。两个入口
+    // 都由 resolveMangaAudioSessionRequest 按 bookKey 统一取元数据。
+    test('阅读器起播与后台入口给会话的书名 / 作者 / 封面一致且带封面', () async {
+      await registerMangaAudio(
+        db,
+        bookKey: 'vol',
+        manifestFile: manifestFile,
+        manifest: _manifest(),
+      );
+      final Directory extract = Directory(p.join(tmp.path, 'book'))
+        ..createSync(recursive: true);
+      final File cover = File(p.join(extract.path, 'cover.jpg'))
+        ..writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF]);
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'vol',
+          title: 'Volume 1',
+          epubPath: p.join(tmp.path, 'vol.cbz'),
+          extractDir: extract.path,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1000,
+          author: const Value<String?>('Author A'),
+          coverPath: const Value<String?>('cover.jpg'),
+          format: const Value<String>('manga'),
+        ),
+      );
+      final MangaAudioRegistration reg = (await loadMangaAudio(db, 'vol'))!;
+      final AudiobookSessionStartRequest fromReader =
+          await resolveMangaAudioSessionRequest(db, registration: reg);
+      final AudiobookSessionStartRequest fromLauncher =
+          (await AudiobookSessionLauncher(db).resolve('vol'))!;
+      for (final AudiobookSessionStartRequest req
+          in <AudiobookSessionStartRequest>[fromReader, fromLauncher]) {
+        expect(req.info.coverPath, isNotNull);
+        expect(p.equals(req.info.coverPath!, cover.path), isTrue);
+        expect(req.info.title, 'Volume 1');
+        expect(req.info.author, 'Author A');
+        expect(req.info.format, BookFormat.manga);
+      }
     });
   });
 }

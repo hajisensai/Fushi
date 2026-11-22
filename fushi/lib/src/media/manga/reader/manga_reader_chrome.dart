@@ -139,6 +139,40 @@ bool mangaChromeBarPainted({
   return !floating || transientVisible || !contentReady;
 }
 
+/// 「滚动收起界面」（JS `onMangaReaderHide`）落到哪一层显隐上。
+enum MangaScrollHideEffect {
+  /// 不动。
+  none,
+
+  /// 收起悬浮态点出来的临时底栏（不动 M 键的持久隐藏）。
+  hideTransient,
+
+  /// 切换固定态的界面显隐（与 M 键同一状态）。
+  togglePersistent,
+}
+
+/// 「滚动收起界面」的落点（纯函数，[hide] = 往下滚）。
+///
+///  * 固定态：就是界面显隐——往下滚隐藏、往上滚显示，已在目标状态时不动；
+///  * 悬浮态：只收起临时底栏，**绝不**改持久隐藏 [chromeVisible]。悬浮态唯一的唤出
+///    手段是点正文中央，它在 [chromeVisible] 为 false 时是 no-op；此前滚动一收就把它
+///    置 false，点击再也叫不出底栏（反馈 Yh8ukM6J_i：切到条漫后回不去）。往上滚在
+///    悬浮态不唤出——点击是悬浮底栏唯一的开关。
+MangaScrollHideEffect mangaScrollHideEffect({
+  required bool floating,
+  required bool chromeVisible,
+  required bool hide,
+}) {
+  if (floating) {
+    return hide
+        ? MangaScrollHideEffect.hideTransient
+        : MangaScrollHideEffect.none;
+  }
+  return chromeVisible == hide
+      ? MangaScrollHideEffect.togglePersistent
+      : MangaScrollHideEffect.none;
+}
+
 /// 漫画 chrome（工具栏 / 胶囊 / 气泡 / 角标）的配色。
 ///
 ///  * MD3：跟随 app 主题的 surfaceContainer 族（浮动工具栏本就是一块独立的
