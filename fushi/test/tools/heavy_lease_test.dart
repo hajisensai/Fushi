@@ -281,6 +281,54 @@ void main() {
     b.release();
   });
 
+  // 2026-11-22 (owner): a queue that already says the wait limit cannot be
+  // met is not waited out; without such a prediction the limit still runs.
+  group('a wait limit the queue cannot meet', () {
+    Future<HeavyLease> limited(Map<String, Duration> typical) =>
+        acquireHeavyLease(
+          need: heavyNeedFor(HeavyKind.other),
+          label: 'limited',
+          waitMax: const Duration(minutes: 10),
+          environment: env(1),
+          readMemory: () => roomy,
+          poll: const Duration(milliseconds: 50),
+          log: (_) {},
+          typicalRuns: typical,
+        );
+
+    test('gives up at once, names the prediction, leaves the queue', () async {
+      final HeavyLease a = await take(1);
+      final Stopwatch sw = Stopwatch()..start();
+      await expectLater(
+        limited(<String, Duration>{'other': const Duration(minutes: 40)}),
+        throwsA(
+          isA<HeavyLeaseTimeout>().having(
+            (HeavyLeaseTimeout e) => e.message,
+            'message',
+            allOf(contains('gives up now'), contains('10 min limit')),
+          ),
+        ),
+      );
+      expect(sw.elapsed, lessThan(const Duration(seconds: 10)));
+      expect(readHeavyQueue(Directory('${tmp.path}/state')), isEmpty);
+      a.release();
+    });
+
+    test('keeps waiting while the prediction fits the limit', () async {
+      final HeavyLease a = await take(1);
+      bool settled = false;
+      final Future<HeavyLease> waiting = limited(<String, Duration>{
+        'other': const Duration(minutes: 3),
+      })..whenComplete(() => settled = true).ignore();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(settled, isFalse);
+      a.release();
+      final HeavyLease b = await waiting;
+      expect(b.slot, 0);
+      b.release();
+    });
+  });
+
   // 2026-11-20: a stopped tool call left heavy.dart queued with nobody
   // waiting; once admitted its command died in the dead console
   // (0xC0000142) and the next orphan took the slot (heavy_lease.dart

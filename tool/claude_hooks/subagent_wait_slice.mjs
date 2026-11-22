@@ -14,6 +14,13 @@
 // from the main conversation, background calls and calls without an explicit
 // timeout (default 120 s) are left alone.
 //
+// It also gives a subagent's `tool/heavy.dart` run a wait limit
+// (`--wait-max-min=10`, unless it set one): a queue that already says the
+// run will not get a slot within that leaves at once with exit 75 and a
+// `gives up now` line (test_flow/heavy_wait_estimate.dart) -- the subagent
+// reports it not run and its delegator runs it with the batch -- instead of
+// the subagent waiting out a queue it cannot outlast (owner, 2026-11-22).
+//
 // This file is self-contained (Node built-ins only) and installs itself for
 // the current user, on any machine and for every project:
 //
@@ -32,6 +39,23 @@ const HOOK_FILE = 'subagent_wait_slice.mjs';
 /** 4.5 minutes: margin under the 5-minute TTL for the request round trip. */
 export const SUBAGENT_FOREGROUND_TIMEOUT_MS = 270000;
 
+/** A subagent's heavy.dart wait limit, in minutes. */
+export const SUBAGENT_HEAVY_WAIT_MAX_MIN = 10;
+
+/**
+ * [command] with every `heavy.dart` run given the subagent wait limit, or
+ * null when it has none to give (no such run, a limit already set, or a
+ * `--status` / `--stats` / `--replay` report).
+ * @param {string} command
+ * @returns {string | null}
+ */
+export function withHeavyWaitLimit(command) {
+  if (command.includes('--wait-max-min')) return null;
+  const run = /(\bheavy\.dart)(?=\s)(?!\s+--(?:status|stats|replay)\b)/g;
+  if (!run.test(command)) return null;
+  return command.replace(run, `$1 --wait-max-min=${SUBAGENT_HEAVY_WAIT_MAX_MIN}`);
+}
+
 /**
  * The tool input to run instead, or null when the call is left as it is.
  * @param {unknown} payload PreToolUse hook input.
@@ -45,12 +69,25 @@ export function slicedToolInput(payload) {
   if (payload.tool_name !== 'Bash' && payload.tool_name !== 'PowerShell') return null;
   const input = payload.tool_input;
   if (input === null || typeof input !== 'object') return null;
-  if (input.run_in_background === true) return null;
-  if (typeof input.timeout !== 'number' || !(input.timeout > SUBAGENT_FOREGROUND_TIMEOUT_MS)) {
-    return null;
-  }
   // updatedInput replaces the whole tool input, so every other field rides along.
-  return { ...input, timeout: SUBAGENT_FOREGROUND_TIMEOUT_MS };
+  const out = { ...input };
+  let changed = false;
+  if (typeof input.command === 'string') {
+    const limited = withHeavyWaitLimit(input.command);
+    if (limited !== null) {
+      out.command = limited;
+      changed = true;
+    }
+  }
+  if (
+    input.run_in_background !== true &&
+    typeof input.timeout === 'number' &&
+    input.timeout > SUBAGENT_FOREGROUND_TIMEOUT_MS
+  ) {
+    out.timeout = SUBAGENT_FOREGROUND_TIMEOUT_MS;
+    changed = true;
+  }
+  return changed ? out : null;
 }
 
 async function main() {

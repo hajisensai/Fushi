@@ -6,7 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { SUBAGENT_FOREGROUND_TIMEOUT_MS, install, slicedToolInput } from './subagent_wait_slice.mjs';
+import {
+  SUBAGENT_FOREGROUND_TIMEOUT_MS,
+  install,
+  slicedToolInput,
+  withHeavyWaitLimit,
+} from './subagent_wait_slice.mjs';
 
 const sub = (toolInput, toolName = 'Bash') => ({
   agent_id: 'a1',
@@ -46,6 +51,39 @@ test('main conversation, background, short and default timeouts are left alone',
   ]) {
     assert.equal(slicedToolInput(payload), null, JSON.stringify(payload));
   }
+});
+
+test('a subagent heavy.dart run gets the wait limit, background ones too', () => {
+  const cmd = 'cd fushi && dart tool/heavy.dart -- flutter test a_test.dart --no-pub > x.log 2>&1';
+  const want = 'cd fushi && dart tool/heavy.dart --wait-max-min=10 -- flutter test a_test.dart --no-pub > x.log 2>&1';
+  assert.deepEqual(slicedToolInput(sub({ command: cmd, timeout: 270000 })), { command: want, timeout: 270000 });
+  assert.deepEqual(slicedToolInput(sub({ command: cmd, run_in_background: true })), {
+    command: want,
+    run_in_background: true,
+  });
+  assert.deepEqual(slicedToolInput(sub({ command: cmd, timeout: 600000 }, 'PowerShell')), {
+    command: want,
+    timeout: SUBAGENT_FOREGROUND_TIMEOUT_MS,
+  });
+  // Main conversation: no limit.
+  assert.equal(slicedToolInput({ tool_name: 'Bash', tool_input: { command: cmd } }), null);
+});
+
+test('withHeavyWaitLimit leaves set limits, reports and other commands alone', () => {
+  for (const c of [
+    'dart tool/heavy.dart --wait-max-min=3 -- flutter analyze',
+    'dart tool/heavy.dart --status',
+    'dart tool/heavy.dart --stats=3',
+    'dart tool/heavy.dart --replay',
+    'flutter test a_test.dart',
+    'cat tool/heavy.dart.bak x',
+  ]) {
+    assert.equal(withHeavyWaitLimit(c), null, c);
+  }
+  assert.equal(
+    withHeavyWaitLimit('dart ../tool/heavy.dart --check-only -- .\\gradlew.bat x'),
+    'dart ../tool/heavy.dart --wait-max-min=10 --check-only -- .\\gradlew.bat x',
+  );
 });
 
 test('the hook answers updatedInput JSON on stdin input, nothing otherwise', () => {
