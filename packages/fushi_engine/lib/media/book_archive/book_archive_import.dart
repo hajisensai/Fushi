@@ -364,8 +364,10 @@ class BookArchiveImporter {
             : BookArchiveItemStatus.imported,
         bookKey: key,
       );
-    } on Exception catch (e) {
-      // 一本坏书不拖垮整包：记进汇总，其余照导。
+    } on Object catch (e) {
+      // 一本坏书不拖垮整包：记进汇总（原因原样给用户看），其余照导。接 [Object] 而非
+      // [Exception]：生产导入原语对坏书抛的不全是 Exception（`PdfImporter` 对零页 PDF
+      // 抛 `StateError`），漏接会让整批中断、批量导入框停在进度态关不掉。
       return BookArchiveItemResult(
         name: name,
         status: BookArchiveItemStatus.failed,

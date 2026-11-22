@@ -158,7 +158,8 @@ void main() {
         },
         importPdf: (String path) async {
           calls.add('pdf:${p.basename(path)}');
-          throw const FormatException('broken pdf');
+          // 与生产同形：`PdfImporter` 对零页 PDF 抛的是 StateError（Error，不是 Exception）。
+          throw StateError('broken pdf');
         },
         createStagingDir: () async {
           final Directory dir = Directory(

@@ -85,7 +85,10 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
       );
       if (!mounted) return;
       setState(() => _summary = summary);
-    } on Exception catch (e) {
+    } on Object catch (e, stackTrace) {
+      // 本框不可点外关闭、进行中禁返回：任何失败都必须落到结果态给出原因和「确定」，
+      // 否则用户被一个永远转圈的模态框锁死。
+      debugPrint('[book-archive-import] failed: $e\n$stackTrace');
       if (!mounted) return;
       setState(() => _error = e);
     }

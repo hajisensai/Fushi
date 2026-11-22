@@ -482,7 +482,11 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (importing) return;
     // 拖进来的是装着一批书的压缩包（.7z / 一包 EPUB 的 zip / 分卷第一卷……）→ 整包转交
     // 批量导入。分类表里 `.zip` 归词典包、`.rar` 归漫画包，不先问就会被下面静默忽略。
-    if (await _handoffIfBookArchives(paths, ++_selectionGeneration)) return;
+    // 只在真有候选压缩包时才推进选择代数：纯字幕 / 音频拖入不该把进行中的选书判定作废。
+    if (paths.any(isBookArchiveContainerPath) &&
+        await _handoffIfBookArchives(paths, ++_selectionGeneration)) {
+      return;
+    }
     if (!mounted) return;
     final DroppedFiles files = classifyDroppedFiles(paths);
     final BookDialogDropResult r = resolveBookDialogDrop(files);
