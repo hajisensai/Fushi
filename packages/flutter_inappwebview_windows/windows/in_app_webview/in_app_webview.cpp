@@ -2163,8 +2163,6 @@ namespace flutter_inappwebview_plugin
       captureScaleFactor_ = capture_scale_factor;
       auto scaled_width = width * capture_scale_factor;
       auto scaled_height = height * capture_scale_factor;
-      compositionBoundsWidth_ = static_cast<int>(scaled_width);
-      compositionBoundsHeight_ = static_cast<int>(scaled_height);
 
       RECT bounds;
       bounds.left = 0;
@@ -2181,10 +2179,6 @@ namespace flutter_inappwebview_plugin
 
       if (webViewController->put_Bounds(bounds) != S_OK) {
         std::cerr << "Setting webview bounds failed." << std::endl;
-      }
-
-      if (hasCompositionPosition_ && hostWindowVisible_ && !isPaused_) {
-        syncCompositionHostPosition();
       }
 
       if (surfaceSizeChangedCallback_) {
@@ -2216,47 +2210,24 @@ namespace flutter_inappwebview_plugin
     compositionLogicalX_ = x;
     compositionLogicalY_ = y;
     hasCompositionPosition_ = true;
-
-    if (hostWindowVisible_ && !isPaused_) {
-      syncCompositionHostPosition();
-    }
+    syncCompositionHostPosition();
   }
 
   void InAppWebView::syncCompositionHostPosition()
   {
-    if (!surface_ || !hasCompositionPosition_ || !webViewController ||
-      !plugin || !plugin->registrar) {
+    if (!surface_ || !hasCompositionPosition_ || !webViewController) {
       return;
     }
 
-    auto* view = plugin->registrar->GetView();
-    if (!view) {
-      return;
-    }
-
-    HWND flutterViewHWnd = view->GetNativeWindow();
-    if (!flutterViewHWnd) {
-      return;
-    }
-
-    // Composition host HWND is a hidden WS_CHILD of flutterViewHWnd. Keep its
-    // position in client coordinates and clamped inside the Flutter client rect
-    // so offscreen/parked WebViews do not drift across the desktop.
-    RECT clientRect{};
-    ::GetClientRect(flutterViewHWnd, &clientRect);
-    const int clientWidth = (std::max)(0, static_cast<int>(clientRect.right - clientRect.left));
-    const int clientHeight = (std::max)(0, static_cast<int>(clientRect.bottom - clientRect.top));
-
-    const int rawX = static_cast<int>(std::lround(compositionLogicalX_ * deviceScaleFactor_));
-    const int rawY = static_cast<int>(std::lround(compositionLogicalY_ * deviceScaleFactor_));
-    const int maxX = compositionBoundsWidth_ > 0
-      ? (std::max)(0, clientWidth - compositionBoundsWidth_)
-      : (std::max)(0, clientWidth - 1);
-    const int maxY = compositionBoundsHeight_ > 0
-      ? (std::max)(0, clientHeight - compositionBoundsHeight_)
-      : (std::max)(0, clientHeight - 1);
-    const int targetX = std::clamp(rawX, 0, maxX);
-    const int targetY = std::clamp(rawY, 0, maxY);
+    // The composition host HWND is a hidden WS_CHILD of the Flutter view
+    // (BUG-3871), so its position is in Flutter-view client pixels:
+    // global logical offset * window DPR (deviceScaleFactor_, never the texture
+    // raster scale). No clamping: a WS_CHILD is clipped by its parent and can
+    // not leak onto the desktop, and WebView2 anchors popups (select, context
+    // menu, IME candidates, drag/drop) to this HWND, so a WebView scrolled
+    // partly out of view must keep its real (possibly negative) origin.
+    const int targetX = static_cast<int>(std::lround(compositionLogicalX_ * deviceScaleFactor_));
+    const int targetY = static_cast<int>(std::lround(compositionLogicalY_ * deviceScaleFactor_));
 
     HWND webViewHWnd = nullptr;
     if (succeededOrLog(webViewController->get_ParentWindow(&webViewHWnd)) && webViewHWnd) {
@@ -2280,15 +2251,14 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
+    // Visibility = host window visible AND not explicitly paused from Dart.
+    // Hiding flips document.visibilityState to hidden (same as a minimized
+    // Chrome window) and drops the proxy Chrome_WidgetWin_1 out of desktop
+    // hit testing.
     if (visible) {
       if (!isPaused_) {
         webViewController->put_IsVisible(TRUE);
-        if (hasCompositionPosition_) {
-          syncCompositionHostPosition();
-        }
-        else {
-          webViewController->NotifyParentWindowPositionChanged();
-        }
+        webViewController->NotifyParentWindowPositionChanged();
       }
     }
     else {
@@ -2298,12 +2268,10 @@ namespace flutter_inappwebview_plugin
 
   void InAppWebView::onHostWindowBoundsChanged()
   {
+    // The host HWND is a WS_CHILD, so moving the top-level window moves it
+    // too; client-relative position is unchanged. WebView2 only needs to be
+    // told its screen position changed (popup / IME placement).
     if (!surface_ || !webViewController || !hostWindowVisible_ || isPaused_) {
-      return;
-    }
-
-    if (hasCompositionPosition_) {
-      syncCompositionHostPosition();
       return;
     }
     webViewController->NotifyParentWindowPositionChanged();

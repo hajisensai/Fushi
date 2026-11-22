@@ -230,8 +230,6 @@ namespace flutter_inappwebview_plugin
     double compositionLogicalX_ = 0.0;
     double compositionLogicalY_ = 0.0;
     bool hasCompositionPosition_ = false;
-    int compositionBoundsWidth_ = 0;
-    int compositionBoundsHeight_ = 0;
     void syncCompositionHostPosition();
     POINT lastCursorPos_ = { 0, 0 };
     VirtualKeyState virtualKeys_;

@@ -75,11 +75,9 @@ namespace flutter_inappwebview_plugin
     RegisterClass(&windowClass_);
 
     if (plugin && plugin->registrar) {
-      if (auto* view = plugin->registrar->GetView()) {
-        if (HWND top_window = ::GetAncestor(view->GetNativeWindow(), GA_ROOT)) {
-          host_window_visible_ = ::IsWindowVisible(top_window) && !::IsIconic(top_window);
-        }
-      }
+      // Host visibility is never cached from registration time (the main window
+      // is not shown yet when plugins register): new WebViews read the live
+      // top-level state, and these messages push later transitions.
       host_window_proc_delegate_id_ = plugin->registrar->RegisterTopLevelWindowProcDelegate(
         [this](HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) -> std::optional<LRESULT> {
           switch (message) {
@@ -89,14 +87,10 @@ namespace flutter_inappwebview_plugin
             }
             else if (wparam == SIZE_RESTORED || wparam == SIZE_MAXIMIZED) {
               onHostWindowVisibilityChanged(::IsWindowVisible(hwnd) != FALSE);
-              onHostWindowBoundsChanged();
             }
             break;
           case WM_SHOWWINDOW:
             onHostWindowVisibilityChanged(wparam != FALSE && !::IsIconic(hwnd));
-            if (wparam != FALSE && !::IsIconic(hwnd)) {
-              onHostWindowBoundsChanged();
-            }
             break;
           case WM_WINDOWPOSCHANGED:
           {
@@ -113,9 +107,6 @@ namespace flutter_inappwebview_plugin
             }
             break;
           }
-          case WM_MOVE:
-            onHostWindowBoundsChanged();
-            break;
           default:
             break;
           }
@@ -207,7 +198,7 @@ namespace flutter_inappwebview_plugin
       auto webView = std::move(keepAliveWebViews.at(keepAliveId.value())->view);
       keepAliveWebViews.erase(keepAliveId.value());
       if (webView) {
-        webView->setHostWindowVisible(host_window_visible_);
+        webView->setHostWindowVisible(isHostWindowVisible());
       }
       auto customPlatformView = std::make_unique<CustomPlatformView>(plugin->registrar->messenger(),
         plugin->registrar->texture_registrar(),
@@ -241,7 +232,7 @@ namespace flutter_inappwebview_plugin
           auto inAppWebView = std::make_unique<InAppWebView>(plugin, params, hwnd, std::move(webViewEnv), std::move(webViewController), std::move(webViewCompositionController));
           // 本函数建的 hwnd 归 InAppWebView 生命周期管（两种宿主模式都是），析构时回收。
           inAppWebView->destroyParentWindowOnClose = true;
-          inAppWebView->setHostWindowVisible(host_window_visible_);
+          inAppWebView->setHostWindowVisible(isHostWindowVisible());
 
           std::optional<std::shared_ptr<URLRequest>> urlRequest = urlRequestMap.has_value() ? std::make_shared<URLRequest>(urlRequestMap.value()) : std::optional<std::shared_ptr<URLRequest>>{};
           if (urlRequest.has_value()) {
@@ -360,9 +351,24 @@ namespace flutter_inappwebview_plugin
     }
   }
 
+  bool InAppWebViewManager::isHostWindowVisible() const
+  {
+    if (!plugin || !plugin->registrar) {
+      return true;
+    }
+    auto* view = plugin->registrar->GetView();
+    if (!view) {
+      return true;
+    }
+    HWND top_window = ::GetAncestor(view->GetNativeWindow(), GA_ROOT);
+    if (!top_window) {
+      return true;
+    }
+    return ::IsWindowVisible(top_window) != FALSE && ::IsIconic(top_window) == FALSE;
+  }
+
   void InAppWebViewManager::onHostWindowVisibilityChanged(bool visible)
   {
-    host_window_visible_ = visible;
     forEachManagedWebView([visible](InAppWebView* webView) {
       webView->setHostWindowVisible(visible);
     });

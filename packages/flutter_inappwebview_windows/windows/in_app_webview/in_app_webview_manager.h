@@ -90,7 +90,7 @@ namespace flutter_inappwebview_plugin
     // 避免落到 CRT atexit。幂等：重复调用为 no-op。
     static void releaseSharedCompositionResources();
     int host_window_proc_delegate_id_ = -1;
-    bool host_window_visible_ = true;
+    bool isHostWindowVisible() const;
     void forEachManagedWebView(const std::function<void(InAppWebView*)>& visitor) const;
     void onHostWindowVisibilityChanged(bool visible);
     void onHostWindowBoundsChanged();

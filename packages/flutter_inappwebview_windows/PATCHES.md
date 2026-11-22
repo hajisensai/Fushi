@@ -162,28 +162,32 @@ verified at runtime on this machine.
 - Keep `content_type.h` pure ASCII: MSVC reads sources in the system code page
   and the plugin builds with `/WX`, so a non-ASCII comment fails with C4819.
 
-## Sync composition host visibility & clamp `WS_CHILD` position (2026-11-21)
+## Sync composition host visibility & `WS_CHILD` position (BUG-5186, 2026-11-21)
 
 - `windows/in_app_webview/in_app_webview_manager.{h,cpp}`: register a
-  top-level `WindowProc` delegate listening to `WM_SIZE`, `WM_SHOWWINDOW`,
-  `WM_WINDOWPOSCHANGED`, and `WM_MOVE`, forwarding host window visibility to
-  all active and `keepAlive` WebViews (and initializing `createInAppWebView` /
-  `createSurface` from the live ancestor state). Without this, minimizing or
-  hiding the Fushi window left composition-mode WebView2 `Chrome_WidgetWin_1`
-  windows active on the desktop and swallowing mouse clicks (including when
-  `window_manager` swallows `WM_SIZE` `SIZE_MINIMIZED`).
+  top-level `WindowProc` delegate (observe only, always `std::nullopt`) on
+  `WM_WINDOWPOSCHANGED` (`SWP_HIDEWINDOW` / `IsIconic` / `IsWindowVisible`),
+  plus `WM_SIZE` / `WM_SHOWWINDOW` as redundant visibility signals, forwarding
+  host visibility to all active and `keepAlive` WebViews. Without this,
+  minimizing or hiding the Fushi window left composition-mode WebView2
+  `Chrome_WidgetWin_1` proxy windows hit-testable on the desktop, swallowing
+  clicks (`window_manager` also eats `WM_SIZE` `SIZE_MINIMIZED`).
+  New / reused WebViews read the live top-level state (`isHostWindowVisible()`);
+  nothing is cached at plugin registration, when the main window is not shown
+  yet. No `WM_MOVE` handling: top-level moves only need
+  `NotifyParentWindowPositionChanged()`, done from `WM_WINDOWPOSCHANGED`.
 - `windows/custom_platform_view/custom_platform_view.cc` and
   `windows/in_app_webview/in_app_webview.{h,cpp}`:
-  - Keep `hostWindowVisible_` and `isPaused_` orthogonal so `resume()` does not
-    call `put_IsVisible(true)` while the host window is hidden/minimized, and
-    un-minimizing does not unhide an explicitly paused WebView.
-  - Pass signed `double` coordinates from `setPosition` (validating
+  - `isPaused_` (Dart `pause()`) and `hostWindowVisible_` are independent;
+    `put_IsVisible` = host visible AND not paused. Hiding flips the page's
+    `document.visibilityState` to `hidden`, same as a minimized Chrome window.
+  - `setPosition` takes signed `double` coordinates (validated with
     `std::isfinite`) instead of truncating via `static_cast<size_t>`.
-  - In composition mode (`surface_` non-null), compute `WS_CHILD` client
-    coordinates clamped inside the Flutter view client rect (no
-    `GetWindowRect` + `SM_CYCAPTION`/`SM_CXBORDER` screen offsets) and call
-    `NotifyParentWindowPositionChanged()` on position, surface-size, show, and
-    host move/resize events.
-- Guard tests:
-  `packages/flutter_inappwebview_windows/test/composition_host_visibility_position_test.dart`
-  and `fushi/test/widgets/inappwebview_windows_native_guards_test.dart`.
+  - Composition mode: the host is a `WS_CHILD` of the Flutter view (BUG-3871),
+    so its position is `lround(logical * deviceScaleFactor_)` in Flutter-view
+    client pixels. Not clamped (a child is clipped by its parent anyway, and
+    WebView2 anchors select / context menu / IME / drag-drop to this HWND, so a
+    WebView scrolled partly out must keep its real, possibly negative, origin),
+    and never scaled by `captureScaleFactor_` (texture raster scale).
+- Guard: `fushi/test/widgets/inappwebview_windows_native_guards_test.dart`
+  (the package's own tests are skipped by CI).
