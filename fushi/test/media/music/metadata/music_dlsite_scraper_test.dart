@@ -17,30 +17,31 @@ import 'package:http/testing.dart';
 const String _rj = 'RJ01109339';
 
 /// product.json 的最小真实形状（字段名照 2026-10 实测响应）。
-String _product(String workno) => jsonEncode(<Map<String, Object?>>[
-  <String, Object?>{
-    'workno': workno,
-    'work_name': '耳舐め&耳ふーサンドイッチ',
-    'maker_name': 'チームランドセル',
-    'work_type': 'SOU',
-    'work_type_string': 'ボイス・ASMR',
-    'regist_date': '2024-05-01 16:00:00',
-    'age_category': 1,
-    'genres': <Map<String, Object?>>[
-      <String, Object?>{'name': '癒し'},
-      <String, Object?>{'name': '耳かき'},
-    ],
-    'creaters': <String, Object?>{
-      'voice_by': <Map<String, Object?>>[
-        <String, Object?>{'name': '耳恋なか'},
-        <String, Object?>{'name': 'そよかぜみらい'},
-      ],
-    },
-    'image_main': <String, Object?>{
-      'url': '//img.dlsite.jp/modpub/images2/work/doujin/$workno.jpg',
-    },
-  },
-]);
+String _product(String workno, {int age = 1}) =>
+    jsonEncode(<Map<String, Object?>>[
+      <String, Object?>{
+        'workno': workno,
+        'work_name': '耳舐め&耳ふーサンドイッチ',
+        'maker_name': 'チームランドセル',
+        'work_type': 'SOU',
+        'work_type_string': 'ボイス・ASMR',
+        'regist_date': '2024-05-01 16:00:00',
+        'age_category': age,
+        'genres': <Map<String, Object?>>[
+          <String, Object?>{'name': '癒し'},
+          <String, Object?>{'name': '耳かき'},
+        ],
+        'creaters': <String, Object?>{
+          'voice_by': <Map<String, Object?>>[
+            <String, Object?>{'name': '耳恋なか'},
+            <String, Object?>{'name': 'そよかぜみらい'},
+          ],
+        },
+        'image_main': <String, Object?>{
+          'url': '//img.dlsite.jp/modpub/images2/work/doujin/$workno.jpg',
+        },
+      },
+    ]);
 
 String _rating(String workno) => jsonEncode(<String, Object?>{
   workno: <String, Object?>{
@@ -82,6 +83,9 @@ void main() {
   late bool notFound;
   late bool coverFails;
 
+  /// product.json 的 `age_category`（1 全年龄 / 2 R-15 / 3 成人向）。
+  late int age;
+
   MusicDlsiteScraper scraper() => MusicDlsiteScraper(
     database: () => db,
     locale: () => 'ja_JP',
@@ -96,7 +100,7 @@ void main() {
             '';
         if (req.url.path.endsWith('product.json')) {
           return http.Response.bytes(
-            utf8.encode(notFound ? '[]' : _product(workno)),
+            utf8.encode(notFound ? '[]' : _product(workno, age: age)),
             200,
           );
         }
@@ -122,6 +126,7 @@ void main() {
     requests = <Uri>[];
     notFound = false;
     coverFails = false;
+    age = 1;
     await db.writeMusicScanBatch(
       MusicScanBatchWrite(
         tracks: <MusicTracksCompanion>[
@@ -227,6 +232,70 @@ void main() {
         );
     await scraper().scrapeAlbum('asmr');
     expect((await db.getMusicAlbum('asmr'))!.coverPath, isNull);
+  });
+
+  group('R-18 作品默认 NSFW（拍板台 NCzkl6oLnf-adult-cover）', () {
+    Future<bool> nsfw(String uid) =>
+        db.isMediaNsfw(TagHostKind.musicAlbum, uid);
+
+    test('成人向：专辑标成 NSFW，主图照补；全年龄 / R-15 不标', () async {
+      age = 3;
+      await scraper().scrapeAlbum('asmr');
+      expect(await nsfw('asmr'), isTrue);
+      expect(
+        (await db.getMusicAlbum('asmr'))!.coverPath,
+        endsWith('dlsite_$_rj.jpg'),
+        reason: '封面照补，交给「模糊 NSFW 封面」管',
+      );
+      expect(
+        (await db.mediaNsfwClock(TagHostKind.musicAlbum, 'asmr')).nsfwAt,
+        42,
+        reason: '戳取注入的时钟',
+      );
+
+      age = 2;
+      await scraper().scrapeAlbum('embedded');
+      expect(await nsfw('embedded'), isFalse);
+      expect(await nsfw('plain'), isFalse);
+    });
+
+    test('有内嵌封面不补图时也按分级标（曲目自带的封面同样是 R-18）', () async {
+      age = 3;
+      await scraper().scrapeAlbum('embedded');
+      expect((await db.getMusicAlbum('embedded'))!.coverPath, isNull);
+      expect(await nsfw('embedded'), isTrue);
+    });
+
+    test('用户取消过 NSFW：重取资料 / 整库识别都不再标回去', () async {
+      age = 3;
+      await scraper().scrapeAlbum('asmr');
+      await db.setMediaNsfw(TagHostKind.musicAlbum, 'asmr', false);
+      await scraper().scrapeAlbum('asmr');
+      expect(await nsfw('asmr'), isFalse);
+      await scraper().scrapeLibrary();
+      expect(await nsfw('asmr'), isFalse);
+    });
+
+    test('整库：同一部作品的几张专辑都标；已取过资料的专辑在整库识别时补标', () async {
+      age = 3;
+      // 先只取一张，模拟「早先取过资料、那时还不会标」：清掉它的标记行。
+      await scraper().scrapeAlbum('embedded');
+      await db.delete(db.mediaNsfwFlags).go();
+      await db.writeMusicScanBatch(
+        MusicScanBatchWrite(
+          tracks: <MusicTracksCompanion>[
+            _track('t5', 'asmr-bonus', '/asmr/$_rj 耳舐め/特典/01.mp3'),
+          ],
+          albums: <MusicAlbumsCompanion>[_album('asmr-bonus', '特典')],
+          artists: const <MusicArtistsCompanion>[],
+          credits: const <MusicTrackCreditsCompanion>[],
+        ),
+      );
+      await scraper().scrapeLibrary();
+      for (final String uid in <String>['asmr', 'asmr-bonus', 'embedded']) {
+        expect(await nsfw(uid), isTrue, reason: uid);
+      }
+    });
   });
 
   test('查无此作：落「取过、没有」的快照，不打评分端点', () async {

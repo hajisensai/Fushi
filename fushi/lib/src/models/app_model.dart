@@ -487,6 +487,8 @@ import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart'
+    show watchMediaNsfwSnapshot;
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
@@ -2450,6 +2452,9 @@ class AppModel
       audiobook: audiobookSession,
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
+      // NSFW 专辑的封面不进系统媒体控件 / 锁屏；偏好未就绪时按开关默认（开）处理。
+      watchNsfw: watchMediaNsfwSnapshot,
+      blurNsfwCovers: () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
       resumeMode: () => isPreferencesReady
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,

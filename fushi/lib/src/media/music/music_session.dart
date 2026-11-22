@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/music/music_history.dart';
@@ -60,6 +61,21 @@ String musicPlaybackFailureText(MusicBackendFailed failure) =>
       null => t.music_play_failed(error: failure.message),
     };
 
+/// 系统媒体控件 / 锁屏卡上要不要去掉 [item] 的封面：「模糊 NSFW 封面」开着、且曲目
+/// 所在专辑（或封面图源）是 NSFW。系统控件上没法打模糊，只能不给图。[snapshot] 还没
+/// 读到时，本地专辑的曲目先不给图（fail-closed，读到后立刻补推一次）。
+bool musicMediaSessionArtHidden({
+  required bool blur,
+  required MediaNsfwSnapshot? snapshot,
+  required MusicPlayItem item,
+}) {
+  if (!blur) return false;
+  final String? albumUid = item.albumUid;
+  if (snapshot == null) return albumUid != null;
+  return (albumUid != null && snapshot.isMusicAlbumNsfw(albumUid)) ||
+      snapshot.isMusicCoverNsfw(coverPath: item.coverPath);
+}
+
 class MusicSession extends ChangeNotifier {
   MusicSession({
     required this.engine,
@@ -71,7 +87,11 @@ class MusicSession extends ChangeNotifier {
     this.appleMusicFavorites,
     MusicResumeMode Function()? resumeMode,
     required bool hasSystemMediaSession,
+    Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? watchNsfw,
+    bool Function()? blurNsfwCovers,
   }) : _audio = audio,
+       _watchNsfw = watchNsfw,
+       _blurNsfwCovers = blurNsfwCovers,
        _hasSystemMediaSession = hasSystemMediaSession,
        _audiobook = audiobook,
        _database = database,
@@ -139,6 +159,34 @@ class MusicSession extends ChangeNotifier {
   final AudiobookSession _audiobook;
   final FushiDatabase? Function() _database;
   final bool Function() _showMediaNotification;
+
+  /// NSFW 标记快照的来源（生产 = app 端 `watchMediaNsfwSnapshot`）与「模糊 NSFW
+  /// 封面」开关：NSFW 专辑的封面不进系统媒体控件 / 锁屏（拍板台
+  /// NCzkl6oLnf-adult-cover）。两者缺一 = 不管（测试 / 无库）。
+  final Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? _watchNsfw;
+  final bool Function()? _blurNsfwCovers;
+  StreamSubscription<MediaNsfwSnapshot>? _nsfwSub;
+
+  /// 首份快照到之前为 null（这段时间本地专辑的曲目一律不带封面，见
+  /// [musicMediaSessionArtHidden]）。
+  MediaNsfwSnapshot? _nsfw;
+
+  /// 第一次要推媒体卡、库已就绪时才开始订阅（库在会话建好之后才打开）。
+  void _ensureNsfwWatch() {
+    final Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? watch =
+        _watchNsfw;
+    if (_nsfwSub != null || watch == null || _blurNsfwCovers == null) return;
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    _nsfwSub = watch(db).listen(
+      (MediaNsfwSnapshot s) {
+        _nsfw = s;
+        _publishMediaSession();
+      },
+      onError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('MusicSession.nsfwWatch', e, st),
+    );
+  }
 
   /// 断点续播模式（设置 `music_resume_mode`）。
   final MusicResumeMode Function() _resumeMode;
@@ -559,7 +607,16 @@ class MusicSession extends ChangeNotifier {
       handler.clearNotification();
       return;
     }
-    final String? cover = item.coverPath;
+    _ensureNsfwWatch();
+    final bool hideArt =
+        _blurNsfwCovers != null &&
+        _watchNsfw != null &&
+        musicMediaSessionArtHidden(
+          blur: _blurNsfwCovers(),
+          snapshot: _nsfw,
+          item: item,
+        );
+    final String? cover = hideArt ? null : item.coverPath;
     // 基础信息与当前歌词行一次组成最终卡片：本方法挂在每个进度 tick 上，分两次推
     // （先无歌词卡、再有歌词卡）会让两张卡交替、去重失效，每 tick 真推两次
     // setMediaItem（BUG-4507）。
@@ -601,6 +658,7 @@ class MusicSession extends ChangeNotifier {
     for (final StreamSubscription<Object?> s in _subs) {
       unawaited(s.cancel());
     }
+    unawaited(_nsfwSub?.cancel());
     _audiobook.removeListener(_onAudiobookChanged);
     favorites?.removeListener(notifyListeners);
     favorites?.dispose();

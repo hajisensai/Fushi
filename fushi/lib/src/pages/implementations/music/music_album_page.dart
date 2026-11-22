@@ -489,6 +489,19 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             label: Text(t.music_subtitle_generate_album),
           ),
         ),
+      // NSFW：封面按「模糊 NSFW 封面」打模糊（DLsite 认出 R-18 时默认已标上）。
+      if (_app.isDatabaseReady)
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_album_nsfw'),
+            onPressed: () => unawaited(
+              showMusicAlbumNsfwDialog(context, _app.database, album),
+            ),
+            icon: const FushiIcon(FushiIcons.visibilityOff),
+            label: Text(t.media_nsfw_action),
+          ),
+        ),
       if (disc != null) ...<Widget>[
         FushiPressScale(
           child: FushiFilledButton.tonalIcon(

@@ -9,8 +9,10 @@
 // - 视频文件：本集被标，或它所在的任一合集被标；
 // - 合集：合集自己被标；
 // - 游戏：所在的任一合集被标（游戏自己的成人向标记在 `GalgameCustomData.nsfw` /
-//   刮削 `metadata.nsfw`，由调用方并入，见 app 端 `GalgameEntry.isNsfw`）。
+//   刮削 `metadata.nsfw`，由调用方并入，见 app 端 `GalgameEntry.isNsfw`）；
+// - 音乐专辑：专辑自己被标（专辑不进合集；DLsite 资料认出 R-18 作品时默认标上）。
 
+import 'package:collection/collection.dart';
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -23,9 +25,13 @@ class MediaNsfwSnapshot {
     required Set<String> videos,
     required Set<int> collections,
     required Map<String, Set<int>> collectionsOfEntry,
+    required Set<String> musicAlbums,
+    required Set<String> musicCoverSources,
   }) : _books = books,
        _srtBooks = srtBooks,
        _videos = videos,
+       _musicAlbums = musicAlbums,
+       _musicCoverSources = musicCoverSources,
        _collections = collections,
        _collectionsOfEntry = collectionsOfEntry;
 
@@ -36,6 +42,8 @@ class MediaNsfwSnapshot {
     videos: const <String>{},
     collections: const <int>{},
     collectionsOfEntry: const <String, Set<int>>{},
+    musicAlbums: const <String>{},
+    musicCoverSources: const <String>{},
   );
 
   static Future<MediaNsfwSnapshot> load(FushiDatabase db) async {
@@ -86,18 +94,52 @@ class MediaNsfwSnapshot {
                   when uid.isNotEmpty)
                 uid,
           };
+    final Set<String> musicAlbums = await db.nsfwEntryKeys(
+      TagHostKind.musicAlbum,
+    );
     return MediaNsfwSnapshot._(
       books: <String>{...books, ...bookUids},
       srtBooks: await db.nsfwEntryKeys(TagHostKind.srt),
       videos: await db.nsfwEntryKeys(TagHostKind.video),
       collections: collections,
       collectionsOfEntry: collectionsOfEntry,
+      musicAlbums: musicAlbums,
+      musicCoverSources: await _musicCoverSourcesOf(db, musicAlbums),
     );
+  }
+
+  /// NSFW 专辑的封面图源：专辑封面文件（目录 / 缓存 / DLsite 主图 / 服务器地址）与
+  /// 专辑下全部曲目的音频路径（内嵌封面从它们读）。音乐封面按图源画，判定也按图源。
+  static Future<Set<String>> _musicCoverSourcesOf(
+    FushiDatabase db,
+    Set<String> albumUids,
+  ) async {
+    if (albumUids.isEmpty) return const <String>{};
+    return <String>{
+      for (final TypedResult r
+          in await (db.selectOnly(db.musicAlbums)
+                ..addColumns(<Expression<Object>>[db.musicAlbums.coverPath])
+                ..where(db.musicAlbums.albumUid.isIn(albumUids)))
+              .get())
+        if (r.read(db.musicAlbums.coverPath) case final String path
+            when path.isNotEmpty)
+          path,
+      for (final TypedResult r
+          in await (db.selectOnly(db.musicTracks)
+                ..addColumns(<Expression<Object>>[db.musicTracks.path])
+                ..where(db.musicTracks.albumUid.isIn(albumUids)))
+              .get())
+        if (r.read(db.musicTracks.path) case final String path
+            when path.isNotEmpty)
+          path,
+    };
   }
 
   final Set<String> _books;
   final Set<String> _srtBooks;
   final Set<String> _videos;
+  final Set<String> _musicAlbums;
+  final Set<String> _musicCoverSources;
   final Set<int> _collections;
 
   /// `mediaType|entryKey` → 它所在的 NSFW 合集 id（只收 NSFW 合集的成员）。
@@ -110,6 +152,7 @@ class MediaNsfwSnapshot {
       _books.isEmpty &&
       _srtBooks.isEmpty &&
       _videos.isEmpty &&
+      _musicAlbums.isEmpty &&
       _collections.isEmpty;
 
   bool _inNsfwCollection(String mediaType, String entryKey) =>
@@ -130,6 +173,31 @@ class MediaNsfwSnapshot {
       _videos.contains(bookUid) ||
       _inNsfwCollection(MediaKind.video.dbValue, bookUid);
 
+  /// 音乐专辑只看自己的标记（专辑不进合集）。
+  bool isMusicAlbumNsfw(String albumUid) => _musicAlbums.contains(albumUid);
+
+  /// 一张音乐封面（[coverPath] 封面文件 / 地址，或从 [embeddedFromPath] 音频文件读的
+  /// 内嵌封面）是否属于 NSFW 专辑。
+  bool isMusicCoverNsfw({String? coverPath, String? embeddedFromPath}) =>
+      _musicCoverSources.isNotEmpty &&
+      ((coverPath != null && _musicCoverSources.contains(coverPath)) ||
+          (embeddedFromPath != null &&
+              _musicCoverSources.contains(embeddedFromPath)));
+
+  static const DeepCollectionEquality _deep = DeepCollectionEquality();
+
+  /// 内容相同（各宿主的标记与合集继承都一样）。app 端按表变更重读后用它判断要不要
+  /// 广播新快照。
+  bool sameAs(MediaNsfwSnapshot other) =>
+      identical(this, other) ||
+      (_deep.equals(_books, other._books) &&
+          _deep.equals(_srtBooks, other._srtBooks) &&
+          _deep.equals(_videos, other._videos) &&
+          _deep.equals(_musicAlbums, other._musicAlbums) &&
+          _deep.equals(_musicCoverSources, other._musicCoverSources) &&
+          _deep.equals(_collections, other._collections) &&
+          _deep.equals(_collectionsOfEntry, other._collectionsOfEntry));
+
   /// 游戏只看合集继承；游戏自己的成人向标记由调用方并入。
   bool isGameInNsfwCollection(String gameId) =>
       _inNsfwCollection(MediaKind.game.dbValue, gameId);
@@ -144,11 +212,13 @@ class MediaNsfwSnapshot {
       final int id => isCollectionNsfw(id),
       null => false,
     },
+    TagHostKind.musicAlbum => isMusicAlbumNsfw(entryKey),
   };
 }
 
 /// [kind] / [entryKey] 宿主所在的、被标成 NSFW 的合集（按名字排序）。NSFW 开关用它
-/// 说明「这部作品因所在合集 NSFW 而 NSFW」——只能到合集里取消。合集本身恒空。
+/// 说明「这部作品因所在合集 NSFW 而 NSFW」——只能到合集里取消。合集本身与音乐专辑
+/// （不进合集）恒空。
 /// EPUB 成员键 v83 起是 uid、旧行仍是 bookKey，两种都认。
 Future<List<MediaCollectionRow>> nsfwCollectionsContaining(
   FushiDatabase db,
@@ -160,7 +230,7 @@ Future<List<MediaCollectionRow>> nsfwCollectionsContaining(
     TagHostKind.srt => MediaKind.srt.dbValue,
     TagHostKind.video => MediaKind.video.dbValue,
     TagHostKind.game => MediaKind.game.dbValue,
-    TagHostKind.collection => null,
+    TagHostKind.collection || TagHostKind.musicAlbum => null,
   };
   if (mediaType == null) return const <MediaCollectionRow>[];
   final Set<String> nsfwIds = await db.nsfwEntryKeys(TagHostKind.collection);

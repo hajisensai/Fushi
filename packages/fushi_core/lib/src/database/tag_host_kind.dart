@@ -7,7 +7,12 @@ enum TagHostKind {
   srt('srt'),
   video('video'),
   collection('collection'),
-  game('game');
+  game('game'),
+
+  /// 本地音乐专辑（`music_albums.album_uid`）。目前只当 NSFW 标记宿主（拍板台
+  /// NCzkl6oLnf-adult-cover：DLsite 资料补的 R-18 主图要能被「模糊 NSFW 封面」管到），
+  /// 不挂标签、不挂私密。
+  musicAlbum('music_album');
 
   const TagHostKind(this.dbValue);
 

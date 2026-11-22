@@ -355,6 +355,19 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
         gameIds.contains(gameId) ? identities.games.wireIdentity(gameId) : null,
   );
 
+  // 音乐专辑只带 NSFW 时钟（不挂标签 / 私密）。专辑 uid 按（专辑艺人, 专辑名）或
+  // （专辑名, 所在目录）派生，带专辑艺人标签的专辑两端同 uid；按目录派生的对不上就
+  // 在对端跳过（与其它宿主「解析不到本机宿主的条目跳过」同口径）。
+  final Set<String> albumUids = <String>{
+    for (final MusicAlbumRow a in await db.listMusicAlbums()) a.albumUid,
+  };
+  await addEntries(
+    TagHostKind.musicAlbum,
+    const <String, TagClockSet>{},
+    (String uid) =>
+        albumUids.contains(uid) ? (key: uid, aliases: const <String>[]) : null,
+  );
+
   final Set<String> referenced = <String>{
     for (final TagManifestEntry e in entries) ...e.addedAt.keys,
   };
@@ -380,6 +393,7 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
   Set<String>? srtUids;
   Set<String>? videoUids;
   Set<String>? bookKeys;
+  Set<String>? albumUids;
   int changed = 0;
   for (final TagManifestEntry e in remote.entries) {
     String? localKey;
@@ -423,6 +437,12 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
     } else if (e.kind == TagHostKind.game.dbValue) {
       kind = TagHostKind.game;
       localKey = identities.games.resolve(e.allKeys);
+    } else if (e.kind == TagHostKind.musicAlbum.dbValue) {
+      kind = TagHostKind.musicAlbum;
+      albumUids ??= <String>{
+        for (final MusicAlbumRow a in await db.listMusicAlbums()) a.albumUid,
+      };
+      if (albumUids.contains(e.key)) localKey = e.key;
     }
     if (kind == null || localKey == null) continue;
     bool didChange = await db.mergeRemoteTagClocks(
