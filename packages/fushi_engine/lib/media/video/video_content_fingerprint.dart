@@ -312,11 +312,47 @@ Future<int> upgradeVideoContentFingerprintsToFullHash(
     final VideoContentFingerprint? full = await fullHashOf(row.videoPath);
     if (full == null || !full.isFullHash) continue;
     if (isCancelled?.call() ?? false) break;
-    await recordVideoContentFingerprint(db, row.bookUid, full);
-    written++;
+    if (await _recordFullHashIfUnchanged(
+      db,
+      row,
+      existing[row.bookUid]!,
+      full,
+    )) {
+      written++;
+    }
   }
   return written;
 }
+
+/// 比较后写入：整文件哈希一份可能要算几分钟，这期间来源扫描可能已把 [row] 改指到
+/// 别的路径（搬家）或因原地换文件重记了指纹。只有行仍指着算的那个路径、指纹行仍是
+/// 开算前读到的 [before] 时才写，否则这份哈希描述的已不是这一行的文件，丢弃（下一轮
+/// 按新状态再算）。检查与写入在同一事务里。
+Future<bool> _recordFullHashIfUnchanged(
+  FushiDatabase db,
+  VideoBookRow row,
+  VideoContentFingerprintRow before,
+  VideoContentFingerprint full,
+) => db.transaction<bool>(() async {
+  final VideoBookRow? live =
+      await (db.select(db.videoBooks)
+            ..where(($VideoBooksTable t) => t.bookUid.equals(row.bookUid)))
+          .getSingleOrNull();
+  if (live == null || live.videoPath != row.videoPath) return false;
+  final VideoContentFingerprintRow? now =
+      await (db.select(db.videoContentFingerprints)..where(
+            ($VideoContentFingerprintsTable t) => t.bookUid.equals(row.bookUid),
+          ))
+          .getSingleOrNull();
+  if (now == null ||
+      now.fingerprint != before.fingerprint ||
+      now.fileSizeBytes != before.fileSizeBytes ||
+      now.fileModifiedAt != before.fileModifiedAt) {
+    return false;
+  }
+  await recordVideoContentFingerprint(db, row.bookUid, full);
+  return true;
+});
 
 /// 后台把采样指纹升级成整文件哈希的调度（[upgradeVideoContentFingerprintsToFullHash]），
 /// 每个库一个（[of]）。

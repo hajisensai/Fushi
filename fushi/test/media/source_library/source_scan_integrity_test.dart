@@ -632,6 +632,52 @@ void main() {
       );
     });
 
+    test('整文件哈希算的期间行被改指 / 指纹被重记：丢弃这份哈希，不写错行', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String aFile = p.join(tmp.path, 'A', '01.mkv');
+      final String bFile = p.join(tmp.path, 'B', '02.mkv');
+      _patterned(aFile, 200 * 1024);
+      _patterned(bFile, 200 * 1024, middleFrom: 70000, middleTo: 90000);
+      await _scan(db, await _source(db, tmp.path));
+      final Map<String, VideoContentFingerprintRow> before = await db
+          .allVideoContentFingerprints();
+      expect(before.length, 2);
+      // 算 01 的期间：扫描把 video/01 改指到别处；算 02 的期间：扫描重记了 02 的指纹。
+      final int written = await upgradeVideoContentFingerprintsToFullHash(
+        db,
+        fullHashOf: (String path) async {
+          final VideoContentFingerprint? full =
+              await computeVideoContentFullHash(path);
+          if (path == aFile) {
+            await (db.update(db.videoBooks)
+                  ..where(($VideoBooksTable t) => t.bookUid.equals('video/01')))
+                .write(
+                  VideoBooksCompanion(
+                    videoPath: Value<String>(p.join(tmp.path, 'C', '01.mkv')),
+                  ),
+                );
+          } else {
+            await recordVideoContentFingerprint(
+              db,
+              'video/02',
+              const VideoContentFingerprint(
+                sizeBytes: 1,
+                modifiedAtMs: 1,
+                value: 'osh:0000000000000001',
+              ),
+            );
+          }
+          return full;
+        },
+      );
+      expect(written, 0);
+      final Map<String, VideoContentFingerprintRow> after = await db
+          .allVideoContentFingerprints();
+      expect(after['video/01']!.fingerprint, before['video/01']!.fingerprint);
+      expect(after['video/02']!.fingerprint, 'osh:0000000000000001');
+    });
+
     test('内容指纹：名单外的目录名连着两层撞上、内容不同——不改指', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
