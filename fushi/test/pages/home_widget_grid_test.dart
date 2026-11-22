@@ -47,10 +47,10 @@ class _HostState extends State<_Host> {
         grid: widget.grid,
         editing: editing,
         cellBuilder: (BuildContext context, HomeWidgetItem item) => ColoredBox(
-          key: ValueKey<String>('cell/${item.kind.id}'),
+          key: ValueKey<String>('cell/${item.slot}'),
           color: const Color(0xFF8899AA),
         ),
-        labelOf: (HomeWidgetKind kind) => kind.id,
+        labelOf: (HomeWidgetItem item) => item.slot,
         onEnterEdit: () {
           widget.log.add('enter');
           setState(() => editing = true);
@@ -73,6 +73,10 @@ class _HostState extends State<_Host> {
             () => items = setHomeWidgetSize(items, index, widget.grid, size),
           );
         },
+        onConfigure: (int index) {
+          widget.log.add('configure $index');
+          setState(() => items = setHomeWidgetLanguage(items, index, 'en'));
+        },
       ),
     ),
   );
@@ -90,6 +94,7 @@ Future<_HostState> _pump(
   bool editing = true,
   TextDirection direction = TextDirection.ltr,
   List<String>? log,
+  List<HomeWidgetItem> items = _items,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -99,7 +104,7 @@ Future<_HostState> _pump(
           body: Align(
             alignment: Alignment.topLeft,
             child: _Host(
-              initial: _items,
+              initial: items,
               grid: HomeGridKind.compact,
               editing: editing,
               log: log ?? <String>[],
@@ -149,6 +154,83 @@ Future<Object?> _pad(WidgetTester tester, GamepadButton button) async {
 }
 
 void main() {
+  testWidgets('可重复的「语言目标」格：按语言各占一格，编辑态有配置角标 / 菜单键 / 手柄 Y', (
+    WidgetTester tester,
+  ) async {
+    final List<String> log = <String>[];
+    final _HostState host = await _pump(
+      tester,
+      log: log,
+      items: const <HomeWidgetItem>[
+        HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(1, 1)),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(1, 1),
+          language: 'ja',
+        ),
+        HomeWidgetItem(
+          HomeWidgetKind.languageGoals,
+          HomeWidgetSize(1, 1),
+          language: 'ko',
+        ),
+      ],
+    );
+    expect(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'ja'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'ko'),
+      ),
+      findsOneWidget,
+    );
+    // 只有可重复（可配置）的组件有配置角标。
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-configure/today')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('home-widget-configure/language_goals:ja'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(log, contains('configure 1'));
+    expect(host.items[1].language, 'en');
+    expect(host.items[1].slot, 'language_goals:en');
+    expect(
+      find.byKey(
+        homeWidgetTileKey(HomeWidgetKind.languageGoals, language: 'en'),
+      ),
+      findsOneWidget,
+    );
+
+    // 键盘菜单键：焦点落在「语言目标」格上时改配置。
+    for (int i = 0; i < 8; i++) {
+      if (_focusedLabel() == 'home-widget/language_goals:ko') break;
+      await _key(tester, LogicalKeyboardKey.tab);
+    }
+    expect(_focusedLabel(), 'home-widget/language_goals:ko');
+    await _key(tester, LogicalKeyboardKey.contextMenu);
+    expect(log, contains('configure 2'));
+    // 换成的语言已经有格子了：不变（一种语言只占一格）。
+    expect(host.items[2].language, 'ko');
+
+    // 「今日」格上菜单键 / 手柄 Y 不改配置。
+    log.clear();
+    for (int i = 0; i < 8; i++) {
+      if (_focusedLabel() == 'home-widget/today') break;
+      await _key(tester, LogicalKeyboardKey.tab);
+    }
+    expect(_focusedLabel(), 'home-widget/today');
+    await _key(tester, LogicalKeyboardKey.contextMenu);
+    await _pad(tester, GamepadButton.y);
+    expect(log.where((String e) => e.startsWith('configure')), isEmpty);
+  });
+
   testWidgets('装箱几何：窄网格两列、按行高与间距排位', (WidgetTester tester) async {
     await _pump(tester, editing: false);
     const double gap = kFushiCoverBlockSpacing;

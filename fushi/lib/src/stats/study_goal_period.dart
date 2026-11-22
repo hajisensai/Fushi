@@ -1,25 +1,28 @@
 import 'package:fushi/src/stats/stat_window.dart';
-import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
-/// 学习字数目标的周期（反馈 CjIr9RGSCe：日目标与周目标二选一）。
+/// 学习目标的周期（`StudyGoal.period`）。
 ///
-/// 两个目标值各自持久化（`reading_goal_daily_chars` / `reading_goal_weekly_chars`），
-/// 本枚举只决定**哪一个生效**：首页目标行、阅读统计页「今天」环、桌面小组件的
-/// 字数目标都按它取目标值与分子。切换周期不清另一份数值，切回来原值还在。
+/// 2026-11 起目标是记录列表（`study_goal_record.dart`），每条记录自带周期；
+/// 旧的字数目标「日 / 周二选一」偏好 `reading_goal_period`（反馈 CjIr9RGSCe）
+/// 只在迁移时读一次（[StudyGoalPeriod.fromWire]）。
 enum StudyGoalPeriod {
-  /// 每日目标：分子 = 今日学习字数（[studyGoalCharsForDay]）。
+  /// 每日：分子 = 当天。
   daily('daily'),
 
-  /// 每周目标：分子 = 本自然周（周一起，[StatWindow.weekFromKey]）学习字数
-  /// （[studyGoalCharsForWeek]）。
-  weekly('weekly');
+  /// 每周：分子 = 本自然周（起始日见 [StatWindow.weekStartDay]，[StatWindow.weekStartOf]）
+  /// 至当天。
+  weekly('weekly'),
+
+  /// 每月：分子 = 本日历月 1 日至当天。
+  monthly('monthly');
 
   const StudyGoalPeriod(this.wire);
 
-  /// 偏好里存的值（`reading_goal_period`）。
+  /// 持久化值（记录 JSON 的 `period`、旧偏好 `reading_goal_period`）。
   final String wire;
 
-  /// 未知 / 缺省值一律回落 [daily]（存量用户没有这个键，行为与之前一致）。
+  /// 未知 / 缺省值一律回落 [daily]。
   static StudyGoalPeriod fromWire(String? wire) {
     for (final StudyGoalPeriod p in values) {
       if (p.wire == wire) return p;
@@ -28,13 +31,53 @@ enum StudyGoalPeriod {
   }
 }
 
-/// 本自然周（[StatWindow.inWeek]：本周一至今日）的学习字数合计。口径与
-/// [studyGoalCharsForDay] 相同——只按 dateKey 筛选求和，**域由调用方传的行集决定**
-/// （首页 / 统计页都传完整日面，BUG-1993）。
-int studyGoalCharsForWeek(Iterable<StatFact> daily, StatWindow window) {
-  int total = 0;
-  for (final StatFact f in daily) {
-    if (window.inWeek(f.dateKey)) total += f.chars;
+/// [period] 下包含 [dayKey] 的窗口起点（含）。终点恒为 [dayKey] 本身（今天之后
+/// 没有数据）。dateKey 是零填充 `yyyy-MM-dd`，字典序即时间序。
+String studyGoalWindowStart(StudyGoalPeriod period, String dayKey) =>
+    switch (period) {
+      StudyGoalPeriod.daily => dayKey,
+      StudyGoalPeriod.weekly => StatWindow.weekStartOf(dayKey),
+      StudyGoalPeriod.monthly => '${dayKey.substring(0, 8)}01',
+    };
+
+/// [key] 是否落在 [period] 包含 [dayKey] 的窗口里（[studyGoalWindowStart] 至 [dayKey]）。
+bool studyGoalWindowContains(
+  StudyGoalPeriod period,
+  String dayKey,
+  String key,
+) =>
+    key.compareTo(studyGoalWindowStart(period, dayKey)) >= 0 &&
+    key.compareTo(dayKey) <= 0;
+
+/// [period] 下包含 [dayKey] 的窗口终点（含）：每日 = 当天；每周 = 本自然周最后一天
+/// （起始日见 [StatWindow.weekStartDay]）；每月 = 当月最后一天。周 / 月目标的「今日
+/// 份额」按窗口里剩下的生效日摊。
+String studyGoalWindowEnd(StudyGoalPeriod period, String dayKey) =>
+    switch (period) {
+      StudyGoalPeriod.daily => dayKey,
+      StudyGoalPeriod.weekly => FushiDatabase.statDateKeyPlusDays(
+        StatWindow.weekStartOf(dayKey),
+        6,
+      ),
+      StudyGoalPeriod.monthly => _lastDayOfMonthKey(dayKey),
+    };
+
+/// [period] 下包含 [dayKey] 的整个窗口（起点至终点，含今天之后的日子），按时间序。
+List<String> studyGoalWindowDays(StudyGoalPeriod period, String dayKey) {
+  final String end = studyGoalWindowEnd(period, dayKey);
+  final List<String> keys = <String>[];
+  for (
+    String k = studyGoalWindowStart(period, dayKey);
+    k.compareTo(end) <= 0;
+    k = FushiDatabase.statDateKeyPlusDays(k, 1)
+  ) {
+    keys.add(k);
   }
-  return total;
+  return keys;
+}
+
+String _lastDayOfMonthKey(String dayKey) {
+  final DateTime d = FushiDatabase.statDateKeyToDay(dayKey);
+  final int last = DateTime(d.year, d.month + 1, 0).day;
+  return '${dayKey.substring(0, 8)}${last.toString().padLeft(2, '0')}';
 }

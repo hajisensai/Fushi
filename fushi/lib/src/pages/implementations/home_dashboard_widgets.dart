@@ -9,12 +9,16 @@
 /// 墨水屏的差异也在这里各自收口。
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show FushiBarReferenceLine;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -271,16 +275,28 @@ class HomeGoalRing extends StatelessWidget {
                     value: value,
                     strokeWidth: 5,
                     color: accent,
-                    backgroundColor: fushiNeutralBlockColor(context),
+                    // 墨水屏的中性块色是纯白：底轨看不见，环只剩半截弧。用浅灰
+                    // （前景 30%，与「语言目标」环同一个）。
+                    backgroundColor: isEinkTheme(context)
+                        ? tokens.surfaces.onSurface.withValues(alpha: 0.3)
+                        : fushiNeutralBlockColor(context),
+                    // 铺满 [size]：不给外框时 M3E 指示器按默认 40 画在 52 的槽里，
+                    // 环心只剩 ~22 宽，「37%」压在弧上（2026-11-20 走查截图）。
+                    constraints: BoxConstraints.tight(Size.square(size)),
+                    padding: EdgeInsets.zero,
                   ),
                 ),
-                Text(
-                  '${(value * 100).round()}%',
-                  style: context.fushiType.labelSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: tokens.surfaces.onSurface,
+                // 达成后环心是对勾（与目标环 [StudyGoalRing] 同一完成状态）。
+                if (target >= 1)
+                  FushiIcon(FushiIcons.check, size: size * 0.42, color: accent)
+                else
+                  Text(
+                    '${(value * 100).round()}%',
+                    style: context.fushiType.labelSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: tokens.surfaces.onSurface,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -905,10 +921,18 @@ class HomeWeekBars extends StatelessWidget {
     required this.labels,
     required this.semanticLabel,
     this.height = 44,
+    this.reference,
+    this.color,
   });
+
+  /// 柱色（当前目标的语言色，与旁边的环同色）；null = 主题主色。墨水屏忽略。
+  final Color? color;
 
   /// 升序 7 天的数值（最后一个是今天）。
   final List<int> values;
+
+  /// 参考线（与 [values] 同单位，当前目标摊到一天的量）；null = 不画。
+  final double? reference;
 
   /// 与 [values] 对齐的悬停提示文案。
   final List<String> labels;
@@ -921,56 +945,68 @@ class HomeWeekBars extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
+    final Color? tint = eink ? null : color;
     final Color today = eink
         ? cs.onSurface
-        : (apple ? appleColorsOf(context).accent : cs.primary);
+        : (tint ?? (apple ? appleColorsOf(context).accent : cs.primary));
     final Color past = eink
         ? cs.outline
-        : (apple
-              ? appleColorsOf(context).accent.withValues(alpha: 0.4)
-              : cs.primaryContainer);
-    final int peak = values.fold<int>(0, math.max);
+        : (tint != null
+              ? tint.withValues(alpha: 0.3)
+              : (apple
+                    ? appleColorsOf(context).accent.withValues(alpha: 0.4)
+                    : cs.primaryContainer));
+    final double? line = reference != null && reference! > 0 ? reference : null;
+    final double peak = math.max(
+      values.fold<int>(0, math.max).toDouble(),
+      line ?? 0,
+    );
+    final Widget bars = SizedBox(
+      key: const ValueKey<String>('home-week-bars'),
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          for (int i = 0; i < values.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(width: tokens.spacing.gap / 2),
+            Expanded(
+              child: FushiTooltip(
+                message: labels[i],
+                excludeFromSemantics: true,
+                child: TweenAnimationBuilder<double>(
+                  // begin: 0：首次出现也从底长起（只给 end 时首帧直接画终值）。
+                  tween: Tween<double>(
+                    begin: 0,
+                    end: peak == 0 ? 0 : values[i] / peak,
+                  ),
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  curve: FushiMotion.standard,
+                  builder: (BuildContext _, double f, Widget? __) => Container(
+                    height: math.max(3, height * f),
+                    decoration: BoxDecoration(
+                      color: i == values.length - 1 ? today : past,
+                      borderRadius: const BorderRadius.all(Radius.circular(4)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
     return Semantics(
       container: true,
       label: semanticLabel,
       excludeSemantics: true,
-      child: SizedBox(
-        key: const ValueKey<String>('home-week-bars'),
-        height: height,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: <Widget>[
-            for (int i = 0; i < values.length; i++) ...<Widget>[
-              if (i > 0) SizedBox(width: tokens.spacing.gap / 2),
-              Expanded(
-                child: FushiTooltip(
-                  message: labels[i],
-                  excludeFromSemantics: true,
-                  child: TweenAnimationBuilder<double>(
-                    // begin: 0：首次出现也从底长起（只给 end 时首帧直接画终值）。
-                    tween: Tween<double>(
-                      begin: 0,
-                      end: peak == 0 ? 0 : values[i] / peak,
-                    ),
-                    duration: fushiMotionDuration(context, FushiMotion.medium),
-                    curve: FushiMotion.standard,
-                    builder: (BuildContext _, double f, Widget? __) =>
-                        Container(
-                          height: math.max(3, height * f),
-                          decoration: BoxDecoration(
-                            color: i == values.length - 1 ? today : past,
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(4),
-                            ),
-                          ),
-                        ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+      child: line == null
+          ? bars
+          : FushiBarReferenceLine(
+              fraction: line / peak,
+              height: height,
+              color: tokens.surfaces.onVariant.withValues(alpha: 0.6),
+              child: bars,
+            ),
     );
   }
 }
@@ -1059,6 +1095,162 @@ class HomeRecentTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 首页「今日」格的目标翻页：每个目标一页，左右滑（触屏 / 触控板 / 鼠标拖）或点
+/// 下方圆点切换；切到哪页由 [onPageChanged] 记下。
+///
+/// **受控组件**：显示哪一页由 [page] 决定（调用方传当前页目标在列表里的位置），页序
+/// 与页集合固定（不随滑动重排或增减，否则一滑就把页换了位置）。用户滑到第 i 页 →
+/// [onPageChanged] 写当前页（不改主目标）→ 调用方用新的 [page] 重建，与当前页相同、
+/// 不再跳；主目标在别处被改（设置里换主目标）或目标增删让当前页挪了位置 → [page] 与
+/// 当前页不同 → 跳过去。
+/// 页面身份因此始终是「哪条目标」，而不是一个只在首建时读一次的下标。
+/// 内容区矮于此时圆点竖排在结束侧（底下一行会把页面挤得只剩一条缝）。
+const double _kGoalPagerSideDotsBelow = 72;
+
+class HomeTodayGoalPager extends StatefulWidget {
+  const HomeTodayGoalPager({
+    super.key,
+    required this.count,
+    required this.page,
+    required this.pageBuilder,
+    required this.onPageChanged,
+    required this.dotLabel,
+    required this.dotColor,
+  });
+
+  final int count;
+
+  /// 该显示的页（夹进 0..count-1）。
+  final int page;
+  final IndexedWidgetBuilder pageBuilder;
+  final ValueChanged<int> onPageChanged;
+
+  /// 第 i 个圆点的读屏 / tooltip 文案（「显示 阅读时长」）。
+  final String Function(int index) dotLabel;
+  final Color dotColor;
+
+  @override
+  State<HomeTodayGoalPager> createState() => _HomeTodayGoalPagerState();
+}
+
+class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
+  late int _page = _wanted;
+  late final PageController _controller = PageController(initialPage: _page);
+
+  int get _wanted => widget.page.clamp(0, math.max(0, widget.count - 1));
+
+  @override
+  void didUpdateWidget(HomeTodayGoalPager old) {
+    super.didUpdateWidget(old);
+    final int wanted = _wanted;
+    if (wanted == _page) return;
+    _page = wanted;
+    // 构建期不能滚动（跳页会同步发滚动通知 → onPageChanged → 写偏好）：等这一帧
+    // 布局完再跳。期间又换了目标页就跳最新的那个。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients || _page != wanted) return;
+      if (_controller.page?.round() != wanted) _controller.jumpToPage(wanted);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _goTo(int index) {
+    unawaited(
+      _controller.animateToPage(
+        index,
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.enter,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget pages = ScrollConfiguration(
+      // 桌面上也能用鼠标拖着翻页（默认只认触屏 / 触控笔 / 触控板）。
+      behavior: ScrollConfiguration.of(
+        context,
+      ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+      child: PageView.builder(
+        controller: _controller,
+        itemCount: widget.count,
+        onPageChanged: (int i) {
+          setState(() => _page = i);
+          widget.onPageChanged(i);
+        },
+        itemBuilder: widget.pageBuilder,
+      ),
+    );
+    if (widget.count <= 1) return pages;
+    final Duration swap = fushiMotionDuration(context, FushiMotion.short);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        // 矮格（手机上的 1×1）放不下底下一行圆点：圆点竖排在结束侧，页面占满高度。
+        final bool side = box.maxHeight < _kGoalPagerSideDotsBelow;
+        final List<Widget> dots = <Widget>[
+          for (int i = 0; i < widget.count; i++)
+            Tooltip(
+              message: widget.dotLabel(i),
+              child: Semantics(
+                button: true,
+                selected: i == _page,
+                label: widget.dotLabel(i),
+                excludeSemantics: true,
+                child: InkResponse(
+                  key: ValueKey<String>('home-today-goal-dot-$i'),
+                  onTap: () => _goTo(i),
+                  radius: 12,
+                  child: SizedBox(
+                    width: side ? 14 : 20,
+                    height: side ? 12 : 16,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: swap,
+                        curve: FushiMotion.enter,
+                        width: side ? 6 : (i == _page ? 14 : 6),
+                        height: side ? (i == _page ? 10 : 6) : 6,
+                        decoration: BoxDecoration(
+                          color: widget.dotColor.withValues(
+                            alpha: i == _page ? 1 : 0.35,
+                          ),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ];
+        if (side) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: pages),
+              // 页内容写满宽度时（一行高的「语言目标」格）别和圆点贴在一起。
+              const SizedBox(width: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(mainAxisSize: MainAxisSize.min, children: dots),
+              ),
+            ],
+          );
+        }
+        return Column(
+          children: <Widget>[
+            Expanded(child: pages),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: dots),
+          ],
+        );
+      },
     );
   }
 }
