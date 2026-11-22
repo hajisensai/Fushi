@@ -970,7 +970,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         );
         if (epubRow != null) {
           await writeEpubBackedSrtBook(
-            repo: SrtBookRepository(widget.repo.database),
+            db: widget.repo.database,
             bookKey: widget.bookKey,
             title: epubRow.title,
             author: epubRow.author,

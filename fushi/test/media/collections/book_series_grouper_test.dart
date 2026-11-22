@@ -1212,7 +1212,7 @@ void main() {
       );
     });
 
-    test('自愈尊重用户移出墓碑与已有归属，不复活、不抢回', () async {
+    test('自愈尊重用户移出墓碑；已在别的合集不妨碍补进原书合集', () async {
       await addEpub('志乃と恋 1');
       await addEpub('志乃と恋 2');
       await addEpub('志乃と恋 3');
@@ -1224,17 +1224,26 @@ void main() {
       await db.addToCollection(otherCid, MediaKind.srt, srt3);
 
       await grouper.groupAll();
+      // SRT 卡在书架上顶替原书卡：原书在系列合集里，SRT 就得在，否则系列少一卷；
+      // 用户另放进的「单独听力」不受影响。
       expect(await members(cid), <String>[
         '志乃と恋 1',
         'srt:志乃と恋 1',
         '志乃と恋 2',
         '志乃と恋 3',
+        'srt:志乃と恋 3',
       ]);
+      expect(await members(otherCid), <String>['srt:志乃と恋 3']);
 
       await db.removeFromCollection(cid, MediaKind.srt, srt1);
       final BookSeriesGroupSummary afterRemoval = await grouper.groupAll();
       expect(afterRemoval.updatedCollectionIds, isEmpty);
-      expect(await members(cid), <String>['志乃と恋 1', '志乃と恋 2', '志乃と恋 3']);
+      expect(await members(cid), <String>[
+        '志乃と恋 1',
+        '志乃と恋 2',
+        '志乃と恋 3',
+        'srt:志乃と恋 3',
+      ]);
       expect(await members(otherCid), <String>['srt:志乃と恋 3']);
     });
   });

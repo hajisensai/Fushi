@@ -2317,7 +2317,6 @@ class SourceLibraryScanner {
         (String subtitlePath, List<String> audioPaths) =>
             alignAndPersistAudiobook(
               db: _db,
-              repo: SrtBookRepository(_db),
               audiobookRepo: audiobookRepo,
               bookKey: bookKey,
               title: p.basenameWithoutExtension(item.bookPath),

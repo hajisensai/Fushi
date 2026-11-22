@@ -45,7 +45,7 @@ void main() {
       );
 
       await writeEpubBackedSrtBook(
-        repo: repo,
+        db: db,
         bookKey: bookKey,
         title: '安達としまむら',
         author: '入間人間',
@@ -82,7 +82,7 @@ void main() {
     test('无音频时 audioPathsJson 为空', () async {
       const String bookKey = 'NoAudioBook';
       await writeEpubBackedSrtBook(
-        repo: repo,
+        db: db,
         bookKey: bookKey,
         title: 'No Audio',
         author: null,
@@ -98,7 +98,7 @@ void main() {
     test('同 bookKey 二次调用幂等：行数不增，uid 不变', () async {
       const String bookKey = 'IdempotentBook';
       await writeEpubBackedSrtBook(
-        repo: repo,
+        db: db,
         bookKey: bookKey,
         title: 'First',
         author: 'A',
@@ -109,7 +109,7 @@ void main() {
 
       // 二次导入（同 bookKey）：upsert on uid → 覆盖同行，不新增行。
       await writeEpubBackedSrtBook(
-        repo: repo,
+        db: db,
         bookKey: bookKey,
         title: 'Second',
         author: 'B',
@@ -129,7 +129,7 @@ void main() {
     test('BUG-1678：只换字幕（不带音频）不得清空配对行的音频与封面', () async {
       const String bookKey = 'SubtitleOnlyReimport';
       await writeEpubBackedSrtBook(
-        repo: repo,
+        db: db,
         bookKey: bookKey,
         title: 'Book',
         author: 'A',
@@ -145,7 +145,7 @@ void main() {
       // 音频。整行覆盖若不以现有行为基线，配对行的音频/封面就一起没了 —— 互联
       // host 的 hasAudiobook 判据要求两表齐备且带音频，清掉即从同步里消失。
       await writeEpubBackedSrtBook(
-        repo: repo,
+        db: db,
         bookKey: bookKey,
         title: 'Book',
         author: 'A',
@@ -170,11 +170,9 @@ void main() {
 
   group('writeEpubBackedSrtBook 继承原书合集归属', () {
     late FushiDatabase db;
-    late SrtBookRepository repo;
 
     setUp(() {
       db = _memDb();
-      repo = SrtBookRepository(db);
     });
     tearDown(() async => db.close());
 
@@ -195,7 +193,7 @@ void main() {
     }
 
     Future<void> writePaired(String bookKey) => writeEpubBackedSrtBook(
-      repo: repo,
+      db: db,
       bookKey: bookKey,
       title: bookKey,
       author: 'Author',
@@ -346,30 +344,33 @@ void main() {
       );
     });
 
-    test('尊重既有放置：配对 SRT 已在合集 B 时不会自动补进合集 A', () async {
+    test('多合集逐个补齐：配对 SRT 已在 A，原书同属的 B 照样补上、A 不重复', () async {
       final String uidP = await insertEpub('Book P');
+      final String uidQ = await insertEpub('Book Q');
       final int cidA = await db.createMediaCollection('Col A');
       final int cidB = await db.createMediaCollection('Col B');
       await db.addToCollection(cidA, MediaKind.epub, uidP);
+      await db.addToCollection(cidB, MediaKind.epub, uidP);
+      await db.addToCollection(cidB, MediaKind.epub, uidQ);
       final String srtUid = epubBackedSrtBookUid('Book P');
-      await db.addToCollection(cidB, MediaKind.srt, srtUid);
+      await db.addToCollection(cidA, MediaKind.srt, srtUid);
 
       await writePaired('Book P');
 
-      expect(
-        (await db.getCollectionItems(cidA)).any(
-          (MediaCollectionItemRow r) =>
-              r.mediaType == MediaKind.srt.dbValue && r.entryKey == srtUid,
-        ),
-        isFalse,
-      );
-      expect(
-        (await db.getCollectionItems(cidB)).any(
-          (MediaCollectionItemRow r) =>
-              r.mediaType == MediaKind.srt.dbValue && r.entryKey == srtUid,
-        ),
-        isTrue,
-      );
+      List<String> keys(List<MediaCollectionItemRow> rows) => <String>[
+        for (final MediaCollectionItemRow r in rows)
+          '${r.mediaType}|${r.entryKey}',
+      ];
+      expect(keys(await db.getCollectionItems(cidA)), <String>[
+        'epub|$uidP',
+        'srt|$srtUid',
+      ]);
+      expect(keys(await db.getCollectionItems(cidB)), <String>[
+        'epub|$uidP',
+        'srt|$srtUid',
+        'epub|$uidQ',
+      ]);
+      expect(await db.inheritPairedSrtCollections(), isEmpty);
     });
 
     test('漫画格式（format=manga）不继承 SRT 合集成员', () async {

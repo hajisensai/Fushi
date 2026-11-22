@@ -47,10 +47,10 @@ class BookSeriesGrouper {
     final List<int> updated = <int>[];
     // 存量书补读 OPF 系列声明（每本只读一次）；之后导入的书由导入器直接写。
     await backfillEpubSeries(_database);
-    // 存量已脱离的配对有声书补齐继承原书所属合集归属，确保下面加载成员与卷序自愈
-    // 能一次看到完整成员。
+    // 存量已脱离的配对有声书补齐继承原书所属合集（一条集合查询，稳态空集），确保
+    // 下面加载成员与卷序自愈能一次看到完整成员。
     final List<int> pairedSrtBackfilled = await _database
-        .backfillMissingPairedSrtCollectionMembers();
+        .inheritPairedSrtCollections();
     final List<_Volume> volumes = await _loadVolumes();
     final Map<String, _Volume> byMember = <String, _Volume>{
       for (final _Volume v in volumes)

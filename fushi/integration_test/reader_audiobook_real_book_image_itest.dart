@@ -652,7 +652,6 @@ Future<_BookCtx> _importRealBook(AppModel appModel, _BookFiles files) async {
   sw.reset();
   final AudiobookAlignmentResult aligned = await alignAndPersistAudiobook(
     db: db,
-    repo: SrtBookRepository(db),
     audiobookRepo: audio,
     bookKey: bookKey,
     title: p.basenameWithoutExtension(files.epub.path),

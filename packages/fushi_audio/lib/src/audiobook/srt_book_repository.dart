@@ -80,9 +80,6 @@ class SrtBookRepository {
 
   final FushiDatabase _db;
 
-  /// 暴露底层数据库，供同库协作逻辑（如 EPUB 配对有声书继承合集归属）复用同一连接。
-  FushiDatabase get database => _db;
-
   /// 书架 / 媒体源列出用的全量读取。列出前顺手自愈被旧数据根遗弃的绝对路径
   /// （[repairMovedPaths]）——范式同 `VideoBookRepository.listForShelf` 对封面的
   /// 自愈（TODO-1255）。
