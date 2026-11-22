@@ -10,6 +10,8 @@ import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show interceptNativeControllerLookupKey;
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 class _FakeTarget extends ControllerLookupTarget {
   _FakeTarget(this.prefs) : super(readPref: (String k) => prefs[k]);
@@ -18,6 +20,11 @@ class _FakeTarget extends ControllerLookupTarget {
   final List<String> log = <String>[];
   bool owns = true;
   bool available = true;
+
+  /// What the next lookups return (highlight length), in order; then 0.
+  final List<int> matches = <int>[];
+  int fromCursor = 10;
+  int entered = 0;
 
   @override
   bool get isAvailable => available;
@@ -35,7 +42,15 @@ class _FakeTarget extends ControllerLookupTarget {
   @override
   Future<void> stepLine(int dir) async => log.add('line$dir');
   @override
-  Future<void> lookupAtCursor() async => log.add('lookup');
+  int get graphemesFromCursor => fromCursor;
+  @override
+  Future<int> lookupAtCursor({int? maxGraphemes}) async {
+    log.add('lookup${maxGraphemes ?? ''}');
+    return matches.isEmpty ? 0 : matches.removeAt(0);
+  }
+
+  @override
+  Future<void> enterResult() async => entered++;
 }
 
 class _FakeSink implements CompanionControllerSink {
@@ -76,6 +91,7 @@ void main() {
   late _FakeTarget target;
   late _FakeSink sink;
   late List<GamepadButton> replayed;
+  late FushiShortcutRegistry shortcuts;
 
   setUp(() {
     registry = CompanionContextRegistry();
@@ -83,7 +99,11 @@ void main() {
     registry
       ..bindControllerSink(sink)
       ..setActive(true);
-    mode = ControllerLookupMode(registry: registry);
+    shortcuts = FushiShortcutRegistry()..loadDefaults(TargetPlatform.windows);
+    mode = ControllerLookupMode(
+      registry: registry,
+      shortcutRegistry: shortcuts,
+    );
     target = _FakeTarget(<String, Object?>{});
     replayed = <GamepadButton>[];
     mode
@@ -92,16 +112,24 @@ void main() {
       ..attach(target);
   });
 
-  test('style: hold L1 with the companion up, off on a single screen', () {
+  test('style: hold L1 by default, single screen included', () {
     expect(mode.style, ControllerLookupStyle.holdL1);
     registry.setActive(false);
-    expect(mode.style, ControllerLookupStyle.off);
+    expect(mode.style, ControllerLookupStyle.holdL1);
+    expect(ControllerLookupStyle.resolve(null), ControllerLookupStyle.holdL1);
+    expect(
+      ControllerLookupStyle.resolve('bogus'),
+      ControllerLookupStyle.holdL1,
+    );
     target.prefs[kControllerLookupStylePrefKey] = 'selectToggle';
     expect(mode.style, ControllerLookupStyle.selectToggle);
+    target.prefs[kControllerLookupStylePrefKey] = 'off';
+    expect(mode.style, ControllerLookupStyle.off);
   });
 
-  test('companion off and no opt-in: every button keeps its page binding', () {
+  test('style off on a single screen: every button keeps its page binding', () {
     registry.setActive(false);
+    target.prefs[kControllerLookupStylePrefKey] = 'off';
     for (final GamepadButton b in GamepadButton.values) {
       expect(mode.onPress(b), isFalse, reason: '$b');
       expect(mode.onRelease(b), isFalse, reason: '$b');
@@ -134,22 +162,28 @@ void main() {
     });
   });
 
-  test('L1 + D-pad / A drive the cursor and look up', () {
+  test('L1 + D-pad drive the cursor; every single step looks up at once', () {
     fakeAsync((FakeAsync async) {
       mode.onPress(GamepadButton.lb);
       // First lookup input during the hold enters right away.
       expect(mode.onPress(GamepadButton.dpadRight), isTrue);
+      async.flushMicrotasks();
+      expect(target.log, <String>['enter', 'step1w', 'lookup']);
       expect(mode.onRelease(GamepadButton.dpadRight), isTrue);
       mode.onPress(GamepadButton.dpadDown);
       mode.onRelease(GamepadButton.dpadDown);
-      mode.onPress(GamepadButton.y); // word -> character
+      async.flushMicrotasks();
+      mode.onPress(GamepadButton.thumbLeft); // L3: word -> character
+      expect(mode.wordGranularity, isFalse);
       mode.onPress(GamepadButton.dpadLeft);
       mode.onRelease(GamepadButton.dpadLeft);
-      mode.onPress(GamepadButton.a);
+      async.flushMicrotasks();
       expect(target.log, <String>[
         'enter',
         'step1w',
+        'lookup',
         'line1',
+        'lookup',
         'step-1c',
         'lookup',
       ]);
@@ -158,7 +192,8 @@ void main() {
     });
   });
 
-  test('a held D-pad direction repeats after the delay', () {
+  test('a held D-pad direction repeats without lookups and looks up once on '
+      'release', () {
     fakeAsync((FakeAsync async) {
       mode.onPress(GamepadButton.lb);
       mode.onPress(GamepadButton.dpadRight);
@@ -166,9 +201,202 @@ void main() {
         ControllerLookupMode.repeatDelay +
             ControllerLookupMode.repeatInterval * 2,
       );
+      expect(target.log.where((String e) => e == 'step1w').length, 3);
+      expect(
+        target.log.where((String e) => e == 'lookup').length,
+        1,
+        reason: 'only the first step looks up while the key is held',
+      );
       mode.onRelease(GamepadButton.dpadRight);
       async.elapse(const Duration(seconds: 1));
       expect(target.log.where((String e) => e == 'step1w').length, 3);
+      expect(target.log.last, 'lookup');
+      expect(target.log.where((String e) => e == 'lookup').length, 2);
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
+  test('the left stick follows the same rule: first step looks up, a held '
+      'push looks up once when released', () {
+    fakeAsync((FakeAsync async) {
+      mode.onPress(GamepadButton.lb);
+      async.elapse(ControllerLookupMode.holdThreshold);
+      expect(mode.onStickMove(TraversalDirection.right), isTrue);
+      async.flushMicrotasks();
+      expect(mode.onStickMove(TraversalDirection.right), isTrue);
+      expect(mode.onStickMove(TraversalDirection.right), isTrue);
+      async.flushMicrotasks();
+      expect(target.log, <String>[
+        'enter',
+        'step1w',
+        'lookup',
+        'step1w',
+        'step1w',
+      ]);
+      mode.onStickRelease();
+      async.flushMicrotasks();
+      expect(target.log.last, 'lookup');
+      // A single flick: one step, one lookup, nothing more on release.
+      target.log.clear();
+      mode.onStickMove(TraversalDirection.down);
+      async.flushMicrotasks();
+      mode.onStickRelease();
+      async.flushMicrotasks();
+      expect(target.log, <String>['line1', 'lookup']);
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
+  test('right end: shrink from the last match, extend up to the line end, '
+      'any move clears the cap', () {
+    fakeAsync((FakeAsync async) {
+      target.fromCursor = 4;
+      mode.onPress(GamepadButton.lb);
+      async.elapse(ControllerLookupMode.holdThreshold);
+      target.matches.addAll(<int>[3, 2, 1]);
+      void tap(GamepadButton b) {
+        mode.onPress(b);
+        mode.onRelease(b);
+        async.flushMicrotasks();
+      }
+
+      tap(GamepadButton.dpadRight);
+      expect(mode.lastMatched, 3);
+      expect(mode.maxGraphemes, isNull);
+      tap(GamepadButton.rightStickLeft); // 3 - 1
+      expect(mode.maxGraphemes, 2);
+      tap(GamepadButton.rightStickLeft); // matched 2 -> 1
+      expect(mode.maxGraphemes, 1);
+      target.log.clear();
+      tap(GamepadButton.rightStickLeft); // already 1: no change, no lookup
+      expect(mode.maxGraphemes, 1);
+      expect(target.log, isEmpty);
+      // The dictionary only finds 1 grapheme under caps 2 and 3: extend keeps
+      // growing from the cap, not from the (shorter) match.
+      target.matches.addAll(<int>[1, 1]);
+      tap(GamepadButton.rightStickRight);
+      expect(mode.maxGraphemes, 2);
+      tap(GamepadButton.rightStickRight);
+      expect(mode.maxGraphemes, 3);
+      tap(GamepadButton.rightStickRight);
+      expect(mode.maxGraphemes, 4);
+      // Past the graphemes left on the line: back to unlimited.
+      tap(GamepadButton.rightStickRight);
+      expect(mode.maxGraphemes, isNull);
+      expect(target.log, <String>['lookup2', 'lookup3', 'lookup4', 'lookup']);
+      // A cursor move clears the cap and the last match.
+      target.matches.add(3);
+      tap(GamepadButton.dpadLeft);
+      tap(GamepadButton.rightStickLeft);
+      expect(mode.maxGraphemes, 2);
+      tap(GamepadButton.dpadLeft);
+      expect(mode.maxGraphemes, isNull);
+      expect(mode.lastMatched, isNull);
+      expect(target.log.last, 'lookup');
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
+  test('the mode resolves its buttons from the registry: a rebind takes '
+      'effect, an unbound button stays with the page', () {
+    fakeAsync((FakeAsync async) {
+      registry.setActive(false);
+      final List<String> popup = <String>[];
+      mode.popupHooks = () => _hooks(popup);
+      // Mine moves from X to R3; X is unbound in the scope now.
+      shortcuts.updateBinding(
+        ShortcutAction.controllerLookupMine,
+        const ShortcutBindingSet(
+          gamepadBindings: <GamepadBinding>[
+            GamepadBinding(GamepadButton.thumbRight),
+          ],
+        ),
+      );
+      expect(
+        mode.actionFor(GamepadButton.thumbRight),
+        ShortcutAction.controllerLookupMine,
+      );
+      expect(mode.actionFor(GamepadButton.x), isNull);
+      mode.onPress(GamepadButton.lb);
+      async.elapse(ControllerLookupMode.holdThreshold);
+      expect(mode.onPress(GamepadButton.thumbRight), isTrue);
+      expect(mode.onPress(GamepadButton.x), isFalse);
+      expect(mode.onRelease(GamepadButton.x), isFalse);
+      expect(mode.swallowsRepeat(GamepadButton.x), isFalse);
+      expect(mode.swallowsRepeat(GamepadButton.thumbRight), isTrue);
+      expect(popup, <String>['mine']);
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
+  test('default keys of the controllerLookup scope', () {
+    const Map<GamepadButton, ShortcutAction>
+    expected = <GamepadButton, ShortcutAction>{
+      GamepadButton.dpadLeft: ShortcutAction.controllerLookupCursorLeft,
+      GamepadButton.dpadRight: ShortcutAction.controllerLookupCursorRight,
+      GamepadButton.dpadUp: ShortcutAction.controllerLookupLineUp,
+      GamepadButton.dpadDown: ShortcutAction.controllerLookupLineDown,
+      GamepadButton.thumbLeft: ShortcutAction.controllerLookupToggleGranularity,
+      GamepadButton.rightStickLeft: ShortcutAction.controllerLookupShrinkEnd,
+      GamepadButton.rightStickRight: ShortcutAction.controllerLookupExtendEnd,
+      GamepadButton.x: ShortcutAction.controllerLookupMine,
+      GamepadButton.y: ShortcutAction.controllerLookupPlayAudio,
+      GamepadButton.rt: ShortcutAction.controllerLookupNextEntry,
+      GamepadButton.lt: ShortcutAction.controllerLookupPrevEntry,
+      GamepadButton.a: ShortcutAction.controllerLookupEnterResult,
+      GamepadButton.b: ShortcutAction.controllerLookupCloseOrExit,
+    };
+    for (final TargetPlatform p in <TargetPlatform>[
+      TargetPlatform.windows,
+      TargetPlatform.macOS,
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
+      mode.shortcutRegistry = FushiShortcutRegistry()..loadDefaults(p);
+      for (final MapEntry<GamepadButton, ShortcutAction> e
+          in expected.entries) {
+        expect(mode.actionFor(e.key), e.value, reason: '$p ${e.key}');
+      }
+      for (final GamepadButton b in <GamepadButton>[
+        GamepadButton.lb,
+        GamepadButton.rb,
+        GamepadButton.select,
+        GamepadButton.start,
+      ]) {
+        expect(mode.actionFor(b), isNull, reason: '$p $b enters / pages');
+      }
+    }
+  });
+
+  test('without a registry no button is a lookup-mode button', () {
+    fakeAsync((FakeAsync async) {
+      mode.shortcutRegistry = null;
+      mode.onPress(GamepadButton.lb);
+      async.elapse(ControllerLookupMode.holdThreshold);
+      expect(mode.active, isTrue);
+      expect(mode.onPress(GamepadButton.dpadRight), isFalse);
+      expect(mode.onPress(GamepadButton.x), isFalse);
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
+  test('A enters the in-page result (single screen); a lookup alone never '
+      'hands the cursor over', () {
+    fakeAsync((FakeAsync async) {
+      registry.setActive(false);
+      bool visible = false;
+      mode.popupHooks = () => _hooks(<String>[], visible: visible);
+      mode.onPress(GamepadButton.lb);
+      async.elapse(ControllerLookupMode.holdThreshold);
+      mode.onPress(GamepadButton.dpadRight);
+      mode.onRelease(GamepadButton.dpadRight);
+      async.flushMicrotasks();
+      expect(target.entered, 0);
+      mode.onPress(GamepadButton.a);
+      expect(target.entered, 0, reason: 'nothing open, nothing to enter');
+      visible = true;
+      mode.onPress(GamepadButton.a);
+      expect(target.entered, 1);
       mode.onRelease(GamepadButton.lb);
     });
   });
@@ -177,8 +405,11 @@ void main() {
     fakeAsync((FakeAsync async) {
       sink.open = true;
       mode.onPress(GamepadButton.lb);
-      mode.onPress(GamepadButton.a);
       mode.onPress(GamepadButton.x);
+      mode.onPress(GamepadButton.y);
+      // A (enter result) has nothing to enter on the companion.
+      mode.onPress(GamepadButton.a);
+      expect(target.entered, 0);
       mode.onPress(GamepadButton.rt);
       mode.onPress(GamepadButton.lt);
       expect(mode.onRightStick(24), isTrue);
@@ -209,8 +440,8 @@ void main() {
       final List<String> popup = <String>[];
       mode.popupHooks = () => _hooks(popup);
       mode.onPress(GamepadButton.lb);
-      mode.onPress(GamepadButton.a);
       mode.onPress(GamepadButton.x);
+      mode.onPress(GamepadButton.y);
       mode.onPress(GamepadButton.rt);
       mode.onPress(GamepadButton.b);
       expect(popup, <String>['mine', 'audio', 'next']);
@@ -233,8 +464,8 @@ void main() {
       final List<String> popup = <String>[];
       mode.popupHooks = () => _hooks(popup);
       mode.onPress(GamepadButton.lb);
-      mode.onPress(GamepadButton.a);
       mode.onPress(GamepadButton.x);
+      mode.onPress(GamepadButton.y);
       mode.onPress(GamepadButton.rt);
       expect(mode.onRightStick(24), isTrue);
       mode.onPress(GamepadButton.b);
@@ -257,7 +488,7 @@ void main() {
       registry.setLookupsOnCompanion(true);
       sink.sent.clear();
       mode.onPress(GamepadButton.lb);
-      mode.onPress(GamepadButton.a);
+      mode.onPress(GamepadButton.x);
       expect(sink.sent, <String>['L:${CompanionLookupActions.mine}']);
       mode.onRelease(GamepadButton.lb);
     });

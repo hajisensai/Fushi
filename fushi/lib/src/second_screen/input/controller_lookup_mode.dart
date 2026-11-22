@@ -547,8 +547,8 @@ class ControllerLookupMode extends ChangeNotifier {
 
   // ---- repeat (400 ms, then every 150 ms) ----
 
-  /// Runs [first] now; with [repeats], runs [repeat] (default [first]) after
-  /// [repeatDelay] and then every [repeatInterval] until the button is
+  /// Runs [first] now; with [repeats], runs [repeat] (default [first]) every
+  /// [repeatInterval] once [repeatDelay] has passed, until the button is
   /// released. [onRepeatEnd] runs on that release when at least one repeat
   /// fired.
   void _startRepeat(
@@ -567,9 +567,10 @@ class ControllerLookupMode extends ChangeNotifier {
     _onRepeatEnd = onRepeatEnd;
     _repeated = false;
     _repeatTimer = Timer(repeatDelay, () {
-      _repeated = true;
-      tick();
-      _repeatTimer = Timer.periodic(repeatInterval, (_) => tick());
+      _repeatTimer = Timer.periodic(repeatInterval, (_) {
+        _repeated = true;
+        tick();
+      });
     });
   }
 
