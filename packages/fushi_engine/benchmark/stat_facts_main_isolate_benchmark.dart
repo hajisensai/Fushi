@@ -30,6 +30,8 @@ Future<void> main(List<String> args) async {
       'idle baseline          : max timer gap median ${idle[2] ~/ 1000} ms',
     );
     for (final bool inline in <bool>[true, false]) {
+      // 基准要两种执行位置对比（inline = 迁移前的执行位置）。
+      // ignore: invalid_use_of_visible_for_testing_member
       debugStatFactsInline = inline;
       final List<int> gaps = <int>[];
       final List<int> walls = <int>[];

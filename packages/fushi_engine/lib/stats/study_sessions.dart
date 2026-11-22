@@ -7,7 +7,7 @@ import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/stat_derive.dart';
 import 'package:fushi_engine/stats/stat_facts.dart'
-    show StatFacts, kRecentGameSessionsLimit, loadStatFacts;
+    show StatFacts, loadStatFacts;
 
 /// 同一媒体相邻两段间隔不超过这个值就归成同一次会话（与首页活动流的
 /// `kActivitySessionGap` 同值：一条纪律，两处消费）。
