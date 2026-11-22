@@ -954,7 +954,8 @@ class DiscLibraryImporter {
   }
 
   /// 既有合集 [collectionId] 是不是 [parentPath] 这个发布目录下的盘的：成员全是原盘
-  /// 标题、且盘根都在这个目录里（本轮没读到的那张盘的成员也算）。
+  /// 标题、且盘的发布目录（[discReleaseDirectory]，与并组同一判据）就是它（本轮没
+  /// 读到的那张盘的成员也算）。
   Future<bool> _collectionBelongsToRelease(
     int collectionId,
     String parentPath,
@@ -967,7 +968,7 @@ class DiscLibraryImporter {
       if (row == null) continue;
       final String? owner = discRootForMemberPath(row.videoPath);
       if (owner == null ||
-          normalizeVideoPath(p.dirname(p.normalize(owner))) != parent) {
+          normalizeVideoPath(discReleaseDirectory(owner)) != parent) {
         return false;
       }
     }

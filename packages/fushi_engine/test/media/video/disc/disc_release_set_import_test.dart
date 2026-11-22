@@ -420,4 +420,124 @@ void main() {
         (await db.getAllMediaCollections()).single;
     expect(await memberPaths(collection.id), <String>[whole]);
   });
+
+  group('BUG-5251：盘根外包着 BD 目录、META 盘名带裸卷号的多卷发布', () {
+    // 用户库的真实布局：`<发布>/ぼっち・ざ・ろっく！ vol.N/BD/BDMV`，盘内 META 名是
+    // `BOCCHI THE ROCK! N`。修前按「盘根上一层 + 去显式卷标的盘名」并组，上一层是
+    // 各卷自己的 `vol.N` 目录、盘名尾部的裸数字也不算卷标，六卷各成一个合集。
+    late String release;
+
+    String volume(int n) => p.join(release, 'ぼっち・ざ・ろっく！ vol.$n', 'BD');
+
+    setUp(() {
+      release = p.join(temp.path, 'ぼっち・ざ・ろっく！ [BDMV] (2022)');
+      for (int n = 1; n <= 3; n++) {
+        writeEpisodicDisc(
+          volume(n),
+          episodes: 2,
+          discName: 'BOCCHI THE ROCK! $n',
+        );
+      }
+    });
+
+    List<String> episodesOf(List<int> volumes) => <String>[
+      for (final int n in volumes)
+        for (int i = 1; i <= 2; i++) episodePath(volume(n), i),
+    ];
+
+    test('规划：跳过 BD 包装目录，三卷并成一组、名字去裸卷号、按卷号排', () async {
+      final BlurayReleaseSet set = planBlurayReleaseSets(<BlurayDisc>[
+        (await readBlurayDisc(volume(3)))!,
+        (await readBlurayDisc(volume(1)))!,
+        (await readBlurayDisc(volume(2)))!,
+      ]).single;
+      expect(set.episodic, isTrue);
+      expect(set.name, 'BOCCHI THE ROCK!');
+      expect(set.parentPath, p.normalize(release));
+      expect(set.discs.map((BlurayDisc d) => d.rootPath), <String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ]);
+      expect(discFolderPath(volume(2)), p.join(release, 'ぼっち・ざ・ろっく！ vol.2'));
+      expect(discDirectoryVolumeOrder(volume(2)), 2);
+    });
+
+    test('裸数字只在与盘目录卷号相同时才剥：番名里的数字不动', () async {
+      final String other = p.join(
+        temp.path,
+        'Area Show',
+        'Area Show vol.1',
+        'BD',
+      );
+      writeEpisodicDisc(other, episodes: 2, discName: 'AREA 86');
+      final BlurayDisc disc = (await readBlurayDisc(other))!;
+      expect(blurayReleaseStem(disc), 'AREA 86');
+      final String plain = p.join(temp.path, 'Two Show', 'BD');
+      writeEpisodicDisc(plain, episodes: 2, discName: 'TWO SHOW 2');
+      expect(blurayReleaseStem((await readBlurayDisc(plain))!), 'TWO SHOW 2');
+    });
+
+    test('入库：三卷一个合集；后到的一卷并进同一个合集', () async {
+      final DiscLibraryImportReport first = await import(<String>[
+        volume(2),
+        volume(1),
+      ]);
+      expect(first.imported, 1);
+      final int collectionId = first.discs.first.collectionId;
+      expect(first.discs.last.collectionId, collectionId);
+      expect(await memberPaths(collectionId), episodesOf(<int>[1, 2]));
+
+      final DiscLibraryImportReport second = await import(<String>[volume(3)]);
+      expect(second.imported, 0);
+      expect(second.discs.single.collectionId, collectionId);
+      expect(await memberPaths(collectionId), episodesOf(<int>[1, 2, 3]));
+      final List<MediaCollectionRow> all = await db.getAllMediaCollections();
+      expect(all, hasLength(1));
+      expect(all.single.name, 'BOCCHI THE ROCK!');
+    });
+
+    test('存量迁移：修前一卷一个的盘合集重扫后并成一个，旧合集移空自删', () async {
+      final List<int> legacy = <int>[];
+      for (int n = 1; n <= 3; n++) {
+        final int id = await db.createMediaCollection(
+          'BOCCHI THE ROCK! $n',
+          collectionType: 'playlist',
+        );
+        legacy.add(id);
+        for (int i = 1; i <= 2; i++) {
+          final String uid = 'video/legacy-$n-$i';
+          await db.upsertVideoBook(
+            VideoBooksCompanion(
+              bookUid: Value<String>(uid),
+              title: Value<String>('BOCCHI THE ROCK! $n - 0$i'),
+              videoPath: Value<String>(episodePath(volume(n), i)),
+            ),
+          );
+          await db.addToCollection(id, MediaKind.video, uid, userIntent: false);
+        }
+      }
+
+      final DiscLibraryImportReport report = await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ]);
+      final int collectionId = report.discs.first.collectionId;
+      expect(
+        report.discs.map((DiscLibraryImportedDisc d) => d.collectionId).toSet(),
+        <int>{collectionId},
+      );
+      expect(await memberPaths(collectionId), episodesOf(<int>[1, 2, 3]));
+      for (final int id in legacy) {
+        expect(await db.getMediaCollectionById(id), isNull);
+      }
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect(
+        await db.getVideoBookByBookUid('video/legacy-2-1'),
+        isNotNull,
+        reason: '沿用原行，进度与统计不丢',
+      );
+    });
+  });
 }
