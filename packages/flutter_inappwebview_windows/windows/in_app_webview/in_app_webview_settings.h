@@ -21,6 +21,7 @@ namespace flutter_inappwebview_plugin
     bool isInspectable = true;
     bool disableContextMenu = false;
     bool incognito = false;
+    bool allowBackgroundAudioPlaying = false;
 
     InAppWebViewSettings();
     InAppWebViewSettings(const flutter::EncodableMap& encodableMap);

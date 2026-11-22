@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/music/apple_music/apple_music_library_client.dart'
@@ -523,6 +524,25 @@ void main() {
         isNull,
       );
     });
+
+    test(
+      'appleMusicWebViewSettings enables background audio opt-in while defaults stay muted',
+      () {
+        final InAppWebViewSettings bridgeSettings = appleMusicWebViewSettings();
+        expect(bridgeSettings.allowBackgroundAudioPlaying, isTrue);
+        expect(
+          bridgeSettings.toMap()['allowBackgroundAudioPlaying'],
+          isTrue,
+          reason:
+              'must serialize allowBackgroundAudioPlaying for Windows HeadlessInAppWebView',
+        );
+        expect(bridgeSettings.mediaPlaybackRequiresUserGesture, isFalse);
+
+        final InAppWebViewSettings defaultSettings = InAppWebViewSettings();
+        expect(defaultSettings.allowBackgroundAudioPlaying, isFalse);
+        expect(defaultSettings.toMap()['allowBackgroundAudioPlaying'], isFalse);
+      },
+    );
   });
 
   test('macOS major version parsing gates the native bridge', () {

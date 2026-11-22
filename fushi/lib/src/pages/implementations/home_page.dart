@@ -1794,7 +1794,7 @@ class _HomePageState extends BasePageState<HomePage>
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
-        if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+        if (!fushiNotificationDrivesPageChrome(notification)) return false;
         _largeTitle.handleNotification(notification);
         // 底栏随滚动收起（Apple 胶囊 / MD3 悬浮胶囊共用同一台状态机：只认
         // 用户滚动、到顶到底的回弹不触发，见 GlassTabBarMinimizeController）。

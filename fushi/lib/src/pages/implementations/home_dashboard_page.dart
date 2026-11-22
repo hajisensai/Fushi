@@ -128,7 +128,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadRole,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/src/utils/components/section_deferred_build.dart';
@@ -2546,7 +2546,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
                   child: NotificationListener<ScrollNotification>(
                     onNotification: (ScrollNotification notification) {
                       _toolbarScroll.handle(notification);
-                      if (fushiNotificationFromVisibleSubtree(notification)) {
+                      if (fushiNotificationDrivesPageChrome(notification)) {
                         _mastheadChrome.handleScrollNotification(notification);
                       }
                       return false;

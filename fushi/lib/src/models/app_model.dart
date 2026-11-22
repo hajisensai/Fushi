@@ -212,7 +212,8 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show
         ExtensionDictionaryFont,
         browserExtensionDictionaryFont,
-        browserExtensionDictionaryFontForView;
+        browserExtensionDictionaryFontForView,
+        popupKanjiCardNamesIn;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_settings_drift_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -6603,6 +6604,14 @@ class AppModel
     autoExpandRows: popupAutoExpandDictionaries,
     collapsedDictionaryNames: _popupCollapsedNamesOf(lookupViewDictionaries),
     expandedDictionaryNames: _popupExpandedNamesOf(lookupViewDictionaries),
+    kanjiCollapsedDictionaryNames: popupKanjiCardNamesIn(
+      lookupViewDictionaries,
+      DictionaryCollapseState.collapsed,
+    ),
+    kanjiExpandedDictionaryNames: popupKanjiCardNamesIn(
+      lookupViewDictionaries,
+      DictionaryCollapseState.expanded,
+    ),
   );
 
   /// 词典管理里逐本「折叠」/「展开」的词典名（BUG-2158 三态），与 in-app 弹窗注入的
@@ -6653,6 +6662,14 @@ class AppModel
         autoExpandRows: p.popupAutoExpandDictionaries,
         collapsedDictionaryNames: _popupCollapsedNamesOf(view.dictionaries),
         expandedDictionaryNames: _popupExpandedNamesOf(view.dictionaries),
+        kanjiCollapsedDictionaryNames: popupKanjiCardNamesIn(
+          view.dictionaries,
+          DictionaryCollapseState.collapsed,
+        ),
+        kanjiExpandedDictionaryNames: popupKanjiCardNamesIn(
+          view.dictionaries,
+          DictionaryCollapseState.expanded,
+        ),
       ),
       einkMode: theme.einkMode,
     ));
@@ -10633,6 +10650,15 @@ class AppModel
     Dictionary dictionary,
     bool hidden,
   ) => dictRepo.setDictionaryKanjiPartHidden(dictionary, hidden);
+
+  /// 汉字卡的折叠三态（拍板台 6uasoIUvSR，「汉字」分区里的折叠控件）：混合词典写它
+  /// 汉字部分自己的键，纯 kanji 词典就是它自己的三态（它没有术语部分）。
+  Future<void> setDictionaryKanjiCardCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState state,
+  ) => dictionary.hasEmbeddedKanji
+      ? dictRepo.setDictionaryKanjiPartCollapseState(dictionary, state)
+      : setDictionaryCollapseState(dictionary, state);
 
   Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
     await dictRepo.toggleDictionaryHidden(
