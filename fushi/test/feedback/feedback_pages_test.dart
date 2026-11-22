@@ -2062,7 +2062,10 @@ void main() {
     });
 
     /// 补传窗口内的本机回执：详情页才给追加入口。
-    Future<FeedbackService> openAttachable(WidgetTester tester) async {
+    Future<FeedbackService> openAttachable(
+      WidgetTester tester, {
+      Widget page = const FeedbackDetailPage(feedbackId: 'oldoldold0'),
+    }) async {
       tallView(tester);
       await tester.runAsync(() async {
         await seedOld();
@@ -2082,9 +2085,7 @@ void main() {
       final LeaderboardService b = board();
       final FeedbackService f = feedback(b);
       await tester.runAsync(f.load);
-      await tester.pumpWidget(
-        wrap(b, f, const FeedbackDetailPage(feedbackId: 'oldoldold0')),
-      );
+      await tester.pumpWidget(wrap(b, f, page));
       final Finder paste = find.byKey(
         const ValueKey<String>('feedback-detail-paste-shot'),
       );
@@ -2146,6 +2147,63 @@ void main() {
       await tester.sendKeyDownEvent(modifier);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
       await tester.sendKeyUpEvent(modifier);
+      await settleIo(
+        tester,
+        () => puts().isNotEmpty && !f.attachInFlight('oldoldold0'),
+      );
+      expect(puts(), hasLength(1));
+      expect(puts().single.url.path, '/v1/feedback/oldoldold0/attachments/s1');
+    });
+
+    // 嵌在反馈中心右栏时，左栏搜索框与详情在同一路由：在搜索框里 Ctrl+V 是给搜索框
+    // 的，不能把剪贴板里的截图悄悄传到右栏这条反馈上；焦点离开搜索框后照常追加。
+    testWidgets('嵌入右栏：焦点在页外输入框时 Ctrl+V 不追加，离开后照常追加', (
+      WidgetTester tester,
+    ) async {
+      final FocusNode outside = FocusNode(debugLabel: 'outside-search');
+      addTearDown(outside.dispose);
+      final FeedbackService f = await openAttachable(
+        tester,
+        page: Scaffold(
+          body: Row(
+            children: <Widget>[
+              SizedBox(
+                width: 240,
+                child: TextField(
+                  key: const ValueKey<String>('outside-search'),
+                  focusNode: outside,
+                ),
+              ),
+              const Expanded(
+                child: FeedbackDetailPage(
+                  feedbackId: 'oldoldold0',
+                  embedded: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      clipboard = <String, Object?>{'bytes': _kOnePixelPng};
+      final LogicalKeyboardKey modifier = Platform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      Future<void> pressPaste() async {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+        await tester.sendKeyUpEvent(modifier);
+      }
+
+      outside.requestFocus();
+      await tester.pump();
+      expect(outside.hasPrimaryFocus, isTrue);
+      await pressPaste();
+      await settleIo(tester, () => false);
+      expect(puts(), isEmpty, reason: '页外输入框里的 Ctrl+V 不该传截图');
+
+      outside.unfocus();
+      await tester.pump();
+      await pressPaste();
       await settleIo(
         tester,
         () => puts().isNotEmpty && !f.attachInFlight('oldoldold0'),

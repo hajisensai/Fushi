@@ -63,6 +63,14 @@ class FeedbackDetailPage extends ConsumerStatefulWidget {
 
 class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   final TextEditingController _reply = TextEditingController();
+
+  /// 包住整页的焦点节点（自身不取焦点、不进遍历），只用来判断主焦点在不在本页：
+  /// 嵌在反馈中心右栏时，左栏的搜索框也在同一路由里（见 [_focusAllowsPaste]）。
+  final FocusNode _pageFocus = FocusNode(
+    debugLabel: 'feedback-detail-page',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
   FeedbackDetail? _detail;
   String? _error;
   bool _missing = false;
@@ -78,6 +86,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    _pageFocus.dispose();
     _reply.dispose();
     super.dispose();
   }
@@ -88,10 +97,22 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     if (!isFeedbackPasteShortcut(event)) return false;
     // 只认最上层：详情页上面又压了别的页面 / 弹窗时不抢。
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    if (!_focusAllowsPaste()) return false;
     final FeedbackDetail? d = _detail;
     if (d == null || _addingShot || _shotRoom(d) <= 0) return false;
     unawaited(_pasteShot(d, explicit: false));
     return false;
+  }
+
+  /// 主焦点在本页之内（回复框等），或停在本页外层的路由作用域上（页内没有具体
+  /// 焦点）时才收 Ctrl+V。焦点在同一路由里本页之外的别处（反馈中心左栏搜索框、
+  /// 列表卡）时不收：那里的 Ctrl+V 是给那个输入框的，不能把剪贴板里的截图悄悄
+  /// 传到右栏这条反馈上。
+  bool _focusAllowsPaste() {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    if (primary == null || primary == _pageFocus) return true;
+    if (primary.ancestors.contains(_pageFocus)) return true;
+    return _pageFocus.ancestors.contains(primary);
   }
 
   Future<void> _load() async {
@@ -714,7 +735,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     final FeedbackDetail? d = _detail;
     // 账户列表里的条目删不掉（下次刷新又会列出来），不给「从本机移除」。
     final bool viaAccount = local?.viaAccount ?? false;
-    return FushiPageScaffold(
+    final Widget page = FushiPageScaffold(
       automaticallyImplyLeading: !widget.embedded,
       title: d?.summary.title ?? local?.title ?? t.feedback_title,
       actions: <Widget>[
@@ -885,5 +906,6 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
         ),
       ),
     );
+    return Focus(focusNode: _pageFocus, child: page);
   }
 }
