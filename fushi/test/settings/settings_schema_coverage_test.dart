@@ -278,10 +278,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'general/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
   'general/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
   // 上锁作品（拍板台 qiqSbvdxrk）：「显示已上锁的作品」是内存里的会话状态（不落
-  // 偏好，打开要过口令 / 系统验证），口令存系统安全存储——harness 设置页里既没有
-  // 库页也没有安全存储。解锁 / 重新藏、口令设验与显示口径由 media_lock_test 咬住。
+  // 偏好，打开要过口令 / 系统验证），口令摘要随上锁标记同步——harness 设置页里既
+  // 没有库页也没有上锁作品。解锁 / 重新藏、口令设 / 改 / 删的验证规则与显示口径由
+  // media_lock_test 咬住。
   'general/Show locked titles': 'test/media/privacy/media_lock_test.dart',
   'general/Unlock passcode': 'test/media/privacy/media_lock_test.dart',
+  'general/Remove unlock passcode': 'test/media/privacy/media_lock_test.dart',
   // 墨水屏每 N 页全刷：生效点是小说三种 view mode 与漫画阅读器的翻页计数和全刷画布，
   // harness 设置页里没有阅读器。间隔值 → 每 N 次翻页触发一次、0 = 关、阅读器接线由
   // eink_full_refresh_test 咬住。

@@ -1,9 +1,13 @@
 /// 上锁作品的解锁 / 口令对话框（拍板台 qiqSbvdxrk）。
 ///
 /// - [unlockMediaLockSession]：验证机主（口令或系统验证）后让本次会话显示上锁的作品；
-/// - [verifyMediaLockOwner]：只验证、不改会话状态（改 / 清口令前用）；
-/// - [ensureMediaLockMethod]：上锁之前确保本机至少有一种解锁方式——系统验证不可用
-///   又没设口令时，先让用户设口令，否则锁上就打不开。
+/// - [verifyMediaLockOwner]：只验证、不改会话状态（改 / 删口令前用）；
+/// - [ensureMediaLockMethod]：上锁之前确保至少有一种解锁方式——系统验证不可用又
+///   没设口令时，先让用户设口令，否则锁上就打不开；
+/// - [changeMediaLockPasscode] / [removeMediaLockPasscode]：设置页的设 / 改 / 删口令。
+///
+/// 走哪条路都按 [MediaLockAuth] 的规则（见 `media_lock_auth.dart` 文件头）：没口令、
+/// 没系统验证、却有上锁作品的设备上，不会出现「新设一个口令就能解锁」的后门。
 library;
 
 import 'dart:async';
@@ -13,6 +17,7 @@ import 'package:fushi/src/media/privacy/media_lock_auth.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -20,59 +25,72 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 连续输错这么多次后冷却 [_cooldown]（系统验证不受限）。
-const int _maxFailuresBeforeCooldown = 5;
-const Duration _cooldown = Duration(seconds: 30);
-
-int _failures = 0;
-DateTime? _cooldownUntil;
-
-/// 测试复位用。
-@visibleForTesting
-void resetMediaLockThrottleForTest() {
-  _failures = 0;
-  _cooldownUntil = null;
-}
-
 /// 验证机主后解锁本次会话。已解锁时直接返回 true。
-Future<bool> unlockMediaLockSession(BuildContext context) async {
+Future<bool> unlockMediaLockSession(
+  BuildContext context,
+  FushiDatabase db,
+) async {
   if (MediaLockSession.instance.isUnlocked) return true;
   final bool ok = await verifyMediaLockOwner(
     context,
+    db,
     title: t.media_lock_unlock_title,
   );
   if (ok) MediaLockSession.instance.unlock();
   return ok;
 }
 
-/// 验证机主：设了口令就弹口令框（可改用系统验证）；没设口令时直接走系统验证；
-/// 两样都没有（上锁标记从别的设备同步过来、本机从没设过口令）时请用户先设一个口令。
+/// 验证机主（[MediaLockAuth.verifyOwnerPlan]）：设了口令就弹口令框（可改用系统
+/// 验证）；没设口令时走系统验证；两样都没有时——本机没有上锁作品就直接放行（没有
+/// 要保护的东西），有就拒绝并说明去哪里设口令。
 Future<bool> verifyMediaLockOwner(
-  BuildContext context, {
+  BuildContext context,
+  FushiDatabase db, {
   required String title,
 }) async {
-  final MediaLockAuth auth = MediaLockAuth.instance;
-  final bool hasPasscode = await auth.passcode.isSet();
-  final bool deviceAvailable = await auth.device.isAvailable();
+  final MediaLockAuth auth = MediaLockAuth.forDatabase(db);
+  final MediaLockVerifyPlan plan;
+  final bool deviceAvailable;
+  try {
+    plan = await auth.verifyOwnerPlan();
+    deviceAvailable = await auth.device.isAvailable();
+  } on Object catch (error) {
+    _toastVerifyError(error);
+    return false;
+  }
   if (!context.mounted) return false;
-  if (!hasPasscode && deviceAvailable) {
-    return _runDeviceAuth(auth, title);
+  switch (plan) {
+    case MediaLockVerifyPlan.nothingToProtect:
+      return true;
+    case MediaLockVerifyPlan.blocked:
+      await _showBlockedDialog(
+        context,
+        title: t.media_lock_verify_blocked_title,
+        body: t.media_lock_verify_blocked_body,
+      );
+      return false;
+    case MediaLockVerifyPlan.device:
+      return _runDeviceAuth(auth, title);
+    case MediaLockVerifyPlan.passcode:
+      final bool? ok = await showAppDialog<bool>(
+        context: context,
+        builder: (BuildContext _) => _MediaLockVerifyDialog(
+          title: title,
+          auth: auth,
+          deviceAvailable: deviceAvailable,
+        ),
+      );
+      return ok ?? false;
   }
-  if (!hasPasscode) {
-    return showMediaLockPasscodeSetupDialog(context);
-  }
-  final bool? ok = await showAppDialog<bool>(
-    context: context,
-    builder: (BuildContext _) => _MediaLockVerifyDialog(
-      title: title,
-      auth: auth,
-      deviceAvailable: deviceAvailable,
-    ),
-  );
-  return ok ?? false;
 }
+
+void _toastVerifyError(Object error) => FushiToast.show(
+  msg: t.media_lock_verify_failed(reason: error.toString()),
+  severity: ToastSeverity.error,
+);
 
 Future<bool> _runDeviceAuth(MediaLockAuth auth, String reason) async {
   final DeviceOwnerAuthResult result;
@@ -91,24 +109,169 @@ Future<bool> _runDeviceAuth(MediaLockAuth auth, String reason) async {
       severity: ToastSeverity.warning,
     );
   }
-  return result == DeviceOwnerAuthResult.success;
+  if (result != DeviceOwnerAuthResult.success) return false;
+  try {
+    await auth.throttle.recordSuccess();
+  } on Object catch (error) {
+    // 清不掉冷却记录不影响这次验证结果，但要让用户知道下次可能还在冷却。
+    _toastVerifyError(error);
+  }
+  return true;
 }
 
-/// 上锁之前调用：本机已有解锁方式 = true；否则请用户设口令，设好 = true。
-Future<bool> ensureMediaLockMethod(BuildContext context) async {
-  if (await MediaLockAuth.instance.hasAnyMethod()) return true;
+Future<void> _showBlockedDialog(
+  BuildContext context, {
+  required String title,
+  required String body,
+}) => showAppDialog<void>(
+  context: context,
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
+    key: const ValueKey<String>('media-lock-blocked-dialog'),
+    title: Text(title),
+    content: SizedBox(width: 420, child: Text(body)),
+    actions: <Widget>[
+      adaptiveDialogAction(
+        context: dialogContext,
+        isDefaultAction: true,
+        onPressed: () => Navigator.of(dialogContext).pop(),
+        child: Text(t.dialog_ok),
+      ),
+    ],
+  ),
+);
+
+/// 上锁之前调用：本机已有解锁方式 = true；否则按设口令的规则请用户设一个，设好 = true。
+Future<bool> ensureMediaLockMethod(
+  BuildContext context,
+  FushiDatabase db,
+) async {
+  if (await MediaLockAuth.forDatabase(db).hasAnyMethod()) return true;
   if (!context.mounted) return false;
-  return showMediaLockPasscodeSetupDialog(context);
+  return changeMediaLockPasscode(context, db);
 }
 
-/// 设 / 改口令（调用方负责先 [verifyMediaLockOwner]）。设好返回 true。
-Future<bool> showMediaLockPasscodeSetupDialog(BuildContext context) async {
+/// 设 / 改口令（[MediaLockAuth.passcodeChangePlan]）：已有口令先验证机主；没口令但
+/// 有上锁作品先过系统验证，系统验证不可用就拒绝；都没有直接设。设好返回 true。
+Future<bool> changeMediaLockPasscode(
+  BuildContext context,
+  FushiDatabase db,
+) async {
+  final MediaLockAuth auth = MediaLockAuth.forDatabase(db);
+  final MediaLockPasscodeChangePlan plan;
+  try {
+    plan = await auth.passcodeChangePlan();
+  } on Object catch (error) {
+    _toastVerifyError(error);
+    return false;
+  }
+  if (!context.mounted) return false;
+  switch (plan) {
+    case MediaLockPasscodeChangePlan.blocked:
+      await _showBlockedDialog(
+        context,
+        title: t.media_lock_verify_blocked_title,
+        body: t.media_lock_verify_blocked_body,
+      );
+      return false;
+    case MediaLockPasscodeChangePlan.verifyOwner:
+      if (!await verifyMediaLockOwner(
+        context,
+        db,
+        title: t.settings_media_lock_passcode,
+      )) {
+        return false;
+      }
+    case MediaLockPasscodeChangePlan.verifyDevice:
+      if (!await _runDeviceAuth(auth, t.settings_media_lock_passcode)) {
+        return false;
+      }
+    case MediaLockPasscodeChangePlan.free:
+      break;
+  }
+  if (!context.mounted) return false;
   final bool? ok = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext _) =>
-        _MediaLockPasscodeSetupDialog(auth: MediaLockAuth.instance),
+    builder: (BuildContext _) => _MediaLockPasscodeSetupDialog(auth: auth),
   );
   return ok ?? false;
+}
+
+/// 删口令（[MediaLockAuth.passcodeRemovalPlan]）：先验证机主、再确认；还有上锁作品
+/// 而本机系统验证不可用时拒绝。删掉返回 true。
+Future<bool> removeMediaLockPasscode(
+  BuildContext context,
+  FushiDatabase db,
+) async {
+  final MediaLockAuth auth = MediaLockAuth.forDatabase(db);
+  final MediaLockPasscodeRemovalPlan plan;
+  final bool hasLockedWorks;
+  try {
+    plan = await auth.passcodeRemovalPlan();
+    hasLockedWorks = await auth.hasLockedWorks();
+  } on Object catch (error) {
+    _toastVerifyError(error);
+    return false;
+  }
+  if (!context.mounted) return false;
+  switch (plan) {
+    case MediaLockPasscodeRemovalPlan.notSet:
+      FushiToast.show(
+        msg: t.media_lock_passcode_not_set,
+        severity: ToastSeverity.info,
+      );
+      return false;
+    case MediaLockPasscodeRemovalPlan.blockedByLockedWorks:
+      await _showBlockedDialog(
+        context,
+        title: t.media_lock_passcode_remove_confirm_title,
+        body: t.media_lock_passcode_remove_blocked,
+      );
+      return false;
+    case MediaLockPasscodeRemovalPlan.allowed:
+      break;
+  }
+  if (!context.mounted) return false;
+  if (!await verifyMediaLockOwner(
+    context,
+    db,
+    title: t.settings_media_lock_passcode_remove,
+  )) {
+    return false;
+  }
+  if (!context.mounted) return false;
+  final bool confirmed = await showFushiConfirmDialog(
+    context: context,
+    title: t.media_lock_passcode_remove_confirm_title,
+    message: hasLockedWorks
+        ? t.media_lock_passcode_remove_confirm_locked_body
+        : t.media_lock_passcode_remove_confirm_body,
+    confirmLabel: t.media_lock_passcode_remove_action,
+    icon: FushiIcons.key,
+    destructive: true,
+  );
+  if (!confirmed) return false;
+  try {
+    await auth.passcode.clear();
+  } on Object catch (error) {
+    FushiToast.show(
+      msg: t.media_lock_passcode_save_failed(reason: error.toString()),
+      severity: ToastSeverity.error,
+    );
+    return false;
+  }
+  FushiToast.show(
+    msg: t.media_lock_passcode_removed_toast,
+    severity: ToastSeverity.success,
+  );
+  return true;
+}
+
+String _cooldownMessage(DateTime until) {
+  final Duration left = until.difference(DateTime.now());
+  final int seconds = left.inSeconds + 1;
+  return seconds > 90
+      ? t.media_lock_passcode_cooldown_minutes(minutes: (seconds / 60).ceil())
+      : t.media_lock_passcode_cooldown(seconds: seconds);
 }
 
 class _MediaLockVerifyDialog extends StatefulWidget {
@@ -129,13 +292,16 @@ class _MediaLockVerifyDialog extends StatefulWidget {
 class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog> {
   final TextEditingController _passcode = TextEditingController();
   String? _error;
-  bool _busy = false;
+
+  /// 读冷却状态之前也算忙（不让人在状态未知时提交）。
+  bool _busy = true;
+  DateTime? _coolingUntil;
   Timer? _cooldownTimer;
 
   @override
   void initState() {
     super.initState();
-    _scheduleCooldownTick();
+    unawaited(_loadCooldown());
   }
 
   @override
@@ -145,14 +311,30 @@ class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog> {
     super.dispose();
   }
 
+  Future<void> _loadCooldown() async {
+    DateTime? until;
+    String? error;
+    try {
+      until = await widget.auth.throttle.coolingUntil();
+    } on Object catch (e) {
+      error = t.media_lock_verify_failed(reason: e.toString());
+    }
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = error ?? (until == null ? null : _cooldownMessage(until));
+    });
+    _armCooldown(until);
+  }
+
   bool get _coolingDown {
-    final DateTime? until = _cooldownUntil;
+    final DateTime? until = _coolingUntil;
     return until != null && DateTime.now().isBefore(until);
   }
 
-  void _scheduleCooldownTick() {
+  void _armCooldown(DateTime? until) {
     _cooldownTimer?.cancel();
-    final DateTime? until = _cooldownUntil;
+    _coolingUntil = until;
     if (until == null) return;
     final Duration left = until.difference(DateTime.now());
     if (left.isNegative) return;
@@ -164,24 +346,35 @@ class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog> {
   Future<void> _submit() async {
     if (_busy || _coolingDown) return;
     setState(() => _busy = true);
-    final bool ok = await widget.auth.passcode.verify(_passcode.text);
+    final bool ok;
+    DateTime? cooldownUntil;
+    try {
+      ok = await widget.auth.passcode.verify(_passcode.text);
+      if (ok) {
+        await widget.auth.throttle.recordSuccess();
+      } else {
+        final Duration? cooldown = await widget.auth.throttle.recordFailure();
+        if (cooldown != null) cooldownUntil = DateTime.now().add(cooldown);
+      }
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = t.media_lock_verify_failed(reason: e.toString());
+      });
+      return;
+    }
     if (!mounted) return;
     if (ok) {
-      _failures = 0;
       Navigator.of(context).pop(true);
       return;
     }
-    _failures++;
-    String error = t.media_lock_passcode_wrong;
-    if (_failures >= _maxFailuresBeforeCooldown) {
-      _failures = 0;
-      _cooldownUntil = DateTime.now().add(_cooldown);
-      error = t.media_lock_passcode_cooldown(seconds: _cooldown.inSeconds);
-      _scheduleCooldownTick();
-    }
+    _armCooldown(cooldownUntil);
     setState(() {
       _busy = false;
-      _error = error;
+      _error = cooldownUntil == null
+          ? t.media_lock_passcode_wrong
+          : _cooldownMessage(cooldownUntil);
       _passcode.clear();
     });
   }
@@ -191,8 +384,6 @@ class _MediaLockVerifyDialogState extends State<_MediaLockVerifyDialog> {
     final bool ok = await _runDeviceAuth(widget.auth, widget.title);
     if (!mounted) return;
     if (ok) {
-      _failures = 0;
-      _cooldownUntil = null;
       Navigator.of(context).pop(true);
       return;
     }
@@ -345,7 +536,10 @@ class _MediaLockPasscodeSetupDialogState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(t.media_lock_passcode_setup_hint, style: text.bodyMedium),
+            Text(
+              t.media_lock_passcode_setup_synced_hint,
+              style: text.bodyMedium,
+            ),
             const SizedBox(height: 12),
             FushiTextField(
               key: const ValueKey<String>('media-lock-passcode-new'),

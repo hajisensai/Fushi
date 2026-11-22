@@ -17,8 +17,13 @@ import 'package:collection/collection.dart';
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 一次性读出的上锁标记快照（几次批查）。只读，读完不随库变化——app 端按表变更
+//// 一次性读出的上锁标记快照（几次批查）。只读，读完不随库变化——app 端按表变更
 /// 重新加载。
+///
+/// 除了按宿主种类判定（[isLocked] 等），还给「不知道键属于哪种宿主」的消费端（收藏 /
+/// 制卡历史 / 统计事实 / 活动流：行里只有一个来源键 bookKey / bookUid / gameId /
+/// trackUid）一个统一判据 [isSourceKeyLocked]；legacy 没有身份键的行按显示名回退
+/// [isTitleLocked]（宁可多藏）。
 class MediaLockSnapshot {
   MediaLockSnapshot._({
     required Set<String> books,
@@ -28,13 +33,19 @@ class MediaLockSnapshot {
     required Set<int> collections,
     required Map<String, Set<int>> collectionsOfEntry,
     required Set<String> musicAlbums,
+    required Set<String> musicTracks,
+    required Set<String> memberKeys,
+    required Set<String> titles,
   }) : _books = books,
        _srtBooks = srtBooks,
        _videos = videos,
        _games = games,
        _collections = collections,
        _collectionsOfEntry = collectionsOfEntry,
-       _musicAlbums = musicAlbums;
+       _musicAlbums = musicAlbums,
+       _musicTracks = musicTracks,
+       _memberKeys = memberKeys,
+       _titles = titles;
 
   /// 没有任何上锁标记（测试 / 未接库的调用方用）。
   static final MediaLockSnapshot none = MediaLockSnapshot._(
@@ -45,6 +56,9 @@ class MediaLockSnapshot {
     collections: const <int>{},
     collectionsOfEntry: const <String, Set<int>>{},
     musicAlbums: const <String>{},
+    musicTracks: const <String>{},
+    memberKeys: const <String>{},
+    titles: const <String>{},
   );
 
   static Future<MediaLockSnapshot> load(FushiDatabase db) async {
@@ -53,7 +67,21 @@ class MediaLockSnapshot {
         ?collectionIdOfTagEntryKey(k),
     };
     final Map<String, Set<int>> collectionsOfEntry = <String, Set<int>>{};
+    // 上锁合集成员的原始成员键（不分种类），给 [isSourceKeyLocked] 用。
+    final Set<String> memberKeys = <String>{};
     final Set<String> books = await db.lockedEntryKeys(TagHostKind.epub);
+    final Set<String> srtUids = await db.lockedEntryKeys(TagHostKind.srt);
+    final Set<String> videos = await db.lockedEntryKeys(TagHostKind.video);
+    final Set<String> games = await db.lockedEntryKeys(TagHostKind.game);
+    final Set<String> musicAlbums = await db.lockedEntryKeys(
+      TagHostKind.musicAlbum,
+    );
+    // 「生效上锁」的各宿主键（自身上锁 ∪ 在上锁合集里）：显示名回退与 SRT bookKey
+    // 登记都按它算。
+    final Set<String> effectiveBooks = <String>{...books};
+    final Set<String> effectiveSrt = <String>{...srtUids};
+    final Set<String> effectiveVideos = <String>{...videos};
+    final Set<String> effectiveGames = <String>{...games};
     if (collections.isNotEmpty) {
       // v83 起 EPUB 合集成员键是 `epub_books.uid`（旧行仍可能是 bookKey）：成员键
       // 归一到 bookKey，原始成员键也登记（书架按 bookKey 问，合集详情页按成员行
@@ -69,30 +97,113 @@ class MediaLockSnapshot {
           (collectionsOfEntry[_memberKey(item.mediaType, key)] ??= <int>{}).add(
             item.collectionId,
           );
+          memberKeys.add(key);
+        }
+        switch (MediaKind.tryParse(item.mediaType)) {
+          case MediaKind.epub:
+            effectiveBooks.add(entryKey);
+          case MediaKind.srt:
+            effectiveSrt.add(item.entryKey);
+          case MediaKind.video:
+            effectiveVideos.add(item.entryKey);
+          case MediaKind.game:
+            effectiveGames.add(item.entryKey);
+          case _:
+            break;
         }
       }
     }
+    final Set<String> titles = <String>{};
     // 上锁的书也按 uid 登记（合集成员行 / 阅读位置按 uid 问）。
-    final Set<String> bookUids = books.isEmpty
-        ? const <String>{}
-        : <String>{
-            for (final TypedResult r
-                in await (db.selectOnly(db.epubBooks)
-                      ..addColumns(<Expression<Object>>[db.epubBooks.uid])
-                      ..where(db.epubBooks.bookKey.isIn(books)))
-                    .get())
-              if (r.read(db.epubBooks.uid) case final String uid
-                  when uid.isNotEmpty)
-                uid,
-          };
+    final Set<String> bookUids = <String>{};
+    if (effectiveBooks.isNotEmpty) {
+      for (final TypedResult r
+          in await (db.selectOnly(db.epubBooks)
+                ..addColumns(<Expression<Object>>[
+                  db.epubBooks.uid,
+                  db.epubBooks.bookKey,
+                  db.epubBooks.title,
+                ])
+                ..where(db.epubBooks.bookKey.isIn(effectiveBooks)))
+              .get()) {
+        if (r.read(db.epubBooks.title) case final String t when t.isNotEmpty) {
+          titles.add(t);
+        }
+        if (!books.contains(r.read(db.epubBooks.bookKey))) continue;
+        if (r.read(db.epubBooks.uid) case final String uid
+            when uid.isNotEmpty) {
+          bookUids.add(uid);
+        }
+      }
+    }
+    // 字幕书 / 有声书：uid 之外也登记 bookKey（收藏 / 制卡 / 统计行里的来源键是
+    // bookKey，与 EPUB 共享 `hoshi://book/` 身份）。
+    final Set<String> srtBooks = <String>{...srtUids};
+    if (effectiveSrt.isNotEmpty) {
+      for (final TypedResult r
+          in await (db.selectOnly(db.srtBooks)
+                ..addColumns(<Expression<Object>>[
+                  db.srtBooks.uid,
+                  db.srtBooks.bookKey,
+                  db.srtBooks.title,
+                ])
+                ..where(db.srtBooks.uid.isIn(effectiveSrt)))
+              .get()) {
+        if (r.read(db.srtBooks.title) case final String t when t.isNotEmpty) {
+          titles.add(t);
+        }
+        final String bookKey = r.read(db.srtBooks.bookKey) ?? '';
+        if (bookKey.isEmpty) continue;
+        if (srtUids.contains(r.read(db.srtBooks.uid))) {
+          srtBooks.add(bookKey);
+        } else {
+          memberKeys.add(bookKey);
+        }
+      }
+    }
+    if (effectiveVideos.isNotEmpty) {
+      for (final TypedResult r
+          in await (db.selectOnly(db.videoBooks)
+                ..addColumns(<Expression<Object>>[db.videoBooks.title])
+                ..where(db.videoBooks.bookUid.isIn(effectiveVideos)))
+              .get()) {
+        if (r.read(db.videoBooks.title) case final String t when t.isNotEmpty) {
+          titles.add(t);
+        }
+      }
+    }
+    if (effectiveGames.isNotEmpty) {
+      for (final TypedResult r
+          in await (db.selectOnly(db.galgames)
+                ..addColumns(<Expression<Object>>[db.galgames.name])
+                ..where(db.galgames.id.isIn(effectiveGames)))
+              .get()) {
+        if (r.read(db.galgames.name) case final String t when t.isNotEmpty) {
+          titles.add(t);
+        }
+      }
+    }
+    // 上锁专辑的曲目（歌单 / 最近播放 / 歌词制卡行按 trackUid 问）。
+    final Set<String> musicTracks = <String>{
+      if (musicAlbums.isNotEmpty)
+        for (final TypedResult r
+            in await (db.selectOnly(db.musicTracks)
+                  ..addColumns(<Expression<Object>>[db.musicTracks.trackUid])
+                  ..where(db.musicTracks.albumUid.isIn(musicAlbums)))
+                .get())
+          ?r.read(db.musicTracks.trackUid),
+    };
     return MediaLockSnapshot._(
       books: <String>{...books, ...bookUids},
-      srtBooks: await db.lockedEntryKeys(TagHostKind.srt),
-      videos: await db.lockedEntryKeys(TagHostKind.video),
-      games: await db.lockedEntryKeys(TagHostKind.game),
+      srtBooks: srtBooks,
+      videos: videos,
+      games: games,
       collections: collections,
       collectionsOfEntry: collectionsOfEntry,
-      musicAlbums: await db.lockedEntryKeys(TagHostKind.musicAlbum),
+      musicAlbums: musicAlbums,
+      musicTracks: musicTracks,
+      memberKeys: memberKeys,
+      titles: titles,
     );
   }
 
@@ -115,6 +226,9 @@ class MediaLockSnapshot {
   final Set<String> _games;
   final Set<int> _collections;
   final Set<String> _musicAlbums;
+  final Set<String> _musicTracks;
+  final Set<String> _memberKeys;
+  final Set<String> _titles;
 
   /// `mediaType|entryKey` → 它所在的上锁合集 id（只收上锁合集的成员）。
   final Map<String, Set<int>> _collectionsOfEntry;
@@ -141,6 +255,7 @@ class MediaLockSnapshot {
       _books.contains(bookKey) ||
       _inLockedCollection(MediaKind.epub.dbValue, bookKey);
 
+  /// [uid] 是 `srt_books.uid`；自身上锁的字幕书按它的 bookKey 问也认。
   bool isSrtBookLocked(String uid) =>
       _srtBooks.contains(uid) ||
       _inLockedCollection(MediaKind.srt.dbValue, uid);
@@ -155,6 +270,27 @@ class MediaLockSnapshot {
 
   /// 音乐专辑只看自己的标记（专辑不进合集）。
   bool isMusicAlbumLocked(String albumUid) => _musicAlbums.contains(albumUid);
+
+  /// 曲目跟着所在专辑上锁。
+  bool isMusicTrackLocked(String trackUid) => _musicTracks.contains(trackUid);
+
+  /// 种类不明的来源键（书 bookKey / uid、字幕书 uid / bookKey、视频 bookUid、
+  /// 游戏 id、曲目 uid、专辑 uid）属于一部上锁的作品。各宿主的键空间互不重叠
+  /// （uuid / `hoshi://` 身份），真撞上了也只会多藏。
+  bool isSourceKeyLocked(String key) =>
+      key.isNotEmpty &&
+      (_books.contains(key) ||
+          _srtBooks.contains(key) ||
+          _videos.contains(key) ||
+          _games.contains(key) ||
+          _musicTracks.contains(key) ||
+          _musicAlbums.contains(key) ||
+          _memberKeys.contains(key));
+
+  /// 显示名属于某部上锁作品。只给没有身份键的 legacy 行（统计 / 活动流）回退用，
+  /// 宁可多藏。
+  bool isTitleLocked(String title) =>
+      title.isNotEmpty && _titles.contains(title);
 
   /// 按标签宿主种类问（对话框 / 通用消费端用）。
   bool isLocked(TagHostKind kind, String entryKey) => switch (kind) {
@@ -179,7 +315,10 @@ class MediaLockSnapshot {
           _deep.equals(_videos, other._videos) &&
           _deep.equals(_games, other._games) &&
           _deep.equals(_musicAlbums, other._musicAlbums) &&
+          _deep.equals(_musicTracks, other._musicTracks) &&
           _deep.equals(_collections, other._collections) &&
+          _deep.equals(_memberKeys, other._memberKeys) &&
+          _deep.equals(_titles, other._titles) &&
           _deep.equals(_collectionsOfEntry, other._collectionsOfEntry));
 }
 

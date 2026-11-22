@@ -2,14 +2,14 @@
 /// 这一个分区（拍板台 qiqSbvdxrk）。作品自己的分级与 NSFW 标记在作品菜单 › 隐私 里改
 /// （`media_privacy_dialog.dart`），这里只放跨作品的开关：
 /// - 显示已上锁的作品（本次会话，不持久化；打开要过口令 / 系统验证）；
-/// - 解锁口令（设置 / 修改）；
+/// - 解锁口令（设置 / 修改 / 删除；口令摘要随上锁标记同步，规则见
+///   `media_lock_auth.dart`）；
 /// - 模糊 NSFW 封面、制卡图片也模糊（原「外观 › NSFW 内容」两项，id 与偏好键不变）。
 library;
 
 import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/privacy/media_lock_auth.dart';
 import 'package:fushi/src/media/privacy/media_lock_dialogs.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -37,7 +37,10 @@ SettingsSection buildMediaPrivacySection() => SettingsSection(
         if (!value) {
           MediaLockSession.instance.relock();
         } else {
-          await unlockMediaLockSession(settingsContext.context);
+          await unlockMediaLockSession(
+            settingsContext.context,
+            settingsContext.appModel.database,
+          );
         }
         settingsContext.refresh();
       },
@@ -52,20 +55,30 @@ SettingsSection buildMediaPrivacySection() => SettingsSection(
         'The unlock passcode can only be set in the app (it must be verified '
         'and typed by the user).',
       ),
-      onTap: (SettingsContext settingsContext) async {
-        final bool hasPasscode = await MediaLockAuth.instance.passcode.isSet();
-        if (!settingsContext.context.mounted) return;
-        // 改口令先验证机主（旧口令或系统验证），免得借手机的人顺手改掉。
-        if (hasPasscode &&
-            !await verifyMediaLockOwner(
-              settingsContext.context,
-              title: t.settings_media_lock_passcode,
-            )) {
-          return;
-        }
-        if (!settingsContext.context.mounted) return;
-        unawaited(showMediaLockPasscodeSetupDialog(settingsContext.context));
-      },
+      // 改口令先验证机主（旧口令或系统验证），免得借手机的人顺手改掉；没口令但
+      // 有同步来的锁时，没有系统验证就不许新设（否则就是后门）。
+      onTap: (SettingsContext settingsContext) => unawaited(
+        changeMediaLockPasscode(
+          settingsContext.context,
+          settingsContext.appModel.database,
+        ),
+      ),
+    ),
+    SettingsActionItem(
+      id: 'general.media_lock_passcode_remove',
+      title: t.settings_media_lock_passcode_remove,
+      subtitle: t.settings_media_lock_passcode_remove_hint,
+      icon: FushiIcons.delete,
+      cli: const SettingsCliAction.unsupported(
+        'The unlock passcode can only be removed in the app (the owner must '
+        'verify first).',
+      ),
+      onTap: (SettingsContext settingsContext) => unawaited(
+        removeMediaLockPasscode(
+          settingsContext.context,
+          settingsContext.appModel.database,
+        ),
+      ),
     ),
     SettingsSwitchItem(
       id: 'appearance.nsfw_blur_covers',

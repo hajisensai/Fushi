@@ -2144,6 +2144,12 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
+      // 解锁口令摘要只为上锁记录服务：导出副本里没有上锁记录了就不带（免得只
+      // 导出词典的包里也夹着口令摘要）。
+      await db.customStatement(
+        'DELETE FROM media_lock_credentials WHERE NOT EXISTS '
+        '(SELECT 1 FROM media_locked_flags)',
+      );
 
       // (3) Category-gated deletion tombstones.
       if (!includeBooks) {

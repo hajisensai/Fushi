@@ -85,6 +85,20 @@ bool isLockedByClock(MediaLockClock clock) {
   return cleared == null || set > cleared;
 }
 
+/// 解锁口令摘要的一份记录（[MediaLockCredentials] 那一行；互联标签清单顶层的
+/// `lockCredential`）。[verifier] 为 null = 口令已删除。
+typedef MediaLockCredential = ({String? verifier, int updatedAt});
+
+/// 两份口令记录的 LWW 合并：[MediaLockCredential.updatedAt] 大的胜，相等时按
+/// verifier 文本取大（null 视为空串），与顺序无关、重放幂等。
+MediaLockCredential mergeLockCredentials(
+  MediaLockCredential a,
+  MediaLockCredential b,
+) {
+  if (a.updatedAt != b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  return (a.verifier ?? '').compareTo(b.verifier ?? '') >= 0 ? a : b;
+}
+
 /// 两只上锁时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
 MediaLockClock mergeLockClocks(MediaLockClock a, MediaLockClock b) {
   int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);

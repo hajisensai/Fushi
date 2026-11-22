@@ -4190,6 +4190,31 @@ class MediaLockedFlags extends Table {
   Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
 }
 
+// ── media_lock_credentials（v171：上锁作品的解锁口令摘要）────────────────
+/// 上锁作品的解锁口令（拍板台 qiqSbvdxrk）：只存 PBKDF2-HMAC-SHA256 的盐 + 摘要
+/// （[verifier] 是 `{"v","iter","salt","hash"}` JSON），不存口令本身。
+///
+/// **跟着上锁标记一起同步、一起进备份**：上锁标记会同步到别的设备，口令若只留在
+/// 本机，一台既没设口令、系统验证也不可用的设备上，任何人「新设一个口令」就能打开
+/// 同步来的锁。口令摘要随锁走，各设备认的是同一个口令。
+///
+/// 只有一行（[credentialKey] = `passcode`）。LWW：[updatedAt] 大的胜，相等时按
+/// [verifier] 文本取大（NULL 视为空串）保证各端收敛。删除口令不删行，写
+/// `verifier = NULL`（删除也要能同步出去）。
+@DataClassName('MediaLockCredentialRow')
+class MediaLockCredentials extends Table {
+  TextColumn get credentialKey => text()();
+
+  /// 口令摘要 JSON；NULL = 口令已删除。
+  TextColumn get verifier => text().nullable()();
+
+  /// 最近一次设置 / 修改 / 删除的毫秒戳。
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{credentialKey};
+}
+
 // ── library_organize_runs / library_organize_changes（AI 整理记录，schema v124）──
 // spec `docs/specs/2026-10-20-ai-library-organize-design.md` §5.3：本机这一次整理
 // 做了什么，供「整理记录」页与撤销用。**设备本地**：不同步、不进备份——别的设备有

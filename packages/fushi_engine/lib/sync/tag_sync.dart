@@ -37,11 +37,17 @@ import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 /// 条目上可选的 `locked`（`{"set": 毫秒, "cleared": 毫秒}`，v171 起）同理搭载作品级
 /// 上锁标记的两只时钟（`media_locked_flags`）：在一台设备上锁的作品，别的设备上
 /// 同样藏起来。缺字段 = 没有上锁知识，不是「解除上锁」。
+///
+/// 顶层可选的 `lockCredential`（`{"at": 毫秒, "verifier": 摘要 JSON 文本}`，v171 起；
+/// 删除口令时没有 `verifier`）搭载上锁作品的解锁口令摘要（`media_lock_credentials`，
+/// LWW）：锁同步到哪，口令就跟到哪——不然一台没设口令、也没有系统验证的设备上，
+/// 「新设一个口令」就能打开同步来的锁。缺字段 = 没有口令知识。
 class TagManifest implements CanonicalJsonManifest {
   const TagManifest({
     this.version = currentVersion,
     this.tags = const <TagManifestTag>[],
     this.entries = const <TagManifestEntry>[],
+    this.lockCredential,
   });
 
   static const int currentVersion = 1;
@@ -53,6 +59,9 @@ class TagManifest implements CanonicalJsonManifest {
   final List<TagManifestTag> tags;
 
   final List<TagManifestEntry> entries;
+
+  /// 解锁口令摘要记录；null = 本端没有口令知识（从没设过 / 旧版对端）。
+  final MediaLockCredential? lockCredential;
 
   factory TagManifest.fromJson(Object? json) {
     final Map<String, dynamic> map = requireManifestObject(json, _label);
@@ -72,7 +81,20 @@ class TagManifest implements CanonicalJsonManifest {
         for (final Object? e in requireManifestList(map, 'entries', _label))
           TagManifestEntry.fromJson(e),
       ],
+      lockCredential: _lockCredential(map['lockCredential']),
     );
+  }
+
+  /// 坏字段（缺 / 非法时间戳、verifier 不是字符串）一律当没有这条知识。
+  static MediaLockCredential? _lockCredential(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? at = raw['at'];
+    final Object? verifier = raw['verifier'];
+    if (at is! int || at < 0) return null;
+    if (verifier != null && (verifier is! String || verifier.isEmpty)) {
+      return null;
+    }
+    return (verifier: verifier as String?, updatedAt: at);
   }
 
   @override
@@ -96,6 +118,11 @@ class TagManifest implements CanonicalJsonManifest {
       'entries': <Map<String, dynamic>>[
         for (final TagManifestEntry e in sortedEntries) e.toJson(),
       ],
+      if (lockCredential case final MediaLockCredential c)
+        'lockCredential': <String, Object>{
+          'at': c.updatedAt,
+          if (c.verifier case final String v) 'verifier': v,
+        },
     };
   }
 
@@ -412,13 +439,19 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
           TagManifestTag(name: t.name, colorValue: t.colorValue),
     ],
     entries: entries,
+    lockCredential: await db.mediaLockCredential(),
   );
 }
 
 /// 把对端清单并入本机 DB，返回实际改动的宿主数。解析不到本机宿主的条目跳过；
 /// 每个宿主的合并各自一个事务（按名 LWW，重放幂等）。
 Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
-  if (remote.entries.isEmpty) return 0;
+  int changed = 0;
+  // 口令摘要先于上锁标记落库：同一轮里锁到了、口令没到的窗口不存在。
+  if (remote.lockCredential case final MediaLockCredential c) {
+    if (await db.mergeRemoteLockCredential(c)) changed++;
+  }
+  if (remote.entries.isEmpty) return changed;
   final CollectionBookIdentityIndex identities =
       await CollectionBookIdentityIndex.load(db);
   final Map<String, int> colors = <String, int>{
@@ -428,7 +461,6 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
   Set<String>? videoUids;
   Set<String>? bookKeys;
   Set<String>? albumUids;
-  int changed = 0;
   for (final TagManifestEntry e in remote.entries) {
     String? localKey;
     TagHostKind? kind;
@@ -510,6 +542,9 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
 /// 不比本机旧）。true ⇒ client 无需 POST（避免每轮无谓回写）。宿主按 kind + 任一
 /// 身份键（主键或别名）对齐，游戏在两端主键不同时也不会被误判成「对端缺它」。
 bool tagManifestCovers(TagManifest remote, TagManifest local) {
+  if (!_lockCredentialCovers(remote.lockCredential, local.lockCredential)) {
+    return false;
+  }
   final Map<String, TagManifestEntry> byKey = <String, TagManifestEntry>{};
   for (final TagManifestEntry r in remote.entries) {
     for (final String k in r.allKeys) {
@@ -566,4 +601,14 @@ bool _lockCovers(MediaLockClock? remote, MediaLockClock? local) {
   bool covers(int? r, int? l) => l == null || (r != null && r >= l);
   return covers(remote?.lockedAt, local.lockedAt) &&
       covers(remote?.clearedAt, local.clearedAt);
+}
+
+/// 远端口令记录不比本机旧（本机没有口令知识时恒为 true）。
+bool _lockCredentialCovers(
+  MediaLockCredential? remote,
+  MediaLockCredential? local,
+) {
+  if (local == null) return true;
+  if (remote == null) return false;
+  return mergeLockCredentials(remote, local) == remote;
 }

@@ -257,7 +257,7 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
     final MediaPrivacyState? state = _state;
     if (state == null || target == state.own) return;
     if (target == MediaPrivacyLevel.locked &&
-        !await ensureMediaLockMethod(context)) {
+        !await ensureMediaLockMethod(context, widget.db)) {
       return;
     }
     if (!mounted) return;
