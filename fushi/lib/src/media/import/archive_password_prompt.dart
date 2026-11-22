@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/archive/archive_passwords.dart';
 
@@ -229,7 +230,7 @@ class _ArchivePasswordDialogState extends State<ArchivePasswordDialog> {
     final String? notice = _notice;
     final Duration motion = fushiMotionDuration(context, FushiMotion.short);
     return FushiAlertDialog(
-      icon: const FushiDialogHeroIcon(icon: Icons.lock_outline),
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.lock),
       title: Text(t.archive_password_title),
       scrollable: true,
       content: Column(
@@ -276,8 +277,8 @@ class _ArchivePasswordDialogState extends State<ArchivePasswordDialog> {
                 suffixIcon: FushiIconButton(
                   key: const ValueKey<String>('archive-password-visibility'),
                   icon: _obscure
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
+                      ? FushiIcons.visibility
+                      : FushiIcons.visibilityOff,
                   tooltip: _obscure
                       ? t.archive_password_show
                       : t.archive_password_hide,

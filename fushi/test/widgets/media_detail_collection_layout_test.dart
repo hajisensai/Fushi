@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -82,6 +83,8 @@ void main() {
         ),
       ),
     );
+    // 模糊走预烘焙（[PrebakedBlurImage]，32098303a7 起不用渲染期 ImageFiltered）。
+    expect(find.byType(PrebakedBlurImage), findsNothing);
     expect(find.byType(ImageFiltered), findsNothing);
 
     await tester.pumpWidget(
@@ -92,7 +95,7 @@ void main() {
         ),
       ),
     );
-    expect(find.byType(ImageFiltered), findsOneWidget);
+    expect(find.byType(PrebakedBlurImage), findsOneWidget);
   });
 
   test('③ hero 不再挂「⋯」，右上角菜单不重复 hero 的「标签 / 补齐缺集」', () {
