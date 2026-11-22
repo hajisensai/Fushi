@@ -1459,7 +1459,6 @@ class _BookImportDialogState extends State<BookImportDialog>
     // health overlay。对话框只把进度/文案/字段透传给 service，行为逐字节等价。
     final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
       db: widget.db,
-      repo: widget.repo,
       audiobookRepo: widget.audiobookRepo,
       bookKey: bookKey,
       title: title,

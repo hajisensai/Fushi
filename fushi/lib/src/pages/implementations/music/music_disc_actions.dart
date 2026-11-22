@@ -24,6 +24,7 @@ import 'package:fushi/src/media/import/import_choice_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
@@ -470,8 +471,23 @@ Future<String?> readAudioCdIntoLibrary({
 }
 
 /// 本地专辑的菜单项：章节导入 / 对号只有光盘专辑有；[remove] 人人都有（光盘专辑移除整张
-/// 盘，普通专辑把全部曲目移出音乐库，拍板台 mmXVwo0Ibv）。
-enum MusicAlbumMenuAction { importChapters, lookup, remove }
+/// 盘，普通专辑把全部曲目移出音乐库，拍板台 mmXVwo0Ibv）；[privacy] 人人都有（专辑的
+/// 隐私对话框：上锁 + NSFW 开关，封面按「模糊 NSFW 封面」打模糊，拍板台
+/// NCzkl6oLnf-adult-cover / qiqSbvdxrk）。
+enum MusicAlbumMenuAction { importChapters, lookup, privacy, remove }
+
+/// 打开专辑的隐私对话框（菜单与专辑页按钮共用）。
+Future<void> showMusicAlbumPrivacyDialog(
+  BuildContext context,
+  FushiDatabase db,
+  MusicAlbumRow album,
+) => showMediaPrivacyDialog(
+  context,
+  db: db,
+  kind: TagHostKind.musicAlbum,
+  entryKey: album.albumUid,
+  title: album.title,
+);
 
 /// 专辑卡右键 / 长按菜单。[disc] 为 null = 普通专辑，只有「从音乐库移除」；光盘专辑另有
 /// 章节导入 / 重新读盘与 MusicBrainz 对号。[globalPosition] 是按下处的全局坐标。
@@ -504,40 +520,51 @@ Future<void> showMusicAlbumMenu({
       ],
     ),
   );
-  final MusicAlbumMenuAction? action =
-      await showFushiMenu<MusicAlbumMenuAction>(
-        context: context,
-        position: RelativeRect.fromRect(
-          Rect.fromPoints(anchor, anchor),
-          Offset.zero & overlay.size,
+  final MusicAlbumMenuAction?
+  action = await showFushiMenu<MusicAlbumMenuAction>(
+    context: context,
+    position: RelativeRect.fromRect(
+      Rect.fromPoints(anchor, anchor),
+      Offset.zero & overlay.size,
+    ),
+    items: <PopupMenuEntry<MusicAlbumMenuAction>>[
+      if (disc != null) ...<PopupMenuEntry<MusicAlbumMenuAction>>[
+        item(
+          MusicAlbumMenuAction.importChapters,
+          FushiIcons.toc,
+          musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
         ),
-        items: <PopupMenuEntry<MusicAlbumMenuAction>>[
-          if (disc != null) ...<PopupMenuEntry<MusicAlbumMenuAction>>[
-            item(
-              MusicAlbumMenuAction.importChapters,
-              FushiIcons.toc,
-              musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
-            ),
-            if (tracks.isNotEmpty &&
-                MusicDiscKind.fromWire(disc.kind) != MusicDiscKind.cdda)
-              item(
-                MusicAlbumMenuAction.lookup,
-                FushiIcons.search,
-                t.music_disc_lookup,
-              ),
-            item(
-              MusicAlbumMenuAction.remove,
-              FushiIcons.delete,
-              t.music_disc_remove,
-            ),
-          ] else if (tracks.isNotEmpty)
-            item(
-              MusicAlbumMenuAction.remove,
-              FushiIcons.removeCircle,
-              t.music_action_remove_from_library,
-            ),
-        ],
-      );
+        if (tracks.isNotEmpty &&
+            MusicDiscKind.fromWire(disc.kind) != MusicDiscKind.cdda)
+          item(
+            MusicAlbumMenuAction.lookup,
+            FushiIcons.search,
+            t.music_disc_lookup,
+          ),
+        item(
+          MusicAlbumMenuAction.privacy,
+          FushiIcons.shield,
+          t.media_privacy_action,
+        ),
+        item(
+          MusicAlbumMenuAction.remove,
+          FushiIcons.delete,
+          t.music_disc_remove,
+        ),
+      ] else if (tracks.isNotEmpty) ...<PopupMenuEntry<MusicAlbumMenuAction>>[
+        item(
+          MusicAlbumMenuAction.privacy,
+          FushiIcons.shield,
+          t.media_privacy_action,
+        ),
+        item(
+          MusicAlbumMenuAction.remove,
+          FushiIcons.removeCircle,
+          t.music_action_remove_from_library,
+        ),
+      ],
+    ],
+  );
   if (action == null || !context.mounted) return;
   await runMusicAlbumMenuAction(
     context: context,
@@ -572,6 +599,10 @@ Future<void> runMusicAlbumMenuAction({
   required MusicDiscSourceRow? disc,
   required List<MusicTrackRow> tracks,
 }) async {
+  if (action == MusicAlbumMenuAction.privacy) {
+    await showMusicAlbumPrivacyDialog(context, app.database, album);
+    return;
+  }
   if (disc == null) {
     if (action == MusicAlbumMenuAction.remove) {
       await musicRemoveAlbumFromLibrary(
@@ -603,5 +634,8 @@ Future<void> runMusicAlbumMenuAction({
       );
     case MusicAlbumMenuAction.remove:
       await removeMusicDiscFromLibrary(context: context, app: app, disc: disc);
+    case MusicAlbumMenuAction.privacy:
+      // 已在函数开头处理。
+      break;
   }
 }

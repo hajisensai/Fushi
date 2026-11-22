@@ -9,6 +9,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -198,7 +199,35 @@ class _LibraryCtlHandlers {
 
   /// 书架同源：`getBooksFromDb`（进度 / 封面 / 改名覆盖）+ 瘦投影 meta（format /
   /// 导入时刻 / 读完标记）+ 字幕书。与书架一致，被字幕书配对的 EPUB 只以有声书出现。
-  Future<List<LibraryCtlEntry>> _bookEntries() async {
+  Future<List<LibraryCtlEntry>> _bookEntries() async =>
+      _withoutLocked(await _allBookEntries());
+
+  Future<List<LibraryCtlEntry>> _videoEntries() async =>
+      _withoutLocked(await _allVideoEntries());
+
+  Future<List<LibraryCtlEntry>> _gameEntries() async =>
+      _withoutLocked(await _allGameEntries());
+
+  /// 上锁（未解锁）的作品不给控制通道 / AI 助手看（[MediaVisibility]，与库页同一个
+  /// 过滤入口）：AI 列库、搜库、最近打开都见不到它，也就不会在对话里报出标题。
+  Future<List<LibraryCtlEntry>> _withoutLocked(
+    List<LibraryCtlEntry> entries,
+  ) async {
+    final MediaVisibility visibility = await MediaVisibility.load(_db);
+    if (!visibility.hidesAnything) return entries;
+    return <LibraryCtlEntry>[
+      for (final LibraryCtlEntry e in entries)
+        if (!switch (e.key.store) {
+          LibraryCtlStore.book => visibility.hidesBook(e.key.id),
+          LibraryCtlStore.srt => visibility.hidesSrtBook(e.key.id),
+          LibraryCtlStore.video => visibility.hidesVideo(e.key.id),
+          LibraryCtlStore.game => visibility.hidesGame(e.key.id),
+        })
+          e,
+    ];
+  }
+
+  Future<List<LibraryCtlEntry>> _allBookEntries() async {
     final List<MediaItem> books = await ReaderFushiSource.instance
         .getBooksFromDb(appModel: _app);
     final Map<String, EpubBookMeta> metas = <String, EpubBookMeta>{
@@ -272,7 +301,7 @@ class _LibraryCtlHandlers {
     return out;
   }
 
-  Future<List<LibraryCtlEntry>> _videoEntries() async {
+  Future<List<LibraryCtlEntry>> _allVideoEntries() async {
     final List<VideoBookRow> rows = await VideoBookRepository(_db).listAll();
     final List<LibraryCtlEntry> out = <LibraryCtlEntry>[
       for (final VideoBookRow row in rows) _videoEntry(row),
@@ -300,7 +329,7 @@ class _LibraryCtlHandlers {
     return repo.games;
   }
 
-  Future<List<LibraryCtlEntry>> _gameEntries() async => <LibraryCtlEntry>[
+  Future<List<LibraryCtlEntry>> _allGameEntries() async => <LibraryCtlEntry>[
     for (final GalgameEntry game in await _games()) _gameEntry(game),
   ];
 

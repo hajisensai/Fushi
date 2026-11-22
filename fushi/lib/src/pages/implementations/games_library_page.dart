@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'dart:async';
 import 'dart:io';
@@ -509,9 +510,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     unawaited(_appModel.setGalgameLibraryView(next.encode()));
   }
 
-  /// 当前要渲染的列表（筛选 + 搜索 + 排序，纯函数）。
-  List<GalgameEntry> _visibleFor(Set<String>? allowedIds) =>
-      applyGalgameLibraryView(_games, _view, allowedIds: allowedIds);
+  /// 当前要渲染的列表（筛选 + 搜索 + 排序，纯函数）。上锁（未解锁）的游戏先拿掉
+  /// （[MediaVisibility]，唯一的上锁过滤入口）。
+  List<GalgameEntry> _visibleFor(Set<String>? allowedIds) {
+    final MediaVisibility visibility = MediaVisibility.of(context);
+    return applyGalgameLibraryView(
+      visibility.hidesAnything
+          ? <GalgameEntry>[
+              for (final GalgameEntry g in _games)
+                if (!visibility.hidesGame(g.id)) g,
+            ]
+          : _games,
+      _view,
+      allowedIds: allowedIds,
+    );
+  }
 
   /// 添加游戏（独立使用时的兜底入口）：委托给共享动作 [addGameViaFilePicker]
   /// （选 exe → 查重 → 落库 → 后台补封面），与「导入」视图快速导入区同一条路。

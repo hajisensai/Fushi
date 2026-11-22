@@ -1287,7 +1287,7 @@ class AnkiHandlebarRenderer {
         // （BUG-4756：此前在 Lapis 下让位成空，SelectionText 字段就丢了选中文字）。
         return payload.popupSelectionText;
       case '{popup-selection-html}':
-        return payload.popupSelectionHtml;
+        return popupSelectionHtmlValue(payload);
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -1390,6 +1390,22 @@ class AnkiHandlebarRenderer {
     final String mm = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
     final String ss = (totalSeconds % 60).toString().padLeft(2, '0');
     return '$hh:$mm:$ss';
+  }
+
+  /// `{popup-selection-html}` 的值：有选区快照 HTML 就用它（带所属词典 scoped CSS）；
+  /// 快照缺席而纯文本在（旧 payload / 草稿、调用方传的文本不是这次快照、快照失败）时
+  /// 退回转义后的纯文本，换行转 `<br>`。三个预设的选中字段默认映射到这个占位符
+  /// （拍板 RdmYdegMPJ），不退回就会在这些情况下把原本有内容的字段写成空。
+  @visibleForTesting
+  static String popupSelectionHtmlValue(AnkiMiningPayload payload) {
+    if (payload.popupSelectionHtml.isNotEmpty) {
+      return payload.popupSelectionHtml;
+    }
+    final String text = payload.popupSelectionText;
+    if (text.isEmpty) return '';
+    return const HtmlEscape(
+      HtmlEscapeMode.element,
+    ).convert(text).replaceAll(RegExp(r'\r\n|\r|\n'), '<br>');
   }
 
   static String _singleGlossaryForDictionary(

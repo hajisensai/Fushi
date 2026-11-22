@@ -1531,6 +1531,10 @@ void installCollectionsSyncWatcher({
           db.mediaPrivacyFlags,
           // 作品 NSFW 标记同样搭标签清单走（别的设备的封面要跟着模糊）。
           db.mediaNsfwFlags,
+          // 作品上锁标记同样搭标签清单走（别的设备上也要藏起来）。
+          db.mediaLockedFlags,
+          // 解锁口令摘要跟着上锁标记走（同一份标签清单）。
+          db.mediaLockCredentials,
           // 作品图谱连接（手动连接 / 确认 / 否决）跟着合集之后同步。
           db.mediaLinks,
         ]),

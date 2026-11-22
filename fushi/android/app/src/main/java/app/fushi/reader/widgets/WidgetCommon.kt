@@ -366,8 +366,14 @@ internal fun StaleHint(snapshot: WidgetSnapshot) {
 
 /** A progress ring drawn with Canvas (Glance has no arc primitive), tinted with theme colors. */
 @Composable
-internal fun Ring(frac: Float, size: Dp, color: ColorProvider, modifier: GlanceModifier = GlanceModifier) {
-    val bitmap = remember(frac) { ringBitmap(frac.coerceIn(0f, 1f)) }
+internal fun Ring(
+    frac: Float,
+    size: Dp,
+    color: ColorProvider,
+    modifier: GlanceModifier = GlanceModifier,
+    px: Int = RING_PX,
+) {
+    val bitmap = remember(frac, px) { ringBitmap(frac.coerceIn(0f, 1f), px) }
     Image(
         provider = ImageProvider(bitmap),
         contentDescription = null,
@@ -376,15 +382,15 @@ internal fun Ring(frac: Float, size: Dp, color: ColorProvider, modifier: GlanceM
     )
 }
 
-private const val RING_PX = 128
+internal const val RING_PX = 128
 
 /** White ring on transparent: faint full track + opaque arc; tinted by the caller. */
-private fun ringBitmap(frac: Float): Bitmap {
-    val bmp = Bitmap.createBitmap(RING_PX, RING_PX, Bitmap.Config.ARGB_8888)
+private fun ringBitmap(frac: Float, px: Int): Bitmap {
+    val bmp = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bmp)
-    val strokePx = RING_PX * 0.13f
+    val strokePx = px * 0.13f
     val inset = strokePx / 2f + 1f
-    val rect = RectF(inset, inset, RING_PX - inset, RING_PX - inset)
+    val rect = RectF(inset, inset, px - inset, px - inset)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = strokePx

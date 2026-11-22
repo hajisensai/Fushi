@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
@@ -18,6 +19,8 @@ import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/stat_ring.dart';
+import 'package:fushi/src/pages/implementations/study_goal_visuals.dart'
+    show StudyGoalRing;
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
@@ -27,7 +30,18 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
-import 'package:fushi/src/stats/study_goal_period.dart';
+import 'package:fushi/src/platform/widget_snapshot.dart'
+    show StudyGoalProgress, computeStudyGoals;
+import 'package:fushi/src/stats/study_goal_language_scope.dart'
+    show loadStudyGoalMediaLanguagesFor;
+import 'package:fushi/src/stats/study_goal_record.dart';
+import 'package:fushi/src/stats/study_goals.dart';
+import 'package:fushi/src/pages/implementations/study_goal_edit_sheet.dart'
+    show StudyGoalSheetResult, showStudyGoalEditSheet;
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -43,7 +57,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// 「按书」列表的排序键：字数 / 时长 / 阅读速度（cph）。
 enum _BookSort { chars, time, speed }
 
-/// 「今天」环形进度在用户未设目标时的回退目标（仅用于可视化，不写库）。
+/// 「今天」环形进度在用户未设字数目标时的回退目标（仅用于可视化，不写库）。
 const int _kDailyCharGoalFallback = 5000;
 const int _kDailyTimeGoalMinutes = 60;
 
@@ -69,7 +83,12 @@ class ReadingStatisticsPage extends BasePage {
       _ReadingStatisticsPageState();
 }
 
-class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
+class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage>
+    with MediaVisibilityDependent<ReadingStatisticsPage> {
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品不进统计，[MediaVisibility]）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_loadFromDatabase());
+
   bool _loading = true;
   String? _error;
 
@@ -140,14 +159,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   int _todayChars = 0;
   int _todayMs = 0;
   int _weekChars = 0;
-  // 学习域目标分子（今日，书 + 视频字幕 + 游戏 hook 文本）：「分析」折叠里
-  // 「今天」环形卡的目标环用它，与首页「今日目标」同函数同口径
-  // （[studyGoalCharsForDay]，BUG-1993）。本页其余 KPI / 趋势 / CPH 仍是
-  // 阅读域（[_todayChars] 等），两组数并存不混用。
+  // 学习域今日字数（书 + 视频字幕 + 游戏 hook 文本，[studyGoalCharsForDay]，
+  // BUG-1993）：没有字数目标时「今天」环按它与默认值画。本页其余 KPI / 趋势 / CPH
+  // 仍是阅读域（[_todayChars] 等），两组数并存不混用。
   int _todayStudyChars = 0;
-  // 本自然周学习域字数（[studyGoalCharsForWeek]，同一份完整日面）：目标周期为
-  // 「按周」（反馈 CjIr9RGSCe）时「今天」卡的目标环用它，与首页同函数同口径。
-  int _weekStudyChars = 0;
+
+  /// 「今天」环的字数目标进度（[studyGoalStatsCharsGoal] 那条记录，与首页 / 小组件
+  /// 同一个纯函数 [computeStudyGoals]、同一份完整日面）；没有字数目标为 null。
+  StudyGoalProgress? _charGoalProgress;
+
+  /// 限定了语言的目标要的媒体语言表（没有这种目标时为空）。
+  Map<String, String> _goalMediaLanguages = const <String, String>{};
   // 完整日面（全部来源），学习域目标分子的数据源。
   List<StatFact> _dailyFacts = <StatFact>[];
   // 上周同期字数（[StatWindow.inPrevWeek]）：仅用于 KPI 条的本周字数环比。
@@ -255,7 +277,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         scope: StatFactsScope.since(_window.weekFromKey),
       );
       await Future.wait<StatFacts>(<Future<StatFacts>>[factsF, goalFactsF]);
-      final StatFacts facts = await factsF;
+      // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）；学习
+      // 目标环不列作品，照旧按全量算。
+      final StatFacts facts = mediaVisibility.visibleStatFacts(await factsF);
+      _goalMediaLanguages = await loadStudyGoalMediaLanguagesFor(
+        db,
+        appModelNoUpdate.studyGoals,
+      );
       _bookFacts = facts.dailyBooks.toList();
       _dailyFacts = (await goalFactsF).daily;
       _sessions = facts.sessions.where((StudySession s) => s.isBook).toList();
@@ -354,7 +382,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _todayMs = 0;
     _weekChars = 0;
     _todayStudyChars = 0;
-    _weekStudyChars = 0;
     _prevWeekChars = 0;
 
     final dailyMap = <String, StatDayData>{};
@@ -388,7 +415,24 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // （完整日面，与首页「今日目标」同源同函数，BUG-1993）。
     _todayChars = studyGoalCharsForDay(_bookFacts, w.todayKey);
     _todayStudyChars = studyGoalCharsForDay(_dailyFacts, w.todayKey);
-    _weekStudyChars = studyGoalCharsForWeek(_dailyFacts, w);
+    final StudyGoal? charGoal = studyGoalStatsCharsGoal(
+      appModelNoUpdate.studyGoals,
+    );
+    _charGoalProgress = charGoal == null
+        ? null
+        : computeStudyGoals(
+            goals: buildStudyGoalsInput(
+              prefs: appModelNoUpdate.prefsRepo,
+              goals: <StudyGoal>[charGoal],
+              mediaLanguages: _goalMediaLanguages,
+              daily: _dailyFacts,
+              window: w,
+              minedByDay: const <String, int>{},
+            ),
+            immersion: buildStudyImmersionInput(_dailyFacts, w),
+            day: w.todayKey,
+            reviewsByDay: null,
+          ).single;
 
     _byDay = dailyMap;
 
@@ -858,22 +902,37 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// 「今天」环形进度卡：字数目标环（复用持久化每日目标，未设则回退默认仅作可视化）
-  /// + 时长目标环 + 速度 / 制卡 / 收藏迷你块。
+  /// 点字数目标环：编辑那条字数目标（[studyGoalStatsCharsGoal]）；还没有字数目标时
+  /// 新建（预填字数、每日）。保存 / 删除 / 撤销删除后整页重载（目标语言可能变了，
+  /// 要重查媒体语言表）。
+  Future<void> _editCharGoal(StudyGoal? goal) async {
+    final StudyGoalSheetResult? result = await showStudyGoalEditSheet(
+      context,
+      appModelNoUpdate,
+      goal: goal,
+      onRestored: () {
+        if (mounted) unawaited(_loadFromDatabase());
+      },
+    );
+    if (result != null && mounted) await _loadFromDatabase();
+  }
+
+  /// 「今天」环形进度卡：字数目标环（目标记录的进度，没有字数目标时按默认值仅作
+  /// 可视化；点按开目标面板）+ 时长目标环 + 速度 / 制卡 / 收藏迷你块。
   Widget _buildTodayPanel() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
-    // 目标周期（反馈 CjIr9RGSCe）：按日 → 今日字数 / 日目标；按周 → 本自然周
-    // 字数 / 周目标，环下标签换成「每周目标」。未设目标时回退默认仅作可视化
-    // （周 = 日默认 × 7）。
-    final bool weeklyGoal =
-        appModelNoUpdate.readingGoalPeriod == StudyGoalPeriod.weekly;
-    final int activeGoal = appModelNoUpdate.readingGoalActiveChars;
-    final int charGoal = activeGoal > 0
-        ? activeGoal
-        : (weeklyGoal ? _kDailyCharGoalFallback * 7 : _kDailyCharGoalFallback);
-    final int goalChars = weeklyGoal ? _weekStudyChars : _todayStudyChars;
+    // 字数环 = 字数目标记录的进度（周 / 月 / 限定语言的目标按它自己的窗口与语言，
+    // 环下标签换成目标名）；没有字数目标时按今日学习字数 / 默认值画，仅作可视化。
+    final StudyGoalProgress? progress = _charGoalProgress;
+    final StudyGoal? goalRecord = progress?.goal;
+    final int charGoal = progress?.target ?? _kDailyCharGoalFallback;
+    final int goalChars = progress?.value ?? _todayStudyChars;
+    final bool plainDaily =
+        goalRecord == null ||
+        (goalRecord.period == StudyGoalPeriod.daily &&
+            goalRecord.language == null);
     // 目标环用学习域分子（BUG-1993，与目标卡 / 首页同口径）；下方 CPH 仍是
     // 阅读域字数 ÷ 阅读时长，量纲不混。
     final double charFrac = goalFraction(goalChars, charGoal);
@@ -902,13 +961,53 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             spacing: tokens.spacing.card,
             runSpacing: tokens.spacing.card,
             children: <Widget>[
-              StatRing(
-                fraction: charFrac,
-                color: chartColors.series,
-                trackColor: ringTrack,
-                value: '${(charFrac * 100).round()}%',
-                detail: '$goalChars/$charGoal',
-                caption: weeklyGoal ? t.stat_goal_weekly : t.stat_goal,
+              Semantics(
+                button: true,
+                label: goalRecord == null
+                    ? t.study_goal_sheet_new
+                    : t.study_goal_sheet_edit,
+                child: FushiTooltip(
+                  message: goalRecord == null
+                      ? t.study_goal_sheet_new
+                      : t.study_goal_sheet_edit,
+                  child: FushiPressScale(
+                    child: FushiFocusable(
+                      key: const ValueKey<String>('reading-stats-goal-ring'),
+                      borderRadius: const BorderRadius.all(Radius.circular(24)),
+                      onTap: () => unawaited(_editCharGoal(goalRecord)),
+                      // 目标环与首页 / 设置同一个视觉件（[StudyGoalRing]）：达成画
+                      // 对勾、超出只画满一圈，环心下行仍写真实数值。
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          StudyGoalRing(
+                            fraction: charFrac,
+                            state: progress?.state,
+                            color: chartColors.series,
+                            track: ringTrack,
+                            size: 96,
+                            labelColor: scheme.onSurface,
+                            detail: '$goalChars/$charGoal',
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            plainDaily
+                                ? t.stat_goal
+                                : studyGoalLabel(
+                                    goalRecord,
+                                    unitChoice:
+                                        appModelNoUpdate.readingGoalTextUnit,
+                                  ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
               StatRing(
                 fraction: timeFrac,

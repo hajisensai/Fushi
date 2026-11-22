@@ -694,6 +694,9 @@ Future<void> mergeTagInto(
           if (collectionId != null) {
             await db.addTagToCollection(collectionId, targetId);
           }
+        case TagHostKind.musicAlbum:
+          // 音乐专辑只当 NSFW 宿主、不挂标签，不会有映射行。
+          break;
       }
     }
   }

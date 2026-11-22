@@ -179,12 +179,15 @@ struct FushiWidgetSnapshot: Decodable {
     var activeDays: Int
     /// `minutes[0]` 那天的 ISO 星期（周一 = 1）。
     var firstWeekday: Int
+    /// 用户的一周从 ISO 星期几开始（偏好 `stats_week_start`；旧快照没有 = 周一）。
+    var weekStart: Int
 
-    init(minutes: [Int], time: String, activeDays: Int, firstWeekday: Int) {
+    init(minutes: [Int], time: String, activeDays: Int, firstWeekday: Int, weekStart: Int = 1) {
       self.minutes = minutes
       self.time = time
       self.activeDays = activeDays
       self.firstWeekday = firstWeekday
+      self.weekStart = weekStart
     }
 
     init(from decoder: Decoder) throws {
@@ -193,6 +196,7 @@ struct FushiWidgetSnapshot: Decodable {
       time = c.string("time")
       activeDays = c.int("activeDays")
       firstWeekday = max(1, min(7, c.int("firstWeekday", default: 1)))
+      weekStart = max(1, min(7, c.int("weekStart", default: 1)))
     }
   }
 
@@ -283,12 +287,15 @@ struct FushiWidgetSnapshot: Decodable {
     var levels: [Int]
     /// `levels[0]` 那天的 ISO 星期（周一 = 1）。
     var firstWeekday: Int
+    /// 用户的一周从 ISO 星期几开始（偏好 `stats_week_start`；旧快照没有 = 周一）。
+    var weekStart: Int
     var time: String
     var activeDays: Int
 
-    init(levels: [Int], firstWeekday: Int, time: String = "", activeDays: Int = 0) {
+    init(levels: [Int], firstWeekday: Int, weekStart: Int = 1, time: String = "", activeDays: Int = 0) {
       self.levels = levels
       self.firstWeekday = firstWeekday
+      self.weekStart = weekStart
       self.time = time
       self.activeDays = activeDays
     }
@@ -297,6 +304,7 @@ struct FushiWidgetSnapshot: Decodable {
       let c = try decoder.container(keyedBy: AnyKey.self)
       levels = ((try? c.decode([Int].self, forKey: AnyKey("levels"))) ?? []).map { max(0, min(4, $0)) }
       firstWeekday = max(1, min(7, c.int("firstWeekday", default: 1)))
+      weekStart = max(1, min(7, c.int("weekStart", default: 1)))
       time = c.string("time")
       activeDays = c.int("activeDays")
     }

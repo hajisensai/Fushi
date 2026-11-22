@@ -178,6 +178,15 @@ class _CountingStore implements SyncAssetStore {
   }) => inner.getAsset(assetId, destination, onProgress: onProgress);
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      inner.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => inner.putBytesAsset(namespaceId, name, bytes);
+  @override
   Future<Object?> getJsonAsset(String assetId) => inner.getJsonAsset(assetId);
 
   @override

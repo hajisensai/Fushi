@@ -75,6 +75,8 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       for (final SrtBookRow s in await _db.getAllSrtBooks())
         if (s.bookKey.isNotEmpty) s.bookKey: s.uid,
     };
+    // 上锁的书（含在上锁合集里的）标 locked：对端未解锁时不出占位卡 / 「继续」。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -158,6 +160,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // hoshi://srtbook/<uid>，无 EpubBooks 行）今天不在本清单，进清单是独立
         // follow-up。
         kind: MediaKind.epub,
+        locked: locks.isBookLocked(r.bookKey),
       );
     }).toList();
   }

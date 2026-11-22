@@ -131,6 +131,7 @@ class HomeWidgetFrame extends StatelessWidget {
     required this.title,
     required this.icon,
     required this.hueKey,
+    this.hue,
     required this.poster,
     required this.dense,
     required this.child,
@@ -149,6 +150,10 @@ class HomeWidgetFrame extends StatelessWidget {
 
   /// 海报色块取色用的稳定键（同一种组件每次同色）。
   final String hueKey;
+
+  /// 指定色相（0–360）时海报色块用它、不按 [hueKey] 折叠（「语言目标」格用语言色，
+  /// 与设置里目标行的颜色一致）。
+  final double? hue;
   final bool poster;
   final bool dense;
   final Widget child;
@@ -182,7 +187,10 @@ class HomeWidgetFrame extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final double pad = homeWidgetFramePadding(dense: dense);
     final FushiCoverBlockColors? colors = poster && !bare
-        ? fushiPosterColors(context, fushiPosterHue('home-widget/$hueKey'))
+        ? fushiPosterColors(
+            context,
+            hue ?? fushiPosterHue('home-widget/$hueKey'),
+          )
         : null;
     final Color foreground = colors?.onContainer ?? tokens.surfaces.onSurface;
     final Color muted =

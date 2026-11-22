@@ -207,6 +207,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   final GlobalKey _resultStackKey = GlobalKey();
 
+  /// 原文限高视口（[BoundedSourceLookupViewport]）的滚动控制器。
+  final ScrollController _sourceScrollController = ScrollController();
+
   /// 结果区 [DictionaryPopupWebView] 的 key——顶层查词把 WebView 局部 localRect 经它的
   /// render box `localToGlobal` 映成屏幕坐标（[popupWordScreenRect]），与提到根 Overlay
   /// 后的弹窗坐标系（真实屏幕空间）统一（TODO-617）。
@@ -578,6 +581,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
+    _sourceScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
@@ -2056,129 +2060,153 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       borderRadius: _resultCardRadius(),
       pressScale: false,
       clipBehavior: Clip.none,
-      child: Column(
-        children: [
-          if (hasSourceText) ...<Widget>[
-            Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: SourceLookupTextPanel(
-                text: _sourceLookupText,
-                // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
-                // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
-                tonalHighlight:
-                    !isGlassDesign(context) && !isEinkTheme(context),
-                dictionaryHeadwordScale:
-                    appModel.dictionaryFontSize /
-                    appModel.defaultDictionaryFontSize,
-                highlight: _sourceHighlight,
-                // 点字换的是下方那份结果（Yomitan 式扫描），不再压一张浮在字上的查词卡，
-                // 所以本条不再需要回报任何弹窗坐标系的 rect——rect 与 globalCoordinates
-                // 都随之退场。结果卡内部选词 / 点链才继续走弹窗栈（见下方 WebView）。
-                onLookup: (String query, Rect _, int charIndex) =>
-                    _lookupFromSourceStrip(query, charIndex),
+      // 原文与结果各滚各的（PR #4100 拍板第 2 点）：原文限高（可用高度的
+      // [kInAppSourceViewportFraction]）在自己的视口里滚，结果 WebView 是固定大小的
+      // Expanded，不随原文滚动逐帧改尺寸（TODO-1152 / 平台视图 resize，见
+      // [BoundedSourceLookupViewport]），也不会出现原文滚走后从 WebView 区滚不回来。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) => Column(
+          key: const ValueKey<String>('home_dictionary_content'),
+          children: [
+            if (hasSourceText) ...<Widget>[
+              Padding(
+                padding: EdgeInsets.only(top: tokens.spacing.gap),
+                child: BoundedSourceLookupViewport(
+                  controller: _sourceScrollController,
+                  maxHeight:
+                      constraints.maxHeight * kInAppSourceViewportFraction,
+                  scrollKey: const ValueKey<String>(
+                    'home_dictionary_source_scroll',
+                  ),
+                  child: SourceLookupTextPanel(
+                    text: _sourceLookupText,
+                    // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
+                    // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
+                    tonalHighlight:
+                        !isGlassDesign(context) && !isEinkTheme(context),
+                    dictionaryHeadwordScale:
+                        appModel.dictionaryFontSize /
+                        appModel.defaultDictionaryFontSize,
+                    highlight: _sourceHighlight,
+                    // 换原文 / 点字后把命中的字（无高亮时是首字）滚进原文视口，只滚这个视口。
+                    revealHighlight: true,
+                    initialCharIndex: 0,
+                    // 点字换的是下方那份结果（Yomitan 式扫描），不再压一张浮在字上的查词卡，
+                    // 所以本条不再需要回报任何弹窗坐标系的 rect——rect 与 globalCoordinates
+                    // 都随之退场。结果卡内部选词 / 点链才继续走弹窗栈（见下方 WebView）。
+                    onLookup: (String query, Rect _, int charIndex) =>
+                        _lookupFromSourceStrip(query, charIndex),
+                  ),
+                ),
               ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: const FushiDivider(),
-            ),
-          ],
-          // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
-          // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
-          // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
-          // 限宽 + padding + 默认 hardEdge 裁住），改由 [SharedLookupPopupHost] 渲染在根 Overlay。
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                bodySideInset,
-                hasSourceText ? tokens.spacing.gap / 2 : tokens.spacing.gap,
-                bodySideInset,
-                tokens.spacing.gap,
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                child: const FushiDivider(),
               ),
-              child: FushiAppUiScaleNeutralizer(
-                child: Stack(
-                  key: _resultStackKey,
-                  children: [
-                    const SizedBox.shrink(
-                      key: ValueKey<String>('home_dictionary_result_evidence'),
-                    ),
-                    DictionaryPopupWebView(
-                      key: _resultWebViewKey,
-                      result: _result!,
-                      // TODO-617：顶层查词把 WebView 局部 localRect 经结果 WebView 的 render box
-                      // localToGlobal 映成屏幕坐标（popupWordScreenRect），与根 Overlay 弹窗同系。
-                      // localRect==Zero 时直传 Zero，由 mixin fallbackSelectionRect 兜底。
-                      onTextSelected:
-                          (text, localRect, rubySpans, contextSentence) {
-                            _pushNestedPopup(
-                              text,
-                              _resultWordScreenRect(localRect),
-                              reuseWarmSlot: true,
-                              rubySpans: rubySpans,
-                              contextSentence: contextSentence,
-                            );
-                          },
-                      onLinkClick: (query, localRect) {
-                        _pushNestedPopup(
-                          query,
-                          _resultWordScreenRect(localRect),
-                          reuseWarmSlot: true,
-                        );
-                      },
-                      // BUG-3216：结果卡制卡补上源文本条那一句作例句（查词页没有书 /
-                      // 视频的「当前句」，以前 Sentence 恒空）。只接结果区：浮层里从
-                      // 释义点出来的词，源文本那句不是它的语境。
-                      onMineEntry: (Map<String, String> fields) =>
-                          onMineEntry(_withSourceSentence(fields)),
-                      onUpdateEntry: (int noteId, Map<String, String> fields) =>
-                          onUpdateEntry(noteId, _withSourceSentence(fields)),
-                      onDuplicateCheck: checkDuplicate,
-                      onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-                      // 反馈 -xJWu33WgJ：结果区以前只接了 + 与覆写最新卡两条，点 ✓
-                      // （这个词以前就制过卡）时 popup.js 按「app 内宿主有原生操作单」
-                      // 调 minedCardAction，这里没接 → 桥回空结果、静默无反应，以前
-                      // 制的那张没句子的卡永远覆写不了。☆ / ↗ / 高级制卡同样漏接。
-                      // 与浮层各层（DictionaryPageMixin.buildNestedPopupLayer）同一套。
-                      onMinedCardAction:
-                          (
-                            Map<String, String> fields, {
-                            bool openChooser = false,
-                          }) => onMinedCardAction(
-                            _withSourceSentence(fields),
-                            openChooser: openChooser,
-                          ),
-                      onQueueOverwrite: (Map<String, String> fields) =>
-                          onQueueOverwrite(_withSourceSentence(fields)),
-                      onOpenInAnki: onOpenInAnki,
-                      // ☆ 与高级制卡的字段预填同读结果区语境（源文本条那一句），
-                      // 与上面制卡 / ✓ 的例句同源（[_resultLookupContext]）。
-                      onFavoriteEntry: (Map<String, String> fields) =>
-                          onFavoriteEntry(
-                            fields,
-                            lookupContext: _resultLookupContext,
-                          ),
-                      onFavoriteCheck: onFavoriteCheck,
-                      onOpenAdvancedMining: advancedMiningOpenerFor(
-                        _resultWebViewKey,
-                        lookupContext: () => _resultLookupContext,
+            ],
+            // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
+            // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
+            // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
+            // 限宽 + padding + 默认 hardEdge 裁住），改由 [SharedLookupPopupHost] 渲染在根 Overlay。
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  bodySideInset,
+                  hasSourceText ? tokens.spacing.gap / 2 : tokens.spacing.gap,
+                  bodySideInset,
+                  tokens.spacing.gap,
+                ),
+                child: FushiAppUiScaleNeutralizer(
+                  child: Stack(
+                    key: _resultStackKey,
+                    children: [
+                      const SizedBox.shrink(
+                        key: ValueKey<String>(
+                          'home_dictionary_result_evidence',
+                        ),
                       ),
-                      onScrolledToBottom: _allLoaded ? null : _loadMore,
-                      onTopPullReleased: _clearSearchFromResultPull,
-                      // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
-                      // 转发给外壳，底栏随下滑收起与库页 ListView 同一台状态机。
-                      forwardScrollToHost: true,
-                      // TODO-1152：结果区 WebView 填满 [Expanded]（全高固定大区域）。
-                      // Windows 上 WebView2 内容在 put_Bounds 撑高后 render 完即 idle 无
-                      // damage，宿主 WGC 帧池采不到新暴露下半区（下半屏黑）。渲染完补一次
-                      // 表面重绘 nudge 逼出完整视口帧。嵌套弹窗内容自适应、无此问题，不开。
-                      nudgeSurfaceOnRender: true,
-                    ),
-                  ],
+                      DictionaryPopupWebView(
+                        key: _resultWebViewKey,
+                        result: _result!,
+                        // TODO-617：顶层查词把 WebView 局部 localRect 经结果 WebView 的 render box
+                        // localToGlobal 映成屏幕坐标（popupWordScreenRect），与根 Overlay 弹窗同系。
+                        // localRect==Zero 时直传 Zero，由 mixin fallbackSelectionRect 兜底。
+                        onTextSelected:
+                            (text, localRect, rubySpans, contextSentence) {
+                              _pushNestedPopup(
+                                text,
+                                _resultWordScreenRect(localRect),
+                                reuseWarmSlot: true,
+                                rubySpans: rubySpans,
+                                contextSentence: contextSentence,
+                              );
+                            },
+                        onLinkClick: (query, localRect) {
+                          _pushNestedPopup(
+                            query,
+                            _resultWordScreenRect(localRect),
+                            reuseWarmSlot: true,
+                          );
+                        },
+                        // BUG-3216：结果卡制卡补上源文本条那一句作例句（查词页没有书 /
+                        // 视频的「当前句」，以前 Sentence 恒空）。只接结果区：浮层里从
+                        // 释义点出来的词，源文本那句不是它的语境。
+                        onMineEntry: (Map<String, String> fields) =>
+                            onMineEntry(_withSourceSentence(fields)),
+                        onUpdateEntry:
+                            (int noteId, Map<String, String> fields) =>
+                                onUpdateEntry(
+                                  noteId,
+                                  _withSourceSentence(fields),
+                                ),
+                        onDuplicateCheck: checkDuplicate,
+                        onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+                        // 反馈 -xJWu33WgJ：结果区以前只接了 + 与覆写最新卡两条，点 ✓
+                        // （这个词以前就制过卡）时 popup.js 按「app 内宿主有原生操作单」
+                        // 调 minedCardAction，这里没接 → 桥回空结果、静默无反应，以前
+                        // 制的那张没句子的卡永远覆写不了。☆ / ↗ / 高级制卡同样漏接。
+                        // 与浮层各层（DictionaryPageMixin.buildNestedPopupLayer）同一套。
+                        onMinedCardAction:
+                            (
+                              Map<String, String> fields, {
+                              bool openChooser = false,
+                            }) => onMinedCardAction(
+                              _withSourceSentence(fields),
+                              openChooser: openChooser,
+                            ),
+                        onQueueOverwrite: (Map<String, String> fields) =>
+                            onQueueOverwrite(_withSourceSentence(fields)),
+                        onOpenInAnki: onOpenInAnki,
+                        // ☆ 与高级制卡的字段预填同读结果区语境（源文本条那一句），
+                        // 与上面制卡 / ✓ 的例句同源（[_resultLookupContext]）。
+                        onFavoriteEntry: (Map<String, String> fields) =>
+                            onFavoriteEntry(
+                              fields,
+                              lookupContext: _resultLookupContext,
+                            ),
+                        onFavoriteCheck: onFavoriteCheck,
+                        onOpenAdvancedMining: advancedMiningOpenerFor(
+                          _resultWebViewKey,
+                          lookupContext: () => _resultLookupContext,
+                        ),
+                        onScrolledToBottom: _allLoaded ? null : _loadMore,
+                        onTopPullReleased: _clearSearchFromResultPull,
+                        // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
+                        // 转发给外壳，底栏随下滑收起与库页 ListView 同一台状态机。
+                        forwardScrollToHost: true,
+                        // TODO-1152：结果区 WebView 填满 [Expanded]（固定大区域，不随原文滚动改尺寸）。
+                        // Windows 上 WebView2 内容在 put_Bounds 撑高后 render 完即 idle 无
+                        // damage，宿主 WGC 帧池采不到新暴露下半区（下半屏黑）。渲染完补一次
+                        // 表面重绘 nudge 逼出完整视口帧。嵌套弹窗内容自适应、无此问题，不开。
+                        nudgeSurfaceOnRender: true,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

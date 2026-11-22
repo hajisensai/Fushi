@@ -1194,6 +1194,8 @@ void _requireOneVideoMetadataOwner({
     VideoSubtitleTextOverrides,
     MediaPrivacyFlags,
     MediaNsfwFlags,
+    MediaLockedFlags,
+    MediaLockCredentials,
     LibraryOrganizeRuns,
     LibraryOrganizeChanges,
     WebBrowserHistory,
@@ -3665,6 +3667,17 @@ class FushiDatabase extends _$FushiDatabase
             'WHERE scan_album_uid IS NULL',
           );
           await regroupAllMusicAlbums();
+        }
+      }
+      if (from < 171) {
+        // v171：作品级「上锁」标记表 media_locked_flags（作品隐私分级的最高一级，
+        // 拍板台 qiqSbvdxrk）。纯新表、不动数据；幂等守卫同 v122 / v156。
+        if (!await _tableExists('media_locked_flags')) {
+          await m.createTable(mediaLockedFlags);
+        }
+        // 同版本的解锁口令摘要表（随上锁标记同步 / 备份）。
+        if (!await _tableExists('media_lock_credentials')) {
+          await m.createTable(mediaLockCredentials);
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

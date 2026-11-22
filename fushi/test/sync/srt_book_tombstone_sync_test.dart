@@ -10,6 +10,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -175,6 +176,15 @@ class _FakeBackend implements SyncBackend {
   @override
   Future<List<AssetEntry>> listChildren(String namespaceId) =>
       _store.listChildren(namespaceId);
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _store.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _store.putBytesAsset(namespaceId, name, bytes);
   @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override

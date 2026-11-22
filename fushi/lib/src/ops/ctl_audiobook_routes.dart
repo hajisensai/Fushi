@@ -336,7 +336,6 @@ class _AudiobookHandlers {
         await stopPlayback();
         final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
           db: _db,
-          repo: srtRepo,
           audiobookRepo: audiobookRepo,
           bookKey: bookKey,
           title: title,

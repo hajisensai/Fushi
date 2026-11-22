@@ -5,11 +5,18 @@
 /// `resolveMangaAudioSessionRequest`）都按 bookKey 走这里取，迷你播放条 / 媒体通知
 /// 看到的封面与书名才不会因入口不同而分叉（BUG：阅读器起播漫画有声没传封面，迷你
 /// 条只能画兜底图标）。
+///
+/// 书名 override 由调用方注入（[SessionTitleOverride]，传
+/// `ReaderFushiSource.instance.overrideTitleForBookKey`）：本文件不 import
+/// `reader_fushi_source`，否则它与漫画起播 `manga_audio_session` 经阅读器页被接进
+/// lib/ 的 import 大环（import_cycle_guard_test）。
 library;
 
 import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+/// 按 bookKey 取用户改过的书名（没改过 = null）。
+typedef SessionTitleOverride = String? Function(String bookKey);
 
 /// 一本书在会话里显示用的元数据。
 typedef SessionBookMeta = ({
@@ -24,11 +31,11 @@ typedef SessionBookMeta = ({
 /// 只认真实存在的文件。书不在库里时标题回落 `Fushi`、无作者无封面、按 EPUB 处理。
 Future<SessionBookMeta> loadSessionBookMeta(
   FushiDatabase db,
-  String bookKey,
-) async {
+  String bookKey, {
+  required SessionTitleOverride overrideTitleOf,
+}) async {
   final EpubBookRow? row = await db.getEpubBook(bookKey);
-  final String? overrideTitle = ReaderFushiSource.instance
-      .overrideTitleForBookKey(bookKey);
+  final String? overrideTitle = overrideTitleOf(bookKey);
   if (row == null) {
     return (
       title: overrideTitle ?? 'Fushi',

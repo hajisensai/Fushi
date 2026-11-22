@@ -89,6 +89,20 @@ class SrsMediaSyncReport {
   /// 对账中途本机文件没了（列出来之后被删 / 被换走）而这一轮没传的名字。不中断整轮：下一轮哈希时它已不在本机，
   /// 不会再排进来（BUG-5061：以前一个这样的文件抛 PathNotFoundException 就让整趟媒体上传作废）。
   final Set<String> vanished = <String>{};
+
+  /// 这一趟从 v3.0.x 写入者目录搬进本机媒体目录的媒体数（`srsRescueLegacyWriterMedia`，拍板台
+  /// `bug-5017-legacy-writer-media`；也算在 [downloaded] 里）。
+  int legacyMediaImported = 0;
+
+  /// 这一趟从 v3.0.x 写入者目录删掉的、不必搬的媒体数（集合不引用 / 本机已有同名文件）。
+  int legacyMediaDropped = 0;
+
+  /// 这一趟收尾后整个删掉的 v3.0.x 写入者目录。只供诊断。
+  final List<String> legacyWritersRemoved = <String>[];
+
+  /// 收 v3.0.x 写入者目录媒体时没做成的（`<写入者目录>[/media/<名字>]: <原因>`）：那些文件留着，下一趟再来；不算
+  /// 这一趟媒体同步失败。只供记日志。
+  final List<String> legacyWriterErrors = <String>[];
 }
 
 /// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。

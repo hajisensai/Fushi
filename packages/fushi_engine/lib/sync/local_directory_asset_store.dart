@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
@@ -108,6 +109,25 @@ class LocalDirectoryAssetStore implements SyncAssetStore {
     final File target = File(p.join(namespaceId, _safeName(name)));
     final File tmp = File('${target.path}$_tmpSuffix');
     await tmp.writeAsString(jsonEncode(json), flush: true);
+    await tmp.rename(target.path);
+  }
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    final File f = File(assetId);
+    if (!f.existsSync()) return null;
+    return f.readAsBytes();
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    final File target = File(p.join(namespaceId, _safeName(name)));
+    final File tmp = File('${target.path}$_tmpSuffix');
+    await tmp.writeAsBytes(bytes, flush: true);
     await tmp.rename(target.path);
   }
 

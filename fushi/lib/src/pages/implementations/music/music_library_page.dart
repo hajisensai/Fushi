@@ -24,6 +24,7 @@ import 'package:fushi/src/second_screen/companion/modules/library_companion_hook
 import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart'
     show playMusicOriginClip;
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
@@ -63,6 +64,7 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
@@ -72,7 +74,6 @@ import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart'
     show MediaSourcesViewState;
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
@@ -113,7 +114,6 @@ import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 part 'music_library_companion.part.dart';
 
@@ -129,6 +129,10 @@ part 'music_library_companion.part.dart';
 /// [discs]（设计稿 #music M1「曲库 tab 增加『光盘』」）：光盘专辑——从光盘添加的
 /// （DVD / BD / 音频 CD，带 `discUid`）与目录里有盘面扫描图的 CD 专辑
 /// （[MusicDiscArtIndex]）。
+///
+/// [sources] / [plugins]：「在线」组的「来源」（音源排序与开关 + 歌词来源）与「插件」
+/// （安装 / 启停 / 登录），与书 / 漫画 / 视频库「在线」组的「来源」「扩展」同位
+/// （拍板台 4GBgF6TrNr：音乐不再从曲库页「⋯」单独推一页来源）。
 enum MusicLibrarySection {
   recommend,
   songs,
@@ -137,14 +141,36 @@ enum MusicLibrarySection {
   playlists,
   works,
   discs,
+  sources,
+  plugins,
 }
 
 /// 音乐分区所属的一级分组（与书 / 漫画 / 视频 / 游戏库同一分法，见
-/// [LibrarySectionGroup]）：推荐来自在线插件音源，归「在线」；其余是本地曲库。
+/// [LibrarySectionGroup]）：推荐 / 来源 / 插件归「在线」；其余是本地曲库。
 LibrarySectionGroup musicLibrarySectionGroupOf(MusicLibrarySection s) =>
-    s == MusicLibrarySection.recommend
-    ? LibrarySectionGroup.online
-    : LibrarySectionGroup.library;
+    switch (s) {
+      MusicLibrarySection.recommend ||
+      MusicLibrarySection.sources ||
+      MusicLibrarySection.plugins => LibrarySectionGroup.online,
+      MusicLibrarySection.songs ||
+      MusicLibrarySection.albums ||
+      MusicLibrarySection.artists ||
+      MusicLibrarySection.playlists ||
+      MusicLibrarySection.works ||
+      MusicLibrarySection.discs => LibrarySectionGroup.library,
+    };
+
+/// 「在线」组此刻的成员（按页签序）：推荐只在有带首页的来源时出（[hasRecommend]），
+/// 来源恒在（Apple Music / 服务器 / 歌词来源都在这里开），插件只在本机能跑插件时出
+/// （[pluginsAvailable]，iOS 合规门下没有）。纯函数。
+List<MusicLibrarySection> musicOnlineSections({
+  required bool hasRecommend,
+  required bool pluginsAvailable,
+}) => <MusicLibrarySection>[
+  if (hasRecommend) MusicLibrarySection.recommend,
+  MusicLibrarySection.sources,
+  if (pluginsAvailable) MusicLibrarySection.plugins,
+];
 
 /// 在线来源重读后音乐页停在哪个分区。打开音乐页恒落在曲库（与书 / 漫画 / 视频 /
 /// 游戏库一致，用户 2026-11-21 拍板）：装了带推荐的插件也不把默认页抢成推荐，推荐
@@ -165,6 +191,8 @@ String musicLibrarySectionLabel(MusicLibrarySection s) => switch (s) {
   MusicLibrarySection.works => t.music_section_works,
   MusicLibrarySection.playlists => t.music_section_playlists,
   MusicLibrarySection.discs => t.music_section_discs,
+  MusicLibrarySection.sources => t.library_view_sources,
+  MusicLibrarySection.plugins => t.music_view_plugins,
 };
 
 /// 生效的来源过滤：指向的插件已不在（被停用 / 卸载）时回到全部来源（`null`）。
@@ -259,19 +287,6 @@ typedef _MusicSearchInputs = ({
   List<MusicServerBrowser> searchServers,
 });
 
-/// 音乐本地文件夹管理对话框：列出已添加的文件夹，可重新扫描 / 移除 / 添加（库页共用的
-/// 来源管理对话框；移除时连带软删该来源下的曲目，见 [removeSourceLibrary]）。曲库经
-/// 表级变更流自动刷新，不用回调。
-///
-/// 只从「来源」页（[openMusicSourcesPage]）的「本地文件夹」行 / 添加菜单进：与视频 /
-/// 书 / 漫画一样，来源管理只有模块页里这一个入口，设置分类与导入菜单不再各挂一份。
-Future<void> showMusicSourcesDialog(BuildContext context) =>
-    showAppDialog<void>(
-      context: context,
-      builder: (_) =>
-          MediaSourcesDialog(mediaKind: SourceLibraryKind.music.dbValue),
-    );
-
 class MusicLibraryPage extends ConsumerStatefulWidget {
   const MusicLibraryPage({
     super.key,
@@ -295,6 +310,23 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// 「我的」组（曲库）上次停留的分区：在推荐页时点组页签回到这里。
   MusicLibrarySection _lastLibrarySection = MusicLibrarySection.albums;
 
+  /// 「在线」组上次停留的分区（推荐 / 来源 / 插件）：在曲库时点组页签回到这里；已下线
+  /// （推荐没了）就退回组内第一个（[_onlineGroupValue]）。
+  MusicLibrarySection? _lastOnlineSection;
+
+  /// 「在线」组此刻的成员（[musicOnlineSections]）。
+  List<MusicLibrarySection> get _onlineSections => musicOnlineSections(
+    hasRecommend: _hasRecommend,
+    pluginsAvailable: isMusicPluginSourcesAvailable,
+  );
+
+  /// 「在线」组页签此刻代表的分区（与库页壳 `_groupValue` 同一规则）。
+  MusicLibrarySection _onlineGroupValue(List<MusicLibrarySection> members) {
+    if (members.contains(_section)) return _section;
+    final MusicLibrarySection? last = _lastOnlineSection;
+    return last != null && members.contains(last) ? last : members.first;
+  }
+
   /// 「导入」视图是否打开（IM12：导入钮切视图，不再弹菜单；选中态跟着它）。
   /// 不进 [MusicLibrarySection]：分区是「看什么类型」的页签，导入不是一种类型。
   bool _importOpen = false;
@@ -310,6 +342,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   List<MusicServerAlbumRef> _serverAlbums = const <MusicServerAlbumRef>[];
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
+  StreamSubscription<void>? _pluginSub;
 
   /// 有盘面扫描图的专辑（专辑 uid → 图路径，[MusicDiscArtIndex.albums]）：画成
   /// 「封面 + 唱片」色块、点开走 CD 详情（设计稿 M3）。快照读出后在后台识别。
@@ -342,6 +375,13 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// `MediaQuery` 顶部内边距让位（[musicBrowsePagePadding]），能接住页头的让位；曲库
   /// 各分区的列表顶部只留固定间距（`music_track_list.dart` 等），接不住，保持排在
   /// 大字下面。
+  /// 停在「在线 › 来源 / 插件」这两个管理视图：它们自挂 `.fushiplug` 落点，也不带
+  /// 「继续收听」卡。
+  bool get _inOnlineManageView =>
+      !_importOpen &&
+      (_section == MusicLibrarySection.sources ||
+          _section == MusicLibrarySection.plugins);
+
   bool _chromeFloats(BuildContext context) =>
       shellRedesignActive(context) &&
       !_importOpen &&
@@ -461,6 +501,14 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     unawaited(_reload());
     unawaited(_reloadServerAlbums());
     unawaited(_reloadOnlineSources());
+    // 「在线 › 插件」/ 来源页拖放装上、卸掉、启停的插件：推荐页签与搜索来源跟着变。
+    if (widget.snapshotLoader == null &&
+        _app.isPreferencesReady &&
+        isMusicPluginSourcesUsable) {
+      _pluginSub = _app.musicPluginManager.changes.listen(
+        (_) => unawaited(_reloadOnlineSources()),
+      );
+    }
     if (widget.snapshotLoader == null && _app.isDatabaseReady) {
       final FushiDatabase db = _app.database;
       // 表级变更流（不是 drift .watch()：长驻页面订阅 watch 会在 dispose 时挂死测试）。
@@ -475,12 +523,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicRemoteTracks,
                 db.musicDiscSources,
                 db.musicPlayEvents,
+                // 专辑上锁 / 解除上锁。
+                db.mediaLockedFlags,
               ],
             ),
           )
           .listen((_) => unawaited(_reload()));
+      // 解锁 / 重新隐藏上锁的作品。
+      MediaLockSession.instance.unlocked.addListener(_onLockSessionChanged);
     }
   }
+
+  void _onLockSessionChanged() => unawaited(_reload());
 
   @override
   void dispose() {
@@ -488,6 +542,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     MusicDiscArtIndex.instance.albums.removeListener(_onDiscArtChanged);
     _companion.dispose();
     unawaited(_dbSub?.cancel());
+    MediaLockSession.instance.unlocked.removeListener(_onLockSessionChanged);
+    unawaited(_pluginSub?.cancel());
     _searchInputs.dispose();
     _actionsSlot.dispose();
     _chrome.dispose();
@@ -497,11 +553,17 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   Future<void> _reload() async {
     final Future<MusicLibrarySnapshot> Function()? loader =
         widget.snapshotLoader;
-    final MusicLibrarySnapshot snap = loader != null
-        ? await loader()
-        : (_app.isDatabaseReady
-              ? await MusicLibrarySnapshot.load(_app.database)
-              : MusicLibrarySnapshot.empty);
+    // 上锁（未解锁）的专辑与它的曲目不进曲库页的任何分区（[MediaVisibility]）。
+    final MediaVisibility visibility = loader == null && _app.isDatabaseReady
+        ? await MediaVisibility.load(_app.database)
+        : MediaVisibility.all;
+    final MusicLibrarySnapshot snap =
+        (loader != null
+                ? await loader()
+                : (_app.isDatabaseReady
+                      ? await MusicLibrarySnapshot.load(_app.database)
+                      : MusicLibrarySnapshot.empty))
+            .withoutAlbums(visibility.hidesMusicAlbum);
     final List<MusicTrackRow> recent = loader == null && _app.isDatabaseReady
         ? await _app.database.listRecentlyPlayedMusicTracks(limit: 40)
         : const <MusicTrackRow>[];
@@ -511,7 +573,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       _snapshot = snap;
       _recentTracks = <MusicTrackRow>[
         for (final MusicTrackRow t in recent)
-          if (seen.add(t.albumUid ?? 'track:${t.trackUid}')) t,
+          if (t.albumUid == null || !visibility.hidesMusicAlbum(t.albumUid!))
+            if (seen.add(t.albumUid ?? 'track:${t.trackUid}')) t,
       ].take(13).toList();
     });
     _publishSearchInputs();
@@ -669,15 +732,21 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     _publishSearchInputs();
   }
 
-  /// 右上角「来源」：管理本地文件夹 / 在线来源 / 歌词来源，回来后重读。
-  Future<void> _openSources() async {
-    await openMusicSourcesPage(context);
-    if (!mounted) return;
-    await Future.wait(<Future<void>>[
-      _reloadOnlineSources(),
-      _reloadServerAlbums(),
-    ]);
+  /// 「在线 › 来源」里音源的顺序 / 开关 / 启用 / 服务器变了：重读推荐与搜索用的来源，
+  /// 以及混排进曲库的服务器专辑。
+  void _onOnlineSourcesChanged() {
+    unawaited(_reloadOnlineSources());
+    unawaited(_reloadServerAlbums());
   }
+
+  /// 「⋯ › 已移除的曲目」：从音乐库移除过的本地曲目（墓碑，拍板台 IDeN5PYaI7）在这里
+  /// 恢复。它管的是本地曲库，跟着重扫一起放在曲库页的「⋯」里。
+  Future<void> _openHiddenTracks() => Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => const MusicHiddenTracksPage(),
+    ),
+  );
 
   Future<void> _addFolder() async {
     final String? path = await pickRealDirectoryPath(
@@ -830,16 +899,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               view.$1,
               _libraryStyle(context, _section),
             ),
-          // 低频的来源管理与重扫收进「⋯」（设计稿 M1：顶栏只平铺 搜索 · 视图 ·
-          // 添加；「添加」是工具栏右端的导入钮）。
+          // 低频的本地曲库维护（重扫 / 已移除的曲目）收进「⋯」（设计稿 M1：顶栏只
+          // 平铺 搜索 · 视图 · 添加；「添加」是工具栏右端的导入钮）。来源与插件不在
+          // 这里：它们是「在线」组的页签，与书 / 漫画 / 视频库同位（拍板台
+          // 4GBgF6TrNr）。
           FushiHeaderMoreButton(
             buttonKey: const ValueKey<String>('music-library-more'),
             entries: <FushiHeaderMoreEntry>[
               FushiHeaderMoreEntry(
-                key: const ValueKey<String>('music_sources'),
-                icon: FushiIcons.hub,
-                label: t.music_sources_title,
-                onSelected: _openSources,
+                key: const ValueKey<String>('music_hidden_tracks'),
+                icon: FushiIcons.visibilityOff,
+                label: t.music_hidden_tracks_title,
+                onSelected: _openHiddenTracks,
               ),
               FushiHeaderMoreEntry(
                 key: const ValueKey<String>('music_rescan'),
@@ -896,10 +967,17 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     // 点任一分区页签都离开导入视图。
     _importOpen = false;
     _section = v;
-    if (musicLibrarySectionGroupOf(v) == LibrarySectionGroup.library) {
-      _lastLibrarySection = v;
+    switch (musicLibrarySectionGroupOf(v)) {
+      case LibrarySectionGroup.library:
+        _lastLibrarySection = v;
+      case LibrarySectionGroup.online:
+        _lastOnlineSection = v;
     }
   });
+
+  /// 「在线 › 来源」里「添加来源 › 音源插件」：就地切到「在线 › 插件」（与其它库页
+  /// 「来源」去「扩展」同一做法）。
+  void _selectPlugins() => _selectSection(MusicLibrarySection.plugins);
 
   /// 顶栏行（页签 + 动作组 + 导入钮）；[secondary] 只在页头大字顶栏里给。
   Widget _buildChromeBar({Widget? secondary}) => FushiFloatingChromeBar(
@@ -913,32 +991,43 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     ),
   );
 
-  /// 一级「我的 / 推荐」两组；没有推荐（未装 / 合规门）时只剩一组，不画胶囊。
+  /// 一级「曲库 / 在线」两组（与书 / 漫画 / 视频 / 游戏库壳同一分法）：在线组只有一个
+  /// 成员时以它命名，否则叫「在线」（[LibrarySectionGroup.online]）。
   Widget _buildTopTabs() {
-    if (!_hasRecommend) return const SizedBox.shrink();
     final bool inLibrary =
         musicLibrarySectionGroupOf(_section) == LibrarySectionGroup.library;
+    final MusicLibrarySection libraryValue = inLibrary
+        ? _section
+        : _lastLibrarySection;
+    final List<MusicLibrarySection> online = _onlineSections;
     return LibrarySectionTabs<MusicLibrarySection>(
       tabs: <LibrarySectionTab<MusicLibrarySection>>[
         LibrarySectionTab<MusicLibrarySection>(
-          value: inLibrary ? _section : _lastLibrarySection,
+          value: libraryValue,
           label: t.music_library_tab,
           orderId: LibrarySectionGroup.library.name,
         ),
         LibrarySectionTab<MusicLibrarySection>(
-          value: MusicLibrarySection.recommend,
-          label: musicLibrarySectionLabel(MusicLibrarySection.recommend),
+          value: _onlineGroupValue(online),
+          label: online.length == 1
+              ? musicLibrarySectionLabel(online.single)
+              : t.library_view_online,
+          labelKey: const ValueKey<String>('music-library-online-tab'),
           orderId: LibrarySectionGroup.online.name,
         ),
       ],
-      selected: _section,
+      // 停在导入视图时高亮「曲库」组：导入管理的就是本地曲库。此时高亮只是视觉锚点、
+      // 不是当前视图，点它照常切回曲库（与库页壳同一规则，BUG-4706）。
+      selected: _importOpen ? libraryValue : _section,
+      selectedIsCurrent: !_importOpen,
       onChanged: _selectSection,
       focusIdPrefix: 'music-library-view',
       floating: true,
     );
   }
 
-  /// 曲库组的二级胶囊（歌曲 / 专辑 / 艺人 / 歌单 / 作品）；在推荐页时为空。
+  /// 当前组的二级胶囊（曲库：歌曲 / 专辑 / 艺人 / 歌单 / 作品；在线：推荐 / 来源 /
+  /// 插件）；组内只有一个分区或在导入视图时为空。
   Widget _buildSubTabs(FushiDesignTokens tokens) {
     final Widget? tabs = _buildSubTabsBody();
     if (tabs == null) return const SizedBox.shrink();
@@ -950,15 +1039,35 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     );
   }
 
-  /// 曲库组的二级页签本体（不带页边 / 对齐）；在推荐页时为 null。页头大字顶栏
-  /// 里交给大字行（[FushiFloatingChromeBar.secondary]）。
+  /// 当前组的二级页签本体（不带页边 / 对齐）；组内只有一个分区或在导入视图时为
+  /// null。页头大字顶栏里交给大字行（[FushiFloatingChromeBar.secondary]）。
   Widget? _buildSubTabsBody() {
-    // 导入视图不属于任何分区：不画曲库二级页签。
-    if (_importOpen ||
-        musicLibrarySectionGroupOf(_section) != LibrarySectionGroup.library) {
-      return null;
+    // 导入视图不属于任何分区：不画二级页签。
+    if (_importOpen) return null;
+    if (musicLibrarySectionGroupOf(_section) == LibrarySectionGroup.online) {
+      final List<MusicLibrarySection> online = _onlineSections;
+      if (online.length < 2) return null;
+      return LibrarySectionTabs<MusicLibrarySection>(
+        // 换组即换一份页签（段数与段值都变），不复用旧 controller。
+        key: const ValueKey<String>('music-library-online-subtabs'),
+        tabs: <LibrarySectionTab<MusicLibrarySection>>[
+          for (final MusicLibrarySection s in online)
+            LibrarySectionTab<MusicLibrarySection>(
+              value: s,
+              label: musicLibrarySectionLabel(s),
+              labelKey: ValueKey<String>('music-online-tab-${s.name}'),
+            ),
+        ],
+        selected: _section,
+        onChanged: _selectSection,
+        focusIdPrefix: 'music-library-online',
+        secondary: true,
+        // 与库页壳一样，各组的二级页签各自记顺序（反馈 ndQ5eXLcqp）。
+        orderKey: 'music-library-online',
+      );
     }
     return LibrarySectionTabs<MusicLibrarySection>(
+      key: const ValueKey<String>('music-library-library-subtabs'),
       tabs: <LibrarySectionTab<MusicLibrarySection>>[
         for (final MusicLibrarySection s in MusicLibrarySection.values)
           if (musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library)
@@ -1103,7 +1212,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     final bool redesign = shellRedesignActive(context);
     final bool floats = _chromeFloats(context);
     _floatingNow = floats;
-    final Widget? hero = snap == null || _importOpen
+    // 「继续收听」属于曲库与推荐：「在线 › 来源 / 插件」是管理页，不在其上方钉播放卡。
+    final Widget? hero = snap == null || _importOpen || _inOnlineManageView
         ? null
         : _buildContinueHero(snap);
     final Widget sections = _importOpen
@@ -1124,7 +1234,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     // 外层这层让位，免得一次拖放被两层各处理一遍。
     return FushiFileDropTarget(
       debugLabel: 'music-library',
-      enabled: !_importOpen,
+      // 「在线 › 来源 / 插件」自己挂 .fushiplug 落点（BUG-4712），同理让位。
+      enabled: !_importOpen && !_inOnlineManageView,
       onDrop: _handleMusicDrop,
       child: MusicBarReserve(
         child: Focus(
@@ -1173,16 +1284,24 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     required Widget sections,
     required bool floats,
   }) {
-    final Widget? secondary =
-        musicLibrarySectionGroupOf(_section) == LibrarySectionGroup.library
-        ? _buildSubTabsBody()
-        : floats
+    // 二级页签（曲库各分区 / 在线组的推荐 · 来源 · 插件）；推荐页内容浮在大字底下时
+    // 再在下面跟一行推荐的来源页签（三级，只属于推荐页）。
+    final Widget? groupTabs = _buildSubTabsBody();
+    final Widget? recommendTabs = floats
         ? musicRecommendSourceTabs(
             sources: _recommendSources,
             selected: _recommendSource,
             onSelect: _selectRecommendSource,
           )
         : null;
+    final Widget? secondary = groupTabs != null && recommendTabs != null
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spacing.gap / 2,
+            children: <Widget>[groupTabs, recommendTabs],
+          )
+        : groupTabs ?? recommendTabs;
     return FushiFloatingChromeScope(
       controller: _chrome,
       child: FushiFloatingChromeOverlay(
@@ -1294,9 +1413,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     );
   }
 
-  /// 分区内容：触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 → 推荐），
-  /// 跨组照样接着滑；首 / 末再往外交给首页外壳切模块（与书架 / 视频 / 游戏库同一层
-  /// [SectionSwipeNavigator]）。
+  /// 分区内容：触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 → 推荐 → 来源
+  /// → 插件），跨组照样接着滑；首 / 末再往外交给首页外壳切模块（与书架 / 视频 / 游戏库
+  /// 同一层 [SectionSwipeNavigator]）。
   Widget _buildSectionsNavigator(
     BuildContext context,
     MusicLibrarySnapshot? snap, {
@@ -1305,7 +1424,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     sections: <MusicLibrarySection>[
       for (final MusicLibrarySection s in MusicLibrarySection.values)
         if (musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library) s,
-      if (_hasRecommend) MusicLibrarySection.recommend,
+      ..._onlineSections,
     ],
     selected: _section,
     onSelect: _selectSection,
@@ -1384,6 +1503,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         leading: recommendLeading,
       );
     }
+    if (_section == MusicLibrarySection.sources) {
+      return MusicOnlineSourcesView(
+        key: const ValueKey<String>('music-section-sources'),
+        onChanged: _onOnlineSourcesChanged,
+        onOpenPlugins: isMusicPluginSourcesAvailable ? _selectPlugins : null,
+      );
+    }
+    if (_section == MusicLibrarySection.plugins) {
+      return const MusicPluginsView(
+        key: ValueKey<String>('music-section-plugins'),
+      );
+    }
     final List<MusicPluginManifest> accountLists = _pluginsWith(
       MusicPluginCapability.library,
     );
@@ -1442,8 +1573,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         style: _libraryStyle(context, MusicLibrarySection.artists),
       ),
       // 本地曲目在前，加入音乐库的远程曲目（YouTube / 在线插件，v148）随后，同一条队列。
+      // 在线组的分区不走这里（[_buildSection] 先分走），与歌曲同画法只为穷尽。
       MusicLibrarySection.songs ||
-      MusicLibrarySection.recommend => MusicTrackList.entries(
+      MusicLibrarySection.recommend ||
+      MusicLibrarySection.sources ||
+      MusicLibrarySection.plugins => MusicTrackList.entries(
         entries: snap.songEntries,
         albums: snap.albumByUid,
         context: MusicQueueContext.mixed,
@@ -1568,7 +1702,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         MusicViewKind.playlists,
         MusicViewStyle.list,
       ),
-      MusicLibrarySection.recommend || MusicLibrarySection.works => null,
+      MusicLibrarySection.recommend ||
+      MusicLibrarySection.works ||
+      MusicLibrarySection.sources ||
+      MusicLibrarySection.plugins => null,
     };
 
 /// [s] 分区在本页生效的样式（推荐 / 作品不用，给列表）。

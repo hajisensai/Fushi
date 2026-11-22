@@ -1507,6 +1507,61 @@ pub(crate) fn differences(pairs: impl IntoIterator<Item = Pair>) -> Diff {
         .collect()
 }
 
+/// 同一行身份两侧都有、只是某几列不同的那些行，按列名计数（[ColumnDiffs]）。只对卡行（`cards`）与统计行（`stats`）
+/// 做：它们的列全是调度数值与 ID，不含笔记内容，迁移报告默认就能带；笔记行（字段、标签、来源标题）不做。行文本是
+/// `cache_pairs` 拼的 `列 | 列 | …`（列序 = [CARD_COLS] / [STAT_COLS]，第一列是行的身份）。别的类别、列数对不上的行
+/// 返回 `None`。
+pub(crate) fn column_diffs(
+    what: &str,
+    old_only: &[String],
+    new_only: &[String],
+) -> Option<ColumnDiffs> {
+    let cols: Vec<&'static str> = match what {
+        "cards" => CARD_COLS.iter().map(|c| c.0).collect(),
+        "stats" => STAT_COLS.iter().map(|c| c.0).collect(),
+        _ => return None,
+    };
+    let split = |rows: &[String]| -> Option<BTreeMap<String, Vec<String>>> {
+        let mut out = BTreeMap::new();
+        for r in rows {
+            let cells: Vec<String> = r.split(" | ").map(str::to_owned).collect();
+            if cells.len() != cols.len() {
+                return None;
+            }
+            out.insert(cells[0].clone(), cells);
+        }
+        Some(out)
+    };
+    let (old, new) = (split(old_only)?, split(new_only)?);
+    let mut out = ColumnDiffs::default();
+    for (id, o) in &old {
+        let Some(n) = new.get(id) else {
+            continue;
+        };
+        out.rows += 1;
+        let mut cells = Vec::new();
+        for (i, name) in cols.iter().enumerate().skip(1) {
+            if o[i] != n[i] {
+                *out.columns.entry(name).or_default() += 1;
+                cells.push(format!("{name}: {} -> {}", o[i], n[i]));
+            }
+        }
+        out.examples.push(format!("{id} {}", cells.join(", ")));
+    }
+    Some(out)
+}
+
+/// [column_diffs] 的结果。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ColumnDiffs {
+    /// 两侧都有、只是列不同的行数。
+    pub rows: u64,
+    /// 列名 → 这一列不同的行数。
+    pub columns: BTreeMap<&'static str, u64>,
+    /// 每行一条：`身份 列: 旧 -> 新, …`（按身份排序）。
+    pub examples: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

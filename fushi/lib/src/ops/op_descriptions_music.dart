@@ -142,7 +142,9 @@ List<OpDescription> _describeScrapeOps(
         'by the DLsite work number (RJ...) found in the album title, catalog '
         'number or track folders: circle, voice actors, tags, DLsite rating, '
         'downloads; fills the album cover from DLsite when it has none. '
-        'Fails with 400 when no work number is found.',
+        'Adult (R-18) works mark the album NSFW (cover blurred under the '
+        '"blur NSFW covers" setting) unless its NSFW flag was ever set or '
+        'cleared before. Fails with 400 when no work number is found.',
     risk: OpRisk.irreversible,
     availability: music,
     params: const <OpParam>[

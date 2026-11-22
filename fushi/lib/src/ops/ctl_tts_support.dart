@@ -60,7 +60,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
         mangaLineNeedsReview;
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
-    show updateMangaAudioLine;
+    show audiobookRowHasRegistration, updateMangaAudioLine;
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -100,6 +100,7 @@ class TtsCtlDeps {
     required this.activeVoice,
     required this.regenerate,
     required this.stopPlayback,
+    required this.localAudioBackend,
   });
 
   factory TtsCtlDeps.of(OpContext context) => TtsCtlDeps(
@@ -132,6 +133,7 @@ class TtsCtlDeps {
         ),
     stopPlayback: (List<String> bookKeys) =>
         context.appModel.audiobookSession.stopIfPlayingAny(bookKeys),
+    localAudioBackend: mangaLocalAudioBackend,
   );
 
   final AppModel Function() app;
@@ -156,6 +158,10 @@ class TtsCtlDeps {
 
   /// 停掉这些书的播放（换句文件前；Windows 上被占用的文件换不掉）。
   final Future<void> Function(List<String> bookKeys) stopPlayback;
+
+  /// 「按句替换本地音频」整形用的后端（只整形本地音频；ffmpeg 不可用抛
+  /// [TtsRenderFailure]）。
+  final Future<MangaRenderBackend> Function() localAudioBackend;
 
   /// 标注任务结束时演出稿的指纹（`<bookKey>@<startedAt>` → 指纹）：撤销标注时据此判断
   /// 之后有没有被手改过。进程内有效；app 重启后撤销报 superseded，不盲目覆盖。
@@ -260,6 +266,31 @@ void requireNotRendering(TtsCtlDeps deps, String bookKey) {
   }
 }
 
+/// 这一卷当前登记的有声成品是不是本机生成的那份（[mangaRenderManifestFile]）。改单句 /
+/// 换本地音频 / 按角色重生成都只改本机生成的清单：登记的是 `tts import` 导进来的外部
+/// 清单时，改本机清单再按句写库会把两份清单的句子混进同一份登记，所以 409。没有登记
+/// （只生成没入库）放行，之后按本机清单整份登记。
+Future<void> requireAppRenderedAudio(TtsCtlDeps deps, String bookKey) async {
+  final AudiobookRow? row = await deps.appModel.database.getAudiobookByBookKey(
+    bookKey,
+  );
+  if (row == null || !audiobookRowHasRegistration(row)) return;
+  final String internal = mangaRenderManifestFile(
+    deps.appModel,
+    bookKey,
+  ).absolute.path;
+  if (row.alignmentFormat == kMangaAlignmentFormat &&
+      p.equals(p.normalize(row.alignmentPath), p.normalize(internal))) {
+    return;
+  }
+  throw CtlFailure(
+    409,
+    'manga_audio_external',
+    '这一卷登记的有声成品不是本机生成的（${row.alignmentPath}）：在外部管线里改好后用 '
+        'tts import 重新导入，或先整卷生成（tts render）换成本机成品',
+  );
+}
+
 /// 说话人的线上名：旁白 / 不明用 `narrator` / `unknown`。
 String ttsSpeakerWire(String speaker) => switch (speaker) {
   kTtsNarrator => 'narrator',
@@ -314,6 +345,14 @@ Map<String, Object?> ttsMangaLineJson(
         '${e.key}': e.value,
     },
   if (line.voice != null) 'voice': line.voice,
+  'audio': switch (line.audio) {
+    MangaLocalAudio(:final String? name) => <String, Object?>{
+      'type': 'file',
+      'name': ?name,
+    },
+    MangaAudiobookClip() => <String, Object?>{'type': 'audiobook'},
+    MangaSynthesized() => <String, Object?>{'type': 'synth'},
+  },
   'source': line.source.name,
   if (line.confidence != null) 'confidence': line.confidence,
   'needsReview': mangaLineNeedsReview(line),
@@ -959,7 +998,9 @@ Future<OpUndoOutcome> revertMangaAnnotate(
 // 单句换种子重生成
 // ─────────────────────────────────────────────────────────────────────────
 
-Directory _backupDir(AppModel appModel, String bookKey) => Directory(
+/// 这一卷撤销用的旧音频备份目录（单句重生成一份一个文件；批量操作一份一个子目录，
+/// 见 `ctl_tts_batch.dart`）。
+Directory mangaCtlBackupDir(AppModel appModel, String bookKey) => Directory(
   p.join(
     mangaAudioRoot(appModel).path,
     '_undo',
@@ -1041,18 +1082,18 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   }
 
   final MangaAudioRenderer renderer = MangaAudioRenderer(
-    backend: const _NoSynthesis(),
+    backend: const TtsCtlNoSynthesis(),
     manifestFile: manifestFile,
   );
   // 旧音频备份（保留候选时清单不再引用它，会被清掉）。
   final File oldFile = File(p.join(manifestFile.parent.path, old.file));
   String? backup;
   if (await oldFile.exists()) {
-    final Directory dir = _backupDir(appModel, bookKey);
+    final Directory dir = mangaCtlBackupDir(appModel, bookKey);
     await dir.create(recursive: true);
     backup = '${DateTime.now().microsecondsSinceEpoch}-${old.file}';
     await oldFile.copy(p.join(dir.path, backup));
-    await _pruneBackups(dir);
+    await pruneMangaCtlBackups(dir);
   }
   await deps.stopPlayback(<String>[bookKey]);
   final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
@@ -1065,8 +1106,8 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   );
   if (!kept) {
     if (backup != null) {
-      await _deleteQuietly(
-        File(p.join(_backupDir(appModel, bookKey).path, backup)),
+      await deleteMangaFileQuietly(
+        File(p.join(mangaCtlBackupDir(appModel, bookKey).path, backup)),
       );
     }
     throw CtlFailure.notFound('这一句已不在成品清单里：$lineId');
@@ -1123,7 +1164,7 @@ Future<OpUndoOutcome> revertMangaRegen(
   }
   final Object? backup = payload['backup'];
   final File? backupFile = backup is String
-      ? File(p.join(_backupDir(appModel, bookKey).path, backup))
+      ? File(p.join(mangaCtlBackupDir(appModel, bookKey).path, backup))
       : null;
   if (backupFile == null || !await backupFile.exists()) {
     return const OpUndoOutcome.failed('旧音频备份已清理，恢复不了');
@@ -1160,24 +1201,38 @@ Future<OpUndoOutcome> revertMangaRegen(
     lineId: lineId,
   );
   await MangaAudioRenderer(
-    backend: const _NoSynthesis(),
+    backend: const TtsCtlNoSynthesis(),
     manifestFile: manifestFile,
   ).sweepUnreferenced(manifest);
-  await _deleteQuietly(backupFile);
+  await deleteMangaFileQuietly(backupFile);
   return const OpUndoOutcome.done();
 }
 
-Future<void> _pruneBackups(Directory dir) async {
-  final List<File> files = <File>[
-    for (final FileSystemEntity e in dir.listSync())
-      if (e is File) e,
-  ]..sort((File a, File b) => p.basename(b.path).compareTo(p.basename(a.path)));
-  for (final File stale in files.skip(kMangaRegenBackupLimit)) {
-    await _deleteQuietly(stale);
+/// 每卷备份最多留 [kMangaRegenBackupLimit] 份（单句的文件与批量的子目录各算一份，按
+/// 名字里的时间戳从新到旧）；更旧的删掉，那几次撤销报「备份已清理」。
+Future<void> pruneMangaCtlBackups(Directory dir) async {
+  final List<FileSystemEntity> entries =
+      <FileSystemEntity>[
+        for (final FileSystemEntity e in dir.listSync())
+          if (e is File || e is Directory) e,
+      ]..sort(
+        (FileSystemEntity a, FileSystemEntity b) =>
+            p.basename(b.path).compareTo(p.basename(a.path)),
+      );
+  for (final FileSystemEntity stale in entries.skip(kMangaRegenBackupLimit)) {
+    if (stale is File) {
+      await deleteMangaFileQuietly(stale);
+    } else {
+      try {
+        await stale.delete(recursive: true);
+      } on FileSystemException {
+        // 被占用（Windows）：留着，下次修剪再删。
+      }
+    }
   }
 }
 
-Future<void> _deleteQuietly(File f) async {
+Future<void> deleteMangaFileQuietly(File f) async {
   try {
     if (await f.exists()) await f.delete();
   } on FileSystemException {
@@ -1186,8 +1241,8 @@ Future<void> _deleteQuietly(File f) async {
 }
 
 /// 保留候选 / 清理只动文件与清单，不合成。
-class _NoSynthesis implements MangaRenderBackend {
-  const _NoSynthesis();
+class TtsCtlNoSynthesis implements MangaRenderBackend {
+  const TtsCtlNoSynthesis();
 
   @override
   int get parallelism => 1;
@@ -1214,6 +1269,13 @@ class _NoSynthesis implements MangaRenderBackend {
   @override
   Future<int> writeSilence({required int ms, required String outputPath}) =>
       throw UnsupportedError('no synthesis here');
+
+  @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('no synthesis here');
 
   @override
   Future<void> prepare({

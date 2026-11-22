@@ -57,12 +57,16 @@ const double kCrossAppAudioFloorPercentile = 0.3;
 const double kCrossAppAudioPeakHeadroomDb = 3.0;
 
 /// 一次最多截这么长（毫秒，不含前后余量）。分不出人声时（只有 BGM、或人声被 BGM
-/// 盖住）退回到查词前最近这一段，而不是把整段 30 秒挂到卡上；精确起止要等试听 /
-/// 调起止（第二段）由用户来定。
+/// 盖住）退回到查词前最近这一段，而不是把整段 30 秒挂到卡上；精确起止由用户在查词卡
+/// 的句子音频试听面板（`cross_app_audio_preview.dart`）里拖。
 const int kCrossAppAudioMaxClipMs = 15000;
 
 /// 有声判据的绝对下限（dBFS）：峰值本身很轻时不把底噪当语音。
 const double kCrossAppAudioAbsFloorDb = -45.0;
+
+/// 用户调过起止后句子音频的最短时长（毫秒）：与高级制卡的区间下限
+/// （`kAdvancedMiningAudioMinDurationMs`）同值，试听面板拖不出比这更短的区间。
+const int kCrossAppAudioMinClipMs = 100;
 
 /// 查词那一刻落下的一段声音。两种来源：
 /// - [CrossAppAudioFileSnapshot]：Android 原生查词时就把裸 PCM 写进 app 缓存目录；
@@ -202,6 +206,26 @@ GalWaveformRange? crossAppAudioDefaultRange(GalAudioSlice slice) {
 
 double _log10(double x) => math.log(x) / math.ln10;
 
+/// 把试听面板里调出的起止偏移（`MiningRequestOverrides.audioStartDeltaMs` /
+/// `audioEndDeltaMs`，都相对自动截句 [base]）加回去，夹进 `[0, totalMs]`。夹完短于
+/// [kCrossAppAudioMinClipMs]（起点越过终点 / 整段拖出快照）返回 null——这张卡不带句子
+/// 音频，而不是硬截一段用户没选的声音。
+///
+/// 偏移而不是绝对起止：面板与制卡各自从**同一份快照**算 [crossAppAudioDefaultRange]
+/// （确定性计算），偏移在两边落到同一段；也与 app 内「高级制卡」的覆盖项同一条线。
+GalWaveformRange? crossAppAudioAdjustRange(
+  GalWaveformRange base, {
+  required int totalMs,
+  int startDeltaMs = 0,
+  int endDeltaMs = 0,
+}) {
+  if (totalMs <= 0) return null;
+  final int start = (base.startMs + startDeltaMs).clamp(0, totalMs);
+  final int end = (base.endMs + endDeltaMs).clamp(0, totalMs);
+  if (end - start < kCrossAppAudioMinClipMs) return null;
+  return GalWaveformRange(startMs: start, endMs: end);
+}
+
 /// 每个下标取以它为中心、长 [window] 的窗内 [values] 的 [percentile] 分位；窗碰到两端时
 /// 整窗平移进界内（窗长不变，背景估计不因靠近缓冲末尾而退化成只看几帧）。
 List<double> _slidingPercentile(
@@ -225,14 +249,17 @@ List<double> _slidingPercentile(
   return out;
 }
 
-/// 读 [snapshot] 的 PCM，截出 [range]（缺省 = [crossAppAudioDefaultRange]）并经 [encode]
-/// 编码成 `<新临时目录>/sentence.<extension>`。快照已失效（被后面的查词挤掉 / 顶替）/
+/// 读 [snapshot] 的 PCM，截出 [range]（缺省 = [crossAppAudioDefaultRange]；再按
+/// [startDeltaMs] / [endDeltaMs] 经 [crossAppAudioAdjustRange] 挪起止——试听面板里用户拖出
+/// 的偏移）并经 [encode] 编码成 `<新临时目录>/sentence.<extension>`。快照已失效（被后面的查词挤掉 / 顶替）/
 /// 整段静音 / 编码失败返回 null（这张卡不带句子音频，照常制）。调用方制卡后删 `dir`
 /// （[deleteCrossAppAudioDir]）；钉住型快照落盘的 PCM 也在这个目录里，一起删。
 Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
   CrossAppAudioSnapshot snapshot, {
   required CrossAppAudioEncoder encode,
   GalWaveformRange? range,
+  int startDeltaMs = 0,
+  int endDeltaMs = 0,
   String extension = 'm4a',
 }) async {
   final Directory dir = await Directory.systemTemp.createTemp(
@@ -248,6 +275,8 @@ Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
       file.pcmPath,
       file.format,
       range,
+      startDeltaMs,
+      endDeltaMs,
     );
     if (cut.readError != null) {
       // 快照被后面的查词挤掉了（原生只留最近几份）：这张卡不带语音。
@@ -269,12 +298,16 @@ Future<({String path, Directory dir})?> prepareCrossAppSentenceAudio(
   }
 }
 
-/// 单独一层函数：送进 isolate 的闭包只捕获这三个可发送的参数（不带调用方的编码器等）。
+/// 单独一层函数：送进 isolate 的闭包只捕获这几个可发送的参数（不带调用方的编码器等）。
 Future<({Uint8List? clip, String? readError})> _cutInBackground(
   String pcmPath,
   PcmFormat format,
   GalWaveformRange? range,
-) => Isolate.run(() => _readAndCut(pcmPath, format, range));
+  int startDeltaMs,
+  int endDeltaMs,
+) => Isolate.run(
+  () => _readAndCut(pcmPath, format, range, startDeltaMs, endDeltaMs),
+);
 
 /// [prepareCrossAppSentenceAudio] 的后台部分：读快照、定范围、截 PCM。读失败把原因带回
 /// （日志服务只在主 isolate 有），整段静音 / 空文件返回 `clip: null`。
@@ -282,6 +315,8 @@ Future<({Uint8List? clip, String? readError})> _cutInBackground(
   String pcmPath,
   PcmFormat format,
   GalWaveformRange? range,
+  int startDeltaMs,
+  int endDeltaMs,
 ) {
   final Uint8List pcm;
   try {
@@ -290,9 +325,18 @@ Future<({Uint8List? clip, String? readError})> _cutInBackground(
     return (clip: null, readError: error.toString());
   }
   if (pcm.isEmpty) return (clip: null, readError: null);
-  final GalWaveformRange? chosen =
+  final GalWaveformRange? base =
       range ??
       crossAppAudioDefaultRange(GalAudioSlice(pcm: pcm, format: format));
+  final GalWaveformRange? chosen =
+      base == null || (startDeltaMs == 0 && endDeltaMs == 0)
+      ? base
+      : crossAppAudioAdjustRange(
+          base,
+          totalMs: pcmDurationMs(pcm.length, format.byteRate),
+          startDeltaMs: startDeltaMs,
+          endDeltaMs: endDeltaMs,
+        );
   if (chosen == null) return (clip: null, readError: null);
   return (
     clip: slicePcmByMs(pcm, format, chosen.startMs, chosen.endMs),

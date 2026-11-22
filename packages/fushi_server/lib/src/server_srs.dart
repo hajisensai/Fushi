@@ -601,6 +601,13 @@ class ServerSrsProfile {
       );
       _mediaReconciledAt = DateTime.now();
       _mediaReconciledContent = content;
+      // 收 v3.0.x 写入者目录媒体没做成的（拍板台 bug-5017-legacy-writer-media）：文件留着下一趟再来，不算失败。
+      for (final String f in media.legacyWriterErrors) {
+        engineLog.log(
+          'ServerSrs.legacyWriterMedia',
+          StateError('profile $uid: could not move v3.0.x writer media: $f'),
+        );
+      }
       if (media.downloaded > 0) _owner._onChanged(uid);
     } catch (e, stack) {
       engineLog.log('ServerSrs.media', e, stack);

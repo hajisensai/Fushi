@@ -41,7 +41,7 @@ void main() {
     final SrtBookRepository srtRepo = SrtBookRepository(db);
     await abRepo.replaceAudio(bookKey: 'Book', audioPaths: <String>[a]);
     await writeEpubBackedSrtBook(
-      repo: srtRepo,
+      db: db,
       bookKey: 'Book',
       title: 'Book',
       author: null,
@@ -138,7 +138,6 @@ void main() {
     required List<String> audio,
   }) => alignAndPersistAudiobook(
     db: db,
-    repo: SrtBookRepository(db),
     audiobookRepo: AudiobookRepository(db),
     bookKey: 'Book',
     title: 'Book',
