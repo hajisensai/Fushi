@@ -13,6 +13,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadHeader;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiListLeadingIcon;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -313,6 +315,47 @@ void main() {
         findsNothing,
       );
       expect(find.text(t.library_organize_proposal_stale), findsNothing);
+    });
+
+    // BUG-5171（反馈 SPRCuY_gVh）：列表顶部留白曾在脚手架之上的 context 里量，
+    // 读不到页头大字外壳注入正文的让位，首个分组头与第一行被「整理记录」大字盖住。
+    testWidgets('$ds：首个分组头与第一行都排在页头下沿之下', (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 1200);
+      addTearDown(tester.view.reset);
+      final int runId = await seedRun();
+      final int changeId = await seedChange(
+        runId,
+        'evict',
+        '杂项',
+        <String, Object?>{
+          'members': <Object?>[member('c')],
+          'origin': 'ai',
+        },
+      );
+      await pumpPage(tester, apple: apple);
+
+      final double headerBottom = tester
+          .getRect(find.byType(FushiMastheadHeader))
+          .bottom;
+      expect(headerBottom, greaterThan(0));
+      expect(
+        tester
+            .getRect(
+              find.byKey(ValueKey<String>('library_organize_undo_run_$runId')),
+            )
+            .top,
+        greaterThanOrEqualTo(headerBottom),
+        reason: '首个分组头（含「撤销本次」）不能被页头盖住',
+      );
+      expect(
+        tester
+            .getRect(
+              find.byKey(ValueKey<String>('library_organize_change_$changeId')),
+            )
+            .top,
+        greaterThan(headerBottom),
+      );
     });
   }
 }
