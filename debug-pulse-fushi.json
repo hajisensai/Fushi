@@ -1,12 +1,59 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T23:40:13Z",
+ "generatedAt": "2026-11-22T00:09:34Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
   "seq": 31044
  },
  "builds": [
+  {
+   "seq": 31044,
+   "version": "3.4.0",
+   "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
+   "unknown": false,
+   "publishedAt": "2026-11-22T00:09:24Z",
+   "testflight": false,
+   "baseSeq": 31026,
+   "prs": [
+    4099,
+    4094,
+    4098,
+    4092,
+    4095,
+    4097,
+    4096,
+    4093
+   ],
+   "direct": [
+    {
+     "sha": "e8d7878ace5b7ea77c19f84a328db82f19dbcad6",
+     "subject": "fix(ci): 回看早退守卫跟上 EOF 分层转调；扩展「自动字幕分句整合」开关搬进内置浏览器设置"
+    },
+    {
+     "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
+     "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
+    }
+   }
+  },
   {
    "seq": 31026,
    "version": "3.4.0",
@@ -203,39 +250,9 @@
    "unknown": false,
    "publishedAt": "2026-11-21T15:37:22Z",
    "testflight": false,
-   "baseSeq": 30654,
-   "prs": [
-    4040
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
-    }
-   }
-  },
-  {
-   "seq": 30654,
-   "version": "3.4.0",
-   "sha": "9f782cbde9ec0af9ce231dbf0665f3c8b156450b",
-   "unknown": false,
-   "publishedAt": "2026-11-21T14:44:44Z",
-   "testflight": false,
    "baseSeq": 29224,
    "prs": [
+    4040,
     4038,
     4037,
     4021,
@@ -646,63 +663,21 @@
      "state": "ok"
     },
     "windows": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
     },
     "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
     }
    }
   }
  ],
- "pending": {
-  "headSha": "570a5bbe952a942cc4b80adb95e46445603169b8",
-  "headSeq": 31044,
-  "prs": [
-   4099,
-   4094,
-   4098,
-   4092,
-   4095,
-   4097,
-   4096,
-   4093
-  ],
-  "direct": [
-   {
-    "sha": "e8d7878ace5b7ea77c19f84a328db82f19dbcad6",
-    "subject": "fix(ci): 回看早退守卫跟上 EOF 分层转调；扩展「自动字幕分句整合」开关搬进内置浏览器设置"
-   },
-   {
-    "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
-    "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463285"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3448": {
    "number": 3448,
