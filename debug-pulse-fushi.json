@@ -1,12 +1,56 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T03:40:58Z",
+ "generatedAt": "2026-11-22T03:41:30Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6f23fd74b34f2e788d9e21d84ff2d80a9171ea0b",
   "seq": 31194
  },
  "builds": [
+  {
+   "seq": 31104,
+   "version": "3.4.0",
+   "sha": "d98d1bb3d8fa51b72356f2a6e838e3c76a28e410",
+   "unknown": false,
+   "publishedAt": "2026-11-22T03:41:13Z",
+   "testflight": true,
+   "baseSeq": 31049,
+   "prs": [
+    4108,
+    4107,
+    4106,
+    4105,
+    4104,
+    4103,
+    4101,
+    4113,
+    4027,
+    3999,
+    4032
+   ],
+   "direct": [
+    {
+     "sha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
+     "subject": "chore(bugs): settle BUG number collisions on 2f621d3d8"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44975076587"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 31049,
    "version": "3.4.0",
@@ -42,7 +86,7 @@
    "unknown": false,
    "publishedAt": "2026-11-22T00:28:30Z",
    "testflight": true,
-   "baseSeq": 31026,
+   "baseSeq": 30680,
    "prs": [
     4099,
     4094,
@@ -51,43 +95,7 @@
     4095,
     4097,
     4096,
-    4093
-   ],
-   "direct": [
-    {
-     "sha": "e8d7878ace5b7ea77c19f84a328db82f19dbcad6",
-     "subject": "fix(ci): 回看早退守卫跟上 EOF 分层转调；扩展「自动字幕分句整合」开关搬进内置浏览器设置"
-    },
-    {
-     "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
-     "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 31026,
-   "version": "3.4.0",
-   "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
-   "unknown": false,
-   "publishedAt": "2026-11-21T23:37:20Z",
-   "testflight": true,
-   "baseSeq": 30680,
-   "prs": [
+    4093,
     4088,
     4033,
     3996,
@@ -146,6 +154,14 @@
    ],
    "direct": [
     {
+     "sha": "e8d7878ace5b7ea77c19f84a328db82f19dbcad6",
+     "subject": "fix(ci): 回看早退守卫跟上 EOF 分层转调；扩展「自动字幕分句整合」开关搬进内置浏览器设置"
+    },
+    {
+     "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
+     "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
+    },
+    {
      "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
      "subject": "docs(bugs): 合并第 8 批后重建 BUGS 索引"
     },
@@ -185,8 +201,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857702"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -269,18 +284,7 @@
    4112,
    4111,
    4110,
-   4109,
-   4108,
-   4107,
-   4106,
-   4105,
-   4104,
-   4103,
-   4101,
-   4113,
-   4027,
-   3999,
-   4032
+   4109
   ],
   "direct": [
    {
@@ -290,10 +294,6 @@
    {
     "sha": "fba5436937c5161b5c39e69263a90e05f841bba9",
     "subject": "chore(bugs): settle BUG number collisions on 51073b3c5"
-   },
-   {
-    "sha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
-    "subject": "chore(bugs): settle BUG number collisions on 2f621d3d8"
    }
   ],
   "truncated": false,
