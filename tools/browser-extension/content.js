@@ -612,6 +612,8 @@ function fushiApplyShiftHoverLookupPref(saved) {
 }
 // 弹窗内嵌套查词（vendor/popup.js，与 app 共用）经这个钩子认同一个触发键；app 内无此钩子时它退回 Shift。
 window.__fushiScanModifierHeld = (e) => fushiScanModifierHeld(e, fushiScanModifier);
+// 弹窗内悬停也认同一个扫描延迟（反馈 r4tpeIzVuD）：与网页侧同一判据，popup.js 停稳后才扫。
+window.__fushiScanDelayMs = () => fushiEffectiveScanDelay(fushiScanModifier, fushiScanDelayMs);
 try {
   const fushiShiftPrefPromise = chrome.storage.local.get(
     ['shiftHoverLookup', 'scanModifier', 'scanDelay'],
@@ -2172,6 +2174,10 @@ function fushiEnsureContainer() {
       fushiPointerOverPopup = true;
       fushiPointerOutsideDocument = false;
       fushiCancelHoverLeave();
+      // 扫描延迟（反馈 r4tpeIzVuD）：指针已从网页进了弹窗，网页侧排着的待扫作废——host 截住
+      // mousemove，document 侧不会再收到移动来重新计时，不撤的话到点会替一个已在弹窗里的
+      // 指针查弹窗边上的网页词，把正在读的词条换掉。弹窗内的扫词由 popup.js 自己按延迟管。
+      fushiCancelScanDelay();
     });
     fushiHost.addEventListener('mouseleave', function () {
       fushiPointerOverPopup = false;
