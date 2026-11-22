@@ -33,6 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4493 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5166](bugs/BUG-5166-api29-background-kill-misreported-foreground.md) | ✅ | ✅ | Android 10 进程退到后台后被系统回收（死前已收到 UI_HIDDEN），下次启动误报前台闪退 |
+| [BUG-5165](bugs/BUG-5165-coloros-permission-app-op-kill-misreported.md) | ✅ | ✅ | ColorOS 改应用权限时系统按 uid 结束进程，下次启动误报「意外退出」 |
 > 共 4494 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
