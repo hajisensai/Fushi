@@ -367,13 +367,16 @@ List<NebbiaHit> nebbiaVocalBigHits(
 }
 
 /// 大雨点：每个词开唱处六成砸一颗，躲开正在唱的那句。整首一次排好（大小按 1 倍，画的时候再乘）。
+/// 只排 [from] 秒起的（之前由人声起音砸，见 [nebbiaVocalBigHits]）；随机序列与 [from] 无关，同一个词
+/// 砸不砸、砸在哪不随人声分离进度变。
 List<NebbiaHit> nebbiaBigHits(
   List<NebbiaLaidLine> laid,
   List<List<List<int>>> words,
   double width,
   double height,
-  int seed,
-) {
+  int seed, {
+  double from = double.negativeInfinity,
+}) {
   final LyricVisualizerRandom rnd = LyricVisualizerRandom(seed ^ 911);
   final double k = math.min(width, height) / 720;
   final List<NebbiaHit> out = <NebbiaHit>[];
@@ -385,7 +388,8 @@ List<NebbiaHit> nebbiaBigHits(
       if (w.isEmpty || w.first >= line.chars.length) continue;
       final double t = line.chars[w.first].t;
       if (rnd.next() >= 0.6) continue;
-      out.add(_bigHitAt(rnd, t, rect, width, height, k));
+      final NebbiaHit hit = _bigHitAt(rnd, t, rect, width, height, k);
+      if (t >= from) out.add(hit);
     }
   }
   out.sort((NebbiaHit a, NebbiaHit b) => a.t.compareTo(b.t));

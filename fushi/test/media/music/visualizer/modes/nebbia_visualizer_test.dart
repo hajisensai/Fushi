@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -325,6 +326,107 @@ void main() {
       }
     });
 
+    test('beat kick: rise from the leftover, settle, skip unrhythmic', () {
+      LyricVisualizerBeatEvent ev(int ms, {bool rhythmic = true}) =>
+          LyricVisualizerBeatEvent(
+            audioMs: ms,
+            displayMs: ms,
+            downbeat: false,
+            gain: 1,
+            ordinal: 0,
+            impact: 0.8,
+            rhythmic: rhythmic,
+          );
+      double lv(List<LyricVisualizerBeatEvent> e, int t) => nebbiaKickLevel(
+        e,
+        t,
+        amount: nebbiaBeatGain,
+        attack: 0.07,
+        decay: 0.3,
+      );
+      final List<LyricVisualizerBeatEvent> one = <LyricVisualizerBeatEvent>[
+        ev(1000),
+      ];
+      expect(lv(one, 999), 0);
+      expect(lv(one, 1035), closeTo(0.4, 1e-9));
+      expect(lv(one, 1070), closeTo(0.8, 1e-9));
+      expect(lv(one, 1370), closeTo(0.8 * math.exp(-1), 1e-9));
+      // 第二拍从上一拍剩下的量升起，不从 0 起。
+      final List<LyricVisualizerBeatEvent> two = <LyricVisualizerBeatEvent>[
+        ev(1000),
+        ev(1200),
+      ];
+      final double left = lv(one, 1200);
+      expect(lv(two, 1200), closeTo(left, 1e-9));
+      expect(lv(two, 1270), closeTo(0.8, 1e-9));
+      // 力度下限 0.35。
+      expect(
+        nebbiaBeatGain(
+          const LyricVisualizerBeatEvent(
+            audioMs: 0,
+            displayMs: 0,
+            downbeat: false,
+            gain: 1,
+            ordinal: 0,
+            impact: 0.1,
+          ),
+        ),
+        0.35,
+      );
+      expect(
+        lv(<LyricVisualizerBeatEvent>[ev(1000, rhythmic: false)], 1070),
+        0,
+      );
+    });
+
+    test('word big hits only from the vocal coverage end', () {
+      final List<NebbiaLaidLine> laid = _scene(NebbiaSettings.defaults());
+      final List<List<List<int>>> words = <List<List<int>>>[
+        for (final NebbiaSourceLine l in appendNebbiaCredits(
+          _source(LyricVisualizerRuntime(sampleWordTimeline())),
+          'Title',
+          'Artist',
+        ))
+          l.words,
+      ];
+      final List<NebbiaHit> all = nebbiaBigHits(laid, words, 1280, 720, 7);
+      expect(all, isNotEmpty);
+      final double cut = all[all.length ~/ 2].t;
+      final List<NebbiaHit> tail = nebbiaBigHits(
+        laid,
+        words,
+        1280,
+        720,
+        7,
+        from: cut,
+      );
+      // 后半段同一批雨点（随机序列不随分界变），之前的一颗不排。
+      expect(tail.every((NebbiaHit h) => h.t >= cut), isTrue);
+      expect(
+        tail.map((NebbiaHit h) => (h.t, h.x, h.y)),
+        all
+            .where((NebbiaHit h) => h.t >= cut)
+            .map((NebbiaHit h) => (h.t, h.x, h.y)),
+      );
+      final LyricVisualizerContext none = visualizerContextFor(
+        nebbiaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+      );
+      expect(
+        nebbiaVocalCoverageEnd(none, const <(double, double)>[]),
+        double.negativeInfinity,
+      );
+      final LyricVisualizerContext withVocal = visualizerContextFor(
+        nebbiaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      expect(
+        nebbiaVocalCoverageEnd(withVocal, nebbiaVocalOnsetsOf(withVocal)),
+        double.infinity,
+      );
+    });
+
     test('bumps shake then settle', () {
       final NebbiaBumps bumps = NebbiaBumps(5);
       final NebbiaBump first = bumps.between(0, 30).first;
@@ -522,9 +624,16 @@ void main() {
           'behind': 'aquarium',
         }),
       );
-      final NebbiaAquaBeat on = nebbiaAquaBeatOf(c, aqua, 2, motion: true);
-      expect(on.jelly, greaterThan(0.9));
+      // 2 s 是强拍（impact 1）：70 ms 收满后舒张；聚光灯 60 ms 放大。
+      final NebbiaAquaBeat on = nebbiaAquaBeatOf(c, aqua, 2.07, motion: true);
+      expect(on.active, isTrue);
+      expect(on.jelly, closeTo(1, 1e-9));
       expect(on.spot, greaterThan(0.9));
+      // 2.5 s 是弱拍（impact 0.4 × 0.6）：比强拍收得浅。
+      expect(
+        nebbiaAquaBeatOf(c, aqua, 2.57, motion: true).jelly,
+        lessThan(on.jelly),
+      );
       expect(nebbiaAquaBeatOf(c, aqua, 2, motion: false).jelly, 0);
       final NebbiaSettings night = NebbiaSettings.from(
         LyricVisualizerTuning.defaults(nebbiaTuningSpecs),

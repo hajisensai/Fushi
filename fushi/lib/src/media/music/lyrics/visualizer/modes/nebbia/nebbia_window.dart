@@ -121,8 +121,16 @@ class NebbiaColors {
 @immutable
 /// 水族箱跟拍（folia 智能动感「舞潮踏拍」）：每帧的冲击量（0..2，已乘强度）。
 class NebbiaAquaBeat {
-  const NebbiaAquaBeat({this.jelly = 0, this.weed = 0, this.spot = 0});
+  const NebbiaAquaBeat({
+    this.jelly = 0,
+    this.weed = 0,
+    this.spot = 0,
+    this.active = false,
+  });
   static const NebbiaAquaBeat none = NebbiaAquaBeat();
+
+  /// 在跟拍：水母自己那份节奏只留四成（folia `OWN_WITH_BEATS`），收缩主要跟拍。
+  final bool active;
 
   /// 水母收缩（拍点 / 重音）。
   final double jelly;
@@ -965,7 +973,15 @@ class NebbiaWindow {
         }
       }
     }
-    _jellies(canvas, size, time, s, colors, beat.jelly);
+    _jellies(
+      canvas,
+      size,
+      time,
+      s,
+      colors,
+      beat.jelly,
+      own: beat.active ? 0.4 : 1,
+    );
     _bubbles(canvas, size, time, s, sandY);
     _spotBeams(
       canvas,
@@ -975,8 +991,9 @@ class NebbiaWindow {
       beat.spot > 0
           ? NebbiaSpotFrame(
               spot.target,
-              spot.radius * (1 + 0.4 * beat.spot),
-              spot.intensity * (1 + 0.3 * beat.spot),
+              // folia `SPOT_GROW`：光斑随拍放大，亮度不变。
+              spot.radius * (1 + 0.45 * beat.spot),
+              spot.intensity,
             )
           : spot,
       colors,
@@ -998,8 +1015,9 @@ class NebbiaWindow {
     double time,
     NebbiaSettings s,
     NebbiaColors colors,
-    double beat,
-  ) {
+    double beat, {
+    double own = 1,
+  }) {
     final double h = size.height;
     final double aspect = size.width / h;
     const double top = -0.35;
@@ -1023,9 +1041,10 @@ class NebbiaWindow {
           (xf + 0.02 * math.sin(time * 0.15 + hue * 10)) * (aspect + 0.2) - 0.1;
       final double r = (0.03 + 0.055 * depth) * s.jellySize * h;
       // 跟拍：拍点上伞盖一齐收缩（folia 舞潮踏拍的水母分项）。
-      final double squeeze = math.max(
-        math.pow(swim, 3).toDouble(),
-        nebbiaClamp(beat),
+      // folia：min(1.3, max(swim³ × own, kick))。
+      final double squeeze = math.min(
+        1.3,
+        math.max(math.pow(swim, 3).toDouble() * own, beat),
       );
       final Color col = Color.lerp(
         Color.lerp(

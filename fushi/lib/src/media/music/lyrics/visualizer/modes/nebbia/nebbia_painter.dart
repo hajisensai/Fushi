@@ -14,6 +14,7 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/analysis/music_audio_analysis.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_chars.dart';
@@ -44,7 +45,73 @@ List<(double, double)> nebbiaVocalOnsetsOf(LyricVisualizerContext c) =>
         (ms / 1000, c.audioFrameAt(ms).vocal),
     ];
 
-/// 水族箱跟拍这一帧的冲击（folia「舞潮踏拍」，只在水族箱、动态效果开、有节拍网格时）。
+/// 人声起音覆盖到哪一秒（歌曲秒）：没有人声起音为 −∞（整首走词）；人声分离还在跑
+/// （`MusicAudioAnalysis.stemsPartial`）时是分离已覆盖到的时刻，之后走词；分完为 +∞。
+double nebbiaVocalCoverageEnd(
+  LyricVisualizerContext c,
+  List<(double, double)> onsets,
+) {
+  if (onsets.isEmpty) return double.negativeInfinity;
+  final LyricVisualizerAudio? a = c.audio;
+  if (a is MusicAudioAnalysis && a.stemsPartial) {
+    return (a.stemsUntilMs + c.offsetMs) / 1000;
+  }
+  return double.infinity;
+}
+
+/// 一拍的力度（folia `NebbiaBeatCursor`）：按重音，最低 0.35；没有重音数据为 1。不乘整曲动感系数。
+double nebbiaBeatGain(LyricVisualizerBeatEvent e) =>
+    math.max(0.35, e.impact ?? 1);
+
+/// folia 水母 / 聚光灯跟拍的「收一下再放开」（`kickLevel` / `spotLevel`）：每拍从上一下还没退完的量
+/// 用 [attack] 秒升到 `max(那个量, amount(拍))`，再按 [decay] 秒指数回落；没有节奏的小节（rhythmic false）
+/// 的拍不算。按时间直接算（往回看到已衰减完的那拍再顺推），拖进度、暂停、重绘都得同一个值。
+double nebbiaKickLevel(
+  List<LyricVisualizerBeatEvent> events,
+  int tMs, {
+  required double Function(LyricVisualizerBeatEvent e) amount,
+  required double attack,
+  required double decay,
+}) {
+  int lo = 0;
+  int hi = events.length;
+  while (lo < hi) {
+    final int m = (lo + hi) >> 1;
+    if (events[m].displayMs <= tMs) {
+      lo = m + 1;
+    } else {
+      hi = m;
+    }
+  }
+  final int last = lo - 1;
+  if (last < 0) return 0;
+  final int horizonMs = ((attack + decay * 8) * 1000).ceil();
+  int first = last;
+  while (first > 0 && tMs - events[first - 1].displayMs <= horizonMs) {
+    first--;
+  }
+  double level(double from, double kick, double age) => age < attack
+      ? from + (kick - from) * age / attack
+      : kick * math.exp(-(age - attack) / decay);
+  double from = 0;
+  double kick = 0;
+  int? at;
+  for (int i = first; i <= last; i++) {
+    final LyricVisualizerBeatEvent e = events[i];
+    if (!e.rhythmic) continue;
+    final double now = at == null
+        ? 0
+        : level(from, kick, (e.displayMs - at) / 1000);
+    from = now;
+    kick = math.max(now, amount(e));
+    at = e.displayMs;
+  }
+  if (at == null) return 0;
+  return level(from, kick, (tMs - at) / 1000);
+}
+
+/// 水族箱跟拍这一帧的冲击（folia「舞潮踏拍」，只在水族箱、动态效果开、有节拍网格时）。水母与聚光灯
+/// 逐拍收放（[nebbiaKickLevel]，力度 [nebbiaBeatGain]）；水草仍跟拍点包络。
 NebbiaAquaBeat nebbiaAquaBeatOf(
   LyricVisualizerContext c,
   NebbiaSettings s,
@@ -59,11 +126,33 @@ NebbiaAquaBeat nebbiaAquaBeatOf(
       !a.beatsReady) {
     return NebbiaAquaBeat.none;
   }
-  final LyricVisualizerAudioFrame f = c.audioFrameAt((t * 1000).round());
+  final int ms = (t * 1000).round();
+  final LyricVisualizerAudioFrame f = c.audioFrameAt(ms);
+  final List<LyricVisualizerBeatEvent> events = LyricVisualizerBeats.of(
+    c,
+  ).events;
+  final double k = s.aquaBeat;
   return NebbiaAquaBeat(
-    jelly: f.accentOrBeat * s.aquaBeat,
-    weed: f.beatImpact * s.aquaBeat,
-    spot: f.downbeatImpact * s.aquaBeat,
+    // folia 水母：小节第一拍收满，普通拍 0.6；70 ms 收紧、0.3 s 舒张。
+    jelly: nebbiaKickLevel(
+      events,
+      ms,
+      amount: (LyricVisualizerBeatEvent e) =>
+          nebbiaBeatGain(e) * k * (e.downbeat ? 1 : 0.6),
+      attack: 0.07,
+      decay: 0.3,
+    ),
+    weed: f.beatImpact * k,
+    // folia 聚光灯：每拍放大（普通拍 0.7、上限 1.5），60 ms 放大、0.25 s 缩回。
+    spot: nebbiaKickLevel(
+      events,
+      ms,
+      amount: (LyricVisualizerBeatEvent e) =>
+          math.min(1.5, nebbiaBeatGain(e) * k * (e.downbeat ? 1 : 0.7)),
+      attack: 0.06,
+      decay: 0.25,
+    ),
+    active: true,
   );
 }
 
@@ -172,17 +261,22 @@ class NebbiaController {
       fontScale: c.fontScale,
       seed: c.seed,
     );
-    // 有人声分析时砸在人声起音上，否则砸在词开唱处（folia 没有人声轨时的退路）。
+    // 人声分轨覆盖到的部分砸在人声起音上，其余（没有人声轨时是整首；分离还在跑时是还没分到的后半段）
+    // 砸在词开唱处（folia `buildBig`：人声轨覆盖不到的部分走词）。
     final List<(double, double)> onsets = nebbiaVocalOnsetsOf(c);
-    bigHits = onsets.isNotEmpty
-        ? nebbiaVocalBigHits(laid, onsets, size.width, size.height, c.seed)
-        : nebbiaBigHits(
-            laid,
-            <List<List<int>>>[for (final NebbiaSourceLine l in src) l.words],
-            size.width,
-            size.height,
-            c.seed,
-          );
+    final double vocalUntil = nebbiaVocalCoverageEnd(c, onsets);
+    bigHits = <NebbiaHit>[
+      if (onsets.isNotEmpty)
+        ...nebbiaVocalBigHits(laid, onsets, size.width, size.height, c.seed),
+      ...nebbiaBigHits(
+        laid,
+        <List<List<int>>>[for (final NebbiaSourceLine l in src) l.words],
+        size.width,
+        size.height,
+        c.seed,
+        from: vocalUntil,
+      ),
+    ]..sort((NebbiaHit a, NebbiaHit b) => a.t.compareTo(b.t));
   }
 
   /// 字的 TextPainter（扫笔字形用）：按字号缓存，换尺寸清掉。
