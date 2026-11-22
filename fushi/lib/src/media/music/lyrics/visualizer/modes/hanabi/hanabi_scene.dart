@@ -18,6 +18,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_orna
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text_layout.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_timeline.dart';
 
 enum HanabiQuality { full, balanced, low }
@@ -119,6 +120,13 @@ class HanabiFrame {
     required this.settings,
     required this.fontScale,
     required this.baseStyle,
+    this.intensityMotion = 1,
+    this.keywordColor,
+    this.keywordKey,
+    this.beatEvents = const <HanabiBeatEvent>[],
+    this.beatBursts = 0,
+    this.pulseScale = 1,
+    this.pulseRotation = 0,
   });
 
   /// 歌词时间（秒）。
@@ -130,6 +138,23 @@ class HanabiFrame {
   final HanabiSettings settings;
   final double fontScale;
   final TextStyle baseStyle;
+
+  /// 动画强度对镜头运动的倍数（folia `MOTION`：平静 0.6 / 普通 1 / 激烈 1.4）。
+  final double intensityMotion;
+
+  /// 关键字色（主题 wordColors，folia `keywordColorOf`）：命中的字用这个颜色；null = 没有关键字。
+  final int? Function(String text)? keywordColor;
+
+  /// [keywordColor] 的内容标识（变了就重建装配）。
+  final Object? keywordKey;
+
+  /// 「随拍开花」的节拍表与强度（0 = 关）。
+  final List<HanabiBeatEvent> beatEvents;
+  final double beatBursts;
+
+  /// 「随拍推镜」这一帧的整层缩放与旋转（弧度）。
+  final double pulseScale;
+  final double pulseRotation;
 }
 
 const double _prepareAhead = 1.5;
@@ -192,11 +217,25 @@ class _ShotRig {
   void dispose() => text?.dispose();
 }
 
+/// 一拍的烟花放进了哪个镜头（folia `BeatPlaced`）。
+class _BeatPlaced {
+  const _BeatPlaced(this.shot, this.burst, this.launch);
+  final int shot;
+  final BurstPlan burst;
+  final LaunchEvent? launch;
+}
+
 class _ParagraphRig {
-  _ParagraphRig(this.timeline, this.shots, this.lastUsed);
+  _ParagraphRig(this.paragraph, this.timeline, this.shots, this.lastUsed);
+  final HanabiParagraph paragraph;
   final HanabiTimeline timeline;
   final List<_ShotRig> shots;
   double lastUsed;
+
+  /// 「随拍开花」每拍算一次就缓存（按拍的毫秒），换节拍表或强度时清掉。
+  final Map<int, _BeatPlaced?> beats = <int, _BeatPlaced?>{};
+  List<HanabiBeatEvent>? beatsFrom;
+  double beatsStrength = -1;
 
   void dispose() {
     for (final _ShotRig s in shots) {
@@ -272,6 +311,9 @@ class HanabiScene {
       f.theme.secondary,
       f.theme.background,
       f.baseStyle.fontFamily,
+      f.baseStyle.fontWeight,
+      f.intensityMotion,
+      f.keywordKey,
     );
     if (key != _rigKey) {
       for (final _ParagraphRig r in _rigs.values) {
@@ -351,7 +393,7 @@ class HanabiScene {
       unitEnd: paragraph.endTime,
       height: h,
       riseSpeed: f.motion ? math.max(0, s.riseSpeed) : 0,
-      motion: textMotion,
+      motion: textMotion * f.intensityMotion,
       exitStart: paragraph.transitionOut?.startTime,
       spinAngles: spin.angles,
       spinDrift: spin.drift,
@@ -385,6 +427,7 @@ class HanabiScene {
               motion: textMotion,
               blockOpacity: s.blockOpacity,
               baseStyle: f.baseStyle,
+              keywordColor: f.keywordColor,
             );
       final _ShotRig rig = _ShotRig(
         shot: shot,
@@ -434,7 +477,7 @@ class HanabiScene {
       rig.lifeEnd = lifeEnd;
       rigs.add(rig);
     }
-    return _ParagraphRig(timeline, rigs, 0);
+    return _ParagraphRig(paragraph, timeline, rigs, 0);
   }
 
   void _planEvents(
@@ -699,6 +742,95 @@ class HanabiScene {
     rig.launches = launches;
   }
 
+  // ── 随拍开花 ──
+
+  /// 一拍的烟花开在那一拍所在的镜头里，位置按画面比例换算进镜头坐标；不在这一段里的拍不开。
+  _BeatPlaced? _placeBeat(
+    _ParagraphRig rig,
+    HanabiBeatEvent event,
+    double strength,
+    Size size,
+    HanabiFrame f,
+  ) {
+    final int key = (event.t * 1000).round();
+    if (rig.beats.containsKey(key)) return rig.beats[key];
+    _BeatPlaced? placed;
+    final HanabiBeatShell? shell = resolveHanabiBeatShell(
+      event,
+      program.seed,
+      strength,
+    );
+    if (shell != null &&
+        rig.shots.isNotEmpty &&
+        event.t >= rig.paragraph.startTime &&
+        event.t <= rig.paragraph.endTime) {
+      final int index = rig.timeline.shotAt(event.t);
+      final _ShotRig shot = rig.shots[index];
+      final double w = size.width;
+      final double h = size.height;
+      final double x = shell.sx * w - shot.originX;
+      final double y = shell.sy * h - shot.originY;
+      LaunchEvent? launch;
+      if (shell.launch && f.settings.launches) {
+        final double bottom = h * 1.03 - shot.originY;
+        launch = LaunchEvent(
+          fromX: x,
+          fromY: math.max(bottom, y + h * 0.2),
+          toX: x,
+          toY: y,
+          at: event.t - kLaunchDuration,
+          duration: kLaunchDuration,
+          color: shot.palette.glow,
+          seed: '${shell.seed}:launch',
+        );
+      }
+      placed = _BeatPlaced(
+        index,
+        planBurst(
+          BurstEvent(
+            x: x,
+            y: y,
+            at: event.t,
+            spec: shell.spec,
+            seed: shell.seed,
+          ),
+          shot.palette,
+          unit: math.min(w, h),
+          amount: math.max(0, f.settings.sparkAmount),
+        ),
+        launch,
+      );
+    }
+    rig.beats[key] = placed;
+    return placed;
+  }
+
+  /// 这一帧在燃烧的拍（开花后 [kHanabiBeatShellLife] 秒内）与马上要升空到达的拍，按镜头分好。
+  List<_BeatPlaced> _collectBeats(_ParagraphRig rig, Size size, HanabiFrame f) {
+    final List<HanabiBeatEvent> events = f.beatEvents;
+    final double strength = f.beatBursts;
+    if (!f.motion || f.settings.textOnly || strength <= 0 || events.isEmpty) {
+      return const <_BeatPlaced>[];
+    }
+    if (!identical(events, rig.beatsFrom) || strength != rig.beatsStrength) {
+      rig.beats.clear();
+      rig.beatsFrom = events;
+      rig.beatsStrength = strength;
+    }
+    final double time = f.time;
+    final double until = time + kLaunchDuration;
+    final List<_BeatPlaced> out = <_BeatPlaced>[];
+    for (
+      int i = firstHanabiBeatAtOrAfter(events, time - kHanabiBeatShellLife);
+      i < events.length && events[i].t <= until;
+      i++
+    ) {
+      final _BeatPlaced? placed = _placeBeat(rig, events[i], strength, size, f);
+      if (placed != null) out.add(placed);
+    }
+    return out;
+  }
+
   // ── 画 ──
 
   void paint(ui.Canvas canvas, Size size, HanabiFrame f) {
@@ -753,6 +885,17 @@ class HanabiScene {
       for (final _ShotRig shot in upcoming.shots) {
         if (shot.lifeStart - time < _prepareAhead) shot.text?.prepare();
       }
+    }
+
+    // 随拍推镜：整个场景层（环境、歌词、辉光）以画面中心推近、左右轻摆。
+    final bool pulsed = graphics && (f.pulseScale != 1 || f.pulseRotation != 0);
+    if (pulsed) {
+      canvas
+        ..save()
+        ..translate(w / 2, h / 2)
+        ..rotate(f.pulseRotation)
+        ..scale(f.pulseScale)
+        ..translate(-w / 2, -h / 2);
     }
 
     // 环境层（后）。
@@ -843,6 +986,7 @@ class HanabiScene {
       ambient.paintFront(_batch, size, time, rise, scenePalette);
       _batch.flush(canvas, sprites);
     }
+    if (pulsed) canvas.restore();
     if (s.overlayFrame) {
       _overlay.paint(canvas, size, scenePalette, f.baseStyle, 1);
     }
@@ -906,7 +1050,9 @@ class HanabiScene {
     canvas.scale(cam.scale);
     canvas.rotate(timeline.spin(time));
     canvas.translate(-w / 2, -h / 2 + timeline.rise(time));
-    for (final _ShotRig shot in rig.shots) {
+    final List<_BeatPlaced> beats = _collectBeats(rig, size, f);
+    for (int si = 0; si < rig.shots.length; si++) {
+      final _ShotRig shot = rig.shots[si];
       if (time < shot.lifeStart || time > shot.lifeEnd) continue;
       final ShotTiming timing = shot.timing;
       final HanabiText? text = shot.text;
@@ -915,9 +1061,18 @@ class HanabiScene {
       canvas.translate(w / 2, h / 2 + timing.worldY);
       canvas.rotate(-timing.spin);
       canvas.translate(-w / 2 + shot.originX, -h / 2 + shot.originY);
-      // 烟花
-      if (shot.bursts.isNotEmpty || shot.launches.isNotEmpty) {
-        for (final LaunchEvent l in shot.launches) {
+      // 烟花（含随拍开花）
+      final List<_BeatPlaced> shotBeats = <_BeatPlaced>[
+        for (final _BeatPlaced b in beats)
+          if (b.shot == si) b,
+      ];
+      if (shot.bursts.isNotEmpty ||
+          shot.launches.isNotEmpty ||
+          shotBeats.isNotEmpty) {
+        for (final LaunchEvent l in <LaunchEvent>[
+          ...shot.launches,
+          for (final _BeatPlaced b in shotBeats) ?b.launch,
+        ]) {
           if (time >= l.at && time <= launchEnd(l)) {
             drawLaunch(l, time, unit, _batch);
           }
@@ -925,6 +1080,8 @@ class HanabiScene {
         final List<BurstPlan> active = <BurstPlan>[
           for (final BurstPlan b in shot.bursts)
             if (time >= b.at && time <= b.end) b,
+          for (final _BeatPlaced b in shotBeats)
+            if (time >= b.burst.at && time <= b.burst.end) b.burst,
         ];
         if (active.isNotEmpty) drawBursts(active, time, _batch);
         _batch.flush(canvas, sprites);

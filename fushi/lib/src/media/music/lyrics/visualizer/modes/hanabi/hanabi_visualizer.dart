@@ -11,6 +11,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_color.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_program.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart';
@@ -34,6 +35,8 @@ abstract final class HanabiTuningKeys {
   static const String sky = 'sky';
   static const String collage = 'collage';
   static const String renderQuality = 'renderQuality';
+  static const String beatBursts = 'beatBursts';
+  static const String beatPulse = 'beatPulse';
 }
 
 String _times(double v) => '${v.toStringAsFixed(1)}×';
@@ -146,6 +149,19 @@ hanabiTunings = <LyricVisualizerTuningSpec>[
     2,
     1,
   ),
+  // folia 智能动感模式的两个效果（强度在 folia 是全局设置，这里收成本样式的两项；0 = 关）。
+  _slider(
+    HanabiTuningKeys.beatBursts,
+    () => t.music_visualizer_hanabi_beat_bursts,
+    2,
+    1,
+  ),
+  _slider(
+    HanabiTuningKeys.beatPulse,
+    () => t.music_visualizer_hanabi_beat_pulse,
+    2,
+    1,
+  ),
   LyricVisualizerChoiceSpec(
     key: HanabiTuningKeys.renderQuality,
     label: () => t.music_visualizer_hanabi_render_quality,
@@ -196,8 +212,27 @@ HanabiProgram compileHanabiProgramFor(
   final List<HanabiLine> lines = <HanabiLine>[
     for (final LyricVisualizerLine l in runtime.lines) ?hanabiLineOf(l),
   ];
-  markHanabiChorus(lines);
   return compileHanabiProgram(lines, seed, duration: durationSeconds);
+}
+
+/// 关键字色（folia `keywordColorOf`）：主题 wordColors 里的词，整词命中或包含关键字（不分大小写）就用它的颜色
+/// （RGB）；没有关键字返回 null。
+int? Function(String text)? hanabiKeywordColorOf(LyricVisualizerTheme? theme) {
+  if (theme == null || !theme.hasWordColors) return null;
+  final List<(String, int)> entries = <(String, int)>[
+    for (final MapEntry<String, Color> e in theme.wordColors.entries)
+      if (e.key.trim().isNotEmpty)
+        (e.key.trim().toLowerCase(), e.value.toARGB32() & 0xFFFFFF),
+  ];
+  if (entries.isEmpty) return null;
+  return (String text) {
+    final String key = text.trim().toLowerCase();
+    if (key.isEmpty) return null;
+    for (final (String word, int color) in entries) {
+      if (key == word || key.contains(word)) return color;
+    }
+    return null;
+  };
 }
 
 /// 注册项。
@@ -207,7 +242,9 @@ final LyricVisualizerEntry hanabiVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_hanabi_description,
   icon: FushiIcons.celebration,
   tunings: hanabiTunings,
-  sharedBackdrop: true,
+  // folia 花火没有指定背景：画在用户选的共享背景上（自己的夜空按「夜空」参数盖一层）。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => HanabiVisualizer(context: c),
 );
@@ -224,6 +261,23 @@ class HanabiVisualizer extends StatefulWidget {
 class _HanabiVisualizerState extends State<HanabiVisualizer> {
   HanabiScene? _scene;
   Object? _sceneKey;
+  List<HanabiBeatEvent> _beats = const <HanabiBeatEvent>[];
+  Object? _beatsKey;
+
+  /// 节拍表（分析就绪 / 换歌 / 改偏移时重算）。
+  List<HanabiBeatEvent> _beatsFor(LyricVisualizerContext c) {
+    final LyricVisualizerAudio? a = c.audio;
+    final Object key = Object.hash(
+      identityHashCode(a),
+      a != null && a.beatsReady ? a.beatTimesMs.length : -1,
+      c.offsetMs,
+    );
+    if (key != _beatsKey) {
+      _beatsKey = key;
+      _beats = hanabiBeatEventsOf(c);
+    }
+    return _beats;
+  }
 
   HanabiScene _sceneFor(LyricVisualizerContext c) {
     final int durationMs = c.clock.duration.inMilliseconds;
@@ -268,9 +322,11 @@ class _HanabiVisualizerState extends State<HanabiVisualizer> {
       background: p.background.toARGB32() & 0xFFFFFF,
     );
     final TextStyle inherited = DefaultTextStyle.of(buildContext).style;
-    final TextStyle baseStyle = TextStyle(
-      fontFamily: inherited.fontFamily,
-      fontFamilyFallback: inherited.fontFamilyFallback,
+    final TextStyle baseStyle = c.applyThemeFont(
+      TextStyle(
+        fontFamily: inherited.fontFamily,
+        fontFamilyFallback: inherited.fontFamilyFallback,
+      ),
     );
     return RepaintBoundary(
       child: LyricVisualizerFrame(
@@ -284,6 +340,8 @@ class _HanabiVisualizerState extends State<HanabiVisualizer> {
             theme: theme,
             settings: hanabiSettingsOf(c.tuning),
             baseStyle: baseStyle,
+            beats: _beatsFor(c),
+            keywordColor: hanabiKeywordColorOf(c.theme),
           ),
         ),
       ),
@@ -299,6 +357,8 @@ class _HanabiPainter extends CustomPainter {
     required this.theme,
     required this.settings,
     required this.baseStyle,
+    required this.beats,
+    required this.keywordColor,
   }) : super(repaint: ticks);
 
   final HanabiScene scene;
@@ -307,10 +367,21 @@ class _HanabiPainter extends CustomPainter {
   final HanabiTheme theme;
   final HanabiSettings settings;
   final TextStyle baseStyle;
+  final List<HanabiBeatEvent> beats;
+  final int? Function(String text)? keywordColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     final LyricVisualizerTick tick = ticks.value;
+    final LyricVisualizerTuning tuning = context.tuning;
+    final bool beatOn = context.motion && !settings.textOnly;
+    final ({double scale, double rotation}) pulse = beatOn
+        ? hanabiBeatPulseAt(
+            context,
+            tick.timeMs,
+            tuning.number(HanabiTuningKeys.beatPulse, 1),
+          )
+        : (scale: 1.0, rotation: 0.0);
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     scene.paint(
@@ -323,6 +394,19 @@ class _HanabiPainter extends CustomPainter {
         settings: settings,
         fontScale: context.fontScale,
         baseStyle: baseStyle,
+        intensityMotion: context.intensity.pick(0.6, 1, 1.4),
+        keywordColor: keywordColor,
+        keywordKey: context.theme == null
+            ? null
+            : Object.hashAll(
+                context.theme!.wordColors.entries.map(
+                  (MapEntry<String, Color> e) => Object.hash(e.key, e.value),
+                ),
+              ),
+        beatEvents: beats,
+        beatBursts: tuning.number(HanabiTuningKeys.beatBursts, 1),
+        pulseScale: pulse.scale,
+        pulseRotation: pulse.rotation,
       ),
     );
     canvas.restore();
@@ -337,5 +421,6 @@ class _HanabiPainter extends CustomPainter {
       old.theme.secondary != theme.secondary ||
       old.theme.background != theme.background ||
       old.settings != settings ||
-      old.baseStyle != baseStyle;
+      old.baseStyle != baseStyle ||
+      !identical(old.beats, beats);
 }

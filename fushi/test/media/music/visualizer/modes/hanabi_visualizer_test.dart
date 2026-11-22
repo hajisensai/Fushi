@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_catalog.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_color.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_fireworks.dart';
@@ -102,12 +105,38 @@ void main() {
       expect(p.lyricEndTime, isNull);
     });
 
-    test('重复出现的行标成副歌', () {
-      final List<HanabiLine> lines = _song();
-      markHanabiChorus(lines);
-      expect(lines[0].isChorus, isTrue);
-      expect(lines[1].isChorus, isTrue);
-      expect(lines[2].isChorus, isFalse);
+    test('副歌取运行时的 isChorus（folia 启发式：重复最多的行）', () {
+      final LyricVisualizerRuntime runtime = LyricVisualizerRuntime(
+        LyricTimeline(
+          format: 'lrc',
+          lines: <LyricLine>[
+            for (final HanabiLine l in _song())
+              LyricLine(
+                startMs: (l.startTime * 1000).round(),
+                endMs: (l.endTime * 1000).round(),
+                syllables: <LyricSyllable>[
+                  LyricSyllable(
+                    text: l.text,
+                    startMs: (l.startTime * 1000).round(),
+                    endMs: (l.endTime * 1000).round(),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      );
+      final List<HanabiLine> lines = <HanabiLine>[
+        for (final LyricVisualizerLine l in runtime.lines) hanabiLineOf(l)!,
+      ];
+      expect(lines.map((HanabiLine l) => l.isChorus), <bool>[
+        true,
+        false,
+        false,
+        true,
+        false,
+        true,
+      ]);
+      expect(lines[0].slice(0, 2).isChorus, isTrue);
       final List<HanabiChorusSpan> spans = resolveHanabiChorusSpans(lines);
       expect(spans, isNotEmpty);
       expect(resolveHanabiChorusWeight(const <HanabiChorusSpan>[], 3), 0);
@@ -133,6 +162,128 @@ void main() {
       expect(late.active, isTrue);
       expect(late.lyricAlpha, closeTo(0, 1e-6));
       expect(late.posterAlpha, closeTo(1, 1e-6));
+    });
+  });
+
+  group('共享框架', () {
+    test('分词走共享分词：汉字 + 送假名成词、助词单独、标点拆出来不算词', () {
+      final HanabiLine l = _line('夜空に光を！ hello, world', 0, 0.1);
+      final List<String> parts = <String>[
+        for (final HanabiSegment s in l.segments)
+          '${l.chars.sublist(s.start, s.end).join()}${s.wordLike ? '' : '*'}',
+      ];
+      expect(parts, <String>[
+        '夜空',
+        'に',
+        '光',
+        'を',
+        '！*',
+        ' *',
+        'hello',
+        ',*',
+        ' *',
+        'world',
+      ]);
+      // 段首尾相接、覆盖整行
+      int at = 0;
+      for (final HanabiSegment s in l.segments) {
+        expect(s.start, at);
+        at = s.end;
+      }
+      expect(at, l.chars.length);
+    });
+
+    test('随拍开花：节拍表、每拍一朵、没节奏不开、强度 0 不开', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        hanabiVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      final List<HanabiBeatEvent> events = hanabiBeatEventsOf(c);
+      expect(events, isNotEmpty);
+      expect(events.first.downbeat, isTrue);
+      expect(events[1].downbeat, isFalse);
+      expect(
+        hanabiBeatEventsOf(
+          visualizerContextFor(
+            hanabiVisualizerEntry,
+            clock: FakeVisualizerClock(),
+          ),
+        ),
+        isEmpty,
+      );
+      final HanabiBeatShell big = resolveHanabiBeatShell(events[0], 's', 1)!;
+      final HanabiBeatShell small = resolveHanabiBeatShell(events[1], 's', 1)!;
+      expect(big.launch, isTrue);
+      expect(small.launch, isFalse);
+      expect(big.spec.radius, greaterThan(small.spec.radius));
+      expect(big.sx, inInclusiveRange(0.2, 0.8));
+      expect(small.sy, inInclusiveRange(0.07, 0.43));
+      // 同一拍同一种子永远一样
+      expect(resolveHanabiBeatShell(events[1], 's', 1)!.sx, small.sx);
+      expect(resolveHanabiBeatShell(events[1], 's', 0), isNull);
+      expect(
+        resolveHanabiBeatShell(
+          const HanabiBeatEvent(t: 1, downbeat: false, gain: 0),
+          's',
+          1,
+        ),
+        isNull,
+      );
+      expect(firstHanabiBeatAtOrAfter(events, 0.6), 2);
+    });
+
+    test('随拍推镜：拍上推近、重拍更深、每拍换边；没有节拍网格不推', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        hanabiVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      final ({double scale, double rotation}) down = hanabiBeatPulseAt(
+        c,
+        2000,
+        1,
+      );
+      final ({double scale, double rotation}) beat = hanabiBeatPulseAt(
+        c,
+        2500,
+        1,
+      );
+      expect(down.scale, greaterThan(beat.scale));
+      expect(beat.scale, greaterThan(1));
+      expect(down.rotation.sign, -beat.rotation.sign);
+      expect(hanabiBeatPulseAt(c, 2000, 0).scale, 1);
+      final LyricVisualizerContext none = visualizerContextFor(
+        hanabiVisualizerEntry,
+        clock: FakeVisualizerClock(),
+      );
+      expect(hanabiBeatPulseAt(none, 2000, 1).scale, 1);
+    });
+
+    test('关键字色：整词命中或包含关键字，不分大小写', () {
+      expect(hanabiKeywordColorOf(null), isNull);
+      expect(hanabiKeywordColorOf(const LyricVisualizerTheme()), isNull);
+      final int? Function(String) of = hanabiKeywordColorOf(
+        const LyricVisualizerTheme(
+          wordColors: <String, Color>{
+            '花火': Color(0xFFE53935),
+            'Summer': Color(0xFF1E88E5),
+          },
+        ),
+      )!;
+      expect(of('花火'), 0xE53935);
+      expect(of('花火を'), 0xE53935);
+      expect(of('summer'), 0x1E88E5);
+      expect(of('夜空'), isNull);
+    });
+
+    test('背景：用户选的共享背景', () {
+      expect(
+        hanabiVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(hanabiVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
     });
   });
 
@@ -367,12 +518,39 @@ void main() {
         hanabiVisualizerEntry.tunings
             .map((LyricVisualizerTuningSpec t) => t.key)
             .toSet(),
-        hasLength(17),
+        hasLength(19),
       );
     });
   });
 
   group('widget', () {
+    testWidgets('有音频分析：随拍开花 + 推镜拉满、AI 主题关键字与字重、激烈', (
+      WidgetTester tester,
+    ) async {
+      await pumpVisualizerAcross(
+        tester,
+        hanabiVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'夜空': Color(0xFFE53935)},
+          fontWeight: FontWeight.w700,
+        ),
+        tuning: const <String, Object?>{'beatBursts': 2.0, 'beatPulse': 2.0},
+        timesMs: const <int>[0, 1100, 1500, 2000, 2900, 3600, 5000, 12300],
+      );
+    });
+
+    testWidgets('只有节拍、没有包络 + 平静 + 关随拍', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        hanabiVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        intensity: LyricVisualizerIntensity.calm,
+        tuning: const <String, Object?>{'beatBursts': 0.0, 'beatPulse': 0.0},
+      );
+    });
+
     testWidgets('默认参数', (WidgetTester tester) async {
       await pumpVisualizerAcross(tester, hanabiVisualizerEntry);
     });

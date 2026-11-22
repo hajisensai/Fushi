@@ -540,6 +540,7 @@ class HanabiText {
     required double motion,
     required double blockOpacity,
     required this.baseStyle,
+    int? Function(String text)? keywordColor,
   }) : _motion = math.max(0, motion),
        _blockOpacity = clamp01(blockOpacity),
        _enterAt = enterAt {
@@ -658,9 +659,18 @@ class HanabiText {
       final int index = visible[o];
       final PlacedGlyph g = glyphs[index];
       final int? under = _glyphColor[index];
+      // 关键字色（主题 wordColors）：先按字所在的词找，再按这个字找（folia lyricText.ts）。
+      final int? keyword = keywordColor == null
+          ? null
+          : (keywordColor(
+                  g.word >= 0 && g.word < words.length
+                      ? words[g.word].text
+                      : g.char,
+                ) ??
+                keywordColor(g.char));
       final HanabiGlyphColors colors = resolveHanabiGlyphColors(
         palette,
-        baseInk,
+        keyword ?? baseInk,
         under ?? backdrop,
       );
       final int tint = colors.ink;

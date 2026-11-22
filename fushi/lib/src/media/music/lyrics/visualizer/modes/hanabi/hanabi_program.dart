@@ -2,8 +2,9 @@
 /// `hanabiTransitions.ts` + `hanabiSceneFrames.ts` + `hanabiScreenBloom.ts` 的纯函数部分）：
 /// 歌词 → 段落 → 每段切镜头、选预设 → 段落转场。同样的歌词与种子永远得到同样的程序。
 ///
-/// 与 folia 的差别：文字偏移按字形（grapheme）而不是 UTF-16；分词是本地的启发式（folia 用 Intl.Segmenter）；
-/// Fushi 的歌词行没有副歌 / 段落元数据，副歌按「连续重复的行」推断。
+/// 与 folia 的差别：文字偏移按字形（grapheme）而不是 UTF-16。分词用框架的共享分词
+/// （`lyric_visualizer_segments.dart`，folia `segmentLyricWords`），副歌取运行时的 `isChorus`（来源
+/// 带段落标注时用标注，否则 folia 的文本启发式）。
 library;
 
 import 'dart:math' as math;
@@ -101,6 +102,7 @@ HanabiLine? hanabiLineOf(LyricVisualizerLine line) {
       ],
       startTime: s,
       endTime: e,
+      isChorus: line.isChorus,
     );
   }
   final List<LyricVisualizerGlyph> used = glyphs.sublist(a, b);
@@ -115,120 +117,68 @@ HanabiLine? hanabiLineOf(LyricVisualizerLine line) {
     ],
     startTime: line.startMs / 1000,
     endTime: math.max(line.endMs, line.startMs) / 1000,
+    isChorus: line.isChorus,
   );
 }
 
-enum _CharClass { space, punct, latin, han, hira, kata, hangul }
-
-_CharClass _classOf(String ch) {
-  if (ch.trim().isEmpty) return _CharClass.space;
-  final int c = ch.runes.first;
-  if (c >= 0x3040 && c <= 0x309F) return _CharClass.hira;
-  if ((c >= 0x30A0 && c <= 0x30FF) ||
-      (c >= 0x31F0 && c <= 0x31FF) ||
-      (c >= 0xFF66 && c <= 0xFF9F)) {
-    return _CharClass.kata;
-  }
-  if ((c >= 0x4E00 && c <= 0x9FFF) ||
-      (c >= 0x3400 && c <= 0x4DBF) ||
-      (c >= 0xF900 && c <= 0xFAFF) ||
-      (c >= 0x20000 && c <= 0x3134F) ||
-      c == 0x3005) {
-    return _CharClass.han;
-  }
-  if ((c >= 0xAC00 && c <= 0xD7AF) ||
-      (c >= 0x1100 && c <= 0x11FF) ||
-      (c >= 0x3130 && c <= 0x318F)) {
-    return _CharClass.hangul;
-  }
-  if (_isLetterOrDigit(ch)) return _CharClass.latin;
-  return _CharClass.punct;
-}
-
-final RegExp _letterOrDigit = RegExp(r'[\p{L}\p{N}]', unicode: true);
-bool _isLetterOrDigit(String ch) => _letterOrDigit.hasMatch(ch);
-
-/// 本地分词（替代 folia 的 Intl.Segmenter）：拉丁 / 数字连写成词，片假名连写成词，汉字两字一词并带上后面的
-/// 送假名（最多两个平假名），单独的平假名三字一词，空白与标点各自成段（不算词）。
+/// 分词（folia `segmentLyricWords` 的 Intl.Segmenter 词粒度）：走框架的共享分词，再按 Intl.Segmenter 的
+/// 习惯把粘在词上的标点拆回来单独成段（不算词），词与词之间的空白各成一段。
 List<HanabiSegment> segmentHanabiWords(List<String> chars) {
+  final List<LyricVisualizerGlyph> glyphs = <LyricVisualizerGlyph>[
+    for (final String c in chars)
+      LyricVisualizerGlyph(
+        text: c,
+        startMs: 0,
+        endMs: 0,
+        syllableIndex: 0,
+        isSpace: c.trim().isEmpty,
+      ),
+  ];
+  final List<LyricVisualizerScript> sc = <LyricVisualizerScript>[
+    for (final String c in chars) lyricVisualizerScriptOf(c),
+  ];
   final List<HanabiSegment> out = <HanabiSegment>[];
-  int i = 0;
-  while (i < chars.length) {
-    final _CharClass k = _classOf(chars[i]);
-    final int start = i;
-    switch (k) {
-      case _CharClass.space:
-        while (i < chars.length && _classOf(chars[i]) == _CharClass.space) {
-          i++;
-        }
-        out.add(HanabiSegment(start, i, wordLike: false, space: true));
-      case _CharClass.punct:
-        while (i < chars.length && _classOf(chars[i]) == _CharClass.punct) {
-          i++;
-        }
-        out.add(HanabiSegment(start, i, wordLike: false, space: false));
-      case _CharClass.latin:
-      case _CharClass.hangul:
-        while (i < chars.length && _classOf(chars[i]) == k) {
-          i++;
-        }
-        out.add(HanabiSegment(start, i, wordLike: true, space: false));
-      case _CharClass.kata:
-        while (i < chars.length && _classOf(chars[i]) == _CharClass.kata) {
-          i++;
-        }
-        out.add(HanabiSegment(start, i, wordLike: true, space: false));
-      case _CharClass.han:
-        int n = 0;
-        while (i < chars.length &&
-            _classOf(chars[i]) == _CharClass.han &&
-            n < 2) {
-          i++;
-          n++;
-        }
-        int okuri = 0;
-        while (i < chars.length &&
-            _classOf(chars[i]) == _CharClass.hira &&
-            okuri < 2) {
-          i++;
-          okuri++;
-        }
-        out.add(HanabiSegment(start, i, wordLike: true, space: false));
-      case _CharClass.hira:
-        int n = 0;
-        while (i < chars.length &&
-            _classOf(chars[i]) == _CharClass.hira &&
-            n < 3) {
-          i++;
-          n++;
-        }
-        out.add(HanabiSegment(start, i, wordLike: true, space: false));
+
+  /// 词外的一段：空白连成一段，标点 / 符号连成一段。
+  void gap(int from, int to) {
+    int i = from;
+    while (i < to) {
+      final int start = i;
+      final bool space = sc[i] == LyricVisualizerScript.space;
+      while (i < to && (sc[i] == LyricVisualizerScript.space) == space) {
+        i++;
+      }
+      out.add(HanabiSegment(start, i, wordLike: false, space: space));
     }
   }
+
+  bool punct(int i) => sc[i] == LyricVisualizerScript.punctuation;
+  int cursor = 0;
+  for (final LyricVisualizerSegment seg in buildLyricVisualizerSegments(
+    glyphs,
+  )) {
+    final int a = seg.firstGlyph.clamp(cursor, chars.length);
+    final int b = (seg.firstGlyph + seg.glyphCount).clamp(a, chars.length);
+    gap(cursor, a);
+    int coreA = a;
+    while (coreA < b && punct(coreA)) {
+      coreA++;
+    }
+    int coreB = b;
+    while (coreB > coreA && punct(coreB - 1)) {
+      coreB--;
+    }
+    if (coreA >= coreB) {
+      gap(a, b);
+    } else {
+      gap(a, coreA);
+      out.add(HanabiSegment(coreA, coreB, wordLike: true, space: false));
+      gap(coreB, b);
+    }
+    cursor = b;
+  }
+  gap(cursor, chars.length);
   return out;
-}
-
-/// 连续两行以上、在全曲里重复出现的行当作副歌（Fushi 的歌词没有副歌标记）。
-void markHanabiChorus(List<HanabiLine> lines) {
-  String key(HanabiLine l) =>
-      l.text.toLowerCase().replaceAll(RegExp(r'\s+'), '');
-  final Map<String, int> counts = <String, int>{};
-  for (final HanabiLine l in lines) {
-    final String k = key(l);
-    if (k.length < 2) continue;
-    counts[k] = (counts[k] ?? 0) + 1;
-  }
-  bool repeated(int i) {
-    final String k = key(lines[i]);
-    return k.length >= 2 && (counts[k] ?? 0) >= 2;
-  }
-
-  for (int i = 0; i < lines.length; i++) {
-    lines[i].isChorus =
-        repeated(i) &&
-        ((i > 0 && repeated(i - 1)) ||
-            (i + 1 < lines.length && repeated(i + 1)));
-  }
 }
 
 // ─── 段落结构（paragraphStructure.ts）──────────────────────────────────
