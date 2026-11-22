@@ -34,14 +34,25 @@ class NebbiaBump {
 
 /// 随机颠簸的时间表（folia：平均 7.5 秒一下，间隔 3–12 秒），按种子一次排开、按需往后补。
 class NebbiaBumps {
-  NebbiaBumps(int seed) : _rng = LyricVisualizerRandom(seed ^ 0x7a11);
+  NebbiaBumps(int seed)
+    : _rng = LyricVisualizerRandom(seed ^ 0x7a11),
+      _fixed = false;
+
+  /// 固定的一份颠簸表（鼓点颠簸，见 [nebbiaDrumBumps]），时刻是歌曲时间。
+  NebbiaBumps.fixed(List<NebbiaBump> bumps)
+    : _rng = LyricVisualizerRandom(0),
+      _fixed = true {
+    _list.addAll(bumps);
+  }
 
   final LyricVisualizerRandom _rng;
+  final bool _fixed;
   final List<NebbiaBump> _list = <NebbiaBump>[];
   double _next = 0;
   double _last = -double.infinity;
 
   void _extend(double until) {
+    if (_fixed) return;
     if (_list.isEmpty && _next == 0) {
       _next = (3 + _rng.next() * 9) / NebbiaFixed.bumpRate;
     }
@@ -277,6 +288,84 @@ const double kNebbiaHitBucket = 0.02;
 double nebbiaHitLife(double refog) =>
     0.4 + refog * 0.3 + NebbiaFixed.beadHold * 0.5 + refog;
 
+/// 鼓点颠簸（folia `nebbiaDrumBumps.ts`）：力度不到 0.35 的不颠，两次至少隔 0.3 秒，幅度 0.3 + 0.7 × 力度。
+/// [hits] 是 (歌曲秒, 力度 0..1)，升序。
+List<NebbiaBump> nebbiaDrumBumps(List<(double, double)> hits) {
+  final List<NebbiaBump> out = <NebbiaBump>[];
+  double last = -double.infinity;
+  for (final (double at, double strength) in hits) {
+    if (strength < 0.35 || at - last < 0.3) continue;
+    out.add(
+      NebbiaBump(at, 0.3 + 0.7 * strength, nebbiaClamp((at - last) / 7.5)),
+    );
+    last = at;
+  }
+  return out;
+}
+
+NebbiaHit _bigHitAt(
+  LyricVisualizerRandom rnd,
+  double t,
+  NebbiaLineRect? rect,
+  double width,
+  double height,
+  double k,
+) {
+  double x = 0;
+  double y = 0;
+  for (int tries = 0; tries < 8; tries++) {
+    x = width * (0.03 + 0.94 * rnd.next());
+    y = height * (0.03 + 0.94 * rnd.next());
+    if (rect == null ||
+        !rect.isFinite ||
+        x < rect.x0 - 20 ||
+        x > rect.x1 + 20 ||
+        y < rect.y0 - 20 ||
+        y > rect.y1 + 20) {
+      break;
+    }
+  }
+  final double r = (7 + rnd.next() * 6) * k;
+  final int ns = 4 + (rnd.next() * 5).floor();
+  final List<(double, double, double)> sat = <(double, double, double)>[
+    for (int i = 0; i < ns; i++)
+      () {
+        final double a = rnd.next() * 6.28;
+        final double d = r * (1.5 + rnd.next() * 1.4);
+        return (
+          math.cos(a) * d,
+          math.sin(a) * d * 0.85 + r * 0.2,
+          (1 + rnd.next() * 1.6) * k,
+        );
+      }(),
+  ];
+  return NebbiaHit(t, x, y, r, true, sat, rnd.next() * 100);
+}
+
+/// 有人声分析时的大雨点（folia `buildBig` 的人声轨分支）：砸在人声起音上，起音处人声够响（> 0.15）
+/// 必砸，否则三成概率；躲开那一刻正在唱的句子。[onsets] 是 (歌曲秒, 人声强度)，升序。
+List<NebbiaHit> nebbiaVocalBigHits(
+  List<NebbiaLaidLine> laid,
+  List<(double, double)> onsets,
+  double width,
+  double height,
+  int seed,
+) {
+  final LyricVisualizerRandom rnd = LyricVisualizerRandom(seed ^ 913);
+  final double k = math.min(width, height) / 720;
+  final List<NebbiaHit> out = <NebbiaHit>[];
+  for (final (double at, double vocal) in onsets) {
+    if (!(vocal > 0.15 || rnd.next() < 0.3)) continue;
+    NebbiaLineRect? rect;
+    for (final NebbiaLaidLine l in laid) {
+      if (l.credits != null) continue;
+      if (l.t <= at && at < l.next) rect = l.rect;
+    }
+    out.add(_bigHitAt(rnd, at, rect, width, height, k));
+  }
+  return out;
+}
+
 /// 大雨点：每个词开唱处六成砸一颗，躲开正在唱的那句。整首一次排好（大小按 1 倍，画的时候再乘）。
 List<NebbiaHit> nebbiaBigHits(
   List<NebbiaLaidLine> laid,
@@ -296,41 +385,14 @@ List<NebbiaHit> nebbiaBigHits(
       if (w.isEmpty || w.first >= line.chars.length) continue;
       final double t = line.chars[w.first].t;
       if (rnd.next() >= 0.6) continue;
-      double x = 0;
-      double y = 0;
-      for (int tries = 0; tries < 8; tries++) {
-        x = width * (0.03 + 0.94 * rnd.next());
-        y = height * (0.03 + 0.94 * rnd.next());
-        if (!rect.isFinite ||
-            x < rect.x0 - 20 ||
-            x > rect.x1 + 20 ||
-            y < rect.y0 - 20 ||
-            y > rect.y1 + 20) {
-          break;
-        }
-      }
-      final double r = (7 + rnd.next() * 6) * k;
-      final int ns = 4 + (rnd.next() * 5).floor();
-      final List<(double, double, double)> sat = <(double, double, double)>[
-        for (int i = 0; i < ns; i++)
-          () {
-            final double a = rnd.next() * 6.28;
-            final double d = r * (1.5 + rnd.next() * 1.4);
-            return (
-              math.cos(a) * d,
-              math.sin(a) * d * 0.85 + r * 0.2,
-              (1 + rnd.next() * 1.6) * k,
-            );
-          }(),
-      ];
-      out.add(NebbiaHit(t, x, y, r, true, sat, rnd.next() * 100));
+      out.add(_bigHitAt(rnd, t, rect, width, height, k));
     }
   }
   out.sort((NebbiaHit a, NebbiaHit b) => a.t.compareTo(b.t));
   return out;
 }
 
-/// 小雨点：每 20 毫秒一格，按这一格的人声强度（这里是歌词节拍包络）以泊松速率 0.15–7 个/秒落下；
+/// 小雨点：每 20 毫秒一格，按这一格的人声强度（共享音频帧的 vocal；没有音频时是歌词起字包络）以泊松速率 0.15–7 个/秒落下；
 /// 每格的随机数只由歌和格号决定，同一时刻同一首歌落在同一处。返回 [T − life, T] 里落下的。
 List<NebbiaHit> nebbiaSmallHits(
   double t,

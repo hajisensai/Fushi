@@ -20,14 +20,18 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_pain
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_tuning.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 注册项。窗外可选「共用背景」，所以宿主照常铺共享背景（街景 / 水族箱时被整个盖住）；
-/// 雾笺不画译文，底部字幕交给宿主。
+/// 注册项。窗外选「共用背景」时请求用户选的共享背景（擦开处透出它），街景 / 水族箱自己画满全屏、
+/// 不要共享背景（folia `nebbiaBackgroundConfig`）；雾笺不画译文，底部字幕交给宿主。
 final LyricVisualizerEntry nebbiaVisualizerEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.nebbia,
   label: () => t.music_visualizer_mode_nebbia,
   description: () => t.music_visualizer_nebbia_description,
   icon: FushiIcons.blurLinear,
   tunings: nebbiaTuningSpecs,
+  background: (LyricVisualizerTuning tuning) =>
+      tuning.choice('behind', 'night') == 'backdrop'
+      ? LyricVisualizerBackgroundRequest.selected
+      : LyricVisualizerBackgroundRequest.none,
   builder: (LyricVisualizerContext c) => NebbiaVisualizer(context: c),
 );
 
@@ -76,10 +80,11 @@ class _NebbiaVisualizerState extends State<NebbiaVisualizer> {
             s: s,
             ticks: ticks,
             controller: _controller,
+            // 主题字体 / 字重（AI 主题）套到书写的字形上。
             font: TextStyle(
-              fontFamily: font.fontFamily,
+              fontFamily: c.theme?.fontFamily ?? font.fontFamily,
               fontFamilyFallback: font.fontFamilyFallback,
-              fontWeight: FontWeight.w500,
+              fontWeight: c.theme?.fontWeight ?? FontWeight.w500,
               locale: font.locale,
             ),
           ),

@@ -218,6 +218,32 @@ List<List<int>> nebbiaGroupWords(List<String> chars) {
   return words;
 }
 
+/// 一句的词：取框架的共享分词（`line.segments`，folia `segmentLyricWords`：中文逐字词典切分、日文
+/// 汉字 + 送假名、拉丁按词、标点粘前），去掉空白；图标单独成词。[chars] 与 `line.glyphs` 一一对应。
+List<List<int>> nebbiaSharedWords(
+  LyricVisualizerLine line,
+  List<String> chars,
+) {
+  final List<List<int>> words = <List<int>>[];
+  for (final LyricVisualizerSegment seg in line.segments) {
+    List<int> run = <int>[];
+    final int end = math.min(chars.length, seg.firstGlyph + seg.glyphCount);
+    for (int i = seg.firstGlyph; i < end; i++) {
+      final String ch = chars[i];
+      if (ch.trim().isEmpty) continue;
+      if (nebbiaIsIcon(ch)) {
+        if (run.isNotEmpty) words.add(run);
+        run = <int>[];
+        words.add(<int>[i]);
+        continue;
+      }
+      run.add(i);
+    }
+    if (run.isNotEmpty) words.add(run);
+  }
+  return words;
+}
+
 /// 整首歌的逐字序列。[seed] 决定哪些句子句尾画图标、画哪个；[doodle] 是概率。
 List<NebbiaSourceLine> buildNebbiaLines(
   List<LyricVisualizerLine> lines,
@@ -235,7 +261,7 @@ List<NebbiaSourceLine> buildNebbiaLines(
           math.max(0, g.endMs - g.startMs) / 1000,
         ),
     ];
-    final List<List<int>> words = nebbiaGroupWords(<String>[
+    final List<List<int>> words = nebbiaSharedWords(line, <String>[
       for (final NebbiaChar c in chars) c.ch,
     ]);
     final double t = line.startMs / 1000;

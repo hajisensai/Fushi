@@ -112,6 +112,10 @@ final List<_Num> _numbers = <_Num>[
   _Num('snow', 0, 3, 1, () => t.music_visualizer_nebbia_snow),
   _Num('snowSize', 0.5, 2, 1, () => t.music_visualizer_nebbia_snow_size),
   _Num('snowMelt', 0.25, 3, 1, () => t.music_visualizer_nebbia_snow_melt),
+  // folia 智能动感模式「疏雨轻车」的颠簸份额：有鼓击分析时车跟鼓点颠（0 = 照旧随机颠）。
+  _Num('drumBump', 0, 2, 1, () => t.music_visualizer_nebbia_drum_bump),
+  // folia「舞潮踏拍」：水族箱里水母收缩、水草摆动、聚光放大跟拍（0 = 不跟拍）。
+  _Num('aquaBeat', 0, 2, 1, () => t.music_visualizer_nebbia_aqua_beat),
 ];
 
 String Function() _layoutLabel(String name) => switch (name) {
@@ -343,6 +347,8 @@ class NebbiaSettings {
   double get snow => _n('snow');
   double get snowSize => _n('snowSize');
   double get snowMelt => _n('snowMelt');
+  double get drumBump => _n('drumBump');
+  double get aquaBeat => _n('aquaBeat');
 
   bool sceneryOn(String part) => scenery.contains(part);
 

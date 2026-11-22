@@ -119,6 +119,21 @@ class NebbiaColors {
 
 /// 两盏聚光灯的这一帧：光斑中心、半径（像素）、强度。
 @immutable
+/// 水族箱跟拍（folia 智能动感「舞潮踏拍」）：每帧的冲击量（0..2，已乘强度）。
+class NebbiaAquaBeat {
+  const NebbiaAquaBeat({this.jelly = 0, this.weed = 0, this.spot = 0});
+  static const NebbiaAquaBeat none = NebbiaAquaBeat();
+
+  /// 水母收缩（拍点 / 重音）。
+  final double jelly;
+
+  /// 水草甩动（拍点）。
+  final double weed;
+
+  /// 聚光放大（小节首拍）。
+  final double spot;
+}
+
 class NebbiaSpotFrame {
   const NebbiaSpotFrame(this.target, this.radius, this.intensity);
   final Offset target;
@@ -178,7 +193,7 @@ class NebbiaWindow {
     _buildings.clear();
   }
 
-  /// 画整扇窗外。[time] 是窗外时钟（秒），[shake] 是车身颠簸的位移。
+  /// 画整扇窗外。[time] 是窗外时钟（秒），[shake] 是车身颠簸的位移；[beat] 是水族箱跟拍的冲击。
   void paint(
     Canvas canvas,
     Size size,
@@ -187,6 +202,7 @@ class NebbiaWindow {
     NebbiaColors colors,
     NebbiaSpotFrame spot, {
     required bool snowing,
+    NebbiaAquaBeat beat = NebbiaAquaBeat.none,
   }) {
     if (_cacheH != size.height || _cacheColors != colors) {
       dispose();
@@ -194,7 +210,7 @@ class NebbiaWindow {
       _cacheColors = colors;
     }
     if (s.behind == NebbiaBehind.aquarium) {
-      _aquarium(canvas, size, time, s, colors, spot);
+      _aquarium(canvas, size, time, s, colors, spot, beat);
     } else {
       _night(canvas, size, time, s, colors, spot, snowing: snowing);
     }
@@ -798,6 +814,7 @@ class NebbiaWindow {
     NebbiaSettings s,
     NebbiaColors colors,
     NebbiaSpotFrame spot,
+    NebbiaAquaBeat beat,
   ) {
     final double h = size.height;
     final double w = size.width;
@@ -905,8 +922,10 @@ class NebbiaWindow {
           Offset tip = Offset(bx, sandY);
           for (int j = 1; j <= 8; j++) {
             final double f = j / 8;
+            // 跟拍时梢头被拍点甩一下（各丛方向交错）。
             final double sway =
-                math.sin(time * 0.9 + c * 1.3 + k * 2.1 - f * 1.5) *
+                (math.sin(time * 0.9 + c * 1.3 + k * 2.1 - f * 1.5) +
+                    beat.weed * 0.8 * ((c + k).isEven ? 1 : -1)) *
                 0.05 *
                 h *
                 f *
@@ -946,14 +965,20 @@ class NebbiaWindow {
         }
       }
     }
-    _jellies(canvas, size, time, s, colors);
+    _jellies(canvas, size, time, s, colors, beat.jelly);
     _bubbles(canvas, size, time, s, sandY);
     _spotBeams(
       canvas,
       size,
       Offset(s.spotX * w, -0.04 * h),
       Offset((1 - s.spotX) * w, -0.04 * h),
-      spot,
+      beat.spot > 0
+          ? NebbiaSpotFrame(
+              spot.target,
+              spot.radius * (1 + 0.4 * beat.spot),
+              spot.intensity * (1 + 0.3 * beat.spot),
+            )
+          : spot,
       colors,
     );
   }
@@ -973,6 +998,7 @@ class NebbiaWindow {
     double time,
     NebbiaSettings s,
     NebbiaColors colors,
+    double beat,
   ) {
     final double h = size.height;
     final double aspect = size.width / h;
@@ -996,7 +1022,11 @@ class NebbiaWindow {
       final double x =
           (xf + 0.02 * math.sin(time * 0.15 + hue * 10)) * (aspect + 0.2) - 0.1;
       final double r = (0.03 + 0.055 * depth) * s.jellySize * h;
-      final double squeeze = math.pow(swim, 3).toDouble();
+      // 跟拍：拍点上伞盖一齐收缩（folia 舞潮踏拍的水母分项）。
+      final double squeeze = math.max(
+        math.pow(swim, 3).toDouble(),
+        nebbiaClamp(beat),
+      );
       final Color col = Color.lerp(
         Color.lerp(
           _vivid[(hue * 4).floor() % 4],

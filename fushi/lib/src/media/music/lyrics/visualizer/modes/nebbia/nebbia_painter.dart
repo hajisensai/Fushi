@@ -16,7 +16,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
-import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_chars.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glass.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart';
@@ -27,6 +26,81 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_wind
 
 const Color _haze = Color.fromARGB(255, 179, 189, 199);
 
+/// 鼓击（歌曲秒, 力度）：每个拍点及其后 60 ms 内的鼓击冲击最大值（框架没有逐个鼓击的列表，鼓击落在
+/// 拍点网格上才算）。音频没有真鼓击分析时为空。
+List<(double, double)> nebbiaDrumHitsOf(LyricVisualizerContext c) {
+  final LyricVisualizerAudio? a = c.audio;
+  if (a == null || !a.beatsReady || a.beatTimesMs.isEmpty) {
+    return const <(double, double)>[];
+  }
+  if (!a.frameAt(a.beatTimesMs.first).drumsReady) {
+    return const <(double, double)>[];
+  }
+  return <(double, double)>[
+    for (final int b in a.beatTimesMs)
+      (
+        c.displayTimeOfAudio(b) / 1000,
+        math.max(
+          a.frameAt(b).drumImpact,
+          math.max(a.frameAt(b + 30).drumImpact, a.frameAt(b + 60).drumImpact),
+        ),
+      ),
+  ];
+}
+
+/// 人声起音（歌曲秒, 人声强度）：每 20 ms 一格扫整首，起音冲击的局部峰（≥ 0.4，相隔 ≥ 0.15 秒）。
+/// 音频没有真人声分析时为空。
+List<(double, double)> nebbiaVocalOnsetsOf(
+  LyricVisualizerContext c,
+  double lyricEnd,
+) {
+  final LyricVisualizerAudio? a = c.audio;
+  if (a == null || !a.envelopeReady) return const <(double, double)>[];
+  if (!a.frameAt(0).vocalReady) return const <(double, double)>[];
+  final int endMs = c.audioTimeOf(((lyricEnd + 2) * 1000).round());
+  final List<(double, double)> out = <(double, double)>[];
+  double prev = 0;
+  LyricVisualizerAudioFrame cur = a.frameAt(0);
+  double last = -double.infinity;
+  for (int ms = 0; ms <= endMs; ms += 20) {
+    final LyricVisualizerAudioFrame next = a.frameAt(ms + 20);
+    final double at = c.displayTimeOfAudio(ms) / 1000;
+    if (cur.onset >= 0.4 &&
+        cur.onset >= prev &&
+        cur.onset > next.onset &&
+        at - last >= 0.15) {
+      out.add((at, cur.vocal));
+      last = at;
+    }
+    prev = cur.onset;
+    cur = next;
+  }
+  return out;
+}
+
+/// 水族箱跟拍这一帧的冲击（folia「舞潮踏拍」，只在水族箱、动态效果开、有节拍网格时）。
+NebbiaAquaBeat nebbiaAquaBeatOf(
+  LyricVisualizerContext c,
+  NebbiaSettings s,
+  double t, {
+  required bool motion,
+}) {
+  final LyricVisualizerAudio? a = c.audio;
+  if (!motion ||
+      s.behind != NebbiaBehind.aquarium ||
+      s.aquaBeat <= 0 ||
+      a == null ||
+      !a.beatsReady) {
+    return NebbiaAquaBeat.none;
+  }
+  final LyricVisualizerAudioFrame f = c.audioFrameAt((t * 1000).round());
+  return NebbiaAquaBeat(
+    jelly: f.accentOrBeat * s.aquaBeat,
+    weed: f.beatImpact * s.aquaBeat,
+    spot: f.downbeatImpact * s.aquaBeat,
+  );
+}
+
 /// 一首歌、一块屏、一份参数下的全部缓存：场景、大雨点、凝结水珠、窗外、字形绘制器，以及窗外时钟。
 class NebbiaController {
   NebbiaController();
@@ -34,6 +108,8 @@ class NebbiaController {
   final NebbiaWindow window = NebbiaWindow();
   NebbiaBumps? _bumps;
   int _bumpSeed = -1;
+  NebbiaBumps? _drumBumps;
+  Object? _drumKey;
 
   String _key = '';
   List<NebbiaLaidLine> laid = const <NebbiaLaidLine>[];
@@ -65,6 +141,22 @@ class NebbiaController {
     return _bumps!;
   }
 
+  /// 鼓点颠簸表（歌曲时间）：音频带真鼓击分析时，取每个拍点附近的鼓击冲击当力度；没有为 null
+  /// （照旧随机颠）。
+  NebbiaBumps? drumBumps(LyricVisualizerContext c) {
+    final LyricVisualizerAudio? a = c.audio;
+    if (a == null || !a.beatsReady) return null;
+    final Object key = Object.hash(identityHashCode(a), c.offsetMs);
+    if (key != _drumKey) {
+      _drumKey = key;
+      final List<(double, double)> hits = nebbiaDrumHitsOf(c);
+      _drumBumps = hits.isEmpty
+          ? null
+          : NebbiaBumps.fixed(nebbiaDrumBumps(hits));
+    }
+    return _drumBumps;
+  }
+
   /// 按需重排整首。
   void ensure(
     LyricVisualizerContext c,
@@ -83,6 +175,8 @@ class NebbiaController {
       c.artist ?? '',
       c.seed,
       glyphs.version,
+      identityHashCode(c.audio),
+      c.offsetMs,
     ].join('|');
     if (size != _fieldSize) {
       field = NebbiaFieldDrops(size.width, size.height);
@@ -110,13 +204,20 @@ class NebbiaController {
       fontScale: c.fontScale,
       seed: c.seed,
     );
-    bigHits = nebbiaBigHits(
-      laid,
-      <List<List<int>>>[for (final NebbiaSourceLine l in src) l.words],
-      size.width,
-      size.height,
-      c.seed,
+    // 有人声分析时砸在人声起音上，否则砸在词开唱处（folia 没有人声轨时的退路）。
+    final List<(double, double)> onsets = nebbiaVocalOnsetsOf(
+      c,
+      src.isEmpty ? 0 : src.map((NebbiaSourceLine l) => l.end).reduce(math.max),
     );
+    bigHits = onsets.isNotEmpty
+        ? nebbiaVocalBigHits(laid, onsets, size.width, size.height, c.seed)
+        : nebbiaBigHits(
+            laid,
+            <List<List<int>>>[for (final NebbiaSourceLine l in src) l.words],
+            size.width,
+            size.height,
+            c.seed,
+          );
   }
 
   /// 字的 TextPainter（扫笔字形用）：按字号缓存，换尺寸清掉。
@@ -271,10 +372,15 @@ class NebbiaPainter extends CustomPainter {
       spotI,
     );
 
-    // 颠簸（不画水族箱时）。
-    final NebbiaBumps bumps = controller.bumps(c.seed);
-    final double bumpK = motion && !aquarium ? s.bump : 0;
-    final Offset shake = bumps.shakeAt(scene, bumpK);
+    // 颠簸（不画水族箱时）：有鼓击分析时跟鼓点（歌曲时间），否则按种子随机（窗外时钟）。
+    final NebbiaBumps? drums = s.drumBump > 0 ? controller.drumBumps(c) : null;
+    final NebbiaBumps bumps = drums ?? controller.bumps(c.seed);
+    final double bumpTime = drums != null ? t : scene;
+    final double bumpK = motion && !aquarium
+        ? s.bump * (drums != null ? s.drumBump : 1)
+        : 0;
+    final Offset shake = bumps.shakeAt(bumpTime, bumpK);
+    final NebbiaAquaBeat aquaBeat = nebbiaAquaBeatOf(c, s, t, motion: motion);
     final Offset glassShift = shake * 0.35;
 
     final Rect full = Offset.zero & size;
@@ -290,6 +396,7 @@ class NebbiaPainter extends CustomPainter {
         colors,
         spot,
         snowing: s.glass == NebbiaGlass.snow,
+        beat: aquaBeat,
       );
       scenePic = rec.endRecording();
       canvas
@@ -407,7 +514,7 @@ class NebbiaPainter extends CustomPainter {
         : const <NebbiaFlakeState>[];
     switch (s.glass) {
       case NebbiaGlass.rain:
-        _fieldDrops(canvas, bumps, scene, bumpK, look, trails);
+        _fieldDrops(canvas, bumps, bumpTime, bumpK, look, trails);
       case NebbiaGlass.dew:
         nebbiaPaintDew(canvas, size, scene, s, fogTint);
       case NebbiaGlass.snow:
@@ -747,12 +854,11 @@ class NebbiaPainter extends CustomPainter {
         one(hit, sizeK);
       }
     }
-    final LyricVisualizerRuntime rt = c.runtime;
     for (final NebbiaHit hit in nebbiaSmallHits(
       t,
       life,
       s.rainHit,
-      (double at) => rt.pulseAt((at * 1000).round(), decayMs: 400),
+      (double at) => c.audioFrameAt((at * 1000).round()).vocal,
       size.width,
       size.height,
       c.seed,

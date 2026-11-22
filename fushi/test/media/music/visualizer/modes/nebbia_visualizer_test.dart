@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
@@ -13,6 +14,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_pain
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_scene.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_tuning.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_window.dart';
 
 import '../visualizer_test_helpers.dart';
 
@@ -383,6 +385,134 @@ void main() {
         nebbiaVisualizerEntry,
         size: const Size(390, 844),
         tuning: const <String, Object?>{'busSpeed': 3.0, 'bump': 2.5},
+      );
+    });
+  });
+
+  group('shared framework', () {
+    LyricVisualizerRuntime runtimeOf(String text) => LyricVisualizerRuntime(
+      LyricTimeline(
+        format: 'lrc',
+        lines: <LyricLine>[
+          LyricLine(
+            startMs: 0,
+            endMs: 3000,
+            syllables: <LyricSyllable>[
+              LyricSyllable(text: text, startMs: 0, endMs: 3000),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    test('words come from the shared segments, spaces dropped', () {
+      final LyricVisualizerRuntime rt = runtimeOf('夜空に光る Hello world');
+      final NebbiaSourceLine line = buildNebbiaLines(rt.lines, 1, 0).first;
+      final List<int> flat = <int>[for (final List<int> w in line.words) ...w];
+      for (int i = 0; i < line.chars.length; i++) {
+        expect(flat.contains(i), line.chars[i].ch.trim().isNotEmpty);
+      }
+      final List<String> latin = <String>[
+        for (final List<int> w in line.words)
+          w.map((int i) => line.chars[i].ch).join(),
+      ];
+      expect(latin, containsAll(<String>['Hello', 'world']));
+      expect(
+        line.words.length,
+        greaterThanOrEqualTo(rt.lines.first.segments.length),
+      );
+    });
+
+    test('drum bumps: strength gate, min gap, amplitude', () {
+      final List<NebbiaBump> b = nebbiaDrumBumps(<(double, double)>[
+        (1, 0.2),
+        (2, 1),
+        (2.1, 1),
+        (2.5, 0.5),
+      ]);
+      expect(b.map((NebbiaBump x) => x.t), <double>[2, 2.5]);
+      expect(b.first.a, closeTo(1, 1e-9));
+      expect(b.last.a, closeTo(0.65, 1e-9));
+      final NebbiaBumps fixed = NebbiaBumps.fixed(b);
+      expect(fixed.between(0, 100).length, 2);
+      expect(fixed.shakeAt(2.05, 1), isNot(Offset.zero));
+    });
+
+    test('drum hits and vocal onsets read the shared audio', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        nebbiaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+        offsetMs: 100,
+      );
+      final List<(double, double)> drums = nebbiaDrumHitsOf(c);
+      expect(drums.first.$1, closeTo(0.1, 1e-9));
+      expect(drums.first.$2, greaterThan(0.9));
+      final List<(double, double)> onsets = nebbiaVocalOnsetsOf(c, 4);
+      expect(onsets, isNotEmpty);
+      for (final (double at, double vocal) in onsets) {
+        expect(((at - 0.1) * 1000).round() % 500, 0);
+        expect(vocal, 0.4);
+      }
+      final LyricVisualizerContext none = visualizerContextFor(
+        nebbiaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+      );
+      expect(nebbiaDrumHitsOf(none), isEmpty);
+      expect(nebbiaVocalOnsetsOf(none, 4), isEmpty);
+    });
+
+    test('aquarium beat only in the aquarium with beats', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        nebbiaVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      final NebbiaSettings aqua = NebbiaSettings.from(
+        LyricVisualizerTuning(nebbiaTuningSpecs, const <String, Object?>{
+          'behind': 'aquarium',
+        }),
+      );
+      final NebbiaAquaBeat on = nebbiaAquaBeatOf(c, aqua, 2, motion: true);
+      expect(on.jelly, greaterThan(0.9));
+      expect(on.spot, greaterThan(0.9));
+      expect(nebbiaAquaBeatOf(c, aqua, 2, motion: false).jelly, 0);
+      final NebbiaSettings night = NebbiaSettings.from(
+        LyricVisualizerTuning.defaults(nebbiaTuningSpecs),
+      );
+      expect(nebbiaAquaBeatOf(c, night, 2, motion: true).jelly, 0);
+    });
+
+    test('background request follows the window choice', () {
+      LyricVisualizerBackgroundRequest of(String behind) =>
+          nebbiaVisualizerEntry.backgroundFor(
+            LyricVisualizerTuning(nebbiaTuningSpecs, <String, Object?>{
+              'behind': behind,
+            }),
+          );
+      expect(of('backdrop'), LyricVisualizerBackgroundRequest.selected);
+      expect(of('night'), LyricVisualizerBackgroundRequest.none);
+      expect(of('aquarium'), LyricVisualizerBackgroundRequest.none);
+    });
+
+    testWidgets('audio drives rain, drum bumps and theme font', (
+      WidgetTester tester,
+    ) async {
+      await pumpVisualizerAcross(
+        tester,
+        nebbiaVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        tuning: const <String, Object?>{'bump': 2.0, 'drumBump': 2.0},
+        theme: const LyricVisualizerTheme(fontWeight: FontWeight.w800),
+      );
+    });
+
+    testWidgets('aquarium dances on the beat', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        nebbiaVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        tuning: const <String, Object?>{'behind': 'aquarium', 'aquaBeat': 2.0},
       );
     });
   });
