@@ -1225,6 +1225,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
       // 来回）。释义正文点词（onTextSelected）仍叠子层。
       onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
+      // 跨应用语音缓存（拍板 design-cross-app-audio-trim-ui）：每层的「+」都带这次查词
+      // 截的句子音频，所以每层都给「调整句子音频」面板，读的是同一份快照。
+      crossAppAudio: miningAudioSnapshot,
       // 嵌套层的词从释义正文点出来：例句是被点处那一句（反馈 TnKWBi4C-9）。
       onMineEntry: isBase
           ? _mineBaseEntry

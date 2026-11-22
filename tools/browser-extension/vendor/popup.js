@@ -911,6 +911,8 @@ const ICON_PATHS = {
     favorite: 'M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z',
     // star（已收藏）
     favorited: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+    // graphic_eq（跨应用语音缓存「调整句子音频」：试听 + 调起止面板入口）
+    graphicEq: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
     // add（制卡按钮已回到 ✓✓↩ 文本标记；add 仅供句子上下文步进器的 + 按钮）
     add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
     // remove（步进器 ➖）
@@ -2896,7 +2898,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         }
     }
 
-    return {
+    // 「调整句子音频」面板确认后回点「+」时带上用户拖出的起止（见 openCrossAppAudioPanel）。
+    return __fushiApplyPendingMineOverrides({
         expression,
         reading,
         matched,
@@ -2917,7 +2920,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         audio,
         selectedDictionary: miningDictionaryFor(idx),
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
-    };
+    });
 }
 
 // [allowDuplicate]：用户已被告知「卡已在 Anki」并明确选了「新增为重复卡」。与 app 内原生
@@ -3256,6 +3259,550 @@ function showMinedCardActionPanel(matches, options) {
         document.addEventListener('keydown', onKey, true);
         duplicateBtn.focus();
     });
+}
+
+// =====================================================================
+// 跨应用语音缓存 · 制卡前试听 + 调起止（拍板 design-cross-app-audio-trim-ui，方案 A）。
+//
+// 应用外查词卡（电脑端 WebView2 覆盖窗 / Android 查词窗）一键「+」带的句子音频是宿主从
+// 「查词前最近 30 秒的其他 app 声音」里自动截的最后一句。这里在「+」旁给一颗「调整句子
+// 音频」：在**这张卡自己的 WebView 里**画波形、拖起止、试听，确认后照常回点本词条的
+// 「+」——不唤起主窗口、不抢游戏的前台焦点（方案 B 会把全屏游戏切到后台）。
+//
+// 宿主只出两根只读桥：crossAppAudioAvailable（这次查词有没有录到声音）与
+// crossAppAudioPreview（波形柱高 + 自动截句区间 + 16 kHz 单声道 WAV data URL）。用户拖出
+// 的起止以**相对自动截句的偏移**写进本次制卡 payload 的 miningOverrides（与 app 内「高级
+// 制卡」同一 wire 键 MiningRequestOverrides.audioStartDeltaMs / audioEndDeltaMs），宿主
+// 制卡时从同一份快照重算默认区间再加偏移——没有新的写路径。
+// =====================================================================
+
+// 拖动 / 方向键的基础粒度（毫秒）：与高级制卡 kAdvancedMiningAudioDragSnapMs 同值。
+const CROSS_APP_AUDIO_SNAP_MS = 10;
+// 方向键一步（毫秒）；Shift ×10 粗调、Ctrl / ⌘ 降到 CROSS_APP_AUDIO_SNAP_MS 细调。
+const CROSS_APP_AUDIO_KEY_STEP_MS = 50;
+// 端点命中容差（CSS px，单侧）：手指 / 鼠标落在端点两侧这么宽内算抓住端点。
+const CROSS_APP_AUDIO_EDGE_HIT_PX = 14;
+// 瞬态查词窗会把窗口高度收缩到卡片内容高度：面板开着时给 <html> 挂它，popup.css 撑出
+// 最小高度，host 下一次测量就把窗口放大到够放面板（同 mined-action-open）。
+const CROSS_APP_AUDIO_OPEN_CLASS = 'crossapp-audio-open';
+
+// 本次渲染的「有没有录到声音」探测（每次 renderPopup 重置：新的查词 = 新的快照）。
+let __fushiCrossAppAudioProbe = null;
+
+function __fushiResetCrossAppAudioProbe() {
+    __fushiCrossAppAudioProbe = null;
+}
+
+function crossAppAudioAvailable() {
+    if (window.__fushiCrossAppAudioHost !== true) return Promise.resolve(false);
+    if (!__fushiCrossAppAudioProbe) {
+        __fushiCrossAppAudioProbe = Promise.resolve()
+            .then(() => window.flutter_inappwebview.callHandler('crossAppAudioAvailable'))
+            .then((ok) => ok === true)
+            .catch(() => false);
+    }
+    return __fushiCrossAppAudioProbe;
+}
+
+// 区间几何（纯函数，node 单测直接调）：把 [startMs, endMs] 夹进 [0, totalMs]，并保证
+// 不短于 minClipMs——拖哪一端就只动哪一端，另一端原地不动；'move' 保持长度整体平移。
+function crossAppAudioClampRange(range, totalMs, minClipMs, moving) {
+    const total = Math.max(0, Math.round(totalMs));
+    const minLen = Math.min(Math.max(1, Math.round(minClipMs)), total);
+    let start = Math.round(range.startMs);
+    let end = Math.round(range.endMs);
+    if (moving === 'start') {
+        start = Math.max(0, Math.min(start, end - minLen));
+    } else if (moving === 'end') {
+        end = Math.min(total, Math.max(end, start + minLen));
+    } else {
+        const len = Math.max(minLen, Math.min(end - start, total));
+        start = Math.max(0, Math.min(start, total - len));
+        end = start + len;
+    }
+    start = Math.max(0, Math.min(start, total));
+    end = Math.max(start, Math.min(end, total));
+    return { startMs: start, endMs: end };
+}
+
+// 用户选区 → 写进 payload 的覆盖项（相对自动截句的偏移；两端都没动 = null，等价一键「+」）。
+function crossAppAudioOverrides(defaultRange, chosen) {
+    const startDelta = Math.round(chosen.startMs - defaultRange.startMs);
+    const endDelta = Math.round(chosen.endMs - defaultRange.endMs);
+    if (startDelta === 0 && endDelta === 0) return null;
+    const out = {};
+    if (startDelta !== 0) out.audioStartDeltaMs = startDelta;
+    if (endDelta !== 0) out.audioEndDeltaMs = endDelta;
+    return out;
+}
+
+function crossAppAudioFormatSeconds(ms) {
+    return (Math.max(0, ms) / 1000).toFixed(2) + 's';
+}
+
+// 本次制卡要带的覆盖项（面板确认 → 回点「+」落地之前有效）：buildMinePayload 据此写
+// miningOverrides，回点落地后由面板清掉。
+let __fushiPendingMineOverrides = null;
+
+function __fushiApplyPendingMineOverrides(payload) {
+    if (__fushiPendingMineOverrides) {
+        payload.miningOverrides = JSON.stringify(__fushiPendingMineOverrides);
+    }
+    return payload;
+}
+
+// 词条在本卡里的稳定 DOM 序（:scope > .entry），与 fushiPopupMineEntryByIndex 同一套索引。
+function __fushiEntryIndexOf(node) {
+    const entryEl = node && node.closest ? node.closest('.entry') : null;
+    if (!entryEl || !entryEl.parentNode) return 0;
+    const siblings = entryEl.parentNode.querySelectorAll(':scope > .entry');
+    const idx = Array.prototype.indexOf.call(siblings, entryEl);
+    return idx < 0 ? 0 : idx;
+}
+
+// 「+」旁的入口。宿主可能有跨应用语音（__fushiCrossAppAudioHost）时才建；先隐藏，探测到
+// 这次查词真的录到了声音才淡入——没开缓存 / 查的是 app 内文字时永远不出现。
+function buildCrossAppAudioButton() {
+    const i18n = window.i18nCrossAppAudio || {};
+    const button = el('button', {
+        // 外观借「高级制卡」那颗 tonal 圆钮（M3E / Apple / 墨水屏三套已在 popup.css 写好）。
+        className: 'inline-action-button ctx-adjust-button crossapp-audio-button',
+        // BUG-3210：确认后经 fushiPopupMineEntryByIndex 回点「+」，那条路没有 pointerdown，
+        // 选区只能在这里快照。
+        onpointerdown: () => { snapshotSelection(); },
+        ontouchstart: () => { snapshotSelection(); },
+        onclick: () => {
+            openCrossAppAudioPanel(__fushiEntryIndexOf(button));
+        },
+    });
+    setButtonIcon(button, 'graphicEq');
+    if (__fushiPopupReducedMotion()) button.classList.add('no-motion');
+    setInlineButtonTip(button, i18n.button || '');
+    // 不用 hidden 属性：.inline-action-button 自带 display，会盖掉 [hidden]。
+    button.style.display = 'none';
+    crossAppAudioAvailable().then((ok) => {
+        if (!ok || button.isConnected === false) return;
+        button.style.display = '';
+        button.classList.add('crossapp-audio-revealed');
+    });
+    return button;
+}
+
+function __fushiDecodeDataUrlBytes(dataUrl) {
+    const comma = dataUrl.indexOf(',');
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+// 试听器：Web Audio 按样本精确地只播 [start, end)（<audio> 的 timeupdate 一秒只有几次，
+// 停点会越过终点几百毫秒）。没有 Web Audio 的宿主退回 <audio>。
+function createCrossAppAudioPlayer(dataUrl, onStateChange) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    let ctx = null;
+    let bufferPromise = null;
+    let source = null;
+    let fallback = null;
+    let fallbackStop = null;
+    let playing = null; // {startMs, endMs, t0}
+    const volume = typeof window.lookupAudioVolume === 'number' ? window.lookupAudioVolume : 1;
+
+    function settle() {
+        playing = null;
+        onStateChange(false);
+    }
+
+    function stop() {
+        if (source) {
+            const node = source;
+            source = null;
+            node.onended = null;
+            try { node.stop(); } catch (_) { /* 已停 */ }
+        }
+        if (fallback) {
+            fallback.pause();
+            if (fallbackStop) fallback.removeEventListener('timeupdate', fallbackStop);
+            fallbackStop = null;
+        }
+        if (playing) settle();
+    }
+
+    async function play(startMs, endMs) {
+        stop();
+        if (Ctx) {
+            if (!ctx) ctx = new Ctx();
+            if (!bufferPromise) {
+                bufferPromise = ctx.decodeAudioData(__fushiDecodeDataUrlBytes(dataUrl).buffer);
+            }
+            const buffer = await bufferPromise;
+            if (!ctx) return; // 解码途中面板已关
+            if (ctx.state === 'suspended') await ctx.resume();
+            const node = ctx.createBufferSource();
+            node.buffer = buffer;
+            const gain = ctx.createGain();
+            gain.gain.value = volume;
+            node.connect(gain);
+            gain.connect(ctx.destination);
+            node.onended = () => {
+                if (source === node) {
+                    source = null;
+                    settle();
+                }
+            };
+            source = node;
+            playing = { startMs, endMs, t0: ctx.currentTime };
+            node.start(0, startMs / 1000, Math.max(0.01, (endMs - startMs) / 1000));
+            onStateChange(true);
+            return;
+        }
+        if (!fallback) fallback = new Audio(dataUrl);
+        fallback.volume = Math.max(0, Math.min(1, volume));
+        fallback.currentTime = startMs / 1000;
+        fallbackStop = () => {
+            if (fallback && fallback.currentTime * 1000 >= endMs) stop();
+        };
+        fallback.addEventListener('timeupdate', fallbackStop);
+        playing = { startMs, endMs, t0: null };
+        await fallback.play();
+        onStateChange(true);
+    }
+
+    // 当前播放头（毫秒，快照时间轴）；没在播返回 null。
+    function positionMs() {
+        if (!playing) return null;
+        if (ctx && playing.t0 !== null) {
+            return Math.min(playing.endMs, playing.startMs + (ctx.currentTime - playing.t0) * 1000);
+        }
+        return fallback ? fallback.currentTime * 1000 : null;
+    }
+
+    function dispose() {
+        stop();
+        if (ctx) {
+            try { ctx.close(); } catch (_) { /* 已关 */ }
+            ctx = null;
+        }
+        fallback = null;
+    }
+
+    return { play, stop, positionMs, dispose, isPlaying: () => playing !== null };
+}
+
+// 画波形：选区外的柱子淡、选区里的实；柱高取每个柱位覆盖的峰值。颜色取 canvas 的
+// CSS color（popup.css 按 M3E / 默认主题给主色），不在 JS 里写死。
+function drawCrossAppAudioWave(canvas, peaks, totalMs, range) {
+    const ratio = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width <= 0 || height <= 0) return;
+    if (canvas.width !== Math.round(width * ratio)) canvas.width = Math.round(width * ratio);
+    if (canvas.height !== Math.round(height * ratio)) canvas.height = Math.round(height * ratio);
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    g.setTransform(ratio, 0, 0, ratio, 0, 0);
+    g.clearRect(0, 0, width, height);
+    const barStep = 3;
+    const columns = Math.max(1, Math.floor(width / barStep));
+    const startX = totalMs > 0 ? range.startMs / totalMs * width : 0;
+    const endX = totalMs > 0 ? range.endMs / totalMs * width : width;
+    const mid = height / 2;
+    g.fillStyle = getComputedStyle(canvas).color || '#1a73e8';
+    for (let c = 0; c < columns; c++) {
+        const from = Math.floor(c / columns * peaks.length);
+        const to = Math.max(from + 1, Math.floor((c + 1) / columns * peaks.length));
+        let peak = 0;
+        for (let i = from; i < to && i < peaks.length; i++) peak = Math.max(peak, peaks[i]);
+        const x = c * barStep;
+        const center = x + barStep / 2;
+        const barHeight = Math.max(1, peak * (height - 4));
+        g.globalAlpha = (center >= startX && center <= endX) ? 0.95 : 0.3;
+        g.fillRect(x, mid - barHeight / 2, barStep - 1, barHeight);
+    }
+    g.globalAlpha = 1;
+}
+
+// 打开第 idx 个词条的「调整句子音频」面板。与 showMinedCardActionPanel 同一套模态纪律：
+// 点遮罩不关、只有「取消」与 Esc 能取消；面板内指针事件不冒泡到 document（否则被当成
+// 「点空白关弹窗」）；开着时声明 __fushiPopupModalDepth（宿主输入桥别抢 Esc）。
+function openCrossAppAudioPanel(idx) {
+    if (__fushiRootNode().querySelector('.crossapp-audio-panel')) return;
+    const i18n = window.i18nCrossAppAudio || {};
+    const ownsDocument = !window.__fushiRoot;
+    const rootEl = document.documentElement;
+    const panel = uiText(el('div', {
+        className: 'mined-action-panel crossapp-audio-panel',
+        role: 'dialog',
+        'aria-label': i18n.title || '',
+    }));
+    if (__fushiPopupReducedMotion()) panel.classList.add('no-motion');
+    const backdrop = el('div', { className: 'mined-action-backdrop crossapp-audio-backdrop' }, [panel]);
+    let settled = false;
+    let player = null;
+    let rafId = 0;
+
+    const onKey = (e) => {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+            // 面板自己吃掉 Esc：否则会冒泡到弹窗的关闭处理器，把整个查词窗一起关了。
+            e.preventDefault();
+            e.stopPropagation();
+            finish();
+        }
+    };
+    window.__fushiPopupModalDepth = (window.__fushiPopupModalDepth || 0) + 1;
+    function finish() {
+        if (settled) return;
+        settled = true;
+        window.__fushiPopupModalDepth = Math.max(0, (window.__fushiPopupModalDepth || 1) - 1);
+        document.removeEventListener('keydown', onKey, true);
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+        if (player) player.dispose();
+        player = null;
+        backdrop.remove();
+        if (ownsDocument) rootEl.classList.remove(CROSS_APP_AUDIO_OPEN_CLASS);
+    }
+    ['click', 'mousedown', 'pointerdown', 'touchstart'].forEach((type) => {
+        backdrop.addEventListener(type, (e) => { e.stopPropagation(); }, false);
+    });
+
+    panel.appendChild(el('div', { className: 'mined-action-title', textContent: i18n.title || '' }));
+    const status = el('div', {
+        className: 'mined-action-subtitle crossapp-audio-status',
+        textContent: i18n.loading || '',
+    });
+    panel.appendChild(status);
+    const actions = el('div', { className: 'mined-action-actions' });
+    const cancelBtn = el('button', {
+        className: 'mined-action-btn ghost',
+        textContent: i18n.cancel || '',
+        onclick: () => finish(),
+    });
+    actions.appendChild(cancelBtn);
+    panel.appendChild(actions);
+
+    if (ownsDocument) rootEl.classList.add(CROSS_APP_AUDIO_OPEN_CLASS);
+    __fushiThemedOverlayParent().appendChild(backdrop);
+    document.addEventListener('keydown', onKey, true);
+    cancelBtn.focus();
+
+    Promise.resolve()
+        .then(() => window.flutter_inappwebview.callHandler('crossAppAudioPreview'))
+        .catch(() => null)
+        .then((preview) => {
+            if (settled) return;
+            if (!preview || typeof preview.totalMs !== 'number' || preview.totalMs <= 0 ||
+                !Array.isArray(preview.peaks) || typeof preview.audio !== 'string') {
+                status.textContent = i18n.unavailable || '';
+                return;
+            }
+            buildEditor(preview);
+        });
+
+    function buildEditor(preview) {
+        const totalMs = preview.totalMs;
+        const minClipMs = typeof preview.minClipMs === 'number' ? preview.minClipMs : 100;
+        const defaultRange = crossAppAudioClampRange(
+            { startMs: preview.startMs, endMs: preview.endMs }, totalMs, minClipMs, 'move');
+        let range = defaultRange;
+        status.textContent = i18n.hint || '';
+
+        const wave = el('div', { className: 'crossapp-audio-wave' });
+        const canvas = el('canvas', { className: 'crossapp-audio-canvas' });
+        const selection = el('div', { className: 'crossapp-audio-selection' });
+        const playhead = el('div', { className: 'crossapp-audio-playhead' });
+        playhead.style.display = 'none';
+        const makeHandle = (edge) => el('div', {
+            className: 'crossapp-audio-handle ' + edge,
+            tabIndex: 0,
+            role: 'slider',
+            'aria-label': (edge === 'start' ? i18n.start : i18n.end) || '',
+            'aria-valuemin': '0',
+            'aria-valuemax': String(totalMs),
+        });
+        const startHandle = makeHandle('start');
+        const endHandle = makeHandle('end');
+        wave.append(canvas, selection, playhead, startHandle, endHandle);
+        const label = el('div', { className: 'crossapp-audio-range' });
+        panel.insertBefore(wave, actions);
+        panel.insertBefore(label, actions);
+
+        const playBtn = el('button', {
+            className: 'mined-action-btn ghost crossapp-audio-play',
+            textContent: i18n.play || '',
+        });
+        const resetBtn = el('button', {
+            className: 'mined-action-btn ghost crossapp-audio-reset',
+            textContent: i18n.reset || '',
+        });
+        const mineBtn = el('button', {
+            className: 'mined-action-btn filled crossapp-audio-mine',
+            textContent: i18n.mine || '',
+        });
+        actions.insertBefore(playBtn, cancelBtn);
+        actions.insertBefore(resetBtn, cancelBtn);
+        actions.appendChild(mineBtn);
+
+        player = createCrossAppAudioPlayer(preview.audio, (isPlaying) => {
+            playBtn.textContent = (isPlaying ? i18n.stop : i18n.play) || '';
+            playBtn.classList.toggle('playing', isPlaying);
+            if (isPlaying) {
+                tickPlayhead();
+            } else {
+                playhead.style.display = 'none';
+                if (rafId) cancelAnimationFrame(rafId);
+                rafId = 0;
+            }
+        });
+
+        function tickPlayhead() {
+            const pos = player ? player.positionMs() : null;
+            if (pos === null) {
+                playhead.style.display = 'none';
+                rafId = 0;
+                return;
+            }
+            playhead.style.display = '';
+            playhead.style.left = (pos / totalMs * 100) + '%';
+            rafId = requestAnimationFrame(tickPlayhead);
+        }
+
+        function paint() {
+            const left = range.startMs / totalMs * 100;
+            const right = range.endMs / totalMs * 100;
+            selection.style.left = left + '%';
+            selection.style.width = Math.max(0, right - left) + '%';
+            startHandle.style.left = left + '%';
+            endHandle.style.left = right + '%';
+            startHandle.setAttribute('aria-valuenow', String(range.startMs));
+            startHandle.setAttribute('aria-valuetext', crossAppAudioFormatSeconds(range.startMs));
+            endHandle.setAttribute('aria-valuenow', String(range.endMs));
+            endHandle.setAttribute('aria-valuetext', crossAppAudioFormatSeconds(range.endMs));
+            label.textContent = crossAppAudioFormatSeconds(range.startMs) + ' – ' +
+                crossAppAudioFormatSeconds(range.endMs) + ' · ' +
+                crossAppAudioFormatSeconds(range.endMs - range.startMs);
+            resetBtn.disabled = range.startMs === defaultRange.startMs &&
+                range.endMs === defaultRange.endMs;
+            drawCrossAppAudioWave(canvas, preview.peaks, totalMs, range);
+        }
+
+        function setRange(next, moving) {
+            range = crossAppAudioClampRange(next, totalMs, minClipMs, moving);
+            // 起止变了，正在试听的那段已不是用户要的：停掉，免得听着旧区间以为是新的。
+            if (player && player.isPlaying()) player.stop();
+            paint();
+        }
+
+        const snap = (ms) => Math.round(ms / CROSS_APP_AUDIO_SNAP_MS) * CROSS_APP_AUDIO_SNAP_MS;
+        const msAt = (clientX) => {
+            const rect = wave.getBoundingClientRect();
+            if (rect.width <= 0) return 0;
+            return snap(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * totalMs);
+        };
+        let drag = null; // {mode, grabOffsetMs, pointerId}
+        wave.addEventListener('pointerdown', (e) => {
+            if (typeof e.button === 'number' && e.button !== 0) return;
+            const rect = wave.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const startX = range.startMs / totalMs * rect.width;
+            const endX = range.endMs / totalMs * rect.width;
+            const ms = msAt(e.clientX);
+            let mode;
+            if (Math.abs(x - startX) <= CROSS_APP_AUDIO_EDGE_HIT_PX &&
+                Math.abs(x - startX) <= Math.abs(x - endX)) {
+                mode = 'start';
+            } else if (Math.abs(x - endX) <= CROSS_APP_AUDIO_EDGE_HIT_PX) {
+                mode = 'end';
+            } else if (x > startX && x < endX) {
+                mode = 'move';
+            } else {
+                // 选区外按下：就近把那一端拖过去（比没反应直观）。
+                mode = x < startX ? 'start' : 'end';
+                setRange(mode === 'start'
+                    ? { startMs: ms, endMs: range.endMs }
+                    : { startMs: range.startMs, endMs: ms }, mode);
+            }
+            drag = { mode, grabOffsetMs: ms - range.startMs, pointerId: e.pointerId };
+            try { wave.setPointerCapture(e.pointerId); } catch (_) { /* 合成事件没有捕获 */ }
+            wave.classList.add('dragging');
+            e.preventDefault();
+        });
+        wave.addEventListener('pointermove', (e) => {
+            if (!drag || e.pointerId !== drag.pointerId) return;
+            const ms = msAt(e.clientX);
+            if (drag.mode === 'start') {
+                setRange({ startMs: ms, endMs: range.endMs }, 'start');
+            } else if (drag.mode === 'end') {
+                setRange({ startMs: range.startMs, endMs: ms }, 'end');
+            } else {
+                const len = range.endMs - range.startMs;
+                const start = ms - drag.grabOffsetMs;
+                setRange({ startMs: start, endMs: start + len }, 'move');
+            }
+        });
+        const endDrag = (e) => {
+            if (!drag || e.pointerId !== drag.pointerId) return;
+            drag = null;
+            wave.classList.remove('dragging');
+        };
+        wave.addEventListener('pointerup', endDrag);
+        wave.addEventListener('pointercancel', endDrag);
+
+        // 端点是 role=slider：Tab 聚焦后方向键微调，Shift 粗调 ×10，Ctrl / ⌘ 细调。
+        const onHandleKey = (edge) => (e) => {
+            let dir = 0;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') dir = -1;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') dir = 1;
+            if (!dir) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const step = (e.ctrlKey || e.metaKey) ? CROSS_APP_AUDIO_SNAP_MS
+                : (e.shiftKey ? CROSS_APP_AUDIO_KEY_STEP_MS * 10 : CROSS_APP_AUDIO_KEY_STEP_MS);
+            if (edge === 'start') {
+                setRange({ startMs: range.startMs + dir * step, endMs: range.endMs }, 'start');
+            } else {
+                setRange({ startMs: range.startMs, endMs: range.endMs + dir * step }, 'end');
+            }
+        };
+        startHandle.addEventListener('keydown', onHandleKey('start'));
+        endHandle.addEventListener('keydown', onHandleKey('end'));
+
+        playBtn.onclick = () => {
+            if (!player) return;
+            if (player.isPlaying()) {
+                player.stop();
+                return;
+            }
+            player.play(range.startMs, range.endMs).catch((err) => {
+                console.error('crossAppAudio preview failed', err);
+            });
+        };
+        resetBtn.onclick = () => setRange(defaultRange, 'move');
+        mineBtn.onclick = async () => {
+            const overrides = crossAppAudioOverrides(defaultRange, range);
+            finish();
+            __fushiPendingMineOverrides = overrides;
+            try {
+                await window.fushiPopupMineEntryByIndex(idx);
+            } finally {
+                __fushiPendingMineOverrides = null;
+            }
+        };
+
+        paint();
+        // 覆盖窗测高会改窗口尺寸、Android 窗会旋转：宽度变了重画波形。
+        if (typeof ResizeObserver === 'function') {
+            const observer = new ResizeObserver(() => {
+                if (settled) {
+                    observer.disconnect();
+                    return;
+                }
+                drawCrossAppAudioWave(canvas, preview.peaks, totalMs, range);
+            });
+            observer.observe(wave);
+        }
+        playBtn.focus();
+    }
 }
 
 // BUG-1064：按钮旁的一次性短提示（1.8s 后自渐隐）。app 外没有 Flutter toast 可用，
@@ -6261,6 +6808,14 @@ function createEntryHeader(entry, idx) {
     //     同一颗按钮、同一套 entryIndex，只是 handler 名与提示文案按宿主能力分流；app 内
     //     不再注入 sentenceContextPreviewEnabled，所以 app 里只有一个入口。
     // 「+」不渲染（制卡模块关）时它也不渲染：确认要回点的正是那颗按钮。
+    // 跨应用语音缓存 · 制卡前试听 + 调起止（拍板 design-cross-app-audio-trim-ui）：应用外
+    // 查词卡（电脑端覆盖窗 / Android 查词窗）在「+」旁给「调整句子音频」。宿主不注入
+    // __fushiCrossAppAudioHost（app 内表面 / 浏览器扩展）时不建、不发探测；建了也要等探测
+    // 确认这次查词录到了声音才露出。确认制卡回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
+    if (miningEnabled && window.__fushiCrossAppAudioHost === true) {
+        buttonsContainer.appendChild(buildCrossAppAudioButton());
+    }
+
     const advancedMining = window.advancedMiningEnabled === true;
     if (miningEnabled && (advancedMining || window.sentenceContextPreviewEnabled)) {
         const adjustBtn = el('button', {
@@ -9011,6 +9566,8 @@ function popupLoadingHoldRemaining(now, shownAt, minVisible) {
 }
 
 window.renderPopup = function() {
+    // 新的一次渲染 = 新的查词（或换了词条）：「有没有录到声音」重新问宿主。
+    __fushiResetCrossAppAudioProbe();
     // 有结果要替换已露出的加载指示器：先补足最短停留时间，再真正渲染（宿主等的
     // popupRendered 随之后移，渲染令牌不变）。仍是搜索期占位时不必等。
     if (__fushiDeferredRenderTimer) {

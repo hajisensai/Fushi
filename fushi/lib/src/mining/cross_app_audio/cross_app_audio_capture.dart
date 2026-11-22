@@ -23,6 +23,7 @@ import 'package:fushi/src/mining/galgame_audio_encode.dart'
 import 'package:fushi/src/mining/galgame_audio_source.dart'
     show GalAudioSlice, LoopbackGalAudioSource;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:path/path.dart' as p;
@@ -214,17 +215,31 @@ class CrossAppAudioCapture {
 
   /// 制卡时把 [snapshot] 截出最后一句、按本平台的编码器写成句子音频（Android 系统 AAC
   /// 编码器写 m4a；Windows 走 ffmpeg，扩展名与其他制卡音频一致）。调用方制卡后删 `dir`。
+  ///
+  /// [overrides] 是这次制卡字段里带的覆盖项（查词卡「调整句子音频」面板 / 高级制卡）：
+  /// 不要句子音频时直接返回 null；起止偏移加在自动截句上（[crossAppAudioAdjustRange]）。
   Future<({String path, Directory dir})?> prepareSentenceAudio(
-    CrossAppAudioSnapshot snapshot,
-  ) {
+    CrossAppAudioSnapshot snapshot, {
+    MiningRequestOverrides? overrides,
+  }) async {
+    if (overrides?.omitAudio ?? false) return null;
+    final int startDeltaMs = overrides?.audioStartDeltaMs ?? 0;
+    final int endDeltaMs = overrides?.audioEndDeltaMs ?? 0;
     if (_desktop) {
       return prepareCrossAppSentenceAudio(
         snapshot,
         encode: _desktopEncoder ?? encodeCrossAppAudioWithFfmpeg,
+        startDeltaMs: startDeltaMs,
+        endDeltaMs: endDeltaMs,
         extension: immersionMiningAudioExtension(),
       );
     }
-    return prepareCrossAppSentenceAudio(snapshot, encode: encodeAac);
+    return prepareCrossAppSentenceAudio(
+      snapshot,
+      encode: encodeAac,
+      startDeltaMs: startDeltaMs,
+      endDeltaMs: endDeltaMs,
+    );
   }
 
   Future<T> _serialDesktop<T>(Future<T> Function() op) {
