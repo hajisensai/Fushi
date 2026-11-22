@@ -38,6 +38,9 @@ const String kOrphan = '01928c3e-0000-7000-8000-00000000cafe';
 /// 在跑的那次以 cancelled 收场；还没开始的（按 runId 先登记）一开始就收场。
 final class _FakeMigration implements SrsGen4MigrationBackend {
   SrsGenState state = SrsGenState.needsMigration;
+
+  /// 状态命令随 [SrsGenState.migrationFailed] 报的原因（内核判定）。
+  SrsGen4MigrationFailure? failure;
   SrsGen4MigrationProgress? running;
   List<String> legacy = <String>[kJa, kOrphan];
   final List<Completer<SrsGen4MigrationOutcome>> runs =
@@ -48,7 +51,7 @@ final class _FakeMigration implements SrsGen4MigrationBackend {
 
   @override
   SrsGen4MigrationStatus status(String dir) =>
-      SrsGen4MigrationStatus(state: state, running: running);
+      SrsGen4MigrationStatus(state: state, failure: failure, running: running);
 
   @override
   Future<List<String>> legacyProfiles(String dir) async => legacy;
@@ -92,6 +95,7 @@ final class _FakeMigration implements SrsGen4MigrationBackend {
   /// 给最近一次 [run] 结论；[after] 是结论之后状态命令报的状态。
   void finish(SrsGen4MigrationOutcome o, {required SrsGenState after}) {
     state = after;
+    failure = after == SrsGenState.migrationFailed ? o.failure : null;
     running = null;
     runs.last.complete(o);
   }
@@ -308,21 +312,29 @@ void main() {
       const SrsGen4MigrationOutcome(
         verdict: SrsGen4MigrationVerdict.aborted,
         reportPath: '/data/srs.db-gen4-report.json',
+        failure: SrsGen4MigrationFailure(
+          reason: SrsGen4MigrationFailureReason.fail,
+          reportPath: '/data/srs.db-gen4-report.json',
+        ),
       ),
       after: SrsGenState.migrationFailed,
     );
     await settle();
     expect(srs.generation.state, ServerSrsGenState.migrationFailed);
     expect(srs.generation.reportPath, '/data/srs.db-gen4-report.json');
+    expect(srs.generation.failure?.reason, SrsGen4MigrationFailureReason.fail);
+    expect(srs.generation.advice, contains('found differences'));
     expect(srs.generation.advice, contains('/data/srs.db-gen4-report.json'));
+    expect(srs.generation.toJson()['failureReason'], 'fail');
     expect(srs.profile(kJa)!.state, ServerSrsProfileState.upgradeBlocked);
     await srs.applyConfig();
     expect(fake.runs, hasLength(2), reason: '对拍不过不自动重跑');
     expect(
       srs.generation.reportPath,
       '/data/srs.db-gen4-report.json',
-      reason: '状态命令报的 migrationFailed 不盖掉本进程的报告路径',
+      reason: '状态命令报的同一个失败不盖掉本进程的结论',
     );
+    expect(srs.generation.verdict, 'aborted');
   });
 
   test('整机备份与迁移互斥：迁移中不给占位；占位期间不开始迁移，放开后接着迁（G10-4）', () async {
@@ -368,10 +380,34 @@ void main() {
           ),
         ]) {
       await srs.stop();
-      fake = _FakeMigration()..state = state;
+      fake = _FakeMigration()
+        ..state = state
+        ..failure = state == SrsGenState.migrationFailed
+            ? const SrsGen4MigrationFailure(
+                reason: SrsGen4MigrationFailureReason.incomplete,
+                reportPath: '/data/srs4-migration-report.json',
+              )
+            : null;
       srs = make();
       await srs.start();
       expect(srs.generation.state, want, reason: '$state');
+      if (state == SrsGenState.migrationFailed) {
+        // 重启后原因与报告路径照样有（内核状态给的），不是笼统的「对拍不过」。
+        expect(srs.generation.reportPath, '/data/srs4-migration-report.json');
+        expect(
+          srs.generation.failure?.reason,
+          SrsGen4MigrationFailureReason.incomplete,
+        );
+        expect(srs.generation.advice, contains('could not complete'));
+        expect(
+          srs.generation.advice,
+          contains('/data/srs4-migration-report.json'),
+        );
+        final Map<Object?, Object?> g =
+            srs.status()['generation']! as Map<Object?, Object?>;
+        expect(g['failureReason'], 'incomplete');
+        expect(g['reportPath'], '/data/srs4-migration-report.json');
+      }
       expect(fake.runs, isEmpty, reason: '$state');
       expect(srs.storeFor(kJa), isNull);
       expect(legacy.readAsStringSync(), 'stand-in for a protocol 3 library');

@@ -187,7 +187,7 @@ enum SrsGenState {
   /// 只剩封存的旧库 / 墓碑，新代库不见了。不建空库顶上，给恢复页。
   sealedOldOnly('sealedOldOnly'),
 
-  /// 上次迁移失败留下了半成品。不自动重跑，给恢复页。
+  /// 上次迁移没完成（原因由内核判定，[SrsGen4MigrationFailure]）。不自动重跑，给恢复页。
   migrationFailed('migrationFailed');
 
   const SrsGenState(this.wire);
@@ -201,6 +201,70 @@ enum SrsGenState {
     }
     return null;
   }
+}
+
+/// [SrsGenState.migrationFailed] 的原因（migrate.rs `Failure::wire`）。判定只在内核状态命令一处，与「是不是失败」同一份
+/// 身份核对；Dart 不读报告文件、不另判。
+enum SrsGen4MigrationFailureReason {
+  /// 上次迁移对拍有差异、已撤回（有报告）。
+  fail('fail'),
+
+  /// 上次迁移对拍没法做全（旧库一侧的缓存基准拿不到，例如笔记缺笔记类型）、已撤回（有报告）。
+  incomplete('incomplete'),
+
+  /// 上次迁移准备某个 profile 时出错、已撤回（有报告）。
+  error('error'),
+
+  /// 旧库不见了、只剩迁移临时文件：上次跑到一半进程没了（没有报告）。
+  interrupted('interrupted');
+
+  const SrsGen4MigrationFailureReason(this.wire);
+
+  final String wire;
+
+  /// 线上名 → 原因；不认识的为 null。
+  static SrsGen4MigrationFailureReason? tryParse(Object? wire) {
+    for (final SrsGen4MigrationFailureReason r in values) {
+      if (r.wire == wire) return r;
+    }
+    return null;
+  }
+}
+
+/// 上次迁移没完成的原因与诊断报告（migrate.rs `Failure::json`：`{reason, reportPath?}`）。状态命令、打开错误、
+/// 中止的迁移结论三处同一形状。
+final class SrsGen4MigrationFailure {
+  const SrsGen4MigrationFailure({required this.reason, this.reportPath});
+
+  final SrsGen4MigrationFailureReason reason;
+
+  /// 诊断报告的路径（只含 ID 与计数）；[SrsGen4MigrationFailureReason.interrupted] 没有。
+  final String? reportPath;
+
+  /// `null` / 不是对象 / 原因不认识 = null（内核与 Dart 同包发布，认不出只可能是坏数据，不猜）。
+  static SrsGen4MigrationFailure? tryParse(Object? j) {
+    if (j is! Map) return null;
+    final SrsGen4MigrationFailureReason? reason =
+        SrsGen4MigrationFailureReason.tryParse(j['reason']);
+    if (reason == null) return null;
+    return SrsGen4MigrationFailure(
+      reason: reason,
+      reportPath: j['reportPath'] as String?,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsGen4MigrationFailure &&
+      other.reason == reason &&
+      other.reportPath == reportPath;
+
+  @override
+  int get hashCode => Object.hash(reason, reportPath);
+
+  @override
+  String toString() =>
+      'SrsGen4MigrationFailure(${reason.wire}${reportPath == null ? '' : ', $reportPath'})';
 }
 
 /// 打开模式（`ffsrs_store_open_mode` 的 `mode`）。
@@ -238,22 +302,32 @@ sealed class SrsStoreOpenBlocked extends SrsCoreException {
 
 /// 还没有新代库（`STORE_NOT_MIGRATED`）。
 final class SrsStoreNotMigrated extends SrsStoreOpenBlocked {
-  const SrsStoreNotMigrated(String message, this.state)
+  const SrsStoreNotMigrated(String message, this.state, {this.failure})
     : super(statusCode, message);
 
   static const int statusCode = -4;
 
   final SrsGenState state;
 
-  /// 错误文本末尾是 `{"state": <线上名>}`（store/ffi.rs `open_error`）。状态读不出来 = null（照一般错误报）。
+  /// [SrsGenState.migrationFailed] 时内核判定的原因（与 [state] 同一次判定）；其余状态 = null。
+  final SrsGen4MigrationFailure? failure;
+
+  /// 错误文本末尾是 `{"failure": ..., "state": <线上名>}`（store/ffi.rs `open_error`，migrate.rs `GenState::json`；
+  /// 前面的说明文字里没有 `{`）。状态读不出来 = null（照一般错误报）。
   static SrsStoreNotMigrated? _parse(String message) {
-    final int at = message.lastIndexOf('{"state"');
+    final int at = message.indexOf('{');
     if (at < 0) return null;
     try {
       final Object? j = jsonDecode(message.substring(at));
       if (j is! Map) return null;
       final SrsGenState? s = SrsGenState.tryParse(j['state']);
-      return s == null ? null : SrsStoreNotMigrated(message, s);
+      return s == null
+          ? null
+          : SrsStoreNotMigrated(
+              message,
+              s,
+              failure: SrsGen4MigrationFailure.tryParse(j['failure']),
+            );
     } on FormatException {
       return null;
     }

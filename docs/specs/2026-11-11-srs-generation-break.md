@@ -1023,6 +1023,12 @@ BUG-4011 的拍板不变：首次同步的确认弹框没回答之前不绑定�
    - 口径按规范 ID：卡按规范卡、日志按规范日志 ID 成组后再比。样本库有 2,856 个规范卡各吃进 2 个旧卡 ID，47,228 个规范日志 ID 各对应
      2 条内容相同的旧日志，归回去的写入者的 5,712 条修改记录落在原件上（§5.3）——这些在对拍里合成一条，不是丢了；
    - **任何不等：中止**，不带病提交。诊断只在报告（`srs4-migration-report.json`，只有 ID 与计数）里，临时文件当场删掉（2026-11-22：手机上用户拿不到临时文件，留着只占空间并让恢复页误报「上次没做完」）；旧文件原样可用。后果见 §9 第 8 项。
+     **失败状态的原因只由内核判（2026-11-22，BUG-5214）**：状态命令 `gen4_migrate_status` 与打开错误（`STORE_NOT_MIGRATED` 的 `{failure, state}`）
+     在 `migrationFailed` 时同带 `failure = {reason, reportPath?}`（`migrate.rs` `GenState::MigrationFailed(Failure)`），判定只在 `status` 一处、
+     与「是不是失败」用同一份身份核对（报告的 `legacyIdentity`）。`reason` 四种：`fail`（对拍有差异）/ `incomplete`（协议 3 一侧的缓存基准拿不到，
+     对拍没法做全）/ `error`（profile 准备出错，及认不出的整体结论）——三种按报告的 `profileVerdict` 分、带报告路径；`interrupted`（旧库不见了、
+     只剩临时文件，没有报告）。中止的迁移结论（`gen4_migrate_run` 的 `aborted`）带同一形状的 `failure`。app 恢复页与 `fushi_server` 只按它说明，
+     不读报告文件、不另判。
 7. **提交**：给临时文件做检查点、确认没有残留 WAL，写入「已核对」标记，改名为 `srs4.db`——这是提交点。之后**原位封存**旧文件：
    在旧 `srs.db` 的 `srs_meta` 里把 `schema` 写成 **39999**（一行、一次事务，D7）。**不改名**（D6）：v3.3.0 以可创建方式打开 `srs.db`（`store/mod.rs:405`），
    改了名旧版本会新建一个空库照常运行，而不是报错。封存后的 `srs.db` 就是保留副本；保留副本到期或被用户删掉时，在原路径放一个**只含 `srs_meta`、`schema = 39999` 的墓碑小库**，
