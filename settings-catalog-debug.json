@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 900,
+ "count": 901,
  "settings": [
   {
    "key": "appearance.language",
@@ -604,6 +604,25 @@
     "zh-CN": "要先验证。还有上锁作品时，只能在能用系统验证的设备上删。"
    },
    "hint": "The unlock passcode can only be removed in the app (the owner must verify first)."
+  },
+  {
+   "key": "general.archive_passwords_clear",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Clear remembered archive passwords",
+    "zh-CN": "清除已记住的压缩包密码"
+   },
+   "path": {
+    "en": "General › Title privacy",
+    "zh-CN": "通用 › 作品隐私"
+   },
+   "description": {
+    "en": "Passwords saved with “Remember password” when importing encrypted zip / 7z / rar archives",
+    "zh-CN": "导入加密 zip / 7z / rar 时勾「记住密码」存下的口令"
+   },
+   "runnable": true,
+   "destructive": true
   },
   {
    "key": "appearance.nsfw_blur_covers",

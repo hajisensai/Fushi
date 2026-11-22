@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 900 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 901 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -32,6 +32,7 @@ How to read this:
 | `general.media_lock_show` | Show locked titles | 显示已上锁的作品 | Title privacy | bool |  | `false` | Off every time the app starts. Turning it on asks for your passcode or system verification. · *user only* |
 | `general.media_lock_passcode` | Unlock passcode | 解锁口令 | Title privacy | action |  |  | Set or change the passcode for showing locked titles. Changing it asks you to verify first. |
 | `general.media_lock_passcode_remove` | Remove unlock passcode | 删除解锁口令 | Title privacy | action |  |  | Asks you to verify first. While titles are still locked, only possible on devices with system verification. |
+| `general.archive_passwords_clear` | Clear remembered archive passwords | 清除已记住的压缩包密码 | Title privacy | action |  |  | Passwords saved with “Remember password” when importing encrypted zip / 7z / rar archives · *destructive* |
 | `appearance.nsfw_blur_covers` | Blur NSFW covers | 模糊 NSFW 封面 | Title privacy | bool |  | `true` | Covers of titles marked NSFW (title menu › Privacy; games also follow Adult title), and of everything in an NSFW collection, are blurred in the library and on Continue cards. |
 | `appearance.nsfw_blur_card_images` | Blur card images too | 制卡图片也模糊 | Title privacy | bool |  | `false` | Cards mined from an NSFW book or manga get a blurred cover or page image. The blurred image is what gets saved in the card, so turning NSFW off later does not restore cards already made. |
 | `system.low_memory_mode` | Low memory mode | 小内存模式 | Performance and getting started | bool |  | `false` | Reduce cache and memory usage for low-end devices. Some changes take effect after restart. |
