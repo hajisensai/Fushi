@@ -1520,7 +1520,7 @@ class RemoteMangaPageInfo {
 const String kMangaPageKeyQuery = 'pageKey';
 
 /// 页身份 [key] 在取页请求里的形态：sha256 十六进制前 24 位（与章目录摘要同一算法）。
-/// 源端页身份多是长 URL、还带 ` ` 分隔符，不直接进查询串。
+/// 源端页身份多是长 URL、还带 `\u0000` 分隔符，不直接进查询串。
 String remoteMangaPageKeyDigest(String key) => mangaChapterDigest(key);
 
 /// 取页请求带的页身份与 host 此刻页表里这一页的身份对不上（HBK-AUDIT-205）：

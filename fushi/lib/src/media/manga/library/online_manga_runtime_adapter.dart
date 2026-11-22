@@ -246,7 +246,7 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
   /// 章里不是同一页。
   @override
   String? get pageKey => switch (remotePageKey) {
-    final String key => '$bookKey ${chapterDigest ?? ''} $key',
+    final String key => '$bookKey\u0000${chapterDigest ?? ''}\u0000$key',
     null => null,
   };
 
