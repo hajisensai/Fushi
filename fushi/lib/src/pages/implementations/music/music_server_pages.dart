@@ -1206,6 +1206,7 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                     key: const ValueKey<String>(
                       'music-server-album-collection',
                     ),
+                    db: musicServerDatabaseOf(context),
                     browser: widget.browser,
                     tracks: tracks,
                     title: album.title,
