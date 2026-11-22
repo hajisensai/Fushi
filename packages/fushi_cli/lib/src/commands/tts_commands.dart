@@ -182,8 +182,10 @@ const List<String> _kinds = <String>[
   'skip',
 ];
 
-/// 语气词表（线上 wire 名，none = 不标）。
-const List<String> _emotions = <String>[
+/// 语气词表（线上 wire 名，none = 不标）。CLI 不依赖 fushi_engine，所以这里手写；
+/// 与引擎 `CastEmotion` 的一致性由 app 侧测试
+/// `tts_manga_line_emotion_parity_test.dart` 钉住，操作目录描述也直接引用这份。
+const List<String> kTtsMangaLineEmotions = <String>[
   'none',
   'neutral',
   'joy',
@@ -211,7 +213,11 @@ void _configureLine(ArgParser parser) => parser
   ..addFlag('new-character', negatable: false, help: '--speaker 是新角色，加进角色表')
   ..addOption('kind', allowed: _kinds, help: '台词类型')
   ..addOption('beat', help: '句后额外停顿（毫秒，0-10000）')
-  ..addOption('emotion', allowed: _emotions, help: '语气（none = 不标，强度一并清掉）')
+  ..addOption(
+    'emotion',
+    allowed: kTtsMangaLineEmotions,
+    help: '语气（none = 不标，强度一并清掉）',
+  )
   ..addOption('intensity', help: '语气强度 0-100（none = 不标强度）')
   ..addOption('position', help: '移到本页第几句（1 起）')
   ..addOption('say', help: '整句手填要念的文字（空串 = 清掉）')

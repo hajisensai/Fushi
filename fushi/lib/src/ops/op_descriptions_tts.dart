@@ -225,19 +225,7 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
         OpParam.string(
           'emotion',
           description: 'Tone of the line; none clears it (and its intensity).',
-          enumValues: <String>[
-            'none',
-            'neutral',
-            'joy',
-            'sadness',
-            'anger',
-            'surprise',
-            'fear',
-            'disgust',
-            'embarrassment',
-            'tenderness',
-            'tension',
-          ],
+          enumValues: kTtsMangaLineEmotions,
         ),
         OpParam.integer(
           'intensity',
