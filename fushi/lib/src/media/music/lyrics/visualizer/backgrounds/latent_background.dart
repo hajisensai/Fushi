@@ -767,7 +767,9 @@ void paintLatentCpu(Canvas canvas, Size size, LatentFrame f) {
     );
   }
   if (f.showDither) {
-    final double cell = math.max(f.pxSize, 6);
+    // CPU 退路逐格画矩形，格子太小会画不动：按比例放大（默认 2.5 → 6 逻辑像素），下限 3。
+    // 不能直接钳到固定下限——那样 2.5 和 8 在低频压缩后都落到同一格宽，像素尺寸参数就失效了。
+    final double cell = math.max(3.0, f.pxSize * 2.4);
     final Path front = Path();
     final int cols = (size.width / cell).ceil();
     final int rows = (size.height / cell).ceil();
