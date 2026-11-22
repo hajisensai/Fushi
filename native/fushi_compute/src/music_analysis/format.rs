@@ -257,6 +257,43 @@ mod tests {
         assert_eq!(b.frames(), 3);
     }
 
+    /// 跨语言契约：这份固定结果的编码与 Dart 测试读的夹具逐字节相同
+    /// （`fushi/test/media/music/analysis/fixtures/golden.fma`；改布局时设 `FUSHI_MANA_WRITE_GOLDEN=1` 重写，
+    /// Dart 侧 `music_audio_analysis_test.dart` 同步改断言）。
+    pub(crate) fn golden() -> Analysis {
+        Analysis {
+            flags: FLAG_BEATS_MODEL | FLAG_DRUMS_MODEL,
+            frame_rate: 22050.0 / 256.0,
+            power: vec![0.0, 0.5, 1.0, 0.25, 0.0],
+            low: vec![1.0, 0.0, 0.2, 0.4, 0.6],
+            mid: vec![0.1, 0.2, 0.3, 0.4, 0.5],
+            high: vec![0.3, 0.2, 0.1, 0.0, 1.0],
+            onset: vec![0.0, 1.0, 0.0, 0.5, 0.0],
+            vocal: vec![0.4, 0.4, 0.4, 0.8, 0.8],
+            bpm: Some(120.0),
+            beats_per_bar: 3,
+            beats_ms: vec![0, 500, 1000, 1500],
+            downbeats_ms: vec![0, 1500],
+            hits_ms: vec![10, 510, 1010],
+            hit_strength: vec![1.0, 0.5, 0.25],
+            hit_kind: vec![0, 1, 2],
+            vocal_onsets_ms: vec![20, 40],
+            duration_ms: 58,
+        }
+    }
+
+    #[test]
+    fn golden_fixture_matches_dart_side() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fushi/test/media/music/analysis/fixtures/golden.fma");
+        let bytes = golden().encode();
+        if std::env::var("FUSHI_MANA_WRITE_GOLDEN").is_ok() {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "regenerate with FUSHI_MANA_WRITE_GOLDEN=1");
+    }
+
     #[test]
     fn rejects_garbage_and_other_versions() {
         assert!(Analysis::decode(b"nope").is_none());
