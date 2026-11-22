@@ -285,7 +285,11 @@ MusicItemMenu? musicServerTrackLibraryMenu(
             browser,
             track,
             albumTitle: albumTitle,
-            downloads: musicServerDownloadServiceOf(context, browser),
+            downloads: musicServerDownloadServiceOf(
+              context,
+              app.database,
+              browser,
+            ),
           );
       if (!context.mounted) return;
       await showMusicActionMenu(

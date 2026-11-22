@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart'
     show AppleMusicUnavailableException;
@@ -119,6 +120,15 @@ const double kMusicAlbumDetailCoverSize = 200;
 /// 光泽），墨水屏退回描边封面框。本地专辑页与服务器专辑页共用。
 Widget musicAlbumDetailCover(Widget cover) =>
     musicMaterialCover(cover, size: kMusicAlbumDetailCoverSize, tilt: true);
+
+/// 当前用户库（还没打开时为 null）：服务器页上的入库 / 下载动作用。
+FushiDatabase? musicServerDatabaseOf(BuildContext context) {
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  return app.isDatabaseReady ? app.database : null;
+}
 
 /// 服务器曲目 → 播放项（按设置的码率上限）。
 List<MusicPlayItem> musicServerPlayItems(
@@ -720,7 +730,12 @@ class MusicServerAlbumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return musicWithContextMenu(
-      musicServerAlbumMenu(context, browser, album),
+      musicServerAlbumMenu(
+        context,
+        musicServerDatabaseOf(context),
+        browser,
+        album,
+      ),
       _buildCard(context),
     );
   }
@@ -791,7 +806,12 @@ class MusicServerAlbumBlockCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => musicWithContextMenu(
-    musicServerAlbumMenu(context, browser, album),
+    musicServerAlbumMenu(
+      context,
+      musicServerDatabaseOf(context),
+      browser,
+      album,
+    ),
     _buildBlock(context),
   );
 
@@ -830,7 +850,12 @@ class MusicServerAlbumListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => musicWithContextMenu(
-    musicServerAlbumMenu(context, browser, album),
+    musicServerAlbumMenu(
+      context,
+      musicServerDatabaseOf(context),
+      browser,
+      album,
+    ),
     _buildRow(context),
   );
 
@@ -992,6 +1017,7 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
           alignment: AlignmentDirectional.centerStart,
           child: MusicServerCollectionButtons(
             key: const ValueKey<String>('music-server-artist-collection'),
+            db: musicServerDatabaseOf(context),
             browser: widget.browser,
             tracks: data.tracks,
             title: widget.artist.name,
@@ -1944,7 +1970,11 @@ MusicItemMenu? musicServerTrackMenu(
               track,
               albumTitle: albumTitle,
               playlistLabel: t.music_action_add_to_local_playlist,
-              downloads: musicServerDownloadServiceOf(context, browser),
+              downloads: musicServerDownloadServiceOf(
+                context,
+                app.database,
+                browser,
+              ),
             )
           : const <MusicMenuAction>[];
       if (!context.mounted) return;

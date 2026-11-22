@@ -145,9 +145,10 @@ void main() {
       () => h.db.musicRemoteLibraryUidsOf(uids),
     ))!;
     expect(inLib, uids.toSet());
-    final MusicRemoteTrackRow row = (await tester.runAsync(
-      () => h.db.getMusicRemoteTrack(uids.first),
-    ))!;
+    final MusicRemoteTrackRow row = (await tester
+        .runAsync<MusicRemoteTrackRow?>(
+          () => h.db.getMusicRemoteTrack(uids.first),
+        ))!;
     expect(row.kind, MusicRemoteTrackKind.server.wire);
     expect(row.album, 'Rock Album');
     expect(
@@ -289,9 +290,10 @@ void main() {
       uids.toSet(),
     );
     // 每首记的是自己那张专辑的名字。
-    final MusicRemoteTrackRow second = (await tester.runAsync(
-      () => h.db.getMusicRemoteTrack(uids.last),
-    ))!;
+    final MusicRemoteTrackRow second = (await tester
+        .runAsync<MusicRemoteTrackRow?>(
+          () => h.db.getMusicRemoteTrack(uids.last),
+        ))!;
     expect(second.album, 'Second Album');
     expect(
       find.descendant(

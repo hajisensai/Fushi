@@ -20,7 +20,6 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
 import 'package:fushi/src/media/music/server/music_server_downloads.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
@@ -106,21 +105,20 @@ Future<void> musicServerRemoveTracksFromLibrary(
   );
 }
 
-/// 当前 app 的下载编排；库没就绪 / 这台服务器不支持下载原文件时回 null。
+/// 当前 app 的下载编排；库没就绪（[db] 为 null）/ 这台服务器不支持下载原文件时回 null。
+/// 库由调用方给（本文件不读 AppModel：不把它接进 import 大环）。
 MusicServerDownloadService? musicServerDownloadServiceOf(
   BuildContext context,
+  FushiDatabase? db,
   MusicServerBrowser browser,
 ) {
-  if (!MusicServerDownloadService.supports(browser)) return null;
-  final ProviderContainer container = ProviderScope.containerOf(
-    context,
-    listen: false,
-  );
-  final AppModel app = container.read(appProvider);
-  if (!app.isDatabaseReady) return null;
+  if (db == null || !MusicServerDownloadService.supports(browser)) return null;
   return MusicServerDownloadService.forApp(
-    downloads: container.read(interconnectDownloadManagerProvider),
-    db: app.database,
+    downloads: ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(interconnectDownloadManagerProvider),
+    db: db,
   );
 }
 
@@ -355,31 +353,28 @@ List<MusicMenuAction> musicServerTrackDownloadActions(
 /// 入库 / 下载动作。不能入库的来源（Apple Music / YouTube）回 null。
 MusicItemMenu? musicServerAlbumMenu(
   BuildContext context,
+  FushiDatabase? db,
   MusicServerBrowser browser,
   MusicServerAlbum album,
 ) {
-  if (!musicServerKindStorable(browser.kind)) return null;
-  final AppModel app = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appProvider);
-  if (!app.isDatabaseReady) return null;
+  if (db == null || !musicServerKindStorable(browser.kind)) return null;
   return MusicItemMenu(
     buttonKey: ValueKey<String>('music-server-album-menu-${album.id}'),
     open: (MusicMenuAnchor? anchor) => unawaited(() async {
       // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
       final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
       final MusicServerDownloadService? downloads =
-          musicServerDownloadServiceOf(context, browser);
+          musicServerDownloadServiceOf(context, db, browser);
       List<MusicMenuAction> actions;
       try {
         final List<MusicServerTrack> tracks = await browser.albumTracks(
           album.id,
         );
-        final Set<String> inLibrary = await app.database
-            .musicRemoteLibraryUidsOf(musicServerTrackUids(browser, tracks));
+        final Set<String> inLibrary = await db.musicRemoteLibraryUidsOf(
+          musicServerTrackUids(browser, tracks),
+        );
         actions = musicServerCollectionActions(
-          db: app.database,
+          db: db,
           browser: browser,
           tracks: tracks,
           libraryUids: inLibrary,
@@ -415,6 +410,7 @@ MusicItemMenu? musicServerAlbumMenu(
 class MusicServerCollectionButtons extends ConsumerStatefulWidget {
   const MusicServerCollectionButtons({
     super.key,
+    required this.db,
     required this.browser,
     required this.tracks,
     required this.title,
@@ -424,6 +420,8 @@ class MusicServerCollectionButtons extends ConsumerStatefulWidget {
     this.albumTitleOf,
   });
 
+  /// 用户库（库没就绪为 null：不画）。
+  final FushiDatabase? db;
   final MusicServerBrowser browser;
   final List<MusicServerTrack> tracks;
 
@@ -450,6 +448,7 @@ class _MusicServerCollectionButtonsState
   void didUpdateWidget(MusicServerCollectionButtons old) {
     super.didUpdateWidget(old);
     if (!identical(old.tracks, widget.tracks) ||
+        !identical(old.db, widget.db) ||
         old.browser.serverId != widget.browser.serverId) {
       _uids = musicServerTrackUids(widget.browser, widget.tracks);
       _library = null;
@@ -482,15 +481,15 @@ class _MusicServerCollectionButtonsState
 
   @override
   Widget build(BuildContext context) {
-    final AppModel app = ref.watch(appProvider);
-    if (!app.isDatabaseReady ||
+    final FushiDatabase? db = widget.db;
+    if (db == null ||
         !musicServerKindStorable(widget.browser.kind) ||
         widget.tracks.isEmpty) {
       return const SizedBox.shrink();
     }
-    final FushiDatabase db = app.database;
     final MusicServerDownloadService? downloads = musicServerDownloadServiceOf(
       context,
+      db,
       widget.browser,
     );
     final InterconnectDownloadManager manager = ref.watch(

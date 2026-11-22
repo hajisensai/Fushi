@@ -210,7 +210,10 @@ void main() {
       await db.removeMusicRemoteTracksFromLibrary(<String>['srv-p'], at: 3);
       await pumpEventQueue();
       expect(seen.first, isEmpty);
-      expect(seen, contains(<String>{'srv-p'}));
+      expect(
+        seen.any((Set<String> s) => s.length == 1 && s.contains('srv-p')),
+        isTrue,
+      );
       expect(seen.last, isEmpty);
     });
   });
