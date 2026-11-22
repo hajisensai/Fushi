@@ -1438,6 +1438,7 @@ class RemoteMangaPageInfo {
     required this.name,
     this.width = 0,
     this.height = 0,
+    this.key,
   });
 
   /// 0 基页序，同时是页图端点的路径段。
@@ -1450,11 +1451,19 @@ class RemoteMangaPageInfo {
   final int width;
   final int height;
 
+  /// 这一页的稳定身份（audit-035）：同一个值 = 同一张页图。对端下载这一章、暂停后
+  /// 续跑时按它认已落地的页还算不算数——[index] 只是页序，host 那边源端换了页、
+  /// 重排了页，页序照旧。host 现取的在线章报源端页身份（扩展原始图片地址等），已下载
+  /// 的章 / 本地卷报页图文件身份；认不出就不报（null），对端续跑不复用这页。旧 host
+  /// 不写这个键，旧 client 不读它，wire 双向兼容。
+  final String? key;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,
     'name': name,
     if (width > 0) 'width': width,
     if (height > 0) 'height': height,
+    if (key != null) 'key': key,
   };
 
   static RemoteMangaPageInfo fromJson(Map<String, Object?> json) =>
@@ -1463,6 +1472,10 @@ class RemoteMangaPageInfo {
         name: json['name']?.toString() ?? '',
         width: _jsonInt(json['width']) ?? 0,
         height: _jsonInt(json['height']) ?? 0,
+        key: switch (json['key']) {
+          final String key when key.isNotEmpty => key,
+          _ => null,
+        },
       );
 }
 

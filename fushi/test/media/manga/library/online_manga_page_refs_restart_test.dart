@@ -169,6 +169,23 @@ void main() {
     expect(runtime.getPagesCalls, 2, reason: '页数不一致是确定结论，不再每页解析一次');
   });
 
+  test('重启后页数相同但源端换了页（audit-035）：按失败，不把两版页图接着混取', () async {
+    final OnlineMangaChapterPageRefs refs = await openRefs();
+    expect(refs[0].pageKey, 'https://cdn.example/v1/0.jpg');
+    expect(
+      refs[0].sourceUrl,
+      'https://cdn.example/v1/0.jpg',
+      reason: 'OCR sidecar 按源站地址配页，不拿进程内代理地址',
+    );
+    runtime
+      ..version = 2
+      ..restart();
+    await expectLater(refs.fetch(1), throwsA(isA<OnlineMangaUnavailable>()));
+    expect(refs.pageTableChanged, isTrue);
+    await expectLater(refs.fetch(2), throwsA(isA<OnlineMangaUnavailable>()));
+    expect(runtime.getPagesCalls, 2);
+  });
+
   test('一般取页失败原样抛出，不重解析页表', () async {
     final OnlineMangaChapterPageRefs refs = await openRefs();
     runtime.failWith = const MihonRuntimeException('IMAGE_HTTP_500', 'boom');
@@ -195,6 +212,9 @@ class _RestartingRuntime extends Fake implements MihonRuntime {
   int process = 1;
   int pageCount = 3;
   int getPagesCalls = 0;
+
+  /// 源端这一章的版本：变了 = 同页数换了页图。
+  int version = 1;
   MihonRuntimeException? failWith;
 
   void restart() => process++;
@@ -216,6 +236,8 @@ class _RestartingRuntime extends Fake implements MihonRuntime {
           index: i,
           url: '',
           imageUrl: 'http://127.0.0.1/image/$process/$i',
+          // 扩展原样给的地址：不随进程变，只随源端换页变（audit-035）。
+          sourceImageUrl: 'https://cdn.example/v$version/$i.jpg',
         ),
     ];
   }
