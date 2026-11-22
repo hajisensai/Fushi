@@ -24,8 +24,9 @@ List<String> srsDedupeMediaNames(Iterable<String> names) {
 /// `srsFushiCardPlan`（srs_fushi_card_plan.dart）构造：那里按区块显隐过滤，卡面上没画的区块
 /// 里的媒体不进来（HrB0STYm3E：关了「显示图片」片段照样出声、例句为空例句音频照样自动播）。
 ///
-/// 原生卡面只画三样会出声的东西：词条旁的单词音频键（`ExpressionAudio`）、Picture 里的视频
-/// 片段、例句卡里的例句音频键（`SentenceAudio`）。以前复习页按整张背面 HTML 收集媒体
+/// 原生卡面画的会出声的东西：词条旁的单词音频键（`ExpressionAudio`）、Picture 里的视频
+/// 片段、例句卡里的例句音频键（`SentenceAudio`），以及用户加的字段区块 / HTML 区块里的
+/// `[sound:]` 发音键（BUG-5200：以前画出来却不进自动播放与重播）。以前复习页按整张背面 HTML 收集媒体
 /// （srs_card_autoplay.dart 的 `srsCardMediaNames`）——释义区里词典自带的 `<audio>` / `[sound:]`、模板复制的多份
 /// 容器都被算进来，于是卡面上只有一两颗发音键、底栏却出一排重播键，自动播放也把它们全播
 /// 了（#15）。底栏重播键、自动播放、R 重播与卡面上的发音键现在是同一份清单。
@@ -36,9 +37,11 @@ class SrsFushiCardMedia {
     required this.word,
     required this.clip,
     required this.sentence,
+    this.custom = const <String>[],
   });
 
-  /// 问题面会出声的媒体（只有听力卡正面有发音键，见 `_buildFront`）。
+  /// 问题面会出声的媒体（按正面布局自上而下：听力卡题面的发音键、字段区块 / HTML 区块里的
+  /// 发音键，见 `_buildFront`）。
   final List<String> front;
 
   /// 单词音频（`ExpressionAudio`）。
@@ -49,6 +52,9 @@ class SrsFushiCardMedia {
 
   /// 例句音频（`SentenceAudio`）。
   final List<String> sentence;
+
+  /// 背面字段区块 / HTML 区块里画出来的发音键（`[sound:]`，按布局自上而下）。
+  final List<String> custom;
 
   /// 片段自带例句声音：例句音频就是片段本身（视频制卡的同步片段，`SentenceAudio` 里的隐藏
   /// `<audio>` 与 `<video>` 是同一个文件），或卡上只有片段没有单独的例句音频。此时例句键
@@ -67,8 +73,8 @@ class SrsFushiCardMedia {
   List<String> get companionSentence =>
       clipCarriesSentence ? const <String>[] : sentence;
 
-  /// 答案面的全部媒体（顺序与卡面从上到下一致：单词 → 例句 / 片段）。片段不带例句声音
+  /// 答案面的全部媒体（单词 → 例句 / 片段 → 自定义区块里的发音键）。片段不带例句声音
   /// 时它只陪播画面（静音），不单独进序列——否则例句音频之后片段再出一遍声。
   List<String> get back =>
-      srsDedupeMediaNames(<String>[...word, ...sentenceUnit]);
+      srsDedupeMediaNames(<String>[...word, ...sentenceUnit, ...custom]);
 }

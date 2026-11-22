@@ -902,13 +902,37 @@ FushiCardLayoutProbe _layoutProbe(String template, FushiCardSide side) {
       );
     }
   }
-  final List<FushiCardItem>? old = _historicLayout(template, side);
+  final List<FushiCardItem>? old =
+      _historicLayout(template, side) ?? _legacyListeningLayout(template, side);
   if (old != null) return (items: old, mismatch: null);
   if (spans == null) return (items: null, mismatch: 'block markup is broken');
   return (
     items: null,
     mismatch: _firstDifference(rest ?? _norm(template), current),
   );
+}
+
+/// 「加模板 › 听力」预设在 BUG-5200 修复之前写的正面（a5d5863e50 起，规范形）：手写的一个音频
+/// 字段大号发音键，没有区块标记、也不是内置骨架，区块布局认不出、整面回退 WebView。现在预设
+/// 改用 [fushiCardTemplateFor] 生成；那之前加的听力模板在这里读成同一字段的字段区块，与新预设
+/// 生成的布局一致，在区块布局里一改就写回标准骨架。
+final RegExp _legacyListeningFront = RegExp(
+  r'^<div class="fc fc-front" lang="ja"><div class="fc-front-audio">'
+  r'<div class="fc-audio fc-audio--large">\{\{([^{}#^/!:>][^{}:]*)\}\}</div>'
+  r'</div></div>$',
+);
+
+/// 旧听力预设正面（[_legacyListeningFront]）的布局：那个音频字段的字段区块；不是为 null。
+List<FushiCardItem>? _legacyListeningLayout(
+  String template,
+  FushiCardSide side,
+) {
+  if (side != FushiCardSide.front) return null;
+  final RegExpMatch? m = _legacyListeningFront.firstMatch(_norm(template));
+  if (m == null) return null;
+  return List<FushiCardItem>.unmodifiable(<FushiCardItem>[
+    FushiCardFieldItem(field: m.group(1)!.trim()),
+  ]);
 }
 
 /// 从 [side] 面的模板 [template]（名字形式）读出区块布局：自上而下的布局项，删掉的区块不在

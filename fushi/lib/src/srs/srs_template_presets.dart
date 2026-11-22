@@ -201,8 +201,14 @@ List<SrsTemplatePreset> srsTemplatePresets(SrsNoteTypeView type) {
       preset(
         SrsTemplatePresetKind.listening,
         audio: termAudio,
-        body: () =>
-            (front: ids(_fushiListeningFront(termAudio!.name)), back: back),
+        body: () => (
+          front: ids(
+            fushiCardTemplateFor(FushiCardSide.front, <FushiCardFieldItem>[
+              FushiCardFieldItem(field: termAudio!.name),
+            ]),
+          ),
+          back: back,
+        ),
       ),
       SrsTemplatePreset(
         kind: SrsTemplatePresetKind.blank,
@@ -290,11 +296,3 @@ String _fushiBack(SrsNoteTypeView type) {
     for (final SrsFieldDef f in type.fields) f.name: f.id,
   });
 }
-
-/// 内置 Fushi 卡片的听力正面（名字形式）：只放单词音频，沿用 Fushi 卡片听力卡的类名（大号发音键）。
-String _fushiListeningFront(String audioField) =>
-    '<div class="fc fc-front" lang="ja">\n'
-    '  <div class="fc-front-audio">\n'
-    '    <div class="fc-audio fc-audio--large">{{$audioField}}</div>\n'
-    '  </div>\n'
-    '</div>\n';

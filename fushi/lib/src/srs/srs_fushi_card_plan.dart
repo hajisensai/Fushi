@@ -14,6 +14,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         FushiCardBlock,
         FushiCardBlockItem,
         FushiCardFieldItem,
+        FushiCardFieldStyle,
         FushiCardFrontBlock,
         FushiCardHtmlItem,
         FushiCardItem,
@@ -84,6 +85,21 @@ bool srsFushiItemVisible(
   FushiCardBlockItem() => true,
   FushiCardFieldItem(:final String field) => srsFieldFilled(fields[field]),
   FushiCardHtmlItem(:final String html) => html.trim().isNotEmpty,
+};
+
+/// 自定义区块 [item] 在原生卡面上画出来的发音键（`[sound:]`，原生 HTML 渲染器画成按钮）：字段
+/// 区块是字段值（标签样式只画纯文字，没有），HTML 区块是展开后的 HTML；内置区块的媒体按区块
+/// 单独取，这里为空。与 srs_fushi_card_items.dart 的 `srsFushiItemHtml` 同一口径。
+List<String> srsFushiCustomItemSounds(
+  FushiCardItem item,
+  Map<String, String> fields,
+) => switch (item) {
+  FushiCardFieldItem(style: FushiCardFieldStyle.tag) => const <String>[],
+  FushiCardFieldItem(:final String field) => srsAudioSources(
+    fields[field] ?? '',
+  ),
+  FushiCardHtmlItem(:final String html) => srsAudioSources(html),
+  FushiCardBlockItem() => const <String>[],
 };
 
 /// 一张原生卡的「画什么 + 画出来的会出什么声」。
@@ -183,13 +199,17 @@ SrsFushiCardPlan srsFushiCardPlan(
     fields['SentenceAudio'] ?? '',
   );
   final List<String> rawWord = srsAudioSources(fields['TermAudio'] ?? '');
-  final bool prompt = frontItems.any(
-    (FushiCardItem x) =>
-        x is FushiCardBlockItem && x.block == FushiCardFrontBlock.prompt,
-  );
-  final List<String> frontAudio = kind != SrsFushiFrontKind.audio || !prompt
-      ? const <String>[]
-      : <String>[?(rawSentence.firstOrNull ?? rawWord.firstOrNull)];
+  // 正面按布局自上而下：题面区块的那颗听力发音键、字段区块 / HTML 区块里画出来的发音键。
+  final List<String> frontAudio = srsDedupeMediaNames(<String>[
+    for (final FushiCardItem x in frontItems)
+      ...switch (x) {
+        FushiCardBlockItem(block: FushiCardFrontBlock.prompt) =>
+          kind == SrsFushiFrontKind.audio
+              ? <String>[?(rawSentence.firstOrNull ?? rawWord.firstOrNull)]
+              : const <String>[],
+        _ => srsFushiCustomItemSounds(x, fields),
+      },
+  ]);
   return SrsFushiCardPlan(
     frontKind: kind,
     visible: visible,
@@ -200,6 +220,10 @@ SrsFushiCardPlan srsFushiCardPlan(
       word: word,
       clip: clip,
       sentence: sentence,
+      custom: <String>[
+        for (final FushiCardItem x in backItems)
+          ...srsFushiCustomItemSounds(x, fields),
+      ],
     ),
   );
 }

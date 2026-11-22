@@ -138,6 +138,10 @@ void main() {
         SrsTemplatePresetKind.listening,
       );
       expect(p.audio!.name, 'TermAudio');
+      // BUG-5200：正面是区块布局认得出的字段区块（原生卡面、可视化编辑），不是手写 HTML。
+      expect(fushiCardFrontLayoutOf(_names(t, p.front)), <FushiCardItem>[
+        FushiCardFieldItem(field: 'TermAudio'),
+      ]);
       expect(_names(t, p.front), contains('{{TermAudio}}'));
       expect(_names(t, p.front), isNot(contains('{{Term}}')));
       expect(

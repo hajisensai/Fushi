@@ -149,6 +149,49 @@ void main() {
       );
     });
 
+    test('BUG-5200：字段区块 / HTML 区块里画出来的发音键进自动播放与重播（标签样式不画按钮、不算）', () {
+      // 听力预设的正面：只有单词音频的字段区块，不是听力卡型（题面区块不在）。
+      final SrsFushiCardPlan listening = srsFushiCardPlan(
+        _fields(),
+        a,
+        front: <FushiCardItem>[FushiCardFieldItem(field: 'TermAudio')],
+      );
+      expect(listening.media.front, <String>['w.mp3']);
+
+      final SrsFushiCardPlan p = srsFushiCardPlan(
+        _fields(<String, String>{
+          'MiscInfo': '[sound:m.mp3]',
+          'Hint': '[sound:tag.mp3]',
+        }),
+        a,
+        front: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardFrontBlock.prompt),
+          const FushiCardHtmlItem('<p>[sound:h.mp3]</p>'),
+        ],
+        back: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardBlock.term),
+          FushiCardBlockItem(FushiCardBlock.reading),
+          FushiCardFieldItem(field: 'MiscInfo'),
+          FushiCardFieldItem(field: 'Hint', style: FushiCardFieldStyle.tag),
+          // 与读音行同一个文件：只算一段。
+          const FushiCardHtmlItem('[sound:w.mp3]'),
+        ],
+      );
+      expect(p.media.front, <String>['h.mp3']);
+      expect(p.media.back, <String>['w.mp3', 'm.mp3']);
+
+      // 听力卡型：题面那颗发音键在前，自定义区块的按布局排在后面。
+      final SrsFushiCardPlan audio = srsFushiCardPlan(
+        _fields(<String, String>{'IsAudioCard': 'x'}),
+        a,
+        front: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardFrontBlock.prompt),
+          const FushiCardHtmlItem('[sound:h.mp3]'),
+        ],
+      );
+      expect(audio.media.front, <String>['s.mp3', 'h.mp3']);
+    });
+
     test('字段区块随字段有无显隐；HTML 区块随内容有无显隐', () {
       final SrsFushiCardPlan p = srsFushiCardPlan(
         _fields(<String, String>{'MiscInfo': 'x'}),
