@@ -37,6 +37,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5169](bugs/BUG-5169-gdrive-client-already-closed.md) | ✅ | ✅ | Google Drive 同步 / 比较数据全部报「Client is already closed」 |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
 | [BUG-5174](bugs/BUG-5174-tag-chip-mouse-drag-scrolls-long-press-reorders.md) | ✅ | ✅ | 标签 chip 上鼠标按住拖只能重排、不能横滚标签条（鼠标也应长按才重排） |
 
 | BUG | 修复 | 测试 | 标题 |
