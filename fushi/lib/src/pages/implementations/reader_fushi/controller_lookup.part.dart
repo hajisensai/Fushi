@@ -1,39 +1,61 @@
 part of '../reader_fushi_page.dart';
 
-// ── 手柄查词模式（ControllerLookupMode, S6）适配 ─────────────────────────
+// ── 手柄查词模式（ControllerLookupMode）适配 ─────────────────────────────
 
-/// 阅读器接入统一手柄查词模式：复用本域的字级光标（`fushiCaret` /
-/// `fushiLyricsCaret`）与 [_ReaderCaret._runCaretAction] 的 busy 串行化，不另写
-/// 光标，焦点环就是光标的可见形态。
+/// 阅读器接入统一手柄查词模式（docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：
+/// 复用本域的字级光标（`fushiCaret` / `fushiLyricsCaret`）与
+/// [_ReaderCaret._runCaretAction] 的 busy 串行化，不另写光标，焦点环就是光标的可见形态。
 ///
-/// * 字级步进 = 逻辑前进 / 后退。JS 光标没有分词，故 [hasWordSteps] 为 false
-///   （模式在 Y 切粒度时落到字级）。
+/// * 字级步进 = 逻辑前进 / 后退；词级步进（[hasWordSteps]）先经
+///   [ReaderControllerWordStepScripts.contextInvocation] 取光标所在块（正文段落 /
+///   歌词行）的文本，用查词模式各页共用的分词（[controllerLookupWordStep]）算出目标，
+///   再让 JS 光标逐字走到那里——到页边与字级步进一样返回翻页状态。块首 / 块尾没有
+///   下一个词时退成一步字级步进，跨进相邻块。
 /// * 行级步进用**物理方向**：正文按书的 writing-mode（竖排 = 左为下一行），歌词
 ///   （有声书视图）按 `lyricsVerticalWriting`（竖排歌词 = 左为下一句，横排 = 下）。
-///   分页 / 连续 / VN 三种 view mode 共用同一套 JS 光标，到边时由
+///   分页 / 连续 / VN 三种 view mode 共用同一套 JS 光标与 `move`，到边时由
 ///   [readerCaretMoveOutcome] 翻页。
-/// * 查词走光标的既有查词（JS → onTextSelected → `_handleTextSelected`），副屏在用
-///   时那里已路由到副屏查词页，否则照常弹页内弹窗；单屏弹窗渲染后光标 transfer
-///   进弹窗，此时 [routerOwnsInput] 为 false，按键交回页面既有弹窗光标处理。
+/// * 查词（[lookupAtCursor]）走光标的既有查词（JS `lookup` → onTextSelected →
+///   `_handleTextSelected` → `_runLookupAndHighlight`，与点按同一链路：清栈复用热槽、
+///   不叠栈）。登记一份 [_ReaderControllerLookupRequest]，`_handleTextSelected` 认领它：
+///   按 `maxGraphemes` 截查询词（[readerControllerCappedQuery]），查完把高亮长度交回。
+///   副屏在用时同一处路由到副屏查词页（截过的查询经 [readerControllerCompanionLookup]）。
+/// * **查词后光标留在正文**：模式在用时弹窗渲染不再把光标 transfer 进弹窗
+///   （[holdsCursorInText]，`onDictionaryPopupRendered` 读它），下一次十字键继续在正文
+///   换词。[enterResult]（默认 A）才把光标交给页内弹窗光标，此后 [routerOwnsInput] 为
+///   false，按键回到页面既有的弹窗光标处理（`decideGamepad`），B 关弹窗后光标回正文。
 class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   _ReaderControllerLookupTarget(this._s, {required super.readPref});
 
   final _ReaderFushiPageState _s;
 
   /// The caret entry started by [onModeEntered]. A button pressed in the same
-  /// instant (L1+A together) must wait for it: `_enterCaret` holds the caret
-  /// busy flag, so a step / lookup run meanwhile would be silently dropped.
+  /// instant (L1 + D-pad together) must wait for it: `_enterCaret` holds the
+  /// caret busy flag, so a step / lookup run meanwhile would be silently
+  /// dropped.
   Future<void>? _entering;
 
-  /// The last step in flight. A lookup waits for it so A right after a D-pad
-  /// step looks up the word the cursor moved to instead of being dropped by
-  /// the caret busy flag (steps themselves keep the page's drop-while-busy
-  /// rule so a held D-pad cannot queue up moves).
+  /// The last step in flight. A lookup waits for it so the lookup right after
+  /// a D-pad step looks up the word the cursor moved to instead of being
+  /// dropped by the caret busy flag (steps themselves keep the page's
+  /// drop-while-busy rule so a held D-pad cannot queue up moves).
   Future<void>? _stepping;
 
   /// Set when the page detaches the target in `dispose`: the mode's reset then
   /// calls [onModeExited], which must not touch a disposing page.
   bool _detached = false;
+
+  /// Between [onModeEntered] and [onModeExited].
+  bool _modeActive = false;
+
+  /// The lookup started by [lookupAtCursor] that `_handleTextSelected` has not
+  /// claimed yet.
+  _ReaderControllerLookupRequest? _pending;
+
+  /// Graphemes of the last controller lookup's scanned query text (before the
+  /// cap): what [graphemesFromCursor] reports. 0 after a step until the next
+  /// lookup lands (the mode then treats any growth as unlimited).
+  int _scannedGraphemes = 0;
 
   @override
   bool get isAvailable {
@@ -51,20 +73,35 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
     return route == null || route.isCurrent;
   }
 
-  /// 单屏查词后光标 transfer 进弹窗：D-pad / A / B 交回页面既有弹窗光标处理。
+  /// False once [enterResult] moved the caret onto the popup: D-pad / A / B
+  /// then go to the page's existing popup caret handling.
   @override
   bool get routerOwnsInput => _s._caretSurface != CaretSurface.popup;
 
   @override
-  bool get hasWordSteps => false;
+  bool get hasWordSteps => true;
+
+  /// Whether a rendered popup must leave the caret in the text (the mode is on
+  /// and the caret is on the book / lyrics). Read by the page's
+  /// `onDictionaryPopupRendered`; a caret already on a popup (after
+  /// [enterResult]) still follows nested lookups.
+  bool get holdsCursorInText =>
+      _modeActive &&
+      !_detached &&
+      (_s._caretSurface == CaretSurface.reader ||
+          _s._caretSurface == CaretSurface.lyrics);
 
   @override
   void onModeEntered() {
+    _modeActive = true;
     if (_s.mounted && !_s._caretActive) unawaited(_ensureCaret());
   }
 
   @override
   void onModeExited() {
+    _modeActive = false;
+    _scannedGraphemes = 0;
+    _settlePending(0);
     if (!_detached && _s.mounted && _s._caretActive) _s._exitCaret();
   }
 
@@ -75,10 +112,11 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
 
   /// Runs one caret move after the cursor is up; null-safe when the entry
   /// failed (empty page / lyrics not ready).
-  Future<void> _step(CaretAction action) async {
+  Future<void> _step(Future<void> Function() move) async {
     await _ensureCaret();
     if (!_s.mounted || !_s._caretActive) return;
-    final Future<void> run = _s._runCaretAction(action);
+    _scannedGraphemes = 0;
+    final Future<void> run = move();
     _stepping = run;
     try {
       await run;
@@ -90,15 +128,82 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   @override
   Future<void> stepCursor(int dir, {required bool word}) async {
     if (!_s.mounted) return;
-    await _step(dir > 0 ? CaretAction.stepForward : CaretAction.stepBackward);
+    await _step(
+      word
+          ? () => _wordStep(dir)
+          : () => _s._runCaretAction(
+              dir > 0 ? CaretAction.stepForward : CaretAction.stepBackward,
+            ),
+    );
   }
 
   @override
   Future<void> stepLine(int dir) async {
     if (!_s.mounted) return;
-    await _ensureCaret();
-    if (!_s.mounted || !_s._caretActive) return;
-    await _step(readerControllerLineAction(dir, vertical: _verticalLines));
+    await _step(
+      () => _s._runCaretAction(
+        readerControllerLineAction(dir, vertical: _verticalLines),
+      ),
+    );
+  }
+
+  /// One word step on the book / lyrics caret, under the caret busy flag like
+  /// every caret action. Falls back to a character step when the caret has no
+  /// text around it or sits on the block's first / last word.
+  Future<void> _wordStep(int dir) async {
+    final _ReaderFushiPageState s = _s;
+    if (s._caretBusy || s._caretSurface == CaretSurface.popup) return;
+    final bool lyrics = s._caretOnLyrics;
+    final InAppWebViewController? web = lyrics
+        ? s._lyricsController
+        : s._controller;
+    if (web == null) return;
+    final String physicalDir = dir > 0 ? 'forward' : 'backward';
+    s._caretBusy = true;
+    try {
+      final ({String text, int index})? context =
+          ReaderControllerWordStepScripts.parseContext(
+            await web.evaluateJavascript(
+              source: ReaderControllerWordStepScripts.contextInvocation(
+                lyrics: lyrics,
+              ),
+            ),
+          );
+      if (!s.mounted) return;
+      final int? target = context == null
+          ? null
+          : controllerLookupWordStep(context.text, context.index, dir);
+      if (target == null) {
+        // No word to go to in this block: one character step, which crosses
+        // into the next / previous block (or turns the page).
+        await s._caretMove(physicalDir);
+        return;
+      }
+      final Object? raw = await web.evaluateJavascript(
+        source: ReaderControllerWordStepScripts.stepInvocation(
+          lyrics: lyrics,
+          delta: target - context!.index,
+        ),
+      );
+      if (!s.mounted || s._controller == null) return;
+      switch (readerCaretMoveOutcome(
+        physicalDir,
+        ReaderCaretScripts.moveStatus(raw),
+      )) {
+        case ReaderCaretMoveOutcome.paginateForward:
+          await s._paginate(ReaderNavigationDirection.forward);
+        case ReaderCaretMoveOutcome.paginateBackward:
+          await s._paginate(ReaderNavigationDirection.backward);
+        case ReaderCaretMoveOutcome.none:
+          break;
+      }
+    } catch (e, stack) {
+      // A half-torn-down WebView throws on evaluateJavascript (BUG-005 root
+      // cause); the step is simply not made.
+      ErrorLogService.instance.log('ReaderFushi.controllerWordStep', e, stack);
+    } finally {
+      s._caretBusy = false;
+    }
   }
 
   /// Whether lines of the surface holding the cursor run vertically (next
@@ -111,11 +216,8 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
     return (_s._settings?.writingMode ?? 'vertical-rl').startsWith('vertical');
   }
 
-  // TODO(gamepad-unify): 页面适配——按 maxGraphemes 截查询词、返回命中高亮长度、
-  // 给出 graphemesFromCursor、实现 enterResult（光标留在正文，A 才进弹窗）。
-  // 现为新签名的最小适配：maxGraphemes 暂被忽略，恒返回 0。
   @override
-  int get graphemesFromCursor => 0;
+  int get graphemesFromCursor => _scannedGraphemes;
 
   @override
   Future<int> lookupAtCursor({int? maxGraphemes}) async {
@@ -123,10 +225,150 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
     await _ensureCaret();
     final Future<void>? stepping = _stepping;
     if (stepping != null) await stepping;
-    if (!_s.mounted || !_s._caretActive) return 0;
-    await _s._runCaretAction(CaretAction.lookup);
-    return 0;
+    final _ReaderFushiPageState s = _s;
+    if (!s.mounted || !s._caretActive || s._caretBusy) return 0;
+    if (s._caretSurface == CaretSurface.popup) return 0;
+    final bool lyrics = s._caretOnLyrics;
+    final InAppWebViewController? web = lyrics
+        ? s._lyricsController
+        : s._controller;
+    if (web == null) return 0;
+    // One lookup at a time: a newer one supersedes the unclaimed older one.
+    _settlePending(0);
+    final _ReaderControllerLookupRequest request =
+        _ReaderControllerLookupRequest(maxGraphemes);
+    _pending = request;
+    s._caretBusy = true;
+    try {
+      final Object? fired = await web.evaluateJavascript(
+        source: lyrics
+            ? ReaderLyricsCaretScripts.lookupInvocation()
+            : ReaderCaretScripts.lookupInvocation(),
+      );
+      // Nothing to look up at the caret (no scannable text): no
+      // onTextSelected will come.
+      final bool started = fired == true || fired == 'true';
+      if (!started && identical(_pending, request)) _settlePending(0);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.controllerLookup', e, stack);
+      if (identical(_pending, request)) _settlePending(0);
+    } finally {
+      s._caretBusy = false;
+    }
+    return request.result;
   }
+
+  /// `_handleTextSelected` takes the pending controller lookup (null for a
+  /// tap / hover / keyboard-caret lookup).
+  _ReaderControllerLookupRequest? _claim() {
+    final _ReaderControllerLookupRequest? request = _pending;
+    _pending = null;
+    return request;
+  }
+
+  /// The claimed lookup's scanned query text (after the ruby snap decision,
+  /// before the cap): the upper bound of the selection's right end.
+  void _recordScanned(String scannedText) {
+    _scannedGraphemes = scannedText.characters.length;
+  }
+
+  void _settlePending(int matched) {
+    final _ReaderControllerLookupRequest? request = _pending;
+    _pending = null;
+    request?.complete(matched);
+  }
+
+  /// Hands the controller cursor to the in-page popup's caret (pick a word in
+  /// the result, nested lookups). Nothing to enter when no popup is shown
+  /// (lookups on the companion, or nothing found) or the caret is already
+  /// there.
+  @override
+  Future<void> enterResult() async {
+    final _ReaderFushiPageState s = _s;
+    if (!s.mounted || !s.isDictionaryShown) return;
+    if (s._caretSurface != CaretSurface.reader &&
+        s._caretSurface != CaretSurface.lyrics) {
+      return;
+    }
+    final DictionaryPopupWebViewState? top = s._caretTopPopupState;
+    if (top == null) return;
+    await s._caret.transferToTopPopup(top);
+  }
+}
+
+/// One controller lookup waiting for `_handleTextSelected`.
+class _ReaderControllerLookupRequest {
+  _ReaderControllerLookupRequest(this.maxGraphemes);
+
+  /// The mode's cap on the query (null = the dictionary's longest match).
+  final int? maxGraphemes;
+
+  final Completer<int> _done = Completer<int>();
+
+  /// The highlighted match length (0 = nothing matched / not shown in page).
+  Future<int> get result => _done.future;
+
+  void complete(int matched) {
+    if (!_done.isCompleted) _done.complete(matched);
+  }
+}
+
+/// The query of a controller lookup: [text] (scanned from the cursor) cut to
+/// [maxGraphemes] graphemes (null = uncut), with the ruby spans that still lie
+/// inside the cut text.
+@visibleForTesting
+({String text, List<FushiRubySpan> rubySpans}) readerControllerCappedQuery(
+  String text,
+  List<FushiRubySpan> rubySpans, {
+  required int? maxGraphemes,
+}) {
+  if (maxGraphemes == null || maxGraphemes <= 0) {
+    return (text: text, rubySpans: rubySpans);
+  }
+  final Characters chars = text.characters;
+  if (chars.length <= maxGraphemes) return (text: text, rubySpans: rubySpans);
+  final String cut = chars.take(maxGraphemes).toString();
+  return (
+    text: cut,
+    rubySpans: <FushiRubySpan>[
+      for (final FushiRubySpan span in rubySpans)
+        if (span.end <= cut.length) span,
+    ],
+  );
+}
+
+/// What a tapped (or cursor) word sends to the companion's Lookup tab: the
+/// sentence with the word's index (the tab scans from it and mines the
+/// sentence), or the query itself when the page reported no usable sentence.
+/// A capped [query] (shorter than the scanned [text]) cuts the scanned source
+/// at the cap, so the tab's scan cannot run past it; the mining sentence stays
+/// whole.
+@visibleForTesting
+({String text, int charIndex, String sentence})
+readerControllerCompanionLookup({
+  required String text,
+  required String sentence,
+  required int sentenceOffset,
+  String? query,
+}) {
+  final String trimmed = sentence.trim();
+  final bool hasSentence =
+      trimmed.isNotEmpty &&
+      sentenceOffset >= 0 &&
+      sentenceOffset < sentence.length;
+  final String term = query ?? text;
+  if (!hasSentence) return (text: term, charIndex: -1, sentence: term);
+  final bool capped = term.length < text.length;
+  return (
+    text: capped
+        ? sentence.substring(
+            0,
+            (sentenceOffset + term.length).clamp(0, sentence.length),
+          )
+        : sentence,
+    charIndex: sentenceOffset,
+    sentence: sentence,
+  );
 }
 
 /// The caret move of a controller line step: physical direction per writing
@@ -151,6 +393,7 @@ extension _ReaderControllerLookup on _ReaderFushiPageState {
     final _ReaderControllerLookupTarget? target = _controllerLookupTarget;
     if (target == null) return;
     target._detached = true;
+    target._settlePending(0);
     ControllerLookupMode.instance.detach(target);
     _controllerLookupTarget = null;
   }

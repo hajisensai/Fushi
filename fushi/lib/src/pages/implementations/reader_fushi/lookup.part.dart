@@ -235,17 +235,24 @@ extension _ReaderLookup on _ReaderFushiPageState {
 
   /// Sends a tapped word to the companion: the whole sentence with the tapped
   /// index (so the Lookup tab can scan from it and mine the sentence), or the
-  /// selected text when the page reported no sentence.
-  Future<bool> _routeLookupToCompanion(ReaderSelectionData data) {
-    final String sentence = data.sentence.trim();
-    final bool hasSentence =
-        sentence.isNotEmpty &&
-        data.sentenceOffset >= 0 &&
-        data.sentenceOffset < data.sentence.length;
+  /// selected text when the page reported no sentence. A controller lookup's
+  /// capped [query] cuts the scanned source at the cap
+  /// ([readerControllerCompanionLookup]).
+  Future<bool> _routeLookupToCompanion(
+    ReaderSelectionData data, {
+    String? query,
+  }) {
+    final ({String text, int charIndex, String sentence}) args =
+        readerControllerCompanionLookup(
+          text: data.text,
+          sentence: data.sentence,
+          sentenceOffset: data.sentenceOffset,
+          query: query,
+        );
     return routeCompanionLookup(
-      text: hasSentence ? data.sentence : data.text,
-      charIndex: hasSentence ? data.sentenceOffset : -1,
-      sentence: hasSentence ? data.sentence : data.text,
+      text: args.text,
+      charIndex: args.charIndex,
+      sentence: args.sentence,
     );
   }
 
@@ -275,174 +282,206 @@ extension _ReaderLookup on _ReaderFushiPageState {
     }
   }
 
+  /// A word was selected in the book / lyrics (tap, hover, keyboard caret,
+  /// controller lookup mode). A pending controller lookup
+  /// ([_ReaderControllerLookupTarget.lookupAtCursor]) is claimed here: its cap
+  /// cuts the query and it gets the highlighted match length back (0 when
+  /// nothing matched or the lookup went to the companion).
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
-    if (data.text.isEmpty) {
-      return;
-    }
-    // Dual-screen companion: when it is up the lookup opens on the second
-    // screen's Lookup tab and the page shows no popup (no popup highlight:
-    // its undo is tied to the popup closing). "Pause on lookup" still
-    // applies: the companion registry runs [_pauseForLookup] when it takes
-    // the lookup and the panel's close resumes ([_companionLookupClosed]).
-    // Same path for paginated, continuous and vn modes and the audiobook
-    // view. The synchronous check keeps the single-screen path free of an
-    // await.
-    //
-    // ruby 组首吸附只是先试：组首查到的词覆盖不到被点的字（义训「じょうろ鼬」点「鼬」）就改用
-    // 从被点字起扫的选区，伴屏路由与下面的查词 / 高亮 / 句子与偏移缓存都跟随最终采用的这一份
-    // （伴屏按 sentenceOffset 扫词，必须在判定之后发，否则伴屏查到的还是「じょうろ」）。
-    data = await resolveRubySnapSelection(
-      data,
-      matchedLength: lookupMatchedCharCount,
-      adoptTapStart: _adoptRubySnapTap,
-    );
-    if (!mounted) return;
-    if (_companion.isActive && await _routeLookupToCompanion(data)) return;
-    if (!mounted) return;
-    _removeSelectionActionBar();
-    // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃
-    // 上一个词的「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，
-    // 草稿若不在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
-    _miningDraft.clear();
-
-    _pauseForLookup();
-
-    final Map<String, double>? rect = data.rect;
-    final Rect selectionRect = rect != null
-        ? _surfaceRectToPage(
-            Rect.fromLTWH(
-              rect['x'] ?? 0,
-              rect['y'] ?? 0,
-              rect['width'] ?? 0,
-              rect['height'] ?? 0,
-            ),
-          )
-        : Rect.fromCenter(
-            center: Offset(
-              MediaQuery.of(context).size.width / 2,
-              MediaQuery.of(context).size.height / 2,
-            ),
-            width: 1,
-            height: 1,
-          );
-
-    // TODO-956：契约——选中可见词 ⇒ currentSentence 必非空。data.sentence 在歌词 /
-    // 合成有声书 / 竖排空段 DOM 等模式可能回空（即便 JS 已有块级 textContent 兜底），
-    // 而 data.text 由本方法开头 `if (data.text.isEmpty) return;` 守卫保证非空。空 sentence
-    // 时退回选中的词，杜绝收藏读点（chrome.part.dart）误报「未选择句子」。
-    if (_lyricsMode) {
-      appModel.currentMediaSource?.setCurrentSentence(
-        selection: FushiTextSelection(
-          text: ReaderSelectionScripts.resolveCurrentSentenceText(
-            data.sentence,
-            data.text,
-          ),
-        ),
+    final _ReaderControllerLookupRequest? controller = _controllerLookupTarget
+        ?._claim();
+    int matched = 0;
+    try {
+      if (data.text.isEmpty) {
+        return;
+      }
+      // Dual-screen companion: when it is up the lookup opens on the second
+      // screen's Lookup tab and the page shows no popup (no popup highlight:
+      // its undo is tied to the popup closing). "Pause on lookup" still
+      // applies: the companion registry runs [_pauseForLookup] when it takes
+      // the lookup and the panel's close resumes ([_companionLookupClosed]).
+      // Same path for paginated, continuous and vn modes and the audiobook
+      // view. The synchronous check keeps the single-screen path free of an
+      // await.
+      //
+      // ruby 组首吸附只是先试：组首查到的词覆盖不到被点的字（义训「じょうろ鼬」点「鼬」）就改用
+      // 从被点字起扫的选区，伴屏路由与下面的查词 / 高亮 / 句子与偏移缓存都跟随最终采用的这一份
+      // （伴屏按 sentenceOffset 扫词，必须在判定之后发，否则伴屏查到的还是「じょうろ」）。
+      data = await resolveRubySnapSelection(
+        data,
+        matchedLength: lookupMatchedCharCount,
+        adoptTapStart: _adoptRubySnapTap,
       );
-      _cachedSentenceOffset = data.sentenceOffset;
-      _cacheMatchableSelection(data);
-      _cachedSelectionRange = null;
-      _cachedSentenceRange = null;
-      _cachedSelectionSectionIndex = null;
-      _lookupCue = null;
-      // 歌词点词不带插图：上一次正文原生选区抽出的图不属于这次查词，留着会被
-      // 片段导出渲进这张卡。
-      _resetSelectionImages();
-      try {
-        // TODO-678（BUG-005 同根因）：把歌词 cue context 的 evaluateJavascript 纳入
-        // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
-        // 会让整个歌词查词分支（含 _runLookupAndHighlight）被打断、弹窗不显示。纳入后
-        // 失败则 _lookupCue 退回 currentCue fallback，查词照常继续。
-        // 查词卡顿：歌词文档选词时已把 `__lyricsCueContext` 同步放进 payload
-        // （fireTextSelected），直接用它，省掉查词前对歌词 WebView 的一次 eval 来回。
-        // payload 不带这个键（正文文档 / 旧 payload）才回去读一次，行为与旧实现一致。
-        final Map<String, dynamic>? ctx;
-        if (data.carriesLyricsCueContext) {
-          ctx = data.lyricsCueContext;
-        } else {
-          final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
-            source: 'JSON.stringify(window.__lyricsCueContext || null)',
+      if (!mounted) return;
+      // 手柄查词模式的选区右端上限：把从光标起扫到的查询词截到 maxGraphemes 个字素，
+      // 其它（句子、偏移、高亮起点）不变。点按 / 悬停 / 键盘光标查词没有 controller，原样。
+      if (controller != null) {
+        _controllerLookupTarget?._recordScanned(data.text);
+      }
+      final ({String text, List<FushiRubySpan> rubySpans}) query =
+          readerControllerCappedQuery(
+            data.text,
+            data.rubySpans,
+            maxGraphemes: controller?.maxGraphemes,
           );
-          ctx = ctxRaw is String && ctxRaw != 'null'
-              ? jsonDecode(ctxRaw) as Map<String, dynamic>
-              : null;
-        }
-        if (ctx != null) {
-          final String? fragId = ctx['textFragmentId'] as String?;
-          final int? cueIdx = (ctx['cueIndex'] as num?)?.toInt();
-          if (fragId != null && fragId.isNotEmpty) {
-            final SubtitleRematchFragment? frag =
-                SubtitleRematchCodec.tryDecode(fragId);
-            if (frag != null) {
-              _cachedMatchableSelectionRange = (
-                offset: frag.normCharStart,
-                length: frag.normCharEnd - frag.normCharStart,
-                text: data.text,
-              );
-              _cachedMatchableSentenceRange = (
-                offset: frag.normCharStart,
-                length: frag.normCharEnd - frag.normCharStart,
-              );
-              final ({int offset, int length})? studyRange =
-                  _studyRangeForAudioFragment(frag);
-              _cachedSelectionRange = studyRange == null
-                  ? null
-                  : (
-                      offset: studyRange.offset,
-                      length: studyRange.length,
-                      text: data.text,
-                    );
-              _cachedSentenceRange = studyRange;
-              // BUG-492：歌词 cue 选区所属章号取自 fragment（与 _lookupSectionIndex 同源）。
-              _cachedSelectionSectionIndex = frag.sectionIndex;
+      if (_companion.isActive &&
+          await _routeLookupToCompanion(data, query: query.text)) {
+        return;
+      }
+      if (!mounted) return;
+      _removeSelectionActionBar();
+      // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃
+      // 上一个词的「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，
+      // 草稿若不在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
+      _miningDraft.clear();
+
+      _pauseForLookup();
+
+      final Map<String, double>? rect = data.rect;
+      final Rect selectionRect = rect != null
+          ? _surfaceRectToPage(
+              Rect.fromLTWH(
+                rect['x'] ?? 0,
+                rect['y'] ?? 0,
+                rect['width'] ?? 0,
+                rect['height'] ?? 0,
+              ),
+            )
+          : Rect.fromCenter(
+              center: Offset(
+                MediaQuery.of(context).size.width / 2,
+                MediaQuery.of(context).size.height / 2,
+              ),
+              width: 1,
+              height: 1,
+            );
+
+      // TODO-956：契约——选中可见词 ⇒ currentSentence 必非空。data.sentence 在歌词 /
+      // 合成有声书 / 竖排空段 DOM 等模式可能回空（即便 JS 已有块级 textContent 兜底），
+      // 而 data.text 由本方法开头 `if (data.text.isEmpty) return;` 守卫保证非空。空 sentence
+      // 时退回选中的词，杜绝收藏读点（chrome.part.dart）误报「未选择句子」。
+      if (_lyricsMode) {
+        appModel.currentMediaSource?.setCurrentSentence(
+          selection: FushiTextSelection(
+            text: ReaderSelectionScripts.resolveCurrentSentenceText(
+              data.sentence,
+              data.text,
+            ),
+          ),
+        );
+        _cachedSentenceOffset = data.sentenceOffset;
+        _cacheMatchableSelection(data);
+        _cachedSelectionRange = null;
+        _cachedSentenceRange = null;
+        _cachedSelectionSectionIndex = null;
+        _lookupCue = null;
+        // 歌词点词不带插图：上一次正文原生选区抽出的图不属于这次查词，留着会被
+        // 片段导出渲进这张卡。
+        _resetSelectionImages();
+        try {
+          // TODO-678（BUG-005 同根因）：把歌词 cue context 的 evaluateJavascript 纳入
+          // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
+          // 会让整个歌词查词分支（含 _runLookupAndHighlight）被打断、弹窗不显示。纳入后
+          // 失败则 _lookupCue 退回 currentCue fallback，查词照常继续。
+          // 查词卡顿：歌词文档选词时已把 `__lyricsCueContext` 同步放进 payload
+          // （fireTextSelected），直接用它，省掉查词前对歌词 WebView 的一次 eval 来回。
+          // payload 不带这个键（正文文档 / 旧 payload）才回去读一次，行为与旧实现一致。
+          final Map<String, dynamic>? ctx;
+          if (data.carriesLyricsCueContext) {
+            ctx = data.lyricsCueContext;
+          } else {
+            final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
+              source: 'JSON.stringify(window.__lyricsCueContext || null)',
+            );
+            ctx = ctxRaw is String && ctxRaw != 'null'
+                ? jsonDecode(ctxRaw) as Map<String, dynamic>
+                : null;
+          }
+          if (ctx != null) {
+            final String? fragId = ctx['textFragmentId'] as String?;
+            final int? cueIdx = (ctx['cueIndex'] as num?)?.toInt();
+            if (fragId != null && fragId.isNotEmpty) {
+              final SubtitleRematchFragment? frag =
+                  SubtitleRematchCodec.tryDecode(fragId);
+              if (frag != null) {
+                _cachedMatchableSelectionRange = (
+                  offset: frag.normCharStart,
+                  length: frag.normCharEnd - frag.normCharStart,
+                  text: data.text,
+                );
+                _cachedMatchableSentenceRange = (
+                  offset: frag.normCharStart,
+                  length: frag.normCharEnd - frag.normCharStart,
+                );
+                final ({int offset, int length})? studyRange =
+                    _studyRangeForAudioFragment(frag);
+                _cachedSelectionRange = studyRange == null
+                    ? null
+                    : (
+                        offset: studyRange.offset,
+                        length: studyRange.length,
+                        text: data.text,
+                      );
+                _cachedSentenceRange = studyRange;
+                // BUG-492：歌词 cue 选区所属章号取自 fragment（与 _lookupSectionIndex 同源）。
+                _cachedSelectionSectionIndex = frag.sectionIndex;
+              }
+            }
+            if (cueIdx != null &&
+                cueIdx >= 0 &&
+                cueIdx < _lyricsCueList.length) {
+              _lookupCue = _lyricsCueList[cueIdx];
             }
           }
-          if (cueIdx != null && cueIdx >= 0 && cueIdx < _lyricsCueList.length) {
-            _lookupCue = _lyricsCueList[cueIdx];
-          }
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushi.lyricsCueContext',
+            e,
+            stack,
+          );
         }
-      } catch (e, stack) {
-        ErrorLogService.instance.log('ReaderFushi.lyricsCueContext', e, stack);
+        _lookupCue ??= _audiobookController?.currentCue;
+        if (_pausedForLookup) _lookupRestartCue = _lookupCue;
+        _syncCueSentence();
+        matched = await _runLookupAndHighlight(
+          query.text,
+          selectionRect,
+          origin: _lookupOriginOf(data),
+          rubySpans: query.rubySpans,
+        );
+        _checkFavoriteStatus();
+        return;
       }
-      _lookupCue ??= _audiobookController?.currentCue;
+
+      // cue 解析三级回退，从最强的判据开始：
+      // ① `audioCuePayload` 是 JS 在点击处直接回传的 **cue 身份**
+      //    （`fushiReader.cueIdAtPoint` 的 `{type:'sid'|'frag', id}`），不做任何坐标
+      //    运算，对本轮修的「学习单位 / 音频 UTF-16 两套坐标混用」天然免疫；
+      // ② 没有 payload 的书（DOM 里不带 cue id）退到按**音频坐标** matchableOffset
+      //    在本章 cue 的 fragment 区间里反查——比原先按句子文本找精确；
+      // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
+      // 与选区操作条「从此句播放」/ 查词状态填充共用 [_cueForSelectionData]，三条路径对
+      // 同一处选区永远认同一句。
+      //
+      // BUG-4824：整组选区状态（句子、句偏移、cue、选区 / 句子范围、所属章号）在
+      // `await` 查词**之前**一次写齐，写点是与拖选菜单 / 原生选区共用的
+      // [_applyLookupStateFromSelectionData]。原先范围与章号写在 await 之后：查词在飞时
+      // 是「新句子 + 新 cue + 旧选区范围」，连点两个词时先点那次的尾段还会在后点那次
+      // 之后落下，留下与弹窗不符的范围（收藏 / 制卡 / 导出都读它）。
+      _applyLookupStateFromSelectionData(data);
       if (_pausedForLookup) _lookupRestartCue = _lookupCue;
       _syncCueSentence();
-      await _runLookupAndHighlight(
-        data.text,
+
+      matched = await _runLookupAndHighlight(
+        query.text,
         selectionRect,
         origin: _lookupOriginOf(data),
-        rubySpans: data.rubySpans,
+        rubySpans: query.rubySpans,
       );
       _checkFavoriteStatus();
-      return;
+    } finally {
+      controller?.complete(matched);
     }
-
-    // cue 解析三级回退，从最强的判据开始：
-    // ① `audioCuePayload` 是 JS 在点击处直接回传的 **cue 身份**
-    //    （`fushiReader.cueIdAtPoint` 的 `{type:'sid'|'frag', id}`），不做任何坐标
-    //    运算，对本轮修的「学习单位 / 音频 UTF-16 两套坐标混用」天然免疫；
-    // ② 没有 payload 的书（DOM 里不带 cue id）退到按**音频坐标** matchableOffset
-    //    在本章 cue 的 fragment 区间里反查——比原先按句子文本找精确；
-    // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
-    // 与选区操作条「从此句播放」/ 查词状态填充共用 [_cueForSelectionData]，三条路径对
-    // 同一处选区永远认同一句。
-    //
-    // BUG-4824：整组选区状态（句子、句偏移、cue、选区 / 句子范围、所属章号）在
-    // `await` 查词**之前**一次写齐，写点是与拖选菜单 / 原生选区共用的
-    // [_applyLookupStateFromSelectionData]。原先范围与章号写在 await 之后：查词在飞时
-    // 是「新句子 + 新 cue + 旧选区范围」，连点两个词时先点那次的尾段还会在后点那次
-    // 之后落下，留下与弹窗不符的范围（收藏 / 制卡 / 导出都读它）。
-    _applyLookupStateFromSelectionData(data);
-    if (_pausedForLookup) _lookupRestartCue = _lookupCue;
-    _syncCueSentence();
-
-    await _runLookupAndHighlight(
-      data.text,
-      selectionRect,
-      origin: _lookupOriginOf(data),
-      rubySpans: data.rubySpans,
-    );
-    _checkFavoriteStatus();
   }
 
   Future<void> _checkFavoriteStatus() async {
