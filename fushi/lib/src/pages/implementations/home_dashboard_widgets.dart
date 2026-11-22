@@ -1330,7 +1330,7 @@ class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
         final bool side = box.maxHeight < _kGoalPagerSideDotsBelow;
         final List<Widget> dots = <Widget>[
           for (int i = 0; i < widget.count; i++)
-            Tooltip(
+            FushiTooltip(
               message: widget.dotLabel(i),
               child: Semantics(
                 button: true,

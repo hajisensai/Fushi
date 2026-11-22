@@ -1701,7 +1701,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       padding: EdgeInsetsDirectional.only(end: 8 * _videoUiScale),
       child: VideoGlassSurface(
         enabled: _appleChrome,
-        child: Tooltip(
+        child: FushiTooltip(
           message: t.web_video_hosting_switch_to_builtin,
           child: Semantics(
             button: true,

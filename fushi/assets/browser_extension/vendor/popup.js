@@ -3299,7 +3299,11 @@ function crossAppAudioAvailable() {
         __fushiCrossAppAudioProbe = Promise.resolve()
             .then(() => window.flutter_inappwebview.callHandler('crossAppAudioAvailable'))
             .then((ok) => ok === true)
-            .catch(() => false);
+            .catch((err) => {
+                // 探测失败（桥没注册 / 宿主抛错）按「没录到」处理，但原因要留痕。
+                console.error('crossAppAudioAvailable probe failed', err);
+                return false;
+            });
     }
     return __fushiCrossAppAudioProbe;
 }
