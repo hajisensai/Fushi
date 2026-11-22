@@ -522,7 +522,9 @@ void main() {
       expect(events.first.t, closeTo(0.1, 1e-9));
       expect(events.first.downbeat, isTrue);
       expect(events[1].downbeat, isFalse);
-      expect(events.every((MetaphorBeatEvent e) => e.gain == 1), isTrue);
+      // 共享重音增益：强拍 impact 1、弱拍 0.4，trackScale 0.8。
+      expect(events.first.gain, closeTo(0.8, 1e-9));
+      expect(events[1].gain, closeTo((0.35 + 0.65 * 0.4) * 0.8, 1e-9));
       // 没有节拍网格：空表（不走特效）
       expect(
         metaphorBeatEventsOf(

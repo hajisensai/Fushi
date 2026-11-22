@@ -29,9 +29,6 @@ class MetaphorBeatEvent {
   bool get rhythmic => gain > 0;
 }
 
-/// folia `BEAT_FX_WEAK_BEAT_FLOOR`：弱拍也至少这么高。
-const double _weakBeatFloor = 0.35;
-
 /// 离小节第一拍多近才挪过去（秒）。
 const double _snapDownbeat = 0.9;
 
@@ -47,30 +44,14 @@ const double metaphorBeatRingLife = 2.2;
 /// 强度拉满时最多按几倍算。
 const double _strengthMax = 2;
 
-/// 音频分析 → 节拍表（显示时间，秒）。每拍的重音从该拍那一刻的 `accentImpact` 读（正好在拍上时
-/// 就是这一拍的峰值）；没有重音数据时每拍都按 1 算。没有节拍网格返回空表。
-List<MetaphorBeatEvent> metaphorBeatEventsOf(LyricVisualizerContext c) {
-  final LyricVisualizerAudio? audio = c.audio;
-  if (audio == null || !audio.beatsReady) return const <MetaphorBeatEvent>[];
-  final Set<int> downbeats = audio.downbeatTimesMs.toSet();
-  final List<MetaphorBeatEvent> out = <MetaphorBeatEvent>[];
-  for (final int ms in audio.beatTimesMs) {
-    final double? accent = audio.frameAt(ms).accentImpact;
-    final double gain = accent == null
-        ? 1
-        : accent <= 1e-3
-        ? 0
-        : _weakBeatFloor + (1 - _weakBeatFloor) * accent.clamp(0.0, 1.0);
-    out.add(
-      MetaphorBeatEvent(
-        t: c.displayTimeOfAudio(ms) / 1000,
-        downbeat: downbeats.contains(ms),
-        gain: gain,
-      ),
-    );
-  }
-  return out;
-}
+/// 共享拍点表 → 节拍表（显示时间，秒）。增益是共享的 folia `resolveBeatFxAccentGain`（重音、整曲动感系数、
+/// 无节奏段为 0，已去掉不是听感拍的拍）。没有节拍网格返回空表。
+List<MetaphorBeatEvent> metaphorBeatEventsOf(
+  LyricVisualizerContext c,
+) => <MetaphorBeatEvent>[
+  for (final LyricVisualizerBeatEvent e in LyricVisualizerBeats.of(c).events)
+    MetaphorBeatEvent(t: e.seconds, downbeat: e.downbeat, gain: e.gain),
+];
 
 /// 第一个时刻不早于 [time] 的拍在第几个。
 int _firstAtOrAfter(List<MetaphorBeatEvent> events, double time) {

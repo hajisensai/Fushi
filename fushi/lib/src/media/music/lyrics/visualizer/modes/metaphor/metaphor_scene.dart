@@ -119,21 +119,14 @@ class MetaphorScene {
 
   MetaphorTextures get textures => _textures ??= MetaphorTextures.create();
 
-  LyricVisualizerAudio? _beatsFrom;
-  int _beatsCount = -1;
-  int _beatsOffset = 0;
+  LyricVisualizerBeats? _beatsFrom;
   List<MetaphorBeatEvent> _beats = const <MetaphorBeatEvent>[];
 
-  /// 本首的节拍表（显示时间，秒）；没有节拍网格是空表。分析就绪 / 换歌 / 改偏移时重算。
+  /// 本首的节拍表（显示时间，秒）；没有节拍网格是空表。共享拍点表换了（分析就绪 / 换歌 / 改偏移）时重算。
   List<MetaphorBeatEvent> get beatEvents {
-    final LyricVisualizerAudio? a = _context.audio;
-    final int count = a != null && a.beatsReady ? a.beatTimesMs.length : 0;
-    if (!identical(a, _beatsFrom) ||
-        count != _beatsCount ||
-        _context.offsetMs != _beatsOffset) {
-      _beatsFrom = a;
-      _beatsCount = count;
-      _beatsOffset = _context.offsetMs;
+    final LyricVisualizerBeats beats = LyricVisualizerBeats.of(_context);
+    if (!identical(beats, _beatsFrom)) {
+      _beatsFrom = beats;
       _beats = metaphorBeatEventsOf(_context);
     }
     return _beats;
