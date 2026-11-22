@@ -406,4 +406,153 @@ void main() {
       });
     });
   });
+
+  group('盘面几何：印刷区对正、去透明边与轮毂（2026-11-22「没有对准」「外面还是白色」）', () {
+    /// 按原图像素坐标画一张平放扫描的光盘，降采样成 256 见方：盘心 ([cx], [cy])、
+    /// 盘半径 [outer]（含透明边）。由外到内：底板 → 透明边（灰白，有反光）→ 印刷区
+    /// → 透明轮毂（近底板色）→ 孔边一道细暗环 → 轴孔（底板）。
+    MusicDiscFaceSample scan({
+      required int width,
+      required int height,
+      required double cx,
+      required double cy,
+      required double outer,
+      double hubEdge = 0.2,
+    }) {
+      const int n = kMusicDiscGeometrySampleSize;
+      final Uint8List px = Uint8List(n * n * 4);
+      for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+          final double sx = (x + 0.5) * width / n;
+          final double sy = (y + 0.5) * height / n;
+          final double r =
+              math.sqrt((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy)) / outer;
+          final List<int> rgb = r > 1
+              ? const <int>[236, 237, 226]
+              : r > kMusicDiscPrintFraction
+              ? const <int>[180, 182, 178]
+              : r > hubEdge
+              ? <int>[60 + (x * 3) % 60, 150, 70]
+              : r > 0.125
+              ? const <int>[226, 228, 216]
+              : r > 0.115
+              ? const <int>[150, 150, 150]
+              : const <int>[236, 237, 226];
+          final int i = (y * n + x) * 4;
+          px[i] = rgb[0];
+          px[i + 1] = rgb[1];
+          px[i + 2] = rgb[2];
+          px[i + 3] = 255;
+        }
+      }
+      return MusicDiscFaceSample(
+        sourceWidth: width,
+        sourceHeight: height,
+        size: n,
+        rgba: px,
+      );
+    }
+
+    test('盘心不在图片正中：量出真实盘心，半径收到印刷区', () {
+      final MusicDiscFaceGeometry g = measureMusicDiscFace(
+        scan(width: 3000, height: 3000, cx: 1590, cy: 1410, outer: 1350),
+      )!;
+      expect(g.centerX, closeTo(0.53, 0.006));
+      expect(g.centerY, closeTo(0.47, 0.006));
+      expect(g.radiusX, closeTo(1350 * kMusicDiscPrintFraction / 3000, 0.006));
+      expect(g.radiusY, closeTo(g.radiusX, 0.001));
+      // 印刷区内缘在盘半径 0.2 处 → 印刷区半径的 0.2 / 0.967；孔边细暗环不算。
+      expect(g.hubFraction, closeTo(0.2 / kMusicDiscPrintFraction, 0.025));
+    });
+
+    test('非正方形扫图：两轴分别按原图宽高换算', () {
+      final MusicDiscFaceGeometry g = measureMusicDiscFace(
+        scan(width: 1400, height: 1000, cx: 700, cy: 500, outer: 420),
+      )!;
+      expect(g.centerX, closeTo(0.5, 0.006));
+      expect(g.centerY, closeTo(0.5, 0.006));
+      expect(g.radiusX, closeTo(420 * kMusicDiscPrintFraction / 1400, 0.006));
+      expect(g.radiusY, closeTo(420 * kMusicDiscPrintFraction / 1000, 0.008));
+    });
+
+    test('印刷一直到孔边 / 轮毂很宽：轮毂比例夹在规格范围内', () {
+      expect(
+        measureMusicDiscFace(
+          scan(
+            width: 2000,
+            height: 2000,
+            cx: 1000,
+            cy: 1000,
+            outer: 950,
+            hubEdge: 0.126,
+          ),
+        )!.hubFraction,
+        kMusicDiscHubMinFraction,
+      );
+      expect(
+        measureMusicDiscFace(
+          scan(
+            width: 2000,
+            height: 2000,
+            cx: 1000,
+            cy: 1000,
+            outer: 950,
+            hubEdge: 0.47,
+          ),
+        )!.hubFraction,
+        kMusicDiscHubMaxFraction,
+      );
+    });
+
+    test('整张都是底板 / 太小的斑点：量不出', () {
+      final MusicDiscFaceSample blank = scan(
+        width: 1000,
+        height: 1000,
+        cx: 500,
+        cy: 500,
+        outer: 1,
+      );
+      expect(measureMusicDiscFace(blank), isNull);
+      expect(
+        measureMusicDiscFace(
+          scan(width: 1000, height: 1000, cx: 500, cy: 500, outer: 120),
+        ),
+        isNull,
+      );
+    });
+
+    test('量不出时退回内切圆（印刷区按规格比例）', () {
+      final MusicDiscFaceGeometry g = MusicDiscFaceGeometry.inscribed(
+        2000,
+        1000,
+      );
+      expect(g.radiusY, closeTo(0.5 * kMusicDiscPrintFraction, 1e-9));
+      expect(g.radiusX, closeTo(0.25 * kMusicDiscPrintFraction, 1e-9));
+    });
+
+    test('几何缓存：同一路径只量一次，读不了给退路', () async {
+      final MusicDiscFaceGeometryCache cache =
+          MusicDiscFaceGeometryCache.instance;
+      final MusicDiscFaceSampler original = cache.sampler;
+      addTearDown(() {
+        cache
+          ..sampler = original
+          ..invalidate();
+      });
+      int calls = 0;
+      cache.sampler = (String path) async {
+        calls++;
+        return path == 'bad'
+            ? null
+            : scan(width: 3000, height: 3000, cx: 1590, cy: 1410, outer: 1350);
+      };
+      expect(cache.peek('a'), isNull);
+      final MusicDiscFaceGeometry a = await cache.load('a');
+      expect(a.centerX, closeTo(0.53, 0.006));
+      expect(await cache.load('a'), a);
+      expect(cache.peek('a'), a);
+      expect(calls, 1);
+      expect(await cache.load('bad'), MusicDiscFaceGeometry.fallback);
+    });
+  });
 }

@@ -468,7 +468,8 @@ class FushiCoverBlock extends StatefulWidget {
   /// 摆法：方形封面立在起始侧，唱片垫在封面后面、从结束侧露出约四成；悬停时
   /// 唱片再滑出一截并转动、封面再斜一点。文字区（水印 / 标题 / 副行 / chip）与
   /// 原摆法同一套，只是从唱片之后起排（2026-11-21 用户：音乐页参照别的模块重做，
-  /// 原 W 原型的整块标题大字版式退役）。只画圆形裁切，不做假唱片——没有盘面图就
+  /// 原 W 原型的整块标题大字版式退役）。圆形、中心孔与投影由传入的 widget 自己画
+  /// （音乐页传 `musicDiscArtImage`），这里只给方形槽；不做假唱片——没有盘面图就
   /// 别传。null = 原摆法。
   final Widget? disc;
 
@@ -1489,28 +1490,16 @@ class _DiscGeometry {
   );
 }
 
-/// 唱片盘面：圆形裁切 + 投影（原型 `.dc`：`0 10px 26px rgba(0,0,0,.55)`）。
+/// 唱片盘面：[FushiCoverBlock.disc] 自己画圆形与投影（真盘面中心是透明轮毂，
+/// 投影要在轮毂处裁掉、扫描图要按量出的盘心对正，这里套整圆裁切 / 整圆投影会把
+/// 孔填成一团阴影），这里只铺满唱片槽。
 class _DiscFace extends StatelessWidget {
   const _DiscFace({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const ShapeDecoration(
-        shape: CircleBorder(),
-        shadows: <BoxShadow>[
-          BoxShadow(
-            color: Color(0x8C000000),
-            offset: Offset(0, 10),
-            blurRadius: 26,
-          ),
-        ],
-      ),
-      child: ClipOval(child: SizedBox.expand(child: child)),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox.expand(child: child);
 }
 
 /// 带投影、裁圆角的一张封面。[overlay]（下载进度压暗等）叠在封面之上、同在
