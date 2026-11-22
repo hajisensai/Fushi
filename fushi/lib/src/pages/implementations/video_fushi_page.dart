@@ -264,11 +264,8 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart'
-    show
-        WebVideoHosting,
-        WebVideoLookupRequest,
-        kWebVideoHostingPrefKey,
-        webVideoHostingFromPref;
+    show WebVideoHosting, WebVideoLookupRequest;
+import 'package:fushi/src/media/video/web_video_hosting_default.dart';
 import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_track_selection.dart';
@@ -2714,6 +2711,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 播放器档（[_webPlayerModeFor]）：否则露出站点页面（观看页还没有视频 / 站点弹层打断）
   /// ——WebView 收输入、整页原样，播放器控件不挂，只留顶部一条细返回条。
   bool _webPlayerMode = false;
+
+  /// 站点原生播放的实测探针（[_observeWebHosting]）：本页的网页档一定是窗口宿主档。
+  final WebVideoHostingProbe _webHostingProbe = WebVideoHostingProbe(
+    hosting: WebVideoHosting.windowed,
+  );
 
   /// 正在因离开观看页 / 「在浏览器中打开」关掉本页（[_exitWebToBrowser] 只跑一次）。
   bool _webExitingToBrowser = false;
@@ -11255,11 +11257,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             segment: segment,
             jumpContext: jumpContext,
           );
-          if (!_videoJumpToolbarShown) return group;
+          final Widget? webHosting = _webHostingTopBarButton(desktop: desktop);
+          if (!_videoJumpToolbarShown && webHosting == null) return group;
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              _videoJumpHistoryTopBarGroup(jumpContext, desktop: desktop),
+              if (webHosting != null) webHosting,
+              if (_videoJumpToolbarShown)
+                _videoJumpHistoryTopBarGroup(jumpContext, desktop: desktop),
               Flexible(child: group),
             ],
           );

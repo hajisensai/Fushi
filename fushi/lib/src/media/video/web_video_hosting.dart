@@ -1,8 +1,9 @@
 // 内置网页播放器的两种宿主档（用户可选）与「窗口宿主档」专用的 JS↔Dart 契约。纯数据 / 纯函数。
 //
-// · [WebVideoHosting.builtin]（默认）：fork 的 composition + WGC 纹理链路，软件 DRM 1080p，帧可捕获
+// 默认用哪一档（按站点手动选择 / 实测 / DRM 预判）见 `web_video_hosting_default.dart`。
+// · [WebVideoHosting.builtin]（界面名「Fushi 播放」）：fork 的 composition + WGC 纹理链路，软件 DRM 1080p，帧可捕获
 //   → Flutter 字幕叠层 / 弹窗查词 / 超分 / 自动制卡全部可用。
-// · [WebVideoHosting.windowed]：WebView2 挂成真 HWND 子窗口自己绘制（硬件 PlayReady，Netflix 到
+// · [WebVideoHosting.windowed]（界面名「站点原生播放」）：WebView2 挂成真 HWND 子窗口自己绘制（硬件 PlayReady，Netflix 到
 //   2160p），Flutter 画不到它上面 → 字幕层注入页面 DOM（`web_video_dom_subtitles.js`），点词经
 //   callHandler 回 Dart，查词卡走独立顶层窗口（GlobalLookupController），制卡只入队、之后切回
 //   内置档重放（P3）。
