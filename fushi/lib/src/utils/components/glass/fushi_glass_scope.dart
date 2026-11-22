@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart' show FushiShellTheme;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -250,8 +251,9 @@ Color fushiGlassPlatformViewFallback(BuildContext context) {
 ///
 /// 结构恒定：无论设计系统 / 亮暗，[child] 永远挂在同一个 [Theme] +
 /// [FushiGlassScope] 下；MD3、墨水屏与本就是深色的 app 直接沿用当前主题。
-/// 深色主题按当前主题的设计系统 / 材质 / 字阶经 [buildFushiThemeData] 重建
-/// （与主 app 的深色主题同一工厂），按源主题缓存，不随每帧重建。
+/// 深色主题按当前主题的设计系统 / 材质 / 字阶 / 外壳样式经 [buildFushiThemeData]
+/// 重建（与主 app 的深色主题同一工厂），源主题上的其它扩展原样保留，按源主题
+/// 缓存，不随每帧重建。
 class FushiAppleDarkTier extends StatelessWidget {
   const FushiAppleDarkTier({super.key, required this.child});
 
@@ -279,7 +281,7 @@ class FushiAppleDarkTier extends StatelessWidget {
     // 浅色主题的字阶把黑色字色烤进了每一档；ThemeData 工厂里显式传入的字色
     // 优先于按亮度合并的默认字色，所以先换成深色档的 label 白。
     const Color label = Color(0xFFFFFFFF);
-    final ThemeData dark = buildFushiThemeData(
+    final ThemeData rebuilt = buildFushiThemeData(
       scheme: theme.colorScheme.copyWith(
         brightness: Brightness.dark,
         primary: monochrome ? accent : appleDarkTierAccent(accent),
@@ -293,9 +295,20 @@ class FushiAppleDarkTier extends StatelessWidget {
           FushiGlassMaterial.off,
       glassDesign: true,
       monochromeAccent: monochrome,
-    ).copyWith(platform: theme.platform);
-    _cache[theme] = dark;
-    return dark;
+      // 外壳样式必须传回工厂（BUG-5208）：工厂缺省 `const FushiShellTheme()`
+      // 不只产出同类扩展，平滑圆角还烤进菜单 / 对话框 / 卡片等组件形状，事后
+      // 合并扩展救不回来。
+      shell: theme.extension<FushiShellTheme>() ?? const FushiShellTheme(),
+    );
+    final ThemeData merged = rebuilt.copyWith(
+      platform: theme.platform,
+      // 源主题上工厂以外的扩展原样保留；工厂产物的同类扩展（设计系统 / 玻璃 /
+      // 外壳 / 深色档 FushiAppleColors）在后、优先。不写显式类型实参：见
+      // rethemeFushiWithScheme 的说明。
+      extensions: [...theme.extensions.values, ...rebuilt.extensions.values],
+    );
+    _cache[theme] = merged;
+    return merged;
   }
 
   @override
