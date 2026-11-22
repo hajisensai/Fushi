@@ -140,6 +140,37 @@ const int kMediaLinkAiBaseClock = 0;
 /// [FushiDatabase.applyAiMediaLink] 一次写入的回执（撤销用）。
 typedef MediaLinkAiWrite = ({MediaLinkId id, MediaLinkRow? previous});
 
+/// 一行是不是**否决**墓碑：墓碑里只有「被新关系取代」（[MediaLinkSource.superseded]）
+/// 的不算——那是 AI 改关系类型 / 方向留下的旧行，不是用户说「这一对不相关」。
+/// 一对端点上的否决判据（[FushiDatabase.mediaLinkPairVetoed] /
+/// [FushiDatabase.enforceMediaLinkVetoes]）都经这里。
+bool mediaLinkIsVetoTombstone(MediaLinkRow row) =>
+    row.deletedAt != null && row.source != MediaLinkSource.superseded;
+
+/// [FushiDatabase.setAiMediaLinkRelation] 的结论。
+enum MediaLinkAiRelationStatus {
+  /// 写了：新关系已是 AI 生效，同一对上别的 AI 生效 / 建议行已标成「被取代」。
+  written,
+
+  /// 这一对上已经只有这一条 AI 生效的连接：什么都没写。
+  unchanged,
+
+  /// 这一对上有用户确认的连接：AI 不改（用户压过 AI）。
+  userConfirmed,
+
+  /// 这一对被否决过（有否决墓碑）：AI 不得再让它生效。
+  vetoed,
+}
+
+/// [FushiDatabase.setAiMediaLinkRelation] 一次写入的回执（撤销用）：
+/// [previous] 是目标行写入前的样子（null = 之前没有），[superseded] 是被标成
+/// 「被取代」的旧行写入前的快照。
+typedef MediaLinkAiRelationWrite = ({
+  MediaLinkId id,
+  MediaLinkRow? previous,
+  List<MediaLinkRow> superseded,
+});
+
 mixin _FushiDbMediaLinks on _$FushiDatabase {
   Expression<bool> _mediaLinkIdIs($MediaLinksTable t, MediaLinkId id) =>
       t.fromKind.equals(id.fromKind) &
@@ -310,7 +341,10 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
     final MediaLinkRow? row =
         await (select(mediaLinks)
               ..where(
-                (t) => _mediaLinkPairIs(t, a, b) & t.deletedAt.isNotNull(),
+                (t) =>
+                    _mediaLinkPairIs(t, a, b) &
+                    t.deletedAt.isNotNull() &
+                    t.source.equals(MediaLinkSource.superseded).not(),
               )
               ..limit(1))
             .getSingleOrNull();
@@ -456,9 +490,10 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
       return a.compareTo(b) <= 0 ? '$a\u0001$b' : '$b\u0001$a';
     }
 
+    // 「被取代」的旧行（AI 改关系类型留下的）不是否决，见 [mediaLinkIsVetoTombstone]。
     final Set<String> vetoed = <String>{
       for (final MediaLinkRow r in rows)
-        if (r.deletedAt != null) pairOf(r),
+        if (mediaLinkIsVetoTombstone(r)) pairOf(r),
     };
     if (vetoed.isEmpty) return 0;
     final int now = at ?? DateTime.now().millisecondsSinceEpoch;
@@ -480,6 +515,198 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
       written++;
     }
     return written;
+  });
+
+  /// 两个端点之间的全部行（任意关系、任意方向、含墓碑）。
+  Future<List<MediaLinkRow>> mediaLinksBetween(
+    MediaLinkEndpoint a,
+    MediaLinkEndpoint b,
+  ) => (select(mediaLinks)..where((t) => _mediaLinkPairIs(t, a, b))).get();
+
+  /// 让一对端点之间 AI 认定的关系变成 `from -[relation]-> to`（AI 管库 v3 §3.3 的
+  /// `link` / `relink`）：
+  ///
+  /// - 这一对上有用户确认的连接 → [MediaLinkAiRelationStatus.userConfirmed]，不写；
+  /// - 这一对被否决过（[mediaLinkIsVetoTombstone]）→ [MediaLinkAiRelationStatus.vetoed]；
+  /// - 已经只剩这一条 AI 生效 → [MediaLinkAiRelationStatus.unchanged]；
+  /// - 否则：同一对上别的**未删**行（AI 生效 / 建议）标成「被取代」墓碑（`source =`
+  ///   [MediaLinkSource.superseded]，`updatedAt` **不推进**——它和 AI 生效一样是 AI 的
+  ///   结论，对端晚于它的用户动作照常压过它；同一时钟上墓碑名次高于 AI 生效 / 建议，
+  ///   对端那份旧行照样被它盖掉）；目标行：没有 → 新建 AI 生效（`updatedAt` 为
+  ///   [kMediaLinkAiBaseClock]，同 [applyAiMediaLink]）；是建议 → 升为 AI 生效（时钟
+  ///   不变）；是「被取代」墓碑（之前改走过的关系又改回来）→ 复活成 AI 生效，时钟取
+  ///   墓碑 `updatedAt + 1`（刚好压过那条墓碑，仍输给之后的任何用户动作）。
+  ///
+  /// 不调 [enforceMediaLinkVetoes]：这里不写否决墓碑。返回结论与回执（交
+  /// [revertAiMediaLinkRelation]）。
+  Future<({MediaLinkAiRelationStatus status, MediaLinkAiRelationWrite? write})>
+  setAiMediaLinkRelation({
+    required MediaLinkRelation relation,
+    required MediaLinkEndpoint from,
+    required MediaLinkEndpoint to,
+    required String source,
+    double? confidence,
+    String? reason,
+    String? role,
+    int? at,
+  }) {
+    if (from.kind == to.kind && from.key == to.key) {
+      throw ArgumentError('media link endpoints must differ');
+    }
+    final MediaLinkId id = mediaLinkIdFor(relation, from, to);
+    return transaction(() async {
+      final List<MediaLinkRow> rows = await mediaLinksBetween(from, to);
+      if (rows.any(
+        (MediaLinkRow r) =>
+            r.deletedAt == null &&
+            mediaLinkConfirmerOf(r) == MediaLinkConfirmer.user,
+      )) {
+        return (status: MediaLinkAiRelationStatus.userConfirmed, write: null);
+      }
+      if (rows.any(mediaLinkIsVetoTombstone)) {
+        return (status: MediaLinkAiRelationStatus.vetoed, write: null);
+      }
+      MediaLinkRow? target;
+      final List<MediaLinkRow> others = <MediaLinkRow>[];
+      for (final MediaLinkRow r in rows) {
+        if (mediaLinkIdOf(r) == id) {
+          target = r;
+        } else if (r.deletedAt == null) {
+          others.add(r);
+        }
+      }
+      if (target != null &&
+          target.deletedAt == null &&
+          mediaLinkConfirmerOf(target) == MediaLinkConfirmer.ai &&
+          others.isEmpty) {
+        return (status: MediaLinkAiRelationStatus.unchanged, write: null);
+      }
+      final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+      for (final MediaLinkRow o in others) {
+        final MediaLinkId oid = mediaLinkIdOf(o);
+        await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, oid))).write(
+          MediaLinksCompanion(
+            source: const Value<String>(MediaLinkSource.superseded),
+            deletedAt: Value<int?>(now),
+          ),
+        );
+      }
+      final MediaLinksCompanion aiColumns =
+          _confirmerColumns(MediaLinkConfirmer.ai).copyWith(
+            source: Value<String>(source),
+            confidence: Value<double?>(confidence),
+            reason: Value<String?>(reason),
+            role: role == null
+                ? const Value<String?>.absent()
+                : Value<String?>(role),
+          );
+      if (target == null) {
+        await into(mediaLinks).insert(
+          MediaLinksCompanion.insert(
+            fromKind: id.fromKind,
+            fromKey: id.fromKey,
+            relation: id.relation,
+            toKind: id.toKind,
+            toKey: id.toKey,
+            role: Value<String?>(role),
+            source: Value<String>(source),
+            confidence: Value<double?>(confidence),
+            reason: Value<String?>(reason),
+            confirmedBy: const Value<String?>(MediaLinkConfirmer.ai),
+            isUserConfirmed: const Value<bool>(false),
+            createdAt: now,
+            updatedAt: kMediaLinkAiBaseClock,
+          ),
+        );
+      } else if (target.deletedAt != null) {
+        // 只可能是「被取代」墓碑（否决墓碑上面已经挡掉了）。
+        await (update(mediaLinks)..where((t) => _mediaLinkIdIs(t, id))).write(
+          aiColumns.copyWith(
+            deletedAt: const Value<int?>(null),
+            updatedAt: Value<int>(target.updatedAt + 1),
+          ),
+        );
+      } else if (mediaLinkConfirmerOf(target) == null) {
+        await (update(
+          mediaLinks,
+        )..where((t) => _mediaLinkIdIs(t, id))).write(aiColumns);
+      }
+      return (
+        status: MediaLinkAiRelationStatus.written,
+        write: (id: id, previous: target, superseded: others),
+      );
+    });
+  }
+
+  /// [setAiMediaLinkRelation] 的撤销（一次用户动作，时钟取 `max(now, 涉及各行
+  /// updatedAt + 1)`，压过已同步 / 备份出去的同一份 AI 结论）：
+  ///
+  /// - 目标行已不是 AI 生效（用户确认 / 否决过，或已不在）→ 不动，返回 false
+  ///   （「已被后续修改覆盖」）；
+  /// - 被取代的旧行：仍是这次留下的「被取代」墓碑的，恢复成写入前的快照；用户之后
+  ///   动过的（复活 / 改过）不动；
+  /// - 目标行：写入前有行 → 恢复成那一行；之前没有 → 这次是**改关系**（有被取代的
+  ///   旧行）就同样标成「被取代」（用户要的是旧关系，不是否决这一对，否则旧行会被
+  ///   否决不变量收掉）；是**新连**（没有旧行）就写否决墓碑（与 [revertAiMediaLink]
+  ///   同一语义：用户撤销 AI 的连接 = 这一对不相关，AI 不再重复）。
+  Future<bool> revertAiMediaLinkRelation(
+    MediaLinkAiRelationWrite write, {
+    int? at,
+  }) => transaction(() async {
+    final MediaLinkRow? row = await mediaLinkById(write.id);
+    if (row == null ||
+        row.deletedAt != null ||
+        mediaLinkConfirmerOf(row) != MediaLinkConfirmer.ai) {
+      return false;
+    }
+    final List<MediaLinkRow> restorable = <MediaLinkRow>[];
+    int newest = row.updatedAt;
+    for (final MediaLinkRow old in write.superseded) {
+      final MediaLinkRow? cur = await mediaLinkById(mediaLinkIdOf(old));
+      if (cur == null ||
+          cur.deletedAt == null ||
+          cur.source != MediaLinkSource.superseded) {
+        continue;
+      }
+      restorable.add(old);
+      if (cur.updatedAt > newest) newest = cur.updatedAt;
+    }
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final int stamp = now > newest ? now : newest + 1;
+    for (final MediaLinkRow old in restorable) {
+      await into(mediaLinks).insertOnConflictUpdate(
+        _normalizedConfirmer(old.copyWith(updatedAt: stamp)).toCompanion(false),
+      );
+    }
+    final MediaLinkRow? previous = write.previous;
+    if (previous != null) {
+      await into(mediaLinks).insertOnConflictUpdate(
+        _normalizedConfirmer(
+          previous.copyWith(updatedAt: stamp),
+        ).toCompanion(false),
+      );
+    } else if (write.superseded.isNotEmpty) {
+      await (update(
+        mediaLinks,
+      )..where((t) => _mediaLinkIdIs(t, write.id))).write(
+        MediaLinksCompanion(
+          source: const Value<String>(MediaLinkSource.superseded),
+          deletedAt: Value<int?>(stamp),
+          updatedAt: Value<int>(stamp),
+        ),
+      );
+    } else {
+      await (update(
+        mediaLinks,
+      )..where((t) => _mediaLinkIdIs(t, write.id))).write(
+        MediaLinksCompanion(
+          deletedAt: Value<int?>(stamp),
+          updatedAt: Value<int>(stamp),
+        ),
+      );
+      await enforceMediaLinkVetoes(at: stamp);
+    }
+    return true;
   });
 
   /// 用户确认一条建议或一条 AI 生效的连接（升为 `user`）。行不存在 / 已是墓碑返回

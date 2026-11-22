@@ -80,6 +80,19 @@ class AiAgentUiHost implements AgentHost {
   }
 }
 
+/// 没人看着的会话用的界面回调：要确认的一律拒绝，要选的一律取消（模型据此把那一处
+/// 留给用户），立即返回、不挂起。
+class AiAgentUnattendedHost extends AiAgentUiHost {
+  @override
+  Future<bool> confirm(AgentConfirmRequest request) async => false;
+
+  @override
+  Future<String?> askChoice(
+    String prompt,
+    List<AgentChoiceOption> options,
+  ) async => null;
+}
+
 /// 一场进行中的 AI 助手对话 + 它的存档。整页与浮层拿同一个对象，展开 / 收回
 /// 都不丢对话（spec §6.4）。
 ///
@@ -95,12 +108,14 @@ class AiAgentController extends ChangeNotifier
     AgentLlm Function(AiProviderConfig provider)? llmFactory,
     DateTime Function()? clock,
     AgentLiveSessions? live,
+    AiAgentUiHost? host,
   }) : _opContext = opContext,
        _llmFactory = llmFactory,
        _clock = clock ?? DateTime.now,
-       _live = live ?? appAgentLiveSessions {
+       _live = live ?? appAgentLiveSessions,
+       host = host ?? AiAgentUiHost() {
     // 待答卡片的变化也通知监听者（[AiAgentConversationController] 的约定）。
-    host.pending.addListener(notifyListeners);
+    this.host.pending.addListener(notifyListeners);
   }
 
   /// app 内唯一实例（需要 [appOpContext] 已登记）。
@@ -122,6 +137,17 @@ class AiAgentController extends ChangeNotifier
     database: context.appModel.database,
     settings: context.appModel.prefsRepo,
     opContext: context,
+  );
+
+  /// 没人看着的独立会话（AI 管库自动复查，spec
+  /// `docs/specs/2026-11-22-ai-library-agent-design.md` §7）：确认卡一律按拒绝、候选卡
+  /// 一律按取消收尾（[AiAgentUnattendedHost]），绝不替用户表态，也不会挂住等人。
+  /// 对话照常存档，「AI 操作记录」里能看、能整场撤销。
+  static AiAgentController unattended(OpContext context) => AiAgentController._(
+    database: context.appModel.database,
+    settings: context.appModel.prefsRepo,
+    opContext: context,
+    host: AiAgentUnattendedHost(),
   );
 
   @visibleForTesting
@@ -151,7 +177,7 @@ class AiAgentController extends ChangeNotifier
   final OpContext _opContext;
   final AgentLlm Function(AiProviderConfig provider)? _llmFactory;
   final DateTime Function() _clock;
-  final AiAgentUiHost host = AiAgentUiHost();
+  final AiAgentUiHost host;
 
   /// 进程里正打开着的会话（与互联 host 的远端会话共用）：别处开着的不续接。
   final AgentLiveSessions _live;

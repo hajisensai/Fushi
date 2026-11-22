@@ -16,6 +16,9 @@ class _Context implements AgentSkillContext {
   bool get cancelled => false;
 
   @override
+  void beginLongTask({required Iterable<String> tools, int? maxToolCalls}) {}
+
+  @override
   Future<AgentToolResult> call(
     String toolId,
     Map<String, Object?> args, {
