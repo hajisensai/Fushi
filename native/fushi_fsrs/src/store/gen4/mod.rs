@@ -71,6 +71,8 @@ pub(crate) mod pack;
 #[cfg(test)]
 pub(crate) mod parity;
 pub(crate) mod prepare;
+#[cfg(test)]
+mod rebuild_scale_tests;
 pub mod receive;
 pub mod refresh;
 pub mod retained;
