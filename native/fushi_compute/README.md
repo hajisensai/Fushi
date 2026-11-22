@@ -283,6 +283,25 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 互相关的累加次序要与旧实现一致，不能向量化重排，只跳过 `audio[i] ≤ 0` 的项（本来就不加）；
 降采样一次性调用基本持平（主要成本是 6 万次 `pow`，两边调的都是 CRT），收益在面板改宽度时不再重算。
 
+## 音乐分析域（`ffc_mana_*`，`src/music_analysis.rs` + `src/music_analysis/`）
+
+全屏歌词动画的音频信号（folia `src/services/analysis/` 的对应物）：整首离线分析出 ≈86 Hz 包络（响度 /
+低中高频段 / 起音 / 人声，按 folia 播放器 `AnalyserNode` 的同一套公式）、拍点 / 强拍 / BPM、鼓点、人声起音，
+结果写成 `.fma` 文件（布局见 `format.rs` 头注，Dart 读取方 `fushi/lib/src/media/music/analysis/`）。
+进程级单例引擎（一个工作线程 + FIFO 队列），事件回调 `(kind, token, value)`。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_mana_start(cb)` | 启动工作线程（幂等，再调换回调） |
+| `ffc_mana_configure(ort, beat_this, htdemucs, threads)` | 配置可选模型；有模型时经 `upscale::runtime` 接上本进程那份 ORT |
+| `ffc_mana_submit(token, pcm, out, flags)` / `ffc_mana_cancel(token)` | 排队一首（44.1 kHz 立体声 s16le raw）/ 取消 |
+| `ffc_mana_analyze_file(pcm, out, flags)` | 同步分析（无头 / 测试） |
+| `ffc_mana_format_version()` / `ffc_mana_pipeline_version()` / `ffc_mana_last_error` | 版本与错误 |
+
+三步：DSP（总跑：包络、Ellis 动态规划跟拍、HPSS 鼓点）→ Beat This!（模型在时换拍点）→ htdemucs（模型在时
+换鼓点 / 人声），每步写一次完整结果。模型（MIT）按需下载、不随包。真文件手动验证：
+`FUSHI_MANA_PCM=<s16le> [FUSHI_MANA_ORT=… FUSHI_MANA_BEAT_THIS=… FUSHI_MANA_HTDEMUCS=…] cargo test --profile quick --lib real_file_sanity -- --nocapture`。
+
 ## 解析域：EPUB 章节 DOM 派生量（BUG-3433）
 
 `ffc_parse_epub_chapter`（`src/parse/epub.rs`，Dart 绑定 `EpubChapterScanner`）一次解析一章 XHTML，

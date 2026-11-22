@@ -125,6 +125,20 @@ fn open_path(path: &str) -> Result<libloading::Library, libloading::Error> {
     unsafe { libloading::Library::new(path) }
 }
 
+/// 已接上的 ORT 的环境（ORT 一个进程只有一份；音频分析 [crate::music_analysis] 也从这里取会话）。
+pub(crate) fn environment() -> Result<ort::environment::Environment, String> {
+    let guard = RUNTIME
+        .get()
+        .ok_or("onnxruntime not loaded")?
+        .lock()
+        .map_err(|_| "runtime lock poisoned")?;
+    Ok(guard
+        .as_ref()
+        .ok_or("onnxruntime not loaded")?
+        .environment
+        .clone())
+}
+
 /// 这个后端在已接上的 ORT 里可用吗（ORT 未接上时恒 false）。
 pub(crate) fn backend_available(backend: Backend) -> bool {
     let loaded = RUNTIME
