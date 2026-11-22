@@ -126,12 +126,20 @@ class AudiobookSessionLauncher {
     if (audiobook.alignmentFormat == kMangaAlignmentFormat) {
       final MangaAudioRegistration? manga = await loadMangaAudio(_db, bookKey);
       if (manga == null) return null;
-      return resolveMangaAudioSessionRequest(_db, registration: manga);
+      return resolveMangaAudioSessionRequest(
+        _db,
+        registration: manga,
+        overrideTitleOf: ReaderFushiSource.instance.overrideTitleForBookKey,
+      );
     }
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
-    final SessionBookMeta meta = await loadSessionBookMeta(_db, bookKey);
+    final SessionBookMeta meta = await loadSessionBookMeta(
+      _db,
+      bookKey,
+      overrideTitleOf: ReaderFushiSource.instance.overrideTitleForBookKey,
+    );
     // 后台听书无 reader 喂 cue（reader 才调 setChapterCues）；这里一次性把全书 cue
     // 取出随 request 返回，让 session.start 直接灌进控制器，否则 _chapterCues 为空、
     // _updateCurrentCue 提前 return、currentCue 恒 null → 悬浮窗推空串（TODO-354

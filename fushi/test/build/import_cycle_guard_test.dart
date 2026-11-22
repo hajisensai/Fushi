@@ -125,6 +125,10 @@ import 'package:test/test.dart';
 /// 一个文件（「目标」设置子页 schema；设置 schema 整族本就经 AppModel 在环里，同族其它
 /// schema 文件同样在环），上限 622 + 1 = 623。其余新目标文件都用窄接口
 /// （`study_goal_host.dart` / `stat_format.dart`）留在环外。
+/// 同次合流时 develop 实测已是 624（守卫红）：有声漫画起播统一取书目元数据（b424304574）让
+/// `audiobook_session_book_meta` import `reader_fushi_source` 读书名 override，它与
+/// `manga_audio_session` 经漫画阅读器页进环。改由调用方注入 `SessionTitleOverride`，两个
+/// 文件出环，develop 回到 622。
 ///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
