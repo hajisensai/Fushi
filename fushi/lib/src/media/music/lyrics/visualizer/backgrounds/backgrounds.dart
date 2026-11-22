@@ -2,8 +2,20 @@
 /// 隐现 35、嵌入 40、空 50）。框架的 `lyricVisualizerBackgrounds` 把它们接在「歌词页背景 / 纯色」后面。
 library;
 
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/common_background.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/latent_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/monet_background.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/nomand_background.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/sora_background.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/url_background.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_background.dart';
 
 final List<LyricVisualizerBackgroundEntry> lyricVisualizerPortedBackgrounds =
-    <LyricVisualizerBackgroundEntry>[monetBackgroundEntry];
+    <LyricVisualizerBackgroundEntry>[
+      commonBackgroundEntry,
+      monetBackgroundEntry,
+      nomandBackgroundEntry,
+      latentBackgroundEntry,
+      urlBackgroundEntry,
+      soraBackgroundEntry,
+    ];
