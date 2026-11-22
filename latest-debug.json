@@ -25,13 +25,13 @@
       "dbSchemaVersion": 171
     },
     {
-      "name": "fushi-3.4.0-debug.31366-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.31366-windows-setup.exe",
-      "releaseSequence": 31366,
-      "tag": "v3.4.0-debug.31366+8ea6084",
-      "version": "3.4.0-debug.31366",
-      "size": 302662280,
-      "sha256": "904556a7ffcc44be818869c40f39fc7c55667e4f1034bba3dea2336dfbdfeeee",
+      "name": "fushi-3.4.0-debug.31429-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.31429-windows-setup.exe",
+      "releaseSequence": 31429,
+      "tag": "v3.4.0-debug.31429+283a920",
+      "version": "3.4.0-debug.31429",
+      "size": 302767544,
+      "sha256": "6b7d87f2a3c02bdf704101d94fa592a34e8f63f3b93a9ffc805396bcd4000d31",
       "dbSchemaVersion": 171
     },
     {
