@@ -338,12 +338,18 @@ void evictPrebakedBlur(ImageProvider provider) =>
 @visibleForTesting
 void clearPrebakedBlurCache() => _BakedBlurCache.clear();
 
+/// 测试 / 性能探针用：进程启动以来实际烘焙（`Picture.toImage`）的次数。
+@visibleForTesting
+int get prebakedBlurBakeCount => _bakeCount;
+int _bakeCount = 0;
+
 /// 测试用：缓存里的条目数。
 @visibleForTesting
 int get prebakedBlurCacheLength => _BakedBlurCache._images.length;
 
 /// 把 [source] 按 fit / alignment 铺进 `width × height` 画布并做一次模糊。
 Future<ui.Image> _bake(_BakeKey key, ui.Image source) {
+  _bakeCount++;
   final ui.PictureRecorder recorder = ui.PictureRecorder();
   final Canvas canvas = Canvas(recorder);
   final Size out = Size(key.width.toDouble(), key.height.toDouble());
