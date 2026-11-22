@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/music/metadata/music_dlsite_scraper.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
+import 'package:fushi_engine/media/music/metadata/music_dlsite_album.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/ops/ctl_music_routes.dart';
@@ -129,8 +132,37 @@ class FakeMusicScraper {
     return report;
   }
 
-  MusicCtlScraper get port =>
-      MusicCtlScraper(scrapeTrack: scrapeTrack, scrapeLibrary: scrapeLibrary);
+  /// 假 DLsite：`al-1` 认得出编号并取到资料，[dlsiteFails] 时抛网络错误，其余专辑认不出。
+  bool dlsiteFails = false;
+
+  Future<MusicDlsiteAlbumInfo?> scrapeAlbumDlsite(String albumUid) async {
+    if (dlsiteFails) throw const DlsiteException('network error: offline');
+    if (albumUid != 'al-1') return null;
+    final DlsiteWorkId id = DlsiteWorkId.tryParse('RJ01109339')!;
+    return MusicDlsiteAlbumInfo(
+      id: id,
+      fetchedAt: 7,
+      snapshot: MusicDlsiteSnapshot(
+        id: id,
+        locale: 'ja_JP',
+        work: DlsiteWork(
+          id: id,
+          title: '耳舐め',
+          circle: 'チームランドセル',
+          voiceActors: const <String>['耳恋なか'],
+          genres: const <String>['癒し'],
+          ageCategory: DlsiteAgeCategory.general,
+          rating: const DlsiteRating(average: 9.0, count: 12, downloads: 300),
+        ),
+      ),
+    );
+  }
+
+  MusicCtlScraper get port => MusicCtlScraper(
+    scrapeTrack: scrapeTrack,
+    scrapeLibrary: scrapeLibrary,
+    scrapeAlbumDlsite: scrapeAlbumDlsite,
+  );
 }
 
 /// 曲库种子：两张专辑、四首歌、两位艺人、一个歌单、一首带候选的识别结论。

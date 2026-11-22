@@ -38,6 +38,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5165](bugs/BUG-5165-external-popup-source-overflow.md) | ✅ | ✅ | 应用内外查词长原文无法完整浏览并挤占释义 |
+> 共 4491 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5165](bugs/BUG-5165-dht-nodes-multi-endpoint-overwrite.md) | ✅ | ✅ | 双栈 / 多网卡下 DHT 节点数被后到的实例覆盖，误报「DHT 一直连不上任何节点」 |
 | [BUG-5164](bugs/BUG-5164-music-split-album-partial-album-artist.md) | ✅ | ✅ | 同一张 CD 只有部分曲目写了专辑艺人，被拆成两张专辑 |
 | [BUG-5163](bugs/BUG-5163-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |
 | [BUG-5162](bugs/BUG-5162-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
@@ -63,9 +68,11 @@
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
+| [BUG-5137](bugs/BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md) | 🚧 | 🚧 | gen4 迁移第 7/10 步重建在 683 万条操作的库上要 1537 秒 |
 | [BUG-5136](bugs/BUG-5136-loopback-shared-ring-stopped-by-other-holder.md) | ✅ | ✅ | loopback 一路被多方共用时，任何一方 stop（含失败 start 后的兜底 stop）都会停掉别人的环 |
 | [BUG-5135](bugs/BUG-5135-torrent-active-slots-hot-reset-zero.md) | ✅ | ✅ | 活跃下载 / 做种名额热更新回 0（引擎默认）不生效 |
 | [BUG-5134](bugs/BUG-5134-jimaku-season-filter.md) | ✅ | ✅ | 合集字幕只点第二季批量下载仍可能写入第一季字幕（Jimaku 把请求季号抄成候选季号） |
+| [BUG-5133](bugs/BUG-5133-ios-inbox-adopt-splits-video-sidecar-stem.md) | ✅ | ✅ | ios-inbox-adopt-splits-video-sidecar-stem |
 | [BUG-5132](bugs/BUG-5132-symindex-rust-failure-published-current.md) | ✅ | ✅ | 符号索引 Rust crate 索引失败仍发布成最新、同一提交不再重建 |
 | [BUG-5131](bugs/BUG-5131-symindex-cjk-path-quoted.md) | ✅ | ✅ | 符号索引按行读 git 文件清单，中文路径被转义后改动文件漏判、返回旧结果 |
 | [BUG-5130](bugs/BUG-5130-caret-line-move-node-prefilter-linear.md) | 🚧 | 🚧 | 阅读器光标每次行移动仍对章内每个文本节点各做一次行盒查询（随章长线性） |

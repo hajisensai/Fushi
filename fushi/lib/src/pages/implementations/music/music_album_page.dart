@@ -30,6 +30,7 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_album_dlsite_section.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
@@ -609,6 +610,13 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
 
     final List<Widget> children = <Widget>[
       header,
+      // 音声 / ASMR 专辑：按作品编号（RJ…）显示 DLsite 资料；认不出编号整块不出现。
+      if (_app.isDatabaseReady && musicAlbumHasDlsiteWork(album, tracks))
+        MusicAlbumDlsiteSection(
+          album: album,
+          tracks: tracks,
+          scraper: _app.musicScrape.dlsite,
+        ),
       for (final MapEntry<int?, List<MusicTrackRow>> disc
           in discs.entries) ...<Widget>[
         if (disc.key != null)
