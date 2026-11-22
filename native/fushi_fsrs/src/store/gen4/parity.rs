@@ -774,9 +774,18 @@ fn check_profile(name: &str, w: &Connection, profile: &str) {
             }
             (!unknown.is_empty()).then(|| {
                 let conn = &outcome.as_ref().unwrap().0;
+                let columns: Vec<String> = unknown
+                    .iter()
+                    .filter_map(|(what, old, new)| {
+                        compare::column_diffs(what, old, new).map(|c| format!("{what} {c:?}"))
+                    })
+                    .collect();
                 (
                     "diff",
-                    format!("{unknown:?} {}", explain(w, profile, conn, &unknown)),
+                    format!(
+                        "{unknown:?} {columns:?} {}",
+                        explain(w, profile, conn, &unknown)
+                    ),
                 )
             })
         }

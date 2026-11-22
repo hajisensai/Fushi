@@ -463,7 +463,8 @@ fn restored_value(
 }
 
 /// [card] 那一刻从血统继承到的 [key]（协议 3 `card_inherited_at`，与 `registers.rs` `cards_group` 同一规则）：血统按
-/// 广度优先（自己在前，前身按 UTF-16 序，防环，最多 256 张），第一张那一刻对这个键有生效写入的前身的值。
+/// 广度优先（自己在前，防环，最多 256 张），离它最近、那一刻对这个键有生效写入的一层前身的值；同一层几张都有时取
+/// 生效写入最新的（`registers::later`，不按卡 ID 排，BUG-5190）。
 fn card_inherited_at(
     ix: &mut Index<'_, '_>,
     cut: &Cut,
@@ -471,17 +472,23 @@ fn card_inherited_at(
     key: &str,
 ) -> Result<Option<Value>, String> {
     let mut seen: Vec<Ref> = vec![card.clone()];
-    let mut queue: std::collections::VecDeque<Ref> =
-        std::collections::VecDeque::from([card.clone()]);
+    let mut queue: std::collections::VecDeque<(Ref, usize)> =
+        std::collections::VecDeque::from([(card.clone(), 0)]);
     let mut visited = 0usize;
-    while let Some(id) = queue.pop_front() {
-        if visited >= 256 {
+    // (层数, 生效值, 排序键)：只换同一层里更新的。
+    let mut best: Option<(usize, String, crate::registers::WriteOrder)> = None;
+    while let Some((id, depth)) = queue.pop_front() {
+        if visited >= 256 || best.as_ref().is_some_and(|b| b.0 < depth) {
             break;
         }
         visited += 1;
         if id != *card {
-            if let Some(v) = ix.class_value_in(EntKind::Card, &id, key, &|k| cut.contains(k))? {
-                return Ok(Some(parsed(Some(v))));
+            if let Some((v, order)) =
+                ix.class_winner_in(EntKind::Card, &id, key, &|k| cut.contains(k))?
+            {
+                if best.as_ref().is_none_or(|b| order.later_than(&b.2)) {
+                    best = Some((depth, v, order));
+                }
             }
         }
         let mut preds: Vec<String> = Vec::new();
@@ -499,11 +506,11 @@ fn card_inherited_at(
             let r = ix.canonical(&Ref::of(&Key::of(&p)))?;
             if !seen.contains(&r) {
                 seen.push(r.clone());
-                queue.push_back(r);
+                queue.push_back((r, depth + 1));
             }
         }
     }
-    Ok(None)
+    Ok(best.map(|b| parsed(Some(b.1))))
 }
 
 /// 一个别名类全部寄存器的规范键。
