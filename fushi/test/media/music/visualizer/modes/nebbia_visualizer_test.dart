@@ -46,6 +46,49 @@ NebbiaGlyph? nebbiaSweepGlyphOrNull(String ch) =>
     ch.trim().isEmpty ? null : nebbiaSweepGlyph(ch);
 
 void main() {
+  group('主题图标', () {
+    test('句尾图标池：主题里能画的图标优先，画不了的跳过，一个都没有回落默认池', () {
+      expect(nebbiaDoodlesFor(null), kNebbiaDoodles);
+      expect(
+        nebbiaDoodlesFor(
+          const LyricVisualizerTheme(
+            lyricsIcons: <LyricVisualizerThemeIcon>[
+              LyricVisualizerThemeIcon.moon,
+              LyricVisualizerThemeIcon.camera,
+              LyricVisualizerThemeIcon.umbrella,
+            ],
+          ),
+        ),
+        <String>['moon', 'umbrella'],
+      );
+      expect(
+        nebbiaDoodlesFor(
+          const LyricVisualizerTheme(
+            lyricsIcons: <LyricVisualizerThemeIcon>[
+              LyricVisualizerThemeIcon.camera,
+            ],
+          ),
+        ),
+        kNebbiaDoodles,
+      );
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        sampleWordTimeline(),
+      );
+      for (final NebbiaSourceLine l in buildNebbiaLines(
+        rt.lines,
+        7,
+        1,
+        doodles: const <String>['moon'],
+      )) {
+        for (final NebbiaChar c in l.chars.where(
+          (NebbiaChar c) => nebbiaIsIcon(c.ch),
+        )) {
+          expect(c.ch, '${kNebbiaIconPrefix}moon');
+        }
+      }
+    });
+  });
+
   group('words', () {
     test('Chinese han runs pair up, particles stand alone', () {
       final List<List<int>> w = nebbiaGroupWords(_chars('我们的夜空'));

@@ -143,6 +143,7 @@ class NebbiaController {
       glyphs.version,
       identityHashCode(c.audio),
       c.offsetMs,
+      nebbiaDoodlesFor(c.theme).join(','),
     ].join('|');
     if (size != _fieldSize) {
       field = NebbiaFieldDrops(size.width, size.height);
@@ -154,6 +155,7 @@ class NebbiaController {
       c.runtime.lines,
       c.seed,
       s.doodle,
+      doodles: nebbiaDoodlesFor(c.theme),
     );
     if (s.credits) src = appendNebbiaCredits(src, c.title, c.artist);
     source = src;

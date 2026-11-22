@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'package:characters/characters.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 一个字素，或 `icon:<名字>`（随手画的图标，nebbia_glyphs.dart 的线稿）。
 @immutable
@@ -90,6 +91,18 @@ const List<String> kNebbiaDoodles = <String>[
   'leaf',
   'sun',
 ];
+
+/// 句尾随手画的图标池（folia：主题有 `lyricsIcons` 就用主题的，否则用默认池）。主题图标里只有
+/// 本样式自绘过线稿的那几种（[kNebbiaDoodles]，id 与主题图标集同名）能画，其余跳过；一个都画不了时
+/// 回落默认池。
+List<String> nebbiaDoodlesFor(LyricVisualizerTheme? theme) {
+  final List<String> own = <String>[
+    for (final LyricVisualizerThemeIcon i
+        in theme?.lyricsIcons ?? const <LyricVisualizerThemeIcon>[])
+      if (kNebbiaDoodles.contains(i.wire)) i.wire,
+  ];
+  return own.isEmpty ? kNebbiaDoodles : own;
+}
 
 String _toChar(String grapheme) {
   final String bare = grapheme.replaceAll(RegExp('[️‍]'), '');
@@ -244,12 +257,15 @@ List<List<int>> nebbiaSharedWords(
   return words;
 }
 
-/// 整首歌的逐字序列。[seed] 决定哪些句子句尾画图标、画哪个；[doodle] 是概率。
+/// 整首歌的逐字序列。[seed] 决定哪些句子句尾画图标、画哪个；[doodle] 是概率，[doodles] 是图标池
+/// （[nebbiaDoodlesFor]）。
 List<NebbiaSourceLine> buildNebbiaLines(
   List<LyricVisualizerLine> lines,
   int seed,
-  double doodle,
-) {
+  double doodle, {
+  List<String> doodles = kNebbiaDoodles,
+}) {
+  final List<String> pool = doodles.isEmpty ? kNebbiaDoodles : doodles;
   final List<NebbiaSourceLine> out = <NebbiaSourceLine>[];
   for (int index = 0; index < lines.length; index++) {
     final LyricVisualizerLine line = lines[index];
@@ -278,8 +294,7 @@ List<NebbiaSourceLine> buildNebbiaLines(
       final NebbiaChar last = chars.last;
       final double at = last.t + last.d;
       final String icon =
-          kNebbiaDoodles[(rng.next() * kNebbiaDoodles.length).floor() %
-              kNebbiaDoodles.length];
+          pool[(rng.next() * pool.length).floor() % pool.length];
       chars
         ..add(NebbiaChar(' ', at, 0))
         ..add(NebbiaChar('$kNebbiaIconPrefix$icon', at + 0.08, 1.1));
