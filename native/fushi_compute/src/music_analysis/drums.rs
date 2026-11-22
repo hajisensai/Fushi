@@ -8,9 +8,11 @@ use super::features::MelBand;
 
 /// 鼓点类别。
 pub(crate) const KICK: u8 = 0;
-#[allow(dead_code)] // 写进结果文件的类别值（Dart 侧按值读），Rust 里只比较底鼓 / 镲片。
 pub(crate) const SNARE: u8 = 1;
 pub(crate) const HAT: u8 = 2;
+
+/// 三个频段依次对应的类别（写进结果文件，Dart 侧按值读）。
+const KINDS: [u8; 3] = [KICK, SNARE, HAT];
 
 const KICK_MAX_HZ: f64 = 150.0;
 const SNARE_MAX_HZ: f64 = 4000.0;
@@ -124,7 +126,7 @@ pub(crate) fn pick_drum_hits(
         for (k, band) in bands.iter().enumerate() {
             if band[f] > top[f] {
                 top[f] = band[f];
-                kind_of[f] = k as u8;
+                kind_of[f] = KINDS[k];
             }
         }
     }

@@ -277,7 +277,6 @@ const LOW_ONSET_MAX_HZ: f64 = 200.0;
 
 /// 包络一帧的原始量（0–1 前的中间值保留给节拍跟踪）。
 pub(crate) struct Envelope {
-    pub(crate) frames: usize,
     /// folia `audioPower`：`((bass + lowMid) / 2)³`。
     pub(crate) power: Vec<f32>,
     /// folia `bass`^1.8（20–150 Hz）。
@@ -363,7 +362,6 @@ pub(crate) fn envelope(mono: &[f32], cancel: &dyn Fn() -> bool) -> Option<Envelo
     let mut prev_mel = vec![0.0f64; ONSET_MELS];
     let mut mel = vec![0.0f64; ONSET_MELS];
     let mut env = Envelope {
-        frames,
         power: vec![0.0; frames],
         low: vec![0.0; frames],
         mid: vec![0.0; frames],
@@ -489,7 +487,7 @@ mod tests {
     fn bass_tone_lights_low_band_not_high() {
         let mono = tone(80.0, 2.0, 0.5);
         let env = envelope(&mono, &never).unwrap();
-        let f = env.frames / 2;
+        let f = env.power.len() / 2;
         assert!(env.low[f] > 0.5, "low {}", env.low[f]);
         assert!(env.high[f] < 0.05, "high {}", env.high[f]);
         assert!(env.power[f] > 0.05);
@@ -513,7 +511,7 @@ mod tests {
             hz += 25.0;
         }
         let env = envelope(&mono, &never).unwrap();
-        let f = env.frames / 2;
+        let f = env.power.len() / 2;
         assert!(env.high[f] > 0.25, "high {}", env.high[f]);
         assert!(env.low[f] < 0.1, "low {}", env.low[f]);
     }
