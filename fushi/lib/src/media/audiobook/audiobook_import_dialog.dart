@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -1007,7 +1008,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
         FushiToast.show(msg: msg, severity: ToastSeverity.success);
-        Navigator.pop(context, true); // true = reload player
+        closeOwnRoute(context, true); // true = reload player
       }
     } on FileSystemException catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);

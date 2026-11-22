@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -573,7 +574,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       desktopOverride: widget.ocrEntryDesktopOverride,
     );
     if (bookKey != null && mounted) {
-      Navigator.pop(context, true);
+      closeOwnRoute(context, true);
     }
   }
 
@@ -623,7 +624,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         reportProgress(1, t.import_step_done);
         if (mounted) {
           FushiToast.show(msg: summary, severity: ToastSeverity.success);
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );
@@ -709,7 +710,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             msg: t.book_import_duplicate_cancelled,
             severity: ToastSeverity.info,
           );
-          Navigator.pop(context, false);
+          closeOwnRoute(context, false);
         }
       },
       action: () async {
@@ -773,7 +774,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             msg: batchSummary ?? t.srt_import_success,
             severity: ToastSeverity.success,
           );
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );
