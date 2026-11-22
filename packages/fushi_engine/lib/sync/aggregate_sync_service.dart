@@ -200,12 +200,11 @@ class AggregateSyncService {
             entry.name != ownLegacyAssetName)
           entry,
     ];
-    //
-    //    BUG-5159：传输层只搬**原样字节**（`getBytesAsset` / 字节级副本缓存），
-    //    报文体解码、按许可裁剪、折叠都在所有者里做——与互联通道同一套
-    //    `aggregate_wire_codec.dart`，调用方（UI isolate）上没有整份快照的 JSON 工作。
-    //    折叠命令不等它做完就去下载下一份：所有者按到达顺序逐条执行，解码与下一份
-    //    的网络传输重叠；字节随 TransferableTypedData 移交。
+    // BUG-5159：传输层只搬**原样字节**（`getBytesAsset` / 字节级副本缓存），
+    // 报文体解码、按许可裁剪、折叠都在所有者里做——与互联通道同一套
+    // `aggregate_wire_codec.dart`，调用方（UI isolate）上没有整份快照的 JSON 工作。
+    // 折叠命令不等它做完就去下载下一份：所有者按到达顺序逐条执行，解码与下一份
+    // 的网络传输重叠；字节随 TransferableTypedData 移交。
     final List<Future<void>> folds = <Future<void>>[];
     for (final AssetEntry entry in peerEntries) {
       final Uint8List? body;

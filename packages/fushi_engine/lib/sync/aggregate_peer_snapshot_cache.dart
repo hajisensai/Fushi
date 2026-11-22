@@ -35,8 +35,7 @@ abstract interface class AggregatePeerSnapshotCache {
 /// 落在 `<root>/<channel>/<资产名>.snap` 的 [AggregatePeerSnapshotCache]。
 ///
 /// 文件格式：一行 UTF-8 JSON 头（`format` / `id` / `revision`，`jsonEncode` 不会产出
-/// 裸换行）+ `
-` + 远端文件的原样字节。读命中只解析这一行头。
+/// 裸换行）+ 换行符 + 远端文件的原样字节。读命中只解析这一行头。
 ///
 /// 缓存失效从不影响正确性（最坏多下一次），所以读写失败一律降级为未命中并记日志，
 /// 不让一次磁盘错误打断整轮同步。

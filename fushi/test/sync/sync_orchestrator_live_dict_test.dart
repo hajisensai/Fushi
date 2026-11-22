@@ -11,7 +11,6 @@
 library;
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
