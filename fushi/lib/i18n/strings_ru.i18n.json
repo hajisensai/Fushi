@@ -9658,8 +9658,6 @@
   "shortcut_action_reader_dismiss_dict": "Закрыть словарь",
   "shortcut_action_reader_enter_caret": "Войти в режим курсора поиска",
   "shortcut_action_reader_lookup_at_cursor": "Поиск слова / активация курсора",
-  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "Открыть панель аудиокниги",
   "shortcut_action_reader_open_gallery": "Открыть галерею иллюстраций",
   "shortcut_action_reader_open_menu": "Open Settings Menu",

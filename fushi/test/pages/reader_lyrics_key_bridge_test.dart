@@ -156,42 +156,6 @@ void main() {
       );
     });
 
-    test('HBK-AUDIT-221：整句扫词键经歌词键桥回 Dart（歌词视图同样能扫词）', () {
-      final FushiShortcutRegistry r = registry();
-      const InputBinding next = InputBinding(key: LogicalKeyboardKey.f7);
-      const InputBinding prev = InputBinding(key: LogicalKeyboardKey.f8);
-      r.updateBinding(
-        ShortcutAction.readerLookupNextWord,
-        r
-            .bindingsFor(ShortcutAction.readerLookupNextWord)
-            .copyWith(keyboardBindings: <InputBinding>[next]),
-      );
-      r.updateBinding(
-        ShortcutAction.readerLookupPrevWord,
-        r
-            .bindingsFor(ShortcutAction.readerLookupPrevWord)
-            .copyWith(keyboardBindings: <InputBinding>[prev]),
-      );
-      final List<String> tokens = lyricsKeyBridgeTokens(r);
-      expect(tokens, containsAll(<String>[next.serialize(), prev.serialize()]));
-      for (final (InputBinding b, ShortcutAction a)
-          in <(InputBinding, ShortcutAction)>[
-            (next, ShortcutAction.readerLookupNextWord),
-            (prev, ShortcutAction.readerLookupPrevWord),
-          ]) {
-        final ({bool space, InputBinding? binding})? parsed =
-            parseLyricsKeyBridgeToken(b.serialize());
-        expect(
-          resolveSpreadKeyBridgeAction(
-            r,
-            parsed!.binding!,
-            actions: kLyricsBridgedActions,
-          ),
-          a,
-        );
-      }
-    });
-
     test('改键跟随：返回上一级改绑后键表随之变化', () {
       final FushiShortcutRegistry r = registry();
       const InputBinding custom = InputBinding(key: LogicalKeyboardKey.keyQ);
@@ -237,7 +201,7 @@ void main() {
       expect(
         block,
         isNot(contains('if (!el) return;')),
-        reason: '行外按下早退 = 侧键绑的扫词 / 关词典在行间空白上是死项',
+        reason: '行外按下早退 = 侧键绑的关词典等动作在行间空白上是死项',
       );
     });
 
@@ -316,7 +280,7 @@ void main() {
       expect(seek, lessThan(gate), reason: '位置型 seek 在任何平台都由页内 JS 承担');
       expect(gate, lessThan(resolve), reason: 'Windows 由页面根 Listener 派发，不重复');
       expect(resolve, lessThan(exec));
-      // controller 门控只属于 seek 分支：无有声书控制器时也要能派发扫词 / 关词典。
+      // controller 门控只属于 seek 分支：无有声书控制器时也要能派发关词典等动作。
       expect(
         body.substring(0, seek),
         isNot(contains('_audiobookController')),

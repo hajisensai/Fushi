@@ -9658,8 +9658,6 @@
   "shortcut_action_reader_dismiss_dict": "إغلاق القاموس",
   "shortcut_action_reader_enter_caret": "الدخول إلى مؤشر البحث",
   "shortcut_action_reader_lookup_at_cursor": "بحث / تفعيل المؤشر",
-  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "فتح لوحة الكتاب الصوتي",
   "shortcut_action_reader_open_gallery": "فتح معرض الرسوم التوضيحية",
   "shortcut_action_reader_open_menu": "Open Settings Menu",

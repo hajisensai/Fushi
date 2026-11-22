@@ -9658,8 +9658,6 @@
   "shortcut_action_reader_dismiss_dict": "Tutup Kamus",
   "shortcut_action_reader_enter_caret": "Masuk kursor pencarian",
   "shortcut_action_reader_lookup_at_cursor": "Cari kata / aktifkan kursor",
-  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "Buka panel buku audio",
   "shortcut_action_reader_open_gallery": "Buka galeri ilustrasi",
   "shortcut_action_reader_open_menu": "Open Settings Menu",

@@ -128,11 +128,6 @@ class ShortcutDefaults {
     // enter-trigger 经 bindingsFor(readerEnterCaret) 谓词查询，不经 resolveKeyboard，
     // 故无枚举顺序歧义，no-shadow 守卫已显式排除它。
     ShortcutAction.readerEnterCaret: _kb([_key(LogicalKeyboardKey.enter)]),
-    // 整句扫词（拍板台 5H922XeDHM）：默认空绑定
-    // （键盘与手柄都留空），用户在「设置 → 快捷键 → 阅读器」自配。执行体在
-    // reader_fushi/word_sweep.part.dart，空绑定不是死通道。
-    ShortcutAction.readerLookupNextWord: const ShortcutBindingSet(),
-    ShortcutAction.readerLookupPrevWord: const ShortcutBindingSet(),
     ShortcutAction.homeTabBooks: _kb([
       _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
     ]),

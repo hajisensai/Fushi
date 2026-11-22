@@ -6,3 +6,4 @@
 - **[x] ① 已修复** — 键桥动作表加上两个扫词动作（reader scope，排在 audiobook 之前）；歌词 JS 非左键按下一律回传（行外行号 -1），`onLyricsPointerSeek` 改成与正文同一条阶梯：入口先收回焦点 → 位置型 seek（controller 门控只在这一支）→ `hostOwnsWebViewPointerInput` 让给页面根 Listener → `resolveMouseBindingActionForButton` + `_executeShortcutAction`（扫词经唯一派发点分流）。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/reader_lyrics_key_bridge_test.dart`：扫词键经歌词键桥导出并反解析到扫词动作；生成 HTML 的 mousedown 在行外也回传；`onLyricsPointerSeek` 三级阶梯顺序与 controller 门控位置的接线守卫。
 - **备注**：WebView 内真实焦点 / macOS 侧键逐词行为未在设备上复测（需 Windows 原生 WebView 焦点与 macOS 侧键），待补。
+- **后续**：2026-11-23 按拍板台 pr4141a 删除阅读器整句扫词，键桥里的两个扫词动作与对应测试随之去掉；歌词非左键回传与 `onLyricsPointerSeek` 三级阶梯是通用鼠标绑定通道（关词典等），保留。

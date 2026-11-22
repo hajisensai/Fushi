@@ -9658,8 +9658,6 @@
   "shortcut_action_reader_dismiss_dict": "Cerrar diccionario",
   "shortcut_action_reader_enter_caret": "Activar cursor de búsqueda",
   "shortcut_action_reader_lookup_at_cursor": "Consultar / activar cursor",
-  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "Abrir panel de audiolibro",
   "shortcut_action_reader_open_gallery": "Abrir galería de ilustraciones",
   "shortcut_action_reader_open_menu": "Open Settings Menu",

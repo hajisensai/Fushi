@@ -9658,8 +9658,6 @@
   "shortcut_action_reader_dismiss_dict": "辞書を閉じる",
   "shortcut_action_reader_enter_caret": "辞書引きカーソルに入る",
   "shortcut_action_reader_lookup_at_cursor": "辞書を引く／カーソルを有効化",
-  "shortcut_action_reader_lookup_next_word": "Next word (word sweep)",
-  "shortcut_action_reader_lookup_prev_word": "Previous word (word sweep)",
   "shortcut_action_reader_open_audiobook": "オーディオブックパネルを開く",
   "shortcut_action_reader_open_gallery": "挿絵ギャラリーを開く",
   "shortcut_action_reader_open_menu": "Open Settings Menu",
