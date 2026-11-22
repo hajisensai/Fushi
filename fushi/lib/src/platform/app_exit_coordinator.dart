@@ -163,8 +163,13 @@ class AppExitCoordinator {
   }
 
   /// 结束进程的唯一出口：先补 [begin]（直接走到这里的路径也留下意图），再标 clean
-  /// （[terminatedBy] 记由谁结束），最后 `exit`。[exitWith] 只给已有测试缝的调用方
+  /// （[terminatedBy] 记由谁结束），最后结束进程。[exitWith] 只给已有测试缝的调用方
   /// （更新交接）透传假 exit。
+  ///
+  /// 契约：调到这里时所有要持久化的东西必须已经显式落盘 / 关好。Windows 上走
+  /// `TerminateProcess`（[exitProcessForPlatform]），不跑任何 DLL 的
+  /// `DllMain(DLL_PROCESS_DETACH)`、CRT atexit / 静态析构，也不 flush C `FILE*`
+  /// 缓冲；依赖这些退出期回调刷盘的原生代码会静默丢尾部数据（BUG-5185）。
   void terminate(
     String terminatedBy, {
     int code = 0,
