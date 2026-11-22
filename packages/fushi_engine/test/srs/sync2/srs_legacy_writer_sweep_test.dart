@@ -335,4 +335,39 @@ void main() {
     expect(remoteHas(loc, srsMediaSha256('cat-v30'.codeUnits)), isTrue);
     expect(Directory(p.join(loc, kWriter1)).existsSync(), isFalse);
   });
+
+  test('媒体对账：到点收手时没收完的写入者媒体记成 deferred（不记已对账），文件一个不动', () async {
+    final SrsDbStore s = await device('dev-e');
+    await addPicture(s, '猫', 'cat.png');
+    await addPicture(s, '犬', 'dog.png');
+    final String dir = await srsLocationDir(s);
+    final String loc = locationPath(dir);
+    final Directory mediaRoot = Directory(p.join(tmp.path, 'local-media'))
+      ..createSync(recursive: true);
+    expect(
+      (await srsRunLocationRound(
+        SrsLocationBackend(assets),
+        s,
+        'interconnect:host',
+      )).error,
+      isNull,
+    );
+    plantWriter(loc, kWriter1);
+    write(p.join(loc, kWriter1, 'media', 'cat.png'), 'cat-v30');
+    write(p.join(loc, kWriter1, 'media', 'dog.png'), 'dog-v30');
+    final List<String> before = filesUnder(p.join(loc, kWriter1));
+
+    final SrsMediaSyncReport m = await srsRunLocationMedia(
+      SrsLocationBackend(assets),
+      s,
+      mediaRoot,
+      locationId: 'interconnect:host',
+      deferRemaining: () => true,
+    );
+    expect(m.legacyMediaImported, 0);
+    expect(m.legacyMediaDropped, 0);
+    expect(m.deferred, greaterThanOrEqualTo(2), reason: '没收完的两个文件算没做');
+    expect(filesUnder(p.join(loc, kWriter1)), before);
+    expect(File(p.join(mediaRoot.path, 'cat.png')).existsSync(), isFalse);
+  });
 }

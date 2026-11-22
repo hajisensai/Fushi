@@ -239,8 +239,9 @@ class SrsLegacyWriterMedia {
   /// 列 / 下载 / 删失败的（`<写入者目录>[/media/<名字>]: <原因>`）：文件留着，下一趟媒体对账再来。
   final List<String> errors = <String>[];
 
-  /// [srsRescueLegacyWriterMedia] 的 `shouldStop` 让收手了（剩下的下一趟再做）。
-  bool stopped = false;
+  /// [srsRescueLegacyWriterMedia] 的 `shouldStop` 让收手时，当前写入者目录 `media/` 里还没处理的文件数（≥1；之后的
+  /// 写入者目录没列，不算在内）。非 0 = 这一趟没收完，调用方记进 [SrsMediaSyncReport.deferred]，不把位置记成已对账。
+  int deferred = 0;
 }
 
 /// 把 v3.0.x 写入者目录 `fushi-srs/<[dir]>/<设备>#<化身号>/media/` 里 v3.3.0 迁移没搬完的媒体收尾（拍板台
@@ -281,10 +282,14 @@ Future<SrsLegacyWriterMedia> srsRescueLegacyWriterMedia(
         if (e.isFolder && e.name == _kSrsLegacyWriterMedia) media = e;
       }
       if (media != null) {
-        for (final AssetEntry f in await store.listChildren(media.id)) {
-          if (f.isFolder || !srsIsBareMediaName(f.name)) continue;
+        final List<AssetEntry> files = <AssetEntry>[
+          for (final AssetEntry f in await store.listChildren(media.id))
+            if (!f.isFolder && srsIsBareMediaName(f.name)) f,
+        ];
+        for (int i = 0; i < files.length; i++) {
+          final AssetEntry f = files[i];
           if (shouldStop?.call() ?? false) {
-            out.stopped = true;
+            out.deferred = files.length - i;
             return out;
           }
           try {
@@ -410,6 +415,8 @@ Future<SrsMediaSyncReport> srsRunLocationMedia(
   if (legacy != null) {
     report
       ..downloaded += legacy.imported
+      // 到点收手没收完的：记成没做，调用方不把位置记成已对账（BUG-5061 的口径），下一趟接着收。
+      ..deferred += legacy.deferred
       ..legacyMediaImported = legacy.imported
       ..legacyMediaDropped = legacy.dropped
       ..legacyWritersRemoved.addAll(legacy.removed)
