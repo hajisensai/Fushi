@@ -439,7 +439,8 @@ Future<bool> mangaAudioHasLineAt(
 
 /// 阅读页「编辑这句配音」：就地改命中气泡那一句（不离开阅读页），存盘；这句已经生成过
 /// 时，改了说话人 / 类型 / 念法就只重新生成这一句（试听 → 保留 / 撤回），也可以直接
-/// 换种子重生成。标注任务在跑、或读盘后被别处改过时不写，提示用户。
+/// 换种子重生成。标注任务在跑、OCR 重跑过（要重新标注）、或读盘后被别处改过时不写，
+/// 提示用户。
 Future<void> editMangaAudioLineInPlace(
   BuildContext context, {
   required AudioProductionHost host,
@@ -464,6 +465,12 @@ Future<void> editMangaAudioLineInPlace(
     );
     return;
   }
+  // OCR 重跑过：演出稿里的块下标指的是旧 OCR，按当前落点的块找到的那句可能是别的气泡，
+  // 改了也会在整卷重新标注时被覆盖。不按块匹配，直接提示要重新标注。
+  if (session.isStale) {
+    FushiToast.show(msg: t.manga_audio_stale, severity: ToastSeverity.warning);
+    return;
+  }
   final MangaScriptLine? line = mangaScriptLineForBlocks(
     session.script,
     page,
@@ -484,7 +491,7 @@ Future<void> editMangaAudioLineInPlace(
     context,
     session: session,
     line: line,
-    canRegenerate: rendered && !session.isStale,
+    canRegenerate: rendered,
   );
   if (action == null || !context.mounted) return;
   if (action != MangaLineEditAction.regenerate) {
@@ -499,7 +506,7 @@ Future<void> editMangaAudioLineInPlace(
       );
       return;
     }
-    if (!rendered || !action.changesVoice || session.isStale) {
+    if (!rendered || !action.changesVoice) {
       FushiToast.show(msg: t.manga_audio_line_saved);
       return;
     }
