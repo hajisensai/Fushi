@@ -118,10 +118,8 @@ class HomeWidgetGrid extends StatefulWidget {
 
 class _HomeWidgetGridState extends State<HomeWidgetGrid>
     with SingleTickerProviderStateMixin {
-  final Map<String, FocusNode> _focusNodes =
-      <String, FocusNode>{};
-  final Map<String, GlobalKey> _tileKeys =
-      <String, GlobalKey>{};
+  final Map<String, FocusNode> _focusNodes = <String, FocusNode>{};
+  final Map<String, GlobalKey> _tileKeys = <String, GlobalKey>{};
   final GlobalKey _stackKey = GlobalKey();
 
   /// 键盘 / 手柄拿起的组件。
@@ -177,9 +175,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
       n.dispose();
       return true;
     });
-    _tileKeys.removeWhere(
-      (String k, GlobalKey _) => !present.contains(k),
-    );
+    _tileKeys.removeWhere((String k, GlobalKey _) => !present.contains(k));
   }
 
   @override
@@ -480,11 +476,7 @@ class _HomeWidgetGridState extends State<HomeWidgetGrid>
 
   // ── 指针拖动 ────────────────────────────────────────────────────────────
 
-  void _dragStart(
-    String kind,
-    LongPressStartDetails details,
-    Rect slot,
-  ) {
+  void _dragStart(String kind, LongPressStartDetails details, Rect slot) {
     // 按在改尺寸柄上：柄自己接管（它的手势在竞技场里先赢），这里不起换位拖动。
     if (_resizeKind != null) return;
     setState(() {

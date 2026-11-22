@@ -58,15 +58,14 @@ String homeWidgetDescription(HomeWidgetKind kind) => switch (kind) {
 
 /// 布局里一块组件的名字（编辑态读屏 / 尺寸网格标题）：可配置的组件带上配置
 /// （「日本語目标」）。
-String homeWidgetItemLabel(HomeWidgetItem item) =>
-    switch (item.kind) {
-      HomeWidgetKind.languageGoals => t.home_language_goals_title(
-        language: item.language == null
-            ? t.stat_goal_language_all
-            : contentLanguageLabelOf(item.language!),
-      ),
-      _ => homeWidgetLabel(item.kind),
-    };
+String homeWidgetItemLabel(HomeWidgetItem item) => switch (item.kind) {
+  HomeWidgetKind.languageGoals => t.home_language_goals_title(
+    language: item.language == null
+        ? t.stat_goal_language_all
+        : contentLanguageLabelOf(item.language!),
+  ),
+  _ => homeWidgetLabel(item.kind),
+};
 
 /// 添加面板的分类筛选。
 enum HomeWidgetAddFilter { all, study, continueMedia, tools }

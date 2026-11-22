@@ -628,9 +628,7 @@ class FushiPosterBars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double? line = reference != null && reference! > 0
-        ? reference
-        : null;
+    final double? line = reference != null && reference! > 0 ? reference : null;
     final double peak = math.max(
       values.fold<int>(0, math.max).toDouble(),
       line ?? 0,
@@ -638,40 +636,40 @@ class FushiPosterBars extends StatelessWidget {
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
     final List<String>? tips = labels;
     final Widget bars = SizedBox(
-        height: height,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          spacing: 5,
-          children: <Widget>[
-            for (int i = 0; i < values.length; i++)
-              Expanded(
-                child: _maybeTip(
-                  tips != null && i < tips.length ? tips[i] : null,
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(
-                      begin: 0,
-                      end: peak == 0 ? 0 : values[i] / peak,
-                    ),
-                    duration: duration,
-                    curve: FushiMotion.enter,
-                    builder: (BuildContext _, double f, Widget? _) => Container(
-                      height: math.max(4, height * f),
-                      decoration: BoxDecoration(
-                        color: colors.accent.withValues(
-                          alpha: i == highlightIndex ? 1 : 0.7,
-                        ),
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(6),
-                          bottom: Radius.circular(3),
-                        ),
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        spacing: 5,
+        children: <Widget>[
+          for (int i = 0; i < values.length; i++)
+            Expanded(
+              child: _maybeTip(
+                tips != null && i < tips.length ? tips[i] : null,
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(
+                    begin: 0,
+                    end: peak == 0 ? 0 : values[i] / peak,
+                  ),
+                  duration: duration,
+                  curve: FushiMotion.enter,
+                  builder: (BuildContext _, double f, Widget? _) => Container(
+                    height: math.max(4, height * f),
+                    decoration: BoxDecoration(
+                      color: colors.accent.withValues(
+                        alpha: i == highlightIndex ? 1 : 0.7,
+                      ),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(6),
+                        bottom: Radius.circular(3),
                       ),
                     ),
                   ),
                 ),
               ),
-          ],
-        ),
-      );
+            ),
+        ],
+      ),
+    );
     return ExcludeSemantics(
       child: line == null
           ? bars
