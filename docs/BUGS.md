@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4581 条。点号进各自文件。
+> 共 4583 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5266](bugs/BUG-5266-book-art-scrape-ignores-edition-language.md) | 🚧 | 🚧 | Cover scraping uses Japanese MangaBaka covers for non-Japanese editions |
+| [BUG-5265](bugs/BUG-5265-series-grouper-merges-language-editions.md) | 🚧 | 🚧 | Book series grouper merges same-title editions in different languages into one collection |
 | [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
 | [BUG-5256](bugs/BUG-5256-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
 | [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |
