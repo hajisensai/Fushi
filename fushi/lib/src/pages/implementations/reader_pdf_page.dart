@@ -1193,6 +1193,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       FushiToast.showMine(
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
+        term: fields['expression'],
+        reading: fields['reading'],
       );
       final MineOutcome outcome = overwriteNoteId != null
           ? await repo.updateMinedNote(
@@ -1215,10 +1217,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         FushiToast.showMine(
           msg: described.message,
           status: described.status,
-          // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+          detail: described.detail,
+          term: fields['expression'],
+          reading: fields['reading'],
+          // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
           action: overwriteNoteId != null
               ? null
-              : minedCardUndoToastAction(
+              : mineResultToastAction(
                   repo,
                   outcome,
                   expression: fields['expression'],

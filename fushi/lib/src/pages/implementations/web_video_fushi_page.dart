@@ -1347,6 +1347,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         FushiToast.showMine(
           msg: t.card_export_failed,
           status: MineToastStatus.failed,
+          term: payload.fields['expression'],
+          reading: payload.fields['reading'],
         );
       }
       return;
@@ -1358,11 +1360,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       FushiToast.showMine(
         msg: t.card_duplicate,
         status: MineToastStatus.duplicate,
+        term: payload.fields['expression'],
+        reading: payload.fields['reading'],
       );
     } else if (res.result == 'success') {
       FushiToast.showMine(
         msg: t.card_exported(deck: res.deckName ?? ''),
         status: MineToastStatus.added,
+        term: payload.fields['expression'],
+        reading: payload.fields['reading'],
       );
       // 与队列落卡同一笔统计（[_mineQueuedRow]）：改走直裁不该让 YouTube 的卡不再计数。
       unawaited(recordMined());
@@ -1372,6 +1378,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           reason: res.message ?? res.detail ?? res.result,
         ),
         status: MineToastStatus.failed,
+        term: payload.fields['expression'],
+        reading: payload.fields['reading'],
       );
     }
   }
