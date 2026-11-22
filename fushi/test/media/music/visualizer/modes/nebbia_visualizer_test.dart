@@ -445,13 +445,19 @@ void main() {
         audio: SyntheticVisualizerAudio(),
         offsetMs: 100,
       );
+      // 合成音频：偶数拍底鼓（力度 1）、奇数拍军鼓、反拍镲片；颠簸只取底鼓。
       final List<(double, double)> drums = nebbiaDrumHitsOf(c);
-      expect(drums.first.$1, closeTo(0.1, 1e-9));
-      expect(drums.first.$2, greaterThan(0.9));
-      final List<(double, double)> onsets = nebbiaVocalOnsetsOf(c, 4);
-      expect(onsets, isNotEmpty);
-      for (final (double at, double vocal) in onsets) {
-        expect(((at - 0.1) * 1000).round() % 500, 0);
+      expect(drums.first, (0.1, 1.0));
+      expect(drums[1].$1, closeTo(1.1, 1e-9));
+      for (final (double at, double strength) in drums) {
+        expect(((at - 0.1) * 1000).round() % 1000, 0);
+        expect(strength, 1);
+      }
+      // 人声起音直接来自共享人声起音表（250 ms 起每秒一个），带起音处的人声强度。
+      final List<(double, double)> onsets = nebbiaVocalOnsetsOf(c);
+      expect(onsets.first.$1, closeTo(0.35, 1e-9));
+      expect(onsets[1].$1, closeTo(1.35, 1e-9));
+      for (final (double _, double vocal) in onsets) {
         expect(vocal, 0.4);
       }
       final LyricVisualizerContext none = visualizerContextFor(
@@ -459,7 +465,7 @@ void main() {
         clock: FakeVisualizerClock(),
       );
       expect(nebbiaDrumHitsOf(none), isEmpty);
-      expect(nebbiaVocalOnsetsOf(none, 4), isEmpty);
+      expect(nebbiaVocalOnsetsOf(none), isEmpty);
     });
 
     test('aquarium beat only in the aquarium with beats', () {

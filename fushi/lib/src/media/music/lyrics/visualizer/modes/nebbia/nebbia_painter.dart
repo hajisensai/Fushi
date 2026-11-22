@@ -26,57 +26,23 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_wind
 
 const Color _haze = Color.fromARGB(255, 179, 189, 199);
 
-/// 鼓击（歌曲秒, 力度）：每个拍点及其后 60 ms 内的鼓击冲击最大值（框架没有逐个鼓击的列表，鼓击落在
-/// 拍点网格上才算）。音频没有真鼓击分析时为空。
-List<(double, double)> nebbiaDrumHitsOf(LyricVisualizerContext c) {
-  final LyricVisualizerAudio? a = c.audio;
-  if (a == null || !a.beatsReady || a.beatTimesMs.isEmpty) {
-    return const <(double, double)>[];
-  }
-  if (!a.frameAt(a.beatTimesMs.first).drumsReady) {
-    return const <(double, double)>[];
-  }
-  return <(double, double)>[
-    for (final int b in a.beatTimesMs)
-      (
-        c.displayTimeOfAudio(b) / 1000,
-        math.max(
-          a.frameAt(b).drumImpact,
-          math.max(a.frameAt(b + 30).drumImpact, a.frameAt(b + 60).drumImpact),
-        ),
-      ),
-  ];
-}
+/// 底鼓（歌曲秒, 力度），升序（folia `nebbiaDrumBumps`：只看底鼓，军鼓、镲片一颠就太碎）。来自共享鼓击表，
+/// 不依赖拍点；没有鼓击检测 / 判为没鼓时为空。
+List<(double, double)> nebbiaDrumHitsOf(LyricVisualizerContext c) =>
+    <(double, double)>[
+      for (final LyricVisualizerDrumHitEvent h in LyricVisualizerBeats.of(
+        c,
+      ).drumHits)
+        if (h.kind == LyricVisualizerDrumKind.kick) (h.seconds, h.strength),
+    ];
 
-/// 人声起音（歌曲秒, 人声强度）：每 20 ms 一格扫整首，起音冲击的局部峰（≥ 0.4，相隔 ≥ 0.15 秒）。
-/// 音频没有真人声分析时为空。
-List<(double, double)> nebbiaVocalOnsetsOf(
-  LyricVisualizerContext c,
-  double lyricEnd,
-) {
-  final LyricVisualizerAudio? a = c.audio;
-  if (a == null || !a.envelopeReady) return const <(double, double)>[];
-  if (!a.frameAt(0).vocalReady) return const <(double, double)>[];
-  final int endMs = c.audioTimeOf(((lyricEnd + 2) * 1000).round());
-  final List<(double, double)> out = <(double, double)>[];
-  double prev = 0;
-  LyricVisualizerAudioFrame cur = a.frameAt(0);
-  double last = -double.infinity;
-  for (int ms = 0; ms <= endMs; ms += 20) {
-    final LyricVisualizerAudioFrame next = a.frameAt(ms + 20);
-    final double at = c.displayTimeOfAudio(ms) / 1000;
-    if (cur.onset >= 0.4 &&
-        cur.onset >= prev &&
-        cur.onset > next.onset &&
-        at - last >= 0.15) {
-      out.add((at, cur.vocal));
-      last = at;
-    }
-    prev = cur.onset;
-    cur = next;
-  }
-  return out;
-}
+/// 人声起音（歌曲秒, 起音处的人声强度），升序（folia `buildBig` 的人声轨分支读 `env.onsets`）。来自共享
+/// 人声起音表（只有人声分轨时有）；没有时为空，大雨点退回砸在词开唱处。
+List<(double, double)> nebbiaVocalOnsetsOf(LyricVisualizerContext c) =>
+    <(double, double)>[
+      for (final int ms in LyricVisualizerBeats.of(c).vocalOnsetsMs)
+        (ms / 1000, c.audioFrameAt(ms).vocal),
+    ];
 
 /// 水族箱跟拍这一帧的冲击（folia「舞潮踏拍」，只在水族箱、动态效果开、有节拍网格时）。
 NebbiaAquaBeat nebbiaAquaBeatOf(
@@ -145,7 +111,7 @@ class NebbiaController {
   /// （照旧随机颠）。
   NebbiaBumps? drumBumps(LyricVisualizerContext c) {
     final LyricVisualizerAudio? a = c.audio;
-    if (a == null || !a.beatsReady) return null;
+    if (a == null || !a.drumsReady) return null;
     final Object key = Object.hash(identityHashCode(a), c.offsetMs);
     if (key != _drumKey) {
       _drumKey = key;
@@ -205,10 +171,7 @@ class NebbiaController {
       seed: c.seed,
     );
     // 有人声分析时砸在人声起音上，否则砸在词开唱处（folia 没有人声轨时的退路）。
-    final List<(double, double)> onsets = nebbiaVocalOnsetsOf(
-      c,
-      src.isEmpty ? 0 : src.map((NebbiaSourceLine l) => l.end).reduce(math.max),
-    );
+    final List<(double, double)> onsets = nebbiaVocalOnsetsOf(c);
     bigHits = onsets.isNotEmpty
         ? nebbiaVocalBigHits(laid, onsets, size.width, size.height, c.seed)
         : nebbiaBigHits(
