@@ -213,8 +213,8 @@ fn row_json(json: &str, profile: &str, field: &str) -> (String, String) {
 }
 
 /// 修改记录 ID（协议 3 `registers::edit_id`）：带旧戳的按旧写入者与旧 seq，不带的按 (设备, seq)。
-fn edit_id_of(ed: &crate::gen4::op::Edit4, op: &OpId) -> String {
-    match &ed.stamp {
+fn edit_id_of(stamp: &Option<crate::gen4::stamp::HeritageStamp>, op: &OpId) -> String {
+    match stamp {
         Some(s) => crate::registers::edit_id(&s.writer, s.seq),
         None => crate::registers::edit_id(&op.device.text(), op.seq as i64),
     }
@@ -883,12 +883,10 @@ impl<'t, 'c> Reads<'t, 'c> {
             if !v.contains("<style>") {
                 continue;
             }
-            let Some(e) = self.t.entry_by_key(k)? else {
+            let Some(e) = self.t.edit_read(k, false)? else {
                 continue;
             };
-            let Some(Body4::Edit(ed)) = body_of(&e) else {
-                continue;
-            };
+            let ed = &e.head;
             if ed.kind != EntKind::Note || !ed.key.starts_with("f/") {
                 continue;
             }
@@ -903,7 +901,7 @@ impl<'t, 'c> Reads<'t, 'c> {
                 .ok_or("gen4 read: an edit gave no line")?;
             out.push(vec![
                 Cell::I(k),
-                Cell::S(edit_id_of(&ed, &e.id)),
+                Cell::S(edit_id_of(&ed.stamp, &e.id)),
                 Cell::S(with_profile(&line.json, &self.profile)),
             ])?;
             n += 1;
@@ -1310,12 +1308,9 @@ impl<'t, 'c> Reads<'t, 'c> {
                 )?;
                 continue;
             }
-            let Some(e) = self.t.entry_by_key(k)? else {
-                continue;
-            };
-            if let Some(Body4::Edit(ed)) = body_of(&e) {
-                let st = ed.stamp.as_ref().and_then(|s| s.server_time);
-                f(edit_id_of(&ed, &e.id), st)?;
+            if let Some(e) = self.t.edit_read(k, false)? {
+                let st = e.head.stamp.as_ref().and_then(|s| s.server_time);
+                f(edit_id_of(&e.head.stamp, &e.id), st)?;
             }
         }
         Ok(())

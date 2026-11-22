@@ -22,8 +22,8 @@ void main() {
     );
     expect(src.contains('class FushiTagFilterBar'), isTrue);
     expect(src.contains('FushiTagChip('), isTrue, reason: '用共享 MD3 tag chip');
-    // BUG-5066 起 chip 本身按指针类型起拖（FushiTagChipDraggable：鼠标 / 触控板
-    // 即时拖，触屏长按拖），落点是 chip 上的 DragTarget，落下调 onReorder。
+    // BUG-5066 / BUG-5174：chip 本身长按起拖（FushiTagChipDraggable，鼠标与触屏
+    // 一致），落点是 chip 上的 DragTarget，落下调 onReorder。
     expect(
       src.contains('FushiTagChipDraggable<BookTagRow>('),
       isTrue,
@@ -39,16 +39,19 @@ void main() {
       'lib/src/media/tags/tag_chip_draggable.dart',
     );
     expect(
-      RegExp(
-        r'longPressDevices = <PointerDeviceKind>\{[^}]*PointerDeviceKind\.touch',
-      ).hasMatch(draggable),
-      isTrue,
-      reason: '触屏仍是长按起拖',
-    );
-    expect(
       draggable.contains('extends LongPressDraggable<T>'),
       isTrue,
-      reason: '触屏走 LongPressDraggable',
+      reason: '长按起拖（按下就拖归标签条横滚）',
+    );
+    expect(
+      draggable.contains('ImmediateMultiDragGestureRecognizer'),
+      isFalse,
+      reason: 'BUG-5174：鼠标也不许即时起拖，否则 chip 上拖不动标签条',
+    );
+    expect(
+      src.contains('mouseDragController: _tagScrollController'),
+      isTrue,
+      reason: 'BUG-5174：鼠标横滚与长按共用容忍手抖的门槛',
     );
     expect(src.contains('TagManagementPage'), isTrue, reason: '末尾管理标签动作');
     // 批量选择可选入参：书架与视频 tab 都传（TODO-063 起视频也启用批量选择）。
