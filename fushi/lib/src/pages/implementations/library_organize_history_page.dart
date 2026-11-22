@@ -452,6 +452,14 @@ String libraryOrganizeChangeTitle(
       name: c.collectionName,
       n: n,
     ),
+    // 改名：记录挂在新名字上，原名在 payload.from（复用建议卡的「把 X 改名为 Y」）。
+    'rename' => t.library_organize_proposal_rename(
+      name: switch (payload['from']) {
+        final String from => from,
+        _ => '?',
+      },
+      newName: c.collectionName,
+    ),
     _ => t.library_organize_change_tag(name: c.collectionName, n: n),
   };
 }
@@ -463,6 +471,7 @@ IconData libraryOrganizeChangeIcon(String kind) => switch (kind) {
   'merge' => FushiIcons.merge,
   'evict' => FushiIcons.remove,
   'move' => FushiIcons.move,
+  'rename' => FushiIcons.rename,
   _ => FushiIcons.tag,
 };
 
