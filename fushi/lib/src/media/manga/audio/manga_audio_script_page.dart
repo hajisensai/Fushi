@@ -27,6 +27,7 @@ import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_review_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
@@ -65,8 +66,6 @@ class MangaAudioScriptPage extends StatefulWidget {
   @override
   State<MangaAudioScriptPage> createState() => _MangaAudioScriptPageState();
 }
-
-enum _LineAction { speaker, kind, beat, say, clearSay, up, down }
 
 enum _FailureAction { retry, retryOther, hand }
 
@@ -518,29 +517,15 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     return s.script.linesOnPage(page).isEmpty ? t.manga_audio_page_empty : '';
   }
 
-  Future<int?> _askMs(String title, int? current) async {
-    final String? typed = await showFushiTextInputDialog(
-      context: context,
-      title: title,
-      message: t.manga_audio_ms_hint,
-      initialValue: current?.toString() ?? '',
-      keyboardType: TextInputType.number,
-      allowEmpty: true,
-      icon: FushiIcons.timer,
-    );
-    if (typed == null) return null;
-    // -1 = 清空（用默认值）。
-    return typed.isEmpty ? -1 : int.tryParse(typed);
-  }
-
   Future<void> _editDirective({required bool hold}) async {
     final MangaAudioAnnotateSession? s = _session;
     if (s == null) return;
     final MangaPageDirective old =
         s.script.pages[_page] ?? const MangaPageDirective();
-    final int? ms = await _askMs(
-      hold ? t.manga_audio_page_hold : t.manga_audio_page_lead,
-      hold ? old.holdMs : old.leadMs,
+    final int? ms = await askMangaAudioMs(
+      context,
+      title: hold ? t.manga_audio_page_hold : t.manga_audio_page_lead,
+      current: hold ? old.holdMs : old.leadMs,
     );
     if (ms == null || !mounted) return;
     final int? value = ms < 0
@@ -557,145 +542,16 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     await _save(s);
   }
 
-  /// 改动落在发起改动时的会话 [s] 上（对话框开着时会话可能被重读换掉，见 [_save]）。
-  int _indexOf(MangaAudioAnnotateSession s, MangaScriptLine line) =>
-      s.script.lines.indexWhere((MangaScriptLine l) => l.lineId == line.lineId);
-
-  void _replace(
-    MangaAudioAnnotateSession s,
-    MangaScriptLine line,
-    MangaScriptLine next,
-  ) {
-    final int i = _indexOf(s, line);
-    if (i >= 0) s.script.lines[i] = next;
-  }
-
+  /// 改一句（与阅读页右键「编辑这句配音」同一份对话框）。改动落在发起改动时的会话 [s]
+  /// 上（对话框开着时会话可能被重读换掉，见 [_save]）。
   Future<void> _editLine(MangaScriptLine line) async {
     final MangaAudioAnnotateSession s = _session!;
-    final List<MangaScriptLine> onPage = s.script.linesOnPage(line.page);
-    final int pos = onPage.indexWhere(
-      (MangaScriptLine l) => l.lineId == line.lineId,
-    );
-    final _LineAction? action = await showFushiChoiceDialog<_LineAction>(
-      context: context,
-      title: t.manga_audio_page(page: line.page + 1),
-      message: s.textOf(line),
-      options: <FushiChoiceOption<_LineAction>>[
-        FushiChoiceOption<_LineAction>(
-          value: _LineAction.speaker,
-          label: t.manga_audio_line_speaker,
-          subtitle: _speakerLabel(line.speaker),
-          icon: FushiIcons.person,
-        ),
-        FushiChoiceOption<_LineAction>(
-          value: _LineAction.kind,
-          label: t.manga_audio_line_kind,
-          subtitle: mangaLineKindLabel(line.kind),
-          icon: FushiIcons.textFields,
-        ),
-        FushiChoiceOption<_LineAction>(
-          value: _LineAction.beat,
-          label: t.manga_audio_line_beat,
-          subtitle: t.manga_audio_ms_value(ms: line.beatMs),
-          icon: FushiIcons.timer,
-        ),
-        FushiChoiceOption<_LineAction>(
-          value: _LineAction.say,
-          label: t.manga_audio_line_say,
-          icon: FushiIcons.edit,
-        ),
-        if (line.say != null)
-          FushiChoiceOption<_LineAction>(
-            value: _LineAction.clearSay,
-            label: t.manga_audio_line_say_clear,
-            icon: FushiIcons.undo,
-          ),
-        FushiChoiceOption<_LineAction>(
-          value: _LineAction.up,
-          label: t.manga_audio_line_move_up,
-          icon: FushiIcons.arrowUp,
-          enabled: pos > 0,
-        ),
-        FushiChoiceOption<_LineAction>(
-          value: _LineAction.down,
-          label: t.manga_audio_line_move_down,
-          icon: FushiIcons.arrowDown,
-          enabled: pos >= 0 && pos < onPage.length - 1,
-        ),
-      ],
+    final MangaLineEditAction? action = await showMangaLineEditDialog(
+      context,
+      session: s,
+      line: line,
     );
     if (action == null || !mounted) return;
-    switch (action) {
-      case _LineAction.speaker:
-        final String? speaker = await _pickSpeaker(line);
-        if (speaker == null || speaker == line.speaker) return;
-        _replace(
-          s,
-          line,
-          line.copyWith(speaker: speaker, source: TtsCastSource.user),
-        );
-      case _LineAction.kind:
-        final CastLineKind? kind = await showFushiChoiceDialog<CastLineKind>(
-          context: context,
-          title: t.manga_audio_line_kind,
-          message: s.textOf(line),
-          selected: line.kind,
-          options: <FushiChoiceOption<CastLineKind>>[
-            for (final CastLineKind k in CastLineKind.values)
-              FushiChoiceOption<CastLineKind>(
-                value: k,
-                label: mangaLineKindLabel(k),
-              ),
-          ],
-        );
-        if (kind == null || kind == line.kind) return;
-        _replace(
-          s,
-          line,
-          line.copyWith(kind: kind, source: TtsCastSource.user),
-        );
-      case _LineAction.beat:
-        final int? ms = await _askMs(t.manga_audio_line_beat, line.beatMs);
-        if (ms == null) return;
-        _replace(
-          s,
-          line,
-          line.copyWith(
-            beatMs: ms < 0 ? 0 : ms.clamp(0, MangaScriptLimits.maxBeatMs),
-            source: TtsCastSource.user,
-          ),
-        );
-      case _LineAction.say:
-        final String? typed = await showFushiTextInputDialog(
-          context: context,
-          title: t.manga_audio_line_say,
-          initialValue: s.textOf(line),
-          maxLines: 4,
-          icon: FushiIcons.edit,
-        );
-        if (typed == null || typed.isEmpty) return;
-        _replace(
-          s,
-          line,
-          line.copyWith(say: typed, source: TtsCastSource.user),
-        );
-      case _LineAction.clearSay:
-        _replace(
-          s,
-          line,
-          line.copyWith(clearSay: true, source: TtsCastSource.user),
-        );
-      case _LineAction.up:
-      case _LineAction.down:
-        final MangaScriptLine other =
-            onPage[action == _LineAction.up ? pos - 1 : pos + 1];
-        final int a = _indexOf(s, line);
-        final int b = _indexOf(s, other);
-        final List<MangaScriptLine> lines = s.script.lines;
-        // 调序也是用户的判断：两行都记为手改，重标时保留顺序。
-        lines[a] = other.copyWith(source: TtsCastSource.user);
-        lines[b] = line.copyWith(source: TtsCastSource.user);
-    }
     await _save(s);
   }
 
@@ -704,48 +560,6 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     kTtsUnknown => t.audiobook_studio_cast_unknown,
     _ => speaker,
   };
-
-  Future<String?> _pickSpeaker(MangaScriptLine line) async {
-    const String newSpeaker = '\u0000new';
-    final MangaAudioAnnotateSession s = _session!;
-    final String? picked = await showFushiChoiceDialog<String>(
-      context: context,
-      title: t.manga_audio_line_speaker,
-      message: s.textOf(line),
-      selected: line.speaker,
-      options: <FushiChoiceOption<String>>[
-        FushiChoiceOption<String>(
-          value: kTtsNarrator,
-          label: t.audiobook_studio_cast_narrator,
-        ),
-        for (final TtsCastCharacter c in s.roster.values)
-          FushiChoiceOption<String>(
-            value: c.name,
-            label: c.name,
-            subtitle: c.aliases.isEmpty ? null : c.aliases.join('、'),
-          ),
-        FushiChoiceOption<String>(
-          value: kTtsUnknown,
-          label: t.audiobook_studio_cast_unknown,
-        ),
-        FushiChoiceOption<String>(
-          value: newSpeaker,
-          label: t.audiobook_studio_cast_new_speaker,
-          icon: FushiIcons.add,
-        ),
-      ],
-    );
-    if (picked != newSpeaker || !mounted) return picked;
-    final String? typed = await showFushiTextInputDialog(
-      context: context,
-      title: t.audiobook_studio_cast_new_speaker,
-      labelText: t.manga_audio_line_speaker,
-      icon: FushiIcons.personAdd,
-    );
-    if (typed == null || typed.isEmpty) return null;
-    s.addCharacter(typed);
-    return typed;
-  }
 
   String _lineSubtitle(MangaScriptLine line) => <String>[
     _speakerLabel(line.speaker),

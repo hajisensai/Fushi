@@ -7,14 +7,12 @@
 library;
 
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart'
     show mergedMangaRoster;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
-import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -33,6 +31,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -695,91 +694,24 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     }
   }
 
+  /// 换种子重生成这一句并试听、保留或撤回（与阅读页「编辑这句配音」同一份流程）。
   Future<void> _regenerate(MangaRenderedLine line) async {
     final MangaAudioVolume? volume = _volume;
     final String? base = _basePresetId;
     if (volume == null || base == null || _busy) return;
-    final int seed = math.Random().nextInt(MangaScriptLimits.maxSeed);
     setState(() => _regenerating = line.lineId);
-    MangaRegenerateCandidate? candidate;
     try {
-      candidate = await regenerateMangaLine(
-        widget.appModel,
+      await _player?.stop();
+      if (!mounted) return;
+      await regenerateMangaLineWithReview(
+        context,
+        host: widget.appModel,
         volume: volume,
         lineId: line.lineId,
-        seed: seed,
-        defaultVoice: base,
-        cancel: TtsRenderCancelToken(),
-      );
-    } on MangaLineFailure catch (e) {
-      FushiToast.show(
-        msg: t.manga_audio_regenerate_failed(
-          reason: ttsRenderFailureText(e.code),
-        ),
-      );
-    } on TtsRenderFailure catch (e) {
-      FushiToast.show(
-        msg: t.manga_audio_regenerate_failed(
-          reason: ttsRenderFailureText(e.code),
-        ),
+        voice: base,
       );
     } finally {
       if (mounted) setState(() => _regenerating = null);
-    }
-    if (candidate == null || !mounted) return;
-    await _reviewCandidate(volume, candidate);
-  }
-
-  /// 试听候选，直到用户选保留或撤回（关掉对话框 = 撤回）。
-  Future<void> _reviewCandidate(
-    MangaAudioVolume volume,
-    MangaRegenerateCandidate candidate,
-  ) async {
-    final String path = mangaCandidatePath(
-      widget.appModel,
-      volume.bookKey,
-      candidate,
-    );
-    await _play(path);
-    while (true) {
-      if (!mounted) return;
-      final String? action = await showFushiChoiceDialog<String>(
-        context: context,
-        title: t.manga_audio_candidate_title(seed: candidate.seed),
-        message: candidate.text,
-        options: <FushiChoiceOption<String>>[
-          FushiChoiceOption<String>(
-            value: 'play',
-            label: t.manga_audio_preview,
-            icon: FushiIcons.play,
-          ),
-          FushiChoiceOption<String>(
-            value: 'keep',
-            label: t.manga_audio_candidate_keep,
-            icon: FushiIcons.success,
-          ),
-          FushiChoiceOption<String>(
-            value: 'revert',
-            label: t.manga_audio_candidate_revert,
-            icon: FushiIcons.undo,
-          ),
-        ],
-      );
-      if (action == 'play') {
-        await _play(path);
-        continue;
-      }
-      await _player?.stop();
-      if (action == 'keep') {
-        await keepMangaCandidate(
-          widget.appModel,
-          volume: volume,
-          candidate: candidate,
-        );
-      } else {
-        await discardMangaCandidate(widget.appModel, volume.bookKey, candidate);
-      }
-      break;
     }
     if (mounted) await _reload();
   }
