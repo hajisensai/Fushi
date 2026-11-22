@@ -5,6 +5,7 @@
 /// 注音块不进朗读文本、不参与排序；底本按页面印着的注音念，见 `manga_ruby.dart`）。
 library;
 
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_text_split.dart';
@@ -47,6 +48,8 @@ class MangaReadAloudUtterance {
 final RegExp _speakable = RegExp(r'[\p{L}\p{N}]', unicode: true);
 
 /// [page] 按阅读顺序排好的朗读句。[rightToLeft] 是本卷翻页方向（日漫 RTL）。
+/// [learnedReadings] 是本卷前面页面注过音的词（只在首次出现处注音的词，后文也按那个
+/// 读音念）；发音词典里写了的词以词典为准。
 List<MangaReadAloudUtterance> planMangaPageReadAloud(
   MokuroImage page, {
   required int pageIndex,
@@ -54,7 +57,12 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
   required List<TtsPronunciationRule> pronunciation,
   List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
   required int maxInputLength,
+  MangaRubyReadings? learnedReadings,
 }) {
+  final Set<String> userWritten = <String>{
+    for (final TtsPronunciationRule r in pronunciation) r.written,
+    for (final TtsPronunciationRule r in preSynthesis) r.written,
+  };
   final List<MangaPageSentence> sentences = mangaPageSentencesInReadingOrder(
     page,
     rightToLeft: rightToLeft,
@@ -68,7 +76,8 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
     if (!_speakable.hasMatch(text)) continue;
     final List<String> chunks = splitTtsTextForInputLimit(
       applyTtsSpokenRules(
-        sentence.spoken.trim(),
+        learnedReadings?.apply(sentence.spoken.trim(), skip: userWritten) ??
+            sentence.spoken.trim(),
         pronunciation: pronunciation,
         preSynthesis: preSynthesis,
       ),

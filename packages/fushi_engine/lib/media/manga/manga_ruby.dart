@@ -12,6 +12,11 @@
 /// 行数均分）把每行沿行方向均分成逐字格，取与注音块重叠过半的字；拉丁字母 / 数字
 /// 按整词扩展（「CRYCHIC」上的「クライシック」比底本短，只盖住中间几个字母），首尾的
 /// 假名 / 标点不算底本。定不出范围的注音照样从句子里拿掉，只是不换读音。
+///
+/// 只在首次出现处注音的词：[MangaRubyReadings] 把同一卷里页面注过的「底本 → 读音」
+/// 记下来，后文没再注音的同一个词合成时也按它念（所有者 2026-11-22 拍板）。读音仍
+/// 全部来自页面印着的注音，只进合成文本、不显示；同一底本在卷里注过两种读音（按
+/// 语境的当て字）就不沿用；单字底本不沿用（会误伤含该字的复合词）。
 library;
 
 import 'dart:math' as math;
@@ -131,8 +136,9 @@ MangaPageRuby detectMangaPageRuby(List<MokuroBlock> blocks) {
   );
 }
 
-/// 同一底本行上重叠的注音合成一条（逐字分开识别的「は る / ひ / かげ」），读音按
-/// 起点顺序相连。结果按底本块、行、起点排序。
+/// 同一底本行上重叠或首尾相接的注音合成一条（逐字分开识别的「は る / ひ / かげ」
+/// 合成「春日影 → はるひかげ」，后文沿用时才能整词匹配），读音按起点顺序相连。结果
+/// 按底本块、行、起点排序。
 List<MangaRubyAnnotation> _merge(List<MangaRubyAnnotation> found) {
   final List<MangaRubyAnnotation> sorted = List<MangaRubyAnnotation>.of(found)
     ..sort((MangaRubyAnnotation a, MangaRubyAnnotation b) {
@@ -149,7 +155,7 @@ List<MangaRubyAnnotation> _merge(List<MangaRubyAnnotation> found) {
     if (last != null &&
         last.baseBlock == a.baseBlock &&
         last.line == a.line &&
-        a.start < last.end) {
+        a.start <= last.end) {
       out[out.length - 1] = MangaRubyAnnotation(
         rubyBlock: last.rubyBlock,
         baseBlock: last.baseBlock,
@@ -385,3 +391,93 @@ List<_LineBox> _evenLineBoxes(MokuroBlock base) {
   }
   return (line: lineIndex, start: chars[first].start, end: chars[last].end);
 }
+
+/// 同一卷里从页面注音学到的「底本 → 读音」：作者通常只在首次出现处注音，后文同一个
+/// 词合成时也按它念。只用于合成文本，不显示。
+///
+/// - 单字底本不学（「日（ひ）」会把「日本」念成「ひ本」）；
+/// - 同一底本注过两种读音（片假名 / 平假名差别不算）就作废，不再沿用——按语境的
+///   当て字不能推广；
+/// - 拉丁字母 / 数字开头或结尾的底本只按整词匹配（「CRYCHIC」不匹配「CRYCHICS」）。
+class MangaRubyReadings {
+  MangaRubyReadings();
+
+  /// 一卷各页的块（`MokuroPayload.images[i].blocks`）学到的读音。按 [pages] 这个
+  /// 列表对象缓存：同一次生成 / 核对里逐句调用不重复全卷扫描。
+  factory MangaRubyReadings.ofVolume(List<List<MokuroBlock>> pages) =>
+      _volumeCache[pages] ??= (MangaRubyReadings()..learnPages(pages));
+
+  static final Expando<MangaRubyReadings> _volumeCache =
+      Expando<MangaRubyReadings>('mangaVolumeRubyReadings');
+
+  final Map<String, String> _byBase = <String, String>{};
+  final Set<String> _ambiguous = <String>{};
+  RegExp? _pattern;
+
+  /// 当前可沿用的「底本 → 读音」。
+  Map<String, String> get readings => Map<String, String>.unmodifiable(_byBase);
+
+  void learnPages(Iterable<List<MokuroBlock>> pages) {
+    for (final List<MokuroBlock> blocks in pages) {
+      learnPage(blocks);
+    }
+  }
+
+  /// 学一页（同一页重复学无副作用）。
+  void learnPage(List<MokuroBlock> blocks) {
+    for (final MangaRubyAnnotation a in detectMangaPageRuby(
+      blocks,
+    ).annotations) {
+      final List<String> lines = blocks[a.baseBlock].lines;
+      if (a.line >= lines.length || a.end > lines[a.line].length) continue;
+      _learn(lines[a.line].substring(a.start, a.end), a.reading);
+    }
+  }
+
+  void _learn(String base, String reading) {
+    if (base.runes.length < 2 || _ambiguous.contains(base)) return;
+    final String? known = _byBase[base];
+    if (known == null) {
+      _byBase[base] = reading;
+      _pattern = null;
+    } else if (_foldKana(known) != _foldKana(reading)) {
+      _byBase.remove(base);
+      _ambiguous.add(base);
+      _pattern = null;
+    }
+  }
+
+  /// 把 [text] 里学到的底本换成读音（长的优先）。[skip] 里的底本不换——用户自己的
+  /// 读法 / 替换表优先。
+  String apply(String text, {Set<String> skip = const <String>{}}) {
+    if (text.isEmpty || _byBase.isEmpty) return text;
+    final RegExp pattern = _pattern ??= RegExp(
+      (_byBase.keys.toList()
+            ..sort((String a, String b) => b.length.compareTo(a.length)))
+          .map(RegExp.escape)
+          .join('|'),
+    );
+    return text.replaceAllMapped(pattern, (Match m) {
+      final String base = m[0]!;
+      if (skip.contains(base)) return base;
+      final String before = m.start > 0 ? text[m.start - 1] : '';
+      final String after = m.end < text.length ? text[m.end] : '';
+      if (_latinOrDigit(base[0]) &&
+          before.isNotEmpty &&
+          _latinOrDigit(before)) {
+        return base;
+      }
+      if (_latinOrDigit(base[base.length - 1]) &&
+          after.isNotEmpty &&
+          _latinOrDigit(after)) {
+        return base;
+      }
+      return _byBase[base] ?? base;
+    });
+  }
+}
+
+/// 片假名折成平假名，比较两个读音是否相同。
+String _foldKana(String reading) => String.fromCharCodes(
+  reading.runes.map((int c) => c >= 0x30a1 && c <= 0x30f6 ? c - 0x60 : c),
+);

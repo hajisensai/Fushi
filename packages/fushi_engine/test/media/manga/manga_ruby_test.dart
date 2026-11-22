@@ -1,5 +1,7 @@
 import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -159,6 +161,81 @@ void main() {
         'CRYCHICじゃないの',
       );
       expect(resolveMangaLineTexts(_line(<int>[1]), page).spoken, 'クライシック');
+    });
+  });
+
+  group('只注首次的词：同卷后文沿用', () {
+    final List<MokuroBlock> firstPage = <MokuroBlock>[
+      _harukage,
+      _v(382, 105, 398, 135, <String>['はる'], fontSize: 16),
+      _v(382, 145, 398, 175, <String>['ひ'], fontSize: 16),
+      _v(382, 185, 398, 215, <String>['かげ'], fontSize: 16),
+      _crychic,
+      _crychicRuby,
+    ];
+    final List<MokuroBlock> laterPage = <MokuroBlock>[
+      _v(600, 100, 640, 540, <String>['春日影とCRYCHICの話']),
+    ];
+
+    test('逐字注音合成整词学下来；拉丁按整词匹配', () {
+      final MangaRubyReadings learned = MangaRubyReadings()
+        ..learnPage(firstPage);
+      expect(learned.readings, <String, String>{
+        '春日影': 'はるひかげ',
+        'CRYCHIC': 'クライシック',
+      });
+      expect(learned.apply('春日影とCRYCHICの話'), 'はるひかげとクライシックの話');
+      expect(learned.apply('CRYCHICS'), 'CRYCHICS');
+      expect(learned.apply('春日影', skip: <String>{'春日影'}), '春日影');
+    });
+
+    test('单字底本不学；同一底本两种读音作废', () {
+      final MangaRubyReadings learned = MangaRubyReadings()
+        ..learnPage(<MokuroBlock>[
+          _v(600, 100, 640, 300, <String>['日だ']),
+          _v(642, 110, 660, 190, <String>['ひ'], fontSize: 18),
+          _v(400, 100, 440, 300, <String>['本気だ']),
+          _v(442, 105, 460, 230, <String>['マジ'], fontSize: 18),
+        ])
+        ..learnPage(<MokuroBlock>[
+          _v(400, 100, 440, 300, <String>['本気だ']),
+          _v(442, 105, 460, 230, <String>['ほんき'], fontSize: 18),
+        ]);
+      expect(learned.readings, isEmpty);
+      // 片假名 / 平假名差别不算两种读音。
+      final MangaRubyReadings same = MangaRubyReadings()
+        ..learnPage(firstPage)
+        ..learnPage(<MokuroBlock>[
+          _crychic,
+          _v(642, 140, 660, 340, <String>['くらいしっく'], fontSize: 18),
+        ]);
+      expect(same.readings['CRYCHIC'], 'クライシック');
+    });
+
+    test('有声剧：后面页没注音的同一个词也按注音念，替换表优先', () {
+      final List<List<MokuroBlock>> volume = <List<MokuroBlock>>[
+        firstPage,
+        laterPage,
+      ];
+      final MangaScriptLine later = MangaScriptLine(
+        page: 1,
+        blocks: <int>[0],
+        speaker: kTtsUnknown,
+        kind: CastLineKind.spoken,
+      );
+      final ({String text, String spoken}) t = mangaLineTexts(later, volume);
+      expect(t.text, '春日影とCRYCHICの話');
+      expect(t.spoken, 'はるひかげとクライシックの話');
+      expect(
+        mangaLineTexts(
+          later,
+          volume,
+          substitutions: const <CastTextSubstitution>[
+            CastTextSubstitution(source: '春日影', replacement: 'はるかげ'),
+          ],
+        ).spoken,
+        'はるかげとクライシックの話',
+      );
     });
   });
 }

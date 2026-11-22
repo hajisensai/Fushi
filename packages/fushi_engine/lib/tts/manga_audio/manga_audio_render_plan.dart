@@ -17,6 +17,7 @@ library;
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
@@ -314,7 +315,8 @@ String mangaLineText(
 
 /// 一句的显示文字与实际念的文字。手动填写的念法（`say`）是用户写好的最终文字，两者
 /// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的先把底本换成页面
-/// 印着的注音读音（[resolveMangaLineTexts]），再过替换表加人名读法。
+/// 印着的注音读音（[resolveMangaLineTexts]），同卷别处注过音、这里没注的词也按那个
+/// 读音（[MangaRubyReadings]，替换表里写了的词以替换表为准），再过替换表加人名读法。
 ({String text, String spoken}) mangaLineTexts(
   MangaScriptLine line,
   List<List<MokuroBlock>> pageBlocks, {
@@ -328,9 +330,16 @@ String mangaLineText(
         ? pageBlocks[line.page]
         : const <MokuroBlock>[],
   );
+  final String spoken = MangaRubyReadings.ofVolume(pageBlocks).apply(
+    raw.spoken.trim(),
+    skip: <String>{
+      for (final CastTextSubstitution s in substitutions)
+        if (s.enabled) s.source,
+    },
+  );
   return (
     text: applyCastSubstitutions(raw.text.trim(), substitutions),
-    spoken: applyCastSpokenSubstitutions(raw.spoken.trim(), substitutions),
+    spoken: applyCastSpokenSubstitutions(spoken, substitutions),
   );
 }
 
