@@ -57,8 +57,8 @@ void main() {
         endTime: 1.05,
         lastWordEndTime: 1.05,
       );
-      expect(micro.wordReveal, MindscapeWordReveal.instant);
-      expect(micro.lineTransition, MindscapeLineTransition.none);
+      expect(micro.wordReveal, LyricVisualizerWordReveal.instant);
+      expect(micro.lineTransition, LyricVisualizerLineTransition.none);
       expect(micro.lineRenderEndTime, closeTo(1.067, 1e-9));
 
       final MindscapeLineTiming short = resolveMindscapeLineTiming(
@@ -66,14 +66,14 @@ void main() {
         endTime: 1.15,
         lastWordEndTime: 1.15,
       );
-      expect(short.wordReveal, MindscapeWordReveal.fast);
+      expect(short.wordReveal, LyricVisualizerWordReveal.fast);
 
       final MindscapeLineTiming normal = resolveMindscapeLineTiming(
         startTime: 1,
         endTime: 3,
         lastWordEndTime: 2.9,
       );
-      expect(normal.wordReveal, MindscapeWordReveal.normal);
+      expect(normal.wordReveal, LyricVisualizerWordReveal.normal);
       expect(normal.transition.enterDuration, closeTo(0.42, 1e-9));
       expect(normal.transition.exitDuration, closeTo(0.32, 1e-9));
       // 离场在 endTime - exit 开始，渲染尾不早于行尾。
@@ -212,7 +212,7 @@ void main() {
         viewportHeight: 720,
         fontScale: 1.12,
         widthRatio: 0.72,
-        intensity: MindscapeIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
         measure: _fakeMeasure,
       )!;
       final MindscapePrepared a = prep();
@@ -259,7 +259,7 @@ void main() {
         viewportHeight: 844,
         fontScale: 1.12,
         widthRatio: 0.72,
-        intensity: MindscapeIntensity.calm,
+        intensity: LyricVisualizerIntensity.calm,
         measure: _fakeMeasure,
       )!;
       expect(p.layout.lines.length, greaterThan(2));
@@ -273,16 +273,66 @@ void main() {
       expect(long.words.last.time.endTime, closeTo(6, 1e-9));
     });
 
-    test('副歌 = 重复最多的歌词', () {
+    test('副歌读共享歌曲结构；行时序读共享 renderHints', () {
       final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
         _repeatTimeline(),
       );
-      expect(mindscapeChorusLines(rt.lines), <int>{0, 2});
       expect(
-        mindscapeChorusLines(
-          LyricVisualizerRuntime(sampleWordTimeline()).lines,
+        <int>{
+          for (int i = 0; i < rt.lines.length; i++)
+            if (mindscapeSourceOf(rt.lines[i]).isChorus) i,
+        },
+        <int>{
+          for (int i = 0; i < rt.lines.length; i++)
+            if (rt.lines[i].isChorus) i,
+        },
+      );
+      expect(mindscapeSourceOf(rt.lines[0]).isChorus, isTrue);
+      final LyricVisualizerRuntime plain = LyricVisualizerRuntime(
+        sampleWordTimeline(),
+      );
+      expect(
+        plain.lines.map(
+          (LyricVisualizerLine l) => mindscapeSourceOf(l).isChorus,
         ),
-        isEmpty,
+        everyElement(isFalse),
+      );
+      final MindscapeLineTiming t = mindscapeSourceOf(plain.lines[0]).timing;
+      expect(t.lineRenderEndTime, plain.lines[0].renderEndMs / 1000);
+      expect(
+        t.transition.enterDuration,
+        plain.lines[0].renderHints.enterMs / 1000,
+      );
+    });
+
+    test('主题按词着色、字重、共享强度与背景', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        mindscapeVisualizerEntry,
+        clock: FakeVisualizerClock(1500),
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'world': Color(0xFFFF0000)},
+          fontWeight: FontWeight.w300,
+          intensity: LyricVisualizerIntensity.calm,
+        ),
+        audio: SyntheticVisualizerAudio(),
+      );
+      final MindscapeConfig cfg = MindscapeConfig.of(c, const TextStyle());
+      expect(cfg.activeColorFor('world'), const Color(0xFFFF0000));
+      expect(cfg.activeColorFor('hello'), c.palette.accent);
+      expect(cfg.fontWeight, FontWeight.w300);
+      expect(cfg.intensity, LyricVisualizerIntensity.calm);
+      // 音频响度来自共享音频帧（有分析时是真音频，拍点上冲高）。
+      expect(cfg.audioPower!(1000), closeTo(0.9, 1e-6));
+      expect(cfg.audioPower!(1250), lessThan(0.9));
+      expect(
+        mindscapeTunings.map((LyricVisualizerTuningSpec s) => s.key),
+        isNot(contains('animationIntensity')),
+      );
+      expect(
+        mindscapeVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(mindscapeTunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
       );
     });
   });
@@ -305,7 +355,7 @@ void main() {
         widthRatio: 0.72,
         motionAmount: 1,
         glowIntensity: 1,
-        intensity: MindscapeIntensity.chaotic,
+        intensity: LyricVisualizerIntensity.chaotic,
       );
       final MindscapeScene scene = MindscapeScene();
       void frame(int ms, double elapsed, {bool motion = true}) {
@@ -349,8 +399,8 @@ void main() {
           MindscapeTuningKeys.widthRatio: 0.4,
           MindscapeTuningKeys.motionAmount: 2.0,
           MindscapeTuningKeys.glowIntensity: 2.0,
-          MindscapeTuningKeys.intensity: 'chaotic',
         },
+        intensity: LyricVisualizerIntensity.chaotic,
       );
     });
     testWidgets('行级歌词 + 平静', (WidgetTester tester) async {
@@ -359,7 +409,20 @@ void main() {
         mindscapeVisualizerEntry,
         timeline: sampleLineTimeline(),
         timesMs: const <int>[0, 600, 1500, 2900, 3100, 4500, 5900, 7000],
-        tuning: <String, Object?>{MindscapeTuningKeys.intensity: 'calm'},
+        intensity: LyricVisualizerIntensity.calm,
+      );
+    });
+    testWidgets('副歌 + 主题 + 音频', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        mindscapeVisualizerEntry,
+        timeline: _repeatTimeline(),
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'夜': Color(0xFFFF4081)},
+          fontWeight: FontWeight.w300,
+          intensity: LyricVisualizerIntensity.chaotic,
+        ),
+        audio: SyntheticVisualizerAudio(),
       );
     });
     testWidgets('减弱动态 + 暂停', (WidgetTester tester) async {

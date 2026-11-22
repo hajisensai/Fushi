@@ -11,19 +11,11 @@ import 'dart:math' as math;
 import 'package:characters/characters.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_timing.dart';
 
 /// 量一段文字在给定字号下的排版宽度（逻辑像素）。
 typedef MindscapeMeasure = double Function(String text, double fontPx);
-
-/// 动画强度（folia `theme.animationIntensity`）。
-enum MindscapeIntensity { calm, normal, chaotic }
-
-MindscapeIntensity mindscapeIntensityOf(String value) => switch (value) {
-  'calm' => MindscapeIntensity.calm,
-  'chaotic' => MindscapeIntensity.chaotic,
-  _ => MindscapeIntensity.normal,
-};
 
 final RegExp _cjkPattern = RegExp('[一-龥぀-ヿ가-힯]');
 
@@ -78,15 +70,12 @@ class MindscapeSourceLine {
   /// 「......」间奏行：不选强调词，漂移更轻。
   final bool isInterlude;
 
-  /// 整首重复最多的歌词（folia 的 chorus 检测）：唱到时画一圈涟漪。
+  /// 副歌行（共享歌曲结构 `LyricVisualizerLine.isChorus`）：唱到时画一圈涟漪。
   final bool isChorus;
 }
 
 /// 从运行时行建布局输入。逐字歌词直接用音节拆出的字形；行级歌词由运行时按行时长均分。
-MindscapeSourceLine mindscapeSourceOf(
-  LyricVisualizerLine line, {
-  bool isChorus = false,
-}) {
+MindscapeSourceLine mindscapeSourceOf(LyricVisualizerLine line) {
   List<LyricVisualizerGlyph> glyphs = line.glyphs;
   List<LyricVisualizerWord> words = line.words;
   if (glyphs.isEmpty) {
@@ -158,33 +147,15 @@ MindscapeSourceLine mindscapeSourceOf(
     text: text,
     graphemes: graphemes,
     words: sourceWords,
-    timing: resolveMindscapeLineTiming(
+    timing: mindscapeLineTimingOf(
+      line.renderHints,
       startTime: line.startMs / 1000,
       endTime: line.endMs / 1000,
       lastWordEndTime: lastWordEnd,
     ),
     isInterlude: text == '......',
-    isChorus: isChorus,
+    isChorus: line.isChorus,
   );
-}
-
-/// folia `detectChorusLines`：重复次数最多（且 >1）的歌词文本算副歌。返回这些行的下标。
-Set<int> mindscapeChorusLines(List<LyricVisualizerLine> lines) {
-  final Map<String, int> counts = <String, int>{};
-  for (final LyricVisualizerLine l in lines) {
-    final String text = l.text.trim();
-    if (text.isEmpty || text == '......' || text.length < 2) continue;
-    counts[text] = (counts[text] ?? 0) + 1;
-  }
-  int maxCount = 0;
-  for (final int c in counts.values) {
-    maxCount = math.max(maxCount, c);
-  }
-  if (maxCount <= 1) return const <int>{};
-  return <int>{
-    for (int i = 0; i < lines.length; i++)
-      if (counts[lines[i].text.trim()] == maxCount) i,
-  };
 }
 
 /// 字号（folia `chooseFontPx`）：随屏宽，字多 / 词多时收小。
@@ -536,16 +507,16 @@ List<MindscapePlacement> mindscapeBuildPlacements({
   required double fontPx,
   required double lineHeight,
   required double maxWidth,
-  required MindscapeIntensity intensity,
+  required LyricVisualizerIntensity intensity,
   required double seed,
   required bool isInterlude,
 }) {
   final double totalHeight = math.max(lineFragments.length, 1) * lineHeight;
-  final double baseMargin = intensity == MindscapeIntensity.calm ? 4 : 6;
+  final double baseMargin = intensity == LyricVisualizerIntensity.calm ? 4 : 6;
   final double baseScale = switch (intensity) {
-    MindscapeIntensity.chaotic => 1.02,
-    MindscapeIntensity.calm => 1,
-    MindscapeIntensity.normal => 1.01,
+    LyricVisualizerIntensity.chaotic => 1.02,
+    LyricVisualizerIntensity.calm => 1,
+    LyricVisualizerIntensity.normal => 1.01,
   };
   final Map<int, double> emphasisMap = mindscapeEmphasisMap(
     lineFragments,
@@ -650,7 +621,8 @@ List<MindscapePlacement> mindscapeBuildPlacements({
     }
 
     final double passedRotate =
-        (random(3) - 0.5) * (intensity == MindscapeIntensity.chaotic ? 20 : 12);
+        (random(3) - 0.5) *
+        (intensity == LyricVisualizerIntensity.chaotic ? 20 : 12);
     final double step = math.max(10, (fontPx * 0.14).roundToDouble());
     final double maxRadius = plan.emphasis > 1
         ? math.max(20, lineHeight * 0.5)
@@ -763,7 +735,7 @@ List<MindscapePlacement> mindscapeBuildPlacements({
         ? 3 + random(6) * 3
         : plan.emphasis > 1
         ? 4 + random(6) * 4
-        : intensity == MindscapeIntensity.chaotic
+        : intensity == LyricVisualizerIntensity.chaotic
         ? 8 + random(6) * 9
         : 5 + random(6) * 6;
 
@@ -816,7 +788,7 @@ MindscapePrepared? mindscapePrepare(
   required double viewportHeight,
   required double fontScale,
   required double widthRatio,
-  required MindscapeIntensity intensity,
+  required LyricVisualizerIntensity intensity,
   required MindscapeMeasure measure,
 }) {
   if (viewportWidth <= 0 || viewportHeight <= 0 || source.graphemes.isEmpty) {

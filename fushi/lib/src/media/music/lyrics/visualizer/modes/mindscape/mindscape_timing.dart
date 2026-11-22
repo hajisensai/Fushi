@@ -1,4 +1,4 @@
-/// 心象（folia cadenza）的时序：行渲染提示（`utils/lyrics/renderHints.ts`）与每个词 / 字 /
+/// 心象（folia cadenza）的时序：行渲染提示（读共享的 `LyricVisualizerRenderHints`）与每个词 / 字 /
 /// 整行的包络（`cadenza/cadenzaEnvelopes.ts`）。纯函数，可单测。
 ///
 /// 时间一律用**秒**（double），与 folia 的常数逐一对应，免得换算出错；调用方把歌词显示
@@ -7,21 +7,17 @@ library;
 
 import 'dart:math' as math;
 
-/// 行的时长档：极短 / 短 / 正常（folia `LineTimingClass`）。
-enum MindscapeTimingClass { normal, short, micro }
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart';
 
-/// 行切换方式（folia `LineTransitionMode`）。
-enum MindscapeLineTransition { normal, fast, none }
-
-/// 逐词显现方式（folia `WordRevealMode`）。
-enum MindscapeWordReveal { normal, fast, instant }
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart'
+    show
+        LyricVisualizerLineTransition,
+        LyricVisualizerRenderHints,
+        LyricVisualizerTimingClass,
+        LyricVisualizerWordReveal;
 
 /// 词的状态。
 enum MindscapeWordStatus { waiting, active, passed }
-
-const double _microLineThreshold = 0.10;
-const double _shortLineThreshold = 0.18;
-const double _microLineRenderFloor = 0.067;
 
 /// 正在唱的词的脉动频率（folia `ACTIVE_PULSE_FREQUENCY`）。
 const double mindscapeActivePulseFrequency = 10;
@@ -84,9 +80,9 @@ class MindscapeLineTiming {
 
   final double startTime;
   final double endTime;
-  final MindscapeTimingClass timingClass;
-  final MindscapeLineTransition lineTransition;
-  final MindscapeWordReveal wordReveal;
+  final LyricVisualizerTimingClass timingClass;
+  final LyricVisualizerLineTransition lineTransition;
+  final LyricVisualizerWordReveal wordReveal;
 
   /// 这一行最晚还能留在屏幕上做离场的时刻。
   final double lineRenderEndTime;
@@ -96,86 +92,44 @@ class MindscapeLineTiming {
   double get linePassHold => transition.linePassHold;
 }
 
-MindscapeTransitionTiming mindscapeTransitionTiming(
-  double rawDuration,
-  MindscapeLineTransition mode,
-  MindscapeWordReveal reveal,
-) {
-  switch (mode) {
-    case MindscapeLineTransition.none:
-      return const MindscapeTransitionTiming(
-        enterDuration: 0,
-        exitDuration: 0,
-        linePassHold: 0,
-      );
-    case MindscapeLineTransition.fast:
-      return MindscapeTransitionTiming(
-        enterDuration: mindscapeClamp(rawDuration * 0.45, 0.045, 0.06),
-        exitDuration: mindscapeClamp(rawDuration * 0.22, 0.03, 0.04),
-        linePassHold: reveal == MindscapeWordReveal.instant ? 0 : 0.03,
-      );
-    case MindscapeLineTransition.normal:
-      final double d = math.max(rawDuration, 0.12);
-      return MindscapeTransitionTiming(
-        enterDuration: math.min(0.42, math.max(0.22, d * 0.34)),
-        exitDuration: math.min(0.32, math.max(0.18, d * 0.18)),
-        linePassHold: reveal == MindscapeWordReveal.instant ? 0 : 0.06,
-      );
-  }
-}
+/// 整行时序（folia `resolveLineRenderTiming`）：分级、离场窗口、入 / 出时长全读共享的
+/// [LyricVisualizerRenderHints]（runtime 建行时已算好），这里只换成秒。
+MindscapeLineTiming mindscapeLineTimingOf(
+  LyricVisualizerRenderHints hints, {
+  required double startTime,
+  required double endTime,
+  required double lastWordEndTime,
+}) => MindscapeLineTiming(
+  startTime: startTime,
+  endTime: endTime,
+  timingClass: hints.timingClass,
+  lineTransition: hints.lineTransition,
+  wordReveal: hints.wordReveal,
+  lineRenderEndTime: hints.renderEndMs / 1000,
+  lastWordEndTime: lastWordEndTime,
+  transition: MindscapeTransitionTiming(
+    enterDuration: hints.enterMs / 1000,
+    exitDuration: hints.exitMs / 1000,
+    linePassHold: hints.passHoldMs / 1000,
+  ),
+);
 
-/// 按行起止与最后一个词的结束时间算出整行时序（folia `buildLineRenderHints` +
-/// `resolveLineRenderTiming`）。
+/// 按行起止与最后一个词的结束时间（秒）算整行时序（测试 / 没有 runtime 行时用）。
 MindscapeLineTiming resolveMindscapeLineTiming({
   required double startTime,
   required double endTime,
   required double? lastWordEndTime,
 }) {
-  final double rawDuration = math.max(endTime - startTime, 0);
-  final MindscapeTimingClass cls = rawDuration < _microLineThreshold
-      ? MindscapeTimingClass.micro
-      : rawDuration < _shortLineThreshold
-      ? MindscapeTimingClass.short
-      : MindscapeTimingClass.normal;
-  final MindscapeLineTransition transitionMode = switch (cls) {
-    MindscapeTimingClass.micro => MindscapeLineTransition.none,
-    MindscapeTimingClass.short => MindscapeLineTransition.fast,
-    MindscapeTimingClass.normal => MindscapeLineTransition.normal,
-  };
-  final MindscapeWordReveal reveal = switch (cls) {
-    MindscapeTimingClass.micro => MindscapeWordReveal.instant,
-    MindscapeTimingClass.short => MindscapeWordReveal.fast,
-    MindscapeTimingClass.normal => MindscapeWordReveal.normal,
-  };
-  final MindscapeTransitionTiming transition = mindscapeTransitionTiming(
-    rawDuration,
-    transitionMode,
-    reveal,
-  );
   final double lastEnd = lastWordEndTime ?? endTime;
-  double renderEnd;
-  if (transitionMode == MindscapeLineTransition.none) {
-    renderEnd = math.max(endTime, startTime + _microLineRenderFloor);
-  } else {
-    final double passStart =
-        math.max(lastEnd, startTime) + transition.linePassHold;
-    final double exitStart = transitionMode == MindscapeLineTransition.fast
-        ? math.max(
-            math.max(startTime + transition.enterDuration + 0.01, passStart),
-            endTime - transition.exitDuration,
-          )
-        : math.max(passStart, endTime - transition.exitDuration);
-    renderEnd = math.max(endTime, exitStart + transition.exitDuration);
-  }
-  return MindscapeLineTiming(
+  return mindscapeLineTimingOf(
+    LyricVisualizerRenderHints.of(
+      startMs: (startTime * 1000).round(),
+      endMs: (endTime * 1000).round(),
+      lastWordEndMs: (lastEnd * 1000).round(),
+    ),
     startTime: startTime,
     endTime: endTime,
-    timingClass: cls,
-    lineTransition: transitionMode,
-    wordReveal: reveal,
-    lineRenderEndTime: renderEnd,
     lastWordEndTime: lastEnd,
-    transition: transition,
   );
 }
 
@@ -185,11 +139,11 @@ MindscapeWordStatus mindscapeWordStatus(
   MindscapeWordTime word,
 ) {
   final double lookahead = switch (line.wordReveal) {
-    MindscapeWordReveal.fast => 0.045,
-    MindscapeWordReveal.instant => 0,
-    MindscapeWordReveal.normal => 0.18,
+    LyricVisualizerWordReveal.fast => 0.045,
+    LyricVisualizerWordReveal.instant => 0,
+    LyricVisualizerWordReveal.normal => 0.18,
   };
-  final double activeEnd = line.wordReveal == MindscapeWordReveal.instant
+  final double activeEnd = line.wordReveal == LyricVisualizerWordReveal.instant
       ? line.lineRenderEndTime
       : word.endTime;
   if (time >= word.startTime - lookahead && time <= activeEnd) {
@@ -201,13 +155,15 @@ MindscapeWordStatus mindscapeWordStatus(
 
 double mindscapeWordProgress(
   double time,
-  MindscapeWordReveal reveal,
+  LyricVisualizerWordReveal reveal,
   MindscapeWordTime word,
 ) {
-  if (reveal == MindscapeWordReveal.instant) {
+  if (reveal == LyricVisualizerWordReveal.instant) {
     return time < word.startTime ? 0 : 1;
   }
-  final double minDuration = reveal == MindscapeWordReveal.fast ? 0.045 : 0.01;
+  final double minDuration = reveal == LyricVisualizerWordReveal.fast
+      ? 0.045
+      : 0.01;
   final double duration = math.max(word.endTime - word.startTime, minDuration);
   return mindscapeClamp((time - word.startTime) / duration, 0, 1);
 }
@@ -224,13 +180,13 @@ double mindscapeGlowEnvelope(
   MindscapeLineTiming line,
   MindscapeWordTime word,
 ) {
-  if (line.wordReveal == MindscapeWordReveal.instant) {
+  if (line.wordReveal == LyricVisualizerWordReveal.instant) {
     if (time < word.startTime || time > line.lineRenderEndTime) return 0;
     return _keyframedGlow(
       mindscapeClamp((time - word.startTime) / 0.067, 0, 1),
     );
   }
-  if (line.wordReveal == MindscapeWordReveal.fast) {
+  if (line.wordReveal == LyricVisualizerWordReveal.fast) {
     final double duration = math.max(word.endTime - word.startTime, 0.045);
     if (time < word.startTime) return 0;
     if (time <= word.endTime) {
@@ -290,7 +246,7 @@ double mindscapeBodyMix(
   MindscapeLineTiming line,
   MindscapeWordTime word,
 ) {
-  if (line.wordReveal == MindscapeWordReveal.instant) {
+  if (line.wordReveal == LyricVisualizerWordReveal.instant) {
     if (time < word.startTime) return 0;
     return time <= line.lineRenderEndTime ? 1 : 0;
   }
@@ -300,7 +256,7 @@ double mindscapeBodyMix(
   }
   final double fade = mindscapeClamp(
     (time - word.endTime) /
-        (line.wordReveal == MindscapeWordReveal.fast ? 0.12 : 0.8),
+        (line.wordReveal == LyricVisualizerWordReveal.fast ? 0.12 : 0.8),
     0,
     1,
   );
@@ -328,9 +284,9 @@ MindscapeLineEnvelope mindscapeLineEnvelope(
   final double enterDuration = line.transition.enterDuration;
   final double exitDuration = line.transition.exitDuration;
   switch (line.lineTransition) {
-    case MindscapeLineTransition.none:
+    case LyricVisualizerLineTransition.none:
       return MindscapeLineEnvelope.identity;
-    case MindscapeLineTransition.fast:
+    case LyricVisualizerLineTransition.fast:
       final double exitStart = math.max(
         math.max(line.startTime + enterDuration + 0.01, passStart),
         lineEnd - exitDuration,
@@ -350,7 +306,7 @@ MindscapeLineEnvelope mindscapeLineEnvelope(
         blur = math.max(blur, mindscapeMix(0, 6, exit));
       }
       return MindscapeLineEnvelope(mindscapeClamp(opacity, 0, 1), scale, blur);
-    case MindscapeLineTransition.normal:
+    case LyricVisualizerLineTransition.normal:
       final double preEnter = math.min(0.1, enterDuration * 0.35);
       final double enter = _easeOutCubic(
         mindscapeClamp(

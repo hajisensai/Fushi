@@ -15,7 +15,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.d
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 可调参数（folia `DEFAULT_CADENZA_TUNING` + 主题的动画强度）。
+/// 可调参数（folia `DEFAULT_CADENZA_TUNING`）。动画强度读共享的 `context.intensity`。
 final List<LyricVisualizerTuningSpec> mindscapeTunings =
     <LyricVisualizerTuningSpec>[
       LyricVisualizerSliderSpec(
@@ -50,16 +50,6 @@ final List<LyricVisualizerTuningSpec> mindscapeTunings =
         initial: 1,
         divisions: 20,
       ),
-      LyricVisualizerChoiceSpec(
-        key: MindscapeTuningKeys.intensity,
-        label: () => t.music_visualizer_mindscape_intensity,
-        options: <(String, String Function())>[
-          ('calm', () => t.music_visualizer_mindscape_intensity_calm),
-          ('normal', () => t.music_visualizer_mindscape_intensity_normal),
-          ('chaotic', () => t.music_visualizer_mindscape_intensity_chaotic),
-        ],
-        initial: 'normal',
-      ),
     ];
 
 /// 注册项。
@@ -69,7 +59,9 @@ final LyricVisualizerEntry mindscapeVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_mindscape_description,
   icon: FushiIcons.hub,
   tunings: mindscapeTunings,
-  sharedBackdrop: true,
+  // folia cadenza 不改背景：画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => MindscapeVisualizer(context: c),
 );

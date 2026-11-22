@@ -22,7 +22,6 @@ abstract final class MindscapeTuningKeys {
   static const String widthRatio = 'widthRatio';
   static const String motionAmount = 'motionAmount';
   static const String glowIntensity = 'glowIntensity';
-  static const String intensity = 'animationIntensity';
 }
 
 /// 一帧用到的配置（来自 [LyricVisualizerContext] + 布局约束）。
@@ -38,6 +37,9 @@ class MindscapeConfig {
     required this.motionAmount,
     required this.glowIntensity,
     required this.intensity,
+    this.fontWeight = FontWeight.w700,
+    this.theme,
+    this.audioPower,
   });
 
   factory MindscapeConfig.of(LyricVisualizerContext c, TextStyle baseStyle) {
@@ -45,15 +47,18 @@ class MindscapeConfig {
     return MindscapeConfig(
       runtime: c.runtime,
       palette: c.palette,
-      baseStyle: baseStyle,
+      baseStyle: c.theme?.fontFamily == null
+          ? baseStyle
+          : baseStyle.copyWith(fontFamily: c.theme!.fontFamily),
       motion: c.motion,
       fontScale: t.number(MindscapeTuningKeys.fontScale, 1.12) * c.fontScale,
       widthRatio: t.number(MindscapeTuningKeys.widthRatio, 0.72),
       motionAmount: t.number(MindscapeTuningKeys.motionAmount, 1),
       glowIntensity: t.number(MindscapeTuningKeys.glowIntensity, 1),
-      intensity: mindscapeIntensityOf(
-        t.choice(MindscapeTuningKeys.intensity, 'normal'),
-      ),
+      intensity: c.intensity,
+      fontWeight: c.theme?.fontWeight ?? FontWeight.w700,
+      theme: c.theme,
+      audioPower: (int displayMs) => c.audioFrameAt(displayMs).power,
     );
   }
 
@@ -65,7 +70,22 @@ class MindscapeConfig {
   final double widthRatio;
   final double motionAmount;
   final double glowIntensity;
-  final MindscapeIntensity intensity;
+
+  /// 共享动画强度（`context.intensity`：主题指定或全局偏好）。
+  final LyricVisualizerIntensity intensity;
+
+  /// 主题字重（folia `resolveThemeFontWeight(theme, 700)`）。
+  final FontWeight fontWeight;
+
+  /// 歌词动画主题：按词着色（folia `resolveWordColor(word, wordColors, accentColor)`）。
+  final LyricVisualizerTheme? theme;
+
+  /// 音频响度（folia `audioPower / 255`；没有音频分析时框架回落歌词起字包络）。null = 0。
+  final double Function(int displayMs)? audioPower;
+
+  /// 词的高亮色。
+  Color activeColorFor(String word) =>
+      theme?.resolveWordColor(word, palette.accent) ?? palette.accent;
 }
 
 /// 一个落点的平滑动画状态（folia `AnimatedPlacementState`）。
@@ -129,8 +149,7 @@ class MindscapeScene {
   final Map<String, _WordPaint> _paints = <String, _WordPaint>{};
   final TextPainter _measurer = TextPainter(textDirection: TextDirection.ltr);
   Object? _cacheKey;
-  LyricVisualizerRuntime? _chorusFor;
-  Set<int> _chorus = const <int>{};
+  LyricVisualizerRuntime? _sourcesFor;
   double? _lastElapsed;
   int? _drawnLine;
 
@@ -156,7 +175,7 @@ class MindscapeScene {
 
   TextStyle _style(MindscapeConfig c, double fontPx) => c.baseStyle.copyWith(
     fontSize: fontPx,
-    fontWeight: FontWeight.w700,
+    fontWeight: c.fontWeight,
     color: const Color(0xFFFFFFFF),
     height: 1,
     shadows: const <Shadow>[],
@@ -173,15 +192,11 @@ class MindscapeScene {
   }
 
   MindscapeSourceLine _sourceOf(MindscapeConfig c, int index) {
-    if (!identical(_chorusFor, c.runtime)) {
-      _chorusFor = c.runtime;
-      _chorus = mindscapeChorusLines(c.runtime.lines);
+    if (!identical(_sourcesFor, c.runtime)) {
+      _sourcesFor = c.runtime;
       _sources.clear();
     }
-    return _sources[index] ??= mindscapeSourceOf(
-      c.runtime.lines[index],
-      isChorus: _chorus.contains(index),
-    );
+    return _sources[index] ??= mindscapeSourceOf(c.runtime.lines[index]);
   }
 
   MindscapePrepared? _prepare(MindscapeConfig c, Size size, int index) {
@@ -225,6 +240,8 @@ class MindscapeScene {
       c.widthRatio,
       c.intensity,
       c.baseStyle.fontFamily,
+      c.fontWeight,
+      c.theme,
       c.runtime,
     );
     if (key != _cacheKey) {
@@ -273,12 +290,12 @@ class MindscapeScene {
         ? mindscapeLineEnvelope(time, timing)
         : MindscapeLineEnvelope.identity;
     if (envelope.opacity <= 0.001) return;
-    final MindscapeWordReveal reveal = timing.wordReveal;
-    final bool instant = reveal == MindscapeWordReveal.instant;
-    final bool chaotic = c.intensity == MindscapeIntensity.chaotic;
-    // folia 的 audioPower：没有实时频谱，用歌词起字包络代替。
-    final double energy = motion
-        ? c.runtime.pulseAt((time * 1000).round()).clamp(0.0, 1.0)
+    final LyricVisualizerWordReveal reveal = timing.wordReveal;
+    final bool instant = reveal == LyricVisualizerWordReveal.instant;
+    final bool chaotic = c.intensity == LyricVisualizerIntensity.chaotic;
+    // folia 的 audioPower / 255：共享音频帧（没有分析时框架回落歌词起字包络）。
+    final double energy = motion && c.audioPower != null
+        ? c.audioPower!((time * 1000).round()).clamp(0.0, 1.0)
         : 0;
     final double motionEnergy = energy * c.motionAmount;
     final double verticalLift = motion
@@ -287,7 +304,6 @@ class MindscapeScene {
     final double width = size.width;
     final double focusY = size.height * 0.42 + verticalLift;
     final Color baseColor = c.palette.text;
-    final Color accent = c.palette.accent;
 
     canvas.save();
     final bool lineLayer = envelope.opacity < 0.999 || envelope.blur > 0.05;
@@ -332,6 +348,8 @@ class MindscapeScene {
         drawIndex++;
         final MindscapePlacement p = placements[pi];
         final MindscapeWordTime wt = p.word.time;
+        // 落点的高亮色（folia `placement.color`：按词着色）。
+        final Color accent = c.activeColorFor(p.word.text);
         final double progress = mindscapeWordProgress(time, reveal, wt);
         final double passedAlpha = instant ? 0 : (chaotic ? 0.9 : 0.82);
         final double pulse =
@@ -484,7 +502,7 @@ class MindscapeScene {
         // 发光在正文后面（folia glow span z-index 0）。
         if (s.glowAlpha > 0.001 && c.glowIntensity > 0) {
           final bool split =
-              reveal == MindscapeWordReveal.normal &&
+              reveal == LyricVisualizerWordReveal.normal &&
               !mindscapeContainsCjk(p.text) &&
               p.text.characters.length > 1;
           final double glowAlpha =
