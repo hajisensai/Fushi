@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T07:12:06Z",
+ "generatedAt": "2026-11-22T09:11:03Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
-  "seq": 31256
+  "sha": "327713340f49445726dc33839151804976aee173",
+  "seq": 31262
  },
  "builds": [
   {
@@ -169,10 +169,16 @@
   }
  ],
  "pending": {
-  "headSha": "c1d0c1e0902a1611c8a043174216f0021530214f",
-  "headSeq": 31256,
-  "prs": [],
+  "headSha": "327713340f49445726dc33839151804976aee173",
+  "headSeq": 31262,
+  "prs": [
+   4151
+  ],
   "direct": [
+   {
+    "sha": "327713340f49445726dc33839151804976aee173",
+    "subject": "chore(bugs): settle BUG number collisions on 5f3c60d82"
+   },
    {
     "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
     "subject": "chore(bugs): settle BUG number collisions on 00145ef40"
@@ -181,16 +187,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892168"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45005892131"
    }
   }
  },
@@ -499,6 +509,15 @@
    "mergedAt": "2026-11-22T05:40:08Z",
    "additions": 6,
    "deletions": 4,
+   "labels": []
+  },
+  "4151": {
+   "number": 4151,
+   "title": "fix(video): Windows 视频帧改走 raster 线程，主线程忙时不再丢帧（BUG-5200）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T09:06:09Z",
+   "additions": 1219,
+   "deletions": 11,
    "labels": []
   }
  }
