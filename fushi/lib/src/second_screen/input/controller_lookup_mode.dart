@@ -92,6 +92,14 @@ class ControllerLookupMode extends ChangeNotifier {
   bool _active = false;
   bool _wordGranularity = true;
 
+  /// Buttons whose current press the mode consumed ([onPress] returned true).
+  /// Only their release and OS key-repeat are the mode's to swallow: a press
+  /// the mode left to the page (e.g. A inside the in-page popup after "enter
+  /// result", when [ControllerLookupTarget.routerOwnsInput] is false) must
+  /// reach the page together with its release, or the page's own press /
+  /// release pairing (long-press timers, …) breaks.
+  final Set<GamepadButton> _consumedPresses = <GamepadButton>{};
+
   bool _lbHeld = false;
   bool _lbUsed = false;
   Timer? _lbTimer;
@@ -185,6 +193,7 @@ class ControllerLookupMode extends ChangeNotifier {
   /// [releaseRawInput] only clears its own.
   void claimRawInput(Object owner) {
     _reset(notify: true);
+    _consumedPresses.clear();
     _rawInputOwner = owner;
   }
 
@@ -203,9 +212,20 @@ class ControllerLookupMode extends ChangeNotifier {
 
   // ---- input ----
 
-  /// A button went down. True = consumed (the page must not see it).
+  /// A button went down. True = consumed (the page must not see it, nor its
+  /// release, see [onRelease]).
   bool onPress(GamepadButton button) {
     if (_rawInputOwner != null) return false;
+    final bool consumed = _press(button);
+    if (consumed) {
+      _consumedPresses.add(button);
+    } else {
+      _consumedPresses.remove(button);
+    }
+    return consumed;
+  }
+
+  bool _press(GamepadButton button) {
     // Panel drive (R1 held, companion up).
     if (_rbHeld) {
       if (_isPanelButton(button)) {
@@ -263,9 +283,11 @@ class ControllerLookupMode extends ChangeNotifier {
     return true;
   }
 
-  /// A button went up. True = consumed.
+  /// A button went up. True = consumed: only the release of a press the mode
+  /// consumed itself; a press it left to the page keeps its release there.
   bool onRelease(GamepadButton button) {
     if (_rawInputOwner != null) return false;
+    final bool pressConsumed = _consumedPresses.remove(button);
     if (_repeating == button) _endRepeat();
     if (button == GamepadButton.lb && _lbHeld) {
       final bool wasActive = _active;
@@ -287,8 +309,7 @@ class ControllerLookupMode extends ChangeNotifier {
       if (!used) redispatch?.call(GamepadButton.rb);
       return true;
     }
-    if (_rbHeld) return true;
-    return _active && _isModeButton(button);
+    return pressConsumed;
   }
 
   /// Left stick moved one step in [direction] (desktop poller; the poller's
@@ -354,13 +375,14 @@ class ControllerLookupMode extends ChangeNotifier {
     return true;
   }
 
-  /// OS key-repeat of a held button (Android): swallowed while the mode owns
-  /// it (the mode runs its own 400 ms / 150 ms repeat).
+  /// OS key-repeat of a held button (Android): swallowed when the mode
+  /// consumed that button's press (the mode runs its own 400 ms / 150 ms
+  /// repeat); a press left to the page keeps its repeats there too.
   bool swallowsRepeat(GamepadButton button) =>
       _rawInputOwner == null &&
       ((button == GamepadButton.lb && _lbHeld) ||
           _rbHeld ||
-          ((_active || _lbHeld) && _isModeButton(button)));
+          _consumedPresses.contains(button));
 
   /// The [ShortcutScope.controllerLookup] action [button] is bound to in
   /// [shortcutRegistry]; null when unbound (or no registry).
@@ -369,8 +391,6 @@ class ControllerLookupMode extends ChangeNotifier {
 
   bool _isPanelButton(GamepadButton b) =>
       b.isDpad || b == GamepadButton.a || b == GamepadButton.b;
-
-  bool _isModeButton(GamepadButton b) => actionFor(b) != null;
 
   static GamepadButton _dpadOf(TraversalDirection direction) =>
       switch (direction) {
@@ -634,6 +654,7 @@ class ControllerLookupMode extends ChangeNotifier {
   @visibleForTesting
   void debugReset() {
     _reset(notify: false);
+    _consumedPresses.clear();
     _target = null;
     _rawInputOwner = null;
     redispatch = null;

@@ -504,6 +504,49 @@ void main() {
     });
   });
 
+  test('a press left to the page keeps its release and repeats there '
+      '(A in the in-page popup after enter result is no long press)', () {
+    fakeAsync((FakeAsync async) {
+      registry.setActive(false);
+      mode.popupHooks = () => _hooks(<String>[]);
+      mode.onPress(GamepadButton.lb);
+      async.elapse(ControllerLookupMode.holdThreshold);
+      expect(mode.onPress(GamepadButton.a), isTrue); // enter result
+      expect(target.entered, 1);
+      expect(mode.swallowsRepeat(GamepadButton.a), isTrue);
+      expect(mode.onRelease(GamepadButton.a), isTrue);
+      // The popup cursor owns the input now: A goes to the page, press,
+      // repeat and release alike.
+      target.owns = false;
+      expect(mode.onPress(GamepadButton.a), isFalse);
+      expect(mode.swallowsRepeat(GamepadButton.a), isFalse);
+      expect(mode.onRelease(GamepadButton.a), isFalse);
+      expect(mode.onPress(GamepadButton.dpadDown), isFalse);
+      expect(mode.swallowsRepeat(GamepadButton.dpadDown), isFalse);
+      expect(mode.onRelease(GamepadButton.dpadDown), isFalse);
+      expect(target.entered, 1);
+      mode.onRelease(GamepadButton.lb);
+    });
+  });
+
+  test('a consumed press keeps its release swallowed after the mode left; '
+      'a press from before the mode keeps its release with the page', () {
+    fakeAsync((FakeAsync async) {
+      target.prefs[kControllerLookupStylePrefKey] = 'selectToggle';
+      // Held before the mode: the page saw the press, it gets the release.
+      expect(mode.onPress(GamepadButton.dpadRight), isFalse);
+      expect(mode.onPress(GamepadButton.select), isTrue);
+      expect(mode.active, isTrue);
+      expect(mode.swallowsRepeat(GamepadButton.dpadRight), isFalse);
+      expect(mode.onRelease(GamepadButton.dpadRight), isFalse);
+      // B leaves the mode on press; its release is still the mode's.
+      expect(mode.onPress(GamepadButton.b), isTrue);
+      expect(mode.active, isFalse);
+      expect(mode.onRelease(GamepadButton.b), isTrue);
+      expect(mode.onRelease(GamepadButton.select), isTrue);
+    });
+  });
+
   test('an unavailable target leaves L1 to the page', () {
     target.available = false;
     expect(mode.onPress(GamepadButton.lb), isFalse);
