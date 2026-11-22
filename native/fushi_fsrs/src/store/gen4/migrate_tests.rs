@@ -1987,3 +1987,176 @@ fn the_failed_state_carries_the_kernel_reason() {
     assert_eq!(st, GenState::MigrationFailed(Failure::Interrupted));
     assert_eq!(st.json(&dir.0)["failure"], json!({"reason": "interrupted"}));
 }
+
+/// 反馈 RhMpA6bn8v：迁移进协议 3 之前的旧日志（操作里没有生效配置快照 `sc`）的投影行，结果被旧代码的重放改写过
+/// （2026-10-25 develop 上第一版协议 3 在迁移时用当时的牌组配置重放全部派生日志，7eeb05bc7c 之后不再改写，但改写过
+/// 的行没人改回来：没有 `sc` 的日志重放时按投影行里的结果照抄）。新代按操作里作者给的结果算，协议 3 的现成日志行是
+/// 旧代码留下的。卡的调度列、之后带 `sc` 的复习的统计分类（`kind`）与成熟变化（`maturity_delta`）跟着不同。
+///
+/// [stale] 把旧库里 L2（之后还有带 `sc` 的作答 r3）与 L3（另一张卡的最后一条）的结果改成旧代码重放出的那份。
+/// 返回 (旧库目录, L2 的卡)。
+fn library_with_a_rewritten_legacy_result(
+    tag: &str,
+    stale: &dyn Fn(&Value) -> Value,
+) -> (tempdir::Dir, String) {
+    use crate::store::gen4::dryrun::tests::library_with;
+    use crate::store::sync2::tests::{DAY, review};
+
+    let card = crate::registers::card_id(N2, "t1", 0).unwrap();
+    let other = crate::registers::card_id(N2, "t2", 0).unwrap();
+    let day = |at: i64| {
+        crate::projection::Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        }
+        .index(at)
+    };
+    let (l1, l2) = (T0 - 40 * DAY, T0 - 37 * DAY);
+    // 作者（迁移前的 Dart，经 FFI 拿到 f32、按 double 写出）给的结果。
+    let author = |at: i64, ivl: i64, reps: i64, s: f64, d: f64| {
+        json!({"queue": "review", "dueDay": day(at) + ivl, "ivl": ivl, "step": 0, "reps": reps, "lapses": 0,
+               "scheduler": "fushi", "lastReviewedAt": at, "mem": {"s": s, "d": d, "sf": s}})
+    };
+    let legacy_log = |id: &str, card: &str, at: i64, rtype: &str, res: Value| {
+        json!({"id": id, "p": P, "card": card, "kind": "review", "rating": 3, "hlc": format!("{at}:0:old"),
+               "at": at, "ts": "anchored", "origin": "fushi", "rtype": rtype, "utcOff": 0, "rollover": 4,
+               "fv": 1, "res": res})
+    };
+    let logs = [
+        (
+            "L1",
+            &card,
+            l1,
+            "learn",
+            author(l1, 3, 1, 3.1730000972747803, 5.282434463500977),
+        ),
+        (
+            "L2",
+            &card,
+            l2,
+            "review",
+            author(l2, 15, 2, 15.343999862670898, 1.53643798828125),
+        ),
+        (
+            "L3",
+            &other,
+            l2,
+            "learn",
+            author(l2, 15, 1, 15.343999862670898, 1.53643798828125),
+        ),
+    ];
+    let lib = library_with(tag, &|d: &Device| {
+        let w = d.core.writer().unwrap();
+        for (id, card, at, rtype, res) in &logs {
+            w.execute(
+                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, jslim) \
+                 VALUES (srs_id(?1), srs_id(?2), srs_id(?3), 'review', 3, ?4, ?5, 'fushi', ?6)",
+                params![id, P, card, at, rtype, legacy_log(id, card, *at, rtype, res.clone()).to_string()],
+            )
+            .unwrap();
+        }
+    });
+    // 旧代码的重放改写了 L2 的投影行（落在 2026-10-25 迁移那一刻），之后才有带 `sc` 的作答。
+    {
+        let w = lib.core.writer().unwrap();
+        for id in ["L2", "L3"] {
+            let json: String = w
+                .query_row(
+                    "SELECT json FROM srs_review_logs WHERE id = srs_id(?1)",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let mut row: Value = serde_json::from_str(&json).unwrap();
+            row["res"] = stale(&row["res"]);
+            w.execute(
+                "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at,                  review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+                params![id, row.to_string()],
+            )
+            .unwrap();
+        }
+    }
+    // 之后作答（带 `sc`，重放按它重算；前一条的结果决定这条的结果、分类与成熟变化）。
+    lib.apply(
+        T0 + 2 * DAY,
+        vec![review("r3", &card, T0 + 2 * DAY, 3, "review")],
+    );
+    let Device { core, _dir: dir } = lib;
+    core.close();
+    drop(core);
+    (dir, card)
+}
+
+/// 旧代码重放改写的结果：f32 按最短十进制写、间隔按当时的配置算长了（15 → 30 天，跨过成熟线）、难度不同。
+fn rewritten_by_old_replay(res: &Value) -> Value {
+    let mut r = res.clone();
+    let due = r["dueDay"].as_i64().unwrap();
+    r["dueDay"] = json!(due + 15);
+    r["ivl"] = json!(30);
+    r["mem"] = json!({"s": 15.344, "d": 3.4977171, "sf": 15.344});
+    r
+}
+
+#[test]
+fn a_legacy_result_rewritten_by_the_old_replay_is_corrected_on_the_protocol_3_side_and_migrates() {
+    let (dir, card) =
+        library_with_a_rewritten_legacy_result("g7-stale-result", &rewritten_by_old_replay);
+    let out = migrate_with(&dir.0, &caches(), &Stop::new(), &mut Vec::new());
+    let report = match &out {
+        Outcome::Committed { report } | Outcome::Aborted { report, .. } => report.clone(),
+        other => panic!("{other:?}"),
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+    assert_eq!(p["verdict"], "pass", "{p:#}");
+    // 佐证逐条报出来：哪条日志、哪张卡、落库的与它操作里的结果。
+    let s = &p["oldSideStaleResults"];
+    assert_eq!(s["logs"], 2, "{s:#}");
+    assert_eq!(s["cards"], 2, "{s:#}");
+    let example = s["examples"][0].as_str().unwrap();
+    assert!(example.starts_with("L2 "), "{example}");
+    assert!(example.contains(&card), "{example}");
+    assert!(matches!(out, Outcome::Committed { .. }), "{out:?}");
+}
+
+/// 只认佐证得了的：带 `sc` 的日志（协议 3 自己会重放它）的落库结果不对，不算这一类，照样判不同、中止。
+#[test]
+fn a_wrong_result_on_a_log_that_carries_its_config_still_fails_the_check() {
+    let (dir, _) = library_with_a_rewritten_legacy_result("g7-stale-sc", &|r| r.clone());
+    {
+        let c = raw(&dir.0);
+        let json: String = c
+            .query_row(
+                "SELECT json FROM srs_review_logs WHERE id = srs_id('r3')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut row: Value = serde_json::from_str(&json).unwrap();
+        assert!(row["sc"].is_object(), "{row}");
+        row["res"]["ivl"] = json!(row["res"]["ivl"].as_i64().unwrap() + 40);
+        row["res"]["dueDay"] = json!(row["res"]["dueDay"].as_i64().unwrap() + 40);
+        c.execute(
+            "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, \
+             review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+            params!["r3", row.to_string()],
+        )
+        .unwrap();
+    }
+    let out = migrate_with(&dir.0, &caches(), &Stop::new(), &mut Vec::new());
+    let Outcome::Aborted { report, .. } = &out else {
+        panic!("{out:?}");
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "fail", "{p:#}");
+    assert_eq!(p["oldSideStaleResults"]["logs"], 0, "{p:#}");
+    assert!(
+        p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["what"] == "cards"),
+        "{p:#}"
+    );
+}
