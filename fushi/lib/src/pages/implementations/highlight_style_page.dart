@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/reader/favorite_highlight_color_dot.dart';
 import 'package:fushi/src/reader/highlight_stroke_preview.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -124,7 +125,10 @@ class _HighlightStylePageState extends State<HighlightStylePage>
     _kind,
   );
   late bool _vertical = widget.initiallyVertical;
-  String _favoriteColor = 'yellow';
+
+  /// 新收藏句的颜色（持久化偏好，见 [ReaderFushiSource.favoriteHighlightColor]），
+  /// 同时是收藏类预览的笔触色。
+  late String _favoriteColor = widget.source.favoriteHighlightColor;
   int _seedSalt = 0;
 
   /// 预览框当前的尺寸（LayoutBuilder 维护）：落笔总时长按它排出来的行数算。
@@ -150,6 +154,12 @@ class _HighlightStylePageState extends State<HighlightStylePage>
   Color get _previewColor => _kind == HighlightKind.favorite
       ? kFavoriteHighlightColors[_favoriteColor]!
       : kHighlightKindPreviewColors[_kind]!;
+
+  /// 选新收藏颜色：预览立即换色，并持久化（之后的收藏用它，已收藏的不变）。
+  void _selectFavoriteColor(String color) {
+    setState(() => _favoriteColor = color);
+    unawaited(widget.source.setFavoriteHighlightColor(color));
+  }
 
   void _selectKind(HighlightKind kind) {
     setState(() {
@@ -344,18 +354,18 @@ class _HighlightStylePageState extends State<HighlightStylePage>
             ),
             if (_kind == HighlightKind.favorite)
               FushiTooltip(
-                message: t.reader_highlight_preview_color_hint,
+                message: t.reader_highlight_favorite_color_hint,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     for (final MapEntry<String, Color> e
                         in kFavoriteHighlightColors.entries)
-                      _ColorDot(
+                      FavoriteHighlightColorDot(
                         key: ValueKey<String>('highlight_style_color_${e.key}'),
                         color: e.value,
                         selected: e.key == _favoriteColor,
-                        semanticLabel: t.reader_highlight_preview_color,
-                        onTap: () => setState(() => _favoriteColor = e.key),
+                        semanticLabel: t.reader_highlight_favorite_color,
+                        onTap: () => _selectFavoriteColor(e.key),
                       ),
                   ],
                 ),
@@ -524,51 +534,6 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                 _commit(_config.copyWith(animate: v), replay: v),
           ),
       ],
-    );
-  }
-}
-
-class _ColorDot extends StatelessWidget {
-  const _ColorDot({
-    super.key,
-    required this.color,
-    required this.selected,
-    required this.semanticLabel,
-    required this.onTap,
-  });
-
-  final Color color;
-  final bool selected;
-  final String semanticLabel;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: semanticLabel,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 20,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: AnimatedContainer(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? cs.onSurface : Colors.transparent,
-                width: 2.5,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

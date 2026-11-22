@@ -97,7 +97,10 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   GoogleDriveHandler._();
   static final GoogleDriveHandler instance = GoogleDriveHandler._();
 
-  drive.DriveApi? _cachedApi;
+  /// 测试注入的 DriveApi（[debugUseDriveApi]）。生产路径不缓存 DriveApi：每次请求都按
+  /// [GoogleDriveAuth.getAuthClient] 的当前 client 现建（构造只是包一层，零开销），
+  /// 令牌刷新换了 client 后不会有谁还捏着旧的（BUG-5169）。
+  drive.DriveApi? _debugApi;
 
   /// 当前 Drive 存储空间 + scope。默认隐藏 appDataFolder；「Hoshi 兼容模式」开启时
   /// 切到可见 My Drive / `ttu-reader-data`（见 [GoogleDriveSyncSpace]）。所有
@@ -108,7 +111,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   /// 切换存储空间。变更时清缓存：根/书文件夹 id 与 DriveApi 句柄都归属旧空间，换空间后
   /// 若复用会拿旧空间的 folderId 打新空间的请求，必须重建（[clearCache] 覆写会连
-  /// `_cachedApi` 一起清）。
+  /// 测试注入的 DriveApi 一起清）。
   void setSyncSpace(GoogleDriveSyncSpace space) {
     if (space.id == _space.id) return;
     _space = space;
@@ -122,7 +125,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   @override
   void clearCache() {
     super.clearCache();
-    _cachedApi = null;
+    _debugApi = null;
     _fileSizes.clear();
   }
 
@@ -131,13 +134,16 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   /// 测试用：直接装一个（假 HTTP client 驱动的）[drive.DriveApi]，绕过 OAuth。
   /// 传 null 清掉。[clearCache] / [setSyncSpace] 也会清。
   @visibleForTesting
-  void debugUseDriveApi(drive.DriveApi? api) => _cachedApi = api;
+  void debugUseDriveApi(drive.DriveApi? api) => _debugApi = api;
 
-  Future<drive.DriveApi> _api() async {
-    if (_cachedApi != null) return _cachedApi!;
-    final client = await GoogleDriveAuth.instance.getAuthClient();
-    _cachedApi = drive.DriveApi(client);
-    return _cachedApi!;
+  /// 本次请求用的 client 与 DriveApi。client 记下来是为了 401 时告诉
+  /// [GoogleDriveAuth.refreshAuth] 被拒的是哪一个（测试注入时为 null）。
+  Future<({auth.AuthClient? client, drive.DriveApi api})> _api() async {
+    final drive.DriveApi? injected = _debugApi;
+    if (injected != null) return (client: null, api: injected);
+    final auth.AuthClient client = await GoogleDriveAuth.instance
+        .getAuthClient();
+    return (client: client, api: drive.DriveApi(client));
   }
 
   /// Every Drive request funnels through here. Wraps [_callOnce] (which owns the
@@ -153,8 +159,12 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   }
 
   Future<T> _callOnce<T>(Future<T> Function(drive.DriveApi api) fn) async {
+    auth.AuthClient? used;
     try {
-      return await fn(await _api());
+      final ({auth.AuthClient? client, drive.DriveApi api}) first =
+          await _api();
+      used = first.client;
+      return await fn(first.api);
     } on GoogleDriveAuthError {
       rethrow;
     } catch (e) {
@@ -181,22 +191,22 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         }
         rethrow;
       }
-      // Expired/rejected access token: the cached client carries a stale token.
-      // Drop it, refresh, and retry once with a freshly-tokened client. The
-      // expiry can arrive as either a DetailedApiRequestError(401) or an
-      // auth.AccessDeniedException (www-authenticate 401), so both reach here
-      // via googleDriveErrorIsUnauthorized (BUG-060).
-      _cachedApi = null;
-      await GoogleDriveAuth.instance.refreshAuth();
+      // Expired/rejected access token: refresh, and retry once with whatever
+      // client is current afterwards. The expiry can arrive as either a
+      // DetailedApiRequestError(401) or an auth.AccessDeniedException
+      // (www-authenticate 401), so both reach here via
+      // googleDriveErrorIsUnauthorized (BUG-060). Passing the rejected client
+      // lets concurrent 401s from the parallel sync channels share ONE refresh
+      // instead of each swapping the token (and, before BUG-5169, closing the
+      // connection the others had just been handed).
+      await GoogleDriveAuth.instance.refreshAuth(rejected: used);
       try {
-        return await fn(await _api());
+        return await fn((await _api()).api);
       } on GoogleDriveAuthError {
         rethrow;
       } catch (retry) {
-        // The refreshed token was also rejected — drop the cached api so the
-        // next call rebuilds it instead of reusing the poisoned client
-        // (HBK-AUDIT-168).
-        _cachedApi = null;
+        // The refreshed token was also rejected. Nothing is cached here, so the
+        // next call re-reads the current client (HBK-AUDIT-168).
         if (googleDriveErrorIsInsufficientScope(retry)) {
           // Same as the initial path (TODO-836): a refreshed token still can't
           // gain a scope, so surface the stable 403 marker rather than a

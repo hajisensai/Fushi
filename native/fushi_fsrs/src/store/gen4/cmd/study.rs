@@ -119,21 +119,12 @@ pub(crate) fn study(
     let today = day.index(now);
     snapshot(t, |t| {
         let ix = RefCell::new(Index::new(t, col));
-        let answers: RefCell<Option<TodayAnswers>> = RefCell::new(None);
         let mut feed = G4Feed {
-            tb: G4Tables {
-                t,
-                ix: &ix,
-                col,
-                answers: &answers,
-            },
+            tb: G4Tables { t, ix: &ix, col },
         };
+        // 自定义学习「会话里答过」直接读常驻会话的「今天的作答」（`store/study.rs` `run` 把会话的计数上下文交给
+        // [G4Tables::answered]）；普通出卡不碰它，不复制整份（HBK-AUDIT-010）。
         hub.with_feed(&mut feed, &col.to_string(), day, today, stamp, |s, feed| {
-            let (_, today_start) = LogState::window(day, today);
-            *answers.borrow_mut() = Some((
-                today_start,
-                s.logs().answers().map(|(c, at)| (c.clone(), at)).collect(),
-            ));
             let req = canon_req(&ix.borrow(), req)?;
             let default = default_deck(t, &ix.borrow(), col)?;
             let tree = deck_tree(&mut ix.borrow_mut(), default)?;
@@ -154,13 +145,7 @@ pub(crate) fn study_stateless(t: &Truth<'_>, col: i64, req: &Value) -> Result<Va
         let default = default_deck(t, &ix.borrow(), col)?;
         let tree = tree_of(&mut ix.borrow_mut(), default)?;
         let logs = scan_logs(t, &mut ix.borrow_mut(), col, day, today)?;
-        let answers = RefCell::new(None);
-        let tb = G4Tables {
-            t,
-            ix: &ix,
-            col,
-            answers: &answers,
-        };
+        let tb = G4Tables { t, ix: &ix, col };
         let mut src = study::SqlSource {
             tb: &tb,
             today,
@@ -311,9 +296,6 @@ pub(crate) fn install_touch(hub: &Arc<StudyHub>, c: &Connection) -> Result<(), S
 
 // ---------------------------------------------------------------------- 会话的数据来源
 
-/// 常驻会话「今天的作答」的拷贝：(今天的日界, [(规范卡, 时刻)])。自定义学习的「会话里答过」用（[G4Tables::answered]）。
-type TodayAnswers = (i64, Vec<(String, i64)>);
-
 /// 新代的会话数据来源（`store/queue.rs` [Feed]）：卡行走 [G4Tables]，日志从 `log_ix` 与操作体拼（模块文件头「日志」）。
 struct G4Feed<'a, 't, 'c> {
     tb: G4Tables<'a, 't, 'c>,
@@ -344,7 +326,8 @@ impl Feed for G4Feed<'_, '_, '_> {
 
     /// 要重折算的日志 = 记下的日志 ∪ 记下的卡上今天的作答 ∪ 这些卡与这些日志的卡所在 historyFrom 连通分量里今天的作答
     /// （分量里任何一处变了，今天学习步日志重放出来的 `res.reps` 都可能变）。按规范日志 ID 重取代表（[logs_of_ids]），一次
-    /// 批量重放，先减旧贡献、再按库里现在的加回（[fold_into]）。
+    /// 批量重放，先减旧贡献、再按库里现在的加回（[fold_into]）。今天的作答都按卡 / 按日志 ID 查会话里的索引
+    /// （[LogState::answers_on] / [LogState::answer_card]），工作量随碰到的卡与日志，不随今天答过几次（HBK-AUDIT-010）。
     fn reread_logs(
         &mut self,
         logs: &mut LogState,
@@ -358,17 +341,15 @@ impl Feed for G4Feed<'_, '_, '_> {
         let tb = &self.tb;
         let (from, today_start) = LogState::window(day, today);
         let mut ids: BTreeSet<Ref> = dirty.logs.iter().map(|s| ref_of(s)).collect();
-        for (id, card) in logs.answer_ids() {
-            if dirty.cards.contains(card) {
-                ids.insert(ref_of(id));
-            }
+        for card in &dirty.cards {
+            ids.extend(logs.answers_on(card).map(|id| ref_of(id)));
         }
         let mut reps = LogReps::new();
         logs_of_ids(tb.t, &tb.ix.borrow(), tb.col, from, &ids, &mut reps)?;
         // 要重放的卡：记下的卡、这批日志里今天的学习步日志的卡，以及（重折算之前）这批日志在会话里记的卡。
         let mut cards: BTreeSet<Ref> = dirty.cards.iter().map(|s| ref_of(s)).collect();
-        for (id, card) in logs.answer_ids() {
-            if ids.contains(&ref_of(id)) {
+        for id in &ids {
+            if let Some(card) = logs.answer_card(&id.text()) {
                 cards.insert(ref_of(card));
             }
         }
@@ -379,10 +360,11 @@ impl Feed for G4Feed<'_, '_, '_> {
             tb.ix.borrow_mut().replayed_logs(&cards)?
         };
         // 分量里别的卡上今天的作答：重放结果也可能变了。
-        let more: BTreeSet<Ref> = logs
-            .answer_ids()
-            .filter(|(id, card)| replayed.contains_key(*card) && !ids.contains(&ref_of(id)))
-            .map(|(id, _)| ref_of(id))
+        let more: BTreeSet<Ref> = replayed
+            .keys()
+            .flat_map(|card| logs.answers_on(card))
+            .map(|id| ref_of(id))
+            .filter(|id| !ids.contains(id))
             .collect();
         if !more.is_empty() {
             logs_of_ids(tb.t, &tb.ix.borrow(), tb.col, from, &more, &mut reps)?;
@@ -506,8 +488,6 @@ struct G4Tables<'a, 't, 'c> {
     t: &'a Truth<'c>,
     ix: &'a RefCell<Index<'t, 'c>>,
     col: i64,
-    /// 常驻会话「今天的作答」（[study] 在会话就绪后放进来；测试基准没有）。
-    answers: &'a RefCell<Option<TodayAnswers>>,
 }
 
 /// 「`id` 在这组卡里」：对 `id` 列的条件与它的参数。整组卡编成**一个** JSON 数组参数（`u<十六进制>` = UUID 的 16
@@ -587,14 +567,20 @@ impl Tables for G4Tables<'_, '_, '_> {
         Ok(r.get::<_, Ref>(i)?.text())
     }
 
-    /// 会话开始（[since]）之后有 `kind = 'review'` 日志的卡（规范卡），见 [card_set]；没有 = 恒假。会话开始在今天之内：
-    /// 常驻会话「今天的作答」里时刻 ≥ [since] 的（同一套代表、同一个种类过滤）；更早：`log_at` 区间（[logs_between]）。
-    fn answered(&self, since: i64) -> Result<(String, Vec<Sql>), String> {
+    /// 会话开始（[since]）之后有 `kind = 'review'` 日志的卡（规范卡），见 [card_set]；没有 = 恒假。会话开始在今天之内
+    /// 且有常驻会话（[resident]）：会话「今天的作答」里时刻 ≥ [since] 的（同一套代表、同一个种类过滤）；更早、或测试
+    /// 基准（没有常驻会话）：`log_at` 区间（[logs_between]）。
+    fn answered(
+        &self,
+        since: i64,
+        resident: Option<&LogState>,
+        today_start: i64,
+    ) -> Result<(String, Vec<Sql>), String> {
         let mut cards: BTreeSet<Ref> = BTreeSet::new();
-        match &*self.answers.borrow() {
-            Some((today_start, list)) if since >= *today_start => {
-                for (card, at) in list {
-                    if *at >= since {
+        match resident {
+            Some(logs) if since >= today_start => {
+                for (card, at) in logs.answers() {
+                    if at >= since {
                         cards.insert(ref_of(card));
                     }
                 }

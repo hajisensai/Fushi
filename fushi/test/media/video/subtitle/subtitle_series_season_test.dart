@@ -175,14 +175,25 @@ void main() {
           const AniListMedia(id: 1, romaji: 'Foo'),
           const AniListMedia(id: 3, romaji: 'Foo 3rd Season Part 2'),
         ], season: 2)?.id,
-        1,
-        reason: '没有第二季条目 → 回退首条（旧行为），不挑第三季下半',
+        isNull,
+        reason: '没有第二季条目 → 挑不出（不回退首条冒充第二季），也不挑第三季下半',
       );
     });
 
-    test('季号未知 / 没有对应季的条目 → 首条（旧行为）', () {
+    test('季号未知 → 首条', () {
       expect(pickAniListSeriesForSeason(reZero, season: null)?.id, 21355);
-      expect(pickAniListSeriesForSeason(reZero, season: 7)?.id, 21355);
+    });
+
+    test('HBK-AUDIT-049 没有对应季的条目 → null，不拿相关度首条冒充那一季', () {
+      expect(pickAniListSeriesForSeason(reZero, season: 7), isNull);
+      expect(
+        pickAniListSeriesForSeason(<AniListMedia>[
+          const AniListMedia(id: 2, romaji: 'Foo 2nd Season'),
+          const AniListMedia(id: 3, romaji: 'Foo 3rd Season'),
+        ], season: 1),
+        isNull,
+        reason: '候选全是续作时第一季也挑不出',
+      );
     });
 
     test('空列表 → null', () {

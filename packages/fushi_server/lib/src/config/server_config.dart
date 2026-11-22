@@ -12,6 +12,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
     show FushiAddressRangeSet;
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
+import 'package:fushi_server/src/config/server_torrent_session_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 import 'package:fushi_server/src/server_language.dart';
@@ -151,6 +152,7 @@ class ServerConfig {
     required this.torrentLibraryPath,
     required this.torrentListen,
     this.torrentPeerRoots = const <String>[],
+    this.torrentSession = const ServerTorrentSessionConfig(),
     this.publicUrls = const <String>[],
     this.trustedProxies = const <String>[],
     this.p2p = false,
@@ -284,6 +286,10 @@ class ServerConfig {
   /// 空 = 远程任务只能落在本机下载根下。
   final List<String> torrentPeerRoots;
 
+  /// `torrent:` 段里内置引擎的会话设置（上传开关 / 限速 / 活跃名额 / 做种上限，
+  /// BUG-5160）。保存即生效，不进重启集合。
+  final ServerTorrentSessionConfig torrentSession;
+
   /// 公网 / 反代 / DDNS 地址，经 `/api/host/addresses` 公布给已配对设备自动学习
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
@@ -374,6 +380,7 @@ class ServerConfig {
     String? torrentLibraryPath,
     String? torrentListen,
     List<String>? torrentPeerRoots,
+    ServerTorrentSessionConfig? torrentSession,
     List<String>? publicUrls,
     List<String>? trustedProxies,
     bool? p2p,
@@ -414,6 +421,7 @@ class ServerConfig {
     torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
     torrentListen: torrentListen ?? this.torrentListen,
     torrentPeerRoots: torrentPeerRoots ?? this.torrentPeerRoots,
+    torrentSession: torrentSession ?? this.torrentSession,
     publicUrls: publicUrls ?? this.publicUrls,
     trustedProxies: trustedProxies ?? this.trustedProxies,
     p2p: p2p ?? this.p2p,
@@ -497,6 +505,7 @@ class ServerConfig {
         _strings(torrentMap['peer_roots']),
         'torrent.peer_roots',
       ),
+      torrentSession: ServerTorrentSessionConfig.fromYaml(torrentMap),
       publicUrls: _strings(map['public_urls']),
       trustedProxies: _trustedProxies(map['trusted_proxies']),
       p2p: _bool(map['p2p']) ?? base.p2p,
@@ -634,6 +643,7 @@ class ServerConfig {
       b.writeln('  library: ${_q(torrentLibraryPath!)}');
     }
     b.writeln('  listen: ${_q(torrentListen)}');
+    torrentSession.writeYaml(b);
     if (torrentPeerRoots.isNotEmpty) {
       b.writeln('  peer_roots:');
       for (final String r in torrentPeerRoots) {

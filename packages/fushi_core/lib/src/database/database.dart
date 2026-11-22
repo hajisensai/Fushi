@@ -5,6 +5,7 @@ import 'dart:math' show Random;
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:drift/isolate.dart' show DriftIsolate, ComputeWithDriftIsolate;
 // drift/remote.dart 标了 experimental，但 DriftRemoteException 是后台 isolate 连接
 // 抛错的唯一载体，开库时要靠它还原类型化异常（见 _TypedOpenErrorInterceptor）。
 // ignore: experimental_member_use
@@ -19,13 +20,15 @@ import 'book_format.dart';
 import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
+import 'db_disk_space.dart';
 import 'db_schema_version.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_image_kind.dart';
 import 'media_link_kind.dart';
-import 'media_source_util.dart' show musicTrackPathKey;
+import 'media_source_util.dart'
+    show musicAlbumNameKey, musicTrackDirPrefix, musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
@@ -191,7 +194,43 @@ enum FushiDatabaseFailureKind {
   /// 根本打不开：父目录不存在、无权限、只读介质、盘断链。
   /// **磁盘上什么都没坏**，让用户去清空数据是有害的误导。
   cannotOpen,
+
+  /// BUG-5076：库所在卷写满了（`SQLITE_FULL` / ENOSPC，或卷探测写不进去）。此时 sqlite
+  /// 报的 IOERR / CORRUPT 都可能只是「写不进去」的表象，分不出真坏还是假坏——唯一正确
+  /// 的引导是「先腾空间再重试」；让用户恢复备份 / 清空数据会把可能完好的数据删掉。
+  insufficientSpace,
 }
+
+/// BUG-5076：开库终态失败的**唯一**分类判据（Layer 0 探测、恢复阶梯各层、drift 后台
+/// 连接的开库拦截都只调这一处）。顺序有意义：
+///  1. 空间不足优先——`SQLITE_FULL`(13)、带 ENOSPC 的文件系统异常（如侧车快照复制
+///     失败），或库目录所在卷探测写不进去（[dbVolumeIsOutOfSpace]）。卷写满时 sqlite
+///     报的 IOERR / CORRUPT 都不可信，不能据此判「损坏」；
+///  2. 文件不存在 → [FushiDatabaseFailureKind.cannotOpen]（sqlite 在父目录可写时会自己
+///     建库，走到终态还不存在只能是路径本身打不开，BUG-1899）；
+///  3. 其余才是 [FushiDatabaseFailureKind.corrupt]。
+FushiDatabaseFailureKind classifyFushiDatabaseOpenFailure(
+  Object cause, {
+  required String dbPath,
+}) {
+  if (_isSqliteFullError(cause) ||
+      isOutOfSpaceError(cause) ||
+      dbVolumeIsOutOfSpace(p.dirname(dbPath))) {
+    return FushiDatabaseFailureKind.insufficientSpace;
+  }
+  if (!File(dbPath).existsSync()) return FushiDatabaseFailureKind.cannotOpen;
+  return FushiDatabaseFailureKind.corrupt;
+}
+
+/// 按 [classifyFushiDatabaseOpenFailure] 定 kind 的终态异常；开库路径上所有终态都经它构造。
+FushiDatabaseUnrecoverableException _terminalOpenFailure(
+  Object cause,
+  String dbPath,
+) => FushiDatabaseUnrecoverableException(
+  dbPath: dbPath,
+  cause: cause,
+  kind: classifyFushiDatabaseOpenFailure(cause, dbPath: dbPath),
+);
 
 class FushiDatabaseUnrecoverableException implements Exception {
   /// Absolute path of the database file that could not be recovered.
@@ -221,6 +260,11 @@ class FushiDatabaseUnrecoverableException implements Exception {
           'could not be opened and does not exist on disk — the folder is '
           'missing, unwritable, or on a disconnected/read-only volume. '
           'Nothing is corrupt; check the data location. Cause: $cause',
+    FushiDatabaseFailureKind.insufficientSpace =>
+      'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
+          'could not be opened because the storage volume is full. The data '
+          'was not deleted; free up space and retry. Do not clear app data. '
+          'Cause: $cause',
   };
 }
 
@@ -237,6 +281,7 @@ class FushiDatabaseUnrecoverableException implements Exception {
 /// is NOT mistaken for a sidecar problem (it falls through to unrecoverable).
 const int _kSqliteIoErr = 10; // SQLITE_IOERR
 const int _kSqliteCorrupt = 11; // SQLITE_CORRUPT
+const int _kSqliteFull = 13; // SQLITE_FULL
 const int _kSqliteCantOpen = 14; // SQLITE_CANTOPEN
 const int _kSqliteNotADb = 26; // SQLITE_NOTADB
 
@@ -264,6 +309,16 @@ bool _isSidecarOpenError(Object e) {
 bool _isMainDbCorruptError(Object e) =>
     e is sqlite3.SqliteException &&
     (e.extendedResultCode & 0xFF) == _kSqliteCorrupt;
+
+/// BUG-5076：`SQLITE_FULL`(13)「database or disk is full」。
+bool _isSqliteFullError(Object e) =>
+    e is sqlite3.SqliteException &&
+    (e.extendedResultCode & 0xFF) == _kSqliteFull;
+
+/// 开库时**不进恢复阶梯、直接终态**的错误：主库损坏（CORRUPT，BUG-4509）与卷写满
+/// （FULL，BUG-5076）。恢复阶梯对两者都无事可做，且在写满的卷上跑阶梯是有害的。
+bool _isTerminalOpenError(Object e) =>
+    _isMainDbCorruptError(e) || _isSqliteFullError(e);
 
 /// The 16-byte magic header every SQLite database file starts with
 /// ("SQLite format 3\u0000"). See https://www.sqlite.org/fileformat.html .
@@ -370,39 +425,36 @@ QueryExecutor _createBackgroundExecutor(File dbFile) =>
 /// 连接撞上侧车错误」。生产代码从不设置它。
 void Function(String dbPath)? debugAfterOpenProbeForTesting;
 
+/// 仅供测试：替换 Layer 2 快照的文件复制（BUG-5076）。测试里无法真把卷写满，用它让
+/// 快照复制像 ENOSPC 那样写了半截后失败，验证「快照失败 → 清半截快照、不删侧车」。
+/// 生产代码从不设置它。
+Future<void> Function(File src, String destPath)?
+debugSidecarSnapshotCopyForTesting;
+
 /// 开库错误分流（Layer 0 与 drift 后台连接共用一套判据）：
 ///  - 主库自身损坏（CORRUPT）→ 终态，不进恢复阶梯、不碰任何文件（见
 ///    [_isMainDbCorruptError]）；
 ///  - 不是侧车类错误 → 恢复阶梯无事可做，原样抛出；
 ///  - 侧车类错误但主库文件头不合法 → 主库坏了 / 根本打不开，终态，绝不删侧车；
-///  - 其余（侧车类且主库头完好）正常返回，由调用方进恢复阶梯。
+///  - 侧车类错误但库所在卷已写满 → 终态（BUG-5076），不进阶梯：写满时扩 `-shm` 报的
+///    IOERR 不是侧车坏了，阶梯的检查点写不进去、快照复制不了，删掉的 `-wal` 却是已提交
+///    事务的唯一副本；
+///  - 其余（侧车类且主库头完好、卷有空间）正常返回，由调用方进恢复阶梯。
+/// 终态的 kind 一律由 [classifyFushiDatabaseOpenFailure] 定。
 void _throwUnlessRecoverableSidecarError(
   Object e,
   StackTrace stack,
   String path,
 ) {
-  if (_isMainDbCorruptError(e)) {
-    throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
-  }
+  if (_isTerminalOpenError(e)) throw _terminalOpenFailure(e, path);
   if (!_isSidecarOpenError(e)) Error.throwWithStackTrace(e, stack);
   // The error class is ambiguous (a corrupt MAIN db can also raise
   // CANTOPEN/NOTADB): only recover if the main db's header is a valid SQLite
   // file. Otherwise it is a corrupt/missing main db → terminal, do NOT delete
-  // any sidecar.
-  if (!_mainDbHeaderIsValid(path)) {
-    // BUG-1899：这里必须分清两件事。sqlite 的 open 在父目录存在时会**自己创建**
-    // 缺失的 db 文件，所以走到这一步还「文件不存在」，只可能是连创建都失败了 ——
-    // 目录不存在 / 无权限 / 只读介质 / 盘断链。那不是「损坏」，把它说成损坏会把
-    // 用户引去清空数据（用户报告：自定义数据安装位置后启动即「Database damaged」，
-    // 实际只是 `<dataRoot>/support` 这个空目录没被创建）。
-    // 文件确实在但头不是 SQLite magic → 才是真的坏了。
-    throw FushiDatabaseUnrecoverableException(
-      dbPath: path,
-      cause: e,
-      kind: File(path).existsSync()
-          ? FushiDatabaseFailureKind.corrupt
-          : FushiDatabaseFailureKind.cannotOpen,
-    );
+  // any sidecar. BUG-1899：文件不存在（连创建都失败）是路径问题不是损坏——这一分辨
+  // 与 BUG-5076 的空间判据一起收在 [classifyFushiDatabaseOpenFailure]。
+  if (!_mainDbHeaderIsValid(path) || dbVolumeIsOutOfSpace(p.dirname(path))) {
+    throw _terminalOpenFailure(e, path);
   }
 }
 
@@ -435,9 +487,7 @@ Future<QueryExecutor> _recoverSidecarAndReopen(
     );
     return _createBackgroundExecutor(dbFile);
   } catch (e, stack) {
-    if (_isMainDbCorruptError(e)) {
-      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
-    }
+    if (_isTerminalOpenError(e)) throw _terminalOpenFailure(e, path);
     if (!_isSidecarOpenError(e)) rethrow;
     fushiDebugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
   }
@@ -446,11 +496,10 @@ Future<QueryExecutor> _recoverSidecarAndReopen(
   //    connection (sidecar too poisoned). Only the MAIN process is allowed to
   //    delete; the :popup process backs off so the two never race.
   if (!allowSidecarDelete) {
-    throw FushiDatabaseUnrecoverableException(
-      dbPath: path,
-      cause:
-          'sidecar open error in a non-main (:popup) process; backing off '
-          'so the main process performs sidecar recovery first',
+    throw _terminalOpenFailure(
+      'sidecar open error in a non-main (:popup) process; backing off '
+      'so the main process performs sidecar recovery first',
+      path,
     );
   }
   await _rebuildSidecar(dbFile);
@@ -464,7 +513,7 @@ Future<QueryExecutor> _recoverSidecarAndReopen(
     fushiDebugPrint(
       '[fushi-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack',
     );
-    throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
+    throw _terminalOpenFailure(e, path);
   }
 }
 
@@ -605,22 +654,46 @@ Future<void> _rebuildSidecar(File dbFile) async {
   final File shm = File('$path-shm');
 
   // Snapshot the main DB + sidecars before deleting anything (D1: 数据安全兜底).
+  //
+  // BUG-5076：快照是删侧车的**前提**，不是可选项。`-wal` 里是已提交、未检查点的事务
+  // 的唯一副本；此前快照失败只记一行 debugPrint 就照删，卷写满（快照恰恰因 ENOSPC
+  // 失败）时等于无备份删掉最后的写入。现在任一快照失败就清掉本次已写的半截快照、
+  // 以终态异常停下，侧车与主库原样不动。
   final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
+  final List<File> written = <File>[];
   Future<void> snapshot(File src, String suffix) async {
-    if (await src.exists()) {
-      try {
-        await src.copy('$path.corrupt-bak-$stamp$suffix');
-      } catch (e) {
-        fushiDebugPrint(
-          '[fushi-db] snapshot of "${src.path}" failed (non-fatal): $e',
-        );
-      }
+    if (!await src.exists()) return;
+    final File dest = File('$path.corrupt-bak-$stamp$suffix');
+    written.add(dest);
+    final Future<void> Function(File src, String destPath)? copyOverride =
+        debugSidecarSnapshotCopyForTesting;
+    if (copyOverride != null) {
+      await copyOverride(src, dest.path);
+    } else {
+      await src.copy(dest.path);
     }
   }
 
-  await snapshot(dbFile, '.db');
-  await snapshot(wal, '.db-wal');
-  await snapshot(shm, '.db-shm');
+  try {
+    await snapshot(dbFile, '.db');
+    await snapshot(wal, '.db-wal');
+    await snapshot(shm, '.db-shm');
+  } on FileSystemException catch (e) {
+    for (final File f in written) {
+      try {
+        if (await f.exists()) await f.delete();
+      } on FileSystemException catch (cleanupError) {
+        fushiDebugPrint(
+          '[fushi-db] could not remove partial snapshot "${f.path}": '
+          '$cleanupError',
+        );
+      }
+    }
+    fushiDebugPrint(
+      '[fushi-db] Layer 2 aborted: snapshot failed, sidecars NOT deleted: $e',
+    );
+    throw _terminalOpenFailure(e, path);
+  }
 
   // Delete ONLY the sidecar PATHS; the main .db is left byte-for-byte intact.
   // Handles either a normal sidecar file OR a stray directory occupying the
@@ -892,9 +965,9 @@ class _TypedOpenErrorInterceptor extends QueryInterceptor {
           cause is FushiDatabaseUnrecoverableException) {
         Error.throwWithStackTrace(cause, causeStack);
       }
-      if (_isMainDbCorruptError(cause)) {
+      if (_isTerminalOpenError(cause)) {
         Error.throwWithStackTrace(
-          FushiDatabaseUnrecoverableException(dbPath: dbPath, cause: cause),
+          _terminalOpenFailure(cause, dbPath),
           causeStack,
         );
       }
@@ -903,7 +976,11 @@ class _TypedOpenErrorInterceptor extends QueryInterceptor {
   }
 }
 
-LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
+LazyDatabase _openDb(
+  String dbDirectory, {
+  bool isMainProcess = true,
+  _OpenedExecutorRef? ref,
+}) {
   return LazyDatabase(() async {
     await _rejectPreRenameDatabase(dbDirectory);
     final file = File(p.join(dbDirectory, fushiDatabaseFileName));
@@ -911,8 +988,25 @@ LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
       file,
       allowSidecarDelete: isMainProcess,
     );
+    ref?.executor = executor;
     return executor.interceptWith(_TypedOpenErrorInterceptor(file.path));
   });
+}
+
+/// [_openDb] 开好的连接（拦截器之前那一层），供 [FushiDatabase.backgroundConnection]
+/// 取出 drift 后台 isolate 的 [DriftIsolate]。开库是惰性的：首个查询之前为 null。
+final class _OpenedExecutorRef {
+  QueryExecutor? executor;
+}
+
+/// [executor] 背后那条 drift 后台连接（`createInBackground` 交出的
+/// [DatabaseConnection]）；不是后台连接（测试的内存库等）返回 null。恢复阶梯换过
+/// 连接时取换上的那条。
+DatabaseConnection? _backgroundConnectionOf(QueryExecutor? executor) {
+  final QueryExecutor? current = executor is _RecoveringOpenExecutor
+      ? executor._inner
+      : executor;
+  return current is DatabaseConnection ? current : null;
 }
 
 /// Opens an arbitrary `.db` FILE (not a directory). Used by the backup MERGE
@@ -1094,6 +1188,7 @@ void _requireOneVideoMetadataOwner({
     MangaDownloadJobs,
     AnidbFileIdentities,
     VideoEpisodeBindingOverrides,
+    VideoCollectionSectionOverrides,
     PendingMineQueue,
     VideoSubtitleGlossaries,
     VideoSubtitleTextOverrides,
@@ -1164,19 +1259,85 @@ class FushiDatabase extends _$FushiDatabase
   /// while the separate `:popup` process passes `false` so it backs off on an
   /// IOERR instead of racing the main process to delete the same sidecar.
   FushiDatabase(String dbDirectory, {bool isMainProcess = true})
-    : _isMainProcess = isMainProcess,
-      super(_openDb(dbDirectory, isMainProcess: isMainProcess));
+    : this._opened(dbDirectory, isMainProcess, _OpenedExecutorRef());
+
+  FushiDatabase._opened(
+    String dbDirectory,
+    bool isMainProcess,
+    _OpenedExecutorRef ref,
+  ) : _isMainProcess = isMainProcess,
+      _openedRef = ref,
+      super(_openDb(dbDirectory, isMainProcess: isMainProcess, ref: ref));
 
   /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
   /// (TODO-888) uses this to migrate an extracted backup DB to the current
   /// schema before merging it into the live DB.
   FushiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
     : _isMainProcess = isMainProcess,
+      _openedRef = null,
       super(_openDbFile(dbFilePath, isMainProcess: isMainProcess));
 
-  FushiDatabase.forTesting(super.e) : _isMainProcess = true;
+  FushiDatabase.forTesting(super.e) : _isMainProcess = true, _openedRef = null;
+
+  /// 在**另一个 isolate** 里接上同一个库：[connection] 来自
+  /// [backgroundConnection]（`DriftIsolate.connect()`）。语句与事务都经同一个 drift
+  /// 服务端串行（与本库原连接同一把 sqlite 连接，不另开库），写入的表更新会通知回
+  /// 其它连接上的 stream 查询。库早已由原连接开好、迁移跑完，这里不会再跑迁移。
+  FushiDatabase.shared(DatabaseConnection connection)
+    : _isMainProcess = false,
+      _openedRef = null,
+      super(connection);
 
   final bool _isMainProcess;
+
+  /// 见 [_OpenedExecutorRef]；只有按目录开的主库有。
+  final _OpenedExecutorRef? _openedRef;
+
+  /// 能发给别的 isolate 的本库连接（在那边 `await c.connect()` 后交给
+  /// [FushiDatabase.shared]）。
+  ///
+  /// 按目录开的库直接给 drift 后台 isolate 的端口：对端的语句不经本 isolate 中转，
+  /// 查询结果也不在本 isolate 解码——整份读取 / 写入的工作量都不落在调用方
+  /// （HBK-AUDIT-028 聚合同步的后台所有者靠这一点）。其它连接（测试的内存库）退回
+  /// drift 的 [serializableConnection]：在本 isolate 起一个转发服务端，语义相同，
+  /// 只是语句经本 isolate 转一手。
+  ///
+  /// 不要在 drift 事务里调用（转发服务端会排在事务后面等）。
+  Future<DriftIsolate> backgroundConnection() async {
+    // 开库是惰性的：先让原连接把库开好（迁移跑完），再交出端口。
+    await customSelect('SELECT 1').get();
+    final DatabaseConnection? background = _backgroundConnectionOf(
+      _openedRef?.executor,
+    );
+    if (background != null) {
+      final Object? data = await background.connectionData;
+      if (data is DriftIsolate) {
+        _forwardBackgroundTableUpdates(background);
+        return data;
+      }
+    }
+    return await serializableConnection();
+  }
+
+  /// 已在转发表更新的那条后台连接（见 [_forwardBackgroundTableUpdates]）。
+  DatabaseConnection? _tableUpdatesForwardedFrom;
+
+  /// 把别的 isolate 经 [backgroundConnection] 写入时、drift 服务端广播回本 isolate
+  /// 的表更新转进**本库**的 stream 查询（`tableUpdates` / `.watch()`）。
+  ///
+  /// 本库的执行器是「惰性库 → 拦截器 → 恢复阶梯 → 后台连接」，`GeneratedDatabase`
+  /// 因此另建了自己的 stream 存储；服务端广播的更新只进后台连接自己那个存储，没人
+  /// 听。不转的话，后台所有者写回的统计 / 收藏 / 浏览历史不会让首页、小组件、伴屏
+  /// 这些监听者刷新（[FushiDatabase.shared] 文档承诺的「通知回其它连接」也不成立）。
+  /// 本库自己的写入不经后台连接的存储，转发不会回环、不会重复。恢复阶梯换过连接时
+  /// 跟着换；库关闭时后台连接的存储关闭，订阅随之结束。
+  void _forwardBackgroundTableUpdates(DatabaseConnection background) {
+    if (identical(_tableUpdatesForwardedFrom, background)) return;
+    _tableUpdatesForwardedFrom = background;
+    background.streamQueries
+        .updatesForSync(TableUpdateQuery.any())
+        .listen(notifyUpdates);
+  }
 
   @override
   int get schemaVersion => kFushiDbSchemaVersion;
@@ -3461,6 +3622,50 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(favoriteSentences);
         }
         await _migrateFavoriteSentencesPrefToTable();
+      }
+      if (from < 167) {
+        // v167：favorite_sentences.color_updated_at_us——收藏句颜色的 LWW 时钟
+        // （BUG-5081）。同步 / 备份合并按内容键去重，同一条收藏两端 createdAt 相同，
+        // 没有颜色时钟就只能各留本机行，改色传不出去。纯加列、存量 NULL（= 没改过色，
+        // 时钟按 created_at_us 算）；按列存在性守卫，幂等。
+        if (await _tableExists('favorite_sentences') &&
+            !await _columnExists('favorite_sentences', 'color_updated_at_us')) {
+          await m.addColumn(
+            favoriteSentences,
+            favoriteSentences.colorUpdatedAtUs,
+          );
+        }
+      }
+      // v168：表结构不变，只加单媒体统计读路径的四条索引（HBK-AUDIT-042：统计侧栏
+      // 只看一本书时，段 / 计数 / 视频 legacy 行 / 书表的等值条件没有可用索引，
+      // 扫本 Profile 全部段与整张计数表）。索引由下面的 _ensureStatIndexes 建——它在
+      // 阶梯末尾每次升 schema 都跑、按列存在性守卫、全幂等；升这一档就是为了让已在
+      // v167 的存量库也走一次 onUpgrade 补上。
+      if (from < 169) {
+        // v169：video_collection_section_overrides——用户 / AI 钉死的「文件 → 合集
+        // 分栏」（拍板台 iR6ccUys9H：短篇被文件名集号推进正片栏、指定第 0 季后分栏
+        // 不动）。稀疏覆盖、FK 随视频删除；纯建表，没有行 = 照旧按文件名派生。
+        // 幂等守卫同 v131。
+        if (!await _tableExists('video_collection_section_overrides')) {
+          await m.createTable(videoCollectionSectionOverrides);
+        }
+      }
+      if (from < 170) {
+        // v170：music_tracks.scan_album_uid——扫描时按标签算出的专辑 uid（归组前的原始
+        // 归属，HBK-AUDIT-027）。存量行回填为当前 album_uid（升级前没有归组步骤，
+        // album_uid 就是按标签算的值），再整库归组一次：BUG-5164 拆开的专辑存量也并回
+        // 一张，之后只在扫描改动到的目录上重算。按列存在性守卫加列；回填只补 NULL、
+        // 归组按当前状态重算，重跑幂等。
+        if (await _tableExists('music_tracks')) {
+          if (!await _columnExists('music_tracks', 'scan_album_uid')) {
+            await m.addColumn(musicTracks, musicTracks.scanAlbumUid);
+          }
+          await customStatement(
+            'UPDATE music_tracks SET scan_album_uid = album_uid '
+            'WHERE scan_album_uid IS NULL',
+          );
+          await regroupAllMusicAlbums();
+        }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。

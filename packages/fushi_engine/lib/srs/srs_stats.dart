@@ -85,7 +85,9 @@ class SrsRwkvNow {
   /// 按 R 排队的复习卡（未暂停、归 Fushi 排程）。
   final int total;
 
-  /// 此刻 R ≤ 所在牌组目标保留率：现在就会出（与出卡同一口径）。
+  /// 此刻 R ≤ 所在牌组目标保留率（界面叫「低于目标」）。不是今天的出卡队列：队列（牌组列表的「N 到期」，Rust
+  /// `study.rs` `instant_eligible` / `count_tree`）还会按「每天最少复习数」从高于目标的卡里补足、按同日间隔与
+  /// 每日复习上限暂缓一部分，两个数可以不同（BUG-5170）。
   final int due;
 
   /// R 高出目标保留率不到 [nearMargin]：接下来最先出的卡。

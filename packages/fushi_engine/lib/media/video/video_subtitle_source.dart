@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:path/path.dart' as p;
@@ -369,31 +370,45 @@ Map<String, dynamic> buildParsedSubtitleResponse({
 }
 
 /// 异步版 [parseSubtitleContent]，重叠收口语义相同。
+///
+/// 解析与解析后的整轨处理（SRT / VTT 的复制 + 排序 + 重叠收口，
+/// [clampPlainTextCueOverlaps]）是**同一个任务**：大内容（超过
+/// [SrtParser.shouldParseInIsolate] 的阈值）整个在后台 isolate 里做完才回来，调用方
+/// isolate（播放器页面 = UI isolate）只收结果。此前只把 parser 本体派到后台，回来后
+/// 在调用方 isolate 上复制整表、排序、再走一遍重叠收口——大字幕轨首帧 / 切轨时这段
+/// O(n log n) 的整轨处理又回到了 UI isolate（HBK-AUDIT-012）。
 Future<List<AudioCue>> parseSubtitleContentAsync(
   SubtitleFormat format, {
   required String content,
   required String bookUid,
   bool includeDrawings = false,
 }) async {
-  // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
-  // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
-  switch (format) {
-    case SubtitleFormat.srt:
-      return clampPlainTextCueOverlaps(
-        await SrtParser.parseStringAsync(content: content, bookKey: bookUid),
-      );
-    case SubtitleFormat.ass:
-      return AssParser.parseStringAsync(
-        content: content,
-        bookKey: bookUid,
-        includeDrawings: includeDrawings,
-      );
-    case SubtitleFormat.vtt:
-      return clampPlainTextCueOverlaps(
-        await VttParser.parseStringAsync(content: content, bookKey: bookUid),
-      );
+  final List<AudioCue> Function() parse = _subtitleContentParseTask(
+    format,
+    content: content,
+    bookUid: bookUid,
+    includeDrawings: includeDrawings,
+  );
+  if (SrtParser.shouldParseInIsolate(content)) {
+    return Isolate.run(parse, debugName: 'parseSubtitleContent');
   }
+  return parse();
 }
+
+/// [parseSubtitleContentAsync] 的整轨任务：只捕获不可变入参（跨 isolate 发送），
+/// 放在非 async 函数里建闭包，免得把 async 帧的上下文一并带过去。
+List<AudioCue> Function() _subtitleContentParseTask(
+  SubtitleFormat format, {
+  required String content,
+  required String bookUid,
+  required bool includeDrawings,
+}) =>
+    () => parseSubtitleContent(
+      format,
+      content: content,
+      bookUid: bookUid,
+      includeDrawings: includeDrawings,
+    );
 
 /// 统一字幕源：内嵌轨或外挂文件二选一。
 ///

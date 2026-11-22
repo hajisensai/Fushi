@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
@@ -34,6 +35,16 @@ class EpubArchiveCorruptException extends FormatException {
 /// - [parseFromExtracted]: re-parses an already-extracted directory (e.g. after
 ///   app restart, when the book is already on disk).
 class EpubParser {
+  /// 测试计数：从磁盘读 zip 中央目录（[openStagedFromPath] / [parseSyncFromPath]）
+  /// 的次数。只在本 isolate 内计数（HBK-AUDIT-013：漫画整卷导入一本 EPUB 只读一次）。
+  @visibleForTesting
+  static int debugZipDirectoryReadCount = 0;
+
+  /// 测试计数：[parseFromExtracted]（container / OPF / spine 解析）的次数。只在本
+  /// isolate 内计数。
+  @visibleForTesting
+  static int debugParseFromExtractedCount = 0;
+
   /// `ZipDecoder().decodeBytes(bytes, verify: true)` 的等价物：先不校验地解码，再在
   /// 返回前逐条解压并用 native/fushi_compute 的 CRC-32 核对（包内纯 Dart CRC 是瓶颈）。
   /// 与 `verify: true` 一致：全部条目都核对，核对完才交给调用方解压落盘。
@@ -106,30 +117,77 @@ class EpubParser {
     bool Function(String entryName)? extractEntry,
     void Function()? onEntryExtracted,
   }) {
+    final EpubStagedExtraction staged = openStagedFromPath(
+      filePath,
+      extractDir,
+      includeSvgSpineDocuments: includeSvgSpineDocuments,
+      cap: cap,
+      deferEntry: extractEntry == null
+          ? null
+          : (String name) => !extractEntry(name),
+      onEntryExtracted: onEntryExtracted,
+    );
+    staged.close();
+    return staged.book;
+  }
+
+  /// 分两段解压的 [parseSyncFromPath]：中央目录**只读一次**，先解 [deferEntry]
+  /// 返回 false 的条目（null = 全部）并解析出 [EpubStagedExtraction.book]，调用方
+  /// 看过这本书再决定要不要 [EpubStagedExtraction.extractDeferred] 补解其余条目
+  /// （HBK-AUDIT-013）。
+  ///
+  /// 给「先凭 container / OPF / spine 定性、再解页图」的漫画整卷导入用：此前它调
+  /// 两遍 [parseSyncFromPath]，中央目录、OPF / spine、章节页图引用都做两遍。补解的
+  /// 只是页图等资源文件；书的章节 / 资源表 / 系列只由 OPF 与 spine 文档决定，第一段
+  /// 解析出的 [EpubStagedExtraction.book] 补解之后照样成立（唯一看盘上图片在不在的
+  /// 是封面回退，漫画导入不用它）。
+  ///
+  /// 失败语义与 [parseSyncFromPath] 相同：容器损坏抛 [EpubArchiveCorruptException]，
+  /// [extractDir] 若是本次新建的就连同写了一半的条目一起删；超出 [cap] 抛
+  /// [ZipExtractionLimitException]。正常返回后调用方必须
+  /// [EpubStagedExtraction.close]。
+  static EpubStagedExtraction openStagedFromPath(
+    String filePath,
+    String extractDir, {
+    bool includeSvgSpineDocuments = false,
+    ZipExtractionCap? cap,
+    bool Function(String entryName)? deferEntry,
+    void Function()? onEntryExtracted,
+  }) {
     final Directory dir = Directory(extractDir);
     final bool createdHere = !dir.existsSync();
     final InputFileStream input = InputFileStream(filePath);
+    Archive? archive;
     try {
-      final Archive archive = _corruptAsEpubException(
+      debugZipDirectoryReadCount += 1;
+      final Archive decoded = _corruptAsEpubException(
         () => ZipDecoder().decodeBuffer(input),
       );
-      _extractArchive(archive, extractDir, (ArchiveFile file, String path) {
-        if (extractEntry != null && !extractEntry(file.name)) return;
-        _corruptAsEpubException(
-          () => extractZipEntryToFile(file, path, verifyCrc32: true, cap: cap),
-        );
-        onEntryExtracted?.call();
-      });
-    } on EpubArchiveCorruptException {
-      if (createdHere && dir.existsSync()) dir.deleteSync(recursive: true);
-      rethrow;
-    } finally {
+      archive = decoded;
+      final EpubStagedExtraction staged = EpubStagedExtraction._(
+        input: input,
+        archive: decoded,
+        extractDir: extractDir,
+        createdHere: createdHere,
+        entries: _planArchiveExtraction(decoded, extractDir),
+        cap: cap,
+        deferEntry: deferEntry,
+        onEntryExtracted: onEntryExtracted,
+      );
+      staged._extractStage(deferred: false);
+      staged.book = parseFromExtracted(
+        extractDir,
+        includeSvgSpineDocuments: includeSvgSpineDocuments,
+      );
+      return staged;
+    } catch (e) {
+      archive?.clearSync();
       input.closeSync();
+      if (e is EpubArchiveCorruptException && createdHere && dir.existsSync()) {
+        dir.deleteSync(recursive: true);
+      }
+      rethrow;
     }
-    return parseFromExtracted(
-      extractDir,
-      includeSvgSpineDocuments: includeSvgSpineDocuments,
-    );
   }
 
   /// zip 层的 [FormatException]（含 archive 的 `ArchiveException`）统一换成
@@ -257,6 +315,7 @@ class EpubParser {
     String extractDir, {
     bool includeSvgSpineDocuments = false,
   }) {
+    debugParseFromExtractedCount += 1;
     final File? containerFile = _findContainerXml(extractDir);
     if (containerFile == null) {
       throw const FormatException(
@@ -433,6 +492,31 @@ class EpubParser {
     String extractDir,
     void Function(ArchiveFile file, String path) writeFile,
   ) {
+    for (final _PlannedEntry entry in _planArchiveExtraction(
+      archive,
+      extractDir,
+    )) {
+      if (entry.isFile) {
+        File(entry.path).parent.createSync(recursive: true);
+        writeFile(entry.file, entry.path);
+      } else {
+        _ensureDirectory(entry.path);
+      }
+    }
+
+    // HBK-AUDIT-102: release the decompressed/raw byte buffers cached on each
+    // ArchiveFile (and the source InputStream views) instead of waiting for GC.
+    // For large image-heavy manga EPUBs this bounds the import-time peak heap
+    // and avoids OOM pressure inside the compute() isolate.
+    archive.clearSync();
+  }
+
+  /// [archive] 每个条目的落盘计划：安全路径（越出 [extractDir] 的条目丢掉）与「写成
+  /// 文件还是建成目录」。顺带建好 [extractDir] 本身。
+  static List<_PlannedEntry> _planArchiveExtraction(
+    Archive archive,
+    String extractDir,
+  ) {
     final Directory dir = Directory(extractDir);
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
@@ -451,20 +535,14 @@ class EpubParser {
       entries,
       canonicalBase,
     );
-    for (final (ArchiveFile file, String filePath) in entries) {
-      if (file.isFile && !archiveDirectories.contains(filePath)) {
-        File(filePath).parent.createSync(recursive: true);
-        writeFile(file, filePath);
-      } else {
-        _ensureDirectory(filePath);
-      }
-    }
-
-    // HBK-AUDIT-102: release the decompressed/raw byte buffers cached on each
-    // ArchiveFile (and the source InputStream views) instead of waiting for GC.
-    // For large image-heavy manga EPUBs this bounds the import-time peak heap
-    // and avoids OOM pressure inside the compute() isolate.
-    archive.clearSync();
+    return <_PlannedEntry>[
+      for (final (ArchiveFile file, String filePath) in entries)
+        _PlannedEntry(
+          file,
+          filePath,
+          isFile: file.isFile && !archiveDirectories.contains(filePath),
+        ),
+    ];
   }
 
   // NOTE on HBK-AUDIT-034: the audit suggested only treating EXPLICIT non-file
@@ -1321,4 +1399,98 @@ class _ManifestItem {
   final String href;
   final String mediaType;
   final String? properties;
+}
+
+/// [EpubParser._planArchiveExtraction] 的一项：条目、落盘路径、写文件还是建目录。
+class _PlannedEntry {
+  const _PlannedEntry(this.file, this.path, {required this.isFile});
+
+  final ArchiveFile file;
+  final String path;
+  final bool isFile;
+}
+
+/// [EpubParser.openStagedFromPath] 打开的两段式解压：中央目录只读一次，第一段已解
+/// 并解析成 [book]，[extractDeferred] 补解第二段。用完必须 [close]（关源文件句柄、
+/// 释放条目缓冲），[close] 可重复调用。
+class EpubStagedExtraction {
+  EpubStagedExtraction._({
+    required InputFileStream input,
+    required Archive archive,
+    required String extractDir,
+    required bool createdHere,
+    required List<_PlannedEntry> entries,
+    required ZipExtractionCap? cap,
+    required bool Function(String entryName)? deferEntry,
+    required void Function()? onEntryExtracted,
+  }) : _input = input,
+       _archive = archive,
+       _extractDir = extractDir,
+       _createdHere = createdHere,
+       _entries = entries,
+       _cap = cap,
+       _deferEntry = deferEntry,
+       _onEntryExtracted = onEntryExtracted;
+
+  final InputFileStream _input;
+  final Archive _archive;
+  final String _extractDir;
+  final bool _createdHere;
+  final List<_PlannedEntry> _entries;
+  final ZipExtractionCap? _cap;
+  final bool Function(String entryName)? _deferEntry;
+  final void Function()? _onEntryExtracted;
+  bool _deferredDone = false;
+  bool _closed = false;
+
+  /// 第一段条目解压后的解析结果（见 [EpubParser.openStagedFromPath]）。
+  late final EpubBook book;
+
+  /// 补解第一段跳过的条目（[EpubParser.openStagedFromPath] 的 `deferEntry`）。只能
+  /// 调一次、须在 [close] 之前。容器损坏时与第一段同样抛
+  /// [EpubArchiveCorruptException]，并清掉本次新建的解压目录。
+  void extractDeferred() {
+    if (_closed) throw StateError('EpubStagedExtraction already closed');
+    if (_deferredDone) throw StateError('deferred entries already extracted');
+    _deferredDone = true;
+    try {
+      _extractStage(deferred: true);
+    } on EpubArchiveCorruptException {
+      close();
+      final Directory dir = Directory(_extractDir);
+      if (_createdHere && dir.existsSync()) dir.deleteSync(recursive: true);
+      rethrow;
+    }
+  }
+
+  /// 关源文件句柄并释放条目缓冲（HBK-AUDIT-102）。
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _archive.clearSync();
+    _input.closeSync();
+  }
+
+  void _extractStage({required bool deferred}) {
+    final bool Function(String entryName)? deferEntry = _deferEntry;
+    for (final _PlannedEntry entry in _entries) {
+      if (!entry.isFile) {
+        // 目录在第一段建好（第二段的文件父目录按需建）。
+        if (!deferred) EpubParser._ensureDirectory(entry.path);
+        continue;
+      }
+      final bool isDeferred = deferEntry != null && deferEntry(entry.file.name);
+      if (isDeferred != deferred) continue;
+      File(entry.path).parent.createSync(recursive: true);
+      EpubParser._corruptAsEpubException(
+        () => extractZipEntryToFile(
+          entry.file,
+          entry.path,
+          verifyCrc32: true,
+          cap: _cap,
+        ),
+      );
+      _onEntryExtracted?.call();
+    }
+  }
 }

@@ -23,9 +23,10 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 - 被 harness 隔离在某个 worktree 时，命令里只要出现 `git`，就写成一条朴素命令（不接 `;` / `&&` / `|` / `$?` / `cd` / heredoc / `python -c`），否则整条被判「too complex」拒跑、白耗一轮；多步就分几次调用。要改的文件必须在你自己的 worktree 或仓库目录之外：主 checkout（含它下面的 `.worktrees/`）里的路径一律被拒写。
 - worktree 会话里路径一律写字面量绝对路径，不用变量拼路径、不写 `cd X && <复杂命令>`（不然静态检查判不了、整条拒跑）；默认用 Bash，PowerShell 只做 Windows 专属操作（PS 5.1 里 `-ErrorAction SilentlyContinue` 或原生命令写 stderr 时退出码是 1，要用 `try { ... -ErrorAction Stop } catch {}` 包住）。
 - 输出太长被落盘（结果里给出 `tool-results/…` 路径）时，用 `grep -n` / `sed -n` 只取需要的部分，不整份 Read 回来。
-- 重活一条命令跑完并取摘要：`<命令> > <日志> 2>&1; echo "exit=$?" >> <日志>; tail -n 40 <日志>`，`timeout` 给 270000（子代理的缓存只保 5 分钟，前台一等超过 5 分钟，下一轮就要把整段上下文重写一遍；到点命令不会被杀，会自动转后台接着跑）；`flutter test` / `analyze` / `build` 照 CLAUDE.md 包 `dart tool/heavy.dart --`。不拆成「起跑 / 轮询 / 看日志」三轮，要跑的测试攒齐一次跑。
-- 转了后台就先做别的；确实无事可做时一片一片地等，每片不超过 4 分钟：`timeout 240 bash -c "until grep -q '^exit=' <日志>; do sleep 20; done"; tail -n 40 <日志>`，没等到就原样再发一片，不短间隔反复看。
-- 累计等了约 30 分钟还没完就不再等（再切片比让缓存失效一次还贵）：回报 `部分完成`，写明还在跑的命令、日志路径和判绿办法，由委托方接手。除此之外不带着还在跑的后台任务结束——委托方会为它被白白唤醒一次。
+- 测试一个交付物只跑一次：代码写完后把所有定向目标攒成一条命令跑；之后只在改了代码时重跑受影响的文件。内容和命令都没变时 `heavy.dart` 直接回 `CACHED PASS`（同内容同命令已经绿过，任何 worktree 跑的都算），那就是绿，照抄它给出的末行当证据，不加 `--no-cache` 重跑。全量 / 成片目录不在子代理里跑，写进回报交委托方汇总。
+- 重活一条命令跑完并取摘要。每次运行先起一个唯一 `<标签>`：`<任务键或 worktree 目录名>-<步骤>-<HHMMSS>`（如 `wf_d14df54e-ef6-15-test-142530`），后面的命令里都写成字面量（不用变量拼路径）：`<命令> > <scratchpad>/<标签>.log 2>&1; echo "<标签> exit=$?" >> <scratchpad>/<标签>.log; tail -n 40 <scratchpad>/<标签>.log`。同一会话的 workflow 子代理共用一个 scratchpad，`test.log` 这类固定名会被别的代理同时截断 / 覆盖，等待时还会读到别人的 `exit=` 行（BUG-5086），所以日志名和 exit 行都带 `<标签>`，重跑也换新 `<标签>`。`timeout` 给 270000（子代理的缓存只保 5 分钟，前台一等超过 5 分钟，下一轮就要把整段上下文重写一遍；到点命令不会被杀，会自动转后台接着跑）；`flutter test` / `analyze` / `build` 照 CLAUDE.md 包 `dart tool/heavy.dart --`。不拆成「起跑 / 轮询 / 看日志」三轮，要跑的测试攒齐一次跑。
+- 转了后台就先做别的；确实无事可做时一片一片地等，每片不超过 4 分钟：`timeout 240 bash -c "until grep -q '^<标签> exit=' <scratchpad>/<标签>.log; do sleep 20; done"; tail -n 40 <scratchpad>/<标签>.log`，没等到就原样再发一片，不短间隔反复看。
+- 累计等了约 15 分钟还没完就不再等（25 万上下文的代理每 4 分钟一片、每片按缓存价重读一遍，等 15 分钟的花费已接近新开一个代理；2026-11-22 从 30 分钟下调）：回报 `部分完成`，写明还在跑的命令、日志路径、`<标签>` 和判绿办法（等到 `<标签> exit=` 行再看退出码），由委托方接手。除此之外不带着还在跑的后台任务结束——委托方会为它被白白唤醒一次。
 
 回报（委托方只看得到这一段）：
 - 第一行写状态：`完成` / `部分完成` / `受阻` / `需改派`。
@@ -43,6 +44,7 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 - 始终用中文回复。发现问题直接说，不为了顺滑把风险说轻。先读最近层级的 `AGENTS.md` / `CLAUDE.md`。
 - **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。在 worktree 会话里另建给自己或子代理改的 worktree（合并 / 审查 PR 用），一律放仓库目录外（主 checkout 同级的 `../fushi-wt/<名>`）：主 checkout 下的 `.worktrees/` 会被隔离检查拒写。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
 - 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。**长期集成分支也不追 `develop`**：只在对 `develop` 开整批 PR 前合一次（与最后一批合流并成一次验证），中途不合、不量、不汇报「落后多少提交」。（[细则](docs/agent/rules-detail.md#集成分支不追-develop)）
+- **跨目录找 Dart / Rust 符号的定义或引用，先用 `python tool/symindex/sym.py def|refs|find <名字>`**（语义索引，0.5 秒；改动文件自动退回实时 grep，标 `[live]`），没有结果或要搜非符号文本时再 `grep`。（[README](tool/symindex/README.md)）
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具；正文内嵌本文件并设 `omitClaudeMd: true`，改完本文件跑 `node tool/claude_hooks/sync_agent_claude_md.mjs`，CI 守卫会查），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
 - **方案取最优、一次做到位**（修 bug 与做功能都适用）：动手前先比较有没有更好的方案，有就用更好的，不因为「改动小 / 沿用现状省事」退而求其次；做到一半发现更好的就换，并在回复里说明换了什么、为什么。能根本修复 / 完整实现的就一次做完，不交「先凑一版、以后再补」的补丁式半成品。更好的方案若会改变用户可见行为或明显扩大范围，先列取舍问用户；确实只能分期的，写明还缺什么并登记（`docs/BUGS.md` / [拍板台](docs/agent/decision-board.md)），不只在汇报里提。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
@@ -92,6 +94,7 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 - **等待不烧缓存**（2026-11-20，实测与依据见 [fast-workflow.md](docs/agent/fast-workflow.md#等待与缓存)）：① 开发会话 push + 开 PR 后就结束，不挂 `wait-ci` / `gh run watch` / `gh pr checks --watch`，不开 Auto-fix 与 PR 监视；PR CI 的红由**合并任务**在合并前读一次、按根因修。② 主会话里预计 <2 分钟且期间没别的事可推进的命令前台跑；要后台跑的几条合成一条命令、一个日志，只被唤醒一次。③ 子代理的缓存只保 5 分钟：前台 `timeout` 不超过 270000，等待切成不超过 4 分钟一片（写在 `.claude/agents/*.md`，`tool/claude_hooks/subagent_wait_slice.mjs` 兜底）。
 - **PR CI 默认只跑快门**（analyze + 守卫 + 直接受影响的测试），全量在合并后的 `develop` 上跑；改了原生 / Android / pubspec / `fushi/tool/` 等才在 PR 上自动跑全量。**不为全量空等**：快门绿就算 PR CI 过；要在分支上跑全量用 `gh workflow run main.yml --ref <分支>` 或 `full-ci` 标签。（[build.md](docs/agent/build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
+- **绿结果不重跑**（2026-11-22）：`heavy.dart` 把 test / analyze 的绿结果按「工作树内容 + 命令」记住，任何 worktree 同内容同命令再跑直接回 `CACHED PASS`、不排队，那就是绿，不加 `--no-cache`。审查代理不重跑实现方已贴出绿结果的测试；全量 / 成片目录不在子代理里等，交委托方汇总一次跑。（[heavy-lease.md](docs/agent/heavy-lease.md#绿结果缓存)）
 - Rust 改动（`native/fushi_*`）：「编译—测试」循环用 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，fushi_fsrs 改一行重编约 8 秒；`--release` 是 7～15 分钟），一大批测试用 `bash tool/rust_test.sh <crate> [过滤]`（分进程跑，全量快一倍多），**不拿 `cargo test --release` 当循环**，`id_audit` 与默认构建本地只跑一种。`--release` 只用于出产物（`build_*` / `tool/native_libs.ps1`）和量性能，全量 release 测试交给 PR CI 的 `native-*-gate`。一个 worktree 一个 target 目录，不另设共用的 `CARGO_TARGET_DIR`。（[build.md](docs/agent/build.md#rust-本地开发循环quick-profile)）
 - PR 合入 `develop` 后加跑目录枚举型守卫整批（清单在 [fast-workflow.md](docs/agent/fast-workflow.md)「合并后必跑」）。
 - Android 资源 / manifest / Gradle / 权限 / 前台服务 / 打包改动：加 `gradlew :app:assembleRelease`（`fushi/android/` 下 `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:assembleRelease`）。
@@ -128,6 +131,7 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
 | 远程操作社区志愿者电脑做 galgame 适配（一个会话控多台、MCP 网关、打包） | [remote-adapt.md](docs/agent/remote-adapt.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |
+| 符号索引（按名字查定义 / 引用、定时刷新、改动文件降级） | [tool/symindex/README.md](tool/symindex/README.md) |
 | 在线源 / 浏览 / 应用内反馈 | [online-sources.md](docs/agent/online-sources.md) |
 | 动画刮削 | [anime-scraping.md](docs/agent/anime-scraping.md) |
 | 各模块语言与职责 | [module-index.md](docs/agent/module-index.md) |

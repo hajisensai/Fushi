@@ -112,6 +112,15 @@ void main() {
   Finder cardOf(String uid) =>
       find.byKey(ValueKey<String>('collection-episode-row-$uid'));
 
+  /// 统一条目菜单（#4b）「整理」段至多 [MediaItemDialogFrame.organizeMaxRows]
+  /// 行（含「排序」簇）：本地集已有「打开文件位置 / 选择集数 / 移到分栏… /
+  /// 排序」四行，「移出合集」按骨架约定溢出进「更多 ›」，进度组（标记已看 /
+  /// 清除观看进度）本来就在「更多 ›」里。打开那个二级菜单。
+  Future<void> openMoreSubmenu(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey<String>('item_menu_more')));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('集级刮削集名/简介上卡；未刮削的集回落文件名标题', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
     await seedEpisodeMeta();
@@ -250,6 +259,12 @@ void main() {
       findsNothing,
       reason: '历史绑定只读兼容，不得重新构造外部网络入口',
     );
+    await openMoreSubmenu(tester);
+    expect(
+      find.byIcon(Icons.open_in_new),
+      findsNothing,
+      reason: '「更多 ›」二级菜单里同样不得有外链项',
+    );
     expect(find.text(t.collection_remove_member), findsOneWidget);
   });
 
@@ -267,6 +282,8 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
+    expect(find.byIcon(Icons.open_in_new), findsNothing);
+    await openMoreSubmenu(tester);
     expect(find.byIcon(Icons.open_in_new), findsNothing);
     expect(
       find.text(t.collection_remove_member),
@@ -345,6 +362,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await openEpisodeMenu(tester, 'video/e2');
+    await openMoreSubmenu(tester);
     expect(
       find.text(t.video_watch_progress_clear),
       findsOneWidget,
@@ -367,6 +385,7 @@ void main() {
 
     // 清完再右键同一集：没有痕迹了，按钮不再出现。
     await openEpisodeMenu(tester, 'video/e2');
+    await openMoreSubmenu(tester);
     expect(find.text(t.video_watch_progress_clear), findsNothing);
     expect(
       find.text(t.collection_remove_member),
@@ -389,6 +408,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
+    await openMoreSubmenu(tester);
     expect(
       find.text(t.collection_remove_member),
       findsOneWidget,

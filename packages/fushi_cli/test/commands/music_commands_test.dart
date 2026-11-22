@@ -69,6 +69,24 @@ void main() {
     expect(tracks.query, <String, String>{'album': 'al-1', 'artist': 'ar'});
   });
 
+  test('album-dlsite：POST 到专辑的 dlsite 子路径，输出资料行', () {
+    final CtlRequestSpec spec = _build('album-dlsite', <String>['a/b']);
+    expect(spec.method, 'POST');
+    expect(spec.path, '/api/admin/music/albums/a%2Fb/dlsite');
+    final String text = _spec('album-dlsite').render!(<String, Object?>{
+      'workId': 'RJ01109339',
+      'status': 'matched',
+      'circle': 'チームランドセル',
+      'voiceActors': <String>['耳恋なか', 'そよかぜみらい'],
+      'tags': <String>['癒し'],
+    });
+    expect(text, contains('RJ01109339 · matched'));
+    expect(text, contains('社团：チームランドセル'));
+    expect(text, contains('声优：耳恋なか / そよかぜみらい'));
+    expect(text, contains('标签：癒し'));
+    expect(text, isNot(contains('剧本')));
+  });
+
   test('详情：uid 进路径并做 URL 编码', () {
     expect(
       _build('album', <String>['a/b']).path,

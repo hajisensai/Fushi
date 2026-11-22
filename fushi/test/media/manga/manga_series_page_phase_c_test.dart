@@ -1079,11 +1079,14 @@ void main() {
     late Completer<void> release;
     await tester.runAsync(() async {
       final EpubBookRow row = await library.add(_entry());
+      final List<MangaDownloadJobRow> jobs = <MangaDownloadJobRow>[];
       for (final OnlineMangaChapter chapter in _chapters) {
-        await downloads.enqueueChapter(
-          entry: _entry(),
-          chapter: chapter,
-          autoOcr: false,
+        jobs.add(
+          await downloads.enqueueChapter(
+            entry: _entry(),
+            chapter: chapter,
+            autoOcr: false,
+          ),
         );
       }
       await tester.pumpWidget(
@@ -1099,14 +1102,11 @@ void main() {
         findsOneWidget,
       );
 
-      // 别的作品入队一章：任务表变了 → 作品页起一轮刷新，它读到的本作任务仍是
-      // 排队态，钉在途中不落地。
+      // 本作单暂停一章：本书任务变了 → 作品页起一轮刷新，它读到的另两章仍是
+      // 排队态，钉在途中不落地。（65d6d43138 起作品页按书订阅任务表，别的作品
+      // 入队不再触发本页刷新，所以触发源必须是本书自己的任务。）
       release = downloads.holdNextRead();
-      await downloads.enqueueChapter(
-        entry: _otherEntry(),
-        chapter: _chapters.first,
-        autoOcr: false,
-      );
+      await downloads.pause(jobs.first.jobId);
       // 页面的异步链跑在测试的 fake zone 里，要 pump 才往前走；干等 future 会死锁。
       for (int i = 0; i < 60 && !downloads.held.isCompleted; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -1140,18 +1140,6 @@ void main() {
     );
   });
 }
-
-OnlineMangaLibraryEntry _otherEntry() => const OnlineMangaLibraryEntry(
-  runtime: OnlineMangaRuntimeKind.mihon,
-  extensionPackage: 'org.example.fixture',
-  sourceId: '1',
-  series: OnlineMangaSeries(
-    key: '/series/other',
-    title: 'Other series',
-    raw: <String, Object?>{'url': '/series/other'},
-  ),
-  chapters: _chapters,
-);
 
 /// 能把下一次 [jobsForBook] 钉在「已读完、未返回」的下载服务：读发生在调用那一刻，
 /// 返回由测试放行，用来复现「先开始的一轮最后落地」。

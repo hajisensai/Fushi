@@ -67,6 +67,12 @@ duration，`ht_torrent_peers` 补 flags/source 稳定位掩码（与 libtorrent 
   `drain_alerts`，各 poll 函数只读自己的队列。新增任何需要 alert 的能力时，
   往 `drain_alerts` 里加一个分支，**绝不要**再写第二处 `pop_alerts` ——
   两个消费者会静默吃掉彼此的事件。
+- **alert 队列有上限，溢出静默丢**：libtorrent 按 `alert_queue_size`（默认
+  2000；high 档 2 倍、critical 档 3 倍）截断，超出的 alert 直接丢、只留一条
+  `alerts_dropped_alert`。要靠回执收尾的批量请求（如 `ht_save_resume_data`）
+  必须开局先 `drain_alerts` 腾空、把在飞请求数钉在队列容量以内、并处理
+  `alerts_dropped_alert`，不能一口气发 N 个再干等（BUG-5158：>2000 颗种子时
+  resume 一颗都存不下）。
 - **改名 / 移动必须走引擎**：libtorrent 按自己记的 save_path + 种子内相对路径
   读盘上传。在引擎之外动文件（资源管理器改名、脚本 mv）= 当场掐断做种，且
   **无法补救**（引擎收不到通知）。`ht_move_storage` 用 `fail_if_exist`：目标

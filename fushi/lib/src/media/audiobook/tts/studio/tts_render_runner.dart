@@ -71,6 +71,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_render_chapter_sort.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
@@ -730,46 +731,26 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsCancelToken ttsCancel,
     required void Function(int count) onSentencesDone,
   }) async {
-    final LinkedHashMap<
-      String,
-      ({String text, _SentenceVoice voice, TtsDirection direction})
-    >
-    byKey =
-        LinkedHashMap<
-          String,
-          ({String text, _SentenceVoice voice, TtsDirection direction})
-        >();
-    final Map<String, int> occurrences = <String, int>{};
-    final Map<String, Object> failures = <String, Object>{};
-    final Set<String> silent = <String>{};
-    for (int k = 0; k < keys.length; k++) {
-      final int planIndex = chapter.planIndices[k];
-      occurrences[keys[k]] = (occurrences[keys[k]] ?? 0) + 1;
-      final String text = textOf(planIndex);
-      if (ttsTextIsSilent(text)) {
-        silent.add(keys[k]);
-        continue;
-      }
-      final _SentenceVoice? voice = voiceOf(planIndex);
-      if (voice == null) {
-        failures[keys[k]] = unavailableOf(planIndex)!;
-        continue;
-      }
-      byKey.putIfAbsent(
-        keys[k],
-        () => (text: text, voice: voice, direction: directionOf(planIndex)),
-      );
-    }
+    final TtsChapterSorting<_SentenceVoice> sorted = sortTtsChapterSentences(
+      keys: keys,
+      planIndices: chapter.planIndices,
+      textOf: textOf,
+      directionOf: directionOf,
+      voiceOf: voiceOf,
+      unavailableOf: (int planIndex) => unavailableOf(planIndex)!,
+    );
+    final LinkedHashMap<String, TtsChapterSentence<_SentenceVoice>> byKey =
+        sorted.byKey;
+    final Map<String, int> occurrences = sorted.occurrences;
+    final Map<String, Object> failures = sorted.failures;
+    final Set<String> silent = sorted.silent;
     // 纯标点句与声音解析不到的句子不进合成池，直接算处理完（停顿 / 占位）。
     for (final String key in <String>{...silent, ...failures.keys}) {
       onSentencesDone(occurrences[key]!);
     }
     // 按声音分组（同一份预设 = 同一个引擎实例 = 同一个并发上限）。
     final Map<String, List<String>> keysByVoice = <String, List<String>>{};
-    byKey.forEach((
-      String key,
-      ({String text, _SentenceVoice voice, TtsDirection direction}) item,
-    ) {
+    byKey.forEach((String key, TtsChapterSentence<_SentenceVoice> item) {
       keysByVoice.putIfAbsent(item.voice.group, () => <String>[]).add(key);
     });
     final Map<String, TtsCachedAudio> results = <String, TtsCachedAudio>{};

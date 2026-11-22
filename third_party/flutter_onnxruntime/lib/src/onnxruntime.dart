@@ -134,6 +134,14 @@ class OnnxRuntime {
   Future<Map<String, dynamic>?> registerCudaRuntime(String dir) =>
       FlutterOnnxruntimePlatform.instance.registerCudaRuntime(dir);
 
+  /// Fushi fork: give back what the CUDA plugin holds while idle (Windows
+  /// only; null elsewhere). Refused (`released: false`, `openCudaSessions > 0`)
+  /// while a CUDA session is open. The registration survives: CUDA stays in
+  /// [getAvailableProviders] and the next CUDA session reloads the library.
+  /// See [FlutterOnnxruntimePlatform.releaseCudaRuntime].
+  Future<Map<String, dynamic>?> releaseCudaRuntime({bool resetContext = false}) =>
+      FlutterOnnxruntimePlatform.instance.releaseCudaRuntime(resetContext: resetContext);
+
   /// Fushi fork: use the onnxruntime.dll at [path] (downloaded DirectML core)
   /// instead of the bundled one. Must run before anything else touches ONNX
   /// Runtime. See [FlutterOnnxruntimePlatform.selectRuntime].

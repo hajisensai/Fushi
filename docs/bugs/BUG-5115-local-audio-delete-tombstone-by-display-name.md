@@ -1,0 +1,6 @@
+## BUG-5115 · local-audio-delete-tombstone-by-display-name
+- **报告**：2026-11-22（外部审计 HBK-AUDIT-022，2026-11-21 Codex PR 审查，来源 PR #3968）
+- **真实性**：✅ 真 bug。PR #3968 让同步按内容身份认库（同一份库两端可异名），删除链路却仍全程用显示名：写墓碑 `fushi/lib/src/models/app_model.dart:13755`（itemKey = displayName）、在库键 `fushi/lib/src/sync/sync_orchestrator/tombstones.part.dart:50`、确认后删除 `app_model.dart:1578`、互联 host 删除回调 `app_model.dart:1409` 与 `local_audio.part.dart:118`（认不出身份时把显示名交回调按名删）、服务端 `LocalAudioLibraryStore.remove(displayName)`。对端把内容 X 叫 `android.db` 删掉，本机内容 Y 恰好也叫 `android.db`，删除落到 Y，X 留下。
+- **[x] ① 已修复** — 删除、重新登记、同步、对账统一用内容身份：墓碑 itemKey 写 contentId（读不出身份的条目不传播、记日志），加回时按 contentId（及旧显示名）清墓碑；在库键改 contentId；确认删除 / host 删除回调 / 服务端 `remove` 都按 contentId 删所有身份相同的登记；host `deleteLocalAudio` 不是合格身份就不删；升级前按显示名写下的旧墓碑不推、不命中任何库（宁可漏删、不删错）。删除确认框按 contentId 映射回本机显示名展示。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/local_audio_deletion_identity_test.dart`（真 `SyncOrchestrator.syncDeletionTombstones`：内容身份墓碑命中异名的本机那份，同名的另一份库与按名旧墓碑不进候选）、`fushi/test/models/app_model_synced_local_audio_test.dart`（从所有设备删除写 contentId 墓碑、异名加回清墓碑；对端删除只删同身份那份、按名不删）、`fushi/test/sync/local_audio_content_identity_test.dart`（服务端 `remove` 按名不删、按身份删并删副本）、`packages/fushi_server/test/local_audio_host_test.dart`（无头 host 按名 DELETE 不动、按身份只删目标）。
+- **备注**：与旧版本对端互通时，旧端按显示名发来的「从所有设备删除」不再生效（无法确认是哪一份库）；本端发出的 contentId 墓碑旧端也认不出。这是数据安全取舍，PR 描述里写明。真机未验。

@@ -1000,6 +1000,11 @@ class MemoAppModel extends AppModel {
   bool get dictionaryUnifiedStyle => true;
   @override
   List<Dictionary> get dictionaries => dictionariesValue;
+  // 折叠 / 展开名单读的是 lookupViewDictionaries（作品会话视图或激活配置）；
+  // 62a2ac1320 起它在词典仓库未就绪时回空表，而这个替身不起 dictRepo，
+  // 所以直接给出替身的词典表（无作品会话 = 激活配置口径）。
+  @override
+  List<Dictionary> get lookupViewDictionaries => dictionariesValue;
   @override
   Map<String, String> get customDictCSS => customDictCSSValue;
   @override

@@ -1,10 +1,12 @@
 // 视频库整理的控制通道（ctl_video_organize_routes.dart）：作品明细、手动指定季集、
 // 按刮削资料整理文件名、把文件搬到点名的位置，以及各自撤销的往返。磁盘用临时目录
 // 上的真实文件，库用内存库，服务是真的 VideoFilenameOrganizeService（不接下载后端）。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ops/ctl_video_organize_routes.dart';
@@ -14,8 +16,78 @@ import 'package:fushi_engine/media/video/organize/video_filename_organize_servic
 import 'package:fushi_engine/media/video/organize/video_work_regroup.dart';
 import 'package:path/path.dart' as p;
 
+/// 可控执行顺序：armed 后，第一条碰到 [table] 的语句处插入 [race]（模拟别的写入方
+/// 恰好在这一刻提交）。读语句在读完之后插入，写语句在写之前插入——正好落在
+/// 「读当前值」与「写回」之间。[race] 收到的是该语句所在的 executor（事务内就是
+/// 事务 executor，等价于另一个连接在这两步之间已提交）。
+class _RaceGate extends QueryInterceptor {
+  String? table;
+  Future<void> Function(QueryExecutor executor)? race;
+  int fired = 0;
+
+  void arm(String table, Future<void> Function(QueryExecutor executor) race) {
+    this.table = table;
+    this.race = race;
+  }
+
+  Future<void> _maybeRace(QueryExecutor executor, String statement) async {
+    final String? t = table;
+    final Future<void> Function(QueryExecutor executor)? r = race;
+    if (t == null || r == null || !statement.contains(t)) return;
+    table = null;
+    race = null;
+    fired++;
+    await r(executor);
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    final List<Map<String, Object?>> rows = await executor.runSelect(
+      statement,
+      args,
+    );
+    await _maybeRace(executor, statement);
+    return rows;
+  }
+
+  @override
+  Future<int> runUpdate(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    await _maybeRace(executor, statement);
+    return executor.runUpdate(statement, args);
+  }
+
+  @override
+  Future<int> runDelete(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    await _maybeRace(executor, statement);
+    return executor.runDelete(statement, args);
+  }
+
+  @override
+  Future<int> runInsert(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    await _maybeRace(executor, statement);
+    return executor.runInsert(statement, args);
+  }
+}
+
 void main() {
   late FushiDatabase db;
+  late _RaceGate gate;
   late Directory root;
   late VideoFilenameOrganizeService service;
   late List<CtlRoute> routes;
@@ -66,7 +138,8 @@ void main() {
       );
 
   setUp(() async {
-    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    gate = _RaceGate();
+    db = FushiDatabase.forTesting(NativeDatabase.memory().interceptWith(gate));
     root = await Directory.systemTemp.createTemp('fushi_video_organize_');
     await db.insertMediaSource(
       MediaSourcesCompanion.insert(
@@ -199,6 +272,83 @@ void main() {
     expect(await db.getVideoEpisodeBindingOverride('ep2'), isNull);
   });
 
+  test('撤销季集指定的读与写之间别处改了指定：新值不被旧快照盖掉（HBK-AUDIT-029）', () async {
+    final Map<String, Object?> payload =
+        jsonDecode(
+              jsonEncode(
+                await call(
+                  'POST',
+                  '$kVideoOrganizeCtlRoot/files/:uid/episode',
+                  params: <String, String>{'uid': 'ep2'},
+                  body: <String, Object?>{'season': 1, 'episode': 2},
+                ),
+              ),
+            )
+            as Map<String, Object?>;
+    // 撤销读到「当前指定 = S1E2」的那一刻，同进程另一任务提交新指定 S0E1（不 await，
+    // 走根 zone，不混进撤销的事务）。
+    Future<void>? concurrent;
+    gate.arm('video_episode_binding_overrides', (QueryExecutor _) async {
+      concurrent = Zone.root.run(
+        () => db.setVideoEpisodeBindingOverride(
+          'ep2',
+          seasonNumber: 0,
+          episodeNumber: 1,
+        ),
+      );
+    });
+    await restoreVideoEpisodePin(
+      db,
+      bookUid: 'ep2',
+      applied: payload['applied'],
+      snapshot: payload['previous'],
+    );
+    await concurrent;
+    expect(gate.fired, 1);
+    final VideoEpisodeBindingOverrideRow? now = await db
+        .getVideoEpisodeBindingOverride('ep2');
+    expect((now?.seasonNumber, now?.episodeNumber), (0, 1));
+  });
+
+  test('手动指定季集：快照读与写入之间别处提交的指定进快照，撤销不抹掉它（BUG-5143）', () async {
+    // pinEpisode 读「执行前指定」的那一刻，同进程另一任务提交指定 S0E1（不 await，
+    // 走根 zone，不混进 pinEpisode 的事务）。快照必须是这次写入实际覆盖掉的值：
+    // 要么 S0E1 先落、进快照，要么排在写入之后、撤销时判 superseded；都不能被撤销抹掉。
+    Future<void>? concurrent;
+    gate.arm('video_episode_binding_overrides', (QueryExecutor _) async {
+      concurrent = Zone.root.run(
+        () => db.setVideoEpisodeBindingOverride(
+          'ep2',
+          seasonNumber: 0,
+          episodeNumber: 1,
+        ),
+      );
+    });
+    final Map<String, Object?> payload =
+        jsonDecode(
+              jsonEncode(
+                await call(
+                  'POST',
+                  '$kVideoOrganizeCtlRoot/files/:uid/episode',
+                  params: <String, String>{'uid': 'ep2'},
+                  body: <String, Object?>{'season': 1, 'episode': 2},
+                ),
+              ),
+            )
+            as Map<String, Object?>;
+    await concurrent;
+    expect(gate.fired, 1);
+    await restoreVideoEpisodePin(
+      db,
+      bookUid: 'ep2',
+      applied: payload['applied'],
+      snapshot: payload['previous'],
+    );
+    final VideoEpisodeBindingOverrideRow? now = await db
+        .getVideoEpisodeBindingOverride('ep2');
+    expect((now?.seasonNumber, now?.episodeNumber), (0, 1));
+  });
+
   test('手动指定之后用户又改过：撤销不覆盖', () async {
     final Map<Object?, Object?> result =
         await call(
@@ -267,6 +417,252 @@ void main() {
       ),
     );
     expect(await db.getVideoEpisodeBindingOverride('ep2'), isNull);
+  });
+
+  group('合集分栏（拍板台 iR6ccUys9H）', () {
+    late int season0Id;
+
+    setUp(() async {
+      // 一集短篇：文件名带集号 01（被文件名推进第 1 季），刮削认成特别篇 S00E02。
+      await addVideo('short1', 'Show/Shorts/Show Petit 01.mkv');
+      await db.addToCollection(collectionId, MediaKind.video, 'short1');
+      season0Id = (await db.getVideoMetadataSeasons(
+        workId,
+      )).singleWhere((VideoMetadataSeasonRow s) => s.seasonNumber == 0).id;
+      await addEpisode(season0Id, 2, bookUid: 'short1');
+    });
+
+    Future<Map<Object?, Object?>> sections() async =>
+        await call(
+              'GET',
+              '$kVideoOrganizeCtlRoot/works/:id/sections',
+              params: <String, String>{'id': 'collection:$collectionId'},
+            )
+            as Map<Object?, Object?>;
+
+    Map<String, List<Object?>> sectionFiles(
+      Map<Object?, Object?> data,
+    ) => <String, List<Object?>>{
+      for (final Map<Object?, Object?> s
+          in (data['sections']! as List<Object?>).cast<Map<Object?, Object?>>())
+        s['key']! as String: s['files']! as List<Object?>,
+    };
+
+    Map<Object?, Object?> fileOf(Map<Object?, Object?> data, String uid) =>
+        (data['files']! as List<Object?>)
+            .cast<Map<Object?, Object?>>()
+            .singleWhere((Map<Object?, Object?> f) => f['uid'] == uid);
+
+    Future<Map<Object?, Object?>> setSection(Map<String, Object?> body) async =>
+        await call('POST', '$kVideoOrganizeCtlRoot/sections', body: body)
+            as Map<Object?, Object?>;
+
+    test('查询：与详情页同一分栏；第 0 季文件归 PV·特典；报出可疑点', () async {
+      final Map<Object?, Object?> data = await sections();
+      expect(data['tabs'], isTrue);
+      expect(sectionFiles(data), <String, List<Object?>>{
+        's1': <Object?>['ep1', 'short1'],
+        'extras': <Object?>['ep2'],
+      });
+      expect(fileOf(data, 'short1')['source'], 'filename');
+      expect(fileOf(data, 'short1')['boundTo'], <String>['S00E02']);
+      expect(fileOf(data, 'short1')['path'], 'Show/Shorts/Show Petit 01.mkv');
+      final List<Map<Object?, Object?>> warnings =
+          (data['warnings']! as List<Object?>).cast<Map<Object?, Object?>>();
+      expect(
+        warnings.map((Map<Object?, Object?> w) => w['kind']),
+        containsAll(<String>['bound_to_special', 'duplicate_episode_number']),
+      );
+      expect(
+        warnings.singleWhere(
+          (Map<Object?, Object?> w) => w['kind'] == 'duplicate_episode_number',
+        )['uids'],
+        <Object?>['ep1', 'short1'],
+      );
+    });
+
+    test('钉到 PV·特典：分栏立刻变；撤销回到执行前', () async {
+      final Map<Object?, Object?> result = await setSection(<String, Object?>{
+        'items': <String>['short1'],
+        'section': 'extras',
+      });
+      expect(result['applied'], 'extras');
+      expect((result['items']! as List<Object?>).single, <String, Object?>{
+        'uid': 'short1',
+        'section': 'extras',
+        'source': 'manual',
+      });
+      final Map<Object?, Object?> after = await sections();
+      expect(sectionFiles(after), <String, List<Object?>>{
+        's1': <Object?>['ep1'],
+        'extras': <Object?>['ep2', 'short1'],
+      });
+      expect(fileOf(after, 'short1')['derivedSection'], 's1');
+      expect(after['warnings'], isEmpty);
+
+      // 撤销载荷过一遍 JSON（与持久化后再撤销同一形态）。
+      final Map<String, Object?> payload =
+          jsonDecode(jsonEncode(result)) as Map<String, Object?>;
+      final ({int reverted, int superseded}) undo =
+          await restoreVideoCollectionSections(
+            db,
+            applied: payload['applied'],
+            previous: payload['previous'],
+          );
+      expect(undo, (reverted: 1, superseded: 0));
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1']),
+        isEmpty,
+      );
+      expect(sectionFiles(await sections())['s1'], <Object?>['ep1', 'short1']);
+    });
+
+    test('钉到第 2 季 / 改回自动；之后又被改过的撤销保留现状', () async {
+      final Map<Object?, Object?> result = await setSection(<String, Object?>{
+        'items': <String>['short1', 'ep1'],
+        'section': 'season',
+        'season': 2,
+      });
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1', 'ep1']),
+        <String, String>{'short1': 's2', 'ep1': 's2'},
+      );
+      await db.setVideoCollectionSectionOverrides(<String>['ep1'], 'extras');
+      final ({int reverted, int superseded}) undo =
+          await restoreVideoCollectionSections(
+            db,
+            applied: result['applied'],
+            previous: result['previous'],
+          );
+      expect(undo, (reverted: 1, superseded: 1));
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1', 'ep1']),
+        <String, String>{'ep1': 'extras'},
+      );
+
+      await setSection(<String, Object?>{
+        'items': <String>['ep1'],
+        'section': 'auto',
+      });
+      expect(fileOf(await sections(), 'ep1')['section'], 's1');
+    });
+
+    test('撤销分栏的读与写之间别处提交了新分栏：保留新值、报 superseded（HBK-AUDIT-029）', () async {
+      final Map<String, Object?> payload =
+          jsonDecode(
+                jsonEncode(
+                  await setSection(<String, Object?>{
+                    'items': <String>['short1'],
+                    'section': 'extras',
+                  }),
+                ),
+              )
+              as Map<String, Object?>;
+      // 撤销碰到分栏表的那一刻（读完当前值之后 / 写回之前），另一写入方把 short1
+      // 提交成第 2 季。
+      gate.arm('video_collection_section_overrides', (QueryExecutor ex) async {
+        await ex.runUpdate(
+          'INSERT OR REPLACE INTO video_collection_section_overrides '
+          '(book_uid, section_key, updated_at) VALUES (?, ?, ?)',
+          <Object?>['short1', 's2', 2],
+        );
+      });
+      final ({int reverted, int superseded}) undo =
+          await restoreVideoCollectionSections(
+            db,
+            applied: payload['applied'],
+            previous: payload['previous'],
+          );
+      expect(gate.fired, 1);
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1']),
+        <String, String>{'short1': 's2'},
+      );
+      expect(undo, (reverted: 0, superseded: 1));
+    });
+
+    test('分栏条件写：四种 expected / replacement 组合只在当前值吻合时命中', () async {
+      Future<Map<String, String>> now() =>
+          db.getVideoCollectionSectionOverrides(<String>['short1']);
+      Future<bool> cas(String? expected, String? replacement) =>
+          db.compareAndSetVideoCollectionSectionOverride(
+            'short1',
+            expected: expected,
+            replacement: replacement,
+          );
+      expect(await cas(null, null), isTrue);
+      expect(await cas('s2', 'extras'), isFalse);
+      expect(await cas(null, 'extras'), isTrue);
+      expect(await now(), <String, String>{'short1': 'extras'});
+      expect(await cas(null, 's2'), isFalse);
+      expect(await cas(null, null), isFalse);
+      expect(await cas('s2', null), isFalse);
+      expect(await cas('extras', 's2'), isTrue);
+      expect(await now(), <String, String>{'short1': 's2'});
+      expect(await cas('s2', null), isTrue);
+      expect(await now(), isEmpty);
+      // 文件行已不在：不插孤儿行（外键），算没命中。
+      expect(
+        await db.compareAndSetVideoCollectionSectionOverride(
+          'gone',
+          expected: null,
+          replacement: 's2',
+        ),
+        isFalse,
+      );
+    });
+
+    test('手动指定到第 0 季：分栏跟着进 PV·特典（修前只看文件名）', () async {
+      await call(
+        'POST',
+        '$kVideoOrganizeCtlRoot/files/:uid/episode',
+        params: <String, String>{'uid': 'short1'},
+        body: <String, Object?>{'season': 0, 'episode': 2},
+      );
+      final Map<Object?, Object?> data = await sections();
+      expect(fileOf(data, 'short1')['section'], 'extras');
+      expect(fileOf(data, 'short1')['source'], 'pinnedEpisode');
+    });
+
+    test('参数不对 400、未知视频 404，都不写库', () async {
+      for (final Map<String, Object?> body in <Map<String, Object?>>[
+        <String, Object?>{
+          'items': <String>['short1'],
+          'section': 'season',
+        },
+        <String, Object?>{
+          'items': <String>['short1'],
+          'section': 'season',
+          'season': 0,
+        },
+        <String, Object?>{
+          'items': <String>['short1'],
+          'section': 'bogus',
+        },
+        <String, Object?>{'items': <String>[], 'section': 'extras'},
+      ]) {
+        await expectLater(
+          setSection(body),
+          throwsA(
+            isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+          ),
+          reason: '$body',
+        );
+      }
+      await expectLater(
+        setSection(<String, Object?>{
+          'items': <String>['short1', 'nope'],
+          'section': 'extras',
+        }),
+        throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 404),
+        ),
+      );
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1']),
+        isEmpty,
+      );
+    });
   });
 
   test('改完季集再整理：磁盘按新季集改名并归目录，字幕跟着走；撤销搬回', () async {
@@ -447,6 +843,35 @@ void main() {
       p.join(root.path, 'Show/Season 00/Renamed.mkv'),
     ).rename(p.join(root.path, 'elsewhere.mkv'));
     expect(await videoOrganizeUndoStillApplies(undoPlan), isFalse);
+  });
+
+  // HBK-AUDIT-031：撤销载荷落库（JSON）后仍带每个文件的身份；搬过去的位置
+  // 换成了别的文件时，不能把那个文件当成当初搬走的视频搬回原名。
+  test('撤销载荷带文件身份：同名位置换成别的文件，撤销判为已被处理且不动它', () async {
+    final Map<Object?, Object?> result =
+        await call(
+              'POST',
+              '$kVideoOrganizeCtlRoot/files/:uid/move',
+              params: <String, String>{'uid': 'ep2'},
+              body: <String, Object?>{'name': 'Renamed'},
+            )
+            as Map<Object?, Object?>;
+    final VideoFilenameOrganizePlan undoPlan = videoOrganizePlanFromJson(
+      jsonDecode(jsonEncode(takeVideoOrganizeUndo(result['undoToken']))),
+    )!;
+    final String moved = p.join(root.path, 'Show/Season 00/Renamed.mkv');
+    await File(moved).rename(p.join(root.path, 'elsewhere.mkv'));
+    await File(moved).writeAsString('an unrelated file');
+    expect(await videoOrganizeUndoStillApplies(undoPlan), isFalse);
+    final ({int reverted, List<String> errors}) outcome =
+        await revertVideoOrganize(service, undoPlan);
+    expect(outcome.reverted, 0);
+    expect(outcome.errors, isNotEmpty);
+    expect(await File(moved).readAsString(), 'an unrelated file');
+    expect(
+      File(p.join(root.path, 'Show/Season 00/Show - S00E01.mkv')).existsSync(),
+      isFalse,
+    );
   });
 
   group('摆放审计与拆并作品', () {

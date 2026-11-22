@@ -77,7 +77,7 @@ void main() {
         return;
       }
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains('PASS 2 browser cases'));
+      expect(result.stdout, contains('PASS 4 browser cases'));
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );

@@ -64,16 +64,50 @@ class UpdateChecker {
 
   static String _updateFlowKey(String version) => 'update|$version';
 
+  /// 在途的下载会话（按 [_updateFlowKey]，与 [_activeUpdateFlows] 同 key）。会话自己在
+  /// 构造时登记、dispose 时注销（[_UpdateDownloadSession]）。BUG-5168：浮层点「隐藏」
+  /// 后会话仍在跑，再次「检查更新」靠这张表找回它、把浮层重新拉起来。
+  static final Map<String, _UpdateDownloadSession> _activeDownloadSessions =
+      <String, _UpdateDownloadSession>{};
+
+  /// 把在途下载的浮层重新显示出来（BUG-5168）。[version] 为 null 时找任一在本机有
+  /// 浮层的在途会话。返回 true = 已拉起；false = 没有在途下载，或它在本机没有浮层。
+  static bool revealActiveDownload({String? version}) {
+    if (version != null) {
+      return _activeDownloadSessions[_updateFlowKey(version)]?.reveal() ??
+          false;
+    }
+    for (final _UpdateDownloadSession session
+        in _activeDownloadSessions.values) {
+      if (session.reveal()) return true;
+    }
+    return false;
+  }
+
+  /// 同版本流已在途时的反馈：下载中 → 把（可能被隐藏的）浮层拉回来；本机没有浮层
+  /// 可拉时才退回一句「正在下载」。
+  static void _showActiveDownload(BuildContext context, String version) {
+    if (revealActiveDownload(version: version)) return;
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(t.update_downloading)));
+  }
+
   /// [version] 已有对话框在屏 / 下载安装在途时给出反馈并返回 true；否则 false。
   static bool _notifyIfUpdateFlowActive(BuildContext context, String version) {
     if (!_activeUpdateFlows.containsKey(_updateFlowKey(version))) return false;
-    if (!_openUpdateDialogVersions.contains(version) && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(FushiSnackBar(content: Text(t.update_downloading)));
+    if (!_openUpdateDialogVersions.contains(version)) {
+      _showActiveDownload(context, version);
     }
     return true;
   }
+
+  @visibleForTesting
+  static bool notifyIfUpdateFlowActiveForTest(
+    BuildContext context,
+    String version,
+  ) => _notifyIfUpdateFlowActive(context, version);
 
   /// 当前在途的检查阶段中断令牌（TODO-821）。`_check` 进入时登记，退出时清空。
   /// 同一时刻只跑一轮检查（`scheduleCheck` 走 post-frame 单次触发），单个足矣。
@@ -909,13 +943,7 @@ class UpdateChecker {
         updater,
         customProxy: customProxy,
       ),
-      onAlreadyActive: () {
-        if (context.mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(FushiSnackBar(content: Text(t.update_downloading)));
-        }
-      },
+      onAlreadyActive: () => _showActiveDownload(context, version),
     );
   }
 
@@ -1050,8 +1078,9 @@ class UpdateChecker {
     }
     // 下载浮层 + 取消令牌（TODO-683/738）与互联远程触发共用同一个会话，见
     // [_UpdateDownloadSession]（update_checker_headless.dart）。
-    final _UpdateDownloadSession session = _UpdateDownloadSession()
-      ..showIn(Overlay.of(context));
+    final _UpdateDownloadSession session = _UpdateDownloadSession(
+      version: version,
+    )..showIn(Overlay.of(context));
     final UpdateDownloadCancellation cancellation = session.cancellation;
 
     HttpClient? client;
@@ -1139,7 +1168,9 @@ class UpdateChecker {
     String version,
     PackageManagedUpdater updater,
   ) async {
-    final _UpdateDownloadSession session = _UpdateDownloadSession();
+    final _UpdateDownloadSession session = _UpdateDownloadSession(
+      version: version,
+    );
     try {
       await HeadlessUpdateFlow._stageInSession(
         session,

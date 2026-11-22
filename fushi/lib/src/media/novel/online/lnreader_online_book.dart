@@ -570,8 +570,10 @@ File lnReaderOnlineChapterFile(String extractDir, int index) =>
     r'src="(images/[^"]+)"',
   ).allMatches(body)) {
     final String name = match.group(1)!;
-    final File image = File(p.join(extractDir, 'OEBPS', name));
-    if (!image.existsSync()) continue;
+    // 正文来自站点，src 名字不可信：只认生成规则下、在本书图片目录里的文件
+    // （HBK-AUDIT-002）。
+    final File? image = lnReaderBookImageFile(extractDir, name);
+    if (image == null || !image.existsSync()) continue;
     final Uint8List bytes = image.readAsBytesSync();
     final String? mediaType = sniffLnReaderImageMediaType(bytes);
     if (mediaType == null) continue;

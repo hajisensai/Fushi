@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/video/video_content_fingerprint.dart'
     show backfillVideoContentFingerprints;
@@ -126,6 +127,10 @@ typedef CollectionPlaybackSnapshot = ({
   Map<String, VideoScrapeMetaRow> episodeMeta,
   CollectionScrapeMetaRow? collectionMeta,
   List<MediaImageRow> images,
+
+  /// `book_uid → 生效分栏键`（[loadCollectionGroupKeysForVideos]：手动分栏 / 手动
+  /// 季集指定优先，否则文件名派生）。剧集面板的季 chip 与合集详情页同口径。
+  Map<String, String> sectionKeys,
 });
 
 typedef _DeletedVideoSnapshot = ({
@@ -533,6 +538,7 @@ class VideoBookRepository {
         episodeMeta: const <String, VideoScrapeMetaRow>{},
         collectionMeta: collectionMeta,
         images: images,
+        sectionKeys: const <String, String>{},
       );
     }
     final (
@@ -554,6 +560,7 @@ class VideoBookRepository {
       episodeMeta: metas,
       collectionMeta: collectionMeta,
       images: images,
+      sectionKeys: await loadCollectionGroupKeysForVideos(_db, rows),
     );
   }
 

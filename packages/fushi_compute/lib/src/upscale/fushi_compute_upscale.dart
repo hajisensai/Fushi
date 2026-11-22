@@ -47,7 +47,8 @@ enum FfcUpscaleEventKind {
   /// 任务被丢弃（翻走了 / 同键替换 / 清队列）。
   cancelled(4),
 
-  /// 当前配置的模型加载失败（token 为 0）。
+  /// 某一代配置的模型加载失败（token = 那一代的代际，见 [FushiComputeUpscale.configure]）。只在它等于
+  /// 自己启用时拿到的代际才按「不可用」处理：换档后旧代迟到的失败不属于新档。
   modelsFailed(5);
 
   const FfcUpscaleEventKind(this.code);
@@ -143,8 +144,15 @@ typedef _AvailDart = int Function(int);
 typedef _TierSupportedC = Int32 Function(Uint32, Uint32);
 typedef _TierSupportedDart = int Function(int, int);
 typedef _ConfigureC =
-    Int32 Function(Uint32, Uint32, Pointer<Utf8>, Pointer<Utf8>);
-typedef _ConfigureDart = int Function(int, int, Pointer<Utf8>, Pointer<Utf8>);
+    Int32 Function(
+      Uint32,
+      Uint32,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Uint64>,
+    );
+typedef _ConfigureDart =
+    int Function(int, int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
 typedef _SubmitC =
     Int32 Function(
       Uint64,
@@ -285,22 +293,28 @@ class FushiComputeUpscale {
   bool tierSupported(FfcUpscaleTier tier, FfcUpscaleBackend backend) =>
       _tierSupported(tier.code, backend.code) == 1;
 
-  /// 配置档位与模型文件；配置变了，引擎在下一页之前重载模型。
-  int configure({
+  /// 配置档位与模型文件；配置变了，引擎在下一页之前重载模型（并丢掉旧配置排队的任务）。
+  ///
+  /// 返回原生状态码与生效的配置代际：配置变了（或这代模型加载失败过、重新启用）代际加一，否则不变。
+  /// [FfcUpscaleEventKind.modelsFailed] 的 token 就是失败的那一代。
+  ({int status, int generation}) configure({
     required FfcUpscaleTier tier,
     required FfcUpscaleBackend backend,
     required String? insideModel,
     required String outsideModel,
   }) {
     return using((Arena arena) {
-      return _configure(
+      final Pointer<Uint64> generation = arena<Uint64>();
+      final int status = _configure(
         tier.code,
         backend.code,
         insideModel == null
             ? nullptr
             : insideModel.toNativeUtf8(allocator: arena),
         outsideModel.toNativeUtf8(allocator: arena),
+        generation,
       );
+      return (status: status, generation: generation.value);
     });
   }
 

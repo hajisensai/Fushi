@@ -2418,6 +2418,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             percent: (fractionOf(item) * 100).round(),
           ),
           onOpen: openerOf(item),
+          // 长按 / 右键 = 与书架网格书卡同一个书条目菜单（BUG-5173）；伴屏高亮主卡
+          // 认主卡的固定 id，其余卡认书卡 id（都能解析回这本书）。
+          onLongPress: () => unawaited(
+            _companionPressed(
+              main
+                  ? const FushiFocusId('reader-shelf-continue-hero')
+                  : FushiFocusId('reader-shelf-book-${item.mediaIdentifier}'),
+              () => _showEpubItemMenu(item),
+            ),
+          ),
         );
     // 封面取色并列卡（2026-11-01 用户选定设计稿「5 · 封面取色卡」）：主卡与
     // 其余在读的书同款同大，卡宽卡在网格列上。

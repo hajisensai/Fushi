@@ -108,10 +108,12 @@ class MangaRenderItem {
     MangaRenderClip() => null,
   };
 
-  /// 由这句生成清单行（文件 / 时长 / 是否占位由生成端给）。
+  /// 由这句生成清单行（文件 / 时长 / 是否占位 / 整形版本由生成端给；占位静音不整形，
+  /// [shape] 传 null）。
   MangaRenderedLine rendered({
     required String file,
     required int durationMs,
+    required String? shape,
     bool placeholder = false,
   }) => MangaRenderedLine(
     lineId: lineId,
@@ -126,16 +128,21 @@ class MangaRenderItem {
     placeholder: placeholder,
     voice: voiceTag,
     seed: seed,
+    shape: shape,
   );
 
-  /// [old] 的音频能不能原样沿用：不是占位、念的文字 / 声音 / 种子都没变。说话人、类型、
-  /// 一拍这类不影响音频的字段变了照样沿用（清单行按新值重建）。
-  bool canReuse(MangaRenderedLine old) =>
+  /// [old] 的音频能不能原样沿用：不是占位、念的文字 / 声音 / 种子都没变，且出音频时的
+  /// 整形版本就是这次的 [shape]（`MangaRenderBackend.shapeVersion`）。整形参数（裁静音 /
+  /// 淡变 / 响度）变了，旧音频与新出的句子混排会忽大忽小，必须重出；没记整形版本的历史
+  /// 清单行（null）一律算版本不符。说话人、类型、一拍这类不影响音频的字段变了照样沿用
+  /// （清单行按新值重建）。
+  bool canReuse(MangaRenderedLine old, {required String shape}) =>
       !old.placeholder &&
       old.lineId == lineId &&
       old.text == text &&
       old.voice == voiceTag &&
-      old.seed == seed;
+      old.seed == seed &&
+      old.shape == shape;
 }
 
 /// 一卷的生成计划。

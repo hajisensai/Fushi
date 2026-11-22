@@ -359,6 +359,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_external_audiobook_replay_sentence;
       case ShortcutAction.globalExternalGalgameSpeakLine:
         return t.shortcut_action_global_external_galgame_speak_line;
+      case ShortcutAction.globalExternalGalgameOverlayToggle:
+        return t.shortcut_action_global_external_galgame_overlay_toggle;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:

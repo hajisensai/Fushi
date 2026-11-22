@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -29,8 +31,8 @@ class _DiscHost implements FushiLibraryHostService, VideoDiscShareHost {
   ];
 
   @override
-  Future<AggregateSnapshot> getAggregateSnapshot() async =>
-      const AggregateSnapshot();
+  Future<Uint8List> getAggregateBody() async =>
+      encodeAggregateWireJson(const AggregateSnapshot().toJson());
 
   @override
   Future<CollectionManifest> getCollectionManifest() async =>

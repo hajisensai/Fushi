@@ -52,6 +52,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -408,6 +409,11 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 列表上方的来源筛选（只在有服务器词典时出现）。
   DictionarySourceFilter _sourceFilter = DictionarySourceFilter.all;
 
+  /// 列表上方的语言筛选（只在当前分区有两种及以上语言时出现）。语言只是标签，
+  /// 不参与排序（拍板台 zBzX4B7037）。
+  DictionaryLanguageFilter _languageFilter =
+      DictionaryLanguageFilter.allLanguages;
+
   /// host 身份 → 展示名（配对记下的设备名），来源标签 / 筛选 / host 提示用。
   Map<String, String> _hostNames = const <String, String>{};
 
@@ -668,6 +674,34 @@ class _DictionaryDialogPageState extends BasePageState {
     return filter;
   }
 
+  /// [type] 分区里出现过的语言标签（筛选项顺序，未标注放最后）。
+  List<String?> _languageTagsOf(DictionaryType type) =>
+      dictionaryLanguageTagsIn<DictionaryManagerRow>(
+        _rowsForType(type),
+        (DictionaryManagerRow row) => row.languageTag,
+      );
+
+  /// 当前分区出现两种及以上语言（未标注也算一种）时才画语言筛选条与行上的语言
+  /// 标签：多数用户只装一种语言的词典，每行都挂同一枚标签只是噪音。
+  bool get _showLanguageTags => _languageTagsOf(_selectedType).length > 1;
+
+  /// 生效的语言筛选：选中的语言在当前分区已不存在（换了分区、改了语言、删了词典）
+  /// 或分区里只剩一种语言时回落「全部语言」，不让列表停在一个看不见的筛选上。
+  DictionaryLanguageFilter get _effectiveLanguageFilter {
+    final DictionaryLanguageFilter filter = _languageFilter;
+    if (filter.all) return filter;
+    final List<String?> tags = _languageTagsOf(_selectedType);
+    if (tags.length < 2 || !tags.contains(filter.language)) {
+      return DictionaryLanguageFilter.allLanguages;
+    }
+    return filter;
+  }
+
+  /// 来源或语言筛选生效中：屏幕上的列表只是分区的一部分。
+  bool get _rowsFiltered =>
+      _effectiveSourceFilter != DictionarySourceFilter.all ||
+      !_effectiveLanguageFilter.all;
+
   /// 一个分区的混排行（本机词典 + 只在服务器上的词典，见 [mixDictionaryManagerRows]）。
   ///
   /// 「汉字」分区不混服务器词典：混合词典的汉字部分在那里按独立的
@@ -729,6 +763,20 @@ class _DictionaryDialogPageState extends BasePageState {
     } finally {
       if (mounted) setState(() => _refreshingServer = false);
     }
+  }
+
+  /// 语言筛选条：全部语言 / 当前分区里的每种语言 / 未标注语言。
+  Widget _buildLanguageFilterBar() {
+    return DictionaryLanguageFilterBar(
+      key: const ValueKey<String>('dict-language-filter-bar'),
+      languages: _languageTagsOf(_selectedType),
+      selected: _effectiveLanguageFilter,
+      // 换筛选收回详情：侧板不能停在一本此刻列表里看不见的词典上。
+      onSelected: (DictionaryLanguageFilter filter) => setState(() {
+        _languageFilter = filter;
+        _detailName = null;
+      }),
+    );
   }
 
   /// 来源筛选条：全部 / 本机 / 每台服务器 / 已隐藏（两台及以上服务器时 + 刷新全部）。
@@ -944,6 +992,8 @@ class _DictionaryDialogPageState extends BasePageState {
       if (_showServerSourcesStrip) _buildServerSourcesStrip(),
       // 服务器词典的来源筛选：与类型分段同属「筛列表」，紧跟其后。
       if (_hasServerRows) _buildSourceFilterBar(),
+      // 语言筛选：语言是标签，筛的是看哪些行，排序仍在整个分区里进行。
+      if (_hasAnyRows && _showLanguageTags) _buildLanguageFilterBar(),
       buildContent(),
       // TODO-1075：自动更新设置卡移到词典列表之后（页尾设置区），不再横切
       // 「导入/浏览/清空」高频操作与分类选择器之间的操作动线。宽屏它住进右侧
@@ -2126,9 +2176,9 @@ class _DictionaryDialogPageState extends BasePageState {
             builder: (_, DictionaryDownloadPhase phase, __) {
               final bool show =
                   pending > 0 && phase == DictionaryDownloadPhase.idle;
-              return AnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                curve: Curves.easeOutCubic,
+              return FushiAnimatedSize(
+                duration: context.fushiMotion.spatialDefault.duration,
+                curve: context.fushiMotion.spatialDefault.curve,
                 alignment: Alignment.topCenter,
                 child: !show
                     ? const SizedBox(width: double.infinity)
@@ -2278,12 +2328,15 @@ class _DictionaryDialogPageState extends BasePageState {
     }
   }
 
-  /// 当前分区在当前来源筛选下看得见的行（列表与详情侧板共用）。
+  /// 当前分区在当前来源 / 语言筛选下看得见的行（列表与详情侧板共用）。
   List<DictionaryManagerRow> _visibleRows() {
     final DictionarySourceFilter filter = _effectiveSourceFilter;
+    final DictionaryLanguageFilter language = _effectiveLanguageFilter;
     return <DictionaryManagerRow>[
       for (final DictionaryManagerRow row in _rowsForType(_selectedType))
-        if (filter.matches(row, enabled: _rowEnabled(row))) row,
+        if (filter.matches(row, enabled: _rowEnabled(row)) &&
+            language.matches(row))
+          row,
     ];
   }
 
@@ -2303,92 +2356,27 @@ class _DictionaryDialogPageState extends BasePageState {
         if (visible.isEmpty && kanjiServerNotes.isEmpty)
           _buildEmptyCategoryRow()
         else if (visible.isNotEmpty)
-          // 进场窗口：首开、切换词典类型与切换来源筛选时，首屏的组标题与词典行
+          // 进场窗口：首开、切换词典类型与切换来源 / 语言筛选时，首屏的词典行
           // 错峰淡入上移（服务器行与本机行同一条错峰序列）。
           FushiEntranceScope(
-            replayKey: '${_selectedType.name}|${filter.id}',
-            child: _buildLanguageGroups(visible),
+            replayKey:
+                '${_selectedType.name}|${filter.id}|'
+                '${_effectiveLanguageFilter.id}',
+            child: _buildDictionaryList(visible),
           ),
       ],
     );
   }
 
-  /// 按「有效语言」（手动指定优先，其次包内声明）分组的列表（反馈 D_Nz5R4vSH）：
-  /// 每组一个语言名标题 + 一列只能在组内拖动的词典；没有语言信息的归「未标注
-  /// 语言」组放最后。分组与组内顺序的推导见 [groupDictionariesByLanguage]——
-  /// 组内顺序就是全局查词优先级在该组的子序列；组内重排写回时整个分区按「各组
-  /// 首尾相接」重编号（[moveDictionaryWithinLanguageGroup]），所以这里从上到下
-  /// 画出来的顺序就是真实查词顺序，其它组的组内顺序不变。
-  ///
-  /// 只有一个语言组时不画组标题：多数用户只装一种语言的词典，列表保持原样，
-  /// 不平白多一行标题；两组及以上才需要标题来区分。
-  Widget _buildLanguageGroups(List<DictionaryManagerRow> section) {
-    final List<DictionaryManagerLanguageGroup> groups =
-        groupDictionaryManagerRowsByLanguage(section);
-    final bool showHeaders = groups.length > 1;
-    final List<Widget> children = <Widget>[];
-    // 错峰下标跨组累加：标题与词典行按屏幕自上而下依次进场。
-    int entranceIndex = 0;
-    for (int g = 0; g < groups.length; g++) {
-      final DictionaryManagerLanguageGroup group = groups[g];
-      if (showHeaders) {
-        children.add(
-          FushiStaggeredEntrance(
-            index: entranceIndex++,
-            child: _buildLanguageGroupHeader(
-              group.language,
-              group.rows.length,
-              first: g == 0,
-            ),
-          ),
-        );
-      }
-      children.add(
-        _buildDictionaryList(
-          group.rows,
-          groupKey: group.language,
-          entranceOffset: entranceIndex,
-        ),
-      );
-      entranceIndex += group.rows.length;
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: children,
-    );
-  }
-
-  /// 组标题：语言自称（与内容语言选择器同一套标签，见 [contentLanguageLabelOf]）
-  /// + 本组本数。走 [SettingsSectionHeader]，MD3 / Apple 各按自己的分组外标题排。
-  Widget _buildLanguageGroupHeader(
-    String? language,
-    int count, {
-    required bool first,
-  }) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String label = language == null
-        ? t.dict_language_group_unset
-        : contentLanguageLabelOf(language);
-    return KeyedSubtree(
-      key: ValueKey<String>('dict-language-group-${language ?? ''}'),
-      child: SettingsSectionHeader(
-        t.dict_language_group_title(language: label, n: count),
-        padding: EdgeInsets.only(
-          top: first ? 0 : tokens.spacing.card,
-          bottom: tokens.spacing.gap,
-        ),
-      ),
-    );
-  }
-
-  /// [row] 在它所在分区里的语言组（组内顺序，含服务器行）。详情里的上移 / 下移 /
-  /// 置顶 / 置底 / 移到第几位与键盘 Alt+↑↓ 都以组为排序范围。
-  List<DictionaryManagerRow> _languageGroupRowsOf(DictionaryManagerRow row) {
+  /// [row] 所在分区的全部行（分区顺序，含服务器行）。详情里的上移 / 下移 /
+  /// 置顶 / 置底 / 移到第几位以整个分区为排序范围：内容语言只是标签，不参与
+  /// 排序（拍板台 zBzX4B7037）。
+  List<DictionaryManagerRow> _sectionRowsOf(DictionaryManagerRow row) {
     final Dictionary? local = row.local;
     final DictionaryType section = local != null
         ? _sectionTypeOf(local)
         : row.remote!.type;
-    return dictionaryManagerLanguageGroupOf(_rowsForType(section), row);
+    return _rowsForType(section);
   }
 
   /// 列表头：分类标题 + 「共 N 本 · 已启用 M 本」，右侧是排序方式提示（桌面
@@ -2695,24 +2683,34 @@ class _DictionaryDialogPageState extends BasePageState {
       overflow: TextOverflow.ellipsis,
       style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
     );
-    if (!_hasServerRows) return label;
+    // 语言标签：分区里有两种及以上语言时，标了语言的行挂一枚语言 tag（与上方语言
+    // 筛选同一套名字）；语言不影响排序，tag 只是告诉用户这本是什么语言。
+    final String? language = _showLanguageTags ? row.languageTag : null;
+    if (!_hasServerRows && language == null) return label;
     final RemoteDictionary? remote = row.remote;
     final bool older = remote != null && _olderHost(remote.hostId);
-    final bool showsChip = DictionarySourceChip.shows(
-      row.source,
-      olderHost: older,
-    );
+    final bool showsChip =
+        _hasServerRows &&
+        DictionarySourceChip.shows(row.source, olderHost: older);
+    final double gap = FushiDesignTokens.of(context).spacing.gap / 2;
     return Row(
       children: <Widget>[
-        DictionarySourceChip(
-          key: ValueKey<String>('dict-row-source-${row.key}'),
-          kind: row.source,
-          hostName: _sourceHostName(row),
-          showHostName: _lookupHostCount >= 2,
-          olderHost: older,
-        ),
-        if (showsChip)
-          SizedBox(width: FushiDesignTokens.of(context).spacing.gap / 2),
+        if (language != null) ...<Widget>[
+          DictionaryLanguageTag(
+            key: ValueKey<String>('dict-row-language-${row.key}'),
+            language: language,
+          ),
+          SizedBox(width: gap),
+        ],
+        if (_hasServerRows)
+          DictionarySourceChip(
+            key: ValueKey<String>('dict-row-source-${row.key}'),
+            kind: row.source,
+            hostName: _sourceHostName(row),
+            showHostName: _lookupHostCount >= 2,
+            olderHost: older,
+          ),
+        if (showsChip) SizedBox(width: gap),
         Flexible(child: label),
       ],
     );
@@ -2958,19 +2956,14 @@ class _DictionaryDialogPageState extends BasePageState {
   // 上移 / 下移按钮（Icons.keyboard_arrow_up / Icons.keyboard_arrow_down）仍是
   // 无障碍 / 手柄重排路径。
   ///
-  /// 一组语言一列：[dictionaries] 是该组词典（组内顺序），拖拽天然只能落在本组
-  /// 之内；[groupKey] 让各组的列表 element 不因组数变化而错位复用；
-  /// [entranceOffset] 是本组第一行在整屏错峰序列里的下标。
-  Widget _buildDictionaryList(
-    List<DictionaryManagerRow> rows, {
-    required String? groupKey,
-    required int entranceOffset,
-  }) {
+  /// [rows] 是当前分区在来源 / 语言筛选下看得见的行（分区顺序）；筛选生效时拖动
+  /// 的落点由 [_reorderRows] 换算回整个分区。
+  Widget _buildDictionaryList(List<DictionaryManagerRow> rows) {
     final bool split = dictionaryManagerUsesSplitLayout(
       MediaQuery.sizeOf(context).width,
     );
     return FushiReorderableColumn(
-      key: ValueKey<String>('dict-language-list-${groupKey ?? ''}'),
+      key: const ValueKey<String>('dict-list'),
       itemCount: rows.length,
       // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
       // 圆角传卡片半径，让拖拽浮层裁成圆角、不在卡片四角露出底色。
@@ -2987,7 +2980,7 @@ class _DictionaryDialogPageState extends BasePageState {
       itemBuilder: (BuildContext context, int index) {
         final DictionaryManagerRow row = rows[index];
         return FushiStaggeredEntrance(
-          index: entranceOffset + index,
+          index: index,
           child: row.isRemote
               ? _buildRemoteDictionaryTile(
                   row: row,
@@ -3014,14 +3007,15 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 拖拽、键盘、详情里的上移 / 下移 / 置顶 / 置底统一走这套最终下标语义——无需
   /// SDK 的 `if(new>old)new--` 特例。越界与原地不动直接忽略。
   ///
-  /// [displayed] 是**屏幕上的一个语言组**（来源筛选后可能只是组的一部分），只用来
-  /// 取被移动的是哪行：组成员一律从最新分区现算——列表是渲染时捕获的，期间别处
-  /// （ctl 路由、导入、改语言、目录刷新）可能已经改了组成员。筛选生效时落点换算成
-  /// 完整组里「目标行」的下标，筛选后挪一格 = 越过屏幕上相邻的那一行。
+  /// [displayed] 是**屏幕上的列表**（来源 / 语言筛选后可能只是分区的一部分），只用来
+  /// 取被移动的是哪行：分区一律现算——列表是渲染时捕获的，期间别处（ctl 路由、
+  /// 导入、目录刷新）可能已经改了分区。筛选生效时落点换算成整个分区里「目标行」
+  /// 的下标，筛选后挪一格 = 越过屏幕上相邻的那一行。内容语言只是标签，不限制排序
+  /// 范围（拍板台 zBzX4B7037）。
   ///
-  /// 分区里没有服务器行时走原路径（[moveDictionaryWithinLanguageGroup]）逐字不变；
-  /// 有服务器行时整个分区按混排顺序 0..n-1 重编号，本机与服务器两张表同一事务落库
-  /// （[AppModel.updateMixedDictionaryOrder]），管理页显示的顺序就是真实查词顺序。
+  /// 分区里没有服务器行时只给本机词典重编号；有服务器行时整个分区按混排顺序 0..n-1
+  /// 重编号，本机与服务器两张表同一事务落库（[AppModel.updateMixedDictionaryOrder]），
+  /// 管理页显示的顺序就是真实查词顺序。
   Future<bool> _reorderRows(
     int oldIndex,
     int newIndex,
@@ -3030,23 +3024,23 @@ class _DictionaryDialogPageState extends BasePageState {
     if (oldIndex < 0 || oldIndex >= displayed.length) return false;
     final DictionaryManagerRow moved = displayed[oldIndex];
     final List<DictionaryManagerRow> section = _rowsForType(_selectedType);
-    // 不筛选时屏幕上的组就是完整组：落点直接是组内下标（组成员变了也按最新组算）。
-    // 筛选后屏幕上只是组的一部分，落点换算成完整组里「目标行」的下标。
+    // 不筛选时屏幕上的列表就是整个分区：落点直接是分区下标。筛选后屏幕上只是
+    // 分区的一部分，落点换算成分区里「目标行」的下标。
     int target = newIndex;
-    if (_effectiveSourceFilter != DictionarySourceFilter.all) {
+    if (_rowsFiltered) {
       final DictionaryManagerRow anchor =
           displayed[newIndex.clamp(0, displayed.length - 1)];
-      target = dictionaryManagerLanguageGroupOf(
-        section,
-        moved,
-      ).indexWhere((DictionaryManagerRow r) => r.key == anchor.key);
+      target = section.indexWhere(
+        (DictionaryManagerRow r) => r.key == anchor.key,
+      );
       if (target < 0) return false;
     }
 
     if (!section.any((DictionaryManagerRow r) => r.isRemote)) {
       final List<Dictionary>? cloneDictionaries =
-          moveDictionaryWithinLanguageGroup(
+          moveDictionarySectionRow<Dictionary>(
             _dictionariesForType(_selectedType),
+            (Dictionary d) => d.name,
             moved.key,
             target,
           );
@@ -3070,7 +3064,12 @@ class _DictionaryDialogPageState extends BasePageState {
     }
 
     final List<DictionaryManagerRow>? next =
-        moveDictionaryManagerRowWithinLanguageGroup(section, moved.key, target);
+        moveDictionarySectionRow<DictionaryManagerRow>(
+          section,
+          (DictionaryManagerRow r) => r.key,
+          moved.key,
+          target,
+        );
     if (next == null) return false;
     final List<Dictionary> locals = <Dictionary>[];
     final List<RemoteDictionary> remotes = <RemoteDictionary>[];
@@ -3088,9 +3087,9 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 把 [row] 挪到它所在语言组的最终下标 [to]（详情里的四个排序按钮）。
+  /// 把 [row] 挪到它所在分区的最终下标 [to]（详情里的四个排序按钮）。
   Future<bool> _moveRowTo(DictionaryManagerRow row, int to) async {
-    final List<DictionaryManagerRow> group = _languageGroupRowsOf(row);
+    final List<DictionaryManagerRow> group = _sectionRowsOf(row);
     final int from = group.indexWhere(
       (DictionaryManagerRow r) => r.key == row.key,
     );
@@ -3102,7 +3101,7 @@ class _DictionaryDialogPageState extends BasePageState {
   /// [_reorderRows] 写入路径，焦点跟着被移动的词典走（列表所在路由是
   /// 当前路由时——窄屏从底部 sheet 里移动时焦点留在 sheet，sheet 内容自己刷新）。
   Future<void> _promptMoveRow(DictionaryManagerRow row) async {
-    final List<DictionaryManagerRow> group = _languageGroupRowsOf(row);
+    final List<DictionaryManagerRow> group = _sectionRowsOf(row);
     final int from = group.indexWhere(
       (DictionaryManagerRow r) => r.key == row.key,
     );
@@ -3247,7 +3246,7 @@ class _DictionaryDialogPageState extends BasePageState {
     VoidCallback? beforeForget,
   }) {
     final DictionaryManagerRow row = DictionaryManagerRow.remote(remote);
-    final List<DictionaryManagerRow> siblings = _languageGroupRowsOf(row);
+    final List<DictionaryManagerRow> siblings = _sectionRowsOf(row);
     final int position = siblings.indexWhere(
       (DictionaryManagerRow r) => r.key == row.key,
     );
@@ -3530,9 +3529,9 @@ class _DictionaryDialogPageState extends BasePageState {
     required bool showHeader,
     required VoidCallback onDeleteRequested,
   }) {
-    // 位置与「共几本」都按语言组算：排序只在组内进行（服务器行一并计入）。
+    // 位置与「共几本」按整个分区算（服务器行一并计入；语言不分组）。
     final DictionaryManagerRow row = DictionaryManagerRow.local(dictionary);
-    final List<DictionaryManagerRow> siblings = _languageGroupRowsOf(row);
+    final List<DictionaryManagerRow> siblings = _sectionRowsOf(row);
     final int position = siblings.indexWhere(
       (DictionaryManagerRow r) => r.key == row.key,
     );
@@ -3760,10 +3759,7 @@ class _DictionaryDialogPageState extends BasePageState {
       tooltip: t.dict_order_position_move,
       enabled:
           picked.length == 1 &&
-          _languageGroupRowsOf(
-                DictionaryManagerRow.local(picked.single),
-              ).length >
-              1,
+          _sectionRowsOf(DictionaryManagerRow.local(picked.single)).length > 1,
       onTap: () => _promptMoveRow(DictionaryManagerRow.local(picked.single)),
     );
     final Widget delete = FushiIconButton(
