@@ -906,21 +906,25 @@ fn run(
                 .ok_or("cache_config_set: missing now")?;
             // 注册配置与默认牌组不变式的开库自愈（[cmd::writes_intent::revive_default_deck]，BUG-5209）同一个事务：
             // 复活写了就照本机写命令推进本机状态行（[local::persist]），回包放在 `revive` 下（它的 `changed` 是实体
-            // 列表，与这里的 `changed` 布尔不同义）。
-            let v = c.write(|t| {
+            // 列表，与这里的 `changed` 布尔不同义）。复活那笔写的 [Tally] 与本机写命令一样提交后取走推进刷新计数
+            // （[local_write]），不交给 Dart。
+            let (v, tally) = c.write(|t| {
                 let col = col_of(t, profile)?;
                 let mut v = cache_config_set(t, col, &caches)?;
                 let mut revive = cmd::writes_intent::revive_default_deck(t, col, now)?;
+                let mut tally = Tally::default();
                 if revive["revived"] == Value::Bool(true) {
                     local::persist(t, profile, None, &mut revive)?;
+                    tally = Tally::take(&mut revive);
                     v["revive"] = revive;
                 }
-                Ok(v)
+                Ok((v, tally))
             })?;
-            // 改了配置 = 派生层整层重建；复活了默认牌组 = 牌组树变了：按刷新键记的缓存整份作废。
-            if v["changed"] == Value::Bool(true) || v.get("revive").is_some() {
+            // 改了配置 = 派生层整层重建：按刷新键记的缓存整份作废。
+            if v["changed"] == Value::Bool(true) {
                 c.refresh_invalidate(profile);
             }
+            c.refresh_note(profile, tally, false);
             v
         }
         "refresh_caches" | "rebuild_caches" => {

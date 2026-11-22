@@ -646,6 +646,10 @@ fn cache_config_set_revives_a_deleted_default_deck_in_the_same_transaction() {
     let r1 = revive["localRevision"].as_i64().unwrap();
     assert!(r1 > r0, "{r0} -> {r1}");
     assert!(revive["localEpoch"].is_string(), "{v}");
+    assert!(
+        revive.get(crate::store::gen4::refresh::TALLY_KEY).is_none(),
+        "刷新计数在分发器里取走、不交给宿主：{v}"
+    );
     assert_eq!(g4(m.h, "local_state", T1, json!({}))["revision"], json!(r1));
 
     let v = g4(m.h, "cache_config_set", T1 + 2, json!({"caches": cfg()}));

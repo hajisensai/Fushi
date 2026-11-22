@@ -839,15 +839,10 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
 /// 回包是 [write] 的统一回包，另带 `revived`（这次写了没有）。
 pub fn revive_default_deck(t: &Truth<'_>, col: i64, now: i64) -> Result<Value, String> {
     // 先只读判（与牌组树同一份判据，`mod.rs` [super::deck_tree] → `DeckTree::of_views`：有身份记录、视图的删除时刻
-    // `da` 非空 = 不在树里）；要写才开写会话。绝大多数开库默认牌组活着，不碰写会话（它要本机身份等）。
+    // `da` 非空 = 不在树里）；只看默认牌组自己一个，不拼整棵树。要写才开写会话。绝大多数开库默认牌组活着，不碰写
+    // 会话（它要本机身份等）。
     let mut ix = Index::new(t, col);
     let deck = super::default_deck(t, &ix, col)?;
-    if super::deck_tree(&mut ix, deck.clone())?
-        .decks
-        .contains_key(&deck)
-    {
-        return Ok(json!({"revived": false}));
-    }
     let r = ref_of(&deck);
     let deleted = match ix.definition(&r)? {
         Some((kind, _, payload)) if kind == EntKind::Deck as i64 => {
