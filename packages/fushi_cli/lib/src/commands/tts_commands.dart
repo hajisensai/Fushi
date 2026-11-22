@@ -55,7 +55,7 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'line',
-        summary: '改一句：说话人 / 类型 / 一拍 / 页内位置 / 手填文字 / 错字修正',
+        summary: '改一句：说话人 / 类型 / 一拍 / 语气与强度 / 页内位置 / 手填文字 / 错字修正',
         usage: '<key> <行 id>',
         configure: _configureLine,
         build: _buildLine,
@@ -182,11 +182,37 @@ const List<String> _kinds = <String>[
   'skip',
 ];
 
+/// 语气词表（线上 wire 名，none = 不标）。
+const List<String> _emotions = <String>[
+  'none',
+  'neutral',
+  'joy',
+  'sadness',
+  'anger',
+  'surprise',
+  'fear',
+  'disgust',
+  'embarrassment',
+  'tenderness',
+  'tension',
+];
+
+/// `--intensity`：整数，或 none（清掉强度，线上是 -1）。
+MapEntry<String, Object?>? _intensityOption(CtlCommandContext c) {
+  final String? raw = c.option('intensity');
+  if (raw == null) return null;
+  if (raw.trim() == 'none')
+    return const MapEntry<String, Object?>('intensity', -1);
+  return MapEntry<String, Object?>('intensity', _intOption(c, 'intensity'));
+}
+
 void _configureLine(ArgParser parser) => parser
   ..addOption('speaker', help: '说话人：角色名 / narrator / unknown')
   ..addFlag('new-character', negatable: false, help: '--speaker 是新角色，加进角色表')
   ..addOption('kind', allowed: _kinds, help: '台词类型')
   ..addOption('beat', help: '句后额外停顿（毫秒，0-10000）')
+  ..addOption('emotion', allowed: _emotions, help: '语气（none = 不标，强度一并清掉）')
+  ..addOption('intensity', help: '语气强度 0-100（none = 不标强度）')
   ..addOption('position', help: '移到本页第几句（1 起）')
   ..addOption('say', help: '整句手填要念的文字（空串 = 清掉）')
   ..addMultiOption('fix', help: 'OCR 错字修正：<块下标>=<文字>（文字为空 = 删掉这处修正）');
@@ -216,13 +242,17 @@ CtlRequestSpec _buildLine(CtlCommandContext c) {
     if (c.flag('new-character')) 'newCharacter': true,
     if (c.option('kind') case final String kind) 'kind': kind,
     if (_intOption(c, 'beat') case final int beat) 'beat': beat,
+    if (c.option('emotion') case final String emotion) 'emotion': emotion,
+    if (_intensityOption(c) case final MapEntry<String, Object?> e)
+      e.key: e.value,
     if (_intOption(c, 'position') case final int position) 'position': position,
     if (say != null) 'say': '$say',
     if (fixes.isNotEmpty) 'fixes': fixes,
   };
   if (body.isEmpty) {
     throw const CtlUsageError(
-      '至少给一个要改的：--speaker / --kind / --beat / --position / --say / --fix',
+      '至少给一个要改的：--speaker / --kind / --beat / --emotion / --intensity / '
+      '--position / --say / --fix',
     );
   }
   return CtlRequestSpec.put(path, body: body);

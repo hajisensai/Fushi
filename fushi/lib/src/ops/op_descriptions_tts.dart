@@ -186,9 +186,11 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
       method: 'PUT',
       pattern: '$item/lines/:line',
       summary:
-          'Edit one script line: speaker, kind, extra pause after it, its '
-          'position on the page, manual text, or OCR typo fixes. The line is '
-          'marked as user-edited (kept on re-annotation).',
+          'Edit one script line: speaker, kind, extra pause after it, tone '
+          '(emotion + intensity), its position on the page, manual text, or '
+          'OCR typo fixes. The line is marked as user-edited (kept on '
+          're-annotation). Tone is a script note only: current voices do not '
+          'read it, so changing it needs no regeneration.',
       risk: OpRisk.write,
       availability: manga,
       params: const <OpParam>[
@@ -219,6 +221,29 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
         OpParam.integer(
           'beat',
           description: 'Extra pause after the line, ms (0-10000).',
+        ),
+        OpParam.string(
+          'emotion',
+          description: 'Tone of the line; none clears it (and its intensity).',
+          enumValues: <String>[
+            'none',
+            'neutral',
+            'joy',
+            'sadness',
+            'anger',
+            'surprise',
+            'fear',
+            'disgust',
+            'embarrassment',
+            'tenderness',
+            'tension',
+          ],
+        ),
+        OpParam.integer(
+          'intensity',
+          description:
+              'Tone intensity 0-100 (needs an emotion on the line or in this '
+              'call); -1 clears it.',
         ),
         OpParam.integer(
           'position',

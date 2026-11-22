@@ -124,6 +124,31 @@ String mangaLineKindLabel(CastLineKind kind) => switch (kind) {
   CastLineKind.skip => t.manga_audio_kind_skip,
 };
 
+/// 语气（情绪）→ 文案；null = 不标。
+String mangaEmotionLabel(CastEmotion? emotion) => switch (emotion) {
+  null => t.manga_audio_emotion_none,
+  CastEmotion.neutral => t.manga_audio_emotion_neutral,
+  CastEmotion.joy => t.manga_audio_emotion_joy,
+  CastEmotion.sadness => t.manga_audio_emotion_sadness,
+  CastEmotion.anger => t.manga_audio_emotion_anger,
+  CastEmotion.surprise => t.manga_audio_emotion_surprise,
+  CastEmotion.fear => t.manga_audio_emotion_fear,
+  CastEmotion.disgust => t.manga_audio_emotion_disgust,
+  CastEmotion.embarrassment => t.manga_audio_emotion_embarrassment,
+  CastEmotion.tenderness => t.manga_audio_emotion_tenderness,
+  CastEmotion.tension => t.manga_audio_emotion_tension,
+};
+
+/// 一句的语气摘要：「愤怒 80」；没标语气返回 null。
+String? mangaLineToneLabel(MangaScriptLine line) {
+  final CastEmotion? emotion = line.emotion;
+  if (emotion == null) return null;
+  final int? intensity = line.intensity;
+  return intensity == null
+      ? mangaEmotionLabel(emotion)
+      : '${mangaEmotionLabel(emotion)} $intensity';
+}
+
 /// 复核界面优先列出的行：说话人不明，或 AI 自评把握低于此值。
 const double kMangaReviewConfidence = 0.6;
 
