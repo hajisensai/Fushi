@@ -793,11 +793,15 @@ const String kSrsGlossImageLinkJs = r'''
     var href = (a.getAttribute('href') || '').trim();
     if (!href || href.charAt(0) === '#' || href.indexOf('?') >= 0 ||
         /^[a-z][a-z0-9+.\-]*:/i.test(href)) return false;
-    var name = mediaName(href);
+    // href 是原样的媒体文件名（上游 `node.href = url`，不做 URL 编码）；src 被卡面渲染编码过，
+    // 解码后才是文件名。文件名本身可能带 `%xx`（`a%20b.png`），所以 href 原样比、解码后也比。
+    var hrefName = mediaName(href);
     var imgs = a.querySelectorAll('img');
     for (var i = 0; i < imgs.length; i++) {
       var src = imgs[i].getAttribute('src') || '';
-      if (mediaName(src.substring(src.lastIndexOf('/') + 1)) === name) return true;
+      var last = src.substring(src.lastIndexOf('/') + 1).trim();
+      var name = mediaName(last);
+      if (name === href || name === hrefName || last === href) return true;
     }
     return false;
   }

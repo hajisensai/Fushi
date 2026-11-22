@@ -327,6 +327,14 @@ assert.deepEqual(calls, [['onSrsImageTap', src]]);
 calls.length = 0;
 click(g.sizer);
 assert.deepEqual(calls, [['onSrsImageTap', src]], '点在盒内占位层上同样放大');
+calls.length = 0;
+// 文件名本身带 `%xx`：href 是原样文件名，src 是编码后的（%25 打头），解码 src 才等于 href。
+const pctName = 'fushi%20dict.png';
+const pctSrc = 'https://srs.local/media/' + encodeURIComponent(pctName);
+const pg = exportedImage(pctName, pctSrc);
+el('DIV', { cls: ['card'] }, [pg.link]);
+click(pg.img);
+assert.deepEqual(calls, [['onSrsImageTap', pctSrc]], '文件名带 %xx 的插图照样放大');
 ''');
     });
 
