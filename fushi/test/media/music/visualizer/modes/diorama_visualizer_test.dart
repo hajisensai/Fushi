@@ -638,25 +638,84 @@ void main() {
       expect(onsets, inInclusiveRange(36, 40));
     });
 
-    test('拍点触发：普通拍 / 强拍各自报，拖进度不报', () {
-      final List<int> beats = <int>[for (int t = 0; t < 10000; t += 500) t];
-      final List<int> downs = <int>[for (int t = 0; t < 10000; t += 2000) t];
-      expect(dioramaBeatTriggers(beats, downs, 480, 520, jump: false), (
-        true,
-        false,
+    test('拍点触发：普通拍 / 强拍各自报（带这一拍），拖进度不报', () {
+      final LyricVisualizerBeats beats = LyricVisualizerBeats.of(
+        visualizerContextFor(
+          dioramaVisualizerEntry,
+          clock: FakeVisualizerClock(),
+          audio: SyntheticVisualizerAudio(),
+        ),
+      );
+      // 合成音频：每 500 ms 一拍，每 4 拍一个强拍（0、2000、4000……）。
+      final DioramaBeatTriggers a = dioramaBeatTriggers(
+        beats,
+        480,
+        520,
+        jump: false,
+      );
+      expect(a.beat?.displayMs, 500);
+      expect(a.downbeat, isNull);
+      final DioramaBeatTriggers b = dioramaBeatTriggers(
+        beats,
+        1990,
+        2010,
+        jump: false,
+      );
+      expect(b.beat, isNull);
+      expect(b.downbeat?.displayMs, 2000);
+      final DioramaBeatTriggers c = dioramaBeatTriggers(
+        beats,
+        520,
+        560,
+        jump: false,
+      );
+      expect(c.beat == null && c.downbeat == null, isTrue);
+      final DioramaBeatTriggers d = dioramaBeatTriggers(
+        beats,
+        480,
+        2600,
+        jump: true,
+      );
+      expect(d.beat == null && d.downbeat == null, isTrue);
+    });
+
+    test('拍点波纹：强拍与低频为主的普通拍生低频尺度，强度按重音增益；无节奏段不生', () {
+      LyricVisualizerBeatEvent ev({
+        bool downbeat = false,
+        double gain = 0.5,
+        double? impact = 0.2,
+        double low = 1 / 3,
+        double high = 1 / 3,
+        bool rhythmic = true,
+      }) => LyricVisualizerBeatEvent(
+        audioMs: 500,
+        displayMs: 500,
+        downbeat: downbeat,
+        gain: gain,
+        ordinal: 1,
+        impact: impact,
+        lowShare: low,
+        highShare: high,
+        rhythmic: rhythmic,
+      );
+      expect(dioramaBeatRipple(ev(downbeat: true, gain: 0.8, impact: 1)), (
+        index: 0,
+        strength: 2.2 * 0.8,
       ));
-      expect(dioramaBeatTriggers(beats, downs, 1990, 2010, jump: false), (
-        false,
-        true,
+      expect(dioramaBeatRipple(ev(low: 0.7, high: 0.1)), (
+        index: 0,
+        strength: 1.6 * 0.5,
       ));
-      expect(dioramaBeatTriggers(beats, downs, 520, 560, jump: false), (
-        false,
-        false,
+      expect(dioramaBeatRipple(ev(low: 0.1, high: 0.7)).index, 1);
+      // 没有重音数据：音色未知，按中频尺度。
+      expect(dioramaBeatRipple(ev(gain: 1, impact: null)), (
+        index: 1,
+        strength: 1.6,
       ));
-      expect(dioramaBeatTriggers(beats, downs, 480, 2600, jump: true), (
-        false,
-        false,
-      ));
+      expect(
+        dioramaBeatRipple(ev(gain: 0, impact: 1, rhythmic: false)).strength,
+        0,
+      );
     });
 
     test('拍上呼吸与歌词跳动有上限', () {

@@ -97,7 +97,7 @@ class DioramaScene {
   DioramaBandTracker _bassTracker = DioramaBandTracker();
   DioramaBandTracker _midTracker = DioramaBandTracker();
   DioramaBandTracker _trebleTracker = DioramaBandTracker();
-  int? _prevAudioMs;
+  int? _prevTimeMs;
   double _bassSus = 0;
   double _midSus = 0;
   double _trebleSus = 0;
@@ -148,7 +148,7 @@ class DioramaScene {
       _bassTracker = DioramaBandTracker();
       _midTracker = DioramaBandTracker();
       _trebleTracker = DioramaBandTracker();
-      _prevAudioMs = null;
+      _prevTimeMs = null;
     }
     if (_settingsFor != c.tuning || _intensityFor != c.intensity) {
       _settingsFor = c.tuning;
@@ -254,27 +254,24 @@ class DioramaScene {
     final double readHeadAlong =
         _globalIndex * (dioramaStepDistance / dioramaCorridorRadius);
     final LyricVisualizerAudioFrame f = c.audioFrameAt(timeMs);
-    // folia：bass、(lowMid + mid) / 2、treble 三个频段；框架的 mid 已经覆盖 lowMid + mid。
+    // folia：bass、(lowMid + mid) / 2、treble 三个频段（没有分段数据时两段都是合并的 mid）。
     final DioramaBandSignal bass = _bassTracker.step(f.low, delta);
-    final DioramaBandSignal mid = _midTracker.step(f.mid, delta);
+    final DioramaBandSignal mid = _midTracker.step(
+      (f.lowMid + f.upperMid) / 2,
+      delta,
+    );
     final DioramaBandSignal treble = _trebleTracker.step(f.high, delta);
     final (double flowSpeed, double bandPulse) = dioramaParticleAudioResponse(
       bass,
       mid,
     );
-    final LyricVisualizerAudio? audio = c.audio;
-    final bool beatFx = audio != null && audio.beatsReady;
-    final int audioMs = c.audioTimeOf(timeMs);
-    final (bool beat, bool downbeat) = beatFx && _prevAudioMs != null
-        ? dioramaBeatTriggers(
-            audio.beatTimesMs,
-            audio.downbeatTimesMs,
-            _prevAudioMs!,
-            audioMs,
-            jump: jump,
-          )
-        : (false, false);
-    _prevAudioMs = audioMs;
+    final LyricVisualizerBeats beats = LyricVisualizerBeats.of(c);
+    final bool beatFx = beats.hasBeats;
+    final int? prevMs = _prevTimeMs;
+    final DioramaBeatTriggers fired = beatFx && prevMs != null
+        ? dioramaBeatTriggers(beats, prevMs, timeMs, jump: jump)
+        : (beat: null, downbeat: null);
+    _prevTimeMs = timeMs;
     if (jump) {
       _flowTime = now * 0.28;
       _pool = DioramaRipplePool();
@@ -297,21 +294,17 @@ class DioramaScene {
             readHeadAlong: readHeadAlong,
           );
         }
-        // 每拍的强度：有重音数据时就是这一拍的重音（无节奏段为 0，不生波纹），否则满强度。
-        final double accent = f.accentImpact ?? 1;
-        if (downbeat && accent > 0) {
+        // 每拍一圈：强度按这一拍的重音增益（无节奏段为 0，不生），低频为主的拍生低频尺度。
+        for (final LyricVisualizerBeatEvent? e in <LyricVisualizerBeatEvent?>[
+          fired.downbeat,
+          fired.beat,
+        ]) {
+          if (e == null) continue;
+          final ({int index, double strength}) ripple = dioramaBeatRipple(e);
+          if (ripple.strength <= 0) continue;
           _pool.spawn(
-            0,
-            dioramaDownbeatRippleStrength * accent,
-            _flowTime,
-            corridor: corridor,
-            readHeadAlong: readHeadAlong,
-          );
-        }
-        if (beat && accent > 0) {
-          _pool.spawn(
-            1,
-            dioramaBeatRippleStrength * accent,
+            ripple.index,
+            ripple.strength,
             _flowTime,
             corridor: corridor,
             readHeadAlong: readHeadAlong,
@@ -341,11 +334,14 @@ class DioramaScene {
     _bassSus = bass.sustained;
     _midSus = mid.sustained;
     _trebleSus = treble.sustained;
+    // 拍钟包络（folia：按每拍重音增益冲顶、160 / 200 ms 衰减）。
+    final double beatEnv = beatFx ? beats.beatImpactAt(timeMs) : 0;
+    final double downEnv = beatFx ? beats.downbeatImpactAt(timeMs) : 0;
     _clusterPulse = beatFx
-        ? dioramaBeatClusterPulse(f.accentOrBeat, f.downbeatImpact)
+        ? dioramaBeatClusterPulse(beatEnv, downEnv)
         : bandPulse;
     // 歌词跳动：拍落下时选中正在唱的单元（拍落在字之间就取最后开唱的），跳到拍衰减完。
-    if (beat || downbeat) {
+    if (fired.beat != null || fired.downbeat != null) {
       final DioramaResolvedLine? r = _seq.resolve(_globalIndex);
       int picked = -1;
       if (r != null && r.localIndex < r.segment.lines.length) {
@@ -357,7 +353,7 @@ class DioramaScene {
       _hopUnit = picked;
       _hopFor = _globalIndex;
     }
-    _hop = beatFx ? dioramaLyricHop(f.accentOrBeat, f.downbeatImpact) : 0;
+    _hop = beatFx ? dioramaLyricHop(beatEnv, downEnv) : 0;
     _powerEnv = dioramaStepEnvelope(
       _powerEnv,
       math.min(1, f.power) * gain,

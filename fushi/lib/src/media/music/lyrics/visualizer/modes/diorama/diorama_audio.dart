@@ -122,23 +122,45 @@ double dioramaBeatClusterPulse(double beat, double downbeat) => math.min(
 double dioramaLyricHop(double beat, double downbeat) =>
     math.min(0.8, math.max(0, beat) * 0.25 + math.max(0, downbeat) * 0.4);
 
-/// 两帧之间新落下的拍：(普通拍, 强拍)。folia `stepDioramaBeatCounter`：强拍也算一拍，但只生强拍
-/// 的波纹；一帧里落了好几拍也只各生一个；拖进度（[jump]）不生。
-(bool, bool) dioramaBeatTriggers(
-  List<int> beats,
-  List<int> downbeats,
-  int prevAudioMs,
-  int nowAudioMs, {
+/// 一帧新落下的普通拍 / 强拍（没有为 null）。
+typedef DioramaBeatTriggers = ({
+  LyricVisualizerBeatEvent? beat,
+  LyricVisualizerBeatEvent? downbeat,
+});
+
+/// 两帧之间新落下的拍（folia `stepDioramaBeatCounter` + 拍钟的 `lastBeat` / `lastDownbeat`）：显示时间
+/// `(prevMs, nowMs]` 里最后一个普通拍、最后一个强拍（没有为 null）。强拍也算一拍，但只生强拍的波纹；
+/// 一帧里落了好几拍也只各生一个；拖进度（[jump]）不生。
+DioramaBeatTriggers dioramaBeatTriggers(
+  LyricVisualizerBeats beats,
+  int prevMs,
+  int nowMs, {
   required bool jump,
 }) {
-  if (jump || nowAudioMs <= prevAudioMs) return (false, false);
-  final int newBeats =
-      lyricVisualizerLastAtOrBefore(beats, nowAudioMs) -
-      lyricVisualizerLastAtOrBefore(beats, prevAudioMs);
-  final int newDown =
-      lyricVisualizerLastAtOrBefore(downbeats, nowAudioMs) -
-      lyricVisualizerLastAtOrBefore(downbeats, prevAudioMs);
-  return (newBeats - newDown > 0, newDown > 0);
+  if (jump || nowMs <= prevMs) return (beat: null, downbeat: null);
+  LyricVisualizerBeatEvent? beat;
+  LyricVisualizerBeatEvent? downbeat;
+  for (final LyricVisualizerBeatEvent e in beats.beatsBetween(prevMs, nowMs)) {
+    if (e.downbeat) {
+      downbeat = e;
+    } else {
+      beat = e;
+    }
+  }
+  return (beat: beat, downbeat: downbeat);
+}
+
+/// folia `DIORAMA_LOW_BEAT_SHARE`：普通拍的突起里低频占比超过它就生低频尺度的波纹。
+const double dioramaLowBeatShare = 0.5;
+
+/// folia `resolveDioramaBeatRipple`：一拍生的波纹（频段下标 0 低频尺度 / 1 中频尺度，强度）。强度按这一拍
+/// 的重音增益（`resolveBeatFxAccentGain`，无节奏段为 0）；强拍生低频尺度，普通拍低频为主时也生低频尺度。
+({int index, double strength}) dioramaBeatRipple(LyricVisualizerBeatEvent e) {
+  if (e.downbeat) {
+    return (index: 0, strength: dioramaDownbeatRippleStrength * e.gain);
+  }
+  final bool low = e.hasAccents && e.lowShare > dioramaLowBeatShare;
+  return (index: low ? 0 : 1, strength: dioramaBeatRippleStrength * e.gain);
 }
 
 // ─── 关键词配色（folia dioramaKeywordColor.ts） ────────────────────────────
