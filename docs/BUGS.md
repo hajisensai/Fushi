@@ -33,11 +33,6 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4489 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5165](bugs/BUG-5165-external-popup-source-overflow.md) | ✅ | ✅ | 应用内外查词长原文无法完整浏览并挤占释义 |
 > 共 4491 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

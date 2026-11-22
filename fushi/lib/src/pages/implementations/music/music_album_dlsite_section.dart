@@ -12,6 +12,7 @@ import 'package:fushi/src/media/detail/item_scrape_detail_view.dart'
 import 'package:fushi/src/media/detail/media_detail_kit.dart'
     show MediaDetailChip, MediaDetailChipRow;
 import 'package:fushi/src/media/music/metadata/music_dlsite_scraper.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -125,7 +126,7 @@ class _MusicAlbumDlsiteSectionState extends State<MusicAlbumDlsiteSection> {
   @override
   Widget build(BuildContext context) {
     final DlsiteWorkId? id = _id;
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: Curves.easeOutCubic,
       alignment: Alignment.topCenter,

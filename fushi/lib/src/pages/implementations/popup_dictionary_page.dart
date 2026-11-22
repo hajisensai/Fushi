@@ -32,6 +32,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.d
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
@@ -892,7 +893,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
                     slivers: <Widget>[
                       if (_sourceLookupText.trim().isNotEmpty)
                         SliverToBoxAdapter(
-                          child: _buildSourceRegion(null, m3e),
+                          child: _buildSourceRegion(tonalHighlight: m3e),
                         ),
                       SliverFillRemaining(
                         child: _buildStack(
@@ -910,8 +911,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
                             children: <Widget>[
                               if (_sourceLookupText.trim().isNotEmpty)
                                 _buildSourceRegion(
-                                  constraints.maxHeight / 3,
-                                  m3e,
+                                  maxHeight: constraints.maxHeight / 3,
+                                  tonalHighlight: m3e,
                                 ),
                               Expanded(
                                 child: _buildStack(
@@ -983,7 +984,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
-  Widget _buildSourceRegion(double? maxHeight, bool tonalHighlight) {
+  Widget _buildSourceRegion({double? maxHeight, required bool tonalHighlight}) {
     final Widget source = SourceLookupTextPanel(
       key: ValueKey<(int, double?)>((widget.searchGeneration, maxHeight)),
       text: _sourceLookupText,
@@ -1000,8 +1001,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
             ),
       onLookup: _lookupFromSourceStrip,
     );
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: Curves.linear,
       alignment: Alignment.topCenter,
       child: _sourceTextCollapsed
           ? const SizedBox.shrink()
