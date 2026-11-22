@@ -37,6 +37,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5170](bugs/BUG-5170-rwkv-now-due-vs-queue-count.md) | ✅ | ✅ | 复习首页「RWKV 此刻」的「Due now 7」与牌组头部「19 due」对不上 |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
 | [BUG-5177](bugs/BUG-5177-video-pause-ocr-tap-wrong-line.md) | 🚧 | ✅ | 视频暂停 OCR 点「中」查词串却从上一行「@utaskyat」的 u 开始 |
 > 共 4493 条。点号进各自文件。
 
