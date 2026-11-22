@@ -91,52 +91,46 @@ void main() {
       if (button.evaluate().isEmpty) {
         final Finder more = find.byKey(kFushiToolbarOverflowKey);
         expect(more, findsOneWidget, reason: '工具栏应有「⋯」');
-        expect(
-          await driver.requestFocusInside(more) ||
-              await driver.focusWidget(more),
-          isTrue,
-          reason: '「⋯」应能拿到焦点',
-        );
+        expect(await _focusOn(tester, more), isTrue, reason: '「⋯」应能拿到焦点');
         await driver.activate();
         await frames(6);
         final Finder item = find.byKey(
           const ValueKey<String>('music_lyrics_visualizer_menu_item'),
         );
         expect(item, findsOneWidget, reason: '「⋯」里应有歌词动画');
-        expect(
-          await driver.requestFocusInside(item) ||
-              await driver.focusWidget(item),
-          isTrue,
-          reason: '歌词动画菜单项应能拿到焦点',
-        );
+        expect(await _focusOn(tester, item), isTrue, reason: '歌词动画菜单项应能拿到焦点');
       } else {
-        expect(
-          await driver.requestFocusInside(button) ||
-              await driver.focusWidget(button),
-          isTrue,
-          reason: '歌词动画按钮应能拿到焦点',
-        );
+        expect(await _focusOn(tester, button), isTrue, reason: '歌词动画按钮应能拿到焦点');
       }
-      debugPrint('[diorama-gpu] opening picker');
-      await driver.activate();
+      debugPrint(
+        '[diorama-gpu] opening picker: inline=${button.evaluate().isNotEmpty} '
+        'focus=${driver.focused?.debugLabel}',
+      );
+      // 歌词页自己把 Enter 绑成了播放类快捷键时，Enter 落不到按钮上：先走焦点控件的标准
+      // ActivateIntent（同一个焦点、同一条激活路径），没有再发 Enter。
+      if (!await driver.activateIntent()) await driver.activate();
       await frames(10);
+      debugPrint(
+        '[diorama-gpu] picker open='
+        '${find.byKey(const ValueKey<String>('music_visualizer_random')).evaluate().isNotEmpty}',
+      );
 
       final Finder tile = find.byKey(
         const ValueKey<String>('music_visualizer_style_diorama'),
       );
-      expect(tile, findsOneWidget, reason: '样式面板应列出镜台');
-      await tester.ensureVisible(tile);
-      await frames(3);
+      await captureFlutterFrame(tester, '02-picker', settle: false);
+      // 网格是懒构建的：镜台卡可能还没建出来。Tab 走焦点时网格会把焦点项滚进视口。
       final bool focusedTile =
-          await driver.requestFocusInside(tile) ||
-          await driver.focusWidget(tile);
+          (tile.evaluate().isNotEmpty && await _focusOn(tester, tile)) ||
+          await driver.focusWidget(tile, maxSteps: 120);
+      debugPrint('[diorama-gpu] tile focused=$focusedTile');
       expect(focusedTile, isTrue, reason: '镜台样式卡应能拿到焦点');
       await captureFlutterFrame(
         tester,
-        '02-picker-diorama-focused',
+        '03-picker-diorama-focused',
         settle: false,
       );
-      await driver.activate();
+      if (!await driver.activateIntent()) await driver.activate();
 
       // 等 Flutter GPU 判定（加载着色器包）落地，再推几秒让相机落位、文字纹理上 GPU。
       for (int i = 0; i < 100 && !DioramaGpu.resolved; i++) {
@@ -158,10 +152,10 @@ void main() {
       );
 
       final List<String> names = <String>[
-        '03-diorama-line1',
-        '04-diorama-line2',
-        '05-diorama-transition',
-        '06-diorama-line4',
+        '04-diorama-line1',
+        '05-diorama-line2',
+        '06-diorama-transition',
+        '07-diorama-line4',
       ];
       for (final String name in names) {
         await frames(30);
@@ -177,16 +171,44 @@ void main() {
       }
 
       // Esc 退出全屏（焦点驱动）。
+      debugPrint('[diorama-gpu] exit visualizer');
       await driver.back();
       await frames(5);
+      debugPrint('[diorama-gpu] exited');
+    } catch (e, st) {
+      // 真 app 改了 FlutterError.onError，测试失败的原文会被框架吞成一条无关断言；先打出来。
+      debugPrint('[diorama-gpu] FAILED: $e\n$st');
+      rethrow;
     } finally {
+      debugPrint('[diorama-gpu] cleanup');
       await appModel.prefsRepo.setMusicVisualizerMode(userMode);
       await appModel.prefsRepo.setMusicVisualizerRandom(userRandom);
-      await appModel.musicSession.engine.stop();
       if (nav.canPop()) nav.pop();
       await frames(5);
+      await appModel.musicSession.engine.pause();
+      debugPrint('[diorama-gpu] paused');
+      await appModel.musicSession.engine.stop();
+      debugPrint('[diorama-gpu] cleanup done');
     }
   });
+}
+
+/// 把焦点交给 [target] 自己的可聚焦控件（按钮 / 卡片的 InkWell 焦点节点），并确认真落上了。
+///
+/// `FocusDriver.requestFocusInside` 只认显式传了 focusNode 的 [Focus]，按钮内部 InkWell
+/// 自建的节点找不到时会退去聚焦外层路由——看着成功，Enter 却落空。这里从目标最深处的元素
+/// 往上取最近的焦点节点，就是那颗按钮自己的。
+Future<bool> _focusOn(WidgetTester tester, Finder target) async {
+  final List<Element> inside = find
+      .descendant(of: target, matching: find.byWidgetPredicate((_) => true))
+      .evaluate()
+      .toList();
+  if (inside.isEmpty) return false;
+  final FocusNode? node = Focus.maybeOf(inside.last);
+  if (node == null) return false;
+  node.requestFocus();
+  await tester.pump(const Duration(milliseconds: 250));
+  return FocusManager.instance.primaryFocus == node;
 }
 
 const String _lrc = '''
