@@ -344,6 +344,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           await _confirmDeleteSrtBook(book);
         },
       ),
+      // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
+      // 一个菜单，BUG-2969）。排在整理段最前：整理段只平铺前
+      // [MediaItemDialogFrame.organizeMaxRows] 行，排在后面会被挤进「更多 ›」。
+      ..._removeFromCollectionActions(dialogContext, removeFromCollection),
       // 2026-10 体验优化：「音频文件丢失」此前只在角标 Tooltip 里（触屏看不到），
       // 菜单里只有一颗不说原因的「重新定位文件」快捷键。改为列表首项，文案把
       // 原因和动作一起说出来。
@@ -418,9 +422,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         slot: ItemMenuSlot.primary,
         onPressed: () => _openSrtDetail(dialogContext, book),
       ),
-      // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
-      // 一个菜单，BUG-2969）。
-      ..._removeFromCollectionActions(dialogContext, removeFromCollection),
       // 单卡「加入合集」：与 EPUB 卡菜单对称，纯字幕书（bookKey 为空）也可加入；
       // entryKey 编码与 shelfSelectionToEntry 对 'srt_<uid>' 选择键的解码一致（= uid）。
       // 合集详情页成员卡语境（已注入「移出合集」）不显示——同一条目在详情页语境下

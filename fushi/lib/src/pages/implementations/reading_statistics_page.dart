@@ -989,7 +989,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage>
                             labelColor: scheme.onSurface,
                             detail: '$goalChars/$charGoal',
                           ),
-                          const SizedBox(height: 8),
+                          SizedBox(height: tokens.spacing.gap),
                           Text(
                             plainDaily
                                 ? t.stat_goal

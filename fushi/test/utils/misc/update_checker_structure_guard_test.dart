@@ -314,8 +314,9 @@ void main() {
     expect(source, contains('UpdateChecker._newUpdateHttpClient()'));
 
     final String releaseSource = read(release);
-    // 本机 UI 流用同一个会话，浮层不在 release part 里再长一份。
-    expect(releaseSource, contains('_UpdateDownloadSession()'));
+    // 本机 UI 流用同一个会话，浮层不在 release part 里再长一份。会话按版本登记
+    // （BUG-5168：隐藏后再检查更新能拉回进度），构造带参数，只认「构造了一个」。
+    expect(releaseSource, contains('= _UpdateDownloadSession('));
     expect(
       releaseSource,
       isNot(contains('_DownloadOverlay(')),
