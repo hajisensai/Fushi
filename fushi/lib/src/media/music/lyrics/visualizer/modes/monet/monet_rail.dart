@@ -116,10 +116,14 @@ class MonetWordGeom {
     required this.offsets,
     required this.timings,
     required this.runs,
+    this.color,
   });
 
   final int startMs;
   final int endMs;
+
+  /// 主题按词着色命中的颜色（folia `tokenColors`）；null = 用行的扫字色。
+  final Color? color;
 
   /// 累计宽度，首项 0。
   final List<double> offsets;
@@ -142,9 +146,11 @@ class MonetLineText {
     required this.x0,
     required this.track,
     required this.lineEndMs,
+    this.isChorus = false,
   });
 
-  /// 排版一行。[maxWidth] 为正文换行宽度，[contentWidth] 为栏宽（右对齐时用）。
+  /// 排版一行。[maxWidth] 为正文换行宽度，[contentWidth] 为栏宽（右对齐时用）。[theme] 有按词着色
+  /// 时给命中的词记上颜色；[textStyle] 带主题字体 / 字重。
   factory MonetLineText.layout({
     required LyricVisualizerLine line,
     required double fontPx,
@@ -152,6 +158,9 @@ class MonetLineText {
     required double contentWidth,
     required bool alignEnd,
     required Color trackColor,
+    LyricVisualizerTheme? theme,
+    TextStyle textStyle = const TextStyle(fontWeight: FontWeight.w600),
+    TextStyle trackStyle = const TextStyle(fontWeight: FontWeight.w500),
   }) {
     final double maxW = math.max(contentWidth - 8, 60);
     List<LyricVisualizerGlyph> glyphs = line.glyphs;
@@ -176,14 +185,17 @@ class MonetLineText {
     }
     utf[glyphs.length] = sb.length;
     final String text = sb.isEmpty ? line.text : sb.toString();
+    final List<LyricVisualizerWordColorRange> colorRanges =
+        theme != null && theme.hasWordColors && sb.isNotEmpty
+        ? theme.colorRangesFor(text)
+        : const <LyricVisualizerWordColorRange>[];
 
     final TextPainter painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(
+        style: textStyle.copyWith(
           color: const Color(0xFFFFFFFF),
           fontSize: fontPx,
-          fontWeight: FontWeight.w600,
           height: kMonetLineHeightFactor,
           letterSpacing: 0,
         ),
@@ -235,6 +247,8 @@ class MonetLineText {
         }
         if (run != null) runs.add(MonetGlyphRun(run, runC0, c));
         if (runs.isEmpty) continue;
+        final int wFirst = math.max(w.firstGlyph, first);
+        final int wEnd = math.min(w.firstGlyph + w.glyphCount, last + 1);
         geoms.add(
           MonetWordGeom(
             startMs: w.startMs,
@@ -242,6 +256,13 @@ class MonetLineText {
             offsets: offsets,
             timings: timings,
             runs: runs,
+            color: colorRanges.isEmpty || wEnd <= wFirst
+                ? null
+                : LyricVisualizerTheme.colorForSpan(
+                    colorRanges,
+                    utf[wFirst],
+                    utf[wEnd],
+                  ),
           ),
         );
       }
@@ -257,10 +278,9 @@ class MonetLineText {
       track = TextPainter(
         text: TextSpan(
           text: sub,
-          style: TextStyle(
+          style: trackStyle.copyWith(
             color: trackColor,
             fontSize: translationFontPx,
-            fontWeight: FontWeight.w500,
             height: kMonetTranslationLineHeightFactor,
             letterSpacing: 0,
           ),
@@ -278,7 +298,9 @@ class MonetLineText {
       lineCount: math.max(1, painter.computeLineMetrics().length),
       x0: alignEnd ? contentWidth - maxW : 0,
       track: track,
-      lineEndMs: line.endMs,
+      // folia `getLineRenderEndTime`：光晕留到句尾离场窗口结束。
+      lineEndMs: line.renderEndMs,
+      isChorus: line.isChorus,
     );
   }
 
@@ -292,6 +314,9 @@ class MonetLineText {
   /// 译文（没有为 null）。
   final TextPainter? track;
   final int lineEndMs;
+
+  /// 副歌行（folia `line.isChorus`）：强调色光晕、扫字色混强调色、光晕更大。
+  final bool isChorus;
 
   int get trackLineCount =>
       track == null ? 0 : math.max(1, track!.computeLineMetrics().length);
@@ -349,7 +374,21 @@ class MonetRailFrame {
     required this.inactiveScale,
     required this.translationFontPx,
     required this.alignEnd,
+    this.theme,
+    this.keywordColoring = true,
+    this.textStyle = const TextStyle(fontWeight: FontWeight.w600),
+    this.trackStyle = const TextStyle(fontWeight: FontWeight.w500),
   });
+
+  /// 本首的歌词动画主题（按词着色）。
+  final LyricVisualizerTheme? theme;
+
+  /// folia `keywordColoringEnabled`。
+  final bool keywordColoring;
+
+  /// 正文 / 译文的字体与字重（已套主题字体）。
+  final TextStyle textStyle;
+  final TextStyle trackStyle;
 
   final LyricVisualizerRuntime runtime;
   final int timeMs;
@@ -369,7 +408,9 @@ class _RailItem {
     : y = MonetChannel(0),
       scale = MonetChannel(1),
       opacity = MonetChannel(0),
-      blur = MonetChannel(0);
+      blur = MonetChannel(0),
+      chorusGlow = MonetChannel(0),
+      chorusScale = MonetChannel(0.96);
 
   final int index;
   MonetLineStatus status;
@@ -378,6 +419,10 @@ class _RailItem {
   final MonetChannel scale;
   final MonetChannel opacity;
   final MonetChannel blur;
+
+  /// 副歌光晕的透明度 / 缩放（folia：当前句 1 / 1.02，否则 0 / 0.96，0.45 秒 easeOut）。
+  final MonetChannel chorusGlow;
+  final MonetChannel chorusScale;
   int zIndex = 0;
   bool exiting = false;
   double exitEnd = 0;
@@ -427,6 +472,9 @@ class MonetRailController {
       contentWidth: contentWidth,
       alignEnd: f.alignEnd,
       trackColor: f.palette.text.withValues(alpha: 0.68),
+      theme: f.keywordColoring ? f.theme : null,
+      textStyle: f.textStyle,
+      trackStyle: f.trackStyle,
     );
     _texts[index] = made;
     while (_texts.length > _cacheLimit) {
@@ -448,6 +496,9 @@ class MonetRailController {
       w,
       f.alignEnd,
       f.palette,
+      f.keywordColoring ? f.theme : null,
+      f.textStyle,
+      f.trackStyle,
     );
     if (key != _cacheKey) {
       if (_cacheKey != null && !identical(f.runtime, _lastRuntime)) {
@@ -514,16 +565,26 @@ class MonetRailController {
         ..offset = e.offset
         ..zIndex = tone.zIndex
         ..exiting = false;
+      final bool chorusOn = e.status == MonetLineStatus.active;
       if (snap) {
         item.y.snap(ys[i]);
         item.scale.snap(tone.scale);
         item.opacity.snap(tone.opacity);
         item.blur.snap(tone.blurPx);
+        item.chorusGlow.snap(chorusOn ? 1 : 0);
+        item.chorusScale.snap(chorusOn ? 1.02 : 0.96);
       } else {
         item.y.springTo(ys[i], now, kMonetScrollSpring);
         item.scale.springTo(tone.scale, now, kMonetScaleSpring);
         item.opacity.tweenTo(tone.opacity, now, 0.28);
         item.blur.tweenTo(tone.blurPx, now, 0.32);
+        item.chorusGlow.tweenTo(chorusOn ? 1 : 0, now, 0.45, Curves.easeOut);
+        item.chorusScale.tweenTo(
+          chorusOn ? 1.02 : 0.96,
+          now,
+          0.45,
+          Curves.easeOut,
+        );
       }
     }
     final List<int> gone = <int>[];
@@ -612,7 +673,14 @@ class MonetRailController {
       canvas.translate(0, item.y.value(now));
       canvas.scale(s);
     }
-    final Rect bounds = Rect.fromLTRB(-glow, -glow, w + glow, visual + glow);
+    // 副歌光晕上下各伸出 56px，图层要包住它。
+    final double haloPad = lt.isChorus ? 56 : 0;
+    final Rect bounds = Rect.fromLTRB(
+      -glow,
+      -glow - haloPad,
+      w + glow,
+      visual + glow + haloPad,
+    );
     final bool layer = opacity < 0.999 || blur > 0.01 || clipped;
     if (layer) {
       final Paint lp = Paint()..color = Color.fromRGBO(0, 0, 0, opacity);
@@ -627,6 +695,8 @@ class MonetRailController {
       canvas.save();
       canvas.clipRect(Rect.fromLTRB(-glow, -glow, w + glow, contentBottom));
     }
+
+    if (lt.isChorus) _paintChorusHalo(canvas, item, f, w, visual);
 
     final Offset o = Offset(lt.x0, padTop);
     final Color primary = f.palette.text;
@@ -680,6 +750,56 @@ class MonetRailController {
     canvas.restore();
   }
 
+  /// folia 副歌行背后的强调色椭圆光晕：贴着行盒左右、上下各伸出 56px，`closest-side` 径向渐变，
+  /// 到边缘之前就淡没（不需要模糊）。
+  static const List<(double, double)> _chorusGlowStops = <(double, double)>[
+    (0.14, 0),
+    (0.12, 0.15),
+    (0.085, 0.35),
+    (0.05, 0.55),
+    (0.022, 0.72),
+    (0.007, 0.87),
+  ];
+
+  void _paintChorusHalo(
+    Canvas canvas,
+    _RailItem item,
+    MonetRailFrame f,
+    double w,
+    double visual,
+  ) {
+    final double a = item.chorusGlow.value(f.now).clamp(0.0, 1.0);
+    if (a <= 0.003) return;
+    final Rect box = Rect.fromLTRB(0, -56, w, visual + 56);
+    final double rx = box.width / 2;
+    final double ry = box.height / 2;
+    if (rx <= 0 || ry <= 0) return;
+    final double s = item.chorusScale.value(f.now);
+    final Color accent = f.palette.accent;
+    canvas.save();
+    canvas.translate(box.center.dx, box.center.dy);
+    canvas.scale(s * rx / ry, s);
+    canvas.drawCircle(
+      Offset.zero,
+      ry,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset.zero,
+          ry,
+          <Color>[
+            for (final (double, double) st in _chorusGlowStops)
+              accent.withValues(alpha: st.$1 * a),
+            accent.withValues(alpha: 0),
+          ],
+          <double>[
+            for (final (double, double) st in _chorusGlowStops) st.$2,
+            1,
+          ],
+        ),
+    );
+    canvas.restore();
+  }
+
   void _paintText(
     Canvas canvas,
     _RailItem item,
@@ -692,7 +812,13 @@ class MonetRailController {
     final int t = f.timeMs;
     final double fontPx = f.fontPx;
     final MonetLineStatus status = item.status;
-    final Color wordColor = primary.withValues(alpha: 0.98);
+    // folia：扫字色是主色@0.98；副歌行混 48% 强调色。按词着色命中的词用主题色。
+    final Color lineColor = primary.withValues(alpha: 0.98);
+    final Color wordColor = lt.isChorus
+        ? Color.lerp(lineColor, f.palette.accent, 0.48)!
+        : lineColor;
+    Color colorOf(MonetWordGeom w) => w.color ?? wordColor;
+    final bool anyThemed = lt.words.any((MonetWordGeom w) => w.color != null);
 
     if (status == MonetLineStatus.active) {
       // 当前句的投影：`0 14px 34px 背景色@0.22`。
@@ -706,26 +832,34 @@ class MonetRailController {
       );
     }
 
-    // 光晕：唱过 / 正在唱的词，按亮度分组，每组两层（半径 0.28 / 0.65 倍字号）。
+    // 光晕：唱过 / 正在唱的词，按（亮度, 颜色）分组，每组两层（半径 0.28 / 0.65 倍字号；副歌
+    // 0.45 / 0.90，不透明度 1 而非 0.88）。
     if (status != MonetLineStatus.waiting) {
-      final Map<int, Path> groups = <int, Path>{};
-      final Map<int, Rect> groupBounds = <int, Rect>{};
+      final Map<(int, int), Path> groups = <(int, int), Path>{};
+      final Map<(int, int), Rect> groupBounds = <(int, int), Rect>{};
       for (final MonetWordGeom w in lt.words) {
         final double g = monetGlow(t, w.startMs, w.endMs, lt.lineEndMs);
         if (g <= 0.02) continue;
-        final int q = (g * 10).round().clamp(1, 10);
-        final Path path = groups.putIfAbsent(q, Path.new);
+        final (int, int) k = (
+          (g * 10).round().clamp(1, 10),
+          colorOf(w).toARGB32(),
+        );
+        final Path path = groups.putIfAbsent(k, Path.new);
         for (final MonetGlyphRun r in w.runs) {
           path.addRect(r.rect.shift(o));
         }
-        groupBounds[q] =
-            groupBounds[q]?.expandToInclude(w.bounds.shift(o)) ??
+        groupBounds[k] =
+            groupBounds[k]?.expandToInclude(w.bounds.shift(o)) ??
             w.bounds.shift(o);
       }
-      final Color glowColor = primary.withValues(alpha: 0.88);
-      for (final MapEntry<int, Path> g in groups.entries) {
-        final double alpha = g.key / 10;
-        for (final double radius in <double>[fontPx * 0.28, fontPx * 0.65]) {
+      final double glowAlpha = lt.isChorus ? 1.0 : 0.88;
+      final List<double> radii = lt.isChorus
+          ? <double>[fontPx * 0.45, fontPx * 0.90]
+          : <double>[fontPx * 0.28, fontPx * 0.65];
+      for (final MapEntry<(int, int), Path> g in groups.entries) {
+        final double alpha = g.key.$1 / 10;
+        final Color glowColor = Color(g.key.$2).withValues(alpha: glowAlpha);
+        for (final double radius in radii) {
           final double sigma = radius / 2;
           _tinted(
             canvas,
@@ -740,14 +874,31 @@ class MonetRailController {
       }
     }
 
+    void paintThemed(bool Function(MonetWordGeom w) include) {
+      if (!anyThemed) return;
+      final Map<int, Path> byColor = <int, Path>{};
+      for (final MonetWordGeom w in lt.words) {
+        final Color? c = w.color;
+        if (c == null || !include(w)) continue;
+        final Path p = byColor.putIfAbsent(c.toARGB32(), Path.new);
+        for (final MonetGlyphRun r in w.runs) {
+          p.addRect(r.rect.shift(o));
+        }
+      }
+      for (final MapEntry<int, Path> e in byColor.entries) {
+        _tinted(canvas, lt.painter, o, Color(e.key), bounds, clip: e.value);
+      }
+    }
+
     final double baseAlpha = switch (status) {
       MonetLineStatus.active => 0.34,
       MonetLineStatus.waiting => 0.46,
       MonetLineStatus.passed => 0.36,
     };
     if (status == MonetLineStatus.passed) {
-      // 唱完的句子：计时词整句亮色。
+      // 唱完的句子：计时词整句亮色（着色词用主题色）。
       _tinted(canvas, lt.painter, o, wordColor, bounds);
+      paintThemed((MonetWordGeom _) => true);
       return;
     }
     _tinted(
@@ -771,6 +922,7 @@ class MonetRailController {
       }
     }
     if (anyLit) _tinted(canvas, lt.painter, o, wordColor, bounds, clip: lit);
+    paintThemed((MonetWordGeom w) => t >= w.endMs);
 
     final double edge = monetSweepEdgeSoftness(fontPx);
     for (final MonetWordGeom w in lt.words) {
@@ -796,7 +948,7 @@ class MonetRailController {
         canvas,
         lt.painter,
         o,
-        Color.lerp(base, wordColor, progress)!,
+        Color.lerp(base, colorOf(w), progress)!,
         wb,
         clip: clip,
       );

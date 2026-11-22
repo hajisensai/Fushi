@@ -7,6 +7,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/animation.dart' show Curves;
+
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 
 /// 行状态（folia `MonetLineStatus`）。
@@ -472,4 +474,34 @@ List<(double, double)> monetSweepMaskStops(
     out.add(((x - c0) / span, monetSweepMaskAlpha(x, sweepEnd, edge, full)));
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// 肖像
+// ---------------------------------------------------------------------------
+
+/// folia `portraitUrl`：自定义时用素材图（没有就回落封面）；封面时用封面（没有就回落素材图）。
+String? monetPortraitPath({
+  required String source,
+  required String? cover,
+  required String? custom,
+}) {
+  final String? c = (cover?.isEmpty ?? true) ? null : cover;
+  return source == 'custom' ? (custom ?? c) : (c ?? custom);
+}
+
+const List<double> _shakeY = <double>[0, -18, 0, 18, 0];
+const List<double> _shakeX = <double>[0, -9, 0, 9, 0];
+const List<double> _shakeRot = <double>[0, 1.2, 0, -1.2, 0];
+
+/// folia chaotic 强度下封面的晃动：9 秒一圈的关键帧（y ±18、x ±9、转 ±1.2°），每段 easeInOut，
+/// 首圈延后 0.2 秒。[seconds] 是挂载以来的墙钟秒数。返回 (dx, dy, 转角度数)。
+(double, double, double) monetChaoticShake(double seconds) {
+  final double t = seconds - 0.2;
+  if (t <= 0) return (0, 0, 0);
+  final double phase = (t % 9) / 9 * 4;
+  final int seg = phase.floor().clamp(0, 3);
+  final double k = Curves.easeInOut.transform(phase - seg);
+  double at(List<double> v) => v[seg] + (v[seg + 1] - v[seg]) * k;
+  return (at(_shakeX), at(_shakeY), at(_shakeRot));
 }

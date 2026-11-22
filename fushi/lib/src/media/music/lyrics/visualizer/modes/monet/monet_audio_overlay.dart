@@ -1,27 +1,28 @@
 /// 莫奈底部的频谱条（移植 folia `monet/AudioOverlay.tsx`）：72 根柱 / 一条平滑曲线，
-/// 中间高两头低（正弦包络）。Fushi 没有实时频谱，五段频带由「歌词节拍」包络合成。
+/// 中间高两头低（正弦包络）。五段频带取自共享音频帧（`LyricVisualizerContext.audioFrameAt`：整首
+/// 离线分析的包络；没有分析时框架用歌词起字包络合成一帧）。
 library;
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
+
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 
 /// 柱数。
 const int kMonetAudioBarCount = 72;
 
-/// 由节拍包络 [pulse]（0–1）与墙钟 [seconds] 合成五段频带（低 / 中低 / 中 / 人声 / 高），
-/// 代替 folia 的 `audioBands`：各段比例不同、各自慢慢起伏，跟着唱词一起冲高回落。
-List<double> monetSyntheticBands(double pulse, double seconds) {
-  final double p = pulse.clamp(0.0, 1.0);
-  return <double>[
-    p * (0.86 + 0.1 * math.sin(seconds * 1.3)),
-    p * (0.72 + 0.14 * math.sin(seconds * 2.1 + 1)),
-    p * (0.66 + 0.16 * math.sin(seconds * 1.7 + 2)),
-    p * (0.8 + 0.12 * math.sin(seconds * 2.9 + 3)),
-    p * (0.52 + 0.16 * math.sin(seconds * 3.3 + 4)),
-  ].map((double v) => v.clamp(0.0, 1.0)).toList();
-}
+/// 音频帧 → folia 的五段频带（bass / lowMid / mid / vocal / treble）。框架的 `mid` 覆盖 folia
+/// lowMid + mid，lowMid 取低频与中频的均值。
+List<double> monetAudioBands(LyricVisualizerAudioFrame f) => <double>[
+  f.low,
+  (f.low + f.mid) / 2,
+  f.mid,
+  f.vocal,
+  f.high,
+].map((double v) => v.clamp(0.0, 1.0)).toList();
 
 /// folia `sampleSpectrumProfile`：五段频带插成 11 个锚点，按对数刻度取样，再叠一层轮廓。
 double monetSpectrumProfile(List<double> bands, double normalizedIndex) {
@@ -88,7 +89,8 @@ class MonetAudioPainter extends CustomPainter {
     required this.color,
     required this.line,
     required this.still,
-    required this.pulse,
+    required this.bands,
+    required this.power,
     required this.seconds,
   });
 
@@ -98,7 +100,12 @@ class MonetAudioPainter extends CustomPainter {
 
   /// 静态图案（减弱动态效果）。
   final bool still;
-  final double pulse;
+
+  /// 五段频带（[monetAudioBands]）。
+  final List<double> bands;
+
+  /// 整体响度（folia `audioPower`）。
+  final double power;
   final double seconds;
 
   @override
@@ -106,8 +113,7 @@ class MonetAudioPainter extends CustomPainter {
     final double w = size.width;
     final double h = size.height;
     if (w <= 0 || h <= 0) return;
-    final List<double> bands = monetSyntheticBands(pulse, seconds);
-    final double energy = math.max(0.08, pulse.clamp(0.0, 1.0));
+    final double energy = math.max(0.08, power.clamp(0.0, 1.0));
     final double ms = seconds * 1000;
     final Shader ink = still
         ? ui.Gradient.linear(Offset.zero, Offset(w, 0), <Color>[
@@ -196,6 +202,7 @@ class MonetAudioPainter extends CustomPainter {
       old.color != color ||
       old.line != line ||
       old.still != still ||
-      old.pulse != pulse ||
+      !listEquals(old.bands, bands) ||
+      old.power != power ||
       old.seconds != seconds;
 }

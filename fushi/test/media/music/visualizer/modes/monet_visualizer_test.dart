@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_audio_overlay.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart';
@@ -11,7 +15,48 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_visual
 
 import '../visualizer_test_helpers.dart';
 
+/// 两行，第一行来源标成副歌。
+LyricTimeline _chorusTimeline() => const LyricTimeline(
+  format: 'ttml',
+  timingQuality: LyricTimingQuality.word,
+  lines: <LyricLine>[
+    LyricLine(
+      startMs: 1000,
+      endMs: 3000,
+      songPart: 'Chorus',
+      syllables: <LyricSyllable>[
+        LyricSyllable(text: 'Hello ', startMs: 1000, endMs: 1600),
+        LyricSyllable(text: 'bright ', startMs: 1600, endMs: 2200),
+        LyricSyllable(text: 'world', startMs: 2200, endMs: 3000),
+      ],
+    ),
+    LyricLine(
+      startMs: 4000,
+      endMs: 6000,
+      songPart: 'Verse',
+      syllables: <LyricSyllable>[
+        LyricSyllable(text: 'ま', startMs: 4000, endMs: 5000),
+        LyricSyllable(text: 'た', startMs: 5000, endMs: 6000),
+      ],
+    ),
+  ],
+);
+
 void main() {
+  late Directory assetRoot;
+  setUp(() {
+    assetRoot = Directory.systemTemp.createTempSync('monet_assets');
+    monetAssetStoreOpener = () async => LyricVisualizerAssetStore(assetRoot);
+  });
+  tearDown(() {
+    monetAssetStoreOpener = LyricVisualizerAssetStore.open;
+    try {
+      assetRoot.deleteSync(recursive: true);
+    } on FileSystemException {
+      // Windows 上偶有句柄未释放，临时目录留给系统清。
+    }
+  });
+
   group('版面尺寸', () {
     test('超宽屏才整体放大', () {
       expect(monetLargeScreenScale(1280), 1);
@@ -181,8 +226,33 @@ void main() {
   });
 
   group('频谱', () {
+    test('音频帧映射成 folia 五段频带', () {
+      const LyricVisualizerAudioFrame f = LyricVisualizerAudioFrame(
+        power: 0.5,
+        low: 0.8,
+        mid: 0.4,
+        high: 0.2,
+        vocal: 0.6,
+        onset: 0,
+        beatImpact: 0,
+        downbeatImpact: 0,
+        drumImpact: 0,
+      );
+      expect(monetAudioBands(f), <Object>[
+        0.8,
+        closeTo(0.6, 1e-9),
+        0.4,
+        0.6,
+        0.2,
+      ]);
+      expect(
+        monetAudioBands(LyricVisualizerAudioFrame.silent),
+        everyElement(0),
+      );
+    });
+
     test('轮廓在 0–1，静态图案中间高两头低', () {
-      final List<double> bands = monetSyntheticBands(1, 3);
+      final List<double> bands = <double>[0.9, 0.7, 0.6, 0.8, 0.5];
       for (int i = 0; i <= 20; i++) {
         final double v = monetSpectrumProfile(bands, i / 20);
         expect(v, inInclusiveRange(0, 1));
@@ -197,7 +267,6 @@ void main() {
       );
       expect(level(0), closeTo(0.02, 1e-9));
       expect(level(36), greaterThan(level(2)));
-      expect(monetSyntheticBands(0, 5), everyElement(0));
     });
   });
 
@@ -262,6 +331,84 @@ void main() {
       );
       b.dispose();
     });
+
+    test('主题按词着色：命中的词记上颜色；副歌行带标记', () {
+      const Color red = Color(0xFFFF0000);
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        _chorusTimeline(),
+      );
+      final MonetLineText a = MonetLineText.layout(
+        line: rt.lines[0],
+        fontPx: 30,
+        translationFontPx: 16,
+        contentWidth: 600,
+        alignEnd: false,
+        trackColor: const Color(0xFFFFFFFF),
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'bright': red},
+        ),
+      );
+      expect(a.isChorus, isTrue);
+      expect(a.words.map((MonetWordGeom w) => w.color), <Color?>[
+        null,
+        red,
+        null,
+      ]);
+      // 光晕留到句尾离场窗口（render hints），不早于行尾。
+      expect(a.lineEndMs, rt.lines[0].renderEndMs);
+      expect(a.lineEndMs, greaterThanOrEqualTo(3000));
+      a.dispose();
+      final MonetLineText b = MonetLineText.layout(
+        line: rt.lines[1],
+        fontPx: 30,
+        translationFontPx: 16,
+        contentWidth: 600,
+        alignEnd: false,
+        trackColor: const Color(0xFFFFFFFF),
+      );
+      expect(b.isChorus, isFalse);
+      expect(b.words.every((MonetWordGeom w) => w.color == null), isTrue);
+      b.dispose();
+    });
+  });
+
+  group('肖像', () {
+    test('来源：自定义优先素材图、封面优先封面，各自回落', () {
+      expect(
+        monetPortraitPath(source: 'custom', cover: 'c.jpg', custom: 'p.png'),
+        'p.png',
+      );
+      expect(
+        monetPortraitPath(source: 'custom', cover: 'c.jpg', custom: null),
+        'c.jpg',
+      );
+      expect(
+        monetPortraitPath(source: 'cover', cover: 'c.jpg', custom: 'p.png'),
+        'c.jpg',
+      );
+      expect(
+        monetPortraitPath(source: 'cover', cover: '', custom: 'p.png'),
+        'p.png',
+      );
+      expect(
+        monetPortraitPath(source: 'cover', cover: null, custom: null),
+        isNull,
+      );
+    });
+
+    test('chaotic 晃动：9 秒一圈，首圈延后 0.2 秒', () {
+      expect(monetChaoticShake(0), (0.0, 0.0, 0.0));
+      final (double x, double y, double r) = monetChaoticShake(0.2 + 2.25);
+      expect(x, closeTo(-9, 1e-9));
+      expect(y, closeTo(-18, 1e-9));
+      expect(r, closeTo(1.2, 1e-9));
+      final (double x2, double y2, double r2) = monetChaoticShake(
+        0.2 + 9 + 6.75,
+      );
+      expect(x2, closeTo(9, 1e-9));
+      expect(y2, closeTo(18, 1e-9));
+      expect(r2, closeTo(-1.2, 1e-9));
+    });
   });
 
   group('参数', () {
@@ -276,6 +423,33 @@ void main() {
       expect(c.showPortrait, isTrue);
       expect(c.squarePortrait, isTrue);
       expect(c.mirrored, isFalse);
+      expect(c.keywordColoring, isTrue);
+      expect(c.customDescription, '');
+      expect(c.portraitSource, 'cover');
+      expect(c.portraitPack, 'default');
+    });
+
+    test('自定义描述截到 120 字；素材包参数只在选自定义时显示', () {
+      final LyricVisualizerTuning tu = LyricVisualizerTuning(
+        monetVisualizerEntry.tunings,
+        <String, Object?>{'customDescription': '  ${'x' * 200}'},
+      );
+      expect(MonetConfig.from(tu).customDescription.length, lessThan(121));
+      final LyricVisualizerTuningSpec pack = monetVisualizerEntry.tunings
+          .firstWhere((LyricVisualizerTuningSpec s) => s.key == 'portraitPack');
+      expect(
+        pack.visibleWhen!(LyricVisualizerTuningFixture.defaults()),
+        isFalse,
+      );
+      expect(
+        pack.visibleWhen!(
+          LyricVisualizerTuning(
+            monetVisualizerEntry.tunings,
+            const <String, Object?>{'portraitSource': 'custom'},
+          ),
+        ),
+        isTrue,
+      );
     });
 
     test('背景交给共享背景「莫奈」', () {
@@ -352,6 +526,66 @@ void main() {
         monetVisualizerEntry,
         size: const Size(2400, 1350),
       );
+    });
+
+    testWidgets('真音频 + 副歌 + 主题着色 + chaotic + 自定义肖像', (
+      WidgetTester tester,
+    ) async {
+      await pumpVisualizerAcross(
+        tester,
+        monetVisualizerEntry,
+        timeline: _chorusTimeline(),
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'bright': Color(0xFFFF0000)},
+          fontWeight: FontWeight.w300,
+        ),
+        tuning: const <String, Object?>{
+          'portraitSource': 'custom',
+          'descriptionVisibility': 'always',
+          'audioStyle': 'line',
+        },
+      );
+    });
+
+    testWidgets('关键字着色关掉也照常画', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        monetVisualizerEntry,
+        timeline: _chorusTimeline(),
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'bright': Color(0xFFFF0000)},
+        ),
+        tuning: const <String, Object?>{'keywordColoringEnabled': false},
+      );
+    });
+
+    testWidgets('描述胶囊显示自定义描述', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FakeVisualizerClock clock = FakeVisualizerClock(1500);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox.expand(
+              child: monetVisualizerEntry.builder(
+                visualizerContextFor(
+                  monetVisualizerEntry,
+                  clock: clock,
+                  tuning: const <String, Object?>{
+                    'descriptionVisibility': 'always',
+                    'customDescription': ' Rainy day ',
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('RAINY DAY'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     testWidgets('画出标题、歌手、专辑', (WidgetTester tester) async {

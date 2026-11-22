@@ -18,6 +18,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/backgrounds/monet_background.dart'
     show kMonetBackgroundId;
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_audio_overlay.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart';
@@ -37,6 +39,11 @@ final LyricVisualizerEntry monetVisualizerEntry = LyricVisualizerEntry(
   sharedSubtitle: false,
   builder: (LyricVisualizerContext c) => MonetVisualizer(context: c),
 );
+
+/// 打开素材库（测试换成临时目录）。
+@visibleForTesting
+Future<LyricVisualizerAssetStore> Function() monetAssetStoreOpener =
+    LyricVisualizerAssetStore.open;
 
 /// folia 海报入场缓动 `[0.25, 1, 0.5, 1]`。
 const Cubic _kIntroCurve = Cubic(0.25, 1, 0.5, 1);
@@ -71,6 +78,10 @@ class _MonetStageState extends State<_MonetStage> {
   late final double _mountStart = widget.ticks.value.elapsed;
   int _lastTimeMs = 0;
   bool _capsuleHovered = false;
+
+  /// 自定义肖像（素材包里最后导入的图）；[_portraitPackKey] 是已经去读的包。
+  String? _customPortrait;
+  String? _portraitPackKey;
 
   @override
   void initState() {
@@ -111,6 +122,29 @@ class _MonetStageState extends State<_MonetStage> {
     super.dispose();
   }
 
+  /// 需要自定义肖像时（选了自定义，或封面缺失时的回落）读一次素材包。
+  void _ensureCustomPortrait(MonetConfig cfg, String? cover) {
+    final bool needed =
+        cfg.showPortrait &&
+        (cfg.portraitSource == 'custom' || (cover?.isEmpty ?? true));
+    if (!needed || _portraitPackKey == cfg.portraitPack) return;
+    final String pack = cfg.portraitPack;
+    _portraitPackKey = pack;
+    unawaited(() async {
+      String? found;
+      try {
+        final LyricVisualizerAssetStore store = await monetAssetStoreOpener();
+        final List<File> files = await store.list(kMonetAssetStyle, pack);
+        if (files.isNotEmpty) found = files.last.path;
+      } on Object {
+        // 素材目录不可用（无存储权限 / 测试环境）：按没有自定义图处理。
+        found = null;
+      }
+      if (!mounted || _portraitPackKey != pack) return;
+      if (found != _customPortrait) setState(() => _customPortrait = found);
+    }());
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.ticks,
@@ -124,6 +158,7 @@ class _MonetStageState extends State<_MonetStage> {
     final LyricVisualizerContext v = widget.visualizer;
     final LyricVisualizerPalette pal = v.palette;
     final MonetConfig cfg = MonetConfig.from(v.tuning);
+    _ensureCustomPortrait(cfg, v.coverPath);
     final bool motion = v.motion;
     final double w = size.width;
     final double h = size.height;
@@ -330,6 +365,19 @@ class _MonetStageState extends State<_MonetStage> {
                   inactiveScale: monetInactiveScale(lyricFont, inactiveFont),
                   translationFontPx: translationFont,
                   alignEnd: mirrored,
+                  theme: v.theme,
+                  keywordColoring: cfg.keywordColoring,
+                  // folia `resolveThemeFontWeight(theme, 600 / 500)` + 主题字体。
+                  textStyle: v.applyThemeFont(
+                    TextStyle(
+                      fontWeight: v.theme?.fontWeight ?? FontWeight.w600,
+                    ),
+                  ),
+                  trackStyle: v.applyThemeFont(
+                    TextStyle(
+                      fontWeight: v.theme?.fontWeight ?? FontWeight.w500,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -345,7 +393,15 @@ class _MonetStageState extends State<_MonetStage> {
       const SizedBox(height: 24),
       Flexible(child: rail),
       if (cfg.descriptionVisibility != 'hidden')
-        _capsule(pal, cfg.descriptionVisibility == 'always', aDesc, motion),
+        _capsule(
+          pal,
+          cfg.descriptionVisibility == 'always',
+          aDesc,
+          motion,
+          cfg.customDescription.isNotEmpty
+              ? cfg.customDescription
+              : t.music_visualizer_mode_monet,
+        ),
     ];
 
     final Widget textColumn = SizedBox(
@@ -373,6 +429,9 @@ class _MonetStageState extends State<_MonetStage> {
           innerW: innerW,
           side: side,
           appear: aPortrait,
+          shake: motion && v.intensity == LyricVisualizerIntensity.chaotic
+              ? monetChaoticShake(tick.elapsed - _mountStart)
+              : (0, 0, 0),
         ),
     ];
 
@@ -404,13 +463,19 @@ class _MonetStageState extends State<_MonetStage> {
                   padding: EdgeInsets.symmetric(horizontal: monetAudioPadX(w)),
                   child: CustomPaint(
                     size: Size.infinite,
-                    painter: MonetAudioPainter(
-                      color: primary,
-                      line: cfg.audioLine,
-                      still: !motion,
-                      pulse: v.runtime.pulseAt(tick.timeMs),
-                      seconds: tick.elapsed,
-                    ),
+                    painter: () {
+                      final LyricVisualizerAudioFrame a = v.audioFrameAt(
+                        tick.timeMs,
+                      );
+                      return MonetAudioPainter(
+                        color: primary,
+                        line: cfg.audioLine,
+                        still: !motion,
+                        bands: monetAudioBands(a),
+                        power: a.power,
+                        seconds: tick.elapsed,
+                      );
+                    }(),
                   ),
                 ),
               ),
@@ -426,6 +491,7 @@ class _MonetStageState extends State<_MonetStage> {
     bool always,
     double appear,
     bool motion,
+    String label,
   ) {
     final bool hasMouse =
         RendererBinding.instance.mouseTracker.mouseIsConnected;
@@ -472,7 +538,7 @@ class _MonetStageState extends State<_MonetStage> {
                         ),
                         const SizedBox(width: 12),
                         Text(
-                          t.music_visualizer_mode_monet.toUpperCase(),
+                          label.toUpperCase(),
                           style: TextStyle(
                             color: pal.text.withValues(alpha: 0.9),
                             fontSize: 12,
@@ -500,6 +566,7 @@ class _MonetStageState extends State<_MonetStage> {
     required double innerW,
     required double side,
     required double appear,
+    required (double, double, double) shake,
   }) {
     final LyricVisualizerPalette pal = v.palette;
     final bool mirrored = cfg.mirrored;
@@ -507,7 +574,11 @@ class _MonetStageState extends State<_MonetStage> {
     final double avail = math.max(0, colW - 12 - edge);
     final double inner = math.min(innerW, avail);
     final Widget image = _MonetPortraitImage(
-      path: v.coverPath,
+      path: monetPortraitPath(
+        source: cfg.portraitSource,
+        cover: v.coverPath,
+        custom: _customPortrait,
+      ),
       motion: v.motion,
     );
     Widget frame;
@@ -581,9 +652,17 @@ class _MonetStageState extends State<_MonetStage> {
         ),
       );
     }
+    final (double sx, double sy, double sr) = shake;
     final Widget moved = Transform.translate(
       offset: Offset(cfg.portraitOffsetX * side, 0),
-      child: frame,
+      child: sx == 0 && sy == 0 && sr == 0
+          ? frame
+          : Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.translationValues(sx, sy, 0)
+                ..rotateZ(sr * math.pi / 180),
+              child: frame,
+            ),
     );
     final Widget entering = Opacity(
       opacity: appear,
@@ -644,14 +723,15 @@ class _MonetPortraitImageState extends State<_MonetPortraitImage> {
   void _want(String? path) {
     if (path == _wanted) return;
     _wanted = path;
-    if (path == null || path.isEmpty || !File(path).existsSync()) {
+    final ImageProvider? provider = lyricVisualizerCoverProvider(path);
+    if (provider == null) {
       // 没封面：保留上一张（folia 淡出但留着），这里直接清掉，框露出底色。
       if (_shown != null) setState(() => _shown = null);
       return;
     }
     unawaited(
       precacheImage(
-        FileImage(File(path)),
+        provider,
         context,
         onError: (Object _, StackTrace? _) {},
       ).then((_) {
@@ -677,7 +757,8 @@ class _MonetPortraitImageState extends State<_MonetPortraitImage> {
           ? const SizedBox.expand(key: ValueKey<String>('monet-empty'))
           : Image(
               key: ValueKey<String>(shown),
-              image: FileImage(File(shown)),
+              image:
+                  lyricVisualizerCoverProvider(shown) ?? FileImage(File(shown)),
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
