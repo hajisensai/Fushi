@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T15:43:37Z",
+ "generatedAt": "2026-11-22T16:32:45Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "023e72ef701a385f58b0b67796e365d9fbd0f0e9",
-  "seq": 31516
+  "sha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
+  "seq": 31528
  },
  "builds": [
+  {
+   "seq": 31474,
+   "version": "3.4.0",
+   "sha": "3c8d64b87b910ea52c1066e8f18b1d283002636d",
+   "unknown": false,
+   "publishedAt": "2026-11-22T16:32:32Z",
+   "testflight": true,
+   "baseSeq": 31429,
+   "prs": [
+    4186,
+    4178,
+    4180
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047097"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 31429,
    "version": "3.4.0",
@@ -69,8 +100,8 @@
    "version": "3.4.0",
    "sha": "6a769b065115e168daeeea38eae45c9bca84182f",
    "unknown": false,
-   "publishedAt": "2026-11-22T12:40:14Z",
-   "testflight": true,
+   "publishedAt": "2026-11-22T12:29:57Z",
+   "testflight": false,
    "baseSeq": 31261,
    "prs": [
     4163,
@@ -108,33 +139,39 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45017902510"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "023e72ef701a385f58b0b67796e365d9fbd0f0e9",
-  "headSeq": 31516,
+  "headSha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
+  "headSeq": 31528,
   "prs": [
+   4197,
+   4194,
    4195,
    4189,
    4193,
    4192,
    4188,
    4187,
-   4185,
-   4186,
-   4178,
-   4180
+   4185
   ],
   "direct": [
+   {
+    "sha": "e0dd8b4d4e2f60c0bf7e74d0dca389d74e4c1a87",
+    "subject": "chore(bugs): settle BUG number collisions on 023e72ef7"
+   },
    {
     "sha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
     "subject": "chore(bugs): settle BUG number collisions on 3c8d64b87"
@@ -144,19 +181,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782108"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071038"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782344"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071029"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782344"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071029"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45039782344"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071029"
    }
   }
  },
@@ -431,6 +468,15 @@
    "deletions": 57,
    "labels": []
   },
+  "4194": {
+   "number": 4194,
+   "title": "feat(books): 书架 / 拖放按内容接收一包书（7z、装着 epub/txt 的 zip/rar），解包整批导入、一份汇总",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T15:59:44Z",
+   "additions": 2164,
+   "deletions": 17,
+   "labels": []
+  },
   "4195": {
    "number": 4195,
    "title": "merge: 拍板台执行批（汉字卡默认折叠 #4190 + 外部 PR #4191）",
@@ -438,6 +484,15 @@
    "mergedAt": "2026-11-22T15:42:24Z",
    "additions": 1497,
    "deletions": 199,
+   "labels": []
+  },
+  "4197": {
+   "number": 4197,
+   "title": "feat(music): 歌词转录用歌曲档位（识别前人声分离），fushi-subtitles 钉到 a5a9a90",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T16:18:15Z",
+   "additions": 789,
+   "deletions": 94,
    "labels": []
   }
  }
