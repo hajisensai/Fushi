@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -228,6 +229,52 @@ void main() {
       );
       // 文件型快照是原生的缓存文件：试听只读，绝不能删掉它（制卡还要用）。
       expect(await File('${tmp.path}/lookup.pcm').exists(), isTrue);
+    });
+
+    // 电脑端的真实路径是钉住型快照：它的 `save` 闭包抓着平台通道（发不进 isolate）。
+    // 试听落盘后在后台 isolate 里算，送进 isolate 的闭包绝不能把快照本身带过去；落盘
+    // 不消费快照（之后制卡还要再落一次），试听的临时目录读完即删。
+    test('a pinned snapshot previews off-isolate and stays minable', () async {
+      final Uint8List pcm = _pcm(
+        _mono8k,
+        4000,
+        const <({int startMs, int endMs})>[(startMs: 1000, endMs: 2000)],
+      );
+      final RawReceivePort unsendable = RawReceivePort();
+      addTearDown(unsendable.close);
+      final List<String> savedTo = <String>[];
+      final CrossAppAudioSnapshot pinned = CrossAppAudioPinnedSnapshot(
+        id: 7,
+        save: (int id, String path) async {
+          expect(unsendable.sendPort, isNotNull);
+          savedTo.add(path);
+          await File(path).writeAsBytes(pcm);
+          return _mono8k;
+        },
+      );
+      final Map<String, Object?>? reply = await crossAppAudioPreviewReply(
+        Future<CrossAppAudioSnapshot?>.value(pinned),
+      );
+      expect(reply, isNotNull);
+      expect(reply!['totalMs'], 4000);
+      expect(savedTo, hasLength(1));
+      expect(
+        await File(savedTo.single).parent.exists(),
+        isFalse,
+        reason: '试听落盘的临时目录读完即删',
+      );
+
+      final ({String path, Directory dir})? out =
+          await prepareCrossAppSentenceAudio(
+            pinned,
+            encode: (GalAudioSlice clip, String outputPath) async {
+              await File(outputPath).writeAsBytes(clip.pcm);
+              return true;
+            },
+          );
+      expect(out, isNotNull, reason: '试听之后同一份快照照常制卡');
+      expect(savedTo, hasLength(2));
+      await deleteCrossAppAudioDir(out!.dir);
     });
 
     test('mining applies the offsets the panel produced', () async {
