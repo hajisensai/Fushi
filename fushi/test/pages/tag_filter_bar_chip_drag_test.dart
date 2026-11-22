@@ -41,6 +41,26 @@ FushiTagFilterBar _bar({
   },
 );
 
+/// 限宽的标签条：三枚标签溢出，标签条才有得滚（不溢出时 `Scrollable` 不收拖动，
+/// 测不出横滚与长按的竞争）。
+Widget _narrow(double width, Widget bar) => _host(
+  Align(
+    alignment: Alignment.topLeft,
+    child: SizedBox(width: width, child: bar),
+  ),
+);
+
+ScrollPosition _tagStripPosition(WidgetTester tester) => tester
+    .state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(FushiTagFilterBar),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    )
+    .position;
+
 void main() {
   setUpAll(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
@@ -81,9 +101,11 @@ void main() {
     final List<(int, int)> reorders = <(int, int)>[];
     final List<int> toggled = <int>[];
     await tester.pumpWidget(
-      _host(_bar(reorders: reorders, onToggleFilter: toggled.add)),
+      _narrow(200, _bar(reorders: reorders, onToggleFilter: toggled.add)),
     );
     await tester.pumpAndSettle();
+    final ScrollPosition position = _tagStripPosition(tester);
+    expect(position.maxScrollExtent, greaterThan(0), reason: '标签条可滚，才有竞争');
 
     final TestGesture mouse = await tester.startGesture(
       tester.getCenter(find.text('标签0')),
@@ -92,41 +114,24 @@ void main() {
     // 长按计时内手抖几 px 不算拖动（BUG-4899 的 1 px 门槛已放宽）。
     await mouse.moveBy(const Offset(3, 0));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
-    await mouse.moveTo(tester.getCenter(find.text('标签2')));
+    await mouse.moveTo(tester.getCenter(find.text('标签1')));
     await tester.pump();
     await mouse.up();
     await tester.pumpAndSettle();
 
-    expect(reorders, <(int, int)>[(0, 2)]);
+    expect(reorders, <(int, int)>[(0, 1)]);
     expect(toggled, isEmpty);
+    expect(position.pixels, 0, reason: '手抖没让标签条横滚');
   });
 
   testWidgets('鼠标在 chip 上按下就拖是横滚标签条，不重排、不筛选', (WidgetTester tester) async {
     final List<(int, int)> reorders = <(int, int)>[];
     final List<int> toggled = <int>[];
-    // 窄宽度让三枚标签溢出，标签条才有得滚。
     await tester.pumpWidget(
-      _host(
-        Align(
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: 120,
-            child: _bar(reorders: reorders, onToggleFilter: toggled.add),
-          ),
-        ),
-      ),
+      _narrow(120, _bar(reorders: reorders, onToggleFilter: toggled.add)),
     );
     await tester.pumpAndSettle();
-    final ScrollPosition position = tester
-        .state<ScrollableState>(
-          find
-              .descendant(
-                of: find.byType(FushiTagFilterBar),
-                matching: find.byType(Scrollable),
-              )
-              .first,
-        )
-        .position;
+    final ScrollPosition position = _tagStripPosition(tester);
     expect(position.maxScrollExtent, greaterThan(40));
 
     final TestGesture mouse = await tester.startGesture(
