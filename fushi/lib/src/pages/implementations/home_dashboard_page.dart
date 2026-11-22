@@ -5031,13 +5031,17 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         if (collectionId != null)
           (type: TrackingMediaType.videoCollection, key: '$collectionId'),
       ],
-      if (entry.book case final MediaItem book)
+      if (entry.book case final MediaItem book) ...<HomeTrackingKey>[
         (
           type: TrackingMediaType.book,
           key:
               ReaderFushiSource.parseBookKey(book.mediaIdentifier) ??
               book.mediaIdentifier,
         ),
+        // A volume counted by its series card's series link.
+        if (collectionId != null)
+          (type: TrackingMediaType.bookCollection, key: '$collectionId'),
+      ],
       if (entry.game case final GalgameEntry game)
         (type: TrackingMediaType.game, key: game.id),
     ];

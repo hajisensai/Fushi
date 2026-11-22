@@ -576,7 +576,8 @@ TrackingMediaType _parseMediaType(String raw) {
         type == TrackingMediaType.remoteSeries) {
       continue;
     }
-    // Only a do-not-track key, never a link.
+    // Series links (whole book series) are made from the Track sheet, which
+    // plans the volume counting; this route links single items.
     if (type == TrackingMediaType.bookCollection) continue;
     if (type.value == raw) return type;
   }

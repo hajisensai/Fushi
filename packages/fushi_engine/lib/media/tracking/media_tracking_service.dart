@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show isMultiSeasonGrouped;
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/tracking/bangumi_tracking_provider.dart';
+import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
@@ -84,6 +86,7 @@ final class TrackingProviderPrefKeys {
     required this.videoWatermark,
     required this.bookWatermark,
     required this.gameWatermark,
+    required this.seriesTidyDone,
     required this.providerId,
   });
 
@@ -100,6 +103,8 @@ final class TrackingProviderPrefKeys {
         videoWatermark: kVideoTrackingReconcileWatermarkPref,
         bookWatermark: kBookTrackingReconcileWatermarkPref,
         gameWatermark: kGameTrackingReconcileWatermarkPref,
+        // Bangumi gets no series links (it keeps its own book matching).
+        seriesTidyDone: 'media_tracking_bangumi_book_series_tidy_v1',
       );
     }
     final String p = 'media_tracking_$providerId';
@@ -114,6 +119,7 @@ final class TrackingProviderPrefKeys {
       videoWatermark: '${p}_video_reconcile_watermark_v1',
       bookWatermark: '${p}_book_reconcile_watermark_v1',
       gameWatermark: '${p}_game_reconcile_watermark_v1',
+      seriesTidyDone: '${p}_book_series_tidy_v1',
     );
   }
 
@@ -130,6 +136,9 @@ final class TrackingProviderPrefKeys {
   final String videoWatermark;
   final String bookWatermark;
   final String gameWatermark;
+
+  /// The one-time tidy-up of per-volume links into series links ran.
+  final String seriesTidyDone;
 
   /// Per-kind on/off for this provider. Missing = on.
   String kindEnabled(TrackingKind kind) =>
@@ -1121,6 +1130,11 @@ class MediaTrackingService {
       await _enqueueCurrentProgress(mapping);
       queued = true;
     }
+    // A volume counted again by its card's series link ("Count again").
+    if (mediaType == TrackingMediaType.book.value &&
+        (await _sendSeriesProgress(mediaKey)).queued > 0) {
+      queued = true;
+    }
     if (queued) _requestSync();
   }
 
@@ -1879,6 +1893,20 @@ class MediaTrackingService {
       }
       return;
     }
+    if (mediaType == TrackingMediaType.bookCollection) {
+      final TrackingSeriesProgress? progress = (await seriesCoverage(
+        mapping,
+      )).progress;
+      if (progress == null) return;
+      await _repository.enqueueProgress(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: mapping.mediaKey,
+        localProgress: progress.progress,
+        completed: progress.completed,
+        provider: provider,
+      );
+      return;
+    }
     if (mediaType == TrackingMediaType.remoteVideo) {
       // A media server episode is only known here once it was watched to the
       // end ([recordRemoteVideoCompleted]); the site decides completion from
@@ -2245,12 +2273,14 @@ class MediaTrackingService {
       completed: completed,
       bangumiMapping: bangumiMapping,
     );
+    final ({int queued, bool open}) series = await _sendSeriesProgress(bookKey);
     // Bangumi's title search ran (or sits in its miss window) without a link.
     final bool bangumiLinkOpen =
         bangumiAutoMaps && bangumiMapping == null && isConfigured;
     final bool settled =
-        sent.queued > 0 &&
+        sent.queued + series.queued > 0 &&
         !sent.open &&
+        !series.open &&
         !bangumiLinkOpen &&
         !await _hasOpenBookLink(bookKey);
     // Linking can wait minutes for the search budget, and the reader awaits
@@ -2267,6 +2297,7 @@ class MediaTrackingService {
             bangumiMapping: null,
             onlyProviders: linked,
           );
+          await _sendSeriesProgress(bookKey, onlyProviders: linked);
         })
         .catchError((Object error, StackTrace stackTrace) {
           engineLog.log('MediaTrackingService.linkBook', error, stackTrace);
@@ -2384,6 +2415,436 @@ class MediaTrackingService {
     return (queued: queued, open: open);
   }
 
+  // ── Series links ──────────────────────────────────────────────────
+
+  /// Queues the series progress of [bookKey]'s series card for every site
+  /// with a series link on it ([onlyProviders] limits it to those). Same
+  /// result shape as [_sendBookProgress].
+  Future<({int queued, bool open})> _sendSeriesProgress(
+    String bookKey, {
+    Set<String>? onlyProviders,
+  }) async {
+    final MediaCollectionRow? card = await _repository.bookSeriesCard(bookKey);
+    if (card == null) return (queued: 0, open: false);
+    int queued = 0;
+    bool open = false;
+    final String key = card.id.toString();
+    for (final TrackingProvider provider in _registry.all) {
+      if (onlyProviders != null && !onlyProviders.contains(provider.id)) {
+        continue;
+      }
+      final MediaTrackingMappingRow? mapping = await _routableMapping(
+        provider,
+        TrackingMediaType.bookCollection,
+        key,
+      );
+      if (mapping == null) continue;
+      final TrackingSeriesProgress? progress = (await seriesCoverage(
+        mapping,
+      )).progress;
+      if (progress == null) continue;
+      if (await _enqueueAndSync(
+        provider: provider,
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        localProgress: progress.progress,
+        completed: progress.completed,
+      )) {
+        queued++;
+      } else {
+        open = true;
+      }
+    }
+    return (queued: queued, open: open);
+  }
+
+  /// Every volume of the series card a series link ([mapping], a
+  /// `book_collection` link) covers, and what it sends. Empty for any other
+  /// link, or when the card is gone.
+  Future<TrackingSeriesCoverage> seriesCoverage(
+    MediaTrackingMappingRow mapping,
+  ) async {
+    final int? collectionId = int.tryParse(mapping.mediaKey);
+    final TrackingKind? kind = _trackingKindOf(mapping.kind);
+    if (mapping.mediaType != TrackingMediaType.bookCollection.value ||
+        collectionId == null ||
+        kind == null ||
+        mapping.progressMode != TrackingProgressMode.volume.value) {
+      return TrackingSeriesCoverage.empty;
+    }
+    return _seriesCoverage(
+      collectionId: collectionId,
+      providerId: mapping.provider,
+      kind: kind,
+    );
+  }
+
+  Future<TrackingSeriesCoverage> _seriesCoverage({
+    required int collectionId,
+    required String providerId,
+    required TrackingKind kind,
+  }) async {
+    final List<EpubBookRow> books = await _repository.collectionBooks(
+      collectionId,
+    );
+    if (books.isEmpty) return TrackingSeriesCoverage.empty;
+    final TrackingIgnoreIndex ignored = await _repository.loadIgnoreIndex();
+    final MediaPrivacySnapshot privacy = await _repository.loadPrivacy();
+    final List<TrackingSeriesMemberFacts> facts =
+        <TrackingSeriesMemberFacts>[];
+    for (final EpubBookRow book in books) {
+      final BookLinkSource source = buildBookLinkSource(
+        book,
+        await _bookLinkHints?.call(book),
+      );
+      final ({bool started, bool finished, int evidenceAt}) read =
+          await _repository.loadBookReadState(
+            book,
+            mangaProgress: _mangaReadProgress,
+          );
+      facts.add(
+        TrackingSeriesMemberFacts(
+          bookKey: book.bookKey,
+          title: source.mediaTitle,
+          // In a series card a PDF's number counts (a scanned volume); alone
+          // it is one volume ([planBookLink]).
+          volume: source.volume,
+          seriesKey: parseBookSeriesKey(book.title)?.key,
+          started: read.started,
+          finished: read.finished,
+          evidenceAt: read.evidenceAt,
+          excluded: ignored.isListed(TrackingMediaType.book.value, book.bookKey),
+          private: isTrackedMediaPrivate(
+            privacy,
+            TrackingMediaType.book.value,
+            book.bookKey,
+          ),
+          otherKind: !bookFormatTracksAs(source.format, kind.value),
+          ownLink:
+              await _repository.findMapping(
+                mediaType: TrackingMediaType.book,
+                mediaKey: book.bookKey,
+                provider: providerId,
+              ) !=
+              null,
+        ),
+      );
+    }
+    return planSeriesCoverage(facts);
+  }
+
+  /// Ids of series links whose series card was deleted: shown as "Series
+  /// card removed" with a remove action; they send nothing.
+  Future<Set<int>> orphanSeriesLinkIds() =>
+      _repository.orphanSeriesMappingIds();
+
+  /// Volumes of linked series cards the series link does not count and the
+  /// user should look at: no volume number in a numbered series
+  /// ([TrackingSeriesMemberState.noNumber]), or a title naming another
+  /// series ([TrackingSeriesMemberState.otherSeries]). One entry per volume
+  /// and site.
+  Future<List<({MediaTrackingMappingRow link, TrackingSeriesMember member})>>
+  seriesVolumesNeedingAttention() async {
+    final List<({MediaTrackingMappingRow link, TrackingSeriesMember member})>
+    out = <({MediaTrackingMappingRow link, TrackingSeriesMember member})>[];
+    for (final MediaTrackingMappingRow link in await _repository
+        .listMappings()) {
+      if (link.mediaType != TrackingMediaType.bookCollection.value) continue;
+      for (final TrackingSeriesMember member in (await seriesCoverage(
+        link,
+      )).members) {
+        if (member.state == TrackingSeriesMemberState.noNumber ||
+            member.state == TrackingSeriesMemberState.otherSeries) {
+          out.add((link: link, member: member));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// [book]'s series card when automatic linking may give it a series link:
+  /// a card with at least two books, and the book counts volumes (a web
+  /// novel or online manga series counts chapters on its own).
+  Future<MediaCollectionRow?> _seriesCardForLinking(
+    EpubBookRow book,
+    BookLinkSource source,
+  ) async {
+    if (source.chapterWork) return null;
+    final MediaCollectionRow? card = await _repository.bookSeriesCard(
+      book.bookKey,
+    );
+    if (card == null) return null;
+    if ((await _repository.collectionBooks(card.id)).length < 2) return null;
+    return card;
+  }
+
+  /// A series link for [provider] from another site's series link on the
+  /// same card ([_linkBookById] for series). Never uses a title.
+  Future<MediaTrackingMappingRow?> _linkSeriesById(
+    TrackingProvider provider,
+    MediaCollectionRow card,
+    TrackingKind kind,
+  ) async {
+    if (!provider.capabilities.accepts(kind, TrackingProgressMode.volume)) {
+      return null;
+    }
+    final TrackingBookLinker linker = provider as TrackingBookLinker;
+    final String key = card.id.toString();
+    for (final TrackingProvider other in _registry.all) {
+      if (other.id == provider.id ||
+          other is! TrackingBookLinker ||
+          !other.isConfigured) {
+        continue;
+      }
+      final MediaTrackingMappingRow? known = await _repository.findMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        provider: other.id,
+      );
+      if (known == null || known.kind != kind.value) continue;
+      TrackingBookSubject? subject = await linker.bookForLinkedId(
+        other.id,
+        known.subjectId,
+      );
+      if (subject == null) {
+        final TrackingBookSubject? there = await (other as TrackingBookLinker)
+            .bookById(known.subjectId);
+        final int? id = there?.linkedIds[provider.id];
+        if (id != null) subject = await linker.bookById(id);
+      }
+      if (subject == null || subject.kind != kind) continue;
+      return _saveAutoLink(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        mediaTitle: card.name,
+        kind: kind,
+        subjectId: subject.subjectId,
+        subjectName: subject.name,
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 0,
+        provider: provider.id,
+        linkSource: TrackingLinkSource.id,
+      );
+    }
+    return null;
+  }
+
+  /// Whether a sure title match [subject] fits the whole card [card] (a
+  /// finished work with a known last volume must have every numbered volume
+  /// of the card); otherwise only the volume itself is linked.
+  Future<bool> _seriesFits({
+    required MediaCollectionRow card,
+    required String providerId,
+    required TrackingBookSubject subject,
+  }) async {
+    final TrackingKind? kind = subject.kind;
+    if (kind == null) return false;
+    final int? finalVolume = subject.finalVolume;
+    if (!subject.isFinished || finalVolume == null) return true;
+    final TrackingSeriesCoverage coverage = await _seriesCoverage(
+      collectionId: card.id,
+      providerId: providerId,
+      kind: kind,
+    );
+    return !coverage.members.any(
+      (TrackingSeriesMember member) =>
+          member.counted && (member.volume ?? 0) > finalVolume,
+    );
+  }
+
+  /// Links the series card [collectionId] to [subject] on [providerId]
+  /// because the user chose it: one link counts every volume of the card,
+  /// also ones added later. Replaces an existing series link and sends the
+  /// current progress.
+  Future<void> linkSeriesToSubject({
+    required int collectionId,
+    required String providerId,
+    required TrackingBookSubject subject,
+    String linkSource = TrackingLinkSource.manual,
+    double? confidence,
+    Duration? holdSend,
+  }) async {
+    final MediaCollectionRow? card = await _repository.loadCollection(
+      collectionId,
+    );
+    final TrackingKind? kind = subject.kind;
+    if (card == null) return;
+    if (kind == null) {
+      throw ArgumentError.value(subject.subjectId, 'subject', 'no kind');
+    }
+    await saveManualMappingAndSync(
+      mediaType: TrackingMediaType.bookCollection,
+      mediaKey: collectionId.toString(),
+      mediaTitle: card.name,
+      kind: kind,
+      subjectId: subject.subjectId,
+      subjectName: subject.name,
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: 0,
+      provider: providerId,
+      linkSource: linkSource,
+      confidence: confidence,
+      holdSend: holdSend,
+    );
+    _statusRevision.value++;
+  }
+
+  /// "Change volume number" for a volume counted by its card's series link
+  /// on [providerId]: the volume gets its own link to the same site entry
+  /// as [volume] (≥ 1). Its own link wins over the series link from then on.
+  Future<void> setSeriesVolumeNumber({
+    required String bookKey,
+    required String providerId,
+    required int volume,
+  }) async {
+    if (volume < 1) return;
+    final MediaCollectionRow? card = await _repository.bookSeriesCard(bookKey);
+    final EpubBookRow? book = await _repository.loadBook(bookKey);
+    if (card == null || book == null) return;
+    final MediaTrackingMappingRow? series = await _repository.findMapping(
+      mediaType: TrackingMediaType.bookCollection,
+      mediaKey: card.id.toString(),
+      provider: providerId,
+    );
+    final TrackingKind? kind = _trackingKindOf(series?.kind ?? '');
+    if (series == null || kind == null) return;
+    final BookLinkSource source = await _bookLinkSourceOf(book, kind: kind);
+    await saveManualMappingAndSync(
+      mediaType: TrackingMediaType.book,
+      mediaKey: bookKey,
+      mediaTitle: source.mediaTitle,
+      kind: kind,
+      subjectId: series.subjectId,
+      subjectName: series.subjectName,
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: volume,
+      provider: providerId,
+    );
+    _statusRevision.value++;
+  }
+
+  /// One-time tidy-up per site: the per-volume links of a series card that
+  /// point to the same site entry, each as the volume's own number, become
+  /// one series link (at least two of them). Links to another entry or with
+  /// another number stay: they are overrides. Nothing is sent: the series
+  /// link starts as having sent what those links had.
+  Future<void> _tidySeriesLinks(TrackingProvider provider) async {
+    final String doneKey = TrackingProviderPrefKeys.forProvider(
+      provider.id,
+    ).seriesTidyDone;
+    if (provider.id == kTrackingProviderBangumi ||
+        provider is! TrackingBookLinker ||
+        _boolPref(doneKey, defaultValue: false)) {
+      return;
+    }
+    final Map<int, MediaCollectionRow> cards = <int, MediaCollectionRow>{};
+    final Map<int, List<MediaTrackingMappingRow>> byCard =
+        <int, List<MediaTrackingMappingRow>>{};
+    for (final MediaTrackingMappingRow row in await _repository.listMappings(
+      provider: provider.id,
+    )) {
+      if (row.mediaType != TrackingMediaType.book.value ||
+          row.progressMode != TrackingProgressMode.volume.value) {
+        continue;
+      }
+      final MediaCollectionRow? card = await _repository.bookSeriesCard(
+        row.mediaKey,
+      );
+      if (card == null) continue;
+      cards[card.id] = card;
+      (byCard[card.id] ??= <MediaTrackingMappingRow>[]).add(row);
+    }
+    for (final MapEntry<int, List<MediaTrackingMappingRow>> entry
+        in byCard.entries) {
+      final MediaCollectionRow card = cards[entry.key]!;
+      final String key = card.id.toString();
+      if (await _repository.findMapping(
+            mediaType: TrackingMediaType.bookCollection,
+            mediaKey: key,
+            provider: provider.id,
+          ) !=
+          null) {
+        continue;
+      }
+      // The site entry most of the card's links point to.
+      final Map<(int, String), List<MediaTrackingMappingRow>> bySubject =
+          <(int, String), List<MediaTrackingMappingRow>>{};
+      for (final MediaTrackingMappingRow row in entry.value) {
+        (bySubject[(row.subjectId, row.kind)] ??= <MediaTrackingMappingRow>[])
+            .add(row);
+      }
+      final List<MediaTrackingMappingRow> main = bySubject.values.reduce(
+        (List<MediaTrackingMappingRow> a, List<MediaTrackingMappingRow> b) =>
+            b.length > a.length ? b : a,
+      );
+      final List<MediaTrackingMappingRow> folded = <MediaTrackingMappingRow>[];
+      for (final MediaTrackingMappingRow row in main) {
+        final EpubBookRow? book = await _repository.loadBook(row.mediaKey);
+        if (book == null) continue;
+        final BookLinkSource source = buildBookLinkSource(
+          book,
+          await _bookLinkHints?.call(book),
+        );
+        if (source.volume == row.progressOffset) folded.add(row);
+      }
+      if (folded.length < 2) continue;
+      final MediaTrackingMappingRow first = folded.first;
+      final TrackingKind? kind = _trackingKindOf(first.kind);
+      if (kind == null) continue;
+      await _repository.saveMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        mediaTitle: card.name,
+        kind: kind,
+        subjectId: first.subjectId,
+        subjectName: first.subjectName,
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 0,
+        provider: provider.id,
+        linkSource: _strongestLinkSource(folded),
+      );
+      int sent = -1;
+      bool sentCompleted = false;
+      for (final MediaTrackingMappingRow row in folded) {
+        final int value = row.sentProgress ?? -1;
+        if (value > sent) sent = value;
+        sentCompleted = sentCompleted || row.sentCompleted;
+        await _repository.deleteMapping(row.id);
+      }
+      final MediaTrackingMappingRow? series = await _repository.findMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        provider: provider.id,
+      );
+      if (series != null && sent >= 0) {
+        await _repository.adoptSentProgress(
+          series.id,
+          progress: sent,
+          completed: sentCompleted,
+        );
+      }
+    }
+    await _preferences.setPref(doneKey, true);
+    _statusRevision.value++;
+  }
+
+  /// The strongest reason among [links]: the user's choice over an approved
+  /// suggestion over another site's id over a title match.
+  static String _strongestLinkSource(List<MediaTrackingMappingRow> links) {
+    const List<String> order = <String>[
+      TrackingLinkSource.manual,
+      TrackingLinkSource.suggestion,
+      TrackingLinkSource.id,
+      TrackingLinkSource.auto,
+    ];
+    int best = order.length;
+    for (final MediaTrackingMappingRow row in links) {
+      final int rank = order.indexOf(row.linkSource ?? '');
+      if (rank >= 0 && rank < best) best = rank;
+    }
+    return best < order.length ? order[best] : TrackingLinkSource.auto;
+  }
+
   /// Links [bookKey] on every active site that tracks its kind and has no
   /// link for it yet (Bangumi keeps its own matching). Returns the providers
   /// that got a new link. One run per book at a time.
@@ -2440,6 +2901,9 @@ class MediaTrackingService {
     final String bookKey = book.bookKey;
     final int now = DateTime.now().millisecondsSinceEpoch;
     final List<TrackingProvider> missing = <TrackingProvider>[];
+    final String? cardKey = (await _repository.bookSeriesCard(
+      bookKey,
+    ))?.id.toString();
     for (final TrackingProvider provider in linkers) {
       if (!provider.capabilities.acceptsKind(kind) ||
           !isKindEnabled(provider.id, kind)) {
@@ -2458,6 +2922,23 @@ class MediaTrackingService {
         provider: provider.id,
       );
       if (existing != null) continue;
+      if (cardKey != null) {
+        // Counted by the card's series link; or the user removed that
+        // link, which leaves the whole series to the user on this site.
+        if (await _repository.findMapping(
+                  mediaType: TrackingMediaType.bookCollection,
+                  mediaKey: cardKey,
+                  provider: provider.id,
+                ) !=
+                null ||
+            await _repository.hasSuggestions(
+              provider: provider.id,
+              mediaType: TrackingMediaType.bookCollection,
+              mediaKey: cardKey,
+            )) {
+          continue;
+        }
+      }
       // Suggestions waiting, dismissed, or a link the user removed: this
       // site is left to the user for this item.
       if (await _repository.hasSuggestions(
@@ -2524,21 +3005,26 @@ class MediaTrackingService {
     );
     final Set<String> linked = <String>{};
     bool suggested = false;
-    BookLinkSource? source;
+    final BookLinkSource source = await _bookLinkSourceOf(book);
+    // A book of a series card links the card: one link for every volume.
+    final MediaCollectionRow? card = await _seriesCardForLinking(book, source);
     for (final TrackingProvider provider in missing) {
       // Removed while an earlier site was searched: never call it again.
       if (!_isRegistered(provider)) continue;
       final String missKey = '${provider.id}:$bookKey';
       try {
-        MediaTrackingMappingRow? row = await _linkBookById(
-          provider,
-          bookKey,
-          kind,
-        );
+        MediaTrackingMappingRow? row = card == null
+            ? null
+            : await _linkSeriesById(provider, card, kind);
+        row ??= await _linkBookById(provider, bookKey, kind);
         if (row == null && provider.capabilities.isOnByDefault(kind)) {
-          source ??= await _bookLinkSourceOf(book);
           final ({MediaTrackingMappingRow? row, bool suggested}) result =
-              await _linkBookByTitle(provider, bookKey, source);
+              await _linkBookByTitle(
+                provider,
+                bookKey,
+                source,
+                seriesCard: card,
+              );
           row = result.row;
           suggested = suggested || result.suggested;
         }
@@ -2614,11 +3100,15 @@ class MediaTrackingService {
   /// match whose progress unit is safe ([planBookLink]); stores the rest as
   /// suggestions. Searches an item once: after suggestions exist, only the
   /// user links it. [suggested] = suggestions were stored.
+  ///
+  /// With a [seriesCard] a sure match counting volumes links the whole card
+  /// (a series link) when it fits every volume of it ([_seriesFits]).
   Future<({MediaTrackingMappingRow? row, bool suggested})> _linkBookByTitle(
     TrackingProvider provider,
     String bookKey,
-    BookLinkSource source,
-  ) async {
+    BookLinkSource source, {
+    MediaCollectionRow? seriesCard,
+  }) async {
     if (await _repository.hasSuggestions(
       provider: provider.id,
       mediaType: TrackingMediaType.book,
@@ -2660,6 +3150,30 @@ class MediaTrackingService {
               )).chapterProgress
             : null,
       );
+      if (plan != null &&
+          seriesCard != null &&
+          plan.mode == TrackingProgressMode.volume &&
+          provider.capabilities.accepts(kind, TrackingProgressMode.volume) &&
+          await _seriesFits(
+            card: seriesCard,
+            providerId: provider.id,
+            subject: subject,
+          )) {
+        final MediaTrackingMappingRow row = await _saveAutoLink(
+          mediaType: TrackingMediaType.bookCollection,
+          mediaKey: seriesCard.id.toString(),
+          mediaTitle: seriesCard.name,
+          kind: kind,
+          subjectId: subject.subjectId,
+          subjectName: subject.name,
+          progressMode: TrackingProgressMode.volume,
+          progressOffset: 0,
+          provider: provider.id,
+          linkSource: TrackingLinkSource.auto,
+          confidence: auto.score,
+        );
+        return (row: row, suggested: false);
+      }
       if (plan != null) {
         final MediaTrackingMappingRow row = await _saveAutoLink(
           mediaType: TrackingMediaType.book,
@@ -2719,6 +3233,7 @@ class MediaTrackingService {
     final List<MediaTrackingSuggestionRow> suggestions = await _repository
         .loadSuggestions(mediaType: TrackingMediaType.book, mediaKey: bookKey);
     final BookLinkSource source = await _bookLinkSourceOf(book, kind: kind);
+    final MediaCollectionRow? card = await _repository.bookSeriesCard(bookKey);
     final List<BookTrackingSite> sites = <BookTrackingSite>[];
     for (final TrackingProvider provider in _registry.all) {
       if (provider is! TrackingBookLinker ||
@@ -2726,6 +3241,16 @@ class MediaTrackingService {
           !provider.capabilities.acceptsKind(kind)) {
         continue;
       }
+      final MediaTrackingMappingRow? seriesLink = card == null
+          ? null
+          : await _repository.findMapping(
+              mediaType: TrackingMediaType.bookCollection,
+              mediaKey: card.id.toString(),
+              provider: provider.id,
+            );
+      final TrackingSeriesCoverage coverage = seriesLink == null
+          ? TrackingSeriesCoverage.empty
+          : await seriesCoverage(seriesLink);
       sites.add(
         BookTrackingSite(
           providerId: provider.id,
@@ -2742,6 +3267,9 @@ class MediaTrackingService {
               if (row.provider == provider.id && row.subjectKind == kind.value)
                 row,
           ],
+          seriesLink: seriesLink,
+          seriesMember: coverage.memberOf(bookKey),
+          seriesByPosition: coverage.numberedByPosition,
         ),
       );
     }
@@ -2755,6 +3283,7 @@ class MediaTrackingService {
       bookKey,
     )).firstOrNull;
     return BookTrackingOverview(
+      seriesCard: card == null ? null : (id: card.id, name: card.name),
       ignored: ignored.isListed(TrackingMediaType.book.value, bookKey),
       series: series == null ? null : (id: series.id, name: series.name),
       seriesIgnored:
@@ -2794,7 +3323,10 @@ class MediaTrackingService {
       );
       if (mapping != null) await _enqueueCurrentProgress(mapping);
     }
-    if (linked.isNotEmpty) _requestSync();
+    if (linked.isNotEmpty) {
+      await _sendSeriesProgress(bookKey, onlyProviders: linked);
+      _requestSync();
+    }
   }
 
   /// The user's search on [providerId] for [bookKey]: a title, or a subject
@@ -3923,12 +4455,32 @@ class MediaTrackingService {
   Future<void> _reconcilePersistedBookProgress(
     TrackingProvider provider,
   ) async {
+    await _tidySeriesLinks(provider);
     final List<PersistedBookTrackingProgress> progress = await _repository
         .loadPersistedBookTrackingProgress(
           afterMs: -1,
           provider: provider.id,
           mangaProgress: _mangaReadProgress,
         );
+    // Series links: the card's progress, evidence = newest reading in it.
+    final List<_CatchUpItem> series = <_CatchUpItem>[];
+    for (final MediaTrackingMappingRow mapping in await _repository
+        .listMappings(provider: provider.id)) {
+      if (mapping.mediaType != TrackingMediaType.bookCollection.value) {
+        continue;
+      }
+      final TrackingSeriesProgress? value = (await seriesCoverage(
+        mapping,
+      )).progress;
+      if (value == null) continue;
+      series.add((
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: mapping.mediaKey,
+        localProgress: value.progress,
+        completed: value.completed,
+        evidenceAt: math.max(mapping.updatedAt, value.evidenceAt),
+      ));
+    }
     await _catchUp(
       provider: provider,
       watermarkKey: TrackingProviderPrefKeys.forProvider(
@@ -3937,6 +4489,7 @@ class MediaTrackingService {
       mediaTypes: const <TrackingMediaType>[
         TrackingMediaType.book,
         TrackingMediaType.bookChapter,
+        TrackingMediaType.bookCollection,
       ],
       items: <_CatchUpItem>[
         for (final PersistedBookTrackingProgress item in progress)
@@ -3947,6 +4500,7 @@ class MediaTrackingService {
             completed: item.completed,
             evidenceAt: item.evidenceAt,
           ),
+        ...series,
       ],
     );
   }

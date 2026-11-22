@@ -19,6 +19,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaTrackingSuggestionRow;
 import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/local_title_clean.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/title_match.dart';
@@ -357,6 +358,9 @@ final class BookTrackingSite {
     required this.isDefaultSite,
     this.link,
     this.suggestions = const <MediaTrackingSuggestionRow>[],
+    this.seriesLink,
+    this.seriesMember,
+    this.seriesByPosition = false,
   });
 
   final String providerId;
@@ -373,6 +377,18 @@ final class BookTrackingSite {
 
   /// Waiting for the user, best first (not dismissed).
   final List<MediaTrackingSuggestionRow> suggestions;
+
+  /// The series link of the book's series card on this site
+  /// (`book_collection`); null when the card has none.
+  final MediaTrackingMappingRow? seriesLink;
+
+  /// How [seriesLink] counts this book (the volume number, or why it is not
+  /// counted); null without a series link.
+  final TrackingSeriesMember? seriesMember;
+
+  /// No volume of the card has a number: [seriesMember]'s number is its
+  /// position on the card.
+  final bool seriesByPosition;
 }
 
 /// Everything the Track sheet shows for one item.
@@ -388,6 +404,7 @@ final class BookTrackingOverview {
     this.ignored = false,
     this.series,
     this.seriesIgnored = false,
+    this.seriesCard,
   });
 
   final String bookKey;
@@ -416,6 +433,11 @@ final class BookTrackingOverview {
 
   /// [series] is on the do-not-track list (covers this book).
   final bool seriesIgnored;
+
+  /// The series card a series link of this book is keyed by (a series made
+  /// by the organiser or a series-like collection, never a reading list);
+  /// null when the book is in none.
+  final ({int id, String name})? seriesCard;
 }
 
 /// [suggestion] as a subject (from its stored details).
