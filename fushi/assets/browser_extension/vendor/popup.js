@@ -10214,19 +10214,55 @@ function __fushiPopupClick(e) {
 }
 
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
+// 弹窗内悬停扫描延迟（反馈 r4tpeIzVuD，与网页侧反馈 L4Vhk0hOjM 同一个设置）：浏览器扩展各 realm
+// 注入 __fushiScanDelayMs（content.js / side-panel.js / nested-popup.js，判据 = 各自的
+// fushiEffectiveScanDelay：只在触发键 none 时取 storage.scanDelay，其余 0）。> 0 时指针停稳这么久
+// 不再动才按最后坐标扫，期间每次 mousemove 重新计时；松开触发键 / 指针离开弹窗作废。
+// app 内没有这个钩子 = 0，立即扫（旧行为）。
+var _popupScanDelayTimer = null;
+function __fushiPopupScanDelayMs() {
+    if (typeof window.__fushiScanDelayMs !== 'function') return 0;
+    var ms = Number(window.__fushiScanDelayMs());
+    return isFinite(ms) && ms > 0 ? ms : 0;
+}
+function __fushiPopupCancelScanDelay() {
+    if (_popupScanDelayTimer === null) return;
+    clearTimeout(_popupScanDelayTimer);
+    _popupScanDelayTimer = null;
+}
+function __fushiPopupScanAt(x, y) {
+    var dx = x - _popupShiftLastX, dy = y - _popupShiftLastY;
+    if (dx * dx + dy * dy < 64) return;
+    _popupShiftLastX = x; _popupShiftLastY = y;
+    if (window.fushiSelection) {
+        window.fushiSelection.selectText(x, y, 20);
+    }
+}
 function __fushiPopupMouseMove(e) {
     if (!__fushiEventInsidePopup(e)) return;
     // 浏览器扩展里查词触发键可配置（content.js 注入 __fushiScanModifierHeld，反馈 ulS75hVkAK）；
     // app 内没有这个钩子，仍是 Shift。
     var scanHeld = typeof window.__fushiScanModifierHeld === 'function'
         ? window.__fushiScanModifierHeld(e) : e.shiftKey;
-    if (!scanHeld) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
-    var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
-    if (dx * dx + dy * dy < 64) return;
-    _popupShiftLastX = e.clientX; _popupShiftLastY = e.clientY;
-    if (window.fushiSelection) {
-        window.fushiSelection.selectText(e.clientX, e.clientY, 20);
+    if (!scanHeld) { _popupShiftLastX = -1; _popupShiftLastY = -1; __fushiPopupCancelScanDelay(); return; }
+    var delay = __fushiPopupScanDelayMs();
+    __fushiPopupCancelScanDelay();
+    if (delay > 0) {
+        var x = e.clientX, y = e.clientY;
+        _popupScanDelayTimer = setTimeout(function() {
+            _popupScanDelayTimer = null;
+            __fushiPopupScanAt(x, y);
+        }, delay);
+        return;
     }
+    __fushiPopupScanAt(e.clientX, e.clientY);
+}
+// 指针离开弹窗（去了网页 / 窗口外）：作废排着的延迟扫描，不替已不在弹窗上的指针查词。
+// relatedTarget 仍在弹窗树内 = 只是在弹窗里换了元素，不动。
+function __fushiPopupMouseOut(root, e) {
+    var to = e && e.relatedTarget;
+    if (to && typeof root.contains === 'function' && root.contains(to)) return;
+    __fushiPopupCancelScanDelay();
 }
 
 // 扩展与播放器共享 document，必须在 ShadowRoot 内完成正文取词和交叉引用处理，
@@ -10247,6 +10283,10 @@ window.__fushiBindPopupInteractions = function(root) {
             handlers[type](event);
         }, type === 'mousemove' ? { passive: true } : false);
     });
+    // mouseout 只用来撤延迟扫描，不截冒泡（网页自己的 mouseout 逻辑照常收到）。
+    root.addEventListener('mouseout', function(event) {
+        __fushiPopupMouseOut(root, event);
+    }, { passive: true });
 };
 if (!(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id)) {
     window.__fushiBindPopupInteractions(document);
