@@ -81,6 +81,61 @@ void main() {
     expectNoStagingLeft();
   });
 
+  /// 把夹具按字节切成 `<name>.001`、`.002`、`.003`（7-Zip「分卷」的切法）放进 [dir]。
+  List<String> splitFixture(String name, Directory dir) {
+    final List<int> bytes = File(_fixture(name)).readAsBytesSync();
+    final int chunk = (bytes.length + 2) ~/ 3;
+    return <String>[
+      for (int i = 0; i * chunk < bytes.length; i++)
+        (File(
+              p.join(dir.path, '$name.${'${i + 1}'.padLeft(3, '0')}'),
+            )..writeAsBytesSync(
+              bytes.sublist(
+                i * chunk,
+                (i + 1) * chunk > bytes.length ? bytes.length : (i + 1) * chunk,
+              ),
+            ))
+            .path,
+    ];
+  }
+
+  test('分卷 7z：从第一卷解开，整包记住的口令通用；后续卷 / 缺卷报 missingVolume', () async {
+    final Directory parts = Directory(p.join(tmp.path, 'parts'))..createSync();
+    final List<String> volumes = splitFixture('content_encrypted.7z', parts);
+    final String wholeFp = (await ArchiveUnpacker().probe(
+      _fixture('content_encrypted.7z'),
+    )).fingerprint;
+    final _ScriptedPasswords passwords = _ScriptedPasswords(
+      <ArchivePasswordAnswer?>[],
+      saved: <String, String>{wholeFp: _password},
+    );
+    final String out = p.join(tmp.path, 'out');
+    final ArchiveUnpackResult result = await ArchiveUnpacker(
+      passwords: passwords,
+    ).extract(volumes.first, intoDir: out);
+    expect(result.encrypted, isTrue);
+    expect(result.files, 4);
+    expectPages(out);
+    expect(passwords.asked, isEmpty);
+
+    Future<void> expectMissing(String path) => expectLater(
+      ArchiveUnpacker(
+        passwords: passwords,
+      ).extract(path, intoDir: p.join(tmp.path, 'bad')),
+      throwsA(
+        isA<ArchiveUnpackException>().having(
+          (ArchiveUnpackException e) => e.failure,
+          'failure',
+          ArchiveUnpackFailure.missingVolume,
+        ),
+      ),
+    );
+    await expectMissing(volumes[1]);
+    File(volumes.last).deleteSync();
+    await expectMissing(volumes.first);
+    expectNoStagingLeft();
+  });
+
   for (final String name in <String>[
     'aes256.zip',
     'zipcrypto.zip',

@@ -3138,6 +3138,7 @@
   "download_task_import_blocked_archive_failed": "Tidak dapat mengekstrak arsip (mungkin rusak atau dilindungi kata sandi)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "Mengekstrak arsip ini memerlukan alat baris perintah 7-Zip, yang belum terpasang",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "Buku ini sudah ada di pustaka Anda. Buku audio belum dapat dilampirkan ke EPUB yang ada secara otomatis; buka buku dan impor buku audio secara manual",
   "download_task_import_blocked_audiobook_no_audio": "Tidak ada file audio ditemukan dalam unduhan buku audio",
   "download_task_import_blocked_audiobook_no_subtitle": "Tidak ada file subtitel dalam unduhan buku audio, sehingga audio tidak dapat diselaraskan dengan teks",

@@ -148,7 +148,7 @@ enum FfcArchiveFailure {
   /// 解出的总字节数 / 文件数超过上限。
   tooLarge,
 
-  /// 格式或压缩方法不支持（RAR、分卷 7z、未编进的算法）。
+  /// 格式或压缩方法不支持（RAR、未编进的算法）。
   unsupported,
 
   /// 包坏了。
@@ -159,6 +159,9 @@ enum FfcArchiveFailure {
 
   /// 经 [FfcCancelFlag] 取消。
   cancelled,
+
+  /// 分卷包（`book.7z.001`…）拼不全：给的不是第一卷，或后面缺卷。
+  missingVolume,
 }
 
 /// [ffcArchiveExtractSync] / [ffcArchiveProbeSync] 的业务失败。
@@ -190,6 +193,7 @@ FfcArchiveFailure? _failureOf(int status) => switch (status) {
   -22 => FfcArchiveFailure.unsafeEntry,
   -23 => FfcArchiveFailure.tooLarge,
   -24 => FfcArchiveFailure.unsupported,
+  -25 => FfcArchiveFailure.missingVolume,
   FfcStatus.badInput => FfcArchiveFailure.corrupt,
   FfcStatus.ioError => FfcArchiveFailure.io,
   FfcStatus.cancelled => FfcArchiveFailure.cancelled,

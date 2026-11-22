@@ -3138,6 +3138,7 @@
   "download_task_import_blocked_archive_failed": "アーカイブを展開できませんでした（破損している可能性があります）",
   "download_task_import_blocked_archive_password": "アーカイブにパスワードがあります。もう一度取り込んでパスワードを入力してください。",
   "download_task_import_blocked_archive_tool_missing": "このアーカイブの展開には 7-Zip コマンドラインツールが必要ですが、インストールされていません",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "この本はすでにライブラリにあります。オーディオブックを既存の EPUB に自動で紐付けることはまだできません。本を開いて、オーディオブックを手動でインポートしてください",
   "download_task_import_blocked_audiobook_no_audio": "オーディオブックのダウンロードに音声ファイルが見つかりません",
   "download_task_import_blocked_audiobook_no_subtitle": "オーディオブックのダウンロードに字幕ファイルがないため、音声をテキストに整列できません",
