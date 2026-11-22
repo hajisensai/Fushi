@@ -8,6 +8,8 @@ import 'package:fushi/src/media/music/metadata/music_dlsite_scraper.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_dlsite_section.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
+import 'package:fushi_engine/media/metadata/image_download.dart'
+    show ImageDownloadException;
 import 'package:fushi_engine/media/music/metadata/music_dlsite_album.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -78,6 +80,7 @@ void main() {
   late Directory tmp;
   late List<Uri> requests;
   late bool notFound;
+  late bool coverFails;
 
   MusicDlsiteScraper scraper() => MusicDlsiteScraper(
     database: () => db,
@@ -101,7 +104,11 @@ void main() {
       }),
     ),
     downloadImage: (String url) async {
-      final File f = File('${tmp.path}/dl_${url.hashCode}.jpg');
+      if (coverFails) {
+        throw const ImageDownloadException('image download HTTP 404');
+      }
+      // 与真下载器一致：临时文件一律 `.img`，格式只能看主图 URL。
+      final File f = File('${tmp.path}/dl_${url.hashCode}.img');
       await f.writeAsBytes(<int>[1, 2, 3]);
       return f;
     },
@@ -114,6 +121,7 @@ void main() {
     tmp = await Directory.systemTemp.createTemp('music_dlsite_test');
     requests = <Uri>[];
     notFound = false;
+    coverFails = false;
     await db.writeMusicScanBatch(
       MusicScanBatchWrite(
         tracks: <MusicTracksCompanion>[
@@ -185,6 +193,20 @@ void main() {
     final MusicDlsiteAlbumInfo? cached = await scraper().albumInfo('asmr');
     expect(cached!.snapshot!.work!.circle, 'チームランドセル');
     expect(requests, isEmpty);
+  });
+
+  test('主图下载失败：资料照常落库、专辑不挂封面，下次再取会重试补图', () async {
+    coverFails = true;
+    final MusicDlsiteAlbumInfo? info = await scraper().scrapeAlbum('asmr');
+    expect(info!.snapshot!.work, isNotNull);
+    expect((await db.getMusicAlbum('asmr'))!.coverPath, isNull);
+
+    coverFails = false;
+    await scraper().scrapeAlbum('asmr');
+    expect(
+      (await db.getMusicAlbum('asmr'))!.coverPath,
+      endsWith('dlsite_$_rj.jpg'),
+    );
   });
 
   test('曲目有内嵌封面时不拿 DLsite 主图覆盖', () async {

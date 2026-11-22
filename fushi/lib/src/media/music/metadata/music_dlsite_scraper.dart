@@ -210,27 +210,28 @@ class MusicDlsiteScraper {
       entityUid: album.albumUid,
     );
     if (locks.contains('cover')) return;
-    File? tmp;
+    final File tmp;
     try {
       tmp = await _download(coverUrl);
+    } on ImageDownloadException {
+      // 主图下不来（网络 / 非图片响应）不影响资料；下次刷新 / 整库识别再试。
+      // 只兜下载这一步：封面目录写不进、落库失败是本地故障，照常抛给调用方。
+      return;
+    }
+    try {
       final Directory dir = await _coverDirectory();
       if (!dir.existsSync()) await dir.create(recursive: true);
-      String ext = p.extension(tmp.path).toLowerCase();
-      if (!const <String>{'.jpg', '.jpeg', '.png', '.webp'}.contains(ext)) {
-        ext = '.jpg';
-      }
-      final File target = File(p.join(dir.path, 'dlsite_${id.value}$ext'));
+      final File target = File(
+        p.join(dir.path, 'dlsite_${id.value}${_coverExtension(coverUrl)}'),
+      );
       await tmp.copy(target.path);
       await db.setMusicAlbumScrapedCover(
         albumUid: album.albumUid,
         coverPath: target.path,
         updatedAt: _clock(),
       );
-    } on Exception {
-      // 封面下不来不影响资料；下次刷新再试。
-      return;
     } finally {
-      if (tmp != null && tmp.existsSync()) {
+      if (tmp.existsSync()) {
         try {
           tmp.deleteSync();
         } on FileSystemException {
@@ -238,6 +239,17 @@ class MusicDlsiteScraper {
         }
       }
     }
+  }
+
+  /// 封面文件扩展名取主图 URL 的（下载器的临时文件一律是 `.img`，看不出格式）；
+  /// 认不出的按 `.jpg`（DLsite 主图实际都是 JPEG）。
+  static String _coverExtension(String coverUrl) {
+    final String ext = p.url
+        .extension(Uri.tryParse(coverUrl)?.path ?? coverUrl)
+        .toLowerCase();
+    return const <String>{'.jpg', '.jpeg', '.png', '.webp'}.contains(ext)
+        ? ext
+        : '.jpg';
   }
 
   /// 曲库里认得出编号、还没取过资料的专辑逐张取（串行，DLsite 客户端自带节流）。
