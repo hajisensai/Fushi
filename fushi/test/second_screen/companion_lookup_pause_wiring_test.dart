@@ -21,7 +21,7 @@ void main() {
     test('popup and companion share the "pause on lookup" entry', () {
       final String select = methodBody(
         src,
-        'Future<void> _handleTextSelected(ReaderSelectionData data) async {',
+        'Future<void> _handleTextSelected(',
       );
       final int routed = select.indexOf('_routeLookupToCompanion(data');
       final int pause = select.indexOf('_pauseForLookup();');

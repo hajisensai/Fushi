@@ -131,10 +131,7 @@ void main() {
       'the looked-up sentence is remembered only while paused for lookup',
       () {
         final String body = maskComments(
-          methodBody(
-            lookup,
-            'Future<void> _handleTextSelected(ReaderSelectionData data)',
-          ),
+          methodBody(lookup, 'Future<void> _handleTextSelected('),
         );
         final RegExp remember = RegExp(
           r'if \(_pausedForLookup\) _lookupRestartCue = _lookupCue;',

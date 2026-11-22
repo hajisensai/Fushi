@@ -17,7 +17,9 @@ part of '../reader_fushi_page.dart';
 ///   [readerCaretMoveOutcome] 翻页。
 /// * 查词（[lookupAtCursor]）走光标的既有查词（JS `lookup` → onTextSelected →
 ///   `_handleTextSelected` → `_runLookupAndHighlight`，与点按同一链路：清栈复用热槽、
-///   不叠栈）。登记一份 [_ReaderControllerLookupRequest]，`_handleTextSelected` 认领它：
+///   不叠栈）。每次查词发一个令牌（[ReaderControllerLookupRequests]），JS 把它盖在这次
+///   查词的 onTextSelected payload 上（`controllerLookup`），`_handleTextSelected` 按令牌
+///   认领——其间夹进来的点按 / 悬停查词没有令牌，不会被误认成手柄查词：
 ///   按 `maxGraphemes` 截查询词（[readerControllerCappedQuery]），查完把高亮长度交回。
 ///   副屏在用时同一处路由到副屏查词页（截过的查询经 [readerControllerCompanionLookup]）。
 /// * **查词后光标留在正文**：模式在用时弹窗渲染不再把光标 transfer 进弹窗
@@ -48,9 +50,10 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   /// Between [onModeEntered] and [onModeExited].
   bool _modeActive = false;
 
-  /// The lookup started by [lookupAtCursor] that `_handleTextSelected` has not
-  /// claimed yet.
-  _ReaderControllerLookupRequest? _pending;
+  /// Lookups started by [lookupAtCursor] that `_handleTextSelected` has not
+  /// claimed yet, by token.
+  final ReaderControllerLookupRequests _requests =
+      ReaderControllerLookupRequests();
 
   /// Graphemes of the last controller lookup's scanned query text (before the
   /// cap): what [graphemesFromCursor] reports. 0 after a step until the next
@@ -101,7 +104,7 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   void onModeExited() {
     _modeActive = false;
     _scannedGraphemes = 0;
-    _settlePending(0);
+    _requests.cancelAll();
     if (!_detached && _s.mounted && _s._caretActive) _s._exitCaret();
   }
 
@@ -233,49 +236,36 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
         ? s._lyricsController
         : s._controller;
     if (web == null) return 0;
-    // One lookup at a time: a newer one supersedes the unclaimed older one.
-    _settlePending(0);
-    final _ReaderControllerLookupRequest request =
-        _ReaderControllerLookupRequest(maxGraphemes);
-    _pending = request;
+    final ({int token, ReaderControllerLookupRequest request}) started =
+        _requests.start(maxGraphemes);
     s._caretBusy = true;
     try {
       final Object? fired = await web.evaluateJavascript(
         source: lyrics
-            ? ReaderLyricsCaretScripts.lookupInvocation()
-            : ReaderCaretScripts.lookupInvocation(),
+            ? ReaderLyricsCaretScripts.lookupInvocation(token: started.token)
+            : ReaderCaretScripts.lookupInvocation(token: started.token),
       );
       // Nothing to look up at the caret (no scannable text): no
       // onTextSelected will come.
-      final bool started = fired == true || fired == 'true';
-      if (!started && identical(_pending, request)) _settlePending(0);
+      if (fired != true && fired != 'true') _requests.cancel(started.token);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.controllerLookup', e, stack);
-      if (identical(_pending, request)) _settlePending(0);
+      _requests.cancel(started.token);
     } finally {
       s._caretBusy = false;
     }
-    return request.result;
+    return started.request.result;
   }
 
-  /// `_handleTextSelected` takes the pending controller lookup (null for a
-  /// tap / hover / keyboard-caret lookup).
-  _ReaderControllerLookupRequest? _claim() {
-    final _ReaderControllerLookupRequest? request = _pending;
-    _pending = null;
-    return request;
-  }
+  /// `_handleTextSelected` takes the controller lookup whose token the
+  /// `onTextSelected` payload carries (`controllerLookup`); null for a tap /
+  /// hover / keyboard-caret lookup (no token) or a token no longer pending.
+  ReaderControllerLookupRequest? _claim(Object? token) => _requests.take(token);
 
   /// The claimed lookup's scanned query text (after the ruby snap decision,
   /// before the cap): the upper bound of the selection's right end.
   void _recordScanned(String scannedText) {
     _scannedGraphemes = scannedText.characters.length;
-  }
-
-  void _settlePending(int matched) {
-    final _ReaderControllerLookupRequest? request = _pending;
-    _pending = null;
-    request?.complete(matched);
   }
 
   /// Hands the controller cursor to the in-page popup's caret (pick a word in
@@ -296,9 +286,58 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
   }
 }
 
+/// The reader's pending controller lookups, by token: each
+/// [_ReaderControllerLookupTarget.lookupAtCursor] gets a fresh token that the
+/// caret JS stamps on that lookup's `onTextSelected` payload
+/// (`controllerLookup`), and `_handleTextSelected` claims by it. The claim never
+/// depends on which payload arrives first, so a tap / hover lookup landing
+/// between the JS call and its payload is not taken for the controller's (same
+/// scheme as the manga controller cursor).
+@visibleForTesting
+class ReaderControllerLookupRequests {
+  int _lastToken = 0;
+  final Map<int, ReaderControllerLookupRequest> _pending =
+      <int, ReaderControllerLookupRequest>{};
+
+  /// Registers a lookup with its right-end cap; its token goes into the JS.
+  ({int token, ReaderControllerLookupRequest request}) start(
+    int? maxGraphemes,
+  ) {
+    final int token = ++_lastToken;
+    final ReaderControllerLookupRequest request = ReaderControllerLookupRequest(
+      maxGraphemes,
+    );
+    _pending[token] = request;
+    return (token: token, request: request);
+  }
+
+  /// The pending lookup stamped with [token] (a payload's `controllerLookup`),
+  /// removed; null for anything else (no token = tap / hover lookup).
+  ReaderControllerLookupRequest? take(Object? token) {
+    final int? key = token is num ? token.toInt() : null;
+    return key == null ? null : _pending.remove(key);
+  }
+
+  /// No payload will come for [token] (nothing to look up, eval failed):
+  /// completes it with no match.
+  void cancel(int token) => _pending.remove(token)?.complete(0);
+
+  /// Completes every pending lookup with no match (mode left, page leaving).
+  void cancelAll() {
+    for (final ReaderControllerLookupRequest r in _pending.values) {
+      r.complete(0);
+    }
+    _pending.clear();
+  }
+
+  /// Lookups still waiting for their payload.
+  int get pendingCount => _pending.length;
+}
+
 /// One controller lookup waiting for `_handleTextSelected`.
-class _ReaderControllerLookupRequest {
-  _ReaderControllerLookupRequest(this.maxGraphemes);
+@visibleForTesting
+class ReaderControllerLookupRequest {
+  ReaderControllerLookupRequest(this.maxGraphemes);
 
   /// The mode's cap on the query (null = the dictionary's longest match).
   final int? maxGraphemes;
@@ -393,7 +432,7 @@ extension _ReaderControllerLookup on _ReaderFushiPageState {
     final _ReaderControllerLookupTarget? target = _controllerLookupTarget;
     if (target == null) return;
     target._detached = true;
-    target._settlePending(0);
+    target._requests.cancelAll();
     ControllerLookupMode.instance.detach(target);
     _controllerLookupTarget = null;
   }

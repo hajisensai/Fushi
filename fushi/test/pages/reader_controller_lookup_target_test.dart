@@ -1,7 +1,16 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
-    show readerControllerCappedQuery, readerControllerCompanionLookup;
+    show
+        ReaderControllerLookupRequest,
+        ReaderControllerLookupRequests,
+        readerControllerCappedQuery,
+        readerControllerCompanionLookup;
+import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_controller_word_step_scripts.dart';
+import 'package:fushi/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 
 import '../helpers/source_guard.dart';
@@ -102,6 +111,121 @@ void main() {
     });
   });
 
+  group('controller lookup claims go by token, not by arrival order', () {
+    test(
+      'a tap / hover payload in between is not taken for the controller '
+      "lookup; the controller's own payload claims it with its cap",
+      () async {
+        final ReaderControllerLookupRequests requests =
+            ReaderControllerLookupRequests();
+        final ({int token, ReaderControllerLookupRequest request}) a = requests
+            .start(3);
+        // A tap lookup lands between the JS call and the controller's payload.
+        expect(requests.take(null), isNull);
+        expect(requests.pendingCount, 1);
+        // A stale / foreign token is no claim either.
+        expect(requests.take(a.token + 1), isNull);
+        expect(requests.take('x'), isNull);
+        final ReaderControllerLookupRequest? claimed = requests.take(a.token);
+        expect(claimed, same(a.request));
+        expect(claimed!.maxGraphemes, 3);
+        claimed.complete(2);
+        expect(await a.request.result, 2);
+        // Claimed once only.
+        expect(requests.take(a.token), isNull);
+      },
+    );
+
+    test('each lookup gets its own token; an older payload arriving after a '
+        'newer lookup started still finds its own request', () async {
+      final ReaderControllerLookupRequests requests =
+          ReaderControllerLookupRequests();
+      final ({int token, ReaderControllerLookupRequest request}) a = requests
+          .start(null);
+      final ({int token, ReaderControllerLookupRequest request}) b = requests
+          .start(5);
+      expect(b.token, isNot(a.token));
+      // JSON numbers may decode as num.
+      expect(requests.take(b.token.toDouble()), same(b.request));
+      expect(requests.take(a.token), same(a.request));
+      expect(a.request.maxGraphemes, isNull);
+    });
+
+    test('cancel / cancelAll complete with no match', () async {
+      final ReaderControllerLookupRequests requests =
+          ReaderControllerLookupRequests();
+      final ({int token, ReaderControllerLookupRequest request}) a = requests
+          .start(null);
+      final ({int token, ReaderControllerLookupRequest request}) b = requests
+          .start(null);
+      final ({int token, ReaderControllerLookupRequest request}) c = requests
+          .start(null);
+      requests.cancel(a.token);
+      expect(await a.request.result, 0);
+      expect(requests.take(a.token), isNull);
+      requests.cancelAll();
+      expect(await b.request.result, 0);
+      expect(await c.request.result, 0);
+      expect(requests.pendingCount, 0);
+    });
+
+    test('the caret lookup invocations carry the token', () {
+      expect(
+        ReaderCaretScripts.lookupInvocation(),
+        'window.fushiCaret.lookup()',
+      );
+      expect(
+        ReaderCaretScripts.lookupInvocation(token: 7),
+        'window.fushiCaret.lookup(7)',
+      );
+      expect(
+        ReaderLyricsCaretScripts.lookupInvocation(),
+        'window.fushiLyricsCaret.lookup()',
+      );
+      expect(
+        ReaderLyricsCaretScripts.lookupInvocation(token: 7),
+        'window.fushiLyricsCaret.lookup(7)',
+      );
+      // Both carets select through the shared stamping helper.
+      for (final String source in <String>[
+        ReaderCaretScripts.source(),
+        ReaderLyricsCaretScripts.source(),
+      ]) {
+        expect(source, contains('lookup: function(token)'));
+        expect(source, contains(ReaderCaretScripts.controllerLookupSelectJs));
+      }
+    });
+
+    test('the JS stamps the token on that one payload only (node)', () {
+      final Directory temp = Directory.systemTemp.createTempSync(
+        'fushi-reader-ctl-token-',
+      );
+      final File payload = File('${temp.path}/select.json')
+        ..writeAsStringSync(
+          jsonEncode(<String, String>{
+            'select': ReaderCaretScripts.controllerLookupSelectJs,
+          }),
+        );
+      late final ProcessResult result;
+      try {
+        result = Process.runSync(
+          'node',
+          <String>['-e', _tokenRunner, payload.path],
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      expect(result.stdout.toString().trim(), 'OK');
+    });
+  });
+
   group('ReaderControllerWordStepScripts', () {
     test('context targets the book caret or the lyrics caret', () {
       final String book = ReaderControllerWordStepScripts.contextInvocation(
@@ -186,13 +310,13 @@ void main() {
         src,
         'Future<int> lookupAtCursor({int? maxGraphemes}) async {',
       );
-      expect(lookup, contains('lookupInvocation()'));
-      expect(lookup, contains('_ReaderControllerLookupRequest('));
+      expect(lookup, contains('lookupInvocation(token: started.token)'));
+      expect(lookup, contains('_requests.start(maxGraphemes)'));
       final String selected = methodBody(
         src,
-        'Future<void> _handleTextSelected(ReaderSelectionData data) async {',
+        'Future<void> _handleTextSelected(',
       );
-      expect(selected, contains('_claim()'));
+      expect(selected, contains('_claim(controllerLookup)'));
       expect(selected, contains('readerControllerCappedQuery('));
       expect(selected, contains('controller?.complete(matched)'));
       // The match length goes back in graphemes, the page lookup's and the
@@ -207,6 +331,13 @@ void main() {
       );
     });
 
+    test('both onTextSelected handlers hand the payload token over', () {
+      expect(
+        "controllerLookup: payload['controllerLookup']".allMatches(src).length,
+        2,
+      );
+    });
+
     test('word steps are on; the gamepad caret entry is gone', () {
       expect(src, contains('bool get hasWordSteps => true;'));
       expect(src, isNot(contains('_readerEnterCaretButtons')));
@@ -216,3 +347,44 @@ void main() {
     });
   });
 }
+
+/// Runs [ReaderCaretScripts.controllerLookupSelectJs] against a stub
+/// `fushiSelection` whose `selectFromPosition` fires the payload synchronously
+/// (like the real one) and whose payload builder calls itself once for the
+/// ruby-snap alternative.
+const String _tokenRunner = r'''
+const fs = require('fs');
+const src = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')).select;
+const select = eval(src);
+function assert(v, m) { if (!v) throw new Error(m); }
+const sent = [];
+const s = {
+  buildSelectionPayload: function(x, y, inner) {
+    const p = { text: 'word', x: x, y: y };
+    if (!inner) p.rubySnap = { selection: this.buildSelectionPayload(x, y, true) };
+    return p;
+  },
+  selectFromPosition: function(node, offset, max) {
+    assert(max === 400, 'scan length');
+    const p = this.buildSelectionPayload(1, 2);
+    sent.push(p);
+    return p.text;
+  },
+};
+const original = s.buildSelectionPayload;
+assert(select(s, {}, 0, 9) === 'word', 'returns the text');
+assert(sent[0].controllerLookup === 9, 'stamped');
+assert(sent[0].rubySnap.selection.controllerLookup === 9, 'snap stamped');
+assert(s.buildSelectionPayload === original, 'builder restored');
+// A tap lookup afterwards (no token) carries nothing.
+s.selectFromPosition({}, 0, 400);
+assert(!('controllerLookup' in sent[1]), 'tap not stamped');
+// Token 0 = plain lookup.
+select(s, {}, 0, 0);
+assert(!('controllerLookup' in sent[2]), 'no token, no stamp');
+// The builder is restored even when the selection throws.
+s.selectFromPosition = function() { throw new Error('boom'); };
+try { select(s, {}, 0, 4); } catch (e) {}
+assert(s.buildSelectionPayload === original, 'restored after throw');
+console.log('OK');
+''';

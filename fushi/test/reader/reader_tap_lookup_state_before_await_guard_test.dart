@@ -91,10 +91,7 @@ void main() {
 
     test('歌词点词、关弹窗同样清图并作废在途抽图', () {
       final String handler = maskComments(
-        methodBody(
-          lookup,
-          'Future<void> _handleTextSelected(ReaderSelectionData data) async {',
-        ),
+        methodBody(lookup, 'Future<void> _handleTextSelected('),
       );
       final int lyricsStart = handler.indexOf('if (_lyricsMode) {');
       expect(lyricsStart, isNonNegative);
@@ -162,10 +159,7 @@ void main() {
 
   group('点词查词（_handleTextSelected 正文分支）', () {
     final String handler = maskComments(
-      methodBody(
-        lookup,
-        'Future<void> _handleTextSelected(ReaderSelectionData data) async {',
-      ),
+      methodBody(lookup, 'Future<void> _handleTextSelected('),
     );
     // 歌词分支以 `return;` 收尾，正文分支是其后的全部。
     final int lyricsStart = handler.indexOf('if (_lyricsMode) {');

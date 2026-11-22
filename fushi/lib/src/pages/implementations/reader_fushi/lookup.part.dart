@@ -284,12 +284,17 @@ extension _ReaderLookup on _ReaderFushiPageState {
 
   /// A word was selected in the book / lyrics (tap, hover, keyboard caret,
   /// controller lookup mode). A pending controller lookup
-  /// ([_ReaderControllerLookupTarget.lookupAtCursor]) is claimed here: its cap
+  /// ([_ReaderControllerLookupTarget.lookupAtCursor]) is claimed here by the
+  /// token its payload carries ([controllerLookup], null for tap / hover /
+  /// keyboard-caret payloads): its cap
   /// cuts the query and it gets the match length back in graphemes (0 when
   /// nothing matched; measured locally when the lookup went to the companion).
-  Future<void> _handleTextSelected(ReaderSelectionData data) async {
-    final _ReaderControllerLookupRequest? controller = _controllerLookupTarget
-        ?._claim();
+  Future<void> _handleTextSelected(
+    ReaderSelectionData data, {
+    Object? controllerLookup,
+  }) async {
+    final ReaderControllerLookupRequest? controller = _controllerLookupTarget
+        ?._claim(controllerLookup);
     int matched = 0;
     try {
       if (data.text.isEmpty) {
