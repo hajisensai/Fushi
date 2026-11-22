@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_audio.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -34,6 +35,7 @@ abstract final class LumiereTuningKeys {
   static const String textOnly = 'textOnly';
   static const String themeColorMix = 'themeColorMix';
   static const String renderQuality = 'renderQuality';
+  static const String keywordColors = 'keywordColors';
 }
 
 String _times(double v) => '${v.toStringAsFixed(1)}×';
@@ -199,6 +201,12 @@ final List<LyricVisualizerTuningSpec> lumiereTunings =
         0.3,
         _percent,
       ),
+      // folia `keywordColors`：AI 主题的关键字在字身、光晕、闪点、爆闪、背景碎片上带色。
+      LyricVisualizerToggleSpec(
+        key: LumiereTuningKeys.keywordColors,
+        label: () => t.music_visualizer_lumiere_keyword_colors,
+        initial: true,
+      ),
       LyricVisualizerChoiceSpec(
         key: LumiereTuningKeys.renderQuality,
         label: () => t.music_visualizer_lumiere_quality,
@@ -251,7 +259,9 @@ final LyricVisualizerEntry lumiereVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_lumiere_description,
   icon: FushiIcons.flash,
   tunings: lumiereTunings,
-  sharedBackdrop: true,
+  // folia 绘光不指定背景：光与雾画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => LumiereVisualizer(context: c),
 );
@@ -268,6 +278,7 @@ class LumiereVisualizer extends StatefulWidget {
 class _LumiereVisualizerState extends State<LumiereVisualizer> {
   LumiereScene? _scene;
   Object? _sceneKey;
+  final LumiereAudioSampler _audio = LumiereAudioSampler();
 
   LumiereScene _sceneFor(LyricVisualizerContext c, TextStyle inherited) {
     final bool seamless = c.tuning.flag(
@@ -282,6 +293,7 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
       c.artist,
       c.album,
       inherited.fontFamily,
+      inherited.fontWeight,
     );
     final LumiereScene? existing = _scene;
     if (existing != null && key == _sceneKey) return existing;
@@ -296,6 +308,7 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
       album: c.album,
       fontFamily: inherited.fontFamily,
       fontFamilyFallback: inherited.fontFamilyFallback,
+      fontWeight: inherited.fontWeight ?? FontWeight.w500,
     );
   }
 
@@ -311,8 +324,13 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
     final LyricVisualizerContext c = widget.context;
     final LumiereScene scene = _sceneFor(
       c,
-      DefaultTextStyle.of(buildContext).style,
+      c.applyThemeFont(DefaultTextStyle.of(buildContext).style),
     );
+    final LyricVisualizerTheme? theme = c.theme;
+    final bool keywords =
+        theme != null &&
+        theme.hasWordColors &&
+        c.tuning.flag(LumiereTuningKeys.keywordColors, true);
     final LyricVisualizerPalette p = c.palette;
     final LumierePalette palette = LumierePalette.resolve(
       accent: p.accent,
@@ -334,6 +352,9 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
             palette: palette,
             settings: lumiereSettingsOf(c.tuning),
             lightBackground: bgLuminance > 0.18,
+            audio: _audio,
+            cameraMotion: lumiereCameraMotion(c.intensity),
+            keywords: keywords ? theme : null,
           ),
         ),
       ),
@@ -349,6 +370,9 @@ class _LumierePainter extends CustomPainter {
     required this.palette,
     required this.settings,
     required this.lightBackground,
+    required this.audio,
+    required this.cameraMotion,
+    required this.keywords,
   }) : super(repaint: ticks);
 
   final LumiereScene scene;
@@ -357,11 +381,19 @@ class _LumierePainter extends CustomPainter {
   final LumierePalette palette;
   final LumiereSettings settings;
   final bool lightBackground;
+  final LumiereAudioSampler audio;
+  final double cameraMotion;
+  final LyricVisualizerTheme? keywords;
 
   @override
   void paint(Canvas canvas, Size size) {
     final LyricVisualizerTick tick = ticks.value;
     final bool motion = context.motion;
+    // 暂停 / 关动态时整帧归零（folia：场景当作安静）。
+    audio.sample(
+      motion && context.playing ? context.audioFrameAt(tick.timeMs) : null,
+      tick.dt,
+    );
     canvas.save();
     canvas.clipRect(Offset.zero & size);
     scene.paint(
@@ -371,7 +403,11 @@ class _LumierePainter extends CustomPainter {
         time: tick.timeMs / 1000,
         animTime: motion ? tick.elapsed : 0,
         motion: motion,
-        pulse: motion ? context.runtime.pulseAt(tick.timeMs) : 0,
+        bass: audio.bass,
+        treble: audio.treble,
+        power: audio.power,
+        cameraMotion: cameraMotion,
+        keywords: keywords,
         palette: palette,
         settings: settings,
         fontScale: context.fontScale,
@@ -387,5 +423,7 @@ class _LumierePainter extends CustomPainter {
       !identical(old.context, context) ||
       old.palette != palette ||
       old.settings != settings ||
-      old.lightBackground != lightBackground;
+      old.lightBackground != lightBackground ||
+      old.cameraMotion != cameraMotion ||
+      !identical(old.keywords, keywords);
 }

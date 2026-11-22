@@ -297,10 +297,16 @@ class GlyphPlacement {
     required this.flash,
     required this.flying,
     required this.current,
+    this.line,
+    this.glyphIndex = -1,
     this.trackX,
     this.trackY,
   });
   final String char;
+
+  /// 所在歌词行与行内字下标：按词着色用。
+  final LyricVisualizerLine? line;
+  final int glyphIndex;
   final double x;
   final double y;
 
@@ -656,6 +662,8 @@ List<GlyphPlacement> layoutWindow(WindowInput input, {required bool vertical}) {
           flash: flash,
           flying: flying,
           current: isCurrent,
+          line: line,
+          glyphIndex: g,
           trackX: trackX,
           trackY: trackY,
         ),

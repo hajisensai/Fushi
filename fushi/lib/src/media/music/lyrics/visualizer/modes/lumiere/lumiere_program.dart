@@ -9,7 +9,8 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_ca
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_math.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_profile.dart';
 
-/// Fushi 的歌词行没有 songPart / isChorus，所以 chorus 只在纯数据层保留，编译时不会产出。
+/// 段落性质（folia `paragraphStructure.ts`）：歌词带副歌标注（`isChorus` / songPart 含 chorus、副歌）
+/// 的段为 chorus，标注为 bridge / break / 間奏 / ブリッジ 的为 breakKind；其余按时长与密度判。
 enum ParagraphKind { breath, verse, lift, chorus, breakKind, outro }
 
 enum LumiereTransitionKind { lightsOut, flareCut, focusPull }
@@ -22,14 +23,26 @@ class LumiereLine {
     required this.end,
     required this.text,
     required this.wordCount,
+    this.isChorus = false,
+    this.songPart,
+    this.blockIndex,
   });
 
-  factory LumiereLine.of(LyricVisualizerLine line) => LumiereLine(
-    index: line.index,
+  /// [sourced]：歌词自带段落标注（`runtime.hasSourceSongParts`）时才带 blockIndex，免得推断出的分块
+  /// 把普通段落切碎（folia 只认源标注）。
+  factory LumiereLine.of(
+    LyricVisualizerLine line, {
+    bool sourced = false,
+    int? index,
+  }) => LumiereLine(
+    index: index ?? line.index,
     start: line.startMs / 1000,
     end: line.endMs / 1000,
     text: line.text,
     wordCount: _wordLike(line),
+    isChorus: line.isChorus,
+    songPart: line.songPartLabel,
+    blockIndex: sourced ? line.blockIndex : null,
   );
 
   final int index;
@@ -37,7 +50,31 @@ class LumiereLine {
   final double end;
   final String text;
   final int wordCount;
+
+  /// 副歌行（共享歌曲结构）。
+  final bool isChorus;
+
+  /// 源歌词的段落标注原文（Verse / Chorus / 副歌…）；没有为 null。
+  final String? songPart;
+
+  /// 源标注的段落块序号；没有为 null。
+  final int? blockIndex;
 }
+
+/// 段落标注变了（folia `metadataChanged`）：两行都有标注且不同时强制分段。
+bool lumiereMetadataChanged(LumiereLine previous, LumiereLine next) =>
+    (previous.blockIndex != null &&
+        next.blockIndex != null &&
+        previous.blockIndex != next.blockIndex) ||
+    (previous.songPart != null &&
+        next.songPart != null &&
+        previous.songPart != next.songPart);
+
+final RegExp _chorusPartRe = RegExp('chorus|副歌', caseSensitive: false);
+final RegExp _breakPartRe = RegExp(
+  'bridge|break|間奏|ブリッジ',
+  caseSensitive: false,
+);
 
 int _wordLike(LyricVisualizerLine line) {
   if (line.words.isNotEmpty) {
@@ -214,8 +251,9 @@ List<List<StructureLine>> draftParagraphs(
   List<StructureLine> current = <StructureLine>[];
   for (int i = 0; i < lines.length; i++) {
     if (i > 0 &&
-        lines[i].line.start - lines[i - 1].renderEnd >= threshold &&
-        current.isNotEmpty) {
+        current.isNotEmpty &&
+        (lumiereMetadataChanged(lines[i - 1].line, lines[i].line) ||
+            lines[i].line.start - lines[i - 1].renderEnd >= threshold)) {
       drafts.addAll(_splitOversized(current));
       current = <StructureLine>[];
     }
@@ -232,6 +270,17 @@ ParagraphKind classifyParagraph(
   int index,
   int total,
 ) {
+  if (lines.any(
+    (StructureLine l) =>
+        l.line.isChorus || _chorusPartRe.hasMatch(l.line.songPart ?? ''),
+  )) {
+    return ParagraphKind.chorus;
+  }
+  if (lines.any(
+    (StructureLine l) => _breakPartRe.hasMatch(l.line.songPart ?? ''),
+  )) {
+    return ParagraphKind.breakKind;
+  }
   if (index == total - 1) return ParagraphKind.outro;
   final double duration = lines.last.renderEnd - lines.first.line.start;
   final int segments = lines.fold(

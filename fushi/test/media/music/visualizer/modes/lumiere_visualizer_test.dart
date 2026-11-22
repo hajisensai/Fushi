@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_audio.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_catalog.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_line_art.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_math.dart';
@@ -433,6 +435,158 @@ void main() {
         tester,
         lumiereVisualizerEntry,
         size: const Size(390, 844),
+      );
+    });
+  });
+
+  group('绘光接共享框架', () {
+    LumiereLine tagged(int i, String part, {bool chorus = false}) =>
+        LumiereLine(
+          index: i,
+          start: i * 2.5,
+          end: i * 2.5 + 2.3,
+          text: 'la la la la la',
+          wordCount: 5,
+          songPart: part,
+          isChorus: chorus,
+        );
+
+    test('段落标注强制分段，副歌 / 间奏按标注定性', () {
+      final List<LumiereLine> lines = <LumiereLine>[
+        tagged(0, 'Verse'),
+        tagged(1, 'Verse'),
+        tagged(2, 'Chorus'),
+        tagged(3, 'Chorus'),
+        tagged(4, 'Bridge'),
+        tagged(5, 'Outro'),
+      ];
+      final List<StructureLine> structure = buildStructureLines(lines);
+      final List<List<StructureLine>> drafts = draftParagraphs(
+        structure,
+        resolveParagraphGapThreshold(lines),
+      );
+      expect(drafts.length, 4);
+      expect(classifyParagraph(drafts[1], 1, 4), ParagraphKind.chorus);
+      expect(classifyParagraph(drafts[2], 2, 4), ParagraphKind.breakKind);
+      expect(classifyParagraph(drafts[3], 3, 4), ParagraphKind.outro);
+      expect(
+        lumiereMetadataChanged(
+          tagged(0, 'Verse'),
+          const LumiereLine(
+            index: 1,
+            start: 3,
+            end: 4,
+            text: 'x',
+            wordCount: 1,
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('共享副歌标记（无源标注）也判 chorus', () {
+      final List<LumiereLine> lines = <LumiereLine>[
+        for (int i = 0; i < 3; i++)
+          LumiereLine(
+            index: i,
+            start: i * 2.0,
+            end: i * 2.0 + 1.8,
+            text: 'la la la la la',
+            wordCount: 5,
+            isChorus: true,
+          ),
+        const LumiereLine(
+          index: 3,
+          start: 20,
+          end: 22,
+          text: 'end end end end',
+          wordCount: 4,
+        ),
+      ];
+      final List<List<StructureLine>> drafts = draftParagraphs(
+        buildStructureLines(lines),
+        resolveParagraphGapThreshold(lines),
+      );
+      expect(
+        classifyParagraph(drafts.first, 0, drafts.length),
+        ParagraphKind.chorus,
+      );
+    });
+
+    test('音频采样：快起慢落、空帧归零', () {
+      expect(
+        smoothLumiereAudioValue(0, 1, 0.06),
+        closeTo(1 - math.exp(-1), 1e-9),
+      );
+      expect(smoothLumiereAudioValue(1, 0, 0.25), closeTo(math.exp(-1), 1e-9));
+      final LumiereAudioSampler sampler = LumiereAudioSampler();
+      final LyricVisualizerContext c = visualizerContextFor(
+        lumiereVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      for (int i = 0; i < 30; i++) {
+        sampler.sample(c.audioFrameAt(1000), 1 / 60);
+      }
+      final LyricVisualizerAudioFrame frame = c.audioFrameAt(1000);
+      expect(sampler.bass, closeTo(math.min(1, frame.low), 0.02));
+      expect(sampler.treble, closeTo(frame.high, 0.02));
+      expect(sampler.power, closeTo(frame.power, 0.02));
+      sampler.sample(null, 1 / 60);
+      expect(sampler.bass + sampler.treble + sampler.power, 0);
+    });
+
+    test('运镜强度、关键字光色、逐字关键字映射、背景请求', () {
+      expect(lumiereCameraMotion(LyricVisualizerIntensity.calm), 0.6);
+      expect(lumiereCameraMotion(LyricVisualizerIntensity.chaotic), 1.4);
+      const Rgb light = Rgb(1, 0.9, 0.6);
+      final Rgb k = lumiereKeywordLight(light, const Rgb(0, 0, 0.4), 0.6);
+      expect(k.peak, closeTo(light.peak, 1e-9));
+      expect(k.b, greaterThan(light.b));
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        wordColors: <String, Color>{'夜空': Color(0xFF2040FF)},
+      );
+      final List<Rgb?> colors = lumiereGlyphKeywordColors(
+        '君と夜空'.split(''),
+        theme.colorRangesFor('君と夜空'),
+      );
+      expect(colors[0], isNull);
+      expect(colors[2], isNotNull);
+      expect(colors[3], isNotNull);
+      expect(
+        lumiereVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(lumiereVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+    });
+
+    testWidgets('真音频 + AI 主题关键字 + 主题字重 + 激烈', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        lumiereVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{
+            'light': Color(0xFF40C4FF),
+            '光': Color(0xFFFF4081),
+          },
+          fontWeight: FontWeight.w800,
+        ),
+      );
+    });
+
+    testWidgets('只有拍点 + 关键字着色关 + 平静', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        lumiereVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        intensity: LyricVisualizerIntensity.calm,
+        tuning: <String, Object?>{'keywordColors': false},
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'light': Color(0xFF40C4FF)},
+        ),
       );
     });
   });

@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_catalog.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_line_art.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_math.dart';
@@ -125,11 +126,15 @@ class LumiereFrame {
     required this.time,
     required this.animTime,
     required this.motion,
-    required this.pulse,
     required this.palette,
     required this.settings,
     required this.fontScale,
     required this.lightBackground,
+    this.bass = 0,
+    this.treble = 0,
+    this.power = 0,
+    this.cameraMotion = 1,
+    this.keywords,
   });
 
   /// 歌曲时间（秒）。
@@ -138,11 +143,80 @@ class LumiereFrame {
   /// 动画时间（秒）：开着动态效果时随墙钟走，关掉时为 0（静止画面）。
   final double animTime;
   final bool motion;
-  final double pulse;
+
+  /// 平滑后的音频（0..1，见 `LumiereAudioSampler`）：低频推光束、响度抬烟雾、高频点亮浮尘。
+  final double bass;
+  final double treble;
+  final double power;
+
+  /// 主题强度对运镜浮动的倍数（0.6 / 1 / 1.4）。
+  final double cameraMotion;
+
+  /// 按词着色的主题；null = 不着色（没有主题或关了「关键字着色」）。
+  final LyricVisualizerTheme? keywords;
   final LumierePalette palette;
   final LumiereSettings settings;
   final double fontScale;
   final bool lightBackground;
+}
+
+// ---------------------------------------------------------------------------
+// 关键字着色（folia `text/keywordColors.ts`）
+// ---------------------------------------------------------------------------
+
+/// 各处关键字色的占比（其余是光色）：字身、光晕、闪点、十字爆闪、背景碎片。
+abstract final class LumiereKeywordMix {
+  static const double glyph = 0.6;
+  static const double halo = 0.75;
+  static const double star = 0.55;
+  static const double burst = 0.7;
+  static const double echo = 0.3;
+}
+
+/// 闪点在关键字光色之上再掺多少白（普通字是 0.5）。
+const double kLumiereKeywordStarWhite = 0.35;
+
+/// 关键字的光晕比普通字亮一点，颜色才看得出来。
+const double kLumiereKeywordHaloGain = 1.25;
+
+/// 关键字色与光色按 [amount] 混合，最亮通道拉回光色的亮度：只取关键字的色相与饱和度，深色关键字
+/// 照样能在光里读出颜色（folia `keywordLight`）。
+Rgb lumiereKeywordLight(Rgb light, Rgb keyword, double amount) {
+  final double kp = keyword.peak;
+  final Rgb hue = kp > 1e-4 ? keyword.scale(1 / kp) : kWhite;
+  final Rgb mixed = light.mix(hue, amount);
+  final double peak = mixed.peak;
+  return peak > 1e-4 ? mixed.scale(light.peak / peak) : light;
+}
+
+Rgb _tint(Rgb light, Rgb? keyword, double amount) =>
+    keyword == null ? light : lumiereKeywordLight(light, keyword, amount);
+
+/// 十字爆闪落在关键字上：以关键字光色为主，保留一点光位的 tint（folia `keywordBurstColor`）。
+Rgb _burstColor(Rgb burst, Rgb light, Rgb? keyword) => keyword == null
+    ? burst
+    : burst.mix(
+        lumiereKeywordLight(light, keyword, LumiereKeywordMix.burst),
+        0.8,
+      );
+
+/// 一行逐字（[glyphs] 为字形文本，按 UTF-16 长度累计偏移）的关键字色；不是关键字为 null。
+List<Rgb?> lumiereGlyphKeywordColors(
+  List<String> glyphs,
+  List<LyricVisualizerWordColorRange> ranges,
+) {
+  final List<Rgb?> out = List<Rgb?>.filled(glyphs.length, null);
+  if (ranges.isEmpty) return out;
+  int offset = 0;
+  for (int i = 0; i < glyphs.length; i++) {
+    final int end = offset + glyphs[i].length;
+    if (glyphs[i].trim().isNotEmpty) {
+      final Color? c = LyricVisualizerTheme.colorForSpan(ranges, offset, end);
+      if (c != null) out[i] = Rgb.of(c);
+    }
+    offset = end;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +236,7 @@ class LumiereGlyphAtlas {
     Iterable<String> chars, {
     String? fontFamily,
     List<String>? fontFamilyFallback,
+    FontWeight fontWeight = FontWeight.w500,
   }) {
     final List<String> unique = chars
         .where((String c) => c.trim().isNotEmpty)
@@ -179,7 +254,7 @@ class LumiereGlyphAtlas {
             fontSize: _em,
             height: 1,
             color: const Color(0xFFFFFFFF),
-            fontWeight: FontWeight.w500,
+            fontWeight: fontWeight,
             fontFamily: fontFamily,
             fontFamilyFallback: fontFamilyFallback,
           ),
@@ -403,14 +478,13 @@ class LumiereScene {
     this.album,
     String? fontFamily,
     List<String>? fontFamilyFallback,
+    FontWeight fontWeight = FontWeight.w500,
   }) : lines = <LumiereLine>[
          for (int i = 0; i < runtime.lines.length; i++)
-           LumiereLine(
+           LumiereLine.of(
+             runtime.lines[i],
+             sourced: runtime.hasSourceSongParts,
              index: i,
-             start: runtime.lines[i].startMs / 1000,
-             end: runtime.lines[i].endMs / 1000,
-             text: runtime.lines[i].text,
-             wordCount: LumiereLine.of(runtime.lines[i]).wordCount,
            ),
        ] {
     program = compileLumiereProgram(lines, seed, seamless: seamless);
@@ -424,6 +498,7 @@ class LumiereScene {
       ],
       fontFamily: fontFamily,
       fontFamilyFallback: fontFamilyFallback,
+      fontWeight: fontWeight,
     );
     _sprites = _buildSprites();
     _echoWords = _fragmentsOf(runtime.lines);
@@ -438,13 +513,44 @@ class LumiereScene {
   late final LumiereProgram program;
   late final LumiereGlyphAtlas atlas;
   late final ui.Image _sprites;
-  late final List<List<String>> _echoWords;
+  late final List<(LyricVisualizerLine, int, List<String>)> _echoWords;
 
   final Map<String, _ShotRig> _rigs = <String, _ShotRig>{};
   double _rigAspect = -1;
   final Map<int, (String, LineShape)> _shapes = <int, (String, LineShape)>{};
   final Map<int, List<double>> _scales = <int, List<double>>{};
   final Map<int, GlyphRandoms> _randoms = <int, GlyphRandoms>{};
+  LyricVisualizerTheme? _keywordTheme;
+  final Map<LyricVisualizerLine, List<Rgb?>> _keywordLines =
+      Map<LyricVisualizerLine, List<Rgb?>>.identity();
+
+  /// [line] 逐字的关键字色（不是关键字为 null）；按主题缓存。
+  List<Rgb?> keywordColorsOf(
+    LyricVisualizerTheme theme,
+    LyricVisualizerLine line,
+  ) {
+    if (!identical(theme, _keywordTheme)) {
+      _keywordTheme = theme;
+      _keywordLines.clear();
+    }
+    return _keywordLines.putIfAbsent(
+      line,
+      () => lumiereGlyphKeywordColors(
+        line.glyphs.map((LyricVisualizerGlyph g) => g.text).toList(),
+        theme.colorRangesFor(line.text),
+      ),
+    );
+  }
+
+  Rgb? _keywordAt(LumiereFrame f, LyricVisualizerLine? line, int glyphIndex) {
+    final LyricVisualizerTheme? theme = f.keywords;
+    if (theme == null || line == null) return null;
+    final List<Rgb?> colors = keywordColorsOf(theme, line);
+    return glyphIndex >= 0 && glyphIndex < colors.length
+        ? colors[glyphIndex]
+        : null;
+  }
+
   final _Batch _batch = _Batch();
   Float32List? _gridPositions;
   Uint16List? _gridIndices;
@@ -458,19 +564,26 @@ class LumiereScene {
     _sprites.dispose();
   }
 
-  static List<List<String>> _fragmentsOf(List<LyricVisualizerLine> lines) {
-    final List<List<String>> out = <List<String>>[];
+  /// 词碎片：(行, 起始字下标, 字)。
+  static List<(LyricVisualizerLine, int, List<String>)> _fragmentsOf(
+    List<LyricVisualizerLine> lines,
+  ) {
+    final List<(LyricVisualizerLine, int, List<String>)> out =
+        <(LyricVisualizerLine, int, List<String>)>[];
     for (final LyricVisualizerLine l in lines) {
       List<String> current = <String>[];
-      for (final LyricVisualizerGlyph g in l.glyphs) {
+      int from = 0;
+      for (int gi = 0; gi < l.glyphs.length; gi++) {
+        final LyricVisualizerGlyph g = l.glyphs[gi];
         if (g.isSpace || current.length >= 4) {
-          if (current.isNotEmpty) out.add(current);
+          if (current.isNotEmpty) out.add((l, from, current));
           current = <String>[];
           if (g.isSpace) continue;
         }
+        if (current.isEmpty) from = gi;
         current.add(g.text);
       }
-      if (current.isNotEmpty) out.add(current);
+      if (current.isNotEmpty) out.add((l, from, current));
     }
     return out;
   }
@@ -617,7 +730,7 @@ class LumiereScene {
         aspect,
         LightDrive(
           intensity: gain,
-          bass: f.pulse * s.audioResponse,
+          bass: math.min(1, f.bass) * s.audioResponse,
           color: f.palette.light,
           local: f.motion ? t - rig.shot.start : null,
         ),
@@ -710,10 +823,11 @@ class LumiereScene {
       final double driftX = lerpD(b.driftX, a.driftX, handoff);
       final double driftY = lerpD(b.driftY, a.driftY, handoff);
       final double at = f.animTime;
-      scale *= 1 + push * k + 0.008 * math.sin(at * kTau / 9);
-      tx = driftX * h * k * 4 + 0.006 * h * math.sin(at * kTau / 13);
-      ty = driftY * h * k * 4 + 0.006 * h * math.cos(at * kTau / 17);
-      rotation = 0.004 * math.sin(at * kTau / 21);
+      final double m = f.cameraMotion;
+      scale *= 1 + push * k + 0.008 * m * math.sin(at * kTau / 9);
+      tx = driftX * h * k * 4 + 0.006 * m * h * math.sin(at * kTau / 13);
+      ty = driftY * h * k * 4 + 0.006 * m * h * math.cos(at * kTau / 17);
+      rotation = 0.004 * m * math.sin(at * kTau / 21);
     }
     if (scale == 1 && tx == 0 && ty == 0 && rotation == 0) return;
     canvas
@@ -859,7 +973,7 @@ class LumiereScene {
     final double density = fog.density * s.fogDensity;
     final Rgb light = f.palette.light;
     final double gain =
-        s.lightIntensity * (1 + 0.2 * f.pulse * s.audioResponse);
+        s.lightIntensity * (1 + 0.2 * math.min(1, f.power) * s.audioResponse);
     final Int32List colors = Int32List((gx + 1) * (gy + 1));
     for (int j = 0; j <= gy; j++) {
       final double y = j / gy;
@@ -1041,11 +1155,7 @@ class LumiereScene {
     final double aspect = size.width / h;
     final LumiereSettings s = f.settings;
     final double intensity =
-        g.intensity *
-        weight *
-        s.lightIntensity *
-        (1 + 0.25 * f.pulse * s.audioResponse) *
-        (0.7 + 0.3 * s.bloom);
+        g.intensity * weight * s.lightIntensity * (0.7 + 0.3 * s.bloom);
     if (intensity <= 0.002) return;
     final Offset c = Offset(g.x * aspect * h, g.y * h);
     final double r = g.radius * h * 2.4 * (1 + 0.25 * s.bloom);
@@ -1312,6 +1422,10 @@ class LumiereScene {
     final double spanX = aspect + margin * 2;
     const double spanY = 1 + margin * 2;
     final Rgb color = f.palette.lit;
+    // 高频点亮浮尘（folia 只作用在主浮尘层，前景虚化不随）。
+    final double trebleLift = front
+        ? 1
+        : 1 + 0.5 * math.min(1, f.treble) * s.audioResponse;
     for (int i = 0; i < count; i++) {
       final int o = (i % spec.count) * 6;
       final double r0 = fract(data[o] + (i ~/ spec.count) * 0.618);
@@ -1336,7 +1450,7 @@ class LumiereScene {
           1 -
           spec.twinkle * 0.5 * (1 + math.sin(at * 2.3 * (0.6 + r2) + r4 * 40));
       final double bright =
-          (spec.ambient + spec.gain * light) * twinkle * weight;
+          (spec.ambient + spec.gain * light) * twinkle * weight * trebleLift;
       if (bright <= 0.01) continue;
       final double sz =
           (spec.sizeMin + (spec.sizeMax - spec.sizeMin) * r2 * r2) * h;
@@ -1385,7 +1499,7 @@ class LumiereScene {
       final double age = at - k * every;
       if (age < 0 || age > life) continue;
       final LumiereRng r = lumiereRng('$seed:${rig.shot.id}:echo:$k');
-      final List<String> word =
+      final (LyricVisualizerLine echoLine, int echoFrom, List<String> word) =
           _echoWords[(r() * _echoWords.length).floor().clamp(
             0,
             _echoWords.length - 1,
@@ -1422,7 +1536,11 @@ class LumiereScene {
             y * h + sy,
             px * _cell / _em,
             (r() - 0.5) * split,
-            color.argb(alpha),
+            _tint(
+              color,
+              _keywordAt(f, echoLine, echoFrom + i),
+              LumiereKeywordMix.echo,
+            ).argb(alpha),
           );
         }
         cx += adv;
@@ -1571,12 +1689,14 @@ class LumiereScene {
     if (s.textBloom > 0) {
       for (int i = 0; i < glyphs.length; i++) {
         final GlyphPlacement g = glyphs[i];
+        final Rgb? kw = _keywordAt(f, g.line, g.glyphIndex);
         final double a0 =
             g.lit *
             (0.03 + 0.14 * illum[i] + 0.08 * g.flash) *
             s.textBloom *
             g.alpha *
-            textFade;
+            textFade *
+            (kw == null ? 1 : kLumiereKeywordHaloGain);
         if (a0 > 0.003) {
           _batch.add(
             _spriteRect(_Sprite.dot),
@@ -1584,7 +1704,7 @@ class LumiereScene {
             g.y,
             g.size * 2.6,
             0,
-            pal.lit.argb(clamp01(a0)),
+            _tint(pal.lit, kw, LumiereKeywordMix.halo).argb(clamp01(a0)),
           );
         }
         if (f.motion && g.flash > 0.05) {
@@ -1594,8 +1714,13 @@ class LumiereScene {
             g.y,
             g.size * 1.8,
             0,
-            pal.lit
-                .mix(kWhite, 0.5)
+            (kw == null
+                    ? pal.lit.mix(kWhite, 0.5)
+                    : lumiereKeywordLight(
+                        pal.lit,
+                        kw,
+                        LumiereKeywordMix.star,
+                      ).mix(kWhite, kLumiereKeywordStarWhite))
                 .argb(clamp01(g.flash * 0.55 * g.alpha * textFade)),
           );
         }
@@ -1623,7 +1748,12 @@ class LumiereScene {
                     0.55 + 0.4 * heat + 0.3 * g.flying + 0.3 * illum[i],
                   ));
       if (alpha <= 0.003) continue;
-      final Rgb color = pal.unlit.mix(pal.lit, g.lit).mix(kWhite, 0.3 * heat);
+      final Rgb lit = _tint(
+        pal.lit,
+        _keywordAt(f, g.line, g.glyphIndex),
+        LumiereKeywordMix.glyph,
+      );
+      final Rgb color = pal.unlit.mix(lit, g.lit).mix(kWhite, 0.3 * heat);
       _batch.add(
         _glyphRect(slot),
         g.x,
@@ -1685,7 +1815,11 @@ class LumiereScene {
         p.y,
         sz,
         0,
-        burst.tint.times(f.palette.lit.mix(kWhite, 0.5)).argb(clamp01(alpha)),
+        _burstColor(
+          burst.tint.times(f.palette.lit.mix(kWhite, 0.5)),
+          f.palette.lit,
+          _keywordAt(f, line, g),
+        ).argb(clamp01(alpha)),
       );
       shown++;
     }
