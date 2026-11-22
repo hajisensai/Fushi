@@ -726,7 +726,12 @@ window.fushiCaret = {
     if (logical === 'lineNext') return vertical ? 'left' : 'down';
     return vertical ? 'right' : 'up'; // linePrev
   },
-  _firstVisibleStop: function() {
+  // [accept] (optional, `function(node, offset) -> bool`) narrows which stops
+  // count: a caller with a stricter "lookup-able glyph" predicate (the reader
+  // word sweep's isScanBoundary / scan-Japanese-only gate, HBK-AUDIT-232) passes
+  // it here so the first VISIBLE stop is also the first ACCEPTABLE one, instead
+  // of re-filtering a single result that may be rejected (stuck on it forever).
+  _firstVisibleStop: function(accept) {
     var walker = this._walker();
     var node;
     var vp = this._viewport();
@@ -736,7 +741,7 @@ window.fushiCaret = {
       if (!span) continue;
       for (var i = span.start; i < span.end;) {
         var len = this._charLen(text, i);
-        if (this._isStop(node, i)) {
+        if (this._isStop(node, i) && (!accept || accept(node, i))) {
           var rect = this._charRect(node, i);
           if (this._rectInViewport(rect, vp)) return { node: node, offset: i, rect: rect };
         }

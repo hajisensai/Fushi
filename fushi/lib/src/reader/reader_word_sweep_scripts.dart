@@ -20,7 +20,8 @@ import 'dart:convert';
 /// * 弹窗开着时以本次查词的选区起点为锚（用户点了别处的词就从那个词接着扫）；
 /// * 否则以有声书正在播放的句（`.fushi-sentence-audio-active`）里第一个可见字为锚；
 /// * 否则沿用上一次的句子（仍在 DOM 里且还有可见字时）；
-/// * 都没有就取屏上第一个可见字（与进光标同一个判据 `fushiCaret._firstVisibleStop`）。
+/// * 都没有就取屏上第一个可见且能当查词起点的字（光标 `fushiCaret._firstVisibleStop` 带上
+///   扫词自己的停靠点判据当过滤条件）。
 /// 锚定后按 `fushiSelection.sentenceDelimiters` 向两侧找句界，规则与
 /// `getSentenceContext` 相同（段落容器内、无标点 cue 边界即句界、句末收尾括号归前句、
 /// 被跳过的空白缝还原成一个空格），但**不走** VN 的 `sourceTextPosition` 换源：扫词
@@ -198,9 +199,16 @@ window.fushiWordSweep = {
     return null;
   },
   _firstVisible: function(s, box) {
+    var self = this;
+    // 停靠点判据（可查字 + 可见）整个交给光标的屏首扫描当过滤条件（HBK-AUDIT-232）：
+    // 只拿它的第一个结果再过滤时，「只查日文」下屏首是英文段落就恒取到英文、那句零停靠点，
+    // 每按一次都重建同一句，同屏的日文永远扫不到。
+    var accept = function(node, offset) {
+      return self._isWordChar(s, node.textContent, offset) && self._visibleChar(s, node, offset, box);
+    };
     var caret = window.fushiCaret;
     if (caret && typeof caret._firstVisibleStop === 'function') {
-      var p = caret._firstVisibleStop();
+      var p = caret._firstVisibleStop(accept);
       if (p && p.node && p.node.nodeType === Node.TEXT_NODE) return { node: p.node, offset: p.offset };
       return null;
     }
@@ -209,8 +217,7 @@ window.fushiWordSweep = {
     while ((n = walker.nextNode())) {
       var t = n.textContent;
       for (var i = 0; i < t.length; i++) {
-        if (!this._isWordChar(s, t, i)) continue;
-        if (this._visibleChar(s, n, i, box)) return { node: n, offset: i };
+        if (accept(n, i)) return { node: n, offset: i };
       }
     }
     return null;

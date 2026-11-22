@@ -1855,14 +1855,16 @@ document.addEventListener('mousemove', function(e) {
   }
 }, {passive: true});
 
-// ── 中键点句 → seek 到该 cue 并播放（标准 click 不触发中键，单列 mousedown）──
+// ── 非左键（中键 / 侧键）→ 回 Dart 按鼠标绑定派发（标准 click 不触发中键，单列 mousedown）──
+// 「seek 到点击句」要知道点在哪行：带上行号，行外为 -1。其余动作（整句扫词、关词典……）
+// 与行无关，行外按下也要回传（HBK-AUDIT-221，与正文 onPointerSeek 同口径）。
+// preventDefault 压掉中键自动滚动。
 _lc.addEventListener('mousedown', function(e) {
   if (e.button === 0) return;
-  var el = e.target.closest('.cue');
-  if (!el) return;
   e.preventDefault();
-  var idx = parseInt(el.getAttribute('data-cue-index'), 10);
-  if (isNaN(idx)) return;
+  var el = e.target && e.target.closest ? e.target.closest('.cue') : null;
+  var idx = el ? parseInt(el.getAttribute('data-cue-index'), 10) : -1;
+  if (isNaN(idx)) idx = -1;
   window.flutter_inappwebview.callHandler('onLyricsPointerSeek', e.button, idx);
 });
 
