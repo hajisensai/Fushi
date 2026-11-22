@@ -23,7 +23,9 @@ final LyricVisualizerEntry stillVisualizerEntry = LyricVisualizerEntry(
   label: () => t.music_visualizer_mode_still,
   description: () => t.music_visualizer_still_description,
   icon: FushiIcons.textFields,
-  sharedBackdrop: false,
+  // folia `background: false`：不要共享背景，宿主只铺配色底色。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.none,
   sharedSubtitle: false,
   builder: (LyricVisualizerContext c) => StillVisualizer(context: c),
 );
@@ -187,6 +189,7 @@ class _StillLyricsState extends State<_StillLyrics> {
                             style: StillSlotStyle.of(isCurrent: s == 1),
                             palette: c.palette,
                             fontScale: c.fontScale,
+                            visualizer: c,
                           ),
                         ],
                       ],
@@ -210,12 +213,14 @@ class _StillSlot extends StatelessWidget {
     required this.style,
     required this.palette,
     required this.fontScale,
+    required this.visualizer,
   });
 
   final LyricVisualizerLine? line;
   final StillSlotStyle style;
   final LyricVisualizerPalette palette;
   final double fontScale;
+  final LyricVisualizerContext visualizer;
 
   @override
   Widget build(BuildContext context) {
@@ -230,7 +235,7 @@ class _StillSlot extends StatelessWidget {
     final Color lyricColor = palette.text.withValues(
       alpha: palette.text.a * style.opacity,
     );
-    final Color transBase = Color.lerp(palette.text, palette.secondary, 0.35)!;
+    final Color transBase = stillTranslationColor(palette, visualizer.theme);
     final Color transColor = transBase.withValues(
       alpha: transBase.a * style.translationOpacity,
     );
@@ -243,15 +248,22 @@ class _StillSlot extends StatelessWidget {
         Text(
           l.text,
           textAlign: TextAlign.center,
-          style: TextStyle(
-            color: lyricColor,
-            fontSize: lyricSize,
-            height: style.lineHeight,
-            letterSpacing: lyricSize * StillMetrics.lyricTrackingEm,
-            fontWeight: style.weight,
-            shadows: <Shadow>[
-              Shadow(color: shadow, offset: const Offset(0, 4), blurRadius: 3),
-            ],
+          // 字重 / 字体照 folia `resolveThemeFontWeight(theme, 700 / 600)` 与主题字体栈。
+          style: visualizer.applyThemeFont(
+            TextStyle(
+              color: lyricColor,
+              fontSize: lyricSize,
+              height: style.lineHeight,
+              letterSpacing: lyricSize * StillMetrics.lyricTrackingEm,
+              fontWeight: style.weight,
+              shadows: <Shadow>[
+                Shadow(
+                  color: shadow,
+                  offset: const Offset(0, 4),
+                  blurRadius: 3,
+                ),
+              ],
+            ),
           ),
         ),
         if (translation != null && translation.isNotEmpty) ...<Widget>[
@@ -259,19 +271,21 @@ class _StillSlot extends StatelessWidget {
           Text(
             translation,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: transColor,
-              fontSize: transSize,
-              height: 1.33,
-              letterSpacing: transSize * StillMetrics.translationTrackingEm,
-              fontWeight: style.translationWeight,
-              shadows: <Shadow>[
-                Shadow(
-                  color: shadow,
-                  offset: const Offset(0, 1),
-                  blurRadius: 1,
-                ),
-              ],
+            style: visualizer.applyThemeFont(
+              TextStyle(
+                color: transColor,
+                fontSize: transSize,
+                height: 1.33,
+                letterSpacing: transSize * StillMetrics.translationTrackingEm,
+                fontWeight: style.translationWeight,
+                shadows: <Shadow>[
+                  Shadow(
+                    color: shadow,
+                    offset: const Offset(0, 1),
+                    blurRadius: 1,
+                  ),
+                ],
+              ),
             ),
           ),
         ],

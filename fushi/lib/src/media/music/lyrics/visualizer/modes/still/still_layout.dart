@@ -1,21 +1,32 @@
 /// 静止（folia `still/VisualizerStill.tsx`）的纯排版规则：取哪三行、各行字号 / 不透明度。
 library;
 
-import 'dart:ui' show FontWeight;
+import 'dart:ui' show Color, FontWeight;
 
 import 'package:flutter/foundation.dart' show immutable;
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 
-/// folia 的 `effectiveIndex`：有行在唱取它；间奏里停在上一句；一句都没到时取第 0 句。
+/// folia 的 `effectiveIndex`：当前句（folia `currentLineIndex`：起点已到、还没过句尾离场，
+/// [LyricVisualizerRuntime.displayedLineAt]）取它；间奏里停在上一句；一句都没到时取第 0 句。
 /// folia 用 state 记住上一句，这里按时间直接算，拖进度到间奏也落在正确的上一句。
 int resolveStillEffectiveIndex(LyricVisualizerRuntime runtime, int timeMs) {
   if (runtime.lines.isEmpty) return -1;
-  final int active = runtime.activeLineAt(timeMs);
+  final int active = runtime.displayedLineAt(timeMs);
   if (active >= 0) return active;
   final int last = runtime.lastStartedLineAt(timeMs);
   return last >= 0 ? last : 0;
 }
+
+/// 译文色（folia `subtitleTheme.secondaryColor`）：主题给了次色就直接用；只有封面取色时，
+/// 封面配色的 secondary 是 M3 色调（暗底上常常太暗），往正文色靠 35% 保证可读。
+Color stillTranslationColor(
+  LyricVisualizerPalette palette,
+  LyricVisualizerTheme? theme,
+) => theme?.palette?.secondary != null
+    ? palette.secondary
+    : Color.lerp(palette.text, palette.secondary, 0.35)!;
 
 /// 上一句 / 当前句 / 下一句三个槽位（folia `[-1, 0, 1]`），越界为 null（画一个空位）。
 List<int?> stillSlotIndices(int effectiveIndex, int lineCount) {

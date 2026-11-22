@@ -15,6 +15,7 @@ Future<FakeVisualizerClock> _mountAt(
   double fontScale = 1,
   bool playing = false,
   Size size = const Size(1280, 720),
+  LyricVisualizerTheme? theme,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -23,6 +24,7 @@ Future<FakeVisualizerClock> _mountAt(
     stillVisualizerEntry,
     clock: clock,
     playing: playing,
+    theme: theme,
   );
   final LyricVisualizerContext c = LyricVisualizerContext(
     timeline: base.timeline,
@@ -35,6 +37,7 @@ Future<FakeVisualizerClock> _mountAt(
     seed: base.seed,
     motion: base.motion,
     fontScale: fontScale,
+    theme: theme,
   );
   await tester.pumpWidget(
     MaterialApp(
@@ -78,6 +81,33 @@ void main() {
       expect(stillSlotIndices(0, 1), <int?>[null, 0, null]);
     });
 
+    test('当前句取句尾离场窗口里的那句（folia currentLineIndex）', () {
+      final LyricVisualizerLine l0 = rt.lines[0];
+      expect(l0.renderEndMs, greaterThan(l0.endMs));
+      expect(resolveStillEffectiveIndex(rt, l0.endMs + 1), 0);
+    });
+
+    test('译文色：主题给了次色直接用，只有封面取色时往正文色靠', () {
+      const LyricVisualizerPalette p = LyricVisualizerPalette(
+        background: Color(0xFF000000),
+        primary: Color(0xFF112233),
+        secondary: Color(0xFF445566),
+        accent: Color(0xFF778899),
+        text: Color(0xFFFFFFFF),
+        dimText: Color(0x73FFFFFF),
+        brightness: Brightness.dark,
+      );
+      expect(
+        stillTranslationColor(p, null),
+        Color.lerp(p.text, p.secondary, 0.35),
+      );
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        palette: LyricVisualizerPaletteOverride(secondary: Color(0xFFABCDEF)),
+      );
+      final LyricVisualizerPalette themed = p.applyOverride(theme.palette);
+      expect(stillTranslationColor(themed, theme), const Color(0xFFABCDEF));
+    });
+
     test('当前句比上下句大且不透明', () {
       expect(
         StillSlotStyle.current.fontSize,
@@ -91,7 +121,12 @@ void main() {
   group('still 组件', () {
     testWidgets('注册项：不用共享背景与共享字幕', (WidgetTester tester) async {
       expect(stillVisualizerEntry.mode, LyricVisualizerMode.still);
-      expect(stillVisualizerEntry.sharedBackdrop, isFalse);
+      expect(
+        stillVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(stillVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.none,
+      );
       expect(stillVisualizerEntry.sharedSubtitle, isFalse);
       expect(stillVisualizerEntry.tunings, isEmpty);
     });
@@ -107,6 +142,23 @@ void main() {
       expect(find.text('また会おう'), findsOneWidget);
       expect(find.text('Hello bright world'), findsOneWidget);
       expect(find.text('夜空に光'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('主题字重与字体套到原文和译文上', (WidgetTester tester) async {
+      await _mountAt(
+        tester,
+        timeMs: 1500,
+        theme: const LyricVisualizerTheme(
+          fontWeight: FontWeight.w300,
+          fontFamily: 'serif',
+        ),
+      );
+      for (final String s in <String>['夜空に光', '夜空中的光']) {
+        final Text text = tester.widget<Text>(find.text(s));
+        expect(text.style?.fontWeight, FontWeight.w300);
+        expect(text.style?.fontFamily, 'serif');
+      }
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
