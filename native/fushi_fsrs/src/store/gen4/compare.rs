@@ -26,7 +26,7 @@ use super::cache::CFG_KEY;
 use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon, legacy_config_for};
 use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
-use super::truth::Truth;
+use super::truth::{EditRead, Truth};
 use crate::gen4::op::{Body4, Log4};
 use crate::store::sync2::semantics::current_tags;
 use crate::sync2::id::{Id, Key};
@@ -410,12 +410,10 @@ fn live_edit_ids(
 ) -> Result<BTreeSet<Ref>, String> {
     let mut out = BTreeSet::new();
     for k in live_keys(t, col)? {
-        let e = t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 compare: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+        let Some(e) = t.edit_read(k, false)? else {
             return Err(format!("gen4 compare: register row {k} is not an edit"));
         };
+        let ed = &e.head;
         if ed.key == "deleted"
             && skip.contains(&format!(
                 "{}:{}",
@@ -664,10 +662,7 @@ pub(crate) fn collisions(t: &Truth<'_>, col: i64) -> Result<Collisions, String> 
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     for (k, state) in rows {
-        let e = t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 compare: register row {k} has no op"))?;
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+        let Some(EditRead { head: ed, .. }) = t.edit_read(k, false)? else {
             continue;
         };
         let Some(st) = &ed.stamp else {

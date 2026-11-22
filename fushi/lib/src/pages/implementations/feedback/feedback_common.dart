@@ -903,6 +903,21 @@ const Set<String> kFeedbackClipboardImageExtensions = <String>{
 /// 被复制的单个图片文件读取上限：再大就不是截图了，也不该整个读进内存。
 const int kFeedbackClipboardFileMaxBytes = 64 * 1024 * 1024;
 
+/// 桌面粘贴快捷键（macOS Cmd+V，其余 Ctrl+V；不带 Alt / Shift）的按下事件。
+///
+/// 提交页与详情页的「追加截图」共用：两处都在 [HardwareKeyboard] 上挂处理器，不论
+/// 焦点在不在输入框都看一眼剪贴板，有图就收；处理器不吃掉按键，输入框照常粘贴文字。
+bool isFeedbackPasteShortcut(KeyEvent event) {
+  if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
+    return false;
+  }
+  final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+  final bool primary = Platform.isMacOS
+      ? keyboard.isMetaPressed
+      : keyboard.isControlPressed;
+  return primary && !keyboard.isAltPressed && !keyboard.isShiftPressed;
+}
+
 /// 从系统剪贴板取出可加入反馈的图片，最多 [limit] 张，每张已按反馈上限处理过
 /// （[prepareFeedbackImage]：超限转 JPEG 缩小）。
 ///
