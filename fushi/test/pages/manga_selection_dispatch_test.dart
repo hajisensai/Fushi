@@ -111,6 +111,26 @@ void main() {
       expect(miningAwaited, isTrue);
     });
 
+    test('手柄查词右端上限：查询词截到 maxQueryGraphemes 个字素，句子不变', () async {
+      final List<String> terms = <String>[];
+      String? sentence;
+      final ReaderSelectionData data = ReaderSelectionData.fromJson(
+        <String, dynamic>{'text': '大丈夫だよな', 'sentence': '大丈夫だよな？'},
+      );
+      for (final int? cap in <int?>[null, 3, 1, 99]) {
+        await dispatchMangaSelection(
+          data,
+          fallbackScreen: const Size(800, 600),
+          maxQueryGraphemes: cap,
+          selectPageForMining: (_) async {},
+          setSentence: (String s) => sentence = s,
+          search: (String term, _, __) async => terms.add(term),
+        );
+      }
+      expect(terms, <String>['大丈夫だよな', '大丈夫', '大', '大丈夫だよな']);
+      expect(sentence, '大丈夫だよな？');
+    });
+
     test('无 rect payload 锚到屏幕中心 1x1（块级兜底）', () async {
       Rect? capturedRect;
       final ReaderSelectionData data = ReaderSelectionData.fromJson(

@@ -74,6 +74,7 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionContexts;
@@ -199,25 +200,63 @@ String? musicCdgCompanionOf(MusicPlayItem item) {
 /// 纯函数：查词命中 → 查词起点在行内的下标。拉丁单词字符回退到词首（点 `world` 的
 /// `r` 从 `w` 起查，与视频字幕 / 截屏识字同一规则 [latinWordRangeAt]）；其余脚本
 /// 起点就是被点字本身。越界夹到 `[0, 行长]`。
-int musicLyricsLookupStart(KaraokeLookupHit hit) {
-  final int at = hit.charIndexInLine.clamp(0, hit.lineText.length);
-  return latinWordRangeAt(hit.lineText, at)?.start ?? at;
+int musicLyricsLookupStart(KaraokeLookupHit hit) =>
+    musicLyricsLookupStartAt(hit.lineText, hit.charIndexInLine);
+
+/// 纯函数：[musicLyricsLookupStart] 的文本版（行文本 + 行内 UTF-16 下标），手柄查词
+/// 模式没有命中矩形时用。
+int musicLyricsLookupStartAt(String lineText, int charIndex) {
+  final int at = charIndex.clamp(0, lineText.length);
+  return latinWordRangeAt(lineText, at)?.start ?? at;
 }
 
 /// 纯函数：查词命中 → 查词起点文本（从 [musicLyricsLookupStart] 到行尾，查词引擎
-/// 自己取最长匹配）。
-String musicLyricsLookupTerm(KaraokeLookupHit hit) =>
-    hit.lineText.substring(musicLyricsLookupStart(hit));
+/// 自己取最长匹配）。[maxGraphemes]（手柄查词模式的选区右端上限，null = 不截）把它
+/// 截到最多这么多个字素，至少 1 个。
+String musicLyricsLookupTerm(KaraokeLookupHit hit, {int? maxGraphemes}) {
+  final String term = hit.lineText.substring(musicLyricsLookupStart(hit));
+  if (maxGraphemes == null) return term;
+  return term.characters.take(math.max(1, maxGraphemes)).toString();
+}
+
+/// 纯函数：副屏接手查词时发过去的查询（行文本 + 行内下标）。不截时原样是整行 +
+/// 命中字；截了就是「行首到截断词尾」+ 查词起点（拉丁词中段的光标也已回退到词首，
+/// 截短的行里不会越界）。制卡句子另由调用方给整行。
+({String text, int charIndex}) musicLyricsCompanionQuery(
+  KaraokeLookupHit hit, {
+  int? maxGraphemes,
+}) {
+  if (maxGraphemes == null) {
+    return (text: hit.lineText, charIndex: hit.charIndexInLine);
+  }
+  final int start = musicLyricsLookupStart(hit);
+  final String term = musicLyricsLookupTerm(hit, maxGraphemes: maxGraphemes);
+  return (
+    text: hit.lineText.substring(0, start + term.length),
+    charIndex: start,
+  );
+}
+
+/// 纯函数：手柄查词模式的选区右端上限——行文本从光标处的查词起点
+/// （[musicLyricsLookupStartAt]，拉丁词回退到词首，与真正查的串同起点）到行尾的
+/// 字素数。
+int musicLyricsGraphemesFromCursor(String lineText, int charIndex) => lineText
+    .substring(musicLyricsLookupStartAt(lineText, charIndex))
+    .characters
+    .length;
 
 /// 纯函数：[musicLyricsLookupTerm] 查词串上的源注音区间（坐标系 = 查词串）。
 ///
 /// [syllables] 是命中行的音节（行文本 = 音节文本拼接），只取起点不早于
 /// [charIndexInLine]（= [musicLyricsLookupStart]）的音节：被查词起点截断的注音基字丢弃。只用解析器读出的
 /// `LyricSyllable.ruby`，不推断读音。
+///
+/// [termLength]（查词串被手柄右端上限截短时的长度）：越过截断处的注音一并丢弃。
 List<FushiRubySpan> musicLyricsRubySpans(
   List<LyricSyllable> syllables,
-  int charIndexInLine,
-) {
+  int charIndexInLine, {
+  int? termLength,
+}) {
   final List<FushiRubySpan> spans = <FushiRubySpan>[];
   int offset = 0;
   for (final LyricSyllable s in syllables) {
@@ -225,6 +264,7 @@ List<FushiRubySpan> musicLyricsRubySpans(
     offset += s.text.length;
     final String reading = (s.ruby ?? '').trim();
     if (reading.isEmpty || s.text.isEmpty || start < charIndexInLine) continue;
+    if (termLength != null && offset - charIndexInLine > termLength) break;
     spans.add(
       FushiRubySpan(
         start: start - charIndexInLine,
@@ -626,21 +666,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     if (loop != null) unawaited(_applyLoop(loop.$1, loop.$2));
   }
 
-  Future<void> _onLookup(KaraokeLookupHit hit) async {
+  /// 查 [hit] 处的词：点按 / 长按与手柄查词模式（[_MusicControllerLookupTarget]）
+  /// 同一条链路。[maxGraphemes] = 手柄模式的选区右端上限（null = 不截，交给词典
+  /// 最长匹配），只截查询串。返回命中高亮长度（字素数）；查不到、被后一次查词取代、
+  /// 或副屏接手而 [measureMatch] 为 false 时 = 0。[measureMatch]：副屏接手时也在
+  /// 本机按同一查询量一次命中长度（同查词缓存，手柄右端微调要用）。
+  Future<int> _onLookup(
+    KaraokeLookupHit hit, {
+    int? maxGraphemes,
+    bool measureMatch = false,
+  }) async {
     _lookupLine = hit.lineIndex;
     final int lookupStart = musicLyricsLookupStart(hit);
     _lookupCharIndex = lookupStart;
     // 换词查询：上下文从零开始，不带上一个词选的前后文（与阅读器 / 视频同语义）。
     _miningDraft.clear();
     appModel.musicStudy.noteLearningAction();
-    // 副屏在用：查词结果显示在副屏「查词」页，本页不弹窗；否则照常弹窗（未启用副屏
-    // 时这里只是一次同步判断，不多等一拍）。「查词时暂停」两边同一入口：副屏接手查词
-    // 时由副屏注册表调 [_pauseForLookup]，副屏关查词时 [_companionLookupClosed] 续播。
-    if (companionContexts.routesLookups) {
-      if (await routeMusicLyricLookup(hit)) return;
-      if (!mounted) return;
-    }
-    _pauseForLookup();
+    final String term = musicLyricsLookupTerm(hit, maxGraphemes: maxGraphemes);
     final LyricTimeline? timeline = _timeline;
     final LyricLine? line =
         timeline != null &&
@@ -648,13 +690,49 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             hit.lineIndex < timeline.lines.length
         ? timeline.lines[hit.lineIndex]
         : null;
-    await searchDictionaryResult(
-      searchTerm: musicLyricsLookupTerm(hit),
-      rubySpans: line != null && line.text == hit.lineText
-          ? musicLyricsRubySpans(line.syllables, lookupStart)
-          : const <FushiRubySpan>[],
+    final List<FushiRubySpan> rubySpans =
+        line != null && line.text == hit.lineText
+        ? musicLyricsRubySpans(
+            line.syllables,
+            lookupStart,
+            termLength: term.length,
+          )
+        : const <FushiRubySpan>[];
+    // 副屏在用：查词结果显示在副屏「查词」页，本页不弹窗；否则照常弹窗（未启用副屏
+    // 时这里只是一次同步判断，不多等一拍）。「查词时暂停」两边同一入口：副屏接手查词
+    // 时由副屏注册表调 [_pauseForLookup]，副屏关查词时 [_companionLookupClosed] 续播。
+    if (companionContexts.routesLookups) {
+      final ({String text, int charIndex}) query = musicLyricsCompanionQuery(
+        hit,
+        maxGraphemes: maxGraphemes,
+      );
+      if (await routeMusicLyricLookup(
+        hit,
+        text: query.text,
+        charIndex: query.charIndex,
+      )) {
+        if (!measureMatch || !mounted) return 0;
+        return measureLookupMatchGraphemes(
+          appModel,
+          term,
+          rubySpans: rubySpans,
+        );
+      }
+      if (!mounted) return 0;
+    }
+    _pauseForLookup();
+    // 换词：已开着的页内查词（连同嵌套层）先收回热槽，新词原地复用热槽，不在上面
+    // 再叠一层顶层弹窗。不走 [clearDictionaryResult]：那条是「关查词」，会续播。
+    if (dictionaryPopupShown) {
+      dismissDescendantsOf(0);
+      dismissTopPopup();
+    }
+    final int highlight = await searchDictionaryResult(
+      searchTerm: term,
+      rubySpans: rubySpans,
       selectionRect: hit.globalRect,
     );
+    return lookupMatchedGraphemes(term, highlight);
   }
 
   /// 「查词时暂停」（页内弹窗与副屏查词页同一入口，含副屏歌词上点的词）：设置开着

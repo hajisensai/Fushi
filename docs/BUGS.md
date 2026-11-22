@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4525 条。点号进各自文件。
+> 共 4526 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -45,6 +45,7 @@
 | [BUG-5195](bugs/BUG-5195-mine-notice-chrome-placement.md) | ✅ | ✅ | mine-notice-chrome-placement |
 | [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
+| [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
 | [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
 | [BUG-5190](bugs/BUG-5190-srs-gen4-migration-card-row-parity.md) | ✅ | ✅ | gen4 迁移对拍：同一张卡的行只差继承来的卡片标志，整体回滚（多前身按卡 ID 排先后） |
 | [BUG-5189](bugs/BUG-5189-shortcut-inline-record-esc-pops-page.md) | ✅ | ✅ | shortcut-inline-record-esc-pops-page |

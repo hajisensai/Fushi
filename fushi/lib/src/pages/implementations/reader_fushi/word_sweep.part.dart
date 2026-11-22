@@ -10,7 +10,7 @@ part of '../reader_fushi_page.dart';
 ///   光标不会被 transfer 进弹窗，焦点按指针查词那条路收回正文，于是方向键、翻页键、
 ///   弹窗的 X=制卡 / Y=发音全部照常可达。
 /// * 当前词的提示是查词本身的行内选区高亮（与点词同一份 `fushi-selection`）。
-/// * 句尾循环、跳过整词不可见 / 不可查的词：规则与视频页共用（[resolveReaderWordSweepStop]）。
+/// * 句尾循环、跳过整词不可见 / 不可查的词：规则见 [resolveReaderWordSweepStop]。
 /// * 正文三种视图（paginated / continuous / vn）与有声书歌词视图共用；句子与可见判据在
 ///   JS 侧（[ReaderWordSweepScripts]）。
 class _ReaderWordSweepState {

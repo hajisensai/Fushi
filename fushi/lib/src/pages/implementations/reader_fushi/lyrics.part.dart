@@ -1750,7 +1750,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             try {
               final Map<String, dynamic> payload =
                   jsonDecode(args[0] as String) as Map<String, dynamic>;
-              await _handleTextSelected(ReaderSelectionData.fromJson(payload));
+              await _handleTextSelected(
+                ReaderSelectionData.fromJson(payload),
+                controllerLookup: payload['controllerLookup'],
+              );
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'ReaderFushi.lyrics.onTextSelected',

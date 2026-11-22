@@ -128,12 +128,14 @@
 ## 8. 手柄模式
 
 - 契约 `input/controller_lookup_target.dart`：`ControllerLookupStyle {holdL1, selectToggle, off}`（偏好
-  `controller_lookup_style`，设备本地；未设置 = 伴屏在时 holdL1，否则 off）与页面实现的 `ControllerLookupTarget`。
+  `controller_lookup_style`，设备本地；未设置一律 holdL1，单屏也是）与页面实现的 `ControllerLookupTarget`。
 - `input/controller_lookup_mode.dart`（`ControllerLookupMode.instance`）排在一切页面分派之前：桌面在
   `gamepad_service.dart` 的 `_dispatchButton`，Android 在 `FocusManager` 早期按键处理器。
-  - **查词模式**（按住 L1 ≥250 ms）：方向键 / 左摇杆 ←/→ 词（Y 切字符）、↑/↓ 行；A 查词，弹窗开着再按 A 制卡；X 词音；
-    RT/LT 下 / 上一条；右摇杆滚动；B 先关弹窗再退出。查词走各页原路径（伴屏在且「查词结果显示在」= 下屏就进 Lookup 页签，
-    否则页内弹窗；跟进键随之走 `CompanionContextRegistry.lookupController` 或页内弹窗钩子）。
+  - **查词模式**（按住 L1 ≥250 ms）：键位是 `controllerLookup` scope 的注册表动作，可在快捷键设置里改。默认：
+    十字键 / 左摇杆 ←/→ 按词（L3 切按字）、↑/↓ 换行，停下即查；右摇杆 ←/→ 选区右端 −1/+1 字；X 制卡、Y 发音；
+    RT/LT 下 / 上一条；A 进入结果（弹窗内选词，副屏查词页时无动作）；右摇杆纵向滚结果；B 先关结果再退出。
+    查词走各页原路径（伴屏在且「查词结果显示在」= 下屏就进 Lookup 页签，否则页内弹窗，光标留在正文；跟进键随之走
+    `CompanionContextRegistry.lookupController` 或页内弹窗钩子）。
   - **R1 驱动面板**（仅伴屏在时）：按住 R1，方向键 / 左摇杆 / A / B 驱动副屏焦点（`panelNav`），其余键吞掉。
   - 有 target 时的 L1、伴屏在时的 R1 单击在**松开时**补发。
 - 页面实现：`reader_fushi/controller_lookup.part.dart`、`video_fushi/controller_lookup.part.dart`、

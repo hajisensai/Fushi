@@ -346,8 +346,11 @@ void main() {
 
     test('被盖住时不起新查词（_lookupAt 入口门控）', () {
       final String src = read('$dir/lookup_favorite.part.dart');
-      final int at = src.indexOf('Future<void> _lookupAt(');
-      final int gate = src.indexOf('if (lookupOwnerRouteCovered) return;', at);
+      final int at = src.indexOf('Future<int> _lookupAt(');
+      final int gate = src.indexOf(
+        'if (lookupOwnerRouteCovered) return 0;',
+        at,
+      );
       final int pause = src.indexOf('controller.pause()', at);
       final int push = src.indexOf('pushNestedPopup(', at);
       expect(gate, greaterThan(at));

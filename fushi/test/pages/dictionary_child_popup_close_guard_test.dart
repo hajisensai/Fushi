@@ -219,7 +219,7 @@ void main() {
     final int barrierStart = video.indexOf('void _onDismissBarrierTap(');
     expect(barrierStart, greaterThanOrEqualTo(0), reason: 'barrier 方法存在');
     final int barrierEnd = video.indexOf(
-      'void _handleSubtitleLookupTap(',
+      'Future<int> _handleSubtitleLookupTap(',
       barrierStart,
     );
     expect(barrierEnd, greaterThan(barrierStart));
