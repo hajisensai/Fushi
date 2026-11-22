@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 /// 书架封面解析的异步版（UI isolate 上不同步列目录）必须与同步版逐字一致。
 void main() {

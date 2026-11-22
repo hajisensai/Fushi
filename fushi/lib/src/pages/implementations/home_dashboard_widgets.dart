@@ -1350,11 +1350,12 @@ class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
                         curve: FushiMotion.enter,
                         width: side ? 6 : (i == _page ? 14 : 6),
                         height: side ? (i == _page ? 10 : 6) : 6,
-                        decoration: BoxDecoration(
+                        // 胶囊点：短边恒为 6，StadiumBorder 即半径 3 的圆端。
+                        decoration: ShapeDecoration(
                           color: widget.dotColor.withValues(
                             alpha: i == _page ? 1 : 0.35,
                           ),
-                          borderRadius: BorderRadius.circular(3),
+                          shape: const StadiumBorder(),
                         ),
                       ),
                     ),

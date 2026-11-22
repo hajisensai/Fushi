@@ -24,7 +24,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
-import 'package:fushi/src/pages/base_source_page.dart'
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';

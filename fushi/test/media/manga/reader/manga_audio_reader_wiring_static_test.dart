@@ -8,8 +8,8 @@
 // [mangaScrollHideEffect]）另有行为测试。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 String _read(List<String> parts) => File(
   p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]),

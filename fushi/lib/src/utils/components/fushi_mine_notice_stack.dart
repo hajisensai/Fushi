@@ -16,9 +16,11 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
@@ -349,7 +351,7 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
           _focused = focused;
           _syncPause();
         },
-        child: AnimatedSize(
+        child: FushiAnimatedSize(
           duration: motion ? FushiMotion.medium : Duration.zero,
           curve: FushiMotion.standard,
           alignment: widget.anchor == MineNoticeStackAnchor.bottom
@@ -453,6 +455,11 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
     final bool bottom = widget.anchor == MineNoticeStackAnchor.bottom;
     final FushiTypography type = context.fushiType;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // Apple 不认 MD3 色调容器：头条与通知卡同一块白 / 深灰实底、系统 label 色。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) && !isEinkTheme(context)
+        ? appleColorsOf(context)
+        : null;
     final int failed = entries
         .where((MineNoticeEntry e) => e.notice.status == MineToastStatus.failed)
         .length;
@@ -460,7 +467,9 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
       constraints: BoxConstraints(maxWidth: widget.maxWidth),
       padding: const EdgeInsetsDirectional.only(start: 14, end: 4),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh,
+        color: apple != null
+            ? mineNoticeAppleContainer(dark: cs.brightness == Brightness.dark)
+            : cs.surfaceContainerHigh,
         borderRadius: const BorderRadius.all(Radius.circular(20)),
         boxShadow: const <BoxShadow>[
           BoxShadow(
@@ -482,7 +491,7 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
                     )
                   : t.card_notice_stack_summary(n: entries.length),
               style: type.labelLarge.copyWith(
-                color: cs.onSurface,
+                color: apple?.label ?? cs.onSurface,
                 fontWeight: FontWeight.w700,
               ),
               maxLines: 1,
