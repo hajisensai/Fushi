@@ -22,12 +22,32 @@ void main() {
     // 发起时冻结库与归属，成功（非重复）分支记账。
     expect(body, contains('final FushiDatabase mineDb = appModel.database;'));
     expect(body, contains('_studyStatsIdentity'));
-    final int duplicate = body.indexOf("res.result == 'duplicate'");
-    final int record = body.indexOf(
-      '_recordVideoMineStat(mineDb, statIdentity)',
+    // 结果按 `switch (res.result)` 分流：记账只在 `case 'success':` 里，
+    // `case 'duplicate':` 与 default 都不记。
+    const String record = '_recordVideoMineStat(mineDb, statIdentity)';
+    const List<String> labels = <String>[
+      "case 'success':",
+      "case 'duplicate':",
+      'default:',
+    ];
+    expect(body, contains('switch (res.result)'));
+    final String success = switchCaseBody(
+      body,
+      "case 'success':",
+      nextLabels: labels,
     );
-    expect(duplicate, greaterThanOrEqualTo(0));
-    expect(record, greaterThan(duplicate), reason: '只在非重复的成功分支记账');
+    final String duplicate = switchCaseBody(
+      body,
+      "case 'duplicate':",
+      nextLabels: labels,
+    );
+    expect(success, contains(record), reason: '新制成功要记视频制卡统计');
+    expect(duplicate, isNot(contains(record)), reason: '只在非重复的成功分支记账');
+    expect(
+      record.allMatches(body).length,
+      1,
+      reason: '只在非重复的成功分支记账（不能在分流之外或 default 里另记一笔）',
+    );
   });
 
   test('原生页播放器层进程死后不释放共享的窗口宿主档环境', () {

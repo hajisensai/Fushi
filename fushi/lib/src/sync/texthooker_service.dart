@@ -4,7 +4,9 @@ import 'package:fushi/src/mining/gal_voice_resource_name.dart';
 import 'package:fushi/src/sync/texthooker_line_fold.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
-enum TexthookerLineSource { websocket, engineHook, unknown }
+/// 台词行的来源通道。`screenOcr` = OCR 游戏模式（定时截窗 + OCR，见
+/// `fushi/lib/src/mining/gal_ocr_line_source.dart`）。
+enum TexthookerLineSource { websocket, engineHook, screenOcr, unknown }
 
 /// Hook script line breaks are part of the text, not printable characters.
 /// Normalize before ruby parsing so all downstream UTF-16 indexes share the
@@ -973,7 +975,13 @@ class TexthookerService extends ChangeNotifier {
     // 产出，而它是 Windows-only 的（设置里的 game destination 同门）。所以这里
     // 不要写 `Platform.isWindows` —— 本文件不 import dart:io，而 CI 的真单测门跑
     // 在 Linux 上，那样写会让折叠的 17 条用例集体变成「折叠不发生」而全红。
-    if (foldProgressiveLines && source == TexthookerLineSource.engineHook) {
+    //
+    // OCR 游戏模式的行同理：打字机停顿时会先识别到半句，再识别到整句——也是同一句的多次
+    // 快照（Rust 判定核心把续写输出成「上一句 + 新尾巴」的严格前缀扩展，正好落进这里）。
+    // screenOcr 行同样只由 Windows-only 的会话产出。
+    if (foldProgressiveLines &&
+        (source == TexthookerLineSource.engineHook ||
+            source == TexthookerLineSource.screenOcr)) {
       // 回吞深度上限：一句台词的快照数是个位数，给个上限免得畸形输入把每行的
       // 折叠判定拖成 O(buffer)。
       const int maxAbsorb = 8;

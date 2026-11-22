@@ -623,8 +623,9 @@ class ReaderPaginationScripts {
   // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
   // 的值转换同口径。改用 fushi_core 共享码点原语（`jp_codepoint_fold.dart`）后
   // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
-  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
-  // `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
+  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`kSentenceAudioRelocationJs` 的
+  // `HW_KATA_TO_FW` 查表）由 `fushi/test/utils/jp_codepoint_fold_test.dart` 的
+  // parity 测试逐项锁定。
   static int _jsFoldCodePoint(int cp) {
     int out = fullwidthAsciiToHalfwidth(cp);
     if (out >= 0x41 && out <= 0x5A) {
@@ -1097,9 +1098,15 @@ window.__fushiInstallShell = function(C) {
   }
 
   /// 三个 shell 各自仍以 `<script>…</script>` 形式返回（它们的单测按这个形状钉着），
-  /// 拼进引擎时剥掉外层标签。
-  static String _stripShellScriptTags(String js) =>
-      js.replaceAll('<script>', '').replaceAll('</script>', '').trim();
+  /// 拼进引擎时**只**剥掉首尾那一对外层标签。shell 正文里出现的 `<script>` 字样
+  /// （注释、字符串字面量）必须原样保留：以前用 `replaceAll` 全局删，会把 BUG-5015
+  /// 注释里的「<script> / <style>」一并抠掉，要是哪天出现在字符串里就是静默改写了
+  /// 脚本语义（守卫 `reader_engine_static_source_guard_test.dart` 的「整段原样在场」）。
+  static String _stripShellScriptTags(String js) => js
+      .trim()
+      .replaceFirst(RegExp(r'^<script>'), '')
+      .replaceFirst(RegExp(r'</script>$'), '')
+      .trim();
 
   // ── Shared JS (properties + methods used by both modes) ────────────
 
@@ -1322,7 +1329,35 @@ window.__fushiInstallShell = function(C) {
       runningSum += this.countChars(node.textContent);
       if (runningSum > targetCharCount) { targetNode = node; break; }
     }
-    return targetNode;
+    if (!targetNode) return null;
+    // BUG-5015：落点只能取**画出来了**的文本。计数口径（与 calculateProgress / 度量的
+    // totalChars 同源）含没有排版盒的文本节点（正文里的 <script> / <style>、书自带
+    // display:none 的元素），目标字落在这种节点上时它没有任何矩形：分页 getRect 退回
+    // 全零的包围盒，锚 = 0 + 当前滚动量，落点变成「调用前停在哪页」的函数（竖排
+    // contentStart > gap 时每落一次还再退一页）；连续的 scrollIntoView 对它是空操作。
+    // 进度把这段字算在下一个画出来的节点之前（progressStops 只给有矩形的节点立桩），
+    // 所以往后取第一个画出来的节点；后面全都没画出来时取前面最近的一个。
+    node = targetNode;
+    do {
+      if (this.countChars(node.textContent) > 0 && this.renderedTextStartRect(node)) return node;
+    } while (node = walker.nextNode());
+    walker.currentNode = targetNode;
+    while (node = walker.previousNode()) {
+      if (this.countChars(node.textContent) > 0 && this.renderedTextStartRect(node)) return node;
+    }
+    return null;
+  },
+  // 文本节点第一个画出来的片段（宽高都 > 0）的 client rect；节点没有排版盒（祖先
+  // display:none、<script> / <style> 正文）或只剩塌缩空白时返回 null。与
+  // buildPaginationMetrics 给 progressStops 立桩的「节点首片段」同口径。
+  renderedTextStartRect: function(node) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
+    }
+    return null;
   },
   scrollToProgressPaged: function(context, progress) {
     if (context.pageSize <= 0 || progress <= 0) {
@@ -1334,11 +1369,10 @@ window.__fushiInstallShell = function(C) {
       return;
     }
     var targetNode = this.findNodeAtProgress(progress);
-    if (targetNode) {
-      var range = document.createRange();
-      range.setStart(targetNode, 0);
-      range.setEnd(targetNode, Math.min(1, targetNode.length));
-      var rect = this.getRect(range);
+    // BUG-5015：锚取节点第一个画出来的片段，不经 getRect 的包围盒兜底——那个兜底对
+    // 没有排版盒的文本给全零矩形，锚就退化成当前滚动量。
+    var rect = targetNode ? this.renderedTextStartRect(targetNode) : null;
+    if (rect) {
       var scroll = this.getPagePosition(context);
       var anchor = this.turnSpan(context.axis, rect).start + scroll;
       this.setPagePosition(context, this.alignToPage(context, anchor));

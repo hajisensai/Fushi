@@ -185,6 +185,7 @@ function el(tag, opts, kids){
     currentSrc: o.src || '', src: o.src || '',
     textContent: '',
     get classList(){ return { contains: (c) => node.cls.includes(c) }; },
+    get firstElementChild(){ return node.childNodes.find((k) => k.nodeType === 1) || null; },
     getAttribute(n){ return n in node.attrs ? node.attrs[n] : null; },
     getBoundingClientRect(){ return { left: 0, top: 0, width: 0, height: 0 }; },
     closest(sel){
@@ -224,6 +225,15 @@ function glossImage(){
     [container]);
   return { link, container, background, img };
 }
+// 现行导出（BUG-5181）：gloss-* class 已换成内联样式剥掉（popup.js
+// inlineStructuredContentExportStyles），只剩 <a href=媒体文件名><span 盒子><span sizer>…<img>。
+function exportedImage(href){
+  const img = el('IMG', { src: SRC });
+  const sizer = el('SPAN');
+  const container = el('SPAN', {}, [sizer, el('SPAN'), el('SPAN'), img]);
+  const link = el('A', { attrs: { href: href || 'fushi_dict_1.png' } }, [container]);
+  return { link, container, sizer, img };
+}
 $kSrsCardLinkScript
 $kSrsCardImageTapScript
 $body
@@ -258,6 +268,30 @@ assert.ok(e.defaultPrevented);
 assert.deepEqual(calls, [['onSrsImageTap', SRC]], '点在图片盒的底色层上同样放大');
 ''');
     });
+
+    test(
+      '现行导出没有 gloss-image-link class：按结构认插图，点 img / 盒内占位层都放大（BUG-5181）',
+      () async {
+        await runJs(r'''
+const g = exportedImage();
+el('DIV', { cls: ['card'] }, [el('DIV', { cls: ['fc-gloss'] }, [g.link])]);
+let e = click(g.img);
+assert.ok(e.defaultPrevented, '媒体文件名 href 不许把卡面外壳导航走');
+assert.deepEqual(calls, [['onSrsImageTap', SRC]]);
+calls.length = 0;
+e = click(g.sizer);
+assert.deepEqual(calls, [['onSrsImageTap', SRC]], '点在盒内占位层上同样放大');
+calls.length = 0;
+// 同样结构但 href 是外链 / 查词 / 来源：不是插图，照原来的链接处理。
+const ext = exportedImage('https://example.com/a.png');
+const lookup = exportedImage('?query=%E8%AA%9E');
+el('DIV', { cls: ['card'] }, [ext.link, lookup.link]);
+click(ext.img);
+click(lookup.img);
+assert.deepEqual(calls.map((c) => c[0]), ['onSrsCardLink', 'onSrsCardLink']);
+''');
+      },
+    );
 
     test('普通链接里的图、onclick 里的插图、卡外、右键照旧不收', () async {
       await runJs(r'''

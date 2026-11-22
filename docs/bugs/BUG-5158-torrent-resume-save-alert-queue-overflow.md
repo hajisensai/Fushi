@@ -1,0 +1,9 @@
+## BUG-5158 · torrent-resume-save-alert-queue-overflow
+- **报告**：2026-11-22（内部压测：5000 颗种子时一轮 saveResumeData 得 saved=0）
+- **真实性**：✅ 真 bug。本机实测旧 DLL：一个 session 加 3000 颗种子后 `saveResumeData(timeoutMs: 120000)` 得 `saved=0, failed=0, timedOut=3000`，白等满 120 秒。根因在 `native/fushi_torrent/fushi_torrent_ffi.cpp` 的 `ht_save_resume_data`（修复前 1498 行起）：
+  1. 开局不 drain。alert 只在调用方碰到 drain 入口时才被取走，宿主每分钟才保存一次，期间 add_torrent / state_changed / torrent_checked / piece_finished 全堆在 libtorrent 内部队列里。libtorrent `alert_manager::emplace_alert` 按优先级截断：normal 到 `alert_queue_size`（默认 2000）、high 到 2 倍、critical 到 3 倍就丢（只记一位 `m_dropped`，下次 pop 时给一条 `alerts_dropped_alert`）。种子上千时队列早已顶到 critical 的上限，本轮 `save_resume_data_alert`（critical）一到就被丢，一颗都收不到。
+  2. 一口气对所有种子发 `save_resume_data`，回执数随种子数线性涨，即使开局腾空，也会在超过 critical 余量时自己挤爆。
+  3. `drain_alerts` 不认 `alerts_dropped_alert`，`resume_pending` 只是个计数，丢了回执既不知道是谁、也不补救，只能等满超时，静默报 `timed_out`。
+- **[x] ① 已修复** — `ht_save_resume_data` 开局先 `drain_alerts` 腾空队列；请求按滑动窗口在飞（`min(alert_queue_size / 4, kMaxResumeInFlight=500)`，回执到一颗补发一颗，总耗时不变）；在飞账从计数改成 `infohash → handle` 的 `resume_inflight`，回执按 infohash 销账、失败按 handle 销账（种子被移除、handle 失效也能比），不在册的重复 / 迟到回执忽略；`drain_alerts` 新认 `alerts_dropped_alert`，丢的类型含 resume 回执时对仍挂着的种子补发一次（libtorrent 不告诉丢了哪颗，挂着的就是可能丢的），JSON 多回一个诊断字段 `reissued`。`timed_out` 现在 = 在飞未回执 + 窗口没轮到的。没有改大 `alert_queue_size`：上限调大只是把阈值往后推，种子再多照样丢。
+- **[x] ② 已加自动化测试** — `packages/fushi_torrent/test/resume_save_many_torrents_test.dart`：一个 session 加 5000 颗种子（加完不 drain，等同宿主启动加回大量种子后的状态），断言一轮保存 `(saved, failed, timedOut) == (5000, 0, 0)` 且盘上 `.resume` 与种子一一对应。变异实测（本机 vcpkg 编 DLL）：旧实现 saved=0；同时去掉「开局 drain」与「丢弃补发」两道 → saved=4708 / timedOut=292，红；只去掉其中一道仍绿（另一道独立兜住）；修复版 5000 颗约 10 秒全绿。
+- **备注**：「只去窗口 + 去补发」在 7000 颗上本机没能稳定挤爆（网络线程边产回执、主线程边 drain，取决于时序），故窗口这一道没有确定性测试，靠 libtorrent 截断规则的推导保证；补发路径同理只在「去掉开局 drain」的变异里被间接覆盖。

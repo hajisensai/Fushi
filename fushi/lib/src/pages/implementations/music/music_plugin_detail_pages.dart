@@ -181,6 +181,50 @@ class _ExpandableTextState extends State<_ExpandableText> {
   }
 }
 
+/// 作品总时长（「1 小时 38 分」/「42 分钟」）。
+String _pluginAlbumDurationLabel(int ms) {
+  final Duration d = Duration(milliseconds: ms);
+  final int hours = d.inHours;
+  final int minutes = d.inMinutes.remainder(60);
+  return hours > 0
+      ? t.music_queue_duration_hours(hours: hours, minutes: minutes)
+      : t.music_queue_duration_minutes(minutes: minutes);
+}
+
+/// 专辑曲目的分组：插件给了曲目分组（正篇 / 环境音版 / 特典……）时按组，组按首次出现的
+/// 顺序排、没给组名的曲目归入无标题的一组；否则多碟专辑按碟分组；都没有不分组（一组无标题）。
+List<({String? title, List<int> indices})> _pluginTrackGroups(
+  List<MusicPluginTrack> tracks, {
+  required bool isAlbum,
+}) {
+  if (isAlbum && tracks.any((MusicPluginTrack t) => t.group != null)) {
+    final Map<String, List<int>> byGroup = <String, List<int>>{};
+    for (int i = 0; i < tracks.length; i++) {
+      (byGroup[tracks[i].group ?? ''] ??= <int>[]).add(i);
+    }
+    return <({String? title, List<int> indices})>[
+      for (final MapEntry<String, List<int>> e in byGroup.entries)
+        (title: e.key.isEmpty ? null : e.key, indices: e.value),
+    ];
+  }
+  final Set<int> discs = <int>{
+    for (final MusicPluginTrack t in tracks) t.discNo ?? 1,
+  };
+  if (!isAlbum || discs.length <= 1) {
+    return <({String? title, List<int> indices})>[
+      (title: null, indices: <int>[for (int i = 0; i < tracks.length; i++) i]),
+    ];
+  }
+  final Map<int, List<int>> byDisc = <int, List<int>>{};
+  for (int i = 0; i < tracks.length; i++) {
+    (byDisc[tracks[i].discNo ?? 1] ??= <int>[]).add(i);
+  }
+  return <({String? title, List<int> indices})>[
+    for (final MapEntry<int, List<int>> e in byDisc.entries)
+      (title: t.music_disc_label(n: e.key), indices: e.value),
+  ];
+}
+
 /// 可点的艺人名（进艺人页）；插件不支持 artist 或没有 id 时是普通文字。
 /// [linkColor] 缺省主题 primary；详情页色块里传色块强调色——浅色主题下强调色与
 /// 前景同色，再给可点的名字加下划线（[underlineLinks]）以示可点。
@@ -369,46 +413,75 @@ class _MusicPluginCollectionPageState
   ) {
     final List<MusicPluginTrack> tracks = c.tracks;
     final bool isAlbum = c.album != null;
-    final Set<int> discs = <int>{
-      for (final MusicPluginTrack t in tracks) t.discNo ?? 1,
-    };
-    final bool grouped = isAlbum && discs.length > 1;
-    final Map<int, List<int>> byDisc = <int, List<int>>{};
-    for (int i = 0; i < tracks.length; i++) {
-      (byDisc[grouped ? tracks[i].discNo ?? 1 : 0] ??= <int>[]).add(i);
-    }
+    final List<({String? title, List<int> indices})> groups =
+        _pluginTrackGroups(tracks, isAlbum: isAlbum);
     return <Widget>[
-      for (final MapEntry<int, List<int>> group in byDisc.entries) ...<Widget>[
-        if (grouped)
+      for (final ({String? title, List<int> indices}) group
+          in groups) ...<Widget>[
+        if (group.title case final String title)
           FushiSectionTitle.group(
-            t.music_disc_label(n: group.key),
-            key: ValueKey<String>('music-plugin-disc-${group.key}'),
+            title,
+            key: ValueKey<String>('music-plugin-track-group-$title'),
           ),
-        for (int j = 0; j < group.value.length; j++)
+        for (int j = 0; j < group.indices.length; j++)
           _TrackRow(
-            track: tracks[group.value[j]],
+            track: tracks[group.indices[j]],
             index: j,
-            count: group.value.length,
+            count: group.indices.length,
             leadingNumber: isAlbum,
             pluginId: widget.manifest.id,
             onPlayMv: _mvAction(
               context,
               ref,
               widget.manifest,
-              tracks[group.value[j]],
+              tracks[group.indices[j]],
             ),
             menu: musicPluginTrackMenu(
               context,
               ref,
               widget.manifest,
-              tracks[group.value[j]],
+              tracks[group.indices[j]],
               inPlaylist: c.playlist,
               inAlbum: c.album,
               onChanged: _reloadTracks,
             ),
-            onTap: () => play(start: group.value[j]),
+            onTap: () => play(start: group.indices[j]),
           ),
       ],
+    ];
+  }
+
+  /// 专辑的关联作品（原版 / 译制版 / 同系列……）：段标题 + 每部一行（副行是关系说明）。
+  List<Widget> _relatedRows(BuildContext context, _Collection c) {
+    final List<MusicPluginRelatedAlbum> related =
+        c.album?.related ?? const <MusicPluginRelatedAlbum>[];
+    if (related.isEmpty) return const <Widget>[];
+    return <Widget>[
+      FushiSectionTitle.group(
+        t.music_plugin_album_related,
+        key: const ValueKey<String>('music-plugin-album-related'),
+      ),
+      for (int i = 0; i < related.length; i++)
+        _EntityRow(
+          key: ValueKey<String>('music-plugin-related-${related[i].album.id}'),
+          index: i,
+          count: related.length,
+          cover: related[i].album.coverUrl,
+          title: related[i].album.title,
+          subtitle: <String>[
+            ?related[i].label,
+            _pluginAlbumSubtitle(related[i].album),
+          ].where((String x) => x.isNotEmpty).join(' · '),
+          onTap: () => unawaited(
+            _push(
+              context,
+              MusicPluginCollectionPage.album(
+                manifest: widget.manifest,
+                album: related[i].album,
+              ),
+            ),
+          ),
+        ),
     ];
   }
 
@@ -426,11 +499,19 @@ class _MusicPluginCollectionPageState
     final TextStyle body = context.fushiType.bodyMedium;
     final String meta = <String>[
       if (album != null) ...<String>[
+        ?album.code,
         if (album.releaseDate != null)
           t.music_plugin_released_on(date: album.releaseDate!)
         else if (album.year != null)
           '${album.year}',
         ?album.company,
+        ?album.language,
+        if (album.durationMs case final int ms when ms > 0)
+          _pluginAlbumDurationLabel(ms),
+        if (album.hasSubtitles case final bool subs)
+          subs
+              ? t.music_plugin_album_subtitles_yes
+              : t.music_plugin_album_subtitles_no,
       ],
       if (playlist?.playCount case final int plays)
         t.music_plugin_play_count(
@@ -464,10 +545,31 @@ class _MusicPluginCollectionPageState
         collected: album?.collected ?? playlist?.collected,
         tracks: c.tracks,
       ),
+      if (album?.sourceUrl case final String url)
+        FushiPressScale(
+          child: FushiOutlinedButton.icon(
+            key: const ValueKey<String>('music_plugin_album_open_source'),
+            // 插件给的链接只收 https（解析时已核），用户点了才外部打开。
+            onPressed: () => unawaited(
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+            ),
+            icon: const FushiIcon(FushiIcons.openInNew),
+            label: Text(t.music_plugin_album_open_source),
+          ),
+        ),
     ];
     final String? owner = playlist?.owner;
     final String? tags = playlist != null && playlist.tags.isNotEmpty
         ? playlist.tags.map((String tag) => '#$tag').join('  ')
+        : null;
+    // 专辑的可点标签（标签 / 声优 / 社团……）：先露一部分，可展开全部。
+    final Widget? albumTags = album != null && album.tags.isNotEmpty
+        ? MusicPluginTagChips(
+            key: const ValueKey<String>('music-plugin-collection-tags'),
+            manifest: widget.manifest,
+            tags: album.tags,
+            maxCollapsed: 12,
+          )
         : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -542,6 +644,7 @@ class _MusicPluginCollectionPageState
             ],
           ),
         ),
+        ?albumTags,
         if (description != null)
           _ExpandableText(
             musicIntroPlainText(description),
@@ -658,6 +761,8 @@ class _MusicPluginCollectionPageState
                                 onTap: () => play(start: i),
                               ),
                         ),
+                        for (final Widget w in _relatedRows(context, c))
+                          SliverToBoxAdapter(child: w),
                       ],
                     ),
                   ),
@@ -668,6 +773,7 @@ class _MusicPluginCollectionPageState
           final List<Widget> children = <Widget>[
             _header(context, c, play),
             ..._trackRows(c, play),
+            ..._relatedRows(context, c),
           ];
           return FushiEntranceScope(
             child: ListView.separated(
@@ -1159,6 +1265,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
       case _ArtistTab.popular when blocks:
         return <Widget>[
           SliverFushiCoverBlocks(
+            layout: shellContentLayoutOf(context),
             itemCount: d.tracks.length,
             itemBuilder:
                 (BuildContext context, int i, FushiCoverBlockSize size) =>
@@ -1230,6 +1337,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
         if (musicRecommendPosterMode(context)) {
           return <Widget>[
             SliverFushiCoverBlocks(
+              layout: shellContentLayoutOf(context),
               itemCount: albums.length,
               itemBuilder:
                   (BuildContext context, int i, FushiCoverBlockSize size) =>
@@ -1298,6 +1406,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
         if (blocks) {
           return <Widget>[
             SliverFushiCoverBlocks(
+              layout: shellContentLayoutOf(context),
               itemCount: similar.length,
               itemBuilder:
                   (BuildContext context, int i, FushiCoverBlockSize size) =>

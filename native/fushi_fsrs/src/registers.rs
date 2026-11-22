@@ -812,6 +812,22 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
     // 显式设的 `freq`（字段还在时），否则名为 `FreqSort` / `FrequencyRank` 的字段（去首尾空白、不分大小写——Lapis 及其衍生类型、
     // 从 Anki 导入的同类笔记都用这个名字）；都没有 = None。
     let freq_effective = effective_frequency_field(freq.as_deref(), &live_fields);
+    // 排序字段（Anki 的 sort field `sortf`）：浏览页的主字段、排序列与笔记缓存 `sort_field` 都读它。显式设的字段
+    // 还在就用它，否则第一个字段（规则只在这里写一次，`se` 是生效值）。
+    let sort = as_str(ent.value("sortField"), "sortField")?.map(str::to_owned);
+    let sort_effective = sort
+        .as_deref()
+        .filter(|id| live_fields.iter().any(|f| f.id == *id))
+        .map(str::to_owned)
+        .or_else(|| live_fields.first().map(|f| f.id.clone()));
+    // 浏览预览的副字段（字段 ID 列表，按字段顺序、只留还在的、去掉排序字段，最多 [BROWSE_FIELDS_MAX] 个）；没设 =
+    // None（自动：排序字段之外按字段顺序的前两个非空字段）。设成空列表 = 不显示副字段；选过的字段一个都不剩时也是
+    // None（回到自动）。
+    let browse = browse_fields(
+        ent.value("browseFields"),
+        &live_fields,
+        sort_effective.as_deref(),
+    )?;
     Ok(json!({
         "ak": as_int(get(payload, "ankiNum"), "ankiNum")?.unwrap_or(0),
         "nk": as_str(get(payload, "ntKind"), "ntKind")?.unwrap_or("standard"),
@@ -824,9 +840,40 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         "tf": term,
         "qf": freq,
         "qe": freq_effective,
+        "sf": sort,
+        "se": sort_effective,
+        "bf": browse,
         "da": ent.deleted_at(),
         "bk": as_str(get(payload, "builtin"), "builtin")?,
     }))
+}
+
+/// 浏览预览最多显示几个副字段（浏览列表两行摘要、表格「字段 1 / 2」两列）。
+pub(crate) const BROWSE_FIELDS_MAX: usize = 2;
+
+/// 见 [note_type_view] 里 `bf` 的说明。
+fn browse_fields(
+    v: &Value,
+    fields: &[FieldDef],
+    sort: Option<&str>,
+) -> Result<Option<Vec<String>>, String> {
+    let picked: Vec<&str> = match v {
+        Value::Null => return Ok(None),
+        Value::Array(xs) => xs.iter().filter_map(Value::as_str).collect(),
+        _ => return Err(format!("browseFields: expected List<String>?, got {v}")),
+    };
+    if picked.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let live: Vec<String> = fields
+        .iter()
+        .filter(|f| Some(f.id.as_str()) != sort && picked.contains(&f.id.as_str()))
+        .take(BROWSE_FIELDS_MAX)
+        .map(|f| f.id.clone())
+        .collect();
+    // 选过的字段一个都不剩（被删 / 后来被选成排序字段 / 同步来的别名对不上）：回到自动，而不是悄悄变成
+    // 「不显示副字段」——那只有显式存空列表才算。
+    Ok(if live.is_empty() { None } else { Some(live) })
 }
 
 /// 见 [note_type_view] 里 `qe` 的说明。
@@ -1290,6 +1337,17 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// [keys] 里每个字段键有没有修改记录（有任何一条就算，值是 null / 空串也算；Dart `SrsEntityEdits[key] != null`）。
+/// 一次解析，逐键回答。
+pub(crate) fn has_registers(
+    edits: &[StoredEdit<'_>],
+    keys: &[String],
+) -> Result<Vec<bool>, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(keys.iter().map(|k| ent.reg(k).is_some()).collect())
+}
+
 /// 往某实体的字段键 [key] 写 [value] 是不是什么都不改（Dart 旧 `srsEditIsNoop`）：这个键有生效记录、没有冲突，且
 /// 生效值与它「相同」（[same_value]）。没有记录、或有冲突待裁决的一律要写。
 pub(crate) fn write_is_noop(
@@ -1645,6 +1703,67 @@ mod tests {
         let only_a: Vec<StoredEdit<'_>> = vec![(edits[0].as_str(), None, None)];
         let v = note_type_view_of(&payload, &only_a, &lapis).unwrap();
         assert_eq!(v["fs"][0]["name"], "Expression");
+    }
+
+    /// 排序字段与浏览副字段：没设时排序字段 = 第一个字段、副字段 None；显式设的排序字段删了回到第一个字段；
+    /// 副字段按字段顺序、去掉排序字段与已删 / 不存在的字段、最多 2 个；空列表原样（不显示副字段）。
+    #[test]
+    fn sort_field_and_browse_fields_materialize_with_fallbacks() {
+        let edit = |seq: i64, key: &str, v: Value| {
+            json!({
+                "p": "p", "k": "notetype", "e": "NT", "f": key, "w": "dev", "s": seq,
+                "v": v, "hlc": format!("{}:0:dev", 1_700_000_000_000i64 + seq),
+            })
+            .to_string()
+        };
+        let defs = [
+            edit(1, "fieldDef/a", json!({"name": "A", "ord": 0})),
+            edit(2, "fieldDef/b", json!({"name": "B", "ord": 1})),
+            edit(3, "fieldDef/c", json!({"name": "C", "ord": 2})),
+            edit(4, "fieldDef/d", json!({"name": "D", "ord": 3})),
+        ];
+        let payload = json!({"ankiNum": 1, "ntKind": "standard"});
+        let view = |extra: &[String]| -> Value {
+            let all: Vec<String> = defs.iter().chain(extra).cloned().collect();
+            let stored: Vec<StoredEdit<'_>> =
+                all.iter().map(|j| (j.as_str(), None, None)).collect();
+            note_type_view_of(&payload, &stored, &Value::Null).unwrap()
+        };
+        let v = view(&[]);
+        assert_eq!(v["sf"], Value::Null);
+        assert_eq!(v["se"], "a");
+        assert_eq!(v["bf"], Value::Null);
+
+        let v = view(&[
+            edit(5, "sortField", json!("c")),
+            edit(6, "browseFields", json!(["d", "c", "zzz", "a", "b"])),
+        ]);
+        assert_eq!(v["sf"], "c");
+        assert_eq!(v["se"], "c");
+        assert_eq!(v["bf"], json!(["a", "b"]));
+
+        let v = view(&[edit(5, "browseFields", json!([]))]);
+        assert_eq!(v["bf"], json!([]));
+
+        // 选过的字段一个都不剩（选的正是后来的排序字段 / 都已删 / 不存在）：回到自动，不变成「不显示副字段」。
+        let v = view(&[
+            edit(5, "browseFields", json!(["c"])),
+            edit(6, "sortField", json!("c")),
+        ]);
+        assert_eq!(v["bf"], Value::Null);
+        let v = view(&[edit(5, "browseFields", json!(["zzz"]))]);
+        assert_eq!(v["bf"], Value::Null);
+
+        let v = view(&[
+            edit(5, "sortField", json!("c")),
+            edit(
+                6,
+                "fieldDef/c",
+                json!({"name": "C", "ord": 2, "deleted": true}),
+            ),
+        ]);
+        assert_eq!(v["sf"], "c");
+        assert_eq!(v["se"], "a");
     }
 
     #[test]

@@ -55,6 +55,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
@@ -65,10 +66,12 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_render_chapter_sort.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
@@ -353,8 +356,12 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       plan: plan,
       chapters: chapters,
       chapterCues: chapterCues,
+      // 占位句与纯标点句都是静音，不拿去和识别结果对。
       placeholders: <int>{
         for (final TtsUnvoicedLine line in rendered.unvoiced) line.planIndex,
+        for (final TtsRenderChapter chapter in chapters)
+          for (final int i in chapter.planIndices)
+            if (ttsTextIsSilent(textOf(i))) i,
       },
       workDir: workDir,
       onProgress: onProgress,
@@ -527,6 +534,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           final ({
             Map<String, TtsCachedAudio> audio,
             Map<String, Object> failures,
+            Set<String> silent,
           })
           synth = await _synthesizeChapter(
             job: job,
@@ -546,15 +554,18 @@ class AppTtsRenderRunner implements TtsRenderRunner {
               onProgress(TtsRenderJobPhase.synthesizing, done, totalSentences);
             },
           );
-          // 没配上的句：成品里占位静音，记下来交给账本。
-          final List<bool> placeholder = <bool>[
-            for (final String key in keys) synth.failures.containsKey(key),
-          ];
+          // 没配上的句：成品里占位静音，记下来交给账本。纯标点句同样放一段静音，
+          // 但不进账本、章清单里记真键（它没有要念的内容，不算失败）。
+          final List<bool> placeholder = ttsChapterPlaceholderMask(
+            keys: keys,
+            failures: synth.failures.keys.toSet(),
+            silent: synth.silent,
+          );
           final List<String> texts = <String>[
             for (final int i in chapter.planIndices) textOf(i),
           ];
           for (int k = 0; k < keys.length; k++) {
-            if (!placeholder[k]) continue;
+            if (!synth.failures.containsKey(keys[k])) continue;
             final int planIndex = chapter.planIndices[k];
             final Object error = synth.failures[keys[k]]!;
             unvoiced.add(
@@ -653,10 +664,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           ).writeAsString(
             TtsChapterManifest(
               section: chapter.section,
-              keys: <String>[
-                for (int k = 0; k < keys.length; k++)
-                  placeholder[k] ? ttsPlaceholderManifestKey(keys[k]) : keys[k],
-              ],
+              keys: ttsChapterManifestKeys(
+                keys: keys,
+                failures: synth.failures.keys.toSet(),
+              ),
               durationsMs: durations,
               pausePreset: pause.name,
               loudnorm: loudnorm,
@@ -695,7 +706,16 @@ class AppTtsRenderRunner implements TtsRenderRunner {
   /// 一句在重试用尽后仍失败（[ttsFailureIsPerLine]）或声音解析不到：记进返回的
   /// `failures`（键 → 失败），其余句子照常合成。熔断（[breaker]）、取消或其它异常：
   /// 停止派发新句、取消同章在途请求，抛第一个失败。
-  Future<({Map<String, TtsCachedAudio> audio, Map<String, Object> failures})>
+  ///
+  /// 纯标点 / 符号句（[ttsTextIsSilent]，如「！」）不送引擎：记进返回的 `silent`，
+  /// 由调用方放一段停顿。
+  Future<
+    ({
+      Map<String, TtsCachedAudio> audio,
+      Map<String, Object> failures,
+      Set<String> silent,
+    })
+  >
   _synthesizeChapter({
     required TtsRenderJob job,
     required TtsRenderChapter chapter,
@@ -711,44 +731,26 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     required TtsCancelToken ttsCancel,
     required void Function(int count) onSentencesDone,
   }) async {
-    final LinkedHashMap<
-      String,
-      ({String text, _SentenceVoice voice, TtsDirection direction})
-    >
-    byKey =
-        LinkedHashMap<
-          String,
-          ({String text, _SentenceVoice voice, TtsDirection direction})
-        >();
-    final Map<String, int> occurrences = <String, int>{};
-    final Map<String, Object> failures = <String, Object>{};
-    for (int k = 0; k < keys.length; k++) {
-      final int planIndex = chapter.planIndices[k];
-      occurrences[keys[k]] = (occurrences[keys[k]] ?? 0) + 1;
-      final _SentenceVoice? voice = voiceOf(planIndex);
-      if (voice == null) {
-        failures[keys[k]] = unavailableOf(planIndex)!;
-        continue;
-      }
-      byKey.putIfAbsent(
-        keys[k],
-        () => (
-          text: textOf(planIndex),
-          voice: voice,
-          direction: directionOf(planIndex),
-        ),
-      );
-    }
-    // 声音解析不到的句子不进合成池，直接算处理完（占位）。
-    for (final String key in failures.keys) {
+    final TtsChapterSorting<_SentenceVoice> sorted = sortTtsChapterSentences(
+      keys: keys,
+      planIndices: chapter.planIndices,
+      textOf: textOf,
+      directionOf: directionOf,
+      voiceOf: voiceOf,
+      unavailableOf: (int planIndex) => unavailableOf(planIndex)!,
+    );
+    final LinkedHashMap<String, TtsChapterSentence<_SentenceVoice>> byKey =
+        sorted.byKey;
+    final Map<String, int> occurrences = sorted.occurrences;
+    final Map<String, Object> failures = sorted.failures;
+    final Set<String> silent = sorted.silent;
+    // 纯标点句与声音解析不到的句子不进合成池，直接算处理完（停顿 / 占位）。
+    for (final String key in <String>{...silent, ...failures.keys}) {
       onSentencesDone(occurrences[key]!);
     }
     // 按声音分组（同一份预设 = 同一个引擎实例 = 同一个并发上限）。
     final Map<String, List<String>> keysByVoice = <String, List<String>>{};
-    byKey.forEach((
-      String key,
-      ({String text, _SentenceVoice voice, TtsDirection direction}) item,
-    ) {
+    byKey.forEach((String key, TtsChapterSentence<_SentenceVoice> item) {
       keysByVoice.putIfAbsent(item.voice.group, () => <String>[]).add(key);
     });
     final Map<String, TtsCachedAudio> results = <String, TtsCachedAudio>{};
@@ -801,7 +803,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             results[key] = await ttsWithRetry(
               () => cache.obtain(key, (String outputPath) {
                 pendingGap = voice.gap > Duration.zero;
-                return synthesizeWithDirection(
+                return ttsSynthesizeSplittingOnReject(
                   voice.provider,
                   byKey[key]!.text,
                   outputPath: outputPath,
@@ -869,7 +871,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       }
       Error.throwWithStackTrace(error, firstStack ?? StackTrace.current);
     }
-    return (audio: results, failures: failures);
+    return (audio: results, failures: failures, silent: silent);
   }
 
   /// 语音识别校对。没开、平台不支持、识别模型没下载时跳过（verified = false，

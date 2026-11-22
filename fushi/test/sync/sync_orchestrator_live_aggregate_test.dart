@@ -9,6 +9,7 @@
 ///      client 只推不拉、不崩（无 report.errors）。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -249,6 +250,61 @@ void main() {
     expect((await hostDb.getMiningStatisticsBySource('book')).single.count, 5);
   });
 
+  // HBK-AUDIT-028：host 端点改为在后台 isolate 编 / 解码报文体后，坏 JSON 与非
+  // object 顶层仍按原契约回 400、不落库；GET 仍是 UTF-8 JSON（含 CJK 书名）。
+  test('host 端点：坏 JSON / 非 object → 400 不落库；GET 回 UTF-8 JSON', () async {
+    await startServer(withLibraryService: true);
+    await _seedReading(
+      hostDb,
+      title: '日本語の本',
+      dateKey: '2026-06-02',
+      chars: 10,
+      timeMs: 1000,
+      modified: 1,
+    );
+    final HttpClient http = HttpClient();
+    addTearDown(() => http.close(force: true));
+    final String auth = 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+    Future<(int, List<int>)> send(String method, List<int>? body) async {
+      final HttpClientRequest req = await http.openUrl(
+        method,
+        Uri.parse('$base/api/library/aggregate'),
+      );
+      req.headers.set(HttpHeaders.authorizationHeader, auth);
+      if (body != null) {
+        req.headers.contentType = ContentType.json;
+        req.add(body);
+      }
+      final HttpClientResponse res = await req.close();
+      final List<int> bytes = <int>[
+        for (final List<int> chunk in await res.toList()) ...chunk,
+      ];
+      return (res.statusCode, bytes);
+    }
+
+    final int before = (await hostDb.getMiningStatisticsBySource(
+      'book',
+    )).length;
+    expect((await send('PUT', utf8.encode('{not json'))).$1, 400);
+    expect((await send('PUT', utf8.encode('[1, 2]'))).$1, 400);
+    expect((await send('PUT', <int>[])).$1, 400);
+    expect(
+      (await hostDb.getMiningStatisticsBySource('book')).length,
+      before,
+      reason: '坏报文体不得落库',
+    );
+
+    final (int status, List<int> body) = await send('GET', null);
+    expect(status, 200);
+    final Object? decoded = jsonDecode(utf8.decode(body));
+    expect(decoded, isA<Map<String, Object?>>());
+    expect(
+      ((decoded! as Map<String, Object?>)['readingStats']! as List<Object?>)
+          .map((Object? r) => (r! as Map<String, Object?>)['title']),
+      contains('日本語の本'),
+    );
+  });
+
   test('老 server（无 libraryService）→ aggregate 404 → client 只推不崩', () async {
     await startServer(withLibraryService: false);
 
@@ -272,7 +328,7 @@ void main() {
     );
 
     final SyncRunReport report = SyncRunReport();
-    // 老 host GET 返 404 → getRemoteAggregate 返 null → push-only；不崩、不产生 error。
+    // 老 host GET 返 404 → getRemoteAggregateBody 返 null → push-only；不崩、不产生 error。
     await orch.syncAggregateLiveForTest(report, backend);
 
     // client 本地统计不受影响（无回灌，无崩溃）。

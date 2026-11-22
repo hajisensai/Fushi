@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -24,8 +25,6 @@ import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
-import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
@@ -229,6 +228,30 @@ enum RemoteSubtitleDefaultUpload {
   hostUnsupported,
 }
 
+/// [InterconnectSyncBackend.getRemoteServiceConfig] 的结果。
+sealed class RemoteServiceConfigPull {
+  const RemoteServiceConfigPull();
+}
+
+/// 拉到了 host 的服务配置快照。
+final class RemoteServiceConfigReceived extends RemoteServiceConfigPull {
+  const RemoteServiceConfigReceived(this.snapshot);
+
+  final InterconnectServiceConfigSnapshot snapshot;
+}
+
+/// 明文会话：host 只在 pinned HTTPS 上给服务配置（API key 不降级到明文，BUG-1311），
+/// 请求没有发出。本地已知、与对端版本无关。
+final class RemoteServiceConfigPlaintextSession
+    extends RemoteServiceConfigPull {
+  const RemoteServiceConfigPlaintextSession();
+}
+
+/// host 回 404：老 host 没有该端点，或 host 关掉了该能力（由能力位区分）。
+final class RemoteServiceConfigEndpointMissing extends RemoteServiceConfigPull {
+  const RemoteServiceConfigEndpointMissing();
+}
+
 class InterconnectSyncBackend extends SyncBackend
     with
         SyncFolderCache,
@@ -346,6 +369,23 @@ class InterconnectSyncBackend extends SyncBackend
     return res
         .transform(utf8.decoder)
         .join()
+        .timeout(requestTimeout)
+        .catchError((Object e, StackTrace stack) {
+          ops?.reportConnectivityFailure(e);
+          Error.throwWithStackTrace(e, stack);
+        });
+  }
+
+  /// [_readBodyBounded] 的原始字节版：同一超时与连通性上报，但不在本 isolate 做
+  /// UTF-8 / JSON 解码——整份快照级的响应体（聚合，HBK-AUDIT-028）交给后台解码。
+  Future<Uint8List> _readBodyBytesBounded(HttpClientResponse res) {
+    final WebDavOps? ops = _ops;
+    return res
+        .fold<BytesBuilder>(
+          BytesBuilder(copy: false),
+          (BytesBuilder b, List<int> chunk) => b..add(chunk),
+        )
+        .then((BytesBuilder b) => b.takeBytes())
         .timeout(requestTimeout)
         .catchError((Object e, StackTrace stack) {
           ops?.reportConnectivityFailure(e);
@@ -949,24 +989,18 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 
-  /// 对端 host 能否收下推来的 PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）。
+  /// 对端 host 的 `GET /api/capabilities` 原样解码结果；老 host（无该端点，404 / 405）
+  /// 返回 null。网络 / 鉴权失败照常抛给调用方记错误。
   ///
-  /// 必须显式协商：老 host 会把 PDF 当 EPUB 导入、必然失败；无头服务端没有 PDF 引擎。
-  /// 能力每轮现问、不跨轮缓存（同一地址上的 host 可能被换成老版本 / 服务端）。
-  /// 老 host（无 capabilities 端点）= false；网络 / 鉴权失败照常抛给调用方记错误。
-  Future<bool> hostAcceptsPdfBooks() async {
+  /// 本方法**每调一次就发一次请求**，不在 backend 上缓存：同一地址上的 host 可能被
+  /// 换成老版本 / 服务端，能力要每轮现问。同一轮里的复用由调用方按轮持有（同步编排器
+  /// 把一轮的读取挂在该轮的 `SyncRunReport` 上，各维度共用一次读取，见
+  /// `peer_gaps.part.dart`）。解析用纯函数：`liveLibraryCapabilityState`（能力位三态，
+  /// PDF 书 / 对端缺能力判定，拍板 other-sync-peer-version-errors）、
+  /// `interconnectHostReportsLocalAudioContentId`（本地音频内容身份，拍板 pr3481）。
+  Future<Object?> readHostCapabilities() async {
     await _ensureResolved();
-    return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
-  }
-
-  /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
-  /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
-  /// （同 [hostAcceptsPdfBooks]）。
-  Future<bool> hostReportsLocalAudioContentId() async {
-    await _ensureResolved();
-    return interconnectHostReportsLocalAudioContentId(
-      await _readHostCapabilities(),
-    );
+    return _readHostCapabilities();
   }
 
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
@@ -1344,10 +1378,13 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   /// Pulls the host-owned service configuration over the pinned HTTPS session.
-  /// Old hosts return 404 and are treated as not supporting the capability.
   /// HTTP/shared-token sessions are rejected by the server rather than silently
   /// downgrading API keys to plaintext transport.
-  Future<InterconnectServiceConfigSnapshot?> getRemoteServiceConfig() async {
+  ///
+  /// 拉不到快照的两种原因分开返回（[RemoteServiceConfigPull]）：明文会话是**本地已知**
+  /// 的「这条链路上 host 按设计不给」，调用方不该再去问能力表；端点 404 才可能是对端
+  /// 版本过旧（或 host 关了该能力），要不要报由调用方按能力位判。
+  Future<RemoteServiceConfigPull> getRemoteServiceConfig() async {
     await _ensureResolved();
     // 明文会话上这个端点**必然**是 403（host 侧 `HTTPS required for service
     // config`），因为 API key 不允许降级到明文传输——这是有意的拒绝，不是故障。
@@ -1356,10 +1393,11 @@ class InterconnectSyncBackend extends SyncBackend
     // `SyncAuthError: Authentication failed`，把「同步完成」永久挂上「N 项失败」，
     // 并且把用户引去反复重配 token——而 token 根本没问题（BUG-1311）。
     //
-    // 答案本地就已知，别问。返回 null 与「旧 host 404」「host 关掉了该能力 404」
-    // 归一到同一条「对端不提供此能力」语义，和 host 自己在 /api/capabilities 上
-    // 广播的 `serviceConfig: _securityContext != null && ...` 逐字一致。
-    if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
+    // 答案本地就已知，别问——连能力表也不必问：host 在 /api/capabilities 上广播的
+    // `serviceConfig: _securityContext != null && ...` 在明文链路上同样是 false。
+    if (Uri.tryParse(_apiBase)?.scheme != 'https') {
+      return const RemoteServiceConfigPlaintextSession();
+    }
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/interconnect/service-config',
@@ -1367,7 +1405,7 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return null;
+      return const RemoteServiceConfigEndpointMissing();
     }
     if (res.statusCode >= 400) {
       // BUG-1323：host 对这个端点的拒绝是**有理由的**（明文 → `HTTPS required for
@@ -1385,8 +1423,10 @@ class InterconnectSyncBackend extends SyncBackend
     if (decoded is! Map) {
       throw const FormatException('Invalid service config response');
     }
-    return InterconnectServiceConfigSnapshot.fromJson(
-      decoded.cast<String, Object?>(),
+    return RemoteServiceConfigReceived(
+      InterconnectServiceConfigSnapshot.fromJson(
+        decoded.cast<String, Object?>(),
+      ),
     );
   }
 
@@ -2121,11 +2161,14 @@ class InterconnectSyncBackend extends SyncBackend
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
-  /// 拉取 host 端聚合快照原始 JSON（TODO-1056 phase C）。老 host 无该端点返回 404
-  /// 时优雅降级返回 null（调用方跳过聚合步骤，与 [remoteBookProgress] 的 404 降级
-  /// 同纪律）——绝不因老 server 缺端点崩溃。返回的是未解码 Map，快照 decode 由上层
-  /// orchestrator 用 AggregateSnapshot.fromJson 处理，本 backend 只搬运 JSON。
-  Future<Map<String, dynamic>?> getRemoteAggregate() async {
+  /// 拉取 host 端聚合快照的**原始响应体**（UTF-8 JSON 字节，TODO-1056 phase C）。
+  /// 老 host 无该端点返回 404 时优雅降级返回 null（调用方跳过聚合步骤，与
+  /// [remoteBookProgress] 的 404 降级同纪律）——绝不因老 server 缺端点崩溃。
+  ///
+  /// HBK-AUDIT-028：本 backend 只搬字节、不解码。整份快照的 UTF-8 / JSON 解码在
+  /// [AggregateSyncService.syncOverClient] 里与折叠同一次后台计算完成（对比弹窗走
+  /// [AggregateSyncService.readingStatCountsByTitle]），不落在调用方（UI）isolate。
+  Future<Uint8List?> getRemoteAggregateBody() async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
@@ -2137,24 +2180,21 @@ class InterconnectSyncBackend extends SyncBackend
       return null; // 老 host 无聚合端点：降级跳过，不崩。
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/aggregate');
-    final String body = await _readBodyBounded(res);
-    final dynamic decoded = jsonDecode(body);
-    if (decoded is Map<String, dynamic>) return decoded;
-    if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    return null; // 非对象返回体：当作空快照处理（上层 fromJson 也会降级）。
+    return _readBodyBytesBounded(res);
   }
 
-  /// 向 host 上报（已在 client 端与 host 并集合并的）聚合快照 JSON（TODO-1056
-  /// phase C）。host 端用 MAX / 并集 upsert 折叠进自己 DB（幂等）。[json] 是
-  /// AggregateSnapshot.toJson() 的结果，本 backend 只负责 PUT 搬运。
-  Future<void> putRemoteAggregate(Object? json) async {
+  /// 向 host 上报（已在 client 端与 host 并集合并的）聚合快照（TODO-1056 phase C）。
+  /// host 端用 MAX / 并集 upsert 折叠进自己 DB（幂等）。[body] 是在后台 isolate
+  /// 编码好的 UTF-8 JSON 报文体（HBK-AUDIT-028），本 backend 只负责 PUT 搬运。
+  Future<void> putRemoteAggregateBody(Uint8List body) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase/api/library/aggregate',
     );
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
-    req.add(utf8.encode(jsonEncode(json)));
+    req.contentLength = body.length;
+    req.add(body);
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/aggregate');
@@ -2166,7 +2206,7 @@ class InterconnectSyncBackend extends SyncBackend
   // 不同）。读-合并-写：GET host 清单 → 引擎合并 → 应用本地 → POST 合并后清单。
 
   /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
-  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregate]
+  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregateBody]
   /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码。
   Future<CollectionManifest?> getRemoteCollectionManifest() async {
     await _ensureResolved();
@@ -2531,18 +2571,19 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
-  /// 通知对端 host 删除 displayName 为 [displayName] 的本地音频来源。
-  Future<void> deleteRemoteLocalAudio(String displayName) async {
+  /// 通知对端 host 删除内容身份为 [contentId] 的本地音频来源（HBK-AUDIT-022：
+  /// 删除只认内容身份，host 不按显示名删）。
+  Future<void> deleteRemoteLocalAudio(String contentId) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'DELETE',
-      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(contentId)}',
     );
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(
       res.statusCode,
-      'DELETE /api/library/localaudio/$displayName',
+      'DELETE /api/library/localaudio/$contentId',
     );
     remoteLibraryMutationRevision.value++;
   }
@@ -2757,7 +2798,7 @@ class InterconnectSyncBackend extends SyncBackend
   // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。
 
   /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。老 host 无该端点返回
-  /// 404 时优雅降级返回空表（与 [getRemoteAggregate] / [getRemoteCollectionManifest]
+  /// 404 时优雅降级返回空表（与 [getRemoteAggregateBody] / [getRemoteCollectionManifest]
   /// 的 404 降级同纪律——绝不因老 server 缺端点抛异常让整页占位卡消失/转圈）。请求
   /// 用 [requestTimeout] 封顶，防止 host 接受连接后卡住响应导致视频页无限等待。
   /// 拉取 host 最近活动事件（新首页 Activity 面板互联数据源；display-only）。
@@ -2846,6 +2887,48 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
+  }
+
+  /// host 是否声明能收流媒体书注册（`liveLibrary.streamVideos`，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 推之前必须先问：老 host 没有 `.../streamentry` 路由，带后缀的 PUT 会落进它的
+  /// 「裸 id 上传视频」分支，把 JSON 请求体当视频文件入库。同一 host 基址只探一次。
+  Future<bool> hostAcceptsStreamVideos() async =>
+      (await _liveLibraryCapabilities())[kLiveLibraryStreamVideosCapability] ==
+      true;
+
+  /// 在对端 host 视频库注册一本流媒体书（只有标题 + URL + 重开规格，不传字节）。
+  ///
+  /// [presentSinceAt] 是本机开始拥有这一行的时刻，host 的删除墓碑闸门据此判断这份
+  /// 是删除之前就有的（409 → [StreamVideoPushResult.vetoed]），还是删后重新加入的。
+  /// 其余非 2xx 照常抛。调用方须先确认 [hostAcceptsStreamVideos]。
+  Future<StreamVideoPushResult> putRemoteStreamVideo(
+    String id,
+    StreamVideoRegistration entry, {
+    int? presentSinceAt,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/'
+          '$kStreamVideoEntryPathSuffix',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
+    req.add(utf8.encode(jsonEncode(entry.toJson())));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 409) {
+      await res.drain<void>();
+      return StreamVideoPushResult.vetoed;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'PUT /api/library/videos/$id/$kStreamVideoEntryPathSuffix',
+    );
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map && decoded['created'] == true
+        ? StreamVideoPushResult.created
+        : StreamVideoPushResult.existed;
   }
 
   /// 通知对端 host 删除 bookUid 为 [id] 的视频（远端视频卡长按删除 / 「从所有设备

@@ -67,6 +67,15 @@ mixin _LocalLibraryHostVideos
         .allVideoTagAddedAtByName();
     final Map<String, Map<String, int>> tagTombByUid = await _db
         .allTagTombstonesByName(MediaKind.video);
+    // 生效分栏（BUG-5084）：与本机合集详情页 / 剧集面板同一入口
+    // （[loadCollectionSections]：手动分栏 → 手动季集指定 → 文件名派生），派生键用
+    // host 的完整路径（季号可能只写在父目录上，client 只拿得到 basename）。两次批量
+    // 查询，与清单行数无关。
+    final Map<String, CollectionSectionResolution> sections =
+        await loadCollectionSections(_db, <String, String>{
+          for (final VideoBookRow row in rows)
+            row.bookUid: collectionGroupKeyForFilename(row.videoPath),
+        });
     // 文件系统事实（体积 / sidecar 字幕 / 封面存在性）一律走 async IO 预取：host 跑在
     // app 主 isolate 上，同步 stat 一个在网络盘（rclone / SMB / WinFsp 挂载）上的视频，
     // 挂载端目录缓存过期时要逐级 PROPFIND 重列目录，单次数秒——整条主 isolate（全部
@@ -96,6 +105,7 @@ mixin _LocalLibraryHostVideos
           prefs: allPrefs,
           tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
           tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
+          sectionKey: sections[row.bookUid]?.groupKey,
         ),
       );
     }
@@ -189,6 +199,7 @@ mixin _LocalLibraryHostVideos
     List<String> tags = const <String>[],
     RemoteCollectionMembership? collection,
     MediaCollectionRow? collectionRow,
+    String? sectionKey,
   }) {
     final int? sizeBytes = fileFacts.sizeBytes;
     final bool hasSubtitle = fileFacts.hasSubtitle;
@@ -330,7 +341,17 @@ mixin _LocalLibraryHostVideos
       // 给远端占位造假 importedAt，远端条目结构上进不了「最近添加」。
       importedAt: row.importedAt,
       fileName: fileName,
+      sectionKey: sectionKey,
       peerPlayable: _hostServesVideoBytes(row.videoPath),
+      // 流媒体书带上重开信息，对端据此落同 uid 的行（拍板台 Z2OhxAjKVv）。
+      stream:
+          isSyncableStreamVideo(bookUid: row.bookUid, videoPath: row.videoPath)
+          ? RemoteStreamVideoEntry(
+              url: row.videoPath.trim(),
+              streamSpecJson: row.streamSpecJson,
+              addedAt: row.localAddedAt ?? row.importedAt,
+            )
+          : null,
     );
   }
 
@@ -1145,6 +1166,51 @@ mixin _LocalLibraryHostVideos
         }
       }
     }
+  }
+
+  /// 收下对端注册的流媒体书（[StreamVideoSyncHost]，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 只建行、不碰任何视频字节：URL + 重开规格 + 标题。host 已有同 uid 的行一律不动
+  /// （host 的标题 / 封面 / 进度是它自己的真相）。删除墓碑闸门在端点（409），这里
+  /// 不重复；新建的行经 `upsertVideoBook` 清掉同 uid 的旧墓碑——端点已确认这是删除
+  /// 之后的重新加入。YouTube 行随后尽力补一张缩略图封面，失败只是没封面。
+  @override
+  Future<bool> registerStreamVideo(
+    String id,
+    StreamVideoRegistration entry,
+  ) async {
+    if (!isSyncableStreamVideo(bookUid: id, videoPath: entry.url)) {
+      throw ArgumentError.value(id, 'id', 'not a syncable stream video');
+    }
+    bool created = false;
+    await _runExclusive(() async {
+      if (await _db.getVideoBookByBookUid(id) != null) return;
+      await _db.upsertVideoBook(
+        streamVideoRowCompanion(
+          bookUid: id,
+          title: entry.title,
+          url: entry.url,
+          streamSpecJson: entry.streamSpecJson,
+          importedAt: entry.importedAt,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      created = true;
+    });
+    if (created) {
+      try {
+        await backfillStreamVideoThumbnailCover(
+          _db,
+          bookUid: id,
+          url: entry.url,
+          coversDir: _videoCoversDirectory ?? await VideoStorage.coversDir(),
+        );
+      } catch (error, stack) {
+        // best-effort：封面失败不影响注册成功。
+        engineLog.log('sync.streamVideo.cover', error, stack);
+      }
+    }
+    return created;
   }
 
   /// 接收 client 上传的视频外挂字幕并落到视频同目录（BUG-964，client→host live push）。

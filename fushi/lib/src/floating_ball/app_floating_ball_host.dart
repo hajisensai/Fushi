@@ -38,6 +38,9 @@ import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler, screenOcrOverlayMiningHandler;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -160,6 +163,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'notification': t.floating_ball_notification,
   'ocr_notification': t.floating_ball_ocr_notification,
   'ocr_hint': t.floating_ball_ocr_pick_hint,
+  // 选取层顶部提示条尾的 ✕ 关闭（反馈 Z0JMfFZXQ9，原生 ScreenOcrService.LABEL_CLOSE）。
+  'ocr_close': t.floating_ball_ocr_close,
   'ocr_no_text': t.floating_ball_ocr_empty,
   'ocr_model_unavailable': t.floating_ball_ocr_model_unavailable,
   'ocr_failed': t.floating_ball_ocr_failed,
@@ -292,12 +297,14 @@ class DesktopSystemBallActionTarget {
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
     OverlayMiningHandler? miningHandler,
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) => GlobalLookupController.instance.lookupText(
     text,
     sentence: sentence,
     anchorScreenRect: anchorScreenRect,
     physicalPlacement: physicalPlacement,
     miningHandler: miningHandler,
+    sentenceAudio: sentenceAudio,
   );
 
   /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
@@ -994,6 +1001,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             physicalPlacement: anchor == null
                 ? null
                 : GlobalLookupPhysicalPlacement(anchorScreenRect: anchor),
+            // 应用外的剪贴板文字：制卡带上查词前其他应用播的最后一句语音。
+            sentenceAudio: CrossAppAudioCapture.instance.snapshot(),
           );
         } else {
           // 全局查词没开：退回主窗里的查词弹窗。
@@ -1408,6 +1417,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             hit: hit.line,
           ),
           sentenceContext: lookup.sentence,
+          // 拍板 design-cross-app-audio-desktop：点字这一刻钉住游戏刚播的声音。
+          sentenceAudio: CrossAppAudioCapture.instance.snapshot(),
         ),
       ),
     );

@@ -401,6 +401,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
+  // String（JSON：客户区归一化 left/top/width/height）：OCR 游戏模式上次框选的台词区域
+  // （gal_ocr_line_source.dart 的 GalOcrRegion）。
+  'gal_ocr_region',
   'galgame_library',
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
@@ -469,9 +472,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',
-  // bool：库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示已处理
-  // （弹过，或判定本安装不需要弹）。描述本安装的状态，与 first_time_setup 同族、
-  // 不随 Profile 走（library_layout_default_notice.dart）。
+  // bool：已删除的「库页现在默认封面网格」一次性提示（拍板台 pr3454）的已处理标记。
+  // 该提示与「选一种库页布局」选择框（G1）重叠、说法相反，2026-11-21 按 PR #3756
+  // 拍板删除（BUG-5060）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'library_layout_default_notice_handled',
   // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
   // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个
@@ -588,6 +591,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',
+  // bool（默认 false）：电脑端（Windows）「缓存其他应用的声音」——开着时启动即常驻录
+  // 系统混音环，应用外查词制卡带查词前最后一句语音（拍板 design-cross-app-audio-desktop）。
+  // Android 不用它（每次都要重新同意屏幕共享）。设备本地。
+  'mining_app_audio_capture_desktop',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
@@ -672,8 +679,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_backdrop_animate',
   // double（默认 1.0，0.5–2.0）：歌词页流体背景饱和度倍数。
   'music_lyrics_backdrop_saturation',
-  // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
-  // （MusicLyricsBackdropStyle.prefValue）。
+  // String（默认 'pixi'，只在手选时落库；无行 = 跟出厂默认）：歌词页流体背景算法
+  // pixi / mesh / classic（MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
   // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
   // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。
@@ -728,6 +735,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
   'nav_rail_expanded',
+  // bool（默认 true）：GitHub 下载直连失败后是否走第三方加速镜像
+  // （kGitHubMirrorPrefixes）。关掉只剩直连与 jsDelivr。
+  'network_github_mirrors_enabled',
   // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
   'network_proxy_mode',
   // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过
@@ -1039,6 +1049,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_asbplayer_config',
   'video_auto_play_next',
   'video_auto_scrape',
+  // bool（默认 false，拍板台 42UUu_kcwD）：手机 / 平板切出 app 或锁屏后视频的声音
+  // 继续播（画面轨 `vid=no` 挂起、回前台恢复）；关着 = 进后台即暂停、回来续播
+  // （BUG-2544）。桌面最小化本来就不暂停，不读这个键。
+  'video_background_play',
   'video_black_flicker_notice_suppressed',
   'video_control_customization',
   'video_custom_action_bindings',

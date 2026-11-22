@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
 import 'package:fushi_core/fushi_core.dart';
@@ -33,8 +34,35 @@ class SourceScrapeIssue {
     this.path,
     this.providerUnavailable = false,
     this.workKey,
-  });
+  }) : scopeSourceId = null;
 
+  /// 整个刮削范围的问题（不属于某一部作品）：范围不可刮、资料源整批不可用、
+  /// 整批异常。
+  ///
+  /// 范围用结构化的 [scopeSourceId] 标识，界面按它映射成本地化名字
+  /// （`videoScrapeIssueTitle`）。engine 没有 i18n：[workTitle] 只放来源行的原始
+  /// 名字，无来源范围（[sourcelessLocalVideoScrapeScope]）的 label 是空串，不能
+  /// 直接拿来当标题。
+  SourceScrapeIssue.scope(
+    SourceLibraryRow scope, {
+    required this.message,
+    this.providerUnavailable = false,
+  }) : workTitle = scope.label,
+       scopeSourceId = scope.id,
+       path = null,
+       workKey = null;
+
+  /// 解码 run 摘要用：字段原样还原。
+  const SourceScrapeIssue._decoded({
+    required this.workTitle,
+    required this.message,
+    required this.path,
+    required this.scopeSourceId,
+  }) : providerUnavailable = false,
+       workKey = null;
+
+  /// 作品名；范围级问题（[isScopeLevel]）是来源行的原始 label（无来源范围为空串）。
+  /// 界面显示一律经 `videoScrapeIssueTitle`，不要直接拿它当标题。
   final String workTitle;
   final String message;
   final String? path;
@@ -48,9 +76,23 @@ class SourceScrapeIssue {
   /// 只在内存里传递，不进 run 摘要 JSON。
   final bool providerUnavailable;
 
+  /// 范围级问题所属范围的来源 id（[SourceLibraryRow.id]；无来源范围是
+  /// [kSourcelessLocalVideoScrapeScopeId]）。作品级问题为 null。
+  final int? scopeSourceId;
+
+  /// 是否是整个范围的问题（见 [SourceScrapeIssue.scope]），不对应任何一部作品：
+  /// 不能拿 [workTitle] 去手动指定 / 重刮作品。
+  bool get isScopeLevel => scopeSourceId != null;
+
   @override
-  String toString() =>
-      'SourceScrapeIssue($workTitle: $message${path == null ? '' : ' @ $path'})';
+  String toString() {
+    final String subject = switch (scopeSourceId) {
+      null => workTitle,
+      final int id => 'scope $id${workTitle.isEmpty ? '' : ' $workTitle'}',
+    };
+    return 'SourceScrapeIssue($subject: $message'
+        '${path == null ? '' : ' @ $path'})';
+  }
 }
 
 class SourceScrapeReport {
@@ -134,6 +176,7 @@ List<Map<String, Object?>> _encodeIssues(List<SourceScrapeIssue> issues) =>
           'work': issue.workTitle,
           'message': issue.message,
           if (issue.path != null) 'path': issue.path,
+          if (issue.scopeSourceId != null) 'scope': issue.scopeSourceId,
         },
     ];
 
@@ -178,10 +221,14 @@ List<SourceScrapeIssue> _decodeIssues(Object? raw) => <SourceScrapeIssue>[
   if (raw is List<Object?>)
     for (final Object? entry in raw)
       if (entry is Map<String, Object?>)
-        SourceScrapeIssue(
+        SourceScrapeIssue._decoded(
           workTitle: entry['work'] as String? ?? '',
           message: entry['message'] as String? ?? '',
           path: entry['path'] as String?,
+          scopeSourceId: switch (entry['scope']) {
+            final int id => id,
+            _ => null,
+          },
         ),
 ];
 
@@ -552,10 +599,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     bool interactive = false,
     bool allowProtectedOverwrite = false,
   }) => _start(
-    sources.where(
-      (SourceLibraryRow source) =>
-          source.mediaKind == 'video' && source.transport == 'local',
-    ),
+    sources.where(isVideoScrapeScope),
     interactive: interactive,
     allowProtectedOverwrite: allowProtectedOverwrite,
   );
@@ -566,10 +610,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
   Future<SourceScrapeReport> scrapeWorkSubsets(
     Map<SourceLibraryRow, List<VideoSourceScrapeWork>> worksBySource,
   ) => _start(
-    worksBySource.keys.where(
-      (SourceLibraryRow source) =>
-          source.mediaKind == 'video' && source.transport == 'local',
-    ),
+    worksBySource.keys.where(isVideoScrapeScope),
     interactive: false,
     allowProtectedOverwrite: false,
     plannedWorksBySource: <int, List<VideoSourceScrapeWork>>{

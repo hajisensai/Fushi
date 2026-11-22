@@ -30,6 +30,7 @@ void main() {
         MangaControlItem.ocrVolume,
         MangaControlItem.statistics,
         MangaControlItem.studyTimer,
+        MangaControlItem.textStrip,
         MangaControlItem.backToStart,
         MangaControlItem.ocrRerun,
         MangaControlItem.hideChrome,
@@ -331,12 +332,13 @@ void main() {
         );
         final MangaChromePlan now = planMangaChrome(
           width: width,
-          // 旧版没有书签 / 朗读 / 统计 / 计时键，Material 下识别框是 FAB。
+          // 旧版没有书签 / 朗读 / 统计 / 计时 / 台词文字条键，Material 下识别框是 FAB。
           groups: layoutGroups(<MangaControlItem>{
             MangaControlItem.bookmarks,
             MangaControlItem.readAloud,
             MangaControlItem.statistics,
             MangaControlItem.studyTimer,
+            MangaControlItem.textStrip,
             MangaControlItem.ocrBoxes,
           }),
           hasFab: true,

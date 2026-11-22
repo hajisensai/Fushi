@@ -633,16 +633,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   /// 桌面 Ctrl+V（macOS Cmd+V）：不论焦点在不在输入框都看一眼剪贴板，有图就收。
   /// 不吃掉按键——输入框里照常粘贴文字（剪贴板里只有图时那一步什么也不贴）。
   bool _onKey(KeyEvent event) {
-    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
-      return false;
-    }
-    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
-    final bool primary = Platform.isMacOS
-        ? keyboard.isMetaPressed
-        : keyboard.isControlPressed;
-    if (!primary || keyboard.isAltPressed || keyboard.isShiftPressed) {
-      return false;
-    }
+    if (!isFeedbackPasteShortcut(event)) return false;
     // 只认最上层：提交页上面又压了别的页面 / 弹窗时不抢。
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
     unawaited(_pasteFromClipboard(explicit: false));

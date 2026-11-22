@@ -10,6 +10,8 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart'
+    show SectionPopScope;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show FushiMastheadTitle;
@@ -427,6 +429,34 @@ void main() {
 
     expect(importButton(tester).selected, isFalse, reason: '已离开导入页');
     expect(onstage(tester, '书架'), isTrue);
+  });
+
+  // 反馈 Ph8RkXJOWv：进了导入页不知道怎么退出。导入页是壳内视图，系统返回键要先
+  // 退出导入页、回到进来前的视图，而不是弹掉首页路由退出 App。
+  testWidgets('导入页按系统返回键回到进来前的视图，回去后返回键不再被壳拦', (WidgetTester tester) async {
+    await tester.pumpWidget(harness(importViews()));
+    await tester.pumpAndSettle();
+    await selectVia(tester, MediaLibraryViewKind.extensions);
+
+    PopScope<Object?> shellPopScope() => tester.widget<PopScope<Object?>>(
+      find.descendant(
+        of: find.byType(SectionPopScope),
+        matching: find.byType(PopScope<Object?>),
+      ),
+    );
+    expect(shellPopScope().canPop, isTrue, reason: '不在导入页时不拦返回');
+
+    await tapImport(tester);
+    expect(onstage(tester, '导入'), isTrue);
+    expect(shellPopScope().canPop, isFalse, reason: '导入页拦下返回');
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(importButton(tester).selected, isFalse, reason: '返回键退出了导入页');
+    expect(onstage(tester, '扩展'), isTrue, reason: '回到进导入页之前的「扩展」');
+    expect(onstage(tester, '导入'), isFalse);
+    expect(shellPopScope().canPop, isTrue, reason: '回去后返回键照常交给路由');
   });
 
   testWidgets('横滑顺序 = 两级页签视觉序：书架 → 媒体服务器 → 发现 → 来源 → 扩展，跨组接着滑', (

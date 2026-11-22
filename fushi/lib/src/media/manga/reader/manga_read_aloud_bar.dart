@@ -1,23 +1,27 @@
-/// 漫画朗读时的浮动播放卡：一张卡片收齐「谁在说 / 说什么 / 播到哪 / 怎么控」。
+/// 漫画朗读 / 有声播放条：播放期间**替换底部工具栏那一行**（与小说阅读器的
+/// `AudiobookPlayBar` 同一思路），画面上不再有单独的浮动卡片。
 ///
 /// ```
-/// ┌──────────────────────────────────────────────┐
-/// │ ● 長崎 そよ                       第 12 页  ✕ │  说话人 · 页码 · 停止
-/// │ あ、ううん、お母さんがね一緒に晩御飯食べようって  │  台词（两行）
-/// │ ━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │  进度（仅成品音频）
-/// │ 2:29                                   47:21  │
-/// │ ⟲          ⏮    ( ▶ )    ⏭          1.0×   │  跟随 / 声音 · 上下句 · 倍速
-/// └──────────────────────────────────────────────┘
+/// ╭──────────────────────────────────────────────────────────────╮
+/// │ ⏮ (⏯) ⏭  ● 長崎 そよ        [底栏原有按钮…]  │ ⟳  ⏱1.0×  ⏹ │
+/// ╰━━━━━━━━●──────────────────────────────────────────────────────╯
+///   传输三联键 · 说话人 / 状态      中间横向滚动      跟随(声音) 倍速 停止
 /// ```
 ///
-/// 两种音源共用同一张卡（[_MangaPlayerCard]）：现场合成用 [MangaReadAloudBar]（左下角
-/// 是「声音」，没有进度）；成品音频用 [MangaAudioPlaybackBar]（左下角是「跟随翻页」，
-/// 多进度与说话人）。点倍速胶囊在卡内展开倍速条。
+/// 用户 2026-11-21：「和小说一样，播放条替换底栏，不要把画面挤上去」——播放条坐在
+/// 底部 chrome 原工具栏的位置、同高（[kMangaChromeToolbarHeight]），所以固定态正文
+/// 让位高度不变、悬浮态照旧浮在页图上并跟着底栏一起收起；不显示台词（页面上的
+/// 高亮框就是当前句），进度是条底边一条细线（成品音频才有，可点 / 可拖）。倍速
+/// 胶囊点开时在条上方弹出倍速条。
 ///
-/// 卡片画在 [MangaChromeSurface] 上（MD3 / Apple 两套材质），按钮走 [FushiIconButton]
-/// （tooltip / Semantics / 命中区齐全），主按钮与倍速胶囊带 [FushiPressScale]，整卡
-/// [FushiHoverLift]，展开收起走 [FushiAnimatedSize] + [FushiMotion]。按钮提示括注
-/// 键盘快捷键（[MangaPlaybackKeyHints]，桌面才有）。显隐由阅读器跟着界面一起管。
+/// 两种音源共用 [_MangaPlayBar]：现场合成用 [MangaReadAloudBar]（右侧是「声音」，
+/// 没有进度）；成品音频用 [MangaAudioPlaybackBar]（右侧是「跟随翻页」，多进度线与
+/// 说话人）。阅读器把底栏原有按钮作为 [middle] 传进来，放不下时横向滚动。
+///
+/// 条画在 [MangaChromeSurface] 上（MD3 / Apple 两套材质），按钮走 [FushiIconButton]
+/// （tooltip / Semantics / 命中区齐全），主按钮与倍速胶囊带 [FushiPressScale]，整条
+/// [FushiHoverLift]，状态文字切换走 [AnimatedSwitcher] + [FushiMotion]。按钮提示括注
+/// 键盘快捷键（[MangaPlaybackKeyHints]，桌面才有）。
 library;
 
 import 'dart:async';
@@ -34,14 +38,14 @@ import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 播放控制的键盘快捷键显示名（`K` / `J` / `L`），由阅读器按快捷键注册表填；触屏
 /// 平台与没绑键时为 null（提示里不括注）。
@@ -70,16 +74,15 @@ String mangaReadAloudTextProblemText(MangaPageTextUnavailableReason reason) =>
         t.manga_read_aloud_ocr_unavailable,
     };
 
-/// 播放条状态行：正在读的句子原文，或等待 / 暂停 / 失败 / 读完的说明。
-String mangaReadAloudStatusText(MangaReadAloudController c) {
-  final String? sentence = c.currentUtterance?.displayText;
+/// 现场合成播放条的状态读数：等待 / 合成 / 暂停 / 失败 / 读完的说明；正常朗读中
+/// 为 null（不显示台词，页面上的高亮框就是当前句）。
+String? mangaReadAloudNoticeText(MangaReadAloudController c) {
   return switch (c.state) {
-    MangaReadAloudState.idle => '',
+    MangaReadAloudState.idle || MangaReadAloudState.playing => null,
     MangaReadAloudState.preparingText => t.manga_read_aloud_waiting_ocr,
-    MangaReadAloudState.synthesizing => sentence ?? t.audiobook_tts_preparing,
-    MangaReadAloudState.playing => sentence ?? '',
-    MangaReadAloudState.paused =>
-      sentence == null ? t.pause : '${t.pause} · $sentence',
+    MangaReadAloudState.synthesizing =>
+      c.currentUtterance == null ? t.audiobook_tts_preparing : null,
+    MangaReadAloudState.paused => t.pause,
     MangaReadAloudState.finished =>
       c.finish == MangaReadAloudFinish.noText
           ? t.manga_read_aloud_no_text
@@ -93,13 +96,14 @@ String mangaReadAloudStatusText(MangaReadAloudController c) {
   };
 }
 
-/// 现场合成的播放卡：声音 / 上一句 / 暂停·继续 / 下一句 / 倍速，右上角停止。
-class MangaReadAloudBar extends StatefulWidget {
+/// 现场合成的播放条：上一句 / 暂停·继续 / 下一句 + 状态，右侧声音 / 倍速 / 停止。
+class MangaReadAloudBar extends StatelessWidget {
   const MangaReadAloudBar({
     super.key,
     required this.controller,
     required this.onVoice,
     this.keyHints = MangaPlaybackKeyHints.none,
+    this.middle,
   });
 
   final MangaReadAloudController controller;
@@ -109,24 +113,20 @@ class MangaReadAloudBar extends StatefulWidget {
 
   final MangaPlaybackKeyHints keyHints;
 
-  @override
-  State<MangaReadAloudBar> createState() => _MangaReadAloudBarState();
-}
-
-class _MangaReadAloudBarState extends State<MangaReadAloudBar> {
-  bool _speedOpen = false;
+  /// 底栏原有按钮（阅读器传入），夹在状态与右侧控件之间，放不下横向滚动。
+  final Widget? middle;
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: controller,
       builder: (BuildContext context, Widget? _) => _build(context),
     );
   }
 
   Widget _build(BuildContext context) {
-    final MangaReadAloudController c = widget.controller;
-    final MangaPlaybackKeyHints keys = widget.keyHints;
+    final MangaReadAloudController c = controller;
+    final MangaPlaybackKeyHints keys = keyHints;
     final MangaReadAloudState state = c.state;
     final bool running =
         state == MangaReadAloudState.playing ||
@@ -155,18 +155,15 @@ class _MangaReadAloudBarState extends State<MangaReadAloudBar> {
             onPressed: state == MangaReadAloudState.paused ? c.resume : null,
           );
 
-    return _MangaPlayerCard(
-      status: mangaReadAloudStatusText(c),
-      warning: failed,
-      closeKey: const ValueKey<String>('manga_read_aloud_stop'),
-      onClose: c.stop,
-      leading: FushiIconButton(
-        key: const ValueKey<String>('manga_read_aloud_voice'),
-        icon: FushiIcons.voice,
-        tooltip: t.audiobook_tts_voices_section,
-        padTouchTarget: true,
-        onTap: widget.onVoice,
-      ),
+    final String? notice = mangaReadAloudNoticeText(c);
+    return _MangaPlayBar(
+      label: notice == null
+          ? null
+          : _BarLabel(
+              key: const ValueKey<String>('manga_read_aloud_status'),
+              text: notice,
+              tone: failed ? _LabelTone.warning : _LabelTone.secondary,
+            ),
       previous: FushiIconButton(
         key: const ValueKey<String>('manga_read_aloud_previous'),
         icon: FushiIcons.skipPrevious,
@@ -184,23 +181,21 @@ class _MangaReadAloudBarState extends State<MangaReadAloudBar> {
         enabled: c.isActive,
         onTap: c.next,
       ),
+      middle: middle,
+      trailing: FushiIconButton(
+        key: const ValueKey<String>('manga_read_aloud_voice'),
+        icon: FushiIcons.voice,
+        tooltip: t.audiobook_tts_voices_section,
+        padTouchTarget: true,
+        onTap: onVoice,
+      ),
       speed: c.speed,
       speedKey: const ValueKey<String>('manga_read_aloud_speed'),
-      speedOpen: _speedOpen,
-      onToggleSpeed: () => setState(() => _speedOpen = !_speedOpen),
       onSpeedChanged: (double v) => c.setSpeed(v),
+      stopKey: const ValueKey<String>('manga_read_aloud_stop'),
+      onStop: c.stop,
     );
   }
-}
-
-/// 成品音频状态行：正在读的句子原文（没配上音的句子标出来），静音段显示页码。
-String mangaAudioStatusText(MangaAudioPlaybackDriver d) {
-  final MangaRenderedLine? line = d.currentLine;
-  if (line == null) return t.manga_audio_status_page(page: d.currentPage + 1);
-  final String text = line.text.isEmpty
-      ? t.manga_audio_status_page(page: line.page + 1)
-      : line.text;
-  return line.placeholder ? '${t.manga_audio_unvoiced} · $text' : text;
 }
 
 /// 说话人显示名：旁白 / 未知用现有文案，其余是角色名本身；静音段没有说话人。
@@ -213,14 +208,15 @@ String? mangaAudioSpeakerLabel(MangaRenderedLine? line) {
   };
 }
 
-/// 成品音频播放卡：说话人 + 台词 + 进度，跟随翻页 / 上一句 / 播放·暂停 / 下一句 / 倍速，
-/// 右上角停止。
+/// 成品音频播放条：上一句 / 播放·暂停 / 下一句 + 说话人，右侧跟随翻页 / 倍速 /
+/// 停止，底边进度线。
 class MangaAudioPlaybackBar extends StatefulWidget {
   const MangaAudioPlaybackBar({
     super.key,
     required this.driver,
     required this.onStop,
     this.keyHints = MangaPlaybackKeyHints.none,
+    this.middle,
   });
 
   final MangaAudioPlaybackDriver driver;
@@ -230,17 +226,18 @@ class MangaAudioPlaybackBar extends StatefulWidget {
 
   final MangaPlaybackKeyHints keyHints;
 
+  /// 底栏原有按钮（阅读器传入），夹在说话人与右侧控件之间，放不下横向滚动。
+  final Widget? middle;
+
   @override
   State<MangaAudioPlaybackBar> createState() => _MangaAudioPlaybackBarState();
 }
 
 class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
-  bool _speedOpen = false;
-
   /// 拖动中的进度（松手才 seek）。
   double? _dragFraction;
 
-  /// 播放中位置流不是每个 tick 都通知（控制器只在换句 / 换状态时通知）：进度条自己
+  /// 播放中位置流不是每个 tick 都通知（控制器只在换句 / 换状态时通知）：进度线自己
   /// 按固定节拍刷新。
   Timer? _ticker;
 
@@ -277,66 +274,41 @@ class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
   Widget _build(BuildContext context) {
     final MangaAudioPlaybackDriver d = widget.driver;
     final MangaPlaybackKeyHints keys = widget.keyHints;
-    final MangaChromePalette colors = MangaChromePalette.of(context);
-    final ThemeData theme = Theme.of(context);
     final int total = d.totalMs;
     final double live = total <= 0
         ? 0
         : (d.positionMs / total).clamp(0.0, 1.0).toDouble();
-    final double fraction = _dragFraction ?? live;
-    final TextStyle? clockStyle = theme.textTheme.labelSmall?.copyWith(
-      color: colors.secondaryForeground,
-      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-    );
+    final double? drag = _dragFraction;
+    final double fraction = drag ?? live;
     final MangaRenderedLine? line = d.currentLine;
+    final String? speaker = mangaAudioSpeakerLabel(line);
+    final bool unvoiced = line?.placeholder ?? false;
 
-    return _MangaPlayerCard(
-      speaker: mangaAudioSpeakerLabel(line),
-      pageLabel: t.manga_audio_status_page(page: d.currentPage + 1),
-      status: mangaAudioStatusText(d),
-      warning: line?.placeholder ?? false,
-      closeKey: const ValueKey<String>('manga_audio_stop'),
-      onClose: widget.onStop,
-      progress: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Semantics(
-            label: t.manga_audio_progress,
-            child: FushiSlider(
-              key: const ValueKey<String>('manga_audio_progress'),
-              value: fraction,
-              onChanged: total <= 0
-                  ? null
-                  : (double v) => setState(() => _dragFraction = v),
-              onChangeEnd: total <= 0
-                  ? null
-                  : (double v) {
-                      setState(() => _dragFraction = null);
-                      unawaited(d.seekTo((v * total).round()));
-                    },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Row(
-              children: <Widget>[
-                Text(_clock((fraction * total).round()), style: clockStyle),
-                const Spacer(),
-                Text(_clock(total), style: clockStyle),
-              ],
-            ),
-          ),
-        ],
-      ),
-      leading: FushiIconButton(
-        key: const ValueKey<String>('manga_audio_follow_page'),
-        icon: FushiIcons.sync,
-        tooltip: t.manga_audio_follow_page,
-        padTouchTarget: true,
-        selected: d.followPage,
-        onTap: () => d.setFollowPage(!d.followPage),
-      ),
+    // 读数优先级：拖动中显示拖到的时间；否则说话人（没配上音的句子标告警色并在
+    // 提示里说明）；静音段没有说话人时显示页码。
+    final _BarLabel label = drag != null
+        ? _BarLabel(
+            key: const ValueKey<String>('manga_audio_scrub_clock'),
+            text: '${_clock((drag * total).round())} / ${_clock(total)}',
+            tone: _LabelTone.secondary,
+            tabular: true,
+          )
+        : speaker != null
+        ? _BarLabel(
+            key: const ValueKey<String>('manga_read_aloud_speaker'),
+            text: speaker,
+            tone: unvoiced ? _LabelTone.warning : _LabelTone.accent,
+            dot: true,
+            tooltip: unvoiced ? '${t.manga_audio_unvoiced} · $speaker' : null,
+          )
+        : _BarLabel(
+            key: const ValueKey<String>('manga_audio_page_label'),
+            text: t.manga_audio_status_page(page: d.currentPage + 1),
+            tone: _LabelTone.secondary,
+          );
+
+    return _MangaPlayBar(
+      label: label,
       previous: FushiIconButton(
         key: const ValueKey<String>('manga_audio_previous'),
         icon: FushiIcons.skipPrevious,
@@ -364,16 +336,37 @@ class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
         padTouchTarget: true,
         onTap: () => unawaited(d.next()),
       ),
+      middle: widget.middle,
+      trailing: FushiIconButton(
+        key: const ValueKey<String>('manga_audio_follow_page'),
+        icon: FushiIcons.sync,
+        tooltip: t.manga_audio_follow_page,
+        padTouchTarget: true,
+        selected: d.followPage,
+        onTap: () => d.setFollowPage(!d.followPage),
+      ),
       speed: d.speed,
       speedKey: const ValueKey<String>('manga_audio_speed'),
-      speedOpen: _speedOpen,
-      onToggleSpeed: () => setState(() => _speedOpen = !_speedOpen),
       onSpeedChanged: (double v) => d.setSpeed(v),
+      stopKey: const ValueKey<String>('manga_audio_stop'),
+      onStop: widget.onStop,
+      progress: _ScrubLine(
+        key: const ValueKey<String>('manga_audio_progress'),
+        fraction: fraction,
+        enabled: total > 0,
+        valueLabel: (double v) =>
+            '${_clock((v * total).round())} / ${_clock(total)}',
+        onDrag: (double v) => setState(() => _dragFraction = v),
+        onCommit: (double v) {
+          setState(() => _dragFraction = null);
+          unawaited(d.seekTo((v * total).round()));
+        },
+      ),
     );
   }
 }
 
-/// 中间的大号主按钮（播放 / 暂停 / 重试）。
+/// 主按钮（播放 / 暂停 / 重试）的描述。
 class _PrimaryAction {
   const _PrimaryAction({
     required this.key,
@@ -388,188 +381,230 @@ class _PrimaryAction {
   final VoidCallback? onPressed;
 }
 
-/// 播放卡本体（两种音源共用）。
-class _MangaPlayerCard extends StatelessWidget {
-  const _MangaPlayerCard({
-    required this.status,
-    required this.warning,
-    required this.closeKey,
-    required this.onClose,
-    required this.leading,
-    required this.previous,
-    required this.primary,
-    required this.next,
-    required this.speed,
-    required this.speedKey,
-    required this.speedOpen,
-    required this.onToggleSpeed,
-    required this.onSpeedChanged,
-    this.speaker,
-    this.pageLabel,
-    this.progress,
+/// 条左侧读数的配色档。
+enum _LabelTone { accent, secondary, warning }
+
+/// 条左侧读数：说话人 / 状态 / 拖动时间，单行省略，完整文字进 tooltip。
+class _BarLabel extends StatelessWidget {
+  const _BarLabel({
+    required super.key,
+    required this.text,
+    required this.tone,
+    this.dot = false,
+    this.tabular = false,
+    this.tooltip,
   });
 
-  final String? speaker;
-  final String? pageLabel;
-  final String status;
-  final bool warning;
-  final Key closeKey;
-  final VoidCallback onClose;
-  final Widget? progress;
-  final Widget leading;
-  final Widget previous;
-  final _PrimaryAction primary;
-  final Widget next;
-  final double speed;
-  final Key speedKey;
-  final bool speedOpen;
-  final VoidCallback onToggleSpeed;
-  final ValueChanged<double> onSpeedChanged;
+  final String text;
+  final _LabelTone tone;
+  final bool dot;
+  final bool tabular;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
     final MangaChromePalette colors = MangaChromePalette.of(context);
-    final ThemeData theme = Theme.of(context);
-    final Duration motion = fushiMotionDuration(context, FushiMotion.short);
-    final String? speakerName = speaker;
-    final String? page = pageLabel;
-    final Widget? progressRow = progress;
-
-    final Widget header = Row(
-      children: <Widget>[
-        if (speakerName != null) ...<Widget>[
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: colors.accent,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              speakerName,
-              key: const ValueKey<String>('manga_read_aloud_speaker'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: colors.accent,
-                fontWeight: FontWeight.w600,
+    final Color color = switch (tone) {
+      _LabelTone.accent => colors.accent,
+      _LabelTone.secondary => colors.secondaryForeground,
+      _LabelTone.warning => colors.warning,
+    };
+    return FushiTooltip(
+      message: tooltip ?? text,
+      child: Semantics(
+        liveRegion: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (dot) ...<Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-            ),
-          ),
-        ],
-        const Spacer(),
-        if (page != null)
-          Text(
-            page,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: colors.secondaryForeground,
-            ),
-          ),
-        FushiIconButton(
-          key: closeKey,
-          icon: FushiIcons.close,
-          size: 20,
-          tooltip: t.manga_read_aloud_stop,
-          padTouchTarget: true,
-          onTap: onClose,
-        ),
-      ],
-    );
-
-    final Widget statusText = Semantics(
-      liveRegion: true,
-      child: Text(
-        status,
-        key: const ValueKey<String>('manga_read_aloud_status'),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.titleMedium?.copyWith(
-          color: warning ? colors.warning : colors.foreground,
-          height: 1.35,
-        ),
-      ),
-    );
-
-    final Widget controls = Row(
-      children: <Widget>[
-        Expanded(
-          child: Align(alignment: Alignment.centerLeft, child: leading),
-        ),
-        previous,
-        const SizedBox(width: 12),
-        _PrimaryButton(action: primary),
-        const SizedBox(width: 12),
-        next,
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: _SpeedChip(
-              key: speedKey,
-              speed: speed,
-              open: speedOpen,
-              onPressed: onToggleSpeed,
-            ),
-          ),
-        ),
-      ],
-    );
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: kMangaChromeBottomMaxWidth),
-      child: FushiHoverLift(
-        builder: (BuildContext context, bool _) => MangaChromeSurface(
-          radius: 28,
-          child: KeyedSubtree(
-            key: const ValueKey<String>('manga_read_aloud_bar'),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 8, 10),
-              child: FushiAnimatedSize(
-                duration: motion,
-                curve: FushiMotion.standard,
-                alignment: Alignment.bottomCenter,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    header,
-                    if (status.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12),
-                        child: statusText,
-                      ),
-                    if (progressRow != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6, right: 12),
-                        child: progressRow,
-                      ),
-                    const SizedBox(height: 4),
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: controls,
-                    ),
-                    if (speedOpen)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, right: 12),
-                        child: _SpeedRow(
-                          speed: speed,
-                          onChanged: onSpeedChanged,
-                        ),
-                      ),
-                  ],
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: color,
+                  fontWeight: tone == _LabelTone.accent
+                      ? FontWeight.w600
+                      : null,
+                  fontFeatures: tabular
+                      ? const <FontFeature>[FontFeature.tabularFigures()]
+                      : null,
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// 大号主按钮：强调色实心圆（56dp），图标实心字形。
+/// 窄于此宽度时倍速胶囊只画图标（倍速读数进 tooltip），把宽度留给中间的按钮。
+const double _kSpeedLabelMinWidth = 520;
+
+/// 播放条本体（两种音源共用）：一行 [kMangaChromeToolbarHeight] 高的胶囊。
+///
+/// `[⏮ ⏯ ⏭][读数] [middle…横滚] │ [trailing][倍速][停止]`，[progress] 叠在底边。
+class _MangaPlayBar extends StatelessWidget {
+  const _MangaPlayBar({
+    required this.previous,
+    required this.primary,
+    required this.next,
+    required this.trailing,
+    required this.speed,
+    required this.speedKey,
+    required this.onSpeedChanged,
+    required this.stopKey,
+    required this.onStop,
+    this.label,
+    this.middle,
+    this.progress,
+  });
+
+  final Widget previous;
+  final _PrimaryAction primary;
+  final Widget next;
+  final Widget? label;
+  final Widget? middle;
+  final Widget trailing;
+  final double speed;
+  final Key speedKey;
+  final ValueChanged<double> onSpeedChanged;
+  final Key stopKey;
+  final VoidCallback onStop;
+  final Widget? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final MangaChromePalette colors = MangaChromePalette.of(context);
+    final Duration motion = fushiMotionDuration(context, FushiMotion.short);
+    final Widget? labelWidget = label;
+    final Widget? middleWidget = middle;
+    final Widget? progressWidget = progress;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: kMangaChromeBottomMaxWidth),
+      child: SizedBox(
+        height: kMangaChromeToolbarHeight,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool showSpeedLabel =
+                constraints.maxWidth >= _kSpeedLabelMinWidth;
+            final Widget row = Row(
+              children: <Widget>[
+                previous,
+                _PrimaryButton(action: primary),
+                next,
+                const SizedBox(width: 8),
+                Flexible(
+                  flex: 2,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: AnimatedSwitcher(
+                      duration: motion,
+                      switchInCurve: FushiMotion.enter,
+                      switchOutCurve: FushiMotion.exit,
+                      layoutBuilder:
+                          (Widget? current, List<Widget> previousChildren) =>
+                              Stack(
+                                alignment: AlignmentDirectional.centerStart,
+                                children: <Widget>[
+                                  ...previousChildren,
+                                  ?current,
+                                ],
+                              ),
+                      child:
+                          labelWidget ??
+                          const SizedBox.shrink(
+                            key: ValueKey<String>('manga_play_bar_no_label'),
+                          ),
+                    ),
+                  ),
+                ),
+                if (middleWidget != null)
+                  Expanded(
+                    flex: 3,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      // 桌面默认 dragDevices 不含鼠标：不包这层，按钮放不下时
+                      // 鼠标拖不动中段。
+                      child: HorizontalDragScrollable(
+                        child: SingleChildScrollView(
+                          key: const ValueKey<String>('manga_play_bar_middle'),
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: middleWidget,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  const Spacer(flex: 3),
+                Container(
+                  width: 1,
+                  height: 24,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  color: colors.groupDivider,
+                ),
+                trailing,
+                _SpeedButton(
+                  key: speedKey,
+                  speed: speed,
+                  showLabel: showSpeedLabel,
+                  onChanged: onSpeedChanged,
+                ),
+                FushiIconButton(
+                  key: stopKey,
+                  icon: FushiIcons.stop,
+                  tooltip: t.manga_read_aloud_stop,
+                  padTouchTarget: true,
+                  onTap: onStop,
+                ),
+              ],
+            );
+            return FushiHoverLift(
+              builder: (BuildContext context, bool _) => MangaChromeSurface(
+                child: KeyedSubtree(
+                  key: const ValueKey<String>('manga_read_aloud_bar'),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(kMangaChromePillRadius),
+                    child: Stack(
+                      children: <Widget>[
+                        Positioned.fill(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: row,
+                          ),
+                        ),
+                        if (progressWidget != null)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: progressWidget,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// 主按钮：强调色实心圆（48dp，放进 64 高的条里上下各留 8），图标实心字形。
 class _PrimaryButton extends StatelessWidget {
   const _PrimaryButton({required this.action});
 
@@ -583,12 +618,12 @@ class _PrimaryButton extends StatelessWidget {
       child: FushiIconButton(
         key: action.key,
         icon: FushiIcons.filled(action.icon),
-        size: 30,
+        size: 26,
         tooltip: action.tooltip,
         backgroundColor: colors.accent,
         enabledColor: colors.onAccent,
         disabledColor: colors.onAccent.withValues(alpha: 0.38),
-        constraints: const BoxConstraints.tightFor(width: 56, height: 56),
+        constraints: const BoxConstraints.tightFor(width: 48, height: 48),
         enabled: action.onPressed != null,
         onTap: action.onPressed,
       ),
@@ -596,29 +631,175 @@ class _PrimaryButton extends StatelessWidget {
   }
 }
 
-/// 倍速胶囊：图标 + 当前倍速，点开 / 收起卡内倍速条。
-class _SpeedChip extends StatelessWidget {
-  const _SpeedChip({
+/// 进度线的命中带高度：条底边到按钮下沿之间的留白（64 高条里 48 的按钮居中，
+/// 下方留 8）。再高就会盖住按钮下沿，点按钮底边会变成跳转进度。
+const double _kScrubBandHeight = 8;
+
+/// 进度线本身的粗细。
+const double _kScrubLineHeight = 3;
+
+/// 条底边的进度线：点一下 / 横向拖动 = 在整卷时间轴上定位，松手才 seek；拖动期间
+/// 父级显示拖到的时间。读屏走 Semantics 的 slider 语义（增减各 5%）。
+class _ScrubLine extends StatelessWidget {
+  const _ScrubLine({
     super.key,
-    required this.speed,
-    required this.open,
-    required this.onPressed,
+    required this.fraction,
+    required this.enabled,
+    required this.valueLabel,
+    required this.onDrag,
+    required this.onCommit,
   });
 
-  final double speed;
-  final bool open;
-  final VoidCallback onPressed;
+  final double fraction;
+  final bool enabled;
+
+  /// 任意进度比例的读数（`6:15 / 47:21`），给读屏的当前值与增减后的值。
+  final String Function(double fraction) valueLabel;
+  final ValueChanged<double> onDrag;
+  final ValueChanged<double> onCommit;
 
   @override
   Widget build(BuildContext context) {
-    final String label = AudiobookSpeedSlider.format(speed);
-    return FushiIconButton(
-      icon: FushiIcons.speed,
-      label: label,
-      tooltip: '${t.playback_speed} $label',
-      padTouchTarget: true,
-      selected: open,
-      onTap: onPressed,
+    final MangaChromePalette colors = MangaChromePalette.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        double at(Offset local) =>
+            width <= 0 ? 0 : (local.dx / width).clamp(0.0, 1.0).toDouble();
+        final double up = (fraction + 0.05).clamp(0.0, 1.0).toDouble();
+        final double down = (fraction - 0.05).clamp(0.0, 1.0).toDouble();
+        return Semantics(
+          slider: true,
+          label: t.manga_audio_progress,
+          value: valueLabel(fraction),
+          increasedValue: valueLabel(up),
+          decreasedValue: valueLabel(down),
+          onIncrease: enabled ? () => onCommit(up) : null,
+          onDecrease: enabled ? () => onCommit(down) : null,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: enabled
+                ? (TapUpDetails d) => onCommit(at(d.localPosition))
+                : null,
+            onHorizontalDragStart: enabled
+                ? (DragStartDetails d) => onDrag(at(d.localPosition))
+                : null,
+            onHorizontalDragUpdate: enabled
+                ? (DragUpdateDetails d) => onDrag(at(d.localPosition))
+                : null,
+            onHorizontalDragEnd: enabled
+                ? (DragEndDetails _) => onCommit(fraction)
+                : null,
+            child: SizedBox(
+              height: _kScrubBandHeight,
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: SizedBox(
+                  height: _kScrubLineHeight,
+                  width: width,
+                  child: Stack(
+                    children: <Widget>[
+                      Positioned.fill(
+                        child: ColoredBox(
+                          color: colors.foreground.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: fraction,
+                        heightFactor: 1,
+                        child: ColoredBox(color: colors.accent),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 倍速胶囊：图标 + 当前倍速（窄条只画图标），点开 / 收起条上方的倍速条。
+class _SpeedButton extends StatefulWidget {
+  const _SpeedButton({
+    super.key,
+    required this.speed,
+    required this.showLabel,
+    required this.onChanged,
+  });
+
+  final double speed;
+  final bool showLabel;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_SpeedButton> createState() => _SpeedButtonState();
+}
+
+class _SpeedButtonState extends State<_SpeedButton> {
+  final OverlayPortalController _portal = OverlayPortalController();
+  final LayerLink _link = LayerLink();
+
+  /// 胶囊与弹出的倍速条同属一组：点胶囊是开关，点组外才收起。
+  final Object _tapGroup = Object();
+
+  void _toggle() => setState(_portal.toggle);
+
+  void _hide() {
+    if (_portal.isShowing) setState(_portal.hide);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String label = AudiobookSpeedSlider.format(widget.speed);
+    return CompositedTransformTarget(
+      link: _link,
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (BuildContext context) => Align(
+          alignment: Alignment.topLeft,
+          child: CompositedTransformFollower(
+            link: _link,
+            targetAnchor: Alignment.topRight,
+            followerAnchor: Alignment.bottomRight,
+            offset: const Offset(0, -12),
+            child: TapRegion(
+              groupId: _tapGroup,
+              onTapOutside: (PointerDownEvent _) => _hide(),
+              child: ExcludeFocus(
+                child: SizedBox(
+                  width: 320,
+                  child: MangaChromeSurface(
+                    radius: 20,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                      child: _SpeedRow(
+                        speed: widget.speed,
+                        onChanged: widget.onChanged,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        child: TapRegion(
+          groupId: _tapGroup,
+          child: FushiPressScale(
+            child: FushiIconButton(
+              icon: FushiIcons.speed,
+              label: widget.showLabel ? label : null,
+              tooltip: '${t.playback_speed} $label',
+              padTouchTarget: true,
+              selected: _portal.isShowing,
+              onTap: _toggle,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

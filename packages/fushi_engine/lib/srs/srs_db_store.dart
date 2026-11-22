@@ -269,6 +269,56 @@ class SrsEditSpec {
   final Object? value;
 }
 
+/// [SrsDbStore.notes] 单次调用物化的笔记数的最大值（测试核对一次操作在 Dart 侧同时持有的笔记视图有上界，BUG-5176）。
+/// 按 isolate 计；测试自己清零。
+@visibleForTesting
+int srsDebugMaxNotesPerRead = 0;
+
+/// [SrsDbStore.writeRetype] 的类型层面计划：内核据此逐条笔记换类型 / 补迁（native/fushi_fsrs/src/store/gen4/cmd/
+/// writes_retype.rs 文件头「请求 `retype`」）。逐条笔记的判定与 Dart 的 `srsPlanNoteTypeChange` / `srsPlanLapisFieldFill`
+/// 相同，只是在内核里做，宿主不物化笔记。
+class SrsRetypePlan {
+  const SrsRetypePlan({
+    required this.noteIds,
+    required this.from,
+    required this.to,
+    this.fieldMap = const <String, String?>{},
+    this.templateMap = const <String, String?>{},
+    this.fill = const <String, List<String>>{},
+  });
+
+  final List<String> noteIds;
+
+  /// 源类型；null = 只补迁不换类型（当前不是 [to] 类型的笔记、已删除的笔记跳过）。给了就要求每条笔记都是它。
+  final SrsNoteTypeView? from;
+  final SrsNoteTypeView to;
+
+  /// 目标 fieldId → 源 fieldId（null = 写空）。
+  final Map<String, String?> fieldMap;
+
+  /// 目标 templateId → 源 templateId（null = 新卡从头学）。
+  final Map<String, String?> templateMap;
+
+  /// 补迁：目标 fieldId → 候选源 fieldId（按优先顺序；取第一个有内容的）。
+  final Map<String, List<String>> fill;
+
+  static Map<String, Object?> _type(SrsNoteTypeView t) => <String, Object?>{
+    'id': t.id,
+    'cloze': t.isCloze,
+    'templates': <String>[for (final SrsTemplateDef x in t.templates) x.id],
+    'fields': <String>[for (final SrsFieldDef f in t.fields) f.id],
+  };
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'notes': noteIds,
+    'from': from == null ? null : _type(from!),
+    'to': _type(to),
+    'fieldMap': fieldMap,
+    'templateMap': templateMap,
+    'fill': fill,
+  };
+}
+
 /// 内核缓存刷新的配置（内核命令的 `caches`；[SrsDbStore] 打开时注册一次，`cache_config_set`）：[profileUid] 的默认
 /// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定；换代迁移
 /// （[SrsGen4Migration.run] 的 `caches`）给库里每个 profile 各算一份。
@@ -2806,7 +2856,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 更改笔记类型、旧 Lapis 迁移）不再每条笔记各查三次（BUG-3543）。
   Future<Map<String, SrsNoteView?>> notes(Iterable<String> ids) async {
     final Map<String, SrsNoteView?> out = <String, SrsNoteView?>{};
-    for (final List<String> chunk in _chunks(ids.toSet())) {
+    final Set<String> wanted = ids.toSet();
+    srsDebugMaxNotesPerRead = max(srsDebugMaxNotesPerRead, wanted.length);
+    for (final List<String> chunk in _chunks(wanted)) {
       final _RefreshPrefetch pre = _RefreshPrefetch();
       await _prefetchEntities(pre, chunk);
       await _prefetchEdits(pre, SrsEntityKind.note, chunk);
@@ -3572,6 +3624,44 @@ class SrsDbStore implements SrsSync2Host {
     ({String name, String reason})? checkpoint,
     ({String deckId, List<String> noteIds})? moveNotes,
     String? debugFailAfter,
+  }) async {
+    await _change(
+      specs,
+      checkpoint: checkpoint,
+      moveNotes: moveNotes,
+      debugFailAfter: debugFailAfter,
+    );
+  }
+
+  /// 一批笔记换笔记类型 / 补迁，**由内核逐条笔记读现值、算、写**（`change` 的换类型段，
+  /// native/fushi_fsrs/src/store/gen4/cmd/writes_retype.rs）：Dart 只给类型层面的计划 [plan]，不物化这批笔记、不攒逐条
+  /// 的修改记录——整批物化 + 整批修改记录在大牌组上把 Dart 堆撑爆（BUG-5176）。还原点、移牌组、注入失败同
+  /// [writeChange]，整次一条命令、一笔。返回 (换了类型的笔记数, 补了至少一个字段的笔记数)。
+  Future<({int retyped, int filled})> writeRetype(
+    SrsRetypePlan plan, {
+    ({String name, String reason})? checkpoint,
+    ({String deckId, List<String> noteIds})? moveNotes,
+    String? debugFailAfter,
+  }) async {
+    final Map<String, Object?> r = await _change(
+      const <SrsEditSpec>[],
+      checkpoint: checkpoint,
+      retype: plan,
+      moveNotes: moveNotes,
+      debugFailAfter: debugFailAfter,
+    );
+    return (
+      retyped: (r['retyped'] as int?) ?? 0,
+      filled: (r['filled'] as int?) ?? 0,
+    );
+  }
+
+  Future<Map<String, Object?>> _change(
+    List<SrsEditSpec> specs, {
+    ({String name, String reason})? checkpoint,
+    SrsRetypePlan? retype,
+    ({String deckId, List<String> noteIds})? moveNotes,
+    String? debugFailAfter,
   }) => runExclusive(() async {
     // 值没变的由内核在这条命令的那一笔里筛掉（[SrsEditDraft.ifChanged]），不预读现值。
     final List<SrsEventDraft> drafts = <SrsEventDraft>[
@@ -3584,7 +3674,12 @@ class SrsDbStore implements SrsSync2Host {
           ifChanged: true,
         ),
     ];
-    if (drafts.isEmpty && checkpoint == null && moveNotes == null) return;
+    if (drafts.isEmpty &&
+        checkpoint == null &&
+        retype == null &&
+        moveNotes == null) {
+      return const <String, Object?>{};
+    }
     // 走一步用的「此刻」与修改记录的时间来源：落库前这一刻取（同 [_emit]）。
     final (int tickNow, SrsTimeSource source) = now();
     final List<Map<String, Object?>> input = await _applyInput(
@@ -3592,6 +3687,7 @@ class SrsDbStore implements SrsSync2Host {
       receive: false,
       source: source,
     );
+    Map<String, Object?> reply = const <String, Object?>{};
     await _commandOrReload(() async {
       final Map<String, Object?> r = await _sync2(
         <String, Object?>{
@@ -3605,6 +3701,7 @@ class SrsDbStore implements SrsSync2Host {
               'name': checkpoint.name,
               'reason': checkpoint.reason,
             },
+          if (retype != null) 'retype': retype.toJson(),
           if (moveNotes != null)
             'move': <String, Object?>{
               'deck': moveNotes.deckId,
@@ -3616,7 +3713,9 @@ class SrsDbStore implements SrsSync2Host {
         blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
       );
       _absorbLocalWrite(r);
+      reply = r;
     });
+    return reply;
   });
 
   /// 一条本机写意图命令（内核自己读现值、自己判、自己写）：一个独占区、一条命令——命令本体、缓存刷新、本机状态行
@@ -5791,7 +5890,7 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<SrsNoteCacheRow>> notesPendingDecision() =>
       noteRows(const <String, Object?>{'pending': true});
 
-  /// 一批卡 / 笔记的人读名：笔记缓存的 `sort_field`（第一个字段去标签、去首尾空白，与浏览页的排序字段同口径；
+  /// 一批卡 / 笔记的人读名：笔记缓存的 `sort_field`（笔记类型的排序字段——缺省第一个字段——去标签、去首尾空白，与浏览页的排序字段同口径；
   /// 卡片按所属笔记）。固定至多两条批量读（卡 → 笔记 ID、笔记 → 排序字段），不随条数增长。
   ///
   /// 冲突中心以前逐条 `cardDetail` / `note`（每条三次读 + 一次字段寄存器物化）：6950 条冲突的库上一次整页

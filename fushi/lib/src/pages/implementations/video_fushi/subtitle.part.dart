@@ -1633,7 +1633,32 @@ extension _VideoSubtitle on _VideoFushiPageState {
         if (row != null) members.add(row);
       }
       if (members.isEmpty) return null;
-      return SubtitleCollectionSpec(collection: collection, members: members);
+      // 「当前季」= 正在播的这一集在面板分季里的季，与合集详情页季 tab 同口径；
+      // 不用 [_jimakuSeasonNumber]：它只认文件名里的显式季号，`Season 2/01.mkv`
+      // 这类父目录写季号的集会被当成「不知道」。
+      final String? playingPath = _currentVideoPath;
+      VideoBookRow? playing;
+      for (final VideoBookRow row in members) {
+        if (row.bookUid == _activeBookUid ||
+            (playingPath != null && row.videoPath == playingPath)) {
+          playing = row;
+          break;
+        }
+      }
+      // 分季与合集详情页同口径（手动分栏 / 手动季集指定优先）。
+      final Map<String, String> sectionKeys =
+          await loadCollectionSubtitleSectionKeys(appModel.database, members);
+      return SubtitleCollectionSpec(
+        collection: collection,
+        members: members,
+        sectionKeys: sectionKeys,
+        initialSeason: playing == null
+            ? null
+            : subtitleCollectionSeasonOfMember(
+                playing,
+                sectionKeys: sectionKeys,
+              ),
+      );
     } on Object catch (error) {
       ErrorLogService.instance.logDiagnostic(
         'VideoFushiPage._subtitleCollectionSpec',

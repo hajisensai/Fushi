@@ -2,13 +2,13 @@ import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
 
-/// `fushi_cli tts …`：漫画有声——演出稿、AI 看图标注、整卷生成（app 侧路由见
+/// `fushi_cli tts …`：漫画有声——演出稿、AI 看图标注、整卷生成、导入外部做好的成品（app 侧路由见
 /// `fushi/lib/src/ops/ctl_tts_routes.dart`）。条目键用 `book:<bookKey>`（见 library ls），
 /// 只认本地漫画卷。
 const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'tts',
-    summary: '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句重生成 / 整卷生成',
+    summary: '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句重生成 / 整卷生成 / 导入成品',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'voices',
@@ -85,6 +85,14 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
         summary: '取消这一卷在排队 / 在跑的生成任务',
         usage: '<key>',
         build: _buildRenderCancel,
+      ),
+      CtlCommandSpec(
+        name: 'import',
+        summary: '导入做好的成品清单 manifest.json（与漫画卡「导入漫画有声」同一套校验；已有成品要 --yes 才替换）',
+        usage: '<key> <manifest.json>',
+        configure: _configureImport,
+        build: _buildImport,
+        render: _renderImport,
       ),
     ],
   ),
@@ -265,6 +273,17 @@ CtlRequestSpec _buildRender(CtlCommandContext c) => CtlRequestSpec.post(
 CtlRequestSpec _buildRenderCancel(CtlCommandContext c) =>
     CtlRequestSpec.post('${_item(c)}/render/cancel');
 
+void _configureImport(ArgParser parser) =>
+    parser.addFlag('yes', negatable: false, help: '这一卷已有有声成品时确认替换');
+
+CtlRequestSpec _buildImport(CtlCommandContext c) => CtlRequestSpec.post(
+  '${_item(c)}/import',
+  body: <String, Object?>{
+    'manifest': ctlAbsolutePath(c.positional(1, 'manifest.json')),
+    if (c.flag('yes')) 'confirm': true,
+  },
+);
+
 // ── render ──────────────────────────────────────────────────────────────
 
 String _renderVoices(Object? data) => renderCtlTable(
@@ -322,4 +341,12 @@ String _renderStatusPart(Object? data) {
     return '${data['alreadyQueued'] == true ? '已在队列里' : '已排进队列'}：${_task(render)}';
   }
   return '已开始标注：${_task(data)}';
+}
+
+String _renderImport(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return '${data['replaced'] == true ? '已替换' : '已导入'}：${data['key']}，'
+      '${data['pages']} 页 ${data['lines']} 句，'
+      '共 ${((data['durationMs'] as num? ?? 0) / 1000).toStringAsFixed(1)} 秒'
+      '${data['replaced'] == true ? '（原成品：${data['previous']}）' : ''}';
 }

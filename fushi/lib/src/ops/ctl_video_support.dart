@@ -219,10 +219,14 @@ Map<String, Object?> ctlVideoPendingNoteJson(VideoScrapePendingNote note) =>
       'reason': note.reason,
     };
 
+/// 范围级问题（[SourceScrapeIssue.isScopeLevel]）带 `scope`（来源 id，无来源范围是
+/// `0`）：它不对应任何作品，`work` 只是来源的原始 label（无来源范围为空串），
+/// 调用方不能拿它去手动指定 / 重刮作品。
 Map<String, Object?> _issueJson(SourceScrapeIssue issue) => <String, Object?>{
   'work': issue.workTitle,
   'message': issue.message,
   if (issue.workKey != null) 'workId': issue.workKey,
+  if (issue.scopeSourceId != null) 'scope': issue.scopeSourceId,
 };
 
 /// 刮削报告的 wire 形状（计数 + 警告 / 错误原文）。

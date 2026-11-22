@@ -942,11 +942,13 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       .where((SrsNoteTypeView n) => n.name == row.noteTypeName)
       .firstOrNull;
 
-  /// 表格里一格对应的字段（正面 = 排序字段即第一个字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
+  /// 表格里一格对应的字段（正面 = 笔记类型的排序字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
   SrsFieldDef? _cellField(SrsBrowseRow row, SrsBrowseTableColumn column) {
     final SrsNoteTypeView? type = _typeOf(row);
     if (type == null || type.fields.isEmpty) return null;
-    if (column == SrsBrowseTableColumn.front) return type.fields.first;
+    if (column == SrsBrowseTableColumn.front) {
+      return type.fieldById(type.effectiveSortFieldId ?? '');
+    }
     final String? name = srsBrowsePreviewFieldName(row, column);
     if (name == null) return null;
     return type.fields.where((SrsFieldDef f) => f.name == name).firstOrNull;

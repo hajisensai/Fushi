@@ -1,6 +1,6 @@
 //! 写命令的新代实现（规划 §2.1 G7-3b；设计 §2.2「真相只有操作」、§3.4「新写入不带 v1 形状的数据」、§5.2「新写入按
-//! 规范 ID」）。**还没接分发器**：协议 3 的写命令（`store/ffi.rs` `local_write_body` 与 `store/sync2/*` 的 `*_on`）
-//! 原地不动，分发器在整批推送里一次切到这里（规划 §2.2 S1）。
+//! 规范 ID」）。已接分发器（`dispatch.rs`「本机写命令」一节）；协议 3 的写命令（`store/legacy3` `local_write_body` 与
+//! `store/sync2/*` 的 `*_on`）不再经分发器调用（冻结）。
 //!
 //! 本文件是底座与「拼操作」一组：[Session]（一条写命令的事务、写入者、索引与回包）、`apply` / `import_drafts` /
 //! `purge` / `checkpoint` / `resolve`。意图命令（`note_fields_if`、`change`、`merge_notes`、`deck_delete`、`sched`）
@@ -140,6 +140,9 @@ pub struct Session<'t, 'c> {
     edit_rows: bool,
     /// 库里有没有别的集合（实体归属闸 [Session::foreign] 用；None = 还没问过）。
     others: Option<bool>,
+    /// 落下的修改记录进不进回包 `edits`（默认进）。`change` 的换类型段（`writes_retype.rs`）关掉它：那一段由内核自己拼、
+    /// 可能是整个牌组的字段值，宿主用不上，回传只会让宿主把整批内容再解码一遍（BUG-5176）。
+    echo_edits: bool,
 }
 
 /// 一条写命令（见文件头「一条命令一个事务」）：[f] 在 [Session] 里做命令本体，返回命令自己的回包（JSON 对象）；
@@ -188,12 +191,18 @@ impl<'t, 'c> Session<'t, 'c> {
             entity_writes: Vec::new(),
             edit_rows: false,
             others: None,
+            echo_edits: true,
         })
     }
 
     /// 请求带 `editRows: true` 就在回包里补上落库修改行（文件头「回包」）。
     pub(super) fn want_edit_rows(&mut self, req: &Value) {
         self.edit_rows = req.get("editRows") == Some(&Value::Bool(true));
+    }
+
+    /// 之后落下的修改记录进不进回包 `edits`（[Session::echo_edits] 字段）。
+    pub(super) fn set_echo_edits(&mut self, on: bool) {
+        self.echo_edits = on;
     }
 
     /// 本机身份（作者）的设备 ID。
@@ -269,6 +278,12 @@ impl<'t, 'c> Session<'t, 'c> {
             }
             _ => {}
         }
+        self.append(body, now)
+    }
+
+    /// 写下一条已归一的操作体（[Session::land] 的后半段：不再归一、不记回包的 `changed` / `purged`）。[Session::purge_class]
+    /// 给类里的带盐成员各落一条清除时直接用它：那几条点名的是原值成员，不能归一回规范 ID。
+    fn append(&mut self, body: Body, now: i64) -> Result<OpId, String> {
         if !matches!(body, Body::Log(_)) {
             self.tree = None;
         }
@@ -293,7 +308,7 @@ impl<'t, 'c> Session<'t, 'c> {
         let (id, _) = self.native.write(&mut self.ix, b4, now)?;
         self.dirty = true;
         self.written += 1;
-        if let Some((kind, entity, key, value)) = edit {
+        if let Some((kind, entity, key, value)) = edit.filter(|_| self.echo_edits) {
             self.edits.push(json!([
                 kind.wire(),
                 entity,
@@ -474,6 +489,47 @@ impl<'t, 'c> Session<'t, 'c> {
 
     pub(super) fn canon(&self, k: &Key) -> Result<Key, String> {
         Ok(key_of(&self.ix.canonical(&Ref::of(k))?))
+    }
+
+    /// 彻底清除实体 [entity] 的**整个别名类**（所有者拍板「清整个别名类」，设计 §10 第 19 条同源；`class.rs` 文件头
+    /// 「没有并起来的」）：规范 ID 那一条照常经 [Session::land]（回包的 `changed` / `purged` 记规范 ID），类里此刻已知的
+    /// 每个别的成员（带盐别名，`Index::class_of`）各落一条点名原值成员的 `Purge`。
+    ///
+    /// 为什么是「每个成员一条」而不是让一条清除在读侧覆盖整类：清除在索引层与真相层都按原值实体生效（`weigh.rs`
+    /// `purge_ix`、`truth.rs` `purge_covering`），语义摘要也按原值 ID 记、不过别名表（`digest.rs`）。让一条清除按类生效，
+    /// 就把各设备各自的别名表（信任状态不同时可以不同，设计 §10 第 18 条）带进了清除结果与摘要，两台设备对同一批操作会
+    /// 算出不同的摘要。每个成员一条清除是普通操作：同步到别的设备，它按同一条按原值实体的规则清掉同一批成员，不依赖它的
+    /// 别名表。代价：写的那一刻本机还不知道的成员（之后才随别的设备的承袭段出现的带盐成员）不在这批里。
+    pub(super) fn purge_class(
+        &mut self,
+        kind: EntKind,
+        entity: &str,
+        now: i64,
+    ) -> Result<(), String> {
+        // 先收尾：同一批前面的操作可能刚改过别名表，成员按收好的表取。
+        let ix = self.settled()?;
+        let members = ix.class_of(&ref_of(entity))?;
+        let canon = key_of(&members[0]);
+        self.land(
+            Body::Purge {
+                kind,
+                entity: canon.clone(),
+            },
+            now,
+        )?;
+        for m in &members[1..] {
+            let member = key_of(m);
+            if member != canon {
+                self.append(
+                    Body::Purge {
+                        kind,
+                        entity: member,
+                    },
+                    now,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// 文本 ID 的规范形。
@@ -1186,8 +1242,8 @@ pub fn import_drafts(
     })
 }
 
-/// `purge`（彻底清除一批同类实体，协议 3 `local_write_body` 的 `purge` 分支）：每个实体「删除 + 清除」两条操作，按
-/// 输入顺序，一笔落下。[req]：`{"now", "kind", "entities": [...]}`（非空）。不存在 / 已清除过的照常追加（清除幂等）；
+/// `purge`（彻底清除一批同类实体，协议 3 `local_write_body` 的 `purge` 分支）：每个实体「删除 + 清除」，按输入顺序，
+/// 一笔落下；清除覆盖实体的整个别名类（[Session::purge_class]：规范 ID 一条 + 每个带盐成员一条）。[req]：`{"now", "kind", "entities": [...]}`（非空）。不存在 / 已清除过的照常追加（清除幂等）；
 /// 别的集合的实体（实体归属闸，`writes_owner.rs`）不写，回包 `foreign` 交回它们在 `entities` 里的下标。
 pub fn purge(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let now = now_of(req)?;
@@ -1222,7 +1278,12 @@ pub fn purge(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
                 continue;
             }
             for b in canon {
-                s.land(b, now)?;
+                match b {
+                    Body::Purge { kind, entity } => s.purge_class(kind, &entity.text(), now)?,
+                    b => {
+                        s.land(b, now)?;
+                    }
+                }
             }
         }
         Ok(json!({"foreign": foreign}))

@@ -118,6 +118,11 @@ class SmartSubtitleMaskSampler {
 
   /// 这一串连续失败已经报过：持续失败（每个采样周期一次）只记第一条。
   bool _errorReported = false;
+
+  /// 画面代际：每次观察到画面不连续（位置倒退 / 跳变）或换搜索区域都 +1。一次抽样在截帧
+  /// 前记下当时的代际，截帧 / 识别回来时代际变了就整帧作废——旧帧的行框不能盖到新时间点上，
+  /// 也不能喂进刚清空的 tracker（HBK-AUDIT-007）。
+  int _generation = 0;
   int? _lastSampledPositionMs;
   int? _lastSeenPositionMs;
   Duration? _lastSampleAt;
@@ -132,6 +137,7 @@ class SmartSubtitleMaskSampler {
   set region(Rect value) {
     if (value == _region) return;
     _region = value;
+    _generation++;
     _tracker.reset();
     if (_unavailable) {
       _rect.value = value;
@@ -172,6 +178,7 @@ class SmartSubtitleMaskSampler {
     if (position != null && seen != null) {
       final int delta = position - seen;
       if (delta < 0 || delta > kSmartSubtitleMaskSeekJumpMs) {
+        _generation++;
         _tracker.reset();
         if (!_unavailable) _rect.value = null;
       }
@@ -198,12 +205,21 @@ class SmartSubtitleMaskSampler {
     _lastSampleAt = _clock();
     _lastSampledPositionMs = _controller.positionMs;
     final Rect region = _region;
+    final int generation = _generation;
+    // 结果身份还要带上 controller 的 seek 计数：seek 一发出就 +1，而播放位置要等 mpv
+    // 落地后才变（[_generation] 靠观察位置跳变才 +1，且跳变不到阈值的小 seek 根本看不出）。
+    // 只看 [_generation]，识别恰好在「已发 seek、位置还没更新」之间回来时旧帧照样发布。
+    final int seekGeneration = _controller.seekGeneration;
+    bool stale() =>
+        _disposed ||
+        generation != _generation ||
+        seekGeneration != _controller.seekGeneration;
     try {
       final RawVideoFrameCrop? crop = await _capture(region);
-      if (_disposed || crop == null) return;
+      if (crop == null || stale()) return;
       final List<Rect> lines = await _detect(crop);
-      // 识别期间换了搜索区域：这一帧作废。
-      if (_disposed || region != _region) return;
+      // 截帧 / 识别期间 seek 了或换了搜索区域：这一帧属于旧画面，作废。
+      if (stale()) return;
       final Rect? next = _tracker.addSample(
         lines: lines,
         region: region,

@@ -1044,3 +1044,28 @@ Fork:
   marked for deletion.
 
 Guard: `fushi/test/third_party/media_kit_video_teardown_order_guard_test.dart`.
+
+## Decision 42UUu_kcwD: no OpenGL ES work while the iOS app is in the background
+
+`ios/Classes/plugin/common/VideoOutput.swift` (kept byte-identical with the
+`common/darwin` and `macos` copies; the change is `#if os(iOS)` only).
+
+Fushi's video page can keep playing audio after the app goes to the background
+(video setting "Keep playing audio in background", off by default). iOS
+terminates an app that submits OpenGL ES commands after it entered the
+background (`gpus_ReturnNotPermittedKillClient`), and upstream `VideoOutput`
+renders on its worker thread every time libmpv signals a frame, with no notion
+of app state. The Dart side switches the video track off (`vid=no`) on
+`paused`, but that command lands some milliseconds after
+`applicationDidEnterBackground`, which is enough for one frame to slip through.
+
+Fork: `VideoOutput` observes `didEnterBackgroundNotification` /
+`willEnterForegroundNotification` (delivered synchronously on the main thread)
+and flips a `gpuSuspended` flag under `gpuLock`. `texture.resize` and
+`texture.render` run inside `beginGpuWork()` / `endGpuWork()`, which hold the
+same lock and skip the work while suspended. The lock never spans the
+`DispatchQueue.main.sync` hops, so the main thread taking it only waits for the
+in-flight frame. Returning to the foreground clears the flag and enqueues one
+redraw.
+
+Guard: `fushi/test/pages/video_background_play_guard_test.dart`.

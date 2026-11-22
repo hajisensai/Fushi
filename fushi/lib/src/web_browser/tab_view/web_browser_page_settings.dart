@@ -296,6 +296,14 @@ class WebBrowserFullscreenZoomGuard {
   /// 用户触碰网页 / 新导航：停止还原。
   void stop() => _restoring = false;
 
+  /// 主文档换代（整页导航提交）：全屏随旧页面一起结束，旧页面的缩放与新页面无关，
+  /// 不再还原。
+  void reset() {
+    _fullscreen = false;
+    _restoring = false;
+    _scaleBeforeFullscreen = null;
+  }
+
   double? _correction() {
     final double? target = _scaleBeforeFullscreen;
     final double? current = _scale;

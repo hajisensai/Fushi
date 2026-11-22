@@ -1,8 +1,6 @@
 import 'dart:convert';
 
 import 'package:fushi_cli/fushi_cli.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show canonicalDictionaryLanguageTag;
 
 import 'package:fushi/src/ops/op_describe_kit.dart';
 
@@ -133,10 +131,10 @@ List<OpDescription> describeDictionaryOps(OpDescribeKit kit) => <OpDescription>[
     method: 'PUT',
     pattern: '/api/admin/dictionaries/:name',
     summary:
-        'Change one dictionary: enable / disable, move to position N within its '
-        'language group of its type section, rename (display name), set content '
-        'language (a changed group puts it last in the new group), and for term '
-        'dictionaries with embedded kanji the kanji part switch / position.',
+        'Change one dictionary: enable / disable, move to position N in its type '
+        'section, rename (display name), set content language (a label only, '
+        'it does not change the order), and for term dictionaries with '
+        'embedded kanji the kanji part switch / position.',
     risk: OpRisk.write,
     params: const <OpParam>[
       OpParam.string(
@@ -149,8 +147,8 @@ List<OpDescription> describeDictionaryOps(OpDescribeKit kit) => <OpDescription>[
       OpParam.integer(
         'position',
         description:
-            '1-based position within its language group (same language) of its '
-            'type section; other language groups keep their order.',
+            '1-based position in its type section (all languages share one '
+            'order).',
       ),
       OpParam.string('displayName', description: 'New display name.'),
       OpParam.boolean(
@@ -168,8 +166,7 @@ List<OpDescription> describeDictionaryOps(OpDescribeKit kit) => <OpDescription>[
       ),
       OpParam.integer(
         'kanjiPosition',
-        description:
-            '1-based position within its language group of the kanji section.',
+        description: '1-based position in the kanji section.',
       ),
     ],
     undo: _dictionarySetUndo(kit),
@@ -528,8 +525,8 @@ List<String> _touchedDictionaryFields(CtlCall call) => <String>[
 ];
 
 /// 分区：`position` 在本类型分区里排（kanji 类型 = 「汉字」分区），`kanjiPosition`
-/// 恒在「汉字」分区里排（与路由同语义）。两者都是**语言组内**的位置，快照里存的
-/// 名序也只含该词典所在语言组（见 [_dictionarySnapshot]）。
+/// 恒在「汉字」分区里排（与路由同语义）。两者都是整个分区里的位置（内容语言
+/// 不参与排序），快照里存的是分区的完整名序（见 [_dictionarySnapshot]）。
 String _sectionOf(Map<String, Object?> dict, String field) =>
     field == 'kanjiPosition' || dict['type'] == 'kanji'
     ? 'kanji'
@@ -628,14 +625,7 @@ Map<String, Object?> _dictionarySnapshot(
   for (final String field in _stringList(key['fields'])) {
     if (field == 'position' || field == 'kanjiPosition') {
       final String section = _sectionOf(dict, field);
-      // 只留同语言组的名序：路由的 position 是组内位置（D_Nz5R4vSH），撤销时
-      // indexOf 得到的必须也是组内下标。
-      final String? language = _languageGroupOfJson(dict);
-      orders[section] = <String>[
-        for (final String name in _sectionNames(list, section))
-          if (_languageGroupOfJson(_resolveDictionary(list, name)) == language)
-            name,
-      ];
+      orders[section] = _sectionNames(list, section);
     } else {
       out[field] = dict[field];
     }
@@ -668,13 +658,6 @@ List<String> _sectionNames(List<Map<String, Object?>> list, String section) {
     return byOrder != 0 ? byOrder : a.$2.compareTo(b.$2);
   });
   return <String>[for (final (int, int, String) m in members) m.$3];
-}
-
-/// `dict.list` 一行的语言组，与管理页 / 路由同一判据：`sourceLanguage` 字段就是
-/// 词典的有效内容语言（手动指定优先，其次包内声明），经同一规范化。
-String? _languageGroupOfJson(Map<String, Object?> dict) {
-  final Object? language = dict['sourceLanguage'];
-  return canonicalDictionaryLanguageTag(language is String ? language : null);
 }
 
 Future<List<Map<String, Object?>>> _listDictionaries(OpDescribeKit kit) async {

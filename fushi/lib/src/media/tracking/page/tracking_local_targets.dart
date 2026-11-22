@@ -8,6 +8,7 @@ import 'package:fushi/src/media/tracking/page/tracking_row_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/tracking/local_title_clean.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 
@@ -178,6 +179,9 @@ Future<List<MediaTrackingLocalTarget>> loadMediaTrackingLocalTargets(
   final Map<String, String> videoPathByUid = <String, String>{
     for (final VideoBookRow video in videos) video.bookUid: video.videoPath,
   };
+  // 分栏与合集详情页同一入口（手动分栏 / 手动季集指定优先）。
+  final Map<String, String> sectionKeys =
+      await loadCollectionGroupKeysForVideos(database, videos);
   final Map<int, List<String>> groupKeysByCollection = <int, List<String>>{};
   for (final MediaCollectionItemRow row in members) {
     if (row.mediaType != 'video') continue;
@@ -185,7 +189,7 @@ Future<List<MediaTrackingLocalTarget>> loadMediaTrackingLocalTargets(
     if (path == null) continue;
     groupKeysByCollection
         .putIfAbsent(row.collectionId, () => <String>[])
-        .add(collectionGroupKeyForFilename(path));
+        .add(sectionKeys[row.entryKey] ?? collectionGroupKeyForFilename(path));
   }
   return <MediaTrackingLocalTarget>[
     for (final MediaCollectionRow collection in collections)

@@ -1,0 +1,16 @@
+## BUG-5163 · ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交
+- **报告**：2026-11-21（用户的 gen4 `conflict_edits` 性能报告第四节附带观察：`3.4.0-debug.30040`，TTS 渲染 + ASR 校验任务 15:44 取消后回到空闲，`fushi.exe` 仍占 GPU 专用显存 956 MB、私有提交约 2.07 GB；CUDA 13 + ORT 模块（`cublasLt64_13.dll` 等）常驻，另有大块全零 `VirtualAlloc` 与 `PAGE_WRITECOMBINE` 页）
+- **真实性**：✅ 真 bug（本进程那部分）。
+  - 进程内用 GPU 的只有 ASR：TTS 引擎全在进程外（Irodori 声音包 / GPT-SoVITS / VOICEVOX 等走本地服务或 HTTP），「制作有声书」的校对才在进程内起 CUDA 转录（`fushi/lib/src/media/audiobook/tts/studio/tts_render_runner.dart` `_transcribe`）。
+  - **取消路径与完成路径一样**：上游 `asr_transcribe_isolate.dart` `_isolateMain` 的 `finally` 无论 paused / finished 都 `sessions.close()` 再 `Isolate.exit`；真机探针在转录中途取消（`paused=true`）与跑完，会话关闭当下都是本进程显存 352 MiB（注册前基线 172 MiB）、私有提交约 2.6 GB，两轮不叠加。
+  - **根因**：残留的是 CUDA 主上下文。cudart retain 它、进程不退就不还；插件只在 `SessionManager` 析构时注销 CUDA 插件 EP（`third_party/flutter_onnxruntime/windows/src/session_manager.cc` 析构 → `CudaPluginRegistry::Unregister`），运行期没有任何归还路径。实测只卸插件库：显存 / 私有提交一个字节都不回来（这也是 BUG-3997 试「最后一个会话释放时注销插件库」没收益的原因）；卸库后再 `cuDevicePrimaryCtxReset_v2`：显存回到 172 MiB 基线，私有提交 −620～850 MiB。
+  - 用户读数 956 MB 里还含 app 自身渲染（Flutter / WebView）的显存，ASR 留下的是其中约 180 MiB；「2 GB 私有提交」与本机探针的 2.6 GB 同量级。
+- **[x] ① 已修复** — vendored 插件 delta #18（PATCHES.md）：`CudaPluginRegistry` 拆成「已注册 + 装载 / 卸载」，`Release()` 卸库（保留目录、EP 名、`IsRegistered()`，Dart 侧无感）并可重置主上下文，`AppendToSessionOptions()` 按需重装；CUDA EP 改在 GPU 队列的建会话任务里追加（与释放同队列，不会把刚追加的 `OrtEpDevice` 释放掉）；关掉最后一个 CUDA 会话即排 `DelayedTask`（`FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS`，缺省 60 s，0 = 不释放），到点复核 `cudaGeneration()` 未变才在 GPU 队列卸库 + 重置主上下文。另暴露 `OnnxRuntime.releaseCudaRuntime({resetContext})` 供按需调用（有 CUDA 会话开着时拒绝）。
+- **[x] ② 已加自动化测试** —
+  - 源码守卫 `fushi/test/onnx/cuda_idle_release_guard_test.dart`（CI 无 GPU：钉关会话排释放、释放复核代际并重置主上下文、CUDA EP 只在 GPU 队列任务里追加、卸库后重装、析构收尾顺序（HBK-AUDIT-015 后改为显式 Shutdown，见 BUG-5129）、Dart 三层 API）。
+  - 真机探针 `fushi/integration_test/asr_cuda_vram_release_itest.dart` 扩展：`ASR_CANCEL_AFTER_MS` 走校对同形的取消路径、`ASR_FP16`、私有提交与 CUDA 模块旁证；断言空闲释放后显存回到基线（< 32 MiB），且释放后的第三轮照常落在 CUDA、空闲后再次归还。RTX 4070 Ti / cu13-ep0.3.0-cudnn9.27 / reazonspeech-k2-v2 fp16 / 2 h 素材中途取消：172 → 峰值 1384 → 关会话 352 → 空闲 3 s 后 **172 MiB**，私有提交 2611 → 1777 MiB；第三轮 → 172 MiB / 1851 MiB。全绿。
+- **备注**：
+  - `onnxruntime_providers_cuda.dll` / `cublasLt64_13.dll`（574 MiB 映像）/ cuDNN 全家在 `UnregisterExecutionProviderLibrary` 后仍驻留（模块被钉住，卸不掉）；它们主要是文件映像页，不占页文件提交。
+  - 释放后私有提交仍比注册时高约 880 MiB，逐轮微涨 50～74 MiB，未细分（候选：cuDNN 装载时的宿主堆、根 isolate 解码 PCM 撑大的 Dart 堆）。不是 CUDA 上下文这类整块残留，未在本条处理。
+  - 报告里「SRS v4 迁移后 Windows 原生堆保留 417 MB」是另一件事，未处理。
+  - 跑探针：`ASR_MODEL_SEED` / `ASR_CUDA_RT_DIR` / `ASR_AUDIO`（≥1 h 才取消得到中途）/ `ASR_CANCEL_AFTER_MS=3000` / `FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS=3000`，经 `tool/run_windows_itest.ps1`。

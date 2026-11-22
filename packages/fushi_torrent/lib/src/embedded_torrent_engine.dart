@@ -561,6 +561,10 @@ class FtSessionStatus {
     required this.upnpEnabled,
     required this.natpmpEnabled,
     required this.pexEnabled,
+    this.uploadGates,
+    this.offlineResumeFrozen,
+    this.activeDownloads,
+    this.activeSeeds,
     required this.downRate,
     required this.upRate,
     required this.portMappings,
@@ -575,6 +579,16 @@ class FtSessionStatus {
   final bool upnpEnabled;
   final bool natpmpEnabled;
   final bool pexEnabled;
+
+  /// 诊断（HBK-AUDIT-030）：上传闸登记表项数（应恒等于种子数）与因数据离线
+  /// 而冻结 resume 的种子数。老 DLL 为 null。
+  final int? uploadGates;
+  final int? offlineResumeFrozen;
+
+  /// libtorrent `active_downloads` / `active_seeds` 现值（-1 = 不限；null =
+  /// 老 DLL 不报这两项）。热更新名额后据此核对真正生效的值（HBK-AUDIT-020）。
+  final int? activeDownloads;
+  final int? activeSeeds;
 
   /// 会话级全局速率（字节/秒，含协议开销；-1 = 未知）。
   final int downRate;
@@ -591,6 +605,10 @@ class FtSessionStatus {
       upnpEnabled: json['upnp_enabled'] == true,
       natpmpEnabled: json['natpmp_enabled'] == true,
       pexEnabled: json['pex_enabled'] == true,
+      uploadGates: (json['upload_gates'] as num?)?.toInt(),
+      offlineResumeFrozen: (json['offline_resume_frozen'] as num?)?.toInt(),
+      activeDownloads: (json['active_downloads'] as num?)?.toInt(),
+      activeSeeds: (json['active_seeds'] as num?)?.toInt(),
       downRate: (json['down_rate'] as num?)?.toInt() ?? -1,
       upRate: (json['up_rate'] as num?)?.toInt() ?? -1,
       portMappings: mappings is List
@@ -804,8 +822,11 @@ class EmbeddedTorrentSession {
   }
 
   /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
-  /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[activeDownloads]/
-  /// [activeSeeds]/[maxUploadSlots] <=0 保持默认。1 成功 0 失败。
+  /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[maxUploadSlots] <=0 不动。
+  /// [activeDownloads]/[activeSeeds] 每次都写全值：>0 原值、0 = libtorrent 默认
+  /// （从任意旧值热切回默认也生效，HBK-AUDIT-020）、<0 = 不限。两者是**状态**
+  /// 不是增量、没有「不动」档，故为 required：只想切别的项的调用方也必须传
+  /// 当前名额，否则缺省值 0 会把用户名额静默冲回默认。1 成功 0 失败。
   bool applySessionSettings({
     int listenPort = 0,
     bool enableDht = true,
@@ -814,8 +835,8 @@ class EmbeddedTorrentSession {
     bool enableNatpmp = true,
     int encPolicy = 0,
     bool anonymousMode = false,
-    int activeDownloads = 0,
-    int activeSeeds = 0,
+    required int activeDownloads,
+    required int activeSeeds,
     int maxUploadSlots = 0,
   }) {
     if (isClosed) return false;
@@ -878,8 +899,9 @@ class EmbeddedTorrentSession {
   /// 底层库是否支持单种子停上传（[setTorrentUploadBlocked]）。老 DLL 为 false。
   bool get supportsTorrentUploadBlock => _b.hasTorrentUploadBlock;
 
-  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 上传限到
-  /// libtorrent 下限 1 B/s，false = 清除单种子上传限速。库不支持返回 false。
+  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 桥内上传闸
+  /// 只拦 piece payload（BUG-5160：不再用 1 B/s 限速，那会连握手 / request
+  /// 一起饿死下载），false = 解除。库不支持返回 false。
   bool setTorrentUploadBlocked(String infoHash, {required bool blocked}) {
     if (isClosed || !_b.hasTorrentUploadBlock) return false;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();

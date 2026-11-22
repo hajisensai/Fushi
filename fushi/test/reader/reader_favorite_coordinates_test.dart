@@ -84,6 +84,8 @@ $cases
       }
     },
     skip: chrome == null ? 'Chromium required; set CHROME_EXECUTABLE' : false,
+    // 起真 headless Chrome：dist_test 只派给声明了 chrome 能力的 worker。
+    tags: <String>['chrome'],
     // 与同目录另两个真 Chrome 套件（reader_audio_cue_identity /
     // reader_horizontal_pitch_invariant）同口径。默认的 30s 不够：test/reader 里现在
     // 有多个起 Chrome 的套件，flutter test 会并行跑它们，机器一忙就有一个被饿死

@@ -60,10 +60,9 @@ void main() {
     () {
       // 回看远端视频不再要求先下载：起播协商前不得有回看拦截。
       final int load = video.indexOf('Future<void> _loadRemoteEpisode(');
-      final int request = video.indexOf(
-        'await client.remoteVideoStreamUrls(',
-        load,
-      );
+      // 取流自 gap-remote-4（3bad0d66de）起与开播位置并行发：先用
+      // `.remoteVideoStreamUrls(info.id, ...)` 拿 Future、后 await，锚点跟着改。
+      final int request = video.indexOf('.remoteVideoStreamUrls(info.id', load);
       expect(load, greaterThan(0));
       expect(request, greaterThan(load));
       expect(
@@ -135,7 +134,15 @@ void main() {
   test(
     'review completion never advances and manual episode changes keep session',
     () {
-      final String completion = _body(episode, '_handlePlaybackCompleted');
+      // 播放器 EOF 回调只转调 _handlePlaybackEnded（媒体服务器线路故障转移落地后
+      // 的分层，见 video_playlist_auto_advance_guard_static_test）：两道早退闸在
+      // _handlePlaybackEnded 开头，先于换线路与普通自动连播。
+      expect(
+        episode,
+        contains('void _handlePlaybackCompleted() => _handlePlaybackEnded('),
+        reason: 'the EOF callback must go through _handlePlaybackEnded',
+      );
+      final String completion = _body(episode, '_handlePlaybackEnded');
       expect(
         completion,
         startsWith(

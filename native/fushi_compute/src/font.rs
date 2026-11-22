@@ -835,49 +835,7 @@ pub unsafe extern "C" fn ffc_font_table_checksum(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::alloc::{GlobalAlloc, Layout, System};
-    use std::cell::Cell;
-
-    /// 记录「当前线程」请求过的最大单次分配（含 try_reserve 的尝试），用来证明畸形输入不会
-    /// 按声明值触发巨量分配。按线程记，测试并行跑互不干扰。
-    struct MaxRequestAlloc;
-
-    thread_local! {
-        static MAX_REQUEST: Cell<usize> = const { Cell::new(0) };
-    }
-
-    fn note(size: usize) {
-        // try_with：线程析构阶段 TLS 已销毁时静默跳过。
-        let _ = MAX_REQUEST.try_with(|m| m.set(m.get().max(size)));
-    }
-
-    unsafe impl GlobalAlloc for MaxRequestAlloc {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            note(layout.size());
-            System.alloc(layout)
-        }
-        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-            note(layout.size());
-            System.alloc_zeroed(layout)
-        }
-        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-            note(new_size);
-            System.realloc(ptr, layout, new_size)
-        }
-        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-            System.dealloc(ptr, layout)
-        }
-    }
-
-    #[global_allocator]
-    static ALLOC: MaxRequestAlloc = MaxRequestAlloc;
-
-    /// 跑 `f`，返回它的结果与期间当前线程最大的单次分配请求。
-    fn max_request_during<T>(f: impl FnOnce() -> T) -> (T, usize) {
-        MAX_REQUEST.with(|m| m.set(0));
-        let v = f();
-        (v, MAX_REQUEST.with(|m| m.get()))
-    }
+    use crate::test_alloc::max_request_during;
 
     /// 48 字节 WOFF2 头（length 填文件真实长度，totalSfntSize 取一个合法的小值）。
     fn woff2_header(num_tables: u16, file_len: usize, total_compressed: u32) -> Vec<u8> {

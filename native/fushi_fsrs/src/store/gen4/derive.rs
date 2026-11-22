@@ -13,7 +13,8 @@
 //!   属于缓存层（设计 §2.7 第 2 条）。`log_ix` 的行进出索引时顺带维护本机落库序 `log_seq(col, n, k, card)`（本机状态，
 //!   不是派生表：重建保留还在的行的序号；`cmd/training.rs` 文件头「rowid」）。
 //! - `closure_ix(col, device, upto, ctx)`：每台承袭设备的旧闭包（协议 3 的 `sync2_legacy`，改成可重建）：它日志里全部
-//!   旧戳的 dot 与上下文之并；`upto` = 带旧戳的最大 seq。
+//!   旧戳的 dot 与上下文之并；`upto` = 带旧戳的最大 seq。`ctx` 另带每 [CLOSURE_STEP] 条一个的检查点（`at`）：不带旧戳
+//!   的写入只见过这台设备旧戳的一部分时，部分闭包从检查点接着并（[closure_text]）。
 //!
 //! 标签、媒体、彻底清除、被扣住的删除在 [super::weigh]（同一个 [Index]，表与规则见那里）。`reg_ix.state` 另有三个负值
 //! （[super::weigh::S_PURGED] / [super::weigh::S_HELD] / [super::weigh::S_DISTRUSTED]）：这条写入不参与寄存器的判定。
@@ -55,11 +56,11 @@ use serde_json::{Map, Value, json};
 use super::cache::Dirt;
 use super::class::RuleCanon;
 use super::schema::{DERIVED_TABLES, sql};
-use super::truth::{Entry, Head, Truth};
+use super::truth::{EditRead, Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
-use crate::gen4::op::{Body4, Edit4};
+use crate::gen4::op::{Body4, EditHead4};
 use crate::gen4::stamp::{HeritageStamp, SYNTHETIC_PREFIX};
 use crate::gen4::translate::applied_body;
 use crate::registers::{StoredEdit, judge_register};
@@ -189,24 +190,51 @@ fn salts_of(body: &Body4) -> Vec<&str> {
     }
 }
 
-/// 一台设备的旧闭包，边扫边攒。
+/// 旧闭包检查点的间隔（按设备 seq）。`closure_ix` 一行除了整份闭包，还记每个 `CLOSURE_STEP` 整数倍的边界 B 上
+/// 「seq < B 的旧戳之并」（`ctx` 的 `at`，[closure_text]）：不带旧戳的写入只见过一台承袭设备旧戳的一部分（前缀 s 比
+/// `upto` 小）时，部分闭包从 ≤ s + 1 的最后一个边界接着并，最多解 `CLOSURE_STEP` 条操作，而不是从第 1 条起把 s 以内
+/// 的全部旧戳逐条解出来（迁移来的库一台承袭设备几十万条，一次 1.6 s，作答一次要两次）。
+pub(super) const CLOSURE_STEP: u64 = 1024;
+
+/// 一台设备的旧闭包，边扫边攒：按 seq 所在的检查点区间分桶（旧戳给的顺序不必是 seq 序——[Truth::for_each_stamp] 先给
+/// 操作上的、再给副本记录上的），收尾时按区间依次并，顺带得出每个边界上的检查点。
 #[derive(Default)]
 struct Acc {
     upto: u64,
+    /// 从检查点接着并时的起点（已收紧的「边界之前的旧戳之并」）。
+    base: Dvv,
+    /// 区间号（seq / [CLOSURE_STEP]）→ 这个区间里旧戳的上下文与 dot 之并（还没收紧）。
+    parts: BTreeMap<u64, Part>,
+}
+
+#[derive(Default)]
+struct Part {
     vv: BTreeMap<String, i64>,
     cloud: BTreeMap<String, BTreeSet<i64>>,
 }
 
+/// 收好的旧闭包：(带旧戳的最大 seq, 整份闭包, 检查点)。检查点是 (边界 B, seq < B 的旧戳之并)，B 是 [CLOSURE_STEP]
+/// 的整数倍、不超过 `upto`，按 B 升序；与前一个相同的不记（边界 B 上的闭包 = B 以内最后一个检查点，没有 = 空）。
+type Closed = (u64, Dvv, Vec<(u64, Dvv)>);
+
 impl Acc {
+    fn seeded(base: Dvv) -> Acc {
+        Acc {
+            base,
+            ..Acc::default()
+        }
+    }
+
     fn note(&mut self, seq: u64, s: &HeritageStamp) {
         self.upto = self.upto.max(seq);
+        let p = self.parts.entry(seq / CLOSURE_STEP).or_default();
         for e in s.ctx.entries() {
             if e.vv > 0 {
-                let top = self.vv.entry(e.writer.clone()).or_insert(0);
+                let top = p.vv.entry(e.writer.clone()).or_insert(0);
                 *top = (*top).max(e.vv as i64);
             }
             if !e.cloud.is_empty() {
-                self.cloud
+                p.cloud
                     .entry(e.writer.clone())
                     .or_default()
                     .extend(e.cloud.iter().map(|&s| s as i64));
@@ -214,22 +242,67 @@ impl Acc {
         }
         // 合成写入者不进闭包（协议 3 `note_legacy`）。
         if s.seq > 0 && !s.writer.starts_with(SYNTHETIC_PREFIX) {
-            self.cloud
-                .entry(s.writer.clone())
-                .or_default()
-                .insert(s.seq);
+            p.cloud.entry(s.writer.clone()).or_default().insert(s.seq);
         }
     }
 
     fn finish(self) -> (u64, Dvv) {
-        let mut d = Dvv::default();
-        d.merge(&Dvv {
-            vv: self.vv,
-            cloud: self.cloud,
-        });
-        d.drop_writers(SYNTHETIC_PREFIX);
-        (self.upto, d)
+        let (upto, d, _) = self.finish_stepped();
+        (upto, d)
     }
+
+    /// 按区间依次并（`Dvv::merge` 每次收紧；收紧是覆盖集合的规范形，分几次并与一次并结果相同）。合成写入者各区间
+    /// 并完就去掉（各写入者的分量互不影响，`Dvv::drop_writers`）。
+    fn finish_stepped(self) -> Closed {
+        let mut d = self.base;
+        d.drop_writers(SYNTHETIC_PREFIX);
+        let mut steps: Vec<(u64, Dvv)> = Vec::new();
+        for (b, p) in self.parts {
+            d.merge(&Dvv {
+                vv: p.vv,
+                cloud: p.cloud,
+            });
+            d.drop_writers(SYNTHETIC_PREFIX);
+            let edge = (b + 1) * CLOSURE_STEP;
+            if edge <= self.upto && steps.last().is_none_or(|(_, last)| *last != d) {
+                steps.push((edge, d.clone()));
+            }
+        }
+        (self.upto, d, steps)
+    }
+}
+
+/// `closure_ix.ctx` 的文本：整份闭包的 JSON（`Dvv::to_json`），`upto` 够一个检查点区间时再带 `at`（[Closed] 的检查点，
+/// `[[B, 闭包], …]`；没有一个也写空数组——有没有 `at` 区分「按检查点建的行」与之前建的行，[Index::settle] 补建后者）。
+/// 读整份闭包的地方（`Dvv::parse`）不认 `at`、照旧。
+fn closure_text(upto: u64, ctx: &Dvv, steps: &[(u64, Dvv)]) -> String {
+    let mut v = ctx.to_json();
+    if upto >= CLOSURE_STEP {
+        v["at"] = Value::Array(steps.iter().map(|(b, d)| json!([b, d.to_json()])).collect());
+    }
+    v.to_string()
+}
+
+/// 文件里有没有检查点之前建的闭包行（够一个检查点区间、`ctx` 里没有 `at`；全部集合）。Primary 开库时先问这一句
+/// （一台承袭设备一行），有才开写事务补建（[Index::backfill_closure_steps]）。
+pub(crate) fn closure_steps_missing(conn: &rusqlite::Connection) -> Result<bool, String> {
+    conn.prepare_cached(
+        "SELECT EXISTS (SELECT 1 FROM closure_ix WHERE upto >= ?1 AND json_type(ctx, '$.at') IS NULL)",
+    )
+    .map_err(sql)?
+    .query_row([CLOSURE_STEP as i64], |r| r.get(0))
+    .map_err(sql)
+}
+
+/// [closure_text] 里的检查点；没有 `at` = None（检查点之前建的行）。
+fn closure_steps(text: &str) -> Option<Vec<(u64, Dvv)>> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    let at = v.get("at")?.as_array()?;
+    Some(
+        at.iter()
+            .filter_map(|e| Some((e.get(0)?.as_u64()?, Dvv::from_json(e.get(1)?))))
+            .collect(),
+    )
 }
 
 /// 一条拼好的落库修改行（[Index::edit_lines_as]）。
@@ -275,6 +348,31 @@ pub struct Settled {
     pub cache_stats: u64,
 }
 
+/// [Index::rebuild_all] 的分段计时。
+struct Stages {
+    at: std::time::Instant,
+    done: Vec<(&'static str, f64)>,
+}
+
+impl Default for Stages {
+    fn default() -> Stages {
+        Stages {
+            at: std::time::Instant::now(),
+            done: Vec::new(),
+        }
+    }
+}
+
+impl Stages {
+    /// 记下从上一个点到现在这一段。
+    fn lap(&mut self, name: &'static str) {
+        let now = std::time::Instant::now();
+        self.done
+            .push((name, now.duration_since(self.at).as_secs_f64()));
+        self.at = now;
+    }
+}
+
 /// 一个集合的派生索引。
 pub struct Index<'t, 'c> {
     pub(super) t: &'t Truth<'c>,
@@ -302,8 +400,14 @@ pub struct Index<'t, 'c> {
     /// 重建时：边扫边攒的闭包（这时不记上面四个集合）。
     bulk: Option<HashMap<Id, Acc>>,
     closures: Option<HashMap<Id, (u64, Dvv)>>,
+    /// `closure_ix.ctx` 落库的原文（与 [Index::closures] 一起读、一起写；[Index::put_closure] 比它定要不要写）。
+    closure_rows: HashMap<Id, String>,
+    /// 从原文解出的检查点（用到时解一次；None = 检查点之前建的行）。
+    closure_steps: HashMap<Id, Option<Rc<Vec<(u64, Dvv)>>>>,
     /// 只覆盖了一台设备旧戳的一部分时的闭包（少见），按 (设备, seq) 记。
     partial: HashMap<(Id, u64), Dvv>,
+    /// 拼部分闭包时解过的旧戳条数（只增不减，测试与量测读：从检查点接着并时每次不超过 [CLOSURE_STEP]）。
+    pub(super) partial_stamps: u64,
     /// 别名证据变了，别名表要重算（`alias.rs`）。
     pub(super) alias_dirty: bool,
     /// 重算先攒着（[Index::hold_aliases]）。
@@ -330,6 +434,9 @@ pub struct Index<'t, 'c> {
     /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
     /// [Index::cache_log_flush]，浏览会话据此按笔记失效）。
     pub(super) cache_touched: BTreeSet<Ref>,
+    /// 最近一次 [Index::rebuild_all] 各阶段的耗时（阶段名, 秒），按执行顺序。迁移报告的 `rebuildStages` 读它：重建慢
+    /// 只在用户的大库上出现时（BUG-5137），凭报告就能定位到阶段。
+    pub rebuild_stages: Vec<(&'static str, f64)>,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -351,7 +458,10 @@ impl<'t, 'c> Index<'t, 'c> {
             shrunk: false,
             bulk: None,
             closures: None,
+            closure_rows: HashMap::new(),
+            closure_steps: HashMap::new(),
             partial: HashMap::new(),
+            partial_stamps: 0,
             alias_dirty: false,
             alias_held: false,
             alias_delta: Default::default(),
@@ -364,6 +474,7 @@ impl<'t, 'c> Index<'t, 'c> {
             rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
+            rebuild_stages: Vec::new(),
         }
     }
 
@@ -659,11 +770,15 @@ impl<'t, 'c> Index<'t, 'c> {
                     ))
                 })
                 .map_err(sql)?;
+            let mut texts = HashMap::new();
             for row in rows {
                 let (device, upto, ctx) = row.map_err(sql)?;
                 map.insert(Id(device), (upto as u64, Dvv::parse(&ctx)));
+                texts.insert(Id(device), ctx);
             }
             self.closures = Some(map);
+            self.closure_rows = texts;
+            self.closure_steps.clear();
         }
         Ok(self.closures.as_mut().expect("just loaded"))
     }
@@ -674,39 +789,139 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 把一台设备的闭包记成 [acc] 的结果。返回变没变。
+    ///
+    /// 「变没变」只看整份闭包（它决定不带旧戳的写入见过什么要不要重判）；落库的行连检查点一起比，只差检查点（补建
+    /// 检查点之前建的行，[Index::settle]）也写，但不算变。
     fn put_closure(&mut self, device: &Id, acc: Acc) -> Result<bool, String> {
-        let (upto, ctx) = acc.finish();
+        let (upto, ctx, steps) = acc.finish_stepped();
         let next = (upto > 0).then_some((upto, ctx));
+        let text = next.as_ref().map(|(u, c)| closure_text(*u, c, &steps));
         let col = self.col;
         let conn = self.t.conn();
-        let map = self.closures()?;
-        if map.get(device) == next.as_ref() {
+        let changed = self.closures()?.get(device) != next.as_ref();
+        if !changed && self.closure_rows.get(device) == text.as_ref() {
             return Ok(false);
         }
-        match next {
-            Some((upto, ctx)) => {
+        self.closure_steps.remove(device);
+        match (next, text) {
+            (Some((upto, ctx)), Some(text)) => {
                 conn.prepare_cached(
                     "INSERT OR REPLACE INTO closure_ix (col, device, upto, ctx) VALUES (?1, ?2, ?3, ?4)",
                 )
                 .map_err(sql)?
-                .execute(params![
-                    col,
-                    device.0.to_vec(),
-                    upto as i64,
-                    ctx.to_json().to_string()
-                ])
+                .execute(params![col, device.0.to_vec(), upto as i64, &text])
                 .map_err(sql)?;
-                map.insert(*device, (upto, ctx));
+                self.closures()?.insert(*device, (upto, ctx));
+                self.closure_rows.insert(*device, text);
             }
-            None => {
+            _ => {
                 conn.prepare_cached("DELETE FROM closure_ix WHERE col = ?1 AND device = ?2")
                     .map_err(sql)?
                     .execute(params![col, device.0.to_vec()])
                     .map_err(sql)?;
-                map.remove(device);
+                self.closures()?.remove(device);
+                self.closure_rows.remove(device);
             }
         }
-        Ok(true)
+        Ok(changed)
+    }
+
+    /// 收尾的闭包那段：旧戳变了的设备（[Index::stale]）与检查点之前建的闭包行（够一个检查点区间、`ctx` 里没有 `at`）
+    /// 从头重算。返回 (重算了几台, 其中整份闭包变了的几台)；只差检查点的不算变（[Index::put_closure]）。
+    fn settle_closures(&mut self) -> Result<(u64, u64), String> {
+        {
+            let mut stmt = self
+                .t
+                .conn()
+                .prepare_cached(
+                    "SELECT device FROM closure_ix WHERE col = ?1 AND upto >= ?2 AND json_type(ctx, '$.at') IS NULL",
+                )
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map(params![self.col, CLOSURE_STEP as i64], |r| {
+                    r.get::<_, [u8; 16]>(0)
+                })
+                .map_err(sql)?;
+            for d in rows {
+                self.stale.insert(Id(d.map_err(sql)?));
+            }
+        }
+        let (mut redone, mut changed) = (0u64, 0u64);
+        for d in std::mem::take(&mut self.stale) {
+            let mut acc = Acc::default();
+            self.t.for_each_stamp(self.col, &d, u64::MAX, |seq, s| {
+                acc.note(seq, s);
+                Ok(())
+            })?;
+            redone += 1;
+            if self.put_closure(&d, acc)? {
+                changed += 1;
+            }
+        }
+        Ok((redone, changed))
+    }
+
+    /// 开库时补建检查点之前建的闭包行（`kernel.rs` `G4Core::open`，Primary）：[Index::settle] 的闭包那段，别的什么都
+    /// 不碰（不重判寄存器、不动缓存层）。这些行的整份闭包本来就与真相一致，重算只补上 `at`；万一整份闭包变了（索引与
+    /// 真相不一致），这里不替收尾做后续的重判，报错让调用方整笔回滚，留给下一次写命令的收尾（它按「闭包变了」重判）。
+    /// 返回补了几台。
+    pub(crate) fn backfill_closure_steps(&mut self) -> Result<u64, String> {
+        self.writing()?;
+        if !self.stale.is_empty() {
+            return Err("gen4 index: closure backfill with pending stamp changes".to_owned());
+        }
+        let (redone, changed) = self.settle_closures()?;
+        if changed > 0 {
+            return Err(format!(
+                "gen4 index: {changed} legacy closures differ from the log; left to the next settle"
+            ));
+        }
+        Ok(redone)
+    }
+
+    /// 一台设备闭包行里的检查点（[closure_text]）：没有行、行是检查点之前建的、或这台设备的旧戳变了还没收尾
+    /// （[Index::settle] 重算之前行是旧的）= None。
+    fn steps_of(&mut self, device: &Id) -> Result<Option<Rc<Vec<(u64, Dvv)>>>, String> {
+        if self.stale.contains(device) {
+            return Ok(None);
+        }
+        self.closures()?;
+        if !self.closure_steps.contains_key(device) {
+            let steps = self
+                .closure_rows
+                .get(device)
+                .and_then(|text| closure_steps(text))
+                .map(Rc::new);
+            self.closure_steps.insert(*device, steps);
+        }
+        Ok(self.closure_steps[device].clone())
+    }
+
+    /// seq <= [s] 的旧戳之并（[s] 比这台设备的 `upto` 小时 [Index::seen] 要的部分闭包）：从 <= s + 1 的最后一个检查点
+    /// 边界接着并到 s（[CLOSURE_STEP]）；行里没有检查点就从第 1 条起并。结果与从头并逐字相同（收紧是覆盖集合的规范形）。
+    fn partial_closure(&mut self, device: &Id, s: u64) -> Result<Dvv, String> {
+        let edge = (s + 1) / CLOSURE_STEP * CLOSURE_STEP;
+        let (from, base) = match self.steps_of(device)? {
+            Some(steps) if edge > 0 => {
+                let i = steps.partition_point(|(b, _)| *b <= edge);
+                let base = i
+                    .checked_sub(1)
+                    .map(|i| steps[i].1.clone())
+                    .unwrap_or_default();
+                (edge, base)
+            }
+            _ => (1, Dvv::default()),
+        };
+        let mut acc = Acc::seeded(base);
+        let mut n = 0u64;
+        self.t
+            .for_each_stamp_in(self.col, device, from, s, |seq, stamp| {
+                acc.note(seq, stamp);
+                n += 1;
+                Ok(())
+            })?;
+        self.partial_stamps += n;
+        Ok(acc.finish().1)
     }
 
     /// 作者写的时候见过 [full]（每台设备的前缀），算不算见过 dot `(w, q)`：前缀自己含它，或前缀覆盖到的旧闭包含它
@@ -749,27 +964,25 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         };
         for (d, &s) in &full.0 {
-            let whole = match self.closures()?.get(d) {
-                None => continue,
-                Some((upto, ctx)) if s >= *upto => {
-                    if has((*d, Span::Whole, *upto), ctx) {
-                        return Ok(true);
-                    }
-                    true
-                }
-                Some(_) => false,
+            let Some((upto, ctx)) = self.closures()?.get(d) else {
+                continue;
             };
-            if whole {
+            let in_whole = has((*d, Span::Whole, *upto), ctx);
+            if s >= *upto {
+                if in_whole {
+                    return Ok(true);
+                }
                 continue;
             }
-            // 只覆盖了这台设备旧戳的一部分：逐条并到 s 为止。
+            // 只覆盖了这台设备旧戳的一部分（s 之后还有带旧戳的操作）。部分闭包是整份闭包的子集（并的旧戳是它的
+            // 子集，`Dvv::merge` 的覆盖只增不减；按类问时 [super::class::Canon::dvv] 的换名对覆盖单调），整份都不含
+            // 这个 dot，部分闭包一定也不含。
+            if !in_whole {
+                continue;
+            }
             if !self.partial.contains_key(&(*d, s)) {
-                let mut acc = Acc::default();
-                self.t.for_each_stamp(self.col, d, s, |seq, stamp| {
-                    acc.note(seq, stamp);
-                    Ok(())
-                })?;
-                self.partial.insert((*d, s), acc.finish().1);
+                let p = self.partial_closure(d, s)?;
+                self.partial.insert((*d, s), p);
             }
             if has((*d, Span::Upto, s), &self.partial[&(*d, s)]) {
                 return Ok(true);
@@ -778,27 +991,15 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(false)
     }
 
-    /// 修改操作 [k]：(操作号, 修改体, HLC 墙钟, HLC 计数, 作者写的时候的完整上下文——依赖 + 自己之前的全部，协议 3
-    /// `Op::ctx`)。
-    fn edit_write(&self, k: i64) -> Result<(OpId, Edit4, i64, u32, Vv), String> {
-        let e = self
-            .t
-            .entry_by_key(k)?
-            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-        let (wall, logical, deps) = match &e.body {
-            SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
-            SlotBody::Raw3(raw) => {
-                let v = raw.to_v3();
-                (v.hlc.wall, v.hlc.logical, v.deps)
-            }
-            _ => return Err(format!("gen4 index: register row {k} is not an op")),
-        };
-        let Some(Body4::Edit(ed)) = body_of(&e) else {
+    /// 修改操作 [k]：(信封与操作体头部——字段值只在 [with_value] 时读，[Truth::edit_read]；作者写的时候的完整上下文
+    /// ——依赖 + 自己之前的全部，协议 3 `Op::ctx`)。
+    fn edit_write(&self, k: i64, with_value: bool) -> Result<(EditRead, Vv), String> {
+        let Some(e) = self.t.edit_read(k, with_value)? else {
             return Err(format!("gen4 index: register row {k} is not an edit"));
         };
-        let mut full = (*deps).clone();
+        let mut full = (*e.deps).clone();
         full.set(e.id.device, e.id.seq - 1);
-        Ok((e.id, ed, wall, logical, full))
+        Ok((e, full))
     }
 
     /// 修改操作 [k] 的作者写的时候见没见过 dot `(w, q)`——因果事实，从真相层答（撤销校验，`cmd/center.rs`）：带旧戳的
@@ -814,8 +1015,8 @@ impl<'t, 'c> Index<'t, 'c> {
         q: i64,
         class: Option<&super::class::Canon>,
     ) -> Result<bool, String> {
-        let (_, ed, _, _, full) = self.edit_write(k)?;
-        match &ed.stamp {
+        let (e, full) = self.edit_write(k, false)?;
+        match &e.head.stamp {
             Some(s) => {
                 let ctx = s.ctx.to_dvv();
                 Ok(match class {
@@ -955,20 +1156,23 @@ impl<'t, 'c> Index<'t, 'c> {
         struct Write {
             k: i64,
             id: OpId,
-            ed: Edit4,
+            ed: EditHead4,
+            /// 只有 [emit] 要的才读（不要的不会成为输出行，BUG-5137）。
+            value: Option<String>,
             wall: i64,
             logical: u32,
             full: Vv,
         }
         let mut writes = Vec::with_capacity(ks.len());
-        for &k in ks {
-            let (id, ed, wall, logical, full) = self.edit_write(k)?;
+        for (i, &k) in ks.iter().enumerate() {
+            let (e, full) = self.edit_write(k, emit(i))?;
             writes.push(Write {
                 k,
-                id,
-                ed,
-                wall,
-                logical,
+                id: e.id,
+                ed: e.head,
+                value: e.value,
+                wall: e.wall,
+                logical: e.logical,
                 full,
             });
         }
@@ -1034,7 +1238,11 @@ impl<'t, 'c> Index<'t, 'c> {
                     )
                 }
             };
-            let value = serde_json::from_str::<Value>(&w.ed.value).unwrap_or(Value::Null);
+            let text = w
+                .value
+                .as_deref()
+                .ok_or_else(|| format!("gen4 index: emitted write {} has no value", w.k))?;
+            let value = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
             let (entity, key, value) = match class {
                 None => (w.ed.entity.text(), w.ed.key.clone(), value),
                 Some(c) => {
@@ -1188,16 +1396,7 @@ impl<'t, 'c> Index<'t, 'c> {
     pub fn settle(&mut self) -> Result<Settled, String> {
         self.writing()?;
         let mut out = Settled::default();
-        for d in std::mem::take(&mut self.stale) {
-            let mut acc = Acc::default();
-            self.t.for_each_stamp(self.col, &d, u64::MAX, |seq, s| {
-                acc.note(seq, s);
-                Ok(())
-            })?;
-            if self.put_closure(&d, acc)? {
-                out.closures += 1;
-            }
-        }
+        out.closures = self.settle_closures()?.1;
         let trust = self.weigh_purged(false, &mut out)?;
         // 别名表在扣住之前定：扣住按别名类判（`weigh.rs` 文件头「扣住的删除」），别名表只看清除状态、不看扣住与
         // 寄存器的判定（`alias.rs` 文件头「证据」）。
@@ -1245,6 +1444,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let t = self.t;
         let conn = t.conn();
         self.reset();
+        let mut stages = Stages::default();
         // 语义摘要的标脏触发器逐行收一次费，重建不需要（最后整个重算）：先摘掉，收尾时装回。
         super::digest::set_triggers(conn, false)?;
         for table in DERIVED_TABLES {
@@ -1252,8 +1452,11 @@ impl<'t, 'c> Index<'t, 'c> {
                 .map_err(sql)?;
         }
         self.closures = Some(HashMap::new());
+        self.closure_rows.clear();
+        self.closure_steps.clear();
         self.bulk = Some(HashMap::new());
         let mut out = Settled::default();
+        stages.lap("clear");
         for d in t.devices(self.col)? {
             t.for_each(self.col, &d.id, 1, |e| {
                 out.scanned += 1;
@@ -1267,6 +1470,7 @@ impl<'t, 'c> Index<'t, 'c> {
         .map_err(sql)?
         .execute([self.col])
         .map_err(sql)?;
+        stages.lap("scan");
         let mut acc: Vec<(Id, Acc)> = self.bulk.take().unwrap_or_default().into_iter().collect();
         acc.sort_by_key(|(d, _)| *d);
         for (d, a) in acc {
@@ -1274,13 +1478,17 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
+        stages.lap("closures");
         let trust = self.weigh_purged(true, &mut out)?;
+        stages.lap("purged");
         // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
         // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。别名表在扣住之前定（同 [Index::settle]）。
         self.salts_dirty = false;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;
+        stages.lap("aliases");
         self.weigh_rest(true, trust, &mut out)?;
+        stages.lap("weighRest");
         let mut regs = std::mem::take(&mut self.regs);
         regs.extend(self.multi_regs()?);
         for r in &regs {
@@ -1289,18 +1497,24 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.judged += 1;
             }
         }
+        stages.lap("registers");
         for id in self.multi_ids("ent_ix")? {
             out.entities += 1;
             self.pick_entity(&id)?;
         }
+        stages.lap("entities");
         for id in self.multi_ids("log_ix")? {
             out.logs += 1;
             self.pick_log(&id)?;
         }
+        stages.lap("logs");
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
+        stages.lap("digests");
         self.materialize_caches(&mut out)?;
+        stages.lap("caches");
+        self.rebuild_stages = stages.done;
         Ok(out)
     }
 
@@ -1419,7 +1633,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::gen4::heritage::HeritageSlot;
     use crate::gen4::op::tests::{id, native_edit, sample_log};
-    use crate::gen4::op::{Log4, Op4};
+    use crate::gen4::op::{Edit4, Log4, Op4};
     use crate::gen4::stamp::{StampCtx, StampHlc};
     use crate::gen4::translate::T_VERSION;
     use crate::store::gen4::legacy::tests::{T0, migrate, pair, peak_mem_mb, sample};
@@ -1758,6 +1972,272 @@ pub(crate) mod tests {
             })
             .unwrap();
             assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 承袭设备 d1 迁进来 w1 的第 1..=[n] 条旧修改，每条见过 w1 之前的全部（真库那台承袭设备的形态）。seq 在 [on_field]
+    /// 里的落在 FIELD 寄存器上，其余各自一个寄存器（不让一个寄存器攒上千条写入）。只告诉索引，不收尾。
+    pub(crate) fn long_heritage(
+        t: &Truth<'_>,
+        ix: &mut Index<'_, '_>,
+        col: i64,
+        n: u64,
+        on_field: &[u64],
+    ) {
+        for seq in 1..=n {
+            let st = stamp(
+                "w1",
+                seq as i64,
+                &format!(r#"{{"vv":{{"w1":{}}}}}"#, seq - 1),
+                seq as i64,
+            );
+            let key = if on_field.contains(&seq) {
+                field()
+            } else {
+                let mut b = [0x7au8; 16];
+                b[8..].copy_from_slice(&seq.to_be_bytes());
+                format!("f/{}", Id(b).text())
+            };
+            let body = Body4::Edit(Edit4 {
+                key,
+                value: format!("\"old{seq}\""),
+                stamp: Some(st),
+                ..native_edit()
+            });
+            let o = op(0xd1, seq, seq as i64, &[], &body);
+            let oid = o.id;
+            t.put_heritage(
+                col,
+                &id(0xc0),
+                &HeritageSlot::op(seq.to_be_bytes(), o),
+                T_VERSION,
+            )
+            .unwrap();
+            ix.add(&t.entry(col, &oid).unwrap().unwrap()).unwrap();
+        }
+    }
+
+    /// 检查点之前建的库（真库迁移时还没有检查点）：Primary 打开时在一个写事务里补上缺 `at` 的闭包行，同一份重算
+    /// （[Index::settle] 的闭包那段），整份闭包不变——派生表逐行回到「按检查点建」的样子，写入代数不动；Secondary 不写。
+    #[test]
+    fn a_primary_open_backfills_closure_checkpoints_without_counting_a_write() {
+        use crate::store::gen4::files::OpenMode;
+        use crate::store::gen4::kernel::G4Core;
+        use crate::store::sync2::tests::tempdir;
+        let dir = tempdir::new("g4closurebackfill");
+        let n = CLOSURE_STEP + 100;
+        let (col, built) = {
+            let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+            let col = c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+            c.write(|t| {
+                let mut ix = Index::new(t, col);
+                long_heritage(t, &mut ix, col, n, &[n]);
+                ix.settle()
+            })
+            .unwrap();
+            let built = c.read(|t| Ok(dump(t.conn(), col))).unwrap();
+            assert!(
+                built
+                    .iter()
+                    .any(|l| l.starts_with("closure_ix ") && l.contains(r#"\"at\""#))
+            );
+            c.write(|t| {
+                t.conn()
+                    .execute("UPDATE closure_ix SET ctx = json_remove(ctx, '$.at')", [])
+                    .map_err(sql)
+            })
+            .unwrap();
+            c.close();
+            (col, built)
+        };
+        let missing = |c: &G4Core| -> bool { c.read(|t| closure_steps_missing(t.conn())).unwrap() };
+        // Secondary 只读：不补，行照旧缺 `at`（下一次 Primary 打开或写命令的收尾补）。
+        let c = G4Core::open(&dir.0, OpenMode::Secondary).unwrap();
+        assert!(missing(&c));
+        c.close();
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        assert!(!missing(&c));
+        assert_eq!(c.read(|t| Ok(dump(t.conn(), col))).unwrap(), built);
+        assert_eq!(c.writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        c.close();
+    }
+
+    /// 迁移来的库的形态（真库：一台承袭设备 34 万条旧戳，迁移途中另一台设备只同步到它的一部分就写了牌组设置）：
+    /// 不带旧戳的写入只见过承袭设备旧戳的一部分（前缀 s < `upto`）。
+    ///
+    /// - 问的 dot 整份闭包都不含（别的设备的原生写入）：不拼部分闭包，一条旧戳都不解；
+    /// - 整份含（同一个写入者更晚的旧修改）：部分闭包从闭包行的检查点接着并，每次最多解 [CLOSURE_STEP] 条，结果与
+    ///   从第 1 条起逐条并逐字相同；按它判出的寄存器状态正确（见过的被支配、没见过的并发）；
+    /// - 检查点之前建的行（`ctx` 没有 `at`）照旧从头并，下一次收尾补上检查点，整份闭包不变、不算变。
+    #[test]
+    fn a_partial_prefix_of_a_long_heritage_log_reads_its_closure_from_a_checkpoint() {
+        let n = 2 * CLOSURE_STEP + 300;
+        let seen_at = 2 * CLOSURE_STEP + 10;
+        let prefix = 2 * CLOSURE_STEP + 200;
+        let other = format!("f/{}", id(5).text());
+        with(|t, col| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                // 承袭设备 d1：w1 的第 1..=n 条旧修改（[long_heritage]），seen_at 与 n 两条落在 FIELD 上。
+                long_heritage(t, &mut ix, col, n, &[seen_at, n]);
+                // a1 只见过 d1 的前 prefix 条：见过 w1:seen_at、没见过 w1:n。
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa1, 1, 10_000, &[(0xd1, prefix)], &write("n1", None)),
+                );
+                // 另一个寄存器：a1 同一个前缀再写一条，a2 并发写一条（问 a2 的 dot，整份闭包不含）。
+                let on_other = |v: &str| {
+                    Body4::Edit(Edit4 {
+                        key: other.clone(),
+                        value: format!("\"{v}\""),
+                        ..native_edit()
+                    })
+                };
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa1, 2, 10_001, &[(0xd1, prefix)], &on_other("x")),
+                );
+                native(t, &mut ix, col, &op(0xa2, 1, 10_002, &[], &on_other("y")));
+                ix.settle()?;
+                // w1:n 的上下文含 w1:seen_at（被支配）；a1 与 w1:n 互不见过，a1 的 HLC 墙钟更大但旧写入按旧 HLC 比——
+                // 两条都活着，其中一条带冲突标志。
+                let got = states(&ix);
+                assert_eq!(got.len(), 3, "{got:?}");
+                assert_eq!(
+                    got.iter()
+                        .find(|s| (s.0, s.1) == (0xd1, seen_at))
+                        .unwrap()
+                        .2,
+                    R_DOMINATED
+                );
+                let live: Vec<i64> = got
+                    .iter()
+                    .filter(|s| s.2 != R_DOMINATED)
+                    .map(|s| s.2)
+                    .collect();
+                assert_eq!(live.len(), 2, "{got:?}");
+                assert!(live.contains(&R_CONFLICT), "{got:?}");
+                // 闭包行带检查点。
+                let text: String = t
+                    .conn()
+                    .query_row(
+                        "SELECT ctx FROM closure_ix WHERE col = ?1 AND device = ?2",
+                        params![col, id(0xd1).0.to_vec()],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                let steps = closure_steps(&text).expect("closure row carries checkpoints");
+                assert_eq!(
+                    steps.iter().map(|x| x.0).collect::<Vec<_>>(),
+                    [CLOSURE_STEP, 2 * CLOSURE_STEP]
+                );
+                Ok(())
+            })
+            .unwrap();
+            // 部分闭包：检查点接着并 == 从第 1 条起逐条并，且每次解的旧戳不超过一个区间。
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let from_scratch = |s: u64| {
+                    let mut acc = Acc::default();
+                    t.for_each_stamp(col, &id(0xd1), s, |seq, st| {
+                        acc.note(seq, st);
+                        Ok(())
+                    })
+                    .unwrap();
+                    acc.finish().1
+                };
+                for s in [
+                    0,
+                    1,
+                    CLOSURE_STEP - 2,
+                    CLOSURE_STEP - 1,
+                    CLOSURE_STEP,
+                    CLOSURE_STEP + 1,
+                    seen_at,
+                    prefix,
+                    n - 1,
+                ] {
+                    let before = ix.partial_stamps;
+                    assert_eq!(
+                        ix.partial_closure(&id(0xd1), s)?,
+                        from_scratch(s),
+                        "s = {s}"
+                    );
+                    assert!(
+                        ix.partial_stamps - before <= CLOSURE_STEP,
+                        "s = {s}: {}",
+                        ix.partial_stamps - before
+                    );
+                }
+                // 问别的设备原生写入的 dot（`other` 寄存器）：整份闭包不含，一条旧戳都不解。
+                let ks: Vec<i64> = [(0xa1, 2), (0xa2, 1)]
+                    .iter()
+                    .map(|&(d, q)| {
+                        t.key_of(
+                            col,
+                            &OpId {
+                                device: id(d),
+                                seq: q,
+                            },
+                        )
+                        .unwrap()
+                        .unwrap()
+                    })
+                    .collect();
+                let mut fresh = Index::new(t, col);
+                fresh.edit_lines_as(&ks, &|_| true, None)?;
+                assert_eq!(fresh.partial_stamps, 0);
+                // FIELD 寄存器（问 w1:n，整份含）：从检查点接着并。
+                let ks: Vec<i64> = [(0xd1, seen_at), (0xd1, n), (0xa1, 1)]
+                    .iter()
+                    .map(|&(d, q)| {
+                        t.key_of(
+                            col,
+                            &OpId {
+                                device: id(d),
+                                seq: q,
+                            },
+                        )
+                        .unwrap()
+                        .unwrap()
+                    })
+                    .collect();
+                let mut fresh = Index::new(t, col);
+                fresh.edit_lines_as(&ks, &|_| true, None)?;
+                assert!(
+                    fresh.partial_stamps > 0 && fresh.partial_stamps <= CLOSURE_STEP,
+                    "{}",
+                    fresh.partial_stamps
+                );
+                Ok::<_, String>(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+            // 检查点之前建的行：照旧从头并（结果相同），下一次收尾补上检查点，不算闭包变了。
+            let before = dump(t.conn(), col);
+            t.conn()
+                .execute(
+                    "UPDATE closure_ix SET ctx = json_remove(ctx, '$.at') WHERE col = ?1",
+                    [col],
+                )
+                .unwrap();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let p = ix.partial_closure(&id(0xd1), prefix)?;
+                assert_eq!(ix.partial_stamps, prefix);
+                let did = ix.settle()?;
+                assert_eq!(did.closures, 0);
+                let mut again = Index::new(t, col);
+                assert_eq!(again.partial_closure(&id(0xd1), prefix)?, p);
+                assert!(again.partial_stamps <= CLOSURE_STEP);
+                Ok::<_, String>(())
+            })
+            .unwrap();
+            assert_eq!(dump(t.conn(), col), before);
         });
     }
 

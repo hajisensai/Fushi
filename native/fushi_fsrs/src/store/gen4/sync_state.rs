@@ -109,6 +109,10 @@ pub struct LocHead {
     pub segs: Vec<String>,
 }
 
+/// 按「(集合, 位置)」记的同步运行时状态表（[Truth::forget_location] / [Truth::forget_all_locations] 一起清）：位置上各设备
+/// 的 head、本机的转发记账、停放的重切件、旧根清单指纹。
+const LOCATION_TABLES: [&str; 4] = ["loc_heads", "relay_out", "relay_park", "oldroot_fp"];
+
 /// [Truth::put_loc_head] 的结果。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LocHeadPut {
@@ -599,7 +603,7 @@ impl<'c> Truth<'c> {
         self.write(|| {
             self.sync_target(col, loc)?;
             let mut n = 0u64;
-            for table in ["loc_heads", "relay_out", "relay_park", "oldroot_fp"] {
+            for table in LOCATION_TABLES {
                 n += self
                     .conn()
                     .prepare_cached(&format!(
@@ -607,6 +611,26 @@ impl<'c> Truth<'c> {
                     ))
                     .map_err(sql)?
                     .execute(params![col, loc])
+                    .map_err(sql)? as u64;
+            }
+            Ok(n)
+        })
+    }
+
+    /// 集合 [col] 换了根（并入改绑：`collections.dir` 换了，位置上的 `fushi-srs/<目录>/` 是另一份）：[forget_location] 那几张
+    /// 表在**全部**位置上的行都去掉（设计 §5.1「位置进度与段清单是某个根的进度，换了根就从头对账」）。不去掉的话，旧目录上
+    /// 各设备的 head 与本机的转发记账会被当成新目录上已有这些段：转发既不往新目录补段（`cmd/sync_relay.rs`
+    /// `present_at`），还把转发缓存里的原文当「每个位置都有了」删掉（`prune`），只经本机拿数据的设备就收不到那些作者的
+    /// 操作。返回去掉的行数。只由并入改绑调（`identity.rs` `join_into`，与改绑同一个事务）。
+    pub(crate) fn forget_all_locations(&self, col: i64) -> Result<u64, String> {
+        self.write(|| {
+            let mut n = 0u64;
+            for table in LOCATION_TABLES {
+                n += self
+                    .conn()
+                    .prepare_cached(&format!("DELETE FROM {table} WHERE col = ?1"))
+                    .map_err(sql)?
+                    .execute([col])
                     .map_err(sql)? as u64;
             }
             Ok(n)

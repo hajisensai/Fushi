@@ -538,18 +538,26 @@ void main() {
   });
 
   group('换档事务（失败回滚）', () {
-    test('reload 返回 false → 共享档回到原值', () async {
+    const AdaptiveQualitySwitchOutcome applied =
+        AdaptiveQualitySwitchOutcome.applied;
+    const AdaptiveQualitySwitchOutcome failed =
+        AdaptiveQualitySwitchOutcome.failed;
+    const AdaptiveQualitySwitchOutcome superseded =
+        AdaptiveQualitySwitchOutcome.superseded;
+
+    test('reload 失败 → 共享档回到原值', () async {
       int? shared = 2;
-      final bool ok = await runAdaptiveQualitySwitch(
-        read: () => shared,
-        write: (int? v) => shared = v,
-        targetIndex: 4,
-        reload: () async {
-          expect(shared, 4, reason: '取流协商要读到目标档，必须先写');
-          return false;
-        },
-      );
-      expect(ok, isFalse);
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => shared,
+            write: (int? v) => shared = v,
+            targetIndex: 4,
+            reload: () async {
+              expect(shared, 4, reason: '取流协商要读到目标档，必须先写');
+              return failed;
+            },
+          );
+      expect(outcome, failed);
       expect(shared, 2);
     });
 
@@ -567,30 +575,51 @@ void main() {
       expect(shared, 2);
     });
 
-    test('reload 返回 true → 保持目标档', () async {
+    test('reload 成功 → 保持目标档', () async {
       int? shared = 2;
-      final bool ok = await runAdaptiveQualitySwitch(
-        read: () => shared,
-        write: (int? v) => shared = v,
-        targetIndex: 4,
-        reload: () async => true,
-      );
-      expect(ok, isTrue);
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => shared,
+            write: (int? v) => shared = v,
+            targetIndex: 4,
+            reload: () async => applied,
+          );
+      expect(outcome, applied);
       expect(shared, 4);
+    });
+
+    test('reload 被换集 / 重试接管 → 不回滚：接管那一程起播读的就是目标档', () async {
+      int? shared = 2;
+      int? negotiatedByTakeover;
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => shared,
+            write: (int? v) => shared = v,
+            targetIndex: 4,
+            reload: () async {
+              // 停止上报期间用户点了重试：新的一程按共享档协商取流。
+              negotiatedByTakeover = shared;
+              return superseded;
+            },
+          );
+      expect(outcome, superseded);
+      expect(negotiatedByTakeover, 4);
+      expect(shared, 4, reason: '共享档必须与接管那一程正在播的流一致（HBK-AUDIT-005）');
     });
 
     test('reload 期间外部改了共享档 → 失败也不覆盖外部的值', () async {
       int? shared = 2;
-      final bool ok = await runAdaptiveQualitySwitch(
-        read: () => shared,
-        write: (int? v) => shared = v,
-        targetIndex: 4,
-        reload: () async {
-          shared = null; // 换源 / 用户手动选档清空了自适应档。
-          return false;
-        },
-      );
-      expect(ok, isFalse);
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => shared,
+            write: (int? v) => shared = v,
+            targetIndex: 4,
+            reload: () async {
+              shared = null; // 换源 / 用户手动选档清空了自适应档。
+              return failed;
+            },
+          );
+      expect(outcome, failed);
       expect(shared, isNull);
     });
 
@@ -600,7 +629,7 @@ void main() {
         read: () => shared,
         write: (int? v) => shared = v,
         targetIndex: 3,
-        reload: () async => false,
+        reload: () async => failed,
       );
       expect(shared, isNull);
     });

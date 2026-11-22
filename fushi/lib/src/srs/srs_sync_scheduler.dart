@@ -66,6 +66,11 @@ const Duration kSrsSyncMinInterval = Duration(seconds: 60);
 /// 有新操作的一轮（新笔记引用了新媒体 / 别的设备传来了笔记）照常立刻对账。
 const Duration kSrsMediaReconcileInterval = Duration(minutes: 30);
 
+/// 发段之后那一遍完整媒体对账在一轮里最多占的时长：到点不再开始新的媒体项，剩下的下一轮接着传（这个位置不记成已对账，
+/// 下一轮照样对账）。一轮在通道锁里串行：以前整份媒体（反馈 arw7eXO895 里 1.1 GB）一次传完才放开，期间新背的卡
+/// 推不出去，手机端一直在传（BUG-5061）。
+const Duration kSrsMediaRoundBudget = Duration(minutes: 2);
+
 /// 同一个（候选没变的）profile 冲突隔多久再通知一次（[SrsSyncNotice.profileNotLinked]）。判定本身每一轮都重做、不复用：
 /// 冲突会被另一边解决（对方采用了本机的 profile 之后，本机 uid 的目录里就有了对方），复用检出时的结论会把已经解决的
 /// 冲突、连同检出那一刻的笔记数，留到很久以后再拿出来问用户。
@@ -198,6 +203,8 @@ typedef SrsMediaSyncRunner =
       Directory mediaRoot, {
       SrsMediaCipher? cipher,
       required String locationId,
+      void Function(int done, int total)? onProgress,
+      bool Function()? deferRemaining,
     });
 
 /// 生产实现：引擎的 [srsRunLocationMedia]。
@@ -208,6 +215,8 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   SrsMediaCipher? cipher,
   required String locationId,
   bool uploadOnly = false,
+  void Function(int done, int total)? onProgress,
+  bool Function()? deferRemaining,
 }) => srsRunLocationMedia(
   srsLocationBackendOf(backend),
   store,
@@ -215,6 +224,8 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   cipher: cipher,
   locationId: locationId,
   uploadOnly: uploadOnly,
+  onProgress: onProgress,
+  deferRemaining: deferRemaining,
 );
 
 /// 本机写入后推送失败时，同一条推送的诊断日志最多隔这么久记一次（[SrsSyncScheduler.autoPush]）：每次去抖 / 退避
@@ -454,6 +465,18 @@ class SrsSyncScheduler {
         );
       }
     }
+    // 清 v3.0.x 写入者目录没做成的（[SrsSync2Report.legacyWriterErrors]，BUG-5017）：同理不算失败、同一个原因只记一次。
+    for (final String f in report.legacyWriterErrors) {
+      if (_loggedSkipped.add('legacy|$key|$f')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.legacyWriterSweep',
+          StateError(
+            'SRS sync could not remove a v3.0.x writer directory in $key: $f',
+          ),
+          StackTrace.current,
+        );
+      }
+    }
   }
 
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
@@ -545,6 +568,25 @@ class SrsSyncScheduler {
   static void _reportMediaStart() =>
       srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
 
+  /// 媒体阶段按项报进度（BUG-5061：以前只报一个「同步卡片媒体」，积压上千个文件时看不出在不在动）。
+  static void _reportMediaProgress(int done, int total) =>
+      srsSyncProgress.value = SrsSyncProgress(
+        stage: SrsSyncStage.media,
+        done: done,
+        total: total,
+      );
+
+  /// 对账中途本机文件没了而没传的（[SrsMediaSyncReport.vanished]）记一条诊断：整轮照常做完，这里只留个痕迹。
+  static void _noteMediaVanished(String source, SrsMediaSyncReport? media) {
+    if (media == null || media.vanished.isEmpty) return;
+    final List<String> names = media.vanished.toList()..sort();
+    ErrorLogService.instance.logDiagnostic(
+      source,
+      'local media vanished during sync (${names.length}): '
+      '${names.take(5).join(', ')}',
+    );
+  }
+
   /// 当前这一轮的细分步骤写进活动面包屑（[_trackRound] 装上、跑完卸下）：进程死在一轮里时，下次启动报
   /// 「上次进程在 srs_sync 进行中没了」带上死在哪一步、那一刻的内存（反馈 i8qNDs_V_D：大库上卡在「开始」
   /// 4.5 分钟后被系统杀，原本只知道阶段名）。
@@ -553,7 +595,8 @@ class SrsSyncScheduler {
 
   /// 发段之前先把本机的媒体传上去（设计 §6.1 写入纪律 3，审查 S-10）：本机新加 / 改过的媒体的绑定随这一轮的段
   /// 发出，读到这些段的设备马上就能拿到内容。只在本机内容可能变了（内容指纹与本位置上次对账时不同）或本位置还没
-  /// 对账过时跑；失败只记日志，不影响复习数据本身的同步。
+  /// 对账过时跑；失败只记日志，不影响复习数据本身的同步。最多占 [kSrsMediaBeforeUploadBudget]：积压的媒体不挡
+  /// 复习记录段（BUG-5061），剩下的由发段之后的完整对账（[kSrsMediaRoundBudget]）与之后的轮次接着传。
   Future<void> _mediaBeforeUpload(
     SyncAssetStore backend,
     SrsDbStore store,
@@ -570,14 +613,20 @@ class SrsSyncScheduler {
       final Directory? root = await readMediaRoot();
       if (root == null) return;
       _reportMediaStart();
-      await srsDefaultMediaSyncRunner(
+      final SrsMediaSyncReport media = await srsDefaultMediaSyncRunner(
         backend,
         store,
         root,
         cipher: keyHex == null ? null : SrsMediaCipher(store, keyHex),
         locationId: key,
         uploadOnly: true,
+        onProgress: _reportMediaProgress,
+        deferRemaining: srsMediaDeadline(
+          kSrsMediaBeforeUploadBudget,
+          shouldStop: () => _locationStopped(key) || store.isWindingDown,
+        ),
       );
+      _noteMediaVanished('SrsSyncScheduler.mediaBeforeUpload', media);
     } catch (e, stack) {
       ErrorLogService.instance.log(
         'SrsSyncScheduler.mediaBeforeUpload',
@@ -1181,19 +1230,30 @@ class SrsSyncScheduler {
         final Directory? root = await readMediaRoot();
         if (root != null) {
           _reportMediaStart();
+          final SrsDbStore mediaStore = store;
           final SrsMediaSyncReport media = await _mediaRunner(
             backend,
-            store,
+            mediaStore,
             root,
             cipher: report.encrypted && locKey != null
                 ? SrsMediaCipher(store, locKey.keyHex)
                 : null,
             locationId: key,
+            onProgress: _reportMediaProgress,
+            deferRemaining: srsMediaDeadline(
+              kSrsMediaRoundBudget,
+              shouldStop: () =>
+                  _locationStopped(key) || mediaStore.isWindingDown,
+            ),
           );
           mediaChanged = media.downloaded > 0;
           _noteMediaKey(key, media);
-          _mediaReconciledAt[key] = _clock();
-          _mediaReconciledContent[key] = content;
+          _noteMediaVanished('SrsSyncScheduler.media', media);
+          // 到点 / 收手留下没做的：不记成已对账，下一轮照样对账、接着传（BUG-5061）。
+          if (media.deferred == 0) {
+            _mediaReconciledAt[key] = _clock();
+            _mediaReconciledContent[key] = content;
+          }
         }
       } catch (e, stack) {
         ErrorLogService.instance.log('SrsSyncScheduler.media', e, stack);
@@ -1753,6 +1813,7 @@ class SrsSyncScheduler {
               onFetchProgress: _reportFetchProgress,
               onUploadStart: _reportUploadStart,
               onMediaStart: _reportMediaStart,
+              onMediaProgress: _reportMediaProgress,
               shouldStop: () =>
                   _locationStopped(l.locationId) || store.isWindingDown,
               onStep: _step,
@@ -1770,6 +1831,7 @@ class SrsSyncScheduler {
         _noteHeritagePending(folderOps);
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
+        _noteMediaVanished('SrsSyncScheduler.folderMedia', r.media);
         // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。
         final String? error = outcome.locationError;
         if (error != null) {

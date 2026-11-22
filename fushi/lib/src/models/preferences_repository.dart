@@ -138,6 +138,8 @@ import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
 // 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
+import 'package:fushi/src/utils/net/github_mirrors.dart'
+    show gitHubMirrorsEnabledReader;
 import 'package:fushi_engine/utils/net/app_proxy.dart'
     show
         appUserProxyModeReader,
@@ -425,6 +427,9 @@ class PreferencesRepository extends ChangeNotifier
     appUserProxyModeReader = () => networkProxyMode;
     appUserProxyUsernameReader = () => networkProxyUsername;
     appUserProxyPasswordReader = () => networkProxyPassword;
+    // GitHub 加速镜像开关同属进程级网络出口策略，同一时机绑定：词典下载、Mihon 扩展
+    // 仓库、字体、着色器、更新检查都在拿不到 AppModel 的地方生成候选。
+    gitHubMirrorsEnabledReader = () => gitHubMirrorsEnabled;
     // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
     miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
   }
@@ -1419,6 +1424,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 电脑端（Windows）「缓存其他应用的声音」开关的偏好键（设备本地）。
+  static const String crossAppAudioCaptureDesktopKey =
+      'mining_app_audio_capture_desktop';
+
+  /// 电脑端「缓存其他应用的声音」（拍板 design-cross-app-audio-desktop）：开着时启动即
+  /// 常驻录系统混音环（与 galgame 会话共用同一路 loopback），应用外查词制卡带查词前最后
+  /// 一句语音。默认关。Android 不持久化（每次都要用户重新同意屏幕共享）。
+  bool get crossAppAudioCaptureDesktop =>
+      getPref(crossAppAudioCaptureDesktopKey, defaultValue: false);
+
+  Future<void> setCrossAppAudioCaptureDesktop(bool value) async {
+    await setPref(crossAppAudioCaptureDesktopKey, value);
+    notifyListeners();
+  }
+
   /// 桌面截屏识字的 OCR 引擎设置（反馈 Eemf0HOZhj）：出厂跟随全局 OCR 引擎偏好
   /// （[mangaOcrEnginePreference]），解析见 [resolveScreenOcrEngine]。
   ScreenOcrEngineSetting get screenOcrEngine =>
@@ -1433,6 +1453,12 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('screen_ocr.engine', value.storageValue);
     notifyListeners();
   }
+
+  /// OCR 游戏模式上次框选的台词区域（`GalOcrRegion.toJson` 的 JSON 串）；没框过为 null。
+  String? get galOcrRegionJson => getPref('gal_ocr_region') as String?;
+
+  Future<void> setGalOcrRegionJson(String json) =>
+      setPref('gal_ocr_region', json);
 
   /// 应用外悬浮球菜单里有没有「打开 Fushi」。默认有；习惯切屏回 Fushi 的人可以
   /// 关掉（反馈 9bdhVTgq3A）。
@@ -3112,16 +3138,6 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('browse_moved_notice_handled', true);
   }
 
-  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
-  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      getPref('library_layout_default_notice_handled', defaultValue: false)
-          as bool;
-
-  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
-    await setPref('library_layout_default_notice_handled', true);
-  }
-
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(
@@ -3184,6 +3200,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoPortraitSubtitleList(bool value) async {
     await setPref('video_portrait_subtitle_list', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 42UUu_kcwD：手机 / 平板切出 app 或锁屏后视频声音继续播（默认关）。
+  /// 关着时进后台暂停、回前台续播（BUG-2544）。
+  bool get videoBackgroundPlay =>
+      getPref('video_background_play', defaultValue: false) as bool;
+
+  Future<void> setVideoBackgroundPlay(bool value) async {
+    await setPref('video_background_play', value);
     notifyListeners();
   }
 
@@ -6191,14 +6217,23 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `mesh`。
+  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `pixi`（反馈
+  /// l1ERGmWxjF）。只在用户手选时落库：没有行 = 跟着出厂默认走，所以默认从 `mesh`
+  /// 改成 `pixi` 后，没手选过的老用户自动切过去，手选过 `mesh` 的保持不变。
   String get musicLyricsBackdropStyle =>
-      (getPref('music_lyrics_backdrop_style', defaultValue: 'mesh')
+      (getPref('music_lyrics_backdrop_style', defaultValue: 'pixi')
           as String?) ??
-      'mesh';
+      'pixi';
 
   Future<void> setMusicLyricsBackdropStyle(String value) async {
     await setPref('music_lyrics_backdrop_style', value);
+    notifyListeners();
+  }
+
+  /// 「恢复默认」：删掉这一行回到「跟着出厂默认走」，而不是把此刻的默认值钉死成
+  /// 显式选择（钉死后再改出厂默认就分不清「手选」与「默认」，BUG-5167）。
+  Future<void> clearMusicLyricsBackdropStyle() async {
+    await removePref('music_lyrics_backdrop_style');
     notifyListeners();
   }
 
@@ -6678,6 +6713,17 @@ class PreferencesRepository extends ChangeNotifier
         ? value
         : kProxyModeAuto;
     await setPref('network_proxy_mode', normalized);
+    notifyListeners();
+  }
+
+  /// 是否允许 GitHub 下载（更新、词典、字体、着色器、Mihon 扩展仓库）在直连失败后
+  /// 走第三方加速镜像（ghproxy 等，`kGitHubMirrorPrefixes`）。默认开；关掉后只剩
+  /// GitHub 直连与 jsDelivr——给安全软件拦截代理域名、或不愿请求经第三方代理的用户。
+  bool get gitHubMirrorsEnabled =>
+      getPref('network_github_mirrors_enabled', defaultValue: true) as bool;
+
+  Future<void> setGitHubMirrorsEnabled(bool value) async {
+    await setPref('network_github_mirrors_enabled', value);
     notifyListeners();
   }
 

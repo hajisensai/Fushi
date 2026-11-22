@@ -27,6 +27,9 @@
 //!     （`Index::canonical_key`：以完整 ID 结尾的换成规范 ID；半截 ID 无从归一）。
 //! - **顺序**：协议 3 `edits` 同一实体按落库顺序（rowid），新代没有落库顺序：按 (修改键, 行 JSON) 排。其余没写
 //!   `ORDER BY` 的协议 3 查询这里也一律给确定顺序（按 ID 的 SQLite 序，`cmd::sql_order`）。
+//! - **`conflict_edits`** 只交回按类判**可能有值不同的并发写入**的寄存器（协议 3 交回全部「还留着两条以上记录」的，
+//!   含同值的并发写入）：调用方（Dart `syncConflicts`）本来就只留有可见败者的，结果相同；两台设备各导入同一个包后
+//!   每条笔记的「所属牌组」都是两条同值写入，协议 3 的口径会把它们全部交回去再丢掉。键先按规则筛、再读操作体。
 //! - **`server_time`**：只有承袭来的那份（`cache.rs` 文件头「取舍」）；原生操作、身份记录没有。
 //! - **`style_candidates` 的游标 `rid`** 是操作主键 `k`（协议 3 是修改记录表的 rowid）：同样只增、只当游标用。
 //! - **`events` 的 `unknown`** 是 `LegacyUnknown` 操作的原文；`events_present` 认的事件 ID 是：身份记录 / 日志按别名类
@@ -47,6 +50,7 @@
 //! `events_present` / `server_times` 按修改记录 ID 找要逐条算 ID（协议 3 有按 ID 的表），它们的调用方（备份合并、profile
 //! 并入）在整批里被按操作并集的新路径替换（规划 §2.2 G9-5 / G11-4）。
 
+use std::cell::Cell as Flag;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use rusqlite::params;
@@ -59,8 +63,9 @@ use super::{
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, KIND_EDIT, KIND_LEGACY_UNKNOWN};
 use crate::store::bulk::{self, KIND_I64, KIND_OPT_I64, KIND_OPT_STR, KIND_STR};
+use crate::store::gen4::alias::key_ids_by;
 use crate::store::gen4::class::builtin_rule_canon;
-use crate::store::gen4::derive::{Index, R_LIVE, Ref, body_of};
+use crate::store::gen4::derive::{Index, R_CONFLICT, R_LIVE, R_WINNER, Ref, body_of};
 use crate::store::gen4::schema::{k_range, sql};
 use crate::store::gen4::truth::Truth;
 use crate::store::gen4::weigh::S_PURGED;
@@ -208,8 +213,8 @@ fn row_json(json: &str, profile: &str, field: &str) -> (String, String) {
 }
 
 /// 修改记录 ID（协议 3 `registers::edit_id`）：带旧戳的按旧写入者与旧 seq，不带的按 (设备, seq)。
-fn edit_id_of(ed: &crate::gen4::op::Edit4, op: &OpId) -> String {
-    match &ed.stamp {
+fn edit_id_of(stamp: &Option<crate::gen4::stamp::HeritageStamp>, op: &OpId) -> String {
+    match stamp {
         Some(s) => crate::registers::edit_id(&s.writer, s.seq),
         None => crate::registers::edit_id(&op.device.text(), op.seq as i64),
     }
@@ -680,12 +685,28 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(out.encode())
     }
 
-    /// `conflict_edits {rules, kind?, id?}`：按类判定后一个字段键上还活着两条以上写入的全部写入（`k` 种类, `i` 规范实体,
-    /// `f` 规范键, `j`, `st`），只看 `rules` 圈定的类别（[Rules]，键按规范形比）；`kind` + `id` 给了只看这一个实体。
+    /// `conflict_edits {rules, kind?, id?}`：按类判定后**可能有值不同的并发写入**的寄存器上活着的全部写入（`k` 种类,
+    /// `i` 规范实体, `f` 规范键, `j`, `st`），只看 `rules` 圈定的类别（[Rules]，键按规范形比）；`kind` + `id` 给了只看
+    /// 这一个实体。调用方（Dart `syncConflicts`）拿这些行交给寄存器内核再判、只留有可见败者的：这里保证不漏任何一个
+    /// 按类判有冲突的寄存器（[Index::class_conflict_lines]），同值的并发写入（两台设备各导入同一个包后每条笔记的
+    /// 「所属牌组」）不再交回去（协议 3 交回全部「还留着两条以上记录」的，Dart 判完丢掉）。行里不带旧戳的写入的
+    /// 上下文只回答「见没见过别的交回的行」（同一个寄存器内的支配判定只看这些）。
     ///
-    /// 候选：有「活着、不是胜者」写入的原值寄存器所在的实体，加上有多个成员的别名类（成员各自只有一条写入、按类并起来
-    /// 才冲突的情形）。候选逐个按类判（`class.rs`），不扫全部寄存器。
+    /// 先按 `rules` 筛键再读操作体：不追踪的键（笔记字段正文、笔记的合成 `tags` 行）不读（BUG-3947，协议 3 在 SQL 里
+    /// 用 `class_filter` 先筛）。候选实体见 [Reads::conflict_candidates]。
     fn conflict_edits(&mut self, req: &Value) -> Result<Vec<u8>, String> {
+        // 归回的写入者表与内置规则表在这一条命令里不变（同一个读快照）：每个候选实体都要，读一次（同 `browse.rs`）。
+        self.ix.pass_writers = Some(std::rc::Rc::new(self.ix.writer_aliases()?));
+        let done = self
+            .ix
+            .pass_rules_begin()
+            .and_then(|()| self.conflict_edits_with(req));
+        self.ix.pass_writers = None;
+        self.ix.pass_rules = None;
+        done
+    }
+
+    fn conflict_edits_with(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let rules = Rules::parse(&self.ix, req.get("rules").ok_or("read: missing rules")?)?;
         let only = match (opt_str(req, "kind"), opt_str(req, "id")) {
             (Some(kind), Some(id)) => Some((
@@ -695,12 +716,12 @@ impl<'t, 'c> Reads<'t, 'c> {
             (None, None) => None,
             _ => return Err("read conflict_edits: kind and id go together".into()),
         };
-        let candidates: BTreeSet<(i64, (u8, Vec<u8>), Ref)> = match only {
+        let candidates: BTreeSet<Candidate> = match only {
             Some((k, c)) => {
                 let (o, b) = sql_order(&c);
                 BTreeSet::from([(k as i64, (o, b.to_vec()), c.clone())])
             }
-            None => self.conflict_candidates()?,
+            None => self.conflict_candidates(&rules)?,
         };
         let mut out = Table::new(&[
             ("k", KIND_STR),
@@ -714,13 +735,22 @@ impl<'t, 'c> Reads<'t, 'c> {
             if !rules.touches(kind) {
                 continue;
             }
-            let rows = self.class_rows(kind, &c)?;
+            // 笔记的 `tags` 寄存器不出（读命令只出那一行合成行，`super::edit_rows`；它只有一行，不会成冲突）。
+            let tracks = |f: &str| !(kind == EntKind::Note && f == "tags") && rules.tracks(kind, f);
+            let pre = |raw: &str| rules.may_track(kind, raw);
+            let mut rows: Vec<EditRow> = self
+                .ix
+                .class_conflict_lines(kind, &c, &pre, &tracks)?
+                .into_iter()
+                .map(|(f, j, st)| (f, with_profile(&j, &self.profile), st))
+                .collect();
+            rows.sort();
             let mut by_key: BTreeMap<&str, Vec<&EditRow>> = BTreeMap::new();
             for row in &rows {
                 by_key.entry(row.0.as_str()).or_default().push(row);
             }
-            for (f, group) in by_key {
-                if group.len() < 2 || !rules.tracks(kind, f) {
+            for (_, group) in by_key {
+                if group.len() < 2 {
                     continue;
                 }
                 for (f, j, st) in group {
@@ -737,34 +767,100 @@ impl<'t, 'c> Reads<'t, 'c> {
         Ok(out.encode())
     }
 
-    /// [Reads::conflict_edits] 的候选 (种类, 排序键, 规范实体)。
-    fn conflict_candidates(&mut self) -> Result<BTreeSet<Candidate>, String> {
+    /// [Reads::conflict_edits] 的候选 (种类, 排序键, 规范实体)：按类判可能有冲突的寄存器所在的全部别名类，不多拉。
+    /// 一个寄存器按类判有冲突只有这几种来路（[Index::class_conflict_lines]）：
+    ///
+    /// 1. 单一原值寄存器、没碰归回写入者：原值判下就有 [R_CONFLICT] 的写入；
+    /// 2. 别名类里不止一个成员在这种实体下有寄存器行（跨成员并起来）——只数**有行的**成员：迁移来的库里每个实体都
+    ///    带一条旧 ID 的别名、规范 ID 自己没有行，按「类里有别名」取会把整库每个实体都拉进来；
+    /// 3. 同一个实体的两个原值键归一成同一个规范键（键里嵌的 ID 有别名，[Reads::merged_key_candidates]）；
+    /// 4. 有归回的写入者时：碰到它的寄存器按类重判，换名可能改变支配——参与判定的不止一条写入（或有扣住的删除）的
+    ///    寄存器才判得出冲突，它一定有一条不是 [R_WINNER] 的行；没有归回写入者时这一种不存在。
+    fn conflict_candidates(&mut self, rules: &Rules) -> Result<BTreeSet<Candidate>, String> {
+        let renamed = self.ix.pass_writers.as_ref().is_some_and(|w| !w.is_empty());
         let mut raw: Vec<(i64, Ref)> = Vec::new();
+        // 一趟按 (种类, 实体) 汇总：有没有冲突的写入、有没有不是胜者的写入，连同实体的规范 ID（别名表的主键点查）。
         let mut q = Sel::of(self.col);
-        let live = q.int(R_LIVE);
+        let conflict = q.int(R_CONFLICT);
+        let winner = q.int(R_WINNER);
         q.push(&format!(
-            "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND state = {live}"
+            "SELECT g.ekind, g.ent, a.canon, g.c, g.n FROM \
+             (SELECT ekind, ent, MAX(state = {conflict}) AS c, MAX(state != {winner}) AS n \
+              FROM reg_ix WHERE col = ?1 GROUP BY ekind, ent) g \
+             LEFT JOIN alias_ix a ON a.col = ?1 AND a.id = g.ent"
         ));
+        let mut members: BTreeMap<(i64, Ref), usize> = BTreeMap::new();
         q.each(self.t, |r| {
-            raw.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?));
+            let ekind: i64 = r.get(0).map_err(sql)?;
+            let ent: Ref = r.get(1).map_err(sql)?;
+            let canon: Option<Ref> = r.get(2).map_err(sql)?;
+            let (c, n): (bool, bool) = (r.get(3).map_err(sql)?, r.get(4).map_err(sql)?);
+            if !ent_kind(ekind).is_ok_and(|k| rules.touches(k)) {
+                return Ok(());
+            }
+            // 与 [Index::canonical] 同一个口径：只有 UUID 查别名表。
+            let canon = match (&ent, canon) {
+                (Ref::Uuid(_), Some(c)) => c,
+                _ => ent,
+            };
+            if c || (renamed && n) {
+                raw.push((ekind, canon.clone()));
+            }
+            *members.entry((ekind, canon)).or_default() += 1;
             Ok(())
         })?;
-        // 有多个成员的别名类：成员的寄存器在哪几种实体下。
-        let mut q = Sel::of(self.col);
-        q.push(
-            "SELECT DISTINCT r.ekind, a.id FROM alias_ix a CROSS JOIN reg_ix r \
-             ON r.col = a.col AND r.ent = a.id \
-             WHERE a.col = ?1 AND a.canon != a.id",
+        raw.extend(
+            members
+                .into_iter()
+                .filter(|&(_, n)| n > 1)
+                .map(|(key, _)| key),
         );
-        q.each(self.t, |r| {
-            raw.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?));
-            Ok(())
-        })?;
+        raw.extend(self.merged_key_candidates(rules)?);
         let mut out = BTreeSet::new();
-        for (k, ent) in raw {
-            let c = self.canon(&ent)?;
+        for (k, c) in raw {
             let (o, b) = sql_order(&c);
             out.insert((k, (o, b.to_vec()), c));
+        }
+        Ok(out)
+    }
+
+    /// [Reads::conflict_candidates] 第 3 种：同一个原值实体下两个原值键归一成同一个规范键的 (种类, 规范实体)。只扫
+    /// `rules` 可能追踪嵌 ID 键族的种类，只取嵌着 ID 的键（紧凑形 tag 不是 0 的，或文本形的 `fieldDesc/`；哪些键嵌
+    /// ID 只认 `alias.rs` 的 `key_ids_by`）。
+    fn merged_key_candidates(&mut self, rules: &Rules) -> Result<Vec<(i64, Ref)>, String> {
+        let mut out = Vec::new();
+        for kind in EntKind::ALL {
+            if !rules.may_track_embedded(kind) {
+                continue;
+            }
+            let mut q = Sel::of(self.col);
+            let ekind = q.int(kind as i64);
+            let desc = q.bind_blob(b"fieldDesc/".to_vec());
+            q.push(&format!(
+                "SELECT ent, key FROM reg_ix WHERE col = ?1 AND ekind = {ekind} \
+                 AND (key >= x'01' OR instr(key, {desc}) > 0) GROUP BY ent, key"
+            ));
+            let mut keys: Vec<(Ref, Vec<u8>)> = Vec::new();
+            q.each(self.t, |r| {
+                keys.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?));
+                Ok(())
+            })?;
+            // (原值实体, 规范键) → 有几个原值键。
+            let mut seen: BTreeMap<(Ref, String), usize> = BTreeMap::new();
+            for (ent, key) in keys {
+                let text = key_text(&key)?;
+                if !embeds_id(&text) || !rules.may_track(kind, &text) {
+                    continue;
+                }
+                *seen
+                    .entry((ent, self.ix.canonical_key(&text)?))
+                    .or_default() += 1;
+            }
+            for ((ent, _), n) in seen {
+                if n > 1 {
+                    out.push((kind as i64, self.canon(&ent)?));
+                }
+            }
         }
         Ok(out)
     }
@@ -787,12 +883,10 @@ impl<'t, 'c> Reads<'t, 'c> {
             if !v.contains("<style>") {
                 continue;
             }
-            let Some(e) = self.t.entry_by_key(k)? else {
+            let Some(e) = self.t.edit_read(k, false)? else {
                 continue;
             };
-            let Some(Body4::Edit(ed)) = body_of(&e) else {
-                continue;
-            };
+            let ed = &e.head;
             if ed.kind != EntKind::Note || !ed.key.starts_with("f/") {
                 continue;
             }
@@ -807,7 +901,7 @@ impl<'t, 'c> Reads<'t, 'c> {
                 .ok_or("gen4 read: an edit gave no line")?;
             out.push(vec![
                 Cell::I(k),
-                Cell::S(edit_id_of(&ed, &e.id)),
+                Cell::S(edit_id_of(&ed.stamp, &e.id)),
                 Cell::S(with_profile(&line.json, &self.profile)),
             ])?;
             n += 1;
@@ -1214,12 +1308,9 @@ impl<'t, 'c> Reads<'t, 'c> {
                 )?;
                 continue;
             }
-            let Some(e) = self.t.entry_by_key(k)? else {
-                continue;
-            };
-            if let Some(Body4::Edit(ed)) = body_of(&e) {
-                let st = ed.stamp.as_ref().and_then(|s| s.server_time);
-                f(edit_id_of(&ed, &e.id), st)?;
+            if let Some(e) = self.t.edit_read(k, false)? {
+                let st = e.head.stamp.as_ref().and_then(|s| s.server_time);
+                f(edit_id_of(&e.head.stamp, &e.id), st)?;
             }
         }
         Ok(())
@@ -1704,10 +1795,10 @@ const NOTE_COLUMNS: [(&str, u32); 13] = [
 
 /// `conflict_edits` 的字段类别规则（协议 3 `class_filter` 的同一份语义）：每项 `{kind, keep: [键…]}`（只要这些键）或
 /// `{kind, drop: [键…]}`（除这些键以外都要）。键先归一，与按类判定的修改行里的规范键比。
-struct Rules(Vec<(String, bool, HashSet<String>)>);
+pub(super) struct Rules(Vec<(String, bool, HashSet<String>)>);
 
 impl Rules {
-    fn parse(ix: &Index<'_, '_>, rules: &Value) -> Result<Rules, String> {
+    pub(super) fn parse(ix: &Index<'_, '_>, rules: &Value) -> Result<Rules, String> {
         let mut out = Vec::new();
         for rule in rules.as_array().ok_or("read: rules must be an array")? {
             let kind = need_str(rule, "kind").map_err(|_| "read: rule without kind")?;
@@ -1732,7 +1823,30 @@ impl Rules {
         self.0.iter().any(|(k, _, _)| k == kind.wire())
     }
 
-    fn tracks(&self, kind: EntKind, key: &str) -> bool {
+    /// 原值键 [raw]（还没归一）归一之后可能被 [Rules::tracks] 留下吗：键里不嵌 ID 时归一不变，照规范键判；嵌着 ID
+    /// 的按键族（ID 之前那段）判——`keep` 里有同族的键才可能，`drop` 一律可能（归一后才知道是不是被丢的那个）。
+    /// 只用来在归一（查别名表）与读操作体之前粗筛，结论不能比 [Rules::tracks] 严。
+    fn may_track(&self, kind: EntKind, raw: &str) -> bool {
+        let family = embedded_family(raw);
+        self.0.iter().any(|(k, keep, keys)| {
+            k == kind.wire()
+                && match (family, *keep) {
+                    (None, true) => keys.contains(raw),
+                    (None, false) => !keys.contains(raw),
+                    (Some(f), true) => keys.iter().any(|x| embedded_family(x) == Some(f)),
+                    (Some(_), false) => true,
+                }
+        })
+    }
+
+    /// 这种实体有没有可能追踪嵌 ID 的键（[Reads::merged_key_candidates] 要不要扫它）。
+    fn may_track_embedded(&self, kind: EntKind) -> bool {
+        self.0.iter().any(|(k, keep, keys)| {
+            k == kind.wire() && (!*keep || keys.iter().any(|x| embeds_id(x)))
+        })
+    }
+
+    pub(super) fn tracks(&self, kind: EntKind, key: &str) -> bool {
         self.0.iter().any(|(k, keep, keys)| {
             k == kind.wire()
                 && if *keep {
@@ -1742,4 +1856,22 @@ impl Rules {
                 }
         })
     }
+}
+
+/// 修改键里嵌着 ID 吗（`alias.rs` `key_ids_by` 会换掉它的那些键）。
+fn embeds_id(key: &str) -> bool {
+    let hit = Flag::new(false);
+    let _ = key_ids_by(key, &|s| {
+        hit.set(true);
+        Ok(s.to_owned())
+    });
+    hit.get()
+}
+
+/// 嵌着 ID 的修改键的键族：ID 之前那段（`f/`、`historyFrom/`、`fieldDesc/` …，ID 恒在末尾、36 个字符）；不嵌 ID = None。
+fn embedded_family(key: &str) -> Option<&str> {
+    if !embeds_id(key) {
+        return None;
+    }
+    key.get(..key.len().checked_sub(36)?)
 }

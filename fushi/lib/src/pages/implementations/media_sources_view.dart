@@ -1563,6 +1563,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (folder == null) return;
     setState(() => _inboxImporting = true);
     try {
+      await _offerInboxRootFiles(folder);
+      if (!mounted) return;
       if (ImportInbox.movesIntoDataRoot(widget.mediaKind)) {
         await _importInboxIntoDataRoot(folder);
       } else {
@@ -1578,9 +1580,55 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   void _showInboxEmpty(String folder) => FushiToast.show(
-    msg: importInboxEmptyText(folder: folder),
+    msg:
+        '${importInboxEmptyText(folder: folder)} ${t.media_import_inbox_itunes_tip}',
     severity: ToastSeverity.info,
   );
+
+  /// 根上散文件最多在确认框里列几个名字（其余以「…」带过）。
+  static const int _inboxRootPreviewLimit = 5;
+
+  /// iTunes 文件共享进不了分类子目录（拍板台 kmfCiXlIU_），只用 iTunes 的用户只能把文件
+  /// 放在 Fushi 文件夹最外层。根上有本页认的散文件时先问用户：确认就移进本页的分类
+  /// 子目录（之后与「文件」App 放进去的文件同路导入），跳过就原样留在根上。媒体种类仍由
+  /// 当前页面决定，只是多一步确认，不静默扫根（见 [ImportInbox.pendingRootFiles]）。
+  Future<void> _offerInboxRootFiles(String folder) async {
+    final Directory inbox = await AppPaths.importInboxDirectory();
+    final List<File> rootFiles = await ImportInbox.pendingRootFiles(
+      inbox: inbox,
+      mediaKind: widget.mediaKind,
+    );
+    if (rootFiles.isEmpty || !mounted) return;
+    final List<String> names = <String>[
+      for (final File f in rootFiles.take(_inboxRootPreviewLimit))
+        '• ${p.basename(f.path)}',
+      if (rootFiles.length > _inboxRootPreviewLimit) '…',
+    ];
+    final bool adopt = await showFushiConfirmDialog(
+      context: context,
+      icon: FushiIcons.folder,
+      title: t.media_import_inbox_root_title(n: rootFiles.length),
+      message:
+          '${t.media_import_inbox_root_message(folder: folder)}\n\n'
+          '${names.join('\n')}',
+      confirmLabel: t.media_import_inbox_root_confirm,
+      cancelLabel: t.media_import_inbox_root_skip,
+    );
+    if (!adopt || !mounted) return;
+    final List<String> failures = await ImportInbox.adoptRootFiles(
+      inbox: inbox,
+      mediaKind: widget.mediaKind,
+      files: rootFiles,
+    );
+    if (failures.isEmpty) return;
+    for (final String failure in failures) {
+      ErrorLogService.instance.log('ImportInbox.adoptRootFiles', failure);
+    }
+    FushiToast.show(
+      msg: t.media_import_inbox_move_failed(n: failures.length),
+      severity: ToastSeverity.warning,
+    );
+  }
 
   /// 书 / 漫画：导入器把内容复制进书库，直接对收件箱子目录原地扫描，原件留给用户在
   /// 「文件」App 里处置（见 [ImportInbox.movesIntoDataRoot]）。

@@ -19,8 +19,10 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show buildFfmpegAtempoFilter, retempoAudioFileViaFfmpeg;
 import 'package:material_ui/material_ui.dart' show immutable;
@@ -394,6 +396,11 @@ Future<File?> _synthesizeAtSourceSpeed({
   required MiningTtsVoiceSource Function() voices,
   String? languageTag,
 }) async {
+  // 纯标点 / 符号词条（[ttsTextIsSilent]）没有能念的内容：合成入口只会给它一段
+  // 静音，静音进卡片比没有音频更糟，按「没有单词音频」报出来。
+  if (choice.kind != MiningTtsFallbackKind.none && ttsTextIsSilent(text)) {
+    throw WordAudioUnavailable(t.models_tts_fallback_nothing_to_read);
+  }
   switch (choice.kind) {
     case MiningTtsFallbackKind.none:
       return null;
@@ -463,8 +470,12 @@ Future<File> _synthesizeWithPreset({
     );
     final TtsCachedAudio audio = await cache.obtain(
       key,
-      (String out) =>
-          active.synthesize(text, outputPath: out, cancel: TtsCancelToken()),
+      (String out) => ttsSynthesizeSplittingOnReject(
+        active,
+        text,
+        outputPath: out,
+        cancel: TtsCancelToken(),
+      ),
     );
     // 缓存文件是 `<key>.audio`（无可用扩展名，且会被淘汰），Anki 按扩展名推断 MIME：
     // 复制一份带真实扩展名的出来。文件名按缓存键取，不同词 / 音色互不覆盖。

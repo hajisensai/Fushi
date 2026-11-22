@@ -1,5 +1,6 @@
-// 漫画朗读播放卡：MD3 与 Apple 两套设计系统下都渲染全部按钮，名称进无障碍语义；
-// 状态行按控制器状态 / 失败原因给出对应文案；成品音频卡顶行显示说话人。
+// 漫画朗读播放条（替换底栏工具栏那一行）：MD3 与 Apple 两套设计系统下都渲染全部
+// 按钮，名称进无障碍语义；状态读数按控制器状态 / 失败原因给出对应文案；成品音频条
+// 显示说话人、不显示台词，停止键贴在条的最右端，倍速在条上方弹出，底边进度线可点。
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +11,11 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
+    show kMangaChromeToolbarHeight;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:material_ui/material_ui.dart';
@@ -92,8 +97,12 @@ class _AudioPlayer extends ChangeNotifier implements MangaAudioPlayerPort {
     notifyListeners();
   }
 
+  /// 收到过的跳转目标（按顺序）。
+  final List<int> seeks = <int>[];
+
   @override
   Future<void> seekMs(int ms) async {
+    seeks.add(ms);
     pos = ms;
     notifyListeners();
   }
@@ -228,7 +237,7 @@ void main() {
   });
 
   for (final bool apple in <bool>[false, true]) {
-    testWidgets('${apple ? 'Apple' : 'MD3'}：成品音频播放条有进度与跟随翻页、没有声音键', (
+    testWidgets('${apple ? 'Apple' : 'MD3'}：成品音频播放条有进度与跟随翻页、没有声音键、不显示台词', (
       WidgetTester tester,
     ) async {
       final _AudioPlayer player = _AudioPlayer();
@@ -258,9 +267,19 @@ void main() {
         find.byKey(const ValueKey<String>('manga_read_aloud_voice')),
         findsNothing,
       );
-      expect(find.text('hello'), findsOneWidget);
-      // 卡片顶行：说话人。
+      // 台词不进播放条（页面上的高亮框就是当前句），只显示说话人。
+      expect(find.text('hello'), findsNothing);
       expect(find.text('A'), findsOneWidget);
+      // 播放条与底栏工具栏同高。
+      final Rect bar = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_read_aloud_bar')),
+      );
+      expect(bar.height, kMangaChromeToolbarHeight);
+      // 停止键贴在条的最右端（旧卡片有说话人时 X 被 Flexible + Spacer 平分挤到中间）。
+      final Rect stop = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_audio_stop')),
+      );
+      expect(bar.right - stop.right, lessThan(16));
 
       await tester.tap(find.byKey(const ValueKey<String>('manga_audio_play')));
       await tester.pump();
@@ -277,11 +296,50 @@ void main() {
       await tester.pump();
       expect(d.followPage, isFalse);
 
-      // 占位句：状态行标「未配音」。
+      // 占位句：说话人读数的提示里标「未配音」，台词照样不显示。
       player.pos = d.plan.lineStartMs(1) + 10;
       player.notifyListeners();
       await tester.pump();
-      expect(find.text('${t.manga_audio_unvoiced} · later'), findsOneWidget);
+      expect(find.text('later'), findsNothing);
+      // 读数提示走 FushiTooltip（Apple 下是玻璃气泡、不是带 message 的 Tooltip），
+      // 按组件的 message 断言，两套设计系统同一判据。
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiTooltip && w.message == '${t.manga_audio_unvoiced} · A',
+        ),
+        findsOneWidget,
+      );
+
+      // 倍速胶囊在条上方弹出倍速条，再点收起。
+      expect(
+        find.byKey(const ValueKey<String>('manga_read_aloud_speed_slider')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('manga_audio_speed')));
+      await tester.pump();
+      final Finder slider = find.byKey(
+        const ValueKey<String>('manga_read_aloud_speed_slider'),
+      );
+      expect(slider, findsOneWidget);
+      expect(tester.getRect(slider).bottom, lessThan(bar.top));
+      await tester.tap(find.byKey(const ValueKey<String>('manga_audio_speed')));
+      await tester.pump();
+      expect(slider, findsNothing);
+
+      // 底边进度线：点中点 = 跳到整卷一半。
+      final Rect line = tester.getRect(
+        find.byKey(const ValueKey<String>('manga_audio_progress')),
+      );
+      final int seeksBefore = player.seeks.length;
+      await tester.tapAt(line.center);
+      await tester.pump();
+      // 断言点按发出的第一次跳转（驱动随后会把落在句间静音里的位置再吸附到句首）。
+      expect(player.seeks.length, greaterThan(seeksBefore));
+      expect(
+        (player.seeks[seeksBefore] - d.totalMs / 2).abs(),
+        lessThan(d.totalMs * 0.02),
+      );
 
       await tester.tap(find.byKey(const ValueKey<String>('manga_audio_stop')));
       expect(stopped, isTrue);

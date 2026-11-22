@@ -32,6 +32,7 @@ import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -62,6 +63,14 @@ class FeedbackDetailPage extends ConsumerStatefulWidget {
 
 class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   final TextEditingController _reply = TextEditingController();
+
+  /// 包住整页的焦点节点（自身不取焦点、不进遍历），只用来判断主焦点在不在本页：
+  /// 嵌在反馈中心右栏时，左栏的搜索框也在同一路由里（见 [_focusAllowsPaste]）。
+  final FocusNode _pageFocus = FocusNode(
+    debugLabel: 'feedback-detail-page',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
   FeedbackDetail? _detail;
   String? _error;
   bool _missing = false;
@@ -70,13 +79,40 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
     unawaited(_load());
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    _pageFocus.dispose();
     _reply.dispose();
     super.dispose();
+  }
+
+  /// 桌面 Ctrl+V（macOS Cmd+V）：与提交页同一快捷键（[isFeedbackPasteShortcut]），
+  /// 还能追加截图时看一眼剪贴板，有图就追加。不吃掉按键——回复框照常粘贴文字。
+  bool _onKey(KeyEvent event) {
+    if (!isFeedbackPasteShortcut(event)) return false;
+    // 只认最上层：详情页上面又压了别的页面 / 弹窗时不抢。
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    if (!_focusAllowsPaste()) return false;
+    final FeedbackDetail? d = _detail;
+    if (d == null || _addingShot || _shotRoom(d) <= 0) return false;
+    unawaited(_pasteShot(d, explicit: false));
+    return false;
+  }
+
+  /// 主焦点在本页之内（回复框等），或停在本页外层的路由作用域上（页内没有具体
+  /// 焦点）时才收 Ctrl+V。焦点在同一路由里本页之外的别处（反馈中心左栏搜索框、
+  /// 列表卡）时不收：那里的 Ctrl+V 是给那个输入框的，不能把剪贴板里的截图悄悄
+  /// 传到右栏这条反馈上。
+  bool _focusAllowsPaste() {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    if (primary == null || primary == _pageFocus) return true;
+    if (primary.ancestors.contains(_pageFocus)) return true;
+    return _pageFocus.ancestors.contains(primary);
   }
 
   Future<void> _load() async {
@@ -168,19 +204,45 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     }
   }
 
-  /// 给这条反馈追加一张截图（相册选图）。
-  Future<void> _addShot(FeedbackDetail d) async {
+  /// 已占的截图名额：服务端已有的截图 + 本机待传的截图槽位。视频（v0）、样本文件
+  /// （f0..f2）与日志不占截图名额。
+  int _shotsUsed(FeedbackDetail d, FeedbackService service) =>
+      d.attachments.where((FeedbackAttachmentInfo a) => a.isScreenshot).length +
+      service
+          .pendingSlots(widget.feedbackId)
+          .where(
+            (String s) =>
+                s != 'log' &&
+                s != FeedbackLimits.videoSlot &&
+                !FeedbackLimits.isFileSlot(s),
+          )
+          .length;
+
+  /// 还能追加几张截图；补传窗口过了（或本机没有这条反馈的回执）为 0。
+  int _shotRoom(FeedbackDetail d) {
     final FeedbackService service = ref.read(feedbackServiceProvider);
+    final FeedbackTicket? local = service.byId(widget.feedbackId);
+    if (local == null || !service.canAttach(local)) return 0;
+    return FeedbackLimits.screenshots - _shotsUsed(d, service);
+  }
+
+  /// 追加截图的共用一段：[source] 按剩余名额取图（相册 / 剪贴板），取到就上传。
+  /// [source] 返回空表 = 用户取消或没有图，什么也不传。
+  Future<void> _appendShots(
+    FeedbackDetail d,
+    Future<List<Uint8List>> Function(int room) source,
+  ) async {
+    if (_addingShot) return;
+    final FeedbackService service = ref.read(feedbackServiceProvider);
+    final int room = _shotRoom(d);
+    if (room <= 0) return;
     setState(() => _addingShot = true);
     try {
-      final File? file = await pickGalleryImageFile();
-      if (file == null) return;
-      final Uint8List bytes = await prepareFeedbackImage(
-        await file.readAsBytes(),
-      );
+      final List<Uint8List> shots = await source(room);
+      if (shots.isEmpty || !mounted) return;
       final FeedbackRetryResult r = await service.addScreenshots(
         widget.feedbackId,
-        <Uint8List>[bytes],
+        shots.take(room).toList(growable: false),
         usedSlots: <String>{
           for (final FeedbackAttachmentInfo a in d.attachments) a.slot,
         },
@@ -192,6 +254,32 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
       if (mounted) setState(() => _addingShot = false);
     }
   }
+
+  /// 给这条反馈追加一张截图（相册选图）。
+  Future<void> _addShot(FeedbackDetail d) => _appendShots(d, (int _) async {
+    final File? file = await pickGalleryImageFile();
+    if (file == null) return const <Uint8List>[];
+    return <Uint8List>[await prepareFeedbackImage(await file.readAsBytes())];
+  });
+
+  /// 把剪贴板里的图片追加进这条反馈（与提交页同一个取图入口
+  /// [readFeedbackImagesFromClipboard]）。[explicit]（按钮）时没图 / 读失败给一句
+  /// 提示；Ctrl+V 粘的多半是回复文字，没图时不打扰。
+  Future<void> _pasteShot(FeedbackDetail d, {required bool explicit}) =>
+      _appendShots(d, (int room) async {
+        final List<Uint8List> images;
+        try {
+          images = await readFeedbackImagesFromClipboard(limit: room);
+        } on Object catch (e, st) {
+          ErrorLogService.instance.log('feedback.paste_image', e, st);
+          if (explicit) _snack(t.feedback_compose_paste_failed);
+          return const <Uint8List>[];
+        }
+        if (images.isEmpty && explicit) {
+          _snack(t.feedback_compose_paste_none);
+        }
+        return images;
+      });
 
   /// 追加视频：选文件 → 本机转码 → 上传（进度见 [FeedbackService.videoTransfer]）。
   Future<void> _addVideo() async {
@@ -238,20 +326,8 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     final DateTime? quotaResetAt = service.uploadQuotaResetAt(
       widget.feedbackId,
     );
-    // 截图只数截图槽位：视频（v0）、样本文件（f0..f2）与日志不占截图名额。
-    final int shots =
-        d.attachments
-            .where((FeedbackAttachmentInfo a) => a.isScreenshot)
-            .length +
-        pending
-            .where(
-              (String s) =>
-                  s != 'log' &&
-                  s != FeedbackLimits.videoSlot &&
-                  !FeedbackLimits.isFileSlot(s),
-            )
-            .length;
-    final bool canAddShot = attachable && shots < FeedbackLimits.screenshots;
+    final bool canAddShot =
+        attachable && _shotsUsed(d, service) < FeedbackLimits.screenshots;
     final bool hasVideo =
         d.attachments.any((FeedbackAttachmentInfo a) => a.isVideo) ||
         pending.contains(FeedbackLimits.videoSlot);
@@ -338,6 +414,19 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                   onPressed: _addingShot ? null : () => unawaited(_addShot(d)),
                   icon: const FushiIcon(FushiIcons.addCircle),
                   label: Text(t.feedback_detail_add_shot),
+                ),
+              ),
+            // 与提交页「粘贴图片」同一入口：剪贴板里的截图 / 复制的图片文件（BUG-5172）。
+            if (canAddShot)
+              FushiPressScale(
+                enabled: !_addingShot,
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('feedback-detail-paste-shot'),
+                  onPressed: _addingShot
+                      ? null
+                      : () => unawaited(_pasteShot(d, explicit: true)),
+                  icon: const FushiIcon(FushiIcons.paste),
+                  label: Text(t.feedback_compose_paste_image),
                 ),
               ),
             if (canAddVideo)
@@ -646,7 +735,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     final FeedbackDetail? d = _detail;
     // 账户列表里的条目删不掉（下次刷新又会列出来），不给「从本机移除」。
     final bool viaAccount = local?.viaAccount ?? false;
-    return FushiPageScaffold(
+    final Widget page = FushiPageScaffold(
       automaticallyImplyLeading: !widget.embedded,
       title: d?.summary.title ?? local?.title ?? t.feedback_title,
       actions: <Widget>[
@@ -817,5 +906,6 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
         ),
       ),
     );
+    return Focus(focusNode: _pageFocus, child: page);
   }
 }

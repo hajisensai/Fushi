@@ -63,6 +63,7 @@ class MangaRenderedLine {
     this.placeholder = false,
     this.voice,
     this.seed,
+    this.shape,
   });
 
   /// [MangaScriptLine.lineId]。
@@ -89,6 +90,12 @@ class MangaRenderedLine {
   final String? voice;
   final int? seed;
 
+  /// 出这段音频时的整形版本（裁静音 / 淡变 / 响度 / 编码参数的指纹，
+  /// `MangaRenderBackend.shapeVersion`）。整形参数变了，旧音频就不能和新出的句子混排，
+  /// 重跑时不沿用；没有这个字段的历史清单行一律按「版本不符」处理。占位静音不整形，
+  /// 记 null。
+  final String? shape;
+
   MangaTimedLine get timed => MangaTimedLine(
     page: page,
     speaker: speaker,
@@ -105,6 +112,7 @@ class MangaRenderedLine {
     String? voice,
     int? seed,
     String? text,
+    String? shape,
   }) => MangaRenderedLine(
     lineId: lineId,
     page: page,
@@ -118,6 +126,7 @@ class MangaRenderedLine {
     placeholder: placeholder,
     voice: voice,
     seed: seed,
+    shape: shape,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -133,6 +142,7 @@ class MangaRenderedLine {
     if (placeholder) 'ph': true,
     if (voice != null) 'voice': voice,
     if (seed != null) 'seed': seed,
+    if (shape != null) 'shape': shape,
   };
 
   static MangaRenderedLine? fromJson(Object? raw) {
@@ -159,6 +169,7 @@ class MangaRenderedLine {
     final Object? text = raw['t'];
     final Object? voice = raw['voice'];
     final Object? seed = raw['seed'];
+    final Object? shape = raw['shape'];
     return MangaRenderedLine(
       lineId: id,
       page: page,
@@ -175,6 +186,7 @@ class MangaRenderedLine {
       placeholder: raw['ph'] == true,
       voice: voice is String ? voice : null,
       seed: seed is int ? seed : null,
+      shape: shape is String ? shape : null,
     );
   }
 }

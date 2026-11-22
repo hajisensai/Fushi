@@ -334,8 +334,16 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
 /// （后台 isolate）转成 JPEG：irot / imir 已应用、不带 EXIF，切片与识别坐标都落在显示
 /// 方向上——与导入时记录的页面尺寸同一坐标系。其余格式原样返回；转换失败也原样返回，
 /// 由平台按原来的方式报错。
+///
+/// TIFF（整卷 OCR 扫用户目录里的老扫描页）同理：Android 的 ImageDecoder 不认 TIFF，
+/// 一律先无损转成 PNG（同样按方向标签转正、不带方向元数据）。
 Future<Uint8List> systemOcrDecodableBytes(Uint8List bytes) async {
-  if (probeImageNative(bytes)?.format != FfcImageFormat.avif) return bytes;
+  final FfcImageFormat? format = probeImageNative(bytes)?.format;
+  if (format == FfcImageFormat.tiff) {
+    final Uint8List? png = await Isolate.run(() => encodeImageAsPng(bytes));
+    return png ?? bytes;
+  }
+  if (format != FfcImageFormat.avif) return bytes;
   final Uint8List? jpeg = await Isolate.run(
     () => encodeImageAsJpeg(bytes, quality: 95),
   );

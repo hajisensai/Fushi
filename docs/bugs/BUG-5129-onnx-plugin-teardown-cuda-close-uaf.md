@@ -1,0 +1,14 @@
+## BUG-5129 · ONNX 插件析构时 GPU 队列排空在途 CUDA 关会话任务，碰到已析构的空闲释放 mutex 与定时器
+- **报告**：2026-11-22（外部审计 Codex 2026-11-21 PR 审查 HBK-AUDIT-015，针对 PR #4023 / BUG-5163 的 CUDA 空闲释放）
+- **真实性**：✅ 真 bug（源码路径确认 + 原生行为测试复现）。
+  - 根因：`FlutterOnnxruntimePluginImpl` 只靠隐式成员析构收尾。PR 头 `fcf9784dff` 的成员顺序是 `gpuQueue_`（`third_party/flutter_onnxruntime/windows/flutter_onnxruntime_plugin.cpp:132`）→ `cudaIdleMutex_`（:219）→ `cudaIdleRelease_`（:223，最后声明、最先析构）。析构时定时器与 mutex 先没，`gpuQueue_` 的析构函数（`WorkQueue::~WorkQueue` 置 stopping 后 join，worker 会把队列里剩下的任务**跑完**）再排空：此时若队列里还有 `HandleCloseSession` 的 CUDA 关会话任务（:1315 `impl->ArmCudaIdleRelease(...)`），它会锁已析构的 `cudaIdleMutex_` 并对已析构的 `DelayedTask` 调 `Schedule`（:197）——未定义行为（MSVC 上多半静默，sanitizer 也抓不到：Impl 的内存要等全部成员析构完才释放）。
+  - 原注释「延时任务最后声明，先于它要投递的队列析构」只顾了「定时器 → 队列」一个方向；「队列任务 → 定时器 / mutex」这个反方向同时存在，所以任何声明顺序单独都不安全（定时器放前面，触发中的定时器又会往已析构的队列投递）。
+  - 复现：`third_party/flutter_onnxruntime/windows/test/async_dispatch_teardown_test.cc` 以 `/DFUSHI_TEARDOWN_LEGACY`（旧的纯隐式析构）编译，「在途 CUDA 关会话在析构排空时被执行」用例 100/100 次红（关会话任务碰到已析构的空闲释放成员）。
+- **[x] ① 已修复** — 析构改为显式收尾：`WorkQueue` / `DelayedTask` 新增幂等 `Shutdown()`（`third_party/flutter_onnxruntime/windows/src/async_dispatch.{h,cc}`；`DelayedTask::Schedule` 停下后返回 false，`WorkQueue::Post` 停下后返回 false、同步诊断模式也不例外）；`~FlutterOnnxruntimePluginImpl()` 先 `cudaIdleRelease_.Shutdown()`（不再接活并 join，触发中的回调把释放任务投到仍然活着的 GPU 队列），再对各 CPU 会话队列、`cpuQueue_`、`gpuQueue_` 依次 `Shutdown()`（拒新任务、排空已排队的关会话 / 释放任务）——全程所有成员都还活着，之后成员析构时已没有线程能碰它们。排空中的关会话任务再 arm 定时器是 no-op。
+- **[x] ② 已加自动化测试** —
+  - 原生行为测试 `third_party/flutter_onnxruntime/windows/test/async_dispatch_teardown_test.cc`（真 `async_dispatch.cc`；`Owner` 按 Impl 的成员与析构顺序复刻空闲释放接线）：在途 CUDA 关会话、析构时定时器正在触发、两个原语的 Shutdown 契约，共 12 条断言。修后 100/100 绿；`/DFUSHI_TEARDOWN_LEGACY` 100/100 红（2 条断言）。编译命令见文件头（MSVC x64，需 `/utf-8`）。
+  - 源码守卫 `fushi/test/onnx/cuda_idle_release_guard_test.dart`「析构先停延时任务，再让工作队列停止接活并排空」钉住真实 Impl 析构里的顺序与 `Schedule` 的停后拒绝（替换掉原来钉「延时任务最后声明」的那条）。
+- **备注**：
+  - 原生测试由 `.github/workflows/native-onnx-plugin-gate.yml` 在 PR 上跑（改 `windows/src/async_dispatch.*` 或 `windows/test/**` 时触发；MSVC x64 `/W4 /WX`，修后版必须绿、`/DFUSHI_TEARDOWN_LEGACY` 版必须红，防止测试退化成永远绿）。Impl 本身依赖 Flutter wrapper 与 ORT 头，不能在测试里直接实例化，所以原生测试测的是复刻的接线 + 真原语。
+  - 排空语义沿用原状：退出时已排队的推理 / 关会话任务会跑完再退出；投回平台线程的回复在消息窗口销毁后被丢弃（不调用），与修前一致。
+  - 真机（引擎退出瞬间恰有 CUDA 关会话在途）未复测。

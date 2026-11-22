@@ -69,14 +69,14 @@ use std::sync::Arc;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::derive::Ref;
-use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
+use super::pack::{self, F_RAW3, F_SNAP, F_STAMP, Names, tv_bits, tv_of};
 use super::schema::{in_tx, in_write_tx, k_dev, k_range, k_seq, opk, sql};
 use crate::gen4::head::PrevIdentity;
 use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint};
 use crate::gen4::name::{read_name, write_name};
 use crate::gen4::op::{
-    Body4, Edit4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4, native_allowed,
-    payload_within_cap, purge_targets_v1, purge_unseen_by,
+    BODY_FMT, Body4, Edit4, EditHead4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4,
+    decode_edit_parts, native_allowed, payload_within_cap, purge_targets_v1, purge_unseen_by,
 };
 use crate::gen4::recut::Stub;
 use crate::gen4::stamp::HeritageStamp;
@@ -166,6 +166,18 @@ impl Head {
             self.deps.contains(other)
         }
     }
+}
+
+/// [Truth::edit_read] 的结果：一条修改操作的信封与头部，字段值按需。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct EditRead {
+    pub id: OpId,
+    pub wall: i64,
+    pub logical: u32,
+    pub deps: Arc<Vv>,
+    pub head: EditHead4,
+    /// 只在 `with_value` 时有（规范 JSON 文本）。
+    pub value: Option<String>,
 }
 
 /// 日志里的一条：承袭日志的槽，或原生日志的操作 / 空洞。
@@ -473,6 +485,8 @@ pub struct Truth<'c> {
     no_deps: Arc<Vv>,
     /// 这个会话里有操作落成了空洞（[Truth::advance_purge]）：提交之后要做字节层收尾（`scrub.rs`）。
     voided: Cell<bool>,
+    /// 库句柄的缓存配置记忆（`cache.rs` [super::cache::CfgMemo]，`kernel.rs` `G4Core::truth` 给）。没有 = 每次现算。
+    cfg_memo: Option<Arc<super::cache::CfgMemo>>,
 }
 
 struct N<'a, 'c>(&'a Truth<'c>);
@@ -644,7 +658,20 @@ impl<'c> Truth<'c> {
             st: RefCell::new(State::default()),
             no_deps: Arc::new(Vv::new()),
             voided: Cell::new(false),
+            cfg_memo: None,
         }
+    }
+
+    /// [Truth::new]，缓存配置的解析结果跨命令记在 [memo] 里（`cache.rs` [super::cache::CfgMemo]）。
+    pub fn with_cfg_memo(conn: &'c Connection, memo: Arc<super::cache::CfgMemo>) -> Truth<'c> {
+        Truth {
+            cfg_memo: Some(memo),
+            ..Truth::new(conn)
+        }
+    }
+
+    pub(super) fn cfg_memo(&self) -> Option<&super::cache::CfgMemo> {
+        self.cfg_memo.as_deref()
     }
 
     pub fn conn(&self) -> &'c Connection {
@@ -1638,6 +1665,73 @@ impl<'c> Truth<'c> {
         }
     }
 
+    /// 主键 [k] 上的修改操作，按派生层要的读法（BUG-5137）：信封（操作号、HLC、依赖）+ 操作体头部（实体、键、旧戳），
+    /// 字段值只在 [with_value] 时复制出来。判定与 `entry_by_key` + `derive::body_of` 逐字段相同（测试
+    /// `edit_read_matches_the_full_decode`），但不做那条路上的三件冗余事：把内部化的旧戳拼回规范字节、整份载荷再克隆一次、
+    /// 再从头解一遍字段值（笔记正文）。
+    ///
+    /// 不是修改（别的种类、解不开、副本记录、空洞）= None；这个主键上什么都没有 = Err（派生层的寄存器行只指向日志里
+    /// 实有的条目）。原样件（协议 3 的载荷要经转译）与剪了快照的行走整条读法。
+    pub(crate) fn edit_read(&self, k: i64, with_value: bool) -> Result<Option<EditRead>, String> {
+        let row = self
+            .conn
+            .prepare_cached(
+                "SELECT k, wall, logical, deps, kind, fmt, flags, body, aux, fp FROM ops WHERE k = ?1",
+            )
+            .map_err(sql)?
+            .query_row([k], op_row)
+            .optional()
+            .map_err(sql)?;
+        let Some(row) = row else {
+            return match self.entry_by_key(k)? {
+                Some(_) => Ok(None),
+                None => Err(format!("gen4 store: no op at key {k}")),
+            };
+        };
+        if row.kind != i64::from(KIND_EDIT) {
+            return Ok(None);
+        }
+        let (wall, logical) = (row.wall, row.logical as u32);
+        let deps = self.deps_of(row.deps)?;
+        let (head, value) = if row.flags & (F_RAW3 | F_SNAP) != 0 {
+            let e = self.op_entry(row)?;
+            match super::derive::body_of(&e) {
+                Some(Body4::Edit(ed)) => {
+                    let (h, v) = ed.into_parts();
+                    (h, with_value.then_some(v))
+                }
+                _ => return Ok(None),
+            }
+        } else {
+            let main = pack::main_bytes(row.flags, &row.body)?;
+            if row.flags & F_STAMP != 0 {
+                let aux = row
+                    .aux
+                    .as_deref()
+                    .ok_or("gen4 store: stamped edit without its stamp")?;
+                let stamp = pack::unpack_stamp(aux, &mut N(self))?;
+                let Ok((mut h, v)) = decode_edit_parts(BODY_FMT, &main) else {
+                    return Err("gen4 store: stored edit does not decode".to_owned());
+                };
+                h.stamp = Some(stamp);
+                (h, with_value.then(|| v.to_owned()))
+            } else {
+                match decode_edit_parts(row.fmt as u16, &main) {
+                    Ok((h, v)) => (h, with_value.then(|| v.to_owned())),
+                    Err(_) => return Ok(None),
+                }
+            }
+        };
+        Ok(Some(EditRead {
+            id: self.id_of_key(k)?,
+            wall,
+            logical,
+            deps,
+            head,
+            value,
+        }))
+    }
+
     /// 一条完整操作的信封（不解操作体）：语义层判「谁见过谁」用。空洞、副本记录 = None。
     pub(crate) fn head_by_key(&self, k: i64) -> Result<Option<Head>, String> {
         let row: Option<(i64, i64, i64, i64, i64)> = self
@@ -2074,15 +2168,33 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         upto: u64,
+        f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_each_stamp_in(col, device, 1, upto, f)
+    }
+
+    /// [Truth::for_each_stamp] 只走 seq 在 `[from, upto]` 里的那一段（按主键区间，不碰段外的行）：派生层从旧闭包的
+    /// 检查点接着并（`derive.rs` [CLOSURE_STEP](super::derive::CLOSURE_STEP)）。
+    pub(crate) fn for_each_stamp_in(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        upto: u64,
         mut f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
-        if upto == 0 {
+        let from = from.max(1);
+        if upto < from {
             return Ok(());
         }
-        let (lo, top) = k_range(dev);
+        let (_, top) = k_range(dev);
+        if from > k_seq(top) {
+            return Ok(());
+        }
+        let lo = opk(dev, from)?;
         let hi = if upto >= k_seq(top) {
             top
         } else {
@@ -4117,6 +4229,189 @@ pub(crate) mod tests {
             }
             prop_assert_eq!(t.audit(col).unwrap(), want.len() as u64);
         }
+
+        /// BUG-5137：[Truth::edit_read]（只解头部、字段值按需）与整条读法 `entry_by_key` + `derive::body_of` 逐字段
+        /// 相同——带旧戳（存储时旧戳内部化）/ 不带、字段值大到压缩 / 不压、协议 3 原样件、别的种类、本机清成的空洞。
+        #[test]
+        fn edit_read_matches_the_full_decode(
+            ops in proptest::collection::vec(arb_op3(), 0..20),
+            edits in proptest::collection::vec(
+                (crate::gen4::op::tests::arb_edit(), any::<bool>()), 0..20),
+            order in any::<prop::sample::Index>(),
+            purge in proptest::collection::vec(any::<prop::sample::Index>(), 0..4),
+        ) {
+            let device = id(OLD);
+            let mut slots = Vec::new();
+            for op in ops {
+                let chain = *blake3::hash(&(slots.len() as u64).to_le_bytes()).as_bytes();
+                if let Ok(slot) = translate(&op, &chain) {
+                    slots.push(slot);
+                }
+            }
+            for (mut ed, big) in edits {
+                if big {
+                    // 够长才走 zstd（`pack::ZSTD_MIN`）。
+                    ed.value = serde_json::to_string(&"単語の例文。".repeat(40)).unwrap();
+                }
+                let o = op_of(device, 1, &Body4::Edit(ed));
+                slots.push(HeritageSlot::op([3; 8], o));
+            }
+            // 两类交错，再按 seq 重新编号。
+            let n = slots.len();
+            if n > 0 {
+                slots.rotate_left(order.index(n));
+            }
+            let mut want = Vec::new();
+            for (i, mut s) in slots.into_iter().enumerate() {
+                let seq = i as u64 + 1;
+                s.id = OpId { device, seq };
+                match &mut s.body {
+                    SlotBody::Op(op) => {
+                        op.id = s.id;
+                        op.hlc.device = device;
+                    }
+                    SlotBody::Raw3(raw) => {
+                        let mut v = raw.to_v3();
+                        v.id = s.id;
+                        v.hlc.device = device;
+                        *raw = Raw3::of_v3(&v);
+                    }
+                    _ => {}
+                }
+                want.push(s);
+            }
+            let conn = open_in_memory().unwrap();
+            let t = Truth::new(&conn);
+            let col = bound(&t);
+            t.tx(|t| {
+                for s in &want {
+                    t.put_heritage(col, &src(), s, 1)?;
+                }
+                Ok(())
+            }).unwrap();
+            for ix in purge {
+                if want.is_empty() {
+                    break;
+                }
+                let i = ix.index(want.len());
+                t.tx(|t| t.advance_purge(col, &want[i].id)).unwrap();
+            }
+            let full = |k: i64| -> Result<Option<EditRead>, String> {
+                let e = t.entry_by_key(k)?.ok_or("missing")?;
+                let (wall, logical, deps) = match &e.body {
+                    SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
+                    SlotBody::Raw3(raw) => {
+                        let v = raw.to_v3();
+                        (v.hlc.wall, v.hlc.logical, v.deps)
+                    }
+                    _ => return Ok(None),
+                };
+                Ok(match super::super::derive::body_of(&e) {
+                    Some(Body4::Edit(ed)) => {
+                        let (head, value) = ed.into_parts();
+                        Some(EditRead { id: e.id, wall, logical, deps, head, value: Some(value) })
+                    }
+                    _ => None,
+                })
+            };
+            let mut edits_seen = 0;
+            for s in &want {
+                let k = t.key_of(col, &s.id).unwrap().unwrap();
+                let whole = full(k).unwrap();
+                edits_seen += usize::from(whole.is_some());
+                prop_assert_eq!(t.edit_read(k, true).unwrap(), whole.clone());
+                prop_assert_eq!(
+                    t.edit_read(k, false).unwrap(),
+                    whole.map(|w| EditRead { value: None, ..w })
+                );
+            }
+            prop_assert!(edits_seen <= want.len());
+        }
+    }
+
+    /// BUG-5137：[Truth::edit_read] 走到了存储的每一种形态（旧戳内部化、压缩、两者都有、原样件），读出的头部与值
+    /// 与写进去的修改相同。
+    #[test]
+    fn edit_read_covers_every_stored_form() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let stamp = crate::gen4::stamp::tests::typical();
+        let big = serde_json::to_string(&"単語の例文。".repeat(40)).unwrap();
+        let edits = [
+            Edit4 {
+                stamp: Some(stamp.clone()),
+                ..native_edit()
+            },
+            Edit4 {
+                value: big.clone(),
+                ..native_edit()
+            },
+            Edit4 {
+                value: big,
+                stamp: Some(stamp),
+                ..native_edit()
+            },
+            native_edit(),
+        ];
+        t.tx(|t| {
+            for (i, ed) in edits.iter().enumerate() {
+                let o = op_of(id(OLD), i as u64 + 1, &Body4::Edit(ed.clone()));
+                t.put_heritage(col, &src(), &HeritageSlot::op([i as u8; 8], o), 1)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        let flags: Vec<i64> = conn
+            .prepare("SELECT flags FROM ops ORDER BY k")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            flags
+                .iter()
+                .map(|f| f & (pack::F_ZSTD | F_STAMP))
+                .collect::<Vec<_>>(),
+            [F_STAMP, pack::F_ZSTD, pack::F_ZSTD | F_STAMP, 0]
+        );
+        for (i, ed) in edits.iter().enumerate() {
+            let k = t.key_of(col, &oid(i as u64 + 1)).unwrap().unwrap();
+            let got = t.edit_read(k, true).unwrap().expect("an edit");
+            let (head, value) = ed.clone().into_parts();
+            assert_eq!((got.head, got.value), (head.clone(), Some(value)));
+            assert_eq!(t.edit_read(k, false).unwrap().unwrap().value, None);
+        }
+        // 原样件：协议 3 的修改，经转译读出。
+        let raw = v3::Op {
+            id: oid(5),
+            hlc: Hlc {
+                wall: 9,
+                logical: 2,
+                device: id(OLD),
+            },
+            deps: Arc::new(Vv::new()),
+            kind: v3::KIND_EDIT,
+            schema: 1,
+            payload: vec![0xff].into(),
+            purged: false,
+        };
+        t.tx(|t| {
+            t.put_heritage(
+                col,
+                &src(),
+                &HeritageSlot::raw3([5; 8], Raw3::of_v3(&raw)),
+                1,
+            )
+        })
+        .unwrap();
+        let k = t.key_of(col, &oid(5)).unwrap().unwrap();
+        // 解不开的原样件不是修改（与 `body_of` 相同）。
+        assert_eq!(t.edit_read(k, true), Ok(None));
+        // 主键上什么都没有 = Err。
+        let none = t.key_of(col, &oid(99)).unwrap().unwrap();
+        assert!(t.edit_read(none, false).is_err());
     }
 
     #[test]

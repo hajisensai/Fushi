@@ -24,6 +24,7 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -661,7 +662,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     prunePopupStack(index + 1);
     // 离开当前页前记下它的滚动位（回来时恢复）；查询开始后再读会读到新内容。
     final double scrollTop =
-        await item.webViewKey.currentState?.currentScrollTop() ?? 0;
+        await item.webViewKey.webViewState?.currentScrollTop() ?? 0;
     if (!mounted || !_popup.entries.contains(item)) return;
     final String termAtStart = item.searchTerm;
     item.isSearching = true;
@@ -713,7 +714,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }) async {
     if (item.isSearching) return;
     final double scrollTop =
-        await item.webViewKey.currentState?.currentScrollTop() ?? 0;
+        await item.webViewKey.webViewState?.currentScrollTop() ?? 0;
     if (!mounted || !_popup.entries.contains(item)) return;
     if (forward) {
       _popup.goForward(item, scrollTop: scrollTop);
@@ -813,7 +814,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         return;
       }
       final bool renderPending =
-          item.webViewKey.currentState?.refreshCurrentResult() ?? true;
+          item.webViewKey.webViewState?.refreshCurrentResult() ?? true;
       if (!renderPending) {
         _onPopupLayerRendered(_popup.entries.indexOf(item), item);
       }
@@ -844,7 +845,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // 渲染信号可能早于盖板架起）——立即走同一条 rendered 路径撤盖板，不空等
       // 1.8s failsafe。state 为 null（WebView 未挂载）时维持等待，交给 failsafe。
       final bool renderPending =
-          item.webViewKey.currentState?.refreshCurrentResult() ?? true;
+          item.webViewKey.webViewState?.refreshCurrentResult() ?? true;
       if (!renderPending) {
         _onPopupLayerRendered(_popup.entries.indexOf(item), item);
       }
@@ -1311,7 +1312,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           );
           if (count > 0) {
             final int generation = activeLookupGeneration;
-            final Rect? wordRect = await item.webViewKey.currentState
+            final Rect? wordRect = await item.webViewKey.webViewState
                 ?.highlightSelection(count);
             // BUG-2054：同一次高亮顺带取回整词 bbox，把刚 push 的子层从「点击的首
             // 字符」重锚到整词矩形（跨行选区时首字符矩形只覆盖第一行，子弹窗会盖住
@@ -1473,7 +1474,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 否则原生平台视图盖住对话框。分区的组装（读 Anki 设置、取预览）也在停靠期间做：
   /// 它们都很快，而先弹窗再停靠会让弹窗在对话框上闪一下。
   Future<void> _openAdvancedMiningDialog({
-    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required GlobalKey<DictionaryPopupRealmState> webViewKey,
     required int entryIndex,
     required String matched,
     required String expression,
@@ -1487,7 +1488,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           await loadAdvancedMiningFieldsSection(
             ref,
             fetchPayload: () async =>
-                webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+                webViewKey.webViewState?.buildMinePayloadByIndex(entryIndex),
             fallbackSentence: () => favoriteLookupContext?.sentence ?? '',
           );
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
@@ -1511,14 +1512,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               ? null
               : buildAdvancedMiningWordAudioSection(
                   listChoices: () async =>
-                      await webViewKey.currentState?.listWordAudioChoices(
+                      await webViewKey.webViewState?.listWordAudioChoices(
                         expression,
                         reading.isEmpty ? expression : reading,
                         matched: matched,
                       ) ??
                       const <Map<String, String>>[],
                   refreshSource: (int sourceIndex) async =>
-                      await webViewKey.currentState
+                      await webViewKey.webViewState
                           ?.listWordAudioChoicesForSource(
                             expression,
                             reading.isEmpty ? expression : reading,
@@ -1533,7 +1534,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 MiningRequestOverrides overrides, {
                 String? wordAudioUrl,
               }) async =>
-                  await webViewKey.currentState?.mineEntryByIndex(
+                  await webViewKey.webViewState?.mineEntryByIndex(
                     entryIndex,
                     // BUG-2634 第二轮：阅读器的 onMineFromPopup 经制卡串行队列
                     // 入队（TODO-644 / BUG-357），草稿要等前一次制卡整段跑完才被
@@ -1571,13 +1572,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _clearVisibleRenderPending();
     if (index > 0) {
       final parent = _popup.entries[index - 1];
-      parent.webViewKey.currentState?.clearSelection();
+      parent.webViewKey.webViewState?.clearSelection();
     }
     if (index == 0) {
       _popup.lowMemory = appModel.lowMemoryMode;
       // 关栈前清掉热槽 WebView 选区（仅保留热槽的分支需要）。
       if (_popup.entries.isNotEmpty && _popup.entries.first.isWarmSlot) {
-        _popup.entries.first.webViewKey.currentState?.clearSelection();
+        _popup.entries.first.webViewKey.webViewState?.clearSelection();
       }
       _popup.dismissAt(0);
       appModel.currentMediaSource?.clearCurrentSentence();
@@ -1695,7 +1696,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// popup is visible.
   @protected
   DictionaryPopupWebViewState? get topPopupState =>
-      _lastVisiblePopup(_popup.entries)?.webViewKey.currentState;
+      _lastVisiblePopup(_popup.entries)?.webViewKey.webViewState;
 
   /// Index of the top-most visible popup in the stack, or -1.
   @protected
@@ -1709,7 +1710,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       <DictionaryPopupWebViewState>[
         for (int i = _popup.entries.length - 1; i >= 0; i--)
           if (_popup.entries[i].visible)
-            if (_popup.entries[i].webViewKey.currentState
+            if (_popup.entries[i].webViewKey.webViewState
                 case final DictionaryPopupWebViewState state)
               state,
       ];
@@ -1824,7 +1825,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // 不再硬编码 allLoaded:true、load-more 后词头数增加」。按名访问，不破坏既有解构。
       bool allLoaded,
       int entryCount,
-      GlobalKey<DictionaryPopupWebViewState> webViewKey,
+      GlobalKey<DictionaryPopupRealmState> webViewKey,
     })
   >
   get debugPopupStack => _popup.entries
@@ -2155,7 +2156,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     if (_popup.entries.isEmpty) return;
     _popup.lowMemory = appModel.lowMemoryMode;
     if (_popup.entries.first.isWarmSlot && !appModel.lowMemoryMode) {
-      _popup.entries.first.webViewKey.currentState?.clearSelection();
+      _popup.entries.first.webViewKey.webViewState?.clearSelection();
     }
     _clearVisibleRenderPending();
     _popup.pruneToWarmSlot();

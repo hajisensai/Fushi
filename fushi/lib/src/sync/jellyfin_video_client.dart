@@ -56,6 +56,8 @@ import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -147,33 +149,34 @@ class JellyfinServerConfig implements MediaServerConfig {
 
   /// 当前线路不通时在用户手填的线路里自动换一条（gap-remote-7 的 Jellyfin 家族版）。
   ///
-  /// 只有 [isJellyfinTransportFailure]（请求没到达服务器）才试——服务器答了话说明
-  /// 线路是通的，换线路无济于事。其余各条线路（登录地址在首位，按 [routeUrls] 顺序）
-  /// 同时用 [probe] 探，取顺序最靠前的可达那条。线路都是用户自己加进这台服务器的、
-  /// 加的时候已用现有令牌验过是同一台（`addJellyfinRoute`），所以 [probe] 可以带令牌
-  /// 读一次媒体库来同时确认「通」和「还是这台、令牌还有效」。
+  /// 只有 [isJellyfinTransportFailure]（请求没到达服务器，或播放途中流断了）才试——
+  /// 服务器答了话说明线路是通的，换线路无济于事。全部线路（登录地址在首位，按
+  /// [routeUrls] 顺序，**含当前这条**）同时用 [probe] 探，取顺序最靠前的可达那条；
+  /// 它就是当前这条（刚才只是抖动 / 流断另有原因）时不换，与 Plex 同口径。线路都是
+  /// 用户自己加进这台服务器的、加的时候已用现有令牌验过是同一台（`addJellyfinRoute`），
+  /// 所以 [probe] 可以带令牌读一次媒体库来同时确认「通」和「还是这台、令牌还有效」。
   ///
   /// 返回切到新线路的配置（只改 [activeServerUrl]）；不是传输失败、只有一条线路、
-  /// 全部不通时返回 null。写回与缓存失效由调用方做（`rerouteMediaServerAfterFailure`）。
+  /// 全部不通、最靠前的可达线路就是当前这条时返回 null。写回与缓存失效由调用方做
+  /// （`rerouteMediaServerAfterFailure`）。
   Future<JellyfinServerConfig?> rerouteAfterFailure(
     Object error, {
     required Future<bool> Function(String url) probe,
   }) async {
     if (!isJellyfinTransportFailure(error)) return null;
-    final String current = effectiveServerUrl;
-    final List<String> candidates = <String>[
-      for (final String url in routeUrls)
-        if (url != current) url,
-    ];
-    if (candidates.isEmpty) return null;
+    final List<String> routes = routeUrls;
+    if (routes.length < 2) return null;
     final List<bool> reachable = await Future.wait(<Future<bool>>[
-      for (final String url in candidates)
+      for (final String url in routes)
         Future<bool>.sync(
           () => probe(url),
         ).then((bool ok) => ok, onError: (Object _) => false),
     ]);
-    for (int i = 0; i < candidates.length; i++) {
-      if (reachable[i]) return withActiveRoute(candidates[i]);
+    for (int i = 0; i < routes.length; i++) {
+      if (!reachable[i]) continue;
+      return routes[i] == effectiveServerUrl
+          ? null
+          : withActiveRoute(routes[i]);
     }
     return null;
   }
@@ -317,7 +320,8 @@ class JellyfinServerConfig implements MediaServerConfig {
 
   /// 从配置构造可用客户端（每次取数新建实例，缓存身份见
   /// [JellyfinVideoClient.remoteLibrarySourceId]）。请求走当前线路
-  /// [effectiveServerUrl]，身份锚仍是 [serverUrl]。
+  /// [effectiveServerUrl]，身份锚仍是 [serverUrl]；传输失败时经这台服务器共享的
+  /// [MediaServerRouteFailover] 换线路并重试（[MediaServerRouteFailover.hookFor]）。
   JellyfinVideoClient buildClient({http.Client? httpClient}) =>
       JellyfinVideoClient(
         api: JellyfinApi(
@@ -325,6 +329,7 @@ class JellyfinServerConfig implements MediaServerConfig {
           accessToken: accessToken,
           deviceId: deviceId,
           client: httpClient,
+          onRouteFailure: MediaServerRouteFailover.hookFor(sourceId),
         ),
         userId: userId,
         libraryIds: libraryIds,
@@ -805,11 +810,15 @@ class JellyfinTransportException implements Exception {
 }
 
 /// [error] 是不是「这条线路不通」类失败：[JellyfinTransportException]、请求超时、
-/// 裸 socket 错误。服务器回了非 2xx（[JellyfinApiException]）说明线路是通的。
+/// 裸 socket / `http.ClientException`（少数写请求没包成前者），或播放途中流断了
+/// （[MediaServerStreamInterrupted]，换不换由探测定）。服务器回了非 2xx
+/// （[JellyfinApiException]）说明线路是通的。
 bool isJellyfinTransportFailure(Object error) =>
     error is JellyfinTransportException ||
     error is TimeoutException ||
-    error is SocketException;
+    error is SocketException ||
+    error is http.ClientException ||
+    error is MediaServerStreamInterrupted;
 
 /// Jellyfin HTTP 异常：状态码 + 端点，供 UI 按连接失败呈现。
 class JellyfinApiException implements Exception {
@@ -916,16 +925,33 @@ class JellyfinServerProbe {
 }
 
 /// 薄 HTTP 封装。所有 JSON 解析走纯静态方法（离线可测）。
+///
+/// [onRouteFailure] 非空时，带令牌的请求（取数、写请求、封面 / 字幕下载）在传输失败
+/// 后问它换线路，换成功就把 [serverUrl] 改成新地址、重试这一次请求
+/// （[MediaServerRouteState.run]）；之后现拼的流 / 封面 / 字幕 URL 都带新地址。登录
+/// （[authenticateByName]）与连接探测（[probeServer]）不走换线路——那时还没有可换的
+/// 已存线路。
 class JellyfinApi {
   JellyfinApi({
-    required this.serverUrl,
+    required String serverUrl,
     this.accessToken,
     this.deviceId = kLegacyDeviceId,
     http.Client? client,
-  }) : _client = client ?? createAppHttpIoClient();
+    MediaServerRouteFailoverHook? onRouteFailure,
+  }) : _route = MediaServerRouteState(serverUrl, hook: onRouteFailure),
+       _client = client ?? createAppHttpIoClient();
 
-  /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）。
-  final String serverUrl;
+  final MediaServerRouteState _route;
+
+  /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）：当前线路，换线路后随之改变。
+  String get serverUrl => _route.baseUrl;
+
+  /// 当前线路以 [error] 失败（如播放途中流断了）后主动问一次换线路；换成功返回 true，
+  /// 之后的请求与现拼的 URL 都走新线路。
+  Future<bool> failoverRoute(Object error) => _route.failover(error);
+
+  Future<T> _withFailover<T>(Future<T> Function() attempt) =>
+      _route.run(attempt, isTransportFailure: isJellyfinTransportFailure);
 
   /// 服务器侧的设备身份（认证头 `DeviceId` / 会话 / 转码任务都按它归属）。
   ///
@@ -1169,7 +1195,7 @@ class JellyfinApi {
   /// 非 JSON 响应体抛 [FormatException]——飞牛对不认识的路由回 SPA index.html
   /// 且状态 200（BUG-2254 备注④），这是那种情况唯一能被察觉的信号。
   Future<Object?> _getDecoded(String path, [Map<String, String>? query]) =>
-      _getDecodedAt(serverUrl, path, query);
+      _withFailover(() => _getDecodedAt(serverUrl, path, query));
 
   /// [_getDecoded] 的公开版：同一台服务器、同一份认证头 / 超时 / 凭据脱敏，给视频以外的域
   /// （音乐的服务器曲库，`jellyfin_music_client.dart`）用，不另起一套传输。
@@ -1184,6 +1210,15 @@ class JellyfinApi {
     String path, {
     Map<String, String>? query,
     Object? body,
+  }) => _withFailover(
+    () => _sendJsonOnce(method, path, query: query, body: body),
+  );
+
+  Future<Object?> _sendJsonOnce(
+    String method,
+    String path, {
+    required Map<String, String>? query,
+    required Object? body,
   }) async {
     try {
       final http.Request req = http.Request(method, _uri(path, query))
@@ -1766,23 +1801,25 @@ class JellyfinApi {
     int? maxStreamingBitrate,
     int? maxWidth,
   }) async {
-    final http.Response res = await _client
-        .post(
-          _uri('/Items/$itemId/PlaybackInfo', <String, String>{
-            'UserId': userId,
-          }),
-          headers: _headers,
-          body: jsonEncode(
-            buildPlaybackInfoRequest(
-              userId: userId,
-              mediaSourceId: mediaSourceId,
-              startPositionMs: startPositionMs,
-              maxStreamingBitrate: maxStreamingBitrate,
-              maxWidth: maxWidth,
+    final http.Response res = await _withFailover(
+      () => _client
+          .post(
+            _uri('/Items/$itemId/PlaybackInfo', <String, String>{
+              'UserId': userId,
+            }),
+            headers: _headers,
+            body: jsonEncode(
+              buildPlaybackInfoRequest(
+                userId: userId,
+                mediaSourceId: mediaSourceId,
+                startPositionMs: startPositionMs,
+                maxStreamingBitrate: maxStreamingBitrate,
+                maxWidth: maxWidth,
+              ),
             ),
-          ),
-        )
-        .timeout(kRequestTimeout);
+          )
+          .timeout(kRequestTimeout),
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException.fromResponse(
         res,
@@ -1972,15 +2009,17 @@ class JellyfinApi {
   /// ffmpeg，要客户端按 `(DeviceId, PlaySessionId)` 显式停，否则转码继续跑到服务器
   /// 自己的超时（几分钟）——下一次起播就与它抢 CPU，「卡 / 有时开不了」的来源之一。
   Future<void> stopActiveEncodings(String playSessionId) async {
-    final http.Response res = await _client
-        .delete(
-          _uri('/Videos/ActiveEncodings', <String, String>{
-            'DeviceId': deviceId,
-            'PlaySessionId': playSessionId,
-          }),
-          headers: _headers,
-        )
-        .timeout(kRequestTimeout);
+    final http.Response res = await _withFailover(
+      () => _client
+          .delete(
+            _uri('/Videos/ActiveEncodings', <String, String>{
+              'DeviceId': deviceId,
+              'PlaySessionId': playSessionId,
+            }),
+            headers: _headers,
+          )
+          .timeout(kRequestTimeout),
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException.fromResponse(res, '/Videos/ActiveEncodings');
     }
@@ -1999,9 +2038,11 @@ class JellyfinApi {
   };
 
   Future<void> _postSession(String path, Map<String, Object?> body) async {
-    final http.Response res = await _client
-        .post(_uri(path), headers: _headers, body: jsonEncode(body))
-        .timeout(kRequestTimeout);
+    final http.Response res = await _withFailover(
+      () => _client
+          .post(_uri(path), headers: _headers, body: jsonEncode(body))
+          .timeout(kRequestTimeout),
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException.fromResponse(res, path);
     }
@@ -2016,11 +2057,13 @@ class JellyfinApi {
     required bool played,
   }) async {
     final String path = '/Users/$userId/PlayedItems/$itemId';
-    final http.Response res =
-        await (played
-                ? _client.post(_uri(path), headers: _headers)
-                : _client.delete(_uri(path), headers: _headers))
-            .timeout(kRequestTimeout);
+    final http.Response res = await _withFailover(
+      () =>
+          (played
+                  ? _client.post(_uri(path), headers: _headers)
+                  : _client.delete(_uri(path), headers: _headers))
+              .timeout(kRequestTimeout),
+    );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException.fromResponse(res, path);
     }
@@ -2146,8 +2189,12 @@ class JellyfinApi {
     }
   }
 
-  /// 拉取 [url] 的全部字节（封面用）。非 2xx 抛 [JellyfinApiException]。
-  Future<Uint8List> fetchBytes(String url) async {
+  /// 拉取 [url] 的全部字节（封面用）。非 2xx 抛 [JellyfinApiException]。[url] 是
+  /// 换线路之前拼的（带旧地址）时改走当前线路。
+  Future<Uint8List> fetchBytes(String url) =>
+      _withFailover(() => _fetchBytesOnce(_route.rebase(url)));
+
+  Future<Uint8List> _fetchBytesOnce(String url) async {
     try {
       final http.Response res = await _client.get(
         Uri.parse(url),
@@ -2181,9 +2228,29 @@ class JellyfinApi {
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
     Duration idleTimeout = kDownloadIdleTimeout,
-  }) async {
+  }) {
     bool cancelled = false;
     cancelSignal?.then((_) => cancelled = true, onError: (_) {});
+    return _withFailover(
+      () => _downloadToFileOnce(
+        _route.rebase(url),
+        dest,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        isCancelled: () => cancelled,
+        idleTimeout: idleTimeout,
+      ),
+    );
+  }
+
+  Future<void> _downloadToFileOnce(
+    String url,
+    File dest, {
+    required void Function(double progress)? onProgress,
+    required void Function(int received, int? total)? onBytes,
+    required bool Function() isCancelled,
+    required Duration idleTimeout,
+  }) async {
     try {
       final http.Request req = http.Request('GET', Uri.parse(url));
       req.headers.addAll(_headers);
@@ -2201,7 +2268,7 @@ class JellyfinApi {
       bool ok = false;
       try {
         await for (final List<int> chunk in res.stream.timeout(idleTimeout)) {
-          if (cancelled) throw const RemoteDownloadCancelled();
+          if (isCancelled()) throw const RemoteDownloadCancelled();
           sink.add(chunk);
           received += chunk.length;
           onBytes?.call(received, total);
@@ -2243,7 +2310,7 @@ class JellyfinApi {
     Duration stallTimeout = kDownloadIdleTimeout,
   }) => downloadMediaServerFileResumable(
     client: _client,
-    url: url,
+    url: _route.rebase(url),
     headers: _headers,
     resumeKey: resumeKey,
     dest: dest,
@@ -2522,7 +2589,8 @@ class JellyfinVideoClient
         MediaServerItemVersions,
         RemoteVideoTitleIdentityFetch,
         RemoteVideoTrackingEpisodeFetch,
-        RemoteVideoClientConnections {
+        RemoteVideoClientConnections,
+        RemoteVideoRouteFailover {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -2915,6 +2983,10 @@ class JellyfinVideoClient
 
   @override
   String get serverUrl => api.serverUrl;
+
+  @override
+  Future<bool> failoverRemoteVideoRoute(Object error) =>
+      api.failoverRoute(error);
 
   @override
   RemoteVideoClient get playbackClient => this;

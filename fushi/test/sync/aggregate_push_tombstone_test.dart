@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -196,8 +198,10 @@ void main() {
 
     Object? pushedJson;
     await AggregateSyncService(db).syncOverClient(
-      fetchRemote: () async => _peerSnapshot(sentence).toJson(),
-      pushMerged: (Object json) async => pushedJson = json,
+      fetchRemote: () async =>
+          encodeAggregateWireJson(_peerSnapshot(sentence).toJson()),
+      pushMerged: (Uint8List body) async =>
+          pushedJson = decodeAggregateWireJson(body),
     );
 
     expect(pushedJson, isNotNull);
@@ -233,11 +237,13 @@ void main() {
 
     Object? pushedJson;
     await AggregateSyncService(db).syncOverClient(
-      fetchRemote: () async => AggregateSnapshot(
-        favoriteSentences: <FavoriteSentence>[sentence],
-      ).toJson(),
-      pushMerged: (Object json) async {
-        pushedJson = json;
+      fetchRemote: () async => encodeAggregateWireJson(
+        AggregateSnapshot(
+          favoriteSentences: <FavoriteSentence>[sentence],
+        ).toJson(),
+      ),
+      pushMerged: (Uint8List body) async {
+        pushedJson = decodeAggregateWireJson(body);
       },
     );
     expect(pushedJson, isNotNull, reason: '纯删除也必须上行');

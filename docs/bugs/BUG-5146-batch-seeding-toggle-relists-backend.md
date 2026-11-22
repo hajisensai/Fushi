@@ -1,0 +1,12 @@
+## BUG-5146 · 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板
+- **报告**：2026-11-22（Codex 2026-11-21 PR 审查 HBK-AUDIT-025，PR #3997）
+- **真实性**：✅ 真（源码路径确认 + 计数实测）。统一列表批量执行 `runDownloadTaskBatch`（`fushi/lib/src/media/downloads/download_batch.dart:84`）逐条调每条的单条槽位；video job 的「暂停 / 继续」槽位落到 `VideoDownloadPipelineService.pauseSeedingJob` / `resumeSeedingJob` / `resumeJob`，三者每条都 `_findBackendTorrent`（`video_download_pipeline_service.dart:1855` / `:1721`，PR #3997 head 26957ddf0b）→ `backend.listTorrents()` 列整个后端再线性找 hash：同一后端 N 条 = N 次枚举 × M 颗；内置引擎是 FFI、外接 qB / `fushi_host` 是 HTTP 往返。面板每条动作还包一层 `_refreshingSnapshots`（`video_download_jobs_panel.dart:520`），每条完成各触发一次 `loadTaskSnapshots` 整表刷新（又是一次全后端枚举）。另：`resumeJob` 每条末尾 `wake()`，批内后续条目与调度 drain 交错，drain 自己再列后端。
+- **[x] ① 已修复** —
+  - 服务层：新增 `pauseSeedingJobs` / `resumeSeedingJobs` / `resumeJobs`（整批，返回失败 jobId → 错误，单条失败不中断）。批内共用一个 `_BackendTorrentLookup`：每个后端实例只 `listTorrents` 一次，按 hash 集合查「在不在」；枚举失败则该后端的每条都以同一错误失败，不重试。单条 API 是一条的批。`resumeJobs` 整批结束才 `wake()` 一次。
+  - 批量执行器：`DownloadTaskActions.batchMember`（`DownloadTaskBatchGroup` / `DownloadTaskBatchMember`）——单条槽位仍是「能不能做」的唯一判据，同组条目在批量时于首条位置交给组一次执行，计数仍逐条。
+  - video job 面板：`onResume` / `onPauseSeeding` / `onResumeSeeding` 改为整批形态（卡片单条传一条的列表）；`_VideoJobToggleBatchGroup` 按与单条槽位同一选择器（`videoDownloadJobPauseTarget` / `videoDownloadJobResumeTarget`）分流，做种与恢复生命周期各整批调一次来源，停持久流程（cancel 不枚举后端）逐条，整批结束只刷新一次快照。
+- **[x] ② 已增加自动化测试** —
+  - `fushi/test/media/video/download/video_download_pipeline_service_test.dart`「batch pause / resume seeding lists the backend once per batch and reports per-job failures」（6 条、1 条种子不在后端：停 / 续各只枚举 1 次、只那 1 条失败）与「batch resume of user-paused jobs lists the backend once」（4 条恢复时看到的枚举次数都是 1）。
+  - `fushi/test/pages/unified_download_jobs_panel_test.dart`「batch pause / resume hands each source one batch call and refreshes snapshots once」（9 条混合：做种暂停整批 1 次调用、cancel 逐条、继续两类各 1 次调用、批后 `metricsLoader` 各只多 1 次）。
+  - 计数对比（同一用例）：修复前 6 条批量停做种 = 6 次 `listTorrents`，修复后 1 次；面板 4 条做种批量暂停修复前 4 次来源调用 + 4 次快照刷新，修复后 1 + 1。变异实测见 PR 描述。
+- **备注**：

@@ -57,6 +57,8 @@ import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
+import 'package:fushi/src/sync/interconnect_lan_relocation.dart'
+    show InterconnectLanRelocator, installInterconnectLanRelocation;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -166,6 +168,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
@@ -873,6 +876,22 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
+      // BUG-5085：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
+      // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
+      mineFailureOpenReview = () {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.srs)) return;
+        final ExternalMediaNavigation media = ExternalMediaNavigation.instance;
+        unawaited(
+          media.navigate(() async {
+            homeShellTabNotifier.value = HomeTab.srs;
+            final NavigatorState? navigator =
+                appModel.navigatorKey.currentState;
+            if (navigator != null) {
+              await unwindToHomeRoute(navigator, media: media);
+            }
+          }),
+        );
+      };
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -896,6 +915,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-5068：已配对 host 换了网段（电脑改连手机热点）、存量直连地址全不通时，
+      // 选路先在局域网上按 hostId 做一次限时 mDNS 浏览找它的新地址，再建隧道。
+      final SyncRepository relocationRepo = SyncRepository(appModel.database);
+      installInterconnectLanRelocation(
+        relocationRepo,
+        InterconnectLanRelocator(
+          ownDeviceId: relocationRepo.getOrCreateDeviceId,
+          onBrowseStart: appModel.syncServerController.registerDiscovery,
+          onBrowseEnd: appModel.syncServerController.unregisterDiscovery,
+        ).urlsFor,
+      );
       // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
       // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
       // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
@@ -2853,8 +2883,29 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // BUG-1899：「打不开」不是「坏了」。父目录不存在 / 无权限 / 只读介质 / 盘断链
       // 都会让 sqlite 报 SQLITE_CANTOPEN(14)，此前它们共用「数据库损坏，请恢复备份或
       // 清空数据」这句话——在磁盘完好的情况下把用户往清空数据上引。
-      final bool cannotOpen =
-          unrecoverable.kind == FushiDatabaseFailureKind.cannotOpen;
+      //
+      // BUG-5076：卷写满（SQLITE_FULL / ENOSPC）同理——此时 sqlite 报的 malformed(11)
+      // 只是「写不进去」的表象，引导必须是「腾空间再重试」，绝不能是恢复备份 / 清数据。
+      // kind 的判据只在 fushi_core 的 classifyFushiDatabaseOpenFailure 一处。
+      final FushiDatabaseFailureKind kind = unrecoverable.kind;
+      final IconData icon = switch (kind) {
+        FushiDatabaseFailureKind.cannotOpen => Icons.folder_off_outlined,
+        FushiDatabaseFailureKind.insufficientSpace =>
+          Icons.sd_card_alert_outlined,
+        FushiDatabaseFailureKind.corrupt => FushiIcons.brokenImage,
+      };
+      final String title = switch (kind) {
+        FushiDatabaseFailureKind.cannotOpen => t.db_cannot_open_title,
+        FushiDatabaseFailureKind.insufficientSpace =>
+          t.db_insufficient_space_title,
+        FushiDatabaseFailureKind.corrupt => t.db_unrecoverable_title,
+      };
+      final String message = switch (kind) {
+        FushiDatabaseFailureKind.cannotOpen => t.db_cannot_open_message,
+        FushiDatabaseFailureKind.insufficientSpace =>
+          t.db_insufficient_space_message,
+        FushiDatabaseFailureKind.corrupt => t.db_unrecoverable_message,
+      };
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
@@ -2871,18 +2922,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    FushiIcon(
-                      cannotOpen
-                          ? Icons.folder_off_outlined
-                          : Icons.broken_image_outlined,
-                      size: 48,
-                      color: cs.error,
-                    ),
+                    FushiIcon(icon, size: 48, color: cs.error),
                     const SizedBox(height: 16),
                     Text(
-                      cannotOpen
-                          ? t.db_cannot_open_title
-                          : t.db_unrecoverable_title,
+                      title,
                       style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
@@ -2890,9 +2933,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      cannotOpen
-                          ? t.db_cannot_open_message
-                          : t.db_unrecoverable_message,
+                      message,
                       style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
@@ -2906,6 +2947,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       ),
                       textAlign: TextAlign.center,
                     ),
+                    // 空间不足是可恢复的外部条件：腾出空间后重试会重新开库、重新按
+                    // 唯一判据分类（空间够了但库真坏了，才会落到「已损坏」专屏）。
+                    if (kind == FushiDatabaseFailureKind.insufficientSpace) ...[
+                      const SizedBox(height: 20),
+                      FushiFilledButton.icon(
+                        icon: const FushiIcon(FushiIcons.refresh, size: 18),
+                        label: Text(t.retry),
+                        onPressed: () => appModel.retryInitialise(),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2972,7 +3023,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const FushiIcon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(FushiIcons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
@@ -3039,7 +3090,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const FushiIcon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(FushiIcons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),

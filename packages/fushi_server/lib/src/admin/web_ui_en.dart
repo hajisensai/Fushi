@@ -475,6 +475,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '删除前一直保留（不会自动到期）': 'Kept until you delete it (never expires on its own)',
   '自动删除没做成': 'Automatic deletion did not happen',
   '删除保留副本': 'Delete retained copy',
+  '已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响':
+      'Damaged (not a readable SQLite file): it can no longer be used to go back to the old version. The current review library is not affected.',
   '立即删除旧版本保留副本？不可撤销：删除后不能再退回旧版本，彻底清除过的内容在旧库里的原文也随之消失。删除前会先核对新库完好，核对不过不删。':
       'Delete the old-version retained copy now? This cannot be undone: you can no longer go back to the old version, and the original text of anything you permanently purged goes with it. The current library is checked first; if the check fails nothing is deleted.',
   '已删除保留副本，释放 {0}': 'Retained copy deleted, {0} freed',
@@ -515,6 +517,20 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'torrent 引擎': 'Torrent engine',
   '内置引擎库路径（空=随包/系统）': 'Embedded engine library path (empty = bundled / system)',
   'libtorrent 监听接口': 'libtorrent listen interfaces',
+  '允许上传 / 做种（关 = 不给任何 peer 上传，已完成的种子暂停做种）':
+      'Allow uploading / seeding (off = upload to no peer; finished torrents stop seeding)',
+  '上传限速 KB/s（0 = 不限）': 'Upload limit KB/s (0 = unlimited)',
+  '下载限速 KB/s（0 = 不限）': 'Download limit KB/s (0 = unlimited)',
+  '限速也作用于局域网 peer': 'Apply the limits to LAN peers too',
+  '同时下载的种子数（-1 = 不限，0 = libtorrent 默认 3）':
+      'Concurrent downloading torrents (-1 = unlimited, 0 = libtorrent default 3)',
+  '同时做种的种子数（-1 = 不限，0 = libtorrent 默认 5）':
+      'Concurrent seeding torrents (-1 = unlimited, 0 = libtorrent default 5)',
+  '最大连接数（0 = 按内存自动推导）': 'Max connections (0 = derived from memory)',
+  '分享率上限（0 = 不限；开上传时生效）':
+      'Share ratio limit (0 = unlimited; applies when uploading is on)',
+  '做种时长上限 分钟（0 = 不限；开上传时生效）':
+      'Seeding time limit in minutes (0 = unlimited; applies when uploading is on)',
   'qBittorrent WebUI 地址': 'qBittorrent WebUI address',
   'qBittorrent 用户名': 'qBittorrent username',
   'qBittorrent 密码': 'qBittorrent password',

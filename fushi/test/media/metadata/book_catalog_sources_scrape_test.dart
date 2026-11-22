@@ -37,6 +37,17 @@ class _Offline {
         return _utf8(_fixture('ndl_opensearch_kusuriya.rss'));
       case 'openapi.rakuten.co.jp':
         return _utf8(_fixture('rakuten_books_search_formatv2.json'));
+      case 'itunes.apple.com':
+        if (req.url.path == '/search') {
+          return _utf8(_fixture('itunes_search_lemon.json'));
+        }
+        return _utf8(
+          _fixture(
+            req.url.queryParameters['id'] == '1537460612'
+                ? 'itunes_lookup_1537460612.json'
+                : 'itunes_not_found.json',
+          ),
+        );
     }
     return http.Response('', 404);
   });
@@ -51,6 +62,15 @@ class _Offline {
   }
 }
 
+/// 只取可见候选（门面只暴露 [BookMetadataScrapeFacade.searchDetailed]：弹窗与控制
+/// 通道都走它）。
+Future<List<BookScrapeCandidate>> _search(
+  BookMetadataScrapeFacade facade, {
+  required BookScrapeSource source,
+  required String query,
+}) async =>
+    (await facade.searchDetailed(source: source, query: query)).candidates;
+
 void main() {
   const RakutenBooksCredentials creds = RakutenBooksCredentials(
     applicationId: 'app',
@@ -62,7 +82,8 @@ void main() {
     final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
       scraper: offline.scraper(),
     );
-    final List<BookScrapeCandidate> found = await facade.search(
+    final List<BookScrapeCandidate> found = await _search(
+      facade,
       source: BookScrapeSource.anilist,
       query: '薬屋のひとりごと',
     );
@@ -73,7 +94,8 @@ void main() {
     expect(c.bannerUrl, contains('/banner/'));
     expect(c.detailUrl, 'https://anilist.co/manga/99026');
 
-    await facade.search(
+    await _search(
+      facade,
       source: BookScrapeSource.anilist,
       query: 'https://anilist.co/manga/99026/Kusuriya',
     );
@@ -93,7 +115,8 @@ void main() {
       },
     );
     expect(
-      await facade.search(
+      await _search(
+        facade,
         source: BookScrapeSource.openbd,
         query: '私の愛人になりなさいっ!',
       ),
@@ -101,7 +124,8 @@ void main() {
     );
     expect(offline.requests, isEmpty);
 
-    final BookScrapeCandidate c = (await facade.search(
+    final BookScrapeCandidate c = (await _search(
+      facade,
       source: BookScrapeSource.openbd,
       query: 'ISBN978-4-06-514111-3',
     )).single;
@@ -117,7 +141,8 @@ void main() {
     final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
       scraper: offline.scraper(),
     );
-    final List<BookScrapeCandidate> found = await facade.search(
+    final List<BookScrapeCandidate> found = await _search(
+      facade,
       source: BookScrapeSource.ndl,
       query: '薬屋のひとりごと',
     );
@@ -140,7 +165,7 @@ void main() {
     expect(without.isSourceAvailable(BookScrapeSource.rakuten), isFalse);
     expect(without.isSourceAvailable(BookScrapeSource.ndl), isTrue);
     await expectLater(
-      without.search(source: BookScrapeSource.rakuten, query: 'x'),
+      _search(without, source: BookScrapeSource.rakuten, query: 'x'),
       throwsA(isA<BookScrapeException>()),
     );
     expect(offline.requests, isEmpty);
@@ -149,7 +174,8 @@ void main() {
       scraper: offline.scraper(rakuten: creds),
     );
     expect(withKey.isSourceAvailable(BookScrapeSource.rakuten), isTrue);
-    final BookScrapeCandidate c = (await withKey.search(
+    final BookScrapeCandidate c = (await _search(
+      withKey,
       source: BookScrapeSource.rakuten,
       query: '薬屋のひとりごと',
     )).single;
@@ -179,7 +205,7 @@ void main() {
       BookScrapeSource.ndl,
     ]) {
       await expectLater(
-        facade.search(source: source, query: '薬屋'),
+        _search(facade, source: source, query: '薬屋'),
         throwsA(
           isA<BookScrapeException>().having(
             (BookScrapeException e) => e.statusCode,
@@ -208,5 +234,90 @@ void main() {
       BookScrapeSource.bangumi,
       '薬屋のひとりごと',
     ));
+  });
+
+  test('弹窗初始源：导入的歌曲默认 iTunes（DLsite 编号 / ISBN 仍优先）', () {
+    expect(bookScrapeInitialState('Lemon', isSong: true), (
+      BookScrapeSource.itunes,
+      'Lemon',
+    ));
+    expect(bookScrapeInitialState('RJ01014447 某作', isSong: true), (
+      BookScrapeSource.dlsite,
+      'RJ01014447',
+    ));
+    expect(bookScrapeInitialState('Lemon'), (
+      BookScrapeSource.bangumi,
+      'Lemon',
+    ));
+  });
+
+  test('iTunes：按歌名搜出专辑封面候选，资料带日期 / 流派，详情页是 Apple Music', () async {
+    final _Offline offline = _Offline();
+    final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
+      scraper: offline.scraper(),
+    );
+    final List<BookScrapeCandidate> found = await _search(
+      facade,
+      source: BookScrapeSource.itunes,
+      query: '米津玄師 Lemon',
+    );
+    expect(found, hasLength(3));
+    final BookScrapeCandidate c = found.first;
+    expect(c.source, BookScrapeSource.itunes);
+    expect(c.title, 'Lemon');
+    expect(c.author, '米津玄師');
+    expect(c.series, 'Lemon - Single');
+    expect(c.date, '2018-02-12');
+    expect(c.tags, <String>['J-Pop']);
+    expect(c.coverUrl, endsWith('/1200x1200bb.jpg'));
+    expect(
+      c.detailUrl,
+      'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
+    );
+    expect(offline.requests.single.path, '/search');
+    expect(facade.isSourceAvailable(BookScrapeSource.itunes), isTrue);
+  });
+
+  test('iTunes：贴 Apple Music 链接只直取；纯数字直取不中再当歌名搜', () async {
+    final _Offline offline = _Offline();
+    final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
+      scraper: offline.scraper(),
+    );
+    final List<BookScrapeCandidate> direct = await _search(
+      facade,
+      source: BookScrapeSource.itunes,
+      query: 'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
+    );
+    expect(direct.single.subjectId, '1537460612');
+    expect(offline.requests.map((Uri u) => u.path), <String>['/lookup']);
+
+    offline.requests.clear();
+    final List<BookScrapeCandidate> numeric = await _search(
+      facade,
+      source: BookScrapeSource.itunes,
+      query: '22',
+    );
+    expect(numeric, hasLength(3));
+    expect(offline.requests.map((Uri u) => u.path), <String>[
+      '/lookup',
+      '/search',
+    ]);
+
+    offline.requests.clear();
+    expect(
+      await _search(
+        facade,
+        source: BookScrapeSource.itunes,
+        query: 'https://music.apple.com/jp/album/x/999',
+      ),
+      isEmpty,
+    );
+    expect(offline.requests.map((Uri u) => u.path), <String>['/lookup']);
+
+    final BookScrapeCandidate? byId = await facade.fetchById(
+      source: BookScrapeSource.itunes,
+      id: '1537460612',
+    );
+    expect(byId?.title, 'Lemon');
   });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 
@@ -275,6 +276,12 @@ final remoteLibraryCacheProvider = Provider<RemoteLibraryCache>((ref) {
       cache.invalidateSource(kInterconnectRemoteLibrarySourceId);
   mutation.addListener(onHostLibraryMutated);
   ref.onDispose(() => mutation.removeListener(onHostLibraryMutated));
+  // 媒体服务器请求漏斗自动换了线路（拍板台 design-media-server-failover-transport）：
+  // 这台的清单槽里封面 / 流 URL 烤着旧线路的 host，整槽作废（与手动「切换线路」同口径）。
+  final StreamSubscription<String> reroutes = MediaServerRouteFailover
+      .reroutedSources
+      .listen(cache.invalidateSource);
+  ref.onDispose(reroutes.cancel);
   return cache;
 });
 

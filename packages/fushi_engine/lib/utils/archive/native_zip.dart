@@ -11,7 +11,7 @@
 /// - `ZipEncoder` / `ZipFileEncoder`（level ≠ STORE）用纯 Dart `Deflate`，并且
 ///   先把整个文件 `toUint8List()` 再压缩。
 /// - `ZipFileEncoder.addFile(..., STORE)` 虽然真流式，但 CRC-32 由 archive 自己的
-///   纯 Dart `getCrc32` 逐字节算；[addFileStored] 换成 Rust 的 [ffcCrc32]。
+///   纯 Dart `getCrc32` 逐字节算；[addFileStored] 换成 Rust 的 [ffcCrc32FileSync]。
 ///
 /// 本文件的函数只消费条目的原始压缩窗口 [ArchiveFile.rawContent]，内存峰值是
 /// 一个读块（解压）或压缩后的体积（压缩）。
@@ -386,22 +386,9 @@ void addFileStored(ZipFileEncoder encoder, File file, String name) {
   }
 }
 
-/// 整个文件的 CRC-32（Rust），分块读、内存峰值一个读块。
-int _fileCrc32(File file) {
-  int crc = 0;
-  final RandomAccessFile raf = file.openSync();
-  try {
-    final Uint8List chunk = Uint8List(kNativeZipChunkBytes);
-    while (true) {
-      final int n = raf.readIntoSync(chunk);
-      if (n == 0) break;
-      crc = ffcCrc32(Uint8List.sublistView(chunk, 0, n), crc);
-    }
-  } finally {
-    raf.closeSync();
-  }
-  return crc;
-}
+/// 整个文件的 CRC-32：读盘与计算都在 Rust 里（`ffcCrc32FileSync`），不在 Dart 里逐块
+/// `readIntoSync`——那样整段磁盘读期间挡住整个 isolate group 的 GC（BUG-5088）。
+int _fileCrc32(File file) => ffcCrc32FileSync(file.path);
 
 /// [ZipFileEncoder.addDirectory] 的原生 zlib 版：同样的条目集合与命名（含目录
 /// 条目、`includeDirName` 语义），文件内容走 [addFileNativeDeflate]。

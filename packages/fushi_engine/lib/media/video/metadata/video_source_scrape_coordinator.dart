@@ -61,6 +61,7 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
@@ -565,9 +566,9 @@ class VideoSourceScrapeCoordinator
     }
     SourceLibraryRow? source;
     VideoSourceScrapeWork? localWork;
-    for (final SourceLibraryRow candidate
-        in await database.getMediaSourcesByKind('video')) {
-      if (candidate.transport != 'local') continue;
+    for (final SourceLibraryRow candidate in await localVideoScrapeScopes(
+      database,
+    )) {
       for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
         database,
       ).plan(candidate)) {
@@ -585,7 +586,7 @@ class VideoSourceScrapeCoordinator
       if (localWork != null) break;
     }
     if (source == null || localWork == null) {
-      throw StateError('作品 $workId 不属于任何已登记的本地视频来源');
+      throw StateError('作品 $workId 不属于任何本机视频来源，也不是无来源本机视频');
     }
     final int sourceId = source.id;
     final Map<int, int> seasonIds = <int, int>{};
@@ -614,7 +615,7 @@ class VideoSourceScrapeCoordinator
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
-        sourceId: Value<int?>(sourceId),
+        sourceId: Value<int?>(persistedScrapeSourceId(source)),
         scope: 'sidecar',
         status: 'running',
         provider: Value<String?>(metadata.provider.name),
@@ -623,10 +624,10 @@ class VideoSourceScrapeCoordinator
         updatedAt: startedAt,
       ),
     );
-    final List<String> knownSourcePaths = (await database.allVideoBooks())
-        .where((VideoBookRow book) => book.sourceId == sourceId)
-        .map((VideoBookRow book) => book.videoPath)
-        .toList(growable: false);
+    final List<String> knownSourcePaths = videoScrapeKnownPathsFor(
+      source,
+      await database.allVideoBooks(),
+    );
     try {
       final _SidecarOutcome outcome = await _writeSidecars(
         source: source,
@@ -843,14 +844,14 @@ class VideoSourceScrapeCoordinator
     // 但每个来源仍独立执行安全 sidecar 落盘；下次用户重刮会创建新 context。
     final VideoSourceScrapeBatchContext effectiveBatch =
         batchContext ?? VideoSourceScrapeBatchContext();
-    if (source.mediaKind != 'video' || source.transport != 'local') {
+    // 只刮本机视频来源与无来源本机视频；「仅此一次」导入的临时行扫完即删，对它
+    // 立项的批次会在行删掉后写 sidecar 记账撞外键（FK 787），它的视频在行删掉后
+    // 归无来源范围刮（[isVideoScrapeScope]）。
+    if (!isVideoScrapeScope(source)) {
       return SourceScrapeReport(
         sourceIds: <int>[source.id],
         warnings: <SourceScrapeIssue>[
-          SourceScrapeIssue(
-            workTitle: source.label,
-            message: '只允许刮削已登记的本地视频来源',
-          ),
+          SourceScrapeIssue.scope(source, message: '只允许刮削已登记的本地视频来源'),
         ],
       );
     }
@@ -879,7 +880,7 @@ class VideoSourceScrapeCoordinator
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
-        sourceId: Value<int?>(source.id),
+        sourceId: Value<int?>(persistedScrapeSourceId(source)),
         scope: runScope,
         status: 'running',
         provider: Value<String?>(settings.provider.name),
@@ -932,10 +933,10 @@ class VideoSourceScrapeCoordinator
         }
         downloadEvidence[entry.key] = entry.value;
       }
-      final List<String> knownSourcePaths = (await database.allVideoBooks())
-          .where((VideoBookRow row) => row.sourceId == source.id)
-          .map((VideoBookRow row) => row.videoPath)
-          .toList(growable: false);
+      final List<String> knownSourcePaths = videoScrapeKnownPathsFor(
+        source,
+        await database.allVideoBooks(),
+      );
       await _publish(
         runId,
         onProgress,
@@ -962,8 +963,8 @@ class VideoSourceScrapeCoordinator
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(
-          SourceScrapeIssue(
-            workTitle: source.label,
+          SourceScrapeIssue.scope(
+            source,
             message: _issueNote(
               works,
               VideoScrapePendingCause.providerUnavailable,
@@ -1280,8 +1281,8 @@ class VideoSourceScrapeCoordinator
       if (banRemaining != null && hasProvider && skippedByBan > 0) {
         failed += skippedByBan;
         errors.add(
-          SourceScrapeIssue(
-            workTitle: source.label,
+          SourceScrapeIssue.scope(
+            source,
             message: _issueNote(
               works.skip(startedWorks),
               VideoScrapePendingCause.providerUnavailable,
@@ -1343,7 +1344,7 @@ class VideoSourceScrapeCoordinator
         warnings: warnings,
         errors: <SourceScrapeIssue>[
           ...errors,
-          SourceScrapeIssue(workTitle: source.label, message: error.toString()),
+          SourceScrapeIssue.scope(source, message: error.toString()),
         ],
       );
       await _finishRun(
@@ -1431,7 +1432,10 @@ class VideoSourceScrapeCoordinator
             database,
           ),
         ).readForPaths(
-          sourceRoot: source.rootPath,
+          sourceRoot: videoScrapeRootFor(source, <String>[
+            for (final VideoBookRow member in localWork.members)
+              member.videoPath,
+          ]),
           fallbackTitle: localWork.title,
           videoPaths: <String>[
             for (final VideoBookRow member in localWork.members)
@@ -2646,7 +2650,7 @@ class VideoSourceScrapeCoordinator
             database,
           ),
         ).readForPaths(
-          sourceRoot: source.rootPath,
+          sourceRoot: videoScrapeRootFor(source, <String>[member.videoPath]),
           fallbackTitle: work.title,
           videoPaths: <String>[member.videoPath],
         );
@@ -4800,12 +4804,22 @@ class VideoSourceScrapeCoordinator
     }
     final List<SourceScrapeIssue> warnings = <SourceScrapeIssue>[];
     final List<SourceScrapeIssue> errors = <SourceScrapeIssue>[];
+    final List<String> memberPaths = <String>[
+      for (final VideoBookRow member in localWork.members) member.videoPath,
+    ];
+    final String sidecarRoot = videoScrapeRootFor(source, memberPaths);
+    // 无来源范围补齐成员所在作品目录的磁盘实况，否则专属目录判定缺前提。
+    final List<String> knownWorkPaths = await videoScrapeKnownPathsForWork(
+      source,
+      knownSourcePaths,
+      memberPaths,
+    );
     final VideoSidecarLayout layout;
     if (metadata.kind == VideoMetadataMediaKind.movie) {
       layout = VideoSidecarTargetResolver.resolveMovie(
-        sourceRoot: source.rootPath,
+        sourceRoot: sidecarRoot,
         videoPath: localWork.members.single.videoPath,
-        knownSourceVideoPaths: knownSourcePaths,
+        knownSourceVideoPaths: knownWorkPaths,
       );
     } else {
       final List<VideoEpisodePath> members = <VideoEpisodePath>[];
@@ -4830,9 +4844,9 @@ class VideoSourceScrapeCoordinator
         );
       }
       layout = VideoSidecarTargetResolver.resolveTv(
-        sourceRoot: source.rootPath,
+        sourceRoot: sidecarRoot,
         members: members,
-        knownSourceVideoPaths: knownSourcePaths,
+        knownSourceVideoPaths: knownWorkPaths,
       );
     }
     warnings.addAll(<SourceScrapeIssue>[
@@ -4842,11 +4856,11 @@ class VideoSourceScrapeCoordinator
 
     final DatabaseSidecarArtifactStore artifacts = DatabaseSidecarArtifactStore(
       database: database,
-      sourceId: source.id,
+      sourceId: persistedScrapeSourceId(source),
       runId: runId,
     );
     final VideoSidecarWriter writer = VideoSidecarWriter(
-      sourceRoot: source.rootPath,
+      sourceRoot: sidecarRoot,
       artifactStore: artifacts,
     );
     final Map<String, _PlannedArtifact> planned = <String, _PlannedArtifact>{};

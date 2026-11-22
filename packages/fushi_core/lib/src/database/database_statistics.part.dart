@@ -629,30 +629,45 @@ mixin _FushiDbStatistics
     String? mediaKey,
     String? orTitle,
   }) async {
-    final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
-        select(studySegments);
-    if (!allProfiles) {
-      final int scope = profileId ?? await resolveActiveProfileId();
-      q.where((t) => t.profileId.equals(scope));
+    final int? scope = allProfiles
+        ? null
+        : profileId ?? await resolveActiveProfileId();
+    SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> base() {
+      final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
+          select(studySegments);
+      if (scope != null) {
+        q.where((t) => t.profileId.equals(scope));
+      }
+      if (mediaKind != null) {
+        q.where((t) => t.mediaKind.equals(mediaKind));
+      }
+      if (fromDateKey != null) {
+        q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+      }
+      if (toDateKey != null) {
+        q.where((t) => t.dateKey.isSmallerOrEqualValue(toDateKey));
+      }
+      return q;
     }
-    if (mediaKind != null) {
-      q.where((t) => t.mediaKind.equals(mediaKind));
-    }
-    if (mediaKey != null) {
-      q.where(
-        (t) => orTitle == null || orTitle.isEmpty
-            ? t.mediaKey.equals(mediaKey)
-            : t.mediaKey.equals(mediaKey) |
-                  (t.mediaKey.equals('') & t.title.equals(orTitle)),
-      );
-    }
-    if (fromDateKey != null) {
-      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
-    }
-    if (toDateKey != null) {
-      q.where((t) => t.dateKey.isSmallerOrEqualValue(toDateKey));
-    }
-    return q.get();
+
+    if (mediaKey == null) return base().get();
+    // 单媒体（HBK-AUDIT-042）：「身份行 OR 无身份同名行」拆成两支各自全等值的
+    // 查询，每支都整段命中 idx_study_segments_profile_media 的
+    // (profile_id, media_kind, media_key[, title]) 前缀。合成一个 OR 时 SQLite
+    // 会把两支共有的 profile_id / media_kind 提到外面、OR 本身用不上索引，只能
+    // 扫本 Profile 的全部段。两支按 media_key 互斥（mediaKey 非空时），拼起来
+    // 不重不漏；mediaKey 为空时第二支是第一支的子集，不发。
+    final Future<List<StudySegmentRow>> byKey =
+        (base()..where((t) => t.mediaKey.equals(mediaKey))).get();
+    if (orTitle == null || orTitle.isEmpty || mediaKey.isEmpty) return byKey;
+    final Future<List<StudySegmentRow>> byTitle =
+        (base()..where((t) => t.mediaKey.equals('') & t.title.equals(orTitle)))
+            .get();
+    final List<List<StudySegmentRow>> parts =
+        await Future.wait<List<StudySegmentRow>>(
+          <Future<List<StudySegmentRow>>>[byKey, byTitle],
+        );
+    return <StudySegmentRow>[...parts[0], ...parts[1]];
   }
 
   /// 按 uid 取段（会话流编辑「这一次会话」时要读回每段的**现有**字数与起止时刻，

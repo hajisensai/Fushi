@@ -1,5 +1,5 @@
-//! 读命令的新代实现（规划 §2.1 G7-4；设计 §2.3「读路径」）。**还没接分发器**：协议 3 的读命令（`store/reads.rs` 的
-//! `read` / `read_lib`、`sync2_history`）原地不动，分发器在整批推送里一次切到这里（规划 §2.2 S1）。
+//! 读命令的新代实现（规划 §2.1 G7-4；设计 §2.3「读路径」）。已接分发器（`dispatch.rs`）；协议 3 的读命令
+//! （`store/reads.rs` 的 `read` / `read_lib`、`sync2_history`）不再经分发器调用（冻结）。
 //!
 //! - [reads]：`read`（一个集合的只读查询，查询名与列契约同协议 3）与 `read_lib`（不针对单个集合）。
 //! - [views]：`entity_views`——每实体一份视图 JSON（规划 §1.1 缺口 G-7；远程复习 V2 与本机共用同一个解码器）。
@@ -80,11 +80,12 @@ pub mod sync_relay;
 pub mod sync_park;
 pub mod training;
 pub mod views;
-// 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
+// 写命令的新代实现（规划 §2.1 G7-3b），同样已接分发器：见 [writes] 文件头。
 pub mod writes;
 pub mod writes_intent;
 pub mod writes_local;
 pub mod writes_restore;
+pub mod writes_retype;
 
 #[cfg(test)]
 mod backup_tests;
@@ -104,6 +105,12 @@ mod identity_tests;
 mod purge_scrub_tests;
 #[cfg(test)]
 mod refresh_tests;
+#[cfg(test)]
+mod study_bench_tests;
+#[cfg(test)]
+mod study_realdb_bench_tests;
+#[cfg(test)]
+mod study_session_tests;
 #[cfg(test)]
 mod study_tests;
 #[cfg(test)]
@@ -207,14 +214,12 @@ pub(super) fn canon_ids_echo(
 
 /// 集合 [col] 的默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组。
 /// 写命令（[writes]）与出卡读命令（[study]）共用。
+/// 解析经 [Index::cache_config]（库句柄的缓存配置记忆，`cache.rs` `CfgMemo`）。
 pub(super) fn default_deck(t: &Truth<'_>, ix: &Index<'_, '_>, col: i64) -> Result<String, String> {
-    match t.derive_cfg(col, super::cache::CFG_KEY)? {
-        Some(text) => {
-            let v: Value =
-                serde_json::from_str(&text).map_err(|e| format!("gen4: bad cache config: {e}"))?;
-            let cfg = crate::store::caches::CacheConfig::parse(&ix.canonical_config(&v)?)?;
-            Ok(cfg.default_deck().to_owned())
-        }
+    debug_assert_eq!(ix.col, col);
+    debug_assert!(std::ptr::eq(ix.t, t));
+    match ix.cache_config()? {
+        Some(cfg) => Ok(cfg.default_deck().to_owned()),
         None => Ok(
             crate::gen4_ids::rules::builtin_default_deck(crate::gen4_ids::rules::CANONICAL).text(),
         ),
@@ -352,17 +357,60 @@ pub(super) fn logs_between(
             .map_err(sql)?,
     };
     for (k, id) in rows {
-        let c = ix.canonical(&id)?;
-        let op = t.id_of_key(k)?;
-        if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
-            continue;
+        merge_rep(t, ix, reps, k, &id)?;
+    }
+    Ok(())
+}
+
+/// 规范日志 ID 在 [ids] 里（规范 ID）、发生时刻 ≥ [lo] 的日志并进 [reps]：与 [logs_between] 同一份代表规则，只是按 ID
+/// 取（每个规范 ID 的别名类成员各走一次 `log_id (col, id, k)`）。出卡常驻会话按 ID 重读日志用（[study]）。
+pub(super) fn logs_of_ids(
+    t: &Truth<'_>,
+    ix: &Index<'_, '_>,
+    col: i64,
+    lo: i64,
+    ids: &std::collections::BTreeSet<Ref>,
+    reps: &mut LogReps,
+) -> Result<(), String> {
+    for c in ids {
+        for m in ix.class_of(c)? {
+            let ks: Vec<i64> = t
+                .conn()
+                .prepare_cached(
+                    "SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1 AND at >= ?3",
+                )
+                .map_err(sql)?
+                .query_map(rusqlite::params![col, m, lo], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            for k in ks {
+                merge_rep(t, ix, reps, k, &m)?;
+            }
         }
-        let Some(e) = t.entry_by_key(k)? else {
-            continue;
-        };
-        if let Some(Body4::Log(l)) = body_of(&e) {
-            reps.insert(c, (op, k, l));
-        }
+    }
+    Ok(())
+}
+
+/// 日志操作 [k]（原值日志 ID [id]）并进 [reps]：每个规范日志 ID 取操作号最小的一份（[logs_between] / [logs_of_ids]
+/// 共用的代表规则）。
+fn merge_rep(
+    t: &Truth<'_>,
+    ix: &Index<'_, '_>,
+    reps: &mut LogReps,
+    k: i64,
+    id: &Ref,
+) -> Result<(), String> {
+    let c = ix.canonical(id)?;
+    let op = t.id_of_key(k)?;
+    if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
+        return Ok(());
+    }
+    let Some(e) = t.entry_by_key(k)? else {
+        return Ok(());
+    };
+    if let Some(Body4::Log(l)) = body_of(&e) {
+        reps.insert(c, (op, k, l));
     }
     Ok(())
 }
@@ -405,18 +453,13 @@ pub(super) fn edit_rows_with(
     profile: &str,
     tags: bool,
 ) -> Result<Vec<(String, String, Option<i64>)>, String> {
-    let (lines, _) = ix.class_lines(kind, c)?;
+    let (lines, _) = ix.class_lines_keyed(kind, c)?;
     let mut rows: Vec<(String, String, Option<i64>)> = Vec::with_capacity(lines.len() + 1);
-    for (json, st) in lines {
-        let json = with_profile(&json, profile);
-        let f = serde_json::from_str::<Value>(&json)
-            .ok()
-            .and_then(|v| v.get("f").and_then(Value::as_str).map(str::to_owned))
-            .unwrap_or_default();
+    for (f, json, st) in lines {
         if kind == EntKind::Note && f == "tags" {
             continue;
         }
-        rows.push((f, json, st));
+        rows.push((f, with_profile(&json, profile), st));
     }
     if kind == EntKind::Note && tags {
         if let Some(json) = tags_line(t, ix, c, profile)? {

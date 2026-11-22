@@ -30,8 +30,11 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
 import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_album_dlsite_section.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show openMusicPlayerPage;
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
@@ -129,6 +132,9 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   late MusicDiscSourceRow? disc = widget.disc;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
   bool _busy = false;
+
+  /// 已经在退回曲库（专辑被移除）。
+  bool _leaving = false;
 
   AppModel get _app => ref.read(appProvider);
 
@@ -316,15 +322,22 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   Future<void> _reload() async {
     final FushiDatabase db = _app.database;
     final MusicAlbumRow? a = await db.getMusicAlbum(album.albumUid);
-    if (!mounted) return;
+    if (!mounted || _leaving) return;
     if (a == null) {
       // 专辑被移除（光盘从曲库移除）：退回曲库。
-      unawaited(Navigator.of(context).maybePop());
+      _leave();
       return;
     }
     final List<MusicTrackRow> rows = sortAlbumTracks(
       await db.listMusicTracks(albumUid: album.albumUid),
     );
+    if (!mounted || _leaving) return;
+    if (a.discUid == null && rows.isEmpty) {
+      // 普通专辑的曲目全被移出音乐库（整张移除 / 多选全移除）：专辑墙已不列它，退回曲库；
+      // 撤销提示挂在曲库那层的 ScaffoldMessenger 上，照样能点。
+      _leave();
+      return;
+    }
     final String? discUid = a.discUid;
     final MusicDiscSourceRow? d = discUid == null
         ? null
@@ -338,17 +351,31 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     });
   }
 
-  Future<void> _runDisc(MusicDiscMenuAction action) async {
-    final MusicDiscSourceRow? d = disc;
-    if (d == null || _busy) return;
+  /// 退回曲库（只退一次：表变更会连发好几次重读）。只摘本页这条路由：本页上面压着别的
+  /// 页（播放页、别的详情）时 `maybePop` 会把顶上那页弹掉，专辑页反而留着。
+  void _leave() {
+    if (_leaving) return;
+    _leaving = true;
+    final NavigatorState navigator = Navigator.of(context);
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      unawaited(navigator.maybePop());
+    } else if (route.isActive) {
+      navigator.removeRoute(route);
+    }
+  }
+
+  /// 专辑动作（光盘的导入 / 对号 / 移除整张盘；普通专辑整张移出音乐库）。
+  Future<void> _runAlbumAction(MusicAlbumMenuAction action) async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
-      await runMusicDiscMenuAction(
+      await runMusicAlbumMenuAction(
         context: context,
         app: _app,
         action: action,
         album: album,
-        disc: d,
+        disc: disc,
         tracks: tracks,
       );
     } finally {
@@ -359,6 +386,19 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   List<MusicPlayItem> _items() => <MusicPlayItem>[
     for (final MusicTrackRow t in tracks) musicPlayItemOf(t, album: album),
   ];
+
+  /// 「播放全部 / 随机播放」：从头放整张并直接进播放页（返回回到专辑页）。
+  void _playAll(MusicPlayerEngine engine, {bool shuffle = false}) {
+    unawaited(
+      engine.playQueue(
+        _items(),
+        context: MusicQueueContext.album,
+        shuffle: shuffle,
+        source: _source,
+      ),
+    );
+    openMusicPlayerPage(context);
+  }
 
   @override
   Widget build(BuildContext context) => MusicViewStyleBuilder(
@@ -398,15 +438,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         child: FushiFilledButton.icon(
           size: FushiButtonSize.m,
           key: const ValueKey<String>('music_album_play'),
-          onPressed: tracks.isEmpty
-              ? null
-              : () => unawaited(
-                  engine.playQueue(
-                    _items(),
-                    context: MusicQueueContext.album,
-                    source: _source,
-                  ),
-                ),
+          onPressed: tracks.isEmpty ? null : () => _playAll(engine),
           icon: const FushiIcon(FushiIcons.play),
           label: Text(t.music_play_all),
         ),
@@ -417,15 +449,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
           key: const ValueKey<String>('music_album_shuffle'),
           onPressed: tracks.isEmpty
               ? null
-              : () => unawaited(
-                  engine.playQueue(
-                    _items(),
-                    context: MusicQueueContext.album,
-                    shuffle: true,
-                    source: _source,
-                  ),
-                ),
-          icon: const FushiIcon(FushiIcons.repeat),
+              : () => _playAll(engine, shuffle: true),
+          icon: const FushiIcon(FushiIcons.shuffle),
           label: Text(t.music_shuffle_play),
         ),
       ),
@@ -471,7 +496,9 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             key: const ValueKey<String>('music_disc_import'),
             onPressed: _busy
                 ? null
-                : () => unawaited(_runDisc(MusicDiscMenuAction.importChapters)),
+                : () => unawaited(
+                    _runAlbumAction(MusicAlbumMenuAction.importChapters),
+                  ),
             icon: const FushiIcon(FushiIcons.toc),
             label: Text(
               musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
@@ -485,7 +512,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
               key: const ValueKey<String>('music_disc_lookup'),
               onPressed: _busy
                   ? null
-                  : () => unawaited(_runDisc(MusicDiscMenuAction.lookup)),
+                  : () =>
+                        unawaited(_runAlbumAction(MusicAlbumMenuAction.lookup)),
               icon: const FushiIcon(FushiIcons.search),
               label: Text(t.music_disc_lookup),
             ),
@@ -496,12 +524,24 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             key: const ValueKey<String>('music_disc_remove'),
             onPressed: _busy
                 ? null
-                : () => unawaited(_runDisc(MusicDiscMenuAction.remove)),
+                : () => unawaited(_runAlbumAction(MusicAlbumMenuAction.remove)),
             icon: const FushiIcon(FushiIcons.delete),
             label: Text(t.music_disc_remove),
           ),
         ),
-      ],
+      ] else if (tracks.isNotEmpty && _app.isDatabaseReady)
+        // 整张专辑移出音乐库（拍板台 mmXVwo0Ibv）：磁盘文件不动，带撤销。
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_album_remove'),
+            onPressed: _busy
+                ? null
+                : () => unawaited(_runAlbumAction(MusicAlbumMenuAction.remove)),
+            icon: const FushiIcon(FushiIcons.removeCircle),
+            label: Text(t.music_action_remove_from_library),
+          ),
+        ),
     ];
     final bool notImported = disc != null && tracks.isEmpty;
 
@@ -570,6 +610,13 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
 
     final List<Widget> children = <Widget>[
       header,
+      // 音声 / ASMR 专辑：按作品编号（RJ…）显示 DLsite 资料；认不出编号整块不出现。
+      if (_app.isDatabaseReady && musicAlbumHasDlsiteWork(album, tracks))
+        MusicAlbumDlsiteSection(
+          album: album,
+          tracks: tracks,
+          scraper: _app.musicScrape.dlsite,
+        ),
       for (final MapEntry<int?, List<MusicTrackRow>> disc
           in discs.entries) ...<Widget>[
         if (disc.key != null)

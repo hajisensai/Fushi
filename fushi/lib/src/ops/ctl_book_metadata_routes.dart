@@ -25,7 +25,7 @@ import 'package:fushi/src/ops/op_context.dart';
 
 /// 书的元数据与封面刮削（写回从对话框抽出的门面）的控制通道路由（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
 /// §2.2 / §8 P2）。每条路由调用 UI 按钮背后的同一个方法，不另写业务逻辑：
-/// 候选 = 「在线匹配封面」弹窗的 [BookMetadataScrapeFacade.search] / `fetchById`；
+/// 候选 = 「在线匹配封面」弹窗的 [BookMetadataScrapeFacade.searchDetailed] / `fetchById`；
 /// 写回 = 书架卡「在线刮削封面」的 [BookMetadataScrapeFacade.applyToBook]（这里
 /// 带 `keepBackup`，撤销靠快照 + 封面备份）。
 ///

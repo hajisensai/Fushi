@@ -50,10 +50,25 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
       if (!await SyncRepository(_db).isInterconnectServiceConfigSyncEnabled()) {
         return;
       }
-      final InterconnectServiceConfigSnapshot? snapshot = await backend
-          .getRemoteServiceConfig();
-      if (snapshot == null) return;
-      report.serviceConfigsImported += await snapshot.applyTo(_db);
+      switch (await backend.getRemoteServiceConfig()) {
+        case RemoteServiceConfigReceived(
+          :final InterconnectServiceConfigSnapshot snapshot,
+        ):
+          report.serviceConfigsImported += await snapshot.applyTo(_db);
+        case RemoteServiceConfigPlaintextSession():
+          // 明文链路上 host 按设计不给（BUG-1311），本地已知、与对端版本无关：
+          // 不记、也不去问能力表——明文是存量默认，这里每轮都会走到，正常轮次
+          // 不能为它多发一次 GET /api/capabilities。
+          return;
+        case RemoteServiceConfigEndpointMissing():
+          // 端点 404：老 host 记一条「对端版本过旧」（拍板
+          // other-sync-peer-version-errors）；host 关了该能力则能力位为 false，不记。
+          await _notePeerGapLive(
+            report,
+            backend,
+            SyncPeerGapDimension.serviceConfig,
+          );
+      }
     } catch (e) {
       report.noteError('service config live sync', e);
     }
@@ -90,8 +105,8 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
   /// 复用 [AggregateSyncService.syncOverClient] 的通道无关核心（materialize 本地 →
   /// GET host 快照 → [AggregateMergeService] 并集折叠 → 写回本地 DB（只 MAX / 并集
   /// upsert，幂等）→ PUT 合并后快照回 host）。IO 由本方法注入：GET 走
-  /// [InterconnectSyncBackend.getRemoteAggregate]（老 host 无端点返回 404 → null →
-  /// 只推不拉，优雅降级），PUT 走 [InterconnectSyncBackend.putRemoteAggregate]。
+  /// [InterconnectSyncBackend.getRemoteAggregateBody]（老 host 无端点返回 404 → null →
+  /// 只推不拉，优雅降级），PUT 走 [InterconnectSyncBackend.putRemoteAggregateBody]。
   ///
   /// 无 baseline / 无冲突弹窗（集合 + 单调语义无损）；删除不跨端传播；无 schema 变更。
   /// 整段 try/catch，逐轮错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
@@ -105,8 +120,8 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
         scope: _scope,
         localApplyLock: runExclusiveWithSyncStateApply,
       ).syncOverClient(
-        fetchRemote: backend.getRemoteAggregate,
-        pushMerged: backend.putRemoteAggregate,
+        fetchRemote: backend.getRemoteAggregateBody,
+        pushMerged: backend.putRemoteAggregateBody,
         shareStats: syncStats,
         shareFavorites: syncFavorites,
         shareWebHistory: syncWebHistory,

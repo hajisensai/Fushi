@@ -222,7 +222,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   // ── 成品音频 ────────────────────────────────────────────────────────
 
-  AudiobookSession get _session => _s.appModel.audiobookSession;
+  /// 不走 `appModel`（它在页面挂着时是 `ref.watch`）：[dispose] / 退出路径也要取会话。
+  AudiobookSession get _session => _s.appModelNoUpdate.audiobookSession;
 
   /// 会话里正在播的、属于本卷的成品音频驱动。
   MangaAudioPlaybackDriver? _activeDriver() {
@@ -320,8 +321,6 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
             await resolveMangaAudioSessionRequest(
               db,
               registration: registration,
-              title: _s._bookRow?.title ?? _s.widget.bookKey,
-              author: _s._bookRow?.author,
             );
         await _session.start(
           info: req.info,
@@ -503,7 +502,11 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
           readSpeed: () => _tts.store.speed,
           writeSpeed: _tts.store.setSpeed,
         );
-        c.addListener(_onControllerChanged);
+        _watch = MangaReadAloudSessionWatch(
+          c,
+          onActiveChanged: _rebuild,
+          onFinished: _onFinished,
+        );
         controller = c;
       } else {
         await c.replaceRig(rig);
@@ -521,26 +524,17 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
-  MangaReadAloudState? _lastState;
+  /// 会话起止 → 重建（播放条 / 工具栏切换、按钮激活态），章末 → 提示。
+  MangaReadAloudSessionWatch? _watch;
 
-  void _onControllerChanged() {
-    final MangaReadAloudController? c = controller;
-    if (c == null || !_s.mounted) return;
-    final MangaReadAloudState state = c.state;
-    if (state != _lastState && state == MangaReadAloudState.finished) {
-      // 读到章末不自动进下一章：停下并提示。
-      FushiToast.show(
-        msg: c.finish == MangaReadAloudFinish.noText
-            ? t.manga_read_aloud_no_text
-            : t.manga_read_aloud_chapter_end,
-      );
-    }
-    final bool rebuild =
-        (state == MangaReadAloudState.idle) !=
-        (_lastState == MangaReadAloudState.idle);
-    _lastState = state;
-    // 工具栏按钮的激活态跟着会话起止变。
-    if (rebuild) _rebuild();
+  void _onFinished(MangaReadAloudFinish? finish) {
+    if (!_s.mounted) return;
+    // 读到章末不自动进下一章：停下并提示。
+    FushiToast.show(
+      msg: finish == MangaReadAloudFinish.noText
+          ? t.manga_read_aloud_no_text
+          : t.manga_read_aloud_chapter_end,
+    );
   }
 
   void stop() {
@@ -595,14 +589,35 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
+  /// 退出阅读器时成品音频的去留，与小说 / PDF 阅读器同一开关同一判据（TODO-702）：
+  /// 没开「退出后续播」（[AppModel.audiobookBackgroundPlay]，默认关）就停掉本页接管
+  /// 的会话真正止声；开着则只解宿主（[dispose]），会话在后台接着播。
+  ///
+  /// 返回路径（[_MangaFushiPageState.onSourcePagePop]）先调一次，让书架迷你条从首帧
+  /// 就见空会话；[dispose] 再调一次兜异常拆栈。fire-and-forget：stop 的同步首段已
+  /// 清空会话，等 native 释放只会把返回挂住（BUG-1273）。
+  void stopAudioUnlessBackground(String logTag) {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver == null || _s.appModelNoUpdate.audiobookBackgroundPlay) return;
+    if (!identical(_session.companion, driver)) return;
+    _detachAudio();
+    unawaited(
+      _session.stop().catchError((Object e, StackTrace stack) {
+        ErrorLogService.instance.log(logTag, e, stack);
+      }),
+    );
+  }
+
   void dispose() {
-    // 成品音频会话比本页活得久（退出阅读器继续听），只解宿主。
+    stopAudioUnlessBackground('MangaFushiPage.disposeStopAudio');
+    // 开着「退出后续播」：会话比本页活得久，只解宿主。
     _detachAudio();
     final MangaReadAloudController? c = controller;
     controller = null;
     _failWaiters(MangaPageTextUnavailableReason.cancelled);
+    _watch?.dispose();
+    _watch = null;
     if (c == null) return;
-    c.removeListener(_onControllerChanged);
     c.dispose();
   }
 }
