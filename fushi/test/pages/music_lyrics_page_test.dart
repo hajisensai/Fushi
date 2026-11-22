@@ -520,7 +520,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('分栏布局：封面右侧滑出唱片（有盘面扫描图转真盘面）', (WidgetTester tester) async {
+  testWidgets('分栏布局：唱片压在封面上（有盘面扫描图转真盘面，没有转银色 CD）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1424, 951);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -554,6 +554,17 @@ void main() {
       find.descendant(
         of: find.byKey(sleeve),
         matching: find.byKey(const ValueKey<String>('music-player-real-disc')),
+      ),
+      findsOneWidget,
+    );
+
+    // 没有盘面扫描图：转银色 CD 盘，不是黑胶。
+    MusicDiscArtIndex.instance.publish(const <String, String>{});
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(sleeve),
+        matching: find.byKey(const ValueKey<String>('music-player-silver-cd')),
       ),
       findsOneWidget,
     );
