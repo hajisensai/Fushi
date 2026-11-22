@@ -463,6 +463,26 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     return _downloadJson(fileId);
   }
 
+  /// Download the raw content of [fileId]; throws once it exceeds [maxBytes].
+  Future<Uint8List> downloadBytesById(String fileId, {required int maxBytes}) =>
+      _downloadBytes(fileId, maxBytes: maxBytes);
+
+  /// Upsert a file named [name] under [parentId] with the raw [bytes].
+  Future<void> uploadBytesInFolder(
+    String parentId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    final existingId = await _findFileId(parentId, name);
+    await _uploadBytes(
+      folderId: parentId,
+      fileId: existingId,
+      fileName: name,
+      bytes: bytes,
+      contentType: 'application/octet-stream',
+    );
+  }
+
   /// Upsert a JSON file named [name] under [parentId] (utf8 of jsonEncode).
   Future<void> uploadJsonInFolder(
     String parentId,
@@ -598,7 +618,11 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   static const _maxDownloadSize = 10 * 1024 * 1024; // 10 MB
 
-  Future<dynamic> _downloadJson(String fileId) async {
+  Future<dynamic> _downloadJson(String fileId) async => jsonDecode(
+    utf8.decode(await _downloadBytes(fileId, maxBytes: _maxDownloadSize)),
+  );
+
+  Future<Uint8List> _downloadBytes(String fileId, {required int maxBytes}) {
     return _call((api) async {
       final media =
           await api.files.get(
@@ -610,11 +634,11 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
       final builder = BytesBuilder(copy: false);
       await for (final chunk in media.stream) {
         builder.add(chunk);
-        if (builder.length > _maxDownloadSize) {
+        if (builder.length > maxBytes) {
           throw GoogleDriveError('Response too large');
         }
       }
-      return jsonDecode(utf8.decode(builder.takeBytes()));
+      return builder.takeBytes();
     });
   }
 
@@ -623,14 +647,26 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     required String? fileId,
     required String fileName,
     required dynamic data,
-  }) async {
-    final bytes = utf8.encode(jsonEncode(data));
+  }) => _uploadBytes(
+    folderId: folderId,
+    fileId: fileId,
+    fileName: fileName,
+    bytes: utf8.encode(jsonEncode(data)),
+    contentType: 'application/json',
+  );
 
+  Future<void> _uploadBytes({
+    required String folderId,
+    required String? fileId,
+    required String fileName,
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
     await _call((api) async {
       final media = drive.Media(
         Stream.value(bytes),
         bytes.length,
-        contentType: 'application/json',
+        contentType: contentType,
       );
 
       if (fileId != null) {

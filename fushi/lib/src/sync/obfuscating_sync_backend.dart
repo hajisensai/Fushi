@@ -545,13 +545,25 @@ class ObfuscatingSyncBackend extends SyncBackend
     }
   }
 
-  // getJsonAsset / putJsonAsset 纯委托（A2 follow-up，不混淆 JSON）。
+  // getJsonAsset / putJsonAsset / 小资产字节读写纯委托（A2 follow-up，不混淆 JSON；
+  // 字节通道承载的是同一类元数据——聚合快照，与 JSON 通道同律）。
   @override
   Future<Object?> getJsonAsset(String assetId) => _inner.getJsonAsset(assetId);
 
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
       _inner.putJsonAsset(namespaceId, name, json);
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _inner.getBytesAsset(assetId);
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _inner.putBytesAsset(namespaceId, name, bytes);
 
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>

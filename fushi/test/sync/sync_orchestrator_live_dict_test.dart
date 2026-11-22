@@ -127,6 +127,15 @@ class _FakeSyncBackend implements SyncBackend {
     void Function(double progress)? onProgress,
   }) => _store.getAsset(assetId, destination, onProgress: onProgress);
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _store.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _store.putBytesAsset(namespaceId, name, bytes);
+  @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
