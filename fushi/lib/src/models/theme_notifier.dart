@@ -905,6 +905,10 @@ class ThemeNotifier extends ChangeNotifier {
     'design_system',
     'glass_material',
     'pure_black_dark',
+    // 阅读器纸色（拍板台 vJSj4RsKFt）：以前纸色随 app_theme_key 走配置，拆成独立
+    // 偏好后照旧随配置 / 作品走，否则在书里改纸色会写穿到全局。
+    readerPaperLightPrefKey,
+    readerPaperDarkPrefKey,
     'shell_rail_style',
     'shell_content_layout',
     'shell_block_arrangement',
