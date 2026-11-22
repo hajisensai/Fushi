@@ -3479,6 +3479,10 @@ class GalHookSessionController extends ChangeNotifier {
     return true;
   }
 
+  /// 会话级音轨低频刷新定时器是否还在跑（[_syncTrackAutoRefresh] 起、[_stopSources] 收）。
+  @visibleForTesting
+  bool get trackAutoRefreshActive => _trackRefreshTimer?.isActive ?? false;
+
   Future<void> refreshAudioTracks() async {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) {

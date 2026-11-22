@@ -472,6 +472,12 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     const String manifestSuffix = '/manifest';
     const String pagesMarker = '/pages/';
     const String chaptersMarker = '/chapters/';
+    // 客户端以为这一页是谁（HBK-AUDIT-205）：host 在同一份页表上核对，对不上回 409。
+    final String? expectedKeyDigest =
+        switch (request.url.queryParameters[kMangaPageKeyQuery]) {
+          final String digest when digest.isNotEmpty => digest,
+          _ => null,
+        };
 
     // 章节式在线漫画（BUG-2474）：`<bookKey>/chapters/<digest>/manifest` 与
     // `<bookKey>/chapters/<digest>/pages/<i>`。digest 是 24 位十六进制目录名，形状
@@ -514,8 +520,11 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
             bookKey,
             digest,
             index,
+            expectedKeyDigest: expectedKeyDigest,
           );
           return await serveFileWithRange(page, request);
+        } on MangaPageChanged catch (error) {
+          return shelf.Response(409, body: error.message);
         } on StateError {
           return shelf.Response.notFound('Manga chapter page not found');
         } on ArgumentError {
@@ -555,8 +564,14 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       );
       if (index == null) return shelf.Response.notFound('Missing page index');
       try {
-        final File page = await svc.mangaPageFile(bookKey, index);
+        final File page = await svc.mangaPageFile(
+          bookKey,
+          index,
+          expectedKeyDigest: expectedKeyDigest,
+        );
         return await serveFileWithRange(page, request);
+      } on MangaPageChanged catch (error) {
+        return shelf.Response(409, body: error.message);
       } on StateError {
         return shelf.Response.notFound('Manga page not found');
       } on ArgumentError {

@@ -130,17 +130,30 @@ bool distTestFilterActive(List<String> testArgs) => testArgs.any((String a) {
 
 /// Splits a json-reporter stream holding several runs back to back at each
 /// run's `start` event. A stream with no `start` at all is one run.
+///
+/// Lines that are no event (not a JSON object) never make a run of their
+/// own: they ride along with the run they precede. Flutter 3.50 prints its
+/// shader compiler warnings to stdout before the reporter's `start`; cut
+/// off as a run of their own they read as a run with no `done` and turned a
+/// green batch red.
 List<List<String>> splitEventRuns(List<String> lines) {
   final List<List<String>> runs = <List<String>>[];
   List<String> current = <String>[];
+  bool currentHasEvents = false;
   for (final String line in lines) {
-    if (line.contains('"type":"start"') && current.isNotEmpty) {
+    if (line.contains('"type":"start"') && currentHasEvents) {
       runs.add(current);
       current = <String>[];
+      currentHasEvents = false;
     }
     current.add(line);
+    if (line.startsWith('{')) currentHasEvents = true;
   }
-  if (current.isNotEmpty || runs.isEmpty) runs.add(current);
+  if (currentHasEvents || runs.isEmpty) {
+    runs.add(current);
+  } else {
+    runs.last.addAll(current);
+  }
   return runs;
 }
 

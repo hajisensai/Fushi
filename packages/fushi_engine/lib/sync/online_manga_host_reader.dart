@@ -29,11 +29,17 @@ abstract interface class OnlineMangaHostReader {
   });
 
   /// [chapter] 第 [index] 页（0 基）的图片字节。越界抛 [RangeError]。
+  ///
+  /// [expectedPageKey] 是调用方从 [chapterPageKeys] 拿到的第 [index] 页身份
+  /// （HBK-AUDIT-205）：实现必须在**取这页所用的同一份页表**上核对第 [index] 页的
+  /// 身份等于它，不等抛 `MangaPageChanged`。两次调用之间页表可能被淘汰、重解析成
+  /// 换了页的一份，只按页序取会把另一页当这一页端出去。null = 身份认不出，不核对。
   Future<Uint8List> chapterPage({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,
     required int index,
+    required String? expectedPageKey,
   });
 }
 

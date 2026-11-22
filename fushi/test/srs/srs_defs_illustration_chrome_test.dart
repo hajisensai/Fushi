@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as image;
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_card_defs_layout.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
@@ -23,7 +24,8 @@ import 'package:fushi_anki/fushi_anki_core.dart' show kFushiCardStylingCss;
 /// `font-size:1px; width:239em`，计算字号被报成 8px，旧脚本据此把 239px 的插图算成 1912px。
 ///
 /// 每档「卡面图片大小」断言：图片在盒子里、盒子不超出栏宽（图注留在栏内）、宽度符合该档；
-/// 点图片和点盒内占位层都把图片交给宿主放大。
+/// 点图片和点盒内占位层都把图片交给宿主放大；同一栏里带图标的普通相对查词链接点了仍查词
+/// （HBK-AUDIT-222）。图片按卡面的真实形态从媒体文件名载入（链接 href 与 img src 同名）。
 void main() {
   final String? chrome =
       <String?>[
@@ -55,6 +57,8 @@ void main() {
               },
             }),
           );
+          File('${temp.path}/$_media').writeAsBytesSync(_picture());
+          File('${temp.path}/$_icon').writeAsBytesSync(_picture());
           final File html = File('${temp.path}/test.html')
             ..writeAsStringSync(_document(size));
           final _ChromeRun result = await _runChrome(chrome!, <String>[
@@ -87,7 +91,7 @@ void main() {
             isEmpty,
             reason: '${report['failures']}\n${report['details']}',
           );
-          expect(report['passed'] as int, 23, reason: '${report['details']}');
+          expect(report['passed'] as int, 24, reason: '${report['details']}');
         } finally {
           temp.deleteSync(recursive: true);
         }
@@ -101,6 +105,27 @@ void main() {
 /// 插图自然尺寸（小学館例解学習国語「ネクタイ」的 images/700e5a6424.avif）。
 const int _w = 239;
 const int _h = 320;
+
+/// 插图的媒体文件名（导出的链接 href 与 img src 都是它）。
+const String _media = '700e5a6424.png';
+
+/// 普通查词链接里的小图标。
+const String _icon = 'arrow.png';
+
+/// 239×320 的插图：白底、右缘 20px 黑边。
+List<int> _picture() {
+  final image.Image p = image.Image(width: _w, height: _h);
+  image.fill(p, color: image.ColorRgb8(255, 255, 255));
+  image.fillRect(
+    p,
+    x1: _w - 20,
+    y1: 0,
+    x2: _w - 1,
+    y2: _h - 1,
+    color: image.ColorRgb8(0, 0, 0),
+  );
+  return image.encodePng(p);
+}
 
 /// 栏宽：卡面根的宽度（窄屏手机）。
 const int _rootWidth = 360;
@@ -125,22 +150,23 @@ const String _cell =
 
 /// 量到真实尺寸的导出：盒子 `font-size:1px; width:<N>em`，sizer 用 padding-top 撑高。
 String _declaredLink(String id) =>
-    '<a id="$id" href="700e5a6424.avif" target="_blank" '
+    '<a id="$id" href="$_media" target="_blank" '
     'rel="noreferrer noopener" style="$_linkStyle">'
     '<span style="${_boxStyle}font-size:1px;width:${_w}em;">'
     '<span style="padding-top:${_h / _w * 100}%;display:inline-block;width:0;'
     'vertical-align:top;font-size:0;"></span>'
     '<span style="display:none;"></span><span></span>'
-    '<img alt="" width="$_w" height="$_h" style="$_imgAbs"></span></a>';
+    '<img alt="" src="$_media" width="$_w" height="$_h" style="$_imgAbs">'
+    '</span></a>';
 
 /// 没量到真实尺寸的导出：盒子 `width:auto`，img 按自然尺寸排。
 String _naturalLink(String id) =>
-    '<a id="$id" href="700e5a6424.avif" target="_blank" '
+    '<a id="$id" href="$_media" target="_blank" '
     'rel="noreferrer noopener" style="$_linkStyle">'
     '<span style="${_boxStyle}font-size:1px;width:auto;">'
     '<span style="padding-top:100%;display:none;"></span>'
     '<span style="display:none;"></span><span></span>'
-    '<img alt="" style="$_imgNatural"></span></a>';
+    '<img alt="" src="$_media" style="$_imgNatural"></span></a>';
 
 /// 小学館例解学習国語的插图：两格表（插图 | 竖排图注）。
 String _figure(String link) =>
@@ -182,6 +208,8 @@ String _document(SrsReviewImageSize size) {
       'ワイシャツのえりもとにまいてむすぶ、細長い布。タイ。'
       '${_figure(_declaredLink('declared'))}'
       '${_figure(_naturalLink('natural'))}'
+      '<a id="lookup" href="ネクタイ"><span><img alt="" src="$_icon" '
+      'style="width:1em;height:1em;"></span>ネクタイ</a>'
       '</span></li></ol></details></div></div></div></div></div>'
       '<script>$kSrsDefsIllustrationScript$kSrsDefsLayoutScript</script>'
       '<script>$kSrsCardLinkScript$kSrsCardImageTapScript</script>'

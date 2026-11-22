@@ -56,6 +56,19 @@ class _MangaHost extends Fake
     ),
   ];
 
+  /// 章节式条目每章的页序：第 i 项 = 现在第 i 页是原来的第几页（模拟 host 重启 /
+  /// 页表缓存淘汰后重解析出重排过的页表，HBK-AUDIT-205）。
+  List<int> chapterOrder = const <int>[0, 1];
+
+  /// 为 true 时章节式条目每页都报身份（默认只报第 0 页，旧 host 的样子）。
+  bool identifyAllPages = false;
+
+  /// 取章节页时收到的 expectedKeyDigest（按调用顺序）。
+  final List<String?> expectedKeyDigests = <String?>[];
+
+  String? _chapterPageKey(int chapter, int original) =>
+      original == 0 || identifyAllPages ? 'src-c${chapter}p$original' : null;
+
   /// 章节式条目在 host 上已下载的章（key → 页字节）。
   static const List<String> chapterKeys = <String>[
     '/manga/csm/1',
@@ -78,9 +91,9 @@ class _MangaHost extends Fake
         for (int i = 0; i < 2; i++)
           RemoteMangaPageInfo(
             index: i,
-            name: 'c${chapter}p$i.jpg',
+            name: 'c${chapter}p${chapterOrder[i]}.jpg',
             // 第 0 页报身份、第 1 页不报（旧 host 的样子）。
-            key: i == 0 ? 'src-c${chapter}p$i' : null,
+            key: _chapterPageKey(chapter, chapterOrder[i]),
           ),
       ],
     );
@@ -90,8 +103,9 @@ class _MangaHost extends Fake
   Future<File> mangaChapterPageFile(
     String bookKey,
     String chapterDigest,
-    int index,
-  ) async {
+    int index, {
+    String? expectedKeyDigest,
+  }) async {
     if (!isMangaChapterDigest(chapterDigest)) {
       throw ArgumentError.value(chapterDigest, 'chapterDigest');
     }
@@ -99,10 +113,19 @@ class _MangaHost extends Fake
     if (index < 0 || index >= 2) {
       throw StateError('manga page out of range');
     }
+    expectedKeyDigests.add(expectedKeyDigest);
+    final int original = chapterOrder[index];
+    // 与真 host 同一约定：带了身份就在当前页表上核对。
+    final String? current = _chapterPageKey(chapter, original);
+    if (expectedKeyDigest != null &&
+        (current == null ||
+            remoteMangaPageKeyDigest(current) != expectedKeyDigest)) {
+      throw const MangaPageChanged('page changed');
+    }
     final File file = File(
       '${Directory.systemTemp.createTempSync('hbk_cpage').path}/p$index.jpg',
     );
-    file.writeAsBytesSync(<int>[0xC0, chapter, index]);
+    file.writeAsBytesSync(<int>[0xC0, chapter, original]);
     return file;
   }
 
@@ -150,7 +173,11 @@ class _MangaHost extends Fake
   }
 
   @override
-  Future<File> mangaPageFile(String bookKey, int index) async {
+  Future<File> mangaPageFile(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  }) async {
     if (bookKey != 'yotsuba-1' || index < 0 || index >= pageBytes.length) {
       throw StateError('manga page out of range: $bookKey#$index');
     }
@@ -335,6 +362,50 @@ void main() {
       expect(ref.pageKey, isNull);
       expect(await adapter.fetchChapterPage(pages.first), <int>[0xC0, 1, 0]);
       expect(await adapter.fetchChapterPage(pages.last), <int>[0xC0, 1, 1]);
+    });
+
+    test('host 页表重排后按旧页序取图：host 核对身份拒取，客户端判源端换页（HBK-AUDIT-205）', () async {
+      host.identifyAllPages = true;
+      final InterconnectLibraryAdapter adapter = InterconnectLibraryAdapter(
+        backend: backend,
+      );
+      final OnlineMangaLibraryEntry seed = entryOf(csm());
+      final OnlineMangaRefreshResult refreshed = await adapter.refresh(seed);
+      final OnlineMangaLibraryEntry entry = OnlineMangaLibraryEntry(
+        runtime: seed.runtime,
+        extensionPackage: seed.extensionPackage,
+        sourceId: seed.sourceId,
+        series: refreshed.series,
+        chapters: refreshed.chapters,
+      );
+      final OnlineMangaChapter chapter = entry.chapters[1];
+      final OnlineMangaChapterPageRefs pages = OnlineMangaChapterPageRefs(
+        adapter: adapter,
+        entry: entry,
+        chapter: chapter,
+        pages: await adapter.resolveChapterPages(
+          entry: entry,
+          chapter: chapter,
+        ),
+      );
+      expect(await pages.fetch(0), <int>[0xC0, 1, 0]);
+      expect(
+        host.expectedKeyDigests.last,
+        remoteMangaPageKeyDigest('src-c1p0'),
+      );
+
+      // host 重启后重解析出 [B, A]：同一个页序 0 已是原来的第 1 页。修复前客户端
+      // 拿到 B 的字节还当成 A 记账。
+      host.chapterOrder = const <int>[1, 0];
+      await expectLater(pages.fetch(0), throwsA(isA<OnlineMangaUnavailable>()));
+      expect(pages.pageTableChanged, isTrue, reason: '重取页表逐页比对后判换页');
+
+      // 按新页表重开：第 0 页是 B，身份与字节一致。
+      final List<OnlineMangaPageRef> fresh = await adapter.resolveChapterPages(
+        entry: entry,
+        chapter: chapter,
+      );
+      expect(await adapter.fetchChapterPage(fresh[0]), <int>[0xC0, 1, 1]);
     });
 
     test('对端没下载的章：可重试的 runtimeFailure（不是「源被禁用」）', () async {

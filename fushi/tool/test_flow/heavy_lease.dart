@@ -588,6 +588,7 @@ Future<HeavyLease> _waitSlot(
 }) async {
   String? lastReason;
   _Ticket? ticket;
+  late _AdmissionView view;
   try {
     while (true) {
       // Taken elsewhere: the ticket goes in the finally below, so --status
@@ -613,7 +614,7 @@ Future<HeavyLease> _waitSlot(
           final int? by = _supersededBy(dir, ticket.name);
           if (by != null) throw HeavyLeaseSuperseded(by);
         }
-        final (HeavyLease? lease, String blocker) = _admit(
+        final (HeavyLease? lease, String blocker, _AdmissionView seen) = _admit(
           dir,
           need,
           ticket,
@@ -627,6 +628,7 @@ Future<HeavyLease> _waitSlot(
         );
         if (lease != null) return lease;
         reason = blocker;
+        view = seen;
       } finally {
         gate.closeSync();
       }
@@ -642,21 +644,20 @@ Future<HeavyLease> _waitSlot(
       }
       // Only this machine's queue is predicted: with a rival out, another
       // machine may take the run any minute, so the wait here says nothing
-      // about whether it runs within the limit.
+      // about whether it runs within the limit. The prediction works on the
+      // very view admission just refused on (HBK-AUDIT-224), not on a
+      // second reading of the queue and the memory.
       if (waitMax != null &&
           ticket != null &&
           rival == null &&
           typical.isNotEmpty) {
-        final MemorySnapshot? memory = readMemory();
         final String? hopeless = _hopelessWait(
-          dir,
+          view,
           ticket.name,
           label,
           sw.elapsed,
           waitMax,
           typical,
-          slots: heavySlotCount(memory, env),
-          budgetMb: heavyBudgetMb(memory, env),
         );
         if (hopeless != null) throw HeavyLeaseTimeout(hopeless);
       }
@@ -667,59 +668,48 @@ Future<HeavyLease> _waitSlot(
   }
 }
 
+/// What one admission attempt saw under the gate: the regular [slots], the
+/// memory [budgetMb] (null: none), every slot holder (light ones included)
+/// and the queue (empty for a light run, which has no ticket).
+typedef _AdmissionView = ({
+  int slots,
+  int? budgetMb,
+  List<HeavyHolder> holders,
+  List<HeavyQueued> queue,
+});
+
 /// Why the queued run holding ticket [name] gives up now: the slots' holders
-/// and the waiters ahead of it, at their kinds' [typical] runs, will not let
-/// it in before [waitMax] (heavy_wait_estimate.dart); null while they may.
-/// Under a memory budget ([budgetMb]), a waiter ahead that does not fit it
-/// now may be passed (heavyMayGoAhead), so it is not counted ahead.
+/// and the waiters ahead of it in [view], at their kinds' [typical] runs,
+/// will not let it in before [waitMax] (heavy_wait_estimate.dart
+/// heavyQueuedWait); null while they may.
 String? _hopelessWait(
-  Directory dir,
+  _AdmissionView view,
   String name,
   String label,
   Duration elapsed,
   Duration waitMax,
-  Map<String, Duration> typical, {
-  required int slots,
-  required int? budgetMb,
-}) {
-  final List<HeavyQueued> queue = readHeavyQueue(dir, sweep: false);
-  final int at = queue.indexWhere((HeavyQueued q) => q.name == name);
+  Map<String, Duration> typical,
+) {
+  final int at = view.queue.indexWhere((HeavyQueued q) => q.name == name);
   if (at < 0) return null;
-  final int nowMs = DateTime.now().millisecondsSinceEpoch;
-  final List<HeavyHolder> holders = <HeavyHolder>[
-    for (final HeavyHolder h in readHeavyHolders(dir, slots))
-      if (h.slot < slots) h,
-  ];
-  final Duration wait = heavyPredictedWait(
-    slots: slots,
-    running: <HeavyRunningNow>[
-      for (final HeavyHolder h in holders)
-        (
-          held: Duration(
-            milliseconds: h.startedAtMs > 0 ? nowMs - h.startedAtMs : 0,
-          ),
-          typical: typical[h.kind],
-        ),
+  final Duration wait = heavyQueuedWait(
+    slots: view.slots,
+    budgetMb: view.budgetMb,
+    holders: view.holders,
+    ahead: <HeavyWaiterAhead>[
+      for (final HeavyQueued q in view.queue.take(at))
+        (bookedMb: q.bookedMb, kind: q.kind),
     ],
-    ahead: <Duration?>[
-      for (final HeavyQueued q in queue.take(at))
-        if (budgetMb == null ||
-            (q.bookedMb != null &&
-                heavyBudgetBlocker(
-                      needMb: q.bookedMb!,
-                      heldCapsMb: <int>[
-                        for (final HeavyHolder h in holders) h.bookedMb,
-                      ],
-                      budgetMb: budgetMb,
-                    ) ==
-                    null))
-          typical[q.kind],
-    ],
+    typical: typical,
+    nowMs: DateTime.now().millisecondsSinceEpoch,
   );
   if (elapsed + wait <= waitMax) return null;
+  final int busy = view.holders
+      .where((HeavyHolder h) => h.slot < view.slots)
+      .length;
   return 'heavy: $label gives up now: predicted to wait about '
       '${(wait.inSeconds / 60).ceil()} more min for a slot '
-      '(${holders.length}/$slots slots busy, $at run(s) ahead; typical run '
+      '($busy/${view.slots} slots busy, $at run(s) ahead; typical run '
       'times from heavy.dart --stats), over the ${waitMax.inMinutes} min '
       'limit. Not running it.';
 }
@@ -759,8 +749,9 @@ _Ticket _queueUp(
 /// Under the admission gate: the slot lease for [ticket] if a slot is free,
 /// [need]'s booking fits the budget and the ticket heads the queue or may go
 /// ahead of the earlier ones (heavy_budget.dart heavyMayGoAhead), else null
-/// and why not. A light [need] has no ticket and picks among the light slots.
-(HeavyLease?, String) _admit(
+/// and why not, with what it saw ([_AdmissionView]). A light [need] has no
+/// ticket and picks among the light slots.
+(HeavyLease?, String, _AdmissionView) _admit(
   Directory dir,
   HeavyNeed need,
   _Ticket? ticket,
@@ -776,9 +767,17 @@ _Ticket _queueUp(
   final int slots = heavySlotCount(memory, env);
   final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
   final int? budget = heavyBudgetMb(memory, env);
+  final List<HeavyQueued> queue = ticket == null
+      ? const <HeavyQueued>[]
+      : readHeavyQueue(dir);
+  final _AdmissionView view = (
+    slots: slots,
+    budgetMb: budget,
+    holders: holders,
+    queue: queue,
+  );
   int passed = 0;
   if (ticket != null) {
-    final List<HeavyQueued> queue = readHeavyQueue(dir);
     final int ahead = queue.indexWhere(
       (HeavyQueued q) => q.name == ticket.name,
     );
@@ -797,6 +796,7 @@ _Ticket _queueUp(
           null,
           'queued behind $ahead earlier run(s): '
               '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+          view,
         );
       }
       passed = ahead;
@@ -816,6 +816,7 @@ _Ticket _queueUp(
       null,
       'all ${candidates.length} ${need.light ? 'light ' : ''}slots busy: '
           '${rivals.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
+      view,
     );
   }
   final String? overBudget = budget == null
@@ -830,6 +831,7 @@ _Ticket _queueUp(
       null,
       '$overBudget: '
           '${holders.map((HeavyHolder h) => '${h.label} (pid ${h.pid}, ${h.bookedMb} MB)').join(', ')}',
+      view,
     );
   }
   for (final int i in candidates) {
@@ -881,9 +883,9 @@ _Ticket _queueUp(
       worktreeLock: worktree,
       slotInfo: info,
     );
-    return (lease, '');
+    return (lease, '', view);
   }
-  return (null, 'slots changed while probing');
+  return (null, 'slots changed while probing', view);
 }
 
 /// Ticket names this process holds (see [_heldInProcess] for why a process

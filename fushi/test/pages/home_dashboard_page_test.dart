@@ -3883,6 +3883,66 @@ void main() {
     );
   });
 
+  testWidgets('HBK-AUDIT-219：阅读统计页字数环回退到月目标时，分子含本月更早（本周之前）的字数', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 3200));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord(
+        'm',
+        StudyGoalId.chars,
+        100000,
+        period: StudyGoalPeriod.monthly,
+      ),
+    ]);
+    // 本月 1 日在本周之前时，在那天再读 500 字：月目标分子必须算进去（首页 / 小组件
+    // 同口径）；月初几天本月 1 日落在本周里，旧实现也读得到，只验同口径。
+    final StatWindow w = StatWindow(DateTime.now());
+    final String monthFirst = '${w.todayKey.substring(0, 8)}01';
+    int monthChars = 800;
+    if (monthFirst != w.todayKey) {
+      await seedLegacyReading(
+        title: '吾輩は猫である',
+        dateKey: monthFirst,
+        charsRead: 500,
+        timeMs: 300000,
+      );
+      monthChars += 500;
+    }
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    unawaited(
+      Navigator.of(tester.element(find.byType(HomeDashboardPage))).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => const ReadingStatisticsPage(),
+        ),
+      ),
+    );
+    await pumpSheet(tester);
+    final Finder fold = find.text(t.stat_analysis);
+    for (int i = 0; i < 30 && fold.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.ensureVisible(fold);
+    await tester.pump();
+    await tester.tap(fold);
+    await pumpSheet(tester);
+    final Finder ring = find.byKey(
+      const ValueKey<String>('reading-stats-goal-ring'),
+    );
+    expect(ring, findsOneWidget);
+    expect(
+      find.descendant(of: ring, matching: find.text('$monthChars/100000')),
+      findsOneWidget,
+      reason: '月目标环的分子是本月 1 日至今天的全部字数',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('目标面板：切「每周」→ 预设换成周量级，保存后今日格按本自然周字数显示', (
     WidgetTester tester,
   ) async {
