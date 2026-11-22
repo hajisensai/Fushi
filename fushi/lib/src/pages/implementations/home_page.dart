@@ -130,6 +130,8 @@ import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
+import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
+    show maybeShowAndroidStorageMovePrompt;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry, pushMediaServerPlayer;
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
@@ -778,6 +780,15 @@ class _HomePageState extends BasePageState<HomePage>
       // 立刻重启，提示只能在这里补上；与上面的弹框串行，排在更新弹窗之前。
       if (mounted) {
         await maybeShowOverwriteSnapshotNotice(
+          context: context,
+          appModel: appModelNoUpdate,
+        );
+      }
+
+      // Android 老安装：一次性提示把书库移到可访问的外部 app 专属目录（新装已在那里）。
+      // 选「现在迁移」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
+      if (mounted) {
+        await maybeShowAndroidStorageMovePrompt(
           context: context,
           appModel: appModelNoUpdate,
         );

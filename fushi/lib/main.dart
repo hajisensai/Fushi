@@ -3037,9 +3037,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      t.data_root_unavailable_message(
-                        path: dataRootUnavailable.configuredPath,
-                      ),
+                      isDesktopPlatform
+                          ? t.data_root_unavailable_message(
+                              path: dataRootUnavailable.configuredPath,
+                            )
+                          : t.data_root_unavailable_message_android(
+                              path: dataRootUnavailable.configuredPath,
+                            ),
                       style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
@@ -3056,12 +3060,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
-                        FushiOutlinedButton.icon(
-                          icon: const FushiIcon(Icons.folder_open, size: 18),
-                          label: Text(t.data_root_use_default_button),
-                          onPressed: () =>
-                              appModel.retryInitialiseWithDefaultRoot(),
-                        ),
+                        // 「用默认位置启动」只对桌面自定义数据根有意义。Android 的外部
+                        // 书库根就是默认位置，退回内部根只会显示一个空库、把新内容写错
+                        // 地方（BUG-815 铁律），只给重试。
+                        if (isDesktopPlatform)
+                          FushiOutlinedButton.icon(
+                            icon: const FushiIcon(Icons.folder_open, size: 18),
+                            label: Text(t.data_root_use_default_button),
+                            onPressed: () =>
+                                appModel.retryInitialiseWithDefaultRoot(),
+                          ),
                       ],
                     ),
                   ],
