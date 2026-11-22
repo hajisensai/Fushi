@@ -900,9 +900,25 @@ fn run(
             let caches = req.get("caches").ok_or("sync2: missing caches")?.clone();
             // 先按缓存层同一份解析核对：坏了不写。
             crate::store::caches::CacheConfig::parse(&caches)?;
-            let v = write_col(c, profile, |t, col| cache_config_set(t, col, &caches))?;
-            // 改了配置 = 派生层整层重建：按刷新键记的缓存整份作废。
-            if v["changed"] == Value::Bool(true) {
+            let now = req
+                .get("now")
+                .and_then(Value::as_i64)
+                .ok_or("cache_config_set: missing now")?;
+            // 注册配置与默认牌组不变式的开库自愈（[cmd::writes_intent::revive_default_deck]，BUG-5209）同一个事务：
+            // 复活写了就照本机写命令推进本机状态行（[local::persist]），回包放在 `revive` 下（它的 `changed` 是实体
+            // 列表，与这里的 `changed` 布尔不同义）。
+            let v = c.write(|t| {
+                let col = col_of(t, profile)?;
+                let mut v = cache_config_set(t, col, &caches)?;
+                let mut revive = cmd::writes_intent::revive_default_deck(t, col, now)?;
+                if revive["revived"] == Value::Bool(true) {
+                    local::persist(t, profile, None, &mut revive)?;
+                    v["revive"] = revive;
+                }
+                Ok(v)
+            })?;
+            // 改了配置 = 派生层整层重建；复活了默认牌组 = 牌组树变了：按刷新键记的缓存整份作废。
+            if v["changed"] == Value::Bool(true) || v.get("revive").is_some() {
                 c.refresh_invalidate(profile);
             }
             v
@@ -932,7 +948,9 @@ fn run(
 /// `derive_cfg`（与迁移写下的是同一个键）。值与库里的相同（按 JSON 值比，键序无关）就什么都不做；变了就写下并按
 /// `Settle::Rebuild` 整个重建派生层（缓存行按新配置重算），同一个事务。配置没变、但缓存层不是按当前推导口径物化的
 /// （`derive_cfg` 的 [RULES_KEY] 不等于 [CACHE_RULES]，`cache.rs`）也整层重建一次。回包 `{changed, settled?}`：
-/// `changed` = 派生层重建过（宿主据它作废按刷新键记的缓存）。
+/// `changed` = 派生层重建过（宿主据它作废按刷新键记的缓存）。请求要带 `now`：分发处在同一个事务里接着做默认牌组
+/// 不变式的自愈（[cmd::writes_intent::revive_default_deck]），写了时回包另带 `revive`（那笔写的统一回包 + 本机状态行的
+/// `localRevision` / `localEpoch`，宿主照本机写命令接）。
 ///
 /// 协议 3 回 `{from, to, current, cache}`（缓存推导口径的版本升级与 Dart 缓存镜像的写入清单）：新代的推导口径版本只有
 /// 「当前 / 不是当前」两态（落后了就整层重建，派生层是真相的纯函数），回包改了形状，G7-5 对应改。

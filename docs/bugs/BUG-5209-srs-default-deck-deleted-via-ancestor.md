@@ -12,3 +12,4 @@
   - engine `packages/fushi_engine/test/srs/srs_default_deck_invariant_test.dart`：①把默认牌组挪进 `Lang` 再删 `Lang`，默认牌组留下挂回顶层、卡不动、浏览会话正常出行；②直接写出旧版留下的坏状态（默认牌组带删除标记），先断言 `schedulingConfigFor('\u0000')` 抛错（即反馈里的空断言），重开库后默认牌组复活、浏览页兜底项与查询都正常。
 - **缺口**：没拿到用户的库，修复随下一个 debug 包发出、用户打开一次即是复核。
 - **备注**：
+  - 2026-11-22 去向：开库自愈从 Dart `ensureBuiltins`（每次开库多读一次默认牌组修改记录，`srs_write_statement_cost_test` 开库读命令被抬成 2，违反「Rust 胖核心、Dart 不存镜像状态」）挪进内核：`native/fushi_fsrs/src/store/gen4/cmd/writes_intent.rs` `revive_default_deck`，由开库的 `cache_config_set`（`store/gen4/dispatch.rs`，请求现带 `now`）在同一个事务里调——判据与牌组树同一份（有身份记录、视图 `da` 非空），经 `apply_in` 落本机原生日志（内核盖 HLC、随同步传播）、推进本机状态行，回包 `revive` 由 `SrsDbStore._registerCacheConfig` 照本机写命令接；`_ensureLocalState` 挪到 `cache_config_set` 之前（回包要带纪元）。开库读命令回到 1。测试：Rust `writes_tests.rs` `revive_default_deck_restores_a_deleted_default_deck_and_keeps_every_card`、`dispatch_tests.rs` `cache_config_set_revives_a_deleted_default_deck_in_the_same_transaction`；engine 两条回归仍绿。

@@ -628,6 +628,31 @@ fn cache_config_set_rebuilds_only_when_the_config_changes() {
     assert!(v["settled"].is_object(), "{v}");
 }
 
+/// BUG-5209：开库的 `cache_config_set` 在同一个事务里复活带删除标记的默认牌组——一笔本机写（推进本机状态行、回包
+/// `revive` 带 `localRevision` / `localEpoch`，宿主照本机写命令接）；默认牌组活着时回包不变、什么都不写。
+#[test]
+fn cache_config_set_revives_a_deleted_default_deck_in_the_same_transaction() {
+    let m = migrated();
+    let deck = default_deck_id(P);
+    g4(m.h, "local_state_ensure", T1, json!({}));
+    let items = vec![json!({"e": edit("deck", &deck, "deleted", json!(T1)), "note": null})];
+    let (v, _) = g4_files(m.h, "apply", T1, json!({}), Some(&items));
+    let r0 = v["localRevision"].as_i64().unwrap();
+
+    let v = g4(m.h, "cache_config_set", T1 + 1, json!({"caches": cfg()}));
+    assert_eq!(v["changed"], json!(false), "配置没变，派生层不重建：{v}");
+    let revive = &v["revive"];
+    assert_eq!(revive["revived"], json!(true), "{v}");
+    let r1 = revive["localRevision"].as_i64().unwrap();
+    assert!(r1 > r0, "{r0} -> {r1}");
+    assert!(revive["localEpoch"].is_string(), "{v}");
+    assert_eq!(g4(m.h, "local_state", T1, json!({}))["revision"], json!(r1));
+
+    let v = g4(m.h, "cache_config_set", T1 + 2, json!({"caches": cfg()}));
+    assert_eq!(v, json!({"changed": false}), "已经活着：不再写");
+    assert_eq!(g4(m.h, "local_state", T1, json!({}))["revision"], json!(r1));
+}
+
 // ---------------------------------------------------------------------- 打开状态
 
 fn state_of(e: &str) -> Value {

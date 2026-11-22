@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::params;
 use serde_json::{Map, Value, json};
 
-use super::super::derive::Ref;
+use super::super::derive::{Index, Ref};
 use super::super::schema::sql;
 use super::super::truth::Truth;
 use super::ref_of;
@@ -822,6 +822,61 @@ pub fn deck_delete(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
         v["token"] = json!({"n": note_cursor, "c": card_cursor});
         v["notes"] = json!(notes);
         v["count"] = json!(count_done);
+        Ok(v)
+    })
+}
+
+// ---------------------------------------------------------------------- revive_default_deck
+
+/// 默认牌组不变式的开库自愈（BUG-5209）：默认牌组（缓存配置给的规范 ID）带着删除标记时，写 `deleted = null`、
+/// `parent = null` 复活并挂回顶层；活着的、或还没有身份记录的（全新库：宿主随后补内置实体）什么都不写。
+///
+/// 旧版 [deck_delete] 删一个祖先牌组时把挪进它子树的默认牌组连带写了删除标记（现已不这样做），牌组树（只收未删除的
+/// 牌组）从此缺默认牌组，而宿主的「有效牌组」与排程配置都回落到它。这里是内核自己的一笔写：经 [apply_in] 落本机
+/// 原生日志、HLC 由内核按 `ts: "wall"` 盖，随同步传到别的设备；只动默认牌组自己的两个键，卡与别的牌组一行不碰。
+/// 宿主每次开库的 `cache_config_set` 在同一个事务里调它（`dispatch.rs`），不另发命令、宿主也不先读。
+///
+/// 回包是 [write] 的统一回包，另带 `revived`（这次写了没有）。
+pub fn revive_default_deck(t: &Truth<'_>, col: i64, now: i64) -> Result<Value, String> {
+    // 先只读判（与牌组树同一份判据，`mod.rs` [super::deck_tree] → `DeckTree::of_views`：有身份记录、视图的删除时刻
+    // `da` 非空 = 不在树里）；要写才开写会话。绝大多数开库默认牌组活着，不碰写会话（它要本机身份等）。
+    let mut ix = Index::new(t, col);
+    let deck = super::default_deck(t, &ix, col)?;
+    if super::deck_tree(&mut ix, deck.clone())?
+        .decks
+        .contains_key(&deck)
+    {
+        return Ok(json!({"revived": false}));
+    }
+    let r = ref_of(&deck);
+    let deleted = match ix.definition(&r)? {
+        Some((kind, _, payload)) if kind == EntKind::Deck as i64 => {
+            let (lines, _) = ix.class_lines(EntKind::Deck, &r)?;
+            !registers::deck_view_of(&payload, &stored(&lines))?["da"].is_null()
+        }
+        // 还没有身份记录（全新库：宿主随后补内置实体）。
+        _ => false,
+    };
+    if !deleted {
+        return Ok(json!({"revived": false}));
+    }
+    write(t, col, |s| {
+        let profile = s.profile.clone();
+        let items: Vec<Value> = [KEY_DELETED, KEY_PARENT]
+            .into_iter()
+            .map(|key| {
+                draft(
+                    &profile,
+                    EntKind::Deck.wire(),
+                    &deck,
+                    key,
+                    &Value::Null,
+                    "wall",
+                )
+            })
+            .collect();
+        let mut v = apply_some(s, now, &items)?;
+        v["revived"] = Value::Bool(true);
         Ok(v)
     })
 }
