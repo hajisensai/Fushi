@@ -1,6 +1,7 @@
 // 「模糊 NSFW 封面」开关变化时，音乐会话要立刻重发当前媒体卡（HBK-AUDIT-217）：
 // 暂停时没有进度 tick，只靠 tick 重发的话，锁屏会一直挂着开关变化前发布的原图。
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
@@ -67,6 +68,20 @@ class _Backend implements MusicOutputBackend {
       const <MusicAudioDevice>[];
 }
 
+/// 不走 `AudioService.init`（测试里没有平台实现，它会起 flutter_cache_manager 抛异步
+/// 错）：直接给一个本地 [FushiAudioHandler]，与 init 失败时的退路同形。
+class _Audio extends AudioController {
+  final FushiAudioHandler handler = FushiAudioHandler(
+    onPlayIntent: (_) {},
+    onSeek: (_) {},
+    onRewind: () {},
+    onFastForward: () {},
+  );
+
+  @override
+  FushiAudioHandler? get audioHandler => handler;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const MethodChannel audioSessionChannel = MethodChannel(
@@ -74,7 +89,9 @@ void main() {
   );
 
   late FushiDatabase db;
-  late AudioController audio;
+  late _Audio audio;
+  late Directory tmp;
+  late File cover;
   late ValueNotifier<bool> blur;
   late StreamController<MediaNsfwSnapshot> nsfw;
   late MusicSession session;
@@ -83,8 +100,9 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    audio = AudioController();
-    await audio.initialiseHandler();
+    audio = _Audio();
+    tmp = await Directory.systemTemp.createTemp('music_nsfw_blur');
+    cover = await File('${tmp.path}/r18.jpg').writeAsBytes(<int>[1, 2, 3]);
     blur = ValueNotifier<bool>(false);
     nsfw = StreamController<MediaNsfwSnapshot>.broadcast();
     session = MusicSession(
@@ -129,6 +147,7 @@ void main() {
     await nsfw.close();
     blur.dispose();
     await db.close();
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(audioSessionChannel, null);
   });
@@ -137,12 +156,12 @@ void main() {
     await db.setMediaNsfw(TagHostKind.musicAlbum, 'r18', true);
     final MediaNsfwSnapshot snap = await MediaNsfwSnapshot.load(db);
     await session.engine.playQueue(<MusicPlayItem>[
-      const MusicPlayItem(
+      MusicPlayItem(
         trackUid: 't',
         path: '/m/t.flac',
         title: 't',
         albumUid: 'r18',
-        coverPath: 'https://covers.example/r18.jpg',
+        coverPath: cover.path,
         durationMs: 60000,
       ),
     ]);
@@ -150,10 +169,10 @@ void main() {
     nsfw.add(snap);
     await pumpEventQueue();
     await session.engine.pause();
-    final FushiAudioHandler handler = audio.audioHandler!;
+    final FushiAudioHandler handler = audio.handler;
     expect(
       handler.mediaItem.value?.artUri,
-      Uri.parse('https://covers.example/r18.jpg'),
+      Uri.file(cover.path),
       reason: '开关关着：照常给图',
     );
 
@@ -165,9 +184,6 @@ void main() {
     );
 
     blur.value = false;
-    expect(
-      handler.mediaItem.value?.artUri,
-      Uri.parse('https://covers.example/r18.jpg'),
-    );
+    expect(handler.mediaItem.value?.artUri, Uri.file(cover.path));
   });
 }
