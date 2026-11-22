@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
@@ -59,6 +58,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 剧 / 电影详情（2026-10 M3E 重做）：hero 与本地「系列」详情同一套
 /// （`collection_detail_layout.dart`：fanart / 封面模糊 + 色晕 scrim 大背景、2:3
@@ -1102,9 +1102,9 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       // [kCollectionEpisodeCardHeight]）：宽屏两列、否则一列，卡高固定。
       SliverPadding(
         padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-        sliver: SliverLayoutBuilder(
-          builder: (BuildContext context, SliverConstraints constraints) {
-            final double width = constraints.crossAxisExtent;
+        sliver: FushiSliverWidthBuilder(
+          builder: (BuildContext context, double crossAxisExtent) {
+            final double width = crossAxisExtent;
             final bool stills =
                 posterTiles && width >= kMediaPosterEpisodeGridMinWidth;
             final int columns = !posterTiles

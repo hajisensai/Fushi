@@ -837,16 +837,17 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         colors: colors,
         size: widget.size,
         titleLines: titleLines,
-        // 半高卡（125 高）放不下作品 logo：logo 会压到副行 / 进度上
-        // （2026-11-12 用户截图 BLEACH 那块），改用两行标题文字。
-        logo: isEinkTheme(context) || widget.size == FushiCoverBlockSize.half
-            ? null
-            : widget.logo,
+        // 半高卡也画 logo（BUG-5252：首页「最近添加」/「继续」的小块对刮削过的
+        // 作品只剩标题文字 + 大字水印，与库页同一张系列卡对不上）。logo 一律
+        // 进固定标题槽（半高档 40 高，与两行标题文字同高），放不下时先丢次要行，
+        // 不会再压到副行 / 进度上（2026-11-12 BLEACH 截图是固定槽之前的问题）。
+        logo: isEinkTheme(context) ? null : widget.logo,
         // 海报元数据层（有 logo 或背景图）的标题走固定标题槽：有没有 logo、
-        // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。
-        titleSlot:
-            widget.size != FushiCoverBlockSize.half &&
-            (widget.logo != null || widget.backdrop != null),
+        // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。半高卡没有
+        // logo 时仍按剩余高度排两行标题文字。
+        titleSlot: widget.size == FushiCoverBlockSize.half
+            ? widget.logo != null && !isEinkTheme(context)
+            : widget.logo != null || widget.backdrop != null,
         eyebrow: widget.eyebrow,
         byline: widget.byline,
         overview: widget.overview,

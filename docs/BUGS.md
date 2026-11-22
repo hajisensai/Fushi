@@ -33,6 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4543 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5253](bugs/BUG-5253-cover-block-sliver-scroll-rebuild.md) | ✅ | ✅ | 色块布局 sliver 每个滚动帧重建视口内全部卡片（媒体库页滚动卡顿） |
+| [BUG-5252](bugs/BUG-5252-home-cover-block-logo-size-class.md) | ✅ | ✅ | home-cover-block-logo-size-class |
+| [BUG-5251](bugs/BUG-5251-bluray-volume-wrapper-dir-split-collections.md) | ✅ | ✅ | bluray-volume-wrapper-dir-split-collections |
+> 共 4541 条。点号进各自文件。
 > 共 4574 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

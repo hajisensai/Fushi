@@ -8,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
@@ -982,6 +984,104 @@ void main() {
     await settleCoverProbes(tester);
     expect(tester.takeException(), isNull);
     expect(logoTitle, findsOneWidget);
+  });
+
+  // BUG-5252：首页「最近添加」小块从前一律给半高档，半高档又不画刮削 logo——
+  // 刮削到 logo 的合集在首页只剩两行文字 + 大字水印，与视频库同一张卡对不上。
+  // 现在半高档也画 logo（进固定标题槽），首页按格子实际高度取尺寸档。
+  test('homeCoverBlockSizeFor：按格子实际高度取尺寸档（BUG-5252）', () {
+    const double half =
+        (kFushiCoverBlockHeroHeight - kFushiCoverBlockSpacing) / 2;
+    expect(homeCoverBlockSizeFor(96), FushiCoverBlockSize.half);
+    expect(homeCoverBlockSizeFor(half - 1), FushiCoverBlockSize.half);
+    expect(homeCoverBlockSizeFor(half), FushiCoverBlockSize.regular);
+    expect(homeCoverBlockSizeFor(200), FushiCoverBlockSize.regular);
+    // 只有允许升首块档的格子（「最近添加」主色块）才升。
+    expect(homeCoverBlockSizeFor(400), FushiCoverBlockSize.regular);
+    expect(
+      homeCoverBlockSizeFor(
+        kFushiCoverBlockHeroHeightCompact - 1,
+        allowHero: true,
+      ),
+      FushiCoverBlockSize.regular,
+    );
+    expect(
+      homeCoverBlockSizeFor(kFushiCoverBlockHeroHeightCompact, allowHero: true),
+      FushiCoverBlockSize.hero,
+    );
+  });
+
+  testWidgets('色块「最近添加」：小块也画刮削 logo，尺寸档跟格子实际高度走（BUG-5252）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final File logo = File('${storeDir.path}/logo.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    // 新加进来、还没看过的两集合集 → 「最近添加」里的一项（不进「继续」）。
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        importedAt: Value(now - 2000),
+        localAddedAt: Value<int?>(now - 2000),
+      ),
+      e2: VideoBooksCompanion(
+        bookUid: const Value('e2'),
+        title: const Value('S01E02'),
+        videoPath: const Value('/abs/e2.mp4'),
+        importedAt: Value(now - 1000),
+        localAddedAt: Value<int?>(now - 1000),
+      ),
+    );
+    await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
+      MediaImagesCompanion.insert(
+        collectionId: Value<int?>(cid),
+        kind: MediaImageKind.logo.dbValue,
+        path: logo.path,
+      ),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    final Finder block = find.byKey(
+      const ValueKey<String>('home-recent-block/0'),
+    );
+    expect(block, findsOneWidget);
+    final Finder logoTitle = find.descendant(
+      of: block,
+      matching: find.byType(FushiLogoTitle),
+    );
+    // 元数据是画到时后台单查（DB + 文件存在性），给真实事件循环几跳。
+    for (int i = 0; i < 20 && logoTitle.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+    await settleCoverProbes(tester);
+    expect(tester.takeException(), isNull);
+    final double height = tester.getSize(block).height;
+    final FushiCoverBlock cover = tester.widget<FushiCoverBlock>(
+      find.descendant(of: block, matching: find.byType(FushiCoverBlock)),
+    );
+    expect(
+      cover.size,
+      homeCoverBlockSizeFor(height),
+      reason: '尺寸档跟格子实际高度（$height）走',
+    );
+    expect(cover.logo, isNotNull, reason: '合集刮削到的 logo 传进了色块');
+    expect(logoTitle, findsOneWidget, reason: '与视频库系列卡一样画 logo，不退成文字');
+    // logo 在固定标题槽里、整块收在色块内（不压出块外）。
+    final Rect blockRect = tester.getRect(block);
+    final Rect logoRect = tester.getRect(logoTitle);
+    expect(logoRect.height, greaterThan(0));
+    expect(blockRect.contains(logoRect.topLeft), isTrue);
+    expect(
+      blockRect.contains(logoRect.bottomRight - const Offset(1, 1)),
+      isTrue,
+    );
   });
 
   // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页
