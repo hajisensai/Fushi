@@ -1,7 +1,7 @@
 /// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
 /// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
 /// （home / reader / audiobook / manga / video / webBrowser / music / srsReview）→ 输入设备
-/// （gamepad）→ 查词弹窗。
+/// （gamepad 焦点导航、controllerLookup 手柄查词模式）→ 查词弹窗。
 /// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
   global,
@@ -66,6 +66,14 @@ enum ShortcutScope {
   // 移焦就给焦点导航绑一个页面没占用的键。
   gamepad,
 
+  // 手柄查词模式（`ControllerLookupMode`，2026-11-22 手柄查词统一，见
+  // docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：模式激活期间
+  // 十字键挪光标、右摇杆左右调选区右端、X/Y 制卡/发音……全部按本 scope 解析，
+  // 可在设置里改键。**只在模式激活时解析**（模式在页面派发之前截键），模式关着时
+  // 这些键照常归页面，所以它不与任何页面 scope 同时解析，自成 co-active 组。
+  // 进入模式的键（按住 L1 / Select）不在这里：由偏好 `controller_lookup_style` 决定。
+  controllerLookup,
+
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
   // resolveKeyboard / 页面派发**：弹窗内容是 WebView，输入事件先到 WebView 的
   // JS，故绑定由 popup_settings_injection 注入给 popup.js，命中即调
@@ -121,6 +129,10 @@ enum ShortcutScope {
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
         return const <ShortcutScope>[gamepad];
+      // 手柄查词模式只在模式激活时、由 `ControllerLookupMode` 单独解析（它在页面
+      // 派发之前截键），与任何页面 scope 都不在同一次解析里，自成 co-active 组。
+      case controllerLookup:
+        return const <ShortcutScope>[controllerLookup];
       // globalExternal（系统级 app 外查词）是独立 co-active 组：**运行时解析**永不与
       // 任何应用内 scope 牵连（`resolveMouse` / `reverse_binding_index` 都按这里扫）。
       //
@@ -240,6 +252,11 @@ enum ShortcutScope {
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
         };
+      // 手柄查词模式：只有手柄。解析入口是 `ControllerLookupMode` 的
+      // `resolveGamepad(button, scope: ShortcutScope.controllerLookup)`（桌面轮询与
+      // Android 早期键处理两条路都先进模式）。键盘有自己的光标模式，不走这里。
+      case controllerLookup:
+        return const <ShortcutChannel>{ShortcutChannel.gamepad};
       // app 内浏览器：键盘 + 手柄（反馈 wegu0vewts：「浏览器里的快捷键映射只能映射
       // 键盘」）。
       //   · 键盘：浏览器页的键事件节点 `resolveKeyboard(event, scope: webBrowser)`
@@ -979,7 +996,64 @@ enum ShortcutAction {
   // 手柄重设计 P2：播放第一个可见词条的发音（点既有 `.audio-button`，与制卡同一
   // 「点按钮不另起桥」纪律，JS 入口 `fushiPopupPlayFirstAudio`）。默认只有手柄 Y
   // ——键盘上鼠标点按钮已经够近，而手柄用户没有任何非光标模式的发音入口。
-  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio');
+  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio'),
+
+  // 手柄查词模式（ShortcutScope.controllerLookup）。执行体是
+  // `ControllerLookupMode._runAction`：模式激活时按本 scope 解析手柄键。
+  // 默认键位：十字键挪光标 / 换行、L3 切按词 / 按字、右摇杆 ←/→ 调选区右端、
+  // X 制卡、Y 发音、RT / LT 下 / 上一词条、A 进入结果、B 关结果 / 退出模式。
+  controllerLookupCursorLeft(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_cursor_left',
+  ),
+  controllerLookupCursorRight(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_cursor_right',
+  ),
+  controllerLookupLineUp(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_line_up',
+  ),
+  controllerLookupLineDown(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_line_down',
+  ),
+  controllerLookupToggleGranularity(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_toggle_granularity',
+  ),
+  controllerLookupShrinkEnd(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_shrink_end',
+  ),
+  controllerLookupExtendEnd(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_extend_end',
+  ),
+  controllerLookupMine(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_mine',
+  ),
+  controllerLookupPlayAudio(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_play_audio',
+  ),
+  controllerLookupNextEntry(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_next_entry',
+  ),
+  controllerLookupPrevEntry(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_prev_entry',
+  ),
+  controllerLookupEnterResult(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_enter_result',
+  ),
+  controllerLookupCloseOrExit(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_close_or_exit',
+  );
 
   const ShortcutAction(this.scope, this.key);
 

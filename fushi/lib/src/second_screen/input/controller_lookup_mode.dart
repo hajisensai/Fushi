@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show TraversalDirection;
@@ -7,9 +8,13 @@ import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
 /// The one controller lookup mode shared by reader, video, manga and music
-/// (S6 of the dual-screen companion).
+/// (S6 of the dual-screen companion; the only controller lookup since the
+/// 2026-11-22 unification,
+/// docs/specs/2026-11-22-gamepad-lookup-unification-design.md).
 ///
 /// It sits in front of page dispatch (the desktop poller path in
 /// `GamepadService._dispatchButton`, a `FocusManager` early key handler for
@@ -19,19 +24,30 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 /// **Lookup mode** (needs an attached, available [ControllerLookupTarget]):
 /// hold L1 (navigation live while held; a short L1 tap is replayed on release
 /// so the page's normal L1 binding still works) or Select toggles, per
-/// [ControllerLookupStyle]. While active:
+/// [ControllerLookupStyle] (default hold L1). Entering is not a shortcut: the
+/// preference decides it. While active every button is resolved against the
+/// [ShortcutScope.controllerLookup] bindings of [shortcutRegistry] (all
+/// remappable; defaults in `ShortcutDefaults`):
 ///
-/// * D-pad / left stick left/right: step by word (character when the page has
-///   no word steps, or after Y switched to character granularity);
-/// * D-pad / left stick up/down: previous / next line;
-/// * A: look up; A again while a lookup is open: mine;
-/// * X: word audio; R2 / L2: next / previous entry; right stick: scroll;
-/// * B: close the lookup, then leave the mode.
+/// * cursor left / right (D-pad ←/→): step by word (character when the page has
+///   no word steps, or after the granularity toggle, L3);
+/// * line up / down (D-pad ↑/↓): previous / next line;
+/// * **look up when the cursor stops**: a single step looks up at once; while a
+///   held direction repeats nothing is looked up, the release looks up once;
+/// * selection right end −1 / +1 grapheme (right stick ←/→): caps the lookup
+///   ([ControllerLookupTarget.lookupAtCursor]'s `maxGraphemes`) and looks up
+///   again; any cursor move clears the cap;
+/// * mine (X), word audio (Y), next / previous entry (RT / LT); the right
+///   stick's vertical axis scrolls the result (analog, not remappable);
+/// * enter result (A): hands the cursor to the page's in-page popup cursor;
+/// * close or exit (B): close the lookup, then leave the mode.
+///
+/// The left stick is a fixed alias of the four cursor moves (not remappable).
 ///
 /// The lookup goes to the companion's Lookup tab while the companion is up
 /// and the user wants lookups there ([CompanionContextRegistry.lookupController])
-/// and to the page's in-page popup otherwise (the page's own lookup path decides; the mode only routes the
-/// follow-up buttons to the same place).
+/// and to the page's in-page popup otherwise (the page's own lookup path
+/// decides; the mode only routes the follow-up buttons to the same place).
 ///
 /// **Panel drive** (independent of lookup mode, companion up only): while R1 is
 /// held, D-pad / left stick / A / B drive the companion's own focus
@@ -40,8 +56,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 /// top screen again. Main-engine focus never moves: the top page keeps its
 /// Flutter focus the whole time, the panel's engine moves its own.
 class ControllerLookupMode extends ChangeNotifier {
-  ControllerLookupMode({CompanionContextRegistry? registry})
-    : _registry = registry ?? companionContexts;
+  ControllerLookupMode({
+    CompanionContextRegistry? registry,
+    this.shortcutRegistry,
+  }) : _registry = registry ?? companionContexts;
 
   static final ControllerLookupMode instance = ControllerLookupMode();
 
@@ -60,6 +78,11 @@ class ControllerLookupMode extends ChangeNotifier {
   /// Replays a tapped L1 / R1 (and B for the in-page popup's own close path)
   /// through the normal dispatch; set by `GamepadService`.
   void Function(GamepadButton button)? redispatch;
+
+  /// Where the mode's buttons are looked up ([ShortcutScope.controllerLookup]);
+  /// set by `GamepadService.start` to the app's registry. Null = no button is a
+  /// lookup-mode button (the mode then only enters and leaves).
+  FushiShortcutRegistry? shortcutRegistry;
 
   /// Test seam for the in-page popup hooks.
   @visibleForTesting
@@ -80,6 +103,32 @@ class ControllerLookupMode extends ChangeNotifier {
   GamepadButton? _repeating;
   Timer? _repeatTimer;
 
+  /// Runs when the held [_repeating] button is released after at least one
+  /// repeat fired (the "look up once the cursor stops" half of a held move).
+  VoidCallback? _onRepeatEnd;
+  bool _repeated = false;
+
+  /// Selection right-end cap in graphemes (null = unlimited, the dictionary's
+  /// longest match). Any cursor / line move clears it.
+  int? _maxGraphemes;
+
+  /// Highlight length of the last finished lookup (null = none / nothing
+  /// matched). Cleared by any cursor / line move.
+  int? _lastMatched;
+
+  /// The last cursor / line step still running; a lookup waits for it so it
+  /// reads the cursor where the step put it.
+  Future<void>? _pendingStep;
+
+  /// Bumped per lookup and on reset: a finished lookup only records its match
+  /// length when no later lookup started meanwhile.
+  int _lookupSeq = 0;
+
+  /// The left stick is mid-push in lookup mode; [_stickMoved] = it stepped
+  /// again after the lookup of its first step.
+  bool _stickBurst = false;
+  bool _stickMoved = false;
+
   /// Lookup mode is on (the badge shows).
   bool get active => _active;
 
@@ -91,7 +140,13 @@ class ControllerLookupMode extends ChangeNotifier {
 
   ControllerLookupTarget? get target => _target;
 
-  /// The companion while it is up (R1 panel drive, the default style).
+  /// Selection right-end cap of the next lookup (null = unlimited).
+  int? get maxGraphemes => _maxGraphemes;
+
+  /// Highlight length of the last finished lookup (null = none).
+  int? get lastMatched => _lastMatched;
+
+  /// The companion while it is up (R1 panel drive).
   CompanionControllerSink? get _companion => _registry.controller;
 
   /// The companion when lookups open there; null when it is down or the user
@@ -106,7 +161,6 @@ class ControllerLookupMode extends ChangeNotifier {
 
   ControllerLookupStyle get style => ControllerLookupStyle.resolve(
     _target?.readPref(kControllerLookupStylePrefKey),
-    companionActive: _companion != null,
   );
 
   /// A page claims the mode while it is on screen. A later claim replaces an
@@ -160,7 +214,7 @@ class ControllerLookupMode extends ChangeNotifier {
         _startRepeat(
           button,
           repeats: button.isDpad,
-          action: () => _panelNav(_panelNavOf(button)),
+          first: () => _panelNav(_panelNavOf(button)),
         );
       }
       return true; // everything else is swallowed while panel-driving
@@ -195,7 +249,8 @@ class ControllerLookupMode extends ChangeNotifier {
       return true;
     }
 
-    if (_lbHeld && !_active && !_lbUsed && _isModeButton(button)) {
+    final ShortcutAction? action = actionFor(button);
+    if (_lbHeld && !_active && !_lbUsed && action != null) {
       // First lookup input during the hold: enter right away.
       _setActive(true);
     }
@@ -203,13 +258,15 @@ class ControllerLookupMode extends ChangeNotifier {
     if (!_active) return false;
     if (_lbHeld) _lbUsed = true;
     if (!t.routerOwnsInput) return false;
-    return _handleActive(t, button);
+    if (action == null) return false;
+    _runAction(t, button, action);
+    return true;
   }
 
   /// A button went up. True = consumed.
   bool onRelease(GamepadButton button) {
     if (_rawInputOwner != null) return false;
-    if (_repeating == button) _stopRepeat();
+    if (_repeating == button) _endRepeat();
     if (button == GamepadButton.lb && _lbHeld) {
       final bool wasActive = _active;
       final bool used = _lbUsed;
@@ -234,27 +291,51 @@ class ControllerLookupMode extends ChangeNotifier {
     return _active && _isModeButton(button);
   }
 
-  /// Left stick moved one step in [direction] (desktop poller). True =
-  /// consumed (panel drive or lookup mode).
+  /// Left stick moved one step in [direction] (desktop poller; the poller's
+  /// own repeat sends further steps while it is held). True = consumed (panel
+  /// drive or lookup mode). The stick is a fixed alias of the four cursor
+  /// moves and follows the same "look up when the cursor stops" rule: the
+  /// first step of a push looks up at once, a held push looks up once on
+  /// [onStickRelease].
   bool onStickMove(TraversalDirection direction) {
     if (_rawInputOwner != null) return false;
-    final GamepadButton dpad = switch (direction) {
-      TraversalDirection.up => GamepadButton.dpadUp,
-      TraversalDirection.down => GamepadButton.dpadDown,
-      TraversalDirection.left => GamepadButton.dpadLeft,
-      TraversalDirection.right => GamepadButton.dpadRight,
-    };
     if (_rbHeld) {
       _rbUsed = true;
       _beginPanel();
-      _panelNav(_panelNavOf(dpad));
+      _panelNav(_panelNavOf(_dpadOf(direction)));
       return true;
     }
     final ControllerLookupTarget? t = _availableTarget;
     if (!_active || t == null || !t.routerOwnsInput) return false;
     if (_lbHeld) _lbUsed = true;
-    _stepFor(t, dpad);
+    final ShortcutAction move = switch (direction) {
+      TraversalDirection.up => ShortcutAction.controllerLookupLineUp,
+      TraversalDirection.down => ShortcutAction.controllerLookupLineDown,
+      TraversalDirection.left => ShortcutAction.controllerLookupCursorLeft,
+      TraversalDirection.right => ShortcutAction.controllerLookupCursorRight,
+    };
+    _move(t, move);
+    if (_stickBurst) {
+      _stickMoved = true; // held stick: look up once it is released
+    } else {
+      _stickBurst = true;
+      _stickMoved = false;
+      unawaited(_lookup(t));
+    }
     return true;
+  }
+
+  /// The left stick returned to centre (or switched direction) after
+  /// [onStickMove] steps: a held push looks up once, here.
+  void onStickRelease() {
+    if (!_stickBurst) return;
+    final bool moved = _stickMoved;
+    _stickBurst = false;
+    _stickMoved = false;
+    final ControllerLookupTarget? t = _availableTarget;
+    if (moved && _active && t != null && t.routerOwnsInput) {
+      unawaited(_lookup(t));
+    }
   }
 
   /// Right stick vertical scroll amount in logical pixels (positive = down).
@@ -281,17 +362,23 @@ class ControllerLookupMode extends ChangeNotifier {
           _rbHeld ||
           ((_active || _lbHeld) && _isModeButton(button)));
 
+  /// The [ShortcutScope.controllerLookup] action [button] is bound to in
+  /// [shortcutRegistry]; null when unbound (or no registry).
+  ShortcutAction? actionFor(GamepadButton button) => shortcutRegistry
+      ?.resolveGamepad(button, scope: ShortcutScope.controllerLookup);
+
   bool _isPanelButton(GamepadButton b) =>
       b.isDpad || b == GamepadButton.a || b == GamepadButton.b;
 
-  bool _isModeButton(GamepadButton b) =>
-      b.isDpad ||
-      b == GamepadButton.a ||
-      b == GamepadButton.b ||
-      b == GamepadButton.x ||
-      b == GamepadButton.y ||
-      b == GamepadButton.lt ||
-      b == GamepadButton.rt;
+  bool _isModeButton(GamepadButton b) => actionFor(b) != null;
+
+  static GamepadButton _dpadOf(TraversalDirection direction) =>
+      switch (direction) {
+        TraversalDirection.up => GamepadButton.dpadUp,
+        TraversalDirection.down => GamepadButton.dpadDown,
+        TraversalDirection.left => GamepadButton.dpadLeft,
+        TraversalDirection.right => GamepadButton.dpadRight,
+      };
 
   static String _panelNavOf(GamepadButton b) => switch (b) {
     GamepadButton.dpadUp => CompanionPanelNav.up,
@@ -310,59 +397,121 @@ class ControllerLookupMode extends ChangeNotifier {
     _panelNav(CompanionPanelNav.begin);
   }
 
-  bool _handleActive(ControllerLookupTarget t, GamepadButton button) {
-    switch (button) {
-      case GamepadButton.dpadLeft:
-      case GamepadButton.dpadRight:
-      case GamepadButton.dpadUp:
-      case GamepadButton.dpadDown:
-        _startRepeat(button, repeats: true, action: () => _stepFor(t, button));
-        return true;
-      case GamepadButton.a:
-        if (_lookupOpen) {
-          _lookupAction(CompanionLookupActions.mine);
-        } else {
-          unawaited(t.lookupAtCursor());
-        }
-        return true;
-      case GamepadButton.x:
-        _lookupAction(CompanionLookupActions.playAudio);
-        return true;
-      case GamepadButton.y:
+  /// Executes the lookup-mode [action] that [button] resolved to.
+  void _runAction(
+    ControllerLookupTarget t,
+    GamepadButton button,
+    ShortcutAction action,
+  ) {
+    switch (action) {
+      case ShortcutAction.controllerLookupCursorLeft:
+      case ShortcutAction.controllerLookupCursorRight:
+      case ShortcutAction.controllerLookupLineUp:
+      case ShortcutAction.controllerLookupLineDown:
+        // Look up when the cursor stops: a single step looks up at once, a
+        // held direction only steps and looks up once on release.
+        _startRepeat(
+          button,
+          repeats: true,
+          first: () {
+            _move(t, action);
+            unawaited(_lookup(t));
+          },
+          repeat: () => _move(t, action),
+          onRepeatEnd: () => unawaited(_lookup(t)),
+        );
+      case ShortcutAction.controllerLookupShrinkEnd:
+      case ShortcutAction.controllerLookupExtendEnd:
+        final bool extend = action == ShortcutAction.controllerLookupExtendEnd;
+        _startRepeat(
+          button,
+          repeats: true,
+          first: () {
+            if (_adjustEnd(t, extend: extend)) unawaited(_lookup(t));
+          },
+          repeat: () => _adjustEnd(t, extend: extend),
+          onRepeatEnd: () => unawaited(_lookup(t)),
+        );
+      case ShortcutAction.controllerLookupToggleGranularity:
         _wordGranularity = !_wordGranularity;
         notifyListeners();
-        return true;
-      case GamepadButton.rt:
+      case ShortcutAction.controllerLookupMine:
+        _lookupAction(CompanionLookupActions.mine);
+      case ShortcutAction.controllerLookupPlayAudio:
+        _lookupAction(CompanionLookupActions.playAudio);
+      case ShortcutAction.controllerLookupNextEntry:
         _lookupAction(CompanionLookupActions.nextEntry);
-        return true;
-      case GamepadButton.lt:
+      case ShortcutAction.controllerLookupPrevEntry:
         _lookupAction(CompanionLookupActions.prevEntry);
-        return true;
-      case GamepadButton.b:
+      case ShortcutAction.controllerLookupEnterResult:
+        // Only the in-page popup has a cursor to enter; a lookup on the
+        // companion is driven from the panel (R1), nothing to do here.
+        if (_companionLookup == null && _lookupOpen) {
+          unawaited(t.enterResult());
+        }
+      case ShortcutAction.controllerLookupCloseOrExit:
         if (_lookupOpen) {
           _closeLookup();
         } else {
           if (_lbHeld) _lbUsed = true;
           _setActive(false);
         }
-        return true;
       default:
-        return false;
+        // Only controllerLookup actions resolve here ([actionFor]).
+        break;
     }
   }
 
-  void _stepFor(ControllerLookupTarget t, GamepadButton dpad) {
-    switch (dpad) {
-      case GamepadButton.dpadLeft:
-      case GamepadButton.dpadRight:
-        final int dir = dpad == GamepadButton.dpadRight ? 1 : -1;
-        unawaited(t.stepCursor(dir, word: _wordGranularity && t.hasWordSteps));
-      case GamepadButton.dpadUp:
-      case GamepadButton.dpadDown:
-        unawaited(t.stepLine(dpad == GamepadButton.dpadDown ? 1 : -1));
-      default:
-        break;
+  /// A cursor / line step: clears the right-end cap (the selection starts
+  /// over at the new position) and the last match length.
+  void _move(ControllerLookupTarget t, ShortcutAction move) {
+    _maxGraphemes = null;
+    _lastMatched = null;
+    final bool word = _wordGranularity && t.hasWordSteps;
+    _pendingStep = switch (move) {
+      ShortcutAction.controllerLookupCursorLeft => t.stepCursor(-1, word: word),
+      ShortcutAction.controllerLookupCursorRight => t.stepCursor(1, word: word),
+      ShortcutAction.controllerLookupLineUp => t.stepLine(-1),
+      ShortcutAction.controllerLookupLineDown => t.stepLine(1),
+      _ => _pendingStep,
+    };
+  }
+
+  /// Moves the selection's right end by one grapheme ([extend] = +1, else −1).
+  /// Returns whether the cap changed (a lookup is worth running).
+  ///
+  /// −1: `(last match length ?? queried cap) − 1`, at least 1 (the smaller of
+  /// the two when both are known: a held shrink runs ahead of its lookups).
+  /// +1: the larger of the two, plus one (so a cap the dictionary could not
+  /// fill keeps growing); past the graphemes left on the line
+  /// ([ControllerLookupTarget.graphemesFromCursor]) the cap returns to null
+  /// (unlimited). With nothing known yet (no match, no cap) −1 does nothing.
+  bool _adjustEnd(ControllerLookupTarget t, {required bool extend}) {
+    final int? before = _maxGraphemes;
+    final int? matched = _lastMatched;
+    if (extend) {
+      final int next = math.max(before ?? 0, matched ?? 0) + 1;
+      _maxGraphemes = next > t.graphemesFromCursor ? null : next;
+    } else {
+      final int? base = before == null
+          ? matched
+          : (matched == null ? before : math.min(before, matched));
+      if (base == null) return false;
+      _maxGraphemes = math.max(1, base - 1);
     }
+    return _maxGraphemes != before;
+  }
+
+  /// Looks up at the cursor (after the step in flight) with the current cap
+  /// and records the match length unless a later lookup started meanwhile.
+  Future<void> _lookup(ControllerLookupTarget t) async {
+    final int seq = ++_lookupSeq;
+    final Future<void>? step = _pendingStep;
+    if (step != null) await step;
+    if (seq != _lookupSeq || !_active) return;
+    final int matched = await t.lookupAtCursor(maxGraphemes: _maxGraphemes);
+    if (seq != _lookupSeq) return;
+    _lastMatched = matched > 0 ? matched : null;
   }
 
   /// Mine / audio / entry moves go to the companion's lookup when lookups
@@ -398,34 +547,66 @@ class ControllerLookupMode extends ChangeNotifier {
 
   // ---- repeat (400 ms, then every 150 ms) ----
 
+  /// Runs [first] now; with [repeats], runs [repeat] (default [first]) after
+  /// [repeatDelay] and then every [repeatInterval] until the button is
+  /// released. [onRepeatEnd] runs on that release when at least one repeat
+  /// fired.
   void _startRepeat(
     GamepadButton button, {
     required bool repeats,
-    required VoidCallback action,
+    required VoidCallback first,
+    VoidCallback? repeat,
+    VoidCallback? onRepeatEnd,
   }) {
     if (_repeating == button) return; // processor / OS repeat of a held key
     _stopRepeat();
-    action();
+    first();
     if (!repeats) return;
+    final VoidCallback tick = repeat ?? first;
     _repeating = button;
+    _onRepeatEnd = onRepeatEnd;
+    _repeated = false;
     _repeatTimer = Timer(repeatDelay, () {
-      _repeatTimer = Timer.periodic(repeatInterval, (_) => action());
+      _repeated = true;
+      tick();
+      _repeatTimer = Timer.periodic(repeatInterval, (_) => tick());
     });
+  }
+
+  /// The held [_repeating] button was released: stop, and finish a repeated
+  /// move with its [_onRepeatEnd] (the one lookup of a held direction).
+  void _endRepeat() {
+    final VoidCallback? end = _repeated ? _onRepeatEnd : null;
+    _stopRepeat();
+    end?.call();
   }
 
   void _stopRepeat() {
     _repeatTimer?.cancel();
     _repeatTimer = null;
     _repeating = null;
+    _onRepeatEnd = null;
+    _repeated = false;
   }
 
   // ---- state ----
+
+  /// Forgets the selection cap, the last match and any lookup in flight.
+  void _clearLookupState() {
+    _maxGraphemes = null;
+    _lastMatched = null;
+    _pendingStep = null;
+    _lookupSeq++;
+    _stickBurst = false;
+    _stickMoved = false;
+  }
 
   void _setActive(bool value) {
     if (_active == value) return;
     _active = value;
     _lbTimer?.cancel();
     _stopRepeat();
+    _clearLookupState();
     final ControllerLookupTarget? t = _target;
     if (value) {
       t?.onModeEntered();
@@ -438,6 +619,7 @@ class ControllerLookupMode extends ChangeNotifier {
   void _reset({required bool notify}) {
     _lbTimer?.cancel();
     _stopRepeat();
+    _clearLookupState();
     final bool was = _active;
     if (was) _target?.onModeExited();
     _active = false;
@@ -454,6 +636,7 @@ class ControllerLookupMode extends ChangeNotifier {
     _target = null;
     _rawInputOwner = null;
     redispatch = null;
+    shortcutRegistry = null;
     _wordGranularity = true;
     popupHooks = () => DictionaryPopupGamepadRegistry.current;
   }

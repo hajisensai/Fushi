@@ -51,6 +51,9 @@ class ShortcutDefaults {
   static const _gStart = GamepadBinding(GamepadButton.start);
   // 手柄字级选词查词（videoEnterCaret）：Select/View 键，video 组内此前未占用。
   static const _gSelect = GamepadBinding(GamepadButton.select);
+  // 右摇杆横推虚拟键：只给手柄查词模式（controllerLookup）用，其它 scope 不绑。
+  static const _gRsLeft = GamepadBinding(GamepadButton.rightStickLeft);
+  static const _gRsRight = GamepadBinding(GamepadButton.rightStickRight);
 
   static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
     ShortcutAction.readerPageForward: _kb(
@@ -819,6 +822,49 @@ class ShortcutDefaults {
     ShortcutAction.popupPlayAudio: const ShortcutBindingSet(
       gamepadBindings: <GamepadBinding>[_gY],
     ),
+
+    // 手柄查词模式（2026-11-22 统一设计）。制卡 X / 发音 Y 与弹窗兜底键、游戏内
+    // 查词卡片同键：用户松开 L1 后对着同一个弹窗仍按同一个键。controllerLookup
+    // 自成 co-active 组，只在模式激活时解析，与页面键位互不遮蔽。
+    ShortcutAction.controllerLookupCursorLeft: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gDpadLeft],
+    ),
+    ShortcutAction.controllerLookupCursorRight: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gDpadRight],
+    ),
+    ShortcutAction.controllerLookupLineUp: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gDpadUp],
+    ),
+    ShortcutAction.controllerLookupLineDown: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gDpadDown],
+    ),
+    ShortcutAction.controllerLookupToggleGranularity: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gL3],
+    ),
+    ShortcutAction.controllerLookupShrinkEnd: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gRsLeft],
+    ),
+    ShortcutAction.controllerLookupExtendEnd: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gRsRight],
+    ),
+    ShortcutAction.controllerLookupMine: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gX],
+    ),
+    ShortcutAction.controllerLookupPlayAudio: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gY],
+    ),
+    ShortcutAction.controllerLookupNextEntry: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gRT],
+    ),
+    ShortcutAction.controllerLookupPrevEntry: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gLT],
+    ),
+    ShortcutAction.controllerLookupEnterResult: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gA],
+    ),
+    ShortcutAction.controllerLookupCloseOrExit: const ShortcutBindingSet(
+      gamepadBindings: <GamepadBinding>[_gB],
+    ),
   };
 
   // SRS 复习页的 Ctrl 组合键（桌面默认；macOS 另加 ⌘ 版本，见 [_withMetaTwins]）。
@@ -1034,6 +1080,10 @@ class ShortcutDefaults {
               wheelBindings: desktop.wheelBindings,
               gamepadBindings: desktop.gamepadBindings,
             );
+          // 手柄查词模式只有手柄通道，移动端与桌面同一套键位（Android 手柄经
+          // GamepadService 的早期键处理进模式，与桌面轮询同一条链）。
+          case ShortcutScope.controllerLookup:
+            return ShortcutBindingSet(gamepadBindings: desktop.gamepadBindings);
         }
       }(),
   };

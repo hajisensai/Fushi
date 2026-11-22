@@ -111,14 +111,21 @@ class _ReaderControllerLookupTarget extends ControllerLookupTarget {
     return (_s._settings?.writingMode ?? 'vertical-rl').startsWith('vertical');
   }
 
+  // TODO(gamepad-unify): 页面适配——按 maxGraphemes 截查询词、返回命中高亮长度、
+  // 给出 graphemesFromCursor、实现 enterResult（光标留在正文，A 才进弹窗）。
+  // 现为新签名的最小适配：maxGraphemes 暂被忽略，恒返回 0。
   @override
-  Future<void> lookupAtCursor() async {
-    if (!_s.mounted) return;
+  int get graphemesFromCursor => 0;
+
+  @override
+  Future<int> lookupAtCursor({int? maxGraphemes}) async {
+    if (!_s.mounted) return 0;
     await _ensureCaret();
     final Future<void>? stepping = _stepping;
     if (stepping != null) await stepping;
-    if (!_s.mounted || !_s._caretActive) return;
+    if (!_s.mounted || !_s._caretActive) return 0;
     await _s._runCaretAction(CaretAction.lookup);
+    return 0;
   }
 }
 

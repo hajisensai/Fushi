@@ -1170,8 +1170,8 @@ List<SettingsItem> buildSteamShortcutItems() {
 /// 「通用 › 键盘与手柄」的手柄查词模式行。没有第二块屏也能用，是手柄输入方式，
 /// 所以和快捷键、焦点导航放在一起；id 不变（历史 appearance 前缀）。
 SettingsItem buildControllerLookupStyleItem() {
-  // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
-  // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
+  // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时一律按住 L1，单屏也是
+  // （2026-11-22 手柄查词统一拍板）。
   return SettingsSegmentedItem<ControllerLookupStyle>(
     id: 'appearance.controller_lookup_style',
     title: t.second_screen_controller_lookup_title,
@@ -1193,14 +1193,13 @@ SettingsItem buildControllerLookupStyleItem() {
     ],
     selected: (SettingsContext c) => ControllerLookupStyle.resolve(
       c.appModel.prefsRepo.getPref(kControllerLookupStylePrefKey),
-      companionActive: c.ref.read(secondScreenControllerProvider).isActive,
     ),
     onChanged: (SettingsContext c, ControllerLookupStyle value) => c
         .appModel
         .prefsRepo
         .setPref(kControllerLookupStylePrefKey, value.name)
         .then((_) => c.refresh()),
-    defaultValue: ControllerLookupStyle.off,
+    defaultValue: ControllerLookupStyle.holdL1,
   );
 }
 
