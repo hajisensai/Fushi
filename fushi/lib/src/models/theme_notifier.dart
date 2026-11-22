@@ -905,6 +905,10 @@ class ThemeNotifier extends ChangeNotifier {
     'design_system',
     'glass_material',
     'pure_black_dark',
+    // 阅读器纸色（拍板台 vJSj4RsKFt）：以前纸色随 app_theme_key 走配置，拆成独立
+    // 偏好后照旧随配置 / 作品走，否则在书里改纸色会写穿到全局。
+    readerPaperLightPrefKey,
+    readerPaperDarkPrefKey,
     'shell_rail_style',
     'shell_content_layout',
     'shell_block_arrangement',
@@ -2109,6 +2113,64 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
     _persistSplashColor();
   }
+
+  /// 阅读器浅色纸偏好键（拍板台 vJSj4RsKFt）：空 = 跟随 app 主题。
+  static const String readerPaperLightPrefKey = 'reader_paper_light';
+
+  /// 阅读器深色纸偏好键：空 = 跟随 app 主题。
+  static const String readerPaperDarkPrefKey = 'reader_paper_dark';
+
+  /// 浅色 app 下可直接选的阅读器纸色（渲染层手调预设 id，冻结名）。
+  static const List<String> readerLightPaperKeys = <String>[
+    'ecru-theme',
+    'water-theme',
+    'eyecare-theme',
+  ];
+
+  /// 深色 app 下可直接选的阅读器纸色。
+  static const List<String> readerDarkPaperKeys = <String>[
+    'gray-theme',
+    'dark-theme',
+    'black-theme',
+  ];
+
+  /// 某一明暗下可选的纸色 id。
+  static List<String> readerPaperKeysFor({required bool dark}) =>
+      dark ? readerDarkPaperKeys : readerLightPaperKeys;
+
+  /// 用户为 [dark] 这一明暗显式选的阅读器纸色；null = 跟随 app 主题。
+  ///
+  /// 纸色按明暗各存一份：手调纸色只在明暗与 app 一致时生效（`readerPresetFor`
+  /// 的不变式——浅纸不能铺在深色 app 上），所以「羊皮纸」只能是浅色时的选择、
+  /// 「深灰」只能是深色时的选择，切明暗时自动换到对应那份。值不在该明暗的可选
+  /// 集里（手改偏好 / 未来删掉的 id）一律当跟随。
+  String? readerPaperFor({required bool dark}) {
+    final Object? raw = _get(
+      dark ? readerPaperDarkPrefKey : readerPaperLightPrefKey,
+      defaultValue: '',
+    );
+    if (raw is! String) return null;
+    return readerPaperKeysFor(dark: dark).contains(raw) ? raw : null;
+  }
+
+  /// 设置 [dark] 这一明暗的阅读器纸色；[key] 为 null = 回到跟随 app 主题。
+  /// 不在该明暗可选集里的 id 抛 [ArgumentError]。
+  Future<void> setReaderPaper({required bool dark, String? key}) async {
+    if (key != null && !readerPaperKeysFor(dark: dark).contains(key)) {
+      throw ArgumentError.value(key, 'key', 'not a reader paper id');
+    }
+    await _set(
+      dark ? readerPaperDarkPrefKey : readerPaperLightPrefKey,
+      key ?? '',
+    );
+    notifyListeners();
+  }
+
+  /// 阅读器纸色用的主题键：当前明暗下用户显式选的纸色优先，否则跟随 app 主题
+  /// 偏好原值（可能是已删的旧预设 id，如 ecru-theme——存量用户的阅读器纸色照旧
+  /// 生效，2026-10 预设精简时阅读器纸色不动）。
+  String get readerThemeKey =>
+      readerPaperFor(dark: isDarkMode) ?? storedAppThemeKey;
 
   /// Resolve the [CustomThemeEntry] the current [appThemeKey] points at, applying
   /// the documented fallback chain when the key is custom:

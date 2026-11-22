@@ -534,6 +534,64 @@ typedef ReaderThemeColors = ({
   bool dark,
 });
 
+/// 阅读器手调纸色预设（羊皮纸 / 水蓝 / 护眼 / 灰 / 深色 / 纯黑），id 是冻结的旧主题键。
+/// 渲染（[resolveReaderThemeColors] 的 presetMap）与设置页纸色色卡共用这一份。
+/// BUG-396：selection/link 与 css `_themeColors` switch 的预设值逐一相等（ARGB 即
+/// rgba 同值），作为五角色单一真相源透传。
+const Map<String, ReaderThemeColors> kReaderPaperPresets =
+    <String, ReaderThemeColors>{
+      'ecru-theme': (
+        bg: Color(0xFFF7F6EB),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x66A8C68C),
+        selection: Color(0x59C2B280),
+        link: Color(0xFF7A6232),
+        dark: false,
+      ),
+      'water-theme': (
+        bg: Color(0xFFDFECF4),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x6664B4DC),
+        selection: Color(0x59C8AA6E),
+        link: Color(0xFF3A5FAD),
+        dark: false,
+      ),
+      // 护眼（豆沙绿）：与 reader_content_styles `_themeColors['eyecare-theme']` 的
+      // rgba 预设逐一相等（ARGB 同值），作为五角色单一真相源透传。
+      'eyecare-theme': (
+        bg: Color(0xFFC7EDCC),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x66A0C878),
+        selection: Color(0x5988B583),
+        link: Color(0xFF4C7A3E),
+        dark: false,
+      ),
+      'gray-theme': (
+        bg: Color(0xFF23272A),
+        fg: Color(0xDEFFFFFF),
+        sentenceAudioHighlight: Color(0x595096C8),
+        selection: Color(0x59BE9B64),
+        link: Color(0xFF6FA8DC),
+        dark: true,
+      ),
+      'dark-theme': (
+        bg: Color(0xFF121212),
+        fg: Color(0x99FFFFFF),
+        sentenceAudioHighlight: Color(0x594682B4),
+        selection: Color(0x59B4915A),
+        link: Color(0xFF7AACDF),
+        dark: true,
+      ),
+      'black-theme': (
+        bg: Color(0xFF000000),
+        fg: Color(0xDEFFFFFF),
+        sentenceAudioHighlight: Color(0x663C78AA),
+        selection: Color(0x66AA8750),
+        link: Color(0xFF5B9BD5),
+        dark: true,
+      ),
+    };
+
 /// 把当前主题 key 解析成阅读器的颜色角色（背景/字色/跟读高亮/选区高亮/链接）。
 ///
 /// 关键修复（BUG-208 / TODO-143）：旧逻辑只查私有 [presetMap]，命中失败就硬编码
