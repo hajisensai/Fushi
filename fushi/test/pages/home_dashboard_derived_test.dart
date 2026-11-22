@@ -1,6 +1,6 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_derived.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
+import 'package:test/test.dart';
 
 VideoBookRow _row(String uid, {String? cover}) => VideoBookRow(
   bookUid: uid,

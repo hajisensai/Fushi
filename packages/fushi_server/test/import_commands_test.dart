@@ -318,6 +318,15 @@ void main() {
         (await routeAutoImport(touch('a.xyz').path)).kind,
         AutoImportKind.unsupported,
       );
+      // 分卷包：第一卷当整个包交执行器解开，后续卷不单独导入。
+      expect(
+        (await routeAutoImport(touch('合集.7z.001').path)).kind,
+        AutoImportKind.novel,
+      );
+      expect(
+        (await routeAutoImport(touch('合集.7z.002').path)).kind,
+        AutoImportKind.unsupported,
+      );
       final String epub = p.join(h.tmp.path, 'b.epub');
       writeTestEpub(epub, 'B');
       expect((await routeAutoImport(epub)).kind, AutoImportKind.novel);

@@ -2189,7 +2189,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
             ),
           );
         }
-        // 编辑态：系统返回 = 完成（保存）；底部浮动编辑工具栏（添加 / 撤销 / 完成）。
+        // 编辑态：系统返回 = 完成（保存）；底部浮动编辑工具栏（添加 / 撤销 / 恢复默认 / 完成）。
         return PopScope(
           canPop: !_editingWidgets,
           onPopInvokedWithResult: (bool didPop, Object? _) {
@@ -2431,7 +2431,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     ],
   );
 
-  /// 编辑态底部浮动工具栏：纯图标（文字进 tooltip / 读屏），添加 · 撤销 · 完成。
+  /// 编辑态底部浮动工具栏：纯图标（文字进 tooltip / 读屏），添加 · 撤销 · 恢复默认 · 完成。
   Widget _buildWidgetEditToolbar() {
     final HomeWidgetEditSession? session = _widgetSessions[_widgetGrid];
     return FushiFloatingToolbar(
@@ -2449,6 +2449,12 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
             icon: FushiIcons.undo,
             label: t.undo,
             onPressed: (session?.canUndo ?? false) ? _undoWidgetEdit : null,
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-restore'),
+            icon: FushiIcons.restart,
+            label: t.home_widget_restore_default,
+            onPressed: _restoreWidgetDefaults,
           ),
           FushiToolbarItem(
             key: const ValueKey<String>('home-widget-edit-done'),
@@ -3013,8 +3019,12 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   }
 
   /// 首页的页头动作（更新中心 · 统计中心 · 收藏夹 · 排行榜 · 反馈 · 编辑首页）：旧
-  /// 浮动工具栏与重设计外壳的页头大字共用同一份。小组件编辑态只剩「恢复默认」
-  /// （添加 / 撤销 / 完成在底部编辑工具栏）。
+  /// 浮动工具栏与重设计外壳的页头大字共用同一份。小组件编辑态只剩「退出编辑」（×，
+  /// 与系统返回同一出口：保存并退出）；添加 / 撤销 / 恢复默认 / 完成在底部编辑工具栏。
+  ///
+  /// 为什么页头不放「恢复默认」：「编辑首页」是动作组最后一颗，进编辑态后同一位置
+  /// 换成的按钮正好接住连点的第二下（反馈 0i8iO2LwXj）。那里只能放无害的「退出」，
+  /// 换掉整份布局的动作挪到底栏、远离进入编辑的那颗按钮。
   List<FushiToolbarItem> _toolbarItems(
     AppModel appModel,
     int unseen,
@@ -3022,10 +3032,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   ) => _editingWidgets
       ? <FushiToolbarItem>[
           FushiToolbarItem(
-            key: const ValueKey<String>('home-toolbar-restore-widgets'),
-            icon: FushiIcons.restart,
-            label: t.home_widget_restore_default,
-            onPressed: _restoreWidgetDefaults,
+            key: const ValueKey<String>('home-toolbar-exit-widget-edit'),
+            icon: FushiIcons.close,
+            label: t.home_widget_exit_edit,
+            onPressed: () => unawaited(_finishWidgetEdit()),
           ),
         ]
       : <FushiToolbarItem>[
