@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T13:34:51Z",
+ "generatedAt": "2026-11-22T13:41:38Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "7b399e44e0d1fabb4dc183d2600299fcc84fcced",
-  "seq": 31369
+  "sha": "283a92028615e3ddf92cd510d316234ae2ecbf35",
+  "seq": 31429
  },
  "builds": [
   {
@@ -25,7 +25,7 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
+     "state": "building",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
     },
     "macos": {
@@ -33,7 +33,7 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
     },
     "ios": {
-     "state": "built",
+     "state": "building",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45021356238"
     }
    }
@@ -187,9 +187,10 @@
   }
  ],
  "pending": {
-  "headSha": "7b399e44e0d1fabb4dc183d2600299fcc84fcced",
-  "headSeq": 31369,
+  "headSha": "283a92028615e3ddf92cd510d316234ae2ecbf35",
+  "headSeq": 31429,
   "prs": [
+   3400,
    4169
   ],
   "direct": [],
@@ -197,23 +198,32 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064413"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486764"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064426"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486671"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064426"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486671"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028064426"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486671"
    }
   }
  },
  "prs": {
+  "3400": {
+   "number": 3400,
+   "title": "build: 升级 Flutter 3.47.6 -> 3.50.0（Win/iOS/macOS/Android release 已过；待重编 3.50 Windows 引擎 hdr-output-2）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-22T13:37:46Z",
+   "additions": 3119,
+   "deletions": 651,
+   "labels": []
+  },
   "4116": {
    "number": 4116,
    "title": "perf(stats): 统计事实面派生迁到 Rust、读取挪进后台 isolate（BUG-4960）",
