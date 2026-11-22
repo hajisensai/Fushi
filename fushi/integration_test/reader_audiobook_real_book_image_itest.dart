@@ -20,7 +20,6 @@ import 'package:fushi_audio/fushi_audio.dart'
         AudioTextNormalizer,
         AudiobookRepository,
         EpubSection,
-        SrtBookRepository,
         SubtitleRematchCodec,
         SubtitleRematchFragment;
 import 'package:fushi_core/fushi_core.dart' show EpubBookRow, FushiDatabase;
