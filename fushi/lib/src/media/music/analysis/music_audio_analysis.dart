@@ -11,8 +11,11 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
 
-/// 结果文件布局版本（= native `format::FORMAT_VERSION`）。
-const int kMusicAudioAnalysisFormatVersion = 1;
+/// 结果文件布局版本（= native `format::FORMAT_VERSION`）。v2 加了每拍重音段与 track_scale / 分离进度。
+const int kMusicAudioAnalysisFormatVersion = 2;
+
+/// 仍能读的最老布局（v1：没有重音段，按中性值补）。
+const int kMusicAudioAnalysisOldestFormatVersion = 1;
 
 /// 头长（字节）。
 const int _kHeaderBytes = 64;
@@ -33,6 +36,15 @@ abstract final class MusicAudioAnalysisFlags {
 
   /// 判为没鼓的歌（鼓轨路径上判，鼓点表为空）。
   static const int drumless = 1 << 3;
+
+  /// htdemucs 还在分：鼓点 / 人声只到 [MusicAudioAnalysis.stemsUntilMs]，之后仍是 DSP 的。
+  static const int stemsPartial = 1 << 4;
+}
+
+/// 每拍标志位（= native `format::BEAT_*`）。
+abstract final class _BeatFlags {
+  static const int rhythmic = 1 << 0;
+  static const int pulse = 1 << 1;
 }
 
 /// 鼓点类别。
@@ -70,7 +82,20 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
     required Uint8List hitStrength,
     required Uint8List hitKind,
     required this.vocalOnsetsMs,
-  }) : _power = power,
+    required this.formatVersion,
+    required this.trackScale,
+    required this.stemsUntilMs,
+    required Uint8List? beatImpact,
+    required Uint8List? beatLow,
+    required Uint8List? beatMid,
+    required Uint8List? beatHigh,
+    required Uint8List? beatFlags,
+  }) : _beatImpact = beatImpact,
+       _beatLow = beatLow,
+       _beatMid = beatMid,
+       _beatHigh = beatHigh,
+       _beatFlags = beatFlags,
+       _power = power,
        _low = low,
        _mid = mid,
        _high = high,
@@ -79,8 +104,10 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
        _hitStrength = hitStrength,
        _hitKind = hitKind;
 
-  /// 解析 `.fma` 字节；不是本版本的文件（魔数 / 布局版本不符、截断）返回 null。
-  /// [expectedPipelineVersion] 给了时，算法版本不符也返回 null（旧缓存作废重算）。
+  /// 解析 `.fma` 字节；读不了的文件（魔数不符、布局版本不在
+  /// [kMusicAudioAnalysisOldestFormatVersion]..[kMusicAudioAnalysisFormatVersion] 里、截断）返回 null。
+  /// v1 文件没有重音段，每拍重音按中性值（满强度、都有节奏、都是听感拍）。
+  /// [expectedPipelineVersion] 给了时，算法版本不符也返回 null（服务不用它：旧结果先拿来用、再补算）。
   static MusicAudioAnalysis? tryParse(
     Uint8List bytes, {
     int? expectedPipelineVersion,
@@ -91,7 +118,11 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
     }
     final ByteData h = ByteData.sublistView(bytes, 0, _kHeaderBytes);
     int u32(int o) => h.getUint32(o, Endian.little);
-    if (u32(4) != kMusicAudioAnalysisFormatVersion) return null;
+    final int version = u32(4);
+    if (version < kMusicAudioAnalysisOldestFormatVersion ||
+        version > kMusicAudioAnalysisFormatVersion) {
+      return null;
+    }
     final int pipeline = u32(48);
     if (expectedPipelineVersion != null &&
         pipeline != expectedPipelineVersion) {
@@ -105,7 +136,16 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
     final int envEnd = _kHeaderBytes + _align4(6 * f);
     final int timesEnd = envEnd + 4 * (b + d + hits);
     final int hitsEnd = timesEnd + _align4(2 * hits);
-    if (bytes.length < hitsEnd + 4 * v) return null;
+    final int onsetsEnd = hitsEnd + 4 * v;
+    final bool hasAccents = version >= 2;
+    if (bytes.length < onsetsEnd + (hasAccents ? 5 * b : 0)) return null;
+    Uint8List? perBeat(int i) => hasAccents
+        ? Uint8List.sublistView(
+            bytes,
+            onsetsEnd + i * b,
+            onsetsEnd + (i + 1) * b,
+          )
+        : null;
     final double frameRate = h.getFloat32(12, Endian.little);
     if (!(frameRate > 0)) return null;
     final double bpm = h.getFloat32(20, Endian.little);
@@ -148,6 +188,14 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
         timesEnd + 2 * hits,
       ),
       vocalOnsetsMs: ints(hitsEnd, v),
+      formatVersion: version,
+      trackScale: hasAccents ? h.getFloat32(52, Endian.little) : 1,
+      stemsUntilMs: hasAccents ? u32(56) : 0,
+      beatImpact: perBeat(0),
+      beatLow: perBeat(1),
+      beatMid: perBeat(2),
+      beatHigh: perBeat(3),
+      beatFlags: perBeat(4),
     );
   }
 
@@ -173,6 +221,21 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
 
   /// 写出这份结果的分析算法版本。
   final int pipelineVersion;
+
+  /// 文件布局版本（1 = 没有重音段）。
+  final int formatVersion;
+
+  /// 整曲动感系数（folia `trackScale`：中位突起映射到 0.45–1；v1 文件为 1）。
+  final double trackScale;
+
+  /// [stemsPartial] 时分离已覆盖到的毫秒（之后的鼓点 / 人声仍是 DSP 的）；否则 0。
+  final int stemsUntilMs;
+
+  final Uint8List? _beatImpact;
+  final Uint8List? _beatLow;
+  final Uint8List? _beatMid;
+  final Uint8List? _beatHigh;
+  final Uint8List? _beatFlags;
 
   final Uint8List _power;
   final Uint8List _low;
@@ -207,6 +270,45 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
 
   /// 没鼓的歌。
   bool get drumless => flags & MusicAudioAnalysisFlags.drumless != 0;
+
+  /// 分离还在跑，鼓点 / 人声只到 [stemsUntilMs]（结果文件会继续刷新）。
+  bool get stemsPartial => flags & MusicAudioAnalysisFlags.stemsPartial != 0;
+
+  /// 有每拍重音（v2 起；v1 文件各访问器给中性值）。
+  bool get hasBeatAccents => _beatImpact != null;
+
+  /// 第 [i] 拍的重音强度（folia `impact`：突起 40% + 前后半秒响度 60%，全曲 p10–p90 归一后 ^0.7；0–1）。
+  double beatImpact(int i) => _beatImpact == null ? 1 : _beatImpact[i] / 255;
+
+  /// 第 [i] 拍突起里低频（<150 Hz）的占比（三段之和 ≈ 1）。
+  double beatLowShare(int i) => _beatLow == null ? 1 / 3 : _beatLow[i] / 255;
+
+  /// 第 [i] 拍突起里中频（150–2000 Hz）的占比。
+  double beatMidShare(int i) => _beatMid == null ? 1 / 3 : _beatMid[i] / 255;
+
+  /// 第 [i] 拍突起里高频（≥2000 Hz）的占比。
+  double beatHighShare(int i) => _beatHigh == null ? 1 / 3 : _beatHigh[i] / 255;
+
+  /// 第 [i] 拍有节奏可打（folia `rhythmic`：只有铺底的小节、模型拿不准的段落为 false）。
+  bool beatRhythmic(int i) =>
+      _beatFlags == null || _beatFlags[i] & _BeatFlags.rhythmic != 0;
+
+  /// 第 [i] 拍是听感拍（folia `pulse`：数得比听感细时只留每组头一拍）。
+  bool beatPulse(int i) =>
+      _beatFlags == null || _beatFlags[i] & _BeatFlags.pulse != 0;
+
+  /// 按重音加权的拍点冲击：只算有节奏的听感拍，峰值 = 该拍 [beatImpact] × [trackScale]，
+  /// 衰减同 [kMusicBeatImpactDecayMs]。拍点特效想「强拍重、弱拍轻、前奏不打」时用它代替原始拍点冲击。
+  double accentedBeatImpactAt(int audioMs) {
+    int k = lyricVisualizerLastAtOrBefore(beatTimesMs, audioMs);
+    // 往前找最近一个会打的拍（不打的拍不算一下）。
+    while (k >= 0 && !(beatRhythmic(k) && beatPulse(k))) {
+      k--;
+    }
+    if (k < 0) return 0;
+    final double dt = (audioMs - beatTimesMs[k]).toDouble();
+    return beatImpact(k) * trackScale * math.exp(-dt / kMusicBeatImpactDecayMs);
+  }
 
   /// 第 [i] 个鼓点的强度（0–1）。
   double hitStrength(int i) => _hitStrength[i] / 255;
@@ -278,5 +380,7 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   String toString() =>
       'MusicAudioAnalysis(flags: $flags, frames: $frameCount, bpm: $bpm, '
       'beats: ${beatTimesMs.length}, downbeats: ${downbeatTimesMs.length}, '
-      'hits: ${hitTimesMs.length}, vocalOnsets: ${vocalOnsetsMs.length})';
+      'hits: ${hitTimesMs.length}, vocalOnsets: ${vocalOnsetsMs.length}, '
+      'format: $formatVersion, pipeline: $pipelineVersion, '
+      'trackScale: $trackScale, stemsUntilMs: $stemsUntilMs)';
 }

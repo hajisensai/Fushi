@@ -167,6 +167,7 @@ abstract interface class MusicAudioAnalysisEngine {
     required String? beatThisModel,
     required String? htdemucsModel,
     required int threads,
+    int backend,
   });
   int submit({
     required int token,
@@ -195,11 +196,13 @@ class _NativeEngine implements MusicAudioAnalysisEngine {
     required String? beatThisModel,
     required String? htdemucsModel,
     required int threads,
+    int backend = 0,
   }) => _b.configure(
     ortPath: ortPath,
     beatThisModel: beatThisModel,
     htdemucsModel: htdemucsModel,
     threads: threads,
+    backend: backend,
   );
   @override
   int submit({
@@ -313,21 +316,29 @@ class FfmpegMusicAnalysisPcmDecoder implements MusicAnalysisPcmDecoder {
 /// 缓存里最多留这么多首的结果（一首约 120–150 KB）；超出按修改时间删最旧的。
 const int kMusicAnalysisCacheMaxFiles = 600;
 
-/// 纯函数：缓存文件名（目标身份 + 文件指纹 + 算法版本 → sha1）。文件改了（大小 / 修改时间变）就是新键。
+/// 纯函数：缓存文件名（目标身份 + 文件指纹 → sha1）。文件改了（大小 / 修改时间变）就是新键。
+///
+/// 不含算法版本：升了版本的旧结果照样找得到、先拿来用（引擎读得懂旧布局），再由
+/// [musicAudioAnalysisComplete] 判不完整、补算——旧缓存不会白扔、也不会堆出多份。
 String musicAudioAnalysisCacheName({
   required MusicAudioAnalysisTarget target,
   required int fileSize,
   required int fileModifiedMs,
-  required int pipelineVersion,
 }) {
-  final String key =
-      '${target.identity}|$fileSize|$fileModifiedMs|p$pipelineVersion';
+  final String key = '${target.identity}|$fileSize|$fileModifiedMs';
   return '${crypto.sha1.convert(utf8.encode(key))}.fma';
 }
 
-/// 纯函数：本机做完了没有（[wanted] 是本机可用模型对应的 flags）。
-bool musicAudioAnalysisComplete(MusicAudioAnalysis a, int wanted) =>
-    a.flags & wanted == wanted;
+/// 纯函数：本机做完了没有：[wanted] 是本机可用模型对应的 flags，分离不是半截，且由当前算法版本
+/// [pipelineVersion] 写出（旧版本写的照样能用，只是要补算）。
+bool musicAudioAnalysisComplete(
+  MusicAudioAnalysis a,
+  int wanted, {
+  required int pipelineVersion,
+}) =>
+    a.flags & wanted == wanted &&
+    !a.stemsPartial &&
+    a.pipelineVersion == pipelineVersion;
 
 class _Request {
   _Request(this.target, this.notifier, {required this.urgent});
@@ -351,6 +362,7 @@ class MusicAudioAnalysisService {
     required MusicAudioAnalysisEngine Function() engine,
     MusicAnalysisPcmDecoder decoder = const FfmpegMusicAnalysisPcmDecoder(),
     Future<String?> Function()? ortPath,
+    Future<int> Function()? backend,
     bool? desktop,
     int? threads,
     Future<void> Function(
@@ -365,6 +377,8 @@ class MusicAudioAnalysisService {
        _engineFactory = engine,
        _decoder = decoder,
        _ortPath = ortPath ?? _defaultOrtPath,
+       // 注入了 ORT 路径（测试 / 无头）而没给后端：不猜 GPU，用 CPU。
+       _backend = backend ?? (ortPath == null ? _defaultBackend : _cpuBackend),
        _desktop = desktop ?? musicAnalysisIsDesktop,
        _threads = threads ?? math.max(1, Platform.numberOfProcessors ~/ 2),
        _download =
@@ -399,12 +413,19 @@ class MusicAudioAnalysisService {
   static Future<String?> _defaultOrtPath() async =>
       (await resolveMangaUpscaleRuntime())?.ortPath;
 
+  static Future<int> _cpuBackend() async => 0;
+
+  /// 与漫画超分同一套后端选择（Windows 选了 DirectML core 时 DirectML、Apple CoreML，其余 CPU）。
+  static Future<int> _defaultBackend() async =>
+      (await resolveMangaUpscaleRuntime())?.gpuBackend?.code ?? 0;
+
   final Future<Directory> Function() _cacheDir;
   final Future<Directory> Function() _modelsDir;
   final Future<Directory> Function() _tempDir;
   final MusicAudioAnalysisEngine Function() _engineFactory;
   final MusicAnalysisPcmDecoder _decoder;
   final Future<String?> Function() _ortPath;
+  final Future<int> Function() _backend;
   final bool _desktop;
   final int _threads;
   final Future<void> Function(
@@ -420,6 +441,13 @@ class MusicAudioAnalysisService {
 
   /// 本机可用模型对应的结果 flags（配置成功后才非 0）。
   int _wantedFlags = 0;
+
+  /// 这份结果在本机算完了吗（引擎没起来时只看 flags）。
+  bool _complete(MusicAudioAnalysis a) => musicAudioAnalysisComplete(
+    a,
+    _wantedFlags,
+    pipelineVersion: _engine?.pipelineVersion ?? a.pipelineVersion,
+  );
 
   final Map<String, ValueNotifier<MusicAudioAnalysisSnapshot>> _notifiers =
       <String, ValueNotifier<MusicAudioAnalysisSnapshot>>{};
@@ -553,7 +581,7 @@ class MusicAudioAnalysisService {
     final MusicAudioAnalysis? have = n.value.audio;
     if (n.value.phase == MusicAudioAnalysisPhase.ready &&
         have != null &&
-        musicAudioAnalysisComplete(have, _wantedFlags)) {
+        _complete(have)) {
       return;
     }
     final String? out = await _outPathFor(target);
@@ -563,7 +591,7 @@ class MusicAudioAnalysisService {
     }
     final MusicAudioAnalysis? cached = await _readResult(out);
     if (cached != null) {
-      final bool complete = musicAudioAnalysisComplete(cached, _wantedFlags);
+      final bool complete = _complete(cached);
       n.value = n.value.copyWith(
         phase: complete ? MusicAudioAnalysisPhase.ready : n.value.phase,
         audio: cached,
@@ -616,7 +644,6 @@ class MusicAudioAnalysisService {
       target: target,
       fileSize: st.size,
       fileModifiedMs: st.modified.millisecondsSinceEpoch,
-      pipelineVersion: _engine!.pipelineVersion,
     );
     return p.join(dir.path, name);
   }
@@ -624,10 +651,7 @@ class MusicAudioAnalysisService {
   Future<MusicAudioAnalysis?> _readResult(String path) async {
     try {
       final Uint8List bytes = await File(path).readAsBytes();
-      return MusicAudioAnalysis.tryParse(
-        bytes,
-        expectedPipelineVersion: _engine?.pipelineVersion,
-      );
+      return MusicAudioAnalysis.tryParse(bytes);
     } on FileSystemException {
       return null;
     }
@@ -681,6 +705,7 @@ class MusicAudioAnalysisService {
       return;
     }
     final String? ort = await _ortPath();
+    final int backend = await _backend();
     final int status = engine.configure(
       ortPath: ort,
       beatThisModel: beat
@@ -690,6 +715,7 @@ class MusicAudioAnalysisService {
           ? p.join(dir.path, kMusicHtdemucsModel.fileName)
           : null,
       threads: _threads,
+      backend: backend,
     );
     if (status != FfcStatus.ok) {
       _log(
@@ -805,6 +831,10 @@ class MusicAudioAnalysisService {
       case FfcManaEventKind.modelFailed:
         final String? err = _engine?.takeLastError();
         _log('model', 'ffc_mana model step failed: $err');
+      case FfcManaEventKind.backendFallback:
+        // 引擎每进程每模型每执行器只发一次，这里照记不去重。
+        final String? err = _engine?.takeLastError();
+        _log('backend', 'ffc_mana backend ${e.value} -> CPU: $err');
       case FfcManaEventKind.done:
         unawaited(() async {
           await _reload(req);

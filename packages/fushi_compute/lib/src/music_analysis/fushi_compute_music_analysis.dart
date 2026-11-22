@@ -28,7 +28,11 @@ enum FfcManaEventKind {
   cancelled(6),
 
   /// 模型那一步失败、结果留 DSP 的（之后照常 [done]）。
-  modelFailed(7);
+  modelFailed(7),
+
+  /// 加速执行器不行、这个模型改用 CPU（结果不受影响）：[FfcManaEvent.value] = 失败的执行器代码
+  /// （同 `FfcUpscaleBackend.code`）。每进程每模型每执行器一次；原因见 [FushiComputeMusicAnalysis.takeLastError]。
+  backendFallback(8);
 
   const FfcManaEventKind(this.code);
 
@@ -78,6 +82,9 @@ abstract final class FfcManaFlags {
 
   /// 判为没鼓的歌。
   static const int drumless = 1 << 3;
+
+  /// htdemucs 还在分：鼓点 / 人声只覆盖到结果头里的 `stems_until_ms`（之后仍是 DSP 的），文件会继续刷新。
+  static const int stemsPartial = 1 << 4;
 }
 
 /// 提交标志（与 native `SUBMIT_*` 一致）。
@@ -131,9 +138,9 @@ typedef _VersionDart = int Function();
 typedef _StartC = Int32 Function(Pointer<NativeFunction<_Callback>>);
 typedef _StartDart = int Function(Pointer<NativeFunction<_Callback>>);
 typedef _ConfigureC =
-    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Uint32);
+    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Uint32, Uint32);
 typedef _ConfigureDart =
-    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int);
+    int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int, int);
 typedef _SubmitC = Int32 Function(Uint64, Pointer<Utf8>, Pointer<Utf8>, Uint32);
 typedef _SubmitDart = int Function(int, Pointer<Utf8>, Pointer<Utf8>, int);
 typedef _CancelC = Int32 Function(Uint64);
@@ -229,11 +236,15 @@ class FushiComputeMusicAnalysis {
 
   /// 配置可选模型（null = 不用）。有模型时接上 [ortPath] 那份 onnxruntime（null = 从本进程符号找，Apple）；
   /// 接不上返回 [FfcManaStatus.runtimeUnavailable]，引擎只跑 DSP。
+  ///
+  /// [backend] 与超分同一套代码（`FfcUpscaleBackend.code`：0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK）：
+  /// 这份 ORT 里没有就静默用 CPU；建会话或跑模型失败就退回 CPU 并发一次 [FfcManaEventKind.backendFallback]。
   int configure({
     required String? ortPath,
     required String? beatThisModel,
     required String? htdemucsModel,
     required int threads,
+    int backend = 0,
   }) => using(
     (Arena arena) => _configure(
       ortPath == null ? nullptr : ortPath.toNativeUtf8(allocator: arena),
@@ -244,6 +255,7 @@ class FushiComputeMusicAnalysis {
           ? nullptr
           : htdemucsModel.toNativeUtf8(allocator: arena),
       threads < 1 ? 1 : threads,
+      backend,
     ),
   );
 

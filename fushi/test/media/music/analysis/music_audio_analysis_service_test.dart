@@ -36,12 +36,13 @@ class _FakeEngine implements MusicAudioAnalysisEngine {
   final List<int> cancels = <int>[];
   final List<(String?, String?, String?)> configs =
       <(String?, String?, String?)>[];
+  final List<int> backends = <int>[];
   int configureStatus = FfcStatus.ok;
 
   @override
   Stream<FfcManaEvent> get events => controller.stream;
   @override
-  int get pipelineVersion => 1;
+  int get pipelineVersion => 2;
   @override
   int start() => FfcStatus.ok;
   @override
@@ -50,8 +51,10 @@ class _FakeEngine implements MusicAudioAnalysisEngine {
     required String? beatThisModel,
     required String? htdemucsModel,
     required int threads,
+    int backend = 0,
   }) {
     configs.add((ortPath, beatThisModel, htdemucsModel));
+    backends.add(backend);
     return beatThisModel == null && htdemucsModel == null
         ? FfcStatus.ok
         : configureStatus;
@@ -135,6 +138,7 @@ void main() {
         engine: () => engine,
         decoder: decoder,
         ortPath: () async => 'ort.dll',
+        backend: () async => 1,
         desktop: desktop,
         threads: 2,
       );
@@ -228,6 +232,7 @@ void main() {
     expect(engine.configs.single.$1, 'ort.dll');
     expect(engine.configs.single.$2, endsWith('beat_this.onnx'));
     expect(engine.configs.single.$3, endsWith('htdemucs.onnx'));
+    expect(engine.backends.single, 1);
     await engine.finish(
       engine.submits.single,
       _withFlags(
@@ -359,7 +364,7 @@ void main() {
     },
   );
 
-  test('cache names change with the file fingerprint and pipeline version', () {
+  test('cache names change with the file fingerprint only', () {
     const MusicAudioAnalysisTarget t = MusicAudioAnalysisTarget(
       trackUid: 'u',
       path: '/a.flac',
@@ -368,27 +373,132 @@ void main() {
       target: t,
       fileSize: 10,
       fileModifiedMs: 1,
-      pipelineVersion: 1,
     );
     expect(a, endsWith('.fma'));
     expect(
-      musicAudioAnalysisCacheName(
-        target: t,
-        fileSize: 11,
-        fileModifiedMs: 1,
-        pipelineVersion: 1,
-      ),
+      musicAudioAnalysisCacheName(target: t, fileSize: 11, fileModifiedMs: 1),
       isNot(a),
     );
     expect(
-      musicAudioAnalysisCacheName(
-        target: t,
-        fileSize: 10,
-        fileModifiedMs: 1,
-        pipelineVersion: 2,
-      ),
+      musicAudioAnalysisCacheName(target: t, fileSize: 10, fileModifiedMs: 2),
       isNot(a),
     );
+  });
+
+  test(
+    'completeness needs the wanted flags, whole stems and this pipeline',
+    () {
+      final MusicAudioAnalysis whole = MusicAudioAnalysis.tryParse(
+        _withFlags(MusicAudioAnalysisFlags.beatsModel),
+      )!;
+      expect(
+        musicAudioAnalysisComplete(
+          whole,
+          MusicAudioAnalysisFlags.beatsModel,
+          pipelineVersion: 2,
+        ),
+        isTrue,
+      );
+      expect(
+        musicAudioAnalysisComplete(
+          whole,
+          MusicAudioAnalysisFlags.beatsModel,
+          pipelineVersion: 3,
+        ),
+        isFalse,
+      );
+      final MusicAudioAnalysis partial = MusicAudioAnalysis.tryParse(
+        _withFlags(
+          MusicAudioAnalysisFlags.beatsModel |
+              MusicAudioAnalysisFlags.drumsModel |
+              MusicAudioAnalysisFlags.vocalModel |
+              MusicAudioAnalysisFlags.stemsPartial,
+        ),
+      )!;
+      expect(partial.stemsPartial, isTrue);
+      expect(
+        musicAudioAnalysisComplete(
+          partial,
+          MusicAudioAnalysisFlags.beatsModel,
+          pipelineVersion: 2,
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'an older-pipeline cached result is shown at once and re-analysed',
+    () async {
+      final MusicAudioAnalysisTarget t = track('old');
+      final MusicAudioAnalysisService first = service();
+      final ValueListenable<MusicAudioAnalysisSnapshot> l = first.analyze(t);
+      await _until(l, (_) => engine.submits.isNotEmpty);
+      // 引擎（升级前）写的是 v1 布局、管线 1。
+      final Uint8List v1 = File(
+        'test/media/music/analysis/fixtures/golden_v1.fma',
+      ).readAsBytesSync();
+      ByteData.sublistView(v1).setUint32(8, 0, Endian.little);
+      await engine.finish(engine.submits.single, v1);
+      await _until(l, (v) => v.audio != null);
+      await first.dispose();
+
+      engine = _FakeEngine();
+      final MusicAudioAnalysisService s = service();
+      final ValueListenable<MusicAudioAnalysisSnapshot> l2 = s.analyze(t);
+      await _until(l2, (_) => engine.submits.isNotEmpty);
+      // 同一个缓存文件（名字不含管线版本）：旧结果先给出来，同时重算。
+      expect(l2.value.audio?.formatVersion, 1);
+      expect(engine.submits.single.out, endsWith('.fma'));
+      await engine.finish(engine.submits.single, _withFlags(0));
+      final MusicAudioAnalysisSnapshot v = await _until(
+        l2,
+        (MusicAudioAnalysisSnapshot v) =>
+            v.phase == MusicAudioAnalysisPhase.ready,
+      );
+      expect(v.audio!.formatVersion, 2);
+      expect(v.audio!.hasBeatAccents, isTrue);
+      await s.dispose();
+    },
+  );
+
+  test('partial stem updates refresh the snapshot while running', () async {
+    final MusicAudioAnalysisService s = service();
+    final ValueListenable<MusicAudioAnalysisSnapshot> l = s.analyze(
+      track('partial'),
+    );
+    await _until(l, (_) => engine.submits.isNotEmpty);
+    final _Submit sub = engine.submits.single;
+    final Uint8List partial = _withFlags(
+      MusicAudioAnalysisFlags.drumsModel |
+          MusicAudioAnalysisFlags.vocalModel |
+          MusicAudioAnalysisFlags.stemsPartial,
+    );
+    ByteData.sublistView(partial).setUint32(56, 1200, Endian.little);
+    await File(sub.out).writeAsBytes(partial);
+    engine.emit(FfcManaEventKind.updated, sub.token);
+    final MusicAudioAnalysisSnapshot mid = await _until(
+      l,
+      (MusicAudioAnalysisSnapshot v) => v.audio?.stemsPartial ?? false,
+    );
+    expect(mid.audio!.stemsUntilMs, 1200);
+    expect(mid.phase, MusicAudioAnalysisPhase.running);
+    // 执行器退回 CPU 的事件只记日志，不影响状态。
+    engine.emit(FfcManaEventKind.backendFallback, sub.token, 1);
+    expect(l.value.phase, MusicAudioAnalysisPhase.running);
+    await engine.finish(
+      sub,
+      _withFlags(
+        MusicAudioAnalysisFlags.drumsModel | MusicAudioAnalysisFlags.vocalModel,
+      ),
+    );
+    final MusicAudioAnalysisSnapshot done = await _until(
+      l,
+      (MusicAudioAnalysisSnapshot v) =>
+          v.phase == MusicAudioAnalysisPhase.ready,
+    );
+    expect(done.audio!.stemsPartial, isFalse);
+    await s.dispose();
   });
 
   test('ffmpeg arguments decode 44.1 kHz stereo s16le, capped length', () {

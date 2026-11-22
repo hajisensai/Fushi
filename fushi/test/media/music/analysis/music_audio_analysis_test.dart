@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,10 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.d
 /// `golden_fixture_matches_dart_side` 逐字节比对同一个文件），这里按同一份已知值断言：两侧布局一致。
 Uint8List _golden() =>
     File('test/media/music/analysis/fixtures/golden.fma').readAsBytesSync();
+
+/// 同一份结果的 v1 布局（没有重音段；Rust `reads_version_1_files_with_neutral_accents` 读同一个文件）。
+Uint8List _goldenV1() =>
+    File('test/media/music/analysis/fixtures/golden_v1.fma').readAsBytesSync();
 
 void main() {
   group('MusicAudioAnalysis.tryParse', () {
@@ -27,7 +32,8 @@ void main() {
       expect(a.bpm, 120);
       expect(a.beatsPerBar, 3);
       expect(a.durationMs, 58);
-      expect(a.pipelineVersion, 1);
+      expect(a.pipelineVersion, 2);
+      expect(a.formatVersion, 2);
       expect(a.beatTimesMs, <int>[0, 500, 1000, 1500]);
       expect(a.downbeatTimesMs, <int>[0, 1500]);
       expect(a.hitTimesMs, <int>[10, 510, 1010]);
@@ -40,6 +46,42 @@ void main() {
       expect(a.envelopeReady, isTrue);
       expect(a.beatsReady, isTrue);
       expect(a.drumsReady, isTrue);
+      // 每拍重音（golden() 里的 accents）。
+      expect(a.hasBeatAccents, isTrue);
+      expect(a.trackScale, 0.75);
+      expect(a.stemsPartial, isFalse);
+      expect(a.stemsUntilMs, 0);
+      expect(a.beatImpact(0), 1.0);
+      expect(a.beatImpact(1), closeTo(0.2, 0.01));
+      expect(a.beatImpact(3), 0.0);
+      expect(a.beatLowShare(3), 1.0);
+      expect(a.beatMidShare(1), closeTo(0.5, 0.01));
+      expect(a.beatHighShare(2), 1.0);
+      expect(
+        <bool>[for (int i = 0; i < 4; i++) a.beatRhythmic(i)],
+        <bool>[true, false, true, true],
+      );
+      expect(
+        <bool>[for (int i = 0; i < 4; i++) a.beatPulse(i)],
+        <bool>[true, true, false, true],
+      );
+    });
+
+    test('reads version-1 files with neutral accents', () {
+      final MusicAudioAnalysis a = MusicAudioAnalysis.tryParse(_goldenV1())!;
+      expect(a.formatVersion, 1);
+      expect(a.pipelineVersion, 1);
+      expect(a.beatTimesMs, <int>[0, 500, 1000, 1500]);
+      expect(a.vocalOnsetsMs, <int>[20, 40]);
+      expect(a.hasBeatAccents, isFalse);
+      expect(a.trackScale, 1);
+      expect(a.beatImpact(2), 1);
+      expect(a.beatLowShare(2), closeTo(1 / 3, 1e-9));
+      expect(a.beatRhythmic(1) && a.beatPulse(2), isTrue);
+      expect(a.stemsPartial, isFalse);
+      // 不认识的新布局照样拒。
+      final Uint8List future = Uint8List.fromList(_goldenV1())..[4] = 3;
+      expect(MusicAudioAnalysis.tryParse(future), isNull);
     });
 
     test('rejects garbage, truncation and other versions', () {
@@ -52,11 +94,11 @@ void main() {
       final Uint8List wrongFormat = Uint8List.fromList(g)..[4] = 9;
       expect(MusicAudioAnalysis.tryParse(wrongFormat), isNull);
       expect(
-        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 2),
+        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 1),
         isNull,
       );
       expect(
-        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 1),
+        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 2),
         isNotNull,
       );
     });
@@ -103,6 +145,27 @@ void main() {
         onBeat.beatsReady && onBeat.drumsReady && onBeat.vocalReady,
         isTrue,
       );
+    });
+
+    test('accented beat impact skips gated beats and scales by accent', () {
+      // 拍 0：impact 1 × trackScale 0.75。
+      expect(a.accentedBeatImpactAt(0), closeTo(0.75, 1e-9));
+      // 拍 1（500 ms）没有节奏：仍从拍 0 衰减。
+      expect(
+        a.accentedBeatImpactAt(500),
+        closeTo(0.75 * math.exp(-500 / kMusicBeatImpactDecayMs), 1e-9),
+      );
+      // 拍 2（1000 ms）不是听感拍：同上，从拍 0 衰减。
+      expect(
+        a.accentedBeatImpactAt(1000),
+        closeTo(0.75 * math.exp(-1000 / kMusicBeatImpactDecayMs), 1e-9),
+      );
+      // 拍 3（1500 ms）impact 0：打了也是 0。
+      expect(a.accentedBeatImpactAt(1500), 0);
+      expect(a.accentedBeatImpactAt(-5), 0);
+      // v1 文件：每拍满强度，等于原始拍点冲击。
+      final MusicAudioAnalysis old = MusicAudioAnalysis.tryParse(_goldenV1())!;
+      expect(old.accentedBeatImpactAt(500), closeTo(1, 1e-9));
     });
   });
 }
