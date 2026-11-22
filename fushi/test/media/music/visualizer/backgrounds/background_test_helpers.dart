@@ -19,6 +19,8 @@ final LyricVisualizerEntry kBackgroundHostEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.defaultMode,
   label: () => 'host',
   icon: FushiIcons.image,
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   builder: (LyricVisualizerContext _) => const SizedBox.expand(),
 );
 

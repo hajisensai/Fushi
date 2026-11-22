@@ -778,10 +778,9 @@ class LyricVisualizerEntry {
     required this.icon,
     required this.builder,
     this.description,
+    required this.background,
     this.tunings = const <LyricVisualizerTuningSpec>[],
-    this.sharedBackdrop = true,
     this.sharedSubtitle = true,
-    this.background,
     this.tuningPresets = const <LyricVisualizerTuningPreset>[],
   });
 
@@ -792,17 +791,13 @@ class LyricVisualizerEntry {
   final String Function()? description;
   final IconData icon;
 
-  /// 画样式本体。宿主已经铺好背景（[sharedBackdrop] 为 true 时）；返回的 widget 填满约束。
+  /// 画样式本体。宿主已经按 [background] 铺好背景；返回的 widget 填满约束。
   final Widget Function(LyricVisualizerContext context) builder;
   final List<LyricVisualizerTuningSpec> tunings;
 
-  /// 旧开关（过渡期保留，样式迁到 [background] 后删除）：true = 用用户选的共享背景；false = 样式
-  /// 自己画全部背景，宿主只铺一层纯色底。[background] 非 null 时忽略它。
-  final bool sharedBackdrop;
-
   /// 按当前参数决定背景（folia 背景独立组合）：用户选的共享背景 / 不要 / 指定某个背景 / 透明。
-  /// null = 按 [sharedBackdrop]。
-  final LyricVisualizerBackgroundRequest Function(LyricVisualizerTuning tuning)?
+  /// 每个样式都必须显式声明（守卫测试核对）。
+  final LyricVisualizerBackgroundRequest Function(LyricVisualizerTuning tuning)
   background;
 
   /// 参数预设（面板顶部一排，点一下整组套用）。
@@ -811,11 +806,7 @@ class LyricVisualizerEntry {
   /// 生效的背景请求。
   LyricVisualizerBackgroundRequest backgroundFor(
     LyricVisualizerTuning tuning,
-  ) =>
-      background?.call(tuning) ??
-      (sharedBackdrop
-          ? LyricVisualizerBackgroundRequest.selected
-          : LyricVisualizerBackgroundRequest.none);
+  ) => background(tuning);
 
   /// true = 宿主在底部画共享的译文 / 下一句字幕；样式自己排译文时填 false。
   final bool sharedSubtitle;

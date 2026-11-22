@@ -167,19 +167,28 @@ void main() {
       expect(ids, hasLength(lyricVisualizerBackgrounds.length));
     });
 
-    test('旧 sharedBackdrop 开关映射成请求', () {
-      final LyricVisualizerEntry still = lyricVisualizerEntryOf(
-        LyricVisualizerMode.still,
-      );
-      final LyricVisualizerTuning t = LyricVisualizerTuning.defaults(
-        still.tunings,
-      );
-      expect(
-        still.backgroundFor(t),
-        still.sharedBackdrop
-            ? LyricVisualizerBackgroundRequest.selected
-            : LyricVisualizerBackgroundRequest.none,
-      );
+    test('每个样式都显式声明背景请求，且按默认参数解析得出', () {
+      for (final MapEntry<LyricVisualizerMode, LyricVisualizerEntry> e
+          in lyricVisualizerRegistry.entries) {
+        final LyricVisualizerTuning t = LyricVisualizerTuning.defaults(
+          e.value.tunings,
+        );
+        final LyricVisualizerBackgroundRequest r = e.value.backgroundFor(t);
+        expect(
+          r,
+          e.value.background(t),
+          reason: '${e.key.name} 的 backgroundFor 必须就是它声明的 background',
+        );
+        if (r.kind == LyricVisualizerBackgroundKind.specific) {
+          expect(
+            lyricVisualizerBackgrounds.any(
+              (LyricVisualizerBackgroundEntry b) => b.id == r.id,
+            ),
+            isTrue,
+            reason: '${e.key.name} 指定了不存在的背景 ${r.id}',
+          );
+        }
+      }
     });
 
     Future<void> pumpHost(

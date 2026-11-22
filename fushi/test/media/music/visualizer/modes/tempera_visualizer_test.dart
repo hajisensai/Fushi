@@ -466,7 +466,12 @@ void main() {
 
     test('entry is registered with shared backdrop and subtitle', () {
       expect(temperaVisualizerEntry.mode, LyricVisualizerMode.tempera);
-      expect(temperaVisualizerEntry.sharedBackdrop, isTrue);
+      expect(
+        temperaVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(temperaTunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
       expect(temperaVisualizerEntry.sharedSubtitle, isTrue);
       expect(temperaVisualizerEntry.tunings, isNotEmpty);
       final TemperaSettings s = temperaSettingsOf(
