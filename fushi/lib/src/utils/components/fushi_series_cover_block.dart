@@ -89,6 +89,22 @@ class FushiSeriesMeta {
   final double? rating;
   final int? year;
 
+  /// 换一张背景图，其余字段原样；[backdropHasText] 跟着新图给（默认无字）。
+  FushiSeriesMeta withBackdrop(
+    ImageProvider backdrop, {
+    bool backdropHasText = false,
+  }) => FushiSeriesMeta(
+    backdrop: backdrop,
+    backdropHasText: backdropHasText,
+    logo: logo,
+    poster: poster,
+    overview: overview,
+    chip: chip,
+    genres: genres,
+    rating: rating,
+    year: year,
+  );
+
   /// 背景图 / logo / 概览 / chip 一项都没有（海报不算：没刮削的条目也有封面）。
   bool get isEmpty =>
       backdrop == null && logo == null && overview == null && chip == null;
