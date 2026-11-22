@@ -1,4 +1,5 @@
-/// 流光的排版（纯函数，可单测）：显示词的切分（folia `buildPostLyricLayoutUnits` 的粘连标点）、
+/// 流光的排版（纯函数，可单测）：显示词的切分（folia `buildPostLyricLayoutUnits`：共享词级分组 +
+/// 粘连标点）、
 /// 每个词的确定性随机姿态与右边距（folia classic `Visualizer.tsx` 的 `wordConfigs`）、
 /// 「防止文字重叠」的伸出量（`glowWordOverlap.ts`），以及 flex-wrap 换行与 justify 摆放。
 library;
@@ -46,12 +47,41 @@ bool _canAttachToPrevious(String previous) =>
 
 bool _stickyOnly(String s) => _stickyTrailing.hasMatch(s);
 
-/// 显示词。[adaptive] = folia 的自适应排版（粘连标点 / 缩写）；旧版排版逐词原样。
+bool _isCjkScript(LyricVisualizerScript s) =>
+    s == LyricVisualizerScript.han ||
+    s == LyricVisualizerScript.hiragana ||
+    s == LyricVisualizerScript.katakana ||
+    s == LyricVisualizerScript.hangul;
+
+/// 落在「语义词」里的字形下标：共享词级分组（[LyricVisualizerLine.segments]）里含两个以上
+/// CJK 字的词组（folia `buildCjkSemanticLayoutUnits` 的 `isSemantic`）。
+Set<int> luminousSemanticGlyphs(LyricVisualizerLine line) {
+  final Set<int> out = <int>{};
+  for (final LyricVisualizerSegment seg in line.segments) {
+    int cjk = 0;
+    for (int g = seg.firstGlyph; g < seg.firstGlyph + seg.glyphCount; g++) {
+      if (_isCjkScript(lyricVisualizerScriptOf(line.glyphs[g].text))) cjk++;
+    }
+    if (cjk < 2) continue;
+    for (int g = seg.firstGlyph; g < seg.firstGlyph + seg.glyphCount; g++) {
+      out.add(g);
+    }
+  }
+  return out;
+}
+
+/// 显示词。[adaptive] = folia 的自适应排版（先按词分组、再粘连标点 / 缩写）；旧版排版逐词原样。
+///
+/// folia classic 把多字的 CJK 语义词拆回逐字画（`buildDisplayWordsFromLayoutUnits`），粘在语义词
+/// 后面的标点也随之拆开，单独成一个显示词；只有不属于语义词的单元才真正合并标点。
 List<LuminousDisplayWord> luminousDisplayWords(
   LyricVisualizerLine line, {
   required bool adaptive,
 }) {
   final List<LuminousDisplayWord> out = <LuminousDisplayWord>[];
+  final Set<int> semantic = adaptive
+      ? luminousSemanticGlyphs(line)
+      : const <int>{};
   for (final LyricVisualizerWord w in line.words) {
     final List<LyricVisualizerGlyph> glyphs = line.glyphs.sublist(
       w.firstGlyph,
@@ -59,10 +89,12 @@ List<LuminousDisplayWord> luminousDisplayWords(
     );
     if (adaptive && out.isNotEmpty) {
       final LuminousDisplayWord prev = out.last;
+      final int prevGlyph = line.glyphs.indexOf(prev.glyphs.first);
       final bool attach =
-          (_stickyOnly(w.text) && _canAttachToPrevious(prev.text)) ||
-          (_directContraction.hasMatch(w.text) &&
-              _endsWordChar.hasMatch(prev.text));
+          !semantic.contains(prevGlyph) &&
+          ((_stickyOnly(w.text) && _canAttachToPrevious(prev.text)) ||
+              (_directContraction.hasMatch(w.text) &&
+                  _endsWordChar.hasMatch(prev.text)));
       if (attach) {
         // 合并时把两词之间的字形（空白）一并收进来，保持字形区间连续。
         final int from = line.glyphs.indexOf(prev.glyphs.first);
@@ -145,7 +177,7 @@ class LuminousLayoutParams {
     required this.avoidOverlap,
   });
 
-  final LuminousIntensity intensity;
+  final LyricVisualizerIntensity intensity;
   final bool rotation;
   final bool legacy;
   final double wordSpacing;
@@ -283,8 +315,8 @@ LuminousLinePlan luminousPlanLine({
   required bool interlude,
   required bool rtl,
 }) {
-  final bool chaotic = params.intensity == LuminousIntensity.chaotic;
-  final bool calm = params.intensity == LuminousIntensity.calm;
+  final bool chaotic = params.intensity == LyricVisualizerIntensity.chaotic;
+  final bool calm = params.intensity == LyricVisualizerIntensity.calm;
   final LuminousJustify justify = interlude || calm
       ? LuminousJustify.center
       : _justifyOptions[(seed % _justifyOptions.length).floor()];

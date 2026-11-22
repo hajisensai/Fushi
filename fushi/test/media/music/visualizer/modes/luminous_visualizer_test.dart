@@ -27,7 +27,7 @@ LyricLine _line(int start, List<(String, int)> parts) {
 }
 
 const LuminousLayoutParams _normal = LuminousLayoutParams(
-  intensity: LuminousIntensity.normal,
+  intensity: LyricVisualizerIntensity.normal,
   rotation: true,
   legacy: false,
   wordSpacing: 0.7,
@@ -45,8 +45,8 @@ void main() {
         endS: 3,
         lastWordEndS: 3,
       );
-      expect(normal.lineTransition, LuminousLineTransition.normal);
-      expect(normal.wordReveal, LuminousWordReveal.normal);
+      expect(normal.lineTransition, LyricVisualizerLineTransition.normal);
+      expect(normal.wordReveal, LyricVisualizerWordReveal.normal);
       expect(normal.wordLookahead, 0.15);
       // 尾巴：passStart = 3.06，exit = min(.32, max(.18, 2*.18)) = .32
       expect(normal.lineRenderEnd, closeTo(3.38, 1e-9));
@@ -56,8 +56,8 @@ void main() {
         endS: 1.15,
         lastWordEndS: 1.15,
       );
-      expect(fast.lineTransition, LuminousLineTransition.fast);
-      expect(fast.wordReveal, LuminousWordReveal.fast);
+      expect(fast.lineTransition, LyricVisualizerLineTransition.fast);
+      expect(fast.wordReveal, LyricVisualizerWordReveal.fast);
       expect(fast.wordLookahead, 0.08);
 
       final LuminousRenderProfile micro = LuminousRenderProfile.fromTimes(
@@ -65,8 +65,8 @@ void main() {
         endS: 1.02,
         lastWordEndS: 1.02,
       );
-      expect(micro.lineTransition, LuminousLineTransition.none);
-      expect(micro.wordReveal, LuminousWordReveal.instant);
+      expect(micro.lineTransition, LyricVisualizerLineTransition.none);
+      expect(micro.wordReveal, LyricVisualizerWordReveal.instant);
       expect(micro.lineRenderEnd, closeTo(1.067, 1e-9));
       // instant：词一直亮到行尾
       expect(micro.activeEnd(1, 1.01), micro.lineRenderEnd);
@@ -141,7 +141,7 @@ void main() {
         schedule: s,
         config: c,
         rotation: true,
-        intensity: LuminousIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(waiting.opacity, 0);
       expect(waiting.scale, 0.5);
@@ -160,7 +160,7 @@ void main() {
         schedule: longActive,
         config: c,
         rotation: true,
-        intensity: LuminousIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(active.opacity, 1);
       expect(active.scale, closeTo(1.2 * luminousActiveScale, 1e-3));
@@ -171,7 +171,7 @@ void main() {
         schedule: s,
         config: c,
         rotation: true,
-        intensity: LuminousIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(passed.opacity, closeTo(0.82, 1e-9));
       expect(passed.scale, closeTo(1.2, 1e-9));
@@ -182,7 +182,7 @@ void main() {
         schedule: s,
         config: c,
         rotation: true,
-        intensity: LuminousIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(half.rotate, greaterThan(3));
       expect(half.rotate, lessThan(13));
@@ -264,28 +264,31 @@ void main() {
     });
 
     test('呼吸浮动', () {
-      expect(luminousBreathAt(3, 0, LuminousIntensity.normal).dy, 0);
+      expect(luminousBreathAt(3, 0, LyricVisualizerIntensity.normal).dy, 0);
       final LuminousBreath quarter = luminousBreathAt(
         7 * 0.25,
         1,
-        LuminousIntensity.normal,
+        LyricVisualizerIntensity.normal,
       );
       expect(quarter.dy, closeTo(-14, 1e-9));
       expect(quarter.scale, closeTo(1.01, 1e-9));
       expect(
-        luminousBreathAt(8.5 * 0.25, 2, LuminousIntensity.calm).dy,
+        luminousBreathAt(8.5 * 0.25, 2, LyricVisualizerIntensity.calm).dy,
         closeTo(-20, 1e-9),
       );
     });
 
     test('入场 / 离场', () {
-      expect(luminousLineEnterFx(LuminousLineTransition.normal, 0).opacity, 0);
       expect(
-        luminousLineEnterFx(LuminousLineTransition.normal, 2).isSteady,
+        luminousLineEnterFx(LyricVisualizerLineTransition.normal, 0).opacity,
+        0,
+      );
+      expect(
+        luminousLineEnterFx(LyricVisualizerLineTransition.normal, 2).isSteady,
         isTrue,
       );
       final LuminousLineFx out = luminousLineExitFx(
-        LuminousLineTransition.normal,
+        LyricVisualizerLineTransition.normal,
         0.3,
       );
       expect(out.opacity, 0);
@@ -318,6 +321,20 @@ void main() {
       expect(luminousDisplayWords(rt.lines.first, adaptive: false).length, 3);
     });
 
+    test('自适应排版：粘在多字语义词（共享词级分组）后的标点不并，单字后的照并', () {
+      final LyricVisualizerRuntime rt = _runtimeOf(<LyricLine>[
+        _line(0, <(String, int)>[('カ', 200), ('ナ', 200), ('。', 100)]),
+      ]);
+      expect(luminousSemanticGlyphs(rt.lines.first), <int>{0, 1, 2});
+      expect(
+        luminousDisplayWords(
+          rt.lines.first,
+          adaptive: true,
+        ).map((LuminousDisplayWord w) => w.text).toList(),
+        <String>['カ', 'ナ', '。'],
+      );
+    });
+
     test('间奏与 RTL 判定', () {
       expect(luminousIsInterlude('......'), isTrue);
       expect(luminousIsInterlude('…'), isFalse);
@@ -339,7 +356,7 @@ void main() {
         wordWidths: <double>[100, 80, 120],
         fontSize: 40,
         params: const LuminousLayoutParams(
-          intensity: LuminousIntensity.calm,
+          intensity: LyricVisualizerIntensity.calm,
           rotation: true,
           legacy: false,
           wordSpacing: 0.7,
@@ -383,7 +400,7 @@ void main() {
         wordWidths: <double>[50, 50],
         fontSize: 40,
         params: const LuminousLayoutParams(
-          intensity: LuminousIntensity.normal,
+          intensity: LyricVisualizerIntensity.normal,
           rotation: false,
           legacy: true,
           wordSpacing: 0.7,
@@ -402,7 +419,7 @@ void main() {
 
     test('防重叠：边距不小于两词伸出量之和，留出行距', () {
       const LuminousLayoutParams p = LuminousLayoutParams(
-        intensity: LuminousIntensity.chaotic,
+        intensity: LyricVisualizerIntensity.chaotic,
         rotation: true,
         legacy: false,
         wordSpacing: 0,
@@ -508,7 +525,7 @@ void main() {
         area: const Size(390, 500),
         fontScale: 1,
         params: const LuminousLayoutParams(
-          intensity: LuminousIntensity.normal,
+          intensity: LyricVisualizerIntensity.normal,
           rotation: true,
           legacy: false,
           wordSpacing: 0.7,
@@ -541,15 +558,97 @@ void main() {
       expect(luminousVisibleLines(rt, 10, motion: true), isEmpty);
     });
 
+    test('副歌涟漪：active 时 0.5 秒从 0.2 倍扩开淡出，唱完后淡掉', () {
+      final LuminousRenderProfile p = LuminousRenderProfile.fromTimes(
+        startS: 1,
+        endS: 3,
+        lastWordEndS: 3,
+      );
+      final LuminousWordSchedule s = LuminousWordSchedule.of(
+        profile: p,
+        wordStart: 1.2,
+        wordEnd: 2,
+        mountAt: 1,
+      );
+      expect(luminousRippleAt(t: 0.5, schedule: s, maxScale: 3), isNull);
+      final LuminousRipple start = luminousRippleAt(
+        t: s.activeAt,
+        schedule: s,
+        maxScale: 3,
+      )!;
+      expect(start.scale, closeTo(0.2, 1e-9));
+      expect(start.opacity, closeTo(0.8, 1e-9));
+      final LuminousRipple done = luminousRippleAt(
+        t: s.activeAt + 0.6,
+        schedule: s,
+        maxScale: 3,
+      )!;
+      expect(done.scale, closeTo(3, 1e-9));
+      expect(done.opacity, closeTo(0, 1e-9));
+      expect(
+        luminousRippleAt(t: s.passedAt + 1, schedule: s, maxScale: 3),
+        isNull,
+      );
+      for (int i = 0; i < 20; i++) {
+        final double k = luminousRippleScale(12.3, i);
+        expect(k, inInclusiveRange(1.5, 3.5));
+        expect(luminousRippleScale(12.3, i), k);
+      }
+    });
+
+    test('渲染提示读共享 renderHints', () {
+      final LyricVisualizerRuntime rt = _runtimeOf(<LyricLine>[
+        _line(1000, <(String, int)>[('a', 1000)]),
+        _line(9000, <(String, int)>[('b', 1000)]),
+      ]);
+      final LuminousRenderProfile p = LuminousRenderProfile.ofLine(
+        rt.lines.first,
+      );
+      expect(p.hints, rt.lines.first.renderHints);
+      expect(p.lineRenderEnd, rt.lines.first.renderEndMs / 1000);
+      expect(luminousLineExitAt(rt, 0), rt.visualEndMsOf(0) / 1000);
+    });
+
+    test('主题按词着色与字重', () {
+      const LuminousSceneConfig cfg = LuminousSceneConfig(
+        size: Size(800, 600),
+        fontScale: 1,
+        params: _normal,
+        baseColor: Color(0xFFFFFFFF),
+        activeColor: Color(0xFF00FF00),
+        fontFamily: null,
+        fontFamilyFallback: null,
+        theme: LyricVisualizerTheme(
+          wordColors: <String, Color>{'love': Color(0xFFFF0000)},
+        ),
+      );
+      expect(cfg.activeColorFor('Love,'), const Color(0xFFFF0000));
+      expect(cfg.activeColorFor('world'), const Color(0xFF00FF00));
+      expect(cfg.fontWeight, FontWeight.w700);
+    });
+
+    test('背景：用户选的共享背景', () {
+      expect(
+        luminousVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(luminousTunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+      expect(
+        luminousTunings.map((LyricVisualizerTuningSpec s) => s.key),
+        isNot(contains('animationIntensity')),
+      );
+    });
+
     test('参数读取', () {
       final LuminousLayoutParams p = luminousParamsOf(
         LyricVisualizerTuning(luminousTunings, const <String, Object?>{
-          LuminousTuningKeys.animationIntensity: 'chaotic',
           LuminousTuningKeys.layoutMode: 'legacy',
           LuminousTuningKeys.wordSpacing: 5.0,
         }),
+        intensity: LyricVisualizerIntensity.chaotic,
       );
-      expect(p.intensity, LuminousIntensity.chaotic);
+      expect(p.intensity, LyricVisualizerIntensity.chaotic);
       expect(p.legacy, isTrue);
       expect(p.wordSpacing, 2); // 夹到上限
       expect(p.rotation, isTrue);
@@ -565,8 +664,8 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         luminousVisualizerEntry,
+        intensity: LyricVisualizerIntensity.chaotic,
         tuning: <String, Object?>{
-          LuminousTuningKeys.animationIntensity: 'chaotic',
           LuminousTuningKeys.avoidOverlap: true,
           LuminousTuningKeys.enableWordRotation: false,
           LuminousTuningKeys.breathingFloatMultiplier: 2.0,
@@ -579,11 +678,45 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         luminousVisualizerEntry,
+        intensity: LyricVisualizerIntensity.calm,
         tuning: <String, Object?>{
           LuminousTuningKeys.layoutMode: 'legacy',
-          LuminousTuningKeys.animationIntensity: 'calm',
           LuminousTuningKeys.breathingFloatMultiplier: 0.0,
         },
+      );
+    });
+
+    testWidgets('副歌（重复句）+ 主题按词着色 / 字重 + 音频', (WidgetTester tester) async {
+      LyricLine l(int start, String a, String b) => LyricLine(
+        startMs: start,
+        endMs: start + 1200,
+        syllables: <LyricSyllable>[
+          LyricSyllable(text: a, startMs: start, endMs: start + 500),
+          LyricSyllable(text: b, startMs: start + 500, endMs: start + 1200),
+        ],
+      );
+      final LyricTimeline tl = LyricTimeline(
+        format: 'ttml',
+        timingQuality: LyricTimingQuality.word,
+        lines: <LyricLine>[
+          l(1000, 'love ', 'you'),
+          l(3000, 'other ', 'line'),
+          l(5000, 'love ', 'you'),
+          l(7000, 'love ', 'you'),
+        ],
+      );
+      expect(LyricVisualizerRuntime(tl).lines.first.isChorus, isTrue);
+      await pumpVisualizerAcross(
+        tester,
+        luminousVisualizerEntry,
+        timeline: tl,
+        timesMs: const <int>[1100, 1300, 1700, 3100, 5200, 7600, 9000],
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'love': Color(0xFFFF4081)},
+          fontWeight: FontWeight.w300,
+          intensity: LyricVisualizerIntensity.chaotic,
+        ),
+        audio: SyntheticVisualizerAudio(),
       );
     });
 

@@ -12,7 +12,6 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/luminous/luminous_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart';
-import 'package:fushi/src/media/music/lyrics/visualizer/modes/luminous/luminous_timing.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 落库键（冻结；与 folia `ClassicTuning` 字段同名）。
@@ -22,10 +21,9 @@ abstract final class LuminousTuningKeys {
   static const String layoutMode = 'layoutMode';
   static const String wordSpacing = 'wordSpacing';
   static const String avoidOverlap = 'avoidOverlap';
-  static const String animationIntensity = 'animationIntensity';
 }
 
-/// 参数声明（folia `classic/tuning.ts` + 主题的动画强度）。
+/// 参数声明（folia `classic/tuning.ts`）。动画强度不在这里：读共享的 `context.intensity`。
 final List<LyricVisualizerTuningSpec> luminousTunings =
     <LyricVisualizerTuningSpec>[
       LyricVisualizerToggleSpec(
@@ -65,30 +63,15 @@ final List<LyricVisualizerTuningSpec> luminousTunings =
         label: () => t.music_visualizer_luminous_avoid_overlap,
         initial: false,
       ),
-      LyricVisualizerChoiceSpec(
-        key: LuminousTuningKeys.animationIntensity,
-        label: () => t.music_visualizer_luminous_intensity,
-        options: <(String, String Function())>[
-          ('calm', () => t.music_visualizer_luminous_intensity_calm),
-          ('normal', () => t.music_visualizer_luminous_intensity_normal),
-          ('chaotic', () => t.music_visualizer_luminous_intensity_chaotic),
-        ],
-        initial: 'normal',
-      ),
     ];
 
-/// 当前参数 → 排版参数。
-LuminousLayoutParams luminousParamsOf(LyricVisualizerTuning tuning) {
-  final String intensity = tuning.choice(
-    LuminousTuningKeys.animationIntensity,
-    'normal',
-  );
+/// 当前参数 + 共享动画强度 → 排版参数。
+LuminousLayoutParams luminousParamsOf(
+  LyricVisualizerTuning tuning, {
+  LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
+}) {
   return LuminousLayoutParams(
-    intensity: switch (intensity) {
-      'calm' => LuminousIntensity.calm,
-      'chaotic' => LuminousIntensity.chaotic,
-      _ => LuminousIntensity.normal,
-    },
+    intensity: intensity,
     rotation: tuning.flag(LuminousTuningKeys.enableWordRotation, true),
     legacy:
         tuning.choice(LuminousTuningKeys.layoutMode, 'adaptive') == 'legacy',
@@ -104,7 +87,9 @@ final LyricVisualizerEntry luminousVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_luminous_description,
   icon: FushiIcons.lightbulb,
   tunings: luminousTunings,
-  sharedBackdrop: true,
+  // folia classic 不改背景：画在用户选的共享背景上。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   builder: (LyricVisualizerContext c) => LuminousVisualizer(context: c),
 );
 
@@ -183,11 +168,13 @@ class _LuminousPainter extends CustomPainter {
       LuminousSceneConfig(
         size: size,
         fontScale: c.fontScale,
-        params: luminousParamsOf(c.tuning),
+        params: luminousParamsOf(c.tuning, intensity: c.intensity),
         baseColor: c.palette.text,
         activeColor: c.palette.accent,
-        fontFamily: fontFamily,
+        fontFamily: c.theme?.fontFamily ?? fontFamily,
         fontFamilyFallback: fontFamilyFallback,
+        fontWeight: c.theme?.fontWeight ?? FontWeight.w700,
+        theme: c.theme,
       ),
       c.runtime,
       t: tick.timeMs / 1000,

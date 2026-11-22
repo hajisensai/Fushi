@@ -1,4 +1,4 @@
-/// 流光的时序：把 folia 的 renderHints / glowWordTiming / glowWordVariants / wordGlow 换成
+/// 流光的时序：行分级与离场窗口读共享的 renderHints，把 folia 的 glowWordTiming / glowWordVariants / wordGlow 换成
 /// 「给定时刻 → 动画值」的纯函数。folia 用 framer-motion 在状态切换时起动画；这里按时间
 /// 解析地算出同一条曲线（弹簧闭式解 + 缓动关键帧），拖进度、暂停都能直接求值，不存动画状态。
 ///
@@ -10,126 +10,78 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
-/// 行过渡模式（folia `LineTransitionMode`）。
-enum LuminousLineTransition { normal, fast, none }
-
-/// 逐词显现模式（folia `WordRevealMode`）。
-enum LuminousWordReveal { normal, fast, instant }
-
-/// 动画强度（folia `theme.animationIntensity`）。
-enum LuminousIntensity { calm, normal, chaotic }
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart'
+    show
+        LyricVisualizerLineTransition,
+        LyricVisualizerRenderHints,
+        LyricVisualizerWordReveal;
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart'
+    show LyricVisualizerIntensity;
 
 /// framer-motion 的 easeOut / easeInOut。
 const Cubic luminousEaseOut = Cubic(0.0, 0.0, 0.58, 1.0);
 const Cubic luminousEaseInOut = Cubic(0.42, 0.0, 0.58, 1.0);
 
-const double _microLineThreshold = 0.10;
-const double _shortLineThreshold = 0.18;
-const double _microLineRenderFloor = 0.067;
-
 double _clampD(double v, double lo, double hi) => math.min(math.max(v, lo), hi);
 
-/// 一行的渲染提示（folia `buildLineRenderHints` + `resolveGlowWordRenderProfile`）。
+/// 一行的渲染提示（folia `resolveGlowWordRenderProfile`）：公式全在共享的
+/// [LyricVisualizerRenderHints] 里，这里只把毫秒换成流光时序用的秒。
 @immutable
 class LuminousRenderProfile {
-  const LuminousRenderProfile({
-    required this.lineTransition,
-    required this.wordReveal,
-    required this.lineRenderEnd,
-    required this.wordLookahead,
-  });
+  const LuminousRenderProfile(this.hints);
 
   /// [startS] / [endS] 是行起止，[lastWordEndS] 是最后一个词的结束（秒）。
   factory LuminousRenderProfile.fromTimes({
     required double startS,
     required double endS,
     required double lastWordEndS,
-  }) {
-    final double raw = math.max(endS - startS, 0);
-    final LuminousLineTransition transition = raw < _microLineThreshold
-        ? LuminousLineTransition.none
-        : raw < _shortLineThreshold
-        ? LuminousLineTransition.fast
-        : LuminousLineTransition.normal;
-    final LuminousWordReveal reveal = raw < _microLineThreshold
-        ? LuminousWordReveal.instant
-        : raw < _shortLineThreshold
-        ? LuminousWordReveal.fast
-        : LuminousWordReveal.normal;
-    double renderEnd;
-    if (transition == LuminousLineTransition.none) {
-      renderEnd = math.max(endS, startS + _microLineRenderFloor);
-    } else {
-      final double enter;
-      final double exit;
-      final double hold;
-      if (transition == LuminousLineTransition.fast) {
-        enter = _clampD(raw * 0.45, 0.045, 0.06);
-        exit = _clampD(raw * 0.22, 0.03, 0.04);
-        hold = reveal == LuminousWordReveal.instant ? 0 : 0.03;
-      } else {
-        enter = math.min(0.42, math.max(0.22, math.max(raw, 0.12) * 0.34));
-        exit = math.min(0.32, math.max(0.18, math.max(raw, 0.12) * 0.18));
-        hold = reveal == LuminousWordReveal.instant ? 0 : 0.06;
-      }
-      final double passStart = math.max(lastWordEndS, startS) + hold;
-      final double exitStart = transition == LuminousLineTransition.fast
-          ? math.max(math.max(startS + enter + 0.01, passStart), endS - exit)
-          : math.max(passStart, endS - exit);
-      renderEnd = math.max(endS, exitStart + exit);
-    }
-    return LuminousRenderProfile(
-      lineTransition: transition,
-      wordReveal: reveal,
-      lineRenderEnd: renderEnd,
-      wordLookahead: reveal == LuminousWordReveal.instant
-          ? 0.03
-          : reveal == LuminousWordReveal.fast
-          ? 0.08
-          : 0.15,
-    );
-  }
+  }) => LuminousRenderProfile(
+    LyricVisualizerRenderHints.of(
+      startMs: (startS * 1000).round(),
+      endMs: (endS * 1000).round(),
+      lastWordEndMs: (lastWordEndS * 1000).round(),
+    ),
+  );
 
+  /// runtime 建行时已算好的提示。
   factory LuminousRenderProfile.ofLine(LyricVisualizerLine line) =>
-      LuminousRenderProfile.fromTimes(
-        startS: line.startMs / 1000,
-        endS: line.endMs / 1000,
-        lastWordEndS: line.words.isEmpty
-            ? line.endMs / 1000
-            : line.words.last.endMs / 1000,
-      );
+      LuminousRenderProfile(line.renderHints);
 
-  final LuminousLineTransition lineTransition;
-  final LuminousWordReveal wordReveal;
+  final LyricVisualizerRenderHints hints;
+
+  LyricVisualizerLineTransition get lineTransition => hints.lineTransition;
+  LyricVisualizerWordReveal get wordReveal => hints.wordReveal;
 
   /// 这一行最晚可以留在屏上的时刻（秒）。
-  final double lineRenderEnd;
+  double get lineRenderEnd => hints.renderEndMs / 1000;
 
   /// 词提前多少秒进入 active。
-  final double wordLookahead;
+  double get wordLookahead => hints.wordLookaheadMs / 1000;
 
-  /// 词的 active 结束时刻（folia `getGlowWordActiveEndTime`）。
-  double activeEnd(double wordStart, double wordEnd) {
-    switch (wordReveal) {
-      case LuminousWordReveal.instant:
-        return lineRenderEnd;
-      case LuminousWordReveal.fast:
-        return math.min(lineRenderEnd, math.max(wordEnd, wordStart + 0.12));
-      case LuminousWordReveal.normal:
-        return wordEnd;
-    }
-  }
+  /// 词的 active 结束时刻（秒；folia `getGlowWordActiveEndTime`）。
+  double activeEnd(double wordStart, double wordEnd) =>
+      hints.wordActiveEndMs(
+        (wordStart * 1000).round(),
+        (wordEnd * 1000).round(),
+      ) /
+      1000;
 
-  /// 词的显示时长（folia `getGlowWordDisplayDuration`）。
-  double displayDuration(double wordStart, double wordEnd) {
-    final double minD = wordReveal == LuminousWordReveal.instant
-        ? 0.08
-        : wordReveal == LuminousWordReveal.fast
-        ? 0.12
-        : 0.1;
-    return math.max(activeEnd(wordStart, wordEnd) - wordStart, minD);
-  }
+  /// 词的显示时长（秒；folia `getGlowWordDisplayDuration`）。
+  double displayDuration(double wordStart, double wordEnd) =>
+      hints.wordDisplayDurationMs(
+        (wordStart * 1000).round(),
+        (wordEnd * 1000).round(),
+      ) /
+      1000;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LuminousRenderProfile && other.hints == hints;
+
+  @override
+  int get hashCode => hints.hashCode;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,9 +216,9 @@ LuminousWordPose luminousActivePose(LuminousWordConfig c) => LuminousWordPose(
 
 LuminousWordPose luminousPassedPose(
   LuminousWordConfig c,
-  LuminousIntensity intensity,
+  LyricVisualizerIntensity intensity,
 ) => LuminousWordPose(
-  opacity: intensity == LuminousIntensity.chaotic ? 0.9 : 0.82,
+  opacity: intensity == LyricVisualizerIntensity.chaotic ? 0.9 : 0.82,
   scale: c.scale == 0 ? 1 : c.scale,
   x: c.x,
   y: c.y,
@@ -322,7 +274,7 @@ LuminousWordPose luminousWordPoseAt({
   required LuminousWordSchedule schedule,
   required LuminousWordConfig config,
   required bool rotation,
-  required LuminousIntensity intensity,
+  required LyricVisualizerIntensity intensity,
 }) {
   final LuminousWordPose waiting = luminousWaitingPose(config, rotation);
   final LuminousWordPose active = luminousActivePose(config);
@@ -375,11 +327,11 @@ class LuminousBodyState {
 LuminousBodyState luminousBodyAt({
   required double t,
   required LuminousWordSchedule schedule,
-  required LuminousWordReveal reveal,
+  required LyricVisualizerWordReveal reveal,
 }) {
-  final double blurIn = reveal == LuminousWordReveal.instant
+  final double blurIn = reveal == LyricVisualizerWordReveal.instant
       ? 0.08
-      : reveal == LuminousWordReveal.fast
+      : reveal == LyricVisualizerWordReveal.fast
       ? 0.12
       : 0.2;
   double highlightAtActive(double at) {
@@ -401,9 +353,9 @@ LuminousBodyState luminousBodyAt({
       final double from = schedule.passedAt >= schedule.activeAt
           ? highlightAtActive(schedule.passedAt)
           : 0;
-      final double back = reveal == LuminousWordReveal.instant
+      final double back = reveal == LyricVisualizerWordReveal.instant
           ? 0.12
-          : reveal == LuminousWordReveal.fast
+          : reveal == LyricVisualizerWordReveal.fast
           ? 0.24
           : 0.8;
       final double p = luminousTween(
@@ -416,11 +368,11 @@ LuminousBodyState luminousBodyAt({
 }
 
 /// 发光光晕的两档半径（CSS text-shadow px）：[inner, outer]（folia `glowRadii`）。
-(double, double) luminousGlowRadii(LuminousWordReveal reveal) =>
+(double, double) luminousGlowRadii(LyricVisualizerWordReveal reveal) =>
     switch (reveal) {
-      LuminousWordReveal.instant => (14, 24),
-      LuminousWordReveal.fast => (18, 32),
-      LuminousWordReveal.normal => (20, 40),
+      LyricVisualizerWordReveal.instant => (14, 24),
+      LyricVisualizerWordReveal.fast => (18, 32),
+      LyricVisualizerWordReveal.normal => (20, 40),
     };
 
 /// 单个字形光晕的不透明度（folia `wordGlowVariants`）。[glyphIndex] / [glyphCount] 指字形在词
@@ -428,7 +380,7 @@ LuminousBodyState luminousBodyAt({
 double luminousGlowAt({
   required double t,
   required LuminousWordSchedule schedule,
-  required LuminousWordReveal reveal,
+  required LyricVisualizerWordReveal reveal,
   required int glyphCount,
   double? charStart,
   double? charEnd,
@@ -437,7 +389,7 @@ double luminousGlowAt({
   double activeRamp(double at) {
     final double dt = at - schedule.activeAt;
     switch (reveal) {
-      case LuminousWordReveal.instant:
+      case LyricVisualizerWordReveal.instant:
         return luminousKeyframes(
           dt,
           math.min(schedule.duration, 0.12),
@@ -445,7 +397,7 @@ double luminousGlowAt({
           const <double>[0, 0.35, 1],
           luminousEaseOut,
         );
-      case LuminousWordReveal.fast:
+      case LyricVisualizerWordReveal.fast:
         return luminousKeyframes(
           dt,
           _clampD(schedule.duration, 0.12, 0.2),
@@ -453,7 +405,7 @@ double luminousGlowAt({
           const <double>[0, 0.4, 1],
           luminousEaseInOut,
         );
-      case LuminousWordReveal.normal:
+      case LyricVisualizerWordReveal.normal:
         if (glyphCount > 1) {
           // 逐字母扫光：每个字形按自己的起点延迟，持续 6 个字长，早到峰值再淡出。
           final double single = schedule.duration / glyphCount;
@@ -492,13 +444,70 @@ double luminousGlowAt({
       final double from = schedule.passedAt >= schedule.activeAt
           ? activeRamp(schedule.passedAt)
           : 0;
-      final double fade = reveal == LuminousWordReveal.instant
+      final double fade = reveal == LyricVisualizerWordReveal.instant
           ? 0.12
-          : reveal == LuminousWordReveal.fast
+          : reveal == LyricVisualizerWordReveal.fast
           ? 0.22
           : 0.9;
       return from *
           (1 - luminousTween(t - schedule.passedAt, fade, luminousEaseOut));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 副歌涟漪（folia `GlowWord` 的 Chorus Ripple）
+// ---------------------------------------------------------------------------
+
+/// 涟漪此刻的缩放与不透明度。
+@immutable
+class LuminousRipple {
+  const LuminousRipple({required this.scale, required this.opacity});
+
+  final double scale;
+  final double opacity;
+}
+
+/// 涟漪扩到的倍数：folia `1.5 + Math.random() * 2`，按行起点 [seed]（秒）与词序确定性取。
+double luminousRippleScale(double seed, int wordIndex) {
+  final double x =
+      math.sin(seed * 7.13 + wordIndex * 12.9898 + 97) * 43758.5453;
+  return 1.5 + (x - x.floorToDouble()) * 2;
+}
+
+/// 副歌行上一个词的涟漪：active 时 0.5 秒 easeOut 从 0.2 倍扩到 [maxScale] 倍、不透明度
+/// 0.8→0；离开 active 时（AnimatePresence exit）从当时的不透明度 0.5 秒淡到 0。null = 不画。
+LuminousRipple? luminousRippleAt({
+  required double t,
+  required LuminousWordSchedule schedule,
+  required double maxScale,
+}) {
+  LuminousRipple at(double time) {
+    final double p = luminousTween(
+      time - schedule.activeAt,
+      0.5,
+      luminousEaseOut,
+    );
+    return LuminousRipple(
+      scale: _lerp(0.2, maxScale, p),
+      opacity: _lerp(0.8, 0, p),
+    );
+  }
+
+  switch (schedule.stateAt(t)) {
+    case LuminousWordState.waiting:
+      return null;
+    case LuminousWordState.active:
+      return at(t);
+    case LuminousWordState.passed:
+      if (schedule.passedAt < schedule.activeAt) return null;
+      final LuminousRipple from = at(schedule.passedAt);
+      final double p = luminousTween(
+        t - schedule.passedAt,
+        0.5,
+        luminousEaseOut,
+      );
+      if (p >= 1 || from.opacity <= 0) return null;
+      return LuminousRipple(scale: from.scale, opacity: from.opacity * (1 - p));
   }
 }
 
@@ -530,28 +539,29 @@ class LuminousLineFx {
 }
 
 /// 离场时长（秒）。
-double luminousLineExitDuration(LuminousLineTransition mode) => switch (mode) {
-  LuminousLineTransition.none => 0.12,
-  LuminousLineTransition.fast => 0.16,
-  LuminousLineTransition.normal => 0.3,
-};
+double luminousLineExitDuration(LyricVisualizerLineTransition mode) =>
+    switch (mode) {
+      LyricVisualizerLineTransition.none => 0.12,
+      LyricVisualizerLineTransition.fast => 0.16,
+      LyricVisualizerLineTransition.normal => 0.3,
+    };
 
 /// 入场：[sinceEnter] 是行挂上后经过的秒数。
 LuminousLineFx luminousLineEnterFx(
-  LuminousLineTransition mode,
+  LyricVisualizerLineTransition mode,
   double sinceEnter,
 ) {
   switch (mode) {
-    case LuminousLineTransition.none:
+    case LyricVisualizerLineTransition.none:
       return LuminousLineFx.steady;
-    case LuminousLineTransition.fast:
+    case LyricVisualizerLineTransition.fast:
       final double p = luminousTween(sinceEnter, 0.16, luminousEaseOut);
       return LuminousLineFx(
         opacity: _lerp(0.35, 1, p),
         scale: _lerp(0.96, 1, p),
         blur: _lerp(4, 0, p),
       );
-    case LuminousLineTransition.normal:
+    case LyricVisualizerLineTransition.normal:
       // framer 默认：不透明度 / 模糊 0.3 秒补间，缩放走默认弹簧（这里用同一弹簧）。
       final double p = luminousTween(sinceEnter, 0.3, luminousEaseOut);
       final double s = luminousSpring(sinceEnter, stiffness: 100, damping: 20);
@@ -565,26 +575,26 @@ LuminousLineFx luminousLineEnterFx(
 
 /// 离场：[sinceExit] 是开始离场后经过的秒数。
 LuminousLineFx luminousLineExitFx(
-  LuminousLineTransition mode,
+  LyricVisualizerLineTransition mode,
   double sinceExit,
 ) {
   final double d = luminousLineExitDuration(mode);
   switch (mode) {
-    case LuminousLineTransition.none:
+    case LyricVisualizerLineTransition.none:
       final double p = luminousTween(sinceExit, d, luminousEaseOut);
       return LuminousLineFx(
         opacity: 1 - p,
         scale: _lerp(1, 1.02, p),
         blur: 6 * p,
       );
-    case LuminousLineTransition.fast:
+    case LyricVisualizerLineTransition.fast:
       final double p = luminousTween(sinceExit, d, luminousEaseInOut);
       return LuminousLineFx(
         opacity: 1 - p,
         scale: _lerp(1, 1.04, p),
         blur: 10 * p,
       );
-    case LuminousLineTransition.normal:
+    case LyricVisualizerLineTransition.normal:
       final double p = luminousTween(sinceExit, d, luminousEaseOut);
       return LuminousLineFx(
         opacity: 1 - p,
@@ -614,13 +624,13 @@ class LuminousBreath {
 LuminousBreath luminousBreathAt(
   double elapsed,
   double multiplier,
-  LuminousIntensity intensity,
+  LyricVisualizerIntensity intensity,
 ) {
   if (multiplier <= 0) return LuminousBreath.none;
   final (double distance, double period) = switch (intensity) {
-    LuminousIntensity.calm => (10.0, 8.5),
-    LuminousIntensity.normal => (14.0, 7.0),
-    LuminousIntensity.chaotic => (18.0, 5.8),
+    LyricVisualizerIntensity.calm => (10.0, 8.5),
+    LyricVisualizerIntensity.normal => (14.0, 7.0),
+    LyricVisualizerIntensity.chaotic => (18.0, 5.8),
   };
   final double d = distance * multiplier;
   final double local = elapsed % period;

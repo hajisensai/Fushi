@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/luminous/luminous_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/luminous/luminous_timing.dart';
 
@@ -28,13 +29,10 @@ class LuminousVisibleLine {
   final bool exiting;
 }
 
-/// 这一句何时下场（秒）：渲染尾巴与下一句起点取早的（folia 的 activeLine 换行即离场）。
-double luminousLineExitAt(List<LyricVisualizerLine> lines, int i) {
-  final LuminousRenderProfile p = LuminousRenderProfile.ofLine(lines[i]);
-  double exit = p.lineRenderEnd;
-  if (i + 1 < lines.length) exit = math.min(exit, lines[i + 1].startMs / 1000);
-  return exit;
-}
+/// 这一句何时下场（秒）：共享的视觉结束（渲染尾巴与下一句起点取早的；folia 的 activeLine 换行即
+/// 离场）。
+double luminousLineExitAt(LyricVisualizerRuntime runtime, int i) =>
+    runtime.visualEndMsOf(i) / 1000;
 
 /// [t] 时刻（秒）要画的句子，离场的在前（先画、被新句盖住）。
 /// [motion] 为 false 时只画当前句，不做入场 / 离场。
@@ -50,7 +48,7 @@ List<LuminousVisibleLine> luminousVisibleLines(
   for (int i = math.max(0, last - 1); i <= last; i++) {
     final LyricVisualizerLine line = lines[i];
     final double start = line.startMs / 1000;
-    final double exitAt = luminousLineExitAt(lines, i);
+    final double exitAt = luminousLineExitAt(runtime, i);
     final LuminousRenderProfile p = LuminousRenderProfile.ofLine(line);
     if (t < exitAt) {
       out.add(
@@ -87,6 +85,8 @@ class LuminousSceneConfig {
     required this.activeColor,
     required this.fontFamily,
     required this.fontFamilyFallback,
+    this.fontWeight = FontWeight.w700,
+    this.theme,
   });
 
   final Size size;
@@ -97,9 +97,21 @@ class LuminousSceneConfig {
   final String? fontFamily;
   final List<String>? fontFamilyFallback;
 
+  /// 主题字重（folia `resolveThemeFontWeight(theme, 700)`）。
+  final FontWeight fontWeight;
+
+  /// 歌词动画主题：按词着色（folia `resolveWordColor(word, wordColors, accentColor)`）。
+  final LyricVisualizerTheme? theme;
+
+  /// 词的高亮色：主题按词着色命中就用它，否则 [activeColor]。
+  Color activeColorFor(String word) =>
+      theme?.resolveWordColor(word, activeColor) ?? activeColor;
+
   @override
   bool operator ==(Object other) =>
       other is LuminousSceneConfig &&
+      other.fontWeight == fontWeight &&
+      other.theme == theme &&
       other.size == size &&
       other.fontScale == fontScale &&
       other.params == params &&
@@ -109,8 +121,16 @@ class LuminousSceneConfig {
       listEquals(other.fontFamilyFallback, fontFamilyFallback);
 
   @override
-  int get hashCode =>
-      Object.hash(size, fontScale, params, baseColor, activeColor, fontFamily);
+  int get hashCode => Object.hash(
+    size,
+    fontScale,
+    params,
+    baseColor,
+    activeColor,
+    fontFamily,
+    fontWeight,
+    theme,
+  );
 }
 
 /// CSS text-shadow 模糊半径 → Flutter [Shadow.blurRadius]（CSS σ = r/2；Flutter σ = 0.577·b + 0.5）。
@@ -149,6 +169,8 @@ class _WordRender {
     required this.center,
     required this.size,
     required this.glows,
+    required this.activeColor,
+    required this.rippleScale,
   });
 
   final LuminousDisplayWord word;
@@ -159,6 +181,12 @@ class _WordRender {
   final Offset center;
   final Size size;
   final List<_GlyphGlow> glows;
+
+  /// 这个词的高亮色（按词着色后）。
+  final Color activeColor;
+
+  /// 副歌涟漪扩到的倍数（folia `1.5 + Math.random() * 2`，这里按行起点确定性取）。
+  final double rippleScale;
   final Map<int, TextPainter> bodies = <int, TextPainter>{};
 
   void dispose() {
@@ -182,6 +210,7 @@ class _LineRender {
     required this.fontSize,
     required this.rtl,
     required this.blockSize,
+    required this.isChorus,
   });
 
   final LuminousRenderProfile profile;
@@ -189,6 +218,9 @@ class _LineRender {
   final double fontSize;
   final bool rtl;
   final Size blockSize;
+
+  /// 副歌行（共享歌曲结构）：在唱的词外扩一圈涟漪。
+  final bool isChorus;
 
   void dispose() {
     for (final _WordRender w in words) {
@@ -320,7 +352,7 @@ class LuminousScene {
     fontFamily: _config!.fontFamily,
     fontFamilyFallback: _config!.fontFamilyFallback,
     fontSize: fontSize,
-    fontWeight: FontWeight.w700,
+    fontWeight: _config!.fontWeight,
     height: luminousLineHeight,
     leadingDistribution: TextLeadingDistribution.even,
   );
@@ -408,6 +440,8 @@ class LuminousScene {
           ),
           size: size,
           glows: glows,
+          activeColor: cfg.activeColorFor(w.text),
+          rippleScale: luminousRippleScale(line.startMs / 1000, i),
         ),
       );
     }
@@ -417,6 +451,7 @@ class LuminousScene {
       fontSize: layout.fontSize,
       rtl: rtl,
       blockSize: Size(layout.flow.width, layout.flow.height),
+      isChorus: line.isChorus,
     );
     _lines[index] = render;
     return render;
@@ -433,7 +468,7 @@ class LuminousScene {
       final LuminousSceneConfig cfg = _config!;
       final Color c = Color.lerp(
         cfg.baseColor,
-        cfg.activeColor,
+        w.activeColor,
         colorStep / _colorSteps,
       )!;
       return _layout(
@@ -446,9 +481,8 @@ class LuminousScene {
     });
   }
 
-  TextPainter _glow(_GlyphGlow g, int step, _LineRender line) {
+  TextPainter _glow(_GlyphGlow g, int step, _LineRender line, Color c) {
     return g.painters.putIfAbsent(step, () {
-      final Color c = _config!.activeColor;
       final double a = step / _glowSteps;
       final (double inner, double outer) = luminousGlowRadii(
         line.profile.wordReveal,
@@ -550,6 +584,32 @@ class LuminousScene {
     canvas.restore();
   }
 
+  /// 副歌涟漪（folia `GlowWord` 的 Chorus Ripple）：词进入 active 时从词心起一圈 1px 细环（直径
+  /// 是词框高的 150%、模糊 1px），0.5 秒 easeOut 从 0.2 倍扩到 [_WordRender.rippleScale] 倍、
+  /// 不透明度 0.8→0；词离开 active 时没放完的环 0.5 秒淡出。画在正文下面（z-0）。
+  void _paintRipple(Canvas canvas, _WordRender w, double t, double opacity) {
+    final LuminousRipple? r = luminousRippleAt(
+      t: t,
+      schedule: w.schedule,
+      maxScale: w.rippleScale,
+    );
+    if (r == null) return;
+    final double a = (r.opacity * opacity).clamp(0.0, 1.0);
+    if (a <= 0.004) return;
+    canvas.save();
+    canvas.scale(r.scale);
+    canvas.drawCircle(
+      Offset.zero,
+      w.size.height * 0.75,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = w.activeColor.withValues(alpha: w.activeColor.a * a)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1),
+    );
+    canvas.restore();
+  }
+
   /// 减弱动态效果：词停在布局姿态，不旋转漂移、不发光；唱过 / 在唱 / 未唱只靠颜色和透明度区分。
   void _paintStaticWord(
     Canvas canvas,
@@ -587,7 +647,7 @@ class LuminousScene {
       intensity: params.intensity,
     );
     if (pose.opacity <= 0.004) return;
-    final LuminousWordReveal reveal = line.profile.wordReveal;
+    final LyricVisualizerWordReveal reveal = line.profile.wordReveal;
     final LuminousBodyState body = luminousBodyAt(
       t: t,
       schedule: w.schedule,
@@ -618,6 +678,7 @@ class LuminousScene {
     canvas.translate(w.center.dx + pose.x, w.center.dy + pose.y);
     canvas.scale(pose.scale);
     canvas.rotate(pose.rotate * math.pi / 180);
+    if (line.isChorus) _paintRipple(canvas, w, t, pose.opacity);
     if (!glowing && !blurred) {
       // 常见情况：不开图层，透明度烘进字色。
       _body(
@@ -641,7 +702,12 @@ class LuminousScene {
       for (int i = 0; i < w.glows.length; i++) {
         if (glowSteps[i] <= 0) continue;
         final _GlyphGlow g = w.glows[i];
-        _glow(g, glowSteps[i], line).paint(canvas, topLeft + g.offset);
+        _glow(
+          g,
+          glowSteps[i],
+          line,
+          w.activeColor,
+        ).paint(canvas, topLeft + g.offset);
       }
     }
     final TextPainter bodyPainter = _body(w, line, colorStep, _alphaSteps);
