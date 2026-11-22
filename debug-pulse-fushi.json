@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T06:57:34Z",
+ "generatedAt": "2026-11-22T07:12:06Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "c1d0c1e0902a1611c8a043174216f0021530214f",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "00145ef40004370c9824486ddb434a473b3fa528",
    "unknown": false,
-   "publishedAt": "2026-11-22T06:57:25Z",
-   "testflight": false,
+   "publishedAt": "2026-11-22T07:11:52Z",
+   "testflight": true,
    "baseSeq": 31242,
    "prs": [
     4148,
@@ -26,16 +26,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44990397606"
+     "state": "ok"
     }
    }
   },
@@ -169,50 +166,6 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
     }
    }
-  },
-  {
-   "seq": 31104,
-   "version": "3.4.0",
-   "sha": "d98d1bb3d8fa51b72356f2a6e838e3c76a28e410",
-   "unknown": false,
-   "publishedAt": "2026-11-22T03:41:13Z",
-   "testflight": true,
-   "baseSeq": 31049,
-   "prs": [
-    4108,
-    4107,
-    4106,
-    4105,
-    4104,
-    4103,
-    4101,
-    4113,
-    4027,
-    3999,
-    4032
-   ],
-   "direct": [
-    {
-     "sha": "704de29ee5dcbf4bae575276e12906efeeaa3956",
-     "subject": "chore(bugs): settle BUG number collisions on 2f621d3d8"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44975076587"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
@@ -242,42 +195,6 @@
   }
  },
  "prs": {
-  "3999": {
-   "number": 3999,
-   "title": "fix(torrent): 双栈下 DHT 节点数被空实例覆盖成 0 的误报（BUG-5070）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-22T01:13:02Z",
-   "additions": 103,
-   "deletions": 15,
-   "labels": []
-  },
-  "4027": {
-   "number": 4027,
-   "title": "feat(ios-inbox): iTunes 文件共享放在根上的文件导入时确认收进分类目录（拍板台 kmfCiXlIU_）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T01:15:09Z",
-   "additions": 656,
-   "deletions": 1,
-   "labels": []
-  },
-  "4032": {
-   "number": 4032,
-   "title": "feat(music): 音声 / ASMR 专辑按 RJ 编号取 DLsite 资料（拍板台 NCzkl6oLnf）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T01:12:53Z",
-   "additions": 2007,
-   "deletions": 40,
-   "labels": []
-  },
-  "4101": {
-   "number": 4101,
-   "title": "fix(browser-extension): 词典弹窗内悬停扫词也认扫描延迟（BUG-5175）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:11:17Z",
-   "additions": 460,
-   "deletions": 20,
-   "labels": []
-  },
   "4102": {
    "number": 4102,
    "title": "fix(music): 歌词页流体背景默认改 Pixi 渲染器，老用户跟着切（BUG-5167）",
@@ -285,60 +202,6 @@
    "mergedAt": "2026-11-22T02:15:45Z",
    "additions": 92,
    "deletions": 19,
-   "labels": []
-  },
-  "4103": {
-   "number": 4103,
-   "title": "fix(tags): 标签 chip 鼠标也长按才重排，按下就拖归横滚（BUG-5174）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:11:54Z",
-   "additions": 374,
-   "deletions": 140,
-   "labels": []
-  },
-  "4104": {
-   "number": 4104,
-   "title": "fix(sync): Google Drive 令牌刷新不再关掉并行通道在用的连接（BUG-5169）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:12:14Z",
-   "additions": 447,
-   "deletions": 63,
-   "labels": []
-  },
-  "4105": {
-   "number": 4105,
-   "title": "fix: 整理记录页页头重叠、反馈详情页粘贴截图、书架继续卡右键菜单（BUG-5171/5172/5173）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:12:34Z",
-   "additions": 623,
-   "deletions": 34,
-   "labels": []
-  },
-  "4106": {
-   "number": 4106,
-   "title": "fix(update): 下载浮层点「隐藏」后再检查更新能拉回进度（BUG-5168）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:12:53Z",
-   "additions": 211,
-   "deletions": 47,
-   "labels": []
-  },
-  "4107": {
-   "number": 4107,
-   "title": "fix(diagnostics): ColorOS 权限变更杀进程与 API<30 后台回收不再误报闪退",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:13:12Z",
-   "additions": 167,
-   "deletions": 10,
-   "labels": []
-  },
-  "4108": {
-   "number": 4108,
-   "title": "fix(video): 暂停 OCR 点字按几何裁决命中 + 点字诊断（BUG-5177，反馈 WgeFHwdQ65）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:13:31Z",
-   "additions": 337,
-   "deletions": 34,
    "labels": []
   },
   "4109": {
@@ -375,15 +238,6 @@
    "mergedAt": "2026-11-22T02:15:10Z",
    "additions": 757,
    "deletions": 73,
-   "labels": []
-  },
-  "4113": {
-   "number": 4113,
-   "title": "perf(fsrs): gen4 派生层只解修改头部 + 重建分段计时与规模基准（BUG-5137）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T02:10:58Z",
-   "additions": 708,
-   "deletions": 88,
    "labels": []
   },
   "4114": {
