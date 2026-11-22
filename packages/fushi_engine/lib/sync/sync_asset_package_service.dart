@@ -509,12 +509,14 @@ class SyncAssetPackageService {
         bookKey: bookKey,
         uid: _stringValue(srtBook, 'uid'),
       );
+      final String importedSrtUid =
+          existingSrt?.uid ?? _stringValue(srtBook, 'uid');
       await _db.upsertSrtBook(
         SrtBooksCompanion.insert(
           id: existingSrt == null
               ? const Value.absent()
               : Value(existingSrt.id),
-          uid: existingSrt?.uid ?? _stringValue(srtBook, 'uid'),
+          uid: importedSrtUid,
           title: _stringValue(srtBook, 'title'),
           author: Value(_nullableString(srtBook, 'author')),
           audioRoot: Value(targetDir.path),
@@ -525,6 +527,7 @@ class SyncAssetPackageService {
           bookKey: Value(bookKey),
         ),
       );
+      await _db.inheritPairedSrtCollections(srtUid: importedSrtUid);
 
       // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
       // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
@@ -536,8 +539,6 @@ class SyncAssetPackageService {
             ]
           : const <String>[];
       if (srtTagNames.isNotEmpty) {
-        final String importedSrtUid =
-            existingSrt?.uid ?? _stringValue(srtBook, 'uid');
         for (final String name in srtTagNames) {
           if (name.isEmpty) continue;
           final int tagId = await _db.getOrCreateTagByName(name);

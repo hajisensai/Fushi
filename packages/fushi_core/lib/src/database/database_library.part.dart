@@ -1501,6 +1501,124 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     }
   });
 
+  /// 配对有声书（`srt_books.book_key` 非空，书架上由 SRT 卡顶替原书卡）继承原书
+  /// （`epub|<uid>`，旧行 `epub|<bookKey>`）所属合集：每个「原书在、SRT 不在、且该
+  /// 合集没有 `('srt', srtUid)` 成员移出墓碑」的合集补一行 `('srt', srtUid)`，紧邻
+  /// 原书之后，全表落成致密 `sortIndex`。
+  ///
+  /// 为什么落库而不是在渲染层把 SRT 卡映射到原书的归属：合集归属的消费方遍布书架
+  /// 折叠、合集详情、首页、互联 host、操作目录、制卡溯源……每处都得记得「被顶替的
+  /// 书去查原书键」是纪律不是结构；成员行在库里，所有消费方天然一致。
+  ///
+  /// 判据按**合集逐个**算，不是「SRT 已在任一合集就整体跳过」：原书同属 A、B 而 SRT
+  /// 只在 A 时 B 里同样要补，否则 B 的书架卡与详情页少这一卷。用户意图由成员墓碑
+  /// 表达——用户从某合集移出过这张卡（墓碑键非 epub 域原样 = srt uid）就不再加回。
+  /// 只对支持有声书的格式（[BookFormat.supportsAudiobook]，与顶替规则同口径）生效。
+  ///
+  /// 自动整理：不 bump `orderUpdatedAt`、不接管合集（[reorderCollectionItemsAutomatically]
+  /// 同一不变量）；`pinnedByUser` 继承原书行（SRT 卡是原书在书架上的替身）。
+  ///
+  /// 一条集合查询选出全部缺口（稳态返回空集，可放在 `BookSeriesGrouper.groupAll`
+  /// 这种热路径上），只对真缺的合集写。[srtUid] 给定时只处理这一本（导入 / 制作
+  /// 落库后调用，须在 `srt_books` 行写好 `book_key` 之后）。返回实际补过行的合集 id。
+  Future<List<int>> inheritPairedSrtCollections({
+    String? srtUid,
+  }) => transaction(() async {
+    final String epub = MediaKind.epub.dbValue;
+    final String srt = MediaKind.srt.dbValue;
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.collection_id AS cid, s.uid AS srt_uid, '
+      '       i.entry_key AS anchor, i.pinned_by_user AS pinned, '
+      '       e.format AS format '
+      'FROM srt_books s '
+      'JOIN epub_books e ON e.book_key = s.book_key '
+      'JOIN media_collection_items i '
+      '  ON i.media_type = ?1 '
+      " AND (i.entry_key = e.book_key OR (e.uid <> '' AND i.entry_key = e.uid)) "
+      'JOIN media_collections c ON c.id = i.collection_id '
+      "WHERE s.book_key <> '' AND s.uid <> '' "
+      '${srtUid == null ? '' : 'AND s.uid = ?3 '}'
+      'AND NOT EXISTS (SELECT 1 FROM media_collection_items x '
+      '  WHERE x.collection_id = i.collection_id '
+      '    AND x.media_type = ?2 AND x.entry_key = s.uid) '
+      'AND NOT EXISTS (SELECT 1 FROM collection_member_tombstones t '
+      '  WHERE t.collection_name = c.name '
+      '    AND t.collection_type = c.collection_type '
+      '    AND t.media_type = ?2 AND t.entry_key = s.uid) '
+      'ORDER BY i.collection_id, s.uid, i.sort_index, i.entry_key',
+      variables: <Variable<Object>>[
+        Variable<String>(epub),
+        Variable<String>(srt),
+        if (srtUid != null) Variable<String>(srtUid),
+      ],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+        srtBooks,
+        epubBooks,
+        mediaCollectionItems,
+        mediaCollections,
+        collectionMemberTombstones,
+      },
+    ).get();
+    // collectionId → srtUid → (原书成员键, pinned)。原书同时挂 uid 与 bookKey
+    // 两行时取排序靠前那行当锚点，pinned 取或。
+    final Map<int, Map<String, ({String anchor, bool pinned})>> gaps =
+        <int, Map<String, ({String anchor, bool pinned})>>{};
+    for (final QueryRow r in rows) {
+      if (!BookFormat.parseOrEpub(r.read<String>('format')).supportsAudiobook) {
+        continue;
+      }
+      final Map<String, ({String anchor, bool pinned})> byUid = gaps
+          .putIfAbsent(
+            r.read<int>('cid'),
+            () => <String, ({String anchor, bool pinned})>{},
+          );
+      final String uid = r.read<String>('srt_uid');
+      final bool pinned = r.read<bool>('pinned');
+      final ({String anchor, bool pinned})? prev = byUid[uid];
+      byUid[uid] = prev == null
+          ? (anchor: r.read<String>('anchor'), pinned: pinned)
+          : (anchor: prev.anchor, pinned: prev.pinned || pinned);
+    }
+    final List<int> updated = gaps.keys.toList()..sort();
+    for (final int collectionId in updated) {
+      final Map<String, ({String anchor, bool pinned})> byUid =
+          gaps[collectionId]!;
+      final Map<String, List<CollectionMemberKey>> afterAnchor =
+          <String, List<CollectionMemberKey>>{};
+      for (final MapEntry<String, ({String anchor, bool pinned})> g
+          in byUid.entries) {
+        await into(mediaCollectionItems).insert(
+          MediaCollectionItemsCompanion.insert(
+            collectionId: collectionId,
+            mediaType: srt,
+            entryKey: g.key,
+            pinnedByUser: Value<bool>(g.value.pinned),
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+        afterAnchor
+            .putIfAbsent(g.value.anchor, () => <CollectionMemberKey>[])
+            .add((mediaType: srt, entryKey: g.key));
+      }
+      final List<CollectionMemberKey> order = <CollectionMemberKey>[];
+      for (final MediaCollectionItemRow item in await getCollectionItems(
+        collectionId,
+      )) {
+        if (item.mediaType == srt && byUid.containsKey(item.entryKey)) {
+          continue; // 新插入的行由下面的锚点带入。
+        }
+        order.add((mediaType: item.mediaType, entryKey: item.entryKey));
+        if (item.mediaType == epub) {
+          order.addAll(
+            afterAnchor[item.entryKey] ?? const <CollectionMemberKey>[],
+          );
+        }
+      }
+      await _writeDenseCollectionOrder(collectionId, order);
+    }
+    return updated;
+  });
+
   /// uid → bookKey 反向换算口（v83；resolveEpubBookUid 的对偶，住本 mixin 是
   /// 因为 on 链拓扑——misc mixin 在本 mixin 之上）。出 wire / 写 bookKey 域
   /// 墓碑前用。书不在库返回 null——透传行（远端 epub 的 entryKey 本就是对端
@@ -1763,15 +1881,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       subset: ordered,
       keyOf: (CollectionMemberKey k) => k,
     );
-    for (int i = 0; i < merged.length; i++) {
-      await (update(mediaCollectionItems)..where(
-            (t) =>
-                t.collectionId.equals(collectionId) &
-                t.mediaType.equals(merged[i].mediaType) &
-                t.entryKey.equals(merged[i].entryKey),
-          ))
-          .write(MediaCollectionItemsCompanion(sortIndex: Value(i)));
-    }
+    await _writeDenseCollectionOrder(collectionId, merged);
     if (bumpOrderUpdatedAt) {
       await (update(
         mediaCollections,
@@ -1782,6 +1892,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       );
     }
   });
+
+  /// 把 [order]（须是该合集**全表**成员的新顺序）落成致密 `sortIndex = 0..n-1`。
+  /// 合集成员序的唯一写入口：手动 / 自动重排与配对有声书继承合集
+  /// （[inheritPairedSrtCollections]）共用，不变量只在这一处。调用方负责事务。
+  Future<void> _writeDenseCollectionOrder(
+    int collectionId,
+    List<CollectionMemberKey> order,
+  ) async {
+    for (int i = 0; i < order.length; i++) {
+      await (update(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(order[i].mediaType) &
+                t.entryKey.equals(order[i].entryKey),
+          ))
+          .write(MediaCollectionItemsCompanion(sortIndex: Value<int>(i)));
+    }
+  }
 
   /// 删条目时清其全部合集引用（逻辑外键无 DB cascade，删书路径主动调用）；被清空的
   /// 合集随之删除。

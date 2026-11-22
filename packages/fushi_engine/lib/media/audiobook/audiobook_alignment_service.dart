@@ -501,7 +501,6 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// 在当前步骤结束后生效。开始持久化（0.8）之后不再检查——那之后是提交阶段。
 Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   required FushiDatabase db,
-  required SrtBookRepository repo,
   required AudiobookRepository audiobookRepo,
   required String bookKey,
   required String title,
@@ -671,7 +670,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
           }
           await audiobookRepo.writeHealth(bookKey: bookKey, health: health);
           await writeEpubBackedSrtBook(
-            repo: repo,
+            db: db,
             bookKey: bookKey,
             title: title,
             author: author,
@@ -771,7 +770,6 @@ Future<List<String>> replaceAudiobookAudio({
     final EpubBookRow? body = await db.getEpubBook(bookKey);
     final AudiobookAlignmentResult result = await alignAndPersistAudiobook(
       db: db,
-      repo: SrtBookRepository(db),
       audiobookRepo: audiobookRepo,
       bookKey: bookKey,
       title: body?.title ?? bookKey,
