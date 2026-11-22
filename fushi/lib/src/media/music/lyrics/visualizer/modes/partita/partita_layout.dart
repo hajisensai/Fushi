@@ -20,24 +20,6 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime
 // 参数
 // ---------------------------------------------------------------------------
 
-/// folia 的 `theme.animationIntensity`（这里没有 AI 主题，做成样式参数）。
-enum PartitaIntensity {
-  calm('calm'),
-  normal('normal'),
-  chaotic('chaotic');
-
-  const PartitaIntensity(this.key);
-
-  final String key;
-
-  static PartitaIntensity fromKey(String key) {
-    for (final PartitaIntensity v in values) {
-      if (v.key == key) return v;
-    }
-    return normal;
-  }
-}
-
 /// 参数键（落库，冻结；与 folia `PartitaTuning` 字段同名）。
 abstract final class PartitaTuningKeys {
   static const String showGuideLines = 'showGuideLines';
@@ -45,7 +27,6 @@ abstract final class PartitaTuningKeys {
   static const String staggerMin = 'staggerMin';
   static const String staggerMax = 'staggerMax';
   static const String avoidOverlap = 'avoidOverlap';
-  static const String intensity = 'intensity';
 }
 
 /// 规整后的参数（folia `resolvePartitaTuning`：两端夹到 0–180，小的在前）。
@@ -57,12 +38,14 @@ class PartitaSettings {
     this.staggerMin = 20,
     this.staggerMax = 100,
     this.avoidOverlap = false,
-    this.intensity = PartitaIntensity.normal,
+    this.intensity = LyricVisualizerIntensity.normal,
   });
 
+  /// [intensity] 是共享的动画强度（`context.intensity`：主题指定或全局偏好）。
   factory PartitaSettings.fromTuning(
     LyricVisualizerTuning tuning, {
     required bool motion,
+    LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
   }) {
     final double a = tuning
         .number(PartitaTuningKeys.staggerMin, 20)
@@ -77,11 +60,7 @@ class PartitaSettings {
       staggerMax: math.max(a, b),
       avoidOverlap: tuning.flag(PartitaTuningKeys.avoidOverlap, false),
       // 减弱动态效果：按 calm 排（不抖、不随机放大）。
-      intensity: motion
-          ? PartitaIntensity.fromKey(
-              tuning.choice(PartitaTuningKeys.intensity, 'normal'),
-            )
-          : PartitaIntensity.calm,
+      intensity: motion ? intensity : LyricVisualizerIntensity.calm,
     );
   }
 
@@ -90,12 +69,12 @@ class PartitaSettings {
   final double staggerMin;
   final double staggerMax;
   final bool avoidOverlap;
-  final PartitaIntensity intensity;
+  final LyricVisualizerIntensity intensity;
 
   /// 布局缓存键里的参数部分（引导线不影响布局，但 folia 也带上了，这里照抄无害）。
   String get cacheKey =>
       '${useSemanticLayout ? 1 : 0}|$staggerMin|$staggerMax|'
-      '${avoidOverlap ? 1 : 0}|${intensity.key}';
+      '${avoidOverlap ? 1 : 0}|${intensity.prefValue}';
 }
 
 // ---------------------------------------------------------------------------
@@ -216,57 +195,26 @@ List<PartitaUnit> applyPartitaStickyPunctuation(List<PartitaUnit> units) {
 }
 
 /// 单字的书写系统（语义分组的启发式用）。
-enum _Script { han, hiragana, katakana, hangul, other }
+bool _isCjkScript(LyricVisualizerScript s) =>
+    s == LyricVisualizerScript.han ||
+    s == LyricVisualizerScript.hiragana ||
+    s == LyricVisualizerScript.katakana ||
+    s == LyricVisualizerScript.hangul;
 
-_Script _scriptOf(String text) {
-  if (text.isEmpty) return _Script.other;
-  final int c = text.runes.first;
-  if ((c >= 0xAC00 && c <= 0xD7AF) ||
-      (c >= 0x1100 && c <= 0x11FF) ||
-      (c >= 0x3130 && c <= 0x318F)) {
-    return _Script.hangul;
-  }
-  if ((c >= 0x30A0 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF)) {
-    return _Script.katakana;
-  }
-  if (c >= 0x3040 && c <= 0x309F) return _Script.hiragana;
-  if ((c >= 0x4E00 && c <= 0x9FFF) ||
-      (c >= 0x3400 && c <= 0x4DBF) ||
-      (c >= 0xF900 && c <= 0xFAFF) ||
-      (c >= 0x20000 && c <= 0x2FA1F) ||
-      c == 0x3005) {
-    return _Script.han;
-  }
-  return _Script.other;
-}
-
-/// 把 [n] 个字切成每段约 [size] 个；余数并进最后一段（只剩 1 个时不单独成段）。
-List<int> _splitEven(int n, int size) {
-  if (n <= size) return <int>[n];
-  final List<int> out = <int>[];
-  int left = n;
-  while (left > 0) {
-    if (left <= size + 1 && left > size) {
-      // 余 1 个：并进这一段。
-      out.add(left);
-      break;
-    }
-    final int take = math.min(size, left);
-    out.add(take);
-    left -= take;
-  }
-  return out;
-}
-
-/// CJK 语义分组（代替 folia 的 Intl.Segmenter / AI 分词）：只在「紧挨着、没有空白」的
-/// 单字 CJK 词串里分组。韩文一串一组；片假名一串一组；汉字两两一组（余一并进前组）；
-/// 紧跟汉字 / 片假名的 1–2 个平假名（送假名、助词）并进前组，其余平假名每 ≤3 字一组。
+/// CJK 语义分组（folia `buildCjkSemanticLayoutUnits`）：按共享词级分组
+/// （[LyricVisualizerLine.segments]）把同一个词组里连续的 CJK 单字词合成一个单元（两个字以上即
+/// 语义单元），其余词各成一个单元；粘连标点留给 [applyPartitaStickyPunctuation]。
 List<PartitaUnit> _semanticUnits(LyricVisualizerLine line) {
   final List<LyricVisualizerWord> words = line.words;
   final List<PartitaUnit> out = <PartitaUnit>[];
-  int i = 0;
-  bool adjacent(LyricVisualizerWord a, LyricVisualizerWord b) =>
-      b.firstGlyph == a.firstGlyph + a.glyphCount;
+  final List<int> segOfGlyph = List<int>.filled(line.glyphs.length, -1);
+  final List<LyricVisualizerSegment> segments = line.segments;
+  for (int si = 0; si < segments.length; si++) {
+    final LyricVisualizerSegment seg = segments[si];
+    for (int g = seg.firstGlyph; g < seg.firstGlyph + seg.glyphCount; g++) {
+      if (g >= 0 && g < segOfGlyph.length) segOfGlyph[g] = si;
+    }
+  }
 
   PartitaUnit unitOf(List<LyricVisualizerWord> ws) => PartitaUnit(
     words: ws,
@@ -274,48 +222,28 @@ List<PartitaUnit> _semanticUnits(LyricVisualizerLine line) {
     isSemantic: ws.length > 1,
   );
 
+  bool isCjkWord(LyricVisualizerWord w) =>
+      w.text.characters.length == 1 &&
+      _isCjkScript(lyricVisualizerScriptOf(w.text));
+
+  int segOf(LyricVisualizerWord w) =>
+      w.firstGlyph >= 0 && w.firstGlyph < segOfGlyph.length
+      ? segOfGlyph[w.firstGlyph]
+      : -1;
+
+  int i = 0;
   while (i < words.length) {
-    final _Script s = _scriptOf(words[i].text);
-    if (s == _Script.other || words[i].text.characters.length != 1) {
+    if (!isCjkWord(words[i]) || segOf(words[i]) < 0) {
       out.add(unitOf(<LyricVisualizerWord>[words[i]]));
       i++;
       continue;
     }
-    // 收一段同书写系统、紧挨着的单字词。
+    final int seg = segOf(words[i]);
     int j = i + 1;
-    while (j < words.length &&
-        adjacent(words[j - 1], words[j]) &&
-        words[j].text.characters.length == 1 &&
-        _scriptOf(words[j].text) == s) {
+    while (j < words.length && isCjkWord(words[j]) && segOf(words[j]) == seg) {
       j++;
     }
-    final List<LyricVisualizerWord> run = words.sublist(i, j);
-    final bool followsAnchor =
-        s == _Script.hiragana &&
-        out.isNotEmpty &&
-        i > 0 &&
-        adjacent(words[i - 1], words[i]) &&
-        <_Script>{
-          _Script.han,
-          _Script.katakana,
-        }.contains(_scriptOf(words[i - 1].text));
-    int k = 0;
-    if (followsAnchor) {
-      final int glue = math.min(run.length, run.length <= 2 ? 2 : 1);
-      final PartitaUnit prev = out.removeLast();
-      out.add(unitOf(<LyricVisualizerWord>[...prev.words, ...run.take(glue)]));
-      k = glue;
-    }
-    final List<int> sizes = switch (s) {
-      _Script.hangul || _Script.katakana => <int>[run.length - k],
-      _Script.han => _splitEven(run.length, 2),
-      _ => _splitEven(run.length - k, 3),
-    };
-    for (final int n in sizes) {
-      if (n <= 0) continue;
-      out.add(unitOf(run.sublist(k, k + n)));
-      k += n;
-    }
+    out.add(unitOf(words.sublist(i, j)));
     i = j;
   }
   return out;
@@ -477,18 +405,18 @@ double _frac(double v) => v - v.floorToDouble();
 List<PartitaPose> partitaWordPoses(
   List<LyricVisualizerWord> displayWords,
   PartitaPose row,
-  PartitaIntensity intensity,
+  LyricVisualizerIntensity intensity,
 ) {
   if (displayWords.isEmpty) return const <PartitaPose>[];
   final double spread = switch (intensity) {
-    PartitaIntensity.chaotic => 15,
-    PartitaIntensity.calm => 0,
-    PartitaIntensity.normal => 6,
+    LyricVisualizerIntensity.chaotic => 15,
+    LyricVisualizerIntensity.calm => 0,
+    LyricVisualizerIntensity.normal => 6,
   };
   final double rot = switch (intensity) {
-    PartitaIntensity.chaotic => 8,
-    PartitaIntensity.calm => 0,
-    PartitaIntensity.normal => 3,
+    LyricVisualizerIntensity.chaotic => 8,
+    LyricVisualizerIntensity.calm => 0,
+    LyricVisualizerIntensity.normal => 3,
   };
   final double base = displayWords.first.startMs / 1000;
   return <PartitaPose>[
@@ -517,9 +445,9 @@ PartitaLinePlan planPartitaLine(
   required PartitaSettings settings,
   required double Function() random,
 }) {
-  final PartitaIntensity intensity = settings.intensity;
-  final bool calm = intensity == PartitaIntensity.calm;
-  final bool chaotic = intensity == PartitaIntensity.chaotic;
+  final LyricVisualizerIntensity intensity = settings.intensity;
+  final bool calm = intensity == LyricVisualizerIntensity.calm;
+  final bool chaotic = intensity == LyricVisualizerIntensity.chaotic;
   final int totalGraphemes = math.max(
     math.max(_graphemesNoSpace(line.text), line.words.length),
     1,

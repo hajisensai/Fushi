@@ -51,7 +51,7 @@ PartitaAnimState partitaWordStateAt(
   PartitaPose p,
   PartitaStateTimes times,
   int timeMs, {
-  required PartitaIntensity intensity,
+  required LyricVisualizerIntensity intensity,
 }) {
   final PartitaAnimState waiting = PartitaAnimState(
     opacity: 0,
@@ -81,7 +81,7 @@ PartitaAnimState partitaWordStateAt(
       final double sec = times.sincePassed(timeMs);
       final double e = partitaTween(sec, 0.5);
       final double r = partitaTween(sec, 5, Curves.linear);
-      final double passedOpacity = intensity == PartitaIntensity.chaotic
+      final double passedOpacity = intensity == LyricVisualizerIntensity.chaotic
           ? 0.9
           : 0.82;
       return PartitaAnimState(
@@ -139,7 +139,7 @@ PartitaAnimState partitaRowStateAt(
 double partitaBodyTintAt(
   PartitaStateTimes times,
   int durationMs,
-  PartitaWordReveal reveal,
+  LyricVisualizerWordReveal reveal,
   int timeMs,
 ) {
   double activeAt(double sec) =>
@@ -154,9 +154,9 @@ double partitaBodyTintAt(
         (times.passedAtMs - times.activeAtMs) / 1000,
       );
       final double dur = switch (reveal) {
-        PartitaWordReveal.instant => 0.12,
-        PartitaWordReveal.fast => 0.24,
-        PartitaWordReveal.normal => 0.8,
+        LyricVisualizerWordReveal.instant => 0.12,
+        LyricVisualizerWordReveal.fast => 0.24,
+        LyricVisualizerWordReveal.normal => 0.8,
       };
       return from * (1 - partitaTween(times.sincePassed(timeMs), dur));
   }
@@ -165,13 +165,13 @@ double partitaBodyTintAt(
 /// 正文模糊（CSS blur px；waiting 10 → active 清晰）。
 double partitaBodyBlurAt(
   PartitaStateTimes times,
-  PartitaWordReveal reveal,
+  LyricVisualizerWordReveal reveal,
   int timeMs,
 ) {
   final double inDur = switch (reveal) {
-    PartitaWordReveal.instant => 0.08,
-    PartitaWordReveal.fast => 0.12,
-    PartitaWordReveal.normal => 0.2,
+    LyricVisualizerWordReveal.instant => 0.08,
+    LyricVisualizerWordReveal.fast => 0.12,
+    LyricVisualizerWordReveal.normal => 0.2,
   };
   double activeAt(double sec) => 10 * (1 - partitaTween(sec, inDur));
   switch (times.phaseAt(timeMs)) {
@@ -184,9 +184,9 @@ double partitaBodyBlurAt(
         (times.passedAtMs - times.activeAtMs) / 1000,
       );
       final double dur = switch (reveal) {
-        PartitaWordReveal.instant => 0.12,
-        PartitaWordReveal.fast => 0.2,
-        PartitaWordReveal.normal => 0.5,
+        LyricVisualizerWordReveal.instant => 0.12,
+        LyricVisualizerWordReveal.fast => 0.2,
+        LyricVisualizerWordReveal.normal => 0.5,
       };
       return from * (1 - partitaTween(times.sincePassed(timeMs), dur));
   }
@@ -195,7 +195,7 @@ double partitaBodyBlurAt(
 /// 发光层一个字的强度 0–1（folia `wordGlowVariants`）。
 double partitaGlowAt({
   required PartitaStateTimes times,
-  required PartitaWordReveal reveal,
+  required LyricVisualizerWordReveal reveal,
   required int durationMs,
   required int wordStartMs,
   required int glyphStartMs,
@@ -206,7 +206,7 @@ double partitaGlowAt({
   final double dur = durationMs / 1000;
   double activeAt(double sec) {
     switch (reveal) {
-      case PartitaWordReveal.instant:
+      case LyricVisualizerWordReveal.instant:
         return partitaKeyframes(
           sec,
           math.min(dur, 0.12),
@@ -214,14 +214,14 @@ double partitaGlowAt({
           const <double>[0, 0.35, 1],
           partitaEaseOut,
         );
-      case PartitaWordReveal.fast:
+      case LyricVisualizerWordReveal.fast:
         return partitaKeyframes(
           sec,
           dur.clamp(0.12, 0.2),
           const <double>[0, 1, 0],
           const <double>[0, 0.4, 1],
         );
-      case PartitaWordReveal.normal:
+      case LyricVisualizerWordReveal.normal:
         if (perGlyph) {
           final double delay = math.max(0, glyphStartMs - wordStartMs) / 1000;
           final double cd = math.max(glyphEndMs - glyphStartMs, 1) / 1000;
@@ -252,38 +252,77 @@ double partitaGlowAt({
         (times.passedAtMs - times.activeAtMs) / 1000,
       );
       final double fade = switch (reveal) {
-        PartitaWordReveal.instant => 0.12,
-        PartitaWordReveal.fast => 0.22,
-        PartitaWordReveal.normal => 0.9,
+        LyricVisualizerWordReveal.instant => 0.12,
+        LyricVisualizerWordReveal.fast => 0.22,
+        LyricVisualizerWordReveal.normal => 0.9,
       };
       return from *
           (1 - partitaTween(times.sincePassed(timeMs), fade, partitaEaseOut));
   }
 }
 
+/// 副歌涟漪扩到的倍数：folia `1.5 + Math.random() * 2`，按词起点与字形位置确定性取。
+double partitaRippleScale(int wordStartMs, int firstGlyph) {
+  final double x =
+      math.sin(wordStartMs * 0.00713 + firstGlyph * 12.9898 + 97) * 43758.5453;
+  return 1.5 + (x - x.floorToDouble()) * 2;
+}
+
+/// 副歌涟漪此刻的缩放与不透明度；null = 不画（还没 active / 已淡完）。
+({double scale, double opacity})? partitaRippleAt({
+  required PartitaStateTimes times,
+  required int timeMs,
+  required double maxScale,
+}) {
+  ({double scale, double opacity}) at(int ms) {
+    final double p = partitaTween(
+      math.max(0, ms - times.activeAtMs) / 1000,
+      0.5,
+      partitaEaseOut,
+    );
+    return (scale: 0.2 + (maxScale - 0.2) * p, opacity: 0.8 * (1 - p));
+  }
+
+  switch (times.phaseAt(timeMs)) {
+    case PartitaPhase.waiting:
+      return null;
+    case PartitaPhase.active:
+      return at(timeMs);
+    case PartitaPhase.passed:
+      final ({double scale, double opacity}) from = at(times.passedAtMs);
+      final double p = partitaTween(
+        times.sincePassed(timeMs),
+        0.5,
+        partitaEaseOut,
+      );
+      if (p >= 1 || from.opacity <= 0) return null;
+      return (scale: from.scale, opacity: from.opacity * (1 - p));
+  }
+}
+
 /// 整句容器此刻的不透明度 / 缩放 / 模糊（folia `getGlowWordLineContainerMotion`）。
 ({double opacity, double scale, double blur}) partitaLineContainerAt({
-  required PartitaRenderProfile profile,
+  required LyricVisualizerRenderHints profile,
   required int lineStartMs,
   required int leaveAtMs,
   required int timeMs,
 }) {
   ({double opacity, double scale, double blur}) enter(double sec) {
-    switch (profile.transition) {
-      case PartitaLineTransition.normal:
+    switch (profile.lineTransition) {
+      case LyricVisualizerLineTransition.normal:
         return (
           opacity: partitaTween(sec, 0.3),
           scale: 0.9 + 0.1 * partitaSpring(sec, stiffness: 500, damping: 25),
           blur: 10 * (1 - partitaTween(sec, 0.3)),
         );
-      case PartitaLineTransition.fast:
+      case LyricVisualizerLineTransition.fast:
         final double e = partitaTween(sec, 0.16, partitaEaseOut);
         return (
           opacity: 0.35 + 0.65 * e,
           scale: 0.96 + 0.04 * e,
           blur: 4 * (1 - e),
         );
-      case PartitaLineTransition.none:
+      case LyricVisualizerLineTransition.none:
         return (opacity: 1, scale: 1, blur: 0);
     }
   }
@@ -292,14 +331,14 @@ double partitaGlowAt({
   final ({double opacity, double scale, double blur}) from = enter(
     (leaveAtMs - lineStartMs) / 1000,
   );
-  final (double s, double b, Curve c) = switch (profile.transition) {
-    PartitaLineTransition.normal => (1.1, 20.0, partitaEaseInOut),
-    PartitaLineTransition.fast => (1.04, 10.0, partitaEaseInOut),
-    PartitaLineTransition.none => (1.02, 6.0, partitaEaseOut),
+  final (double s, double b, Curve c) = switch (profile.lineTransition) {
+    LyricVisualizerLineTransition.normal => (1.1, 20.0, partitaEaseInOut),
+    LyricVisualizerLineTransition.fast => (1.04, 10.0, partitaEaseInOut),
+    LyricVisualizerLineTransition.none => (1.02, 6.0, partitaEaseOut),
   };
   final double e = partitaTween(
     (timeMs - leaveAtMs) / 1000,
-    profile.exitMs / 1000,
+    partitaLineExitMs(profile.lineTransition) / 1000,
     c,
   );
   return (
@@ -312,12 +351,12 @@ double partitaGlowAt({
 /// 歌词区的缓慢漂浮（folia `lyricContainerFloat`）：y 与缩放按关键帧循环。
 ({double y, double scale}) partitaFloatAt(
   double elapsedSec,
-  PartitaIntensity intensity,
+  LyricVisualizerIntensity intensity,
 ) {
   final (double distance, double duration) = switch (intensity) {
-    PartitaIntensity.calm => (10.0, 8.5),
-    PartitaIntensity.normal => (14.0, 7.0),
-    PartitaIntensity.chaotic => (18.0, 5.8),
+    LyricVisualizerIntensity.calm => (10.0, 8.5),
+    LyricVisualizerIntensity.normal => (14.0, 7.0),
+    LyricVisualizerIntensity.chaotic => (18.0, 5.8),
   };
   final double t = elapsedSec % duration;
   const List<double> times = <double>[0, 0.25, 0.5, 0.75, 1];
@@ -349,6 +388,7 @@ class PartitaPainter extends CustomPainter {
   }) : settings = PartitaSettings.fromTuning(
          visualizer.tuning,
          motion: visualizer.motion,
+         intensity: visualizer.intensity,
        ),
        super(repaint: ticks);
 
@@ -407,13 +447,12 @@ class PartitaPainter extends CustomPainter {
     final List<LyricVisualizerLine> lines = visualizer.runtime.lines;
     final LyricVisualizerLine line = lines[index];
     if (t < line.startMs) return;
-    final PartitaRenderProfile profile = partitaRenderProfileOf(line);
-    final int nextStart = index + 1 < lines.length
-        ? lines[index + 1].startMs
-        : 1 << 40;
-    final int leaveAt = math.min(profile.renderEndMs, nextStart);
+    final LyricVisualizerRenderHints profile = line.renderHints;
+    // 共享的视觉结束：句尾离场窗口与下一句起点取早的。
+    final int leaveAt = visualizer.runtime.visualEndMsOf(index);
     if (!_motion && t >= leaveAt) return;
-    if (_motion && t >= leaveAt + profile.exitMs) return;
+    final int exitMs = partitaLineExitMs(profile.lineTransition);
+    if (_motion && t >= leaveAt + exitMs) return;
 
     final PartitaLinePaint lp = _layout(line, size);
     final ({double opacity, double scale, double blur}) box = _motion
@@ -443,7 +482,7 @@ class PartitaPainter extends CustomPainter {
       );
     }
     for (final PartitaRowPaint row in lp.rows) {
-      _paintRow(canvas, lp, row, t, box.opacity);
+      _paintRow(canvas, lp, row, t, box.opacity, line.isChorus);
     }
     if (blurred) canvas.restore();
     canvas.restore();
@@ -455,6 +494,7 @@ class PartitaPainter extends CustomPainter {
     PartitaRowPaint row,
     int t,
     double lineOpacity,
+    bool chorus,
   ) {
     final PartitaRowPlan plan = row.plan;
     final PartitaPhase phase = row.times.phaseAt(t);
@@ -481,7 +521,7 @@ class PartitaPainter extends CustomPainter {
       _paintGuides(canvas, row, b.size, phase, t, rowOpacity);
     }
     for (final PartitaWordPaint w in row.words) {
-      _paintWord(canvas, lp, w, t, rowOpacity);
+      _paintWord(canvas, lp, w, t, rowOpacity, chorus);
     }
     canvas.restore();
   }
@@ -495,6 +535,10 @@ class PartitaPainter extends CustomPainter {
     double opacity,
   ) {
     final LyricVisualizerPalette pal = visualizer.palette;
+    // 引导线的高亮色：整个 chunk 文本按主题着色（folia `getActiveColor(chunk 文本)`）。
+    final Color active = _activeColor(
+      row.plan.displayWords.map((LyricVisualizerWord w) => w.text).join(' '),
+    );
     final double grow = switch (phase) {
       PartitaPhase.waiting => 0,
       _ =>
@@ -504,7 +548,7 @@ class PartitaPainter extends CustomPainter {
     };
     if (grow <= 0) return;
     final Color color = switch (phase) {
-      PartitaPhase.active => pal.accent,
+      PartitaPhase.active => active,
       PartitaPhase.passed => pal.text.withValues(alpha: 0.22),
       PartitaPhase.waiting => pal.text.withValues(alpha: 0.14),
     };
@@ -523,7 +567,7 @@ class PartitaPainter extends CustomPainter {
     }
     if (phase == PartitaPhase.active && _motion) {
       final Paint glow = Paint()
-        ..color = pal.accent.withValues(alpha: 0.27 * grow * opacity)
+        ..color = active.withValues(alpha: 0.27 * grow * opacity)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
       canvas.drawRect(vertical.inflate(1), glow);
       canvas.drawRect(horizontal.inflate(1), glow);
@@ -539,9 +583,11 @@ class PartitaPainter extends CustomPainter {
     PartitaWordPaint w,
     int t,
     double rowOpacity,
+    bool chorus,
   ) {
     final LyricVisualizerPalette pal = visualizer.palette;
-    final PartitaWordReveal reveal = lp.profile.reveal;
+    final Color accent = _activeColor(w.word.text);
+    final LyricVisualizerWordReveal reveal = lp.profile.wordReveal;
     final Rect b = w.box;
 
     if (!_motion) {
@@ -549,7 +595,7 @@ class PartitaPainter extends CustomPainter {
       final PartitaPhase phase = w.times.phaseAt(t);
       final Color c = switch (phase) {
         PartitaPhase.waiting => pal.dimText,
-        PartitaPhase.active => pal.accent,
+        PartitaPhase.active => accent,
         PartitaPhase.passed => pal.text.withValues(alpha: pal.text.a * 0.82),
       };
       final TextPainter tp = w.body.body(c.withValues(alpha: c.a * rowOpacity));
@@ -570,13 +616,14 @@ class PartitaPainter extends CustomPainter {
     canvas.translate(b.center.dx + s.x, b.center.dy + s.y);
     if (s.rotate != 0) canvas.rotate(s.rotate * math.pi / 180);
     canvas.scale(s.scale);
+    if (chorus) _paintRipple(canvas, w, t, opacity, accent);
     canvas.translate(-b.width / 2, -b.height / 2);
 
     // 发光层（在正文下面）。
     final (double inner, double outer) radii = switch (reveal) {
-      PartitaWordReveal.instant => (14.0, 24.0),
-      PartitaWordReveal.fast => (18.0, 32.0),
-      PartitaWordReveal.normal => (20.0, 40.0),
+      LyricVisualizerWordReveal.instant => (14.0, 24.0),
+      LyricVisualizerWordReveal.fast => (18.0, 32.0),
+      LyricVisualizerWordReveal.normal => (20.0, 40.0),
     };
     final bool perGlyph = w.glyphs.length > 1;
     for (final PartitaGlowGlyph g in w.glyphs) {
@@ -592,14 +639,12 @@ class PartitaPainter extends CustomPainter {
       );
       final double a = glow * opacity;
       if (a <= 0.02) continue;
-      g.text
-          .glow(pal.accent, a, radii.$1, radii.$2)
-          .paint(canvas, Offset(g.dx, 0));
+      g.text.glow(accent, a, radii.$1, radii.$2).paint(canvas, Offset(g.dx, 0));
     }
 
     // 正文：颜色在底色与高亮色间过渡，进 active 时去模糊。
     final double tint = partitaBodyTintAt(w.times, w.durationMs, reveal, t);
-    final Color base = Color.lerp(pal.text, pal.accent, tint)!;
+    final Color base = Color.lerp(pal.text, accent, tint)!;
     final Color color = base.withValues(alpha: base.a * opacity);
     final double blur = partitaBodyBlurAt(w.times, reveal, t);
     final bool blurred = blur > 0.3;
@@ -616,6 +661,44 @@ class PartitaPainter extends CustomPainter {
     }
     w.body.body(color).paint(canvas, Offset.zero);
     if (blurred) canvas.restore();
+    canvas.restore();
+  }
+
+  /// 词的高亮色：主题按词着色命中就用它，否则 `palette.accent`（folia `getActiveColor`）。
+  Color _activeColor(String text) {
+    final Color accent = visualizer.palette.accent;
+    return visualizer.theme?.resolveWordColor(text, accent) ?? accent;
+  }
+
+  /// 副歌涟漪（folia `GlowWord` 的 Chorus Ripple；副歌判据来自共享歌曲结构）：词在唱时从词心
+  /// 起一圈 1px 细环（直径 = 词框高 ×1.5、模糊 1px），0.5 秒 easeOut 从 0.2 倍扩到
+  /// 1.5–3.5 倍、不透明度 0.8→0；离开 active 后没放完的 0.5 秒淡出。调用时画布原点在词心。
+  void _paintRipple(
+    Canvas canvas,
+    PartitaWordPaint w,
+    int t,
+    double opacity,
+    Color color,
+  ) {
+    final ({double scale, double opacity})? r = partitaRippleAt(
+      times: w.times,
+      timeMs: t,
+      maxScale: partitaRippleScale(w.word.startMs, w.word.firstGlyph),
+    );
+    if (r == null) return;
+    final double a = (r.opacity * opacity).clamp(0.0, 1.0);
+    if (a <= 0.004) return;
+    canvas.save();
+    canvas.scale(r.scale);
+    canvas.drawCircle(
+      Offset.zero,
+      w.box.height * 0.75,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = color.withValues(alpha: color.a * a)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1),
+    );
     canvas.restore();
   }
 

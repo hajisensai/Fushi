@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 
 String _px(double v) => '${v.round()} px';
 
-/// 参数（folia `tuning.ts` 的五项 + 主题里的动画强度）。
+/// 参数（folia `tuning.ts` 的五项）。动画强度读共享的 `context.intensity`。
 final List<LyricVisualizerTuningSpec> partitaTuningSpecs =
     <LyricVisualizerTuningSpec>[
       LyricVisualizerToggleSpec(
@@ -59,25 +59,6 @@ final List<LyricVisualizerTuningSpec> partitaTuningSpecs =
         label: () => t.music_visualizer_partita_avoid_overlap,
         initial: false,
       ),
-      LyricVisualizerChoiceSpec(
-        key: PartitaTuningKeys.intensity,
-        label: () => t.music_visualizer_partita_intensity,
-        options: <(String, String Function())>[
-          (
-            PartitaIntensity.calm.key,
-            () => t.music_visualizer_partita_intensity_calm,
-          ),
-          (
-            PartitaIntensity.normal.key,
-            () => t.music_visualizer_partita_intensity_normal,
-          ),
-          (
-            PartitaIntensity.chaotic.key,
-            () => t.music_visualizer_partita_intensity_chaotic,
-          ),
-        ],
-        initial: PartitaIntensity.normal.key,
-      ),
     ];
 
 String _staggerMinLabel() => t.music_visualizer_partita_stagger_min;
@@ -91,7 +72,8 @@ final LyricVisualizerEntry partitaVisualizerEntry = LyricVisualizerEntry(
   icon: FushiIcons.sort,
   tunings: partitaTuningSpecs,
   // folia 的云阶用共享背景 + 底部译文 / 下一句字幕（VisualizerShell + SubtitleOverlay）。
-  sharedBackdrop: true,
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   sharedSubtitle: true,
   builder: (LyricVisualizerContext c) => PartitaVisualizer(context: c),
 );
@@ -120,9 +102,13 @@ class _PartitaVisualizerState extends State<PartitaVisualizer> {
     final LyricVisualizerContext c = widget.context;
     // 换了一首（新的运行时）就丢掉旧句子的排版。
     _cache.bindTo(c.runtime);
-    final TextStyle style = DefaultTextStyle.of(
-      context,
-    ).style.copyWith(decoration: TextDecoration.none);
+    // 主题字重 / 字体（folia `resolveThemeFontWeight(theme, 700)` / `resolveThemeFontStack`）。
+    final TextStyle style = c.applyThemeFont(
+      DefaultTextStyle.of(context).style.copyWith(
+        decoration: TextDecoration.none,
+        fontWeight: FontWeight.w700,
+      ),
+    );
     return LyricVisualizerFrame(
       context: c,
       builder: (BuildContext _, LyricVisualizerTicks ticks) => CustomPaint(

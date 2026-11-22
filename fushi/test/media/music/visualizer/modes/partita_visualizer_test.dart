@@ -68,7 +68,7 @@ void main() {
       expect(d.last.endMs, 1500);
     });
 
-    test('语义分组：汉字两两一组、送假名并进前组，再粘标点', () {
+    test('语义分组读共享词级分组：汉字连写成词、助词单独、再粘标点', () {
       final LyricVisualizerLine l = _line(<(String, int)>[
         ('夜', 200),
         ('空', 200),
@@ -77,7 +77,7 @@ void main() {
         ('！', 100),
       ]);
       final List<PartitaUnit> u = buildPartitaLayoutUnits(l, semantic: true);
-      expect(_texts(u), <String>['夜空に', '光！']);
+      expect(_texts(u), <String>['夜空', 'に', '光！']);
       expect(u.first.isSemantic, isTrue);
       // 语义单元显示时仍逐字。
       final List<LyricVisualizerWord> d = partitaDisplayWords(u, l.glyphs);
@@ -87,16 +87,23 @@ void main() {
         'に',
         '光！',
       ]);
+      // 片假名连写成一个语义单元。
+      final LyricVisualizerLine k = _line(<(String, int)>[
+        ('カ', 200),
+        ('ナ', 200),
+        ('の', 200),
+      ]);
+      expect(_texts(buildPartitaLayoutUnits(k, semantic: true)).first, 'カナ');
     });
 
-    test('中文长串两两分组，余一并进最后一组；关掉语义则逐字', () {
+    test('中文跟共享词级分组走（无词典逐字）；关掉语义也逐字', () {
       final LyricVisualizerLine l = _line(<(String, int)>[
         for (final String c in '我们一起走'.split('')) (c, 200),
       ]);
-      expect(_texts(buildPartitaLayoutUnits(l, semantic: true)), <String>[
-        '我们',
-        '一起走',
-      ]);
+      expect(
+        _texts(buildPartitaLayoutUnits(l, semantic: true)),
+        l.segments.map((LyricVisualizerSegment s) => s.text).toList(),
+      );
       expect(buildPartitaLayoutUnits(l, semantic: false), hasLength(5));
     });
 
@@ -174,7 +181,9 @@ void main() {
       final PartitaLinePlan calm = planPartitaLine(
         l,
         windowHeight: 720,
-        settings: const PartitaSettings(intensity: PartitaIntensity.calm),
+        settings: const PartitaSettings(
+          intensity: LyricVisualizerIntensity.calm,
+        ),
         random: LyricVisualizerRandom(7).next,
       );
       for (final PartitaRowPlan r in calm.rows) {
@@ -200,8 +209,52 @@ void main() {
       final PartitaSettings off = PartitaSettings.fromTuning(
         LyricVisualizerTuning.defaults(partitaVisualizerEntry.tunings),
         motion: false,
+        intensity: LyricVisualizerIntensity.chaotic,
       );
-      expect(off.intensity, PartitaIntensity.calm);
+      expect(off.intensity, LyricVisualizerIntensity.calm);
+      final PartitaSettings shared = PartitaSettings.fromTuning(
+        LyricVisualizerTuning.defaults(partitaVisualizerEntry.tunings),
+        motion: true,
+        intensity: LyricVisualizerIntensity.chaotic,
+      );
+      expect(shared.intensity, LyricVisualizerIntensity.chaotic);
+      expect(
+        partitaVisualizerEntry.tunings.map(
+          (LyricVisualizerTuningSpec s) => s.key,
+        ),
+        isNot(contains('intensity')),
+      );
+      expect(
+        partitaVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(partitaVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+    });
+
+    test('副歌涟漪：active 起 0.5 秒从 0.2 倍扩开淡出，唱完淡掉', () {
+      const PartitaStateTimes times = PartitaStateTimes(
+        activeAtMs: 1000,
+        passedAtMs: 1200,
+      );
+      expect(partitaRippleAt(times: times, timeMs: 900, maxScale: 3), isNull);
+      final ({double scale, double opacity}) s0 = partitaRippleAt(
+        times: times,
+        timeMs: 1000,
+        maxScale: 3,
+      )!;
+      expect(s0.scale, closeTo(0.2, 1e-9));
+      expect(s0.opacity, closeTo(0.8, 1e-9));
+      final ({double scale, double opacity}) mid = partitaRippleAt(
+        times: times,
+        timeMs: 1300,
+        maxScale: 3,
+      )!;
+      expect(mid.opacity, lessThan(s0.opacity));
+      expect(partitaRippleAt(times: times, timeMs: 1800, maxScale: 3), isNull);
+      for (int i = 0; i < 10; i++) {
+        expect(partitaRippleScale(1000 * i, i), inInclusiveRange(1.5, 3.5));
+      }
     });
   });
 
@@ -267,24 +320,21 @@ void main() {
 
   group('时序', () {
     test('按行时长分档：正常 / 短 / 极短', () {
-      final PartitaRenderProfile n = partitaRenderProfileOf(
-        _lrc('abc', 0, 2000),
-      );
-      expect(n.transition, PartitaLineTransition.normal);
-      expect(n.lookaheadMs, 150);
+      final LyricVisualizerRenderHints n = _lrc('abc', 0, 2000).renderHints;
+      expect(n.lineTransition, LyricVisualizerLineTransition.normal);
+      expect(n.wordLookaheadMs, 150);
+      expect(partitaLineExitMs(n.lineTransition), 300);
       expect(n.renderEndMs, greaterThanOrEqualTo(2000));
-      final PartitaRenderProfile f = partitaRenderProfileOf(_lrc('a', 0, 150));
-      expect(f.reveal, PartitaWordReveal.fast);
-      final PartitaRenderProfile m = partitaRenderProfileOf(_lrc('a', 0, 50));
-      expect(m.transition, PartitaLineTransition.none);
+      final LyricVisualizerRenderHints f = _lrc('a', 0, 150).renderHints;
+      expect(f.wordReveal, LyricVisualizerWordReveal.fast);
+      final LyricVisualizerRenderHints m = _lrc('a', 0, 50).renderHints;
+      expect(m.lineTransition, LyricVisualizerLineTransition.none);
       expect(m.renderEndMs, 67);
-      expect(partitaActiveEndMs(0, 10, m), m.renderEndMs);
+      expect(m.wordActiveEndMs(0, 10), m.renderEndMs);
     });
 
     test('三态切换点：预读但不早于行出现', () {
-      final PartitaRenderProfile p = partitaRenderProfileOf(
-        _lrc('abc', 1000, 3000),
-      );
+      final LyricVisualizerRenderHints p = _lrc('abc', 1000, 3000).renderHints;
       final PartitaStateTimes first = PartitaStateTimes.of(
         startMs: 1000,
         activeEndMs: 1500,
@@ -330,14 +380,14 @@ void main() {
         pose,
         times,
         500,
-        intensity: PartitaIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(w.opacity, 0);
       final PartitaAnimState a = partitaWordStateAt(
         pose,
         times,
         2900,
-        intensity: PartitaIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(a.opacity, 1);
       expect(a.scale, closeTo(1.2 * partitaActiveScale, 1e-3));
@@ -345,7 +395,7 @@ void main() {
         pose,
         times,
         3000 + 6000,
-        intensity: PartitaIntensity.normal,
+        intensity: LyricVisualizerIntensity.normal,
       );
       expect(p.opacity, closeTo(0.82, 1e-6));
       expect(p.scale, closeTo(1.2, 1e-6));
@@ -359,7 +409,7 @@ void main() {
       );
       double g(int glyphStart, int glyphEnd, bool per, int t) => partitaGlowAt(
         times: times,
-        reveal: PartitaWordReveal.normal,
+        reveal: LyricVisualizerWordReveal.normal,
         durationMs: 1000,
         wordStartMs: 0,
         glyphStartMs: glyphStart,
@@ -375,9 +425,7 @@ void main() {
     });
 
     test('整句容器：进场淡入、离场放大模糊消失', () {
-      final PartitaRenderProfile p = partitaRenderProfileOf(
-        _lrc('abc', 0, 2000),
-      );
+      final LyricVisualizerRenderHints p = _lrc('abc', 0, 2000).renderHints;
       final ({double opacity, double scale, double blur}) enter =
           partitaLineContainerAt(
             profile: p,
@@ -444,8 +492,8 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         partitaVisualizerEntry,
+        intensity: LyricVisualizerIntensity.chaotic,
         tuning: const <String, Object?>{
-          'intensity': 'chaotic',
           'avoidOverlap': true,
           'showGuideLines': false,
           'useSemanticLayout': false,
@@ -459,7 +507,41 @@ void main() {
       await pumpVisualizerAcross(
         tester,
         partitaVisualizerEntry,
-        tuning: const <String, Object?>{'intensity': 'calm'},
+        intensity: LyricVisualizerIntensity.calm,
+      );
+    });
+
+    testWidgets('副歌 + 主题按词着色 / 字重 + 音频', (WidgetTester tester) async {
+      LyricLine l(int start, String a, String b) => LyricLine(
+        startMs: start,
+        endMs: start + 1200,
+        syllables: <LyricSyllable>[
+          LyricSyllable(text: a, startMs: start, endMs: start + 500),
+          LyricSyllable(text: b, startMs: start + 500, endMs: start + 1200),
+        ],
+      );
+      final LyricTimeline tl = LyricTimeline(
+        format: 'ttml',
+        timingQuality: LyricTimingQuality.word,
+        lines: <LyricLine>[
+          l(1000, 'love ', 'you'),
+          l(3000, 'other ', 'line'),
+          l(5000, 'love ', 'you'),
+          l(7000, 'love ', 'you'),
+        ],
+      );
+      expect(LyricVisualizerRuntime(tl).lines.first.isChorus, isTrue);
+      await pumpVisualizerAcross(
+        tester,
+        partitaVisualizerEntry,
+        timeline: tl,
+        timesMs: const <int>[1100, 1300, 1700, 3100, 5200, 7600, 9000],
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'love': Color(0xFFFF4081)},
+          fontWeight: FontWeight.w300,
+          intensity: LyricVisualizerIntensity.chaotic,
+        ),
+        audio: SyntheticVisualizerAudio(),
       );
     });
 

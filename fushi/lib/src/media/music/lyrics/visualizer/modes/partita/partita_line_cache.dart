@@ -146,7 +146,7 @@ class PartitaLinePaint {
   });
 
   final LyricVisualizerLine line;
-  final PartitaRenderProfile profile;
+  final LyricVisualizerRenderHints profile;
   final List<PartitaRowPaint> rows;
   final Size blockSize;
   final double fontSize;
@@ -238,7 +238,7 @@ PartitaLinePaint buildPartitaLinePaint({
     settings: settings,
     random: rng.next,
   );
-  final PartitaRenderProfile profile = partitaRenderProfileOf(line);
+  final LyricVisualizerRenderHints profile = line.renderHints;
   final double fontSize = partitaFontSize(
     width: area.width,
     totalGraphemes: plan.totalGraphemes,
@@ -246,7 +246,7 @@ PartitaLinePaint buildPartitaLinePaint({
   );
   final TextStyle wordStyle = style.copyWith(
     fontSize: fontSize,
-    fontWeight: FontWeight.w700,
+    fontWeight: style.fontWeight ?? FontWeight.w700,
     height: partitaLineHeight,
     leadingDistribution: TextLeadingDistribution.even,
   );
@@ -295,11 +295,11 @@ PartitaLinePaint buildPartitaLinePaint({
           glyphs: _glowGlyphs(line, w, body, wordStyle),
           times: PartitaStateTimes.of(
             startMs: w.startMs,
-            activeEndMs: partitaActiveEndMs(w.startMs, w.endMs, profile),
+            activeEndMs: profile.wordActiveEndMs(w.startMs, w.endMs),
             lineStartMs: line.startMs,
             profile: profile,
           ),
-          durationMs: partitaDisplayDurationMs(w.startMs, w.endMs, profile),
+          durationMs: profile.wordDisplayDurationMs(w.startMs, w.endMs),
         ),
       );
     }
@@ -311,7 +311,7 @@ PartitaLinePaint buildPartitaLinePaint({
         words: words,
         times: PartitaStateTimes.of(
           startMs: rp.chunkWords.first.startMs,
-          activeEndMs: partitaActiveEndMs(last.startMs, last.endMs, profile),
+          activeEndMs: profile.wordActiveEndMs(last.startMs, last.endMs),
           lineStartMs: line.startMs,
           profile: profile,
         ),

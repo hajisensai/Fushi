@@ -1,5 +1,5 @@
-/// 云阶（folia partita）的时序：行级 render profile（folia `renderHints.ts` +
-/// `glowWordTiming.ts`）、词 / 行的 waiting → active → passed 三态，以及把 framer-motion 的
+/// 云阶（folia partita）的时序：行级渲染提示读共享的 `LyricVisualizerRenderHints`（folia
+/// `renderHints.ts` + `glowWordTiming.ts`），这里是词 / 行的 waiting → active → passed 三态，以及把 framer-motion 的
 /// spring / tween 过渡改写成「距状态切换多久」的解析函数，这样拖进度、倒放都能直接按时间算出姿态。
 ///
 /// 时间一律是歌词显示毫秒（folia 用秒）。
@@ -9,121 +9,21 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart';
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_hints.dart'
+    show
+        LyricVisualizerLineTransition,
+        LyricVisualizerRenderHints,
+        LyricVisualizerWordReveal;
 
-/// 整行容器的进出场方式（folia `LineTransitionMode`）。
-enum PartitaLineTransition { normal, fast, none }
-
-/// 词高亮方式（folia `WordRevealMode`）。
-enum PartitaWordReveal { normal, fast, instant }
-
-/// 一行的渲染参数（folia `GlowWordRenderProfile`）。
-@immutable
-class PartitaRenderProfile {
-  const PartitaRenderProfile({
-    required this.renderEndMs,
-    required this.transition,
-    required this.reveal,
-    required this.lookaheadMs,
-  });
-
-  /// 整行最多占到的视觉时间（folia `getLineRenderEndTime`）。
-  final int renderEndMs;
-  final PartitaLineTransition transition;
-  final PartitaWordReveal reveal;
-
-  /// 词提前进入 active 的预读量。
-  final int lookaheadMs;
-
-  /// 行离场时长（folia `getGlowWordLineContainerMotion` 的 exit）。
-  int get exitMs => switch (transition) {
-    PartitaLineTransition.normal => 300,
-    PartitaLineTransition.fast => 160,
-    PartitaLineTransition.none => 120,
-  };
-}
-
-const double _microLineSeconds = 0.10;
-const double _shortLineSeconds = 0.18;
-const double _microLineRenderFloor = 0.067;
-
-double _clampD(double v, double lo, double hi) => math.min(math.max(v, lo), hi);
-
-/// 按行时长分档并算出 render end（folia `buildLineRenderHints`）。
-PartitaRenderProfile partitaRenderProfileOf(LyricVisualizerLine line) {
-  final double start = line.startMs / 1000;
-  final double end = line.endMs / 1000;
-  final double raw = math.max(end - start, 0);
-  final PartitaLineTransition transition = raw < _microLineSeconds
-      ? PartitaLineTransition.none
-      : raw < _shortLineSeconds
-      ? PartitaLineTransition.fast
-      : PartitaLineTransition.normal;
-  final PartitaWordReveal reveal = switch (transition) {
-    PartitaLineTransition.none => PartitaWordReveal.instant,
-    PartitaLineTransition.fast => PartitaWordReveal.fast,
-    PartitaLineTransition.normal => PartitaWordReveal.normal,
-  };
-  final double lastWordEnd = line.words.isEmpty
-      ? end
-      : line.words.last.endMs / 1000;
-
-  double renderEnd;
-  if (transition == PartitaLineTransition.none) {
-    renderEnd = math.max(end, start + _microLineRenderFloor);
-  } else {
-    final double enter;
-    final double exit;
-    final double hold;
-    if (transition == PartitaLineTransition.fast) {
-      enter = _clampD(raw * 0.45, 0.045, 0.06);
-      exit = _clampD(raw * 0.22, 0.03, 0.04);
-      hold = reveal == PartitaWordReveal.instant ? 0 : 0.03;
-    } else {
-      final double basis = math.max(raw, 0.12);
-      enter = math.min(0.42, math.max(0.22, basis * 0.34));
-      exit = math.min(0.32, math.max(0.18, basis * 0.18));
-      hold = reveal == PartitaWordReveal.instant ? 0 : 0.06;
-    }
-    final double passStart = math.max(lastWordEnd, start) + hold;
-    final double exitStart = transition == PartitaLineTransition.fast
-        ? math.max(math.max(start + enter + 0.01, passStart), end - exit)
-        : math.max(passStart, end - exit);
-    renderEnd = math.max(end, exitStart + exit);
-  }
-
-  return PartitaRenderProfile(
-    renderEndMs: (renderEnd * 1000).round(),
-    transition: transition,
-    reveal: reveal,
-    lookaheadMs: switch (reveal) {
-      PartitaWordReveal.instant => 30,
-      PartitaWordReveal.fast => 80,
-      PartitaWordReveal.normal => 150,
-    },
-  );
-}
-
-/// 一个词（或一行 chunk 的最后一个词）active 的结束时刻（folia `getGlowWordActiveEndTime`）。
-int partitaActiveEndMs(int startMs, int endMs, PartitaRenderProfile p) =>
-    switch (p.reveal) {
-      PartitaWordReveal.instant => p.renderEndMs,
-      PartitaWordReveal.fast => math.min(
-        p.renderEndMs,
-        math.max(endMs, startMs + 120),
-      ),
-      PartitaWordReveal.normal => endMs,
+/// 整句容器的离场时长（folia `getGlowWordLineContainerMotion` 的 exit；与共享 renderHints 的
+/// `exitMs`（句尾离场窗口）不是一回事）。
+int partitaLineExitMs(LyricVisualizerLineTransition transition) =>
+    switch (transition) {
+      LyricVisualizerLineTransition.normal => 300,
+      LyricVisualizerLineTransition.fast => 160,
+      LyricVisualizerLineTransition.none => 120,
     };
-
-/// 词的显示时长（folia `getGlowWordDisplayDuration`），毫秒。
-int partitaDisplayDurationMs(int startMs, int endMs, PartitaRenderProfile p) {
-  final int min = switch (p.reveal) {
-    PartitaWordReveal.instant => 80,
-    PartitaWordReveal.fast => 120,
-    PartitaWordReveal.normal => 100,
-  };
-  return math.max(partitaActiveEndMs(startMs, endMs, p) - startMs, min);
-}
 
 /// 三态。
 enum PartitaPhase { waiting, active, passed }
@@ -138,9 +38,12 @@ class PartitaStateTimes {
     required int startMs,
     required int activeEndMs,
     required int lineStartMs,
-    required PartitaRenderProfile profile,
+    required LyricVisualizerRenderHints profile,
   }) {
-    final int activeAt = math.max(startMs - profile.lookaheadMs, lineStartMs);
+    final int activeAt = math.max(
+      startMs - profile.wordLookaheadMs,
+      lineStartMs,
+    );
     return PartitaStateTimes(
       activeAtMs: activeAt,
       passedAtMs: math.max(activeEndMs, activeAt),
