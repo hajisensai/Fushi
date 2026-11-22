@@ -430,6 +430,13 @@ class MachiBeatFrame {
   final List<double> swellAt = List<double>.filled(4, 0.5);
   final List<double> swellAmp = List<double>.filled(4, 0);
 
+  /// 地面干时地上光斑的一跳（0 是常态）。
+  double thump = 0;
+
+  /// 鼓点涟漪：还活着的几圈的年龄（秒，空的 -1）与幅度（空的 0），最新的在前。
+  final List<double> ringAge = List<double>.filled(machiRippleMax, -1);
+  final List<double> ringAmp = List<double>.filled(machiRippleMax, 0);
+
   void reset() {
     neonGroups.fillRange(0, machiNeonGroups, 1);
     neon = 1;
@@ -437,6 +444,9 @@ class MachiBeatFrame {
     bloom = 1;
     swellAt.fillRange(0, 4, 0.5);
     swellAmp.fillRange(0, 4, 0);
+    thump = 0;
+    ringAge.fillRange(0, machiRippleMax, -1);
+    ringAmp.fillRange(0, machiRippleMax, 0);
   }
 
   /// 第 [group] 组霓虹。
@@ -449,42 +459,170 @@ class MachiBeatFrame {
 const double _beatPeriod = 0.75;
 const int _beatsPerBar = 4;
 
-/// 一拍（folia `BeatFxEvent` 里用得到的那几项；显示时间，秒）。
-class MachiBeatEvent {
-  const MachiBeatEvent({
-    required this.t,
-    required this.downbeat,
-    required this.gain,
-  });
+/// folia `MACHI_BEAT.ripple`：环走多快（米 / 秒）、活多久（秒）、最多几圈；弱于 floor 的底鼓不算，两圈至少隔
+/// gap 秒；光斑一跳的量与衰减；路面湿度在 wet 两值之间时环渐渐出来、光斑的一跳渐渐退掉。
+const double machiRippleSpeed = 6.5;
+const double machiRippleLife = 1.3;
+const int machiRippleMax = 4;
+const double _rippleFloor = 0.3;
+const double _rippleGap = 0.33;
+const double _rippleThump = 0.55;
+const double _rippleThumpDecay = 0.14;
+const double _rippleWetFrom = 0.1;
+const double _rippleWetTo = 0.6;
 
-  final double t;
-  final bool downbeat;
+/// folia `MACHI_BEAT.screen`：每处亮起 / 暗下多久，弱于 floor 的军鼓不算，两处至少隔 gap 秒。
+const double _screenAttack = 0.25;
+const double _screenFall = 1.15;
+const double _screenFloor = 0.4;
+const double _screenGap = 0.35;
 
-  /// folia `resolveBeatFxAccentGain`：0 = 没有节奏的小节里的拍，不亮。
-  final double gain;
+/// folia `pickedDrumHits`：[hits] 里 [kind] 类、够响（≥ [floor]）、离上一个挑中的够远（≥ [gap] 秒）的那几下，
+/// 返回它们在 [hits] 里的下标（升序）。从头往后挑一次，与画哪一帧无关（窗口滑动时不会有一下忽然冒出来或消失）。
+List<int> machiPickDrumHits(
+  List<LyricVisualizerDrumHitEvent> hits,
+  LyricVisualizerDrumKind kind,
+  double floor,
+  double gap,
+) {
+  final List<int> out = <int>[];
+  double previous = double.negativeInfinity;
+  for (int i = 0; i < hits.length; i++) {
+    final LyricVisualizerDrumHitEvent h = hits[i];
+    if (h.kind != kind || h.strength < floor || h.seconds - previous < gap) {
+      continue;
+    }
+    previous = h.seconds;
+    out.add(i);
+  }
+  return out;
 }
 
-/// 音频分析 → 节拍表（显示时间，秒）。每拍的重音读该拍那一刻的 `accentImpact`（正好在拍上时就是这一拍的
-/// 峰值，folia 弱拍底 0.35）；没有重音数据时每拍按 1 算。没有节拍网格返回空表。
-List<MachiBeatEvent> machiBeatEventsOf(LyricVisualizerContext c) {
-  final LyricVisualizerAudio? audio = c.audio;
-  if (audio == null || !audio.beatsReady) return const <MachiBeatEvent>[];
-  final Set<int> downbeats = audio.downbeatTimesMs.toSet();
-  return <MachiBeatEvent>[
-    for (final int ms in audio.beatTimesMs)
-      () {
-        final double? accent = audio.frameAt(ms).accentImpact;
-        return MachiBeatEvent(
-          t: c.displayTimeOfAudio(ms) / 1000,
-          downbeat: downbeats.contains(ms),
-          gain: accent == null
-              ? 1
-              : accent <= 1e-3
-              ? 0
-              : 0.35 + 0.65 * accent.clamp(0.0, 1.0),
-        );
-      }(),
-  ];
+/// 一首歌的拍点与按 folia 规则挑好的底鼓（涟漪）、军鼓（大屏闪拍）。
+class MachiBeatTrack {
+  MachiBeatTrack(this.beats)
+    : kicks = machiPickDrumHits(
+        beats.drumHits,
+        LyricVisualizerDrumKind.kick,
+        _rippleFloor,
+        _rippleGap,
+      ),
+      snares = machiPickDrumHits(
+        beats.drumHits,
+        LyricVisualizerDrumKind.snare,
+        _screenFloor,
+        _screenGap,
+      );
+
+  /// [c] 这一首的（共享拍点表按音频对象 + 偏移缓存）。
+  factory MachiBeatTrack.of(LyricVisualizerContext c) =>
+      MachiBeatTrack(LyricVisualizerBeats.of(c));
+
+  final LyricVisualizerBeats beats;
+
+  /// 挑中的底鼓 / 军鼓在 `beats.drumHits` 里的下标（升序）。
+  final List<int> kicks;
+  final List<int> snares;
+
+  /// 有能跟的鼓击。
+  bool get hasDrums => beats.drumHits.isNotEmpty;
+}
+
+/// [picked] 里到 [time] 还活着（年龄 < [life]）的那几下，最新的在前，最多 [max] 个。
+List<int> _aliveHits(
+  LyricVisualizerBeats beats,
+  List<int> picked,
+  double time,
+  double life,
+  int max,
+) {
+  final List<int> out = <int>[];
+  int lo = 0;
+  int hi = picked.length;
+  while (lo < hi) {
+    final int mid = (lo + hi) >> 1;
+    if (beats.drumHits[picked[mid]].seconds <= time) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  for (int k = lo - 1; k >= 0 && out.length < max; k--) {
+    if (time - beats.drumHits[picked[k]].seconds >= life) break;
+    out.add(picked[k]);
+  }
+  return out;
+}
+
+/// folia `machiRippleWetness`：路面有多湿就有多少涟漪（0..1）；剩下的给光斑的一跳。
+double machiRippleWetness(double wetness) {
+  final double t = machiClamp(
+    (wetness - _rippleWetFrom) / (_rippleWetTo - _rippleWetFrom),
+    0,
+    1,
+  );
+  return t * t * (3 - 2 * t);
+}
+
+/// 鼓点涟漪（folia `resolveMachiDrumRipples`）：[time]（显示时间秒）之前还活着的几圈写进 `out.ringAge` /
+/// `out.ringAmp`（最新的在前）；返回地面干时光斑的那一跳（0..）。
+double resolveMachiDrumRipples(
+  MachiBeatTrack track,
+  double time,
+  double strength,
+  MachiBeatFrame out,
+) {
+  out.ringAge.fillRange(0, machiRippleMax, -1);
+  out.ringAmp.fillRange(0, machiRippleMax, 0);
+  if (strength <= 0) return 0;
+  final List<int> alive = _aliveHits(
+    track.beats,
+    track.kicks,
+    time,
+    machiRippleLife,
+    machiRippleMax,
+  );
+  double pulse = 0;
+  for (int slot = 0; slot < alive.length; slot++) {
+    final LyricVisualizerDrumHitEvent h = track.beats.drumHits[alive[slot]];
+    final double age = time - h.seconds;
+    final double amp = strength * h.strength;
+    out.ringAge[slot] = age;
+    out.ringAmp[slot] = amp;
+    pulse = math.max(
+      pulse,
+      _rippleThump * amp * math.exp(-age / _rippleThumpDecay),
+    );
+  }
+  return pulse;
+}
+
+/// 大屏闪拍（folia `resolveMachiScreenFlash`）：还亮着的几下军鼓各在屏上的哪、多亮（最新的在前）。位置按
+/// 那下鼓击在表里的序号取（黄金分割步进，拖进度也落在同一处）。
+void resolveMachiScreenFlash(
+  MachiBeatTrack track,
+  double time,
+  double strength,
+  MachiBeatFrame out,
+) {
+  out.swellAt.fillRange(0, 4, 0.5);
+  out.swellAmp.fillRange(0, 4, 0);
+  if (strength <= 0) return;
+  final List<int> alive = _aliveHits(
+    track.beats,
+    track.snares,
+    time,
+    _screenAttack + _screenFall,
+    4,
+  );
+  for (int slot = 0; slot < alive.length; slot++) {
+    final LyricVisualizerDrumHitEvent h = track.beats.drumHits[alive[slot]];
+    out.swellAt[slot] = machiSwellPlace(alive[slot]);
+    out.swellAmp[slot] =
+        strength *
+        h.strength *
+        machiSwell(time - h.seconds, _screenAttack, _screenFall);
+  }
 }
 
 const double _neonAttack = 0.4;
@@ -506,21 +644,29 @@ void _resetNeon(MachiBeatFrame out) {
 }
 
 /// 把一拍叠进 [swells]：第 index 拍轮到 index % 组数 那组；返回这拍给店里暖灯的量（不是小节第一拍为 0）。
+/// [beat] 带重音时按音色塑形（folia `addNeonBeat`）：偏中高频的拍多亮霓虹、偏低频的小节第一拍多亮暖灯。
 double _addNeonBeat(
   List<double> swells,
   int index,
   double age,
   double gain,
-  bool downbeat,
-) {
+  bool downbeat, [
+  LyricVisualizerBeatEvent? beat,
+]) {
+  final bool tone = beat != null && beat.hasAccents;
+  final double neonTone = tone
+      ? math.max(0, 0.4 + 0.9 * (beat.midShare + beat.highShare))
+      : 1;
   final int group = index % machiNeonGroups;
   final double swell =
       gain *
+      neonTone *
       (downbeat ? _neonDownbeat : 1) *
       machiSwell(age, _neonAttack, _neonFall);
   swells[group] = math.max(swells[group], swell);
   if (!downbeat) return 0;
-  return gain * machiSwell(age, _warmAttack, _warmFall);
+  final double warmTone = tone ? math.max(0, 0.4 + 1.8 * beat.lowShare) : 1;
+  return gain * warmTone * machiSwell(age, _warmAttack, _warmFall);
 }
 
 /// 每组的倍数 = 1 + 强度 ×（lift × 这组 + contrast ×（这组 − 三组平均）），三组一样亮时只是轮流。
@@ -548,10 +694,10 @@ void _writeNeon(
   out.bloom = 1 + strength * _bloomLift * mean;
 }
 
-/// 霓虹随拍（folia `resolveMachiNeonPulse`）：[events] 是整张节拍表（升序），按拍在表里的序号轮到第几组
-/// （拖进度也是同一组）；没有节奏的小节里的拍不亮。
+/// 霓虹随拍（folia `resolveMachiNeonPulse`）：[events] 是共享拍点表（升序，显示时间），按拍在表里的序号轮到
+/// 第几组（拖进度也是同一组）；增益是共享的重音增益（含整曲动感系数），没有节奏的小节里的拍不亮。
 void resolveMachiNeonPulse(
-  List<MachiBeatEvent> events,
+  List<LyricVisualizerBeatEvent> events,
   double time,
   double strength,
   MachiBeatFrame out,
@@ -565,7 +711,7 @@ void resolveMachiNeonPulse(
   int hi = events.length - 1;
   while (lo <= hi) {
     final int mid = (lo + hi) >> 1;
-    if (events[mid].t <= time) {
+    if (events[mid].seconds <= time) {
       last = mid;
       lo = mid + 1;
     } else {
@@ -573,11 +719,14 @@ void resolveMachiNeonPulse(
     }
   }
   for (int index = last; index >= 0; index--) {
-    final MachiBeatEvent e = events[index];
-    final double age = time - e.t;
+    final LyricVisualizerBeatEvent e = events[index];
+    final double age = time - e.seconds;
     if (age >= _neonLife) break;
     if (e.gain <= 0) continue;
-    bar = math.max(bar, _addNeonBeat(swells, index, age, e.gain, e.downbeat));
+    bar = math.max(
+      bar,
+      _addNeonBeat(swells, index, age, e.gain, e.downbeat, e),
+    );
   }
   _writeNeon(swells, strength, bar, out);
 }

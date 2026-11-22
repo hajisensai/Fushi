@@ -32,6 +32,8 @@ const String machiKeyFocus = 'focus';
 const String machiKeyFocusOffset = 'focus_offset';
 const String machiKeySimulatedBeat = 'simulated_beat';
 const String machiKeyNeonPulse = 'neon_pulse';
+const String machiKeyDrumRipple = 'drum_ripple';
+const String machiKeyScreenFlash = 'screen_flash';
 const String machiKeyReflections = 'reflections';
 const String machiKeyGlow = 'glow';
 
@@ -247,6 +249,24 @@ final List<LyricVisualizerTuningSpec> machiTuningSpecs =
         initial: 1,
         format: _times,
       ),
+      // folia 智能动感「鼓点涟漪」：每下底鼓从歌词屏脚下在湿地面上荡开一圈（地面干时光斑跳一下）；0 = 关。
+      LyricVisualizerSliderSpec(
+        key: machiKeyDrumRipple,
+        label: () => t.music_visualizer_machi_drum_ripple,
+        min: 0,
+        max: 2,
+        initial: 1,
+        format: _times,
+      ),
+      // folia 智能动感「大屏闪拍」：每下军鼓在歌词屏一处慢慢亮起再暗下；0 = 关（有「模拟节拍」时仍按固定节拍）。
+      LyricVisualizerSliderSpec(
+        key: machiKeyScreenFlash,
+        label: () => t.music_visualizer_machi_screen_flash,
+        min: 0,
+        max: 2,
+        initial: 1,
+        format: _times,
+      ),
       LyricVisualizerToggleSpec(
         key: machiKeyReflections,
         label: () => t.music_visualizer_machi_reflections,
@@ -286,6 +306,8 @@ class MachiSettings {
       focusOffset = tuning.number(machiKeyFocusOffset, 0),
       simulatedBeat = tuning.flag(machiKeySimulatedBeat, true),
       neonPulse = tuning.number(machiKeyNeonPulse, 1),
+      drumRipple = tuning.number(machiKeyDrumRipple, 1),
+      screenFlash = tuning.number(machiKeyScreenFlash, 1),
       reflections = tuning.flag(machiKeyReflections, true),
       glow = tuning.flag(machiKeyGlow, true);
 
@@ -311,6 +333,12 @@ class MachiSettings {
 
   /// 霓虹随拍强度（0..2）。
   final double neonPulse;
+
+  /// 鼓点涟漪强度（0..2）。
+  final double drumRipple;
+
+  /// 大屏闪拍强度（0..2）。
+  final double screenFlash;
   final bool reflections;
   final bool glow;
 }

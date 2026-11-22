@@ -881,9 +881,13 @@ class MachiRenderer {
         at,
         lamp.pool * (1 + 0.15 * light.wetness),
         lamp.color,
-        0.34 * s * (1 - 0.6 * frame.env.daylight) * frame.beat.warm,
+        0.34 *
+            s *
+            (1 - 0.6 * frame.env.daylight) *
+            (frame.beat.warm + frame.beat.thump),
       );
     }
+    _drawKickRipples(scene, light.wetness);
     // 湿地面的倒影：沿竖向拉成光带。
     if (frame.reflections && light.wetness > 0.05) {
       _drawReflections(scene);
@@ -904,6 +908,55 @@ class MachiRenderer {
           0.55 * s * (0.45 + frame.look.bloom * frame.beat.bloom * 1.6),
         );
       }
+    }
+  }
+
+  /// 鼓点涟漪（folia 地面着色器的 kick rings）：从歌词屏脚下（场景焦点）在湿地面上荡开的亮环，环按
+  /// [machiRippleSpeed] 走、按剩余寿命的平方淡；地面越干越淡（[machiRippleWetness]）。
+  void _drawKickRipples(MachiSceneModel scene, double wetness) {
+    final double wet = machiRippleWetness(wetness);
+    if (wet <= 0.01) return;
+    final MachiBeatFrame beat = frame.beat;
+    final Color c = Color.lerp(
+      frame.palette.neon,
+      const Color(0xFFFFFFFF),
+      0.55,
+    )!;
+    for (int i = 0; i < machiRippleMax; i++) {
+      final double age = beat.ringAge[i];
+      final double amp = beat.ringAmp[i];
+      if (age < 0 || amp <= 0) continue;
+      final double left = 1 - age / machiRippleLife;
+      if (left <= 0) continue;
+      final double alpha = machiClamp(0.45 * amp * left * left * wet, 0, 1);
+      if (alpha < 0.01) continue;
+      final double r = machiRippleSpeed * age + 0.2;
+      final Path ring = Path();
+      const int steps = 48;
+      for (int k = 0; k <= steps; k++) {
+        final double a = k / steps * 2 * math.pi;
+        final Offset o = camera.project(
+          MachiV3(
+            scene.focus.x + r * math.cos(a),
+            0.03,
+            scene.focus.z + r * math.sin(a),
+          ),
+        );
+        if (k == 0) {
+          ring.moveTo(o.dx, o.dy);
+        } else {
+          ring.lineTo(o.dx, o.dy);
+        }
+      }
+      canvas.drawPath(
+        ring,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..blendMode = BlendMode.plus
+          ..strokeWidth = math.max(1.5, 0.12 * camera.scale)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2)
+          ..color = c.withValues(alpha: alpha),
+      );
     }
   }
 

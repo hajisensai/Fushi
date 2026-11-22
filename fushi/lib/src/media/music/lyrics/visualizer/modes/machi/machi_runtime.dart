@@ -58,8 +58,7 @@ class MachiRuntime {
   MachiFrame? _frame;
 
   LyricVisualizerRuntime? _linesOf;
-  List<MachiBeatEvent> _beats = const <MachiBeatEvent>[];
-  Object? _beatsKey;
+  MachiBeatTrack? _track;
   List<double> _lightningTimes = const <double>[];
   List<double> _paragraphs = const <double>[];
 
@@ -119,20 +118,12 @@ class MachiRuntime {
       _paragraphs = buildMachiParagraphStarts(ctx.runtime.lines);
       _screen?.invalidate();
     }
-    final LyricVisualizerAudio? audio = ctx.audio;
-    final Object beatsKey = Object.hash(
-      identityHashCode(audio),
-      audio != null && audio.beatsReady ? audio.beatTimesMs.length : -1,
-      ctx.offsetMs,
-    );
-    if (beatsKey != _beatsKey) {
-      _beatsKey = beatsKey;
-      _beats = machiBeatEventsOf(ctx);
-    }
+    final LyricVisualizerBeats beats = LyricVisualizerBeats.of(ctx);
+    if (!identical(_track?.beats, beats)) _track = MachiBeatTrack(beats);
   }
 
-  /// 本首的节拍表（显示时间，秒）；没有节拍网格为空。
-  List<MachiBeatEvent> get beats => _beats;
+  /// 本首的拍点与挑好的鼓击。
+  MachiBeatTrack get beatTrack => _track!;
 
   /// 推进一帧。
   void step(LyricVisualizerTick tick, Size size) {
@@ -286,20 +277,37 @@ class MachiRuntime {
       );
   }
 
-  /// 节拍（folia `stepBeat`）：有节拍网格且「霓虹随拍」开着时霓虹跟真拍子（按歌曲时间取，暂停时回常态）；
-  /// 否则开着「模拟节拍」时霓虹按氛围时钟上的固定节拍走。大屏闪拍按固定节拍（军鼓击点不在音频契约里）。
+  /// 节拍（folia `stepBeat`），按歌曲时间取、暂停时回常态：
+  /// - 霓虹随拍：有拍点且强度 > 0 时跟真拍子；否则开着「模拟节拍」时按氛围时钟上的固定节拍走；
+  /// - 鼓点涟漪：有鼓击时每下底鼓在湿地面上荡开一圈（地面干时改成光斑跳一下）；没有鼓击时没有；
+  /// - 大屏闪拍：有鼓击且强度 > 0 时每下军鼓亮一处；否则开着「模拟节拍」时按固定节拍。
   void _stepBeat(MachiFrame f, double song, bool motion) {
     f.beat.reset();
     if (!motion) return;
-    final bool real = _beats.isNotEmpty && _settings.neonPulse > 0;
-    if (real) {
-      if (_ctx.playing) {
-        resolveMachiNeonPulse(_beats, song, _settings.neonPulse, f.beat);
+    final MachiBeatTrack track = _track!;
+    final bool playing = _ctx.playing;
+    if (track.beats.hasBeats && _settings.neonPulse > 0) {
+      if (playing) {
+        resolveMachiNeonPulse(
+          track.beats.events,
+          song,
+          _settings.neonPulse,
+          f.beat,
+        );
       }
     } else if (_settings.simulatedBeat) {
       resolveMachiSteadyNeonPulse(_ambient, 1, f.beat);
     }
-    if (_settings.simulatedBeat) {
+    if (track.hasDrums && playing) {
+      f.beat.thump =
+          resolveMachiDrumRipples(track, song, _settings.drumRipple, f.beat) *
+          (1 - machiRippleWetness(f.env.wetness));
+    }
+    if (track.hasDrums && _settings.screenFlash > 0) {
+      if (playing) {
+        resolveMachiScreenFlash(track, song, _settings.screenFlash, f.beat);
+      }
+    } else if (_settings.simulatedBeat) {
       resolveMachiSteadyScreenFlash(_ambient, 1, f.beat);
     }
   }

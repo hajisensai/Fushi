@@ -44,7 +44,8 @@ LyricVisualizerLine _line(
   );
   final List<LyricVisualizerGlyph> g = buildLyricVisualizerGlyphs(l);
   return LyricVisualizerLine(
-    index: index,
+    position: index,
+    timelineIndex: index,
     source: l,
     text: text,
     startMs: start,
@@ -123,9 +124,9 @@ void main() {
         resolveMachiBoardReveal(l, 2500).first,
         closeTo(row.glyphs.last.x1, 1e-6),
       );
-      // 一半时间亮到大约一半。
+      // 行级歌词按 folia buildTimedWords 估时：四个字等权、只占行时长的 90%，所以 450 ms 时亮到一半。
       expect(
-        resolveMachiBoardReveal(l, 1500).first,
+        resolveMachiBoardReveal(l, 1450).first,
         closeTo(row.left + row.width / 2, 1),
       );
     });
@@ -176,39 +177,101 @@ void main() {
         clock: FakeVisualizerClock(),
         audio: SyntheticVisualizerAudio(),
       );
-      final List<MachiBeatEvent> events = machiBeatEventsOf(c);
+      final List<LyricVisualizerBeatEvent> events = LyricVisualizerBeats.of(
+        c,
+      ).events;
       expect(events, isNotEmpty);
       expect(events.first.downbeat, isTrue);
       expect(events[1].downbeat, isFalse);
-      expect(
-        machiBeatEventsOf(
-          visualizerContextFor(
-            machiVisualizerEntry,
-            clock: FakeVisualizerClock(),
-          ),
-        ),
-        isEmpty,
-      );
       final MachiBeatFrame f = MachiBeatFrame();
       // 第 5 拍（2.5 秒）刚过 0.4 秒：第 5 % 3 组最亮
-      resolveMachiNeonPulse(events, events[5].t + 0.4, 1, f);
+      resolveMachiNeonPulse(events, events[5].seconds + 0.4, 1, f);
       const int lit = 5 % machiNeonGroups;
       for (int g = 0; g < machiNeonGroups; g++) {
         if (g != lit) expect(f.neonGroups[lit], greaterThan(f.neonGroups[g]));
       }
       expect(f.bloom, greaterThan(1));
-      // 小节第一拍（第 4 拍）后暖灯起来
-      resolveMachiNeonPulse(events, events[4].t + 0.6, 1, f);
-      expect(f.warm, greaterThan(1));
-      resolveMachiNeonPulse(events, events[4].t + 0.6, 0, f);
+      // 小节第一拍（第 4 拍）后暖灯起来；合成音频的强拍偏低频，暖灯按音色多亮一些。
+      resolveMachiNeonPulse(events, events[4].seconds + 0.6, 1, f);
+      final double warmToned = f.warm;
+      expect(warmToned, greaterThan(1));
+      resolveMachiNeonPulse(
+        <LyricVisualizerBeatEvent>[
+          for (final LyricVisualizerBeatEvent e in events.take(6))
+            LyricVisualizerBeatEvent(
+              audioMs: e.audioMs,
+              displayMs: e.displayMs,
+              downbeat: e.downbeat,
+              gain: e.gain,
+              ordinal: e.ordinal,
+            ),
+        ],
+        events[4].seconds + 0.6,
+        1,
+        f,
+      );
+      expect(warmToned, greaterThan(f.warm));
+      resolveMachiNeonPulse(events, events[4].seconds + 0.6, 0, f);
       expect(f.neonGroups, everyElement(1.0));
       expect(f.bloom, 1);
-      const List<MachiBeatEvent> silent = <MachiBeatEvent>[
-        MachiBeatEvent(t: 0, downbeat: true, gain: 0),
+      const List<LyricVisualizerBeatEvent> silent = <LyricVisualizerBeatEvent>[
+        LyricVisualizerBeatEvent(
+          audioMs: 0,
+          displayMs: 0,
+          downbeat: true,
+          gain: 0,
+          ordinal: 0,
+          rhythmic: false,
+        ),
       ];
       resolveMachiNeonPulse(silent, 0.4, 1, f);
       expect(f.neonGroups, everyElement(1.0));
       expect(f.warm, 1);
+    });
+
+    test('鼓点涟漪跟底鼓、大屏闪拍跟军鼓；挑鼓击按力度与间隔；没有鼓击什么都没有', () {
+      final MachiBeatTrack track = MachiBeatTrack.of(
+        visualizerContextFor(
+          machiVisualizerEntry,
+          clock: FakeVisualizerClock(),
+          audio: SyntheticVisualizerAudio(),
+        ),
+      );
+      // 合成音频：底鼓在 0、1、2… 秒，军鼓在 0.5、1.5… 秒，镲片在反拍。
+      expect(
+        track.kicks.map((int i) => track.beats.drumHits[i].seconds).take(3),
+        <double>[0, 1, 2],
+      );
+      expect(
+        track.snares.map((int i) => track.beats.drumHits[i].seconds).take(2),
+        <double>[0.5, 1.5],
+      );
+      final MachiBeatFrame f = MachiBeatFrame();
+      // 2.1 秒：活着的底鼓是 2 秒（0.1 秒）和 1 秒（1.1 秒）那两下，最新的在前。
+      final double thump = resolveMachiDrumRipples(track, 2.1, 1, f);
+      expect(f.ringAge[0], closeTo(0.1, 1e-9));
+      expect(f.ringAge[1], closeTo(1.1, 1e-9));
+      expect(f.ringAge[2], -1);
+      expect(f.ringAmp[0], 1);
+      expect(thump, closeTo(0.55 * math.exp(-0.1 / 0.14), 1e-9));
+      expect(resolveMachiDrumRipples(track, 2.1, 0, f), 0);
+      expect(f.ringAmp, everyElement(0.0));
+      // 2 秒：1.5 秒那下军鼓正在暗下（力度 0.7），0.5 秒那下已暗完（亮起 0.25 + 暗下 1.15 秒）。
+      resolveMachiScreenFlash(track, 2, 1, f);
+      expect(f.swellAmp[0], closeTo(0.7 * machiSwell(0.5, 0.25, 1.15), 1e-9));
+      expect(f.swellAmp[1], 0);
+      expect(f.swellAt[0], inInclusiveRange(0.15, 0.85));
+      expect(machiRippleWetness(0), 0);
+      expect(machiRippleWetness(1), 1);
+      final MachiBeatTrack none = MachiBeatTrack.of(
+        visualizerContextFor(
+          machiVisualizerEntry,
+          clock: FakeVisualizerClock(),
+        ),
+      );
+      expect(none.hasDrums, isFalse);
+      resolveMachiScreenFlash(none, 2, 1, f);
+      expect(f.swellAmp, everyElement(0.0));
     });
 
     test('跑马灯：下一句加译文；曲名卡是曲名与歌手', () {
