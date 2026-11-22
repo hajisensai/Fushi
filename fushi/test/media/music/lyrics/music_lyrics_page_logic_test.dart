@@ -196,14 +196,6 @@ void main() {
       expect(musicLyricsGraphemesFromCursor('', 0), 0);
     });
 
-    test('命中高亮长度换算成字素，查不到 = 0', () {
-      expect(musicLyricsMatchedGraphemes('駆ける', 2), 2);
-      expect(musicLyricsMatchedGraphemes('駆ける', 9), 3);
-      expect(musicLyricsMatchedGraphemes('駆ける', 0), 0);
-      expect(musicLyricsMatchedGraphemes('', 3), 0);
-      expect(musicLyricsMatchedGraphemes('👨‍👩‍👧b', 8), 1);
-    });
-
     test('查询串被截短：越过截断处的注音丢掉', () {
       const List<LyricSyllable> syllables = <LyricSyllable>[
         LyricSyllable(text: '星', startMs: 0, endMs: 1, ruby: 'ほし'),

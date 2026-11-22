@@ -14,6 +14,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
@@ -5850,17 +5851,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       matched = await _processMangaSelection(
         data,
         maxQueryGraphemes: request?.maxGraphemes,
+        measureMatch: request != null,
       );
     } finally {
       request?.complete(matched);
     }
   }
 
-  /// [processMangaSelection] 的本体；返回页内弹窗的命中高亮长度（字素数），
-  /// 没查 / 无结果 / 路由去副屏时为 0。
+  /// [processMangaSelection] 的本体；返回命中高亮长度（字素数），没查 / 无结果时为 0。
+  /// 路由去副屏（副屏不回报命中长度）时，[measureMatch]（手柄查词模式）为 true 就在
+  /// 本机按同一查询量出命中长度（[measureLookupMatchGraphemes]），否则 0。
   Future<int> _processMangaSelection(
     ReaderSelectionData data, {
     int? maxQueryGraphemes,
+    bool measureMatch = false,
   }) async {
     if (!mounted) return 0;
     int matched = 0;
@@ -5900,6 +5904,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       search: (String term, Rect selectionRect, bool verticalWriting) async {
         // Dual-screen: the companion's Lookup tab shows it when it is up.
         if (await routeCompanionLookup(text: term, sentence: _lastSentence)) {
+          if (measureMatch && mounted) {
+            matched = await measureLookupMatchGraphemes(appModel, term);
+          }
           return;
         }
         if (!mounted) return;
@@ -5917,7 +5924,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           // Shift 悬停扫过 OCR 字时 JS 回传 fromHover，记成悬停查词。
           origin: data.fromHover ? LookupOrigin.hover : LookupOrigin.explicit,
         );
-        matched = highlightCount;
+        matched = lookupMatchedGraphemes(term, highlightCount);
         if (!mounted) return;
         unawaited(_highlightMangaSelection(highlightCount));
       },

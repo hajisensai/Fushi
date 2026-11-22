@@ -12,7 +12,7 @@ part of '../video_fushi_page.dart';
 ///   或连发结束后调 [lookupAtCursor]（停下即查）。
 /// * 查词走点击查词同链路（`replaceStack` + `reuseWarmSlot` 复用热槽、不叠栈；副屏在用
 ///   时路由到副屏查词页）。`maxGraphemes` 只截查询串（[capSubtitleLookupTerm]），返回
-///   字幕高亮的字素长度。
+///   字幕高亮的字素长度；副屏在用时本机按同一查询量命中长度（[measureLookupMatchGraphemes]）。
 /// * 查词后光标**留在字幕上**（[routerOwnsInput] 仍为 true，下一次十字键继续换词）：
 ///   [_VideoFushiPageState.onNestedPopupRendered] 在本模式持有光标时不 transfer。按「进入
 ///   结果」（[enterResult]）才把光标交给页内弹窗光标，此后 D-pad / A / B 走页面既有的弹窗
@@ -148,6 +148,7 @@ class _VideoControllerLookupTarget extends ControllerLookupTarget {
       hit.charRect,
       hit.cue,
       maxGraphemes: maxGraphemes,
+      measureMatch: true,
     );
   }
 

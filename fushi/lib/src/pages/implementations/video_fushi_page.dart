@@ -475,6 +475,7 @@ import 'package:fushi/src/media/video/video_speed_pref.dart';
 import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
@@ -8774,7 +8775,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// [maxGraphemes]：手柄查词模式的选区右端上限，原样交给 [_lookupAt]（null = 不截）。
   /// 返回 [_lookupAt] 的命中高亮长度（字素数；沉浸门控挡下 / 查不到 = 0）——点击入口
-  /// 不关心它，手柄查词模式据此算选区右端。
+  /// 不关心它，手柄查词模式据此算选区右端（[measureMatch] = true，副屏接手时也量）。
   Future<int> _handleSubtitleLookupTap(
     String sentence,
     int graphemeIndex,
@@ -8782,6 +8783,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     AudioCue? cue, {
     bool fromHover = false,
     int? maxGraphemes,
+    bool measureMatch = false,
   }) {
     if (!_immersiveAllowsLookup) return Future<int>.value(0);
     _lookupOpenedByHover = fromHover;
@@ -8792,6 +8794,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       charRect,
       overrideCue: cue,
       maxGraphemes: maxGraphemes,
+      measureMatch: measureMatch,
     );
   }
 

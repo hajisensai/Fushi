@@ -73,6 +73,7 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionContexts;
@@ -241,17 +242,6 @@ int musicLyricsGraphemesFromCursor(String lineText, int charIndex) => lineText
     .substring(musicLyricsLookupStartAt(lineText, charIndex))
     .characters
     .length;
-
-/// 纯函数：查词高亮长度（[BaseSourcePageState.searchDictionaryResult] /
-/// [BaseSourcePageState.lookupMatchedCharCount] 返回的 [term] 前缀长度）换算成
-/// 字素数；查不到 = 0。
-int musicLyricsMatchedGraphemes(String term, int highlightLength) {
-  if (highlightLength <= 0 || term.isEmpty) return 0;
-  return term
-      .substring(0, math.min(highlightLength, term.length))
-      .characters
-      .length;
-}
 
 /// 纯函数：[musicLyricsLookupTerm] 查词串上的源注音区间（坐标系 = 查词串）。
 ///
@@ -720,9 +710,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         charIndex: query.charIndex,
       )) {
         if (!measureMatch || !mounted) return 0;
-        return musicLyricsMatchedGraphemes(
+        return measureLookupMatchGraphemes(
+          appModel,
           term,
-          await lookupMatchedCharCount(term, rubySpans),
+          rubySpans: rubySpans,
         );
       }
       if (!mounted) return 0;
@@ -739,7 +730,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       rubySpans: rubySpans,
       selectionRect: hit.globalRect,
     );
-    return musicLyricsMatchedGraphemes(term, highlight);
+    return lookupMatchedGraphemes(term, highlight);
   }
 
   /// 「查词时暂停」（页内弹窗与副屏查词页同一入口，含副屏歌词上点的词）：设置开着

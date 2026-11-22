@@ -34,13 +34,16 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 只把查询串截到前 [maxGraphemes] 个字素（[capSubtitleLookupTerm]），其余不变。
   ///
   /// 返回命中高亮长度（字素数，= 字幕高亮的 `graphemeCount`）；查不到、没查（门控 /
-  /// 空词）或查词交给了副屏查词页（副屏不回报命中长度）时返回 0。
+  /// 空词）时返回 0。查词交给了副屏查词页（副屏不回报命中长度）时，[measureMatch]
+  /// 为 true（手柄查词模式）就在本机按同一查询量出命中长度
+  /// （[measureLookupMatchGraphemes]，走查词缓存、不弹窗不记历史），否则 0。
   Future<int> _lookupAt(
     String sentence,
     int graphemeIndex,
     Rect charRect, {
     AudioCue? overrideCue,
     int? maxGraphemes,
+    bool measureMatch = false,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return 0;
@@ -73,7 +76,8 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
               : -1,
           sentence: sentence,
         )) {
-      return 0;
+      if (!measureMatch || !mounted) return 0;
+      return measureLookupMatchGraphemes(appModel, term);
     }
     if (!mounted) return 0;
     // 「高级制卡」的「查词时画面」就是这一刻；对话框试听挪走播放头后也据此放回。

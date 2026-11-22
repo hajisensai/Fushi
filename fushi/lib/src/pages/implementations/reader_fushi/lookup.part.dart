@@ -285,8 +285,8 @@ extension _ReaderLookup on _ReaderFushiPageState {
   /// A word was selected in the book / lyrics (tap, hover, keyboard caret,
   /// controller lookup mode). A pending controller lookup
   /// ([_ReaderControllerLookupTarget.lookupAtCursor]) is claimed here: its cap
-  /// cuts the query and it gets the highlighted match length back (0 when
-  /// nothing matched or the lookup went to the companion).
+  /// cuts the query and it gets the match length back in graphemes (0 when
+  /// nothing matched; measured locally when the lookup went to the companion).
   Future<void> _handleTextSelected(ReaderSelectionData data) async {
     final _ReaderControllerLookupRequest? controller = _controllerLookupTarget
         ?._claim();
@@ -326,6 +326,15 @@ extension _ReaderLookup on _ReaderFushiPageState {
           );
       if (_companion.isActive &&
           await _routeLookupToCompanion(data, query: query.text)) {
+        // 副屏查词页自己扫词、不回报命中长度：手柄查词模式要的命中长度由本机按
+        // 同一查询量（走查词缓存，不弹窗不记历史），与歌词 / 视频 / 漫画同一入口。
+        if (controller != null && mounted) {
+          matched = await measureLookupMatchGraphemes(
+            appModel,
+            query.text,
+            rubySpans: query.rubySpans,
+          );
+        }
         return;
       }
       if (!mounted) return;
@@ -443,11 +452,14 @@ extension _ReaderLookup on _ReaderFushiPageState {
         _lookupCue ??= _audiobookController?.currentCue;
         if (_pausedForLookup) _lookupRestartCue = _lookupCue;
         _syncCueSentence();
-        matched = await _runLookupAndHighlight(
+        matched = lookupMatchedGraphemes(
           query.text,
-          selectionRect,
-          origin: _lookupOriginOf(data),
-          rubySpans: query.rubySpans,
+          await _runLookupAndHighlight(
+            query.text,
+            selectionRect,
+            origin: _lookupOriginOf(data),
+            rubySpans: query.rubySpans,
+          ),
         );
         _checkFavoriteStatus();
         return;
@@ -472,11 +484,14 @@ extension _ReaderLookup on _ReaderFushiPageState {
       if (_pausedForLookup) _lookupRestartCue = _lookupCue;
       _syncCueSentence();
 
-      matched = await _runLookupAndHighlight(
+      matched = lookupMatchedGraphemes(
         query.text,
-        selectionRect,
-        origin: _lookupOriginOf(data),
-        rubySpans: query.rubySpans,
+        await _runLookupAndHighlight(
+          query.text,
+          selectionRect,
+          origin: _lookupOriginOf(data),
+          rubySpans: query.rubySpans,
+        ),
       );
       _checkFavoriteStatus();
     } finally {

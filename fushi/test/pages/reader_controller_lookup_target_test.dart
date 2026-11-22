@@ -195,7 +195,11 @@ void main() {
       expect(selected, contains('_claim()'));
       expect(selected, contains('readerControllerCappedQuery('));
       expect(selected, contains('controller?.complete(matched)'));
-      expect(selected, contains('matched = await _runLookupAndHighlight('));
+      // The match length goes back in graphemes, the page lookup's and the
+      // companion's (measured locally) alike.
+      expect(selected, contains('lookupMatchedGraphemes('));
+      expect(selected, contains('await _runLookupAndHighlight('));
+      expect(selected, contains('measureLookupMatchGraphemes('));
       // The hot-slot reuse of the tap path (no popup stacking).
       expect(
         methodBody(src, 'Future<int> _runLookupAndHighlight('),
