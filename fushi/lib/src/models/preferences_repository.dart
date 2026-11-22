@@ -6217,14 +6217,23 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `mesh`。
+  /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `pixi`（反馈
+  /// l1ERGmWxjF）。只在用户手选时落库：没有行 = 跟着出厂默认走，所以默认从 `mesh`
+  /// 改成 `pixi` 后，没手选过的老用户自动切过去，手选过 `mesh` 的保持不变。
   String get musicLyricsBackdropStyle =>
-      (getPref('music_lyrics_backdrop_style', defaultValue: 'mesh')
+      (getPref('music_lyrics_backdrop_style', defaultValue: 'pixi')
           as String?) ??
-      'mesh';
+      'pixi';
 
   Future<void> setMusicLyricsBackdropStyle(String value) async {
     await setPref('music_lyrics_backdrop_style', value);
+    notifyListeners();
+  }
+
+  /// 「恢复默认」：删掉这一行回到「跟着出厂默认走」，而不是把此刻的默认值钉死成
+  /// 显式选择（钉死后再改出厂默认就分不清「手选」与「默认」，BUG-5167）。
+  Future<void> clearMusicLyricsBackdropStyle() async {
+    await removePref('music_lyrics_backdrop_style');
     notifyListeners();
   }
 
