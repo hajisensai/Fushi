@@ -42,7 +42,7 @@ class _FakeEngine implements MusicAudioAnalysisEngine {
   @override
   Stream<FfcManaEvent> get events => controller.stream;
   @override
-  int get pipelineVersion => 2;
+  int get pipelineVersion => 3;
   @override
   int start() => FfcStatus.ok;
   @override
@@ -395,7 +395,7 @@ void main() {
         musicAudioAnalysisComplete(
           whole,
           MusicAudioAnalysisFlags.beatsModel,
-          pipelineVersion: 2,
+          pipelineVersion: 3,
         ),
         isTrue,
       );
@@ -403,7 +403,7 @@ void main() {
         musicAudioAnalysisComplete(
           whole,
           MusicAudioAnalysisFlags.beatsModel,
-          pipelineVersion: 3,
+          pipelineVersion: 4,
         ),
         isFalse,
       );
@@ -420,7 +420,7 @@ void main() {
         musicAudioAnalysisComplete(
           partial,
           MusicAudioAnalysisFlags.beatsModel,
-          pipelineVersion: 2,
+          pipelineVersion: 3,
         ),
         isFalse,
       );
@@ -456,7 +456,7 @@ void main() {
         (MusicAudioAnalysisSnapshot v) =>
             v.phase == MusicAudioAnalysisPhase.ready,
       );
-      expect(v.audio!.formatVersion, 2);
+      expect(v.audio!.formatVersion, 3);
       expect(v.audio!.hasBeatAccents, isTrue);
       await s.dispose();
     },
