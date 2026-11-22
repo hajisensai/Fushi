@@ -7793,6 +7793,8 @@
   "music_subtitle_plugin_fetch_failed": "Couldn't fetch this track's audio: ${reason}",
   "music_subtitle_plugin_fetch_hint": "Downloading this track's audio for on-device transcription. It is deleted once the subtitles are saved.",
   "music_subtitle_plugin_fetch_title": "Fetching track audio",
+  "music_subtitle_server_fetch_hint_batch": "Downloading the tracks' audio for on-device transcription. Each copy is deleted once its subtitles are saved.",
+  "music_subtitle_server_fetch_progress": "Downloading track ${i} of ${n}: ${title}",
   "music_subtitle_status_done": "Done: subtitles written for ${n} tracks",
   "music_subtitle_unavailable_remote": "${title}: not a local file, skipped",
   "music_subtitle_vocal_separation_low_memory": "Not enough free memory on this device to separate vocals; recognizing the original mix instead. Lines buried under the accompaniment may be missed.",

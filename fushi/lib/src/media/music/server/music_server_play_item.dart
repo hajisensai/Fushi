@@ -12,11 +12,14 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerTrack,
         musicServerAlbumUid,
         musicServerTrackUid;
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+    show MusicServerLoudness, MusicServerTrackRef;
 
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 
-/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；源属性取服务器报的（转码时取转码后的：
+/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；响度取服务器给的（[MusicServerTrack.loudness]，
+/// 没给时起播期按 [MusicPlayItem.serverTrack] 补查）；源属性取服务器报的（转码时取转码后的：
 /// 信号路径面板据此不把转码流判 bit-perfect）。
 MusicPlayItem musicServerPlayItem(
   MusicServerBrowser browser,
@@ -29,6 +32,7 @@ MusicPlayItem musicServerPlayItem(
     track,
     maxBitrateKbps: maxBitrateKbps,
   );
+  final MusicServerLoudness? loudness = track.loudness;
   return MusicPlayItem(
     trackUid: musicServerTrackUid(browser.serverId, track.id),
     path: stream.uri.toString(),
@@ -46,6 +50,16 @@ MusicPlayItem musicServerPlayItem(
     sampleRate: stream.transcoded ? null : track.sampleRate,
     bitDepth: stream.transcoded ? null : track.bitDepth,
     channels: track.channels,
+    rgTrackGain: loudness?.trackGainDb,
+    rgTrackPeak: loudness?.trackPeak,
+    rgAlbumGain: loudness?.albumGainDb,
+    rgAlbumPeak: loudness?.albumPeak,
+    serverTrack: MusicServerTrackRef(
+      kind: browser.kind,
+      serverId: browser.serverId,
+      trackId: track.id,
+      albumId: track.albumId,
+    ),
     isPreview: stream.isPreview,
   );
 }

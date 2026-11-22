@@ -16,6 +16,8 @@ library;
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
+
 /// 服务器协议家族（持久化值冻结）。
 enum MusicServerKind {
   /// Jellyfin / Emby / 飞牛影视等 MediaBrowser 兼容层（凭据复用视频的媒体服务器配置）。
@@ -134,6 +136,7 @@ class MusicServerTrack {
     this.coverRef,
     this.playlistEntryId,
     this.path,
+    this.loudness,
   });
 
   final String id;
@@ -164,6 +167,10 @@ class MusicServerTrack {
   /// 服务器上的文件路径（服务器愿意报时才有，Jellyfin 的 `Path`）。只用于导出 `.m3u8`；
   /// 播放一律走 [MusicServerBrowser.streamFor]。
   final String? path;
+
+  /// 服务器给的响度（Jellyfin `NormalizationGain` / OpenSubsonic `replayGain`）；服务器没测 /
+  /// 文件没标签时为 null（见 `music_server_loudness.dart`）。
+  final MusicServerLoudness? loudness;
 
   bool get isLossless => isLosslessMusicCodec(codec ?? container);
 }

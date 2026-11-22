@@ -25,6 +25,13 @@ import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicServerKindStorable;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart'
+    show
+        musicServerSubtitleMenuActions,
+        musicSubtitleGenerationSupported,
+        openMusicServerSubtitleGenerateSheet;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
@@ -1095,6 +1102,36 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                   widget.browser,
                   album: album,
                 ),
+                // 整张专辑生成日语字幕（Jellyfin / Subsonic）：逐首从服务器取音频再开面板。
+                if (musicSubtitleGenerationSupported() &&
+                    musicServerKindStorable(widget.browser.kind))
+                  FushiPressScale(
+                    child: FushiFilledButton.tonalIcon(
+                      size: FushiButtonSize.m,
+                      key: const ValueKey<String>(
+                        'music_server_album_generate_subtitles',
+                      ),
+                      onPressed: tracks.isEmpty
+                          ? null
+                          : () => unawaited(
+                              openMusicServerSubtitleGenerateSheet(
+                                context: context,
+                                appModel: ref.read(appProvider),
+                                items: musicServerPlayItems(
+                                  ref,
+                                  widget.browser,
+                                  tracks,
+                                  album: album,
+                                ),
+                                title: album.title,
+                                key:
+                                    'music:server-album:${widget.browser.serverId}:${album.id}',
+                              ),
+                            ),
+                      icon: const FushiIcon(FushiIcons.subtitles),
+                      label: Text(t.music_subtitle_generate_album),
+                    ),
+                  ),
               ];
               Widget tile(int i, {FushiCoverBlockSize? block}) =>
                   MusicServerTrackTile(
@@ -1859,6 +1896,12 @@ MusicItemMenu? musicServerTrackMenu(
                 musicAddToPlaylist(c, editor, <String>[track.id]),
           ),
           ...library,
+          ...musicServerSubtitleMenuActions(
+            app,
+            browser,
+            track,
+            albumTitle: albumTitle,
+          ),
         ],
       );
     }()),

@@ -15,6 +15,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
@@ -70,7 +71,8 @@ class SubsonicApiException implements Exception {
 /// 单个请求的响应超时（流媒体本身不经这里：流地址交给 mpv）。
 const Duration kSubsonicRequestTimeout = Duration(seconds: 15);
 
-class SubsonicMusicClient implements MusicServerBrowser {
+class SubsonicMusicClient
+    implements MusicServerBrowser, MusicServerLoudnessLookup {
   SubsonicMusicClient(
     SubsonicServerConfig config, {
     http.Client? client,
@@ -198,6 +200,18 @@ class SubsonicMusicClient implements MusicServerBrowser {
       for (final Map<String, Object?> e in _maps(r['openSubsonicExtensions']))
         if (e['name'] is String) e['name']! as String,
     };
+  }
+
+  // ---------------------------------------------------------------- 响度
+
+  /// 从音乐库 / 歌单还原的曲目（行里不存响度）起播时补查：`getSong` 的 OpenSubsonic
+  /// `replayGain`。纯 Subsonic 服务器没有这一项，回 null。
+  @override
+  Future<MusicServerLoudness?> loudnessOf(MusicServerTrackRef track) async {
+    final Map<String, Object?> r = await _call('getSong', <String, String>{
+      'id': track.trackId,
+    });
+    return parseOpenSubsonicReplayGain(_obj(r['song'])?['replayGain']);
   }
 
   // ---------------------------------------------------------------- 浏览
@@ -450,6 +464,7 @@ class SubsonicMusicClient implements MusicServerBrowser {
       channels: _int(s['channelCount']),
       sizeBytes: _int(s['size']),
       coverRef: _str(s['coverArt']),
+      loudness: parseOpenSubsonicReplayGain(s['replayGain']),
     );
   }
 

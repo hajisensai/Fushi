@@ -10,11 +10,15 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/music/server/jellyfin_music_parse.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 
 class JellyfinMusicClient
-    implements MusicServerBrowser, MusicServerPlaylistEditing {
+    implements
+        MusicServerBrowser,
+        MusicServerPlaylistEditing,
+        MusicServerLoudnessLookup {
   JellyfinMusicClient(this.config, {http.Client? httpClient})
     : _api = JellyfinApi(
         serverUrl: config.effectiveServerUrl,
@@ -98,6 +102,24 @@ class JellyfinMusicClient
       for (final Map<String, Object?> r in jellyfinItemsOf(json))
         ?parseJellyfinMusicTrack(r),
     ]);
+  }
+
+  /// 从音乐库 / 歌单还原的曲目（行里不存响度）起播时补查：一次 `Items?Ids=<曲目>,<专辑>`
+  /// 同时取曲目与专辑条目的 `NormalizationGain`（媒体库没开 LUFS 扫描时都没有，回 null）。
+  @override
+  Future<MusicServerLoudness?> loudnessOf(MusicServerTrackRef track) async {
+    final String? albumId = track.albumId;
+    final Object? json = await _api
+        .getDecodedJson('$_userPath/Items', <String, String>{
+          'Ids': <String>[track.trackId, ?albumId].join(','),
+          'EnableImages': 'false',
+          'EnableUserData': 'false',
+        });
+    return jellyfinLoudnessOfItems(
+      jellyfinItemsOf(json),
+      trackId: track.trackId,
+      albumId: albumId,
+    );
   }
 
   @override
