@@ -6,6 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
 import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_browser.dart'
+    show downloadTaskStatusLabel, selectDownloadTasks;
+import 'package:fushi/src/media/downloads/download_task_entry.dart'
+    show DownloadTaskEntry, DownloadTaskStatus;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -15,7 +19,12 @@ import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
+import 'package:fushi/src/mining/gal_hook_session_controller.dart'
+    show GalHookSessionController;
+import 'package:fushi/src/mining/galgame_home_selection.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_library_query.dart'
+    show GalgameLibraryView;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
@@ -24,10 +33,14 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart' show moduleOfHomeTab;
+import 'package:fushi/src/pages/implementations/download_task_sources.dart'
+    show loadDownloadTaskSnapshot;
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
     show fushiWebBrowserRoute, openFushiWebBrowser;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
-    show MusicEmbeddedCoverCache;
+    show MusicEmbeddedCoverCache, musicCoverImageProvider;
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show musicNowPlayingByline;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
@@ -63,9 +76,7 @@ import 'package:fushi_core/fushi_core.dart'
         EpubBookRow,
         VideoBookRow,
         VideoMetadataImageRow,
-        VideoMetadataWorkRow,
-        VideoDownloadJobLifecycle,
-        VideoDownloadJobRow;
+        VideoMetadataWorkRow;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show ShelfReadStatus, classifyShelfReadStatus;
@@ -199,8 +210,11 @@ AdaptiveNavPeek homeNavPeekFor(
       );
     case HomeTab.browse:
       return AdaptiveNavPeek(
-        load: () =>
-            _loadDownloads(appModel: appModel, openDownloads: openDownloads),
+        load: () => _loadDownloads(
+          ref: ref,
+          appModel: appModel,
+          openDownloads: openDownloads,
+        ),
       );
   }
 }
@@ -488,34 +502,58 @@ Future<NavPeekFeed> _loadGames({
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
-  final List<GalgameEntry> played =
-      games
-          .where(
-            (GalgameEntry g) =>
-                g.lastPlayedMs > 0 && !lockVisibility.hidesGame(g.id),
-          )
-          .toList()
-        ..sort(
-          (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
-        );
-  NavPeekTimed entryOf(GalgameEntry g) {
-    final String? cover = g.coverPath;
-    return (
-      at: g.lastPlayedMs,
-      entry: AdaptiveNavPeekEntry(
+  return navPeekGamesFeed(
+    games,
+    hideNsfw: GalgameLibraryView.decode(appModel.galgameLibraryView).hideNsfw,
+    visibility: lockVisibility,
+    // galgame Hook 只做 Windows（与游戏首页 `_session` 同一判据）。
+    runningExe: Platform.isWindows
+        ? galHookRunningExe(GalHookSessionController.instance.state)
+        : null,
+    nowMs: DateTime.now().millisecondsSinceEpoch,
+    entryOf: (GalgameEntry g) {
+      final String? cover = g.coverPath;
+      return AdaptiveNavPeekEntry(
         title: g.displayName,
         cover: cover == null || cover.isEmpty || !File(cover).existsSync()
             ? null
             : resolveMediaCoverImage(kind: MediaKind.game, localPath: cover),
         blurCover: nsfw(MediaNsfwTarget.game(g.id, adult: g.isNsfw)),
         onOpen: open,
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
+/// 游戏速览：与游戏首页同一份可见口径（[galgameShownOnHome]：「隐藏成人向」偏好
+/// + 上锁）与同一份「继续」选取（[galgameHomeContinue]：正在运行的游戏优先，
+/// 从没玩过也算；否则最近玩过的）。正在运行的那条按此刻 [nowMs] 计时（首页速览
+/// 混排时它就是最近的）。
+NavPeekFeed navPeekGamesFeed(
+  List<GalgameEntry> games, {
+  required bool hideNsfw,
+  required MediaVisibility visibility,
+  required String? runningExe,
+  required int nowMs,
+  required AdaptiveNavPeekEntry Function(GalgameEntry game) entryOf,
+}) {
+  final List<GalgameEntry> visible = <GalgameEntry>[
+    for (final GalgameEntry g in games)
+      if (galgameShownOnHome(g, hideNsfw: hideNsfw, visibility: visibility)) g,
+  ];
+  final ({GalgameEntry? hero, List<GalgameEntry> rest}) cont =
+      galgameHomeContinue(visible, runningExe: runningExe);
+  final GalgameEntry? hero = cont.hero;
+  final bool heroRunning =
+      hero != null && galgameRunningEntry(visible, runningExe)?.id == hero.id;
   return NavPeekFeed(
-    resume: played.isEmpty ? null : entryOf(played.first),
-    recent: played.skip(1).take(_kPeekRecentCount).map(entryOf).toList(),
+    resume: hero == null
+        ? null
+        : (at: heroRunning ? nowMs : hero.lastPlayedMs, entry: entryOf(hero)),
+    recent: <NavPeekTimed>[
+      for (final GalgameEntry g in cont.rest.take(_kPeekRecentCount))
+        (at: g.lastPlayedMs, entry: entryOf(g)),
+    ],
   );
 }
 
@@ -607,97 +645,87 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
 }
 
 Future<AdaptiveNavPeekData> _loadDownloads({
+  required WidgetRef ref,
   required AppModel appModel,
   required VoidCallback openDownloads,
-}) async {
-  final List<VideoDownloadJobRow> jobs =
-      (await appModel.database.getVideoDownloadJobs()).toList()..sort(
-        (VideoDownloadJobRow a, VideoDownloadJobRow b) =>
-            b.updatedAt - a.updatedAt,
-      );
-  final AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) entryOf =
+}) async => navPeekDownloadData(
+  await loadDownloadTaskSnapshot(appModel: appModel, ref: ref),
+  openDownloads: openDownloads,
+);
+
+/// 下载速览：与下载页「任务」列表同一份条目（[loadDownloadTaskSnapshot]：持久视频
+/// 任务 + 旧番剧计划 / 直链 / 漫画 / 远端 host / 互联 / 转录入库），按页面缺省
+/// 排序（[selectDownloadTasks]，新建的在前）。「继续」= 最前的那条下载中任务，
+/// 「最近」= 其余的前几条；点哪条都进下载页。
+AdaptiveNavPeekData navPeekDownloadData(
+  List<DownloadTaskEntry> tasks, {
+  required VoidCallback openDownloads,
+}) {
+  final List<DownloadTaskEntry> ordered = selectDownloadTasks(tasks);
+  final AdaptiveNavPeekEntry Function(DownloadTaskEntry task) entryOf =
       navPeekDownloadEntry(openDownloads);
-  final VideoDownloadJobRow? resume = jobs
+  final DownloadTaskEntry? resume = ordered
       .where(
-        (VideoDownloadJobRow j) =>
-            j.lifecycle == VideoDownloadJobLifecycle.active,
+        (DownloadTaskEntry task) => task.status == DownloadTaskStatus.active,
       )
       .firstOrNull;
   return AdaptiveNavPeekData(
     resume: resume == null ? null : entryOf(resume),
     resumeLabel: t.download_task_lifecycle_active,
     recentLabel: t.nav_downloads,
-    summary: navPeekDownloadSummary(jobs),
-    recent: jobs
-        .where((VideoDownloadJobRow j) => !identical(j, resume))
+    summary: navPeekDownloadSummary(ordered),
+    recent: ordered
+        .where((DownloadTaskEntry task) => !identical(task, resume))
         .take(_kPeekRecentCount)
         .map(entryOf)
         .toList(),
   );
 }
 
-/// 下载任务的速览条目：标题是作品名，副行是具体资源名（同一部作品的不同集 /
-/// 版本靠它区分——只有作品名时两条任务看起来是同一项），尾部状态签是进行中的
-/// 百分比或生命周期（已完成 / 需要处理 / 已失败 / 已取消）。
-AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) navPeekDownloadEntry(
+/// 下载任务的速览条目：标题与副行同任务卡（副行是资源名 / 来源 / 设备，同一部
+/// 作品的不同集 / 版本靠它区分），尾部状态签是下载中的百分比或状态名
+/// （[downloadTaskStatusLabel]，与下载页同一份文案）。
+AdaptiveNavPeekEntry Function(DownloadTaskEntry task) navPeekDownloadEntry(
   VoidCallback openDownloads,
-) => (VideoDownloadJobRow job) {
-  final String? cover = job.coverUrl;
-  final bool done = job.lifecycle == VideoDownloadJobLifecycle.completed;
-  final double progress = done
+) => (DownloadTaskEntry task) {
+  final String? cover = task.coverUrl;
+  final double progress = task.status == DownloadTaskStatus.completed
       ? 1
-      : job.stageProgress.clamp(0.0, 1.0).toDouble();
-  final String? resource = job.resourceTitle?.trim();
-  final (
-    String status,
-    AdaptiveNavPeekStatusTone tone,
-  ) = switch (job.lifecycle) {
-    VideoDownloadJobLifecycle.completed => (
-      t.download_task_lifecycle_completed,
-      AdaptiveNavPeekStatusTone.done,
-    ),
-    VideoDownloadJobLifecycle.needsAttention => (
-      t.download_task_lifecycle_needs_attention,
-      AdaptiveNavPeekStatusTone.attention,
-    ),
-    VideoDownloadJobLifecycle.failed => (
-      t.download_task_lifecycle_failed,
-      AdaptiveNavPeekStatusTone.error,
-    ),
-    VideoDownloadJobLifecycle.cancelled => (
-      t.download_task_lifecycle_cancelled,
-      AdaptiveNavPeekStatusTone.neutral,
-    ),
-    _ => ('${(progress * 100).round()}%', AdaptiveNavPeekStatusTone.active),
+      : (task.progress ?? 0).clamp(0.0, 1.0).toDouble();
+  final AdaptiveNavPeekStatusTone tone = switch (task.status) {
+    DownloadTaskStatus.active => AdaptiveNavPeekStatusTone.active,
+    DownloadTaskStatus.completed => AdaptiveNavPeekStatusTone.done,
+    DownloadTaskStatus.attention => AdaptiveNavPeekStatusTone.attention,
+    DownloadTaskStatus.queued ||
+    DownloadTaskStatus.paused ||
+    DownloadTaskStatus.cancelled => AdaptiveNavPeekStatusTone.neutral,
   };
+  final String? subtitle = task.subtitle?.trim();
   return AdaptiveNavPeekEntry(
-    title: job.title,
+    title: task.title,
     cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
     progress: progress,
-    subtitle: resource == null || resource.isEmpty
-        ? (job.year == null ? null : '${job.year}')
-        : resource,
-    status: status,
+    subtitle: subtitle == null || subtitle.isEmpty ? null : subtitle,
+    status: task.status == DownloadTaskStatus.active
+        ? '${(progress * 100).round()}%'
+        : downloadTaskStatusLabel(task.status),
     statusTone: tone,
     onOpen: openDownloads,
   );
 };
 
-/// 下载速览页头的概况：「活动 2 · 完成 35」，需要处理 / 失败的有才拼上。
-String? navPeekDownloadSummary(List<VideoDownloadJobRow> jobs) {
-  int count(String lifecycle) =>
-      jobs.where((VideoDownloadJobRow j) => j.lifecycle == lifecycle).length;
-  final int active = count(VideoDownloadJobLifecycle.active);
-  final int attention =
-      count(VideoDownloadJobLifecycle.needsAttention) +
-      count(VideoDownloadJobLifecycle.failed);
-  final int completed = count(VideoDownloadJobLifecycle.completed);
-  if (jobs.isEmpty) return null;
+/// 下载速览页头的概况，与下载页顶部概况卡（`DownloadSummaryHero`）同一组计数：
+/// 「下载中 2 · 排队 1 · 已完成 35」，需要处理的有才拼上。
+String? navPeekDownloadSummary(List<DownloadTaskEntry> tasks) {
+  if (tasks.isEmpty) return null;
+  int count(DownloadTaskStatus status) =>
+      tasks.where((DownloadTaskEntry task) => task.status == status).length;
+  final int attention = count(DownloadTaskStatus.attention);
   return <String>[
-    t.download_summary_active(n: active),
-    if (attention > 0)
-      '${t.download_task_lifecycle_needs_attention} $attention',
-    t.download_summary_completed(n: completed),
+    t.download_summary_active(n: count(DownloadTaskStatus.active)),
+    t.download_summary_queued(n: count(DownloadTaskStatus.queued)),
+    if (attention > 0) '${t.download_task_status_attention} $attention',
+    t.download_summary_completed(n: count(DownloadTaskStatus.completed)),
   ].join(' · ');
 }
 
@@ -945,22 +973,23 @@ Future<AdaptiveNavPeekData> _loadMusic({
   final MusicPlayItem? current = engine.current;
   AdaptiveNavPeekEntry? resume;
   if (current != null) {
-    final MusicTrackRow? track = await db.getMusicTrack(current.trackUid);
-    if (track != null) {
-      final MusicAlbumRow? album = await albumOf(track.albumUid);
-      resume = AdaptiveNavPeekEntry(
-        title: track.title,
-        cover: await _musicCover(db, track: track, album: album),
-        subtitle: <String>[
-          if (track.artistCredit ?? album?.albumArtistCredit
-              case final String artist)
-            artist,
-          ?album?.title,
-        ].join(' · '),
-        onOpen: openMusic,
-      );
-      units.removeWhere((MusicTrackRow t) => unitKey(t) == unitKey(track));
+    // 「继续」照播放条画：标题 / 副行 / 封面都取播放项本身。服务器、插件、
+    // Apple Music 的曲目 uid 是合成的、不在曲库表里，不能先去表里查。
+    ImageProvider? cover = musicCoverImageProvider(current.coverPath);
+    if (cover == null) {
+      // 曲库曲目只有内嵌封面时播放项不带封面路径：按曲库那一行补上。
+      final MusicTrackRow? track = await db.getMusicTrack(current.trackUid);
+      if (track != null) {
+        cover = await _musicCover(
+          db,
+          track: track,
+          album: await albumOf(track.albumUid),
+        );
+      }
     }
+    resume = navPeekNowPlayingEntry(current, cover: cover, onOpen: openMusic);
+    final String playingKey = current.albumUid ?? current.trackUid;
+    units.removeWhere((MusicTrackRow t) => unitKey(t) == playingKey);
   } else if (units.isNotEmpty) {
     resume = await entryOf(units.removeAt(0));
   }
@@ -971,6 +1000,22 @@ Future<AdaptiveNavPeekData> _loadMusic({
       for (final MusicTrackRow track in units.take(_kPeekRecentCount))
         await entryOf(track),
     ],
+  );
+}
+
+/// 音乐速览的「正在播放」条目：与播放条同一份标题与副行
+/// （[musicNowPlayingByline]），只看播放项本身，曲库表外的曲目同样有。
+AdaptiveNavPeekEntry navPeekNowPlayingEntry(
+  MusicPlayItem item, {
+  required ImageProvider? cover,
+  required VoidCallback onOpen,
+}) {
+  final String byline = musicNowPlayingByline(item);
+  return AdaptiveNavPeekEntry(
+    title: item.title,
+    cover: cover,
+    subtitle: byline.isEmpty ? null : byline,
+    onOpen: onOpen,
   );
 }
 

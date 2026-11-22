@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4581 条。点号进各自文件。
+> 共 4585 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5264](bugs/BUG-5264-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
+| [BUG-5263](bugs/BUG-5263-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
+| [BUG-5262](bugs/BUG-5262-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
+| [BUG-5261](bugs/BUG-5261-downloads-peek-sources.md) | ✅ | ✅ | 下载速览只看视频任务：漫画 / 转录 / 直链 / 旧番剧 / 远端 / 互联任务都不在 |
 | [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
 | [BUG-5256](bugs/BUG-5256-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
 | [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |
