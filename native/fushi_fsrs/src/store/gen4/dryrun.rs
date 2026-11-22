@@ -716,6 +716,7 @@ pub(crate) fn profile_stages(
         skip.cards.extend(cards);
     }
     out.insert("collidedNotes".into(), json!(collided.notes.len()));
+    out.insert("collidedEntities".into(), json!(collided.entities.len()));
     mark("canonLoad");
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");

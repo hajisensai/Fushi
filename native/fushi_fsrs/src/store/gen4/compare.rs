@@ -28,9 +28,10 @@ use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
 use super::truth::{EditRead, Truth};
 use crate::gen4::op::{Body4, Log4};
+use crate::store::sync2::load_op;
 use crate::store::sync2::semantics::current_tags;
 use crate::sync2::id::{Id, Key};
-use crate::sync2::op::EntKind;
+use crate::sync2::op::{Body, EntKind};
 use crate::sync2::vv::OpId;
 
 /// 有差异的类别：(类别, 只在旧库, 只在新库)。空 = 完全一致。
@@ -641,11 +642,15 @@ pub(crate) struct Collisions {
     /// 撞车的修改记录 ID：`edits` 两边都不比。不看状态——撞车的另一条在新代里被支配了也一样（协议 3 可能留的正是那条）。
     pub edit_ids: BTreeSet<Ref>,
     /// 撞车、且在新代里活着的修改落在的笔记（`note:ID`）：这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序
-    /// 造成的，缓存层不比它们与它们的卡。
+    /// 造成的，缓存层不比它们与它们的卡。跨 profile 撞车的笔记（[entities]）也在这里：协议 3 按 `profile_uid` 列本
+    /// profile 的笔记（`caches.rs` 的全量刷新），行归了别的 profile 的笔记在它的缓存里没有。
     pub notes: BTreeSet<String>,
     /// 撞车的修改落在的寄存器（`种类:ID`, 键），两条都算：协议 3 只存了其中一条，另一个寄存器的胜者随之不同（干跑的
     /// `registerWinners` 不比这些寄存器）。
     pub registers: BTreeSet<(String, String)>,
+    /// 跨 profile 撞车的实体（[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 行却归了
+    /// 同库另一个 profile。`entities` 一类按本 profile 的操作集合把它们算进协议 3 一侧；其中的笔记同时进 [notes]。
+    pub entities: BTreeSet<Ref>,
 }
 
 /// 扫一遍 `reg_ix` 的全部写入，找出 [Collisions]。同时在内存里的只有每个旧 dot 的第一条修改（大库三十多万个）。
@@ -1311,7 +1316,7 @@ pub(crate) fn against_protocol_3(
             .collect()
     };
     // 撞车的旧修改记录 ID 两边都不比（[Collisions]）。
-    let collided = collisions(t, col)?;
+    let mut collided = collisions(t, col)?;
     let mut old_edits = protocol_3_live_edits(src, profile, &held_ents)?;
     let mut new_edits = live_edit_ids(t, col, &held_ents)?;
     old_edits.retain(|id| !collided.edit_ids.contains(id));
@@ -1328,17 +1333,22 @@ pub(crate) fn against_protocol_3(
         logs,
         refs("SELECT DISTINCT id FROM log_ix WHERE col = ?1")?,
     );
-    let entities = old_refs(
+    // 协议 3 一侧的实体：本 profile 名下的 `srs_entities` 行，加上行归了同库另一个 profile、本 profile 的操作日志里
+    // 也有身份记录的（[taken_entities]）。
+    let mut entities = old_refs(
         src,
         "SELECT id FROM srs_entities WHERE profile_uid = srs_id(?1)",
         profile,
     )?;
-    push_refs(
-        &mut diff,
-        "entities",
-        entities,
-        refs("SELECT DISTINCT id FROM ent_ix WHERE col = ?1")?,
-    );
+    let new_entities = refs("SELECT DISTINCT id FROM ent_ix WHERE col = ?1")?;
+    for (id, kind) in taken_entities(src, profile, &entities, &new_entities)? {
+        if kind == EntKind::Note {
+            collided.notes.insert(format!("note:{}", id.text()));
+        }
+        collided.entities.insert(id);
+    }
+    entities.extend(collided.entities.iter().cloned());
+    push_refs(&mut diff, "entities", entities, new_entities);
     push_pair(&mut diff, ("tags", old_tags, new_tags));
     let media = texts(
         src,
@@ -1389,6 +1399,64 @@ pub(crate) fn against_protocol_3(
         &mut diff,
     )?;
     Ok((diff, rows, collided, known))
+}
+
+/// 跨 profile 撞车的实体（[Collisions::entities]）：协议 3 的 `srs_entities` 以实体 ID 为主键、全库共用
+/// （`store/schema.rs`），同库两个 profile 的操作日志里都有同一个实体的身份记录时只存一行——内容相同的留给先落投影的
+/// profile，不同的归规范 JSON 小者（`sync2::project_entity`）。另一个 profile 名下就没有这一行，而新代按集合各存各的。
+///
+/// 只从 [new] 里协议 3 一侧没有的 ID 找（[own] 是本 profile 名下的行）：这一行在库里、归了另一个 profile，且本
+/// profile 已应用的操作（`sync2_ops`）里有它的身份记录，才算撞车（ID → 种类）；证不出的照常记成差异。
+fn taken_entities(
+    src: &Connection,
+    profile: &str,
+    own: &BTreeSet<Ref>,
+    new: &BTreeSet<Ref>,
+) -> Result<BTreeMap<Ref, EntKind>, String> {
+    let mut elsewhere: BTreeSet<&Ref> = BTreeSet::new();
+    {
+        let mut stmt = src
+            .prepare("SELECT 1 FROM srs_entities WHERE id = ?1 AND profile_uid != srs_id(?2)")
+            .map_err(sql)?;
+        for id in new.difference(own) {
+            if stmt.exists(params![id, profile]).map_err(sql)? {
+                elsewhere.insert(id);
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    if elsewhere.is_empty() {
+        return Ok(out);
+    }
+    let ops: Vec<(Vec<u8>, i64)> = src
+        .prepare(
+            "SELECT device, seq FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND purged = 0",
+        )
+        .map_err(sql)?
+        .query_map(params![profile, crate::sync2::op::KIND_ENTITY], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (device, seq) in ops {
+        let device: [u8; 16] = device
+            .try_into()
+            .map_err(|_| "compare: bad device id blob".to_owned())?;
+        let op_id = OpId {
+            device: Id(device),
+            seq: seq as u64,
+        };
+        let op = load_op(src, profile, &op_id)?
+            .ok_or_else(|| format!("compare: op {} vanished", op_text(&op_id)))?;
+        if let Body::Entity { kind, id, .. } = op.body().map_err(|e| e.to_string())? {
+            let id = Ref::of(&id);
+            if elsewhere.contains(&id) {
+                out.insert(id, kind);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）
