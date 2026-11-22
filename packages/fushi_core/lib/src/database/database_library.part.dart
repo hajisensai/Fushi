@@ -1043,35 +1043,44 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         MediaCollectionsCompanion(coverPath: Value(coverPath)),
       );
 
-  /// 私密合集（v122 `media_privacy_flags`）的成员离开它之前，把私密落到成员自己
-  /// 身上（fail-closed）。成员的私密原本只是「在私密合集里」继承来的：合集被删 /
-  /// 合并解散 / 按季或按 AniDB 作品拆走 / 成员被移出时，继承随成员关系一起消失，
-  /// 那部作品就会在下一轮排行榜上传、Bangumi 推送里静默变回公开——其中 AniDB 拆分
-  /// 是刮削后台自动做的，用户根本没表达过「公开」。取消私密只认用户在作品自己的私密
-  /// 开关上拨回去。合集本身不私密时什么都不做；成员已私密的不重写（不推进时钟）。
+  /// 私密 / 上锁合集（v122 `media_privacy_flags` / v171 `media_locked_flags`）的
+  /// 成员离开它之前，把私密 / 上锁落到成员自己身上（fail-closed）。成员的私密 /
+  /// 上锁原本只是「在合集里」继承来的：合集被删 / 合并解散 / 按季或按 AniDB 作品
+  /// 拆走 / 成员被移出时，继承随成员关系一起消失，那部作品就会在下一轮排行榜上传、
+  /// Bangumi 推送里静默变回公开，或者在库里突然露出来——其中 AniDB 拆分是刮削后台
+  /// 自动做的，用户根本没表达过「公开」。取消只认用户在作品自己的隐私分级上改回去。
+  /// 合集本身两样都没有时什么都不做；成员已有的不重写（不推进时钟）。
   Future<void> _carryCollectionPrivacyToMembers(
     int collectionId,
     Iterable<({String mediaType, String entryKey})> leaving,
   ) async {
-    if (!await isMediaPrivate(
+    final String collectionKey = collectionTagEntryKey(collectionId);
+    final bool private = await isMediaPrivate(
       TagHostKind.collection,
-      collectionTagEntryKey(collectionId),
-    )) {
-      return;
-    }
+      collectionKey,
+    );
+    final bool locked = await isMediaLocked(
+      TagHostKind.collection,
+      collectionKey,
+    );
+    if (!private && !locked) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
     for (final (:String mediaType, :String entryKey) in leaving) {
       final MediaKind? kind = MediaKind.tryParse(mediaType);
       // 对端未知种类：本机没有对应宿主、也没有出站路径，无从落标记。
       if (kind == null) continue;
-      // EPUB 成员键 v83 起是 uid，私密标记键是 bookKey；反查不上 = 透传行（原值
-      // 本就是 bookKey），照抄。
+      // EPUB 成员键 v83 起是 uid，私密 / 上锁标记键是 bookKey；反查不上 = 透传行
+      // （原值本就是 bookKey），照抄。
       final String hostKey = kind == MediaKind.epub
           ? (await resolveEpubBookKeyByUid(entryKey) ?? entryKey)
           : entryKey;
       final TagHostKind host = tagHostKindOfMediaKind(kind);
-      if (await isMediaPrivate(host, hostKey)) continue;
-      await setMediaPrivate(host, hostKey, true, at: now);
+      if (private && !await isMediaPrivate(host, hostKey)) {
+        await setMediaPrivate(host, hostKey, true, at: now);
+      }
+      if (locked && !await isMediaLocked(host, hostKey)) {
+        await setMediaLocked(host, hostKey, true, at: now);
+      }
     }
   }
 

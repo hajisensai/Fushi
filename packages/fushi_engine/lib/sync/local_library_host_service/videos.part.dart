@@ -109,7 +109,13 @@ mixin _LocalLibraryHostVideos
         ),
       );
     }
-    return videos;
+    // 上锁的视频（含在上锁合集里的）标 locked：对端未解锁时不出占位卡。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
+    if (locks.isEmpty) return videos;
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo v in videos)
+        locks.isVideoLocked(v.id) ? v.copyWith(locked: true) : v,
+    ];
   }
 
   /// 预取 [row] 的文件系统事实（全部 async IO，不阻塞调用方 isolate；见 [listVideos]）。

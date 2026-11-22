@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -109,8 +110,17 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
     final bool apple = isGlassDesign(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     final double leadingWidth = apple ? metrics.leadingIconSize : 40;
+    // 上锁（未解锁）的合集不列（[MediaVisibility]，唯一的上锁过滤入口）。
+    // 顶部合集总数与空态也只按可见的算——数上锁合集等于告诉人「这里藏了东西」。
+    final MediaVisibility lockVisibility = MediaVisibility.of(context);
+    final List<MediaCollectionRow> unlocked = lockVisibility.hidesAnything
+        ? <MediaCollectionRow>[
+            for (final MediaCollectionRow c in _collections)
+              if (!lockVisibility.hidesCollection(c.id)) c,
+          ]
+        : _collections;
     final List<MediaCollectionRow> visible = filterByMediaSearch(
-      _collections,
+      unlocked,
       _search.text,
       (MediaCollectionRow c) => <String>[c.name],
     );
@@ -190,7 +200,7 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _CollectionSummaryCard(count: _collections.length),
+          _CollectionSummaryCard(count: unlocked.length),
           SizedBox(height: tokens.spacing.gap * 1.5),
           FushiSearchField(
             fieldKey: const ValueKey<String>('collection_management_search'),
@@ -214,7 +224,7 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
           child: Center(child: adaptiveIndicator(context: context)),
         );
       }
-      if (_collections.isEmpty) {
+      if (unlocked.isEmpty) {
         return SafeArea(
           bottom: false,
           child: Center(

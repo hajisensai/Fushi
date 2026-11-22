@@ -64970,6 +64970,614 @@ class MediaNsfwFlagsCompanion extends UpdateCompanion<MediaNsfwFlagRow> {
   }
 }
 
+class $MediaLockedFlagsTable extends MediaLockedFlags
+    with TableInfo<$MediaLockedFlagsTable, MediaLockedFlagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLockedFlagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lockedAtMeta = const VerificationMeta(
+    'lockedAt',
+  );
+  @override
+  late final GeneratedColumn<int> lockedAt = GeneratedColumn<int>(
+    'locked_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<int> clearedAt = GeneratedColumn<int>(
+    'cleared_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaKind,
+    entryKey,
+    lockedAt,
+    clearedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_locked_flags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLockedFlagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaKindMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('locked_at')) {
+      context.handle(
+        _lockedAtMeta,
+        lockedAt.isAcceptableOrUnknown(data['locked_at']!, _lockedAtMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaKind, entryKey};
+  @override
+  MediaLockedFlagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLockedFlagRow(
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      lockedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}locked_at'],
+      ),
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}cleared_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaLockedFlagsTable createAlias(String alias) {
+    return $MediaLockedFlagsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLockedFlagRow extends DataClass
+    implements Insertable<MediaLockedFlagRow> {
+  final String mediaKind;
+  final String entryKey;
+
+  /// 最近一次上锁的毫秒戳；NULL = 从没上过锁。
+  final int? lockedAt;
+
+  /// 最近一次解除上锁的毫秒戳；NULL = 从没解除过。
+  final int? clearedAt;
+  const MediaLockedFlagRow({
+    required this.mediaKind,
+    required this.entryKey,
+    this.lockedAt,
+    this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_kind'] = Variable<String>(mediaKind);
+    map['entry_key'] = Variable<String>(entryKey);
+    if (!nullToAbsent || lockedAt != null) {
+      map['locked_at'] = Variable<int>(lockedAt);
+    }
+    if (!nullToAbsent || clearedAt != null) {
+      map['cleared_at'] = Variable<int>(clearedAt);
+    }
+    return map;
+  }
+
+  MediaLockedFlagsCompanion toCompanion(bool nullToAbsent) {
+    return MediaLockedFlagsCompanion(
+      mediaKind: Value(mediaKind),
+      entryKey: Value(entryKey),
+      lockedAt: lockedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lockedAt),
+      clearedAt: clearedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(clearedAt),
+    );
+  }
+
+  factory MediaLockedFlagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLockedFlagRow(
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      lockedAt: serializer.fromJson<int?>(json['lockedAt']),
+      clearedAt: serializer.fromJson<int?>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaKind': serializer.toJson<String>(mediaKind),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'lockedAt': serializer.toJson<int?>(lockedAt),
+      'clearedAt': serializer.toJson<int?>(clearedAt),
+    };
+  }
+
+  MediaLockedFlagRow copyWith({
+    String? mediaKind,
+    String? entryKey,
+    Value<int?> lockedAt = const Value.absent(),
+    Value<int?> clearedAt = const Value.absent(),
+  }) => MediaLockedFlagRow(
+    mediaKind: mediaKind ?? this.mediaKind,
+    entryKey: entryKey ?? this.entryKey,
+    lockedAt: lockedAt.present ? lockedAt.value : this.lockedAt,
+    clearedAt: clearedAt.present ? clearedAt.value : this.clearedAt,
+  );
+  MediaLockedFlagRow copyWithCompanion(MediaLockedFlagsCompanion data) {
+    return MediaLockedFlagRow(
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      lockedAt: data.lockedAt.present ? data.lockedAt.value : this.lockedAt,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockedFlagRow(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('lockedAt: $lockedAt, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(mediaKind, entryKey, lockedAt, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLockedFlagRow &&
+          other.mediaKind == this.mediaKind &&
+          other.entryKey == this.entryKey &&
+          other.lockedAt == this.lockedAt &&
+          other.clearedAt == this.clearedAt);
+}
+
+class MediaLockedFlagsCompanion extends UpdateCompanion<MediaLockedFlagRow> {
+  final Value<String> mediaKind;
+  final Value<String> entryKey;
+  final Value<int?> lockedAt;
+  final Value<int?> clearedAt;
+  final Value<int> rowid;
+  const MediaLockedFlagsCompanion({
+    this.mediaKind = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.lockedAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLockedFlagsCompanion.insert({
+    required String mediaKind,
+    required String entryKey,
+    this.lockedAt = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaKind = Value(mediaKind),
+       entryKey = Value(entryKey);
+  static Insertable<MediaLockedFlagRow> custom({
+    Expression<String>? mediaKind,
+    Expression<String>? entryKey,
+    Expression<int>? lockedAt,
+    Expression<int>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaKind != null) 'media_kind': mediaKind,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (lockedAt != null) 'locked_at': lockedAt,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLockedFlagsCompanion copyWith({
+    Value<String>? mediaKind,
+    Value<String>? entryKey,
+    Value<int?>? lockedAt,
+    Value<int?>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLockedFlagsCompanion(
+      mediaKind: mediaKind ?? this.mediaKind,
+      entryKey: entryKey ?? this.entryKey,
+      lockedAt: lockedAt ?? this.lockedAt,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (lockedAt.present) {
+      map['locked_at'] = Variable<int>(lockedAt.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<int>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockedFlagsCompanion(')
+          ..write('mediaKind: $mediaKind, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('lockedAt: $lockedAt, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaLockCredentialsTable extends MediaLockCredentials
+    with TableInfo<$MediaLockCredentialsTable, MediaLockCredentialRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLockCredentialsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _credentialKeyMeta = const VerificationMeta(
+    'credentialKey',
+  );
+  @override
+  late final GeneratedColumn<String> credentialKey = GeneratedColumn<String>(
+    'credential_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _verifierMeta = const VerificationMeta(
+    'verifier',
+  );
+  @override
+  late final GeneratedColumn<String> verifier = GeneratedColumn<String>(
+    'verifier',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [credentialKey, verifier, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_lock_credentials';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLockCredentialRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('credential_key')) {
+      context.handle(
+        _credentialKeyMeta,
+        credentialKey.isAcceptableOrUnknown(
+          data['credential_key']!,
+          _credentialKeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_credentialKeyMeta);
+    }
+    if (data.containsKey('verifier')) {
+      context.handle(
+        _verifierMeta,
+        verifier.isAcceptableOrUnknown(data['verifier']!, _verifierMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {credentialKey};
+  @override
+  MediaLockCredentialRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLockCredentialRow(
+      credentialKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}credential_key'],
+      )!,
+      verifier: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}verifier'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaLockCredentialsTable createAlias(String alias) {
+    return $MediaLockCredentialsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLockCredentialRow extends DataClass
+    implements Insertable<MediaLockCredentialRow> {
+  final String credentialKey;
+
+  /// 口令摘要 JSON；NULL = 口令已删除。
+  final String? verifier;
+
+  /// 最近一次设置 / 修改 / 删除的毫秒戳。
+  final int updatedAt;
+  const MediaLockCredentialRow({
+    required this.credentialKey,
+    this.verifier,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['credential_key'] = Variable<String>(credentialKey);
+    if (!nullToAbsent || verifier != null) {
+      map['verifier'] = Variable<String>(verifier);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MediaLockCredentialsCompanion toCompanion(bool nullToAbsent) {
+    return MediaLockCredentialsCompanion(
+      credentialKey: Value(credentialKey),
+      verifier: verifier == null && nullToAbsent
+          ? const Value.absent()
+          : Value(verifier),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MediaLockCredentialRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLockCredentialRow(
+      credentialKey: serializer.fromJson<String>(json['credentialKey']),
+      verifier: serializer.fromJson<String?>(json['verifier']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'credentialKey': serializer.toJson<String>(credentialKey),
+      'verifier': serializer.toJson<String?>(verifier),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MediaLockCredentialRow copyWith({
+    String? credentialKey,
+    Value<String?> verifier = const Value.absent(),
+    int? updatedAt,
+  }) => MediaLockCredentialRow(
+    credentialKey: credentialKey ?? this.credentialKey,
+    verifier: verifier.present ? verifier.value : this.verifier,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  MediaLockCredentialRow copyWithCompanion(MediaLockCredentialsCompanion data) {
+    return MediaLockCredentialRow(
+      credentialKey: data.credentialKey.present
+          ? data.credentialKey.value
+          : this.credentialKey,
+      verifier: data.verifier.present ? data.verifier.value : this.verifier,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockCredentialRow(')
+          ..write('credentialKey: $credentialKey, ')
+          ..write('verifier: $verifier, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(credentialKey, verifier, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLockCredentialRow &&
+          other.credentialKey == this.credentialKey &&
+          other.verifier == this.verifier &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MediaLockCredentialsCompanion
+    extends UpdateCompanion<MediaLockCredentialRow> {
+  final Value<String> credentialKey;
+  final Value<String?> verifier;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const MediaLockCredentialsCompanion({
+    this.credentialKey = const Value.absent(),
+    this.verifier = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLockCredentialsCompanion.insert({
+    required String credentialKey,
+    this.verifier = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : credentialKey = Value(credentialKey),
+       updatedAt = Value(updatedAt);
+  static Insertable<MediaLockCredentialRow> custom({
+    Expression<String>? credentialKey,
+    Expression<String>? verifier,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (credentialKey != null) 'credential_key': credentialKey,
+      if (verifier != null) 'verifier': verifier,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLockCredentialsCompanion copyWith({
+    Value<String>? credentialKey,
+    Value<String?>? verifier,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLockCredentialsCompanion(
+      credentialKey: credentialKey ?? this.credentialKey,
+      verifier: verifier ?? this.verifier,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (credentialKey.present) {
+      map['credential_key'] = Variable<String>(credentialKey.value);
+    }
+    if (verifier.present) {
+      map['verifier'] = Variable<String>(verifier.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLockCredentialsCompanion(')
+          ..write('credentialKey: $credentialKey, ')
+          ..write('verifier: $verifier, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $LibraryOrganizeRunsTable extends LibraryOrganizeRuns
     with TableInfo<$LibraryOrganizeRunsTable, LibraryOrganizeRunRow> {
   @override
@@ -85760,6 +86368,11 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
       $MediaPrivacyFlagsTable(this);
   late final $MediaNsfwFlagsTable mediaNsfwFlags = $MediaNsfwFlagsTable(this);
+  late final $MediaLockedFlagsTable mediaLockedFlags = $MediaLockedFlagsTable(
+    this,
+  );
+  late final $MediaLockCredentialsTable mediaLockCredentials =
+      $MediaLockCredentialsTable(this);
   late final $LibraryOrganizeRunsTable libraryOrganizeRuns =
       $LibraryOrganizeRunsTable(this);
   late final $LibraryOrganizeChangesTable libraryOrganizeChanges =
@@ -85930,6 +86543,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoSubtitleTextOverrides,
     mediaPrivacyFlags,
     mediaNsfwFlags,
+    mediaLockedFlags,
+    mediaLockCredentials,
     libraryOrganizeRuns,
     libraryOrganizeChanges,
     webBrowserHistory,
@@ -131668,6 +132283,377 @@ typedef $$MediaNsfwFlagsTableProcessedTableManager =
       MediaNsfwFlagRow,
       PrefetchHooks Function()
     >;
+typedef $$MediaLockedFlagsTableCreateCompanionBuilder =
+    MediaLockedFlagsCompanion Function({
+      required String mediaKind,
+      required String entryKey,
+      Value<int?> lockedAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLockedFlagsTableUpdateCompanionBuilder =
+    MediaLockedFlagsCompanion Function({
+      Value<String> mediaKind,
+      Value<String> entryKey,
+      Value<int?> lockedAt,
+      Value<int?> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLockedFlagsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLockedFlagsTable> {
+  $$MediaLockedFlagsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lockedAt => $composableBuilder(
+    column: $table.lockedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLockedFlagsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLockedFlagsTable> {
+  $$MediaLockedFlagsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lockedAt => $composableBuilder(
+    column: $table.lockedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLockedFlagsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLockedFlagsTable> {
+  $$MediaLockedFlagsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<int> get lockedAt =>
+      $composableBuilder(column: $table.lockedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$MediaLockedFlagsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLockedFlagsTable,
+          MediaLockedFlagRow,
+          $$MediaLockedFlagsTableFilterComposer,
+          $$MediaLockedFlagsTableOrderingComposer,
+          $$MediaLockedFlagsTableAnnotationComposer,
+          $$MediaLockedFlagsTableCreateCompanionBuilder,
+          $$MediaLockedFlagsTableUpdateCompanionBuilder,
+          (
+            MediaLockedFlagRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaLockedFlagsTable,
+              MediaLockedFlagRow
+            >,
+          ),
+          MediaLockedFlagRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLockedFlagsTableTableManager(
+    _$FushiDatabase db,
+    $MediaLockedFlagsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLockedFlagsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLockedFlagsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaLockedFlagsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaKind = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<int?> lockedAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockedFlagsCompanion(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                lockedAt: lockedAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaKind,
+                required String entryKey,
+                Value<int?> lockedAt = const Value.absent(),
+                Value<int?> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockedFlagsCompanion.insert(
+                mediaKind: mediaKind,
+                entryKey: entryKey,
+                lockedAt: lockedAt,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLockedFlagsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLockedFlagsTable,
+      MediaLockedFlagRow,
+      $$MediaLockedFlagsTableFilterComposer,
+      $$MediaLockedFlagsTableOrderingComposer,
+      $$MediaLockedFlagsTableAnnotationComposer,
+      $$MediaLockedFlagsTableCreateCompanionBuilder,
+      $$MediaLockedFlagsTableUpdateCompanionBuilder,
+      (
+        MediaLockedFlagRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaLockedFlagsTable,
+          MediaLockedFlagRow
+        >,
+      ),
+      MediaLockedFlagRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MediaLockCredentialsTableCreateCompanionBuilder =
+    MediaLockCredentialsCompanion Function({
+      required String credentialKey,
+      Value<String?> verifier,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLockCredentialsTableUpdateCompanionBuilder =
+    MediaLockCredentialsCompanion Function({
+      Value<String> credentialKey,
+      Value<String?> verifier,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLockCredentialsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLockCredentialsTable> {
+  $$MediaLockCredentialsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get credentialKey => $composableBuilder(
+    column: $table.credentialKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get verifier => $composableBuilder(
+    column: $table.verifier,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLockCredentialsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLockCredentialsTable> {
+  $$MediaLockCredentialsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get credentialKey => $composableBuilder(
+    column: $table.credentialKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get verifier => $composableBuilder(
+    column: $table.verifier,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLockCredentialsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLockCredentialsTable> {
+  $$MediaLockCredentialsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get credentialKey => $composableBuilder(
+    column: $table.credentialKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get verifier =>
+      $composableBuilder(column: $table.verifier, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MediaLockCredentialsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLockCredentialsTable,
+          MediaLockCredentialRow,
+          $$MediaLockCredentialsTableFilterComposer,
+          $$MediaLockCredentialsTableOrderingComposer,
+          $$MediaLockCredentialsTableAnnotationComposer,
+          $$MediaLockCredentialsTableCreateCompanionBuilder,
+          $$MediaLockCredentialsTableUpdateCompanionBuilder,
+          (
+            MediaLockCredentialRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaLockCredentialsTable,
+              MediaLockCredentialRow
+            >,
+          ),
+          MediaLockCredentialRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLockCredentialsTableTableManager(
+    _$FushiDatabase db,
+    $MediaLockCredentialsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLockCredentialsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLockCredentialsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaLockCredentialsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> credentialKey = const Value.absent(),
+                Value<String?> verifier = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockCredentialsCompanion(
+                credentialKey: credentialKey,
+                verifier: verifier,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String credentialKey,
+                Value<String?> verifier = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLockCredentialsCompanion.insert(
+                credentialKey: credentialKey,
+                verifier: verifier,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLockCredentialsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLockCredentialsTable,
+      MediaLockCredentialRow,
+      $$MediaLockCredentialsTableFilterComposer,
+      $$MediaLockCredentialsTableOrderingComposer,
+      $$MediaLockCredentialsTableAnnotationComposer,
+      $$MediaLockCredentialsTableCreateCompanionBuilder,
+      $$MediaLockCredentialsTableUpdateCompanionBuilder,
+      (
+        MediaLockCredentialRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaLockCredentialsTable,
+          MediaLockCredentialRow
+        >,
+      ),
+      MediaLockCredentialRow,
+      PrefetchHooks Function()
+    >;
 typedef $$LibraryOrganizeRunsTableCreateCompanionBuilder =
     LibraryOrganizeRunsCompanion Function({
       Value<int> id,
@@ -142597,6 +143583,10 @@ class $FushiDatabaseManager {
       $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);
   $$MediaNsfwFlagsTableTableManager get mediaNsfwFlags =>
       $$MediaNsfwFlagsTableTableManager(_db, _db.mediaNsfwFlags);
+  $$MediaLockedFlagsTableTableManager get mediaLockedFlags =>
+      $$MediaLockedFlagsTableTableManager(_db, _db.mediaLockedFlags);
+  $$MediaLockCredentialsTableTableManager get mediaLockCredentials =>
+      $$MediaLockCredentialsTableTableManager(_db, _db.mediaLockCredentials);
   $$LibraryOrganizeRunsTableTableManager get libraryOrganizeRuns =>
       $$LibraryOrganizeRunsTableTableManager(_db, _db.libraryOrganizeRuns);
   $$LibraryOrganizeChangesTableTableManager get libraryOrganizeChanges =>

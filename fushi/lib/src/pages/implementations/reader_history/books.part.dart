@@ -464,8 +464,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           MediaRef(kind: MediaKind.srt, entryKey: book.uid),
         ),
       ),
-      // NSFW：「模糊 NSFW 封面」开着时书架封面打模糊（身份 = SrtBooks.uid）。
-      mediaNsfwToggleAction(
+      // 隐私：分级（公开 / 上锁；字幕书没有出站路径，没有「私密」级）与 NSFW
+      // （身份 = SrtBooks.uid）。
+      mediaPrivacyAction(
         context,
         db: appModel.database,
         kind: TagHostKind.srt,

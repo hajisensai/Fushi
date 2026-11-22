@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/base_page.dart';
@@ -82,7 +83,12 @@ class ReadingStatisticsPage extends BasePage {
       _ReadingStatisticsPageState();
 }
 
-class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
+class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage>
+    with MediaVisibilityDependent<ReadingStatisticsPage> {
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品不进统计，[MediaVisibility]）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_loadFromDatabase());
+
   bool _loading = true;
   String? _error;
 
@@ -271,7 +277,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         scope: StatFactsScope.since(_window.weekFromKey),
       );
       await Future.wait<StatFacts>(<Future<StatFacts>>[factsF, goalFactsF]);
-      final StatFacts facts = await factsF;
+      // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）；学习
+      // 目标环不列作品，照旧按全量算。
+      final StatFacts facts = mediaVisibility.visibleStatFacts(await factsF);
       _goalMediaLanguages = await loadStudyGoalMediaLanguagesFor(
         db,
         appModelNoUpdate.studyGoals,

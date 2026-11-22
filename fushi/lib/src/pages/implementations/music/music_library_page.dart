@@ -24,6 +24,7 @@ import 'package:fushi/src/second_screen/companion/modules/library_companion_hook
 import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart'
     show playMusicOriginClip;
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
@@ -522,12 +523,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicRemoteTracks,
                 db.musicDiscSources,
                 db.musicPlayEvents,
+                // 专辑上锁 / 解除上锁。
+                db.mediaLockedFlags,
               ],
             ),
           )
           .listen((_) => unawaited(_reload()));
+      // 解锁 / 重新隐藏上锁的作品。
+      MediaLockSession.instance.unlocked.addListener(_onLockSessionChanged);
     }
   }
+
+  void _onLockSessionChanged() => unawaited(_reload());
 
   @override
   void dispose() {
@@ -535,6 +542,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     MusicDiscArtIndex.instance.albums.removeListener(_onDiscArtChanged);
     _companion.dispose();
     unawaited(_dbSub?.cancel());
+    MediaLockSession.instance.unlocked.removeListener(_onLockSessionChanged);
     unawaited(_pluginSub?.cancel());
     _searchInputs.dispose();
     _actionsSlot.dispose();
@@ -545,11 +553,17 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   Future<void> _reload() async {
     final Future<MusicLibrarySnapshot> Function()? loader =
         widget.snapshotLoader;
-    final MusicLibrarySnapshot snap = loader != null
-        ? await loader()
-        : (_app.isDatabaseReady
-              ? await MusicLibrarySnapshot.load(_app.database)
-              : MusicLibrarySnapshot.empty);
+    // 上锁（未解锁）的专辑与它的曲目不进曲库页的任何分区（[MediaVisibility]）。
+    final MediaVisibility visibility = loader == null && _app.isDatabaseReady
+        ? await MediaVisibility.load(_app.database)
+        : MediaVisibility.all;
+    final MusicLibrarySnapshot snap =
+        (loader != null
+                ? await loader()
+                : (_app.isDatabaseReady
+                      ? await MusicLibrarySnapshot.load(_app.database)
+                      : MusicLibrarySnapshot.empty))
+            .withoutAlbums(visibility.hidesMusicAlbum);
     final List<MusicTrackRow> recent = loader == null && _app.isDatabaseReady
         ? await _app.database.listRecentlyPlayedMusicTracks(limit: 40)
         : const <MusicTrackRow>[];
@@ -559,7 +573,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       _snapshot = snap;
       _recentTracks = <MusicTrackRow>[
         for (final MusicTrackRow t in recent)
-          if (seen.add(t.albumUid ?? 'track:${t.trackUid}')) t,
+          if (t.albumUid == null || !visibility.hidesMusicAlbum(t.albumUid!))
+            if (seen.add(t.albumUid ?? 'track:${t.trackUid}')) t,
       ].take(13).toList();
     });
     _publishSearchInputs();

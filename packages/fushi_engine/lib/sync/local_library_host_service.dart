@@ -22,6 +22,7 @@ import 'package:fushi_audio/fushi_audio_core.dart'
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
     show isStandaloneSubtitleBook, srtBookHasGeneratedBody;
 import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi_engine/privacy/media_lock.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
