@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
@@ -23,15 +24,54 @@ CladdaghGlyph _g(double s, double e, double angle) => CladdaghGlyph(
 CladdaghScene _scene({
   bool motion = true,
   Map<String, Object?> tuning = const <String, Object?>{},
+  LyricTimeline? timeline,
+  LyricVisualizerAudio? audio,
+  LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
+  LyricVisualizerTheme? theme,
 }) => CladdaghScene(
   visualizerContextFor(
     claddaghVisualizerEntry,
     clock: FakeVisualizerClock(),
     motion: motion,
     tuning: tuning,
+    timeline: timeline,
+    audio: audio,
+    intensity: intensity,
+    theme: theme,
   ),
   const TextStyle(),
 );
+
+/// 两行，来源标成副歌（folia `isChorus`）。
+LyricTimeline _chorusTimeline() => const LyricTimeline(
+  format: 'ttml',
+  timingQuality: LyricTimingQuality.word,
+  lines: <LyricLine>[
+    LyricLine(
+      startMs: 1000,
+      endMs: 3000,
+      songPart: 'Chorus',
+      syllables: <LyricSyllable>[
+        LyricSyllable(text: '夜', startMs: 1000, endMs: 1500),
+        LyricSyllable(text: '空', startMs: 1500, endMs: 2000),
+        LyricSyllable(text: 'に', startMs: 2000, endMs: 2500),
+        LyricSyllable(text: '光', startMs: 2500, endMs: 3000),
+      ],
+    ),
+    LyricLine(
+      startMs: 4000,
+      endMs: 6000,
+      songPart: 'Verse',
+      syllables: <LyricSyllable>[
+        LyricSyllable(text: 'ま', startMs: 4000, endMs: 5000),
+        LyricSyllable(text: 'た', startMs: 5000, endMs: 6000),
+      ],
+    ),
+  ],
+);
+
+double _maxRadius(CladdaghFrame f) =>
+    f.glyphs.map((CladdaghDraw d) => d.offset.distance).reduce(math.max);
 
 void main() {
   group('时间轴', () {
@@ -195,6 +235,28 @@ void main() {
     });
   });
 
+  group('音频平滑', () {
+    test('弹簧首帧落到目标，之后平滑追随；时间倒退直接到位', () {
+      final CladdaghSpringFollower f = CladdaghSpringFollower(
+        stiffness: 150,
+        damping: 25,
+      );
+      expect(f.advance(0.2, 0), 0.2);
+      final double v = f.advance(1, 50);
+      expect(v, inExclusiveRange(0.2, 1));
+      expect(f.advance(1, 450), closeTo(1, 0.05));
+      expect(f.advance(0.3, 100), 0.3);
+    });
+
+    test('副歌光晕约 330ms 走满，减弱动态直接到位', () {
+      final CladdaghGlowRamp r = CladdaghGlowRamp();
+      expect(r.advance(false, 0, animate: true), 0);
+      expect(r.advance(true, 100, animate: true), closeTo(0.3, 1e-9));
+      expect(r.advance(true, 400, animate: true), 1);
+      expect(r.advance(false, 410, animate: false), 0);
+    });
+  });
+
   group('场景', () {
     testWidgets('当前行正在唱的字排在正前方并发光', (WidgetTester tester) async {
       final CladdaghScene scene = _scene();
@@ -231,6 +293,66 @@ void main() {
       expect(f.axis!.scaleX, 1);
     });
 
+    testWidgets('真音频：拍上低频让中轴线伸长、环鼓起；强度越高鼓得越大', (WidgetTester tester) async {
+      final SyntheticVisualizerAudio audio = SyntheticVisualizerAudio();
+      // 1000ms 正好落在拍上（合成音频 low = 1）。
+      final CladdaghFrame onBeat = _scene(
+        audio: audio,
+      ).compute(1000, const Size(1280, 720));
+      expect(onBeat.axis!.scaleX, closeTo(2.5, 1e-6));
+      // 拍间（1400ms：离上一拍 400ms）低频已回落。
+      final CladdaghFrame offBeat = _scene(
+        audio: audio,
+      ).compute(1400, const Size(1280, 720));
+      expect(offBeat.axis!.scaleX, lessThan(1.1));
+      final double calm = _maxRadius(
+        _scene(
+          audio: audio,
+          intensity: LyricVisualizerIntensity.calm,
+        ).compute(1000, const Size(1280, 720)),
+      );
+      final double chaotic = _maxRadius(
+        _scene(
+          audio: audio,
+          intensity: LyricVisualizerIntensity.chaotic,
+        ).compute(1000, const Size(1280, 720)),
+      );
+      expect(chaotic, greaterThan(calm * 1.3));
+    });
+
+    testWidgets('没有音频分析：回落歌词起字包络，照样脉动', (WidgetTester tester) async {
+      final CladdaghFrame f = _scene().compute(1000, const Size(1280, 720));
+      expect(f.axis!.scaleX, greaterThan(1.5));
+    });
+
+    testWidgets('副歌：三层发光、奇偶字错位、中轴线光晕；主歌没有', (WidgetTester tester) async {
+      final CladdaghScene scene = _scene(timeline: _chorusTimeline());
+      final CladdaghFrame f = scene.compute(1100, const Size(1280, 720));
+      expect(f.axis!.glowSize, greaterThan(0));
+      expect(f.glyphs.any((CladdaghDraw d) => d.chorus), isTrue);
+      final CladdaghScene plain = _scene(timeline: _chorusTimeline());
+      final CladdaghFrame v = plain.compute(4100, const Size(1280, 720));
+      expect(v.axis!.glowSize, 0);
+      expect(v.glyphs.any((CladdaghDraw d) => d.chorus), isFalse);
+    });
+
+    testWidgets('主题按词着色：命中的字唱过后用主题色', (WidgetTester tester) async {
+      const Color red = Color(0xFFFF0000);
+      final CladdaghFrame f = _scene(
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'夜': red},
+        ),
+      ).compute(1500, const Size(1280, 720));
+      final CladdaghDraw night = f.glyphs.firstWhere(
+        (CladdaghDraw d) => d.text == '夜',
+      );
+      expect(night.color.withValues(alpha: 1), red);
+      final CladdaghDraw sky = f.glyphs.firstWhere(
+        (CladdaghDraw d) => d.text == '空',
+      );
+      expect(sky.color.withValues(alpha: 1), isNot(red));
+    });
+
     testWidgets('第一句之前：下一句从背面淡入', (WidgetTester tester) async {
       final CladdaghScene scene = _scene();
       final CladdaghFrame f = scene.compute(800, const Size(390, 844));
@@ -250,6 +372,15 @@ void main() {
     expect(t.showAxisLine, isTrue);
     expect(t.showTranslation, isFalse);
     expect(t.focusSpacingScale, 1);
+  });
+
+  test('背景：用用户选的共享背景', () {
+    expect(
+      claddaghVisualizerEntry.backgroundFor(
+        LyricVisualizerTuning.defaults(claddaghTuningSpecs),
+      ),
+      LyricVisualizerBackgroundRequest.selected,
+    );
   });
 
   group('冒烟', () {
@@ -291,6 +422,20 @@ void main() {
         claddaghVisualizerEntry,
         motion: false,
         playing: false,
+      );
+    });
+
+    testWidgets('真音频 + 副歌 + 主题', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        claddaghVisualizerEntry,
+        timeline: _chorusTimeline(),
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'空': Color(0xFF00FF00)},
+          fontWeight: FontWeight.w400,
+        ),
       );
     });
 

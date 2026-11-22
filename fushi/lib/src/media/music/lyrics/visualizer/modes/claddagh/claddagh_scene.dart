@@ -64,13 +64,61 @@ class CladdaghRingSpring {
   }
 }
 
-/// 代替 folia 平滑后的低频能量：歌词起字包络（`pulseAt`）加一段 70ms 的起音，峰值约 0.56。
-double claddaghLyricPower(LyricVisualizerRuntime runtime, int timeMs) {
-  const double decayMs = 320;
-  final double p = runtime.pulseAt(timeMs, decayMs: decayMs.round());
-  if (p <= 0) return 0;
-  final double dt = -decayMs * math.log(p);
-  return p * (1 - math.exp(-dt / 70));
+/// folia 用 framer-motion `useSpring` 平滑频段（低频 stiffness 150 / damping 25，人声 120 / 24，
+/// 质量 1）。这里按歌词显示时间逐帧推进同一个弹簧：半隐式欧拉，每步不超过 1/240 秒；时间倒退或
+/// 一跳超过 0.5 秒（拖进度、首帧）时直接落到目标值。
+class CladdaghSpringFollower {
+  CladdaghSpringFollower({required this.stiffness, required this.damping});
+
+  final double stiffness;
+  final double damping;
+
+  double _x = 0;
+  double _v = 0;
+  int? _lastMs;
+
+  double get value => _x;
+
+  /// 推进到 [timeMs]，目标 [target]，返回平滑后的值。
+  double advance(double target, int timeMs) {
+    final int? last = _lastMs;
+    _lastMs = timeMs;
+    if (last == null || timeMs < last || timeMs - last > 500) {
+      _x = target;
+      _v = 0;
+      return _x;
+    }
+    double remaining = (timeMs - last) / 1000;
+    while (remaining > 1e-9) {
+      final double h = math.min(remaining, 1 / 240);
+      final double a = -stiffness * (_x - target) - damping * _v;
+      _v += a * h;
+      _x += _v * h;
+      remaining -= h;
+    }
+    return _x;
+  }
+}
+
+/// folia 副歌时中轴线光晕的强度：每帧（60fps）向目标走 0.05，约 330ms 走完。这里按显示时间换算
+/// 成每秒 3.0；时间倒退或跳太远时直接到位。
+class CladdaghGlowRamp {
+  double _value = 0;
+  int? _lastMs;
+
+  double advance(bool on, int timeMs, {required bool animate}) {
+    final double target = on ? 1 : 0;
+    final int? last = _lastMs;
+    _lastMs = timeMs;
+    if (!animate || last == null || timeMs < last || timeMs - last > 500) {
+      _value = target;
+      return _value;
+    }
+    final double step = (timeMs - last) / 1000 * 3.0;
+    final double diff = target - _value;
+    _value = diff.abs() <= step ? target : _value + diff.sign * step;
+    return _value;
+  }
 }
 
 /// 中轴线这一帧的样子。
@@ -81,6 +129,8 @@ class CladdaghAxis {
     required this.scaleY,
     required this.angleDeg,
     required this.length,
+    this.glowSize = 0,
+    this.glowColor = const Color(0x00000000),
   });
 
   final Color color;
@@ -88,6 +138,10 @@ class CladdaghAxis {
   final double scaleY;
   final double angleDeg;
   final double length;
+
+  /// 副歌光晕（CSS drop-shadow 的模糊半径 px；0 = 不画）。
+  final double glowSize;
+  final Color glowColor;
 }
 
 /// 一个要画的字。
@@ -103,11 +157,17 @@ class CladdaghDraw {
     required this.glowRadius,
     required this.glowColor,
     required this.blur,
+    this.chorus = false,
+    this.coreColor = const Color(0x00000000),
   });
 
   final String text;
   final double fontPx;
   final bool translation;
+
+  /// 副歌三层发光（内核 0.35r 用 [coreColor]，外两层 r / 1.6r 用 [glowColor]）。
+  final bool chorus;
+  final Color coreColor;
 
   /// 相对环心。
   final Offset offset;
@@ -175,24 +235,59 @@ double Function(int count) claddaghTextMeasurer(
 
 /// 场景：持有环弹簧与按行的排版缓存。
 class CladdaghScene {
-  CladdaghScene(this._ctx, this._baseStyle);
+  CladdaghScene(
+    this._ctx,
+    this._baseStyle, {
+    FontWeight lyricWeight = FontWeight.w700,
+    FontWeight translationWeight = FontWeight.w600,
+  }) : _lyricWeight = lyricWeight,
+       _translationWeight = translationWeight;
 
   LyricVisualizerContext _ctx;
   TextStyle _baseStyle;
+  FontWeight _lyricWeight;
+  FontWeight _translationWeight;
   final CladdaghRingSpring _spring = CladdaghRingSpring();
+
+  /// folia `useSpring(audioBands.bass, {stiffness: 150, damping: 25})`。
+  final CladdaghSpringFollower _bass = CladdaghSpringFollower(
+    stiffness: 150,
+    damping: 25,
+  );
+
+  /// folia `useSpring(audioBands.vocal, {stiffness: 120, damping: 24})`。
+  final CladdaghSpringFollower _vocal = CladdaghSpringFollower(
+    stiffness: 120,
+    damping: 24,
+  );
+  final CladdaghGlowRamp _axisGlow = CladdaghGlowRamp();
 
   String _layoutKey = '';
   final Map<int, List<CladdaghGlyph>> _lineCache = <int, List<CladdaghGlyph>>{};
   final Map<int, List<CladdaghGlyph>> _translationCache =
       <int, List<CladdaghGlyph>>{};
 
-  /// 换输入（参数 / 配色 / 时间轴变化）。排版缓存按 key 自动失效。
-  void update(LyricVisualizerContext ctx, TextStyle baseStyle) {
-    if (!identical(ctx.runtime, _ctx.runtime) || baseStyle != _baseStyle) {
+  /// 每行每个字的按词着色（folia `charColor`，主题 wordColors 命中的字；null = 用高亮色）。
+  final Map<int, List<Color?>> _colorCache = <int, List<Color?>>{};
+
+  /// 换输入（参数 / 配色 / 时间轴 / 主题变化）。排版缓存按 key 自动失效。
+  void update(
+    LyricVisualizerContext ctx,
+    TextStyle baseStyle, {
+    FontWeight lyricWeight = FontWeight.w700,
+    FontWeight translationWeight = FontWeight.w600,
+  }) {
+    if (!identical(ctx.runtime, _ctx.runtime) ||
+        baseStyle != _baseStyle ||
+        lyricWeight != _lyricWeight ||
+        translationWeight != _translationWeight ||
+        ctx.theme != _ctx.theme) {
       _layoutKey = '';
     }
     _ctx = ctx;
     _baseStyle = baseStyle;
+    _lyricWeight = lyricWeight;
+    _translationWeight = translationWeight;
   }
 
   /// 歌词基准字号：folia 72px × 字号倍数；窄屏按宽度缩（不到 1100 宽时，最小一半）。
@@ -210,7 +305,29 @@ class CladdaghScene {
     _layoutKey = key;
     _lineCache.clear();
     _translationCache.clear();
+    _colorCache.clear();
   }
+
+  /// 行内每个字（按 [spacing] 的字素顺序）该用的按词着色：folia 按 UTF-16 游标把字素映射回整行
+  /// 文本，与 `buildWordColorRanges` 的范围重叠就取那个颜色。
+  List<Color?> _lineColors(int index, List<CladdaghGlyph> spacing) =>
+      _colorCache.putIfAbsent(index, () {
+        final LyricVisualizerTheme? theme = _ctx.theme;
+        if (theme == null || !theme.hasWordColors) {
+          return List<Color?>.filled(spacing.length, null);
+        }
+        final List<LyricVisualizerWordColorRange> ranges = theme.colorRangesFor(
+          _ctx.runtime.lines[index].text,
+        );
+        final List<Color?> out = <Color?>[];
+        int cursor = 0;
+        for (final CladdaghGlyph g in spacing) {
+          final int end = cursor + g.char.length;
+          out.add(LyricVisualizerTheme.colorForSpan(ranges, cursor, end));
+          cursor = end;
+        }
+        return out;
+      });
 
   List<CladdaghTiming> _timingsOf(LyricVisualizerLine line) {
     if (line.glyphs.isNotEmpty) {
@@ -257,7 +374,7 @@ class CladdaghScene {
       tuning.letterSpacingOffset,
       claddaghTextMeasurer(
         chars,
-        claddaghGlyphStyle(_baseStyle, fontPx, FontWeight.w700),
+        claddaghGlyphStyle(_baseStyle, fontPx, _lyricWeight),
       ),
     );
     final List<CladdaghArc> arcs = claddaghArcs(
@@ -293,7 +410,7 @@ class CladdaghScene {
       tuning.translationLetterSpacingOffset,
       claddaghTextMeasurer(
         chars,
-        claddaghGlyphStyle(_baseStyle, fontPx, FontWeight.w600),
+        claddaghGlyphStyle(_baseStyle, fontPx, _translationWeight),
       ),
     );
     final List<CladdaghArc> arcs = claddaghArcs(offsets, fontPx, radius, 1);
@@ -309,16 +426,9 @@ class CladdaghScene {
     ];
   });
 
-  /// 行结束后环继续慢慢转到下一行开唱前（留出下一行入场的时间），末行再多转 10 秒。
-  double _renderEnd(int index) {
-    final List<LyricVisualizerLine> lines = _ctx.runtime.lines;
-    final LyricVisualizerLine line = lines[index];
-    final double end = line.endMs.toDouble();
-    final double next = index + 1 < lines.length
-        ? lines[index + 1].startMs - kCladdaghNextLineEntryLeadMs
-        : end + 10000;
-    return math.max(end, next);
-  }
+  /// folia `line.renderHints?.renderEndTime`：行的句尾离场窗口（共享 render hints）。
+  double _renderEnd(int index) =>
+      _ctx.runtime.lines[index].renderEndMs.toDouble();
 
   /// 算一帧。
   CladdaghFrame compute(int timeMs, Size size) {
@@ -347,18 +457,33 @@ class CladdaghScene {
 
     final int centerIndex = c.runtime.lastStartedLineAt(timeMs);
     final double lineOffset = _spring.valueAt(centerIndex, t, animate: motion);
-    final double power = motion && c.playing
-        ? claddaghLyricPower(c.runtime, timeMs)
-        : 0;
+    // 音频：分析就绪时是真低频 / 人声，否则框架用歌词起字包络合成一帧；两路都过 folia 的弹簧。
+    final LyricVisualizerAudioFrame audio = c.audioFrameAt(timeMs);
+    final double smoothedBass = _bass.advance(audio.low, timeMs);
+    final double smoothedVocal = _vocal.advance(audio.vocal, timeMs);
+    final bool live = motion && c.playing;
+    final double power = live ? smoothedBass.clamp(0.0, 1.0) : 0;
+    final double vocalPower = live ? smoothedVocal.clamp(0.0, 1.0) : 0;
+    final int activeIndex = c.runtime.activeLineAt(timeMs);
+    final bool activeChorus = activeIndex >= 0 && lines[activeIndex].isChorus;
+    final double axisGlow = _axisGlow.advance(
+      activeChorus,
+      timeMs,
+      animate: motion,
+    );
 
-    // 中轴线：颜色在主色与强调色之间随能量脉动，长度随低频平方伸缩。
+    // 中轴线：颜色随 max(低频, 人声) 在主色与强调色之间脉动，长度随低频平方伸缩；副歌加光晕。
     CladdaghAxis? axis;
     if (tuning.showAxisLine) {
       final Color from = palette.text;
       Color to = palette.accent;
       if (to == from) to = palette.secondary;
       if (to == from) to = const Color(0xFFFFFFFF);
-      final double ratio = math.min(1.0, math.max(0.0, power - 0.02) / 0.58);
+      final double colorPower = math.max(power, vocalPower);
+      final double ratio = math.min(
+        1.0,
+        math.max(0.0, colorPower - 0.02) / 0.58,
+      );
       final Color mixed = Color.lerp(
         from.withValues(alpha: 1),
         to.withValues(alpha: 1),
@@ -371,6 +496,8 @@ class CladdaghScene {
         scaleY: 1 + sq * 0.5,
         angleDeg: tuning.centerNormalTiltDeg,
         length: 300 * claddaghClamp(size.width / 1100, 0.5, 1),
+        glowSize: axisGlow > 0.001 ? (4 + power * 12) * axisGlow : 0,
+        glowColor: mixed.withValues(alpha: axisGlow),
       );
     }
 
@@ -385,8 +512,14 @@ class CladdaghScene {
       );
     }
 
-    // 节拍让环半径轻轻鼓起（folia normal 强度：×0.25，上限 1.25）。
-    final double rx = baseRx * math.min(1 + power * 0.25, 1.25);
+    // 低频让环半径鼓起（folia 按主题强度：calm ×0.08 ≤1.08、normal ×0.25 ≤1.25、
+    // chaotic ×0.95 ≤1.95）。
+    final double rx =
+        baseRx *
+        math.min(
+          1 + power * c.intensity.pick(0.08, 0.25, 0.95),
+          c.intensity.pick(1.08, 1.25, 1.95),
+        );
     final CladdaghRing ring = CladdaghRing(
       rx: rx,
       ellipseTiltDeg: tuning.ellipseTiltDeg,
@@ -471,24 +604,30 @@ class CladdaghScene {
             : 0,
       );
 
-      for (final CladdaghGlyph g in spacing) {
+      final bool chorus = line.isChorus;
+      final List<Color?> charColors = _lineColors(idx, spacing);
+      // 副歌：奇偶字沿短轴上下错开，幅度随低频脉动（folia `staggerAmount`）。
+      final double stagger = chorus ? fontPx * (0.06 + power * 0.12) : 0;
+      for (int gi = 0; gi < spacing.length; gi++) {
+        final CladdaghGlyph g = spacing[gi];
         if (g.char.trim().isEmpty) continue;
         final CladdaghPose pose = ring.pose(
           line: state,
           nominalAngle: g.nominalAngle,
+          rawYOffset: chorus ? (gi.isEven ? stagger : -stagger) : 0,
         );
         if (pose.opacity < 0.002) continue;
         final ({double mix, double alpha, double flashPop}) flash =
             claddaghFlash(claddaghCharProgress(g, t));
         final Color color = Color.lerp(
           primary,
-          highlight,
+          (charColors[gi] ?? highlight).withValues(alpha: 1),
           flash.mix,
         )!.withValues(alpha: flash.alpha);
-        final double glow =
-            24 *
-            math.pow(pose.focus, 2.0) *
-            (1 + (motion ? flash.flashPop : 0));
+        final double baseGlow = chorus
+            ? (36 + power * 24) * math.pow(pose.focus, 1.5).toDouble()
+            : 24 * math.pow(pose.focus, 2.0).toDouble();
+        final double glow = baseGlow * (1 + (motion ? flash.flashPop : 0));
         final double shadowFade = claddaghClamp((glow - 0.5) / 2, 0, 1);
         final bool hasGlow = glow > 0.5 && shadowFade > 0.01;
         draws.add(
@@ -509,6 +648,14 @@ class CladdaghScene {
               alpha: hasGlow ? flash.alpha * shadowFade * pose.opacity : 0,
             ),
             blur: pose.blur < 0.2 ? 0 : pose.blur,
+            chorus: chorus && hasGlow,
+            coreColor: chorus && hasGlow
+                ? Color.lerp(
+                    color.withValues(alpha: 1),
+                    primary,
+                    0.65,
+                  )!.withValues(alpha: shadowFade * pose.opacity)
+                : const Color(0x00000000),
           ),
         );
       }

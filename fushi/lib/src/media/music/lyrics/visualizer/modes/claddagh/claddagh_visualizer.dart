@@ -2,7 +2,8 @@
 ///
 /// 歌词沿一条倾斜的扁椭圆轨道排开：正在唱的字转到正前方、放大发光，背面的字缩小、
 /// 模糊、收拢；每换一行整环用弹簧转半圈，下一行从背面转上来。中间一条与长轴垂直的
-/// 短轴线随（歌词起字）能量变色伸缩。可选把译文沿同一圈排在歌词下方。
+/// 短轴线随低频 / 人声能量（音频分析；没有时回落歌词起字包络）变色伸缩，副歌时加光晕。
+/// 可选把译文沿同一圈排在歌词下方。
 library;
 
 import 'dart:collection';
@@ -25,7 +26,9 @@ final LyricVisualizerEntry claddaghVisualizerEntry = LyricVisualizerEntry(
   description: () => t.music_visualizer_claddagh_description,
   icon: FushiIcons.radioUnchecked,
   tunings: claddaghTuningSpecs,
-  sharedBackdrop: true,
+  // folia 回环套在 VisualizerShell 里：用用户选的共享背景。
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.selected,
   builder: (LyricVisualizerContext c) => CladdaghVisualizer(context: c),
 );
 
@@ -51,12 +54,28 @@ class _CladdaghVisualizerState extends State<CladdaghVisualizer> {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle base = DefaultTextStyle.of(
-      context,
-    ).style.copyWith(decoration: TextDecoration.none, shadows: null);
-    final CladdaghScene scene = _scene ??= CladdaghScene(widget.context, base);
-    scene.update(widget.context, base);
-    _cache.baseStyle = base;
+    final TextStyle base = widget.context.applyThemeFont(
+      DefaultTextStyle.of(
+        context,
+      ).style.copyWith(decoration: TextDecoration.none, shadows: null),
+    );
+    // folia `resolveThemeFontWeight(theme, 700)`（译文 600）：主题给了字重就用主题的。
+    final FontWeight? themeWeight = widget.context.theme?.fontWeight;
+    final FontWeight lyricWeight = themeWeight ?? FontWeight.w700;
+    final FontWeight translationWeight = themeWeight ?? FontWeight.w600;
+    final CladdaghScene scene = _scene ??= CladdaghScene(
+      widget.context,
+      base,
+      lyricWeight: lyricWeight,
+      translationWeight: translationWeight,
+    );
+    scene.update(
+      widget.context,
+      base,
+      lyricWeight: lyricWeight,
+      translationWeight: translationWeight,
+    );
+    _cache.setStyle(base, lyricWeight, translationWeight);
     return LyricVisualizerFrame(
       context: widget.context,
       builder: (BuildContext c, LyricVisualizerTicks ticks) => RepaintBoundary(
@@ -82,10 +101,19 @@ class CladdaghGlyphCache {
   final LinkedHashMap<String, TextPainter> _map =
       LinkedHashMap<String, TextPainter>();
   TextStyle _baseStyle = const TextStyle();
+  FontWeight _lyricWeight = FontWeight.w700;
+  FontWeight _translationWeight = FontWeight.w600;
 
-  set baseStyle(TextStyle v) {
-    if (v == _baseStyle) return;
-    _baseStyle = v;
+  /// 换排版样式（主题字体 / 字重）；变了就清缓存。
+  void setStyle(TextStyle base, FontWeight lyric, FontWeight translation) {
+    if (base == _baseStyle &&
+        lyric == _lyricWeight &&
+        translation == _translationWeight) {
+      return;
+    }
+    _baseStyle = base;
+    _lyricWeight = lyric;
+    _translationWeight = translation;
     clear();
   }
 
@@ -101,9 +129,11 @@ class CladdaghGlyphCache {
     final double glow = _q(d.glowRadius, 0.5);
     final Color glowColor = _qa(d.glowColor);
     final double blur = _q(d.blur, 0.25);
+    final Color coreColor = _qa(d.coreColor);
     final String key =
         '${d.text}|${d.fontPx.toStringAsFixed(1)}|${d.translation ? 6 : 7}|'
-        '${color.toARGB32()}|$glow|${glowColor.toARGB32()}|$blur';
+        '${color.toARGB32()}|$glow|${glowColor.toARGB32()}|$blur|'
+        '${d.chorus ? coreColor.toARGB32() : 0}';
     final TextPainter? hit = _map.remove(key);
     if (hit != null) {
       _map[key] = hit;
@@ -112,8 +142,19 @@ class CladdaghGlyphCache {
     final TextStyle style = claddaghGlyphStyle(
       _baseStyle,
       d.fontPx,
-      d.translation ? FontWeight.w600 : FontWeight.w700,
+      d.translation ? _translationWeight : _lyricWeight,
     );
+    final bool hasGlow = glow > 0 && glowColor.a > 0;
+    // 副歌三层（folia：内核 0.35r 混主色、r、1.6r）；平时一层 r。
+    final List<Shadow>? shadows = !hasGlow
+        ? null
+        : d.chorus
+        ? <Shadow>[
+            Shadow(color: coreColor, blurRadius: glow * 0.35),
+            Shadow(color: glowColor, blurRadius: glow),
+            Shadow(color: glowColor, blurRadius: glow * 1.6),
+          ]
+        : <Shadow>[Shadow(color: glowColor, blurRadius: glow)];
     final TextPainter painter = TextPainter(
       text: TextSpan(
         text: d.text,
@@ -124,9 +165,7 @@ class CladdaghGlyphCache {
                   ..color = color
                   ..maskFilter = MaskFilter.blur(BlurStyle.normal, blur))
               : null,
-          shadows: glow > 0 && glowColor.a > 0
-              ? <Shadow>[Shadow(color: glowColor, blurRadius: glow)]
-              : null,
+          shadows: shadows,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -198,6 +237,21 @@ class _CladdaghPainter extends CustomPainter {
     canvas.translate(center.dx, center.dy);
     canvas.rotate(axis.angleDeg * math.pi / 180);
     canvas.scale(axis.scaleX, axis.scaleY);
+    if (axis.glowSize > 0 && axis.glowColor.a > 0) {
+      // 副歌光晕：CSS drop-shadow 的模糊半径是两个标准差。
+      final Color glowClear = axis.glowColor.withValues(alpha: 0);
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, axis.glowSize / 2)
+          ..shader = ui.Gradient.linear(
+            rect.centerLeft,
+            rect.centerRight,
+            <Color>[glowClear, axis.glowColor, axis.glowColor, glowClear],
+            const <double>[0, 0.2, 0.8, 1],
+          ),
+      );
+    }
     canvas.drawRect(
       rect,
       Paint()
