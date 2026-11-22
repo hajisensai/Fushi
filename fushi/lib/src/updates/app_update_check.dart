@@ -38,11 +38,7 @@ Future<void> checkAppUpdateNow(
 }) async {
   final UpdateChannel effectiveChannel =
       channel ?? appUpdateChannelOf(appModel);
-  // BUG-5168：下载浮层点过「隐藏」时，再点「检查更新」就是要回去看进度——直接把在途
-  // 下载的浮层拉回来，不再去查一遍网络、也不只回一句「正在下载」。
-  // HBK-AUDIT-230：只拉回**这次要查的通道**的下载。stable 下载在途时，调试版面板显式
-  // 按 debug 查（BUG-4987），必须照样去查 debug manifest，不能被 stable 浮层截走。
-  if (UpdateChecker.revealActiveDownload(channel: effectiveChannel)) return;
+  if (revealDownloadForManualCheck(explicitChannel: channel)) return;
   if (_manualCheckInFlight) {
     // 更新中心条目 / 系统通知也从这里进来：在飞时静默早退等于「点了没反应」。
     FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
@@ -111,6 +107,20 @@ Future<void> checkAppUpdateNow(
     _manualCheckInFlight = false;
   }
 }
+
+/// 手动「检查更新」先把在途下载的浮层拉回来（BUG-5168：浮层点过「隐藏」时，再点
+/// 「检查更新」就是要回去看进度，不再查一遍网络）。返回 true = 已拉起、这次检查到此为止。
+///
+/// [explicitChannel] 是调用方显式代表的时间线（BUG-4987 调试版面板恒按 debug 查）：
+/// 只拉回目标版本**恰好属于这条轨**的下载——stable 下载在途时，面板按 debug 查必须照样
+/// 去查 debug manifest，不能被 stable 浮层截走（HBK-AUDIT-230）。
+///
+/// 为 null（设置页 / 更新中心 / 反馈进度，按用户自己的通道查）时拉回任一在途下载：
+/// beta / debug 通道按嵌套合集也收正式版 / 预发布（BUG-846），用户通道下在途的下载
+/// 可能属于更稳的那条轨；按「生效通道」精确匹配会把它漏掉，退回去重查网络，甚至在
+/// 它还在下的时候又弹出另一版的对话框。
+bool revealDownloadForManualCheck({UpdateChannel? explicitChannel}) =>
+    UpdateChecker.revealActiveDownload(channel: explicitChannel);
 
 /// 当前生效的更新通道：安装方式绑定了通道（Flatpak 的 branch）时用它，否则用设置
 /// （与 [UpdateChecker.scheduleCheck] 内的 debug > beta > stable 优先级一致）。
