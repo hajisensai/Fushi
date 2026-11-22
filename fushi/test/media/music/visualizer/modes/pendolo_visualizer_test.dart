@@ -621,9 +621,131 @@ void main() {
     });
   });
 
+  group('字幕偏好与预设', () {
+    LyricVisualizerLine dual() => LyricVisualizerRuntime(
+      const LyricTimeline(
+        format: 'ttml',
+        timingQuality: LyricTimingQuality.line,
+        lines: <LyricLine>[
+          LyricLine(
+            startMs: 0,
+            endMs: 2000,
+            syllables: <LyricSyllable>[
+              LyricSyllable(text: '夜空', startMs: 0, endMs: 2000),
+            ],
+            romanization: 'yozora',
+            translations: <LyricTranslation>[LyricTranslation('zh', '夜空中的光')],
+          ),
+        ],
+      ),
+    ).lines.single;
+
+    test('双行：罗马音在前，第二行退一级；字号乘字幕倍数；隐藏时没有', () {
+      final List<PendoloSubtitleTrack> both = pendoloSubtitleTracks(
+        dual(),
+        subtitle: const LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.both,
+          fontScale: 1.5,
+        ),
+        focal: true,
+        fontScale: 1,
+      );
+      expect(both.map((PendoloSubtitleTrack t) => t.text), <String>[
+        'yozora',
+        '夜空中的光',
+      ]);
+      expect(both[0].fontPx, 24);
+      expect(both[1].fontPx, (24 * 0.88).roundToDouble());
+      expect(both[1].opacityFactor, 0.82);
+      expect(both[1].weightFallback, FontWeight.w400);
+      expect(
+        pendoloSubtitleTracks(
+          dual(),
+          subtitle: const LyricVisualizerSubtitleSettings(
+            hideTranslation: true,
+          ),
+          focal: true,
+          fontScale: 1,
+        ),
+        isEmpty,
+      );
+      // 焦点高度按两行留够。
+      final double one = pendoloFocalBlockHeight(
+        dual(),
+        fontScale: 1,
+        measureWidth: 400,
+        activeScale: 1,
+      );
+      final double two = pendoloFocalBlockHeight(
+        dual(),
+        fontScale: 1,
+        measureWidth: 400,
+        activeScale: 1,
+        subtitle: const LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.both,
+        ),
+      );
+      expect(two, greaterThan(one));
+    });
+
+    testWidgets('排版块按偏好出两行，字体单独选时换字族', (WidgetTester tester) async {
+      final PendoloLineBlock block = PendoloLineBlock.build(
+        line: dual(),
+        focal: true,
+        fontScale: 1,
+        maxWidth: 400,
+        align: PendoloAlign.left,
+        primary: Colors.white,
+        fillColor: Colors.amber,
+        secondary: Colors.grey,
+        subtitle: const LyricVisualizerSubtitleSettings(
+          content: LyricVisualizerSubtitleContent.both,
+          font: LyricVisualizerSubtitleFont.serif,
+        ),
+      );
+      expect(block.subtitles, hasLength(2));
+      expect(block.subtitles[1].text!.style!.fontFamily, 'serif');
+      block.dispose();
+    });
+
+    test('预设保留用户当前的左右镜像', () {
+      for (final LyricVisualizerTuningPreset p in pendoloTuningPresets) {
+        final Map<String, Object> on = p.apply(
+          pendoloVisualizerEntry.tunings,
+          current: const <String, Object?>{
+            PendoloTuningKeys.mirrorLayout: true,
+          },
+        );
+        expect(on[PendoloTuningKeys.mirrorLayout], true, reason: p.id);
+      }
+    });
+  });
+
   group('冒烟', () {
     testWidgets('默认参数', (WidgetTester tester) async {
       await pumpVisualizerAcross(tester, pendoloVisualizerEntry);
+    });
+
+    testWidgets('主题图标画在摆轮上 + 双行字幕（含镜像）', (WidgetTester tester) async {
+      for (final bool mirrored in <bool>[false, true]) {
+        await pumpVisualizerAcross(
+          tester,
+          pendoloVisualizerEntry,
+          theme: const LyricVisualizerTheme(
+            lyricsIcons: <LyricVisualizerThemeIcon>[
+              LyricVisualizerThemeIcon.flower,
+              LyricVisualizerThemeIcon.moon,
+            ],
+          ),
+          subtitle: const LyricVisualizerSubtitleSettings(
+            content: LyricVisualizerSubtitleContent.both,
+          ),
+          tuning: <String, Object?>{
+            PendoloTuningKeys.mirrorLayout: mirrored,
+            PendoloTuningKeys.showGearDecor: 'full',
+          },
+        );
+      }
     });
 
     testWidgets('镜像 + 倾斜 + 完整饰线 + 发光', (WidgetTester tester) async {

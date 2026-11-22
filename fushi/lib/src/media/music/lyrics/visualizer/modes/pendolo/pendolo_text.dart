@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle_settings.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 焦点句 / 其他句的字号（px，乘字号倍数前）。
@@ -126,6 +127,8 @@ class PendoloLineBlock {
     LyricVisualizerTheme? theme,
     Color? glowAccent,
     double chorusGlow = 0,
+    LyricVisualizerSubtitleSettings subtitle =
+        LyricVisualizerSubtitleSettings.defaults,
   }) {
     final double fontPx =
         (focal ? kPendoloFocalFontPx : kPendoloIdleFontPx) * fontScale;
@@ -177,32 +180,33 @@ class PendoloLineBlock {
 
     final List<TextPainter> subs = <TextPainter>[];
     final List<double> gaps = <double>[];
-    final String? sub = _subtitleOf(line);
-    if (sub != null) {
-      final double px =
-          ((focal ? kPendoloFocalSubtitlePx : kPendoloIdleSubtitlePx) *
-                  fontScale)
-              .roundToDouble();
+    final Color rowColor = focal
+        ? secondary
+        : secondary.withValues(alpha: secondary.a * 0.6);
+    for (final PendoloSubtitleTrack track in pendoloSubtitleTracks(
+      line,
+      subtitle: subtitle,
+      focal: focal,
+      fontScale: fontScale,
+    )) {
       subs.add(
         TextPainter(
           text: TextSpan(
-            text: sub,
-            style: baseStyle.copyWith(
-              fontSize: px,
-              height: kPendoloSubtitleLineHeight,
-              fontWeight: FontWeight.w500,
-              letterSpacing: px * 0.01,
-              color: focal
-                  ? secondary
-                  : secondary.withValues(alpha: secondary.a * 0.6),
-            ),
+            text: track.text,
+            style: track
+                .style(subtitle, theme)
+                .copyWith(
+                  color: rowColor.withValues(
+                    alpha: rowColor.a * track.opacityFactor,
+                  ),
+                ),
           ),
           textAlign: ta,
           textDirection: TextDirection.ltr,
           textWidthBasis: TextWidthBasis.longestLine,
         )..layout(maxWidth: math.max(1, maxWidth)),
       );
-      gaps.add(px * kPendoloSubtitleGapEm);
+      gaps.add(track.fontPx * track.gapEm);
     }
     return PendoloLineBlock._(
       main: main,
@@ -408,15 +412,74 @@ List<InlineSpan>? pendoloColorRuns(
   return runs;
 }
 
-/// 首选译文，没有就用罗马音；只剩符号（"//"、"●●●"）的不显示。
-String? _subtitleOf(LyricVisualizerLine line) {
-  final RegExp readable = RegExp(r'[\p{L}\p{N}]', unicode: true);
-  for (final String? s in <String?>[line.translation, line.romanization]) {
-    if (s != null && s.trim().isNotEmpty && readable.hasMatch(s)) {
-      return s.trim();
-    }
-  }
-  return null;
+/// 一句下面的一行副字幕（folia `PendoloSubtitleTrackSpec`）：第一行保持原单行样子，双行时第二行
+/// 字号 0.88、透明度 0.82、上间距 0.25em、主题没给字重时 w400。
+class PendoloSubtitleTrack {
+  const PendoloSubtitleTrack({
+    required this.text,
+    required this.fontPx,
+    required this.gapEm,
+    required this.weightFallback,
+    required this.opacityFactor,
+  });
+
+  final String text;
+  final double fontPx;
+
+  /// 行上方的间距（按本行字号的 em）。
+  final double gapEm;
+  final FontWeight weightFallback;
+  final double opacityFactor;
+
+  /// 本行的字体样式（不含颜色）：字幕字体按全局偏好（跟随歌词 = 主题字体 / 字重）。
+  TextStyle style(
+    LyricVisualizerSubtitleSettings subtitle,
+    LyricVisualizerTheme? theme,
+  ) => subtitle.applyFont(
+    TextStyle(
+      fontSize: fontPx,
+      height: kPendoloSubtitleLineHeight,
+      fontWeight: theme?.fontWeight ?? weightFallback,
+      letterSpacing: fontPx * 0.01,
+    ),
+    theme,
+  );
+}
+
+/// 一句的副字幕行（folia `resolvePendoloSubtitleTracks`）：按全局字幕偏好取译文 / 罗马音 / 两行，
+/// 隐藏时没有；字号 = 焦点 16 / 其他 12 × 歌词字号倍数 × 字幕字号倍数（取整）。
+List<PendoloSubtitleTrack> pendoloSubtitleTracks(
+  LyricVisualizerLine line, {
+  required LyricVisualizerSubtitleSettings subtitle,
+  required bool focal,
+  required double fontScale,
+}) {
+  final List<LyricVisualizerSubtitleRow> rows = subtitle.rowsFor(
+    lineText: line.text,
+    translation: line.translation,
+    romanization: line.romanization,
+  );
+  if (rows.isEmpty) return const <PendoloSubtitleTrack>[];
+  final double basePx =
+      (focal ? kPendoloFocalSubtitlePx : kPendoloIdleSubtitlePx) *
+      fontScale *
+      subtitle.effectiveFontScale;
+  return <PendoloSubtitleTrack>[
+    for (int i = 0; i < rows.length; i++)
+      PendoloSubtitleTrack(
+        text: rows[i].text,
+        fontPx:
+            (i > 0 ? basePx * kLyricVisualizerSecondarySubtitleSize : basePx)
+                .roundToDouble(),
+        gapEm: i > 0
+            ? kLyricVisualizerSecondarySubtitleGapEm
+            : kPendoloSubtitleGapEm,
+        weightFallback: i > 0
+            ? kLyricVisualizerSecondarySubtitleWeight
+            : FontWeight.w500,
+        opacityFactor: i > 0 ? kLyricVisualizerSecondarySubtitleOpacity : 1,
+      ),
+  ];
 }
 
 /// 按字形取排版后的位置，分到各行。
@@ -480,6 +543,9 @@ double pendoloFocalBlockHeight(
   required double measureWidth,
   required double activeScale,
   TextStyle baseStyle = const TextStyle(),
+  LyricVisualizerSubtitleSettings subtitle =
+      LyricVisualizerSubtitleSettings.defaults,
+  LyricVisualizerTheme? theme,
 }) {
   final double fontPx = kPendoloFocalFontPx * fontScale;
   final TextPainter p = TextPainter(
@@ -491,21 +557,17 @@ double pendoloFocalBlockHeight(
   )..layout(maxWidth: math.max(1, measureWidth));
   double h = p.height;
   p.dispose();
-  final String? sub = _subtitleOf(line);
-  if (sub != null) {
-    final double px = (kPendoloFocalSubtitlePx * fontScale).roundToDouble();
+  for (final PendoloSubtitleTrack track in pendoloSubtitleTracks(
+    line,
+    subtitle: subtitle,
+    focal: true,
+    fontScale: fontScale,
+  )) {
     final TextPainter s = TextPainter(
-      text: TextSpan(
-        text: sub,
-        style: baseStyle.copyWith(
-          fontSize: px,
-          height: kPendoloSubtitleLineHeight,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
+      text: TextSpan(text: track.text, style: track.style(subtitle, theme)),
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: math.max(1, measureWidth));
-    h += s.height + px * kPendoloSubtitleGapEm;
+    h += s.height + track.fontPx * track.gapEm;
     s.dispose();
   }
   return h * activeScale;

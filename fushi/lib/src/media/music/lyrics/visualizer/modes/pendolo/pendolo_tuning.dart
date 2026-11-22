@@ -224,13 +224,14 @@ final List<LyricVisualizerTuningSpec> pendoloTuningSpecs =
       ),
     ];
 
-/// folia `PendoloSettingsPanel` 的三个预设：都在默认值上只改各自那几项。folia 套预设时保留用户
-/// 当前的左右镜像；这里的预设是整组值，镜像回到默认（不镜像）。
+/// folia `PendoloSettingsPanel` 的三个预设：都在默认值上只改各自那几项；套预设时保留用户当前的
+/// 左右镜像（folia 同样不动镜像）。
 final List<LyricVisualizerTuningPreset> pendoloTuningPresets =
     <LyricVisualizerTuningPreset>[
       // 预设 1：表盘往前倾、分层视差拉满，轮盘放大、往右挪。
       LyricVisualizerTuningPreset(
         id: 'tiltForward',
+        preserve: const <String>{PendoloTuningKeys.mirrorLayout},
         label: () => t.music_visualizer_pendolo_preset_tilt_forward,
         values: const <String, Object>{
           PendoloTuningKeys.arcRadius: 0.5,
@@ -244,6 +245,7 @@ final List<LyricVisualizerTuningPreset> pendoloTuningPresets =
       // 预设 2：表盘往后倾、侧向转开，加分层视差，轮盘放大、往右挪。
       LyricVisualizerTuningPreset(
         id: 'tilt',
+        preserve: const <String>{PendoloTuningKeys.mirrorLayout},
         label: () => t.music_visualizer_pendolo_preset_tilt_side,
         values: const <String, Object>{
           PendoloTuningKeys.arcRadius: 0.5,
@@ -256,6 +258,7 @@ final List<LyricVisualizerTuningPreset> pendoloTuningPresets =
       // 预设 3：轮心视角，相机在轮心后上方顺着刻度针看，歌词立起来。
       LyricVisualizerTuningPreset(
         id: 'hubView',
+        preserve: const <String>{PendoloTuningKeys.mirrorLayout},
         label: () => t.music_visualizer_pendolo_hub_view,
         values: const <String, Object>{
           PendoloTuningKeys.hubView: true,

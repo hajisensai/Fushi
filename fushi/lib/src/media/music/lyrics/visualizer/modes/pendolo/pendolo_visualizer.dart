@@ -282,7 +282,7 @@ class _PendoloStageState extends State<_PendoloStage> {
   }) {
     final String key =
         '${line.position}|${focal ? 1 : 0}|${chorus ? 1 : 0}|'
-        '${maxWidth.round()}|${align.index}';
+        '${maxWidth.round()}|${align.index}|${_c.subtitle.hashCode}';
     final _CachedBlock? hit = _blocks[key];
     if (hit != null) {
       hit.frame = _frame;
@@ -306,6 +306,7 @@ class _PendoloStageState extends State<_PendoloStage> {
       theme: _c.theme,
       glowAccent: accent,
       chorusGlow: look.glow,
+      subtitle: _c.subtitle,
     );
     _blocks[key] = _CachedBlock(block, _frame);
     return block;
@@ -328,7 +329,8 @@ class _PendoloStageState extends State<_PendoloStage> {
     final TextStyle base = _baseStyle;
     final String key =
         '${measureWidth.round()}|${_c.fontScale}|${_tuning.activeScale}|'
-        '${base.fontFamily}|${base.fontWeight?.value}';
+        '${base.fontFamily}|${base.fontWeight?.value}|${_c.subtitle.hashCode}|'
+        '${_c.theme?.fontFamily}|${_c.theme?.fontWeight?.value}';
     if (key != _heightsKey) {
       _heights.clear();
       _heightsKey = key;
@@ -346,6 +348,8 @@ class _PendoloStageState extends State<_PendoloStage> {
               measureWidth: measureWidth,
               activeScale: _tuning.activeScale,
               baseStyle: base,
+              subtitle: _c.subtitle,
+              theme: _c.theme,
             ),
           ),
     ];
@@ -487,6 +491,7 @@ class _PendoloPainter extends CustomPainter {
         mirrored: tu.mirrored,
         dial: dial,
         parallaxScalePx: parallaxPx,
+        balanceIcon: c.theme?.glyphIcons.firstOrNull,
       );
       if (tu.lineGlow) {
         _paintGlowing(canvas, size, frame, accent);

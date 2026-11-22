@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_geometry.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_tuning.dart';
 
@@ -33,7 +34,11 @@ class PendoloClockworkFrame {
     required this.mirrored,
     required this.dial,
     required this.parallaxScalePx,
+    this.balanceIcon,
   });
+
+  /// 摆轮上的主题图标（folia 主题 `lyricsIcons[0]`）；null = 程序画的五角星（folia Star 兜底）。
+  final IconData? balanceIcon;
 
   final double hubX;
   final double hubY;
@@ -600,11 +605,24 @@ void paintPendoloClockwork(
     final double iconSize = math.max(14, r * 0.13).toDouble();
     canvas.save();
     canvas.translate(an.balanceX, an.balanceY);
-    stroke
-      ..color = pal.balanceIcon
-      ..strokeWidth = 1.2
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(paths.star(iconSize), stroke);
+    final IconData? icon = f.balanceIcon;
+    if (icon != null) {
+      // 字形不对称：镜像时翻回来，图标读起来是正的。
+      if (f.mirrored) canvas.scale(-1, 1);
+      paintLyricVisualizerIconGlyph(
+        canvas,
+        icon,
+        Offset.zero,
+        iconSize,
+        pal.balanceIcon,
+      );
+    } else {
+      stroke
+        ..color = pal.balanceIcon
+        ..strokeWidth = 1.2
+        ..strokeJoin = StrokeJoin.round;
+      canvas.drawPath(paths.star(iconSize), stroke);
+    }
     canvas.restore();
   });
 }
