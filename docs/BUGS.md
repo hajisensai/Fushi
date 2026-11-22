@@ -33,6 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4494 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5180](bugs/BUG-5180-manga-audio-session-cover-missing.md) | ✅ | ✅ | 阅读器起播有声漫画不带封面，首页迷你播放条只有兜底图标 |
+| [BUG-5179](bugs/BUG-5179-manga-floating-chrome-scroll-hide.md) | ✅ | ✅ | 漫画悬浮底栏：切到条漫一滚动就再也点不出底栏 |
+| [BUG-5178](bugs/BUG-5178-manga-audio-lookup-exit-keys-highlight.md) | ✅ | ✅ | 有声漫画：查词不及时暂停、退出不停、键盘不接管、高亮不恢复 |
 > 共 4492 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

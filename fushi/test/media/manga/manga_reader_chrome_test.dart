@@ -44,6 +44,62 @@ void main() {
     });
   });
 
+  // 反馈 Yh8ukM6J_i：悬浮态下滚动收起曾把 M 键的持久隐藏置 false，中央点击
+  // （_toggleFloatingChrome 在 chromeVisible 为 false 时 no-op）再也唤不出底栏。
+  group('mangaScrollHideEffect', () {
+    test('悬浮态：往下滚只收临时底栏，往上滚不动；绝不切持久隐藏', () {
+      for (final bool visible in <bool>[true, false]) {
+        expect(
+          mangaScrollHideEffect(
+            floating: true,
+            chromeVisible: visible,
+            hide: true,
+          ),
+          MangaScrollHideEffect.hideTransient,
+        );
+        expect(
+          mangaScrollHideEffect(
+            floating: true,
+            chromeVisible: visible,
+            hide: false,
+          ),
+          MangaScrollHideEffect.none,
+        );
+      }
+    });
+
+    test('固定态：往下滚隐藏、往上滚显示，已在目标状态不动', () {
+      expect(
+        mangaScrollHideEffect(floating: false, chromeVisible: true, hide: true),
+        MangaScrollHideEffect.togglePersistent,
+      );
+      expect(
+        mangaScrollHideEffect(
+          floating: false,
+          chromeVisible: false,
+          hide: false,
+        ),
+        MangaScrollHideEffect.togglePersistent,
+      );
+      expect(
+        mangaScrollHideEffect(
+          floating: false,
+          chromeVisible: false,
+          hide: true,
+        ),
+        MangaScrollHideEffect.none,
+      );
+      expect(
+        mangaScrollHideEffect(
+          floating: false,
+          chromeVisible: true,
+          hide: false,
+        ),
+        MangaScrollHideEffect.none,
+      );
+    });
+  });
+
   group('mangaChromeBarPainted', () {
     test('固定态只看 chromeVisible；悬浮态还要 transientVisible', () {
       expect(
