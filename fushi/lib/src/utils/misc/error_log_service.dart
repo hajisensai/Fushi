@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -619,6 +620,36 @@ MineNoticeAction? mineFailureToastAction(MineOutcome outcome) {
   };
 }
 
+/// 制卡进了**待发卡片**队列（Anki 连不上，卡冻结待补发）时，提示上「查看队列」做的事：打开
+/// 待发卡片列表。主窗口进程由 main.dart 装上；没装（弹窗 / 查词窗进程、测试）就不出按钮。
+VoidCallback? mineQueuedOpenPending;
+
+/// 「已加入待发队列」提示上的「查看队列」（用户 2026-11-22 重设计）。只给待发卡片队列
+/// （[MineOutcome.deckName] 为 null）；Fushi 复习的后台写入马上就落库，没有可看的队列。
+MineNoticeAction? mineQueuedToastAction(MineOutcome outcome) {
+  final VoidCallback? open = mineQueuedOpenPending;
+  if (open == null ||
+      outcome.result != MineResult.queued ||
+      outcome.deckName != null) {
+    return null;
+  }
+  return MineNoticeAction(label: t.card_notice_view_queue, onPressed: open);
+}
+
+/// 「已存在」提示上的「仍要添加」：[remine] 是调用方用同一份字段、拍上
+/// `AnkiMiningPayload.withAllowDuplicate` 再制一次（BUG-2605 同一约定）。只有结果是
+/// 重复、且调用方手里有字段可重发时才给。
+MineNoticeAction? mineAddAnywayToastAction(
+  MineOutcome outcome,
+  Future<void> Function()? remine,
+) {
+  if (remine == null || outcome.result != MineResult.duplicate) return null;
+  return MineNoticeAction(
+    label: t.card_notice_add_anyway,
+    onPressed: () => unawaited(remine()),
+  );
+}
+
 /// BUG-089 / BUG-4003：把一次没制成的 [MineOutcome] 的**完整诊断**写进
 /// [ErrorLogService]——原始异常 [MineOutcome.error] 优先，其次后端的简短原因
 /// [MineOutcome.errorDetail]，都没有时记结果枚举本身。[logMineFailure] 与游戏串流
@@ -719,7 +750,17 @@ String? localizeAnkiMineError(String? code) {
 ///   `card_overwritten`、且 `record=false`（覆盖不计入制卡统计）。此前 reader/video/
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
 ///   + 不记账），一并收口于此。
-({String message, bool success, bool record, MineToastStatus status})
+///
+/// [detail]：制卡结果卡第二行、状态标题后面的**短说明**（用户 2026-11-22 重设计：卡片
+/// 第一行是词、第二行「已制卡 · 日语::挖矿」）——成功给牌组名，有缺失给缺的原因，
+/// 重复给「本次未导出」，待写入复习给牌组名；null = 没有更短的说法，卡片用 [message]。
+({
+  String message,
+  String? detail,
+  bool success,
+  bool record,
+  MineToastStatus status,
+})
 describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
   switch (outcome.result) {
     case MineResult.success:
@@ -742,8 +783,14 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
         if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
         if (hasNotice) notice,
       ].join(' ');
+      final String detail = <String>[
+        if (!hasAudioWarning && !hasNotice && deckName.isNotEmpty) deckName,
+        if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
+        if (hasNotice) notice,
+      ].join(' ');
       return (
         message: message,
+        detail: detail.isEmpty ? null : detail,
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
@@ -758,6 +805,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.duplicate:
       return (
         message: t.card_duplicate,
+        detail: t.card_notice_detail_not_exported,
         success: false,
         record: false,
         status: MineToastStatus.duplicate,
@@ -765,6 +813,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.notConfigured:
       return (
         message: t.card_export_not_configured,
+        detail: null,
         success: false,
         record: false,
         status: MineToastStatus.failed,
@@ -782,6 +831,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
             : t.srs_mining_background_queued(
                 deck: queuedDeck.isEmpty ? t.srs_mining_target_srs : queuedDeck,
               ),
+        detail: queuedDeck == null || queuedDeck.isEmpty ? null : queuedDeck,
         success: true,
         record: !overwrite,
         status: MineToastStatus.queued,
@@ -789,6 +839,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.error:
       return (
         message: logMineFailure(outcome),
+        detail: null,
         success: false,
         record: false,
         status: MineToastStatus.failed,

@@ -84,6 +84,8 @@ import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_stack.dart';
+import 'package:fushi/src/utils/misc/notice_placement.dart';
 // 只取语义枚举与调色板：视频页的通知一律走左上角 _showOsd，不得用 FushiToast
 // （BUG-931 有守卫），故刻意不 import 整套 toast API。
 import 'package:fushi/src/utils/misc/fushi_toast.dart' show FushiToastCapsule;
@@ -1356,18 +1358,9 @@ class _VideoOsdMessage {
     this.progress,
     this.prominent = false,
     this.severity = ToastSeverity.neutral,
-    this.mineStatus,
-    this.mineAction,
   });
 
   final String message;
-
-  /// 制卡结果卡上的动作按钮（「撤销」，反馈 JNyykxvuY9）；非空时 OSD 接收指针。
-  final MineNoticeAction? mineAction;
-
-  /// 非空 = 制卡结果 OSD，画成与底部制卡 toast 同一张 M3E 结果卡
-  /// （[FushiMineNoticeCard]），而不是通用小角标。
-  final MineToastStatus? mineStatus;
   final IconData? icon;
   final double? progress;
 
@@ -2663,6 +2656,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
+
+  /// 制卡结果队列（左上角、OSD 下方）：与底部制卡 toast 同一个
+  /// [FushiMineNoticeStack]，处理中原地变成结果、连续几张叠起来。只经
+  /// [_showMineOsd] 写入。
+  final MineNoticeController _mineNotices = MineNoticeController();
 
   /// 「识别一次当前画面」请求序号（反馈 X3ozgOAx8v）：[_ocrCurrentFrame] 每次 +1，
   /// 暂停 OCR 覆盖层看到变化就手动识别当前暂停帧（见
@@ -8056,6 +8054,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _mineNotices.dispose();
     _manualFrameOcrRequests.dispose();
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
@@ -8900,43 +8899,42 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 Widget? _,
               ) {
                 final ThemeData theme = Theme.of(context);
-                return Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: _videoButtonBarHeight + 8 * _videoUiScale,
-                    ),
-                    child: Theme(
-                      data: theme.copyWith(
-                        colorScheme: _videoChromeColorScheme(context),
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.medium,
+                // 跟着顶栏显隐上下（[_followTopChrome]，与 OSD 同一口径）。
+                return _followTopChrome(
+                  (BuildContext context, double top) => Align(
+                    alignment: Alignment.topLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 16, right: 16, top: top),
+                      child: Theme(
+                        data: theme.copyWith(
+                          colorScheme: _videoChromeColorScheme(context),
                         ),
-                        switchInCurve: FushiMotion.enter,
-                        switchOutCurve: FushiMotion.exit,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, -0.15),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
+                        child: AnimatedSwitcher(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.medium,
+                          ),
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          transitionBuilder:
+                              (Widget child, Animation<double> animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, -0.15),
+                                        end: Offset.zero,
+                                      ).animate(animation),
+                                      child: child,
+                                    ),
                                   ),
+                          child: job == null
+                              ? const SizedBox.shrink()
+                              : VideoGraphicSubtitleOcrProgressCard(
+                                  state: job,
+                                  onCancel: _cancelGraphicSubtitleOcr,
                                 ),
-                        child: job == null
-                            ? const SizedBox.shrink()
-                            : VideoGraphicSubtitleOcrProgressCard(
-                                state: job,
-                                onCancel: _cancelGraphicSubtitleOcr,
-                              ),
+                        ),
                       ),
                     ),
                   ),

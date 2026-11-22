@@ -34,11 +34,16 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 4522 条。点号进各自文件。
+> 共 4524 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5203](bugs/BUG-5203-home-activity-rows-main-isolate-merge.md) | ✅ | ✅ | 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序 |
+| [BUG-5200](bugs/BUG-5200-windows-video-frames-wait-main-thread.md) | ✅ | ✅ | Windows 视频每一帧都要等主线程，主线程一忙就被下一帧覆盖丢掉（平移镜头一卡一卡） |
 | [BUG-5199](bugs/BUG-5199-media-lock-desktop-system-auth.md) | 🚧 | 🚧 | 上锁作品：Windows / Linux 没有系统验证（只有口令） |
 | [BUG-5198](bugs/BUG-5198-media-lock-remaining-consumers.md) | 🚧 | 🚧 | 上锁作品：剩余列出作品标题的次要消费端未接 MediaVisibility |
+| [BUG-5196](bugs/BUG-5196-mine-notice-refetch-audio-action.md) | 🚧 | 🚧 | mine-notice-refetch-audio-action |
+| [BUG-5195](bugs/BUG-5195-mine-notice-chrome-placement.md) | ✅ | ✅ | mine-notice-chrome-placement |
 | [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
 | [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
@@ -271,7 +276,7 @@
 | [BUG-4963](bugs/BUG-4963-anidb-encrypted-stale-tag-reply-key-mismatch.md) | ✅ | ✅ | AniDB 加密会话里迟到的旧 tag 回包被误判成 Key 不一致，哈希识别整轮停用 |
 | [BUG-4962](bugs/BUG-4962-bound-session-lookup-switch.md) | ✅ | ✅ | 关掉 host 的「用这台服务器查词典」后，游戏串流 / 视频遥控查词恒无结果 |
 | [BUG-4961](bugs/BUG-4961-ambient-animation-full-refresh-rate-gpu-cost.md) | ✅ | ✅ | 常驻装饰动画按屏幕刷新率逐帧重画：吉祥物光晕 / 主页背景开着时 4K 144 Hz 整窗持续合成，GPU 占用高 |
-| [BUG-4960](bugs/BUG-4960-stats-overview-main-isolate-rust-core.md) | 🚧 | 🚧 | 统计中心「总览」页签在主 isolate 上有 90～250 ms 的同步段（大库） |
+| [BUG-4960](bugs/BUG-4960-stats-overview-main-isolate-rust-core.md) | ✅ | ✅ | 统计中心「总览」页签在主 isolate 上有 90～250 ms 的同步段（大库） |
 | [BUG-4959](bugs/BUG-4959-favorite-sentence-change-watch-rereads-on-any-pref-write.md) | 🚧 | 🚧 | 收藏句变更通知靠偏好表整表更新流，任何偏好写入都让播放页重读整串收藏 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |

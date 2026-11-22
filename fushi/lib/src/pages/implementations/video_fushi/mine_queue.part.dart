@@ -59,7 +59,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
           } catch (_) {}
           final String message = t.card_export_failed_detail(reason: '$error');
           if (retry != null) {
-            _showMineOsd(message, MineToastStatus.failed, null, retry);
+            _showMineOsd(message, MineToastStatus.failed, retry: retry);
           } else {
             _showOsd(message, severity: ToastSeverity.error);
           }
@@ -168,22 +168,23 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             final bool mineBadgeShown =
                 _minesInFlight.value > 0 || _stagedMineCount.value > 0;
             final ColorScheme cs = _videoChromeColorScheme(context);
-            return Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: 16,
-                  top:
-                      _videoButtonBarHeight +
-                      (mineBadgeShown ? 48 : 8) * _videoUiScale,
-                ),
-                child: VideoLoopCueBadge(
-                  active: controller.loopCurrentCue,
-                  label: t.video_loop_cue_badge_label,
-                  tooltip: t.video_loop_cue_badge_tooltip,
-                  onTap: () => controller.setLoopCurrentCue(false),
-                  surfaceColor: _osdSurfaceColor(cs),
-                  textColor: _osdTextColor(cs),
+            // 跟着顶栏显隐上下（[_followTopChrome]）；制卡队列角标在时让到它下面一格。
+            return _followTopChrome(
+              (BuildContext context, double top) => Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: 16,
+                    top: top + (mineBadgeShown ? 40 * _videoUiScale : 0),
+                  ),
+                  child: VideoLoopCueBadge(
+                    active: controller.loopCurrentCue,
+                    label: t.video_loop_cue_badge_label,
+                    tooltip: t.video_loop_cue_badge_tooltip,
+                    onTap: () => controller.setLoopCurrentCue(false),
+                    surfaceColor: _osdSurfaceColor(cs),
+                    textColor: _osdTextColor(cs),
+                  ),
                 ),
               ),
             );
@@ -210,53 +211,52 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             final String label = staged > 0
                 ? t.video_mine_queue_badge(count: staged)
                 : t.video_mine_in_progress(count: inFlight);
-            return Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: 16,
-                  top: _videoButtonBarHeight + 8 * _videoUiScale,
-                ),
-                child: Material(
-                  key: const ValueKey<String>('video-mine-queue-badge'),
-                  color: _osdSurfaceColor(cs),
-                  shape: const StadiumBorder(),
-                  child: InkWell(
-                    customBorder: const StadiumBorder(),
-                    canRequestFocus: false,
-                    onTap: staged > 0
-                        ? () => unawaited(
-                            // 网页档：切到可捕获的内置档逐句重放落卡。
-                            _webMode
-                                ? _runWebMineQueue()
-                                : _openVideoMineQueue(),
-                          )
-                        : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          if (inFlight > 0)
-                            SizedBox.square(
-                              dimension: 14,
-                              child: FushiCircularProgressIndicator(
-                                strokeWidth: 2,
+            return _followTopChrome(
+              (BuildContext context, double top) => Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(right: 16, top: top),
+                  child: Material(
+                    key: const ValueKey<String>('video-mine-queue-badge'),
+                    color: _osdSurfaceColor(cs),
+                    shape: const StadiumBorder(),
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      canRequestFocus: false,
+                      onTap: staged > 0
+                          ? () => unawaited(
+                              // 网页档：切到可捕获的内置档逐句重放落卡。
+                              _webMode
+                                  ? _runWebMineQueue()
+                                  : _openVideoMineQueue(),
+                            )
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (inFlight > 0)
+                              SizedBox.square(
+                                dimension: 14,
+                                child: FushiCircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: textColor,
+                                ),
+                              )
+                            else
+                              FushiIcon(
+                                Icons.playlist_add_check,
+                                size: 16,
                                 color: textColor,
                               ),
-                            )
-                          else
-                            FushiIcon(
-                              Icons.playlist_add_check,
-                              size: 16,
-                              color: textColor,
-                            ),
-                          const SizedBox(width: 6),
-                          Text(label, style: TextStyle(color: textColor)),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(label, style: TextStyle(color: textColor)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
