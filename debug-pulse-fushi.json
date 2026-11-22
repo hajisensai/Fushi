@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T10:16:56Z",
+ "generatedAt": "2026-11-22T10:44:52Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ce54f05ee90428ad6e14fdb34aa68817865b0dfb",
-  "seq": 31323
+  "sha": "0311c42954416e17c7b4d8490360374ae357bdd8",
+  "seq": 31334
  },
  "builds": [
   {
@@ -112,9 +112,13 @@
   }
  ],
  "pending": {
-  "headSha": "ce54f05ee90428ad6e14fdb34aa68817865b0dfb",
-  "headSeq": 31323,
+  "headSha": "0311c42954416e17c7b4d8490360374ae357bdd8",
+  "headSeq": 31334,
   "prs": [
+   4156,
+   4157,
+   4159,
+   4158,
    4152,
    4124,
    4141,
@@ -137,19 +141,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368076"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45013366328"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45013366362"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45013366362"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45008368167"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45013366362"
    }
   }
  },
@@ -323,6 +327,42 @@
    "mergedAt": "2026-11-22T09:36:23Z",
    "additions": 2522,
    "deletions": 399,
+   "labels": []
+  },
+  "4156": {
+   "number": 4156,
+   "title": "feat(archive): 分卷 7z / zip（.001 起）导入（拍板台 7c59jhhc8Q）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T10:37:39Z",
+   "additions": 527,
+   "deletions": 33,
+   "labels": []
+  },
+  "4157": {
+   "number": 4157,
+   "title": "fix(anki): 识别改版 AnkiDroid kuma3 Anki（BUG-5207）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T10:31:59Z",
+   "additions": 59,
+   "deletions": 2,
+   "labels": []
+  },
+  "4158": {
+   "number": 4158,
+   "title": "fix(guards): develop baseline guard reds after batch merge",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T10:26:42Z",
+   "additions": 300,
+   "deletions": 172,
+   "labels": []
+  },
+  "4159": {
+   "number": 4159,
+   "title": "fix(theme): Apple 深色档与书内查词弹窗保留用户外壳样式（BUG-5208）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T10:26:56Z",
+   "additions": 161,
+   "deletions": 7,
    "labels": []
   }
  }
