@@ -6,7 +6,7 @@ import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
-    show srsHomeRecallBars;
+    show srsHomeRecallBars, srsHomeRwkvQueued;
 import 'package:fushi/src/pages/implementations/srs_stat_charts.dart'
     show SrsBarDatum;
 import 'package:fushi/src/srs/srs_home_stats.dart';
@@ -186,6 +186,41 @@ void main() {
       final SrsHomeStats s = srsHomeStatsOf(report(hasDueDateCards: false));
       expect(s.rwkvNow, isNull);
       expect(s.showsForecast, isTrue);
+    });
+  });
+
+  // BUG-5170（应用内反馈 TcVEYa3z46）：「RWKV 此刻」的低于目标张数和头部「N 到期」口径不同，面板要拿头部的数
+  // 写对账说明；只有头部全是这些 RWKV 卡、且 RWKV 已就绪时才拿得出可比的数。
+  group('srsHomeRwkvQueued', () {
+    test('纯 RWKV、已就绪：头部到期数就是这些卡今天排队的张数', () {
+      expect(
+        srsHomeRwkvQueued(
+          reviewCount: 19,
+          hasDueDateCards: false,
+          rwkvPending: false,
+        ),
+        19,
+      );
+    });
+    test('还有按到期日排队的卡（FSRS 复习 / 学习中）：头部混了别的卡，不对账', () {
+      expect(
+        srsHomeRwkvQueued(
+          reviewCount: 19,
+          hasDueDateCards: true,
+          rwkvPending: false,
+        ),
+        isNull,
+      );
+    });
+    test('RWKV 还没准备好：头部的数不全，不对账', () {
+      expect(
+        srsHomeRwkvQueued(
+          reviewCount: 0,
+          hasDueDateCards: false,
+          rwkvPending: true,
+        ),
+        isNull,
+      );
     });
   });
 
