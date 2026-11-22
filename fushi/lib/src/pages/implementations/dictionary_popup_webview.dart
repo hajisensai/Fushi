@@ -24,6 +24,7 @@ import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
     show kPopupSearchingPlaceholderResult;
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -687,7 +688,8 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
       DictionaryPopupWebViewState();
 }
 
-class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
+class DictionaryPopupWebViewState
+    extends DictionaryPopupRealmState<DictionaryPopupWebView>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
 
@@ -1649,6 +1651,7 @@ JSON.stringify((function(){
   /// 'moved' when the focus advanced or 'blocked' at the first/last entry (or a
   /// single-entry / empty result). Orthogonal to the char caret — moves only the
   /// entry indicator + viewport, never the caret ring.
+  @override
   Future<String> focusEntryMove(bool forward) async {
     final Object? raw = await _controller?.evaluateJavascript(
       source:
@@ -1680,6 +1683,7 @@ JSON.stringify((function(){
     );
   }
 
+  @override
   Future<void> mineFirstVisibleEntry() async {
     await _controller?.evaluateJavascript(
       source:
@@ -1690,6 +1694,7 @@ JSON.stringify((function(){
 
   /// 手柄（dictionaryPopup scope）：播放第一个可见词条的发音——点既有发音按钮，
   /// 复用其全部音源解析/回退逻辑（与制卡同一「点按钮不另起桥」纪律）。
+  @override
   Future<void> playFirstVisibleAudio() async {
     await _controller?.evaluateJavascript(
       source:
@@ -1727,6 +1732,7 @@ JSON.stringify((function(){
   }
 
   /// 手柄右摇杆：连续滚动弹窗内容 [dy] CSS 像素（正=向下）。
+  @override
   Future<void> scrollContentBy(double dy) async {
     await _controller?.evaluateJavascript(
       source:
@@ -4622,4 +4628,17 @@ void logPopupJsError(ErrorLogService errorLogService, List<dynamic> rawArgs) {
     message.isEmpty ? '(no message)' : message,
     stack.isEmpty ? null : StackTrace.fromString(stack),
   );
+}
+
+/// 把查词弹窗栈里的层键（[DictionaryPopupController] 只按窄接口
+/// [DictionaryPopupRealmState] 持有）窄化回具体的 [DictionaryPopupWebViewState]，
+/// 供宿主调 WebView 的其余能力（滚动位置、高亮、制卡、缩放……）。语义同
+/// `GlobalKey<DictionaryPopupWebViewState>.currentState`：未挂载或挂的不是弹窗
+/// WebView 时为 null。
+extension DictionaryPopupRealmKeyWebView
+    on GlobalKey<DictionaryPopupRealmState> {
+  DictionaryPopupWebViewState? get webViewState {
+    final State<StatefulWidget>? state = currentState;
+    return state is DictionaryPopupWebViewState ? state : null;
+  }
 }

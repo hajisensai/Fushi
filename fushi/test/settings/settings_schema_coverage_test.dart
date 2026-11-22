@@ -883,6 +883,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 反馈按钮打开反馈中心 / 场景勾选里去掉反馈：球上没有反馈按钮',
   'floatingBall/Switch profile':
       'test/floating_ball/app_floating_ball_host_test.dart: 切换配置（桌面系统球原地切 / 选当前配置或关菜单不切 / Android 回 Toast）',
+  // 跨应用语音挖掘（b212740665 起电脑端也有）：分区只在 CrossAppAudioCapture
+  // .platformAvailable（Android / Windows）时出现，所以只在 Windows 主机上进账。开关的值
+  // 是原生录环此刻在不在录，打开要原生采集真起来才落 crossAppAudioCaptureDesktop
+  // 偏好（起不来只弹 Toast、不写库）——harness 没有原生录音端，故 changed=false，这是
+  // 「起不来就不记成开」的正确行为，不是驱动失败。起停 / 租约 / 录环快照与制卡取句的
+  // 生效由专项用例咬住；真录系统混音需真机验。
+  'floatingBall/Capture other apps\' audio':
+      'test/mining/cross_app_audio_capture_test.dart: start/stop 翻 running、电脑端租约起停与快照 / prepareSentenceAudio（真录音需真机）',
   // 阅读器 / 漫画 / 视频三个场景的专属按钮勾选。三组与上面几行是同一个
   // `_buttonsSection` 生成器（写 floatingBallButtons(scope)），生效点同样在宿主按
   // 当前场景挑按钮。这组分区只在对应模块（书 / 漫画 / 视频）开着时出现：#2198 之前
@@ -1195,6 +1203,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 守卫咬住。
   'system/P2P (torrent) proxy':
       'test/torrent/download_http_client_proxy_test.dart',
+  // GitHub 加速镜像开关（b5312214f2，拍板台 0E-r9q489Y）：写 prefsRepo（changed=true），
+  // 生效点是请求时现读的镜像候选名单（gitHubMirrorCandidates / 仓库文件候选），
+  // harness 里没有出站下载可探。关掉只剩直连与 jsDelivr、重新打开立即恢复、
+  // 镜像 URL 分档不受影响，由专项用例咬住。
+  'system/Use GitHub download mirrors':
+      'test/utils/net/github_mirrors_test.dart: 用户关掉 GitHub 加速镜像（拍板台 0E-r9q489Y）',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   // 云备份通道总开关：写 sync_cloud_enabled，生效点是 enabledSyncChannelBackends 不再列出
   // 云通道（常规 / 复习同步与资产传输都从这份枚举取通道）；harness 里没有同步在跑，

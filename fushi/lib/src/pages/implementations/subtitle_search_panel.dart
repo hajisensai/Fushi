@@ -822,7 +822,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       });
       // 降级但仍留着同一番名的旧系列列表时，按旧列表首条继续检索：比退回纯文本搜准，
       // 也不用再问一次 AniList。
-      // 相关度首条恒为第一季：按本集季号挑对应那一季的条目（挑不出才退回首条）。
+      // 相关度首条恒为第一季：按本集季号挑对应那一季的条目；挑不出就纯文本搜，不拿
+      // 别季的 id 冒充本集那一季的身份（HBK-AUDIT-049）。
       final int? season = _seasonHint(query);
       final int? resolvedSeriesId = outcome.media.isNotEmpty
           ? pickAniListSeriesForSeason(outcome.media, season: season)?.id

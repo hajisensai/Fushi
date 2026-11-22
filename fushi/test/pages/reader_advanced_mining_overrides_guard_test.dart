@@ -75,9 +75,15 @@ void main() {
       prepare,
       contains('if (audioFiles != null && !(overrides?.omitAudio ?? false))'),
     );
+    // 书封的唯一来源是 `coverPath` 的初值（BUG-4913 起取 `_bookCoverFilePath`，
+    // 配对字幕书封面与 EPUB 封面同序合成）；选了不要图片时这个初值必须是 null。
     expect(
-      prepare,
-      contains('if (_extractDir != null && !(overrides?.omitImage ?? false))'),
+      RegExp(
+        r'String\? coverPath = \(overrides\?\.omitImage \?\? false\)\s*'
+        r'\?\s*null\s*:\s*_bookCoverFilePath;',
+      ).hasMatch(prepare),
+      isTrue,
+      reason: '「不要图片」必须让书封不进卡',
     );
   });
 

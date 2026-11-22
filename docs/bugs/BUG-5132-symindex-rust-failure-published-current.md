@@ -1,0 +1,6 @@
+## BUG-5132 · 符号索引 Rust crate 索引失败仍发布成最新、同一提交不再重建
+- **报告**：2026-11-22（Codex 2026-11-21 PR 审查 HBK-AUDIT-018，PR #4024）
+- **真实性**：✅ 真 bug。根因 `tool/symindex/build.py:240`（`index_rust` 捕获 `CalledProcessError` 后 `continue`，失败不外传）与 `build.py:261`（`build` 无条件写 `base_sha=HEAD`、`langs=rust` 并 `os.replace` 发布），`is_current` 只比 `base_sha`。实测（PR head 39351763b1）：单 crate 样本、rust-analyzer 替换成必失败的子进程，构建正常返回，`is_current=True`、`rust` 符号数 0、`langs=rust`；`refresh.ps1` 的 `--check` 因此判已是最新，同一提交永不重建，`sym.py` 对该 crate 的符号给出「索引里没有」。
+- **[x] ① 已修复** — b3334488e8：`index_rust`（`tool/symindex/build.py:232`）返回失败 crate 目录；`build` 把它写进 meta `incomplete_dirs`（`build.py:268`，键定义 `tool/symindex/symdb.py:13`），发布后以非零退出（refresh 日志记失败）；`is_current`（`build.py:299`）在有未完成目录时返回 False，下次调度重建；`sym.py:83` 把这些目录下的文件（`files_under`，`git ls-files -z`）整体并入改动集合，索引结果不当真、改走 `[live]` 实时搜索并在头部注明。Dart 部分照常更新，不因单个 crate 失败丢掉整份新索引。
+- **[x] ② 已加自动化测试** — `tool/symindex/symdb_test.py` 的 `RustFailureTest`：注入失败的 lsif 子进程后断言 build 非零退出、`is_current` 为 False、`incomplete_dirs == ['native/fushi_x']`，并端到端跑 `sym.py def` 断言该 crate 的定义经实时搜索给出；完整构建仍判最新。变异实测：撤掉 `failed.append(rel)`（退回跳过即发布），用例变红，恢复后 14/14 通过。
+- **备注**：纯 Python 工具，无设备复测需求。旧索引没有 `incomplete_dirs` 键时视为无未完成目录。

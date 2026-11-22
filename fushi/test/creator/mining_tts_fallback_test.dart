@@ -489,6 +489,27 @@ void main() {
       expect(systemCalls, isEmpty);
     });
 
+    test('纯标点 / 符号词条：系统与预设都不合成，报「没有可朗读的内容」（不往卡片放静音）', () async {
+      for (final MiningTtsFallbackVoice choice in <MiningTtsFallbackVoice>[
+        const MiningTtsFallbackVoice.preset('p1'),
+        const MiningTtsFallbackVoice.system(),
+      ]) {
+        final _FakeDescriptor d = _FakeDescriptor();
+        await expectLater(
+          run(choice, descriptor: d, text: '！？'),
+          throwsA(
+            isA<WordAudioUnavailable>().having(
+              (WordAudioUnavailable e) => e.reason,
+              'reason',
+              t.models_tts_fallback_nothing_to_read,
+            ),
+          ),
+        );
+        expect(d.texts, isEmpty);
+      }
+      expect(systemCalls, isEmpty);
+    });
+
     test('选预设：mp3 产物落 .mp3；不同词互不覆盖', () async {
       final _FakeDescriptor d = _FakeDescriptor(mp3: true);
       final File? a = await run(

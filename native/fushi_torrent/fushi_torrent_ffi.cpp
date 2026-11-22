@@ -19,8 +19,11 @@
 #include <libtorrent/create_torrent.hpp>
 #include <libtorrent/download_priority.hpp>
 #include <libtorrent/error_code.hpp>
+#include <libtorrent/extensions.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/magnet_uri.hpp>
+#include <libtorrent/peer_connection_handle.hpp>
+#include <libtorrent/peer_request.hpp>
 #include <libtorrent/peer_class.hpp>
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/portmap.hpp>
@@ -36,6 +39,7 @@
 #include <libtorrent/write_resume_data.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -45,6 +49,9 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
+#include <set>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -242,6 +249,10 @@ struct PieceEvent {
 // 「进度提示」，丢了不影响正确性（真相在 ht_torrent_pieces 的位图里）。
 constexpr std::size_t kMaxQueuedPieceEvents = 4096;
 
+// 一轮 ht_save_resume_data 同时在飞的 save_resume_data 请求上限（另受
+// alert_queue_size / 4 约束，取小者）。理由见 ht_save_resume_data。
+constexpr int kMaxResumeInFlight = 500;
+
 // TODO-1961-c：一次异步存储操作（改名 / 移动）的回执槽。
 //
 // `pending` 是「已发出、还没回执」；`ok` 只有在 `pending == 0` 时才有意义。
@@ -275,6 +286,151 @@ struct StorageOp {
   }
 };
 
+// ── BUG-5160：单种子「停上传、续下载」闸（fRmEhU4XIK）──────────────────────
+//
+// libtorrent 没有 per-torrent 的「零上传」原语。旧实现拿 set_upload_limit(1)
+// 冒充，但 per-torrent 限速走的是该种子 peer class 的上传带宽通道，管的是
+// 连接上**全部**出向字节：握手（68 B 要排 68 s 预算）、interested、request、
+// ut_metadata 都得排队，下载被一起饿死（分享率在下载途中达标的种子永久
+// 卡住，限速还随 fastResume 落盘）。set_max_uploads 的 0/-1 都是「不限」。
+//
+// 正确的位置是 payload 本身：piece 只会作为对 request 的应答发出，所以
+// 截停期间吞掉对端的 request（含 allowed-fast），控制消息一概不动。附带
+// 两件不让截停「看着像在传」的事：
+// - 截停生效那一刻 choke 已 unchoke 的对端（choke 会顺带 reject 已排队的
+//   请求），并把该种子的 unchoke 名额压到 1，免得 choker 把一堆全局上传
+//   槽位浪费在只会被吞请求的连接上；
+// - 解除那一刻把仍被 choke 着、但对端早已表态 interested 的连接补一次
+//   unchoke 机会 —— 尤其是本地对端（ignore_unchoke_slots，choker 不管它们，
+//   只在收到 interested 时 unchoke 一次），不补就永远卡在 choked。
+// 状态只在 libtorrent 网络线程读（peer_plugin 回调），由 FFI 线程写；单个
+// atomic<bool> 足矣。
+struct UploadGate {
+  std::atomic<bool> blocked{false};
+};
+
+class UploadGatePeerPlugin final : public lt::peer_plugin {
+ public:
+  UploadGatePeerPlugin(lt::peer_connection_handle pc,
+                       std::shared_ptr<UploadGate> gate)
+      : pc_(std::move(pc)),
+        gate_(std::move(gate)),
+        applied_(gate_->blocked.load()) {}
+
+  lt::string_view type() const override { return "fushi_upload_gate"; }
+
+  bool on_request(const lt::peer_request&) override {
+    // true = 已处理，libtorrent 不再排这个请求 → 不发 piece。
+    return gate_->blocked.load();
+  }
+
+  void tick() override {
+    const bool blocked = gate_->blocked.load();
+    if (blocked == applied_) return;
+    applied_ = blocked;
+    if (pc_.is_disconnecting() || pc_.is_connecting()) return;
+    if (blocked) {
+      pc_.choke_this_peer();  // 已 choke 时是 no-op
+    } else if (pc_.is_choked() && pc_.is_peer_interested()) {
+      pc_.maybe_unchoke_this_peer();
+    }
+  }
+
+ private:
+  lt::peer_connection_handle pc_;
+  std::shared_ptr<UploadGate> gate_;
+  bool applied_;  // 本连接已落实的截停状态（边沿触发，免得与 choker 拉锯）
+};
+
+// torrent_handle → 闸 的登记表。登记与注销都是 O(log N)：种子销毁时由它的
+// torrent_plugin 析构**精确**注销自己那一项（HBK-AUDIT-030：旧实现在每次
+// new_torrent 里持锁清扫整张表找过期项，同批恢复 N 颗种子累计 O(N²)）。
+// torrent_handle 的比较走 weak_ptr::owner_before，种子销毁后键仍可比较。
+class UploadGateRegistry {
+ public:
+  void add(const lt::torrent_handle& h, const std::shared_ptr<UploadGate>& g) {
+    std::lock_guard<std::mutex> lock(mu_);
+    gates_[h] = g;
+  }
+
+  // 只删仍指向 [gate] 的那一项：同一 handle 键不会被别的种子复用，但按值
+  // 核对一次，避免误删。
+  void remove(const lt::torrent_handle& h, const UploadGate* gate) {
+    std::lock_guard<std::mutex> lock(mu_);
+    const auto it = gates_.find(h);
+    if (it == gates_.end()) return;
+    const std::shared_ptr<UploadGate> current = it->second.lock();
+    if (!current || current.get() == gate) gates_.erase(it);
+  }
+
+  std::shared_ptr<UploadGate> find(const lt::torrent_handle& h) {
+    std::lock_guard<std::mutex> lock(mu_);
+    const auto it = gates_.find(h);
+    return it == gates_.end() ? nullptr : it->second.lock();
+  }
+
+  std::size_t size() {
+    std::lock_guard<std::mutex> lock(mu_);
+    return gates_.size();
+  }
+
+ private:
+  std::mutex mu_;
+  std::map<lt::torrent_handle, std::weak_ptr<UploadGate>> gates_;
+};
+
+class UploadGateTorrentPlugin final : public lt::torrent_plugin {
+ public:
+  UploadGateTorrentPlugin(std::shared_ptr<UploadGate> gate,
+                          std::weak_ptr<UploadGateRegistry> registry,
+                          lt::torrent_handle handle)
+      : gate_(std::move(gate)),
+        registry_(std::move(registry)),
+        handle_(std::move(handle)) {}
+
+  // 种子销毁（移除 / session 析构）→ 注销自己。登记表可能已先于种子析构
+  // （session 析构顺序），所以持 weak_ptr。
+  ~UploadGateTorrentPlugin() override {
+    if (const std::shared_ptr<UploadGateRegistry> registry = registry_.lock()) {
+      registry->remove(handle_, gate_.get());
+    }
+  }
+
+  std::shared_ptr<lt::peer_plugin> new_connection(
+      const lt::peer_connection_handle& pc) override {
+    return std::make_shared<UploadGatePeerPlugin>(pc, gate_);
+  }
+
+ private:
+  std::shared_ptr<UploadGate> gate_;
+  std::weak_ptr<UploadGateRegistry> registry_;
+  lt::torrent_handle handle_;
+};
+
+// session 级插件：每个种子入 session 时发一个闸，按 torrent_handle 登记，
+// FFI 侧按 handle 找到闸翻转。种子销毁 → torrent_plugin 析构 → 注销。
+class UploadGatePlugin final : public lt::plugin {
+ public:
+  std::shared_ptr<lt::torrent_plugin> new_torrent(
+      const lt::torrent_handle& h, lt::client_data_t) override {
+    auto gate = std::make_shared<UploadGate>();
+    registry_->add(h, gate);
+    return std::make_shared<UploadGateTorrentPlugin>(std::move(gate),
+                                                     registry_, h);
+  }
+
+  std::shared_ptr<UploadGate> find(const lt::torrent_handle& h) {
+    return registry_->find(h);
+  }
+
+  // 登记表现有项数（诊断 / 测试：应恒等于 session 里的种子数）。
+  std::size_t size() { return registry_->size(); }
+
+ private:
+  std::shared_ptr<UploadGateRegistry> registry_ =
+      std::make_shared<UploadGateRegistry>();
+};
+
 // session 句柄的真身：拥有 lt::session + 已收割待取的 alert 队列。
 //
 // TODO-1961-b：为什么必须有队列 —— `pop_alerts` 是**破坏性**的（取走即从
@@ -284,9 +440,24 @@ struct StorageOp {
 // 的。正解不是加第二个 pop 点，而是**一个 session 只有一个收割点**
 // （[drain_alerts]），收割后按类型分派进各自队列，各 poll 函数只读自己的队列。
 struct ht_session_ctx {
-  explicit ht_session_ctx(lt::settings_pack sp) : ses(std::move(sp)) {}
+  explicit ht_session_ctx(lt::settings_pack sp)
+      : ses(std::move(sp)), upload_gate(std::make_shared<UploadGatePlugin>()) {
+    // 先于任何 add_torrent 注册（同一网络线程按序执行），每个种子都带闸。
+    ses.add_extension(upload_gate);
+  }
 
   lt::session ses;
+
+  // BUG-5160：单种子停上传闸（ht_set_torrent_upload_blocked 翻转）。
+  std::shared_ptr<UploadGatePlugin> upload_gate;
+
+  // BUG-5161 / HBK-AUDIT-030：加载时数据不可达而保持暂停的种子（infohash
+  // hex）。这些种子的 fast-resume 还没被 libtorrent 核过，此时 save_resume_data
+  // 写出的是空位图——把它写回盘就丢掉了原 .resume 里的进度：下次启动若数据
+  // 仍不可达，空位图让它照常开跑、在空挂载点上从 0 下载。所以冻结期间
+  // ht_save_resume_data 跳过它们，盘上保留原 .resume。用户显式恢复
+  // （ht_pause_torrent pause=0）、移动存储成功或移除种子时解冻。
+  std::set<std::string> offline_resume_frozen;
 
   // 已收割待取的 piece 完成事件。
   std::vector<PieceEvent> pieces;
@@ -294,11 +465,21 @@ struct ht_session_ctx {
   // 已收割的 resume data（infohash → bencode 后的字节）。
   std::vector<std::pair<std::string, std::vector<char>>> resumes;
 
-  // 已发出 save_resume_data 但尚未收到回执的种子数（收齐即可停止等待）。
-  int resume_pending = 0;
+  // 已发出 save_resume_data 但尚未收到回执的种子（infohash → handle）。
+  //
+  // 按种子记账而不是只记个数：libtorrent 的 alert 队列有上限
+  // （alert_queue_size，默认 2000），溢出的 alert 被直接丢弃、只留一条
+  // alerts_dropped_alert。丢了哪几颗的回执只能从「谁还挂着」推出来，才能
+  // 对它们重新发请求；重复回执（原回执其实没丢）也靠它识别并忽略。
+  std::map<std::string, lt::torrent_handle> resume_inflight;
 
   // 本轮 save_resume_data 失败的个数（诊断用，随每轮保存清零）。
   int resume_failed = 0;
+
+  // drain_alerts 见到 alerts_dropped_alert 且其中含 resume 回执时置真，由
+  // ht_save_resume_data 消费：把仍挂着的种子重新发一遍（它们的回执可能
+  // 正在被丢掉的那批里）。
+  bool resume_receipts_dropped = false;
 
   // TODO-1961-c：改名 / 移动的回执槽。两者都是**异步**的：调用只是把请求排进
   // libtorrent，成没成只能从 file_renamed_alert / file_rename_failed_alert /
@@ -394,6 +575,20 @@ int apply_first_last_boost(lt::torrent_handle& h) {
   return 1;
 }
 
+// save_resume_data_failed_alert 的记账：按 handle 找回本轮挂着的那一颗。
+// 用 handle 相等（owner_before，种子已被移除、handle 失效也能比）而不是
+// infohash —— 失效 handle 取不到 infohash。返回 true = 确是本轮挂着的。
+bool settle_failed_resume(ht_session_ctx* ctx, const lt::torrent_handle& h) {
+  for (auto it = ctx->resume_inflight.begin(); it != ctx->resume_inflight.end();
+       ++it) {
+    if (it->second == h) {
+      ctx->resume_inflight.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
 // **唯一**的 alert 收割点：pop 一次，按类型分派进 ctx 的各队列，其余丢弃。
 // 任何需要 alert 的入口都只调它，绝不自己 pop_alerts（理由见 ht_session_ctx）。
 void drain_alerts(ht_session_ctx* ctx) {
@@ -413,14 +608,28 @@ void drain_alerts(ht_session_ctx* ctx) {
       continue;
     }
     if (const auto* sr = lt::alert_cast<lt::save_resume_data_alert>(a)) {
-      if (ctx->resume_pending > 0) ctx->resume_pending--;
-      ctx->resumes.emplace_back(best_hash_hex(sr->params.info_hashes),
-                                lt::write_resume_data_buf(sr->params));
+      // 只收本轮挂着的种子；不在册的是重发后原回执也到了的重复件（或上一轮
+      // 超时后的迟到件），落盘一次就够。
+      std::string id = best_hash_hex(sr->params.info_hashes);
+      if (ctx->resume_inflight.erase(id) > 0) {
+        ctx->resumes.emplace_back(std::move(id),
+                                  lt::write_resume_data_buf(sr->params));
+      }
       continue;
     }
-    if (lt::alert_cast<lt::save_resume_data_failed_alert>(a) != nullptr) {
-      if (ctx->resume_pending > 0) ctx->resume_pending--;
-      ctx->resume_failed++;
+    if (const auto* sf = lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
+      if (settle_failed_resume(ctx, sf->handle)) ctx->resume_failed++;
+      continue;
+    }
+    if (const auto* ad = lt::alert_cast<lt::alerts_dropped_alert>(a)) {
+      // 队列溢出：libtorrent 只告诉我们「丢过哪些类型」，不告诉丢了哪颗。
+      // 含 resume 回执时交给 ht_save_resume_data 对仍挂着的种子补发。
+      if (ad->dropped_alerts.test(
+              std::size_t(lt::save_resume_data_alert::alert_type)) ||
+          ad->dropped_alerts.test(
+              std::size_t(lt::save_resume_data_failed_alert::alert_type))) {
+        ctx->resume_receipts_dropped = true;
+      }
       continue;
     }
     // TODO-1961-c：改名 / 移动的回执。
@@ -768,6 +977,13 @@ HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
   }
 }
 
+// ht_apply_session_settings 的活跃名额入参 → settings_pack 值（见调用处）。
+static int active_limit_value(int requested, int key) {
+  if (requested > 0) return requested;
+  if (requested < 0) return -1;
+  return lt::default_settings().get_int(key);
+}
+
 HT_EXPORT int ht_apply_session_settings(
     void* session, int listen_port, int enable_dht, int enable_lsd,
     int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
@@ -792,12 +1008,16 @@ HT_EXPORT int ht_apply_session_settings(
     sp.set_int(lt::settings_pack::out_enc_policy, policy);
     sp.set_int(lt::settings_pack::in_enc_policy, policy);
     sp.set_bool(lt::settings_pack::anonymous_mode, anonymous_mode != 0);
-    if (active_downloads > 0) {
-      sp.set_int(lt::settings_pack::active_downloads, active_downloads);
-    }
-    if (active_seeds > 0) {
-      sp.set_int(lt::settings_pack::active_seeds, active_seeds);
-    }
+    // 活跃名额是**状态**不是增量：每次都写全值，热更新才能从任意旧值切回
+    // 默认（HBK-AUDIT-020：旧实现 <=0 不写，从「不限 / 10」改回 0 时旧名额
+    // 一直用到重启）。>0 原值；0 = libtorrent 默认（取 default_settings，不在
+    // 本桥抄常量）；<0 = 不限（libtorrent 读这两项时把负数当 int 最大值）。
+    sp.set_int(lt::settings_pack::active_downloads,
+               active_limit_value(active_downloads,
+                                  lt::settings_pack::active_downloads));
+    sp.set_int(lt::settings_pack::active_seeds,
+               active_limit_value(active_seeds,
+                                  lt::settings_pack::active_seeds));
     if (max_upload_slots > 0) {
       sp.set_int(lt::settings_pack::unchoke_slots_limit, max_upload_slots);
     }
@@ -920,13 +1140,17 @@ HT_EXPORT int ht_pause_torrent(void* session, const char* info_hash,
   if (session == nullptr) return 0;
   try {
     const bool want_pause = pause != 0;
-    const auto apply = [want_pause](lt::torrent_handle h) {
+    ht_session_ctx* ctx = as_ctx(session);
+    const auto apply = [want_pause, ctx](lt::torrent_handle h) {
       if (!h.is_valid()) return;
       if (want_pause) {
         // auto_managed 的种子会被队列管理器自动 resume，必须先清。
         h.unset_flags(lt::torrent_flags::auto_managed);
         h.pause();
       } else {
+        // 用户显式恢复数据离线的种子 = 接受 libtorrent 按现状校验；解冻，
+        // 之后的 resume 照常落盘（HBK-AUDIT-030）。
+        ctx->offline_resume_frozen.erase(best_hash_hex(h.info_hashes()));
         h.set_flags(lt::torrent_flags::auto_managed);
         h.resume();
       }
@@ -956,8 +1180,14 @@ HT_EXPORT int ht_set_torrent_upload_blocked(void* session,
   try {
     lt::torrent_handle h = find_torrent(as_session(session), info_hash);
     if (!h.is_valid()) return 0;
-    // 0 / -1 在 libtorrent 里都是「不限」，1 B/s 是可表达的最低上传限速。
-    h.set_upload_limit(blocked != 0 ? 1 : -1);
+    // BUG-5160：只拦 payload（见 UploadGate），绝不用 per-torrent 限速 ——
+    // 那会连握手 / request 一起饿死，下载随之永久卡住。
+    const std::shared_ptr<UploadGate> gate = as_ctx(session)->upload_gate->find(h);
+    if (!gate) return 0;
+    const bool want = blocked != 0;
+    gate->blocked.store(want);
+    // 截停期间该种子最多占 1 个 unchoke 名额（0 在 libtorrent 里是「不限」）。
+    h.set_max_uploads(want ? 1 : -1);
     return 1;
   } catch (...) {
     return 0;
@@ -1418,6 +1648,8 @@ HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,
     lt::session* ses = as_session(session);
     lt::torrent_handle h = find_torrent(ses, info_hash);
     if (!h.is_valid()) return 0;
+    as_ctx(session)->offline_resume_frozen.erase(
+        best_hash_hex(h.info_hashes()));
     ses->remove_torrent(h, delete_files != 0 ? lt::session::delete_files
                                              : lt::remove_flags_t{});
     return 1;
@@ -1484,6 +1716,8 @@ HT_EXPORT char* ht_move_storage(void* session, const char* info_hash,
       return json_error("move timed out");
     }
     if (!ctx->move_op.ok) return json_error(ctx->move_op.detail);
+    // 存储已挪到新位置：旧 .resume 记的离线路径不再是真相（HBK-AUDIT-030）。
+    ctx->offline_resume_frozen.erase(best_hash_hex(h.info_hashes()));
     std::string out = "{\"ok\":true,";
     append_json_str_field(out, "path", ctx->move_op.detail);
     out += '}';
@@ -1507,26 +1741,71 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
     std::filesystem::create_directories(
         std::filesystem::u8path(std::string(out_dir)), fs_ec);
 
+    // BUG-5158：先把 libtorrent 内部队列里积压的 alert 收走。
+    //
+    // 只有调用方碰到 drain 的入口（本函数、改名 / 移动、piece 事件、会话
+    // 状态）时 alert 才被取走；宿主平时每分钟才保存一次，期间 add_torrent /
+    // state_changed / torrent_checked / piece_finished 全堆在 libtorrent 里。
+    // libtorrent 按优先级给队列上限：normal 满 alert_queue_size（默认 2000）
+    // 即丢，high 到 2 倍、critical（save_resume_data_alert 属此档）到 3 倍。
+    // 种子一多（加回几千颗就有几千条 add_torrent + 成倍的状态 alert），队列
+    // 早已顶到 critical 的上限，本轮回执一到就被丢，一颗都收不到 —— 复现：
+    // 加 3000 颗后保存，saved=0 / timed_out=3000，白等满整个超时预算。
+    drain_alerts(ctx);
+
     // 前一轮的残留（超时未收齐）不该算进本轮：清账再发。
     ctx->resumes.clear();
-    ctx->resume_pending = 0;
+    ctx->resume_inflight.clear();
     ctx->resume_failed = 0;
+    ctx->resume_receipts_dropped = false;
 
+    // 待发队列：无元数据的种子（磁力刚加、还没拿到 info dict）存了也无法
+    // 重建，libtorrent 会直接回 failed_alert —— 不发，省一轮等待。
+    std::vector<lt::torrent_handle> queue;
     for (const lt::torrent_handle& h : ctx->ses.get_torrents()) {
       if (!h.is_valid()) continue;
-      // 无元数据的种子（磁力刚加、还没拿到 info dict）存了也无法重建，
-      // libtorrent 会直接回 failed_alert —— 不发，省一轮等待。
       if (!h.torrent_file()) continue;
+      // 数据离线冻结中：盘上的原 .resume 才是真相，不拿空位图覆盖它。
+      if (ctx->offline_resume_frozen.count(best_hash_hex(h.info_hashes())) !=
+          0) {
+        continue;
+      }
+      queue.push_back(h);
+    }
+
+    // 在飞上限：每颗种子恰好产生一条回执。一口气全发出去时，回执数随种子数
+    // 线性涨，超过 critical 档的余量（3 × alert_queue_size 减去同期别的
+    // alert）就丢 —— 腾空队列只解决「开局已满」，解决不了「本轮自己挤爆」。
+    // 在飞数钉在队列容量的四分之一以内（且 ≤ kMaxResumeInFlight），种子再多
+    // 也挤不爆；按回执到达逐颗补发（滑动窗口），总耗时不因分批变长。
+    const int queue_cap =
+        ctx->ses.get_settings().get_int(lt::settings_pack::alert_queue_size);
+    const std::size_t window =
+        std::size_t(std::clamp(queue_cap / 4, 1, kMaxResumeInFlight));
+    std::size_t next = 0;
+    int reissued = 0;
+    const auto issue = [](const lt::torrent_handle& h) {
       // save_info_dict：把 info dict 一并写进 resume，重启后磁力种子无需
       // 重新向 DHT/peer 取元数据即可直接续传/做种。
       h.save_resume_data(lt::torrent_handle::save_info_dict);
-      ctx->resume_pending++;
-    }
+    };
+    const auto top_up = [&]() {
+      while (next < queue.size() && ctx->resume_inflight.size() < window) {
+        const lt::torrent_handle& h = queue[next++];
+        // 发之前种子可能已被移除；失效 handle 取不到 infohash，跳过即可
+        // （它也不会再有 resume 可存）。
+        if (!h.is_valid()) continue;
+        const std::string id = best_hash_hex(h.info_hashes());
+        if (!ctx->resume_inflight.emplace(id, h).second) continue;
+        issue(h);
+      }
+    };
+    top_up();
 
     const int budget_ms = timeout_ms > 0 ? timeout_ms : 5000;
     const std::chrono::steady_clock::time_point deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(budget_ms);
-    while (ctx->resume_pending > 0) {
+    while (!ctx->resume_inflight.empty()) {
       const std::chrono::steady_clock::time_point now =
           std::chrono::steady_clock::now();
       if (now >= deadline) break;
@@ -1535,6 +1814,19 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
       ctx->ses.wait_for_alert(
           std::chrono::duration_cast<lt::time_duration>(deadline - now));
       drain_alerts(ctx);
+      if (ctx->resume_receipts_dropped) {
+        // 队列仍然溢出过（窗口之外的 alert 洪峰），而且丢的里面有 resume
+        // 回执：丢的是哪几颗无从得知，唯一确定的是它们都还挂在 inflight
+        // 里。对挂着的全部补发一次；原回执若其实没丢，后到的重复件按
+        // inflight 去重，不会多写。
+        ctx->resume_receipts_dropped = false;
+        for (const auto& entry : ctx->resume_inflight) {
+          if (!entry.second.is_valid()) continue;
+          issue(entry.second);
+          reissued++;
+        }
+      }
+      top_up();
     }
 
     int saved = 0;
@@ -1572,10 +1864,13 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
       saved++;
     }
     const int alert_failed = ctx->resume_failed;
-    const int pending_left = ctx->resume_pending;
+    // 超时 = 发了没等到回执的 + 窗口没轮到、根本没发出去的。
+    const int pending_left =
+        int(ctx->resume_inflight.size()) + int(queue.size() - next);
     ctx->resumes.clear();
-    ctx->resume_pending = 0;
+    ctx->resume_inflight.clear();
     ctx->resume_failed = 0;
+    ctx->resume_receipts_dropped = false;
 
     std::string out = "{\"ok\":true,\"saved\":";
     out += std::to_string(saved);
@@ -1583,6 +1878,8 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
     out += std::to_string(alert_failed + write_failed);
     out += ",\"timed_out\":";
     out += std::to_string(pending_left);
+    out += ",\"reissued\":";
+    out += std::to_string(reissued);
     out += '}';
     return dup_string(out);
   } catch (const std::exception& e) {
@@ -1592,11 +1889,41 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
   }
 }
 
+// HBK-AUDIT-030：resume 声称持有的数据此刻是否真的可达。save_path 必须是
+// 目录，且（有元数据时）至少一个非空、非 pad 的种子文件在盘上——与 libtorrent
+// 自己的 has_any_file 同口径；改过名的文件按 renamed_files 的路径找（相对
+// save_path，或绝对路径）。盘 / 网络挂载不在而空挂载点目录还在时，目录检查
+// 能过、文件检查不过。没有元数据（理论上不会：持有数据就必然有 info dict）
+// 只能以目录为准。
+static bool resume_data_reachable(const lt::add_torrent_params& params) {
+  std::error_code ec;
+  const std::filesystem::path root = std::filesystem::u8path(params.save_path);
+  if (!std::filesystem::is_directory(root, ec)) return false;
+  if (!params.ti || !params.ti->is_valid()) return true;
+  const lt::file_storage& fs = params.ti->files();
+  for (const lt::file_index_t i : fs.file_range()) {
+    if (fs.pad_file_at(i) || fs.file_size(i) <= 0) continue;
+    std::filesystem::path path;
+    const auto renamed = params.renamed_files.find(i);
+    if (renamed != params.renamed_files.end()) {
+      const std::filesystem::path name =
+          std::filesystem::u8path(renamed->second);
+      path = name.is_absolute() ? name : root / name;
+    } else {
+      path = std::filesystem::u8path(fs.file_path(i, params.save_path));
+    }
+    std::error_code file_ec;
+    if (std::filesystem::is_regular_file(path, file_ec)) return true;
+  }
+  return false;
+}
+
 HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
   if (session == nullptr) return json_error("session is null");
   if (dir == nullptr || *dir == '\0') return json_error("dir is empty");
   try {
-    lt::session* ses = as_session(session);
+    ht_session_ctx* ctx = as_ctx(session);
+    lt::session* ses = &ctx->ses;
     const std::filesystem::path root =
         std::filesystem::u8path(std::string(dir));
     std::error_code exists_ec;
@@ -1632,10 +1959,40 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
       }
       // 与 add_with_params 同一语义：本引擎的 add = 「开始跑」。resume 里
       // 存的 paused 旗标必须清掉，否则加回来是暂停态，既不续传也不做种。
-      params.flags &= ~lt::torrent_flags::paused;
+      //
+      // BUG-5161 例外：resume 声称持有数据、而 save_path 此刻不存在（盘未
+      // 挂载 / 网络盘未重连 / 目录被挪走）。照常开跑的话 libtorrent 拒掉
+      // fast-resume 后在空路径上全检得 0 片（torrent.cpp on_resume_data_checked
+      // → start_checking），周期快照随即把「全长全 0」位图写回 .resume；
+      // 而全 0 位图下次加载时无片可核、fast-resume 被直接接受，路径回来也
+      // 永不再校验，从 0% 重下。保持暂停（并清 auto_managed，免得队列管理
+      // 器自动 resume）则不会开始全检，期间写出的是空位图，下次路径可达时
+      // libtorrent 对已有文件做全量校验，进度原样找回。
+      //
+      // HBK-AUDIT-030：只看 save_path 目录在不在不够——盘 / 网络挂载不在时
+      // 空挂载点目录往往还在。判据改成「真实数据可达」：resume 持有数据时，
+      // 至少要有一个种子文件在盘上（与 libtorrent has_any_file 同口径）。
+      // 不可达的种子还要冻结 resume（见 ht_session_ctx::offline_resume_frozen），
+      // 否则暂停期间写出的空位图会在下次启动时把它重新放出来。
+      const bool holds_data =
+          !params.have_pieces.none_set() ||
+          bool(params.flags & lt::torrent_flags::seed_mode);
+      const bool data_offline =
+          holds_data && !resume_data_reachable(params);
+      if (data_offline) {
+        params.flags |= lt::torrent_flags::paused;
+        params.flags &= ~lt::torrent_flags::auto_managed;
+      } else {
+        params.flags &= ~lt::torrent_flags::paused;
+      }
       // BUG-1293：旧版本把「关上传」误写成置 upload_mode（实际语义是停止
       // 下载），已升级用户的 resume 里可能带着残留 flag，加载时一律治愈。
       params.flags &= ~lt::torrent_flags::upload_mode;
+      // BUG-5160：旧版本单种子停上传用 set_upload_limit(1)，随 fastResume 落盘
+      // 后种子一加载就饿死。本桥没有任何 per-torrent 限速功能（限速只走会话
+      // 级 ht_apply_limits），所以 resume 里的单种子限速一律是那条 bug 的残留，
+      // 清掉；截停意图由宿主首轮 sweep 经 ht_set_torrent_upload_blocked 重下。
+      params.upload_limit = -1;
       lt::error_code add_ec;
       lt::torrent_handle h = ses->add_torrent(std::move(params), add_ec);
       if ((add_ec && add_ec != lt::errors::duplicate_torrent) ||
@@ -1643,9 +2000,15 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
         failed++;
         continue;
       }
+      const std::string id = best_hash_hex(h.info_hashes());
+      if (data_offline) {
+        ctx->offline_resume_frozen.insert(id);
+      } else {
+        ctx->offline_resume_frozen.erase(id);
+      }
       if (added > 0) ids += ',';
       ids += '"';
-      append_json_escaped(ids, best_hash_hex(h.info_hashes()));
+      append_json_escaped(ids, id);
       ids += '"';
       added++;
     }
@@ -1934,6 +2297,15 @@ HT_EXPORT char* ht_session_status(void* session) {
            (sp.get_bool(lt::settings_pack::enable_upnp) ? "true" : "false");
     out += std::string(",\"natpmp_enabled\":") +
            (sp.get_bool(lt::settings_pack::enable_natpmp) ? "true" : "false");
+    // HBK-AUDIT-030 诊断：上传闸登记表项数（应恒等于种子数）与数据离线
+    // 冻结 resume 的种子数。
+    out += ",\"upload_gates\":" + std::to_string(ctx->upload_gate->size());
+    out += ",\"offline_resume_frozen\":" +
+           std::to_string(ctx->offline_resume_frozen.size());
+    out += ",\"active_downloads\":" +
+           std::to_string(sp.get_int(lt::settings_pack::active_downloads));
+    out += ",\"active_seeds\":" +
+           std::to_string(sp.get_int(lt::settings_pack::active_seeds));
     // 本桥建 session 一律带默认插件（含 ut_pex），无运行时开关。
     out += ",\"pex_enabled\":true";
     out += ",\"down_rate\":" + std::to_string(ctx->down_rate);

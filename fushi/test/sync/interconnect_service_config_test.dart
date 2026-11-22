@@ -366,8 +366,8 @@ void main() {
 
     expect(
       await backend.getRemoteServiceConfig(),
-      isNull,
-      reason: '明文 host 不提供该能力，语义与「旧 host 404」「能力关闭 404」归一',
+      isA<RemoteServiceConfigPlaintextSession>(),
+      reason: '明文会话本地已知不给，与「端点 404」分开报：编排器据此连能力表都不问',
     );
     // 只断返回值不够——把门控换成「照发请求 + catch 吞掉异常」同样会返回 null。
     // 必须断请求根本没发出去：否则每一轮同步仍会打一次注定 403 的往返，

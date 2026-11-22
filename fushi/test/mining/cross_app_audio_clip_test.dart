@@ -147,10 +147,10 @@ void main() {
     });
   });
 
-  group('CrossAppAudioSnapshot.fromNative', () {
+  group('CrossAppAudioFileSnapshot.fromNative', () {
     test('parses the native snapshot reply', () {
-      final CrossAppAudioSnapshot? s =
-          CrossAppAudioSnapshot.fromNative(<Object?, Object?>{
+      final CrossAppAudioFileSnapshot? s =
+          CrossAppAudioFileSnapshot.fromNative(<Object?, Object?>{
             'path': '/cache/cross_app_audio/lookup_1.pcm',
             'sampleRate': 48000,
             'channels': 1,
@@ -166,9 +166,9 @@ void main() {
     });
 
     test('rejects a reply without a path or format', () {
-      expect(CrossAppAudioSnapshot.fromNative(null), isNull);
+      expect(CrossAppAudioFileSnapshot.fromNative(null), isNull);
       expect(
-        CrossAppAudioSnapshot.fromNative(<Object?, Object?>{
+        CrossAppAudioFileSnapshot.fromNative(<Object?, Object?>{
           'sampleRate': 48000,
           'channels': 1,
           'bitsPerSample': 16,
@@ -177,7 +177,9 @@ void main() {
         isNull,
       );
       expect(
-        CrossAppAudioSnapshot.fromNative(<Object?, Object?>{'path': '/x.pcm'}),
+        CrossAppAudioFileSnapshot.fromNative(<Object?, Object?>{
+          'path': '/x.pcm',
+        }),
         isNull,
       );
     });
@@ -260,7 +262,7 @@ void main() {
     Future<CrossAppAudioSnapshot> writeSnapshot(Uint8List pcm) async {
       final File f = File('${tmp.path}/lookup.pcm');
       await f.writeAsBytes(pcm);
-      return CrossAppAudioSnapshot(pcmPath: f.path, format: _format);
+      return CrossAppAudioFileSnapshot(pcmPath: f.path, format: _format);
     }
 
     test('encodes only the last utterance and returns the file', () async {
@@ -347,7 +349,7 @@ void main() {
       () async {
         final ({String path, Directory dir})? out =
             await prepareCrossAppSentenceAudio(
-              CrossAppAudioSnapshot(
+              CrossAppAudioFileSnapshot(
                 pcmPath: '${tmp.path}/gone.pcm',
                 format: _format,
               ),

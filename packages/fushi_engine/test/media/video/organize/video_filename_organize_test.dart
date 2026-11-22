@@ -942,6 +942,81 @@ void main() {
       expect((await book('video/re')).videoPath, p.normalize(video));
     });
 
+    // HBK-AUDIT-031：两次独立发起的搬动（ctl / 对话框各一次）落到同一个目标。
+    // 修前两边的「目标空着」检查都在对方 rename 之前通过，后一个 rename 静默
+    // 覆盖先搬过去的视频（Windows 的 File.rename 也是 MOVEFILE_REPLACE_EXISTING）。
+    test('并发两次搬到同一目标：只落地一个，另一个整条失败，两份内容都在', () async {
+      final String other = p.join(root, 'other', 'Bocchi copy.mkv');
+      Directory(p.dirname(other)).createSync(recursive: true);
+      File(other).writeAsStringSync('second copy');
+      await seedMovie();
+      await seedMovie(uid: 'video/re2', path: other);
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      final VideoFilenameOrganizePlan planA = await service.plan(<String>[
+        'video/re',
+      ], layout: VideoOrganizeLayout.directories);
+      final VideoFilenameOrganizePlan planB = await service.plan(<String>[
+        'video/re2',
+      ], layout: VideoOrganizeLayout.directories);
+      expect(planA.items.single.status, VideoFilenamePlanStatus.ready);
+      expect(planB.items.single.status, VideoFilenamePlanStatus.ready);
+      expect(planB.items.single.moves.first.move.to, newVideo());
+
+      final List<VideoFilenameOrganizeResult> results = await Future.wait(
+        <Future<VideoFilenameOrganizeResult>>[
+          service.apply(planA),
+          service.apply(planB),
+        ],
+      );
+      expect(
+        results.fold<int>(
+          0,
+          (int sum, VideoFilenameOrganizeResult r) => sum + r.renamedCount,
+        ),
+        1,
+      );
+      final List<String> contents = <String>[
+        for (final String path in <String>[video, other, newVideo()])
+          if (File(path).existsSync()) File(path).readAsStringSync(),
+      ]..sort();
+      expect(contents, <String>['mkv!', 'second copy']);
+      // 失败的那条没留下占位文件。
+      expect(
+        Directory(
+          newDir(),
+        ).listSync().whereType<File>().where((File f) => f.lengthSync() == 0),
+        isEmpty,
+      );
+    });
+
+    test('撤销前核对文件身份：搬过去的位置换成了别的文件就不搬回', () async {
+      await seedMovie();
+      final VideoFilenameOrganizeService service = VideoFilenameOrganizeService(
+        database: db,
+      );
+      final VideoFilenameOrganizeResult result = await service.apply(
+        await service.plan(<String>[
+          'video/re',
+        ], layout: VideoOrganizeLayout.directories),
+      );
+      expect(result.renamedCount, 1);
+      // 用户把搬过去的视频挪走，又有另一个文件落到了同一个名字上。
+      File(newVideo()).renameSync(p.join(root, 'kept elsewhere.mkv'));
+      File(newVideo()).writeAsStringSync('another video entirely');
+
+      final VideoFilenameOrganizeResult undo = await service.apply(
+        result.undoPlan!,
+      );
+      expect(undo.renamedCount, 0);
+      expect(undo.failures.single.error, contains(newVideo()));
+      expect(File(newVideo()).readAsStringSync(), 'another video entirely');
+      expect(File(video).existsSync(), isFalse);
+      expect(File(newSubtitle()).existsSync(), isTrue, reason: '整条不动');
+      expect((await book('video/re')).videoPath, p.normalize(newVideo()));
+    });
+
     test('不在任何来源库根下：outsideLibraryRoot；只改文件名照常可做', () async {
       final String outside = p.join(tmp.path, 'elsewhere', 'movie.mkv');
       Directory(p.dirname(outside)).createSync(recursive: true);

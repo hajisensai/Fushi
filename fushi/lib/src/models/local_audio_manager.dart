@@ -523,6 +523,23 @@ class LocalAudioManager {
     await setEntries(dbs);
   }
 
+  /// 移除存储 path 在 [paths] 里的所有条目（内部副本连文件一起删，引用模式的用户
+  /// 原文件不动，同 [remove]）。按 path 而不是下标认：调用方算身份期间登记表可能
+  /// 已经变了，下标会错位。返回移除的条数。
+  Future<int> removeByStoredPaths(Set<String> paths) async {
+    final List<LocalAudioDbEntry> kept = <LocalAudioDbEntry>[];
+    final List<LocalAudioDbEntry> removed = <LocalAudioDbEntry>[];
+    for (final LocalAudioDbEntry e in entries) {
+      (paths.contains(e.path) ? removed : kept).add(e);
+    }
+    if (removed.isEmpty) return 0;
+    for (final LocalAudioDbEntry e in removed) {
+      if (_isInternalCopy(e.path)) await deleteFiles(e.path);
+    }
+    await setEntries(kept);
+    return removed.length;
+  }
+
   Future<void> reorder(int oldIndex, int newIndex) async {
     final dbs = List<LocalAudioDbEntry>.of(entries);
     if (oldIndex < 0 || oldIndex >= dbs.length) return;

@@ -17,6 +17,8 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler;
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
@@ -1538,6 +1540,9 @@ void main() {
           call.physicalPlacement?.anchorScreenRect,
           const Rect.fromLTRB(1800, 900, 1896, 996),
         );
+        // 拍板 design-cross-app-audio-desktop：应用外的剪贴板文字，查词这一刻钉住
+        // 其他应用刚播的声音，默认制卡路径据此带句子音频。
+        expect(call.sentenceAudio, isNotNull);
       });
 
       testWidgets('剪贴板：覆盖窗不可用时退回主窗查词弹窗', (WidgetTester tester) async {
@@ -2519,11 +2524,13 @@ class _LookupTextCall {
     this.physicalPlacement, {
     this.sentence = '',
     this.miningHandler,
+    this.sentenceAudio,
   });
 
   final String text;
   final String sentence;
   final OverlayMiningHandler? miningHandler;
+  final Future<CrossAppAudioSnapshot?>? sentenceAudio;
   final Rect? anchorScreenRect;
   final GlobalLookupPhysicalPlacement? physicalPlacement;
 }
@@ -2547,6 +2554,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
     OverlayMiningHandler? miningHandler,
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) async {
     log.add('lookupText');
     lookups.add(
@@ -2556,6 +2564,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         physicalPlacement,
         sentence: sentence,
         miningHandler: miningHandler,
+        sentenceAudio: sentenceAudio,
       ),
     );
     return true;

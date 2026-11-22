@@ -4,9 +4,29 @@ import '../engine/fushidicts_models.dart' show FushiKanjiResult;
 import 'dictionary_entry.dart';
 
 class DictionarySearchResult {
+  /// 持久化 / 线上格式：`entries` 是**逐条 [DictionaryEntry.toJson] 后的字符串**列表
+  /// （双层 JSON，见 [toJson]）。
+  ///
+  /// BUG-5064：查词历史里出现过 `entries` 元素是 JSON 对象（单层）的行，`List<String>.from`
+  /// 直接抛类型错误，整条历史读不回来。对象形式与字符串形式承载的是同一组字段，
+  /// 这里两种都按同一份 [DictionaryEntry.fromMap] 还原；别的类型仍抛 [FormatException]。
+  /// 读到非规范形式的调用方可以用 [hasCanonicalEntries] 判断要不要按 [toJson] 重写。
   factory DictionarySearchResult.fromJson(String json) {
-    final map = Map<String, dynamic>.from(jsonDecode(json));
-    final entriesJson = List<String>.from(map['entries'] ?? []);
+    final Object? decoded = jsonDecode(json);
+    if (decoded is! Map) {
+      throw FormatException(
+        'DictionarySearchResult JSON is not an object: '
+        '${decoded.runtimeType}',
+      );
+    }
+    return DictionarySearchResult.fromMap(Map<String, dynamic>.from(decoded));
+  }
+
+  /// [fromJson] 解出顶层 JSON 对象之后的那一步（`entries` 两种形式见 [fromJson]）。
+  factory DictionarySearchResult.fromMap(Map<String, dynamic> map) {
+    final List<dynamic> entriesJson = List<dynamic>.from(
+      map['entries'] as List? ?? const <dynamic>[],
+    );
     final kanjiJson = List<dynamic>.from(map['kanjiResults'] ?? const []);
     return DictionarySearchResult(
       searchTerm: map['searchTerm'] as String,
@@ -14,7 +34,7 @@ class DictionarySearchResult {
       truncated: map['truncated'] as bool? ?? false,
       headwordCount: map['headwordCount'] as int? ?? 0,
       scrollPosition: map['scrollPosition'] as int? ?? 0,
-      entries: entriesJson.map(DictionaryEntry.fromJson).toList(),
+      entries: entriesJson.map(_entryFromJsonValue).toList(),
       kanjiResults: kanjiJson
           .map(
             (dynamic e) =>
@@ -23,6 +43,26 @@ class DictionarySearchResult {
           .toList(),
     );
   }
+
+  /// [map]（[fromJson] 的顶层对象）的 `entries` 是否是 [toJson] 写出的规范形式
+  /// （缺省 / 每个元素都是字符串）。false = 能读回来，但应按 [toJson] 重写。
+  static bool hasCanonicalEntries(Map<String, dynamic> map) {
+    final Object? entries = map['entries'];
+    return entries == null ||
+        (entries is List && entries.every((Object? e) => e is String));
+  }
+
+  static DictionaryEntry _entryFromJsonValue(dynamic value) {
+    if (value is String) return DictionaryEntry.fromJson(value);
+    if (value is Map) {
+      return DictionaryEntry.fromMap(Map<String, dynamic>.from(value));
+    }
+    throw FormatException(
+      'DictionarySearchResult entry is neither a JSON string nor an object: '
+      '${value.runtimeType}',
+    );
+  }
+
   DictionarySearchResult({
     required this.searchTerm,
     this.entries = const [],

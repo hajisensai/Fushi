@@ -28,6 +28,7 @@ using PFN_cuDeviceGetAttribute = CUresult(__stdcall *)(int *, int, CUdevice);
 using PFN_cuDeviceTotalMem = CUresult(__stdcall *)(size_t *, CUdevice);
 using PFN_cuGetErrorName = CUresult(__stdcall *)(CUresult, const char **);
 using PFN_cuDeviceGetLuid = CUresult(__stdcall *)(char *, unsigned int *, CUdevice);
+using PFN_cuDevicePrimaryCtxReset = CUresult(__stdcall *)(CUdevice);
 
 std::string CuError(PFN_cuGetErrorName get_name, const char *what, CUresult code) {
   std::string message = std::string(what) + " failed: " + std::to_string(code);
@@ -180,6 +181,44 @@ bool CudaDeviceLuid(int ordinal, uint8_t luid[8]) {
   return true;
 }
 
+std::string ResetCudaPrimaryContexts() {
+  // Same module ProbeCudaDriver keeps loaded; System32 only.
+  static HMODULE nvcuda = LoadLibraryExW(L"nvcuda.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (nvcuda == nullptr) {
+    return "nvcuda.dll not found";
+  }
+  auto get_error_name = reinterpret_cast<PFN_cuGetErrorName>(GetProcAddress(nvcuda, "cuGetErrorName"));
+  auto init = reinterpret_cast<PFN_cuInit>(GetProcAddress(nvcuda, "cuInit"));
+  auto device_get_count = reinterpret_cast<PFN_cuDeviceGetCount>(GetProcAddress(nvcuda, "cuDeviceGetCount"));
+  auto device_get = reinterpret_cast<PFN_cuDeviceGet>(GetProcAddress(nvcuda, "cuDeviceGet"));
+  auto ctx_reset =
+      reinterpret_cast<PFN_cuDevicePrimaryCtxReset>(GetProcAddress(nvcuda, "cuDevicePrimaryCtxReset_v2"));
+  if (init == nullptr || device_get_count == nullptr || device_get == nullptr || ctx_reset == nullptr) {
+    return "nvcuda.dll is missing cuDevicePrimaryCtxReset_v2";
+  }
+  CUresult rc = init(0);
+  if (rc != 0) {
+    return CuError(get_error_name, "cuInit", rc);
+  }
+  int count = 0;
+  rc = device_get_count(&count);
+  if (rc != 0) {
+    return CuError(get_error_name, "cuDeviceGetCount", rc);
+  }
+  std::string first_error;
+  for (int i = 0; i < count; i++) {
+    CUdevice device = 0;
+    rc = device_get(&device, i);
+    if (rc == 0) {
+      rc = ctx_reset(device);
+    }
+    if (rc != 0 && first_error.empty()) {
+      first_error = CuError(get_error_name, "cuDevicePrimaryCtxReset", rc);
+    }
+  }
+  return first_error;
+}
+
 CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstring &raw_dir) {
   std::lock_guard<std::mutex> lock(mutex_);
   CudaRegistrationResult result;
@@ -189,21 +228,39 @@ CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstr
     return result;
   }
   if (registered_) {
-    if (ToLower(dir) == ToLower(dir_)) {
-      result.ok = true;
+    if (ToLower(dir) != ToLower(dir_)) {
+      result.error = "CUDA execution provider is already registered from " + WideToUtf8(dir_) +
+                     "; a different runtime directory needs an app restart";
       result.device_count = device_count_;
       return result;
     }
-    result.error = "CUDA execution provider is already registered from " + WideToUtf8(dir_) +
-                   "; a different runtime directory needs an app restart";
+    if (!loaded_) {
+      result.error = LoadLocked(env);
+      if (!result.error.empty()) {
+        return result;
+      }
+    }
+    result.ok = true;
     result.device_count = device_count_;
     return result;
   }
 
-  const std::wstring library = dir + L"\\onnxruntime_providers_cuda.dll";
-  if (GetFileAttributesW(library.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    result.error = "onnxruntime_providers_cuda.dll not found in " + WideToUtf8(dir);
+  dir_ = dir;
+  result.error = LoadLocked(env);
+  if (!result.error.empty()) {
+    dir_.clear();
     return result;
+  }
+  registered_ = true;
+  result.ok = true;
+  result.device_count = device_count_;
+  return result;
+}
+
+std::string CudaPluginRegistry::LoadLocked(OrtEnv *env) {
+  const std::wstring library = dir_ + L"\\onnxruntime_providers_cuda.dll";
+  if (GetFileAttributesW(library.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    return "onnxruntime_providers_cuda.dll not found in " + WideToUtf8(dir_);
   }
 
   // The plugin's own imports (cublas*, cudnn64_9) would resolve through
@@ -212,12 +269,13 @@ CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstr
   // search order - AddDllDirectory does not cover that, and preloading only
   // cudnn64_9.dll is not enough either (both measured: Conv then fails with
   // CUDNN_BACKEND_API_FAILED). Prepending the directory to this process's
-  // PATH is what works. Process-local; restored if registration fails.
+  // PATH is what works. Process-local; restored if registration fails. A
+  // reload after Release() finds the directory already on PATH.
   const std::wstring old_path = GetPath();
   bool path_changed = false;
   {
     const std::wstring lowered = ToLower(old_path);
-    const std::wstring needle = ToLower(dir);
+    const std::wstring needle = ToLower(dir_);
     bool present = false;
     size_t start = 0;
     while (start <= lowered.size()) {
@@ -232,7 +290,7 @@ CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstr
       start = end + 1;
     }
     if (!present) {
-      const std::wstring new_path = old_path.empty() ? dir : dir + L";" + old_path;
+      const std::wstring new_path = old_path.empty() ? dir_ : dir_ + L";" + old_path;
       path_changed = SetEnvironmentVariableW(L"PATH", new_path.c_str()) != 0;
     }
   }
@@ -246,8 +304,7 @@ CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstr
   std::string error = TakeStatus(api.RegisterExecutionProviderLibrary(env, kRegistrationName, library.c_str()));
   if (!error.empty()) {
     restore_path();
-    result.error = "RegisterExecutionProviderLibrary failed: " + error;
-    return result;
+    return "RegisterExecutionProviderLibrary failed: " + error;
   }
 
   const OrtEpDevice *const *devices = nullptr;
@@ -273,22 +330,23 @@ CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstr
     // No half-registered state: drop the library again.
     TakeStatus(api.UnregisterExecutionProviderLibrary(env, kRegistrationName));
     restore_path();
-    result.error = error.empty() ? "CUDA execution provider registered but reported no device" :
-                                   "GetEpDevices failed: " + error;
-    return result;
+    return error.empty() ? "CUDA execution provider registered but reported no device" :
+                           "GetEpDevices failed: " + error;
   }
 
-  registered_ = true;
-  dir_ = dir;
+  loaded_ = true;
   cuda_devices_ = std::move(cuda_devices);
   ep_names_ = std::move(ep_names);
   device_count_ = static_cast<int>(cuda_devices_.size());
-  result.ok = true;
-  result.device_count = device_count_;
-  return result;
+  return std::string();
 }
 
 bool CudaPluginRegistry::IsRegistered() { return registered_.load(); }
+
+bool CudaPluginRegistry::IsLoaded() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return loaded_;
+}
 
 std::vector<std::string> CudaPluginRegistry::RegisteredEpNames() {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -301,6 +359,12 @@ void CudaPluginRegistry::AppendToSessionOptions(OrtEnv *env, OrtSessionOptions *
     throw Ort::Exception("CUDA execution provider is not registered (registerCudaRuntime has not succeeded)",
                          ORT_FAIL);
   }
+  if (!loaded_) {
+    const std::string error = LoadLocked(env);
+    if (!error.empty()) {
+      throw Ort::Exception("CUDA execution provider could not be reloaded: " + error, ORT_FAIL);
+    }
+  }
   if (device_index < 0 || device_index >= static_cast<int>(cuda_devices_.size())) {
     throw Ort::Exception("CUDA device index " + std::to_string(device_index) + " out of range (" +
                              std::to_string(cuda_devices_.size()) + " CUDA device(s))",
@@ -311,13 +375,37 @@ void CudaPluginRegistry::AppendToSessionOptions(OrtEnv *env, OrtSessionOptions *
       Ort::GetApi().SessionOptionsAppendExecutionProvider_V2(options, env, &device, 1, nullptr, nullptr, 0));
 }
 
+CudaReleaseResult CudaPluginRegistry::Release(OrtEnv *env, bool reset_context) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  CudaReleaseResult result;
+  if (!registered_) {
+    return result;
+  }
+  if (loaded_) {
+    TakeStatus(Ort::GetApi().UnregisterExecutionProviderLibrary(env, kRegistrationName));
+    loaded_ = false;
+    cuda_devices_.clear();
+    result.released = true;
+  }
+  // Also when the library was already unloaded: the primary context outlives
+  // it (cudart retains it and never lets go).
+  if (reset_context) {
+    result.error = ResetCudaPrimaryContexts();
+    result.context_reset = result.error.empty();
+  }
+  return result;
+}
+
 void CudaPluginRegistry::Unregister(OrtEnv *env) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!registered_) {
     return;
   }
-  TakeStatus(Ort::GetApi().UnregisterExecutionProviderLibrary(env, kRegistrationName));
+  if (loaded_) {
+    TakeStatus(Ort::GetApi().UnregisterExecutionProviderLibrary(env, kRegistrationName));
+  }
   registered_ = false;
+  loaded_ = false;
   cuda_devices_.clear();
   ep_names_.clear();
   device_count_ = 0;

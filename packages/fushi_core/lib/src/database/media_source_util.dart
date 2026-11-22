@@ -50,6 +50,42 @@ String normalizeSourceRootPath(String raw, {required String transport}) {
 String musicTrackPathKey(String path, {p.Context? context}) =>
     (context ?? p.context).canonicalize(path);
 
+/// 路径键（[musicTrackPathKey]）所在目录的前缀：到最后一个分隔符为止、含分隔符。专辑
+/// 归组按它认「同一目录」，也拿它当 `path_key` 的区间查询前缀（`[前缀, 前缀末字符 + 1)`
+/// 恰好是这个目录下的全部路径键）。根下文件 / 没有分隔符的（远程无目录）返回 null：
+/// 无从判断是否同一张盘，不参与归组。
+String? musicTrackDirPrefix(String pathKey) {
+  final int cut = pathKey.lastIndexOf('/') > pathKey.lastIndexOf(r'\')
+      ? pathKey.lastIndexOf('/')
+      : pathKey.lastIndexOf(r'\');
+  return cut <= 0 ? null : pathKey.substring(0, cut + 1);
+}
+
+/// 专辑名 / 艺人名的比较键：与 `native/fushi_music` `uid.rs` 的 `normalize_name` 同一口径
+/// ——去首尾空白、连续空白折成一个、全角 ASCII（含全角空格）折成半角、小写。只用来认
+/// 「同一个名字的写法差异」，不做模糊匹配。
+String musicAlbumNameKey(String name) {
+  final StringBuffer out = StringBuffer();
+  bool pendingSpace = false;
+  for (final int rune in name.trim().runes) {
+    int c = rune;
+    if (c == 0x3000) {
+      c = 0x20;
+    } else if (c >= 0xFF01 && c <= 0xFF5E) {
+      c -= 0xFEE0;
+    }
+    final String ch = String.fromCharCode(c);
+    if (ch.trim().isEmpty) {
+      pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace && out.isNotEmpty) out.write(' ');
+    pendingSpace = false;
+    out.write(ch.toLowerCase());
+  }
+  return out.toString();
+}
+
 /// 取归一化后路径的末段作为默认显示名（文件夹名）。
 /// - 末段为空（如根路径）时回退整段。
 /// - 纯函数，不触磁盘。

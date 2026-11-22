@@ -1995,7 +1995,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   @override
   Object? get debugTopPopupWebViewState {
     final int index = _popup.lastVisibleIndex;
-    return index < 0 ? null : _popup.entries[index].webViewKey.currentState;
+    return index < 0 ? null : _popup.entries[index].webViewKey.webViewState;
   }
 
   @override
@@ -2014,7 +2014,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Future<dynamic> debugEvaluateTopPopup(String source) async {
     final int index = _popup.lastVisibleIndex;
     if (index < 0) return null;
-    return _popup.entries[index].webViewKey.currentState?.debugEval(source);
+    return _popup.entries[index].webViewKey.webViewState?.debugEval(source);
   }
 
   @override

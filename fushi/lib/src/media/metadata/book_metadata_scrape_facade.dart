@@ -167,7 +167,7 @@ class BookMetadataApplyResult {
 /// 此前候选解析（贴 Bangumi URL 直取、纯数字关键词「搜索 + id 直取」并列、DLsite
 /// 编号直取）与封面下载写在弹窗 State 里、写回写在书架页里，控制通道 / AI 助手没法调
 /// 「同一个方法」。现在弹窗、书架页、`fushi_cli book …` 都只经本门面：
-/// - [search] / [fetchById]：候选；
+/// - [searchDetailed] / [fetchById]：候选；
 /// - [downloadCover]：选中候选后下载封面到临时文件（编辑信息弹窗拿它先预览、保存时
 ///   再落地，所以下载与写回分两步）；
 /// - [applyToBook]：写回显示名 / 作者 / 封面。`keepBackup` 时先把将被替换的 override
@@ -275,17 +275,10 @@ class BookMetadataScrapeFacade {
   /// NSFW 候选（[BookScrapeCandidate.isAdult]）只在 [includeNsfw] 时返回——这是对**所有
   /// 源**统一的一条规则，跟随作品自己的 NSFW 标记（拍板台 pr3497）；不再靠「把 DLsite
   /// 单独做成一个源、默认不选」来把成人向结果挡在普通书搜索外。
-  Future<List<BookScrapeCandidate>> search({
-    required BookScrapeSource source,
-    required String query,
-    bool includeNsfw = false,
-  }) async => (await searchDetailed(
-    source: source,
-    query: query,
-    includeNsfw: includeNsfw,
-  )).candidates;
-
-  /// 同 [search]，另报因 [includeNsfw] 为 false 而藏起来的 NSFW 候选条数。
+  ///
+  /// 返回可见候选与因 [includeNsfw] 为 false 而藏起来的 NSFW 候选条数（弹窗据此
+  /// 提示「藏了 N 条」）。弹窗与控制通道的候选搜索路由（`kBookMetadataCtlSearch`）
+  /// 都走这一个方法。
   Future<BookScrapeSearchResult> searchDetailed({
     required BookScrapeSource source,
     required String query,

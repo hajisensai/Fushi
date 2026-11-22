@@ -20,6 +20,8 @@ import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -61,6 +63,10 @@ typedef OverlayMiningHandler =
 /// 是否还在屏上（调用方在派发这条消息时捕获自己的查词 route，回包时核对它仍是当前
 /// 且未作废）。为假时失败原因改由宿主 toast（[MineFailureNotice.settle]）。null =
 /// 视为一直在屏上。
+///
+/// [sentenceAudio]（拍板 design-cross-app-audio-desktop）：应用外查词那一刻钉住的
+/// 「最近一段其他 app 声音」（跨应用语音缓存开着才有）。默认制卡 / 覆写路径（没有
+/// [miningHandler]）据此截出查词前最后一句语音当句子音频；带委托的表面自己决定。
 bool maybeHandleOverlayDeferredBridge({
   required AppModel? model,
   required Object? handler,
@@ -69,6 +75,7 @@ bool maybeHandleOverlayDeferredBridge({
   String sentenceContext = '',
   OverlayMiningHandler? miningHandler,
   MineOriginOnScreen? isOriginOnScreen,
+  Future<CrossAppAudioSnapshot?>? sentenceAudio,
 }) {
   switch (handler) {
     // playWordAudio 桥已删：popup.js 三端统一自己用 HTML5 <audio> 播放解析好的
@@ -105,6 +112,7 @@ bool maybeHandleOverlayDeferredBridge({
           sentenceContext,
           miningHandler,
           isOriginOnScreen,
+          sentenceAudio,
         ),
       );
       return true;
@@ -160,6 +168,7 @@ bool maybeHandleOverlayDeferredBridge({
           sentenceContext,
           miningHandler,
           isOriginOnScreen,
+          sentenceAudio,
         ),
       );
       return true;
@@ -404,6 +413,7 @@ Future<void> _handleMineBridge(
   String sentenceContext,
   OverlayMiningHandler? miningHandler,
   MineOriginOnScreen? isOriginOnScreen,
+  Future<CrossAppAudioSnapshot?>? sentenceAudio,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -419,7 +429,12 @@ Future<void> _handleMineBridge(
     final String expression = fields['expression'] ?? '';
     if (model != null && expression.isNotEmpty) {
       if (miningHandler == null) {
-        reply = await _mineEntry(model, fields, sentenceContext);
+        reply = await _mineEntry(
+          model,
+          fields,
+          sentenceContext,
+          sentenceAudio: sentenceAudio,
+        );
       } else {
         await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
         reply = await miningHandler(fields: fields);
@@ -474,6 +489,7 @@ Future<Map<String, Object?>> _mineEntry(
   String sentenceContext, {
   String? coverPath,
   bool recordStats = true,
+  Future<CrossAppAudioSnapshot?>? sentenceAudio,
 }) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
@@ -481,18 +497,26 @@ Future<Map<String, Object?>> _mineEntry(
   // galgame 会话在跑：卡片带游戏出处（复习时「回到出处」打开该游戏），书域不带。
   final ({String gameId, String? title})? game =
       overlayMinedSentenceGameOrigin();
-  final MineOutcome outcome = await repo.mineEntry(
-    rawPayloadJson: jsonEncode(fields),
-    context: AnkiMiningContext(
-      sentence: sentence,
-      coverPath: coverPath,
-      source: AnkiMiningSource.book,
-      documentTitle: game?.title,
-      sourceLink: game == null
-          ? null
-          : CardSourceLink.tryGame(gameId: game.gameId),
-    ),
-  );
+  final ({String path, Directory dir})? audio =
+      await prepareOverlaySentenceAudio(sentenceAudio);
+  final MineOutcome outcome;
+  try {
+    outcome = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: sentence,
+        coverPath: coverPath,
+        sentenceAudioPath: audio?.path,
+        source: AnkiMiningSource.book,
+        documentTitle: game?.title,
+        sourceLink: game == null
+            ? null
+            : CardSourceLink.tryGame(gameId: game.gameId),
+      ),
+    );
+  } finally {
+    if (audio != null) unawaited(deleteCrossAppAudioDir(audio.dir));
+  }
   // 与 in-app 入口（texthooker 页）同判据：describeMineOutcome 决定成败与记不记，
   // 回包由 MinePopupResult 构造——成功回 ankiConnect + noteId，进了待发队列回
   // queued（popup.js 画 ✓ 不回查），重复回 duplicate（BUG-1908）。
@@ -534,6 +558,7 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
   required AppModel model,
   required ScreenOcrCardImage cardImage,
   required String sentenceContext,
+  Future<CrossAppAudioSnapshot?>? sentenceAudio,
 }) {
   return ({required Map<String, String> fields, int? updateNoteId}) async {
     final ({String path, Directory dir})? cover =
@@ -551,6 +576,7 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
               sentenceContext,
               coverPath: cover?.path,
               recordStats: false,
+              sentenceAudio: sentenceAudio,
             )
           : await _updateEntry(
               model,
@@ -558,6 +584,7 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
               fields,
               sentenceContext,
               coverPath: cover?.path,
+              sentenceAudio: sentenceAudio,
             );
     } finally {
       if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
@@ -860,6 +887,7 @@ Future<void> _handleUpdateBridge(
   String sentenceContext,
   OverlayMiningHandler? miningHandler,
   MineOriginOnScreen? isOriginOnScreen,
+  Future<CrossAppAudioSnapshot?>? sentenceAudio,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -882,7 +910,13 @@ Future<void> _handleUpdateBridge(
     final String expression = fields['expression'] ?? '';
     if (model != null && noteId != null && expression.isNotEmpty) {
       if (miningHandler == null) {
-        reply = await _updateEntry(model, noteId, fields, sentenceContext);
+        reply = await _updateEntry(
+          model,
+          noteId,
+          fields,
+          sentenceContext,
+          sentenceAudio: sentenceAudio,
+        );
       } else {
         await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
         reply = await miningHandler(fields: fields, updateNoteId: noteId);
@@ -917,18 +951,27 @@ Future<Map<String, Object?>> _updateEntry(
   Map<String, String> fields,
   String sentenceContext, {
   String? coverPath,
+  Future<CrossAppAudioSnapshot?>? sentenceAudio,
 }) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.miningAnkiRepository;
-  final MineOutcome outcome = await repo.updateMinedNote(
-    noteId: noteId,
-    rawPayloadJson: jsonEncode(fields),
-    context: AnkiMiningContext(
-      sentence: resolveMineSentence(fields, sentenceContext),
-      coverPath: coverPath,
-      source: AnkiMiningSource.book,
-    ),
-  );
+  final ({String path, Directory dir})? audio =
+      await prepareOverlaySentenceAudio(sentenceAudio);
+  final MineOutcome outcome;
+  try {
+    outcome = await repo.updateMinedNote(
+      noteId: noteId,
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(
+        sentence: resolveMineSentence(fields, sentenceContext),
+        coverPath: coverPath,
+        sentenceAudioPath: audio?.path,
+        source: AnkiMiningSource.book,
+      ),
+    );
+  } finally {
+    if (audio != null) unawaited(deleteCrossAppAudioDir(audio.dir));
+  }
   final bool success = outcome.result == MineResult.success;
   // BUG-1908：覆写失败同样带原因回浮窗（口径与 _mineEntry 一致，overwrite: true
   // 让 describeMineOutcome 给出「已覆写/覆写失败」而不是「已导出」）。
@@ -940,4 +983,22 @@ Future<Map<String, Object?>> _updateEntry(
     'noteId': success ? outcome.noteId : null,
     if (message != null && message.isNotEmpty) 'message': message,
   };
+}
+
+/// 跨应用语音缓存：把应用外查词那一刻钉住的 [snapshot] 截出查词前最后一句语音、编码成
+/// 句子音频（拍板 design-cross-app-audio-desktop）。没开缓存 / 快照已被顶替 / 整段静音 /
+/// 编码失败返回 null——这张卡照常制，只是不带句子音频。调用方制卡后删 `dir`。
+Future<({String path, Directory dir})?> prepareOverlaySentenceAudio(
+  Future<CrossAppAudioSnapshot?>? snapshot,
+) async {
+  if (snapshot == null) return null;
+  try {
+    final CrossAppAudioSnapshot? taken = await snapshot;
+    if (taken == null) return null;
+    return await CrossAppAudioCapture.instance.prepareSentenceAudio(taken);
+  } on Exception catch (error, stack) {
+    // 句子音频是附加项：取不到要留痕，但不能让整张卡制不出来。
+    ErrorLogService.instance.log('overlay.crossAppAudio', error, stack);
+    return null;
+  }
 }

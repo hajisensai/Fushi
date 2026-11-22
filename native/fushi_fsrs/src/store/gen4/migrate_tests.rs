@@ -1681,3 +1681,111 @@ fn two_devices_upgrading_at_once_translate_the_same_bytes() {
         diff.join("\n")
     );
 }
+
+/// BUG-5063（反馈 9G1OHF2dQe）：同一条 Anki revlog 导入到血统里的两张卡上（旧笔记删了、新卡继承旧卡的历史，
+/// 再从 Anki 导一次），两份日志 ID 都由各自的带盐卡派生。同一事件的副本只算一份、代表取 ID 最小的那份——协议 3 比
+/// 原值 ID，新代比规范 ID，带盐的原值与规范值的先后可以相反。挑一对先后相反的 guid：迁移照样判 committed，对拍
+/// 没有差异（统计行、卡行的 `last_log_id` 两边指同一次复习）。
+#[test]
+fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_cleanly() {
+    use crate::gen4_ids::rules::{self, CANONICAL};
+    use crate::store::sync2::config::default_deck_id;
+    use crate::store::sync2::tests::{deck_entity, edit};
+
+    const ANKI_NT: i64 = 1_700_000_000_555;
+    const RID: i64 = T0 + 5_000;
+    let card_of = |salt: Option<&str>, guid: &str| -> Id {
+        let nt = rules::note_type(salt, ANKI_NT);
+        rules::card(&rules::note(salt, guid), &rules::template(&nt, 0), 0)
+    };
+    let log_of = |salt: Option<&str>, guid: &str| -> String {
+        rules::imported_revlog(&card_of(salt, guid), RID).text()
+    };
+    // 带盐的两份日志 ID 与规范的两份先后相反的一对 guid。
+    let (old_g, new_g) = (0..)
+        .map(|i| (format!("bug5063-old-{i}"), format!("bug5063-new-{i}")))
+        .find(|(a, b)| {
+            (log_of(Some(P), a) < log_of(Some(P), b))
+                != (log_of(CANONICAL, a) < log_of(CANONICAL, b))
+        })
+        .unwrap();
+    let nt = rules::note_type(Some(P), ANKI_NT);
+    let (field, tmpl) = (rules::field(&nt, 0), rules::template(&nt, 0));
+    let note = |g: &str| rules::note(Some(P), g).text();
+    let (c_old, c_new) = (
+        card_of(Some(P), &old_g).text(),
+        card_of(Some(P), &new_g).text(),
+    );
+    let anki = |card: &str, id: &str| -> Value {
+        json!({"t": "log", "x": {
+            "id": id, "p": P, "card": card, "kind": "review", "rating": 3, "hlc": format!("{RID}:0:anki"),
+            "at": RID, "ts": "wall", "origin": "anki", "ankiId": RID, "rtype": "review", "dur": 5000, "utcOff": 0,
+            "rollover": 4, "alg": "anki",
+            "res": {"queue": "review", "ivl": 3, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi",
+                    "dueDay": 5, "lastReviewedAt": RID}
+        }})
+    };
+
+    let d = Device::new("bug5063");
+    d.core.sync2_identity(P, T0).unwrap();
+    while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    let mut events = vec![
+        deck_entity(&default_deck_id(P)),
+        json!({"t": "entity", "x": {"id": nt.text(), "p": P, "k": "notetype",
+               "d": {"createdAt": 1, "ntKind": "standard", "ankiNum": ANKI_NT}}}),
+        edit(
+            "notetype",
+            &nt.text(),
+            &format!("fieldDef/{}", field.text()),
+            json!({"ankiNum": 0, "name": "E", "ord": 0}),
+        ),
+        edit(
+            "notetype",
+            &nt.text(),
+            &format!("tmplDef/{}", tmpl.text()),
+            json!({"ankiNum": 0, "name": "A", "ord": 0, "front": "{{E}}"}),
+        ),
+    ];
+    for g in [&old_g, &new_g] {
+        events.push(
+            json!({"t": "entity", "x": {"id": note(g), "p": P, "k": "note",
+                           "d": {"createdAt": 1, "guid": g, "noteTypeId": nt.text()}}}),
+        );
+        events.push(edit(
+            "note",
+            &note(g),
+            &format!("f/{}", field.text()),
+            json!("猫"),
+        ));
+    }
+    d.apply(T0, events);
+    d.apply(T0 + 1, vec![anki(&c_old, &log_of(Some(P), &old_g))]);
+    d.apply(
+        T0 + 2,
+        vec![
+            edit("note", &note(&old_g), "deleted", json!(T0 + 2)),
+            edit("card", &c_new, &format!("historyFrom/{c_old}"), json!(true)),
+        ],
+    );
+    d.apply(T0 + 3, vec![anki(&c_new, &log_of(Some(P), &new_g))]);
+    let Device { core, _dir: dir } = d;
+    core.close();
+    drop(core);
+
+    let canonical = BTreeMap::from([(
+        P.to_owned(),
+        json!({"defaultDeck": rules::builtin_default_deck(CANONICAL).text()}).to_string(),
+    )]);
+    let out = migrate_with(&dir.0, &canonical, &Stop::new(), &mut Vec::new());
+    let Outcome::Committed { report } = &out else {
+        panic!("{out:?}")
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "pass", "{p:#}");
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+    // 正是「代表选得不同」这一格被认出来：新卡的统计行与卡行各一处。
+    let k = &p["knownDifferences"];
+    assert_eq!(k["cacheStatRepresentativeSwaps"], json!(1), "{p:#}");
+    assert_eq!(k["cacheCardRepresentativeSwaps"], json!(1), "{p:#}");
+}

@@ -265,6 +265,15 @@ void main() {
       findsNothing,
       reason: '单集不得再打开带 legacy 重刮/在线匹配动作的旧资料弹窗',
     );
+    // 统一条目菜单（#4b）「整理」段至多 4 行：本地集的「移出合集」排在「打开文件
+    // 位置 / 选择集数 / 移到分栏… / 排序」之后，按骨架约定溢出进「更多 ›」。
+    await tester.tap(find.byKey(const ValueKey<String>('item_menu_more')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_scrape_info),
+      findsNothing,
+      reason: '「更多 ›」二级菜单里同样不得有旧资料弹窗入口',
+    );
     expect(
       find.text(t.collection_remove_member),
       findsOneWidget,

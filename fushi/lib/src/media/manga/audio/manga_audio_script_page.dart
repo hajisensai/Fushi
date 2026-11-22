@@ -4,7 +4,9 @@
 ///
 /// 标注本身在进程级任务表 [MangaAnnotateTasks] 里跑，本页只是观察者：打开时接上本卷
 /// 正在跑的任务显示进度，离开页面不停，只有点「停止」才停；跑完由任务表弹全局提示。
-/// 本卷有任务在跑时复核编辑锁住（任务用自己的会话落盘），跑完重读。
+/// 本卷有任务在跑时复核编辑锁住（任务用自己的会话落盘），跑完重读，新会话装上后才解锁
+/// （[MangaReviewEditGate]）；存盘再按读盘修订校验（[MangaAudioAnnotateSession.saveEdits]），
+/// 不拿整份旧稿连同旧账本盖掉别处刚写的结果。
 library;
 
 import 'dart:async';
@@ -25,6 +27,7 @@ import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_review_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
@@ -84,15 +87,22 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
 
   AppModel get _app => widget.appModel;
 
-  /// 本卷有任务在跑：复核编辑全部锁住（任务用自己的会话落盘，避免互相覆盖）。
+  /// 本卷有任务在跑（显示进度与「停止」）。
   bool get _busy => _task != null;
+
+  /// 能不能改稿：任务在跑、或任务刚结束 / 从复核回来后新会话还没装上时都不能
+  /// （见 [MangaReviewEditGate]）。
+  final MangaReviewEditGate _gate = MangaReviewEditGate();
+
+  /// 复核编辑全部锁住（任务用自己的会话落盘；旧会话还在屏幕上时也不能改）。
+  bool get _locked => !_gate.editable;
 
   @override
   void initState() {
     super.initState();
     _tasks.addListener(_syncTasks);
     _syncTasks();
-    unawaited(_load());
+    unawaited(_load(_gate.beginLoad()));
   }
 
   @override
@@ -108,12 +118,12 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
   void _syncTasks() {
     final MangaAnnotateTask? task = _tasks.runningFor(widget.bookKey);
     if (!identical(task, _task)) {
-      final bool ended = _task != null && task == null;
+      // 任务跑完：同一拍里先开新一轮读盘，锁一直挂到新会话装上（[_load]）。
+      final bool ended = _gate.taskChanged(running: task != null);
       _task?.removeListener(_onTaskChanged);
       task?.addListener(_onTaskChanged);
       _task = task;
-      // 任务跑完：重读盘上的演出稿与账本。
-      if (ended) unawaited(_load());
+      if (ended) unawaited(_load(_gate.beginLoad()));
     }
     final TtsSeriesRun? active = activeTtsSeriesRun;
     final String? seriesKey = _session?.seriesKey;
@@ -142,7 +152,10 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _load() async {
+  /// 开一份新会话并装上；[load] 是 [MangaReviewEditGate.beginLoad] 给的代号，期间又
+  /// 请求了更新的读盘时丢掉这次的结果。[keepPage]：重读后停在当前页（从逐句复核回来、
+  /// 存盘冲突重读时），否则跳到第一处要处理的页。
+  Future<void> _load(int load, {bool keepPage = false}) async {
     try {
       final MangaAudioAnnotateSession s = await MangaAudioAnnotateSession.open(
         _app,
@@ -151,16 +164,19 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
       final List<EpubBookRow> volumes = s.seriesKey == null
           ? const <EpubBookRow>[]
           : await mangaSeriesVolumes(_app, s.seriesKey!);
-      if (!mounted) return;
+      if (!mounted || !_gate.isLatest(load)) return;
       setState(() {
+        _gate.install(load);
         _session = s;
         _seriesVolumes = volumes;
         _loadError = null;
-        _page = _initialPage(s);
+        _page = keepPage && _page < s.pageCount ? _page : _initialPage(s);
       });
       _syncTasks();
     } on MangaAudioAnnotateError catch (e) {
-      if (mounted) setState(() => _loadError = e.code);
+      if (mounted && _gate.isLatest(load)) {
+        setState(() => _loadError = e.code);
+      }
     }
   }
 
@@ -168,6 +184,9 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     final List<int> ordered = _orderedPages(s);
     return ordered.isEmpty ? 0 : ordered.first;
   }
+
+  int _pendingCount(MangaAudioAnnotateSession s) =>
+      s.script.lines.where(mangaLineNeedsReview).length;
 
   int _reviewCount(MangaAudioAnnotateSession s, int page) =>
       s.script.linesOnPage(page).where(mangaLineNeedsReview).length;
@@ -188,12 +207,35 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     return <int>[...first, ...rest];
   }
 
+  /// 对照原页逐句复核；回来后重读（复核页用自己的会话写盘）。
+  Future<void> _openReview() async {
+    if (_session == null || _locked) return;
+    await openMangaAudioReviewPage(
+      context,
+      appModel: _app,
+      bookKey: widget.bookKey,
+      startPage: _page,
+    );
+    if (mounted) await _load(_gate.beginLoad(), keepPage: true);
+  }
+
   void _toast(String msg, {ToastSeverity severity = ToastSeverity.neutral}) =>
       FushiToast.show(msg: msg, severity: severity);
 
-  Future<void> _save() async {
-    await _session?.saveAll();
-    if (mounted) setState(() {});
+  /// 存 [s]（发起改动时的会话）。改动期间（对话框开着时）任务开始了、换了会话，或这卷
+  /// 读盘后被别处存过，都不写：重读最新稿并提示重做，不拿整份旧稿盖掉新结果。
+  Future<void> _save(MangaAudioAnnotateSession s) async {
+    final bool written =
+        identical(s, _session) && !_locked && await s.saveEdits();
+    if (!mounted) return;
+    if (!written) {
+      final int load = _gate.beginLoad();
+      setState(() {});
+      _toast(t.manga_audio_review_conflict, severity: ToastSeverity.warning);
+      await _load(load, keepPage: true);
+      return;
+    }
+    setState(() {});
   }
 
   // ---------------------------------------------------------------------------
@@ -266,7 +308,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
 
   Future<void> _annotate({required bool wholeVolume}) async {
     final MangaAudioAnnotateSession? s = _session;
-    if (s == null || _busy) return;
+    if (s == null || _locked) return;
     final AiProviderConfig? provider = _provider();
     if (provider == null || !await ensureMangaAudioUploadConsent(context)) {
       return;
@@ -366,7 +408,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
 
   Future<void> _onFailure(MangaAnnotateFailure failure) async {
     final MangaAudioAnnotateSession? s = _session;
-    if (s == null || _busy) return;
+    if (s == null || _locked) return;
     final AiProviderConfig? current = resolveMangaAudioProvider(_app);
     final List<AiProviderConfig> usable = mangaAudioUsableProviders(_app);
     final String? nextId = failure.nextRetryProvider(<String>[
@@ -404,11 +446,13 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           ),
       ],
     );
-    if (action == null || !mounted || _busy) return;
+    if (action == null || !mounted || _locked || !identical(s, _session)) {
+      return;
+    }
     if (action == _FailureAction.hand) {
       s.handAnnotatePage(failure.page);
       setState(() => _page = failure.page);
-      await _save();
+      await _save(s);
       return;
     }
     final AiProviderConfig? provider = action == _FailureAction.retry
@@ -510,16 +554,20 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
       leadMs: hold ? old.leadMs : value,
       source: TtsCastSource.user,
     );
-    await _save();
+    await _save(s);
   }
 
-  int _indexOf(MangaScriptLine line) => _session!.script.lines.indexWhere(
-    (MangaScriptLine l) => l.lineId == line.lineId,
-  );
+  /// 改动落在发起改动时的会话 [s] 上（对话框开着时会话可能被重读换掉，见 [_save]）。
+  int _indexOf(MangaAudioAnnotateSession s, MangaScriptLine line) =>
+      s.script.lines.indexWhere((MangaScriptLine l) => l.lineId == line.lineId);
 
-  void _replace(MangaScriptLine line, MangaScriptLine next) {
-    final int i = _indexOf(line);
-    if (i >= 0) _session!.script.lines[i] = next;
+  void _replace(
+    MangaAudioAnnotateSession s,
+    MangaScriptLine line,
+    MangaScriptLine next,
+  ) {
+    final int i = _indexOf(s, line);
+    if (i >= 0) s.script.lines[i] = next;
   }
 
   Future<void> _editLine(MangaScriptLine line) async {
@@ -582,6 +630,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
         final String? speaker = await _pickSpeaker(line);
         if (speaker == null || speaker == line.speaker) return;
         _replace(
+          s,
           line,
           line.copyWith(speaker: speaker, source: TtsCastSource.user),
         );
@@ -600,11 +649,16 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           ],
         );
         if (kind == null || kind == line.kind) return;
-        _replace(line, line.copyWith(kind: kind, source: TtsCastSource.user));
+        _replace(
+          s,
+          line,
+          line.copyWith(kind: kind, source: TtsCastSource.user),
+        );
       case _LineAction.beat:
         final int? ms = await _askMs(t.manga_audio_line_beat, line.beatMs);
         if (ms == null) return;
         _replace(
+          s,
           line,
           line.copyWith(
             beatMs: ms < 0 ? 0 : ms.clamp(0, MangaScriptLimits.maxBeatMs),
@@ -620,9 +674,14 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           icon: FushiIcons.edit,
         );
         if (typed == null || typed.isEmpty) return;
-        _replace(line, line.copyWith(say: typed, source: TtsCastSource.user));
+        _replace(
+          s,
+          line,
+          line.copyWith(say: typed, source: TtsCastSource.user),
+        );
       case _LineAction.clearSay:
         _replace(
+          s,
           line,
           line.copyWith(clearSay: true, source: TtsCastSource.user),
         );
@@ -630,14 +689,14 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
       case _LineAction.down:
         final MangaScriptLine other =
             onPage[action == _LineAction.up ? pos - 1 : pos + 1];
-        final int a = _indexOf(line);
-        final int b = _indexOf(other);
+        final int a = _indexOf(s, line);
+        final int b = _indexOf(s, other);
         final List<MangaScriptLine> lines = s.script.lines;
         // 调序也是用户的判断：两行都记为手改，重标时保留顺序。
         lines[a] = other.copyWith(source: TtsCastSource.user);
         lines[b] = line.copyWith(source: TtsCastSource.user);
     }
-    await _save();
+    await _save(s);
   }
 
   String _speakerLabel(String speaker) => switch (speaker) {
@@ -739,6 +798,17 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
                   : _stop,
             ),
           if (!_busy) ...<Widget>[
+            if (s.script.lines.isNotEmpty)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('manga-audio-review'),
+                icon: FushiIcons.image,
+                showIcon: true,
+                title: t.manga_audio_review_action,
+                subtitle: _pendingCount(s) == 0
+                    ? null
+                    : t.manga_audio_page_review_count(n: _pendingCount(s)),
+                onTap: () => unawaited(_openReview()),
+              ),
             AdaptiveSettingsRow(
               key: const ValueKey<String>('manga-audio-annotate'),
               icon: FushiIcons.ai,
@@ -780,7 +850,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
                 title: mangaAnnotateFailureTitle(f),
                 subtitle: _failureSubtitle(f),
                 subtitleMaxLines: 3,
-                onTap: _busy ? null : () => unawaited(_onFailure(f)),
+                onTap: _locked ? null : () => unawaited(_onFailure(f)),
               ),
           ],
         ),
@@ -801,7 +871,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
             subtitle: directive.holdMs == null
                 ? t.manga_audio_ms_default
                 : t.manga_audio_ms_value(ms: directive.holdMs!),
-            onTap: _busy ? null : () => unawaited(_editDirective(hold: true)),
+            onTap: _locked ? null : () => unawaited(_editDirective(hold: true)),
           ),
           AdaptiveSettingsRow(
             key: const ValueKey<String>('manga-audio-page-lead'),
@@ -809,7 +879,9 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
             subtitle: directive.leadMs == null
                 ? t.manga_audio_ms_default
                 : t.manga_audio_ms_value(ms: directive.leadMs!),
-            onTap: _busy ? null : () => unawaited(_editDirective(hold: false)),
+            onTap: _locked
+                ? null
+                : () => unawaited(_editDirective(hold: false)),
           ),
         ],
       ),
@@ -835,7 +907,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           title: s.textOf(line).isEmpty ? '—' : s.textOf(line),
           titleMaxLines: 6,
           subtitle: _lineSubtitle(line),
-          onTap: _busy ? null : () => unawaited(_editLine(line)),
+          onTap: _locked ? null : () => unawaited(_editLine(line)),
         ),
     ];
   }

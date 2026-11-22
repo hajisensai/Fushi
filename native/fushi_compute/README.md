@@ -20,7 +20,7 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即抛加载异常 |
+| `ffc_abi_version() -> i32` | ABI 版本（当前 3）；Dart 侧不一致即抛加载异常 |
 | `ffc_free_bytes(u8*, usize)` | 释放本库分配并交给调用方的缓冲区 |
 | `ffc_hash_ed2k_new() -> ctx*` | 新建 AniDB ED2K 上下文（panic 时 NULL） |
 | `ffc_hash_ed2k_update(ctx*, const u8*, usize) -> i32` | 追加字节 |
@@ -160,6 +160,17 @@ isolate，整页一次跨 FFI。处理失败返回 null，不可回退上传原�
 
 回归覆盖原生像素合成、EXIF、透明度与参数校验，Dart FFI 生命周期，以及 Flutter 横竖排、缩放坐标、
 倾斜块范围与最终上传 JPEG 的实际像素。
+
+## 图像域：视频截帧 BGRA → RGBA 裁块（HBK-AUDIT-008）
+
+`ffc_image_bgra_to_rgba8_inplace(buf, len, stride, w, h)` 就地把带行跨度的 BGRA 行（mpv
+`screenshot-raw` 的 `bgr0`，第四字节未定义；每行从第 0 字节起取 `w` 像素）换成从 `buf[0]` 起行紧排的不透明 RGBA8888。智能遮布
+每次抽样的裁块与暂停 OCR 的整帧都走它：Dart 入口 `FushiComputeImage.bgraToRgba8` 在 media_kit
+补丁的截帧 isolate 上把矩形覆盖的那段行一次拷进暂存区、就地调用、按需前置字节头拷回 Dart 堆
+（只用一块暂存区：截帧 isolate 每次新建，多一块缓冲就多一轮缺页）；
+`fushi/lib/src/media/video/raw_video_frame.dart` 只算裁剪矩形与头。原先的 Dart 逐像素循环已删。
+逐字节对照（多种 stride / 矩形，含原生缓冲视图）见 `packages/fushi_compute/test/image_bgra_to_rgba_test.dart`，
+耗时对比用 `packages/fushi_compute/benchmark/bgra_to_rgba_bench.dart`。
 
 ## 字体域
 
@@ -612,3 +623,18 @@ GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声�
 
 每帧耗时（release，i5-12600KF）：合成大库 400 部作品 + 1.38 万词约 1.2 ms（`cargo test --release
 pano::tests::big_library -- --nocapture`）；本机真实库（132 部作品、展示 2,603 词、峰值 3.5 万顶点）约 0.26 ms。
+
+## OCR 台词流域（`ffc_ocrline_*`）
+
+游戏 OCR 模式（拍板台 `v5GSgDau9u` / BUG-5083）的判定核心（`src/ocrline.rs`，Dart 绑定
+`packages/fushi_compute/lib/src/ocr/fushi_compute_ocr_line.dart`，泵 `fushi/lib/src/mining/gal_ocr_line_source.dart`，
+spec `docs/specs/2026-11-22-game-ocr-line-stream-design.md`）。连续 OCR 的全部状态（上一帧签名、稳定计数、已送 OCR 的帧、
+空白态、上一句）都在 Rust，Dart 不存镜像。
+
+| 符号 | 说明 |
+|---|---|
+| `ffc_ocrline_new(void** out) -> i32` / `ffc_ocrline_free(void*)` | 建 / 释放 tracker（`free` 是 `void(void*)`，可挂 `NativeFinalizer`） |
+| `ffc_ocrline_reset(void*) -> i32` | 忘掉帧状态与上一句（换识别区域） |
+| `ffc_ocrline_forget_frame(void*) -> i32` | 上一次交出的 OCR 帧识别失败：只忘帧标记（同一画面会再交出），上一句保留 |
+| `ffc_ocrline_feed_png(void*, const u8* png, usize, const f32 region[4], u8** out, usize* out_len, u32 meta[3]) -> i32` | 整窗 PNG + 客户区归一化框 → `meta = [action, w, h]`（0 idle / 1 settling / 2 ocr / 3 cleared）；ocr 时交出裁好的 RGBA（`ffc_free_bytes`）。坏 PNG `-3`，框在图外 `-2` |
+| `ffc_ocrline_feed_text(void*, const u8* utf8, usize, u8** out, usize* out_len, u32* kind) -> i32` | OCR 全文（行间 `\n`）→ kind（0 empty / 1 duplicate / 2 new / 3 extend）；new / extend 交出这一句的显示文本（CJK 间空白已去；extend 是「上一句 + 新尾巴」） |

@@ -7,7 +7,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
   /// 墓碑消费端算 deleteLocal 候选（远端有删除标记 ∧ 本地仍在库 ∧ 标记管得着这条）。
   /// itemKey 与写墓碑点严格一致：book/audiobook = bookKey（[writeSyncDeletionTombstone]
   /// 调用点 reader_fushi_source / audiobook），video = bookUid（video_book_repository），
-  /// localaudio = displayName，srtbook = srt_books.uid（仅 standalone，见下）。
+  /// localaudio = 内容身份 contentId（HBK-AUDIT-022，见下），srtbook = srt_books.uid
+  /// （仅 standalone，见下）。
   ///
   /// 键一律用 [SyncTombstoneKind.dbValue] 而非裸字符串字面量：这张 map 与写墓碑点必须
   /// 逐字一致，拼错一个字符的后果是「对端删了、本地永远不弹确认」这种静默失效。
@@ -44,10 +45,17 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         for (final VideoBookRow r in await _db.allVideoBooks())
           r.bookUid: r.localAddedAt,
       },
+      // localaudio 键是**内容身份**（HBK-AUDIT-022）：同一份库各端可以叫不同的名字，
+      // 同名的可能是另一份库，按显示名求交会把删除落到另一份库上。读不出身份的条目
+      // （文件不在本机且没存身份）不进候选——确认不了是哪份库就不提议删。旧版本按
+      // 显示名写的墓碑因此不再命中任何条目（宁可漏删，不删错）。
       // localaudio 条目不记录加入时刻 → null = 无从仲裁，保持「只看在不在库」的旧语义。
       SyncTombstoneKind.localaudio.dbValue: <String, int?>{
-        for (final LocalAudioDbEntry e in localAudioEntries)
-          e.displayName: null,
+        for (final String id in <String?>[
+          for (final LocalAudioDbEntry e in localAudioEntries)
+            await resolveLocalAudioContentId(e),
+        ].nonNulls)
+          id: null,
       },
       SyncTombstoneKind.favoriteword.dbValue: <String, int?>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
@@ -296,7 +304,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
 
   /// 该 kind 在互联 live 通道上有没有删除端点。
   ///
-  /// 收藏词 / 收藏句没有：它们经聚合快照通道同步，而 `applyAggregateSnapshot` 按设计
+  /// 收藏词 / 收藏句没有：它们经聚合快照通道同步，而 `applyAggregateBody` 按设计
   /// 只做 MAX / 并集（删除不跨端传播）。这里如实跳过——不假装推过（那会静默丢删除），
   /// 也不算作失败（那会为一件永远做不成的事永久卡住基线）。
   static bool _hasInterconnectDeletionChannel(SyncTombstoneKind kind) {
@@ -337,7 +345,11 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         await backend.deleteRemoteAudiobook(itemKey);
         return true;
       case SyncTombstoneKind.localaudio:
-        await backend.deleteRemoteLocalAudio(itemKey);
+        // 只推内容身份键（HBK-AUDIT-022）。升级前按显示名写下的旧墓碑不推：对端
+        // 只能按名删，同名的可能是另一份库；新 host 也不认按名删除。
+        if (isLocalAudioContentId(itemKey)) {
+          await backend.deleteRemoteLocalAudio(itemKey);
+        }
         return true;
       case SyncTombstoneKind.video:
         // 唯一会如实报「不支持」的一条：视频删除端点是本次新增的，旧 host 没有。

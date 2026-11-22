@@ -31,11 +31,13 @@ Matcher _failure(int status, [String? code]) => throwsA(
 void main() {
   late List<FeedbackDraft> submitted;
   late Exception? failWith;
+  late DateTime? quotaResetAt;
   late List<CtlRoute> routes;
 
   setUp(() {
     submitted = <FeedbackDraft>[];
     failWith = null;
+    quotaResetAt = null;
     int keys = 0;
     routes = buildFeedbackCtlRoutesFor(
       submit: (FeedbackDraft draft) async {
@@ -55,6 +57,7 @@ void main() {
             body: draft.body,
           ),
           failedAttachments: draft.includeLogs ? 1 : 0,
+          quotaResetAt: quotaResetAt,
         );
       },
       keys: FeedbackSubmissionKeys(newKey: () => 'key-${keys++}'),
@@ -96,8 +99,18 @@ void main() {
       'logsAttached': true,
       'deviceInfoAttached': false,
       'failedAttachments': 1,
+      'uploadQuotaResetAt': null,
     });
     expect('$result', isNot(contains('secret-ticket-value')));
+  });
+
+  test('附件撞每 IP 每天上传额度：回执带额度重置时刻（UTC ISO 8601，BUG-4797）', () async {
+    quotaResetAt = DateTime.utc(2026, 11, 23);
+    final Object? result = await post(valid);
+    expect(
+      (result! as Map<String, Object?>)['uploadQuotaResetAt'],
+      '2026-11-23T00:00:00.000Z',
+    );
   });
 
   test('超时后同内容重试带同一把幂等键（不建重复反馈，BUG-3489 同口径）', () async {

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/episode_near_end.dart';
@@ -910,6 +911,9 @@ class MediaTrackingRepository {
     final Map<String, VideoBookRow> videosByUid = <String, VideoBookRow>{
       for (final VideoBookRow video in videos) video.bookUid: video,
     };
+    // 分栏与合集详情页同一入口（手动分栏 / 手动季集指定优先）。
+    final Map<String, String> sectionKeys =
+        await loadCollectionGroupKeysForVideos(_db, videos);
     final List<MediaCollectionRow> collections = await _db
         .getAllMediaCollections();
     final List<MediaCollectionItemRow> members = await _db
@@ -986,7 +990,8 @@ class MediaTrackingRepository {
           multiSeason: isMultiSeasonGrouped(<String>[
             for (final MediaCollectionItemRow member in collectionMembers)
               if (videosByUid[member.entryKey] case final VideoBookRow video)
-                collectionGroupKeyForFilename(video.videoPath),
+                sectionKeys[video.bookUid] ??
+                    collectionGroupKeyForFilename(video.videoPath),
           ]),
         ),
       );
@@ -1392,23 +1397,30 @@ class MediaTrackingRepository {
     );
   }
 
-  /// 合集 video 成员的分组键列——按各集 `videoPath` 文件名**现场派生**（分组是
-  /// 文件名的纯函数、不落库，语义见 collection_season_groups.dart）。service 据此
-  /// 判定「多季合集」并绕开结构性失真的合集级映射；存量合集零迁移即受保护。
+  /// 合集 video 成员的分组键列——按各集 `videoPath` 文件名**现场派生**，叠上手动
+  /// 分栏 / 手动季集指定（语义见 collection_season_groups.dart，与合集详情页同一
+  /// 入口 [loadCollectionGroupKeysForVideos]）。service 据此判定「多季合集」并绕开
+  /// 结构性失真的合集级映射；存量合集零迁移即受保护。
   Future<List<String>> loadCollectionVideoGroupKeys(int collectionId) async {
     final List<MediaCollectionItemRow> items = await _db.getCollectionItems(
       collectionId,
     );
-    final List<String> keys = <String>[];
+    final List<VideoBookRow> videos = <VideoBookRow>[];
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
       final VideoBookRow? video = await _db.getVideoBookByBookUid(
         item.entryKey,
       );
       if (video == null) continue;
-      keys.add(collectionGroupKeyForFilename(video.videoPath));
+      videos.add(video);
     }
-    return keys;
+    final Map<String, String> sectionKeys =
+        await loadCollectionGroupKeysForVideos(_db, videos);
+    return <String>[
+      for (final VideoBookRow video in videos)
+        sectionKeys[video.bookUid] ??
+            collectionGroupKeyForFilename(video.videoPath),
+    ];
   }
 
   /// Collection [collectionId] holds more than one season: a link for the
@@ -2069,12 +2081,19 @@ class MediaTrackingRepository {
       )) {
         continue;
       }
-      // 多季分组合集（分组按文件名现场派生，不落库）：整合集映射结构性失真
+      // 多季分组合集（分组按文件名现场派生、叠上手动分栏）：整合集映射结构性失真
       // （Bangumi 一季一条目，合集下标当集数会把第二季完结报给第一季 subject）。
       // 补发跳过合集级映射，按集映射的补发由上面的 video 分支承担。
+      final Map<String, String> sectionKeys =
+          await loadCollectionGroupKeysForVideos(
+            _db,
+            videos.whereType<VideoBookRow>(),
+          );
       if (isMultiSeasonGrouped(<String>[
         for (final VideoBookRow? video in videos)
-          if (video != null) collectionGroupKeyForFilename(video.videoPath),
+          if (video != null)
+            sectionKeys[video.bookUid] ??
+                collectionGroupKeyForFilename(video.videoPath),
       ])) {
         continue;
       }

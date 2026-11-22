@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   test('视频导入视图把整库刮削、后台任务与清理记录登记进浮动顶栏（IM18）', () {
     final String source = File(
@@ -152,7 +154,14 @@ void main() {
     ).readAsStringSync();
     expect(home, contains('ValueNotifier<int> _videoLibraryRefreshSignal'));
     expect(home, contains('libraryRefreshSignal: _videoLibraryRefreshSignal'));
-    expect(home, contains('onLibraryChanged: _notifyVideoLibraryChanged'));
+    // 来源页的库变更回调经 _onVideoSourcesChangedLibrary（拍板台
+    // gtpgyff3l7-oneshot-scrape：顺带补发一轮补刮），它必须仍先发同一个刷新信号。
+    expect(home, contains('onLibraryChanged: _onVideoSourcesChangedLibrary'));
+    expect(
+      methodBody(maskComments(home), 'void _onVideoSourcesChangedLibrary()'),
+      contains('_notifyVideoLibraryChanged();'),
+      reason: '来源页改动视频库后，保活视频库必须收到同一刷新信号',
+    );
     expect(home, contains('onScrapeAll: _scrapeAllVideosFromSources'));
     expect(
       home,

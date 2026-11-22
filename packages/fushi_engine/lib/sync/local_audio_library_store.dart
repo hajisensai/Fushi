@@ -123,18 +123,26 @@ class LocalAudioLibraryStore {
     return true;
   }
 
-  /// 按 displayName 删除登记，并删掉库目录里的内部副本（含 -wal / -shm）；
-  /// 库目录之外的路径（外部引用）只摘登记、不动文件。找不到时幂等返回。
-  Future<void> remove(String displayName) async {
+  /// 删除内容身份为 [contentId] 的所有登记，并删掉库目录里的内部副本（含 -wal /
+  /// -shm）；库目录之外的路径（外部引用）只摘登记、不动文件。找不到 / [contentId]
+  /// 不是合格身份时幂等返回。
+  ///
+  /// 只按内容身份删（HBK-AUDIT-022）：显示名在各端可以不同，同名的可能是另一份库。
+  Future<void> remove(String contentId) async {
+    if (!isLocalAudioContentId(contentId)) return;
     final List<LocalAudioDbEntry> stored = _readStored();
-    final int index = stored.indexWhere(
-      (LocalAudioDbEntry e) => e.displayName == displayName,
-    );
-    if (index < 0) return;
-    final LocalAudioDbEntry removed = stored.removeAt(index);
-    await _writeStored(stored);
-    if (_isInternalCopyName(removed.path)) {
-      await _deleteFiles(_resolve(removed.path));
+    final List<LocalAudioDbEntry> kept = <LocalAudioDbEntry>[];
+    final List<LocalAudioDbEntry> removed = <LocalAudioDbEntry>[];
+    for (final LocalAudioDbEntry e in stored) {
+      final String? id = await resolveLocalAudioContentId(
+        e.copyWith(path: _resolve(e.path)),
+      );
+      (id == contentId ? removed : kept).add(e);
+    }
+    if (removed.isEmpty) return;
+    await _writeStored(kept);
+    for (final LocalAudioDbEntry r in removed) {
+      if (_isInternalCopyName(r.path)) await _deleteFiles(_resolve(r.path));
     }
   }
 

@@ -337,6 +337,10 @@ String mangaBubbleFocusJs({
   var TS_SIZE = ${preferences.bubbleTextStripSize};
   var TS_EMPTY = ${jsonEncode(stripEmptyLabel)};
   var tsEl = null, tsKey = null, tsScrollT = null;
+  // 台词栏当前条目的气泡索引（key → 气泡），与条目同一次 _tsBuild 建出：可见页 / OCR
+  // 数据变了才会重建条目，索引跟着重建。悬停只按 key 查它，不再每次重扫、量、排序
+  // 屏上全部 OCR 框（HBK-AUDIT-045）。
+  var tsIndex = {}, tsHoverKey = null;
   // 气泡的原 OCR 块（句子分组 / 无分组时的单块）。
   function _tsBoxesOf(b){
     var part = b.key.slice(b.key.indexOf(':') + 1);
@@ -378,15 +382,22 @@ String mangaBubbleFocusJs({
       tsEl = document.createElement('div');
       tsEl.className = 'manga-text-strip manga-ts-' + TS_LAYOUT;
       tsEl.style.fontSize = TS_SIZE + 'px';
+      // pointerover 会冒泡：同一条目里划过每个逐字节点都触发一次。按悬停的气泡去重，
+      // 只在换到另一个气泡（或移出条目）时改描边。
       tsEl.addEventListener('pointerover', function(e){
         var it = e.target && e.target.closest ? e.target.closest('.manga-ts-item') : null;
-        var b = it ? _tsFind(_bzSequenceOnScreen(), it.getAttribute('data-ts-key')) : null;
-        _tsOutline(b ? [b] : [], 'manga-ts-hover');
+        var key = it ? it.getAttribute('data-ts-key') : null;
+        _tsHover(key);
       });
-      tsEl.addEventListener('pointerleave', function(){ _tsOutline([], 'manga-ts-hover'); });
+      tsEl.addEventListener('pointerleave', function(){ _tsHover(null); });
       document.body.appendChild(tsEl);
     }
     var seq = _bzSequenceOnScreen();
+    tsIndex = {};
+    seq.forEach(function(b){ tsIndex[b.key] = b; });
+    // 条目整批换掉：悬停描边按新条目重新判定。
+    tsHoverKey = null;
+    _tsOutline([], 'manga-ts-hover');
     tsEl.textContent = '';
     if (!seq.length) {
       var empty = document.createElement('div');
@@ -404,6 +415,12 @@ String mangaBubbleFocusJs({
     tsKey = cur.key;
     tsEl.appendChild(_tsItem(cur));
     _tsOutline([cur], 'manga-ts-current');
+  }
+  function _tsHover(key){
+    if (key === tsHoverKey) return;
+    tsHoverKey = key;
+    var b = key !== null && Object.prototype.hasOwnProperty.call(tsIndex, key) ? tsIndex[key] : null;
+    _tsOutline(b ? [b] : [], 'manga-ts-hover');
   }
   function _tsSetCurrent(key){
     if (!TS_ON) return;

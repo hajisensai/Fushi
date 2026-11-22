@@ -197,7 +197,7 @@ void main() {
         reason: '分区必须以 matched 组装（跨 dart format 换行 / 尾逗号匹配）',
       );
       expect(
-        src.contains('webViewKey.currentState?.mineEntryByIndex('),
+        src.contains('webViewKey.webViewState?.mineEntryByIndex('),
         isTrue,
       );
       expect(
@@ -219,7 +219,7 @@ void main() {
         reason: '分区必须以 matched 组装（跨 dart format 换行 / 尾逗号匹配）',
       );
       expect(
-        src.contains('webViewKey.currentState?.mineEntryByIndex('),
+        src.contains('webViewKey.webViewState?.mineEntryByIndex('),
         isTrue,
       );
       expect(src.contains('overrides: overrides,'), isTrue);

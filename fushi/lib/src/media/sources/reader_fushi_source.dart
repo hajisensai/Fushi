@@ -538,41 +538,6 @@ class ReaderFushiSource extends ReaderMediaSource {
   MediaItem overrideTitleMediaItemForBookKey(String bookKey) =>
       overrideTitleMediaItemForIdentifier(mediaIdentifierFor(bookKey));
 
-  /// BUG-220: EPUB books carry an editable author column, so expose author
-  /// editing in the media edit dialog.
-  @override
-  bool get supportsAuthorEdit => true;
-
-  /// BUG-220: persist the edited author directly to the `epubBooks.author`
-  /// column (NOT the primary key, so no re-key is needed — unlike the title,
-  /// which is overridden via a preference). A blank author clears the column.
-  ///
-  /// BUG-1018 (A3): standalone SRT books (identity `hoshi://srtbook/<uid>`)
-  /// write through to the `srt_books.author` column instead of silently
-  /// no-opping like the old empty-bookKey identifier did.
-  @override
-  Future<void> setAuthorFromMediaItem({
-    required MediaItem item,
-    required String? author,
-  }) async {
-    final FushiDatabase? db = sharedDatabase;
-    if (db == null) return;
-    final String? bookKey = parseBookKey(item.mediaIdentifier);
-    if (bookKey != null) {
-      await db.updateEpubBookAuthor(bookKey, author);
-      return;
-    }
-    final String? srtUid = parseSrtBookUid(item.mediaIdentifier);
-    if (srtUid == null) return;
-    final SrtBookRepository repo = SrtBookRepository(db);
-    final SrtBook? book = await repo.findByUid(srtUid);
-    if (book == null) return;
-    // Mirror updateEpubBookAuthor's blank-clears semantics.
-    final String trimmed = (author ?? '').trim();
-    book.author = trimmed.isEmpty ? null : trimmed;
-    await repo.save(book);
-  }
-
   @override
   Future<void> prepareResources() async {}
 
@@ -1296,6 +1261,22 @@ class ReaderFushiSource extends ReaderMediaSource {
       debugPrint('[ReaderFushiSource] deleteBook failed: $e');
       return DeleteBookResult.failure(e.toString());
     }
+  }
+
+  /// 这本书有没有用户自定义的显示书名或封面（[deleteBook] 会经
+  /// [_clearBookOverridesLogged] 把它们一起清掉）。只查内存偏好与一次文件 stat。
+  ///
+  /// HBK-AUDIT-032：Kavita 缓存副本的自动淘汰 / 一键清理据此把「用户改过名 / 换过
+  /// 封面」的书当作带用户数据的书保留——这两样只在本机、服务器上没有副本，而它们按
+  /// bookKey（= 净化后的书名）存，书删了就不能留着（同名书会把它「复活」，BUG-4979），
+  /// 所以只能不删书。
+  bool hasBookCustomization({
+    required AppModel appModel,
+    required String bookKey,
+  }) {
+    final MediaItem item = overrideTitleMediaItemForBookKey(bookKey);
+    return getOverrideTitleFromMediaItem(item) != null ||
+        resolveOverrideThumbnailFile(appModel: appModel, item: item) != null;
   }
 
   /// 清掉这本书的 override 书名偏好与 override 封面文件（封面文件名只由 bookKey
