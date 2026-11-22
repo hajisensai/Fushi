@@ -8631,24 +8631,72 @@ function createKanjiCard(kanji) {
     return card;
 }
 
-// Builds the container holding every kanji card for the current lookup, or null
-// when there are no kanji results. Each character in a multi-character (rare,
-// but the array supports it) result gets its own card.
+// 汉字区块默认是否展开（拍板台 6uasoIUvSR）。判据与术语词典的三态同构（BUG-2158）：
+// 区块里任一本汉字词典被显式「展开」→ 展开；否则只有全局「折叠词典」关着、且区块里的
+// 词典没有全部显式「折叠」时才展开。与术语词典不同，这里**不吃**自动展开窗口
+// （autoExpandRows）：汉字卡排在词条之上，按窗口规则它总是「第一本」、永远展开，
+// 折叠就成了摆设——单字查询的首屏应留给词条释义。名单由宿主按词典管理「汉字」分区
+// 的逐本设置注入（混合词典的汉字部分单记一份，不复用术语部分的名单，BUG-3573）。
+// window.collapseDictionaries 缺省（未注入的壳）按默认的「折叠」处理。
+function kanjiSectionInitiallyOpen(dictNames) {
+    const expanded = window.kanjiExpandedDictionaryNames || [];
+    const collapsed = window.kanjiCollapsedDictionaryNames || [];
+    if (dictNames.some((name) => expanded.includes(name))) return true;
+    if (window.collapseDictionaries !== false) return false;
+    return !(dictNames.length > 0 && dictNames.every((name) => collapsed.includes(name)));
+}
+
+// Builds the collapsible block holding every kanji card for the current lookup,
+// or null when there are no kanji results. Each character in a multi-character
+// (rare, but the array supports it) result gets its own card.
+//
+// 拍板台 6uasoIUvSR：汉字卡仍排在词条之上，但整块是一张与词典卡同款的
+// <details class="glossary-group">，默认折叠成一行「汉字 · 粉  词典名…」，点标题行展开，
+// 交互与其它词典的折叠一致（同一套卡片皮肤 / 箭头 / 状态层）。根节点保留
+// .kanji-card-section：点空白不关弹窗的判据（handleDocumentClick）认的就是它。
 function buildKanjiCards() {
     const kanji = window.kanjiResults;
     if (!Array.isArray(kanji) || kanji.length === 0) {
         return null;
     }
-    const section = el('div', { className: 'kanji-card-section' });
-    let appended = 0;
+    const cards = [];
+    const characters = [];
+    const dictNames = [];
     for (const entry of kanji) {
         const card = createKanjiCard(entry);
-        if (card) {
-            section.appendChild(card);
-            appended++;
-        }
+        if (!card) continue;
+        cards.push(card);
+        if (!characters.includes(entry.character)) characters.push(entry.character);
+        if (entry.dictName && !dictNames.includes(entry.dictName)) dictNames.push(entry.dictName);
     }
-    return appended > 0 ? section : null;
+    if (cards.length === 0) return null;
+
+    const section = el('details', { className: 'kanji-card-section glossary-group' });
+    section.open = kanjiSectionInitiallyOpen(dictNames);
+
+    const summary = el('summary', { className: 'dict-label kanji-card-summary' });
+    const label = window.i18nKanjiSection || 'Kanji';
+    summary.appendChild(el('span', {
+        className: 'dict-name',
+        textContent: `${label} · ${characters.join(' ')}`
+    }));
+    if (dictNames.length > 0) {
+        summary.appendChild(el('span', {
+            className: 'kanji-card-summary-dicts',
+            textContent: dictNames.map(__fushiDictDisplayName).join(' · ')
+        }));
+    }
+    // BUG-2447 同款：鼠标按下不让 <summary> 拿 DOM 焦点（macOS WKWebView 会因此抢走
+    // 宿主快捷键）；开合是 click 的默认动作，不受影响。只对主键生效。
+    summary.addEventListener('mousedown', (e) => {
+        if (e && e.button === 0) e.preventDefault();
+    });
+    section.appendChild(summary);
+
+    const body = el('div', { className: 'kanji-card-body' });
+    for (const card of cards) body.appendChild(card);
+    section.appendChild(body);
+    return section;
 }
 
 window._renderGeneration = 0;
