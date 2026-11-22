@@ -4158,6 +4158,38 @@ class MediaNsfwFlags extends Table {
   Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
 }
 
+// ── media_locked_flags（v171：作品级「上锁」标记）──────────────────────
+/// 用户把一部作品「上锁」（拍板台 qiqSbvdxrk）：作品隐私分级的最高一级——
+/// 公开 < 私密（[MediaPrivacyFlags]，管出站）< 上锁（本表）。上锁蕴含私密（不上传
+/// 排行榜、不推 Bangumi，见 fushi_engine `media_privacy.dart`），并且在本次会话
+/// 解锁之前，库页 / 首页卡片 / 搜索 / 合集等所有列表消费端都不显示它（app 端
+/// `media_visibility.dart` 是唯一的过滤入口）。解锁只在内存里、每次启动都回到隐藏。
+///
+/// 与 [MediaPrivacyFlags] / [MediaNsfwFlags] 同形、同一套逻辑外键（[mediaKind] =
+/// `TagHostKind.dbValue`，[entryKey]：epub=bookKey / srt=uid / video=bookUid /
+/// collection=合集 id 字符串 / game=Galgames.id / musicAlbum=albumUid），跨端搭
+/// 互联标签同步清单（条目上的可选 `locked` 字段）：一台设备上锁的作品，别的设备
+/// 上同样藏起来。
+///
+/// 一行两只时钟（LWW）：[lockedAt] = 最近一次上锁，[clearedAt] = 最近一次解除；
+/// 上锁 ⇔ lockedAt 非空且（clearedAt 为空或 lockedAt > clearedAt），相等解除胜。
+/// 解除不删行（理由同 [MediaPrivacyFlags]）。宿主删除不级联：同键重新导入仍上锁
+/// （宁可多藏）。
+@DataClassName('MediaLockedFlagRow')
+class MediaLockedFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次上锁的毫秒戳；NULL = 从没上过锁。
+  IntColumn get lockedAt => integer().nullable()();
+
+  /// 最近一次解除上锁的毫秒戳；NULL = 从没解除过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
 // ── library_organize_runs / library_organize_changes（AI 整理记录，schema v124）──
 // spec `docs/specs/2026-10-20-ai-library-organize-design.md` §5.3：本机这一次整理
 // 做了什么，供「整理记录」页与撤销用。**设备本地**：不同步、不进备份——别的设备有

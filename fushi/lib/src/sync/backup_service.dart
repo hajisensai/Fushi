@@ -2129,6 +2129,21 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
+      // v171 上锁标记：同一套宿主逻辑外键，同口径收敛（不随包导出本份导出里
+      // 没有的作品的上锁记录）。
+      await db.customStatement(
+        'DELETE FROM media_locked_flags WHERE '
+        "(media_kind = 'epub' AND entry_key NOT IN "
+        '(SELECT book_key FROM epub_books)) '
+        "OR (media_kind = 'srt' AND entry_key NOT IN "
+        '(SELECT uid FROM srt_books)) '
+        "OR (media_kind = 'video' AND entry_key NOT IN "
+        '(SELECT book_uid FROM video_books)) '
+        "OR (media_kind = 'collection' AND entry_key NOT IN "
+        '(SELECT CAST(id AS TEXT) FROM media_collections)) '
+        "OR (media_kind = 'game' AND entry_key NOT IN "
+        '(SELECT id FROM galgames))',
+      );
 
       // (3) Category-gated deletion tombstones.
       if (!includeBooks) {

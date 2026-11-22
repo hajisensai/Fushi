@@ -847,6 +847,87 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return true;
   });
 
+  // ── media_locked_flags（v171 作品级上锁标记）─────────────────────────
+
+  /// 把宿主上锁 / 解除上锁：只推进对应那只时钟（[at] 缺省取当前时刻），另一只
+  /// 原样保留，互联合并才能按 LWW 裁决并发的上锁 / 解除。
+  Future<void> setMediaLocked(
+    TagHostKind kind,
+    String entryKey,
+    bool locked, {
+    int? at,
+  }) => transaction(() async {
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final MediaLockClock current = await mediaLockClock(kind, entryKey);
+    await into(mediaLockedFlags).insertOnConflictUpdate(
+      MediaLockedFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        lockedAt: Value(locked ? now : current.lockedAt),
+        clearedAt: Value(locked ? current.clearedAt : now),
+      ),
+    );
+  });
+
+  /// 宿主当前的上锁时钟（没有行 = 两只戳都为 null）。
+  Future<MediaLockClock> mediaLockClock(
+    TagHostKind kind,
+    String entryKey,
+  ) async {
+    final MediaLockedFlagRow? row =
+        await (select(mediaLockedFlags)..where(
+              (t) =>
+                  t.mediaKind.equals(kind.dbValue) &
+                  t.entryKey.equals(entryKey),
+            ))
+            .getSingleOrNull();
+    return (lockedAt: row?.lockedAt, clearedAt: row?.clearedAt);
+  }
+
+  Future<bool> isMediaLocked(TagHostKind kind, String entryKey) async =>
+      isLockedByClock(await mediaLockClock(kind, entryKey));
+
+  /// 某宿主种类当前上锁的全部 entryKey（一趟批查）。
+  Future<Set<String>> lockedEntryKeys(TagHostKind kind) async => <String>{
+    for (final MapEntry<String, MediaLockClock> e
+        in (await allLockClocksForKind(kind)).entries)
+      if (isLockedByClock(e.value)) e.key,
+  };
+
+  /// 某宿主种类全部上锁时钟（含已解除的），供互联标签同步构建本机清单。
+  Future<Map<String, MediaLockClock>> allLockClocksForKind(
+    TagHostKind kind,
+  ) async {
+    final List<MediaLockedFlagRow> rows = await (select(
+      mediaLockedFlags,
+    )..where((t) => t.mediaKind.equals(kind.dbValue))).get();
+    return <String, MediaLockClock>{
+      for (final MediaLockedFlagRow r in rows)
+        r.entryKey: (lockedAt: r.lockedAt, clearedAt: r.clearedAt),
+    };
+  }
+
+  /// 把对端上锁时钟并入宿主（逐戳取大）。只在合并结果与本机不同时写库，返回
+  /// 是否改了（理由同 [mergeRemotePrivacyClock]）。
+  Future<bool> mergeRemoteLockClock(
+    TagHostKind kind,
+    String entryKey,
+    MediaLockClock remote,
+  ) => transaction(() async {
+    final MediaLockClock local = await mediaLockClock(kind, entryKey);
+    final MediaLockClock merged = mergeLockClocks(local, remote);
+    if (merged == local) return false;
+    await into(mediaLockedFlags).insertOnConflictUpdate(
+      MediaLockedFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        lockedAt: Value(merged.lockedAt),
+        clearedAt: Value(merged.clearedAt),
+      ),
+    );
+    return true;
+  });
+
   Future<int?> _tagIdByName(String name) async {
     final BookTagRow? row =
         await (select(bookTags)

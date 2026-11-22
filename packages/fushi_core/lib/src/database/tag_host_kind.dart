@@ -72,3 +72,24 @@ MediaPrivacyClock mergePrivacyClocks(MediaPrivacyClock a, MediaPrivacyClock b) {
     clearedAt: maxOf(a.clearedAt, b.clearedAt),
   );
 }
+
+/// 一个宿主的「上锁」标记时钟（[MediaLockedFlags] 一行；互联标签同步清单条目上的
+/// `locked` 载荷）。两只戳都为 null = 从没上过锁。语义与 [MediaPrivacyClock] 相同。
+typedef MediaLockClock = ({int? lockedAt, int? clearedAt});
+
+/// 上锁 ⇔ 上锁的戳比解除的戳新（相等解除胜）。
+bool isLockedByClock(MediaLockClock clock) {
+  final int? set = clock.lockedAt;
+  if (set == null) return false;
+  final int? cleared = clock.clearedAt;
+  return cleared == null || set > cleared;
+}
+
+/// 两只上锁时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
+MediaLockClock mergeLockClocks(MediaLockClock a, MediaLockClock b) {
+  int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
+  return (
+    lockedAt: maxOf(a.lockedAt, b.lockedAt),
+    clearedAt: maxOf(a.clearedAt, b.clearedAt),
+  );
+}

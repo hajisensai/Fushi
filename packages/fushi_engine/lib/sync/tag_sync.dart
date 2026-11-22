@@ -33,6 +33,10 @@ import 'package:fushi_engine/sync/sync_manifest_codec.dart';
 /// 条目上可选的 `nsfw`（`{"set": 毫秒, "cleared": 毫秒}`，v156 起）同理搭载作品级
 /// NSFW 标记的两只时钟（`media_nsfw_flags`）：在一台设备上标的 NSFW，别的设备上
 /// 的封面也要跟着模糊。缺字段 = 没有 NSFW 知识。
+///
+/// 条目上可选的 `locked`（`{"set": 毫秒, "cleared": 毫秒}`，v171 起）同理搭载作品级
+/// 上锁标记的两只时钟（`media_locked_flags`）：在一台设备上锁的作品，别的设备上
+/// 同样藏起来。缺字段 = 没有上锁知识，不是「解除上锁」。
 class TagManifest implements CanonicalJsonManifest {
   const TagManifest({
     this.version = currentVersion,
@@ -130,6 +134,7 @@ class TagManifestEntry {
     this.tombstones = const <String, int>{},
     this.privacy,
     this.nsfw,
+    this.locked,
   });
 
   factory TagManifestEntry.fromJson(Object? json) {
@@ -152,6 +157,7 @@ class TagManifestEntry {
       tombstones: _clockMap(map['removed']),
       privacy: _privacyClock(map['privacy']),
       nsfw: _nsfwClock(map['nsfw']),
+      locked: _lockClock(map['locked']),
     );
   }
 
@@ -176,6 +182,9 @@ class TagManifestEntry {
   /// 作品级 NSFW 标记的时钟；null = 本端对它没有 NSFW 知识（从没标过 / 旧版对端）。
   final MediaNsfwClock? nsfw;
 
+  /// 作品级上锁标记的时钟；null = 本端对它没有上锁知识（从没上过锁 / 旧版对端）。
+  final MediaLockClock? locked;
+
   Iterable<String> get allKeys => <String>[key, ...aliases];
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -193,6 +202,11 @@ class TagManifestEntry {
       'nsfw': <String, int>{
         if (n.nsfwAt != null) 'set': n.nsfwAt!,
         if (n.clearedAt != null) 'cleared': n.clearedAt!,
+      },
+    if (locked case final MediaLockClock l)
+      'locked': <String, int>{
+        if (l.lockedAt != null) 'set': l.lockedAt!,
+        if (l.clearedAt != null) 'cleared': l.clearedAt!,
       },
   };
 
@@ -214,6 +228,15 @@ class TagManifestEntry {
     final int? cleared = _stamp(raw['cleared']);
     if (set == null && cleared == null) return null;
     return (nsfwAt: set, clearedAt: cleared);
+  }
+
+  /// 两只戳都缺 / 都非法时为 null（等同没有这个字段）。
+  static MediaLockClock? _lockClock(Object? raw) {
+    if (raw is! Map) return null;
+    final int? set = _stamp(raw['set']);
+    final int? cleared = _stamp(raw['cleared']);
+    if (set == null && cleared == null) return null;
+    return (lockedAt: set, clearedAt: cleared);
   }
 
   static Map<String, int> _clockMap(Object? raw) {
@@ -262,18 +285,28 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
     final Map<String, MediaNsfwClock> nsfw = await db.allNsfwClocksForKind(
       kind,
     );
+    final Map<String, MediaLockClock> locks = await db.allLockClocksForKind(
+      kind,
+    );
     for (final String localKey in <String>{
       ...clocks.keys,
       ...privacy.keys,
       ...nsfw.keys,
+      ...locks.keys,
     }) {
       final TagClockSet? tagClocks = clocks[localKey];
       final MediaPrivacyClock? privacyClock = privacy[localKey];
       final MediaNsfwClock? nsfwClock = nsfw[localKey];
+      final MediaLockClock? lockClock = locks[localKey];
       final bool hasTags =
           tagClocks != null &&
           (tagClocks.addedAt.isNotEmpty || tagClocks.tombstones.isNotEmpty);
-      if (!hasTags && privacyClock == null && nsfwClock == null) continue;
+      if (!hasTags &&
+          privacyClock == null &&
+          nsfwClock == null &&
+          lockClock == null) {
+        continue;
+      }
       final ({String key, List<String> aliases})? id = identify(localKey);
       if (id == null) continue;
       entries.add(
@@ -285,6 +318,7 @@ Future<TagManifest> loadLocalTagManifest(FushiDatabase db) async {
           tombstones: tagClocks?.tombstones ?? const <String, int>{},
           privacy: privacyClock,
           nsfw: nsfwClock,
+          locked: lockClock,
         ),
       );
     }
@@ -462,6 +496,11 @@ Future<int> applyTagManifest(FushiDatabase db, TagManifest remote) async {
         didChange = true;
       }
     }
+    if (e.locked case final MediaLockClock l) {
+      if (await db.mergeRemoteLockClock(kind, localKey, l)) {
+        didChange = true;
+      }
+    }
     if (didChange) changed++;
   }
   return changed;
@@ -500,6 +539,7 @@ bool tagManifestCovers(TagManifest remote, TagManifest local) {
     }
     if (!_privacyCovers(r.privacy, l.privacy)) return false;
     if (!_nsfwCovers(r.nsfw, l.nsfw)) return false;
+    if (!_lockCovers(r.locked, l.locked)) return false;
   }
   return true;
 }
@@ -517,5 +557,13 @@ bool _nsfwCovers(MediaNsfwClock? remote, MediaNsfwClock? local) {
   if (local == null) return true;
   bool covers(int? r, int? l) => l == null || (r != null && r >= l);
   return covers(remote?.nsfwAt, local.nsfwAt) &&
+      covers(remote?.clearedAt, local.clearedAt);
+}
+
+/// 远端上锁时钟逐戳不比本机旧（本机没有上锁知识时恒为 true）。
+bool _lockCovers(MediaLockClock? remote, MediaLockClock? local) {
+  if (local == null) return true;
+  bool covers(int? r, int? l) => l == null || (r != null && r >= l);
+  return covers(remote?.lockedAt, local.lockedAt) &&
       covers(remote?.clearedAt, local.clearedAt);
 }
