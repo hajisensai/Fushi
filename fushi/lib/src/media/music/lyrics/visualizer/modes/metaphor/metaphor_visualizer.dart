@@ -23,14 +23,16 @@ import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_tuning.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 注册项。画面自己铺纸（不要共用背景）；译文 / 下一句交给宿主的共享字幕（folia 也是底部字幕层）。
+/// 注册项。画面自己铺纸（folia `background: false`：不要共用背景）；译文 / 下一句交给宿主的共享
+/// 字幕（folia 也是底部字幕层）。
 final LyricVisualizerEntry metaphorVisualizerEntry = LyricVisualizerEntry(
   mode: LyricVisualizerMode.metaphor,
   label: () => t.music_visualizer_mode_metaphor,
   description: () => t.music_visualizer_metaphor_description,
   icon: FushiIcons.ambientMotion,
   tunings: metaphorTuningSpecs,
-  sharedBackdrop: false,
+  background: (LyricVisualizerTuning _) =>
+      LyricVisualizerBackgroundRequest.none,
   builder: (LyricVisualizerContext c) => MetaphorVisualizer(context: c),
 );
 

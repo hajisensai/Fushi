@@ -6,11 +6,14 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_camera.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_layout.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_palette.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_painter.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_program.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_scene.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_shapes.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_visualizer.dart';
 
@@ -162,9 +165,10 @@ void main() {
       }
     });
 
-    test('token：中日文一字一个，英文按空白断开，时间是秒', () {
+    test('token：按共享分词切（夜空 成一个词），英文按空白断开，时间是秒', () {
       final List<MetaphorToken> ja = buildMetaphorTokens(runtime.lines[0]);
-      expect(ja.map((MetaphorToken t) => t.text), <String>['夜', '空', 'に', '光']);
+      expect(ja.map((MetaphorToken t) => t.text), <String>['夜空', 'に', '光']);
+      expect(ja.first.chars.length, 2);
       expect(ja.first.chars.first.t0, closeTo(1.0, 1e-9));
       final List<MetaphorToken> en = buildMetaphorTokens(runtime.lines[1]);
       expect(
@@ -457,7 +461,249 @@ void main() {
     expect(dist(p.accent, p.ink), greaterThanOrEqualTo(0.25 - 1e-9));
   });
 
+  group('共享框架', () {
+    LyricTimeline chorusTimeline() => LyricTimeline(
+      format: 'lrc',
+      lines: <LyricLine>[
+        for (int i = 0; i < 6; i++)
+          LyricLine(
+            startMs: 1000 + i * 4000,
+            endMs: 4000 + i * 4000,
+            syllables: <LyricSyllable>[
+              LyricSyllable(
+                text: i.isOdd ? 'shine on me tonight' : 'verse line $i here',
+                startMs: 1000 + i * 4000,
+                endMs: 4000 + i * 4000,
+              ),
+            ],
+          ),
+      ],
+    );
+
+    test('副歌取运行时的 isChorus', () {
+      final List<MetaphorProgramLine> lines = _programLines(chorusTimeline());
+      expect(lines.map((MetaphorProgramLine l) => l.chorus), <bool>[
+        false,
+        true,
+        false,
+        true,
+        false,
+        true,
+      ]);
+      final MetaphorProgram p = compileMetaphorProgram(lines, seed: 9);
+      expect(
+        p.cues.where((MetaphorCue c) => c.lineIndex >= 0 && c.chorus),
+        isNotEmpty,
+      );
+    });
+
+    test('强度改切换快慢：激烈的镜头多于平静的', () {
+      final List<MetaphorProgramLine> lines = _programLines(chorusTimeline());
+      int shots(LyricVisualizerIntensity i) => compileMetaphorProgram(
+        lines,
+        seed: 4,
+        intensity: i,
+      ).cues.fold(0, (int n, MetaphorCue c) => n + c.shots.length);
+      expect(
+        shots(LyricVisualizerIntensity.chaotic),
+        greaterThan(shots(LyricVisualizerIntensity.calm)),
+      );
+    });
+
+    test('湮灭对撞：节拍表、对撞挪到小节第一拍、平常的拍放小环', () {
+      final LyricVisualizerContext c = visualizerContextFor(
+        metaphorVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+        offsetMs: 100,
+      );
+      final List<MetaphorBeatEvent> events = metaphorBeatEventsOf(c);
+      expect(events.length, c.audio!.beatTimesMs.length);
+      expect(events.first.t, closeTo(0.1, 1e-9));
+      expect(events.first.downbeat, isTrue);
+      expect(events[1].downbeat, isFalse);
+      expect(events.every((MetaphorBeatEvent e) => e.gain == 1), isTrue);
+      // 没有节拍网格：空表（不走特效）
+      expect(
+        metaphorBeatEventsOf(
+          visualizerContextFor(
+            metaphorVisualizerEntry,
+            clock: FakeVisualizerClock(),
+            audio: SyntheticVisualizerAudio(beatsReady: false),
+          ),
+        ),
+        isEmpty,
+      );
+      expect(
+        metaphorBeatEventsOf(
+          visualizerContextFor(
+            metaphorVisualizerEntry,
+            clock: FakeVisualizerClock(),
+          ),
+        ),
+        isEmpty,
+      );
+
+      const MetaphorRect bounds = MetaphorRect(-3, -1, 3, 1);
+      final List<MetaphorCollision> hits = planMetaphorCollisions(
+        bounds,
+        metaphorRng('c'),
+        <double>[4.5, 4.6],
+        1,
+        false,
+      );
+      final List<MetaphorCollision> snapped = snapMetaphorCollisions(
+        hits,
+        events,
+      );
+      // 4.5 秒附近 0.9 秒内的小节第一拍是 4.1（拍点 0.1 + 0.5k，每 4 拍一小节）
+      expect(snapped[0].time, closeTo(4.1, 1e-9));
+      // 第二下离第一下太近不能也挪到 4.1：挪到最近的普通拍 4.6
+      expect(snapped[1].time, closeTo(4.6, 1e-9));
+      // 不挪到 earliest 之前
+      expect(
+        snapMetaphorCollisions(hits, events, earliest: 4.4)[0].time,
+        greaterThanOrEqualTo(4.4),
+      );
+
+      final MetaphorInstances out = MetaphorInstances();
+      writeMetaphorBeatRings(snapped, events, 5.0, 0, 1, out);
+      expect(out.count, greaterThan(0));
+      for (int i = 0; i < out.count; i++) {
+        expect(out.shapeAt(i), metaphorShapeRing);
+      }
+      final MetaphorInstances none = MetaphorInstances();
+      writeMetaphorBeatRings(snapped, events, 5.0, 0, 0, none);
+      expect(none.count, 0);
+    });
+
+    test('音量：有分析时读响度，没有时用歌词包络；平滑往上快往下慢', () {
+      final LyricVisualizerContext withAudio = visualizerContextFor(
+        metaphorVisualizerEntry,
+        clock: FakeVisualizerClock(),
+        audio: SyntheticVisualizerAudio(),
+      );
+      expect(metaphorAudioLevel(withAudio, 1000), closeTo(0.9, 1e-9));
+      final LyricVisualizerContext lyric = visualizerContextFor(
+        metaphorVisualizerEntry,
+        clock: FakeVisualizerClock(),
+      );
+      expect(metaphorAudioLevel(lyric, 1000), closeTo(0.6, 1e-6));
+      expect(metaphorAudioLevel(lyric, 9000), 0);
+
+      final MetaphorAudioSmoother sm = MetaphorAudioSmoother();
+      expect(sm.sample(0, 0), 0);
+      double up = 0;
+      for (int t = 16; t <= 160; t += 16) {
+        up = sm.sample(1, t);
+      }
+      expect(up, inInclusiveRange(0.3, 0.5));
+      // 拖进度：直接取当前值
+      expect(sm.sample(0.2, 5000), 0.2);
+    });
+
+    test('关键字着色：开着时主题关键字的 token 带颜色，关着全是 null', () {
+      const LyricVisualizerTheme theme = LyricVisualizerTheme(
+        wordColors: <String, Color>{
+          '夜空': Color(0xFFE53935),
+          'bright': Color(0xFF1E88E5),
+        },
+      );
+      MetaphorScene sceneWith(bool on) => MetaphorScene(
+        visualizerContextFor(
+          metaphorVisualizerEntry,
+          clock: FakeVisualizerClock(),
+          theme: theme,
+          tuning: <String, Object?>{'keywordColors': on},
+        ),
+      );
+      final MetaphorScene on = sceneWith(true);
+      final List<MetaphorToken> ja = buildMetaphorTokens(on.runtime.lines[0]);
+      expect(on.keywordTints(ja), <Color?>[
+        const Color(0xFFE53935),
+        null,
+        null,
+      ]);
+      final List<MetaphorToken> en = buildMetaphorTokens(on.runtime.lines[1]);
+      final List<Color?> enTints = on.keywordTints(en);
+      expect(
+        enTints[en.indexWhere((MetaphorToken t) => t.text == 'bright')],
+        const Color(0xFF1E88E5),
+      );
+      expect(enTints.whereType<Color>().length, 1);
+      // 带颜色的字在排版里算强调、颜色跟着走
+      final MetaphorLayout layout = buildMetaphorLayout(
+        MetaphorLayoutInput(
+          tokens: ja,
+          composition: MetaphorComposition.block,
+          measure: _measure,
+          rng: metaphorRng('t'),
+          tints: on.keywordTints(ja),
+        ),
+      );
+      final List<MetaphorGlyph> tinted = layout.glyphs
+          .where((MetaphorGlyph g) => g.tint != null)
+          .toList();
+      expect(tinted.map((MetaphorGlyph g) => g.char), <String>['夜', '空']);
+      expect(tinted.every((MetaphorGlyph g) => g.accent), isTrue);
+      on.dispose();
+      final MetaphorScene off = sceneWith(false);
+      expect(off.keywordTints(ja), everyElement(isNull));
+      off.dispose();
+    });
+
+    test('关键字颜色和纸分不开时往墨那边拉', () {
+      final MetaphorPalette p = resolveMetaphorPalette(
+        LyricVisualizerPalette.fromScheme(
+          ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
+        ),
+      );
+      final Color same = resolveMetaphorKeywordColor(p.paper, p);
+      final double d = math.sqrt(
+        math.pow(same.r - p.paper.r, 2) +
+            math.pow(same.g - p.paper.g, 2) +
+            math.pow(same.b - p.paper.b, 2),
+      );
+      expect(d, greaterThan(0.1));
+    });
+
+    test('背景：自己铺纸，不要共享背景', () {
+      expect(
+        metaphorVisualizerEntry.backgroundFor(
+          LyricVisualizerTuning.defaults(metaphorVisualizerEntry.tunings),
+        ),
+        LyricVisualizerBackgroundRequest.none,
+      );
+    });
+  });
+
   group('挂载', () {
+    testWidgets('有音频分析 + AI 主题关键字着色 + 激烈', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        metaphorVisualizerEntry,
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'夜空': Color(0xFFE53935)},
+          fontWeight: FontWeight.w600,
+        ),
+        tuning: const <String, Object?>{
+          'keywordColors': true,
+          'beatAnnihilation': 2.0,
+        },
+      );
+    });
+
+    testWidgets('只有节拍、没有包络（歌词回落）', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        metaphorVisualizerEntry,
+        audio: SyntheticVisualizerAudio(envelopeReady: false),
+        intensity: LyricVisualizerIntensity.calm,
+      );
+    });
+
     testWidgets('默认参数', (WidgetTester tester) async {
       await pumpVisualizerAcross(tester, metaphorVisualizerEntry);
     });

@@ -8,6 +8,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 0..1 的随机数源（按顺序取）。
 typedef MetaphorRng = double Function();
@@ -137,6 +138,7 @@ class MetaphorProgramLine {
     wordStarts: <double>[
       for (final LyricVisualizerWord w in line.words) w.startMs / 1000,
     ],
+    chorus: line.isChorus,
   );
 
   final int lineIndex;
@@ -469,12 +471,14 @@ MetaphorProgram compileMetaphorProgram(
   double cutPace = 1,
   bool negative = true,
   bool transitions = true,
+  LyricVisualizerIntensity intensity = LyricVisualizerIntensity.normal,
 }) {
   final MetaphorRng rng = metaphorRng('metaphor:$seed');
   final MetaphorRng composeRng = metaphorRng('metaphor:$seed:compose');
   final MetaphorRng transitionRng = metaphorRng('metaphor:$seed:transition');
   final MetaphorRng splitRng = metaphorRng('metaphor:$seed:split');
-  final double pace = cutPace;
+  // folia INTENSITY_PACE：平静 0.75 / 普通 1 / 激烈 1.3
+  final double pace = cutPace * intensity.pick(0.75, 1, 1.3);
   final _ShotContext context = _ShotContext(rng, negative);
   final List<MetaphorCue> cues = <MetaphorCue>[];
   final String name = title?.trim() ?? '';

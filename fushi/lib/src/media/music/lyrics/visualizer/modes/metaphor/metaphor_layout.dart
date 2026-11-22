@@ -5,6 +5,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'dart:ui' show Color;
+
 import 'package:characters/characters.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
@@ -68,6 +70,7 @@ class MetaphorGlyph {
     required this.word,
     required this.accent,
     required this.seed,
+    this.tint,
   });
 
   final String char;
@@ -83,6 +86,9 @@ class MetaphorGlyph {
   /// 属于 words 里的第几个。
   final int word;
   final bool accent;
+
+  /// 关键字自己的颜色（主题 wordColors）；null = 强调色（或不是关键字）。
+  final Color? tint;
 
   /// 0..1，这个字自己的随机数（化开时散去的方向、放出的粒子用）。
   final double seed;
@@ -121,28 +127,16 @@ final RegExp _wordLike = RegExp(r'[\p{L}\p{N}]', unicode: true);
 
 bool _isSpace(String s) => s.trim().isEmpty;
 
-/// 一句歌词 → token：空白一段、中日韩一字一个、拉丁连写成一个；每个字带自己的演唱时间。
+/// 一句歌词 → token（folia `buildMetaphorTokens`）：按共享分词（`LyricVisualizerLine.segments`，
+/// folia `segmentLyricWords`）切成词，词与词之间的空白各成一段；每个字带自己的演唱时间。
 List<MetaphorToken> buildMetaphorTokens(LyricVisualizerLine line) {
   final List<MetaphorToken> tokens = <MetaphorToken>[];
   final List<LyricVisualizerGlyph> glyphs = line.glyphs;
-  int i = 0;
-  while (i < glyphs.length) {
-    final int first = i;
-    if (glyphs[i].isSpace) {
-      while (i < glyphs.length && glyphs[i].isSpace) {
-        i++;
-      }
-    } else if (lyricVisualizerIsCjk(glyphs[i].text)) {
-      i++;
-    } else {
-      while (i < glyphs.length &&
-          !glyphs[i].isSpace &&
-          !lyricVisualizerIsCjk(glyphs[i].text)) {
-        i++;
-      }
-    }
+
+  void push(int from, int to) {
+    if (to <= from) return;
     final List<MetaphorTokenChar> chars = <MetaphorTokenChar>[
-      for (final LyricVisualizerGlyph g in glyphs.sublist(first, i))
+      for (final LyricVisualizerGlyph g in glyphs.sublist(from, to))
         MetaphorTokenChar(g.text, g.startMs / 1000, g.endMs / 1000),
     ];
     final String text = chars.map((MetaphorTokenChar c) => c.char).join();
@@ -155,6 +149,32 @@ List<MetaphorToken> buildMetaphorTokens(LyricVisualizerLine line) {
       ),
     );
   }
+
+  /// 词外的字（空白、没归进词的符号）：空白连成一段，其余一字一个。
+  void pushGap(int from, int to) {
+    int i = from;
+    while (i < to) {
+      final int first = i;
+      if (glyphs[i].isSpace) {
+        while (i < to && glyphs[i].isSpace) {
+          i++;
+        }
+      } else {
+        i++;
+      }
+      push(first, i);
+    }
+  }
+
+  int cursor = 0;
+  for (final LyricVisualizerSegment seg in line.segments) {
+    final int from = seg.firstGlyph.clamp(cursor, glyphs.length);
+    final int to = (seg.firstGlyph + seg.glyphCount).clamp(from, glyphs.length);
+    pushGap(cursor, from);
+    push(from, to);
+    cursor = to;
+  }
+  pushGap(cursor, glyphs.length);
   return tokens;
 }
 
@@ -265,6 +285,7 @@ class MetaphorLayoutInput {
     required this.measure,
     required this.rng,
     this.isAccent,
+    this.tints,
   });
 
   final List<MetaphorToken> tokens;
@@ -274,6 +295,9 @@ class MetaphorLayoutInput {
 
   /// 这个词要不要用强调色。
   final bool Function(String text)? isAccent;
+
+  /// 每个 token 的关键字颜色（folia `tints`）；有颜色的 token 也算强调。
+  final List<Color?>? tints;
 }
 
 List<_Placed> _placeRows(
@@ -498,12 +522,20 @@ MetaphorLayout buildMetaphorLayout(MetaphorLayoutInput input) {
   final double total = widths.fold(0, (double s, double w) => s + w);
   final List<MetaphorGlyph> glyphs = <MetaphorGlyph>[];
   final List<MetaphorWord> words = <MetaphorWord>[];
+  final List<Color?> tints = <Color?>[
+    for (int i = 0; i < tokens.length; i++)
+      tokens[i].space || input.tints == null || i >= input.tints!.length
+          ? null
+          : input.tints![i],
+  ];
   final List<bool> accents = <bool>[
-    for (final MetaphorToken t in tokens)
-      !t.space && (input.isAccent?.call(t.text.trim()) ?? false),
+    for (int i = 0; i < tokens.length; i++)
+      !tokens[i].space &&
+          (tints[i] != null ||
+              (input.isAccent?.call(tokens[i].text.trim()) ?? false)),
   ];
 
-  void pushWord(List<_Slot> slots, bool accent) {
+  void pushWord(List<_Slot> slots, bool accent, [Color? tint]) {
     if (slots.isEmpty) return;
     final int word = words.length;
     double x0 = double.infinity;
@@ -530,6 +562,7 @@ MetaphorLayout buildMetaphorLayout(MetaphorLayoutInput input) {
           t1: s.c.t1,
           word: word,
           accent: accent,
+          tint: tint,
           seed: input.rng(),
         ),
       );
@@ -560,7 +593,7 @@ MetaphorLayout buildMetaphorLayout(MetaphorLayoutInput input) {
       (byToken[index] ??= <_Slot>[]).add(slot);
     }
     byToken.forEach((int index, List<_Slot> slots) {
-      pushWord(slots, accents[index]);
+      pushWord(slots, accents[index], tints[index]);
     });
   } else {
     final List<_Placed> placed = switch (input.composition) {
@@ -593,7 +626,7 @@ MetaphorLayout buildMetaphorLayout(MetaphorLayoutInput input) {
           ),
         );
       }
-      pushWord(slots, accents[p.index]);
+      pushWord(slots, accents[p.index], tints[p.index]);
     }
   }
 

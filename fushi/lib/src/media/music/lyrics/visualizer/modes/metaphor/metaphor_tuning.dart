@@ -1,5 +1,6 @@
 /// 隐喻的可调参数（folia `metaphor/types.ts` + `tuning.ts`）：同样的默认值和范围。
-/// 不移植的：分辨率倍数（Flutter 按设备像素比画）、关键字着色（Fushi 的封面配色没有关键字表）。
+/// 不移植的：分辨率倍数（Flutter 按设备像素比画）。「湮灭对撞」节拍特效的强度在 folia 是全局的
+/// 智能动感设置，这里收成本样式的一项（0 = 关）。
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -16,6 +17,8 @@ abstract final class MetaphorTuningKeys {
   static const String negative = 'negative';
   static const String flip = 'flip';
   static const String transitions = 'transitions';
+  static const String keywordColors = 'keywordColors';
+  static const String beatAnnihilation = 'beatAnnihilation';
 }
 
 String _times(double v) => '×${v.toStringAsFixed(2)}';
@@ -53,6 +56,19 @@ final List<LyricVisualizerTuningSpec> metaphorTuningSpecs =
         key: MetaphorTuningKeys.flip,
         label: () => t.music_visualizer_metaphor_flip,
         initial: false,
+      ),
+      LyricVisualizerToggleSpec(
+        key: MetaphorTuningKeys.keywordColors,
+        label: () => t.music_visualizer_metaphor_keyword_colors,
+        initial: false,
+      ),
+      LyricVisualizerSliderSpec(
+        key: MetaphorTuningKeys.beatAnnihilation,
+        label: () => t.music_visualizer_metaphor_beat_annihilation,
+        min: 0,
+        max: 2,
+        initial: 1,
+        format: _times,
       ),
       LyricVisualizerSliderSpec(
         key: MetaphorTuningKeys.flow,
@@ -100,6 +116,8 @@ class MetaphorSettings {
     this.negative = true,
     this.flip = false,
     this.transitions = true,
+    this.keywordColors = false,
+    this.beatAnnihilation = 1,
   });
 
   factory MetaphorSettings.of(LyricVisualizerTuning t) => MetaphorSettings(
@@ -112,6 +130,8 @@ class MetaphorSettings {
     negative: t.flag(MetaphorTuningKeys.negative, true),
     flip: t.flag(MetaphorTuningKeys.flip, false),
     transitions: t.flag(MetaphorTuningKeys.transitions, true),
+    keywordColors: t.flag(MetaphorTuningKeys.keywordColors, false),
+    beatAnnihilation: t.number(MetaphorTuningKeys.beatAnnihilation, 1),
   );
 
   final double cutPace;
@@ -123,4 +143,10 @@ class MetaphorSettings {
   final bool negative;
   final bool flip;
   final bool transitions;
+
+  /// 主题关键字（wordColors）各用自己的颜色；关着时和别的字一样是墨色。
+  final bool keywordColors;
+
+  /// 「湮灭对撞」强度（0..2）：对撞挪到拍上、平常的拍放小环；0 = 关。
+  final double beatAnnihilation;
 }

@@ -82,3 +82,8 @@ MetaphorPalette resolveMetaphorPalette(
   if (_distance(accent, ink) < 0.25) accent = _mix(paper, ink, 0.42);
   return MetaphorPalette(paper: paper, ink: ink, accent: accent, tone: tone);
 }
+
+/// 关键字自己的颜色（主题 wordColors）在这张纸上的样子（folia `resolveMetaphorKeywordColor`）：
+/// 和纸分不开时往墨那边拉。
+Color resolveMetaphorKeywordColor(Color color, MetaphorPalette palette) =>
+    _awayFromPaper(_opaque(color), palette.paper, palette.ink, 0.25);

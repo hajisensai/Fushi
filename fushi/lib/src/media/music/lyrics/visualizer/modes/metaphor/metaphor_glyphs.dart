@@ -81,6 +81,20 @@ class _GlyphPainters {
 class MetaphorGlyphSource {
   final Map<String, _GlyphPainters> _cache = <String, _GlyphPainters>{};
 
+  /// 歌词字的字重 / 字体（主题的 fontWeight / fontFamily，folia `resolveThemeFontWeight(theme, 300)`）。
+  FontWeight _weight = metaphorFontWeight;
+  String? _family;
+
+  /// 换字体：变了就清掉缓存（量字宽也跟着变），返回是否变了。
+  bool setFont(FontWeight? weight, String? family) {
+    final FontWeight w = weight ?? metaphorFontWeight;
+    if (w == _weight && family == _family) return false;
+    _weight = w;
+    _family = family;
+    clear();
+    return true;
+  }
+
   _GlyphPainters _painters(String key) {
     final _GlyphPainters? hit = _cache[key];
     if (hit != null) return hit;
@@ -98,11 +112,15 @@ class MetaphorGlyphSource {
             fontFamily: 'Cambria Math',
             fontFamilyFallback: _noteFamilies,
           )
-        : const TextStyle(
+        : TextStyle(
             fontSize: metaphorGlyphEm,
             height: 1,
             leadingDistribution: TextLeadingDistribution.even,
-            fontWeight: metaphorFontWeight,
+            // 笔画密的字最多 500（folia DENSE_WEIGHT）
+            fontWeight: dense && _weight.value > 500
+                ? FontWeight.w500
+                : _weight,
+            fontFamily: _family,
           );
     final TextPainter tight = TextPainter(
       text: TextSpan(

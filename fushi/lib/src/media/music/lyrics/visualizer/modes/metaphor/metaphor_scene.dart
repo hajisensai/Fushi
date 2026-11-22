@@ -5,9 +5,13 @@ library;
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'dart:ui' show Color;
+
+import 'package:flutter/foundation.dart' show mapEquals;
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_camera.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart';
@@ -29,6 +33,7 @@ class MetaphorGlyphEntry {
     required this.note,
     required this.accent,
     required this.seed,
+    this.tint,
   });
 
   final String key;
@@ -42,6 +47,9 @@ class MetaphorGlyphEntry {
   final bool note;
   final bool accent;
   final double seed;
+
+  /// 关键字自己的颜色（主题 wordColors，未按纸调整）；null = 强调色。
+  final Color? tint;
 }
 
 /// 一个 cue 的那套东西。
@@ -59,6 +67,13 @@ class MetaphorSet {
   final List<MetaphorCollision> collisions;
   final List<MetaphorGlyphEntry> entries;
   final MetaphorAtlas? atlas;
+
+  /// 有关键字自己颜色的字（显影时多一张着色图）。
+  bool get tinted => entries.any((MetaphorGlyphEntry e) => e.tint != null);
+
+  /// 挪到拍上的那组对撞（按哪张节拍表挪的）。
+  List<MetaphorBeatEvent>? snappedFrom;
+  List<MetaphorCollision>? snapped;
 
   /// 线稿的矢量图缓存（手抖每秒 8 格地跳，一笔一笔冒出来），由画家维护。
   String? lineArtKey;
@@ -82,6 +97,7 @@ class MetaphorSet {
 class MetaphorScene {
   MetaphorScene(LyricVisualizerContext context) : _context = context {
     _settings = MetaphorSettings.of(context.tuning);
+    glyphs.setFont(context.theme?.fontWeight, context.theme?.fontFamily);
     program = _compile();
   }
 
@@ -103,6 +119,45 @@ class MetaphorScene {
 
   MetaphorTextures get textures => _textures ??= MetaphorTextures.create();
 
+  LyricVisualizerAudio? _beatsFrom;
+  int _beatsCount = -1;
+  int _beatsOffset = 0;
+  List<MetaphorBeatEvent> _beats = const <MetaphorBeatEvent>[];
+
+  /// 本首的节拍表（显示时间，秒）；没有节拍网格是空表。分析就绪 / 换歌 / 改偏移时重算。
+  List<MetaphorBeatEvent> get beatEvents {
+    final LyricVisualizerAudio? a = _context.audio;
+    final int count = a != null && a.beatsReady ? a.beatTimesMs.length : 0;
+    if (!identical(a, _beatsFrom) ||
+        count != _beatsCount ||
+        _context.offsetMs != _beatsOffset) {
+      _beatsFrom = a;
+      _beatsCount = count;
+      _beatsOffset = _context.offsetMs;
+      _beats = metaphorBeatEventsOf(_context);
+    }
+    return _beats;
+  }
+
+  /// 这一套里要画的对撞：有节拍表就挪到拍上（循环的 cue 时间会折回去，不挪）。
+  List<MetaphorCollision> collisionsFor(
+    MetaphorSet set,
+    MetaphorCue cue,
+    List<MetaphorBeatEvent> events,
+  ) {
+    if (events.isEmpty || cue.loop > 0) return set.collisions;
+    if (!identical(set.snappedFrom, events)) {
+      set
+        ..snappedFrom = events
+        ..snapped = snapMetaphorCollisions(
+          set.collisions,
+          events,
+          earliest: cue.start,
+        );
+    }
+    return set.snapped!;
+  }
+
   MetaphorProgram _compile() => compileMetaphorProgram(
     <MetaphorProgramLine>[
       for (int i = 0; i < runtime.lines.length; i++)
@@ -113,6 +168,7 @@ class MetaphorScene {
     cutPace: _settings.cutPace,
     negative: _settings.negative,
     transitions: _settings.transitions,
+    intensity: _context.intensity,
   );
 
   /// 换输入：歌、种子、曲名、编进分镜的参数变了就重编；融球多少变了只重建各套。
@@ -125,13 +181,21 @@ class MetaphorScene {
         !identical(previous.runtime, next.runtime) ||
         previous.seed != next.seed ||
         previous.title != next.title;
+    final bool fontChanged = glyphs.setFont(
+      next.theme?.fontWeight,
+      next.theme?.fontFamily,
+    );
     if (songChanged ||
+        previous.intensity != next.intensity ||
         before.cutPace != _settings.cutPace ||
         before.negative != _settings.negative ||
         before.transitions != _settings.transitions) {
       program = _compile();
       clearSets();
-    } else if (before.blobs != _settings.blobs) {
+    } else if (fontChanged ||
+        before.blobs != _settings.blobs ||
+        before.keywordColors != _settings.keywordColors ||
+        !mapEquals(previous.theme?.wordColors, next.theme?.wordColors)) {
       clearSets();
     }
   }
@@ -188,6 +252,7 @@ class MetaphorScene {
               composition: cue.composition,
               measure: glyphs.measure,
               rng: rng,
+              tints: line != null ? keywordTints(tokens) : null,
             ),
           )
         : MetaphorLayout(
@@ -248,6 +313,7 @@ class MetaphorScene {
           note: false,
           accent: g.accent,
           seed: g.seed,
+          tint: g.tint,
         ),
       for (final MetaphorNoteGlyph n in notes)
         MetaphorGlyphEntry(
@@ -271,6 +337,31 @@ class MetaphorScene {
           ? null
           : glyphs.buildAtlas(entries.map((MetaphorGlyphEntry e) => e.key)),
     );
+  }
+
+  /// 一句歌词每个 token 的关键字颜色（不是关键字的是 null；folia `keywordTints`）：中日韩按短语包含、
+  /// 英文按词（主题的 `colorRangesFor`）。「关键字着色」关着、主题没有关键字时全是 null。
+  List<Color?> keywordTints(List<MetaphorToken> tokens) {
+    final LyricVisualizerTheme? theme = _context.theme;
+    final List<Color?> none = List<Color?>.filled(tokens.length, null);
+    if (!_settings.keywordColors || theme == null || !theme.hasWordColors) {
+      return none;
+    }
+    final List<LyricVisualizerWordColorRange> ranges = theme.colorRangesFor(
+      tokens.map((MetaphorToken t) => t.text).join(),
+    );
+    if (ranges.isEmpty) return none;
+    int offset = 0;
+    return <Color?>[
+      for (final MetaphorToken t in tokens)
+        () {
+          final int start = offset;
+          offset += t.text.length;
+          return t.space
+              ? null
+              : LyricVisualizerTheme.colorForSpan(ranges, start, offset);
+        }(),
+    ];
   }
 
   /// 一个 cue 里哪几个时刻对撞：歌词是隔几个词挑一个词的开唱时刻，间奏是隔几秒一次。

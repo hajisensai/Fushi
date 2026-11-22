@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_camera.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart';
@@ -94,8 +95,9 @@ class MetaphorFrameState {
 MetaphorFrameState resolveMetaphorFrame(
   MetaphorScene scene,
   double timeSeconds,
-  double aspect,
-) {
+  double aspect, {
+  double audioLevel = 0,
+}) {
   final LyricVisualizerContext c = scene.context;
   final MetaphorSettings s = scene.settings;
   final bool still = !c.motion;
@@ -122,10 +124,7 @@ MetaphorFrameState resolveMetaphorFrame(
             motion: s.cameraMotion,
           ),
         );
-  // 没有实时频谱：音量用逐字起音的包络代替
-  final double audio = still
-      ? 0
-      : 0.6 * scene.runtime.pulseAt((safe * 1000).round(), decayMs: 600);
+  final double audio = still ? 0 : audioLevel;
   return MetaphorFrameState(
     cueIndex: cueIndex,
     cue: cue,
@@ -151,6 +150,15 @@ int _argb(double r, double g, double b) {
   final int gi = (g.clamp(0.0, 1.0) * 255).round();
   final int bi = (b.clamp(0.0, 1.0) * 255).round();
   return (0xFF000000 | (ri << 16) | (gi << 8) | bi).toSigned(32);
+}
+
+/// [rgb] 的颜色配上 [argb] 的强度（取三个通道里最大的那个当透明度）。
+int _withAlpha(Color rgb, int argb) {
+  final int amount = math.max(
+    (argb >> 16) & 0xFF,
+    math.max((argb >> 8) & 0xFF, argb & 0xFF),
+  );
+  return ((amount << 24) | (rgb.toARGB32() & 0x00FFFFFF)).toSigned(32);
 }
 
 Color _rgb(double r, double g, double b) => Color.from(
@@ -197,10 +205,40 @@ class _Batch {
 }
 
 /// 墨场与显影的画家（一个样式实例一个，持有逐帧的缓存）。
+/// folia `sampleAudio`：音量（0..1）往上 0.3 秒、往下 0.9 秒地平滑跟过去。按歌词时间走（画面只在
+/// 歌词时间变了时重画）；往回跳或一下跳太远（拖进度）就直接取当前值。
+class MetaphorAudioSmoother {
+  double _value = 0;
+  int? _atMs;
+
+  double get value => _value;
+
+  double sample(double level, int timeMs) {
+    final int? at = _atMs;
+    _atMs = timeMs;
+    final double v = level.isFinite ? level.clamp(0.0, 1.0) : 0;
+    if (at == null || timeMs < at || timeMs - at > 300) {
+      return _value = v;
+    }
+    final double dt = math.min(0.1, (timeMs - at) / 1000);
+    final double tau = v > _value ? 0.3 : 0.9;
+    _value += (v - _value) * (1 - math.exp(-dt / tau));
+    return _value;
+  }
+}
+
+/// 这一帧的音量：有音频分析时是响度包络；没有时是歌词起字包络（尖，所以按 folia 旧代用压到六成）。
+double metaphorAudioLevel(LyricVisualizerContext c, int timeMs) {
+  final LyricVisualizerAudioFrame frame = c.audioFrameAt(timeMs);
+  return frame.fallback ? 0.6 * frame.power : frame.power;
+}
+
 class MetaphorRenderer {
   MetaphorRenderer(this.scene);
 
   final MetaphorScene scene;
+  final MetaphorAudioSmoother _audio = MetaphorAudioSmoother();
+  ui.Image? _tint;
   final MetaphorInstances _instances = MetaphorInstances();
   ui.Image? _field;
   String? _warpKey;
@@ -209,6 +247,8 @@ class MetaphorRenderer {
   void dispose() {
     _field?.dispose();
     _field = null;
+    _tint?.dispose();
+    _tint = null;
     _warp?.dispose();
     _warp = null;
   }
@@ -217,10 +257,14 @@ class MetaphorRenderer {
     if (size.width < 1 || size.height < 1) return;
     final double aspect = size.width / size.height;
     scene.ensureAspect(aspect);
+    final double level = scene.context.playing
+        ? metaphorAudioLevel(scene.context, timeMs)
+        : 0;
     final MetaphorFrameState f = resolveMetaphorFrame(
       scene,
       timeMs / 1000,
       aspect,
+      audioLevel: _audio.sample(level, timeMs),
     );
     final MetaphorSet set = scene.ensureSet(f.cueIndex);
     final MetaphorSettings s = scene.settings;
@@ -233,7 +277,7 @@ class MetaphorRenderer {
     final double q = math.min(1, _fieldMaxSide / size.longestSide);
     final int fw = math.max(1, (size.width * q).ceil());
     final int fh = math.max(1, (size.height * q).ceil());
-    final ui.Image field = _renderField(set, f, size, q, fw, fh, tex);
+    final ui.Image field = _renderField(set, f, size, q, fw, fh, tex, palette);
     _field?.dispose();
     _field = field;
     _develop(canvas, size, f, s, palette, tex, field, q);
@@ -251,6 +295,7 @@ class MetaphorRenderer {
     int fw,
     int fh,
     MetaphorTextures tex,
+    MetaphorPalette palette,
   ) {
     final MetaphorSettings s = scene.settings;
     final MetaphorPose pose = f.pose;
@@ -291,11 +336,27 @@ class MetaphorRenderer {
     );
     if (!f.still) {
       writeMetaphorPairs(set.layout.glyphs, f.time, _instances);
-      writeMetaphorCollisions(
-        set.collisions,
-        resolveMetaphorCueTime(f.cue, f.time),
-        _instances,
+      // 「湮灭对撞」：有节拍表时对撞挪到拍上，平常的拍从对撞点放小环；没有节拍表、强度 0 时走原来那组
+      final double cueTime = resolveMetaphorCueTime(f.cue, f.time);
+      final List<MetaphorBeatEvent> events = s.beatAnnihilation > 0
+          ? scene.beatEvents
+          : const <MetaphorBeatEvent>[];
+      final List<MetaphorCollision> collisions = scene.collisionsFor(
+        set,
+        f.cue,
+        events,
       );
+      writeMetaphorCollisions(collisions, cueTime, _instances);
+      if (events.isNotEmpty) {
+        writeMetaphorBeatRings(
+          collisions,
+          events,
+          f.time,
+          cueTime - f.time,
+          s.beatAnnihilation,
+          _instances,
+        );
+      }
     }
     final _Batch blobCore = _Batch();
     final _Batch blobHalo = _Batch();
@@ -359,6 +420,9 @@ class MetaphorRenderer {
 
     // 字形：屏幕坐标里摆（字不能跟着世界的 y 翻过来）
     final MetaphorAtlas? atlas = set.atlas;
+    // 关键字自己的颜色（folia uTint）：另一张图里按墨量画上各自的颜色，显影时强调色的墨从这里取色
+    final _Batch tintTight = _Batch();
+    final _Batch tintWide = _Batch();
     if (atlas != null) {
       final _Batch tight = _Batch();
       final _Batch wide = _Batch();
@@ -421,6 +485,12 @@ class MetaphorRenderer {
         );
         tight.add(t, atlas.tightRect(slot), tightColor);
         wide.add(t, atlas.wideRect(slot), wideColor);
+        final Color? tint = g.tint;
+        if (tint != null && !g.note) {
+          final Color rgb = _keywordColor(tint, palette);
+          tintTight.add(t, atlas.tightRect(slot), _withAlpha(rgb, tightColor));
+          tintWide.add(t, atlas.wideRect(slot), _withAlpha(rgb, wideColor));
+        }
       }
       wide.draw(c, atlas.image, plus);
       tight.draw(c, atlas.image, plus);
@@ -429,7 +499,34 @@ class MetaphorRenderer {
     final ui.Picture picture = recorder.endRecording();
     final ui.Image image = picture.toImageSync(fw, fh);
     picture.dispose();
+
+    _tint?.dispose();
+    _tint = null;
+    if (atlas != null && !tintTight.isEmpty) {
+      final ui.PictureRecorder tr = ui.PictureRecorder();
+      final Canvas tc = Canvas(tr);
+      final Paint over = Paint()..filterQuality = FilterQuality.low;
+      tintWide.draw(tc, atlas.image, over);
+      tintTight.draw(tc, atlas.image, over);
+      final ui.Picture tp = tr.endRecording();
+      _tint = tp.toImageSync(fw, fh);
+      tp.dispose();
+    }
     return image;
+  }
+
+  final Map<int, Color> _keywordColors = <int, Color>{};
+  MetaphorPalette? _keywordPalette;
+
+  Color _keywordColor(Color raw, MetaphorPalette palette) {
+    if (!identical(palette, _keywordPalette)) {
+      _keywordColors.clear();
+      _keywordPalette = palette;
+    }
+    return _keywordColors.putIfAbsent(
+      raw.toARGB32(),
+      () => resolveMetaphorKeywordColor(raw, palette),
+    );
   }
 
   /// 线稿（细线、圆弧、波浪线）：按冒出来的笔数和手抖的格缓存成一张世界坐标的矢量图。
@@ -688,17 +785,49 @@ class MetaphorRenderer {
     );
     canvas.restore();
 
-    // 强调色的墨（B 通道）
-    _thresholdLayer(
-      canvas,
-      full,
-      warp,
-      fieldPaint,
-      roughPaint,
-      palette.accent,
-      channel: 2,
-      offset: -threshold,
-    );
+    // 强调色的墨（B 通道）；关键字有自己的颜色时颜色从着色图取（folia uTint：没有着色的地方是强调色）
+    final ui.Image? tint = _tint;
+    if (tint == null) {
+      _thresholdLayer(
+        canvas,
+        full,
+        warp,
+        fieldPaint,
+        roughPaint,
+        palette.accent,
+        channel: 2,
+        offset: -threshold,
+      );
+    } else {
+      canvas
+        ..saveLayer(full, Paint())
+        ..drawRect(full, Paint()..color = palette.accent)
+        ..drawVertices(
+          warp,
+          BlendMode.srcOver,
+          Paint()
+            ..filterQuality = FilterQuality.low
+            ..shader = ImageShader(
+              tint,
+              TileMode.clamp,
+              TileMode.clamp,
+              _translate(0, 0),
+              filterQuality: FilterQuality.low,
+            ),
+        );
+      _thresholdLayer(
+        canvas,
+        full,
+        warp,
+        fieldPaint,
+        roughPaint,
+        const Color(0xFFFFFFFF),
+        channel: 2,
+        offset: -threshold,
+        blendMode: BlendMode.dstIn,
+      );
+      canvas.restore();
+    }
 
     // 杂点：墨色的撒在纸上（落在墨里的被墨盖住），纸色的在墨上面（落在纸上的看不出）
     final double beat = (f.fluidTime * 6).floorToDouble();
@@ -771,6 +900,7 @@ class MetaphorRenderer {
     Color color, {
     required int channel,
     required double offset,
+    BlendMode blendMode = BlendMode.srcOver,
   }) {
     final List<double> m = <double>[
       0, 0, 0, 0, color.r * 255, //
@@ -779,7 +909,12 @@ class MetaphorRenderer {
       0, 0, 0, 0, _inkSlope * offset * 255,
     ];
     m[15 + channel] = _inkSlope;
-    canvas.saveLayer(full, Paint()..colorFilter = ColorFilter.matrix(m));
+    canvas.saveLayer(
+      full,
+      Paint()
+        ..blendMode = blendMode
+        ..colorFilter = ColorFilter.matrix(m),
+    );
     canvas
       ..drawVertices(warp, BlendMode.srcOver, fieldPaint)
       ..drawRect(full, roughPaint)
