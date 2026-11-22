@@ -3356,7 +3356,7 @@ mod tests {
                 4,
             ),
             (
-                "卡片标志同一层前身取最新写入（registers.rs 的 card_lineage_vectors_* 测试、sync_tests 的                  a_cache_with_card_flags_inherited_by_the_old_layer_rule_is_rebuilt_on_open）",
+                "卡片标志同一层前身取最新写入（registers.rs 的 card_lineage_vectors_* 测试、sync_tests 的 a_cache_with_card_flags_inherited_by_the_old_layer_rule_is_rebuilt_on_open）",
                 5,
             ),
         ];
