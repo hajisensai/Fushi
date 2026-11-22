@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T00:28:45Z",
+ "generatedAt": "2026-11-22T01:17:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
-  "seq": 31044
+  "sha": "2f621d3d84ea96ba81428fc5abb9fd1704d9ec9c",
+  "seq": 31070
  },
  "builds": [
   {
@@ -677,7 +677,36 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "2f621d3d84ea96ba81428fc5abb9fd1704d9ec9c",
+  "headSeq": 31070,
+  "prs": [
+   4027,
+   3999,
+   4032,
+   4077
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569815"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569855"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569855"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44970569855"
+   }
+  }
+ },
  "prs": {
   "3448": {
    "number": 3448,
@@ -2822,6 +2851,15 @@
    "deletions": 19,
    "labels": []
   },
+  "3999": {
+   "number": 3999,
+   "title": "fix(torrent): 双栈下 DHT 节点数被空实例覆盖成 0 的误报（BUG-5070）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-22T01:13:02Z",
+   "additions": 103,
+   "deletions": 15,
+   "labels": []
+  },
   "4000": {
    "number": 4000,
    "title": "fix(srs): 复习库换代途中制卡提示去升级，不再报「复习不可用」（BUG-5069）",
@@ -3065,6 +3103,15 @@
    "deletions": 360,
    "labels": []
   },
+  "4027": {
+   "number": 4027,
+   "title": "feat(ios-inbox): iTunes 文件共享放在根上的文件导入时确认收进分类目录（拍板台 kmfCiXlIU_）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T01:15:09Z",
+   "additions": 656,
+   "deletions": 1,
+   "labels": []
+  },
   "4028": {
    "number": 4028,
    "title": "feat: galgame 台词浮窗显隐热键 + 收藏句颜色可选（拍板台 fMicnouU6V）",
@@ -3090,6 +3137,15 @@
    "mergedAt": "2026-11-21T20:11:14Z",
    "additions": 1816,
    "deletions": 57,
+   "labels": []
+  },
+  "4032": {
+   "number": 4032,
+   "title": "feat(music): 音声 / ASMR 专辑按 RJ 编号取 DLsite 资料（拍板台 NCzkl6oLnf）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T01:12:53Z",
+   "additions": 2007,
+   "deletions": 40,
    "labels": []
   },
   "4033": {
@@ -3441,6 +3497,15 @@
    "mergedAt": "2026-11-21T19:41:21Z",
    "additions": 1440,
    "deletions": 74,
+   "labels": []
+  },
+  "4077": {
+   "number": 4077,
+   "title": "fix(srs-gen4): 迁移对拍认出副本组换了代表（BUG-5063）+ 模板判空按类型解析一次（BUG-5137）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T01:12:49Z",
+   "additions": 64,
+   "deletions": 22,
    "labels": []
   },
   "4078": {
