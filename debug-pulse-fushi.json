@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T02:13:37Z",
+ "generatedAt": "2026-11-22T02:23:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "974ded3838b72878a748034f704b8629200853ee",
-  "seq": 31099
+  "sha": "51073b3c5f1dae344b2721046cb9a7d7a0b33633",
+  "seq": 31122
  },
  "builds": [
   {
@@ -678,9 +678,15 @@
   }
  ],
  "pending": {
-  "headSha": "974ded3838b72878a748034f704b8629200853ee",
-  "headSeq": 31099,
+  "headSha": "51073b3c5f1dae344b2721046cb9a7d7a0b33633",
+  "headSeq": 31122,
   "prs": [
+   4102,
+   4112,
+   4111,
+   4110,
+   4109,
+   4108,
    4107,
    4106,
    4105,
@@ -702,19 +708,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050336"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262302"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050256"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050256"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975050256"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44975262319"
    }
   }
  },
@@ -3717,6 +3723,15 @@
    "deletions": 20,
    "labels": []
   },
+  "4102": {
+   "number": 4102,
+   "title": "fix(music): 歌词页流体背景默认改 Pixi 渲染器，老用户跟着切（BUG-5167）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:15:45Z",
+   "additions": 92,
+   "deletions": 19,
+   "labels": []
+  },
   "4103": {
    "number": 4103,
    "title": "fix(tags): 标签 chip 鼠标也长按才重排，按下就拖归横滚（BUG-5174）",
@@ -3760,6 +3775,51 @@
    "mergedAt": "2026-11-22T02:13:12Z",
    "additions": 167,
    "deletions": 10,
+   "labels": []
+  },
+  "4108": {
+   "number": 4108,
+   "title": "fix(video): 暂停 OCR 点字按几何裁决命中 + 点字诊断（BUG-5177，反馈 WgeFHwdQ65）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:13:31Z",
+   "additions": 337,
+   "deletions": 34,
+   "labels": []
+  },
+  "4109": {
+   "number": 4109,
+   "title": "fix(srs-home): RWKV 此刻「低于目标」与头部到期数分清口径（BUG-5170）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:13:49Z",
+   "additions": 224,
+   "deletions": 61,
+   "labels": []
+  },
+  "4110": {
+   "number": 4110,
+   "title": "fix(manga): 有声漫画查词即停/退出即停/键盘接管/高亮恢复，悬浮底栏不再锁死，阅读器起播带封面",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:14:21Z",
+   "additions": 654,
+   "deletions": 77,
+   "labels": []
+  },
+  "4111": {
+   "number": 4111,
+   "title": "fix(srs): 旧 Lapis 迁移 / 补迁收进内核逐条算，修 iPad 大牌组 OOM 闪退（BUG-5176）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:14:40Z",
+   "additions": 880,
+   "deletions": 157,
+   "labels": []
+  },
+  "4112": {
+   "number": 4112,
+   "title": "fix(srs): 释义插图尺寸与点按放大（BUG-5181）+ 回到出处入口去重（BUG-5182）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-22T02:15:10Z",
+   "additions": 757,
+   "deletions": 73,
    "labels": []
   },
   "4113": {
