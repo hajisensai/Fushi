@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 /// 守卫：**推迟赋值的 `final` 局部变量在 `switch` 语句里赋值、之后又被闭包捕获**
 /// ——这个形状在 Dart 3.14.0 的 AOT 编译器里会崩（dart-lang/sdk#64917）。
 ///
-/// ## 起因（BUG-4657）
+/// ## 起因（BUG-5204）
 ///
 /// Flutter 3.50.0（Dart 3.14.0）下，`home_page.dart` 的
 /// `_openRemoteAiVideoAcquisition` 让全平台 release 构建在 `gen_snapshot` 里挂掉：

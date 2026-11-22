@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-4658：`main.dart` 的 `FlutterError.onError` 以前吞掉同时含
+/// BUG-5205：`main.dart` 的 `FlutterError.onError` 以前吞掉同时含
 /// `SingleTickerProviderStateMixin` 与 `RawTooltipState` 的错误（老框架里 tooltip
 /// 会建第二个 ticker）。Flutter 3.50 的 `RawTooltipState` 只懒建一个
 /// `AnimationController`，这条过滤已无对象，反而会把「disposed with an active
