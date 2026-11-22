@@ -4706,6 +4706,40 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 首页视图（见 models/home_view.dart）：总开关（默认关）、保存的视图（JSON 数组，
+  // 空串 = 没有）、本配置的当前 / 默认视图 id（'' = 全部）、一次性提示是否已显示。
+  bool get homeViewsEnabled =>
+      getPref('home_views_enabled', defaultValue: false) as bool? ?? false;
+
+  Future<void> setHomeViewsEnabled(bool value) async {
+    await setPref('home_views_enabled', value);
+    notifyListeners();
+  }
+
+  String get homeViews =>
+      getPref('home_views', defaultValue: '') as String? ?? '';
+
+  Future<void> setHomeViews(String json) async {
+    await setPref('home_views', json);
+    notifyListeners();
+  }
+
+  String get homeViewActive =>
+      getPref('home_view_active', defaultValue: '') as String? ?? '';
+
+  Future<void> setHomeViewActive(String id) async {
+    await setPref('home_view_active', id);
+    notifyListeners();
+  }
+
+  bool get homeViewsTipShown =>
+      getPref('home_views_tip_shown', defaultValue: false) as bool? ?? false;
+
+  Future<void> setHomeViewsTipShown(bool value) async {
+    await setPref('home_views_tip_shown', value);
+    notifyListeners();
+  }
+
   // 复习卡片浏览器的保存视图（JSON 数组，见 SrsBrowseSavedView）。空串 = 没有。
   String get srsBrowseSavedViews =>
       getPref('srs_browse_saved_views', defaultValue: '') as String;

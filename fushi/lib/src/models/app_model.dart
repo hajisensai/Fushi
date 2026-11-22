@@ -188,6 +188,7 @@ import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
+import 'package:fushi/src/models/home_view.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
@@ -12803,6 +12804,28 @@ class AppModel
       decodeHomeWidgetLayout(_prefsRepo?.homeWidgetLayout ?? '');
   Future<void> setHomeWidgetLayout(HomeWidgetLayout layout) =>
       prefsRepo.setHomeWidgetLayout(encodeHomeWidgetLayout(layout));
+
+  // 首页视图（透传 prefsRepo，见 models/home_view.dart）。可空读：prefs 未装配 = 关、
+  // 没有视图、全部。
+  bool get homeViewsEnabled => _prefsRepo?.homeViewsEnabled ?? false;
+  Future<void> setHomeViewsEnabled(bool value) =>
+      prefsRepo.setHomeViewsEnabled(value);
+  List<HomeView> get homeViews => decodeHomeViews(_prefsRepo?.homeViews ?? '');
+  Future<void> setHomeViews(List<HomeView> views) =>
+      prefsRepo.setHomeViews(encodeHomeViews(views));
+  String get homeViewActiveId => _prefsRepo?.homeViewActive ?? '';
+  Future<void> setHomeViewActiveId(String id) =>
+      prefsRepo.setHomeViewActive(id);
+  bool get homeViewsTipShown => _prefsRepo?.homeViewsTipShown ?? false;
+  Future<void> setHomeViewsTipShown(bool value) =>
+      prefsRepo.setHomeViewsTipShown(value);
+
+  /// 首页此刻生效的视图（开关关着 / 选的是全部 / 指不到 = null）。
+  HomeView? get activeHomeView => resolveActiveHomeView(
+    enabled: homeViewsEnabled,
+    views: homeViews,
+    activeId: homeViewActiveId,
+  );
 
   // 复习卡片浏览器的保存视图（JSON，透传 prefsRepo）。可空读：prefs 未装配 = 没有。
   String get srsBrowseSavedViews => _prefsRepo?.srsBrowseSavedViews ?? '';

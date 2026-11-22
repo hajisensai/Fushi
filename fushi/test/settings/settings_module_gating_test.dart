@@ -309,6 +309,8 @@ void main() {
         );
         expect(section.items.map((SettingsItem i) => i.id), <String>[
           'navigation.home_widgets.edit',
+          'navigation.home_widgets.views',
+          'navigation.home_widgets.views_manage',
         ]);
         return section;
       }

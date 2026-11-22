@@ -13,6 +13,8 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/home_views_page.dart'
+    show HomeViewsPage;
 import 'package:fushi/src/pages/implementations/miscellaneous_settings_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/eink_full_refresh.dart';
@@ -905,6 +907,29 @@ SettingsSection buildHomePanelsSection() {
           homeShellTabNotifier.value = HomeTab.home;
           homeWidgetEditRequested.value = true;
         },
+      ),
+      // 首页视图（models/home_view.dart，用户 2026-11-22 拍板）：默认关；关着时首页
+      // 与改造前一致。开关、视图、默认视图都随 Profile 走。关掉保留已存的视图。
+      SettingsSwitchItem(
+        id: 'navigation.home_widgets.views',
+        title: t.settings_home_views_title,
+        subtitle: t.settings_home_views_subtitle,
+        icon: FushiIcons.filterList,
+        value: (SettingsContext c) => c.appModel.homeViewsEnabled,
+        onChanged: (SettingsContext c, bool value) async {
+          await c.appModel.setHomeViewsEnabled(value);
+        },
+        defaultValue: false,
+      ),
+      SettingsNavigationItem(
+        id: 'navigation.home_widgets.views_manage',
+        title: t.settings_home_views_manage,
+        subtitle: t.settings_home_views_manage_subtitle,
+        icon: FushiIcons.edit,
+        showIcon: true,
+        visible: (SettingsContext c) => c.appModel.homeViewsEnabled,
+        onTap: (SettingsContext c) =>
+            pushSettingsPage(c, (_) => const HomeViewsPage()),
       ),
     ],
   );

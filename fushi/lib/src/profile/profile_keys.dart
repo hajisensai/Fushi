@@ -95,6 +95,9 @@ class ProfileKeys {
     'onboarding_completed',
     'onboarding_finished',
     'onboarding_home_card_dismissed',
+    // 首页视图的一次性提示已显示过：同族（描述本安装看过提示）。进快照的话切到这个键
+    // 落地前建的老 Profile 会把它删掉，提示再弹一遍。
+    'home_views_tip_shown',
     // 「本版新内容」看到哪个版本：描述本机装过的包，与新手引导标志同族。
     kWhatsNewSeenVersionPrefKey,
     kWhatsNewSeenSeqPrefKey,

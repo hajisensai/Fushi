@@ -435,6 +435,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String 'daily' | 'all'：首页「今日」格左右滑显示哪些目标（StudyGoalSwipeScope.wire）。
   // 缺省 daily = 只有每日目标。随 Profile 走。
   'home_today_swipe_goals',
+  // 首页视图（models/home_view.dart，用户 2026-11-22 拍板）。四个键：
+  // String：本配置首页打开时用哪个视图（视图 id；'' / 指不到 = 全部）。随 Profile 走。
+  'home_view_active',
+  // String（JSON 数组，默认空）：保存的首页视图 `[{"id","name","langs":[...],"noLang",
+  // "tags":[标签 id],"all"}]`。字段冻结。随 Profile 走、进备份 / 同步（标签 id 是本库自增
+  // id，别的设备上指不到的 id 匹配时当作不存在）。
+  'home_views',
+  // bool（默认 false）：首页视图总开关。关着时首页与改造前逐字一致。随 Profile 走。
+  'home_views_enabled',
+  // bool（默认 false）：首页视图的一次性提示（头像旁）已显示过。与
+  // onboarding_home_card_dismissed 同族、不随 Profile 走。
+  'home_views_tip_shown',
   // String（JSON，默认空）：首页小组件网格的两份布局 `{"v":1,"compact":[{"k":kind,
   // "c":列,"r":行},...],"wide":[...]}`（models/home_widget_layout.dart）。键或某份
   // 布局缺失 = 没编辑过，渲染时由旧键 `home_dashboard_panels` 迁移现算、不落盘。

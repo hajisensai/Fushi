@@ -93,7 +93,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     bool poster,
   ) => HomeWidgetFrame(
     key: const ValueKey<String>('home-continue-card'),
-    title: t.home_continue,
+    title: _homeViewTitle(t.home_continue),
     icon: FushiIcons.playCircle,
     hueKey: HomeWidgetKind.continueHero.id,
     poster: poster,
@@ -124,14 +124,16 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     if (entries.isEmpty) {
       return HomeWidgetFrame(
         key: const ValueKey<String>('home-continue-card'),
-        title: t.home_continue,
+        title: _homeViewTitle(t.home_continue),
         icon: FushiIcons.playCircle,
         hueKey: HomeWidgetKind.continueHero.id,
         poster: poster,
         dense: false,
         child: HomeWidgetOverflowClip(
           child: _initialLoadDone
-              ? _continueEmptyState(appModel)
+              ? (_activeHomeView != null
+                    ? _homeViewEmptyState()
+                    : _continueEmptyState(appModel))
               : HomeContinueRowSkeleton(
                   coverHeight: _HomeDashboardPageState._kContinueCoverHeight,
                 ),
@@ -174,7 +176,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     final double gap = tokens.spacing.gap;
     return HomeWidgetFrame(
       key: const ValueKey<String>('home-continue-card'),
-      title: t.home_continue,
+      title: _homeViewTitle(t.home_continue),
       icon: FushiIcons.playCircle,
       hueKey: HomeWidgetKind.continueHero.id,
       poster: false,
@@ -495,7 +497,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     List<_ContinueEntry> list,
     bool poster,
   ) {
-    final String title = homeWidgetLabel(kind);
+    final String title = _homeViewTitle(homeWidgetLabel(kind));
     String subtitleOf(_ContinueEntry e) => e.badgeLabel ?? _continueMetaLine(e);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
@@ -514,10 +516,12 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           dense: dense,
           showHeader: !headerless,
           child: list.isEmpty
-              ? _widgetEmptyLine(
-                  tokens,
-                  _initialLoadDone ? t.home_continue_empty : '',
-                )
+              ? (_initialLoadDone && _activeHomeView != null
+                    ? _homeViewEmptyLine(tokens)
+                    : _widgetEmptyLine(
+                        tokens,
+                        _initialLoadDone ? t.home_continue_empty : '',
+                      ))
               : LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints box) {
                     final bool single =
@@ -730,6 +734,73 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           style: tokens.type.metadata.copyWith(
             color: style?.muted ?? tokens.surfaces.onVariant,
           ),
+        ),
+      );
+    },
+  );
+
+  // ── 首页视图（models/home_view.dart）──────────────────────────────────────
+
+  /// 本帧生效的首页视图的显示名；null = 开关关着 / 全部。
+  String? get _homeViewName {
+    final HomeView? view = _activeHomeView;
+    if (view == null) return null;
+    return homeViewNameOf(
+      view,
+      _homeViewLookup?.tagNames ?? const <int, String>{},
+    );
+  }
+
+  /// 媒体组件标题：视图不是全部时缀上视图名（「继续 · 中文」），否则原样。
+  String _homeViewTitle(String base) {
+    final String? view = _homeViewName;
+    return view == null
+        ? base
+        : t.home_view_widget_title(title: base, view: view);
+  }
+
+  void _showEverythingOnHome() => unawaited(
+    ref.read(appProvider).setHomeViewActiveId(kHomeViewEverythingId),
+  );
+
+  /// 视图把「继续」主角筛空了：说明 +「显示全部」。
+  Widget _homeViewEmptyState() => HomeEmptyState(
+    icon: FushiIcons.filterList,
+    stateKey: 'home-view-empty-state',
+    message: t.home_view_empty(view: _homeViewName ?? ''),
+    actions: <Widget>[
+      FushiFilledButton.tonalIcon(
+        key: const ValueKey<String>('home-view-show-everything'),
+        onPressed: _showEverythingOnHome,
+        icon: const FushiIcon(FushiIcons.home),
+        label: Text(t.home_view_show_everything),
+      ),
+    ],
+  );
+
+  /// 小格子版的视图空态：一行说明 +「显示全部」文字按钮（放不下的部分裁掉）。
+  Widget _homeViewEmptyLine(FushiDesignTokens tokens) => Builder(
+    builder: (BuildContext context) {
+      final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
+      return _fitCenter(
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 4,
+          children: <Widget>[
+            Text(
+              t.home_view_empty(view: _homeViewName ?? ''),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.metadata.copyWith(
+                color: style?.muted ?? tokens.surfaces.onVariant,
+              ),
+            ),
+            FushiTextButton(
+              key: const ValueKey<String>('home-view-show-everything-line'),
+              onPressed: _showEverythingOnHome,
+              child: Text(t.home_view_show_everything),
+            ),
+          ],
         ),
       );
     },
@@ -1986,17 +2057,19 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             : null;
         return HomeWidgetFrame(
           key: const ValueKey<String>('home-recent-card'),
-          title: t.home_recently_added,
+          title: _homeViewTitle(t.home_recently_added),
           icon: FushiIcons.schedule,
           hueKey: HomeWidgetKind.recentlyAdded.id,
           poster: poster,
           dense: false,
           bare: blocks != null,
           child: list.isEmpty
-              ? _widgetEmptyLine(
-                  tokens,
-                  _initialLoadDone ? t.home_widget_recent_empty : '',
-                )
+              ? (_initialLoadDone && _activeHomeView != null
+                    ? _homeViewEmptyLine(tokens)
+                    : _widgetEmptyLine(
+                        tokens,
+                        _initialLoadDone ? t.home_widget_recent_empty : '',
+                      ))
               : blocks != null
               ? _recentBlocks(tokens, appModel, list, blocks, blockArea, now)
               : LayoutBuilder(

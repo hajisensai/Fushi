@@ -13,6 +13,7 @@ import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -138,7 +139,12 @@ import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
     show SectionSwipeCascade;
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable, desktopAwareScrollPhysics;
+import 'package:fushi/src/models/home_view.dart';
+import 'package:fushi/src/models/home_view_lookup.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
+import 'package:fushi/src/pages/implementations/home_view_switcher.dart';
+import 'package:fushi/src/pages/implementations/home_views_page.dart'
+    show homeViewNameOf;
 import 'package:fushi/src/pages/implementations/home_widget_add_sheet.dart';
 import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
 import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
@@ -312,9 +318,24 @@ RecentBookGroupTarget recentBookGroupTarget({
 /// 重建——不能只在 initState 读一次（2026-10-10 审查：改名 / 切换后首页头像仍是
 /// 旧首字，BUG-3249）。
 class _HomeAvatarPill extends ConsumerStatefulWidget {
-  const _HomeAvatarPill({required this.onPressed});
+  const _HomeAvatarPill({
+    required this.onPressed,
+    this.onOpenViewMenu,
+    this.showViewTip = false,
+    this.onViewTipDone,
+  });
 
   final VoidCallback onPressed;
+
+  /// 首页视图开关开着时非空：右键 / 长按 / 菜单键弹出「首页显示」菜单（锚在头像上）。
+  /// null = 开关关着，头像与改造前逐字一致。
+  final void Function(BuildContext anchor)? onOpenViewMenu;
+
+  /// 首页视图的一次性提示（头像旁）是否该显示。
+  final bool showViewTip;
+
+  /// 提示被处理（「知道了」/「试试看」）时调用，记下已显示过。
+  final VoidCallback? onViewTipDone;
 
   @override
   ConsumerState<_HomeAvatarPill> createState() => _HomeAvatarPillState();
@@ -397,14 +418,33 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
     final HomeBackgroundTasksScope? tasks = HomeBackgroundTasksScope.maybeOf(
       context,
     );
-    if (tasks == null) {
-      return _buildPill(context, service, const <BackgroundTask>[], null);
-    }
-    return ListenableBuilder(
-      listenable: tasks.listenable,
-      builder: (BuildContext context, Widget? _) =>
-          _buildPill(context, service, tasks.tasks(), tasks.onOpen),
+    final Widget pill = tasks == null
+        ? _buildPill(context, service, const <BackgroundTask>[], null)
+        : ListenableBuilder(
+            listenable: tasks.listenable,
+            builder: (BuildContext context, Widget? _) =>
+                _buildPill(context, service, tasks.tasks(), tasks.onOpen),
+          );
+    final VoidCallback? openViewMenu = _openViewMenu;
+    if (openViewMenu == null) return pill;
+    return HomeViewTipAnchor(
+      show: widget.showViewTip,
+      onGotIt: () => widget.onViewTipDone?.call(),
+      onShowMe: () {
+        widget.onViewTipDone?.call();
+        openViewMenu();
+      },
+      child: HomeViewAvatarControls(onOpenMenu: openViewMenu, child: pill),
     );
+  }
+
+  /// 打开「首页显示」菜单（锚在本头像上）；首页视图开关关着时为 null。
+  VoidCallback? get _openViewMenu {
+    final void Function(BuildContext anchor)? open = widget.onOpenViewMenu;
+    if (open == null) return null;
+    return () {
+      if (mounted) open(context);
+    };
   }
 
   /// 头像本体 + 同步状态外圈：有任务在跑时外圈是分段进度环（不定态时转动），
@@ -527,16 +567,29 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
       HomeAvatarSyncState.running => backgroundTasksTooltip(tasks),
       HomeAvatarSyncState.failed => t.sync_last_failed,
     };
-    final String label = <String>[
+    final VoidCallback? openViewMenu = _openViewMenu;
+    final String baseLabel = <String>[
       if (syncLabel.isNotEmpty) syncLabel,
       name.isEmpty ? t.leaderboard_title : name,
     ].join('\n');
+    // 首页视图开着时提示右键 / 长按能切换视图，读屏另给一个「选择首页视图」动作。
+    final String label = openViewMenu == null
+        ? baseLabel
+        : '$baseLabel · ${t.home_view_avatar_hint}';
+    final Map<CustomSemanticsAction, VoidCallback>? viewActions =
+        openViewMenu == null
+        ? null
+        : <CustomSemanticsAction, VoidCallback>{
+            CustomSemanticsAction(label: t.home_view_choose): openViewMenu,
+          };
     final Widget decorated = _withSyncState(context, avatar, size, tasks);
     if (masthead) {
       return Semantics(
         key: const ValueKey<String>('home-toolbar-avatar'),
         button: true,
         label: label,
+        onLongPress: openViewMenu,
+        customSemanticsActions: viewActions,
         excludeSemantics: true,
         child: FushiTooltip(
           message: label,
@@ -571,6 +624,8 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
         key: const ValueKey<String>('home-toolbar-avatar'),
         button: true,
         label: label,
+        onLongPress: openViewMenu,
+        customSemanticsActions: viewActions,
         excludeSemantics: true,
         child: FushiTooltip(
           message: label,
@@ -588,6 +643,8 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
       key: const ValueKey<String>('home-toolbar-avatar'),
       button: true,
       label: label,
+      onLongPress: openViewMenu,
+      customSemanticsActions: viewActions,
       excludeSemantics: true,
       child: FushiTooltip(
         message: label,
@@ -811,6 +868,7 @@ class _HomeDashboardSnapshot {
     required this.videoDurationMsByPath,
     required this.goalMediaLanguages,
     required this.minedByDay,
+    required this.homeViewLookup,
   });
 
   /// 这轮聚合所属的激活 Profile（统计按 Profile 隔离）。快照只在同一 Profile 下
@@ -837,6 +895,10 @@ class _HomeDashboardSnapshot {
 
   /// 统计日 → 制卡数（制卡目标的分子，与小组件同口径）。
   final Map<String, int> minedByDay;
+
+  /// 首页视图匹配用的批量事实（书语言 + 标签映射 + 标签池）；首页视图开关关着时
+  /// 不查、为 null。
+  final HomeViewLookup? homeViewLookup;
 }
 
 class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
@@ -1002,6 +1064,20 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 目标分子用的媒体语言表与制卡日表（随快照加载，改目标后 [_reloadGoalData] 重载）。
   Map<String, String> _goalMediaLanguages = const <String, String>{};
   Map<String, int> _minedByDay = const <String, int>{};
+
+  /// 首页视图（models/home_view.dart）匹配用的批量事实：开关开着时随整批载入查一次
+  /// （[_loadDashboardDataUnsafe]），开关刚打开 / 标签改了时单独补查
+  /// （[_reloadHomeViewLookup]）。开关关着时恒为 null、不发任何额外查询。
+  HomeViewLookup? _homeViewLookup;
+  int _homeViewLookupGeneration = 0;
+
+  /// 本帧生效的首页视图（build 开头写入；null = 开关关着 / 全部）。小组件标题与空态读它。
+  HomeView? _activeHomeView;
+
+  /// 标签映射 / 标签池 / 字幕书语言的表级信号（这几张表不在
+  /// `watchDashboardDataChanges` 的表集里）：开关开着时防抖后重查 [_homeViewLookup]。
+  StreamSubscription<Set<TableUpdate>>? _homeViewTablesSub;
+  Timer? _homeViewLookupDebounce;
 
   /// 一行高「语言目标」格（挑了几条目标）滑到第几页：slot 键 → 页号。只在本页内记。
   final Map<String, int> _languageGoalsPage = <String, int>{};
@@ -1171,6 +1247,18 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           ),
         )
         .listen((Set<TableUpdate> _) => _scheduleActiveProfileCheck());
+    _homeViewTablesSub = db
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              db.tagAssignments,
+              db.bookTags,
+              db.srtBooks,
+              db.epubBooks,
+            ],
+          ),
+        )
+        .listen((Set<TableUpdate> _) => _scheduleHomeViewLookupReload());
     // P4：游戏改名/刮削（库页写穿 galgames 表后 GalgameRepository.load() 通知）
     // 也要刷新日明细/时间轴的游戏显示名——galgames 表不在
     // watchDashboardDataChanges 的表集里，走仓储 ChangeNotifier 这条既有通道
@@ -1194,6 +1282,14 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   void _onPrefsChangedForRemoteGate() {
     if (!mounted) return;
     final AppModel appModel = ref.read(appProvider);
+    // 首页视图开关刚打开（含切到开着它的 Profile）：补查视图匹配要的事实；关掉后丢掉，
+    // 关着时不留任何查询结果。列表重算由 build 的记忆键（视图签名）驱动。
+    if (appModel.homeViewsEnabled) {
+      if (_homeViewLookup == null) unawaited(_reloadHomeViewLookup());
+    } else if (_homeViewLookup != null) {
+      _homeViewLookupGeneration++;
+      _homeViewLookup = null;
+    }
     // 服务器条目的混排开关翻转：先按新门控过滤已上屏的条目（关掉立即消失），
     // 再重取（门控签名变了，节流缓存自动作废）。
     final String serverGate = _serverContinueGates(appModel).signature;
@@ -1336,6 +1432,52 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     _scheduleReload();
   }
 
+  /// 标签 / 书语言变了：首页视图开着时防抖重查匹配事实（关着时什么都不做）。
+  void _scheduleHomeViewLookupReload() {
+    if (!ref.read(appProvider).homeViewsEnabled) return;
+    _homeViewLookupDebounce?.cancel();
+    _homeViewLookupDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => unawaited(_reloadHomeViewLookup()),
+    );
+  }
+
+  /// 正在单独补查 [_homeViewLookup]（偏好通知连发时不重复发查询）；补查期间又要求
+  /// 重查时记一笔，这轮结束后再查一次（不丢掉期间的标签改动）。
+  bool _homeViewLookupInFlight = false;
+  bool _homeViewLookupRerun = false;
+
+  /// 单独重查首页视图匹配事实（开关刚打开 / 标签改了）。整批载入也会顺带查一次，
+  /// 代次晚于本次发起的结果会丢弃本次。
+  Future<void> _reloadHomeViewLookup() async {
+    if (_homeViewLookupInFlight) {
+      _homeViewLookupRerun = true;
+      return;
+    }
+    _homeViewLookupInFlight = true;
+    final int generation = ++_homeViewLookupGeneration;
+    try {
+      final HomeViewLookup lookup = await loadHomeViewLookup(
+        ref.read(appProvider).database,
+      );
+      if (!mounted || generation != _homeViewLookupGeneration) return;
+      if (!ref.read(appProvider).homeViewsEnabled) return;
+      setState(() => _homeViewLookup = lookup);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'HomeDashboardPage.homeViewLookup',
+        e,
+        stack,
+      );
+    } finally {
+      _homeViewLookupInFlight = false;
+      if (_homeViewLookupRerun && mounted) {
+        _homeViewLookupRerun = false;
+        unawaited(_reloadHomeViewLookup());
+      }
+    }
+  }
+
   void _reloadNow() {
     // 「继续」的书侧数据来自缓存 provider（书列表/最近阅读时刻均派生自
     // reader_positions），它们此前只在关书/导入时失效——互联/云同步把更远的
@@ -1359,6 +1501,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     unawaited(_dataChangeSub?.cancel());
     _profileCheckDebounce?.cancel();
     unawaited(_profileChangeSub?.cancel());
+    _homeViewLookupDebounce?.cancel();
+    unawaited(_homeViewTablesSub?.cancel());
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
@@ -1454,7 +1598,13 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     final Future<List<MediaImageRow>> discCoversF = db.getMediaImagesOfKind(
       MediaImageKind.discCover,
     );
+    // 首页视图的匹配事实：只在开关开着时查（关着时首页的查询与改造前完全一样）。
+    final int homeViewGeneration = ++_homeViewLookupGeneration;
+    final Future<HomeViewLookup?> homeViewF = appModel.homeViewsEnabled
+        ? loadHomeViewLookup(db)
+        : Future<HomeViewLookup?>.value();
     await Future.wait<Object?>(<Future<Object?>>[
+      homeViewF,
       videosF,
       factsF,
       collectionsF,
@@ -1563,6 +1713,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       videoDurationMsByPath: durationByPath,
       goalMediaLanguages: await goalMediaF,
       minedByDay: await minedByDayF,
+      // 期间单独补查过（开关刚打开 / 标签改了）就用那份更新的，不拿这轮旧的覆盖。
+      homeViewLookup: homeViewGeneration == _homeViewLookupGeneration
+          ? await homeViewF
+          : _homeViewLookup,
     );
     _snapshots[db] = snapshot;
     if (!mounted) return;
@@ -1592,6 +1746,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     _videoDurationMsByPath = s.videoDurationMsByPath;
     _goalMediaLanguages = s.goalMediaLanguages;
     _minedByDay = s.minedByDay;
+    _homeViewLookup = s.homeViewLookup;
     // 本地聚合换了一轮（可能刚刮削过）：已取的系列元数据标旧，画到时后台重取，
     // 重取完成前仍画旧值，不闪回无图版式。
     _seriesMetaGeneration++;
@@ -1945,6 +2100,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AppModel appModel = ref.watch(appProvider);
+    // 首页视图（开关关着 / 选的是全部 = null，下面一切与改造前一致）。
+    _activeHomeView = appModel.activeHomeView;
     // 上锁（未解锁）的书 / 视频 / 游戏不进首页任何卡片（[MediaVisibility]，唯一的
     // 上锁过滤入口）；「继续」的 FAB 续读也只从可见条目里挑。
     final MediaVisibility lockVisibility = MediaVisibility.of(context);
@@ -2609,7 +2766,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           return FushiFloatingChromeBar(
             tabs: const SizedBox.shrink(),
             slot: _mastheadActions,
-            trailing: _HomeAvatarPill(onPressed: _openLeaderboard),
+            trailing: _avatarPill(),
           );
         },
       ),
@@ -3010,7 +3167,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         return HomeFloatingToolbar(
           // 2026-10 精简：左上角原「首页」标题胶囊换成用户头像（排行榜账户头像，
           // 没开账户时退回 Profile 名首字），点开排行榜（账户页在那里）。
-          leading: _HomeAvatarPill(onPressed: _openLeaderboard),
+          leading: _avatarPill(),
           visible: _toolbarScroll.visible,
           actions: _toolbarItems(appModel, unseen, feedbackUnseen),
         );
@@ -3187,6 +3344,9 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         _serverContinueGates(appModel).signature,
         _moduleVisibilityMask(appModel.moduleVisibility),
         t,
+        // 首页视图：关着时两项恒为 null，记忆行为与改造前一致。
+        _activeHomeView?.signature,
+        _activeHomeView == null ? null : _homeViewLookup,
       ],
       () => _computeContinueEntries(
         appModel,
@@ -3225,6 +3385,71 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       primaryCollectionByEntry: _primaryCollectionByEntry,
       memberSortIndex: _memberSortIndex,
     );
+  }
+
+  /// 按本帧生效的首页视图（[_activeHomeView]）过滤「继续」/「最近添加」的候选；
+  /// 开关关着 / 选的是全部时原样返回 [entries]（[filterForHomeView]）。
+  List<_ContinueEntry> _filterForHomeView(List<_ContinueEntry> entries) =>
+      filterForHomeView<_ContinueEntry>(
+        entries,
+        view: _activeHomeView,
+        subjectOf: _homeViewSubjectOf,
+      );
+
+  /// 一条首页条目在视图匹配里的语言与标签（含其主合集的标签）。
+  ///
+  /// 远端条目（互联 host 补位、Jellyfin / Emby / Plex、Audiobookshelf）在本机没有
+  /// 语言 / 标签数据：一律当作「没设语言」、没有标签——只在「全部」或包含「未设语言」
+  /// 的视图里出现。
+  HomeViewSubject _homeViewSubjectOf(_ContinueEntry e) {
+    const HomeViewSubject none = (language: null, tagIds: <int>{});
+    if (e.remote != null || e.server != null) return none;
+    final HomeViewLookup lookup = _homeViewLookup ?? HomeViewLookup.empty;
+    final String? language;
+    final TagHostKind host;
+    final String entryKey;
+    int? collectionId = e.collectionId;
+    if (e.book case final MediaItem item) {
+      final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+        item.mediaIdentifier,
+      );
+      if (srtUid != null) {
+        host = TagHostKind.srt;
+        entryKey = srtUid;
+      } else {
+        host = TagHostKind.epub;
+        entryKey =
+            ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+            item.mediaIdentifier;
+      }
+      language = lookup.languageOf(host.dbValue, entryKey);
+      collectionId ??= _primaryCollectionByEntry[_bookCollectionKey(item)];
+    } else if (e.video case final VideoBookRow v) {
+      host = TagHostKind.video;
+      entryKey = v.bookUid;
+      language = v.language;
+      collectionId ??=
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
+    } else if (e.game case final GalgameEntry g) {
+      host = TagHostKind.game;
+      entryKey = g.id;
+      language = g.language;
+      collectionId ??=
+          _primaryCollectionByEntry[MediaKind.game.compositeKey(g.id)];
+    } else {
+      return none;
+    }
+    final Set<int> own = lookup.tagsOf(host.dbValue, entryKey);
+    final Set<int> tags = collectionId == null
+        ? own
+        : <int>{
+            ...own,
+            ...lookup.tagsOf(
+              TagHostKind.collection.dbValue,
+              collectionTagEntryKey(collectionId),
+            ),
+          };
+    return (language: language, tagIds: tags);
   }
 
   List<_ContinueEntry> _computeContinueEntries(
@@ -3498,7 +3723,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     // 模块门控：关掉的模块的条目**先出局再 take(10)**——顺序反过来会出现「过滤后
     // 不足 10 条」（前 10 条恰好全是被关模块的条目时甚至整行空掉）。
     final ModuleVisibility visibility = appModel.moduleVisibility;
-    final List<_ContinueEntry> visible = entries
+    // 首页视图同理先筛再 take(10)；关着时原样返回、不查表。
+    final List<_ContinueEntry> visible = _filterForHomeView(entries)
         .where((_ContinueEntry e) => visibility.isEnabled(e.module))
         .take(10)
         .toList();
@@ -4078,6 +4304,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     _epubLocalAddedAtByKey,
     _collectionNamesById,
     _moduleVisibilityMask(appModel.moduleVisibility),
+    _activeHomeView?.signature,
+    _activeHomeView == null ? null : _homeViewLookup,
   ], () => _computeRecentlyAddedEntries(appModel, books));
 
   List<_ContinueEntry> _computeRecentlyAddedEntries(
@@ -4191,7 +4419,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     entries.sort(
       (_ContinueEntry a, _ContinueEntry b) => b.recentMs.compareTo(a.recentMs),
     );
-    return entries
+    return _filterForHomeView(entries)
         .where((_ContinueEntry e) => visibility.isEnabled(e.module))
         .take(_kRecentLimit)
         .toList();
@@ -5088,6 +5316,26 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   }
 
   /// 排行榜入口（统计中心入口旁的独立按钮）。
+  /// 工具栏 / 页头里的头像。首页视图开着时挂上「首页显示」菜单与一次性提示；关着时
+  /// 与改造前逐字一致。
+  Widget _avatarPill() {
+    final AppModel appModel = ref.read(appProvider);
+    if (!appModel.homeViewsEnabled) {
+      return _HomeAvatarPill(onPressed: _openLeaderboard);
+    }
+    return _HomeAvatarPill(
+      onPressed: _openLeaderboard,
+      onOpenViewMenu: (BuildContext anchor) => openHomeViewMenu(
+        anchor: anchor,
+        appModel: appModel,
+        tagNames: _homeViewLookup?.tagNames ?? const <int, String>{},
+      ),
+      showViewTip:
+          !appModel.homeViewsTipShown && _initialLoadDone && !_editingWidgets,
+      onViewTipDone: () => unawaited(appModel.setHomeViewsTipShown(true)),
+    );
+  }
+
   void _openLeaderboard() {
     Navigator.push(
       context,
