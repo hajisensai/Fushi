@@ -13,7 +13,7 @@
 
 此参数是 Intent extra，不是 URL 查询参数或持久化设置。
 
-应用内词典页及嵌入式词典使用页面整体向下滚动，原文保留自然高度，不受外部浮窗的三分之一上限约束。
+应用内词典页与嵌入式词典（双屏伴屏）同样把原文放进限高视口（`BoundedSourceLookupViewport`），上限为可用高度的二分之一，超出部分在原文区域内独立滚动；下方结果区始终是固定大小的区域，不随原文滚动改变尺寸。
 
 ```kotlin
 val lookup = Intent(Intent.ACTION_PROCESS_TEXT).apply {
