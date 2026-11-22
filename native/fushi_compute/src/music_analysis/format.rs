@@ -29,16 +29,19 @@
 //!       u8[B]  每拍重音 impact（0–255 ↔ 0–1）                              ← v2 起
 //!       u8[B]  每拍低频占比 / u8[B] 中频占比 / u8[B] 高频占比
 //!       u8[B]  每拍标志（bit0 rhythmic：这一拍有节奏可打；bit1 pulse：听感拍），之后补齐到 4 的倍数
+//!       u8[F] × 2  分开的中频包络：low_mid（folia `lowMid` 150–400 Hz）、upper_mid（folia `mid`
+//!              400–1200 Hz），之后补齐到 4 的倍数                         ← v3 起（v1 / v2 读作合并的 mid）
 //! ```
 
 /// 魔数。
 pub(crate) const MAGIC: &[u8; 4] = b"FMA1";
-/// 文件布局版本（v2：加每拍重音段与 track_scale / 分离进度两个头字段）。
-pub const FORMAT_VERSION: u32 = 2;
+/// 文件布局版本（v2：加每拍重音段与 track_scale / 分离进度两个头字段；v3：文件尾加分开的两段中频包络）。
+pub const FORMAT_VERSION: u32 = 3;
 /// 仍能读的最老布局。
 pub(crate) const OLDEST_FORMAT_VERSION: u32 = 1;
 /// 分析算法版本：改了常数 / 算法就升，Dart 侧据此判旧缓存不完整、补算（旧文件照样先拿来用）。
-pub const PIPELINE_VERSION: u32 = 2;
+/// 3：结果多出分开的两段中频（旧结果补算一次才有）。
+pub const PIPELINE_VERSION: u32 = 3;
 /// 头长。
 pub(crate) const HEADER_BYTES: usize = 64;
 
@@ -69,6 +72,10 @@ pub(crate) struct Analysis {
     pub(crate) high: Vec<f32>,
     pub(crate) onset: Vec<f32>,
     pub(crate) vocal: Vec<f32>,
+    /// folia `lowMid`^2（150–400 Hz）与 folia `mid`^2（400–1200 Hz）；[mid] 是两者均值的平方。
+    /// 读 v1 / v2 文件时两条都等于 [mid]。
+    pub(crate) low_mid: Vec<f32>,
+    pub(crate) upper_mid: Vec<f32>,
     pub(crate) bpm: Option<f64>,
     pub(crate) beats_per_bar: u32,
     pub(crate) beats_ms: Vec<i32>,
@@ -97,6 +104,8 @@ impl Default for Analysis {
             high: Vec::new(),
             onset: Vec::new(),
             vocal: Vec::new(),
+            low_mid: Vec::new(),
+            upper_mid: Vec::new(),
             bpm: None,
             beats_per_bar: 0,
             beats_ms: Vec::new(),
@@ -197,6 +206,12 @@ impl Analysis {
             (if r { BEAT_RHYTHMIC } else { 0 }) | (if p { BEAT_PULSE } else { 0 })
         }));
         pad4(&mut out);
+        for series in [&self.low_mid, &self.upper_mid] {
+            // 缺这两条（只有合并 mid 的旧结果）时按 mid 写，读侧与读旧文件一致。
+            let src = if series.len() == f { series } else { &self.mid };
+            out.extend(src.iter().map(|v| q8(*v)));
+        }
+        pad4(&mut out);
         out
     }
 
@@ -227,7 +242,13 @@ impl Analysis {
         } else {
             onsets_end
         };
-        if bytes.len() < accents_end {
+        let mids_start = accents_end.div_ceil(4) * 4;
+        let mids_end = if version >= 3 {
+            mids_start + 2 * f
+        } else {
+            accents_end
+        };
+        if bytes.len() < mids_end {
             return None;
         }
         let series = |i: usize| -> Vec<f32> {
@@ -244,6 +265,17 @@ impl Analysis {
                 .collect()
         };
         let bpm = f32_at(20);
+        let tail = |i: usize| -> Vec<f32> {
+            bytes[mids_start + i * f..mids_start + (i + 1) * f]
+                .iter()
+                .map(|b| f32::from(*b) / 255.0)
+                .collect()
+        };
+        let (low_mid, upper_mid) = if version >= 3 {
+            (tail(0), tail(1))
+        } else {
+            (series(2), series(2))
+        };
         let accents = if version >= 2 {
             let q = |i: usize| -> Vec<f32> {
                 bytes[onsets_end + i * b..onsets_end + (i + 1) * b]
@@ -273,6 +305,8 @@ impl Analysis {
             high: series(3),
             onset: series(4),
             vocal: series(5),
+            low_mid,
+            upper_mid,
             bpm: (bpm > 0.0).then_some(f64::from(bpm)),
             beats_per_bar: u32_at(24),
             beats_ms: ints(env_end, b),
@@ -322,6 +356,8 @@ mod tests {
             high: vec![0.3, 0.2, 0.1],
             onset: vec![0.0, 1.0, 0.0],
             vocal: vec![0.4, 0.4, 0.4],
+            low_mid: vec![0.0, 0.6, 0.2],
+            upper_mid: vec![0.9, 0.1, 0.4],
             bpm: Some(128.0),
             beats_per_bar: 4,
             beats_ms: vec![10, 478, 947],
@@ -364,6 +400,8 @@ mod tests {
         assert!((b.accents.high[2] - 1.0).abs() < 0.01);
         assert_eq!(b.accents.track_scale, 0.8);
         assert_eq!(b.stems_until_ms, 900);
+        assert!((b.low_mid[1] - 0.6).abs() < 0.01);
+        assert!((b.upper_mid[0] - 0.9).abs() < 0.01);
         assert_eq!(b.pipeline_version, PIPELINE_VERSION);
     }
 
@@ -379,6 +417,25 @@ mod tests {
         assert_eq!(a.vocal_onsets_ms, g.vocal_onsets_ms);
         assert_eq!(a.accents, Accents::neutral(4));
         assert_eq!(a.stems_until_ms, 0);
+        assert_eq!(a.low_mid, a.mid);
+        assert_eq!(a.upper_mid, a.mid);
+    }
+
+    /// v2 文件（没有分开的两段中频）照样读：两段都读作合并的 mid，重音照读。
+    #[test]
+    fn reads_version_2_files_with_merged_mids() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fushi/test/media/music/analysis/fixtures/golden_v2.fma");
+        let a = Analysis::decode(&std::fs::read(path).unwrap()).unwrap();
+        let g = golden();
+        assert_eq!(a.pipeline_version, 2);
+        assert_eq!(a.beats_ms, g.beats_ms);
+        assert_eq!(a.accents.rhythmic, g.accents.rhythmic);
+        assert_eq!(a.low_mid, a.mid);
+        assert_eq!(a.upper_mid, a.mid);
+        // 重编码成当前布局后两段中频按 mid 写出。
+        let again = Analysis::decode(&a.encode()).unwrap();
+        assert_eq!(again.low_mid, a.mid);
     }
 
     /// 跨语言契约：这份固定结果的编码与 Dart 测试读的夹具逐字节相同
@@ -394,6 +451,8 @@ mod tests {
             high: vec![0.3, 0.2, 0.1, 0.0, 1.0],
             onset: vec![0.0, 1.0, 0.0, 0.5, 0.0],
             vocal: vec![0.4, 0.4, 0.4, 0.8, 0.8],
+            low_mid: vec![0.2, 0.4, 0.6, 0.8, 1.0],
+            upper_mid: vec![0.0, 0.1, 0.0, 0.2, 0.0],
             bpm: Some(120.0),
             beats_per_bar: 3,
             beats_ms: vec![0, 500, 1000, 1500],

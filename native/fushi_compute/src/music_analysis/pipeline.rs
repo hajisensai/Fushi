@@ -180,6 +180,8 @@ pub(crate) fn analyze(
         power: env.power,
         low: env.low,
         mid: env.mid,
+        low_mid: env.low_mid,
+        upper_mid: env.upper_mid,
         high: env.high,
         vocal: env.vocal_band,
         bpm,

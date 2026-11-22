@@ -44,7 +44,7 @@ void main() {
     return f.path;
   }
 
-  /// 读 `.fma` 头与拍点表，核对 v2 布局（每拍重音段长度正好对上文件尾）。
+  /// 读 `.fma` 头与拍点表，核对 v3 布局（每拍重音段 + 两段中频包络正好对上文件尾）。
   ({int flags, int frames, int beats, double bpm, double trackScale})
   readResult(String path) {
     final Uint8List bytes = File(path).readAsBytesSync();
@@ -65,7 +65,8 @@ void main() {
         4 * (b + d + hits) +
         align4(2 * hits) +
         4 * v +
-        align4(5 * b);
+        align4(5 * b) +
+        align4(2 * f);
     expect(bytes.length, end);
     return (
       flags: u32(8),
@@ -76,9 +77,9 @@ void main() {
     );
   }
 
-  test('versions match the v2 layout', () {
-    expect(engine.formatVersion, 2);
-    expect(engine.pipelineVersion, 2);
+  test('versions match the v3 layout', () {
+    expect(engine.formatVersion, 3);
+    expect(engine.pipelineVersion, 3);
   });
 
   test('event kinds map from native codes', () {

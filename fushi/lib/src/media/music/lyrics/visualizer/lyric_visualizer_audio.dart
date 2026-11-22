@@ -12,6 +12,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show immutable;
 
+// 拍点 / 鼓击事件的共享工具（显示时间窗口、folia 重音增益、包络）与契约同出。
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_beats.dart';
+
 /// 一帧音频信号。数值全部规整到 0–1（实现方负责归一化：整首自适应，不随音量绝对值跳）。
 @immutable
 class LyricVisualizerAudioFrame {
@@ -25,6 +28,8 @@ class LyricVisualizerAudioFrame {
     required this.beatImpact,
     required this.downbeatImpact,
     required this.drumImpact,
+    double? lowMid,
+    double? upperMid,
     this.accentImpact,
     this.bpm,
     this.envelopeReady = false,
@@ -32,7 +37,8 @@ class LyricVisualizerAudioFrame {
     this.drumsReady = false,
     this.vocalReady = false,
     this.fallback = false,
-  });
+  }) : _lowMid = lowMid,
+       _upperMid = upperMid;
 
   /// 全静（还没任何数据、也没有歌词可回落时）。
   static const LyricVisualizerAudioFrame silent = LyricVisualizerAudioFrame(
@@ -54,8 +60,18 @@ class LyricVisualizerAudioFrame {
   /// 低频（≈20–150 Hz；folia `bass`）。
   final double low;
 
-  /// 中频（≈150–1200 Hz；folia `lowMid` + `mid`）。
+  /// 中频（≈150–1200 Hz；folia `lowMid` + `mid` 两段的合并）。要逐段还原 folia `audioBands` 时用
+  /// [lowMid] / [upperMid]。
   final double mid;
+
+  final double? _lowMid;
+  final double? _upperMid;
+
+  /// 中低频（≈150–400 Hz；folia `lowMid`）。没有分段数据（旧分析结果 / 歌词回落）时等于 [mid]。
+  double get lowMid => _lowMid ?? mid;
+
+  /// 中频上段（≈400–1200 Hz；folia `audioBands.mid`）。没有分段数据时等于 [mid]。
+  double get upperMid => _upperMid ?? mid;
 
   /// 高频（≈3.5 kHz 以上；folia `treble`）。
   final double high;
@@ -107,6 +123,8 @@ class LyricVisualizerAudioFrame {
       other.power == power &&
       other.low == low &&
       other.mid == mid &&
+      other.lowMid == lowMid &&
+      other.upperMid == upperMid &&
       other.high == high &&
       other.vocal == vocal &&
       other.onset == onset &&
@@ -126,6 +144,8 @@ class LyricVisualizerAudioFrame {
     power,
     low,
     mid,
+    lowMid,
+    upperMid,
     high,
     vocal,
     onset,
@@ -148,6 +168,109 @@ class LyricVisualizerAudioFrame {
       '$downbeatImpact, drum: $drumImpact, accent: $accentImpact, bpm: $bpm, fallback: $fallback)';
 }
 
+/// 鼓击种类（folia drum hits 的 kind）。
+enum LyricVisualizerDrumKind { kick, snare, hat }
+
+/// 一下鼓击（音频时间）。
+@immutable
+class LyricVisualizerDrumHit {
+  const LyricVisualizerDrumHit({
+    required this.timeMs,
+    required this.kind,
+    required this.strength,
+  });
+
+  /// 音频时间（毫秒）。
+  final int timeMs;
+
+  final LyricVisualizerDrumKind kind;
+
+  /// 力度 0–1。
+  final double strength;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LyricVisualizerDrumHit &&
+      other.timeMs == timeMs &&
+      other.kind == kind &&
+      other.strength == strength;
+
+  @override
+  int get hashCode => Object.hash(timeMs, kind, strength);
+
+  @override
+  String toString() =>
+      'LyricVisualizerDrumHit($timeMs, ${kind.name}, $strength)';
+}
+
+/// 一拍的数据（音频时间；folia `beatAccents` 的一项 + 拍 / 强拍归属）。
+@immutable
+class LyricVisualizerBeat {
+  const LyricVisualizerBeat({
+    required this.timeMs,
+    required this.downbeat,
+    this.impact,
+    this.lowShare = 1 / 3,
+    this.midShare = 1 / 3,
+    this.highShare = 1 / 3,
+    this.rhythmic = true,
+    this.pulse = true,
+  });
+
+  /// 音频时间（毫秒）。
+  final int timeMs;
+
+  /// 是强拍（小节第一拍，[LyricVisualizerAudio.downbeatTimesMs] 里有它）。
+  final bool downbeat;
+
+  /// 重音强度 0–1（folia `impact`）；null = 没有重音数据（旧结果），此时音色三项都是 1/3、
+  /// [rhythmic] / [pulse] 都是 true。
+  final double? impact;
+
+  /// 这一拍突起里低频（<150 Hz）/ 中频（150–2000 Hz）/ 高频（≥2000 Hz）的占比（三者和 ≈ 1；folia `tone`）。
+  final double lowShare;
+  final double midShare;
+  final double highShare;
+
+  /// 这一拍有节奏可打（folia `rhythmic`：只有铺底的小节为 false，拍点特效不打）。
+  final bool rhythmic;
+
+  /// 是听感拍（folia `pulse`：复合拍子数得比听感细时只留每组头一拍；false 的拍 folia 不进特效表）。
+  final bool pulse;
+
+  /// 有重音数据。
+  bool get hasAccents => impact != null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LyricVisualizerBeat &&
+      other.timeMs == timeMs &&
+      other.downbeat == downbeat &&
+      other.impact == impact &&
+      other.lowShare == lowShare &&
+      other.midShare == midShare &&
+      other.highShare == highShare &&
+      other.rhythmic == rhythmic &&
+      other.pulse == pulse;
+
+  @override
+  int get hashCode => Object.hash(
+    timeMs,
+    downbeat,
+    impact,
+    lowShare,
+    midShare,
+    highShare,
+    rhythmic,
+    pulse,
+  );
+
+  @override
+  String toString() =>
+      'LyricVisualizerBeat($timeMs, downbeat: $downbeat, impact: $impact, '
+      'tone: $lowShare/$midShare/$highShare, rhythmic: $rhythmic, pulse: $pulse)';
+}
+
 /// 一首歌的音频分析结果（实现方：音频分析服务）。只读；分析进度变化时实现方换一个新对象交给宿主
 /// （宿主据此重建 context），或者同一对象内部的 ready 标志变 true。
 ///
@@ -165,6 +288,25 @@ abstract interface class LyricVisualizerAudio {
 
   /// 整首速度；未知为 null。
   double? get bpm;
+
+  /// 逐拍数据，与 [beatTimesMs] 等长同序。没有节拍网格时为空。拍点特效一般不直接读它，而是经
+  /// `LyricVisualizerBeats.of(context)`（folia 的合并 / 过滤 / 重音增益都在那里做好）。
+  List<LyricVisualizerBeat> get beats;
+
+  /// 有逐拍重音（[LyricVisualizerBeat.impact] 非 null）。
+  bool get hasBeatAccents;
+
+  /// 整曲动感系数（folia `trackScale`，0.45–1；没有重音数据时为 1）。
+  double get trackScale;
+
+  /// 鼓击（音频时间升序）。没有鼓击检测或判为没鼓的歌为空，看 [drumsReady] 区分。
+  List<LyricVisualizerDrumHit> get drumHits;
+
+  /// 鼓击检测已就绪（有鼓击，或判定这首没鼓——「没有鼓击」本身就是答案）。
+  bool get drumsReady;
+
+  /// 人声起音（音频时间毫秒，升序；只有人声分轨时有，否则为空）。
+  List<int> get vocalOnsetsMs;
 
   /// 包络（power / 频段）已就绪。为 false 时 `audioFrameAt` 回落到歌词包络。
   bool get envelopeReady;

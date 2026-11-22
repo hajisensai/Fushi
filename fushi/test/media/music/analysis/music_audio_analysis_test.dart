@@ -11,6 +11,10 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.d
 Uint8List _golden() =>
     File('test/media/music/analysis/fixtures/golden.fma').readAsBytesSync();
 
+/// 同一份结果的 v2 布局（没有分开的两段中频；Rust `reads_version_2_files_with_merged_mids` 读同一个文件）。
+Uint8List _goldenV2() =>
+    File('test/media/music/analysis/fixtures/golden_v2.fma').readAsBytesSync();
+
 /// 同一份结果的 v1 布局（没有重音段；Rust `reads_version_1_files_with_neutral_accents` 读同一个文件）。
 Uint8List _goldenV1() =>
     File('test/media/music/analysis/fixtures/golden_v1.fma').readAsBytesSync();
@@ -32,16 +36,16 @@ void main() {
       expect(a.bpm, 120);
       expect(a.beatsPerBar, 3);
       expect(a.durationMs, 58);
-      expect(a.pipelineVersion, 2);
-      expect(a.formatVersion, 2);
+      expect(a.pipelineVersion, 3);
+      expect(a.formatVersion, 3);
       expect(a.beatTimesMs, <int>[0, 500, 1000, 1500]);
       expect(a.downbeatTimesMs, <int>[0, 1500]);
       expect(a.hitTimesMs, <int>[10, 510, 1010]);
       expect(a.hitStrength(0), 1.0);
       expect(a.hitStrength(1), closeTo(0.5, 0.01));
-      expect(a.hitKind(0), MusicDrumHitKind.kick);
-      expect(a.hitKind(1), MusicDrumHitKind.snare);
-      expect(a.hitKind(2), MusicDrumHitKind.hat);
+      expect(a.hitKind(0), LyricVisualizerDrumKind.kick);
+      expect(a.hitKind(1), LyricVisualizerDrumKind.snare);
+      expect(a.hitKind(2), LyricVisualizerDrumKind.hat);
       expect(a.vocalOnsetsMs, <int>[20, 40]);
       expect(a.envelopeReady, isTrue);
       expect(a.beatsReady, isTrue);
@@ -65,6 +69,36 @@ void main() {
         <bool>[for (int i = 0; i < 4; i++) a.beatPulse(i)],
         <bool>[true, true, false, true],
       );
+      // 契约的逐拍表：强拍标记、重音、音色、门控与上面的访问器一致。
+      expect(a.beats, hasLength(4));
+      expect(a.beats[0].downbeat && a.beats[3].downbeat, isTrue);
+      expect(a.beats[1].downbeat || a.beats[2].downbeat, isFalse);
+      expect(a.beats[1].impact, closeTo(0.2, 0.01));
+      expect(a.beats[3].lowShare, 1.0);
+      expect(a.beats[1].rhythmic, isFalse);
+      expect(a.beats[2].pulse, isFalse);
+      // 契约的鼓击表。
+      expect(
+        a.drumHits.map((LyricVisualizerDrumHit h) => h.kind),
+        <LyricVisualizerDrumKind>[
+          LyricVisualizerDrumKind.kick,
+          LyricVisualizerDrumKind.snare,
+          LyricVisualizerDrumKind.hat,
+        ],
+      );
+      expect(a.drumHits[1].timeMs, 510);
+      expect(a.drumHits[1].strength, closeTo(0.5, 0.01));
+    });
+
+    test('reads version-2 files with merged mids', () {
+      final MusicAudioAnalysis a = MusicAudioAnalysis.tryParse(_goldenV2())!;
+      expect(a.formatVersion, 2);
+      expect(a.pipelineVersion, 2);
+      expect(a.hasBeatAccents, isTrue);
+      expect(a.beats[1].impact, closeTo(0.2, 0.01));
+      final LyricVisualizerAudioFrame f = a.frameAt(30);
+      expect(f.lowMid, f.mid);
+      expect(f.upperMid, f.mid);
     });
 
     test('reads version-1 files with neutral accents', () {
@@ -79,8 +113,10 @@ void main() {
       expect(a.beatLowShare(2), closeTo(1 / 3, 1e-9));
       expect(a.beatRhythmic(1) && a.beatPulse(2), isTrue);
       expect(a.stemsPartial, isFalse);
+      expect(a.beats.every((LyricVisualizerBeat b) => !b.hasAccents), isTrue);
+      expect(a.beats[0].lowShare, closeTo(1 / 3, 1e-9));
       // 不认识的新布局照样拒。
-      final Uint8List future = Uint8List.fromList(_goldenV1())..[4] = 3;
+      final Uint8List future = Uint8List.fromList(_goldenV1())..[4] = 4;
       expect(MusicAudioAnalysis.tryParse(future), isNull);
     });
 
@@ -98,7 +134,7 @@ void main() {
         isNull,
       );
       expect(
-        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 2),
+        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 3),
         isNotNull,
       );
     });
@@ -119,6 +155,10 @@ void main() {
       expect(mid.envelopeReady, isTrue);
       expect(mid.fallback, isFalse);
       expect(mid.bpm, 120);
+      // 分开的两段中频（golden：lowMid 0.2 0.4 0.6 …，upperMid 0 0.1 0 …）。
+      expect(mid.lowMid, closeTo(0.5, 0.04));
+      expect(f1.upperMid, closeTo(0.1, 0.02));
+      expect(mid.mid, isNot(mid.lowMid));
     });
 
     test('outside the analysed range the envelope is silent', () {

@@ -11,8 +11,9 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
 
-/// 结果文件布局版本（= native `format::FORMAT_VERSION`）。v2 加了每拍重音段与 track_scale / 分离进度。
-const int kMusicAudioAnalysisFormatVersion = 2;
+/// 结果文件布局版本（= native `format::FORMAT_VERSION`）。v2 加了每拍重音段与 track_scale / 分离进度；
+/// v3 在文件尾加了分开的两段中频（lowMid / upperMid）。
+const int kMusicAudioAnalysisFormatVersion = 3;
 
 /// 仍能读的最老布局（v1：没有重音段，按中性值补）。
 const int kMusicAudioAnalysisOldestFormatVersion = 1;
@@ -46,9 +47,6 @@ abstract final class _BeatFlags {
   static const int rhythmic = 1 << 0;
   static const int pulse = 1 << 1;
 }
-
-/// 鼓点类别。
-enum MusicDrumHitKind { kick, snare, hat }
 
 /// 拍点冲击的衰减（与 `LyricVisualizerContext.audioFrameAt` 的回落路径同值）。
 const int kMusicBeatImpactDecayMs = 180;
@@ -90,7 +88,13 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
     required Uint8List? beatMid,
     required Uint8List? beatHigh,
     required Uint8List? beatFlags,
-  }) : _beatImpact = beatImpact,
+    required Uint8List? lowMid,
+    required Uint8List? upperMid,
+    required this.beats,
+    required this.drumHits,
+  }) : _lowMid = lowMid,
+       _upperMid = upperMid,
+       _beatImpact = beatImpact,
        _beatLow = beatLow,
        _beatMid = beatMid,
        _beatHigh = beatHigh,
@@ -106,7 +110,8 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
 
   /// 解析 `.fma` 字节；读不了的文件（魔数不符、布局版本不在
   /// [kMusicAudioAnalysisOldestFormatVersion]..[kMusicAudioAnalysisFormatVersion] 里、截断）返回 null。
-  /// v1 文件没有重音段，每拍重音按中性值（满强度、都有节奏、都是听感拍）。
+  /// v1 文件没有重音段，每拍重音按中性值（满强度、都有节奏、都是听感拍）；v1 / v2 没有分开的两段中频，
+  /// 帧里的 lowMid / upperMid 读作合并的 mid。
   /// [expectedPipelineVersion] 给了时，算法版本不符也返回 null（服务不用它：旧结果先拿来用、再补算）。
   static MusicAudioAnalysis? tryParse(
     Uint8List bytes, {
@@ -138,7 +143,19 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
     final int hitsEnd = timesEnd + _align4(2 * hits);
     final int onsetsEnd = hitsEnd + 4 * v;
     final bool hasAccents = version >= 2;
-    if (bytes.length < onsetsEnd + (hasAccents ? 5 * b : 0)) return null;
+    final int accentsEnd = onsetsEnd + (hasAccents ? 5 * b : 0);
+    final bool hasSplitMids = version >= 3;
+    final int midsStart = _align4(accentsEnd);
+    if (bytes.length < (hasSplitMids ? midsStart + 2 * f : accentsEnd)) {
+      return null;
+    }
+    Uint8List? splitMid(int i) => hasSplitMids
+        ? Uint8List.sublistView(
+            bytes,
+            midsStart + i * f,
+            midsStart + (i + 1) * f,
+          )
+        : null;
     Uint8List? perBeat(int i) => hasAccents
         ? Uint8List.sublistView(
             bytes,
@@ -164,6 +181,51 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
       return out;
     }
 
+    final Int32List beatTimes = ints(envEnd, b);
+    final Int32List downbeatTimes = ints(envEnd + 4 * b, d);
+    final Int32List hitTimes = ints(envEnd + 4 * (b + d), hits);
+    final Uint8List hitStrength = Uint8List.sublistView(
+      bytes,
+      timesEnd,
+      timesEnd + hits,
+    );
+    final Uint8List hitKind = Uint8List.sublistView(
+      bytes,
+      timesEnd + hits,
+      timesEnd + 2 * hits,
+    );
+    final Uint8List? accImpact = perBeat(0);
+    final Uint8List? accLow = perBeat(1);
+    final Uint8List? accMid = perBeat(2);
+    final Uint8List? accHigh = perBeat(3);
+    final Uint8List? accFlags = perBeat(4);
+    final Set<int> downbeatSet = downbeatTimes.toSet();
+    // 契约的逐拍 / 逐击对象表：整首一次建好（几千项），样式按窗口查。
+    final List<LyricVisualizerBeat> beats =
+        List<LyricVisualizerBeat>.unmodifiable(<LyricVisualizerBeat>[
+          for (int i = 0; i < b; i++)
+            LyricVisualizerBeat(
+              timeMs: beatTimes[i],
+              downbeat: downbeatSet.contains(beatTimes[i]),
+              impact: accImpact == null ? null : accImpact[i] / 255,
+              lowShare: accLow == null ? 1 / 3 : accLow[i] / 255,
+              midShare: accMid == null ? 1 / 3 : accMid[i] / 255,
+              highShare: accHigh == null ? 1 / 3 : accHigh[i] / 255,
+              rhythmic:
+                  accFlags == null || accFlags[i] & _BeatFlags.rhythmic != 0,
+              pulse: accFlags == null || accFlags[i] & _BeatFlags.pulse != 0,
+            ),
+        ]);
+    final List<LyricVisualizerDrumHit> drumHits =
+        List<LyricVisualizerDrumHit>.unmodifiable(<LyricVisualizerDrumHit>[
+          for (int i = 0; i < hits; i++)
+            LyricVisualizerDrumHit(
+              timeMs: hitTimes[i],
+              kind: _drumKind(hitKind[i]),
+              strength: hitStrength[i] / 255,
+            ),
+        ]);
+
     return MusicAudioAnalysis._(
       flags: u32(8),
       frameRate: frameRate,
@@ -178,28 +240,31 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
       high: series(3),
       onset: series(4),
       vocal: series(5),
-      beatTimesMs: ints(envEnd, b),
-      downbeatTimesMs: ints(envEnd + 4 * b, d),
-      hitTimesMs: ints(envEnd + 4 * (b + d), hits),
-      hitStrength: Uint8List.sublistView(bytes, timesEnd, timesEnd + hits),
-      hitKind: Uint8List.sublistView(
-        bytes,
-        timesEnd + hits,
-        timesEnd + 2 * hits,
-      ),
+      beatTimesMs: beatTimes,
+      downbeatTimesMs: downbeatTimes,
+      hitTimesMs: hitTimes,
+      hitStrength: hitStrength,
+      hitKind: hitKind,
       vocalOnsetsMs: ints(hitsEnd, v),
       formatVersion: version,
       trackScale: hasAccents ? h.getFloat32(52, Endian.little) : 1,
       stemsUntilMs: hasAccents ? u32(56) : 0,
-      beatImpact: perBeat(0),
-      beatLow: perBeat(1),
-      beatMid: perBeat(2),
-      beatHigh: perBeat(3),
-      beatFlags: perBeat(4),
+      beatImpact: accImpact,
+      beatLow: accLow,
+      beatMid: accMid,
+      beatHigh: accHigh,
+      beatFlags: accFlags,
+      lowMid: splitMid(0),
+      upperMid: splitMid(1),
+      beats: beats,
+      drumHits: drumHits,
     );
   }
 
   static int _align4(int n) => (n + 3) & ~3;
+
+  static LyricVisualizerDrumKind _drumKind(int code) =>
+      LyricVisualizerDrumKind.values[math.min(code, 2)];
 
   /// [MusicAudioAnalysisFlags] 的组合。
   final int flags;
@@ -226,10 +291,20 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   final int formatVersion;
 
   /// 整曲动感系数（folia `trackScale`：中位突起映射到 0.45–1；v1 文件为 1）。
+  @override
   final double trackScale;
 
   /// [stemsPartial] 时分离已覆盖到的毫秒（之后的鼓点 / 人声仍是 DSP 的）；否则 0。
   final int stemsUntilMs;
+
+  final Uint8List? _lowMid;
+  final Uint8List? _upperMid;
+
+  @override
+  final List<LyricVisualizerBeat> beats;
+
+  @override
+  final List<LyricVisualizerDrumHit> drumHits;
 
   final Uint8List? _beatImpact;
   final Uint8List? _beatLow;
@@ -257,6 +332,7 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   final Uint8List _hitKind;
 
   /// 人声起音（毫秒，升序；只有人声分轨时有）。
+  @override
   final Int32List vocalOnsetsMs;
 
   /// 拍点来自模型。
@@ -275,6 +351,7 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   bool get stemsPartial => flags & MusicAudioAnalysisFlags.stemsPartial != 0;
 
   /// 有每拍重音（v2 起；v1 文件各访问器给中性值）。
+  @override
   bool get hasBeatAccents => _beatImpact != null;
 
   /// 第 [i] 拍的重音强度（folia `impact`：突起 40% + 前后半秒响度 60%，全曲 p10–p90 归一后 ^0.7；0–1）。
@@ -314,8 +391,7 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   double hitStrength(int i) => _hitStrength[i] / 255;
 
   /// 第 [i] 个鼓点的类别。
-  MusicDrumHitKind hitKind(int i) =>
-      MusicDrumHitKind.values[math.min(_hitKind[i], 2)];
+  LyricVisualizerDrumKind hitKind(int i) => _drumKind(_hitKind[i]);
 
   @override
   bool get envelopeReady => frameCount > 0;
@@ -324,6 +400,7 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
   bool get beatsReady => beatTimesMs.isNotEmpty;
 
   /// 鼓点就绪：有鼓点，或判定没鼓（「没有鼓点」本身就是答案）。
+  @override
   bool get drumsReady => hitTimesMs.isNotEmpty || drumless;
 
   /// 一条包络在帧位置 [pos] 的线性插值（0–1）；范围外为 0。
@@ -354,6 +431,8 @@ class MusicAudioAnalysis implements LyricVisualizerAudio {
       power: _sample(_power, pos),
       low: _sample(_low, pos),
       mid: _sample(_mid, pos),
+      lowMid: _lowMid == null ? null : _sample(_lowMid, pos),
+      upperMid: _upperMid == null ? null : _sample(_upperMid, pos),
       high: _sample(_high, pos),
       vocal: _sample(_vocal, pos),
       onset: _sample(_onset, pos),

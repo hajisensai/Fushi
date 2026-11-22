@@ -29,6 +29,53 @@ class SyntheticVisualizerAudio implements LyricVisualizerAudio {
   @override
   double? get bpm => 120;
 
+  /// 强拍重（impact 1、低频为主），其余拍轻（impact 0.4、高频为主）。
+  @override
+  late final List<LyricVisualizerBeat> beats = <LyricVisualizerBeat>[
+    for (int i = 0; i < beatTimesMs.length; i++)
+      LyricVisualizerBeat(
+        timeMs: beatTimesMs[i],
+        downbeat: i % 4 == 0,
+        impact: i % 4 == 0 ? 1 : 0.4,
+        lowShare: i % 4 == 0 ? 0.7 : 0.2,
+        midShare: 0.2,
+        highShare: i % 4 == 0 ? 0.1 : 0.6,
+      ),
+  ];
+
+  @override
+  bool get hasBeatAccents => true;
+
+  @override
+  double get trackScale => 0.8;
+
+  /// 偶数拍底鼓、奇数拍军鼓，每个反拍一下镲片。
+  @override
+  late final List<LyricVisualizerDrumHit> drumHits = <LyricVisualizerDrumHit>[
+    for (int i = 0; i < beatTimesMs.length; i++) ...<LyricVisualizerDrumHit>[
+      LyricVisualizerDrumHit(
+        timeMs: beatTimesMs[i],
+        kind: i.isEven
+            ? LyricVisualizerDrumKind.kick
+            : LyricVisualizerDrumKind.snare,
+        strength: i.isEven ? 1 : 0.7,
+      ),
+      LyricVisualizerDrumHit(
+        timeMs: beatTimesMs[i] + 250,
+        kind: LyricVisualizerDrumKind.hat,
+        strength: 0.4,
+      ),
+    ],
+  ];
+
+  @override
+  bool get drumsReady => true;
+
+  @override
+  final List<int> vocalOnsetsMs = <int>[
+    for (int t = 250; t < 240000; t += 1000) t,
+  ];
+
   @override
   LyricVisualizerAudioFrame frameAt(int audioMs) {
     final double beat = lyricVisualizerImpactAt(beatTimesMs, audioMs);

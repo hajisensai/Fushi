@@ -283,6 +283,10 @@ pub(crate) struct Envelope {
     pub(crate) low: Vec<f32>,
     /// folia `lowMid` + `mid` 的平均 ^2（150–1200 Hz）。
     pub(crate) mid: Vec<f32>,
+    /// folia `lowMid`^2（150–400 Hz）。
+    pub(crate) low_mid: Vec<f32>,
+    /// folia `mid`^2（400–1200 Hz）。
+    pub(crate) upper_mid: Vec<f32>,
     /// folia `treble`^2（3.5–12 kHz）。
     pub(crate) high: Vec<f32>,
     /// folia `vocal` 频段（1–3.5 kHz）^1.5：没有人声分轨时的人声代理。
@@ -365,6 +369,8 @@ pub(crate) fn envelope(mono: &[f32], cancel: &dyn Fn() -> bool) -> Option<Envelo
         power: vec![0.0; frames],
         low: vec![0.0; frames],
         mid: vec![0.0; frames],
+        low_mid: vec![0.0; frames],
+        upper_mid: vec![0.0; frames],
         high: vec![0.0; frames],
         vocal_band: vec![0.0; frames],
         onset_raw: vec![0.0; frames],
@@ -394,6 +400,8 @@ pub(crate) fn envelope(mono: &[f32], cancel: &dyn Fn() -> bool) -> Option<Envelo
         env.power[frame] = ((bass + low_mid) / 2.0).powf(3.0) as f32;
         env.low[frame] = bass.powf(1.8) as f32;
         env.mid[frame] = ((low_mid + mid) / 2.0).powf(2.0) as f32;
+        env.low_mid[frame] = low_mid.powf(2.0) as f32;
+        env.upper_mid[frame] = mid.powf(2.0) as f32;
         env.high[frame] = treble.powf(2.0) as f32;
         env.vocal_band[frame] = vocal.powf(1.5) as f32;
 
@@ -491,6 +499,33 @@ mod tests {
         assert!(env.low[f] > 0.5, "low {}", env.low[f]);
         assert!(env.high[f] < 0.05, "high {}", env.high[f]);
         assert!(env.power[f] > 0.05);
+    }
+
+    /// 分开的两段中频各管各的：250 Hz 亮 lowMid（150–400），800 Hz 亮 upper_mid（400–1200）；合并 mid 是两段均值。
+    #[test]
+    fn low_mid_and_upper_mid_split_the_mid_band() {
+        let lo = envelope(&tone(250.0, 2.0, 0.5), &never).unwrap();
+        let hi = envelope(&tone(800.0, 2.0, 0.5), &never).unwrap();
+        let f = lo.power.len() / 2;
+        assert!(
+            lo.low_mid[f] > lo.upper_mid[f],
+            "250 Hz: {} vs {}",
+            lo.low_mid[f],
+            lo.upper_mid[f]
+        );
+        assert!(
+            hi.upper_mid[f] > hi.low_mid[f],
+            "800 Hz: {} vs {}",
+            hi.upper_mid[f],
+            hi.low_mid[f]
+        );
+        let merged = ((lo.low_mid[f].sqrt() + lo.upper_mid[f].sqrt()) / 2.0).powi(2);
+        assert!(
+            (lo.mid[f] - merged).abs() < 1e-4,
+            "mid {} merged {}",
+            lo.mid[f],
+            merged
+        );
     }
 
     #[test]
