@@ -44,6 +44,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5176](bugs/BUG-5176-lapis-migration-oom.md) | ✅ | ✅ | iPad 旧 Lapis 迁移页 load / migrate 整批物化笔记，Dart 堆 Out of Memory 后闪退 |
 | [BUG-5170](bugs/BUG-5170-rwkv-now-due-vs-queue-count.md) | ✅ | ✅ | 复习首页「RWKV 此刻」的「Due now 7」与牌组头部「19 due」对不上 |
 
 | BUG | 修复 | 测试 | 标题 |
