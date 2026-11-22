@@ -28,6 +28,10 @@
 /// 分类子目录由页面决定（与 `addLocalFolderAsSource` 「媒体种类由当前页面决定，不从文件
 /// 内容猜」同一纪律）：书页导 `Books`、视频页导 `Video`、漫画页导 `Manga`。视频页不认的
 /// 文件原样留在收件箱，用户看得见没被收走。
+///
+/// **iTunes 文件共享**（拍板台 kmfCiXlIU_）：iTunes 只看得见 Documents 最外层、进不了
+/// 分类子目录。根上本页认的散文件不静默收走，点导入时列出来让用户确认，确认后先移进本页
+/// 的分类子目录再走上面的流程（[ImportInbox.pendingRootFiles] / [ImportInbox.adoptRootFiles]）。
 library;
 
 import 'dart:io';
@@ -38,6 +42,8 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath, kVideoExtensions;
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show listSidecarSubtitles;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show
         kDragAudioExtensions,
@@ -82,6 +88,12 @@ class ImportInbox {
   /// 视频是 `Video` 而不是 `Videos`：iOS 的 APFS 默认不分大小写，`Videos` 与书库白名单
   /// 里的旧扁平布局目录 `videos`（`AppPaths.fushiOwnedDocumentsEntries`）是**同一个**目录。
   /// 收件箱子目录名与白名单大小写无关地互不相交，由测试钉死。
+  ///
+  /// 没有 `Games`（拍板台 kmfCiXlIU_ 问过）：iOS 上游戏模块只是串流接收端
+  /// （`GamesModuleForm.streamClient`，游戏装在配对的 Windows 主机上、远程启动后串流），
+  /// 本机没有任何游戏导入管线，游戏来源也只认 Windows exe；建一个 `Games` 文件夹只会
+  /// 让用户把文件放进一个永远导入不了的地方。音乐也不单列：视频页的 `Video` 收纯音频并
+  /// 交给音乐库（见 [acceptsFile]）。
   static const Map<String, String> kindFolderNames = <String, String>{
     'book': 'Books',
     'video': 'Video',
@@ -226,6 +238,212 @@ class ImportInbox {
     return out;
   }
 
+  /// 收件箱**根**（Documents 最外层）里 [mediaKind] 认的散文件，按路径排序。
+  ///
+  /// 只为 iTunes 文件共享（拍板台 kmfCiXlIU_）：Windows / 旧 macOS 的 iTunes「文件共享」
+  /// 只列出 Documents 最外层，进不了 `Books` / `Video` / `Manga` 子文件夹，只用 iTunes
+  /// 的用户只能把文件丢在根上。这里**只列不收**：根上的文件属于哪一类仍由用户当前所在的
+  /// 页面决定，且要用户在导入时确认后才由 [adoptRootFiles] 移进本页的分类子目录——不把
+  /// 根当成常驻的导入目录静默扫走（根上还可能有别的 app 文件，且 `.srt` / `.pdf` /
+  /// 音频这类扩展名几个页面都认，静默收走必然有页面收错）。
+  ///
+  /// 只收文件不收目录：根上的目录是分类子目录、旧版书库白名单项或用户自建的文件夹，
+  /// 它们的归属没法凭名字判断；用「文件」App 的用户本来就能把目录放进分类子目录。
+  static Future<List<File>> pendingRootFiles({
+    required Directory inbox,
+    required String mediaKind,
+  }) async {
+    if (folderNameFor(mediaKind) == null) return const <File>[];
+    if (!await inbox.exists()) return const <File>[];
+    final List<File> out = <File>[
+      await for (final FileSystemEntity e in inbox.list(followLinks: false))
+        if (e is File && shouldTake(mediaKind, e)) e,
+    ];
+    out.sort((File a, File b) => a.path.compareTo(b.path));
+    return out;
+  }
+
+  /// 把用户确认过的根上散文件 [files]（取自 [pendingRootFiles]）移进 [mediaKind] 的分类
+  /// 子目录，之后走该页面原有的收件箱导入。返回移不动的条目（`名字: 原因`），它们留在
+  /// 根上。目标名由 [planRootAdoption] 按依赖组整组分配，见其说明。
+  static Future<List<String>> adoptRootFiles({
+    required Directory inbox,
+    required String mediaKind,
+    required List<File> files,
+  }) async {
+    final Directory? kindDir = kindFolder(inbox, mediaKind);
+    if (kindDir == null || files.isEmpty) return const <String>[];
+    await kindDir.create(recursive: true);
+    final List<String> existing = <String>[
+      await for (final FileSystemEntity e in kindDir.list(followLinks: false))
+        p.basename(e.path),
+    ];
+    final List<String> targets = planRootAdoption(
+      rootNames: <String>[for (final File f in files) p.basename(f.path)],
+      existingNames: existing,
+    );
+    final List<String> failures = <String>[];
+    for (int i = 0; i < files.length; i++) {
+      try {
+        await _moveFile(files[i], p.join(kindDir.path, targets[i]));
+      } on FileSystemException catch (e) {
+        failures.add('${p.basename(files[i].path)}: $e');
+      }
+    }
+    return failures;
+  }
+
+  /// 纯函数：根上散文件 [rootNames] 搬进已有条目为 [existingNames] 的分类子目录时各自
+  /// 的目标文件名（与 [rootNames] 一一对应、同序）。
+  ///
+  /// 外挂字幕靠与视频 / 音频同 stem 配对（`pickSidecar` / `listSidecarSubtitles`，**不分
+  /// 大小写**），所以目标按**依赖组**整组分配（HBK-AUDIT-019）：一个主文件和它的同 stem
+  /// 字幕落到同一个 stem 上；原 stem 不可用时整组一起改成 `<stem> (2)<后缀>`、`(3)`…。
+  /// 一个 stem 对某组**不可用**，当且仅当：
+  ///  - 组内任一目标名与已占用的名字（已有条目 + 先分配的组）不分大小写重名——iOS 的
+  ///    APFS 区分大小写，`ep01.mkv` 与 `EP01.mkv` 能并存，但配对不分大小写，且 rename
+  ///    会无声覆盖同名文件；
+  ///  - 组里有主文件，而该 stem 会和已占用的**另一个主文件**交叉配对：已占用的、已被某个
+  ///    主文件认领的字幕会配上新主文件（旧视频的字幕被新视频配走），或本组的字幕会配上
+  ///    已占用的主文件（旧视频配上新字幕）。stem 互为前缀（`EP01` 与 `EP01.v2`）时字幕归
+  ///    更长的 stem，较短的不算交叉。
+  ///
+  /// 有意放行的两种「接上」：只有字幕的组配上已有主文件（给已放进去的视频补字幕），主文件
+  /// 配上目录里没有主文件认领的孤立字幕——两者都不拆散任何一对已有的配对。
+  static List<String> planRootAdoption({
+    required List<String> rootNames,
+    required Iterable<String> existingNames,
+  }) {
+    final List<String> taken = <String>[...existingNames];
+    final Set<String> takenLower = <String>{
+      for (final String n in taken) n.toLowerCase(),
+    };
+    final List<String> targets = List<String>.filled(rootNames.length, '');
+    for (final _SidecarGroup group in _groupBySidecarStem(rootNames)) {
+      final String stem = _freeGroupStem(group, taken, takenLower);
+      for (final _SidecarGroupMember m in group.members) {
+        final String target = '$stem${m.suffix}';
+        targets[m.index] = target;
+        taken.add(target);
+        takenLower.add(target.toLowerCase());
+      }
+    }
+    return targets;
+  }
+
+  /// 把 [names] 分成依赖组：每个非字幕文件（视频 / 音频 / 书…）以自己的
+  /// `basenameWithoutExtension` 为 stem 开一组（stem 不分大小写相同的归同一组）；字幕按
+  /// `listSidecarSubtitles` 的同一配对规则归入能配上的**最长** stem 的组；配不上任何主文件
+  /// 的字幕自成一组。组内后缀不分大小写已被占用的成员（`EP01.mkv` 与 `ep01.mkv`）另开一
+  /// 组，不让同组两个成员落到同一个目标名上。组的顺序与成员顺序都随 [names]。
+  static List<_SidecarGroup> _groupBySidecarStem(List<String> names) {
+    final List<_SidecarGroup> groups = <_SidecarGroup>[];
+    final Map<String, _SidecarGroup> byStemLower = <String, _SidecarGroup>{};
+    final List<int> subtitles = <int>[];
+    _SidecarGroup newGroup(String stem, {required bool primary}) {
+      final _SidecarGroup g = _SidecarGroup(stem, hasPrimary: primary);
+      groups.add(g);
+      return g;
+    }
+
+    for (int i = 0; i < names.length; i++) {
+      final String name = names[i];
+      if (_isSubtitleName(name)) {
+        subtitles.add(i);
+        continue;
+      }
+      final String stem = p.basenameWithoutExtension(name);
+      _SidecarGroup? group = byStemLower[stem.toLowerCase()];
+      final String suffix = name.substring(stem.length);
+      if (group == null) {
+        group = newGroup(stem, primary: true);
+        byStemLower[stem.toLowerCase()] = group;
+      } else if (group.hasSuffix(suffix)) {
+        group = newGroup(stem, primary: true);
+      }
+      group.members.add(_SidecarGroupMember(i, suffix));
+    }
+    for (final int i in subtitles) {
+      final String name = names[i];
+      _SidecarGroup? owner;
+      for (final _SidecarGroup g in byStemLower.values) {
+        if (_pairsWith(name, g.stem) &&
+            (owner == null || g.stem.length > owner.stem.length)) {
+          owner = g;
+        }
+      }
+      if (owner == null || owner.hasSuffix(name.substring(owner.stem.length))) {
+        owner = newGroup(p.basenameWithoutExtension(name), primary: false);
+      }
+      owner.members.add(
+        _SidecarGroupMember(i, name.substring(owner.stem.length)),
+      );
+    }
+    return groups;
+  }
+
+  static bool _isSubtitleName(String name) =>
+      _bare(kDragSubtitleExtensions).contains(_extensionOf(name));
+
+  /// 字幕文件名 [subtitleName] 是否是 [stem] 的外挂字幕（与 `listSidecarSubtitles` 同一
+  /// 规则）。
+  static bool _pairsWith(String subtitleName, String stem) =>
+      stem.length < subtitleName.length &&
+      listSidecarSubtitles(stem, <String>[subtitleName]).isNotEmpty;
+
+  /// [group] 能用的 stem：原 stem 可用就用原 stem，否则依次试 `<stem> (2)`、`(3)`…，整组
+  /// 共用同一个。可用的判据见 [planRootAdoption]。
+  static String _freeGroupStem(
+    _SidecarGroup group,
+    List<String> taken,
+    Set<String> takenLower,
+  ) {
+    final List<String> takenPrimaryStems = <String>[
+      for (final String n in taken)
+        if (!_isSubtitleName(n)) p.basenameWithoutExtension(n),
+    ];
+    // 已占用、且有主文件认领的字幕 → 认领它的最长主文件 stem 的长度（同目录 stem 互为
+    // 前缀时由更长的认领，与 `sidecarSubtitlesForDeletedVideo` 同一归属规则）。
+    final Map<String, int> takenOwnedSubtitles = <String, int>{};
+    for (final String n in taken) {
+      if (!_isSubtitleName(n)) continue;
+      for (final String s in takenPrimaryStems) {
+        if (_pairsWith(n, s) && s.length > (takenOwnedSubtitles[n] ?? -1)) {
+          takenOwnedSubtitles[n] = s.length;
+        }
+      }
+    }
+    bool usable(String stem) {
+      for (final _SidecarGroupMember m in group.members) {
+        if (takenLower.contains('$stem${m.suffix}'.toLowerCase())) return false;
+      }
+      if (!group.hasPrimary) return true;
+      // 已有主文件的字幕会被新主文件配走。
+      for (final MapEntry<String, int> owned in takenOwnedSubtitles.entries) {
+        if (stem.length >= owned.value && _pairsWith(owned.key, stem)) {
+          return false;
+        }
+      }
+      // 本组的字幕会被已有主文件配走。
+      for (final _SidecarGroupMember m in group.members) {
+        final String target = '$stem${m.suffix}';
+        if (!_isSubtitleName(target)) continue;
+        for (final String s in takenPrimaryStems) {
+          if (s.length >= stem.length && _pairsWith(target, s)) return false;
+        }
+      }
+      return true;
+    }
+
+    String candidate = group.stem;
+    int n = 2;
+    while (!usable(candidate)) {
+      candidate = '${group.stem} ($n)';
+      n++;
+    }
+    return candidate;
+  }
+
   /// 批次目录名：本地时间到秒，同一秒内重复收时追加序号，保证不与已有批次合并
   /// （合并会让一次性扫描把上一批已导入的文件再扫一遍）。
   static Future<Directory> _freshBatchDirectory(
@@ -301,4 +519,34 @@ class ImportInbox {
       await source.delete();
     }
   }
+}
+
+/// 根上散文件的一个依赖组（主文件 + 同 stem 外挂字幕），见 [ImportInbox.planRootAdoption]。
+class _SidecarGroup {
+  _SidecarGroup(this.stem, {required this.hasPrimary});
+
+  /// 组的原 stem（主文件的 `basenameWithoutExtension`，保留原始大小写）。
+  final String stem;
+
+  /// 组里有没有主文件（视频 / 音频 / 书…）；只有字幕的组为 false。
+  final bool hasPrimary;
+  final List<_SidecarGroupMember> members = <_SidecarGroupMember>[];
+
+  /// 组内是否已有不分大小写相同的后缀（同组两个成员不能落到同一个目标名上）。
+  bool hasSuffix(String suffix) {
+    final String lower = suffix.toLowerCase();
+    return members.any(
+      (_SidecarGroupMember m) => m.suffix.toLowerCase() == lower,
+    );
+  }
+}
+
+class _SidecarGroupMember {
+  const _SidecarGroupMember(this.index, this.suffix);
+
+  /// 在 [ImportInbox.planRootAdoption] 的 `rootNames` 里的下标。
+  final int index;
+
+  /// 文件名去掉组 stem 后的部分（`.mkv` / `.ja.srt`…），改名时原样接在新 stem 后。
+  final String suffix;
 }
