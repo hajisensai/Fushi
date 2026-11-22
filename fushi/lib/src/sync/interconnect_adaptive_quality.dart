@@ -181,22 +181,43 @@ class _WindowTick {
 /// 此刻仍是我们写的那个目标时回滚：换档途中用户手动选档、换源 / 换链路让 backend
 /// 重新定了起点，都不能被一个过期的原值覆盖。
 ///
-/// 返回新流是否立起来；[reload] 抛的错回滚后原样重新抛出。
-Future<bool> runAdaptiveQualitySwitch({
+/// 重载被更新的一程加载接管（[AdaptiveQualitySwitchOutcome.superseded]，
+/// HBK-AUDIT-005：换档途中用户换集 / 重试）时**不回滚**：目标档在 [reload] 之前就写
+/// 进了共享状态，接管的那一程起播协商读到的正是它（或换了 scope 自己重定了起点），
+/// 共享档此刻归那一程所有。回滚会让共享档与正在播的流对不上，下一拍自适应从一个
+/// 并没在播的档起判，页面「重试」也会换回一个不是当前在播的档。
+///
+/// 返回本次换档的结局；[reload] 抛的错回滚后原样重新抛出。
+Future<AdaptiveQualitySwitchOutcome> runAdaptiveQualitySwitch({
   required int? Function() read,
   required void Function(int? index) write,
   required int targetIndex,
-  required Future<bool> Function() reload,
+  required Future<AdaptiveQualitySwitchOutcome> Function() reload,
 }) async {
   final int? previous = read();
   write(targetIndex);
-  bool ok = false;
+  AdaptiveQualitySwitchOutcome outcome = AdaptiveQualitySwitchOutcome.failed;
   try {
-    ok = await reload();
-    return ok;
+    outcome = await reload();
+    return outcome;
   } finally {
-    if (!ok && read() == targetIndex) write(previous);
+    if (outcome == AdaptiveQualitySwitchOutcome.failed &&
+        read() == targetIndex) {
+      write(previous);
+    }
   }
+}
+
+/// [runAdaptiveQualitySwitch] 一次重载的结局。
+enum AdaptiveQualitySwitchOutcome {
+  /// 新档的流在本程立起来了。
+  applied,
+
+  /// 本程取流 / 起播没立起来（或页面已退出）：共享档回滚到原值。
+  failed,
+
+  /// 本程被更新的一程加载接管（换集 / 重试 / 再次换档）：共享档归接管者，不回滚。
+  superseded,
 }
 
 /// 「自动」档的自适应控制器。

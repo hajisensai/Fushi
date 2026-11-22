@@ -1,116 +1,39 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable, longPressTolerantHitSlop;
 import 'package:material_ui/material_ui.dart';
 
-/// 标签 chip 的拖动重排入口：按指针类型分流（BUG-4899 / BUG-5066）。
+/// 标签 chip 的拖动重排入口：所有指针都是**长按才起拖**（BUG-4899 / BUG-5066 /
+/// BUG-5174）。
 ///
-/// - 鼠标 / 触控板：即时 [Draggable]（`ImmediateMultiDragGestureRecognizer`），
-///   越过 hit slop 才起拖；按下不动松开仍是单击，chip 的点选筛选照常。
-/// - 触屏 / 触控笔：[LongPressDraggable]，长按才起拖，短滑仍归外层横滚。
+/// 交互约定：按下就拖 = 横滚标签条，按住不动满长按时长再拖 = 重排，不动松开 =
+/// 单击筛选；鼠标与触屏一致，chip 左侧没有拖动柄。
 ///
-/// 为什么鼠标不能也走长按（BUG-4899 根因）：库页标签条是
-/// `HorizontalDragScrollable` 包的横向 `ListView`，鼠标精确指针的 hit slop 只有
-/// 1 px（`kPrecisePointerHitSlop`），长按 500 ms 计时里手一抖超过 1 px，
-/// `DelayedMultiDragGestureRecognizer` 就自行认输，同一下位移让横滚胜出。即时
-/// 版的 recognizer 比滚动区深，指针路由先到它，越过 slop 的同一帧先认领，横滚
-/// 抢不到。代价：鼠标在 chip 上拖不再横滚标签条，横滚改走 Shift+滚轮（横向
-/// `Scrollable` 只取滚轮 dx，裸滚轮不横滚）、触控板横扫和 chip 之间的空白处拖动。
+/// 鼠标为什么以前长按拖不动（BUG-4899 根因）：Flutter 对鼠标的 hit slop 只有
+/// 1 px（`kPrecisePointerHitSlop`），原生 [DelayedMultiDragGestureRecognizer] 在
+/// 500 ms 计时里位移超 1 px 就自行认输，`Scrollable` 的横拖识别器也是 1 px 就
+/// 认领，手一抖长按就输给横滚。本件的长按识别改用 [longPressTolerantHitSlop]
+/// （鼠标取 `kTouchSlop`）容忍抖动；标签条外层的 [HorizontalDragScrollable] 传
+/// `mouseDragController`，鼠标横滚用同一门槛起滚，两边判据一致、互不误伤。
 ///
-/// 两条路径的设备集不重叠，互不进同一竞技场。落点由调用方 chip 上的
-/// `DragTarget<T>` 接，本件只负责「起拖」。
-class FushiTagChipDraggable<T extends Object> extends StatelessWidget {
+/// 落点由调用方 chip 上的 `DragTarget<T>` 接，本件只负责「起拖」。
+class FushiTagChipDraggable<T extends Object> extends LongPressDraggable<T> {
   const FushiTagChipDraggable({
-    required this.data,
-    required this.feedback,
-    required this.child,
-    this.childWhenDragging,
+    required T super.data,
+    required super.feedback,
+    required super.child,
+    super.childWhenDragging,
     super.key,
   });
-
-  /// 拖动携带的数据（标签行）。
-  final T data;
-
-  /// 跟手浮层。
-  final Widget feedback;
-
-  /// chip 本体（通常是包着 chip 的 `DragTarget<T>`）。
-  final Widget child;
-
-  /// 拖动中留在原位的占位；null 时原样显示 [child]。
-  final Widget? childWhenDragging;
-
-  /// 即时起拖的精确指针。
-  static const Set<PointerDeviceKind> immediateDevices = <PointerDeviceKind>{
-    PointerDeviceKind.mouse,
-    PointerDeviceKind.trackpad,
-  };
-
-  /// 长按起拖的指针（其余全部）。
-  static const Set<PointerDeviceKind> longPressDevices = <PointerDeviceKind>{
-    PointerDeviceKind.touch,
-    PointerDeviceKind.stylus,
-    PointerDeviceKind.invertedStylus,
-    PointerDeviceKind.unknown,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return _ImmediateDeviceDraggable<T>(
-      devices: immediateDevices,
-      data: data,
-      feedback: feedback,
-      childWhenDragging: childWhenDragging,
-      child: _LongPressDeviceDraggable<T>(
-        devices: longPressDevices,
-        data: data,
-        feedback: feedback,
-        childWhenDragging: childWhenDragging,
-        child: child,
-      ),
-    );
-  }
-}
-
-/// 只认 [devices] 的即时 [Draggable]。
-class _ImmediateDeviceDraggable<T extends Object> extends Draggable<T> {
-  const _ImmediateDeviceDraggable({
-    required this.devices,
-    required super.child,
-    required super.feedback,
-    super.data,
-    super.childWhenDragging,
-  });
-
-  final Set<PointerDeviceKind> devices;
-
-  @override
-  MultiDragGestureRecognizer createRecognizer(
-    GestureMultiDragStartCallback onStart,
-  ) =>
-      ImmediateMultiDragGestureRecognizer(supportedDevices: devices)
-        ..onStart = onStart;
-}
-
-/// 只认 [devices] 的 [LongPressDraggable]（保留起拖触感反馈）。
-class _LongPressDeviceDraggable<T extends Object>
-    extends LongPressDraggable<T> {
-  const _LongPressDeviceDraggable({
-    required this.devices,
-    required super.child,
-    required super.feedback,
-    super.data,
-    super.childWhenDragging,
-  });
-
-  final Set<PointerDeviceKind> devices;
 
   @override
   DelayedMultiDragGestureRecognizer createRecognizer(
     GestureMultiDragStartCallback onStart,
   ) =>
-      DelayedMultiDragGestureRecognizer(delay: delay, supportedDevices: devices)
+      _LongPressTolerantMultiDragGestureRecognizer(delay: delay)
         ..onStart = (Offset position) {
           final Drag? result = onStart(position);
           if (result != null && hapticFeedbackOnStart) {
@@ -118,4 +41,82 @@ class _LongPressDeviceDraggable<T extends Object>
           }
           return result;
         };
+}
+
+/// 长按计时内的位移门槛取 [longPressTolerantHitSlop] 的长按多指拖动识别器。
+class _LongPressTolerantMultiDragGestureRecognizer
+    extends DelayedMultiDragGestureRecognizer {
+  _LongPressTolerantMultiDragGestureRecognizer({super.delay});
+
+  @override
+  MultiDragPointerState createNewPointerState(PointerDownEvent event) =>
+      _LongPressTolerantPointerState(
+        event.position,
+        delay,
+        event.kind,
+        gestureSettings,
+      );
+
+  @override
+  String get debugDescription => 'long multidrag (tolerant slop)';
+}
+
+/// 与 Flutter 的 `_DelayedPointerState` 同构，只是门槛换成
+/// [longPressTolerantHitSlop]。
+class _LongPressTolerantPointerState extends MultiDragPointerState {
+  _LongPressTolerantPointerState(
+    super.initialPosition,
+    Duration delay,
+    super.kind,
+    super.gestureSettings,
+  ) {
+    _timer = Timer(delay, _delayPassed);
+  }
+
+  Timer? _timer;
+  GestureMultiDragStartCallback? _starter;
+
+  double get _slop => longPressTolerantHitSlop(kind, gestureSettings);
+
+  void _delayPassed() {
+    _timer = null;
+    final GestureMultiDragStartCallback? starter = _starter;
+    if (starter != null) {
+      _starter = null;
+      starter(initialPosition);
+    } else {
+      resolve(GestureDisposition.accepted);
+    }
+  }
+
+  void _ensureTimerStopped() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void accepted(GestureMultiDragStartCallback starter) {
+    if (_timer == null) {
+      starter(initialPosition);
+    } else {
+      _starter = starter;
+    }
+  }
+
+  @override
+  void checkForResolutionAfterMove() {
+    // 已被竞技场判胜、等计时满再起拖：此时的位移不再改判。
+    if (_timer == null) return;
+    final Offset? delta = pendingDelta;
+    if (delta != null && delta.distance > _slop) {
+      resolve(GestureDisposition.rejected);
+      _ensureTimerStopped();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ensureTimerStopped();
+    super.dispose();
+  }
 }

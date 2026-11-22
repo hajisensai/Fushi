@@ -476,8 +476,9 @@ const String kSrsDefsLayoutScript = r'''
     var collapse = num('--fushi-srs-dict-collapse', 1) > 0 &&
       String(fc.__fcLayoutKey || '').charAt(0) !== 'e';
     fc.classList.add('fushi-srs-defs-grid');
-    // 词典插图分级（[kSrsDefsIllustrationScript]），在分列之前：插图放大后分组变高再排。
+    // 词典插图分级与量栏宽（[kSrsDefsIllustrationScript]），在分列之前：插图放大后分组变高再排。
     if (window.__fushiSrsMarkIllustrations) window.__fushiSrsMarkIllustrations(fc);
+    if (window.__fushiSrsSizeIllustrations) window.__fushiSrsSizeIllustrations(fc);
     var main = fc.querySelector('.fc-gloss--main');
     if (main) {
       var label = main.querySelector('.fc-dict-label');
@@ -535,6 +536,8 @@ const String kSrsDefsLayoutScript = r'''
       }
     }
     pack(list, groups, cols, lead);
+    // 分列改了各本词典的栏宽：插图上限按新栏宽重量（变高后由高度监听再排一次）。
+    if (window.__fushiSrsSizeIllustrations) window.__fushiSrsSizeIllustrations(list);
     syncToggle(more);
     if (obs) {
       for (var o = 0; o < groups.length; o++) obs.observe(groups[o]);
@@ -570,8 +573,14 @@ const int kSrsDefsIllustrationMinWidth = 200;
 ///   更高的整张等比缩小、不裁切）。窄版式释义 WebView 跟内容等高、页内 vh 不是屏高，
 ///   调用方传像素值。
 ///
+/// 「栏宽」是脚本量出来的像素值 `--fushi-srs-illus-avail`，不是 `100%`（BUG-5181）：词典常把
+/// 插图和竖排图注放进一张两格的表，表格单元格按内容定宽，插图宽度里的百分比在里面是循环引用——
+/// `max-width:100%` 拦不住超宽的插图，`width:min(100%, …)` 直接被算成 0 宽。变量还没量到时
+/// 退回 `100%`。
+///
 /// 导出的图片盒是 `<a>`（插图链接）+ 第一个子 `<span>`（盒子，几何全是内联样式），
-/// 盒里的 sizer 用 `padding-top` 百分比撑高，所以只改宽度、高度按比例跟着变。
+/// 盒里的 sizer 用 `padding-top` 百分比撑高，所以只改宽度、高度按比例跟着变；盒子的
+/// `100%` 相对的是链接，链接宽度已是定值，不再循环。
 String srsDefsIllustrationCss(
   SrsReviewImageSize size, {
   required String maxHeight,
@@ -579,7 +588,7 @@ String srsDefsIllustrationCss(
   const String link = '.fc-defs-only a[data-fushi-srs-illus]';
   const String box = '$link>span:first-child';
   final StringBuffer out = StringBuffer()
-    ..write('$link{max-width:100%!important;}')
+    ..write('$link{max-width:var(--fushi-srs-illus-avail, 100%)!important;}')
     ..write(
       '$box{width:100%!important;min-width:0!important;'
       'max-width:100%!important;}',
@@ -605,29 +614,45 @@ String srsDefsIllustrationCss(
     case SrsReviewImageSize.large:
       out
         ..write(
-          '$link{width:min(100%, calc($maxHeight * '
-          'var(--fushi-srs-illus-ar)))!important;}',
+          '$link{width:calc($maxHeight * '
+          'var(--fushi-srs-illus-ar))!important;}',
         )
         ..write('$box{max-height:none!important;}');
   }
   return out.toString();
 }
 
-/// 释义页的词典插图分级脚本（定义 `window.__fushiSrsMarkIllustrations(root)`，
-/// [kSrsDefsLayoutScript] 每次排版先调它）。按制卡导出内联的几何算出插图的声明尺寸
-/// （盒子 `width` 的 em / px × 盒子字号；高 = 宽 × sizer 的 `padding-top` 百分比），
-/// 没量到真实尺寸的导出（盒子 `width:auto`）等图片载入后按自然尺寸（词典声明了一维就按
-/// 那一维）算。宽高都不超过 3 个正文字号的是图标、外字祖先下的是外字，不标记；其余标
-/// `data-fushi-srs-illus="color|mono"`，并把声明宽度 / 宽高比写进 CSS 变量供
-/// [srsDefsIllustrationCss] 用。每个链接只判一次（换卡是新节点）。
+/// 释义页的词典插图脚本：
+///
+/// - `window.__fushiSrsMarkIllustrations(root)`（[kSrsDefsLayoutScript] 每次排版先调它）分级：
+///   按制卡导出内联的几何算出插图的声明尺寸（盒子 `width` 的 em / px；高 = 宽 × sizer 的
+///   `padding-top` 百分比），没量到真实尺寸的导出（盒子 `width:auto`）等图片载入后按自然尺寸
+///   （词典声明了一维就按那一维）算。宽高都不超过 3 个正文字号的是图标、外字祖先下的是外字，
+///   不标记；其余标 `data-fushi-srs-illus="color|mono"`，并把声明宽度 / 宽高比写进 CSS 变量供
+///   [srsDefsIllustrationCss] 用。每个链接只判一次（换卡是新节点）。
+/// - `window.__fushiSrsSizeIllustrations(root)`（排版前后各调一次，`<details>` 开合、插图载入
+///   后也调）量每张插图能占的栏宽，写进 `--fushi-srs-illus-avail`。
+///
+/// 声明宽度不能用「em 数 × `getComputedStyle` 的字号」算（BUG-5181）：导出的图片盒是
+/// `font-size:1px; width:<N>em`，Android WebView 的最小字号（默认 8px）让计算字号报成 8px，
+/// 排版里的 em 却仍按 1px 解析，声明宽度被放大 8 倍——239px 的插图被当成 1912px，撑破栏宽、
+/// 只露出左上角。这里在盒子里放一个不可见的绝对定位探针，按同一个长度排一次再量，取的就是
+/// 排版本身的宽度。
 const String kSrsDefsIllustrationScript = r'''
 (function(){
   var ICON_EM = 3;
-  function px(v, el){
-    var m = /^([0-9.]+)(em|px)$/.exec(String(v || '').trim());
-    if (!m) return NaN;
-    var n = parseFloat(m[1]);
-    return m[2] === 'px' ? n : n * (parseFloat(getComputedStyle(el).fontSize) || 0);
+  var LEN = /^[0-9.]+(em|px)$/;
+  // 导出内联长度在盒子里的实际排版宽度（CSS px），见上方说明。
+  function len(v, box){
+    v = String(v || '').trim();
+    if (!LEN.test(v)) return NaN;
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;display:block;left:0;top:0;' +
+      'margin:0;padding:0;border:0;height:0;min-width:0;max-width:none;width:' + v;
+    box.appendChild(probe);
+    var w = probe.offsetWidth;
+    box.removeChild(probe);
+    return w;
   }
   function mark(a, box, w, ratio, natural){
     if (!(w > 0 && ratio > 0)) return;
@@ -642,7 +667,7 @@ const String kSrsDefsIllustrationScript = r'''
     a.setAttribute('data-fushi-srs-illus', mono ? 'mono' : 'color');
   }
   function classify(a, box, img){
-    var w = px(box.style.width, box);
+    var w = len(box.style.width, box);
     var sizer = box.firstElementChild;
     var pt = sizer && sizer !== img ? String(sizer.style.paddingTop || '') : '';
     if (w > 0 && /%$/.test(pt)) {
@@ -653,8 +678,9 @@ const String kSrsDefsIllustrationScript = r'''
       var nw = img.naturalWidth, nh = img.naturalHeight;
       if (!(nw > 0 && nh > 0)) return;
       var r = nh / nw;
-      var dw = px(img.style.width, box), dh = px(img.style.height, box);
+      var dw = len(img.style.width, box), dh = len(img.style.height, box);
       mark(a, box, dw > 0 ? dw : dh > 0 ? dh / r : nw, r, true);
+      if (window.__fushiSrsSizeIllustration) window.__fushiSrsSizeIllustration(a);
     }
     if (img.complete && img.naturalWidth > 0) natural();
     else img.addEventListener('load', natural, {once: true});
@@ -672,5 +698,52 @@ const String kSrsDefsIllustrationScript = r'''
       classify(a, box, img);
     }
   };
+  // 宽度随内容伸缩的祖先（行内 / 行内块 / 表格结构）：插图的上限要穿过它们，量到外面第一个
+  // 宽度由外部决定的块级容器为止。
+  var SHRINK = /^(inline|inline-block|inline-flex|inline-grid|inline-table|contents|table|table-row|table-row-group|table-header-group|table-footer-group|ruby|ruby-base|ruby-text)$/;
+  function px(v){ return parseFloat(v) || 0; }
+  // 插图能占的宽度（CSS px）：外面第一个块级容器的内容宽，途经表格单元格时扣掉同一行其余
+  // 单元格与本格自己的内边距 / 边框（插图旁边的竖排图注还要留在栏里）。容器没渲染（收起的
+  // <details>）时返回 0，由调用方跳过。
+  function avail(a){
+    var less = 0;
+    for (var el = a.parentElement; el; el = el.parentElement) {
+      var cs = getComputedStyle(el);
+      var d = cs.display;
+      if (d === 'none') return 0;
+      if (d === 'table-cell') {
+        var row = el.parentElement;
+        if (row) less += Math.max(0, row.offsetWidth - el.offsetWidth);
+        less += el.offsetWidth - el.clientWidth + px(cs.paddingLeft) + px(cs.paddingRight);
+        continue;
+      }
+      if (SHRINK.test(d)) continue;
+      var w = el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight);
+      return w > 0 ? Math.max(0, Math.floor(w - less)) : 0;
+    }
+    return 0;
+  }
+  function size(list){
+    // 先量完再统一写，整批只重排一次。
+    var widths = [];
+    for (var i = 0; i < list.length; i++) widths.push(avail(list[i]));
+    for (var j = 0; j < list.length; j++) {
+      if (widths[j] > 0) list[j].style.setProperty('--fushi-srs-illus-avail', widths[j] + 'px');
+    }
+  }
+  window.__fushiSrsSizeIllustration = function(a){ size([a]); };
+  window.__fushiSrsSizeIllustrations = function(root){
+    size(root.querySelectorAll('a[data-fushi-srs-illus]'));
+  };
+  if (!window.__fushiSrsIllusToggleListen) {
+    window.__fushiSrsIllusToggleListen = true;
+    // 收起的词典（<details>）里量不到宽度；展开时补量（toggle 不冒泡，捕获阶段收）。
+    document.addEventListener('toggle', function(e){
+      var t = e.target;
+      if (t && t.querySelectorAll && window.__fushiSrsSizeIllustrations) {
+        window.__fushiSrsSizeIllustrations(t);
+      }
+    }, true);
+  }
 })();
 ''';

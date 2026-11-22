@@ -8,6 +8,7 @@ import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -191,6 +192,115 @@ void main() {
         ],
       );
       expect(pairs, <String, String>{'remote-e2': 'local-e2'});
+    });
+  });
+
+  group('BUG-5084 分栏：host 下发生效分栏', () {
+    test('host 手动分栏 / 季集指定 / 父目录季号 → client 远端槽同一分栏', () async {
+      final File manual = writeVideo('Show/[Grp] Show - 01.mkv', 16);
+      final File pinned = writeVideo('Show/[Grp] Show - 02.mkv', 16);
+      final File plain = writeVideo('Show/[Grp] Show - 03.mkv', 16);
+      // 季号只写在 host 的父目录上：client 只拿得到 basename。
+      final File dirSeason = writeVideo('Show/Season 2/05.mkv', 16);
+      for (final (String uid, File f) in <(String, File)>[
+        ('video/manual', manual),
+        ('video/pinned', pinned),
+        ('video/plain', plain),
+        ('video/dir-s2', dirSeason),
+      ]) {
+        await db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: '集名 $uid',
+            videoPath: f.path,
+          ),
+        );
+      }
+      // host 上：01 手动钉到 PV·特典，02 手动季集指定到第 0 季（= PV·特典）。
+      await db.setVideoCollectionSectionOverrides(<String>[
+        'video/manual',
+      ], kCollectionExtrasGroupKey);
+      await db.setVideoEpisodeBindingOverride(
+        'video/pinned',
+        seasonNumber: 0,
+        episodeNumber: 1,
+      );
+
+      final ({int status, Object? json}) res = await get('/api/library/videos');
+      expect(res.status, 200);
+      final Map<String, CollectionEpisodeSlot> slots =
+          <String, CollectionEpisodeSlot>{
+            for (final Object? raw in res.json! as List<Object?>)
+              if (RemoteVideoInfo.fromJson(
+                    (raw! as Map).cast<String, Object?>(),
+                  )
+                  case final RemoteVideoInfo v)
+                v.id: CollectionEpisodeSlot.remote(v),
+          };
+      final Map<String, String> clientKeys = <String, String>{
+        for (final MapEntry<String, CollectionEpisodeSlot> e in slots.entries)
+          e.key: e.value.baseSectionKey,
+      };
+      expect(clientKeys, <String, String>{
+        'video/manual': kCollectionExtrasGroupKey,
+        'video/pinned': kCollectionExtrasGroupKey,
+        'video/plain': 's1',
+        'video/dir-s2': 's2',
+      });
+      // 与 host 本机同一入口给出的生效分栏逐条一致。
+      final List<VideoBookRow> hostRows = <VideoBookRow>[
+        for (final String uid in clientKeys.keys)
+          (await db.getVideoBookByBookUid(uid))!,
+      ];
+      expect(clientKeys, await loadCollectionGroupKeysForVideos(db, hostRows));
+      // 改动前的口径（client 按 basename 派生）把这几集全塞进正片第 1 季。
+      expect(
+        <String>{
+          for (final CollectionEpisodeSlot slot in slots.values)
+            collectionGroupKeyForFilename(slot.filename),
+        },
+        <String>{'s1'},
+      );
+    });
+
+    test('旧 host 不带 sectionKey / 形状不合法：client 照旧按文件名派生', () {
+      final RemoteVideoInfo old = RemoteVideoInfo.fromJson(<String, Object?>{
+        'id': 'v',
+        'title': '集名',
+        'fileName': 'Show S02E03.mkv',
+      });
+      expect(old.sectionKey, isNull);
+      expect(CollectionEpisodeSlot.remote(old).baseSectionKey, 's2');
+      for (final Object? bad in <Object?>['', 's0', 'season2', 'S2', 7]) {
+        final RemoteVideoInfo parsed = RemoteVideoInfo.fromJson(
+          <String, Object?>{
+            'id': 'v',
+            'title': '集名',
+            'fileName': 'Show S02E03.mkv',
+            'sectionKey': bad,
+          },
+        );
+        expect(parsed.sectionKey, isNull, reason: '$bad');
+        expect(parsed.collectionGroupKey, 's2', reason: '$bad');
+      }
+      // 往返：只在有值时写键，解析回来不变；换断点的副本保留它。
+      const RemoteVideoInfo fresh = RemoteVideoInfo(
+        id: 'v',
+        title: '集名',
+        fileName: 'Show S02E03.mkv',
+        sectionKey: kCollectionExtrasGroupKey,
+      );
+      expect(old.toJson().containsKey('sectionKey'), isFalse);
+      final RemoteVideoInfo round = RemoteVideoInfo.fromJson(fresh.toJson());
+      expect(round.sectionKey, kCollectionExtrasGroupKey);
+      expect(
+        round.withPosition(positionMs: 1, positionUpdatedAtMs: 1).sectionKey,
+        kCollectionExtrasGroupKey,
+      );
+      expect(
+        round.copyWith(positionMs: 1).collectionGroupKey,
+        kCollectionExtrasGroupKey,
+      );
     });
   });
 

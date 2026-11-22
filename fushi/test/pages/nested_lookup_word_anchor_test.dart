@@ -331,11 +331,11 @@ void main() {
 
       test('mixin 车道 onTextSelected 取回 bbox 并重锚子层', () {
         // 跨 token 的调用串先去空白再比：tall 格式会把
-        // `entry.webViewKey.currentState?.highlightSelection(count)` 拆成两行，
+        // `entry.webViewKey.webViewState?.highlightSelection(count)` 拆成两行，
         // 逐字面匹配会在「代码没动、只是被格式化」时假红（CI 2026-09-21 实红一次）。
         final String src = _withoutWhitespace(mixin.readAsStringSync());
         expect(
-          'await entry.webViewKey.currentState?.highlightSelection(count)'
+          'await entry.webViewKey.webViewState?.highlightSelection(count)'
               .replaceAll(' ', '')
               .allMatches(src)
               .length,
@@ -358,7 +358,7 @@ void main() {
       test('阅读器车道 onTextSelected 取回 bbox 并重锚子层', () {
         final String src = _withoutWhitespace(base.readAsStringSync());
         expect(
-          'await item.webViewKey.currentState?.highlightSelection(count)'
+          'await item.webViewKey.webViewState?.highlightSelection(count)'
               .replaceAll(' ', '')
               .allMatches(src)
               .length,

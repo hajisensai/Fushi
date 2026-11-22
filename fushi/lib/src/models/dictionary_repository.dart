@@ -587,18 +587,34 @@ class DictionaryRepository {
           ]);
       // 装载期间清过历史 / 已 dispose：这份旧快照不得再落进内存。
       if (_historyClearEpoch != clearEpoch) return;
+      // BUG-5064：非规范 / 读不回来的行以前只在内存里跳过、库里原样留着，没查新词
+      // （不触发落库）就每次启动都重报一遍。现在装载时就让库与内存对齐：能还原的
+      // 标成正文过期、按规范格式重写；读不回来的不进内存，下一次落库（增量同步只
+      // 保留内存里有的行 id）把它删掉——报错只记这一次。
+      final List<String> dropped = <String>[];
+      bool rewrite = false;
       for (int i = 0; i < decoded.length; i++) {
         final DecodedDictionaryHistoryResult item = decoded[i];
         final DictionarySearchResult? result = item.result;
         if (result != null) {
           _dictionaryHistoryResults.add(result);
           _historyRowIds[result] = rows[i].id;
+          if (!item.canonical) {
+            _historyJsonStale.add(result);
+            rewrite = true;
+          }
           continue;
         }
-        final String error = item.error ?? 'unknown decode failure';
-        ErrorLogService.instance.log('DictRepo.historyLoad', error);
-        debugPrint('[Fushi] skipping corrupted dictionary history: $error');
+        dropped.add(item.error ?? 'unknown decode failure');
       }
+      if (dropped.isNotEmpty) {
+        final String message =
+            'dropping ${dropped.length} unreadable dictionary history row(s); '
+            'first error: ${dropped.first}';
+        ErrorLogService.instance.log('DictRepo.historyLoad', message);
+        debugPrint('[Fushi] $message');
+      }
+      if (dropped.isNotEmpty || rewrite) _schedulePersistDictionaryHistory();
     } catch (e, stack) {
       ErrorLogService.instance.log('DictRepo.historyLoad', e, stack);
     }
@@ -1042,9 +1058,9 @@ class DictionaryRepository {
 
   /// 分区重编号的**唯一推导**：本机词典与服务器词典共用一条 `order` 数轴
   /// （[_mixedTermOrder]），只给本机词典重编号会让服务器词典在查词序里漂移
-  /// （例：A0 B1 R2 C3 D4 里 A 改语言后本机重编成 B0 C1 D2 A3、R 还是 2，R 就从 C
-  /// 之前跑到了 D 之后）。所以任何改分区顺序的写入（管理页 / ctl 重排、改语言换组）
-  /// 都从这里出写入清单：
+  /// （例：A0 B1 R2 C3 D4 里 A 挪到最后、本机重编成 B0 C1 D2 A3、R 还是 2，R 就从
+  /// C 之前跑到了 D 之后）。所以任何改分区顺序的写入（管理页 / ctl 重排）都从这里
+  /// 出写入清单：
   ///
   /// 1. 现有混排分区 = 本机 [type] 词典 + [serverOnlySectionRows]，按 `order` 归并、
   ///    同序号本机在前（与管理页列表、[_mixedTermOrder] 同一规则）；
@@ -1052,22 +1068,19 @@ class DictionaryRepository {
   ///    没点名的本机词典）守在原来紧跟其后的那本点名词典之前（排在最后一本点名
   ///    词典之后的守在它之后）；[moved] 那本真的换了邻居时它不当锚点，落在新顺序里
   ///    它的前一本正后方（排第一则在分区最前）；
-  /// 3. 整个混排分区按语言组首尾相接规范化（[concatenateLanguageGroupsOf]，与管理页
-  ///    分组同一规则），按下标 0..n-1 重编号。
+  /// 3. 整个混排分区按下标 0..n-1 重编号（语言不参与排序，拍板台 zBzX4B7037）。
   ///
-  /// 分区里没有服务器词典时结果与改造前逐字相同（= [newLocalOrder] 的规范顺序）。
-  /// [replacing]：用它代替缓存里同名那本（改语言：分组按改完的语言算）。
+  /// 分区里没有服务器词典时结果就是 [newLocalOrder] 的顺序。
   /// 只返回序号真的变了的行；「汉字」分区不混服务器词典（混合词典的汉字部分在那里
   /// 有独立序号），[type] 为 kanji 时只有本机词典。
   _SectionWrites _renumberSection(
     DictionaryType type,
     List<String> newLocalOrder, {
     String? moved,
-    Dictionary? replacing,
   }) {
     final List<Dictionary> localSection = <Dictionary>[
       for (final Dictionary d in _dictionariesCache)
-        if (d.type == type) d.name == replacing?.name ? replacing! : d,
+        if (d.type == type) d,
     ];
     final Map<String, Dictionary> byName = <String, Dictionary>{
       for (final Dictionary d in localSection) d.name: d,
@@ -1108,7 +1121,7 @@ class DictionaryRepository {
     }
 
     // 2. [moved] 只在它真的换了邻居（点名词典之间的前后）时才不当锚点：没挪动的
-    // 写回（ctl 位置不变只做规范化）不该把旁边的服务器词典挤开。只点名一本时它就是
+    // 写回（ctl 位置不变）不该把旁边的服务器词典挤开。只点名一本时它就是
     // 唯一的锚点。
     final List<String> namedBefore = <String>[
       for (final _SectionRow r in current)
@@ -1155,16 +1168,11 @@ class DictionaryRepository {
       ],
     ];
 
-    // 3. 语言组规范化 + 重编号；只出序号变了的行（[replacing] 的其它字段由调用方写）。
-    final List<_SectionRow> canonical =
-        concatenateLanguageGroupsOf<_SectionRow>(
-          next,
-          (_SectionRow r) => r.languageGroup,
-        );
+    // 3. 重编号；只出序号变了的行。
     final List<Dictionary> locals = <Dictionary>[];
     final List<RemoteDictionary> remotes = <RemoteDictionary>[];
-    for (int k = 0; k < canonical.length; k++) {
-      final _SectionRow r = canonical[k];
+    for (int k = 0; k < next.length; k++) {
+      final _SectionRow r = next[k];
       final Dictionary? local = r.local;
       if (local != null) {
         if (local.order != k) locals.add(_copyDictionary(local)..order = k);
@@ -1345,114 +1353,19 @@ class DictionaryRepository {
   /// lang 标注），但那份 HTML 是缓存过的——不清的话用户改了语言要等缓存自然过期
   /// 才看得到变化（与 toggleDictionaryHidden 同款理由，BUG-171/BUG-177）。
   ///
-  /// 词典管理页按「有效语言」分组、组内排序（[groupDictionariesByLanguage]）。
-  /// 改完若换了组，这本词典在新组里排**最后**，并且它所在的每个分区（自身类型的
-  /// 分区；混合词典再加「汉字」分区）都按 [sectionAfterLanguageChange] 写回规范
-  /// 顺序（各语言组按显示顺序首尾相接、按下标重编号）——管理页显示的顺序 ==
-  /// 真实查词顺序。只给它一个「全局最大」序号不够：那会让它在查词序里排到
-  /// 「未标注语言」组之后，而管理页把它画在未标注组之前。
-  /// 没换组（例如「自动 · ja」改成手动 `ja`）则位置不动。查词照旧查全部启用的
-  /// 词典，语言只决定它在管理页里归哪组、以及渲染用的字体链。
+  /// 语言只是管理页上的标签与筛选项（`dictionaryLanguageTagOf`），**不动任何
+  /// 序号**：查词优先级仍是全局 `order`，改语言前后这本词典的位置不变（拍板台
+  /// zBzX4B7037）。查词照旧查全部启用的词典。
   Future<void> setDictionaryLanguageOverride(
     Dictionary dictionary,
     String? language,
   ) {
     final String trimmed = language?.trim() ?? '';
-    return _writeMetadata(() async {
-      final Dictionary current = _dictionariesCache.firstWhere(
-        (d) => d.name == dictionary.name,
-        orElse: () => throw StateError(
-          'Dictionary is no longer installed: ${dictionary.name}',
-        ),
-      );
-      final Dictionary updated = _copyDictionary(current)
-        ..languageOverride = trimmed.isEmpty ? null : trimmed;
-      final Map<String, Dictionary> writes = <String, Dictionary>{
-        updated.name: updated,
-      };
-      final List<RemoteDictionary> remoteWrites = <RemoteDictionary>[];
-      if (dictionaryLanguageGroupOf(updated) !=
-          dictionaryLanguageGroupOf(current)) {
-        // 分区成员与顺序取改之前的缓存（已按 order 排好），只把这本换成改完的。
-        final List<Dictionary> after = <Dictionary>[
-          for (final Dictionary d in _dictionariesCache)
-            d.name == updated.name ? updated : d,
-        ];
-        // 两个分区都先按改之前的序号算好，再动任何序号（混合词典没有
-        // kDictKanjiOrderKey 时汉字分区序号退回 order，先改 order 会带偏）。
-        // 自身类型的分区与服务器词典混排：经 [_renumberSection] 连同服务器词典一起
-        // 重编号（这本挪到新组最后），服务器词典守在原来的邻居旁边。
-        final _SectionWrites? typeSection = updated.type == DictionaryType.kanji
-            ? null
-            : _renumberSection(
-                updated.type,
-                <String>[
-                  for (final Dictionary d in sectionAfterLanguageChange(
-                    <Dictionary>[
-                      for (final Dictionary d in after)
-                        if (d.type == updated.type) d,
-                    ],
-                    updated,
-                  ))
-                    d.name,
-                ],
-                moved: updated.name,
-                replacing: updated,
-              );
-        final List<Dictionary>? kanjiSection = updated.isInKanjiSection
-            ? sectionAfterLanguageChange(
-                kanjiSectionDictionariesOf(after),
-                updated,
-              )
-            : null;
-        Dictionary writable(Dictionary d) =>
-            writes.putIfAbsent(d.name, () => _copyDictionary(d));
-        if (typeSection != null) {
-          // 本机行是 [updated] / 缓存那本的拷贝（已带新序号），直接顶替。
-          for (final Dictionary d in typeSection.locals) {
-            writes[d.name] = d;
-          }
-          remoteWrites.addAll(typeSection.remotes);
-        }
-        if (kanjiSection != null) {
-          // 「汉字」分区：纯 kanji 词典写 order，混合词典只写汉字部分的
-          // kDictKanjiOrderKey（同 [updateKanjiSectionOrder]）。
-          for (int i = 0; i < kanjiSection.length; i++) {
-            final Dictionary target = writable(kanjiSection[i]);
-            if (target.hasEmbeddedKanji) {
-              writes[target.name] = target.copyWith(
-                metadata: <String, String>{
-                  ...target.metadata,
-                  kDictKanjiOrderKey: '$i',
-                },
-              );
-            } else {
-              target.order = i;
-            }
-          }
-        }
-      }
-      // 只写真的变了的：顺序没动的词典不进事务。
-      await _commitDictionaries(<Dictionary>[
-        for (final Dictionary d in writes.values)
-          if (d.name == updated.name || _orderChanged(d)) d,
-      ], remote: remoteWrites);
-      final Dictionary committed = writes[updated.name]!;
-      // 与 [_editDictionary] 同理：只在写入成功后把结果回填给调用方手里的快照。
-      dictionary
-        ..order = committed.order
-        ..languageOverride = committed.languageOverride;
-    });
-  }
-
-  /// [candidate] 的两个排序键（[Dictionary.order] / 汉字分区序号）与缓存里同名
-  /// 那本是否不同。
-  bool _orderChanged(Dictionary candidate) {
-    final Dictionary current = _dictionariesCache.firstWhere(
-      (Dictionary d) => d.name == candidate.name,
+    return _editDictionary(
+      dictionary,
+      (Dictionary updated) =>
+          updated.languageOverride = trimmed.isEmpty ? null : trimmed,
     );
-    return current.order != candidate.order ||
-        current.kanjiSectionOrder != candidate.kanjiSectionOrder;
   }
 
   /// 折叠三态的**唯一写入点**（BUG-2158）。两个名单在这里保持互斥。
@@ -1934,14 +1847,17 @@ class DictionaryRepository {
 // UTF-16，每字符按 2 字节计；每个对象/列表再加固定开销。宁可高估。
 
 /// [decodeDictionaryHistoryResults] 的一条结果：解析成功给 [result]，失败给 [error]。
+/// [canonical] = 库里那份正文就是 [DictionarySearchResult.toJson] 的规范格式；false
+/// 表示读得回来但格式不规范（BUG-5064：`entries` 存成对象），应按规范格式重写。
 typedef DecodedDictionaryHistoryResult = ({
   DictionarySearchResult? result,
   String? error,
+  bool canonical,
 });
 
 /// 在一次性后台 isolate 里把查词历史的 `resultJson` 逐条解析回对象
 /// （[encodeDictionaryHistoryResults] 的反向）。坏行不抛，带着错误文本回来，由调用方
-/// 记日志并跳过。
+/// 从库里清掉。
 Future<List<DecodedDictionaryHistoryResult>> decodeDictionaryHistoryResults(
   List<String> jsons,
 ) async {
@@ -1952,9 +1868,21 @@ Future<List<DecodedDictionaryHistoryResult>> decodeDictionaryHistoryResults(
         <DecodedDictionaryHistoryResult>[];
     for (final String json in jsons) {
       try {
-        out.add((result: DictionarySearchResult.fromJson(json), error: null));
+        final Object? decoded = jsonDecode(json);
+        if (decoded is! Map) {
+          throw FormatException(
+            'dictionary history row is not a JSON object: '
+            '${decoded.runtimeType}',
+          );
+        }
+        final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
+        out.add((
+          result: DictionarySearchResult.fromMap(map),
+          error: null,
+          canonical: DictionarySearchResult.hasCanonicalEntries(map),
+        ));
       } catch (e) {
-        out.add((result: null, error: e.toString()));
+        out.add((result: null, error: e.toString(), canonical: false));
       }
     }
     return out;
@@ -2200,14 +2128,6 @@ class _SectionRow {
 
   final Dictionary? local;
   final RemoteDictionary? remote;
-
-  /// 归哪个语言组：与管理页 `DictionaryManagerRow.languageGroup` 同一判据（本机按
-  /// [dictionaryLanguageGroupOf]，服务器行按 host 报的 `sourceLanguage`）。
-  String? get languageGroup {
-    final Dictionary? l = local;
-    if (l != null) return dictionaryLanguageGroupOf(l);
-    return canonicalDictionaryLanguageTag(remote!.sourceLanguage);
-  }
 }
 
 /// [DictionaryRepository] 装载服务器词典的输入：全部目录行（按 host、真名排序）+

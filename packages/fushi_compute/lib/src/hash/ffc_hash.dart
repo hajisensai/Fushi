@@ -51,6 +51,14 @@ typedef _PowCheckDart =
     int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, int);
 typedef _EqualC = Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size);
 typedef _EqualDart = int Function(Pointer<Uint8>, int, Pointer<Uint8>, int);
+typedef _Sha256FileC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Pointer<Uint64>);
+typedef _Sha256FileDart =
+    int Function(Pointer<Uint8>, int, Pointer<Uint8>, Pointer<Uint64>);
+typedef _Crc32FileC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Uint32>, Pointer<Uint64>);
+typedef _Crc32FileDart =
+    int Function(Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Uint64>);
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeDart = void Function(Pointer<Void>);
 
@@ -76,6 +84,14 @@ final class _HashBindings {
       ),
       sha256Free = lib.lookupFunction<_FreeC, _FreeDart>(
         'ffc_hash_sha256_free',
+      ),
+      // 读盘 + 哈希整个文件，几 GB 的片子要几十秒：**必须是非叶调用**——线程在原生代码里
+      // 处于 native 态、算 GC 安全点，同 isolate group 的 UI isolate 照常 GC（BUG-5088）。
+      sha256File = lib.lookupFunction<_Sha256FileC, _Sha256FileDart>(
+        'ffc_hash_sha256_file',
+      ),
+      crc32File = lib.lookupFunction<_Crc32FileC, _Crc32FileDart>(
+        'ffc_hash_crc32_file',
       ),
       crc32 = lib.lookupFunction<_Crc32C, _Crc32Dart>(
         'ffc_hash_crc32',
@@ -110,6 +126,8 @@ final class _HashBindings {
   final _UpdateDart sha256Update;
   final _Sha256FinishDart sha256Finish;
   final _FreeDart sha256Free;
+  final _Sha256FileDart sha256File;
+  final _Crc32FileDart crc32File;
   final _Crc32Dart crc32;
   final _UuidBatchDart uuidV5Batch;
   final _BatchDart hash53Batch;
@@ -347,26 +365,60 @@ Future<String> ffcSha256File(String path, {FushiCompute? library}) async {
   }
 }
 
-/// 用原生 SHA-256 哈希整个文件，返回 64 位十六进制小写摘要。
+/// 整个文件的 SHA-256（64 位十六进制小写），同步：读盘与哈希都在原生库里一次做完
+/// （`ffc_hash_sha256_file`），调用期间阻塞当前 isolate——只该在后台 isolate 里调。
 ///
-/// 同步读：只该在后台 isolate 里调。库不可用抛 [FushiComputeUnavailableError]。
+/// 不在 Dart 里逐块 `readIntoSync(buffer)`：那条路径在 VM 里持有目标数组，整段磁盘读期间
+/// 线程不进 GC 安全点，同 isolate group 的 UI isolate 每次 GC 都得等它（BUG-5088，后台视频
+/// 指纹预热让整个界面掉帧）。原生调用全程处于 native 态，不挡 GC。
+///
+/// 打不开 / 读失败抛 [FileSystemException]；库不可用抛 [FushiComputeUnavailableError]。
 String ffcSha256FileSync(String path, {FushiCompute? library}) {
-  final FfcSha256Hasher hasher = FfcSha256Hasher.create(library: library);
-  try {
-    final RandomAccessFile input = File(path).openSync();
-    try {
-      while (true) {
-        final int count = input.readIntoSync(hasher.buffer);
-        if (count == 0) break;
-        hasher.update(count);
-      }
-    } finally {
-      input.closeSync();
-    }
-    return hasher.finishHex();
-  } finally {
-    hasher.close();
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  return using((Arena arena) {
+    final Pointer<Uint8> out = arena<Uint8>(32);
+    _fileHashCall(
+      arena,
+      path,
+      (Pointer<Uint8> p, int n, Pointer<Uint64> read) =>
+          b.sha256File(p, n, out, read),
+    );
+    return _hex(out.asTypedListOutOfLine(32), 0, 32);
+  });
+}
+
+/// 整个文件的 CRC-32（IEEE，zip 用的那个），同步：读盘与计算都在原生库里一次做完
+/// （`ffc_hash_crc32_file`），不挡 GC，理由同 [ffcSha256FileSync]。只该在后台 isolate 里调。
+///
+/// 打不开 / 读失败抛 [FileSystemException]；库不可用抛 [FushiComputeUnavailableError]。
+int ffcCrc32FileSync(String path, {FushiCompute? library}) {
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  return using((Arena arena) {
+    final Pointer<Uint32> out = arena<Uint32>();
+    _fileHashCall(
+      arena,
+      path,
+      (Pointer<Uint8> p, int n, Pointer<Uint64> read) =>
+          b.crc32File(p, n, out, read),
+    );
+    return out.value;
+  });
+}
+
+/// 把 [path] 按 UTF-8 放进 [arena]，跑一次整文件哈希调用 [call]，按状态码抛错。
+void _fileHashCall(
+  Arena arena,
+  String path,
+  int Function(Pointer<Uint8> path, int pathLength, Pointer<Uint64> read) call,
+) {
+  final Uint8List bytes = utf8.encode(path);
+  final Pointer<Uint8> pathPtr = arena<Uint8>(max(bytes.length, 1));
+  pathPtr.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
+  final int status = call(pathPtr, bytes.length, arena<Uint64>());
+  if (status == FfcStatus.ioError) {
+    throw FileSystemException('Cannot read file for hashing', path);
   }
+  FfcStreamingHash._checkStatus(status);
 }
 
 String _hex(Uint8List bytes, int start, int end) {

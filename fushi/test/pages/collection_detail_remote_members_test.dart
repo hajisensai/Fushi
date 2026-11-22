@@ -201,6 +201,72 @@ void main() {
     );
   });
 
+  testWidgets('远端集按 host 下发的生效分栏出季 tab（BUG-5084）', (WidgetTester tester) async {
+    for (final String uid in <String>['video/e1', 'video/e2', 'video/e3']) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+    RemoteVideoInfo withSection(RemoteVideoInfo info, String? sectionKey) =>
+        RemoteVideoInfo(
+          id: info.id,
+          title: info.title,
+          collection: info.collection,
+          fileName: '${info.title}.mkv',
+          sectionKey: sectionKey,
+        );
+
+    useTallSurface(tester);
+    await tester.pumpWidget(
+      detailPage(
+        remoteVideos: <RemoteVideoInfo>[
+          // host 上手动钉到 PV·特典的短篇：文件名派生是第 1 季。
+          withSection(remoteEpisode('video/e1', 'Show 01', 0), 'extras'),
+          withSection(remoteEpisode('video/e2', 'Show 02', 1), 's1'),
+          // 旧 host 不下发：按文件名派生。
+          withSection(remoteEpisode('video/e3', 'Show 03', 2), null),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder tabs = find.byKey(
+      const ValueKey<String>('collection-season-tabs'),
+    );
+    expect(tabs, findsOneWidget, reason: 'host 的手动分栏必须在客户端分出 PV·特典栏');
+    expect(
+      tester
+          .widgetList<Tab>(
+            find.descendant(of: tabs, matching: find.byType(Tab)),
+          )
+          .map((Tab tab) => tab.text ?? '')
+          .toList(),
+      <String>['第 1 季', 'PV·特典'],
+    );
+    await tester.tap(find.text('第 1 季'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e1')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e3')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('PV·特典'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/e2')),
+      findsNothing,
+    );
+  });
+
   testWidgets('只在对端的集仍给「下载本集」，不给「打开文件位置」', (WidgetTester tester) async {
     await db.upsertVideoBook(
       VideoBooksCompanion(

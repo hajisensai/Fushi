@@ -1030,18 +1030,47 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                           .videoDownloadPipelineService
                                           ?.retryJob(job.jobId);
                                     },
-                                    onResume: (VideoDownloadJobRow job) async {
-                                      await ref
-                                          .read(appProvider)
-                                          .videoDownloadPipelineService
-                                          ?.resumeJob(job.jobId);
-                                    },
+                                    // 继续 / 停做种 / 续做种都是整批形态：批量
+                                    // 整批共用一次后端枚举（HBK-AUDIT-025）。
+                                    onResume:
+                                        (
+                                          List<VideoDownloadJobRow> jobs,
+                                        ) async =>
+                                            await ref
+                                                .read(appProvider)
+                                                .videoDownloadPipelineService
+                                                ?.resumeJobs(_jobIds(jobs)) ??
+                                            const <String, Object>{},
                                     onCancel: (VideoDownloadJobRow job) async {
                                       await ref
                                           .read(appProvider)
                                           .videoDownloadPipelineService
                                           ?.cancelJob(job.jobId);
                                     },
+                                    // 已完成仍做种的任务：停 / 续做种，走任务
+                                    // 自己绑定的后端（BUG-5072）。
+                                    onPauseSeeding:
+                                        (
+                                          List<VideoDownloadJobRow> jobs,
+                                        ) async =>
+                                            await ref
+                                                .read(appProvider)
+                                                .videoDownloadPipelineService
+                                                ?.pauseSeedingJobs(
+                                                  _jobIds(jobs),
+                                                ) ??
+                                            const <String, Object>{},
+                                    onResumeSeeding:
+                                        (
+                                          List<VideoDownloadJobRow> jobs,
+                                        ) async =>
+                                            await ref
+                                                .read(appProvider)
+                                                .videoDownloadPipelineService
+                                                ?.resumeSeedingJobs(
+                                                  _jobIds(jobs),
+                                                ) ??
+                                            const <String, Object>{},
                                     onPairAudiobook:
                                         (VideoDownloadJobRow job) async {
                                           await _pairDownloadedAudiobook(job);
@@ -1601,4 +1630,8 @@ List<_DownloadsResourceDomain> _visibleResourceDomains(
         (domain != _DownloadsResourceDomain.games ||
             gamesForm == GamesModuleForm.localLibrary))
       domain,
+];
+
+List<String> _jobIds(List<VideoDownloadJobRow> jobs) => <String>[
+  for (final VideoDownloadJobRow job in jobs) job.jobId,
 ];

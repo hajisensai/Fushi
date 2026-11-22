@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -199,6 +201,74 @@ void main() {
     expect(repo.dictionaryHistory.single.searchTerm, '犬');
   });
 
+  test('BUG-5064：entries 存成对象的行还原进内存，并按规范格式重写回库', () async {
+    await _seedHistory(db, <String>['猫', '犬']);
+    final DictionaryHistoryRow row = (await db.getAllDictionaryHistory()).first;
+    final Map<String, dynamic> map =
+        jsonDecode(row.resultJson) as Map<String, dynamic>;
+    map['entries'] = <Object?>[
+      for (final Object? e in map['entries'] as List<Object?>)
+        jsonDecode(e! as String),
+    ];
+    await db.customStatement(
+      'UPDATE dictionary_history SET result_json = ? WHERE id = ?',
+      <Object>[jsonEncode(map), row.id],
+    );
+
+    final DictionaryRepository repo = DictionaryRepository(db);
+    addTearDown(repo.dispose);
+    await repo.loadFromDb();
+
+    expect(
+      <String>[for (final r in repo.dictionaryHistory) r.searchTerm],
+      <String>['猫', '犬'],
+    );
+    expect(repo.dictionaryHistory.first.entries.single.meaning, 'meaning of 猫');
+
+    // 没查新词，只是退出前的 flush：坏格式那行也已经按规范格式重写（行 id 不变）。
+    await repo.flushDictionaryHistoryNow();
+    final List<DictionaryHistoryRow> after = await db.getAllDictionaryHistory();
+    expect(<int>[for (final r in after) r.id], contains(row.id));
+    for (final DictionaryHistoryRow r in after) {
+      final Map<String, dynamic> m =
+          jsonDecode(r.resultJson) as Map<String, dynamic>;
+      expect(DictionarySearchResult.hasCanonicalEntries(m), isTrue);
+    }
+  });
+
+  test('BUG-5064：读不回来的行装载后即从库里清掉，不再每次启动重报', () async {
+    await _seedHistory(db, <String>['猫', '犬']);
+    await db.customStatement(
+      'UPDATE dictionary_history SET result_json = ? WHERE position = 0',
+      <Object>[
+        jsonEncode(<String, Object?>{
+          'searchTerm': '猫',
+          'entries': <Object?>[42],
+        }),
+      ],
+    );
+    await db.customStatement(
+      'INSERT INTO dictionary_history (position, result_json) VALUES (?, ?)',
+      <Object>[2, '{not json'],
+    );
+
+    final DictionaryRepository repo = DictionaryRepository(db);
+    addTearDown(repo.dispose);
+    await repo.loadFromDb();
+    expect(repo.dictionaryHistory.single.searchTerm, '犬');
+
+    // 用户什么都没做，只有退出前的 flush：坏行已经不在库里了。
+    await repo.flushDictionaryHistoryNow();
+    final List<DictionaryHistoryRow> after = await db.getAllDictionaryHistory();
+    expect(after, hasLength(1));
+    final List<DecodedDictionaryHistoryResult> decoded =
+        await decodeDictionaryHistoryResults(<String>[
+          for (final DictionaryHistoryRow r in after) r.resultJson,
+        ]);
+    expect(decoded.single.error, isNull);
+    expect(decoded.single.result?.searchTerm, '犬');
+  });
+
   test('没有历史：不起 isolate 也照常落定并回调', () async {
     int loadedCalls = 0;
     final DictionaryRepository repo = DictionaryRepository(
@@ -230,6 +300,7 @@ void main() {
     expect(decoded[0].result?.searchTerm, '猫');
     expect(decoded[0].result?.scrollPosition, 3);
     expect(decoded[0].error, isNull);
+    expect(decoded[0].canonical, isTrue);
     expect(decoded[1].result, isNull);
     expect(decoded[1].error, isNotEmpty);
     expect(decoded[2].result?.searchTerm, '犬');

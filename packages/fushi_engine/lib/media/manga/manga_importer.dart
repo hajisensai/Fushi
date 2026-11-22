@@ -212,32 +212,55 @@ class MangaImporter {
   /// [kPageSizeProbePrefixBytes] 字节，能凭前缀定论的格式（[probeImageSizeFromPrefix]：
   /// PNG、头部在前缀内的 JPEG）直接返回；其余读全量走 [_pageSize]（manga-29c，此前
   /// 每页整张读进内存只为读头）。
+  ///
+  /// 读全量时用**同一个句柄**接着读前缀之后的部分（HBK-AUDIT-051）：此前关掉句柄、
+  /// `readAsBytes` 从头再读整页，WebP / AVIF 每页开两次文件、前缀读两遍。
   static Future<MokuroSize> pageSizeOfFile(
     File file,
     String relativeUrl,
   ) async {
     final RandomAccessFile handle = await file.open();
-    final int length;
-    final Uint8List prefix;
+    final Uint8List bytes;
     try {
-      length = await handle.length();
-      prefix = await handle.read(kPageSizeProbePrefixBytes);
+      final int length = await handle.length();
+      final Uint8List prefix = await handle.read(kPageSizeProbePrefixBytes);
+      final ({int width, int height})? header = probeImageSizeFromPrefix(
+        prefix,
+      );
+      if (header != null) {
+        return MokuroSize(header.width.toDouble(), header.height.toDouble());
+      }
+      bytes = prefix.length >= length
+          ? prefix
+          : await _readRest(handle, prefix, length);
     } finally {
       await handle.close();
     }
-    final ({int width, int height})? header = probeImageSizeFromPrefix(prefix);
-    if (header != null) {
-      return MokuroSize(header.width.toDouble(), header.height.toDouble());
-    }
-    final Uint8List bytes = prefix.length >= length
-        ? prefix
-        : await file.readAsBytes();
     if (isMangaTranscodedPage(file.path)) {
       // 导入时要转成 PNG 的页（TIFF）：尺寸必须与转码产物一致，而转码按原生解码器
       // 读到的方向标签转正——尺寸也只问原生内核（Dart 头探测不看 TIFF 方向）。
       return _nativePageSize(bytes, relativeUrl);
     }
     return _pageSize(bytes, relativeUrl);
+  }
+
+  /// 已从 [handle] 读出 [prefix]：把剩余部分接着读进一块 [length] 大小的缓冲，返回
+  /// 整页字节。文件在两次读之间被截短时返回实际读到的部分（与 `readAsBytes` 读到
+  /// 什么算什么同一语义）。
+  static Future<Uint8List> _readRest(
+    RandomAccessFile handle,
+    Uint8List prefix,
+    int length,
+  ) async {
+    final Uint8List bytes = Uint8List(length)
+      ..setRange(0, prefix.length, prefix);
+    int filled = prefix.length;
+    while (filled < length) {
+      final int read = await handle.readInto(bytes, filled, length);
+      if (read <= 0) break;
+      filled += read;
+    }
+    return filled == length ? bytes : Uint8List.sublistView(bytes, 0, filled);
   }
 
   /// [path] 是不是导入时转码成 PNG 落盘的页图（[kMangaImportTranscodedPageExtensions]）。

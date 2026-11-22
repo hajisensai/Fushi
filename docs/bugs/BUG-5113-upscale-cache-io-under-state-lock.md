@@ -1,0 +1,6 @@
+## BUG-5113 · 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队
+- **报告**：2026-11-22（Codex 2026-11-21 PR 审查 HBK-AUDIT-014，PR #3951）
+- **真实性**：✅ 真 bug。`native/fushi_compute/src/upscale.rs` 工作线程（修前 `worker_loop` 约 281–283 行）先拿 `engine.state` 锁再 `cache.put`，`native/fushi_compute/src/upscale/cache.rs` 的 `put` 在锁里同步 `fs::write` 临时文件、`fs::rename`、淘汰时 `fs::remove_file`；`ffc_upscale_cached_path` 在锁里开文件刷修改时间，`ffc_upscale_start` 在锁里扫缓存目录，`ffc_upscale_submit` 在锁里复制整页字节。`MangaUpscaleController.isCached` / `request` / `focus`（`manga_upscale_controller.dart`）都在 UI isolate 上同步调这些 FFI，慢盘时 UI 线程排在磁盘 I/O 后面。实测（模拟写一次 400 ms 的慢盘）：修前另一线程拿锁查询等了 413.7 ms。
+- **[x] ① 已修复** — 磁盘 I/O 全部移出状态锁：`DiskCache` 除 `open` 外只动内存——`stage` 只算路径，`PendingPut::write` 在锁外写临时文件 + 改名，`commit` 在锁里登记并返回要删的淘汰文件，调用方锁外 `remove_files`；`Engine::cached_path` 锁里只改 LRU 顺序，锁外 `refresh_file` 刷修改时间（文件不在再拿锁 `forget`）；`ffc_upscale_start` 锁外 `DiskCache::open`，`set_limit` 的淘汰也锁外删；`ffc_upscale_submit` 整页字节在锁外复制。整页复制数核对：Dart `submit` 一次（Dart 堆 → malloc），Rust 一次（`to_vec` 进队列），两次都不在锁里。
+- **[x] ② 已加自动化测试** — Rust `upscale::tests::cache_write_does_not_hold_the_state_lock`（注入 400 ms 慢写，另一线程拿锁查询的等待须 < 100 ms；并验写入后 `QUERY_CACHED`、文件被外部删后 `cached_path` 作废条目）；`upscale::cache::tests::vanished_file_is_forgotten_on_lookup`、`evicts_least_recently_used_and_survives_reopen`（`set_limit` 本身不删文件）。变异实测：把写盘挪回锁内，用例红（等待 413.7 ms）。
+- **备注**：真机慢盘未复测。

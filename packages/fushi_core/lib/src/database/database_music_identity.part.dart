@@ -250,7 +250,9 @@ Future<MusicScanUidRemap> _remapScannedMusicTracks(
     usedTargets.add(target.trackUid);
     trackRemap[t.trackUid.value] = target.trackUid;
     final String? incomingAlbum = t.albumUid.present ? t.albumUid.value : null;
-    final String? targetAlbum = target.albumUid;
+    // 旧行的原始归属（归组前按标签算的 uid）：生效专辑可能是归组改挂的那张，拿它当
+    // 改写目标会把新解析的曲目连同原始归属一起钉死在别的专辑上（HBK-AUDIT-027）。
+    final String? targetAlbum = target.scanAlbumUid ?? target.albumUid;
     if (incomingAlbum != null &&
         targetAlbum != null &&
         incomingAlbum != targetAlbum &&

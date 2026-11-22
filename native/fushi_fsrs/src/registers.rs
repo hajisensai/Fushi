@@ -1337,6 +1337,17 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// [keys] 里每个字段键有没有修改记录（有任何一条就算，值是 null / 空串也算；Dart `SrsEntityEdits[key] != null`）。
+/// 一次解析，逐键回答。
+pub(crate) fn has_registers(
+    edits: &[StoredEdit<'_>],
+    keys: &[String],
+) -> Result<Vec<bool>, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(keys.iter().map(|k| ent.reg(k).is_some()).collect())
+}
+
 /// 往某实体的字段键 [key] 写 [value] 是不是什么都不改（Dart 旧 `srsEditIsNoop`）：这个键有生效记录、没有冲突，且
 /// 生效值与它「相同」（[same_value]）。没有记录、或有冲突待裁决的一律要写。
 pub(crate) fn write_is_noop(

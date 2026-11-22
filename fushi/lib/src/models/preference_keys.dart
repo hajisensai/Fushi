@@ -401,6 +401,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
+  // String（JSON：客户区归一化 left/top/width/height）：OCR 游戏模式上次框选的台词区域
+  // （gal_ocr_line_source.dart 的 GalOcrRegion）。
+  'gal_ocr_region',
   'galgame_library',
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
@@ -588,6 +591,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',
+  // bool（默认 false）：电脑端（Windows）「缓存其他应用的声音」——开着时启动即常驻录
+  // 系统混音环，应用外查词制卡带查词前最后一句语音（拍板 design-cross-app-audio-desktop）。
+  // Android 不用它（每次都要重新同意屏幕共享）。设备本地。
+  'mining_app_audio_capture_desktop',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
@@ -672,8 +679,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_backdrop_animate',
   // double（默认 1.0，0.5–2.0）：歌词页流体背景饱和度倍数。
   'music_lyrics_backdrop_saturation',
-  // String（默认 'mesh'）：歌词页流体背景算法 pixi / mesh / classic
-  // （MusicLyricsBackdropStyle.prefValue）。
+  // String（默认 'pixi'，只在手选时落库；无行 = 跟出厂默认）：歌词页流体背景算法
+  // pixi / mesh / classic（MusicLyricsBackdropStyle.prefValue）。
   'music_lyrics_backdrop_style',
   // bool（默认 true）：歌词页 / MV 结构化歌词里非当前行轻模糊；关掉后上下句保持清晰
   // （学习时要看前后句，GitHub #3354）。设备本地观感偏好（KaraokeLyricsAppearance.blurInactive）。

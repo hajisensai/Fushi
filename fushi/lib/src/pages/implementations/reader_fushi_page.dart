@@ -48,6 +48,7 @@ import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
 import 'package:fushi/src/media/novel/online/online_novel_missing_images_notice.dart';
+import 'package:fushi/src/media/novel/online/reader_missing_images_wiring.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
@@ -2084,7 +2085,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 网文书的缺图提示与补取（[OnlineNovelMissingImagesRetrier]）：在线书 / 网页
   /// 小说书由取章加载器补取，没有加载器的书（LNReader 下载成的 EPUB）由
   /// [LnReaderDownloadedBookImages] 按章节里的缺图占位补取。开书时建、换书时换。
-  OnlineNovelMissingImagesController? _onlineMissingImages;
+  ReaderMissingImagesWiring? _onlineMissingImages;
 
   /// [_chapterCharCounts] 整表已是当前口径（[kChapterCharCountCaliber]）、并已
   /// 注入 [EpubBook.setChapterCharCountHints]。在线书取章后换单章字数时据此决定
@@ -3553,20 +3554,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           nextChapterTitle: t.novel_web_chapter_next,
         );
     final OnlineNovelMissingImagesRetrier? missingImagesRetrier =
-        switch (_onlineChapterLoader) {
-          final OnlineNovelMissingImagesRetrier retrier => retrier,
-          null => lnReaderDownloadedBookImagesFor(
+        readerMissingImagesRetrierFor(
+          chapterLoader: _onlineChapterLoader,
+          downloadedBookImages: () => lnReaderDownloadedBookImagesFor(
             row: bookRow,
             extractDir: extractDir,
             database: db,
             manager: () => appModelNoUpdate.lnReaderManager,
           ),
-          _ => null,
-        };
+        );
     if (missingImagesRetrier != null) {
-      _onlineMissingImages = _createOnlineMissingImagesController(
-        missingImagesRetrier,
-      );
+      _onlineMissingImages = _createOnlineMissingImages(missingImagesRetrier);
     }
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
@@ -5003,7 +5001,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           ),
                           // 在线书缺图提示（悬浮胶囊，不占正文位置）。
                           if (_onlineMissingImages
-                              case final OnlineNovelMissingImagesController
+                              case final ReaderMissingImagesWiring
                                   missingImages)
                             _coveredByLyricsOverlay(
                               'online_missing_images',
@@ -5013,7 +5011,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                                 right: 12,
                                 child: Center(
                                   child: OnlineNovelMissingImagesNoticeBar(
-                                    controller: missingImages,
+                                    controller: missingImages.controller,
                                   ),
                                 ),
                               ),

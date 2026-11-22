@@ -5,8 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
-import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show DictionaryPopupWebViewState;
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 /// Unit tests for the shared [DictionaryPopupController] — the single set of
@@ -887,12 +886,12 @@ void main() {
       final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
       pushNested(c, '一'); // 顶层（热槽不复用的路径，也走非热槽建层）
       final DictionaryPopupEntry child = pushNested(c, '二');
-      final GlobalKey<DictionaryPopupWebViewState> childKey = child.webViewKey;
+      final GlobalKey<DictionaryPopupRealmState> childKey = child.webViewKey;
       expect(c.parkedRealms, isEmpty);
 
       c.truncateTo(2);
       expect(c.entries.length, 2);
-      expect(c.parkedRealms, <GlobalKey<DictionaryPopupWebViewState>>[
+      expect(c.parkedRealms, <GlobalKey<DictionaryPopupRealmState>>[
         childKey,
       ], reason: '被裁的嵌套层不再随 entry 一起死，键进池等待接管');
 

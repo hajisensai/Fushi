@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
-import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
@@ -92,8 +92,8 @@ class DictionaryPopupEntry {
     this.allLoaded = false,
     this.rubySpans = const <FushiRubySpan>[],
     this.contextSentence = '',
-    GlobalKey<DictionaryPopupWebViewState>? webViewKey,
-  }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupWebViewState>();
+    GlobalKey<DictionaryPopupRealmState>? webViewKey,
+  }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupRealmState>();
 
   String searchTerm;
   Rect selectionRect;
@@ -173,7 +173,7 @@ class DictionaryPopupEntry {
   int get lookupGeneration => _lookupGeneration;
   int _lookupGeneration = 0;
 
-  /// 本层当前查词会话的**全局唯一**编号，交给 [DictionaryPopupWebView.lookupSession]：
+  /// 本层当前查词会话的**全局唯一**编号，交给 `DictionaryPopupWebView.lookupSession`：
   /// WebView 据此判「这是新会话、要全量重画并从顶部开始」，而不是靠结果对象身份去猜——
   /// 本地查词缓存命中时同一个词再查会拿回**同一个**结果对象，只比身份就不推送、不归零，
   /// 弹窗带着上一次的滚动位翻出。全局（而非每层各自的 [lookupGeneration]）是因为停驻
@@ -214,7 +214,7 @@ class DictionaryPopupEntry {
   bool get hasNavigationHistory => canGoBack || canGoForward;
 
   /// 下一次推本层 result 渲染完成后要恢复到的 `scrollTop`；null = 归零（新词从
-  /// 顶部开始）。只有后退 / 前进回到历史页时非空，由 [DictionaryPopupWebView]
+  /// 顶部开始）。只有后退 / 前进回到历史页时非空，由 `DictionaryPopupWebView`
   /// 经 `window.__fushiPendingScrollTop` 交给 popup.js 在渲染尾批应用。
   double? restoreScrollTop;
 
@@ -226,7 +226,7 @@ class DictionaryPopupEntry {
   /// 嵌套层就用它建 entry（同一把 GlobalKey ⇒ 同一个 WebView element ⇒ 静态段、
   /// 字体、JIT 全部还热）。键复用而不是 entry 复用：仍在途的旧异步查词握着旧 entry，
   /// `entries.contains(旧 entry)` 恒假，绝不会把旧词的结果灌进新层。
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey;
+  final GlobalKey<DictionaryPopupRealmState> webViewKey;
 }
 
 /// 与 UI 无关的查词弹窗**栈原语**：书内（base_source_page）、视频、首页查词 tab、
@@ -281,7 +281,7 @@ class DictionaryPopupController extends ChangeNotifier {
 
   /// 栈顶**可见**层的 WebView 状态（热槽隐身层不算）；无可见层或 WebView 未挂载
   /// 返回 null（钩子就地变 no-op，不抛）。
-  DictionaryPopupWebViewState? get _topVisibleWebViewState {
+  DictionaryPopupRealmState? get _topVisibleWebViewState {
     final int index = lastVisibleIndex;
     return index < 0 ? null : _entries[index].webViewKey.currentState;
   }
@@ -352,18 +352,16 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 是常见操作。多停一个 realm 换掉这次冷建；低内存模式仍一个都不停（见 [_retireEntries]）。
   static const int kMaxParkedRealms = 2;
 
-  final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealms =
-      <GlobalKey<DictionaryPopupWebViewState>>[];
+  final List<GlobalKey<DictionaryPopupRealmState>> _parkedRealms =
+      <GlobalKey<DictionaryPopupRealmState>>[];
 
-  late final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealmsView =
-      UnmodifiableListView<GlobalKey<DictionaryPopupWebViewState>>(
-        _parkedRealms,
-      );
+  late final List<GlobalKey<DictionaryPopupRealmState>> _parkedRealmsView =
+      UnmodifiableListView<GlobalKey<DictionaryPopupRealmState>>(_parkedRealms);
 
   /// 停驻中的嵌套 realm 键（最近用过的在末尾）。宿主必须把每一把键渲染成一层屏外
   /// 隐藏弹窗（[parkedRealmPopupLayer]），否则键背后的 WebView element 会被销毁，
   /// 复用就退化成冷建。
-  List<GlobalKey<DictionaryPopupWebViewState>> get parkedRealms =>
+  List<GlobalKey<DictionaryPopupRealmState>> get parkedRealms =>
       _parkedRealmsView;
 
   /// 把一批离栈的层收尾：取消挂起 Timer；非热槽层的 WebView 键停驻（超上限的、
@@ -393,9 +391,9 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   /// 新建非热槽层用的 WebView 键：有停驻 realm 就接管最近用过的那把，没有就新建。
-  GlobalKey<DictionaryPopupWebViewState> _takeRealmKey() {
+  GlobalKey<DictionaryPopupRealmState> _takeRealmKey() {
     if (_parkedRealms.isEmpty) {
-      return GlobalKey<DictionaryPopupWebViewState>();
+      return GlobalKey<DictionaryPopupRealmState>();
     }
     return _parkedRealms.removeLast();
   }

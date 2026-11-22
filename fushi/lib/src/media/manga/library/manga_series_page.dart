@@ -9,7 +9,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
-import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -255,12 +255,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   );
 
   /// 下载状态位（设计稿 2026-09-12 §5）：任务行 + 磁盘判据，两份合成章节行上
-  /// 的一个状态。任务表一变就重算；磁盘判据按章缓存，只重判任务行状态变了的章
+  /// 的一个状态。本书的任务行一变就重算（别的书的任务变化不叫醒本页）；磁盘判据按章缓存，只重判任务行状态变了的章
   /// （[MangaChapterDownloadVerdicts]，manga-4），刷新串行合并（[_downloadRefresh]）。
   Map<String, MangaDownloadJobRow> _jobs =
       const <String, MangaDownloadJobRow>{};
   Set<String> _downloaded = const <String>{};
-  StreamSubscription<void>? _jobsWatch;
+
+  /// 本书章节任务的变化订阅（HBK-AUDIT-050：只订本书，别的书写进度不叫醒本页）。
+  StreamSubscription<Map<String, MangaDownloadJobRow>>? _jobsWatch;
+  String? _jobsWatchBookKey;
   final MangaChapterDownloadVerdicts _downloadVerdicts =
       MangaChapterDownloadVerdicts();
   late final CoalescedRefresh _downloadRefresh = CoalescedRefresh(
@@ -397,6 +400,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   void dispose() {
     unawaited(_jobsWatch?.cancel());
     _jobsWatch = null;
+    _jobsWatchBookKey = null;
     unawaited(_ocrChangesWatch?.cancel());
     unawaited(_ocrEventsWatch?.cancel());
     unawaited(_localVolumeChanges?.cancel());
@@ -559,16 +563,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final AppModel? appModel = _appModelOrNull;
     if (row == null || entry == null || appModel == null) return;
     final MangaDownloadService downloads = appModel.mangaDownloadService;
-    _jobsWatch ??= downloads.watchJobs().listen(
-      (_) => unawaited(_refreshDownloadState()),
-      onError: (Object error, StackTrace stack) {
-        ErrorLogService.instance.log(
-          'MangaSeriesPage.watchDownloads',
-          error,
-          stack,
-        );
-      },
-    );
+    if (_jobsWatchBookKey != row.bookKey) {
+      unawaited(_jobsWatch?.cancel());
+      _jobsWatchBookKey = row.bookKey;
+      _jobsWatch = downloads
+          .watchChapterJobsForBook(row.bookKey)
+          .listen(
+            (_) => unawaited(_refreshDownloadState()),
+            onError: (Object error, StackTrace stack) {
+              ErrorLogService.instance.log(
+                'MangaSeriesPage.watchDownloads',
+                error,
+                stack,
+              );
+            },
+          );
+    }
     final Map<String, MangaDownloadJobRow> jobs = await downloads.jobsForBook(
       row.bookKey,
     );
@@ -582,6 +592,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
     if (!mounted) return;
     final bool downloadedChanged = !setEquals(downloaded, _downloaded);
+    // 本书显示数据没变（任务行、已下载集合、书目录都同上一轮）就不重建。
+    if (!downloadedChanged && bookDir == _bookDir && mapEquals(jobs, _jobs)) {
+      _watchOcr(row.bookKey);
+      return;
+    }
     setState(() {
       _jobs = jobs;
       _downloaded = downloaded;

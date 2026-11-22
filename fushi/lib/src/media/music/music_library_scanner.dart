@@ -466,6 +466,9 @@ class MusicLibraryScanner {
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    // 同一张 CD 只有部分曲目写了专辑艺人时的「同目录同名」并回一张（BUG-5164）不在这里
+    // 整源再做：writeMusicScanBatch / softDeleteMissingMusicTracks 各自在同一事务里只对
+    // 改动到的目录重算（HBK-AUDIT-027），零变化的增量扫描不读任何归组数据。
     if (reparseAll) await _db.setPref(revisionKey, revision);
     final int imported = await _importPlaylists(playlists, errors);
     return MusicScanSummary(

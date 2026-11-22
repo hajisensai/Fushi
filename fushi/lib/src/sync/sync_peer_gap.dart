@@ -68,6 +68,7 @@ enum SyncPeerGapDimension {
         'local audio libraries were matched by display name only (a renamed '
         'copy of the same library may transfer again)',
     capabilityKey: kLiveLibraryLocalAudioContentIdCapability,
+    degraded: true,
   );
 
   const SyncPeerGapDimension({
@@ -75,7 +76,12 @@ enum SyncPeerGapDimension {
     required this.consequence,
     this.capabilityKey,
     this.reportWhenDeclaredOff = false,
+    this.degraded = false,
   });
+
+  /// 缺这项能力时这一维度**照样同步了、只是降级**（本地音频退回按显示名匹配），而
+  /// 不是没同步。手动同步摘要据此把它算进「N 项只能降级同步」，不说成「没同步」。
+  final bool degraded;
 
   /// 报告行前缀，与该维度其它错误行（`'$label: $error'`）同前缀。
   final String label;

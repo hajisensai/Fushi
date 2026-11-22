@@ -187,8 +187,8 @@ List<String> _keyedTexts(WidgetTester tester, Finder scope, String prefix) {
 
 void _printManagerEvidence(WidgetTester tester, String step, Finder page) {
   _printTexts(step, _textsIn(tester, page));
-  for (final String h in _keyedTexts(tester, page, 'dict-language-group-')) {
-    debugPrint('$_kTag $step group-header | $h');
+  for (final String h in _keyedTexts(tester, page, 'dict-row-language-')) {
+    debugPrint('$_kTag $step row-language | $h');
   }
   for (final String c in _keyedTexts(tester, page, 'dict-row-source-')) {
     debugPrint('$_kTag $step row-chip | $c');

@@ -1,5 +1,12 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
+import 'package:fushi/src/mining/galgame_audio_source.dart' show GalAudioSlice;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/desktop/desktop_clipboard_service.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
@@ -8,6 +15,8 @@ import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/desktop/desktop_permission_service.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+
+import '../mining/fake_loopback_native.dart';
 
 /// BUG-730 — BEHAVIOURAL test (not source-scan): drives the REAL app-external
 /// mine bridge (`maybeHandleOverlayDeferredBridge` → `_handleMineBridge` →
@@ -23,6 +32,9 @@ class _CapturingAnkiRepo extends BaseAnkiRepository {
   AnkiMiningContext? captured;
   String? capturedPayloadJson;
 
+  /// 制卡那一刻句子音频文件在不在（后端要从它拷媒体）。
+  bool? sentenceAudioExisted;
+
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
@@ -30,6 +42,8 @@ class _CapturingAnkiRepo extends BaseAnkiRepository {
   }) async {
     captured = context;
     capturedPayloadJson = rawPayloadJson;
+    final String? audio = context.sentenceAudioPath;
+    sentenceAudioExisted = audio == null ? null : File(audio).existsSync();
     // result != success → `_mineEntry` skips `_recordMinedStats` (no DB touch).
     return MineOutcome.failure('capture');
   }
@@ -221,5 +235,78 @@ void main() {
     await _pumpUntil(() => delegatedNoteId != null && replied);
     expect(delegatedNoteId, 731);
     expect(repo.captured, isNull);
+  });
+
+  // 拍板 design-cross-app-audio-desktop：电脑端应用外查词制卡带查词前最后一句语音。
+  group('cross-app sentence audio (desktop)', () {
+    const MethodChannel loopback = MethodChannel('test/overlay_loopback');
+    late FakeLoopbackNative native;
+    late CrossAppAudioCapture capture;
+
+    setUp(() async {
+      native = FakeLoopbackNative(loopback)..install();
+      capture = CrossAppAudioCapture.forTesting(
+        const MethodChannel('test/overlay_cross_app_audio'),
+        desktopLoopbackChannel: loopback,
+        desktopEncoder: (GalAudioSlice clip, String outputPath) async {
+          await File(outputPath).writeAsBytes(<int>[1, 2, 3]);
+          return true;
+        },
+      );
+      CrossAppAudioCapture.debugInstance = capture;
+      expect((await capture.start()).running, isTrue);
+    });
+
+    tearDown(() async {
+      await capture.stop();
+      CrossAppAudioCapture.debugInstance = null;
+      native.uninstall();
+    });
+
+    Map<String, Object?> fields() => <String, Object?>{
+      'expression': '勝負',
+      'reading': 'しょうぶ',
+      'matched': '勝負',
+      'dictionaryMedia': '',
+    };
+
+    test(
+      'the lookup-time snapshot reaches AnkiMiningContext.sentenceAudioPath',
+      () async {
+        final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+        bool replied = false;
+        maybeHandleOverlayDeferredBridge(
+          model: _desktopModel(repo),
+          handler: 'mineEntry',
+          message: _mineMessage(fields()),
+          resolveBridge: (int id, Object? value) async => replied = true,
+          sentenceContext: '今日は真剣勝負だ。',
+          sentenceAudio: capture.snapshot(),
+        );
+        await _pumpUntil(() => repo.captured != null && replied);
+        final String? audio = repo.captured?.sentenceAudioPath;
+        expect(audio, isNotNull, reason: '应用外查词制卡必须带上跨应用语音');
+        expect(repo.sentenceAudioExisted, isTrue);
+        await _pumpUntil(() => !File(audio!).existsSync());
+        expect(File(audio!).existsSync(), isFalse, reason: '制完删临时句子音频');
+      },
+    );
+
+    test('a snapshot superseded by a later lookup is never attached', () async {
+      final _CapturingAnkiRepo repo = _CapturingAnkiRepo();
+      final Future<CrossAppAudioSnapshot?> stale = capture.snapshot();
+      await stale;
+      await capture.snapshot(); // 下一次查词顶替了它
+      maybeHandleOverlayDeferredBridge(
+        model: _desktopModel(repo),
+        handler: 'mineEntry',
+        message: _mineMessage(fields()),
+        resolveBridge: (int id, Object? value) async {},
+        sentenceAudio: stale,
+      );
+      await _pumpUntil(() => repo.captured != null);
+      expect(repo.captured, isNotNull, reason: '卡照常制');
+      expect(repo.captured!.sentenceAudioPath, isNull);
+    });
   });
 }

@@ -9,10 +9,16 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 /// 分组，S01/S02/PV 天生混进同一个 playlist 合集；而 Bangumi 一季一条目，「整合集
 /// 映射 + 合集下标当集数」会把 S02E01 报成 E13、完结误报给第一季条目。
 ///
-/// **分组是文件名的纯函数，不是持久化状态**——一律在读取时从 `videoPath` 现场
-/// 派生，不落库。存储方案（曾试过 `group_key` 列）会制造三个本可不存在的问题：
-/// 存量合集要手动补键、旧成员 null 新成员有键的「半截态」、跨端同步对端无键退化。
-/// 派生让全部存量/新导入/同步来的多季合集**立即**获得同一语义，零迁移零手动。
+/// **分组默认是文件名的纯函数**——在读取时从 `videoPath` 现场派生，不落库。整列
+/// 存储方案（曾试过 `group_key` 列）会制造三个本可不存在的问题：存量合集要手动
+/// 补键、旧成员 null 新成员有键的「半截态」、跨端同步对端无键退化。派生让全部
+/// 存量/新导入/同步来的多季合集**立即**获得同一语义，零迁移零手动。
+///
+/// 文件名推断不了或推断错的成员（`01`–`08` 的短篇其实是特典）由用户 / AI 显式
+/// 指定，按优先级叠在派生键之上（[resolveCollectionSection]，拍板台 iR6ccUys9H）：
+/// ① 手动分栏（`video_collection_section_overrides`，稀疏行）→ ② 手动季集指定
+/// （`video_episode_binding_overrides`：第 0 季 = 特别篇 → PV·特典，第 N 季 → 第 N
+/// 季）→ ③ 文件名派生。没有指定的成员照旧派生，上面三条好处原样保留。
 /// 消费点：详情页顶部**季 tab**（切 tab 换该季剧集，单季合集不出 tab）、tracking
 /// 绕开结构性失真的合集级映射（改走季度感知的按集通道）。
 
@@ -21,8 +27,14 @@ const String kCollectionExtrasGroupKey = 'extras';
 
 /// 由解析出的季/集派生分组键：有集号 → `s<季号>`（无季号视作第 1 季，与
 /// 排序规则 `_compareEpisodes` 的「null 视作 1」同口径）；无集号 → PV/特典组。
+///
+/// 第 0 季（`S00E01`、`Season 00/`）是特别篇，归 PV/特典组，不单开一个「第 0 季」
+/// tab——与手动季集指定到第 0 季（[resolveCollectionSection]）同一口径（拍板台
+/// iR6ccUys9H）。
 String collectionSeasonGroupKey({int? season, int? episode}) =>
-    episode == null ? kCollectionExtrasGroupKey : 's${season ?? 1}';
+    episode == null || season == 0
+    ? kCollectionExtrasGroupKey
+    : 's${season ?? 1}';
 
 /// 从视频文件路径/文件名派生分组键（导入落库与「按季分组」动作同源；解析引擎
 /// 与刮削/排序同一个 [parseVideoPath]）。
@@ -41,6 +53,72 @@ String collectionGroupKeyForFilename(String filename) {
 int? seasonNumberOfGroupKey(String groupKey) {
   if (!groupKey.startsWith('s')) return null;
   return int.tryParse(groupKey.substring(1));
+}
+
+/// 写入口接受的手动分栏键：`extras` 或规范形 `s<N>`（N ≥ 1）。第 0 季不是一栏
+/// （特别篇就是 PV·特典栏），`s01` / `s-1` 这类非规范形一律拒收。
+bool isValidCollectionSectionKey(String key) {
+  if (key == kCollectionExtrasGroupKey) return true;
+  final int? season = seasonNumberOfGroupKey(key);
+  return season != null && season >= 1 && key == 's$season';
+}
+
+/// 一个成员的分栏从哪来（查询接口如实报给调用方，便于核对「为什么在这一栏」）。
+enum CollectionSectionSource {
+  /// 用户 / AI 手动指定的分栏。
+  manual,
+
+  /// 手动季集指定（第 0 季 → PV·特典）。
+  pinnedEpisode,
+
+  /// 文件名 / 路径派生（默认）。
+  filename,
+}
+
+/// 一个成员的生效分栏 + 来源 + 不看任何指定时的派生键。
+class CollectionSectionResolution {
+  const CollectionSectionResolution({
+    required this.groupKey,
+    required this.source,
+    required this.derivedKey,
+  });
+
+  /// 生效分栏键（`s<N>` / `extras`）。
+  final String groupKey;
+
+  final CollectionSectionSource source;
+
+  /// 文件名派生键（清掉全部指定后会回到的那一栏）。
+  final String derivedKey;
+}
+
+/// 按优先级合成生效分栏：手动分栏（形状合法才算）→ 手动季集指定 → 派生键。纯函数。
+CollectionSectionResolution resolveCollectionSection({
+  required String derivedKey,
+  String? manualKey,
+  int? pinnedSeason,
+}) {
+  if (manualKey != null && isValidCollectionSectionKey(manualKey)) {
+    return CollectionSectionResolution(
+      groupKey: manualKey,
+      source: CollectionSectionSource.manual,
+      derivedKey: derivedKey,
+    );
+  }
+  if (pinnedSeason != null && pinnedSeason >= 0) {
+    return CollectionSectionResolution(
+      groupKey: pinnedSeason == 0
+          ? kCollectionExtrasGroupKey
+          : 's$pinnedSeason',
+      source: CollectionSectionSource.pinnedEpisode,
+      derivedKey: derivedKey,
+    );
+  }
+  return CollectionSectionResolution(
+    groupKey: derivedKey,
+    source: CollectionSectionSource.filename,
+    derivedKey: derivedKey,
+  );
 }
 
 /// 多季判定：派生出的组数 ≥ 2（单季、纯电影、全 PV 都是单组 → 不启用分季语义）。
@@ -118,34 +196,43 @@ class CollectionSeasonRegroup<T> {
   final Map<T, String> keyOf;
 }
 
-/// 对合集成员按文件名重算季/集：产出新排序与分组键（「按季排序」动作据此
+/// 对合集成员按分栏重排：产出新排序与分组键（「按季排序」动作据此
 /// 经 `reorderCollectionItems` 落盘新序；键仅供展示层复用，不落库）。
+///
+/// 先按**生效分栏**分桶（季号升序、PV·特典殿后），桶内按文件名集号 → 标题。
+/// [sectionKeyOf] 给生效分栏（手动分栏 / 手动季集指定叠在文件名之上，见
+/// `loadCollectionSections`，拍板台 iR6ccUys9H）；不给或返回 null 时按文件名
+/// 派生（[collectionGroupKeyForFilename]，第 0 季归 PV·特典）。分桶与 [keyOf]
+/// 同一个键，所以重排后的全序与季 tab 分节一致。
 CollectionSeasonRegroup<T> regroupMembersBySeason<T>({
   required List<T> members,
   required String Function(T member) filenameOf,
   required String Function(T member) titleOf,
+  String? Function(T member)? sectionKeyOf,
 }) {
   final Map<T, VideoNameInfo> infoOf = <T, VideoNameInfo>{
     for (final T m in members) m: parseVideoPath(filenameOf(m)),
   };
+  final Map<T, String> keyOf = <T, String>{
+    for (final T m in members)
+      m:
+          sectionKeyOf?.call(m) ??
+          collectionSeasonGroupKey(
+            season: infoOf[m]!.season,
+            episode: infoOf[m]!.episode,
+          ),
+  };
+  // extras（及未知形状的键）排末尾。
+  int bucketOf(T m) => seasonNumberOfGroupKey(keyOf[m]!) ?? (1 << 20);
   final List<T> ordered = List<T>.of(members)
     ..sort((T a, T b) {
-      final VideoNameInfo ia = infoOf[a]!;
-      final VideoNameInfo ib = infoOf[b]!;
-      // extras（无集号）排末尾，组内季→集→标题（与导入分组排序同口径）。
-      final int sa = ia.episode == null ? 1 << 20 : (ia.season ?? 1);
-      final int sb = ib.episode == null ? 1 << 20 : (ib.season ?? 1);
+      final int sa = bucketOf(a);
+      final int sb = bucketOf(b);
       if (sa != sb) return sa.compareTo(sb);
-      final int ea = ia.episode ?? (1 << 30);
-      final int eb = ib.episode ?? (1 << 30);
+      final int ea = infoOf[a]!.episode ?? (1 << 30);
+      final int eb = infoOf[b]!.episode ?? (1 << 30);
       if (ea != eb) return ea.compareTo(eb);
       return titleOf(a).toLowerCase().compareTo(titleOf(b).toLowerCase());
     });
-  return CollectionSeasonRegroup<T>(
-    ordered: ordered,
-    keyOf: <T, String>{
-      for (final T m in members)
-        m: collectionGroupKeyForFilename(filenameOf(m)),
-    },
-  );
+  return CollectionSeasonRegroup<T>(ordered: ordered, keyOf: keyOf);
 }

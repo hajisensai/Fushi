@@ -1,7 +1,17 @@
 /// 没有要念的内容时的静音：纯标点句判定与静音 WAV（制作、朗读、漫画共用）。
+///
+/// 判定只接在一处：所有经引擎合成一句的入口都走 `ttsSynthesizeSplittingOnReject`
+/// （`tts_reject_split.dart`），纯标点句在那里写 [writeTtsSilentLine]、不送引擎。
+/// 调用方只在要「另作安排」时自己判（整书制作 / 补配把它记成停顿、漫画把整句纯标点
+/// 的气泡出成停顿、制卡不给纯标点词条配音），不为了避开引擎而判。
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:fushi_engine/tts/cast/cast_line_voicing.dart'
+    show estimatePlaceholderMs;
+import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 能念出声的字符：标点、符号、空白、控制 / 格式字符、附加符号以外的一切（字母、
 /// 假名、汉字、数字……）。附加符号（\p{M}）单独念不出声，而且要排除：emoji / 符号
@@ -19,6 +29,20 @@ bool ttsTextIsSilent(String text) => !_speakable.hasMatch(text);
 
 /// 纯标点句在朗读里用的静音 WAV 采样率（单声道）。
 const int kTtsSilentLineSampleRate = 24000;
+
+/// 纯标点句的「合成」：在 [outputPath] 写一段静音 WAV（长度 = [estimatePlaceholderMs]，
+/// 与制作的占位停顿一致）。
+Future<TtsResult> writeTtsSilentLine(String text, String outputPath) async {
+  await File(outputPath).writeAsBytes(
+    buildTtsSilenceWav(
+      ms: estimatePlaceholderMs(text),
+      sampleRate: kTtsSilentLineSampleRate,
+      channels: 1,
+    ),
+    flush: true,
+  );
+  return const TtsResult(format: TtsAudioFormat.wav);
+}
 
 /// [ms] 毫秒的 16-bit PCM 静音 WAV。
 Uint8List buildTtsSilenceWav({

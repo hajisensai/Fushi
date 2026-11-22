@@ -57,6 +57,13 @@ class MusicTracks extends Table {
 
   /// 所属专辑（`MusicAlbums.albumUid`）；无专辑标签的散曲为 NULL。
   TextColumn get albumUid => text().nullable()();
+
+  /// 扫描时按这首曲目自己的标签算出的专辑 uid（schema v167，HBK-AUDIT-027）：归组前的
+  /// 原始归属。同一张 CD 只有部分曲目写了专辑艺人时，扫描落库按「同目录同名」把没写的
+  /// 那几首改挂到带艺人的那张上（[albumUid] 是归组后的生效值），这一列不动——之后同一组
+  /// 里艺人变了（新加第二位、带艺人的文件删了），没变的文件不重新解析也能从这里退回原专辑。
+  /// 只有扫描落库写它；光盘导入等别的写入方为 NULL，归组按 [albumUid] 认。设备本地。
+  TextColumn get scanAlbumUid => text().nullable()();
   IntColumn get discNo => integer().nullable()();
   IntColumn get trackNo => integer().nullable()();
   IntColumn get year => integer().nullable()();

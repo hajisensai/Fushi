@@ -1645,12 +1645,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
           break;
         }
       }
+      // 分季与合集详情页同口径（手动分栏 / 手动季集指定优先）。
+      final Map<String, String> sectionKeys =
+          await loadCollectionSubtitleSectionKeys(appModel.database, members);
       return SubtitleCollectionSpec(
         collection: collection,
         members: members,
+        sectionKeys: sectionKeys,
         initialSeason: playing == null
             ? null
-            : subtitleCollectionSeasonOfMember(playing),
+            : subtitleCollectionSeasonOfMember(
+                playing,
+                sectionKeys: sectionKeys,
+              ),
       );
     } on Object catch (error) {
       ErrorLogService.instance.logDiagnostic(

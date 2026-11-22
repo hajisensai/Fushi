@@ -1,6 +1,12 @@
 ## BUG-5063 · gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚
 - **报告**：2026-11-21（应用内反馈 9G1OHF2dQe：复习库升级卡在 7/10 超过 30 分钟，随后对拍失败并回滚，srs.db 4.7 GB）
-- **真实性**：⏳ 待复现。日志显示对拍报告里 stats 两侧 log_id 集合完全不同（各 162960 条），canonicalCounts 却一致，2387 张卡的重放列不一致，knownDifferences 为 0。推测根因在 `native/fushi_fsrs/src/store/gen4/compare.rs`（STAT_COLS 约 :535，stats 对拍约 :940-950）：带盐 / derived 别名的日志 ID 两侧写法不同，对拍前没有先归一。与 BUG-5056（a7e1258ca1、cb5d32859d，classRegisters 加事件副本）签名不同；用户跑的 30040 包早于 5056 修复。
-- **[ ] ① 未修复** — 需要用户的 srs.db（或 srs4.db-migrating）副本，用 gen4_dryrun 复现；确认后在对拍前把两侧 log_id 过 CanonMap / 别名归一，报告补差异列与归一信息。
-- **[ ] ② 未加自动化测试** — 复现后用最小化样本加 compare.rs 单测。
-- **备注**：第 7/10 步重建 6.8M 条操作耗时 1537 秒，慢的问题另看。junction 路径显示不算 bug。
+- **真实性**：✅ 真 bug（核对器误判，旧库没受影响）。反馈附的 `srs4-migration-report.json`：第一个资料库 `parity` 只有 `cards` 2387/2387（同一张卡、行不同）与 `stats` 162960/162960（两侧样例日志 ID 完全不同、条数对称），`canonical` 为空（规范卡的调度状态、每张卡的统计条数都一致），`knownDifferences` 为 0；库里 683385 条日志、统计行只有 353123 条——几乎每次复习都有一份 Anki 导入的副本。用最小库复现出同一签名（下面的测试，修复前 `cards` 1/1、`stats` 1/1、`canonical` 空）。
+  - **根因**：同一次复习的几份副本（卡片历史的 `EventKey`；BUG-4254 的血统里同一条 Anki revlog 按两张带盐卡各派生一份日志 `v5(card, anki-revlog/<id>)`）只算一份，代表取 ID 最小的那份（`native/fushi_fsrs/src/history.rs:265` 的 `select`；跨归属组的 `store/caches.rs:1715` 同一口径）。协议 3 比的是原值 ID，新代重放读的是归一过的日志（`store/gen4/cache.rs:1015` `log_at` → `canonical_json`），比的是规范 ID；带盐的原值与规范值由不同的 v5 哈希得来，两份副本的先后约一半相反。两边算的是同一次复习，统计行只差日志 ID 一格、卡行只差 `last_log_id` 一格，可核对器（`store/gen4/compare.rs` `cache_pairs` 的 stats / cards 对拍）把协议 3 一侧的 ID 改写成规范 ID 后逐行比，没有「代表选得不同」这类已知差异，于是整行判差异、迁移判失败回滚。核对器按 ID 查日志体时直接拿规范 ID 查 `log_ix`（`event_copies` 的 `body`），带盐库里规范 ID 本身不在操作里，也查不到。
+- **[x] ① 已修复** — `compare.rs`：新增已知差异「同一事件的副本两边选了不同代表」。统计行：同一张规范归属卡、同一发生时刻上两侧各恰好剩一行、日志不同，且两条日志体是同一事件的副本（HLC 含写入者、发生时刻、种类、来源、评分类型、评分、Anki id 逐个相同；Anki 来源不比卡，别的来源比规范卡，与 `EventKey` 同一口径）才认（`stat_representative_swaps`）；卡行：同一张卡两侧 `last_log_id` 不同且是同一事件的副本（`card_representative_swaps`）。只把协议 3 一侧那一格换成新代选的那份，行的其余列（归属卡、评分、重放列……）照比。日志体查找改走别名类（`log_body`：先按 ID，再按 `alias_canon` 里的原值成员），`event_copies` 共用。报告 `knownDifferences` 新增 `cacheStatRepresentativeSwaps` / `cacheCardRepresentativeSwaps`。新代的选取规则不改（按规范 ID 是设备无关的，改回原值 ID 反而不确定）。
+- **[x] ② 已增加自动化测试** — `store/gen4/migrate_tests.rs` `anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_cleanly`：协议 3 小库（profile uid 加盐的笔记类型 / 两条笔记，旧笔记删掉、新卡 `historyFrom` 旧卡，同一条 revlog 各导入一份，挑带盐与规范先后相反的 guid）跑真实迁移，判 committed、`parity` 与 `canonical` 为空、两类 swap 各 1；撤掉修复即红（`parity` 出现 `cards` / `stats` 各 1/1，与用户报告同签名）。`compare.rs` `representative_swaps_are_known_only_for_copies_of_one_event`：正例、评分不同、非 Anki 来源落在不同规范卡、一侧两条候选、两边一致五种。
+- **缺口**：
+  - 没拿到用户的库，未在真库上跑 `gen4_dryrun` 复核 162960 行全部被认出；修复随下一个 debug 包发出后用户「重新升级」即是复核。
+  - 跨归属组的同一事件（`caches.rs` `anki_duplicate_log_ids`，两张没有血统链接、可见性相同的卡）若两边留了不同的那份，归属卡也会不同，这一类仍照报差异（用户报告里 `canonicalStats` 无差异，说明没有发生）；需要时另按证据加。
+  - 测试装置 `store/gen4/parity.rs` `imported_from` 不写 profile 的盐（真实迁移在 `dryrun.rs:586` 写），装置里带盐 ID 全部「没验上」、原值即规范值，所以几百个协议 3 场景的对拍从来覆盖不到带盐的别名差异，这次的 bug 因此没被装置发现。让装置也写盐是测试基础设施的扩面（会让全部场景按带盐口径重跑、可能冒出别的差异），单独做。
+- **备注**：第 7/10 步重建 6.8M 条操作耗时 1537 秒，已拆成 [BUG-5137](BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md)。junction 路径显示不算 bug。
+- **重复修复**：PR #4077 曾另写一版（`representative_swaps` + `apply_swaps`，日志体只按规范 ID 查 `log_ix`，带盐库里查不到），与上面已合入的修复重复，合并 develop 时撤下，以本版为准。

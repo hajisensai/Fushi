@@ -94,14 +94,54 @@ class VideoFilenameTorrentLink {
   );
 }
 
+/// 一个磁盘文件的身份指纹：大小 + 修改时间（rename 两者都不变；本机与引擎的
+/// 改名都只是 rename）。撤销 / 回滚前用它确认「现在躺在搬过去位置上的」仍是
+/// 当初搬过去的那个文件，而不是之后被别人放到同名位置上的另一个文件。
+class VideoFileFingerprint {
+  const VideoFileFingerprint({required this.size, required this.modifiedMs});
+
+  final int size;
+  final int modifiedMs;
+
+  /// [path] 上普通文件的指纹；不存在 / 不是普通文件返回 null。
+  static Future<VideoFileFingerprint?> of(String path) async {
+    final FileStat stat = await FileStat.stat(path);
+    if (stat.type != FileSystemEntityType.file) return null;
+    return VideoFileFingerprint(
+      size: stat.size,
+      modifiedMs: stat.modified.millisecondsSinceEpoch,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoFileFingerprint &&
+      other.size == size &&
+      other.modifiedMs == modifiedMs;
+
+  @override
+  int get hashCode => Object.hash(size, modifiedMs);
+
+  @override
+  String toString() => '$size bytes @ $modifiedMs';
+}
+
 /// 计划里的一个文件改名 / 搬动（附做种联动）。
 class VideoFilenamePlannedMove {
-  const VideoFilenamePlannedMove({required this.move, this.torrent});
+  const VideoFilenamePlannedMove({
+    required this.move,
+    this.torrent,
+    this.sourceFingerprint,
+  });
 
   final VideoFileMove move;
 
   /// 非 null = 这个文件在做种，改名走引擎。
   final VideoFilenameTorrentLink? torrent;
+
+  /// 非 null = [VideoFileMove.from] 上必须正是这个文件才搬（撤销 / 回滚步骤
+  /// 带着执行时记下的指纹）；对不上就整条失败、不动磁盘。正向计划为 null。
+  final VideoFileFingerprint? sourceFingerprint;
 
   VideoFilenamePlannedMove get inverse => VideoFilenamePlannedMove(
     move: VideoFileMove(from: move.to, to: move.from, isVideo: move.isVideo),
@@ -201,10 +241,16 @@ class VideoFilenameItemOutcome {
     required this.ok,
     this.error,
     this.rollbackError,
+    this.undoMoves = const <VideoFilenamePlannedMove>[],
   });
 
   final VideoFilenameItemPlan item;
   final bool ok;
+
+  /// 成功时：每一步的逆向（与 [VideoFilenameItemPlan.moves] 同序），带着搬完
+  /// 那一刻在目标上量到的 [VideoFilenamePlannedMove.sourceFingerprint]。撤销
+  /// 计划按它逆序执行。
+  final List<VideoFilenamePlannedMove> undoMoves;
 
   /// 失败原因（引擎 / 文件系统 / 库的原文）。
   final String? error;
@@ -250,10 +296,7 @@ class VideoFilenameOrganizeResult {
             title: o.item.title,
             status: VideoFilenamePlanStatus.ready,
             libraryRoot: o.item.libraryRoot,
-            moves: <VideoFilenamePlannedMove>[
-              for (final VideoFilenamePlannedMove m in o.item.moves.reversed)
-                m.inverse,
-            ],
+            moves: o.undoMoves.reversed.toList(),
           ),
     ];
     if (items.isEmpty) return null;
@@ -587,12 +630,21 @@ class VideoFilenameOrganizeService {
     TorrentBackend? backend,
     VideoBookRepository repo,
   ) async {
+    // 已做步骤的逆向（同序），带着搬完那一刻在目标上量到的指纹：回滚与撤销
+    // 都只搬回「仍是当初搬过去的那个文件」。
     final List<VideoFilenamePlannedMove> done = <VideoFilenamePlannedMove>[];
     String? error;
     for (final VideoFilenamePlannedMove step in item.moves) {
       error = await _move(step, backend);
       if (error != null) break;
-      done.add(step);
+      final VideoFilenamePlannedMove inverse = step.inverse;
+      done.add(
+        VideoFilenamePlannedMove(
+          move: inverse.move,
+          torrent: inverse.torrent,
+          sourceFingerprint: await VideoFileFingerprint.of(step.move.to),
+        ),
+      );
     }
     if (error == null) {
       try {
@@ -614,7 +666,11 @@ class VideoFilenameOrganizeService {
         await _removeEmptiedDirectories(item, <String>[
           for (final VideoFilenamePlannedMove m in item.moves) m.move.from,
         ]);
-        return VideoFilenameItemOutcome(item: item, ok: true);
+        return VideoFilenameItemOutcome(
+          item: item,
+          ok: true,
+          undoMoves: List<VideoFilenamePlannedMove>.unmodifiable(done),
+        );
       } catch (e) {
         error = '$e';
       }
@@ -622,12 +678,12 @@ class VideoFilenameOrganizeService {
     // 逆序撤回已做的步骤：失败态 = 这一条什么都没变。
     final List<String> rollbackErrors = <String>[];
     for (final VideoFilenamePlannedMove step in done.reversed) {
-      final String? undoError = await _move(step.inverse, backend);
+      final String? undoError = await _move(step, backend);
       if (undoError != null) rollbackErrors.add(undoError);
     }
     // 撤回后新建的规范目录可能空着。
     await _removeEmptiedDirectories(item, <String>[
-      for (final VideoFilenamePlannedMove m in done) m.move.to,
+      for (final VideoFilenamePlannedMove m in done) m.move.from,
     ]);
     return VideoFilenameItemOutcome(
       item: item,
@@ -658,44 +714,103 @@ class VideoFilenameOrganizeService {
     }
   }
 
+  /// 本 isolate 里正在被某一步搬入的目标（[platformPathKey]）。整理 / 搬动 /
+  /// 回滚 / 撤销可以被 ctl 与库页对话框各自独立发起、互相交错；同一个目标
+  /// 同时只许一步在「确认空着 → 搬进去」之间，另一步直接判占用。
+  static final Set<String> _targetsInFlight = <String>{};
+
   /// 执行一步改名 / 搬动；成功返回 null，失败返回原因。
+  ///
+  /// 不覆盖语义（HBK-AUDIT-031）：`File.rename` 在 POSIX（rename(2)）与
+  /// Windows（Dart 用 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`）上都会静默
+  /// 覆盖已有目标，所以「先查目标空着、再 rename」中间被别人搬进来的文件会被
+  /// 冲掉。本机搬动先用独占创建（O_EXCL / CREATE_NEW，原子）在目标上占一个
+  /// 空占位，占到了才把源 rename 到自己的占位上；占不到 = 目标被占，整步失败。
+  /// 引擎改名（做种文件）由引擎动磁盘，没法先放占位，靠 [_targetsInFlight]
+  /// 与进程内其他步骤互斥（本机搬动同样登记，两条路径不会撞进同一个目标）。
   Future<String?> _move(
     VideoFilenamePlannedMove step,
     TorrentBackend? backend,
   ) async {
     final VideoFileMove move = step.move;
-    // 目标已被别的文件占着就不动：引擎的 rename 与 `File.rename` 在部分平台上
-    // 都会静默覆盖。大小写不同的同名（Windows 上是同一个文件）不算占用。
-    if (platformPathKey(move.from) != platformPathKey(move.to) &&
-        await FileSystemEntity.type(move.to, followLinks: false) !=
-            FileSystemEntityType.notFound) {
-      return 'target already exists: ${move.to}';
-    }
-    final VideoFilenameTorrentLink? torrent = step.torrent;
-    if (torrent != null) {
-      if (backend == null) return 'download backend is unavailable';
-      try {
-        final TorrentStorageResult result = await backend.renameFile(
-          torrent.infoHash,
-          torrent.fileIndex,
-          torrent.newRelativePath,
-        );
-        return result.ok
-            ? null
-            : (result.error ?? 'backend refused the rename');
-      } catch (e) {
-        return '$e';
-      }
+    // 大小写不同的同名（Windows 上是同一个文件）：改的就是它自己，不算占用。
+    final bool sameEntry =
+        platformPathKey(move.from) == platformPathKey(move.to);
+    final String targetKey = platformPathKey(move.to);
+    if (!sameEntry && !_targetsInFlight.add(targetKey)) {
+      return 'target is being written by another move: ${move.to}';
     }
     try {
-      await Directory(p.dirname(move.to)).create(recursive: true);
+      // 撤销 / 回滚：源位置上必须仍是当初搬过去的那个文件。
+      final VideoFileFingerprint? expected = step.sourceFingerprint;
+      if (expected != null) {
+        final VideoFileFingerprint? actual = await VideoFileFingerprint.of(
+          move.from,
+        );
+        if (actual != expected) {
+          return 'not the file that was moved here '
+              '(expected $expected, found ${actual ?? 'nothing'}): ${move.from}';
+        }
+      }
+      final VideoFilenameTorrentLink? torrent = step.torrent;
+      if (torrent != null) {
+        if (!sameEntry &&
+            await FileSystemEntity.type(move.to, followLinks: false) !=
+                FileSystemEntityType.notFound) {
+          return 'target already exists: ${move.to}';
+        }
+        if (backend == null) return 'download backend is unavailable';
+        try {
+          final TorrentStorageResult result = await backend.renameFile(
+            torrent.infoHash,
+            torrent.fileIndex,
+            torrent.newRelativePath,
+          );
+          return result.ok
+              ? null
+              : (result.error ?? 'backend refused the rename');
+        } catch (e) {
+          return '$e';
+        }
+      }
+      if (sameEntry) return await _renameLocal(move);
+      try {
+        await Directory(p.dirname(move.to)).create(recursive: true);
+        await File(move.to).create(exclusive: true);
+      } on FileSystemException catch (e) {
+        if (await FileSystemEntity.type(move.to, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+          return 'target already exists: ${move.to}';
+        }
+        return _describeFsError(e, move.to);
+      }
+      final String? error = await _renameLocal(move);
+      if (error == null) return null;
+      // 没搬进去：收回自己的空占位（占位期间别人进不来，目标上只会是它）。
+      try {
+        await File(move.to).delete();
+      } on FileSystemException catch (e) {
+        return '$error; empty placeholder left behind: '
+            '${_describeFsError(e, move.to)}';
+      }
+      return error;
+    } finally {
+      if (!sameEntry) _targetsInFlight.remove(targetKey);
+    }
+  }
+
+  static Future<String?> _renameLocal(VideoFileMove move) async {
+    try {
       await File(move.from).rename(move.to);
       return null;
     } on FileSystemException catch (e) {
-      return '${e.message}: ${e.path ?? move.from}'
-          '${e.osError == null ? '' : ' (${e.osError!.message})'}';
+      return _describeFsError(e, move.from);
     }
   }
+
+  static String _describeFsError(FileSystemException e, String path) =>
+      '${e.message}: ${e.path ?? path}'
+      '${e.osError == null ? '' : ' (${e.osError!.message})'}';
 
   /// 读 [bookUid] 的刮削身份：绑到分集 → 剧集（作品名 + 季 + 集）；作品直接
   /// 绑这个文件且不是电视剧 → 电影；其余（未刮削、特典、只有作品）→ null。

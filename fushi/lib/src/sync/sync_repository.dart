@@ -709,12 +709,22 @@ class SyncRepository {
 
   /// 流媒体书拉取基线：上次从该通道见过的最大 host 拥有时刻（毫秒，host 时钟）。
   /// 0 = 从未拉过（全量）。设备本地、按通道分槽。
-  Future<int> getStreamVideoPullSinceMs(SyncChannelScope scope) async {
-    final String? s = await _getStringOrNull(
-      scope.key(_keyStreamVideoPullSinceMs),
-    );
-    return s == null ? 0 : int.tryParse(s) ?? 0;
-  }
+  Future<int> getStreamVideoPullSinceMs(SyncChannelScope scope) async =>
+      _parseStreamVideoPullSinceMs(
+        await _getStringOrNull(scope.key(_keyStreamVideoPullSinceMs)),
+      );
+
+  /// [getStreamVideoPullSinceMs] 的快照版：从一份已读好的整表偏好（`getAllPrefs`）里
+  /// 取，不再查库。视频进度 sweep 开头本来就读整表偏好，拉取基线顺手从里面拿。
+  static int streamVideoPullSinceMsFromPrefs(
+    SyncChannelScope scope,
+    Map<String, String> prefs,
+  ) => _parseStreamVideoPullSinceMs(
+    prefs[scope.key(_keyStreamVideoPullSinceMs)],
+  );
+
+  static int _parseStreamVideoPullSinceMs(String? s) =>
+      s == null ? 0 : int.tryParse(s) ?? 0;
 
   Future<void> setStreamVideoPullSinceMs(SyncChannelScope scope, int ms) =>
       _setString(scope.key(_keyStreamVideoPullSinceMs), ms.toString());
@@ -2326,6 +2336,9 @@ class SyncRepository {
     // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
     // 设备上会让它误报 / 漏报「对端有更新」。
     kInterconnectAudiobookRevisionsPrefKey,
+    // 电脑端「缓存其他应用的声音」：开着就常驻录这台机器的系统混音，是这台设备的
+    // 录音许可，不能随备份 / 同步在别的设备上被替用户打开。
+    PreferencesRepository.crossAppAudioCaptureDesktopKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

@@ -213,3 +213,104 @@ fn alias_rows_count_by_their_net_change() {
     assert!(!hub.take_study("1").overflow, "taken");
     assert!(!hub.take_study("2").overflow, "another collection");
 }
+
+/// HBK-AUDIT-010：普通出卡（单独排队与作答带排队）不整表遍历「今天的作答」。以前每次排队先把整份今天的作答复制一遍
+/// （给自定义学习备着），作答后的增量重读又整表扫三遍找「碰到的卡上的作答」，今天答 N 次累计 O(N²) 次访问；现在按卡 /
+/// 按日志 ID 查会话里的索引，访问数为 0。结果仍与无状态基准逐键相同，自定义学习（会话开始在今天之内）照样读会话里
+/// 今天的作答。
+#[test]
+fn ordinary_study_never_walks_the_whole_list_of_todays_answers() {
+    use crate::store::queue::answer_visits;
+    const K: usize = 40;
+    let nid = |i: usize| format!("0193a1b2-0000-7000-8000-{:012x}", 0x2000 + i);
+    let m = migrated_prepared(false, &|d| {
+        let mut ev = Vec::new();
+        for i in 0..K {
+            let n = nid(i);
+            ev.push(note(&n, "NT", 200 + i as i64));
+            ev.push(edit("note", &n, "f/fa", json!(format!("語{i}"))));
+        }
+        d.apply(super::tests::T0 + DAY + 90, ev);
+    });
+    let core = crate::store::ffi::core_of(m.h).unwrap();
+    let col = col_of(&core);
+    let deck = default_deck_id(P);
+    let pick = |now: i64| study_req(now, json!({"deck": deck, "pick": true}));
+    g4(m.h, "study", NOW, pick(NOW));
+    let b0 = builds(&core);
+    let v0 = answer_visits();
+    let mut at = NOW;
+    for i in 0..K {
+        at += 60_000;
+        let n = nid(i);
+        answer(m.h, &core, col, &format!("w{i}"), &n, "t1", at, 3, "learn");
+        // 同一张卡再答一步：碰到的卡上已有今天的作答，增量重读要按卡把它们找出来重折算。
+        answer(
+            m.h,
+            &core,
+            col,
+            &format!("w{i}b"),
+            &n,
+            "t1",
+            at + 1_000,
+            3,
+            "learn",
+        );
+        let req = pick(at + 2_000);
+        assert_eq!(
+            g4(m.h, "study", at + 2_000, req.clone()),
+            stateless(&core, col, &req)
+        );
+    }
+    let visits = answer_visits() - v0;
+    eprintln!(
+        "[HBK-AUDIT-010] {} answers + {K} studies: {visits} visits of today's answer list",
+        2 * K
+    );
+    assert_eq!(builds(&core), b0, "still incremental");
+    assert_eq!(visits, 0, "ordinary study walked today's answers");
+    // 自定义学习（会话开始在今天之内）读会话里今天的作答：与基准相同。
+    let custom = study_req(
+        at + 3_000,
+        json!({"deck": deck, "pick": true,
+            "custom": {"since": NOW, "mode": "filter", "states": ["new", "learning", "due"]}}),
+    );
+    assert_eq!(
+        g4(m.h, "study", at + 3_000, custom.clone()),
+        stateless(&core, col, &custom)
+    );
+    assert!(
+        answer_visits() > v0,
+        "custom study reads the session's answers"
+    );
+}
+
+/// HBK-AUDIT-010：增量重读按卡的作答索引找「碰到的卡上今天的作答」。一张卡接上另一张卡的历史（`historyFrom`），它今天
+/// 那条学习步的重放 `res.reps` 跟着变（不再是 1，这张卡不再算今天引入的新卡）；那条日志自己没被改、只有卡记下了，只有
+/// 按卡找到它重折算，会话才与无状态基准相同（索引查空时这里的计数会多算一张）。
+#[test]
+fn a_linked_history_refolds_todays_answers_on_the_touched_card() {
+    let m = migrated_prepared(false, &prep);
+    let core = crate::store::ffi::core_of(m.h).unwrap();
+    let col = col_of(&core);
+    check(m.h, &core, col, NOW, "initial");
+    let b0 = builds(&core);
+    let at = NOW + 60 * 60_000;
+    for (i, n) in NEWER.iter().enumerate().take(2) {
+        let id = format!("x{i}");
+        answer(m.h, &core, col, &id, n, "t1", at + i as i64, 3, "learn");
+    }
+    let pick = |now: i64| study_req(now, json!({"deck": default_deck_id(P), "pick": true}));
+    let before = stateless(&core, col, &pick(at + 10));
+    check(m.h, &core, col, at + 10, "two new cards introduced");
+    // 第二张卡接上第一张的历史：它今天那条学习步的重放 `res.reps` 不再是 1。日志本身没改，只有这张卡记下了。
+    let (a, b) = (card(NEWER[0], "t1"), card(NEWER[1], "t1"));
+    let items = vec![
+        json!({"e": edit("card", &b, &format!("historyFrom/{a}"), json!(true)), "note": NEWER[1]}),
+    ];
+    call(m.h, &g4req("apply", at + 20, json!({})), Some(&items)).unwrap();
+    let after = stateless(&core, col, &pick(at + 10));
+    assert_ne!(before, after, "the linked history changes today's counts");
+    check(m.h, &core, col, at + 30, "linked history");
+    assert_eq!(builds(&core), b0, "still incremental");
+}

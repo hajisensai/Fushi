@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 class _TestAppModel extends AppModel {
@@ -172,20 +173,45 @@ void main() {
     // 源码守卫：这段是纯 native 下发（要真 DLL + 真局域网 peer 才看得见效果），
     // widget/单测都探不到。少了这一行，用户翻开关就完全没反应，而且**没有任何
     // 其它测试会红**——所以这条守卫是必要的，不是凑数。
+    // BUG-5071 起下发序列收进 EmbeddedTorrentHostClient.postConfig（app 与无头服务端
+    // 共用）：AppModel → postConfig → applyLimits 命令 → 工作 isolate 里的
+    // EmbeddedTorrentHost.applyLimits，三环各钉一处。
     final File f = File('lib/src/models/app_model.dart');
     expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
-    final String src = f.readAsStringSync();
-    final int call = src.indexOf('host.applyLimits(');
+    final String app = maskComments(f.readAsStringSync());
     expect(
-      call,
-      greaterThanOrEqualTo(0),
+      methodBody(
+        app,
+        'void _applyEmbeddedTorrentLimits(QbConnectionConfig? config)',
+      ),
+      contains('host.postConfig(effectiveTorrentConfig(config))'),
       reason: 'AppModel must still apply limits to the embedded host',
     );
-    final String block = src.substring(call, src.indexOf(');', call));
+    final String client = maskComments(
+      File(
+        '../packages/fushi_engine/lib/media/torrent/'
+        'embedded_torrent_host_client.dart',
+      ).readAsStringSync(),
+    );
+    final String post = methodBody(
+      client,
+      'void postConfig(QbConnectionConfig config',
+    );
+    final int call = post.indexOf('applyLimits(');
+    expect(call, greaterThanOrEqualTo(0), reason: 'postConfig 必须下发限速');
     expect(
-      block,
-      contains('limitLocalPeers:'),
+      post.substring(call, post.indexOf(');', call)),
+      contains('limitLocalPeers: config.limitLocalPeers'),
       reason: 'the LAN toggle must reach native, or it silently does nothing',
+    );
+    final String command = methodBody(
+      client,
+      'EmbeddedTorrentCommand<bool> _applyLimits(',
+    );
+    expect(
+      command,
+      contains('limitLocalPeers: limitLocalPeers'),
+      reason: '工作 isolate 里调 EmbeddedTorrentHost.applyLimits 时不能把开关丢掉',
     );
   });
 }

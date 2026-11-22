@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
@@ -101,6 +102,31 @@ class _TestAppModel extends AppModel {
   }
 }
 
+/// 记下作品页重查本书任务（= 跑一轮下载状态刷新）的次数（HBK-AUDIT-050）。
+class _CountingDownloads extends MangaDownloadService {
+  _CountingDownloads({required super.database, required super.serviceFor});
+
+  int jobsForBookCalls = 0;
+
+  @override
+  Future<Map<String, MangaDownloadJobRow>> jobsForBook(String bookKey) {
+    jobsForBookCalls += 1;
+    return super.jobsForBook(bookKey);
+  }
+}
+
+class _CountingAppModel extends _TestAppModel {
+  _CountingAppModel(super.db, super.library, super.root);
+
+  late final _CountingDownloads downloads = _CountingDownloads(
+    database: _db,
+    serviceFor: (OnlineMangaRuntimeKind runtime) => _library,
+  );
+
+  @override
+  MangaDownloadService get mangaDownloadService => downloads;
+}
+
 Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
   overrides: <Override>[
     platformServicesProvider.overrideWithValue(testPlatformServices()),
@@ -134,6 +160,18 @@ const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
     raw: <String, Object?>{'url': '/chapter/1'},
   ),
 ];
+
+OnlineMangaLibraryEntry _otherEntry() => const OnlineMangaLibraryEntry(
+  runtime: OnlineMangaRuntimeKind.mihon,
+  extensionPackage: 'org.example.fixture',
+  sourceId: '1',
+  series: OnlineMangaSeries(
+    key: '/series/other',
+    title: 'Other series',
+    raw: <String, Object?>{'url': '/series/other'},
+  ),
+  chapters: _chapters,
+);
 
 OnlineMangaLibraryEntry _entry() => const OnlineMangaLibraryEntry(
   runtime: OnlineMangaRuntimeKind.mihon,
@@ -314,5 +352,70 @@ void main() {
       '/chapter/1',
       reason: '开读前记下「选了这一章」，阅读器据此定位',
     );
+  });
+
+  // HBK-AUDIT-050：作品页只订本书的任务行；别的书逐页写进度不该让它重查任务、
+  // 重判章节、重建。
+  testWidgets('别的书下载写进度不刷新本页；本书任务变了照常刷新', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final _CountingAppModel appModel = _CountingAppModel(db, library, root);
+    final _CountingDownloads downloads = appModel.downloads;
+
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      await library.add(_otherEntry());
+      await tester.pumpWidget(_harness(appModel, row.bookKey));
+      await _pumpUntil(tester, find.text('Chapter 1'));
+      Future<void> settle() async {
+        for (int i = 0; i < 6; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await tester.pump();
+        }
+      }
+
+      await settle();
+      final int baseline = downloads.jobsForBookCalls;
+      expect(baseline, greaterThan(0));
+
+      final MangaDownloadJobRow otherJob = await downloads.enqueueChapter(
+        entry: _otherEntry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      for (int done = 1; done <= 5; done++) {
+        await db.updateMangaDownloadJobProgress(
+          otherJob.jobId,
+          pagesDone: done,
+          pagesTotal: 5,
+          updatedAt: done,
+        );
+        await settle();
+      }
+      expect(
+        downloads.jobsForBookCalls,
+        baseline,
+        reason: '别的书入队 + 5 次进度写入，本页一轮都不该重算',
+      );
+
+      await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_download_queued')),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('manga_chapter_download_queued')),
+        findsOneWidget,
+      );
+      expect(downloads.jobsForBookCalls, greaterThan(baseline));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle();
+      downloads.dispose();
+    });
   });
 }

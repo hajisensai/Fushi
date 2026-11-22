@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -110,15 +111,23 @@ Future<void> _pumpReview(
 Finder _chip(int rating) =>
     find.byKey(ValueKey<String>('srs-rated-chip-$rating'));
 
-/// 一帧帧推进到 [finder] 出现为止（评分后下一张卡异步载入，提示随之出现）；
-/// 出现即停，不多推时间——提示本身只停留 [FushiNoticeDwell.flash]。
+/// 一帧帧推进到 [finder] 出现为止（评分后下一张卡异步载入，提示随之出现）；出现即停，不多推
+/// 时间——提示本身只停留 [FushiNoticeDwell.flash]，从它挂上那一帧起计时，等待期间推的假时间不占它。
+///
+/// 停止条件只看页面状态，不设真实时长预算：评分落库与排下一张是 SRS 内核在工作 isolate 上的往返，
+/// 满载的慢 worker 上一次往返就能超过原先固定 60 轮（约 0.3 s 真实时间）的预算，提示还没挂上就判了
+/// 失败。没出现时推到页面静下来（与 [srsSettle] 同一判据：连续 3 轮既无在途内核操作、也无排着的帧）
+/// 再判失败。
 Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
-  for (int i = 0; i < 60; i++) {
-    if (finder.evaluate().isNotEmpty) return;
+  int quiet = 0;
+  while (finder.evaluate().isEmpty && quiet < 3) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 5)),
     );
     await tester.pump(const Duration(milliseconds: 16));
+    quiet = SrsOpLedger.inflightCount == 0 && !tester.binding.hasScheduledFrame
+        ? quiet + 1
+        : 0;
   }
   expect(finder, findsOneWidget, reason: '评分后提示应出现');
 }

@@ -760,7 +760,15 @@ test('scanDelay：指针移出窗口作废待查；storage.onChanged 热更新�
   assert.strictEqual(pendingTimers(h, 700).length, 0, '换触发键作废按旧设置排的待查');
 });
 
-test('scanDelay 归一：非数 / 负数 → 0，超上限夹到 2000；side-panel.js 副本逐例同义', () => {
+test('content.js 给弹窗注入 __fushiScanDelayMs（反馈 r4tpeIzVuD）：与网页侧同一判据，随 storage 热更新', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'none', scanDelay: 300 } });
+  assert.strictEqual(typeof h.windowObj.__fushiScanDelayMs, 'function');
+  assert.strictEqual(h.windowObj.__fushiScanDelayMs(), 300);
+  for (const listener of h.storageListeners) listener({ scanModifier: { newValue: 'ctrl' } }, 'local');
+  assert.strictEqual(h.windowObj.__fushiScanDelayMs(), 0, '按键模式不加延迟');
+});
+
+test('scanDelay 归一：非数 / 负数 → 0，超上限夹到 2000；side-panel.js / nested-popup.js 副本逐例同义', () => {
   function extract(src, name) {
     const start = src.indexOf('function ' + name + '(');
     assert.ok(start >= 0, name + ' 不见了');
@@ -778,15 +786,29 @@ test('scanDelay 归一：非数 / 负数 → 0，超上限夹到 2000；side-pan
   const panelSrc = fs.readFileSync(path.join(__dirname, 'side-panel.js'), 'utf8');
   assert.match(contentSrc, /const FUSHI_SCAN_DELAY_MAX_MS = 2000;/);
   assert.match(panelSrc, /var FUSHI_SCAN_DELAY_MAX_MS = 2000;/);
+  const nestedSrc = fs.readFileSync(path.join(__dirname, 'nested-popup.js'), 'utf8');
+  assert.match(nestedSrc, /var FUSHI_SCAN_DELAY_MAX_MS = 2000;/);
+  assert.match(nestedSrc, /var FUSHI_SCAN_MODIFIER_KEYS = \{ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' \};/);
   const a = vm.createContext({});
   const b = vm.createContext({});
-  vm.runInContext(table + names.map((n) => extract(contentSrc, n)).join('\n'), a);
+  const c = vm.createContext({});
+  const nestedNames = names.concat(['fushiScanModifierHeld']);
+  vm.runInContext(table + nestedNames.map((n) => extract(contentSrc, n)).join('\n'), a);
   vm.runInContext(table + names.map((n) => extract(panelSrc, n)).join('\n'), b);
+  vm.runInContext(table + nestedNames.map((n) => extract(nestedSrc, n)).join('\n'), c);
   const values = [undefined, null, '300', NaN, Infinity, -5, 0, 0.4, 1, 299.6, 2000, 2001, 99999];
   for (const v of values) {
     assert.strictEqual(a.fushiNormalizeScanDelay(v), b.fushiNormalizeScanDelay(v), String(v));
+    assert.strictEqual(a.fushiNormalizeScanDelay(v), c.fushiNormalizeScanDelay(v), 'nested ' + String(v));
     for (const mod of ['shift', 'none', 'bogus']) {
       assert.strictEqual(a.fushiEffectiveScanDelay(mod, v), b.fushiEffectiveScanDelay(mod, v), mod + ' ' + v);
+      assert.strictEqual(a.fushiEffectiveScanDelay(mod, v), c.fushiEffectiveScanDelay(mod, v), 'nested ' + mod + ' ' + v);
+    }
+  }
+  // 嵌套弹窗（nested-popup.js，独立 realm）的触发键判定副本（反馈 r4tpeIzVuD）。
+  for (const mod of ['shift', 'ctrl', 'alt', 'meta', 'none', 'bogus']) {
+    for (const ev of [{}, { shiftKey: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
+      assert.strictEqual(a.fushiScanModifierHeld(ev, mod), c.fushiScanModifierHeld(ev, mod), 'nested held ' + mod);
     }
   }
   assert.strictEqual(a.fushiNormalizeScanDelay('300'), 0);

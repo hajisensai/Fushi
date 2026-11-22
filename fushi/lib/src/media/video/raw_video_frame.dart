@@ -7,6 +7,9 @@
 /// isolate。智能遮布持续抽帧（播放中每秒约 4 次），整帧在 isolate 之间来回拷贝
 /// （1080p 约 8 MB、4K 约 33 MB）与纯 Dart 编码都不可接受。
 ///
+/// 逐像素的 BGRA→RGBA 换通道与裁块在 Rust（fushi_compute `ffc_image_bgra_to_rgba8_inplace`，
+/// 经 [FushiComputeImage.bgraToRgba8]），本文件只算裁剪矩形、写字节头（HBK-AUDIT-008）。
+///
 /// 裁剪的字节布局：24 字节小端头（整帧宽、整帧高、裁剪 left、top、宽、高，各
 /// uint32）后接 `宽 * 高 * 4` 字节 RGBA（alpha 恒 255），由 [parseRawVideoFrameCrop]
 /// 解析。
@@ -15,6 +18,7 @@ library;
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
+import 'package:fushi_compute/fushi_compute.dart' show FushiComputeImage;
 import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 
 /// media_kit 补丁里的原始帧格式名。
@@ -120,7 +124,7 @@ RawVideoFrameTransform rawVideoFrameCropTransform(Rect fraction) =>
         );
 
 /// 按整帧比例矩形 [fraction] 裁出一块、转成 RGBA，打包成带头的字节（布局见库注释）；
-/// 帧数据不完整或裁剪为空返回 null。只拷贝裁剪内的像素。
+/// 帧数据不完整或裁剪为空返回 null。只拷贝裁剪覆盖的行，像素换通道在 Rust。
 Uint8List? cropRawVideoFrameBytes(RawVideoFrame frame, Rect fraction) {
   if (frame.width <= 0 ||
       frame.height <= 0 ||
@@ -141,7 +145,15 @@ Uint8List? cropRawVideoFrameBytes(RawVideoFrame frame, Rect fraction) {
   final int w = right - left;
   final int h = bottom - top;
   if (w <= 0 || h <= 0) return null;
-  final Uint8List out = Uint8List(kRawVideoFrameCropHeaderBytes + w * h * 4);
+  final Uint8List out = FushiComputeImage.instance.bgraToRgba8(
+    frame.bgra,
+    stride: frame.stride,
+    x: left,
+    y: top,
+    width: w,
+    height: h,
+    headerBytes: kRawVideoFrameCropHeaderBytes,
+  );
   ByteData.sublistView(out, 0, kRawVideoFrameCropHeaderBytes)
     ..setUint32(0, frame.width, Endian.little)
     ..setUint32(4, frame.height, Endian.little)
@@ -149,45 +161,6 @@ Uint8List? cropRawVideoFrameBytes(RawVideoFrame frame, Rect fraction) {
     ..setUint32(12, top, Endian.little)
     ..setUint32(16, w, Endian.little)
     ..setUint32(20, h, Endian.little);
-  final Uint8List src = frame.bgra;
-  if (Endian.host == Endian.little &&
-      src.offsetInBytes % 4 == 0 &&
-      frame.stride % 4 == 0) {
-    // 按 32 位字换通道：BGRA 小端字 = A<<24|R<<16|G<<8|B → RGBA 小端字 =
-    // 0xFF<<24|B<<16|G<<8|R（alpha 置满：mpv 的 bgr0 第四字节未定义）。整帧 1080p
-    // 是 200 万像素，逐字节写要多花数倍时间。
-    final Uint32List out32 = out.buffer.asUint32List(
-      kRawVideoFrameCropHeaderBytes,
-      w * h,
-    );
-    final Uint32List src32 = src.buffer.asUint32List(
-      src.offsetInBytes,
-      src.length ~/ 4,
-    );
-    final int strideWords = frame.stride ~/ 4;
-    int o = 0;
-    for (int y = 0; y < h; y++) {
-      int i = (top + y) * strideWords + left;
-      for (int x = 0; x < w; x++) {
-        final int v = src32[i++];
-        out32[o++] =
-            0xFF000000 | ((v & 0xFF) << 16) | (v & 0xFF00) | ((v >> 16) & 0xFF);
-      }
-    }
-    return out;
-  }
-  int o = kRawVideoFrameCropHeaderBytes;
-  for (int y = 0; y < h; y++) {
-    int i = (top + y) * frame.stride + left * 4;
-    for (int x = 0; x < w; x++) {
-      out[o] = src[i + 2];
-      out[o + 1] = src[i + 1];
-      out[o + 2] = src[i];
-      out[o + 3] = 255;
-      o += 4;
-      i += 4;
-    }
-  }
   return out;
 }
 

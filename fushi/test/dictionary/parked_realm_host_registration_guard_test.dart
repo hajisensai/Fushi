@@ -44,12 +44,42 @@ void main() {
   });
 
   test('每个建了 DictionaryPopupController 的宿主都渲染停驻 realm 层', () {
-    final List<String> missing = <String>[
-      for (final ({String path, String code}) h in hosts)
-        if (!h.code.contains('parkedRealmPopupLayers(') &&
-            !h.code.contains('buildParkedRealmLayers('))
-          h.path,
-    ];
+    bool rendersParked(String code) =>
+        code.contains('parkedRealmPopupLayers(') ||
+        code.contains('buildParkedRealmLayers(');
+
+    // 共用弹窗宿主（`SharedLookupPopupHost`，拍板台 design-shared-lookup-webview）建了
+    // controller，但浮层子项全部委托给当前渲染方的
+    // `SharedLookupPopupOwner.buildSharedLookupPopupLayers`。对它，责任落在**每个**
+    // 渲染方实现上：任何一个漏渲染，它当渲染方时停驻键就当帧销毁。按「谁实现了
+    // 这个契约」枚举，新渲染方自动落进扫描面。
+    final List<String> missing = <String>[];
+    for (final ({String path, String code}) h in hosts) {
+      final bool delegates = h.code.contains('class SharedLookupPopupHost');
+      if (!delegates) {
+        if (!rendersParked(h.code)) missing.add(h.path);
+        continue;
+      }
+      final List<String> owners = <String>[
+        for (final FileSystemEntity e in libRoot.listSync(recursive: true))
+          if (e is File &&
+              e.path.endsWith('.dart') &&
+              RegExp(
+                r'implements[^{]*\bSharedLookupPopupOwner\b',
+              ).hasMatch(maskComments(e.readAsStringSync())))
+            e.path.replaceAll(r'\', '/'),
+      ];
+      expect(
+        owners,
+        isNotEmpty,
+        reason: '${h.path} 把浮层委托给 SharedLookupPopupOwner，却一个实现都没扫到：判据漂了',
+      );
+      for (final String owner in owners) {
+        if (!rendersParked(maskComments(File(owner).readAsStringSync()))) {
+          missing.add('$owner（SharedLookupPopupOwner 渲染方）');
+        }
+      }
+    }
     expect(
       missing,
       isEmpty,

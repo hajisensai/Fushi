@@ -14,6 +14,9 @@ enum VideoMetadataLockableField {
   originalTitle,
   overview,
   tagline,
+
+  /// 年份（BUG-5082 手填资料）。只锁 `year` 列；首播 / 完结日期仍跟刮削走。
+  year,
   genres,
   studios,
   rating,
@@ -32,6 +35,7 @@ const Map<String, VideoMetadataLockableField> _byName =
       'originalTitle': VideoMetadataLockableField.originalTitle,
       'overview': VideoMetadataLockableField.overview,
       'tagline': VideoMetadataLockableField.tagline,
+      'year': VideoMetadataLockableField.year,
       'genres': VideoMetadataLockableField.genres,
       'studios': VideoMetadataLockableField.studios,
       'rating': VideoMetadataLockableField.rating,

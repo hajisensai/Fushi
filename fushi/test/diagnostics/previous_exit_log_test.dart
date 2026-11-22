@@ -513,9 +513,11 @@ void main() {
   group('Android：同一 pid 的死时重要性压过会话标记的前后台推断', () {
     const MethodChannel channel = MethodChannel('test/process_exit_importance');
 
+    // [reasons] 为 null 模拟 API < 30：原生不读 ApplicationExitInfo，payload 里没有
+    // `reasons` 键，`sdk` 记 29。
     Future<PreviousExitVerdict?> verdictFor({
       required String lifecycle,
-      required List<Map<String, Object?>> reasons,
+      required List<Map<String, Object?>>? reasons,
       bool clean = false,
       List<Map<String, Object?>> trims = const <Map<String, Object?>>[],
       List<Map<String, Object?>> uiEvents = const <Map<String, Object?>>[],
@@ -535,8 +537,8 @@ void main() {
           .setMockMethodCallHandler(
             channel,
             (MethodCall call) async => <String, Object?>{
-              'sdk': 34,
-              'reasons': reasons,
+              'sdk': reasons == null ? 29 : 34,
+              'reasons': ?reasons,
               'trims': trims,
               'uiEvents': uiEvents,
             },
@@ -747,6 +749,102 @@ void main() {
       expect(v!.kind, PreviousExitKind.backgroundReclaim);
       expect(v.worthReporting, isFalse);
       expect(v.summary, contains('androidUiAtDeath=hidden'));
+    });
+
+    // BUG-5166（反馈 ywhUI7Adc1，realme RMX1971 / Android 10）：API < 30 没有
+    // ApplicationExitInfo，旧实现拿不到死亡时刻就丢掉同 pid 的原生证据，标记停在 inactive
+    // 按前台算 → 后台被回收却弹「意外退出」。死亡时刻以本次启动（nowMs=9000）为上界。
+    test(
+      'API 29 无退出记录 + 标记停在 inactive + 同 pid 已 trim UI_HIDDEN → 不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'inactive',
+          reasons: null,
+          trims: <Map<String, Object?>>[trim(19104, 20, 4700)],
+        );
+        expect(v, isNotNull);
+        expect(v!.foreground, isFalse);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('androidUiAtDeath=hidden'));
+      },
+    );
+
+    test('API 29 无退出记录 + 同 pid 只有 RUNNING_CRITICAL → 照常按前台上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'inactive',
+        reasons: null,
+        trims: <Map<String, Object?>>[trim(19104, 15, 4700)],
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('API 29 无退出记录：早于本会话启动的同号 trim（pid 复用）不算', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'inactive',
+        reasons: null,
+        trims: <Map<String, Object?>>[trim(19104, 20, 500)],
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('有 reasons 但没有这个 pid 的记录 → 同样以本次启动为上界看原生证据', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'inactive',
+        reasons: <Map<String, Object?>>[record(pid: 777, importance: 400)],
+        trims: <Map<String, Object?>>[trim(19104, 20, 4700)],
+      );
+      expect(v!.foreground, isFalse);
+      expect(v.worthReporting, isFalse);
+    });
+
+    test('androidSessionUiVisibleAtDeath：退出记录优先；上界只在 pid 不是本进程时用', () {
+      final Map<Object?, Object?> payload = <Object?, Object?>{
+        'trims': <Object?>[trim(19104, 20, 4700)],
+      };
+      expect(
+        androidSessionUiVisibleAtDeath(payload, pid: 19104, startedAtMs: 1000),
+        isNull,
+      );
+      expect(
+        androidSessionUiVisibleAtDeath(
+          payload,
+          pid: 19104,
+          startedAtMs: 1000,
+          nextProcessStartedAtMs: 9000,
+          currentPid: 20000,
+        ),
+        isFalse,
+      );
+      // 本进程复用了旧 pid：trim 可能是本进程自己的，不用上界。
+      expect(
+        androidSessionUiVisibleAtDeath(
+          payload,
+          pid: 19104,
+          startedAtMs: 1000,
+          nextProcessStartedAtMs: 9000,
+          currentPid: 19104,
+        ),
+        isNull,
+      );
+      // 有退出记录时用记录的死亡时刻：死在 trim 之前，这条 trim 不算。
+      expect(
+        androidSessionUiVisibleAtDeath(
+          <Object?, Object?>{
+            ...payload,
+            'reasons': <Object?>[
+              record(pid: 19104, importance: 125, timestamp: 4500),
+            ],
+          },
+          pid: 19104,
+          startedAtMs: 1000,
+          nextProcessStartedAtMs: 9000,
+          currentPid: 20000,
+        ),
+        isNull,
+      );
     });
 
     test('importance=100 是硬事实：原生说隐藏也照样算前台', () async {
@@ -1457,6 +1555,27 @@ void main() {
       expect(
         androidExitKind('OTHER', description: '[KILL UID] user cleanup'),
         isNull,
+      );
+      // BUG-5183（反馈 4u4HnlOcv2）：OnePlus ColorOS 15 改应用权限时记的整串描述。
+      expect(
+        androidExitKind(
+          'OTHER',
+          description: '[KILL UID] Permission related app op changed',
+        ),
+        PreviousExitKind.permissionChanged,
+      );
+      // 只认这一整串，`[KILL UID]` 下的其它原因 / 大小写变体 / 夹带前后缀都不吞。
+      for (final String d in <String>[
+        '[KILL UID] permission related app op changed',
+        '[KILL UID] Permission related app op changed by malware',
+        'x [KILL UID] Permission related app op changed',
+        '[KILL UID] Other related app op changed',
+      ]) {
+        expect(androidExitKind('OTHER', description: d), isNull, reason: d);
+      }
+      expect(
+        androidExitKind('OTHER', description: '[KILL UID] malware'),
+        PreviousExitKind.securityKilled,
       );
       // 只有 OTHER 看描述：别的原因码带这段文字也不改判。
       expect(
