@@ -3143,6 +3143,7 @@
   "download_task_import_blocked_archive_failed": "Das Archiv konnte nicht entpackt werden (möglicherweise beschädigt oder passwortgeschützt)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "Zum Entpacken dieses Archivs wird das 7-Zip-Kommandozeilenwerkzeug benötigt, das nicht installiert ist",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "Dieses Buch ist bereits in deiner Bibliothek. Hörbücher können noch nicht automatisch an ein vorhandenes EPUB angehängt werden; öffne das Buch und importiere das Hörbuch manuell",
   "download_task_import_blocked_audiobook_no_audio": "Im Hörbuch-Download wurden keine Audiodateien gefunden",
   "download_task_import_blocked_audiobook_no_subtitle": "Im Hörbuch-Download ist keine Untertiteldatei enthalten, daher kann das Audio nicht am Text ausgerichtet werden",

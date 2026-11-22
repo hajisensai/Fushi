@@ -3143,6 +3143,7 @@
   "download_task_import_blocked_archive_failed": "แตกไฟล์เก็บถาวรไม่ได้ (อาจเสียหายหรือมีรหัสผ่าน)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "การแตกไฟล์เก็บถาวรนี้ต้องใช้เครื่องมือบรรทัดคำสั่ง 7-Zip ซึ่งยังไม่ได้ติดตั้ง",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "หนังสือเล่มนี้อยู่ในคลังของคุณแล้ว ยังแนบหนังสือเสียงกับ EPUB ที่มีอยู่โดยอัตโนมัติไม่ได้ เปิดหนังสือแล้วนำเข้าหนังสือเสียงด้วยตนเอง",
   "download_task_import_blocked_audiobook_no_audio": "ไม่พบไฟล์เสียงในการดาวน์โหลดหนังสือเสียง",
   "download_task_import_blocked_audiobook_no_subtitle": "ไม่มีไฟล์คำบรรยายในการดาวน์โหลดหนังสือเสียง จึงจัดแนวเสียงกับข้อความไม่ได้",

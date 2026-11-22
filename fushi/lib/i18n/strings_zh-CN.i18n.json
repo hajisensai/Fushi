@@ -3143,6 +3143,7 @@
   "download_task_import_blocked_archive_failed": "压缩包解压失败（可能已损坏）",
   "download_task_import_blocked_archive_password": "压缩包有密码：重新导入并输入密码",
   "download_task_import_blocked_archive_tool_missing": "解压这个压缩包需要 7-Zip 命令行工具，本机未安装",
+  "download_task_import_blocked_archive_volumes": "分卷压缩包不全：要从第一卷（.001）导入，其余各卷放在同一个文件夹里",
   "download_task_import_blocked_audiobook_book_exists": "库中已有同名书。有声书暂时不能自动关联到已有的 EPUB，请打开这本书手动导入有声书",
   "download_task_import_blocked_audiobook_no_audio": "有声书下载里没有音频文件",
   "download_task_import_blocked_audiobook_no_subtitle": "有声书下载里没有字幕文件，无法把音频对齐到正文",

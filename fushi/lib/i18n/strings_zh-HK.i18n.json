@@ -3143,6 +3143,7 @@
   "download_task_import_blocked_archive_failed": "壓縮包解壓失敗（可能已損壞）",
   "download_task_import_blocked_archive_password": "壓縮包有密碼：重新匯入並輸入密碼",
   "download_task_import_blocked_archive_tool_missing": "解壓這個壓縮包需要 7-Zip 命令行工具，本機未安裝",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "庫中已有同名書。有聲書暫時不能自動關聯到已有的 EPUB，請開啟這本書手動匯入有聲書",
   "download_task_import_blocked_audiobook_no_audio": "有聲書下載裡沒有音頻檔案",
   "download_task_import_blocked_audiobook_no_subtitle": "有聲書下載裡沒有字幕檔案，無法把音頻對齊到正文",

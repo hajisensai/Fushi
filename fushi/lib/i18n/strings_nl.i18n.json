@@ -3143,6 +3143,7 @@
   "download_task_import_blocked_archive_failed": "Kon het archief niet uitpakken (het is mogelijk beschadigd of met een wachtwoord beveiligd)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "Voor het uitpakken van dit archief is het 7-Zip-opdrachtregelprogramma nodig, dat niet is geïnstalleerd",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "Dit boek staat al in je bibliotheek. Luisterboeken kunnen nog niet automatisch aan een bestaande EPUB worden gekoppeld; open het boek en importeer het luisterboek handmatig",
   "download_task_import_blocked_audiobook_no_audio": "Geen audiobestanden gevonden in de luisterboekdownload",
   "download_task_import_blocked_audiobook_no_subtitle": "Geen ondertitelbestand in de luisterboekdownload, dus de audio kan niet met de tekst worden uitgelijnd",
