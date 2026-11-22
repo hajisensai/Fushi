@@ -15,6 +15,8 @@
 ///   时，没单句指定声音的合成句改用旁白音色（[mangaSynthVoiceFor]）。
 library;
 
+import 'package:path/path.dart' as p;
+
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
@@ -47,6 +49,22 @@ String mangaClipVoiceTag(MangaAudiobookClip clip) =>
     '$kMangaClipVoicePrefix${clip.bookKey ?? ''}#${clip.fileIndex}:'
     '${clip.startMs}-${clip.endMs}';
 
+/// 换上本地音频的句子在清单 `voice` 字段里的标记（带内容指纹：换了另一段音频就能被
+/// 识别出来重新整形）。
+const String kMangaLocalVoicePrefix = 'file:';
+
+String mangaLocalVoiceTag(MangaLocalAudio audio) =>
+    '$kMangaLocalVoicePrefix${audio.sig}';
+
+/// 换上本地音频后这句的成品文件名（带内容指纹：与原文件不同名，原文件留到清单不再
+/// 引用时才清，撤销据此认出「还是这次换上的音频」）。
+String mangaLocalLineFileName(String lineId, MangaLocalAudio audio) =>
+    '$lineId.f${audio.sig}.m4a';
+
+/// 本地音频保留副本的绝对路径（成品目录 [directory] 下的 [kMangaLocalAudioDirName]）。
+String mangaLocalAudioSourcePath(String directory, MangaLocalAudio audio) =>
+    p.join(directory, kMangaLocalAudioDirName, '${audio.sig}${audio.ext}');
+
 /// 一句的音源（计划层）。
 sealed class MangaRenderSource {
   const MangaRenderSource();
@@ -74,6 +92,13 @@ final class MangaRenderClip extends MangaRenderSource {
   final MangaAudiobookClip clip;
 }
 
+/// 整形用户换上的本地音频（[MangaLocalAudio]）。
+final class MangaRenderLocal extends MangaRenderSource {
+  const MangaRenderLocal(this.audio);
+
+  final MangaLocalAudio audio;
+}
+
 /// 计划里的一句。
 class MangaRenderItem {
   const MangaRenderItem({
@@ -94,18 +119,19 @@ class MangaRenderItem {
   String get voiceTag => switch (source) {
     MangaRenderSynth(:final String voice) => voice,
     MangaRenderClip(:final MangaAudiobookClip clip) => mangaClipVoiceTag(clip),
+    MangaRenderLocal(:final MangaLocalAudio audio) => mangaLocalVoiceTag(audio),
   };
 
   /// 写进清单 `seed` 的值（有声书片段没有种子）。
   int? get seed => switch (source) {
     MangaRenderSynth(:final int seed) => seed,
-    MangaRenderClip() => null,
+    MangaRenderClip() || MangaRenderLocal() => null,
   };
 
   /// 账本里记的「指派的声音」（有声书片段记 null）。
   String? get assignedVoice => switch (source) {
     MangaRenderSynth(:final String voice) => voice,
-    MangaRenderClip() => null,
+    MangaRenderClip() || MangaRenderLocal() => null,
   };
 
   /// 由这句生成清单行（文件 / 时长 / 是否占位 / 整形版本由生成端给；占位静音不整形，
@@ -211,6 +237,8 @@ MangaRenderSource? mangaRenderSourceFor({
           byUser: clip.byUser,
         ),
       );
+    case MangaLineAudioPlan.localAudio:
+      return MangaRenderLocal(line.audio as MangaLocalAudio);
     case MangaLineAudioPlan.synthesize:
       return MangaRenderSynth(
         voice: mangaSynthVoiceFor(script, line, defaultVoice, narrator),

@@ -6,13 +6,16 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show Audiobook, AudiobookRepository;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart'
-    show mangaCandidateFileName;
+    show MangaRenderItem, mangaCandidateFileName, mangaLocalAudioSourcePath;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -21,6 +24,8 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
+    show registerMangaAudio;
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -122,6 +127,63 @@ class _FakeAnnotator {
       reviewedLines: 0,
     );
   }
+}
+
+/// 只会整形本地音频的假后端：输出 = `shaped:<源文件内容>`，时长 = 1500；源文件内容是
+/// `bad` 时整形失败。
+class _FakeLocalBackend implements MangaRenderBackend {
+  @override
+  int get parallelism => 1;
+
+  @override
+  String get shapeVersion => 'test-shape';
+
+  @override
+  Future<int> shapeLocalAudio({
+    required String sourcePath,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    final String content = await File(sourcePath).readAsString();
+    if (content == 'bad') throw const MangaLineFailure('encode_failed');
+    await File(outputPath).writeAsString('shaped:$content');
+    return 1500;
+  }
+
+  @override
+  Future<int> synthesizeLine({
+    required String voice,
+    required int seed,
+    required List<String> segments,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('local only');
+
+  @override
+  Future<int> cutClip({
+    required MangaAudiobookClip clip,
+    required String outputPath,
+    required TtsRenderCancelToken cancel,
+  }) => throw UnsupportedError('local only');
+
+  @override
+  Future<int> writeSilence({required int ms, required String outputPath}) =>
+      throw UnsupportedError('local only');
+
+  @override
+  Future<void> prepare({
+    required List<MangaRenderItem> items,
+    required TtsRenderCancelToken cancel,
+  }) async {}
+
+  @override
+  bool get canCloneNarrator => false;
+
+  @override
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  }) async => false;
 }
 
 Map<String, Object?> _block(String text) => <String, Object?>{
@@ -302,6 +364,7 @@ void main() {
               );
             },
         stopPlayback: (List<String> keys) async {},
+        localAudioBackend: () async => _FakeLocalBackend(),
       ),
     );
     routes = buildTtsCtlRoutes(context);
@@ -920,6 +983,347 @@ void main() {
     await expectLater(importManifest(file.path), failure(409));
   });
 
+  /// 本机生成过的成品：p0b0（太郎）/ p0b1（不明）/ p1b0（旁白）三句，各有音频，已入库。
+  Future<File> writeRendered() async {
+    final File manifestFile = mangaRenderManifestFile(model, bookKey);
+    await manifestFile.parent.create(recursive: true);
+    final List<(String, int, List<int>, String, CastLineKind)> rows =
+        <(String, int, List<int>, String, CastLineKind)>[
+          ('p0b0', 0, <int>[0], '太郎', CastLineKind.spoken),
+          ('p0b1', 0, <int>[1], kTtsUnknown, CastLineKind.spoken),
+          ('p1b0', 1, <int>[0], kTtsNarrator, CastLineKind.narration),
+        ];
+    for (final (String id, _, _, _, _) in rows) {
+      await File(
+        p.join(manifestFile.parent.path, '$id.m4a'),
+      ).writeAsString('old-$id');
+    }
+    final MangaRenderManifest manifest = MangaRenderManifest(
+      pageCount: 3,
+      engineSignature: 'sig-1',
+      lines: <MangaRenderedLine>[
+        for (final (
+              String id,
+              int page,
+              List<int> blocks,
+              String who,
+              CastLineKind kind,
+            )
+            in rows)
+          MangaRenderedLine(
+            lineId: id,
+            page: page,
+            blocks: blocks,
+            speaker: who,
+            kind: kind,
+            beatMs: 0,
+            file: '$id.m4a',
+            durationMs: 1200,
+            text: 'text $id',
+            voice: 'v1',
+            seed: 0,
+            shape: 'test-shape',
+          ),
+      ],
+    );
+    await manifest.save(manifestFile);
+    await registerMangaAudio(
+      db,
+      bookKey: bookKey,
+      manifestFile: manifestFile,
+      manifest: manifest,
+    );
+    return manifestFile;
+  }
+
+  File localWav(String name, String content) =>
+      File(p.join(tmp.path, 'wavs', name))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(content);
+
+  Future<List<AudioCueRow>> cues() async => (await db.getCuesForBook(bookKey))
+    ..sort(
+      (AudioCueRow a, AudioCueRow b) => a.audioFileIndex - b.audioFileIndex,
+    );
+
+  test('按句换本地音频：没生成过 422；预检逐句给原因、不改；有错不带 dryRun 422', () async {
+    final File good = localWav('a.wav', 'wav-a');
+    await expectLater(
+      call(
+        'POST',
+        '$item/lines/replace',
+        body: <String, Object?>{
+          'files': <String, String>{'p0b0': good.path},
+        },
+      ),
+      coded(422, 'manga_not_rendered'),
+    );
+    final File manifestFile = await writeRendered();
+    final String before = await manifestFile.readAsString();
+    await expectLater(call('POST', '$item/lines/replace'), failure(400));
+
+    final Object? dry = await call(
+      'POST',
+      '$item/lines/replace',
+      body: <String, Object?>{
+        'dryRun': true,
+        'files': <String, String>{
+          'p0b0': good.path,
+          'p0b1': 'rel/b.wav',
+          'p1b0': p.join(tmp.path, 'wavs', 'missing.wav'),
+          'p2b0': localWav('c.txt', 'x').path,
+        },
+      },
+    );
+    final List<Object?> lines = (dry! as Map)['lines'] as List<Object?>;
+    expect((dry as Map)['ok'], isFalse);
+    Map<Object?, Object?> lineOf(String id) => lines
+        .cast<Map<Object?, Object?>>()
+        .singleWhere((Map<Object?, Object?> l) => l['line'] == id);
+    expect(lineOf('p0b0')['ok'], isTrue);
+    expect(lineOf('p0b0')['currentDurationMs'], 1200);
+    expect(lineOf('p0b1')['code'], 'path_not_absolute');
+    expect(lineOf('p1b0')['code'], 'file_missing');
+    expect(lineOf('p2b0')['code'], 'line_missing');
+
+    await expectLater(
+      call(
+        'POST',
+        '$item/lines/replace',
+        body: <String, Object?>{
+          'files': <String, String>{
+            'p0b0': good.path,
+            'p1b0': p.join(tmp.path, 'wavs', 'missing.wav'),
+          },
+        },
+      ),
+      coded(422, 'manga_audio_replace_invalid', 'p1b0'),
+    );
+    // 整形失败也是全有或全无。
+    await expectLater(
+      call(
+        'POST',
+        '$item/lines/replace',
+        body: <String, Object?>{
+          'files': <String, String>{
+            'p0b0': good.path,
+            'p1b0': localWav('bad.wav', 'bad').path,
+          },
+        },
+      ),
+      coded(422, 'manga_audio_replace_failed', 'p1b0'),
+    );
+    expect(await manifestFile.readAsString(), before);
+    expect(
+      (await readScript()).lineById('p0b0')!.audio,
+      isA<MangaSynthesized>(),
+    );
+  });
+
+  test('按句换本地音频：清单 / 演出稿 / 库里 cue 时长与音频路径一起换，续听位置换算到同一句；撤销放回', () async {
+    final File manifestFile = await writeRendered();
+    await AudiobookRepository(
+      db,
+    ).updatePositionMs(bookKey: bookKey, positionMs: 2400 + 600);
+    final File mapping = File(p.join(tmp.path, 'wavs', 'map.json'))
+      ..createSync(recursive: true);
+    localWav('b.wav', 'wav-b');
+    mapping.writeAsStringSync(
+      jsonEncode(<String, String>{
+        'p0b0': localWav('a.wav', 'wav-a').path,
+        'p1b0': 'b.wav',
+      }),
+    );
+
+    final (Object? result, Future<OpUndoOutcome> Function() undo) = await runOp(
+      'tts.manga.lines.replace',
+      body: <String, Object?>{'mapping': mapping.path},
+    );
+    expect(result, containsPair('replaced', 2));
+    final MangaRenderManifest manifest = (await MangaRenderManifest.load(
+      manifestFile,
+    ))!;
+    final MangaRenderedLine l0 = manifest.lines[0];
+    expect(l0.file, startsWith('p0b0.f'));
+    expect(l0.voice, startsWith('file:'));
+    expect(l0.durationMs, 1500);
+    expect(
+      File(p.join(manifestFile.parent.path, l0.file)).readAsStringSync(),
+      'shaped:wav-a',
+    );
+    expect(
+      File(p.join(manifestFile.parent.path, 'p0b0.m4a')).existsSync(),
+      isFalse,
+    );
+    final MangaLineAudioSource audio = (await readScript())
+        .lineById('p0b0')!
+        .audio;
+    expect(audio, isA<MangaLocalAudio>());
+    expect((audio as MangaLocalAudio).name, 'a.wav');
+    expect(
+      File(
+        mangaLocalAudioSourcePath(manifestFile.parent.path, audio),
+      ).readAsStringSync(),
+      'wav-a',
+    );
+    List<AudioCueRow> rows = await cues();
+    expect(rows.map((AudioCueRow c) => c.endMs), <int>[1500, 1200, 1500]);
+    final Audiobook? book = await AudiobookRepository(
+      db,
+    ).findByBookKey(bookKey);
+    expect(book!.audioPaths![0], endsWith(l0.file));
+    // 断点原在第 3 句（p1b0）的 600 ms 处；第 1 句换了不归零，第 3 句自己也换了 →
+    // 从第 3 句开头接着听。
+    expect(await AudiobookRepository(db).readPositionMs(bookKey), 1500 + 1200);
+
+    expect((await undo()).status, OpUndoStatus.done);
+    final MangaRenderManifest back = (await MangaRenderManifest.load(
+      manifestFile,
+    ))!;
+    expect(back.lines[0].file, 'p0b0.m4a');
+    expect(back.lines[0].durationMs, 1200);
+    expect(
+      File(p.join(manifestFile.parent.path, 'p0b0.m4a')).readAsStringSync(),
+      'old-p0b0',
+    );
+    expect(
+      File(p.join(manifestFile.parent.path, l0.file)).existsSync(),
+      isFalse,
+    );
+    expect(
+      (await readScript()).lineById('p0b0')!.audio,
+      isA<MangaSynthesized>(),
+    );
+    rows = await cues();
+    expect(rows.map((AudioCueRow c) => c.endMs), <int>[1200, 1200, 1200]);
+    expect((await undo()).status, OpUndoStatus.superseded);
+  });
+
+  test('按句换本地音频 / 单句重生成：登记的是外部导入的清单时 409', () async {
+    await writeRendered();
+    final File external = await writeExternalManifest('ext');
+    await importManifest(external.path, confirm: true);
+    await expectLater(
+      call(
+        'POST',
+        '$item/lines/replace',
+        body: <String, Object?>{
+          'files': <String, String>{'p0b0': localWav('a.wav', 'wav-a').path},
+        },
+      ),
+      coded(409, 'manga_audio_external'),
+    );
+    await expectLater(
+      call(
+        'POST',
+        '$item/lines/:line/regenerate',
+        params: <String, String>{'key': wire, 'line': 'p0b0'},
+      ),
+      coded(409, 'manga_audio_external'),
+    );
+  });
+
+  test('按角色批量重生成：预检列句子与跳过原因；排进队列；撤销取消任务、放回已换的句子', () async {
+    final File manifestFile = await writeRendered();
+    await expectLater(
+      call(
+        'POST',
+        '$item/characters/:name/regenerate',
+        params: <String, String>{'key': wire, 'name': '花子'},
+      ),
+      failure(404),
+    );
+    // 太郎还有一句没生成过：按角色重生成要跳过它。
+    final MangaAudioScript script = await readScript();
+    script.lines.add(
+      MangaScriptLine(
+        page: 2,
+        blocks: const <int>[0],
+        speaker: '太郎',
+        kind: CastLineKind.spoken,
+      ),
+    );
+    await writeScript(script);
+    final Object? dry = await call(
+      'POST',
+      '$item/characters/:name/regenerate',
+      params: <String, String>{'key': wire, 'name': '太郎'},
+      body: <String, Object?>{'dryRun': true},
+    );
+    expect(
+      ((dry! as Map)['lines'] as List<Object?>).map(
+        (Object? l) => (l! as Map)['line'],
+      ),
+      <String>['p0b0'],
+    );
+    expect((dry as Map)['skipped'], <Object?>[
+      <String, Object?>{'line': 'p2b0', 'reason': 'not_rendered'},
+    ]);
+    expect(queue.latestFor(bookKey), isNull);
+
+    // 跑起来后撤销：任务还在跑 → 取消，什么都没换成。
+    final (Object? r1, Future<OpUndoOutcome> Function() undo1) = await runOp(
+      'tts.manga.character.regenerate',
+      params: <String, String>{'key': wire, 'name': '太郎'},
+    );
+    expect(r1, containsPair('taskId', wire));
+    await until(() => renderRunner.runs == 1);
+    final TtsRenderJob job1 = queue.latestFor(bookKey)!;
+    expect(job1.lineRequests.single.lineId, 'p0b0');
+    expect(job1.lineRequests.single.seed, isNotNull);
+    expect((await undo1()).status, OpUndoStatus.done);
+    expect(queue.latestFor(bookKey)!.status, TtsRenderJobStatus.cancelled);
+
+    // 再跑一次，模拟任务换好了这一句（新种子、新文件），撤销放回旧音频与旧种子。
+    final (Object? _, Future<OpUndoOutcome> Function() undo2) = await runOp(
+      'tts.manga.character.regenerate',
+      params: <String, String>{'key': wire, 'name': '太郎'},
+    );
+    final TtsRenderJob job2 = queue.latestFor(bookKey)!;
+    final int seed = job2.lineRequests.single.seed!;
+    await queue.cancel(job2.id);
+    await until(() => queue.latestFor(bookKey)!.isTerminal);
+    final String newFile = mangaCandidateFileName('p0b0', seed);
+    await File(
+      p.join(manifestFile.parent.path, newFile),
+    ).writeAsString('new-audio');
+    final MangaRenderManifest manifest = (await MangaRenderManifest.load(
+      manifestFile,
+    ))!;
+    manifest.replaceLine(
+      'p0b0',
+      (MangaRenderedLine l) => l.replaced(
+        file: newFile,
+        durationMs: 900,
+        placeholder: false,
+        voice: 'v1',
+        seed: seed,
+      ),
+    );
+    await manifest.save(manifestFile);
+    await File(p.join(manifestFile.parent.path, 'p0b0.m4a')).delete();
+    final MangaAudioScript changed = await readScript();
+    changed.replaceLine('p0b0', (MangaScriptLine l) => l.copyWith(seed: seed));
+    await writeScript(changed);
+
+    expect((await undo2()).status, OpUndoStatus.done);
+    final MangaRenderManifest back = (await MangaRenderManifest.load(
+      manifestFile,
+    ))!;
+    expect(back.lines[0].file, 'p0b0.m4a');
+    expect(back.lines[0].seed, 0);
+    expect(
+      File(p.join(manifestFile.parent.path, 'p0b0.m4a')).readAsStringSync(),
+      'old-p0b0',
+    );
+    expect(
+      File(p.join(manifestFile.parent.path, newFile)).existsSync(),
+      isFalse,
+    );
+    expect((await readScript()).lineById('p0b0')!.seed, isNull);
+    expect((await cues()).first.endMs, 1200);
+  });
+
   test('描述：写操作都可撤销或标 irreversible；生成与标注是长任务', () {
     expect(catalog['tts.manga.render']!.risk, OpRisk.irreversible);
     expect(catalog['tts.manga.annotate']!.spec.needsConfirmation, isTrue);
@@ -928,6 +1332,8 @@ void main() {
       'tts.manga.line.edit',
       'tts.manga.character.edit',
       'tts.manga.line.regenerate',
+      'tts.manga.lines.replace',
+      'tts.manga.character.regenerate',
       'tts.manga.render-cancel',
       'tts.manga.annotate',
       'tts.manga.import',
