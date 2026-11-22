@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 
 /// 焦点句 / 其他句的字号（px，乘字号倍数前）。
 const double kPendoloFocalFontPx = 28;
@@ -95,6 +96,7 @@ class PendoloLineBlock {
     required this.align,
     required this.lineEndMs,
     required this.fontPx,
+    required this.glow,
   }) {
     double w = main.width;
     for (final TextPainter s in subtitles) {
@@ -108,7 +110,9 @@ class PendoloLineBlock {
     height = h;
   }
 
-  /// 排一句。[focal] 决定字号与是否带扫光；[maxWidth] 是块的最大宽度。
+  /// 排一句。[focal] 决定字号与是否带扫光；[maxWidth] 是块的最大宽度。[baseStyle] 带主题的
+  /// 字体 / 字重；[theme] 的 wordColors 只染扫亮层（folia `PendoloActiveLyricSweep`：底层
+  /// 统一 52% 主文字色）；[chorusGlow] > 0 时扫亮层带副歌光晕（folia 两层 drop-shadow）。
   factory PendoloLineBlock.build({
     required LyricVisualizerLine line,
     required bool focal,
@@ -118,6 +122,10 @@ class PendoloLineBlock {
     required Color primary,
     required Color fillColor,
     required Color secondary,
+    TextStyle baseStyle = const TextStyle(),
+    LyricVisualizerTheme? theme,
+    Color? glowAccent,
+    double chorusGlow = 0,
   }) {
     final double fontPx =
         (focal ? kPendoloFocalFontPx : kPendoloIdleFontPx) * fontScale;
@@ -129,14 +137,15 @@ class PendoloLineBlock {
     final String body = raw.isEmpty ? line.text : raw;
     final int lead = body.length - body.trimLeft().length;
     final String text = body.trim().isEmpty ? line.text : body.trim();
-    final TextStyle style = TextStyle(
+    final TextStyle style = baseStyle.copyWith(
       fontSize: fontPx,
       height: 1.2,
       letterSpacing: fontPx * 0.01,
     );
-    TextPainter painter(Color color) => TextPainter(
+    TextPainter painter(Color color, [List<InlineSpan>? runs]) => TextPainter(
       text: TextSpan(
-        text: text,
+        text: runs == null ? text : null,
+        children: runs,
         style: style.copyWith(color: color),
       ),
       textAlign: ta,
@@ -151,9 +160,19 @@ class PendoloLineBlock {
     );
     TextPainter? fill;
     List<PendoloSweepRow> rows = const <PendoloSweepRow>[];
+    PendoloSweepGlow? glow;
     if (focal) {
-      fill = painter(fillColor);
+      fill = painter(fillColor, pendoloColorRuns(text, theme, fillColor));
       rows = _buildRows(fill, line, lead, text.length);
+      if (chorusGlow > 0) {
+        glow = PendoloSweepGlow(
+          innerSigma: fontPx * 0.3 * chorusGlow / 2,
+          innerColor: fillColor.withValues(alpha: 0.72),
+          outerSigma: fontPx * 0.62 * chorusGlow / 2,
+          outerColor: (glowAccent ?? fillColor).withValues(alpha: 0.28),
+          padding: fontPx * 0.7 * chorusGlow + 10,
+        );
+      }
     }
 
     final List<TextPainter> subs = <TextPainter>[];
@@ -168,7 +187,7 @@ class PendoloLineBlock {
         TextPainter(
           text: TextSpan(
             text: sub,
-            style: TextStyle(
+            style: baseStyle.copyWith(
               fontSize: px,
               height: kPendoloSubtitleLineHeight,
               fontWeight: FontWeight.w500,
@@ -194,6 +213,7 @@ class PendoloLineBlock {
       align: align,
       lineEndMs: line.endMs,
       fontPx: fontPx,
+      glow: glow,
     );
   }
 
@@ -205,6 +225,9 @@ class PendoloLineBlock {
   final PendoloAlign align;
   final int lineEndMs;
   final double fontPx;
+
+  /// 副歌光晕（null = 不是正在唱的副歌句）。
+  final PendoloSweepGlow? glow;
   late final double width;
   late final double height;
 
@@ -242,6 +265,36 @@ class PendoloLineBlock {
         pendoloSweepEdge(row, timeMs, lineEndMs),
     ];
     if (edges.every((double? e) => e == null)) return;
+    final PendoloSweepGlow? g = glow;
+    if (g != null) {
+      // CSS 的 filter 在 mask 之后：光晕围着已扫亮的部分。先画两层模糊着色的遮罩结果，再画本体。
+      final Rect glowArea = (at & Size(f.width, f.height)).inflate(
+        fontPx + g.padding,
+      );
+      for (final (double sigma, Color color) in <(double, Color)>[
+        (g.outerSigma, g.outerColor),
+        (g.innerSigma, g.innerColor),
+      ]) {
+        if (sigma <= 0.05) continue;
+        canvas.saveLayer(
+          glowArea,
+          Paint()
+            ..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma)
+            ..colorFilter = ColorFilter.mode(color, BlendMode.srcIn),
+        );
+        _paintMaskedSweep(canvas, f, at, edges);
+        canvas.restore();
+      }
+    }
+    _paintMaskedSweep(canvas, f, at, edges);
+  }
+
+  void _paintMaskedSweep(
+    Canvas canvas,
+    TextPainter f,
+    Offset at,
+    List<double?> edges,
+  ) {
     final double soft = (fontPx * 0.42).clamp(8.0, 16.0);
     final Rect area = (at & Size(f.width, f.height)).inflate(fontPx);
     canvas.saveLayer(area, Paint());
@@ -295,6 +348,64 @@ class PendoloLineBlock {
       s.dispose();
     }
   }
+}
+
+/// 副歌扫亮层的光晕（folia `drop-shadow(0 0 0.3em·g fill/0.72) drop-shadow(0 0 0.62em·g accent/0.28)`；
+/// CSS 模糊半径折成 sigma = 半径 / 2）。
+class PendoloSweepGlow {
+  const PendoloSweepGlow({
+    required this.innerSigma,
+    required this.innerColor,
+    required this.outerSigma,
+    required this.outerColor,
+    required this.padding,
+  });
+
+  final double innerSigma;
+  final Color innerColor;
+  final double outerSigma;
+  final Color outerColor;
+  final double padding;
+}
+
+/// folia `buildPendoloColorRuns`：主题 wordColors 命中的字按自己的颜色，其余按 [fallback]，相邻
+/// 同色合成一段。没有命中时返回 null（整行一个颜色）。
+List<InlineSpan>? pendoloColorRuns(
+  String text,
+  LyricVisualizerTheme? theme,
+  Color fallback,
+) {
+  if (theme == null || !theme.hasWordColors || text.isEmpty) return null;
+  final List<LyricVisualizerWordColorRange> ranges = theme.colorRangesFor(text);
+  if (ranges.isEmpty) return null;
+  final List<InlineSpan> runs = <InlineSpan>[];
+  final StringBuffer buf = StringBuffer();
+  Color? current;
+  void flush() {
+    if (buf.isEmpty) return;
+    runs.add(
+      TextSpan(
+        text: buf.toString(),
+        style: TextStyle(color: current),
+      ),
+    );
+    buf.clear();
+  }
+
+  int i = 0;
+  for (final int rune in text.runes) {
+    final int len = rune > 0xFFFF ? 2 : 1;
+    final Color c =
+        LyricVisualizerTheme.colorForSpan(ranges, i, i + len) ?? fallback;
+    if (c != current) {
+      flush();
+      current = c;
+    }
+    buf.writeCharCode(rune);
+    i += len;
+  }
+  flush();
+  return runs;
 }
 
 /// 首选译文，没有就用罗马音；只剩符号（"//"、"●●●"）的不显示。
@@ -368,12 +479,13 @@ double pendoloFocalBlockHeight(
   required double fontScale,
   required double measureWidth,
   required double activeScale,
+  TextStyle baseStyle = const TextStyle(),
 }) {
   final double fontPx = kPendoloFocalFontPx * fontScale;
   final TextPainter p = TextPainter(
     text: TextSpan(
       text: line.text,
-      style: TextStyle(fontSize: fontPx, height: 1.2),
+      style: baseStyle.copyWith(fontSize: fontPx, height: 1.2),
     ),
     textDirection: TextDirection.ltr,
   )..layout(maxWidth: math.max(1, measureWidth));
@@ -385,7 +497,7 @@ double pendoloFocalBlockHeight(
     final TextPainter s = TextPainter(
       text: TextSpan(
         text: sub,
-        style: TextStyle(
+        style: baseStyle.copyWith(
           fontSize: px,
           height: kPendoloSubtitleLineHeight,
           fontWeight: FontWeight.w500,

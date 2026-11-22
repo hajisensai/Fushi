@@ -195,10 +195,18 @@ class PendoloSpring {
   double value;
   double velocity = 0;
 
-  /// 推进 [dt] 秒趋向 [target]。参数照 folia：stiffness 180·s，damping 18 + 4/s，mass 0.8。
-  void step(double target, double dt, double snappiness) {
-    final double stiffness = 180 * snappiness;
-    final double damping = 18 + 4 / math.max(0.5, snappiness);
+  /// 推进 [dt] 秒趋向 [target]。参数照 folia：stiffness 180·s，damping 18 + 4/s，mass 0.8；
+  /// [springScale] / [dampingScale] 是动画强度档位的倍率（folia `escapementSpring` /
+  /// `escapementDamping`）。
+  void step(
+    double target,
+    double dt,
+    double snappiness, {
+    double springScale = 1,
+    double dampingScale = 1,
+  }) {
+    final double stiffness = 180 * snappiness * springScale;
+    final double damping = (18 + 4 / math.max(0.5, snappiness)) * dampingScale;
     const double mass = 0.8;
     // 半隐式欧拉 + 子步，dt 最大 0.05 时仍稳定。
     final int sub = math.max(1, (dt / 0.004).ceil());
@@ -237,12 +245,24 @@ class PendoloClockworkMotion {
   /// 摆轮 / 游丝的摆角（弧度），[step] 后有效。
   double bassOscillation = 0;
 
-  /// 推进一帧。[bass] 0–1（Fushi 没有实时频谱，用歌词节拍包络代替）；暂停时只冻结相位。
-  void step(double dt, double bass, {required bool paused}) {
-    smoothedBass += (bass.clamp(0.0, 1.0) - smoothedBass) * 0.12;
+  /// 推进一帧。[bass] 0–1（共享音频帧的低频；没有音频分析时是歌词起字包络的代用品）；暂停时
+  /// 只冻结相位。其余参数是动画强度档位的倍率（folia `PendoloMotionProfile`）。
+  void step(
+    double dt,
+    double bass, {
+    required bool paused,
+    double bassResponse = 1,
+    double balanceSpeed = 1,
+    double balanceAmplitude = 1,
+    double escapementSpring = 1,
+    double escapementDamping = 1,
+  }) {
+    smoothedBass +=
+        (bass.clamp(0.0, 1.0) - smoothedBass) *
+        math.min(0.24, 0.12 * bassResponse);
     final double b = smoothedBass;
     if (!paused) {
-      phase += dt * (2.8 + b * 3.5);
+      phase += dt * (2.8 + b * 3.5 * bassResponse) * balanceSpeed;
       secondGearElapsed += dt;
       final int done = secondGearElapsed.floor();
       if (done > 0) {
@@ -250,11 +270,13 @@ class PendoloClockworkMotion {
         secondGearElapsed -= done;
       }
       final double target = secondGearStep * (math.pi * 2 / 15);
-      secondGearVelocity += (target - secondGearAngle) * 92 * dt;
-      secondGearVelocity *= math.exp(-13 * dt);
+      secondGearVelocity +=
+          (target - secondGearAngle) * 92 * escapementSpring * dt;
+      secondGearVelocity *= math.exp(-13 * escapementDamping * dt);
       secondGearAngle += secondGearVelocity * dt;
     }
-    bassOscillation = math.sin(phase) * (0.15 + b * 0.70);
+    bassOscillation =
+        math.sin(phase) * (0.15 + b * 0.70 * bassResponse) * balanceAmplitude;
   }
 }
 

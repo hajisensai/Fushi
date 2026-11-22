@@ -6,12 +6,82 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_geometry.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_text.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_tuning.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_visualizer.dart';
 
 import '../visualizer_test_helpers.dart';
+
+/// 两句，第一句来源标成副歌（folia `isChorus`）。
+LyricTimeline _chorusTimeline() => const LyricTimeline(
+  format: 'ttml',
+  timingQuality: LyricTimingQuality.word,
+  lines: <LyricLine>[
+    LyricLine(
+      startMs: 1000,
+      endMs: 3000,
+      songPart: 'Chorus',
+      syllables: <LyricSyllable>[
+        LyricSyllable(text: '夜', startMs: 1000, endMs: 1500),
+        LyricSyllable(text: '空', startMs: 1500, endMs: 2000),
+        LyricSyllable(text: 'に', startMs: 2000, endMs: 2500),
+        LyricSyllable(text: '光', startMs: 2500, endMs: 3000),
+      ],
+    ),
+    LyricLine(
+      startMs: 4000,
+      endMs: 6000,
+      songPart: 'Verse',
+      syllables: <LyricSyllable>[
+        LyricSyllable(text: 'ま', startMs: 4000, endMs: 5000),
+        LyricSyllable(text: 'た', startMs: 5000, endMs: 6000),
+      ],
+    ),
+  ],
+);
+
+/// 只有鼓击的音频（每 500ms 一下满强度）；[ready] 为 false 时鼓击没就绪。
+class _DrumAudio implements LyricVisualizerAudio {
+  _DrumAudio({this.ready = true});
+
+  final bool ready;
+
+  @override
+  bool get envelopeReady => true;
+
+  @override
+  bool get beatsReady => false;
+
+  @override
+  List<int> get beatTimesMs => const <int>[];
+
+  @override
+  List<int> get downbeatTimesMs => const <int>[];
+
+  @override
+  double? get bpm => null;
+
+  @override
+  LyricVisualizerAudioFrame frameAt(int audioMs) => LyricVisualizerAudioFrame(
+    power: 0.4,
+    low: 0.9,
+    mid: 0.3,
+    high: 0.2,
+    vocal: 0.3,
+    onset: 0,
+    beatImpact: 0,
+    downbeatImpact: 0,
+    drumImpact: ready
+        ? lyricVisualizerImpactAt(<int>[
+            for (int t = 0; t < 60000; t += 500) t,
+          ], audioMs)
+        : 0,
+    envelopeReady: true,
+    drumsReady: ready,
+  );
+}
 
 void main() {
   group('轮盘布局', () {
@@ -154,6 +224,218 @@ void main() {
       final double phase = m.phase;
       m.step(0.05, 0.2, paused: true);
       expect(m.phase, phase);
+    });
+  });
+
+  group('音频与动画强度', () {
+    test('档位：calm / normal / chaotic 的倍率照 folia', () {
+      expect(
+        PendoloMotionProfile.of(LyricVisualizerIntensity.normal).bassResponse,
+        1,
+      );
+      final PendoloMotionProfile calm = PendoloMotionProfile.of(
+        LyricVisualizerIntensity.calm,
+      );
+      final PendoloMotionProfile chaotic = PendoloMotionProfile.of(
+        LyricVisualizerIntensity.chaotic,
+      );
+      expect(calm.balanceAmplitude, 0.58);
+      expect(chaotic.balanceSpeed, 1.3);
+      expect(chaotic.chorusHaloOpacity, 0.5);
+      expect(calm.chorusTransitionSeconds, 0.52);
+    });
+
+    test('副歌强调只给正在唱的副歌句', () {
+      const PendoloMotionProfile p = PendoloMotionProfile.normal;
+      final PendoloChorusLook on = PendoloChorusLook.of(true, true, p);
+      expect(on.accentMix, 0.58);
+      expect(on.haloOpacity, 0.34);
+      expect(on.glow, 1);
+      final PendoloChorusLook paused = PendoloChorusLook.of(true, false, p);
+      expect(paused.active, isFalse);
+      expect(paused.accentMix, 0.32);
+      expect(paused.glow, 0);
+      expect(PendoloChorusLook.of(false, true, p).haloScale, 1);
+    });
+
+    test('副歌强调按档位时长缓入缓出', () {
+      final PendoloChorusRamp r = PendoloChorusRamp();
+      r.step(true, 0.21, 0.42);
+      expect(r.progress, closeTo(0.5, 1e-9));
+      expect(r.eased, greaterThan(0.5));
+      r.step(true, 1, 0.42);
+      expect(r.eased, 1);
+      r.step(false, 0.42, 0.42);
+      expect(r.idle, isTrue);
+    });
+
+    test('摆轮：低频越强摆得越快越大；chaotic 比 calm 更猛', () {
+      double swing(double bass, PendoloMotionProfile p) {
+        final PendoloClockworkMotion m = PendoloClockworkMotion();
+        double peak = 0;
+        for (int i = 0; i < 600; i++) {
+          m.step(
+            1 / 60,
+            bass,
+            paused: false,
+            bassResponse: p.bassResponse,
+            balanceSpeed: p.balanceSpeed,
+            balanceAmplitude: p.balanceAmplitude,
+          );
+          peak = math.max(peak, m.bassOscillation.abs());
+        }
+        return peak;
+      }
+
+      const PendoloMotionProfile n = PendoloMotionProfile.normal;
+      expect(swing(0.9, n), greaterThan(swing(0.1, n) + 0.3));
+      expect(
+        swing(0.6, PendoloMotionProfile.chaotic),
+        greaterThan(swing(0.6, PendoloMotionProfile.calm) * 1.8),
+      );
+    });
+
+    test('鼓击按分贝读：弱击暗、强击满；强度 0 什么都不亮', () {
+      expect(pendoloWavePunch(1, 1), 1);
+      expect(pendoloWavePunch(kPendoloWeakBeatFloor, 1), closeTo(0.0316, 1e-3));
+      expect(pendoloWavePunch(0.8, 0), 0);
+      expect(pendoloWavePunch(0.8, 2), greaterThan(pendoloWavePunch(0.8, 1)));
+    });
+
+    test('鼓面：鼓击上升沿点亮光晕 / 宝石 / 表盘，强击抖屏、表盘鼓起，然后归静', () {
+      final PendoloDrumhead d = PendoloDrumhead();
+      // 首帧只对齐。
+      expect(d.step(1 / 60, 0.9, strength: 1), isFalse);
+      expect(d.glow, 0);
+      expect(d.step(1 / 60, 0.1, strength: 1), isFalse);
+      expect(d.step(1 / 60, 0.9, strength: 1), isTrue);
+      expect(d.glow, greaterThan(0.5));
+      expect(d.jewelFlare, d.glow);
+      expect(d.tickDialLight, greaterThan(0.5));
+      expect(d.outerDialLight, greaterThan(0.5));
+      expect(d.shake, greaterThan(0.5));
+      expect(d.haloScale, greaterThan(0.8));
+      d.step(1 / 60, 0.85, strength: 1);
+      expect(d.breath, isNot(1));
+      expect(d.shakeOffset(math.Random(1)), isNot(Offset.zero));
+      // 衰减中的鼓击不再触发；2 秒后一切归零。
+      for (int i = 0; i < 120; i++) {
+        expect(d.step(1 / 60, 0.85 * math.exp(-i / 10), strength: 1), isFalse);
+      }
+      expect(d.idle, isTrue);
+      // 拖进度不点亮；弱击不抖屏。
+      expect(d.step(1 / 60, 0.9, strength: 1, jump: true), isFalse);
+      d.step(1 / 60, 0, strength: 1);
+      d.step(1 / 60, 0.4, strength: 1);
+      expect(d.glow, greaterThan(0));
+      expect(d.shake, 0);
+    });
+
+    test('鼓面只读真鼓击：歌词代用帧 / 鼓击没就绪都不算', () {
+      expect(pendoloDrumImpactOf(_DrumAudio().frameAt(1000)), 1);
+      expect(pendoloDrumImpactOf(_DrumAudio(ready: false).frameAt(1000)), 0);
+      const LyricVisualizerAudioFrame fallback = LyricVisualizerAudioFrame(
+        power: 1,
+        low: 1,
+        mid: 1,
+        high: 1,
+        vocal: 1,
+        onset: 1,
+        beatImpact: 1,
+        downbeatImpact: 1,
+        drumImpact: 1,
+        fallback: true,
+      );
+      expect(pendoloDrumImpactOf(fallback), 0);
+    });
+
+    test('效果色：强调色提亮提饱和；灰色主题用金色', () {
+      final HSLColor c = HSLColor.fromColor(
+        pendoloBeatFxColor(const Color(0xFF203060)),
+      );
+      expect(c.saturation, greaterThanOrEqualTo(0.58));
+      expect(c.lightness, greaterThanOrEqualTo(0.68));
+      expect(
+        pendoloBeatFxColor(const Color(0xFF808080)),
+        const Color(0xFFF3C46B),
+      );
+    });
+
+    test('宝石：两颗大的（轮心、摆轮）+ 六颗小的', () {
+      final List<PendoloJewel> j = pendoloJewels(
+        PendoloClockworkAnchors(300, 340),
+        0,
+      );
+      expect(j.length, 8);
+      expect(j.where((PendoloJewel e) => !e.small).length, 2);
+      expect(pendoloFlareRadius(1, false), 64);
+    });
+  });
+
+  group('主题与副歌', () {
+    test('wordColors 拆成同色段（只给扫亮层用）', () {
+      final List<InlineSpan>? runs = pendoloColorRuns(
+        '夜空に光',
+        const LyricVisualizerTheme(
+          wordColors: <String, Color>{'空': Color(0xFFFF0000)},
+        ),
+        const Color(0xFFEEEEEE),
+      );
+      expect(runs, isNotNull);
+      final List<(String, Color?)> parts = <(String, Color?)>[
+        for (final InlineSpan s in runs!)
+          ((s as TextSpan).text!, s.style?.color),
+      ];
+      expect(parts, <(String, Color?)>[
+        ('夜', const Color(0xFFEEEEEE)),
+        ('空', const Color(0xFFFF0000)),
+        ('に光', const Color(0xFFEEEEEE)),
+      ]);
+      expect(pendoloColorRuns('夜空', null, const Color(0xFFEEEEEE)), isNull);
+    });
+
+    testWidgets('副歌句的扫亮层带光晕，字体跟主题', (WidgetTester tester) async {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        _chorusTimeline(),
+      );
+      expect(rt.lines[0].isChorus, isTrue);
+      final PendoloLineBlock chorus = PendoloLineBlock.build(
+        line: rt.lines[0],
+        focal: true,
+        fontScale: 1,
+        maxWidth: 600,
+        align: PendoloAlign.left,
+        primary: const Color(0xFFFFFFFF),
+        fillColor: const Color(0xFFFF8080),
+        secondary: const Color(0xFFAAAAAA),
+        baseStyle: const TextStyle(fontWeight: FontWeight.w800),
+        chorusGlow: 1.42,
+      );
+      expect(chorus.glow, isNotNull);
+      expect(chorus.glow!.padding, closeTo(28 * 0.7 * 1.42 + 10, 1e-9));
+      expect(chorus.main.text!.style!.fontWeight, FontWeight.w800);
+      final PendoloLineBlock plain = PendoloLineBlock.build(
+        line: rt.lines[1],
+        focal: true,
+        fontScale: 1,
+        maxWidth: 600,
+        align: PendoloAlign.left,
+        primary: const Color(0xFFFFFFFF),
+        fillColor: const Color(0xFFFF8080),
+        secondary: const Color(0xFFAAAAAA),
+      );
+      expect(plain.glow, isNull);
+      chorus.dispose();
+      plain.dispose();
+    });
+
+    test('最后一句过了视觉结束才转出去', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        _chorusTimeline(),
+      );
+      final int end = rt.lines.last.renderEndMs;
+      expect(pendoloTargetIndexAt(rt, end - 1), isNot(2));
+      expect(pendoloTargetIndexAt(rt, end + 1), 2);
     });
   });
 
@@ -323,6 +605,78 @@ void main() {
       );
     });
 
+    testWidgets('真鼓击 + 副歌 + 主题 + chaotic', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        pendoloVisualizerEntry,
+        timeline: _chorusTimeline(),
+        audio: _DrumAudio(),
+        intensity: LyricVisualizerIntensity.chaotic,
+        theme: const LyricVisualizerTheme(
+          wordColors: <String, Color>{'空': Color(0xFFFF0000)},
+          fontWeight: FontWeight.w700,
+        ),
+        tuning: const <String, Object?>{
+          PendoloTuningKeys.tiltDeg: 40.0,
+          PendoloTuningKeys.showCoverOnWatchFace: true,
+        },
+      );
+    });
+
+    testWidgets('轮心视角 + 鼓击 + 副歌（calm）', (WidgetTester tester) async {
+      await pumpVisualizerAcross(
+        tester,
+        pendoloVisualizerEntry,
+        timeline: _chorusTimeline(),
+        audio: SyntheticVisualizerAudio(),
+        intensity: LyricVisualizerIntensity.calm,
+        tuning: const <String, Object?>{PendoloTuningKeys.hubView: true},
+      );
+    });
+
+    test('预设：三套都在默认值上只改各自那几项', () {
+      expect(
+        pendoloVisualizerEntry.tuningPresets.map(
+          (LyricVisualizerTuningPreset p) => p.id,
+        ),
+        <String>['tiltForward', 'tilt', 'hubView'],
+      );
+      final Map<String, Object> hub = pendoloVisualizerEntry.tuningPresets.last
+          .apply(pendoloVisualizerEntry.tunings);
+      expect(hub[PendoloTuningKeys.hubView], isTrue);
+      expect(hub[PendoloTuningKeys.arcRadius], 0.42);
+      final PendoloTuning tilt = PendoloTuning.read(
+        LyricVisualizerTuning(
+          pendoloVisualizerEntry.tunings,
+          pendoloVisualizerEntry.tuningPresets[1].values,
+        ),
+      );
+      expect(tilt.tiltDeg, -53);
+      expect(tilt.tiltAxisDeg, 66);
+      expect(tilt.parallaxDepth, 1.65);
+      expect(tilt.wheelCenterX, 0.3);
+    });
+
+    test('背景请求用户选的共享背景；轮心视角时藏起倾斜滑块', () {
+      final LyricVisualizerTuning defaults = LyricVisualizerTuning.defaults(
+        pendoloVisualizerEntry.tunings,
+      );
+      expect(
+        pendoloVisualizerEntry.backgroundFor(defaults),
+        LyricVisualizerBackgroundRequest.selected,
+      );
+      final LyricVisualizerTuningSpec tiltSpec = pendoloVisualizerEntry.tunings
+          .firstWhere(
+            (LyricVisualizerTuningSpec s) => s.key == PendoloTuningKeys.tiltDeg,
+          );
+      final LyricVisualizerTuning hub = LyricVisualizerTuning(
+        pendoloVisualizerEntry.tunings,
+        const <String, Object?>{PendoloTuningKeys.hubView: true},
+      );
+      expect(tiltSpec.visibleWhen!(defaults), isTrue);
+      expect(tiltSpec.visibleWhen!(hub), isFalse);
+    });
+
     testWidgets('窄屏竖屏', (WidgetTester tester) async {
       await pumpVisualizerAcross(
         tester,
@@ -342,6 +696,7 @@ void main() {
       expect(tu.activeScale, 1.25);
       expect(tu.gearDecor, PendoloGearDecor.subtle);
       expect(tu.showCenterGradient, isTrue);
+      expect(tu.drumheadStrength, 1);
       expect(pendoloVisualizerEntry.sharedSubtitle, isFalse);
     });
   });

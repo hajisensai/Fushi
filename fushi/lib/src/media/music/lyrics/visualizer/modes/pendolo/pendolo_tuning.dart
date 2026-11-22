@@ -50,6 +50,9 @@ abstract final class PendoloTuningKeys {
   static const String hubView = 'hubView';
   static const String hubViewHeight = 'hubViewHeight';
   static const String hubViewBack = 'hubViewBack';
+
+  /// folia 智能动感模式里「仿真鼓面」的强度（0 = 关）。
+  static const String drumheadStrength = 'drumheadStrength';
 }
 
 int _divisions(double min, double max, double step) =>
@@ -103,6 +106,8 @@ final List<LyricVisualizerTuningSpec> pendoloTuningSpecs =
       ),
       LyricVisualizerSliderSpec(
         key: PendoloTuningKeys.hubViewHeight,
+        visibleWhen: (LyricVisualizerTuning v) =>
+            v.flag(PendoloTuningKeys.hubView, false),
         label: () => t.music_visualizer_pendolo_hub_view_height,
         min: kPendoloHubViewHeightMin,
         max: kPendoloHubViewHeightMax,
@@ -115,6 +120,8 @@ final List<LyricVisualizerTuningSpec> pendoloTuningSpecs =
       ),
       LyricVisualizerSliderSpec(
         key: PendoloTuningKeys.hubViewBack,
+        visibleWhen: (LyricVisualizerTuning v) =>
+            v.flag(PendoloTuningKeys.hubView, false),
         label: () => t.music_visualizer_pendolo_hub_view_back,
         min: kPendoloHubViewBackMin,
         max: kPendoloHubViewBackMax,
@@ -127,6 +134,8 @@ final List<LyricVisualizerTuningSpec> pendoloTuningSpecs =
       ),
       LyricVisualizerSliderSpec(
         key: PendoloTuningKeys.tiltDeg,
+        visibleWhen: (LyricVisualizerTuning v) =>
+            !v.flag(PendoloTuningKeys.hubView, false),
         label: () => t.music_visualizer_pendolo_tilt,
         min: -kPendoloTiltLimitDeg,
         max: kPendoloTiltLimitDeg,
@@ -136,6 +145,8 @@ final List<LyricVisualizerTuningSpec> pendoloTuningSpecs =
       ),
       LyricVisualizerSliderSpec(
         key: PendoloTuningKeys.tiltAxisDeg,
+        visibleWhen: (LyricVisualizerTuning v) =>
+            !v.flag(PendoloTuningKeys.hubView, false),
         label: () => t.music_visualizer_pendolo_tilt_axis,
         min: -90,
         max: 90,
@@ -201,6 +212,58 @@ final List<LyricVisualizerTuningSpec> pendoloTuningSpecs =
         label: () => t.music_visualizer_pendolo_line_glow,
         initial: false,
       ),
+      // folia 把它放在全局「智能动感模式」的每样式效果里（强度 0–2）；Fushi 没有那层全局开关，
+      // 做成本样式的参数。
+      LyricVisualizerSliderSpec(
+        key: PendoloTuningKeys.drumheadStrength,
+        label: () => t.music_visualizer_pendolo_drumhead_strength,
+        min: 0,
+        max: 2,
+        initial: 1,
+        divisions: _divisions(0, 2, 0.1),
+      ),
+    ];
+
+/// folia `PendoloSettingsPanel` 的三个预设：都在默认值上只改各自那几项。folia 套预设时保留用户
+/// 当前的左右镜像；这里的预设是整组值，镜像回到默认（不镜像）。
+final List<LyricVisualizerTuningPreset> pendoloTuningPresets =
+    <LyricVisualizerTuningPreset>[
+      // 预设 1：表盘往前倾、分层视差拉满，轮盘放大、往右挪。
+      LyricVisualizerTuningPreset(
+        id: 'tiltForward',
+        label: () => t.music_visualizer_pendolo_preset_tilt_forward,
+        values: const <String, Object>{
+          PendoloTuningKeys.arcRadius: 0.5,
+          PendoloTuningKeys.wheelCenterX: 0.3,
+          PendoloTuningKeys.tickSnappiness: 1.8,
+          PendoloTuningKeys.tiltDeg: 40.0,
+          PendoloTuningKeys.tiltAxisDeg: -10.0,
+          PendoloTuningKeys.parallaxDepth: 2.0,
+        },
+      ),
+      // 预设 2：表盘往后倾、侧向转开，加分层视差，轮盘放大、往右挪。
+      LyricVisualizerTuningPreset(
+        id: 'tilt',
+        label: () => t.music_visualizer_pendolo_preset_tilt_side,
+        values: const <String, Object>{
+          PendoloTuningKeys.arcRadius: 0.5,
+          PendoloTuningKeys.wheelCenterX: 0.3,
+          PendoloTuningKeys.tiltDeg: -53.0,
+          PendoloTuningKeys.tiltAxisDeg: 66.0,
+          PendoloTuningKeys.parallaxDepth: 1.65,
+        },
+      ),
+      // 预设 3：轮心视角，相机在轮心后上方顺着刻度针看，歌词立起来。
+      LyricVisualizerTuningPreset(
+        id: 'hubView',
+        label: () => t.music_visualizer_pendolo_hub_view,
+        values: const <String, Object>{
+          PendoloTuningKeys.hubView: true,
+          PendoloTuningKeys.hubViewHeight: 1.4,
+          PendoloTuningKeys.hubViewBack: 1.2,
+          PendoloTuningKeys.parallaxDepth: 1.0,
+        },
+      ),
     ];
 
 /// 读好的一组参数（folia `PendoloTuning`）。
@@ -223,6 +286,7 @@ class PendoloTuning {
     this.hubView = false,
     this.hubViewHeight = 1.4,
     this.hubViewBack = 1.2,
+    this.drumheadStrength = 1,
   });
 
   factory PendoloTuning.read(LyricVisualizerTuning tuning) => PendoloTuning(
@@ -245,6 +309,7 @@ class PendoloTuning {
     hubView: tuning.flag(PendoloTuningKeys.hubView, false),
     hubViewHeight: tuning.number(PendoloTuningKeys.hubViewHeight, 1.4),
     hubViewBack: tuning.number(PendoloTuningKeys.hubViewBack, 1.2),
+    drumheadStrength: tuning.number(PendoloTuningKeys.drumheadStrength, 1),
   );
 
   final double arcRadius;
@@ -264,6 +329,7 @@ class PendoloTuning {
   final bool hubView;
   final double hubViewHeight;
   final double hubViewBack;
+  final double drumheadStrength;
 
   /// 1 = 歌词在右、表盘在左；镜像时 -1。
   double get sideSign => mirrored ? -1 : 1;
