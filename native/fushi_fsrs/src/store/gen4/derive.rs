@@ -348,6 +348,31 @@ pub struct Settled {
     pub cache_stats: u64,
 }
 
+/// [Index::rebuild_all] 的分段计时。
+struct Stages {
+    at: std::time::Instant,
+    done: Vec<(&'static str, f64)>,
+}
+
+impl Default for Stages {
+    fn default() -> Stages {
+        Stages {
+            at: std::time::Instant::now(),
+            done: Vec::new(),
+        }
+    }
+}
+
+impl Stages {
+    /// 记下从上一个点到现在这一段。
+    fn lap(&mut self, name: &'static str) {
+        let now = std::time::Instant::now();
+        self.done
+            .push((name, now.duration_since(self.at).as_secs_f64()));
+        self.at = now;
+    }
+}
+
 /// 一个集合的派生索引。
 pub struct Index<'t, 'c> {
     pub(super) t: &'t Truth<'c>,
@@ -409,6 +434,9 @@ pub struct Index<'t, 'c> {
     /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
     /// [Index::cache_log_flush]，浏览会话据此按笔记失效）。
     pub(super) cache_touched: BTreeSet<Ref>,
+    /// 最近一次 [Index::rebuild_all] 各阶段的耗时（阶段名, 秒），按执行顺序。迁移报告的 `rebuildStages` 读它：重建慢
+    /// 只在用户的大库上出现时（BUG-5137），凭报告就能定位到阶段。
+    pub rebuild_stages: Vec<(&'static str, f64)>,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -446,6 +474,7 @@ impl<'t, 'c> Index<'t, 'c> {
             rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
+            rebuild_stages: Vec::new(),
         }
     }
 
@@ -1415,6 +1444,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let t = self.t;
         let conn = t.conn();
         self.reset();
+        let mut stages = Stages::default();
         // 语义摘要的标脏触发器逐行收一次费，重建不需要（最后整个重算）：先摘掉，收尾时装回。
         super::digest::set_triggers(conn, false)?;
         for table in DERIVED_TABLES {
@@ -1426,6 +1456,7 @@ impl<'t, 'c> Index<'t, 'c> {
         self.closure_steps.clear();
         self.bulk = Some(HashMap::new());
         let mut out = Settled::default();
+        stages.lap("clear");
         for d in t.devices(self.col)? {
             t.for_each(self.col, &d.id, 1, |e| {
                 out.scanned += 1;
@@ -1439,6 +1470,7 @@ impl<'t, 'c> Index<'t, 'c> {
         .map_err(sql)?
         .execute([self.col])
         .map_err(sql)?;
+        stages.lap("scan");
         let mut acc: Vec<(Id, Acc)> = self.bulk.take().unwrap_or_default().into_iter().collect();
         acc.sort_by_key(|(d, _)| *d);
         for (d, a) in acc {
@@ -1446,13 +1478,17 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
+        stages.lap("closures");
         let trust = self.weigh_purged(true, &mut out)?;
+        stages.lap("purged");
         // 扫描时带盐的操作把「盐集合要重看」置上了；这里就地重算，别让它留着、把别名表误报成没重算（缓存层按类读
         // 要求别名表是新的，`class.rs` [Index::aliases_stale]）。别名表在扣住之前定（同 [Index::settle]）。
         self.salts_dirty = false;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;
+        stages.lap("aliases");
         self.weigh_rest(true, trust, &mut out)?;
+        stages.lap("weighRest");
         let mut regs = std::mem::take(&mut self.regs);
         regs.extend(self.multi_regs()?);
         for r in &regs {
@@ -1461,18 +1497,24 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.judged += 1;
             }
         }
+        stages.lap("registers");
         for id in self.multi_ids("ent_ix")? {
             out.entities += 1;
             self.pick_entity(&id)?;
         }
+        stages.lap("entities");
         for id in self.multi_ids("log_ix")? {
             out.logs += 1;
             self.pick_log(&id)?;
         }
+        stages.lap("logs");
         self.heads.clear();
         super::digest::set_triggers(conn, true)?;
         out.digests = self.digest_rebuild()?;
+        stages.lap("digests");
         self.materialize_caches(&mut out)?;
+        stages.lap("caches");
+        self.rebuild_stages = stages.done;
         Ok(out)
     }
 
