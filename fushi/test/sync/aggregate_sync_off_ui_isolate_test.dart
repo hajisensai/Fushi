@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_owner.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
@@ -216,6 +217,57 @@ void main() {
     expect(
       await AggregateSyncService(db).sync(store: store, deviceId: 'dev-A'),
       isFalse,
+    );
+  });
+
+  test('云通道只搬字节（BUG-5159）：后端不走 JSON 编解码，副本命中也不在调用方解码', () async {
+    final _BytesOnlyStore store = _BytesOnlyStore();
+    final FushiDatabase peerDb = await _freshDb('agg_bytes_peer_');
+    await peerDb.setMiningCount(
+      sourceType: 'book',
+      dateKey: '2026-10-03',
+      count: 7,
+    );
+    await AggregateSyncService(peerDb).sync(store: store, deviceId: 'dev-B');
+
+    final Directory cacheRoot = await Directory.systemTemp.createTemp(
+      'agg_bytes_cache_',
+    );
+    addTearDown(() => cleanupTempDir(cacheRoot));
+    final FushiDatabase db = await _freshDb('agg_bytes_local_');
+    await db.setMiningCount(
+      sourceType: 'book',
+      dateKey: '2026-10-01',
+      count: 1,
+    );
+    final AggregateSyncService svc = AggregateSyncService(
+      db,
+      peerSnapshotCache: DirectoryAggregatePeerSnapshotCache(
+        () async => cacheRoot,
+      ),
+    );
+
+    // 第一轮下载对端字节，第二轮命中副本；两轮调用方都没有整份快照工作。
+    final List<String> callerWork = await _callerSnapshotWork(() async {
+      expect(await svc.sync(store: store, deviceId: 'dev-A'), isTrue);
+      expect(
+        await svc.sync(store: store, deviceId: 'dev-A'),
+        isFalse,
+        reason: '内容没变：所有者对上行字节算的哈希与上次一致，不重传',
+      );
+    });
+
+    expect(callerWork, isEmpty);
+    expect(store.byteReads, 1, reason: '对端没变，第二轮读副本');
+    expect(await _miningCount(db, '2026-10-03'), 7, reason: '对端的值折进本地');
+    // 上行是所有者编好的报文体，原样落在远端，对端能按同一编解码读回。
+    final Uint8List own = (await store.getBytesAsset(
+      '$kSyncAggregateNamespace/dev-A.fushiaggregate',
+    ))!;
+    final AggregateSnapshot uploaded = decodeAggregateWireSnapshot(own)!;
+    expect(
+      uploaded.miningStats.map((MiningRecord r) => r.dateKey).toSet(),
+      containsAll(<String>['2026-10-01', '2026-10-03']),
     );
   });
 
@@ -461,4 +513,26 @@ void main() {
     expect(nonObject.merged.toJson(), local.toJson());
     expect(nonObject.applyNeeded, isFalse);
   });
+}
+
+/// 只认字节读写的资产库：聚合同步若再走 `getJsonAsset` / `putJsonAsset`（在调用方
+/// 做整份 JSON 编解码），这里直接失败。
+class _BytesOnlyStore extends FakeAssetStore {
+  _BytesOnlyStore() : super(reportRevisions: true);
+
+  int byteReads = 0;
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) =>
+      throw StateError('aggregate sync must not JSON-decode on the caller');
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      throw StateError('aggregate sync must not JSON-encode on the caller');
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) {
+    byteReads++;
+    return super.getBytesAsset(assetId);
+  }
 }

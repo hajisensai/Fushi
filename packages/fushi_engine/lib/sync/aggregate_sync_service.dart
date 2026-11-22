@@ -200,29 +200,40 @@ class AggregateSyncService {
             entry.name != ownLegacyAssetName)
           entry,
     ];
-    final List<Object?> peerJsons = <Object?>[];
+    //
+    //    BUG-5159：传输层只搬**原样字节**（`getBytesAsset` / 字节级副本缓存），
+    //    报文体解码、按许可裁剪、折叠都在所有者里做——与互联通道同一套
+    //    `aggregate_wire_codec.dart`，调用方（UI isolate）上没有整份快照的 JSON 工作。
+    //    折叠命令不等它做完就去下载下一份：所有者按到达顺序逐条执行，解码与下一份
+    //    的网络传输重叠；字节随 TransferableTypedData 移交。
+    final List<Future<void>> folds = <Future<void>>[];
     for (final AssetEntry entry in peerEntries) {
+      final Uint8List? body;
       try {
-        peerJsons.add(await _readPeerSnapshot(store, entry));
+        body = await _readPeerSnapshot(store, entry);
       } catch (_) {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
       }
+      if (body == null) continue;
+      // 先挂上处理器：下一份下载期间它若失败，不能算未处理的异步错误；错误仍在
+      // 下面的 Future.wait 里原样抛出。
+      final Future<void> fold = owner.run(
+        _foldPeerCommand(
+          _transferable(body),
+          stats: shareStats,
+          favorites: shareStats,
+          webHistory: shareWebHistory,
+        ),
+      )..ignore();
+      folds.add(fold);
     }
+    await Future.wait(folds);
     await peerSnapshotCache?.retainOnly(scope.id, <String>{
       for (final AssetEntry e in peerEntries) e.name,
     });
-    // 折叠 + 写回增量判定在所有者里做，合并结果留在那边，只回「要不要写回」。
-    // 残余（BUG-5159）：对端快照仍是各云后端 getJsonAsset 在调用方解码出的 JSON，
-    // 这里整份拷进所有者。
-    final bool applyNeeded = await owner.run(
-      _planCloudCommand(
-        peerJsons,
-        stats: shareStats,
-        favorites: shareStats,
-        webHistory: shareWebHistory,
-      ),
-    );
+    // 写回增量判定在所有者里做，合并结果留在那边，只回「要不要写回」。
+    final bool applyNeeded = await owner.run(_cloudApplyNeededCommand());
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     //    合并结果与本地内容相等（[localDelta] 为 null）时整步跳过：mergeSnapshots
@@ -255,26 +266,31 @@ class AggregateSyncService {
       return false;
     }
 
-    // 真要上传时才把上行 JSON 取回调用方（残余，BUG-5159：SyncAssetStore 只收 JSON）。
-    final Map<String, Object?> payload = await owner.run(
-      _cloudOutgoingPayloadCommand(),
+    // 真要上传时才把所有者编好的上行字节取回调用方，原样写上去（BUG-5159）。
+    final TransferableTypedData body = await owner.run(
+      _cloudOutgoingBodyCommand(),
     );
-    await store.putJsonAsset(ns, ownAssetName, payload);
+    await store.putBytesAsset(
+      ns,
+      ownAssetName,
+      body.materialize().asUint8List(),
+    );
     await _db.setPrefTyped<String>(_lastPushedHashKey, hash);
     return true;
   }
 
-  /// 一份对端快照的内容：版本标记没变就读本地副本，否则下载并更新副本。
-  Future<Object?> _readPeerSnapshot(
+  /// 一份对端快照的原样字节：版本标记没变就读本地副本，否则下载并更新副本。
+  /// 远端不存在返回 null。
+  Future<Uint8List?> _readPeerSnapshot(
     SyncAssetStore store,
     AssetEntry entry,
   ) async {
     final AggregatePeerSnapshotCache? cache = peerSnapshotCache;
-    final Object? cached = await cache?.read(scope.id, entry);
+    final Uint8List? cached = await cache?.read(scope.id, entry);
     if (cached != null) return cached;
-    final Object? json = await store.getJsonAsset(entry.id);
-    await cache?.write(scope.id, entry, json);
-    return json;
+    final Uint8List? body = await store.getBytesAsset(entry.id);
+    if (body != null) await cache?.write(scope.id, entry, body);
+    return body;
   }
 
   /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
@@ -289,11 +305,15 @@ class AggregateSyncService {
   ///
   /// 不用 `Object.hashCode`：Dart 不保证它跨运行稳定，用它会让每轮都判成「变了」，
   /// 去重形同虚设；更糟的是它可能在部分平台上恰好稳定，于是问题只在部分用户身上出现。
-  static String _stableHash(String input) {
+  static String _stableHash(String input) => _fnv1a64(input.codeUnits);
+
+  /// [_stableHash] 的本体，按「码元」逐个折进去：字符串给 UTF-16 码元，报文体给
+  /// UTF-8 字节。纯 ASCII 内容两种口径算出同一个值。
+  static String _fnv1a64(List<int> units) {
     const int prime = 0x01000193;
     int hi = 0xcbf29ce4;
     int lo = 0x84222325;
-    for (final int unit in input.codeUnits) {
+    for (final int unit in units) {
       lo ^= unit;
       final int loProduct = lo * prime;
       final int hiProduct = hi * prime + (loProduct ~/ 0x100000000);
@@ -539,23 +559,39 @@ class AggregateSyncService {
     return plan.applyNeeded;
   };
 
-  static AggregateOwnerCommand<bool> _planCloudCommand(
-    List<Object?> peerJsons, {
+  /// 云通道：解码一份对端报文体、按许可裁剪、折进本轮的合并结果。报文体不是合法
+  /// UTF-8 / JSON 时跳过这一份（与「单份对端读不出不中断整轮」同律）；顶层不是
+  /// object 时按 [AggregateSnapshot.fromJson] 的降级当空快照。
+  static AggregateOwnerCommand<void> _foldPeerCommand(
+    TransferableTypedData body, {
     required bool stats,
     required bool favorites,
     required bool webHistory,
   }) => (AggregateOwnerContext context) {
     final _OwnerRound round = _round(context);
-    final AggregateFoldPlan plan = planFold(
-      local: round.local,
-      peerJsons: peerJsons,
+    final Object? json;
+    try {
+      json = decodeAggregateWireJson(body.materialize().asUint8List());
+    } on FormatException {
+      return;
+    }
+    noteAggregateSnapshotWork('fold');
+    round.merged = _foldPeer(
+      round.merged ?? round.local,
+      json,
       stats: stats,
       favorites: favorites,
       webHistory: webHistory,
     );
-    round.merged = plan.merged;
-    return plan.applyNeeded;
   };
+
+  /// 云通道：所有对端都折完后，合并结果相对本地有没有写回增量。
+  static AggregateOwnerCommand<bool> _cloudApplyNeededCommand() =>
+      (AggregateOwnerContext context) {
+        final _OwnerRound round = _round(context);
+        final AggregateSnapshot merged = round.merged ??= round.local;
+        return localDelta(merged, round.local) != null;
+      };
 
   static AggregateOwnerCommand<void> _applyMergedCommand() =>
       (AggregateOwnerContext context) {
@@ -584,15 +620,17 @@ class AggregateSyncService {
           round.merged!,
         );
         if (outgoing.isEmpty) return null;
-        final ({Map<String, Object?> payload, String hash}) encoded =
-            encodeOutgoing(outgoing);
-        round.payload = encoded.payload;
+        final ({Uint8List body, String hash}) encoded = encodeOutgoing(
+          outgoing,
+        );
+        round.outgoingBody = encoded.body;
         return encoded.hash;
       };
 
-  static AggregateOwnerCommand<Map<String, Object?>>
-  _cloudOutgoingPayloadCommand() =>
-      (AggregateOwnerContext context) => _round(context).payload!;
+  static AggregateOwnerCommand<TransferableTypedData>
+  _cloudOutgoingBodyCommand() =>
+      (AggregateOwnerContext context) =>
+          _transferable(_round(context).outgoingBody!);
 
   static AggregateOwnerCommand<bool> _decodeIncomingCommand(
     Uint8List body, {
@@ -642,13 +680,17 @@ class AggregateSyncService {
     AggregateSnapshot merged = local;
     String? peerFingerprint;
     for (final Object? json in peerJsons) {
-      final AggregateSnapshot peer = AggregateSnapshot.fromJson(
+      merged = _foldPeer(
+        merged,
         json,
-      ).select(stats: stats, favorites: favorites, webHistory: webHistory);
-      if (fingerprintPeer) {
-        peerFingerprint = unorderedSnapshotFingerprint(peer.toJson());
-      }
-      merged = mergeSnapshots(merged, peer);
+        stats: stats,
+        favorites: favorites,
+        webHistory: webHistory,
+        onPeer: fingerprintPeer
+            ? (AggregateSnapshot peer) =>
+                  peerFingerprint = unorderedSnapshotFingerprint(peer.toJson())
+            : null,
+      );
     }
     return AggregateFoldPlan(
       merged: merged,
@@ -657,14 +699,33 @@ class AggregateSyncService {
     );
   }
 
-  /// 云通道上行的纯计算：快照编码 + 内容哈希（「没变就不重传」的判据）。
+  /// 一份对端 JSON 按共享许可裁剪后折进 [merged]（云通道逐份折、[planFold] 循环折
+  /// 的同一步）。[onPeer] 拿到裁剪后的对端快照（互联通道据此算 host 指纹）。
+  static AggregateSnapshot _foldPeer(
+    AggregateSnapshot merged,
+    Object? json, {
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+    void Function(AggregateSnapshot peer)? onPeer,
+  }) {
+    final AggregateSnapshot peer = AggregateSnapshot.fromJson(
+      json,
+    ).select(stats: stats, favorites: favorites, webHistory: webHistory);
+    onPeer?.call(peer);
+    return mergeSnapshots(merged, peer);
+  }
+
+  /// 云通道上行的纯计算：快照一步编成 UTF-8 JSON 报文体（与互联通道同一
+  /// [encodeAggregateWireJson]），内容哈希（「没变就不重传」的判据）直接对这份
+  /// 字节算，不再另编一遍字符串。
   @visibleForTesting
-  static ({Map<String, Object?> payload, String hash}) encodeOutgoing(
+  static ({Uint8List body, String hash}) encodeOutgoing(
     AggregateSnapshot outgoing,
   ) {
     noteAggregateSnapshotWork('encodeOutgoing');
-    final Map<String, Object?> payload = outgoing.toJson();
-    return (payload: payload, hash: _stableHash(jsonEncode(payload)));
+    final Uint8List body = encodeAggregateWireJson(outgoing.toJson());
+    return (body: body, hash: _fnv1a64(body));
   }
 
   /// 互联通道上行的纯计算：[outgoing] 与 host 刚给的内容（指纹 [peerFingerprint]，
@@ -2069,8 +2130,8 @@ final class _OwnerRound {
   /// 互联通道：host 快照（裁剪后）的无序指纹，上行判据用。
   String? peerFingerprint;
 
-  /// 云通道：待上传的快照 JSON（哈希判定要上传时才取回调用方）。
-  Map<String, Object?>? payload;
+  /// 云通道：待上传的快照报文体（哈希判定要上传时才取回调用方）。
+  Uint8List? outgoingBody;
 
   /// host PUT：解码并裁剪好的对端快照。
   AggregateSnapshot? incoming;

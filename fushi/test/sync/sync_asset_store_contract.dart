@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -67,6 +69,27 @@ void runAssetStoreContract(String label, SyncAssetStore Function() create) {
       final AssetEntry? found = await store.findAsset(ns, 'm.json');
       final Object? decoded = await store.getJsonAsset(found!.id);
       expect(decoded, <String, Object?>{'k': 'v', 'n': 2});
+    });
+
+    test('bytes round-trip verbatim and are readable as JSON', () async {
+      final String ns = await store.ensureNamespace('__aggregate__');
+      final Uint8List body = Uint8List.fromList(
+        utf8.encode(jsonEncode(<String, Object?>{'t': '本好き 🎉'})),
+      );
+      await store.putBytesAsset(ns, 'dev.fushiaggregate', body);
+      final AssetEntry? found = await store.findAsset(ns, 'dev.fushiaggregate');
+      expect(await store.getBytesAsset(found!.id), body);
+      expect(await store.getJsonAsset(found.id), <String, Object?>{
+        't': '本好き 🎉',
+      });
+
+      // 覆盖写。
+      await store.putBytesAsset(
+        ns,
+        'dev.fushiaggregate',
+        Uint8List.fromList(<int>[0, 255]),
+      );
+      expect(await store.getBytesAsset(found.id), <int>[0, 255]);
     });
 
     test('deleteAsset removes a file (idempotent)', () async {

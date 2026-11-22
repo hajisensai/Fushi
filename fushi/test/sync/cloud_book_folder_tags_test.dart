@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
@@ -232,6 +233,15 @@ class _FakeBookFolderBackend implements SyncBackend {
   @override
   Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
       throw UnimplementedError();
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
       throw UnimplementedError();
