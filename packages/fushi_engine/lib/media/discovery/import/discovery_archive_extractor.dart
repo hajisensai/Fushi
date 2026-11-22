@@ -56,6 +56,8 @@ class DiscoveryArchiveExtractor {
         ArchiveUnpackFailure.passwordRequired ||
         ArchiveUnpackFailure.passwordCancelled =>
           DiscoveryImportBlocker.archivePasswordRequired,
+        ArchiveUnpackFailure.missingVolume =>
+          DiscoveryImportBlocker.archiveVolumesMissing,
         _ => DiscoveryImportBlocker.archiveExtractionFailed,
       }, '${e.failure.name}${e.detail == null ? '' : ': ${e.detail}'}');
     }

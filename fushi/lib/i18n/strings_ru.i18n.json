@@ -3126,6 +3126,7 @@
   "download_task_import_blocked_archive_failed": "Не удалось распаковать архив (возможно, он повреждён или защищён паролем)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "Для распаковки этого архива нужна утилита командной строки 7-Zip, которая не установлена",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "Эта книга уже есть в вашей библиотеке. Аудиокниги пока нельзя автоматически прикрепить к существующему EPUB; откройте книгу и импортируйте аудиокнигу вручную",
   "download_task_import_blocked_audiobook_no_audio": "В загрузке аудиокниги не найдено аудиофайлов",
   "download_task_import_blocked_audiobook_no_subtitle": "В загрузке аудиокниги нет файла субтитров, поэтому аудио нельзя выровнять по тексту",

@@ -3126,6 +3126,7 @@
   "download_task_import_blocked_archive_failed": "압축 파일을 풀 수 없었습니다(손상되었거나 비밀번호로 보호되어 있을 수 있습니다)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "이 압축 파일을 풀려면 7-Zip 명령줄 도구가 필요한데 설치되어 있지 않습니다",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "이 책은 이미 라이브러리에 있습니다. 아직은 오디오북을 기존 EPUB에 자동으로 연결할 수 없으니 책을 열어 오디오북을 직접 가져오세요",
   "download_task_import_blocked_audiobook_no_audio": "오디오북 다운로드에서 오디오 파일을 찾지 못했습니다",
   "download_task_import_blocked_audiobook_no_subtitle": "오디오북 다운로드에 자막 파일이 없어 오디오를 텍스트에 정렬할 수 없습니다",

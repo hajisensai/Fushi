@@ -3126,6 +3126,7 @@
   "download_task_import_blocked_archive_failed": "تعذّر استخراج الأرشيف (ربما هو تالف أو محمي بكلمة مرور)",
   "download_task_import_blocked_archive_password": "The archive is password-protected. Import it again and enter the password.",
   "download_task_import_blocked_archive_tool_missing": "يحتاج استخراج هذا الأرشيف إلى أداة سطر أوامر 7-Zip وهي غير مثبّتة",
+  "download_task_import_blocked_archive_volumes": "Split archive is incomplete: import it from the first volume (.001) and keep all volumes in the same folder",
   "download_task_import_blocked_audiobook_book_exists": "هذا الكتاب موجود في مكتبتك بالفعل. لا يمكن إرفاق الكتب الصوتية بكتاب EPUB موجود تلقائيًا بعد؛ افتح الكتاب واستورد الكتاب الصوتي يدويًا",
   "download_task_import_blocked_audiobook_no_audio": "لم يُعثر على ملفات صوت في تنزيل الكتاب الصوتي",
   "download_task_import_blocked_audiobook_no_subtitle": "لا يوجد ملف ترجمة في تنزيل الكتاب الصوتي، لذا لا يمكن محاذاة الصوت مع النص",
