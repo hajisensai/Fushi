@@ -263,8 +263,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage>
       // 表一行不用，与观看页同形）；计数面不收窄，「总览 = 各域之和」照旧成立。
       // 统计页不需要活动行，activityLimit 传 0。
       //
-      // 学习目标环是跨域口径（与首页「今日目标」同源，BUG-1993）：另读一份**本周
-      // 一起**的全域日面，只为 [_dailyFacts]；两份读互不依赖、一起发出去。
+      // 学习目标环是跨域口径（与首页「今日目标」同源，BUG-1993）：另读一份全域日面，
+      // 只为 [_dailyFacts]；起点是环上那条字数目标**自己周期窗口**的起点（周 / 月目标
+      // 要整窗分子，HBK-AUDIT-219），两份读互不依赖、一起发出去。
+      final String goalFactsFrom = studyGoalStatsCharsFactsFrom(
+        studyGoalStatsCharsGoal(appModelNoUpdate.studyGoals),
+        _window.todayKey,
+      );
       final Future<StatFacts> factsF = loadStatFacts(
         db,
         activityLimit: 0,
@@ -274,7 +279,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage>
       final Future<StatFacts> goalFactsF = loadStatFacts(
         db,
         activityLimit: 0,
-        scope: StatFactsScope.since(_window.weekFromKey),
+        scope: StatFactsScope.since(goalFactsFrom),
       );
       await Future.wait<StatFacts>(<Future<StatFacts>>[factsF, goalFactsF]);
       // 上锁作品（本次会话未解锁）的行不进任何数字与列表（唯一过滤入口）；学习

@@ -747,11 +747,20 @@ void main() {
       File(p.join(manifestFile.parent.path, 'p0b0.m4a')).existsSync(),
       isFalse,
     );
+    // 重生成之后独立改了停顿与念的文字（HBK-AUDIT-208）：撤销只放回音频与种子。
+    final MangaAudioScript edited = await readScript();
+    edited.replaceLine(
+      'p0b0',
+      (MangaScriptLine l) => l.copyWith(beatMs: 900, say: 'こんばんは'),
+    );
+    await writeScript(edited);
 
     expect((await undo()).status, OpUndoStatus.done);
     manifest = (await MangaRenderManifest.load(manifestFile))!;
     expect(manifest.lines.single.file, 'p0b0.m4a');
     expect(manifest.lines.single.durationMs, 1200);
+    expect((await readScript()).lineById('p0b0')!.beatMs, 900);
+    expect((await readScript()).lineById('p0b0')!.say, 'こんばんは');
     expect(
       File(p.join(manifestFile.parent.path, 'p0b0.m4a')).readAsStringSync(),
       'old-audio',
@@ -1178,7 +1187,18 @@ void main() {
     // 从第 3 句开头接着听。
     expect(await AudiobookRepository(db).readPositionMs(bookKey), 1500 + 1200);
 
+    // 换音之后独立把停顿设成 900 ms、改了说话人（HBK-AUDIT-208）：撤销换音只放回音源，
+    // 不抹掉这些编辑。
+    final MangaAudioScript edited = await readScript();
+    edited.replaceLine(
+      'p0b0',
+      (MangaScriptLine l) => l.copyWith(beatMs: 900, speaker: kTtsNarrator),
+    );
+    await writeScript(edited);
+
     expect((await undo()).status, OpUndoStatus.done);
+    expect((await readScript()).lineById('p0b0')!.beatMs, 900);
+    expect((await readScript()).lineById('p0b0')!.speaker, kTtsNarrator);
     final MangaRenderManifest back = (await MangaRenderManifest.load(
       manifestFile,
     ))!;
@@ -1346,6 +1366,13 @@ void main() {
     final MangaAudioScript changed = await readScript();
     changed.replaceLine('p0b0', (MangaScriptLine l) => l.copyWith(seed: seed));
     await writeScript(changed);
+    // 重生成之后独立改了停顿与念的文字（HBK-AUDIT-208）：撤销只放回音频与种子。
+    final MangaAudioScript edited = await readScript();
+    edited.replaceLine(
+      'p0b0',
+      (MangaScriptLine l) => l.copyWith(beatMs: 900, say: 'こんばんは'),
+    );
+    await writeScript(edited);
 
     expect((await undo2()).status, OpUndoStatus.done);
     final MangaRenderManifest back = (await MangaRenderManifest.load(
@@ -1362,6 +1389,8 @@ void main() {
       isFalse,
     );
     expect((await readScript()).lineById('p0b0')!.seed, isNull);
+    expect((await readScript()).lineById('p0b0')!.beatMs, 900);
+    expect((await readScript()).lineById('p0b0')!.say, 'こんばんは');
     expect((await cues()).first.endMs, 1200);
   });
 

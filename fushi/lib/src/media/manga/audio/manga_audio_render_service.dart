@@ -325,17 +325,18 @@ Future<MangaRenderBackend> mangaLocalAudioBackend() async {
   );
 }
 
-/// 候选文件的绝对路径（试听用）。
+/// 候选音频的绝对路径（试听用；保留前它在暂存文件里）。
 String mangaCandidatePath(
   AudioProductionHost appModel,
   String bookKey,
   MangaRegenerateCandidate candidate,
 ) => p.join(
   mangaRenderManifestFile(appModel, bookKey).parent.path,
-  candidate.file,
+  candidate.stagedFile,
 );
 
-/// 保留候选：清单 / 演出稿 / 账本落盘，重新入库。返回 false = 这句已不在清单里。
+/// 保留候选：清单 / 演出稿 / 账本落盘，重新入库。返回 false = 这句已不在清单里，
+/// 或候选文件已被别的操作清掉（什么都没改）。
 Future<bool> keepMangaCandidate(
   AudioProductionHost appModel, {
   required MangaAudioVolume volume,
@@ -372,6 +373,52 @@ Future<bool> keepMangaCandidate(
     manifestFile: manifestFile,
     manifest: manifest,
     lineId: candidate.lineId,
+  );
+  return true;
+}
+
+/// 演出稿里已改成「不读」类型的句子（[lineIds] 里的）从成品里拿掉：清单、账本落盘，
+/// 库按新清单整份重登记，播放器不再念它（与整卷生成同一判据，HBK-AUDIT-214）。返回
+/// true = 拿掉了（清单变了）。这卷没生成过 / 这几句都还读时什么都不写。
+Future<bool> dropMangaUnreadLines(
+  AudioProductionHost appModel, {
+  required String bookKey,
+  required MangaAudioScript script,
+  required Iterable<String> lineIds,
+}) async {
+  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
+  final MangaRenderManifest? manifest = await MangaRenderManifest.load(
+    manifestFile,
+  );
+  if (manifest == null ||
+      mangaUnreadRenderedLines(
+        script: script,
+        manifest: manifest,
+        lineIds: lineIds,
+      ).isEmpty) {
+    return false;
+  }
+  // 要删这几句的音频文件：先停掉这卷的播放（Windows 上被占用的文件删不掉）。
+  await appModel.audiobookSession.stopIfPlayingAny(<String>[bookKey]);
+  final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
+  final CastVoicingLedger ledger = await voicing.load(bookKey);
+  final List<String> dropped =
+      await MangaAudioRenderer(
+        backend: const _NoBackend(),
+        manifestFile: manifestFile,
+      ).dropUnreadLines(
+        script: script,
+        manifest: manifest,
+        ledger: ledger,
+        lineIds: lineIds,
+      );
+  if (dropped.isEmpty) return false;
+  await voicing.save(bookKey, ledger);
+  await registerMangaAudio(
+    appModel.database,
+    bookKey: bookKey,
+    manifestFile: manifestFile,
+    manifest: manifest,
   );
   return true;
 }

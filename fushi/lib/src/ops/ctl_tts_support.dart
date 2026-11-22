@@ -1134,6 +1134,36 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   };
 }
 
+/// 撤销「换音」类操作（单句重生成 / 按角色批量重生成 / 换本地音频）时清单这一句只放回
+/// 音频本身：文件、时长、占位、声音、种子、念的文字与整形版本都随那段旧音频一起回去；
+/// 说话人 / 类型 / 一拍等演出字段保留当前值（之后被独立改过的不被抹掉，HBK-AUDIT-208）。
+MangaRenderedLine mangaRenderedAudioRestored(
+  MangaRenderedLine current,
+  MangaRenderedLine before,
+) => current.replaced(
+  file: before.file,
+  durationMs: before.durationMs,
+  placeholder: before.placeholder,
+  voice: before.voice,
+  seed: before.seed,
+  text: before.text,
+  spoken: before.spoken,
+  shape: before.shape,
+);
+
+/// 撤销「换音」类操作时演出稿这一句只放回这次操作改过的字段：音源（[MangaScriptLine.audio]）
+/// 总是；种子只在 [seed] 为 true（换种子重生成）时。停顿、说话人、手填文字、错字修正、
+/// 单句声音等之后被独立改过的字段保留当前值（HBK-AUDIT-208）。
+MangaScriptLine mangaScriptAudioRestored(
+  MangaScriptLine current,
+  MangaScriptLine before, {
+  required bool seed,
+}) => current.copyWith(
+  audio: before.audio,
+  seed: seed ? before.seed : null,
+  clearSeed: seed && before.seed == null,
+);
+
 /// 撤销「单句重生成」：清单里这一句还是这次的候选文件时，把备份的旧音频放回去，清单、
 /// 演出稿这一行、未配音账本都恢复到重生成之前。
 Future<OpUndoOutcome> revertMangaRegen(
@@ -1171,7 +1201,10 @@ Future<OpUndoOutcome> revertMangaRegen(
   }
   await deps.stopPlayback(<String>[bookKey]);
   await backupFile.copy(p.join(manifestFile.parent.path, oldLine.file));
-  manifest.replaceLine(lineId, (MangaRenderedLine _) => oldLine);
+  manifest.replaceLine(
+    lineId,
+    (MangaRenderedLine now) => mangaRenderedAudioRestored(now, oldLine),
+  );
   await manifest.save(manifestFile);
 
   final MangaAudioScriptStore scripts = mangaAudioScriptStoreFor(appModel);
@@ -1181,7 +1214,10 @@ Future<OpUndoOutcome> revertMangaRegen(
   );
   final MangaScriptLine? now = script.lineById(lineId);
   if (before != null && now != null && now.seed == payload['seed']) {
-    script.replaceLine(lineId, (MangaScriptLine _) => before);
+    script.replaceLine(
+      lineId,
+      (MangaScriptLine l) => mangaScriptAudioRestored(l, before, seed: true),
+    );
     await scripts.save(bookKey, script);
   }
   final CastVoicingEntry? entry = CastVoicingEntry.fromJson(

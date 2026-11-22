@@ -180,7 +180,8 @@ function matches(node, sel){
 function el(tag, opts, kids){
   const o = opts || {};
   const node = {
-    nodeType: 1, tagName: tag, cls: o.cls || [], attrs: o.attrs || {},
+    nodeType: 1, tagName: tag, cls: o.cls || [],
+    attrs: Object.assign({}, o.attrs, o.src ? { src: o.src } : {}),
     childNodes: kids || [], parent: null,
     currentSrc: o.src || '', src: o.src || '',
     textContent: '',
@@ -193,13 +194,16 @@ function el(tag, opts, kids){
       return null;
     },
     querySelector(sel){
+      return node.querySelectorAll(sel)[0] || null;
+    },
+    querySelectorAll(sel){
+      const out = [];
       for (const k of node.childNodes) {
         if (k.nodeType !== 1) continue;
-        if (matches(k, sel)) return k;
-        const r = k.querySelector(sel);
-        if (r) return r;
+        if (matches(k, sel)) out.push(k);
+        out.push(...k.querySelectorAll(sel));
       }
-      return null;
+      return out;
     },
   };
   for (const k of node.childNodes) k.parent = node;
@@ -227,8 +231,8 @@ function glossImage(){
 }
 // 现行导出（BUG-5181）：gloss-* class 已换成内联样式剥掉（popup.js
 // inlineStructuredContentExportStyles），只剩 <a href=媒体文件名><span 盒子><span sizer>…<img>。
-function exportedImage(href){
-  const img = el('IMG', { src: SRC });
+function exportedImage(href, src){
+  const img = el('IMG', { src: src || SRC });
   const sizer = el('SPAN');
   const container = el('SPAN', {}, [sizer, el('SPAN'), el('SPAN'), img]);
   const link = el('A', { attrs: { href: href || 'fushi_dict_1.png' } }, [container]);
@@ -292,6 +296,47 @@ assert.deepEqual(calls.map((c) => c[0]), ['onSrsCardLink', 'onSrsCardLink']);
 ''');
       },
     );
+
+    test('带图标的相对查词链接仍查词；插图按「href 就是链接里那张图的媒体文件名」认（HBK-AUDIT-222）', () async {
+      await runJs(r'''
+// 普通查词链接：相对 href、首个子元素是装着图标的 span、后面跟词头文字。结构与插图一样，
+// 但图标不是 href 指的那个文件：照旧按链接文字查词。
+const icon = el('IMG', { src: 'https://srs.local/media/arrow.png' });
+const box = el('SPAN', {}, [icon]);
+const lookup = el('A', { attrs: { href: '語彙' } },
+  [box, { nodeType: 3, textContent: '語彙' }]);
+el('DIV', { cls: ['card'] }, [lookup]);
+let e = click(icon);
+assert.ok(e.defaultPrevented, '相对链接不许把卡面外壳导航走');
+assert.deepEqual(calls.map((c) => c[0]), ['onSrsCardLink']);
+assert.equal(calls[0][1].kind, 'lookup');
+assert.equal(calls[0][1].query, '語彙');
+calls.length = 0;
+click(box);
+assert.deepEqual(calls.map((c) => [c[0], c[1].query]), [['onSrsCardLink', '語彙']],
+  '点在图标盒上同样查词');
+calls.length = 0;
+// 真插图：文件名带空格与非 ASCII，卡面渲染把 src 编码成媒体 URL，解码后就是 href。
+const name = 'ネクタイ 1.avif';
+const src = 'https://srs.local/media/' + encodeURIComponent(name);
+const g = exportedImage(name, src);
+el('DIV', { cls: ['card'] }, [g.link]);
+e = click(g.img);
+assert.ok(e.defaultPrevented);
+assert.deepEqual(calls, [['onSrsImageTap', src]]);
+calls.length = 0;
+click(g.sizer);
+assert.deepEqual(calls, [['onSrsImageTap', src]], '点在盒内占位层上同样放大');
+calls.length = 0;
+// 文件名本身带 `%xx`：href 是原样文件名，src 是编码后的（%25 打头），解码 src 才等于 href。
+const pctName = 'fushi%20dict.png';
+const pctSrc = 'https://srs.local/media/' + encodeURIComponent(pctName);
+const pg = exportedImage(pctName, pctSrc);
+el('DIV', { cls: ['card'] }, [pg.link]);
+click(pg.img);
+assert.deepEqual(calls, [['onSrsImageTap', pctSrc]], '文件名带 %xx 的插图照样放大');
+''');
+    });
 
     test('普通链接里的图、onclick 里的插图、卡外、右键照旧不收', () async {
       await runJs(r'''

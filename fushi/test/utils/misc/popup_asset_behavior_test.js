@@ -149,6 +149,16 @@ class FakeElement {
     return child;
   }
 
+  // 「调整句子音频」面板把波形 / 试听按钮插在动作行之前（openCrossAppAudioPanel）。
+  insertBefore(child, reference) {
+    const at = reference ? this.children.indexOf(reference) : -1;
+    if (at < 0) return this.appendChild(child);
+    this.children.splice(at, 0, child);
+    child.parentElement = this;
+    child.parentNode = this;
+    return child;
+  }
+
   append(...children) {
     for (const child of children) {
       // 真 DOM 的 append 接受字符串（建文本节点）；注音 <ruby> 的读音片段就是这么塞的。
@@ -5120,9 +5130,8 @@ async function testCrossAppAudioPanelGeometryAndProbe() {
   assert.deepStrictEqual(plain(overrides(base, {startMs: 1250, endMs: 2400})),
     {audioStartDeltaMs: 250, audioEndDeltaMs: 400});
 
-  const payload = context.__fushiApplyPendingMineOverrides({expression: '猫'});
-  assert.equal(payload.miningOverrides, undefined,
-    'with no confirmed panel the mine payload carries no overrides');
+  assert.equal(fs.readFileSync(popupPath, 'utf8').includes('__fushiPendingMineOverrides'), false,
+    'HBK-AUDIT-211: trim overrides travel with their own mine request, never through a page global');
 
   const calls = [];
   context.window.flutter_inappwebview.callHandler = (name) => {
@@ -5146,7 +5155,213 @@ async function testCrossAppAudioPanelGeometryAndProbe() {
     'a failing probe hides the entry instead of throwing');
 }
 
-testCrossAppAudioPanelGeometryAndProbe().then(
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return {promise, resolve};
+}
+
+const CROSS_APP_PREVIEW = {
+  totalMs: 5000,
+  startMs: 1000,
+  endMs: 2000,
+  minClipMs: 100,
+  peaks: [0.2, 0.6, 0.4],
+  audio: 'data:audio/wav;base64,AAAA',
+};
+
+// 打开第 idx 个词条的「调整句子音频」面板并等编辑器建好，回各控件。
+async function openCrossAppAudioPanelForTest(context, idx) {
+  // 替身 DOM 没有布局：波形画布量出 0 宽，drawCrossAppAudioWave 直接跳过绘制。
+  const createElement = context.document.createElement;
+  context.document.createElement = (tagName) => {
+    const element = createElement.call(context.document, tagName);
+    if (String(tagName).toLowerCase() === 'canvas') {
+      element.clientWidth = 0;
+      element.clientHeight = 0;
+    }
+    return element;
+  };
+  context.openCrossAppAudioPanel(idx);
+  await flush();
+  const host = context.window.__fushiRoot || context.document.body;
+  const panel = findByClass(host, 'crossapp-audio-panel');
+  assert.ok(panel, 'cross-app audio panel must mount');
+  const controls = {
+    panel,
+    play: findByClass(panel, 'crossapp-audio-play'),
+    mine: findByClass(panel, 'crossapp-audio-mine'),
+    startHandle: findByClass(panel, 'start'),
+    endHandle: findByClass(panel, 'end'),
+    cancel: findByClass(panel, 'mined-action-actions').children
+      .find((child) => child.className === 'mined-action-btn ghost'),
+  };
+  assert.ok(controls.play && controls.mine && controls.startHandle && controls.endHandle,
+    'the editor must be built from the preview');
+  return controls;
+}
+
+function pressKey(target, key, extra = {}) {
+  target.dispatchEvent({
+    type: 'keydown',
+    key,
+    ...extra,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+}
+
+// HBK-AUDIT-211（#4137）：裁剪偏移只属于确认它的那一笔制卡。以前面板把偏移写进页面全局
+// 再回点「+」，裁剪制卡还在等取音时，另一个词条的普通「+」组包也读到同一份偏移——两张卡
+// 都带了裁剪。这里让裁剪那笔卡在取音上，期间点别的词条的「+」。
+async function testCrossAppAudioTrimOffsetStaysWithItsOwnRequest() {
+  const context = loadPopup();
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  const slowAudio = deferred();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'crossAppAudioPreview') return Promise.resolve(CROSS_APP_PREVIEW);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'resolveWordAudio') {
+      return payload.expression === '猫'
+        ? slowAudio.promise
+        : Promise.resolve(`audio://${payload.expression}`);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: mined.length});
+    }
+    return Promise.resolve(null);
+  };
+  const mineButtons = mountEntriesWith(context, ['猫', '犬']);
+  await flush();
+
+  const panel = await openCrossAppAudioPanelForTest(context, 0);
+  // Shift + ← 把起点往前挪 500ms。
+  pressKey(panel.startHandle, 'ArrowLeft', {shiftKey: true});
+  const trimmed = panel.mine.onclick();
+  await flush();
+  assert.equal(mined.length, 0, 'the trimmed request is still waiting for its word audio');
+
+  // 裁剪那笔还卡在取音上时，用户点另一个词条的普通「+」。
+  await mineButtons[1].onclick();
+  await flush();
+  slowAudio.resolve('audio://猫');
+  await trimmed;
+  await flush();
+
+  const byExpression = new Map(mined.map((p) => [p.expression, p]));
+  assert.equal(mined.length, 2, 'both cards are mined');
+  assert.equal(byExpression.get('犬').miningOverrides, undefined,
+    'a plain + on another entry must not inherit the trim offset');
+  assert.deepStrictEqual(JSON.parse(byExpression.get('猫').miningOverrides),
+    {audioStartDeltaMs: -500}, 'the trimmed card carries exactly the confirmed offset');
+
+  // 之后同一词条再点一次普通「+」也不能沾上那次的偏移。
+  mineButtons[0].dataset.mined = '';
+  await mineButtons[0].onclick();
+  await flush();
+  assert.equal(mined[mined.length - 1].miningOverrides, undefined,
+    'a later plain + on the trimmed entry mines without overrides');
+}
+
+// HBK-AUDIT-212（#4137）：试听要等解码。以前播放对象在解码完成后才登记，解码期间换了范围
+// 再点试听会排进第二个 BufferSource，两段一起响，「停止」只停得掉后一个。试听请求必须在
+// 等待前登记、可被停止 / 换范围 / 关面板取消，解码回来时核对自己仍是当前请求。
+async function testCrossAppAudioPreviewSupersedesPendingDecode() {
+  const starts = [];
+  const decodes = [];
+  class FakeAudioContext {
+    constructor() {
+      this.state = 'running';
+      this.currentTime = 0;
+      this.destination = {};
+    }
+    decodeAudioData() {
+      const d = deferred();
+      decodes.push(d);
+      return d.promise;
+    }
+    createBufferSource() {
+      const node = {
+        stopped: false,
+        connect() {},
+        start(when, offset, duration) {
+          starts.push({node, offset, duration});
+        },
+        stop() {
+          node.stopped = true;
+        },
+      };
+      return node;
+    }
+    createGain() {
+      return {gain: {value: 1}, connect() {}};
+    }
+    resume() {
+      return Promise.resolve();
+    }
+    close() {}
+  }
+  const configure = (context) => {
+    // 面板播放时逐帧推播放头；同步回调的 rAF 替身会无限递归，这里只登记不回调。
+    context.requestAnimationFrame = () => 1;
+    context.cancelAnimationFrame = () => {};
+    context.atob = (s) => Buffer.from(s, 'base64').toString('binary');
+    context.window.AudioContext = FakeAudioContext;
+    context.window.flutter_inappwebview.callHandler = (name) =>
+      Promise.resolve(name === 'crossAppAudioPreview' ? CROSS_APP_PREVIEW : null);
+  };
+
+  // ① 解码中换了范围再点试听：只播新范围一段。
+  let context = loadPopup(configure);
+  let panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  pressKey(panel.endHandle, 'ArrowRight', {shiftKey: true});
+  panel.play.onclick();
+  await flush();
+  assert.equal(decodes.length, 1, 'the snapshot is decoded once and shared');
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 1,
+    'a preview superseded while decoding must never start its own BufferSource');
+  assert.equal(starts[0].offset, 1);
+  assert.equal(starts[0].duration, 1.5, 'only the range chosen last is auditioned');
+  // 「停止」停的正是在响的那一段。
+  panel.play.onclick();
+  assert.equal(starts[0].node.stopped, true, 'stop reaches the only playing source');
+
+  // ② 解码中只换范围（没再点试听）：旧范围那次试听作废，不出声。
+  starts.length = 0;
+  decodes.length = 0;
+  context = loadPopup(configure);
+  panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  pressKey(panel.startHandle, 'ArrowLeft');
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 0, 'changing the range cancels a preview that is still decoding');
+
+  // ③ 解码中关面板：不出声。
+  decodes.length = 0;
+  context = loadPopup(configure);
+  panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  panel.cancel.onclick();
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 0, 'closing the panel cancels a preview that is still decoding');
+}
+
+testCrossAppAudioPanelGeometryAndProbe()
+  .then(testCrossAppAudioTrimOffsetStaysWithItsOwnRequest)
+  .then(testCrossAppAudioPreviewSupersedesPendingDecode)
+  .then(
   () => console.log('cross-app audio panel tests passed'),
   (error) => {
     console.error(error);

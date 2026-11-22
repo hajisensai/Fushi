@@ -15,7 +15,9 @@
 //! 刷新、没给缓存配置；预演只在 `migrationBlockers` 里报）。
 //! 4. 对拍（`compare.rs`，与测试装置同一份比法）。基准是**冻结的旧代码对旧库全量重建出来的缓存**，不是旧库里现成的
 //!    缓存表（它允许过期）；现成的与重建的另比一次，单列（§10 第 7 条，不计入判定）。协议 3 自己还欠着收尾的卡与笔记
-//!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。
+//!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。旧代码重放改写过、再没改回来的日志结果（没有 `sc` 的
+//!    日志，投影行结果 ≠ 它操作里作者给的，`stale.rs` 逐条佐证）在影子日志表上改回、按协议 3 的重放重放后再重建，
+//!    报 `oldSideStaleResults`。
 //! 5. 在对拍之外再按规范 ID 比（§6.1 第 5 步、§5.3）：每个寄存器的胜者、每张规范卡的调度状态、每张规范卡（含不在缓存
 //!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
 //!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
@@ -55,6 +57,7 @@ use super::ingest::{Settle, ingest_settle};
 use super::legacy;
 use super::native::Native;
 use super::schema::{self, sql};
+use super::stale::{self, Stale};
 use super::truth::Truth;
 use crate::gen4::heritage::fingerprint;
 use crate::gen4::op::Body4;
@@ -78,7 +81,9 @@ use crate::sync2::vv::OpId;
 ///   设备、`prev`、`Salts` 的 seq）、`migrationBlockers`（只有真迁移才拦的前提，预演只报、有才写）。旧库的本机状态
 ///   形状不对（`sync2_self` 的 `next_seq` < 1、公钥冲突等，`carry.rs` 报错）时这个 profile 的结论是 `error`、整份也随之
 ///   `error`（以前照样 `pass` / `fail`）。
-pub const REPORT_VERSION: i64 = 4;
+/// - 5：profile 报告加 `oldSideStaleResults`（`{logs, cards, examples}`，`stale.rs`）：协议 3 一侧被旧代码重放改写过、
+///   再没改回来的日志结果，基准改回后重建，逐条佐证、不计入判定（反馈 RhMpA6bn8v）。
+pub const REPORT_VERSION: i64 = 5;
 
 /// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
 pub const KNOWN_ENTRIES: usize = 5_000;
@@ -638,6 +643,9 @@ pub(crate) fn profile_stages(
         "oldSidePending".into(),
         json!({"replayCards": skip.cards.len(), "staleTagNotes": skip.notes.len()}),
     );
+    // 协议 3 一侧被旧代码重放改写过、再没改回来的日志结果（`stale.rs`）：基准先改回再重建，逐条报出来。
+    let stale = stale::find(src, profile)?;
+    out.insert("oldSideStaleResults".into(), stale::report(&stale));
     let mut peaks = Map::new();
     let mut mark = |what: &str| {
         peaks.insert(what.into(), json!(mb(peak_mem_mb().0)));
@@ -647,7 +655,7 @@ pub(crate) fn profile_stages(
         profile,
         t,
         col,
-        &mut |src: &Connection, profile: &str, cfg: &str| old_caches(src, profile, cfg),
+        &mut |src: &Connection, profile: &str, cfg: &str| old_caches(src, profile, cfg, &stale),
         &skip,
     )?;
     mark("parity");
@@ -977,6 +985,9 @@ fn old_side_pending(src: &Connection, profile: &str) -> Result<Skip, String> {
     Ok(skip)
 }
 
+/// 协议 3 的日志投影表（有过期结果要改回时也建影子，[old_caches]）。
+const LOG_TABLE: &str = "srs_review_logs";
+
 /// 协议 3 缓存重建要写的表。
 const CACHE_TABLES: [&str; 4] = [
     "srs_notes_cache",
@@ -988,11 +999,20 @@ const CACHE_TABLES: [&str; 4] = [
 /// 冻结的旧代码（`store::caches::rebuild`）对旧库全量重建出来的缓存行，旧库一个字节不写：在连接的 `temp` 库里按
 /// `main` 的定义建同名的空表与索引——不带库名的表名先找 `temp`，旧代码的读写都落在这几张临时表上——重建、读行、删表。
 /// [cfg] 已是协议 3 口径（带盐的内置 ID，`compare.rs` `cache_pairs` 经 `class.rs` `legacy_config_for` 换好的）。
-fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, OldCachesError> {
+///
+/// [stale] 是协议 3 一侧佐证得了的过期日志结果（`stale.rs`）：非空时日志投影表也在 `temp` 里建一份同名的（这个 profile
+/// 的行），先改回、按协议 3 的重放重放那些卡，再重建。
+fn old_caches(
+    src: &Connection,
+    profile: &str,
+    cfg: &str,
+    stale: &[Stale],
+) -> Result<CacheRows, OldCachesError> {
     old_caches_with(
         src,
         profile,
         cfg,
+        stale,
         &mut |src: &Connection, profile: &str, cfg| {
             crate::store::caches::rebuild(src, profile, cfg).map(|_| ())
         },
@@ -1009,6 +1029,7 @@ fn old_caches_with(
     src: &Connection,
     profile: &str,
     cfg: &str,
+    stale: &[Stale],
     rebuild: &mut Rebuild<'_>,
 ) -> Result<CacheRows, OldCachesError> {
     use OldCachesError::{Protocol3, Setup};
@@ -1016,8 +1037,29 @@ fn old_caches_with(
         &serde_json::from_str(cfg).map_err(|e| Setup(e.to_string()))?,
     )
     .map_err(Setup)?;
+    let mut tables: Vec<&str> = CACHE_TABLES.to_vec();
+    if !stale.is_empty() {
+        tables.push(LOG_TABLE);
+    }
+    // 日志投影表的影子要拷行：只拷存储列（`json` 是生成列）。
+    let log_cols: Vec<String> = if stale.is_empty() {
+        Vec::new()
+    } else {
+        texts(
+            src,
+            &format!("SELECT name FROM pragma_table_xinfo('{LOG_TABLE}', 'main') WHERE hidden = 0"),
+            &[],
+        )
+        .map_err(Setup)?
+        .into_iter()
+        .collect()
+    };
     let defs: Vec<(String, String, String)> = (|| -> Result<_, String> {
-        let marks = CACHE_TABLES.map(|t| format!("'{t}'")).join(", ");
+        let marks = tables
+            .iter()
+            .map(|t| format!("'{t}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
         src.prepare(&format!(
             "SELECT type, tbl_name, sql FROM main.sqlite_schema WHERE tbl_name IN ({marks}) \
              AND type IN ('table', 'index') AND sql IS NOT NULL ORDER BY type DESC, name"
@@ -1034,7 +1076,7 @@ fn old_caches_with(
         .filter(|d| d.0 == "table")
         .map(|d| d.1.as_str())
         .collect();
-    if made.len() != CACHE_TABLES.len() {
+    if made.len() != tables.len() {
         return Err(Setup(format!(
             "gen4 dry run: the legacy library lacks cache tables (has {made:?})"
         )));
@@ -1047,6 +1089,18 @@ fn old_caches_with(
                 _ => ddl.clone(),
             };
             src.execute_batch(&ddl).map_err(|e| Setup(sql(e)))?;
+        }
+        if !stale.is_empty() {
+            let cols = log_cols.join(", ");
+            src.execute(
+                &format!(
+                    "INSERT INTO temp.{LOG_TABLE} ({cols}) SELECT {cols} FROM main.{LOG_TABLE} \
+                     WHERE profile_uid = srs_id(?1)"
+                ),
+                [profile],
+            )
+            .map_err(|e| Setup(sql(e)))?;
+            stale::heal(src, stale).map_err(Protocol3)?;
         }
         rebuild(src, profile, &parsed).map_err(Protocol3)?;
         let olds = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
@@ -1080,7 +1134,7 @@ fn old_caches_with(
             .map_err(Setup)?,
         ))
     })();
-    for t in CACHE_TABLES {
+    for t in tables {
         let _ = src.execute_batch(&format!("DROP TABLE IF EXISTS temp.{t}"));
     }
     shadow
@@ -1927,9 +1981,13 @@ pub(crate) mod tests {
             p["oldSidePending"],
             json!({"replayCards": 0, "staleTagNotes": 0})
         );
+        assert_eq!(
+            p["oldSideStaleResults"],
+            json!({"logs": 0, "cards": 0, "examples": []})
+        );
         // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
         let k = &p["knownDifferences"];
-        assert_eq!(r["version"], 4);
+        assert_eq!(r["version"], 5);
         assert_eq!(
             (&k["total"], &k["unproven"]),
             (&json!(0), &json!(0)),
@@ -2056,7 +2114,7 @@ pub(crate) mod tests {
     fn old_cache_errors_are_typed_by_where_they_fail() {
         let d = library("g4dryoldtyped");
         let c = open_legacy(&d._dir.0.join("srs.db")).unwrap();
-        let e = old_caches_with(&c, P, &cfg(), &mut |_, _, _| {
+        let e = old_caches_with(&c, P, &cfg(), &[], &mut |_, _, _| {
             Err("any text at all".to_owned())
         })
         .unwrap_err();
@@ -2065,7 +2123,7 @@ pub(crate) mod tests {
             .query_row("SELECT COUNT(*) FROM temp.sqlite_schema", [], |r| r.get(0))
             .unwrap();
         assert_eq!(temps, 0);
-        let e = old_caches_with(&c, P, "not json", &mut |_, _, _| Ok(())).unwrap_err();
+        let e = old_caches_with(&c, P, "not json", &[], &mut |_, _, _| Ok(())).unwrap_err();
         assert!(matches!(e, OldCachesError::Setup(_)), "{e:?}");
     }
 
@@ -2128,7 +2186,7 @@ pub(crate) mod tests {
             .unwrap()
         };
         let n = count(&c);
-        let (notes, cards, stats) = old_caches(&c, P, &cfg()).unwrap();
+        let (notes, cards, stats) = old_caches(&c, P, &cfg(), &[]).unwrap();
         assert_eq!((notes.len(), cards.len(), stats.len()), (2, 4, 2));
         assert_eq!(count(&c), n);
         let temps: i64 = c
