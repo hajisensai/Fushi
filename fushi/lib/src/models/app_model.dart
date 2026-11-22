@@ -6367,9 +6367,18 @@ class AppModel
   ThemeAccentOverrideSource? get activeAccentOverrideSource =>
       themeNotifier.activeAccentOverrideSource;
 
-  /// 阅读器纸色用的主题键：偏好原值（可能是已删的旧预设 id，如 ecru-theme），
-  /// 让存量用户的阅读器纸色照旧生效（2026-10 预设精简时阅读器纸色不动）。
-  String get readerThemeKey => themeNotifier.storedAppThemeKey;
+  /// 阅读器纸色用的主题键：当前明暗下显式选的纸色优先，否则跟随 app 主题偏好
+  /// 原值（见 [ThemeNotifier.readerThemeKey]）。
+  String get readerThemeKey => themeNotifier.readerThemeKey;
+
+  /// 「跟随主题」时阅读器纸色所跟的主题键（偏好原值，可能是旧纸色 id）。
+  String get readerFollowThemeKey => themeNotifier.storedAppThemeKey;
+
+  /// 阅读器纸色（拍板台 vJSj4RsKFt）：浅色 / 深色各一份，null = 跟随 app 主题。
+  String? readerPaperFor({required bool dark}) =>
+      themeNotifier.readerPaperFor(dark: dark);
+  Future<void> setReaderPaper({required bool dark, String? key}) =>
+      themeNotifier.setReaderPaper(dark: dark, key: key);
 
   /// 「纯黑深色背景」开关（原「纯黑」预设的语义）。
   bool get pureBlackDark => themeNotifier.pureBlackDark;
