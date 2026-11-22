@@ -245,6 +245,7 @@ class StatFacts {
     required this.legacyActivity,
     required this.epubRows,
     this.sessions = const <StudySession>[],
+    this.activityRows = const <ActivityEventRow>[],
     this.dayTotals = const <StatDayTotal>[],
     this.bookDayTotals = const <StatDayTotal>[],
     this.recentGameSessions = const <GalgameSessionRow>[],
@@ -275,20 +276,11 @@ class StatFacts {
   /// [activityRows] 的条数上限（与 legacy 行的取数上限同值）。
   final int activityLimit;
 
-  /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行 ∪ 游玩会话合成行，按精确
-  /// 时刻倒序、截到 [activityLimit]。首页时间轴与游戏首页时间线都只吃它。
-  List<ActivityEventRow> get activityRows {
-    final List<ActivityEventRow> all =
-        <ActivityEventRow>[
-          ...legacyActivity,
-          ...segmentsAsActivityRows(segments),
-          ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
-        ]..sort(
-          (ActivityEventRow a, ActivityEventRow b) =>
-              b.timestampMs.compareTo(a.timestampMs),
-        );
-    return all.length <= activityLimit ? all : all.sublist(0, activityLimit);
-  }
+  /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行（写零的段不进）∪ 游玩会话
+  /// 合成行，按精确时刻倒序、截到 [activityLimit]。游戏首页时间线与互联 host 的远端
+  /// 活动端点都只吃它。加载时由 Rust 在后台 isolate 里一并排好、截好（`stats.rs`
+  /// `derive_activity`，BUG-5184），读方不再现算。
+  final List<ActivityEventRow> activityRows;
 
   /// **会话流的唯一数据源**（统计中心总览 + 三个域 tab + 按媒体的会话列表都吃它）：
   /// 段按 [kStudySessionGap] 归并 + 最近游玩会话骨架，按结束时刻倒序；写零的段不进。
@@ -313,7 +305,7 @@ class StatFacts {
   final List<StudySegmentRow> segments;
 
   /// legacy `activity_events` 行（v92 前的 read / watch / game 行 + 至今仍在写的
-  /// `added` 导入事件）。活动流把它与 [segmentsAsActivityRows] 并集。
+  /// `added` 导入事件）。活动流（[activityRows]）把它与段 / 游玩会话合成行并集。
   final List<ActivityEventRow> legacyActivity;
 
   /// 加载 legacy 阅读行身份时顺带取的书表瘦投影（页面复用：title→bookKey /
@@ -650,11 +642,14 @@ Future<StatFacts> _loadStatFactsHere(
     reviews: request.reviews,
     gameSessions: recentGameSessions,
     gameNames: gameNamesById,
+    legacyActivity: activity,
+    activityLimit: activityLimit,
   );
   return StatFacts(
     daily: derived.daily,
     hourly: derived.hourly,
     sessions: derived.sessions,
+    activityRows: derived.activityRows,
     dayTotals: derived.dayTotals,
     bookDayTotals: derived.bookDayTotals,
     segments: segments,
@@ -770,56 +765,6 @@ Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
     favoriteWords: await favoriteWordsF,
     favoriteSentences: await favoriteSentencesF,
   );
-}
-
-/// 把游玩会话映射成活动流行（id=0 哨兵）：v92 前 `GalgamePlayTracker` 会在
-/// galgame_sessions 之外再写一条带 durationMs 的 game 活动行（第二本账），现在
-/// 只在读取时合成。title 取当前库内显示名；游戏已从库移除时是会话行上的快照名
-/// （v113，经 [loadStatFacts] 并进 [gameNamesById]），都没有才空串（展示层回退
-/// mediaKey）。
-List<ActivityEventRow> galgameSessionsAsActivityRows(
-  List<GalgameSessionRow> sessions,
-  Map<String, String> gameNamesById,
-) {
-  return <ActivityEventRow>[
-    for (final GalgameSessionRow s in sessions)
-      ActivityEventRow(
-        id: 0,
-        eventType: kActivityGame,
-        mediaType: kActivityMediaGame,
-        title: gameNamesById[s.gameId] ?? '',
-        mediaKey: s.gameId,
-        dateKey: s.dateKey,
-        timestampMs: s.endMs,
-        durationMs: s.durationSeconds * 1000,
-        charsDelta: null,
-      ),
-  ];
-}
-
-/// 把 v92 段映射成活动流行（id=0 哨兵，display-only 不落库——与互联远端行同一
-/// 手法），喂既有 [aggregateActivityEvents]：同日同媒体多段按 30 分钟 gap 归并成
-/// session 数，时长 / 字数求和。eventType 按 kind：book→read、video→watch、game→game。
-List<ActivityEventRow> segmentsAsActivityRows(List<StudySegmentRow> segments) {
-  return <ActivityEventRow>[
-    for (final StudySegmentRow s in segments)
-      if (s.durationMs > 0 || s.chars > 0 || s.pages > 0)
-        ActivityEventRow(
-          id: 0,
-          eventType: switch (s.mediaKind) {
-            kActivityMediaVideo => kActivityWatch,
-            kActivityMediaGame => kActivityGame,
-            _ => kActivityRead,
-          },
-          mediaType: s.mediaKind,
-          title: s.title,
-          mediaKey: s.mediaKey,
-          dateKey: s.dateKey,
-          timestampMs: s.endAt,
-          durationMs: s.durationMs,
-          charsDelta: s.chars,
-        ),
-  ];
 }
 
 /// 首页「今日目标」与阅读统计页目标卡共用的**同一条**口径：给定日面行的当日字数

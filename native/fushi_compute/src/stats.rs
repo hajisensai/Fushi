@@ -10,7 +10,9 @@
 //!   游戏以 `galgame_sessions` 行为骨架吸收区间相交的字数段；两处排序照搬 Dart `List.sort`
 //!   （不稳定，并列元素的去向必须一致，见 [crate::dart::sort]）；
 //! - **按日合计**（总览的范围图 / 所选范围卡 / 学习日历 / 阅读速度）：全日面与阅读域日面各一份，
-//!   按 dateKey 首次出现的顺序。
+//!   按 dateKey 首次出现的顺序；
+//! - **活动流**（`StatFacts.activityRows`，BUG-5184）：legacy 活动行 ∪ 非零段 ∪ 游玩会话骨架，按时刻
+//!   倒序（照搬 `List.sort`）截到上限。只回来源 + 下标，行对象由调用方按原样复用 / 合成。
 //!
 //! 字符串全程是 UTF-16 码元（Dart `String` 的内部表示）：比较 = `String.compareTo`，
 //! 不经 UTF-8 往返。
@@ -21,7 +23,7 @@
 //! `text`（全部字符串的 UTF-16 码元首尾相接）。整数与字符串各按下列顺序依次读出：
 //!
 //! ```text
-//! ints: [版本=1, gap 毫秒]
+//! ints: [版本=2, gap 毫秒, 活动流条数上限]
 //! 每张表先一个行数 n（ints），再 n 行；行内字段 S = 字符串、I = 整数，按列出顺序：
 //!  1 epubs            S title, S bookKey, S format
 //!  2 reading          S title, S dateKey | I ms, I chars, I pages, I lastModified
@@ -36,6 +38,7 @@
 //! 10 reviews          I day(自 1970-01-01 的天数), I hour, I ms, I last
 //! 11 gameSessions     S gameId | I id, I startMs, I endMs, I durationSeconds
 //! 12 gameNames        S gameId, S name           （会话标题：库内显示名优先）
+//! 13 legacyActivity   I timestampMs              （legacy 活动行，只需排序键；行对象留在调用方）
 //! ```
 //!
 //! ## 输出（[crate::hand_over_bytes]，调用方 `ffc_free_bytes`）
@@ -50,6 +53,7 @@
 //! sessions:n, 每行 kind, key, title, format, deviceId, startAt, endAt, durationMs, chars, pages,
 //!          gameSessionId(无 = -1, 有则后跟 id), uid 个数 m, m 个 uid
 //! dayTotals / bookDayTotals: 各 n, 每行 dateKey, chars, ms
+//! activity: n, 每行 来源(0 = legacy 活动行 / 1 = 段 / 2 = 游玩会话骨架), 该来源表里的下标
 //! ```
 
 use std::collections::{HashMap, HashSet};
@@ -57,7 +61,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{dart, guard, hand_over_bytes, status};
 
 /// 输入格式版本（打包端写在 ints[0]）。
-const INPUT_VERSION: i64 = 1;
+const INPUT_VERSION: i64 = 2;
 
 type Str<'a> = &'a [u16];
 
@@ -251,6 +255,8 @@ struct Input<'a> {
     reviews: Vec<[i64; 4]>,
     game_sessions: Vec<GameSession<'a>>,
     game_names: Vec<(Str<'a>, Str<'a>)>,
+    activity_limit: i64,
+    legacy_activity_ts: Vec<i64>,
 }
 
 fn parse<'a>(r: &mut Reader<'a>) -> Result<Input<'a>, BadInput> {
@@ -258,6 +264,7 @@ fn parse<'a>(r: &mut Reader<'a>) -> Result<Input<'a>, BadInput> {
         return Err(BadInput);
     }
     let gap_ms = r.int()?;
+    let activity_limit = r.int()?;
     let mut input = Input {
         gap_ms,
         epubs: Vec::new(),
@@ -272,6 +279,8 @@ fn parse<'a>(r: &mut Reader<'a>) -> Result<Input<'a>, BadInput> {
         reviews: Vec::new(),
         game_sessions: Vec::new(),
         game_names: Vec::new(),
+        activity_limit,
+        legacy_activity_ts: Vec::new(),
     };
     for _ in 0..r.count()? {
         input.epubs.push((r.str()?, r.str()?, r.str()?));
@@ -346,6 +355,9 @@ fn parse<'a>(r: &mut Reader<'a>) -> Result<Input<'a>, BadInput> {
     }
     for _ in 0..r.count()? {
         input.game_names.push((r.str()?, r.str()?));
+    }
+    for _ in 0..r.count()? {
+        input.legacy_activity_ts.push(r.int()?);
     }
     if r.ip != r.ints.len() || r.sp != r.ends.len() {
         return Err(BadInput);
@@ -649,6 +661,58 @@ fn add_to_run<'a>(r: &mut Session<'a>, s: &Segment<'a>) {
     }
 }
 
+/// 活动流一行的来源（输出里的来源码即判别值）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActivitySource {
+    /// legacy `activity_events` 行（调用方原样复用）。
+    Legacy(usize),
+    /// 段合成的读 / 看 / 玩事件。
+    Segment(usize),
+    /// 游玩会话骨架合成的「游玩」事件。
+    Game(usize),
+}
+
+/// 活动流（旧 Dart `StatFacts.activityRows` 的逐步复刻）：legacy 行 ∪ 非零段（按段顺序）∪
+/// 游玩会话（按骨架顺序）拼接后按时刻倒序（`List.sort`，并列去向一致），截到 [limit] 条。
+pub fn derive_activity(
+    legacy_ts: &[i64],
+    segments: &[Segment<'_>],
+    game_sessions: &[GameSession<'_>],
+    limit: i64,
+) -> Vec<ActivitySource> {
+    let mut all: Vec<(ActivitySource, i64)> = Vec::with_capacity(legacy_ts.len());
+    all.extend(
+        legacy_ts
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| (ActivitySource::Legacy(i), t)),
+    );
+    all.extend(
+        segments
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !s.is_zero())
+            .map(|(i, s)| (ActivitySource::Segment(i), s.end_at)),
+    );
+    all.extend(
+        game_sessions
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (ActivitySource::Game(i), g.end_ms)),
+    );
+    let limit = limit.max(0) as usize;
+    if limit == 0 {
+        // `all.length <= 0 ? all : all.sublist(0, 0)`：恒为空，不必排序。
+        return Vec::new();
+    }
+    let mut order: Vec<usize> = (0..all.len()).collect();
+    dart::sort(&mut order, &mut |a: usize, b: usize| {
+        dart::compare_i64(all[b].1, all[a].1)
+    });
+    order.truncate(limit);
+    order.into_iter().map(|i| all[i].0).collect()
+}
+
 /// 按 dateKey 求和（首次出现顺序），[only] 非空时只算该域。
 pub fn day_totals<'a>(daily: &[Fact<'a>], only: Option<Str<'_>>) -> Vec<DayTotal<'a>> {
     let mut index: HashMap<Str<'a>, usize> = HashMap::new();
@@ -768,6 +832,12 @@ fn derive(ints: &[i64], ends: &[u32], text: &[u16]) -> Result<Vec<u8>, BadInput>
     );
     let all_days = day_totals(&daily, None);
     let book_days = day_totals(&daily, Some(c.book.as_slice()));
+    let activity = derive_activity(
+        &input.legacy_activity_ts,
+        &input.segments,
+        &input.game_sessions,
+        input.activity_limit,
+    );
 
     let mut w = Writer {
         ints: Vec::new(),
@@ -814,6 +884,16 @@ fn derive(ints: &[i64], ends: &[u32], text: &[u16]) -> Result<Vec<u8>, BadInput>
     }
     w.totals(&all_days);
     w.totals(&book_days);
+    w.i(activity.len() as i64);
+    for a in &activity {
+        let (tag, i) = match *a {
+            ActivitySource::Legacy(i) => (0, i),
+            ActivitySource::Segment(i) => (1, i),
+            ActivitySource::Game(i) => (2, i),
+        };
+        w.i(tag);
+        w.i(i as i64);
+    }
     w.finish()
 }
 

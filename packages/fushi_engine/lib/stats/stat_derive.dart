@@ -61,6 +61,7 @@ final class StatDerived {
     required this.daily,
     required this.hourly,
     required this.sessions,
+    required this.activityRows,
     required this.dayTotals,
     required this.bookDayTotals,
   });
@@ -68,12 +69,13 @@ final class StatDerived {
   final List<StatFact> daily;
   final List<StatFact> hourly;
   final List<StudySession> sessions;
+  final List<ActivityEventRow> activityRows;
   final List<StatDayTotal> dayTotals;
   final List<StatDayTotal> bookDayTotals;
 }
 
 /// 输入格式版本（`stats.rs` 的 `INPUT_VERSION`）。
-const int _kInputVersion = 1;
+const int _kInputVersion = 2;
 
 /// 整份派生（见 `stats.rs` 文件头）。大库上是几十毫秒的同步调用，只在后台 isolate 调。
 StatDerived deriveStatFacts({
@@ -89,11 +91,14 @@ StatDerived deriveStatFacts({
   StatReviewGrid? reviews,
   List<GalgameSessionRow> gameSessions = const <GalgameSessionRow>[],
   Map<String, String> gameNames = const <String, String>{},
+  List<ActivityEventRow> legacyActivity = const <ActivityEventRow>[],
+  int activityLimit = 0,
   Duration gap = kStudySessionGap,
 }) {
   final FfcStatInput p = FfcStatInput()
     ..int64(_kInputVersion)
-    ..int64(gap.inMilliseconds);
+    ..int64(gap.inMilliseconds)
+    ..int64(activityLimit);
   p.int64(epubs.length);
   for (final EpubBookMeta e in epubs) {
     p
@@ -199,10 +204,65 @@ StatDerived deriveStatFacts({
       ..string(id)
       ..string(name);
   });
-  return _decode(FushiComputeStats.instance.derive(p));
+  p.int64(legacyActivity.length);
+  for (final ActivityEventRow e in legacyActivity) {
+    p.int64(e.timestampMs);
+  }
+  return _decode(
+    FushiComputeStats.instance.derive(p),
+    legacyActivity: legacyActivity,
+    segments: segments,
+    gameSessions: gameSessions,
+    gameNames: gameNames,
+  );
 }
 
-StatDerived _decode(FfcStatSnapshot snap) {
+/// 段合成的活动流行（id=0 哨兵，display-only 不落库——与互联远端行同一手法），喂既有
+/// `aggregateActivityEvents`：同日同媒体多段按 30 分钟 gap 归并成 session 数，时长 /
+/// 字数求和。eventType 按 kind：book→read、video→watch、game→game。写零的段 Rust 侧
+/// 已排除（与事实面同一判据）。
+ActivityEventRow _segmentActivityRow(StudySegmentRow s) => ActivityEventRow(
+  id: 0,
+  eventType: switch (s.mediaKind) {
+    kActivityMediaVideo => kActivityWatch,
+    kActivityMediaGame => kActivityGame,
+    _ => kActivityRead,
+  },
+  mediaType: s.mediaKind,
+  title: s.title,
+  mediaKey: s.mediaKey,
+  dateKey: s.dateKey,
+  timestampMs: s.endAt,
+  durationMs: s.durationMs,
+  charsDelta: s.chars,
+);
+
+/// 游玩会话合成的「游玩」活动行（id=0 哨兵）：v92 前 `GalgamePlayTracker` 会在
+/// galgame_sessions 之外再写一条带 durationMs 的 game 活动行（第二本账），现在只在读取
+/// 时合成。title 取库内显示名；游戏已从库移除时是会话行上的快照名（v113，经
+/// [loadStatFacts] 并进 gameNames），都没有才空串（展示层回退 mediaKey）。
+ActivityEventRow _gameActivityRow(
+  GalgameSessionRow s,
+  Map<String, String> gameNames,
+) => ActivityEventRow(
+  id: 0,
+  eventType: kActivityGame,
+  mediaType: kActivityMediaGame,
+  title: gameNames[s.gameId] ?? '',
+  mediaKey: s.gameId,
+  dateKey: s.dateKey,
+  timestampMs: s.endMs,
+  durationMs: s.durationSeconds * 1000,
+  charsDelta: null,
+);
+
+StatDerived _decode(
+  FfcStatSnapshot snap, {
+  required List<ActivityEventRow> legacyActivity,
+  required List<StudySegmentRow> segments,
+  required List<GalgameSessionRow> gameSessions,
+  required Map<String, String> gameNames,
+}) {
   final Int64List v = snap.ints;
   final List<String> s = snap.strings;
   int i = 0;
@@ -288,6 +348,23 @@ StatDerived _decode(FfcStatSnapshot snap) {
   }, growable: false);
   final List<StatDayTotal> dayTotals = totals();
   final List<StatDayTotal> bookDayTotals = totals();
+  // 活动流：Rust 只回 (来源, 下标)，只对截出来的这几百条建行对象。
+  final int nActivity = v[i++];
+  final List<ActivityEventRow> activityRows = List<ActivityEventRow>.generate(
+    nActivity,
+    (_) {
+      final int source = v[i];
+      final int index = v[i + 1];
+      i += 2;
+      return switch (source) {
+        0 => legacyActivity[index],
+        1 => _segmentActivityRow(segments[index]),
+        2 => _gameActivityRow(gameSessions[index], gameNames),
+        _ => throw StateError('ffc_stats_derive: bad activity source $source'),
+      };
+    },
+    growable: false,
+  );
   if (i != v.length) {
     throw StateError('ffc_stats_derive: trailing snapshot data');
   }
@@ -295,6 +372,7 @@ StatDerived _decode(FfcStatSnapshot snap) {
     daily: daily,
     hourly: hourly,
     sessions: sessions,
+    activityRows: activityRows,
     dayTotals: dayTotals,
     bookDayTotals: bookDayTotals,
   );

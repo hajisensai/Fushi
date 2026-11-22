@@ -32,6 +32,8 @@ struct Snap {
     sessions: Vec<(Vec<String>, [i64; 5], Option<i64>, Vec<String>)>,
     days: Vec<(String, i64, i64)>,
     book_days: Vec<(String, i64, i64)>,
+    /// (来源码, 下标)。
+    activity: Vec<(i64, i64)>,
 }
 
 fn decode(bytes: &[u8]) -> Snap {
@@ -104,6 +106,8 @@ fn decode(bytes: &[u8]) -> Snap {
     };
     let days = totals(&mut next);
     let book_days = totals(&mut next);
+    let na = next();
+    let activity = (0..na).map(|_| (next(), next())).collect();
     assert_eq!(p, ints.len());
     Snap {
         daily,
@@ -111,6 +115,7 @@ fn decode(bytes: &[u8]) -> Snap {
         sessions,
         days,
         book_days,
+        activity,
     }
 }
 
@@ -145,7 +150,7 @@ fn sessions_input(
     names: &[(&str, &str)],
 ) -> Pack {
     let mut p = Pack::default();
-    p.i(INPUT_VERSION).i(gap);
+    p.i(INPUT_VERSION).i(gap).i(0);
     for _ in 0..8 {
         p.i(0);
     }
@@ -162,6 +167,7 @@ fn sessions_input(
     for &(k, v) in names {
         p.s(k).s(v);
     }
+    p.i(0); // legacyActivity
     p
 }
 
@@ -177,7 +183,7 @@ fn calendar_day_key_matches_dart_format() {
 #[test]
 fn rejects_wrong_version_and_trailing_data() {
     let mut p = sessions_input(1, |_| 0, &[], &[]);
-    p.ints[0] = 2;
+    p.ints[0] = INPUT_VERSION + 1;
     assert!(run(&p).is_err());
     let mut p = sessions_input(1, |_| 0, &[], &[]);
     p.i(7);
@@ -197,7 +203,8 @@ fn empty_input_gives_empty_snapshot() {
             hourly: vec![],
             sessions: vec![],
             days: vec![],
-            book_days: vec![]
+            book_days: vec![],
+            activity: vec![],
         }
     );
 }
@@ -205,7 +212,7 @@ fn empty_input_gives_empty_snapshot() {
 #[test]
 fn facts_follow_legacy_order_and_identity_rules() {
     let mut p = Pack::default();
-    p.i(INPUT_VERSION).i(1_800_000);
+    p.i(INPUT_VERSION).i(1_800_000).i(0);
     // epubs：A 唯一、B 同名两本（不反查）。
     p.i(3);
     p.s("A").s("ka").s("epub");
@@ -266,7 +273,7 @@ fn facts_follow_legacy_order_and_identity_rules() {
     p.i(2);
     p.i(20_454).i(5).i(0).i(1);
     p.i(20_455).i(6).i(500).i(106);
-    p.i(0).i(0); // gameSessions / gameNames
+    p.i(0).i(0).i(0); // gameSessions / gameNames / legacyActivity
     let s = run(&p).unwrap();
     let f = |k: &str, key: &str, t: &str, fm: &str, d: &str, n: [i64; 5]| {
         (k.into(), key.into(), t.into(), fm.into(), d.into(), n)
@@ -470,4 +477,32 @@ fn ffi_status_codes() {
         )
     };
     assert_eq!(code, status::BAD_INPUT);
+}
+
+#[test]
+fn activity_merges_sources_sorts_desc_and_truncates() {
+    // 拼接顺序：legacy [L0=5, L1=30] → 非零段 [S0=10, S1=30]（写零段跳过）→ 骨架 [G0=30]。
+    let build = |limit: i64| {
+        let mut p = sessions_input(
+            0,
+            |p| {
+                seg(p, "s0", "d", "book", "k", "", "x", 0, 10, 1, 0);
+                seg(p, "zero", "d", "book", "k", "", "x", 0, 99, 0, 0);
+                seg(p, "s1", "d", "video", "v", "", "x", 20, 30, 1, 0);
+                3
+            },
+            &[("g", 1, 25, 30, 5)],
+            &[],
+        );
+        p.ints[2] = limit;
+        p.ints.pop();
+        p.i(2).i(5).i(30);
+        p
+    };
+    let s = run(&build(3)).unwrap();
+    // 时刻并列（30）时 Dart 插入排序保持拼接顺序：L1、S1（下标 2）、G0。
+    assert_eq!(s.activity, vec![(0, 1), (1, 2), (2, 0)]);
+    let s = run(&build(10)).unwrap();
+    assert_eq!(s.activity, vec![(0, 1), (1, 2), (2, 0), (1, 0), (0, 0)]);
+    assert!(run(&build(0)).unwrap().activity.is_empty());
 }
