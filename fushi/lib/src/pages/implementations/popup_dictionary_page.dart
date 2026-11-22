@@ -1003,7 +1003,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
     return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.short),
-      curve: Curves.linear,
+      curve: context.fushiMotion.effectsFast.curve,
       alignment: Alignment.topCenter,
       child: _sourceTextCollapsed
           ? const SizedBox.shrink()

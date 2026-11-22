@@ -128,7 +128,7 @@ class _MusicAlbumDlsiteSectionState extends State<MusicAlbumDlsiteSection> {
     final DlsiteWorkId? id = _id;
     return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
-      curve: Curves.easeOutCubic,
+      curve: context.fushiMotion.effectsDefault.curve,
       alignment: Alignment.topCenter,
       child: id == null
           ? const SizedBox(width: double.infinity)
