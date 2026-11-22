@@ -5,11 +5,15 @@
 // - 内核 `location_root` 认过根（新根 `v4/` 在用）：只有死文件 + 空 `media/` 的写入者目录整个删；`media/` 里还有
 //   v3.3.0 没搬完的媒体、或有认不出的文件 → 只删死文件，目录与那些文件留着；别的目录、`v4/` 一个不碰；再跑一轮幂等。
 // - 内核拒绝的位置（只有协议 1 旧根 `v2/`）：一个字节不动。
+// - 完整的一趟媒体对账（生产入口 [srsRunLocationMedia]，拍板台 bug-5017-legacy-writer-media）把写入者目录里
+//   v3.3.0 没搬完的媒体收尾：集合引用、本机没有的搬进本机媒体目录（同一趟传上位置）；不引用的、本机已有同名的删；
+//   之后写入者目录整个删。名字已有别处的绑定时不抢：媒体同步照常换回绑定的内容。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
@@ -186,5 +190,149 @@ void main() {
     expect(r.legacyWritersRemoved, isEmpty);
     expect(filesUnder(loc), before);
     expect(Directory(p.join(loc, kWriter1, 'media')).existsSync(), isTrue);
+  });
+
+  /// 集合里加一条笔记，图片字段引用 [picture]。
+  Future<void> addPicture(SrsDbStore s, String expr, String picture) =>
+      s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(s.profileUid, 'Expression'): expr,
+          srsLapisFieldId(s.profileUid, 'Picture'): '<img src="$picture">',
+        },
+      );
+
+  /// [loc] 下内容寻址目录里有没有内容 [sha]（`<根>/media/<前2>/<sha>`）。
+  bool remoteHas(String loc, String sha) => filesUnder(
+    loc,
+  ).any((String f) => f.endsWith('/media/${sha.substring(0, 2)}/$sha'));
+
+  test('媒体对账：没搬完的媒体引用到的搬进本机并传上位置，不引用 / 本机已有的删，之后写入者目录整删', () async {
+    final SrsDbStore s = await device('dev-c');
+    await addPicture(s, '猫', 'cat.png');
+    await addPicture(s, '犬', 'dog.png');
+    final String dir = await srsLocationDir(s);
+    final String loc = locationPath(dir);
+    final Directory mediaRoot = Directory(p.join(tmp.path, 'local-media'))
+      ..createSync(recursive: true);
+    // 本机已有 dog.png（之后改过的版本）：写入者目录那份是旧副本。
+    write(p.join(mediaRoot.path, 'dog.png'), 'dog-new');
+    plantWriter(loc, kWriter2);
+    write(p.join(loc, kWriter2, 'media', 'cat.png'), 'cat-v30');
+    write(p.join(loc, kWriter2, 'media', 'dog.png'), 'dog-v30');
+    write(p.join(loc, kWriter2, 'media', 'orphan.png'), 'orphan');
+    // 有认不出的文件的写入者目录：媒体照样收尾，目录与那个文件留着。
+    plantWriter(loc, kWriter3, extra: <String>['notes.txt']);
+    write(p.join(loc, kWriter3, 'media', 'cat.png'), 'cat-v30');
+
+    final SrsSync2Report r = await srsRunLocationRound(
+      SrsLocationBackend(assets),
+      s,
+      'interconnect:host',
+    );
+    expect(r.error, isNull);
+    expect(r.legacyWritersRemoved, isEmpty, reason: '一轮同步本身不碰没搬完的媒体');
+    expect(filesUnder(p.join(loc, kWriter2)), <String>[
+      'media/cat.png',
+      'media/dog.png',
+      'media/orphan.png',
+    ]);
+
+    final SrsMediaSyncReport m = await srsRunLocationMedia(
+      SrsLocationBackend(assets),
+      s,
+      mediaRoot,
+      locationId: 'interconnect:host',
+    );
+    expect(m.completed, isTrue);
+    expect(m.legacyWriterErrors, isEmpty);
+    // writer2 的 cat.png 搬进来；writer3 的 cat.png 到时本机已有 → 删；dog / orphan 删。
+    expect(m.legacyMediaImported, 1);
+    expect(m.legacyMediaDropped, 3);
+    expect(m.legacyWritersRemoved, <String>[kWriter2]);
+    expect(
+      File(p.join(mediaRoot.path, 'cat.png')).readAsStringSync(),
+      'cat-v30',
+    );
+    expect(
+      File(p.join(mediaRoot.path, 'dog.png')).readAsStringSync(),
+      'dog-new',
+    );
+    expect(File(p.join(mediaRoot.path, 'orphan.png')).existsSync(), isFalse);
+    expect(
+      mediaRoot.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      unorderedEquals(<String>['cat.png', 'dog.png']),
+      reason: '临时文件不留',
+    );
+    expect(
+      remoteHas(loc, srsMediaSha256('cat-v30'.codeUnits)),
+      isTrue,
+      reason: '搬进来的同一趟就按内容传上位置',
+    );
+    expect(Directory(p.join(loc, kWriter2)).existsSync(), isFalse);
+    expect(filesUnder(p.join(loc, kWriter3)), <String>['notes.txt']);
+
+    // 幂等：再来一趟什么都不搬、不删、不报错。
+    final SrsMediaSyncReport again = await srsRunLocationMedia(
+      SrsLocationBackend(assets),
+      s,
+      mediaRoot,
+      locationId: 'interconnect:host',
+    );
+    expect(again.legacyMediaImported, 0);
+    expect(again.legacyMediaDropped, 0);
+    expect(again.legacyWriterErrors, isEmpty);
+    expect(
+      File(p.join(mediaRoot.path, 'cat.png')).readAsStringSync(),
+      'cat-v30',
+    );
+  });
+
+  test('媒体对账：名字已绑到别的内容时搬来的旧副本不抢绑定，换回绑定的内容', () async {
+    final SrsDbStore s = await device('dev-d');
+    await addPicture(s, '猫', 'cat.png');
+    final String dir = await srsLocationDir(s);
+    final String loc = locationPath(dir);
+    final Directory mediaRoot = Directory(p.join(tmp.path, 'local-media'))
+      ..createSync(recursive: true);
+    write(p.join(mediaRoot.path, 'cat.png'), 'cat-bound');
+    expect(
+      (await srsRunLocationRound(
+        SrsLocationBackend(assets),
+        s,
+        'interconnect:host',
+      )).error,
+      isNull,
+    );
+    // 绑定 cat.png → 'cat-bound' 并传上位置；之后本机那份没了（本机媒体目录被清过）。
+    await srsRunLocationMedia(
+      SrsLocationBackend(assets),
+      s,
+      mediaRoot,
+      locationId: 'interconnect:host',
+    );
+    expect(remoteHas(loc, srsMediaSha256('cat-bound'.codeUnits)), isTrue);
+    File(p.join(mediaRoot.path, 'cat.png')).deleteSync();
+    plantWriter(loc, kWriter1);
+    write(p.join(loc, kWriter1, 'media', 'cat.png'), 'cat-v30');
+
+    final SrsMediaSyncReport m = await srsRunLocationMedia(
+      SrsLocationBackend(assets),
+      s,
+      mediaRoot,
+      locationId: 'interconnect:host',
+    );
+    expect(m.legacyWriterErrors, isEmpty);
+    expect(m.legacyMediaImported, 1);
+    expect(m.legacyWritersRemoved, <String>[kWriter1]);
+    expect(
+      File(p.join(mediaRoot.path, 'cat.png')).readAsStringSync(),
+      'cat-bound',
+      reason: '绑定没被旧副本抢走，媒体同步换回绑定的内容',
+    );
+    // 旧副本被换掉之前，媒体同步按既有的保全规则先把它按内容传上位置（「那份内容此刻可能只有这台设备有」）：
+    // 字节不丢，但没有名字指向它。
+    expect(remoteHas(loc, srsMediaSha256('cat-v30'.codeUnits)), isTrue);
+    expect(Directory(p.join(loc, kWriter1)).existsSync(), isFalse);
   });
 }

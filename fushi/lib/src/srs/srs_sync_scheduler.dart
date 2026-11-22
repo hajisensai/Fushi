@@ -1249,6 +1249,19 @@ class SrsSyncScheduler {
           mediaChanged = media.downloaded > 0;
           _noteMediaKey(key, media);
           _noteMediaVanished('SrsSyncScheduler.media', media);
+          // 收 v3.0.x 写入者目录媒体没做成的（拍板台 bug-5017-legacy-writer-media）：文件留着下一趟再来，不算失败，
+          // 同一个原因只记一次。
+          for (final String f in media.legacyWriterErrors) {
+            if (_loggedSkipped.add('legacy-media|$key|$f')) {
+              ErrorLogService.instance.log(
+                'SrsSyncScheduler.legacyWriterMedia',
+                StateError(
+                  'SRS sync could not move v3.0.x writer media in $key: $f',
+                ),
+                StackTrace.current,
+              );
+            }
+          }
           // 到点 / 收手留下没做的：不记成已对账，下一轮照样对账、接着传（BUG-5061）。
           if (media.deferred == 0) {
             _mediaReconciledAt[key] = _clock();
