@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T22:44:25Z",
+ "generatedAt": "2026-11-23T23:04:06Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
-  "seq": 32143
+  "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
+  "seq": 32145
  },
  "builds": [
   {
@@ -125,6 +125,35 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
+  "headSeq": 32145,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
+    "subject": "Merge #4333 (claude/fix-immersion-queue-order-flake) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085451"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
+   }
+  }
+ },
  "prs": {}
 }
