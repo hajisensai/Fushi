@@ -518,7 +518,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
     // TODO-700 T8: the bottom bar is excluded from focus traversal, so D-pad
     // Down no longer routes focus into the chrome. It falls through to normal
     // gamepad shortcut resolution below; the bar is operated by touch/mouse.
-    final ShortcutAction? action =
+    final ShortcutAction? bound =
         appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.reader,
@@ -526,7 +526,16 @@ extension _ReaderCaret on _ReaderFushiPageState {
         appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.audiobook,
+        );
+    // D-pad 左 / 右跟随阅读方向（竖排 vertical-rl 下一页在左），与键盘方向键、漫画
+    // D-pad 同一原语；只接管出厂绑定（反馈 uz_2m0E_Eu）。
+    final ShortcutAction? action =
+        resolveReaderDpadPageTurn(
+          button: button,
+          rtl: _isRtlReading,
+          boundAction: bound,
         ) ??
+        bound ??
         // 兜底「返回上一级」（universal，默认手柄 B）。排在 reader+audiobook 之后
         // ⇒ 书内 B 仍先命中 audiobookPrevSentence（上一句），不退书；只有用户把
         // B 从上一句上解绑、或把返回改绑到别的键时，这条才会真的接管。

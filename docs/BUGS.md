@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4658 条。点号进各自文件。
+> 共 4659 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -43,6 +43,7 @@
 | [BUG-5351](bugs/BUG-5351-manga-double-tap-zoom-flash-offset.md) | ✅ | ✅ | 漫画双击放大 / 缩回落定后黑屏闪一帧，缩回最后一帧位置跳动 |
 | [BUG-5350](bugs/BUG-5350-android-330-java-crash-mihon.md) | ✅ | ✅ | Android 用 Mihon 在线源时闪退：扩展抛 Error（LinkageError 等）漏过宿主拦截器，经 OkHttp 异步线程重抛带崩进程 |
 | [BUG-5349](bugs/BUG-5349-manga-speed-popover-full-height.md) | ✅ | ✅ | 漫画播放条倍速 / 音量弹层撑满屏高 |
+| [BUG-5349](bugs/BUG-5349-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
 | [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | ✅ | ✅ | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
 | [BUG-5340](bugs/BUG-5340-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |
