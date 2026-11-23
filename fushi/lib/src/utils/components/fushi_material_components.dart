@@ -4271,6 +4271,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
                           )
                         : widget.appleActions
                         ? fushiAppleHeaderActionGroups(
+                            context,
                             resolvedItems,
                             expandLabels: expandLabels,
                           )
@@ -4708,15 +4709,21 @@ const double kFushiAppleNavBarSubtitleHeight = 52;
 /// 一枚 [FushiToolbar] 玻璃胶囊（单个按钮时收成正圆），文字动作
 /// （[fushiIsStandaloneHeaderAction]）不进胶囊，按 Apple 按钮自身形态排在旁边，
 /// 间距 10（与 [FushiToolbar] 的组间距同口径）。原顺序保留。
+///
+/// iOS 27 / macOS 27：图标动作的胶囊是库的共享玻璃胶囊（[FushiAppleBarCluster]：
+/// `GlassPinnedBarChrome` + `GlassBarItem.custom(background: shared)`，与库页
+/// 导航栏同一个），随画质档位，实色档是实色胶囊。
 Widget fushiAppleHeaderActionGroups(
+  BuildContext context,
   List<Widget> items, {
   bool expandLabels = false,
 }) {
   final List<Widget> segments = <Widget>[];
   List<Widget> run = <Widget>[];
+  final bool compact = fushiMastheadCompact(context);
   void flushRun() {
     if (run.isEmpty) return;
-    segments.add(FushiToolbar(children: run));
+    segments.add(FushiAppleBarCluster(items: run, compact: compact));
     run = <Widget>[];
   }
 
@@ -4745,10 +4752,12 @@ Widget fushiAppleHeaderActionGroups(
 /// Apple 导航栏的 leading：[FushiRouteBackButton] 自身就是玻璃圆钮，原样；
 /// 其它图标键（关闭 / 抽屉 / 自定义图标键）收进单按钮 [FushiToolbar]（正圆
 /// 玻璃钮，与返回键同一形态）；头像、品牌位等非按钮 leading 原样返回。
+///
+/// iOS 27：图标键是库的独立玻璃圆钮（[FushiAppleBarCircle]，`separate`）。
 Widget? fushiAppleNavLeading(Widget? leading) {
   if (leading == null || leading is FushiRouteBackButton) return leading;
   if (fushiIsChromeIconButton(leading)) {
-    return FushiToolbar(children: <Widget>[leading]);
+    return FushiAppleBarCircle(child: leading);
   }
   return leading;
 }
@@ -4756,14 +4765,11 @@ Widget? fushiAppleNavLeading(Widget? leading) {
 /// Apple 导航栏 inline 标题字阶：移动 17 semibold（iOS 26 导航栏）、桌面
 /// 20 bold（macOS 26 窗口工具栏标题），label 色。与 [FushiAppBar] 的 Apple
 /// 标题同一口径。
-TextStyle fushiAppleNavTitleStyle(BuildContext context) {
-  final bool desktop = fushiAppleCompact(context);
-  return (Theme.of(context).textTheme.titleLarge ?? const TextStyle()).copyWith(
-    fontSize: desktop ? 20 : 17,
-    fontWeight: desktop ? FontWeight.w700 : FontWeight.w600,
-    color: appleColorsOf(context).label,
-  );
-}
+///
+/// iOS 27 / macOS 27：移动 17 / 桌面 15 semibold（[fushiAppleInlineTitleStyle]，
+/// macOS 工具栏标题不再用 20 bold 的窗口大字）。
+TextStyle fushiAppleNavTitleStyle(BuildContext context) =>
+    fushiAppleInlineTitleStyle(context);
 
 /// Apple 导航栏的标题块：单行标题（+ 可选单行副标题，13pt secondaryLabel），
 /// 移动端居中、桌面靠前。
@@ -5114,7 +5120,7 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
         // 带文字的动作自身就是一枚同高胶囊按钮，排在组旁（见
         // [fushiFloatingHeaderActionGroups]），不再被包进组胶囊。
         final Widget toolbar = apple
-            ? fushiAppleHeaderActionGroups(items)
+            ? fushiAppleHeaderActionGroups(context, items)
             : fushiFloatingHeaderActionGroups(
                 items,
                 (List<Widget> icons) => FushiToolbar(children: icons),
@@ -5287,6 +5293,12 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 页头底下）：驱动顶部渐隐遮罩。
   final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
 
+  /// Apple 导航栏形态下正文是否已滚到栏下面（驱动 soft scroll edge）。`late`：
+  /// 热重载时已存在的 State 也能建出来。
+  late final ValueNotifier<bool> _appleScrolledUnder = ValueNotifier<bool>(
+    false,
+  );
+
   /// [FushiPageScaffold.revealTitleAfterScroll]：标题是否已该显示。
   final ValueNotifier<bool> _titleRevealed = ValueNotifier<bool>(false);
 
@@ -5361,13 +5373,19 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     _chrome.dispose();
     _scrolledUnder.dispose();
     _titleRevealed.dispose();
+    _appleScrolledUnder.dispose();
     _mastheadRevealOffset.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.mastheadEnabled && shellRedesignActive(context)) {
+    // Apple（Cupertino）的二级页默认是 iOS 27 / macOS 27 导航栏（下面的
+    // [FushiPageHeader] 导航行），不走页头大字；显式 `masthead: true`（库页等）
+    // 照旧。
+    final bool masthead =
+        widget.masthead ?? (widget.header == null && !isGlassDesign(context));
+    if (masthead && shellRedesignActive(context)) {
       return _buildMasthead(context);
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -5466,6 +5484,15 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                           NotificationListener<Notification>(
                             onNotification: (Notification notification) {
                               _trackTitleReveal(notification);
+                              if (!floatingChrome) {
+                                final ScrollMetrics? m = _verticalScrollMetrics(
+                                  notification,
+                                );
+                                if (m != null) {
+                                  _appleScrolledUnder.value =
+                                      m.extentBefore > 0.5;
+                                }
+                              }
                               return floatingChrome &&
                                   _chrome.handleNotification(notification);
                             },
@@ -5497,6 +5524,26 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                               ),
                             ),
                           ),
+                          // Apple（iOS 27）：正文滚到导航栏下面时，栏下沿是库的
+                          // soft scroll edge（GlassScrollEdgeEffect，不模糊）。
+                          if (!floatingChrome)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable: _appleScrolledUnder,
+                                builder:
+                                    (
+                                      BuildContext context,
+                                      bool under,
+                                      Widget? _,
+                                    ) => FushiAppleSoftScrollEdge(
+                                      visible: under,
+                                      color: tokens.surfaces.page,
+                                    ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -5781,6 +5828,7 @@ class FushiToolScaffold extends StatelessWidget {
                                     scrollDirection: Axis.horizontal,
                                     reverse: true,
                                     child: fushiAppleHeaderActionGroups(
+                                      context,
                                       actions,
                                     ),
                                   ),

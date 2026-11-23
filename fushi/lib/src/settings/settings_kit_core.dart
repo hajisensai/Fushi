@@ -52,6 +52,15 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         kFushiMastheadTrackedOffset;
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
     show FushiPageTitleTier;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show
+        FushiAppleLargeTitle,
+        FushiAppleNavBar,
+        FushiAppleSoftScrollEdge,
+        FushiRouteBackButton,
+        fushiAppleInlineTitleOpacity,
+        fushiAppleLargeTitleBand,
+        fushiAppleLargeTitleOpacity;
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -1720,17 +1729,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
       },
     );
     final Widget column = apple || isGlassDesign(context)
-        ? SafeArea(
-            bottom: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                header,
-                jumpBar,
-                Expanded(child: body),
-              ],
-            ),
-          )
+        ? _buildApple(context, jumpBar: jumpBar, body: body, canPop: canPop)
         : _buildOverlaid(context, header: header, jumpBar: jumpBar, body: body);
     // 独立路由页用 Scaffold（SnackBar / 键盘避让都要它）；嵌在宽屏右窗格时
     // 只铺 Material，不再套第二层 Scaffold。
@@ -1756,6 +1755,170 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// Apple（Cupertino）= iOS 27 / macOS 27 的设置子页：最上面一行导航栏
+  /// （[FushiAppleNavBar]：透明栏、玻璃返回圆钮、动作进共享玻璃胶囊），下面是
+  /// 靠前的大标题（带分类形状图标）与分组跳转条。正文顶部让位 = 大标题行 + 跳转
+  /// 条；正文往下滚时大标题随内容上移、被导航栏下沿收走并淡出，栏里淡入居中的
+  /// 17pt 小标题（UIKit `prefersLargeTitles` 的两段式交叉淡变）；跳转条随之上移
+  /// 后吸在栏下。内容压到栏 / 跳转条下面时下沿是库的 soft scroll edge。
+  ///
+  /// 正文不自己消费顶部让位时（[SettingsKitScaffold.bodyConsumesTopPadding] 为
+  /// false），壳替它整体让开，大标题不随内容滚，只在滚离顶部后淡出。
+  Widget _buildApple(
+    BuildContext context, {
+    required Widget jumpBar,
+    required Widget body,
+    required bool canPop,
+  }) {
+    final double band = fushiAppleLargeTitleBand(context);
+    final bool consumes = widget.bodyConsumesTopPadding;
+    double offset() =>
+        _controller.hasClients ? _controller.positions.first.pixels : 0;
+    // 大标题已收走的那段（0…band）；不随内容滚的正文恒为 0。
+    double slide() => consumes ? offset().clamp(0.0, band) : 0;
+    double progress() => consumes
+        ? (offset() / band).clamp(0.0, 1.0)
+        : (offset() > 12 ? 1.0 : 0.0);
+    final IconData? icon = widget.leadingIcon;
+    final Widget largeTitle = FushiAppleLargeTitle(
+      title: widget.title,
+      badge: icon == null
+          ? null
+          : SettingsShapeIcon(
+              icon: icon,
+              tone: widget.leadingTone,
+              size: fushiAppleCompact(context) ? 26 : 30,
+            ),
+    );
+    final double inset = settingsGlassDetailHorizontalInset(context);
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiAppleNavBar(
+            // 已在 SafeArea 里，栏不再让位状态栏 / 窗口标题栏。
+            primary: false,
+            automaticallyImplyLeading: false,
+            leading: canPop
+                ? FushiRouteBackButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  )
+                : null,
+            title: ListenableBuilder(
+              listenable: _controller,
+              builder: (BuildContext context, Widget? child) {
+                final double o = fushiAppleInlineTitleOpacity(progress());
+                return ExcludeSemantics(
+                  excluding: o == 0,
+                  child: Opacity(opacity: o, child: child),
+                );
+              },
+              child: Text(widget.title),
+            ),
+            actions: widget.actions,
+          ),
+          Expanded(
+            child: Builder(
+              builder: (BuildContext context) {
+                final MediaQueryData media = MediaQuery.of(context);
+                return Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: ListenableBuilder(
+                        listenable: _jumpBarHeight,
+                        child: consumes
+                            ? body
+                            : SafeArea(bottom: false, child: body),
+                        builder: (BuildContext context, Widget? content) {
+                          final double top = band + _jumpBarHeight.value;
+                          return MediaQuery(
+                            data: media.copyWith(
+                              padding: media.padding.copyWith(top: top),
+                              viewPadding: media.viewPadding.copyWith(top: top),
+                            ),
+                            child: content!,
+                          );
+                        },
+                      ),
+                    ),
+                    // 内容压到导航栏 / 吸顶跳转条下面：跳转条后面垫页面底色，
+                    // 下沿 soft 渐隐（库 GlassScrollEdgeEffect，不模糊）。
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge(<Listenable>[
+                          _controller,
+                          _jumpBarHeight,
+                        ]),
+                        builder: (BuildContext context, Widget? _) {
+                          final double jumpTop = band - slide();
+                          return FushiAppleSoftScrollEdge(
+                            visible: consumes
+                                ? offset() >= band - 0.5
+                                : offset() > 0,
+                            solidExtent: jumpTop + _jumpBarHeight.value,
+                          );
+                        },
+                      ),
+                    ),
+                    ListenableBuilder(
+                      listenable: _controller,
+                      child: largeTitle,
+                      builder: (BuildContext context, Widget? title) {
+                        final double o = fushiAppleLargeTitleOpacity(
+                          progress(),
+                        );
+                        return Positioned(
+                          top: -slide(),
+                          left: inset,
+                          right: inset,
+                          height: band,
+                          child: ExcludeSemantics(
+                            excluding: o == 0,
+                            child: AnimatedOpacity(
+                              opacity: o,
+                              duration: consumes
+                                  ? Duration.zero
+                                  : fushiMotionDuration(
+                                      context,
+                                      FushiMotion.short,
+                                    ),
+                              child: Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: title,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    ListenableBuilder(
+                      listenable: _controller,
+                      child: FushiHeightReporter(
+                        onHeight: _onJumpBarHeight,
+                        child: jumpBar,
+                      ),
+                      builder: (BuildContext context, Widget? bar) =>
+                          Positioned(
+                            top: band - slide(),
+                            left: 0,
+                            right: 0,
+                            child: bar!,
+                          ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -51,8 +51,14 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show FushiAppleBarCluster;
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show fushiMastheadCompact;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show
+        FushiAppleBarCircle,
+        fushiAppleBarButtonExtent,
         fushiAppleInlineSubtitleStyle,
         fushiAppleInlineTitleStyle,
         kFushiAppleInlineTitleRadius;
@@ -1822,6 +1828,59 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     );
   }
 
+  /// [appleBar] 形态的动作区：每组一枚库的共享玻璃胶囊（与库页导航栏同一个
+  /// [FushiAppleBarCluster]），组间留 8；「⋯」（横向）并进最后一枚。按钮本身
+  /// （点击 / 焦点 / tooltip / 语义 / 选中态）仍是 [FushiToolbarButton]。
+  Widget _appleBarActions(
+    BuildContext context, {
+    required List<List<FushiToolbarItem>> groups,
+    required List<FushiToolbarItem> overflow,
+    required ({
+      Color container,
+      Color foreground,
+      Color selectedContainer,
+      Color selectedForeground,
+    })
+    palette,
+  }) {
+    final List<List<Widget>> clusters = <List<Widget>>[
+      for (final List<FushiToolbarItem> group in groups)
+        if (group.isNotEmpty)
+          <Widget>[
+            for (final FushiToolbarItem item in group)
+              FushiToolbarButton(
+                item: item,
+                foreground: palette.foreground,
+                selectedContainer: palette.selectedContainer,
+                selectedForeground: palette.selectedForeground,
+              ),
+          ],
+    ];
+    if (overflow.isNotEmpty) {
+      final Widget more = FushiToolbarOverflowButton(
+        items: overflow,
+        foreground: palette.foreground,
+        buttonKey: widget.overflowKey,
+      );
+      if (clusters.isEmpty) {
+        clusters.add(<Widget>[more]);
+      } else {
+        clusters.last.add(more);
+      }
+    }
+    final bool compact = fushiMastheadCompact(context);
+    return Row(
+      key: const ValueKey<String>('fushi_floating_toolbar'),
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (int i = 0; i < clusters.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(width: 8),
+          FushiAppleBarCluster(items: clusters[i], compact: compact),
+        ],
+      ],
+    );
+  }
+
   /// Apple 标题文字两侧的内边距：垫底胶囊里与 Material 标题胶囊同宽，内联
   /// （无底）时贴近导航栏标题的 4。build 与测宽共用。
   double get _appleTitlePadding => widget.titleBacking
@@ -1854,7 +1913,14 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     final Widget? titleLeading = widget.titleLeading;
     final Widget? titleTrailing = widget.titleTrailing;
     final bool apple = isGlassDesign(context);
-    final double leadingExtent = apple
+    // Apple 普通页面的顶栏 = iOS 27 / macOS 27 导航栏：前置键是库的独立玻璃
+    // 圆钮（GlassBarItemBackground.separate），每组动作合成一枚库的共享玻璃
+    // 胶囊（shared，[FushiAppleBarCluster]），「⋯」并进最后一枚。阅读器等按
+    // 纸色传 [colors] 的顶栏、裸图标顶栏（[bare]）保持原来的着色悬浮面。
+    final bool appleBar = apple && !widget.bare && colors == null;
+    final double leadingExtent = appleBar
+        ? fushiAppleBarButtonExtent(context)
+        : apple
         ? fushiAppleFloatingExtent(context)
         : kFushiFloatingToolbarCompactExtent;
     final Widget? titlePill =
@@ -1996,9 +2062,23 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
                 ),
               )
             : (groups: groups, overflow: overflow);
-        final Widget? toolbar = hasActions || foldedLeading.isNotEmpty
+        final List<FushiToolbarItem> overflowItems = <FushiToolbarItem>[
+          ...foldedLeading,
+          ...split.overflow,
+          ...widget.menu,
+        ];
+        final Widget? toolbar = !(hasActions || foldedLeading.isNotEmpty)
+            ? null
+            : appleBar && labeled == null
+            ? _appleBarActions(
+                context,
+                groups: split.groups,
+                overflow: overflowItems,
+                palette: palette,
+              )
             // 不做尺寸动画（HBK034）：AnimatedSize 收缩时会保留旧宽度一帧，窗口
             // 骤缩时右侧溢出。按目标宽度立即布局，防抖靠展开回差。
+            : hasActions || foldedLeading.isNotEmpty
             ? FushiFloatingToolbar(
                 groups: split.groups,
                 overflow: <FushiToolbarItem>[
@@ -2025,21 +2105,35 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
             )) ...<Widget>[
               // 前置键（返回等）就是一枚圆：按钮经 [FushiFillSlot] 撑满整枚圆，
               // 悬停 / 按下的 state layer 与命中区 = 可见形状。
-              FushiFloatingPill(
-                color: palette.container,
-                shape: const CircleBorder(),
-                padding: EdgeInsets.zero,
-                child: FushiFillSlot.wrap(
-                  extent: Size.square(leadingExtent),
+              if (appleBar)
+                FushiAppleBarCircle(
+                  child: FushiFillSlot.wrap(
+                    extent: Size.square(leadingExtent),
+                    shape: const CircleBorder(),
+                    child: FushiToolbarButton(
+                      item: item,
+                      foreground: palette.foreground,
+                      selectedContainer: palette.selectedContainer,
+                      selectedForeground: palette.selectedForeground,
+                    ),
+                  ),
+                )
+              else
+                FushiFloatingPill(
+                  color: palette.container,
                   shape: const CircleBorder(),
-                  child: FushiToolbarButton(
-                    item: item,
-                    foreground: palette.foreground,
-                    selectedContainer: palette.selectedContainer,
-                    selectedForeground: palette.selectedForeground,
+                  padding: EdgeInsets.zero,
+                  child: FushiFillSlot.wrap(
+                    extent: Size.square(leadingExtent),
+                    shape: const CircleBorder(),
+                    child: FushiToolbarButton(
+                      item: item,
+                      foreground: palette.foreground,
+                      selectedContainer: palette.selectedContainer,
+                      selectedForeground: palette.selectedForeground,
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: 8),
             ],
             if (follow) toolbar,
@@ -2048,7 +2142,13 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
               child: titlePill == null
                   ? const SizedBox.shrink()
                   : Align(
-                      alignment: AlignmentDirectional.centerStart,
+                      // iOS 导航栏标题居中；macOS 工具栏标题靠前。
+                      alignment:
+                          appleBar &&
+                              !widget.titleBacking &&
+                              fushiMastheadCompact(context)
+                          ? Alignment.center
+                          : AlignmentDirectional.centerStart,
                       child: titlePill,
                     ),
             ),
