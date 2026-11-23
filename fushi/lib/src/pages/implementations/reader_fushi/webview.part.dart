@@ -921,6 +921,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       vnMergeCrossScreenSentenceAudioCues:
           s.visualNovelMergeCrossScreenSentenceAudioCues,
       sentenceAudioCuesJson: sentenceAudioCuesJson,
+      audiobookLineAlignFollow: _audiobookLineAlignFollow,
       seamlessChapters: seamless.active,
       seamlessChapterIndex: seamless.index,
       seamlessChapterOrder: seamless.order,
@@ -953,8 +954,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
       continuousTurnPullPx: s.continuousChapterTurnResistance.pullPx,
       continuousTurnPinMidGesture:
           s.continuousChapterTurnResistance.pinMidGesture,
+      audiobookLineAlignFollow: _audiobookLineAlignFollow,
     );
   }
+
+  /// 连续模式有声书跟读是否整行对齐（偏好 `audiobook_scroll_follow`，反馈 tUJsiLpL9d）。
+  bool get _audiobookLineAlignFollow =>
+      ReaderFushiSource.instance.audiobookScrollFollow ==
+      kAudiobookScrollFollowLineAlign;
 
   /// 实际播放的翻页效果：用户所选按墨水屏 / 系统「减弱动态效果」降级（规则唯一出处
   /// [effectivePageTurnAnimation]）。JS 侧只认这个结果，不再自己判减弱动态效果。

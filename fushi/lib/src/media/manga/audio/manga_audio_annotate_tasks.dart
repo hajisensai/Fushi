@@ -22,6 +22,7 @@ import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
@@ -199,10 +200,18 @@ class MangaAnnotateTask extends ChangeNotifier {
 /// 进程级漫画标注任务表。注册表本身在任务开始 / 结束时 [notifyListeners]；单个任务的
 /// 进度听 [MangaAnnotateTask]。
 class MangaAnnotateTasks extends ChangeNotifier {
-  MangaAnnotateTasks({required MangaAnnotateTaskRunner runner, this.onSettled})
-    : _runner = runner;
+  MangaAnnotateTasks({
+    required MangaAnnotateTaskRunner runner,
+    this.onSettled,
+    MangaVolumeBusy? Function(String bookKey)? blocker,
+  }) : _runner = runner,
+       _blocker = blocker;
 
   final MangaAnnotateTaskRunner _runner;
+
+  /// 开始前的「这一卷别处占着」判据（应用里装的是「正在导入导出包」，见
+  /// [mangaVolumeImportBlocker]）；返回非 null 时 [start] 抛 [MangaVolumeBusyException]。
+  final MangaVolumeBusy? Function(String bookKey)? _blocker;
 
   /// 任务结束且 [MangaAnnotateTask.announce] 时调用（告诉用户结果）。
   final void Function(MangaAnnotateTask task)? onSettled;
@@ -227,7 +236,8 @@ class MangaAnnotateTasks extends ChangeNotifier {
       if (t.isRunning) t,
   ];
 
-  /// 发起一次标注。同卷已有运行中的任务抛 [MangaAnnotateBusy]（不排队、不并行标同一卷）。
+  /// 发起一次标注。同卷已有运行中的任务抛 [MangaAnnotateBusy]（不排队、不并行标同一卷）；
+  /// 这一卷被别处占着（正在导入导出包）抛 [MangaVolumeBusyException]。
   /// [announce] = 结束时经 [onSettled] 告诉用户。
   MangaAnnotateTask start(
     MangaAnnotateRequest request, {
@@ -235,6 +245,10 @@ class MangaAnnotateTasks extends ChangeNotifier {
   }) {
     final MangaAnnotateTask? busy = runningFor(request.bookKey);
     if (busy != null) throw MangaAnnotateBusy(busy);
+    final MangaVolumeBusy? blocked = _blocker?.call(request.bookKey);
+    if (blocked != null) {
+      throw MangaVolumeBusyException(request.bookKey, blocked);
+    }
     final MangaAnnotateTask task = MangaAnnotateTask._(
       request,
       announce: announce,
@@ -370,4 +384,5 @@ MangaAnnotateTasks mangaAnnotateTasksFor(AudioProductionHost appModel) =>
             bool Function() isCancelled,
           ) => runMangaAnnotateRequest(appModel, request, sink, isCancelled),
       onSettled: _toastSettled,
+      blocker: (String bookKey) => mangaVolumeImportBlocker(bookKey),
     );

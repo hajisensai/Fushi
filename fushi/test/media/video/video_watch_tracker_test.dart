@@ -255,6 +255,23 @@ void main() {
       expect(tracker.debugSubtitleChars, 7, reason: '去重集挡重复入账');
     });
 
+    test('后台只放声音（countSubtitleChars=false）不计字，回前台重看照计', () {
+      // 拍板台 42UUu_kcwD-media：与有声书后台听书同一口径，只计时长不计字。
+      tracker.countSubtitleChars = false;
+      src.currentCueIndex = 0;
+      src.currentCue = _cue('あいう'); // 3
+      _playThrough(src, fromMs: 0, toMs: 2000);
+      src.currentCueIndex = 1;
+      src.currentCue = _cue('かきくけ', startMs: 2000, endMs: 4000);
+      src.emit();
+      expect(tracker.debugSubtitleChars, 0);
+      tracker.countSubtitleChars = true;
+      src.currentCueIndex = 0; // 回前台重看第一句：后台那次没进去重集
+      src.currentCue = _cue('あいう');
+      _playThrough(src, fromMs: 0, toMs: 2000);
+      expect(tracker.debugSubtitleChars, 3);
+    });
+
     test('暂停态拖进度条落点命中 cue 不计（位置进入 ≠ 看过）', () {
       src.isPlaying = false;
       src.currentCueIndex = 0;

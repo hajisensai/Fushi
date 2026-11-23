@@ -1692,6 +1692,7 @@ class AggregateSyncService {
     pages: s.pages,
     updatedAt: s.updatedAt,
     profileName: profileNameById[s.profileId] ?? '',
+    lookups: s.lookups,
   );
 
   static StudyTombstoneRecord _tombstoneRecordOf(
@@ -1746,6 +1747,7 @@ class AggregateSyncService {
     durationMs: Value(r.durationMs),
     chars: Value(r.chars),
     pages: Value(r.pages),
+    lookups: Value(r.lookups),
     updatedAt: r.updatedAt,
     profileId: Value(profileId),
   );

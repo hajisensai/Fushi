@@ -42,6 +42,8 @@ String ttsRenderFailureText(String? code) {
     // `manga_audio_renderer.dart`）。
     case 'manga_script_empty':
       return t.manga_audio_failure_script_empty;
+    case 'manga_package_importing':
+      return t.manga_audio_package_error_importing;
     case 'manga_script_stale':
       return t.manga_audio_failure_script_stale;
     case 'manga_no_pages':

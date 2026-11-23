@@ -99,18 +99,28 @@ Windows 自带 OCR。识别器不可用（缺语言包 / 本机模型未下载�
 
 - Rust `ocrline` 域 + Dart 绑定 + 单元测试。
 - Dart 泵 `GalOcrLineSource`（`fushi/lib/src/mining/gal_ocr_line_source.dart`）+ 会话集成 + 台词来源。
-- 台词工作台「OCR 识别台词」起点、框选对话框、会话中「调整识别区域」，框选结果记在偏好里（全局一份）。
+- 台词工作台「OCR 识别台词」起点、框选对话框、会话中「调整识别区域」，框选结果记在偏好里（全局一份；第二期改为按游戏记）。
 
-### 第二期（登记 BUG，未做）
+### 第二期（BUG-5141，已做）
+
+- **等待动画不再卡死稳定判据**（§3.1 补充）：每格记易变分（变一次 +2、稳一帧 -1，≥6 算易变），「稳定」与「与上次
+  送 OCR 的帧比变没变」都排除易变格；打字机每格只出墨一次不会变易变；易变格超过网格四分之一视为整框在动，掩码作废。
+- **送 OCR 前的预处理**（Rust `prepare_for_ocr`）：按有墨行段估字高，< 16 px 时整数倍放大到约 24 px（≤4 倍，最长边
+  ≤2600 = `OcrEngine.MaxImageDimension`）；可选 Otsu 二值化（`ffc_ocrline_configure`，少数派当字、白底黑字）。
+  交给识别器的 `width` / `height` 是预处理后的尺寸。
+- **按游戏记住**识别区域与二值化开关（`GalCaptureMemory.ocrRegion` / `ocrBinarize`，key = 游戏 exe 全路径小写）；
+  框选初值 = 本局 / 该游戏记住的 / 全局上次的框（偏好 `gal_ocr_region`，新游戏多半也是画面下方同类台词框）/ 默认框。
+- **AI 操作目录**：`game.ocr.start`（`POST /api/admin/game/ocr/start`，不可逆：替换当前会话）、
+  `game.ocr.region.set`（`PUT /api/admin/game/ocr/region`，可撤销）；`game status` 的 `session.mode = ocr` 带 `session.ocr`。
+
+### 第三期（BUG-5299，未做）
 
 - **持续 WGC 会话直出区域原始像素**：现在每次取帧都新建一次 WGC 会话并编 PNG，再在 Rust 解码；
-  第二期在 runner 里加持续会话 + 只回框内 BGRA，省掉编解码与会话建立（目标 ≥4 fps、单帧 <10 ms）。
-- **按游戏记住识别区域**（现在全局一份）。
-- **小字放大 / 二值化预处理**提升 Windows OCR 在低分辨率游戏上的识别率；可选的「只识别某颜色的字」
-  （MisakaTranslator 的阈值化思路）。
-- **台词浮窗的点字查词坐标**：OCR 行没有 Hook 行那样的游戏内文字几何，游戏内嵌查词（第③条能力）
-  对 OCR 行暂不提供，台词浮窗 / 工作台里查词照常。
-- **AI 操作目录**（`ctl_game_routes`）补 `start_ocr` / `set_ocr_region` 路由与描述。
+  在 runner 里加持续会话 + 只回框内 BGRA（复用 `CaptureCore` 的 Magpie / 缩放源 / 客户区裁框判据），Rust 加
+  `feed_bgra`，省掉编解码与会话建立（目标 ≥4 fps、单帧 <10 ms）。必须真机验。
+- **OCR 行的游戏内嵌查词**：识别行框（在预处理后的图上，需交出放大倍数或由 Rust 映回）→ 客户区坐标 → 接入
+  `GalAttachedTextController` 的几何提供者；查词扫描面不得直接 import OCR 包（`gal_attached_no_ocr_guard_test`）。
+  在此之前台词浮窗 / 工作台里查词照常。
 - 安卓模拟器以外的平台（macOS / Linux 窗口截取）不在范围内，除非用户改平台边界。
 
 ## 7. 测试

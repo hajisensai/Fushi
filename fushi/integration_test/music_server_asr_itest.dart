@@ -28,7 +28,7 @@ import 'package:fushi/src/asr_host/asr_host.dart' show openAsrModelStore;
 import 'package:fushi/src/media/music/asr/music_plugin_asr_audio.dart';
 import 'package:fushi/src/media/music/asr/music_server_asr_audio.dart';
 import 'package:fushi/src/media/music/asr/music_subtitle_target.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';

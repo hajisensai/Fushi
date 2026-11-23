@@ -16,11 +16,13 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
@@ -773,9 +775,24 @@ mixin DictionaryPageMixin {
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
-      fields,
-    );
+    MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(fields);
+    // 拍板 EuOLprw_dV（选 b）：开了「制卡时框选截图」就先推出框选页，用户框好再制；
+    // 点「×」就不制这张卡（弹窗把按钮放回「+」）。高级制卡里已经选过卡图的不再弹。
+    final ScreenOcrCardImage? frameSource = miningCardImage;
+    if (frameSource != null &&
+        screenOcrCardFrameNeeded(
+          cardImageEnabled: mixinAppModel.prefsRepo.screenOcrCardImage,
+          frameOnMine: mixinAppModel.prefsRepo.screenOcrCardFrameOnMine,
+          overrides: overrides,
+        )) {
+      if (!mounted) return const MinePopupResult.cancelled();
+      // 弹窗 WebView 会盖在 Flutter 路由上（与「高级制卡」对话框同理），框选期间停靠屏外。
+      final MiningRequestOverrides? frame = await runWithLookupPopupHidden(
+        () => pickScreenOcrCardFrame(context, frameSource),
+      );
+      if (frame == null) return const MinePopupResult.cancelled();
+      overrides = mergeScreenOcrCardFrame(overrides, frame);
+    }
     final ({String path, Directory dir})? cover = await _prepareMiningCover(
       overrides,
     );
@@ -1095,16 +1112,15 @@ mixin DictionaryPageMixin {
     try {
       final ({String? bookKey, String? title})? identity = lookupBookIdentity;
       unawaited(
-        mixinAppModel.database
-            .addLookupCount(
-              bookKey: identity?.bookKey,
-              title: identity?.title ?? '',
-              sourceType: dictionarySourceType,
-              dateKey: _statTodayKey(),
-            )
-            .catchError((Object e, StackTrace st) {
-              debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
-            }),
+        recordStudyLookup(
+          mixinAppModel.database,
+          bookKey: identity?.bookKey,
+          title: identity?.title ?? '',
+          sourceType: dictionarySourceType,
+          at: DateTime.now(),
+        ).catchError((Object e, StackTrace st) {
+          debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
+        }),
       );
     } catch (e, st) {
       debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');
@@ -1544,6 +1560,16 @@ mixin DictionaryPageMixin {
             query: query,
             autoRead: autoReadOnNavigate,
           ),
+          // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+          onRefineQuery: (String query, String source) => navigatePopupInPlace(
+            controller: controller,
+            index: index,
+            entry: entry,
+            query: query,
+            autoRead: autoReadOnNavigate,
+            refineSource: source,
+          ),
+          refineSource: entry.refineSource,
           // 制卡四个出口都先过 [miningFieldsForLayer]：宿主按层补上它知道的上下文
           // （主窗查词宿主补出自那一行原文的例句，反馈 1Mwaro8UTC）。
           onMineEntry: closePopupAfterAcceptedMine(
@@ -1906,12 +1932,17 @@ mixin DictionaryPageMixin {
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃。查询期间置
   /// [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  ///
+  /// [refineSource] 非 null = 从「查不到」的词块 / 修改框换词（拍板台 Um72dWD9Cz）：
+  /// 空结果**也**换，新页记下词块来源、沿用原页那一句。与
+  /// [BaseSourcePageState.navigatePopupInPlace] 同语义。
   Future<void> navigatePopupInPlace({
     required DictionaryPopupController controller,
     required int index,
     required DictionaryPopupEntry entry,
     required String query,
     bool autoRead = false,
+    String? refineSource,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || entry.isSearching) return;
@@ -1934,12 +1965,15 @@ mixin DictionaryPageMixin {
           entry.searchTerm != termAtStart) {
         return;
       }
-      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
-      mixinAppModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: trimmed,
-      );
-      mixinAppModel.addToDictionaryHistory(result: result);
+      final bool empty = result.entries.isEmpty && result.kanjiResults.isEmpty;
+      if (empty && refineSource == null) return;
+      if (!empty) {
+        mixinAppModel.addToSearchHistory(
+          historyKey: DictionaryMediaType.instance.uniqueKey,
+          searchTerm: trimmed,
+        );
+        mixinAppModel.addToDictionaryHistory(result: result);
+      }
       // navigateInPlace 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
       controller.navigateInPlace(
         entry,
@@ -1947,6 +1981,8 @@ mixin DictionaryPageMixin {
         result: result,
         allLoaded: !result.truncated,
         scrollTop: scrollTop,
+        refineSource: refineSource ?? '',
+        contextSentence: refineSource == null ? '' : entry.contextSentence,
       );
       if (autoRead &&
           ReaderFushiSource.instance.autoReadOnLookup &&

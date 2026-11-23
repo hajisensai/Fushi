@@ -1075,6 +1075,14 @@ class ReaderSettings {
     fontKeySrsCard,
   ];
 
+  /// 全部字体持久化短键（目录 + 各用途成员表 + 旧列表键）：「组合」设置树把它们整组归到
+  /// 「外观 › 字体」叶子（`fushi_settings_tree.dart`），与其余阅读样式分开继承。
+  static const List<String> fontPersistenceKeys = <String>[
+    fontCatalogKey,
+    fontTargetsKey,
+    ..._fontTargetKeys,
+  ];
+
   bool get _hasAnyFontPrefs =>
       _cache.containsKey(fontCatalogKey) ||
       _cache.containsKey(fontTargetsKey) ||

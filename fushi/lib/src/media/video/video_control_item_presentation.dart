@@ -119,6 +119,8 @@ IconData videoControlItemIcon(
       return FushiIcons.lastPage;
     case VideoControlItem.chapterList:
       return FushiIcons.numberedList;
+    case VideoControlItem.liveChat:
+      return FushiIcons.forum;
     case VideoControlItem.danmaku:
       return FushiIcons.danmaku;
     case VideoControlItem.ocrFrame:
@@ -209,6 +211,8 @@ String videoControlItemLabel(
       return t.shortcut_action_video_next_chapter;
     case VideoControlItem.chapterList:
       return t.video_chapters;
+    case VideoControlItem.liveChat:
+      return t.video_live_chat_title;
     case VideoControlItem.danmaku:
       return t.video_control_danmaku;
     case VideoControlItem.ocrFrame:

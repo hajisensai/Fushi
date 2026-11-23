@@ -221,6 +221,22 @@ void main() {
         _build('curate-pending', <String>[]).path,
         '/api/admin/library/curate/pending',
       );
+      final CtlRequestSpec r = _build('curate-retry', <String>[
+        'books',
+        'epub:abc',
+        '--yes',
+      ]);
+      expect(r.method, 'POST');
+      expect(r.path, '/api/admin/library/curate/scrape/retry');
+      expect(r.body, <String, Object?>{
+        'stage': 'books',
+        'ref': 'epub:abc',
+        'yes': true,
+      });
+      expect(
+        () => _build('curate-retry', <String>['video', 'x']),
+        throwsA(isA<CtlUsageError>()),
+      );
     });
   });
 
@@ -261,6 +277,7 @@ void main() {
         'curate-links',
         'curate-music',
         'curate-pending',
+        'curate-retry',
         'source-add',
         'source-rename',
         'source-rm',

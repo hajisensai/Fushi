@@ -217,7 +217,15 @@ window.__fushiHighlight = function(selector, reveal, pauseEnabled, fromChapterSt
       el, reveal, pauseEnabled, fromChapterStart);
   el.classList.add('fushi-active');
   if (reveal && !revealedImage) {
-    window.__fushiRevealTarget(el);
+    // 反馈 tUJsiLpL9d：shell 提供 revealAudioCue 时按「当前句」揭示（分页量跨页分界、
+    // 连续整行对齐），key 与 Dart 侧 cue.textFragmentId 相同；否则走通用揭示。
+    var r = window.fushiReader;
+    if (r && typeof r.revealAudioCue === 'function' &&
+        typeof r.audioCueSpan === 'function') {
+      r.revealAudioCue(selector, el, null, r.audioCueSpan([el]));
+    } else {
+      window.__fushiRevealTarget(el);
+    }
   }
 };
 
@@ -522,6 +530,76 @@ void 0;
           'if(typeof __fushiResetPrevHighlight!=="undefined")'
           '__fushiResetPrevHighlight();',
     );
+  }
+
+  /// 分页「读到页边就翻」（反馈 tUJsiLpL9d）：刚揭示的这句（[cueKey] =
+  /// `cue.textFragmentId`）跨页时，落点页及之前的可数字数与整句字数；不跨页、不是
+  /// 分页 shell、或 WebView 已换文档时为 null。分界由 shell 在揭示时量好，这里只取。
+  static Future<({int before, int total})?> audioCuePageSplit(
+    InAppWebViewController controller,
+    String cueKey,
+  ) async {
+    return _decodeAudioCueSplit(
+      await controller.evaluateJavascript(
+        source:
+            '(window.fushiReader&&'
+            'typeof window.fushiReader.audioCuePageSplit==="function")?'
+            'window.fushiReader.audioCuePageSplit(${jsonEncode(cueKey)}):null',
+      ),
+    );
+  }
+
+  /// 声音到达下一页第一个字：翻到 [cueKey] 后半截所在页，返回下一个分界（一句跨三页
+  /// 时）或 null。
+  static Future<({int before, int total})?> revealAudioCueTail(
+    InAppWebViewController controller,
+    String cueKey,
+  ) async {
+    return _decodeAudioCueSplit(
+      await controller.evaluateJavascript(
+        source:
+            '(window.fushiReader&&'
+            'typeof window.fushiReader.revealAudioCueTail==="function")?'
+            'window.fushiReader.revealAudioCueTail(${jsonEncode(cueKey)}):null',
+      ),
+    );
+  }
+
+  /// 作废「已翻到后半截」的记录：音频回到了分界之前（seek / 重听本句），下次揭示
+  /// 要回到句首页。
+  static Future<void> dropAudioCueTail(
+    InAppWebViewController controller,
+  ) async {
+    await controller.evaluateJavascript(
+      source:
+          'if(window.fushiReader&&'
+          'typeof window.fushiReader.dropAudioCueTail==="function")'
+          'window.fushiReader.dropAudioCueTail();',
+    );
+  }
+
+  /// `audioCuePageSplit` / `revealAudioCueTail` 的回值：JSON 文本 `{before, total}`。
+  @visibleForTesting
+  static ({int before, int total})? decodeAudioCueSplitForTesting(
+    Object? raw,
+  ) => _decodeAudioCueSplit(raw);
+
+  static ({int before, int total})? _decodeAudioCueSplit(Object? raw) {
+    if (raw is! String || raw.isEmpty) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map) return null;
+    final Object? before = decoded['before'];
+    final Object? total = decoded['total'];
+    if (before is! num || total is! num) return null;
+    final int b = before.toInt();
+    final int n = total.toInt();
+    if (n <= 0 || b <= 0 || b >= n) return null;
+    return (before: b, total: n);
   }
 
   /// BUG-898：揭开当前章内全部防剧透模糊图。纯图片章走 [awaitImageChapterPause] 停留、

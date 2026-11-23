@@ -70,6 +70,17 @@ String lookupQueryFromIndex(
   return query.trim().isEmpty ? '' : query;
 }
 
+final RegExp _firstLookupChar = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// 一句话里「第一个可查的字」的 UTF-16 下标：跳过句首空白、引号括号（「『（【等）与
+/// 其他标点符号，落在第一个字母 / 数字类字符上（假名、汉字、`々`、`ー` 都属 `\p{L}`）。
+/// 整句没有可查字时返回 null。
+///
+/// 用途：文本钩子「新句自动查词」从这里起交给 [lookupQueryFromIndex]，与手点该字
+/// 走同一条最长匹配路径（反馈 q9Jcu_Zr2_）。
+int? firstLookupCharIndex(String text) =>
+    _firstLookupChar.firstMatch(text)?.start;
+
 /// Sentence-terminating delimiters. Byte-identical to
 /// `fushiSelection.sentenceDelimiters` in reader_selection_scripts.dart
 /// ('。！？.!?\n\r'): the char AFTER one of these starts a new sentence.

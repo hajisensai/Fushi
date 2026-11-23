@@ -94,10 +94,7 @@ Future<int> pickAndAddMusicDiscs({
     dialogTitle: t.music_disc_add,
   );
   if (path == null || !context.mounted) return 0;
-  final List<String> discs = await probeMusicDiscRoot(path) != null
-      ? <String>[path]
-      : await findMusicDiscRootsInBackground(path);
-  return _registerMusicDiscs(app, discs);
+  return _registerMusicDiscs(app, await musicDiscCandidatesAt(path));
 }
 
 /// 导入菜单「光盘 › 光盘镜像…」：选一个或多个 `.iso` 文件登记成光盘专辑（读不出的盘
@@ -120,19 +117,18 @@ Future<int> pickAndAddMusicDiscImages({
 
 /// 逐张登记 [discs]，汇总成一条提示。返回登记了几张。
 Future<int> _registerMusicDiscs(AppModel app, List<String> discs) async {
-  final MusicDiscImportService service = MusicDiscImportService(app.database);
-  int added = 0;
-  String? firstError;
-  for (final String disc in discs) {
-    try {
-      await service.registerDisc(disc);
-      added++;
-    } on MusicDiscUnreadableException {
-      firstError ??= await _unreadableMessage(disc);
-    } on Exception catch (e) {
-      firstError ??= e.toString();
-    }
-  }
+  final MusicDiscRegisterReport report = await registerMusicDiscs(
+    MusicDiscImportService(app.database),
+    discs,
+  );
+  final int added = report.albumUids.length;
+  final MapEntry<String, Exception>? first =
+      report.failures.entries.firstOrNull;
+  final String? firstError = first == null
+      ? null
+      : first.value is MusicDiscUnreadableException
+      ? await _unreadableMessage(first.key)
+      : first.value.toString();
   if (added == 0) {
     FushiToast.show(
       msg: firstError ?? t.music_disc_none_found,

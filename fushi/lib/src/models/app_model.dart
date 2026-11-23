@@ -408,6 +408,9 @@ import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/music_library_host_module.dart';
+import 'package:fushi_engine/media/music/host/engine_music_library_host.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show
         MossBackendPreference,
@@ -432,6 +435,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/sync/online_library_items.dart'
+    show AppOnlineLibraryParticipant;
 import 'package:fushi/src/sync/interconnect_host_channel.dart'
     show InterconnectHostRef;
 import 'package:fushi/src/sync/app_peer_torrent_engine.dart';
@@ -498,13 +503,17 @@ import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart'
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
-    show appleMusicTokenSource, loadMusicServerBindings;
+    show
+        appleMusicTokenSource,
+        loadMusicServerBindings,
+        musicServerBitrateLimit;
 import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/media/music/server/music_server_track_ref.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show
         MusicServerBrowser,
         MusicServerItemKind,
+        MusicHostLyrics,
         MusicServerLyrics,
         MusicServerLyricsProvider;
 import 'package:fushi/src/media/music/server/music_server_favorites.dart'
@@ -555,9 +564,15 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show InterconnectMusicHostLyrics, InterconnectMusicHosts;
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show MusicServerBinding, musicServerBindingLoader;
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
+import 'package:fushi/src/media/music/metadata/music_video_service.dart'
+    show AppMusicHostVideoMatcher, MusicVideoService;
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart'
+    show isYoutubeMusicSourceAvailable;
 import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart'
     show BindingMusicServerLoudnessResolver, musicServerLoudnessResolver;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
@@ -1254,6 +1269,38 @@ class AppModel
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
     // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
     assistantFactory: () => createAppAssistantHost(this),
+    // 互联共享音乐库（设计 2026-11-23，拍板 design-imusic-q2：与视频库 / 书库同级，跟着互联总开关走，
+    // 不另设开关）：与无头服务端同一个引擎实现。
+    modulesFactory: () => <InterconnectHostModule>[
+      MusicLibraryHostModule(
+        EngineMusicLibraryHost(
+          database: () => isDatabaseReady ? database : null,
+          // 网络来源（SFTP / WebDAV / AList）曲目由 host 用自己的来源解析器代读（design-imusic-q4），
+          // 与本机播放同一个解析器（按来源缓存连接）。
+          networkSource: (MusicTrackRow row) async {
+            final MusicRemoteMediaResolver? resolver = musicRemoteMediaResolver;
+            if (resolver == null) return null;
+            final MusicRemoteStream? s = await resolver.resolve(
+              MusicPlayItem(
+                trackUid: row.trackUid,
+                path: row.path,
+                title: row.title,
+                sourceId: row.sourceId,
+              ),
+            );
+            return s == null
+                ? null
+                : (url: Uri.parse(s.url), headers: s.headers);
+          },
+          // 客户端请这台 host 重新匹配 / 绑定 MV（design-imusic-q9）：host 用自己的 MV 服务对自己的
+          // 文件跑；在线搜索受这台 host 自己的 YouTube 合规门约束。
+          videoMatcher: AppMusicHostVideoMatcher(
+            () => MusicVideoService(database: database),
+            online: () => isYoutubeMusicSourceAvailable,
+          ),
+        ),
+      ),
+    ],
     // 对端点名「给这个视频补字幕」：与刮削后自动补同一个服务（运行时随下载管线
     // 起停，每次现取）。
     videoSubtitleBackfill: (String videoId, {String? language}) =>
@@ -1338,6 +1385,9 @@ class AppModel
       onlineMangaReader: InterconnectOnlineMangaHostReader(
         onlineMangaLibraryService,
       ),
+      // 在线源条目跨设备同步（拍板台 mY5VWg1nD-）：对端交来的清单并进本机库，
+      // GET 时附上本机自己的清单。
+      onlineLibraryParticipant: AppOnlineLibraryParticipant(database),
       refreshDictionaryCache: () async {
         // host 侧（互联对端上传/删除词典）直接改 DB，Dart 侧内存 cache 不会自己
         // 跟上：不先 loadFromDb，_rebuildDictPathsCacheAsync 读的还是旧列表，刚被
@@ -2406,7 +2456,8 @@ class AppModel
               );
             }());
           },
-          // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
+          // 媒体会话与音乐 / 后台视频互斥（音乐模块 §7.5、拍板台 42UUu_kcwD-media）：
+          // 会话归别人时，锁屏 / 耳机键不发给有声书。
           controlStreams: AudioControlStreams(
             playIntentStream: audioCtrl.streamFor(
               audioCtrl.playIntentStream,
@@ -2431,6 +2482,8 @@ class AppModel
           // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
           database: () => isDatabaseReady ? database : null,
           studyIdleTimeout: () => readingIdleTimeout,
+          // 与音乐 / 后台视频争同一个系统媒体会话：后开播的认领，被抢的暂停。
+          mediaSeat: audioCtrl.seat(MediaSessionOwner.audiobook),
         )
         ..skipActionSeconds = (() =>
             ReaderFushiSource.instance.skipActionSeconds)
@@ -2468,6 +2521,17 @@ class AppModel
     musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
     // 曲库 / 本地歌单里的服务器曲目（v149）：起播 / 取封面的地址按当前服务器配置现算。
     musicServerBindingLoader ??= () => loadMusicServerBindings(this);
+    // 互联共享音乐库（设计 2026-11-23）：已配对 host 的曲库按服务器接进来；host 曲目起播时才
+    // 签票取流，封面经同一条钉扎通道取。
+    final InterconnectMusicHosts musicHosts =
+        InterconnectMusicHosts.instance ??= InterconnectMusicHosts(
+          () => SyncRepository(database),
+          // 与服务器曲库同一个「码率上限」设置：设了就请 host 转码（design-imusic-q6）。
+          maxBitrateKbps: () => musicServerBitrateLimit(
+            isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 0,
+          ),
+        );
+    musicFushiHostTrackOpener ??= musicHosts.openTrackPath;
     // 服务器曲目没随播放项带来的响度（音乐库 / 歌单还原的、Jellyfin 的专辑增益）起播时补查。
     // 服务器也没有时用客户端测的（离线副本的 sidecar / v176 测量列，见
     // music_server_loudness_measurer.dart）。
@@ -2668,6 +2732,17 @@ class AppModel
           durationMs: durationMs,
           lyrics: lyrics,
         );
+    // 互联 host 曲目的离线副本：host 上生效的那份歌词（design-imusic-q12）。
+    musicServerDownloadHostLyricsSaver ??=
+        ({
+          required String trackUid,
+          required int? durationMs,
+          required MusicHostLyrics? lyrics,
+        }) => musicLyrics.storeHostLyrics(
+          trackUid: trackUid,
+          durationMs: durationMs,
+          lyrics: lyrics,
+        );
     ExitFlushRegistry.instance.register(serverReporting.flush);
     _musicStudy = MusicStudyTracker(
       engine: engine,
@@ -2761,6 +2836,10 @@ class AppModel
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
+    // 互联 host 曲目：host 上生效的歌词为准，修改写回（design-imusic-q3）。
+    hostLyrics: InterconnectMusicHostLyrics(
+      () => InterconnectMusicHosts.instance,
+    ),
     // 视频库字幕管线以前写在音频旁的 `<主名>.ja.srt`：有 asr 行时不当 sidecar。
     isGeneratedSidecar: (String audioPath, String path) async =>
         isDefaultVideoSubtitlePipelineOutput(
@@ -7498,6 +7577,18 @@ class AppModel
 
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
+
+  /// YouTube 直播回放带聊天回放时开始播放就打开聊天栏，默认关（拍板台 zTedU_pOQF）。
+  bool get videoLiveChatAutoOpen => prefsRepo.videoLiveChatAutoOpen;
+
+  Future<void> setVideoLiveChatAutoOpen(bool value) =>
+      prefsRepo.setVideoLiveChatAutoOpen(value);
+
+  /// 聊天栏显示发送者，默认开（拍板台 zTedU_pOQF）。
+  bool get videoLiveChatShowAuthor => prefsRepo.videoLiveChatShowAuthor;
+
+  Future<void> setVideoLiveChatShowAuthor(bool value) =>
+      prefsRepo.setVideoLiveChatShowAuthor(value);
 
   /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
   bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;

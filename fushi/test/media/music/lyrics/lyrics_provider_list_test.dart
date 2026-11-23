@@ -1,6 +1,6 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 
 void main() {
   const LyricsProviderEntry a = LyricsProviderEntry(id: 'a', enabled: true);
