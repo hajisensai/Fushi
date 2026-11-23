@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show ProgressiveBlur;
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
@@ -209,10 +211,24 @@ class FushiMastheadGeometry {
     required this.actions,
     required this.primary,
     required this.secondary,
+    this.apple = false,
   });
 
   final bool compact;
   final double width;
+
+  /// Apple（Cupertino）设计系统的导航栏形态（2026-11 用户拍板，设计稿
+  /// `video_topbar_cupertino_design/v5.html`）：
+  /// - 窄窗（[compact]）= iOS 大标题导航栏：第一行只有前导 / 动作组 / 主按钮
+  ///   （恒 [stacked]），下面一行是 34pt 大标题 + 右侧一级分段控件；随滚动这一
+  ///   行收起，大标题缩成动作行正中的 17pt 小标题，一级分段随行滚走并淡出；
+  /// - 宽窗 = 常驻工具栏：标题、一级分段、动作同一行垂直居中，不随滚动收缩
+  ///   （调用方把进度钉在 0）。
+  final bool apple;
+
+  /// Apple 窄窗收起态小标题字号与展开态大标题字号（iOS 17pt / 34pt）。
+  static const double appleInlineTitleFont = 17;
+  static const double appleLargeTitleFont = 34;
 
   /// 主标题（页名 / 标题形态的一级切换）缩到下限仍放不进动作行，换到动作行
   /// 下面单独一行（[FushiPageTitleMetrics.minTitleScale]）。
@@ -238,15 +254,23 @@ class FushiMastheadGeometry {
 
   bool get hasSecondary => secondary.height > 0;
 
-  double titleScaleAt(double p) =>
-      _titleFontAt(compact: compact, p: p) /
-      _titleFontAt(compact: compact, p: 0);
+  double titleScaleAt(double p) {
+    if (apple) {
+      return compact
+          ? _lerp(1, appleInlineTitleFont / appleLargeTitleFont, p)
+          : 1;
+    }
+    return _titleFontAt(compact: compact, p: p) /
+        _titleFontAt(compact: compact, p: 0);
+  }
 
   /// 窄窗下没有页名时，一级切换就是这一行的主标题（标题形态的「书架 / 在线」
   /// 或返回键页的单独页名，都是页名字号）：随滚动与页名同比例收缩。
   bool get _switchIsTitle => compact && title.height <= 0;
 
-  double switchScaleAt(double p) => _switchIsTitle
+  double switchScaleAt(double p) => apple
+      ? 1
+      : _switchIsTitle
       ? titleScaleAt(p)
       : _switchFontAt(compact: compact, p: p) /
             _switchFontAt(compact: compact, p: 0);
@@ -256,7 +280,7 @@ class FushiMastheadGeometry {
 
   /// 主按钮缩放：收起态页名缩到 28 时主按钮（头像 / 导入）跟着从 48 缩到 40，
   /// 免得一颗大圆压过页名（2026-11-16 用户：顶栏比例不协调）。
-  double primaryScaleAt(double p) => primary.height <= 0
+  double primaryScaleAt(double p) => primary.height <= 0 || apple
       ? 1
       : _lerp(
           1,
@@ -274,7 +298,7 @@ class FushiMastheadGeometry {
   /// 页名的下边距：展开态贴底（大字压住整行）；收起态逐步抬到与动作组垂直
   /// 居中，小字页名不再坠在一排图标的下沿。
   double titleLiftAt(double p) {
-    if (title.height <= 0 || stacked) return 0;
+    if (title.height <= 0 || stacked || apple) return 0;
     final double centered =
         actionLiftAt(p) +
         actionRowExtentAt(p) / 2 -
@@ -282,8 +306,9 @@ class FushiMastheadGeometry {
     return math.max(0.0, centered) * p;
   }
 
-  /// 面板上内边距：桌面 26 → 10；手机的状态栏由外壳让开，只留 8。
-  double topPadAt(double p) => _metrics.topPadAt(p);
+  /// 面板上内边距：桌面 26 → 10；手机的状态栏由外壳让开，只留 8。Apple 导航栏
+  /// 紧贴外壳让开的状态栏 / 标题栏行，不另留。
+  double topPadAt(double p) => apple ? 0 : _metrics.topPadAt(p);
 
   /// 徽标 / 一级切换（无页名时）/ 动作组与主按钮的下边距。
   double badgeLiftAt(double p) => _metrics.badgeLiftAt(p);
@@ -307,8 +332,22 @@ class FushiMastheadGeometry {
   double get actionsPrimaryGap => _metrics.actionsPrimaryGap;
   static const double leadingGap = 8;
 
+  /// Apple 动作行的高度（iOS 导航栏 44 / macOS 工具栏 48）。
+  double get appleActionRowExtent => compact ? 44 : 48;
+
+  /// 第一行（动作行）的高度，供 Apple 收起态小标题居中。
+  double actionRowHeightAt(double p) => _actionRowHeightAt(p);
+
   /// 动作行（前导 / 动作组 / 主按钮）的高度。
   double _actionRowHeightAt(double p) {
+    if (apple) {
+      double h = appleActionRowExtent;
+      if (leading.height > 0) h = math.max(h, leading.height);
+      if (actions.height > 0) h = math.max(h, actions.height);
+      if (primary.height > 0) h = math.max(h, primary.height);
+      if (!compact) h = math.max(h, appleTitleRowExtent);
+      return h;
+    }
     double h = _metrics.minFirstRowExtentAt(p);
     if (leading.height > 0) h = math.max(h, leading.height + actionLiftAt(p));
     if (actions.height > 0) h = math.max(h, actions.height + actionLiftAt(p));
@@ -318,8 +357,14 @@ class FushiMastheadGeometry {
     return h;
   }
 
+  /// Apple 标题行（大标题 / 一级分段）展开态的高度。
+  double get appleTitleRowExtent => math.max(title.height, switcher.height);
+
   /// 标题段（页名 / 徽标 / 一级切换）的高度。
   double _titleRowHeightAt(double p) {
+    if (apple) {
+      return compact ? appleTitleRowExtent * (1 - p) : appleTitleRowExtent;
+    }
     double h = 0;
     if (title.height > 0) {
       h = math.max(h, title.height * titleScaleAt(p) + titleLiftAt(p));
@@ -337,12 +382,19 @@ class FushiMastheadGeometry {
   }
 
   /// 第一行（主标题单独一行时含动作行 + 标题行）的高度。
-  double firstRowHeightAt(double p) => stacked
+  double firstRowHeightAt(double p) => apple && compact
+      ? _actionRowHeightAt(p) + (stackGap + appleTitleRowExtent) * (1 - p)
+      : stacked
       ? _actionRowHeightAt(p) + stackGap + _titleRowHeightAt(p)
       : math.max(_actionRowHeightAt(p), _titleRowHeightAt(p));
 
   /// 前导 / 动作组 / 主按钮的底边（相对面板顶）。
-  double actionBottomAt(double p) => stacked
+  double actionBottomAt(double p) => apple
+      ? topPadAt(p) +
+            _actionRowHeightAt(p) -
+            (_actionRowHeightAt(p) - math.max(actions.height, primary.height)) /
+                2
+      : stacked
       ? topPadAt(p) + _actionRowHeightAt(p) - actionLiftAt(p)
       : topPadAt(p) + firstRowHeightAt(p) - actionLiftAt(p);
 
@@ -386,7 +438,8 @@ class FushiMastheadGeometry {
       other.switchBaseline == switchBaseline &&
       other.actions == actions &&
       other.primary == primary &&
-      other.secondary == secondary;
+      other.secondary == secondary &&
+      other.apple == apple;
 
   @override
   int get hashCode => Object.hash(
@@ -402,6 +455,7 @@ class FushiMastheadGeometry {
     actions,
     primary,
     secondary,
+    apple,
   );
 }
 
@@ -671,17 +725,39 @@ Widget _mastheadEnter(
 }
 
 /// 页名大字。换页名时旧字淡出、新字小幅上移淡入。
+/// Apple（Cupertino）库页导航栏标题字阶：窄窗 iOS 大标题 34pt / w700，宽窗
+/// macOS 工具栏标题 15pt / w700（设计稿 `video_topbar_cupertino_design/v5.html`）。
+TextStyle fushiAppleNavTitleStyle(
+  BuildContext context, {
+  required bool compact,
+}) {
+  final TextStyle base =
+      Theme.of(context).textTheme.displayLarge ?? const TextStyle();
+  return base.copyWith(
+    fontSize: compact ? FushiMastheadGeometry.appleLargeTitleFont : 15,
+    fontWeight: FontWeight.w700,
+    letterSpacing: compact ? 0.37 : 0,
+    height: compact ? 41 / 34 : 1.25,
+    color: appleColorsOf(context).label,
+  );
+}
+
 class FushiMastheadTitle extends StatelessWidget {
   const FushiMastheadTitle({
     required this.title,
     required this.compact,
     this.maxLines,
     this.tier = FushiPageTitleTier.page,
+    this.style,
     super.key,
   });
 
   final String title;
   final bool compact;
+
+  /// 覆盖字阶（Apple 库页导航栏用 [fushiAppleNavTitleStyle]）；null = 按
+  /// [tier] 取页头大字。
+  final TextStyle? style;
 
   /// 页名字阶档位（设置分类页用 [FushiPageTitleTier.section]）。
   final FushiPageTitleTier tier;
@@ -697,11 +773,8 @@ class FushiMastheadTitle extends StatelessWidget {
     // container：页名自己成一个语义节点。不成节点的话「书架」这个 label 会一路
     // 向上并进外壳的手势 / 焦点节点（与侧栏、页签争成兄弟合并组），换页或
     // 重排时框架复用这些共享节点就会断言 `!child.attached`。
-    final TextStyle base = fushiMastheadTitleStyle(
-      context,
-      compact: compact,
-      tier: tier,
-    );
+    final TextStyle base =
+        style ?? fushiMastheadTitleStyle(context, compact: compact, tier: tier);
     return Semantics(
       container: true,
       header: true,
@@ -1344,6 +1417,7 @@ class FushiMastheadPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (progress <= 0 || height <= 0) return const SizedBox.shrink();
+    if (backdropBlur && isGlassDesign(context)) return _buildApple(context);
     if (!backdropBlur) {
       return SizedBox(
         height: height,
@@ -1379,6 +1453,50 @@ class FushiMastheadPanel extends StatelessWidget {
     );
   }
 }
+
+extension on FushiMastheadPanel {
+  /// Apple（Cupertino）scroll edge（iOS 26 / 27 `.scrollEdgeEffectStyle`）：
+  /// 栏区页面底色 + 下沿 [kFushiAppleScrollEdgeFade] 渐隐，背后渐进模糊（库的
+  /// [ProgressiveBlur]，顶部最强、向下变清晰）。玻璃画质实色档（含系统降低
+  /// 透明度 / 增强对比度 / 墨水屏，见 [glassMaterialOf]）只渐隐、不模糊。
+  Widget _buildApple(BuildContext context) {
+    final bool blur = glassMaterialOf(context) != FushiGlassMaterial.off;
+    final Color page = fushiMastheadPageColor(context);
+    final double alpha = (blur ? 0.72 : 1) * progress;
+    final double total = height + kFushiAppleScrollEdgeFade;
+    return IgnorePointer(
+      child: SizedBox(
+        height: total,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            if (blur) ProgressiveBlur(maxSigma: 14 * progress),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: <double>[0, height / total, 1],
+                  colors: <Color>[
+                    page.withValues(alpha: alpha),
+                    page.withValues(alpha: alpha * 0.85),
+                    page.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Apple scroll edge 的底板从透明到满所需的滚动距离（逻辑 px）。
+const double kFushiAppleScrollEdgeDistance = 24;
+
+/// Apple scroll edge 栏下沿的渐隐带高度（逻辑 px）。
+const double kFushiAppleScrollEdgeFade = 26;
 
 /// 在系统字号缩放之上再乘一个放不下时的缩放（[FushiTitleFit.scale]）。
 @immutable

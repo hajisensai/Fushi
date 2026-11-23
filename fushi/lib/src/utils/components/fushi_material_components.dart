@@ -4936,6 +4936,11 @@ Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
     builder: (BuildContext anchorContext) => FushiIconButton(
       icon: FushiIcons.more,
       tooltip: t.common_more_actions,
+      // Apple：收进来的动作带角标（如待确认身份数）时 ⋯ 也亮红点，不让提醒随
+      // 收起消失（设计稿 v5）。M3E 不变。
+      badge:
+          isGlassDesign(anchorContext) &&
+          collapsed.any((FushiIconButton action) => action.badge),
       onTap: () => _showHeaderOverflowMenu(anchorContext, collapsed),
     ),
   );

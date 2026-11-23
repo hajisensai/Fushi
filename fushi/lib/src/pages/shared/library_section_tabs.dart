@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadRole,
         FushiMastheadSegmentedTabs,
         FushiMastheadSwitch,
+        fushiMastheadCompact,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -284,7 +285,21 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     T selectedValue,
     ValueChanged<T> onSelect,
   ) {
-    return switch (fushiMastheadRoleOf(context)) {
+    final FushiMastheadRole? role = fushiMastheadRoleOf(context);
+    if (role != null && isGlassDesign(context)) {
+      // Apple（Cupertino）导航栏：一级「媒体库 | 在线」与二级视图都是分段控件
+      // （设计稿 video_topbar_cupertino_design/v5.html）；窄窗二级铺满整行。
+      return _AppleSectionSegments<T>(
+        tabs: shownTabs,
+        selected: selectedValue,
+        onChanged: onSelect,
+        fill:
+            role == FushiMastheadRole.secondary &&
+            fushiMastheadCompact(context),
+        selectedIsCurrent: selectedIsCurrent,
+      );
+    }
+    return switch (role) {
       FushiMastheadRole.primary => FushiMastheadSwitch<T>(
         tabs: shownTabs,
         selected: selectedValue,

@@ -20,8 +20,12 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadPalette,
         FushiMastheadPrimaryButton,
         FushiMastheadRole,
+        fushiMastheadCompact,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
+    show FushiAppleFloatingSurface;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
@@ -117,7 +121,16 @@ Widget libraryImportChromeButton({
       // （重设计外壳）里是主按钮：indicator 底、圆角 20，悬停 / 选中弹到 28。
       // 页头大字先判（Apple 设计系统下同样生效，只换配色）。
       builder: (BuildContext context) =>
-          fushiMastheadRoleOf(context) == FushiMastheadRole.primary
+          fushiMastheadRoleOf(context) == FushiMastheadRole.primary &&
+              isGlassDesign(context)
+          // Apple 导航栏：强调色玻璃圆钮（窄窗 44 / 宽窗 36，设计稿 v5 `.prom`），
+          // 材质随玻璃画质档位（实色档实色圆）。
+          ? _AppleImportButton(
+              key: ValueKey<String>('$focusIdPrefix-import'),
+              selected: selected,
+              onTap: onTap,
+            )
+          : fushiMastheadRoleOf(context) == FushiMastheadRole.primary
           ? FushiMastheadPrimaryButton(
               selected: selected,
               builder:
@@ -151,6 +164,42 @@ Widget libraryImportChromeButton({
           : fushiFloatingLeading(button)!,
     ),
   );
+}
+
+/// Apple 库页导航栏的「导入」主按钮（见 [libraryImportChromeButton]）。
+class _AppleImportButton extends StatelessWidget {
+  const _AppleImportButton({
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final double extent = fushiMastheadCompact(context) ? 44 : 36;
+    return FushiPressScale(
+      child: FushiAppleFloatingSurface(
+        shape: const CircleBorder(),
+        tint: scheme.primary,
+        child: FushiIconButton(
+          icon: FushiIcons.libraryAdd,
+          tooltip: t.library_view_import,
+          selected: selected,
+          alwaysVisible: true,
+          onTap: onTap,
+          shapeBorder: const CircleBorder(),
+          backgroundColor: Colors.transparent,
+          enabledColor: scheme.onPrimary,
+          padding: EdgeInsets.all((extent - 22) / 2),
+          constraints: BoxConstraints.tightFor(width: extent, height: extent),
+        ),
+      ),
+    );
+  }
 }
 
 /// 一个视图的声明：显示名 + 内容构建器。
