@@ -1,0 +1,13 @@
+## BUG-5260 · 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠
+- **报告**：2026-11-22（只读审计，接 BUG-5258：用户拍板「每张卡跟它打开的页面一致」，首页速览必须显示首页 dashboard「继续」区显示的东西）
+- **真实性**：✅ 真 bug。首页速览与首页 dashboard 各写了一套「继续」编排：
+  - 速览 `_loadHome`（改前 `fushi/lib/src/pages/implementations/home_nav_peek.dart:1046`）只把本地书、本地漫画、`_loadVideos`、本地游戏四路用 `mergeNavPeekFeeds`（改前同文件 `:1028`）按时刻混排；
+  - dashboard `_computeContinueEntries`（改前 `fushi/lib/src/pages/implementations/home_dashboard_page.dart:3230`）另外还混排互联 host 远端补位（`_remoteContinue`，经 `withoutLocallyCoveredCollections` 与本地同名合集去重，改前 `:3426`）和用户自配服务器条目（Jellyfin / Emby / Plex、Audiobookshelf，`_serverContinue` 按 `serverContinueGates` 两道门过滤并让位给已入库的本地行，改前 `:3457`），游戏按主合集折叠成一张卡、标题取合集名（改前 `:3398`）。
+  - 结果：Jellyfin 剧看到一半、或 host 上读到一半的书，首页「继续」排第一，首页速览却显示更旧的本地条目或「还没有可继续的」；同合集几部游戏在速览里各占一格；速览的远端视频合集（来自视频页共享清单）不与本地同名合集去重。另外速览还把读完的书 / 只是最近播放过的视频混进「最近」，首页「继续」没有它们。
+- **[x] ① 已修复** — 编排抽成唯一纯函数 `composeHomeContinue`（`fushi/lib/src/pages/implementations/home_continue_compose.dart`）：输入 `HomeContinueInputs`（本地书 / 视频索引 / 游戏 / 合集映射 / 远端候选 / 服务器候选 / 两道门 / 模块开关），输出有序的 `HomeContinueUnit`（书 / 视频 / 游戏 / 远端 / 服务器五种单元）。dashboard 的 `_computeContinueEntries` 只剩「单元 → `_ContinueEntry`」的映射；合集归属键、视频合集续播目标、上锁判定、成员表拆分、观看时刻派生也挪成共享函数，dashboard 原方法委托过去。首页速览 `_loadHome` 按 dashboard 同一批表 / provider 现读输入，远端与服务器两路只读进程级 `RemoteContinueFeed.of(db).current` / `ServerContinueFeed.of(db).current`（悬停不发网络请求），调同一个 `composeHomeContinue`，`planHomeNavPeek` 取第一张作「继续」、接下来四张作「最近」。`mergeNavPeekFeeds` 删除（无其它调用方）。游戏速览（游戏 tab）不折叠，保持与游戏库页一致。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_continue_compose_test.dart`：远端 host 书进「继续」并按时刻排序；Jellyfin 条目门开进、门关不进；ABS 只认自己的门、书模块关着出局；游戏按合集折叠、标题取合集名、续玩目标取最近玩的；远端视频合集与本地同名合集去重（本地合集 Next-Up 推进到第 2 集）；关掉的模块先出局再取前 N；速览编排与 dashboard 同序（速览 = dashboard 前五张）；源码守卫钉住 dashboard 与速览都经 `composeHomeContinue`、速览只读 feed 现成结果。既有 dashboard「继续」测试（`home_dashboard_page_test` 的服务器条目 / 游戏合集收敛 / 书视频合集续读等）无回归。
+- **已知差异**（刻意保留）：
+  - 速览打开服务器条目后不强制重拉服务器「继续」（那是首页页面状态的节流取数；首页下次进入按 TTL 自己重取）；
+  - 首页从未在本进程加载过时，`RemoteContinueFeed` / `ServerContinueFeed` 为空，速览暂时只有本地条目（与桌面小组件同一取舍）；
+  - 漫画在首页速览里不再带「有声 / 加声音」入口（首页「继续」卡也没有；漫画 tab 速览照旧带）。
+- **备注**：未在桌面肉眼复测悬停速览。书的单模块选集正由并行分支统一（fix/book-peek-continue），合入时把 `home_continue_compose.dart` 的 `_bookUnits` 换成那边的共享选集函数即可。
