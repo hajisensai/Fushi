@@ -141,14 +141,30 @@ const sectionFn = extract(
   'createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts)',
 );
 
-// 派生判据必须独立于被测源码：这两条只用来保证我们抓到的确实是**唯一**那处
-// summary mousedown 监听，抓错了下面的行为断言就成了自证。
+// 派生判据必须独立于被测源码：这两条只用来保证我们抓到的确实是词典分组 <summary>
+// 上**唯一**那处 mousedown 监听，抓错了下面的行为断言就成了自证。
+// popup.js 里别的 <summary>（汉字卡分区，拍板 6uasoIUvSR）也有自己的 mousedown，
+// 所以只在 createGlossarySection 的函数体里数。
 const summaryMouseDownSites =
-  popupSrc.match(/summary\.addEventListener\('mousedown'/g) || [];
+  sectionFn.match(/summary\.addEventListener\('mousedown'/g) || [];
 assert.strictEqual(
   summaryMouseDownSites.length, 1,
-  'popup.js must register exactly one mousedown listener on the dict <summary>; '
+  'createGlossarySection must register exactly one mousedown listener on the dict <summary>; '
   + 'found ' + summaryMouseDownSites.length);
+
+// 其余 <summary> 的 mousedown 也必须掐掉主键的默认聚焦（同一个 macOS WKWebView 抢焦点
+// 问题，BUG-2447）：逐处取监听体，主键 preventDefault 一处不能少。
+const allSummaryMouseDownBodies =
+  popupSrc.match(/summary\.addEventListener\('mousedown', \(e\) => \{[\s\S]*?\n\s*\}\);/g) || [];
+assert.strictEqual(
+  allSummaryMouseDownBodies.length,
+  (popupSrc.match(/summary\.addEventListener\('mousedown'/g) || []).length,
+  'every <summary> mousedown listener must take (e) and be extractable');
+for (const body of allSummaryMouseDownBodies) {
+  assert.match(
+    body, /e\.button === 0\) e\.preventDefault\(\)/,
+    '<summary> mousedown must preventDefault the primary button: ' + body);
+}
 
 const timers = [];
 const context = {
