@@ -78,12 +78,18 @@ const Set<String> kMangaRenderManifestKeys = <String>{
   'pages',
 };
 
+/// 清单 `pages` 里每页指令 app 自己读写的键（`MangaPageDirective.toJson`）；别的键见
+/// [MangaRenderManifest.pageExtras]。
+const Set<String> kMangaPageDirectiveKeys = <String>{'hold', 'lead', 'src'};
+
 /// [raw] 里不在 [known] 中的键（外部管线写的未知字段），按原顺序；没有返回空表。
-Map<String, Object?> _unknownKeys(Map<Object?, Object?> raw, Set<String> known) =>
-    <String, Object?>{
-      for (final MapEntry<Object?, Object?> e in raw.entries)
-        if (e.key is String && !known.contains(e.key)) e.key as String: e.value,
-    };
+Map<String, Object?> _unknownKeys(
+  Map<Object?, Object?> raw,
+  Set<String> known,
+) => <String, Object?>{
+  for (final MapEntry<Object?, Object?> e in raw.entries)
+    if (e.key is String && !known.contains(e.key)) e.key as String: e.value,
+};
 
 /// 清单里的一句。
 class MangaRenderedLine {
@@ -254,8 +260,9 @@ class MangaRenderedLine {
 ///
 /// 外部管线导入的清单（`tts import`）会被 app 原地改写（单句重生成 / 换本地音频 / 按角色
 /// 重生成，拍板 pr4255a）。外部管线写进去、app 不认识的键原样保留：顶层的放
-/// [extras]，每行的按行身份放 [lineExtras]（不按下标——行会被拿掉、整卷重排）。存盘时
-/// 合并回去，同名时 app 自己的键优先；行已不在 [lines] 里，它的未知字段随之丢弃。
+/// [extras]，每行的按行身份放 [lineExtras]（不按下标——行会被拿掉、整卷重排），每页
+/// 指令的按页码放 [pageExtras]。存盘时合并回去，同名时 app 自己的键优先；行 / 页指令
+/// 已不在清单里，它的未知字段随之丢弃。
 class MangaRenderManifest {
   MangaRenderManifest({
     required this.pageCount,
@@ -265,7 +272,18 @@ class MangaRenderManifest {
     this.continuous = false,
     Map<String, Object?>? extras,
     Map<String, Map<String, Object?>>? lineExtras,
+    Map<int, Map<String, Object?>>? pageExtras,
   }) : pages = pages ?? <int, MangaPageDirective>{},
+       pageExtras = pageExtras == null
+           ? const <int, Map<String, Object?>>{}
+           : Map<int, Map<String, Object?>>.unmodifiable(
+               <int, Map<String, Object?>>{
+                 for (final MapEntry<int, Map<String, Object?>> e
+                     in pageExtras.entries)
+                   if (e.value.isNotEmpty)
+                     e.key: Map<String, Object?>.unmodifiable(e.value),
+               },
+             ),
        extras = extras == null
            ? const <String, Object?>{}
            : Map<String, Object?>.unmodifiable(extras),
@@ -305,6 +323,9 @@ class MangaRenderManifest {
   /// 行身份 → 该行 app 不认识的键（外部管线写的）。构造时只收 [lines] 里有的行；之后
   /// 从 [lines] 拿掉的行不再写回（见 [liveLineExtras]）。
   final Map<String, Map<String, Object?>> lineExtras;
+
+  /// 页码 → 该页指令 app 不认识的键（外部管线写的）。只写回 [pages] 里仍有指令的页。
+  final Map<int, Map<String, Object?>> pageExtras;
 
   /// [lineExtras] 里仍在 [lines] 中的那些（拿掉的句子不带到新清单）。
   Map<String, Map<String, Object?>> get liveLineExtras =>
@@ -366,7 +387,7 @@ class MangaRenderManifest {
     ],
     'pages': <String, Object?>{
       for (final MapEntry<int, MangaPageDirective> e in pages.entries)
-        '${e.key}': e.value.toJson(),
+        '${e.key}': _withExtras(e.value.toJson(), pageExtras[e.key]),
     },
   }, extras);
 
@@ -384,7 +405,7 @@ class MangaRenderManifest {
   }
 
   /// 解析；结构坏（缺页数、行页码越界 / 乱序）返回 null，不认识的行丢弃。顶层与每行
-  /// app 不认识的键收进 [extras] / [lineExtras]。
+  /// app 不认识的键收进 [extras] / [lineExtras]，每页指令的收进 [pageExtras]。
   static MangaRenderManifest? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final Object? count = raw['pageCount'];
@@ -405,6 +426,23 @@ class MangaRenderManifest {
       );
       if (extra.isNotEmpty) lineExtras[line.lineId] = extra;
     }
+    final Map<int, MangaPageDirective> directives = <int, MangaPageDirective>{};
+    final Map<int, Map<String, Object?>> pageExtras =
+        <int, Map<String, Object?>>{};
+    if (pages is Map) {
+      for (final MapEntry<Object?, Object?> e in pages.entries) {
+        final int? page = int.tryParse('${e.key}');
+        if (page == null) continue;
+        directives[page] = MangaPageDirective.fromJson(e.value);
+        if (e.value case final Map<Object?, Object?> d) {
+          final Map<String, Object?> extra = _unknownKeys(
+            d,
+            kMangaPageDirectiveKeys,
+          );
+          if (extra.isNotEmpty) pageExtras[page] = extra;
+        }
+      }
+    }
     int prev = 0;
     for (final MangaRenderedLine l in parsed) {
       if (l.page < prev || l.page >= count) return null;
@@ -417,12 +455,8 @@ class MangaRenderManifest {
       continuous: raw['cont'] == true,
       extras: _unknownKeys(raw, kMangaRenderManifestKeys),
       lineExtras: lineExtras,
-      pages: <int, MangaPageDirective>{
-        if (pages is Map)
-          for (final MapEntry<Object?, Object?> e in pages.entries)
-            if (int.tryParse('${e.key}') case final int page)
-              page: MangaPageDirective.fromJson(e.value),
-      },
+      pageExtras: pageExtras,
+      pages: directives,
     );
   }
 
