@@ -6219,6 +6219,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 曲目有本机 MV（绑定的 MV 或曲目本身是 MV 视频）时，歌词页与全屏歌词动画的背景放
+  /// MV 画面（静音，跟曲库音轨按偏移对齐），默认 true；false = 始终用动画背景。
+  bool get musicLyricsMvBackdrop =>
+      getPref('music_lyrics_mv_backdrop', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsMvBackdrop(bool value) async {
+    await setPref('music_lyrics_mv_backdrop', value);
+    notifyListeners();
+  }
+
   /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `pixi`（反馈
   /// l1ERGmWxjF）。只在用户手选时落库：没有行 = 跟着出厂默认走，所以默认从 `mesh`
   /// 改成 `pixi` 后，没手选过的老用户自动切过去，手选过 `mesh` 的保持不变。

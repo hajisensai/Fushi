@@ -469,6 +469,21 @@ SettingsDestination buildMusicDestination() {
       SettingsSection(
         title: t.music_lyrics_backdrop_title,
         items: <SettingsItem>[
+          // 有 MV 默认放 MV（MusicMvBackdropController）；关掉回到下面的动画背景。
+          SettingsSwitchItem(
+            id: 'music.lyrics_mv_backdrop',
+            title: t.music_lyrics_mv_backdrop_title,
+            subtitle: t.music_lyrics_mv_backdrop_hint,
+            icon: FushiIcons.video,
+            defaultValue: true,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicLyricsMvBackdrop,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.appModel.prefsRepo.setMusicLyricsMvBackdrop(value);
+              // 打开时补一轮后台匹配（只对没对过的）。
+              if (value) unawaited(c.appModel.musicVideoAutoMatch.schedule());
+            },
+          ),
           SettingsSegmentedItem<bool>(
             id: 'music.lyrics_backdrop_animate',
             title: t.music_lyrics_backdrop_motion_title,

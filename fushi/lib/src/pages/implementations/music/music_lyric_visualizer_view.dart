@@ -65,6 +65,7 @@ class MusicLyricVisualizerView extends StatefulWidget {
     this.onSeek,
     this.intensity = LyricVisualizerIntensity.normal,
     this.backgroundId,
+    this.mvBackdrop = false,
     this.subtitle = LyricVisualizerSubtitleSettings.defaults,
     this.theme,
     this.audio,
@@ -96,6 +97,10 @@ class MusicLyricVisualizerView extends StatefulWidget {
 
   /// 用户选的共享背景（`music_visualizer_background`）；null = 默认（歌词页背景）。
   final String? backgroundId;
+
+  /// 歌词页正在放 MV 背景（`MusicMvBackdropController.showing`）：用共享背景的样式不画
+  /// 背景，让下面的 MV 透上来（[lyricVisualizerBackgroundYieldsToMv]）。
+  final bool mvBackdrop;
 
   /// 全局字幕偏好（`music_visualizer_subtitle_*`），原样进样式 context。
   final LyricVisualizerSubtitleSettings subtitle;
@@ -252,11 +257,17 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
       // 背景层（folia 背景独立组合）：样式按参数请求，宿主画在样式下面。
       final LyricVisualizerBackgroundRequest backgroundRequest = entry
           .backgroundFor(tuning);
+      // 歌词页在放 MV 背景时共享背景让位，MV 从下面透上来。
       final LyricVisualizerBackgroundEntry? background =
-          resolveLyricVisualizerBackground(
+          lyricVisualizerBackgroundYieldsToMv(
             backgroundRequest,
-            widget.backgroundId,
-          );
+            mvShowing: widget.mvBackdrop,
+          )
+          ? null
+          : resolveLyricVisualizerBackground(
+              backgroundRequest,
+              widget.backgroundId,
+            );
       body = Stack(
         fit: StackFit.expand,
         children: <Widget>[

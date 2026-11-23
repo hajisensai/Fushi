@@ -103,6 +103,7 @@ import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyrics_mv_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_companion.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
@@ -398,6 +399,22 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   MusicLyricsService get _service => appModelNoUpdate.musicLyrics;
 
   late final MusicLyricsClock _clock = MusicLyricsClock(_engine);
+
+  /// MV 背景（有本机 MV 时默认盖在流体背景上）。它的显隐变了要重建：全屏歌词动画据此
+  /// 决定共享背景让不让位。
+  late final MusicMvBackdropController _mvBackdrop = MusicMvBackdropController(
+    engine: _engine,
+    clock: _clock,
+    database: appModelNoUpdate.database,
+    enabled: appModelNoUpdate.prefsRepo.musicLyricsMvBackdrop,
+  )..addListener(_onMvBackdrop);
+  bool _mvBackdropShowing = false;
+
+  void _onMvBackdrop() {
+    if (!mounted || _mvBackdrop.showing == _mvBackdropShowing) return;
+    setState(() => _mvBackdropShowing = _mvBackdrop.showing);
+  }
+
   late bool _showLyrics = widget.startWithLyrics;
 
   String? _loadedUid;
@@ -544,6 +561,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     unawaited(_generatedSub?.cancel());
     _releaseAnalysis();
     _aiTheme.dispose();
+    _mvBackdrop
+      ..removeListener(_onMvBackdrop)
+      ..dispose();
     _clock.dispose();
     super.dispose();
   }
@@ -765,6 +785,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         prefs.musicVisualizerIntensity,
       ),
       backgroundId: prefs.musicVisualizerBackground,
+      mvBackdrop: _mvBackdrop.showing,
       subtitle: LyricVisualizerSubtitleSettings(
         content: LyricVisualizerSubtitleContent.fromPref(
           prefs.musicVisualizerSubtitleContent,
@@ -1677,13 +1698,21 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     // 背景不再画有声书几何的「歌词底板」：音乐页布局与那套几何对不上，底板落在
     // 歌词区中间、什么都不托（用户截图里那块空的大深色面板）。流体背景两套设计
     // 系统共用（样式 / 动效 / 饱和度见 设置 › 音乐 › 歌词页背景）。
-    final Widget background = MusicLyricsBackdrop(
-      coverPath: item?.coverPath,
-      style: MusicLyricsBackdropStyle.fromPref(
-        appModel.prefsRepo.musicLyricsBackdropStyle,
-      ),
-      animate: appModel.prefsRepo.musicLyricsBackdropAnimate,
-      saturation: appModel.prefsRepo.musicLyricsBackdropSaturation,
+    // 有本机 MV 时 MV 画面盖在流体背景上（设置可关；开关在这里同步，切换推迟到微任务）。
+    _mvBackdrop.enabled = appModel.prefsRepo.musicLyricsMvBackdrop;
+    final Widget background = Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        MusicLyricsBackdrop(
+          coverPath: item?.coverPath,
+          style: MusicLyricsBackdropStyle.fromPref(
+            appModel.prefsRepo.musicLyricsBackdropStyle,
+          ),
+          animate: appModel.prefsRepo.musicLyricsBackdropAnimate,
+          saturation: appModel.prefsRepo.musicLyricsBackdropSaturation,
+        ),
+        MusicLyricsMvBackdrop(controller: _mvBackdrop),
+      ],
     );
     // 整页（歌词 + 同坐标系的查词弹窗）放在界面缩放中和层下：查词 WebView 要求
     // 净缩放 = 1，只包弹窗会和歌词选区的坐标对不上（同 reader_fushi_source）。
