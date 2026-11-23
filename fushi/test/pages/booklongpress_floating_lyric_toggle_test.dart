@@ -96,7 +96,9 @@ void main() {
     expect(srtActions, contains('_scrapeBookItem(item)'));
 
     expect(epubActions, contains('t.view_illustrations'));
-    expect(epubActions, contains('t.audiobook_import'));
+    // 「导入有声书」/「制作有声书」由 bookCardAudioWorkbenchActions 排（拍板
+    // Ew0AxAgycu，顺序与主次见 book_card_audio_actions_test.dart）。
+    expect(epubActions, contains('importAudiobook: canAttachAudiobook'));
     expect(epubActions, contains('t.profile_book_profile'));
     expect(epubActions, contains('t.book_css_editor_edit_css'));
     expect(epubActions, contains('floating_lyric_toggle_action'));

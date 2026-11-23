@@ -195,9 +195,15 @@ final class DialogWorkbenchAction extends DialogListAction {
     super.subtitle,
     this.loadStatus,
     this.children = const <DialogListAction>[],
+    this.emphasized = true,
   }) : super(slot: ItemMenuSlot.workbench, group: DialogActionGroup.content);
 
   final Future<String?> Function()? loadStatus;
+
+  /// true = 主色调容器（默认）；false = 同级并列的次要工作台行，画成中性底色。
+  /// 一张卡有两个同级工作台入口时（书卡「导入有声书」在上、「制作有声书」紧随，
+  /// 拍板 Ew0AxAgycu 方案 a）只有第一项用主色，其余用中性色，主次一眼可分。
+  final bool emphasized;
 
   /// 非空 = 工作台是一组动作（视频的「字幕与刮削」）：右键菜单里是子菜单行，
   /// [onPressed] 不用；宽屏对话框里展开成这些动作本身（一项都不丢）。
