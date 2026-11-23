@@ -178,6 +178,20 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: true,
           ),
+          // 拍板 EuOLprw_dV（选 b）：制卡时自己框截图范围（带上发帖人、时间等上下文）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_frame_on_mine',
+            title: t.screen_ocr_card_frame_on_mine,
+            subtitle: t.screen_ocr_card_frame_on_mine_hint,
+            icon: FushiIcons.crop,
+            visible: (SettingsContext c) => _prefs(c).screenOcrCardImage,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardFrameOnMine,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrCardFrameOnMine(value);
+              c.refresh();
+            },
+            defaultValue: false,
+          ),
           // 反馈 Eemf0HOZhj：桌面截屏识字的 OCR 引擎，和 AI 的「功能 → 提供商」一样默认
           // 跟随全局（设置 → 本机模型 → OCR 的引擎偏好），想单独改的在这里选。
           SettingsSegmentedItem<ScreenOcrEngineSetting>(

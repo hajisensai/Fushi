@@ -609,6 +609,8 @@ function parseMineResult(reply) {
             message,
             duplicate: reply.duplicate === true,
             queued: reply.queued === true,
+            // 拍板 EuOLprw_dV：用户在截屏识字的框选页点了「×」，自己放弃了这张卡。
+            cancelled: reply.cancelled === true,
             // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
             // （MineFailureNotice.settle）。这里就不能再说第二遍。
             hostReported: reply.hostReported === true,
@@ -6646,6 +6648,10 @@ function createEntryHeader(entry, idx) {
 
                 if (result.queued) {
                     queuedLocally = true;
+                    setMineState(false);
+                } else if (result.cancelled) {
+                    // 拍板 EuOLprw_dV：用户自己在框选页放弃了这次制卡——不是失败，不说
+                    // 「制卡失败」，也不回查 Anki（TODO-448），按钮放回可点的 '+'。
                     setMineState(false);
                 } else if (result.ankiConnect) {
                     // TODO-270 D: a freshly mined card with a real note id becomes
