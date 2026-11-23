@@ -46,7 +46,9 @@ void main() {
     );
     expect(
       appModel,
-      contains('triggerLookup(text,capturedContext:capturedContext,)'),
+      contains(
+        'triggerLookup(text,capturedContext:capturedContext,advancedMining:advancedMining,)',
+      ),
     );
   });
 

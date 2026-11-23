@@ -1282,6 +1282,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       ? 'window.__fushiCrossAppAudioHost = '
             '${CrossAppAudioCapture.instance.isDesktop};'
       : '';
+  // 拍板台 rf--UcsGta-overlay：app 外覆盖窗的「高级制卡」是转交主窗（点了会切到 Fushi
+  // 主窗口打开对话框），提示文案照实说。按钮门控 `window.advancedMiningEnabled` 按表面
+  // 走每帧 renderJs（global_lookup_render.dart），这里只给文案；app 内表面由
+  // dictionary_popup_webview 的固定块写自己的 i18nCtx。
+  final String advancedMiningTipJs = options.globalLookup
+      ? 'window.i18nCtx = ${jsonEncode(<String, String>{'advancedMining': t.popup_advanced_mining_open_in_app})};'
+      : '';
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
@@ -1380,6 +1387,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // Android 查词窗由 dictionary_popup_webview 的 in-app 固定块注入，其余宿主不注入。
     window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine, 'skip': t.popup_cross_app_audio_skip})};
     $crossAppAudioHostJs
+    $advancedMiningTipJs
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。

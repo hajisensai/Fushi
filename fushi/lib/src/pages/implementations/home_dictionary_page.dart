@@ -17,7 +17,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/base_tab_page.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
 import 'package:fushi/src/lookup/captured_context_sentences.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
     show AdvancedMiningSentenceSection;
@@ -245,6 +247,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   /// 结果区高级制卡选的前后句（与阅读器 / 视频同一份草稿语义），每次新请求清空。
   final MiningSentenceDraft _capturedDraft = MiningSentenceDraft();
+
+  /// 拍板台 rf--UcsGta-overlay：应用外查词覆盖窗点「高级制卡」转交过来的词条。结果区
+  /// 画完**这次请求**的结果（[_pendingAdvancedMiningGeneration] 仍是当前查词代）后为它
+  /// 打开高级制卡对话框；用户先改查了别的词就作废。
+  AdvancedMiningHandoff? _pendingAdvancedMining;
+  int _pendingAdvancedMiningGeneration = -1;
+
+  /// 正在问 popup.js 词条下标（一次往返）。期间又来的 `popupRendered` 记在
+  /// [_advancedMiningRenderedWhileBusy]，往返回来若是「还在渲染」就立刻再问一次——
+  /// 尾批画完的那次信号不能因为撞上往返就丢掉。
+  bool _advancedMiningLocating = false;
+  bool _advancedMiningRenderedWhileBusy = false;
 
   /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
   ///
@@ -482,6 +496,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _capturedContext = request.capturedContext;
     _capturedSourceText = request.text;
     _capturedDraft.clear();
+    _pendingAdvancedMining = request.advancedMining;
+    _pendingAdvancedMiningGeneration = -1;
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
       _runDesktopLookup(request);
     } else {
@@ -497,6 +513,77 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
     // force——显式查词意图，即便与上次同词也要重查，页面不叠加「同词不重查」去重。
     _search(request.text, autoRead: false, force: true);
+    // 转交来的高级制卡只认这一次查词的结果（_search 已同步铸出它的查词代）。
+    if (_pendingAdvancedMining != null) {
+      _pendingAdvancedMiningGeneration = _searchGeneration;
+    }
+  }
+
+  /// 结果区 WebView 每画完一次（`popupRendered`）都会来；有转交来的高级制卡在等时，
+  /// 确认画好的是那次请求的结果，再去定位词条、打开对话框。
+  void _onResultRendered() {
+    final AdvancedMiningHandoff? handoff = _pendingAdvancedMining;
+    if (handoff == null) return;
+    if (_advancedMiningLocating) {
+      _advancedMiningRenderedWhileBusy = true;
+      return;
+    }
+    if (_pendingAdvancedMiningGeneration != _searchGeneration) {
+      // 用户已改查别的词（或这次请求没能发出查词）：转交作废。
+      _pendingAdvancedMining = null;
+      return;
+    }
+    final DictionarySearchResult? result = _result;
+    final DictionaryPopupWebViewState? webView = _resultWebViewKey.currentState;
+    if (_isSearching ||
+        result == null ||
+        webView == null ||
+        !webView.hasRenderedResult(result)) {
+      return;
+    }
+    _advancedMiningLocating = true;
+    _advancedMiningRenderedWhileBusy = false;
+    unawaited(_openHandedOffAdvancedMining(handoff, webView));
+  }
+
+  Future<void> _openHandedOffAdvancedMining(
+    AdvancedMiningHandoff handoff,
+    DictionaryPopupWebViewState webView,
+  ) async {
+    bool retry = false;
+    try {
+      final int index = await webView.entryDomIndexFor(
+        expression: handoff.expression,
+        reading: handoff.reading,
+        matched: handoff.matched,
+      );
+      if (!mounted || !identical(_pendingAdvancedMining, handoff)) return;
+      if (index == kPopupEntryIndexStillRendering) {
+        // 尾批还在画：等它画完那次 popupRendered；往返途中已经来过就立刻再问。
+        retry = _advancedMiningRenderedWhileBusy;
+        return;
+      }
+      _pendingAdvancedMining = null;
+      if (index < 0) {
+        // 主窗结果里没有这个词条（两边词典配置不同步之类）。结果已经摆在眼前，
+        // 用户可以自己点；不猜下标，猜错就是制错卡。
+        ErrorLogService.instance.log(
+          'HomeDictionaryPage.advancedMiningHandoff',
+          'entry not found in the main-window result: $handoff',
+          StackTrace.current,
+        );
+        return;
+      }
+      await advancedMiningOpenerFor(
+        _resultWebViewKey,
+        lookupContext: () => _resultLookupContext,
+        sentenceSection: _capturedSentenceSection,
+      )?.call(index, handoff.matched, handoff.expression, handoff.reading);
+    } finally {
+      _advancedMiningLocating = false;
+      _advancedMiningRenderedWhileBusy = false;
+      if (retry && mounted) _onResultRendered();
+    }
   }
 
   void _onFocusChanged() {
@@ -2209,6 +2296,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                         ),
                         onScrolledToBottom: _allLoaded ? null : _loadMore,
                         onTopPullReleased: _clearSearchFromResultPull,
+                        onRendered: _onResultRendered,
                         // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
                         // 转发给外壳，底栏随下滑收起与库页 ListView 同一台状态机。
                         forwardScrollToHost: true,

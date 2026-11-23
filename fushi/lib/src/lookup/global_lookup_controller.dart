@@ -22,6 +22,7 @@ import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
 import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
@@ -355,6 +356,10 @@ class GlobalLookupController {
   // BUG-730). The card itself never renders it. Empty when no sentence was
   // captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
+  // 拍板台 rf--UcsGta-overlay：这次根查词「抓取上下文」切好的前后句（热键查词开了抓取
+  // 上下文才有）。唯一用途是卡上「高级制卡」转交主窗时随词带过去，让主窗的高级制卡
+  // 对话框能加减前后句。每次根查词重置（_lookupExternal）。
+  CapturedSentenceContext? _currentCapturedContext;
   OverlayMiningHandler? _currentMiningHandler;
   // 拍板 design-cross-app-audio-desktop：本次**应用外**查词那一刻钉住的最近一段其他 app
   // 声音（跨应用语音缓存开着才有；调用方没给的表面——应用内文字、galgame——为 null）。
@@ -1227,6 +1232,8 @@ class GlobalLookupController {
         autoRead: true,
         miningHandler: null,
         sentenceAudio: sentenceAudio,
+        // 卡上「高级制卡」转交主窗时带过去的前后句（拍板台 rf--UcsGta-overlay）。
+        capturedContext: sentences,
       );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
@@ -1626,6 +1633,7 @@ class GlobalLookupController {
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     Future<DictionarySearchResult>? pendingSearch,
     Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    CapturedSentenceContext? capturedContext,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1662,6 +1670,7 @@ class GlobalLookupController {
         if (!_isCurrentRoute) return false;
       }
       _currentSentence = sentence;
+      _currentCapturedContext = capturedContext;
       _currentMiningHandler = miningHandler;
       // 默认制卡路径据此带句子音频；带委托的表面（截屏识字、galgame、网页视频）由委托
       // 自己决定（截屏识字的委托拿的是同一份快照）。查词卡的「调整句子音频」面板两种
@@ -2107,6 +2116,7 @@ class GlobalLookupController {
     _originFloorLeft = 0;
     _originFloorTop = 0;
     _currentMiningHandler = null;
+    _currentCapturedContext = null;
     glog('overlayHidden: dismissed — reveal state reset');
     try {
       // Notify the route owner while its token is still valid. Galgame's owner
@@ -2385,6 +2395,14 @@ class GlobalLookupController {
     // BUG-2770：JS 带上指针种类，触摸 / 触控笔改看触摸半边
     // （enableTouchSwipeToClose，未设置时默认开）——瞬态覆盖窗是 windowed WebView2，
     // 触屏手指在这里就是真 touch 事件，此前却被鼠标默认值一并关掉。
+    // 拍板台 rf--UcsGta-overlay：卡上「高级制卡」→ 转交主窗查词页。覆盖窗本身画不了
+    // Flutter 对话框（失焦即自关，见 overlay_bridge_handlers.dart 文件头），所以把词条
+    // 身份 + 抓到的上下文交给主窗出口，主窗查完同一段文字后打开完整的高级制卡对话框。
+    // 不是 deferred 桥：popup.js 不等回包（原生层已即时回 null）。
+    if (handler == 'openAdvancedMining') {
+      _handOffAdvancedMining(message);
+      return;
+    }
     if (handler == 'topPullReleased') {
       final Object? args = message['args'];
       if (popupTopPullDismissAllowed(
@@ -3005,6 +3023,7 @@ class GlobalLookupController {
       // the children and must not be nudged inside the window-local frame, or
       // the runner's pinned root/bbox relationship would no longer hold.
       clampRootShellToWorkArea: route.source != 'galCard',
+      advancedMiningHandoff: _advancedMiningHandoffAvailable(route),
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
       entriesStore: entriesStore,
@@ -3063,6 +3082,56 @@ class GlobalLookupController {
   /// TODO-867 P3c C3 — insertion-order index (stack depth, 0 = root) of the frame
   /// with [frameId], or -1 when unknown. The host stamps tapOutside with the
   /// frame id; Dart maps it to the layer index for closeChildPopups.
+  /// 这张覆盖窗卡给不给「高级制卡」（转交主窗）入口（拍板台 rf--UcsGta-overlay）。
+  ///
+  /// 只给走默认制卡路径的卡（[_currentMiningHandler] 为 null：热键查词、悬浮字幕 /
+  /// 歌词行……）——主窗查词页制出来的卡与覆盖窗「+」同一条默认路径、同一句例句。
+  /// 带制卡委托的表面（galgame 台词浮窗、截屏识字、网页视频）会往卡里加游戏画面 /
+  /// 截图 / 视频片段，主窗重现不了，转交过去反而少东西，不给；游戏内查词卡
+  /// （`galCard`）同理。制卡模块关着时 popup.js 自己不渲染（「+」都没有）。
+  bool _advancedMiningHandoffAvailable(GlobalLookupRoute route) =>
+      route.source != 'galCard' && _currentMiningHandler == null;
+
+  /// 卡上点了「高级制卡」：收起覆盖窗，把这一层的查询串 + 上下文 + 词条身份交给主窗
+  /// 出口（[AppModel.queueExternalLookup]），主窗查词页唤到前台、查完后打开对话框。
+  void _handOffAdvancedMining(Map<String, Object?> message) {
+    final AppModel? model = _appModel;
+    final AdvancedMiningHandoff? handoff = AdvancedMiningHandoff.fromBridgeArgs(
+      message['args'],
+    );
+    if (model == null || handoff == null) {
+      glog('advancedMining handoff: ignored (model=${model != null})');
+      return;
+    }
+    // 入口门控之外的来源（理论上不会渲染按钮）一律不转交，免得主窗制出缺媒体的卡。
+    if (!_advancedMiningHandoffAvailable(GlobalLookupChannel.currentRoute)) {
+      glog('advancedMining handoff: ignored on a delegated-mining surface');
+      return;
+    }
+    final OverlayHandoffSource? source = resolveOverlayHandoffSource(
+      stack: _stack,
+      frameId: message['__frameId'] as String?,
+      captured: _currentCapturedContext,
+      sentence: _currentSentence,
+    );
+    if (source == null) {
+      glog('advancedMining handoff: source layer gone');
+      return;
+    }
+    glog(
+      'advancedMining handoff: ${source.text.length} chars, '
+      'neighbours=${source.capturedContext?.hasNeighbours ?? false}',
+    );
+    // 先收起卡片：主窗一到前台覆盖窗本来也会因失焦自关，这里显式关掉，状态在
+    // overlayHidden 里按正常关窗复位。
+    GlobalLookupChannel.hide();
+    model.queueExternalLookup(
+      source.text,
+      capturedContext: source.capturedContext,
+      advancedMining: handoff,
+    );
+  }
+
   int _layerIndexForFrameId(String frameId) {
     final List<GlobalLookupFrame> frames = _stack.frames;
     for (int i = 0; i < frames.length; i++) {

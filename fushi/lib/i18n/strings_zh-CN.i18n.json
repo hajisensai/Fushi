@@ -9138,6 +9138,7 @@
   "popup_advanced_mining_mosaic_none": "未打码",
   "popup_advanced_mining_mosaic_page_title": "打码",
   "popup_advanced_mining_mosaic_undo": "撤销",
+  "popup_advanced_mining_open_in_app": "高级制卡（在 Fushi 主窗口中打开）",
   "popup_advanced_mining_reset": "恢复为一键制卡的默认",
   "popup_advanced_mining_sentence_count": "已选 ${count} 句",
   "popup_advanced_mining_sentence_section": "句子",
