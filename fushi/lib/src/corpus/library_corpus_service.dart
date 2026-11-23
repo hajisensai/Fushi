@@ -63,6 +63,26 @@ abstract interface class CorpusNormalizer {
   Future<T?> runInBackground<T>(T Function(CorpusTermsFn terms) job);
 }
 
+/// 归一口径签名的单一真相：签名一变，语料服务就按新口径从歌词行重新分词。
+///
+/// - 词典：路径 + 目录修改时刻（同一路径重新导入 / 覆盖也算换了词典）。
+/// - [scanLength]：语料词元由原生 `tokenize_corpus` 按扫描窗口切分（反馈 ezCjUoU2QM，
+///   设置可改），窗口一变同一句的词元就变，不进签名的话旧窗口建的索引会和新窗口
+///   喂进来的文档混在一起。出厂值不进签名，签名与此前逐字相同（升级不触发全量重建）。
+@visibleForTesting
+String corpusNormalizerSignature({
+  required List<({String path, int modifiedMs})> dictionaries,
+  required int scanLength,
+}) {
+  return corpusFingerprint(<Object?>[
+    for (final ({String path, int modifiedMs}) d in dictionaries) ...<Object?>[
+      d.path,
+      d.modifiedMs,
+    ],
+    if (scanLength != FushiDicts.defaultScanLength) 'scan:$scanLength',
+  ]);
+}
+
 /// 生产实现：借当前 [FushiDicts] 句柄给后台 isolate（借用协议见
 /// [FushiDicts.borrowForBackground]），后台里一次 FFI 处理一整批句子。
 class FushiDictsCorpusNormalizer implements CorpusNormalizer {
@@ -75,10 +95,13 @@ class FushiDictsCorpusNormalizer implements CorpusNormalizer {
     if (!FushiDicts.isInitialized || FushiDicts.hasPendingDicts) return null;
     final List<String> paths = FushiDicts.instance.termDictionaryPaths;
     if (paths.isEmpty) return null;
-    // 路径 + 目录修改时刻：同一路径重新导入（覆盖）也算换了词典。
-    return corpusFingerprint(<Object?>[
-      for (final String path in paths) ...<Object?>[path, _modifiedMs(path)],
-    ]);
+    return corpusNormalizerSignature(
+      dictionaries: <({String path, int modifiedMs})>[
+        for (final String path in paths)
+          (path: path, modifiedMs: _modifiedMs(path)),
+      ],
+      scanLength: FushiDicts.scanLength,
+    );
   }
 
   static int _modifiedMs(String path) {
