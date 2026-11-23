@@ -2278,7 +2278,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 「继续阅读」候选：[hero] = 第一个候选，[others] = 其余候选（时刻倒序）；
   /// 没有候选为 null。选书与侧栏速览、首页「继续」区同一份
-  /// [selectMediaItemContinueCandidates]（BUG-5259）：合集按 Next-Up 推进（读完
+  /// [selectMediaItemContinueCandidates]（BUG-5278）：合集按 Next-Up 推进（读完
   /// 第 1 卷 → hero 是第 2 卷），散书只收「在读」，读完判据同阅读状态筛选
   /// （[_completedBookKeys]）。输入口径（BUG-777 / BUG-804）见 [_shelfCardLayout]
   /// 上方「UI v2：书架顶部继续阅读」那段注释。

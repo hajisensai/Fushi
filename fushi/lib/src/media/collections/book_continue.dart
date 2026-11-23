@@ -1,4 +1,4 @@
-/// 书 / 漫画「继续阅读」选书的**唯一判据**（BUG-5259）。
+/// 书 / 漫画「继续阅读」选书的**唯一判据**（BUG-5278）。
 ///
 /// 侧栏书 / 漫画速览（`home_nav_peek.dart` 的 `_loadBooks`）、书架 / 漫画库顶部
 /// 「继续阅读」（`reader_fushi_history_page.dart` 的 `_pickShelfContinue`）与首页
@@ -27,7 +27,7 @@ library;
 
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/book_media_identifier.dart';
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, MediaCollectionItemRow, MediaKind;
 import 'package:fushi_engine/media/collections/book_series_key.dart'
@@ -207,7 +207,7 @@ String bookCollectionEntryKey(
   required Map<String, String> epubUidByKey,
   required Map<String, int> primaryCollectionIdByEntry,
 }) {
-  final String? bookKey = ReaderFushiSource.parseBookKey(item.mediaIdentifier);
+  final String? bookKey = parseBookKeyOfMediaIdentifier(item.mediaIdentifier);
   if (bookKey != null) {
     final String uidKey = MediaKind.epub.compositeKey(
       epubUidByKey[bookKey] ?? bookKey,
@@ -218,9 +218,7 @@ String bookCollectionEntryKey(
         ? legacyKey
         : uidKey;
   }
-  final String? srtUid = ReaderFushiSource.parseSrtBookUid(
-    item.mediaIdentifier,
-  );
+  final String? srtUid = parseSrtBookUidOfMediaIdentifier(item.mediaIdentifier);
   if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
   return MediaKind.epub.compositeKey(item.mediaIdentifier);
 }
@@ -243,7 +241,7 @@ List<BookContinueCandidate<MediaItem>> selectMediaItemContinueCandidates({
   required Map<String, int> memberSortIndex,
 }) {
   String bookKeyOf(MediaItem item) =>
-      ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+      parseBookKeyOfMediaIdentifier(item.mediaIdentifier) ??
       item.mediaIdentifier;
   final Map<String, String> entryKeys = <String, String>{};
   String entryKeyOf(MediaItem item) =>
@@ -288,19 +286,13 @@ Future<Map<String, int>> loadPrimaryMemberSortIndex(
   return out;
 }
 
-/// 「继续阅读」卡上显示的书名：与书架卡同一 override 通道（编辑对话框改名后
-/// 同步显示新名，BUG-1018 / BUG-1108），三个消费点都用它，也是
-/// [BookContinueCandidate.volumeNumber] 的书名来源。
-String bookContinueDisplayTitle(MediaItem item) =>
-    ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item);
-
 /// 书的最近阅读时刻表（键 = 书稳定身份，见 `bookLastReadAtProvider`）：
 /// `reader_positions.updatedAt` 与该书各章 `manga_chapter_states.readAt` 取大。
 ///
 /// 在线漫画在作品页「标记此章及更早为已读」（或 Kavita 对齐已读）只写章状态表、
 /// 不写 `reader_positions`——书架进度（`onlineMangaShelfProgress`）已经认它是「在
 /// 读」，最近阅读时刻却是 0：速览旧实现按「时刻 > 0」过滤把它整个丢掉，而首页
-/// 照样列出（BUG-5259 G5）。章状态的键也是书 uid，与位置表同一键空间。
+/// 照样列出（BUG-5278 G5）。章状态的键也是书 uid，与位置表同一键空间。
 Map<String, int> mergeMangaChapterReadRecency({
   required Map<String, int> readerPositionUpdatedAt,
   required Iterable<({String bookUid, int? readAt})> chapterStates,

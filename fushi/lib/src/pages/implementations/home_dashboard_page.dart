@@ -3216,7 +3216,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     Set<String> completedBookKeys,
   ) {
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
-    // 书 / 漫画：与侧栏速览、书架「继续阅读」同一份选书（BUG-5259，
+    // 书 / 漫画：与侧栏速览、书架「继续阅读」同一份选书（BUG-5278，
     // [selectMediaItemContinueCandidates]）——合集按 Next-Up 推进（读完第 1 卷 →
     // 第 2 卷，整套读完或一卷没开读不出卡），散书只收「在读」。
     for (final BookContinueCandidate<MediaItem> c

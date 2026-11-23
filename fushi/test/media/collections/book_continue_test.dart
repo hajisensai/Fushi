@@ -9,7 +9,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show filterShelfEntriesByMangaSplit;
 import 'package:fushi_core/fushi_core.dart' show MediaCollectionRow;
 
-/// BUG-5259：侧栏书 / 漫画速览、书架 / 漫画库顶部「继续阅读」与首页「继续」区
+/// BUG-5278：侧栏书 / 漫画速览、书架 / 漫画库顶部「继续阅读」与首页「继续」区
 /// 各有一套选书，同一时刻给出三个答案。三处现在都只经
 /// [selectMediaItemContinueCandidates]；这里钉住它的口径与速览编排。
 MediaItem _book(

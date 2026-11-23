@@ -265,7 +265,7 @@ String? bookNavPeekSeriesCue(
   return candidate.isSeries ? collectionName : null;
 }
 
-/// 书 / 漫画速览的编排（纯函数，BUG-5259）：「继续」= 继续阅读第一项（与书架 /
+/// 书 / 漫画速览的编排（纯函数，BUG-5278）：「继续」= 继续阅读第一项（与书架 /
 /// 漫画库顶部「继续阅读」主卡同一份 [selectBookContinueCandidates] 结果）；
 /// 「最近」= 其余继续阅读候选，再接最近读过的其它条目（按合集折叠，已在继续阅读
 /// 里的合集 / 散书不再重复）。只看本机书架（与它打开的库页一致，不混互联远端）。

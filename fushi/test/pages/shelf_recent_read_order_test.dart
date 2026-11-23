@@ -146,7 +146,7 @@ void main() {
       );
     });
 
-    // BUG-5259 G5：在线漫画只在作品页「标记已读」过的章不写 reader_positions，
+    // BUG-5278 G5：在线漫画只在作品页「标记已读」过的章不写 reader_positions，
     // 时刻表要并进章 readAt，且标记后（经 fushiBooksProvider 转手）即时失效重算。
     test('并进章 readAt（取大）；标记章已读后时刻表即时失效', () async {
       await db.upsertReaderPosition(
