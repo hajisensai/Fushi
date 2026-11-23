@@ -9167,6 +9167,7 @@
   "profile_delete_srs_backed_up": "配置已删除，复习数据已备份到 $path",
   "profile_delete_srs_backup_failed": "复习数据备份失败，配置未删除。",
   "profile_delete_srs_impact": "它的复习数据也会一起删除：$cards 张卡、$reviews 条复习记录。删除前会先在本机自动备份。",
+  "profile_delete_srs_unavailable": "复习库现在打不开，没法先备份这个配置的复习数据，所以暂时不能删除。请先到复习页完成升级或查看原因，再来删除。",
   "profile_export": "导出",
   "profile_export_failed": "导出失败",
   "profile_follow_default_current": "跟随默认（$name）",

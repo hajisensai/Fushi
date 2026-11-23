@@ -9167,6 +9167,7 @@
   "profile_delete_srs_backed_up": "Profile deleted. Its review data was backed up to $path",
   "profile_delete_srs_backup_failed": "Couldn't back up the review data, so the profile was not deleted.",
   "profile_delete_srs_impact": "Its review data will be deleted too: $cards cards and $reviews review records. A backup is saved on this device first.",
+  "profile_delete_srs_unavailable": "The review library can't be opened right now, so this profile's review data can't be backed up first and the profile can't be deleted yet. Open Review to finish the upgrade or see what's wrong, then try again.",
   "profile_export": "Esporta",
   "profile_export_failed": "Esportazione fallita",
   "profile_follow_default_current": "Segue il predefinito ($name)",

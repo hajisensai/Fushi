@@ -785,6 +785,10 @@ Future<Object?> _deleteProfile(OpContext context, CtlCall call) async {
   final ProfileDeletionOutcome? outcome;
   try {
     outcome = await viewModel.deleteProfile(target.id);
+  } on ProfileDeletionSrsUnavailableException catch (e) {
+    throw CtlFailure.rejected(
+      '复习库打不开（先到复习页完成升级或查看原因），没法先备份复习数据，未删除「${target.name}」：${e.cause}',
+    );
   } on ProfileDeletionBackupException catch (e) {
     throw CtlFailure.rejected('复习数据备份失败，未删除「${target.name}」：${e.cause}');
   }
