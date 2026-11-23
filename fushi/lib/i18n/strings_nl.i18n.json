@@ -7206,7 +7206,7 @@
   "mining_audio_follow_playback_speed": "Zinsaudio afstemmen op afspeelsnelheid",
   "mining_audio_follow_playback_speed_hint": "Wanneer het luisterboek sneller of langzamer dan 1× speelt, wordt de zinsaudio op de kaart naar dezelfde snelheid uitgerekt met behoud van de toonhoogte. Geldt voor mining uit luisterboeken; TTS-woordaudio op kaarten volgt de snelheid van de reservestem.",
   "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
-  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+  "mining_audio_follow_playback_volume_hint": "Sentence audio on song, audiobook, audio manga and video cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Audio-marge vóór de zin",
   "mining_audio_head_pad_hint": "Extra audio die vóór het begin van de ondertitel wordt bewaard, zodat de eerste lettergreep niet wordt afgekapt. Loopt nooit door in de vorige regel.",
   "mining_audio_pad_readout": "${ms} ms",

@@ -76,6 +76,7 @@ Future<String?> _okAudio({
   String audioBitrate = '64k',
   String? tlsPinSha256,
   Map<String, String> httpHeaders = const {},
+  double? gainDb,
 }) async => outputPath;
 
 /// YouTube 的分离音频轨是远端 http(s)，引擎会先走 range 物化（TODO-1314）。默认物化器

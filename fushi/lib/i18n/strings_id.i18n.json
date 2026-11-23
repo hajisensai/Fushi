@@ -7206,7 +7206,7 @@
   "mining_audio_follow_playback_speed": "Sesuaikan audio kalimat dengan kecepatan putar",
   "mining_audio_follow_playback_speed_hint": "Saat buku audio diputar lebih cepat atau lebih lambat dari 1×, audio kalimat pada kartu direntangkan waktunya ke kecepatan yang sama dengan nada dipertahankan. Berlaku untuk mining buku audio; audio kata TTS pada kartu mengikuti kecepatan suara cadangan.",
   "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
-  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+  "mining_audio_follow_playback_volume_hint": "Sentence audio on song, audiobook, audio manga and video cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Bantalan audio sebelum kalimat",
   "mining_audio_head_pad_hint": "Audio tambahan dipertahankan sebelum subtitel mulai, agar suku kata pertama tidak terpotong. Tidak pernah masuk ke baris sebelumnya.",
   "mining_audio_pad_readout": "${ms} ms",

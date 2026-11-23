@@ -156,6 +156,77 @@ void main() {
         reason: '没有播放器',
       );
     });
+
+    test('视频：libmpv 0～100+ 立方曲线；网页后端 HTML video 线性 v/100', () {
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: 50,
+          webBackend: false,
+        ),
+        closeTo(-18.06, 0.01),
+      );
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: 150,
+          webBackend: false,
+        ),
+        closeTo(10.57, 0.01),
+        reason: 'mpv 音量上限 150 / 200 时可放大',
+      );
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: 50,
+          webBackend: true,
+        ),
+        closeTo(-6.02, 0.01),
+      );
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: 100,
+          webBackend: false,
+        ),
+        closeTo(0, 1e-9),
+      );
+    });
+
+    test('视频：静音（音量 0）不跟随；开关关 / 没有播放器 → null', () {
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: 0,
+          webBackend: false,
+        ),
+        0,
+      );
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: 0,
+          webBackend: true,
+        ),
+        0,
+      );
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: false,
+          volume: 50,
+          webBackend: false,
+        ),
+        isNull,
+      );
+      expect(
+        videoMiningClipGainDb(
+          followPlayback: true,
+          volume: null,
+          webBackend: false,
+        ),
+        isNull,
+      );
+    });
   });
 
   group('偏好层', () {
@@ -207,6 +278,34 @@ void main() {
       );
       expect(src, contains('volume: _audiobookController?.volume'));
       expect(src, contains('gainDb: sentenceAudioGainDb,'));
+    });
+
+    test('视频制卡：开关 + 播放器音量（静音按 0）→ 请求的 audioGainDb', () {
+      final String src = File(
+        'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+      ).readAsStringSync();
+      expect(src, contains('videoMiningClipGainDb('));
+      expect(
+        src,
+        contains('followPlayback: appModel.miningAudioFollowPlaybackVolume'),
+      );
+      expect(
+        src,
+        contains('volume: controller.muted ? 0 : controller.requestedVolume'),
+      );
+      expect(src, contains('webBackend: controller.isWebBackend'));
+      expect(src, contains('audioGainDb: audioGainDb,'));
+    });
+
+    test('有声漫画制卡：朗读中的播放器音量，否则本卷记住的有声音量', () {
+      final String src = File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync();
+      expect(src, contains('audiobookMiningClipGainDb('));
+      expect(src, contains('liveVolume: miningAudioVolume,'));
+      expect(src, contains(').readVolume(widget.bookKey)'));
+      expect(src, contains('curve: audiobookPlaybackVolumeCurve,'));
+      expect(src, contains('gainDb: gainDb,'));
     });
 
     test('TtsChannel.extractAudioSegment 透传 gainDb', () {

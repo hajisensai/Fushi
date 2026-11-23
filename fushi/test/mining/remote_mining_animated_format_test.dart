@@ -255,6 +255,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async => null;
 
     test('format: avif → 产出 .avif，结果带回 avif', () async {

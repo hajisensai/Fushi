@@ -66,6 +66,7 @@ class _Spy {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     calls.add('audio');
     return outputPath;

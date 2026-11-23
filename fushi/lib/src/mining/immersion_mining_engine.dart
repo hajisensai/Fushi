@@ -89,6 +89,8 @@ typedef AudioExtractor =
       String audioBitrate,
       String? tlsPinSha256,
       Map<String, String> httpHeaders,
+      // 片段整体增益（dB）：[ImmersionMiningRequest.audioGainDb]，null = 原始电平。
+      double? gainDb,
     });
 
 /// 句子音频取中置声道前确认声道布局（默认 [probeAudioStreamChannelLayout]）。
@@ -416,6 +418,7 @@ class ImmersionMiningEngine {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const <String, String>{},
+    double? gainDb,
   }) => extractAudioSegmentViaFfmpeg(
     inputPath: inputPath,
     startMs: startMs,
@@ -429,6 +432,7 @@ class ImmersionMiningEngine {
     tlsPinSha256: tlsPinSha256,
     httpHeaders: httpHeaders,
     frontCenterOnly: true,
+    gainDb: gainDb,
   );
 
   static Future<bool> _defaultSnapshotAudioVerifier({
@@ -995,6 +999,8 @@ class ImmersionMiningEngine {
         req.remoteAudioClipper == null &&
         // 中置声道要经 `pan` 滤镜重编码，不能把原音轨直接搬进片段。
         !req.audioFrontCenter &&
+        // 跟随播放音量（d7mXlstcv9）要经 `volume` 滤镜重编码，同理。
+        buildFfmpegVolumeFilter(req.audioGainDb) == null &&
         (selectedAudio != null || req.audioStreamCount == 1);
     Object? audioError;
     StackTrace? audioStack;
@@ -1279,7 +1285,14 @@ class ImmersionMiningEngine {
     }
     // host 端裁未命中（非互联 host / 老 host 无 clipaudio 端点 / 裁切失败）时回退现有
     // ffmpeg-over-URL 抽取（YouTube 物化 + 直连 ffmpeg 抽取，含 BUG-891 的 tls pin）。
-    if (audioPath != null) return audioPath;
+    if (audioPath != null) {
+      return _applyAudioGainToLocalClip(
+        req,
+        clipPath: audioPath,
+        compression: compression,
+        tempDir: tempDir,
+      );
+    }
 
     // TODO-1314（B5）：audio-only DASH 分离流（req.audioSource 非空且为远端 http = YouTube
     // 分离音频轨）的 ffmpeg HTTP `-ss` seek 会被 googlevideo 限速 stall→120s 超时→无句子音频
@@ -1320,6 +1333,7 @@ class ImmersionMiningEngine {
       // 的远端判定忽略；Fushi muxed 时 cutInput 是远端 https host，pin 生效。
       tlsPinSha256: req.mediaSourceTlsPinSha256,
       httpHeaders: req.mediaSourceHttpHeaders,
+      gainDb: req.audioGainDb,
     );
     // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
     if (materialized != null) {
@@ -1328,6 +1342,44 @@ class ImmersionMiningEngine {
       } catch (_) {}
     }
     return audioPath;
+  }
+
+  /// 互联 host 端裁回来的片段（[clipPath]，本机文件）补上跟随播放音量的增益
+  /// （[ImmersionMiningRequest.audioGainDb]）：host 的 `clipaudio` 端点只裁不调增益，
+  /// 新老 host 都一样，所以在本机对这几十 KB 的成品再走一遍同一个抽取器（`-af volume`），
+  /// 而不是另开一条只有新 host 才认的协议参数。不需要增益时原样返回 [clipPath]（现状）。
+  ///
+  /// 补增益失败不丢卡：片段本身是好的，只是没跟上音量——记诊断日志后用原片段落卡。
+  Future<String> _applyAudioGainToLocalClip(
+    ImmersionMiningRequest req, {
+    required String clipPath,
+    required MiningMediaCompression compression,
+    required String tempDir,
+  }) async {
+    if (buildFfmpegVolumeFilter(req.audioGainDb) == null) return clipPath;
+    String? failure;
+    final String? gained = await _audio(
+      inputPath: clipPath,
+      startMs: 0,
+      endMs: req.clipEndMs - req.clipStartMs,
+      outputPath:
+          '$tempDir/immersion_audio_gain.${immersionMiningAudioExtension()}',
+      audioChannels: compression.audioChannels,
+      audioBitrate: compression.audioBitrate,
+      onFailure: (String summary) => failure ??= summary,
+      gainDb: req.audioGainDb,
+    );
+    if (gained == null) {
+      engineLog.logDiagnostic(
+        'Anki.remoteAudioClipGain',
+        'gain ${req.audioGainDb} dB not applied: ${failure ?? 'unknown'}',
+      );
+      return clipPath;
+    }
+    try {
+      File(clipPath).deleteSync();
+    } catch (_) {}
+    return gained;
   }
 
   /// 中置声道 FC 的句子音频；取不到返回 null 并经 [onAudioSourceFallback] 说明原因。
@@ -1383,6 +1435,7 @@ class ImmersionMiningEngine {
           engineLog.logDiagnostic('Anki.frontCenterAudio', summary),
       tlsPinSha256: req.mediaSourceTlsPinSha256,
       httpHeaders: req.mediaSourceHttpHeaders,
+      gainDb: req.audioGainDb,
     );
     if (path == null) {
       onAudioSourceFallback?.call(

@@ -492,6 +492,7 @@ void main() {
                   String audioBitrate = '64k',
                   String? tlsPinSha256,
                   Map<String, String> httpHeaders = const <String, String>{},
+                  double? gainDb,
                 }) async {
                   audioCalls.add(outputPath);
                   return null;
@@ -568,6 +569,7 @@ void main() {
                   String audioBitrate = '64k',
                   String? tlsPinSha256,
                   Map<String, String> httpHeaders = const <String, String>{},
+                  double? gainDb,
                 }) async {
                   await File(outputPath).writeAsBytes(<int>[1, 2, 3]);
                   return outputPath;
@@ -690,6 +692,7 @@ void main() {
                     String audioBitrate = '64k',
                     String? tlsPinSha256,
                     Map<String, String> httpHeaders = const {},
+                    double? gainDb,
                   }) async {
                     audioCalls++;
                     expect(audioStreamIndex, tracks.index);
@@ -801,6 +804,7 @@ void main() {
                   String audioBitrate = '64k',
                   String? tlsPinSha256,
                   Map<String, String> httpHeaders = const {},
+                  double? gainDb,
                 }) async {
                   calls.add('audio');
                   await File(outputPath).writeAsBytes([1]);

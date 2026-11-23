@@ -103,6 +103,7 @@ void main() {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async => outputPath;
   Future<String?> nullAudio({
     required String inputPath,
@@ -116,6 +117,7 @@ void main() {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async => null;
   Future<String?> okFrame({
     required String inputPath,
@@ -248,6 +250,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioCalled = true;
         return outputPath;
@@ -305,6 +308,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       audioCalled = true;
       return outputPath;
@@ -516,6 +520,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioInput = inputPath;
         return outputPath;
@@ -584,6 +589,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioInput = inputPath;
         return outputPath;
@@ -745,6 +751,7 @@ void main() {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     onFailure?.call(
       'ffmpeg launch failed: executable=ffmpeg; '
@@ -829,6 +836,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       onFailure?.call(longCause);
       return null;
@@ -1070,6 +1078,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       calls.add('audio');
       return outputPath;

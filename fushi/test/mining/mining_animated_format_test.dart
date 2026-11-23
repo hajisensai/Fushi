@@ -405,6 +405,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async => outputPath;
 
     /// 只让 GIF 成功的抽取器 + 调用流水账。模拟「旧包捆绑的 ffmpeg 没有 libsvtav1」。

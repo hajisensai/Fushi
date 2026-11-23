@@ -55,6 +55,8 @@ import 'package:fushi/src/media/manga/manga_mining_crop.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart'
     show downloadMangaPanelModel, mangaPanelModelRevision;
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/mining_playback_volume_gain.dart'
+    show audiobookMiningClipGainDb, audiobookPlaybackVolumeCurve;
 import 'package:fushi_engine/media/manga/manga_page_crop.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart'
     show kMangaPanelModelManifest;
@@ -6013,10 +6015,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 在某一句里时，从那一句的音频裁出（[resolveMangaMiningAudioClip]），写进新临时目录。
   /// 其余情况（含在线直读章、裁片失败）返回 null，卡片照常做、不带句子音频——句子音频
   /// 不做 TTS 兜底（BUG-172）。参数都是调用方在第一个 await 前定格的快照。
+  ///
+  /// 句子音频跟随播放音量（d7mXlstcv9，与有声书卡同一开关同一套换算）：[liveVolume]
+  /// 是本卷正在朗读时播放器的音量；没在朗读时取本卷记住的有声音量（下次起播就是它，
+  /// 所听即所得）。开关关 → 原始电平。
   Future<({String path, Directory dir})?> _mangaSentenceAudio({
     required MokuroPayload? payload,
     required int pageIndex,
     required List<int> blocks,
+    required double? liveVolume,
   }) async {
     if (payload == null) return null;
     Directory? dir;
@@ -6037,6 +6044,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         imageTier: appModel.miningImageQuality,
         audioTier: appModel.miningAudioQuality,
       );
+      final bool followVolume = appModel.miningAudioFollowPlaybackVolume;
+      final double? gainDb = audiobookMiningClipGainDb(
+        followPlayback: followVolume,
+        volume: followVolume
+            ? liveVolume ??
+                  await AudiobookRepository(
+                    appModel.database,
+                  ).readVolume(widget.bookKey)
+            : null,
+        curve: audiobookPlaybackVolumeCurve,
+      );
       String? failure;
       final String? path = await TtsChannel.instance.extractAudioSegment(
         inputPath: clip.inputPath,
@@ -6048,6 +6066,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
         audioChannels: compression.audioChannels,
         audioBitrate: compression.audioBitrate,
+        gainDb: gainDb,
         onFailure: (String summary) => failure = summary,
       );
       if (path == null) {
@@ -6260,6 +6279,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         miningBlocks != null && miningBlocks.pageIndex == miningPageIndex
         ? miningBlocks.blocks
         : null;
+    // 句子音频跟随播放音量：本卷正在朗读时的播放器音量，同样在第一个 await 前定格。
+    final MangaAudioPlaybackDriver? readAloudAudio = _readAloud.audio;
+    final double? miningAudioVolume =
+        readAloudAudio != null &&
+            !readAloudAudio.isDisposed &&
+            readAloudAudio.bookKey == widget.bookKey
+        ? readAloudAudio.volume
+        : null;
     // 在线直读章不取成品音频（与 OCR「未下载不识别」一致）。
     final MokuroPayload? miningPayload = _streamingChapter ? null : _payload;
     final MangaCardImagePlan imagePlan = resolveMangaCardImagePlan(
@@ -6362,6 +6389,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           payload: miningPayload,
           pageIndex: miningPageIndex,
           blocks: miningSentenceBlocks,
+          liveVolume: miningAudioVolume,
         );
         sentenceAudioPath = audio?.path;
         sentenceAudioTempDir = audio?.dir;

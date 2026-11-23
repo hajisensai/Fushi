@@ -63,6 +63,8 @@ import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
 import 'package:fushi/src/mining/pending_mine_overwrites.dart';
+import 'package:fushi/src/mining/mining_playback_volume_gain.dart'
+    show videoMiningClipGainDb;
 import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/platform/platform_providers.dart';
