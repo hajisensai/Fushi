@@ -67,14 +67,10 @@ import 'package:fushi/src/media/panorama/panorama_library.dart'
     show PanoramaWork, PanoramaWorkKind;
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
 import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
-import 'package:fushi/src/pages/implementations/home_background_tasks_scope.dart';
+import 'package:fushi/src/pages/implementations/home_profile_chip.dart';
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
+    show FushiPageTitleMetrics;
 import 'package:fushi/src/pages/implementations/home_collage_widgets.dart';
-import 'package:fushi/src/sync/background_tasks_indicator.dart'
-    show
-        BackgroundTask,
-        BackgroundTasksGlyph,
-        activeBackgroundTasks,
-        backgroundTasksTooltip;
 import 'package:fushi/src/media/tracking/page/tracking_page.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
@@ -311,6 +307,11 @@ RecentBookGroupTarget recentBookGroupTarget({
 /// （切换激活 Profile 写 `active_profile_id`）一有写入就重读一次，名字真变了才
 /// 重建——不能只在 initState 读一次（2026-10-10 审查：改名 / 切换后首页头像仍是
 /// 旧首字，BUG-3249）。
+///
+/// 头像**只管账户**（拍板台 design-avatar-combo-placement，2026-11-23）：点击恒为
+/// 打开排行榜，不再随后台任务状态改成打开任务明细，也不再在外圈画同步进度——
+/// 同步 / 补刮的进度与失败回到外壳右下的「后台任务」按钮。有两份以上配置时，
+/// 头像右边跟一颗默认配置胶囊（[HomeProfileChip]）。
 class _HomeAvatarPill extends ConsumerStatefulWidget {
   const _HomeAvatarPill({required this.onPressed});
 
@@ -393,81 +394,10 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
   Widget build(BuildContext context) {
     final LeaderboardService service = ref.watch(leaderboardServiceProvider);
     _maybeRefreshSelf(service);
-    // 同步状态画在头像外圈（设计稿 H3）：外壳广播后台任务时跟着它重建。
-    final HomeBackgroundTasksScope? tasks = HomeBackgroundTasksScope.maybeOf(
-      context,
-    );
-    if (tasks == null) {
-      return _buildPill(context, service, const <BackgroundTask>[], null);
-    }
-    return ListenableBuilder(
-      listenable: tasks.listenable,
-      builder: (BuildContext context, Widget? _) =>
-          _buildPill(context, service, tasks.tasks(), tasks.onOpen),
-    );
+    return _buildPill(context, service);
   }
 
-  /// 头像本体 + 同步状态外圈：有任务在跑时外圈是分段进度环（不定态时转动），
-  /// 有失败时右上角红点。[extent] 是头像边长。
-  Widget _withSyncState(
-    BuildContext context,
-    Widget avatar,
-    double extent,
-    List<BackgroundTask> tasks,
-  ) {
-    final HomeAvatarSyncState state = homeAvatarSyncStateOf(tasks);
-    if (state == HomeAvatarSyncState.idle) return avatar;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool running = activeBackgroundTasks(tasks).isNotEmpty;
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.center,
-      children: <Widget>[
-        avatar,
-        // 外圈按头像四边各外扩 4 定位：Stack 的尺寸只由头像决定，不随父约束
-        // （工具栏 Row 里宽度无界）去撑大，也就不会把头像挤离中心。
-        if (running)
-          Positioned(
-            left: -4,
-            top: -4,
-            right: -4,
-            bottom: -4,
-            child: IgnorePointer(
-              child: BackgroundTasksGlyph(
-                key: const ValueKey<String>('home-avatar-sync-ring'),
-                tasks: tasks,
-                size: extent + 8,
-                showIcon: false,
-                color: scheme.primary,
-              ),
-            ),
-          ),
-        if (state == HomeAvatarSyncState.failed)
-          PositionedDirectional(
-            top: -1,
-            end: -1,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                key: const ValueKey<String>('home-avatar-sync-error'),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: scheme.error,
-                  border: Border.all(color: scheme.surface, width: 2),
-                ),
-                child: const SizedBox.square(dimension: 12),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildPill(
-    BuildContext context,
-    LeaderboardService service,
-    List<BackgroundTask> tasks,
-    VoidCallback? openTasks,
-  ) {
+  Widget _buildPill(BuildContext context, LeaderboardService service) {
     final LeaderboardSelf? self = service.self;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String name = self?.account.nickname ?? _profileName ?? '';
@@ -515,25 +445,13 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
               ),
             ),
           );
-    final HomeAvatarSyncState syncState = homeAvatarSyncStateOf(tasks);
-    // 有任务在跑 / 有失败时点头像先看后台任务（状态就画在头像上，点它看明细
-    // 是唯一顺手的去处）；没有时照旧打开排行榜。
-    final VoidCallback onTap =
-        openTasks != null && syncState != HomeAvatarSyncState.idle
-        ? openTasks
-        : widget.onPressed;
-    final String syncLabel = switch (syncState) {
-      HomeAvatarSyncState.idle => '',
-      HomeAvatarSyncState.running => backgroundTasksTooltip(tasks),
-      HomeAvatarSyncState.failed => t.sync_last_failed,
-    };
-    final String label = <String>[
-      if (syncLabel.isNotEmpty) syncLabel,
-      name.isEmpty ? t.leaderboard_title : name,
-    ].join('\n');
-    final Widget decorated = _withSyncState(context, avatar, size, tasks);
+    final VoidCallback onTap = widget.onPressed;
+    final String label = name.isEmpty ? t.leaderboard_title : name;
+    final Widget button;
+    final double chipExtent;
     if (masthead) {
-      return Semantics(
+      chipExtent = FushiPageTitleMetrics.of(context).primaryExtent;
+      button = Semantics(
         key: const ValueKey<String>('home-toolbar-avatar'),
         button: true,
         label: label,
@@ -558,16 +476,16 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                     onTap: onTap,
                     child: SizedBox.square(
                       dimension: extent,
-                      child: Center(child: decorated),
+                      child: Center(child: avatar),
                     ),
                   ),
                 ),
           ),
         ),
       );
-    }
-    if (apple) {
-      return Semantics(
+    } else if (apple) {
+      chipExtent = size;
+      button = Semantics(
         key: const ValueKey<String>('home-toolbar-avatar'),
         button: true,
         label: label,
@@ -578,32 +496,42 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
           child: FushiPlainButton(
             onPressed: onTap,
             borderRadius: BorderRadius.circular(size / 2),
-            child: decorated,
+            child: avatar,
+          ),
+        ),
+      );
+    } else {
+      chipExtent = size;
+      final Color container = fushiFloatingToolbarPalette(context).container;
+      button = Semantics(
+        key: const ValueKey<String>('home-toolbar-avatar'),
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: FushiTooltip(
+          message: label,
+          excludeFromSemantics: true,
+          child: FushiPressScale(
+            child: FushiFloatingPill(
+              color: container,
+              padding: const EdgeInsets.all(4),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onTap,
+                child: avatar,
+              ),
+            ),
           ),
         ),
       );
     }
-    final Color container = fushiFloatingToolbarPalette(context).container;
-    return Semantics(
-      key: const ValueKey<String>('home-toolbar-avatar'),
-      button: true,
-      label: label,
-      excludeSemantics: true,
-      child: FushiTooltip(
-        message: label,
-        excludeFromSemantics: true,
-        child: FushiPressScale(
-          child: FushiFloatingPill(
-            color: container,
-            padding: const EdgeInsets.all(4),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onTap,
-              child: decorated,
-            ),
-          ),
-        ),
-      ),
+    // 头像右边的默认配置胶囊（只有一份配置时不出现，也不留间距）。
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        button,
+        HomeProfileChip(extent: chipExtent, floating: !masthead && !apple),
+      ],
     );
   }
 }

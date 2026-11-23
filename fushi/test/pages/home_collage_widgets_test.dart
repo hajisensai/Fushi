@@ -1,10 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/home_tab.dart';
-import 'package:fushi/src/pages/implementations/home_background_tasks_scope.dart';
 import 'package:fushi/src/pages/implementations/home_collage_widgets.dart';
-import 'package:fushi/src/sync/background_tasks_indicator.dart'
-    show BackgroundTask;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -211,44 +207,7 @@ void main() {
     });
   });
 
-  group('H3 头像同步状态', () {
-    test('只有首页由头像承载后台任务（不挂右下 FAB）', () {
-      for (final HomeTab tab in HomeTab.values) {
-        expect(homeBackgroundTasksOnAvatar(tab), tab == HomeTab.home);
-      }
-    });
-
-    test('空 = idle，在跑 = running，有失败 = failed（失败优先）', () {
-      const BackgroundTask running = BackgroundTask(
-        id: 'sync-1',
-        icon: FushiIcons.sync,
-        line: 'Syncing',
-      );
-      const BackgroundTask failedDone = BackgroundTask(
-        id: 'sync-2',
-        icon: FushiIcons.sync,
-        line: 'Synced',
-        errors: <String>['boom'],
-        finished: true,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[]),
-        HomeAvatarSyncState.idle,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[running]),
-        HomeAvatarSyncState.running,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[running, failedDone]),
-        HomeAvatarSyncState.failed,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[failedDone]),
-        HomeAvatarSyncState.failed,
-      );
-    });
-
+  group('首页底部渐隐', () {
     test('底部渐隐：从底栏上沿开始淡，到底栏中线全透明', () {
       final LinearGradient g = homeBottomFadeGradient(height: 800, inset: 100);
       expect(g.stops, <double>[0, (800 - 100) / 800, (800 - 50) / 800]);

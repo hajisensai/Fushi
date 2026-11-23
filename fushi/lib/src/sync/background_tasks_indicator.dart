@@ -28,7 +28,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 export 'package:fushi/src/sync/background_task.dart';
 export 'package:fushi/src/sync/sync_background_activity.dart'
-    show hasActiveSyncTasks, syncBackgroundTasksListenable;
+    show
+        hasActiveSyncTasks,
+        hasUnseenSyncFailures,
+        syncBackgroundTasksListenable;
+export 'package:fushi/src/sync/sync_task_board.dart'
+    show acknowledgeFinishedSyncTasks;
 
 /// 首页外壳的「后台任务」入口（2026-11-03 顶栏让位）：常规同步、复习同步 / 旧文件
 /// 迁移、视频源补刮共用右下（MD3 手机叠在悬浮底栏 FAB 上方、Apple 进大标题行）的
@@ -198,6 +203,25 @@ class BackgroundTasksGlyph extends StatelessWidget {
             ),
           if (showIcon)
             FushiIcon(backgroundTasksIcon(tasks), size: iconSize, color: fg),
+          // 有一轮记下了失败（在跑或已结束、用户还没打开明细看过）：右上角红点，
+          // 一直提醒到用户打开明细（确认见 acknowledgeFinishedSyncTasks）。
+          if (showIcon && tasks.any((BackgroundTask t) => t.errors.isNotEmpty))
+            PositionedDirectional(
+              top: 0,
+              end: 0,
+              child: DecoratedBox(
+                key: const ValueKey<String>('background-tasks-error-dot'),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: theme.colorScheme.error,
+                  border: Border.all(
+                    color: theme.colorScheme.surface,
+                    width: 2,
+                  ),
+                ),
+                child: SizedBox.square(dimension: size * 0.24),
+              ),
+            ),
         ],
       ),
     );

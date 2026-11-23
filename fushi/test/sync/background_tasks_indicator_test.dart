@@ -137,6 +137,26 @@ void main() {
       );
     });
 
+    test('失败轮次结束后算「未看过的失败」，确认后移出任务表；在跑的不动', () {
+      final SyncTaskHandle failed = beginSyncTask(SyncActivityKind.fullSweep);
+      failed.error('boom');
+      failed.finish();
+      final SyncTaskHandle running = beginSyncTask(SyncActivityKind.singleBook);
+      expect(hasUnseenSyncFailures(), isTrue);
+      expect(hasActiveSyncTasks(), isTrue);
+
+      acknowledgeFinishedSyncTasks();
+      expect(hasUnseenSyncFailures(), isFalse, reason: '看过就不再提醒');
+      expect(syncTasks.value.map((SyncTask t) => t.id), <int>[
+        running.id,
+      ], reason: '在跑的那轮不因确认被移走');
+      expect(hasActiveSyncTasks(), isTrue);
+
+      running.finish();
+      expect(syncTasks.value, isEmpty, reason: '没出错的那轮结束直接移出');
+      expect(hasUnseenSyncFailures(), isFalse);
+    });
+
     test('常规同步还没有阶段 tick 时也有文字（BUG-1260）', () {
       beginSyncTask(SyncActivityKind.fullSweep);
       expect(syncBackgroundTasks().single.line, t.sync_progress_preparing);
@@ -155,6 +175,39 @@ void main() {
     expect(ring.values, <double?>[0.5, null]);
     expect(find.byIcon(FushiIcons.sync), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('有失败（含已结束）时右上角红点；没有失败不画', (WidgetTester tester) async {
+    const BackgroundTask failedDone = BackgroundTask(
+      id: 'sync-1',
+      icon: FushiIcons.sync,
+      line: 'Synced',
+      errors: <String>['boom'],
+      finished: true,
+    );
+    await tester.pumpWidget(
+      _host(const BackgroundTasksGlyph(tasks: <BackgroundTask>[failedDone])),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('background-tasks-error-dot')),
+      findsOneWidget,
+    );
+    expect(find.byType(FushiSegmentedProgressRing), findsNothing);
+    expect(find.byIcon(FushiIcons.sync), findsOneWidget);
+
+    await tester.pumpWidget(
+      _host(
+        const BackgroundTasksGlyph(
+          tasks: <BackgroundTask>[
+            BackgroundTask(id: 'a', icon: FushiIcons.sync, line: 'A'),
+          ],
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('background-tasks-error-dot')),
+      findsNothing,
+    );
   });
 
   testWidgets('没有任务时不画环', (WidgetTester tester) async {
