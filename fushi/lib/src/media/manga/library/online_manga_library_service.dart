@@ -158,32 +158,7 @@ class OnlineMangaLibraryService {
     );
     await _writeAtomic(placeholder, '{"pages":[]}');
 
-    String? coverPath;
-    final String? coverUrl = entry.series.coverUrl;
-    if (coverUrl != null && coverUrl.isNotEmpty) {
-      try {
-        final List<int> bytes = await adapter.fetchCover(entry, coverUrl);
-        // BUG-2496：未知魔数（源返回的 Cloudflare 拦截页 / HTML 错误页）直接不落盘，
-        // 不再回落成 `cover.jpg`——那种文件一到渲染层就是 `Invalid image data`。
-        final String? extension = _imageExtension(bytes);
-        if (extension == null) {
-          throw const CoverImageInvalidException(
-            'online manga cover is not PNG/WebP/GIF/JPEG',
-          );
-        }
-        final String coverFile = p.join(directory.path, 'cover$extension');
-        // 收口再查一次完整性（截断 JPEG/PNG）+ 原子写 + 驱逐解码缓存。
-        await writeCoverBytesAtomically(bytes: bytes, destPath: coverFile);
-        coverPath = p.basename(coverFile);
-      } on CoverImageInvalidException catch (e) {
-        ErrorLogService.instance.logDiagnostic(
-          'OnlineMangaLibraryService.cover',
-          e,
-        );
-      } on Object {
-        // 封面失败不能挡住「追这部作品」。作品页仍会经源的运行时按需取图。
-      }
-    }
+    final String? coverPath = await _fetchCoverInto(directory, entry);
 
     // 建行与它的全部副作用（侧车、互联对端墓碑、远端合集认领）只走这一个口，
     // 「重新入库」同用（OnlineMangaReshelf.reshelve）。
@@ -197,6 +172,58 @@ class OnlineMangaLibraryService {
       extractDir: directory.path,
       importedAt: DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  /// 经运行时取作品封面落进 [directory]，返回相对书目录的文件名；没有封面地址 /
+  /// 取图失败 / 不是图片返回 null（封面失败不挡入库，作品页仍会经运行时按需取图）。
+  Future<String?> _fetchCoverInto(
+    Directory directory,
+    OnlineMangaLibraryEntry entry,
+  ) async {
+    final String? coverUrl = entry.series.coverUrl;
+    if (coverUrl == null || coverUrl.isEmpty) return null;
+    try {
+      final List<int> bytes = await adapter.fetchCover(entry, coverUrl);
+      // BUG-2496：未知魔数（源返回的 Cloudflare 拦截页 / HTML 错误页）直接不落盘，
+      // 不再回落成 `cover.jpg`——那种文件一到渲染层就是 `Invalid image data`。
+      final String? extension = _imageExtension(bytes);
+      if (extension == null) {
+        throw const CoverImageInvalidException(
+          'online manga cover is not PNG/WebP/GIF/JPEG',
+        );
+      }
+      final String coverFile = p.join(directory.path, 'cover$extension');
+      // 收口再查一次完整性（截断 JPEG/PNG）+ 原子写 + 驱逐解码缓存。
+      await writeCoverBytesAtomically(bytes: bytes, destPath: coverFile);
+      return p.basename(coverFile);
+    } on CoverImageInvalidException catch (e) {
+      ErrorLogService.instance.logDiagnostic(
+        'OnlineMangaLibraryService.cover',
+        e,
+      );
+    } on Object {
+      // 封面失败不能挡住「追这部作品」。作品页仍会经源的运行时按需取图。
+    }
+    return null;
+  }
+
+  /// 书架行还没有封面时（跨设备同步来的条目只有描述符，拍板台 mY5VWg1nD-）经运行时
+  /// 补一张。刷新成功后调；已有封面不动，失败静默（下次刷新再试）。
+  Future<void> _backfillCover(
+    String bookKey,
+    OnlineMangaLibraryEntry entry,
+  ) async {
+    final EpubBookRow? row = await database.getEpubBook(bookKey);
+    if (row == null || (row.coverPath?.isNotEmpty ?? false)) return;
+    if (row.extractDir.isEmpty) return;
+    final String? cover = await _fetchCoverInto(
+      Directory(row.extractDir),
+      entry,
+    );
+    if (cover == null) return;
+    await (database.update(database.epubBooks)
+          ..where(($EpubBooksTable t) => t.bookKey.equals(bookKey)))
+        .write(EpubBooksCompanion(coverPath: Value<String?>(cover)));
   }
 
   /// 用一次刷新的结果覆盖库里描述符的**作品资料与章表**。
@@ -289,6 +316,7 @@ class OnlineMangaLibraryService {
       );
     }
     await _refreshSidecar(bookKey);
+    await _backfillCover(bookKey, written.entry);
     await _publishNewChapters(
       bookKey: bookKey,
       title: series.title,
