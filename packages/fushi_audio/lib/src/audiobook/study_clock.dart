@@ -113,6 +113,9 @@ class _OpenSegment {
   int chars = 0;
   int pages = 0;
 
+  /// 本段里在这个媒体上的查词次数（v178，见 [StudyClock.addLookup]）。
+  int lookups = 0;
+
   /// 有未落库的改动。写失败保持 true，下个 tick 用绝对值重写——重试不会翻倍。
   bool dirty = false;
 
@@ -179,6 +182,41 @@ void retireStudySegmentUids(Iterable<String> uids) {
 /// 测试用：清空退役登记（进程级全局，用例之间必须互不串味）。
 void debugClearRetiredStudySegmentUids() {
   _retiredStudySegmentUids.clear();
+}
+
+/// 本进程里**正在计时**的时钟（[StudyClock.start] 登记、[StudyClock.stop] /
+/// [StudyClock.detach] 摘除）。只给 [creditLookupToRunningStudyClock] 按媒体身份找
+/// 「这次查词发生在哪一段里」用；停着的时钟不在这里（停表 = 不在学习）。
+final Set<StudyClock> _runningStudyClocks = <StudyClock>{};
+
+/// 把一次查词记进 [mediaKind] / [mediaKey] 这个媒体**正在计时**的时钟的当前段
+/// （拍板台 4KOWK3c2mn 方案 b：查词与字数 / 时长同一小时粒度、同一行，编辑会话改
+/// 日期时随段平移，删会话时随段写零，同步走段的 uid LWW）。
+///
+/// 返回 false = 本进程里这个媒体没有在跑的时钟（手动暂停 / 切后台 / 浮窗进程 /
+/// 无书查词），调用方照旧记按天的 `lookup_mining_counters`。两处互斥，不双计。
+/// [mediaKind] 与 `lookup_mining_counters.source_type` 同值域（book / video / game /
+/// music），[mediaKey] 与计数表的 `book_key` 同一身份。
+bool creditLookupToRunningStudyClock({
+  required String mediaKind,
+  required String mediaKey,
+}) {
+  if (mediaKey.isEmpty) return false;
+  for (final StudyClock clock in _runningStudyClocks) {
+    if (clock._mediaKind == mediaKind &&
+        clock._mediaKey == mediaKey &&
+        clock.isRunning) {
+      clock.addLookup();
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 测试用：清空在跑时钟登记（进程级全局，用例之间必须互不串味）。
+@visibleForTesting
+void debugClearRunningStudyClocks() {
+  _runningStudyClocks.clear();
 }
 
 class StudyClock {
@@ -271,6 +309,10 @@ class StudyClock {
   _OpenSegment? _open;
   String? _cachedDeviceId;
 
+  /// 最近一次被封的段（[addLookup] 在空闲封段后把查词记回它）。只在本会话内有效，
+  /// [stop] / [detach] 清掉——下次起表是新的学习，不往旧段上记。
+  _OpenSegment? _lastSealed;
+
   /// 本会话开过的全部段（含已封的），按打开顺序。封段只丢 [_open] 引用，对象留在
   /// 这里给 [retractChars] / [retractPages] 从尾往前扣；封段时没有内容账的段摘掉
   /// （无可撤回，也让表不随空闲门反复封段无限长）。
@@ -353,6 +395,7 @@ class StudyClock {
     _tickStart = now;
     _lastTouch = now;
     _timer = Timer.periodic(_tick, (_) => unawaited(_onTimer()));
+    _runningStudyClocks.add(this);
     _trace('start accrual=${accrual.name} idle=${idleTimeout?.inSeconds}s');
   }
 
@@ -365,8 +408,10 @@ class StudyClock {
     final Timer? timer = _timer;
     _timer = null;
     timer?.cancel();
+    _runningStudyClocks.remove(this);
     _accrue(_now());
     _tickStart = null;
+    _lastSealed = null;
     final _OpenSegment? seg = _open;
     _open = null;
     if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
@@ -395,8 +440,10 @@ class StudyClock {
     final Timer? timer = _timer;
     _timer = null;
     timer?.cancel();
+    _runningStudyClocks.remove(this);
     _accrue(_now());
     _tickStart = null;
+    _lastSealed = null;
     final _OpenSegment? seg = _open;
     _open = null;
     if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
@@ -451,6 +498,45 @@ class StudyClock {
     _open!.dirty = true;
     _sessionPages += pages;
     _trace('+${pages}p → ${_describe(_open!)}');
+  }
+
+  /// 记一次查词到当前打开段（没有就以 0 时长开一段；v178）。只经
+  /// [creditLookupToRunningStudyClock] 调用：查词面不持有时钟，按媒体身份找过来。
+  ///
+  /// **查词不喂空闲门**（不 [touch]，统计口径见 docs/agent/statistics.md），也不算
+  /// 显式记账模式的「本窗记过账」——它不改变时长裁决，只是给段添一项计数。墙钟模式
+  /// 先结算待定窗口（同 [addChars] 的 BUG-2217 理由：跨小时瞬间先把旧小时时长落旧段）。
+  /// 停表期间返回 false、什么也不记，由调用方退回按天计数表。
+  ///
+  /// 空闲门刚把段封掉（停在一页上查了很久的词）时，查词记回**同一统计日**里最近封
+  /// 的那一段并重新排队落库（绝对值重写，同 [retractChars] 改已封段），而不是另开
+  /// 一条 0 时长段：0 时长段不进会话流，编辑会话时就挪不走这次查词。那一段若已随
+  /// 会话删除 / 编辑退役（[retireStudySegmentUids]），不往它上记（写会被丢弃，查词
+  /// 就丢了），照常开新段。
+  ///
+  /// **写穿**：查词当场排队落库（与 v178 前 `addLookupCount` 每次查词即写同一口径），
+  /// 不等下一 tick——统计侧栏 / 统计页随查随见，进程被杀也不丢这一分钟内的查词。
+  bool addLookup() {
+    if (!isRunning) return false;
+    final DateTime now = _now();
+    if (accrual == StudyAccrual.wallClock) _accrue(now);
+    final _OpenSegment? sealed = _lastSealed;
+    if (_open == null &&
+        sealed != null &&
+        !_retiredStudySegmentUids.contains(sealed.uid) &&
+        sealed.dateKey == FushiDatabase.statDateKeyOf(now)) {
+      sealed.lookups += 1;
+      sealed.dirty = true;
+      if (_needsWrite(sealed)) _enqueueWrite(sealed);
+      _trace('+1 lookup → sealed ${_describe(sealed)}');
+      return true;
+    }
+    final _OpenSegment seg = _ensureOpen(now);
+    seg.lookups += 1;
+    seg.dirty = true;
+    if (_needsWrite(seg)) _enqueueWrite(seg);
+    _trace('+1 lookup → ${_describe(seg)}');
+    return true;
   }
 
   /// 撤回本会话已记的字数（回翻）。阅读账本的入账额是「会话覆盖并集 ∩ [0, 当前
@@ -667,7 +753,8 @@ class StudyClock {
   /// 诊断用：段的一行摘要。
   static String _describe(_OpenSegment seg) =>
       'seg ${seg.uid.substring(0, seg.uid.length < 8 ? seg.uid.length : 8)} '
-      '${seg.dateKey}@${seg.hour} ${seg.durationMs}ms/${seg.chars}c/${seg.pages}p';
+      '${seg.dateKey}@${seg.hour} ${seg.durationMs}ms/${seg.chars}c/${seg.pages}p'
+      '${seg.lookups > 0 ? '/${seg.lookups}q' : ''}';
 
   /// 当前打开段；没有或已跨小时 / 跨天（段不跨小时边界）就封旧开新。
   _OpenSegment _ensureOpen(DateTime now) {
@@ -699,6 +786,7 @@ class StudyClock {
     final _OpenSegment? seg = _open;
     if (seg == null) return;
     _open = null;
+    _lastSealed = seg;
     _trace('seal ${_describe(seg)}');
     if (_needsWrite(seg)) _enqueueWrite(seg);
     if (seg.chars == 0 && seg.pages == 0) _sessionSegments.remove(seg);
@@ -712,7 +800,10 @@ class StudyClock {
   /// 过门，而页面 dispose 里的账本 `leave()` 正是在记页数。零 IO 由 [detach] 结构性
   /// 保证，不靠这道阈值——早先靠它的说法是错的。
   static bool _worthWriting(_OpenSegment seg) =>
-      seg.durationMs >= 1000 || seg.chars > 0 || seg.pages > 0;
+      seg.durationMs >= 1000 ||
+      seg.chars > 0 ||
+      seg.pages > 0 ||
+      seg.lookups > 0;
 
   /// 本次是否要写：有脏改动，且（已在库里 或 过 [_worthWriting] 门槛）。前者覆盖
   /// 「写过 300 字 0 时长 → 被撤回成 0 字」：不写穿，库里就留着 300。
@@ -782,6 +873,7 @@ class StudyClock {
         durationMs: Value(seg.durationMs),
         chars: Value(seg.chars),
         pages: Value(seg.pages),
+        lookups: Value(seg.lookups),
         updatedAt: Value(now.millisecondsSinceEpoch),
       ),
     );

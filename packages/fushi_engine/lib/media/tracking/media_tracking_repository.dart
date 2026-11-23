@@ -627,8 +627,9 @@ class MediaTrackingRepository {
       for (final MediaCollectionItemRow member in members) {
         final String collection = member.collectionId.toString();
         if (member.mediaType == MediaKind.video.dbValue) {
-          if (videoCollections.contains(collection))
+          if (videoCollections.contains(collection)) {
             videos.add(member.entryKey);
+          }
         } else if (member.mediaType != MediaKind.game.dbValue &&
             bookCollections.contains(collection)) {
           books.add(bookKeyOf(member.entryKey));

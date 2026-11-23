@@ -72,6 +72,38 @@ void main() {
     );
   }
 
+  test('准入判据拒收：enqueue 抛 TtsRenderRejected、不落清单；放行后照常排上', () async {
+    final _FakeRunner runner = _FakeRunner(workRoot);
+    final Set<String> blocked = <String>{'book-a'};
+    final TtsRenderQueue queue = TtsRenderQueue(
+      store: store,
+      workRoot: workRoot,
+      runner: runner,
+      admission: (String bookKey) =>
+          blocked.contains(bookKey) ? 'occupied' : null,
+    );
+    await expectLater(
+      queue.enqueue(bookKey: 'book-a', title: 'A', presetId: 'v'),
+      throwsA(
+        isA<TtsRenderRejected>()
+            .having((TtsRenderRejected e) => e.bookKey, 'bookKey', 'book-a')
+            .having((TtsRenderRejected e) => e.reason, 'reason', 'occupied'),
+      ),
+    );
+    expect(queue.jobs, isEmpty);
+    expect(await store.exists(), isFalse);
+
+    blocked.clear();
+    final TtsRenderJob job = await queue.enqueue(
+      bookKey: 'book-a',
+      title: 'A',
+      presetId: 'v',
+    );
+    expect(queue.jobs.single.id, job.id);
+    await _untilTerminal(queue, job.id);
+    await queue.close();
+  });
+
   test('remove 删清单条目的同时删掉它的工作目录', () async {
     final _FakeRunner runner = _FakeRunner(workRoot);
     final TtsRenderQueue queue = build(runner);

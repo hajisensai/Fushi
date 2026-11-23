@@ -488,13 +488,20 @@ Future<Map<String, Object?>> regenerateMangaCharacterLines(
     for (final MapEntry<String, int> e in seeds.entries)
       TtsRenderLineRequest(lineId: e.key, seed: e.value),
   ];
-  final TtsRenderJob job = await deps.renderQueue().enqueue(
-    bookKey: bookKey,
-    title: volume.row.title.isEmpty ? bookKey : volume.row.title,
-    presetId: voice,
-    kind: TtsRenderJobKind.manga,
-    lineRequests: requests,
-  );
+  final TtsRenderJob job;
+  try {
+    job = await deps.renderQueue().enqueue(
+      bookKey: bookKey,
+      title: volume.row.title.isEmpty ? bookKey : volume.row.title,
+      presetId: voice,
+      kind: TtsRenderJobKind.manga,
+      lineRequests: requests,
+    );
+  } on TtsRenderRejected {
+    // 入口查过之后（逐句备份旧音频要花时间）导出包的导入占住了这一卷。
+    await backup.discard();
+    throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
+  }
   // 入口的 requireNotRendering 与这里之间（逐句备份旧音频要花时间）别处可能已排上这一
   // 卷的任务：enqueue 遇到同卷未结束的任务会原样返回它、不排我们的。那不是这次的批量
   // 重生成——既不能报成功，也不能把它的 ID 记进撤销快照（撤销会把别人的整卷生成取消掉）。

@@ -90,29 +90,13 @@ const Map<String, String> _notRouted = <String, String>{
       'ui-only: 输入是剪贴板粘贴的文本；CLI 等价做法是存成 .txt 后 fushi_cli library import',
   // ── 待补（docs/bugs/BUG-*-cli-ui-only-ops-gaps.md 盘点清单） ────────────────────────────────────────
   'lib/src/media/music/music_audio_intake_port.dart#importMusicFiles':
-      'pending cli-ui-only-ops-gaps: 音乐库导入音频文件',
-  'lib/src/media/music/music_audio_intake.dart#importMusicFiles':
-      'pending cli-ui-only-ops-gaps: 音乐库导入音频文件',
-  'importChapters': 'pending cli-ui-only-ops-gaps: 音乐碟片按章节导入',
-  'importMusicDiscChapters': 'pending cli-ui-only-ops-gaps: 音乐碟片按章节导入',
-  'pickAndAddMusicDiscs': 'pending cli-ui-only-ops-gaps: 音乐碟片添加',
-  'pickAndAddMusicDiscImages': 'pending cli-ui-only-ops-gaps: 音乐碟片镜像添加',
-  'pickAndInstallMusicPlugin': 'pending cli-ui-only-ops-gaps: 音乐歌词 / 元数据插件安装',
-  'exportBesideAudio': 'pending cli-ui-only-ops-gaps: 歌词导出到音频旁',
+      'covered: 端口接口声明；实现 MusicAudioIntake.importMusicFiles 经 fushi_cli music import 调用',
   'importFiles': 'pending cli-ui-only-ops-gaps: 歌词可视化素材包导入图片',
-  'importAudioCdIfPresent': 'pending cli-ui-only-ops-gaps: 音频 CD 导入',
   'importIptvChannels': 'pending cli-ui-only-ops-gaps: IPTV 播放列表导入频道',
   'pickAndApplyVideoFrameCover': 'pending cli-ui-only-ops-gaps: 视频取帧当封面',
   'exportTranscribedSrt': 'pending cli-ui-only-ops-gaps: 有声书转录结果导出 SRT',
-  'exportTo': 'pending cli-ui-only-ops-gaps: Galgame Hook 码配置导出',
-  'exportWindowRecording': 'pending cli-ui-only-ops-gaps: 窗口录制导出',
-  'importMinedSentencesIntoSrs': 'pending cli-ui-only-ops-gaps: 制卡历史导入 SRS',
-  'importRecoveryCode': 'pending cli-ui-only-ops-gaps: 排行榜恢复码导入（凭据只经 stdin）',
-  'importPageBackdropImage':
-      'pending cli-ui-only-ops-gaps: 页面背景图导入（设置项缺 CLI 入口）',
-  'importPageBackdropModuleImage':
-      'pending cli-ui-only-ops-gaps: 模块页面背景图导入（设置项缺 CLI 入口）',
-  'importNow': 'pending cli-ui-only-ops-gaps: 动画下载计划「立即导入」',
+  'exportWindowRecording':
+      'internal: 制卡管线内部取录制帧拼片段（gal_hook_mining_coordinator），用户入口是 fushi_cli game mine',
   'exportTtsAudiobookM4b': 'pending cli-ui-only-ops-gaps: TTS 有声书导出 M4B',
   'importSyncedBookFile': 'pending cli-ui-only-ops-gaps: 阅读历史云端列表里下载单本书',
 };

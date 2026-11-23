@@ -32,6 +32,7 @@ import 'package:fushi_engine/media/torrent/magnet_utils.dart';
 import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
 import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
@@ -438,4 +439,44 @@ Future<shelf.Response> _onTorrent(
       return _json(<String, Object?>{'ok': ok});
   }
   return shelf.Response.notFound('Unknown route');
+}
+
+/// 把本机 BT 引擎借给已配对设备当下载后端的互联模块（`/api/torrent-engine*` + 能力位
+/// `torrentEngine`）。
+class HostTorrentEngineInterconnectModule extends InterconnectHostModule {
+  HostTorrentEngineInterconnectModule(this.engine);
+
+  final HostTorrentEngine? engine;
+
+  @override
+  String get capabilityKey => kTorrentEngineCapability;
+
+  @override
+  Future<Object?> capability() async => (await engine?.capability())?.toJson();
+
+  @override
+  List<String> get routePrefixes => const <String>[kTorrentEngineRoutePrefix];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final HostTorrentEngine? e = engine;
+    if (e == null) return shelf.Response.notFound('Host torrent engine off');
+    // 操纵 host 的下载引擎与磁盘：只认已配对设备自己的凭据，共享 token / legacy 行都不行（与 AI
+    // 中继、视频遥控同一道门）。
+    final String? owner = request.credentialFingerprint;
+    if (owner == null || !await request.isPairedPeer()) {
+      return shelf.Response(
+        403,
+        body: '{"error":"paired_peer_required"}',
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+    }
+    return handleHostTorrentEngineRequest(
+      e,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+      owner: owner,
+    );
+  }
 }

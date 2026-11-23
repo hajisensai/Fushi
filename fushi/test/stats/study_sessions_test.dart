@@ -33,6 +33,7 @@ StudySegmentRow _seg(
   durationMs: ms,
   chars: chars,
   pages: pages,
+  lookups: 0,
   updatedAt: end,
   profileId: 0,
 );

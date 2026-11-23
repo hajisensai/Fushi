@@ -24,6 +24,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/ai/ai_manga_audio_assistant.dart'
+    show findMangaNameReadings;
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
@@ -359,12 +361,20 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     final MangaAudioVolume? volume = _volume;
     final String? base = _basePresetId;
     if (volume == null || base == null || _busy) return;
-    await _queue.enqueue(
-      bookKey: volume.bookKey,
-      title: _title(volume),
-      presetId: base,
-      kind: TtsRenderJobKind.manga,
-    );
+    try {
+      await _queue.enqueue(
+        bookKey: volume.bookKey,
+        title: _title(volume),
+        presetId: base,
+        kind: TtsRenderJobKind.manga,
+      );
+    } on TtsRenderRejected {
+      FushiToast.show(
+        msg: t.manga_audio_package_error_importing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (mounted) setState(() {});
   }
 
@@ -455,6 +465,18 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
             series: series.roster,
             volume: volume.script.roster,
           ).values,
+          findReadings: (List<CastTextSubstitution> names) =>
+              findMangaNameReadings(
+                widget.appModel,
+                bookKey: volume.bookKey,
+                seriesKey: seriesKey,
+                workTitle: series.title.isNotEmpty
+                    ? series.title
+                    : volume.row.title,
+                names: names,
+                substitutions:
+                    volume.series?.substitutions ?? series.substitutions,
+              ),
           save: (List<CastTextSubstitution> next) async {
             final SeriesCastProfile fresh =
                 await seriesCastStoreFor(widget.appModel).update(
@@ -556,13 +578,21 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       FushiToast.show(msg: t.manga_audio_job_busy);
       return;
     }
-    await _queue.enqueue(
-      bookKey: volume.bookKey,
-      title: _title(volume),
-      presetId: base,
-      kind: TtsRenderJobKind.manga,
-      lineRequests: requests,
-    );
+    try {
+      await _queue.enqueue(
+        bookKey: volume.bookKey,
+        title: _title(volume),
+        presetId: base,
+        kind: TtsRenderJobKind.manga,
+        lineRequests: requests,
+      );
+    } on TtsRenderRejected {
+      FushiToast.show(
+        msg: t.manga_audio_package_error_importing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     FushiToast.show(msg: t.manga_audio_backfill_queued);
     if (mounted) setState(() {});
   }
