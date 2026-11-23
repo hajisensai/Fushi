@@ -1212,15 +1212,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return;
     }
     if (!mounted) return;
-    final GalOcrRegion? region = await _pickOcrRegion(picked.hwnd);
-    if (region == null || !mounted) return;
+    final GalOcrRegionChoice? choice = await _pickOcrRegion(picked);
+    if (choice == null || !mounted) return;
     // 反馈 kEFPY4cuKZ：与「附着」同理，先取好配置视图模型——会话起来后页面可能已卸载。
     final ProfileViewModel profileVm = ref.read(
       profileViewModelProvider.notifier,
     );
     await _session.startOcrCapture(
       picked,
-      region: region,
+      region: choice.region,
+      binarize: choice.binarize,
       recognize: recognize,
     );
     unawaited(
@@ -1237,15 +1238,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalHookSessionState state = _session.state;
     final ExternalWindowInfo? window = state.boundWindow;
     if (!state.isOcrMode || window == null) return;
-    final GalOcrRegion? region = await _pickOcrRegion(window.hwnd);
-    if (region != null) _session.setOcrRegion(region);
+    final GalOcrRegionChoice? choice = await _pickOcrRegion(window);
+    if (choice == null) return;
+    _session.setOcrRegion(choice.region);
+    _session.setOcrBinarize(choice.binarize);
   }
 
-  /// 截 [hwnd] 一帧，在上面框台词区域；初始框 = 本局的框 / 上次记住的框 / 默认的画面下方。
-  /// 确认后把框记进偏好（下次开 OCR 模式直接用）。
-  Future<GalOcrRegion?> _pickOcrRegion(int hwnd) async {
+  /// 截 [window] 一帧，在上面框台词区域。初始值 = 本局的设置 / 这个游戏上次的设置
+  /// （按游戏记，BUG-5141 ②）/ 全局上次的框（没开过 OCR 的新游戏多半也是画面下方的
+  /// 同类台词框）/ 默认的画面下方。确认后把框记进全局「上次的框」；按游戏的记忆由会话
+  /// 控制器在开始 / 改框时写。
+  Future<GalOcrRegionChoice?> _pickOcrRegion(ExternalWindowInfo window) async {
     final WindowCaptureResult shot = await WindowCaptureChannel.captureWindow(
-      hwnd,
+      window.hwnd,
     );
     final Uint8List? png = shot.pngBytes;
     if (png == null || png.isEmpty) {
@@ -1257,28 +1262,22 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     if (!context.mounted) return null;
     final PreferencesRepository prefs = _appModel.prefsRepo;
+    final GalOcrRememberedSettings remembered = _session
+        .rememberedOcrSettingsFor(window);
     final GalOcrRegion initial =
-        _session.state.ocrRegion ??
-        _storedOcrRegion(prefs.galOcrRegionJson) ??
+        remembered.region ??
+        GalOcrRegion.fromJsonString(prefs.galOcrRegionJson) ??
         GalOcrRegion.defaultDialogue;
-    final GalOcrRegion? region = await showGalOcrRegionPicker(
+    final GalOcrRegionChoice? choice = await showGalOcrRegionPicker(
       context,
       framePng: png,
       initial: initial,
+      initialBinarize: remembered.binarize,
     );
-    if (region != null) {
-      unawaited(prefs.setGalOcrRegionJson(jsonEncode(region.toJson())));
+    if (choice != null) {
+      unawaited(prefs.setGalOcrRegionJson(jsonEncode(choice.region.toJson())));
     }
-    return region;
-  }
-
-  static GalOcrRegion? _storedOcrRegion(String? json) {
-    if (json == null || json.isEmpty) return null;
-    try {
-      return GalOcrRegion.fromJson(jsonDecode(json));
-    } on FormatException {
-      return null;
-    }
+    return choice;
   }
 
   /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、

@@ -4299,6 +4299,8 @@
   "game_no_events": "尚无会话事件",
   "game_no_match": "没有符合当前筛选的游戏",
   "game_no_tracks": "尚无音轨数据",
+  "game_ocr_binarize_hint": "低对比或描边的字识别不准时打开，按游戏记住。",
+  "game_ocr_binarize_title": "二值化文字",
   "game_ocr_capture": "OCR 识别台词",
   "game_ocr_frame_failed": "截不到窗口画面，无法框选区域",
   "game_ocr_issue_capture_failed": "截不到游戏窗口（是否最小化或已关闭？）",

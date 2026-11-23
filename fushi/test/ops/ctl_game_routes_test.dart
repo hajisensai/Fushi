@@ -20,6 +20,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -132,6 +133,56 @@ class _FakeHost implements GameCtlHost {
   Future<void> stop({required bool keepBinding}) async {
     calls.add('stop:$keepBinding');
     snap = const GameCtlSessionSnapshot(state: GalHookSessionState());
+  }
+
+  ({GalOcrRegion region, bool binarize}) ocrDefaults = (
+    region: GalOcrRegion.defaultDialogue,
+    binarize: false,
+  );
+
+  /// 非 null 时 [startOcr] 报识别器不可用。
+  String? ocrUnavailable;
+
+  @override
+  ({GalOcrRegion region, bool binarize}) ocrDefaultsFor(
+    ExternalWindowInfo window,
+  ) => ocrDefaults;
+
+  @override
+  Future<String?> startOcr(
+    ExternalWindowInfo window, {
+    required GalOcrRegion region,
+    required bool binarize,
+  }) async {
+    calls.add('ocr:${window.hwnd}:${region.left}:$binarize');
+    if (ocrUnavailable != null) return ocrUnavailable;
+    snap = GameCtlSessionSnapshot(
+      state: GalHookSessionState(
+        phase: GalHookSessionPhase.waitingSignals,
+        externalWindowMode: true,
+        boundWindow: window,
+        gamePid: window.pid,
+        ocrRegion: region,
+        ocrBinarize: binarize,
+      ),
+    );
+    return null;
+  }
+
+  @override
+  void setOcrRegion(GalOcrRegion region) {
+    calls.add('ocr-region:${region.left}');
+    snap = GameCtlSessionSnapshot(
+      state: snap.state.copyWith(ocrRegion: region),
+    );
+  }
+
+  @override
+  void setOcrBinarize(bool binarize) {
+    calls.add('ocr-binarize:$binarize');
+    snap = GameCtlSessionSnapshot(
+      state: snap.state.copyWith(ocrBinarize: binarize),
+    );
   }
 
   @override
@@ -575,7 +626,7 @@ void main() {
       expect(r.pattern, startsWith('/api/admin/game/'));
       expect(seen.add('${r.method} ${r.pattern}'), isTrue);
     }
-    expect(routes, hasLength(44));
+    expect(routes, hasLength(46));
   });
 
   group('门控', () {
@@ -831,6 +882,168 @@ void main() {
               as Map<String, Object?>;
       expect(out['alreadyAttached'], isTrue);
       expect(host.calls, isEmpty);
+    });
+
+    test('OCR 模式（BUG-5141 ⑤）：默认用该游戏记住的设置；给了框 / 开关就用给的', () async {
+      final _FakeHost host = _FakeHost()
+        ..windows = const <ExternalWindowInfo>[a, b1, b2]
+        ..ocrDefaults = (
+          region: const GalOcrRegion(
+            left: 0.25,
+            top: 0.7,
+            width: 0.5,
+            height: 0.2,
+          ),
+          binarize: true,
+        );
+      final List<CtlRoute> routes = buildGameCtlRoutesWith(host);
+      final Map<String, Object?> out =
+          await _call(
+                routes,
+                'POST',
+                '/api/admin/game/ocr/start',
+                body: {'pid': 7},
+              )
+              as Map<String, Object?>;
+      expect(out['ok'], isTrue);
+      expect(out['alreadyRunning'], isFalse);
+      expect(host.calls, <String>['ocr:11:0.25:true']);
+      final Map<String, Object?> session =
+          out['session']! as Map<String, Object?>;
+      expect(session['mode'], 'ocr');
+      expect(session['ocr'], <String, Object?>{
+        'region': <String, double>{
+          'left': 0.25,
+          'top': 0.7,
+          'width': 0.5,
+          'height': 0.2,
+        },
+        'binarize': true,
+        'issue': 'none',
+      });
+
+      // 已在对这个窗口跑 OCR：不重起会话，只套用给出的框 / 开关。
+      host.calls.clear();
+      final Map<String, Object?> again =
+          await _call(
+                routes,
+                'POST',
+                '/api/admin/game/ocr/start',
+                body: {
+                  'hwnd': 11,
+                  'left': 0.1,
+                  'top': 0.6,
+                  'width': 0.8,
+                  'height': 0.3,
+                  'binarize': false,
+                },
+              )
+              as Map<String, Object?>;
+      expect(again['alreadyRunning'], isTrue);
+      expect(host.calls, <String>['ocr-region:0.1', 'ocr-binarize:false']);
+
+      // OCR 模式下对同一窗口附着：不是「已附着」，要换成注入捕获。
+      host.calls.clear();
+      final Map<String, Object?> attached =
+          await _call(
+                routes,
+                'POST',
+                '/api/admin/game/attach',
+                body: {'hwnd': 11},
+              )
+              as Map<String, Object?>;
+      expect(attached['alreadyAttached'], isFalse);
+      expect(host.calls, <String>['attach:11']);
+    });
+
+    test('OCR start：框只给一部分 / 非法 400；识别器不可用 422 且不起会话', () async {
+      final _FakeHost host = _FakeHost()
+        ..windows = const <ExternalWindowInfo>[a];
+      final List<CtlRoute> routes = buildGameCtlRoutesWith(host);
+      await expectLater(
+        _call(
+          routes,
+          'POST',
+          '/api/admin/game/ocr/start',
+          body: {'hwnd': 11, 'left': 0.1},
+        ),
+        _status(400),
+      );
+      await expectLater(
+        _call(
+          routes,
+          'POST',
+          '/api/admin/game/ocr/start',
+          body: {
+            'hwnd': 11,
+            'left': 0.5,
+            'top': 0.5,
+            'width': 0.9,
+            'height': 0.4,
+          },
+        ),
+        _status(400),
+      );
+      host.ocrUnavailable = 'model_missing';
+      await expectLater(
+        _call(routes, 'POST', '/api/admin/game/ocr/start', body: {'hwnd': 11}),
+        _status(422),
+      );
+      expect(host.snap.state.isOcrMode, isFalse);
+    });
+
+    test('OCR region：没有 OCR 会话 409；什么都没给 400；改框 / 开关', () async {
+      final _FakeHost host = _FakeHost()
+        ..windows = const <ExternalWindowInfo>[a];
+      final List<CtlRoute> routes = buildGameCtlRoutesWith(host);
+      await expectLater(
+        _call(
+          routes,
+          'PUT',
+          '/api/admin/game/ocr/region',
+          body: {'binarize': true},
+        ),
+        _status(409),
+      );
+      await _call(
+        routes,
+        'POST',
+        '/api/admin/game/ocr/start',
+        body: {'hwnd': 11},
+      );
+      await expectLater(
+        _call(
+          routes,
+          'PUT',
+          '/api/admin/game/ocr/region',
+          body: <String, Object?>{},
+        ),
+        _status(400),
+      );
+      final Map<String, Object?> out =
+          await _call(
+                routes,
+                'PUT',
+                '/api/admin/game/ocr/region',
+                body: {
+                  'left': 0,
+                  'top': 0.5,
+                  'width': 1,
+                  'height': 0.5,
+                  'binarize': true,
+                },
+              )
+              as Map<String, Object?>;
+      expect(out, <String, Object?>{
+        'region': <String, double>{
+          'left': 0,
+          'top': 0.5,
+          'width': 1,
+          'height': 0.5,
+        },
+        'binarize': true,
+        'issue': 'none',
+      });
     });
 
     test('stop 透传 keepBinding', () async {

@@ -4299,6 +4299,8 @@
   "game_no_events": "Belum ada peristiwa sesi",
   "game_no_match": "Tidak ada game yang cocok dengan filter saat ini",
   "game_no_tracks": "Belum ada data trek audio",
+  "game_ocr_binarize_hint": "Turn on if low-contrast or outlined text is misread. Remembered per game.",
+  "game_ocr_binarize_title": "Binarize text",
   "game_ocr_capture": "Read lines with OCR",
   "game_ocr_frame_failed": "Couldn't capture the window, so the area can't be selected",
   "game_ocr_issue_capture_failed": "Can't capture the game window (minimized or closed?)",

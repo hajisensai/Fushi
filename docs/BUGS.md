@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4599 条。点号进各自文件。
+> 共 4600 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | 🚧 | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
 | [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
@@ -167,7 +168,7 @@
 | [BUG-5144](bugs/BUG-5144-music-plugin-empty-page-stops-paging.md) | ✅ | ✅ | music-plugin-empty-page-stops-paging |
 | [BUG-5143](bugs/BUG-5143-video-section-undo-overwrites-concurrent-edit.md) | ✅ | ✅ | video-section-undo-overwrites-concurrent-edit |
 | [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
-| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
+| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | ✅ | ✅ | OCR 游戏模式第二期：等待动画卡死稳定判据、按游戏记区域、小字预处理、AI 操作路由 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | ✅ | ✅ | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
