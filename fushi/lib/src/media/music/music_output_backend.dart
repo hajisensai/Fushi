@@ -6,6 +6,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef;
 
 import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
@@ -37,6 +39,7 @@ class MusicPlayItem {
     this.artistRefs = const <MusicPlayArtistRef>[],
     this.sourceAlbumId,
     this.sourceId,
+    this.serverTrack,
     this.isPreview = false,
   });
 
@@ -54,6 +57,11 @@ class MusicPlayItem {
   /// 曲库曲目所属的音乐来源（`music_tracks.source_id`）。网络音乐来源的曲目起播时按它的
   /// transport 取流（`music_remote_media.dart`）；服务器曲库 / 插件 / 单文件导入为 null。
   final int? sourceId;
+
+  /// 服务器曲库曲目（经 `musicServerPlayItem` 建的项）的服务器身份：[path] / [coverPath]
+  /// 是带账号凭据的地址、[trackUid] 是哈希，都推不回是哪台服务器的哪一首。最近播放快照只落
+  /// 这份身份（BUG-5267），重播时由当前配置的服务器现算地址。其余曲目为 null。
+  final MusicServerTrackRef? serverTrack;
 
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
   final int? startMs;

@@ -30,6 +30,7 @@ import 'media_link_kind.dart';
 import 'media_source_util.dart'
     show musicAlbumNameKey, musicTrackDirPrefix, musicTrackPathKey;
 import 'music_scrape_tables.dart';
+import 'music_server_ref.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
 import 'sql_functions.dart';
@@ -3678,6 +3679,17 @@ class FushiDatabase extends _$FushiDatabase
         // 同版本的解锁口令摘要表（随上锁标记同步 / 备份）。
         if (!await _tableExists('media_lock_credentials')) {
           await m.createTable(mediaLockCredentials);
+        }
+      }
+      if (from < 172) {
+        // v172：表结构不变，清洗 music_play_events 快照里带账号凭据的服务器地址
+        // （BUG-5267：服务器曲目的播放流 / 封面地址原样落库，Jellyfin 带 api_key、
+        // Subsonic 带 u + t + s / apiKey）。认得出曲目 / 封面 id 的换成身份占位
+        // （`fushi-music-server://…`，重播时由当前配置的服务器现算地址），认不出的置
+        // NULL。v139 之前的库没有快照列，跳过；幂等。
+        if (await _tableExists('music_play_events') &&
+            await _columnExists('music_play_events', 'source_cover')) {
+          await scrubMusicPlayEventCredentials();
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

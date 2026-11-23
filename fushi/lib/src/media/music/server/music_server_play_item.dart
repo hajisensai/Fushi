@@ -10,13 +10,15 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerBrowser,
         MusicServerStream,
         MusicServerTrack,
+        MusicServerTrackRef,
         musicServerAlbumUid,
         musicServerTrackUid;
 
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 
-/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；源属性取服务器报的（转码时取转码后的：
+/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址（带账号凭据，只活在内存里；落库只用
+/// [MusicPlayItem.serverTrack] 这份身份，BUG-5267）；源属性取服务器报的（转码时取转码后的：
 /// 信号路径面板据此不把转码流判 bit-perfect）。
 MusicPlayItem musicServerPlayItem(
   MusicServerBrowser browser,
@@ -46,6 +48,13 @@ MusicPlayItem musicServerPlayItem(
     sampleRate: stream.transcoded ? null : track.sampleRate,
     bitDepth: stream.transcoded ? null : track.bitDepth,
     channels: track.channels,
+    serverTrack: MusicServerTrackRef(
+      kind: browser.kind,
+      serverId: browser.serverId,
+      trackId: track.id,
+      albumId: track.albumId,
+      coverRef: track.coverRef,
+    ),
     isPreview: stream.isPreview,
   );
 }
