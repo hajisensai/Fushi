@@ -110,11 +110,8 @@ class SrsTestClock {
 
   void advance(Duration d) => nowMs += d.inMilliseconds;
 
-  SrsTrustedClock trusted() => SrsTrustedClock(
-    wallClockMs: () => nowMs,
-    bootClockMs: () => nowMs,
-    bootId: 'test-boot',
-  );
+  SrsTrustedClock trusted() =>
+      SrsTrustedClock(wallClockMs: () => nowMs, bootClockMs: () => nowMs);
 }
 
 /// 临时目录里的一份 srs.db（Rust 独占连接，Drift 执行器跑在当前 isolate）。注册
