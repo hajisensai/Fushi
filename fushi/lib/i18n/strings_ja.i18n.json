@@ -10049,6 +10049,7 @@
   "settings_page_reset_confirm": "Reset",
   "settings_page_reset_menu": "Reset page to defaults",
   "settings_page_reset_message": "Checked settings will go back to their defaults.",
+  "settings_page_reset_value_follow_default": "${value} (set by you) → follow the default",
   "settings_page_reset_value_off": "Off",
   "settings_page_reset_value_on": "On",
   "settings_profiles_summary": "Keep several sets of settings for different languages or purposes",

@@ -10049,6 +10049,7 @@
   "settings_page_reset_confirm": "恢复",
   "settings_page_reset_menu": "恢复本页默认",
   "settings_page_reset_message": "勾选的设置项将恢复为默认值。",
+  "settings_page_reset_value_follow_default": "${value}（手动选择）→ 跟随默认值",
   "settings_page_reset_value_off": "关",
   "settings_page_reset_value_on": "开",
   "settings_profiles_summary": "为不同语言或用途保存多套设置",

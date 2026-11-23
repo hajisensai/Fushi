@@ -1831,6 +1831,15 @@ class ReaderFushiSource extends ReaderMediaSource {
         legacyCloseAfterMining: _legacyClosePopupAfterMining,
       );
 
+  /// [module] 是否显式选过（选的正是默认也算）；没选过 = 跟 [afterMiningPopupDefaultFor] 走。
+  bool hasStoredAfterMiningPopupAction(ModuleId module) =>
+      readStoredPreference<String>(afterMiningPopupPrefKey(module)) != null;
+
+  /// 恢复默认：删掉 [module] 的显式选择，回到跟 [afterMiningPopupDefaultFor] 走
+  /// （不把此刻由旧开关推出的默认钉成手选）。
+  Future<void> clearAfterMiningPopupAction(ModuleId module) =>
+      deletePreference(key: afterMiningPopupPrefKey(module));
+
   bool get _legacyClosePopupAfterMining =>
       readStoredPreference<bool>('close_popup_after_mining') ?? false;
 

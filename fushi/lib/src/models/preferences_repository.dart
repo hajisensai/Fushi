@@ -6242,6 +6242,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 库里是否存着显式选择（手选过，哪怕选的正是出厂默认）；没存 = 跟出厂默认走。
+  bool get hasStoredMusicLyricsBackdropStyle =>
+      containsKey('music_lyrics_backdrop_style');
+
   /// 「恢复默认」：删掉这一行回到「跟着出厂默认走」，而不是把此刻的默认值钉死成
   /// 显式选择（钉死后再改出厂默认就分不清「手选」与「默认」，BUG-5167）。
   Future<void> clearMusicLyricsBackdropStyle() async {

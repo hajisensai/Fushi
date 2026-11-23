@@ -504,10 +504,13 @@ Future<Object?> _resetSetting(OpContext context, CtlCall call) async {
     throw CtlFailure.badRequest('设置项「${entry.key}」没有声明默认值，不能恢复默认');
   }
   final bool wasModified = spec.modified;
-  if (wasModified) await spec.reset();
+  // 值等于默认但显式存着的（HBK-AUDIT-235）也删值，与页级恢复同口径。
+  final bool wasPinned = spec.pinnedAtDefault;
+  if (spec.resettable) await spec.reset();
   return <String, Object?>{
     ...settingsIndexEntryJson(entry, settings),
     'wasModified': wasModified,
+    if (wasPinned) 'wasPinnedAtDefault': true,
   };
 }
 
