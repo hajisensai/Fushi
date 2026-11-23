@@ -227,7 +227,9 @@ class VideoBookRepository {
       await _db.addActivityEvent(
         eventType: kActivityAdded,
         mediaType: kActivityMediaVideo,
-        title: title,
+        // 与 video_books.title 同口径（[FushiDatabase.upsertVideoBook] 写入单点
+        // 过 cleanImportedTitle）：活动行的标题快照不带文件名残留的 CRC / 扩展名。
+        title: cleanImportedTitle(title),
         mediaKey: bookUid,
         dateKey: FushiTimeFormat.dayKey(
           DateTime.fromMillisecondsSinceEpoch(nowMs),

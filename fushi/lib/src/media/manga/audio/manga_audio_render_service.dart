@@ -448,9 +448,16 @@ class _NoBackend implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) => throw UnsupportedError('no synthesis here');
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => null;
 
   @override
   Future<int> cutClip({

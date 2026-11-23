@@ -21,6 +21,7 @@ Future<void> _insert(
   String? sourceMetadata,
   String? author,
   String? coverPath,
+  String? language,
   int chapterCount = 1,
 }) async {
   await db
@@ -39,6 +40,7 @@ Future<void> _insert(
           author: Value<String?>(author),
           coverPath: Value<String?>(coverPath),
           sourceMetadata: Value<String?>(sourceMetadata),
+          language: Value<String?>(language),
         ),
       );
 }
@@ -159,6 +161,7 @@ void main() {
       importedAt: 2,
       format: 'manga',
       sourceMetadata: '{"k":"v"}',
+      language: 'zh-Hant',
     );
     await _insert(db, key: 'e', chaptersJson: '[]', importedAt: 7);
 
@@ -173,6 +176,7 @@ void main() {
       expect(facts[i].title, full[i].title);
       expect(facts[i].format, full[i].format);
       expect(facts[i].sourceMetadata, full[i].sourceMetadata);
+      expect(facts[i].language, full[i].language);
     }
   });
 }

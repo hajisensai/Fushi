@@ -532,6 +532,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final reading = entry.reading;
         if (expression.isNotEmpty) {
           _autoReadWord(
+            item,
             expression,
             reading,
             matched: lookupEntryMatchedText(entry),
@@ -651,6 +652,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final DictionaryEntry entry = result.entries.first;
         if (entry.word.isNotEmpty) {
           _autoReadWord(
+            item,
             entry.word,
             entry.reading,
             matched: lookupEntryMatchedText(entry),
@@ -834,9 +836,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _pendingSelectionRect = null;
   }
 
-  /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
-  /// [matched] 是查词命中原文：词头带替换写法时 TTS 兜底念它（反馈 WJFhjUGaTn）。
+  /// 查词自动发音：解析启用的音频源（[autoReadWordUnified]），优先交给**本次查词
+  /// 那一层** [item] 自己的弹窗 WebView 用 `<audio>` 播。[matched] 是查词命中原文：
+  /// 词头带替换写法时 TTS 兜底念它（反馈 WJFhjUGaTn）。
   Future<void> _autoReadWord(
+    DictionaryPopupEntry item,
     String expression,
     String reading, {
     String matched = '',
@@ -844,24 +848,30 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading, matched: matched),
+      play: () =>
+          _playAutoReadWord(item, expression, reading, matched: matched),
     );
   }
 
+  /// 播放目标是 [item] 自己的 WebView，**不是** [topPopupState]（BUG-5278）：自动发音在
+  /// 查词结果一到就触发，这时本层还挂在「等首帧渲染再翻出」上、尚不可见，而
+  /// [topPopupState] 只认可见层——顶层查词拿到 null，嵌套查词拿到下面那层旧弹窗，
+  /// 自动发音从来没走上弹窗 `<audio>` 快路径。state 在真正要播时才取，见
+  /// [DictionaryPopupWebViewState.lazyWordAudioPlayer]；层已被关时回落 Dart 播放器。
   Future<bool> _playAutoReadWord(
+    DictionaryPopupEntry item,
     String expression,
     String reading, {
     String matched = '',
   }) {
-    // Prefer the popup's own <audio> (unified fast path); fall back to the Dart
-    // player when the popup WebView is not ready. Capture the state once so the
-    // callback does not re-evaluate the getter mid-play.
-    final DictionaryPopupWebViewState? popup = topPopupState;
     return autoReadWordUnified(
       appModel,
       expression,
       reading,
-      playInWebView: popup?.playWordAudioUrl,
+      playInWebView: DictionaryPopupWebViewState.lazyWordAudioPlayer(
+        () =>
+            _popup.entries.contains(item) ? item.webViewKey.webViewState : null,
+      ),
       matched: matched,
     );
   }

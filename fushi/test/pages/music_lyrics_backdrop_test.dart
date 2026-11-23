@@ -265,13 +265,25 @@ void main() {
       () async {
         await repo.setMusicLyricsBackdropStyle('mesh');
         expect(repo.musicLyricsBackdropStyle, 'mesh');
+        expect(repo.hasStoredMusicLyricsBackdropStyle, isTrue);
         await repo.clearMusicLyricsBackdropStyle();
+        expect(repo.hasStoredMusicLyricsBackdropStyle, isFalse);
         expect(repo.musicLyricsBackdropStyle, 'pixi');
         expect(repo.getPref('music_lyrics_backdrop_style'), isNull);
         final PreferencesRepository reloaded = PreferencesRepository(db);
         await reloaded.loadFromDb();
         expect(reloaded.getPref('music_lyrics_backdrop_style'), isNull);
         reloaded.dispose();
+      },
+    );
+
+    test(
+      'explicit pixi counts as stored though it equals the default',
+      () async {
+        expect(repo.hasStoredMusicLyricsBackdropStyle, isFalse);
+        await repo.setMusicLyricsBackdropStyle('pixi');
+        expect(repo.hasStoredMusicLyricsBackdropStyle, isTrue);
+        expect(repo.musicLyricsBackdropStyle, 'pixi');
       },
     );
 
@@ -302,7 +314,7 @@ void main() {
             as SettingsSegmentedItem<MusicLyricsBackdropStyle>;
     expect(style.defaultValue, MusicLyricsBackdropStyle.pixi);
     // 恢复默认要删行（回到「跟出厂默认」），不能把默认值写成手选（BUG-5167）。
-    expect(style.resetToDefault, isNotNull);
+    expect(style.storedChoice, isNotNull);
     expect(style.options.map((o) => o.value), MusicLyricsBackdropStyle.values);
 
     final SettingsSliderItem saturation =

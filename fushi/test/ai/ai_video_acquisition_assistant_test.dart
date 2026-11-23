@@ -488,7 +488,8 @@ void main() {
     });
 
     test('身份判定系统提示：口头作品名语境、多季无季号 → null、不选剧场版', () {
-      final String prompt = buildAiVideoAcquisitionIdentitySystemPrompt(
+      final String prompt = buildAiIdentitySystemPrompt(
+        AiIdentityScenario.videoRequest,
         locale: 'ja',
       );
       expect(prompt, contains('"key"'));

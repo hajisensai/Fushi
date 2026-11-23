@@ -40,6 +40,42 @@
 | [BUG-5312](bugs/BUG-5312-bluray-menu-playall-phantom-row.md) | ✅ | ✅ | 原盘菜单「全部播放」凭空多出一集整卷行，加密剧集盘各集没有封面 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
+> 共 4629 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5336](bugs/BUG-5336-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
+| [BUG-5335](bugs/BUG-5335-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
+| [BUG-5334](bugs/BUG-5334-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
+| [BUG-5333](bugs/BUG-5333-downloads-peek-sources.md) | ✅ | ✅ | 下载速览只看视频任务：漫画 / 转录 / 直链 / 旧番剧 / 远端 / 互联任务都不在 |
+| [BUG-5332](bugs/BUG-5332-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
+| [BUG-5331](bugs/BUG-5331-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
+| [BUG-5330](bugs/BUG-5330-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
+| [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
+| [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
+| [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
+| [BUG-5294](bugs/BUG-5294-gen4-parity-secondary-profile-builtins-missing.md) | ✅ | ✅ | gen4 迁移对拍：第二个 profile 的三个加盐内置实体协议 3 一侧哪儿都没有，`entities` 判新代多出、整份撤回 |
+| [BUG-5293](bugs/BUG-5293-music-replaygain-over-12db-rejected.md) | ✅ | ✅ | ReplayGain 超过 +12 dB 的曲目按 0 dB 播 |
+| [BUG-5292](bugs/BUG-5292-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
+| [BUG-5291](bugs/BUG-5291-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
+| [BUG-5290](bugs/BUG-5290-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
+| [BUG-5288](bugs/BUG-5288-media-server-grid-stale-watched.md) | ✅ | ✅ | 媒体服务器网格 / 首页在标记未看后仍显示旧的已看状态 |
+| [BUG-5287](bugs/BUG-5287-book-art-scrape-ignores-edition-language.md) | ✅ | ✅ | Cover scraping uses Japanese MangaBaka covers for non-Japanese editions |
+| [BUG-5286](bugs/BUG-5286-series-grouper-merges-language-editions.md) | ✅ | ✅ | Book series grouper merges same-title editions in different languages into one collection |
+| [BUG-5285](bugs/BUG-5285-legacy-disc-stream-rows-not-converted.md) | ✅ | ✅ | 修复前逐个入库的蓝光流文件行（00000.m2ts）一直留在视频库，不会换成原盘合集 |
+| [BUG-5284](bugs/BUG-5284-media-title-crc-suffix-not-cleaned.md) | ✅ | ✅ | media-title-crc-suffix-not-cleaned |
+| [BUG-5283](bugs/BUG-5283-book-game-pending-identity-invisible.md) | ✅ | ✅ | book-game-pending-identity-invisible |
+| [BUG-5282](bugs/BUG-5282-ai-identity-candidate-type-mislabeled.md) | ✅ | ✅ | AI 识别作品时候选类型被标成本地搜索类型，正确候选被压低置信度不采用 |
+| [BUG-5281](bugs/BUG-5281-anidb-same-name-character-credit-fk-failure.md) | ✅ | ✅ | 同一声优配两个同名角色时写角色外部 id 撞外键，整部作品刮削失败 |
+| [BUG-5280](bugs/BUG-5280-disc-stream-files-counted-as-pending-works.md) | ✅ | ✅ | 逐个入库的原盘流文件（BDMV/STREAM/*.m2ts）被当成作品，挂满「待确认身份」 |
+| [BUG-5279](bugs/BUG-5279-continuous-subtitle-bounce.md) | ✅ | ✅ | 连续对白字幕交接时一句贴基线、下一句被抬高，上下跳动 |
+| [BUG-5278](bugs/BUG-5278-reader-auto-read-misses-popup-webview.md) | ✅ | ✅ | 阅读器等页面的查词自动发音从未走弹窗 `<audio>`，第一次要等一会 |
+| [BUG-5277](bugs/BUG-5277-interconnect-manga-page-id-download-transition.md) | ✅ | ✅ | 互联漫画读到一半 host 下完这章：页身份由源端身份变成文件身份，取页 409、对端整章重下 |
+| [BUG-5276](bugs/BUG-5276-settings-reset-pinned-default.md) | ✅ | ✅ | 「恢复本页默认」删不掉与默认同值的显式选择，跟别的设置走的行恢复后反被钉死 |
+| [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | ✅ | ✅ | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
+| [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | ✅ | ✅ | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
+| [BUG-5273](bugs/BUG-5273-mihon-desugar-kotlin-abi.md) | ✅ | ✅ | Mihon / Aniyomi 扩展调宿主 kotlin-stdlib 等 java.time 签名 NoSuchMethodError（minSdk 24 脱糖改写成 j$.time） |
+| [BUG-5272](bugs/BUG-5272-jitendex-redirect-not-followed.md) | ✅ | ✅ | jitendex-redirect-not-followed |
 | [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
 | [BUG-5270](bugs/BUG-5270-webview-wgc-worker-occluded-join-hang.md) | ✅ | ✅ | 显示器关着时关掉带 WebView 的页面，Windows app 整个卡死（WGC 取帧线程 join 不回） |
 | [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |

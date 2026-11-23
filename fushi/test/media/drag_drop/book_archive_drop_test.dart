@@ -85,10 +85,14 @@ void main() {
       expect(r.bookArchives, isEmpty);
     });
 
-    test('词典页拖放分类不受影响', () {
+    test('词典页拖放：.7z / .rar 按词典包收（落点意图是词典，拍板 design-dict-drop-7z-rar）', () {
       expect(
-        classifyDroppedFilesForDictionary(<String>['/x/a.zip', '/x/b.7z']),
-        <String>['/x/a.zip'],
+        classifyDroppedFilesForDictionary(<String>[
+          '/x/a.zip',
+          '/x/b.7z',
+          '/x/c.rar',
+        ]),
+        <String>['/x/a.zip', '/x/b.7z', '/x/c.rar'],
       );
     });
   });

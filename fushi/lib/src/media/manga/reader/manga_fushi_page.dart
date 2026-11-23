@@ -101,6 +101,7 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart'
     show AudiobookSessionStartRequest;
 import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_media_voice_scope.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart'
@@ -3741,6 +3742,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         context,
         FushiMotion.short,
       ).inMilliseconds,
+      // 浮层角上按钮（「×」收起 / 「⤢」逐格读）跟随设计系统：Apple 毛玻璃 / MD3 容器。
+      bubbleZoomAppleStyle: isGlassDesign(context),
+      bubbleZoomCloseLabel: t.manga_bubble_zoom_close,
       textStripLayout: _textStripLayout,
       bubbleFocusLabel: t.manga_bubble_focus_enter,
       bubbleFocusResume: navigation.bubbleFocusResume,

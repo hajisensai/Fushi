@@ -641,7 +641,8 @@ class ShortcutDefaults {
       _key(LogicalKeyboardKey.keyY, {ModifierKey.ctrl, ModifierKey.shift}),
     ]),
     // 音乐：空格 / K 播放暂停（空格与视频页、有声书同一习惯键；文本框持焦时让路，见
-    // music_shortcuts.dart）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键。
+    // music_shortcuts.dart）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键；全屏播放页 /
+    // 歌词页另有裸 ←/→ ±5 秒（musicPlayer scope）。
     ShortcutAction.musicTogglePlayPause: _kb([
       _key(LogicalKeyboardKey.space),
       _key(LogicalKeyboardKey.keyK),
@@ -661,6 +662,14 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.musicSeekBackward: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.shift}),
+    ]),
+    // 全屏播放页 / 歌词页没有网格焦点要移，裸 ←/→ 直接 ±5 秒（拍板台 vo1KPp0_Rh，与
+    // 视频页习惯一致）；只在播放页解析，曲库页不受影响。
+    ShortcutAction.musicPlayerSeekForward: _kb([
+      _key(LogicalKeyboardKey.arrowRight),
+    ]),
+    ShortcutAction.musicPlayerSeekBackward: _kb([
+      _key(LogicalKeyboardKey.arrowLeft),
     ]),
     // SRS 复习页：与改造前 `_onKey` 写死的键完全一致（反馈 itlb0djDq6 只要求可改键，
     // 不改手感）。主键 = 空格 / Enter / 小键盘 Enter / 手柄 A；评分 = 数字 1–4 与小键盘
@@ -988,6 +997,7 @@ class ShortcutDefaults {
           case ShortcutScope.manga:
           case ShortcutScope.webBrowser:
           case ShortcutScope.music:
+          case ShortcutScope.musicPlayer:
           // SRS 复习页：平板 / 外接键盘上空格翻面、数字评分照样要用；手柄 A 翻面是
           // Android 上改造前就有的行为。
           case ShortcutScope.srsReview:

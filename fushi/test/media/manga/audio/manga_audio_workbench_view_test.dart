@@ -64,6 +64,8 @@ Future<List<String>> _pump(
                   onImport: () => calls.add('import'),
                   onOpenAudiobookSource: () => calls.add('source'),
                   onOpenDramaTrack: () => calls.add('drama'),
+                  onExportPackage: () => calls.add('export-package'),
+                  onImportPackage: () => calls.add('import-package'),
                 ),
           ),
         ),
@@ -128,6 +130,17 @@ void main() {
       await tester.tap(find.byKey(const ValueKey<String>('$_p-import')));
       await tester.pumpAndSettle();
       expect(calls.last, 'import');
+
+      // 有声漫画包：导出（本卷有演出稿就能导）/ 导入。
+      expect(find.byKey(const ValueKey<String>('$_p-package')), findsOneWidget);
+      for (final String id in <String>['export-package', 'import-package']) {
+        final Finder row = find.byKey(ValueKey<String>('$_p-$id'));
+        await tester.ensureVisible(row);
+        await tester.pumpAndSettle();
+        await tester.tap(row);
+        await tester.pumpAndSettle();
+        expect(calls.last, id);
+      }
     });
   }
 

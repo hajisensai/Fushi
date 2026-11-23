@@ -715,6 +715,56 @@ void main() {
     );
   });
 
+  test('同一声优配两个同名角色（不同 id）时刮削不撞外键（BUG-5281）', () async {
+    // AniDB 19701：Kaguya 152136 / 152583 同名、同一位声优。
+    VideoMetadataCredit kaguya(String characterId) => VideoMetadataCredit(
+      kind: VideoMetadataCreditKind.voiceActor,
+      person: VideoMetadataPerson(
+        name: 'Natsuyoshi Yuuko',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '56190'),
+        ],
+      ),
+      character: VideoMetadataCharacter(
+        name: 'Kaguya',
+        ids: <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: characterId),
+        ],
+      ),
+      roleName: 'Kaguya',
+    );
+
+    await store.apply(
+      localWork,
+      VideoMetadataWork(
+        provider: VideoMetadataProviderKind.anidb,
+        kind: VideoMetadataMediaKind.movie,
+        title: 'Cosmic Princess Kaguya!',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '19701', isDefault: true),
+        ],
+        credits: <VideoMetadataCredit>[kaguya('152136'), kaguya('152583')],
+      ),
+    );
+
+    final VideoMetadataWorkRow row = (await database.getVideoMetadataWorkByBook(
+      'movie-1',
+    ))!;
+    final VideoMetadataCreditRow credit =
+        (await database.getVideoMetadataCredits(workId: row.id)).single;
+    expect(credit.characterKey, 'character:anidb:152136');
+    expect(
+      await database.getVideoMetadataCharacter('character:anidb:152583'),
+      isNull,
+    );
+    expect(
+      await database.getVideoMetadataProviderIdentities(
+        characterKey: 'character:anidb:152136',
+      ),
+      hasLength(1),
+    );
+  });
+
   test('MAL 人物表残缺时不覆盖库里已有的完整表，只追加（BUG-2612）', () async {
     VideoMetadataCredit voice(String person, String role) =>
         VideoMetadataCredit(

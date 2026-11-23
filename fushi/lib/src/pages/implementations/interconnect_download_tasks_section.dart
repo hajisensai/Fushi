@@ -47,17 +47,23 @@ class InterconnectDownloadTasksSection extends ConsumerWidget {
     final InterconnectDownloadManager manager = ref.watch(
       interconnectDownloadManagerProvider,
     );
-    final List<DownloadTaskEntry> entries = <DownloadTaskEntry>[
-      for (final InterconnectDownloadTask task in manager.tasks.values)
-        interconnectDownloadTaskEntry(
-          manager,
-          task,
-          deleteCompletedFiles: _completedFilesDeleter(ref, manager, task),
-        ),
-    ];
-    return tasksBuilder(context, entries);
+    return tasksBuilder(context, interconnectDownloadTaskEntries(ref, manager));
   }
 }
+
+/// [manager] 此刻的互联下载任务 → 统一任务列表条目。下载页与侧栏下载速览共用
+/// 这一份映射（见 `download_task_sources.dart`）。
+List<DownloadTaskEntry> interconnectDownloadTaskEntries(
+  WidgetRef ref,
+  InterconnectDownloadManager manager,
+) => <DownloadTaskEntry>[
+  for (final InterconnectDownloadTask task in manager.tasks.values)
+    interconnectDownloadTaskEntry(
+      manager,
+      task,
+      deleteCompletedFiles: _completedFilesDeleter(ref, manager, task),
+    ),
+];
 
 /// 已完成的**扩展源视频**任务的「删除（可连文件）」。其它来源 / 状态，或不知道
 /// 成品落点（[InterconnectDownloadTask.destPath] 为 null）时返回 null——它们没有
@@ -236,6 +242,7 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
     },
     createdAt: task.startedAt,
     progress: task.progress,
+    subtitle: sectionTitle,
     collectionKey: fromExtension ? 'interconnect-extension' : 'interconnect',
     collectionTitle: sectionTitle,
     searchTerms: <String>[task.title],

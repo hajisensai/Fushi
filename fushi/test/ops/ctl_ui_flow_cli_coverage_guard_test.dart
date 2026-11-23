@@ -31,6 +31,8 @@ const Map<String, String> _notRouted = <String, String>{
       'covered: fushi_cli profile import（/api/admin/profiles/import）',
   'importAndSwitchProfile':
       'covered: fushi_cli profile import + profile activate',
+  'pickAndOpenMangaAudioPackageImport':
+      'covered: fushi_cli tts import-package（tts.manga.import-package，界面版只多一步选文件再开导入页）',
   'importFromDirectory':
       'covered: fushi_cli dict import（/api/admin/dictionaries/import）',
   'importFromFile':
@@ -97,6 +99,7 @@ const Map<String, String> _notRouted = <String, String>{
   'pickAndAddMusicDiscImages': 'pending cli-ui-only-ops-gaps: 音乐碟片镜像添加',
   'pickAndInstallMusicPlugin': 'pending cli-ui-only-ops-gaps: 音乐歌词 / 元数据插件安装',
   'exportBesideAudio': 'pending cli-ui-only-ops-gaps: 歌词导出到音频旁',
+  'importFiles': 'pending cli-ui-only-ops-gaps: 歌词可视化素材包导入图片',
   'importAudioCdIfPresent': 'pending cli-ui-only-ops-gaps: 音频 CD 导入',
   'importIptvChannels': 'pending cli-ui-only-ops-gaps: IPTV 播放列表导入频道',
   'pickAndApplyVideoFrameCover': 'pending cli-ui-only-ops-gaps: 视频取帧当封面',
