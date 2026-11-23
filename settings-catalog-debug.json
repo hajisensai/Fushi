@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 903,
+ "count": 915,
  "settings": [
   {
    "key": "appearance.language",
@@ -4895,7 +4895,7 @@
     "en": "The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more.",
     "zh-CN": "当前句居中显示，与歌词模式一致。自动＝按窗口高度显示，拖高悬浮窗即可看到更多句。"
    },
-   "min": 1.0,
+   "min": 0.0,
    "max": 15.0,
    "default": 3.0
   },
@@ -9153,6 +9153,24 @@
    "default": "auto"
   },
   {
+   "key": "music.lyrics_mv_backdrop",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Show the MV behind lyrics",
+    "zh-CN": "有 MV 时背景放 MV"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "When the track has a local MV (bound, found next to it or on a nearby Blu-ray), the lyrics page and lyric animations play it muted behind the lyrics, aligned to the library audio. Turn off to always use the animated background.",
+    "zh-CN": "曲目有本机 MV（已绑定、同目录或附近蓝光盘里找到的）时，歌词页和全屏歌词动画的背景静音播放 MV，跟曲库音轨对齐；关掉则始终用动画背景。"
+   },
+   "default": true
+  },
+  {
    "key": "music.lyrics_backdrop_animate",
    "kind": "value",
    "type": "choice",
@@ -9242,6 +9260,461 @@
    "min": 50.0,
    "max": 200.0,
    "default": 100.0
+  },
+  {
+   "key": "music.visualizer_mode",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Animated lyrics style",
+    "zh-CN": "歌词动画样式"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "options": [
+    {
+     "value": "luminous",
+     "label": {
+      "en": "Luminous",
+      "zh-CN": "流光"
+     }
+    },
+    {
+     "value": "mindscape",
+     "label": {
+      "en": "Mindscape",
+      "zh-CN": "心象"
+     }
+    },
+    {
+     "value": "fume",
+     "label": {
+      "en": "Fume",
+      "zh-CN": "浮名"
+     }
+    },
+    {
+     "value": "partita",
+     "label": {
+      "en": "Partita",
+      "zh-CN": "云阶"
+     }
+    },
+    {
+     "value": "cappella",
+     "label": {
+      "en": "Cappella",
+      "zh-CN": "群唱"
+     }
+    },
+    {
+     "value": "claddagh",
+     "label": {
+      "en": "Claddagh",
+      "zh-CN": "回环"
+     }
+    },
+    {
+     "value": "monet",
+     "label": {
+      "en": "Monet",
+      "zh-CN": "莫奈"
+     }
+    },
+    {
+     "value": "diorama",
+     "label": {
+      "en": "Diorama",
+      "zh-CN": "镜台"
+     }
+    },
+    {
+     "value": "pendolo",
+     "label": {
+      "en": "Pendolo",
+      "zh-CN": "时计"
+     }
+    },
+    {
+     "value": "sonnet",
+     "label": {
+      "en": "Sonnet",
+      "zh-CN": "商籁"
+     }
+    },
+    {
+     "value": "tempera",
+     "label": {
+      "en": "Tempera",
+      "zh-CN": "凝彩"
+     }
+    },
+    {
+     "value": "lumiere",
+     "label": {
+      "en": "Lumiere",
+      "zh-CN": "绘光"
+     }
+    },
+    {
+     "value": "nebbia",
+     "label": {
+      "en": "Nebbia",
+      "zh-CN": "雾笺"
+     }
+    },
+    {
+     "value": "metaphor",
+     "label": {
+      "en": "Metaphor",
+      "zh-CN": "隐喻"
+     }
+    },
+    {
+     "value": "hanabi",
+     "label": {
+      "en": "Hanabi",
+      "zh-CN": "花火"
+     }
+    },
+    {
+     "value": "machi",
+     "label": {
+      "en": "Machi",
+      "zh-CN": "町景"
+     }
+    },
+    {
+     "value": "tilt",
+     "label": {
+      "en": "Tilt",
+      "zh-CN": "倾诉"
+     }
+    },
+    {
+     "value": "still",
+     "label": {
+      "en": "Still",
+      "zh-CN": "静止"
+     }
+    }
+   ],
+   "default": "luminous"
+  },
+  {
+   "key": "music.visualizer_random",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Random style for each song",
+    "zh-CN": "每首歌随机样式"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "Switches to a different animation style when the song changes",
+    "zh-CN": "换歌时自动换一个动画样式"
+   },
+   "default": false
+  },
+  {
+   "key": "music.visualizer_ai_theme_auto",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Generate AI theme automatically",
+    "zh-CN": "自动生成 AI 主题"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "When the lyric animation opens on a song that has none yet. Needs an AI provider for this feature.",
+    "zh-CN": "打开歌词动画时，给还没有主题的歌自动生成。需要先给这个功能指派 AI。"
+   },
+   "default": false
+  },
+  {
+   "key": "music.visualizer_intensity",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Animation intensity",
+    "zh-CN": "动画强度"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "How lively lyric animations move; an AI theme can override it per song",
+    "zh-CN": "歌词动画的动感程度；AI 主题可按歌曲覆盖"
+   },
+   "options": [
+    {
+     "value": "calm",
+     "label": {
+      "en": "Calm",
+      "zh-CN": "平静"
+     }
+    },
+    {
+     "value": "normal",
+     "label": {
+      "en": "Normal",
+      "zh-CN": "标准"
+     }
+    },
+    {
+     "value": "chaotic",
+     "label": {
+      "en": "Chaotic",
+      "zh-CN": "激烈"
+     }
+    }
+   ],
+   "default": "normal"
+  },
+  {
+   "key": "music.visualizer_background",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Animation background",
+    "zh-CN": "动画背景"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "Background drawn under lyric animation styles that use the shared background",
+    "zh-CN": "画在使用共享背景的歌词动画样式下面的背景"
+   },
+   "options": [
+    {
+     "value": "fluid",
+     "label": {
+      "en": "Lyrics page background",
+      "zh-CN": "歌词页背景"
+     }
+    },
+    {
+     "value": "solid",
+     "label": {
+      "en": "Solid color",
+      "zh-CN": "纯色"
+     }
+    },
+    {
+     "value": "common",
+     "label": {
+      "en": "Common",
+      "zh-CN": "通用"
+     }
+    },
+    {
+     "value": "monet",
+     "label": {
+      "en": "Monet",
+      "zh-CN": "莫奈"
+     }
+    },
+    {
+     "value": "nomand",
+     "label": {
+      "en": "Nomand",
+      "zh-CN": "漫游"
+     }
+    },
+    {
+     "value": "latent",
+     "label": {
+      "en": "Latent",
+      "zh-CN": "隐现"
+     }
+    },
+    {
+     "value": "url",
+     "label": {
+      "en": "Custom image",
+      "zh-CN": "自定义图片"
+     }
+    },
+    {
+     "value": "sora",
+     "label": {
+      "en": "Sora",
+      "zh-CN": "空"
+     }
+    }
+   ],
+   "default": "fluid"
+  },
+  {
+   "key": "music.visualizer_font_scale",
+   "kind": "value",
+   "type": "number",
+   "title": {
+    "en": "Animated lyrics text size",
+    "zh-CN": "歌词动画字号"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "min": 60.0,
+   "max": 200.0,
+   "default": 100.0
+  },
+  {
+   "key": "music.visualizer_subtitle_hide",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Hide animated lyrics subtitles",
+    "zh-CN": "隐藏歌词动画副字幕"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "Hides translations and the next-line preview",
+    "zh-CN": "不显示翻译与下一句预览"
+   },
+   "default": false
+  },
+  {
+   "key": "music.visualizer_subtitle_content",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Animated lyrics subtitle content",
+    "zh-CN": "歌词动画副字幕内容"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "What the line under the lyrics shows",
+    "zh-CN": "歌词下方的副字幕显示什么"
+   },
+   "options": [
+    {
+     "value": "translation",
+     "label": {
+      "en": "Translation",
+      "zh-CN": "翻译"
+     }
+    },
+    {
+     "value": "romanization",
+     "label": {
+      "en": "Romanization",
+      "zh-CN": "罗马音"
+     }
+    },
+    {
+     "value": "both",
+     "label": {
+      "en": "Romanization + translation",
+      "zh-CN": "罗马音 + 翻译"
+     }
+    },
+    {
+     "value": "none",
+     "label": {
+      "en": "None",
+      "zh-CN": "不显示"
+     }
+    }
+   ],
+   "default": "translation"
+  },
+  {
+   "key": "music.visualizer_subtitle_font_scale",
+   "kind": "value",
+   "type": "number",
+   "title": {
+    "en": "Animated lyrics subtitle size",
+    "zh-CN": "歌词动画副字幕字号"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "min": 60.0,
+   "max": 200.0,
+   "default": 100.0
+  },
+  {
+   "key": "music.visualizer_subtitle_font",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Animated lyrics subtitle font",
+    "zh-CN": "歌词动画副字幕字体"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "options": [
+    {
+     "value": "inherit",
+     "label": {
+      "en": "Same as lyrics",
+      "zh-CN": "跟随歌词"
+     }
+    },
+    {
+     "value": "sans",
+     "label": {
+      "en": "Sans serif",
+      "zh-CN": "无衬线"
+     }
+    },
+    {
+     "value": "serif",
+     "label": {
+      "en": "Serif",
+      "zh-CN": "衬线"
+     }
+    },
+    {
+     "value": "mono",
+     "label": {
+      "en": "Monospace",
+      "zh-CN": "等宽"
+     }
+    }
+   ],
+   "default": "inherit"
+  },
+  {
+   "key": "music.visualizer_models",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Audio analysis models",
+    "zh-CN": "音频分析模型"
+   },
+   "path": {
+    "en": "Music › Lyrics page background",
+    "zh-CN": "音乐 › 歌词页背景"
+   },
+   "description": {
+    "en": "Beat and drum detection for lyric animations; optional download",
+    "zh-CN": "歌词动画用的节拍与鼓点识别模型，按需下载"
+   },
+   "hint": "模型下载 / 删除只在界面里做（带下载进度与确认）"
   },
   {
    "key": "game.ingame_lookup",
@@ -11269,8 +11742,8 @@
     "zh-CN": "查词 › 应用外查词"
    },
    "description": {
-    "en": "Read surrounding text from the foreground app to show the current sentence (Windows / macOS)",
-    "zh-CN": "从前台应用读取选区周围文本，在查词弹窗显示当前句（Windows / macOS）"
+    "en": "Read surrounding text from the foreground app to show the current sentence (Windows / macOS / Linux)",
+    "zh-CN": "从前台应用读取选区周围文本，在查词弹窗显示当前句（Windows / macOS / Linux）"
    },
    "default": false,
    "platforms": [

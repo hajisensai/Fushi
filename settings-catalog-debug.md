@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 903 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 915 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -284,7 +284,7 @@ How to read this:
 | `listening.audiobook_auto_transcribe_without_text` | Also transcribe audiobooks without book text | 没有正文也转录 | Materials and transcription | bool |  | `false` | When a download has no EPUB or text file, add the transcript as a subtitle book. Without book text the subtitles are less accurate. |
 | `listening.audiobook_folder_import_transcribe` | Transcribe audiobooks found by folder import | 导入文件夹时为缺字幕的有声书转录 | Materials and transcription | bool |  | `false` | When a book in an imported folder has audiobook audio but no subtitles, transcribe it on this device and align it to the book. Local folders only. |
 | `listening.floating_lyric` | Floating lyric overlay | 悬浮字幕 | Floating subtitle | bool |  | `false` | Float the currently playing subtitle line on top of other apps. |
-| `listening.floating_lyric_visible_lines` | Sentences shown | 同时显示句数 | Floating subtitle | number | 1.0 – 15.0 | `3.0` | The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more. |
+| `listening.floating_lyric_visible_lines` | Sentences shown | 同时显示句数 | Floating subtitle | number | 0.0 – 15.0 | `3.0` | The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more. |
 | `listening.floating_lyric_font_size` | Floating subtitle font size | 悬浮字幕字号 | Floating subtitle | number | 8.0 – 64.0 | `20.0` |  |
 | `listening.floating_lyric_click_lookup` | Tap floating subtitle to look up | 点击悬浮字幕查词 | Floating subtitle | bool |  | `true` | Keep this on with position lock if you still want word lookup. |
 | `listening.floating_lyric_vertical` | Vertical text | 竖排 | Floating subtitle appearance | bool |  | `false` | Lay the subtitle out top-to-bottom with lines flowing right-to-left, like vertical lyrics. Widen the window to see more sentences. |
@@ -482,9 +482,21 @@ How to read this:
 | `music.desktop_lyrics` | Desktop lyrics | 桌面歌词 | Lyrics | bool |  | `false` | Show the current lyric line in a floating always-on-top window while music plays |
 | `music.lyrics_media_session` | Lyrics on the lock screen | 锁屏显示歌词 | Lyrics | bool |  | `true` | Show the current line as the subtitle of the media notification and lock screen |
 | `music.karaoke_ass_render` | ASS karaoke subtitles | ASS 卡拉 OK 字幕 | Lyrics | choice | `auto`, `original`, `structured` | `auto` | Automatic: subtitles with effects render as authored; plain karaoke timing uses synced lyrics. |
+| `music.lyrics_mv_backdrop` | Show the MV behind lyrics | 有 MV 时背景放 MV | Lyrics page background | bool |  | `true` | When the track has a local MV (bound, found next to it or on a nearby Blu-ray), the lyrics page and lyric animations play it muted behind the lyrics, aligned to the library audio. Turn off to always use the animated background. |
 | `music.lyrics_backdrop_animate` | Background motion | 背景动效 | Lyrics page background | choice | `true`, `false` | `true` |  |
 | `music.lyrics_backdrop_style` | Fluid style | 流体样式 | Lyrics page background | choice | `pixi`, `meshGradient`, `classic` | `pixi` | Switch the fluid background algorithm of the lyrics page |
 | `music.lyrics_backdrop_saturation` | Background saturation | 背景饱和度 | Lyrics page background | number | 50.0 – 200.0 | `100.0` | Saturation of the lyrics page's fluid background; adjust it if the lyrics are hard to read on a background that is too bright or too dark |
+| `music.visualizer_mode` | Animated lyrics style | 歌词动画样式 | Lyrics page background | choice | `luminous`, `mindscape`, `fume`, `partita`, `cappella`, `claddagh`, `monet`, `diorama`, `pendolo`, `sonnet`, `tempera`, `lumiere`, `nebbia`, `metaphor`, `hanabi`, `machi`, `tilt`, `still` | `luminous` |  |
+| `music.visualizer_random` | Random style for each song | 每首歌随机样式 | Lyrics page background | bool |  | `false` | Switches to a different animation style when the song changes |
+| `music.visualizer_ai_theme_auto` | Generate AI theme automatically | 自动生成 AI 主题 | Lyrics page background | bool |  | `false` | When the lyric animation opens on a song that has none yet. Needs an AI provider for this feature. |
+| `music.visualizer_intensity` | Animation intensity | 动画强度 | Lyrics page background | choice | `calm`, `normal`, `chaotic` | `normal` | How lively lyric animations move; an AI theme can override it per song |
+| `music.visualizer_background` | Animation background | 动画背景 | Lyrics page background | choice | `fluid`, `solid`, `common`, `monet`, `nomand`, `latent`, `url`, `sora` | `fluid` | Background drawn under lyric animation styles that use the shared background |
+| `music.visualizer_font_scale` | Animated lyrics text size | 歌词动画字号 | Lyrics page background | number | 60.0 – 200.0 | `100.0` |  |
+| `music.visualizer_subtitle_hide` | Hide animated lyrics subtitles | 隐藏歌词动画副字幕 | Lyrics page background | bool |  | `false` | Hides translations and the next-line preview |
+| `music.visualizer_subtitle_content` | Animated lyrics subtitle content | 歌词动画副字幕内容 | Lyrics page background | choice | `translation`, `romanization`, `both`, `none` | `translation` | What the line under the lyrics shows |
+| `music.visualizer_subtitle_font_scale` | Animated lyrics subtitle size | 歌词动画副字幕字号 | Lyrics page background | number | 60.0 – 200.0 | `100.0` |  |
+| `music.visualizer_subtitle_font` | Animated lyrics subtitle font | 歌词动画副字幕字体 | Lyrics page background | choice | `inherit`, `sans`, `serif`, `mono` | `inherit` |  |
+| `music.visualizer_models` | Audio analysis models | 音频分析模型 | Lyrics page background | action |  |  | Beat and drum detection for lyric animations; optional download |
 | `music.effects.enabled` | Enable audio effects | 启用音效 | Audio effects | bool |  | `false` |  |
 | `music.effects.preset` | Preset | 预设 | Audio effects | choice | `custom`, `flat`, `pop`, `rock`, `classical`, `jazz`, `vocal`, `electronic`, `bassBoost`, `trebleBoost`, `headphones`, `smallSpeakers` | `flat` |  |
 | `music.effects.preamp` | Preamp | 前级 | Audio effects | number | -12.0 – 12.0 | `0.0` |  |
@@ -617,7 +629,7 @@ How to read this:
 | `lookup.after_mining_popup.music` | After creating a card in music | 音乐中制卡后 | Popup › Lookup popup › Closing | choice | `keepOpen`, `close`, `closeAndResume` | `keepOpen` | What the lookup popup does once the card is saved. Playback resumes only if the lookup paused it. |
 | `lookup.after_mining_popup.games` | After creating a card in games | 游戏中制卡后 | Popup › Lookup popup › Closing | choice | `keepOpen`, `close` | `keepOpen` | What the lookup popup does once the card is saved. |
 | `lookup.after_mining_popup.lookup` | After creating a card in lookup and elsewhere | 查词页及其他地方制卡后 | Popup › Lookup popup › Closing | choice | `keepOpen`, `close` | `keepOpen` | What the lookup popup does once the card is saved. |
-| `lookup.global_context_capture` | Capture selection context | 抓取选中文本上下文 | Lookup outside the app | bool |  | `false` | Read surrounding text from the foreground app to show the current sentence (Windows / macOS) · *only on windows, macos* |
+| `lookup.global_context_capture` | Capture selection context | 抓取选中文本上下文 | Lookup outside the app | bool |  | `false` | Read surrounding text from the foreground app to show the current sentence (Windows / macOS / Linux) · *only on windows, macos* |
 | `lookup.accessibility_permission` | Grant Accessibility permission for app-external lookup | 为应用外查词授权辅助功能 | Lookup outside the app | action |  |  | Without permission, the shortcut only looks up the current clipboard text. |
 | `lookup.overlay_lookup_independent_size` | Separate size for pop-out lookup | 弹出查词窗独立尺寸 | Lookup outside the app | bool |  | `false` | Give the app-external pop-out lookup window its own max size instead of following the in-app popup |
 | `lookup.overlay_lookup_max_width` | Pop-out lookup max width | 弹出查词窗最大宽度 | Lookup outside the app | number | 250.0 – 2000.0 | `480.0` |  |
