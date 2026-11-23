@@ -275,6 +275,7 @@ final class VideoRemotePlaybackBinding {
     required this.addListener,
     required this.removeListener,
     this.favoritesChanged,
+    this.libraryAnchor,
     this.previewAudio,
     this.stopAudio,
     this.setVolume,
@@ -305,6 +306,18 @@ final class VideoRemotePlaybackBinding {
   final void Function(VoidCallback) addListener;
   final void Function(VoidCallback) removeListener;
   final Future<void> Function()? favoritesChanged;
+
+  /// Where a cue starting at [startMs] on the player's timeline is anchored in
+  /// the library: which row and which moment on that row's own timeline.
+  /// Favorites are written and matched through it. Null means the player's
+  /// timeline is the row's ([bookUid], same milliseconds). A disc's "play all"
+  /// playlist spans several episode rows, each with its own timeline
+  /// (BUG-5340).
+  final ({String bookUid, int ms}) Function(int startMs)? libraryAnchor;
+
+  /// [libraryAnchor] with its default applied.
+  ({String bookUid, int ms}) anchorOf(int startMs) =>
+      libraryAnchor?.call(startMs) ?? (bookUid: bookUid(), ms: startMs);
 
   /// Plays the subtitle-clock span `[startMs, endMs]` of [anchor]'s track on
   /// the desktop player (the context dialog's audio preview). Returns false
@@ -1108,14 +1121,15 @@ final class VideoRemoteHost implements VideoRemoteService {
           .where((FavoriteSentence favorite) => _matches(favorite, cue))
           .toList();
       if (body['favorited'] == true && matches.isEmpty) {
+        final ({String bookUid, int ms}) anchor = binding.anchorOf(cue.startMs);
         await repo.add(
           FavoriteSentence(
             text: cue.text,
             bookTitle: binding.title(),
             createdAt: _now(),
-            bookKey: binding.bookUid(),
+            bookKey: anchor.bookUid,
             sectionIndex: binding.sectionIndex(),
-            normCharOffset: cue.startMs,
+            normCharOffset: anchor.ms,
             normCharLength: cue.endMs - cue.startMs,
             source: kFavoriteSentenceSourceVideo,
             // Same statistics-day key as every other favorite write
@@ -1385,14 +1399,18 @@ final class VideoRemoteHost implements VideoRemoteService {
     }
   }
 
-  bool _matches(FavoriteSentence favorite, VideoRemoteCue cue) =>
-      favorite.source == kFavoriteSentenceSourceVideo &&
-      favorite.bookKey == _binding?.bookUid() &&
-      favorite.text == cue.text &&
-      (favorite.sectionIndex == null ||
-          favorite.sectionIndex == _binding?.sectionIndex()) &&
-      (favorite.normCharOffset == null ||
-          favorite.normCharOffset == cue.startMs);
+  bool _matches(FavoriteSentence favorite, VideoRemoteCue cue) {
+    final VideoRemotePlaybackBinding? binding = _binding;
+    if (binding == null) return false;
+    final ({String bookUid, int ms}) anchor = binding.anchorOf(cue.startMs);
+    return favorite.source == kFavoriteSentenceSourceVideo &&
+        favorite.bookKey == anchor.bookUid &&
+        favorite.text == cue.text &&
+        (favorite.sectionIndex == null ||
+            favorite.sectionIndex == binding.sectionIndex()) &&
+        (favorite.normCharOffset == null ||
+            favorite.normCharOffset == anchor.ms);
+  }
 
   Future<Map<String, Object?>> _listLibrary(Map<String, dynamic> body) async {
     final VideoRemoteLibrary? library = _library;

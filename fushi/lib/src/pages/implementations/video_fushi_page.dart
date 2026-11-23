@@ -431,6 +431,7 @@ import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
+import 'package:fushi/src/media/video/video_episode_axis_source.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/remote_video_resume.dart';
@@ -3209,6 +3210,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   String? _discBookUid;
   String? _discBindingPath;
+
+  /// 原盘菜单当前标题是被扫描切成集的播放列表时，各集的库行与区间（见
+  /// [_discMenuEpisodeProgress]）；其余标题为 null。
+  BlurayMenuTitleBinding? _discMenuEpisodes;
   int _discBindingGeneration = 0;
   int? _discNativeGeneration;
   bool _discMenuWasActive = false;
@@ -3710,7 +3715,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return FavoriteLookupContext(
       sentence: sentence,
       sectionIndex: _favoriteSectionIndex,
-      normCharOffset: cue?.startMs,
+      // 收藏词的 bookKey 是当前这一集（[lookupBookIdentity]）：锚点换到这一集的时间轴。
+      normCharOffset: cue == null ? null : _activeEpisodeAxisMs(cue.startMs),
       normCharLength: cue == null
           ? null
           : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
@@ -7400,6 +7406,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 当前 [_watchTracker] 的覆盖并集偏好键；身份变了据此判「要不要重建」。
   String? _watchTrackerCoverageKey;
 
+  /// 当前 [_watchTracker] 所看的原盘分集区间（[EpisodeAxisPlaybackSource]）；不是原盘
+  /// 「全部播放」时为 null。
+  BlurayMenuEpisode? _watchTrackerAxis;
+
   /// 计时开始方式已按偏好设定过（本页首次建 tracker 时一次）。
   bool _studyStartModeApplied = false;
 
@@ -7439,15 +7449,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// Library video watched to the end: media tracking links it from the
   /// scraped metadata (or a mapping the user made).
-  Future<void> _libraryTrackingCompletion() async {
-    if (!appModel.isMediaTrackingOn) return;
-    await appModel.mediaTrackingService.recordVideoCompleted(
-      bookUid: _activeBookUid,
-      collectionId: widget.playlistCollectionId,
-      episodeIndex: _currentEpisode,
-      seriesCompleted:
-          _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
-    );
+  ///
+  /// 身份在建采集器那一刻定死（BUG-5340）：原盘「全部播放」跨集时旧采集器离开时的
+  /// 完成判定落在换身份之后，按当时的 [_activeBookUid] 报就把上一集的「看完」记到了
+  /// 下一集头上。
+  Future<void> Function() _libraryTrackingCompletionFor() {
+    final String bookUid = _activeBookUid;
+    final int episodeIndex = _currentEpisode;
+    final bool seriesCompleted =
+        _episodes.isNotEmpty && episodeIndex == _episodes.length - 1;
+    return () async {
+      if (!appModel.isMediaTrackingOn) return;
+      await appModel.mediaTrackingService.recordVideoCompleted(
+        bookUid: bookUid,
+        collectionId: widget.playlistCollectionId,
+        episodeIndex: episodeIndex,
+        seriesCompleted: seriesCompleted,
+      );
+    };
   }
 
   /// Start fresh at the explicit continue action; review playback never feeds
@@ -7466,9 +7485,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       uid,
       episodeIndex,
     );
+    // 原盘「全部播放」：采集器看的是当前这一集的时间轴（BUG-5340），区间变了同样重建。
+    final BlurayMenuEpisode? axis = _discMenuActiveEpisode;
     final VideoWatchTracker? current = _watchTracker;
     if (current != null) {
-      if (current.bookUid == uid && _watchTrackerCoverageKey == coverageKey) {
+      if (current.bookUid == uid &&
+          _watchTrackerCoverageKey == coverageKey &&
+          identical(_watchTrackerAxis, axis)) {
         return;
       }
       // 远端换成员 / host-playlist 换集：身份变了，封旧段、按新身份重建（覆盖并集在
@@ -7489,6 +7512,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 其余远端无可关联的身份，不报。
     final bool hasLibraryRow = _bookRow != null;
     _watchTrackerCoverageKey = coverageKey;
+    _watchTrackerAxis = axis;
+    final int axisLengthMs = axis == null ? 0 : axis.endMs - axis.startMs;
     _watchTracker =
         VideoWatchTracker(
             bookUid: uid,
@@ -7523,12 +7548,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // row has no scraped ids of its own.
             onEpisodeCompleted:
                 _remoteTrackingCompletion() ??
-                (hasLibraryRow ? _libraryTrackingCompletion : null),
+                (hasLibraryRow ? _libraryTrackingCompletionFor() : null),
             onPlayingChanged: _studyClockGate.setPlaying,
           )
           // 后台放声音期间换集（远端连播）：新采集器同样只计时长不计字。
           ..countSubtitleChars = !_backgroundAudioActive
-          ..attach(controller)
+          // 原盘「全部播放」：位置 / 时长 / 当前句换到这一集自己的时间轴，完成判定按集长、
+          // 覆盖并集与直接打开这一集同轴（BUG-5340）。
+          ..attach(
+            axis == null || axisLengthMs <= 0
+                ? controller
+                : EpisodeAxisPlaybackSource(
+                    controller,
+                    startMs: axis.startMs,
+                    lengthMs: axisLengthMs,
+                  ),
+          )
           ..start();
     // tracker.start() 只起采样；起不起表由计时门定（建表时已在后台 / 被盖住就不起）。
     _studyClockGate.sync();
@@ -7782,6 +7817,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 自看进度（与远端剧集列表的按集 key 同源）。
   Future<void> _persistPosition(String uid, int posMs) async {
     if (_sourceReviewActive) return;
+    // 原盘「全部播放」：位置在整条播放列表上，记到播放头所在的那一集、按那一集自己的
+    // 时间轴（BUG-5312 / BUG-5340）。
+    final ({String uid, int positionMs, int durationMs})? episode =
+        _discMenuEpisodeProgress(uid, posMs);
+    if (episode != null) {
+      return _persistLibraryPosition(
+        episode.uid,
+        episode.positionMs,
+        durationMs: episode.durationMs,
+      );
+    }
+    return _persistLibraryPosition(uid, posMs);
+  }
+
+  /// [_persistPosition] 的落库部分：[posMs] 已在库行 [uid] 自己的时间轴上。
+  /// [durationMs] 见 [_persistKnownDuration]。
+  Future<void> _persistLibraryPosition(
+    String uid,
+    int posMs, {
+    int? durationMs,
+  }) async {
     final int clamped = posMs < 0 ? 0 : posMs;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     // 统一合集 Phase 3：每集是独立 VideoBooks 行 → 恒单视频持久化（写该集自己的
@@ -7795,7 +7851,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       videoRemotePositionEpisodeAtPrefKey(uid, 0),
       nowMs,
     );
-    await _persistKnownDuration(uid);
+    await _persistKnownDuration(uid, durationMs: durationMs);
   }
 
   /// 上次为哪一集记下了多长的片长（只在变化时重写，见 [_persistKnownDuration]）。
@@ -7804,8 +7860,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// BUG-3491：把本集**真实片长**记进 `video_duration_ms_<uid>`。库里没有片长列，
   /// 合集续播要靠它分清「已打勾的集重看到一半」与「看完了」，集卡要靠它算观看
   /// 百分比（见 video_duration_pref.dart）。片长是文件事实，同一集只写一次。
-  Future<void> _persistKnownDuration(String uid) async {
-    final int? durationMs = _controller?.durationMs;
+  ///
+  /// [durationMs] 给了就用它（原盘「全部播放」里的一集：播放器的时长是整条播放列表）。
+  Future<void> _persistKnownDuration(String uid, {int? durationMs}) async {
+    durationMs ??= _controller?.durationMs;
     if (durationMs == null || durationMs <= 0) return;
     final (String uid, int durationMs)? last = _persistedDuration;
     if (last != null && last.$1 == uid && last.$2 == durationMs) return;

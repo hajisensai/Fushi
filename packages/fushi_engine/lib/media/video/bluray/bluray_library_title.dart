@@ -3,6 +3,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath, isDiscMemberPath;
@@ -38,6 +40,163 @@ Future<VideoBookRow?> ensureBlurayTitleInLibrary(
     sourceId: sourceId,
   );
   return rows.isEmpty ? null : rows.single;
+}
+
+/// 原盘菜单播放的一条播放列表被扫描切成了集时，其中一集在库里的行与它在这条播放
+/// 列表时间轴上占的区间（左闭右开）。
+class BlurayMenuEpisode {
+  const BlurayMenuEpisode({
+    required this.row,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  /// 这一集的库行（路径是分集路径 `00001.p03.mpls`）。
+  final VideoBookRow row;
+
+  /// 这一集在菜单所播播放列表时间轴上的起点（毫秒）。
+  final int startMs;
+
+  /// 这一集在菜单所播播放列表时间轴上的终点（毫秒，不含）。
+  final int endMs;
+
+  bool contains(int positionMs) => positionMs >= startMs && positionMs < endMs;
+}
+
+/// 原盘菜单进入一条播放列表时它在库里的身份。
+///
+/// 播放列表本身是一条标题 / 特典时 [row] 是它的行、[episodes] 为空；它被扫描按集
+/// 切开过（「全部播放」那条）时库里只有各集，[row] 为 null、[episodes] 按集序给出
+/// 各集的行与区间——播放进度、观看记录要落到正在播的那一集上，不能给整条播放列表
+/// 另建一行（BUG-5312：建出来的整卷行在合集里成了凭空多出来的一集）。
+class BlurayMenuTitleBinding {
+  const BlurayMenuTitleBinding.title(VideoBookRow this.row)
+    : episodes = const <BlurayMenuEpisode>[];
+
+  const BlurayMenuTitleBinding.episodes(this.episodes) : row = null;
+
+  final VideoBookRow? row;
+  final List<BlurayMenuEpisode> episodes;
+
+  /// [positionMs]（播放列表时间轴）落在哪一集；不是分集绑定时为 null。越过末集终点
+  /// （尾部的空白 / 片尾卡）仍算末集，落在首集之前算首集。
+  BlurayMenuEpisode? episodeAt(int positionMs) {
+    if (episodes.isEmpty) return null;
+    for (final BlurayMenuEpisode episode in episodes) {
+      if (episode.contains(positionMs)) return episode;
+    }
+    return positionMs < episodes.first.startMs ? episodes.first : episodes.last;
+  }
+
+  /// 播放列表时间轴上的 [positionMs] 该记到哪一集的哪个位置（这一集自己的时间轴，
+  /// 夹在 `[0, 集长]` 内）。不是分集绑定时为 null。
+  ({BlurayMenuEpisode episode, int positionMs})? progressAt(int positionMs) {
+    final BlurayMenuEpisode? episode = episodeAt(positionMs);
+    if (episode == null) return null;
+    final int relative = positionMs - episode.startMs;
+    final int length = episode.endMs - episode.startMs;
+    return (
+      episode: episode,
+      positionMs: relative < 0 ? 0 : (relative > length ? length : relative),
+    );
+  }
+
+  /// [bookUid] 是不是这次绑定里的某一集。
+  bool hasEpisode(String bookUid) => episodeOf(bookUid) != null;
+
+  /// 库行 [bookUid] 在这次绑定里对应的那一集；不在其中（或不是分集绑定）时为 null。
+  BlurayMenuEpisode? episodeOf(String bookUid) {
+    for (final BlurayMenuEpisode episode in episodes) {
+      if (episode.row.bookUid == bookUid) return episode;
+    }
+    return null;
+  }
+
+  /// 「原盘分集时间轴」的正向换算（BUG-5340）：播放列表时间轴上的 [playlistMs]
+  /// （播放位置或字幕句起点）在库里该记到哪一集（`bookUid`）的哪一刻（这一集自己的
+  /// 时间轴，与直接打开这一集时同一根轴）。按 [progressAt] 选集并夹在集长内；不是
+  /// 分集绑定时为 null。收藏句、制卡历史这类「键是某一集、时间是锚点」的写入都走它。
+  ({String bookUid, int ms})? anchorAt(int playlistMs) {
+    final ({BlurayMenuEpisode episode, int positionMs})? progress = progressAt(
+      playlistMs,
+    );
+    if (progress == null) return null;
+    return (bookUid: progress.episode.row.bookUid, ms: progress.positionMs);
+  }
+
+  /// 「原盘分集时间轴」的反向换算：库行 [bookUid] 自己时间轴上的 [episodeMs] 在这条
+  /// 播放列表时间轴上是哪一刻。[bookUid] 不是这次绑定里的集时为 null（锚点属于别的
+  /// 视频，不能平移到这条播放列表上）。
+  int? playlistMsOf(String bookUid, int episodeMs) {
+    final BlurayMenuEpisode? episode = episodeOf(bookUid);
+    return episode == null ? null : episode.startMs + episodeMs;
+  }
+}
+
+/// 原盘菜单进入 [playlistPath] 时该绑的库身份；不是盘内 MPLS 路径、或盘读不出来时
+/// 返回 null。
+///
+/// 被扫描按集切开的播放列表（[BlurayTitle.sourcePlaylistId] 指向它）不建整条播放
+/// 列表的行，改为确保各集都在库里（与扫描同一套规则），返回各集在这条播放列表上
+/// 的区间；其余播放列表走 [ensureBlurayDiscTitlesInLibrary] 的单条规则。
+Future<BlurayMenuTitleBinding?> ensureBlurayMenuTitleInLibrary(
+  FushiDatabase db,
+  String playlistPath, {
+  int? sourceId,
+}) async {
+  final String? discRoot = blurayDiscRootForPlaylistPath(playlistPath);
+  if (discRoot == null || !isBlurayPlaylistPath(playlistPath)) return null;
+  final BlurayDisc? disc = await readBlurayDisc(discRoot);
+  final String playlistId = p.basenameWithoutExtension(playlistPath);
+  final List<BlurayTitle> parts = <BlurayTitle>[
+    for (final BlurayTitle title in disc?.titles ?? const <BlurayTitle>[])
+      if (title.sourcePlaylistId == playlistId) title,
+  ];
+  BlurayPlaylist? whole;
+  for (final BlurayPlaylist playlist
+      in disc?.playlists ?? const <BlurayPlaylist>[]) {
+    if (playlist.id == playlistId) whole = playlist;
+  }
+  if (disc != null && whole != null && parts.isNotEmpty) {
+    final Map<String, int> startTicksById = <String, int>{
+      for (final BlurayEpisodeSpan span in splitBlurayPlaylistEpisodes(whole))
+        blurayEpisodePlaylistId(playlistId, span.playItemNumber):
+            blurayEpisodeStartTicks(whole, span),
+    };
+    if (parts.every(
+      (BlurayTitle t) => startTicksById.containsKey(t.playlist.id),
+    )) {
+      final List<VideoBookRow> rows = await ensureBlurayDiscTitlesInLibrary(
+        db,
+        discRoot: discRoot,
+        playlistPaths: <String>[
+          for (final BlurayTitle title in parts) title.playlistPath,
+        ],
+        disc: disc,
+        sourceId: sourceId,
+      );
+      int ms(int ticks) => ticks * 1000 ~/ kBlurayTimeScale;
+      return BlurayMenuTitleBinding.episodes(<BlurayMenuEpisode>[
+        for (int i = 0; i < parts.length; i++)
+          BlurayMenuEpisode(
+            row: rows[i],
+            startMs: ms(startTicksById[parts[i].playlist.id]!),
+            endMs: ms(
+              startTicksById[parts[i].playlist.id]! +
+                  parts[i].playlist.durationTicks,
+            ),
+          ),
+      ]);
+    }
+  }
+  final List<VideoBookRow> rows = await ensureBlurayDiscTitlesInLibrary(
+    db,
+    discRoot: discRoot,
+    playlistPaths: <String>[playlistPath],
+    disc: disc,
+    sourceId: sourceId,
+  );
+  return rows.isEmpty ? null : BlurayMenuTitleBinding.title(rows.single);
 }
 
 /// 一张盘上的多条标题 / 特典 [playlistPaths] 按扫描导入的规则入库，返回与入参同序

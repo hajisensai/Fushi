@@ -398,6 +398,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // 换了光盘标题：旧标题的图形字幕整轨转文字作废，强杀在途抽轨（见 _applyLoad）。
       _cancelGraphicSubtitleOcr();
       _discBindingPath = selected;
+      _discMenuEpisodes = null;
       final int generation = ++_discBindingGeneration;
       if (selected != null) {
         unawaited(
@@ -446,13 +447,28 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         controller.bindRemoteDiscTitle(expectedGeneration: nativeGeneration);
         return;
       }
-      final VideoBookRow? row = isDvdTitlePath(path)
-          ? await ensureDvdTitleInLibrary(appModel.database, path)
-          : await ensureBlurayTitleInLibrary(appModel.database, path);
+      // A playlist the scanner split into episodes (a disc's "play all") has no
+      // row of its own: the library holds its episodes, and the one under the
+      // playhead is the identity (BUG-5312). Progress is mapped onto that
+      // episode's own axis in [_discMenuEpisodeProgress].
+      BlurayMenuTitleBinding? menu;
+      final VideoBookRow? row;
+      if (isDvdTitlePath(path)) {
+        row = await ensureDvdTitleInLibrary(appModel.database, path);
+      } else {
+        menu = await ensureBlurayMenuTitleInLibrary(appModel.database, path);
+        final int playheadMs =
+            ((controller.discNavigationState?.positionSeconds ?? 0) * 1000)
+                .round();
+        row = menu?.row ?? menu?.episodeAt(playheadMs)?.row;
+      }
       if (!current() || row == null) return;
       final VideoBookRow selected = row;
+      final BlurayMenuTitleBinding? episodes =
+          menu != null && menu.episodes.isNotEmpty ? menu : null;
       // Identity changes atomically before enabling title playback consumers.
       _rebuild(() {
+        _discMenuEpisodes = episodes;
         _discBookUid = selected.bookUid;
         _bookRow = selected;
         final int episode = _episodes.indexWhere(
@@ -494,6 +510,95 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         );
       }
     }
+  }
+
+  // ── 原盘分集时间轴（BUG-5340）──────────────────────────────────────────────
+  //
+  // 菜单「全部播放」时播放器（及字幕、制卡裁剪、跳转记录）都在整条播放列表的时间轴
+  // 上，库身份却是播放头所在的那一集。凡是「键是某一集、时间是锚点」的落库 / 判定
+  // （观看采集器、收藏句、制卡历史、收藏词）都在这里换算：写入减去该集起点，读回
+  // （收藏镜像、遥控打开收藏）加回起点。页内的状态（镜像、跳转记录、字幕高亮）一律
+  // 留在播放器时间轴上，跨集不作废。
+
+  /// 当前库身份（[_discBookUid]）在原盘「全部播放」里对应的那一集；其余为 null。
+  BlurayMenuEpisode? get _discMenuActiveEpisode {
+    final BlurayMenuTitleBinding? menu = _discMenuEpisodes;
+    final String? uid = _discBookUid;
+    return menu == null || uid == null ? null : menu.episodeOf(uid);
+  }
+
+  /// 播放器时间轴（字幕句起点同）上的 [playerMs] 在库里记到哪一行的哪一刻：原盘
+  /// 「全部播放」按句子所在的那一集换算；其余就是 `(_activeBookUid, playerMs)`。
+  ({String bookUid, int ms}) _libraryAnchorAt(int playerMs) =>
+      _discMenuEpisodes?.anchorAt(playerMs) ??
+      (bookUid: _activeBookUid, ms: playerMs);
+
+  /// [_libraryAnchorAt] 的反向：库行 [bookKey] 时间轴上的 [ms] 在播放器时间轴上是
+  /// 哪一刻；锚点不属于本页此刻所播的视频时为 null。
+  int? _playerMsOfAnchor(String? bookKey, int ms) {
+    final BlurayMenuTitleBinding? menu = _discMenuEpisodes;
+    if (menu == null) return bookKey == _activeBookUid ? ms : null;
+    return bookKey == null ? null : menu.playlistMsOf(bookKey, ms);
+  }
+
+  /// 播放器时间轴上的 [playerMs] 在**当前这一集**时间轴上的位置（键已定为
+  /// [_activeBookUid] 的写入用，如收藏词）；不是原盘「全部播放」时原样返回。
+  int _activeEpisodeAxisMs(int playerMs) {
+    final BlurayMenuEpisode? episode = _discMenuActiveEpisode;
+    if (episode == null) return playerMs;
+    final int relative = playerMs - episode.startMs;
+    final int length = episode.endMs - episode.startMs;
+    return relative < 0 ? 0 : (relative > length ? length : relative);
+  }
+
+  /// 播放器时间轴的身份：同一值下页内按播放器毫秒记的状态（收藏镜像、跳转记录）
+  /// 仍然有效。原盘「全部播放」跨集只换库身份、不换时间轴，所以按绑定的播放列表算。
+  String get _playerAxisScope {
+    final String? path = _discBindingPath;
+    return _discMenuEpisodes != null && path != null
+        ? 'disc-title:$path'
+        : _activeBookUid;
+  }
+
+  /// 原盘菜单「全部播放」这类按集切开的播放列表：把播放列表时间轴上的一次进度写入
+  /// [posMs] 改记到播放头所在的那一集（这一集自己的时间轴），播放头跨进下一集时
+  /// 顺带把页面与控制器的库身份换过去（BUG-5312）。不是分集绑定、或 [uid] 不是本次
+  /// 绑定里的集（迟到的旧标题写入）时返回 null，调用方照原样写。
+  ({String uid, int positionMs, int durationMs})? _discMenuEpisodeProgress(
+    String uid,
+    int posMs,
+  ) {
+    final BlurayMenuTitleBinding? menu = _discMenuEpisodes;
+    final VideoPlayerController? controller = _controller;
+    if (menu == null || controller == null || !menu.hasEpisode(uid)) {
+      return null;
+    }
+    final ({BlurayMenuEpisode episode, int positionMs})? progress = menu
+        .progressAt(posMs);
+    if (progress == null) return null;
+    final VideoBookRow row = progress.episode.row;
+    if (row.bookUid != _discBookUid && mounted) {
+      _rebuild(() {
+        _discBookUid = row.bookUid;
+        _bookRow = row;
+        final int episode = _episodes.indexWhere(
+          (_PlaylistEpisodeRef entry) => entry.bookUid == row.bookUid,
+        );
+        _currentEpisode = episode < 0 ? 0 : episode;
+        _title = row.title;
+      });
+      _titleNotifier.value = row.title;
+      controller.retargetDiscTitleBook(row.bookUid);
+      // 按新一集重建观看采集器（旧采集器离开时按旧集的区间结算，见
+      // [EpisodeAxisPlaybackSource]）。收藏镜像覆盖整条播放列表的各集（见
+      // [_refreshFavoritedCueCache]），跨集照样有效，这里不必等重读。
+      _ensureWatchTracker(controller, row.title);
+    }
+    return (
+      uid: row.bookUid,
+      positionMs: progress.positionMs,
+      durationMs: progress.episode.endMs - progress.episode.startMs,
+    );
   }
 
   /// 原盘菜单顶栏的自动隐藏：任何指针活动都把它唤出，静置

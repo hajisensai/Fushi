@@ -844,6 +844,16 @@ extension VideoDiscMenuController on VideoPlayerController {
     _notifyDiscMenuChanged();
   }
 
+  /// 原盘菜单「全部播放」播的是被扫描切成集的整条播放列表：库身份随播放位置从一集
+  /// 换到下一集（BUG-5312）。播放、抽取与章节仍在整条播放列表的时间轴上，只换
+  /// 进度 / 制卡 / 统计记到的那一行；标题身份没变，不作废任何轨道或字幕状态。
+  void retargetDiscTitleBook(String bookUid) {
+    if (!discTitleReady || _bookUid == null || _bookUid == bookUid) return;
+    _bookUid = bookUid;
+    _lastSavedSec = -1;
+    _notifyDiscMenuChanged();
+  }
+
   /// Bind the current native title to its library row without reopening Player.
   /// The page resolves the exact MPLS path; delayed results from previous titles
   /// cannot replace the current identity. Keep MPLS so ffmpeg uses the same axis.

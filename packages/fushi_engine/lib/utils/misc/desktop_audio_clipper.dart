@@ -6,6 +6,8 @@ import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_hdr_tone_map.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show videoMemberExistsSync;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart'
@@ -1446,7 +1448,9 @@ Future<String?> extractVideoFrameViaFfmpeg({
   // BUG-2192：先裁再缩的 crop 滤镜段（`crop=…`），null = 不裁（既有调用方逐字不变）。
   String? cropFilter,
 }) async {
-  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
+  // 原盘成员（蓝光分集 `00001.p03.mpls` 是虚拟路径）按背后的真实文件判在不在；
+  // ffmpeg 后端会把它改写成 concat 输入（BUG-5312）。
+  if (!_isRemoteFfmpegInput(inputPath) && !videoMemberExistsSync(inputPath)) {
     return null;
   }
   // BUG-2496：ffmpeg 不直写 outputPath。书架/更新中心在它写到一半时重建就会读到
