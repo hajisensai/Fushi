@@ -92,6 +92,76 @@ void main() {
     expect(calls.last.queryParameters, isEmpty);
   });
 
+  test('本地一条没筛中（续作连番 / 区间命名）→ 再按集问服务端，结果以服务端为准', () async {
+    // 第二季条目、文件按全系列连番命名：本地解析出 13 / 14，问第 2 集一条也对不上；
+    // 服务端按 anime-relations 把 14 映射成第 2 集。
+    final String absolute = jsonEncode(<Object?>[
+      file('[Group] Kage no Jitsuryokusha ni Naritakute! - 13.ja.srt'),
+      file('[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+      file('Kage no Jitsuryokusha ni Naritakute! S2 (13-24).zip'),
+    ]);
+    final String serverEpisode2 = jsonEncode(<Object?>[
+      file('[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+    ]);
+    final List<Uri> calls = <Uri>[];
+    final MockClient client = MockClient((http.Request req) async {
+      calls.add(req.url);
+      if (req.url.path == '/api/entries/search') {
+        return http.Response.bytes(utf8.encode(entries), 200);
+      }
+      final bool byEpisode = req.url.queryParameters['episode'] == '2';
+      return http.Response.bytes(
+        utf8.encode(byEpisode ? serverEpisode2 : absolute),
+        200,
+      );
+    });
+
+    final ProviderBatchResult<VideoSubtitleCandidate> result =
+        await JimakuVideoSubtitleProvider(
+          client: JimakuClient(apiKey: 'k', client: client),
+        ).search(request(episode: 2));
+
+    expect(result.failures, isEmpty);
+    expect(
+      result.items.map((VideoSubtitleCandidate c) => c.fileName).toSet(),
+      <String>{
+        '[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt',
+        'Kage no Jitsuryokusha ni Naritakute! S2 (13-24).zip',
+      },
+    );
+    expect(calls.map((Uri u) => u.toString()).toList(), <Object>[
+      startsWith('https://jimaku.cc/api/entries/search'),
+      'https://jimaku.cc/api/entries/1855/files',
+      'https://jimaku.cc/api/entries/1855/files?episode=2',
+    ]);
+  });
+
+  test('条目里只有压缩包：本地没筛中也不多问服务端（按集筛只会把包滤掉）', () async {
+    final List<Uri> calls = <Uri>[];
+    final MockClient client = MockClient((http.Request req) async {
+      calls.add(req.url);
+      if (req.url.path == '/api/entries/search') {
+        return http.Response.bytes(utf8.encode(entries), 200);
+      }
+      return http.Response.bytes(
+        utf8.encode(
+          jsonEncode(<Object?>[
+            file('Kage no Jitsuryokusha ni Naritakute! (01-20).zip'),
+          ]),
+        ),
+        200,
+      );
+    });
+
+    final ProviderBatchResult<VideoSubtitleCandidate> result =
+        await JimakuVideoSubtitleProvider(
+          client: JimakuClient(apiKey: 'k', client: client),
+        ).search(request(episode: 3));
+
+    expect(result.items, hasLength(1));
+    expect(calls, hasLength(2));
+  });
+
   test('不带集号：全表原样列出', () async {
     final MockClient client = MockClient((http.Request req) async {
       if (req.url.path == '/api/entries/search') {
@@ -157,6 +227,26 @@ void main() {
         'head-done',
         'get /api/entries/search',
       ]);
+    });
+
+    test('上一次预热结束后可以再预热（在途标记按完成清空）', () async {
+      int heads = 0;
+      final MockClient client = MockClient((http.Request req) async {
+        if (req.method == 'HEAD') heads++;
+        return http.Response('', 200);
+      });
+      final JimakuClient jimaku = JimakuClient(apiKey: 'k', client: client);
+
+      final Future<void> first = jimaku.warmUpConnection();
+      expect(
+        identical(jimaku.warmUpConnection(), first),
+        isTrue,
+        reason: '在途时合并成一次',
+      );
+      await first;
+      await Future<void>.delayed(Duration.zero);
+      await jimaku.warmUpConnection();
+      expect(heads, 2);
     });
 
     test('预热失败只留诊断，不影响之后的正式请求', () async {

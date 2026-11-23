@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -822,15 +823,27 @@ class JimakuClient {
   /// 请求同属一个 [http.Client] 的连接池（按 host 复用）。失败只留诊断：落空时正式
   /// 请求照常自己建连，与不预热完全一样。
   Future<void> warmUpConnection() {
-    return _warming ??= () async {
-      try {
-        await _client.head(Uri.parse(_site));
-      } on Object catch (error) {
-        engineLog.logDiagnostic('JimakuClient.warmUpConnection', error);
-      } finally {
-        _warming = null;
-      }
-    }();
+    final Future<void>? inFlight = _warming;
+    if (inFlight != null) return inFlight;
+    final Future<void> warming = _headSite();
+    _warming = warming;
+    // 完成后再清：不能把清空写进 [_headSite] 的 finally——client 若同步抛错，
+    // finally 会在 `_warming = warming` 之前跑完，留下一个永不再清的已完成 future，
+    // 之后的预热全成空操作。
+    unawaited(
+      warming.whenComplete(() {
+        if (identical(_warming, warming)) _warming = null;
+      }),
+    );
+    return warming;
+  }
+
+  Future<void> _headSite() async {
+    try {
+      await _client.head(Uri.parse(_site));
+    } on Object catch (error) {
+      engineLog.logDiagnostic('JimakuClient.warmUpConnection', error);
+    }
   }
 
   /// 所有 API / 下载请求的唯一出口。预热还在握手时先等它：否则这次请求看到

@@ -1129,12 +1129,17 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     final http.Client? existing = _anilistHttp;
     if (existing != null) return existing;
     final http.Client created = await _createHttpClient();
-    // 建 client 的 await 期间：面板已关 → 没人会再关它，这里关；另一轮搜索已先
-    // 建好一个 → 用那个，关掉这个，不漏连接。
+    // 建 client 的 await 期间另一轮搜索已先建好一个 → 用那个，关掉这个。
     final http.Client? raced = _anilistHttp;
-    if (!mounted || raced != null) {
+    if (raced != null) {
       created.close();
-      if (raced != null) return raced;
+      return raced;
+    }
+    // 面板已关（[dispose] 已跑过，不会再来关它）→ 当场关掉、不挂回字段；调用方
+    // 紧接着的 [_isCurrentSearch] 检查（含 mounted）会直接返回，不会拿它发请求。
+    if (!mounted) {
+      created.close();
+      return created;
     }
     return _anilistHttp = created;
   }

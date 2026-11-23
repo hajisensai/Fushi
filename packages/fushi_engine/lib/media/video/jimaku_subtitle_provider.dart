@@ -79,29 +79,40 @@ class JimakuVideoSubtitleProvider
         final int? episode = entry.flags.movie
             ? null
             : request.effectiveEpisode;
-        final List<JimakuFile> files;
+        List<JimakuFile> files;
         final List<JimakuFile> packs;
         try {
-          // 每个条目只列**一次**全表，集号在本地按文件名筛。此前带集号时要打两次：
-          // 一次 `?episode=` 让服务端按文件名猜集号，一次全表只为补整季压缩包
-          // （`Show (01-26).zip` 猜不出单集，会被服务端滤掉）——全表本来就包含前者
-          // 的全部结果，第二次往返纯属白等，还多吃一次 25 次/窗口的配额。本地判据
-          // [JimakuFile.episode]（[parseSubtitleEpisode]）与服务端对真实条目的筛选
-          // 结果逐一对过（2026-11-23，61 / 53 / 2 个文件的条目各集一致）。
+          // 先列一次全表：整季压缩包（BUG-3000 跟进，`Show (01-26).zip` 猜不出单集，
+          // 服务端 `?episode=` 会把它滤掉）只能从全表补，这一次省不掉。
           final List<JimakuFile> all = await _client.listFiles(
             entry.id,
             throwOnError: true,
           );
+          packs = <JimakuFile>[
+            for (final JimakuFile file in all)
+              if (file.archiveFormat != null) file,
+          ];
           files = episode == null
               ? all
               : <JimakuFile>[
                   for (final JimakuFile file in all)
                     if (file.episode == episode) file,
                 ];
-          packs = <JimakuFile>[
-            for (final JimakuFile file in all)
-              if (file.archiveFormat != null) file,
-          ];
+          // 集号以服务端为准，本地筛只是省一次往返的快路径。服务端 `?episode=` 用
+          // anitomy 解析文件名、认集号**区间**（`Show - 01-02.ass` 同时算第 1、2 集），
+          // 还按 anime-relations 把续作连番映射回本季集号（第二季条目里的
+          // `Show - 14.ass` 算第 2 集）；本地 [parseSubtitleEpisode] 只取单个集号、
+          // 不懂映射。所以本地一条也没筛中、而全表里又确有单集字幕时，再按集问一次
+          // 服务端：常见命名一次往返搞定，连番 / 区间命名照旧不漏。
+          if (episode != null &&
+              files.isEmpty &&
+              all.any((JimakuFile file) => file.archiveFormat == null)) {
+            files = await _client.listFiles(
+              entry.id,
+              episode: episode,
+              throwOnError: true,
+            );
+          }
         } on Object catch (error) {
           // 排在最前的条目都没问到 = 整次搜索失败；后面的条目失败（典型是限流）
           // 不该把已经拿到的候选一起丢掉，如实带着失败返回部分结果。
