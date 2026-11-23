@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';

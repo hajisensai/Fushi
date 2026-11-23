@@ -15,7 +15,6 @@ import 'package:fushi/src/media/manga/audio/manga_audio_package_io.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
-import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
