@@ -16,15 +16,21 @@ import 'package:fushi/src/ops/ctl_disc_routes.dart';
 import 'package:fushi/src/ops/ctl_media_links_routes.dart';
 import 'package:fushi/src/ops/ctl_book_metadata_routes.dart';
 import 'package:fushi/src/ops/ctl_srs_routes.dart';
+import 'package:fushi/src/ops/ctl_srs_mined_import_routes.dart';
 import 'package:fushi/src/ops/ctl_tts_routes.dart';
 import 'package:fushi/src/ops/ctl_music_routes.dart';
+import 'package:fushi/src/ops/ctl_music_import_routes.dart';
 import 'package:fushi/src/ops/ctl_data_routes.dart';
 import 'package:fushi/src/ops/ctl_feedback_routes.dart';
+import 'package:fushi/src/ops/ctl_anime_download_routes.dart';
+import 'package:fushi/src/ops/ctl_leaderboard_routes.dart';
 import 'package:fushi/src/ops/ctl_dictionary_routes.dart';
 import 'package:fushi/src/ops/ctl_game_routes.dart';
+import 'package:fushi/src/ops/ctl_game_hook_code_routes.dart';
 import 'package:fushi/src/ops/ctl_library_routes.dart';
 import 'package:fushi/src/ops/ctl_online_routes.dart';
 import 'package:fushi/src/ops/ctl_settings_routes.dart';
+import 'package:fushi/src/ops/ctl_page_backdrop_routes.dart';
 import 'package:fushi/src/ops/ctl_video_routes.dart';
 import 'package:fushi/src/ops/op_catalog_assembly.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -84,12 +90,16 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildLibraryCtlRoutes(context),
   ...buildDictionaryCtlRoutes(context),
   ...buildSettingsCtlRoutes(context),
+  ...buildPageBackdropCtlRoutes(context),
   ...buildDataCtlRoutes(context),
   ...buildOnlineCtlRoutes(context),
   ...buildVideoCtlRoutes(context),
   ...buildGameCtlRoutes(context),
+  ...buildGameHookCodeCtlRoutes(context),
   ...buildMusicCtlRoutes(context),
+  ...buildMusicImportCtlRoutes(context),
   ...buildSrsCtlRoutes(context),
+  ...buildSrsMinedImportCtlRoutes(context),
   ...buildTtsCtlRoutes(context),
   ...buildBookMetadataCtlRoutes(context),
   ...buildMediaLinksCtlRoutes(context),
@@ -98,5 +108,7 @@ List<CtlRoute> buildDomainOpRoutes(OpContext context) => <CtlRoute>[
   ...buildWebCtlRoutes(context),
   ...buildWebSearchCtlRoutes(context),
   ...buildFeedbackCtlRoutes(context),
+  ...buildLeaderboardCtlRoutes(context),
+  ...buildAnimeDownloadCtlRoutes(context),
   ...buildAiAgentCtlRoutes(context),
 ];
