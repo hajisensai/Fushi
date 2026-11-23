@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 32143,
-  "notes": "Automated release-signed debug-channel build from develop @ ecd64aa. Push releases are always prerelease and never Latest.",
+  "notes": "Automated desktop debug-channel build from develop @ ecd64aa. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.4.0-debug.32137-ios.ipa",
@@ -48,16 +48,6 @@
       "dbSchemaVersion": 178
     },
     {
-      "name": "fushi-3.4.0-debug.32137-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32137-windows-setup.exe",
-      "releaseSequence": 32137,
-      "tag": "v3.4.0-debug.32137+bb449e3",
-      "version": "3.4.0-debug.32137",
-      "size": 305104384,
-      "sha256": "5b22d08e1d27cd4af6179f8b3dad0599a137cc550822a35441dad9ffadc61f54",
-      "dbSchemaVersion": 178
-    },
-    {
       "name": "fushi-3.4.0-debug.32143-ecd64aa-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32143-ecd64aa-debug.apk",
       "releaseSequence": 32143,
@@ -65,6 +55,16 @@
       "version": "3.4.0-debug.32143",
       "size": 281722064,
       "sha256": "df116c08aefad509a84e8e45448d5f0a618be480b0c9363983d5e8b3f5b446af",
+      "dbSchemaVersion": 178
+    },
+    {
+      "name": "fushi-3.4.0-debug.32143-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32143-windows-setup.exe",
+      "releaseSequence": 32143,
+      "tag": "v3.4.0-debug.32143+ecd64aa",
+      "version": "3.4.0-debug.32143",
+      "size": 305095136,
+      "sha256": "9ac985d9b2a7811c55ed0857514d7204ce523c6526bfe6b2b34e33c67dd0af3d",
       "dbSchemaVersion": 178
     }
   ]
