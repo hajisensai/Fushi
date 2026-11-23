@@ -48,6 +48,7 @@ import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart'
     show DictionarySourceChip, DictionarySourceKind;
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart' show ComboScope;
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart'
     show ProfileViewModel, profileViewModelProvider;
@@ -1359,10 +1360,12 @@ void main() {
 
             // 2d. 作品级配置视图（激活 = Games，作品绑定 Chinese）下的本机查词。
             final Object owner = Object();
-            final bool entered = await WorkProfileScope.instance.enterProfile(
+            final bool entered = await WorkProfileScope.instance.enterCombos(
               owner: owner,
               repository: profileRepo,
-              resolveProfileId: () async => chineseId,
+              resolveLayers: () async => <ComboScope, int>{
+                ComboScope.work: chineseId!,
+              },
             );
             try {
               final RemoteLookupDictionaryConfig? viewCfg = WorkProfileScope

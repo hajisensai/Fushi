@@ -1,6 +1,5 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
