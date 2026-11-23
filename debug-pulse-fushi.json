@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T06:17:03Z",
+ "generatedAt": "2026-11-23T06:35:00Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "d095b87a48ab1cfd8dccc7d3e23b83834ae9508a",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
    "unknown": false,
-   "publishedAt": "2026-11-23T06:16:53Z",
+   "publishedAt": "2026-11-23T06:34:47Z",
    "testflight": false,
    "baseSeq": 31534,
    "prs": [
@@ -49,16 +49,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
+     "state": "ok"
     },
     "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
+     "state": "ok"
     }
    }
   },
@@ -97,36 +94,9 @@
    "unknown": false,
    "publishedAt": "2026-11-23T03:55:32Z",
    "testflight": true,
-   "baseSeq": 31528,
-   "prs": [
-    4201
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 31528,
-   "version": "3.4.0",
-   "sha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
-   "unknown": false,
-   "publishedAt": "2026-11-22T17:49:01Z",
-   "testflight": false,
    "baseSeq": 31474,
    "prs": [
+    4201,
     4197,
     4194,
     4195,
@@ -150,8 +120,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071038"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -160,8 +129,7 @@
      "state": "ok"
     },
     "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071029"
+     "state": "ok"
     }
    }
   }
