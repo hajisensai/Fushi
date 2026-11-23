@@ -303,15 +303,26 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
+                // 侧栏态：内容区与侧栏一样从窗口上沿铺起（macOS 27 统一的标题栏 +
+                // 工具栏，详情页的底色 / 二级侧栏一直画到窗口按钮那一行，不再在
+                // y = topInset 处切出一条接缝），顶部安全区（窗口按钮行 / 状态栏）
+                // 以 MediaQuery 顶部 padding 交给页面自己让；[AppleSidebarTopBleed]
+                // 标出这一段是让位。标签栏态：内容排在胶囊下面，不再有顶部 padding。
+                // 两态之间按形变进度插值，过渡连续。
                 Positioned(
                   left: kGlassNavSidebarWidth * (1 - settled),
-                  top: topInset + _kAppleTabBarInset * settled,
+                  top: (topInset + _kAppleTabBarInset) * settled,
                   right: 0,
                   bottom: 0,
-                  // 顶部安全区已由上面的 top 让开（与原先外层 SafeArea 同一版面）。
-                  child: MediaQuery.removePadding(
-                    context: context,
-                    removeTop: true,
+                  child: MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      padding: MediaQuery.paddingOf(
+                        context,
+                      ).copyWith(top: topInset * (1 - settled)),
+                      viewPadding: MediaQuery.viewPaddingOf(
+                        context,
+                      ).copyWith(top: topInset * (1 - settled)),
+                    ),
                     child: content!,
                   ),
                 ),
@@ -368,7 +379,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               ],
             );
           },
-          child: widget.child,
+          child: AppleSidebarTopBleed(child: widget.child),
         );
       },
     );
@@ -892,4 +903,21 @@ class _AppleMorphDestinationState extends State<_AppleMorphDestination> {
       ),
     );
   }
+}
+
+/// 标记子树在 Apple 宽窗侧栏外壳（[AppleSidebarTabsShell]）的内容区里：内容区
+/// 从窗口上沿铺起，MediaQuery 顶部 padding 是窗口按钮行（桌面自绘标题行）的
+/// 让位，页面自己决定让不让（整页底色 / 侧栏底铺到顶、内容排在 padding 下）。
+/// 外壳里只为它画顶栏的页面（首页外壳的大标题条、各 tab）据此把让位还给自己。
+/// 纯布局标记，与设计系统分派无关。
+class AppleSidebarTopBleed extends InheritedWidget {
+  const AppleSidebarTopBleed({required super.child, super.key});
+
+  /// [context] 是否在侧栏外壳的内容区里。
+  static bool activeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppleSidebarTopBleed>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(AppleSidebarTopBleed oldWidget) => false;
 }

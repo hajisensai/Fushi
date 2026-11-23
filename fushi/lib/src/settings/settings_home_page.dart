@@ -649,7 +649,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
               wide: true,
               padding: EdgeInsets.fromLTRB(
                 GlassSettingsRenderer.detailHorizontalInset(context),
-                16,
+                16 + mediaPadding.top,
                 GlassSettingsRenderer.detailHorizontalInset(context),
                 24 + mediaPadding.bottom,
               ),
@@ -860,7 +860,12 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         child: SafeArea(
           bottom: false,
           child: Padding(
-            padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+            // 侧栏底从窗口顶画起（[_glassSidebarBackdrop]），搜索框与分类排在
+            // 顶部让位（窗口按钮行）下面。
+            padding: EdgeInsets.only(
+              top: mediaPadding.top,
+              bottom: mediaPadding.bottom,
+            ),
             child: _wideNavPanel(
               tokens,
               glass: false,

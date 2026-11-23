@@ -224,9 +224,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
                   detailHorizontalInset(context),
                   0,
                 ),
-                child: settingsAppleFormColumn(
-                  destination.body!(settingsContext),
-                ),
+                child: destination.body!(settingsContext),
               ),
             )
           : _detailBody(
@@ -364,12 +362,10 @@ class GlassSettingsRenderer implements SettingsRenderer {
     ];
     // 内容列全宽（用户 2026-10-04「设置页要做成全宽」）：分组卡、行与滑块随
     // 右栏伸缩，只保留常规左右留白。
-    final Widget bounded = settingsAppleFormColumn(
-      FushiEntranceScope(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: content,
-        ),
+    final Widget bounded = FushiEntranceScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: content,
       ),
     );
 
@@ -418,24 +414,6 @@ class GlassSettingsRenderer implements SettingsRenderer {
         .toList(growable: false);
   }
 }
-
-/// macOS 27 grouped form 的内容列（见 [FushiAppleMetrics.form]）：在 form
-/// 作用域里限宽 [kFushiAppleFormMaxWidth]、在剩余空间居中；其余情况原样返回
-/// [child]（全宽，用户 2026-10-04「设置页要做成全宽」只针对 iOS / 窄窗）。
-/// 只排版，与设计系统分派无关。
-Widget settingsAppleFormColumn(Widget child) => Builder(
-  builder: (BuildContext context) => FushiAppleMetrics.of(context).form
-      ? Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: kFushiAppleFormMaxWidth,
-            ),
-            child: child,
-          ),
-        )
-      : child,
-);
 
 /// macOS 27「系统设置」侧栏的分类图标：20×20、圆角 5 的彩色方块（分类自己的
 /// 色调色），白色字形。只用于宽屏侧栏；详情页与 iOS 列表的图标仍按

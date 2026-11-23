@@ -1818,8 +1818,20 @@ class _HomePageState extends BasePageState<HomePage>
         children: <Widget>[
           ListenableBuilder(
             listenable: _largeTitle,
-            builder: (BuildContext context, Widget? _) =>
-                overlayTitle ? const SizedBox.shrink() : _buildShellTitleBar(),
+            builder: (BuildContext context, Widget? _) => overlayTitle
+                ? const SizedBox.shrink()
+                : Padding(
+                    // Apple 宽窗侧栏外壳：内容区从窗口上沿铺起，标题条排在窗口
+                    // 按钮行下面（见 [_appleSidebarTopInsetFor]）。
+                    padding: EdgeInsets.only(
+                      top:
+                          AppleSidebarTopBleed.activeOf(context) &&
+                              _shellBarTitleFor(_visibleTab) != null
+                          ? MediaQuery.paddingOf(context).top
+                          : 0,
+                    ),
+                    child: _buildShellTitleBar(),
+                  ),
           ),
           Expanded(
             child: _withAppleTopEdge(
@@ -2024,19 +2036,27 @@ class _HomePageState extends BasePageState<HomePage>
       children: <Widget>[
         content,
         if (apple)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 14,
-            child: ListenableBuilder(
-              listenable: _appleChrome,
-              builder: (BuildContext context, Widget? _) =>
-                  FushiAppleScrollEdge(
-                    side: FushiScrollEdgeSide.top,
-                    visible: _appleChrome.contentUnderTop,
-                    blur: false,
-                  ),
+          // Apple 宽窗侧栏外壳里没有标题条的 tab，内容从窗口按钮行下面开始
+          // （见 [_appleSidebarTopInsetFor]），带子跟着下移。
+          Builder(
+            builder: (BuildContext context) => Positioned(
+              top:
+                  AppleSidebarTopBleed.activeOf(context) &&
+                      _shellBarTitleFor(_visibleTab) == null
+                  ? MediaQuery.paddingOf(context).top
+                  : 0,
+              left: 0,
+              right: 0,
+              height: 14,
+              child: ListenableBuilder(
+                listenable: _appleChrome,
+                builder: (BuildContext context, Widget? _) =>
+                    FushiAppleScrollEdge(
+                      side: FushiScrollEdgeSide.top,
+                      visible: _appleChrome.contentUnderTop,
+                      blur: false,
+                    ),
+              ),
             ),
           ),
         ...overlay,
@@ -4512,27 +4532,60 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.manga => const MangaLibraryPage(),
       HomeTab.music => const MusicLibraryPage(),
     };
-    return FushiFloatingChromeInset(
-      top: _shellTitleInsetFor(tab),
-      child: FushiShellTitleScope(
-        title: _shellTitleFor(tab),
-        actionsSlot: _shellActions,
-        // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
-        child: FushiMastheadBadgeScope(
-          shape: homeNavRailShapeFor(tab),
-          child: FushiShellInlineTitle(
-            enabled: _shellTitleInline(tab),
-            child: PrimaryScrollController(
-              controller: _tabScrollControllers.putIfAbsent(
-                tab,
-                ScrollController.new,
+    return _appleSidebarTopInsetFor(
+      tab,
+      child: FushiFloatingChromeInset(
+        top: _shellTitleInsetFor(tab),
+        child: FushiShellTitleScope(
+          title: _shellTitleFor(tab),
+          actionsSlot: _shellActions,
+          // 页头大字旁的徽标与侧栏当前项用同一枚模块多边形。
+          child: FushiMastheadBadgeScope(
+            shape: homeNavRailShapeFor(tab),
+            child: FushiShellInlineTitle(
+              enabled: _shellTitleInline(tab),
+              child: PrimaryScrollController(
+                controller: _tabScrollControllers.putIfAbsent(
+                  tab,
+                  ScrollController.new,
+                ),
+                automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+                child: content,
               ),
-              automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-              child: content,
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// Apple 宽窗侧栏外壳（[AppleSidebarTopBleed]）的内容区从窗口上沿铺起、窗口
+  /// 按钮行以 MediaQuery 顶部 padding 交下来：外壳为 [tab] 画了大标题条的，条
+  /// 已经让过（条在 [_withAppleScrollChrome] 里排在按钮行下面），内容不再让；
+  /// 没有标题条的 tab 由这里整体让开（与以前外壳在外面让开同一版面），只有设置
+  /// tab 自己处理——它的二级侧栏底 / 详情底一直画到窗口顶，内容排在让位下面。
+  /// 结构恒定（Padding + MediaQuery），切 tab / 切外壳形态不重挂页面。
+  Widget _appleSidebarTopInsetFor(HomeTab tab, {required Widget child}) {
+    return Builder(
+      builder: (BuildContext context) {
+        final MediaQueryData media = MediaQuery.of(context);
+        final bool bleed =
+            AppleSidebarTopBleed.activeOf(context) && tab != HomeTab.settings;
+        final bool hasBar = _shellBarTitleFor(tab) != null;
+        final double top = media.padding.top;
+        return Padding(
+          padding: EdgeInsets.only(top: bleed && !hasBar ? top : 0),
+          child: MediaQuery(
+            data: bleed
+                ? media.copyWith(
+                    padding: media.padding.copyWith(top: 0),
+                    viewPadding: media.viewPadding.copyWith(top: 0),
+                  )
+                : media,
+            child: child,
+          ),
+        );
+      },
     );
   }
 

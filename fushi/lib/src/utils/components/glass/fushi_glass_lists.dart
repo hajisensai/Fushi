@@ -66,8 +66,8 @@ class FushiAppleMetrics {
   final bool desktop;
 
   /// macOS 27「系统设置」grouped form 档：桌面档且在 [FushiAppleFormScope] 里
-  /// （设置宽屏主从的详情窗格）。行内边距收到 10、说明 / 脚注 11 号，内容列
-  /// 限宽 [kFushiAppleFormMaxWidth] 居中，分组卡换 form 底色 + 0.5 px 描边。
+  /// （设置宽屏主从的详情窗格）。行内边距收到 10、说明 / 脚注 11 号，内容全宽
+  /// （用户 2026-11-24），分组卡换 form 底色 + 0.5 px 描边。
   final bool form;
 
   /// 列表行最小高：iOS 27 inset grouped 行 52pt，macOS 27 grouped form 单行 40。
@@ -88,13 +88,17 @@ class FushiAppleMetrics {
   /// 分组脚注字号：iOS footnote 13；macOS 27 grouped form 的组尾说明 11。
   double get footnoteSize => form ? 11 : 13;
 
-  /// grouped form 的分组框底：深色 #2A2A2A、浅色 #F5F5F5。详情窗格本身不铺
-  /// 底、透出外壳的窗口底（Apple 设计系统深色黑 / 浅色白，与窗口标题行同色），
-  /// 分组框比它亮 / 暗一档再加 0.5 px separator 描边分出边界。
+  /// grouped form 的内容底（详情窗格，macOS 27 窗口底）：深 #1E1E1E、浅 #F5F5F5。
+  Color formBackground(BuildContext context) =>
+      Theme.of(context).colorScheme.brightness == Brightness.dark
+      ? const Color(0xFF1E1E1E)
+      : const Color(0xFFF5F5F5);
+
+  /// grouped form 的分组框底：深 #2A2A2A、浅白。
   Color formGroupBackground(BuildContext context) =>
       Theme.of(context).colorScheme.brightness == Brightness.dark
       ? const Color(0xFF2A2A2A)
-      : const Color(0xFFF5F5F5);
+      : const Color(0xFFFFFFFF);
 
   /// 行首图标尺寸。
   double get leadingIconSize => desktop ? 18 : 22;
@@ -151,10 +155,6 @@ class FushiAppleMetrics {
 
 /// 桌面平台窗口宽于此值才用 macOS 紧凑度量（见 [FushiAppleMetrics.of]）。
 const double kFushiAppleCompactMetricsWidth = 600;
-
-/// macOS 27 grouped form 内容列的最大宽（系统设置详情窗格的表单列 ≈ 640），
-/// 宽窗里在剩余空间居中。
-const double kFushiAppleFormMaxWidth = 640;
 
 /// 子树按 macOS 27「系统设置」grouped form 排版（[FushiAppleMetrics.form]）。
 /// 只在桌面档生效：窄窗（< [kFushiAppleCompactMetricsWidth]）仍是 iOS 档。
