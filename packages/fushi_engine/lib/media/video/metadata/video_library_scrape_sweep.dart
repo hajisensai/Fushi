@@ -60,10 +60,14 @@ class VideoPendingScrapeWork {
     required this.source,
     required this.work,
     this.pendingNote,
+    this.pendingNoteAt,
   });
 
   final SourceLibraryRow source;
   final VideoSourceScrapeWork work;
+
+  /// [pendingNote] 所在那次运行的开始时刻（待确认清单显示「上次尝试」）。
+  final DateTime? pendingNoteAt;
 
   /// 最近一次刮削留下的「为什么没认出来」；近期运行记录里没有它的标记时为 null。
   /// 只有 [VideoLibraryScrapeSweep.pendingWorksWithReasons] 填它（待确认清单要
@@ -387,22 +391,30 @@ class VideoLibraryScrapeSweep {
   Future<List<VideoPendingScrapeWork>> _withPendingNotes(
     List<VideoPendingScrapeWork> pending,
   ) async {
-    final Map<int, Map<String, VideoScrapePendingNote>> bySource =
-        <int, Map<String, VideoScrapePendingNote>>{};
+    final Map<int, Map<String, (VideoScrapePendingNote, DateTime)>> bySource =
+        <int, Map<String, (VideoScrapePendingNote, DateTime)>>{};
     for (final VideoPendingScrapeWork entry in pending) {
       bySource[entry.source.id] ??= await _pendingNotesOf(entry.source);
     }
     return <VideoPendingScrapeWork>[
       for (final VideoPendingScrapeWork entry in pending)
-        VideoPendingScrapeWork(
-          source: entry.source,
-          work: entry.work,
-          pendingNote: bySource[entry.source.id]![entry.work.stableKey],
-        ),
+        if (bySource[entry.source.id]![entry.work.stableKey]
+            case final (VideoScrapePendingNote, DateTime) found)
+          VideoPendingScrapeWork(
+            source: entry.source,
+            work: entry.work,
+            pendingNote: found.$1,
+            pendingNoteAt: found.$2,
+          )
+        else
+          VideoPendingScrapeWork(source: entry.source, work: entry.work),
     ];
   }
 
-  Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
+  /// 每个作品键最近一次的挂起原因 + 那次运行的开始时刻。逐次运行（新 → 旧）
+  /// 解析、先到先得，与 [latestVideoScrapePendingNotes] 一次喂全部运行的结果
+  /// 逐条相同，只是多带出运行时刻。
+  Future<Map<String, (VideoScrapePendingNote, DateTime)>> _pendingNotesOf(
     SourceLibraryRow scope,
   ) async {
     final List<VideoSourceScrapeRunRow> runs = await _database
@@ -410,16 +422,26 @@ class VideoLibraryScrapeSweep {
           sourceId: persistedScrapeSourceId(scope),
           limit: _pendingNoteRunLookback,
         );
-    return latestVideoScrapePendingNotes(<Iterable<String>>[
-      for (final VideoSourceScrapeRunRow run in runs)
-        if (decodeSourceScrapeReport(run.summaryJson)
-            case final SourceScrapeReport report)
-          <String>[
-            for (final SourceScrapeIssue issue in report.warnings)
-              issue.message,
-            for (final SourceScrapeIssue issue in report.errors) issue.message,
-          ],
-    ]);
+    final Map<String, (VideoScrapePendingNote, DateTime)> notes =
+        <String, (VideoScrapePendingNote, DateTime)>{};
+    for (final VideoSourceScrapeRunRow run in runs) {
+      final SourceScrapeReport? report = decodeSourceScrapeReport(
+        run.summaryJson,
+      );
+      if (report == null) continue;
+      final DateTime at = DateTime.fromMillisecondsSinceEpoch(run.startedAt);
+      final Map<String, VideoScrapePendingNote>
+      inRun = latestVideoScrapePendingNotes(<Iterable<String>>[
+        <String>[
+          for (final SourceScrapeIssue issue in report.warnings) issue.message,
+          for (final SourceScrapeIssue issue in report.errors) issue.message,
+        ],
+      ]);
+      for (final MapEntry<String, VideoScrapePendingNote> e in inRun.entries) {
+        notes.putIfAbsent(e.key, () => (e.value, at));
+      }
+    }
+    return notes;
   }
 
   /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。

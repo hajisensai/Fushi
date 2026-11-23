@@ -20,6 +20,8 @@ import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync
 import 'package:fushi_engine/media/video/metadata/video_series_relation_refresh.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
+import 'package:fushi/src/media/identity/app_pending_identity.dart'
+    show libraryCurateStoreOf;
 import 'package:fushi/src/media/library_curate/library_curate_auto.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart'
     show videoDiscoveryScrapeConfig;
@@ -29,13 +31,6 @@ import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
 export 'package:fushi/src/media/library_curate/library_curate_auto.dart';
-
-/// 偏好里的那份本机状态。
-LibraryCurateStore libraryCurateStoreOf(PreferencesRepository prefs) =>
-    JsonLibraryCurateStore(
-      read: () async => prefs.libraryCurateState,
-      write: prefs.setLibraryCurateState,
-    );
 
 /// 用 [invoker]（进程内操作目录）组一个编排器。
 LibraryCurator buildAppLibraryCurator({
@@ -82,13 +77,15 @@ LibraryCurator libraryCuratorFor(OpContext context) {
   final LibraryCurator? cached = _shared;
   if (cached != null && identical(_sharedFor, context)) return cached;
   _sharedFor = context;
-  return _shared = buildAppLibraryCurator(
+  final LibraryCurator built = _shared = buildAppLibraryCurator(
     db: context.appModel.database,
     prefs: context.appModel.prefsRepo,
     invoker: buildAppInProcessOpInvoker(context),
     aiModuleEnabled: () => isAiModuleEnabled(context.appModel.moduleVisibility),
     uiLocaleTag: () => context.appModel.appLocale.toLanguageTag(),
   );
+  relayLibraryCuratorRuns(built);
+  return built;
 }
 
 /// 根组件登记操作上下文后调（`main.dart`）：让自动路径与设置页拿得到编排器。
@@ -102,4 +99,5 @@ void registerAppLibraryCurator() => registerLibraryCuratorProvider(() {
 void debugSetAppLibraryCurator(LibraryCurator? curator, OpContext? context) {
   _shared = curator;
   _sharedFor = context;
+  relayLibraryCuratorRuns(curator);
 }

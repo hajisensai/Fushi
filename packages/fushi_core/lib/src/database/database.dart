@@ -15,6 +15,7 @@ import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/fushi_debug_print.dart';
+import '../utils/media_title_clean.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
@@ -3678,6 +3679,18 @@ class FushiDatabase extends _$FushiDatabase
         // 同版本的解锁口令摘要表（随上锁标记同步 / 备份）。
         if (!await _tableExists('media_lock_credentials')) {
           await m.createTable(mediaLockCredentials);
+        }
+      }
+      if (from < 172) {
+        // v172：存量 video_books.title 清掉文件名残留的末尾 CRC 标签 / 扩展名
+        // （BUG：media-title-crc-suffix-not-cleaned）。写入单点 upsertVideoBook 起
+        // 已过同一个 [cleanImportedTitle]，这里把之前入库的行清一次。表结构不变；
+        // 只改「清洗后确有变化」的行，重跑幂等。
+        // 只动视频：视频身份是 book_uid、标题只是显示名（用户改名直写本列）。
+        // epub_books / srt_books 的 title 是身份（bookKey = sanitizeTtuFilename(title)、
+        // 统计聚合键、同步资产键、来源扫描「已导入」判定），绝不改写，显示层清洗。
+        if (await _tableExists('video_books')) {
+          await cleanStoredVideoBookTitles();
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
