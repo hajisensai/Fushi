@@ -66,6 +66,10 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     final String orientation = block.isVertical ? 'vertical' : 'horizontal';
     final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
     final bool hasRegions = regions.isNotEmpty;
+    final String frame = _mangaOrientedFrameStyle(
+      block.rectangle,
+      mangaBlockOrientedFrame(regions),
+    );
     final String inner = hasRegions
         ? _mangaCharacterRegionsHtml(block: block, regions: regions)
         : mangaBlockTextLayout(block).lines
@@ -73,6 +77,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
               .join('<br>');
     buffer.write(
       '<p class="ocr-box" '
+      '${frame.isEmpty ? '' : 'data-ocr-frame="1" '}'
       'data-ocr-orientation="$orientation" '
       'data-manga-block="$blockIndex" '
       'data-manga-sentence="'
@@ -91,10 +96,89 @@ String mangaOcrBoxesHtml(MokuroImage page) {
       'margin:0;'
       'padding:0;'
       'pointer-events:${hasRegions ? 'none' : 'auto'};'
+      '$frame'
       '">$inner</p>',
     );
   }
   return buffer.toString();
+}
+
+/// 斜排块（字格带旋转）的有向外框：页图像素，绕 [MokuroOrientedRect.center] 转
+/// [MokuroOrientedRect.rotation]。全部字格都正立（或没有字格）时返回 null——块框
+/// `block.rectangle` 本身就是正确的轴对齐框。
+///
+/// `.ocr-box` 按 `block.rectangle`（轴对齐外接框）定位，斜着的字被它框成又宽又高的
+/// 正框；字格 `.ocr-char` 早已逐个 `rotate`（BUG-5308）。块级的朗读高亮 / 识别范围 /
+/// 当前块描边要跟字一起斜，就得从字格拟合出整块的有向矩形：转角取各字格转角的
+/// 面积加权圆周均值（按 4θ 取均值，避开 ±45° 处 (-π/4, π/4] 折叠的跳变），边长与
+/// 中心取全部字格四角在该转角坐标系里的投影范围。
+@visibleForTesting
+MokuroOrientedRect? mangaBlockOrientedFrame(List<MangaOcrTextRegion> regions) {
+  if (!regions.any((MangaOcrTextRegion r) => r.rotation != 0)) return null;
+  double sumSin = 0;
+  double sumCos = 0;
+  for (final MangaOcrTextRegion region in regions) {
+    final double weight = math.max(
+      region.rectangle.width * region.rectangle.height,
+      1e-6,
+    );
+    sumSin += weight * math.sin(4 * region.rotation);
+    sumCos += weight * math.cos(4 * region.rotation);
+  }
+  final double rotation = math.atan2(sumSin, sumCos) / 4;
+  if (rotation == 0) return null;
+  final double c = math.cos(rotation);
+  final double s = math.sin(rotation);
+  double minU = double.infinity;
+  double maxU = double.negativeInfinity;
+  double minV = double.infinity;
+  double maxV = double.negativeInfinity;
+  for (final MangaOcrTextRegion region in regions) {
+    final MokuroOrientedRect cell = MokuroOrientedRect(
+      center: region.rectangle.center,
+      width: region.rectangle.width,
+      height: region.rectangle.height,
+      rotation: region.rotation,
+    );
+    final double hw = cell.width / 2;
+    final double hh = cell.height / 2;
+    for (final MokuroPoint p in <MokuroPoint>[
+      cell.toPage(-hw, -hh),
+      cell.toPage(hw, -hh),
+      cell.toPage(hw, hh),
+      cell.toPage(-hw, hh),
+    ]) {
+      final double u = p.dx * c + p.dy * s;
+      final double v = -p.dx * s + p.dy * c;
+      minU = math.min(minU, u);
+      maxU = math.max(maxU, u);
+      minV = math.min(minV, v);
+      maxV = math.max(maxV, v);
+    }
+  }
+  final double cu = (minU + maxU) / 2;
+  final double cv = (minV + maxV) / 2;
+  return MokuroOrientedRect(
+    center: MokuroPoint(cu * c - cv * s, cu * s + cv * c),
+    width: maxU - minU,
+    height: maxV - minV,
+    rotation: rotation,
+  );
+}
+
+/// 把有向外框写成 `.ocr-box` 上的 CSS 自定义属性：摆正框相对块框的百分比位置 / 尺寸
+/// 与转角。`::before` 伪元素按它画出斜框（见 overlay CSS 的 `[data-ocr-frame]`
+/// 规则），块本身的几何与命中区不变。[frame] 为 null 时返回空串。
+String _mangaOrientedFrameStyle(MokuroRect block, MokuroOrientedRect? frame) {
+  if (frame == null) return '';
+  final double bw = block.width <= 0 ? 1 : block.width;
+  final double bh = block.height <= 0 ? 1 : block.height;
+  final MokuroRect upright = frame.unrotated;
+  return '--ocr-frame-l:${_pct((upright.left - block.left) / bw * 100)};'
+      '--ocr-frame-t:${_pct((upright.top - block.top) / bh * 100)};'
+      '--ocr-frame-w:${_pct(upright.width / bw * 100)};'
+      '--ocr-frame-h:${_pct(upright.height / bh * 100)};'
+      '--ocr-frame-r:${_num(frame.rotation * 180 / math.pi)}deg;';
 }
 
 /// Resolve the complete sentence represented by every OCR block on a page.
@@ -1029,6 +1113,11 @@ String mangaWindowDocument(
       '.manga-ts-empty{opacity:.6;font-size:.7em;}'
       '.manga-page .ocr-box.manga-ts-current,.manga-page .ocr-box.manga-ts-hover'
       '{outline:3px solid rgba(255,196,0,.95);border-radius:4px;}'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-current,'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-hover{outline:none;}'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-current::before,'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-hover::before'
+      '{outline:3px solid rgba(255,196,0,.95);}'
       '.manga-bubble-zoom{position:fixed;overflow:hidden;z-index:6;'
       'border-radius:16px;background:$backgroundCss;touch-action:none;'
       'transform-origin:50% 50%;'
@@ -1064,6 +1153,21 @@ String mangaWindowDocument(
       // 也要看得见读到哪了；写在其后，识别框显示时以朗读高亮为准。
       '.ocr-box.manga-speaking{outline:3px solid rgba(255,170,0,.95);'
       'background:rgba(255,200,0,.28);border-radius:4px;}'
+      // BUG-5308：斜排块（data-ocr-frame）的块框是轴对齐外接框，描边 / 底色改由
+      // ::before 按 mangaBlockOrientedFrame 的有向矩形画，跟字格一起转。伪元素不吃
+      // 指针事件，命中仍只由 .ocr-char 决定；文字条里块是 static 排版，不画斜框。
+      '.ocr-box[data-ocr-frame]::before{content:"";position:absolute;'
+      'left:var(--ocr-frame-l);top:var(--ocr-frame-t);'
+      'width:var(--ocr-frame-w);height:var(--ocr-frame-h);'
+      'transform:rotate(var(--ocr-frame-r));box-sizing:border-box;'
+      'border-radius:4px;pointer-events:none;}'
+      '.manga-text-strip .ocr-box[data-ocr-frame]::before{content:none;}'
+      '.ocr-boxes-visible .ocr-box[data-ocr-frame],'
+      '.ocr-box[data-ocr-frame].manga-speaking{outline:none;background:none;}'
+      '.ocr-boxes-visible .ocr-box[data-ocr-frame]::before'
+      '{outline:2px solid rgba(255,64,64,.9);background:rgba(255,64,64,.12);}'
+      '.ocr-box[data-ocr-frame].manga-speaking::before'
+      '{outline:3px solid rgba(255,170,0,.95);background:rgba(255,200,0,.28);}'
       // Character geometry is entirely explicit. Keep the common hit-layer
       // declarations in one rule instead of repeating them for every OCR
       // character: dense magazine pages can contain several thousand regions.
