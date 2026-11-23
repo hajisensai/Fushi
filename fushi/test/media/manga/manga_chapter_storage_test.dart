@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
-    show parseMangaJson;
+    show MokuroBlock, MokuroImage, MokuroPayload, MokuroSize, parseMangaJson;
 import 'package:path/path.dart' as p;
 
 /// 章目录布局与「已下载」判据（设计稿 2026-09-12 §2.1）。
@@ -187,4 +187,77 @@ void main() {
       expect(payload!.images.single.url, 'images/page-000001.jpg');
     },
   );
+
+  group('源端页身份旁注（review-interconnect-page-id-on-download）', () {
+    MokuroPayload payloadOf(List<(String, int, int)> pages) => MokuroPayload(
+      images: <MokuroImage>[
+        for (final (String url, int width, int height) in pages)
+          MokuroImage(
+            url: url,
+            size: MokuroSize(width.toDouble(), height.toDouble()),
+            blocks: const <MokuroBlock>[],
+          ),
+      ],
+    );
+
+    final MokuroPayload downloaded = payloadOf(<(String, int, int)>[
+      ('images/page-000001.png', 100, 150),
+      ('images/page-000002.png', 101, 151),
+      ('images/page-000003.png', 102, 152),
+    ]);
+
+    test('配对 → 落盘 → 读回：逐页认出源端身份，源端没给身份的页为 null', () async {
+      final Directory dir = mangaChapterDirectory(bookDir.path, '/c/1')
+        ..createSync(recursive: true);
+      mangaChapterSourcePagesFile(dir).writeAsStringSync(
+        encodeMangaChapterSourcePages(
+          mangaChapterSourcePagesOf(downloaded, <String?>['a', null, 'c']),
+        ),
+      );
+      final List<MangaChapterSourcePage?> pages =
+          await readMangaChapterSourcePages(dir);
+      expect(
+        <String?>[
+          for (int i = 0; i < 4; i++)
+            mangaChapterSourcePageKey(pages, downloaded, i),
+        ],
+        <String?>['a', null, 'c', null],
+      );
+    });
+
+    test('manga.json 换过内容（url 或尺寸对不上）的页不认旁注', () {
+      final List<MangaChapterSourcePage?> pages = mangaChapterSourcePagesOf(
+        downloaded,
+        <String?>['a', 'b', 'c'],
+      );
+      final MokuroPayload rewritten = payloadOf(<(String, int, int)>[
+        ('images/page-000001.png', 100, 150),
+        ('images/page-000002.png', 201, 151),
+        ('images/other.png', 102, 152),
+      ]);
+      expect(
+        <String?>[
+          for (int i = 0; i < 3; i++)
+            mangaChapterSourcePageKey(pages, rewritten, i),
+        ],
+        <String?>['a', null, null],
+      );
+    });
+
+    test('页数对不上整份不记；没有旁注 / 坏旁注按「没有」', () async {
+      expect(
+        mangaChapterSourcePagesOf(downloaded, <String?>['a', 'b']),
+        isEmpty,
+      );
+      final Directory dir = mangaChapterDirectory(bookDir.path, '/c/2')
+        ..createSync(recursive: true);
+      expect(await readMangaChapterSourcePages(dir), isEmpty);
+      mangaChapterSourcePagesFile(dir).writeAsStringSync('{not json');
+      expect(await readMangaChapterSourcePages(dir), isEmpty);
+      mangaChapterSourcePagesFile(
+        dir,
+      ).writeAsStringSync('{"version":2,"pages":[]}');
+      expect(await readMangaChapterSourcePages(dir), isEmpty);
+    });
+  });
 }

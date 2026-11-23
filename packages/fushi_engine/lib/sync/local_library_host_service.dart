@@ -114,7 +114,11 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
         mangaChapterJsonFile,
-        readDownloadedChapterPayload;
+        mangaChapterSourcePageKey,
+        mangaChapterSourcePagesFile,
+        readDownloadedChapterPayload,
+        readMangaChapterSourcePages,
+        MangaChapterSourcePage;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show MokuroImage, MokuroPayload, parseMangaJson;
