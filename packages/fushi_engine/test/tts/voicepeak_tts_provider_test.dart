@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -568,6 +570,171 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  group('per-line direction', () {
+    const List<String> standard = <String>['happy', 'fun', 'angry', 'sad'];
+
+    VoicepeakTtsProvider provider({
+      String emotion = '',
+      String speed = '',
+      String pitch = '',
+    }) =>
+        descriptor().create(
+              preset(
+                extra: <String, String>{
+                  'emotion': emotion,
+                  'speed': speed,
+                  'pitch': pitch,
+                },
+              ),
+              const TtsHost(),
+            )
+            as VoicepeakTtsProvider;
+
+    test('declares native emotion + rate only', () {
+      final TtsDirectionSupport s = ttsDirectionSupportOf(provider());
+      expect(
+        <bool>[s.emotion, s.rate, s.pitch, s.volume, s.tone, s.seed],
+        <bool>[true, true, false, false, false, false],
+      );
+    });
+
+    test('empty direction: identical command line', () {
+      final VoicepeakTtsProvider vp = provider(
+        emotion: 'happy=50, sad=0',
+        speed: '120',
+        pitch: '-50',
+      );
+      expect(
+        vp.synthesisArguments(
+          't',
+          'o.wav',
+          direction: TtsDirection.none,
+          narratorEmotions: standard,
+        ),
+        vp.synthesisArguments('t', 'o.wav'),
+      );
+    });
+
+    test('emotion name per narrator list', () {
+      expect(voicepeakEmotionNameFor(CastEmotion.joy, standard), 'happy');
+      expect(voicepeakEmotionNameFor(CastEmotion.joy, <String>['fun']), 'fun');
+      expect(voicepeakEmotionNameFor(CastEmotion.anger, standard), 'angry');
+      expect(voicepeakEmotionNameFor(CastEmotion.sadness, standard), 'sad');
+      expect(voicepeakEmotionNameFor(CastEmotion.fear, standard), isNull);
+      expect(
+        voicepeakEmotionNameFor(CastEmotion.sadness, <String>['whisper']),
+        isNull,
+      );
+      expect(voicepeakEmotionNameFor(null, standard), isNull);
+    });
+
+    test('line emotion replaces the preset mood, keeps other emotions; '
+        'speed stacks on the preset', () {
+      final List<String> args =
+          provider(
+            emotion: 'happy=10, sad=20, whisper=30',
+            speed: '120',
+            pitch: '-50',
+          ).synthesisArguments(
+            't',
+            'o.wav',
+            direction: const TtsDirection(
+              emotion: CastEmotion.anger,
+              intensity: 80,
+              rateOffset: 0.25,
+            ),
+            narratorEmotions: <String>[...standard, 'whisper'],
+          );
+      expect(args.sublist(6), <String>[
+        '-e',
+        'whisper=30,angry=80',
+        '--speed',
+        '150',
+        '--pitch',
+        '-50',
+      ]);
+    });
+
+    test('emotion the narrator lacks folds into speed', () {
+      final List<String> args = provider(emotion: 'happy=10')
+          .synthesisArguments(
+            't',
+            'o.wav',
+            direction: const TtsDirection(emotion: CastEmotion.sadness),
+            narratorEmotions: const <String>['whisper'],
+          );
+      // 悲伤 强度 50（缺省）→ -0.12 × 0.5 = -6%；预设情感原样。
+      expect(args.sublist(6), <String>['-e', 'happy=10', '--speed', '94']);
+    });
+
+    test('speed clamps to 50..200', () {
+      expect(
+        provider(speed: '180')
+            .synthesisArguments(
+              't',
+              'o.wav',
+              direction: const TtsDirection(rateOffset: 1.0),
+            )
+            .sublist(6),
+        <String>['--speed', '200'],
+      );
+      expect(
+        provider()
+            .synthesisArguments(
+              't',
+              'o.wav',
+              direction: const TtsDirection(rateOffset: -0.5),
+            )
+            .sublist(6),
+        <String>['--speed', '50'],
+      );
+    });
+
+    test('directed synthesis lists the narrator emotions once', () async {
+      behaviour = (_FakeProcess proc) async {
+        if (proc.args.first == '--list-emotion') {
+          proc.finish(0, stdout: 'happy\nfun\nangry\nsad\n');
+        } else {
+          await writeWavAndExit(proc);
+        }
+      };
+      final VoicepeakTtsProvider vp = provider();
+      try {
+        for (final CastEmotion e in <CastEmotion>[
+          CastEmotion.joy,
+          CastEmotion.fear,
+        ]) {
+          await synthesizeWithDirection(
+            vp,
+            '吾輩は猫である',
+            outputPath: p.join(tmp.path, 'out.wav'),
+            cancel: TtsCancelToken(),
+            direction: effectiveTtsDirection(
+              vp.directionSupport,
+              TtsDirection(emotion: e, intensity: 100),
+            ),
+          );
+        }
+      } finally {
+        await vp.dispose();
+      }
+      expect(spawned.map((_FakeProcess f) => f.args.first), <String>[
+        '--list-emotion',
+        '-s',
+        '-s',
+      ]);
+      expect(spawned[0].args, <String>['--list-emotion', 'Japanese Female 1']);
+      expect(spawned[1].args.sublist(6), <String>['-e', 'happy=100']);
+      // 怯え：标准旁白没有 → 折成 +10% 语速。
+      expect(spawned[2].args.sublist(6), <String>['--speed', '110']);
+    });
+
+    test('plain synthesis never lists emotions', () async {
+      await synth(preset());
+      expect(spawned.single.args.first, '-s');
     });
   });
 }

@@ -111,6 +111,8 @@ String ttsParamLabel(String key) => switch (key) {
   AzureTtsDescriptor.regionKey => t.audiobook_tts_param_region,
   IrodoriServerTtsDescriptor.captionKey => t.audiobook_tts_param_caption,
   OpenAiCompatibleTtsDescriptor.modelKey => t.audiobook_tts_param_model,
+  OpenAiCompatibleTtsDescriptor.deliveryInstructionsKey =>
+    t.audiobook_tts_param_delivery_instructions,
   'api_key' => t.audiobook_tts_param_api_key,
   'voice' => t.audiobook_tts_param_voice,
   SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine,
@@ -151,6 +153,13 @@ String ttsChoiceLabel(String providerId, String key, String value) => switch ((
       CustomHttpTtsResponse.jsonUrl => t.audiobook_tts_response_json_url,
     },
   (CustomHttpTtsDescriptor.providerId, _) => value,
+  (
+    OpenAiCompatibleTtsDescriptor.providerId,
+    OpenAiCompatibleTtsDescriptor.deliveryInstructionsKey,
+  ) =>
+    value == OpenAiCompatibleTtsDescriptor.deliveryOff
+        ? t.audiobook_tts_param_delivery_instructions_off
+        : t.audiobook_tts_param_delivery_instructions_on,
   (UnslothStudioTtsDescriptor.providerId, _) => _unslothLanguageLabel(value),
   _ => ttsLanguageLabel(value),
 };
@@ -203,6 +212,11 @@ String? ttsParamHint(String providerId, String key) => switch ((
     OpenAiCompatibleTtsDescriptor.modelKey,
   ) =>
     t.audiobook_tts_param_model_hint,
+  (
+    OpenAiCompatibleTtsDescriptor.providerId,
+    OpenAiCompatibleTtsDescriptor.deliveryInstructionsKey,
+  ) =>
+    t.audiobook_tts_param_delivery_instructions_hint,
   (UnslothStudioTtsDescriptor.providerId, final String key) =>
     _unslothParamHint(key),
   (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>

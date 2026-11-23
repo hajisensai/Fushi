@@ -139,14 +139,22 @@ String mangaEmotionLabel(CastEmotion? emotion) => switch (emotion) {
   CastEmotion.tension => t.manga_audio_emotion_tension,
 };
 
-/// 一句的语气摘要：「愤怒 80」；没标语气返回 null。
-String? mangaLineToneLabel(MangaScriptLine line) {
+/// 一句的情绪摘要：「愤怒 80」；没标情绪返回 null。
+String? mangaLineEmotionLabel(MangaScriptLine line) {
   final CastEmotion? emotion = line.emotion;
   if (emotion == null) return null;
   final int? intensity = line.intensity;
   return intensity == null
       ? mangaEmotionLabel(emotion)
       : '${mangaEmotionLabel(emotion)} $intensity';
+}
+
+/// 一句的演法摘要：情绪（[mangaLineEmotionLabel]）+ 语气说明，如「愤怒 80 · 必死に食い
+/// 下がる」；都没标返回 null。复核列表的副标题用它，连续几句同一个人时能看出语气有没有
+/// 逐句变化。
+String? mangaLineToneLabel(MangaScriptLine line) {
+  final List<String> parts = <String>[?mangaLineEmotionLabel(line), ?line.tone];
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 /// 复核界面优先列出的行：说话人不明，或 AI 自评把握低于此值。

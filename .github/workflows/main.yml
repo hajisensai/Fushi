@@ -43,6 +43,8 @@ on:
       - '.github/actions/provide-baked-secrets/**'
       # strings.g.dart 不入库：analyze / test / build 前由它生成（生成器在 fushi/** 里）。
       - '.github/actions/gen-i18n/**'
+      # shaderbundle 不入库：flutter analyze 前由它编出（pubspec 资源，analyze 不跑构建钩子）。
+      - '.github/actions/gen-shader-bundles/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/actions/test-native-linux/**'
@@ -301,6 +303,9 @@ jobs:
     # fushi/lib/i18n/strings.g.dart is not tracked: generate it (needs the pub get above).
     - name: Generate i18n
       uses: ./.github/actions/gen-i18n
+    # build/shaderbundles/*.shaderbundle is hook output listed in pubspec assets; analyze runs no hook.
+    - name: Generate Flutter GPU shader bundles
+      uses: ./.github/actions/gen-shader-bundles
 
     - name: Run dart analyze
       working-directory: fushi

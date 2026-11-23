@@ -43,6 +43,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+    show MusicServerLoudness;
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
@@ -58,6 +62,7 @@ import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
     show setMpvPropertiesInOrder;
@@ -254,6 +259,9 @@ MusicOutputPlatform musicOutputPlatformOfHost() {
   return MusicOutputPlatform.other;
 }
 
+/// mpv `volume-gain-max` 的取值（mpv 选项允许的上限 150 dB）。
+const String kMusicMpvVolumeGainMaxDb = '150';
+
 /// 纯函数：输出设置 → 要下发的 mpv 属性（设计 §7.4 的平台表）。
 ///
 /// * Windows `ao=wasapi`、macOS `ao=coreaudio`：独占时 `audio-exclusive=yes`
@@ -262,6 +270,9 @@ MusicOutputPlatform musicOutputPlatformOfHost() {
 /// * Linux：`ao` 不钉（PipeWire 优先，退 ALSA）；选 `alsa/hw:…` 设备即硬件直出。
 /// * Android / iOS：`ao` 用 media_kit 默认；bit-perfect / 采样率由平台通道处理。
 /// * ReplayGain 恒 `replaygain=no`：增益由后端按曲目用 `volume-gain` 施加（见文件头）。
+///   `volume-gain-max` 放到 mpv 允许的上限：mpv 默认只准 +12 dB，超过的 `volume-gain`
+///   整个被拒（停在上一个值 / 0 dB）。录得轻的曲目（-30 LUFS 量级的人声、老录音）按 -18 LUFS
+///   要 +12 dB 以上；防削波由 [musicReplayGainDb] 按峰值封顶，不靠 mpv 这道上限。
 Map<String, String> musicMpvProperties(
   MusicOutputSettings settings, {
   required MusicOutputPlatform platform,
@@ -273,6 +284,7 @@ Map<String, String> musicMpvProperties(
     'gapless-audio': settings.gapless ? 'weak' : 'no',
     'prefetch-playlist': settings.gapless ? 'yes' : 'no',
     'replaygain': 'no',
+    'volume-gain-max': kMusicMpvVolumeGainMaxDb,
     // 纯音频实例：没有画面，也不要封面当视频轨解码。
     'audio-display': 'no',
     if (platform == MusicOutputPlatform.windows) 'ao': 'wasapi',
@@ -307,6 +319,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     MusicPlatformOutput platformOutput = const MusicPlatformOutput(),
     MusicCdDiscIdReader? cdDiscIdReader,
     MusicPluginStreamResolver? pluginStreamResolver,
+    MusicServerLoudnessResolver? serverLoudnessResolver,
     int Function()? nowMs,
   }) : _player = Player(configuration: configuration),
        _initialProperties = initialProperties,
@@ -314,6 +327,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
        _platformOutput = platformOutput,
        _cdDiscIdReader = cdDiscIdReader,
        _pluginStreamResolver = pluginStreamResolver,
+       _serverLoudnessResolver = serverLoudnessResolver,
        _nowMs = nowMs ?? _wallClockMs {
     _subs.add(_player.stream.position.listen(_onPosition));
     _subs.add(_player.stream.playing.listen(_onPlaying));
@@ -328,6 +342,16 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
 
   /// 插件曲目取流（null = 全局装配点 [resolveMusicPluginStream]）。
   final MusicPluginStreamResolver? _pluginStreamResolver;
+
+  /// 服务器曲目起播期补查响度（null = 全局装配点 [musicServerLoudnessResolver]）。
+  final MusicServerLoudnessResolver? _serverLoudnessResolver;
+
+  /// 补查到的服务器响度（曲目 uid → 响度），[_applyGain] 与播放项自带的值合并。
+  final Map<String, MusicServerLoudness> _serverLoudness =
+      <String, MusicServerLoudness>{};
+
+  /// 正在补查的曲目（同一首并发只问一次）。
+  final Set<String> _serverLoudnessPending = <String>{};
 
   /// 墙钟（epoch 毫秒），判插件流地址是否过期。
   final int Function() _nowMs;
@@ -510,18 +534,29 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   }
 
   /// 按出声曲目下发 ReplayGain（`volume-gain`，dB）。
+  ///
+  /// 服务器曲目没随播放项带来的响度用补查结果补上（[_lookupServerLoudness]）。
   Future<void> _applyGain(MusicPlayItem? item) async {
-    final double db =
-        item == null || _settings.replayGain == MusicReplayGainMode.off
-        ? 0
-        : musicReplayGainDb(
-            albumMode: _settings.replayGain == MusicReplayGainMode.album,
-            trackGain: item.rgTrackGain,
-            trackPeak: item.rgTrackPeak,
-            albumGain: item.rgAlbumGain,
-            albumPeak: item.rgAlbumPeak,
-            preampDb: _settings.replayGainPreampDb,
-          );
+    final double db;
+    if (item == null || _settings.replayGain == MusicReplayGainMode.off) {
+      db = 0;
+    } else {
+      final ({
+        double? trackGain,
+        double? trackPeak,
+        double? albumGain,
+        double? albumPeak,
+      })
+      l = musicItemLoudnessWith(item, _serverLoudness[item.trackUid]);
+      db = musicReplayGainDb(
+        albumMode: _settings.replayGain == MusicReplayGainMode.album,
+        trackGain: l.trackGain,
+        trackPeak: l.trackPeak,
+        albumGain: l.albumGain,
+        albumPeak: l.albumPeak,
+        preampDb: _settings.replayGainPreampDb,
+      );
+    }
     await _setIfChanged('volume-gain', db.toStringAsFixed(2));
   }
 
@@ -585,10 +620,36 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   final Map<String, Map<String, String>> _fileLocalFor =
       <String, Map<String, String>>{};
 
+  /// 服务器曲目缺响度时向服务器补查（不阻塞起播：预排的下一首在出声前早就查完；当前这首
+  /// 查回来时若正在出声，立即按新值重下增益）。查不到 / 失败按 0 dB 播。
+  void _lookupServerLoudness(MusicPlayItem item) {
+    final MusicServerTrackRef? ref = item.serverTrack;
+    if (ref == null || !musicItemNeedsServerLoudness(item)) return;
+    final String uid = item.trackUid;
+    if (_serverLoudness.containsKey(uid) || !_serverLoudnessPending.add(uid)) {
+      return;
+    }
+    final MusicServerLoudnessResolver? resolver =
+        _serverLoudnessResolver ?? musicServerLoudnessResolver;
+    if (resolver == null) {
+      _serverLoudnessPending.remove(uid);
+      return;
+    }
+    unawaited(
+      resolver.resolve(ref).then((MusicServerLoudness? l) async {
+        _serverLoudnessPending.remove(uid);
+        if (l == null || _disposed) return;
+        _serverLoudness[uid] = l;
+        if (_audible?.trackUid == uid) await _applyGain(_audible);
+      }),
+    );
+  }
+
   Future<Media> _mediaFor(
     MusicPlayItem item, {
     MusicPlayItem? playThrough,
   }) async {
+    _lookupServerLoudness(item);
     final MusicResolvedMedia resolved = await resolveMusicMedia(
       item,
       playThrough: playThrough,

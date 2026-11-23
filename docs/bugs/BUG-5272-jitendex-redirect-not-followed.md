@@ -1,0 +1,6 @@
+## BUG-5272 · jitendex-redirect-not-followed
+- **报告**：2026-11-23（应用内反馈 / 拍板台 QkIs9sPRrB：「词典不会直接显示 jitendex 跳转的对应词条，原版 hoshidict 是直接显示跳转后的对应词条的」；拍板「做」）
+- **真实性**：✅ 真。Jitendex 的重定向词条（13.9 万条，如 `怖気つく` → `怖気づく`）glossary 是「一张 `data.content == "redirect-glossary"` 的 structured-content 链接卡 + 一条 `[formOf, [rule]]`」（约 1078 条只有链接卡，如 `アホんだら` → `阿呆陀羅`）。引擎只认「整条 glossary 都是 formOf 项」的 Yomitan 纯重定向（`native/fushidicts/fushidicts_src/util/redirect_glossary.cpp` `parse` 要求 `[[` 开头），链接卡开头的 Jitendex 形态被当成普通释义：弹窗只出一张「⟶ 怖気づく」卡，不出目标词条。另外判据门槛 `kMaxRawBytes = 1024` 也装不下 Jitendex 的链接卡（实测最大 1950 字节），且存量 Jitendex 的 `redirect_glossary.flag` 都是按旧判据写的「0」，读侧会据此跳过检测。
+- **[x] ① 已修复** — `redirect_glossary.cpp` `parse` 认第二种纯重定向形态：每项要么是 formOf，要么是 Jitendex 链接卡（目标取 formOf；没有 formOf 的链接卡取 href `?query=` 参数），混着任何释义的不算；同一目标去重、留带 rule 的 formOf。`kMaxRawBytes` 抬到 4096。sidecar 加第三列判据版本 `kFlagCriterion = 2`，旧版（两列）不采信，启动迁移扫描按新判据重写。`lookup.cpp` 的一层跟随逻辑不变，自动覆盖。真 Jitendex（2026-10-03 版）导入后实测：`怖気つくな` → `怖気づく`（matched 怖気つく，trace `redirected from 怖気つく`），`アホんだらが` → `阿呆陀羅`，迁移扫描报 1。
+- **[x] ② 已加自动化测试** — `native/fushidicts/tests/yomitan_redirect_lookup_test.cpp` J1–J4（链接卡 + formOf、只有链接卡、formOf 在前、链接卡混释义不动）在每种 sidecar 状态下跑；S8（v1 sidecar 不采信、迁移重写）、S9（只有链接卡的词典导入端 / 迁移扫描打标）。去掉 Jitendex 判据时 27 处失败。
+- **备注**：跟随目标不按 href 的 `primary_reading` 过滤读音，与 Yomitan formOf 语义一致（目标词头的全部读音都出）。

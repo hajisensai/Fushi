@@ -190,6 +190,12 @@ String normalizeGalgameSearchText(String raw) => normalizeMediaSearchText(raw);
 bool matchesGalgameSearch(GalgameEntry entry, String query) =>
     matchesMediaSearch(query: query, titles: entry.searchTitles);
 
+/// 「隐藏成人向」偏好（[GalgameLibraryView.hideNsfw]）下 [entry] 被藏起来吗。
+/// 库页筛选、游戏首页与侧栏游戏速览同一判据（首页口径见
+/// `galgame_home_selection.dart` 的 `galgameShownOnHome`）。
+bool galgameHiddenByNsfwPref(GalgameEntry entry, {required bool hideNsfw}) =>
+    hideNsfw && entry.isNsfw;
+
 /// 某条游戏是否通过筛选（不含搜索）。纯函数。
 bool matchesGalgameFilters(GalgameEntry entry, GalgameLibraryView view) {
   if (view.status != null && entry.playStatus != view.status) {
@@ -203,7 +209,7 @@ bool matchesGalgameFilters(GalgameEntry entry, GalgameLibraryView view) {
     case GalgameLocalFilter.metadataOnly:
       if (entry.hasLocalExe) return false;
   }
-  if (view.hideNsfw && entry.isNsfw) {
+  if (galgameHiddenByNsfwPref(entry, hideNsfw: view.hideNsfw)) {
     return false;
   }
   if (view.tags.isNotEmpty) {

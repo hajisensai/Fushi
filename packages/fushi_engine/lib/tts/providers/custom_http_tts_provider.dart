@@ -1,10 +1,14 @@
 /// 自定义 HTTP TTS：用户自己描述一个合成接口（地址、方法、请求模板、请求头、返回格式），
 /// 接没有专门适配的自建服务（GPT-SoVITS 各下游分支、各类 WebUI 的 API）。
 ///
-/// - 模板里的占位符：`{text}`（这一句）、`{lang}`、`{speed}`、`{api_key}`（凭据）。
+/// - 模板里的占位符：`{text}`（这一句）、`{lang}`、`{speed}`、`{api_key}`（凭据），
+///   以及逐句语气（[CustomHttpTtsConfig.valuesFor]）：`{emotion}`、`{intensity}`、
+///   `{tone}`、`{instruction}`、`{rate}`、`{pitch}`、`{volume}`（`docs/tts-custom-http.md`）。
 ///   query 模板按 URL 编码代入；JSON 模板先按 JSON 解析，再只在**字符串值**里代入，
 ///   最后整体重新编码——引号、换行、反斜杠都由编码器转义，模板写法不会被文本内容破坏。
-///   整个字符串值恰好是 `"{speed}"` 时代入数字。
+///   整个字符串值恰好是一个数值占位符（[kCustomHttpTtsNumericPlaceholders]）时代入数字。
+/// - 逐句语气只在模板真用到对应占位符时才声明支持（[customHttpTtsDirectionSupport]），
+///   没用到的字段不进缓存键；没有演出参数的句子请求与以前逐字节相同。
 /// - 凭据只放 `api_key`（secret 参数，按凭据存）：请求头 / query 里的凭据型字段必须写
 ///   `{api_key}`，写明文的校验不过（[CustomHttpTtsDescriptor.validate]）。
 /// - 失败只带错误码与 HTTP 状态，不带地址、模板、响应正文。
@@ -17,7 +21,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/tts/providers/tts_http.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -239,13 +245,79 @@ class CustomHttpTtsConfig {
   final CustomHttpTtsResponse response;
   final String responsePath;
 
-  /// 占位符 → 值。
-  Map<String, String> valuesFor(String text) => <String, String>{
-    'text': text,
-    'lang': lang,
-    'speed': speed.isEmpty ? '1.0' : speed,
-    'api_key': apiKey,
-  };
+  /// 占位符 → 值。[direction] 已按 [customHttpTtsDirectionSupport] 过滤：
+  /// - `{speed}`：预设语速；有语速偏移且预设语速是数字（或没填，按 1.0）时乘上
+  ///   `1 + rateOffset`；
+  /// - `{rate}`：这一句的语速倍率 `1 + rateOffset`（没有为 `1`）；
+  /// - `{pitch}`：音高偏移，半音（没有为 `0`）；`{volume}`：音量偏移，dB（没有为 `0`）；
+  /// - `{emotion}`：情绪英文名（[CastEmotion.wire]，没有为 `neutral`）；
+  ///   `{intensity}`：强度 0..100（没有情绪为 `0`，有情绪没标强度为 `50`）；
+  /// - `{tone}`：语气说明原文（没有为空串）；`{instruction}`：情绪 + 语气说明拼成的
+  ///   日语指令（[ttsDeliveryInstruction]，没有为空串）。
+  Map<String, String> valuesFor(
+    String text, {
+    TtsDirection direction = TtsDirection.none,
+  }) {
+    final double? rate = direction.rateOffset;
+    final double factor = rate == null ? 1 : 1 + rate;
+    final String presetSpeed = speed.isEmpty ? '1.0' : speed;
+    final double? presetSpeedValue = double.tryParse(presetSpeed);
+    final CastEmotion? emotion = direction.emotion;
+    return <String, String>{
+      'text': text,
+      'lang': lang,
+      'speed': rate == null || presetSpeedValue == null
+          ? presetSpeed
+          : customHttpTtsNumber(presetSpeedValue * factor),
+      'api_key': apiKey,
+      'emotion': (emotion ?? CastEmotion.neutral).wire,
+      'intensity': emotion == null ? '0' : '${direction.effectiveIntensity}',
+      'tone': direction.tone?.trim() ?? '',
+      'instruction': ttsDeliveryInstruction(direction) ?? '',
+      'rate': customHttpTtsNumber(factor),
+      'pitch': customHttpTtsNumber(direction.pitchOffset ?? 0),
+      'volume': customHttpTtsNumber(direction.volumeOffset ?? 0),
+    };
+  }
+}
+
+/// 数值占位符的文本：最多三位小数、去掉多余的 0（`1.08`、`-2`、`0`）。
+String customHttpTtsNumber(double v) {
+  String text = v.toStringAsFixed(3);
+  if (text.contains('.')) text = text.replaceFirst(RegExp(r'\.?0+$'), '');
+  return text == '-0' ? '0' : text;
+}
+
+/// 模板（query / 请求体 / 请求头）里用到的占位符名。
+Set<String> customHttpTtsPlaceholdersOf(CustomHttpTtsConfig config) => <String>{
+  for (final String template in <String>[
+    config.queryTemplate,
+    config.bodyTemplate,
+    config.headersTemplate,
+  ])
+    for (final Match m in _kPlaceholder.allMatches(template)) m.group(1)!,
+};
+
+/// 按模板实际用到的占位符声明演出能力（对面是什么服务不知道，模板就是契约）：
+/// - `{emotion}` / `{intensity}` / `{instruction}` → 情绪由服务原生表达；
+/// - `{tone}` / `{instruction}` → 收语气说明；
+/// - `{rate}`，或 `{speed}` 且预设语速是数字 / 没填 → 语速；
+/// - `{pitch}` → 音高；`{volume}` → 音量。
+/// 不表达情绪但能调语速 / 音高 / 音量的模板，情绪由 [effectiveTtsDirection] 折进这几项。
+TtsDirectionSupport customHttpTtsDirectionSupport(CustomHttpTtsConfig config) {
+  final Set<String> used = customHttpTtsPlaceholdersOf(config);
+  final bool numericSpeed =
+      config.speed.isEmpty || double.tryParse(config.speed) != null;
+  return TtsDirectionSupport(
+    emotion:
+        used.contains('emotion') ||
+        used.contains('intensity') ||
+        used.contains('instruction'),
+    tone: used.contains('tone') || used.contains('instruction'),
+    rate: used.contains('rate') || (used.contains('speed') && numericSpeed),
+    pitch: used.contains('pitch'),
+    volume: used.contains('volume'),
+  );
 }
 
 /// 一次合成要发的请求（纯函数 [buildCustomHttpTtsRequest] 的产物，测试直接断言）。
@@ -263,7 +335,18 @@ class CustomHttpTtsRequest {
   final List<int>? body;
 }
 
-final RegExp _kPlaceholder = RegExp(r'\{(text|lang|speed|api_key)\}');
+final RegExp _kPlaceholder = RegExp(
+  r'\{(text|lang|speed|api_key|emotion|intensity|tone|instruction|rate|pitch|volume)\}',
+);
+
+/// 整个 JSON 字符串值恰好是这些占位符之一时代入数字（服务端多半要 number）。
+const Set<String> kCustomHttpTtsNumericPlaceholders = <String>{
+  'speed',
+  'intensity',
+  'rate',
+  'pitch',
+  'volume',
+};
 
 /// 把字符串里的已知占位符原样替换（转义由调用方按目标格式负责）。未知的 `{…}` 不动。
 String customHttpTtsSubstitute(String template, Map<String, String> values) =>
@@ -369,10 +452,13 @@ Object? customHttpTtsPick(Object? json, List<String> path) {
 
 Object? _substituteJson(Object? node, Map<String, String> values) {
   if (node is String) {
-    // 整个值就是 {speed}：代入数字（服务端多半要 float）。
-    if (node == '{speed}') {
-      final String speed = values['speed'] ?? '';
-      return num.tryParse(speed) ?? speed;
+    // 整个值就是一个数值占位符（{speed} 等）：代入数字（服务端多半要 number）。
+    final Match? whole = _kPlaceholder.matchAsPrefix(node);
+    if (whole != null &&
+        whole.end == node.length &&
+        kCustomHttpTtsNumericPlaceholders.contains(whole.group(1))) {
+      final String value = values[whole.group(1)] ?? '';
+      return num.tryParse(value) ?? value;
     }
     return customHttpTtsSubstitute(node, values);
   }
@@ -389,10 +475,12 @@ Object? _substituteJson(Object? node, Map<String, String> values) {
 }
 
 /// 按配置与这一句造出请求。配置不完整 / 不合法抛 [TtsFailureCode.notConfigured]。
+/// [direction] 是这一句的演出参数（已按 [customHttpTtsDirectionSupport] 过滤）。
 CustomHttpTtsRequest buildCustomHttpTtsRequest(
   CustomHttpTtsConfig config,
-  String text,
-) {
+  String text, {
+  TtsDirection direction = TtsDirection.none,
+}) {
   const TtsFailure notConfigured = TtsFailure(TtsFailureCode.notConfigured);
   final Uri? base = Uri.tryParse(config.endpoint);
   if (base == null ||
@@ -403,7 +491,10 @@ CustomHttpTtsRequest buildCustomHttpTtsRequest(
   if (!CustomHttpTtsDescriptor.methods.contains(config.method)) {
     throw notConfigured;
   }
-  final Map<String, String> values = config.valuesFor(text);
+  final Map<String, String> values = config.valuesFor(
+    text,
+    direction: direction,
+  );
 
   final List<(String, String)>? query = customHttpTtsParseQuery(
     config.queryTemplate,
@@ -470,7 +561,8 @@ CustomHttpTtsRequest buildCustomHttpTtsRequest(
 bool _sameOrigin(Uri a, Uri b) =>
     a.scheme == b.scheme && a.host == b.host && a.port == b.port;
 
-class CustomHttpTtsProvider extends TtsProvider {
+class CustomHttpTtsProvider extends TtsProvider
+    implements TtsDirectedSynthesis {
   CustomHttpTtsProvider({required this.config, required TtsHost host})
     : _client = host.httpClientFactory();
 
@@ -482,14 +574,32 @@ class CustomHttpTtsProvider extends TtsProvider {
       const CustomHttpTtsDescriptor().capabilities;
 
   @override
+  TtsDirectionSupport get directionSupport =>
+      customHttpTtsDirectionSupport(config);
+
+  @override
   Future<TtsResult> synthesize(
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
     final CustomHttpTtsRequest request = buildCustomHttpTtsRequest(
       config,
       text,
+      direction: direction,
     );
     switch (config.response) {
       case CustomHttpTtsResponse.audio:
