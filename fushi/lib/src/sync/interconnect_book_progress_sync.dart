@@ -138,7 +138,7 @@ class InterconnectBookProgressSync {
   ///   书级进度（章级进度在 `manga_chapter_states`，见 BUG-5352「未尽事项」）。
   /// - 其余书：本机键就是 wire 键。
   static String? hostBookKeyOf(EpubBookRow book) {
-    final OnlineMangaLibraryEntry? entry = _interconnectMangaEntryOf(book);
+    final OnlineMangaLibraryEntry? entry = interconnectMangaEntryOf(book);
     if (entry == null) return book.bookKey;
     if (entry.series.raw['chaptered'] == true) return null;
     final String peerKey = entry.series.key;
@@ -150,7 +150,7 @@ class InterconnectBookProgressSync {
       hostBookKeyOf(book) != null;
 
   /// 经互联收下的漫画行的描述符；其它书 null（非漫画不解析 JSON）。
-  static OnlineMangaLibraryEntry? _interconnectMangaEntryOf(EpubBookRow book) {
+  static OnlineMangaLibraryEntry? interconnectMangaEntryOf(EpubBookRow book) {
     if (BookFormat.parseOrEpub(book.format) != BookFormat.manga) return null;
     final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
       book.sourceMetadata,
@@ -639,7 +639,7 @@ class InterconnectBookProgressSync {
     RemoteBookProgress p,
   ) async {
     if (book.uid.isEmpty) return;
-    final OnlineMangaLibraryEntry? entry = _interconnectMangaEntryOf(book);
+    final OnlineMangaLibraryEntry? entry = interconnectMangaEntryOf(book);
     if (entry == null || entry.series.raw['chaptered'] == true) return;
     if (entry.series.key.isEmpty) return;
     final String chapterKey = InterconnectMangaCatalog.chapterFor(

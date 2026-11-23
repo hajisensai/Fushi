@@ -42,6 +42,7 @@ import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/online_library_items.dart';
 import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_manga_chapter_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
     show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
@@ -56,6 +57,8 @@ import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart'
+    show kMangaChapterProgressCapability;
 import 'package:fushi/src/sync/sync_peer_gap.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryCatalogService;
@@ -1110,6 +1113,8 @@ class SyncOrchestrator {
       // 一本小说的进度要等所有视频传完才到对端。
       _emitPhaseStart(SyncPhase.readingData);
       await _syncBookProgressLive(report, b);
+      // 章节式互联漫画的章级进度（书级位置对它们不带章身份，上一步已排除）。
+      await _syncMangaChapterProgressLive(report, b);
       mark('bookProgressLive');
     }
 
@@ -2468,6 +2473,13 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncBookProgressLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncMangaChapterProgressLive]。
+  @visibleForTesting
+  Future<void> syncMangaChapterProgressLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncMangaChapterProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncVideoProgressLive]。
   @visibleForTesting
