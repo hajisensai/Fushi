@@ -3346,6 +3346,11 @@ function crossAppAudioOverrides(defaultRange, chosen) {
     return out;
 }
 
+// 「本次跳过句子音频」的覆盖项（拍板 Z0DtSVYC7A）：只作用于这一笔制卡，不改任何设置。
+function crossAppAudioSkipOverrides() {
+    return { omitAudio: true };
+}
+
 function crossAppAudioFormatSeconds(ms) {
     return (Math.max(0, ms) / 1000).toFixed(2) + 's';
 }
@@ -3616,6 +3621,18 @@ function openCrossAppAudioPanel(idx) {
         onclick: () => finish(),
     });
     actions.appendChild(cancelBtn);
+    // 拍板 Z0DtSVYC7A（方案 b）：查的词本来就没有句子语音时，录环里是刚才别的声音，按次
+    // 跳过即可，不必去设置里关掉整个跨应用语音缓存。不依赖试听数据：读取中 / 读不出时也能点。
+    // 宿主 prepareSentenceAudio 见 omitAudio 直接不截（与高级制卡「不要句子音频」同一 wire 键）。
+    const skipBtn = el('button', {
+        className: 'mined-action-btn ghost crossapp-audio-skip',
+        textContent: i18n.skip || '',
+        onclick: async () => {
+            finish();
+            await window.fushiPopupMineEntryByIndex(idx, crossAppAudioSkipOverrides());
+        },
+    });
+    actions.appendChild(skipBtn);
     panel.appendChild(actions);
 
     if (ownsDocument) rootEl.classList.add(CROSS_APP_AUDIO_OPEN_CLASS);

@@ -9040,6 +9040,7 @@
   "popup_cross_app_audio_hint": "拖动两端框住要的那句，试听确认后制卡。",
   "popup_cross_app_audio_loading": "正在读取录到的声音…",
   "popup_cross_app_audio_mine": "制卡",
+  "popup_cross_app_audio_skip": "不带句子音频制卡",
   "popup_cross_app_audio_unavailable": "这次查词没有录到其他应用的声音。",
   "popup_ctx_box_current": "当前句",
   "popup_ctx_box_next": "后文",
