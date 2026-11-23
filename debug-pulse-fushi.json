@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T14:56:18Z",
+ "generatedAt": "2026-11-23T14:58:10Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4ad722660ac2e56212f658c329b0dd501479c41c",
-  "seq": 32049
+  "sha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
+  "seq": 32050
  },
  "builds": [
   {
@@ -432,10 +432,14 @@
   }
  ],
  "pending": {
-  "headSha": "4ad722660ac2e56212f658c329b0dd501479c41c",
-  "headSeq": 32049,
+  "headSha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
+  "headSeq": 32050,
   "prs": [],
   "direct": [
+   {
+    "sha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
+    "subject": "chore(bugs): settle BUG number collisions on 4ad722660"
+   },
    {
     "sha": "4ad722660ac2e56212f658c329b0dd501479c41c",
     "subject": "Merge #4285 (pr/manga-popover-height) into develop"
