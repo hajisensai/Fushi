@@ -306,34 +306,30 @@ void main() {
   group('floating-lyric platform predicates', () {
     // 平台判据的唯一真相源：isSupported 与所有入口都经它（源码守卫在
     // test/reader/reader_quick_settings_floating_lyric_test.dart）。
-    test('native back-end exists on Android, Windows and macOS only', () {
+    test('native back-end exists on Android, Windows, macOS and Linux', () {
       expect(floatingLyricBackendAvailableOn('android'), isTrue);
       expect(floatingLyricBackendAvailableOn('windows'), isTrue);
       expect(floatingLyricBackendAvailableOn('macos'), isTrue);
-      expect(floatingLyricBackendAvailableOn('linux'), isFalse);
+      expect(floatingLyricBackendAvailableOn('linux'), isTrue);
       expect(floatingLyricBackendAvailableOn('ios'), isFalse);
       expect(floatingLyricBackendAvailableOn('fuchsia'), isFalse);
     });
 
-    test(
-      'desktop rich window (extended style + auto line count) is Windows and '
-      'macOS',
-      () {
-        expect(floatingLyricDesktopWindowOn('windows'), isTrue);
-        expect(floatingLyricDesktopWindowOn('macos'), isTrue);
-        expect(floatingLyricDesktopWindowOn('android'), isFalse);
-        expect(floatingLyricDesktopWindowOn('linux'), isFalse);
-      },
-    );
+    test('desktop rich window (extended style + auto line count) is Windows, '
+        'macOS and Linux', () {
+      expect(floatingLyricDesktopWindowOn('windows'), isTrue);
+      expect(floatingLyricDesktopWindowOn('macos'), isTrue);
+      expect(floatingLyricDesktopWindowOn('linux'), isTrue);
+      expect(floatingLyricDesktopWindowOn('android'), isFalse);
+    });
 
-    test(
-      'vertical text stays Windows-only (macOS back-end has no vertical layout)',
-      () {
-        expect(floatingLyricVerticalTextOn('windows'), isTrue);
-        expect(floatingLyricVerticalTextOn('macos'), isFalse);
-        expect(floatingLyricVerticalTextOn('android'), isFalse);
-      },
-    );
+    test('vertical text stays Windows-only (macOS / Linux back-ends have no '
+        'vertical layout)', () {
+      expect(floatingLyricVerticalTextOn('windows'), isTrue);
+      expect(floatingLyricVerticalTextOn('macos'), isFalse);
+      expect(floatingLyricVerticalTextOn('linux'), isFalse);
+      expect(floatingLyricVerticalTextOn('android'), isFalse);
+    });
 
     test('platformOverride still wins over the host OS', () {
       FloatingLyricChannel.platformOverride = false;
