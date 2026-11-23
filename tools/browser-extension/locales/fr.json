@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Hauteur du fond",
   "opt_subtitleStyleBoxHeight_desc": "% de la hauteur de la vidéo (5–60). 0 s’adapte au texte.",
   "opt_subtitleStyleBoxAutoFit_title": "Ajustement automatique",
-  "opt_subtitleStyleBoxAutoFit_desc": "Ajuste la taille du texte à un fond de hauteur fixe.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Réduit le texte qui ne tient pas dans un fond de hauteur fixe ; ne l'agrandit jamais.",
   "opt_subtitleStyle_auto": "Ajuster au texte",
   "opt_resetSubtitleStyle_title": "Rétablir l’apparence par défaut",
   "opt_resetSubtitleStyle_desc": "Réinitialise cette section (position et interrupteur de fond conservés).",

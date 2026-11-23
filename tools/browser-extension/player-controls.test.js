@@ -152,7 +152,7 @@ function findAll(root, pred, out = []) {
 
 const STYLE_STUB = {
   KEY: 'subtitleStyle',
-  DEFAULTS: { fontScale: 100, lineHeight: 145, textAlign: 'center', shadow: 'soft', textColor: '', backgroundColor: '', backgroundOpacity: 72 },
+  DEFAULTS: { fontScale: 100, lineHeight: 145, textAlign: 'center', shadow: 'soft', textColor: '', backgroundColor: '', backgroundOpacity: 72, boxAutoFit: true },
   LIMITS: { fontScale: [50, 300], lineHeight: [100, 250], backgroundOpacity: [0, 100] },
   DEFAULT_TEXT_COLOR: '#f7f8f2',
   DEFAULT_BACKGROUND_COLOR: '#0c0f0d',
@@ -416,6 +416,8 @@ test('styleControls：上下限全部取自 fushiSubtitleStyle，本模块不另
   assert.deepStrictEqual([byId.lineHeight.min, byId.lineHeight.max], STYLE_STUB.LIMITS.lineHeight);
   assert.deepStrictEqual([byId.backgroundOpacity.min, byId.backgroundOpacity.max], STYLE_STUB.LIMITS.backgroundOpacity);
   // 变异实测：把 LIMITS 改窄，控件必须跟着变窄（否则说明值是硬编码的）。
+  // 自适应缩放开关在快捷面板里（反馈 UAiGljqcTw），字段与设置页同一个 boxAutoFit。
+  assert.strictEqual(byId.boxAutoFit.kind, 'switch');
   const narrowed = PC.styleControls(Object.assign({}, STYLE_STUB, { LIMITS: { fontScale: [80, 120] } }));
   assert.deepStrictEqual([narrowed[0].min, narrowed[0].max], [80, 120]);
   assert.deepStrictEqual(PC.styleControls(null), []);
@@ -538,6 +540,25 @@ test('字幕样式子页：改字号写 subtitleStyle；恢复默认删键', () 
   const reset = walk(menu, (el) => el.textContent === FUSHI_T('pc_style_reset'));
   reset.click();
   assert.strictEqual(t.removes.pop(), 'subtitleStyle');
+});
+
+test('字幕样式子页：自适应缩放开关（反馈 UAiGljqcTw）回显默认开、翻关写 boxAutoFit:false、翻回删键', () => {
+  const t = load();
+  t.button().click();
+  t.rowFor('style').click();
+  const find = () => walk(t.menu(), (el) => el.dataset && el.dataset.field === 'boxAutoFit');
+  const row = find();
+  assert.ok(row, '快捷面板里应该有自适应缩放开关');
+  assert.strictEqual(row.getAttribute('role'), 'switch');
+  assert.strictEqual(row.getAttribute('aria-checked'), 'true', '默认开（与 fushiSubtitleStyle.DEFAULTS 一致）');
+  row.click();
+  assert.strictEqual(t.sets.pop().subtitleStyle.boxAutoFit, false);
+  const again = find();
+  assert.strictEqual(again.getAttribute('aria-checked'), 'false', '立即重绘，回显关');
+  // 键盘：Enter 翻回默认 → 等于默认就删键。
+  for (const fn of again.handlers.keydown || []) fn({ key: 'Enter', preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(t.removes.pop(), 'subtitleStyle');
+  assert.strictEqual(find().getAttribute('aria-checked'), 'true');
 });
 
 test('BUG-3145：总门没开时「Fushi 字幕」显示关，翻开时连总门一起写', () => {

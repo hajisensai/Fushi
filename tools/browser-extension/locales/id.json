@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Tinggi latar",
   "opt_subtitleStyleBoxHeight_desc": "% dari tinggi video (5–60). 0 menyesuaikan teks.",
   "opt_subtitleStyleBoxAutoFit_title": "Sesuaikan otomatis",
-  "opt_subtitleStyleBoxAutoFit_desc": "Menskalakan teks agar muat di latar dengan tinggi tetap.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Mengecilkan teks yang tidak muat di latar dengan tinggi tetap; tidak pernah memperbesar.",
   "opt_subtitleStyle_auto": "Sesuai teks",
   "opt_resetSubtitleStyle_title": "Pulihkan tampilan bawaan",
   "opt_resetSubtitleStyle_desc": "Mengatur ulang bagian ini (posisi dan sakelar latar tetap).",

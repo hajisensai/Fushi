@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Altezza dello sfondo",
   "opt_subtitleStyleBoxHeight_desc": "% dell’altezza del video (5–60). 0 si adatta al testo.",
   "opt_subtitleStyleBoxAutoFit_title": "Adattamento automatico",
-  "opt_subtitleStyleBoxAutoFit_desc": "Ridimensiona il testo per farlo stare in uno sfondo ad altezza fissa.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Rimpicciolisce il testo che non sta in uno sfondo ad altezza fissa; non lo ingrandisce mai.",
   "opt_subtitleStyle_auto": "Adatta al testo",
   "opt_resetSubtitleStyle_title": "Ripristina aspetto predefinito",
   "opt_resetSubtitleStyle_desc": "Reimposta questa sezione (mantiene posizione e interruttore dello sfondo).",

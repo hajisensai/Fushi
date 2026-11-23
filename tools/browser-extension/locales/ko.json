@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "배경 높이",
   "opt_subtitleStyleBoxHeight_desc": "영상 높이의 %(5–60). 0이면 글자에 맞춥니다.",
   "opt_subtitleStyleBoxAutoFit_title": "자동 맞춤",
-  "opt_subtitleStyleBoxAutoFit_desc": "고정 높이 배경에 맞게 글자 크기를 조절합니다.",
+  "opt_subtitleStyleBoxAutoFit_desc": "고정 높이 배경에 들어가지 않는 글자만 줄입니다(키우지 않음).",
   "opt_subtitleStyle_auto": "텍스트에 맞춤",
   "opt_resetSubtitleStyle_title": "기본 모양으로 복원",
   "opt_resetSubtitleStyle_desc": "이 섹션을 초기화합니다(위치와 배경 스위치는 유지).",

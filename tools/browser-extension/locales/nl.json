@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Achtergrondhoogte",
   "opt_subtitleStyleBoxHeight_desc": "% van de videohoogte (5–60). 0 past zich aan de tekst aan.",
   "opt_subtitleStyleBoxAutoFit_title": "Automatisch passend",
-  "opt_subtitleStyleBoxAutoFit_desc": "Schaalt tekst zodat die in een achtergrond met vaste hoogte past.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Verkleint tekst die niet in een achtergrond met vaste hoogte past; vergroot nooit.",
   "opt_subtitleStyle_auto": "Aan tekst aanpassen",
   "opt_resetSubtitleStyle_title": "Standaarduiterlijk herstellen",
   "opt_resetSubtitleStyle_desc": "Wist deze sectie (positie en achtergrondschakelaar blijven).",

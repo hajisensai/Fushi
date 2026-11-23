@@ -473,11 +473,11 @@ test('自适应缩放：底板有高度就按实测内容写 --fushi-sub-fit；�
   assert.ok(fit > 0 && fit < 1, '长句应缩小，实得 ' + el.style.getPropertyValue('--fushi-sub-fit'));
   assert.ok(w.textEl().scrollHeight <= 43 - 13 + 0.5, '收手时整句真的放得下（扣掉上下内边距 13）');
 
-  // 底板拉大一倍（40% 高 = 288px）：同一句话的字跟着变大 = 「大小随盒自适应」。
+  // 底板拉大（60% 宽 × 40% 高）：整句在设置字号下就放得下 → 倍率交还 CSS（= 设置字号），
+  // **不会**为了填满底板而放大（只缩不放，和 mpv 一样；反馈 UAiGljqcTw「单行比两行大」）。
   w.sandbox.chrome.storage.local.set({ subtitleStyle: { boxWidth: 60, boxHeight: 40 } });
   w.tick();
-  const bigger = parseFloat(el.style.getPropertyValue('--fushi-sub-fit'));
-  assert.ok(bigger > fit, '底板越大字越大：' + bigger + ' 应 > ' + fit);
+  assert.strictEqual(el.style.getPropertyValue('--fushi-sub-fit'), '', '放得下就保持设置字号，不放大');
 
   // 关掉自适应（设置页开关）→ 倍率交还 CSS，字号回到用户设的「大小」。
   w.sandbox.chrome.storage.local.set({ subtitleStyle: { boxWidth: 60, boxHeight: 40, boxAutoFit: false } });
