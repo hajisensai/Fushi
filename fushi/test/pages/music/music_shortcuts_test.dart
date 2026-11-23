@@ -1,3 +1,5 @@
+import 'dart:ui' show KeyEventDeviceType;
+
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter/gestures.dart'
     show kMiddleMouseButton, kPrimaryMouseButton, kSecondaryMouseButton;
@@ -191,6 +193,65 @@ void main() {
       dispatchMusicShortcut(ShortcutAction.musicPlayerSeekBackward, engine),
       isFalse,
     );
+  });
+
+  test('手柄 / 遥控器十字键的左右不被播放页 ±5 秒夺走（只认键盘）', () {
+    final FushiShortcutRegistry registry = FushiShortcutRegistry()
+      ..loadDefaults(TargetPlatform.android);
+    for (final (
+          LogicalKeyboardKey key,
+          PhysicalKeyboardKey physical,
+          ShortcutAction expected,
+        )
+        in <(LogicalKeyboardKey, PhysicalKeyboardKey, ShortcutAction)>[
+          (
+            LogicalKeyboardKey.arrowRight,
+            PhysicalKeyboardKey.arrowRight,
+            ShortcutAction.musicPlayerSeekForward,
+          ),
+          (
+            LogicalKeyboardKey.arrowLeft,
+            PhysicalKeyboardKey.arrowLeft,
+            ShortcutAction.musicPlayerSeekBackward,
+          ),
+        ]) {
+      // 键盘方向键：播放页解析成 ±5 秒。
+      expect(
+        resolveMusicKeyEvent(
+          KeyDownEvent(
+            physicalKey: physical,
+            logicalKey: key,
+            timeStamp: Duration.zero,
+          ),
+          registry: registry,
+          surface: MusicShortcutSurface.player,
+          modifiers: const <ModifierKey>{},
+        ),
+        expected,
+      );
+      // 同一个 arrow 键来自手柄 / 遥控器：不解析，交回焦点导航。
+      for (final KeyEventDeviceType device in <KeyEventDeviceType>[
+        KeyEventDeviceType.gamepad,
+        KeyEventDeviceType.directionalPad,
+        KeyEventDeviceType.joystick,
+      ]) {
+        expect(
+          resolveMusicKeyEvent(
+            KeyDownEvent(
+              physicalKey: physical,
+              logicalKey: key,
+              timeStamp: Duration.zero,
+              deviceType: device,
+            ),
+            registry: registry,
+            surface: MusicShortcutSurface.player,
+            modifiers: const <ModifierKey>{},
+          ),
+          isNull,
+          reason: '$key from $device',
+        );
+      }
+    }
   });
 
   test('文本框持焦时让路：空格是在打字', () {

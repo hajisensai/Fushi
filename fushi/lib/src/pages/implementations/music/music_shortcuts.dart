@@ -82,6 +82,27 @@ ShortcutAction? resolveMusicShortcut(
   return null;
 }
 
+/// 把一个键事件按 [surface] 的 scope 组解析成动作。
+///
+/// 音乐两组 scope 只开键盘通道（[ShortcutScope.channels]）：控制器来的键（Android
+/// 手柄 / 遥控器的方向键以 arrow 键事件到达，[GamepadButton.fromKeyEvent] 认得出来）
+/// 不是键盘输入，一律不解析，交回焦点导航 / 全局手柄派发。否则播放页的裸 ←/→ 绑定会
+/// 把手柄十字键的左右移焦夺成 ±5 秒。
+ShortcutAction? resolveMusicKeyEvent(
+  KeyEvent event, {
+  required FushiShortcutRegistry registry,
+  required MusicShortcutSurface surface,
+  required Set<ModifierKey> modifiers,
+}) {
+  if (GamepadButton.fromKeyEvent(event) != null) return null;
+  return resolveMusicShortcut(
+    registry,
+    surface,
+    event.logicalKey,
+    modifiers: modifiers,
+  );
+}
+
 /// 音乐页键事件节点的 `onKeyEvent` 本体：按 [surface] 的 scope 组解析后派发。
 ///
 /// 文本框持焦时一律让路：空格 / 字母键是在打字，不是播放控制（[editableFocused] 缺省
@@ -105,10 +126,10 @@ KeyEventResult handleMusicShortcutKey(
     if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
     if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
   };
-  final ShortcutAction? action = resolveMusicShortcut(
-    registry,
-    surface,
-    event.logicalKey,
+  final ShortcutAction? action = resolveMusicKeyEvent(
+    event,
+    registry: registry,
+    surface: surface,
     modifiers: modifiers,
   );
   return dispatchMusicShortcut(action, engine)
