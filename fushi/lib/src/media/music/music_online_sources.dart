@@ -54,7 +54,8 @@ String musicServerSourceKey(MusicServerBrowser browser) =>
       MusicServerKind.appleMusic => kAppleMusicSourceKey,
       MusicServerKind.youtube => kYoutubeMusicSourceKey,
       MusicServerKind.jellyfin ||
-      MusicServerKind.subsonic => 'server:${browser.serverId}',
+      MusicServerKind.subsonic ||
+      MusicServerKind.fushiHost => 'server:${browser.serverId}',
     };
 
 /// 一个来源连同它在「推荐 / 搜索」里是否显示。

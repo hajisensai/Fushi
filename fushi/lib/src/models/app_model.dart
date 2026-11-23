@@ -406,6 +406,9 @@ import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/music_library_host_module.dart';
+import 'package:fushi_engine/media/music/host/engine_music_library_host.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show
         MossBackendPreference,
@@ -536,6 +539,8 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show InterconnectMusicHostLyrics, InterconnectMusicHosts;
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show musicServerBindingLoader;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
@@ -1232,6 +1237,15 @@ class AppModel
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
     // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
     assistantFactory: () => createAppAssistantHost(this),
+    // 互联共享音乐库（设计 2026-11-23，拍板 design-imusic-q2：与视频库 / 书库同级，跟着互联总开关走，
+    // 不另设开关）：与无头服务端同一个引擎实现。
+    modulesFactory: () => <InterconnectHostModule>[
+      MusicLibraryHostModule(
+        EngineMusicLibraryHost(
+          database: () => isDatabaseReady ? database : null,
+        ),
+      ),
+    ],
     // 对端点名「给这个视频补字幕」：与刮削后自动补同一个服务（运行时随下载管线
     // 起停，每次现取）。
     videoSubtitleBackfill: (String videoId, {String? language}) =>
@@ -2446,6 +2460,13 @@ class AppModel
     musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
     // 曲库 / 本地歌单里的服务器曲目（v149）：起播 / 取封面的地址按当前服务器配置现算。
     musicServerBindingLoader ??= () => loadMusicServerBindings(this);
+    // 互联共享音乐库（设计 2026-11-23）：已配对 host 的曲库按服务器接进来；host 曲目起播时才
+    // 签票取流，封面经同一条钉扎通道取。
+    final InterconnectMusicHosts musicHosts =
+        InterconnectMusicHosts.instance ??= InterconnectMusicHosts(
+          () => SyncRepository(database),
+        );
+    musicFushiHostTrackOpener ??= musicHosts.openTrackPath;
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。
@@ -2668,6 +2689,10 @@ class AppModel
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
+    // 互联 host 曲目：host 上生效的歌词为准，修改写回（design-imusic-q3）。
+    hostLyrics: InterconnectMusicHostLyrics(
+      () => InterconnectMusicHosts.instance,
+    ),
     // 视频库字幕管线以前写在音频旁的 `<主名>.ja.srt`：有 asr 行时不当 sidecar。
     isGeneratedSidecar: (String audioPath, String path) async =>
         isDefaultVideoSubtitlePipelineOutput(

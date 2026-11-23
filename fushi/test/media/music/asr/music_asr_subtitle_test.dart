@@ -9,7 +9,7 @@ import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/asr/music_subtitle_target.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';

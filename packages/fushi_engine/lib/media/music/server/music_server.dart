@@ -30,7 +30,12 @@ enum MusicServerKind {
 
   /// YouTube 内置音源（反馈 0tRY-D2JgG）：只搜曲目 + 起播时取 audio-only 流，没有专辑 /
   /// 艺人 / 歌单树；`fushi_engine/media/music/youtube/`。
-  youtube('youtube');
+  youtube('youtube'),
+
+  /// 已配对的 Fushi 互联 host 的曲库（设计 docs/specs/2026-11-23-interconnect-music-library-design.md）：
+  /// 曲目 id 就是 host 的 `track_uid`，播放身份同它（拍板 design-imusic-q1 选 a），取流要先向 host
+  /// 签统一流票（起播时才取，[kFushiHostMusicScheme] 占位）。
+  fushiHost('fushi_host');
 
   const MusicServerKind(this.wire);
 
@@ -317,6 +322,150 @@ abstract interface class MusicServerBrowser {
   void close();
 }
 
+/// 能给出歌词的服务器（互联 host：host 上生效的那份，引擎层、不联网）。
+abstract interface class MusicServerLyricsSource {
+  /// host 上这首生效的歌词：原文 + 格式 + 整首偏移 + 来源；没有为 null。
+  Future<MusicServerLyrics?> lyricsFor(String trackId);
+
+  /// 把整首偏移写回 host（[source] 是 [MusicServerLyrics.source]）。
+  Future<void> setLyricsOffset(
+    String trackId, {
+    required String source,
+    required int offsetMs,
+  });
+
+  /// 把用户在本机选定的一份写成 host 上的手动指定。
+  Future<void> chooseLyrics(
+    String trackId, {
+    required String format,
+    required List<int> raw,
+    required int offsetMs,
+  });
+}
+
+/// 歌词服务按**播放路径**问歌词的那一层（互联 host 曲目：路径是 [fushiHostMusicTrackPath] 占位，
+/// 实现按占位找到 host 再转给它的 [MusicServerLyricsSource]）。不认识的路径回 null / 什么都不做。
+abstract interface class MusicHostLyricsLayer {
+  /// 这条路径是不是本层负责的曲目。
+  bool handles(String path);
+
+  Future<MusicServerLyrics?> lyricsFor(String path);
+
+  Future<void> setLyricsOffset(
+    String path, {
+    required String source,
+    required int offsetMs,
+  });
+
+  Future<void> chooseLyrics(
+    String path, {
+    required String format,
+    required List<int> raw,
+    required int offsetMs,
+  });
+}
+
+/// 服务器给的一份歌词。
+class MusicServerLyrics {
+  const MusicServerLyrics({
+    required this.source,
+    required this.format,
+    required this.raw,
+    this.offsetMs = 0,
+    this.isUserEdited = false,
+  });
+
+  final String source;
+  final String format;
+  final List<int> raw;
+  final int offsetMs;
+  final bool isUserEdited;
+}
+
+/// 能给出 MV 绑定的服务器（互联 host 上自动匹配 / 手动绑定好的 MV）。
+abstract interface class MusicServerVideoSource {
+  /// 这首曲目在服务器上的 MV 绑定（解析得到画面的才出）。
+  Future<List<MusicServerVideo>> videosFor(String trackId);
+
+  /// 起播时取 MV 画面流（带票，[MusicServerMediaLease.release] 释放）。
+  Future<MusicServerMediaLease> openVideo(MusicServerVideo video);
+
+  /// 把 MV 对齐微调写回服务器。
+  Future<void> setVideoOffset(MusicServerVideo video, int offsetMs);
+}
+
+/// 服务器上的一条 MV 绑定。`offsetMs`：MV 时间 = 音频时间 + offset。
+class MusicServerVideo {
+  const MusicServerVideo({
+    required this.id,
+    required this.kind,
+    required this.offsetMs,
+    this.isUserBound = false,
+    this.youtubeRef,
+  });
+
+  final String id;
+
+  /// `local` / `anime_episode` / `youtube`（`MusicVideoKind`）。
+  final String kind;
+  final int offsetMs;
+  final bool isUserBound;
+
+  /// `youtube` 绑定的地址：画面由客户端自己的 YouTube 音源取（受客户端合规门约束）。
+  final String? youtubeRef;
+}
+
+/// 一条起播时才签的媒体流：[uri] 交给播放器，用完调 [release]（幂等）。
+class MusicServerMediaLease {
+  const MusicServerMediaLease({required this.uri, required this.release});
+
+  final Uri uri;
+  final Future<void> Function() release;
+}
+
+/// 互联 host 曲目的播放占位（`fushi-host-music:///<hostId>/<trackUid>`）：起播时才签票取流。
+const String kFushiHostMusicScheme = 'fushi-host-music';
+
+/// 互联 host 封面的占位（`fushi-host-music-cover:///<hostId>/<coverRef>`）：封面组件经钉扎通道取。
+const String kFushiHostMusicCoverScheme = 'fushi-host-music-cover';
+
+String fushiHostMusicTrackPath(String hostId, String trackUid) =>
+    _hostPath(kFushiHostMusicScheme, hostId, trackUid);
+
+String fushiHostMusicCoverPath(String hostId, String coverRef) =>
+    _hostPath(kFushiHostMusicCoverScheme, hostId, coverRef);
+
+/// [fushiHostMusicTrackPath] 的逆；不是这种路径回 null。
+({String hostId, String trackUid})? parseFushiHostMusicTrackPath(String path) =>
+    _parseHostPath(path, kFushiHostMusicScheme);
+
+/// [fushiHostMusicCoverPath] 的逆（`trackUid` 位是封面引用）。
+({String hostId, String trackUid})? parseFushiHostMusicCoverPath(String path) =>
+    _parseHostPath(path, kFushiHostMusicCoverScheme);
+
+bool isFushiHostMusicPath(String path) =>
+    path.startsWith('$kFushiHostMusicScheme:///');
+
+// 两段都放在路径里（authority 留空）：放进 URI host 会被 `Uri.parse` 小写化，配对身份 / uid 要
+// 原样保住。两段各自百分号编码。
+String _hostPath(String scheme, String hostId, String id) =>
+    '$scheme:///${Uri.encodeComponent(hostId)}/${Uri.encodeComponent(id)}';
+
+({String hostId, String trackUid})? _parseHostPath(String path, String scheme) {
+  final String prefix = '$scheme:///';
+  if (!path.startsWith(prefix)) return null;
+  final List<String> parts = path.substring(prefix.length).split('/');
+  if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) return null;
+  try {
+    return (
+      hostId: Uri.decodeComponent(parts[0]),
+      trackUid: Uri.decodeComponent(parts[1]),
+    );
+  } on Object {
+    return null; // 坏的百分号编码
+  }
+}
+
 const int kMusicServerPageSize = 100;
 const int kMusicServerCoverSize = 400;
 
@@ -334,6 +483,21 @@ String musicServerTrackUid(String serverId, String trackId) {
   }
   return b.toString();
 }
+
+/// 一首服务器曲目在本机的播放身份：互联 host 直接用 host 的 `track_uid`（同一首歌在两台设备是同一首，
+/// 歌单 / 播放记录 / 断点 / 歌词偏移与 host 同键，design-imusic-q1 选 a）；其余服务器走 `srv` 命名空间。
+String musicServerPlaybackUid(MusicServerBrowser browser, String trackId) =>
+    browser.kind == MusicServerKind.fushiHost
+    ? trackId
+    : musicServerTrackUid(browser.serverId, trackId);
+
+/// 专辑同理（互联 host 用 host 的 `album_uid`）。
+String musicServerPlaybackAlbumUid(
+  MusicServerBrowser browser,
+  String albumId,
+) => browser.kind == MusicServerKind.fushiHost
+    ? albumId
+    : musicServerAlbumUid(browser.serverId, albumId);
 
 /// 服务器专辑混排进本地曲库时的专辑 uid（同上，命名空间不同）。
 String musicServerAlbumUid(String serverId, String albumId) {

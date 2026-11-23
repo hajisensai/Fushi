@@ -7733,6 +7733,7 @@
   "music_server_field_password": "Password",
   "music_server_field_url": "Server address",
   "music_server_field_user": "Username",
+  "music_server_fushi_host_subtitle": "Fushi device (interconnect)",
   "music_server_invalid": "Invalid server settings: $error",
   "music_server_jellyfin_subtitle": "Jellyfin / Emby · show in music library",
   "music_server_load_failed": "Could not load from the server",

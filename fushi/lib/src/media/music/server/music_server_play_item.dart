@@ -8,10 +8,13 @@ library;
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show
         MusicServerBrowser,
+        MusicServerKind,
         MusicServerStream,
         MusicServerTrack,
-        musicServerAlbumUid,
-        musicServerTrackUid;
+        fushiHostMusicCoverPath,
+        fushiHostMusicTrackPath,
+        musicServerPlaybackAlbumUid,
+        musicServerPlaybackUid;
 
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
@@ -29,19 +32,28 @@ MusicPlayItem musicServerPlayItem(
     track,
     maxBitrateKbps: maxBitrateKbps,
   );
+  // 互联 host：占位串直接拼（不经 Uri 往返，配对身份 / uid 原样保住），uid 就是 host 的
+  // track_uid（design-imusic-q1）。
+  final bool host = browser.kind == MusicServerKind.fushiHost;
+  final String? hostCover = host && track.coverRef != null
+      ? fushiHostMusicCoverPath(browser.serverId, track.coverRef!)
+      : null;
   return MusicPlayItem(
-    trackUid: musicServerTrackUid(browser.serverId, track.id),
-    path: stream.uri.toString(),
+    trackUid: musicServerPlaybackUid(browser, track.id),
+    path: host
+        ? fushiHostMusicTrackPath(browser.serverId, track.id)
+        : stream.uri.toString(),
     title: track.title,
     artist: track.artist,
     album: albumTitle ?? track.album,
     albumUid: track.albumId == null
         ? null
-        : musicServerAlbumUid(browser.serverId, track.albumId!),
+        : musicServerPlaybackAlbumUid(browser, track.albumId!),
     discNo: track.discNo,
     trackNo: track.trackNo,
     durationMs: track.durationMs,
-    coverPath: coverPath ?? browser.coverUri(track.coverRef)?.toString(),
+    coverPath:
+        coverPath ?? hostCover ?? browser.coverUri(track.coverRef)?.toString(),
     codec: stream.transcoded ? stream.codec : (track.codec ?? track.container),
     sampleRate: stream.transcoded ? null : track.sampleRate,
     bitDepth: stream.transcoded ? null : track.bitDepth,

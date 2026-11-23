@@ -7733,6 +7733,7 @@
   "music_server_field_password": "密码",
   "music_server_field_url": "服务器地址",
   "music_server_field_user": "用户名",
+  "music_server_fushi_host_subtitle": "Fushi 互联设备",
   "music_server_invalid": "服务器设置有误：$error",
   "music_server_jellyfin_subtitle": "Jellyfin / Emby · 显示在曲库里",
   "music_server_load_failed": "从服务器读取失败",

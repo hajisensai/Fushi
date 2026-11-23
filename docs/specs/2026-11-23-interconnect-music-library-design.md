@@ -1,4 +1,4 @@
-# 互联共享音乐库与 MV 背景（2026-11-23，设计稿，待拍板）
+# 互联共享音乐库与 MV 背景（2026-11-23，已拍板，分期实现中）
 
 起因：PR [#4249](https://github.com/hajisensai/Fushi/pull/4249) 让歌词页 / 全屏歌词动画默认放本机 MV（含蓝光
 `BDMV/STREAM` 里的 MV，音乐来源扫完后后台自动匹配，声纹与对齐结果缓存在 v172 表）。用户接着问「能不能在互联
@@ -6,7 +6,7 @@
 （[server-parity-gaps.md](../agent/server-parity-gaps.md)「Music libraries: deliberately deferred」），app 当 host
 也没有任何音乐路由。所以 MV 是这件事的最后一环，前提是先把音乐库本身接进互联。
 
-本文只定方向与边界，**§9 的拍板项定了之前不动代码**。规模 L/XL，按 §8 分期出 PR。
+§9 的 13 条已于 2026-11-23 全部拍板（拍板台 `design-imusic-q0`..`q12`），结果与落地状态见 §9；规模 L/XL，按 §8 分期出 PR。
 
 必读：[subsystem-map.md](../agent/subsystem-map.md)（引擎纯度、互联选路）、
 [2026-11-16-interconnect-source-share.md](2026-11-16-interconnect-source-share.md)（同一套门、能力位、iOS 合规先例）、
@@ -390,87 +390,39 @@ class MusicMvBackdropSource {
 | **1 引擎读层** | `fushi_music` 进引擎依赖；歌词本地层、MV 引用解析、封面选取搬进引擎，app 改调引擎、删 app 版；修 §2.5 的注释 | 引擎纯度守卫绿；歌词 / MV 解析单测从 app 挪到引擎后照样绿 |
 | **2 音乐模块 + 客户端（app 当 host）** | `MusicLibraryHostModule` / `EngineMusicLibraryHost`、路由与 DTO、能力位；`InterconnectMusicBrowser`、`fushiHost` 播放解析、`music_remote_tracks` 新 kind；MV 解析器重构 + 远端解析器；卡拉 OK 页接远端；合规判据 + 守卫 | 引擎路由测试（分页、流票吊销 / 释放、Range、`peerPlayable`、YouTube / 插件曲目不出）；客户端假 host 测试；两台真机：远端曲目播放 + 歌词页 MV 背景对齐（蓝光 m2ts 一例） |
 | **3 服务端扫描与随包** | 扫描 / 刮削 / MV 自动匹配写层搬进引擎；`scanAll` 加 music + prune（走音乐扫描器的软删）、`kServerLibraryRootKinds` 加 music、admin purge；`release-server.yml` / `build-multiplatform.yml` 构建随包 `native/fushi_music`（照 `fushi_fsrs`：Rust 缓存、Linux x64、`bin/../lib/` 查找、构建失败即失败）；服务端操作目录 / WebUI 允许 music 根 | 服务端集成测试扫一个带 CUE + 蓝光 MV 的夹具目录，客户端经服务端播放并出 MV 背景；`server-parity-gaps.md` 删掉音乐那一节 |
-| 4（视拍板） | Q4 网络来源曲目经 host 中继、Q5 光盘标题、Q3 回写、Q9 远程重新匹配、Q12 下载到本机 | 各自 |
+| 4（均已拍「做」） | Q4 网络来源曲目经 host 中继（BUG-5303）、Q5 光盘标题 / CDDA（BUG-5304）、Q6 转码（BUG-5305）、Q9 远程重新匹配（BUG-5306）、Q12 下载到本机（BUG-5307）；Q3 回写已并入第 2 期 | 各自 |
 
 操作目录：第 2、3 期若新增 `ctl_<域>_routes.dart` 路由（例如服务端 `/api/admin/libraries` 放开 music、
 app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设计不为 AI 新增浏览远端音乐的写操作。
 
-## 9. 待拍板
+## 9. 拍板结果（2026-11-23）与落地状态
 
-每条给出利弊和建议，等用户拍。
+按钮之外以留言为准（Q3 / Q4 / Q8 留言「根本性做完」）。「已做」指分支 `claude/imusic-impl` 的 PR；未做的都登记成
+`docs/bugs/` 待办，不留口头尾巴。
 
-**Q0 统一的互联模块层（§3.5）覆盖多大范围？**
-- a（建议）第 0 期立模块层与统一流票，迁入六个已近模块形态的功能，音乐第一个按模块写。书 / 有声书 / 视频 / 漫画 /
-  词典等老库类的路由与 `InterconnectSyncBackend` 方法，之后每类一个 PR 迁移，全部登记成待办。
-  - 利：音乐不再新增一套散写；风险可控，每个 PR 都能用「wire 逐字节不变」验收。
-  - 弊：过渡期两种写法并存，直到老库类迁完。
-- b 先把所有老库类一起迁完，再做音乐。
-  - 利：一步到位，没有过渡期。
-  - 弊：牵动约 9000 行（`InterconnectSyncBackend` 4884 行 + `fushi_library_host_service.dart` 4182 行）以及所有
-    远端库页面，音乐要等很久，回归面也最大。
-- c 只给音乐用新写法，老代码不动、不登记。不建议：会长期两套并存，正是要避免的那种状态。
+| 题 | 拍板 | 落地 |
+|---|---|---|
+| **Q0** 模块层范围 | a：立模块层 + 统一流票，迁入六个近模块功能，老库类之后逐类迁、登记待办 | 已做：`interconnect_module.dart`、`library_media_streams.dart`，六个功能迁入，能力 JSON 逐字节快照、守卫；老库类迁移 → BUG-5298 |
+| **Q1** 播放身份 | a：直接用 host `track_uid` | 已做：`musicServerPlaybackUid` / `musicServerPlaybackAlbumUid`，`music_remote_tracks` 新 kind `fushi_host`（uid = host uid），歌词偏移 / 歌单 / 播放记录与 host 同键 |
+| **Q2** 单独开关 | 不加：与视频库 / 书库同级，跟互联总开关走 | 已做：`MusicLibraryHostModule` 无独立开关，app 与服务端同装 |
+| **Q3** 写回 host | 你定 + 「根本性做完，照合集」→ c：全部写回 | 已做：歌词整首偏移（LWW `updatedAt`）、换歌词来源（手动指定）、MV 偏移（LWW）、host 歌单编辑（`MusicServerPlaylistEditing`；智能歌单 409）；歌词服务 ⓪ 层以 host 那份为准并写回 |
+| **Q4** 网络来源曲目中继 | 做 | 未做：host 标 `networkSource`、客户端暂不列出 → BUG-5303 |
+| **Q5** 光盘标题 / CDDA | 做 | 未做：host 标 `discTitle` / `cdda`、客户端暂不列出 → BUG-5304 |
+| **Q6** host 转码 | 做 | 未做：现原样直出 → BUG-5305 |
+| **Q7** 下发 YouTube MV 绑定 | 做 | host 侧已做（`RemoteMusicVideo.youtubeRef`）；客户端消费随 MV 背景 → BUG-5302 |
+| **Q8** MV 曲目两条连接 | 你定 + 根本性做完 → a：接受两条，与本机实现一致 | 随客户端 MV 背景落地 → BUG-5302 |
+| **Q9** 远程重新匹配 / 手动绑定 | 做 | 未做：匹配器在未合并的 #4249 → BUG-5306 |
+| **Q10** iOS 合规单列判据 | 做 | 已做：`store_compliance.dart` 的 `interconnectMusicLibraryAvailableOn`（恒 true），`music_servers.dart` / `music_remote_tracks.dart` 只问它，守卫钉住 |
+| **Q11** 分期顺序 | a：先模块层与引擎 | 已按 a：第 0 期 → 第 1 期（部分）→ 第 2 期；第 1 期余项 → BUG-5300，第 3 期 → BUG-5301 |
+| **Q12** 下载到本机 | 做 | 未做 → BUG-5307 |
 
-**Q1 客户端播放身份：直接用 host 的 `track_uid`，还是 `srv` 命名空间？**
-- a（建议）直接用 host uid。
-  - 利：客户端的歌单 / 播放记录 / 断点 / 手动歌词 / MV 微调和 host 是同一个键，音乐备份合并天然对上，
-    同一首歌两台设备是同一首。
-  - 弊：解析 uid 时要多一步「本机有就用本机，否则查远端」；`musicServerPlayItem` 要让 browser 提供身份。
-- b 照 Subsonic 用 `srv`。
-  - 利：零新逻辑。
-  - 弊：两台设备的音乐数据永远是两份，以后再想统一要做迁移。
+### 9.1 实现与原设计的出入
 
-**Q2 要不要给音乐库单独一个 host 开关「把音乐库共享给已配对设备」？**
-- 建议不加，与视频 / 书库同级：配对即授权读库。
-- 加的利：可以只配对不共享音乐。弊：多一个开关，且其他库都没有，行为不一致。
-
-**Q3 客户端上的修改要不要写回 host？**（MV ±100 ms 微调、换歌词来源 / 整首偏移、加入 host 歌单）
-- a（建议）MV 偏移与歌词偏移写回 host（`PUT`，按 `updatedAt` LWW；它们是 host 那个文件的属性，在哪台设备
-  调都应该一致）；歌单编辑不写回，客户端的歌单是客户端自己的，靠 Q1-a 的同键 + 音乐备份合并。
-- b 全部只留本机：最简单，但同一首在 host 上和客户端上对齐不一样。
-- c 全部写回，包括 host 歌单编辑（实现 `MusicServerPlaylistEditing`）：最完整，但 host 主人的歌单会被别的
-  设备改。
-
-**Q4 host 上的网络来源曲目（SFTP / WebDAV / AList）要不要经 host 中继给客户端？**
-- 建议第一版不出（`peerPlayable = false` 并写原因），放第 4 期。
-- 出的利：库是完整的。弊：host 要拿凭据替客户端读远端字节（SFTP 回环中继那套），带宽走两跳；服务端没有
-  网络来源，app / 服务端行为不一致。
-
-**Q5 光盘标题（DVD / 蓝光整盘按标题入库的曲目）与 CDDA？**
-- 建议第一版不出；CDDA 永远不出（实时读光驱，无法区间串流）。光盘标题以后可接现有盘共享会话
-  （`disc_share_routes.dart`），第 4 期再议。
-- 注意：MV 绑定里的蓝光 `.m2ts` **不在此列**，第一版就支持（就是普通文件）。
-
-**Q6 客户端设了码率上限时，host 要不要转码？**
-- 建议不转码，原样直出：互联多在局域网 / 自建网络，且音乐方案以 bit-perfect 为前提；服务端转码要额外的
-  ffmpeg 负载。
-- 转码的利：手机外网省流量。弊：host CPU、实现量（现有视频转码管线可复用，但音频 profile 要新定）。
-
-**Q7 YouTube 类 MV 绑定要不要下发？**
-- 建议不下发：host 曲库只出 host 本机能读字节的东西，YouTube 画面应由客户端自己的 YouTube 音源决定（iOS
-  本来就没有）。
-- 下发的利：桌面客户端能复用 host 上手动绑过的 YouTube MV。弊：客户端要再判一次 `onlineMusicSource`，
-  并要处理 YouTube 取流失败。
-
-**Q8 曲目本身是 MV 视频时，画面和音频是两条连接（两份带宽）。**
-- a（建议）接受两条：实现与本机一致，不改播放器结构；局域网下无感，外网下视频码率决定开销。
-- b 外网时自动关掉这类曲目的 MV 背景：省流量，但「同一首歌，换个网络背景就没了」不好解释。
-- c 改成同一个 mpv 同时出声出画：要把歌词页背景和主播放器合成一个，改动大，不建议。
-
-**Q9 客户端要不要能「请 host 重新匹配 / 手动绑定 MV」？**
-- 建议第一版不做：匹配要 host 解码，客户端只看结果；在 host 上操作即可。
-- 做的利：手机上发现没配上能直接修。弊：需要远程写操作 + 任务进度回传（可复用 jobs 能力位），且手动绑定要
-  在客户端浏览 host 的文件树。
-
-**Q10 iOS 合规是否单列判据 `interconnectMusicLibraryAvailableOn`（恒 true）？**
-- 建议单列：消费端只问它，审核以此为由拒绝时改一行即可收回，守卫钉住分界。
-- 不单列（复用 `userConfiguredServersAvailable`）的利：少一个函数。弊：将来只想收回其中一项时会连带。
-
-**Q11 分期顺序：先立模块层与搬引擎（第 0、1 期）再上音乐，还是先做 app 当 host 尽快能用？**
-- a（建议）先模块层与引擎：app 与服务端一开始就是同一个实现，不会出现「app 版先上、服务端再写一遍」。用户最早在
-  第 2 期才能用上。
-- b 先 app 当 host：用户更早能用，但第 1 期的搬迁仍要做，app 侧会先写一遍、再搬一遍。
-
-**Q12 要不要「把 host 的曲目下载到本机」（离线听）？**
-- 建议第一版不做，挂第 4 期：下载后就是本机曲库里的一首，涉及落到哪个音乐来源、uid（按新路径会变，正好
-  与 Q1-a 冲突，要靠 `music_track_uid_aliases` 映射）、歌词与 MV 跟随。值得单独设计。
-- 做的利：手机外出离线听。弊：上面那串身份问题。
+- **播放 / 封面占位**写成 `fushi-host-music:///<serverId>/<trackUid>` 与 `fushi-host-music-cover:///<serverId>/<ref>`
+  （两段都在路径里、authority 留空）：放进 URI host 会被 `Uri.parse` 小写化，配对身份 / uid 要原样保住。
+  `serverId` 是配对身份 `InterconnectHostRef.key`（换 IP 不变）。
+- **CUE 虚拟曲目**：服务器曲目模型没有起止，客户端起播签票时并发取一次 `GET tracks/<uid>`，用 host 曲目行的
+  `cueStartMs` / `cueEndMs` 拼 EDL 段；播放项自带的起止优先。
+- **流票**：客户端只留最近 3 张曲目票（当前 + 预载 + 余量），更早的主动 `streamrelease`；host 侧 6 小时 TTL 与
+  128 张上限兜底。
+- **本机放不了的曲目**（Q4 / Q5 未落地前）先不列出，与服务器页「放不了的曲目不列出」一致；落地时改成灰显。

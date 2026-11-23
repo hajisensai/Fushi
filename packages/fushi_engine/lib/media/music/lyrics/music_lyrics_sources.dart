@@ -1,6 +1,7 @@
 /// 歌词来源的纯判据（设计 §5.4）：sidecar 命名与优先级、内嵌多条时选哪条、来源键。
 library;
 
+import 'package:fushi_core/fushi_core.dart' show MusicLyricRow;
 import 'package:fushi_music/fushi_music.dart';
 
 /// `music_lyrics.source` 的取值。
@@ -244,4 +245,30 @@ String? pickCdgCompanion(String audioPath, Iterable<String> siblings) {
     if (_baseName(p).toLowerCase() == want) return p;
   }
   return null;
+}
+
+/// 负缓存行的 format。
+const String kMusicLyricsNoneFormat = 'none';
+
+/// 纯函数：一首歌的多条 `music_lyrics` 行里，播放器（[MusicLyricsService.resolve]）会用
+/// 哪一条——用户手动指定的最高，其次按 [MusicLyricsSource.automaticRank]，同档取最近
+/// 更新的；负缓存行不算。歌词页与曲库歌词搜索共用这一个判据，搜到的
+/// 行与点进去显示的歌词是同一份。没有可用行返回 null。
+///
+/// 只看库里的行：sidecar / 内嵌在 resolve 里每次重读文件，库里这两档是上次读到的缓存。
+MusicLyricRow? preferredMusicLyricRow(Iterable<MusicLyricRow> rows) {
+  MusicLyricRow? best;
+  for (final MusicLyricRow r in rows) {
+    if (r.format == kMusicLyricsNoneFormat) continue;
+    if (best == null || _prefers(r, best)) best = r;
+  }
+  return best;
+}
+
+bool _prefers(MusicLyricRow a, MusicLyricRow b) {
+  if (a.isUserEdited != b.isUserEdited) return a.isUserEdited;
+  final int ra = MusicLyricsSource.automaticRank(a.source);
+  final int rb = MusicLyricsSource.automaticRank(b.source);
+  if (ra != rb) return ra < rb;
+  return a.updatedAt > b.updatedAt;
 }

@@ -211,6 +211,7 @@ String musicRemoteSourceLabel(MusicRemoteEntry entry) => switch (entry.kind) {
   MusicRemoteTrackKind.youtube => 'YouTube',
   MusicRemoteTrackKind.server =>
     entry.server?.browser.displayName ?? t.music_remote_server_missing,
+  MusicRemoteTrackKind.fushiHost => t.music_server_fushi_host_subtitle,
   MusicRemoteTrackKind.plugin || null => entry.track.sourceKey,
 };
 

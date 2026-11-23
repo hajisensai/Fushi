@@ -1087,6 +1087,37 @@ void main() {
     });
   });
 
+  group('互联共享音乐库（design-imusic-q10）', () {
+    test('判据单独一条写在 store_compliance.dart，消费端都只问它', () {
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains(
+          'boolinterconnectMusicLibraryAvailableOn({requiredboolisIOS})=>true;',
+        ),
+      );
+      expect(interconnectMusicLibraryAvailableOn(isIOS: true), isTrue);
+      final String servers = compactCode(
+        read('lib/src/media/music/server/music_servers.dart'),
+      );
+      expect(servers, contains('if(interconnectMusicLibraryAvailable)'));
+      expect(servers, isNot(contains('Platform.isIOS')));
+      final String remote = compactCode(
+        read('lib/src/media/music/music_remote_tracks.dart'),
+      );
+      expect(
+        remote,
+        contains(
+          'MusicRemoteTrackKind.fushiHost=>interconnectMusicLibraryAvailable,',
+        ),
+      );
+      final String client = read(
+        'lib/src/media/music/server/interconnect_music_client.dart',
+      );
+      expect(client, isNot(contains('Platform.isIOS')));
+      expect(client, isNot(contains('isIOS')));
+    });
+  });
+
   group('音乐在线音源插件（onlineMusicSource）', () {
     test('门只写在 music_plugin_gate.dart，消费端都只问它', () {
       final String gate = compactCode(

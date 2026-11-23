@@ -111,10 +111,10 @@ class _Assistant implements HostAssistantProvider {
 
 /// 测试用模块：提供一种流（音乐曲目），id → 临时目录里的文件。
 class _StreamModule extends InterconnectHostModule {
-  _StreamModule(this.files, {this.prefix = '/api/test-module'});
+  _StreamModule(this.files);
 
   final Map<String, File> files;
-  final String prefix;
+  final String prefix = '/api/test-module';
 
   @override
   String get capabilityKey => 'testModule';
