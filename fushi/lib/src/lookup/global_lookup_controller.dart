@@ -848,7 +848,7 @@ class GlobalLookupController {
 
   /// Screen OCR needs the overlay (freeze layer + lookup card); showing /
   /// hiding the audiobook floating subtitles needs a native floating-lyric
-  /// window (none on Linux, see [floatingLyricBackendAvailableOn]); reading the
+  /// window (none on iOS, see [floatingLyricBackendAvailableOn]); reading the
   /// galgame line aloud needs the galgame text overlay (Windows only). The other
   /// actions work without either ([triggerSelectionLookup] falls back to the
   /// main window, [openLookupPageInMainWindow] never needed it, the audiobook
