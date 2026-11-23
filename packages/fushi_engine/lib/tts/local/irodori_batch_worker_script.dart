@@ -15,7 +15,9 @@ library;
 const String kIrodoriBatchWorkerScriptName = 'irodori_batch_worker.py';
 
 /// 协议版本：脚本与 Dart 侧不一致时 Dart 拒绝使用（`ready.protocol`）。
-const int kIrodoriBatchProtocol = 1;
+/// 2：句子多了可选的 `caption`（逐句情绪 / 语气）与 `duration_scale`（语速）；旧脚本
+/// 会静默忽略它们、合成出没有语气的音频，所以升版本让 Dart 侧拒绝旧脚本。
+const int kIrodoriBatchProtocol = 2;
 
 /// 协议事件行前缀；其余 stdout 行都当日志。
 const String kIrodoriBatchEventPrefix = '@@fushi ';
@@ -33,7 +35,11 @@ Requests:
 item:
   {"id": str, "text": str, "refs": [path, ...], "adapter": path|null,
    "seconds": float|null, "seed": int, "steps": int, "cfg_text": float,
-   "cfg_speaker": float, "out": path}
+   "cfg_speaker": float, "caption": str?, "duration_scale": float?,
+   "out": path}
+  caption is the Voice Design caption (per-line emotion / delivery; v4 models
+  combine it with the reference audio). duration_scale scales the predicted
+  duration (speaking rate); both are omitted when unused.
 Events:
   loading {stage}; ready {protocol, device}; line {job, id, index, total, ok,
   out?, duration_ms?, error?}; job_done {job, ok, failed, cancelled};
@@ -52,7 +58,7 @@ import threading
 import time
 import traceback
 
-PROTOCOL = 1
+PROTOCOL = 2
 PREFIX = "@@fushi "
 
 os.environ.setdefault("IRODORI_SDPA_CUDNN", "0")
@@ -245,6 +251,8 @@ def run_job(runtime, save_wav, SamplingRequest, reader: Reader, req: dict) -> No
                 cfg_scale_speaker=float(item.get("cfg_speaker", 5.0)),
                 seed=int(item.get("seed", 0)),
                 seconds=item.get("seconds"),
+                caption=item.get("caption") or None,
+                duration_scale=float(item.get("duration_scale") or 1.0),
                 lora_adapter=item.get("adapter") or None,
             ))
             os.makedirs(os.path.dirname(out) or ".", exist_ok=True)

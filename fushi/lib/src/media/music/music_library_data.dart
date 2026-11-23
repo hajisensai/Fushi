@@ -221,10 +221,11 @@ final class MusicRemoteEntry extends MusicLibraryEntry {
 
   MusicRemoteTrackKind? get kind => MusicRemoteTrackKind.fromWire(track.kind);
 
-  /// 现在能不能播：种类认识，且服务器曲目的服务器在这台设备上配着。
+  /// 现在能不能播：种类认识，且服务器曲目的服务器在这台设备上配着，或有离线副本（v175）。
   bool get available => switch (kind) {
     null => false,
-    MusicRemoteTrackKind.server => server != null,
+    MusicRemoteTrackKind.server =>
+      server != null || musicRemoteLocalCopyOf(track) != null,
     MusicRemoteTrackKind.youtube || MusicRemoteTrackKind.plugin => true,
   };
 

@@ -32,14 +32,12 @@ void main() {
       expect(stripTitleHashSuffix(''), '');
     });
 
-    test('不是恰好 8 位小写十六进制、或不在末尾的方括号都不动', () {
+    test('不是恰好 8 位十六进制、或不在末尾的标签都不动', () {
       // 7 位 / 9 位。
       expect(stripTitleHashSuffix('Title [679fb7c]'), 'Title [679fb7c]');
       expect(stripTitleHashSuffix('Title [679fb7c90]'), 'Title [679fb7c90]');
       // 非十六进制字符。
       expect(stripTitleHashSuffix('Title [679fb7cz]'), 'Title [679fb7cz]');
-      // 大写（设计稿判据 `[0-9a-f]{8}`）。
-      expect(stripTitleHashSuffix('Title [679FB7C9]'), 'Title [679FB7C9]');
       // 年份 / 卷号。
       expect(stripTitleHashSuffix('Title [2024]'), 'Title [2024]');
       expect(stripTitleHashSuffix('Title [上]'), 'Title [上]');
@@ -48,12 +46,15 @@ void main() {
         stripTitleHashSuffix('Title [679fb7c9] 第2巻'),
         'Title [679fb7c9] 第2巻',
       );
-      // 圆括号不是这个格式。
-      expect(stripTitleHashSuffix('Title (679fb7c9)'), 'Title (679fb7c9)');
+      // 出版社标签不是 CRC。
+      expect(stripTitleHashSuffix('Title (電撃文庫)'), 'Title (電撃文庫)');
     });
 
-    test('只去掉最后一段哈希', () {
-      expect(stripTitleHashSuffix('A [11111111] [22222222]'), 'A [11111111]');
+    test('全媒体共用判据：大写、圆括号、连续多段、残留扩展名都去掉', () {
+      expect(stripTitleHashSuffix('Title [679FB7C9]'), 'Title');
+      expect(stripTitleHashSuffix('Title (679fb7c9)'), 'Title');
+      expect(stripTitleHashSuffix('A [11111111] [22222222]'), 'A');
+      expect(stripTitleHashSuffix('A [69c3d7b2].epub'), 'A');
     });
 
     test('整个标题只有哈希时原样返回（不显示空标题）', () {

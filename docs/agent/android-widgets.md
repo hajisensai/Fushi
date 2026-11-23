@@ -1,6 +1,6 @@
 # Android home-screen widgets
 
-Native Android home-screen widgets (Jetpack Glance, API 24+). Flutter stays the
+Native Android home-screen widgets (Jetpack Glance, API 26+). Flutter stays the
 only owner of app data: Dart computes a small JSON **snapshot** from the existing
 providers / statistics functions and pushes it to native; the Glance widgets only
 render that snapshot (plus one live native read: AnkiDroid due counts).

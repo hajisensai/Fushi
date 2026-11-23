@@ -24,7 +24,7 @@
 
 | Platform | Status | Catatan |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) atau lebih baru |
+| Android | ✅ | Android 8.0 (API 26) atau lebih baru |
 | Windows | ✅ | Hooking teks dan suara galgame hanya untuk Windows |
 | macOS | ✅ | Hanya Apple Silicon; Mac Intel tidak didukung |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Tanpa penemuan, sumber daring, atau pusat unduhan (pedoman App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Unduh rilis terbaru dari [situs web Fushi](https://fushi.moe/) — tersedia APK Android, installer Windows, dan build macOS (hanya Apple Silicon; Mac Intel tidak didukung); iOS dipasang lewat [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux belum memiliki rilis aplikasi siap pakai; bangun dari sumber. Fushi Server headless dirilis terpisah di [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Membutuhkan Android 7.0 (API 24) atau lebih tinggi.
+> Membutuhkan Android 8.0 (API 26) atau lebih tinggi.
 
 ## Pembangunan
 

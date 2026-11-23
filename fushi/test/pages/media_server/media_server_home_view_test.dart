@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
@@ -457,4 +458,46 @@ void main() {
       expect(libraries.top, greaterThanOrEqualTo(search.bottom));
     });
   }
+
+  testWidgets('服务器用户数据变更：继续观看与库行原地重拉，不清空、不重取媒体库', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    browser.libraries.add(movies);
+    browser.latestByLibrary['lib-movies'] = fakeMovies(5);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('media-server-home-continue')),
+      findsNothing,
+      reason: '还没有在看的',
+    );
+    final int resumeCalls = browser.listResumeCalls;
+    final int latestCalls = browser.latestRequests.length;
+
+    MediaServerUserDataChanges.notify('other:server');
+    await tester.pumpAndSettle();
+    expect(browser.listResumeCalls, resumeCalls, reason: '别的服务器的变更不重拉');
+
+    // 服务器上开始看了一集（播放页退回 / 标记后的通知）。
+    browser.resume.addAll(
+      fakeEpisodes(seriesId: 's1', seasonId: 'sea1', seasonNumber: 1, count: 1),
+    );
+    MediaServerUserDataChanges.notify(browser.serverId);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('media-server-home-row-lib-movies')),
+      findsOneWidget,
+      reason: '原地重拉不清空库行',
+    );
+    await tester.pumpAndSettle();
+    expect(browser.listResumeCalls, resumeCalls + 1);
+    expect(browser.latestRequests.length, latestCalls + 1);
+    expect(
+      find.byKey(const ValueKey<String>('media-server-home-continue')),
+      findsOneWidget,
+      reason: '继续观看跟上服务器',
+    );
+  });
 }

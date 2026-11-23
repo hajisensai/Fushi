@@ -355,6 +355,14 @@ Future<String?> heavyWorkingTree(
     copy = File('${scratch.path}/index.$pid');
     if (index.existsSync()) {
       index.copySync(copy.path);
+      // Keep the index's own mtime on the copy. git trusts a cached stat only
+      // when the entry is older than the index file ("racy git"); a copy
+      // stamped "now" would make an entry written in the same second as the
+      // real index look settled, so a same-size edit within that second
+      // (same mtime second, same size) goes unhashed. File.copySync keeps
+      // the mtime on Windows / macOS but not on Linux. setLastModified may
+      // round down, which only makes more entries racy (re-hashed): safe.
+      copy.setLastModifiedSync(index.lastModifiedSync());
     } else if (copy.existsSync()) {
       copy.deleteSync();
     }

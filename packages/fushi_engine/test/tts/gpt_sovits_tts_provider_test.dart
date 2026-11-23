@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -221,5 +223,86 @@ void main() {
       failsWith(TtsFailureCode.network),
     );
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  });
+
+  group('per-line direction', () {
+    test('declares rate only', () {
+      final TtsDirectionSupport s = ttsDirectionSupportOf(
+        const GptSovitsTtsDescriptor().create(preset(), host),
+      );
+      expect(
+        <bool>[s.rate, s.pitch, s.volume, s.emotion, s.tone, s.seed],
+        <bool>[true, false, false, false, false, false],
+      );
+    });
+
+    test('speed_factor = 1 + rate offset, 2 decimals, clamped', () {
+      expect(GptSovitsTtsProvider.speedFactorOf(TtsDirection.none), 1.0);
+      expect(
+        GptSovitsTtsProvider.speedFactorOf(
+          const TtsDirection(rateOffset: 0.123),
+        ),
+        1.12,
+      );
+      expect(
+        GptSovitsTtsProvider.speedFactorOf(
+          const TtsDirection(rateOffset: -0.9),
+        ),
+        0.5,
+      );
+      expect(
+        GptSovitsTtsProvider.speedFactorOf(const TtsDirection(rateOffset: 1.5)),
+        2.0,
+      );
+    });
+
+    Future<Map<String, Object?>> directed(TtsDirection wanted) async {
+      final TtsProvider provider = const GptSovitsTtsDescriptor().create(
+        preset(),
+        host,
+      );
+      try {
+        await synthesizeWithDirection(
+          provider,
+          '吾輩は猫である',
+          outputPath: p.join(tmp.path, 'out.wav'),
+          cancel: TtsCancelToken(),
+          direction: effectiveTtsDirection(
+            ttsDirectionSupportOf(provider),
+            wanted,
+          ),
+        );
+      } finally {
+        await provider.dispose();
+      }
+      return jsonDecode(requests.last.body) as Map<String, Object?>;
+    }
+
+    test('emotion folds into speed_factor', () async {
+      final Map<String, Object?> sad = await directed(
+        const TtsDirection(emotion: CastEmotion.sadness, intensity: 100),
+      );
+      expect(sad['speed_factor'], 0.88);
+      final Map<String, Object?> rushed = await directed(
+        const TtsDirection(
+          emotion: CastEmotion.joy,
+          intensity: 50,
+          rateOffset: 0.2,
+          pitchOffset: 3,
+          tone: '弾んで',
+        ),
+      );
+      expect(rushed['speed_factor'], 1.24);
+      expect(rushed.keys, isNot(contains('pitch')));
+    });
+
+    test('empty direction keeps speed_factor 1.0 (body unchanged)', () async {
+      await synth(preset());
+      final String plain = requests.single.body;
+      requests.clear();
+      final Map<String, Object?> sent = await directed(TtsDirection.none);
+      expect(sent, jsonDecode(plain));
+      expect(sent['speed_factor'], 1.0);
+    });
   });
 }

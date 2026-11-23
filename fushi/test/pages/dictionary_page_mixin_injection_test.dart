@@ -118,7 +118,7 @@ class _HostState extends ConsumerState<_Host> with DictionaryPageMixin {
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState, {
+    DictionaryPopupWebViewState? Function()? popupState, {
     String matched = '',
   }) async {
     played.add('$expression/$reading');
