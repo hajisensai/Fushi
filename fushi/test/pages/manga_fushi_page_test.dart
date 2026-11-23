@@ -1833,15 +1833,17 @@ void main() {
       contains('stopImmediatePropagation()'),
       reason: '导航键必须独占给 Dart',
     );
+    // 反馈 uz_2m0E_Eu ②：长按 ← / → 也连发翻页，桥把长按转发过来并带上 e.repeat，
+    // 由 Dart 侧 _heldInputVerdict 等上一页动画落定才放行（不堆翻页风暴）。
     expect(
       script,
-      contains('if (e.repeat) return;'),
-      reason: '按住方向键不得堆翻页风暴（本页既有语义）',
+      isNot(contains('if (e.repeat) return;')),
+      reason: '长按要转发给 Dart 做节流，不能在 JS 里丢掉',
     );
     expect(
       script,
-      contains("callHandler('onMangaNavigationKey', _hit)"),
-      reason: '回传的是命中的 token（裸键时与 e.key 同值），不再是原始 e.key',
+      contains("callHandler('onMangaNavigationKey', _hit, !!e.repeat)"),
+      reason: '回传命中的 token 与是否长按重复，Dart 侧据此节流',
     );
   });
 

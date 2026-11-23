@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Bỏ qua chương đã đọc",
   "manga_resume_target_last": "Vị trí đọc cuối",
   "manga_resume_target_subtitle": "Chỉ manga trực tuyến. Bỏ qua chương đã đọc: nếu chương đọc gần nhất từng được đọc xong, sẽ đọc tiếp từ chương sau; mở lại một chương đã đọc xong sẽ bắt đầu từ trang 1. Vị trí đọc cuối: giống sách, quay lại trang bạn đã dừng, kể cả trong chương đã đọc xong trước đó; chỉ khi dừng ở trang cuối mới chuyển sang chương sau.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Vừa chiều cao",
   "manga_scale_fit_screen": "Vừa màn hình",
   "manga_scale_fit_width": "Vừa chiều rộng",

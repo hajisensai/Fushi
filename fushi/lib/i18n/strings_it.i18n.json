@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Salta capitoli letti",
   "manga_resume_target_last": "Ultima posizione di lettura",
   "manga_resume_target_subtitle": "Solo manga online. Salta capitoli letti: se l'ultimo capitolo letto è già stato finito in passato, si continua dal capitolo successivo; un capitolo finito si riapre dalla pagina 1. Ultima posizione di lettura: come per i libri, torna alla pagina in cui ti sei fermato, anche in un capitolo già finito; si passa al successivo solo se ti sei fermato all'ultima pagina.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Adatta all'altezza",
   "manga_scale_fit_screen": "Adatta allo schermo",
   "manga_scale_fit_width": "Adatta alla larghezza",

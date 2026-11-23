@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "跳過讀完的章節",
   "manga_resume_target_last": "最後閱讀位置",
   "manga_resume_target_subtitle": "僅限線上漫畫。跳過讀完的章節：最近讀的那一話只要讀完過，就接著看下一話；重開讀完過的話由第 1 頁開始。最後閱讀位置：和讀書一樣回到上次離開的那一頁，即使那一話以前讀完過；只有停在最後一頁才進入下一話。",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "適應高度",
   "manga_scale_fit_screen": "適應螢幕",
   "manga_scale_fit_width": "適應寬度",

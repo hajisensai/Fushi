@@ -1193,6 +1193,25 @@ final Expando<ValueNotifier<bool>> _popupScrolledUnderOf =
 /// 顶栏的 M3 scrolled-under 底：正文滚离顶部时淡入 surfaceContainerHigh 底，回到顶部
 /// 淡回透明。玻璃设计系统与墨水屏不铺底（前者是材质、后者灰阶下色块读不出来），
 /// 无可渲染词条（搜索中 / 空态）时恒透明。
+/// 标出查词弹窗顶栏子树，供宿主键盘通道判「焦点是不是落在顶栏按钮上」
+/// （[DictionaryPopupLayer._maybeWrapHostKeyInput]）。只做标记，不改布局。
+class _PopupTopBarFocusRegion extends StatelessWidget {
+  const _PopupTopBarFocusRegion({required this.child});
+
+  final Widget child;
+
+  /// 当前主焦点是否落在某个弹窗顶栏子树内。
+  static bool containsPrimaryFocus() {
+    final BuildContext? focused = FocusManager.instance.primaryFocus?.context;
+    return focused != null &&
+        focused.findAncestorWidgetOfExactType<_PopupTopBarFocusRegion>() !=
+            null;
+  }
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 class _PopupScrolledUnderBar extends StatelessWidget {
   const _PopupScrolledUnderBar({
     required this.scrolledUnder,
@@ -1709,7 +1728,9 @@ class DictionaryPopupLayer extends StatelessWidget {
       // [SwipeDismissWrapper] 的 Listener 子树内——正文里左键框选的指针位移序列
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
       // BUG-2770：鼠标滑关关时仍按触摸开关挂 touchOnly 包装。
-      final Widget topRegion = _wrapSwipeDismiss(topBar);
+      final Widget topRegion = _wrapSwipeDismiss(
+        _PopupTopBarFocusRegion(child: topBar),
+      );
       // M3E（2026-10-06，用户：「这条线很丑」）：顶栏与正文之间不再画常驻硬分隔线
       // （旧 TODO-1187 的 0.5px Divider）。未滚动时两者只靠间距区分；正文一离开顶部，
       // 顶栏铺上一层 surfaceContainerHigh 底（M3 top app bar 的 scrolled-under），
@@ -1814,6 +1835,13 @@ class DictionaryPopupLayer extends StatelessWidget {
         // 只在按下沿触发：关词典是一次性动作，按住不该逐层关掉整条弹窗栈
         // （与 JS 桥的 `forwardRepeats: false` 同语义）。
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        // 顶栏按钮（阅读器有声控制 / 视频收藏星标 …）持 Flutter 焦点时，方向键是
+        // 按钮间遍历、Enter / 空格是激活——属于控件自己，不截走交给宿主；与 JS 桥
+        // 放行输入框 / 键盘聚焦控件同一条原则。
+        if (dictionaryPopupTopBarOwnsKey(event.logicalKey) &&
+            _PopupTopBarFocusRegion.containsPrimaryFocus()) {
+          return KeyEventResult.ignored;
+        }
         final String? token = dictionaryPopupKeyToken(
           key: event.logicalKey,
           modifiers: activeModifierKeys(),

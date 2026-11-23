@@ -602,6 +602,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（`MangaResumeTarget.key`，默认 `furthest`）：在线漫画重新打开时回到
   // 进度（读完过的章跳过）还是最后停下的那一页（`last`）。
   'manga_resume_target',
+  // bool（默认 false）：漫画「反转方向键翻页」——键盘裸 ← / → 在跨页方向校正后整体
+  // 对调；与小说的 `reverse_arrow_page_turn` 分开（反馈 uz_2m0E_Eu ④）。
+  'manga_reverse_arrow_page_turn',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',

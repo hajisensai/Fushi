@@ -296,12 +296,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
           scope: ShortcutScope.audiobook,
           physicalKey: imeFallbackPhysicalKey,
         );
-    final ShortcutAction? arrowOverride = resolveReaderArrowPageTurn(
-      key: event.logicalKey,
+    final ShortcutAction? arrowOverride = _resolveReaderArrowKey(
+      event.logicalKey,
       modifiers: modifiers,
-      rtl: _isRtlReading,
       boundAction: bareArrowBinding,
-      reverse: ReaderFushiSource.instance.reverseArrowPageTurn,
     );
     return spaceOverride ??
         arrowOverride ??
@@ -327,6 +325,42 @@ extension _ReaderCaret on _ReaderFushiPageState {
           scope: ShortcutScope.universal,
           physicalKey: imeFallbackPhysicalKey,
         );
+  }
+
+  /// 裸 ← / → 的阅读器语义，键盘焦点路径与 spread 文档键桥、查词弹窗回传共用一份：
+  ///
+  ///  1. [resolveReaderArrowPageTurn] 按阅读方向（竖排下一页在左）与「反转方向键翻页」
+  ///     开关把出厂翻页绑定校正成页序动作；用户改绑 / 解绑过就返回 null 让路；
+  ///  2. 有声书在场且查词弹窗不可见时，校正后的「下一页 / 上一页」改作「下一句 /
+  ///     上一句」（[resolveAudioArrowTakeover]，反馈 uz_2m0E_Eu ①，与漫画同一判据）。
+  ///     PageUp / PageDown / ↑ / ↓ 不受影响，照旧翻页。
+  ///
+  /// [boundAction] = 该键在 reader → audiobook co-active 组里解析出的真实绑定。
+  /// 非裸 ← / → 一律返回 null。
+  ShortcutAction? _resolveReaderArrowKey(
+    LogicalKeyboardKey key, {
+    required Set<ModifierKey> modifiers,
+    required ShortcutAction? boundAction,
+  }) {
+    final ShortcutAction? pageTurn = resolveReaderArrowPageTurn(
+      key: key,
+      modifiers: modifiers,
+      rtl: _isRtlReading,
+      boundAction: boundAction,
+      reverse: ReaderFushiSource.instance.reverseArrowPageTurn,
+    );
+    return resolveAudioArrowTakeover(
+          key: key,
+          modifiers: modifiers,
+          pageAction: pageTurn,
+          pageForward: ShortcutAction.readerPageForward,
+          pageBackward: ShortcutAction.readerPageBackward,
+          nextLine: ShortcutAction.audiobookNextSentence,
+          previousLine: ShortcutAction.audiobookPrevSentence,
+          audioActive: _hasActiveAudiobook,
+          dictionaryShown: isDictionaryShown,
+        ) ??
+        pageTurn;
   }
 
   /// TODO-1078：WebView 内容层捕获的裸 Space（Windows WebView2 抢走 OS 键盘焦点后
@@ -622,6 +656,16 @@ extension _ReaderCaret on _ReaderFushiPageState {
     );
   }
 
+  /// 查词弹窗开着时按 ← / → 翻页：先关整条弹窗栈再翻（反馈 uz_2m0E_Eu ③，与漫画
+  /// 「左右键关弹窗并翻页」一致）。只认 ← / → 触发的翻页——PageUp / PageDown /
+  /// ↑ / ↓ / 空格 / 手柄 / 鼠标的翻页语义不在本次统一范围内，保持原样。
+  void _dismissDictionaryForArrowPageTurn(LogicalKeyboardKey? trigger) {
+    if (trigger == null || directionalPageTurnSideForKey(trigger) == null) {
+      return;
+    }
+    if (isDictionaryShown) clearDictionaryResult();
+  }
+
   KeyEventResult _executeShortcutAction(
     ShortcutAction action, {
     LogicalKeyboardKey? keyboardTriggerKey,
@@ -629,9 +673,11 @@ extension _ReaderCaret on _ReaderFushiPageState {
   }) {
     switch (action) {
       case ShortcutAction.readerPageForward:
+        _dismissDictionaryForArrowPageTurn(keyboardTriggerKey);
         _paginate(ReaderNavigationDirection.forward);
         return KeyEventResult.handled;
       case ShortcutAction.readerPageBackward:
+        _dismissDictionaryForArrowPageTurn(keyboardTriggerKey);
         _paginate(ReaderNavigationDirection.backward);
         return KeyEventResult.handled;
       case ShortcutAction.readerDismissDict:

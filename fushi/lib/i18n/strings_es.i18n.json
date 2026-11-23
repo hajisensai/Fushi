@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Saltar capítulos leídos",
   "manga_resume_target_last": "Última posición de lectura",
   "manga_resume_target_subtitle": "Solo manga en línea. Saltar capítulos leídos: si alguna vez terminaste el último capítulo que leíste, continúa con el siguiente; un capítulo terminado se vuelve a abrir desde la página 1. Última posición de lectura: como en los libros, vuelve a la página donde lo dejaste, aunque sea un capítulo que ya terminaste; solo pasa al siguiente si te detuviste en la última página.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Ajustar al alto",
   "manga_scale_fit_screen": "Ajustar a la pantalla",
   "manga_scale_fit_width": "Ajustar al ancho",
