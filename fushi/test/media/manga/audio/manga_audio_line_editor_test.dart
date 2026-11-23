@@ -68,6 +68,49 @@ void main() {
     );
   });
 
+  group('改语气 / 强度（拍板 bnAC_eferQ-2）', () {
+    final MangaScriptLine plain = _line(0, <int>[0], 'A');
+
+    test('设语气与强度；强度夹到 0..100；落盘往返不丢', () {
+      final MangaScriptLine toned = plain.copyWith(
+        emotion: CastEmotion.anger,
+        intensity: 140,
+      );
+      expect(toned.emotion, CastEmotion.anger);
+      expect(toned.intensity, 100);
+      final MangaScriptLine? back = MangaScriptLine.fromJson(toned.toJson());
+      expect(back?.emotion, CastEmotion.anger);
+      expect(back?.intensity, 100);
+    });
+
+    test('清掉语气时强度一并清掉；只清强度保留语气；其它字段不受影响', () {
+      final MangaScriptLine toned = plain.copyWith(
+        emotion: CastEmotion.joy,
+        intensity: 40,
+        beatMs: 300,
+      );
+      final MangaScriptLine noIntensity = toned.copyWith(clearIntensity: true);
+      expect(noIntensity.emotion, CastEmotion.joy);
+      expect(noIntensity.intensity, isNull);
+      final MangaScriptLine cleared = toned.copyWith(clearEmotion: true);
+      expect(cleared.emotion, isNull);
+      expect(cleared.intensity, isNull);
+      expect(cleared.beatMs, 300);
+      // 不碰语气的改动保留原语气。
+      expect(toned.copyWith(speaker: 'B').intensity, 40);
+      // 没有语气时给强度也不留下孤立的强度。
+      expect(plain.copyWith(intensity: 50).intensity, isNull);
+    });
+
+    test('强度输入：空 / 非整数为 null，越界夹到范围', () {
+      expect(mangaToneIntensityFrom(''), isNull);
+      expect(mangaToneIntensityFrom('abc'), isNull);
+      expect(mangaToneIntensityFrom(' 70 '), 70);
+      expect(mangaToneIntensityFrom('250'), 100);
+      expect(mangaToneIntensityFrom('-5'), 0);
+    });
+  });
+
   group('mangaAudioHasLineAt（右键菜单列不列「编辑这句配音」）', () {
     late Directory dir;
     late AudioProductionHost host;

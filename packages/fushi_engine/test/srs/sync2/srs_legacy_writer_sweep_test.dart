@@ -288,6 +288,67 @@ void main() {
     );
   });
 
+  // HBK-AUDIT-202：v3.0.x 写入者多在不分大小写的文件系统上，笔记引用 cat.png、写入者目录里那份叫 CAT.png。
+  // 修前按精确文件名判存活，唯一的副本被当成没人引用直接删掉；媒体同步清理本来就按大小写折叠算存活。
+  test('媒体对账：只差大小写的副本按引用名搬进本机，多份只留一份；归属认不出的留着；没人引用的照删', () async {
+    final SrsDbStore s = await device('dev-f');
+    await addPicture(s, '猫', 'cat.png');
+    await addPicture(s, '犬', 'dog.png');
+    await addPicture(s, '狗', 'Dog.png');
+    final String dir = await srsLocationDir(s);
+    final String loc = locationPath(dir);
+    final Directory mediaRoot = Directory(p.join(tmp.path, 'local-media'))
+      ..createSync(recursive: true);
+    expect(
+      (await srsRunLocationRound(
+        SrsLocationBackend(assets),
+        s,
+        'interconnect:host',
+      )).error,
+      isNull,
+    );
+    // 同一张图在两个写入者目录里各一份，大小写都和引用名不同。
+    plantWriter(loc, kWriter2);
+    write(p.join(loc, kWriter2, 'media', 'CAT.png'), 'cat-v30');
+    plantWriter(loc, kWriter3);
+    write(p.join(loc, kWriter3, 'media', 'Cat.PNG'), 'cat-v30');
+    // dog.png 与 Dog.png 都有人引用：DOG.png 归谁认不出。bird.png 大小写不论都没人引用。
+    plantWriter(loc, kWriter1);
+    write(p.join(loc, kWriter1, 'media', 'DOG.png'), 'dog-v30');
+    write(p.join(loc, kWriter1, 'media', 'BIRD.png'), 'bird');
+
+    final SrsMediaSyncReport m = await srsRunLocationMedia(
+      SrsLocationBackend(assets),
+      s,
+      mediaRoot,
+      locationId: 'interconnect:host',
+    );
+    expect(m.completed, isTrue);
+    expect(m.legacyWriterErrors, isEmpty);
+    expect(m.legacyMediaImported, 1, reason: '两份副本只搬一份，按引用名 cat.png 落地');
+    expect(m.legacyMediaDropped, 2, reason: '另一份副本与 BIRD.png');
+    expect(
+      mediaRoot.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      <String>['cat.png'],
+    );
+    expect(
+      File(p.join(mediaRoot.path, 'cat.png')).readAsStringSync(),
+      'cat-v30',
+    );
+    expect(
+      remoteHas(loc, srsMediaSha256('cat-v30'.codeUnits)),
+      isTrue,
+      reason: '按引用名记账，同一趟按内容传上位置',
+    );
+    expect(
+      m.legacyWritersRemoved,
+      unorderedEquals(<String>[kWriter2, kWriter3]),
+    );
+    expect(filesUnder(p.join(loc, kWriter1)), <String>[
+      'media/DOG.png',
+    ], reason: '归属认不出的不搬也不删');
+  });
+
   test('媒体对账：名字已绑到别的内容时搬来的旧副本不抢绑定，换回绑定的内容', () async {
     final SrsDbStore s = await device('dev-d');
     await addPicture(s, '猫', 'cat.png');

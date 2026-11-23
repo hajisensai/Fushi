@@ -209,14 +209,36 @@ Future<VideoSubtitleRecognizerChoice> resolveAppVideoSubtitleRecognizer({
   required VideoSubtitleSegmenterMode mode,
   MossBackendPreference mossBackend = MossBackendPreference.auto,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.mixedAudio,
 }) => resolveVideoSubtitleRecognizer(
   mode: mode,
   mossBackend: mossBackend,
   language: language,
+  audioProfile: audioProfile,
   serviceFactory: (asr.AsrAudioProfile profile) =>
       createAsrTranscriptionService(audioProfile: profile),
   startProcess: appAsrProcessStarter,
 );
+
+/// 音乐库歌词转录用哪种素材：默认 `song`（识别前先做人声分离，上游
+/// `asr_vocal_separation.dart`）；手机上按内存门槛估算放不下分离那一截时退回
+/// `mixedAudio`（判据 [songAsrAudioProfileFor]）。桌面端不探测、不建服务。
+Future<asr.AsrAudioProfile> appMusicAsrAudioProfile(
+  asr.AsrLanguage language, {
+  DeviceMemorySnapshot? Function() memoryProbe = readDeviceMemorySnapshot,
+}) async {
+  final DeviceMemorySnapshot? memory = memoryProbe();
+  if (memory == null) return asr.AsrAudioProfile.song;
+  // 估算要按真正会跑的变体（已在盘的优先），与开跑时内存门槛同一个口径。
+  final asr.AsrTranscribePlan plan = await createAsrTranscriptionService(
+    audioProfile: asr.AsrAudioProfile.song,
+  ).plan(language: language, preference: asr.AsrAccelerationPreference.auto);
+  return songAsrAudioProfileFor(
+    songPack: asr.asrModelPackFor(language, profile: asr.AsrAudioProfile.song),
+    variant: plan.variant,
+    memory: memory,
+  );
+}
 
 /// 本机 MOSS（audio.cpp 运行库 + 权重）在 [backend] 偏好下的就绪状态。
 Future<MossProvisionStatus> appMossProvisionStatus(

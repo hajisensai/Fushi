@@ -81,15 +81,21 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
     // 本机行表与整表偏好在这里各读一次，流媒体对齐与下面的进度 / 播放偏好共用（稳态
     // 一轮 SQL 条数与视频数无关，interconnect_progress_sweep_db_ops_test 钉着）；只有
     // 对齐真落了新行才重读行表。
+    //
+    // 先等 host 清单、再读本机快照（HBK-AUDIT-213）：清单 GET 可能要等好几秒，先读
+    // 本机的话，这期间用户删掉的本机独有流媒体书仍在快照里，会被当成「本机有、host
+    // 没有」注册给 host。推之前 [_pushStreamVideosLive] 还会逐条再确认一次。
+    final List<RemoteVideoInfo> hostSnapshot =
+        hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
+        ? hostVideos.videos
+        : await backend.listRemoteVideos();
     List<VideoBookRow> localRows = await _db.allVideoBooks();
     final Map<String, String> allPrefs = await _db.getAllPrefs();
     final ({List<RemoteVideoInfo> hostList, bool pulled}) aligned =
         await _reconcileStreamVideosLive(
           report,
           backend,
-          hostVideos != null && hostVideos.age <= hostVideoListReuseMaxAge
-              ? hostVideos.videos
-              : await backend.listRemoteVideos(),
+          hostSnapshot,
           localRows: localRows,
           prefs: allPrefs,
         );

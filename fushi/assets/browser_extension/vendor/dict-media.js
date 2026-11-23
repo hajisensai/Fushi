@@ -404,6 +404,9 @@ function applyFushiPopupDisplayPrefs(theme) {
     window.autoExpandRows = Number.isFinite(rows) && rows >= 0 ? rows : undefined;
     window.collapsedDictionaryNames = fushiParsePopupNameList(theme['--fushi-collapsed-dicts']);
     window.expandedDictionaryNames = fushiParsePopupNameList(theme['--fushi-expanded-dicts']);
+    // 汉字卡（默认折叠成一行）的逐本三态，拍板台 6uasoIUvSR。
+    window.kanjiCollapsedDictionaryNames = fushiParsePopupNameList(theme['--fushi-kanji-collapsed-dicts']);
+    window.kanjiExpandedDictionaryNames = fushiParsePopupNameList(theme['--fushi-kanji-expanded-dicts']);
 }
 
 // 用户在 app 里设的「词典字体」（设置 · 字体 · 词典），与 app 内弹窗同一份设置：

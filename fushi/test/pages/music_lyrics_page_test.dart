@@ -34,6 +34,7 @@ import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -556,6 +557,25 @@ void main() {
         matching: find.byKey(const ValueKey<String>('music-player-real-disc')),
       ),
       findsOneWidget,
+    );
+
+    // 封面与唱片共用一层整组倾斜（HBK-AUDIT-228）：唱片的祖先里有 group 倾斜层，
+    // 且封面（倾斜高光所在的封面框）也在同一层底下，两者不会一个倾、一个平。
+    final Finder groupTilt = find.descendant(
+      of: find.byKey(sleeve),
+      matching: find.byWidgetPredicate((Widget w) => w is FushiTilt && w.group),
+    );
+    expect(groupTilt, findsOneWidget);
+    expect(
+      find.descendant(
+        of: groupTilt,
+        matching: find.byKey(const ValueKey<String>('music-player-real-disc')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: groupTilt, matching: find.byType(FushiTiltGlare)),
+      findsWidgets,
     );
 
     // 没有盘面扫描图：转银色 CD 盘，不是黑胶。

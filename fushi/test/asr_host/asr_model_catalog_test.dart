@@ -777,6 +777,45 @@ void main() {
       expect(added.catalog.customPacks, hasLength(1));
     });
   });
+
+  group('歌曲素材（song）', () {
+    test('选包跟混音走：视频那边选了哪个包，歌曲就用哪个（外加分离模型）', () {
+      final AsrModelPack chosenMixed = asrModelChoicesFor(
+        AsrLanguage.japanese,
+        buildAsrModelRegistry(AsrModelCatalog.empty),
+        profile: AsrAudioProfile.mixedAudio,
+      ).last;
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          chosenMixed.id,
+          profile: AsrAudioProfile.mixedAudio,
+        ),
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.song,
+            )
+            ?.id,
+        chosenMixed.id,
+      );
+    });
+
+    test('写着 `@song` 的选择键不认：不造声明 song 的窄包', () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAsrKitsunePack.id,
+          profile: AsrAudioProfile.song,
+        ),
+      );
+      for (final AsrModelPack pack in registry.packs) {
+        expect(pack.audioProfiles, isNot(contains(AsrAudioProfile.song)));
+      }
+    });
+  });
 }
 
 /// 一个 sourceUrl 指向本地目录的假包（只用来验 id 去重规则）。

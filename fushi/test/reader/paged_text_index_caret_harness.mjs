@@ -145,6 +145,9 @@ const caretMovesFn = `function caretMoves(fails, total) {
   }
   [0, 0.4, 1].forEach(stopsAt);
   goTo(0.4);
+  // 本页可落的字数（光标所在页的可见落点数）：几何查询的预期量级按它算，不按固定字数——
+  // 一页装多少字随字体度量变（CI 的 Linux Chrome 与 Windows / macOS 字形宽度不同）。
+  var pageStops = k._collectVisibleStops(false).length;
   k.enter();
   var dirs = r.isVertical() ? ['left', 'right'] : ['down', 'up'];
   for (var s = 0; s < 6; s++) {
@@ -167,7 +170,7 @@ const caretMovesFn = `function caretMoves(fails, total) {
   // 旧实现每次移动对整章每个字各量一次（>= total 次）；现在每个文本节点量一次行盒，
   // 只有与视口相交的节点才逐字量。
   if (!(maxCaret < total / 2)) fails.push('caret geometry ' + maxCaret + ' per move for ' + total + ' chars');
-  return {caretRects: caretRects, refRects: refRects, moves: moves, maxCaret: maxCaret};
+  return {caretRects: caretRects, refRects: refRects, moves: moves, maxCaret: maxCaret, pageStops: pageStops};
 }`;
 
 // HBK-AUDIT-023：整章一个文本节点。每次移动的几何查询不超过页上字数的量级（一页约
@@ -178,7 +181,12 @@ const longCheck = `(async () => {
   while ((n = w.nextNode())) { total += r.countChars(n.textContent); nodes++; }
   if (nodes !== 1) fails.push('long chapter has ' + nodes + ' text nodes');
   var res = caretMoves(fails, total);
-  if (!(res.maxCaret < total / 20)) fails.push('long caret geometry ' + res.maxCaret + ' per move for ' + total + ' chars in one node');
+  // 上限按本页落点数定（逐字量的只该是可见行盒里的字，外加两次二分各 ~log2(n) 次探测与行盒读取），
+  // 不用「总字数 / 20」这种固定数：Linux CI 的 Chrome 字形更窄、一页装的字多，固定数在那里
+  // 恒红（4426 > 3840），而按页算的量级关系各平台一致。另要求远少于整节点逐字扫描。
+  var probes = 2 * Math.ceil(Math.log2(total + 1)) + 64;
+  if (!(res.maxCaret <= 4 * res.pageStops + probes)) fails.push('long caret geometry ' + res.maxCaret + ' per move for ' + res.pageStops + ' on-page stops');
+  if (!(res.maxCaret * 10 < Math.min.apply(null, res.refRects))) fails.push('long caret geometry ' + res.maxCaret + ' per move is not far below whole-node scan ' + Math.min.apply(null, res.refRects));
   return Object.assign({fails: fails, total: total}, res);
 })()`;
 
@@ -209,9 +217,9 @@ try {
     cases++;
     if (res.fails.length) {
       failed++;
-      console.log(`FAIL long ${mode}: ${res.fails.join('; ')}`);
+      console.log(`FAIL long ${mode}: ${res.fails.join('; ')} [caret ${res.caretRects.join('/')}, ${res.pageStops} on-page stops]`);
     } else {
-      console.log(`ok long ${mode}: caret ${res.caretRects.join('/')} per move over ${res.total} chars in one node `
+      console.log(`ok long ${mode}: caret ${res.caretRects.join('/')} per move for ${res.pageStops} on-page stops over ${res.total} chars in one node `
         + `(whole-node scan ${res.refRects.join('/')})`);
     }
   }

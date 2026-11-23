@@ -213,6 +213,10 @@ void main() {
       <String, Object?>{
         'verdict': 'aborted',
         'reportPath': 'dir/srs4-migration-report.json',
+        'failure': <String, Object?>{
+          'reason': 'error',
+          'reportPath': 'dir/srs4-migration-report.json',
+        },
         'report': <String, Object?>{'verdict': 'aborted'},
       },
     ]) {
@@ -235,64 +239,70 @@ void main() {
       }
       if (o.verdict == SrsGen4MigrationVerdict.aborted) {
         expect(o.reportPath, 'dir/srs4-migration-report.json');
+        expect(o.failure?.reason, SrsGen4MigrationFailureReason.error);
+        expect(c.failureFor(null)?.reportPath, o.reportPath);
       }
       c.dispose();
     }
   });
 
-  test('the report on offer follows the latest verdict', () async {
-    final FakeGen4Backend b = FakeGen4Backend();
-    String? onDisk = 'dir/old-report.json';
-    final SrsGen4MigrationController c = SrsGen4MigrationController(
-      directory: 'dir',
-      profileUids: () async => <String>['p1'],
-      onCommitted: () async {},
-      backend: b,
-      nowMs: () => 1,
-      findAbortedReport: (String dir) async => onDisk,
-    );
-    addTearDown(c.dispose);
-    expect(c.savedReportChecked, isFalse);
-    expect(c.reportPath, isNull);
-    await c.loadSavedReport();
-    expect(c.savedReportChecked, isTrue);
-    expect(c.previousRunAborted, isTrue);
-    expect(c.reportPath, 'dir/old-report.json');
+  test(
+    'the failure on offer is the kernel reason, then the latest verdict',
+    () async {
+      final FakeGen4Backend b = FakeGen4Backend();
+      final SrsGen4MigrationController c = SrsGen4MigrationController(
+        directory: 'dir',
+        profileUids: () async => <String>['p1'],
+        onCommitted: () async {},
+        backend: b,
+        nowMs: () => 1,
+      );
+      addTearDown(c.dispose);
+      // 上次的原因由内核在打开错误里给（SrsStoreNotMigrated.failure），控制器原样转交，不读报告文件。
+      const SrsGen4MigrationFailure previous = SrsGen4MigrationFailure(
+        reason: SrsGen4MigrationFailureReason.incomplete,
+        reportPath: 'dir/old-report.json',
+      );
+      expect(c.failureFor(previous), previous);
+      expect(c.failureFor(null), isNull);
 
-    // 在跑：不给报告；又一次对拍不过：给这次的。
-    Future<void> done = c.start();
-    expect(c.reportPath, isNull);
-    b.finish(<String, Object?>{
-      'verdict': 'aborted',
-      'reportPath': 'dir/new-report.json',
-    });
-    await done;
-    expect(c.reportPath, 'dir/new-report.json');
-    expect(c.previousRunAborted, isTrue);
+      // 在跑：没有可说明的失败；又一次中止：以这次内核给的原因为准。
+      Future<void> done = c.start();
+      expect(c.failureFor(previous), isNull);
+      b.finish(<String, Object?>{
+        'verdict': 'aborted',
+        'reportPath': 'dir/new-report.json',
+        'failure': <String, Object?>{
+          'reason': 'fail',
+          'reportPath': 'dir/new-report.json',
+        },
+      });
+      await done;
+      expect(
+        c.failureFor(previous),
+        const SrsGen4MigrationFailure(
+          reason: SrsGen4MigrationFailureReason.fail,
+          reportPath: 'dir/new-report.json',
+        ),
+      );
 
-    // 这次被拦下 / 出错：这次没有报告可给。
-    b.pending = Completer<SrsGen4MigrationOutcome>();
-    done = c.start();
-    b.finish(<String, Object?>{'verdict': 'blocked', 'code': 'busy'});
-    await done;
-    expect(c.reportPath, isNull);
+      // 这次被拦下：这次没有失败可说明，也不回头拿上次的。
+      b.pending = Completer<SrsGen4MigrationOutcome>();
+      done = c.start();
+      b.finish(<String, Object?>{'verdict': 'blocked', 'code': 'busy'});
+      await done;
+      expect(c.failureFor(previous), isNull);
 
-    // 目录里没有报告（只剩临时文件那一种）：不是「对拍不过」。
-    onDisk = null;
-    final SrsGen4MigrationController fresh = SrsGen4MigrationController(
-      directory: 'dir',
-      profileUids: () async => <String>['p1'],
-      onCommitted: () async {},
-      backend: FakeGen4Backend(),
-      nowMs: () => 1,
-      findAbortedReport: (String dir) async => onDisk,
-    );
-    addTearDown(fresh.dispose);
-    await fresh.loadSavedReport();
-    expect(fresh.savedReportChecked, isTrue);
-    expect(fresh.previousRunAborted, isFalse);
-    expect(fresh.reportPath, isNull);
-  });
+      // 这次出错（内核报错）：同上。
+      b.pending = Completer<SrsGen4MigrationOutcome>();
+      done = c.start();
+      await settle();
+      b.pending.completeError(const SrsCoreException(-1, 'boom'));
+      await done;
+      expect(c.error, isNotNull);
+      expect(c.failureFor(previous), isNull);
+    },
+  );
 
   group('quiesce (before the database closes)', () {
     test('idle: returns at once, no cancel sent', () async {

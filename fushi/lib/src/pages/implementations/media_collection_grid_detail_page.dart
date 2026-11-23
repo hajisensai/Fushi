@@ -271,6 +271,14 @@ class _MediaCollectionGridDetailPageState
   String? _backdropPath;
   String? _logoPath;
 
+  /// 「获取各卷封面与横幅」下到的系列横幅（[BookArtStore.backdropForCollection]，
+  /// 成员多数票那张；只有书 / 漫画合集、且确实下到过才非 null）。合集自己没有
+  /// 背景图时它顶上 hero 背景带。[_reload] 与刮削层变更时重算，build 零 IO。
+  String? _artBannerPath;
+
+  /// 正在监听的刮削层变更（[CollectionArtScrape.changes]）；没传 [artScrape] 为 null。
+  Listenable? _artChanges;
+
   /// 全部标签（筛选面板取名 / 色）与合集自身的标签（hero）。
   List<BookTagRow> _allTags = const <BookTagRow>[];
   List<BookTagRow> _collectionTags = const <BookTagRow>[];
@@ -306,8 +314,21 @@ class _MediaCollectionGridDetailPageState
     _name = widget.collection.name;
     _scroll.addListener(_onScroll);
     widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
+    _artChanges = widget.artScrape?.changes;
+    _artChanges?.addListener(_onArtStoreChanged);
     _reload();
   }
+
+  /// 刮削层写入 / 清除（本页按钮、ops 路由、单本编辑弹窗都走它）后重算横幅。
+  void _onArtStoreChanged() {
+    if (!mounted) return;
+    final String? next = _artBannerFor(_rows);
+    if (next != _artBannerPath) setState(() => _artBannerPath = next);
+  }
+
+  /// [rows] 里书成员的合集横幅路径；没有刮削层 / 没下到为 null。
+  String? _artBannerFor(List<MediaCollectionItemRow> rows) =>
+      widget.artScrape?.bannerFor(rows)?.path;
 
   void _onMemberInfoChanged() {
     if (mounted) setState(() {});
@@ -320,11 +341,19 @@ class _MediaCollectionGridDetailPageState
       oldWidget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
       widget.memberInfoRefresh?.addListener(_onMemberInfoChanged);
     }
+    final Listenable? changes = widget.artScrape?.changes;
+    if (!identical(changes, _artChanges)) {
+      _artChanges?.removeListener(_onArtStoreChanged);
+      _artChanges = changes;
+      _artChanges?.addListener(_onArtStoreChanged);
+      _artBannerPath = _artBannerFor(_rows);
+    }
   }
 
   @override
   void dispose() {
     widget.memberInfoRefresh?.removeListener(_onMemberInfoChanged);
+    _artChanges?.removeListener(_onArtStoreChanged);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _search.dispose();
@@ -398,6 +427,7 @@ class _MediaCollectionGridDetailPageState
       _scrapeMeta = scrapeMeta;
       _backdropPath = backdropPath;
       _logoPath = logoPath;
+      _artBannerPath = _artBannerFor(rows);
       _loading = false;
       _selected.retainWhere(
         (String key) => rows.any(
@@ -442,31 +472,40 @@ class _MediaCollectionGridDetailPageState
             : sort.name,
       );
 
+  /// 阅读时间排序没有一键整理比较器：按页内视图序排，视图外的成员保持原序接在后面。
+  List<MediaCollectionItemRow> _rowsInViewOrder(
+    List<CollectionMemberEntry> arranged,
+  ) {
+    final Set<String> shown = <String>{
+      for (final CollectionMemberEntry e in arranged) e.key,
+    };
+    return <MediaCollectionItemRow>[
+      for (final CollectionMemberEntry e in arranged) e.row,
+      for (final MediaCollectionItemRow r in _rows)
+        if (!shown.contains('${r.mediaType}|${r.entryKey}')) r,
+    ];
+  }
+
   /// 「存为手动顺序」（原一键整理，排序交互重设计层次 B2）：把当前视图排序写穿
   /// sortIndex（`reorderCollectionItems`），库页合集行同源立即同序。阅读时间排序
   /// 没有对应的一键整理比较器，按页内视图序落盘。
   Future<void> _saveViewOrder(List<CollectionMemberEntry> arranged) async {
-    final List<MediaCollectionItemRow> next;
-    switch (_sort) {
-      case CollectionMemberSort.manual:
-        return;
-      case CollectionMemberSort.volume:
-      case CollectionMemberSort.added:
-        next = await sortedCollectionRows(
-          db: widget.database,
-          rows: _rows,
-          byTitle: _sort == CollectionMemberSort.volume,
-        );
-      case CollectionMemberSort.read:
-        final Set<String> shown = <String>{
-          for (final CollectionMemberEntry e in arranged) e.key,
-        };
-        next = <MediaCollectionItemRow>[
-          for (final CollectionMemberEntry e in arranged) e.row,
-          for (final MediaCollectionItemRow r in _rows)
-            if (!shown.contains('${r.mediaType}|${r.entryKey}')) r,
-        ];
-    }
+    // 用 switch 表达式在声明处取值，不在 switch 语句里给推迟赋值的 final 赋值再让
+    // setState 闭包捕获（Dart 3.14.0 AOT 对该形状有 dart-lang/sdk#64917 崩溃，
+    // 修复 dart-lang/sdk@7848cfe821d；守卫
+    // test/build/aot_deferred_final_switch_capture_guard_test.dart）。
+    final List<MediaCollectionItemRow>? sorted = switch (_sort) {
+      CollectionMemberSort.manual => null,
+      CollectionMemberSort.volume ||
+      CollectionMemberSort.added => await sortedCollectionRows(
+        db: widget.database,
+        rows: _rows,
+        byTitle: _sort == CollectionMemberSort.volume,
+      ),
+      CollectionMemberSort.read => _rowsInViewOrder(arranged),
+    };
+    if (sorted == null) return;
+    final List<MediaCollectionItemRow> next = sorted;
     if (!mounted) return;
     setState(() {
       _rows = next;
@@ -1584,9 +1623,17 @@ class _MediaCollectionGridDetailPageState
   /// 合集的系列资料：合集自己有刮削资料 / 背景图就用自己的，否则借最前那卷（继续
   /// 会打开的那本）的刮削资料与横版海报；都没有为 null（头部保持原样）。只读
   /// [_reload] 预取的字段，零 IO。
+  ///
+  /// 背景带优先级：合集自己的背景图 > 「获取各卷封面与横幅」下到的系列横幅
+  /// （[_artBannerPath]，用户在本合集上主动取的、系列级）> 借来那卷的背景图 >
+  /// 没有（hero 用封面模糊垫底）。
   ({FushiSeriesMeta meta, String? summary})? _collectionSeries() {
     final String? backdropPath = _backdropPath;
     final String? logoPath = _logoPath;
+    final String? bannerPath = _artBannerPath;
+    final ImageProvider? banner = bannerPath == null
+        ? null
+        : resizedFileImage(File(bannerPath));
     final FushiSeriesMeta? own = collectionSeriesMeta(
       scrape: _scrapeMeta,
       backdrop: backdropPath == null
@@ -1598,17 +1645,23 @@ class _MediaCollectionGridDetailPageState
     if (own != null) {
       final String? summary = _scrapeMeta?.summary?.trim();
       return (
-        meta: own,
+        meta: own.backdrop == null && banner != null
+            ? own.withBackdrop(banner)
+            : own,
         summary: summary == null || summary.isEmpty ? null : summary,
       );
     }
     final ({FushiSeriesMeta meta, String? summary})? borrowed = widget
         .collectionSeriesFallback
         ?.call();
-    if (borrowed == null) return null;
+    if (borrowed == null) {
+      return banner == null
+          ? null
+          : (meta: FushiSeriesMeta(backdrop: banner), summary: null);
+    }
     final String? summary = borrowed.summary?.trim();
     return (
-      meta: borrowed.meta,
+      meta: banner == null ? borrowed.meta : borrowed.meta.withBackdrop(banner),
       summary: summary == null || summary.isEmpty ? null : summary,
     );
   }

@@ -9,6 +9,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_lapis_preview_fills.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000a1';
 
@@ -481,19 +482,21 @@ void main() {
         expect((await s.note(lost))!.field(fushi('MiscInfo')), '');
         // BUG-5176：候选按块物化，单次只读一块，结果与整块相同。
         srsDebugMaxNotesPerRead = 0;
-        final SrsLapisBackfillPreview chunked = await s.previewLapisBackfill(
+        final Map<String, Map<String, String>> chunked = await previewFills(
+          s,
           chunk: 1,
         );
         expect(srsDebugMaxNotesPerRead, 1);
-        expect(chunked.notes, 2);
-        expect(chunked.fills, (await s.previewLapisBackfill()).fills);
+        expect(chunked.length, 2);
+        expect(chunked, await previewFills(s));
         // 迁移后用户自己写过来源：绝不覆盖。
         await s.editFields(SrsEntityKind.note, kept, <String, Object?>{
           SrsFieldKeys.noteField(fushi('MiscInfo')): 'mine',
         });
 
         final SrsLapisBackfillPreview p = await s.previewLapisBackfill();
-        expect(p.fills.keys, <String>[lost]);
+        expect(p.notes, 1);
+        expect((await previewFills(s)).keys, <String>[lost]);
         expect(p.fieldCounts, <String, int>{fushi('MiscInfo'): 1});
         expect(await s.applyLapisBackfill(), 1);
         expect((await s.note(lost))!.field(fushi('MiscInfo')), 'Book A');

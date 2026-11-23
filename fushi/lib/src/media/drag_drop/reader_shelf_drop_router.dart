@@ -11,9 +11,11 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/drag_drop/book_archive_probe.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
+import 'package:fushi/src/media/import/book_archive_import_dialog.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -62,6 +64,12 @@ Future<void> routeReaderShelfDrop({
     preferManga: mangaOnly,
     db: appModel.database,
   );
+  // 装着一批书的 `.zip` / `.rar`（一包 EPUB / TXT 小说合集）同样要看包里装的是什么：
+  // 页图包已由上一步归漫画，剩下的再看条目名（拍板 83Fe7zQbhv）。
+  final Map<String, bool> bookArchives = await probeDroppedBookArchives(
+    paths,
+    imageArchives: imageArchives,
+  );
   if (!context.mounted) return;
 
   // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
@@ -70,13 +78,14 @@ Future<void> routeReaderShelfDrop({
     paths,
     isDirectory: (String pth) => Directory(pth).existsSync(),
     isImageArchive: (String pth) => imageArchives[pth] ?? false,
+    isBookArchive: (String pth) => bookArchives[pth] ?? false,
     preferManga: mangaOnly,
   );
   debugPrint(
     '[fushi-drop] [$debugLabel] classified '
     'books=${files.books.length} subtitles=${files.subtitles.length} '
     'audios=${files.audios.length} videos=${files.videos.length} '
-    'mangas=${files.mangas.length} '
+    'mangas=${files.mangas.length} bookArchives=${files.bookArchives.length} '
     'unsupportedMangas=${files.unsupportedMangas.length} '
     'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
     'global=$globalPosition',
@@ -141,6 +150,16 @@ Future<void> routeReaderShelfDrop({
         return;
       }
       unawaited(actions.openMangaImportPrefilled(mangaPaths: files.mangas));
+    case DropIntent.importBookArchive:
+      // 一包书 / 列不出名字的包（.7z、分卷第一卷）：解开一次按内容分流——书整批导入给一份
+      // 汇总，只有页图的交漫画导入（漫画模块关着时汇总里如实说明）。同批拖入的单本书一起
+      // 交进去，不静默丢掉。
+      unawaited(
+        actions.openBookArchiveImport(<String>[
+          ...files.bookArchives,
+          ...files.books,
+        ]),
+      );
     case DropIntent.unsupportedMangaArchive:
       debugPrint('[fushi-drop] [$debugLabel] intent=unsupportedMangaArchive');
       showSnack(t.drag_drop_manga_archive_unsupported);
@@ -274,6 +293,25 @@ class _ReaderShelfDropActions {
       );
       if (imported == null) return;
     }
+  }
+
+  /// 拖入装着一批书的压缩包 → 解包整批导入（[showBookArchiveImportDialog]），一份汇总；
+  /// 解开是页图的包交漫画导入。
+  Future<void> openBookArchiveImport(List<String> paths) async {
+    final bool imported = await showBookArchiveImportDialog(
+      context: context,
+      db: appModel.database,
+      paths: paths,
+      importMangaDirectories:
+          appModel.moduleVisibility.isEnabled(ModuleId.manga)
+          ? (List<String> directories) => showMangaDirectoriesImportDialog(
+              context: context,
+              db: appModel.database,
+              directories: directories,
+            )
+          : null,
+    );
+    if (imported && context.mounted) onLibraryChanged();
   }
 
   /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /

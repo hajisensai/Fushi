@@ -49,6 +49,10 @@
 > - `videoEnterCaret` / `readerEnterCaret` / `readerLookupAtCursor` 去掉手柄通道，只剩键盘（已存的自定义手柄
 >   绑定失效且不再显示）。手柄查词只有查词模式这一条路。
 > - 单屏默认按住 L1 带来的行为变化见上条：L1 轻点改在松开时补发。不想要的用户改成「Select 切换」或「关」。
+>
+> **2026-11-23 增补（拍板台 pr4141a）：** 阅读器整句扫词 `readerLookupNextWord` / `readerLookupPrevWord`（拍板台
+> 5H922XeDHM，PR #4130）同样删除，键盘 / 手柄 / 鼠标 / 弹窗回传 / 歌词键桥通道一并去掉；旧持久化 key
+> `reader_lookup_next_word` / `reader_lookup_prev_word` 加载时忽略（`kRetiredShortcutActionKeys`）。
 
 > **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
 >
@@ -139,7 +143,6 @@
 | globalBack（universal） | Esc / Alt+← | B | 返回上一级：有弹窗关弹窗，否则退出书 |
 | readerToggleBookmark | Ctrl+D | X | 切换书签 |
 | readerToggleFurigana | （无键盘默认） | R3 | 切换振假名 |
-| readerLookupNextWord / readerLookupPrevWord | （无默认，用户自配） | （无默认） | 整句扫词：不进光标，在当前句里按词前进 / 后退并复用点词查词换同一张弹窗（句尾循环；光标激活时让位；正文三种视图 + 歌词视图共用；执行体 `reader_fushi/word_sweep.part.dart`，拍板台 5H922XeDHM） |
 
 ### home scope（首页解析 home + global）
 

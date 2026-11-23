@@ -182,11 +182,6 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
-    kotlinOptions {
-        jvmTarget = '17'
-        freeCompilerArgs += ['-Xcontext-parameters']
-    }
-
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
         main.java.srcDirs += mihonSourceOutput
@@ -298,16 +293,20 @@ android {
         }
     }
 
-    packagingOptions {
-        pickFirst 'lib/**/libc++_shared.so'
-        pickFirst 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+    packaging {
+        jniLibs {
+            pickFirsts += ['lib/**/libc++_shared.so']
+        }
+        resources {
+            pickFirsts += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+        }
     }
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             def appName = "fushi"
             def buildType = variant.buildType.name
-            def architecture = output.getFilter(com.android.build.OutputFile.ABI)
+            def architecture = output.getFilter('ABI')
             def newName
 
             if ("${architecture}" == "arm64-v8a") {
@@ -358,6 +357,15 @@ android {
     }
 }
 
+// KGP 2.4 removed the android { kotlinOptions { } } DSL; compilerOptions is the
+// replacement (AGP 9 with android.builtInKotlin=false still applies KGP itself).
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        freeCompilerArgs.add('-Xcontext-parameters')
+    }
+}
+
 flutter {
     source '../..'
 }
@@ -367,11 +375,11 @@ dependencies {
     // flutter_local_notifications 自身 android/build.gradle 里钉的那个。
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation "androidx.webkit:webkit:1.12.0"
-    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.4.20"
     // JVM 单测里 android.jar 的 org.json 只是抛 "not mocked" 的桩（HostProxyPolicyTest 等读 JSON 的
     // 用例因此必红）；测试类路径上放真实现，生产仍用平台自带的 org.json。
     testImplementation "org.json:json:20240303"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.20"
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
     implementation 'com.github.umair13adil:RxLogs:v1.0.18'

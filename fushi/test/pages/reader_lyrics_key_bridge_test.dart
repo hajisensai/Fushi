@@ -188,6 +188,23 @@ void main() {
       expect(html(keyBridgeScript: marker), contains(marker));
     });
 
+    test('HBK-AUDIT-221：非左键按下在行外也回传（行号 -1），不只在行上', () {
+      final String doc = html();
+      final int at = doc.indexOf("_lc.addEventListener('mousedown'");
+      expect(at, greaterThanOrEqualTo(0));
+      final String block = doc.substring(at, doc.indexOf('});', at));
+      expect(
+        block,
+        contains("callHandler('onLyricsPointerSeek', e.button, idx)"),
+      );
+      expect(block, contains(': -1;'));
+      expect(
+        block,
+        isNot(contains('if (!el) return;')),
+        reason: '行外按下早退 = 侧键绑的关词典等动作在行间空白上是死项',
+      );
+    });
+
     test('「跟随音频」胶囊回 Dart（收回焦点），不只做纯 JS 恢复', () {
       final String doc = html();
       final int pill = doc.indexOf("document.getElementById('ly-follow')");
@@ -245,6 +262,30 @@ void main() {
           reason: name,
         );
       }
+    });
+
+    test('HBK-AUDIT-221：onLyricsPointerSeek 与正文 onPointerSeek 同一条三级阶梯', () {
+      final String body = handler('onLyricsPointerSeek');
+      final int reclaim = body.indexOf(
+        '_focusOwnership.reclaim(FocusReclaimCause.gesture)',
+      );
+      final int seek = body.indexOf('isSeekToClickedSentenceButton(');
+      final int gate = body.indexOf('if (hostOwnsWebViewPointerInput) return;');
+      final int resolve = body.indexOf('resolveMouseBindingActionForButton(');
+      final int exec = body.indexOf('_executeShortcutAction(action)');
+      for (final int i in <int>[reclaim, seek, gate, resolve, exec]) {
+        expect(i, greaterThanOrEqualTo(0), reason: body);
+      }
+      expect(reclaim, lessThan(seek), reason: '先收回焦点，再按动作分流');
+      expect(seek, lessThan(gate), reason: '位置型 seek 在任何平台都由页内 JS 承担');
+      expect(gate, lessThan(resolve), reason: 'Windows 由页面根 Listener 派发，不重复');
+      expect(resolve, lessThan(exec));
+      // controller 门控只属于 seek 分支：无有声书控制器时也要能派发关词典等动作。
+      expect(
+        body.substring(0, seek),
+        isNot(contains('_audiobookController')),
+        reason: '入口不得因 controller 为 null 早退',
+      );
     });
 
     test('整页焦点判据委托给纯函数（不再在页面里另写一份歌词让位）', () {

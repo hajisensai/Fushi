@@ -31,7 +31,162 @@ Set<String> videoTextBackdropUrls(Iterable<VideoMetadataImageRow>? workImages) {
   };
 }
 
-/// 一部视频作品的系列色块元数据。
+/// [videoSeriesMetaPlan] 的输入：一部作品（合集或散片）的刮削行。
+typedef VideoSeriesMetaInput = ({
+  VideoMetadataWorkRow? work,
+  List<MediaImageRow>? mediaImages,
+  List<VideoMetadataImageRow>? workImages,
+  CollectionScrapeMetaRow? scrape,
+});
+
+/// 两份 [VideoSeriesMetaInput] 是否同一份（逐字段对象同一）：刮削映射增量刷新时
+/// 没变的键保持原行对象（`VideoLibraryScrapeMaps.patched`），据此判「不用重算」。
+bool videoSeriesMetaInputSame(VideoSeriesMetaInput a, VideoSeriesMetaInput b) =>
+    identical(a.work, b.work) &&
+    identical(a.mediaImages, b.mediaImages) &&
+    identical(a.workImages, b.workImages) &&
+    identical(a.scrape, b.scrape);
+
+/// 一个图位的候选（按优先序）：附加图组的本地路径，再是作品图组的行
+/// （本地路径 + 远程地址，已按 kind 优先、`position` 排好）。
+@immutable
+class VideoSeriesImageSlot {
+  const VideoSeriesImageSlot({
+    this.mediaPaths = const <String>[],
+    this.workRows = const <({String? localPath, String remoteUrl})>[],
+    required this.decodeWidth,
+  });
+
+  final List<String> mediaPaths;
+  final List<({String? localPath, String remoteUrl})> workRows;
+  final int decodeWidth;
+}
+
+/// 视频系列色块元数据的**纯数据**部分（BUG-5253 余项）：排序刮削图组、分出有字 /
+/// 无字背景图、`jsonDecode` 标签、拼年份 / 集数，都在 [videoSeriesMetaPlan] 里做完，
+/// 可以放到后台 isolate；卡片 build 只调 [resolveVideoSeriesMeta] 按候选查本地文件
+/// 存在性（哈希查找）拼出 [FushiSeriesMeta]。不含 ImageProvider / 翻译串，能跨
+/// isolate 拷贝。
+@immutable
+class VideoSeriesMetaPlan {
+  const VideoSeriesMetaPlan({
+    required this.textlessBackdrop,
+    required this.textBackdrop,
+    required this.logo,
+    required this.poster,
+    required this.mediaType,
+    required this.year,
+    required this.episodeCount,
+    required this.genres,
+    required this.rating,
+  });
+
+  /// 没有任何刮削资料（只剩自有封面 / 回落年份）。
+  static const VideoSeriesMetaPlan empty = VideoSeriesMetaPlan(
+    textlessBackdrop: VideoSeriesImageSlot(
+      decodeWidth: kMetadataBackdropDecodePixelWidth,
+    ),
+    textBackdrop: VideoSeriesImageSlot(
+      decodeWidth: kMetadataBackdropDecodePixelWidth,
+    ),
+    logo: VideoSeriesImageSlot(decodeWidth: kMetadataLogoDecodePixelWidth),
+    poster: VideoSeriesImageSlot(decodeWidth: 480),
+    mediaType: null,
+    year: null,
+    episodeCount: null,
+    genres: <String>[],
+    rating: null,
+  );
+
+  final VideoSeriesImageSlot textlessBackdrop;
+  final VideoSeriesImageSlot textBackdrop;
+  final VideoSeriesImageSlot logo;
+  final VideoSeriesImageSlot poster;
+
+  /// 刮削作品类型原值（`tv` / `movie` / 其它），翻译在 UI 侧做。
+  final String? mediaType;
+
+  /// 作品年份（作品 → 首播日 → 合集 airDate）；都没有为 null，UI 侧再回落。
+  final int? year;
+
+  /// 总集数（电影不画）。
+  final int? episodeCount;
+  final List<String> genres;
+  final double? rating;
+}
+
+/// 算 [VideoSeriesMetaPlan]（纯函数，可在后台 isolate 跑）。
+VideoSeriesMetaPlan videoSeriesMetaPlan(VideoSeriesMetaInput input) {
+  final VideoMetadataWorkRow? work = input.work;
+  final CollectionScrapeMetaRow? scrape = input.scrape;
+  final List<MediaImageRow> mediaImages =
+      input.mediaImages ?? const <MediaImageRow>[];
+  final List<VideoMetadataImageRow> orderedWork = work == null
+      ? const <VideoMetadataImageRow>[]
+      : ((input.workImages ?? const <VideoMetadataImageRow>[]).toList()..sort(
+          (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+              a.position.compareTo(b.position),
+        ));
+  final Set<String> textUrls = videoTextBackdropUrls(input.workImages);
+  bool textless(String? url) => url == null || !textUrls.contains(url);
+
+  List<String> mediaPaths(
+    MediaImageKind kind, {
+    bool Function(MediaImageRow row)? where,
+  }) => <String>[
+    for (final MediaImageRow row in mediaImages)
+      if (row.kind == kind.dbValue &&
+          row.path.isNotEmpty &&
+          (where == null || where(row)))
+        row.path,
+  ];
+  List<({String? localPath, String remoteUrl})> workRows(
+    List<String> kinds, {
+    bool Function(VideoMetadataImageRow row)? where,
+  }) => <({String? localPath, String remoteUrl})>[
+    for (final String kind in kinds)
+      for (final VideoMetadataImageRow row in orderedWork)
+        if (row.kind == kind && (where?.call(row) ?? true))
+          (localPath: row.localPath, remoteUrl: row.remoteUrl),
+  ];
+  VideoSeriesImageSlot backdrop({required bool withText}) =>
+      VideoSeriesImageSlot(
+        mediaPaths: mediaPaths(
+          MediaImageKind.backdrop,
+          where: (MediaImageRow row) => textless(row.sourceUrl) != withText,
+        ),
+        workRows: workRows(
+          const <String>['backdrop'],
+          where: (VideoMetadataImageRow row) =>
+              textless(row.remoteUrl) != withText,
+        ),
+        decodeWidth: kMetadataBackdropDecodePixelWidth,
+      );
+
+  return VideoSeriesMetaPlan(
+    textlessBackdrop: backdrop(withText: false),
+    textBackdrop: backdrop(withText: true),
+    logo: VideoSeriesImageSlot(
+      mediaPaths: mediaPaths(MediaImageKind.logo),
+      workRows: workRows(const <String>['logo']),
+      decodeWidth: kMetadataLogoDecodePixelWidth,
+    ),
+    poster: VideoSeriesImageSlot(
+      workRows: workRows(const <String>['cover', 'poster']),
+      decodeWidth: 480,
+    ),
+    mediaType: work?.mediaType,
+    year:
+        work?.year ??
+        videoAirYear(work?.premiereDate) ??
+        videoAirYear(scrape?.airDate),
+    episodeCount: work?.mediaType == 'movie' ? null : scrape?.episodeCount,
+    genres: fushiScrapeTagNames(scrape?.tagsJson, limit: 2),
+    rating: work?.rating ?? scrape?.rating,
+  );
+}
+
+/// 按 [plan] 的候选拼出 [FushiSeriesMeta]（UI 侧，只查本地文件存在性）。
 ///
 /// - 背景图：先取**无字**的（附加图组 backdrop → 作品图组 backdrop，语言标签为空
 ///   的优先）；只有带字的才退而用它，并置 [FushiSeriesMeta.backdropHasText]——原图
@@ -43,119 +198,67 @@ Set<String> videoTextBackdropUrls(Iterable<VideoMetadataImageRow>? workImages) {
 /// 图一律先本地文件、再远程地址（[metadataRemoteImage]：AppCachedHttpImage 磁盘缓存 + 解码上限，与作品详情页
 /// 同一条取图链）；某张本地图还在探测存在性时先不落到远程（等探测完重建，免得
 /// 本地有图还去下载一遍）。
-FushiSeriesMeta videoSeriesMeta({
-  required VideoMetadataWorkRow? work,
-  required List<MediaImageRow>? mediaImages,
-  required List<VideoMetadataImageRow>? workImages,
-  required CollectionScrapeMetaRow? scrape,
+FushiSeriesMeta resolveVideoSeriesMeta(
+  VideoSeriesMetaPlan plan, {
   required VideoSeriesLocalImage localImage,
   ImageProvider? ownPoster,
   int? fallbackYear,
 }) {
   ImageProvider? settled(ImageProvider? image) =>
       image == kPendingCoverImage ? null : image;
-  final List<VideoMetadataImageRow> orderedWork =
-      (workImages ?? const <VideoMetadataImageRow>[]).toList()..sort(
-        (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
-            a.position.compareTo(b.position),
-      );
-  ImageProvider? workImage(
-    List<String> kinds, {
-    required int decodeWidth,
-    bool Function(VideoMetadataImageRow row)? where,
-  }) {
-    if (work == null) return null;
-    final List<VideoMetadataImageRow> rows = <VideoMetadataImageRow>[
-      for (final VideoMetadataImageRow row in orderedWork)
-        if (where?.call(row) ?? true) row,
-    ];
-    bool probing = false;
-    for (final String kind in kinds) {
-      for (final VideoMetadataImageRow row in rows) {
-        if (row.kind != kind) continue;
-        final ImageProvider? local = localImage(row.localPath);
-        if (local == kPendingCoverImage) {
-          probing = true;
-        } else if (local != null) {
-          return local;
-        }
-      }
-    }
-    if (probing) return null;
-    for (final String kind in kinds) {
-      for (final VideoMetadataImageRow row in rows) {
-        if (row.kind != kind || row.remoteUrl.isEmpty) continue;
-        // 远程回落与本地分支同一解码上限（#3722 video-18：刮削图默认是 TMDB
-        // 原图，裸解码几张就压满 ImageCache）。
-        return metadataRemoteImage(row.remoteUrl, width: decodeWidth);
-      }
-    }
-    return null;
-  }
-
-  ImageProvider? mediaImage(
-    MediaImageKind kind, {
-    bool Function(MediaImageRow row)? where,
-  }) {
-    if (mediaImages == null) return null;
-    for (final MediaImageRow row in mediaImages) {
-      if (row.kind != kind.dbValue || row.path.isEmpty) continue;
-      if (where != null && !where(row)) continue;
-      final ImageProvider? image = localImage(row.path);
+  ImageProvider? mediaImage(VideoSeriesImageSlot slot) {
+    for (final String path in slot.mediaPaths) {
+      final ImageProvider? image = localImage(path);
       if (image != null) return image;
     }
     return null;
   }
 
-  final Set<String> textUrls = videoTextBackdropUrls(workImages);
-  bool textless(String? url) => url == null || !textUrls.contains(url);
-  ImageProvider? backdropOf({required bool withText}) =>
-      settled(
-        mediaImage(
-          MediaImageKind.backdrop,
-          where: (MediaImageRow row) => textless(row.sourceUrl) != withText,
-        ),
-      ) ??
-      workImage(
-        const <String>['backdrop'],
-        decodeWidth: kMetadataBackdropDecodePixelWidth,
-        where: (VideoMetadataImageRow row) =>
-            textless(row.remoteUrl) != withText,
-      );
-  ImageProvider? backdrop = backdropOf(withText: false);
+  ImageProvider? workImage(VideoSeriesImageSlot slot) {
+    bool probing = false;
+    for (final ({String? localPath, String remoteUrl}) row in slot.workRows) {
+      final ImageProvider? local = localImage(row.localPath);
+      if (local == kPendingCoverImage) {
+        probing = true;
+      } else if (local != null) {
+        return local;
+      }
+    }
+    if (probing) return null;
+    for (final ({String? localPath, String remoteUrl}) row in slot.workRows) {
+      if (row.remoteUrl.isEmpty) continue;
+      // 远程回落与本地分支同一解码上限（#3722 video-18：刮削图默认是 TMDB
+      // 原图，裸解码几张就压满 ImageCache）。
+      return metadataRemoteImage(row.remoteUrl, width: slot.decodeWidth);
+    }
+    return null;
+  }
+
+  ImageProvider? slotImage(VideoSeriesImageSlot slot) =>
+      settled(mediaImage(slot)) ?? workImage(slot);
+
+  ImageProvider? backdrop = slotImage(plan.textlessBackdrop);
   bool backdropHasText = false;
   if (backdrop == null) {
-    backdrop = backdropOf(withText: true);
+    backdrop = slotImage(plan.textBackdrop);
     backdropHasText = backdrop != null;
   }
-  final ImageProvider? logo =
-      settled(mediaImage(MediaImageKind.logo)) ??
-      workImage(const <String>[
-        'logo',
-      ], decodeWidth: kMetadataLogoDecodePixelWidth);
-  final ImageProvider? poster =
-      settled(ownPoster) ??
-      workImage(const <String>['cover', 'poster'], decodeWidth: 480);
-  final String? kind = switch (work?.mediaType) {
+  final ImageProvider? logo = slotImage(plan.logo);
+  final ImageProvider? poster = settled(ownPoster) ?? workImage(plan.poster);
+  final String? kind = switch (plan.mediaType) {
     'tv' => t.shelf_block_video_kind_tv,
     'movie' => t.shelf_block_video_kind_movie,
     _ => null,
   };
-  final int? year =
-      work?.year ??
-      videoAirYear(work?.premiereDate) ??
-      videoAirYear(scrape?.airDate) ??
-      fallbackYear;
-  final int? episodes = work?.mediaType == 'movie'
-      ? null
-      : scrape?.episodeCount;
+  final int? year = plan.year ?? fallbackYear;
+  final int? episodes = plan.episodeCount;
   return FushiSeriesMeta.fromParts(
     backdrop: backdrop,
     backdropHasText: backdropHasText,
     logo: logo,
     poster: poster,
-    genres: fushiScrapeTagNames(scrape?.tagsJson, limit: 2),
-    rating: work?.rating ?? scrape?.rating,
+    genres: plan.genres,
+    rating: plan.rating,
     chipParts: <String>[
       ?kind,
       if (year != null) '$year',
@@ -164,3 +267,26 @@ FushiSeriesMeta videoSeriesMeta({
     ],
   );
 }
+
+/// 一部视频作品的系列色块元数据：[videoSeriesMetaPlan] + [resolveVideoSeriesMeta]
+/// 一步走完（应用首页在异步加载里按条目单查时用；视频库卡片 build 只读后台
+/// 预算好的 [VideoSeriesMetaPlan]，不走这里）。
+FushiSeriesMeta videoSeriesMeta({
+  required VideoMetadataWorkRow? work,
+  required List<MediaImageRow>? mediaImages,
+  required List<VideoMetadataImageRow>? workImages,
+  required CollectionScrapeMetaRow? scrape,
+  required VideoSeriesLocalImage localImage,
+  ImageProvider? ownPoster,
+  int? fallbackYear,
+}) => resolveVideoSeriesMeta(
+  videoSeriesMetaPlan((
+    work: work,
+    mediaImages: mediaImages,
+    workImages: workImages,
+    scrape: scrape,
+  )),
+  localImage: localImage,
+  ownPoster: ownPoster,
+  fallbackYear: fallbackYear,
+);

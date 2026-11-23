@@ -303,10 +303,11 @@ class ImportInbox {
   ///  - 组内任一目标名与已占用的名字（已有条目 + 先分配的组）不分大小写重名——iOS 的
   ///    APFS 区分大小写，`ep01.mkv` 与 `EP01.mkv` 能并存，但配对不分大小写，且 rename
   ///    会无声覆盖同名文件；
-  ///  - 组里有主文件，而该 stem 会和已占用的**另一个主文件**交叉配对：已占用的、已被某个
-  ///    主文件认领的字幕会配上新主文件（旧视频的字幕被新视频配走），或本组的字幕会配上
-  ///    已占用的主文件（旧视频配上新字幕）。stem 互为前缀（`EP01` 与 `EP01.v2`）时字幕归
-  ///    更长的 stem，较短的不算交叉。
+  ///  - 组里有主文件，而该 stem 会和已占用的**另一个主文件**交叉配对：已占用的、有主文件
+  ///    配得上的字幕会配上新主文件（旧视频的字幕被新视频配走），或本组的字幕会配上已占用
+  ///    的主文件（旧视频配上新字幕）。「配得上」与播放器同一规则（`listSidecarSubtitles`，
+  ///    不看同目录别的视频）：stem 互为前缀（`EP01` 与 `EP01.ja`）时字幕对两边都成立，
+  ///    也算交叉（HBK-AUDIT-220）。
   ///
   /// 有意放行的两种「接上」：只有字幕的组配上已有主文件（给已放进去的视频补字幕），主文件
   /// 配上目录里没有主文件认领的孤立字幕——两者都不拆散任何一对已有的配对。
@@ -402,34 +403,33 @@ class ImportInbox {
       for (final String n in taken)
         if (!_isSubtitleName(n)) p.basenameWithoutExtension(n),
     ];
-    // 已占用、且有主文件认领的字幕 → 认领它的最长主文件 stem 的长度（同目录 stem 互为
-    // 前缀时由更长的认领，与 `sidecarSubtitlesForDeletedVideo` 同一归属规则）。
-    final Map<String, int> takenOwnedSubtitles = <String, int>{};
-    for (final String n in taken) {
-      if (!_isSubtitleName(n)) continue;
-      for (final String s in takenPrimaryStems) {
-        if (_pairsWith(n, s) && s.length > (takenOwnedSubtitles[n] ?? -1)) {
-          takenOwnedSubtitles[n] = s.length;
-        }
-      }
-    }
+    // 已占用、且有主文件配得上的字幕。HBK-AUDIT-220：判「配得上」只用播放器的实际规则
+    // （[_pairsWith] = `listSidecarSubtitles`，自动选字幕的 `pickSidecar` 是它的子集）——
+    // 播放器给一个视频找字幕时不看同目录别的视频，`EP01.ja.srt` 对 `EP01.mkv` 与
+    // `EP01.ja.mkv` 都成立；不能再按「stem 互为前缀时归更长的」放行较短的一方
+    // （那只是删视频时带走字幕的规则），否则 `EP01.mkv` 会给自己选上 `EP01.ja.mkv` 的
+    // 日语字幕。
+    final List<String> takenPairedSubtitles = <String>[
+      for (final String n in taken)
+        if (_isSubtitleName(n) &&
+            takenPrimaryStems.any((String s) => _pairsWith(n, s)))
+          n,
+    ];
     bool usable(String stem) {
       for (final _SidecarGroupMember m in group.members) {
         if (takenLower.contains('$stem${m.suffix}'.toLowerCase())) return false;
       }
       if (!group.hasPrimary) return true;
-      // 已有主文件的字幕会被新主文件配走。
-      for (final MapEntry<String, int> owned in takenOwnedSubtitles.entries) {
-        if (stem.length >= owned.value && _pairsWith(owned.key, stem)) {
-          return false;
-        }
+      // 已有主文件的字幕会被新主文件配上。
+      for (final String subtitle in takenPairedSubtitles) {
+        if (_pairsWith(subtitle, stem)) return false;
       }
-      // 本组的字幕会被已有主文件配走。
+      // 本组的字幕会被已有主文件配上。
       for (final _SidecarGroupMember m in group.members) {
         final String target = '$stem${m.suffix}';
         if (!_isSubtitleName(target)) continue;
         for (final String s in takenPrimaryStems) {
-          if (s.length >= stem.length && _pairsWith(target, s)) return false;
+          if (_pairsWith(target, s)) return false;
         }
       }
       return true;

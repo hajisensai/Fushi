@@ -311,7 +311,9 @@ String asrChoiceKey(AsrLanguage language, AsrAudioProfile profile) =>
   final int at = key.indexOf('@');
   if (at < 0) return (tag: key, profile: AsrAudioProfile.cleanSpeech);
   final String name = key.substring(at + 1);
-  for (final AsrAudioProfile profile in AsrAudioProfile.values) {
+  // 选择是「这种素材用哪个包」：只有声学素材对应包（`song` 选包按混音，没有自己的
+  // 选择；写了也不认，免得造出声明 `song` 的窄包）。
+  for (final AsrAudioProfile profile in kAsrPackAudioProfiles) {
     if (profile.name == name) {
       return (tag: key.substring(0, at), profile: profile);
     }

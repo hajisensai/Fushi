@@ -8,6 +8,9 @@
 //
 // - 宿主取回：真 HttpServer（不支持 Range 的音频服务、502、网页、octet-stream 的 mp3、超限）；
 // - 页面：真实 headless Chrome 跑生产外壳 + eggrolls 模板的 TTS 脚本原样。
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

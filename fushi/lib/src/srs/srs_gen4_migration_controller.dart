@@ -10,7 +10,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io' show FileSystemException;
 
 import 'package:flutter/foundation.dart' show ChangeNotifier, Listenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,10 +44,7 @@ class SrsGen4MigrationController extends ChangeNotifier {
     Listenable? databaseClosing,
     Listenable? databaseChanged,
     int Function()? nowMs,
-    Future<String?> Function(String dir)? findAbortedReport,
   }) : _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch),
-       _findAbortedReport =
-           findAbortedReport ?? SrsGen4Migration.abortedReportPath,
        _databaseOpen = databaseOpen ?? (() => true),
        _databaseClosing = databaseClosing,
        _databaseChanged = databaseChanged {
@@ -71,9 +67,6 @@ class SrsGen4MigrationController extends ChangeNotifier {
   final SrsGen4MigrationBackend backend;
   final Duration pollInterval;
   final int Function() _nowMs;
-
-  /// 找目录里那份「对拍不过、已撤回」的报告（[SrsGen4Migration.abortedReportPath]；测试换成假的）。
-  final Future<String?> Function(String dir) _findAbortedReport;
 
   /// 主库此刻开着（[AppModel.isDatabaseOpen]）。关库（覆盖恢复 / 换数据根 / 退出）一开始就置假、先于等关库前的写手：
   /// 之后不再开始新的迁移（交接说明 §9.5 第 7 条）。启动初始化完成之前也是假。
@@ -101,10 +94,6 @@ class SrsGen4MigrationController extends ChangeNotifier {
   Completer<void>? _finished;
   bool _disposed = false;
 
-  /// 磁盘上那份「对拍不过、已撤回」的报告（上一次进程里跑出来的；[loadSavedReport] 读）。
-  String? _savedReportPath;
-  bool _savedReportChecked = false;
-
   SrsGen4MigrationPhase get phase => _phase;
 
   /// 正在跑时最近一次轮询到的进度（还没轮询到 = null）。
@@ -116,40 +105,21 @@ class SrsGen4MigrationController extends ChangeNotifier {
   /// 上一次跑出的错误（内核报错，例如上次失败留下的半成品让迁移拒绝开始）。
   Object? get error => _error;
 
-  /// 读过磁盘上的报告没有（[loadSavedReport]）：没读完之前页面还分不清「上次没通过核对」与「上次没做完」。
-  bool get savedReportChecked => _savedReportChecked;
-
-  /// 「上次迁移没完成」（[SrsGenState.migrationFailed]）的具体原因，与内核判定的两条原因一一对应：
-  /// - 有报告 = 上次对拍不过、已撤回（旧库没动，临时文件当场删了）；
-  /// - 没有报告 = 只剩迁移临时文件（上次跑到一半进程没了）。
-  /// 本进程里还没有结论时才看它；有了结论就以结论为准（[reportPath]）。
-  bool get previousRunAborted => _savedReportPath != null;
-
-  /// 用户能拿走的诊断报告（只含 ID 与计数）：本进程这次跑出「对拍不过」时是它的报告；这次还没有结论时是磁盘上上一次
-  /// 对拍不过的那份；其余（在跑 / 别的结论 / 出错）= null。页面据此给「发给开发者」与「分享 / 保存」。
-  String? get reportPath {
+  /// 页面此刻要说明的那次失败（原因与报告都由内核判定，这里不读报告文件）：
+  /// - 在跑 = null；
+  /// - 本进程这次有了结论：以结论为准，中止的是它带的 [SrsGen4MigrationOutcome.failure]，其余结论 = null；
+  /// - 本次出错（内核报错）= null（页面说「出错停止了」，不再拿上一次的原因说事）；
+  /// - 还没有结论：[previous]，即打开错误里内核与 [SrsGenState.migrationFailed] 同一次判定的上次原因
+  ///   （[SrsStoreNotMigrated.failure]）。
+  /// 有 [SrsGen4MigrationFailure.reportPath] 时页面给「发给开发者」与「分享 / 保存」。
+  SrsGen4MigrationFailure? failureFor(SrsGen4MigrationFailure? previous) {
     if (_phase != SrsGen4MigrationPhase.idle) return null;
     final SrsGen4MigrationOutcome? o = _outcome;
     if (o != null) {
-      return o.verdict == SrsGen4MigrationVerdict.aborted ? o.reportPath : null;
+      return o.verdict == SrsGen4MigrationVerdict.aborted ? o.failure : null;
     }
     if (_error != null) return null;
-    return _savedReportPath;
-  }
-
-  /// 读一次磁盘上的报告（页面显示「上次迁移没完成」时调；读完通知页面）。
-  Future<void> loadSavedReport() async {
-    String? path;
-    try {
-      path = await _findAbortedReport(directory);
-    } on FileSystemException catch (e, stack) {
-      // 报告读不了（权限 / 被占用）：按「没有报告」说明，原因进日志。
-      ErrorLogService.instance.log('SrsGen4Migration.report', e, stack);
-    }
-    if (_disposed) return;
-    _savedReportPath = path;
-    _savedReportChecked = true;
-    _notify();
+    return previous;
   }
 
   /// 已请求取消、还没有结论。
@@ -216,11 +186,6 @@ class SrsGen4MigrationController extends ChangeNotifier {
         _phase = SrsGen4MigrationPhase.committed;
       } else {
         _outcome = o;
-        // 磁盘上的报告跟着这次的结论走：这次对拍不过就是这一份；别的结论不改写报告（旧库没动，上次的报告仍有效）。
-        if (o.verdict == SrsGen4MigrationVerdict.aborted) {
-          _savedReportPath = o.reportPath;
-          _savedReportChecked = true;
-        }
         _phase = SrsGen4MigrationPhase.idle;
       }
     } catch (e, stack) {

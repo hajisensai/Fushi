@@ -2430,6 +2430,15 @@ html[data-theme="dark"] {
     margin: 4px 0 6px;
 }
 
+/* 拍板台 6uasoIUvSR：汉字区块是一张 <details class="kanji-card-section glossary-group">，
+   默认折叠成一行（卡片皮肤 / 箭头 / 标题行沿用词典卡 .glossary-group / .dict-label）。
+   标题行 = 「汉字 · 粉」+ 区块里的汉字词典名。 */
+.kanji-card-summary-dicts {
+    margin-left: 6px;
+    font-weight: normal;
+    overflow-wrap: anywhere;
+}
+
 .kanji-card {
     margin-top: 4px;
     padding: 8px 10px;
@@ -3621,6 +3630,30 @@ html.fushi-m3e .kanji-card {
     border-radius: var(--md-sys-shape-corner-large-increased);
     padding: 12px 14px;
     background: var(--md-sys-color-surface-container-high);
+}
+
+/* 汉字区块单独成卡（不在词典分段列表里）：四角都是分段列表首尾的 24 圆角，标题行的
+   按压层跟着卡片圆角走（同 .glossary-group:first-child / :last-child 的标题行规则）。 */
+html.fushi-m3e .kanji-card-section.glossary-group {
+    border-radius: 24px;
+}
+
+html.fushi-m3e .kanji-card-section.glossary-group > .dict-label {
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+}
+
+html.fushi-m3e .kanji-card-section.glossary-group:not([open]) > .dict-label {
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+}
+
+html.fushi-m3e .kanji-card-summary-dicts {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: 0;
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
 }
 
 html.fushi-m3e .kanji-card-char {

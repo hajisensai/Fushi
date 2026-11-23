@@ -88,7 +88,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope,
         FushiFloatingChromeScrollInset;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -390,7 +390,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   bool _onChromeScroll(ScrollNotification notification) {
     if (!_floatingNow) return false;
     // 隐藏的保活分区 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 
@@ -734,7 +734,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   /// 「在线 › 来源」里音源的顺序 / 开关 / 启用 / 服务器变了：重读推荐与搜索用的来源，
   /// 以及混排进曲库的服务器专辑。
+  ///
+  /// 来源视图在写完偏好后才回调：那时用户可能已经切走（来源视图已 dispose），本页
+  /// 也可能已关掉，所以先判 mounted（之后的重读要经 ref 取 AppModel）。
   void _onOnlineSourcesChanged() {
+    if (!mounted) return;
     unawaited(_reloadOnlineSources());
     unawaited(_reloadServerAlbums());
   }

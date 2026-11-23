@@ -1907,25 +1907,30 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       builder: (BuildContext context, double t, Widget? child) =>
           Transform.translate(
             offset: Offset(-peek * t / 2, 0),
-            child: SizedBox.square(
-              dimension: cover,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  child!,
-                  Positioned(
-                    left: inset + peek * t,
-                    top: inset,
-                    child: _SpinningDisc(
-                      coverPath: item?.coverPath,
-                      albumUid: item?.albumUid,
-                      trackPath: item?.path,
-                      size: disc,
-                      spinning: _engine.isPlaying,
-                      fallback: _DiscFallback.silverCd,
+            // 封面与唱片共用这一层倾斜（封面框自带的那层被 group 收掉），
+            // 唱片不会留在平面上、两层不会错开。
+            child: FushiTilt(
+              group: true,
+              child: SizedBox.square(
+                dimension: cover,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    child!,
+                    Positioned(
+                      left: inset + peek * t,
+                      top: inset,
+                      child: _SpinningDisc(
+                        coverPath: item?.coverPath,
+                        albumUid: item?.albumUid,
+                        trackPath: item?.path,
+                        size: disc,
+                        spinning: _engine.isPlaying,
+                        fallback: _DiscFallback.silverCd,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

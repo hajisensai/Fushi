@@ -18,6 +18,7 @@ class _UpdateDownloadSession {
     required String version,
     UpdateDownloadCancellation? cancellation,
   }) : _registryKey = UpdateChecker._updateFlowKey(version),
+       channel = channelForUpdateVersion(version),
        // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
        // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
        status = ValueNotifier<String>(t.update_connecting),
@@ -27,6 +28,11 @@ class _UpdateDownloadSession {
   }
 
   final String _registryKey;
+
+  /// 这次下载的目标版本属于哪条更新时间线（HBK-AUDIT-230）。手动「检查更新」只拉回
+  /// 与它要查的通道相同的会话：stable 下载在途时，调试版面板显式按 debug 查，不能被
+  /// stable 浮层截走。
+  final UpdateChannel channel;
 
   final ValueNotifier<double> progress = ValueNotifier<double>(0);
   final ValueNotifier<String> status;
