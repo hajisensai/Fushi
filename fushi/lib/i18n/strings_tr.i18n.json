@@ -2943,6 +2943,8 @@
   "download_batch_delete_confirm": "$n indirme görevi silinsin mi?",
   "download_batch_done": "$n görev işlendi",
   "download_batch_failed": "$n başarısız oldu",
+  "download_batch_failed_details": "Why",
+  "download_batch_failed_details_title": "Failed items",
   "download_batch_unsupported": "$n atlandı (desteklenmiyor)",
   "download_clear_completed_confirm": "Clear $n completed download tasks? Without the option below they are only removed from the list and downloaded files are kept.",
   "download_clear_completed_confirm_keeps_files": "$n of them cannot have their files deleted from here and will only be removed from the list.",

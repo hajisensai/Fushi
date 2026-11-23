@@ -2943,6 +2943,8 @@
   "download_batch_delete_confirm": "ลบงานดาวน์โหลด $n งานหรือไม่?",
   "download_batch_done": "ประมวลผลงานแล้ว $n งาน",
   "download_batch_failed": "ล้มเหลว $n งาน",
+  "download_batch_failed_details": "Why",
+  "download_batch_failed_details_title": "Failed items",
   "download_batch_unsupported": "ข้าม $n งาน (ไม่รองรับ)",
   "download_clear_completed_confirm": "Clear $n completed download tasks? Without the option below they are only removed from the list and downloaded files are kept.",
   "download_clear_completed_confirm_keeps_files": "$n of them cannot have their files deleted from here and will only be removed from the list.",

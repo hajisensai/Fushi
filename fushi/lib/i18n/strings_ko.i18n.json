@@ -2943,6 +2943,8 @@
   "download_batch_delete_confirm": "다운로드 작업 $n개를 삭제하시겠습니까?",
   "download_batch_done": "작업 $n개 처리됨",
   "download_batch_failed": "$n개 실패",
+  "download_batch_failed_details": "Why",
+  "download_batch_failed_details_title": "Failed items",
   "download_batch_unsupported": "$n개 건너뜀(지원되지 않음)",
   "download_clear_completed_confirm": "Clear $n completed download tasks? Without the option below they are only removed from the list and downloaded files are kept.",
   "download_clear_completed_confirm_keeps_files": "$n of them cannot have their files deleted from here and will only be removed from the list.",
