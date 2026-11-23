@@ -22,7 +22,10 @@ import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/identity/pending_identity.dart'
-    show PendingIdentityAiOutcome;
+    show
+        PendingIdentityAiOutcome,
+        PendingIdentityIgnoreDomain,
+        loadPendingIdentityIgnored;
 import 'package:fushi_engine/media/collections/book_series_grouper.dart'
     show isOnlineMangaSourceMetadata;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart';
@@ -1199,13 +1202,21 @@ class LibraryCurator {
     final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
     final Set<String> progress = ctx.progressOf(stage);
     final String? target = ctx.target;
+    // 用户在待确认身份队列里忽略的单元不再自动去查（与视频补刮同一约定）；单条
+    // 重试是用户对这一条的明确请求，不受它限制。
+    final Set<String> ignored = target == null
+        ? await loadPendingIdentityIgnored(db, PendingIdentityIgnoreDomain.book)
+        : const <String>{};
     final List<LibraryCurateBookUnit> units = target == null
-        ? _openBookUnits(
-            await facts.bookScrapeUnits(_since(stage, ctx)),
-            ctx.state,
-            progress: progress,
-            auto: auto,
-          )
+        ? <LibraryCurateBookUnit>[
+            for (final LibraryCurateBookUnit u in _openBookUnits(
+              await facts.bookScrapeUnits(_since(stage, ctx)),
+              ctx.state,
+              progress: progress,
+              auto: auto,
+            ))
+              if (!ignored.contains(u.id)) u,
+          ]
         : targetBookUnits(await facts.bookScrapeUnits(null), target);
     final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
         ? mediaDecider?.call()
@@ -1508,6 +1519,9 @@ class LibraryCurator {
     final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
     final Set<String> progress = ctx.progressOf(stage);
     final String? target = ctx.target;
+    final Set<String> ignored = target == null
+        ? await loadPendingIdentityIgnored(db, PendingIdentityIgnoreDomain.game)
+        : const <String>{};
     final List<LibraryCurateGameUnit> units = <LibraryCurateGameUnit>[
       for (final LibraryCurateGameUnit g in await facts.gameScrapeUnits(
         target == null ? _since(stage, ctx) : null,
@@ -1515,6 +1529,7 @@ class LibraryCurator {
         if (target != null
             ? (g.id == target || 'game:${g.id}' == target)
             : !progress.contains(g.id) &&
+                  !ignored.contains('game:${g.id}') &&
                   !ctx.state.suppressed.contains('scrape.games:${g.id}') &&
                   !(auto && ctx.state.seen.contains('scrape.games:${g.id}')))
           g,
@@ -1921,12 +1936,16 @@ class LibraryCurator {
     // 书 / 游戏：每个单元一次资料源搜索，最多一次 AI 消歧（没指派 AI 时为 0）。
     if (toolbox.describeTool(LibraryCurateOps.bookScrapeSearch) != null &&
         toolbox.describeTool(LibraryCurateOps.bookScrapeApply) != null) {
+      final Set<String> ignored = await loadPendingIdentityIgnored(
+        db,
+        PendingIdentityIgnoreDomain.book,
+      );
       final int n = _openBookUnits(
         await facts.bookScrapeUnits(since(LibraryCurateStage.scrapeBooks)),
         state,
         progress: null,
         auto: false,
-      ).length;
+      ).where((LibraryCurateBookUnit u) => !ignored.contains(u.id)).length;
       if (n > 0) {
         items[LibraryCurateStage.scrapeBooks] = n;
         if (a.videoIdentify && mediaDecider?.call() != null) {
@@ -1936,11 +1955,17 @@ class LibraryCurator {
     }
     if (toolbox.describeTool(LibraryCurateOps.gameScrapeSearch) != null &&
         toolbox.describeTool(LibraryCurateOps.gameScrapeApply) != null) {
+      final Set<String> ignoredGames = await loadPendingIdentityIgnored(
+        db,
+        PendingIdentityIgnoreDomain.game,
+      );
       final int n = <LibraryCurateGameUnit>[
         for (final LibraryCurateGameUnit g in await facts.gameScrapeUnits(
           since(LibraryCurateStage.scrapeGames),
         ))
-          if (!state.suppressed.contains('scrape.games:${g.id}')) g,
+          if (!state.suppressed.contains('scrape.games:${g.id}') &&
+              !ignoredGames.contains('game:${g.id}'))
+            g,
       ].length;
       if (n > 0) {
         items[LibraryCurateStage.scrapeGames] = n;

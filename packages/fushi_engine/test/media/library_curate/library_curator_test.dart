@@ -12,6 +12,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
+import 'package:fushi_engine/media/identity/pending_identity.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
@@ -1547,6 +1548,41 @@ void main() {
       expect(
         () => c.retryScrape(stage: LibraryCurateStage.links, ref: 'x'),
         throwsArgumentError,
+      );
+    });
+
+    test('待确认身份队列里忽略的书 / 游戏：整趟不再去查，也不计入预估', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Ignored')),
+        single(vol('k2', 'Kept')),
+      ];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Ignored game'),
+      ];
+      await setPendingIdentityIgnored(
+        db,
+        PendingIdentityIgnoreDomain.book,
+        <String>['book:k1'],
+        ignored: true,
+      );
+      await setPendingIdentityIgnored(
+        db,
+        PendingIdentityIgnoreDomain.game,
+        <String>['game:g1'],
+        ignored: true,
+      );
+      final LibraryCurateEstimate e = await curator().estimate();
+      expect(e.itemsByStage[LibraryCurateStage.scrapeBooks], 1);
+      expect(e.itemsByStage[LibraryCurateStage.scrapeGames], isNull);
+      await curator().run(trigger: LibraryCurateTrigger.manual, full: true);
+      expect(
+        <Object?>[
+          for (int i = 0; i < toolbox.calls.length; i++)
+            if (toolbox.calls[i] == LibraryCurateOps.bookScrapeSearch ||
+                toolbox.calls[i] == LibraryCurateOps.gameScrapeSearch)
+              toolbox.args[i]['query'] ?? toolbox.args[i]['id'],
+        ],
+        <Object?>['Kept'],
       );
     });
 

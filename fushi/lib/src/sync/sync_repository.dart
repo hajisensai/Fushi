@@ -26,6 +26,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         PreferencesRepository;
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
     show kBtSitesLegacyMigrationPref;
+import 'package:fushi_engine/media/identity/pending_identity.dart'
+    show kBookScrapeIgnoredPrefKey, kGameScrapeIgnoredPrefKey;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart'
     show kVideoScrapeIgnoredWorksPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -2113,6 +2115,9 @@ class SyncRepository {
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
     // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
     kVideoScrapeIgnoredWorksPrefKey,
+    // 书 / 漫画与游戏的同一种忽略（BUG-5283）：键里是本机合集 / 游戏自增 id。
+    kBookScrapeIgnoredPrefKey,
+    kGameScrapeIgnoredPrefKey,
     _keyBackendType,
     // 云备份通道开关与上一行的后端选择是同一件事的两半——「这台设备走不走云盘、
     // 走哪个」——而凭据本就设备本地。随备份 / 设置同步漂走会出错：只想在电脑上

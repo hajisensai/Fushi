@@ -91,12 +91,18 @@ enum PendingIdentityAiOutcome {
   }
 }
 
+/// 书 / 漫画忽略域的偏好键（见 [PendingIdentityIgnoreDomain.book]）。
+const String kBookScrapeIgnoredPrefKey = 'book_scrape_ignored_works';
+
+/// 游戏忽略域的偏好键（见 [PendingIdentityIgnoreDomain.game]）。
+const String kGameScrapeIgnoredPrefKey = 'game_scrape_ignored_works';
+
 /// 忽略记在哪一个域里（一个域一个偏好键）。书与漫画同一个域：它们是库管家同一个
 /// 刮削阶段（`scrape.books`）的单元，键空间相同。
 enum PendingIdentityIgnoreDomain {
   video('video_scrape_ignored_works'),
-  book('book_scrape_ignored_works'),
-  game('game_scrape_ignored_works');
+  book(kBookScrapeIgnoredPrefKey),
+  game(kGameScrapeIgnoredPrefKey);
 
   const PendingIdentityIgnoreDomain(this.prefKey);
 
