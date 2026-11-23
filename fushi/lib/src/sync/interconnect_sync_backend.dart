@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart';
 import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
@@ -616,6 +617,55 @@ class InterconnectSyncBackend extends SyncBackend
   Future<Map<String, RemoteBookProgress>?> getLiveBookProgressSnapshot({
     InterconnectHostPin? pin,
   }) => _pinned(pin, remoteBookProgressSnapshot);
+
+  /// 钉住 [pin] 读 host 上漫画 [bookKey] 的全部章状态（`GET` [kMangaChapterProgressPath]，拍板
+  /// design-ic-manga-chapter-progress）。老 host 没有这条路由、或 host 上没有这本漫画 → 404 → null
+  /// （调用方静默跳过）。网络 / 鉴权 / 5xx 照常抛。
+  Future<Map<String, RemoteMangaChapterState>?> getLiveMangaChapterProgress(
+    String bookKey, {
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => _mangaChapterProgressRequest('GET', bookKey));
+
+  /// 钉住 [pin] 把本端较新的章 [states] 推给 host（`PUT` [kMangaChapterProgressPath]），host 按章
+  /// LWW 合并后回合并后的全部章状态。404 → null（同 [getLiveMangaChapterProgress]）。只在同一本书的
+  /// GET 成功之后调：老 host 会把这条路径上的 PUT 当 WebDAV 写文件。
+  Future<Map<String, RemoteMangaChapterState>?> putLiveMangaChapterProgress(
+    String bookKey,
+    Map<String, RemoteMangaChapterState> states, {
+    InterconnectHostPin? pin,
+  }) => _pinned(
+    pin,
+    () => _mangaChapterProgressRequest('PUT', bookKey, body: states),
+  );
+
+  Future<Map<String, RemoteMangaChapterState>?> _mangaChapterProgressRequest(
+    String method,
+    String bookKey, {
+    Map<String, RemoteMangaChapterState>? body,
+  }) async {
+    await _resolvedForLive();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      method,
+      '$_apiBase$kMangaChapterProgressPath/${Uri.encodeComponent(bookKey)}',
+    );
+    if (body != null) {
+      req.headers.set('Content-Type', 'application/json; charset=utf-8');
+      req.add(utf8.encode(jsonEncode(encodeMangaChapterStates(body))));
+    }
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        '$method $kMangaChapterProgressPath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    return decodeMangaChapterStates(jsonDecode(await _readBodyBounded(res)));
+  }
 
   /// 钉住 [pin] 读 host 视频播放位置（内容同 [remoteVideoPosition]）。
   Future<LivePosition> getLiveVideoPosition(

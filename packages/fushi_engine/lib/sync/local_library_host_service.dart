@@ -70,6 +70,7 @@ import 'package:fushi_engine/media/video/series_playback_prefs.dart'
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show
         hasExportableMangaContent,
@@ -169,6 +170,7 @@ abstract class _LocalLibraryHostBase
         FushiLibraryHostService,
         BookProgressBatchHost,
         MangaLibraryHost,
+        MangaChapterProgressHost,
         LivePositionWriteHost,
         PdfBookImportHost,
         DeletionTombstoneHost,
