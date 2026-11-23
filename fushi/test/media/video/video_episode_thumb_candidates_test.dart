@@ -81,6 +81,35 @@ void main() {
         isEmpty,
       );
     });
+
+    // 封面来源表在后台读（不挡详情页加载）：还没读到时，封面与剧照都有的集
+    // 停在待定占位，不先闪成剧照再跳回手动封面；只有一张时顺序无关，直接给出。
+    test('封面来源还没读到：两张都有时停在待定占位，只有一张时照给', () {
+      expect(
+        videoEpisodeThumbCandidates(
+          cover: cover,
+          coverIsUserChosen: null,
+          still: still,
+        ),
+        <ImageProvider>[kPendingCoverImage],
+      );
+      expect(
+        videoEpisodeThumbCandidates(
+          cover: cover,
+          coverIsUserChosen: null,
+          still: null,
+        ),
+        <ImageProvider>[cover],
+      );
+      expect(
+        videoEpisodeThumbCandidates(
+          cover: null,
+          coverIsUserChosen: null,
+          still: still,
+        ),
+        <ImageProvider>[still],
+      );
+    });
   });
 
   group('CoverOrigin.isUserChosen', () {

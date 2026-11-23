@@ -410,7 +410,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       const <String, List<VideoFileEpisodeStills>>{};
 
   /// 成员文件 → 封面来源（`cover_meta.json`）：判定集封面是不是用户手动设置的。
-  Map<String, CoverMeta> _coverMetaByUid = const <String, CoverMeta>{};
+  /// null = 还没读到（首次读在后台进行，见 [_refreshCoverMeta]）。
+  Map<String, CoverMeta>? _coverMetaByUid;
+
+  /// [_refreshCoverMeta] 的代次：只采纳最近一次发起的读取结果。
+  int _coverMetaGeneration = 0;
 
   /// 本合集的附加图组（v68 `media_images`）快照：hero 封面自有层的原盘竖版盘面图
   /// 从这里取（[collectionOwnCoverCandidates]）。
@@ -535,6 +539,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Future<void> _reload() async {
+    // 封面来源表是磁盘文件，只决定「手动封面 / 剧照」谁在前，不挡成员列表加载：
+    // 与本次重载并行读，落定后单独重建（见 [_refreshCoverMeta]）。
+    unawaited(_refreshCoverMeta());
     // 上锁（未解锁）的本地集不进成员槽：列表、继续观看、批量动作都见不到它。
     final List<CollectionEpisodeSlot> slots = <CollectionEpisodeSlot>[
       for (final CollectionEpisodeSlot slot in await widget.loadEpisodes())
@@ -604,7 +611,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             members.map((VideoBookRow member) => member.bookUid),
           ),
         );
-    final Map<String, CoverMeta> coverMeta = await _loadCoverMeta();
     final List<VideoMetadataExtraRow> workExtras = canonicalWork == null
         ? const <VideoMetadataExtraRow>[]
         : await widget.database.getVideoMetadataExtras(canonicalWork.id);
@@ -682,7 +688,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _episodeMetaByUid = episodeMeta;
       _canonicalEpisodesByUid = canonicalEpisodes;
       _fileEpisodesByUid = fileEpisodes;
-      _coverMetaByUid = coverMeta;
       _workCredits = workCredits;
       _canonicalWork = canonicalWork;
       _workTerms = workTerms;
@@ -2152,6 +2157,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     Navigator.of(context).maybePop();
   }
 
+  /// 后台重读封面来源表并重建。读盘期间沿用上一次的结果（首次为 null，封面与剧照
+  /// 都有的集停在待定占位，见 [videoEpisodeThumbCandidates]）；它不在 [_reload] 的
+  /// 等待链上——网络盘 / 休眠盘上读得慢也不会让整页停在空白。
+  Future<void> _refreshCoverMeta() async {
+    final int generation = ++_coverMetaGeneration;
+    final Map<String, CoverMeta> meta = await _loadCoverMeta();
+    if (!mounted || generation != _coverMetaGeneration) return;
+    setState(() => _coverMetaByUid = meta);
+  }
+
   /// 封面来源表（`cover_meta.json`）。读不到只影响「手动封面排在剧照前」这一条
   /// 排序（全部按非手动处理，剧照在前），不挡详情页加载。
   Future<Map<String, CoverMeta>> _loadCoverMeta() async {
@@ -2175,8 +2190,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (local == null) return <ImageProvider>[?cover];
     return videoEpisodeThumbCandidates(
       cover: cover,
-      coverIsUserChosen:
-          _coverMetaByUid[local.bookUid]?.origin.isUserChosen ?? false,
+      coverIsUserChosen: switch (_coverMetaByUid) {
+        null => null,
+        final Map<String, CoverMeta> meta =>
+          meta[local.bookUid]?.origin.isUserChosen ?? false,
+      },
       still: videoFileEpisodeStillImage(
         _fileEpisodesByUid[local.bookUid],
         positionMs: local.lastPositionMs,

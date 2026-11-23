@@ -116,14 +116,24 @@ ImageProvider? videoFileEpisodeStillImage(
 /// [coverIsUserChosen] 由封面来源（`CoverOrigin.isUserChosen`）判定。返回去掉空值后
 /// 的候选，渲染端从第一张起显示，加载 / 解码失败依次回落下一张（剧照远程地址失效
 /// 时退回截图；手动封面文件坏了时退回剧照）。
+///
+/// [coverIsUserChosen] 为 null 表示封面来源表（`cover_meta.json`）还在后台读：封面与
+/// 剧照**都有**时先后顺序取决于它，此时停在 [kPendingCoverImage]（与
+/// `AsyncFileExistenceCache` 探测中同一口径），不先闪成剧照再跳回手动封面；只有其中
+/// 一张时顺序无关，直接给出。
 List<ImageProvider> videoEpisodeThumbCandidates({
   required ImageProvider? cover,
-  required bool coverIsUserChosen,
+  required bool? coverIsUserChosen,
   required ImageProvider? still,
-}) => <ImageProvider>[
-  for (final ImageProvider? image
-      in coverIsUserChosen
-          ? <ImageProvider?>[cover, still]
-          : <ImageProvider?>[still, cover])
-    ?image,
-];
+}) {
+  if (coverIsUserChosen == null && cover != null && still != null) {
+    return const <ImageProvider>[kPendingCoverImage];
+  }
+  return <ImageProvider>[
+    for (final ImageProvider? image
+        in (coverIsUserChosen ?? false)
+            ? <ImageProvider?>[cover, still]
+            : <ImageProvider?>[still, cover])
+      ?image,
+  ];
+}
