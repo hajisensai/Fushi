@@ -188,8 +188,26 @@ class _VideoLiveChatPanelState extends State<VideoLiveChatPanel> {
   void _onChatChanged() {
     if (!mounted) return;
     // 会话跳转换了窗口（列表清空）：之前冻结的位置已不在新窗口里，回到跟随。
-    if (widget.chat.messages.isEmpty) _resetFollow();
+    if (widget.chat.messages.isEmpty) {
+      _resetFollow();
+    } else {
+      _pruneTextKeys();
+    }
     setState(() {});
+  }
+
+  /// 会话窗口裁掉 / 跳走的消息不再保留字符命中用的 [GlobalKey]：长直播的消息可达十万条，
+  /// 不裁的话两张表随观看时长无限增长，[_hitTest] 每次悬停都要把历史上见过的每一条扫一遍。
+  /// 只留当前窗口里的（上限 = 会话的 maxMessages）。
+  void _pruneTextKeys() {
+    if (_textKeys.isEmpty) return;
+    final Set<String> live = <String>{
+      for (final YoutubeChatMessage m in widget.chat.messages) m.id,
+    };
+    _textKeys.removeWhere((String id, GlobalKey _) => !live.contains(id));
+    _keyedMessages.removeWhere(
+      (String id, YoutubeChatMessage _) => !live.contains(id),
+    );
   }
 
   void _onPosition() {

@@ -85,10 +85,12 @@ YoutubeChatReplayPage _pageOf(
   List<YoutubeChatMessage> messages, {
   String? next = 'NEXT',
   String? seek = 'SEEK',
+  int? lastActionOffsetMs,
 }) => YoutubeChatReplayPage(
   messages: messages,
   nextContinuation: next,
   seekContinuation: seek,
+  lastActionOffsetMs: lastActionOffsetMs,
 );
 
 class _FakeFetch {
@@ -237,6 +239,20 @@ void main() {
       expect(page.messages.single.text, '');
       expect(page.messages.single.author, '@rich');
       expect(page.nextContinuation, isNull);
+      // 被过滤掉的动作也计入时间轴推进（空正文那条在 6000）。
+      expect(page.lastActionOffsetMs, 6000);
+    });
+
+    test('一页全是被过滤掉的动作：messages 为空，lastActionOffsetMs 仍是最晚动作时刻', () {
+      final YoutubeChatReplayPage page = parseYoutubeChatReplayPage(
+        _page(<Map<String, Object?>>[
+          _textAction('e1', 7000, <Map<String, Object?>>[]),
+          _textAction('e2', 9000, <Map<String, Object?>>[]),
+        ]),
+      );
+      expect(page.messages, isEmpty);
+      expect(page.lastActionOffsetMs, 9000);
+      expect(page.nextContinuation, 'NEXT');
     });
 
     test('认不出的结构是空页（无 continuation），非 JSON 对象抛 FormatException', () {
@@ -435,6 +451,28 @@ void main() {
       await fetch.answer(1, _pageOf(<YoutubeChatMessage>[_msg('a', 1000)]));
       expect(s.status, YoutubeChatReplayStatus.ended);
       expect(fetch.calls, hasLength(2));
+    });
+
+    test('接续页只有被过滤掉的动作但时间轴往前走了：不算到头，接着取', () async {
+      final _FakeFetch fetch = _FakeFetch();
+      final YoutubeChatReplaySession s = YoutubeChatReplaySession(
+        entryContinuation: 'ENTRY',
+        fetch: fetch.call,
+        lookaheadMs: 10000,
+      );
+      unawaited(s.syncTo(0));
+      await fetch.answer(0, _pageOf(<YoutubeChatMessage>[_msg('a', 1000)]));
+      await fetch.answer(
+        1,
+        _pageOf(
+          const <YoutubeChatMessage>[],
+          next: 'NEXT2',
+          lastActionOffsetMs: 4000,
+        ),
+      );
+      expect(s.status, isNot(YoutubeChatReplayStatus.ended));
+      expect(s.covered, (fromMs: 0, toMs: 4000));
+      expect(fetch.calls[2], (continuation: 'NEXT2', offsetMs: 4000));
     });
 
     test('失败停在 failed、不自动重试；retry 按最后的播放头重新同步', () async {

@@ -87,6 +87,7 @@ class YoutubeChatReplayPage {
     required this.messages,
     required this.nextContinuation,
     required this.seekContinuation,
+    this.lastActionOffsetMs,
   });
 
   /// 按 [YoutubeChatMessage.offsetMs] 升序。
@@ -97,6 +98,11 @@ class YoutubeChatReplayPage {
 
   /// 跳到任意时刻用的 continuation（`playerSeekContinuationData`）；没给时为 null。
   final String? seekContinuation;
+
+  /// 这一页所有回放动作（含被 [messages] 过滤掉的会员 / Super Sticker / 系统提示等）里
+  /// 最晚的 `videoOffsetTimeMsec`；一条动作都没有时为 null。会话据此判断接续页有没有往前
+  /// 推进——一页全是非文字动作时 [messages] 为空，但时间轴照样往前走了，不能当成「到头」。
+  final int? lastActionOffsetMs;
 }
 
 Map<String, Object?>? _map(Object? v) =>
@@ -176,6 +182,7 @@ YoutubeChatReplayPage parseYoutubeChatReplayPage(Map<String, Object?> json) {
     );
   }
   final List<YoutubeChatMessage> messages = <YoutubeChatMessage>[];
+  int? lastActionOffset;
   for (final Object? rawAction in _list(cont['actions'])) {
     final Map<String, Object?>? replay = _map(
       _map(rawAction)?['replayChatItemAction'],
@@ -183,6 +190,9 @@ YoutubeChatReplayPage parseYoutubeChatReplayPage(Map<String, Object?> json) {
     if (replay == null) continue;
     final int? offset = int.tryParse(_str(replay['videoOffsetTimeMsec']) ?? '');
     if (offset == null) continue;
+    if (lastActionOffset == null || offset > lastActionOffset) {
+      lastActionOffset = offset;
+    }
     for (final Object? rawInner in _list(replay['actions'])) {
       final Map<String, Object?>? item = _map(
         _map(_map(rawInner)?['addChatItemAction'])?['item'],
@@ -206,6 +216,7 @@ YoutubeChatReplayPage parseYoutubeChatReplayPage(Map<String, Object?> json) {
     messages: sorted,
     nextContinuation: next,
     seekContinuation: seek,
+    lastActionOffsetMs: lastActionOffset,
   );
 }
 
@@ -538,9 +549,13 @@ class YoutubeChatReplaySession {
     }
     _next = page.nextContinuation;
     if (page.seekContinuation != null) _seek = page.seekContinuation;
-    final int lastOffset = page.messages.isEmpty
+    final int? previousTo = _coveredTo;
+    // 窗口尾按这一页所有回放动作算（含被过滤掉的非文字动作），不只按留下的消息。
+    int lastOffset = page.messages.isEmpty
         ? requestedMs
         : page.messages.last.offsetMs;
+    final int? lastAction = page.lastActionOffsetMs;
+    if (lastAction != null && lastAction > lastOffset) lastOffset = lastAction;
     if (seek) {
       final int firstOffset = page.messages.isEmpty
           ? requestedMs
@@ -551,8 +566,12 @@ class YoutubeChatReplaySession {
       final int to = _coveredTo ?? requestedMs;
       _coveredTo = lastOffset > to ? lastOffset : to;
     }
-    // 到头：没有 next continuation；或接续页什么新东西都没带（再请求也只会原地打转）。
-    _ended = page.nextContinuation == null || (!seek && !added);
+    // 到头：没有 next continuation；或接续页既没带新消息、时间轴也没往前走（再请求也只会
+    // 原地打转）。一页全是会员 / Super Sticker 等被过滤掉的动作时 [added] 为 false，但
+    // [YoutubeChatReplayPage.lastActionOffsetMs] 越过了旧窗口尾，仍是推进、不算到头。
+    final bool advanced =
+        added || (previousTo != null && lastOffset > previousTo);
+    _ended = page.nextContinuation == null || (!seek && !advanced);
     _trim();
   }
 
