@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show PrefCodec;
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show
         dbSourcePrefKey,
@@ -170,10 +171,44 @@ class WorkProfileSession {
     sources[leaf] = target;
   }
 
-  /// 会话期间制卡落进哪份 Profile 的复习副本：牌组叶子（Fushi 复习的牌组 id 带配置 uid）的
-  /// 来源；null = 牌组继承默认组合，落激活配置的副本。阶段 4 改由 `srs.library` 叶子解析出
-  /// 的集合决定（共享复习库），届时替换这里。
-  int? get miningProfileId => sourceProfileIdOf(FushiComboNode.miningDeck);
+  /// 会话期间制卡落进哪份 Profile 的复习副本（过渡规则，阶段 4 改由 `srs.library` 叶子解析出
+  /// 的集合决定，届时替换这里）；null = 落激活配置的副本。
+  ///
+  /// 复习落点的牌组 id（`mining.deck` 叶子）与笔记类型 id（`mining.note_type` 叶子）只在
+  /// 它们所在那份副本里有意义，两个叶子可以来自不同的层：只看牌组叶子时，「牌组用默认、笔记
+  /// 类型是绑定配置自建的」会落进激活副本，自建笔记类型在那里找不到，静默回落 Lapis。所以先看
+  /// 用户明确选过（id 非空）的那几个落点的来源；都没选过再看两个叶子的来源；多个候选取优先级
+  /// 最高的层（作品 > 媒体类型 > 语言）。
+  int? get miningProfileId {
+    final ({int? deck, int? noteType}) sources = (
+      deck: sourceProfileIdOf(FushiComboNode.miningDeck),
+      noteType: sourceProfileIdOf(FushiComboNode.miningNoteType),
+    );
+    final Set<int> chosen = <int>{
+      if (_srsIdChosen(_kSrsMiningDeckIdKey) && sources.deck != null)
+        sources.deck!,
+      if (_srsIdChosen(_kSrsMiningNoteTypeIdKey) && sources.noteType != null)
+        sources.noteType!,
+    };
+    final Set<int> candidates = chosen.isNotEmpty
+        ? chosen
+        : <int>{?sources.deck, ?sources.noteType};
+    if (candidates.isEmpty) return null;
+    for (final ComboScope s in ComboScope.bindingLayers) {
+      final int? id = layers[s];
+      if (id != null && candidates.contains(id)) return id;
+    }
+    return candidates.first;
+  }
+
+  static const String _kSrsMiningDeckIdKey = 'srs_mining_deck_id';
+  static const String _kSrsMiningNoteTypeIdKey = 'srs_mining_note_type_id';
+
+  /// 会话生效值里复习落点 [key] 是否选过具体 id（空串 = 默认牌组 / 内置卡片，任何副本都有）。
+  bool _srsIdChosen(String key) {
+    final String? raw = prefs[key];
+    return raw != null && PrefCodec.decode<String>(raw, '').isNotEmpty;
+  }
 
   /// 会话期间生效的作品级键（原始编码值，键同 `preferences` 表）。会话内写入只改这里 +
   /// 绑定配置的快照。

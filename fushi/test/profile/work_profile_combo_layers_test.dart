@@ -225,6 +225,66 @@ void main() {
     expect(decode(await store.read()).selectedDeckName, 'JP2');
   });
 
+  test('Anki：存量快照缺的字段不算「改了」，不被顺手写进组合', () async {
+    final _MemoryAnkiStore live = _MemoryAnkiStore(
+      const AnkiSettings(selectedDeckName: 'Global', tags: 'g'),
+    );
+    final WorkScopedAnkiSettingsStore store = WorkScopedAnkiSettingsStore(
+      live: () => live,
+    );
+    AnkiSettings decode(String? raw) =>
+        AnkiSettings.fromJson(jsonDecode(raw!) as Map<String, dynamic>);
+    // 更早版本的快照没有 tags 这一行。
+    await db.deleteProfileSetting(langId, ProfileKeys.categoryAnki, 'tags');
+    await openManga();
+
+    await store.write(
+      jsonEncode(
+        decode(await store.read()).copyWith(selectedDeckName: 'JP2').toJson(),
+      ),
+    );
+    expect(
+      await rowValue(langId, ProfileKeys.categoryAnki, 'selectedDeckName'),
+      'JP2',
+    );
+    expect(
+      await rowValue(langId, ProfileKeys.categoryAnki, 'tags'),
+      isNull,
+      reason: '没改的字段不写',
+    );
+  });
+
+  test('复习落点：笔记类型是绑定配置自建的、牌组用默认时落那份配置的副本', () async {
+    await put(
+      mediaId,
+      ProfileKeys.categoryPref,
+      'srs_mining_note_type_id',
+      PrefCodec.encode('nt-manga'),
+    );
+    await openManga();
+    expect(
+      scope.active!.sourceProfileIdOf(FushiComboNode.miningDeck),
+      langId,
+      reason: 'Anki 牌组名来自语言层，复习牌组 id 仍是默认（空）',
+    );
+    expect(scope.active!.miningProfileId, mediaId, reason: '自建笔记类型只在媒体类型那份副本里');
+    vm.leaveWorkSession(reader);
+
+    // 都没选过具体 id：取两个落点叶子来源里优先级最高的层。
+    await db.deleteProfileSetting(
+      mediaId,
+      ProfileKeys.categoryPref,
+      'srs_mining_note_type_id',
+    );
+    await openManga();
+    expect(scope.active!.miningProfileId, langId);
+    vm.leaveWorkSession(reader);
+
+    // 没有任何落点叶子来自绑定层：落激活副本。
+    await openManga(language: null);
+    expect(scope.active!.miningProfileId, isNull);
+  });
+
   test('弹窗进程按发布的多层值镜像出同一份生效值', () async {
     await openManga();
     final String published = scope.publishedSessionValue;

@@ -117,7 +117,10 @@
   那里拆出）——作品会话永远不写全局。Anki 只写相对此刻生效值变了的字段，按叶子分组落库。
 - Android 弹窗进程：`work_profile_session` 的值改成 `<作品层>,<媒体类型层>,<语言层>:<写入次数>`，
   弹窗按同样的层重新解析；旧格式 `<id>:<次数>` 当作作品层。
-- 会话制卡落哪份复习副本（过渡）：`mining.deck` 叶子的来源组合（牌组 id 带 uid）；阶段 4 换成
+- 会话制卡落哪份复习副本（过渡）：复习落点的牌组 id（`mining.deck`）与笔记类型 id
+  （`mining.note_type`）只在所在副本里有意义，取用户选过具体 id 的那几个叶子的来源（都没选过则取
+  两个叶子的来源），多个候选取优先级最高的层（`WorkProfileSession.miningProfileId`）；只看牌组
+  叶子会让「牌组用默认、笔记类型是绑定配置自建的」落进激活副本、自建类型回落 Lapis。阶段 4 换成
   `srs.library` 解析。
 - `resolveProfileId` / `resolveBoundProfileId`（浏览器扩展按「浏览器」媒体类型选一份配置）顺序同步
   改为 作品 > 媒体类型 > 语言。

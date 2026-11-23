@@ -60,10 +60,7 @@ void main() {
       role: ComboRole.named,
     );
     expect(rows[kRole], 'named');
-    expect(
-      rows[const SettingKey(kComboSyntheticCategory, 'split:deck')],
-      '1',
-    );
+    expect(rows[const SettingKey(kComboSyntheticCategory, 'split:deck')], '1');
     final DecodedComboRows d = decodeComboRows(tree, rows);
     expect(d.role, ComboRole.named);
     expect(d.document.splitLeafIds, <String>{'theme', 'deck', 'srs'});

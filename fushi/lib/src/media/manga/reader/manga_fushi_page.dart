@@ -2086,7 +2086,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_resolveAndApplyMangaProfile());
   }
 
-  /// 解析并应用 Profile 绑定（book 级 > 语言级 > 'manga' 媒体类型级 > 当前激活）。
+  /// 解析并应用 Profile 绑定（逐叶子：作品 > 'manga' 媒体类型 > 语言 > 默认组合）。
   ///
   /// 漫画与 EPUB 共用 `epub_books` 表，语言取该行的 `language` 列。**注意当前它
   /// 对漫画基本恒为 NULL**：`manga_importer` 的插入不带 language（CBZ / 图片包
