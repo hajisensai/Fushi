@@ -12,6 +12,8 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
+    show kMangaAudioPackageExtension;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart'
@@ -30,10 +32,13 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
     show registerMangaAudio;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/ops/ctl_tts_package_routes.dart'
+    show kTtsMangaPackageCtlRoot;
 import 'package:fushi/src/ops/ctl_tts_routes.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -217,6 +222,7 @@ void main() {
   late List<({String lineId, int seed})> regenerated;
   late List<CtlRoute> routes;
   late OpCatalog catalog;
+  late MangaAudioPackageTasks packageTasks;
 
   Future<void> writeScript(MangaAudioScript script) =>
       mangaAudioScriptStoreFor(model).save(bookKey, script);
@@ -322,6 +328,7 @@ void main() {
       runner: renderRunner,
     );
     consent = false;
+    packageTasks = MangaAudioPackageTasks();
     regenerated = <({String lineId, int seed})>[];
     context = OpContext(ref: _Ref(model));
     debugOverrideTtsCtlDeps(
@@ -372,6 +379,7 @@ void main() {
             },
         stopPlayback: (List<String> keys) async {},
         localAudioBackend: () async => _FakeLocalBackend(),
+        packageTasks: () => packageTasks,
       ),
     );
     routes = buildTtsCtlRoutes(context);
@@ -1474,5 +1482,151 @@ void main() {
     ]) {
       expect(catalog[id]!.undo, isNotNull, reason: id);
     }
+  });
+
+  group('有声漫画包', () {
+    const String pkg = kTtsMangaPackageCtlRoot;
+    const Map<String, String> none = <String, String>{};
+
+    void writePages() {
+      for (int i = 0; i < 3; i++) {
+        File(p.join(tmp.path, 'vol', 'p$i.jpg')).writeAsBytesSync(<int>[i, 9]);
+      }
+    }
+
+    test('导出等写完 → 预检认出本机同一卷 → 不确认 409 → 确认导入 → 撤销放回', () async {
+      writePages();
+      await writeRendered();
+      final String out = p.join(tmp.path, 'out$kMangaAudioPackageExtension');
+      final Map<String, Object?> exported =
+          await call(
+                'POST',
+                '$pkg/export',
+                params: none,
+                body: <String, Object?>{
+                  'keys': <String>[wire],
+                  'out': out,
+                  'wait': true,
+                },
+              )
+              as Map<String, Object?>;
+      expect(exported['status'], 'done', reason: '$exported');
+      expect(File(out).existsSync(), isTrue);
+      final Map<String, Object?> task =
+          await call(
+                'GET',
+                '$pkg/tasks/:id',
+                params: <String, String>{'id': exported['taskId']! as String},
+              )
+              as Map<String, Object?>;
+      expect(task['status'], 'done');
+
+      final Map<String, Object?> plan =
+          await call(
+                'POST',
+                '$pkg/import',
+                params: none,
+                body: <String, Object?>{'file': out, 'dryRun': true},
+              )
+              as Map<String, Object?>;
+      expect(plan['dryRun'], isTrue);
+      final Map<Object?, Object?> volume =
+          (plan['volumes']! as List<Object?>).single! as Map<Object?, Object?>;
+      expect(volume['action'], 'useExisting');
+      expect(volume['key'], wire);
+      expect(volume['replacesAudio'], isTrue);
+
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/import',
+          params: none,
+          body: <String, Object?>{'file': out, 'wait': true},
+        ),
+        failure(409),
+      );
+
+      // 本机演出稿先清空：导入后应是包里的 3 句，撤销回到空的那份。
+      await writeScript(MangaAudioScript(engineSignature: 'sig-1'));
+      final (
+        Object? result,
+        Future<OpUndoOutcome> Function() undo,
+      ) = await runOp(
+        'tts.manga.import-package',
+        params: none,
+        body: <String, Object?>{'file': out, 'confirm': true, 'wait': true},
+      );
+      expect(
+        (result! as Map<Object?, Object?>)['status'],
+        'done',
+        reason: '$result',
+      );
+      expect((await readScript()).lines, hasLength(3));
+      expect(await db.getCuesForBook(bookKey), hasLength(3));
+      expect((await undo()).status, OpUndoStatus.done);
+      expect((await readScript()).lines, isEmpty);
+    });
+
+    test('参数与错误：没卷 / 没成品 / 坏包 / 没有的任务', () async {
+      writePages();
+      final String out = p.join(tmp.path, 'x$kMangaAudioPackageExtension');
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/export',
+          params: none,
+          body: <String, Object?>{'out': out},
+        ),
+        failure(400),
+      );
+      // 有演出稿但没登记成品：导出整卷 422，只导演出稿可以。
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/export',
+          params: none,
+          body: <String, Object?>{
+            'keys': <String>[wire],
+            'out': out,
+            'wait': true,
+          },
+        ),
+        failure(422),
+      );
+      final Map<String, Object?> scriptOnly =
+          await call(
+                'POST',
+                '$pkg/export',
+                params: none,
+                body: <String, Object?>{
+                  'keys': <String>[wire],
+                  'out': out,
+                  'scriptOnly': true,
+                  'wait': true,
+                },
+              )
+              as Map<String, Object?>;
+      expect(scriptOnly['status'], 'done', reason: '$scriptOnly');
+
+      final File junk = File(p.join(tmp.path, 'junk.zip'))
+        ..writeAsStringSync('nope');
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/import',
+          params: none,
+          body: <String, Object?>{'file': junk.path, 'dryRun': true},
+        ),
+        failure(422),
+      );
+      await expectLater(
+        call(
+          'GET',
+          '$pkg/tasks/:id',
+          params: const <String, String>{'id': 'nope'},
+        ),
+        failure(404),
+      );
+    });
   });
 }

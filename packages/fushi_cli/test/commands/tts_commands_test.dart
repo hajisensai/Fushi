@@ -42,6 +42,10 @@ void main() {
       'render',
       'render-cancel',
       'import',
+      'export',
+      'import-package',
+      'package-task',
+      'package-cancel',
     ]);
   });
 
@@ -300,5 +304,141 @@ void main() {
     ]);
     expect(yes.body, containsPair('confirm', true));
     expect(() => _build('import', <String>['book:vol-1']), _usageError());
+  });
+
+  test(
+    'export：卷 key 与 --series 二选一；--volumes 只跟 --series；--out 转绝对路径；默认等写完',
+    () {
+      const String root = '/api/admin/tts/manga-packages';
+      final CtlRequestSpec keys = _build('export', <String>[
+        'book:vol-1',
+        'book:vol-2',
+        '--out',
+        'out.fushi-manga-audio',
+      ]);
+      expect(keys.method, 'POST');
+      expect(keys.path, '$root/export');
+      expect(
+        keys.body,
+        containsPair('keys', <String>['book:vol-1', 'book:vol-2']),
+      );
+      expect(
+        keys.body,
+        containsPair('out', p.absolute('out.fushi-manga-audio')),
+      );
+      expect(keys.body, containsPair('wait', true));
+      expect(keys.body!.containsKey('series'), isFalse);
+
+      final CtlRequestSpec series = _build('export', <String>[
+        '--series',
+        'collection:3',
+        '--volumes',
+        'book:a, book:b',
+        '--script-only',
+        '--no-wait',
+        '--out',
+        '/x/y',
+      ]);
+      expect(series.body, containsPair('series', 'collection:3'));
+      expect(
+        series.body,
+        containsPair('volumes', <String>['book:a', 'book:b']),
+      );
+      expect(series.body, containsPair('scriptOnly', true));
+      expect(series.body!.containsKey('wait'), isFalse);
+
+      expect(() => _build('export', <String>['book:a']), _usageError());
+      expect(() => _build('export', <String>['--out', 'x']), _usageError());
+      expect(
+        () =>
+            _build('export', <String>['book:a', '--series', 's', '--out', 'x']),
+        _usageError(),
+      );
+      expect(
+        () => _build('export', <String>[
+          'book:a',
+          '--volumes',
+          'b',
+          '--out',
+          'x',
+        ]),
+        _usageError(),
+      );
+    },
+  );
+
+  test('import-package / package-task / package-cancel', () {
+    const String root = '/api/admin/tts/manga-packages';
+    final CtlRequestSpec plain = _build('import-package', <String>[
+      'p.fushi-manga-audio',
+    ]);
+    expect(plain.path, '$root/import');
+    expect(plain.body, containsPair('file', p.absolute('p.fushi-manga-audio')));
+    expect(plain.body, containsPair('wait', true));
+    expect(plain.body!.containsKey('confirm'), isFalse);
+    final CtlRequestSpec dry = _build('import-package', <String>[
+      'p',
+      '--dry-run',
+      '--as-new',
+      '--yes',
+    ]);
+    expect(dry.body, containsPair('dryRun', true));
+    expect(dry.body, containsPair('asNew', true));
+    expect(dry.body, containsPair('confirm', true));
+    expect(dry.body!.containsKey('wait'), isFalse, reason: '预检不用等');
+    expect(() => _build('import-package', <String>[]), _usageError());
+
+    final CtlRequestSpec task = _build('package-task', <String>[
+      't 1',
+      '--wait',
+    ]);
+    expect(task.method, 'GET');
+    expect(task.path, '$root/tasks/t%201');
+    expect(task.query, containsPair('wait', 'true'));
+    final CtlRequestSpec cancel = _build('package-cancel', <String>['t1']);
+    expect(cancel.method, 'POST');
+    expect(cancel.path, '$root/tasks/t1/cancel');
+  });
+
+  test('包任务的人类可读输出：预检逐卷、导出结果带大小、导入结果逐卷', () {
+    final CtlCommandSpec spec = _group().find('import-package')!;
+    final String plan = spec.render!(<String, Object?>{
+      'dryRun': true,
+      'path': '/p.fushi-manga-audio',
+      'volumes': <Object?>[
+        <String, Object?>{
+          'id': 'v1',
+          'title': '第1巻',
+          'pages': 180,
+          'action': 'useExisting',
+          'key': 'book:vol-1',
+          'hasAudio': true,
+          'lines': 12,
+          'durationMs': 34500,
+          'replacesAudio': true,
+          'missingVoices': <String>['voice-x'],
+        },
+      ],
+    });
+    expect(plan, contains('用本机已有的同一卷 book:vol-1'));
+    expect(plan, contains('12 句 34.5 秒'));
+    expect(plan, contains('要 --yes'));
+    expect(plan, contains('本机缺声音：voice-x'));
+
+    final String exported = _group().find('export')!.render!(<String, Object?>{
+      'taskId': 'pkg-1',
+      'kind': 'export',
+      'status': 'done',
+      'result': <String, Object?>{
+        'path': '/out.fushi-manga-audio',
+        'bytes': 3 * 1048576,
+        'volumes': <Object?>[
+          <String, Object?>{'id': 'v1', 'title': '第1巻', 'scriptOnly': true},
+        ],
+      },
+    });
+    expect(exported, contains('导出完成：pkg-1'));
+    expect(exported, contains('/out.fushi-manga-audio（3.0 MB）'));
+    expect(exported, contains('v1 第1巻：仅演出稿'));
   });
 }
