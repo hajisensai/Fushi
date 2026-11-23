@@ -3658,9 +3658,13 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           result->Success();
         } else if (method == "lookupOverlaySelection") {
           // BUG-5310 — 查词热键按下时卡片里有选区：交给卡片嵌套查词，回 true
-          // 表示已接手（Dart 不收卡、不抓前台选区）。
-          result->Success(
-              flutter::EncodableValue(win->LookupOverlaySelection()));
+          // 表示 host 真的发出了嵌套查词（Dart 不收卡、不抓前台选区）。结果要等
+          // host 脚本跑完才知道，回调必须可拷贝，unique_ptr 转 shared_ptr。
+          std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+              pending(std::move(result));
+          win->LookupOverlaySelection([pending](bool taken) {
+            pending->Success(flutter::EncodableValue(taken));
+          });
         } else if (method == "resize") {
           if (win == gal_lookup_card_window_.get()) {
             win->ResizeOffscreen(IntFromValue(args, "width", 0),

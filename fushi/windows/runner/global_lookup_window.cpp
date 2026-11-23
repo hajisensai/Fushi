@@ -4107,23 +4107,35 @@ void GlobalLookupWindow::UpdateCopyHotkey() {
 }
 
 // BUG-5310 — 卡片里的选区 + 查词热键 = 在卡片里嵌套查词。判据与 Ctrl+C 接管同源
-// （selection_present_ && IsShowing()），所以「卡片已收起 / 没选区」时一律返回
-// false，Dart 照旧抓前台程序的选区。host 取到空选区（上报与现场不一致）时自己
-// resetSelectionReport 把这边复位，下一次按键就回到前台抓取。
-bool GlobalLookupWindow::LookupOverlaySelection() {
+// （selection_present_ && IsShowing()），所以「卡片已收起 / 没选区」时一律回 false，
+// Dart 照旧抓前台程序的选区。接没接手以 host `lookupSelection()` 的返回值为准：
+// 上报与现场不一致（选区已清 / 只选中空白或注音 / realm 没有桥）时 host 回 false，
+// 这次按键退回前台抓取，而不是被吞掉。
+void GlobalLookupWindow::LookupOverlaySelection(
+    std::function<void(bool)> done) {
   if (!selection_present_ || !IsShowing() || webview_ == nullptr ||
       !webview_ready_) {
-    return false;
+    done(false);
+    return;
   }
+  auto shared_done = std::make_shared<std::function<void(bool)>>(
+      std::move(done));
   const HRESULT hr = webview_->ExecuteScript(
       L"(function(){var h=window.__globalLookupHost;"
-      L"if(h&&typeof h.lookupSelection==='function')h.lookupSelection();})()",
-      nullptr);
+      L"return !!(h&&typeof h.lookupSelection==='function'&&"
+      L"h.lookupSelection());})()",
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [shared_done](HRESULT error_code, LPCWSTR result_json) -> HRESULT {
+            const bool taken = SUCCEEDED(error_code) && result_json != nullptr &&
+                               wcscmp(result_json, L"true") == 0;
+            (*shared_done)(taken);
+            return S_OK;
+          })
+          .Get());
   if (FAILED(hr)) {
     ReportOverlayError("ExecuteScript(lookupSelection) failed", hr);
-    return false;
+    (*shared_done)(false);
   }
-  return true;
 }
 
 void GlobalLookupWindow::CopyOverlaySelectionToClipboard() {

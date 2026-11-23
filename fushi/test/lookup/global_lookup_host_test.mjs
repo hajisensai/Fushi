@@ -3708,6 +3708,16 @@ function flushTimers() {
     hostPostLog.filter((m) => m.handler === 'overlaySelection').map((m) => m.args[0]),
     [true],
     'after the reset the next selection is reported again');
+
+  // A selection with nothing lookup-able (whitespace only) still counts as
+  // "present" for Ctrl+C, but must NOT be claimed: lookupSelection returns
+  // false so native answers Dart false and the press falls back to the
+  // foreground capture instead of being swallowed.
+  w0._select('  ');
+  hostPostLog = [];
+  assert.strictEqual(host.lookupSelection(), false, 'blank selection -> not claimed');
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'textSelected').length, 0);
 }
 
 console.log('global_lookup_host_test: PASS');

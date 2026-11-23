@@ -113,18 +113,23 @@ void main() {
     String readRaw(String p) =>
         File(p).readAsStringSync().replaceAll('\r\n', '\n');
 
-    test('native 判据与 Ctrl+C 接管同源，并调用 host.lookupSelection', () {
+    test('native 判据与 Ctrl+C 接管同源，接没接手以 host.lookupSelection 返回值为准', () {
       final String cpp = maskComments(
         readRaw('windows/runner/global_lookup_window.cpp'),
       );
       final int at = cpp.indexOf(
-        'bool GlobalLookupWindow::LookupOverlaySelection(',
+        'void GlobalLookupWindow::LookupOverlaySelection(',
       );
       expect(at, greaterThanOrEqualTo(0));
       final String body = cpp.substring(at, cpp.indexOf('\n}', at));
       expect(body, contains('!selection_present_ || !IsShowing()'));
-      expect(body, contains('h.lookupSelection()'));
-      expect(body, contains('return true;'));
+      // 脚本入队 ≠ 接手：host 取不到可查的字（选区已清 / 只选中空白或注音）时
+      // 必须回 false 让这次按键退回前台抓取，否则 selection_present_ 停在 true，
+      // 卡片在场期间每次按热键都被吞掉。
+      expect(body, contains('return !!(h&&typeof h.lookupSelection'));
+      expect(body, contains('ICoreWebView2ExecuteScriptCompletedHandler'));
+      expect(body, contains('wcscmp(result_json, L"true") == 0'));
+      expect(body, isNot(contains('return true;')));
 
       final String flutterWindow = maskComments(
         readRaw('windows/runner/flutter_window.cpp'),
@@ -134,7 +139,9 @@ void main() {
         contains('method == "lookupOverlaySelection"'),
         reason: 'Dart 调的方法名必须在 global_lookup 通道上有分支',
       );
-      expect(flutterWindow, contains('win->LookupOverlaySelection()'));
+      // 结果等 host 脚本跑完才在回调里回 Dart，不在入队时同步回 true。
+      expect(flutterWindow, contains('win->LookupOverlaySelection([pending]'));
+      expect(flutterWindow, isNot(contains('win->LookupOverlaySelection()')));
     });
 
     test('host 导出 lookupSelection，经卡片 realm 的桥发 textSelected', () {
