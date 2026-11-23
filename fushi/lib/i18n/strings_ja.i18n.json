@@ -4656,7 +4656,7 @@
   "glass_material_hint": "すりガラスは面の背後をぼかします。リキッドガラスは、グラフィックエンジンが対応していれば屈折とハイライトを加えます（非対応時はすりガラスで表示）。Windows 11 と macOS ではウィンドウ背景からデスクトップが透けて見えます。E Ink モードやコントラスト強調時は不透明な面に戻ります。",
   "glass_material_liquid": "リキッド",
   "global_context_capture": "選択コンテキストをキャプチャ",
-  "global_context_capture_hint": "前面アプリから周辺テキストを読み取り、現在の文を表示します（Windows / macOS）",
+  "global_context_capture_hint": "前面アプリから周辺テキストを読み取り、現在の文を表示します（Windows / macOS / Linux）",
   "go_to_chapter": "第 $n 章",
   "handlebar_audio": "音声",
   "handlebar_book_cover": "書籍カバー",
