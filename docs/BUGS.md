@@ -48,6 +48,7 @@
 | [BUG-5310](bugs/BUG-5310-overlay-card-selection-hotkey-nested-lookup.md) | ✅ | ✅ | 应用外查词卡片里选中文字再按查词热键，卡片收起后在鼠标处重弹原词，不做嵌套查词 |
 | [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
 | [BUG-5311](bugs/BUG-5311-music-disc-art-cold-start-cache.md) | ✅ | ✅ | music-disc-art-cold-start-cache |
+| [BUG-5308](bugs/BUG-5308-manga-read-aloud-highlight-not-rotated.md) | ✅ | ✅ | manga-read-aloud-highlight-not-rotated |
 | [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
 | [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
