@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "請把字幕或音訊拖到某本書或某段影片上",
   "drag_drop_unsupported_on_books": "請把書籍檔案拖到這裡。視頻或詞典檔案請切換到對應頁面。",
   "drag_drop_unsupported_on_collection": "只能拖入影片檔案：拖進來的影片會匯入並直接加入本合集。",
-  "drag_drop_unsupported_on_dictionary": "請把 .zip、.dsl 或 .mdx 詞典檔案拖到這裡。CSS 檔案只能連同詞典包一起匯入。",
+  "drag_drop_unsupported_on_dictionary": "請把 .zip、.7z、.rar、.dsl 或 .mdx 詞典檔案拖到這裡。CSS 檔案只能連同詞典包一起匯入。",
   "drag_drop_unsupported_on_downloads": "請把 .torrent 種子檔案拖到這裡以新增下載任務。其它檔案請拖到書架、漫畫庫或影片頁。",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

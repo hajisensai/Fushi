@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "Hãy thả phụ đề hoặc âm thanh lên một cuốn sách hoặc một video",
   "drag_drop_unsupported_on_books": "Hãy thả tệp sách vào đây. Chuyển sang Video hoặc Từ điển cho các tệp đó.",
   "drag_drop_unsupported_on_collection": "Thả tệp video vào đây để nhập thẳng vào bộ sưu tập này.",
-  "drag_drop_unsupported_on_dictionary": "Hãy thả tệp từ điển .zip, .dsl hoặc .mdx vào đây. Tệp CSS chỉ dùng được cùng với một gói từ điển.",
+  "drag_drop_unsupported_on_dictionary": "Hãy thả tệp từ điển .zip, .7z, .rar, .dsl hoặc .mdx vào đây. Tệp CSS chỉ dùng được cùng với một gói từ điển.",
   "drag_drop_unsupported_on_downloads": "Thả tệp .torrent vào đây để thêm tác vụ tải xuống. Các tệp khác thuộc các trang Sách, Manga hoặc Video.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

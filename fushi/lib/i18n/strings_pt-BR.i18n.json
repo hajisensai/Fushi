@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "Solte legendas ou áudio sobre um livro ou vídeo",
   "drag_drop_unsupported_on_books": "Solte arquivos de livro aqui. Mude para Vídeo ou Dicionários para esses arquivos.",
   "drag_drop_unsupported_on_collection": "Solte arquivos de vídeo aqui para importá-los diretamente para esta coleção.",
-  "drag_drop_unsupported_on_dictionary": "Solte arquivos de dicionário .zip, .dsl ou .mdx aqui. Arquivos CSS só funcionam junto com um pacote de dicionário.",
+  "drag_drop_unsupported_on_dictionary": "Solte arquivos de dicionário .zip, .7z, .rar, .dsl ou .mdx aqui. Arquivos CSS só funcionam junto com um pacote de dicionário.",
   "drag_drop_unsupported_on_downloads": "Solte arquivos .torrent aqui para adicionar uma tarefa de download. Outros arquivos pertencem às páginas de Livros, Mangá ou Vídeo.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

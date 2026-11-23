@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "ลากคำบรรยายหรือเสียงไปวางบนหนังสือหรือวิดีโอ",
   "drag_drop_unsupported_on_books": "ลากไฟล์หนังสือมาวางที่นี่ สำหรับไฟล์วิดีโอหรือพจนานุกรมให้สลับไปยังหน้านั้น",
   "drag_drop_unsupported_on_collection": "วางไฟล์วิดีโอที่นี่เพื่อนำเข้าลงในคอลเลกชันนี้โดยตรง",
-  "drag_drop_unsupported_on_dictionary": "ลากไฟล์พจนานุกรม .zip, .dsl หรือ .mdx มาวางที่นี่ ไฟล์ CSS ใช้ได้เฉพาะเมื่อมาพร้อมแพ็กเกจพจนานุกรมเท่านั้น",
+  "drag_drop_unsupported_on_dictionary": "ลากไฟล์พจนานุกรม .zip, .7z, .rar, .dsl หรือ .mdx มาวางที่นี่ ไฟล์ CSS ใช้ได้เฉพาะเมื่อมาพร้อมแพ็กเกจพจนานุกรมเท่านั้น",
   "drag_drop_unsupported_on_downloads": "วางไฟล์ .torrent ที่นี่เพื่อเพิ่มงานดาวน์โหลด ไฟล์อื่นเป็นของหน้าหนังสือ มังงะ หรือวิดีโอ",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

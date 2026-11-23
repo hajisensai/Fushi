@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "Untertitel oder Audio auf ein Buch oder Video ziehen",
   "drag_drop_unsupported_on_books": "Buchdateien hier ablegen. Für solche Dateien zu Video oder Wörterbücher wechseln.",
   "drag_drop_unsupported_on_collection": "Ziehe Videodateien hierher, um sie direkt in diese Sammlung zu importieren.",
-  "drag_drop_unsupported_on_dictionary": "Wörterbuchdateien (.zip, .dsl oder .mdx) hier ablegen. CSS-Dateien funktionieren nur zusammen mit einem Wörterbuchpaket.",
+  "drag_drop_unsupported_on_dictionary": "Wörterbuchdateien (.zip, .7z, .rar, .dsl oder .mdx) hier ablegen. CSS-Dateien funktionieren nur zusammen mit einem Wörterbuchpaket.",
   "drag_drop_unsupported_on_downloads": "Ziehe .torrent-Dateien hierher, um eine Download-Aufgabe hinzuzufügen. Andere Dateien gehören auf die Seiten Bücher, Manga oder Video.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

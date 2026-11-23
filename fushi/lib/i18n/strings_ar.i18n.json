@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "أفلت الترجمات أو الصوت على كتاب أو فيديو",
   "drag_drop_unsupported_on_books": "أفلت ملفات الكتب هنا. بدّل إلى الفيديو أو القواميس لتلك الملفات.",
   "drag_drop_unsupported_on_collection": "أسقط ملفات الفيديو هنا لاستيرادها مباشرة إلى هذه المجموعة.",
-  "drag_drop_unsupported_on_dictionary": "أفلت ملفات قواميس .zip أو .dsl أو .mdx هنا. تعمل ملفات CSS فقط مع حزمة قاموس.",
+  "drag_drop_unsupported_on_dictionary": "أفلت ملفات قواميس .zip أو .7z أو .rar أو .dsl أو .mdx هنا. تعمل ملفات CSS فقط مع حزمة قاموس.",
   "drag_drop_unsupported_on_downloads": "أسقط ملفات .torrent هنا لإضافة مهمة تنزيل. الملفات الأخرى مكانها صفحات الكتب أو المانجا أو الفيديو.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

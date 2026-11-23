@@ -3250,7 +3250,7 @@
   "drag_drop_need_card_target": "Sleep ondertitels of audio op een boek of video",
   "drag_drop_unsupported_on_books": "Sleep boekbestanden hierheen. Schakel over naar Video of Woordenboeken voor die bestanden.",
   "drag_drop_unsupported_on_collection": "Sleep videobestanden hierheen om ze rechtstreeks in deze collectie te importeren.",
-  "drag_drop_unsupported_on_dictionary": "Sleep .zip-, .dsl- of .mdx-woordenboekbestanden hierheen. CSS-bestanden werken alleen samen met een woordenboekpakket.",
+  "drag_drop_unsupported_on_dictionary": "Sleep .zip-, .7z-, .rar-, .dsl- of .mdx-woordenboekbestanden hierheen. CSS-bestanden werken alleen samen met een woordenboekpakket.",
   "drag_drop_unsupported_on_downloads": "Sleep .torrent-bestanden hierheen om een downloadtaak toe te voegen. Andere bestanden horen op de pagina's Boeken, Manga of Video.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
