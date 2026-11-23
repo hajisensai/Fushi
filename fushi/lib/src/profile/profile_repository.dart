@@ -27,6 +27,8 @@ import 'package:fushi/src/sync/sync_repository.dart'
         SyncRepository,
         isRemoteDictionaryPseudoHostId,
         remoteDictionaryLookupHostIdsOf;
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show kPageBackdropProfileParkedPrefKeyPrefixes;
 
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
@@ -365,13 +367,16 @@ class ProfileRepository {
   ///   即沿用切换前的选择——现有全局值就是每个配置的初始值，不需要一次性迁移；
   /// * 非激活配置的只读视图（[loadSettingsView]：浏览器扩展 / 互联选了别的配置）取停放值。
   ///
+  /// 页面背景图片同理（[kPageBackdropProfileParkedPrefKeyPrefixes]）：文件只在本机，换配置要换图。
+  ///
   /// 兜底声音的值多半指向本机朗读声音预设（`tts_voice_presets` 设备本地），带到别的设备只会指向不存在的
   /// 预设，所以不走快照 / 导出 / 同步，只在本机按配置记。
-  static const Map<String, String> perProfileDeviceLocalPrefs =
-      <String, String>{
-        kMiningTtsFallbackVoicePref:
-            kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
-      };
+  static const Map<String, String>
+  perProfileDeviceLocalPrefs = <String, String>{
+    kMiningTtsFallbackVoicePref: kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+    // 页面背景图片（与取色缓存）：样式随快照走，图片文件只在本机，按配置停放。
+    ...kPageBackdropProfileParkedPrefKeyPrefixes,
+  };
 
   /// 配置的 uid；配置行已不存在时 null。
   Future<String?> _profileUidOrNull(int profileId) async {
