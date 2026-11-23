@@ -33,8 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4630 条。点号进各自文件。
-> 共 4638 条。点号进各自文件。
+> 共 4645 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -47,10 +46,9 @@
 | [BUG-5332](bugs/BUG-5332-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
 | [BUG-5331](bugs/BUG-5331-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
 | [BUG-5330](bugs/BUG-5330-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
-| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | 🚧 | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词 |
+| [BUG-5311](bugs/BUG-5311-music-disc-art-cold-start-cache.md) | ✅ | ✅ | music-disc-art-cold-start-cache |
 | [BUG-5310](bugs/BUG-5310-overlay-card-selection-hotkey-nested-lookup.md) | ✅ | ✅ | 应用外查词卡片里选中文字再按查词热键，卡片收起后在鼠标处重弹原词，不做嵌套查词 |
 | [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
-| [BUG-5311](bugs/BUG-5311-music-disc-art-cold-start-cache.md) | ✅ | ✅ | music-disc-art-cold-start-cache |
 | [BUG-5308](bugs/BUG-5308-manga-read-aloud-highlight-not-rotated.md) | ✅ | ✅ | manga-read-aloud-highlight-not-rotated |
 | [BUG-5307](bugs/BUG-5307-imusic-offline-download.md) | ✅ | ✅ | 互联音乐库：把 host 曲目下载到本机离线听（design-imusic-q12） |
 | [BUG-5306](bugs/BUG-5306-imusic-remote-mv-rematch.md) | ✅ | ✅ | 互联音乐库：客户端请 host 重新匹配 / 手动绑定 MV（design-imusic-q9） |
@@ -60,6 +58,7 @@
 | [BUG-5302](bugs/BUG-5302-imusic-mv-remote-client.md) | ✅ | ✅ | 互联音乐库：客户端歌词页 / 卡拉 OK 页放 host 的 MV（依赖 #4249） |
 | [BUG-5301](bugs/BUG-5301-imusic-server-scan-packaging.md) | 🚧 | 🚧 | 互联音乐库第 3 期：服务端扫描音乐与随包 fushi_music |
 | [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | ✅ | ✅ | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
+| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | 🚧 | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词 |
 | [BUG-5298](bugs/BUG-5298-imusic-legacy-library-modules.md) | 🚧 | 🚧 | 互联老库类迁入统一模块层（design-imusic-q0） |
 | [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
