@@ -10067,6 +10067,8 @@
   "settings_lookup_pause_on_lookup_hint": "查词时暂停有声书 / 视频，关掉弹窗后继续",
   "settings_lookup_popup_summary": "尺寸、位置、滚动与关闭方式",
   "settings_lookup_popup_title": "查词弹窗",
+  "settings_lookup_scan_length_hint": "查词和分词从光标处最多取几个字作为最长候选（8–32，默认 16）。调大能匹配更长的词组，但每次查词会更慢。",
+  "settings_lookup_scan_length_title": "扫描窗口长度",
   "settings_lookup_section_audio": "发音与播放",
   "settings_lookup_section_dictionaries": "词典",
   "settings_lookup_section_hover": "划词与悬停",

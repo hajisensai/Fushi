@@ -138,7 +138,12 @@ void main() {
   });
 
   void cacheLocal(DictionarySearchResult result) => dictRepo.cacheSearchResult(
-    buildSearchCacheKey(term: term, maxTerms: maxTerms, maxResults: maxTerms),
+    buildSearchCacheKey(
+      term: term,
+      maxTerms: maxTerms,
+      maxResults: maxTerms,
+      scanLength: FushiDicts.defaultScanLength,
+    ),
     result,
   );
 

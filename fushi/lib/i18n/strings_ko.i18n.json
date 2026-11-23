@@ -10067,6 +10067,8 @@
   "settings_lookup_pause_on_lookup_hint": "Pause audiobooks / videos during a lookup and resume when the popup closes",
   "settings_lookup_popup_summary": "Size, position, scrolling and closing",
   "settings_lookup_popup_title": "Lookup popup",
+  "settings_lookup_scan_length_hint": "How many characters from the cursor lookup and word splitting try as the longest candidate (8–32, default 16). Larger values match longer phrases but make each lookup slower.",
+  "settings_lookup_scan_length_title": "Scan window length",
   "settings_lookup_section_audio": "Pronunciation and playback",
   "settings_lookup_section_dictionaries": "Dictionaries",
   "settings_lookup_section_hover": "Selection and hover",

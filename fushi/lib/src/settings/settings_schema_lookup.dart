@@ -35,6 +35,7 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
@@ -731,6 +732,27 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.defaultMaximumDictionaryTermsInResult,
             onChanged: (SettingsContext settingsContext, num value) {
               settingsContext.appModel.setMaximumTerms(value.toInt());
+              settingsContext.appModel.clearDictionaryResultsCache();
+              settingsContext.refresh();
+            },
+          ),
+          // 词典扫描窗口（反馈 ezCjUoU2QM）：查词、整词高亮长度、分词共用一个值
+          // （FushiDicts.scanLength 经偏好读取）。缓存键已带窗口，清缓存只为释放旧窗口
+          // 下的结果、让当前查词结果按新窗口重查。
+          SettingsNumberItem(
+            id: 'lookup.scan_length',
+            title: t.settings_lookup_scan_length_title,
+            subtitle: t.settings_lookup_scan_length_hint,
+            icon: Icons.straighten_outlined,
+            integer: true,
+            min: FushiDicts.minScanLength,
+            max: FushiDicts.maxScanLength,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupScanLength,
+            resetValue: (SettingsContext settingsContext) =>
+                FushiDicts.defaultScanLength,
+            onChanged: (SettingsContext settingsContext, num value) async {
+              await settingsContext.appModel.setLookupScanLength(value.toInt());
               settingsContext.appModel.clearDictionaryResultsCache();
               settingsContext.refresh();
             },

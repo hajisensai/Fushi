@@ -116,28 +116,77 @@ void main() {
   group('buildSearchCacheKey byte-identical cache key', () {
     test('format len:term/maxTerms/maxResults', () {
       expect(
-        buildSearchCacheKey(term: '図書館', maxTerms: 8, maxResults: 32),
+        buildSearchCacheKey(
+          term: '図書館',
+          maxTerms: 8,
+          maxResults: 32,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '3:図書館/8/32',
+      );
+    });
+
+    test('非出厂扫描窗口带 /s<n>，出厂值键不变（反馈 ezCjUoU2QM）', () {
+      expect(
+        buildSearchCacheKey(
+          term: '図書館',
+          maxTerms: 8,
+          maxResults: 8,
+          scanLength: 24,
+          chineseSimpToTrad: true,
+        ),
+        '3:図書館/8/8/s24/zh',
+      );
+      expect(
+        buildSearchCacheKey(
+          term: '図書館',
+          maxTerms: 8,
+          maxResults: 8,
+          scanLength: 24,
+        ),
+        isNot(
+          buildSearchCacheKey(
+            term: '図書館',
+            maxTerms: 8,
+            maxResults: 8,
+            scanLength: FushiDicts.defaultScanLength,
+          ),
+        ),
       );
     });
 
     test('term.length uses UTF-16 code units', () {
       expect(
-        buildSearchCacheKey(term: '\u{2000B}', maxTerms: 1, maxResults: 1),
+        buildSearchCacheKey(
+          term: '\u{2000B}',
+          maxTerms: 1,
+          maxResults: 1,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '2:\u{2000B}/1/1',
       );
     });
 
     test('empty term key', () {
       expect(
-        buildSearchCacheKey(term: '', maxTerms: 0, maxResults: 0),
+        buildSearchCacheKey(
+          term: '',
+          maxTerms: 0,
+          maxResults: 0,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '0:/0/0',
       );
     });
 
     test('term with slash/colon not escaped', () {
       expect(
-        buildSearchCacheKey(term: 'a/b:c', maxTerms: 5, maxResults: 100),
+        buildSearchCacheKey(
+          term: 'a/b:c',
+          maxTerms: 5,
+          maxResults: 100,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '5:a/b:c/5/100',
       );
     });
@@ -153,7 +202,12 @@ void main() {
         'long word here',
       ]) {
         expect(
-          buildSearchCacheKey(term: term, maxTerms: 8, maxResults: 32),
+          buildSearchCacheKey(
+            term: term,
+            maxTerms: 8,
+            maxResults: 32,
+            scanLength: FushiDicts.defaultScanLength,
+          ),
           legacyKey(term, 8, 32),
           reason: 'cacheKey drift busts the cache',
         );
@@ -471,7 +525,12 @@ void main() {
 
     test('缓存键：关着时与旧格式逐字相同，开着时带 /zh 后缀不与之共用', () {
       expect(
-        buildSearchCacheKey(term: '这个', maxTerms: 8, maxResults: 8),
+        buildSearchCacheKey(
+          term: '这个',
+          maxTerms: 8,
+          maxResults: 8,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '2:这个/8/8',
       );
       expect(
@@ -479,6 +538,7 @@ void main() {
           term: '这个',
           maxTerms: 8,
           maxResults: 8,
+          scanLength: FushiDicts.defaultScanLength,
           chineseSimpToTrad: true,
         ),
         '2:这个/8/8/zh',

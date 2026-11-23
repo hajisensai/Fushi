@@ -94,11 +94,17 @@ class FushiDictsCorpusNormalizer implements CorpusNormalizer {
     if (!FushiDicts.isInitialized || FushiDicts.hasPendingDicts) {
       return Future<T?>.value();
     }
+    // 扫描窗口在本 isolate 上取：读偏好的装配点是 isolate 局部的，后台读不到。
+    final int scanLength = FushiDicts.scanLength;
     return FushiDicts.instance.borrowForBackground<T>(
       (int address, String? libraryPath) => Isolate.run<T>(
         () => job(
-          (List<String> sentences) =>
-              FushiDicts.corpusTermsBorrowed(address, libraryPath, sentences),
+          (List<String> sentences) => FushiDicts.corpusTermsBorrowed(
+            address,
+            libraryPath,
+            scanLength,
+            sentences,
+          ),
         ),
         debugName: 'fushi-corpus-ingest',
       ),
