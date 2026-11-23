@@ -203,7 +203,10 @@ Rect _shell(WidgetTester tester, _Mode mode, _Case c) {
   final Offset o = box.localToGlobal(Offset.zero);
   return (
     box: o & box.size,
-    baseline: o.dy + box.getDistanceToBaseline(TextBaseline.alphabetic)!,
+    // 布局期之外不能调 getDistanceToBaseline（断言只许父级布局期读）；
+    // 干基线按当前约束重算，同一结果。
+    baseline:
+        o.dy + box.getDryBaseline(box.constraints, TextBaseline.alphabetic)!,
   );
 }
 
