@@ -44,6 +44,8 @@ class _PaperAppModel extends AppModel {
   @override
   Color? get activeCustomThemeSelectionColor => null;
   @override
+  Color? get activeCustomThemeSelectionTextColor => null;
+  @override
   Color? get activeCustomThemeLinkColor => null;
 
   @override

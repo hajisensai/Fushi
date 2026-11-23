@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 /// ① 收藏词 ☆ 按钮已复活并接 favoriteEntry 桥（FavoriteWords 写入入口不得再丢）。
 /// ② 制卡句进导出管线（getAllMinedSentences → buildMinedExport）。
 /// ③ 导出抽屉走 MD3 范式（FushiModalSheetFrame + FushiDesignTokens），范围含 allMined。
-/// ④ 不回归 BUG-123：竖排选区 rt/rp 遮罩仍在 reader_content_styles.dart。
+/// ④ 不回归 BUG-123/125：竖排选区 ruby class 分流仍在，rt 铺底色的遮罩不得复活。
 void main() {
   test('① popup.js 复活收藏按钮且调 favoriteEntry（FavoriteWords 写入入口）', () {
     final String js = File('assets/popup/popup.js').readAsStringSync();
@@ -68,12 +68,22 @@ void main() {
       contains('composeOpaqueColor'),
       reason: 'BUG-125 预合成不透明色机制必须仍在',
     );
-    // 反向：不得复活已删除的 rt/rp 遮罩（与 ruby_highlight_guard 一致）。
-    expect(
-      css.contains('ruby.fushi-selection-ruby-active > rt'),
-      isFalse,
-      reason: 'BUG-125 已删除会抹基字的 rt 遮罩，不得复活',
-    );
+    // 反向：不得复活已删除的 rt/rp 遮罩（与 ruby_highlight_guard 一致）。拍板台
+    // -8azTfJh_v 起允许一条只管字色的 rt 规则（查词高亮文字色换了 ruby 字色时让不在
+    // 窄条底色上的振假名留原色）；任何给 rt 铺底色的规则仍禁止。
+    const String rtSelector = 'ruby.fushi-selection-ruby-active > rt';
+    for (
+      int i = css.indexOf(rtSelector);
+      i >= 0;
+      i = css.indexOf(rtSelector, i + rtSelector.length)
+    ) {
+      final String rule = css.substring(i, css.indexOf('}', i));
+      expect(
+        rule.contains('background'),
+        isFalse,
+        reason: 'BUG-125 已删除会抹基字的 rt 遮罩，不得复活：$rule',
+      );
+    }
   });
 
   test('⑤ TODO-914 去重聚合 + 可勾选模式守卫（纯函数 + UI 控件存在）', () {
