@@ -270,6 +270,14 @@ void requireNotAnnotating(TtsCtlDeps deps, String bookKey) {
   }
 }
 
+/// 本卷正在导入有声漫画包（导入任务占着它，解包到落库结束）时不许标注 / 生成 / 改演出稿
+/// 或成品：导入会整份替换演出稿、成品与登记，两边会互相覆盖。
+void requireNotImportingPackage(TtsCtlDeps deps, String bookKey) {
+  if (deps.packageTasks().importingVolume(bookKey) != null) {
+    throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
+  }
+}
+
 /// 本卷有在排队 / 在跑的生成任务时不许换句文件。
 void requireNotRendering(TtsCtlDeps deps, String bookKey) {
   final TtsRenderJob? job = deps.renderQueue().latestFor(bookKey);
