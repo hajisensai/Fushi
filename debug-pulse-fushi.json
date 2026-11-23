@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T16:56:35Z",
+ "generatedAt": "2026-11-23T17:10:46Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
-  "seq": 32101
+  "sha": "55e160e5bc4255de30e515000fbb28b3180440d3",
+  "seq": 32120
  },
  "builds": [
   {
@@ -217,7 +217,60 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "55e160e5bc4255de30e515000fbb28b3180440d3",
+  "headSeq": 32120,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "55e160e5bc4255de30e515000fbb28b3180440d3",
+    "subject": "Merge #4310 (claude/fb-dict-scan-length) into develop"
+   },
+   {
+    "sha": "f19e4d08b28f44829f9d42f82f4de747d688b0dd",
+    "subject": "Merge #4309 (claude/fb-page-turn-unify) into develop"
+   },
+   {
+    "sha": "0f83d08598a42dc159158887a8e29ec7bab4d36e",
+    "subject": "Merge #4308 (claude/fb-sel-highlight-text-color) into develop"
+   },
+   {
+    "sha": "58c865983c10ca4c49eb9adf12fafa7e3a811cfb",
+    "subject": "Merge #4313 (claude/fb-vocal-separation-toggle) into develop"
+   },
+   {
+    "sha": "308c5e3cf9bc269eef02b660c853951fc4495a32",
+    "subject": "Merge #4312 (claude/fb-episode-picker-stills) into develop"
+   },
+   {
+    "sha": "c1aecae579774d2fc0904af9553e3c04607cef02",
+    "subject": "Merge #4311 (claude/ic-manga-chapter-progress) into develop"
+   },
+   {
+    "sha": "419007fd409edef7a442c7907340cd2862d7a2ff",
+    "subject": "Merge #4306 (claude/infallible-wilbur-694b6f) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272157"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272235"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272235"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272235"
+   }
+  }
+ },
  "prs": {
   "4278": {
    "number": 4278,
