@@ -1158,13 +1158,13 @@ String mangaWindowDocument(
       'background:rgba(255,200,0,.28);border-radius:4px;}'
       // BUG-5308：斜排块（data-ocr-frame）的块框是轴对齐外接框，描边 / 底色改由
       // ::before 按 mangaBlockOrientedFrame 的有向矩形画，跟字格一起转。伪元素不吃
-      // 指针事件，命中仍只由 .ocr-char 决定；文字条里块是 static 排版，不画斜框。
+      // 指针事件，命中仍只由 .ocr-char 决定；文字条的克隆去掉了 data-ocr-frame
+      // （static 排版，不画斜框）。
       '.ocr-box[data-ocr-frame]::before{content:"";position:absolute;'
       'left:var(--ocr-frame-l);top:var(--ocr-frame-t);'
       'width:var(--ocr-frame-w);height:var(--ocr-frame-h);'
       'transform:rotate(var(--ocr-frame-r));box-sizing:border-box;'
       'border-radius:4px;pointer-events:none;}'
-      '.manga-text-strip .ocr-box[data-ocr-frame]::before{content:none;}'
       '.ocr-boxes-visible .ocr-box[data-ocr-frame],'
       '.ocr-box[data-ocr-frame].manga-speaking{outline:none;background:none;}'
       '.ocr-boxes-visible .ocr-box[data-ocr-frame]::before'

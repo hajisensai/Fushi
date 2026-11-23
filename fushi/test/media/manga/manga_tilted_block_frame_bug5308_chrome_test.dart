@@ -7,7 +7,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/manga_bubble_focus_js.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
@@ -69,6 +71,17 @@ const String _cases = r'''
   check(getComputedStyle(tilted, '::before').outlineStyle === 'solid',
       'recognition-range view: rotated frame outlined');
 
+  // 台词栏克隆是 static 横排：不带有向外框，「显示识别范围」照旧给斜块描正框。
+  window.__mangaTextStripRefresh();
+  var cloned = document.querySelector(
+      '.manga-text-strip .ocr-box[data-manga-block="0"]');
+  check(!!cloned, 'text panel cloned the tilted block');
+  check(!!cloned && !cloned.hasAttribute('data-ocr-frame'),
+      'text panel clone drops data-ocr-frame');
+  check(!!cloned && getComputedStyle(cloned).outlineStyle === 'solid',
+      'recognition-range view: text panel clone keeps its outline: '
+          + (cloned && getComputedStyle(cloned).outlineStyle));
+
   var out = document.createElement('pre');
   out.id = 'results';
   out.textContent = btoa(JSON.stringify({passed: passed, failures: failures}));
@@ -105,6 +118,8 @@ void main() {
       mode: MangaReadingMode.webtoon,
       spreadDirection: 'rtl',
       inlineSelectionJs: '',
+      readerPreferences: const MangaReaderPreferences(bubbleTextStrip: true),
+      textStripLayout: MangaTextStripLayout.panel,
     );
     final String setup =
         'window.__testBoxes=${jsonEncode(mangaOcrBoxesHtml(bug5308Page()))};';
@@ -150,7 +165,7 @@ void main() {
             jsonDecode(utf8.decode(base64Decode(payload!.group(1)!)))
                 as Map<String, dynamic>;
         expect(report['failures'], isEmpty, reason: '${report['failures']}');
-        expect(report['passed'] as int, 13);
+        expect(report['passed'] as int, 16);
       } finally {
         try {
           temp.deleteSync(recursive: true);
