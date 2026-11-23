@@ -57,6 +57,7 @@ class _FakeTransport implements InterconnectMusicTransport {
         path: p,
         queryParameters: q.isEmpty ? null : q,
       ),
+      pin: 'AB:CD',
     );
   }
 

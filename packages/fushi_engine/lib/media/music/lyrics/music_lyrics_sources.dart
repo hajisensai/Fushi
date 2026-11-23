@@ -16,6 +16,10 @@ abstract final class MusicLyricsSource {
   /// 不联网；排在文件自带的 sidecar / 内嵌之后、在线来源之前。
   static const String asr = 'asr';
 
+  /// 媒体服务器（Jellyfin / OpenSubsonic）存的歌词：服务器曲目才有，与插件自带歌词同档
+  /// （在 [asr] 之后、在线搜索之前）。
+  static const String server = 'server';
+
   /// 在线音源插件自带的歌词：`provider:plugin:<插件 id>`（插件曲目才有，排在 LRCLIB 前）。
   static const String _pluginPrefix = 'provider:plugin:';
 
@@ -50,14 +54,14 @@ abstract final class MusicLyricsSource {
     lrclib,
   ];
 
-  /// 自动来源的档位（越小越优先）：sidecar > 内嵌 > 生成字幕 > 插件自带 > LRCLIB > 歌词插件 > 其它。
+  /// 自动来源的档位（越小越优先）：sidecar > 内嵌 > 生成字幕 > 服务器歌词 / 插件自带 > LRCLIB > 歌词插件 > 其它。
   /// 前四档与 [MusicLyricsService.resolve] 的查找顺序一致；LRCLIB 与歌词插件在 resolve 里按用户排的
   /// 来源列表（`music_lyrics_providers`）问，这里是不读偏好的纯判据，按默认顺序（LRCLIB 在前）近似。
   static int automaticRank(String source) {
     if (source == sidecar) return 0;
     if (source == embedded) return 1;
     if (source == asr) return 2;
-    if (isPlugin(source)) return 3;
+    if (source == server || isPlugin(source)) return 3;
     if (source == lrclib) return 4;
     if (isLyricsPlugin(source)) return 5;
     return 6;

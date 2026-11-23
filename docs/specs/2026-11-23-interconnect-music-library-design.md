@@ -414,7 +414,7 @@ app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设�
 | **Q9** 远程重新匹配 / 手动绑定 | 做 | 未做：匹配器在未合并的 #4249 → BUG-5306 |
 | **Q10** iOS 合规单列判据 | 做 | 已做：`store_compliance.dart` 的 `interconnectMusicLibraryAvailableOn`（恒 true），`music_servers.dart` / `music_remote_tracks.dart` 只问它，守卫钉住 |
 | **Q11** 分期顺序 | a：先模块层与引擎 | 已按 a：第 0 期 → 第 1 期（部分）→ 第 2 期；第 1 期余项（歌词本地层、封面选取进引擎）已做（BUG-5300 已修），第 3 期 → BUG-5301 |
-| **Q12** 下载到本机 | 做 | 已做：复用插件下载管线，`forDownload` 签票（原样 + 整首），host 歌词写 sidecar，导入后 host uid 记别名并改指引用（BUG-5307 已修） |
+| **Q12** 下载到本机 | 做 | 已做：接进 Jellyfin / Subsonic 同一条离线副本管线（v175），`forDownload` 签票（原样 + 整首）、按通道证书指纹钉扎直取、封面走通道、host 歌词入缓存；uid 不变，之后放本机文件（BUG-5307 已修） |
 
 ### 9.1 实现与原设计的出入
 

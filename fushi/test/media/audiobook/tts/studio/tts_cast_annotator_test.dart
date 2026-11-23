@@ -526,6 +526,21 @@ void main() {
       expect(kTtsCastLinesSystemPrompt, isNot(contains('"skip"')));
     });
 
+    test('系统提示要逐句语气说明；AI 给的 tone 进演出字段', () {
+      expect(kTtsCastLinesSystemPrompt, contains('"tone"'));
+      expect(kTtsCastLinesSystemPrompt, contains('sentence-final particles'));
+      expect(kTtsCastLinesSystemPrompt, contains('"tone":"必死に食い下がる"'));
+      final CastLineDirection d = ttsCastAiDirection(<Object?, Object?>{
+        'e': 'sadness',
+        'ei': 60,
+        'tone': '  おずおずと ',
+        'rate': 0.5,
+      });
+      expect(d.tone, 'おずおずと');
+      expect(d.emotion, CastEmotion.sadness);
+      expect(d.rateOffset, isNull, reason: '语速等偏移不归 AI 定');
+    });
+
     test('系统提示：`*` 行必须逐条回，书名 / 标牌显式回 narrator', () {
       expect(kTtsCastLinesSystemPrompt, contains('{"i":11,"s":"narrator"}'));
       expect(kTtsCastLinesSystemPrompt, contains('Give EVERY starred line'));

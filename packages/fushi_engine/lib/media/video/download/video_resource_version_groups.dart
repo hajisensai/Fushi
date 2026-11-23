@@ -9,6 +9,7 @@ library;
 import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
+import 'package:fushi_engine/media/titles/media_title_clean.dart';
 import 'package:fushi_engine/media/video/download/video_release_scope_evidence.dart';
 
 /// 从发布标题解析集号（`S01E05` / `Title - 05 [1080p]` 两种主流形态）。
@@ -47,7 +48,7 @@ String? releaseGroupTagFromTitle(String title) {
   if (match == null) return null;
   final String tag = match.group(1)!.trim();
   if (tag.isEmpty) return null;
-  if (RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(tag)) return null;
+  if (isCrcHex(tag)) return null;
   if (RegExp(r'^\d{3,4}[pP]$').hasMatch(tag)) return null;
   return tag;
 }
@@ -57,6 +58,9 @@ String? _releaseGroupOf(VideoResourceCandidate candidate) {
   if (structured.isNotEmpty) return structured;
   return releaseGroupTagFromTitle(candidate.title);
 }
+
+/// 一个 CRC 标签（全媒体共用判据 [kCrcTagSource]）。
+final RegExp _crcTag = RegExp(kCrcTagSource);
 
 /// 没有发布组字段时，用「只抹掉集号」的标题模板识别同一逐集发布系列。
 ///
@@ -77,7 +81,7 @@ String _unknownReleaseFamilyKey(VideoResourceCandidate candidate) {
   if (!replacedEpisode) return 'single:${candidate.identityKey}';
   // 每集不同的 CRC 不属于发布系列身份；其它编码、音轨、来源等技术标记保留，
   // 因而 MULTi x264-AMBER 与普通 H264 不会因为同季同清晰度而误合并。
-  title = title.replaceAll(RegExp(r'[\[\(][0-9a-f]{8}[\]\)]'), '');
+  title = title.replaceAll(_crcTag, '');
   title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
   return 'template:$title';
 }

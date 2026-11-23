@@ -17,3 +17,7 @@
 - **[x] ② 已加自动化测试** — `fushi/test/pages/home_collage_widgets_test.dart`「H3 头像同步状态」组：只有首页由头像
   承载（其余 tab 照旧画 FAB）、任务 → idle / running / failed 状态、底部渐隐的起止位置。
 - **备注**：真机像素观感（MD3 手机底栏渐隐、头像外圈环 / 红点）未在设备上复测，收尾阶段补。
+- **2026-11-23 修复 ① 被维护者撤回（有意接受的回归）**：拍板台 design-avatar-combo-placement 选方案 a——头像只管
+  账户、首页恢复右下「后台任务」FAB（`home_page.dart` 的 `_hasBackgroundTasks && !_shellFabHostedByBar`，不再豁免首页），
+  头像外圈环 / 红点与 `home_background_tasks_scope.dart` 删除。维护者在「入口放顶栏动作组」与「照旧右下」之间明确选了
+  右下，接受同步期间 MD3 手机上 FAB 叠在底栏上方、可能压住首屏底部卡片。② 首屏变短与 ③ 底部渐隐保留。

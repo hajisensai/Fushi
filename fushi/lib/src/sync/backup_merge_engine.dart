@@ -331,6 +331,16 @@ class BackupMergeEngine {
       // 本机曲库并掉过重复曲目（v145）：合进来的歌单项 / 歌词 / 播放记录 / 收藏句可能
       // 还挂着败者 uid（别的设备或旧备份），按别名表改指胜者。放在全部合并之后。
       await _db.applyMusicTrackUidAliases();
+      // BUG-5290：合进来的播放流快照可能带旧版本落的服务器凭据（备份库迁移到当前
+      // schema 时已清洗过一遍；同版本 / 外来拼出的备份不走迁移），合并后再清洗一次。
+      if (_wants('music')) await _db.scrubMusicPlayEventCredentials();
+      // 合进来的较新远程曲目行可能清了入库时刻（别的设备移出过）：本机有离线副本（v175，
+      // 设备本地的事实）的放回曲库，副本文件从不因合并被删。
+      if (_wants('music')) {
+        await _db.reconcileMusicServerDownloadsIntoLibrary(
+          at: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
       await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
     });
@@ -2394,6 +2404,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'media_link_ai_verdicts',
       // v165：视频内容指纹——本机文件算出来的，必须本机重算。
       'video_content_fingerprints',
+      // v172：本地 MV 自动匹配缓存——本机文件算出来的，必须本机重算。
+      'music_video_prints',
+      'music_video_match_checks',
       // v135：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
       'game_voice_casts',
       // v133：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。

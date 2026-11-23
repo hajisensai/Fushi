@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -23,6 +22,7 @@ import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
     show MusicDetailHero, musicDetailHeroGap;
+import 'package:fushi/src/pages/implementations/music/music_library_removal.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicBrowsePagePadding, musicBrowseScaffold;
@@ -37,8 +37,6 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
-    show FushiSnackBar;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfSelectionCheck;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';

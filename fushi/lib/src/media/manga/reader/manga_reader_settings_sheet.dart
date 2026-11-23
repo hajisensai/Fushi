@@ -1218,7 +1218,8 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       isDesktopPlatform &&
           _value('bubbleZoom') != false &&
           _value('lookupOnHover') != true &&
-          (_value('bubbleZoomHover') ?? 'dwell') == 'dwell',
+          (_value('bubbleZoomHover') ?? kMangaBubbleZoomHoverDefault) ==
+              'dwell',
     _ => true,
   };
 

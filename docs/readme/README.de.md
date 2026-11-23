@@ -24,7 +24,7 @@
 
 | Plattform | Status | Hinweise |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) oder neuer |
+| Android | ✅ | Android 8.0 (API 26) oder neuer |
 | Windows | ✅ | Das Hooking von Galgame-Text und -Sprache gibt es nur unter Windows |
 | macOS | ✅ | Nur Apple Silicon; Intel-Macs werden nicht unterstützt |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Keine Entdeckung, Online-Quellen oder Download-Center (App-Store-Richtlinien) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Lade die neueste Version von der [Fushi-Website](https://fushi.moe/) herunter — verfügbar sind das Android-APK, das Windows-Installationsprogramm und macOS-Builds (nur Apple Silicon; Intel-Macs werden nicht unterstützt); iOS wird über [TestFlight](https://testflight.apple.com/join/j88d69jx) installiert. Für Linux gibt es noch kein vorkompiliertes App-Release; baue es aus dem Quellcode. Der Headless-Server Fushi Server wird separat auf [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) veröffentlicht.
 
-> Erfordert Android 7.0 (API 24) oder höher.
+> Erfordert Android 8.0 (API 26) oder höher.
 
 ## Build
 

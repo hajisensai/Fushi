@@ -32,6 +32,10 @@ typedef InterconnectMusicResponse = ({
   Uint8List bytes,
   Map<String, Object?>? json,
   Uri? Function(String path, Map<String, String> query) resolve,
+
+  /// 这次走的地址钉扎的证书指纹（https 自签的 host）；明文 / 没有钉扎为 null。在通道之外直接取
+  /// host 给的地址（离线副本下载）时，按它钉扎证书。
+  String? pin,
 });
 
 /// 没有任何地址给出 HTTP 回答（离线 / 不可达 / 证书不符 / 凭据被拒）。
@@ -102,6 +106,7 @@ class ChannelInterconnectMusicTransport implements InterconnectMusicTransport {
       json: res.jsonObject?.cast<String, Object?>(),
       resolve: (String p, Map<String, String> q) =>
           interconnectRequestUri(res.via.url, p, q),
+      pin: res.via.fingerprintSha256,
     );
   }
 
@@ -122,7 +127,9 @@ class InterconnectMusicBrowser
         MusicServerBrowser,
         MusicServerPlaylistEditing,
         MusicServerLyricsSource,
-        MusicServerVideoSource {
+        MusicServerVideoSource,
+        MusicServerDownloading,
+        MusicServerCoverBytes {
   InterconnectMusicBrowser({
     required this.serverId,
     required this.displayName,
@@ -310,20 +317,43 @@ class InterconnectMusicBrowser
   Future<InterconnectMusicOpenedTrack> openTrack(
     String trackUid, {
     bool forDownload = false,
+  }) async => (await _open(trackUid, forDownload: forDownload)).opened;
+
+  /// 离线副本下载（design-imusic-q12，与 Jellyfin / Subsonic 同一条离线副本管线）：原样音质、整首
+  /// （CUE 虚拟曲目由 host 无损截段），每次开跑 / 续传现签一张票；地址在通道之外直接取，按这次
+  /// 走的地址的证书指纹钉扎。
+  @override
+  Future<MusicServerDownloadSource> downloadSourceFor(
+    MusicServerTrack track,
+  ) async {
+    final ({InterconnectMusicOpenedTrack opened, String? pin}) o = await _open(
+      track.id,
+      forDownload: true,
+    );
+    return MusicServerDownloadSource(
+      uri: Uri.parse(o.opened.url),
+      extensionHint: (track.container ?? track.codec)?.toLowerCase(),
+      pinnedFingerprint: o.pin,
+    );
+  }
+
+  Future<({InterconnectMusicOpenedTrack opened, String? pin})> _open(
+    String trackUid, {
+    required bool forDownload,
   }) async {
     final Future<Map<String, Object?>> meta = _getJson(
       'tracks/${_seg(trackUid)}',
     );
     final int? cap = forDownload ? null : _maxBitrateKbps();
-    final ({Uri url, String ticket, Map<String, Object?> info}) stream =
-        await _issue(
-          LibraryMediaStreamKind.musicTrack,
-          trackUid,
-          options: <String, Object?>{
-            kMusicStreamOptionMaxBitrate: ?cap,
-            if (forDownload) kMusicStreamOptionSegment: true,
-          },
-        );
+    final ({Uri url, String ticket, Map<String, Object?> info, String? pin})
+    stream = await _issue(
+      LibraryMediaStreamKind.musicTrack,
+      trackUid,
+      options: <String, Object?>{
+        kMusicStreamOptionMaxBitrate: ?cap,
+        if (forDownload) kMusicStreamOptionSegment: true,
+      },
+    );
     final RemoteMusicTrack? track;
     try {
       track = RemoteMusicTrack.fromJson(await meta);
@@ -331,19 +361,26 @@ class InterconnectMusicBrowser
       unawaited(_release(stream.ticket));
       rethrow;
     }
-    _trackTickets.add(stream.ticket);
-    while (_trackTickets.length > kHeldTrackTickets) {
-      unawaited(_release(_trackTickets.removeAt(0)));
+    // 下载的票不进播放的环（切几首歌就会把还在下的票释放掉）；由 host 的 TTL / 上限收。
+    if (!forDownload) {
+      _trackTickets.add(stream.ticket);
+      while (_trackTickets.length > kHeldTrackTickets) {
+        unawaited(_release(_trackTickets.removeAt(0)));
+      }
     }
     final bool applied = stream.info['segmentApplied'] == true;
     return (
-      url: stream.url.toString(),
-      startMs: applied ? null : track?.cueStartMs,
-      endMs: applied ? null : track?.cueEndMs,
+      opened: (
+        url: stream.url.toString(),
+        startMs: applied ? null : track?.cueStartMs,
+        endMs: applied ? null : track?.cueEndMs,
+      ),
+      pin: stream.pin,
     );
   }
 
-  Future<({Uri url, String ticket, Map<String, Object?> info})> _issue(
+  Future<({Uri url, String ticket, Map<String, Object?> info, String? pin})>
+  _issue(
     LibraryMediaStreamKind kind,
     String id, {
     Map<String, Object?>? options,
@@ -369,7 +406,7 @@ class InterconnectMusicBrowser
     final Uri issued = Uri.parse(url);
     final Uri? resolved = res.resolve(issued.path, issued.queryParameters);
     if (resolved == null) throw const FormatException('streamurl: bad url');
-    return (url: resolved, ticket: ticket, info: body!);
+    return (url: resolved, ticket: ticket, info: body!, pin: res.pin);
   }
 
   Future<void> _release(String ticket) async {
@@ -389,6 +426,7 @@ class InterconnectMusicBrowser
   // ── 封面 ──
 
   /// 封面字节（[coverRef] 来自曲目 / 专辑的 `coverRef`）。
+  @override
   Future<Uint8List> coverBytes(String coverRef) async {
     final String path = '$kRemoteMusicRoutePrefix/covers/${_seg(coverRef)}';
     final InterconnectMusicResponse res = await _transport.send(
@@ -458,7 +496,7 @@ class InterconnectMusicBrowser
   // ── 歌词（host 上生效的那份；修改写回） ──
 
   @override
-  Future<MusicServerLyrics?> lyricsFor(String trackId) async {
+  Future<MusicHostLyrics?> lyricsFor(String trackId) async {
     final String path =
         '$kRemoteMusicRoutePrefix/tracks/${_seg(trackId)}/lyrics';
     final InterconnectMusicResponse res = await _transport.send(
@@ -473,7 +511,7 @@ class InterconnectMusicBrowser
         ? null
         : RemoteMusicLyrics.fromJson(body);
     if (l == null) return null;
-    return MusicServerLyrics(
+    return MusicHostLyrics(
       source: l.source,
       format: l.format,
       raw: l.raw,
@@ -538,7 +576,7 @@ class InterconnectMusicBrowser
     if (video.youtubeRef != null) {
       throw StateError('YouTube MV is played by the client YouTube source');
     }
-    final ({Uri url, String ticket, Map<String, Object?> info}) s =
+    final ({Uri url, String ticket, Map<String, Object?> info, String? pin}) s =
         await _issue(LibraryMediaStreamKind.musicVideo, video.id);
     bool released = false;
     return MusicServerMediaLease(
@@ -893,7 +931,7 @@ class InterconnectMusicHostLyrics implements MusicHostLyricsLayer {
   }
 
   @override
-  Future<MusicServerLyrics?> lyricsFor(String path) async {
+  Future<MusicHostLyrics?> lyricsFor(String path) async {
     final ({InterconnectMusicBrowser browser, String trackUid})? t =
         await _target(path);
     return t?.browser.lyricsFor(t.trackUid);

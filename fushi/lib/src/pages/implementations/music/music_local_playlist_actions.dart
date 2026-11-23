@@ -12,7 +12,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -22,20 +21,19 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
-import 'package:fushi/src/media/music/plugin/music_plugin_download.dart'
-    show MusicPluginDownloadStart;
-import 'package:fushi/src/media/music/server/interconnect_music_client.dart';
-import 'package:fushi/src/media/music/server/interconnect_music_download.dart';
-import 'package:fushi/src/media/source_library/add_local_folder_source.dart'
-    show importLocalFolderOnceAt;
-import 'package:fushi/src/media/source_library/source_library_scanner.dart'
-    show SourceScanSummary;
+import 'package:fushi/src/media/music/server/music_server_downloads.dart'
+    show MusicServerDownloadService;
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/storage/download_layout.dart' show DownloadRoot;
-import 'package:fushi/src/sync/interconnect_download_manager.dart'
-    show interconnectDownloadManagerProvider;
+import 'package:fushi/src/pages/implementations/music/music_library_removal.dart'
+    show musicRemoveRemoteTracksWithUndo;
+import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart'
+    show musicServerDownloadServiceOf, musicServerTrackDownloadActions;
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show musicServerItemActions;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart'
+    show musicServerSubtitleMenuActions;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -147,16 +145,18 @@ Future<void> musicAddRemoteTrackToLibrary(
   );
 }
 
-/// 远程曲目移出音乐库（行留着：歌单可能还引用它）。
+/// 远程曲目移出音乐库（行留着：歌单可能还引用它），提示带「撤销」（按原入库时刻放回）。
+/// 服务器曲目在跑的下载随之取消；离线副本等撤销窗口过去再删（下载 ⊂ 音乐库，v175）。
 Future<void> musicRemoveRemoteTrackFromLibrary(
+  BuildContext context,
   FushiDatabase db,
   String trackUid,
 ) async {
-  await db.removeMusicRemoteTrackFromLibrary(trackUid, at: _now());
-  FushiToast.show(
-    msg: t.music_action_removed_from_library,
-    severity: ToastSeverity.success,
-  );
+  // 第一个 await 之前取：动作跑完时菜单可能已经卸载。
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  await musicRemoveRemoteTracksWithUndo(messenger, db, <String>[
+    trackUid,
+  ], message: (_) => t.music_action_removed_from_library);
 }
 
 /// 远程曲目的「加入 / 移出音乐库」「加入本地歌单」两项菜单动作；不是远程曲目或门没过回空。
@@ -192,7 +192,8 @@ List<MusicMenuAction> musicRemoteTrackLibraryActions(
       id: 'removeFromLibrary',
       label: t.music_action_remove_from_library,
       icon: FushiIcons.close,
-      run: (_) => musicRemoveRemoteTrackFromLibrary(db, track.trackUid.value),
+      run: (BuildContext context) =>
+          musicRemoveRemoteTrackFromLibrary(context, db, track.trackUid.value),
     )
   else
     MusicMenuAction(
@@ -282,51 +283,56 @@ MusicItemMenu? musicServerTrackLibraryMenu(
     open: (MusicMenuAnchor? anchor) => unawaited(() async {
       // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
       final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
-      final ProviderContainer container = ProviderScope.containerOf(
-        context,
-        listen: false,
-      );
       final List<MusicMenuAction> actions = <MusicMenuAction>[
+        // 收藏 / 即时混音（能收藏 / 能混音的服务器：OpenSubsonic；Jellyfin 由
+        // `musicServerTrackMenu` 出）。
+        ...musicServerItemActions(
+          browser,
+          MusicServerItemKind.track,
+          track.id,
+          reportedFavorite: track.favorite,
+        ),
         ...await musicServerTrackLibraryActions(
           app.database,
           browser,
           track,
           albumTitle: albumTitle,
-        ),
-        // 互联 host 曲目：下载成本机曲目离线听（design-imusic-q12）。
-        if (browser is InterconnectMusicBrowser)
-          MusicMenuAction(
-            id: 'download',
-            label: t.music_action_download,
-            icon: FushiIcons.download,
-            run: (_) => _downloadHostTrack(
-              app,
-              container,
-              browser,
-              track,
-              albumTitle: albumTitle,
-            ),
+          downloads: musicServerDownloadServiceOf(
+            context,
+            app.database,
+            browser,
           ),
+        ),
       ];
       if (!context.mounted) return;
       await showMusicActionMenu(
         context,
         anchor: at,
         errorText: (Object e) => t.music_action_failed(error: '$e'),
-        actions: actions,
+        actions: <MusicMenuAction>[
+          ...actions,
+          ...musicServerSubtitleMenuActions(
+            app,
+            browser,
+            track,
+            albumTitle: albumTitle,
+          ),
+        ],
       );
     }()),
   );
 }
 
-/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态）；
-/// 不能入库的来源回空。[playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
+/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态），给了
+/// [downloads] 再加离线副本的「下载 / 取消下载 / 删除下载」（v175）；不能入库的来源回空。
+/// [playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
 Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
   FushiDatabase db,
   MusicServerBrowser browser,
   MusicServerTrack track, {
   String? albumTitle,
   String? playlistLabel,
+  MusicServerDownloadService? downloads,
 }) async {
   final MusicRemoteTracksCompanion? row = musicServerRemoteTrackCompanion(
     browser,
@@ -337,63 +343,18 @@ Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
   final bool inLibrary =
       (await db.getMusicRemoteTrack(row.trackUid.value))?.libraryAddedAt !=
       null;
-  return musicRemoteTrackLibraryActions(
-    db,
-    row,
-    inLibrary: inLibrary,
-    playlistLabel: playlistLabel,
-  );
-}
-
-/// 互联 host 曲目 → 本机曲目（下载中心可见进度 / 暂停 / 重试）。
-Future<void> _downloadHostTrack(
-  AppModel app,
-  ProviderContainer container,
-  InterconnectMusicBrowser browser,
-  MusicServerTrack track, {
-  String? albumTitle,
-}) async {
-  final InterconnectMusicDownloadService service =
-      InterconnectMusicDownloadService(
-        downloads: container.read(interconnectDownloadManagerProvider),
-        root: () async => Directory((await DownloadRoot.current()).musicRoot),
-        import: (String path) async {
-          final SourceScanSummary? summary = await importLocalFolderOnceAt(
-            db: app.database,
-            transcribeAudiobook: null,
-            mediaKind: SourceLibraryKind.music.dbValue,
-            path: path,
-            recursive: false,
-          );
-          return summary?.error;
-        },
-        adopt: ({required String hostUid, required String localPath}) =>
-            adoptInterconnectMusicDownload(
-              app.database,
-              hostUid: hostUid,
-              localPath: localPath,
-            ),
-      );
-  final MusicPluginDownloadStart outcome = await service.download(
-    browser,
-    track,
-    albumTitle: albumTitle,
-  );
-  final ({String msg, ToastSeverity severity}) toast = switch (outcome) {
-    MusicPluginDownloadStart.started => (
-      msg: t.music_download_started,
-      severity: ToastSeverity.success,
+  return <MusicMenuAction>[
+    ...musicRemoteTrackLibraryActions(
+      db,
+      row,
+      inLibrary: inLibrary,
+      playlistLabel: playlistLabel,
     ),
-    MusicPluginDownloadStart.alreadyRunning => (
-      msg: t.music_download_already_running,
-      severity: ToastSeverity.info,
+    ...musicServerTrackDownloadActions(
+      downloads,
+      browser,
+      track,
+      albumTitle: albumTitle,
     ),
-    MusicPluginDownloadStart.alreadyDownloaded => (
-      msg: t.music_download_already_done,
-      severity: ToastSeverity.info,
-    ),
-    MusicPluginDownloadStart.trialOnly || MusicPluginDownloadStart.unplayable =>
-      (msg: t.music_download_unplayable, severity: ToastSeverity.warning),
-  };
-  FushiToast.show(msg: toast.msg, severity: toast.severity);
+  ];
 }

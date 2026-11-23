@@ -1,6 +1,7 @@
 /// 一首歌用哪份歌词（设计 §5.4）+ `music_lyrics` 落库（`timeline_cache` 二进制 + 版本）。
 ///
 /// 优先级：① 用户手动指定（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
+/// ③' 媒体服务器存的歌词（服务器曲目）/ 插件自带歌词 →
 /// ④ LRCLIB（精确匹配；失败不自动采用模糊结果，由用户挑）。
 ///
 /// - 解析与格式互转全在 Rust（`package:fushi_music`）；这里只做 IO 与编排；
@@ -18,14 +19,14 @@ import 'dart:isolate';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicHostLyrics, MusicHostLyricsLayer, MusicServerLyrics;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 import 'package:fushi_engine/media/music/lyrics/music_local_lyrics.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
-import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicHostLyricsLayer, MusicServerLyrics;
 
 export 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
     show kMusicLyricsNoneFormat, preferredMusicLyricRow;
@@ -44,6 +45,19 @@ const int kPluginLyricsScriptProbeLimit = 3;
 /// 向在线音源插件要一首歌的歌词（app 装配：`MusicPluginManager.source(id).lyrics`）。
 typedef MusicPluginLyricsFetcher =
     Future<MusicPluginLyrics?> Function(String pluginId, String trackId);
+
+/// 服务器曲目的歌词（app 装配：播放项经 `MusicServerTrackResolver` 认回服务器后问
+/// `MusicServerLyricsProvider.lyricsFor`）。不是服务器曲目（或那台服务器不存歌词）回 null；
+/// 是服务器曲目时回 `(lyrics: …)`，`lyrics` 为 null = 服务器上这首没有歌词。网络 / 服务器
+/// 错误抛（不写负缓存，回落到在线来源）。
+typedef MusicServerLyricsFetcher =
+    Future<({MusicServerLyrics? lyrics})?> Function(
+      String trackUid,
+      String path,
+    );
+
+/// 服务器说「这首没有歌词」后多久再问（管理员会补 .lrc / 装歌词插件，与插件同档）。
+const Duration kServerLyricsNegativeCacheTtl = Duration(days: 1);
 
 /// 向歌词插件搜候选（app 装配：`MusicPluginManager.source(id).lyricsSearch`）。
 typedef MusicPluginLyricsSearcher =
@@ -274,6 +288,7 @@ class MusicLyricsService {
     Future<LyricTimeline> Function(Uint8List bytes, String hint, int? durMs)?
     parse,
     int Function()? now,
+    MusicServerLyricsFetcher? serverLyrics,
     MusicPluginLyricsFetcher? pluginLyrics,
     MusicPluginLyricsSearcher? pluginSearch,
     MusicPluginLyricsRefFetcher? pluginFetch,
@@ -283,6 +298,7 @@ class MusicLyricsService {
   }) : _database = database,
        _hostLyrics = hostLyrics,
        _isGeneratedSidecar = isGeneratedSidecar,
+       _serverLyrics = serverLyrics,
        _pluginLyrics = pluginLyrics,
        _pluginSearch = pluginSearch,
        _pluginFetch = pluginFetch,
@@ -305,6 +321,7 @@ class MusicLyricsService {
   final Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
   _parse;
   final int Function() _now;
+  final MusicServerLyricsFetcher? _serverLyrics;
   final MusicPluginLyricsFetcher? _pluginLyrics;
   final MusicPluginLyricsSearcher? _pluginSearch;
   final MusicPluginLyricsRefFetcher? _pluginFetch;
@@ -447,29 +464,20 @@ class MusicLyricsService {
     final MusicHostLyricsLayer? hostLayer = _hostLyrics;
     if (hostLayer != null && hostLayer.handles(track.path)) {
       _hostPaths[track.trackUid] = track.path;
-      MusicServerLyrics? remote;
+      MusicHostLyrics? remote;
       try {
         remote = await hostLayer.lyricsFor(track.path);
       } on Object catch (e) {
         debugPrint('[music-lyrics] host lyrics failed: $e');
       }
       if (remote != null && remote.raw.isNotEmpty) {
-        final Uint8List raw = Uint8List.fromList(remote.raw);
-        final LyricTimeline t = await _parse(
-          raw,
-          remote.format,
-          track.durationMs,
-        );
-        await _upsert(
+        final LyricTimeline t = await _writeHostLyrics(
           db,
           trackUid: track.trackUid,
-          source: remote.source,
-          format: remote.format,
-          raw: raw,
-          timeline: t,
-          isUserEdited: remote.isUserEdited,
-          offsetMs: remote.offsetMs,
+          durationMs: track.durationMs,
+          lyrics: remote,
         );
+        final Uint8List raw = Uint8List.fromList(remote.raw);
         return MusicLyricsResolution(
           timeline: t.copyWith(
             source: remote.source,
@@ -571,6 +579,25 @@ class MusicLyricsService {
         timeline: await _timelineOf(db, generated, track.durationMs),
         source: MusicLyricsSource.asr,
       );
+    }
+
+    // ③' 媒体服务器存的歌词（Jellyfin `/Audio/{id}/Lyrics`、OpenSubsonic
+    // `getLyricsBySongId`）：服务器曲目没有本地文件，服务器读到的 .lrc / 内嵌歌词就是
+    // 「文件自带」那一档，排在在线搜索前。缓存（含负缓存）→ 问服务器；服务器报错不写负缓存，
+    // 继续往在线来源回落。
+    final MusicServerLyricsFetcher? fetchServer = _serverLyrics;
+    // 离线副本（本机文件、uid 仍在服务器曲目命名空间 `srv`）也走这一档：下载时存下的那行
+    // 直接用，服务器不在也有歌词。
+    if (fetchServer != null &&
+        !track.isCueTrack &&
+        (!track.isLocalFile || track.trackUid.startsWith('srv'))) {
+      final MusicLyricsResolution? hit = await _resolveServerLyrics(
+        db,
+        track,
+        rowOf(MusicLyricsSource.server),
+        fetchServer,
+      );
+      if (hit != null) return hit;
     }
 
     // ③' 插件自带歌词（逐字歌词等）：缓存（含负缓存）→ 问插件。插件报错不吞成
@@ -689,6 +716,153 @@ class MusicLyricsService {
       Error.throwWithStackTrace(lrclibError, lrclibStack!);
     }
     return null;
+  }
+
+  /// 服务器歌词（③'）：有缓存且新鲜就用；负缓存在 [kServerLyricsNegativeCacheTtl] 内不再问；
+  /// 否则问服务器并落库（重取时保留用户调过的偏移）。不是服务器曲目 / 没有 / 出错回 null。
+  Future<MusicLyricsResolution?> _resolveServerLyrics(
+    FushiDatabase db,
+    MusicLyricsTrackRef track,
+    MusicLyricRow? prev,
+    MusicServerLyricsFetcher fetch,
+  ) async {
+    const String source = MusicLyricsSource.server;
+    if (prev != null && prev.format != kMusicLyricsNoneFormat) {
+      return MusicLyricsResolution(
+        timeline: await _timelineOf(db, prev, track.durationMs),
+        source: source,
+      );
+    }
+    if (prev != null &&
+        _now() - prev.updatedAt <
+            kServerLyricsNegativeCacheTtl.inMilliseconds) {
+      return null;
+    }
+    final ({MusicServerLyrics? lyrics})? got;
+    try {
+      got = await fetch(track.trackUid, track.path);
+    } on Exception {
+      return null;
+    }
+    if (got == null) return null;
+    final LyricTimeline? t = await _writeServerLyrics(
+      db,
+      trackUid: track.trackUid,
+      durationMs: track.durationMs,
+      lyrics: got.lyrics,
+    );
+    if (t == null) return null;
+    return MusicLyricsResolution(
+      timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
+      source: source,
+    );
+  }
+
+  /// 服务器给的歌词落库（[MusicLyricsSource.server] 行；[lyrics] 为 null 记负缓存）。回生效的
+  /// 时间轴，没有歌词回 null。
+  Future<LyricTimeline?> _writeServerLyrics(
+    FushiDatabase db, {
+    required String trackUid,
+    required int? durationMs,
+    required MusicServerLyrics? lyrics,
+  }) async {
+    const String source = MusicLyricsSource.server;
+    if (lyrics == null) {
+      await _upsert(
+        db,
+        trackUid: trackUid,
+        source: source,
+        format: kMusicLyricsNoneFormat,
+        raw: Uint8List(0),
+      );
+      return null;
+    }
+    final ({String text, String format}) raw = lyrics.toRaw();
+    final Uint8List bytes = Uint8List.fromList(utf8.encode(raw.text));
+    final LyricTimeline t = (await _parse(
+      bytes,
+      raw.format,
+      durationMs,
+    )).copyWith(source: source);
+    await _upsert(
+      db,
+      trackUid: trackUid,
+      source: source,
+      format: raw.format,
+      raw: bytes,
+      timeline: t,
+    );
+    return t;
+  }
+
+  /// 下载离线副本时把服务器歌词存进歌词缓存（`music_lyrics` 的 [MusicLyricsSource.server]
+  /// 行，与串流时解析出的是同一行）：离线放下载的那份时照样有歌词。已有服务器歌词时服务器
+  /// 说「没有」不覆盖（保留能用的那份）；用户调过的偏移不动。
+  Future<void> storeServerLyrics({
+    required String trackUid,
+    required int? durationMs,
+    required MusicServerLyrics? lyrics,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    if (lyrics == null) {
+      for (final MusicLyricRow r in await _rows(db, trackUid)) {
+        if (r.source == MusicLyricsSource.server &&
+            r.format != kMusicLyricsNoneFormat) {
+          return;
+        }
+      }
+    }
+    await _writeServerLyrics(
+      db,
+      trackUid: trackUid,
+      durationMs: durationMs,
+      lyrics: lyrics,
+    );
+  }
+
+  /// host 给的歌词落库：按 host 上的来源 / 偏移 / 手动指定写一行本机缓存（host 离线、或放离线副本时
+  /// 照样有 host 上那份）。回解析好的时间轴。
+  Future<LyricTimeline> _writeHostLyrics(
+    FushiDatabase db, {
+    required String trackUid,
+    required int? durationMs,
+    required MusicHostLyrics lyrics,
+  }) async {
+    final Uint8List raw = Uint8List.fromList(lyrics.raw);
+    final LyricTimeline t = await _parse(raw, lyrics.format, durationMs);
+    await _upsert(
+      db,
+      trackUid: trackUid,
+      source: lyrics.source,
+      format: lyrics.format,
+      raw: raw,
+      timeline: t,
+      isUserEdited: lyrics.isUserEdited,
+      offsetMs: lyrics.offsetMs,
+    );
+    return t;
+  }
+
+  /// 下载互联 host 曲目的离线副本时把 host 上生效的歌词存进歌词缓存（design-imusic-q12）；
+  /// [lyrics] 为 null（host 上没有）时什么也不写。
+  Future<void> storeHostLyrics({
+    required String trackUid,
+    required int? durationMs,
+    required MusicHostLyrics? lyrics,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null || lyrics == null || lyrics.raw.isEmpty) return;
+    try {
+      await _writeHostLyrics(
+        db,
+        trackUid: trackUid,
+        durationMs: durationMs,
+        lyrics: lyrics,
+      );
+    } on LyricsParseException catch (e) {
+      debugPrint('[music-lyrics] host lyrics unparsable: $e');
+    }
   }
 
   /// 在线歌词来源的查询顺序：[MusicLyricsSource.lrclib] 或歌词插件 id。没装配来源列表
@@ -1232,6 +1406,8 @@ class MusicLyricsService {
             ? 'LRCLIB'
             : r.source == MusicLyricsSource.asr
             ? 'ASR'
+            : r.source == MusicLyricsSource.server
+            ? 'Server'
             : MusicLyricsSource.pluginIdOf(r.source) ??
                   MusicLyricsSource.lyricsPluginIdOf(r.source);
         if (label == null) continue;

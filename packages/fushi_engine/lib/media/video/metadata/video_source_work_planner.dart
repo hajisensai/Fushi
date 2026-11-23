@@ -3,7 +3,7 @@ import 'package:fushi_engine/media/media_extensions.dart'
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
-    show isDiscMemberPath;
+    show isDiscMemberPath, isDiscStreamFilePath;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
@@ -72,11 +72,14 @@ bool videoSourcePlansScrapeWorks(SourceLibraryRow source) =>
 /// 预告/花絮仍是 VideoBook，但不是可独立识别的作品；纯音频（原声专辑曲目等）
 /// 同理——拿曲名去动画资料源搜只会失败或误绑，封面走同目录专辑封面。yt-dlp
 /// 默认命名下载的 YouTube 视频（`标题 [videoId].ext`）也没有资料源作品身份，
-/// 不进计划（[isYtDlpYoutubeDownloadPath]）。
+/// 不进计划（[isYtDlpYoutubeDownloadPath]）。原盘内部的流文件（`BDMV/STREAM/
+/// 00002.m2ts`，BUG-4245 修复前逐文件入库留下的行）同理：文件名只是片段号，盘由
+/// 它的标题代表，各自当一部作品只会堆出一串认不出的「待确认」（BUG-5280）。
 bool videoBookJoinsScrapePlan(VideoBookRow book) =>
     !isAudioOnlyMediaPath(book.videoPath) &&
     classifyLocalVideoExtra(book.videoPath) == null &&
-    !isYtDlpYoutubeDownloadPath(book.videoPath);
+    !isYtDlpYoutubeDownloadPath(book.videoPath) &&
+    !isDiscStreamFilePath(book.videoPath);
 
 /// [VideoSourceWorkPlanner.plan] 要读的三张整表的一次性快照。
 ///

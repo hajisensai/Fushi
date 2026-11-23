@@ -37,6 +37,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// 两种能力都有时，两份候选靠这个区分。
 String musicLyricsCandidateTitle(String source, String label) {
   if (source == MusicLyricsSource.asr) return t.music_lyrics_source_asr;
+  if (source == MusicLyricsSource.server) return t.music_lyrics_source_server;
   if (MusicLyricsSource.isPlugin(source)) {
     return '$label · ${musicPluginCapabilityLabel('lyrics')}';
   }

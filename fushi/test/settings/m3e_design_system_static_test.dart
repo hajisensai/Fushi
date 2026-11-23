@@ -758,6 +758,19 @@ class AnotherPopupPart {
         'MD3 / Apple dual rendering of the component owns its radii, surface '
         'roles and label sizes — same reviewed exception class as '
         'fushi_material_components / settings_shared.';
+    // 全屏歌词动画（PR #4211，照 folia-major 移植）的场景内容：画面里的歌词、标题 / 歌手占位、
+    // 段落标签、主题图标字形与莫奈的封面框都是画进场景的内容，字号照 folia 的 px / rem 写死再乘
+    // 场景缩放与用户字号倍率（fontScale），与 motion_type_token_guard_test 的
+    // _lyricVisualizerContentFontBudget 同一类豁免。歌词页的控件条、选样式面板、参数面板、
+    // 素材库与 AI 主题面板是 UI chrome，不在此列，仍走共享 M3E 组件与令牌。
+    const String kLyricVisualizerSceneContent =
+        'Full-screen lyric visualizer scene content (PR #4211, ported from '
+        'folia-major): lyrics, title / artist placeholders, section labels, '
+        'theme-icon glyphs and the Monet cover frames are painted into the '
+        'scene at folia px / rem sizes times the scene scale and the user '
+        'font scale — content, not page chrome (same class as karaoke '
+        'lyrics). The lyric page controls, style picker, parameter panel, '
+        'asset library and AI theme sheet stay on shared M3E components.';
     const Map<String, String> allowedFiles = <String, String>{
       'lib/src/media/panorama/panorama_atlas.dart':
           'Library panorama glyph atlas: words are rasterized once at the atlas em size into GPU sprites (3D content scaled per frame by the Rust core), not page chrome.',
@@ -794,6 +807,68 @@ class AnotherPopupPart {
       'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart':
           'Pre-layout of karaoke lyric rows derives the ruby row size from the '
           'line font size (content ratio, see karaoke_appearance.dart).',
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_theme_icons.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/claddagh/claddagh_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_text_raster.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/machi/machi_text.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_painter.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/partita/partita_line_cache.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_text.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_typography.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_visualizer.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/tilt/tilt_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart':
+          kLyricVisualizerSceneContent,
       'lib/src/models/theme_notifier.dart':
           'Theme preview content intentionally displays generated surface '
           'roles. buildFushiThemeData is also the ThemeData source for both '
@@ -1463,6 +1538,68 @@ class AnotherPopupPart {
       'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart': <String>{
         'fontSize:',
       },
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_theme_icons.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/claddagh/claddagh_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_text_raster.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/machi/machi_text.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart':
+          <String>{'BorderRadius.circular(', 'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_painter.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/partita/partita_line_cache.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_text.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_typography.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_visualizer.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/tilt/tilt_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart':
+          <String>{'fontSize:'},
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
         'fontSize:',

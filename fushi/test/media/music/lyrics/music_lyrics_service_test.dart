@@ -9,7 +9,7 @@ import 'package:fushi/src/media/music/lyrics/lyric_cues.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicHostLyricsLayer, MusicServerLyrics;
+    show MusicHostLyricsLayer, MusicHostLyrics;
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -431,7 +431,7 @@ void main() {
   group('互联 host 曲目（design-imusic-q3 选 c）', () {
     test('host 上生效的那份为准并落本机缓存；偏移与手动指定写回 host', () async {
       final _FakeHostLyrics host = _FakeHostLyrics()
-        ..lyrics = MusicServerLyrics(
+        ..lyrics = MusicHostLyrics(
           source: 'sidecar',
           format: 'lrc',
           raw: utf8.encode('[00:01.00]ホスト'),
@@ -490,7 +490,7 @@ void main() {
 }
 
 class _FakeHostLyrics implements MusicHostLyricsLayer {
-  MusicServerLyrics? lyrics;
+  MusicHostLyrics? lyrics;
   bool fail = false;
   final List<String> offsets = <String>[];
   final List<({String format, int offsetMs})> choices =
@@ -500,7 +500,7 @@ class _FakeHostLyrics implements MusicHostLyricsLayer {
   bool handles(String path) => path.startsWith('fushi-host-music:///');
 
   @override
-  Future<MusicServerLyrics?> lyricsFor(String path) async {
+  Future<MusicHostLyrics?> lyricsFor(String path) async {
     if (fail) throw StateError('offline');
     return lyrics;
   }

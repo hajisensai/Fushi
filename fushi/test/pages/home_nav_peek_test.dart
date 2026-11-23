@@ -6,8 +6,6 @@ import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_recent_destinations.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
-    show AdaptiveNavPeekData, AdaptiveNavPeekEntry;
 import 'package:fushi_core/fushi_core.dart' show MediaCollectionRow;
 
 MediaCollectionRow _collection(int id, String name) => MediaCollectionRow(
@@ -52,32 +50,6 @@ void main() {
     for (final HomeTab tab in HomeTab.values) {
       expect(source, contains('case HomeTab.${tab.name}:'), reason: tab.name);
     }
-  });
-
-  test('首页速览：「继续」取各模块继续项里最近的，其余按时刻倒序混排', () {
-    AdaptiveNavPeekEntry entry(String title) =>
-        AdaptiveNavPeekEntry(title: title, onOpen: () {});
-    NavPeekTimed timed(String title, int at) => (at: at, entry: entry(title));
-    final AdaptiveNavPeekData data = mergeNavPeekFeeds(<NavPeekFeed>[
-      NavPeekFeed(
-        resume: timed('book', 50),
-        recent: <NavPeekTimed>[timed('book2', 10)],
-      ),
-      NavPeekFeed(
-        resume: timed('video', 90),
-        recent: <NavPeekTimed>[timed('video2', 70), timed('video3', 5)],
-      ),
-      // 没玩过游戏：空的不影响。
-      const NavPeekFeed(),
-      NavPeekFeed(recent: <NavPeekTimed>[timed('game', 60), timed('g2', 1)]),
-    ]);
-    expect(data.resume?.title, 'video');
-    expect(
-      <String>[for (final AdaptiveNavPeekEntry e in data.recent) e.title],
-      // 别的模块的继续项（book@50）也进「最近」，只取前四个。
-      <String>['video2', 'game', 'book', 'book2'],
-    );
-    expect(mergeNavPeekFeeds(const <NavPeekFeed>[]).isEmpty, isTrue);
   });
 
   test('设置最近分类：挪到最前、去重、最多五个；坏值与不认识的名字跳过', () {

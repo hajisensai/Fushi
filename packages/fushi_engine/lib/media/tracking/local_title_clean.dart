@@ -4,6 +4,7 @@
 library;
 
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/titles/media_title_clean.dart';
 
 /// Hiragana or katakana.
 bool isTitleKana(int code) =>
@@ -49,12 +50,10 @@ List<String> titleScriptRuns(String title) {
   return <String>[for (final List<String> run in runs) run.join(' ')];
 }
 
-/// A file extension a book or video was imported from.
-final RegExp _fileExtension = RegExp(
-  r'\.(?:cbz|cbr|cb7|zip|rar|7z|epub|pdf|mobi|azw3?|kepub|txt|'
-  r'mkv|mp4|m4v|avi|webm|mov|wmv|flv|ts|m2ts|rmvb)$',
-  caseSensitive: false,
-);
+/// A file extension a book or video was imported from: the shared list of
+/// every media kind ([importedTitleExtensionPattern]; it used to be a private
+/// list of books + a few video containers).
+final RegExp _fileExtension = importedTitleExtensionPattern;
 
 /// A release group glued to the end of a video file name after its tags:
 /// `[HEVC]-GM-Team`, `(1080p)-ANDY`.
@@ -112,7 +111,9 @@ final RegExp _releaseWords = RegExp(
   r'remaster(?:ed)?|uncensored|censored|fixed|repack|'
   r'4k|[xh]\.?26[45]|hevc|avc|aac|flac|ac3|dts|bd-?rip|blu-?ray|web-?dl|'
   r'web-?rip|hdtv|dvd-?rip|remux|10-?bit|8-?bit|'
-  r'\d{3,4}p|v\d{1,2}|\d{4}|[0-9a-f]{8})[\s,._+&/-]*)+'
+  r'\d{3,4}p|v\d{1,2}|\d{4}|'
+  '$kCrcHexSource'
+  r')[\s,._+&/-]*)+'
   r')$',
   caseSensitive: false,
 );

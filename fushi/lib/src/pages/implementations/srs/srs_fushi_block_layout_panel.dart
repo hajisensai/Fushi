@@ -65,6 +65,7 @@ String _styleLabel(FushiCardFieldStyle s) => switch (s) {
   FushiCardFieldStyle.tag => t.srs_fushi_block_style_tag,
   FushiCardFieldStyle.quote => t.srs_fushi_block_style_quote,
   FushiCardFieldStyle.small => t.srs_fushi_block_style_small,
+  FushiCardFieldStyle.audio => t.srs_fushi_block_style_audio,
 };
 
 /// 面板里的一行：布局项、是否显示（只有内置区块能隐藏）、稳定 id（拖动 / 展开状态的 key）。
