@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'game_hook_code_commands.dart';
 
 /// game 域命令（Galgame Hook，仅 Windows；app 侧路由见
 /// `fushi/lib/src/ops/ctl_game_routes.dart`）：启动 / 附着 / 停止
@@ -320,6 +321,7 @@ const List<CtlCommandGroup> gameCommandGroups = <CtlCommandGroup>[
         build: _buildLookupCalibrate,
         render: _renderLookupCalibrate,
       ),
+      ...gameHookCodeCommands,
     ],
   ),
 ];

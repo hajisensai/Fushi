@@ -20,6 +20,28 @@ ${repeated('a')}\t\t\t932\tHQ@1234\texecutable
     );
   });
 
+  test('empty label (trailing empty column) round-trips, CRLF too', () {
+    final LunaHookCodeProfile profile = LunaHookCodeProfile(
+      executableSha256: repeated('a'),
+      moduleName: '',
+      moduleSha256: '',
+      codepage: 932,
+      hookCode: 'HS-8@0:game.exe',
+      label: '',
+    );
+    final String encoded = encodeLunaHookCodeProfiles(<LunaHookCodeProfile>[
+      profile,
+    ]);
+    for (final String text in <String>[
+      encoded,
+      encoded.replaceAll('\n', '\r\n'),
+    ]) {
+      final List<LunaHookCodeProfile> parsed = parseLunaHookCodeProfiles(text);
+      expect(parsed.single.hookCode, 'HS-8@0:game.exe');
+      expect(parsed.single.label, '');
+    }
+  });
+
   test('profile store imports, persists, exports, and upserts', () async {
     final Directory temp = await Directory.systemTemp.createTemp(
       'luna_profile',

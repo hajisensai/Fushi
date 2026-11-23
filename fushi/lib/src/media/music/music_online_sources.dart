@@ -1,5 +1,6 @@
 import 'package:fushi_engine/media/music/server/music_server.dart';
-import 'package:fushi_music/fushi_music.dart' show MusicPluginManifest;
+import 'package:fushi_music/fushi_music.dart'
+    show MusicPluginManager, MusicPluginManifest;
 
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -134,4 +135,18 @@ Future<void> forgetMusicOnlineSource(
         if (e.id != key) e,
     ]),
   );
+}
+
+/// 卸载一个音乐插件（设置页「卸载」与控制通道 `music plugin-rm` 共用）：删包、插件存储与
+/// 加密凭据，再清它在「来源」页的顺序与开关（停用不清：重新启用后还在原位）。[prefs] 为
+/// null（偏好还没就绪）时只卸载。
+Future<void> uninstallMusicPlugin(
+  MusicPluginManager manager,
+  PreferencesRepository? prefs,
+  String id,
+) async {
+  await manager.uninstall(id);
+  if (prefs != null) {
+    await forgetMusicOnlineSource(prefs, musicPluginSourceKey(id));
+  }
 }
