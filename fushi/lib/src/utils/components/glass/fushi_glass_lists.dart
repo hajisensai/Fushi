@@ -39,17 +39,12 @@ class FushiAppleMetrics {
   /// （设置首页窄屏 = iOS「设置」），取 iOS 档：行高、字号、卡片圆角与 iOS 27
   /// inset grouped 一致（用户 2026-11-24 对照 iOS 27 截图）。
   factory FushiAppleMetrics.of(BuildContext context) {
-    final FushiAppleMetrics byPlatform = FushiAppleMetrics.forPlatform(
-      Theme.of(context).platform,
-    );
-    if (!byPlatform.desktop) return byPlatform;
-    final double? width = MediaQuery.maybeSizeOf(context)?.width;
-    if (width != null && width < kFushiAppleCompactMetricsWidth) {
+    if (!fushiAppleUsesMacMetrics(context)) {
       return const FushiAppleMetrics._(desktop: false);
     }
     return FushiAppleFormScope.activeOf(context)
         ? const FushiAppleMetrics._(desktop: true, form: true)
-        : byPlatform;
+        : const FushiAppleMetrics._(desktop: true);
   }
 
   /// 按主题平台取档（没有 BuildContext 的装配点用；与 [FushiAppleMetrics.of] 同一判据）。
@@ -153,8 +148,22 @@ class FushiAppleMetrics {
       );
 }
 
-/// 桌面平台窗口宽于此值才用 macOS 紧凑度量（见 [FushiAppleMetrics.of]）。
+/// 桌面平台窗口宽于此值才用 macOS 紧凑度量（见 [fushiAppleUsesMacMetrics]）。
 const double kFushiAppleCompactMetricsWidth = 600;
+
+/// Apple 设计系统「iOS 档 / macOS 档」的**唯一判据**（用户 2026-11-24：窄屏 =
+/// iOS，宽屏 = macOS）：主题平台是桌面（macOS / Windows / Linux）且窗口宽
+/// ≥ [kFushiAppleCompactMetricsWidth] 才是 macOS 档；触屏平台（iOS / Android /
+/// Fuchsia）任何宽度、桌面窄窗（< 600）都是 iOS 档。拿不到 MediaQuery 时按
+/// 平台判。[FushiAppleMetrics.of]、`fushiAppleCompact`、`adaptiveModalSheet`
+/// 的桌面 sheet 判断都委托这里，不另写平台 / 宽度判断。
+bool fushiAppleUsesMacMetrics(BuildContext context) {
+  if (!FushiAppleMetrics.forPlatform(Theme.of(context).platform).desktop) {
+    return false;
+  }
+  final double? width = MediaQuery.maybeSizeOf(context)?.width;
+  return width == null || width >= kFushiAppleCompactMetricsWidth;
+}
 
 /// 子树按 macOS 27「系统设置」grouped form 排版（[FushiAppleMetrics.form]）。
 /// 只在桌面档生效：窄窗（< [kFushiAppleCompactMetricsWidth]）仍是 iOS 档。

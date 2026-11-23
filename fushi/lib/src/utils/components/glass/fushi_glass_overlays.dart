@@ -267,13 +267,15 @@ Widget _appleMenuSurface(
   final bool compact = fushiAppleCompact(context);
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
   return CustomPaint(
+    // Apple 浮层投影：大半径、很淡、偏移小于模糊半径（面板下沿不出现硬边
+    // 灰带）。
     painter: _OuterShadowPainter(
       radius: r,
       color: Colors.black.withValues(
-        alpha: (dark ? 0.45 : 0.18) * shadowOpacity.clamp(0.0, 1.0),
+        alpha: (dark ? 0.30 : 0.12) * shadowOpacity.clamp(0.0, 1.0),
       ),
-      blur: compact ? 18 : 32,
-      offset: Offset(0, compact ? 6 : 12),
+      blur: compact ? 28 : 44,
+      offset: Offset(0, compact ? 6 : 10),
     ),
     child: GlassContainer(
       useOwnLayer: true,
@@ -340,6 +342,23 @@ class _OuterShadowPainter extends CustomPainter {
       offset != oldDelegate.offset;
 }
 
+/// Apple 浮层（对话框 / 进度框 / 桌面 sheet）的投影：一层大半径很淡的环境
+/// 投影 + 一层贴边的细接触阴影（macOS / iOS 窗口与 alert 的观感）。偏移远小
+/// 于模糊半径，面板下沿不会出现一条偏硬的灰带。
+List<BoxShadow> fushiAppleOverlayShadows({required bool dark}) => <BoxShadow>[
+  BoxShadow(
+    color: Colors.black.withValues(alpha: dark ? 0.30 : 0.10),
+    blurRadius: 64,
+    spreadRadius: -8,
+    offset: const Offset(0, 12),
+  ),
+  BoxShadow(
+    color: Colors.black.withValues(alpha: dark ? 0.20 : 0.05),
+    blurRadius: 3,
+    offset: const Offset(0, 1),
+  ),
+];
+
 // ===========================================================================
 // 对话框
 // ===========================================================================
@@ -390,9 +409,9 @@ class FushiAppleDialogPanel extends StatelessWidget {
       return CustomPaint(
         painter: _OuterShadowPainter(
           radius: radius,
-          color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
-          blur: 40,
-          offset: const Offset(0, 16),
+          color: Colors.black.withValues(alpha: dark ? 0.32 : 0.12),
+          blur: 64,
+          offset: const Offset(0, 12),
         ),
         child: GlassContainer(
           useOwnLayer: true,
@@ -436,19 +455,7 @@ class FushiAppleDialogPanel extends StatelessWidget {
             width: 0.5,
           ),
         ),
-        shadows: <BoxShadow>[
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.45 : 0.16),
-            blurRadius: 48,
-            spreadRadius: -4,
-            offset: const Offset(0, 20),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.30 : 0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        shadows: fushiAppleOverlayShadows(dark: dark),
       ),
       child: ClipRSuperellipse(
         borderRadius: borderRadius,
@@ -1539,6 +1546,24 @@ Widget _appleMenuSubtitle(BuildContext context, Widget child) {
   );
 }
 
+/// 宽屏 macOS 菜单不画行内图标：调用方 [PopupMenuItem] 里 `Row[图标, 定宽
+/// SizedBox, …]` 去掉开头的图标与间距；其他形状原样返回。
+Widget _appleMenuStripLeadingIcon(Widget child) {
+  if (child is! Row || child.children.length < 3) return child;
+  final List<Widget> cells = child.children;
+  final Widget first = cells[0];
+  final Widget gap = cells[1];
+  if (first is! FushiIcon && first is! Icon) return child;
+  if (gap is! SizedBox || gap.child != null || gap.width == null) return child;
+  return Row(
+    key: child.key,
+    mainAxisSize: child.mainAxisSize,
+    mainAxisAlignment: child.mainAxisAlignment,
+    crossAxisAlignment: child.crossAxisAlignment,
+    children: cells.sublist(2),
+  );
+}
+
 /// 菜单副标题字样。
 TextStyle _menuSubtitleStyle(BuildContext context) => TextStyle(
   fontSize: fushiAppleCompact(context) ? 11 : 15,
@@ -1620,7 +1645,8 @@ class FushiAppleMenuItemRow extends StatelessWidget {
             ],
           );
     final Widget? tail = trailing;
-    final IconData? glyph = icon;
+    // 宽屏 macOS 菜单不画行内图标（用户 2026-11-24 拍板），窄屏 iOS 保留。
+    final IconData? glyph = compact ? null : icon;
     return _AppleMenuRow(
       onTap: onPressed ?? () {},
       enabled: enabled,
@@ -2611,7 +2637,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
       // iOS / macOS 27 菜单：[图标][文字]。
       content = Row(
         children: <Widget>[
-          if (data.icon != null) ...<Widget>[
+          if (data.icon != null && !compact) ...<Widget>[
             FushiIcon(data.icon, size: iconSize),
             SizedBox(width: _menuIconGap(context)),
           ],
@@ -2625,9 +2651,10 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         ],
       );
     } else {
+      final Widget raw = item.child ?? const SizedBox.shrink();
       content = _appleMenuSubtitle(
         context,
-        item.child ?? const SizedBox.shrink(),
+        compact ? _appleMenuStripLeadingIcon(raw) : raw,
       );
     }
     return Padding(
@@ -3379,7 +3406,12 @@ Widget _appleMenuItemButton(
     );
   }
   if (child is MenuItemButton) {
-    final Widget? icon = child.leadingIcon;
+    // 宽屏 macOS 菜单不画行内图标（对勾列除外），窄屏 iOS 保留。
+    final Widget? original = child.leadingIcon;
+    final Widget? icon = compact && original is! FushiAppleMenuCheck
+        ? null
+        : original;
+    final bool droppedIcon = icon == null && original != null;
     // MD3 写法「行尾一个勾 = 选中」改成行首对勾列。
     final bool trailingCheck =
         icon == null && _isMenuCheckGlyph(child.trailingIcon);
@@ -3389,9 +3421,9 @@ Widget _appleMenuItemButton(
       leading = checkSlot(true);
       trailing = null;
     } else if (icon == null) {
-      if (!checkColumn) return child;
+      if (!checkColumn && !droppedIcon) return child;
       // 同组有勾选项：未勾的行也让出对勾列，文字左缘对齐。
-      leading = checkSlot(false);
+      leading = checkColumn ? checkSlot(false) : null;
       trailing = child.trailingIcon;
     } else if (icon is FushiAppleMenuCheck || !checkColumn) {
       return child;
@@ -3473,10 +3505,9 @@ Widget _appleMenuItemButton(
       clipBehavior: child.clipBehavior,
       focusNode: child.focusNode,
       statesController: child.statesController,
-      leadingIcon: compact ? child.leadingIcon : null,
-      trailingIcon:
-          child.trailingIcon ??
-          (compact || child.leadingIcon == null ? null : child.leadingIcon),
+      // 宽屏 macOS 菜单不画行内图标；窄屏 iOS 图标在文字前。
+      leadingIcon: compact ? null : child.leadingIcon,
+      trailingIcon: child.trailingIcon,
       submenuIcon: WidgetStatePropertyAll<Widget?>(
         FushiIcon(
           CupertinoIcons.chevron_forward,

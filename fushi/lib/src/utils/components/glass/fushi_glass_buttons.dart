@@ -8,7 +8,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiAppleMetrics;
+    show FushiAppleMetrics, fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -253,20 +253,12 @@ LiquidGlassSettings _clearBarGlassSettings(
   );
 }
 
-/// 桌面（Windows / macOS / Linux）用 macOS 26 的紧凑控件尺寸；移动端用
-/// iOS 26 的 44pt 触控尺寸。按 [ThemeData.platform] 判（测试可覆盖）。
-bool fushiAppleCompact(BuildContext context) {
-  switch (Theme.of(context).platform) {
-    case TargetPlatform.windows:
-    case TargetPlatform.macOS:
-    case TargetPlatform.linux:
-      return true;
-    case TargetPlatform.android:
-    case TargetPlatform.iOS:
-    case TargetPlatform.fuchsia:
-      return false;
-  }
-}
+/// true = **macOS 档**（紧凑控件：行高 24 / 13 号字等），false = iOS 档
+/// （44pt 触控尺寸）。名字里的 compact 指 macOS 的紧凑度量，不是「窄屏」。
+/// 判据委托 [fushiAppleUsesMacMetrics]（桌面平台且窗口宽 ≥ 600）：桌面窄窗
+/// 与触屏一样是 iOS 档。
+bool fushiAppleCompact(BuildContext context) =>
+    fushiAppleUsesMacMetrics(context);
 
 /// Apple 按钮（iOS 27 UIButton / macOS 27 NSButton）的尺寸档。
 ///

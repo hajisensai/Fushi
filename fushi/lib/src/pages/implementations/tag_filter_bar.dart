@@ -602,7 +602,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final Widget? appleGlyph = !glass
         ? null
         : icon != null
-        ? FushiIcon(icon)
+        // 宽屏 macOS 菜单不画行内图标（标签色点是数据，保留）。
+        ? (fushiAppleCompact(context) ? null : FushiIcon(icon))
         : dotColor != null
         ? DecoratedBox(
             decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),

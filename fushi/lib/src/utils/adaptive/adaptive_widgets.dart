@@ -23,6 +23,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
         FushiAppleProgressRing,
         FushiCircularProgressIndicator,
         fushiAppleActivityIndicator;
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show fushiAppleOverlayShadows;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiSegmentedButton, FushiSlider, FushiSwitch;
@@ -392,14 +396,11 @@ Future<T?> adaptiveModalSheet<T>({
       ? AnimationStyle.noAnimation
       : fushiM3eSheetAnimationStyle;
   if (isGlassDesign(context)) {
-    final TargetPlatform platform = Theme.of(context).platform;
-    final bool desktop =
-        platform == TargetPlatform.macOS ||
-        platform == TargetPlatform.windows ||
-        platform == TargetPlatform.linux;
-    if (desktop) {
-      // macOS 26 sheet：从窗口顶部正中垂下的实色面板（宽 480–640、圆角 18、
-      // 大半径柔和阴影），不是底部抽屉。走 RawDialogRoute：Esc（DismissIntent）
+    // 宽屏 = macOS 浮动 sheet；窄屏（含桌面窄窗）= iOS 底部 sheet。判据唯一
+    // 一处（[fushiAppleUsesMacMetrics]）。
+    if (fushiAppleUsesMacMetrics(context)) {
+      // macOS 27 sheet：窗口正中的浮动实色面板（宽 480–640、圆角 20、大半径
+      // 很淡的投影），淡入 + 轻微放大，不是底部抽屉也不再从顶部垂下。走 RawDialogRoute：Esc（DismissIntent）
       // 关闭、点遮罩关闭、独立焦点作用域、pop 返回值与底部弹层一致。
       final CapturedThemes themes = captureFor(useRootNavigator ?? true);
       return showGeneralDialog<T>(
@@ -434,11 +435,8 @@ Future<T?> adaptiveModalSheet<T>({
               );
               return FadeTransition(
                 opacity: curved,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, -0.08),
-                    end: Offset.zero,
-                  ).animate(curved),
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
                   child: child,
                 ),
               );
@@ -673,8 +671,8 @@ class _LiquidSheetBodyState extends State<_LiquidSheetBody> {
   }
 }
 
-/// Apple 设计系统的桌面弹层（macOS 26 sheet）：贴窗口顶部正中、宽 480–640、
-/// 圆角 18、实色面板（深 #2C2C2E / 浅白）+ 大半径柔和阴影，最高 85% 窗口高。
+/// Apple 设计系统的宽屏弹层（macOS 27 sheet）：窗口正中浮动、宽 480–640、
+/// 圆角 20、实色面板（深 #2C2C2E / 浅白）+ 大半径很淡的投影，最高 85% 窗口高。
 /// 内容外包透明 Material（依赖 Material 祖先的子组件照常工作）。
 class _AppleDesktopSheet extends StatelessWidget {
   const _AppleDesktopSheet({required this.child});
@@ -685,13 +683,12 @@ class _AppleDesktopSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Size size = MediaQuery.sizeOf(context);
-    const BorderRadius radius = BorderRadius.all(Radius.circular(18));
-    final double width = (size.width - 32).clamp(0, 640).toDouble();
+    const BorderRadius radius = BorderRadius.all(Radius.circular(20));
+    final double width = (size.width - 48).clamp(0, 640).toDouble();
     return SafeArea(
       child: Align(
-        alignment: Alignment.topCenter,
         child: Padding(
-          padding: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: BoxConstraints(
               minWidth: width < 480 ? width : 480,
@@ -708,13 +705,7 @@ class _AppleDesktopSheet extends StatelessWidget {
                       : Colors.black.withValues(alpha: 0.08),
                   width: 0.5,
                 ),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: dark ? 0.5 : 0.22),
-                    blurRadius: 40,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
+                boxShadow: fushiAppleOverlayShadows(dark: dark),
               ),
               child: ClipRRect(
                 borderRadius: radius,
