@@ -4,6 +4,7 @@
 library;
 
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 
 /// Jellyfin 的 `RunTimeTicks` 是 100 ns。
 int? jellyfinTicksToMs(Object? ticks) => ticks is num ? ticks ~/ 10000 : null;
@@ -184,6 +185,7 @@ MusicServerTrack? parseJellyfinMusicTrack(Map<String, Object?> j) {
     coverRef: _hasPrimary(j)
         ? id
         : (_str(j['AlbumPrimaryImageTag']) != null ? albumId : null),
+    loudness: jellyfinTrackLoudnessOf(j),
   );
 }
 

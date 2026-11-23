@@ -43,6 +43,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+    show MusicServerLoudness, MusicServerTrackRef;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
@@ -58,6 +60,7 @@ import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
     show setMpvPropertiesInOrder;
@@ -307,6 +310,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     MusicPlatformOutput platformOutput = const MusicPlatformOutput(),
     MusicCdDiscIdReader? cdDiscIdReader,
     MusicPluginStreamResolver? pluginStreamResolver,
+    MusicServerLoudnessResolver? serverLoudnessResolver,
     int Function()? nowMs,
   }) : _player = Player(configuration: configuration),
        _initialProperties = initialProperties,
@@ -314,6 +318,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
        _platformOutput = platformOutput,
        _cdDiscIdReader = cdDiscIdReader,
        _pluginStreamResolver = pluginStreamResolver,
+       _serverLoudnessResolver = serverLoudnessResolver,
        _nowMs = nowMs ?? _wallClockMs {
     _subs.add(_player.stream.position.listen(_onPosition));
     _subs.add(_player.stream.playing.listen(_onPlaying));
@@ -328,6 +333,16 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
 
   /// 插件曲目取流（null = 全局装配点 [resolveMusicPluginStream]）。
   final MusicPluginStreamResolver? _pluginStreamResolver;
+
+  /// 服务器曲目起播期补查响度（null = 全局装配点 [musicServerLoudnessResolver]）。
+  final MusicServerLoudnessResolver? _serverLoudnessResolver;
+
+  /// 补查到的服务器响度（曲目 uid → 响度），[_applyGain] 与播放项自带的值合并。
+  final Map<String, MusicServerLoudness> _serverLoudness =
+      <String, MusicServerLoudness>{};
+
+  /// 正在补查的曲目（同一首并发只问一次）。
+  final Set<String> _serverLoudnessPending = <String>{};
 
   /// 墙钟（epoch 毫秒），判插件流地址是否过期。
   final int Function() _nowMs;
@@ -510,18 +525,29 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   }
 
   /// 按出声曲目下发 ReplayGain（`volume-gain`，dB）。
+  ///
+  /// 服务器曲目没随播放项带来的响度用补查结果补上（[_lookupServerLoudness]）。
   Future<void> _applyGain(MusicPlayItem? item) async {
-    final double db =
-        item == null || _settings.replayGain == MusicReplayGainMode.off
-        ? 0
-        : musicReplayGainDb(
-            albumMode: _settings.replayGain == MusicReplayGainMode.album,
-            trackGain: item.rgTrackGain,
-            trackPeak: item.rgTrackPeak,
-            albumGain: item.rgAlbumGain,
-            albumPeak: item.rgAlbumPeak,
-            preampDb: _settings.replayGainPreampDb,
-          );
+    final double db;
+    if (item == null || _settings.replayGain == MusicReplayGainMode.off) {
+      db = 0;
+    } else {
+      final ({
+        double? trackGain,
+        double? trackPeak,
+        double? albumGain,
+        double? albumPeak,
+      })
+      l = musicItemLoudnessWith(item, _serverLoudness[item.trackUid]);
+      db = musicReplayGainDb(
+        albumMode: _settings.replayGain == MusicReplayGainMode.album,
+        trackGain: l.trackGain,
+        trackPeak: l.trackPeak,
+        albumGain: l.albumGain,
+        albumPeak: l.albumPeak,
+        preampDb: _settings.replayGainPreampDb,
+      );
+    }
     await _setIfChanged('volume-gain', db.toStringAsFixed(2));
   }
 
@@ -585,10 +611,36 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   final Map<String, Map<String, String>> _fileLocalFor =
       <String, Map<String, String>>{};
 
+  /// 服务器曲目缺响度时向服务器补查（不阻塞起播：预排的下一首在出声前早就查完；当前这首
+  /// 查回来时若正在出声，立即按新值重下增益）。查不到 / 失败按 0 dB 播。
+  void _lookupServerLoudness(MusicPlayItem item) {
+    final MusicServerTrackRef? ref = item.serverTrack;
+    if (ref == null || !musicItemNeedsServerLoudness(item)) return;
+    final String uid = item.trackUid;
+    if (_serverLoudness.containsKey(uid) || !_serverLoudnessPending.add(uid)) {
+      return;
+    }
+    final MusicServerLoudnessResolver? resolver =
+        _serverLoudnessResolver ?? musicServerLoudnessResolver;
+    if (resolver == null) {
+      _serverLoudnessPending.remove(uid);
+      return;
+    }
+    unawaited(
+      resolver.resolve(ref).then((MusicServerLoudness? l) async {
+        _serverLoudnessPending.remove(uid);
+        if (l == null || _disposed) return;
+        _serverLoudness[uid] = l;
+        if (_audible?.trackUid == uid) await _applyGain(_audible);
+      }),
+    );
+  }
+
   Future<Media> _mediaFor(
     MusicPlayItem item, {
     MusicPlayItem? playThrough,
   }) async {
+    _lookupServerLoudness(item);
     final MusicResolvedMedia resolved = await resolveMusicMedia(
       item,
       playThrough: playThrough,

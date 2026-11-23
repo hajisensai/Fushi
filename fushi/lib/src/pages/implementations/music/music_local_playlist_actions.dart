@@ -31,6 +31,8 @@ import 'package:fushi/src/pages/implementations/music/music_server_collection_ac
     show musicServerDownloadServiceOf, musicServerTrackDownloadActions;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicServerItemActions;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart'
+    show musicServerSubtitleMenuActions;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -307,7 +309,15 @@ MusicItemMenu? musicServerTrackLibraryMenu(
         context,
         anchor: at,
         errorText: (Object e) => t.music_action_failed(error: '$e'),
-        actions: actions,
+        actions: <MusicMenuAction>[
+          ...actions,
+          ...musicServerSubtitleMenuActions(
+            app,
+            browser,
+            track,
+            albumTitle: albumTitle,
+          ),
+        ],
       );
     }()),
   );

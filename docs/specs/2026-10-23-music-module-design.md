@@ -335,6 +335,13 @@ TTML**。手动指定的来源存成 `user` 行（`isUserEdited`），原文为 
 - ReplayGain 2.0：读标签（`REPLAYGAIN_*`、R128_*、iTunNORM 换算）；缺标签的曲目
   后台用统一 FFmpeg `ebur128` 扫描并写入 DB（**不改用户文件**，写回是显式操作）。
 - 预放大 + 防削波（`replaygain-clip=no` + 峰值保护）。
+- 服务器曲目（Jellyfin / Subsonic，2026-11-22）：不在客户端测，用服务器给的响度——Jellyfin 10.9+
+  条目的 `NormalizationGain`（服务器 EBU R128 测，目标 -18 LUFS，曲目 / 专辑条目各一份，媒体库开了
+  「LUFS 扫描」才有）、OpenSubsonic 曲目的 `replayGain`。列表接口带回来的直接进播放项 `rg_*`；
+  从音乐库 / 本地歌单还原的服务器曲目（v149 行不存响度）与缺专辑增益的，由 mpv 后端取流时经可选
+  能力 `MusicServerLoudnessLookup` 向那台服务器补查一次（进程内按曲目缓存、失败不缓存，不阻塞起播，
+  回来时若正在出声立即重下 `volume-gain`）。代码：引擎 `server/music_server_loudness.dart`、app
+  `server/music_server_loudness_resolver.dart`。服务器没有响度时按 0 dB 播。
 
 ### 7.4 输出与 bit-perfect
 
