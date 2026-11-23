@@ -6,6 +6,7 @@ import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
@@ -100,6 +101,20 @@ void main() {
     late String url;
 
     setUp(() async {
+      // 本组测的是「401 → authRejected」与自建 client 的归属，不是选路。明文地址
+      // 选路要先过一次 2 秒限时的真实 /api/ping；全量并发批里冷启动的第一次往返
+      // 会超过 2 秒，那条地址就被当「未核对的明文地址」扣下，凭据一次都没发出，
+      // 结局成了 unreachable（develop 全量 batch 27 实测该用例 4957 ms）。地址
+      // 核对由 interconnect_peer_addresses_test 覆盖，这里按仓库惯例注入探测：
+      // 仍核对身份，只认这台 host。
+      resetInterconnectRaceCache();
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl candidate, String? expectedHostId) async =>
+              expectedHostId == 'H-exec';
+      addTearDown(() {
+        debugInterconnectAddressProbeOverride = null;
+        resetInterconnectRaceCache();
+      });
       tmp = Directory.systemTemp.createTempSync('fushi-dl-exec-');
       repo = SyncRepository(db);
       final FushiSyncServer server = FushiSyncServer(
