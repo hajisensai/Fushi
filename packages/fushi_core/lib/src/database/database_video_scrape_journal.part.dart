@@ -129,6 +129,27 @@ class VideoScrapePresentationRows {
   final List<MediaImageRow> mediaImages;
 }
 
+/// 一批视频文件绑定的分集、分集所在的季与分集图（[FushiDatabase.getVideoFileEpisodeRows]）。
+///
+/// 首页主卡与合集选集页按文件挑「这一集自己的剧照」都从这三张表聚合；排序与对应
+/// 全表读取一致（分集按 [compareVideoMetadataEpisodesForDisplay]，图按 id 升序）。
+class VideoFileEpisodeRows {
+  const VideoFileEpisodeRows({
+    required this.episodes,
+    required this.seasons,
+    required this.episodeImages,
+  });
+
+  /// `book_uid ∈ bookUids` 的分集，按 (season_id, episode_number, id)。
+  final List<VideoMetadataEpisodeRow> episodes;
+
+  /// 上面那些分集所在的季。
+  final List<VideoMetadataSeasonRow> seasons;
+
+  /// 上面那些分集的分集图，按 id 升序。
+  final List<VideoMetadataImageRow> episodeImages;
+}
+
 /// 媒体图组的展示顺序：kind → position → id（id 兜底，同位次也有确定顺序）。
 /// 全表读取 [FushiDatabase.getAllMediaImages] 与增量重读同一口径。
 int compareMediaImagesForDisplay(MediaImageRow a, MediaImageRow b) {
@@ -256,7 +277,6 @@ mixin _FushiDbVideoScrapeJournal on _$FushiDatabase {
   ) async {
     final List<VideoScrapeMetaRow> scrapeMeta = <VideoScrapeMetaRow>[];
     final List<VideoMetadataExtraRow> extras = <VideoMetadataExtraRow>[];
-    final List<VideoMetadataEpisodeRow> episodes = <VideoMetadataEpisodeRow>[];
     final Map<int, VideoMetadataWorkRow> workRows =
         <int, VideoMetadataWorkRow>{};
     final Map<int, MediaImageRow> mediaImageRows = <int, MediaImageRow>{};
@@ -272,11 +292,6 @@ mixin _FushiDbVideoScrapeJournal on _$FushiDatabase {
         await (select(
           videoMetadataExtras,
         )..where(($VideoMetadataExtrasTable t) => t.bookUid.isIn(chunk))).get(),
-      );
-      episodes.addAll(
-        await (select(videoMetadataEpisodes)
-              ..where(($VideoMetadataEpisodesTable t) => t.bookUid.isIn(chunk)))
-            .get(),
       );
       for (final VideoMetadataWorkRow row in await (select(
         videoMetadataWorks,
@@ -323,6 +338,45 @@ mixin _FushiDbVideoScrapeJournal on _$FushiDatabase {
         )..where(($VideoMetadataImagesTable t) => t.workId.isIn(chunk))).get(),
       );
     }
+    final VideoFileEpisodeRows fileEpisodes = await getVideoFileEpisodeRows(
+      delta.bookUids,
+    );
+    int imageById(VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+        a.id.compareTo(b.id);
+    workImages.sort(imageById);
+    return VideoScrapePresentationRows(
+      scrapeMeta: scrapeMeta,
+      collectionScrapeMeta: collectionScrapeMetaRows,
+      works: workRows.values.toList()
+        ..sort(
+          (VideoMetadataWorkRow a, VideoMetadataWorkRow b) =>
+              a.id.compareTo(b.id),
+        ),
+      workImages: workImages,
+      episodes: fileEpisodes.episodes,
+      seasons: fileEpisodes.seasons,
+      episodeImages: fileEpisodes.episodeImages,
+      extras: extras,
+      mediaImages: mediaImageRows.values.toList()
+        ..sort(compareMediaImagesForDisplay),
+    );
+  }
+
+  /// [bookUids] 这批视频文件绑定的分集、所在季与分集图（见 [VideoFileEpisodeRows]）。
+  /// 按块批量查，几百集的合集也只有常数轮往返。
+  Future<VideoFileEpisodeRows> getVideoFileEpisodeRows(
+    Iterable<String> bookUids,
+  ) async {
+    final List<VideoMetadataEpisodeRow> episodes = <VideoMetadataEpisodeRow>[];
+    for (final List<String> chunk in _journalChunks<String>(
+      bookUids.toSet().toList(growable: false),
+    )) {
+      episodes.addAll(
+        await (select(videoMetadataEpisodes)
+              ..where(($VideoMetadataEpisodesTable t) => t.bookUid.isIn(chunk)))
+            .get(),
+      );
+    }
     final List<VideoMetadataImageRow> episodeImages = <VideoMetadataImageRow>[];
     for (final List<int> chunk in _journalChunks<int>(<int>[
       for (final VideoMetadataEpisodeRow e in episodes) e.id,
@@ -346,26 +400,15 @@ mixin _FushiDbVideoScrapeJournal on _$FushiDatabase {
       );
     }
 
-    int imageById(VideoMetadataImageRow a, VideoMetadataImageRow b) =>
-        a.id.compareTo(b.id);
     episodes.sort(compareVideoMetadataEpisodesForDisplay);
-    workImages.sort(imageById);
-    episodeImages.sort(imageById);
-    return VideoScrapePresentationRows(
-      scrapeMeta: scrapeMeta,
-      collectionScrapeMeta: collectionScrapeMetaRows,
-      works: workRows.values.toList()
-        ..sort(
-          (VideoMetadataWorkRow a, VideoMetadataWorkRow b) =>
-              a.id.compareTo(b.id),
-        ),
-      workImages: workImages,
+    episodeImages.sort(
+      (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+          a.id.compareTo(b.id),
+    );
+    return VideoFileEpisodeRows(
       episodes: episodes,
       seasons: seasons,
       episodeImages: episodeImages,
-      extras: extras,
-      mediaImages: mediaImageRows.values.toList()
-        ..sort(compareMediaImagesForDisplay),
     );
   }
 
