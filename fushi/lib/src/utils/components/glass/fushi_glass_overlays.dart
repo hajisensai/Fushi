@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_dialog_content_scroll.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -197,21 +198,35 @@ LiquidGlassSettings _overlayGlassSettings(
 // 面板是随「玻璃画质」的厚玻璃（实色档 = 系统实色面）+ 外圈柔和阴影，从锚点
 // 形变展开。
 
-/// 菜单面板圆角。
+/// 菜单面板圆角：与高亮胶囊同心——R = 行高 / 2 + 内缩（iOS 25 + 12 = 37，
+/// macOS 宽窗 15 + 6 = 21），胶囊贴到面板拐角时两条圆弧等距。
 double _menuRadius(BuildContext context) =>
-    fushiAppleCompact(context) ? 10 : 34;
+    _menuRowHeight(context) / 2 + _menuRowInset(context);
 
-/// 菜单行高。
+/// 菜单行高（iOS 50；macOS 宽窗紧凑 30）。
 double _menuRowHeight(BuildContext context) =>
-    fushiAppleCompact(context) ? 24 : 50;
+    fushiAppleCompact(context) ? 30 : 50;
 
-/// 菜单行圆角（悬停 / 按下的高亮块）。
-double _menuRowRadius(BuildContext context) =>
-    fushiAppleCompact(context) ? 6 : 999;
+/// 菜单行高亮块圆角：一律全圆角胶囊（取半高，带副标题的高行同样全圆）。
+double _menuRowRadius(BuildContext context) => 999;
 
-/// 菜单行与面板边缘的内缩。
+/// 菜单行与面板边缘的内缩（左右与上下同值，保证同心）。
 double _menuRowInset(BuildContext context) =>
-    fushiAppleCompact(context) ? 5 : 12;
+    fushiAppleCompact(context) ? 6 : 12;
+
+/// 菜单行高亮（悬停 / 按下 / 键盘焦点）：中性浅灰，不用强调色（用户
+/// 2026-11-24「下拉框还是有强调色」）。深色 white 14% / 浅色 black 8%，按下
+/// 再深一档。
+Color _menuHighlight(BuildContext context, {bool pressed = false}) {
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  return dark
+      ? Colors.white.withValues(alpha: pressed ? 0.20 : 0.14)
+      : Colors.black.withValues(alpha: pressed ? 0.12 : 0.08);
+}
+
+/// 菜单行字号（iOS 17；macOS 宽窗 14）。
+double _menuFontSize(BuildContext context) =>
+    fushiAppleCompact(context) ? 14 : 17;
 
 /// 菜单面板默认宽度：macOS 菜单 200–280，iOS 上下文菜单 250 起（系统定宽
 /// 约 250）。
@@ -1364,9 +1379,8 @@ class FushiDialog extends StatelessWidget {
 // ===========================================================================
 
 /// Apple 菜单 / 列表选项行：无底，[leading]（行首对勾列）+ 内容。
-/// 高亮：键盘焦点 / 悬停铺中性 secondaryFill，按下铺 fill；[accentHighlight]
-/// （macOS 菜单）下鼠标悬停 / 按下改铺强调色圆角块、前景换 onAccent——只跟
-/// 指针走，键盘焦点仍是中性底，不会有常驻的强调色块。前景色由行自己给（[foreground]），高亮时才能整体反色。
+/// 高亮：悬停 / 按下 / 键盘焦点一律中性浅灰全圆角胶囊（[_menuHighlight]），
+/// 文字保持 label 色，所有尺寸档都不用强调色。前景色由行自己给（[foreground]），高亮时才能整体反色。
 /// 自带焦点节点，[ActivateIntent]（Enter / 手柄 A）与点击都触发 [onTap]。
 class _AppleMenuRow extends StatefulWidget {
   const _AppleMenuRow({
@@ -1377,7 +1391,6 @@ class _AppleMenuRow extends StatefulWidget {
     required this.padding,
     required this.foreground,
     required this.child,
-    this.accentHighlight = false,
     this.leading,
     this.mouseCursor,
     this.focusNode,
@@ -1390,7 +1403,6 @@ class _AppleMenuRow extends StatefulWidget {
   final double radius;
   final EdgeInsetsGeometry padding;
   final Color foreground;
-  final bool accentHighlight;
   final Widget child;
 
   /// 行首列（菜单的对勾列，已定宽）；null = 不占位。
@@ -1415,22 +1427,17 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiAppleColors apple = appleColorsOf(context);
     final bool enabled = widget.enabled;
-    final bool pointerLit = enabled && (_hovered || _pressed);
-    final bool highlight = pointerLit || (enabled && _focused);
-    final bool accent = widget.accentHighlight && pointerLit;
+    final bool highlight = enabled && (_hovered || _pressed || _focused);
     final Color background = !highlight
         ? Colors.transparent
-        : accent
-        ? apple.accent
-        : (_pressed ? apple.fill : apple.secondaryFill);
-    final Color fg = accent ? apple.onAccent : widget.foreground;
+        : _menuHighlight(context, pressed: _pressed);
+    final Color fg = widget.foreground;
     final Widget body = AnimatedContainer(
-      // macOS 菜单高亮是瞬时跟手的，不做渐变。
-      duration: _pressed || widget.accentHighlight
+      // 高亮跟手：按下瞬时，悬停 / 焦点短渐变。
+      duration: _pressed
           ? Duration.zero
-          : const Duration(milliseconds: 120),
+          : fushiMotionDuration(context, FushiMotion.micro),
       constraints: BoxConstraints(minHeight: widget.minHeight),
       padding: widget.padding,
       decoration: BoxDecoration(
@@ -1442,14 +1449,11 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
         data: IconThemeData(color: fg),
         child: DefaultTextStyle.merge(
           style: TextStyle(color: fg),
-          child: _accentTint(
-            accent ? fg : null,
-            Row(
-              children: <Widget>[
-                ?widget.leading,
-                Expanded(child: widget.child),
-              ],
-            ),
+          child: Row(
+            children: <Widget>[
+              ?widget.leading,
+              Expanded(child: widget.child),
+            ],
           ),
         ),
       ),
@@ -1617,7 +1621,6 @@ class FushiAppleMenuItemRow extends StatelessWidget {
       autofocus: autofocus,
       minHeight: _menuRowHeight(context),
       radius: _menuRowRadius(context),
-      accentHighlight: compact,
       foreground: fg,
       padding: EdgeInsetsDirectional.symmetric(
         horizontal: _menuItemPadding(context),
@@ -1633,7 +1636,7 @@ class FushiAppleMenuItemRow extends StatelessWidget {
         data: IconThemeData(size: compact ? 15 : 22),
         child: DefaultTextStyle.merge(
           style: TextStyle(
-            fontSize: compact ? 13 : 17,
+            fontSize: _menuFontSize(context),
             height: 1.25,
             letterSpacing: 0,
           ),
@@ -2631,7 +2634,6 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         enabled: item.enabled,
         minHeight: rowHeight,
         radius: _menuRowRadius(context),
-        accentHighlight: compact,
         foreground: fg,
         mouseCursor: item.mouseCursor,
         padding: EdgeInsetsDirectional.symmetric(
@@ -2649,7 +2651,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
           data: IconThemeData(size: iconSize),
           child: DefaultTextStyle.merge(
             style: (theme.textTheme.bodyLarge ?? const TextStyle()).copyWith(
-              fontSize: compact ? 13 : 17,
+              fontSize: _menuFontSize(context),
               height: 1.25,
               letterSpacing: 0,
             ),
@@ -2713,7 +2715,6 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
     final _FushiMenuRoute<T> route = widget.route;
     final int initial = _initialIndex;
     final bool apple = route.apple;
-    final bool compact = apple && fushiAppleCompact(context);
     // 整组有可勾选项（当前值 / CheckedPopupMenuItem / 选中的结构化项）时每行
     // 都让出行首对勾列，文字左缘对齐（iOS / macOS 菜单同）。
     final bool checkColumn =
@@ -2742,7 +2743,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
     final EdgeInsetsGeometry padding =
         route.menuPadding ??
         (apple
-            ? EdgeInsets.symmetric(vertical: compact ? 5 : 12)
+            ? EdgeInsets.symmetric(vertical: _menuRowInset(context))
             : popupTheme.menuPadding ??
                   const EdgeInsets.symmetric(vertical: 8));
     Widget menu = ConstrainedBox(
@@ -3130,8 +3131,8 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
 /// 下被清成透明无阴影，全部菜单项收进 [_appleMenuSurface] 这一块面板里（项仍
 /// 是 MenuAnchor 的直接后代，方向键 / Esc / 子菜单行为不变）。菜单项
 /// （[MenuItemButton] 等）经 [MenuButtonTheme] 改成与 showFushiMenu 同一套
-/// 行：桌面 macOS 菜单（行高 28、13 号、悬停 / 焦点强调色块 + onAccent 字），
-/// 移动 iOS 菜单（行高 44、17 号、按下 fill 灰、焦点 tertiaryFill）。
+/// 行（与 showFushiMenu 同一规格：中性浅灰全圆角胶囊高亮、不用强调色；
+/// 行高 / 字号 / 内缩见 [_menuRowHeight] 一组）。
 class _FushiGlassMenuPanel extends StatefulWidget {
   const _FushiGlassMenuPanel({required this.children});
 
@@ -3155,17 +3156,13 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
     final List<Widget> children = widget.children;
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
-    bool pointerLit(Set<WidgetState> states) =>
-        states.contains(WidgetState.hovered) ||
-        states.contains(WidgetState.pressed);
     bool lit(Set<WidgetState> states) =>
-        pointerLit(states) || states.contains(WidgetState.focused);
-    // macOS：强调色块只跟指针（悬停 / 按下），键盘焦点是中性底。
-    bool accent(Set<WidgetState> states) =>
-        compact && pointerLit(states) && !states.contains(WidgetState.disabled);
+        states.contains(WidgetState.hovered) ||
+        states.contains(WidgetState.pressed) ||
+        states.contains(WidgetState.focused);
+    // 所有尺寸档：中性浅灰全圆角胶囊高亮，文字保持 label 色（不用强调色）。
     Color fg(Set<WidgetState> states) {
       if (states.contains(WidgetState.disabled)) return apple.tertiaryLabel;
-      if (accent(states)) return apple.onAccent;
       return apple.label;
     }
 
@@ -3184,28 +3181,28 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
       visualDensity: VisualDensity.standard,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       alignment: AlignmentDirectional.centerStart,
-      shape: WidgetStatePropertyAll<OutlinedBorder>(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_menuRowRadius(context)),
-        ),
-      ),
+      shape: const WidgetStatePropertyAll<OutlinedBorder>(StadiumBorder()),
       backgroundColor: WidgetStateProperty.resolveWith((
         Set<WidgetState> states,
       ) {
         if (states.contains(WidgetState.disabled) || !lit(states)) {
           return Colors.transparent;
         }
-        if (accent(states)) return apple.accent;
-        return states.contains(WidgetState.pressed)
-            ? apple.fill
-            : apple.secondaryFill;
+        return _menuHighlight(
+          context,
+          pressed: states.contains(WidgetState.pressed),
+        );
       }),
       foregroundColor: WidgetStateProperty.resolveWith(fg),
       iconColor: WidgetStateProperty.resolveWith(fg),
       iconSize: WidgetStatePropertyAll<double>(compact ? 15 : 22),
       overlayColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
       textStyle: WidgetStatePropertyAll<TextStyle>(
-        TextStyle(fontSize: compact ? 13 : 17, height: 1.25, letterSpacing: 0),
+        TextStyle(
+          fontSize: _menuFontSize(context),
+          height: 1.25,
+          letterSpacing: 0,
+        ),
       ),
       splashFactory: NoSplash.splashFactory,
       animationDuration: Duration.zero,
@@ -3233,7 +3230,7 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
               controller: _scroll,
               padding: EdgeInsets.symmetric(
                 horizontal: _menuRowInset(context),
-                vertical: compact ? 5 : 12,
+                vertical: _menuRowInset(context),
               ),
               child: IntrinsicWidth(
                 child: Column(
@@ -3258,8 +3255,7 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
 }
 
 /// macOS / iOS 菜单行的左右内边距（MenuItemButton 与 showFushiMenu 行同值）。
-double _menuItemPadding(BuildContext context) =>
-    fushiAppleCompact(context) ? 10 : 12;
+double _menuItemPadding(BuildContext context) => 12;
 
 /// 行首对勾列宽（[FushiAppleMenuCheck] 的宽度）。
 double _menuCheckSlot(BuildContext context) =>
@@ -3669,13 +3665,13 @@ Widget _pullDownChevron(Widget? icon, double size) {
   return FushiIcon(CupertinoIcons.chevron_up_chevron_down, size: size);
 }
 
-/// 玻璃下拉的「字段」按钮，iOS 26 pull-down 形态：
-/// - [expanded]（表单里撑满的下拉，含 DropdownButtonFormField）= pop-up
-///   button bezel：无色透明液态玻璃、圆角 10，当前值 + 行尾
-///   `chevron.up.chevron.down`；
-/// - 否则是 plain pull-down 按钮：无底的当前值文字 + 小号上下箭头，悬停铺
-///   中性灰。
-/// 都不是 MD3 下划线框；Enter / 手柄 A / 点击都打开玻璃菜单。
+/// 玻璃下拉的「字段」按钮：公共 pop-up 按钮外观 [FushiApplePopUpButtonFace]
+/// （iOS 27 tertiaryFill 灰填充胶囊 / macOS 27 secondaryFill 圆角 6 的 pop-up
+/// button，当前值 + 行尾 `chevron.up.chevron.down`），实色内容层控件、不是
+/// 玻璃。[expanded]（表单里撑满的下拉，含 DropdownButtonFormField）撑满父级，
+/// iOS 非 dense 时高 44 与并排输入框对齐；否则内容自适应宽。底由
+/// [FushiPlainButton] 画（悬停 / 按下叠前景色、键盘焦点环），Enter / 手柄 A /
+/// 点击都打开统一的 Apple 菜单面板。调用方的 MD3 内边距 / 图标尺寸不沿用。
 Widget _glassDropdownField(
   BuildContext context, {
   required Widget value,
@@ -3688,75 +3684,41 @@ Widget _glassDropdownField(
   Widget? leading,
   Widget? icon,
   Color? iconColor,
-  double iconSize = 24,
   TextStyle? style,
   AlignmentGeometry alignment = AlignmentDirectional.centerStart,
-  EdgeInsetsGeometry? padding,
 }) {
-  final ThemeData theme = Theme.of(context);
-  final FushiAppleColors apple = appleColorsOf(context);
-  final bool compact = fushiAppleCompact(context);
+  final bool desktop = FushiApplePopUpButtonFace.desktopOf(context);
   final bool enabled = onTap != null;
-  final Color fg = enabled ? apple.label : apple.tertiaryLabel;
-  final double chevronSize = compact ? 11 : 13;
-  final Widget row = Row(
-    mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-    children: <Widget>[
-      if (leading != null) ...<Widget>[leading, const SizedBox(width: 8)],
-      if (expanded)
-        Expanded(
-          child: Align(alignment: alignment, child: value),
-        )
-      else
-        Flexible(child: value),
-      SizedBox(width: compact ? 4 : 6),
-      IconTheme.merge(
-        data: IconThemeData(
-          color: iconColor ?? (enabled ? apple.secondaryLabel : fg),
-          size: chevronSize,
-        ),
-        child: _pullDownChevron(icon, chevronSize),
-      ),
-    ],
-  );
-  Widget field = IconTheme.merge(
-    data: IconThemeData(color: fg, size: compact ? 16 : 18),
-    child: DefaultTextStyle(
-      style:
-          (style ??
-                  theme.textTheme.bodyLarge?.copyWith(
-                    fontSize: compact ? 14 : 17,
-                  ) ??
-                  const TextStyle())
-              .copyWith(color: style?.color ?? fg),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      child: row,
-    ),
-  );
-  final double minHeight = expanded
-      ? (dense || compact ? 36 : 44)
-      : (compact ? 28 : 34);
-  field = Container(
-    constraints: BoxConstraints(minHeight: minHeight),
-    padding:
-        padding ??
-        EdgeInsets.symmetric(horizontal: expanded ? 12 : (compact ? 6 : 8)),
-    alignment: expanded ? AlignmentDirectional.centerStart : null,
-    child: field,
-  );
-  final Widget button = FushiPlainButton(
+  final double height = expanded && !desktop && !dense
+      ? 44
+      : FushiApplePopUpButtonFace.defaultHeightOf(context);
+  final double chevronSize = desktop ? 10 : 12;
+  Widget? chevron = icon == null ? null : _pullDownChevron(icon, chevronSize);
+  if (chevron != null && iconColor != null) {
+    chevron = IconTheme.merge(
+      data: IconThemeData(color: iconColor),
+      child: chevron,
+    );
+  }
+  return FushiPlainButton(
     onPressed: onTap,
     focusNode: focusNode,
     autofocus: autofocus,
-    borderRadius: BorderRadius.circular(expanded ? 10 : minHeight / 2),
+    borderRadius: FushiApplePopUpButtonFace.radiusOf(context, height),
+    fill: FushiApplePopUpButtonFace.fillOf(context),
     semanticLabel: semanticLabel.isEmpty ? null : semanticLabel,
-    child: field,
+    child: FushiApplePopUpButtonFace(
+      labelWidget: value,
+      leading: leading,
+      chevron: chevron,
+      style: style,
+      contentAlignment: alignment,
+      expand: expanded,
+      height: height,
+      enabled: enabled,
+      paintFill: false,
+    ),
   );
-  // 撑满的表单下拉是 macOS 26 的 pop-up button bezel：控件层，无色透明
-  // 液态玻璃（不是 systemFill 灰块）；plain 形态保持无底。
-  if (!expanded) return button;
-  return fushiClearGlassBezel(context, radius: 10, child: button);
 }
 
 double _anchorWidth(BuildContext anchor) {
@@ -3764,9 +3726,12 @@ double _anchorWidth(BuildContext anchor) {
   return box is RenderBox && box.hasSize ? box.size.width : 0;
 }
 
-/// [DropdownButton] 的设计系统分派版。玻璃下是 iOS 26 pull-down 按钮（当前值
-/// + `chevron.up.chevron.down`，撑满时是实色字段）+ 玻璃菜单
-/// （[DropdownMenuItem] 映射成同值的 [PopupMenuItem]，当前项行尾打勾）。
+/// [DropdownButton] 的设计系统分派版。
+///
+/// @design dual —— MD3 原样 [DropdownButton]；Apple 下按钮本体是公共 pop-up
+/// 外观 [FushiApplePopUpButtonFace]（iOS 27 灰填充胶囊 / macOS 27 pop-up
+/// button），点开走统一的 Apple 菜单面板（[DropdownMenuItem] 映射成同值的
+/// [PopupMenuItem]）。
 class FushiDropdownButton<T> extends StatefulWidget {
   const FushiDropdownButton({
     super.key,
@@ -3945,10 +3910,8 @@ class _FushiDropdownButtonState<T> extends State<FushiDropdownButton<T>> {
         iconColor: _enabled
             ? widget.iconEnabledColor
             : widget.iconDisabledColor,
-        iconSize: widget.iconSize,
         style: widget.style,
         alignment: widget.alignment,
-        padding: widget.padding,
       ),
     );
   }
@@ -3969,8 +3932,10 @@ class _FushiDropdownSelection<T> {
   int get hashCode => value.hashCode;
 }
 
-/// [DropdownMenu] 的设计系统分派版。玻璃下是 iOS pull-down 字段（标签 +
-/// 当前项）+ 玻璃菜单；不提供输入过滤 / 搜索（仓库调用点都是纯选择）。选中后同步写回
+/// [DropdownMenu] 的设计系统分派版。
+///
+/// @design dual —— Apple 下按钮本体是 [FushiApplePopUpButtonFace]（标签 +
+/// 当前项），点开走统一的 Apple 菜单面板；不提供输入过滤 / 搜索（仓库调用点都是纯选择）。选中后同步写回
 /// [controller]（若给了）并回调 [onSelected]。
 class FushiDropdownMenu<T> extends StatefulWidget {
   const FushiDropdownMenu({
@@ -4519,8 +4484,8 @@ class _FushiGlassSnackBarActionButtonState
 }
 
 /// [DropdownButtonFormField] 的设计系统分派版。MD3 下原样构造原控件；玻璃
-/// 下是 [FormField] + [FushiDropdownButton]（iOS 实色 pull-down 字段 + 玻璃
-/// 菜单），
+/// 下是 [FormField] + [FushiDropdownButton]（[FushiApplePopUpButtonFace] 按钮
+/// + 统一 Apple 菜单面板；@design dual），
 /// `decoration` 的 labelText / label / hintText / helperText / errorText /
 /// prefixIcon / suffixIcon 画在字段周围，validator / onSaved /
 /// autovalidateMode 语义与原控件一致。
@@ -4750,14 +4715,3 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
     );
   }
 }
-
-/// 强调色高亮行的整行着色：菜单项的文字 / 图标 / 行尾对勾常自带显式颜色
-/// （label、强调色），DefaultTextStyle 盖不住——默认单色主题下强调色是黑 /
-/// 白，高亮底上就成了黑字黑勾看不见（用户 2026-10-04 报）。高亮时把整行
-/// 不透明像素统一染成 [color]（onAccent）；结构恒定，不随高亮增删层。
-Widget _accentTint(Color? color, Widget child) => ColorFiltered(
-  colorFilter: color == null
-      ? const ColorFilter.mode(Colors.transparent, BlendMode.dst)
-      : ColorFilter.mode(color, BlendMode.srcIn),
-  child: child,
-);
