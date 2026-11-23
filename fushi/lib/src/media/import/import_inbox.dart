@@ -43,7 +43,7 @@ import 'package:fushi_engine/media/media_extensions.dart'
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show listSidecarSubtitles;
+    show sidecarSubtitleOwnerStem;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show
         kDragAudioExtensions,
@@ -304,10 +304,11 @@ class ImportInbox {
   ///    APFS 区分大小写，`ep01.mkv` 与 `EP01.mkv` 能并存，但配对不分大小写，且 rename
   ///    会无声覆盖同名文件；
   ///  - 组里有主文件，而该 stem 会和已占用的**另一个主文件**交叉配对：已占用的、有主文件
-  ///    配得上的字幕会配上新主文件（旧视频的字幕被新视频配走），或本组的字幕会配上已占用
-  ///    的主文件（旧视频配上新字幕）。「配得上」与播放器同一规则（`listSidecarSubtitles`，
-  ///    不看同目录别的视频）：stem 互为前缀（`EP01` 与 `EP01.ja`）时字幕对两边都成立，
-  ///    也算交叉（HBK-AUDIT-220）。
+  ///    认领的字幕改归新主文件（旧视频的字幕被新视频配走），或本组的字幕归已占用的主文件
+  ///    （旧视频配上新字幕）。「归谁」与播放器、删视频同一条规则——最长文件名主干认领
+  ///    （`sidecarSubtitleOwnerStem`，拍板台 review-hbk-audit-220-player-sub-owner）：
+  ///    `EP01.ja.srt` 在 `EP01.mkv` 与 `EP01.ja.mkv` 并存时归 `EP01.ja`，较短 stem 的
+  ///    视频与它互不相干，不必改名。
   ///
   /// 有意放行的两种「接上」：只有字幕的组配上已有主文件（给已放进去的视频补字幕），主文件
   /// 配上目录里没有主文件认领的孤立字幕——两者都不拆散任何一对已有的配对。
@@ -334,7 +335,7 @@ class ImportInbox {
 
   /// 把 [names] 分成依赖组：每个非字幕文件（视频 / 音频 / 书…）以自己的
   /// `basenameWithoutExtension` 为 stem 开一组（stem 不分大小写相同的归同一组）；字幕按
-  /// `listSidecarSubtitles` 的同一配对规则归入能配上的**最长** stem 的组；配不上任何主文件
+  /// 播放器的同一归属规则（`sidecarSubtitleOwnerStem`，最长主干认领）归组；配不上任何主文件
   /// 的字幕自成一组。组内后缀不分大小写已被占用的成员（`EP01.mkv` 与 `ep01.mkv`）另开一
   /// 组，不让同组两个成员落到同一个目标名上。组的顺序与成员顺序都随 [names]。
   static List<_SidecarGroup> _groupBySidecarStem(List<String> names) {
@@ -366,13 +367,12 @@ class ImportInbox {
     }
     for (final int i in subtitles) {
       final String name = names[i];
-      _SidecarGroup? owner;
-      for (final _SidecarGroup g in byStemLower.values) {
-        if (_pairsWith(name, g.stem) &&
-            (owner == null || g.stem.length > owner.stem.length)) {
-          owner = g;
-        }
-      }
+      final String? ownerStem = sidecarSubtitleOwnerStem(name, <String>[
+        for (final _SidecarGroup g in byStemLower.values) g.stem,
+      ]);
+      _SidecarGroup? owner = ownerStem == null
+          ? null
+          : byStemLower[ownerStem.toLowerCase()];
       if (owner == null || owner.hasSuffix(name.substring(owner.stem.length))) {
         owner = newGroup(p.basenameWithoutExtension(name), primary: false);
       }
@@ -386,12 +386,6 @@ class ImportInbox {
   static bool _isSubtitleName(String name) =>
       _bare(kDragSubtitleExtensions).contains(_extensionOf(name));
 
-  /// 字幕文件名 [subtitleName] 是否是 [stem] 的外挂字幕（与 `listSidecarSubtitles` 同一
-  /// 规则）。
-  static bool _pairsWith(String subtitleName, String stem) =>
-      stem.length < subtitleName.length &&
-      listSidecarSubtitles(stem, <String>[subtitleName]).isNotEmpty;
-
   /// [group] 能用的 stem：原 stem 可用就用原 stem，否则依次试 `<stem> (2)`、`(3)`…，整组
   /// 共用同一个。可用的判据见 [planRootAdoption]。
   static String _freeGroupStem(
@@ -403,16 +397,11 @@ class ImportInbox {
       for (final String n in taken)
         if (!_isSubtitleName(n)) p.basenameWithoutExtension(n),
     ];
-    // 已占用、且有主文件配得上的字幕。HBK-AUDIT-220：判「配得上」只用播放器的实际规则
-    // （[_pairsWith] = `listSidecarSubtitles`，自动选字幕的 `pickSidecar` 是它的子集）——
-    // 播放器给一个视频找字幕时不看同目录别的视频，`EP01.ja.srt` 对 `EP01.mkv` 与
-    // `EP01.ja.mkv` 都成立；不能再按「stem 互为前缀时归更长的」放行较短的一方
-    // （那只是删视频时带走字幕的规则），否则 `EP01.mkv` 会给自己选上 `EP01.ja.mkv` 的
-    // 日语字幕。
-    final List<String> takenPairedSubtitles = <String>[
+    // 已占用、且归某个已占用主文件的字幕（最长主干认领；没人认领的孤立字幕谁接上都行）。
+    final List<String> takenOwnedSubtitles = <String>[
       for (final String n in taken)
         if (_isSubtitleName(n) &&
-            takenPrimaryStems.any((String s) => _pairsWith(n, s)))
+            sidecarSubtitleOwnerStem(n, takenPrimaryStems) != null)
           n,
     ];
     bool usable(String stem) {
@@ -420,17 +409,25 @@ class ImportInbox {
         if (takenLower.contains('$stem${m.suffix}'.toLowerCase())) return false;
       }
       if (!group.hasPrimary) return true;
-      // 已有主文件的字幕会被新主文件配上。
-      for (final String subtitle in takenPairedSubtitles) {
-        if (_pairsWith(subtitle, stem)) return false;
+      final String stemLower = stem.toLowerCase();
+      // 已有主文件的字幕会改归新主文件：加上新 stem 后归属落到它身上（同 stem 不同容器
+      // 的旧视频也算——两个视频会同时认领它）。
+      for (final String subtitle in takenOwnedSubtitles) {
+        final String? after = sidecarSubtitleOwnerStem(subtitle, <String>[
+          ...takenPrimaryStems,
+          stem,
+        ]);
+        if (after != null && after.toLowerCase() == stemLower) return false;
       }
-      // 本组的字幕会被已有主文件配上。
+      // 本组的字幕会被已有主文件认领：有已占用主文件配得上它、且 stem 不短于本组。
       for (final _SidecarGroupMember m in group.members) {
         final String target = '$stem${m.suffix}';
         if (!_isSubtitleName(target)) continue;
-        for (final String s in takenPrimaryStems) {
-          if (_pairsWith(target, s)) return false;
-        }
+        final String? owner = sidecarSubtitleOwnerStem(
+          target,
+          takenPrimaryStems,
+        );
+        if (owner != null && owner.length >= stem.length) return false;
       }
       return true;
     }
