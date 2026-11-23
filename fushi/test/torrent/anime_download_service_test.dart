@@ -302,6 +302,33 @@ void main() {
         p.join('/dl', 'Show - 01.srt'),
       );
     });
+
+    test('带 lang 段的名字会被 stem 更长的同目录视频认领时省掉 lang 段（最长主干认领）', () {
+      const PlanSubtitle sub = PlanSubtitle(
+        episode: 1,
+        fileName: 'EP01.srt',
+        stagedPath: '/s/x.srt',
+        language: 'ja',
+      );
+      // `EP01.ja.srt` 归 `EP01.ja.mkv`：照原名写会盖掉 / 冒充人家的字幕。
+      expect(
+        sidecarPathFor(
+          p.join('/dl', 'EP01.mkv'),
+          sub,
+          dirFiles: const <String>['EP01.mkv', 'EP01.ja.mkv', 'EP01.ja.srt'],
+        ),
+        p.join('/dl', 'EP01.srt'),
+      );
+      // 没有更长 stem 的视频：照常带 lang 段。
+      expect(
+        sidecarPathFor(
+          p.join('/dl', 'EP01.mkv'),
+          sub,
+          dirFiles: const <String>['EP01.mkv', 'EP02.mkv'],
+        ),
+        p.join('/dl', 'EP01.ja.srt'),
+      );
+    });
   });
 
   group('AnimeDownloadService.tick', () {
