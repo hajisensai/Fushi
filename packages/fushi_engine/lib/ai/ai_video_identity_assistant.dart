@@ -41,9 +41,18 @@ Rules:
   episode labels or release-group noise with no identifiable work name.
 - Do not pick a sequel, prequel, movie, OVA or spin-off when the local folder
   looks like a different entry of the same franchise.
+- A local folder is often one physical volume or disc of a release ("vol.6",
+  "上巻" / "下巻", "Disc 2", "BOX", "[BDMV]"): it may hold only some of the
+  episodes, bonus material, or disc playlists named by number ("00001.mpls").
+  It belongs to the work it is a volume of. A volume number in the title, or
+  fewer local files than the candidate's episode count, is not a contradiction;
+  only clearly more local episodes than the candidate has counts against it.
+- A field missing from a candidate (mediaKind, year, episodeCount) means the
+  provider did not say; treat it as unknown, never as a mismatch.
 - "confidence" is your honest probability that the chosen candidate is the
-  right work. Use 0.9 or higher only when titles, type, year and season all
-  agree; otherwise stay below 0.85.
+  right work. Use 0.9 or higher only when the titles clearly name the same
+  work and none of the known type, year, season or episode clues contradicts
+  it; otherwise stay below 0.85.
 - Compare titles across languages and romanizations (Japanese, Chinese,
   Korean, English, romaji), ignoring case, punctuation and release-group tags.
 - "reason" is one short sentence written in the language with tag "$locale".
