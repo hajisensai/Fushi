@@ -579,9 +579,9 @@ void main() {
     );
     await addVideo(
       'movie-b',
-      'D:/A/Bonus Feature (2019).mkv',
+      'D:/A/Unscraped OVA (2019).mkv',
       sourceId,
-      'Bonus Feature',
+      'Unscraped OVA',
     );
     final ValueNotifier<int> changed = ValueNotifier<int>(0);
     addTearDown(changed.dispose);

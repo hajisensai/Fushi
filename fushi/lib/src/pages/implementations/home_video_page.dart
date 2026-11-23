@@ -71,6 +71,7 @@ import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
+import 'package:fushi/src/media/video/video_continue_watching.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/media/video/video_library_memo.dart';
 import 'package:fushi/src/media/video/video_library_scrape_maps.dart';
@@ -113,6 +114,12 @@ import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/identity/pending_identity.dart'
+    show PendingIdentityMediaKind;
+import 'package:fushi/src/media/identity/pending_identity_text.dart'
+    show pendingIdentityBannerText;
+import 'package:fushi/src/media/identity/pending_identity_widgets.dart'
+    show PendingIdentityBanner;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
@@ -164,7 +171,6 @@ import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
     show LibraryGridDomain;
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -214,7 +220,6 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -289,6 +294,37 @@ Future<void> openLocalVideoBook({
   );
 }
 
+/// 经 [client]（互联 host / 媒体服务器的 live 能力）流播一条远端视频——视频页远端
+/// 卡与侧栏速览「继续」的同一条入口。
+///
+/// [collectionMembers] 是客户端合集播放的有序远端成员（多于一个时播放器据此建
+/// 剧集列表 + 跨成员连播），[startIndex] 是起播下标。返回的 future 在播放页
+/// 关掉时完成。
+Future<void> openRemoteVideoStream({
+  required BuildContext context,
+  required VideoBookRepository repo,
+  required RemoteVideoClient client,
+  required RemoteVideoInfo video,
+  List<RemoteVideoInfo>? collectionMembers,
+  int startIndex = 0,
+}) {
+  final bool playlist =
+      collectionMembers != null && collectionMembers.length > 1;
+  return Navigator.push(
+    context,
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralizedRemote(
+        info: video,
+        repo: repo,
+        client: client,
+        remoteCollectionMembers: playlist ? collectionMembers : null,
+        initialEpisodeIndex: playlist ? startIndex : null,
+      ),
+    ),
+  );
+}
+
 enum _AllVideosLayout { grid, list }
 
 /// 卡面标签 chip 的渲染形状（BUG-1808）：本地条目带库里的颜色；互联远端条目 host
@@ -327,46 +363,6 @@ typedef _CollectionCoverSource = ({
 /// 与书架联动），卡片渲染所挂标签，长按弹菜单（编辑标签 / 设置封面 / 删除）。
 /// 「最近观看时刻」的两份映射：按 bookUid 键控的当前口径，以及迁移遗留 NULL-uid
 /// 行按 title 的回退口径。
-class _WatchRecency {
-  const _WatchRecency({required this.byUid, required this.legacyByTitle});
-
-  final Map<String, DateTime> byUid;
-  final Map<String, DateTime> legacyByTitle;
-}
-
-/// watch-stats 全量行 + `study_segments` 最近时刻 → 「最近观看」两份映射。
-///
-/// UI v2 Phase B / v39：v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建
-/// 回退映射。v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），
-/// 新的观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 [latestWatchAtByKey]，
-/// 同 uid 取最大，任一来源缺席都不影响另一来源。
-///
-/// 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词同一
-/// 判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该视频从
-/// 「最近观看」消失。
-///
-/// 抽成独立函数是因为它有两个调用者：全量的 [_HomeVideoPageState._loadLibraryMapsInner]
-/// 与播放返回后的窄刷新 [_HomeVideoPageState._loadWatchRecency]。两条路径必须给出
-/// 逐字节相同的映射，否则「继续观看」的排序会随刷新来路漂移。
-_WatchRecency _buildWatchRecency(
-  List<VideoWatchStatisticRow> watchRows,
-  Map<String, int> segmentEndAtByUid,
-) {
-  return _WatchRecency(
-    byUid: latestWatchAtByKey(<(String, int)>[
-      for (final VideoWatchStatisticRow r in watchRows)
-        if (r.bookUid case final String uid when uid.isNotEmpty)
-          (uid, r.lastModified),
-      for (final MapEntry<String, int> e in segmentEndAtByUid.entries)
-        if (e.key.isNotEmpty) (e.key, e.value),
-    ]),
-    legacyByTitle: latestWatchAtByKey(<(String, int)>[
-      for (final VideoWatchStatisticRow r in watchRows)
-        if (r.bookUid == null || r.bookUid!.isEmpty) (r.title, r.lastModified),
-    ]),
-  );
-}
-
 /// 页头是否需要显式「刷新」按钮（BUG-2567 / 反馈 #7m1x-R3yOn）。
 ///
 /// 下拉刷新（[RefreshIndicator]）只认 `dragDevices` 里的设备，Flutter 默认集合
@@ -582,11 +578,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 正片也会被一起永久挪出自动补刮。
   Set<String> _dismissedPendingScrapeKeys = const <String>{};
 
-  int get _pendingScrapeCount => _pendingScrapeKeys.length;
-
-  bool get _pendingScrapeBannerVisible =>
-      _pendingScrapeKeys.isNotEmpty &&
-      !_dismissedPendingScrapeKeys.containsAll(_pendingScrapeKeys);
   bool _pendingScrapeInFlight = false;
 
   /// 批量删除在飞（35YfcYO-zR）：进度对话框挡住了页面，这里再挡一层，快捷键 /
@@ -818,6 +809,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// `_lastRemoteState`）。失败态不覆盖缓存。
   _RemoteVideoState? _lastRemoteState;
 
+  /// 页外（侧栏速览）复用本页继续观看结果与远端清单的共享口（见 [VideoContinueShare]）。
+  late final VideoContinueShare _continueShare;
+
   /// [_remoteEpisodesMirroredLocally] 的记忆：本地全量列表、远端清单、合集归属表
   /// 三者都按对象身份比对（各自换代都是整体替换），build 期不重复解析文件名。
   List<VideoBookRow>? _mirrorMemoLocal;
@@ -1039,6 +1033,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   @override
   void initState() {
     super.initState();
+    _continueShare = ref.read(videoContinueShareProvider);
     _seriesFilter = videoSeriesFilterFromName(
       appModelNoUpdate.prefsRepo.videoAllSeriesFilterName,
     );
@@ -1270,6 +1265,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    _continueShare.clearOwner(this);
     _companion.dispose();
     _collectionDisplayCounts.dispose();
     _coverExists.dispose();
@@ -1840,7 +1836,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ///
   /// 与 [_loadLibraryMapsInner] 各自记代（generation），互不取消：全量重载在途时
   /// 发起窄重载不会把前者的结果丢掉（那会让其余十几个映射永远停在旧值）。两条路径
-  /// 读的是同一批行、经同一个 [_buildWatchRecency] 聚合，后落地者覆盖前者是等价的。
+  /// 读的是同一批行、经同一个 [buildVideoWatchRecency] 聚合，后落地者覆盖前者是等价的。
   Future<void> _loadWatchRecency() async {
     final int requestGeneration = ++_watchRecencyRequestGeneration;
     final FushiDatabase db = ref.read(appProvider).database;
@@ -1853,7 +1849,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       watchRowsF,
       segmentEndAtByUidF,
     ]);
-    final _WatchRecency recency = _buildWatchRecency(
+    final VideoWatchRecency recency = buildVideoWatchRecency(
       await watchRowsF,
       await segmentEndAtByUidF,
     );
@@ -1922,17 +1918,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 首屏合集行渲染被它 gate）。判据 `primaryMap[key] == m.collectionId` 与旧
     // 逐合集 `== c.id` 等价（旧循环里 members 的 collectionId 恒为 c.id）。
     final List<MediaCollectionItemRow> collectionItems = await collectionItemsF;
-    final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionItemRow m in collectionItems) {
-      final String key = '${m.mediaType}|${m.entryKey}';
-      if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
-    }
+    final Map<String, int> memberSortIndex = buildVideoMemberSortIndex(
+      primaryCollectionByEntry: primaryMap,
+      items: collectionItems,
+    );
     // UI v2 Phase B / v39：watch-stats 全量行 → 最近观看时间（内存聚合）。
     // v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建回退映射。
     // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
     // 观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 latestWatchAtByKey，
     // 同 uid 取最大，任一来源缺席都不影响另一来源。
-    final _WatchRecency recency = _buildWatchRecency(
+    final VideoWatchRecency recency = buildVideoWatchRecency(
       await watchRowsF,
       await segmentEndAtByUidF,
     );
@@ -3902,25 +3897,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 「点击立即建立远端流」（home_video_remote_interconnect_test），把一次性的着色器
     // 提示放到 await 导航前会让远端串流请求永远不发出（TODO-026 回归）。提示是纯信息
     // 性的（只置 videoAnime4kPromptShown），叠加在已打开的播放页之上即可，不必先于导航。
-    Navigator.push(
-      context,
-      adaptivePageRoute<void>(
+    unawaited(
+      openRemoteVideoStream(
         context: context,
-        builder: (_) => VideoFushiPage.neutralizedRemote(
-          info: video,
-          repo: widget.repo,
-          client: client,
-          // 客户端合集播放：合集里点某成员时带上有序远端成员列表 + 起播下标，播放器据此
-          // 建剧集列表 + 跨成员自动连播（成员是各自独立 video id，非同 id 换 episodeIndex）。
-          remoteCollectionMembers:
-              (collectionMembers != null && collectionMembers.length > 1)
-              ? collectionMembers
-              : null,
-          initialEpisodeIndex:
-              (collectionMembers != null && collectionMembers.length > 1)
-              ? startIndex
-              : null,
-        ),
+        repo: widget.repo,
+        client: client,
+        video: video,
+        collectionMembers: collectionMembers,
+        startIndex: startIndex,
       ),
     );
     await _showAnime4kFirstUsePromptIfNeeded();
@@ -5785,68 +5769,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 卡片照样进库，用户只会觉得「封面怎么是视频截图」而不知道有个确认队列在等他
   /// （BUG-2201）。数量为 0 时零高度。
   ///
-  /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]），出现 / 收起都带尺寸 +
-  /// 淡入淡出过渡。
-  Widget _buildPendingScrapeBanner() {
-    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return FushiAnimatedSize(
-      duration: duration,
-      curve: FushiMotion.standard,
-      alignment: Alignment.topCenter,
-      child: AnimatedSwitcher(
-        duration: duration,
-        switchInCurve: FushiMotion.enter,
-        switchOutCurve: FushiMotion.exit,
-        child: _pendingScrapeBannerVisible
-            ? _buildPendingScrapeBannerCard()
-            : const SizedBox.shrink(key: ValueKey<String>('hidden')),
-      ),
-    );
-  }
-
-  Widget _buildPendingScrapeBannerCard() {
-    final VoidCallback? open = widget.onOpenScrapeTasks;
-    return Padding(
-      key: const ValueKey<String>('video-library-scrape-pending-banner'),
-      padding: const EdgeInsets.only(bottom: 8),
-      child: FushiCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: <Widget>[
-              const FushiIcon(Icons.rule_folder_outlined, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  t.video_library_scrape_pending_banner(
-                    count: _pendingScrapeCount,
-                  ),
-                ),
-              ),
-              if (open != null) ...<Widget>[
-                const SizedBox(width: 8),
-                FushiFilledButton.tonal(
-                  onPressed: open,
-                  child: Text(t.video_library_scrape_pending_banner_action),
-                ),
-              ],
-              const SizedBox(width: 4),
-              FushiIconButtonControl(
-                key: const ValueKey<String>(
-                  'video-library-scrape-pending-banner-dismiss',
-                ),
-                tooltip: t.video_library_scrape_pending_banner_dismiss,
-                onPressed: () => setState(
-                  () => _dismissedPendingScrapeKeys = _pendingScrapeKeys,
-                ),
-                icon: const FushiIcon(FushiIcons.close),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]）。与书架 / 游戏库页同一个
+  /// 提醒条组件（[PendingIdentityBanner]，BUG-5283）。
+  Widget _buildPendingScrapeBanner() => PendingIdentityBanner(
+    keyPrefix: 'video-library-scrape-pending-banner',
+    pendingKeys: _pendingScrapeKeys,
+    dismissedKeys: _dismissedPendingScrapeKeys,
+    message: (int count) =>
+        pendingIdentityBannerText(PendingIdentityMediaKind.video, count),
+    onDismiss: () =>
+        setState(() => _dismissedPendingScrapeKeys = _pendingScrapeKeys),
+    onOpen: widget.onOpenScrapeTasks,
+    dismissTooltip: t.video_library_scrape_pending_banner_dismiss,
+  );
 
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
   /// 空白标题不提交（保持原名）。
@@ -6198,6 +6133,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   _lastRemoteState = null;
                   _remoteVideoSource = null;
                 }
+                // 侧栏速览与首页同一份远端清单（不另取数）。
+                _continueShare.publishRemote(
+                  this,
+                  _lastRemoteState?.videos,
+                  _lastRemoteState == null ? null : _remoteVideoSource,
+                );
                 // TODO-2486：远端条目与本地同规则过年份/看完状态筛选（远端无刮削
                 // 资料 = 未知年份桶；无完成标记按未完成、进度取 positionMs）。
                 // 本机已有同一集的远端条目不出占位卡（BUG-2978：与合集详情页
@@ -6282,13 +6223,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                               _specFilters.isEmpty)
                             v,
                     ];
-                    final List<RemoteVideoInfo> home = <RemoteVideoInfo>[
-                      for (final RemoteVideoInfo v in _visibleRemoteVideos(
-                        remoteState,
-                        null,
-                      ))
-                        if (!mirroredRemote.contains(v.id)) v,
-                    ];
+                    final List<RemoteVideoInfo> home = visibleHomeRemoteVideos(
+                      remote: remoteState == null || remoteState.failed
+                          ? const <RemoteVideoInfo>[]
+                          : remoteState.videos,
+                      local: all,
+                      primaryCollectionByEntry: _primaryCollectionByEntry,
+                      visibility: MediaVisibility.of(context),
+                      showRemoteEntries: showRemoteEntries,
+                    );
                     return (filtered: filtered, home: home);
                   },
                 );
@@ -6811,11 +6754,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  String _workTitle(MediaCollectionRow collection) {
-    return _metadataWorkByCollection[collection.id]?.title ??
-        _collectionScrapeMetaById[collection.id]?.title ??
-        collection.name;
-  }
+  String _workTitle(MediaCollectionRow collection) => videoCollectionWorkTitle(
+    collection,
+    metadataWorkByCollection: _metadataWorkByCollection,
+    collectionScrapeMetaById: _collectionScrapeMetaById,
+  );
 
   /// hero / 行卡成员封面回落链：首个有本地封面的成员（组内序），全缺返回 null。
   ImageProvider? _collectionMembersCoverProvider(List<VideoBookRow> members) {
@@ -6837,108 +6780,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<VideoBookRow> filtered,
     List<RemoteVideoInfo> remoteVideos,
   ) {
-    final Map<int, List<_VideoSlot>> grouped = <int, List<_VideoSlot>>{};
-    final List<VideoBookRow> looseLocal = <VideoBookRow>[];
-    final List<RemoteVideoInfo> looseRemote = <RemoteVideoInfo>[];
-    for (final VideoBookRow book in filtered) {
-      if (_localExtraBookUids.contains(book.bookUid)) continue;
-      final int? cid = _collectionIdByUid[book.bookUid];
-      if (cid != null && _collectionsById.containsKey(cid)) {
-        grouped
-            .putIfAbsent(cid, () => <_VideoSlot>[])
-            .add(_VideoSlot(local: book));
-      } else {
-        looseLocal.add(book);
-      }
-    }
-    for (final RemoteVideoInfo video in remoteVideos) {
-      final int? cid = _remoteCollectionId(video);
-      if (cid != null && _collectionsById.containsKey(cid)) {
-        grouped
-            .putIfAbsent(cid, () => <_VideoSlot>[])
-            .add(_VideoSlot(remote: video));
-      } else {
-        looseRemote.add(video);
-      }
-    }
-    final List<_HomeContinueItem> items = <_HomeContinueItem>[];
-    grouped.forEach((int cid, List<_VideoSlot> members) {
-      members.sort(
-        (_VideoSlot a, _VideoSlot b) =>
-            _slotSortIndex(a).compareTo(_slotSortIndex(b)),
-      );
-      final List<VideoSeriesPlaybackState> states = _slotPlaybackStates(
-        members,
-      );
-      int completed = 0;
-      int recentMs = 0;
-      for (int i = 0; i < members.length; i++) {
-        // 手动标记或进度到片尾区都算看完（BUG-3491）。
-        if (states[i].progress.countsAsWatched) completed++;
-        final int watched = _slotWatchedAtMs(members[i]);
-        if (watched > recentMs) recentMs = watched;
-      }
-      // Next-Up 口径（[continueWatchingSeriesIndex]）：续播用户最后实际播放且尚未
-      // 完成的那一集；那集已看完则落到紧接的下一集。不能退回序列中更早的未完成
-      // 集，也不能误跳到合集最后一集；整部看完不进本行。
-      final int? currentIndex = continueWatchingSeriesIndex(states);
-      if (currentIndex == null) return;
-      final MediaCollectionRow collection = _collectionsById[cid]!;
-      items.add(
+    final List<VideoContinueCandidate> candidates =
+        selectVideoContinueCandidates(
+          local: filtered,
+          remote: remoteVideos,
+          inputs: _continueInputs,
+        );
+    return <_HomeContinueItem>[
+      for (final VideoContinueCandidate c in candidates)
         _HomeContinueItem(
-          recentMs: recentMs,
-          hero: () => _continueCollectionHero(
-            collection,
-            members,
-            completed,
-            currentIndex,
-          ),
+          recentMs: c.recentMs,
+          hero: switch (c) {
+            VideoContinueSeriesCandidate() => () => _continueCollectionHero(c),
+            VideoContinueLocalCandidate(:final VideoBookRow book) =>
+              () => _continueEntryHero(book),
+            VideoContinueRemoteCandidate(:final RemoteVideoInfo video) =>
+              () => _continueRemoteHero(video),
+          },
         ),
-      );
-    });
-    for (final VideoBookRow book in looseLocal) {
-      // 已打勾但重看到一半的单片同样进「继续观看」（BUG-3491）。
-      if (book.lastPositionMs <= 0 ||
-          CollectionMemberProgress(
-            positionMs: book.lastPositionMs,
-            completed: book.completedAt != null,
-            durationMs: _knownDurationMs(book.bookUid),
-          ).isFinished) {
-        continue;
-      }
-      final DateTime? at =
-          _watchAtByUid[book.bookUid] ?? _legacyWatchAtByTitle[book.title];
-      items.add(
-        _HomeContinueItem(
-          recentMs: at?.millisecondsSinceEpoch ?? 0,
-          hero: () => _continueEntryHero(book),
-        ),
-      );
-    }
-    for (final RemoteVideoInfo video in looseRemote) {
-      // 与本地散卡同口径：没进度、或已看完（打勾 / 进度到片尾区）不进本行
-      // （BUG-3611：此前远端只看 positionMs > 0，看完的散片也一直挂着）。
-      if (video.positionMs <= 0 ||
-          CollectionMemberProgress(
-            positionMs: video.positionMs,
-            completed: video.completedAt != null,
-            durationMs: video.durationMs,
-          ).isFinished) {
-        continue;
-      }
-      items.add(
-        _HomeContinueItem(
-          recentMs: video.positionUpdatedAtMs,
-          hero: () => _continueRemoteHero(video),
-        ),
-      );
-    }
-    items.sort(
-      (_HomeContinueItem a, _HomeContinueItem b) =>
-          b.recentMs.compareTo(a.recentMs),
-    );
-    return items;
+    ];
   }
+
+  /// 选集输入：本页的合集归属 / 组内序 / 最近观看 / 片长 / 特典快照。
+  VideoContinueInputs get _continueInputs => VideoContinueInputs(
+    collectionIdByUid: _collectionIdByUid,
+    collectionsById: _collectionsById,
+    sortIndexByUid: _sortIndexByUid,
+    watchAtByUid: _watchAtByUid,
+    legacyWatchAtByTitle: _legacyWatchAtByTitle,
+    durationMsOf: _knownDurationMs,
+    excludedUids: _localExtraBookUids,
+    metadataWorkByCollection: _metadataWorkByCollection,
+    collectionScrapeMetaById: _collectionScrapeMetaById,
+  );
 
   /// 播放器记下的片长（BUG-3491，见 video_duration_pref.dart）；没播过 → null。
   int? _knownDurationMs(String bookUid) => videoDurationMsFromPref(
@@ -6958,45 +6832,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _collectionIdByUid[video.id];
 
   /// 本地与远端成员共享本地保存的组内顺序。
-  int _slotSortIndex(_VideoSlot slot) =>
-      _sortIndexByUid[slot.local?.bookUid ?? slot.remote!.id] ?? 1 << 30;
+  int _slotSortIndex(_VideoSlot slot) => _continueInputs.sortIndexOf(slot);
 
-  /// 最近观看时刻（epoch 毫秒，0 = 没看过）。远端的真相源是 host 下发的
-  /// [RemoteVideoInfo.positionUpdatedAtMs]（与「继续观看」行同一口径）。
-  int _slotWatchedAtMs(_VideoSlot slot) {
-    final VideoBookRow? local = slot.local;
-    if (local != null) {
-      // BUG-1731：统计行只记本机播放、缺失/陈旧时回落
-      // 行级 lastPlayedAt（远端回灌只写它）。
-      return effectiveWatchedAtMs(
-        statsWatchedAtMs:
-            (_watchAtByUid[local.bookUid] ?? _legacyWatchAtByTitle[local.title])
-                ?.millisecondsSinceEpoch ??
-            0,
-        lastPlayedAt: local.lastPlayedAt,
-      );
-    }
-    return slot.remote!.positionUpdatedAtMs;
-  }
+  /// 最近观看时刻（epoch 毫秒，0 = 没看过），口径见 [VideoContinueInputs.watchedAtMsOf]。
+  int _slotWatchedAtMs(_VideoSlot slot) => _continueInputs.watchedAtMsOf(slot);
 
   /// 入库时刻（epoch 毫秒）；远端 host 不带该字段（旧 host）时为 null。
   int? _slotImportedAtMs(_VideoSlot slot) =>
       slot.local?.importedAt ?? slot.remote?.importedAt;
 
   List<VideoSeriesPlaybackState> _slotPlaybackStates(List<_VideoSlot> slots) =>
-      <VideoSeriesPlaybackState>[
-        for (final _VideoSlot slot in slots)
-          VideoSeriesPlaybackState(
-            lastWatchedAtMs: _slotWatchedAtMs(slot),
-            positionMs: slot.local?.lastPositionMs ?? slot.remote!.positionMs,
-            completed: slot.local != null
-                ? slot.local!.completedAt != null
-                : slot.remote!.completedAt != null,
-            durationMs: slot.local != null
-                ? _knownDurationMs(slot.local!.bookUid)
-                : slot.remote!.durationMs,
-          ),
-      ];
+      _continueInputs.playbackStatesOf(slots);
 
   ImageProvider? _slotCoverProvider(_VideoSlot slot) {
     final VideoBookRow? local = slot.local;
@@ -7714,33 +7560,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 合集目标集的副标题：目标集还没开播（上一集看完落到的下一集）→「下一集 ·
   /// 第 N 集」；有进度 →「看到第 N 集 · 剩 M 分钟」。由成员自身状态决定，不另传
   /// 标志。行卡与主卡共用。
-  String _continueCollectionSecondaryText(_VideoSlot target, int currentIndex) {
-    final VideoBookRow? targetLocal = target.local;
-    if (targetLocal != null) {
-      return _isUnstarted(targetLocal)
-          ? t.video_home_next_episode_number(n: currentIndex + 1)
-          : _continueSecondaryText(
-              targetLocal,
-              episodeNumber: currentIndex + 1,
-            );
-    }
-    final RemoteVideoInfo targetRemote = target.remote!;
-    return targetRemote.completedAt == null && targetRemote.positionMs <= 0
-        ? t.video_home_next_episode_number(n: currentIndex + 1)
-        : t.video_home_continue_episode_number(n: currentIndex + 1);
-  }
+  String _continueCollectionSecondaryText(
+    VideoContinueSeriesCandidate candidate,
+  ) => videoContinueSeriesSubtitle(
+    candidate,
+    startedLocalText: (VideoBookRow book, int n) =>
+        _continueSecondaryText(book, episodeNumber: n),
+  );
 
   /// 首屏继续观看卡·合集：大图走 v68 选图链（titleCard / backdrop，Jellyfin
   /// preferThumb 口径）→ 刮削作品横图 → 目标集截帧 → 竖版作品封面链；进度条 =
   /// 目标集集内进度（不知道片长时退回已看完成员 / 总数）。目标集只在 host 上时
   /// 点卡流播、副标题前导 ☁。
   _HomeHeroData _continueCollectionHero(
-    MediaCollectionRow collection,
-    List<_VideoSlot> members,
-    int completedCount,
-    int currentIndex,
+    VideoContinueSeriesCandidate candidate,
   ) {
-    final _VideoSlot target = members[currentIndex];
+    final MediaCollectionRow collection = candidate.collection;
+    final List<_VideoSlot> members = candidate.members;
+    final int completedCount = candidate.completedCount;
+    final _VideoSlot target = candidate.target;
     final _HeroCleanArt clean = _heroCleanArt(
       target.local == null ? null : _episodeStillProvider(target.local!),
       _videoBlockMeta(collectionId: collection.id),
@@ -7752,8 +7590,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ),
       collectionId: collection.id,
       focusId: FushiFocusId('home-video-continue-collection-${collection.id}'),
-      title: _workTitle(collection),
-      subtitle: _continueCollectionSecondaryText(target, currentIndex),
+      title: candidate.title,
+      subtitle: _continueCollectionSecondaryText(candidate),
       detailLine: completedCount > 0
           ? t.video_hero_episodes_watched(n: completedCount)
           : null,
@@ -7783,7 +7621,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         title: _workTitle(collection),
         onContinue: () =>
             _openSlot(target, playlistCollectionId: collection.id),
-        progressLabel: _continueCollectionSecondaryText(target, currentIndex),
+        progressLabel: _continueCollectionSecondaryText(candidate),
       ),
       cloud: target.local == null,
     );
@@ -7801,9 +7639,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         episodeStill ?? (meta.backdropHasText ? null : meta.backdrop);
     return (image: image, logo: image == null ? null : meta.logo);
   }
-
-  static bool _isUnstarted(VideoBookRow book) =>
-      book.completedAt == null && book.lastPositionMs <= 0;
 
   /// 首屏骨架预判主卡用（[_buildLibraryMapsPendingSlivers]）：这一条有任何播放
   /// 痕迹（有位置 / 已打勾 / 有行级播放时刻）。只是「可能有继续观看」的宽判据——
@@ -13372,13 +13207,8 @@ String _remoteVideoSelectionKey(RemoteVideoInfo video) =>
 bool _isRemoteVideoSelectionKey(String key) =>
     key.startsWith(_kRemoteVideoSelectionPrefix);
 
-class _VideoSlot {
-  const _VideoSlot({this.local, this.remote})
-    : assert(local != null || remote != null);
-
-  final VideoBookRow? local;
-  final RemoteVideoInfo? remote;
-}
+/// 首页横滚行的本地 / 远端统一槽位（与侧栏速览共用 [VideoHomeSlot]）。
+typedef _VideoSlot = VideoHomeSlot;
 
 /// 本轮该不该真的向远端要清单（BUG-1891）。**纯判定**，抽成顶层函数是为了能被
 /// 单测直接锁住——它是「一进视频页就把整台 Emby 递归一遍」的唯一闸门。

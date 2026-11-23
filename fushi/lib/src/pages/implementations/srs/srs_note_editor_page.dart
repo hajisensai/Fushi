@@ -45,6 +45,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
 import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi/src/srs/srs_field_speech.dart' show srsSpeechSourcesOf;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
@@ -972,6 +973,13 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       help: SrsFieldHelp.of(field, miningSlot: _miningSlotsOf(type)[field.id]),
       headerActions: _fieldActions(type, field),
       model: _fields[field.id]!,
+      speechSources: srsSpeechSourcesOf<SrsFieldModel>(
+        field.name,
+        <({String name, SrsFieldModel value})>[
+          for (final SrsFieldDef f in type.fields)
+            (name: f.name, value: _fields[f.id]!),
+        ],
+      ),
       toggle: builtin && kFushiCardSwitchFields.contains(field.name),
       css: type.css,
       fushiCard: type.builtinKey == kSrsBuiltinFushiCardKey,

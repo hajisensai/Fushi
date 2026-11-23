@@ -5,12 +5,25 @@
 ///
 /// 三家只是默认端口不同（各自独立 providerId，缓存键互不串）；LMROID、ITVOICE 等
 /// 其它兼容引擎改地址即可。声音选的是「风格」：style id 才是 `speaker` 参数。
+///
+/// 逐句语气（[TtsDirectedSynthesis]）：在 `/audio_query` 拿回的 AudioQuery 上改
+/// `speedScale` / `pitchScale` / `volumeScale` / `intonationScale` 再交给
+/// `/synthesis`（换算见 [VoicevoxCompatibleTtsProvider.applyDirection]）。
+/// - VOICEVOX / SHAREVOX：声明原生情绪——情绪自己译成「抑揚」（intonationScale）+
+///   [ttsEmotionProsody] 的语速 / 音高 / 音量。只声明语速 / 音高 / 音量让框架折算会
+///   丢掉抑揚这一维，而抑揚恰是这类引擎最能听出「高兴 / 低落」的旋钮。
+/// - AivisSpeech：`intonationScale` 是「所选风格的感情强弱」、不是抑揚，`pitchScale`
+///   偏离 0 会劣化音质（引擎文档原话），所以只声明语速 + 音量，情绪由框架折算。
 library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/providers/tts_http.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -37,6 +50,16 @@ abstract class VoicevoxCompatibleTtsDescriptor extends TtsProviderDescriptor {
 
   /// 引擎默认地址（`http://127.0.0.1:<默认端口>`）。
   String get defaultEndpoint;
+
+  /// 逐句语气能表达的字段（见库注释）。VOICEVOX ENGINE 语义（`pitchScale` 乘在
+  /// log-F0 上、`intonationScale` 放大音高起伏）：情绪原生 + 语速 / 音高 / 音量。
+  /// SHAREVOX 引擎由 VOICEVOX ENGINE 分叉，这几个字段语义相同。
+  TtsDirectionSupport get directionSupport => const TtsDirectionSupport(
+    emotion: true,
+    rate: true,
+    pitch: true,
+    volume: true,
+  );
 
   @override
   TtsCapabilities get capabilities => const TtsCapabilities(
@@ -108,6 +131,7 @@ abstract class VoicevoxCompatibleTtsDescriptor extends TtsProviderDescriptor {
               e.value: preset.param(e.key).trim(),
         },
         capabilities: capabilities,
+        directionSupport: directionSupport,
         host: host,
       );
 }
@@ -136,6 +160,13 @@ class AivisSpeechTtsDescriptor extends VoicevoxCompatibleTtsDescriptor {
 
   @override
   String get defaultEndpoint => defaultUrl;
+
+  /// AivisSpeech Engine 的 AudioQuery（`voicevox_engine/model.py`）：
+  /// `intonationScale` 是「選択した話者スタイルの感情表現の強弱」而非抑揚，`pitchScale`
+  /// 「0.0 から変更すると音質が劣化する」。所以只调语速 / 音量，情绪由框架折算进这两项。
+  @override
+  TtsDirectionSupport get directionSupport =>
+      const TtsDirectionSupport(rate: true, volume: true);
 }
 
 class SharevoxTtsDescriptor extends VoicevoxCompatibleTtsDescriptor {
@@ -151,12 +182,14 @@ class SharevoxTtsDescriptor extends VoicevoxCompatibleTtsDescriptor {
   String get defaultEndpoint => defaultUrl;
 }
 
-class VoicevoxCompatibleTtsProvider extends TtsProvider {
+class VoicevoxCompatibleTtsProvider extends TtsProvider
+    implements TtsDirectedSynthesis {
   VoicevoxCompatibleTtsProvider({
     required String endpoint,
     required this.speaker,
     required this.overrides,
     required this.capabilities,
+    required this.directionSupport,
     required TtsHost host,
   }) : _base = voicevoxBaseUri(endpoint),
        _client = host.httpClientFactory();
@@ -169,6 +202,9 @@ class VoicevoxCompatibleTtsProvider extends TtsProvider {
 
   @override
   final TtsCapabilities capabilities;
+
+  @override
+  final TtsDirectionSupport directionSupport;
 
   final Uri? _base;
   final HttpClient _client;
@@ -214,11 +250,182 @@ class VoicevoxCompatibleTtsProvider extends TtsProvider {
     return next;
   }
 
+  /// GUI 与 AivisSpeech 文档给的合法范围（VOICEVOX ENGINE 本身不校验，超出会失真）。
+  static const double minSpeedScale = 0.5;
+  static const double maxSpeedScale = 2.0;
+  static const double minPitchScale = -0.15;
+  static const double maxPitchScale = 0.15;
+  static const double maxIntonationScale = 2.0;
+  static const double maxVolumeScale = 2.0;
+
+  /// 每种情绪在强度 100 时对 `intonationScale` 的倍率增量（按强度线性缩放）：高兴 /
+  /// 生气 / 惊讶时起伏更大，悲伤 / 温柔 / 嫌恶时更平。只在声明了原生情绪时用。
+  static const Map<CastEmotion, double> emotionIntonation =
+      <CastEmotion, double>{
+        CastEmotion.neutral: 0,
+        CastEmotion.joy: 0.25,
+        CastEmotion.sadness: -0.30,
+        CastEmotion.anger: 0.30,
+        CastEmotion.surprise: 0.40,
+        CastEmotion.fear: 0.10,
+        CastEmotion.disgust: -0.10,
+        CastEmotion.embarrassment: 0.10,
+        CastEmotion.tenderness: -0.15,
+        CastEmotion.tension: 0.05,
+      };
+
+  /// 没有有声 mora 可量时假定的平均 ln(F0)（约 245 Hz）。没有有声 mora 时音高也
+  /// 无从可调，这个值只防止除零。
+  static const double _fallbackLogF0 = 5.5;
+
+  /// 把逐句语气写进 AudioQuery（纯函数，测试直接调；[query] 已套过 [applyOverrides]，
+  /// 预设里的倍率作为基准、这里乘 / 加在上面而非替换）。[direction] 为空原样返回。
+  ///
+  /// - 语速：`speedScale × (1 + rateOffset)`（引擎把每个音素时长除以 speedScale）。
+  /// - 音量：`volumeScale × 10^(dB / 20)`（引擎按 volumeScale 线性缩放波形幅度）。
+  /// - 音高：VOICEVOX ENGINE `tts_engine._apply_pitch_scale` 是
+  ///   `mora.pitch *= 2 ** pitchScale`，而 mora.pitch 是 ln(F0)，所以 pitchScale 不是
+  ///   「每半音固定若干」。升 s 个半音要让 ln(F0) 加 `s·ln2/12`：取这句有声 mora 的
+  ///   平均 ln(F0) = L、原 pitchScale = p0，新值 `p = log2(2^p0 + s·ln2/12 / L)`
+  ///   （对平均音高精确；女声 L≈5.5 时 1 半音 ≈ 0.015）。
+  /// - 抑揚：`intonationScale × (1 + [emotionIntonation] × 强度/100)`。
+  ///
+  /// [direction] 带情绪（只有声明了原生情绪才会带）时，情绪除了抑揚，还按
+  /// [ttsEmotionProsody] 叠进语速 / 音高 / 音量（同框架折算，夹到 [CastLineLimits]）。
+  /// 结果都夹到引擎合法范围；预设本身已在范围外的，不被往回拉。
+  static Map<String, Object?> applyDirection(
+    Map<String, Object?> query,
+    TtsDirection direction,
+  ) {
+    if (direction.isEmpty) return query;
+    final CastEmotion? emotion = direction.emotion;
+    final int intensity = direction.effectiveIntensity;
+    final TtsProsodyOffsets folded = emotion == null
+        ? (rate: 0, pitch: 0, volume: 0)
+        : ttsEmotionProsody(emotion, intensity);
+    double? total(double? given, double add, double lo, double hi) {
+      if (given == null && add == 0) return null;
+      final double v = ((given ?? 0) + add).clamp(lo, hi).toDouble();
+      return v.abs() < 1e-9 ? null : v;
+    }
+
+    final double? rate = total(
+      direction.rateOffset,
+      folded.rate,
+      CastLineLimits.minRateOffset,
+      CastLineLimits.maxRateOffset,
+    );
+    final double? semitones = total(
+      direction.pitchOffset,
+      folded.pitch,
+      -CastLineLimits.maxPitchSemitones,
+      CastLineLimits.maxPitchSemitones,
+    );
+    final double? decibels = total(
+      direction.volumeOffset,
+      folded.volume,
+      -CastLineLimits.maxVolumeDb,
+      CastLineLimits.maxVolumeDb,
+    );
+    final double intonation = emotion == null
+        ? 0
+        : emotionIntonation[emotion]! *
+              intensity.clamp(0, CastLineLimits.maxIntensity) /
+              100;
+
+    final Map<String, Object?> next = <String, Object?>{...query};
+    double numberOf(String field, double fallback) => switch (next[field]) {
+      final num v when v.isFinite => v.toDouble(),
+      _ => fallback,
+    };
+    // 夹到 [lo, hi]，但范围向基准值放宽（用户自己设的越界值不被往回拉）。
+    double within(double v, double base, double lo, double hi) =>
+        v.clamp(math.min(lo, base), math.max(hi, base)).toDouble();
+
+    if (rate != null) {
+      final double base = numberOf('speedScale', 1);
+      next['speedScale'] = _round(
+        within(base * (1 + rate), base, minSpeedScale, maxSpeedScale),
+      );
+    }
+    if (semitones != null) {
+      final double logF0 =
+          _meanVoicedLogF0(next['accent_phrases']) ?? _fallbackLogF0;
+      final double base = numberOf('pitchScale', 0);
+      final double factor =
+          math.pow(2, base).toDouble() + semitones * math.ln2 / 12 / logF0;
+      if (factor > 0) {
+        next['pitchScale'] = _round(
+          within(
+            math.log(factor) / math.ln2,
+            base,
+            minPitchScale,
+            maxPitchScale,
+          ),
+        );
+      }
+    }
+    if (decibels != null) {
+      final double base = numberOf('volumeScale', 1);
+      next['volumeScale'] = _round(
+        within(
+          base * math.pow(10, decibels / 20).toDouble(),
+          base,
+          0,
+          maxVolumeScale,
+        ),
+      );
+    }
+    if (intonation != 0) {
+      final double base = numberOf('intonationScale', 1);
+      next['intonationScale'] = _round(
+        within(base * (1 + intonation), base, 0, maxIntonationScale),
+      );
+    }
+    return next;
+  }
+
+  /// 去浮点噪声（引擎能分辨的精度远低于 1e-4）。
+  static double _round(double v) => (v * 10000).round() / 10000;
+
+  /// AudioQuery 里有声 mora（pitch > 0）的平均 ln(F0)；一个都没有返回 null。
+  static double? _meanVoicedLogF0(Object? accentPhrases) {
+    double sum = 0;
+    int count = 0;
+    if (accentPhrases is List) {
+      for (final Object? phrase in accentPhrases) {
+        if (phrase is! Map || phrase['moras'] is! List) continue;
+        for (final Object? mora in phrase['moras'] as List) {
+          if (mora is! Map) continue;
+          final Object? pitch = mora['pitch'];
+          if (pitch is num && pitch.isFinite && pitch > 0) {
+            sum += pitch;
+            count++;
+          }
+        }
+      }
+    }
+    return count == 0 ? null : sum / count;
+  }
+
   @override
   Future<TtsResult> synthesize(
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
     final Uri? base = _base;
     final int? style = int.tryParse(speaker.trim());
@@ -247,7 +454,9 @@ class VoicevoxCompatibleTtsProvider extends TtsProvider {
       uri: _at(base, '/synthesis', <String, String>{'speaker': '$style'}),
       outputPath: outputPath,
       cancel: cancel,
-      body: utf8.encode(jsonEncode(applyOverrides(query, overrides))),
+      body: utf8.encode(
+        jsonEncode(applyDirection(applyOverrides(query, overrides), direction)),
+      ),
       headers: const <String, String>{
         HttpHeaders.contentTypeHeader: 'application/json; charset=utf-8',
         HttpHeaders.acceptHeader: 'audio/wav',

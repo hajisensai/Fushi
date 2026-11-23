@@ -52,7 +52,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 171);
+    expect(migrated.schemaVersion, kFushiDbSchemaVersion);
     final List<MediaSourceRow> rows = await migrated
         .select(migrated.mediaSources)
         .get();
@@ -89,7 +89,10 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     expect(columnsOf(probe), contains('auto_scan'));
   });
 
@@ -113,7 +116,10 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     expect(columnsOf(probe), contains('auto_scan'));
   });
 }

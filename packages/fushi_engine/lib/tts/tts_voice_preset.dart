@@ -9,6 +9,9 @@ library;
 import 'dart:convert';
 
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/tts/tts_media_voices.dart';
+
+export 'package:fushi_engine/tts/tts_media_voices.dart';
 
 class TtsVoicePreset {
   const TtsVoicePreset({
@@ -160,6 +163,24 @@ class TtsPresetStore {
   }
 
   Future<void> setSpeed(double value) => _prefs.setPref(speedKey, value);
+
+  /// 朗读声音按作品记（[TtsMediaVoices]）：本书 / 系列 + 语言 → 预设 id。
+  static const String mediaVoicesKey = 'tts_media_voices';
+
+  TtsMediaVoices loadMediaVoices() {
+    final Object? raw = _prefs.getPref(mediaVoicesKey, defaultValue: '');
+    return raw is String ? TtsMediaVoices.decode(raw) : TtsMediaVoices();
+  }
+
+  Future<void> saveMediaVoices(TtsMediaVoices voices) =>
+      _prefs.setPref(mediaVoicesKey, voices.isEmpty ? '' : voices.encode());
+
+  /// 删声音预设后调：作品表里指向它的条目一起删（不删也会回落到默认，但留着的
+  /// 悬空 id 会让「这本书用了单独的声音」的提示失真）。
+  Future<void> forgetMediaVoicePreset(String presetId) async {
+    final TtsMediaVoices voices = loadMediaVoices();
+    if (voices.forgetPreset(presetId)) await saveMediaVoices(voices);
+  }
 
   /// 每本书的朗读断点：章节、该句在章内的匹配坐标起点、句内毫秒、音频缓存键。
   static String resumeKeyFor(String bookKey) => 'tts_resume_$bookKey';

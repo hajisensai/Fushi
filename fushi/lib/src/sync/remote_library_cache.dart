@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 
@@ -282,6 +283,11 @@ final remoteLibraryCacheProvider = Provider<RemoteLibraryCache>((ref) {
       .reroutedSources
       .listen(cache.invalidateSource);
   ref.onDispose(reroutes.cancel);
+  // 媒体服务器上的已播放 / 断点变了（标记已看 / 未看、播放页退回）：这台的清单
+  // 槽（卡片角标、「已看 x/N」）作废，下次读拿到服务器的新状态。
+  final StreamSubscription<String> userData = MediaServerUserDataChanges.stream
+      .listen(cache.invalidateSource);
+  ref.onDispose(userData.cancel);
   return cache;
 });
 

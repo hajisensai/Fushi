@@ -1,0 +1,10 @@
+## BUG-5296 · gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回
+- **报告**：2026-11-23（外部 PR #4245，作者 zymy8848，附真机报告 `srs4-migration-report(1).json` / `(2).json`：367 张卡、274 条统计不同、`oldSideStaleResults: 0`）
+- **真实性**：✅ 真 bug（对拍的基准偏了；旧库与新代的数据都没坏）。
+  - **根因**：协议 3 里日志投影是唯一依赖到达顺序的地方——`store/sync2/mod.rs` `project_log`（:1514）只在行不存在时插入、`index_log`（:1491）`INSERT OR IGNORE` 写 `sync2_log_meta`、`upsert_server_time`（:1048）只在插入时调；`dedup.rs` 只收敛载荷逐字节相同的副本。多台设备各自包过同一份旧库时，每台都先投影自己那份。新代 `store/gen4/derive.rs` `pick_log`（:1359）与顺序无关，取操作号最小的。两份副本在 `sc`、意图、作者结果、时长、时区、评分、HLC、S(e) 乃至卡上的任何不同，都让两侧的卡 / 统计分叉。BUG-5250 的 `stale.rs` 只看 `sync2_log_meta` 当前指向的操作、跳过带 `sc` 的行，认不出这一类。
+- **[x] ① 已修复** — PR #4245 第一版只认 `res` / `sc` / 意图三处不同；合并前改成按整份差量：
+  - `store/gen4/stale.rs`：`find` 对 `log_ix` 里有更小操作号代表 W 的行（M = `sync2_log_meta` 所指），先证落库行出自 M（身份键、`sc`、意图与 M 相同；M 是带 `sc` 的 `Absolute` 时 `res` 也相同；要换掉的每个键与 S(e) 的落库原值都是 M 的），再算 `log_row(M)` → `log_row(W)` 的差量（`res` 以外的键、意图、S(e)，以及 W 的结果由作者给时的 `res`）；M、W 除操作号外完全一样时不认（落库行与操作的差异照报）。`heal` 把差量写回投影行（列与 JSON 一起）、`sync2_log_meta`（卡、笔记、意图、操作号）与 `srs_event_local.server_time`，再按协议 3 的重放重放新旧两张卡。三台以上设备同理（每个非代表副本都映到最小操作号）。
+  - `store/gen4/dryrun.rs`：影子表按需加 `sync2_log_meta`（有换代表时）与 `srs_event_local`（换代表改了 S(e) 时），旧库一个字节不写；报告 `oldSideStaleResults` 多一项 `swaps`，例子写「日志 卡 op: M -> W keys: [换了的键] … res: …」，报告格式版本 5 → 6。
+  - `store/gen4/guards_tests.rs`：`stale.rs` 登记读 `srs_event_local`。
+- **[x] ② 已增加自动化测试** — `store/gen4/migrate_tests.rs`：PR 带来的 4 个（`sc` 不同改回、同 `sc` 改坏 `res` 照报、改坏 `sc` / 身份键照报、意图不同在影子 `sync2_log_meta` 里改回）；合并前加 3 个：`duplicate_log_copies_differing_beyond_result_config_and_intent_heal_and_migrate`（同 `sc` 只差时长与 S(e)、无 `sc` 差评分与时区；干跑不动旧库，两台都提交）、`duplicate_log_whose_swapped_field_was_tampered_still_fails`（要换掉的时长落库值被改成第三个值，照样中止）、`duplicate_log_across_three_devices_heals_every_non_representative_copy`（三台设备，中间与最大两台都改回）。拿 PR 第一版的 `stale.rs` 跑，前一个与第三个报 `stats` 的 `duration_ms` / `rating` / `utc_offset_min` 差异。
+- **备注**：M 不在 `log_ix`（新代不认它为活跃操作）的行不在这一类，照原样对拍。同批反馈 CQKRyvMoOC / EapjqHGvCl 签名不同，另见 BUG-5294 / BUG-5295。

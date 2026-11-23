@@ -77129,6 +77129,1971 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
   }
 }
 
+class $MusicServerDownloadsTable extends MusicServerDownloads
+    with TableInfo<$MusicServerDownloadsTable, MusicServerDownloadRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicServerDownloadsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceKeyMeta = const VerificationMeta(
+    'sourceKey',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKey = GeneratedColumn<String>(
+    'source_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverKindMeta = const VerificationMeta(
+    'serverKind',
+  );
+  @override
+  late final GeneratedColumn<String> serverKind = GeneratedColumn<String>(
+    'server_kind',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _coverPathMeta = const VerificationMeta(
+    'coverPath',
+  );
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+    'cover_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sizeBytesMeta = const VerificationMeta(
+    'sizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> sizeBytes = GeneratedColumn<int>(
+    'size_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _codecMeta = const VerificationMeta('codec');
+  @override
+  late final GeneratedColumn<String> codec = GeneratedColumn<String>(
+    'codec',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _downloadedAtMeta = const VerificationMeta(
+    'downloadedAt',
+  );
+  @override
+  late final GeneratedColumn<int> downloadedAt = GeneratedColumn<int>(
+    'downloaded_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    sourceKey,
+    itemId,
+    serverKind,
+    filePath,
+    coverPath,
+    sizeBytes,
+    codec,
+    downloadedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_server_downloads';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicServerDownloadRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('source_key')) {
+      context.handle(
+        _sourceKeyMeta,
+        sourceKey.isAcceptableOrUnknown(data['source_key']!, _sourceKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKeyMeta);
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('server_kind')) {
+      context.handle(
+        _serverKindMeta,
+        serverKind.isAcceptableOrUnknown(data['server_kind']!, _serverKindMeta),
+      );
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_filePathMeta);
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(
+        _coverPathMeta,
+        coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta),
+      );
+    }
+    if (data.containsKey('size_bytes')) {
+      context.handle(
+        _sizeBytesMeta,
+        sizeBytes.isAcceptableOrUnknown(data['size_bytes']!, _sizeBytesMeta),
+      );
+    }
+    if (data.containsKey('codec')) {
+      context.handle(
+        _codecMeta,
+        codec.isAcceptableOrUnknown(data['codec']!, _codecMeta),
+      );
+    }
+    if (data.containsKey('downloaded_at')) {
+      context.handle(
+        _downloadedAtMeta,
+        downloadedAt.isAcceptableOrUnknown(
+          data['downloaded_at']!,
+          _downloadedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_downloadedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid};
+  @override
+  MusicServerDownloadRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicServerDownloadRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      sourceKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_key'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      serverKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_kind'],
+      ),
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      )!,
+      coverPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_path'],
+      ),
+      sizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size_bytes'],
+      ),
+      codec: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}codec'],
+      ),
+      downloadedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}downloaded_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicServerDownloadsTable createAlias(String alias) {
+    return $MusicServerDownloadsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicServerDownloadRow extends DataClass
+    implements Insertable<MusicServerDownloadRow> {
+  final String trackUid;
+
+  /// 服务器配置身份（`MusicServerBrowser.serverId`），与 [MusicRemoteTracks.sourceKey] 同义。
+  final String sourceKey;
+
+  /// 服务器侧曲目 id。
+  final String itemId;
+
+  /// 服务器的协议家族 wire 值（v176，`MusicServerKind.wire`：`jellyfin` | `subsonic`）。离线副本的
+  /// 播放项凭它带上完整的服务器身份——这台设备上的服务器配置删了 / 连不上时，播放上报与收藏
+  /// 照样能记进离线队列（[MusicServerPendingActions]）。v176 之前的行按 [sourceKey] 前缀回填
+  /// （Jellyfin 家族 `jellyfin:`、Subsonic `subsonic-`）；NULL = 认不出。
+  final String? serverKind;
+
+  /// 离线副本的绝对路径（本机）。
+  final String filePath;
+
+  /// 同目录里下好的专辑封面（本机绝对路径）；没有为 NULL。
+  final String? coverPath;
+
+  /// 文件大小（字节）。
+  final int? sizeBytes;
+
+  /// 文件的容器 / 编码（按文件头认出的扩展名，`flac` / `mp3` …）。
+  final String? codec;
+
+  /// 下完的时刻（毫秒）。
+  final int downloadedAt;
+  const MusicServerDownloadRow({
+    required this.trackUid,
+    required this.sourceKey,
+    required this.itemId,
+    this.serverKind,
+    required this.filePath,
+    this.coverPath,
+    this.sizeBytes,
+    this.codec,
+    required this.downloadedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['source_key'] = Variable<String>(sourceKey);
+    map['item_id'] = Variable<String>(itemId);
+    if (!nullToAbsent || serverKind != null) {
+      map['server_kind'] = Variable<String>(serverKind);
+    }
+    map['file_path'] = Variable<String>(filePath);
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    if (!nullToAbsent || sizeBytes != null) {
+      map['size_bytes'] = Variable<int>(sizeBytes);
+    }
+    if (!nullToAbsent || codec != null) {
+      map['codec'] = Variable<String>(codec);
+    }
+    map['downloaded_at'] = Variable<int>(downloadedAt);
+    return map;
+  }
+
+  MusicServerDownloadsCompanion toCompanion(bool nullToAbsent) {
+    return MusicServerDownloadsCompanion(
+      trackUid: Value(trackUid),
+      sourceKey: Value(sourceKey),
+      itemId: Value(itemId),
+      serverKind: serverKind == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverKind),
+      filePath: Value(filePath),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      sizeBytes: sizeBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sizeBytes),
+      codec: codec == null && nullToAbsent
+          ? const Value.absent()
+          : Value(codec),
+      downloadedAt: Value(downloadedAt),
+    );
+  }
+
+  factory MusicServerDownloadRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicServerDownloadRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      sourceKey: serializer.fromJson<String>(json['sourceKey']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      serverKind: serializer.fromJson<String?>(json['serverKind']),
+      filePath: serializer.fromJson<String>(json['filePath']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      sizeBytes: serializer.fromJson<int?>(json['sizeBytes']),
+      codec: serializer.fromJson<String?>(json['codec']),
+      downloadedAt: serializer.fromJson<int>(json['downloadedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'sourceKey': serializer.toJson<String>(sourceKey),
+      'itemId': serializer.toJson<String>(itemId),
+      'serverKind': serializer.toJson<String?>(serverKind),
+      'filePath': serializer.toJson<String>(filePath),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'sizeBytes': serializer.toJson<int?>(sizeBytes),
+      'codec': serializer.toJson<String?>(codec),
+      'downloadedAt': serializer.toJson<int>(downloadedAt),
+    };
+  }
+
+  MusicServerDownloadRow copyWith({
+    String? trackUid,
+    String? sourceKey,
+    String? itemId,
+    Value<String?> serverKind = const Value.absent(),
+    String? filePath,
+    Value<String?> coverPath = const Value.absent(),
+    Value<int?> sizeBytes = const Value.absent(),
+    Value<String?> codec = const Value.absent(),
+    int? downloadedAt,
+  }) => MusicServerDownloadRow(
+    trackUid: trackUid ?? this.trackUid,
+    sourceKey: sourceKey ?? this.sourceKey,
+    itemId: itemId ?? this.itemId,
+    serverKind: serverKind.present ? serverKind.value : this.serverKind,
+    filePath: filePath ?? this.filePath,
+    coverPath: coverPath.present ? coverPath.value : this.coverPath,
+    sizeBytes: sizeBytes.present ? sizeBytes.value : this.sizeBytes,
+    codec: codec.present ? codec.value : this.codec,
+    downloadedAt: downloadedAt ?? this.downloadedAt,
+  );
+  MusicServerDownloadRow copyWithCompanion(MusicServerDownloadsCompanion data) {
+    return MusicServerDownloadRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      sourceKey: data.sourceKey.present ? data.sourceKey.value : this.sourceKey,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      serverKind: data.serverKind.present
+          ? data.serverKind.value
+          : this.serverKind,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      sizeBytes: data.sizeBytes.present ? data.sizeBytes.value : this.sizeBytes,
+      codec: data.codec.present ? data.codec.value : this.codec,
+      downloadedAt: data.downloadedAt.present
+          ? data.downloadedAt.value
+          : this.downloadedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerDownloadRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('itemId: $itemId, ')
+          ..write('serverKind: $serverKind, ')
+          ..write('filePath: $filePath, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('codec: $codec, ')
+          ..write('downloadedAt: $downloadedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackUid,
+    sourceKey,
+    itemId,
+    serverKind,
+    filePath,
+    coverPath,
+    sizeBytes,
+    codec,
+    downloadedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicServerDownloadRow &&
+          other.trackUid == this.trackUid &&
+          other.sourceKey == this.sourceKey &&
+          other.itemId == this.itemId &&
+          other.serverKind == this.serverKind &&
+          other.filePath == this.filePath &&
+          other.coverPath == this.coverPath &&
+          other.sizeBytes == this.sizeBytes &&
+          other.codec == this.codec &&
+          other.downloadedAt == this.downloadedAt);
+}
+
+class MusicServerDownloadsCompanion
+    extends UpdateCompanion<MusicServerDownloadRow> {
+  final Value<String> trackUid;
+  final Value<String> sourceKey;
+  final Value<String> itemId;
+  final Value<String?> serverKind;
+  final Value<String> filePath;
+  final Value<String?> coverPath;
+  final Value<int?> sizeBytes;
+  final Value<String?> codec;
+  final Value<int> downloadedAt;
+  final Value<int> rowid;
+  const MusicServerDownloadsCompanion({
+    this.trackUid = const Value.absent(),
+    this.sourceKey = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.serverKind = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.codec = const Value.absent(),
+    this.downloadedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicServerDownloadsCompanion.insert({
+    required String trackUid,
+    required String sourceKey,
+    required String itemId,
+    this.serverKind = const Value.absent(),
+    required String filePath,
+    this.coverPath = const Value.absent(),
+    this.sizeBytes = const Value.absent(),
+    this.codec = const Value.absent(),
+    required int downloadedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       sourceKey = Value(sourceKey),
+       itemId = Value(itemId),
+       filePath = Value(filePath),
+       downloadedAt = Value(downloadedAt);
+  static Insertable<MusicServerDownloadRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? sourceKey,
+    Expression<String>? itemId,
+    Expression<String>? serverKind,
+    Expression<String>? filePath,
+    Expression<String>? coverPath,
+    Expression<int>? sizeBytes,
+    Expression<String>? codec,
+    Expression<int>? downloadedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (sourceKey != null) 'source_key': sourceKey,
+      if (itemId != null) 'item_id': itemId,
+      if (serverKind != null) 'server_kind': serverKind,
+      if (filePath != null) 'file_path': filePath,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (sizeBytes != null) 'size_bytes': sizeBytes,
+      if (codec != null) 'codec': codec,
+      if (downloadedAt != null) 'downloaded_at': downloadedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicServerDownloadsCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? sourceKey,
+    Value<String>? itemId,
+    Value<String?>? serverKind,
+    Value<String>? filePath,
+    Value<String?>? coverPath,
+    Value<int?>? sizeBytes,
+    Value<String?>? codec,
+    Value<int>? downloadedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicServerDownloadsCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      sourceKey: sourceKey ?? this.sourceKey,
+      itemId: itemId ?? this.itemId,
+      serverKind: serverKind ?? this.serverKind,
+      filePath: filePath ?? this.filePath,
+      coverPath: coverPath ?? this.coverPath,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      codec: codec ?? this.codec,
+      downloadedAt: downloadedAt ?? this.downloadedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (sourceKey.present) {
+      map['source_key'] = Variable<String>(sourceKey.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (serverKind.present) {
+      map['server_kind'] = Variable<String>(serverKind.value);
+    }
+    if (filePath.present) {
+      map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (sizeBytes.present) {
+      map['size_bytes'] = Variable<int>(sizeBytes.value);
+    }
+    if (codec.present) {
+      map['codec'] = Variable<String>(codec.value);
+    }
+    if (downloadedAt.present) {
+      map['downloaded_at'] = Variable<int>(downloadedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerDownloadsCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('itemId: $itemId, ')
+          ..write('serverKind: $serverKind, ')
+          ..write('filePath: $filePath, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('sizeBytes: $sizeBytes, ')
+          ..write('codec: $codec, ')
+          ..write('downloadedAt: $downloadedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicServerPendingActionsTable extends MusicServerPendingActions
+    with
+        TableInfo<
+          $MusicServerPendingActionsTable,
+          MusicServerPendingActionRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicServerPendingActionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _dedupeKeyMeta = const VerificationMeta(
+    'dedupeKey',
+  );
+  @override
+  late final GeneratedColumn<String> dedupeKey = GeneratedColumn<String>(
+    'dedupe_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _actionMeta = const VerificationMeta('action');
+  @override
+  late final GeneratedColumn<String> action = GeneratedColumn<String>(
+    'action',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverKindMeta = const VerificationMeta(
+    'serverKind',
+  );
+  @override
+  late final GeneratedColumn<String> serverKind = GeneratedColumn<String>(
+    'server_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverIdMeta = const VerificationMeta(
+    'serverId',
+  );
+  @override
+  late final GeneratedColumn<String> serverId = GeneratedColumn<String>(
+    'server_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _playedAtMeta = const VerificationMeta(
+    'playedAt',
+  );
+  @override
+  late final GeneratedColumn<int> playedAt = GeneratedColumn<int>(
+    'played_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _favoriteMeta = const VerificationMeta(
+    'favorite',
+  );
+  @override
+  late final GeneratedColumn<bool> favorite = GeneratedColumn<bool>(
+    'favorite',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("favorite" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _attemptsMeta = const VerificationMeta(
+    'attempts',
+  );
+  @override
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+    'attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastAttemptAtMeta = const VerificationMeta(
+    'lastAttemptAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastAttemptAt = GeneratedColumn<int>(
+    'last_attempt_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    dedupeKey,
+    action,
+    serverKind,
+    serverId,
+    itemId,
+    trackUid,
+    playedAt,
+    favorite,
+    createdAt,
+    attempts,
+    lastAttemptAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_server_pending_actions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicServerPendingActionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('dedupe_key')) {
+      context.handle(
+        _dedupeKeyMeta,
+        dedupeKey.isAcceptableOrUnknown(data['dedupe_key']!, _dedupeKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dedupeKeyMeta);
+    }
+    if (data.containsKey('action')) {
+      context.handle(
+        _actionMeta,
+        action.isAcceptableOrUnknown(data['action']!, _actionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_actionMeta);
+    }
+    if (data.containsKey('server_kind')) {
+      context.handle(
+        _serverKindMeta,
+        serverKind.isAcceptableOrUnknown(data['server_kind']!, _serverKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_serverKindMeta);
+    }
+    if (data.containsKey('server_id')) {
+      context.handle(
+        _serverIdMeta,
+        serverId.isAcceptableOrUnknown(data['server_id']!, _serverIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_serverIdMeta);
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('played_at')) {
+      context.handle(
+        _playedAtMeta,
+        playedAt.isAcceptableOrUnknown(data['played_at']!, _playedAtMeta),
+      );
+    }
+    if (data.containsKey('favorite')) {
+      context.handle(
+        _favoriteMeta,
+        favorite.isAcceptableOrUnknown(data['favorite']!, _favoriteMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(
+        _attemptsMeta,
+        attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta),
+      );
+    }
+    if (data.containsKey('last_attempt_at')) {
+      context.handle(
+        _lastAttemptAtMeta,
+        lastAttemptAt.isAcceptableOrUnknown(
+          data['last_attempt_at']!,
+          _lastAttemptAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {dedupeKey};
+  @override
+  MusicServerPendingActionRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicServerPendingActionRow(
+      dedupeKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}dedupe_key'],
+      )!,
+      action: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}action'],
+      )!,
+      serverKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_kind'],
+      )!,
+      serverId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_id'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      playedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}played_at'],
+      ),
+      favorite: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}favorite'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      attempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempts'],
+      )!,
+      lastAttemptAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_attempt_at'],
+      ),
+    );
+  }
+
+  @override
+  $MusicServerPendingActionsTable createAlias(String alias) {
+    return $MusicServerPendingActionsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicServerPendingActionRow extends DataClass
+    implements Insertable<MusicServerPendingActionRow> {
+  /// 去重键（见类注释）。
+  final String dedupeKey;
+
+  /// `play` | `favorite`（wire 值，冻结）。
+  final String action;
+
+  /// 服务器协议家族 wire 值（`jellyfin` | `subsonic`）。
+  final String serverKind;
+
+  /// 服务器配置身份（`MusicServerBrowser.serverId`）。
+  final String serverId;
+
+  /// 服务器侧曲目 id。
+  final String itemId;
+
+  /// 播放身份（`musicServerTrackUid(serverId, itemId)`），显示待送达的收藏状态用。
+  final String trackUid;
+
+  /// 播放：开播时刻（epoch 毫秒，补发时作为服务器上的播放时刻）。收藏为 NULL。
+  final int? playedAt;
+
+  /// 收藏：要设成的状态。播放为 NULL。
+  final bool? favorite;
+
+  /// 入队（收藏：最后一次切换）的时刻。
+  final int createdAt;
+
+  /// 服务器回了错误（不是连不上）的次数：到上限丢弃（条目在服务器上删了等）。
+  final int attempts;
+
+  /// 最近一次补发尝试的时刻；没试过为 NULL。
+  final int? lastAttemptAt;
+  const MusicServerPendingActionRow({
+    required this.dedupeKey,
+    required this.action,
+    required this.serverKind,
+    required this.serverId,
+    required this.itemId,
+    required this.trackUid,
+    this.playedAt,
+    this.favorite,
+    required this.createdAt,
+    required this.attempts,
+    this.lastAttemptAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['dedupe_key'] = Variable<String>(dedupeKey);
+    map['action'] = Variable<String>(action);
+    map['server_kind'] = Variable<String>(serverKind);
+    map['server_id'] = Variable<String>(serverId);
+    map['item_id'] = Variable<String>(itemId);
+    map['track_uid'] = Variable<String>(trackUid);
+    if (!nullToAbsent || playedAt != null) {
+      map['played_at'] = Variable<int>(playedAt);
+    }
+    if (!nullToAbsent || favorite != null) {
+      map['favorite'] = Variable<bool>(favorite);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    map['attempts'] = Variable<int>(attempts);
+    if (!nullToAbsent || lastAttemptAt != null) {
+      map['last_attempt_at'] = Variable<int>(lastAttemptAt);
+    }
+    return map;
+  }
+
+  MusicServerPendingActionsCompanion toCompanion(bool nullToAbsent) {
+    return MusicServerPendingActionsCompanion(
+      dedupeKey: Value(dedupeKey),
+      action: Value(action),
+      serverKind: Value(serverKind),
+      serverId: Value(serverId),
+      itemId: Value(itemId),
+      trackUid: Value(trackUid),
+      playedAt: playedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(playedAt),
+      favorite: favorite == null && nullToAbsent
+          ? const Value.absent()
+          : Value(favorite),
+      createdAt: Value(createdAt),
+      attempts: Value(attempts),
+      lastAttemptAt: lastAttemptAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastAttemptAt),
+    );
+  }
+
+  factory MusicServerPendingActionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicServerPendingActionRow(
+      dedupeKey: serializer.fromJson<String>(json['dedupeKey']),
+      action: serializer.fromJson<String>(json['action']),
+      serverKind: serializer.fromJson<String>(json['serverKind']),
+      serverId: serializer.fromJson<String>(json['serverId']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      playedAt: serializer.fromJson<int?>(json['playedAt']),
+      favorite: serializer.fromJson<bool?>(json['favorite']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+      lastAttemptAt: serializer.fromJson<int?>(json['lastAttemptAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'dedupeKey': serializer.toJson<String>(dedupeKey),
+      'action': serializer.toJson<String>(action),
+      'serverKind': serializer.toJson<String>(serverKind),
+      'serverId': serializer.toJson<String>(serverId),
+      'itemId': serializer.toJson<String>(itemId),
+      'trackUid': serializer.toJson<String>(trackUid),
+      'playedAt': serializer.toJson<int?>(playedAt),
+      'favorite': serializer.toJson<bool?>(favorite),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'attempts': serializer.toJson<int>(attempts),
+      'lastAttemptAt': serializer.toJson<int?>(lastAttemptAt),
+    };
+  }
+
+  MusicServerPendingActionRow copyWith({
+    String? dedupeKey,
+    String? action,
+    String? serverKind,
+    String? serverId,
+    String? itemId,
+    String? trackUid,
+    Value<int?> playedAt = const Value.absent(),
+    Value<bool?> favorite = const Value.absent(),
+    int? createdAt,
+    int? attempts,
+    Value<int?> lastAttemptAt = const Value.absent(),
+  }) => MusicServerPendingActionRow(
+    dedupeKey: dedupeKey ?? this.dedupeKey,
+    action: action ?? this.action,
+    serverKind: serverKind ?? this.serverKind,
+    serverId: serverId ?? this.serverId,
+    itemId: itemId ?? this.itemId,
+    trackUid: trackUid ?? this.trackUid,
+    playedAt: playedAt.present ? playedAt.value : this.playedAt,
+    favorite: favorite.present ? favorite.value : this.favorite,
+    createdAt: createdAt ?? this.createdAt,
+    attempts: attempts ?? this.attempts,
+    lastAttemptAt: lastAttemptAt.present
+        ? lastAttemptAt.value
+        : this.lastAttemptAt,
+  );
+  MusicServerPendingActionRow copyWithCompanion(
+    MusicServerPendingActionsCompanion data,
+  ) {
+    return MusicServerPendingActionRow(
+      dedupeKey: data.dedupeKey.present ? data.dedupeKey.value : this.dedupeKey,
+      action: data.action.present ? data.action.value : this.action,
+      serverKind: data.serverKind.present
+          ? data.serverKind.value
+          : this.serverKind,
+      serverId: data.serverId.present ? data.serverId.value : this.serverId,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      playedAt: data.playedAt.present ? data.playedAt.value : this.playedAt,
+      favorite: data.favorite.present ? data.favorite.value : this.favorite,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+      lastAttemptAt: data.lastAttemptAt.present
+          ? data.lastAttemptAt.value
+          : this.lastAttemptAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerPendingActionRow(')
+          ..write('dedupeKey: $dedupeKey, ')
+          ..write('action: $action, ')
+          ..write('serverKind: $serverKind, ')
+          ..write('serverId: $serverId, ')
+          ..write('itemId: $itemId, ')
+          ..write('trackUid: $trackUid, ')
+          ..write('playedAt: $playedAt, ')
+          ..write('favorite: $favorite, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastAttemptAt: $lastAttemptAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    dedupeKey,
+    action,
+    serverKind,
+    serverId,
+    itemId,
+    trackUid,
+    playedAt,
+    favorite,
+    createdAt,
+    attempts,
+    lastAttemptAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicServerPendingActionRow &&
+          other.dedupeKey == this.dedupeKey &&
+          other.action == this.action &&
+          other.serverKind == this.serverKind &&
+          other.serverId == this.serverId &&
+          other.itemId == this.itemId &&
+          other.trackUid == this.trackUid &&
+          other.playedAt == this.playedAt &&
+          other.favorite == this.favorite &&
+          other.createdAt == this.createdAt &&
+          other.attempts == this.attempts &&
+          other.lastAttemptAt == this.lastAttemptAt);
+}
+
+class MusicServerPendingActionsCompanion
+    extends UpdateCompanion<MusicServerPendingActionRow> {
+  final Value<String> dedupeKey;
+  final Value<String> action;
+  final Value<String> serverKind;
+  final Value<String> serverId;
+  final Value<String> itemId;
+  final Value<String> trackUid;
+  final Value<int?> playedAt;
+  final Value<bool?> favorite;
+  final Value<int> createdAt;
+  final Value<int> attempts;
+  final Value<int?> lastAttemptAt;
+  final Value<int> rowid;
+  const MusicServerPendingActionsCompanion({
+    this.dedupeKey = const Value.absent(),
+    this.action = const Value.absent(),
+    this.serverKind = const Value.absent(),
+    this.serverId = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.trackUid = const Value.absent(),
+    this.playedAt = const Value.absent(),
+    this.favorite = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.lastAttemptAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicServerPendingActionsCompanion.insert({
+    required String dedupeKey,
+    required String action,
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required String trackUid,
+    this.playedAt = const Value.absent(),
+    this.favorite = const Value.absent(),
+    required int createdAt,
+    this.attempts = const Value.absent(),
+    this.lastAttemptAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : dedupeKey = Value(dedupeKey),
+       action = Value(action),
+       serverKind = Value(serverKind),
+       serverId = Value(serverId),
+       itemId = Value(itemId),
+       trackUid = Value(trackUid),
+       createdAt = Value(createdAt);
+  static Insertable<MusicServerPendingActionRow> custom({
+    Expression<String>? dedupeKey,
+    Expression<String>? action,
+    Expression<String>? serverKind,
+    Expression<String>? serverId,
+    Expression<String>? itemId,
+    Expression<String>? trackUid,
+    Expression<int>? playedAt,
+    Expression<bool>? favorite,
+    Expression<int>? createdAt,
+    Expression<int>? attempts,
+    Expression<int>? lastAttemptAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (dedupeKey != null) 'dedupe_key': dedupeKey,
+      if (action != null) 'action': action,
+      if (serverKind != null) 'server_kind': serverKind,
+      if (serverId != null) 'server_id': serverId,
+      if (itemId != null) 'item_id': itemId,
+      if (trackUid != null) 'track_uid': trackUid,
+      if (playedAt != null) 'played_at': playedAt,
+      if (favorite != null) 'favorite': favorite,
+      if (createdAt != null) 'created_at': createdAt,
+      if (attempts != null) 'attempts': attempts,
+      if (lastAttemptAt != null) 'last_attempt_at': lastAttemptAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicServerPendingActionsCompanion copyWith({
+    Value<String>? dedupeKey,
+    Value<String>? action,
+    Value<String>? serverKind,
+    Value<String>? serverId,
+    Value<String>? itemId,
+    Value<String>? trackUid,
+    Value<int?>? playedAt,
+    Value<bool?>? favorite,
+    Value<int>? createdAt,
+    Value<int>? attempts,
+    Value<int?>? lastAttemptAt,
+    Value<int>? rowid,
+  }) {
+    return MusicServerPendingActionsCompanion(
+      dedupeKey: dedupeKey ?? this.dedupeKey,
+      action: action ?? this.action,
+      serverKind: serverKind ?? this.serverKind,
+      serverId: serverId ?? this.serverId,
+      itemId: itemId ?? this.itemId,
+      trackUid: trackUid ?? this.trackUid,
+      playedAt: playedAt ?? this.playedAt,
+      favorite: favorite ?? this.favorite,
+      createdAt: createdAt ?? this.createdAt,
+      attempts: attempts ?? this.attempts,
+      lastAttemptAt: lastAttemptAt ?? this.lastAttemptAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (dedupeKey.present) {
+      map['dedupe_key'] = Variable<String>(dedupeKey.value);
+    }
+    if (action.present) {
+      map['action'] = Variable<String>(action.value);
+    }
+    if (serverKind.present) {
+      map['server_kind'] = Variable<String>(serverKind.value);
+    }
+    if (serverId.present) {
+      map['server_id'] = Variable<String>(serverId.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (playedAt.present) {
+      map['played_at'] = Variable<int>(playedAt.value);
+    }
+    if (favorite.present) {
+      map['favorite'] = Variable<bool>(favorite.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (lastAttemptAt.present) {
+      map['last_attempt_at'] = Variable<int>(lastAttemptAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerPendingActionsCompanion(')
+          ..write('dedupeKey: $dedupeKey, ')
+          ..write('action: $action, ')
+          ..write('serverKind: $serverKind, ')
+          ..write('serverId: $serverId, ')
+          ..write('itemId: $itemId, ')
+          ..write('trackUid: $trackUid, ')
+          ..write('playedAt: $playedAt, ')
+          ..write('favorite: $favorite, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicServerTrackStatesTable extends MusicServerTrackStates
+    with TableInfo<$MusicServerTrackStatesTable, MusicServerTrackStateRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicServerTrackStatesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverKindMeta = const VerificationMeta(
+    'serverKind',
+  );
+  @override
+  late final GeneratedColumn<String> serverKind = GeneratedColumn<String>(
+    'server_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverIdMeta = const VerificationMeta(
+    'serverId',
+  );
+  @override
+  late final GeneratedColumn<String> serverId = GeneratedColumn<String>(
+    'server_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _favoriteMeta = const VerificationMeta(
+    'favorite',
+  );
+  @override
+  late final GeneratedColumn<bool> favorite = GeneratedColumn<bool>(
+    'favorite',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("favorite" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _favoriteAtMeta = const VerificationMeta(
+    'favoriteAt',
+  );
+  @override
+  late final GeneratedColumn<int> favoriteAt = GeneratedColumn<int>(
+    'favorite_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _measuredTrackGainMeta = const VerificationMeta(
+    'measuredTrackGain',
+  );
+  @override
+  late final GeneratedColumn<double> measuredTrackGain =
+      GeneratedColumn<double>(
+        'measured_track_gain',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _measuredTrackPeakMeta = const VerificationMeta(
+    'measuredTrackPeak',
+  );
+  @override
+  late final GeneratedColumn<double> measuredTrackPeak =
+      GeneratedColumn<double>(
+        'measured_track_peak',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _loudnessMeasuredAtMeta =
+      const VerificationMeta('loudnessMeasuredAt');
+  @override
+  late final GeneratedColumn<int> loudnessMeasuredAt = GeneratedColumn<int>(
+    'loudness_measured_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    serverKind,
+    serverId,
+    itemId,
+    favorite,
+    favoriteAt,
+    measuredTrackGain,
+    measuredTrackPeak,
+    loudnessMeasuredAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_server_track_states';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicServerTrackStateRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('server_kind')) {
+      context.handle(
+        _serverKindMeta,
+        serverKind.isAcceptableOrUnknown(data['server_kind']!, _serverKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_serverKindMeta);
+    }
+    if (data.containsKey('server_id')) {
+      context.handle(
+        _serverIdMeta,
+        serverId.isAcceptableOrUnknown(data['server_id']!, _serverIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_serverIdMeta);
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('favorite')) {
+      context.handle(
+        _favoriteMeta,
+        favorite.isAcceptableOrUnknown(data['favorite']!, _favoriteMeta),
+      );
+    }
+    if (data.containsKey('favorite_at')) {
+      context.handle(
+        _favoriteAtMeta,
+        favoriteAt.isAcceptableOrUnknown(data['favorite_at']!, _favoriteAtMeta),
+      );
+    }
+    if (data.containsKey('measured_track_gain')) {
+      context.handle(
+        _measuredTrackGainMeta,
+        measuredTrackGain.isAcceptableOrUnknown(
+          data['measured_track_gain']!,
+          _measuredTrackGainMeta,
+        ),
+      );
+    }
+    if (data.containsKey('measured_track_peak')) {
+      context.handle(
+        _measuredTrackPeakMeta,
+        measuredTrackPeak.isAcceptableOrUnknown(
+          data['measured_track_peak']!,
+          _measuredTrackPeakMeta,
+        ),
+      );
+    }
+    if (data.containsKey('loudness_measured_at')) {
+      context.handle(
+        _loudnessMeasuredAtMeta,
+        loudnessMeasuredAt.isAcceptableOrUnknown(
+          data['loudness_measured_at']!,
+          _loudnessMeasuredAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid};
+  @override
+  MusicServerTrackStateRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicServerTrackStateRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      serverKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_kind'],
+      )!,
+      serverId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_id'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      favorite: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}favorite'],
+      ),
+      favoriteAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}favorite_at'],
+      ),
+      measuredTrackGain: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}measured_track_gain'],
+      ),
+      measuredTrackPeak: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}measured_track_peak'],
+      ),
+      loudnessMeasuredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}loudness_measured_at'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicServerTrackStatesTable createAlias(String alias) {
+    return $MusicServerTrackStatesTable(attachedDatabase, alias);
+  }
+}
+
+class MusicServerTrackStateRow extends DataClass
+    implements Insertable<MusicServerTrackStateRow> {
+  /// 播放身份（`musicServerTrackUid(serverId, itemId)`）。
+  final String trackUid;
+
+  /// 服务器协议家族 wire 值（`jellyfin` | `subsonic`）。
+  final String serverKind;
+  final String serverId;
+  final String itemId;
+
+  /// 最后已知的收藏状态（服务器报的 / 服务器确认过的 / 本机最后一次切换）；不知道为 NULL。
+  final bool? favorite;
+
+  /// [favorite] 记下的时刻。
+  final int? favoriteAt;
+
+  /// 客户端测的曲目增益（dB，ReplayGain 2.0 参考 -18 LUFS）；静音 / 测不出为 NULL。
+  final double? measuredTrackGain;
+
+  /// 客户端测的曲目峰值（线性）。
+  final double? measuredTrackPeak;
+
+  /// 测量时刻；NULL = 没测过（非空而增益为 NULL = 测过、测不出，不再测）。
+  final int? loudnessMeasuredAt;
+  final int updatedAt;
+  const MusicServerTrackStateRow({
+    required this.trackUid,
+    required this.serverKind,
+    required this.serverId,
+    required this.itemId,
+    this.favorite,
+    this.favoriteAt,
+    this.measuredTrackGain,
+    this.measuredTrackPeak,
+    this.loudnessMeasuredAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['server_kind'] = Variable<String>(serverKind);
+    map['server_id'] = Variable<String>(serverId);
+    map['item_id'] = Variable<String>(itemId);
+    if (!nullToAbsent || favorite != null) {
+      map['favorite'] = Variable<bool>(favorite);
+    }
+    if (!nullToAbsent || favoriteAt != null) {
+      map['favorite_at'] = Variable<int>(favoriteAt);
+    }
+    if (!nullToAbsent || measuredTrackGain != null) {
+      map['measured_track_gain'] = Variable<double>(measuredTrackGain);
+    }
+    if (!nullToAbsent || measuredTrackPeak != null) {
+      map['measured_track_peak'] = Variable<double>(measuredTrackPeak);
+    }
+    if (!nullToAbsent || loudnessMeasuredAt != null) {
+      map['loudness_measured_at'] = Variable<int>(loudnessMeasuredAt);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MusicServerTrackStatesCompanion toCompanion(bool nullToAbsent) {
+    return MusicServerTrackStatesCompanion(
+      trackUid: Value(trackUid),
+      serverKind: Value(serverKind),
+      serverId: Value(serverId),
+      itemId: Value(itemId),
+      favorite: favorite == null && nullToAbsent
+          ? const Value.absent()
+          : Value(favorite),
+      favoriteAt: favoriteAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(favoriteAt),
+      measuredTrackGain: measuredTrackGain == null && nullToAbsent
+          ? const Value.absent()
+          : Value(measuredTrackGain),
+      measuredTrackPeak: measuredTrackPeak == null && nullToAbsent
+          ? const Value.absent()
+          : Value(measuredTrackPeak),
+      loudnessMeasuredAt: loudnessMeasuredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(loudnessMeasuredAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MusicServerTrackStateRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicServerTrackStateRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      serverKind: serializer.fromJson<String>(json['serverKind']),
+      serverId: serializer.fromJson<String>(json['serverId']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      favorite: serializer.fromJson<bool?>(json['favorite']),
+      favoriteAt: serializer.fromJson<int?>(json['favoriteAt']),
+      measuredTrackGain: serializer.fromJson<double?>(
+        json['measuredTrackGain'],
+      ),
+      measuredTrackPeak: serializer.fromJson<double?>(
+        json['measuredTrackPeak'],
+      ),
+      loudnessMeasuredAt: serializer.fromJson<int?>(json['loudnessMeasuredAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'serverKind': serializer.toJson<String>(serverKind),
+      'serverId': serializer.toJson<String>(serverId),
+      'itemId': serializer.toJson<String>(itemId),
+      'favorite': serializer.toJson<bool?>(favorite),
+      'favoriteAt': serializer.toJson<int?>(favoriteAt),
+      'measuredTrackGain': serializer.toJson<double?>(measuredTrackGain),
+      'measuredTrackPeak': serializer.toJson<double?>(measuredTrackPeak),
+      'loudnessMeasuredAt': serializer.toJson<int?>(loudnessMeasuredAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MusicServerTrackStateRow copyWith({
+    String? trackUid,
+    String? serverKind,
+    String? serverId,
+    String? itemId,
+    Value<bool?> favorite = const Value.absent(),
+    Value<int?> favoriteAt = const Value.absent(),
+    Value<double?> measuredTrackGain = const Value.absent(),
+    Value<double?> measuredTrackPeak = const Value.absent(),
+    Value<int?> loudnessMeasuredAt = const Value.absent(),
+    int? updatedAt,
+  }) => MusicServerTrackStateRow(
+    trackUid: trackUid ?? this.trackUid,
+    serverKind: serverKind ?? this.serverKind,
+    serverId: serverId ?? this.serverId,
+    itemId: itemId ?? this.itemId,
+    favorite: favorite.present ? favorite.value : this.favorite,
+    favoriteAt: favoriteAt.present ? favoriteAt.value : this.favoriteAt,
+    measuredTrackGain: measuredTrackGain.present
+        ? measuredTrackGain.value
+        : this.measuredTrackGain,
+    measuredTrackPeak: measuredTrackPeak.present
+        ? measuredTrackPeak.value
+        : this.measuredTrackPeak,
+    loudnessMeasuredAt: loudnessMeasuredAt.present
+        ? loudnessMeasuredAt.value
+        : this.loudnessMeasuredAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  MusicServerTrackStateRow copyWithCompanion(
+    MusicServerTrackStatesCompanion data,
+  ) {
+    return MusicServerTrackStateRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      serverKind: data.serverKind.present
+          ? data.serverKind.value
+          : this.serverKind,
+      serverId: data.serverId.present ? data.serverId.value : this.serverId,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      favorite: data.favorite.present ? data.favorite.value : this.favorite,
+      favoriteAt: data.favoriteAt.present
+          ? data.favoriteAt.value
+          : this.favoriteAt,
+      measuredTrackGain: data.measuredTrackGain.present
+          ? data.measuredTrackGain.value
+          : this.measuredTrackGain,
+      measuredTrackPeak: data.measuredTrackPeak.present
+          ? data.measuredTrackPeak.value
+          : this.measuredTrackPeak,
+      loudnessMeasuredAt: data.loudnessMeasuredAt.present
+          ? data.loudnessMeasuredAt.value
+          : this.loudnessMeasuredAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerTrackStateRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('serverKind: $serverKind, ')
+          ..write('serverId: $serverId, ')
+          ..write('itemId: $itemId, ')
+          ..write('favorite: $favorite, ')
+          ..write('favoriteAt: $favoriteAt, ')
+          ..write('measuredTrackGain: $measuredTrackGain, ')
+          ..write('measuredTrackPeak: $measuredTrackPeak, ')
+          ..write('loudnessMeasuredAt: $loudnessMeasuredAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackUid,
+    serverKind,
+    serverId,
+    itemId,
+    favorite,
+    favoriteAt,
+    measuredTrackGain,
+    measuredTrackPeak,
+    loudnessMeasuredAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicServerTrackStateRow &&
+          other.trackUid == this.trackUid &&
+          other.serverKind == this.serverKind &&
+          other.serverId == this.serverId &&
+          other.itemId == this.itemId &&
+          other.favorite == this.favorite &&
+          other.favoriteAt == this.favoriteAt &&
+          other.measuredTrackGain == this.measuredTrackGain &&
+          other.measuredTrackPeak == this.measuredTrackPeak &&
+          other.loudnessMeasuredAt == this.loudnessMeasuredAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MusicServerTrackStatesCompanion
+    extends UpdateCompanion<MusicServerTrackStateRow> {
+  final Value<String> trackUid;
+  final Value<String> serverKind;
+  final Value<String> serverId;
+  final Value<String> itemId;
+  final Value<bool?> favorite;
+  final Value<int?> favoriteAt;
+  final Value<double?> measuredTrackGain;
+  final Value<double?> measuredTrackPeak;
+  final Value<int?> loudnessMeasuredAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const MusicServerTrackStatesCompanion({
+    this.trackUid = const Value.absent(),
+    this.serverKind = const Value.absent(),
+    this.serverId = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.favorite = const Value.absent(),
+    this.favoriteAt = const Value.absent(),
+    this.measuredTrackGain = const Value.absent(),
+    this.measuredTrackPeak = const Value.absent(),
+    this.loudnessMeasuredAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicServerTrackStatesCompanion.insert({
+    required String trackUid,
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    this.favorite = const Value.absent(),
+    this.favoriteAt = const Value.absent(),
+    this.measuredTrackGain = const Value.absent(),
+    this.measuredTrackPeak = const Value.absent(),
+    this.loudnessMeasuredAt = const Value.absent(),
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       serverKind = Value(serverKind),
+       serverId = Value(serverId),
+       itemId = Value(itemId),
+       updatedAt = Value(updatedAt);
+  static Insertable<MusicServerTrackStateRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? serverKind,
+    Expression<String>? serverId,
+    Expression<String>? itemId,
+    Expression<bool>? favorite,
+    Expression<int>? favoriteAt,
+    Expression<double>? measuredTrackGain,
+    Expression<double>? measuredTrackPeak,
+    Expression<int>? loudnessMeasuredAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (serverKind != null) 'server_kind': serverKind,
+      if (serverId != null) 'server_id': serverId,
+      if (itemId != null) 'item_id': itemId,
+      if (favorite != null) 'favorite': favorite,
+      if (favoriteAt != null) 'favorite_at': favoriteAt,
+      if (measuredTrackGain != null) 'measured_track_gain': measuredTrackGain,
+      if (measuredTrackPeak != null) 'measured_track_peak': measuredTrackPeak,
+      if (loudnessMeasuredAt != null)
+        'loudness_measured_at': loudnessMeasuredAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicServerTrackStatesCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? serverKind,
+    Value<String>? serverId,
+    Value<String>? itemId,
+    Value<bool?>? favorite,
+    Value<int?>? favoriteAt,
+    Value<double?>? measuredTrackGain,
+    Value<double?>? measuredTrackPeak,
+    Value<int?>? loudnessMeasuredAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicServerTrackStatesCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      serverKind: serverKind ?? this.serverKind,
+      serverId: serverId ?? this.serverId,
+      itemId: itemId ?? this.itemId,
+      favorite: favorite ?? this.favorite,
+      favoriteAt: favoriteAt ?? this.favoriteAt,
+      measuredTrackGain: measuredTrackGain ?? this.measuredTrackGain,
+      measuredTrackPeak: measuredTrackPeak ?? this.measuredTrackPeak,
+      loudnessMeasuredAt: loudnessMeasuredAt ?? this.loudnessMeasuredAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (serverKind.present) {
+      map['server_kind'] = Variable<String>(serverKind.value);
+    }
+    if (serverId.present) {
+      map['server_id'] = Variable<String>(serverId.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (favorite.present) {
+      map['favorite'] = Variable<bool>(favorite.value);
+    }
+    if (favoriteAt.present) {
+      map['favorite_at'] = Variable<int>(favoriteAt.value);
+    }
+    if (measuredTrackGain.present) {
+      map['measured_track_gain'] = Variable<double>(measuredTrackGain.value);
+    }
+    if (measuredTrackPeak.present) {
+      map['measured_track_peak'] = Variable<double>(measuredTrackPeak.value);
+    }
+    if (loudnessMeasuredAt.present) {
+      map['loudness_measured_at'] = Variable<int>(loudnessMeasuredAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicServerTrackStatesCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('serverKind: $serverKind, ')
+          ..write('serverId: $serverId, ')
+          ..write('itemId: $itemId, ')
+          ..write('favorite: $favorite, ')
+          ..write('favoriteAt: $favoriteAt, ')
+          ..write('measuredTrackGain: $measuredTrackGain, ')
+          ..write('measuredTrackPeak: $measuredTrackPeak, ')
+          ..write('loudnessMeasuredAt: $loudnessMeasuredAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MusicPlayEventsTable extends MusicPlayEvents
     with TableInfo<$MusicPlayEventsTable, MusicPlayEventRow> {
   @override
@@ -79543,6 +81508,796 @@ class VideoContentFingerprintsCompanion
           ..write('fileModifiedAt: $fileModifiedAt, ')
           ..write('fingerprint: $fingerprint, ')
           ..write('computedAt: $computedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicVideoPrintsTable extends MusicVideoPrints
+    with TableInfo<$MusicVideoPrintsTable, MusicVideoPrintRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicVideoPrintsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeBytesMeta = const VerificationMeta(
+    'fileSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> fileSizeBytes = GeneratedColumn<int>(
+    'file_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _printMeta = const VerificationMeta('print');
+  @override
+  late final GeneratedColumn<Uint8List> print = GeneratedColumn<Uint8List>(
+    'print',
+    aliasedName,
+    false,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _computedAtMeta = const VerificationMeta(
+    'computedAt',
+  );
+  @override
+  late final GeneratedColumn<int> computedAt = GeneratedColumn<int>(
+    'computed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    path,
+    fileSizeBytes,
+    fileModifiedAt,
+    print,
+    computedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_video_prints';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicVideoPrintRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('file_size_bytes')) {
+      context.handle(
+        _fileSizeBytesMeta,
+        fileSizeBytes.isAcceptableOrUnknown(
+          data['file_size_bytes']!,
+          _fileSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeBytesMeta);
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileModifiedAtMeta);
+    }
+    if (data.containsKey('print')) {
+      context.handle(
+        _printMeta,
+        print.isAcceptableOrUnknown(data['print']!, _printMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_printMeta);
+    }
+    if (data.containsKey('computed_at')) {
+      context.handle(
+        _computedAtMeta,
+        computedAt.isAcceptableOrUnknown(data['computed_at']!, _computedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_computedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {path};
+  @override
+  MusicVideoPrintRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicVideoPrintRow(
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      fileSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size_bytes'],
+      )!,
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      )!,
+      print: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}print'],
+      )!,
+      computedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}computed_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicVideoPrintsTable createAlias(String alias) {
+    return $MusicVideoPrintsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicVideoPrintRow extends DataClass
+    implements Insertable<MusicVideoPrintRow> {
+  /// 视频文件的本机绝对路径。
+  final String path;
+
+  /// 算声纹当时的文件大小（字节），失效判据。
+  final int fileSizeBytes;
+
+  /// 算声纹当时的文件修改时刻（毫秒），失效判据。
+  final int fileModifiedAt;
+
+  /// 声纹：u32 序列按小端存成字节。
+  final Uint8List print;
+
+  /// 本行写入时刻（毫秒）。
+  final int computedAt;
+  const MusicVideoPrintRow({
+    required this.path,
+    required this.fileSizeBytes,
+    required this.fileModifiedAt,
+    required this.print,
+    required this.computedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['path'] = Variable<String>(path);
+    map['file_size_bytes'] = Variable<int>(fileSizeBytes);
+    map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    map['print'] = Variable<Uint8List>(print);
+    map['computed_at'] = Variable<int>(computedAt);
+    return map;
+  }
+
+  MusicVideoPrintsCompanion toCompanion(bool nullToAbsent) {
+    return MusicVideoPrintsCompanion(
+      path: Value(path),
+      fileSizeBytes: Value(fileSizeBytes),
+      fileModifiedAt: Value(fileModifiedAt),
+      print: Value(print),
+      computedAt: Value(computedAt),
+    );
+  }
+
+  factory MusicVideoPrintRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicVideoPrintRow(
+      path: serializer.fromJson<String>(json['path']),
+      fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
+      fileModifiedAt: serializer.fromJson<int>(json['fileModifiedAt']),
+      print: serializer.fromJson<Uint8List>(json['print']),
+      computedAt: serializer.fromJson<int>(json['computedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'path': serializer.toJson<String>(path),
+      'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
+      'fileModifiedAt': serializer.toJson<int>(fileModifiedAt),
+      'print': serializer.toJson<Uint8List>(print),
+      'computedAt': serializer.toJson<int>(computedAt),
+    };
+  }
+
+  MusicVideoPrintRow copyWith({
+    String? path,
+    int? fileSizeBytes,
+    int? fileModifiedAt,
+    Uint8List? print,
+    int? computedAt,
+  }) => MusicVideoPrintRow(
+    path: path ?? this.path,
+    fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+    fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+    print: print ?? this.print,
+    computedAt: computedAt ?? this.computedAt,
+  );
+  MusicVideoPrintRow copyWithCompanion(MusicVideoPrintsCompanion data) {
+    return MusicVideoPrintRow(
+      path: data.path.present ? data.path.value : this.path,
+      fileSizeBytes: data.fileSizeBytes.present
+          ? data.fileSizeBytes.value
+          : this.fileSizeBytes,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      print: data.print.present ? data.print.value : this.print,
+      computedAt: data.computedAt.present
+          ? data.computedAt.value
+          : this.computedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoPrintRow(')
+          ..write('path: $path, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('print: $print, ')
+          ..write('computedAt: $computedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    path,
+    fileSizeBytes,
+    fileModifiedAt,
+    $driftBlobEquality.hash(print),
+    computedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicVideoPrintRow &&
+          other.path == this.path &&
+          other.fileSizeBytes == this.fileSizeBytes &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          $driftBlobEquality.equals(other.print, this.print) &&
+          other.computedAt == this.computedAt);
+}
+
+class MusicVideoPrintsCompanion extends UpdateCompanion<MusicVideoPrintRow> {
+  final Value<String> path;
+  final Value<int> fileSizeBytes;
+  final Value<int> fileModifiedAt;
+  final Value<Uint8List> print;
+  final Value<int> computedAt;
+  final Value<int> rowid;
+  const MusicVideoPrintsCompanion({
+    this.path = const Value.absent(),
+    this.fileSizeBytes = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.print = const Value.absent(),
+    this.computedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicVideoPrintsCompanion.insert({
+    required String path,
+    required int fileSizeBytes,
+    required int fileModifiedAt,
+    required Uint8List print,
+    required int computedAt,
+    this.rowid = const Value.absent(),
+  }) : path = Value(path),
+       fileSizeBytes = Value(fileSizeBytes),
+       fileModifiedAt = Value(fileModifiedAt),
+       print = Value(print),
+       computedAt = Value(computedAt);
+  static Insertable<MusicVideoPrintRow> custom({
+    Expression<String>? path,
+    Expression<int>? fileSizeBytes,
+    Expression<int>? fileModifiedAt,
+    Expression<Uint8List>? print,
+    Expression<int>? computedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (path != null) 'path': path,
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (print != null) 'print': print,
+      if (computedAt != null) 'computed_at': computedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicVideoPrintsCompanion copyWith({
+    Value<String>? path,
+    Value<int>? fileSizeBytes,
+    Value<int>? fileModifiedAt,
+    Value<Uint8List>? print,
+    Value<int>? computedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicVideoPrintsCompanion(
+      path: path ?? this.path,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      print: print ?? this.print,
+      computedAt: computedAt ?? this.computedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (fileSizeBytes.present) {
+      map['file_size_bytes'] = Variable<int>(fileSizeBytes.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (print.present) {
+      map['print'] = Variable<Uint8List>(print.value);
+    }
+    if (computedAt.present) {
+      map['computed_at'] = Variable<int>(computedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoPrintsCompanion(')
+          ..write('path: $path, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('print: $print, ')
+          ..write('computedAt: $computedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicVideoMatchChecksTable extends MusicVideoMatchChecks
+    with TableInfo<$MusicVideoMatchChecksTable, MusicVideoMatchCheckRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicVideoMatchChecksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _videoPathMeta = const VerificationMeta(
+    'videoPath',
+  );
+  @override
+  late final GeneratedColumn<String> videoPath = GeneratedColumn<String>(
+    'video_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeBytesMeta = const VerificationMeta(
+    'fileSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> fileSizeBytes = GeneratedColumn<int>(
+    'file_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _checkedAtMeta = const VerificationMeta(
+    'checkedAt',
+  );
+  @override
+  late final GeneratedColumn<int> checkedAt = GeneratedColumn<int>(
+    'checked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    videoPath,
+    fileSizeBytes,
+    fileModifiedAt,
+    checkedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_video_match_checks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicVideoMatchCheckRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('video_path')) {
+      context.handle(
+        _videoPathMeta,
+        videoPath.isAcceptableOrUnknown(data['video_path']!, _videoPathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_videoPathMeta);
+    }
+    if (data.containsKey('file_size_bytes')) {
+      context.handle(
+        _fileSizeBytesMeta,
+        fileSizeBytes.isAcceptableOrUnknown(
+          data['file_size_bytes']!,
+          _fileSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeBytesMeta);
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileModifiedAtMeta);
+    }
+    if (data.containsKey('checked_at')) {
+      context.handle(
+        _checkedAtMeta,
+        checkedAt.isAcceptableOrUnknown(data['checked_at']!, _checkedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_checkedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid, videoPath};
+  @override
+  MusicVideoMatchCheckRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicVideoMatchCheckRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      videoPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_path'],
+      )!,
+      fileSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size_bytes'],
+      )!,
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      )!,
+      checkedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}checked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicVideoMatchChecksTable createAlias(String alias) {
+    return $MusicVideoMatchChecksTable(attachedDatabase, alias);
+  }
+}
+
+class MusicVideoMatchCheckRow extends DataClass
+    implements Insertable<MusicVideoMatchCheckRow> {
+  /// `music_tracks.track_uid`（无外键，见文件头）。
+  final String trackUid;
+
+  /// 对过的视频文件本机路径。
+  final String videoPath;
+
+  /// 对齐当时视频文件的大小（字节）：文件换了就要重对。
+  final int fileSizeBytes;
+
+  /// 对齐当时视频文件的修改时刻（毫秒）。
+  final int fileModifiedAt;
+
+  /// 对齐时刻（毫秒）。
+  final int checkedAt;
+  const MusicVideoMatchCheckRow({
+    required this.trackUid,
+    required this.videoPath,
+    required this.fileSizeBytes,
+    required this.fileModifiedAt,
+    required this.checkedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['video_path'] = Variable<String>(videoPath);
+    map['file_size_bytes'] = Variable<int>(fileSizeBytes);
+    map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    map['checked_at'] = Variable<int>(checkedAt);
+    return map;
+  }
+
+  MusicVideoMatchChecksCompanion toCompanion(bool nullToAbsent) {
+    return MusicVideoMatchChecksCompanion(
+      trackUid: Value(trackUid),
+      videoPath: Value(videoPath),
+      fileSizeBytes: Value(fileSizeBytes),
+      fileModifiedAt: Value(fileModifiedAt),
+      checkedAt: Value(checkedAt),
+    );
+  }
+
+  factory MusicVideoMatchCheckRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicVideoMatchCheckRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      videoPath: serializer.fromJson<String>(json['videoPath']),
+      fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
+      fileModifiedAt: serializer.fromJson<int>(json['fileModifiedAt']),
+      checkedAt: serializer.fromJson<int>(json['checkedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'videoPath': serializer.toJson<String>(videoPath),
+      'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
+      'fileModifiedAt': serializer.toJson<int>(fileModifiedAt),
+      'checkedAt': serializer.toJson<int>(checkedAt),
+    };
+  }
+
+  MusicVideoMatchCheckRow copyWith({
+    String? trackUid,
+    String? videoPath,
+    int? fileSizeBytes,
+    int? fileModifiedAt,
+    int? checkedAt,
+  }) => MusicVideoMatchCheckRow(
+    trackUid: trackUid ?? this.trackUid,
+    videoPath: videoPath ?? this.videoPath,
+    fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+    fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+    checkedAt: checkedAt ?? this.checkedAt,
+  );
+  MusicVideoMatchCheckRow copyWithCompanion(
+    MusicVideoMatchChecksCompanion data,
+  ) {
+    return MusicVideoMatchCheckRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      videoPath: data.videoPath.present ? data.videoPath.value : this.videoPath,
+      fileSizeBytes: data.fileSizeBytes.present
+          ? data.fileSizeBytes.value
+          : this.fileSizeBytes,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      checkedAt: data.checkedAt.present ? data.checkedAt.value : this.checkedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoMatchCheckRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('videoPath: $videoPath, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('checkedAt: $checkedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackUid,
+    videoPath,
+    fileSizeBytes,
+    fileModifiedAt,
+    checkedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicVideoMatchCheckRow &&
+          other.trackUid == this.trackUid &&
+          other.videoPath == this.videoPath &&
+          other.fileSizeBytes == this.fileSizeBytes &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          other.checkedAt == this.checkedAt);
+}
+
+class MusicVideoMatchChecksCompanion
+    extends UpdateCompanion<MusicVideoMatchCheckRow> {
+  final Value<String> trackUid;
+  final Value<String> videoPath;
+  final Value<int> fileSizeBytes;
+  final Value<int> fileModifiedAt;
+  final Value<int> checkedAt;
+  final Value<int> rowid;
+  const MusicVideoMatchChecksCompanion({
+    this.trackUid = const Value.absent(),
+    this.videoPath = const Value.absent(),
+    this.fileSizeBytes = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.checkedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicVideoMatchChecksCompanion.insert({
+    required String trackUid,
+    required String videoPath,
+    required int fileSizeBytes,
+    required int fileModifiedAt,
+    required int checkedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       videoPath = Value(videoPath),
+       fileSizeBytes = Value(fileSizeBytes),
+       fileModifiedAt = Value(fileModifiedAt),
+       checkedAt = Value(checkedAt);
+  static Insertable<MusicVideoMatchCheckRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? videoPath,
+    Expression<int>? fileSizeBytes,
+    Expression<int>? fileModifiedAt,
+    Expression<int>? checkedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (videoPath != null) 'video_path': videoPath,
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (checkedAt != null) 'checked_at': checkedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicVideoMatchChecksCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? videoPath,
+    Value<int>? fileSizeBytes,
+    Value<int>? fileModifiedAt,
+    Value<int>? checkedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicVideoMatchChecksCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      videoPath: videoPath ?? this.videoPath,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      checkedAt: checkedAt ?? this.checkedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (videoPath.present) {
+      map['video_path'] = Variable<String>(videoPath.value);
+    }
+    if (fileSizeBytes.present) {
+      map['file_size_bytes'] = Variable<int>(fileSizeBytes.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (checkedAt.present) {
+      map['checked_at'] = Variable<int>(checkedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoMatchChecksCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('videoPath: $videoPath, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('checkedAt: $checkedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -86405,6 +89160,12 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MusicPlaylistEntriesTable(this);
   late final $MusicRemoteTracksTable musicRemoteTracks =
       $MusicRemoteTracksTable(this);
+  late final $MusicServerDownloadsTable musicServerDownloads =
+      $MusicServerDownloadsTable(this);
+  late final $MusicServerPendingActionsTable musicServerPendingActions =
+      $MusicServerPendingActionsTable(this);
+  late final $MusicServerTrackStatesTable musicServerTrackStates =
+      $MusicServerTrackStatesTable(this);
   late final $MusicPlayEventsTable musicPlayEvents = $MusicPlayEventsTable(
     this,
   );
@@ -86414,6 +89175,11 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $VideoThemeSongSpansTable(this);
   late final $VideoContentFingerprintsTable videoContentFingerprints =
       $VideoContentFingerprintsTable(this);
+  late final $MusicVideoPrintsTable musicVideoPrints = $MusicVideoPrintsTable(
+    this,
+  );
+  late final $MusicVideoMatchChecksTable musicVideoMatchChecks =
+      $MusicVideoMatchChecksTable(this);
   late final $MediaLinkAiVerdictsTable mediaLinkAiVerdicts =
       $MediaLinkAiVerdictsTable(this);
   late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
@@ -86564,10 +89330,15 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlaylists,
     musicPlaylistEntries,
     musicRemoteTracks,
+    musicServerDownloads,
+    musicServerPendingActions,
+    musicServerTrackStates,
     musicPlayEvents,
     musicResumePoints,
     videoThemeSongSpans,
     videoContentFingerprints,
+    musicVideoPrints,
+    musicVideoMatchChecks,
     mediaLinkAiVerdicts,
     musicScrapeMeta,
     musicMetadataRawSnapshots,
@@ -87336,7 +90107,18 @@ class $$MediaOpenHistoryTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MediaOpenHistoryTable, MediaOpenHistoryRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaOpenHistoryTable,
+                    MediaOpenHistoryRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -87703,7 +90485,16 @@ class $$AnkiMappingsTableTableManager
                 prependDictionaryNames: prependDictionaryNames,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AnkiMappingsTable, AnkiMappingRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $AnkiMappingsTable,
+                    AnkiMappingRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -87891,7 +90682,18 @@ class $$SearchHistoryItemsTableTableManager
                 uniqueKey: uniqueKey,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$SearchHistoryItemsTable, SearchHistoryItemRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $SearchHistoryItemsTable,
+                    SearchHistoryItemRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -88219,7 +91021,16 @@ class $$AudiobooksTableTableManager
                 followAudio: followAudio,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AudiobooksTable, AudiobookRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $AudiobooksTable,
+                    AudiobookRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -88518,7 +91329,16 @@ class $$AudioCuesTableTableManager
                 tokenTimingJson: tokenTimingJson,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AudioCuesTable, AudioCueRow>(table),
+                  BaseReferences<_$FushiDatabase, $AudioCuesTable, AudioCueRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -88851,7 +91671,16 @@ class $$SrtBooksTableTableManager
                 language: language,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$SrtBooksTable, SrtBookRow>(table),
+                  BaseReferences<_$FushiDatabase, $SrtBooksTable, SrtBookRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -89073,7 +91902,16 @@ class $$ReaderPositionsTableTableManager
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ReaderPositionsTable, ReaderPositionRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ReaderPositionsTable,
+                    ReaderPositionRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -89397,7 +92235,16 @@ class $$BookmarksTableTableManager
                 chapterKey: chapterKey,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$BookmarksTable, BookmarkRow>(table),
+                  BaseReferences<_$FushiDatabase, $BookmarksTable, BookmarkRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -89644,7 +92491,18 @@ class $$ReadingStatisticsTableTableManager
                 lastStatisticModified: lastStatisticModified,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ReadingStatisticsTable, ReadingStatisticRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ReadingStatisticsTable,
+                    ReadingStatisticRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -89853,7 +92711,18 @@ class $$ReadingHourlyLogsTableTableManager
                 format: format,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ReadingHourlyLogsTable, ReadingHourlyLogRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ReadingHourlyLogsTable,
+                    ReadingHourlyLogRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -90019,7 +92888,16 @@ class $$PreferencesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$PreferencesTable, PreferenceRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $PreferencesTable,
+                    PreferenceRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -90335,7 +93213,18 @@ class $$DictionaryMetadataTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$DictionaryMetadataTable, DictionaryMetaRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $DictionaryMetadataTable,
+                    DictionaryMetaRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -90697,7 +93586,19 @@ class $$RemoteDictionaryMetadataTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $RemoteDictionaryMetadataTable,
+                    RemoteDictionaryMetaRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $RemoteDictionaryMetadataTable,
+                    RemoteDictionaryMetaRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -90868,7 +93769,18 @@ class $$DictionaryHistoryTableTableManager
                 resultJson: resultJson,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$DictionaryHistoryTable, DictionaryHistoryRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $DictionaryHistoryTable,
+                    DictionaryHistoryRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -91977,7 +94889,7 @@ class $$MediaSourcesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$MediaSourcesTable, MediaSourceRow>(table),
                   $$MediaSourcesTableReferences(db, table, e),
                 ),
               )
@@ -92780,7 +95692,7 @@ class $$EpubBooksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$EpubBooksTable, EpubBookRow>(table),
                   $$EpubBooksTableReferences(db, table, e),
                 ),
               )
@@ -93088,7 +96000,7 @@ class $$BookTagsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$BookTagsTable, BookTagRow>(table),
                   $$BookTagsTableReferences(db, table, e),
                 ),
               )
@@ -93387,7 +96299,7 @@ class $$TagAssignmentsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$TagAssignmentsTable, TagAssignmentRow>(table),
                   $$TagAssignmentsTableReferences(db, table, e),
                 ),
               )
@@ -93913,7 +96825,7 @@ class $$ProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ProfilesTable, ProfileRow>(table),
                   $$ProfilesTableReferences(db, table, e),
                 ),
               )
@@ -94305,7 +97217,7 @@ class $$ProfileSettingsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ProfileSettingsTable, ProfileSettingRow>(table),
                   $$ProfileSettingsTableReferences(db, table, e),
                 ),
               )
@@ -94581,7 +97493,9 @@ class $$MediaTypeProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$MediaTypeProfilesTable, MediaTypeProfileRow>(
+                    table,
+                  ),
                   $$MediaTypeProfilesTableReferences(db, table, e),
                 ),
               )
@@ -94844,7 +97758,7 @@ class $$BookProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$BookProfilesTable, BookProfileRow>(table),
                   $$BookProfilesTableReferences(db, table, e),
                 ),
               )
@@ -95117,7 +98031,9 @@ class $$LanguageProfilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$LanguageProfilesTable, LanguageProfileRow>(
+                    table,
+                  ),
                   $$LanguageProfilesTableReferences(db, table, e),
                 ),
               )
@@ -95329,7 +98245,16 @@ class $$SyncBaselinesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$SyncBaselinesTable, SyncBaselineRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $SyncBaselinesTable,
+                    SyncBaselineRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -96518,7 +99443,7 @@ class $$VideoBooksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoBooksTable, VideoBookRow>(table),
                   $$VideoBooksTableReferences(db, table, e),
                 ),
               )
@@ -96986,7 +99911,19 @@ class $$VideoWatchStatisticsTableTableManager
                 lastModified: lastModified,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $VideoWatchStatisticsTable,
+                    VideoWatchStatisticRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoWatchStatisticsTable,
+                    VideoWatchStatisticRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -97173,7 +100110,16 @@ class $$VideoHourlyLogsTableTableManager
                 watchTimeMs: watchTimeMs,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$VideoHourlyLogsTable, VideoHourlyLogRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoHourlyLogsTable,
+                    VideoHourlyLogRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -97539,7 +100485,16 @@ class $$FavoriteWordsTableTableManager
                 normCharLength: normCharLength,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$FavoriteWordsTable, FavoriteWordRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $FavoriteWordsTable,
+                    FavoriteWordRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -97952,7 +100907,18 @@ class $$FavoriteSentencesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$FavoriteSentencesTable, FavoriteSentenceRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $FavoriteSentencesTable,
+                    FavoriteSentenceRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -98139,7 +101105,18 @@ class $$MiningStatisticsTableTableManager
                 count: count,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MiningStatisticsTable, MiningStatisticRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MiningStatisticsTable,
+                    MiningStatisticRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -98606,7 +101583,16 @@ class $$MinedSentencesTableTableManager
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MinedSentencesTable, MinedSentenceRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MinedSentencesTable,
+                    MinedSentenceRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -98872,7 +101858,10 @@ class $$MusicAutoSourceDismissalsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $MusicAutoSourceDismissalsTable,
+                    MusicAutoSourceDismissalRow
+                  >(table),
                   $$MusicAutoSourceDismissalsTableReferences(db, table, e),
                 ),
               )
@@ -99181,8 +102170,10 @@ class $$SeriesTableTableManager
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$SeriesTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable<$SeriesTable, SeriesRow>(table),
+                  $$SeriesTableReferences(db, table, e),
+                ),
               )
               .toList(),
           prefetchHooksCallback: ({shelfEntriesRefs = false}) {
@@ -99466,7 +102457,7 @@ class $$ShelfEntriesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$ShelfEntriesTable, ShelfEntryRow>(table),
                   $$ShelfEntriesTableReferences(db, table, e),
                 ),
               )
@@ -100443,7 +103434,9 @@ class $$MediaCollectionsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$MediaCollectionsTable, MediaCollectionRow>(
+                    table,
+                  ),
                   $$MediaCollectionsTableReferences(db, table, e),
                 ),
               )
@@ -100900,7 +103893,10 @@ class $$MediaCollectionItemsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $MediaCollectionItemsTable,
+                    MediaCollectionItemRow
+                  >(table),
                   $$MediaCollectionItemsTableReferences(db, table, e),
                 ),
               )
@@ -101224,7 +104220,19 @@ class $$CollectionMemberTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $CollectionMemberTombstonesTable,
+                    CollectionMemberTombstoneRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $CollectionMemberTombstonesTable,
+                    CollectionMemberTombstoneRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -101386,7 +104394,19 @@ class $$CollectionBookAliasesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $CollectionBookAliasesTable,
+                    CollectionBookAliasRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $CollectionBookAliasesTable,
+                    CollectionBookAliasRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -101615,7 +104635,18 @@ class $$FushiPairedPeersTableTableManager
                 lastSeenIp: lastSeenIp,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$FushiPairedPeersTable, FushiPairedPeerRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $FushiPairedPeersTable,
+                    FushiPairedPeerRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -101768,7 +104799,16 @@ class $$BookTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$BookTombstonesTable, BookTombstoneRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $BookTombstonesTable,
+                    BookTombstoneRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -102016,7 +105056,19 @@ class $$LookupMiningCountersTableTableManager
                 mineCount: mineCount,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $LookupMiningCountersTable,
+                    LookupMiningCounterRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $LookupMiningCountersTable,
+                    LookupMiningCounterRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -102196,7 +105248,19 @@ class $$StatisticsTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $StatisticsTombstonesTable,
+                    StatisticsTombstoneRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $StatisticsTombstonesTable,
+                    StatisticsTombstoneRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -102396,7 +105460,19 @@ class $$BookTagMembershipTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $BookTagMembershipTombstonesTable,
+                    BookTagMembershipTombstoneRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $BookTagMembershipTombstonesTable,
+                    BookTagMembershipTombstoneRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -102608,7 +105684,16 @@ class $$BookCustomCssTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$BookCustomCssTable, BookCustomCssRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $BookCustomCssTable,
+                    BookCustomCssRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -102803,7 +105888,19 @@ class $$MangaReaderOverridesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MangaReaderOverridesTable,
+                    MangaReaderOverrideRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaReaderOverridesTable,
+                    MangaReaderOverrideRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -103047,7 +106144,19 @@ class $$SyncDeletionTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $SyncDeletionTombstonesTable,
+                    SyncDeletionTombstoneRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $SyncDeletionTombstonesTable,
+                    SyncDeletionTombstoneRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -103221,7 +106330,16 @@ class $$RevealedImagesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$RevealedImagesTable, RevealedImageRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $RevealedImagesTable,
+                    RevealedImageRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -103503,7 +106621,16 @@ class $$ActivityEventsTableTableManager
                 charsDelta: charsDelta,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ActivityEventsTable, ActivityEventRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ActivityEventsTable,
+                    ActivityEventRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -103671,7 +106798,18 @@ class $$ClipboardHistoryTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ClipboardHistoryTable, ClipboardHistoryRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ClipboardHistoryTable,
+                    ClipboardHistoryRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -104163,7 +107301,7 @@ class $$VideoScrapeMetaTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoScrapeMetaTable, VideoScrapeMetaRow>(table),
                   $$VideoScrapeMetaTableReferences(db, table, e),
                 ),
               )
@@ -104695,7 +107833,10 @@ class $$CollectionScrapeMetaTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $CollectionScrapeMetaTable,
+                    CollectionScrapeMetaRow
+                  >(table),
                   $$CollectionScrapeMetaTableReferences(db, table, e),
                 ),
               )
@@ -105256,7 +108397,10 @@ class $$MediaTrackingMappingsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $MediaTrackingMappingsTable,
+                    MediaTrackingMappingRow
+                  >(table),
                   $$MediaTrackingMappingsTableReferences(db, table, e),
                 ),
               )
@@ -105641,7 +108785,10 @@ class $$MediaTrackingOutboxTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $MediaTrackingOutboxTable,
+                    MediaTrackingOutboxRow
+                  >(table),
                   $$MediaTrackingOutboxTableReferences(db, table, e),
                 ),
               )
@@ -106014,7 +109161,19 @@ class $$MediaTrackingSuggestionsTableTableManager
                 dismissedAt: dismissedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MediaTrackingSuggestionsTable,
+                    MediaTrackingSuggestionRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaTrackingSuggestionsTable,
+                    MediaTrackingSuggestionRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106245,7 +109404,19 @@ class $$MediaTrackingIgnoredTableTableManager
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MediaTrackingIgnoredTable,
+                    MediaTrackingIgnoredRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaTrackingIgnoredTable,
+                    MediaTrackingIgnoredRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106595,7 +109766,19 @@ class $$MediaTrackingActivityTableTableManager
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MediaTrackingActivityTable,
+                    MediaTrackingActivityRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaTrackingActivityTable,
+                    MediaTrackingActivityRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -106911,7 +110094,19 @@ class $$MediaTrackingRemoteEpisodesTableTableManager
                 watchedAt: watchedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MediaTrackingRemoteEpisodesTable,
+                    MediaTrackingRemoteEpisodeRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaTrackingRemoteEpisodesTable,
+                    MediaTrackingRemoteEpisodeRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -107412,7 +110607,7 @@ class $$GalgamesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$GalgamesTable, GalgameRow>(table),
                   $$GalgamesTableReferences(db, table, e),
                 ),
               )
@@ -107770,7 +110965,7 @@ class $$GalgameSourcesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$GalgameSourcesTable, GalgameSourceRow>(table),
                   $$GalgameSourcesTableReferences(db, table, e),
                 ),
               )
@@ -108070,7 +111265,16 @@ class $$GalgameSessionsTableTableManager
                 gameTitle: gameTitle,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$GalgameSessionsTable, GalgameSessionRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $GalgameSessionsTable,
+                    GalgameSessionRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -108469,7 +111673,19 @@ class $$MangaExtensionStoresTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MangaExtensionStoresTable,
+                    MangaExtensionStoreRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaExtensionStoresTable,
+                    MangaExtensionStoreRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -108864,7 +112080,16 @@ class $$MangaExtensionsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MangaExtensionsTable, MangaExtensionRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaExtensionsTable,
+                    MangaExtensionRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -109155,7 +112380,18 @@ class $$MangaOnlineSourcesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MangaOnlineSourcesTable, MangaOnlineSourceRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaOnlineSourcesTable,
+                    MangaOnlineSourceRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -109399,7 +112635,19 @@ class $$MangaSourcePreferencesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MangaSourcePreferencesTable,
+                    MangaSourcePreferenceRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaSourcePreferencesTable,
+                    MangaSourcePreferenceRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -109598,7 +112846,18 @@ class $$MangaTrustedSignersTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MangaTrustedSignersTable, MangaTrustedSignerRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaTrustedSignersTable,
+                    MangaTrustedSignerRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -110255,7 +113514,9 @@ class $$CollectionRelationsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$CollectionRelationsTable, CollectionRelationRow>(
+                    table,
+                  ),
                   $$CollectionRelationsTableReferences(db, table, e),
                 ),
               )
@@ -110736,7 +113997,7 @@ class $$MediaImagesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$MediaImagesTable, MediaImageRow>(table),
                   $$MediaImagesTableReferences(db, table, e),
                 ),
               )
@@ -111151,7 +114412,16 @@ class $$ItemScrapeMetaTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ItemScrapeMetaTable, ItemScrapeMetaRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ItemScrapeMetaTable,
+                    ItemScrapeMetaRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -111374,7 +114644,16 @@ class $$ItemImagesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$ItemImagesTable, ItemImageRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $ItemImagesTable,
+                    ItemImageRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -112606,7 +115885,9 @@ class $$VideoMetadataWorksTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoMetadataWorksTable, VideoMetadataWorkRow>(
+                    table,
+                  ),
                   $$VideoMetadataWorksTableReferences(db, table, e),
                 ),
               )
@@ -113652,7 +116933,10 @@ class $$VideoMetadataSeasonsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataSeasonsTable,
+                    VideoMetadataSeasonRow
+                  >(table),
                   $$VideoMetadataSeasonsTableReferences(db, table, e),
                 ),
               )
@@ -114736,7 +118020,10 @@ class $$VideoMetadataEpisodesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataEpisodesTable,
+                    VideoMetadataEpisodeRow
+                  >(table),
                   $$VideoMetadataEpisodesTableReferences(db, table, e),
                 ),
               )
@@ -115507,7 +118794,10 @@ class $$VideoMetadataPeopleTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataPeopleTable,
+                    VideoMetadataPersonRow
+                  >(table),
                   $$VideoMetadataPeopleTableReferences(db, table, e),
                 ),
               )
@@ -116121,7 +119411,10 @@ class $$VideoMetadataCharactersTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataCharactersTable,
+                    VideoMetadataCharacterRow
+                  >(table),
                   $$VideoMetadataCharactersTableReferences(db, table, e),
                 ),
               )
@@ -117043,7 +120336,10 @@ class $$VideoMetadataProviderIdentitiesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataProviderIdentitiesTable,
+                    VideoMetadataProviderIdentityRow
+                  >(table),
                   $$VideoMetadataProviderIdentitiesTableReferences(
                     db,
                     table,
@@ -117552,7 +120848,10 @@ class $$VideoMetadataRawSnapshotsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataRawSnapshotsTable,
+                    VideoMetadataRawSnapshotRow
+                  >(table),
                   $$VideoMetadataRawSnapshotsTableReferences(db, table, e),
                 ),
               )
@@ -117877,7 +121176,9 @@ class $$VideoMetadataTermsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoMetadataTermsTable, VideoMetadataTermRow>(
+                    table,
+                  ),
                   $$VideoMetadataTermsTableReferences(db, table, e),
                 ),
               )
@@ -118248,7 +121549,10 @@ class $$VideoMetadataWorkTermsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataWorkTermsTable,
+                    VideoMetadataWorkTermRow
+                  >(table),
                   $$VideoMetadataWorkTermsTableReferences(db, table, e),
                 ),
               )
@@ -119070,7 +122374,10 @@ class $$VideoMetadataCreditsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoMetadataCreditsTable,
+                    VideoMetadataCreditRow
+                  >(table),
                   $$VideoMetadataCreditsTableReferences(db, table, e),
                 ),
               )
@@ -120039,7 +123346,9 @@ class $$VideoMetadataImagesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoMetadataImagesTable, VideoMetadataImageRow>(
+                    table,
+                  ),
                   $$VideoMetadataImagesTableReferences(db, table, e),
                 ),
               )
@@ -120782,7 +124091,9 @@ class $$VideoMetadataExtrasTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoMetadataExtrasTable, VideoMetadataExtraRow>(
+                    table,
+                  ),
                   $$VideoMetadataExtrasTableReferences(db, table, e),
                 ),
               )
@@ -121282,7 +124593,10 @@ class $$VideoSourceScrapeSettingsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoSourceScrapeSettingsTable,
+                    VideoSourceScrapeSettingRow
+                  >(table),
                   $$VideoSourceScrapeSettingsTableReferences(db, table, e),
                 ),
               )
@@ -121941,7 +125255,10 @@ class $$VideoSourceScrapeRunsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoSourceScrapeRunsTable,
+                    VideoSourceScrapeRunRow
+                  >(table),
                   $$VideoSourceScrapeRunsTableReferences(db, table, e),
                 ),
               )
@@ -122793,7 +126110,10 @@ class $$VideoSidecarArtifactsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoSidecarArtifactsTable,
+                    VideoSidecarArtifactRow
+                  >(table),
                   $$VideoSidecarArtifactsTableReferences(db, table, e),
                 ),
               )
@@ -124213,7 +127533,9 @@ class $$VideoDownloadJobsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$VideoDownloadJobsTable, VideoDownloadJobRow>(
+                    table,
+                  ),
                   $$VideoDownloadJobsTableReferences(db, table, e),
                 ),
               )
@@ -124950,7 +128272,10 @@ class $$VideoDownloadJobFilesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoDownloadJobFilesTable,
+                    VideoDownloadJobFileRow
+                  >(table),
                   $$VideoDownloadJobFilesTableReferences(db, table, e),
                 ),
               )
@@ -125599,7 +128924,10 @@ class $$VideoDownloadJobSubtitlesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoDownloadJobSubtitlesTable,
+                    VideoDownloadJobSubtitleRow
+                  >(table),
                   $$VideoDownloadJobSubtitlesTableReferences(db, table, e),
                 ),
               )
@@ -126718,7 +130046,10 @@ class $$VideoDownloadSubscriptionsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoDownloadSubscriptionsTable,
+                    VideoDownloadSubscriptionRow
+                  >(table),
                   $$VideoDownloadSubscriptionsTableReferences(db, table, e),
                 ),
               )
@@ -127392,7 +130723,10 @@ class $$VideoDownloadSubscriptionItemsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoDownloadSubscriptionItemsTable,
+                    VideoDownloadSubscriptionItemRow
+                  >(table),
                   $$VideoDownloadSubscriptionItemsTableReferences(db, table, e),
                 ),
               )
@@ -127703,7 +131037,18 @@ class $$MangaChapterStatesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MangaChapterStatesTable, MangaChapterStateRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaChapterStatesTable,
+                    MangaChapterStateRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -127903,7 +131248,19 @@ class $$StudySegmentTombstonesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $StudySegmentTombstonesTable,
+                    StudySegmentTombstoneRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $StudySegmentTombstonesTable,
+                    StudySegmentTombstoneRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -128305,7 +131662,16 @@ class $$StudySegmentsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$StudySegmentsTable, StudySegmentRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $StudySegmentsTable,
+                    StudySegmentRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -128680,7 +132046,16 @@ class $$WebMineQueueTableTableManager
                 minedAt: minedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$WebMineQueueTable, WebMineQueueRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $WebMineQueueTable,
+                    WebMineQueueRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -129180,7 +132555,16 @@ class $$VideoFileSpecsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$VideoFileSpecsTable, VideoFileSpecRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoFileSpecsTable,
+                    VideoFileSpecRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -129450,7 +132834,18 @@ class $$UpdateFeedEntriesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$UpdateFeedEntriesTable, UpdateFeedEntryRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $UpdateFeedEntriesTable,
+                    UpdateFeedEntryRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -129882,7 +133277,18 @@ class $$MangaDownloadJobsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MangaDownloadJobsTable, MangaDownloadJobRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MangaDownloadJobsTable,
+                    MangaDownloadJobRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -130453,7 +133859,18 @@ class $$AnidbFileIdentitiesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AnidbFileIdentitiesTable, AnidbFileIdentityRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $AnidbFileIdentitiesTable,
+                    AnidbFileIdentityRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -130744,7 +134161,10 @@ class $$VideoEpisodeBindingOverridesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoEpisodeBindingOverridesTable,
+                    VideoEpisodeBindingOverrideRow
+                  >(table),
                   $$VideoEpisodeBindingOverridesTableReferences(db, table, e),
                 ),
               )
@@ -131055,7 +134475,10 @@ class $$VideoCollectionSectionOverridesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $VideoCollectionSectionOverridesTable,
+                    VideoCollectionSectionOverrideRow
+                  >(table),
                   $$VideoCollectionSectionOverridesTableReferences(
                     db,
                     table,
@@ -131411,7 +134834,16 @@ class $$PendingMineQueueTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$PendingMineQueueTable, PendingMineRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $PendingMineQueueTable,
+                    PendingMineRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -131632,7 +135064,19 @@ class $$VideoSubtitleGlossariesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $VideoSubtitleGlossariesTable,
+                    VideoSubtitleGlossaryRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoSubtitleGlossariesTable,
+                    VideoSubtitleGlossaryRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -131874,7 +135318,19 @@ class $$VideoSubtitleTextOverridesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $VideoSubtitleTextOverridesTable,
+                    VideoSubtitleTextOverrideRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoSubtitleTextOverridesTable,
+                    VideoSubtitleTextOverrideRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -132068,7 +135524,18 @@ class $$MediaPrivacyFlagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MediaPrivacyFlagsTable, MediaPrivacyFlagRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaPrivacyFlagsTable,
+                    MediaPrivacyFlagRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -132259,7 +135726,16 @@ class $$MediaNsfwFlagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MediaNsfwFlagsTable, MediaNsfwFlagRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaNsfwFlagsTable,
+                    MediaNsfwFlagRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -132446,7 +135922,18 @@ class $$MediaLockedFlagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MediaLockedFlagsTable, MediaLockedFlagRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaLockedFlagsTable,
+                    MediaLockedFlagRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -132626,7 +136113,19 @@ class $$MediaLockCredentialsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MediaLockCredentialsTable,
+                    MediaLockCredentialRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaLockCredentialsTable,
+                    MediaLockCredentialRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -133066,7 +136565,9 @@ class $$LibraryOrganizeRunsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$LibraryOrganizeRunsTable, LibraryOrganizeRunRow>(
+                    table,
+                  ),
                   $$LibraryOrganizeRunsTableReferences(db, table, e),
                 ),
               )
@@ -133497,7 +136998,10 @@ class $$LibraryOrganizeChangesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $LibraryOrganizeChangesTable,
+                    LibraryOrganizeChangeRow
+                  >(table),
                   $$LibraryOrganizeChangesTableReferences(db, table, e),
                 ),
               )
@@ -133746,7 +137250,18 @@ class $$WebBrowserHistoryTableTableManager
                 visitCount: visitCount,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$WebBrowserHistoryTable, WebBrowserHistoryRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $WebBrowserHistoryTable,
+                    WebBrowserHistoryRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -134013,7 +137528,18 @@ class $$WebBrowserBookmarksTableTableManager
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$WebBrowserBookmarksTable, WebBrowserBookmarkRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $WebBrowserBookmarksTable,
+                    WebBrowserBookmarkRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -134226,7 +137752,19 @@ class $$WebBrowserSessionTabsTableTableManager
                 active: active,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $WebBrowserSessionTabsTable,
+                    WebBrowserSessionTabRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $WebBrowserSessionTabsTable,
+                    WebBrowserSessionTabRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -134436,7 +137974,19 @@ class $$WebBrowserClosedTabsTableTableManager
                 tabIndex: tabIndex,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $WebBrowserClosedTabsTable,
+                    WebBrowserClosedTabRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $WebBrowserClosedTabsTable,
+                    WebBrowserClosedTabRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -134726,7 +138276,18 @@ class $$WebBrowserDownloadsTableTableManager
                 startedAt: startedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$WebBrowserDownloadsTable, WebBrowserDownloadRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $WebBrowserDownloadsTable,
+                    WebBrowserDownloadRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -135128,7 +138689,16 @@ class $$MediaLinksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MediaLinksTable, MediaLinkRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaLinksTable,
+                    MediaLinkRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -135945,7 +139515,16 @@ class $$MusicTracksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicTracksTable, MusicTrackRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicTracksTable,
+                    MusicTrackRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136119,7 +139698,19 @@ class $$MusicTrackUidAliasesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MusicTrackUidAliasesTable,
+                    MusicTrackUidAliasRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicTrackUidAliasesTable,
+                    MusicTrackUidAliasRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136506,7 +140097,16 @@ class $$MusicAlbumsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicAlbumsTable, MusicAlbumRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicAlbumsTable,
+                    MusicAlbumRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136727,7 +140327,16 @@ class $$MusicArtistsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicArtistsTable, MusicArtistRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicArtistsTable,
+                    MusicArtistRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -136938,7 +140547,18 @@ class $$MusicTrackCreditsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicTrackCreditsTable, MusicTrackCreditRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicTrackCreditsTable,
+                    MusicTrackCreditRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -137245,7 +140865,16 @@ class $$MusicLyricsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicLyricsTable, MusicLyricRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicLyricsTable,
+                    MusicLyricRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -137500,7 +141129,16 @@ class $$MusicVideosTableTableManager
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicVideosTable, MusicVideoRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicVideosTable,
+                    MusicVideoRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -137746,7 +141384,18 @@ class $$MusicDiscSourcesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicDiscSourcesTable, MusicDiscSourceRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicDiscSourcesTable,
+                    MusicDiscSourceRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -138069,7 +141718,7 @@ class $$MusicPlaylistsTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<$MusicPlaylistsTable, MusicPlaylistRow>(table),
                   $$MusicPlaylistsTableReferences(db, table, e),
                 ),
               )
@@ -138392,7 +142041,10 @@ class $$MusicPlaylistEntriesTableTableManager
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
-                  e.readTable(table),
+                  e.readTable<
+                    $MusicPlaylistEntriesTable,
+                    MusicPlaylistEntryRow
+                  >(table),
                   $$MusicPlaylistEntriesTableReferences(db, table, e),
                 ),
               )
@@ -138839,7 +142491,18 @@ class $$MusicRemoteTracksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicRemoteTracksTable, MusicRemoteTrackRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicRemoteTracksTable,
+                    MusicRemoteTrackRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -138865,6 +142528,999 @@ typedef $$MusicRemoteTracksTableProcessedTableManager =
         >,
       ),
       MusicRemoteTrackRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicServerDownloadsTableCreateCompanionBuilder =
+    MusicServerDownloadsCompanion Function({
+      required String trackUid,
+      required String sourceKey,
+      required String itemId,
+      Value<String?> serverKind,
+      required String filePath,
+      Value<String?> coverPath,
+      Value<int?> sizeBytes,
+      Value<String?> codec,
+      required int downloadedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicServerDownloadsTableUpdateCompanionBuilder =
+    MusicServerDownloadsCompanion Function({
+      Value<String> trackUid,
+      Value<String> sourceKey,
+      Value<String> itemId,
+      Value<String?> serverKind,
+      Value<String> filePath,
+      Value<String?> coverPath,
+      Value<int?> sizeBytes,
+      Value<String?> codec,
+      Value<int> downloadedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicServerDownloadsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicServerDownloadsTable> {
+  $$MusicServerDownloadsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+    column: $table.coverPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get codec => $composableBuilder(
+    column: $table.codec,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get downloadedAt => $composableBuilder(
+    column: $table.downloadedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicServerDownloadsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicServerDownloadsTable> {
+  $$MusicServerDownloadsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+    column: $table.coverPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sizeBytes => $composableBuilder(
+    column: $table.sizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get codec => $composableBuilder(
+    column: $table.codec,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get downloadedAt => $composableBuilder(
+    column: $table.downloadedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicServerDownloadsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicServerDownloadsTable> {
+  $$MusicServerDownloadsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceKey =>
+      $composableBuilder(column: $table.sourceKey, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<int> get sizeBytes =>
+      $composableBuilder(column: $table.sizeBytes, builder: (column) => column);
+
+  GeneratedColumn<String> get codec =>
+      $composableBuilder(column: $table.codec, builder: (column) => column);
+
+  GeneratedColumn<int> get downloadedAt => $composableBuilder(
+    column: $table.downloadedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MusicServerDownloadsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicServerDownloadsTable,
+          MusicServerDownloadRow,
+          $$MusicServerDownloadsTableFilterComposer,
+          $$MusicServerDownloadsTableOrderingComposer,
+          $$MusicServerDownloadsTableAnnotationComposer,
+          $$MusicServerDownloadsTableCreateCompanionBuilder,
+          $$MusicServerDownloadsTableUpdateCompanionBuilder,
+          (
+            MusicServerDownloadRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicServerDownloadsTable,
+              MusicServerDownloadRow
+            >,
+          ),
+          MusicServerDownloadRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicServerDownloadsTableTableManager(
+    _$FushiDatabase db,
+    $MusicServerDownloadsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicServerDownloadsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicServerDownloadsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicServerDownloadsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> sourceKey = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<String?> serverKind = const Value.absent(),
+                Value<String> filePath = const Value.absent(),
+                Value<String?> coverPath = const Value.absent(),
+                Value<int?> sizeBytes = const Value.absent(),
+                Value<String?> codec = const Value.absent(),
+                Value<int> downloadedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerDownloadsCompanion(
+                trackUid: trackUid,
+                sourceKey: sourceKey,
+                itemId: itemId,
+                serverKind: serverKind,
+                filePath: filePath,
+                coverPath: coverPath,
+                sizeBytes: sizeBytes,
+                codec: codec,
+                downloadedAt: downloadedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String sourceKey,
+                required String itemId,
+                Value<String?> serverKind = const Value.absent(),
+                required String filePath,
+                Value<String?> coverPath = const Value.absent(),
+                Value<int?> sizeBytes = const Value.absent(),
+                Value<String?> codec = const Value.absent(),
+                required int downloadedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerDownloadsCompanion.insert(
+                trackUid: trackUid,
+                sourceKey: sourceKey,
+                itemId: itemId,
+                serverKind: serverKind,
+                filePath: filePath,
+                coverPath: coverPath,
+                sizeBytes: sizeBytes,
+                codec: codec,
+                downloadedAt: downloadedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MusicServerDownloadsTable,
+                    MusicServerDownloadRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicServerDownloadsTable,
+                    MusicServerDownloadRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicServerDownloadsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicServerDownloadsTable,
+      MusicServerDownloadRow,
+      $$MusicServerDownloadsTableFilterComposer,
+      $$MusicServerDownloadsTableOrderingComposer,
+      $$MusicServerDownloadsTableAnnotationComposer,
+      $$MusicServerDownloadsTableCreateCompanionBuilder,
+      $$MusicServerDownloadsTableUpdateCompanionBuilder,
+      (
+        MusicServerDownloadRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicServerDownloadsTable,
+          MusicServerDownloadRow
+        >,
+      ),
+      MusicServerDownloadRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicServerPendingActionsTableCreateCompanionBuilder =
+    MusicServerPendingActionsCompanion Function({
+      required String dedupeKey,
+      required String action,
+      required String serverKind,
+      required String serverId,
+      required String itemId,
+      required String trackUid,
+      Value<int?> playedAt,
+      Value<bool?> favorite,
+      required int createdAt,
+      Value<int> attempts,
+      Value<int?> lastAttemptAt,
+      Value<int> rowid,
+    });
+typedef $$MusicServerPendingActionsTableUpdateCompanionBuilder =
+    MusicServerPendingActionsCompanion Function({
+      Value<String> dedupeKey,
+      Value<String> action,
+      Value<String> serverKind,
+      Value<String> serverId,
+      Value<String> itemId,
+      Value<String> trackUid,
+      Value<int?> playedAt,
+      Value<bool?> favorite,
+      Value<int> createdAt,
+      Value<int> attempts,
+      Value<int?> lastAttemptAt,
+      Value<int> rowid,
+    });
+
+class $$MusicServerPendingActionsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicServerPendingActionsTable> {
+  $$MusicServerPendingActionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get dedupeKey => $composableBuilder(
+    column: $table.dedupeKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get action => $composableBuilder(
+    column: $table.action,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverId => $composableBuilder(
+    column: $table.serverId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get playedAt => $composableBuilder(
+    column: $table.playedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get favorite => $composableBuilder(
+    column: $table.favorite,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicServerPendingActionsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicServerPendingActionsTable> {
+  $$MusicServerPendingActionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get dedupeKey => $composableBuilder(
+    column: $table.dedupeKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get action => $composableBuilder(
+    column: $table.action,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverId => $composableBuilder(
+    column: $table.serverId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get playedAt => $composableBuilder(
+    column: $table.playedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get favorite => $composableBuilder(
+    column: $table.favorite,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicServerPendingActionsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicServerPendingActionsTable> {
+  $$MusicServerPendingActionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get dedupeKey =>
+      $composableBuilder(column: $table.dedupeKey, builder: (column) => column);
+
+  GeneratedColumn<String> get action =>
+      $composableBuilder(column: $table.action, builder: (column) => column);
+
+  GeneratedColumn<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<int> get playedAt =>
+      $composableBuilder(column: $table.playedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get favorite =>
+      $composableBuilder(column: $table.favorite, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+
+  GeneratedColumn<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MusicServerPendingActionsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicServerPendingActionsTable,
+          MusicServerPendingActionRow,
+          $$MusicServerPendingActionsTableFilterComposer,
+          $$MusicServerPendingActionsTableOrderingComposer,
+          $$MusicServerPendingActionsTableAnnotationComposer,
+          $$MusicServerPendingActionsTableCreateCompanionBuilder,
+          $$MusicServerPendingActionsTableUpdateCompanionBuilder,
+          (
+            MusicServerPendingActionRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicServerPendingActionsTable,
+              MusicServerPendingActionRow
+            >,
+          ),
+          MusicServerPendingActionRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicServerPendingActionsTableTableManager(
+    _$FushiDatabase db,
+    $MusicServerPendingActionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicServerPendingActionsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MusicServerPendingActionsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicServerPendingActionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> dedupeKey = const Value.absent(),
+                Value<String> action = const Value.absent(),
+                Value<String> serverKind = const Value.absent(),
+                Value<String> serverId = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<String> trackUid = const Value.absent(),
+                Value<int?> playedAt = const Value.absent(),
+                Value<bool?> favorite = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<int?> lastAttemptAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerPendingActionsCompanion(
+                dedupeKey: dedupeKey,
+                action: action,
+                serverKind: serverKind,
+                serverId: serverId,
+                itemId: itemId,
+                trackUid: trackUid,
+                playedAt: playedAt,
+                favorite: favorite,
+                createdAt: createdAt,
+                attempts: attempts,
+                lastAttemptAt: lastAttemptAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String dedupeKey,
+                required String action,
+                required String serverKind,
+                required String serverId,
+                required String itemId,
+                required String trackUid,
+                Value<int?> playedAt = const Value.absent(),
+                Value<bool?> favorite = const Value.absent(),
+                required int createdAt,
+                Value<int> attempts = const Value.absent(),
+                Value<int?> lastAttemptAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerPendingActionsCompanion.insert(
+                dedupeKey: dedupeKey,
+                action: action,
+                serverKind: serverKind,
+                serverId: serverId,
+                itemId: itemId,
+                trackUid: trackUid,
+                playedAt: playedAt,
+                favorite: favorite,
+                createdAt: createdAt,
+                attempts: attempts,
+                lastAttemptAt: lastAttemptAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MusicServerPendingActionsTable,
+                    MusicServerPendingActionRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicServerPendingActionsTable,
+                    MusicServerPendingActionRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicServerPendingActionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicServerPendingActionsTable,
+      MusicServerPendingActionRow,
+      $$MusicServerPendingActionsTableFilterComposer,
+      $$MusicServerPendingActionsTableOrderingComposer,
+      $$MusicServerPendingActionsTableAnnotationComposer,
+      $$MusicServerPendingActionsTableCreateCompanionBuilder,
+      $$MusicServerPendingActionsTableUpdateCompanionBuilder,
+      (
+        MusicServerPendingActionRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicServerPendingActionsTable,
+          MusicServerPendingActionRow
+        >,
+      ),
+      MusicServerPendingActionRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicServerTrackStatesTableCreateCompanionBuilder =
+    MusicServerTrackStatesCompanion Function({
+      required String trackUid,
+      required String serverKind,
+      required String serverId,
+      required String itemId,
+      Value<bool?> favorite,
+      Value<int?> favoriteAt,
+      Value<double?> measuredTrackGain,
+      Value<double?> measuredTrackPeak,
+      Value<int?> loudnessMeasuredAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicServerTrackStatesTableUpdateCompanionBuilder =
+    MusicServerTrackStatesCompanion Function({
+      Value<String> trackUid,
+      Value<String> serverKind,
+      Value<String> serverId,
+      Value<String> itemId,
+      Value<bool?> favorite,
+      Value<int?> favoriteAt,
+      Value<double?> measuredTrackGain,
+      Value<double?> measuredTrackPeak,
+      Value<int?> loudnessMeasuredAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicServerTrackStatesTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicServerTrackStatesTable> {
+  $$MusicServerTrackStatesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverId => $composableBuilder(
+    column: $table.serverId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get favorite => $composableBuilder(
+    column: $table.favorite,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get favoriteAt => $composableBuilder(
+    column: $table.favoriteAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get measuredTrackGain => $composableBuilder(
+    column: $table.measuredTrackGain,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get measuredTrackPeak => $composableBuilder(
+    column: $table.measuredTrackPeak,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get loudnessMeasuredAt => $composableBuilder(
+    column: $table.loudnessMeasuredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicServerTrackStatesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicServerTrackStatesTable> {
+  $$MusicServerTrackStatesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverId => $composableBuilder(
+    column: $table.serverId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get favorite => $composableBuilder(
+    column: $table.favorite,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get favoriteAt => $composableBuilder(
+    column: $table.favoriteAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get measuredTrackGain => $composableBuilder(
+    column: $table.measuredTrackGain,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get measuredTrackPeak => $composableBuilder(
+    column: $table.measuredTrackPeak,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get loudnessMeasuredAt => $composableBuilder(
+    column: $table.loudnessMeasuredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicServerTrackStatesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicServerTrackStatesTable> {
+  $$MusicServerTrackStatesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get serverKind => $composableBuilder(
+    column: $table.serverKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get serverId =>
+      $composableBuilder(column: $table.serverId, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<bool> get favorite =>
+      $composableBuilder(column: $table.favorite, builder: (column) => column);
+
+  GeneratedColumn<int> get favoriteAt => $composableBuilder(
+    column: $table.favoriteAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get measuredTrackGain => $composableBuilder(
+    column: $table.measuredTrackGain,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get measuredTrackPeak => $composableBuilder(
+    column: $table.measuredTrackPeak,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get loudnessMeasuredAt => $composableBuilder(
+    column: $table.loudnessMeasuredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MusicServerTrackStatesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicServerTrackStatesTable,
+          MusicServerTrackStateRow,
+          $$MusicServerTrackStatesTableFilterComposer,
+          $$MusicServerTrackStatesTableOrderingComposer,
+          $$MusicServerTrackStatesTableAnnotationComposer,
+          $$MusicServerTrackStatesTableCreateCompanionBuilder,
+          $$MusicServerTrackStatesTableUpdateCompanionBuilder,
+          (
+            MusicServerTrackStateRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicServerTrackStatesTable,
+              MusicServerTrackStateRow
+            >,
+          ),
+          MusicServerTrackStateRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicServerTrackStatesTableTableManager(
+    _$FushiDatabase db,
+    $MusicServerTrackStatesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicServerTrackStatesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MusicServerTrackStatesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicServerTrackStatesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> serverKind = const Value.absent(),
+                Value<String> serverId = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<bool?> favorite = const Value.absent(),
+                Value<int?> favoriteAt = const Value.absent(),
+                Value<double?> measuredTrackGain = const Value.absent(),
+                Value<double?> measuredTrackPeak = const Value.absent(),
+                Value<int?> loudnessMeasuredAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerTrackStatesCompanion(
+                trackUid: trackUid,
+                serverKind: serverKind,
+                serverId: serverId,
+                itemId: itemId,
+                favorite: favorite,
+                favoriteAt: favoriteAt,
+                measuredTrackGain: measuredTrackGain,
+                measuredTrackPeak: measuredTrackPeak,
+                loudnessMeasuredAt: loudnessMeasuredAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String serverKind,
+                required String serverId,
+                required String itemId,
+                Value<bool?> favorite = const Value.absent(),
+                Value<int?> favoriteAt = const Value.absent(),
+                Value<double?> measuredTrackGain = const Value.absent(),
+                Value<double?> measuredTrackPeak = const Value.absent(),
+                Value<int?> loudnessMeasuredAt = const Value.absent(),
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicServerTrackStatesCompanion.insert(
+                trackUid: trackUid,
+                serverKind: serverKind,
+                serverId: serverId,
+                itemId: itemId,
+                favorite: favorite,
+                favoriteAt: favoriteAt,
+                measuredTrackGain: measuredTrackGain,
+                measuredTrackPeak: measuredTrackPeak,
+                loudnessMeasuredAt: loudnessMeasuredAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MusicServerTrackStatesTable,
+                    MusicServerTrackStateRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicServerTrackStatesTable,
+                    MusicServerTrackStateRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicServerTrackStatesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicServerTrackStatesTable,
+      MusicServerTrackStateRow,
+      $$MusicServerTrackStatesTableFilterComposer,
+      $$MusicServerTrackStatesTableOrderingComposer,
+      $$MusicServerTrackStatesTableAnnotationComposer,
+      $$MusicServerTrackStatesTableCreateCompanionBuilder,
+      $$MusicServerTrackStatesTableUpdateCompanionBuilder,
+      (
+        MusicServerTrackStateRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicServerTrackStatesTable,
+          MusicServerTrackStateRow
+        >,
+      ),
+      MusicServerTrackStateRow,
       PrefetchHooks Function()
     >;
 typedef $$MusicPlayEventsTableCreateCompanionBuilder =
@@ -139302,7 +143958,16 @@ class $$MusicPlayEventsTableTableManager
                 sourceCover: sourceCover,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicPlayEventsTable, MusicPlayEventRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicPlayEventsTable,
+                    MusicPlayEventRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -139500,7 +144165,18 @@ class $$MusicResumePointsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicResumePointsTable, MusicResumePointRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicResumePointsTable,
+                    MusicResumePointRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -139823,7 +144499,18 @@ class $$VideoThemeSongSpansTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$VideoThemeSongSpansTable, VideoThemeSongSpanRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoThemeSongSpansTable,
+                    VideoThemeSongSpanRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -140050,7 +144737,19 @@ class $$VideoContentFingerprintsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $VideoContentFingerprintsTable,
+                    VideoContentFingerprintRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $VideoContentFingerprintsTable,
+                    VideoContentFingerprintRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -140076,6 +144775,445 @@ typedef $$VideoContentFingerprintsTableProcessedTableManager =
         >,
       ),
       VideoContentFingerprintRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicVideoPrintsTableCreateCompanionBuilder =
+    MusicVideoPrintsCompanion Function({
+      required String path,
+      required int fileSizeBytes,
+      required int fileModifiedAt,
+      required Uint8List print,
+      required int computedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicVideoPrintsTableUpdateCompanionBuilder =
+    MusicVideoPrintsCompanion Function({
+      Value<String> path,
+      Value<int> fileSizeBytes,
+      Value<int> fileModifiedAt,
+      Value<Uint8List> print,
+      Value<int> computedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicVideoPrintsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicVideoPrintsTable> {
+  $$MusicVideoPrintsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get print => $composableBuilder(
+    column: $table.print,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicVideoPrintsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicVideoPrintsTable> {
+  $$MusicVideoPrintsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get print => $composableBuilder(
+    column: $table.print,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicVideoPrintsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicVideoPrintsTable> {
+  $$MusicVideoPrintsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<Uint8List> get print =>
+      $composableBuilder(column: $table.print, builder: (column) => column);
+
+  GeneratedColumn<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MusicVideoPrintsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicVideoPrintsTable,
+          MusicVideoPrintRow,
+          $$MusicVideoPrintsTableFilterComposer,
+          $$MusicVideoPrintsTableOrderingComposer,
+          $$MusicVideoPrintsTableAnnotationComposer,
+          $$MusicVideoPrintsTableCreateCompanionBuilder,
+          $$MusicVideoPrintsTableUpdateCompanionBuilder,
+          (
+            MusicVideoPrintRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicVideoPrintsTable,
+              MusicVideoPrintRow
+            >,
+          ),
+          MusicVideoPrintRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicVideoPrintsTableTableManager(
+    _$FushiDatabase db,
+    $MusicVideoPrintsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicVideoPrintsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicVideoPrintsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MusicVideoPrintsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> path = const Value.absent(),
+                Value<int> fileSizeBytes = const Value.absent(),
+                Value<int> fileModifiedAt = const Value.absent(),
+                Value<Uint8List> print = const Value.absent(),
+                Value<int> computedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoPrintsCompanion(
+                path: path,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                print: print,
+                computedAt: computedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String path,
+                required int fileSizeBytes,
+                required int fileModifiedAt,
+                required Uint8List print,
+                required int computedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoPrintsCompanion.insert(
+                path: path,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                print: print,
+                computedAt: computedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicVideoPrintsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicVideoPrintsTable,
+      MusicVideoPrintRow,
+      $$MusicVideoPrintsTableFilterComposer,
+      $$MusicVideoPrintsTableOrderingComposer,
+      $$MusicVideoPrintsTableAnnotationComposer,
+      $$MusicVideoPrintsTableCreateCompanionBuilder,
+      $$MusicVideoPrintsTableUpdateCompanionBuilder,
+      (
+        MusicVideoPrintRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicVideoPrintsTable,
+          MusicVideoPrintRow
+        >,
+      ),
+      MusicVideoPrintRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicVideoMatchChecksTableCreateCompanionBuilder =
+    MusicVideoMatchChecksCompanion Function({
+      required String trackUid,
+      required String videoPath,
+      required int fileSizeBytes,
+      required int fileModifiedAt,
+      required int checkedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicVideoMatchChecksTableUpdateCompanionBuilder =
+    MusicVideoMatchChecksCompanion Function({
+      Value<String> trackUid,
+      Value<String> videoPath,
+      Value<int> fileSizeBytes,
+      Value<int> fileModifiedAt,
+      Value<int> checkedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicVideoMatchChecksTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicVideoMatchChecksTable> {
+  $$MusicVideoMatchChecksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get videoPath => $composableBuilder(
+    column: $table.videoPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicVideoMatchChecksTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicVideoMatchChecksTable> {
+  $$MusicVideoMatchChecksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get videoPath => $composableBuilder(
+    column: $table.videoPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicVideoMatchChecksTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicVideoMatchChecksTable> {
+  $$MusicVideoMatchChecksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get videoPath =>
+      $composableBuilder(column: $table.videoPath, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get checkedAt =>
+      $composableBuilder(column: $table.checkedAt, builder: (column) => column);
+}
+
+class $$MusicVideoMatchChecksTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicVideoMatchChecksTable,
+          MusicVideoMatchCheckRow,
+          $$MusicVideoMatchChecksTableFilterComposer,
+          $$MusicVideoMatchChecksTableOrderingComposer,
+          $$MusicVideoMatchChecksTableAnnotationComposer,
+          $$MusicVideoMatchChecksTableCreateCompanionBuilder,
+          $$MusicVideoMatchChecksTableUpdateCompanionBuilder,
+          (
+            MusicVideoMatchCheckRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicVideoMatchChecksTable,
+              MusicVideoMatchCheckRow
+            >,
+          ),
+          MusicVideoMatchCheckRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicVideoMatchChecksTableTableManager(
+    _$FushiDatabase db,
+    $MusicVideoMatchChecksTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicVideoMatchChecksTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MusicVideoMatchChecksTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicVideoMatchChecksTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> videoPath = const Value.absent(),
+                Value<int> fileSizeBytes = const Value.absent(),
+                Value<int> fileModifiedAt = const Value.absent(),
+                Value<int> checkedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoMatchChecksCompanion(
+                trackUid: trackUid,
+                videoPath: videoPath,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String videoPath,
+                required int fileSizeBytes,
+                required int fileModifiedAt,
+                required int checkedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoMatchChecksCompanion.insert(
+                trackUid: trackUid,
+                videoPath: videoPath,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicVideoMatchChecksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicVideoMatchChecksTable,
+      MusicVideoMatchCheckRow,
+      $$MusicVideoMatchChecksTableFilterComposer,
+      $$MusicVideoMatchChecksTableOrderingComposer,
+      $$MusicVideoMatchChecksTableAnnotationComposer,
+      $$MusicVideoMatchChecksTableCreateCompanionBuilder,
+      $$MusicVideoMatchChecksTableUpdateCompanionBuilder,
+      (
+        MusicVideoMatchCheckRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicVideoMatchChecksTable,
+          MusicVideoMatchCheckRow
+        >,
+      ),
+      MusicVideoMatchCheckRow,
       PrefetchHooks Function()
     >;
 typedef $$MediaLinkAiVerdictsTableCreateCompanionBuilder =
@@ -140386,7 +145524,18 @@ class $$MediaLinkAiVerdictsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MediaLinkAiVerdictsTable, MediaLinkAiVerdictRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MediaLinkAiVerdictsTable,
+                    MediaLinkAiVerdictRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141126,7 +146275,16 @@ class $$MusicScrapeMetaTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicScrapeMetaTable, MusicScrapeMetaRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicScrapeMetaTable,
+                    MusicScrapeMetaRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141362,7 +146520,19 @@ class $$MusicMetadataRawSnapshotsTableTableManager
                 fetchedAt: fetchedAt,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $MusicMetadataRawSnapshotsTable,
+                    MusicMetadataRawSnapshotRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicMetadataRawSnapshotsTable,
+                    MusicMetadataRawSnapshotRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141558,7 +146728,18 @@ class $$MusicLockedFieldsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$MusicLockedFieldsTable, MusicLockedFieldRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $MusicLockedFieldsTable,
+                    MusicLockedFieldRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141749,7 +146930,16 @@ class $$GameVoiceCastsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$GameVoiceCastsTable, GameVoiceCastRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $GameVoiceCastsTable,
+                    GameVoiceCastRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -141964,7 +147154,19 @@ class $$PersonIdentityBridgesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $PersonIdentityBridgesTable,
+                    PersonIdentityBridgeRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $PersonIdentityBridgesTable,
+                    PersonIdentityBridgeRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -142252,7 +147454,19 @@ class $$AdaptationProgressAnchorsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<
+                    $AdaptationProgressAnchorsTable,
+                    AdaptationProgressAnchorRow
+                  >(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $AdaptationProgressAnchorsTable,
+                    AdaptationProgressAnchorRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -142546,7 +147760,16 @@ class $$AiAgentSessionsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AiAgentSessionsTable, AiAgentSessionRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $AiAgentSessionsTable,
+                    AiAgentSessionRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -142912,7 +148135,16 @@ class $$AiAgentActionsTableTableManager
                 undoStatus: undoStatus,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$AiAgentActionsTable, AiAgentActionRow>(table),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $AiAgentActionsTable,
+                    AiAgentActionRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -143271,7 +148503,18 @@ class $$RemoteAudioBindingsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable<$RemoteAudioBindingsTable, RemoteAudioBindingRow>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$FushiDatabase,
+                    $RemoteAudioBindingsTable,
+                    RemoteAudioBindingRow
+                  >(db, table, e),
+                ),
+              )
               .toList(),
           prefetchHooksCallback: null,
         ),
@@ -143628,6 +148871,18 @@ class $FushiDatabaseManager {
       $$MusicPlaylistEntriesTableTableManager(_db, _db.musicPlaylistEntries);
   $$MusicRemoteTracksTableTableManager get musicRemoteTracks =>
       $$MusicRemoteTracksTableTableManager(_db, _db.musicRemoteTracks);
+  $$MusicServerDownloadsTableTableManager get musicServerDownloads =>
+      $$MusicServerDownloadsTableTableManager(_db, _db.musicServerDownloads);
+  $$MusicServerPendingActionsTableTableManager get musicServerPendingActions =>
+      $$MusicServerPendingActionsTableTableManager(
+        _db,
+        _db.musicServerPendingActions,
+      );
+  $$MusicServerTrackStatesTableTableManager get musicServerTrackStates =>
+      $$MusicServerTrackStatesTableTableManager(
+        _db,
+        _db.musicServerTrackStates,
+      );
   $$MusicPlayEventsTableTableManager get musicPlayEvents =>
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
   $$MusicResumePointsTableTableManager get musicResumePoints =>
@@ -143639,6 +148894,10 @@ class $FushiDatabaseManager {
         _db,
         _db.videoContentFingerprints,
       );
+  $$MusicVideoPrintsTableTableManager get musicVideoPrints =>
+      $$MusicVideoPrintsTableTableManager(_db, _db.musicVideoPrints);
+  $$MusicVideoMatchChecksTableTableManager get musicVideoMatchChecks =>
+      $$MusicVideoMatchChecksTableTableManager(_db, _db.musicVideoMatchChecks);
   $$MediaLinkAiVerdictsTableTableManager get mediaLinkAiVerdicts =>
       $$MediaLinkAiVerdictsTableTableManager(_db, _db.mediaLinkAiVerdicts);
   $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>

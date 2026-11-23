@@ -142,6 +142,16 @@ SettingsSegmentedItem<AfterMiningPopupAction> _afterMiningPopupItem(
         },
     defaultValueBuilder: (SettingsContext settingsContext) =>
         settingsContext.readerSource.afterMiningPopupDefaultFor(module),
+    // 恢复默认 = 删掉本模块的选择、回到跟旧开关推出的默认走，不把此刻的默认钉成
+    // 手选（BUG-5276）。
+    storedChoice: SettingsStoredChoice(
+      isStored: (SettingsContext settingsContext) =>
+          settingsContext.readerSource.hasStoredAfterMiningPopupAction(module),
+      clear: (SettingsContext settingsContext) async {
+        await settingsContext.readerSource.clearAfterMiningPopupAction(module);
+        notifyReaderSettingsChanged(settingsContext);
+      },
+    ),
   );
 }
 

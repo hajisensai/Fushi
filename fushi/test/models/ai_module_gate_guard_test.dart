@@ -40,6 +40,12 @@ final List<_EntrySite> _sites = <_EntrySite>[
     definitionFile: 'video_source_scrape_dialog.dart',
   ),
   _EntrySite(
+    '待确认身份弹窗的「让 AI 重试」（书 / 漫画、游戏）',
+    RegExp(r'retryWithAi:(?!\s*widget\.)'),
+    RegExp(r'retryWithAi:\s*isAiModuleEnabled\('),
+    definitionFile: 'pending_identity_widgets.dart',
+  ),
+  _EntrySite(
     '合集详情页排序菜单的「AI 排序」',
     // 透传（`widget.collectionAiSettings`）不是新入口，只认真正求值的接线点。
     RegExp(r'collectionAiSettings:(?!\s*widget\.)'),
