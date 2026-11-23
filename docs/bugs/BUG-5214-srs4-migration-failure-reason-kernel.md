@@ -1,0 +1,13 @@
+## BUG-5214 · 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对
+- **报告**：2026-11-22（审查 PR #4160 / BUG-5210 的修复时发现）
+- **真实性**：✅ 真 bug，三处。
+  1. 两边判定不一致：`migrationFailed` 由内核 `native/fushi_fsrs/src/store/gen4/migrate.rs` `status` 判，认报告要 `verdict = aborted` **且** `legacyIdentity` 等于旁边旧库的身份；而 #4160 加的 `SrsGen4Migration.abortedReportPath`（`packages/fushi_srs/lib/src/store/srs_gen4_migration.dart`）在 Dart 里自己读报告 JSON，只看 `verdict`。旧库不见了、只剩临时文件（内核判的是「上次跑到一半」）而目录里恰好留着一份别的旧库的中止报告时，页面说成「没通过核对」并递出那份不相干的报告。这也违反「Rust 胖核心、Dart 不存镜像状态」。
+  2. 三种中止说成一种：内核中止的整体结论（`dryrun.rs` `overall`）有 `fail`（对拍有差异）/ `incomplete`（协议 3 缓存基准拿不到，如笔记身份缺 `noteTypeId`，`dryrun.rs` / `cache.rs`）/ `error`（profile 准备出错），恢复页一律用 `srs_gen4_aborted_report`「没有通过核对」。
+  3. `fushi_server` 重启后 `migrationFailed` 不带报告路径：`server_srs.dart` `_onGenState` 只拿到状态名，`advice` 也只会说「parity check」。
+- **[x] ① 已修复** —
+  - 内核：`GenState::MigrationFailed(Failure)`，`Failure = Aborted(AbortReason{Fail|Incomplete|Error}) | Interrupted`，在 `status` 同一处、同一份身份核对里判出（按报告的 `profileVerdict` 分，认不出的算 `error`）。线上形状 `GenState::json` = `{state, failure: {reason, reportPath?}}`，状态命令 `gen4_migrate_status`（`kernel.rs`）与打开错误 `STORE_NOT_MIGRATED`（`store/ffi.rs` `open_error`）共用；`Outcome::Aborted` 带 `reason`，`gen4_migrate_run` 的回包带同一形状的 `failure`。没加新的 FFI 调用。
+  - Dart：`SrsGen4MigrationFailure` / `SrsGen4MigrationFailureReason`（`srs_core.dart`），`SrsStoreNotMigrated.failure`、`SrsGen4MigrationStatus.failure`、`SrsGen4MigrationOutcome.failure` 只解析内核给的；删 `SrsGen4Migration.abortedReportPath` 与控制器里的报告读取（`findAbortedReport` / `loadSavedReport` / `previousRunAborted`），改为 `SrsGen4MigrationController.failureFor(previous)`。恢复页按原因四选一说明（`srs_gen4_aborted_fail` / `_incomplete` / `_error` / `srs_gen4_interrupted`），有报告路径才给「发给开发者」「分享 / 保存」；反馈标题 / 正文改成中性的「已撤回」。17 种语言都译了。
+  - 服务端：`ServerSrsGeneration.failure`（状态命令 / 打开错误 / 本进程结论三处同一来源），`toJson` 多 `failureReason`，重启后 `reportPath` 照样有，`advice` 按原因各一句。
+  - 规格 `docs/specs/2026-11-11-srs-generation-break.md` §6.1 第 6 步补原因模型。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs` `migrate::tests::the_failed_state_carries_the_kernel_reason`（每种 `profileVerdict` → 原因、别的旧库的报告 / 提交报告不算、只剩临时文件 = `interrupted`）、`cmd::dispatch_tests::the_open_error_carries_the_failure_reason`（打开错误与状态命令同一原因）、`migrate::tests` 中止用例核对 `Outcome::Aborted.reason` 与回包 `failure`；`packages/fushi_srs/test/store/srs_gen4_migration_test.dart`（原因线上名与 `migrate.rs` 一致、三处同形解析）；`fushi/test/srs/srs_gen4_migration_controller_test.dart`（`failureFor` 跟最新结论）；`fushi/test/srs/srs_generation_view_test.dart`（MD3 / Apple：四种原因各一句、只有中止给报告动作、原因读不出说笼统一句、本次结论取代上次）；`packages/fushi_server/test/server_srs_migration_test.dart`（重启后带原因与报告路径、本进程结论不被盖）。
+- **备注**：

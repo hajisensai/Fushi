@@ -721,7 +721,10 @@ Future<OpUndoOutcome> revertMangaLineBatch(
         await File(p.join(dir.path, local)).copy(target.path);
       }
     }
-    manifest.replaceLine(id, (MangaRenderedLine _) => old);
+    manifest.replaceLine(
+      id,
+      (MangaRenderedLine now) => mangaRenderedAudioRestored(now, old),
+    );
     final MangaScriptLine? now = script.lineById(id);
     final bool scriptApplied =
         now != null &&
@@ -731,7 +734,12 @@ Future<OpUndoOutcome> revertMangaLineBatch(
                       expectFile
             : now.seed == expectSeed);
     if (oldScript != null && scriptApplied) {
-      script.replaceLine(id, (MangaScriptLine _) => oldScript);
+      // 只放回这次操作改过的字段：换本地音频改音源，换种子重生成改种子（与音源）。
+      script.replaceLine(
+        id,
+        (MangaScriptLine l) =>
+            mangaScriptAudioRestored(l, oldScript, seed: expectFile is! String),
+      );
     }
     final CastVoicingEntry? entry = CastVoicingEntry.fromJson(
       raw['ledgerEntry'],

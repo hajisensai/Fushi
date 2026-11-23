@@ -131,6 +131,48 @@ test('松开触发键 / 指针离开弹窗：作废排着的扫描；弹窗内�
   assert.strictEqual(p.selects.length, 0);
 });
 
+test('HBK-AUDIT-231：排着的扫描绑定弹窗与设置代次——关窗 / 换词 / 换弹窗 / 热切换设置后到点不扫', () => {
+  // ① Esc 关窗：宿主（content.js fushiHidePopup / side-panel.js hideLookupPane）推进
+  // _renderGeneration、清 __fushiRoot，不派 mouseout。
+  {
+    const p = loadPopup(noneMode(300));
+    p.move(10, 10);
+    p.sandbox.window._renderGeneration += 1;
+    p.pending()[0].fn();
+    assert.strictEqual(p.selects.length, 0, '关窗后到点不得 selectText');
+  }
+  // ② 关窗后又开了新弹窗（新 ShadowRoot）。
+  {
+    const p = loadPopup(noneMode(300));
+    p.sandbox.window.__fushiRoot = null;
+    p.move(10, 10);
+    p.sandbox.window.__fushiRoot = { host: {} };
+    p.pending()[0].fn();
+    assert.strictEqual(p.selects.length, 0, '新开的弹窗不得吃旧计时');
+  }
+  // ③ 热切换触发键（none → shift：有效延迟变 0）或改延迟值。
+  {
+    let delay = 300;
+    const p = loadPopup({ held: () => true, delay: () => delay });
+    p.move(10, 10);
+    delay = 0;
+    p.pending()[0].fn();
+    assert.strictEqual(p.selects.length, 0, '切走 none 模式后旧计时不得扫');
+    delay = 300;
+    p.move(40, 10);
+    delay = 500;
+    p.pending()[0].fn();
+    assert.strictEqual(p.selects.length, 0, '改了延迟值后按旧值排的计时不得扫');
+  }
+  // 对照：弹窗与设置都没变，到点照常扫。
+  {
+    const p = loadPopup(noneMode(300));
+    p.move(10, 10);
+    p.pending()[0].fn();
+    assert.deepStrictEqual(p.selects, [[10, 10]]);
+  }
+});
+
 test('嵌套弹窗（独立 realm）自己按 storage 装两个钩子，并随 onChanged 热更新', () => {
   const storageListeners = [];
   const host = { attachShadow: () => makeEl() };

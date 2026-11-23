@@ -468,7 +468,8 @@ class FushiCoverBlock extends StatefulWidget {
   /// 摆法：方形封面立在起始侧，唱片垫在封面后面、从结束侧露出约四成；悬停时
   /// 唱片再滑出一截并转动、封面再斜一点。文字区（水印 / 标题 / 副行 / chip）与
   /// 原摆法同一套，只是从唱片之后起排（2026-11-21 用户：音乐页参照别的模块重做，
-  /// 原 W 原型的整块标题大字版式退役）。只画圆形裁切，不做假唱片——没有盘面图就
+  /// 原 W 原型的整块标题大字版式退役）。圆形、中心孔与投影由传入的 widget 自己画
+  /// （音乐页传 `musicDiscArtImage`），这里只给方形槽；不做假唱片——没有盘面图就
   /// 别传。null = 原摆法。
   final Widget? disc;
 
@@ -836,16 +837,17 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         colors: colors,
         size: widget.size,
         titleLines: titleLines,
-        // 半高卡（125 高）放不下作品 logo：logo 会压到副行 / 进度上
-        // （2026-11-12 用户截图 BLEACH 那块），改用两行标题文字。
-        logo: isEinkTheme(context) || widget.size == FushiCoverBlockSize.half
-            ? null
-            : widget.logo,
+        // 半高卡也画 logo（BUG-5252：首页「最近添加」/「继续」的小块对刮削过的
+        // 作品只剩标题文字 + 大字水印，与库页同一张系列卡对不上）。logo 一律
+        // 进固定标题槽（半高档 40 高，与两行标题文字同高），放不下时先丢次要行，
+        // 不会再压到副行 / 进度上（2026-11-12 BLEACH 截图是固定槽之前的问题）。
+        logo: isEinkTheme(context) ? null : widget.logo,
         // 海报元数据层（有 logo 或背景图）的标题走固定标题槽：有没有 logo、
-        // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。
-        titleSlot:
-            widget.size != FushiCoverBlockSize.half &&
-            (widget.logo != null || widget.backdrop != null),
+        // logo 横长还是偏方，标题区都一样大（2026-11-21 用户拍板）。半高卡没有
+        // logo 时仍按剩余高度排两行标题文字。
+        titleSlot: widget.size == FushiCoverBlockSize.half
+            ? widget.logo != null && !isEinkTheme(context)
+            : widget.logo != null || widget.backdrop != null,
         eyebrow: widget.eyebrow,
         byline: widget.byline,
         overview: widget.overview,
@@ -1489,28 +1491,16 @@ class _DiscGeometry {
   );
 }
 
-/// 唱片盘面：圆形裁切 + 投影（原型 `.dc`：`0 10px 26px rgba(0,0,0,.55)`）。
+/// 唱片盘面：[FushiCoverBlock.disc] 自己画圆形与投影（真盘面中心是透明轮毂，
+/// 投影要在轮毂处裁掉、扫描图要按量出的盘心对正，这里套整圆裁切 / 整圆投影会把
+/// 孔填成一团阴影），这里只铺满唱片槽。
 class _DiscFace extends StatelessWidget {
   const _DiscFace({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const ShapeDecoration(
-        shape: CircleBorder(),
-        shadows: <BoxShadow>[
-          BoxShadow(
-            color: Color(0x8C000000),
-            offset: Offset(0, 10),
-            blurRadius: 26,
-          ),
-        ],
-      ),
-      child: ClipOval(child: SizedBox.expand(child: child)),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox.expand(child: child);
 }
 
 /// 带投影、裁圆角的一张封面。[overlay]（下载进度压暗等）叠在封面之上、同在

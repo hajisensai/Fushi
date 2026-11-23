@@ -704,6 +704,107 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 模板编辑器：保存在途时返回不问放弃，写完自动退出；途中再改的仍算未保存', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      final String card1 = v.templates.first.id;
+      // 编辑器压在一个宿主页上面（真 app 从笔记类型编辑页推进来），返回才真有路由可退。
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: Builder(
+          builder: (BuildContext context) => Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SrsTemplateEditorPage(
+                    noteTypeId: nt,
+                    templateId: card1,
+                    initialTab: SrsTemplateEditorTab.front,
+                  ),
+                ),
+              ),
+              child: const Text('open-editor'),
+            ),
+          ),
+        ),
+      );
+      Future<void> open() async {
+        await tester.tap(find.text('open-editor'));
+        await _settle(tester);
+        expect(find.byType(SrsTemplateEditorPage), findsOneWidget);
+      }
+
+      Future<void> back() async {
+        await tester
+            .state<NavigatorState>(find.byType(Navigator).first)
+            .maybePop();
+        await tester.pump();
+      }
+
+      final Finder saveButton = find.byKey(
+        const ValueKey<String>('srs_template_save'),
+      );
+      final Finder discardTitle = find.text(t.srs_note_types_discard_title);
+
+      // ① 点保存后不推进真实时间：写命令停在 worker 往返途中（= 大库上要好几秒的那段）。此时返回不该问
+      // 「放弃修改」——修改正在写入，放弃也撤不回。
+      await open();
+      await tester.enterText(find.byType(EditableText).first, '{{Back}}');
+      await _settle(tester);
+      final int before = srsPageRevision(tester);
+      await tester.tap(saveButton.first);
+      await tester.pump();
+      await back();
+      expect(discardTitle, findsNothing, reason: '保存在途，不是未保存');
+      expect(
+        find.byType(SrsTemplateEditorPage),
+        findsOneWidget,
+        reason: '先等写完',
+      );
+      await srsSettleUntilWritten(
+        tester,
+        before,
+        until: () => find.byType(SrsTemplateEditorPage).evaluate().isEmpty,
+      );
+      expect(discardTitle, findsNothing);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.templates.first.front,
+        '{{fld:${v.fields[1].id}}}',
+        reason: '写完才退出，修改已落库',
+      );
+
+      // ② 保存在途时又改了字：写完只把点保存那一刻的内容记成已保存，途中改的返回仍要问。
+      await open();
+      await tester.enterText(find.byType(EditableText).first, '{{Front}}');
+      await _settle(tester);
+      final int before2 = srsPageRevision(tester);
+      await tester.tap(saveButton.first);
+      await tester.pump();
+      await tester.enterText(find.byType(EditableText).first, '{{Front}} x');
+      await tester.pump();
+      await srsSettleUntilWritten(tester, before2);
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.templates.first.front,
+        '{{fld:${v.fields[0].id}}}',
+        reason: '写进去的是点保存时的内容',
+      );
+      await back();
+      await _settle(tester);
+      expect(discardTitle, findsOneWidget, reason: '途中改的没存，要问');
+      await tester.tap(find.text(t.cancel).last);
+      await _settle(tester);
+      expect(find.byType(SrsTemplateEditorPage), findsOneWidget);
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 模板编辑器：预览用真实笔记；改正面保存写库；未知字段报错不保存', (
       WidgetTester tester,
     ) async {

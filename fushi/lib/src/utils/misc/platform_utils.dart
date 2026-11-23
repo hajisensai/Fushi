@@ -49,7 +49,7 @@ bool get webViewUsesCustomSchemeTransport =>
 /// Every platform, Android included, shows both the status bar and the
 /// navigation bar (the user reversed TODO-097 on 2026-10-04: the Android home
 /// shell shows the status bar again). Show every overlay first, then
-/// edge-to-edge: Flutter 3.44's edgeToEdge only changes decor fitting and does
+/// edge-to-edge: Flutter 3.44's edgeToEdge only changed decor fitting and did
 /// not clear the FULLSCREEN / IMMERSIVE_STICKY a video page leaves behind, so
 /// visibility must be restored explicitly through `manual` (BUG-2925).
 ///
@@ -76,12 +76,12 @@ Future<void> setHomeShellSystemUiMode() async {
 /// Android must not send edgeToEdge here. Up to Flutter 3.44 the Android
 /// `PlatformPlugin.enableEdgeToEdge()` only changed decor fitting and left the
 /// IMMERSIVE_STICKY flags from `openMedia` in place, so the bars stayed hidden
-/// and `viewPadding.top` stayed at the cutout inset. Flutter 3.47 first calls
-/// `decorView.setSystemUiVisibility(0)`, which clears those flags: the status
-/// and navigation bars came back as soon as a book finished loading, and the
-/// status-bar height went straight into the text's top padding (the "top
-/// margin got bigger" report). Declaring the wanted mode directly does not
-/// depend on that engine detail.
+/// and `viewPadding.top` stayed at the cutout inset. Flutter 3.47 (still so
+/// in 3.50.0) first calls `decorView.setSystemUiVisibility(0)`, which clears
+/// those flags: the status and navigation bars came back as soon as a book
+/// finished loading, and the status-bar height went straight into the text's
+/// top padding (the "top margin got bigger" report). Declaring the wanted
+/// mode directly does not depend on that engine detail.
 ///
 /// [android] defaults to the running platform; tests pass it explicitly.
 Future<void> setReaderSystemUiMode({bool? android}) async {

@@ -8,8 +8,8 @@
 // [mangaScrollHideEffect]）另有行为测试。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 String _read(List<String> parts) => File(
   p.joinAll(<String>['lib', 'src', 'media', 'manga', ...parts]),
@@ -35,7 +35,7 @@ void main() {
   test('查词暂停在发起查词时同步按住，不等弹窗渲染信号（与小说 _pauseForLookup 同一时点）', () {
     final String select = _methodBody(
       page,
-      'Future<void> processMangaSelection(ReaderSelectionData data) async {',
+      'Future<int> _processMangaSelection(',
     );
     final int opened = select.indexOf(
       '_readAloud.lookupOpened(MangaLookupSource.page)',
@@ -94,6 +94,28 @@ void main() {
       popStop,
       lessThan(pop.indexOf(RegExp(r'^\s+await ', multiLine: true))),
       reason: '第一个 await 之前停，书架迷你条首帧就见空会话',
+    );
+  });
+
+  test('起播成品音频的会话归属绑在页面去留上（HBK-AUDIT-215）', () {
+    final String start = _methodBody(
+      readAloud,
+      'Future<bool> _startAudioIfRegistered() async {',
+    );
+    // 起会话只走带归属的入口；裸 `_session.start(` 起到一半退出会留下没人接管的会话。
+    expect(start, contains('startMangaAudioSessionOwned('));
+    expect(start, isNot(contains('_session.start(')));
+    expect(start, contains('wanted: () => _wantsAudioStart'));
+    // 「开始退出」在返回路径（先于 dispose、此时仍 mounted）就记下。
+    final String stop = _methodBody(
+      readAloud,
+      'void stopAudioUnlessBackground(String logTag) {',
+    );
+    expect(stop.indexOf('_leaving = true'), greaterThanOrEqualTo(0));
+    expect(
+      stop.indexOf('_leaving = true'),
+      lessThan(stop.indexOf('audiobookBackgroundPlay')),
+      reason: '开着「退出后续播」也要记下退出，起到一半的会话不归本页',
     );
   });
 

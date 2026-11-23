@@ -905,6 +905,10 @@ class ThemeNotifier extends ChangeNotifier {
     'design_system',
     'glass_material',
     'pure_black_dark',
+    // 阅读器纸色（拍板台 vJSj4RsKFt）：以前纸色随 app_theme_key 走配置，拆成独立
+    // 偏好后照旧随配置 / 作品走，否则在书里改纸色会写穿到全局。
+    readerPaperLightPrefKey,
+    readerPaperDarkPrefKey,
     'shell_rail_style',
     'shell_content_layout',
     'shell_block_arrangement',
@@ -2109,6 +2113,64 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
     _persistSplashColor();
   }
+
+  /// 阅读器浅色纸偏好键（拍板台 vJSj4RsKFt）：空 = 跟随 app 主题。
+  static const String readerPaperLightPrefKey = 'reader_paper_light';
+
+  /// 阅读器深色纸偏好键：空 = 跟随 app 主题。
+  static const String readerPaperDarkPrefKey = 'reader_paper_dark';
+
+  /// 浅色 app 下可直接选的阅读器纸色（渲染层手调预设 id，冻结名）。
+  static const List<String> readerLightPaperKeys = <String>[
+    'ecru-theme',
+    'water-theme',
+    'eyecare-theme',
+  ];
+
+  /// 深色 app 下可直接选的阅读器纸色。
+  static const List<String> readerDarkPaperKeys = <String>[
+    'gray-theme',
+    'dark-theme',
+    'black-theme',
+  ];
+
+  /// 某一明暗下可选的纸色 id。
+  static List<String> readerPaperKeysFor({required bool dark}) =>
+      dark ? readerDarkPaperKeys : readerLightPaperKeys;
+
+  /// 用户为 [dark] 这一明暗显式选的阅读器纸色；null = 跟随 app 主题。
+  ///
+  /// 纸色按明暗各存一份：手调纸色只在明暗与 app 一致时生效（`readerPresetFor`
+  /// 的不变式——浅纸不能铺在深色 app 上），所以「羊皮纸」只能是浅色时的选择、
+  /// 「深灰」只能是深色时的选择，切明暗时自动换到对应那份。值不在该明暗的可选
+  /// 集里（手改偏好 / 未来删掉的 id）一律当跟随。
+  String? readerPaperFor({required bool dark}) {
+    final Object? raw = _get(
+      dark ? readerPaperDarkPrefKey : readerPaperLightPrefKey,
+      defaultValue: '',
+    );
+    if (raw is! String) return null;
+    return readerPaperKeysFor(dark: dark).contains(raw) ? raw : null;
+  }
+
+  /// 设置 [dark] 这一明暗的阅读器纸色；[key] 为 null = 回到跟随 app 主题。
+  /// 不在该明暗可选集里的 id 抛 [ArgumentError]。
+  Future<void> setReaderPaper({required bool dark, String? key}) async {
+    if (key != null && !readerPaperKeysFor(dark: dark).contains(key)) {
+      throw ArgumentError.value(key, 'key', 'not a reader paper id');
+    }
+    await _set(
+      dark ? readerPaperDarkPrefKey : readerPaperLightPrefKey,
+      key ?? '',
+    );
+    notifyListeners();
+  }
+
+  /// 阅读器纸色用的主题键：当前明暗下用户显式选的纸色优先，否则跟随 app 主题
+  /// 偏好原值（可能是已删的旧预设 id，如 ecru-theme——存量用户的阅读器纸色照旧
+  /// 生效，2026-10 预设精简时阅读器纸色不动）。
+  String get readerThemeKey =>
+      readerPaperFor(dark: isDarkMode) ?? storedAppThemeKey;
 
   /// Resolve the [CustomThemeEntry] the current [appThemeKey] points at, applying
   /// the documented fallback chain when the key is custom:
@@ -3984,8 +4046,14 @@ ThemeData buildFushiThemeData({
 
 /// 把已成型的 [base] 换成 [scheme] 重走一遍工厂：组件主题（菜单 / 对话框 / 弹层
 /// / 提示条 / 滑条……的底色与前景）全按新 scheme 重算，字阶、设计系统、玻璃材质、
-/// 墨水屏、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂产物同类型
-/// 的扩展优先）。
+/// 墨水屏、外壳样式、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂
+/// 产物同类型的扩展优先）。
+///
+/// 外壳样式（[FushiShellTheme]）必须显式传回工厂：工厂缺省是
+/// `const FushiShellTheme()`，它产出的同类扩展在合并时排在后面、会盖掉 [base]
+/// 上用户的那份——重新取色的子树（色块取色、歌词、视频面板、遥控页）里圆角
+/// 平滑、侧栏样式、库页布局、色块摆放全被打回默认；平滑圆角还烤进了组件形状。
+/// 单色强调色（`monochromeAccent`）不沿用：重新取色就是要换成新的强调色。
 ///
 /// 为什么不能 `base.copyWith(colorScheme: scheme)`：工厂把 scheme 颜色**烤进**了
 /// 各组件主题（popupMenuTheme.color = surfaceContainer 等），只换 colorScheme
@@ -4001,6 +4069,7 @@ ThemeData rethemeFushiWithScheme(ThemeData base, ColorScheme scheme) {
         FushiDesignSystem.auto,
     glass: glass?.material ?? FushiGlassMaterial.off,
     glassDesign: glass?.glassDesign ?? false,
+    shell: base.extension<FushiShellTheme>() ?? const FushiShellTheme(),
   );
   return rebuilt.copyWith(
     platform: base.platform,

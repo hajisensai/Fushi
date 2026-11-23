@@ -104,10 +104,17 @@ void main() {
       }
       expect(find.byType(FushiEntranceScope), findsOneWidget);
       expect(find.byType(FushiStaggeredEntrance), findsNWidgets(3));
-      // 默认开启：问题面点左 = 显示答案、点中间 = 切换顶栏；答案面左滑 = 良好；双击不绑。
+      // 默认开启：问题面点左 / 点中间 = 切换顶栏、左滑 = 显示答案；答案面左滑 = 良好；双击不绑。
       expect(
         find.descendant(
           of: _row(SrsReviewSide.front, SrsReviewGesture.tapLeft),
+          matching: find.text(t.srs_review_gestures_action_toggle_toolbar),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: _row(SrsReviewSide.front, SrsReviewGesture.swipeLeft),
           matching: find.text(t.srs_review_show_answer),
         ),
         findsOneWidget,

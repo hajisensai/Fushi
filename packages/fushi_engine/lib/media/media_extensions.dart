@@ -157,19 +157,36 @@ bool isMusicLibraryMediaPath(String path) =>
     isAudioOnlyMediaPath(path) || isVideoMediaPath(path);
 
 /// 小写、带点的扩展名；没有扩展名（或只有前导点的隐藏文件名）为 null。
+///
+/// 热路径（视频库每次重建对全库逐行判音频 / 视频）：本地路径不走 [Uri.tryParse]、
+/// 不现编正则——实测 1400 行一次 20+ ms，全耗在这两步上。只有 `http(s)://` 才解析
+/// URL 取路径段（去掉查询串 / 片段）。
 String? _mediaExtensionOf(String path) {
   final String trimmed = path.trim();
   if (trimmed.isEmpty) return null;
-  final Uri? uri = Uri.tryParse(trimmed);
-  final String candidate =
-      uri != null && (uri.scheme == 'http' || uri.scheme == 'https')
-      ? uri.path
-      : trimmed;
-  final int slash = candidate.lastIndexOf(RegExp(r'[\\/]'));
-  final String name = candidate.substring(slash + 1);
-  final int dot = name.lastIndexOf('.');
-  if (dot <= 0) return null;
-  return name.substring(dot).toLowerCase();
+  String candidate = trimmed;
+  if (_hasHttpScheme(trimmed)) {
+    final Uri? uri = Uri.tryParse(trimmed);
+    if (uri != null) candidate = uri.path;
+  }
+  int slash = -1;
+  for (int i = candidate.length - 1; i >= 0; i--) {
+    final int c = candidate.codeUnitAt(i);
+    if (c == 0x2F || c == 0x5C) {
+      slash = i;
+      break;
+    }
+  }
+  final int dot = candidate.lastIndexOf('.');
+  if (dot <= slash + 1) return null;
+  return candidate.substring(dot).toLowerCase();
+}
+
+/// `http://` / `https://` 前缀（大小写不敏感，与 [Uri.scheme] 的归一化一致）。
+bool _hasHttpScheme(String s) {
+  if (s.length < 7) return false;
+  final String head = s.substring(0, s.length < 8 ? s.length : 8).toLowerCase();
+  return head.startsWith('http://') || head.startsWith('https://');
 }
 
 /// 播放列表清单扩展名（扩展 M3U）：**文本清单，不是媒体流本体**。app 侧对它的

@@ -146,18 +146,21 @@ void main() {
         _day('2026-03-05', 1, 0), // W10（周四，夏令时前）
         _day('2026-03-12', 2, 0), // W11（周四，夏令时后）
       ], StatTrendGranularity.weekly);
+      // 周桶键 = 该周第一天（默认周一，[StatWindow.weekStartOf]），横轴标签仍是 ISO 周号。
       expect(us.map((StatTrendPoint p) => p.bucketKey), <String>[
-        '2026-W10',
-        '2026-W11',
+        '2026-03-02',
+        '2026-03-09',
       ]);
+      expect(us.map((StatTrendPoint p) => p.label), <String>['W10', 'W11']);
       final List<StatTrendPoint> eu = aggregateTrend(<StatDayData>[
         _day('2026-03-26', 1, 0), // W13
         _day('2026-04-02', 2, 0), // W14
       ], StatTrendGranularity.weekly);
       expect(eu.map((StatTrendPoint p) => p.bucketKey), <String>[
-        '2026-W13',
-        '2026-W14',
+        '2026-03-23',
+        '2026-03-30',
       ]);
+      expect(eu.map((StatTrendPoint p) => p.label), <String>['W13', 'W14']);
     });
 
     // CI 机器多是 UTC、没有夏令时，上面两条在那里测不出回退；源码层再钉死

@@ -53,6 +53,17 @@ class CollectionArtScrape {
 
   BookArtStore get store => BookArtStore.of(thumbnailsDirectory);
 
+  /// 刮削层变更通知（写入 / 清除 / 撤销后合集详情页重算横幅）。
+  Listenable get changes => store;
+
+  /// [rows] 里书成员的合集横幅（[BookArtStore.backdropForCollection]，成员多数票
+  /// 那张）；没下到为 null。只读刮削层，不受「在线服务」门约束：图已在本地。
+  File? bannerFor(Iterable<MediaCollectionItemRow> rows) =>
+      store.backdropForCollection(<String>[
+        for (final MediaCollectionItemRow r in rows)
+          if (r.mediaType == 'epub') r.entryKey,
+      ]);
+
   BookArtScrapeService _service() =>
       serviceFactory?.call() ??
       BookArtScrapeService(database: database, store: store);

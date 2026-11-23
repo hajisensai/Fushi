@@ -12,6 +12,7 @@ import 'package:fushi/src/feedback/feedback_draft_store.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
@@ -292,5 +293,55 @@ void main() {
     await tester.enterText(key('feedback-body'), '');
     await settle(tester, () => !draftOnDisk());
     expect(draftOnDisk(), isFalse);
+  });
+
+  testWidgets('预填打开：分类 / 标题 / 正文就位，文件自动附上，不读写草稿', (WidgetTester tester) async {
+    tallView(tester);
+    // 磁盘上有一份用户自己写到一半的草稿：预填打开既不能拿它覆盖预填，也不能改写它。
+    await tester.runAsync(
+      () => FeedbackDraftStore(root).write(
+        FeedbackComposeDraft(
+          category: FeedbackCategory.suggestion,
+          title: '',
+          body: '用户自己的草稿',
+          contact: '',
+          includeLogs: false,
+          includeDevice: true,
+          linkAccount: true,
+          screenshots: const <Uint8List>[],
+          savedAt: 1,
+        ),
+      ),
+    );
+    final File report = File('${root.path}/srs4-migration-report.json')
+      ..writeAsStringSync('{"verdict":"aborted"}');
+    await tester.pumpWidget(
+      wrap(
+        FeedbackComposePage(
+          prefill: FeedbackComposePrefill(
+            category: FeedbackCategory.bug,
+            title: '升级没过核对',
+            body: '附上报告',
+            files: <File>[report],
+          ),
+        ),
+      ),
+    );
+    final Finder attached = key('feedback-file-${report.path}');
+    await settle(tester, () => attached.evaluate().isNotEmpty);
+    expect(attached, findsOneWidget);
+    expect(find.text('升级没过核对'), findsOneWidget);
+    expect(find.text('附上报告'), findsOneWidget);
+    expect(find.text('用户自己的草稿'), findsNothing);
+
+    await tester.enterText(key('feedback-body'), '附上报告，补一句');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await drainDraftWrites(tester);
+    expect((await readDraft(tester))!.body, '用户自己的草稿');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
 }

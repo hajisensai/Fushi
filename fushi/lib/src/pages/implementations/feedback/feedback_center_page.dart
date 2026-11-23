@@ -97,18 +97,7 @@ class _FeedbackCenterPageState extends ConsumerState<FeedbackCenterPage> {
     );
     if (result == null || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      FushiSnackBar(
-        content: Text(
-          result.quotaResetAt != null
-              ? t.feedback_submitted_quota(
-                  n: result.failedAttachments,
-                  time: feedbackQuotaResetTime(result.quotaResetAt!),
-                )
-              : result.failedAttachments > 0
-              ? t.feedback_submitted_partial(n: result.failedAttachments)
-              : t.feedback_submitted,
-        ),
-      ),
+      FushiSnackBar(content: Text(feedbackSubmittedMessage(result))),
     );
   }
 

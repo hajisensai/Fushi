@@ -6,7 +6,6 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -101,6 +100,7 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show showFushiConfirmDialog;
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 part 'music_plugin_actions.dart';
 part 'music_plugin_browse_pages.dart';
@@ -1165,11 +1165,11 @@ class SliverMusicRecommendBlocks extends StatelessWidget {
   final int maxRows;
 
   @override
-  Widget build(BuildContext context) => SliverLayoutBuilder(
-    builder: (BuildContext context, SliverConstraints constraints) =>
+  Widget build(BuildContext context) => FushiSliverWidthBuilder(
+    builder: (BuildContext context, double crossAxisExtent) =>
         SliverFushiCoverBlocks(
           itemCount: musicCoverBlockRowCapacity(
-            width: constraints.crossAxisExtent,
+            width: crossAxisExtent,
             itemCount: itemCount,
             rows: maxRows,
           ),
@@ -3146,10 +3146,10 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         itemBuilder: block,
       );
     }
-    return SliverLayoutBuilder(
-      builder: (BuildContext context, SliverConstraints constraints) {
+    return FushiSliverWidthBuilder(
+      builder: (BuildContext context, double crossAxisExtent) {
         final int shown = musicCoverBlockRowCapacity(
-          width: constraints.crossAxisExtent,
+          width: crossAxisExtent,
           itemCount: entries.length,
           layout: layout,
           rows: 1,

@@ -238,6 +238,8 @@ void main() {
     // 内置实体各一条 SELECT，现在一条 `entities {ids}`），所以 3 → 1。
     // 新代：开库多一条 `collection_info`（盐集合不在 identity 回包里，绑定代号要带上它，SrsDbStore._sync2Open），
     // 3 → 4（`identity` + `collection_info` + `cache_config_set` + 本机状态）。
+    // BUG-5209：默认牌组带删除标记时的开库自愈在内核 `cache_config_set` 的同一个事务里做（宿主不先读默认牌组），
+    // 读命令仍是 1、内核命令数不变。
     expect(costs, <String, _Cost>{
       'rebuildCaches': (statements: 0, core: 1),
       'open(current)': (statements: 1, core: 4),

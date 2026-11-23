@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/background_keyed_derivation.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
@@ -71,6 +72,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/video_library_memo.dart';
 import 'package:fushi/src/media/video/video_library_scrape_maps.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/video_online_services_banner.dart';
@@ -501,6 +503,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     setState(() {});
   }
 
+  /// BUG-5253 余项：卡片 build 不在 UI 线程上排序刮削图组 / `jsonDecode` 标签
+  /// （[videoSeriesMetaPlan]）、不逐集解析集号（[parsedEpisodeNumbersOf]）。两者都
+  /// 按输入键控、在后台 isolate 整批算好：刮削映射 / 合集分组换代时预取
+  /// （[_prefetchSeriesPlans] / [_prefetchEpisodeNumbers]），build 只读结果。
+  late final BackgroundKeyedDerivation<
+    String,
+    VideoSeriesMetaInput,
+    VideoSeriesMetaPlan
+  >
+  _seriesPlans =
+      BackgroundKeyedDerivation<
+        String,
+        VideoSeriesMetaInput,
+        VideoSeriesMetaPlan
+      >(
+        compute: videoSeriesMetaPlan,
+        inputEquals: videoSeriesMetaInputSame,
+        onReady: _onBackgroundDerivationReady,
+      );
+  late final BackgroundKeyedDerivation<int, List<String>, List<int?>>
+  _episodeNumbers = BackgroundKeyedDerivation<int, List<String>, List<int?>>(
+    compute: parsedEpisodeNumbersOf,
+    inputEquals: _sameStrings,
+    onReady: _onBackgroundDerivationReady,
+  );
+
+  void _onBackgroundDerivationReady() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
   /// 书架行重取：同时让「已知不存在」的封面路径再探一次（刮削 / 抽帧可能刚把文件
   /// 写到原先探过的路径上），旧答案用到新答案回来，不闪占位。
   Future<List<VideoBookRow>> _listForShelf() {
@@ -683,6 +716,89 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
+
+  // ── 库页派生数据的记忆化（2026-11-22 UI 线程卡顿根治）──────────────────
+  //
+  // 筛选 / 搜索 / 折叠 / 首页各行都是页面状态的纯派生。页面会因封面回填、刮削
+  // 进度、各种 watcher 频繁重建，派生却只在它真正的输入（行列表、映射、筛选档位、
+  // 搜索词、分区、远端清单……）换掉时才会变：输入按身份 / 值比较，没变就复用上次
+  // 的结果（[DerivationMemo]）。页面状态里的映射一律整张替换、从不原地改，按身份
+  // 比较是可靠的。build 方法只读这些结果。
+
+  /// 标签过滤 → 搜索 → 本地下拉筛选后的本地可见列表（[_buildVideoLibraryBody]）。
+  final DerivationMemo<List<VideoBookRow>> _orderedMemo =
+      DerivationMemo<List<VideoBookRow>>();
+
+  /// 混排进主网格的远端占位（过筛选）与首页用的未过滤远端占位。
+  final DerivationMemo<
+    ({List<RemoteVideoInfo> filtered, List<RemoteVideoInfo> home})
+  >
+  _remoteListsMemo =
+      DerivationMemo<
+        ({List<RemoteVideoInfo> filtered, List<RemoteVideoInfo> home})
+      >();
+
+  /// 「管理合集」页的成员数（未筛选全量的折叠结果）。
+  final DerivationMemo<Map<int, int>> _displayCountsMemo =
+      DerivationMemo<Map<int, int>>();
+
+  /// 系列墙的折叠 + 组间排序结果。
+  final DerivationMemo<List<CollectionGroup<_VideoSlot>>> _seriesGroupsMemo =
+      DerivationMemo<List<CollectionGroup<_VideoSlot>>>();
+
+  /// 「全部视频」按当前排序方式排好的本地列表。
+  final DerivationMemo<List<VideoBookRow>> _allVideosOrderMemo =
+      DerivationMemo<List<VideoBookRow>>();
+
+  /// 首页「继续观看」/「已更新未看」候选。
+  final DerivationMemo<List<_HomeContinueItem>> _continueItemsMemo =
+      DerivationMemo<List<_HomeContinueItem>>();
+  final DerivationMemo<List<_HomeSubscriptionItem>> _subscriptionUpdatesMemo =
+      DerivationMemo<List<_HomeSubscriptionItem>>();
+
+  /// 首页「最近添加」行的候选（排好序），以及它的窗口判定下一次翻转的时刻
+  /// （epoch 微秒，null = 不会再翻转）：到点前对同一批输入重算结果逐项相同。
+  final DerivationMemo<_RecentlyAddedData> _recentlyAddedMemo =
+      DerivationMemo<_RecentlyAddedData>();
+  int? _recentlyAddedNextChangeMicros;
+
+  /// 上一次读「最近添加」缓存时的时刻：之后若现在早于它，说明系统时钟回拨了。
+  int? _recentlyAddedComputedAtMicros;
+
+  /// 按裸 uid 键控的主合集归属 / 组内序（由 [_primaryCollectionByEntry] /
+  /// [_memberSortIndex] 整张替换时重建，查询不再逐次拼复合键）。
+  final DerivationMemo<Map<String, int>> _collectionIdByUidMemo =
+      DerivationMemo<Map<String, int>>();
+  final DerivationMemo<Map<String, int>> _sortIndexByUidMemo =
+      DerivationMemo<Map<String, int>>();
+
+  Map<String, int> get _collectionIdByUid => _collectionIdByUidMemo.of(
+    <Object?>[_primaryCollectionByEntry],
+    () => entriesOfKind<int>(_primaryCollectionByEntry, MediaKind.video),
+  );
+
+  Map<String, int> get _sortIndexByUid => _sortIndexByUidMemo.of(<Object?>[
+    _memberSortIndex,
+  ], () => entriesOfKind<int>(_memberSortIndex, MediaKind.video));
+
+  /// 只看文件路径的逐条判据（纯音频 / 路径规则判出的特典），每个路径只算一次。
+  /// 随行列表换代清空（同一路径的结论不会变，清空只为不让已删条目的路径常驻）。
+  final Map<String, bool> _audioOnlyByPath = <String, bool>{};
+  final Map<String, bool> _extraByPath = <String, bool>{};
+  List<VideoBookRow>? _pathFactsRows;
+
+  void _syncPathFacts(List<VideoBookRow> rows) {
+    if (identical(rows, _pathFactsRows)) return;
+    _pathFactsRows = rows;
+    _audioOnlyByPath.clear();
+    _extraByPath.clear();
+  }
+
+  bool _isAudioOnlyPathCached(String path) =>
+      _audioOnlyByPath[path] ??= isAudioOnlyMediaPath(path);
+
+  bool _isExtraPathCached(String path) =>
+      _extraByPath[path] ??= classifyLocalVideoExtra(path) != null;
 
   /// 当前渲染成横排行的合集 id 列表（[_buildLocalVideoSlivers] 每帧写入），供
   /// 全选 / 反选把可见合集纳入整选集。
@@ -910,7 +1026,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 判成附件（与来源扫描排除特典同一个 [classifyLocalVideoExtra]）。
   bool _isLocalExtra(VideoBookRow book) =>
       _localExtraBookUids.contains(book.bookUid) ||
-      classifyLocalVideoExtra(book.videoPath) != null;
+      _isExtraPathCached(book.videoPath);
 
   /// TODO-2486：横滚行控制器（每行独立，横向偏移在 rebuild 间不串行）。
   final ScrollController _recentRowController = ScrollController();
@@ -1159,6 +1275,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _coverExists.dispose();
     _remoteCoverExists.dispose();
     _coverExistsRevision.dispose();
+    _seriesPlans.dispose();
+    _episodeNumbers.dispose();
     _specsListened?.removeListener(_onVideoSpecsChangedForFilter);
     _headerSearch.dispose();
     _searchController.dispose();
@@ -1490,6 +1608,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         );
       }
     });
+    _prefetchSeriesPlans();
   }
 
   /// 整表轮次落地前按刮削展示日志补齐：[cursor] 之后的写入由增量重读覆盖到
@@ -1855,6 +1974,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _scrapeCursor = caughtUpCursor;
       _subscribedCollectionIds = subscribedCollectionIds;
     });
+    _prefetchSeriesPlans();
   }
 
   /// 「已更新未看」行的订阅→合集解析输入（新 Drift 订阅：条目→任务、元数据身份→
@@ -2629,7 +2749,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ) &&
       matchesVideoMediaType(
         filter: _effectiveMediaTypeFilter,
-        isAudio: isAudioOnlyMediaPath(b.videoPath),
+        isAudio: _isAudioOnlyPathCached(b.videoPath),
       ) &&
       // 特典判据要跑路径正则，「全部」档位不求值（每次 build 对全库求值）。
       (_effectiveExtrasFilter == VideoExtrasFilter.all ||
@@ -2761,8 +2881,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   bool _isCollectionMember(String bookUid) {
-    final int? collectionId =
-        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
+    final int? collectionId = _collectionIdByUid[bookUid];
     return collectionId != null && _collectionsById.containsKey(collectionId);
   }
 
@@ -3344,6 +3463,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 仅为穷尽 switch。
       case DropIntent.importNewManga:
       case DropIntent.unsupportedMangaArchive:
+      case DropIntent.importBookArchive:
       case DropIntent.ignore:
         break;
     }
@@ -5978,48 +6098,75 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         final Set<int>? collectionFilter = ref
             .watch(filteredCollectionIdsProvider)
             .valueOrNull;
-        final List<VideoBookRow> books = filter == null
-            ? all
-            : all.where((VideoBookRow b) {
-                // 成员命中标签、或所属合集命中标签都保留（后者让打了标签的合集其成员
-                // 整组存活、折叠出合集组）。
-                return keepMemberUnderTagFilter(
-                  memberMatched: filter.contains(b.bookUid),
-                  primaryCollectionId: _effectiveCollectionIdForBook(b),
-                  collectionFilter: collectionFilter,
-                );
-              }).toList();
-        // P5-A：搜索按标题匹配，归一化走与书架/游戏库页同一份
-        // [matchesMediaSearch]（全角/片假名/标点折叠），三页搜出的结果口径一致。
-        final List<VideoBookRow> searched = _searchQuery.trim().isEmpty
-            ? books
-            : books.where((VideoBookRow b) {
-                final int? collectionId = _effectiveCollectionIdForBook(b);
-                return matchesMediaSearch(
-                  query: _searchQuery,
-                  titles: <String>[
-                    b.title,
-                    if (_metadataWorkByBook[b.bookUid]?.title
-                        case final String title)
-                      title,
-                    if (collectionId != null &&
-                        _metadataWorkByCollection[collectionId] != null)
-                      _metadataWorkByCollection[collectionId]!.title,
-                  ],
-                );
-              }).toList();
-        // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
-        // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
-        // TODO-2486：年份 / 看完状态下拉筛选（本地即筛）。年份由条目刮削 airDate
-        // 派生（无资料 = 归「未知」桶，条目不消失）；看完状态按 completedAt /
-        // lastPositionMs 三档判。
-        // 首屏骨架期间屏幕上一张真卡都没有，筛选判据（系列归属 / 来源 / 年份）
-        // 要的映射也还是空的：可见集如实为空，不拿空映射筛出一批看不见的条目。
-        final List<VideoBookRow> ordered = <VideoBookRow>[
-          if (!firstPaintPending)
-            for (final VideoBookRow b in searched)
-              if (_passesLocalFilters(b)) b,
-        ];
+        // 2026-11-22：整条本地派生（标签过滤 → 搜索 → 下拉筛选）只在输入换掉时
+        // 重算（[_orderedMemo]）。「规格」筛选的判定读解析器 / 规格服务的异步
+        // 结论（结论回来时 setState 重筛，且判定本身要攒批补解析），档位非空时
+        // 不缓存、每帧照旧现算。
+        List<VideoBookRow> deriveOrdered() {
+          _syncPathFacts(all);
+          final List<VideoBookRow> books = filter == null
+              ? all
+              : all.where((VideoBookRow b) {
+                  // 成员命中标签、或所属合集命中标签都保留（后者让打了标签的合集其成员
+                  // 整组存活、折叠出合集组）。
+                  return keepMemberUnderTagFilter(
+                    memberMatched: filter.contains(b.bookUid),
+                    primaryCollectionId: _effectiveCollectionIdForBook(b),
+                    collectionFilter: collectionFilter,
+                  );
+                }).toList();
+          // P5-A：搜索按标题匹配，归一化走与书架/游戏库页同一份
+          // [matchesMediaSearch]（全角/片假名/标点折叠），三页搜出的结果口径一致。
+          final List<VideoBookRow> searched = _searchQuery.trim().isEmpty
+              ? books
+              : books.where((VideoBookRow b) {
+                  final int? collectionId = _effectiveCollectionIdForBook(b);
+                  return matchesMediaSearch(
+                    query: _searchQuery,
+                    titles: <String>[
+                      b.title,
+                      if (_metadataWorkByBook[b.bookUid]?.title
+                          case final String title)
+                        title,
+                      if (collectionId != null &&
+                          _metadataWorkByCollection[collectionId] != null)
+                        _metadataWorkByCollection[collectionId]!.title,
+                    ],
+                  );
+                }).toList();
+          // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
+          // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
+          // TODO-2486：年份 / 看完状态下拉筛选（本地即筛）。年份由条目刮削 airDate
+          // 派生（无资料 = 归「未知」桶，条目不消失）；看完状态按 completedAt /
+          // lastPositionMs 三档判。
+          // 首屏骨架期间屏幕上一张真卡都没有，筛选判据（系列归属 / 来源 / 年份）
+          // 要的映射也还是空的：可见集如实为空，不拿空映射筛出一批看不见的条目。
+          return <VideoBookRow>[
+            if (!firstPaintPending)
+              for (final VideoBookRow b in searched)
+                if (_passesLocalFilters(b)) b,
+          ];
+        }
+
+        final List<VideoBookRow> ordered = _specFilters.isNotEmpty
+            ? deriveOrdered()
+            : _orderedMemo.of(<Object?>[
+                all,
+                firstPaintPending,
+                filter,
+                collectionFilter,
+                _searchQuery,
+                widget.section,
+                _yearFilter,
+                _effectiveSeriesFilter,
+                _watchStatusFilter,
+                _effectiveMediaTypeFilter,
+                _effectiveExtrasFilter,
+                _effectiveSourceFilter,
+                _primaryCollectionByEntry,
+                _collectionsById,
+                _scrapeMaps,
+              ], deriveOrdered);
         // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用（骨架期为空，
         // 批量动作不会作用于看不见的条目）。
         _visibleVideos = ordered;
@@ -6057,48 +6204,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 // [loadCollectionEpisodeSlots] 的归并同一判据，库页合集卡的
                 // 「已看完 x/N」与详情页集数一致）。判重看本地**全量**列表，
                 // 本地那集被筛选/搜索藏起来时远端副本也不该顶上来。
-                final Set<String> mirroredRemote =
-                    _remoteEpisodesMirroredLocally(
-                      all,
-                      snapState ?? _lastRemoteState,
-                    );
-                final List<RemoteVideoInfo> remoteVideos = <RemoteVideoInfo>[
-                  for (final RemoteVideoInfo v in _visibleRemoteVideos(
-                    snapState ?? _lastRemoteState,
-                    filter,
-                  ))
-                    if (!mirroredRemote.contains(v.id))
-                      // BUG-2327：远端占位卡与本地卡同口径过搜索（此前只裁本地列表，
-                      // 搜索时远端占位卡照样满屏）。
-                      // 远端占位与本地同规则过系列归属筛选，判据同样取**在系列墙上的
-                      // 折叠形态**：host 下发的 membership 还要能解析到本机存在的合集
-                      // （[_remoteCollectionId]，解析不到系列墙就按散卡降级）。只看
-                      // `collection != null` 会让「host 有、本机没有同名合集」的占位卡
-                      // 在系列墙上是散卡、在这里却算系列成员。
-                      if (matchesMediaSearch(
-                            query: _searchQuery,
-                            titles: <String>[v.title],
-                          ) &&
-                          _yearFilter.matches(null) &&
-                          matchesVideoSeriesFilter(
-                            filter: _effectiveSeriesFilter,
-                            inSeries: _remoteCollectionId(v) != null,
-                          ) &&
-                          matchesVideoWatchStatus(
-                            filter: _watchStatusFilter,
-                            completed: false,
-                            lastPositionMs: v.positionMs,
-                          ) &&
-                          // BUG-2835：占位 DTO 没有文件路径、不属于本机任何来源——判
-                          // 不出是不是音频 / 特典，就只在这三档都「全部」时出现，不猜。
-                          _effectiveMediaTypeFilter ==
-                              VideoMediaTypeFilter.all &&
-                          _effectiveExtrasFilter == VideoExtrasFilter.all &&
-                          _effectiveSourceFilter == null &&
-                          // 远端占位不带文件路径，判不出载体 / 画质。
-                          _specFilters.isEmpty)
-                        v,
-                ];
                 // 反馈 ZjKzpkfZ1N：首页分区没有任何筛选入口（标签栏、筛选面板、
                 // 页头搜索都只在系列 / 全部视频出现），而筛选状态与那两个分区
                 // 共享（标签还与书架共享）。首页若吃过滤后的列表，在别处选中的
@@ -6108,24 +6213,111 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 final List<VideoBookRow> homeLocal = firstPaintPending
                     ? const <VideoBookRow>[]
                     : all;
-                final List<RemoteVideoInfo> homeRemote = <RemoteVideoInfo>[
-                  for (final RemoteVideoInfo v in _visibleRemoteVideos(
-                    snapState ?? _lastRemoteState,
-                    null,
-                  ))
-                    if (!mirroredRemote.contains(v.id)) v,
-                ];
+                // 2026-11-22：两份远端占位清单只在输入换掉时重算（[_remoteListsMemo]）。
+                final _RemoteVideoState? remoteState =
+                    snapState ?? _lastRemoteState;
+                final bool showRemoteEntries = ref
+                    .read(appProvider)
+                    .prefsRepo
+                    .showRemoteEntries;
+                final ({
+                  List<RemoteVideoInfo> filtered,
+                  List<RemoteVideoInfo> home,
+                })
+                remoteLists = _remoteListsMemo.of(
+                  <Object?>[
+                    all,
+                    remoteState,
+                    remoteState?.videos,
+                    remoteState?.failed,
+                    showRemoteEntries,
+                    filter,
+                    _searchQuery,
+                    _yearFilter,
+                    _effectiveSeriesFilter,
+                    _watchStatusFilter,
+                    _effectiveMediaTypeFilter,
+                    _effectiveExtrasFilter,
+                    _effectiveSourceFilter,
+                    _specFilters,
+                    _primaryCollectionByEntry,
+                  ],
+                  () {
+                    final Set<String> mirroredRemote =
+                        _remoteEpisodesMirroredLocally(all, remoteState);
+                    final List<RemoteVideoInfo> filtered = <RemoteVideoInfo>[
+                      for (final RemoteVideoInfo v in _visibleRemoteVideos(
+                        remoteState,
+                        filter,
+                      ))
+                        if (!mirroredRemote.contains(v.id))
+                          // BUG-2327：远端占位卡与本地卡同口径过搜索（此前只裁本地列表，
+                          // 搜索时远端占位卡照样满屏）。
+                          // 远端占位与本地同规则过系列归属筛选，判据同样取**在系列墙上的
+                          // 折叠形态**：host 下发的 membership 还要能解析到本机存在的合集
+                          // （[_remoteCollectionId]，解析不到系列墙就按散卡降级）。只看
+                          // `collection != null` 会让「host 有、本机没有同名合集」的占位卡
+                          // 在系列墙上是散卡、在这里却算系列成员。
+                          if (matchesMediaSearch(
+                                query: _searchQuery,
+                                titles: <String>[v.title],
+                              ) &&
+                              _yearFilter.matches(null) &&
+                              matchesVideoSeriesFilter(
+                                filter: _effectiveSeriesFilter,
+                                inSeries: _remoteCollectionId(v) != null,
+                              ) &&
+                              matchesVideoWatchStatus(
+                                filter: _watchStatusFilter,
+                                completed: false,
+                                lastPositionMs: v.positionMs,
+                              ) &&
+                              // BUG-2835：占位 DTO 没有文件路径、不属于本机任何来源——判
+                              // 不出是不是音频 / 特典，就只在这三档都「全部」时出现，不猜。
+                              _effectiveMediaTypeFilter ==
+                                  VideoMediaTypeFilter.all &&
+                              _effectiveExtrasFilter == VideoExtrasFilter.all &&
+                              _effectiveSourceFilter == null &&
+                              // 远端占位不带文件路径，判不出载体 / 画质。
+                              _specFilters.isEmpty)
+                            v,
+                    ];
+                    final List<RemoteVideoInfo> home = <RemoteVideoInfo>[
+                      for (final RemoteVideoInfo v in _visibleRemoteVideos(
+                        remoteState,
+                        null,
+                      ))
+                        if (!mirroredRemote.contains(v.id)) v,
+                    ];
+                    return (filtered: filtered, home: home);
+                  },
+                );
+                final List<RemoteVideoInfo> remoteVideos = remoteLists.filtered;
+                final List<RemoteVideoInfo> homeRemote = remoteLists.home;
                 // 「管理合集」页的成员数（BUG-4277）：管理页列的是本域全部合集、
                 // 不随搜索 / 筛选 / 分区变，成员数也只取未筛选全量（同首页口径）的
                 // 折叠结果。放在分区分支之前：「全部视频」分区不建系列墙，挂在系列
                 // 墙里就永远发布不到。骨架期归属映射还没到，不发布（不是 0）。
+                // 折叠只在输入换掉时重算（[_displayCountsMemo]）；每帧照旧发布，
+                // 同值发布在 [CollectionDisplayCounts.publishCounts] 里是空操作。
                 if (!firstPaintPending) {
-                  _collectionDisplayCounts.publish<_VideoSlot>(
-                    _foldVideoUnits(
-                      homeLocal,
-                      homeRemote,
-                      _primaryCollectionByEntry,
-                      _memberSortIndex,
+                  _collectionDisplayCounts.publishCounts(
+                    _displayCountsMemo.of(
+                      <Object?>[
+                        homeLocal,
+                        homeRemote,
+                        _primaryCollectionByEntry,
+                        _memberSortIndex,
+                        _collectionsById,
+                      ],
+                      () => collectionDisplayCountsOf<_VideoSlot>(
+                        _foldVideoUnits(
+                          homeLocal,
+                          homeRemote,
+                          _primaryCollectionByEntry,
+                          _memberSortIndex,
+                        ),
+                      ),
                     ),
                   );
                 }
@@ -6278,9 +6470,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 用户合集在系列页既折不出合集卡、成员也被判成「无归属」。用户拍板合集就该
   /// 在系列里，分叉去掉后三处（标签过滤 / 标题搜索 / 最终分组）天然同口径。
   int? _effectiveCollectionIdForBook(VideoBookRow book) {
-    return _primaryCollectionByEntry[MediaKind.video.compositeKey(
-      book.bookUid,
-    )];
+    return _collectionIdByUid[book.bookUid];
   }
 
   /// 视频首页概览（2026-10 重设计，设计稿 `fushi/build/video_home_design/`）：
@@ -6307,13 +6497,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final double contentWidth = (availableWidth - tokens.spacing.card * 2)
         .clamp(0.0, double.infinity);
     final double cardWidth = videoHomePosterCardWidth(contentWidth);
-    final List<_HomeContinueItem> continueItems = _collectContinueItems(
+    // 两份候选只在输入换掉时重算（[_continueItemsMemo] /
+    // [_subscriptionUpdatesMemo]）。片长（[_knownDurationMs]）读偏好、不进键：
+    // 它只在播放时写，播放回来的进度通知会重拉行列表（[_refreshAfterPlayback]），
+    // 行列表换代即重算。
+    final List<Object?> slotInputs = <Object?>[
       filtered,
       remoteVideos,
+      _primaryCollectionByEntry,
+      _collectionsById,
+      _memberSortIndex,
+      _scrapeMaps,
+      _watchAtByUid,
+      _legacyWatchAtByTitle,
+    ];
+    final List<_HomeContinueItem> continueItems = _continueItemsMemo.of(
+      slotInputs,
+      () => _collectContinueItems(filtered, remoteVideos),
     );
-    final List<_HomeSubscriptionItem> updates = _collectSubscriptionUpdates(
-      filtered,
-      remoteVideos,
+    final List<_HomeSubscriptionItem> updates = _subscriptionUpdatesMemo.of(
+      <Object?>[...slotInputs, _subscribedCollectionIds],
+      () => _collectSubscriptionUpdates(filtered, remoteVideos),
     );
     // 首屏就是全部的「继续观看」（[FushiContinueSpotlight]，与书架 / 游戏 /
     // 音乐 / 首页同一个组件；最多 15 部，与原继续观看行同一上限），下面不再
@@ -6638,8 +6842,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<RemoteVideoInfo> looseRemote = <RemoteVideoInfo>[];
     for (final VideoBookRow book in filtered) {
       if (_localExtraBookUids.contains(book.bookUid)) continue;
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      final int? cid = _collectionIdByUid[book.bookUid];
       if (cid != null && _collectionsById.containsKey(cid)) {
         grouped
             .putIfAbsent(cid, () => <_VideoSlot>[])
@@ -6752,14 +6955,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 远端占位同样使用经过 DAO 墓碑裁决的持久归属。
   int? _remoteCollectionId(RemoteVideoInfo video) =>
-      _primaryCollectionByEntry[MediaKind.video.compositeKey(video.id)];
+      _collectionIdByUid[video.id];
 
   /// 本地与远端成员共享本地保存的组内顺序。
   int _slotSortIndex(_VideoSlot slot) =>
-      _memberSortIndex[MediaKind.video.compositeKey(
-        slot.local?.bookUid ?? slot.remote!.id,
-      )] ??
-      1 << 30;
+      _sortIndexByUid[slot.local?.bookUid ?? slot.remote!.id] ?? 1 << 30;
 
   /// 最近观看时刻（epoch 毫秒，0 = 没看过）。远端的真相源是 host 下发的
   /// [RemoteVideoInfo.positionUpdatedAtMs]（与「继续观看」行同一口径）。
@@ -6840,8 +7040,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final Map<int, List<_VideoSlot>> grouped = <int, List<_VideoSlot>>{};
     for (final VideoBookRow book in filtered) {
       if (_localExtraBookUids.contains(book.bookUid)) continue;
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+      final int? cid = _collectionIdByUid[book.bookUid];
       if (cid != null &&
           _subscribedCollectionIds.contains(cid) &&
           _collectionsById.containsKey(cid)) {
@@ -6958,6 +7157,53 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<RemoteVideoInfo> remoteVideos,
     double cardWidth,
   ) {
+    // 候选的分组 / 选集 / 排序只在输入换掉、或窗口判定到了下一次翻转时刻时重算
+    // （[_recentlyAddedMemo]）；行卡 spec（封面、标签、文案）每帧照旧现建，只建
+    // 显示出来的前 15 张。
+    final List<Object?> keys = <Object?>[
+      filtered,
+      remoteVideos,
+      _primaryCollectionByEntry,
+      _collectionsById,
+      _memberSortIndex,
+      _scrapeMaps,
+    ];
+    final int? cachedNextChange = _recentlyAddedNextChangeMicros;
+    final int nowMicros = DateTime.now().microsecondsSinceEpoch;
+    // 到了下一次翻转时刻，或系统时钟被往回拨过（回拨后窗口判定可能反向翻转，
+    // 翻转时刻表只对「时间往前走」成立）：作废重算。
+    final int? computedAt = _recentlyAddedComputedAtMicros;
+    if ((cachedNextChange != null && nowMicros >= cachedNextChange) ||
+        (computedAt != null && nowMicros < computedAt)) {
+      _recentlyAddedMemo.clear();
+    }
+    final _RecentlyAddedData data = _recentlyAddedMemo.of(
+      keys,
+      () => _collectRecentlyAdded(filtered, remoteVideos),
+    );
+    _recentlyAddedNextChangeMicros = data.nextChangeMicros;
+    _recentlyAddedComputedAtMicros = nowMicros;
+    final List<_VideoRowItem> recent = <_VideoRowItem>[
+      for (final _RecentlyAddedEntry entry in data.entries.take(15))
+        _recentlyAddedRowItem(entry),
+    ];
+    if (recent.isEmpty) return null;
+    return _buildHorizontalCardRow(
+      title: t.home_recently_added,
+      blocksKey: const ValueKey<String>('home_video_recent_blocks'),
+      controller: _recentRowController,
+      cardWidth: cardWidth,
+      items: recent,
+    );
+  }
+
+  /// 「最近添加」行的候选（与改动前同一套规则，只是不再每帧重算）：入库窗口内的
+  /// 条目，合集成员合成一项（取最新入库那集，集号按全体成员组内序），按入库
+  /// 时刻倒序。另带窗口判定下一次翻转的时刻，到点后缓存作废。
+  _RecentlyAddedData _collectRecentlyAdded(
+    List<VideoBookRow> filtered,
+    List<RemoteVideoInfo> remoteVideos,
+  ) {
     final DateTime now = DateTime.now();
     final Map<int, List<_VideoSlot>> allMembersByCollection =
         <int, List<_VideoSlot>>{};
@@ -6973,9 +7219,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     for (final _VideoSlot slot in candidates) {
       final VideoBookRow? local = slot.local;
       final int? cid = local != null
-          ? _primaryCollectionByEntry[MediaKind.video.compositeKey(
-              local.bookUid,
-            )]
+          ? _collectionIdByUid[local.bookUid]
           : _remoteCollectionId(slot.remote!);
       final bool inCollection =
           cid != null && _collectionsById.containsKey(cid);
@@ -6994,13 +7238,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         loose.add(slot);
       }
     }
-    final List<_VideoRowItem> recent = <_VideoRowItem>[];
+    final List<_RecentlyAddedEntry> entries = <_RecentlyAddedEntry>[];
     grouped.forEach((int cid, List<_VideoSlot> members) {
       members.sort(
         (_VideoSlot a, _VideoSlot b) =>
             (_slotImportedAtMs(b) ?? 0).compareTo(_slotImportedAtMs(a) ?? 0),
       );
-      final MediaCollectionRow collection = _collectionsById[cid]!;
       final _VideoSlot latest = members.first;
       final List<_VideoSlot> allMembers =
           allMembersByCollection[cid] ?? members;
@@ -7011,54 +7254,75 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       final int latestIndex = allMembers.indexWhere(
         (_VideoSlot value) => identical(value, latest),
       );
-      final int? episodeNumber = latestIndex < 0 ? null : latestIndex + 1;
-      recent.add(
-        _VideoRowItem(
+      entries.add(
+        _RecentlyAddedEntry(
           recentMs: _slotImportedAtMs(latest) ?? 0,
-          spec: _RowCardSpec(
-            cardKey: ValueKey<String>('home_video_recent_collection_$cid'),
-            collectionId: cid,
-            focusId: FushiFocusId('home-video-recent-collection-$cid'),
-            // 竖版作品封面链；纯远端合集回落到最新那一集的远端封面。
-            cover: _collectionPosterProvider(collection, members, latest),
-            title: _workTitle(collection),
-            onTap: () => _openCollectionDetail(collection),
-            onLongPress: () => _showCollectionContextMenu(
-              collection,
-              cover: () =>
-                  _collectionPosterProvider(collection, members, latest),
-              title: _workTitle(collection),
-            ),
-            tags: _collectionTagChips(cid),
-            secondaryText: episodeNumber == null
-                ? t.video_playlist_episodes(count: allMembers.length)
-                : t.video_home_recent_episode_number(n: episodeNumber),
-            cloudBadge: latest.local == null,
-          ),
+          slot: latest,
+          collection: _collectionsById[cid]!,
+          members: members,
+          memberCount: allMembers.length,
+          episodeNumber: latestIndex < 0 ? null : latestIndex + 1,
         ),
       );
     });
     for (final _VideoSlot slot in loose) {
-      final VideoBookRow? local = slot.local;
-      recent.add(
-        _VideoRowItem(
-          recentMs: _slotImportedAtMs(slot) ?? 0,
-          spec: local != null
-              ? _recentlyAddedSpec(local)
-              : _recentlyAddedRemoteSpec(slot.remote!),
-        ),
+      entries.add(
+        _RecentlyAddedEntry(recentMs: _slotImportedAtMs(slot) ?? 0, slot: slot),
       );
     }
-    recent.sort(
-      (_VideoRowItem a, _VideoRowItem b) => b.recentMs.compareTo(a.recentMs),
+    entries.sort(
+      (_RecentlyAddedEntry a, _RecentlyAddedEntry b) =>
+          b.recentMs.compareTo(a.recentMs),
     );
-    if (recent.isEmpty) return null;
-    return _buildHorizontalCardRow(
-      title: t.home_recently_added,
-      blocksKey: const ValueKey<String>('home_video_recent_blocks'),
-      controller: _recentRowController,
-      cardWidth: cardWidth,
-      items: recent.take(15).toList(growable: false),
+    return (
+      entries: entries,
+      nextChangeMicros: videoRecentlyAddedNextChangeMicros(
+        importedAts: <int?>[
+          for (final _VideoSlot slot in candidates) _slotImportedAtMs(slot),
+        ],
+        now: now,
+      ),
+    );
+  }
+
+  /// 「最近添加」一项 → 行卡（合集项：竖版作品封面链 + 「第 N 集」；散项：
+  /// [_recentlyAddedSpec] / [_recentlyAddedRemoteSpec]）。
+  _VideoRowItem _recentlyAddedRowItem(_RecentlyAddedEntry entry) {
+    final MediaCollectionRow? collection = entry.collection;
+    final _VideoSlot latest = entry.slot;
+    if (collection == null) {
+      final VideoBookRow? local = latest.local;
+      return _VideoRowItem(
+        recentMs: entry.recentMs,
+        spec: local != null
+            ? _recentlyAddedSpec(local)
+            : _recentlyAddedRemoteSpec(latest.remote!),
+      );
+    }
+    final int cid = collection.id;
+    final List<_VideoSlot> members = entry.members!;
+    final int? episodeNumber = entry.episodeNumber;
+    return _VideoRowItem(
+      recentMs: entry.recentMs,
+      spec: _RowCardSpec(
+        cardKey: ValueKey<String>('home_video_recent_collection_$cid'),
+        collectionId: cid,
+        focusId: FushiFocusId('home-video-recent-collection-$cid'),
+        // 竖版作品封面链；纯远端合集回落到最新那一集的远端封面。
+        cover: _collectionPosterProvider(collection, members, latest),
+        title: _workTitle(collection),
+        onTap: () => _openCollectionDetail(collection),
+        onLongPress: () => _showCollectionContextMenu(
+          collection,
+          cover: () => _collectionPosterProvider(collection, members, latest),
+          title: _workTitle(collection),
+        ),
+        tags: _collectionTagChips(cid),
+        secondaryText: episodeNumber == null
+            ? t.video_playlist_episodes(count: entry.memberCount)
+            : t.video_home_recent_episode_number(n: episodeNumber),
+        cloudBadge: latest.local == null,
+      ),
     );
   }
 
@@ -7573,8 +7837,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 最近添加行卡：副行「最近添加」；点击带主合集上下文开播。
   _RowCardSpec _recentlyAddedSpec(VideoBookRow book) {
-    final int? cid =
-        _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
+    final int? cid = _collectionIdByUid[book.bookUid];
     final bool playlist = playlistEpisodeCount(book.playlistJson) > 1;
     final ImageProvider? poster = _bookPosterProvider(book);
     final String title = _metadataWorkByBook[book.bookUid]?.title ?? book.title;
@@ -7678,13 +7941,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // DTO 的归属已在目录加载时原子收养，渲染只读取本地裁决结果。
     final Map<String, int> primaryByEntry = _primaryCollectionByEntry;
     final Map<String, int> memberSortIndex = _memberSortIndex;
+    // 折叠 + 组间排序只在输入换掉时重算（[_seriesGroupsMemo]）：组序键读观看
+    // 时刻、刮削标题（[_workTitle]）、排序方式与手动序。
     final List<CollectionGroup<_VideoSlot>> groups =
         <CollectionGroup<_VideoSlot>>[
-          for (final CollectionGroup<_VideoSlot> group in _groupVideos(
-            books,
-            groupedRemoteVideos,
-            primaryByEntry,
-            memberSortIndex,
+          for (final CollectionGroup<_VideoSlot> group in _seriesGroupsMemo.of(
+            <Object?>[
+              books,
+              groupedRemoteVideos,
+              primaryByEntry,
+              memberSortIndex,
+              _collectionsById,
+              _sortMode,
+              _manualRanks,
+              _watchAtByUid,
+              _legacyWatchAtByTitle,
+              _scrapeMaps,
+            ],
+            () {
+              final List<CollectionGroup<_VideoSlot>> folded = _groupVideos(
+                books,
+                groupedRemoteVideos,
+                primaryByEntry,
+                memberSortIndex,
+              );
+              // 分组换代才发：集号解析在后台跑，卡片 build 只读结果。
+              _prefetchEpisodeNumbers(folded);
+              return folded;
+            },
           ))
             group,
         ];
@@ -8055,15 +8339,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<VideoBookRow> ordered = books.toList()
-      ..sort(
-        (VideoBookRow a, VideoBookRow b) => compareShelfSortKeys(
-          _videoSortKey(a),
-          _videoSortKey(b),
-          _sortMode,
-          manualRanks: _manualRanks,
+    // 排序只在输入换掉时重算（[_allVideosOrderMemo]）。
+    final List<VideoBookRow> ordered = _allVideosOrderMemo.of(
+      <Object?>[
+        books,
+        _sortMode,
+        _manualRanks,
+        _watchAtByUid,
+        _legacyWatchAtByTitle,
+      ],
+      () => books.toList()
+        ..sort(
+          (VideoBookRow a, VideoBookRow b) => compareShelfSortKeys(
+            _videoSortKey(a),
+            _videoSortKey(b),
+            _sortMode,
+            manualRanks: _manualRanks,
+          ),
         ),
-      );
+    );
     _sortedUnitKeys = <String>[
       for (final VideoBookRow book in ordered) book.bookUid,
     ];
@@ -9048,12 +9342,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           p.completed || (p.positionMs ?? 0) > 0 || (p.lastPlayedAt ?? 0) > 0,
     );
     final int index = progresses.isEmpty ? 0 : continueMemberIndex(progresses);
-    if (anyTrace && completed < total) {
-      // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据），不是顺位号。
-      final int episodeNumber = collectionMemberEpisodeNumber(<String>[
-        for (final CollectionOrderingItem<_VideoSlot> item in group.items)
-          item.payload.local?.videoPath ?? item.payload.remote!.parseName,
-      ], index);
+    // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据
+    // [collectionMemberEpisodeNumber]），不是顺位号。整批解析在后台 isolate 做
+    // （BUG-5253 余项，[_prefetchEpisodeNumbers]）；这份成员名单还没解析完时先
+    // 写「已看完 x/N」，不拿顺位号冒充集号。
+    final List<int?>? episodeNumbers = anyTrace && completed < total
+        ? _episodeNumbers.lookup(
+            group.collection!.id,
+            _collectionEpisodeNames(group),
+          )
+        : null;
+    if (episodeNumbers != null) {
+      final int episodeNumber = episodeNumbers[index] ?? index + 1;
       return (
         label:
             '${t.collection_continue_progress(n: episodeNumber)}'
@@ -9071,6 +9371,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       started: anyTrace,
       index: anyTrace ? index : 0,
     );
+  }
+
+  /// 合集成员的集号解析输入（与 [CollectionEpisodeSlot.filename] 同源：本地是视频
+  /// 路径，远端是 [RemoteVideoInfo.parseName]），按成员顺序。
+  static List<String> _collectionEpisodeNames(
+    CollectionGroup<_VideoSlot> group,
+  ) => <String>[
+    for (final CollectionOrderingItem<_VideoSlot> item in group.items)
+      item.payload.local?.videoPath ?? item.payload.remote!.parseName,
+  ];
+
+  /// 合集分组换代时把各合集的成员名单整批发往后台解析集号（名单没变的跳过）。
+  void _prefetchEpisodeNumbers(List<CollectionGroup<_VideoSlot>> groups) {
+    _episodeNumbers.prefetch(<int, List<String>>{
+      for (final CollectionGroup<_VideoSlot> group in groups)
+        if (group.collection case final MediaCollectionRow collection)
+          collection.id: _collectionEpisodeNames(group),
+    });
   }
 
   /// 合集叠层后几层的封面（近 → 远，最多两张）：按合集内顺序取成员自己的封面
@@ -12636,7 +12954,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 概览：合集刮削标签前两个 · ★ 评分。
   ///
   /// [bookUid] 给出而这本视频自己没有作品资料时（剧集里的一集），借它主合集的。
+  ///
+  /// 排序 / 解析部分（[VideoSeriesMetaPlan]）由后台 isolate 预算（BUG-5253 余项），
+  /// 这里只做哈希查找与本地文件存在性查询；还没算好时先给上一份结果（同键旧
+  /// 输入的）或空资料，算好后整页重建一次。
   FushiSeriesMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
+    final ({String key, VideoSeriesMetaInput input, int? collectionId}) source =
+        _seriesPlanSource(collectionId: collectionId, bookUid: bookUid);
+    final int? cid = source.collectionId;
+    final VideoSeriesMetaPlan plan = _isEmptySeriesInput(source.input)
+        ? VideoSeriesMetaPlan.empty
+        : _seriesPlans.lookup(source.key, source.input, allowStale: true) ??
+              VideoSeriesMetaPlan.empty;
+    return resolveVideoSeriesMeta(
+      plan,
+      localImage: _localFileCover,
+      ownPoster: cid == null
+          ? null
+          : _collectionOwnCover(_collectionsById[cid]),
+      fallbackYear: bookUid == null ? null : _airYearByUid[bookUid],
+    );
+  }
+
+  /// [_videoBlockMeta] 的取数口径：合集取合集自己的作品 / 图组 / 刮削资料；散片取
+  /// 自己的，自己没有作品资料时（剧集里的一集）借主合集的作品与刮削资料（自己有
+  /// 图组仍用自己的）。返回后台计划的缓存键（用的输入与合集完全相同时直接共用
+  /// 合集的键）、输入，以及借到的合集 id（取自有封面用）。
+  ({String key, VideoSeriesMetaInput input, int? collectionId})
+  _seriesPlanSource({int? collectionId, String? bookUid}) {
     int? cid = collectionId;
     VideoMetadataWorkRow? work = cid != null
         ? _metadataWorkByCollection[cid]
@@ -12644,24 +12989,60 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<MediaImageRow>? images = cid != null
         ? _mediaImagesByCollection[cid]
         : _mediaImagesByBookUid[bookUid];
+    final bool ownBookData = cid == null && (work != null || images != null);
     if (cid == null && bookUid != null && work == null) {
-      cid = _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
+      cid = _collectionIdByUid[bookUid];
       if (cid != null) {
         work = _metadataWorkByCollection[cid];
         images = images ?? _mediaImagesByCollection[cid];
       }
     }
-    return videoSeriesMeta(
-      work: work,
-      mediaImages: images,
-      workImages: work == null ? null : _metadataImagesByWork[work.id],
-      scrape: cid == null ? null : _collectionScrapeMetaById[cid],
-      localImage: _localFileCover,
-      ownPoster: cid == null
-          ? null
-          : _collectionOwnCover(_collectionsById[cid]),
-      fallbackYear: bookUid == null ? null : _airYearByUid[bookUid],
+    final VideoMetadataWorkRow? resolvedWork = work;
+    return (
+      key: collectionId != null
+          ? 'c:$collectionId'
+          : (ownBookData || cid == null ? 'b:$bookUid' : 'c:$cid'),
+      input: (
+        work: resolvedWork,
+        mediaImages: images,
+        workImages: resolvedWork == null
+            ? null
+            : _metadataImagesByWork[resolvedWork.id],
+        scrape: cid == null ? null : _collectionScrapeMetaById[cid],
+      ),
+      collectionId: cid,
     );
+  }
+
+  static bool _isEmptySeriesInput(VideoSeriesMetaInput input) =>
+      input.work == null &&
+      input.mediaImages == null &&
+      input.workImages == null &&
+      input.scrape == null;
+
+  /// 刮削映射换代（整表落地 / 增量补丁）后把所有带刮削资料的合集与散片的
+  /// [VideoSeriesMetaPlan] 整批发往后台；输入没变的键（增量时没被点名的）跳过。
+  void _prefetchSeriesPlans() {
+    final Map<String, VideoSeriesMetaInput> inputs =
+        <String, VideoSeriesMetaInput>{};
+    void add(({String key, VideoSeriesMetaInput input, int? collectionId}) s) {
+      if (!_isEmptySeriesInput(s.input)) inputs[s.key] = s.input;
+    }
+
+    for (final int cid in <int>{
+      ..._metadataWorkByCollection.keys,
+      ..._mediaImagesByCollection.keys,
+      ..._collectionScrapeMetaById.keys,
+    }) {
+      add(_seriesPlanSource(collectionId: cid));
+    }
+    for (final String uid in <String>{
+      ..._metadataWorkByBook.keys,
+      ..._mediaImagesByBookUid.keys,
+    }) {
+      add(_seriesPlanSource(bookUid: uid));
+    }
+    _seriesPlans.prefetch(inputs);
   }
 
   /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
@@ -12897,6 +13278,32 @@ class _HomeSubscriptionItem {
 }
 
 /// 横滚行一项（TODO-2486）：最近时刻（排序键）+ 惰性构造。
+/// 「最近添加」候选 + 窗口判定下一次翻转的时刻（epoch 微秒，null = 不再翻转）。
+typedef _RecentlyAddedData = ({
+  List<_RecentlyAddedEntry> entries,
+  int? nextChangeMicros,
+});
+
+/// 「最近添加」行的一项：散项只有 [slot]；合集项另带合集、窗口内成员（按入库
+/// 倒序，[slot] 是其中最新那集）、全体成员数与最新那集的集号。
+class _RecentlyAddedEntry {
+  const _RecentlyAddedEntry({
+    required this.recentMs,
+    required this.slot,
+    this.collection,
+    this.members,
+    this.memberCount = 0,
+    this.episodeNumber,
+  });
+
+  final int recentMs;
+  final _VideoSlot slot;
+  final MediaCollectionRow? collection;
+  final List<_VideoSlot>? members;
+  final int memberCount;
+  final int? episodeNumber;
+}
+
 class _VideoRowItem {
   const _VideoRowItem({required this.recentMs, required this.spec});
 
@@ -12939,6 +13346,16 @@ class _RowCardSpec {
   /// 合集条目给 [collectionId]，本地散片给 [bookUid]，远端占位都不给。
   final int? collectionId;
   final String? bookUid;
+}
+
+/// 两份成员名单逐项相同（集号解析的输入比较，[BackgroundKeyedDerivation]）。
+bool _sameStrings(List<String> a, List<String> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或

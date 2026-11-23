@@ -24,7 +24,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
-import 'package:fushi/src/pages/base_source_page.dart'
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
@@ -804,6 +804,8 @@ mixin DictionaryPageMixin {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
@@ -825,8 +827,11 @@ mixin DictionaryPageMixin {
       FushiToast.showMine(
         msg: described.message,
         status: described.status,
-        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-        action: minedCardUndoToastAction(
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+        // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+        action: mineResultToastAction(
           repo,
           outcome,
           expression: fields['expression'],
@@ -892,6 +897,8 @@ mixin DictionaryPageMixin {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final outcome = await repo.updateMinedNote(
       noteId: noteId,
@@ -902,7 +909,13 @@ mixin DictionaryPageMixin {
     final described = describeMineOutcome(outcome, overwrite: true);
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
     if (described.success) {
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+      );
       return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome, message: described.message);

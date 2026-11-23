@@ -565,8 +565,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     _speakerLabel(line.speaker),
     mangaLineKindLabel(line.kind),
     if (line.beatMs > 0) '+${t.manga_audio_ms_value(ms: line.beatMs)}',
-    if (line.emotion != null)
-      '${line.emotion!.wire}${line.intensity == null ? '' : ' ${line.intensity}'}',
+    ?mangaLineToneLabel(line),
     if (mangaLineNeedsReview(line) && line.speaker != kTtsUnknown)
       t.manga_audio_low_confidence,
     if (line.source == TtsCastSource.user) t.manga_audio_user_edited,

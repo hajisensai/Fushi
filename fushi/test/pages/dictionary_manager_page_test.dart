@@ -97,6 +97,26 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
+  Future<void> setDictionaryKanjiCardCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState state,
+  ) async {
+    if (!dictionary.hasEmbeddedKanji) {
+      return setDictionaryCollapseState(dictionary, state);
+    }
+    final Map<String, String> metadata = Map<String, String>.of(
+      dictionary.metadata,
+    )..remove(kDictKanjiCollapseKey);
+    if (state != DictionaryCollapseState.inherit) {
+      metadata[kDictKanjiCollapseKey] = state.name;
+    }
+    final int index = store.indexWhere(
+      (Dictionary d) => d.name == dictionary.name,
+    );
+    store[index] = dictionary.copyWith(metadata: metadata);
+  }
+
+  @override
   Future<void> cycleDictionaryCollapseState(Dictionary dictionary) async {
     const String code = 'ja';
     switch (dictionary.collapseStateFor(JapaneseLanguage.instance)) {
@@ -264,10 +284,10 @@ void main() {
   });
 
   testWidgets(
-    'BUG-3573: kanji section rows of a mixed dictionary offer no collapse '
-    'control (it would edit the term part)',
+    'BUG-3573 + 6uasoIUvSR: the kanji section collapse control of a mixed '
+    'dictionary edits its kanji cards, never the term part',
     (WidgetTester tester) async {
-      await _pumpPage(
+      final _FakeAppModel model = await _pumpPage(
         tester,
         size: const Size(1280, 800),
         dictionaries: <Dictionary>[
@@ -291,27 +311,42 @@ void main() {
       const ValueKey<String> rowCollapseKey = ValueKey<String>(
         'dict-row-collapse-Mixed',
       );
+      Dictionary mixed() =>
+          model.store.firstWhere((Dictionary d) => d.name == 'Mixed');
 
       // 「术语」分区：混合词典的术语部分照常有折叠控件（行内钮 + 详情分段）。
       expect(find.byKey(rowCollapseKey), findsOneWidget);
       await tester.tap(find.text('Mixed'));
       await _settle(tester);
-      expect(
-        find.byKey(const ValueKey<String>('dict-detail-Mixed')),
-        findsOneWidget,
-      );
       expect(find.byKey(collapseKey), findsOneWidget);
 
-      // 「汉字」分区：同一本的汉字部分不给折叠控件（汉字卡不折叠）。切分区时详情
-      // 侧板仍停在这本（再点一下行会把详情收起），此时它按「汉字」分区的上下文渲染。
+      // 「汉字」分区：同一本的汉字部分也有折叠控件（汉字卡默认折叠成一行，逐本三态），
+      // 改的是汉字部分自己的状态。切分区时详情侧板仍停在这本。
       await tester.tap(find.textContaining(t.dictionary_section_kanji));
       await _settle(tester);
       expect(
         find.byKey(const ValueKey<String>('dict-detail-Mixed')),
         findsOneWidget,
       );
-      expect(find.byKey(collapseKey), findsNothing);
-      expect(find.byKey(rowCollapseKey), findsNothing, reason: '行内折叠钮与详情同一判据');
+      expect(find.byKey(collapseKey), findsOneWidget);
+      expect(find.byKey(rowCollapseKey), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-collapse-KANJIDIC')),
+        findsOneWidget,
+        reason: '纯 kanji 词典同样可设汉字卡的默认展示',
+      );
+
+      await tester.tap(find.byKey(rowCollapseKey));
+      await _settle(tester);
+      expect(
+        mixed().kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.expanded,
+      );
+      expect(
+        mixed().collapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.inherit,
+        reason: '汉字分区的控件不能改到术语部分',
+      );
       expect(tester.takeException(), isNull);
     },
   );

@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -916,6 +917,9 @@ String? formatStatCphOf(int chars, int ms) {
 /// 一个时段（[contains] 选 dateKey）内**阅读域**的速度外显：只累加 `isBook` 的
 /// 日面行再经 [formatStatCphOf]。统计中心总览的时段卡是跨域总和（视频只计时不
 /// 计字、游戏 hook 只计字不计时），「字/时」只对阅读域有意义，所以单独切片算。
+///
+/// 统计中心总览不走它：总览拿的是加载时 Rust 一并算好的阅读域按日合计
+/// （[StatFacts.bookDayTotals]），用 [statBookCphOfTotals]，口径相同、不逐条遍历日面。
 String? statBookCphOf(
   List<StatFact> daily,
   bool Function(String dateKey) contains,
@@ -926,6 +930,23 @@ String? statBookCphOf(
     if (!f.isBook || !contains(f.dateKey)) continue;
     chars += f.chars;
     ms += f.ms;
+  }
+  return formatStatCphOf(chars, ms);
+}
+
+/// [statBookCphOf] 的按日合计版本：[bookDays] 是阅读域日面的按日合计
+/// （[StatFacts.bookDayTotals]），只累加 [contains] 选中的统计日。统计中心总览用它，
+/// 改范围重建时只走天数级的循环。
+String? statBookCphOfTotals(
+  List<StatDayTotal> bookDays,
+  bool Function(String dateKey) contains,
+) {
+  int chars = 0;
+  int ms = 0;
+  for (final StatDayTotal d in bookDays) {
+    if (!contains(d.dateKey)) continue;
+    chars += d.chars;
+    ms += d.ms;
   }
   return formatStatCphOf(chars, ms);
 }

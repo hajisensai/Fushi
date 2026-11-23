@@ -41,6 +41,14 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   (int, List<int>)? _speaking;
   bool _starting = false;
 
+  /// 本页已进入退出流程（返回路径 / 拆栈，见 [stopAudioUnlessBackground]）。此后
+  /// 不再起新的成品会话，起到一半的那份也不接管（HBK-AUDIT-215）。返回路径先于
+  /// `dispose` 走，这段时间 `mounted` 还是 true，所以不能只看 `mounted`。
+  bool _leaving = false;
+
+  /// 起成品音频这件事还归不归本页：页面还在、也没开始退出。
+  bool get _wantsAudioStart => _s.mounted && !_leaving;
+
   bool get active => (controller?.isActive ?? false) || audio != null;
 
   // ── MangaReadAloudHost ────────────────────────────────────────────────
@@ -299,7 +307,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
       db,
       _s.widget.bookKey,
     );
-    if (registration == null || !_s.mounted) return false;
+    if (registration == null || !_wantsAudioStart) return false;
     final MangaAudioImportResult? mismatch = _audioMismatch(
       registration.manifest,
     );
@@ -324,26 +332,35 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
               overrideTitleOf:
                   ReaderFushiSource.instance.overrideTitleForBookKey,
             );
-        await _session.start(
-          info: req.info,
-          audioFiles: req.audioFiles,
-          prefs: req.prefs,
-          persist: req.persist,
-          cues: req.cues,
-          companion: req.companion,
-        );
+        // 会话归属绑在本页去留上：起到一半本页退出了，就不起 / 停掉这次装上的那份，
+        // 不留没人接管的暂停会话（HBK-AUDIT-215）。
+        final AudiobookSessionCompanion? created =
+            await startMangaAudioSessionOwned(
+              _session,
+              req,
+              wanted: () => _wantsAudioStart,
+            );
+        if (!_wantsAudioStart) return true;
         driver = _activeDriver();
-        if (driver == null || !_s.mounted) return true;
+        if (driver == null) return true;
         // 续播点不在读者眼前这一屏：从眼前这页的页段起点开始（与现场朗读「从当前页
         // 开始」一致）；就在这一屏则接着上次听到的地方。
         if (!isSameSpread(driver.currentPage, visiblePage)) {
           await driver.seekTo(driver.plan.pageStartMs(visiblePage));
+        }
+        // seek 期间本页退出：这次装上的会话还没被接管，同样不留。
+        if (!_wantsAudioStart) {
+          if (created != null && identical(_session.companion, created)) {
+            unawaited(_session.stop());
+          }
+          return true;
         }
       }
       _attachAudio(driver);
       await driver.play();
     } catch (error, stack) {
       ErrorLogService.instance.log('MangaFushiPage.mangaAudio', error, stack);
+      if (!_wantsAudioStart) return true;
       FushiToast.show(
         msg: t.manga_audio_start_failed,
         severity: ToastSeverity.error,
@@ -598,7 +615,10 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   /// 返回路径（[_MangaFushiPageState.onSourcePagePop]）先调一次，让书架迷你条从首帧
   /// 就见空会话；[dispose] 再调一次兜异常拆栈。fire-and-forget：stop 的同步首段已
   /// 清空会话，等 native 释放只会把返回挂住（BUG-1273）。
+  ///
+  /// 这也是本页「开始退出」的标记：此后起到一半的成品会话不再归本页（[_leaving]）。
   void stopAudioUnlessBackground(String logTag) {
+    _leaving = true;
     final MangaAudioPlaybackDriver? driver = audio;
     if (driver == null || _s.appModelNoUpdate.audiobookBackgroundPlay) return;
     if (!identical(_session.companion, driver)) return;

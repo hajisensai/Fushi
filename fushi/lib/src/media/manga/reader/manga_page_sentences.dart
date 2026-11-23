@@ -16,8 +16,8 @@ import 'package:fushi_engine/ocr/reading_order.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 
 /// 一页里的一句：[group] 是 overlay 的句子分组号，[sentence] 是整句 OCR 原文
-/// （不含注音块）。
-typedef MangaPageSentence = ({int group, String sentence});
+/// （不含注音块），[spoken] 是合成用的整句（底本按页面印着的注音换成读音）。
+typedef MangaPageSentence = ({int group, String sentence, String spoken});
 
 /// [page] 按阅读顺序排好的句子。[rightToLeft] 是本卷翻页方向（日漫 RTL）。
 List<MangaPageSentence> mangaPageSentencesInReadingOrder(
@@ -43,12 +43,12 @@ List<MangaPageSentence> mangaPageSentencesInReadingOrder(
 
   // 组 → 组内正文块的最小名次 + 整句文本。
   final Map<int, int> groupRank = <int, int>{};
-  final Map<int, String> groupText = <int, String>{};
+  final Map<int, MangaBlockSentence> groupText = <int, MangaBlockSentence>{};
   for (int i = 0; i < groups.length; i++) {
     final int? rank = rankOfBlock[i];
     if (rank == null) continue;
     final int group = groups[i].group;
-    groupText[group] = groups[i].sentence;
+    groupText[group] = groups[i];
     final int? best = groupRank[group];
     if (best == null || rank < best) groupRank[group] = rank;
   }
@@ -59,7 +59,11 @@ List<MangaPageSentence> mangaPageSentencesInReadingOrder(
     });
   return <MangaPageSentence>[
     for (final int group in orderedGroups)
-      (group: group, sentence: groupText[group]!),
+      (
+        group: group,
+        sentence: groupText[group]!.sentence,
+        spoken: groupText[group]!.spoken,
+      ),
   ];
 }
 

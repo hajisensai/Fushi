@@ -90,10 +90,33 @@ bool _autoEnabled(LibraryCurateAutoHost? host) {
   return ai.organize || ai.videoIdentify || ai.mediaLinks;
 }
 
-/// 入库 / 来源扫描 / 库页加载后调：去抖后跑一趟（只看上一趟之后的新条目）。不阻塞
-/// 调用方。
+/// 流水线之后的 AI 助手自动复查（spec `docs/specs/2026-11-22-ai-library-agent-design.md`
+/// §7）。实现（`library_agent_review.dart`）要用操作上下文、在 import 大环外，经
+/// [registerLibraryAgentAutoReviewer] 注入。
+abstract interface class LibraryAgentAutoReviewer {
+  /// 开关开着、AI 模块开着、「AI 助手」指派了提供商。
+  bool get enabled;
+
+  /// 复查一次（内部判断增量 / 全库 / 不必跑；失败自己记日志，不抛）。
+  Future<void> review();
+}
+
+LibraryAgentAutoReviewer? Function()? _reviewerProvider;
+
+/// 根组件登记操作上下文时注入（`main.dart`）。
+void registerLibraryAgentAutoReviewer(
+  LibraryAgentAutoReviewer? Function()? provider,
+) => _reviewerProvider = provider;
+
+LibraryAgentAutoReviewer? _reviewer() {
+  final LibraryAgentAutoReviewer? r = _reviewerProvider?.call();
+  return r != null && r.enabled ? r : null;
+}
+
+/// 入库 / 来源扫描 / 库页加载后调：去抖后跑一趟（只看上一趟之后的新条目），再交 AI
+/// 助手复查。不阻塞调用方。
 void scheduleAutomaticLibraryCurate() {
-  if (!_autoEnabled(_autoHost)) return;
+  if (!_autoEnabled(_autoHost) && _reviewer() == null) return;
   _debounce?.cancel();
   _debounce = Timer(
     kLibraryCurateAutoDebounce,
@@ -101,23 +124,36 @@ void scheduleAutomaticLibraryCurate() {
   );
 }
 
-/// 跑一趟自动路径（去抖到点后调；测试直接调）。已有一趟在跑 / 门不开 / 编排器还
-/// 拿不到时什么都不做，返回 null。失败只记日志（自动路径没人看着）。
+/// 跑一趟自动路径（去抖到点后调；测试直接调）：先跑库管家流水线（便宜、证据硬的
+/// 部分），再交 AI 助手复查（全局判断）。手动整理正在跑时这一次整体跳过，下一次
+/// 触发再来（复查要看到流水线的结果）。流水线没跑或没跑成时返回 null。失败只记
+/// 日志（自动路径没人看着）。
 @visibleForTesting
 Future<LibraryCurateRun?> runAutomaticLibraryCurate() async {
   _debounce = null;
   final LibraryCurateAutoHost? host = _autoHost;
-  if (!_autoEnabled(host)) return null;
-  final LibraryCurator? curator = host!.curator();
-  if (curator == null || curator.isRunning) return null;
-  try {
-    return await curator.run(trigger: LibraryCurateTrigger.auto);
-  } on LibraryCurateBusy {
-    return null;
-  } on Object catch (error, stack) {
-    engineLog.log('libraryCurate.automatic', error, stack);
-    return null;
+  LibraryCurateRun? run;
+  if (_autoEnabled(host)) {
+    final LibraryCurator? curator = host!.curator();
+    if (curator == null) return null;
+    if (curator.isRunning) return null;
+    try {
+      run = await curator.run(trigger: LibraryCurateTrigger.auto);
+    } on LibraryCurateBusy {
+      return null;
+    } on Object catch (error, stack) {
+      engineLog.log('libraryCurate.automatic', error, stack);
+    }
   }
+  final LibraryAgentAutoReviewer? reviewer = _reviewer();
+  if (reviewer != null) {
+    try {
+      await reviewer.review();
+    } on Object catch (error, stack) {
+      engineLog.log('libraryAgentReview.automatic', error, stack);
+    }
+  }
+  return run;
 }
 
 @visibleForTesting

@@ -57,6 +57,12 @@ class VideoOutputManager {
   // called").
   void Dispose(int64_t handle, std::function<void()> on_done);
 
+  // FUSHI FORK (BUG-5200): presentation counters of the |VideoOutput| for
+  // |handle|. Called on the platform thread, so it never waits: empty while
+  // another manager call (Create / Dispose can take long) holds the lock, or
+  // when there is no such output.
+  std::optional<VideoOutputFrameStats> FrameStats(int64_t handle);
+
   ~VideoOutputManager();
 
  private:

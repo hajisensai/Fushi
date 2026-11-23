@@ -1347,6 +1347,28 @@ class DictionaryRepository {
     },
   });
 
+  /// 混合词典汉字部分的汉字卡折叠三态（[kDictKanjiCollapseKey]）。术语部分的折叠
+  /// 名单不受影响（BUG-3573）。纯 kanji 词典走 [setDictionaryCollapseState]。
+  Future<void> setDictionaryKanjiPartCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState state,
+  ) => updateDictionaryMetadata(<String, Dictionary? Function(Dictionary)>{
+    dictionary.name: (Dictionary current) {
+      final Map<String, String> metadata = Map<String, String>.of(
+        current.metadata,
+      );
+      switch (state) {
+        case DictionaryCollapseState.expanded:
+          metadata[kDictKanjiCollapseKey] = 'expanded';
+        case DictionaryCollapseState.collapsed:
+          metadata[kDictKanjiCollapseKey] = 'collapsed';
+        case DictionaryCollapseState.inherit:
+          metadata.remove(kDictKanjiCollapseKey);
+      }
+      return current.copyWith(metadata: metadata);
+    },
+  });
+
   /// 用户手动指定这本词典的内容语言（BCP-47），null / 空串 = 恢复「自动」。
   ///
   /// 写完必须清查词结果缓存：词典语言只影响渲染（字体链 + structured content 的

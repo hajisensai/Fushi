@@ -15,6 +15,7 @@ void main() {
     const MineOutcome outcome = MineOutcome.success(noteId: 7, notice: notice);
     final Map<String, Object?> reply = overlayMineReply(outcome, (
       message: 'Card exported. $notice',
+      detail: null,
       success: true,
       record: true,
       status: MineToastStatus.addedWithWarning,
@@ -28,6 +29,7 @@ void main() {
     const MineOutcome outcome = MineOutcome.success(noteId: 7);
     final Map<String, Object?> reply = overlayMineReply(outcome, (
       message: 'Card exported.',
+      detail: null,
       success: true,
       record: true,
       status: MineToastStatus.added,
@@ -40,6 +42,7 @@ void main() {
     const MineOutcome outcome = MineOutcome.duplicate();
     final Map<String, Object?> reply = overlayMineReply(outcome, (
       message: 'Already in Anki.',
+      detail: null,
       success: false,
       record: false,
       status: MineToastStatus.duplicate,

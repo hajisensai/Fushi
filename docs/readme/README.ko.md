@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | **한국어** | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1`은 `flutter pub get`과 `ci/apply-patches.sh`를 하나의 명령으로 합칩니다. 이 프로젝트는 Flutter 3.47.6(Dart SDK `>=3.8.0 <4.0.0`)에 고정되어 있으며, Material과 Cupertino를 `material_ui` / `cupertino_ui` 패키지로 사용하므로 더 이전 버전의 Flutter로는 빌드할 수 없습니다. 일부 업스트림 의존성은 `third_party/`에 vendored되어 있거나 `ci/apply-patches.sh`로 패치됩니다. Linux 데스크톱 빌드 의존성을 포함한 자세한 내용은 [docs/agent/build.md](../agent/build.md)를 참조하세요.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1`은 `flutter pub get`과 `ci/apply-patches.sh`를 하나의 명령으로 합칩니다. 이 프로젝트는 Flutter 3.50.0(Dart SDK `>=3.8.0 <4.0.0`)에 고정되어 있으며, Material과 Cupertino를 `material_ui` / `cupertino_ui` 패키지로 사용하므로 더 이전 버전의 Flutter로는 빌드할 수 없습니다. 일부 업스트림 의존성은 `third_party/`에 vendored되어 있거나 `ci/apply-patches.sh`로 패치됩니다. Linux 데스크톱 빌드 의존성을 포함한 자세한 내용은 [docs/agent/build.md](../agent/build.md)를 참조하세요.
 
 <details>
 <summary><b>기술 스택</b></summary>
 
 | 계층 | 기술 |
 |---|---|
-| 프레임워크 | Flutter 3.47.6(Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| 프레임워크 | Flutter 3.50.0(Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | 플랫폼 | Android / Windows / macOS / iOS / Linux, 그리고 헤드리스 서버 |
 | UI | `material_ui`(Material 3 Expressive) / `cupertino_ui`(Cupertino) |
 | 리더 | WebView 페이징 엔진(Hoshi Reader 계열에서 파생) |

@@ -1025,6 +1025,8 @@ class _PopupStaticSettingsMemo {
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
+    required this.kanjiCollapsedNames,
+    required this.kanjiExpandedNames,
     required this.hiddenNames,
     required this.dictionaryDisplayNames,
     required this.stylesJson,
@@ -1060,6 +1062,8 @@ class _PopupStaticSettingsMemo {
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
+  final String kanjiCollapsedNames;
+  final String kanjiExpandedNames;
   final String hiddenNames;
   final String dictionaryDisplayNames;
   final String stylesJson;
@@ -1159,6 +1163,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String expandedNames = jsonEncode(
     popupExpandedDictionaryNames(appModel),
   );
+  // 拍板台 6uasoIUvSR：汉字卡（默认折叠成一行）的逐本三态。混合词典的汉字部分有自己
+  // 的一份（BUG-3573），不能复用上面两个按术语部分算的名单。
+  final String kanjiCollapsedNames = jsonEncode(
+    popupKanjiCardNamesIn(
+      appModel.lookupViewDictionaries,
+      DictionaryCollapseState.collapsed,
+    ),
+  );
+  final String kanjiExpandedNames = jsonEncode(
+    popupKanjiCardNamesIn(
+      appModel.lookupViewDictionaries,
+      DictionaryCollapseState.expanded,
+    ),
+  );
   // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
   final String hiddenNames = jsonEncode(
     appModel.hiddenDictionaryNames.toList(),
@@ -1238,6 +1256,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       // persistDictionary 顺带让 stylesJson 换了新实例（每次点击整个重载 native
       // 词典引擎），一旦那条被优化掉就静默失效。
       cached.expandedNames == expandedNames &&
+      cached.kanjiCollapsedNames == kanjiCollapsedNames &&
+      cached.kanjiExpandedNames == kanjiExpandedNames &&
       cached.hiddenNames == hiddenNames &&
       cached.dictionaryDisplayNames == dictionaryDisplayNames &&
       identical(cached.stylesJson, stylesJson) &&
@@ -1396,6 +1416,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
+    window.kanjiCollapsedDictionaryNames = $kanjiCollapsedNames;
+    window.kanjiExpandedDictionaryNames = $kanjiExpandedNames;
+    window.i18nKanjiSection = ${jsonEncode(t.dict_category_kanji)};
     window.hiddenDictionaryNames = $hiddenNames;
     window.dictionaryDisplayNames = $dictionaryDisplayNames;
 ''';
@@ -1438,6 +1461,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,
+    kanjiCollapsedNames: kanjiCollapsedNames,
+    kanjiExpandedNames: kanjiExpandedNames,
     hiddenNames: hiddenNames,
     dictionaryDisplayNames: dictionaryDisplayNames,
     stylesJson: stylesJson,
@@ -1456,6 +1481,19 @@ List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
     .where((d) => d.isCollapsed(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();
+
+/// 汉字卡折叠态为 [state] 的词典名（拍板台 6uasoIUvSR）：查词弹窗
+/// （`kanjiCollapsedDictionaryNames` / `kanjiExpandedDictionaryNames`）与浏览器扩展
+/// theme 通道共用这一个判据（[Dictionary.kanjiCardCollapseStateFor]）。
+List<String> popupKanjiCardNamesIn(
+  Iterable<Dictionary> dictionaries,
+  DictionaryCollapseState state,
+) => <String>[
+  for (final Dictionary d in dictionaries)
+    if (d.isInKanjiSection &&
+        d.kanjiCardCollapseStateFor(JapaneseLanguage.instance) == state)
+      d.name,
+];
 
 /// 词典管理里逐本设成「展开」的词典名（BUG-2158 三态里优先级最高的一档）：查词弹窗
 /// （`expandedDictionaryNames`）与复习卡面释义页共用这一个真相源。

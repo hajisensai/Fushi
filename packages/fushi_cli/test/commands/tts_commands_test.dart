@@ -122,6 +122,35 @@ void main() {
     );
   });
 
+  test('line：--emotion / --intensity 进 body；none 清掉强度；非整数是用法错误', () {
+    expect(
+      _build('line', <String>[
+        'book:vol-1',
+        'p0b1',
+        '--emotion',
+        'anger',
+        '--intensity',
+        '80',
+      ]).body,
+      <String, Object?>{'emotion': 'anger', 'intensity': 80},
+    );
+    expect(
+      _build('line', <String>[
+        'book:vol-1',
+        'p0b1',
+        '--emotion',
+        'none',
+        '--intensity',
+        'none',
+      ]).body,
+      <String, Object?>{'emotion': 'none', 'intensity': -1},
+    );
+    expect(
+      () => _build('line', <String>['book:vol-1', 'p0b1', '--intensity', 'x']),
+      _usageError(),
+    );
+  });
+
   test('character：改名 / 指派 / 清掉指派；--voice 与 --clear-voice 互斥', () {
     final CtlRequestSpec rename = _build('character', <String>[
       'book:vol-1',

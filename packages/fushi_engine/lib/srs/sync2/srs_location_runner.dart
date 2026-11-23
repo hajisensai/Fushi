@@ -230,7 +230,8 @@ class SrsLegacyWriterMedia {
   /// 搬进本机媒体目录（并按「没人绑过才绑」记成已对齐）的文件数。
   int imported = 0;
 
-  /// 不必搬、直接删掉的文件数：集合里没有任何存活引用，或本机媒体目录里已有同名文件（集合在这台设备上已有这个名字）。
+  /// 不必搬、直接删掉的文件数：集合里没有任何存活引用（大小写不论），或本机媒体目录里已有它对应的引用名的文件
+  /// （集合在这台设备上已有这个名字）。
   int dropped = 0;
 
   /// 收尾后整个删掉的写入者目录。
@@ -250,12 +251,15 @@ class SrsLegacyWriterMedia {
 /// `v4/meta.json` 已由内核 `location_root` 写定、这一轮的操作已收进本机（调用方只在一轮成功之后跑完整对账），
 /// 「集合里谁还引用这个名字」是收齐之后的结论。
 ///
-/// 每个媒体文件（名字不是裸文件名的认不出、不碰）：
-/// - 集合里没有任何存活引用（[srsLiveMediaReferences]：存活笔记、删除未满保留期的笔记、全部笔记类型）→ 删。口径与
-///   媒体同步 / 本机媒体回收相同：没有笔记用它，受支持的版本里也没有谁会再读它。
-/// - 本机媒体目录 [mediaRoot] 已有同名文件 → 删：集合在这台设备上已有这个名字（同一份内容，或之后改过的版本；
-///   v3.3.0 的迁移同样不跟已有的绑定抢），写入者目录那份是旧副本。
-/// - 否则搬进 [mediaRoot]：先下载到同目录的临时文件再改名（原子，半截文件不会冒充媒体），然后内核 `media_landed`
+/// 每个媒体文件（名字不是裸文件名的认不出、不碰）先认出它是集合里哪个引用名（[_SrsLegacyMediaNames]）：同名的
+/// 引用优先；没有同名的，按媒体同步清理的口径（[srsSyncMedia] 的 `liveFolded`）只差大小写的也算同一个——v3.0.x 写入者
+/// 多在不分大小写的文件系统上，笔记引用 `cat.png`、本机那份叫 `CAT.png` 是常态（HBK-AUDIT-202）。
+/// - 集合里没有任何存活引用（[srsLiveMediaReferences]：存活笔记、删除未满保留期的笔记、全部笔记类型），大小写不论
+///   → 删。口径与媒体同步 / 本机媒体回收相同：没有笔记用它，受支持的版本里也没有谁会再读它。
+/// - 只差大小写的引用名不止一个（`cat.png` 与 `Cat.png` 都有人引用、都不同名）→ 认不出该归谁，不搬也不删，留着。
+/// - 本机媒体目录 [mediaRoot] 已有那个引用名的文件 → 删：集合在这台设备上已有这个名字（同一份内容，或之后改过的
+///   版本，或别的写入者目录先搬来的那份；v3.3.0 的迁移同样不跟已有的绑定抢），写入者目录那份是旧副本。
+/// - 否则按引用名搬进 [mediaRoot]：先下载到同目录的临时文件再改名（原子，半截文件不会冒充媒体），然后内核 `media_landed`
 ///   记成「本机已与绑定对齐」、名字还没有绑定的才绑上（不覆盖别的设备已有的绑定：有绑定的，媒体同步照常下载绑定的
 ///   内容；那份内容哪里都没有时本机留着搬来的这份）。记账成功之后才删写入者目录里那份；记账失败就撤掉刚放进来的
 ///   文件、写入者那份留着。搬进来的文件由同一趟的 [srsSyncMedia] 按内容传上位置。
@@ -270,7 +274,7 @@ Future<SrsLegacyWriterMedia> srsRescueLegacyWriterMedia(
   bool Function()? shouldStop,
 }) async {
   final SrsLegacyWriterMedia out = SrsLegacyWriterMedia();
-  Set<String>? live;
+  _SrsLegacyMediaNames? live;
   for (final AssetEntry writer in await _srsLegacyWriters(
     store,
     dir,
@@ -293,7 +297,7 @@ Future<SrsLegacyWriterMedia> srsRescueLegacyWriterMedia(
             return out;
           }
           try {
-            live ??= await srsLiveMediaReferences(srs);
+            live ??= _SrsLegacyMediaNames(await srsLiveMediaReferences(srs));
             await _srsRescueLegacyMediaFile(
               store,
               srs,
@@ -321,20 +325,27 @@ Future<void> _srsRescueLegacyMediaFile(
   SrsDbStore srs,
   Directory mediaRoot,
   AssetEntry f,
-  Set<String> live,
+  _SrsLegacyMediaNames live,
   SrsLegacyWriterMedia out,
 ) async {
-  final File local = File(p.join(mediaRoot.path, f.name));
-  if (!live.contains(f.name) || await local.exists()) {
+  final ({bool dead, String? name}) ref = live.resolve(f.name);
+  final String? name = ref.name;
+  if (name == null) {
+    // 归属认不出（只差大小写的引用不止一个）的留着；大小写不论都没人引用的删。
+    if (!ref.dead) return;
+    await store.deleteAsset(f.id);
+    out.dropped++;
+    return;
+  }
+  final File local = File(p.join(mediaRoot.path, name));
+  if (await local.exists()) {
     await store.deleteAsset(f.id);
     out.dropped++;
     return;
   }
   await mediaRoot.create(recursive: true);
   // 临时文件名按媒体名定死：进程死在半路留下的那份，下一趟同一个名字重来时先被清掉。
-  final File part = File(
-    p.join(mediaRoot.path, '.fushi-legacy-${f.name}.part'),
-  );
+  final File part = File(p.join(mediaRoot.path, '.fushi-legacy-$name.part'));
   try {
     if (await part.exists()) await part.delete();
     await store.getAsset(f.id, part);
@@ -351,7 +362,7 @@ Future<void> _srsRescueLegacyMediaFile(
         'op': 'media_landed',
         'root': mediaRoot.path,
         'items': <Map<String, String>>[
-          <String, String>{'name': f.name, 'sha': sha},
+          <String, String>{'name': name, 'sha': sha},
         ],
         'now': srs.now().$1,
       });
@@ -372,6 +383,27 @@ Future<void> _srsRescueLegacyMediaFile(
     } on FileSystemException {
       // 留给下一趟同名重来时清。
     }
+  }
+}
+
+/// [srsRescueLegacyWriterMedia] 用的存活引用名，带大小写折叠的索引。
+class _SrsLegacyMediaNames {
+  _SrsLegacyMediaNames(this._live) {
+    for (final String n in _live) {
+      _byFolded.putIfAbsent(n.toLowerCase(), () => <String>[]).add(n);
+    }
+  }
+
+  final Set<String> _live;
+  final Map<String, List<String>> _byFolded = <String, List<String>>{};
+
+  /// 写入者目录里叫 [file] 的那份对应的引用名：同名的引用优先，否则只差大小写的唯一一个。
+  /// `dead` = 大小写不论都没人引用（可删）；`name` 为 null 且不 `dead` = 只差大小写的引用不止一个、归属认不出。
+  ({bool dead, String? name}) resolve(String file) {
+    if (_live.contains(file)) return (dead: false, name: file);
+    final List<String>? folded = _byFolded[file.toLowerCase()];
+    if (folded == null) return (dead: true, name: null);
+    return (dead: false, name: folded.length == 1 ? folded.single : null);
   }
 }
 

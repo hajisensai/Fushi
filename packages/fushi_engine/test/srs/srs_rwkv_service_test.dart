@@ -534,7 +534,6 @@ class _Fixture {
       trustedClock: SrsTrustedClock(
         wallClockMs: () => clock[0],
         bootClockMs: () => clock[0],
-        bootId: 'b',
       ),
       // 「今天」的时区钉成 UTC+8（夹具录制时的口径）：不钉就读跑测试那台机器的系统时区，日界与「今天结束」
       // 的时刻随机器变，冻结的对拍记录只在 UTC+8 的机器上对得上（CI 是 UTC）。

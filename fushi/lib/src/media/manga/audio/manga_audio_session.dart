@@ -45,6 +45,9 @@ class _ControllerPort implements MangaAudioPlayerPort {
   double get speed => _c.speed;
 
   @override
+  double get volume => _c.volume;
+
+  @override
   Future<void> play() => _c.play();
 
   @override
@@ -55,6 +58,9 @@ class _ControllerPort implements MangaAudioPlayerPort {
 
   @override
   Future<void> setSpeed(double speed) => _c.setSpeed(speed);
+
+  @override
+  Future<void> setVolume(double volume) => _c.setVolume(volume);
 }
 
 /// 进度读写的口径换算：库里存「只数句子音频」的毫秒（与库里 cue 同源，补回一句时
@@ -154,4 +160,45 @@ Future<AudiobookSessionStartRequest> resolveMangaAudioSessionRequest(
           player: _ControllerPort(controller),
         ),
   );
+}
+
+/// 阅读器页按 [req] 起成品音频会话，会话归属绑在页面的去留上（HBK-AUDIT-215）。
+///
+/// 起播要等几段异步（装音频 handler、解析请求、[AudiobookSession.start] 里的播放器
+/// 加载），读者可能在这期间退出阅读器。退出路径只处理页面「已接管」的会话，还没
+/// 接管的这一份没人管：迟到的加载装进全局会话，留下一条暂停的迷你条，还可能已经
+/// 顶掉了别的书。所以：
+/// - [wanted] 在调 `start` 前已是 false：不起会话（不顶掉正在播的别的书）；
+/// - `start` 期间 [wanted] 变 false：停掉**这次装上的**会话（按本次创建的伴随对象
+///   认，会话已被别处换掉就不碰），返回 null；
+/// - 否则返回这次装上的伴随对象（同书复用时没新建伴随对象，返回 null，调用方按
+///   会话现状再取）。
+///
+/// `start` 抛错原样抛出（会话自己不留半成品，见 [AudiobookSession.start]）。
+Future<AudiobookSessionCompanion?> startMangaAudioSessionOwned(
+  AudiobookSession session,
+  AudiobookSessionStartRequest req, {
+  required bool Function() wanted,
+}) async {
+  if (!wanted()) return null;
+  final AudiobookSessionCompanionFactory? factory = req.companion;
+  AudiobookSessionCompanion? created;
+  await session.start(
+    info: req.info,
+    audioFiles: req.audioFiles,
+    prefs: req.prefs,
+    persist: req.persist,
+    cues: req.cues,
+    remote: req.remote,
+    companion: factory == null
+        ? null
+        : (AudiobookPlayerController controller) =>
+              created = factory(controller),
+  );
+  if (wanted()) return created;
+  final AudiobookSessionCompanion? mine = created;
+  if (mine != null && identical(session.companion, mine)) {
+    await session.stop();
+  }
+  return null;
 }

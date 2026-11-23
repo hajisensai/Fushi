@@ -32,6 +32,8 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show FushiSidePaneScrollScope;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -458,37 +460,39 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       minSplitWidth: kFushiSettingsHomeTwoPaneMinWidth,
       supportingSide: SupportingPaneSide.start,
       showDivider: false,
-      supporting: Padding(
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.gap,
-          0,
-          tokens.spacing.page + mediaPadding.bottom,
-        ),
-        child: FushiCard(
-          padding: EdgeInsets.zero,
-          borderRadius: tokens.radii.groupRadius,
-          color: tokens.surfaces.card,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildSearchField(onNavCard: true),
-              Expanded(
-                child: _searchQuery.trim().isEmpty
-                    ? renderer.buildDestinationList(
-                        settingsContext: settingsContext,
-                        destinations: destinations,
-                        selectedDestinationId: selectedDestinationId,
-                        onDestinationSelected: _selectDestination,
-                        pushRoutes: false,
-                      )
-                    : _buildSearchResults(
-                        settingsContext: settingsContext,
-                        destinations: destinations,
-                        wide: true,
-                      ),
-              ),
-            ],
+      supporting: FushiSidePaneScrollScope(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            tokens.spacing.gap,
+            0,
+            tokens.spacing.page + mediaPadding.bottom,
+          ),
+          child: FushiCard(
+            padding: EdgeInsets.zero,
+            borderRadius: tokens.radii.groupRadius,
+            color: tokens.surfaces.card,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _buildSearchField(onNavCard: true),
+                Expanded(
+                  child: _searchQuery.trim().isEmpty
+                      ? renderer.buildDestinationList(
+                          settingsContext: settingsContext,
+                          destinations: destinations,
+                          selectedDestinationId: selectedDestinationId,
+                          onDestinationSelected: _selectDestination,
+                          pushRoutes: false,
+                        )
+                      : _buildSearchResults(
+                          settingsContext: settingsContext,
+                          destinations: destinations,
+                          wide: true,
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -592,32 +596,34 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           GlassSettingsRenderer.sidebarWidth +
           _wideNavPanelExtraWidth(FushiDesignTokens.of(context)),
       showDivider: false,
-      supporting: Padding(
-        padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-        child: _wideNavPanel(
-          FushiDesignTokens.of(context),
-          glass: true,
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                child: _buildKitSearchBar(wide: true),
-              ),
-              // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
-              // 占满右侧详情窗格。
-              Expanded(
-                child: _navListEdgeFade(
-                  renderer.buildDestinationList(
-                    settingsContext: settingsContext,
-                    destinations: destinations,
-                    selectedDestinationId: selectedDestinationId,
-                    onDestinationSelected: _selectDestination,
-                    pushRoutes: false,
+      supporting: FushiSidePaneScrollScope(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+          child: _wideNavPanel(
+            FushiDesignTokens.of(context),
+            glass: true,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                  child: _buildKitSearchBar(wide: true),
+                ),
+                // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
+                // 占满右侧详情窗格。
+                Expanded(
+                  child: _navListEdgeFade(
+                    renderer.buildDestinationList(
+                      settingsContext: settingsContext,
+                      destinations: destinations,
+                      selectedDestinationId: selectedDestinationId,
+                      onDestinationSelected: _selectDestination,
+                      pushRoutes: false,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -770,39 +776,41 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           _wideNavPanelExtraWidth(tokens),
       showDivider: false,
       // 左栏是固定版面（搜索框 + 分类列表）：整体让开系统状态栏。
-      supporting: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-          child: _wideNavPanel(
-            tokens,
-            glass: false,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.gap + 4,
-                    tokens.spacing.gap,
-                    tokens.spacing.gap + 4,
-                    tokens.spacing.gap,
+      supporting: FushiSidePaneScrollScope(
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+            child: _wideNavPanel(
+              tokens,
+              glass: false,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.gap + 4,
+                      tokens.spacing.gap,
+                      tokens.spacing.gap + 4,
+                      tokens.spacing.gap,
+                    ),
+                    child: _buildKitSearchBar(wide: true),
                   ),
-                  child: _buildKitSearchBar(wide: true),
-                ),
-                // 搜索时左栏保持分类列表，结果占满右侧详情窗格（此前结果挤在 240
-                // 宽的左栏里，标题两行就截断，右侧详情却空着）。
-                Expanded(
-                  child: _navListEdgeFade(
-                    renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
+                  // 搜索时左栏保持分类列表，结果占满右侧详情窗格（此前结果挤在 240
+                  // 宽的左栏里，标题两行就截断，右侧详情却空着）。
+                  Expanded(
+                    child: _navListEdgeFade(
+                      renderer.buildDestinationList(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        selectedDestinationId: selectedDestinationId,
+                        onDestinationSelected: _selectDestination,
+                        pushRoutes: false,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

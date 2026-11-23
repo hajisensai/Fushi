@@ -1,7 +1,7 @@
 // AI 库管家设计稿 §7 / §8（docs/specs/2026-11-18-ai-library-curator-design.md）：
 // 分类 = 合集归属整理。AI 能把条目从任何非目录合集（含用户合集）移出——单独放或挪进
 // 别的合集；pinned 的不移、同一对（合集, 成员）只移一次、移出用户合集必须带理由；
-// 用户合集的合并 / 改名只产出待确认建议。全部可撤销，撤销移出 = 钉住。
+// 用户合集的合并 / 改名直接执行（AI 管库 v3 §2.2，自动只收 high）。全部可撤销，撤销移出 = 钉住。
 import 'dart:convert';
 
 import 'package:drift/native.dart';
@@ -325,64 +325,72 @@ void main() {
     });
   });
 
-  group('planOrganizeReply：用户合集的合并 / 改名只出待确认建议', () {
+  group('planOrganizeReply：用户合集的合并 / 改名直接产成动作（AI 管库 v3 §2.2）', () {
     ({LibraryOrganizeFacts facts, OrganizeChunk chunk}) world() => _world(
       <OrganizeEntry>[_entry('a')],
       <OrganizeCollectionFact>[
         _col(1, CollectionOrigin.user, members: <String>{'x'}),
         _col(2, CollectionOrigin.user, members: <String>{'y'}),
+        _col(3, CollectionOrigin.user, members: <String>{'z'}),
       ],
     );
-    const AiOrganizeReply reply = AiOrganizeReply(
+    AiOrganizeReply reply({
+      AiOrganizeConfidence confidence = AiOrganizeConfidence.high,
+    }) => AiOrganizeReply(
       merges: <AiOrganizeMergeProposal>[
         AiOrganizeMergeProposal(
-          collections: <String>['C0', 'C1'],
-          confidence: AiOrganizeConfidence.high,
+          collections: const <String>['C0', 'C1'],
+          confidence: confidence,
         ),
       ],
       renames: <AiOrganizeRenameProposal>[
         AiOrganizeRenameProposal(
           collection: 'C0',
           name: '涼宮ハルヒ',
-          confidence: AiOrganizeConfidence.high,
+          confidence: confidence,
           reason: '原名是乱码',
         ),
         AiOrganizeRenameProposal(
-          collection: 'C1',
-          name: 'col1', // 与 C0 撞名：不提。
-          confidence: AiOrganizeConfidence.high,
+          collection: 'C2',
+          name: 'col1', // 与 C0 撞名：不改。
+          confidence: confidence,
+        ),
+        AiOrganizeRenameProposal(
+          collection: 'C1', // 被并掉的败方：不改。
+          name: '别的名字',
+          confidence: confidence,
         ),
       ],
     );
 
-    test('手动：两条建议，不产出任何直接改动', () {
-      final OrganizePlan p = _plan(world(), reply);
-      expect(p.actions, isEmpty);
-      expect(
-        p.proposals.map((OrganizeProposal x) => x.kind),
-        <OrganizeProposalKind>[
-          OrganizeProposalKind.merge,
-          OrganizeProposalKind.rename,
-        ],
-      );
-      final OrganizeProposal merge = p.proposals.first;
-      expect(
-        <int>{merge.targetCollectionId, ...merge.sourceCollectionIds},
-        <int>{1, 2},
-      );
-      expect(p.proposals.last.newName, '涼宮ハルヒ');
-      expect(p.proposals.last.reason, '原名是乱码');
-    });
+    for (final OrganizeTrigger trigger in OrganizeTrigger.values) {
+      test('${trigger.name} · high：合并 + 改名直接成动作，不出建议', () {
+        final OrganizePlan p = _plan(world(), reply(), trigger: trigger);
+        expect(
+          p.actions.map((OrganizeAction a) => a.kind),
+          <OrganizeActionKind>[
+            OrganizeActionKind.merge,
+            OrganizeActionKind.rename,
+          ],
+        );
+        final OrganizeAction merge = p.actions.first;
+        expect(merge.targetCollectionId, 1);
+        expect(merge.sourceCollectionIds, <int>[2]);
+        final OrganizeAction rename = p.actions.last;
+        expect(rename.targetCollectionId, 1);
+        expect(rename.name, '涼宮ハルヒ');
+        expect(rename.reason, '原名是乱码');
+      });
 
-    test('自动：不出建议', () {
-      final OrganizePlan p = _plan(
-        world(),
-        reply,
-        trigger: OrganizeTrigger.auto,
-      );
-      expect(p.actions, isEmpty);
-      expect(p.proposals, isEmpty);
-    });
+      test('${trigger.name} · medium：合集级改动同合并门槛，不落', () {
+        final OrganizePlan p = _plan(
+          world(),
+          reply(confidence: AiOrganizeConfidence.medium),
+          trigger: trigger,
+        );
+        expect(p.actions, isEmpty);
+      });
+    }
   });
 
   group('回复解析与提示词', () {

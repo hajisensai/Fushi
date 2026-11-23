@@ -558,6 +558,13 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           showIcon: true,
         ),
       // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
+      // 手柄查词模式：键只在模式开启时生效，进入方式在通用设置里选，讲清楚在哪儿按。
+      if (scope == ShortcutScope.controllerLookup)
+        AdaptiveSettingsRow(
+          title: t.shortcut_scope_controller_lookup_note,
+          icon: FushiIcons.info,
+          showIcon: true,
+        ),
       if (scope == ShortcutScope.dictionaryPopup)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_dictionary_popup_note,

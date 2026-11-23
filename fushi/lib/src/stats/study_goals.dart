@@ -17,6 +17,8 @@ import 'package:fushi/src/stats/stat_format.dart'
 import 'package:fushi/src/platform/widget_snapshot.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_goal_language_scope.dart';
+import 'package:fushi/src/stats/study_goal_period.dart'
+    show studyGoalWindowStart;
 import 'package:fushi/src/stats/study_goal_record.dart'
     show StudyGoalReviewsHidden;
 import 'package:fushi/src/utils/components/content_language_picker.dart'
@@ -671,6 +673,13 @@ StudyGoal? studyGoalStatsCharsGoal(Iterable<StudyGoal> goals) {
       firstWhere(daily) ??
       firstWhere(chars);
 }
+
+/// 统计页「今天」字数环要读的全域日面起点（含）：[goal]（[studyGoalStatsCharsGoal]
+/// 选出的那条）自己周期窗口的起点，没有字数目标时只要今天。环的分子与首页 / 小组件
+/// 同一个 [computeStudyGoals]，喂进去的日面必须盖住整个目标窗口——回退到月目标时
+/// 只读本周会漏掉本月更早的字数（HBK-AUDIT-219）。
+String studyGoalStatsCharsFactsFrom(StudyGoal? goal, String todayKey) =>
+    studyGoalWindowStart(goal?.period ?? StudyGoalPeriod.daily, todayKey);
 
 /// 「语言目标」格里的一个环位：[progress] 为 null 时是空环（这一周期没有目标）。
 class StudyGoalRingSlot {
