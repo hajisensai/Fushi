@@ -8,6 +8,11 @@ import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
+import 'package:fushi/src/media/identity/app_pending_identity.dart';
+import 'package:fushi/src/media/identity/pending_identity_widgets.dart';
+import 'package:fushi_engine/media/identity/curator_pending_identity.dart'
+    show CuratorPendingIdentityDomain;
+import 'package:fushi_engine/media/identity/pending_identity.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -319,6 +324,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
 
   @override
   void dispose() {
+    _pendingIdentityRefresh.dispose();
     _itemScrapeSub?.cancel();
     _collectionScrapeSub?.cancel();
     _scrapeReloadDebounce?.cancel();
@@ -409,6 +415,63 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   void _refresh() {
     if (!mounted) return;
     setState(() => _games = _repo.games);
+    // 仓储的每个写方法（含刮削写回）都会走到这里：待确认提醒条跟着重算。
+    _pendingIdentityRefresh.ping();
+  }
+
+  /// 待确认身份提醒条的刷新信号（库管家每趟结束、仓储写入后；BUG-5283）。
+  final PendingIdentityRefresh _pendingIdentityRefresh =
+      PendingIdentityRefresh();
+
+  PendingIdentitySource _pendingIdentitySource() =>
+      curatorPendingIdentitySourceOf(
+        db: _appModel.database,
+        prefs: _appModel.prefsRepo,
+        domain: CuratorPendingIdentityDomain.games,
+      );
+
+  /// 提醒条「去确认」：游戏的待确认清单（BUG-5283）。手动搜索 = 游戏菜单同一个
+  /// 「刮削资料」弹窗；让 AI 重试 = 库管家对这一款重跑游戏刮削阶段。
+  Future<void> _openPendingIdentity() => showPendingIdentityDialog(
+    context: context,
+    kind: PendingIdentityMediaKind.game,
+    source: _pendingIdentitySource(),
+    actions: PendingIdentityActions(
+      identifyManually: (BuildContext _, PendingIdentityEntry e) =>
+          _identifyPendingGame(e),
+      retryWithAi: isAiModuleEnabled(_appModel.moduleVisibility)
+          ? (BuildContext dialogContext, PendingIdentityEntry e) =>
+                retryPendingIdentityWithAi(
+                  entry: e,
+                  prefs: _appModel.prefsRepo,
+                  aiModuleEnabled: true,
+                  ensureConsent: () => ensureLibraryOrganizeConsent(
+                    dialogContext,
+                    _appModel.prefsRepo,
+                  ),
+                )
+          : null,
+    ),
+  );
+
+  Future<String?> _identifyPendingGame(PendingIdentityEntry entry) async {
+    final String? id = entry.memberKeys.isEmpty ? null : entry.memberKeys.first;
+    GalgameEntry? game;
+    for (final GalgameEntry g in _repo.games) {
+      if (g.id == id) {
+        game = g;
+        break;
+      }
+    }
+    if (game == null) return t.identity_pending_item_missing;
+    if (await showGalgameScrapeDialog(
+      context: context,
+      game: game,
+      repo: _repo,
+    )) {
+      _refresh();
+    }
+    return null;
   }
 
   /// 「手动」排序的名次表（单元 tieKey → 下标；合集 `c<id>`、游戏 id），存在偏好
@@ -871,6 +934,15 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
               _buildPageHeader(context),
             ] else if (_games.isNotEmpty)
               _buildToolbar(context, allTags),
+            // 游戏没认出来时的常驻提醒（BUG-5283）：与视频库同一个提醒条组件。
+            // 本页只在本机游戏库形态（Windows）出现，串流接收端是另一页。
+            PendingIdentityBannerHost(
+              key: const ValueKey<String>('pending-identity-host-game'),
+              kind: PendingIdentityMediaKind.game,
+              source: _pendingIdentitySource,
+              changes: _pendingIdentityRefresh.stream,
+              onOpen: _openPendingIdentity,
+            ),
           ],
         ),
         child: FushiFloatingChromeScrollInset(

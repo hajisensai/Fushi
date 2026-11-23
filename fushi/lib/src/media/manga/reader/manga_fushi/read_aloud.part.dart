@@ -213,6 +213,20 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   TtsServices get _tts => TtsServices.of(_s.appModel.prefsRepo);
 
+  /// 这部漫画朗读的作品身份（书键 + 系列 + 语言），声音按它记（[TtsMediaVoices]）。
+  Future<TtsMediaVoiceScope> _voiceScope() async {
+    final String bookKey = _s.widget.bookKey;
+    return resolveTtsMediaVoiceScope(
+      _s.appModel,
+      bookKey,
+      language: await ttsMediaContentLanguage(
+        _s.appModel.database,
+        bookKey,
+        globalDefault: _s.appModel.prefsRepo.defaultContentLanguage,
+      ),
+    );
+  }
+
   /// 工具栏「朗读」：没在读就从当前页开始，在读就停。登记过成品音频的卷播成品，
   /// 否则现场合成。
   Future<void> toggle() async {
@@ -494,7 +508,10 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     try {
       final _MangaReadAloudServicesRig rig;
       try {
-        rig = await _MangaReadAloudServicesRig.create(_tts);
+        rig = await _MangaReadAloudServicesRig.create(
+          _tts,
+          await _voiceScope(),
+        );
       } on _MangaReadAloudVoiceMissing catch (missing) {
         FushiToast.show(
           msg: missing.incomplete
@@ -579,25 +596,28 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     audio?.onPageChanged(page);
   }
 
-  /// 朗读中快速切换声音：选中即设为使用中，用新声音从当前句重读。
+  /// 朗读中快速切换声音：选中的声音记到这部漫画（有系列记到「系列 + 语言」），
+  /// 「使用默认声音」清掉它；用新声音从当前句重读。
   Future<void> switchVoice() async {
     final TtsServices tts = _tts;
+    final TtsMediaVoiceScope scope = await _voiceScope();
+    if (!_s.mounted) return;
     final TtsVoiceQuickSwitchChoice? choice = await showTtsVoiceQuickSwitch(
       _s.context,
       tts,
+      scope: scope,
     );
     if (choice == null || !_s.mounted) return;
-    final String? presetId = choice.presetId;
-    if (presetId == null) {
+    if (choice.isManage) {
       controller?.pause();
       await openTtsVoiceSettingsPage(_s.context, tts);
       return;
     }
-    await tts.store.setActivePresetId(presetId);
+    await applyTtsVoiceQuickSwitchChoice(tts, choice, scope: scope);
     final MangaReadAloudController? c = controller;
     if (c == null) return;
     try {
-      await c.replaceRig(await _MangaReadAloudServicesRig.create(tts));
+      await c.replaceRig(await _MangaReadAloudServicesRig.create(tts, scope));
     } on _MangaReadAloudVoiceMissing catch (missing) {
       FushiToast.show(
         msg: missing.incomplete
@@ -712,8 +732,8 @@ class _MangaReadAloudVoiceMissing implements Exception {
   final bool incomplete;
 }
 
-/// 生产声音：当前朗读声音 + 全应用共用的 [TtsAudioCache]（同句同音色只合一次，
-/// 与小说朗读 / 制作台共用）。
+/// 生产声音：这部漫画该用的朗读声音（本书 → 系列 + 语言 → 全局使用中）+ 全应用
+/// 共用的 [TtsAudioCache]（同句同音色只合一次，与小说朗读 / 制作台共用）。
 class _MangaReadAloudServicesRig implements MangaReadAloudVoiceRig {
   _MangaReadAloudServicesRig._({
     required TtsProvider provider,
@@ -724,11 +744,13 @@ class _MangaReadAloudServicesRig implements MangaReadAloudVoiceRig {
        _cache = cache,
        _audioIdentity = audioIdentity;
 
-  static Future<_MangaReadAloudServicesRig> create(TtsServices tts) async {
+  static Future<_MangaReadAloudServicesRig> create(
+    TtsServices tts,
+    TtsMediaVoiceScope scope,
+  ) async {
     // 从没配过声音时与「朗读声音」页同一份开箱默认（微软 Edge）。
     await tts.seedBuiltinVoiceIfUnset();
-    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
-        tts.activeVoice();
+    final TtsMediaVoice? voice = tts.voiceForMedia(scope);
     if (voice == null) {
       throw const _MangaReadAloudVoiceMissing(incomplete: false);
     }

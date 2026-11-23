@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
@@ -69,7 +70,22 @@ class MediaServerSession {
   /// 播一个可播放叶子。[siblings] 是同一季（或同一容器）里**已加载**的全部叶子，
   /// 用来给播放页建剧集列表；[item] 不在其中时退化成单播。返回的 Future 在播放页
   /// 退回来时完成（见 [MediaServerPlayHandler]）。
+  ///
+  /// 退回来时经 [MediaServerUserDataChanges] 通知：播放期间上报了断点 / 播完标记，
+  /// 首页 / 网格 / 详情原地跟上（BUG-3491 起只有详情页自己重拉）。
   Future<void> playItem(
+    BuildContext context,
+    MediaServerItem item, {
+    List<MediaServerItem> siblings = const <MediaServerItem>[],
+  }) async {
+    try {
+      await _playItem(context, item, siblings: siblings);
+    } finally {
+      MediaServerUserDataChanges.notify(serverId);
+    }
+  }
+
+  Future<void> _playItem(
     BuildContext context,
     MediaServerItem item, {
     List<MediaServerItem> siblings = const <MediaServerItem>[],

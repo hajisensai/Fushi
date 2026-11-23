@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show PrefCodec;
 
 import 'package:fushi/src/models/home_tab.dart';
 
@@ -127,6 +128,65 @@ const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
   kPageBackdropSeedCachePrefKey,
   kPageBackdropModuleImagesPrefKey,
 ];
+
+/// 背景图片按配置记、只留在本机：live 键 → 停放键前缀（后缀 = profile uid）。
+///
+/// 样式（预设 / 强度 / 模糊…）随 Profile 快照走，图片路径却是设备本地的——两者拆开后切配置
+/// 只换样式不换图。这里把图片键接进 `ProfileRepository.perProfileDeviceLocalPrefs`：切走时
+/// live 值停放到这份配置名下，切入时换回；没停放过的配置沿用切换前的图（现有全局图就是每份
+/// 配置的初始值，不需要迁移）。停放键与 live 键同样设备本地
+/// （`PrefRedactionPolicy.deviceLocalKeyPrefixes`）：不进 Profile 快照 / 分享 / 备份 / 设置同步。
+/// 取色缓存跟着图走，一并停放，切回来不用重取。
+const Map<String, String> kPageBackdropProfileParkedPrefKeyPrefixes =
+    <String, String>{
+      kPageBackdropLandscapeImagePrefKey: 'page_backdrop_image_landscape::',
+      kPageBackdropPortraitImagePrefKey: 'page_backdrop_image_portrait::',
+      kPageBackdropModuleImagesPrefKey: 'page_backdrop_module_images::',
+      kPageBackdropSeedCachePrefKey: 'page_backdrop_seed_cache::',
+    };
+
+/// [prefs]（偏好表原始编码值）里仍在引用的全部背景图路径：live 键与各配置停放的值，
+/// 全局两张 + 各模块的。[skipParkedUid] 的停放值不算——激活配置的停放值是它上次切走时
+/// 的旧值，live 键才是它现在的图（下次切走会被覆盖），算进去只会让换掉的旧图多留一阵。
+Set<String> pageBackdropReferencedImagePaths(
+  Map<String, String> prefs, {
+  String? skipParkedUid,
+}) {
+  final Set<String> out = <String>{};
+  void addPath(Object? value) {
+    if (value is String && value.isNotEmpty) out.add(value);
+  }
+
+  void addModuleImages(Object? value) {
+    for (final PageBackdropModuleImages images
+        in decodePageBackdropModuleImages(value).values) {
+      addPath(images.landscape);
+      addPath(images.portrait);
+    }
+  }
+
+  prefs.forEach((String key, String raw) {
+    for (final MapEntry<String, String> e
+        in kPageBackdropProfileParkedPrefKeyPrefixes.entries) {
+      if (e.key == kPageBackdropSeedCachePrefKey) continue;
+      final bool live = key == e.key;
+      final bool parked =
+          key.startsWith(e.value) &&
+          (skipParkedUid == null || key != '${e.value}$skipParkedUid');
+      if (!live && !parked) continue;
+      // 停放值是 live 原始编码值的原样拷贝；空串 = 那份配置没设图。
+      if (raw.isEmpty) return;
+      final Object? value = PrefCodec.decodeUntyped(raw);
+      if (e.key == kPageBackdropModuleImagesPrefKey) {
+        addModuleImages(value);
+      } else {
+        addPath(value);
+      }
+      return;
+    }
+  });
+  return out;
+}
 
 /// 当前生效的页面背景设置（不可变快照）。
 @immutable

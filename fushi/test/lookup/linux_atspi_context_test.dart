@@ -4,6 +4,9 @@
 // captured buffer into the selected term + sentence. The D-Bus layer itself
 // (DBusAtspiTree) was verified against GTK 3 and GTK 4 TextViews in Xvfb.
 
+import 'dart:io';
+
+import 'package:dbus/dbus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/linux_atspi_context.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
@@ -156,7 +159,7 @@ void main() {
         );
         final AtspiSelectionContext? ctx = await findFocusedSelectionContext(
           tree,
-          ownPid: _ownPid,
+          ownPids: const <int>{_ownPid},
         );
         expect(ctx, isNotNull);
         expect(ctx!.contextText, novel);
@@ -185,7 +188,31 @@ void main() {
       );
       final AtspiSelectionContext? ctx = await findFocusedSelectionContext(
         tree,
-        ownPid: _ownPid,
+        ownPids: const <int>{_ownPid},
+      );
+      expect(_selected(ctx!), '見当');
+      expect(ctx.contextText, novel);
+    });
+
+    // Flatpak: Fushi's toolkit registers on the host bus through Flatpak's
+    // D-Bus proxy, so the bus reports the proxy's pid for Fushi, not the
+    // sandbox pid; both are own pids.
+    test('skips every own pid (Flatpak proxy pid included)', () async {
+      const int proxyPid = 900;
+      final _FakeTree tree = _FakeTree(
+        apps: const <AtspiRef>[
+          AtspiRef(':1.2', '/root'), // Fushi through the proxy, active
+          AtspiRef(':1.4', '/root'), // the foreground app
+        ],
+        nodes: <AtspiRef, _Node>{
+          ..._appWithText(':1.2', text: 'Fushi の文。', selection: (0, 5)),
+          ..._appWithText(':1.4', text: novel, selection: (target, target + 2)),
+        },
+        pids: const <String, int>{':1.2': proxyPid, ':1.4': 8},
+      );
+      final AtspiSelectionContext? ctx = await findFocusedSelectionContext(
+        tree,
+        ownPids: const <int>{_ownPid, proxyPid},
       );
       expect(_selected(ctx!), '見当');
       expect(ctx.contextText, novel);
@@ -206,7 +233,7 @@ void main() {
       );
       final AtspiSelectionContext? ctx = await findFocusedSelectionContext(
         tree,
-        ownPid: _ownPid,
+        ownPids: const <int>{_ownPid},
       );
       expect(_selected(ctx!), '見当');
     });
@@ -218,7 +245,7 @@ void main() {
               apps: const <AtspiRef>[AtspiRef(':1.4', '/root')],
               nodes: nodes,
             ),
-            ownPid: _ownPid,
+            ownPids: const <int>{_ownPid},
           );
       final Map<AtspiRef, _Node> noSelection = _appWithText(
         ':1.4',
@@ -271,7 +298,7 @@ void main() {
             windowActive: false,
           ),
         ),
-        ownPid: _ownPid,
+        ownPids: const <int>{_ownPid},
         log: logs.add,
       );
       expect(ctx, isNull);
@@ -289,7 +316,7 @@ void main() {
       );
       final AtspiSelectionContext? ctx = await findFocusedSelectionContext(
         tree,
-        ownPid: _ownPid,
+        ownPids: const <int>{_ownPid},
         maxExpand: 10,
       );
       expect(ctx!.contextText, '${'あ' * 10}見当${'い' * 10}');
@@ -340,7 +367,10 @@ void main() {
           nodes: nodes,
         );
         expect(
-          await findFocusedSelectionContext(tree, ownPid: _ownPid),
+          await findFocusedSelectionContext(
+            tree,
+            ownPids: const <int>{_ownPid},
+          ),
           isNull,
         );
         // window, hidden, table: hiddenView and cell are never visited.
@@ -371,7 +401,7 @@ void main() {
         expect(
           await findFocusedSelectionContext(
             deep,
-            ownPid: _ownPid,
+            ownPids: const <int>{_ownPid},
             nodeBudget: 20,
           ),
           isNull,
@@ -380,13 +410,101 @@ void main() {
           _selected(
             (await findFocusedSelectionContext(
               _FakeTree(apps: const <AtspiRef>[app], nodes: chain),
-              ownPid: _ownPid,
+              ownPids: const <int>{_ownPid},
             ))!,
           ),
           '見当',
         );
       },
     );
+  });
+
+  group('resolveAtspiBusAddress', () {
+    const String proxy = 'unix:path=/run/flatpak/at-spi-bus';
+    const String host = 'unix:path=/run/user/1000/at-spi/bus_0,guid=abc';
+
+    Future<String?> Function() registry(String? address) =>
+        () async => address;
+
+    test('outside a sandbox: environment first, then the registry', () async {
+      expect(
+        await resolveAtspiBusAddress(
+          environmentAddress: 'unix:path=/tmp/a11y',
+          inFlatpak: false,
+          registryAddress: () => fail('registry asked although env is set'),
+        ),
+        (address: 'unix:path=/tmp/a11y', source: AtspiBusSource.environment),
+      );
+      expect(
+        await resolveAtspiBusAddress(
+          environmentAddress: '',
+          inFlatpak: false,
+          registryAddress: registry(host),
+        ),
+        (address: host, source: AtspiBusSource.registry),
+      );
+      expect(
+        await resolveAtspiBusAddress(
+          environmentAddress: null,
+          inFlatpak: false,
+          registryAddress: registry(''),
+        ),
+        isNull,
+      );
+    });
+
+    test('Flatpak: the host bus wins over the filtered proxy', () async {
+      expect(
+        await resolveAtspiBusAddress(
+          environmentAddress: proxy,
+          inFlatpak: true,
+          registryAddress: registry(host),
+        ),
+        (address: host, source: AtspiBusSource.flatpakHost),
+      );
+    });
+
+    test('Flatpak without org.a11y.Bus access falls back to the proxy and '
+        'logs the D-Bus error name only', () async {
+      final List<String> logs = <String>[];
+      expect(
+        await resolveAtspiBusAddress(
+          environmentAddress: proxy,
+          inFlatpak: true,
+          registryAddress: () async => throw DBusServiceUnknownException(
+            DBusMethodErrorResponse(
+              'org.freedesktop.DBus.Error.ServiceUnknown',
+            ),
+          ),
+          log: logs.add,
+        ),
+        (address: proxy, source: AtspiBusSource.flatpakProxy),
+      );
+      expect(logs, <String>[
+        'atspi: flatpak host bus unavailable '
+            '(org.freedesktop.DBus.Error.ServiceUnknown)',
+      ]);
+      expect(
+        await resolveAtspiBusAddress(
+          environmentAddress: null,
+          inFlatpak: true,
+          registryAddress: registry(null),
+        ),
+        isNull,
+      );
+    });
+  });
+
+  // The Flatpak half of the host-bus route: without both permissions the
+  // sandbox can neither ask for the host bus address nor reach its socket.
+  test('Flatpak manifest grants the host accessibility bus', () {
+    final String manifest = File(
+      '../tool/linux/flatpak/app.fushi.reader.yml',
+    ).readAsStringSync();
+    expect(manifest, contains('  - --talk-name=org.a11y.Bus\n'));
+    expect(manifest, contains('  - --filesystem=xdg-run/at-spi:ro\n'));
+    // Not the whole session bus: that does not lift the a11y proxy anyway.
+    expect(manifest, isNot(contains('  - --socket=session-bus')));
   });
 
   group('contextFromCharacterOffsets', () {

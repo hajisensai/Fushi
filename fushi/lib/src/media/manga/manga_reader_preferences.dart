@@ -79,6 +79,11 @@ extension MangaOcrProgressBadgeStyleKey on MangaOcrProgressBadgeStyle {
   };
 }
 
+/// 桌面鼠标触发气泡放大的默认方式：按住 Ctrl 指向气泡（拍板台 _5emrTFV1l：
+/// 默认「停留就弹」读图时鼠标一停就误弹，改成显式手势；想要停留放大的在设置里改）。
+/// 只影响没存过这一项的用户——已存的 `bubbleZoomHover` 原样生效。
+const String kMangaBubbleZoomHoverDefault = 'ctrl';
+
 /// 气泡放大悬停停留时长（毫秒）的默认值与区间。
 const int kMangaBubbleZoomDelayDefault = 350;
 const int kMangaBubbleZoomDelayMin = 150;
@@ -149,7 +154,7 @@ class MangaReaderPreferences {
     this.aiUpscale = 'off',
     this.lookupOnHover = false,
     this.bubbleZoom = true,
-    this.bubbleZoomHover = 'dwell',
+    this.bubbleZoomHover = kMangaBubbleZoomHoverDefault,
     this.bubbleZoomDelay = kMangaBubbleZoomDelayDefault,
     this.bubbleZoomScale = kMangaBubbleZoomScaleDefault,
     this.bubbleFocusDim = 'light',
@@ -463,11 +468,11 @@ class MangaReaderPreferences {
       aiUpscale: text('aiUpscale', 'off', <String>{'off', 'light', 'high'}),
       lookupOnHover: flag('lookupOnHover', false),
       bubbleZoom: flag('bubbleZoom', true),
-      bubbleZoomHover: text('bubbleZoomHover', 'dwell', <String>{
-        'dwell',
-        'ctrl',
-        'off',
-      }),
+      bubbleZoomHover: text(
+        'bubbleZoomHover',
+        kMangaBubbleZoomHoverDefault,
+        <String>{'dwell', 'ctrl', 'off'},
+      ),
       bubbleZoomDelay: number(
         'bubbleZoomDelay',
         kMangaBubbleZoomDelayDefault,

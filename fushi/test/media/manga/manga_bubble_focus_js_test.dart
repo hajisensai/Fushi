@@ -623,7 +623,7 @@ assert.equal(bzLayer,null);
 assert.equal(_bzBlocksHoverLookup(150,200,false),false);
 _fcExit(true);
 assert.equal(_bzBlocksHoverLookup(150,200,false),true);
-'''),
+''', preferences: const MangaReaderPreferences(bubbleZoomHover: 'dwell')),
       );
     });
 

@@ -585,13 +585,15 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
     ),
     (
         "compare.rs",
-        "协议 3 投影与新代派生层逐类对拍（`entities` 一类按本 profile 的身份记录认出被同库另一个 profile 占走行的实体，读 sync2_ops）",
+        "协议 3 投影与新代派生层逐类对拍（`entities` 一类按本 profile 的身份记录认出被同库另一个 profile 占走行、或行随别的 profile 删掉的实体，读 sync2_ops；`idTrace` 的 `p3` 读修改记录 / 日志的操作映射）",
         &[
             "srs_entities",
             "srs_event_local",
             "srs_field_edits",
             "srs_review_logs",
+            "sync2_edit_ops",
             "sync2_held",
+            "sync2_log_meta",
             "sync2_media",
             "sync2_ops",
             "sync2_purged",
@@ -612,6 +614,7 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
             "sync2_cache_pending",
             "sync2_held",
             "sync2_legacy",
+            "sync2_log_meta",
             "sync2_replay_pending",
         ],
     ),
@@ -636,8 +639,13 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
     ),
     (
         "stale.rs",
-        "对拍前认出协议 3 一侧被旧重放改写过的日志结果并在影子表 / SAVEPOINT 里改回（反馈 RhMpA6bn8v）",
-        &["srs_review_logs", "sync2_log_meta", "sync2_ops"],
+        "对拍前认出协议 3 一侧过期的日志结果、停在非代表副本上的重复日志，在影子表 / SAVEPOINT 里改回（反馈 RhMpA6bn8v）",
+        &[
+            "srs_event_local",
+            "srs_review_logs",
+            "sync2_log_meta",
+            "sync2_ops",
+        ],
     ),
     (
         "media.rs",

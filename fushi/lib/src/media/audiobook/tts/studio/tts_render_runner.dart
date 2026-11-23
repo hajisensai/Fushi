@@ -281,11 +281,13 @@ class AppTtsRenderRunner implements TtsRenderRunner {
 
     String keyOf(int planIndex) {
       final String presetId = presetOf[planIndex]!;
-      return TtsAudioCache.keyFor(<String, Object?>{
-        ...voices[presetId]?.identity ??
+      return ttsSentenceCacheKey(
+        voiceIdentity:
+            voices[presetId]?.identity ??
             <String, Object?>{'unavailable': presetId},
-        ...directionOf(planIndex).cacheIdentity,
-      }, textOf(planIndex));
+        direction: directionOf(planIndex),
+        text: textOf(planIndex),
+      );
     }
 
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(
