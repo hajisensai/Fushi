@@ -183,6 +183,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioInput = inputPath;
         return outputPath;
@@ -235,6 +236,7 @@ void main() {
           String audioBitrate = '64k',
           String? tlsPinSha256,
           Map<String, String> httpHeaders = const {},
+          double? gainDb,
         }) async {
           audioInput = inputPath;
           return outputPath;

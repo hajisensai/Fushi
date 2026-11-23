@@ -725,6 +725,14 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     final int? audioStreamIndex = audioPlan.audioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
+    // 句子音频跟随播放音量（d7mXlstcv9，与歌曲 / 有声书卡同一开关同一套换算）：点击当下
+    // 播放器的音量（静音按 0 算 → 不跟随，截一段无声的卡没有意义）；开关关 → null，
+    // 原始电平、ffmpeg 参数与现状逐字节相同。
+    final double? audioGainDb = videoMiningClipGainDb(
+      followPlayback: appModel.miningAudioFollowPlaybackVolume,
+      volume: controller.muted ? 0 : controller.requestedVolume,
+      webBackend: controller.isWebBackend,
+    );
     final int episode = _currentEpisode;
     final SourceReviewSession? reviewSession = _sourceReviewSession;
     final (String sourceUid, int sourceEpisode) = _isRemote
@@ -1070,6 +1078,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         audioStreamCount: audioStreamCount,
         audioFrontCenter: audioPlan.frontCenter,
         audioFrontCenterNeedsProbe: audioPlan.frontCenterNeedsProbe,
+        audioGainDb: audioGainDb,
         // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
         source: AnkiMiningSource.video,
         sourceLinkResolver: resolveSourceLink,

@@ -309,6 +309,7 @@ class _GatedExtractors {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     if (_failingAudio.contains(inputPath)) {
       throw StateError('audio extractor crashed');

@@ -6,7 +6,9 @@
 ///
 /// * 音乐：与播放同一份 ReplayGain（[musicReplayGainDb]，同模式 / preamp / 峰值限幅；
 ///   ReplayGain 关或曲目没有增益数据时 0 dB，与播放端一致）+ 音量滑块。
-/// * 有声书：音量滑块。
+/// * 有声书、有声漫画（同一个 just_audio 播放器）：音量滑块。
+/// * 视频：播放器音量滑块（静音按 0 算）。libmpv 后端是立方曲线；网页播放后端是 HTML
+///   `<video>`，`volume = v / 100` 是线性振幅。
 ///
 /// 音量滑块换算成 dB 时按各自播放后端的真实音量曲线：libmpv 的 `volume` 是**立方**曲线
 /// （mpv `player/audio.c`：`gain = pow(volume / 100, 3)`，音乐与 Windows / Linux 上的
@@ -84,4 +86,19 @@ double? audiobookMiningClipGainDb({
     PlaybackVolumeCurve.mpvCubic => playbackVolumeGainDb(volume * 100, curve),
     PlaybackVolumeCurve.linear => playbackVolumeGainDb(volume, curve),
   };
+}
+
+/// 纯函数：视频制卡片段的增益（dB）。[volume] 是视频播放器的 0～100+ 刻度
+/// （`VideoPlayerController` 的音量，静音时调用方传 0）；[webBackend] 为真时是网页播放
+/// 后端（HTML `<video>`，线性振幅 `v / 100`），否则是 libmpv（立方曲线）。[followPlayback]
+/// 关或没有播放器 → null（原始电平）。
+double? videoMiningClipGainDb({
+  required bool followPlayback,
+  required double? volume,
+  required bool webBackend,
+}) {
+  if (!followPlayback || volume == null) return null;
+  return webBackend
+      ? playbackVolumeGainDb(volume / 100, PlaybackVolumeCurve.linear)
+      : playbackVolumeGainDb(volume, PlaybackVolumeCurve.mpvCubic);
 }

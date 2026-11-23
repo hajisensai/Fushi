@@ -101,6 +101,7 @@ Future<String?> _okAudio({
   String audioBitrate = '64k',
   String? tlsPinSha256,
   Map<String, String> httpHeaders = const {},
+  double? gainDb,
 }) async => outputPath;
 
 /// Netflix 那条链会把产物 `readAsBytes` 回来，故假件必须真落盘（引擎那条只传路径）。
@@ -116,6 +117,7 @@ Future<String?> _okAudioOnDisk({
   String audioBitrate = '64k',
   String? tlsPinSha256,
   Map<String, String> httpHeaders = const {},
+  double? gainDb,
 }) async {
   final File out = File(outputPath);
   out.parent.createSync(recursive: true);

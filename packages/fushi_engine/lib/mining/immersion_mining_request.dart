@@ -395,6 +395,7 @@ class ImmersionMiningRequest {
     this.audioStreamCount,
     this.audioFrontCenter = false,
     this.audioFrontCenterNeedsProbe = false,
+    this.audioGainDb,
     // BUG-1137：不给默认值。曾默认 video，gal 场景卡忘传 source 就被静默标成
     // 视频；来源必须由每个调用点显式声明，漏传直接编译不过。
     required this.source,
@@ -461,6 +462,13 @@ class ImmersionMiningRequest {
 
   /// [audioFrontCenter] 为真但调用方不知道声道布局：引擎抽取前先 ffprobe 确认有 FC。
   final bool audioFrontCenterNeedsProbe;
+
+  /// 句子音频整体增益（dB，`-af volume=…dB`）：制卡句子音频跟随播放音量（d7mXlstcv9，
+  /// 开关开时由调用方按播放器当前音量算好，见 `mining_playback_volume_gain.dart`）。
+  /// null = 原始电平（现状，ffmpeg 参数逐字节不变）。只作用于引擎自己裁出的句子音频
+  /// （本地 / 远端 ffmpeg 抽取、中置声道、互联 host 端裁回来的片段）；调用方直接给的
+  /// [providedAudioBytes] 原样落卡。
+  final double? audioGainDb;
   final AnkiMiningSource source;
   final String? bookTitleTag;
 
@@ -637,6 +645,7 @@ class ImmersionMiningRequest {
         // 不落副本，见 `SentenceAudioSourcePlan.differsFromPlaying`）：中置取音照旧。
         audioFrontCenter: audioFrontCenter,
         audioFrontCenterNeedsProbe: audioFrontCenterNeedsProbe,
+        audioGainDb: audioGainDb,
         source: source,
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
@@ -702,6 +711,7 @@ class ImmersionMiningRequest {
     audioStreamCount: audioStreamCount,
     audioFrontCenter: audioFrontCenter,
     audioFrontCenterNeedsProbe: audioFrontCenterNeedsProbe,
+    audioGainDb: audioGainDb,
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
