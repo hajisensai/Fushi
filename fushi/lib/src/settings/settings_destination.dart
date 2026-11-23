@@ -616,6 +616,20 @@ class SettingsSegmentOption<T extends Object> {
   final String? tooltip;
 }
 
+/// 「偏好没存值 = 跟出厂默认走」的设置行的存值判据（[SettingsSegmentedItem.storedChoice]）。
+///
+/// 这类行「显式选了默认值」与「没选过」看上去一样，但以后出厂默认一改，前者钉在旧值、
+/// 后者跟着变；页级「恢复本页默认」靠 [isStored] 把前者也列出来并删掉（HBK-AUDIT-235）。
+class SettingsStoredChoice {
+  const SettingsStoredChoice({required this.isStored, required this.clear});
+
+  /// 偏好里是否存了这一行的显式值。
+  final SettingsSwitchGetter isStored;
+
+  /// 删掉显式值（回到跟出厂默认走）。
+  final Future<void> Function(SettingsContext context) clear;
+}
+
 class SettingsSegmentedItem<T extends Object> extends SettingsItem {
   const SettingsSegmentedItem({
     required super.id,
@@ -633,10 +647,14 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     this.dropdown = false,
     this.defaultValue,
     this.defaultValueBuilder,
-    this.resetToDefault,
+    this.storedChoice,
     this.enabled,
     this.optionsBuilder,
-  });
+  }) : assert(
+         defaultValueBuilder == null || storedChoice != null,
+         '出厂默认随别的设置变的行必须声明 storedChoice：恢复默认要删掉自己的'
+         '偏好回到「跟着走」，不能把此刻的默认值钉成手选',
+       );
 
   /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
   final T? defaultValue;
@@ -645,9 +663,13 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
   /// 渲染时求值，「已改过」对照的是此刻真实生效的默认。读一律走 [defaultValueFor]。
   final SettingsValueGetter<T>? defaultValueBuilder;
 
-  /// 恢复默认的写法；null = 把 [defaultValueFor] 的值经 [onChanged] 写回。默认值
-  /// 随别的设置变的行要清掉自己的偏好（回到「跟着走」），而不是把此刻的默认值钉死。
-  final Future<void> Function(SettingsContext context)? resetToDefault;
+  /// 「没存值 = 跟出厂默认走」的行声明它：偏好有没有显式存值 + 怎么删掉。
+  ///
+  /// 声明了它，恢复默认就是删值（回到「跟着走」），而不是把此刻的默认值钉成手选；
+  /// 值与默认相同但显式存过的（先改走、再手动选回默认值）也算可恢复——见
+  /// [SettingsResetSpec.pinnedAtDefault]。null = 恢复默认把 [defaultValueFor] 的值
+  /// 经 [onChanged] 写回（存不存值对这类行没有区别）。[defaultValueBuilder] 行必填。
+  final SettingsStoredChoice? storedChoice;
 
   /// 此刻的出厂默认；null = 没声明默认（不参与恢复默认）。
   T? defaultValueFor(SettingsContext context) =>

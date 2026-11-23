@@ -227,6 +227,7 @@ DownloadTaskEntry animeDownloadTaskEntry({
     progress: plan.status == AnimeDownloadPlan.statusImported ? 1 : progress,
     collectionKey: collectionKey,
     collectionTitle: collectionKey == null ? null : plan.seriesTitle,
+    subtitle: animeDownloadPlanSubtitle(plan),
     searchTerms: <String>[plan.torrentTitle, plan.qbCategory],
     // 观测值与视频任务同口径投影进 Entry：做种位喂「做种」筛选，速率喂下载中心
     // 顶部合计速度——此前只拿 stats 算状态，合计里 legacy 行恒按 0 计（反馈
@@ -244,6 +245,37 @@ DownloadTaskEntry animeDownloadTaskEntry({
     builder: builder,
   );
 }
+
+/// 旧番剧计划卡片的副行：种子标题与作品名不同时才列（任务卡与侧栏速览同一句）。
+String? animeDownloadPlanSubtitle(AnimeDownloadPlan plan) =>
+    plan.torrentTitle == plan.seriesTitle ? null : plan.torrentTitle;
+
+/// 页外（侧栏下载速览）用的旧番剧计划快照：与下载页同一份计划表（新的在上）与
+/// 同一份映射 [animeDownloadTaskEntry]，进度 / 观测值取服务此刻的值。速览只读
+/// 条目的展示字段：不挂动作，卡片 builder 也不会被调用。
+Future<List<DownloadTaskEntry>> animeDownloadTaskSnapshot(
+  AppModel appModel,
+) async {
+  final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
+  if (store == null) return const <DownloadTaskEntry>[];
+  final List<AnimeDownloadPlan> plans = await store.loadAll();
+  final AnimeDownloadService? service = appModel.animeDownloadService;
+  final Map<String, double> progress =
+      service?.downloadProgress.value ?? const <String, double>{};
+  final Map<String, DownloadTaskStats> stats =
+      service?.downloadStats.value ?? const <String, DownloadTaskStats>{};
+  return <DownloadTaskEntry>[
+    for (final AnimeDownloadPlan plan in plans.reversed)
+      animeDownloadTaskEntry(
+        plan: plan,
+        progress: progress[plan.id],
+        stats: stats[plan.id],
+        builder: _summaryOnlyTaskCard,
+      ),
+  ];
+}
+
+Widget _summaryOnlyTaskCard(BuildContext _) => const SizedBox.shrink();
 
 /// 合集名 / 关系边标题常带刮削附加的年份后缀（`FX戦士くるみちゃん (2026)`），
 /// AniList 搜索对整串字面匹配，带了后缀就 0 条（反馈 4Np5-EyJgE）。预填搜番词
@@ -3292,9 +3324,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 title: plan.seriesTitle.isEmpty
                     ? plan.torrentTitle
                     : plan.seriesTitle,
-                subtitle: plan.torrentTitle == plan.seriesTitle
-                    ? null
-                    : plan.torrentTitle,
+                subtitle: animeDownloadPlanSubtitle(plan),
                 status: plan.status == AnimeDownloadPlan.statusImported
                     ? t.download_task_status_completed
                     : plan.status == AnimeDownloadPlan.statusFailed

@@ -24,7 +24,7 @@
 
 | แพลตฟอร์ม | สถานะ | หมายเหตุ |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) ขึ้นไป |
+| Android | ✅ | Android 8.0 (API 26) ขึ้นไป |
 | Windows | ✅ | การ hook ข้อความและเสียงของ galgame ใช้ได้เฉพาะ Windows |
 | macOS | ✅ | เฉพาะ Apple Silicon; ไม่รองรับ Mac แบบ Intel |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | ไม่มีการค้นหาแหล่ง แหล่งออนไลน์ และศูนย์ดาวน์โหลด (ตามแนวทางของ App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ดาวน์โหลดรุ่นล่าสุดได้จาก[เว็บไซต์ Fushi](https://fushi.moe/) — มี Android APK, ตัวติดตั้ง Windows และบิลด์ macOS (เฉพาะ Apple Silicon; ไม่รองรับ Mac แบบ Intel) ส่วน iOS ติดตั้งผ่าน [TestFlight](https://testflight.apple.com/join/j88d69jx) Linux ยังไม่มีรุ่นแอปที่สร้างไว้ล่วงหน้า ให้สร้างจากซอร์สโค้ดเอง Fushi Server แบบ headless เผยแพร่แยกต่างหากที่ [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)
 
-> ต้องใช้ Android 7.0 (API 24) ขึ้นไป
+> ต้องใช้ Android 8.0 (API 26) ขึ้นไป
 
 ## การสร้าง
 

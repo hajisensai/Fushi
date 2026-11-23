@@ -10,14 +10,24 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
   TtsReadAlong? get _ttsReadAlong =>
       TtsReadAlong.forController(_audiobookController);
 
+  /// 本书朗读的作品身份（书键 + 系列 + 本书语言），声音按它记（[TtsMediaVoices]）。
+  Future<TtsMediaVoiceScope> _ttsMediaVoiceScope() => resolveTtsMediaVoiceScope(
+    appModel,
+    widget.bookKey,
+    language: _contentLanguage,
+  );
+
+  /// 本书朗读用的默认声音：本书 → 系列 + 语言 → 全局使用中。
+  Future<TtsMediaVoice?> _ttsMediaVoice() async =>
+      _ttsServices.voiceForMedia(await _ttsMediaVoiceScope());
+
   /// 没挂有声书时听书入口（顶栏按钮 / 快捷键 B / 底栏）弹的选择。
   Future<void> _openListenEntry() async {
     if (!_moduleVisibility.isEnabled(ModuleId.listening)) return;
     final TtsServices tts = _ttsServices;
     await tts.seedBuiltinVoiceIfUnset();
+    final TtsMediaVoice? voice = await _ttsMediaVoice();
     if (!mounted) return;
-    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
-        tts.activeVoice();
     final bool hasResume = tts.store.resumeFor(widget.bookKey) != null;
     final _ListenEntryChoice? choice = await _withStudyClockPaused(
       () => showFushiChoiceDialog<_ListenEntryChoice>(
@@ -109,42 +119,62 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
   static String _ttsVoiceName(TtsVoicePreset preset) =>
       preset.name.isEmpty ? ttsProviderLabel(preset.providerId) : preset.name;
 
-  /// 朗读声音设置页。朗读进行中时，回来后把「使用中」的声音应用到正在进行的
+  /// 朗读声音设置页。朗读进行中时，回来后把本书该用的声音应用到正在进行的
   /// 朗读（在设置页里换了声音 / 改了参数，回来就生效，不必停掉重开）。
   Future<void> _openTtsVoiceSettings() async {
     await _withStudyClockPaused(
       () => openTtsVoiceSettingsPage(context, _ttsServices),
     );
     if (!mounted || _ttsReadAlong == null) return;
-    await _applyActiveTtsVoiceToReading();
+    await _applyMediaTtsVoiceToReading();
   }
 
-  /// 朗读中快速切换声音（播放条 / 有声书面板的声音入口）：选中即设为使用中并
-  /// 热切换；「朗读声音」项进设置页。与其它音频模态一样经共享边界：先收起本页
-  /// 选区 / 操作条、暂停学习时钟，再弹对话框。
+  /// 朗读中快速切换声音（播放条 / 有声书面板的声音入口）：选中的声音记到本书
+  /// （有系列记到「系列 + 本书语言」）并热切换；「使用默认声音」清掉本书的声音；
+  /// 「朗读声音」项进设置页。与其它音频模态一样经共享边界：先收起本页选区 /
+  /// 操作条、暂停学习时钟，再弹对话框。
   Future<void> _openTtsVoiceQuickSwitch() async {
     final TtsServices tts = _ttsServices;
+    final TtsMediaVoiceScope scope = await _ttsMediaVoiceScope();
+    if (!mounted) return;
     final TtsVoiceQuickSwitchChoice? choice = await _withStudyClockPaused(
-      () => showTtsVoiceQuickSwitch(context, tts),
+      () => showTtsVoiceQuickSwitch(context, tts, scope: scope),
     );
     if (choice == null || !mounted) return;
-    final String? presetId = choice.presetId;
-    if (presetId == null) {
+    if (choice.isManage) {
       await _openTtsVoiceSettings();
       return;
     }
-    await tts.store.setActivePresetId(presetId);
+    await applyTtsVoiceQuickSwitchChoice(tts, choice, scope: scope);
     if (!mounted) return;
-    await _applyActiveTtsVoiceToReading();
+    await _applyMediaTtsVoiceToReading();
+    if (!mounted) return;
+    await _noteStudioNarrationVoice();
   }
 
-  /// 把「使用中」的声音应用到正在进行的朗读：能热切换就从当前句句首换声音续播；
-  /// 现有分句放不下新引擎的长度上限时，用新声音从当前句重起朗读会话。
-  Future<void> _applyActiveTtsVoiceToReading() async {
+  /// 制作台给本书（或系列）的旁白配过声音时，旁白与没标说话人的句子一直用那个
+  /// 声音（选角表优先于朗读默认声音），快速切换换的只是其余部分——提示一句，
+  /// 免得以为没换成。
+  Future<void> _noteStudioNarrationVoice() async {
+    final TtsReadAlong? readAlong = _ttsReadAlong;
+    if (readAlong == null || !readAlong.isMultiVoice) return;
+    final TtsCastBundle bundle = await loadTtsCastBundle(
+      appModel,
+      widget.bookKey,
+    );
+    if (!mounted) return;
+    if (bundle.cast.voiceOf(kTtsNarrator) == null) return;
+    FushiToast.show(msg: t.audiobook_tts_voice_narration_from_studio);
+  }
+
+  /// 把本书该用的声音（本书 → 系列 + 语言 → 全局使用中）应用到正在进行的朗读：
+  /// 能热切换就从当前句句首换声音续播；现有分句放不下新引擎的长度上限时，用新
+  /// 声音从当前句重起朗读会话。
+  Future<void> _applyMediaTtsVoiceToReading() async {
     final TtsReadAlong? readAlong = _ttsReadAlong;
     if (readAlong == null) return;
-    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
-        _ttsServices.activeVoice();
+    final TtsMediaVoice? voice = await _ttsMediaVoice();
+    if (!mounted || !identical(readAlong, _ttsReadAlong)) return;
     if (voice == null) {
       FushiToast.show(
         msg: t.audiobook_tts_no_voice,
@@ -234,12 +264,16 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
     FushiToast.show(msg: t.audiobook_tts_preparing);
     final TtsReadAlong readAlong;
     try {
+      final TtsMediaVoice? voice = await _ttsMediaVoice();
       readAlong = await TtsReadAlong.start(
         session: session,
         services: _ttsServices,
         book: book,
         info: info,
         startPoint: at ?? (resume ? TtsStartAtResume(fallback: here) : here),
+        voice: voice == null
+            ? null
+            : (preset: voice.preset, descriptor: voice.descriptor),
         autoplay: autoplay,
         // 制作台给角色配过声音的书（含系列里记住的声音）：朗读也按角色换声音。
         cast: (await loadTtsCastBundle(appModel, widget.bookKey)).cast,

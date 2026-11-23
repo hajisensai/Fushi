@@ -2046,7 +2046,6 @@ class _Importer {
     required bool update,
     bool restored = false,
   }) async {
-    if (!isNew && !update) return;
     final String deck = _deckOf[c.homeDeck] ?? store.defaultDeckId;
     // 暂停属于排程（Anki 不含排程时整卡 schedule_as_new，暂停一并清掉）。
     final bool suspended = c.queue == -1;
@@ -2064,24 +2063,30 @@ class _Importer {
     // 缓存行与修改记录在块开头一次预读（[_prefetchExisting]）。
     final SrsCardCacheRow? row = pre.cards[cardId];
     if (row == null) return;
-    // 本机在来源卡片最后修改之后改过的（用户在 Fushi 里挪过牌组 / 暂停过）不覆盖：按这个键的
-    // 修改记录时刻与 Anki 卡片 mod 比，新的赢（同 Anki 导入对已有卡片的「较新时更新」）。
-    // 以前笔记内容一更新就无条件改回 Anki 的牌组 / 暂停状态（BUG-3554）。
+    // 本机已有的卡**不随重导换牌组**（同 Anki 导入：已存在的卡跳过，只更新笔记内容）。以前「较新时
+    // 更新」也把卡挪进来源牌组，判据只看这张卡自己的牌组修改记录：用户改的是牌组名 / 父牌组（卡没有
+    // 牌组记录）、或新版包换了牌组名时，来源牌组认不出、另建一个同源牌组，旧牌组里的同源卡被整批
+    // 挪过去；用户把这个「重复」牌组连卡删掉，旧牌组的卡和笔记跟着全没了（BUG-5274）。
+    // 唯一例外是恢复的笔记：本机那次挪动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
+    final bool moveDeck = restored && row.deckId != deck;
+    if (!restored && row.deckId != deck) report.cardsKeptInDeck++;
+    final bool syncSuspend =
+        update && withSuspend && row.suspended != suspended;
+    if (!moveDeck && !syncSuspend) return;
+    // 暂停：本机在来源卡片最后修改之后改过的（用户在 Fushi 里暂停 / 取消暂停过）不覆盖：按这个键的
+    // 修改记录时刻与 Anki 卡片 mod 比，新的赢。以前笔记内容一更新就无条件改回 Anki 的暂停状态（BUG-3554）。
     final SrsEntityEdits edits =
         pre.cardEdits[cardId] ??
         await store.entityEdits(SrsEntityKind.card, cardId);
     final int sourceMs = c.mod * 1000;
-    // 恢复的笔记不比：本机那次改动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
+    // 恢复的笔记不比（同上，回到来源状态）。
     bool localNewer(String key) =>
         !restored && _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
     // 同 moveCard / setSuspended，但攒进本批（以前每个键各开一个事务）。
     _pending.addAll(
       store.newEditDrafts(SrsEntityKind.card, cardId, <String, Object?>{
-        if (row.deckId != deck && !localNewer(SrsFieldKeys.cardDeck))
-          SrsFieldKeys.cardDeck: deck,
-        if (withSuspend &&
-            row.suspended != suspended &&
-            !localNewer(SrsFieldKeys.suspended))
+        if (moveDeck) SrsFieldKeys.cardDeck: deck,
+        if (syncSuspend && !localNewer(SrsFieldKeys.suspended))
           SrsFieldKeys.suspended: suspended,
       }, current: edits),
     );

@@ -7,6 +7,6 @@
     3. `_importCardFlags`（`:2080-2081`）对已有卡：`row.deckId != deck && !localNewer(cardDeck)` 就写 `cardDeck = <新牌组>`。用户只是改了**牌组**名 / 父牌组，卡片自身没有 `cardDeck` 修改记录，`localNewer` 恒为 false → 旧牌组里每张同源卡都被挪进新牌组，旧牌组变空。
     4. 用户删新牌组时选了连卡删除：`SrsDbStore.deleteDeck(deleteCards: true)`（`packages/fushi_engine/lib/srs/srs_db_store.dart:4014`，内核 `deck_delete`）删掉「只在这个子树里有卡」的笔记——此刻所有同源笔记的卡都在新牌组里，于是整批笔记被删，旧牌组「卡片和笔记都没有了」。
   - 与 Anki 不一致（推测，按 Anki 新导入器 `rslib/src/import_export/package/apkg/import/cards.rs` 的行为：已存在的卡跳过、不改所在牌组，只更新笔记内容）：Anki 里同样的操作旧牌组不受影响。BUG-3554 只把「无条件改回来源牌组」收成「按 mod 比较」，没覆盖「本机改的是牌组本身而不是卡」这一情形。
-- **[ ] ① 未修复** — 修复方向（待实现方定）：已有卡的所在牌组不随重导改动（对齐 Anki），或至少在来源牌组被判为「新建 / 改名的同源牌组」时不挪已有卡；导入报告里写明「N 张已有卡留在原牌组」。删牌组前打的还原点（`deleteDeck` 注释 §10.2）可帮已中招的用户找回。
-- **[ ] ② 未加自动化测试** — 应在 `fushi_engine` 的 apkg 导入测试里加：导入 → 改牌组名 / 挪父牌组 → 再导入 mod 更新的同 guid 包 → 断言已有卡仍在原牌组、删新牌组（deleteCards）不删笔记。
+- **[x] ① 已修复** — 对齐 Anki：本机已有的卡**不随重导换牌组**（`srs_apkg_import.dart` `_importCardFlags`）。只有恢复的笔记（本机删过、这次导回）的卡回到来源牌组；暂停状态仍按 BUG-3554 的「较新时更新」。来源牌组认不出时照旧另建同源牌组（同 Anki 按名认牌组），但它只收新笔记的卡，删掉它不会波及旧牌组。导入报告新增「已有卡片留在本机原来的牌组：N 张」（`SrsImportReport.cardsKeptInDeck`，i18n `srs_import_report_cards_kept_deck`）。取舍：「从 Anki 再迁一次」不再同步用户在 Anki 里挪过牌组的已有卡（Anki 自己的导入也不同步）。已中招的用户可用删牌组前内核打的还原点（`deleteDeck` §10.2）找回。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/apkg/srs_apkg_import_test.dart`「重导新版包：牌组改过名 / 挪过父牌组时已有卡留在原牌组，删掉新建的同源牌组不删笔记（BUG-5274）」：改名、挪到自建父牌组下两种，来源笔记与卡片 mod 都更新的最坏情形，断言卡不换牌组、`cardsKeptInDeck == 2`、`deleteDeck(新牌组, deleteCards: true)` 返回空且笔记未删；BUG-3554 测试的牌组断言随之改为「来源卡片更新也不换牌组」。
 - **备注**：同根因反馈 X5FYYdCXXm、Z8uKJRBeSD。

@@ -15,7 +15,7 @@ class AndroidPermissionService implements PlatformPermissionService {
   /// `SDK_INT < VERSION_CODES.R -> PERMISSION_STATUS_RESTRICTED`），
   /// 而 `isGranted` 只在 `granted` 时为真，于是旧系统上该谓词恒假。
   ///
-  /// 旧系统（API 24~29）上真正管辖外部存储读写的是 `READ/WRITE_EXTERNAL_STORAGE`，
+  /// 旧系统（API 26~29）上真正管辖外部存储读写的是 `READ/WRITE_EXTERNAL_STORAGE`，
   /// 也就是 `Permission.storage`。查询侧和申请侧必须按 SDK 版本选**同一个**权限，
   /// 否则「问的」和「要的」不是同一件事——那正是 BUG-1213 的根因形状。
   static const int _manageExternalStorageMinSdk = 30;

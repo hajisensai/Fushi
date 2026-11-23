@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 
@@ -53,7 +54,7 @@ void main() {
     });
   });
 
-  test('只有改读法的动作才触发单句重生成', () {
+  test('只有改读法 / 演法的动作才触发单句重生成', () {
     expect(
       <MangaLineEditAction>[
         for (final MangaLineEditAction a in MangaLineEditAction.values)
@@ -62,6 +63,8 @@ void main() {
       <MangaLineEditAction>[
         MangaLineEditAction.speaker,
         MangaLineEditAction.kind,
+        MangaLineEditAction.emotion,
+        MangaLineEditAction.tone,
         MangaLineEditAction.say,
         MangaLineEditAction.clearSay,
       ],
@@ -100,6 +103,28 @@ void main() {
       expect(toned.copyWith(speaker: 'B').intensity, 40);
       // 没有语气时给强度也不留下孤立的强度。
       expect(plain.copyWith(intensity: 50).intensity, isNull);
+    });
+
+    test('语气说明：去空白后写入、空串清掉、没变返回 null；摘要带上语气说明', () {
+      final MangaScriptLine? toned = mangaLineWithTone(plain, '  おずおずと ');
+      expect(toned?.tone, 'おずおずと');
+      expect(mangaLineWithTone(toned!, 'おずおずと'), isNull);
+      expect(mangaLineWithTone(toned, '')!.tone, isNull);
+      expect(mangaLineWithTone(plain, '   '), isNull);
+      expect(mangaLineToneLabel(plain), isNull);
+      expect(mangaLineToneLabel(toned), 'おずおずと');
+      final MangaScriptLine both = toned.copyWith(
+        emotion: CastEmotion.sadness,
+        intensity: 60,
+      );
+      expect(
+        mangaLineToneLabel(both),
+        '${mangaEmotionLabel(CastEmotion.sadness)} 60 · おずおずと',
+      );
+      expect(
+        mangaLineEmotionLabel(both),
+        '${mangaEmotionLabel(CastEmotion.sadness)} 60',
+      );
     });
 
     test('强度输入：空 / 非整数为 null，越界夹到范围', () {

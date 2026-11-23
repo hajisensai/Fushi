@@ -36,6 +36,8 @@ import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
+    show mediaServerItemKey;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 媒体服务器入库条目的重开规格（落 `VideoBooks.streamSpecJson`）。
@@ -115,6 +117,16 @@ MediaServerLibraryWork? mediaServerWorkOfRow(VideoBookRow row) {
   );
   if (spec == null) return null;
   return (serverId: spec.serverId, workId: spec.workId ?? spec.itemId);
+}
+
+/// [row] 若是媒体服务器入库行，返回它那一集的条目键（[mediaServerItemKey]）；否则
+/// null。首页「继续」区与侧栏首页速览据此让已入库的服务器条目让位给本地卡。
+String? localMediaServerItemKeyOfVideo(VideoBookRow row) {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  return spec == null ? null : mediaServerItemKey(spec.serverId, spec.itemId);
 }
 
 /// 一部作品在媒体库里的状态：已入库的叶子 id（有 `media-server://` 行的）。
