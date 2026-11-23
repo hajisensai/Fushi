@@ -31,6 +31,8 @@ const Map<String, String> _notRouted = <String, String>{
       'covered: fushi_cli profile import（/api/admin/profiles/import）',
   'importAndSwitchProfile':
       'covered: fushi_cli profile import + profile activate',
+  'pickAndOpenMangaAudioPackageImport':
+      'covered: fushi_cli tts import-package（tts.manga.import-package，界面版只多一步选文件再开导入页）',
   'importFromDirectory':
       'covered: fushi_cli dict import（/api/admin/dictionaries/import）',
   'importFromFile':
