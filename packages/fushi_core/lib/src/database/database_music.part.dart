@@ -893,7 +893,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
   /// [snapshot] 是播放项快照 + 播放来源（v139）：在线 / 服务器曲目不进曲库，最近播放
   /// 只能靠它显示与重播。
   ///
-  /// 写入守门（BUG-5267）：快照里的路径 / 封面 / 来源封面先过 [scrubMusicPersistedUrl]——
+  /// 写入守门（BUG-5290）：快照里的路径 / 封面 / 来源封面先过 [scrubMusicPersistedUrl]——
   /// 带账号凭据的服务器地址换成身份占位或丢掉，凭据绝不落库（app 侧已按服务器身份写占位，
   /// 这里兜住任何漏网的调用方）。
   Future<int> startMusicPlayEvent({
@@ -930,7 +930,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
     ),
   );
 
-  /// 清洗播放流快照里带账号凭据的服务器地址（BUG-5267）：`path` / `cover_path` /
+  /// 清洗播放流快照里带账号凭据的服务器地址（BUG-5290）：`path` / `cover_path` /
   /// `source_cover` 里凡是带凭据的 http(s) 地址，按 [scrubMusicPersistedUrl] 换成身份占位
   /// （认不出曲目 / 封面 id 的置 NULL）。v172 迁移、备份恢复 / 合并导入之后各跑一次；
   /// 幂等，只扫 http(s) 开头的行。返回改写的行数。

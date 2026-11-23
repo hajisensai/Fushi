@@ -47,7 +47,7 @@ typedef MusicServerLocalCopyLookup =
 MusicServerLocalCopyLookup? musicServerLocalCopyLookup;
 
 /// 一首服务器曲目 → 播放项。路径是 HTTP 流地址（带账号凭据，只活在内存里；落库只用
-/// [MusicPlayItem.serverTrack] 这份身份，BUG-5267）；响度取服务器给的
+/// [MusicPlayItem.serverTrack] 这份身份，BUG-5290）；响度取服务器给的
 /// （[MusicServerTrack.loudness]，没给时起播期按 [MusicPlayItem.serverTrack] 补查）；源属性取
 /// 服务器报的（转码时取转码后的：
 /// 信号路径面板据此不把转码流判 bit-perfect）。

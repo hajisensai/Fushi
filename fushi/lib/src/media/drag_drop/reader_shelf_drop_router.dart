@@ -302,7 +302,14 @@ class _ReaderShelfDropActions {
       context: context,
       db: appModel.database,
       paths: paths,
-      mangaEnabled: appModel.moduleVisibility.isEnabled(ModuleId.manga),
+      importMangaDirectories:
+          appModel.moduleVisibility.isEnabled(ModuleId.manga)
+          ? (List<String> directories) => showMangaDirectoriesImportDialog(
+              context: context,
+              db: appModel.database,
+              directories: directories,
+            )
+          : null,
     );
     if (imported && context.mounted) onLibraryChanged();
   }

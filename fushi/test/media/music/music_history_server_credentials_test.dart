@@ -19,7 +19,7 @@ import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 
-/// BUG-5267：最近播放快照（`music_play_events`）曾把服务器曲目带凭据的流地址 / 封面地址原样
+/// BUG-5290：最近播放快照（`music_play_events`）曾把服务器曲目带凭据的流地址 / 封面地址原样
 /// 落库（Jellyfin `api_key=<access token>`、Subsonic `u` + `t` + `s` / `apiKey`）。
 ///
 /// 钉死：落库只有身份占位；重播时由当前配置的服务器现算地址（换了 token 用新的）；没配那台

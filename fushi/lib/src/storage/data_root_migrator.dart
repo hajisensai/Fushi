@@ -59,6 +59,7 @@ class DataRootMigrationTarget {
     required this.documentsRoot,
     required this.supportRoot,
     required this.dataRootPrefValue,
+    this.androidDocumentsLocation,
   });
 
   /// 普通自定义数据根：两个根都落在 [dataRootPath] 下（TODO-935 的原语义）。
@@ -88,6 +89,21 @@ class DataRootMigrationTarget {
     dataRootPrefValue: null,
   );
 
+  /// Android：只搬书库根（内部 `app_flutter` ↔ 外部 `Android/data/<包名>/files/data`），
+  /// 数据库留在原地（[supportRoot] = 当前 support 根，引擎按 BUG-1188 的「support 不搬」
+  /// 处理）。[location] 是提交时要写进 [AppPaths.androidDocumentsLocationPrefKey] 的值。
+  factory DataRootMigrationTarget.androidDocuments({
+    required String documentsRoot,
+    required String supportRoot,
+    required String location,
+  }) => DataRootMigrationTarget._(
+    pickedPath: documentsRoot,
+    documentsRoot: Directory(documentsRoot),
+    supportRoot: Directory(supportRoot),
+    dataRootPrefValue: null,
+    androidDocumentsLocation: location,
+  );
+
   /// 用户在目录选择器里真正挑中的路径。校验（自我迁移 / 安装目录）按它判定，与用户看到的
   /// 那个目录一致。
   final String pickedPath;
@@ -102,14 +118,20 @@ class DataRootMigrationTarget {
   /// 提交时要写进 [AppPaths.dataRootPrefKey] 的值；null = 默认位置（清掉该 pref）。
   final String? dataRootPrefValue;
 
+  /// 非 null = Android 书库位置迁移（见 [DataRootMigrationTarget.androidDocuments]），
+  /// 提交时写 Android 位置锚点而不是 `data_root`。
+  final String? androidDocumentsLocation;
+
   /// 本次目标是否是「默认位置」（= 与全新安装同形）。
-  bool get isDefaultLocation => dataRootPrefValue == null;
+  bool get isDefaultLocation =>
+      dataRootPrefValue == null && androidDocumentsLocation == null;
 
   @override
   String toString() =>
       'DataRootMigrationTarget(picked: $pickedPath, '
       'documents: ${documentsRoot.path}, support: ${supportRoot.path}, '
-      'dataRootPref: $dataRootPrefValue)';
+      'dataRootPref: $dataRootPrefValue, '
+      'androidLocation: $androidDocumentsLocation)';
 }
 
 /// BUG-1188：把用户挑的目录 [pickedRoot] 解析成 [DataRootMigrationTarget]。

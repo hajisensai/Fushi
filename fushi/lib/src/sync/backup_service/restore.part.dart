@@ -382,14 +382,7 @@ class BackupRestoreService {
         as int;
   }
 
-  /// Restores [_deviceLocalTables] from [bakPath] (this device's pre-import
-  /// snapshot) into the freshly-overwritten DB in [dbDirectory] (BUG-816). The
-  /// backup carries these tables EMPTY by design (`_stripCredentials`), so
-  /// without this the overwrite would wipe this device's LAN pairings and sync
-  /// baselines. Runs inline during import while both DBs are at the current
-  /// schema (bak is a copy of the live DB), so `SELECT *` columns align. No-op
-  /// (logged) if bak is gone.
-  /// 恢复进来的库：清洗播放流快照里带账号凭据的服务器地址（BUG-5267，
+  /// 恢复进来的库：清洗播放流快照里带账号凭据的服务器地址（BUG-5290，
   /// [FushiDatabase.scrubMusicPlayEventCredentials]，幂等）。
   /// 低层调用方换进来的不是 SQLite 库（测试夹具）时没有可清洗的行，跳过。
   static Future<void> _scrubRestoredMusicCredentials(String dbDirectory) async {
@@ -403,6 +396,13 @@ class BackupRestoreService {
     }
   }
 
+  /// Restores [_deviceLocalTables] from [bakPath] (this device's pre-import
+  /// snapshot) into the freshly-overwritten DB in [dbDirectory] (BUG-816). The
+  /// backup carries these tables EMPTY by design (`_stripCredentials`), so
+  /// without this the overwrite would wipe this device's LAN pairings and sync
+  /// baselines. Runs inline during import while both DBs are at the current
+  /// schema (bak is a copy of the live DB), so `SELECT *` columns align. No-op
+  /// (logged) if bak is gone.
   static Future<bool> _reapplyDeviceLocalTablesFromBak(
     String dbDirectory,
     String bakPath,
@@ -1323,7 +1323,7 @@ class BackupRestoreService {
         );
       }
 
-      // 2d) BUG-5267：备份里的播放流快照可能带着旧版本落的服务器凭据（Jellyfin
+      // 2d) BUG-5290：备份里的播放流快照可能带着旧版本落的服务器凭据（Jellyfin
       //     api_key、Subsonic u + t + s / apiKey）。打开时迁移（< v172）会清洗一遍；
       //     同版本 / 外来拼出的备份迁移不跑，这里不论版本再清洗一次。
       await _scrubRestoredMusicCredentials(dbDirectory);

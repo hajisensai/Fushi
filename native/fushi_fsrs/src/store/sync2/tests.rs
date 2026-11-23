@@ -4310,7 +4310,7 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
             false,
         )
         .unwrap();
-    let anchor = json!({"o": 12, "b": "boot"});
+    let anchor = json!({"s": 12, "t": 1, "e": 11});
     let r: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_commit_persisting(

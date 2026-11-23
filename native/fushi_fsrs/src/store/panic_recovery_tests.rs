@@ -109,7 +109,7 @@ fn after_a_panicking_command_through_the_c_abi_writes_still_work() {
     };
     test_panic::arm(test_panic::BEFORE_RELEASE);
     let (rc, e, _) =
-        sync2(json!({"profile": "p", "op": "local_anchor", "anchor": {"o": 5, "b": "boot"}}));
+        sync2(json!({"profile": "p", "op": "local_anchor", "anchor": {"s": 5, "t": 1, "e": 4}}));
     assert_eq!(rc, super::ffi::STORE_PANIC, "{e}");
     assert!(!test_panic::armed(), "the injected panic fired");
     // 半截写入回滚了：本机状态行没建出来。
@@ -128,7 +128,7 @@ fn after_a_panicking_command_through_the_c_abi_writes_still_work() {
         assert_eq!(rc, 0, "write after the panic failed: {e}");
     }
     let (rc, e, _) =
-        sync2(json!({"profile": "p", "op": "local_anchor", "anchor": {"o": 6, "b": "boot"}}));
+        sync2(json!({"profile": "p", "op": "local_anchor", "anchor": {"s": 6, "t": 1, "e": 5}}));
     assert_eq!(rc, 0, "a command after the panic failed: {e}");
     // 以前 Drift 执行器的语句入口（mode 0–3）已经没有了：panic 之后也不会多出一个能写的入口。
     for sql in [insert("drift").as_str(), "BEGIN TRANSACTION"] {

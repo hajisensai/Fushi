@@ -2855,10 +2855,13 @@ class AnotherPopupPart {
       expect(section, isNot(contains('height: 64')));
     }
 
+    final String progressCardSource = File(
+      'lib/src/media/import/import_progress_card.dart',
+    ).readAsStringSync();
     final String progressCard = _sectionSource(
-      bookImportSource,
+      progressCardSource,
       'class ImportProgressCard',
-      bookImportSource.length,
+      progressCardSource.length,
     );
     expect(progressCard, contains('FushiCard('));
     expect(progressCard, contains('context.fushiType'));

@@ -60,7 +60,7 @@ class MusicPlayItem {
 
   /// 服务器曲库曲目（Jellyfin / Subsonic / Apple Music / YouTube 经 `musicServerPlayItem` 建的
   /// 项，含离线副本）的服务器身份：[path] / [coverPath] 是带账号凭据的地址（或本机副本路径）、
-  /// [trackUid] 是哈希，都推不回是哪台服务器的哪一首。最近播放快照只落这份身份（BUG-5267），
+  /// [trackUid] 是哈希，都推不回是哪台服务器的哪一首。最近播放快照只落这份身份（BUG-5290），
   /// 重播时由当前配置的服务器现算地址；播放上报、服务器歌词、起播期补查响度、生成字幕取流都按它
   /// 找回当前配置的服务器。其余曲目为 null。
   final MusicServerTrackRef? serverTrack;
