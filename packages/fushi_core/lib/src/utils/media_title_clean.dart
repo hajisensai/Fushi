@@ -56,7 +56,13 @@ final RegExp importedTitleExtensionPattern = RegExp(
 );
 
 /// CRC 本体：恰好 8 位十六进制（大小写都认）。用来拼各处自己的正则。
-const String kCrcHexSource = '[0-9a-fA-F]{8}';
+///
+/// 排除 `YYYYMMDD` 形态的日期（19xx / 20xx 年、合法月日）：电视录像常以
+/// `番組名 [20240315]` 区分各期，日期是标题的一部分，删了各期就同名（写库清洗不可
+/// 回滚）。代价是恰好长成日期的全数字 CRC 去不掉——只少清一点，不会误删。
+const String kCrcHexSource =
+    '(?!(?:19|20)[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])'
+    '(?![0-9a-fA-F]))[0-9a-fA-F]{8}';
 
 /// 一个 CRC 标签：`[xxxxxxxx]` 或 `(xxxxxxxx)`（括号成对）。
 const String kCrcTagSource = '(?:\\[$kCrcHexSource\\]|\\($kCrcHexSource\\))';

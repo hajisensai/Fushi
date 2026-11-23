@@ -77,13 +77,15 @@ LibraryCurator libraryCuratorFor(OpContext context) {
   final LibraryCurator? cached = _shared;
   if (cached != null && identical(_sharedFor, context)) return cached;
   _sharedFor = context;
-  return _shared = buildAppLibraryCurator(
+  final LibraryCurator built = _shared = buildAppLibraryCurator(
     db: context.appModel.database,
     prefs: context.appModel.prefsRepo,
     invoker: buildAppInProcessOpInvoker(context),
     aiModuleEnabled: () => isAiModuleEnabled(context.appModel.moduleVisibility),
     uiLocaleTag: () => context.appModel.appLocale.toLanguageTag(),
   );
+  relayLibraryCuratorRuns(built);
+  return built;
 }
 
 /// 根组件登记操作上下文后调（`main.dart`）：让自动路径与设置页拿得到编排器。
@@ -97,4 +99,5 @@ void registerAppLibraryCurator() => registerLibraryCuratorProvider(() {
 void debugSetAppLibraryCurator(LibraryCurator? curator, OpContext? context) {
   _shared = curator;
   _sharedFor = context;
+  relayLibraryCuratorRuns(curator);
 }

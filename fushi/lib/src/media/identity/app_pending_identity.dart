@@ -85,10 +85,9 @@ String pendingIdentityRetryOutcomeText(LibraryCurateRun run) {
 
 /// 待确认提醒条的刷新信号：库管家每趟（含单条重试、撤销）结束 + 宿主自己 [ping]。
 class PendingIdentityRefresh {
-  PendingIdentityRefresh({
-    LibraryCurator? Function() curator = appLibraryCurator,
-  }) {
-    _sub = curator()?.runFinished.listen((_) => ping());
+  /// [runFinished] 默认是进程级转发流（跟着当前编排器，重建后不失效）；测试可注入。
+  PendingIdentityRefresh({Stream<LibraryCurateRun>? runFinished}) {
+    _sub = (runFinished ?? appLibraryCuratorRunFinished).listen((_) => ping());
   }
 
   final StreamController<void> _controller = StreamController<void>.broadcast();

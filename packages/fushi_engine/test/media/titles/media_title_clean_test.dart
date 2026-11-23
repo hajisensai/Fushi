@@ -58,6 +58,17 @@ void main() {
       expect(cleanImportedTitle('Title (679fb7c9)'), 'Title');
       expect(cleanImportedTitle('A [11111111] (22222222)'), 'A');
       expect(cleanImportedTitle('Title [679fb7c]'), 'Title [679fb7c]');
+    });
+
+    test('8 位日期 YYYYMMDD 不是 CRC（录像各期靠它区分）', () {
+      expect(cleanImportedTitle('番組名 [20240315].ts'), '番組名 [20240315]');
+      expect(cleanImportedTitle('ニュース (20240316).mp4'), 'ニュース (20240316)');
+      expect(cleanImportedTitle('Show [19991231]'), 'Show [19991231]');
+      expect(isCrcHex('20240315'), isFalse);
+      // 不像日期的全数字 / 含字母的仍是 CRC。
+      expect(cleanImportedTitle('Title [12345678]'), 'Title');
+      expect(cleanImportedTitle('Title [20241399]'), 'Title');
+      expect(cleanImportedTitle('Title [2024031a]'), 'Title');
       expect(cleanImportedTitle('Title [679fb7c90]'), 'Title [679fb7c90]');
       expect(cleanImportedTitle('Title [679fb7cz]'), 'Title [679fb7cz]');
       expect(cleanImportedTitle('Title [679fb7c9) '), 'Title [679fb7c9)');
