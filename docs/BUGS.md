@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4584 条。点号进各自文件。
+> 共 4585 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
 | [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |
 | [BUG-5268](bugs/BUG-5268-windows-display-off-black-screen.md) | 🚧 | 🚧 | windows-display-off-black-screen |
 | [BUG-5263](bugs/BUG-5263-import-dialog-pops-page-above.md) | ✅ | ✅ | import-dialog-pops-page-above |
@@ -210,7 +211,7 @@
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
 | [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
 | [BUG-5084](bugs/BUG-5084-interconnect-client-collection-sections-ignore-host-override.md) | ✅ | ✅ | 互联客户端看 host 合集时分栏不认 host 上的手动分栏 |
-| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
+| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | ✅ | ✅ | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
 | [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | ✅ | ✅ | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
 | [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
 | [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
@@ -334,7 +335,7 @@
 | [BUG-4962](bugs/BUG-4962-bound-session-lookup-switch.md) | ✅ | ✅ | 关掉 host 的「用这台服务器查词典」后，游戏串流 / 视频遥控查词恒无结果 |
 | [BUG-4961](bugs/BUG-4961-ambient-animation-full-refresh-rate-gpu-cost.md) | ✅ | ✅ | 常驻装饰动画按屏幕刷新率逐帧重画：吉祥物光晕 / 主页背景开着时 4K 144 Hz 整窗持续合成，GPU 占用高 |
 | [BUG-4960](bugs/BUG-4960-stats-overview-main-isolate-rust-core.md) | ✅ | ✅ | 统计中心「总览」页签在主 isolate 上有 90～250 ms 的同步段（大库） |
-| [BUG-4959](bugs/BUG-4959-favorite-sentence-change-watch-rereads-on-any-pref-write.md) | 🚧 | 🚧 | 收藏句变更通知靠偏好表整表更新流，任何偏好写入都让播放页重读整串收藏 |
+| [BUG-4959](bugs/BUG-4959-favorite-sentence-change-watch-rereads-on-any-pref-write.md) | ✅ | ✅ | 收藏句变更通知靠偏好表整表更新流，任何偏好写入都让播放页重读整串收藏 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |
 | [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |
