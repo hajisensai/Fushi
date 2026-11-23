@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T22:19:39Z",
+ "generatedAt": "2026-11-23T22:44:25Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
    "unknown": false,
-   "publishedAt": "2026-11-23T22:19:22Z",
-   "testflight": false,
+   "publishedAt": "2026-11-23T22:44:11Z",
+   "testflight": true,
    "baseSeq": 32137,
    "prs": [],
    "direct": [
@@ -36,16 +36,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
+     "state": "ok"
     }
    }
   },
@@ -115,66 +112,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32125,
-   "version": "3.4.0",
-   "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
-   "unknown": false,
-   "publishedAt": "2026-11-23T18:06:08Z",
-   "testflight": true,
-   "baseSeq": 32101,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
-     "subject": "Merge #4315 (claude/review-merge-release-prep-bcbb63) into develop"
-    },
-    {
-     "sha": "55e160e5bc4255de30e515000fbb28b3180440d3",
-     "subject": "Merge #4310 (claude/fb-dict-scan-length) into develop"
-    },
-    {
-     "sha": "f19e4d08b28f44829f9d42f82f4de747d688b0dd",
-     "subject": "Merge #4309 (claude/fb-page-turn-unify) into develop"
-    },
-    {
-     "sha": "0f83d08598a42dc159158887a8e29ec7bab4d36e",
-     "subject": "Merge #4308 (claude/fb-sel-highlight-text-color) into develop"
-    },
-    {
-     "sha": "58c865983c10ca4c49eb9adf12fafa7e3a811cfb",
-     "subject": "Merge #4313 (claude/fb-vocal-separation-toggle) into develop"
-    },
-    {
-     "sha": "308c5e3cf9bc269eef02b660c853951fc4495a32",
-     "subject": "Merge #4312 (claude/fb-episode-picker-stills) into develop"
-    },
-    {
-     "sha": "c1aecae579774d2fc0904af9553e3c04607cef02",
-     "subject": "Merge #4311 (claude/ic-manga-chapter-progress) into develop"
-    },
-    {
-     "sha": "419007fd409edef7a442c7907340cd2862d7a2ff",
-     "subject": "Merge #4306 (claude/infallible-wilbur-694b6f) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574167"
     },
     "windows": {
      "state": "ok"
