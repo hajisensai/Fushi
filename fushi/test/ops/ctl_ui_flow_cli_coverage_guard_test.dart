@@ -98,6 +98,8 @@ const Map<String, String> _notRouted = <String, String>{
   'exportWindowRecording':
       'internal: 制卡管线内部取录制帧拼片段（gal_hook_mining_coordinator），用户入口是 fushi_cli game mine',
   'exportTtsAudiobookM4b': 'pending cli-ui-only-ops-gaps: TTS 有声书导出 M4B',
+  'exportClip':
+      'pending cli-ui-only-ops-gaps: 漫画有声书播放条导出当前句片段视频（MangaReadAloud.exportClip）',
   'importSyncedBookFile': 'pending cli-ui-only-ops-gaps: 阅读历史云端列表里下载单本书',
 };
 

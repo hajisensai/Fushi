@@ -17,6 +17,7 @@
   - 视频：`importIptvChannels`（IPTV 播放列表）、`pickAndApplyVideoFrameCover`（取帧当封面）。
   - 音乐：`importFiles`（歌词可视化素材包导入图片，`LyricVisualizerAssetStore`）。
   - 有声书 / TTS：`exportTranscribedSrt`（转录结果导出 SRT）、`exportTtsAudiobookM4b`（TTS 有声书导出 M4B）。
+  - 漫画有声书：`exportClip`（播放条「导出片段视频」，`fushi/lib/src/media/manga/reader/manga_fushi/read_aloud.part.dart`，9dd3ea1146 / 反馈 pZhONQTAap 新增时没接路由也没登记，develop 单测门红）。现状依赖打开着的阅读器会话（当前框着的句、页图取自会话）；接路由时应改成按 `bookKey + lineId` 取成品音频（`resolveMangaLineAudioClip`）与页图、合成（`synthMangaAudioClipVideo`）到指定输出路径，与界面共用同一条管线。小说有声书的同类导出是私有方法（`reader_fushi/chrome.part.dart` `_exportAudiobookClipFromSelection`），守卫按命名扫不到，同样没有路由，一并补。
   - 阅读历史：`importSyncedBookFile`（云端列表下载单本；云同步对比那条已由 `config run sync.compare_apply` 覆盖，互联远端书库走 `InterconnectDownloadManager` 的那条还没有路由）。
   - 守卫扫不到的非 import/export 命名写操作：音乐**歌单增删改 / 加歌**、歌词搜索没有路由。**歌词单独编辑界面在功能黑名单里**（`docs/agent/feature-blacklist.md`），不做路由。
   - 盘点的局限：守卫按命名扫「搬进 / 搬出」类流程；不叫 import/export/pickAnd 的纯界面写操作要靠按域逐页盘点，每补一个域顺手盘一遍该域页面并补进这里。
