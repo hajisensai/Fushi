@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart';
+import 'package:fushi/src/media/video/metadata/video_local_index_rebuild.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -28,6 +29,11 @@ Future<VideoScrapeCleanupResult> _clearAllCommitted(
   final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
     database: database,
   ).clearAll(mode: mode);
+  // 清理删掉的是全部规范作品——连同本地索引建的本地作品与特典绑定（外键级联）。
+  // 这些是由文件结构推出来的派生状态，立刻按启动回填同一条路径重建：否则 NCOP /
+  // NCED / PV / `SPs` 目录特典在系列墙上各自成卡，要等下次启动或重扫才归回系列
+  // （反馈 fUW6_kx9Rw）。广播放在重建之后，来源页 / 视频库读到的是重建后的库。
+  await reindexLocalVideoSources(database, logSource: 'video.scrape.clearAll');
   videoScrapeCleanupRevision.value += 1;
   // 取证：用户反馈「清理后 NFO 还在」（Feedback 7NBVwW-6Qc）时，日志里要能分清是
   // 选了只清记录、文件被保护（改过 / 路径不安全），还是 ledger 记的路径已不存在。
