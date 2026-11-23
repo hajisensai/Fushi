@@ -22,6 +22,8 @@
 /// 需要关库 + 重启进程，不属于「一个动作按钮」的语义。
 library;
 
+import 'dart:convert';
+
 /// Host 侧可选能力，与 `FushiLibraryHostService` 的大接口分开（同
 /// `InterconnectServiceConfigHost` 的理由：老实现 / 测试 fake 不必跟着实现新方法）。
 abstract interface class InterconnectProfileHost {
@@ -63,3 +65,66 @@ class InterconnectProfileUnavailableException implements Exception {
 
 /// 互联「配置文件」端点路径（host 与 client 共用的唯一字面量）。
 const String kInterconnectProfilePath = '/api/interconnect/profile';
+
+/// host 拒绝配置搬运的原因（wire 值见 [code]，错误响应体是 `{"error": code}`）。
+///
+/// 反馈 G-ebgSnoK8：以前这几种拒绝回的是英文自由文本（`Profile transfer disabled
+/// on host`），client 只能原样拼进「服务端拒绝了这次请求：……」上屏，既没翻译也没
+/// 说该去哪里开开关。改成结构化码，client 按码给出本地化的可操作原因。
+enum InterconnectProfileDenial {
+  /// 会话不是 TLS：整份配置不走明文。
+  httpsRequired('https_required'),
+
+  /// 没带已配对设备的专属 token（共享 token 不收）。
+  peerTokenRequired('peer_token_required'),
+
+  /// host 上「读写本机配置」开关关着（默认关）。
+  disabled('profile_transfer_disabled'),
+
+  /// 开关开着，但 host 眼下没有可交出的配置（见
+  /// [InterconnectProfileHost.exportInterconnectProfile]）。
+  unavailable('profile_unavailable');
+
+  const InterconnectProfileDenial(this.code);
+
+  final String code;
+
+  /// 对应的 HTTP 状态码：「没东西可给」是 409，其余是明确拒绝 403。
+  int get httpStatus => this == unavailable ? 409 : 403;
+
+  static InterconnectProfileDenial? fromCode(Object? raw) {
+    for (final InterconnectProfileDenial d
+        in InterconnectProfileDenial.values) {
+      if (d.code == raw) return d;
+    }
+    return null;
+  }
+}
+
+/// 拒绝响应正文。
+String interconnectProfileDenialBody(InterconnectProfileDenial denial) =>
+    jsonEncode(<String, String>{'error': denial.code});
+
+/// 从错误响应正文里取拒绝原因（不是 JSON / 没有认得的 error 码 → null）。
+InterconnectProfileDenial? parseInterconnectProfileDenialBody(String body) {
+  try {
+    final Object? decoded = jsonDecode(body);
+    if (decoded is Map) {
+      return InterconnectProfileDenial.fromCode(decoded['error']);
+    }
+  } on FormatException {
+    return null;
+  }
+  return null;
+}
+
+/// client 收到 host 的结构化拒绝时抛出，UI 按 [denial] 给出本地化原因。
+class InterconnectProfileRejected implements Exception {
+  const InterconnectProfileRejected(this.denial, {this.statusCode});
+
+  final InterconnectProfileDenial denial;
+  final int? statusCode;
+
+  @override
+  String toString() => 'InterconnectProfileRejected(${denial.code})';
+}
