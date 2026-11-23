@@ -58,6 +58,7 @@ use super::legacy;
 use super::native::Native;
 use super::schema::{self, sql};
 use super::stale::{self, Stale};
+use super::trace;
 use super::truth::Truth;
 use crate::gen4::heritage::fingerprint;
 use crate::gen4::op::Body4;
@@ -747,9 +748,26 @@ pub(crate) fn profile_stages(
         )?,
     }
     drop(old_rows);
-    drop(baseline);
     mark("canonicalPairs");
     canonical_diff.sort_by_key(|d| d.0);
+    // ID 溯源（BUG-5269）：对拍与按规范 ID 比的例子里出现的 ID、别名层验不上的 ID，逐个摊开两侧的行与派生规则。只是
+    // 诊断：读失败记进报告，不让真迁移（同一个函数）因此失败。
+    let unverified = trace::unverified_ids(t, col, opts.examples);
+    if let Some(a) = out.get_mut("aliases") {
+        a["unverifiedExamples"] = match &unverified {
+            Ok(ids) => json!(ids),
+            Err(e) => json!({ "error": e }),
+        };
+    }
+    let mut trace_ids = example_ids(&[&diff, &canonical_diff], opts.examples);
+    trace_ids.extend(unverified.unwrap_or_default());
+    out.insert(
+        "idTrace".into(),
+        trace::id_trace(t, col, &canon, baseline.rows(), &trace_ids)
+            .unwrap_or_else(|e| json!({ "error": e })),
+    );
+    drop(baseline);
+    mark("idTrace");
     let failing = failing || !canonical_diff.is_empty();
     out.insert("canonical".into(), diff_json(&canonical_diff, opts));
     out.insert(
@@ -811,8 +829,9 @@ fn alias_json(a: &AliasCounts) -> Value {
 }
 
 /// 差异的报告形：每类只给条数与前几个例子。默认例子只取行的身份（`notes` / `cards` / `stats` 行的第一列、`tags` 的
-/// 笔记 ID、`media` 的内容哈希），不带笔记内容。卡行与统计行另给「同一身份两侧都有的行按列名的差异计数」与前几行的
-/// 「列: 旧 -> 新」（[compare::column_diffs]；这两类的列不含笔记内容）。
+/// 笔记 ID、`media` 的内容哈希），不带笔记内容。笔记行、卡行与统计行另给「同一身份两侧都有的行按列名的差异计数」与
+/// 前几行的「列: 旧 -> 新」（[compare::column_diffs]；笔记行的内容列默认只报字符数，[Options::full_examples] 时给原文）。
+/// 「为什么对不上」由 `idTrace`（[trace::id_trace]）摊开。
 fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
     let ex = |what: &str, xs: &[String]| -> Vec<String> {
         xs.iter()
@@ -837,7 +856,9 @@ fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
                     "examplesNew": ex(what, new_only),
                 });
                 // 卡行 / 统计行：同一身份两侧都有的，哪几列不同（列全是调度数值与 ID，默认就带）。
-                if let Some(c) = compare::column_diffs(what, old_only, new_only) {
+                if let Some(c) =
+                    compare::column_diffs(what, old_only, new_only, !opts.full_examples)
+                {
                     v["sameIdRows"] = json!(c.rows);
                     v["columns"] = json!(c.columns);
                     v["columnExamples"] = json!(
@@ -932,6 +953,23 @@ fn known_json(k: &Known) -> Value {
         "entries": entries,
         "truncated": total > KNOWN_ENTRIES,
     })
+}
+
+/// 差异例子（每类每侧前 [examples] 行）里出现的 UUID 格，按出现顺序（去重在 [trace::id_trace]）。只取 UUID 格，
+/// 笔记行的内容列不会进报告。
+fn example_ids(diffs: &[&Diff], examples: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for d in diffs {
+        for (what, old, new) in d.iter() {
+            if matches!(*what, "media" | "caches") {
+                continue;
+            }
+            for r in old.iter().take(examples).chain(new.iter().take(examples)) {
+                out.extend(trace::uuids_in_row(r).map(str::to_owned));
+            }
+        }
+    }
+    out
 }
 
 fn ident(what: &str, s: &str) -> String {
@@ -2065,6 +2103,99 @@ pub(crate) mod tests {
         );
         let text = r.to_string();
         assert!(!text.contains("犬"), "examples must not carry note content");
+        // BUG-5269：笔记行也报「哪一列不同」，内容列只报字符数；例子里的笔记在 `idTrace` 里摊开两侧的笔记类型与卡。
+        let notes = p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["what"] == "notes")
+            .unwrap();
+        assert_eq!(notes["sameIdRows"], 1, "{notes:#}");
+        let cols = notes["columns"].as_object().unwrap();
+        assert!(!cols.is_empty(), "{notes:#}");
+        let example = notes["columnExamples"][0].as_str().unwrap();
+        assert!(example.starts_with(N2), "{example}");
+        assert!(
+            example.contains("chars>"),
+            "content columns are redacted: {example}"
+        );
+        assert!(example.contains("(note_type_id NT)"), "{example}");
+        let traced = p["idTrace"]["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["id"] == N2)
+            .unwrap_or_else(|| panic!("{:#}", p["idTrace"]));
+        assert_eq!(traced["oldNote"]["noteType"]["id"], "NT", "{traced:#}");
+        assert_eq!(traced["newNote"]["noteType"]["id"], "NT", "{traced:#}");
+        assert_eq!(traced["found"], true, "{traced:#}");
+        assert!(p["aliases"]["unverifiedExamples"].is_array(), "{p:#}");
+    }
+
+    /// `idTrace` 对卡 ID 的派生反查（BUG-5269）：卡行在的给笔记 / 模板 / 序号与「行 ID 正是由这三者派生」，再在相关笔记
+    /// × 候选模板 × 序号里列出能派生出它的组合；统计行挂的卡、日志索引里挂的卡也摊开。
+    #[test]
+    fn the_id_trace_explains_where_a_card_id_comes_from() {
+        let d = library("g4drytrace");
+        let old = d._dir.0.join("srs.db");
+        let work = d._dir.0.join("work");
+        let caches = BTreeMap::from([(P.to_owned(), cfg())]);
+        let r = run(
+            &old,
+            &work,
+            Options {
+                caches: &caches,
+                batch: 3,
+                keep: true,
+                examples: DEFAULT_EXAMPLES,
+                full_examples: false,
+                stop: &Stop::new(),
+                progress: &mut |_, _| {},
+            },
+        )
+        .unwrap();
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        let conn = schema::open(&work.join(WORK_FILE)).unwrap();
+        let t = Truth::new(&conn);
+        let col = t.binding_of(P).unwrap().unwrap().col;
+        let canon = CanonMap::load(&t, col).unwrap();
+        let c1 = crate::registers::card_id(N1, "t1", 0).unwrap();
+        let log: String = conn
+            .query_row("SELECT log FROM stats WHERE col = ?1 LIMIT 1", [col], |r| {
+                r.get::<_, Ref>(0)
+            })
+            .unwrap()
+            .text();
+        let v = trace::id_trace(
+            &t,
+            col,
+            &canon,
+            None,
+            &[c1.clone(), log.clone(), c1.clone()],
+        )
+        .unwrap();
+        let ids = v["ids"].as_array().unwrap();
+        assert_eq!(ids.len(), 2, "duplicates are traced once: {v:#}");
+        let card = &ids[0];
+        assert_eq!(card["newCard"]["note"]["id"], N1, "{card:#}");
+        assert_eq!(card["newCard"]["template"]["id"], "t1", "{card:#}");
+        assert_eq!(card["newCard"]["ord"], "0", "{card:#}");
+        assert_eq!(card["newCard"]["idFromRow"], true, "{card:#}");
+        let derivations: Vec<&str> = card["derivations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d.as_str().unwrap())
+            .collect();
+        assert!(
+            derivations.contains(&format!("card({N1}, t1 [template of a card row], 0)").as_str()),
+            "{card:#}"
+        );
+        assert!(card["newStatLogs"].as_u64().unwrap() >= 1, "{card:#}");
+        let stat = &ids[1];
+        assert_eq!(stat["newStat"]["card"], c1, "{stat:#}");
+        assert_eq!(stat["newLogCard"], c1, "{stat:#}");
+        assert!(stat.get("derivations").is_none(), "{stat:#}");
     }
 
     /// 协议 3 的缓存重建整次失败（这里：一条笔记身份记录缺 `noteTypeId`，`cache.rs` 文件头「与协议 3 的差别」）：缓存层

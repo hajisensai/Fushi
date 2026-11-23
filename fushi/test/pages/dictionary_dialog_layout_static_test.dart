@@ -446,11 +446,30 @@ void main() {
     // ③ 图标随**三态**切换，状态可一览（BUG-2158）。少一个分支就意味着两个态
     // 共用一个图标 —— 那正是修复前「显式展开」和「继承」长得一模一样的老毛病。
     // 只钉语义不钉排版：dart format 可能把实参折行并补尾逗号。
+    // 状态按分区取（拍板 6uasoIUvSR）：行内按钮与详情分段共用
+    // `_collapseStateInSection`——「汉字」分区读汉字卡的折叠态，其余读释义折叠态。
+    expect(btnSource, contains('_collapseStateInSection(dictionary)'));
+    final int sectionStart = source.indexOf(
+      'DictionaryCollapseState _collapseStateInSection(',
+    );
+    expect(sectionStart, isNonNegative);
+    final String sectionSource = source.substring(
+      sectionStart,
+      source.indexOf(';', sectionStart) + 1,
+    );
     expect(
-      btnSource,
+      sectionSource,
       matches(
         RegExp(
           r'dictionary\.collapseStateFor\(\s*JapaneseLanguage\.instance\s*,?\s*\)',
+        ),
+      ),
+    );
+    expect(
+      sectionSource,
+      matches(
+        RegExp(
+          r'dictionary\.kanjiCardCollapseStateFor\(\s*JapaneseLanguage\.instance\s*,?\s*\)',
         ),
       ),
     );

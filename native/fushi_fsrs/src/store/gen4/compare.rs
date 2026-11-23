@@ -512,6 +512,17 @@ pub(crate) const NOTE_COLS: &[(&str, &str)] = &[
     ("dupe_norm", "dupe_norm"),
     ("source_key", "source_key"),
 ];
+/// [NOTE_COLS] 里装笔记内容（或由内容算出）的列：报告默认不带原文（[column_diffs] 的 `redact`）。
+pub(crate) const NOTE_CONTENT_COLS: &[&str] = &[
+    "term_key",
+    "reading_key",
+    "sort_field",
+    "tags_json",
+    "media_refs",
+    "source_title",
+    "dupe_norm",
+    "source_key",
+];
 pub(crate) const CARD_COLS: &[(&str, &str)] = &[
     ("id", "id"),
     ("note_id", "note_id"),
@@ -1583,11 +1594,22 @@ pub(crate) fn column_diffs(
     what: &str,
     old_only: &[String],
     new_only: &[String],
+    redact: bool,
 ) -> Option<ColumnDiffs> {
     let cols: Vec<&'static str> = match what {
+        "notes" => NOTE_COLS.iter().map(|c| c.0).collect(),
         "cards" => CARD_COLS.iter().map(|c| c.0).collect(),
         "stats" => STAT_COLS.iter().map(|c| c.0).collect(),
         _ => return None,
+    };
+    // 笔记行的内容列：[redact] 时只报长度（字符数），不报原文。
+    let content = |name: &str| what == "notes" && NOTE_CONTENT_COLS.contains(&name);
+    let shown = |name: &str, v: &str| -> String {
+        if redact && content(name) && v != "∅" {
+            format!("<{} chars>", v.chars().count())
+        } else {
+            v.to_owned()
+        }
     };
     let split = |rows: &[String]| -> Option<BTreeMap<String, Vec<String>>> {
         let mut out = BTreeMap::new();
@@ -1611,7 +1633,21 @@ pub(crate) fn column_diffs(
         for (i, name) in cols.iter().enumerate().skip(1) {
             if o[i] != n[i] {
                 *out.columns.entry(name).or_default() += 1;
-                cells.push(format!("{name}: {} -> {}", o[i], n[i]));
+                cells.push(format!(
+                    "{name}: {} -> {}",
+                    shown(name, &o[i]),
+                    shown(name, &n[i])
+                ));
+            }
+        }
+        // 笔记行另带笔记类型（不同的话上面已列出），差异先能按类型归类。
+        if what == "notes" {
+            let ty = NOTE_COLS
+                .iter()
+                .position(|c| c.0 == "note_type_id")
+                .expect("listed column");
+            if o[ty] == n[ty] {
+                cells.push(format!("(note_type_id {})", o[ty]));
             }
         }
         out.examples.push(format!("{id} {}", cells.join(", ")));

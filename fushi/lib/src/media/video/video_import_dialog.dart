@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
@@ -574,7 +575,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           '${result.collectionId} episodes=${result.episodeUids.length} '
           'playlist=${p.basename(m3u8Path)}',
         );
-        Navigator.pop(context, firstUid);
+        closeOwnRoute(context, firstUid);
       },
     );
   }
@@ -704,7 +705,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           '[fushi-drop] [video-import] imported bookUid=$bookUid '
           'video=${p.basename(pickedVideoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
         );
-        Navigator.pop(context, bookUid);
+        closeOwnRoute(context, bookUid);
       },
     );
   }
@@ -738,7 +739,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           '[fushi-drop] [video-import] importedStream '
           'bookUid=${imported.bookUid} url=$url',
         );
-        Navigator.pop(context, imported.bookUid);
+        closeOwnRoute(context, imported.bookUid);
       },
     );
   }
