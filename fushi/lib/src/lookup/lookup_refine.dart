@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 拍板台 Um72dWD9Cz（方案 B）：查词浮层「查不到」时，把查询词拆成可点的词块、
 /// 外加「修改」输入框，让 OCR 多框进的词（`an vnusual case`）与认错的字（u→v）
@@ -291,17 +292,20 @@ class _LookupRefinePanelState extends State<LookupRefinePanel> {
       ),
     ];
     final Widget body = widget.compact
-        ? SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: <Widget>[
-                for (final Widget child in children)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 8),
-                    child: child,
-                  ),
-              ],
+        // 桌面端默认 dragDevices 不含鼠标，横向词块条要显式放开拖动。
+        ? HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  for (final Widget child in children)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: child,
+                    ),
+                ],
+              ),
             ),
           )
         : Wrap(

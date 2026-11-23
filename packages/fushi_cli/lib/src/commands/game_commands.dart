@@ -42,6 +42,20 @@ const List<CtlCommandGroup> gameCommandGroups = <CtlCommandGroup>[
         render: _renderAttach,
       ),
       CtlCommandSpec(
+        name: 'ocr-start',
+        summary: '对已在运行的游戏窗口开 OCR 捕获（不注入；--hwnd 或 --pid，区域 / 二值化缺省取本游戏记住的）',
+        configure: _configureOcrStart,
+        build: _buildOcrStart,
+        render: _renderOcrStart,
+      ),
+      CtlCommandSpec(
+        name: 'ocr-region',
+        summary: '改正在进行的 OCR 捕获的对话框区域和 / 或二值化（记进本游戏）',
+        configure: _configureOcrRegion,
+        build: _buildOcrRegion,
+        render: _renderOcrRegion,
+      ),
+      CtlCommandSpec(
         name: 'stop',
         summary: '停止捕获（结算本局游玩时长）',
         configure: _configureStop,
@@ -470,6 +484,100 @@ String _renderAttach(Object? data) {
     _renderSessionLine(data['session']),
     _renderStages(data['stages']),
   ].where((String s) => s.isNotEmpty).join('\n');
+}
+
+// ── ocr ──────────────────────────────────────────────────────────────────
+
+void _addOcrOptions(ArgParser parser) {
+  parser
+    ..addOption(
+      'area',
+      help: '对话框区域 left,top,width,height（客户区 0～1 归一化，如 0.05,0.7,0.9,0.25）',
+    )
+    ..addFlag('binarize', help: '识别前二值化（低对比 / 描边字有用）；--no-binarize 关掉');
+}
+
+/// `--area l,t,w,h` → body 里的四个字段；没给返回空。
+Map<String, Object?> _ocrAreaBody(CtlCommandContext context) {
+  final String? raw = context.option('area');
+  if (raw == null) return const <String, Object?>{};
+  final List<String> parts = raw
+      .split(',')
+      .map((String s) => s.trim())
+      .toList();
+  final List<double?> values = parts.map(double.tryParse).toList();
+  if (values.length != 4 || values.any((double? v) => v == null)) {
+    throw CtlUsageError('--area 要写成 left,top,width,height 四个数：$raw');
+  }
+  return <String, Object?>{
+    'left': values[0],
+    'top': values[1],
+    'width': values[2],
+    'height': values[3],
+  };
+}
+
+void _configureOcrStart(ArgParser parser) {
+  _configureAttach(parser);
+  _addOcrOptions(parser);
+}
+
+CtlRequestSpec _buildOcrStart(CtlCommandContext context) {
+  final int? hwnd = context.intOption('hwnd');
+  final int? pid = context.intOption('pid');
+  if ((hwnd == null) == (pid == null)) {
+    throw const CtlUsageError('--hwnd 与 --pid 二选一');
+  }
+  if ((hwnd ?? pid!) <= 0) throw const CtlUsageError('句柄 / pid 必须为正整数');
+  final bool? binarize = context.explicitFlag('binarize');
+  return CtlRequestSpec.post(
+    '/api/admin/game/ocr/start',
+    body: <String, Object?>{
+      'hwnd': ?hwnd,
+      'pid': ?pid,
+      ..._ocrAreaBody(context),
+      'binarize': ?binarize,
+    },
+  );
+}
+
+void _configureOcrRegion(ArgParser parser) => _addOcrOptions(parser);
+
+CtlRequestSpec _buildOcrRegion(CtlCommandContext context) {
+  final Map<String, Object?> area = _ocrAreaBody(context);
+  final bool? binarize = context.explicitFlag('binarize');
+  if (area.isEmpty && binarize == null) {
+    throw const CtlUsageError('至少给 --area 或 --binarize / --no-binarize');
+  }
+  return CtlRequestSpec.put(
+    '/api/admin/game/ocr/region',
+    body: <String, Object?>{...area, 'binarize': ?binarize},
+  );
+}
+
+String _renderOcrStart(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final Object? window = data['window'];
+  final String title = window is Map ? '「${window['title']}」' : '';
+  return <String>[
+    data['alreadyRunning'] == true
+        ? '已在 OCR 捕获$title，只更新了区域 / 二值化'
+        : data['ok'] == true
+        ? '已开始 OCR 捕获$title'
+        : 'OCR 捕获未成功$title',
+    _renderSessionLine(data['session']),
+    _renderStages(data['stages']),
+  ].where((String s) => s.isNotEmpty).join('\n');
+}
+
+String _renderOcrRegion(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final Object? r = data['region'];
+  final String area = r is Map
+      ? '区域 ${r['left']},${r['top']},${r['width']},${r['height']}'
+      : '区域未设';
+  return '$area · 二值化${data['binarize'] == true ? '开' : '关'}'
+      '${data['issue'] == null || data['issue'] == 'none' ? '' : ' · ${data['issue']}'}';
 }
 
 void _configureStop(ArgParser parser) {

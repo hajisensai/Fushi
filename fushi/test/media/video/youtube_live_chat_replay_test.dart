@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_engine/media/video/youtube_live_chat_replay.dart';
 
 /// 拍板台 zTedU_pOQF：YouTube 聊天回放的解析与分页会话。fixture 的结构取自 2026-11 线上

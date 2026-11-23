@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/sync/library_media_streams.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:meta/meta.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -39,8 +40,9 @@ HttpClient _newClient() {
   if (factory != null) return factory();
   // 上游是用户自己配置的来源（自建 NAS / WebDAV 常见自签证书）：与本机播放器直连这些来源时
   // 一致（mpv 默认 tls-verify=no），不校验证书；凭据只发往用户配置的那个地址。
-  return HttpClient()
-    ..connectionTimeout = const Duration(seconds: 15)
+  // 走应用出站装配点：局域网 / 回环目标由 isDirectProxyTarget 恒定 DIRECT，公网 AList /
+  // WebDAV 才按用户代理出站（与 host 本机直接播放这些来源同一出口）。
+  return createAppHttpClient(connectionTimeout: const Duration(seconds: 15))
     ..badCertificateCallback = (X509Certificate _, String _, int _) => true;
 }
 

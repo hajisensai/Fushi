@@ -54,8 +54,7 @@ import 'package:fushi/src/media/novel/online/lnreader_models.dart'
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kOnlineLibraryLedgerPrefKey;
-import 'package:fushi/src/media/video/online/anime_source_library.dart'
-    show AnimeSourceBookSpec;
+import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 

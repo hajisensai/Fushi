@@ -550,7 +550,9 @@ void main() {
   });
 
   Future<int> mangaBookCount() async => (await targetDb.getAllEpubBooks())
-      .where((EpubBookRow r) => r.format == 'manga')
+      .where(
+        (EpubBookRow r) => BookFormat.parseOrEpub(r.format) == BookFormat.manga,
+      )
       .length;
 
   test('同一个包导两次（含换个文件名的副本）：在跑时第二次起不来；之后拿旧计划落库判 plan_stale，'

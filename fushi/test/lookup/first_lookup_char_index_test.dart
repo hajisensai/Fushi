@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 
 /// 反馈 q9Jcu_Zr2_：文本钩子「新句自动查词」的起查字——句首的空白、引号括号与

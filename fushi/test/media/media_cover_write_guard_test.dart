@@ -197,6 +197,12 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
         '目的地后交给 downloadVideoCoverToPath（video_cover_extractor）落盘，'
         '本文件自己不写。',
   ),
+  'lib/src/sync/online_library_items.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '书库在线源条目跨设备同步（mY5VWg1nD-）：对端建来的在线视频条目补封面，派生 '
+        'videoCoverFileName 目的地后交给 downloadVideoCoverToPath（video_cover_extractor）'
+        '或 backfillStreamVideoThumbnailCover 落盘，本文件自己不写。',
+  ),
   'lib/src/media/video/video_import_dialog.dart': (
     CoverDeriverRole.writesViaService,
     '导入弹窗重取封面，字节走 applyCover*。',
