@@ -66,6 +66,8 @@ class IrodoriBatchItem {
     this.steps = kIrodoriDefaultSteps,
     this.cfgText = kIrodoriDefaultCfgText,
     this.cfgSpeaker = kIrodoriDefaultCfgSpeaker,
+    this.caption,
+    this.durationScale,
   });
 
   /// 用声音包 [pack] 的 [group] 组合成 [text]。[seed] 为 null 用包的默认种子；
@@ -108,6 +110,14 @@ class IrodoriBatchItem {
   final double cfgText;
   final double cfgSpeaker;
 
+  /// Voice Design caption（这一句的情绪 / 语气指令）；null = 不带。v4 系列底模的
+  /// caption 与参考音频同时生效（参考定音色，caption 定情绪 / 风格）。
+  final String? caption;
+
+  /// 预测时长的倍率（`SamplingRequest.duration_scale`，>1 更慢）；null = 1.0。只在
+  /// [seconds] 为 null（走时长预测）时有意义。
+  final double? durationScale;
+
   /// 「参考音频组」键：adapter + 参考音频。同键的句子连在一起合成。
   String get groupKey => '${adapterDir ?? ''}\u0000${refs.join('\u0000')}';
 
@@ -121,6 +131,8 @@ class IrodoriBatchItem {
     'steps': steps,
     'cfg_text': cfgText,
     'cfg_speaker': cfgSpeaker,
+    if (caption != null) 'caption': caption,
+    if (durationScale != null) 'duration_scale': durationScale,
     'out': outputPath,
   };
 }

@@ -14,7 +14,11 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/src/settings/settings_kit.dart'
+    show SettingsResetSpec, settingsResetSpecFor;
 import 'package:fushi/src/settings/settings_kit_core.dart';
+import 'package:fushi/src/settings/settings_page_reset.dart'
+    show settingsSectionModifiedSummary;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
@@ -51,6 +55,7 @@ class _Values {
   String mode = 'auto'; // 默认 auto
   bool hidden = false; // 折叠分组里的项，默认 false
   bool noDefault = true; // 没声明 defaultValue
+  String? style; // storedChoice 行：null = 没存值、跟默认 pixi 走
 }
 
 SettingsDestination _destination(_Values v, {bool withDefaults = true}) {
@@ -98,6 +103,21 @@ SettingsDestination _destination(_Values v, {bool withDefaults = true}) {
             ],
             selected: (_) => v.mode,
             onChanged: (_, String value) => v.mode = value,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'style',
+            title: 'Style',
+            defaultValue: withDefaults ? 'pixi' : null,
+            options: const <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(value: 'pixi', label: 'Pixi'),
+              SettingsSegmentOption<String>(value: 'mesh', label: 'Mesh'),
+            ],
+            selected: (_) => v.style ?? 'pixi',
+            onChanged: (_, String value) => v.style = value,
+            storedChoice: SettingsStoredChoice(
+              isStored: (_) => v.style != null,
+              clear: (_) async => v.style = null,
+            ),
           ),
           SettingsSwitchItem(
             id: 'noDefault',
@@ -332,6 +352,78 @@ void main() {
       find.byKey(const ValueKey<String>('settings-page-reset-dialog')),
       findsNothing,
     );
+  });
+
+  // HBK-AUDIT-235：「没存值 = 跟默认走」的行，手动选回默认值后库里存着显式值。
+  // 页级恢复要能删掉它，且确认框写「跟随默认值」而不是「Pixi → Pixi」。
+  testWidgets('stored value equal to the default is offered as '
+      '"follow the default" and cleared', (WidgetTester tester) async {
+    final _Values v = _Values()..style = 'pixi';
+    await _pump(tester, () => _destination(v));
+
+    final FushiIconButtonControl button = tester.widget<FushiIconButtonControl>(
+      _menu(),
+    );
+    expect(button.onPressed, isNotNull, reason: '只有钉在默认值上的行也要能恢复');
+    expect(button.tooltip, t.settings_page_reset_menu);
+    await _pressReset(tester);
+
+    expect(_dialogRow('style'), findsOneWidget);
+    expect(
+      find.text(t.settings_page_reset_value_follow_default(value: 'Pixi')),
+      findsOneWidget,
+    );
+    expect(find.text('Pixi → Pixi'), findsNothing);
+    // 没改过的普通行（写回默认值与不存值无区别）照旧不列。
+    expect(_dialogRow('autoplay'), findsNothing);
+    expect(_dialogRow('mode'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('settings-page-reset-confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(v.style, isNull, reason: '删值回到跟默认走，不是把 pixi 再写一遍');
+  });
+
+  testWidgets('stored-choice row that differs from the default resets by '
+      'clearing, labelled current → default', (WidgetTester tester) async {
+    final _Values v = _Values()..style = 'mesh';
+    await _pump(tester, () => _destination(v));
+    await _pressReset(tester);
+    expect(find.text('Mesh → Pixi'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('settings-page-reset-confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(v.style, isNull);
+  });
+
+  testWidgets('pinned-at-default rows do not count as modified in the '
+      'section summary', (WidgetTester tester) async {
+    final _Values v = _Values()..style = 'pixi';
+    await _pump(tester, () => _destination(v));
+    final BuildContext context = tester.element(find.byType(_Host));
+    final SettingsContext sctx = SettingsContext(
+      context: context,
+      appModel: ProviderScope.containerOf(context).read(appProvider),
+      ref: (tester.state(find.byType(_Host)) as ConsumerState<_Host>).ref,
+      readerSource: ReaderFushiSource.instance,
+      refresh: () {},
+    );
+    final SettingsSection main = _destination(v).sections.first;
+    final SettingsItem style = main.items.firstWhere(
+      (SettingsItem i) => i.id == 'style',
+    );
+    final SettingsResetSpec spec = settingsResetSpecFor(style, sctx)!;
+    expect(spec.modified, isFalse);
+    expect(spec.pinnedAtDefault, isTrue);
+    expect(spec.resettable, isTrue);
+    expect(settingsSectionModifiedSummary(main, sctx), isNull);
+
+    v.style = null;
+    final SettingsResetSpec unset = settingsResetSpecFor(style, sctx)!;
+    expect(unset.pinnedAtDefault, isFalse);
+    expect(unset.resettable, isFalse);
   });
 
   testWidgets('narrow header folds the reset action into the overflow menu', (

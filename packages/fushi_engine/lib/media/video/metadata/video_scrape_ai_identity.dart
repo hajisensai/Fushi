@@ -42,7 +42,11 @@ class AiVideoIdentityCandidate {
 
   /// 各语言标题（主标题 + 原名 + 别名），去空去重。
   final List<String> titles;
-  final VideoMetadataMediaKind mediaKind;
+
+  /// 候选**自己的**类型；null = 资料源没说（AniDB 标题目录命中只有标题与 id，
+  /// 不知道是 TV 还是剧场版）。不能拿本地的搜索类型顶上：单文件按电影搜到的 TV
+  /// 候选会被标成「电影」，模型据此压低置信度（BUG-5282）。
+  final VideoMetadataMediaKind? mediaKind;
   final int? year;
   final int? episodeCount;
 
@@ -72,7 +76,7 @@ class AiVideoIdentityCandidate {
   Map<String, Object?> toJson() => <String, Object?>{
     'key': key,
     'titles': titles,
-    'mediaKind': mediaKind.name,
+    if (mediaKind != null) 'mediaKind': mediaKind!.name,
     if (year != null) 'year': year,
     if (episodeCount != null) 'episodeCount': episodeCount,
     if (synopsis != null) 'synopsis': synopsis,

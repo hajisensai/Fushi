@@ -136,12 +136,12 @@ void main() {
         page,
         'Future<void> _loadWatchRecency() async {',
       );
-      expect(recency.contains('_buildWatchRecency('), isTrue);
+      expect(recency.contains('buildVideoWatchRecency('), isTrue);
       final String full = methodBody(
         page,
         'Future<void> _loadLibraryMapsInner(int requestGeneration)',
       );
-      expect(full.contains('_buildWatchRecency('), isTrue);
+      expect(full.contains('buildVideoWatchRecency('), isTrue);
       // 两条路径各记各的代，互不取消。
       expect(recency.contains('_watchRecencyRequestGeneration'), isTrue);
       expect(full.contains('_libraryMapsRequestGeneration'), isTrue);

@@ -15,6 +15,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
         listSidecarSubtitles,
+        ownedSidecarSuffix,
         pickSidecar,
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -115,7 +116,11 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
         mangaChapterJsonFile,
-        readDownloadedChapterPayload;
+        mangaChapterSourcePageKey,
+        mangaChapterSourcePagesFile,
+        readDownloadedChapterPayload,
+        readMangaChapterSourcePages,
+        MangaChapterSourcePage;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show MokuroImage, MokuroPayload, parseMangaJson;

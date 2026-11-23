@@ -66,7 +66,8 @@ class TtsCastLine {
   /// 句后额外停顿（毫秒），叠加在转场基础值之上（[CastLineLimits.maxBeatMs] 封顶）。
   final int beatMs;
 
-  /// 情绪（封闭词表，只标注、不参与合成）+ 强度 0..100。
+  /// 情绪（封闭词表）+ 强度 0..100：合成时经 `TtsDirection` 交给引擎（原生表达或折成
+  /// 语速 / 音高 / 音量）。
   final CastEmotion? emotion;
   final int? intensity;
 
@@ -78,7 +79,8 @@ class TtsCastLine {
   /// 种子；null = 用作品默认种子（[TtsCast.defaultSeed]）。单句重生成时写入。
   final int? seed;
 
-  /// 旧版选角表里 LLM 给的自由文本语气提示（如「囁き」；新标注不再产出，只展示）。
+  /// 自由文本语气说明（如「おずおずと、申し訳なさそうに」）；能收自然语言的引擎拿它
+  /// 当演技指令。旧版选角表的 `e` 自由文本也落在这里。
   final String? tone;
 
   /// LLM 自报的把握（0..1）；用户手改的行为 null（视为确定）。
@@ -106,6 +108,7 @@ class TtsCastLine {
     pitchOffset: pitchOffset,
     volumeOffset: volumeOffset,
     seed: seed,
+    tone: tone,
   );
 
   /// 用户挂在这行上的补回设置（单句声音 / 念法 / 重生成写下的种子）：重新标注时要
@@ -174,7 +177,6 @@ class TtsCastLine {
     'src': source.name,
     if (kind != null) 'k': kind!.wire,
     ...direction.toJson(),
-    if (tone != null) 'tone': tone,
     if (confidence != null) 'c': confidence,
     if (evidence != null) 'ev': evidence!.name,
     if (voice != null) 'voice': voice,
@@ -206,7 +208,7 @@ class TtsCastLine {
       pitchOffset: d.pitchOffset,
       volumeOffset: d.volumeOffset,
       seed: d.seed,
-      tone: tone is String && tone.trim().isNotEmpty ? tone : null,
+      tone: castToneOf(tone),
       confidence: castDoubleIn(raw['c'], 0, 1),
       evidence: evidence,
       voice: raw['voice'] is String ? raw['voice'] as String : null,

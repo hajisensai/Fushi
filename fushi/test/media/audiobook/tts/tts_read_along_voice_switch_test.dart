@@ -415,6 +415,25 @@ void main() {
       expect(entries[0].label, 'Voice A');
     });
 
+    test('marks the global default when the media uses another voice', () {
+      final _FakeDescriptor ok = _FakeDescriptor();
+      List<TtsVoiceSwitchEntry> build(String? defaultId) =>
+          ttsVoiceSwitchEntries(
+            presets: <TtsVoicePreset>[_preset('a', 'A'), _preset('b', 'B')],
+            activePresetId: 'b',
+            defaultPresetId: defaultId,
+            descriptorOf: (String _) => ok,
+          );
+      final List<TtsVoiceSwitchEntry> own = build('a');
+      expect(own[0].isDefault, isTrue);
+      expect(own[0].active, isFalse);
+      expect(own[1].isDefault, isFalse);
+      expect(own[1].active, isTrue);
+      // 作品用的就是默认声音：不另标「默认」。
+      expect(build('b').any((TtsVoiceSwitchEntry e) => e.isDefault), isFalse);
+      expect(build(null).any((TtsVoiceSwitchEntry e) => e.isDefault), isFalse);
+    });
+
     test('choice values compare by preset id; manage is distinct', () {
       expect(
         const TtsVoiceQuickSwitchChoice.preset('a'),
@@ -424,6 +443,15 @@ void main() {
       expect(
         const TtsVoiceQuickSwitchChoice.manage(),
         isNot(const TtsVoiceQuickSwitchChoice.preset('a')),
+      );
+      expect(
+        const TtsVoiceQuickSwitchChoice.useDefault(),
+        isNot(const TtsVoiceQuickSwitchChoice.manage()),
+      );
+      expect(const TtsVoiceQuickSwitchChoice.useDefault().isManage, isFalse);
+      expect(
+        const TtsVoiceQuickSwitchChoice.useDefault().action,
+        TtsVoiceQuickSwitchAction.useDefault,
       );
     });
   });

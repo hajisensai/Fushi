@@ -24,7 +24,7 @@
 
 | Plateforme | État | Remarques |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) ou version ultérieure |
+| Android | ✅ | Android 8.0 (API 26) ou version ultérieure |
 | Windows | ✅ | Le hooking du texte et de la voix des galgames n'est disponible que sous Windows |
 | macOS | ✅ | Apple Silicon uniquement ; les Mac Intel ne sont pas pris en charge |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Pas de découverte, de sources en ligne ni de centre de téléchargement (règles de l'App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Téléchargez la dernière version depuis le [site web de Fushi](https://fushi.moe/) : l'APK Android, l'installateur Windows et les builds macOS (Apple Silicon uniquement ; les Mac Intel ne sont pas pris en charge) sont disponibles ; iOS s'installe via [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux n'a pas encore de version précompilée de l'application ; compilez-la depuis les sources. Fushi Server, le serveur sans interface, est publié séparément sur [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Nécessite Android 7.0 (API 24) ou supérieur.
+> Nécessite Android 8.0 (API 26) ou supérieur.
 
 ## Compilation
 

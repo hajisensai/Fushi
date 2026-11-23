@@ -1746,6 +1746,16 @@ void main() {
       expect(query.candidateKeys, contains('anidb:7'));
       expect(query.localTitles, isNotEmpty);
       expect(query.sampleFileNames, <String>['Movie (2024).mkv']);
+      // AniDB 标题目录命中不知道自己是 TV 还是剧场版：不能把本地的搜索类型
+      // （单文件 → movie）当成候选类型交给模型（BUG-5282）。
+      expect(
+        query.candidates.map((AiVideoIdentityCandidate c) => c.mediaKind),
+        everyElement(isNull),
+      );
+      expect(
+        query.toJson()['candidates'],
+        everyElement(isNot(contains('mediaKind'))),
+      );
       // 运行记录：warnings 里有一条 ai:matched 标记，且随 summaryJson 落库。
       final SourceScrapeIssue note = report.warnings.singleWhere(
         (SourceScrapeIssue issue) =>

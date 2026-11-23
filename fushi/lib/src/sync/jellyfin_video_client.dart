@@ -42,6 +42,7 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteCollectionMembership,
@@ -3573,9 +3574,13 @@ class JellyfinVideoClient
     return out;
   }
 
+  /// 写成功后经 [MediaServerUserDataChanges] 通知：所有「标记已看 / 未看」入口
+  /// 最终都走这里，浏览视图与清单缓存据此跟上服务器的新状态。
   @override
-  Future<void> setRemoteVideoPlayed(String id, {required bool played}) =>
-      api.setPlayed(userId: userId, itemId: id, played: played);
+  Future<void> setRemoteVideoPlayed(String id, {required bool played}) async {
+    await api.setPlayed(userId: userId, itemId: id, played: played);
+    MediaServerUserDataChanges.notify(serverId);
+  }
 
   /// [RemoteVideoDetailFetch]：打一次 `/Items/{id}` 把清单里省掉的重字段
   /// （MediaSources → 文件大小 / 精确文本字幕轨 / 字幕文件名）补齐。
