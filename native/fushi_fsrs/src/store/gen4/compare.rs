@@ -662,6 +662,10 @@ pub(crate) struct Collisions {
     /// 跨 profile 撞车的实体（[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 行却归了
     /// 同库另一个 profile。`entities` 一类按本 profile 的操作集合把它们算进协议 3 一侧；其中的笔记同时进 [notes]。
     pub entities: BTreeSet<Ref>,
+    /// 行没了的实体（BUG-5294，[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 里哪个
+    /// profile 名下都没有这一行（行归过同库另一个 profile，那个 profile 后来被删、行随它删掉）。协议 3 自己的规则下
+    /// （`project_entity`：没有行就写）它是这个 profile 的实体，`entities` 一类照样算进协议 3 一侧；其中的笔记同时进 [notes]。
+    pub orphaned: BTreeSet<Ref>,
 }
 
 /// 扫一遍 `reg_ix` 的全部写入，找出 [Collisions]。同时在内存里的只有每个旧 dot 的第一条修改（大库三十多万个）。
@@ -1352,13 +1356,18 @@ pub(crate) fn against_protocol_3(
         profile,
     )?;
     let new_entities = refs("SELECT DISTINCT id FROM ent_ix WHERE col = ?1")?;
-    for (id, kind) in taken_entities(src, profile, &entities, &new_entities)? {
+    for (id, (kind, row_elsewhere)) in taken_entities(src, profile, &entities, &new_entities)? {
         if kind == EntKind::Note {
             collided.notes.insert(format!("note:{}", id.text()));
         }
-        collided.entities.insert(id);
+        if row_elsewhere {
+            collided.entities.insert(id);
+        } else {
+            collided.orphaned.insert(id);
+        }
     }
     entities.extend(collided.entities.iter().cloned());
+    entities.extend(collided.orphaned.iter().cloned());
     push_refs(&mut diff, "entities", entities, new_entities);
     push_pair(&mut diff, ("tags", old_tags, new_tags));
     let media = texts(
@@ -1416,22 +1425,35 @@ pub(crate) fn against_protocol_3(
 /// （`store/schema.rs`），同库两个 profile 的操作日志里都有同一个实体的身份记录时只存一行——内容相同的留给先落投影的
 /// profile，不同的归规范 JSON 小者（`sync2::project_entity`）。另一个 profile 名下就没有这一行，而新代按集合各存各的。
 ///
-/// 只从 [new] 里协议 3 一侧没有的 ID 找（[own] 是本 profile 名下的行）：这一行在库里、归了另一个 profile，且本
-/// profile 已应用的操作（`sync2_ops`）里有它的身份记录，才算撞车（ID → 种类）；证不出的照常记成差异。
+/// 只从 [new] 里协议 3 一侧没有的 ID 找（[own] 是本 profile 名下的行）：本 profile 已应用的操作（`sync2_ops`）里有它的
+/// 身份记录，且这一行要么在库里、归了另一个 profile（撞车，BUG-5267），要么整张表里都没有（行随另一个 profile 的删除
+/// 没了，BUG-5294：`srs_entities` 只有按 `profile_uid` 整批删的路径，`store/profile_data.rs` `purge_on`）——才算协议 3
+/// 一侧的实体。返回 ID → (种类, 行是否归了别的 profile)；证不出的照常记成差异。行在本 profile 名下却不在 [own] 里的
+/// 不会出现（[own] 就是这些行）。
 fn taken_entities(
     src: &Connection,
     profile: &str,
     own: &BTreeSet<Ref>,
     new: &BTreeSet<Ref>,
-) -> Result<BTreeMap<Ref, EntKind>, String> {
-    let mut elsewhere: BTreeSet<&Ref> = BTreeSet::new();
+) -> Result<BTreeMap<Ref, (EntKind, bool)>, String> {
+    let mut elsewhere: BTreeMap<&Ref, bool> = BTreeMap::new();
     {
         let mut stmt = src
-            .prepare("SELECT 1 FROM srs_entities WHERE id = ?1 AND profile_uid != srs_id(?2)")
+            .prepare("SELECT profile_uid != srs_id(?2) FROM srs_entities WHERE id = ?1")
             .map_err(sql)?;
         for id in new.difference(own) {
-            if stmt.exists(params![id, profile]).map_err(sql)? {
-                elsewhere.insert(id);
+            let other: Option<bool> = stmt
+                .query_row(params![id, profile], |r| r.get(0))
+                .optional()
+                .map_err(sql)?;
+            match other {
+                Some(true) => {
+                    elsewhere.insert(id, true);
+                }
+                None => {
+                    elsewhere.insert(id, false);
+                }
+                Some(false) => {}
             }
         }
     }
@@ -1462,8 +1484,8 @@ fn taken_entities(
             .ok_or_else(|| format!("compare: op {} vanished", op_text(&op_id)))?;
         if let Body::Entity { kind, id, .. } = op.body().map_err(|e| e.to_string())? {
             let id = Ref::of(&id);
-            if elsewhere.contains(&id) {
-                out.insert(id, kind);
+            if let Some(&taken) = elsewhere.get(&id) {
+                out.insert(id, (kind, taken));
             }
         }
     }
