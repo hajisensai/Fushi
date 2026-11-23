@@ -57,9 +57,10 @@ enum FontTarget {
 
   /// 有声书**悬浮字幕** / 音乐桌面歌词的字体：Windows native 分层窗
   /// `FloatingLyricWindow`（与 [gameLookup] 同一个原生窗类，DirectWrite 自绘）与
-  /// macOS `FushiFloatingLyric.swift`（NSPanel + TextKit，CTFontManager 读字体文件）。
+  /// macOS `FushiFloatingLyric.swift`（NSPanel + TextKit，CTFontManager 读字体文件）
+  /// 与 Linux `floating_lyric_window.cc`（Pango，fontconfig 注册字体文件）。
   ///
-  /// 语义与导入格式限制都与 [gameLookup] 相同（平台多一个 macOS）：
+  /// 语义与导入格式限制都与 [gameLookup] 相同（平台多 macOS / Linux）：
   /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
   /// 缺字回退靠 native 追加的系统字体集。
   floatingLyric,
@@ -73,12 +74,13 @@ enum FontTarget {
 /// 这个用途在当前平台**是否真有消费端**。
 ///
 /// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
-/// [FontTarget.floatingLyric] 是 Windows + macOS（悬浮字幕原生窗），
+/// [FontTarget.floatingLyric] 是 Windows + macOS + Linux（悬浮字幕原生窗），
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
   FontTarget.gameLookup => Platform.isWindows,
-  FontTarget.floatingLyric => Platform.isWindows || Platform.isMacOS,
+  FontTarget.floatingLyric =>
+    Platform.isWindows || Platform.isMacOS || Platform.isLinux,
   FontTarget.appUi ||
   FontTarget.body ||
   FontTarget.dictionary ||
