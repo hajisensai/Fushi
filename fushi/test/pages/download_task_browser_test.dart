@@ -653,6 +653,76 @@ void main() {
       );
     });
 
+    testWidgets('批量有失败时提示条可点开逐条看任务名与原因（BUG-5212）', (WidgetTester tester) async {
+      _viewport(tester, const Size(900, 900));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          actionable('fine', actions: DownloadTaskActions(retry: () async {})),
+          actionable(
+            'broken',
+            actions: DownloadTaskActions(
+              retry: () async => throw StateError('torrent gone'),
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+      await tester.tap(_batchSelectAll);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-batch-retry')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(t.download_batch_failed(n: 1)),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.download_batch_failed_details));
+      await tester.pumpAndSettle();
+
+      final Finder dialog = find.byKey(
+        const ValueKey<String>('download_batch_failures_dialog'),
+      );
+      expect(dialog, findsOneWidget);
+      expect(
+        find.descendant(of: dialog, matching: find.text('broken')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.textContaining('torrent gone'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.text('fine')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('批量全部成功时提示条不带「查看原因」', (WidgetTester tester) async {
+      _viewport(tester, const Size(900, 900));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          actionable('fine', actions: DownloadTaskActions(retry: () async {})),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await enterSelection(tester);
+      await tester.tap(_batchSelectAll);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-batch-retry')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining(t.download_batch_done(n: 1)), findsOneWidget);
+      expect(find.text(t.download_batch_failed_details), findsNothing);
+    });
+
     testWidgets('选中集里没有条目支持某动作时按钮禁用', (WidgetTester tester) async {
       _viewport(tester, const Size(900, 900));
       await tester.pumpWidget(

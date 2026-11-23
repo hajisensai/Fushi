@@ -168,10 +168,59 @@ Future<bool> defaultInterconnectAddressProbe(
     timeout: const Duration(seconds: 2),
   );
   final FushiPingResult? result = outcome.result;
-  if (result == null) return false;
-  if (expectedHostId == null) return true;
-  return result.hostId == expectedHostId;
+  if (result == null) {
+    // 签名只取分型（+ 状态码），不取异常原文：原文里可能带每次都不同的本地端口，
+    // 用它判「同一失败」会让状态切换判定失效。原文照样写进那一条诊断。
+    final int? code = outcome.statusCode;
+    noteInterconnectAddressProbe(
+      candidate.url,
+      '${outcome.failure!.name}${code == null ? '' : ' HTTP $code'}',
+      detail: outcome.failureDetail,
+    );
+    return false;
+  }
+  if (expectedHostId != null && result.hostId != expectedHostId) {
+    noteInterconnectAddressProbe(
+      candidate.url,
+      'hostIdMismatch',
+      detail: 'hostIdMismatch: expected=$expectedHostId got=${result.hostId}',
+    );
+    return false;
+  }
+  noteInterconnectAddressProbe(candidate.url, null);
+  return true;
 }
+
+/// 每条候选地址最近一次探测的失败签名（null = 上次探通）。没有条目 = 还没探过。
+final Map<String, String?> _probeStates = <String, String?>{};
+
+/// 记下 [url] 这一次探测的结局（[failure] = 失败签名，null 表示探通），**只在状态
+/// 切换时**写诊断：首次失败、失败分型变了、失败后恢复。[detail] 是写进诊断的全文
+/// （缺省用 [failure]）。
+///
+/// BUG-5262（反馈 w8sFMyflft）：选路每轮（缓存 30 秒过期后每次请求 / 每次复习推送）
+/// 对同一台 host 的全部地址并发 ping；对端离线时，旧实现在 [probeFushiPing] 里逐地址、
+/// 逐轮记一条诊断，随反馈上传的日志尾巴几乎全是同样的 Ping 超时 / No route to host。
+/// 对端在线时，失效的旧地址（换网前的 IPv6 等）也每轮记一条。
+@visibleForTesting
+void noteInterconnectAddressProbe(
+  String url,
+  String? failure, {
+  String? detail,
+}) {
+  final bool known = _probeStates.containsKey(url);
+  final String? previous = _probeStates[url];
+  _probeStates[url] = failure;
+  if (known && previous == failure) return;
+  if (failure != null) {
+    engineLog.logDiagnostic('Ping:$url', detail ?? failure);
+  } else if (previous != null) {
+    engineLog.logDiagnostic('Ping:$url', 'reachable again (was $previous)');
+  }
+}
+
+@visibleForTesting
+void resetInterconnectAddressProbeStates() => _probeStates.clear();
 
 InterconnectAddressProbe? _probeOverride;
 

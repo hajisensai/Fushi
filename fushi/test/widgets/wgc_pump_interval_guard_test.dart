@@ -23,12 +23,21 @@ String _read(List<String> candidates, String name) {
 
 void main() {
   test('BUG-4114: WGC frame worker is paced by the compositor clock', () {
-    final String src = maskComments(
+    final String bridge = maskComments(
       _read(<String>[
         'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
         '../packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',
       ], 'texture_bridge.cc'),
     );
+    // 节拍本身在 frame_clock.h（单独成头文件以便 windows/test/frame_clock_test.cpp 单测）。
+    final String clock = maskComments(
+      _read(<String>[
+        'packages/flutter_inappwebview_windows/windows/custom_platform_view/frame_clock.h',
+        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/frame_clock.h',
+      ], 'frame_clock.h'),
+    );
+    expect(bridge, contains('#include "frame_clock.h"'));
+    final String src = '$bridge\n$clock';
 
     expect(
       src.contains('DispatcherQueueTimer') || src.contains('CreateTimer('),
@@ -72,6 +81,39 @@ void main() {
       reason:
           'the compositor wait must time out so an idle desktop still '
           're-checks the stop signal, without spinning',
+    );
+  });
+
+  test('BUG-5270: a stopped compositor clock neither spins nor hides the stop '
+      'signal', () {
+    // 显示器关着时 DCompositionWaitForCompositorClock 立刻返回
+    // STATUS_GRAPHICS_PRESENT_OCCLUDED，不看停止事件。当成节拍的话取帧线程空转、
+    // 永远退不出，平台线程 join 它时整个 app 卡死。行为由
+    // packages/flutter_inappwebview_windows/windows/test/frame_clock_test.cpp 实测，
+    // 这里只守住结构：未知返回码归为「时钟没走」，并改为自己等停止事件。
+    final String clock = maskComments(
+      _read(<String>[
+        'packages/flutter_inappwebview_windows/windows/custom_platform_view/frame_clock.h',
+        '../packages/flutter_inappwebview_windows/windows/custom_platform_view/frame_clock.h',
+      ], 'frame_clock.h'),
+    );
+    final int unavailable = clock.indexOf(
+      'case CompositorWaitOutcome::kClockUnavailable:',
+    );
+    expect(unavailable, greaterThanOrEqualTo(0));
+    final int nextCase = clock.indexOf('case ', unavailable + 5);
+    expect(
+      clock.substring(unavailable, nextCase).contains('WaitStopFor('),
+      isTrue,
+      reason:
+          'an unavailable clock must fall back to waiting on the stop event',
+    );
+    expect(
+      clock.contains('return CompositorWaitOutcome::kClockUnavailable;'),
+      isTrue,
+      reason:
+          'any status other than stop / tick / timeout / WAIT_FAILED is '
+          'an unavailable clock, never a tick',
     );
   });
 

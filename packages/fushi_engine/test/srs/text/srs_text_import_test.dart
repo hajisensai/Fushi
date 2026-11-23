@@ -20,11 +20,7 @@ Future<SrsDbStore> _openStore() async {
     core: storage.core,
     profileUid: _profile,
     deviceId: 'dev',
-    trustedClock: SrsTrustedClock(
-      wallClockMs: () => t++,
-      bootClockMs: () => 0,
-      bootId: 'boot',
-    ),
+    trustedClock: SrsTrustedClock(wallClockMs: () => t++, bootClockMs: () => 0),
   );
 }
 
@@ -442,7 +438,6 @@ void main() {
         trustedClock: SrsTrustedClock(
           wallClockMs: () => clock++,
           bootClockMs: () => 0,
-          bootId: 'boot',
         ),
       );
       SrsTextImportOptions into(SrsDbStore s, String noteTypeId) =>
