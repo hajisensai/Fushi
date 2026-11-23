@@ -270,6 +270,42 @@ void main() {
       expect(mangaPlaceholderFileName('p3b1.2'), 'p3b1.2.ph.wav');
       expect(mangaCandidateFileName('p3b1.2', 42), 'p3b1.2.s42.m4a');
     });
+
+    test('外部目录清扫只认按句命名写出的文件（拍板 isATnQZ_eN-external）', () {
+      final Set<String> ids = <String>{'p0b0', 'p3b1.2'};
+      const MangaLocalAudio local = MangaLocalAudio(
+        sig: '0123456789abcdef',
+        ext: '.wav',
+      );
+      for (final String name in <String>[
+        mangaLineFileName('p0b0'),
+        'p0b0.wav',
+        mangaPlaceholderFileName('p0b0'),
+        mangaCandidateFileName('p3b1.2', 42),
+        mangaLocalLineFileName('p0b0', local),
+        mangaStagedFileName(mangaLineFileName('p0b0')),
+        mangaStagedFileName(mangaCandidateFileName('p0b0', 7)),
+        mangaStagedFileName(mangaPlaceholderFileName('p0b0')),
+        'p0b0.prev.m4a',
+        'p0b0.s7.prev.m4a',
+      ]) {
+        expect(isMangaRendererFileName(name, ids), isTrue, reason: name);
+      }
+      for (final String name in <String>[
+        'cover.jpg',
+        'notes.txt',
+        '001.wav',
+        'p0b0.mp3',
+        'p0b0.txt',
+        'p0b0.final.m4a',
+        'p9b9.m4a',
+        'p0b0',
+        'p0b00.m4a',
+        'manifest.json',
+      ]) {
+        expect(isMangaRendererFileName(name, ids), isFalse, reason: name);
+      }
+    });
   });
 
   group('整卷生成', () {
@@ -1592,6 +1628,85 @@ void main() {
           <String>['p0b0'],
         );
       });
+    });
+
+    test('目录不归 app 管（外部导入的清单）：清扫只删按句命名写出的文件，用户的其他文件不碰', () async {
+      final Directory ext = Directory(p.join(tmp.path, 'external'))
+        ..createSync();
+      final Directory userLocal = Directory(
+        p.join(ext.path, kMangaLocalAudioDirName),
+      )..createSync();
+      final List<String> userFiles = <String>[
+        'cover.jpg',
+        'notes.txt',
+        '001.wav',
+        'p0b0.mp3',
+      ];
+      for (final String name in userFiles) {
+        File(p.join(ext.path, name)).writeAsStringSync('user-$name');
+      }
+      File(p.join(userLocal.path, 'readme.txt')).writeAsStringSync('user');
+      final MangaAudioRenderer external = MangaAudioRenderer(
+        backend: backend,
+        manifestFile: File(p.join(ext.path, 'manifest.json')),
+        ownsDirectory: false,
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaAudioScript script = script0()..voices.byCharacter.clear();
+      final MangaRenderOutcome out = await external.render(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        previous: null,
+        ledger: ledger,
+        onProgress: (int done, int total) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      // 一句换种子保留：旧的 p2b0.m4a 不再被引用、名字是本类写的 → 清掉。
+      final MangaRegenerateCandidate candidate = await external.regenerate(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        lineId: 'p2b0',
+        seed: 100,
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(
+        await external.keepCandidate(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          candidate: candidate,
+        ),
+        isTrue,
+      );
+      expect(out.manifest.lines[2].file, 'p2b0.s100.m4a');
+      expect(File(p.join(ext.path, 'p2b0.s100.m4a')).existsSync(), isTrue);
+      expect(File(p.join(ext.path, 'p2b0.m4a')).existsSync(), isFalse);
+      // 改成「不读」拿掉的句子：它的音频（不再在清单里）也按本类的名字清掉。
+      script.replaceLine(
+        'p0b1',
+        (MangaScriptLine l) => l.copyWith(kind: CastLineKind.skip),
+      );
+      expect(
+        await external.dropUnreadLines(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          lineIds: <String>['p0b1'],
+        ),
+        <String>['p0b1'],
+      );
+      expect(File(p.join(ext.path, 'p0b1.m4a')).existsSync(), isFalse);
+      for (final String name in userFiles) {
+        expect(
+          File(p.join(ext.path, name)).readAsStringSync(),
+          'user-$name',
+          reason: name,
+        );
+      }
+      expect(File(p.join(userLocal.path, 'readme.txt')).existsSync(), isTrue);
+      expect(File(p.join(ext.path, 'manifest.json')).existsSync(), isTrue);
     });
   });
 

@@ -352,10 +352,13 @@ void main() {
             }) async {
               regenerated.add((lineId: lineId, seed: seed));
               final String file = mangaCandidateFileName(lineId, seed);
-              // 与真生成端一致：候选先写暂存名，保留时才发布成 [file]。
+              // 与真生成端一致：候选先写暂存名（登记的那份清单旁边），保留时才发布成 [file]。
               final File out = File(
                 p.join(
-                  mangaRenderManifestFile(model, bookKey).parent.path,
+                  (await mangaAudioEditTarget(
+                    model,
+                    bookKey,
+                  )).manifestFile.parent.path,
                   mangaStagedFileName(file),
                 ),
               );
@@ -1285,10 +1288,120 @@ void main() {
     expect((await undo()).status, OpUndoStatus.superseded);
   });
 
-  test('按句换本地音频 / 单句重生成：登记的是外部导入的清单时 409', () async {
+  test(
+    '外部导入的清单：换本地音频 / 单句重生成 / 按角色重生成都原地改写它，用户的其他文件不碰；撤销放回（拍板 isATnQZ_eN-external）',
+    () async {
+      final File internal = await writeRendered();
+      final String internalBefore = await internal.readAsString();
+      final File external = await writeExternalManifest('ext');
+      final String extDir = external.parent.path;
+      for (final String name in <String>['cover.jpg', 'notes.txt', '001.wav']) {
+        File(p.join(extDir, name)).writeAsStringSync('user-$name');
+      }
+      await importManifest(external.path, confirm: true);
+      Future<MangaRenderManifest> extManifest() async =>
+          (await MangaRenderManifest.load(external))!;
+      Future<Audiobook> book() async =>
+          (await AudiobookRepository(db).findByBookKey(bookKey))!;
+
+      // 换本地音频：外部清单这句换成整形后的文件，写在外部目录里，登记仍指向外部清单。
+      final (
+        Object? replaced,
+        Future<OpUndoOutcome> Function() undoReplace,
+      ) = await runOp(
+        'tts.manga.lines.replace',
+        body: <String, Object?>{
+          'files': <String, String>{'p0b0': localWav('a.wav', 'wav-a').path},
+        },
+      );
+      expect(replaced, containsPair('replaced', 1));
+      final MangaRenderedLine l0 = (await extManifest()).lines[0];
+      expect(l0.file, startsWith('p0b0.f'));
+      expect(File(p.join(extDir, l0.file)).readAsStringSync(), 'shaped:wav-a');
+      expect(File(p.join(extDir, 'p0b0.m4a')).existsSync(), isFalse);
+      expect((await book()).alignmentPath, external.path);
+      expect((await book()).audioPaths![0], p.join(extDir, l0.file));
+      expect((await book()).audioPaths![1], p.join(extDir, 'p0b1.m4a'));
+      expect(await internal.readAsString(), internalBefore);
+
+      expect((await undoReplace()).status, OpUndoStatus.done);
+      expect((await extManifest()).lines[0].file, 'p0b0.m4a');
+      expect(File(p.join(extDir, 'p0b0.m4a')).readAsStringSync(), 'audio-p0b0');
+      expect(File(p.join(extDir, l0.file)).existsSync(), isFalse);
+      expect((await book()).audioPaths![0], p.join(extDir, 'p0b0.m4a'));
+
+      // 单句重生成：候选出在外部目录、保留后外部清单换成它；撤销放回旧音频。
+      final (
+        Object? regen,
+        Future<OpUndoOutcome> Function() undoRegen,
+      ) = await runOp(
+        'tts.manga.line.regenerate',
+        params: <String, String>{'key': wire, 'line': 'p0b1'},
+        body: <String, Object?>{'seed': 7},
+      );
+      expect(regen, containsPair('seed', 7));
+      expect((await extManifest()).lines[1].file, 'p0b1.s7.m4a');
+      expect(File(p.join(extDir, 'p0b1.s7.m4a')).readAsStringSync(), 'new-7');
+      expect((await book()).audioPaths![1], p.join(extDir, 'p0b1.s7.m4a'));
+      expect(await internal.readAsString(), internalBefore);
+      expect((await undoRegen()).status, OpUndoStatus.done);
+      expect((await extManifest()).lines[1].file, 'p0b1.m4a');
+      expect(File(p.join(extDir, 'p0b1.m4a')).readAsStringSync(), 'audio-p0b1');
+
+      // 按角色重生成：预检列的是外部清单里的句子。
+      final Object? dry = await call(
+        'POST',
+        '$item/characters/:name/regenerate',
+        params: <String, String>{'key': wire, 'name': '太郎'},
+        body: <String, Object?>{'dryRun': true},
+      );
+      expect(
+        ((dry! as Map<String, Object?>)['lines']! as List<Object?>).map(
+          (Object? l) => (l! as Map<String, Object?>)['line'],
+        ),
+        <String>['p0b0'],
+      );
+
+      for (final String name in <String>['cover.jpg', 'notes.txt', '001.wav']) {
+        expect(
+          File(p.join(extDir, name)).readAsStringSync(),
+          'user-$name',
+          reason: name,
+        );
+      }
+      expect(await internal.readAsString(), internalBefore);
+    },
+  );
+
+  test('登记的是广播剧 / 动画音轨成品时按句改 409', () async {
     await writeRendered();
-    final File external = await writeExternalManifest('ext');
-    await importManifest(external.path, confirm: true);
+    final File drama = mangaDramaManifestFile(model, bookKey);
+    await drama.parent.create(recursive: true);
+    await File(p.join(drama.parent.path, 'seg0.m4a')).writeAsString('seg');
+    final MangaRenderManifest manifest = MangaRenderManifest(
+      pageCount: 3,
+      engineSignature: 'sig-1',
+      lines: const <MangaRenderedLine>[
+        MangaRenderedLine(
+          lineId: 'seg0',
+          page: 0,
+          blocks: <int>[0],
+          speaker: '太郎',
+          kind: CastLineKind.spoken,
+          beatMs: 0,
+          file: 'seg0.m4a',
+          durationMs: 1000,
+          text: 'seg',
+        ),
+      ],
+    );
+    await manifest.save(drama);
+    await registerMangaAudio(
+      db,
+      bookKey: bookKey,
+      manifestFile: drama,
+      manifest: manifest,
+    );
     await expectLater(
       call(
         'POST',
@@ -1297,7 +1410,7 @@ void main() {
           'files': <String, String>{'p0b0': localWav('a.wav', 'wav-a').path},
         },
       ),
-      coded(409, 'manga_audio_external'),
+      coded(409, 'manga_audio_drama'),
     );
     await expectLater(
       call(
@@ -1305,7 +1418,15 @@ void main() {
         '$item/lines/:line/regenerate',
         params: <String, String>{'key': wire, 'line': 'p0b0'},
       ),
-      coded(409, 'manga_audio_external'),
+      coded(409, 'manga_audio_drama'),
+    );
+    await expectLater(
+      call(
+        'POST',
+        '$item/characters/:name/regenerate',
+        params: <String, String>{'key': wire, 'name': '太郎'},
+      ),
+      coded(409, 'manga_audio_drama'),
     );
   });
 

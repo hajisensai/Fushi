@@ -15,7 +15,8 @@
 ///   对象上。取消、整卷级失败或「全有或全无」里有一句失败时只删本次自己的暂存文件，
 ///   旧清单与它引用的音频原样可播；
 /// - 清单写完后清掉目录里清单不再引用的音频（换过声音的旧文件、被取代的占位、没保留的
-///   候选）。
+///   候选）。成品目录不归 app 管（`tts import` 导入的外部清单，原地改写）时只清本类按
+///   句命名规则写出的文件，目录里别的文件一个不碰（[MangaAudioRenderer.ownsDirectory]）。
 library;
 
 import 'dart:async';
@@ -247,6 +248,7 @@ class MangaAudioRenderer {
   MangaAudioRenderer({
     required this.backend,
     required this.manifestFile,
+    this.ownsDirectory = true,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
@@ -254,6 +256,12 @@ class MangaAudioRenderer {
 
   /// 清单文件（`MangaRenderManifest.fileFor`）；音频放在同目录。
   final File manifestFile;
+
+  /// 清单所在目录是不是 app 自己的成品目录（`<db>/manga_audio/<sha1>/`）。是：清扫时
+  /// 清单不再引用的文件一律删。不是（外部导入的清单，在用户自己的目录里原地改写）：
+  /// 只删清单不再引用、且名字是本类按句命名规则写出的文件（[isMangaRendererFileName]），
+  /// 用户放在同目录的其他文件（封面、说明、别卷的音频……）一个不碰。
+  final bool ownsDirectory;
   final DateTime Function() _now;
 
   Directory get directory => manifestFile.parent;
@@ -1035,21 +1043,34 @@ class MangaAudioRenderer {
     );
     dropped.forEach(ledger.resolve);
     await manifest.save(manifestFile);
-    await sweepUnreferenced(manifest);
+    await sweepUnreferenced(manifest, releasedLineIds: dropped);
     return dropped;
   }
 
-  /// 删掉目录里 [manifest] 不再引用的音频与残留的 `.part`（清单本身与它的临时文件
-  /// 不动）。删不掉（Windows 上被占用）只记日志，下次再删。
-  Future<void> sweepUnreferenced(MangaRenderManifest manifest) async {
+  /// 删掉目录里 [manifest] 不再引用的音频与残留的暂存文件（清单本身与它的临时文件
+  /// 不动）。删不掉（Windows 上被占用）只记日志，下次再删。目录不归 app 管
+  /// （[ownsDirectory] 为 false）时只删 [isMangaRendererFileName] 认得的文件：行身份取
+  /// 清单里的句子加 [releasedLineIds]（这次从清单拿掉的句子）。
+  Future<void> sweepUnreferenced(
+    MangaRenderManifest manifest, {
+    Iterable<String> releasedLineIds = const <String>[],
+  }) async {
     if (!await directory.exists()) return;
     final Set<String> keep = <String>{
       p.basename(manifestFile.path),
       '${p.basename(manifestFile.path)}.tmp',
       for (final MangaRenderedLine l in manifest.lines) l.file,
     };
+    final Set<String> lineIds = <String>{
+      for (final MangaRenderedLine l in manifest.lines) l.lineId,
+      ...releasedLineIds,
+    };
     for (final FileSystemEntity e in directory.listSync()) {
       if (e is! File || keep.contains(p.basename(e.path))) continue;
+      if (!ownsDirectory &&
+          !isMangaRendererFileName(p.basename(e.path), lineIds)) {
+        continue;
+      }
       try {
         await e.delete();
       } on FileSystemException catch (err, stack) {
@@ -1071,6 +1092,11 @@ class MangaAudioRenderer {
       if (e is! File || sigs.contains(p.basenameWithoutExtension(e.path))) {
         continue;
       }
+      // `_local/` 是本类建的，但外部目录里不排除用户自己恰好有同名子目录：只删
+      // 名字是保留副本（`<sig>.<ext>`，[MangaLocalAudio.isValidSig]）的文件。
+      if (!ownsDirectory && !_localCopyName.hasMatch(p.basename(e.path))) {
+        continue;
+      }
       try {
         await e.delete();
       } on FileSystemException catch (err, stack) {
@@ -1078,6 +1104,27 @@ class MangaAudioRenderer {
       }
     }
   }
+}
+
+final RegExp _localCopyName = RegExp(r'^[0-9a-f]{16}\.[a-z0-9]{1,8}$');
+
+/// 后缀：`m4a` / `wav`（一句的正式文件，停顿句是 wav）、`ph.wav`（占位）、
+/// `s<种子>.<ext>`（换种子）、`f<摘要>.<ext>`（换本地音频）；暂存（`.stage`）与发布时的
+/// 备份（`.prev`）插在扩展名前。
+final RegExp _rendererSuffix = RegExp(
+  r'^(?:(?:s\d+|f[0-9a-f]{16})\.)?(?:stage\.|prev\.)?(?:m4a|wav)$|^ph\.(?:stage\.|prev\.)?wav$',
+);
+
+/// [name] 是不是 [MangaAudioRenderer] 按句命名规则给 [lineIds] 里某一句写出的文件
+/// （[mangaLineFileName]、[mangaPlaceholderFileName]、[mangaCandidateFileName]、
+/// [mangaLocalLineFileName]、它们的停顿 `.wav` 变体与暂存 / 发布备份名）。外部导入的
+/// 成品目录里清扫只认这些名字，别的文件都不是本类写的、不删。
+bool isMangaRendererFileName(String name, Set<String> lineIds) {
+  for (final String id in lineIds) {
+    if (name.length <= id.length + 1 || !name.startsWith('$id.')) continue;
+    if (_rendererSuffix.hasMatch(name.substring(id.length + 1))) return true;
+  }
+  return false;
 }
 
 /// [manifest] 里属于 [lineIds]、演出稿里却已是「不读」类型（或已删掉）的句子——

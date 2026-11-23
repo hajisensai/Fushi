@@ -428,7 +428,7 @@ Future<bool> _reviewCandidate(
 ) async {
   final AudiobookPlayerController? playing = host.audiobookSession.controller;
   if (playing != null && playing.isPlaying) await playing.pause();
-  final String path = mangaCandidatePath(host, volume.bookKey, candidate);
+  final String path = await mangaCandidatePath(host, volume.bookKey, candidate);
   final AudioPlayer player = AudioPlayer();
   Future<void> play() async {
     try {
@@ -554,7 +554,7 @@ Future<void> editMangaAudioLineInPlace(
     return;
   }
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-    mangaRenderManifestFile(host, bookKey),
+    (await mangaAudioEditTarget(host, bookKey)).manifestFile,
   );
   final bool rendered =
       manifest?.lines.any((MangaRenderedLine l) => l.lineId == line.lineId) ??
