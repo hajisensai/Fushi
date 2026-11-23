@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -223,7 +224,9 @@ class _LookupRefinePanelState extends State<LookupRefinePanel> {
   @override
   Widget build(BuildContext context) {
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    return AnimatedSize(
+    // 关动效（减少动态 / 墨水屏 / 测试）时 duration 归零：SDK AnimatedSize 零时长
+    // 会在自己的 performLayout 里同步 markNeedsLayout 触发断言，统一走 FushiAnimatedSize。
+    return FushiAnimatedSize(
       duration: duration,
       curve: FushiMotion.standard,
       alignment: Alignment.topCenter,

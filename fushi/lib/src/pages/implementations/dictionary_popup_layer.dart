@@ -30,6 +30,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/lookup_refine.dart';
@@ -2368,7 +2369,8 @@ class DictionaryPopupLayer extends StatelessWidget {
         refine != null &&
         refineSource.trim().isNotEmpty &&
         _hasRenderableResults;
-    return AnimatedSize(
+    // 关动效时 duration 归零，SDK AnimatedSize 零时长会在布局中自我置脏，走 FushiAnimatedSize。
+    return FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.short),
       curve: FushiMotion.standard,
       alignment: Alignment.topCenter,
