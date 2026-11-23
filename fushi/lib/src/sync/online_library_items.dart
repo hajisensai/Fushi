@@ -52,13 +52,12 @@ import 'package:fushi/src/media/novel/online/lnreader_book_download.dart'
 import 'package:fushi/src/media/novel/online/lnreader_models.dart'
     show LnReaderChapter;
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kOnlineLibraryLedgerPrefKey;
 import 'package:fushi/src/media/video/online/anime_source_library.dart'
     show AnimeSourceBookSpec;
 import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-
-/// 本机账本的偏好键（`sync_` 前缀：设备本地，不随设置同步外传）。
-const String kOnlineLibraryLedgerPrefKey = 'sync_online_library_known_v1';
 
 /// 同步的在线漫画运行时（见库注释）。
 bool isSyncableOnlineMangaRuntime(OnlineMangaRuntimeKind runtime) =>
@@ -206,6 +205,7 @@ class OnlineLibraryApplier {
         .getSyncDeletionDeletedAtByKey(SyncTombstoneKind.video.dbValue);
 
     int changed = 0;
+    bool musicChanged = false;
     final List<String> errors = <String>[];
     final List<Future<void> Function()> followUps = <Future<void> Function()>[];
     final List<OnlineLibraryItem> ordered = incoming.values.toList()
@@ -216,7 +216,10 @@ class OnlineLibraryApplier {
     for (final OnlineLibraryItem item in ordered) {
       try {
         if (item.kind == OnlineLibraryItemKind.music) {
-          if (await _applyMusic(item)) changed++;
+          if (await _applyMusic(item)) {
+            changed++;
+            musicChanged = true;
+          }
           continue;
         }
         if (local.contains(item)) {
@@ -246,6 +249,14 @@ class OnlineLibraryApplier {
       }
     }
     await _saveLedger(ledger);
+    // 对端较新的曲目行可能清了入库时刻（那边移出了音乐库）：本机有离线副本（v175，设备
+    // 本地的事实，下载 ⊂ 音乐库）的放回曲库，与备份合并导入同一个对账口；它不动
+    // `updated_at`，所以不会反过来把「放回」当成新编辑传回对端。
+    if (musicChanged) {
+      await _db.reconcileMusicServerDownloadsIntoLibrary(
+        at: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
     return OnlineLibraryApplyResult(
       changed: changed,
       errors: errors,

@@ -19,9 +19,13 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kOnlineLibraryLedgerPrefKey;
+import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/online_library_items.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -434,6 +438,44 @@ void main() {
       expect(await probe.applyFrom(a), 0);
       expect((await b.getMusicRemoteTrack('m1'))?.libraryAddedAt, 300);
     });
+
+    test('对端移出音乐库、本机有离线副本：放回曲库且不改 updatedAt（不回传）', () async {
+      await _addMusic(a, uid: 'm2', at: 100);
+      final OnlineLibraryApplierResultProbe probe =
+          OnlineLibraryApplierResultProbe(applier(b));
+      expect(await probe.applyFrom(a), 1);
+      await b
+          .into(b.musicServerDownloads)
+          .insert(
+            MusicServerDownloadsCompanion.insert(
+              trackUid: 'm2',
+              sourceKey: 'demo-plugin',
+              itemId: 'track-m2',
+              filePath: p.join('x', 'm2.flac'),
+              downloadedAt: 150,
+            ),
+          );
+
+      await a.removeMusicRemoteTrackFromLibrary('m2', at: 200);
+      expect(await probe.applyFrom(a), 1);
+      final MusicRemoteTrackRow kept = (await b.getMusicRemoteTrack('m2'))!;
+      expect(kept.libraryAddedAt, 150, reason: '下载 ⊂ 音乐库：离线副本把曲目留在曲库');
+      expect(kept.updatedAt, 200, reason: '设备本地修正不当成新编辑，A 下一轮不会被改回');
+      expect(await probe.applyFrom(a), 0);
+    });
+  });
+
+  test('账本与 host 信箱是设备本地键：不进备份 / Profile 快照 / 分享', () {
+    expect(
+      PrefRedactionPolicy.isDeviceLocalOrCredential(
+        kOnlineLibraryLedgerPrefKey,
+      ),
+      isTrue,
+    );
+    expect(ProfileKeys.isExcludedPref(kOnlineLibraryLedgerPrefKey), isTrue);
+    const String mailboxKey = '${OnlineLibraryMailbox.keyPrefix}devX';
+    expect(PrefRedactionPolicy.isDeviceLocalOrCredential(mailboxKey), isTrue);
+    expect(ProfileKeys.isExcludedPref(mailboxKey), isTrue);
   });
 
   group('云通道', () {

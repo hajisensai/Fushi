@@ -82,6 +82,13 @@ const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
 const String kMusicScanParserRevisionPrefKeyPrefix =
     'music_scan_parser_revision::';
 
+/// 在线源条目同步的本机账本（JSON：`<种类>:<身份>` → 本机见过的最大 addedAt，拍板台
+/// mY5VWg1nD-，`online_library_items.dart`）：区分「对端新加的」与「本机删掉的」。描述的是
+/// **这台设备的库**见过哪些条目：设备本地（`SyncRepository.deviceLocalPrefKeys`），不进
+/// Profile 快照 / 备份 / 设置同步——切 Profile 时被快照剪掉或换回旧值，本机「仅本机删除」
+/// 过的条目会被对端清单建回来；合并导入接管别的设备的账本，则对端新加的条目永远建不出来。
+const String kOnlineLibraryLedgerPrefKey = 'sync_online_library_known_v1';
+
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
 /// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
@@ -1417,6 +1424,10 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'page_backdrop_seed_cache::',
   kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
+  // JSON：`sync_online_library_peer:<设备 id>`——互联 host 的在线源条目清单信箱
+  // （`OnlineLibraryMailbox.keyPrefix`，fushi_engine `online_library_sync.dart`，拍板台
+  // mY5VWg1nD-）。设备本地（PrefRedactionPolicy.deviceLocalKeyPrefixes）。
+  'sync_online_library_peer:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
   // 小写邮箱 / 用户名，BUG-4434），文件箱进度基线按它分槽。设备本地
   // （SyncRepository.deviceLocalPrefKeys），不进备份 / 设置同步。
