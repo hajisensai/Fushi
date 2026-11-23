@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -32,6 +33,22 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+/// 把已经在磁盘上的页图目录 [directories] 交给 [MangaImportDialog] 导入（书名取目录名）。
+/// 返回是否真的导入了至少一卷。书籍侧的「一包书」解包后遇到漫画就走这里——它由调用方
+/// 以回调注入 `showBookArchiveImportDialog`，压缩包导入框本身不 import 漫画 UI。
+Future<bool> showMangaDirectoriesImportDialog({
+  required BuildContext context,
+  required FushiDatabase db,
+  required List<String> directories,
+}) async {
+  final bool? imported = await showAppDialog<bool>(
+    context: context,
+    builder: (_) => MangaImportDialog(db: db, initialPaths: directories),
+  );
+  return imported == true;
+}
 
 /// 漫画导入对话框。
 ///
@@ -573,7 +590,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       desktopOverride: widget.ocrEntryDesktopOverride,
     );
     if (bookKey != null && mounted) {
-      Navigator.pop(context, true);
+      closeOwnRoute(context, true);
     }
   }
 
@@ -623,7 +640,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         reportProgress(1, t.import_step_done);
         if (mounted) {
           FushiToast.show(msg: summary, severity: ToastSeverity.success);
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );
@@ -709,7 +726,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             msg: t.book_import_duplicate_cancelled,
             severity: ToastSeverity.info,
           );
-          Navigator.pop(context, false);
+          closeOwnRoute(context, false);
         }
       },
       action: () async {
@@ -773,7 +790,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             msg: batchSummary ?? t.srt_import_success,
             severity: ToastSeverity.success,
           );
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );
