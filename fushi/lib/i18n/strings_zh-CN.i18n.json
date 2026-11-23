@@ -5761,6 +5761,7 @@
   "manga_audio_estimate_body": "将由 ${provider} 标注 ${pages} 页有文字的页面：约 ${requests} 次请求，其中 ${images} 次带页图。",
   "manga_audio_estimate_nothing": "所有页面都已标注",
   "manga_audio_estimate_title": "开始标注？",
+  "manga_audio_export_clip_no_line": "这一页没有可导出的配音句子",
   "manga_audio_failure_bad_output": "回复格式不对",
   "manga_audio_failure_clip_missing": "关联有声书里的这一段取不到",
   "manga_audio_failure_empty_text": "没有可念的文字",

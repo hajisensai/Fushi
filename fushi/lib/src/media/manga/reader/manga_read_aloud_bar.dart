@@ -219,9 +219,17 @@ class MangaAudioPlaybackBar extends StatefulWidget {
     required this.onStop,
     this.keyHints = MangaPlaybackKeyHints.none,
     this.middle,
+    this.onExportClip,
+    this.exportingClip = false,
   });
 
   final MangaAudioPlaybackDriver driver;
+
+  /// 把正框着的那句导出成片段视频（页图 + 句子音频）；null 时不画这颗按钮。
+  final VoidCallback? onExportClip;
+
+  /// 导出进行中（按钮转圈）。
+  final bool exportingClip;
 
   /// 停止成品音频会话（会话级，不只是暂停）。
   final VoidCallback onStop;
@@ -276,6 +284,10 @@ class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
   Widget _build(BuildContext context) {
     final MangaAudioPlaybackDriver d = widget.driver;
     final MangaPlaybackKeyHints keys = widget.keyHints;
+    final VoidCallback? onExportClip = widget.onExportClip;
+    final int? displayedLine = d.displayedLineIndex;
+    final bool exportableLine =
+        displayedLine != null && !d.manifest.lines[displayedLine].placeholder;
     final int total = d.totalMs;
     final double live = total <= 0
         ? 0
@@ -339,13 +351,29 @@ class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
         onTap: () => unawaited(d.next()),
       ),
       middle: widget.middle,
-      trailing: FushiIconButton(
-        key: const ValueKey<String>('manga_audio_follow_page'),
-        icon: FushiIcons.sync,
-        tooltip: t.manga_audio_follow_page,
-        padTouchTarget: true,
-        selected: d.followPage,
-        onTap: () => d.setFollowPage(!d.followPage),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (onExportClip != null)
+            FushiIconButton(
+              key: const ValueKey<String>('manga_audio_export_clip'),
+              icon: FushiIcons.video,
+              tooltip: t.audiobook_export_clip,
+              padTouchTarget: true,
+              busy: widget.exportingClip,
+              // 整页无台词（页停留）或框着的是没配上音的占位句：没有可导出的声音。
+              enabled: exportableLine,
+              onTap: onExportClip,
+            ),
+          FushiIconButton(
+            key: const ValueKey<String>('manga_audio_follow_page'),
+            icon: FushiIcons.sync,
+            tooltip: t.manga_audio_follow_page,
+            padTouchTarget: true,
+            selected: d.followPage,
+            onTap: () => d.setFollowPage(!d.followPage),
+          ),
+        ],
       ),
       speed: d.speed,
       speedKey: const ValueKey<String>('manga_audio_speed'),

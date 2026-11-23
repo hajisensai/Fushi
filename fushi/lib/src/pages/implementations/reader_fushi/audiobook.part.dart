@@ -2071,52 +2071,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       }
       final String outPath = videoFile.path;
 
-      // M5：分享/存盘。桌面（含 Linux）走 FilePicker 存盘；移动走系统 Share。
-      if (isDesktop) {
-        final String? savePath = await FilePicker.platform.saveFile(
-          dialogTitle: t.audiobook_export_clip,
-          // BUG-809：桌面导出 .mp4（H.264，通用可直接播放）。
-          fileName: 'audiobook_clip_$stamp.$videoExt',
-          type: FileType.custom,
-          allowedExtensions: <String>[videoExt],
-        );
-        if (savePath != null) {
-          await File(outPath).copy(savePath);
-          if (mounted) {
-            FushiToast.show(
-              msg: t.audiobook_export_clip_saved,
-              severity: ToastSeverity.success,
-            );
-          }
-        }
-      } else {
-        final List<XFile> sharedFiles =
-            audiobookClipMobileShareAttachments(videoPath: outPath)
-                .map(
-                  (AudiobookClipShareAttachment attachment) =>
-                      XFile(attachment.path, mimeType: attachment.mimeType),
-                )
-                .toList(growable: false);
-        // BUG-1243：ffmpeg 合成参数已显式 `-map 0:v:0 -map 1:a:0`，AAC 在 MOV 内。
-        // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
-        // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。
-        //
-        // BUG-2542：移动端产物落 app 私有目录（不进相册），这次分享面板是用户取回
-        // 它的唯一通道。面板没呈现（防重入门丢弃 / 平台不回包）时不能再报「已保存」
-        // ——那是个用户拿不到文件的假成功。
-        final bool shared = await FushiShare.shareFiles(
-          sharedFiles,
-          subject: text,
-        );
-        if (mounted) {
-          FushiToast.show(
-            msg: shared
-                ? t.audiobook_export_clip_saved
-                : t.audiobook_export_clip_share_unavailable,
-            severity: shared ? ToastSeverity.success : ToastSeverity.warning,
+      // M5：分享/存盘（与漫画有声书共用 [deliverAudiobookClipVideo]）。桌面（含
+      // Linux）走 FilePicker 存盘；移动走系统 Share，面板没呈现时给诚实文案。
+      final AudiobookClipDeliveryOutcome delivered =
+          await deliverAudiobookClipVideo(
+            videoPath: outPath,
+            fileName: 'audiobook_clip_$stamp.$videoExt',
+            subject: text,
+            isDesktop: isDesktop,
           );
-        }
-      }
+      if (mounted) toastAudiobookClipDelivery(delivered);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.exportClip.pipeline', e, stack);
       debugPrint('[ReaderFushi] export-clip pipeline error: $e');
