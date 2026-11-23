@@ -7205,7 +7205,7 @@
   "mining_audio_follow_playback_speed": "文の音声を再生速度に合わせる",
   "mining_audio_follow_playback_speed_hint": "オーディオブックを 1 倍速以外で再生しているとき、カードの文の音声を同じ速度に、音程を保ったまま伸縮します。オーディオブックのカード作成に適用。カードの TTS 単語発音は「代替音声の再生速度」に従います。",
   "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
-  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+  "mining_audio_follow_playback_volume_hint": "Sentence audio on song, audiobook, audio manga and video cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "文の音声の前の余白",
   "mining_audio_head_pad_hint": "字幕が始まる前に余分に残す音声です。最初の音節が切れるのを防ぎます。前の行にはかかりません。",
   "mining_audio_pad_readout": "${ms} ms",

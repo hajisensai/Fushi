@@ -7205,7 +7205,7 @@
   "mining_audio_follow_playback_speed": "Ajustar o áudio da frase à velocidade de reprodução",
   "mining_audio_follow_playback_speed_hint": "Quando o audiolivro toca mais rápido ou mais devagar que 1×, o áudio da frase no cartão é esticado no tempo para a mesma velocidade, preservando o tom. Vale para mineração de audiolivro; o áudio TTS das palavras nos cartões segue a velocidade da voz reserva.",
   "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
-  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+  "mining_audio_follow_playback_volume_hint": "Sentence audio on song, audiobook, audio manga and video cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Margem de áudio antes da frase",
   "mining_audio_head_pad_hint": "Áudio extra mantido antes do início da legenda, para que a primeira sílaba não seja cortada. Nunca invade a linha anterior.",
   "mining_audio_pad_readout": "${ms} ms",

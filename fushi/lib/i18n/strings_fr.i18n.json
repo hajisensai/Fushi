@@ -7205,7 +7205,7 @@
   "mining_audio_follow_playback_speed": "Adapter l'audio de la phrase à la vitesse de lecture",
   "mining_audio_follow_playback_speed_hint": "Quand le livre audio est lu plus vite ou plus lentement qu'à 1×, l'audio de la phrase sur la carte est étiré à la même vitesse en préservant la hauteur. S'applique aux cartes créées depuis un livre audio ; l'audio TTS des mots suit la vitesse de la voix de secours.",
   "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
-  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+  "mining_audio_follow_playback_volume_hint": "Sentence audio on song, audiobook, audio manga and video cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Marge audio avant la phrase",
   "mining_audio_head_pad_hint": "Audio supplémentaire conservé avant le début du sous-titre, pour ne pas couper la première syllabe. Ne déborde jamais sur la ligne précédente.",
   "mining_audio_pad_readout": "${ms} ms",
