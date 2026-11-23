@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "ความสูงพื้นหลัง",
   "opt_subtitleStyleBoxHeight_desc": "% ของความสูงวิดีโอ (5–60) 0 คือพอดีข้อความ",
   "opt_subtitleStyleBoxAutoFit_title": "ปรับขนาดอัตโนมัติ",
-  "opt_subtitleStyleBoxAutoFit_desc": "ปรับขนาดข้อความให้พอดีพื้นหลังที่สูงคงที่",
+  "opt_subtitleStyleBoxAutoFit_desc": "ย่อข้อความที่ไม่พอดีพื้นหลังที่สูงคงที่ โดยไม่ขยายใหญ่ขึ้น",
   "opt_subtitleStyle_auto": "พอดีกับข้อความ",
   "opt_resetSubtitleStyle_title": "คืนค่ารูปลักษณ์เริ่มต้น",
   "opt_resetSubtitleStyle_desc": "ล้างส่วนนี้ (คงตำแหน่งและสวิตช์พื้นหลังไว้)",

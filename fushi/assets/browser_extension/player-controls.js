@@ -198,6 +198,14 @@
     }
     return [
       range('fontScale', 5, 'opt_subtitleStyleFontScale_title'),
+      // 自适应缩放开关（反馈 UAiGljqcTw：只在设置页有，用户和机器人都没找到）。与设置页同一字段
+      // boxAutoFit，默认值同样只认 fushiSubtitleStyle.DEFAULTS。
+      {
+        id: 'boxAutoFit',
+        kind: 'switch',
+        label: tr('opt_subtitleStyleBoxAutoFit_title'),
+        hint: tr('opt_subtitleStyleBoxAutoFit_desc'),
+      },
       range('lineHeight', 5, 'opt_subtitleStyleLineHeight_title'),
       {
         id: 'textAlign',
@@ -1045,6 +1053,36 @@
       wrap.appendChild(input);
       wrap.appendChild(out);
       el.appendChild(wrap);
+      return el;
+    }
+    if (spec.kind === 'switch') {
+      // 整行就是开关（与主页面的开关行同一套 M3E 轨道 + 拇指），点 / Enter / 空格都翻转。
+      var on = !!cur[spec.id];
+      el.classList.add('is-switch');
+      el.setAttribute('role', 'switch');
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('aria-checked', on ? 'true' : 'false');
+      if (spec.hint) el.title = spec.hint;
+      var sw = document.createElement('span');
+      sw.className = 'fushi-pc-switch';
+      sw.dataset.on = on ? '1' : '';
+      var check = iconEl('check', 16, 'fushi-pc-switch-icon');
+      if (check) sw.appendChild(check);
+      el.appendChild(sw);
+      var flipSwitch = function (refocus) {
+        var patch = {};
+        patch[spec.id] = !on;
+        writeStyle(patch, true);
+        // 立即提交会重绘整页，键盘用户的焦点跟回同一行，不掉回菜单开头。
+        if (refocus && stylePageEl && typeof stylePageEl.querySelector === 'function') {
+          var again = stylePageEl.querySelector('[data-field="' + spec.id + '"]');
+          if (again && typeof again.focus === 'function') again.focus();
+        }
+      };
+      el.addEventListener('click', function () { flipSwitch(false); });
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flipSwitch(true); }
+      });
       return el;
     }
     if (spec.kind === 'segmented') {

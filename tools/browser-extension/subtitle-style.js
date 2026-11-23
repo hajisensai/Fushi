@@ -44,7 +44,7 @@
     padding: 100,          // 百分比（默认 6px 12px 7px）
     boxWidth: 0,           // 视频宽的百分比；0 = 随内容（文字撑开，最宽到 subtitle-panel 的视口夹取）
     boxHeight: 0,          // 视频高的百分比（下限，内容更高时自动加高）；0 = 随内容
-    boxAutoFit: true,      // 自适应缩放：底板定了高度时，字号随盒伸缩到整句刚好放下（见 nextFitScale）
+    boxAutoFit: true,      // 自适应缩放：底板定了高度时，放不下的长句缩小到刚好放下；只缩不放（见 nextFitScale）
   });
   var LIMITS = Object.freeze({
     fontScale: [50, 300],
@@ -61,9 +61,11 @@
   // 宽 / 高非 0 时的下限：再窄就一字一行、再矮就等于没设。0 单独表示「随内容」，不受下限约束。
   var BOX_FLOOR = Object.freeze({ boxWidth: 20, boxHeight: 5 });
   // 自适应缩放倍率（--fushi-sub-fit）的允许区间。下限 0.35 是「还读得清」的底：压到这里仍放不下
-  // 的超长句**不再继续压**，改让底板按 min-height 自己长高（字一个都不许裁掉）；上限 2.5 防止
-  // 用户把底板拉得极大时字大到糊满画面。
-  var FIT_RANGE = Object.freeze([0.35, 2.5]);
+  // 的超长句**不再继续压**，改让底板按 min-height 自己长高（字一个都不许裁掉）。
+  // 上限 1 = **只缩不放**（维护者 2026-11-23 拍板「默认和 mpv 一样」，反馈 UAiGljqcTw）：字号的
+  // 上限就是用户设的「大小」，放得下的句子一律保持设置字号，只有放不下的才缩小。旧上限 2.5 会让
+  // 短句放大到填满底板，于是一行的字比两行的大、句与句之间字号忽大忽小。
+  var FIT_RANGE = Object.freeze([0.35, 1]);
   // 收敛容差：实测高落在可用高的 [1-TOL, 1] 区间内就算「刚好放下」，不再迭代。
   var FIT_TOLERANCE = 0.04;
   var ALIGNS = { left: true, center: true, right: true };
@@ -316,9 +318,9 @@
   // availH/W 是底板扣掉内边距后的可用尺寸（高来自设置里的底板高，不是实测高——底板写的是
   // min-height，内容一溢出盒子自己就长高了，拿实测高做分母永远判不出「放不下」）。
   //
-  // 返回 { fit, done }：fit 是下一轮该用的倍率，done=true 表示已经「刚好放下」可以收手。
+  // 返回 { fit, done }：fit 是下一轮该用的倍率，done=true 表示已经「放得下」可以收手。
   // 换行是非线性的（缩小字号可能少折一行，高度阶跃式下降），所以一次比例外推不保证到位，
-  // 由调用方迭代几轮；横向溢出（一个长到断不开的词）只许收、不许放。
+  // 由调用方迭代几轮。倍率被 FIT_RANGE 夹在 1 以下：有富余时最多回到设置字号，绝不为填满而放大。
   function nextFitScale(current, m, opts) {
     var fit = clampFit(current);
     var contentH = m && isFinite(m.contentH) ? m.contentH : 0;
@@ -334,7 +336,8 @@
     var next = clampFit(fit * ratio);
     // 收手条件：① 已经「放得下且基本填满」——ratio 是「可用 / 实测」，放得下是
     // ratio >= 1，填得满是 ratio <= 1 + 容差（写反边界就是「刚好溢出一点反而判收手」）；
-    // ② 倍率顶到区间边界后还想继续同方向走（再迭代也只会原地踏步）；③ 倍率变化小到看不出来。
+    // ② 倍率顶到区间边界后还想继续同方向走（再迭代也只会原地踏步）——设置字号下本来就放得下
+    // 的句子走的就是这条：fit = 1 = 上限，next 仍是 1，原地收手；③ 倍率变化小到看不出来。
     var done = (ratio >= 1 && ratio <= 1 + tol) ||
       (next === fit) ||
       (Math.abs(next - fit) / fit < 0.01);
@@ -366,7 +369,8 @@
     };
   }
 
-  // 自适应缩放的落地：把 textEl 里的整句缩放到「box 里刚好放下」，返回最终倍率。
+  // 自适应缩放的落地：设置字号下放不下的整句缩小到「box 里刚好放下」，返回最终倍率
+  // （放得下就是 1，即保持设置字号；只缩不放，见 FIT_RANGE）。
   // el = 底板（写 --fushi-sub-fit 的那个），textEl = 文字层（被测量的那个），frame = 视频盒 /
   // 预览舞台盒。网页覆盖层与 options 预览共用这一份，观感不可能对不上。
   //

@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Chiều cao nền",
   "opt_subtitleStyleBoxHeight_desc": "% chiều cao video (5–60). 0 là vừa chữ.",
   "opt_subtitleStyleBoxAutoFit_title": "Tự động vừa khung",
-  "opt_subtitleStyleBoxAutoFit_desc": "Co giãn chữ cho vừa nền có chiều cao cố định.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Thu nhỏ chữ không vừa nền có chiều cao cố định; không bao giờ phóng to.",
   "opt_subtitleStyle_auto": "Vừa theo chữ",
   "opt_resetSubtitleStyle_title": "Khôi phục giao diện mặc định",
   "opt_resetSubtitleStyle_desc": "Đặt lại mục này (giữ vị trí và công tắc nền).",

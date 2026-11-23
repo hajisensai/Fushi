@@ -95,7 +95,7 @@
   opt_subtitleStyleBoxHeight_title: 'Background height',
   opt_subtitleStyleBoxHeight_desc: '% of the video height (5–60). 0 fits the text.',
   opt_subtitleStyleBoxAutoFit_title: 'Auto-fit',
-  opt_subtitleStyleBoxAutoFit_desc: 'Scales text to fit a fixed-height background.',
+  opt_subtitleStyleBoxAutoFit_desc: 'Shrinks text that does not fit a fixed-height background; never enlarges.',
   opt_subtitleStyle_auto: 'Fit text',
   opt_resetSubtitleStyle_title: 'Restore default appearance',
   opt_resetSubtitleStyle_desc: 'Clears this section (keeps position and the background switch).',

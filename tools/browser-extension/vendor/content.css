@@ -5869,6 +5869,38 @@
     padding: 4px 12px;
 }
 
+/* 快捷面板里的开关行（自适应缩放）：整行可点，状态层与主页面开关行一致。 */
+#fushi-player-controls .fushi-pc-style-row.is-switch {
+    border-radius: var(--md-sys-shape-corner-medium);
+    outline: none;
+    cursor: pointer;
+    transition: background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:focus-visible {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-focus-opacity), transparent);
+    box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:active {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), transparent);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:active .fushi-pc-switch::after {
+    top: 0;
+    left: 0;
+    width: 28px;
+    height: 28px;
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:active .fushi-pc-switch[data-on="1"]::after {
+    left: 20px;
+}
+
 #fushi-player-controls .fushi-pc-style-label {
     flex: 1 1 auto;
     min-width: 0;

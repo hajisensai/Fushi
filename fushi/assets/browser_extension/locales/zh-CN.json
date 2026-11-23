@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "底板高度",
   "opt_subtitleStyleBoxHeight_desc": "视频高度的百分比（5–60%），0 为随内容。",
   "opt_subtitleStyleBoxAutoFit_title": "自适应缩放",
-  "opt_subtitleStyleBoxAutoFit_desc": "底板固定高度时，字号自动缩放到正好放下。",
+  "opt_subtitleStyleBoxAutoFit_desc": "底板固定高度时，放不下的字幕才缩小到正好放下；不会放大。",
   "opt_subtitleStyle_auto": "随内容",
   "opt_resetSubtitleStyle_title": "恢复默认外观",
   "opt_resetSubtitleStyle_desc": "清除本节的自定义（不含位置和底板开关）。",
