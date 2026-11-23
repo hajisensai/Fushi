@@ -138,17 +138,26 @@ const TtsVoicePreset _edge = TtsVoicePreset(
   name: 'Edge',
 );
 
-MangaRenderItem _synth(String voice, List<String> segments, {int seed = 7}) =>
-    MangaRenderItem(
-      line: MangaScriptLine(
-        page: 0,
-        blocks: const <int>[0],
-        speaker: '宮城',
-        kind: CastLineKind.spoken,
-      ),
-      text: segments.join(),
-      source: MangaRenderSynth(voice: voice, seed: seed, segments: segments),
-    );
+MangaRenderItem _synth(
+  String voice,
+  List<String> segments, {
+  int seed = 7,
+  CastLineDirection direction = const CastLineDirection(),
+}) => MangaRenderItem(
+  line: MangaScriptLine(
+    page: 0,
+    blocks: const <int>[0],
+    speaker: '宮城',
+    kind: CastLineKind.spoken,
+  ),
+  text: segments.join(),
+  source: MangaRenderSynth(
+    voice: voice,
+    seed: seed,
+    segments: segments,
+    direction: direction,
+  ),
+);
 
 void main() {
   late Directory dir;
@@ -221,6 +230,7 @@ void main() {
         voice: preset.id,
         seed: 7,
         segments: <String>[segment],
+        direction: const CastLineDirection(),
         outputPath: p.join(dir.path, 'out.m4a'),
         cancel: TtsRenderCancelToken(),
       );
@@ -340,6 +350,76 @@ void main() {
     expect(
       worker.jobs.single.items.map((IrodoriBatchItem i) => i.text).toList(),
       <String>['うん'],
+    );
+    await b.dispose();
+  });
+
+  test('带演出的句子：批里的键 / 参数按声音包能表达的演出算，指纹随之进清单', () async {
+    const CastLineDirection toned = CastLineDirection(
+      emotion: CastEmotion.sadness,
+      intensity: 80,
+      tone: 'おずおずと',
+      rateOffset: 0.2,
+      pitchOffset: -2,
+      volumeOffset: 3,
+    );
+    final AppMangaRenderBackend b = backend();
+    await prepare(b, <MangaRenderItem>[
+      _synth(_narr.id, <String>['うん'], direction: toned),
+      _synth(_narr.id, <String>['うん']),
+    ]);
+    final TtsDirectionSupport support = irodoriPackDirectionSupport(_narr);
+    final TtsDirection wanted = effectiveTtsDirection(
+      support,
+      TtsDirection.fromLine(
+        toned,
+        seed: 7,
+        durationSeconds: irodoriManualSeconds('うん', lora: support.adapter),
+      ),
+    );
+    final String tonedKey = TtsAudioCache.keyFor(<String, Object?>{
+      ...packs.audioIdentity(_narr),
+      ...wanted.cacheIdentity,
+    }, 'うん');
+    final Map<String, IrodoriBatchItem> byId = <String, IrodoriBatchItem>{
+      for (final IrodoriBatchItem i in worker.jobs.single.items) i.id: i,
+    };
+    // 无演出的同一句照旧（键与改动前一致）；带演出的按生效字段另算一个键。
+    expect(byId.keys, contains(keyOf(_narr, 'うん')));
+    expect(byId.keys, contains(tonedKey));
+    final IrodoriBatchItem item = byId[tonedKey]!;
+    final IrodoriBatchItem expected = irodoriDirectedItem(
+      irodoriBatchItemFromPreset(
+        _narr,
+        id: tonedKey,
+        text: 'うん',
+        outputPath: item.outputPath,
+      )!,
+      wanted,
+    );
+    expect(item.seed, expected.seed);
+    expect(item.seconds, expected.seconds);
+    expect(item.caption, expected.caption);
+    expect(item.durationScale, expected.durationScale);
+
+    expect(
+      await b.directionKey(voice: _narr.id, direction: toned),
+      mangaDirectionKey(
+        effectiveTtsDirection(support, TtsDirection.fromLine(toned)),
+      ),
+    );
+    expect(
+      await b.directionKey(
+        voice: _narr.id,
+        direction: const CastLineDirection(),
+      ),
+      isNull,
+      reason: '没有演出 = 与旧清单行（没有 dir）一致',
+    );
+    expect(
+      await b.directionKey(voice: 'pack:nope/x', direction: toned),
+      isNull,
+      reason: '声音解析不了：按没有生效的演出比对',
     );
     await b.dispose();
   });

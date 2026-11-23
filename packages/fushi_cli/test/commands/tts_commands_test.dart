@@ -151,6 +151,17 @@ void main() {
     );
   });
 
+  test('line：--tone 原样进 body，空串（清掉）也照发', () {
+    expect(
+      _build('line', <String>['book:vol-1', 'p0b1', '--tone', 'おずおずと']).body,
+      <String, Object?>{'tone': 'おずおずと'},
+    );
+    expect(
+      _build('line', <String>['book:vol-1', 'p0b1', '--tone', '']).body,
+      <String, Object?>{'tone': ''},
+    );
+  });
+
   test('character：改名 / 指派 / 清掉指派；--voice 与 --clear-voice 互斥', () {
     final CtlRequestSpec rename = _build('character', <String>[
       'book:vol-1',

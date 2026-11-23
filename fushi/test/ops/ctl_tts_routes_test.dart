@@ -159,9 +159,16 @@ class _FakeLocalBackend implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) => throw UnsupportedError('local only');
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => null;
 
   @override
   Future<int> cutClip({
@@ -624,6 +631,48 @@ void main() {
     expect((await readScript()).lineById('p0b0')!.emotion, CastEmotion.anger);
     // 第一次改之后这一页又被改过：不覆盖。
     expect((await undo()).status, OpUndoStatus.superseded);
+  });
+
+  test('改一句的语气说明：写入 / 出现在行 JSON；非文字 400；空串清掉；撤销放回', () async {
+    await expectLater(
+      call(
+        'PUT',
+        '$item/lines/:line',
+        params: <String, String>{'key': wire, 'line': 'p0b0'},
+        body: <String, Object?>{'tone': 3},
+      ),
+      failure(400),
+    );
+    final (Object? result, Future<OpUndoOutcome> Function() undo) = await runOp(
+      'tts.manga.line.edit',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'tone': '  おずおずと '},
+    );
+    final Map<String, Object?> line =
+        (result! as Map<String, Object?>)['line']! as Map<String, Object?>;
+    expect(line['tone'], 'おずおずと');
+    MangaScriptLine edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.tone, 'おずおずと');
+    expect(edited.direction.tone, 'おずおずと');
+    expect(edited.source, TtsCastSource.user);
+
+    expect((await undo()).status, OpUndoStatus.done);
+    expect((await readScript()).lineById('p0b0')!.tone, isNull);
+
+    await call(
+      'PUT',
+      '$item/lines/:line',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'tone': '声を落として'},
+    );
+    await call(
+      'PUT',
+      '$item/lines/:line',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'tone': ''},
+    );
+    edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.tone, isNull);
   });
 
   test('改某角色：改名带走行与声音；声音要在列表里；撤销整份放回', () async {

@@ -219,6 +219,7 @@ void _configureLine(ArgParser parser) => parser
     help: '语气（none = 不标，强度一并清掉）',
   )
   ..addOption('intensity', help: '语气强度 0-100（none = 不标强度）')
+  ..addOption('tone', help: '语气说明（自由文本演技指令，如「おずおずと」；空串 = 清掉）')
   ..addOption('position', help: '移到本页第几句（1 起）')
   ..addOption('say', help: '整句手填要念的文字（空串 = 清掉）')
   ..addMultiOption('fix', help: 'OCR 错字修正：<块下标>=<文字>（文字为空 = 删掉这处修正）');
@@ -251,6 +252,7 @@ CtlRequestSpec _buildLine(CtlCommandContext c) {
     if (c.option('emotion') case final String emotion) 'emotion': emotion,
     if (_intensityOption(c) case final MapEntry<String, Object?> e)
       e.key: e.value,
+    if (c.args.wasParsed('tone')) 'tone': '${c.args['tone']}',
     if (_intOption(c, 'position') case final int position) 'position': position,
     if (say != null) 'say': '$say',
     if (fixes.isNotEmpty) 'fixes': fixes,
@@ -258,7 +260,7 @@ CtlRequestSpec _buildLine(CtlCommandContext c) {
   if (body.isEmpty) {
     throw const CtlUsageError(
       '至少给一个要改的：--speaker / --kind / --beat / --emotion / --intensity / '
-      '--position / --say / --fix',
+      '--tone / --position / --say / --fix',
     );
   }
   return CtlRequestSpec.put(path, body: body);
