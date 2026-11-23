@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -205,21 +206,45 @@ String joinMangaBlockTexts(Iterable<String> parts) {
   return out.toString();
 }
 
-/// 一句的台词文本：手动填写了 [MangaScriptLine.say] 就用它；否则按
-/// [MangaScriptLine.blocks] 顺序取该页 OCR 块的文字（块内各行直接相连），有文本修正时
-/// 用修正值，再按 [joinMangaBlockTexts] 拼接。越界的块下标跳过（校验过的行不会出现）。
+/// 一句的台词文本（显示 / 制卡用），即 [resolveMangaLineTexts] 的 `text`。
 String resolveMangaLineText(
   MangaScriptLine line,
   List<MokuroBlock> pageBlocks,
-) =>
-    line.say ??
-    joinMangaBlockTexts(<String>[
-      for (final int b in line.blocks)
-        if (line.textFixes[b] case final String fix)
-          fix
-        else if (b >= 0 && b < pageBlocks.length)
-          pageBlocks[b].lines.join(),
-    ]);
+) => resolveMangaLineTexts(line, pageBlocks).text;
+
+/// 一句的台词文本与合成用文本。手动填写了 [MangaScriptLine.say] 两者都用它；否则按
+/// [MangaScriptLine.blocks] 顺序取该页 OCR 块的文字（块内各行直接相连），有文本修正时
+/// 用修正值，再按 [joinMangaBlockTexts] 拼接。越界的块下标跳过（校验过的行不会出现）。
+///
+/// 页面印着的注音（`manga_ruby.dart`）：底本块也在这句里时，注音块不进文本，合成用
+/// 文本里底本换成注音读音（「CRYCHIC」念「クライシック」）；有文本修正的底本不换（修正
+/// 后字位对不上）。只有注音、没有底本的行照常念注音块本身。
+({String text, String spoken}) resolveMangaLineTexts(
+  MangaScriptLine line,
+  List<MokuroBlock> pageBlocks,
+) {
+  final String? say = line.say;
+  if (say != null) return (text: say, spoken: say);
+  final MangaPageRuby ruby = detectMangaPageRuby(pageBlocks);
+  final Set<int> inLine = line.blocks.toSet();
+  final List<String> text = <String>[];
+  final List<String> spoken = <String>[];
+  for (final int b in line.blocks) {
+    if (line.textFixes[b] case final String fix) {
+      text.add(fix);
+      spoken.add(fix);
+      continue;
+    }
+    if (b < 0 || b >= pageBlocks.length) continue;
+    if (ruby.baseOfRuby[b] case final int base when inLine.contains(base)) {
+      continue;
+    }
+    final List<String> lines = pageBlocks[b].lines;
+    text.add(lines.join());
+    spoken.add(ruby.spokenLinesOf(b, lines).join());
+  }
+  return (text: joinMangaBlockTexts(text), spoken: joinMangaBlockTexts(spoken));
+}
 
 /// 演出稿记录的 OCR 签名：OCR 结果自带引擎签名（`MangaOcrMetadata.engineSignature`）
 /// 就用它；没有（mokuro 导入的卷）就按 OCR 内容算——每页的块数、块框坐标（取整到像素）

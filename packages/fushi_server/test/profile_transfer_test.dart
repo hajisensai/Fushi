@@ -179,12 +179,19 @@ void main() {
 
     final ({int status, String body}) get = await wire('GET');
     expect(get.status, 403);
-    expect(get.body, contains('disabled'));
+    expect(
+      parseInterconnectProfileDenialBody(get.body),
+      InterconnectProfileDenial.disabled,
+    );
     final ({int status, String body}) put = await wire(
       'PUT',
       body: profileJson('A', <String, String>{'k': '1'}),
     );
     expect(put.status, 403);
+    expect(
+      parseInterconnectProfileDenialBody(put.body),
+      InterconnectProfileDenial.disabled,
+    );
     expect(
       Directory(
         p.join(tmp.path, 'data', 'support', 'interconnect_profiles'),
@@ -280,6 +287,13 @@ void main() {
   test('坏载荷 400 且零落盘；未配对 token 401；明文 host 403', () async {
     await startServer(tls: true);
     await setEnabled(true);
+    // 开着但还没收到过任何配置：409 + 结构化码（反馈 G-ebgSnoK8，不回英文原文）。
+    final ({int status, String body}) empty = await wire('GET');
+    expect(empty.status, 409);
+    expect(
+      parseInterconnectProfileDenialBody(empty.body),
+      InterconnectProfileDenial.unavailable,
+    );
     final ({int status, String body}) bad = await wire(
       'PUT',
       body: '{"type":"something-else"}',
@@ -296,7 +310,10 @@ void main() {
     await startServer(tls: false);
     final ({int status, String body}) plain = await wire('GET', scheme: 'http');
     expect(plain.status, 403);
-    expect(plain.body, contains('HTTPS required'));
+    expect(
+      parseInterconnectProfileDenialBody(plain.body),
+      InterconnectProfileDenial.httpsRequired,
+    );
   });
 
   test('配置往返：profile_transfer 写回 yaml，缺省为 false', () async {

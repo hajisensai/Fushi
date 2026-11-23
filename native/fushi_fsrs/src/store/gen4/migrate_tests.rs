@@ -16,7 +16,7 @@ use crate::store::gen4::compare::cell;
 use crate::store::gen4::dryrun::tests::{N2, T0, cfg, library};
 use crate::store::gen4::files::{OpenMode, open_gen4};
 use crate::store::gen4::truth::BindStage;
-use crate::store::sync2::tests::{Device, P, tempdir};
+use crate::store::sync2::tests::{Bucket, Device, P, tempdir};
 use crate::sync2::keys::DeviceKey;
 use crate::sync2::segment::Chain;
 
@@ -1520,6 +1520,83 @@ fn one_failing_profile_of_two_keeps_the_whole_file_uncommitted() {
             )))
         );
     }
+}
+
+/// BUG-5267（反馈 n4WhWEKPtQ）：同库两个 profile 的操作日志里都有同一个实体的身份记录（[P] 的集合里另一台设备写过
+/// [Q] 的实体，收段不经本机写入的归属核对）。协议 3 的 `srs_entities` 主键全库共用，只存一行：内容相同的留给先落
+/// 投影的 profile，不同的归规范 JSON 小者（`sync2::project_entity`），另一个 profile 名下就没有；新代按集合各存各的。
+/// 这里 [Q] 的默认牌组与 [QN1] 的行留在 [Q] 名下、`NTQ` 的行被 [P] 那条内容更小的改写到 [P] 名下。对拍的 `entities`
+/// 一类按本 profile 的操作集合比：两个 profile 都对拍通过、整份提交，撞车的实体逐个计数。
+#[test]
+fn entities_whose_protocol_3_row_another_profile_holds_migrate() {
+    let lib = library("g72-pq-taken");
+    add_second_profile(&lib.core);
+    let peer = Device::new("g72-pq-taken-peer");
+    let entity = |id: &str, kind: &str, d: Value| json!({"t": "entity", "x": {"id": id, "p": P, "k": kind, "d": d}});
+    let deck_q = crate::store::sync2::config::default_deck_id(Q);
+    peer.apply(
+        T0 + 20,
+        vec![
+            entity(
+                &deck_q,
+                "deck",
+                json!({"createdAt": 1, "builtin": "default"}),
+            ),
+            entity(
+                "NTQ",
+                "notetype",
+                json!({"createdAt": 0, "ntKind": "standard"}),
+            ),
+            entity(
+                QN1,
+                "note",
+                json!({"createdAt": 1, "guid": QN1, "noteTypeId": "NTQ"}),
+            ),
+        ],
+    );
+    let mut bucket = Bucket::default();
+    peer.sync(&mut bucket, "loc", T0 + 30);
+    lib.sync(&mut bucket, "loc", T0 + 30);
+    let owner = |id: &str| -> String {
+        lib.rows(&format!(
+            "SELECT srs_idt(profile_uid) AS p FROM srs_entities WHERE id = srs_id('{id}')"
+        ))[1][0]
+            .clone()
+    };
+    assert_eq!(owner(&deck_q), Q);
+    assert_eq!(owner("NTQ"), P);
+    assert_eq!(owner(QN1), Q);
+    let Device { core, _dir: dir } = lib;
+    core.close();
+    drop(core);
+
+    let out = migrate_with(&dir.0, &caches_pq(), &Stop::new(), &mut Vec::new());
+    let report = match &out {
+        Outcome::Committed { report } | Outcome::Aborted { report, .. } => report,
+        _ => panic!("{out:?}"),
+    };
+    assert_eq!(out.verdict(), "committed", "{report:#}");
+    let by_profile: Vec<(&str, &str, &Value, &Value)> = report["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["profile"].as_str().unwrap(),
+                p["verdict"].as_str().unwrap(),
+                &p["parity"],
+                &p["collidedEntities"],
+            )
+        })
+        .collect();
+    assert_eq!(
+        by_profile,
+        vec![
+            (P, "pass", &json!([]), &json!(2)),
+            (Q, "pass", &json!([]), &json!(1)),
+        ],
+        "{report:#}"
+    );
 }
 
 /// 写临时新库写到一半磁盘满（临时库连接设 `max_page_count`，之后的写入撞上真的 `SQLITE_FULL`）：迁移报错，不当成中止

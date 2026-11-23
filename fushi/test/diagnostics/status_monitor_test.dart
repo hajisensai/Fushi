@@ -535,4 +535,28 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     expect(m.running, isFalse);
   });
+
+  testWidgets('状态页：悬浮小窗分区排第一，默认窗口首屏就能看到开关（BUG-5258）', (
+    WidgetTester tester,
+  ) async {
+    final _Fake f = _Fake();
+    final StatusMonitor m = f.monitor();
+    addTearDown(m.resetForTest);
+    // 默认 800×600 测试窗口：悬浮小窗排在读数后面时整节懒构建不出来。
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(home: StatusMonitorPage(monitor: m)),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    final Finder toggle = find.text(t.status_monitor_overlay_toggle);
+    expect(toggle, findsOneWidget);
+    expect(
+      tester.getTopLeft(toggle).dy,
+      lessThan(tester.getTopLeft(find.text(t.status_monitor_cpu)).dy),
+      reason: '悬浮小窗开关在实时读数之上',
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

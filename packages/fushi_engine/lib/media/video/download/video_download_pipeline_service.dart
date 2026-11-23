@@ -1640,8 +1640,9 @@ class VideoDownloadPipelineService {
         'The selected download job no longer exists',
       );
     }
+    // 用户显式重试：种子从原后端消失（任何后端）就回 enqueue 在同一后端重建，
+    // 语义同 [resumeJob]；enqueue 的 _binding 会校验后端身份。
     final bool rewindToEnqueue =
-        job.backendKind == QbConnectionConfig.backendEmbedded &&
         job.stage == VideoDownloadJobStage.download &&
         (job.lastError ?? '').contains(videoDownloadMissingBackendTaskError);
     if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
@@ -1693,10 +1694,11 @@ class VideoDownloadPipelineService {
 
   /// Resumes a user-paused durable job and its exact backend task.
   ///
-  /// Embedded tasks whose fast-resume entry disappeared are rewound to the
-  /// enqueue stage so the original selected resource is recreated. Other
-  /// backends must still expose the recorded task; silently switching backend
-  /// instances would resume or create the wrong torrent.
+  /// A download-stage task missing from its backend (embedded fast-resume
+  /// loss, a paused task never migrated to a `fushi_host`, a torrent removed
+  /// in qBittorrent) is rewound to the enqueue stage so the original selected
+  /// resource is recreated on the **same** validated backend instance; the
+  /// backend identity check still refuses to act on a different downloader.
   Future<void> resumeJob(String jobId) async {
     await _resumeJob(jobId, _BackendTorrentLookup());
     wake();
@@ -1743,16 +1745,15 @@ class VideoDownloadPipelineService {
             );
           }
         }
-      } else if (job.backendKind == QbConnectionConfig.backendEmbedded &&
-          job.stage == VideoDownloadJobStage.download) {
-        rewindToEnqueue = true;
       } else if (job.stage == VideoDownloadJobStage.download) {
-        throw const VideoDownloadPipelineActionRequired(
-          'The torrent is no longer available in the original backend',
-        );
+        // 用户显式「继续」，原后端上却没有这颗种子（内置引擎 fast-resume 丢失、
+        // 迁到 fushi_host 前就暂停而没移植、外接 qB 里被删）：回到 enqueue 在
+        // **同一个**后端上按任务原选的资源重建。上面的 _validateBackendBinding
+        // 与 enqueue 的 _binding 都按 kind/profile/fingerprint 校验，不会换到
+        // 另一台下载器；自动观察路径（_observeDownload）仍只对内置引擎重建。
+        rewindToEnqueue = true;
       }
-    } else if (job.backendKind == QbConnectionConfig.backendEmbedded &&
-        job.stage == VideoDownloadJobStage.download) {
+    } else if (job.stage == VideoDownloadJobStage.download) {
       rewindToEnqueue = true;
     }
 
