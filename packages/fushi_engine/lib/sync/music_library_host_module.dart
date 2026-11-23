@@ -21,6 +21,8 @@
 /// | `GET tracks/<uid>/lyrics`（204 = 没有）、`PUT tracks/<uid>/lyrics {format, raw, offsetMs}` | 歌词 / 换来源 |
 /// | `PUT tracks/<uid>/lyrics/offset {source, offsetMs, updatedAt}` | 整首偏移 |
 /// | `GET tracks/<uid>/videos`、`PUT videos/<id>/offset {offsetMs, updatedAt}` | MV 绑定 / 微调 |
+/// | `POST tracks/<uid>/videos/rematch`、`GET tracks/<uid>/videos/candidates?source=anime|online` | 请 host 重新匹配 / 候选（q9） |
+/// | `POST tracks/<uid>/videos {kind, ref, …}`、`DELETE tracks/<uid>/videos/<id>` | 手动绑定 / 解绑（q9） |
 /// | `GET covers/<ref>` | 封面 |
 library;
 
@@ -58,6 +60,8 @@ class MusicLibraryHostModule extends InterconnectHostModule {
       'transcode': true,
       'relay': true,
       'discs': true,
+      // 能不能请这台 host 重新匹配 / 手动绑定 MV（design-imusic-q9；无头服务端没有匹配器）。
+      'videoMatch': h.videoMatcher != null,
     };
   }
 
@@ -240,12 +244,44 @@ class MusicLibraryHostModule extends InterconnectHostModule {
             ? shelf.Response.notFound('Lyrics not found')
             : _json(<String, Object?>{'offsetMs': applied});
       case <String>['tracks', final String uid, 'videos']:
+        if (method == 'POST') {
+          final RemoteMusicVideoCandidate? c =
+              RemoteMusicVideoCandidate.fromJson(await _body(request));
+          if (c == null) return shelf.Response(400, body: 'Bad candidate');
+          return _json(<String, Object?>{
+            'items': <Object?>[
+              for (final RemoteMusicVideo v in await h.bindVideo(uid, c))
+                v.toJson(),
+            ],
+          });
+        }
         if (method != 'GET') return shelf.Response(405);
         return _json(<String, Object?>{
           'items': <Object?>[
             for (final RemoteMusicVideo v in await h.videos(uid)) v.toJson(),
           ],
         });
+      case <String>['tracks', final String uid, 'videos', 'rematch']:
+        if (method != 'POST') return shelf.Response(405);
+        return _json(<String, Object?>{'bound': await h.rematchVideos(uid)});
+      case <String>['tracks', final String uid, 'videos', 'candidates']:
+        if (method != 'GET') return shelf.Response(405);
+        return _json(<String, Object?>{
+          'items': <Object?>[
+            for (final RemoteMusicVideoCandidate c in await h.videoCandidates(
+              uid,
+              q['source'] ?? '',
+            ))
+              c.toJson(),
+          ],
+        });
+      case <String>['tracks', final String uid, 'videos', final String id]:
+        if (method != 'DELETE') return shelf.Response(405);
+        final int? videoId = int.tryParse(id);
+        if (videoId == null || !await h.unbindVideo(uid, videoId)) {
+          return shelf.Response.notFound('Video not found');
+        }
+        return shelf.Response(204);
       case <String>['videos', final String id, 'offset']:
         if (method != 'PUT') return shelf.Response(405);
         final int? videoId = int.tryParse(id);

@@ -319,12 +319,12 @@ abstract interface class InterconnectHostModule {
 
 ```dart
 typedef MusicMvSourceResolver =
-    Future<MusicMvBackdropSource?> Function(MusicPlayItem item);
+    Stream<MusicMvBackdropSource?> Function(MusicPlayItem item);
 
 class MusicMvBackdropSource {
-  final Media media;          // 本机：文件路径；远端：带流票的 URL
+  final String path;          // 本机：文件路径；远端：带流票的 URL
   final int offsetMs;
-  final Future<void> Function()? release; // 远端：释放流票
+  final Future<void> Function()? release; // 远端：释放流票（幂等）
 }
 ```
 
@@ -343,7 +343,8 @@ class MusicMvBackdropSource {
 
 - 自动匹配（声纹、对齐）只在 host 上、对 host 本机文件跑。v172 缓存表留在 host，键是 host 路径，不出境。
 - 客户端**绝不**为远端曲目或远端 MV 解码、算声纹。远端曲目上隐藏「重新匹配 / 手动绑定」入口。
-  是否加「请 host 重新匹配」的远程指令见 Q9。
+  Q9 拍「做」：host 接受 `POST …/videos/rematch`、`GET …/videos/candidates?source=online|anime`、`POST …/videos`、
+  `DELETE …/videos/<id>`，匹配在 host 上跑，客户端只发指令、在 host 给的候选里选（能力位 `videoMatch`）。
 - 服务端自己扫描音乐后也跑同一个 `MusicVideoAutoMatcher`（第三期搬进引擎后两边共用），需要 ffmpeg 与
   `fushi_music`（§8 第三期）。
 
@@ -390,7 +391,7 @@ class MusicMvBackdropSource {
 | **1 引擎读层** | `fushi_music` 进引擎依赖；歌词本地层、MV 引用解析、封面选取搬进引擎，app 改调引擎、删 app 版；修 §2.5 的注释 | 引擎纯度守卫绿；歌词 / MV 解析单测从 app 挪到引擎后照样绿 |
 | **2 音乐模块 + 客户端（app 当 host）** | `MusicLibraryHostModule` / `EngineMusicLibraryHost`、路由与 DTO、能力位；`InterconnectMusicBrowser`、`fushiHost` 播放解析、`music_remote_tracks` 新 kind；MV 解析器重构 + 远端解析器；卡拉 OK 页接远端；合规判据 + 守卫 | 引擎路由测试（分页、流票吊销 / 释放、Range、`peerPlayable`、YouTube / 插件曲目不出）；客户端假 host 测试；两台真机：远端曲目播放 + 歌词页 MV 背景对齐（蓝光 m2ts 一例） |
 | **3 服务端扫描与随包** | 扫描 / 刮削 / MV 自动匹配写层搬进引擎；`scanAll` 加 music + prune（走音乐扫描器的软删）、`kServerLibraryRootKinds` 加 music、admin purge；`release-server.yml` / `build-multiplatform.yml` 构建随包 `native/fushi_music`（照 `fushi_fsrs`：Rust 缓存、Linux x64、`bin/../lib/` 查找、构建失败即失败）；服务端操作目录 / WebUI 允许 music 根 | 服务端集成测试扫一个带 CUE + 蓝光 MV 的夹具目录，客户端经服务端播放并出 MV 背景；`server-parity-gaps.md` 删掉音乐那一节 |
-| 4（均已拍「做」） | Q4 / Q5 / Q6 / Q12 已并入本 PR；Q9 远程重新匹配（BUG-5306）待 #4249；Q3 回写已并入第 2 期 | 各自 |
+| 4（均已拍「做」） | Q4 / Q5 / Q6 / Q12 / Q9 已并入本 PR（Q9 在合入 #4249 后做）；Q3 回写已并入第 2 期 | 各自 |
 
 操作目录：第 2、3 期若新增 `ctl_<域>_routes.dart` 路由（例如服务端 `/api/admin/libraries` 放开 music、
 app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设计不为 AI 新增浏览远端音乐的写操作。
@@ -409,9 +410,9 @@ app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设�
 | **Q4** 网络来源曲目中继 | 做 | 已做：host 用自己的来源解析器代读、Range 透传（`LibraryMediaUpstream` + `library_media_relay.dart`），凭据不出 host（BUG-5303 已修） |
 | **Q5** 光盘标题 / CDDA | 做 | 已做：`MusicStreamMaterializer` 按章节 / 盘时间轴截成 FLAC 缓存文件（CDDA 限 Windows host），签票回 `segmentApplied`（BUG-5304 已修） |
 | **Q6** host 转码 | 做 | 已做：签票带 `maxBitrateKbps`，源码率高于上限时整首转 AAC 缓存文件（可 seek）；未用视频 HLS 分段方案，理由见 BUG-5305（已修） |
-| **Q7** 下发 YouTube MV 绑定 | 做 | host 侧已做（`RemoteMusicVideo.youtubeRef`）；客户端消费随 MV 背景 → BUG-5302 |
-| **Q8** MV 曲目两条连接 | 你定 + 根本性做完 → a：接受两条，与本机实现一致 | 随客户端 MV 背景落地 → BUG-5302 |
-| **Q9** 远程重新匹配 / 手动绑定 | 做 | 未做：匹配器在未合并的 #4249 → BUG-5306 |
+| **Q7** 下发 YouTube MV 绑定 | 做 | 已做：host 下发 `youtubeRef`；客户端 MV 页由本机 YouTube 音源取（iOS 不出），歌词页背景接 host 绑定（BUG-5302 已修） |
+| **Q8** MV 曲目两条连接 | 你定 + 根本性做完 → a：接受两条，与本机实现一致 | 已做：`openTrackPicture` 另签原样画面流（BUG-5302 已修） |
+| **Q9** 远程重新匹配 / 手动绑定 | 做 | 已做：rematch / candidates / bind / unbind 四条路由 + 能力位 `videoMatch`（BUG-5306 已修） |
 | **Q10** iOS 合规单列判据 | 做 | 已做：`store_compliance.dart` 的 `interconnectMusicLibraryAvailableOn`（恒 true），`music_servers.dart` / `music_remote_tracks.dart` 只问它，守卫钉住 |
 | **Q11** 分期顺序 | a：先模块层与引擎 | 已按 a：第 0 期 → 第 1 期（部分）→ 第 2 期；第 1 期余项（歌词本地层、封面选取进引擎）已做（BUG-5300 已修），第 3 期 → BUG-5301 |
 | **Q12** 下载到本机 | 做 | 已做：接进 Jellyfin / Subsonic 同一条离线副本管线（v175），`forDownload` 签票（原样 + 整首）、按通道证书指纹钉扎直取、封面走通道、host 歌词入缓存；uid 不变，之后放本机文件（BUG-5307 已修） |

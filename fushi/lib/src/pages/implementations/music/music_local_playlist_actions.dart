@@ -26,8 +26,12 @@ import 'package:fushi/src/media/music/server/music_server_downloads.dart'
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show InterconnectMusicBrowser;
 import 'package:fushi/src/pages/implementations/music/music_library_removal.dart'
     show musicRemoveRemoteTracksWithUndo;
+import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
+    show openMusicHostMvPage;
 import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart'
     show musicServerDownloadServiceOf, musicServerTrackDownloadActions;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
@@ -317,6 +321,18 @@ MusicItemMenu? musicServerTrackLibraryMenu(
             track,
             albumTitle: albumTitle,
           ),
+          // 互联 host 曲目：host 上的 MV（看 / 微调写回 / 请 host 重新匹配，design-imusic-q7 / q9）。
+          if (browser is InterconnectMusicBrowser)
+            MusicMenuAction(
+              id: 'mv',
+              label: t.music_mv_section,
+              icon: FushiIcons.video,
+              run: (BuildContext context) => openMusicHostMvPage(
+                context: context,
+                browser: browser,
+                track: track,
+              ),
+            ),
         ],
       );
     }()),

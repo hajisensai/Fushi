@@ -691,9 +691,13 @@ class MusicServerVideo {
     required this.offsetMs,
     this.isUserBound = false,
     this.youtubeRef,
+    this.label,
   });
 
   final String id;
+
+  /// 列表里显示的名字（文件名 / YouTube 视频 id …）；服务器没给为 null。
+  final String? label;
 
   /// `local` / `anime_episode` / `youtube`（`MusicVideoKind`）。
   final String kind;

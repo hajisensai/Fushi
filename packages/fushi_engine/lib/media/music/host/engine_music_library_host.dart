@@ -34,6 +34,8 @@ import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart'
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show dvdDiscRootForTitlePath, dvdTitleNumberForPath, isDvdTitlePath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeVideoIdOrNull;
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show themeSongFilesOf;
 import 'package:fushi_engine/sync/library_media_streams.dart';
@@ -59,6 +61,22 @@ typedef MusicHostNetworkSource =
 /// 封面：文件或内存字节，二选一。
 typedef MusicHostCover = ({File? file, Uint8List? bytes});
 
+/// host 上的 MV 匹配器（design-imusic-q9：客户端请 host 重新匹配 / 手动绑定）。匹配要解码、算声纹，
+/// 只在 host 本机对 host 文件跑；实现由 app 注入（`MusicVideoService`），无头服务端没有（路由回 501）。
+abstract interface class MusicHostVideoMatcher {
+  /// 重新找本机 MV（文件名预筛 + 声纹对齐，过门自动绑定）。回这次绑上的个数。
+  Future<int> rematch(String trackUid);
+
+  /// 待确认候选（[RemoteMusicVideoCandidateSource]）。
+  Future<List<RemoteMusicVideoCandidate>> candidates(
+    String trackUid,
+    String source,
+  );
+
+  /// 绑定一个候选（用户确认；YouTube 会尝试对齐求偏移）。
+  Future<void> bind(String trackUid, RemoteMusicVideoCandidate candidate);
+}
+
 /// 歌单写操作的错误（路由映射成 4xx）。
 class MusicHostWriteError implements Exception {
   const MusicHostWriteError(this.status, this.message);
@@ -79,8 +97,10 @@ class EngineMusicLibraryHost {
     MusicStreamMaterializer? materializer,
     bool? cddaSupported,
     MusicLocalLyrics? localLyrics,
+    MusicHostVideoMatcher? videoMatcher,
     DateTime Function()? now,
   }) : _database = database,
+       videoMatcher = videoMatcher,
        _localLyrics = localLyrics ?? MusicLocalLyrics(),
        _animeEpisodeFile = animeEpisodeFile,
        _embeddedCover = embeddedCover ?? _readEmbeddedCover,
@@ -94,6 +114,9 @@ class EngineMusicLibraryHost {
 
   /// 本地歌词层（与 app 的本机播放同一份 sidecar / 内嵌规则，BUG-5300）。
   final MusicLocalLyrics _localLyrics;
+
+  /// MV 匹配器（null = 这台 host 不接受远程匹配 / 绑定）。
+  final MusicHostVideoMatcher? videoMatcher;
 
   /// CDDA 能不能截：只有 Windows 有按扇区读光驱的实现（macOS 的 CD 挂成 AIFF 文件，入库就是本机文件）。
   final bool _cddaSupported;
@@ -694,8 +717,71 @@ class EngineMusicLibraryHost {
         confidence: row.confidence,
         isUserBound: row.isUserBound,
         youtubeRef: youtubeRef,
+        label: musicVideoRowLabel(row),
         updatedAt: row.updatedAt,
       );
+
+  MusicHostVideoMatcher _matcher() {
+    final MusicHostVideoMatcher? m = videoMatcher;
+    if (m == null) {
+      throw const MusicHostWriteError(501, 'MV matching not available');
+    }
+    return m;
+  }
+
+  Future<MusicTrackRow> _liveTrack(String trackUid) async {
+    final MusicTrackRow? t = await _db.getMusicTrack(trackUid);
+    if (t == null || t.deletedAt != null) {
+      throw const MusicHostWriteError(404, 'Track not found');
+    }
+    return t;
+  }
+
+  /// 请 host 重新找本机 MV（design-imusic-q9）。回这次绑上的个数。
+  Future<int> rematchVideos(String trackUid) async {
+    final MusicHostVideoMatcher m = _matcher();
+    await _liveTrack(trackUid);
+    return m.rematch(trackUid);
+  }
+
+  /// host 给的待确认 MV 候选（design-imusic-q9）。
+  Future<List<RemoteMusicVideoCandidate>> videoCandidates(
+    String trackUid,
+    String source,
+  ) async {
+    final MusicHostVideoMatcher m = _matcher();
+    if (source != RemoteMusicVideoCandidateSource.anime &&
+        source != RemoteMusicVideoCandidateSource.online) {
+      throw const MusicHostWriteError(400, 'Unknown candidate source');
+    }
+    await _liveTrack(trackUid);
+    return m.candidates(trackUid, source);
+  }
+
+  /// 客户端选定的候选绑到这首（用户确认绑定，design-imusic-q9）。回绑定后的列表。
+  Future<List<RemoteMusicVideo>> bindVideo(
+    String trackUid,
+    RemoteMusicVideoCandidate candidate,
+  ) async {
+    final MusicHostVideoMatcher m = _matcher();
+    await _liveTrack(trackUid);
+    await m.bind(trackUid, candidate);
+    return videos(trackUid);
+  }
+
+  /// 解绑这首的一条 MV（只认属于 [trackUid] 的绑定）。绑定不存在回 false。
+  Future<bool> unbindVideo(String trackUid, int videoId) async {
+    final FushiDatabase db = _db;
+    final MusicVideoRow? row =
+        await (db.select(db.musicVideos)..where(
+              ($MusicVideosTable t) =>
+                  t.id.equals(videoId) & t.trackUid.equals(trackUid),
+            ))
+            .getSingleOrNull();
+    if (row == null) return false;
+    await db.deleteMusicVideo(videoId);
+    return true;
+  }
 
   /// 写回 MV 对齐微调（design-imusic-q3），按 [updatedAt] LWW。绑定不存在回 null。
   Future<int?> setVideoOffset(
@@ -1044,6 +1130,13 @@ bool _isRemoteCover(String path) =>
 /// 本机音频文件路径（不是 `scheme://` 形式的网络来源 / 插件路径）。
 bool _isLocalAudioPath(String path) =>
     !RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]+://').hasMatch(path);
+
+/// MV 绑定在列表里显示的名字：本机文件名 / YouTube 视频 id / 其余原样（与 app 曲目详情同一规则）。
+String musicVideoRowLabel(MusicVideoRow row) => switch (row.kind) {
+  MusicVideoKind.local => p.basename(row.ref),
+  MusicVideoKind.youtube => youtubeVideoIdOrNull(row.ref) ?? row.ref,
+  _ => row.ref,
+};
 
 const String _kAlbumCoverPrefix = 'a:';
 const String _kTrackCoverPrefix = 't:';

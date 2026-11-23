@@ -223,6 +223,7 @@ void main() {
       'transcode': true,
       'relay': true,
       'discs': true,
+      'videoMatch': false,
     });
   });
 
@@ -568,6 +569,121 @@ void main() {
     expect(r.body, 'Music library off');
   });
 
+  test('MV 远程匹配 / 候选 / 绑定 / 解绑（design-imusic-q9）', () async {
+    final _FakeMatcher matcher = _FakeMatcher(db);
+    final FushiSyncServer withMatcher = FushiSyncServer(
+      syncDataDir: '${tmp.path}/q9',
+      port: 0,
+      token: _token,
+      modules: <InterconnectHostModule>[
+        MusicLibraryHostModule(
+          EngineMusicLibraryHost(
+            database: () => db,
+            cddaSupported: false,
+            videoMatcher: matcher,
+          ),
+        ),
+      ],
+    );
+    await withMatcher.start();
+    addTearDown(withMatcher.stop);
+    final Map<String, Object?> caps =
+        _obj(await _send(withMatcher, 'GET', '/api/capabilities'))['music']!
+            as Map<String, Object?>;
+    expect(caps['videoMatch'], isTrue);
+    // 没装匹配器的 host：能力位为假，写路由 501。
+    final Map<String, Object?> bareCaps =
+        _obj(await _send(server, 'GET', '/api/capabilities'))['music']!
+            as Map<String, Object?>;
+    expect(bareCaps['videoMatch'], isFalse);
+    expect(
+      (await _send(
+        server,
+        'POST',
+        '/api/library/music/tracks/t1/videos/rematch',
+      )).status,
+      501,
+    );
+
+    final _Res re = await _send(
+      withMatcher,
+      'POST',
+      '/api/library/music/tracks/t2/videos/rematch',
+    );
+    expect(_obj(re)['bound'], 1);
+    expect(matcher.rematched, <String>['t2']);
+    expect(
+      (await _send(
+        withMatcher,
+        'POST',
+        '/api/library/music/tracks/nope/videos/rematch',
+      )).status,
+      404,
+    );
+
+    final _Res cand = await _send(
+      withMatcher,
+      'GET',
+      '/api/library/music/tracks/t2/videos/candidates?source=anime',
+    );
+    final RemoteMusicVideoCandidate c = RemoteMusicVideoCandidate.fromJson(
+      (_obj(cand)['items']! as List<Object?>).single! as Map<String, Object?>,
+    )!;
+    expect(c.title, 'OP1');
+    expect(
+      (await _send(
+        withMatcher,
+        'GET',
+        '/api/library/music/tracks/t2/videos/candidates?source=bogus',
+      )).status,
+      400,
+    );
+
+    final _Res bound = await _send(
+      withMatcher,
+      'POST',
+      '/api/library/music/tracks/t2/videos',
+      json: <String, Object?>{
+        'kind': MusicVideoKind.youtube,
+        'ref': 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'title': 'MV',
+      },
+    );
+    final List<RemoteMusicVideo> after = <RemoteMusicVideo>[
+      for (final Object? e in _obj(bound)['items']! as List<Object?>)
+        RemoteMusicVideo.fromJson(e! as Map<String, Object?>)!,
+    ];
+    final RemoteMusicVideo yt = after.firstWhere(
+      (RemoteMusicVideo v) => v.kind == MusicVideoKind.youtube,
+    );
+    expect(yt.label, 'dQw4w9WgXcQ');
+    expect(yt.isUserBound, isTrue);
+
+    // 解绑：只认属于这首的绑定。
+    expect(
+      (await _send(
+        withMatcher,
+        'DELETE',
+        '/api/library/music/tracks/t1/videos/${yt.videoId}',
+      )).status,
+      404,
+    );
+    expect(
+      (await _send(
+        withMatcher,
+        'DELETE',
+        '/api/library/music/tracks/t2/videos/${yt.videoId}',
+      )).status,
+      204,
+    );
+    expect(
+      (await db.listMusicVideos(
+        't2',
+      )).where((MusicVideoRow r) => r.kind == MusicVideoKind.youtube),
+      isEmpty,
+    );
+  });
+
   group('host 给字节：网络来源中继 / 光盘与 CDDA 截段 / 转码（design-imusic-q4 / q5 / q6）', () {
     late HttpServer upstream;
     late FushiSyncServer full;
@@ -770,4 +886,41 @@ void main() {
       expect(r2.bytes.bytes, song1.readAsBytesSync());
     });
   });
+}
+
+class _FakeMatcher implements MusicHostVideoMatcher {
+  _FakeMatcher(this.db);
+
+  final FushiDatabase db;
+  final List<String> rematched = <String>[];
+
+  @override
+  Future<int> rematch(String trackUid) async {
+    rematched.add(trackUid);
+    return 1;
+  }
+
+  @override
+  Future<List<RemoteMusicVideoCandidate>> candidates(
+    String trackUid,
+    String source,
+  ) async => const <RemoteMusicVideoCandidate>[
+    RemoteMusicVideoCandidate(
+      kind: MusicVideoKind.animeEpisode,
+      ref: 'anime:b1#0',
+      title: 'OP1',
+    ),
+  ];
+
+  @override
+  Future<void> bind(String trackUid, RemoteMusicVideoCandidate c) =>
+      db.upsertMusicVideo(
+        MusicVideosCompanion.insert(
+          trackUid: trackUid,
+          kind: c.kind,
+          ref: c.ref,
+          isUserBound: const Value<bool>(true),
+          updatedAt: 20,
+        ),
+      );
 }

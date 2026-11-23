@@ -566,6 +566,10 @@ import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show MusicServerBinding, musicServerBindingLoader;
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
+import 'package:fushi/src/media/music/metadata/music_video_service.dart'
+    show AppMusicHostVideoMatcher, MusicVideoService;
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart'
+    show isYoutubeMusicSourceAvailable;
 import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart'
     show BindingMusicServerLoudnessResolver, musicServerLoudnessResolver;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
@@ -1285,6 +1289,12 @@ class AppModel
                 ? null
                 : (url: Uri.parse(s.url), headers: s.headers);
           },
+          // 客户端请这台 host 重新匹配 / 绑定 MV（design-imusic-q9）：host 用自己的 MV 服务对自己的
+          // 文件跑；在线搜索受这台 host 自己的 YouTube 合规门约束。
+          videoMatcher: AppMusicHostVideoMatcher(
+            () => MusicVideoService(database: database),
+            online: () => isYoutubeMusicSourceAvailable,
+          ),
         ),
       ),
     ],

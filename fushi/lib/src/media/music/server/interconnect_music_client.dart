@@ -136,12 +136,16 @@ class InterconnectMusicBrowser
     required InterconnectMusicTransport transport,
     this.timeout = const Duration(seconds: 15),
     int? Function()? maxBitrateKbps,
+    this.canMatchVideos = false,
     @visibleForTesting DateTime Function()? now,
   }) : _transport = transport,
        _maxBitrateKbps = maxBitrateKbps ?? _noLimit,
        _now = now ?? DateTime.now;
 
   static int? _noLimit() => null;
+
+  /// 这台 host 能不能接受远程 MV 匹配 / 绑定（能力位 `videoMatch`，design-imusic-q9）。
+  final bool canMatchVideos;
 
   /// 设置里的码率上限（null = 原样直出）。签票时带给 host，host 按源码率决定转不转（design-imusic-q6）。
   final int? Function() _maxBitrateKbps;
@@ -567,17 +571,29 @@ class InterconnectMusicBrowser
                 offsetMs: v.offsetMs,
                 isUserBound: v.isUserBound,
                 youtubeRef: v.youtubeRef,
+                label: v.label,
               ),
     ];
   }
 
-  @override
-  Future<MusicServerMediaLease> openVideo(MusicServerVideo video) async {
-    if (video.youtubeRef != null) {
-      throw StateError('YouTube MV is played by the client YouTube source');
-    }
+  /// 曲目本身是 MV 视频时（host 曲目的 `isVideo`），给歌词页背景另签一条「原样」的画面流：音频由引擎
+  /// 那条流放（可能转了码），画面读同一个原文件，两条连接（design-imusic-q8 选 a）。[offsetMs] 是 MV 时刻
+  /// 相对曲目时刻的偏移（CUE 曲目 = 起点）。不是视频回 null。
+  Future<({MusicServerMediaLease lease, int offsetMs})?> openTrackPicture(
+    String trackUid,
+  ) async {
+    final RemoteMusicTrack? t = RemoteMusicTrack.fromJson(
+      await _getJson('tracks/${_seg(trackUid)}'),
+    );
+    if (t == null || !t.isVideo) return null;
     final ({Uri url, String ticket, Map<String, Object?> info, String? pin}) s =
-        await _issue(LibraryMediaStreamKind.musicVideo, video.id);
+        await _issue(LibraryMediaStreamKind.musicTrack, trackUid);
+    return (lease: _lease(s), offsetMs: t.cueStartMs ?? 0);
+  }
+
+  MusicServerMediaLease _lease(
+    ({Uri url, String ticket, Map<String, Object?> info, String? pin}) s,
+  ) {
     bool released = false;
     return MusicServerMediaLease(
       uri: s.url,
@@ -587,6 +603,56 @@ class InterconnectMusicBrowser
         await _release(s.ticket);
       },
     );
+  }
+
+  /// 请 host 重新找本机 MV（design-imusic-q9）。回这次绑上的个数。
+  Future<int> rematchVideos(String trackId) async {
+    final Map<String, Object?> body = await _sendJson(
+      'POST',
+      'tracks/${_seg(trackId)}/videos/rematch',
+      null,
+    );
+    final Object? n = body['bound'];
+    return n is int ? n : 0;
+  }
+
+  /// host 给的待确认 MV 候选（[RemoteMusicVideoCandidateSource]）。
+  Future<List<RemoteMusicVideoCandidate>> videoCandidates(
+    String trackId,
+    String source,
+  ) async {
+    final Map<String, Object?> body = await _getJson(
+      'tracks/${_seg(trackId)}/videos/candidates',
+      query: <String, String>{'source': source},
+    );
+    final Object? items = body['items'];
+    return <RemoteMusicVideoCandidate>[
+      if (items is List)
+        for (final Object? e in items)
+          if (e is Map<String, Object?>)
+            if (RemoteMusicVideoCandidate.fromJson(e)
+                case final RemoteMusicVideoCandidate c)
+              c,
+    ];
+  }
+
+  /// 请 host 绑定选定的候选。
+  Future<void> bindVideo(String trackId, RemoteMusicVideoCandidate candidate) =>
+      _sendJson('POST', 'tracks/${_seg(trackId)}/videos', candidate.toJson());
+
+  /// 请 host 解绑一条 MV。
+  Future<void> unbindVideo(String trackId, MusicServerVideo video) => _sendJson(
+    'DELETE',
+    'tracks/${_seg(trackId)}/videos/${_seg(video.id)}',
+    null,
+  );
+
+  @override
+  Future<MusicServerMediaLease> openVideo(MusicServerVideo video) async {
+    if (video.youtubeRef != null) {
+      throw StateError('YouTube MV is played by the client YouTube source');
+    }
+    return _lease(await _issue(LibraryMediaStreamKind.musicVideo, video.id));
   }
 
   @override
@@ -829,13 +895,15 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
     if (factory != null) {
       // 测试：替身传输直接问能力位。
       final InterconnectMusicTransport t = factory(host);
+      final Map<String, Object?>? music;
       try {
         final InterconnectMusicResponse res = await t.send(
           'GET',
           '/api/capabilities',
           timeout: probeTimeout,
         );
-        if (!_offersMusic(res.json)) {
+        music = _musicCaps(res.json);
+        if (music == null) {
           t.close();
           return null;
         }
@@ -850,6 +918,7 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
           displayName: label,
           transport: t,
           maxBitrateKbps: _maxBitrateKbps,
+          canMatchVideos: music!['videoMatch'] == true,
         ),
       );
     }
@@ -857,18 +926,19 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
       repo: repo,
       host: host,
     );
-    final InterconnectCapabilityOutcome<bool> outcome =
-        await probeInterconnectCapability<bool>(
+    final InterconnectCapabilityOutcome<Map<String, Object?>> outcome =
+        await probeInterconnectCapability<Map<String, Object?>>(
           channel,
           label: label,
           timeout: probeTimeout,
           parse: (Map<String, dynamic> caps, FushiClientUrl via) =>
-              _offersMusic(caps.cast<String, Object?>()) ? true : null,
+              _musicCaps(caps.cast<String, Object?>()),
         );
-    if (outcome is! InterconnectCapabilityAvailable<bool>) {
+    if (outcome is! InterconnectCapabilityAvailable<Map<String, Object?>>) {
       channel.close();
       return null;
     }
+    final bool canMatchVideos = outcome.target['videoMatch'] == true;
     final InterconnectMusicBrowser? existing = _browsers[host.key];
     if (existing != null) {
       channel.close();
@@ -879,14 +949,16 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
       displayName: label,
       transport: ChannelInterconnectMusicTransport(channel),
       maxBitrateKbps: _maxBitrateKbps,
+      canMatchVideos: canMatchVideos,
     );
   }
 
-  static bool _offersMusic(Map<String, Object?>? caps) {
+  /// 能力位里的音乐对象（`v >= 1` 才算提供音乐库）；不提供为 null。
+  static Map<String, Object?>? _musicCaps(Map<String, Object?>? caps) {
     final Object? music = caps?[kRemoteMusicCapability];
-    if (music is! Map) return false;
+    if (music is! Map) return null;
     final Object? v = music['v'];
-    return v is int && v >= 1;
+    return v is int && v >= 1 ? music.cast<String, Object?>() : null;
   }
 
   /// 关掉全部 host 的传输（进程收尾 / 测试）。

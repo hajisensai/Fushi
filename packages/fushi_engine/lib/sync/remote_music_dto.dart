@@ -453,6 +453,7 @@ class RemoteMusicVideo {
     this.isUserBound = false,
     this.durationMs,
     this.youtubeRef,
+    this.label,
     this.updatedAt = 0,
   });
 
@@ -471,6 +472,9 @@ class RemoteMusicVideo {
   /// `youtube` 绑定的地址（design-imusic-q7：下发，客户端按自己的 YouTube 合规门取流；其余种类为 null，
   /// 字节经流票从 host 读）。
   final String? youtubeRef;
+
+  /// 列表里显示的名字（本机文件名 / YouTube 视频 id / 动画集引用），与 host 本机曲目详情同一规则。
+  final String? label;
   final int updatedAt;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -481,6 +485,7 @@ class RemoteMusicVideo {
     'isUserBound': isUserBound,
     'durationMs': ?durationMs,
     'youtubeRef': ?youtubeRef,
+    'label': ?label,
     'updatedAt': updatedAt,
   };
 
@@ -497,7 +502,58 @@ class RemoteMusicVideo {
       isUserBound: j['isUserBound'] == true,
       durationMs: _int(j['durationMs']),
       youtubeRef: _str(j['youtubeRef']),
+      label: _str(j['label']),
       updatedAt: _int(j['updatedAt']) ?? 0,
+    );
+  }
+}
+
+/// 请 host 找 MV 的来源（design-imusic-q9）：`anime` = host 视频库里的动画集，`online` = host 搜 YouTube。
+abstract final class RemoteMusicVideoCandidateSource {
+  static const String anime = 'anime';
+  static const String online = 'online';
+}
+
+/// host 给出的一个待确认 MV 候选（与本机曲目详情「从动画找 / 在线搜索」同一份候选），客户端选了再请
+/// host 绑定（`POST tracks/<uid>/videos`）。
+class RemoteMusicVideoCandidate {
+  const RemoteMusicVideoCandidate({
+    required this.kind,
+    required this.ref,
+    required this.title,
+    this.subtitle,
+    this.offsetMs = 0,
+    this.confidence,
+  });
+
+  final String kind;
+  final String ref;
+  final String title;
+  final String? subtitle;
+  final int offsetMs;
+  final double? confidence;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'kind': kind,
+    'ref': ref,
+    'title': title,
+    'subtitle': ?subtitle,
+    'offsetMs': offsetMs,
+    'confidence': ?confidence,
+  };
+
+  static RemoteMusicVideoCandidate? fromJson(Map<String, Object?> j) {
+    final String? kind = _str(j['kind']);
+    final String? ref = _str(j['ref']);
+    if (kind == null || ref == null) return null;
+    final Object? conf = j['confidence'];
+    return RemoteMusicVideoCandidate(
+      kind: kind,
+      ref: ref,
+      title: _str(j['title']) ?? ref,
+      subtitle: _str(j['subtitle']),
+      offsetMs: _int(j['offsetMs']) ?? 0,
+      confidence: conf is num ? conf.toDouble() : null,
     );
   }
 }
