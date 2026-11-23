@@ -148,6 +148,11 @@ abstract final class GlobalLookupChannel {
 
   static Future<bool> isShowing() => _impl.isShowing();
 
+  /// BUG-5310 — 卡片里有选区时由卡片接手这次查词触发（见
+  /// [OverlayWindowChannel.lookupOverlaySelection]）。
+  static Future<bool> lookupOverlaySelection() =>
+      _impl.lookupOverlaySelection();
+
   static Future<bool> suspendForCapture(int captureGeneration) =>
       _impl.suspendForCapture(captureGeneration);
 

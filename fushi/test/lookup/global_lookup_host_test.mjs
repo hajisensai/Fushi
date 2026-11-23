@@ -3605,4 +3605,109 @@ function flushTimers() {
   assert.strictEqual(rootIframe.contentWindow.document.body.scrollTop, 0);
 }
 
+// BUG-5310 — the app-external lookup hotkey pressed while a card holds a
+// selection: native decides the card owns the press (selection_present_ &&
+// IsShowing()) and calls host.lookupSelection(). The host must hand the
+// selection to the realm it lives in (most recent selection wins) and post it
+// through THAT realm's bridge as `textSelected`, so the message gets the same
+// __frameId stamp and window-local anchor transform as tapping glossary text —
+// Dart then runs the existing nested-lookup chain. A stale native view (no live
+// selection) must reset the report de-dup instead of posting anything.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const iframeOf = (id) => shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === id)
+    .children.find((c) => c.tagName === 'IFRAME');
+  function armRealm(id, rect) {
+    const win = iframeOf(id).contentWindow;
+    const listeners = [];
+    win._selected = '';
+    const range = {
+      startContainer: { nodeType: 3, parentElement: { tagName: 'SPAN' } },
+      getClientRects: () => [rect],
+      getBoundingClientRect: () => rect,
+    };
+    win.getSelection = () => ({
+      isCollapsed: win._selected === '',
+      rangeCount: win._selected === '' ? 0 : 1,
+      toString: () => win._selected,
+      getRangeAt: () => range,
+    });
+    win.document = {
+      addEventListener(type, fn) {
+        if (type === 'selectionchange') listeners.push(fn);
+      },
+    };
+    // popup_bridge_adapter's callHandler: posts through the realm's (wrapped)
+    // chrome.webview bridge, looked up at call time.
+    win.flutter_inappwebview = {
+      callHandler(name, ...args) {
+        win.chrome.webview.postMessage({ handler: name, args });
+      },
+    };
+    // selection.js: a stale click-scan record + the CSS-zoom rect transform.
+    win.fushiSelection = {
+      selection: { stale: true },
+      rectToClientSpace(node, r) {
+        return { left: r.left * 2, top: r.top * 2, width: r.width * 2, height: r.height * 2 };
+      },
+    };
+    host._watchFrameSelection(host._frames.get(id));
+    win._select = (text) => {
+      win._selected = text;
+      listeners.forEach((fn) => fn());
+    };
+    return win;
+  }
+  const w0 = armRealm('frame-0', { left: 1, top: 2, width: 8, height: 9 });
+  const w1 = armRealm('frame-1', { left: 5, top: 6, width: 16, height: 18 });
+  w0._select('猫');
+  w1._select('犬が');
+
+  // Reference envelope: what tapping glossary text in frame-1 at the same
+  // client rect produces (selection.js -> callHandler('textSelected', ...)).
+  hostPostLog = [];
+  w1.chrome.webview.postMessage({
+    handler: 'textSelected',
+    args: ['犬が', { x: 10, y: 12, width: 32, height: 36 }],
+  });
+  const tapped = hostPostLog.find((m) => m.handler === 'textSelected');
+  assert.ok(tapped, 'a tap in frame-1 reaches native as textSelected');
+
+  hostPostLog = [];
+  assert.strictEqual(host.lookupSelection(), true, 'card selection is looked up');
+  const posted = hostPostLog.filter((m) => m.handler === 'textSelected');
+  assert.strictEqual(posted.length, 1, 'exactly one nested lookup request');
+  assert.strictEqual(posted[0].__frameId, 'frame-1',
+    'the realm holding the most recent selection is the nested source');
+  assert.strictEqual(posted[0].args[0], '犬が');
+  assert.deepStrictEqual(posted[0].args[1], tapped.args[1],
+    'same window-local anchor transform as tapping that text');
+  assert.strictEqual(w1.fushiSelection.selection, null,
+    'stale click-scan record cleared so highlightSelection cannot mark old text');
+  assert.strictEqual(w0.fushiSelection.selection.stale, true,
+    'other realms untouched');
+
+  // Native still believes a selection exists, but it vanished without a
+  // selectionchange: nothing is posted, and the de-dup is reset so the next
+  // real selection is reported again.
+  w0._selected = '';
+  w1._selected = '';
+  hostPostLog = [];
+  assert.strictEqual(host.lookupSelection(), false, 'no live selection -> no lookup');
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'textSelected').length, 0);
+  w0._select('鳥');
+  assert.deepStrictEqual(
+    hostPostLog.filter((m) => m.handler === 'overlaySelection').map((m) => m.args[0]),
+    [true],
+    'after the reset the next selection is reported again');
+}
+
 console.log('global_lookup_host_test: PASS');

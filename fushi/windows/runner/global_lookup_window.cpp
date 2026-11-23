@@ -4106,6 +4106,26 @@ void GlobalLookupWindow::UpdateCopyHotkey() {
   }
 }
 
+// BUG-5310 — 卡片里的选区 + 查词热键 = 在卡片里嵌套查词。判据与 Ctrl+C 接管同源
+// （selection_present_ && IsShowing()），所以「卡片已收起 / 没选区」时一律返回
+// false，Dart 照旧抓前台程序的选区。host 取到空选区（上报与现场不一致）时自己
+// resetSelectionReport 把这边复位，下一次按键就回到前台抓取。
+bool GlobalLookupWindow::LookupOverlaySelection() {
+  if (!selection_present_ || !IsShowing() || webview_ == nullptr ||
+      !webview_ready_) {
+    return false;
+  }
+  const HRESULT hr = webview_->ExecuteScript(
+      L"(function(){var h=window.__globalLookupHost;"
+      L"if(h&&typeof h.lookupSelection==='function')h.lookupSelection();})()",
+      nullptr);
+  if (FAILED(hr)) {
+    ReportOverlayError("ExecuteScript(lookupSelection) failed", hr);
+    return false;
+  }
+  return true;
+}
+
 void GlobalLookupWindow::CopyOverlaySelectionToClipboard() {
   if (webview_ == nullptr || !webview_ready_) {
     return;

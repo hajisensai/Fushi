@@ -3656,6 +3656,11 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           win->DispatchGamepadAction(StringFromValue(args, "action", ""),
                                      DoubleFromValue(args, "dy", 0.0));
           result->Success();
+        } else if (method == "lookupOverlaySelection") {
+          // BUG-5310 — 查词热键按下时卡片里有选区：交给卡片嵌套查词，回 true
+          // 表示已接手（Dart 不收卡、不抓前台选区）。
+          result->Success(
+              flutter::EncodableValue(win->LookupOverlaySelection()));
         } else if (method == "resize") {
           if (win == gal_lookup_card_window_.get()) {
             win->ResizeOffscreen(IntFromValue(args, "width", 0),
