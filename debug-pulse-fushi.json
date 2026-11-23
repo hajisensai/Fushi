@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T17:10:46Z",
+ "generatedAt": "2026-11-23T17:17:49Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "55e160e5bc4255de30e515000fbb28b3180440d3",
-  "seq": 32120
+  "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
+  "seq": 32125
  },
  "builds": [
   {
@@ -218,10 +218,14 @@
   }
  ],
  "pending": {
-  "headSha": "55e160e5bc4255de30e515000fbb28b3180440d3",
-  "headSeq": 32120,
+  "headSha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
+  "headSeq": 32125,
   "prs": [],
   "direct": [
+   {
+    "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
+    "subject": "Merge #4315 (claude/review-merge-release-prep-bcbb63) into develop"
+   },
    {
     "sha": "55e160e5bc4255de30e515000fbb28b3180440d3",
     "subject": "Merge #4310 (claude/fb-dict-scan-length) into develop"
@@ -254,20 +258,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272157"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574167"
    },
    "windows": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272235"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574255"
    },
    "macos": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272235"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574255"
    },
    "ios": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45224272235"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574255"
    }
   }
  },
