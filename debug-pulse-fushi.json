@@ -1,12 +1,46 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T20:38:27Z",
+ "generatedAt": "2026-11-23T21:23:02Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
-  "seq": 32137
+  "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
+  "seq": 32143
  },
  "builds": [
+  {
+   "seq": 32137,
+   "version": "3.4.0",
+   "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
+   "unknown": false,
+   "publishedAt": "2026-11-23T21:22:48Z",
+   "testflight": false,
+   "baseSeq": 32135,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
+     "subject": "Merge #4322 (claude/fix-cover-guard-4312) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+    }
+   }
+  },
   {
    "seq": 32135,
    "version": "3.4.0",
@@ -195,7 +229,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314530"
     },
     "windows": {
      "state": "ok"
@@ -210,32 +245,40 @@
   }
  ],
  "pending": {
-  "headSha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
-  "headSeq": 32137,
+  "headSha": "ecd64aae2992f34686339675e991489d81ba74cc",
+  "headSeq": 32143,
   "prs": [],
   "direct": [
    {
-    "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
-    "subject": "Merge #4322 (claude/fix-cover-guard-4312) into develop"
+    "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
+    "subject": "Merge #4325 (claude/fix-develop-red2-collection) into develop"
+   },
+   {
+    "sha": "583e2139621e5a05f3f650100836dfd8b33b3ad0",
+    "subject": "Merge #4324 (claude/fix-develop-red2-download) into develop"
+   },
+   {
+    "sha": "70acd5c60130b9456a8c9ac24a088ba061ce7bd9",
+    "subject": "Merge #4323 (claude/fix-develop-red2-reader) into develop"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592808"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154785"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
    }
   }
  },
