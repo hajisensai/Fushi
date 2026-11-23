@@ -2,6 +2,8 @@ import 'package:fushi/src/sync/backup_service.dart'
     show SrsRestoreBlockedException;
 import 'package:fushi_engine/srs/srs_backup_bundle.dart'
     show SrsBackupTooNewException;
+import 'package:fushi_engine/sync/interconnect_profile_transfer.dart'
+    show InterconnectProfileDenial, InterconnectProfileRejected;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -35,6 +37,11 @@ String? _friendlyClause(Object error) {
   // 两者都会被它误捕。
   if (error is SyncAuthError && error.kind != SyncAuthFailureKind.credentials) {
     return friendlySyncAuthFailure(error.kind, error.serverReason);
+  }
+  // 反馈 G-ebgSnoK8：互联配置搬运被 host 明确拒绝，按结构化码给可操作的本地化原因
+  // （以前是 host 的英文原文拼进「服务端拒绝了这次请求：……」）。
+  if (error is InterconnectProfileRejected) {
+    return interconnectProfileDenialText(error.denial);
   }
   // BUG-1693：互联对端一台都探不到——最常见成因是对端没运行 Fushi / 设备离线，
   // 不是本机网络故障。按类型分派（此前它落到兜底、裸英文
@@ -160,6 +167,19 @@ String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
       return t.sync_err_html_page_detail(title: title);
   }
 }
+
+/// 互联配置搬运的 host 拒绝原因 → 给用户的一句话（告诉用户去哪里改）。
+String interconnectProfileDenialText(InterconnectProfileDenial denial) =>
+    switch (denial) {
+      InterconnectProfileDenial.disabled =>
+        t.interconnect_profile_reason_disabled,
+      InterconnectProfileDenial.httpsRequired =>
+        t.interconnect_profile_reason_https,
+      InterconnectProfileDenial.peerTokenRequired =>
+        t.interconnect_profile_reason_pairing,
+      InterconnectProfileDenial.unavailable =>
+        t.interconnect_profile_reason_unavailable,
+    };
 
 String _rawMessage(Object error) => error is SyncBackendError
     ? error.message

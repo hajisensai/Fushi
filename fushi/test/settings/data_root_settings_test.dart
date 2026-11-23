@@ -315,17 +315,24 @@ void main() {
       );
     });
 
-    test('data-storage section is gated desktop-only', () {
+    test('data-storage section is gated to desktop + Android (not iOS)', () {
       final String src = readSource(
         'lib/src/sync/sync_settings_schema.dart',
       ).readAsStringSync();
       expect(src.contains("id: 'sync.data_storage_location'"), isTrue);
       expect(src.contains('_DataRootWidget(settingsContext: ctx)'), isTrue);
-      // The section + item both gate on isDesktopPlatform so mobile never sees
-      // a control it cannot honor (sandbox-fixed roots).
+      // The section + item both gate on _dataStorageLocationAvailable: desktop
+      // picks any folder, Android switches internal <-> external app-specific
+      // dir; iOS (sandbox-fixed root) never sees a control it cannot honor.
       expect(
-        src.contains('visible: (SettingsContext ctx) => isDesktopPlatform'),
+        src.contains('isDesktopPlatform || (!kIsWeb && Platform.isAndroid)'),
         isTrue,
+      );
+      expect(
+        'visible: (SettingsContext ctx) => _dataStorageLocationAvailable'
+            .allMatches(src)
+            .length,
+        2,
       );
     });
 

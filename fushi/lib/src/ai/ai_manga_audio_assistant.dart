@@ -23,6 +23,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
@@ -445,19 +446,26 @@ class MangaAudioAnnotateSession {
   }
 
   /// 用户手工标某页（AI 标不出来时）：每个还没归属的块一句（OCR 顺序、说话人不明、
-  /// 说出口），来源记为用户，之后在复核界面逐句改；该页失败与丢弃记录清掉。
+  /// 说出口），来源记为用户，之后在复核界面逐句改；该页失败与丢弃记录清掉。页面印着
+  /// 的注音块（`manga_ruby.dart`）不单成一句，跟进底本那句（合成时底本按它念）。
   void handAnnotatePage(int page) {
     final List<MangaScriptLine> existing = script.linesOnPage(page);
     final Set<int> claimed = <int>{
       for (final MangaScriptLine l in existing) ...l.blocks,
     };
-    final int blocks = volume.payload.images[page].blocks.length;
+    final List<MokuroBlock> pageBlocks = volume.payload.images[page].blocks;
+    final MangaPageRuby ruby = detectMangaPageRuby(pageBlocks);
+    final int blocks = pageBlocks.length;
     final List<MangaScriptLine> added = <MangaScriptLine>[
       for (int b = 0; b < blocks; b++)
-        if (!claimed.contains(b))
+        if (!claimed.contains(b) && !ruby.isRuby(b))
           MangaScriptLine(
             page: page,
-            blocks: <int>[b],
+            blocks: <int>[
+              b,
+              for (final MapEntry<int, int> e in ruby.baseOfRuby.entries)
+                if (e.value == b && !claimed.contains(e.key)) e.key,
+            ],
             speaker: kTtsUnknown,
             kind: CastLineKind.spoken,
             source: TtsCastSource.user,

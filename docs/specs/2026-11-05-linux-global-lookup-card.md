@@ -35,7 +35,9 @@ WebKitGTK 4.1 的 script message 不带来源 frame，Windows / macOS 的第二�
 1. **合成器的主选区**（`linux/runner/wayland_selection.cc`，`ext-data-control-v1`，在 worker 线程上开一条短命的 Wayland 连接，整体限时 500 ms）。必须先走这条：Fushi 画在 XWayland 上，而 KWin 只在 X11 窗口有焦点时才把 Wayland 应用的选区抄进 X11，悬浮球又从不拿焦点，所以 Konsole / Firefox 里选的字在 X11 PRIMARY 里永远是空的（Deck 上实测：data control 读到整句，X11 PRIMARY 为 None）。data control 是剪贴板管理器不拿焦点读选区的标准做法，KWin 6.7 提供。Flatpak 因此加了 `--socket=wayland`（只用来读选区，`GDK_BACKEND` 仍是 x11）。
 2. **X11 PRIMARY**：没有 Wayland 显示 / 不支持 data control / 读到空时退回（纯 X11 会话、X11 应用里选的字）。
 
-`captureContext`（整句）X11 / Wayland 都没有对应物，回 notImplemented，Dart 照常退回 `captureSelection`。
+**整句（「抓取选中文本上下文」开着时）**：不经 runner（`captureContext` 在 Linux 回 notImplemented），由 Dart 直接走 AT-SPI（`lib/src/lookup/linux_atspi_context.dart`，`package:dbus` 连无障碍总线）：注册表根 → 各应用（跳过 Fushi 自己的进程）→ 带 ACTIVE 的顶层窗 → FOCUSED 后代（GTK 3 等实现了 `Collection` 的一次 `GetMatches`；GTK 4 等没有的按 SHOWING 剪枝深搜，上限 1500 节点、不进 MANAGES_DESCENDANTS 子树）→ `Text` 的第 0 个选区与两侧各 600 字，再交给与 Windows / macOS 同一个 `extractSentenceAt`。AT-SPI 偏移按字符（码点）计，转成 UTF-16 下标。整体限时 800 ms；它看的是前台窗口的 ACTIVE / FOCUSED，所以在隐藏卡片 / 前置主窗**之前**读（`global_lookup_controller.dart`）。拿不到（没有无障碍总线、应用没开无障碍、没有焦点或选区、超时）一律返回 null，照常退回 `captureSelection` 只拿选区文字。放 Dart 而不放 runner / helper：D-Bus 全异步、不阻塞 GTK 主线程（libatspi 是同步且非线程安全的），零新增构建依赖，遍历逻辑可用假树单测（`test/lookup/linux_atspi_context_test.dart`）。实测：Xvfb + 私有会话总线里 GTK 3 / GTK 4 的 `GtkTextView` 都取到整句（约 20 ms）。
+
+**Flatpak 限制**：flatpak 把无障碍总线换成过滤代理（`flatpak-run-dbus.c` 的 `flatpak_run_add_a11y_dbus_args`：只放行注册表的 `Socket.Embed` 等几条），沙箱里调不到别的应用，Flatpak 版因此安静退回只拿选区；源码构建 / tar.gz 包不受影响。要不要为此放宽沙箱权限见拍板台 `design-linux-atspi-flatpak`。
 
 ## 4. 平台门与限制
 

@@ -53,7 +53,6 @@ void main() {
     trustedClock: SrsTrustedClock(
       wallClockMs: () => now,
       bootClockMs: () => now,
-      bootId: 'boot',
     ),
     fallbackRolloverHour: () => 4,
     localOffsetMin: () => 0,

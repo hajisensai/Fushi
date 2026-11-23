@@ -45,6 +45,9 @@ class _ControllerPort implements MangaAudioPlayerPort {
   double get speed => _c.speed;
 
   @override
+  double get volume => _c.volume;
+
+  @override
   Future<void> play() => _c.play();
 
   @override
@@ -55,6 +58,9 @@ class _ControllerPort implements MangaAudioPlayerPort {
 
   @override
   Future<void> setSpeed(double speed) => _c.setSpeed(speed);
+
+  @override
+  Future<void> setVolume(double volume) => _c.setVolume(volume);
 }
 
 /// 进度读写的口径换算：库里存「只数句子音频」的毫秒（与库里 cue 同源，补回一句时

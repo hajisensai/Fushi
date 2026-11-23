@@ -1,0 +1,12 @@
+## BUG-5261 · interconnect-profile-403-english-reason
+- **报告**：2026-11-23（应用内反馈 G-ebgSnoK8：互联「上传 / 下载配置」失败，提示「配置传输失败：服务端拒绝了这次请求：Profile transfer disabled on host（登录没问题）」）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/sync/fushi_sync_server/sync_state.part.dart` 的 `_handleInterconnectProfile` 在 host 开关关着 / 非 TLS / 非配对 token 时回 403 + 英文自由文本（`Profile transfer disabled on host` 等），「没配置可给」回 409 + 英文 `e.message`。client `fushi/lib/src/sync/interconnect_sync_backend.dart` 的 `getRemoteProfileJson` / `putRemoteProfileJson` 把这段 body 原样当 `serverReason` 交给 `checkStatus`，经 `friendlySyncAuthFailure(forbidden)` 拼进 `sync_err_forbidden_detail`，再套 `interconnect_profile_failed` 上屏：英文没翻译，也没告诉用户该去对端打开「读写本机配置方案」。
+- **[x] ① 已修复** —
+  - 引擎 `interconnect_profile_transfer.dart`：新增 `InterconnectProfileDenial`（`https_required` / `peer_token_required` / `profile_transfer_disabled` 403，`profile_unavailable` 409）、错误体 `{"error": code}` 的编解码、client 侧类型化异常 `InterconnectProfileRejected`（与 `/api/host/update` 的 `HostUpdateDenial` 同一套形状）。
+  - host `_handleInterconnectProfile`：四处拒绝都改回结构化码（`_interconnectProfileDenied`），409 的英文原因只进诊断日志。
+  - client `_checkProfileResponse`：错误体带认得的码 → 抛 `InterconnectProfileRejected`；其余（401、老 host 自由文本）仍交 `checkStatus`。
+  - `sync_error_messages.dart` 的 `_friendlyClause` 按类型分派到 `interconnectProfileDenialText`，四条新 i18n：`interconnect_profile_reason_disabled` / `_https` / `_pairing` / `_unavailable`。设置页动作行的 catch 不用改（仍经 `friendlySyncErrorDetail`）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/interconnect_profile_rejection_test.dart`：真 TLS `FushiSyncServer` + 真 `InterconnectSyncBackend`，开关关着时下载 / 上传都抛 `disabled`，上屏文案恰为 `interconnect_profile_failed(interconnect_profile_reason_disabled)`、不含英文原文；共享 token → `peer_token_required`；没配置可给 → 409 `profile_unavailable`；开关开着正常往返；每个码都有专属文案。修复前 client 抛的是 `SyncAuthError(forbidden)`，全部断言红。
+  - `fushi/test/sync/interconnect_profile_transfer_test.dart`、`packages/fushi_server/test/profile_transfer_test.dart`：wire 断言改为解析结构化码（含无头服务端 409 `profile_unavailable`）。
+- **备注**：`/api/interconnect/service-config` 的 403 仍是自由文本，但它是自动跟随的后台同步，不走这条动作行的提示，不在本条范围。
