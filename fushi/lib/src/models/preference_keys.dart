@@ -1428,6 +1428,10 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // （BUG-2816）与 app 漫画来源扫描（BUG-3574）共用（引擎 book_library_prune.dart）；
   // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
+  // JSON：`music_lyric_coverage_<trackUid>`——这首歌已计过字数的歌词句的曲目时间窗并集
+  // （IntervalCoverage，music_study_tracker.dart 的 kMusicLyricCoveragePrefPrefix，拍板台
+  // qQTh1Q3G9U）。与视频 `video_watch_coverage_<uid>` 同一存放形态；跨设备同步缺口见 BUG-5289。
+  'music_lyric_coverage_',
   kSectionTabOrderPrefKeyPrefix,
   kLibraryManualOrderPrefKeyPrefix,
   kSrsDayRolloverPendingPrefKeyPrefix,

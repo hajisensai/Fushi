@@ -7541,7 +7541,7 @@
   "music_liked_title": "Liked songs",
   "music_liked_unavailable": "${name} has no liked songs playlist.",
   "music_link_unavailable": "Can't open this from here",
-  "music_listening_study_hint": "When off, only listening after a lookup, card or loop on the lyrics page counts",
+  "music_listening_study_hint": "Counts listening time and lyric characters (each line once). When off, only what follows a lookup, card or loop on the lyrics page counts",
   "music_listening_study_title": "Count listening as study time",
   "music_loudness_scan_hint": "EBU R128 scan in the background. Results are stored in the library; your files are not modified.",
   "music_loudness_scan_now": "Measure loudness now",

@@ -2750,6 +2750,8 @@ class AppModel
       listeningCountsAsStudy: () =>
           isDatabaseReady && prefsRepo.musicListeningCountsAsStudy,
       idleTimeout: () => readingIdleTimeout,
+      lyricsFor: live.timelineFor,
+      setLyricsWanted: live.setStudyWanted,
     );
     return session;
   }

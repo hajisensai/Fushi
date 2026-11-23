@@ -69,6 +69,7 @@
 | [BUG-5292](bugs/BUG-5292-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
 | [BUG-5291](bugs/BUG-5291-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
 | [BUG-5290](bugs/BUG-5290-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
+| [BUG-5289](bugs/BUG-5289-music-lyric-coverage-sync.md) | 🚧 | 🚧 | 音乐歌词「已计句子」并集不跨设备同步 |
 | [BUG-5288](bugs/BUG-5288-media-server-grid-stale-watched.md) | ✅ | ✅ | 媒体服务器网格 / 首页在标记未看后仍显示旧的已看状态 |
 | [BUG-5287](bugs/BUG-5287-book-art-scrape-ignores-edition-language.md) | ✅ | ✅ | Cover scraping uses Japanese MangaBaka covers for non-Japanese editions |
 | [BUG-5286](bugs/BUG-5286-series-grouper-merges-language-editions.md) | ✅ | ✅ | Book series grouper merges same-title editions in different languages into one collection |
