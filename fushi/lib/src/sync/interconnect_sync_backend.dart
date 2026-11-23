@@ -1552,7 +1552,7 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 返回 null 的三种情形归一为「对端不提供此能力」：明文会话 / 老 host 404 /
   /// host 未接线该能力 404。host **开关关着**是 403（不是 404）——那不是「不支持」，
-  /// 而是对端明确拒绝，必须如实报给用户，故走 checkStatus 抛出。
+  /// 而是对端明确拒绝，必须如实报给用户，故抛 [InterconnectProfileRejected]。
   ///
   /// BUG-3147：[repo] 必填，进来先 [_reloadSessionFrom]——本类是单例，这个按钮又不经
   /// 任何同步编排，不重载就会拿进程里那份旧会话（重新配对之前的 token / 地址）去打
@@ -1570,21 +1570,15 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return null;
     }
-    if (res.statusCode >= 400) {
-      _ops!.checkStatus(
-        res.statusCode,
-        'GET $kInterconnectProfilePath',
-        serverReason: await readSyncErrorBody(res),
-      );
-    }
+    await _checkProfileResponse(res, 'GET $kInterconnectProfilePath');
     return _readBodyBounded(res);
   }
 
   /// 把本机的 Profile 分享 JSON 推给 host（互联「上传配置」动作）。
   ///
   /// 返回 host 上新建的 Profile 名；host 不提供该能力（老 host / 未接线）返回 null，
-  /// 由调用方翻成「对端不支持」。host 开关关着 / 明文会话 / 未配对一律经 checkStatus
-  /// 抛出，携带 host 给的拒绝原因。
+  /// 由调用方翻成「对端不支持」。host 开关关着 / 明文会话 / 未配对一律抛
+  /// [InterconnectProfileRejected]，携带 host 给的拒绝码。
   ///
   /// [repo] 的用途同 [getRemoteProfileJson]（BUG-3147）。
   Future<String?> putRemoteProfileJson(
@@ -1609,19 +1603,30 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return null;
     }
-    if (res.statusCode >= 400) {
-      _ops!.checkStatus(
-        res.statusCode,
-        'PUT $kInterconnectProfilePath',
-        serverReason: await readSyncErrorBody(res),
-      );
-    }
+    await _checkProfileResponse(res, 'PUT $kInterconnectProfilePath');
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
     if (decoded is! Map) {
       throw const FormatException('Invalid profile upload response');
     }
     final Object? name = decoded['name'];
     return name is String ? name : '';
+  }
+
+  /// 配置搬运的错误响应：带 `{"error": code}` 的是 host 的明确拒绝 →
+  /// [InterconnectProfileRejected]（UI 按码给本地化原因，反馈 G-ebgSnoK8）；其余
+  /// （401 配对失效、老 host 的自由文本等）交给统一的 [WebDavOps.checkStatus]。
+  Future<void> _checkProfileResponse(
+    HttpClientResponse res,
+    String label,
+  ) async {
+    if (res.statusCode < 400) return;
+    final SyncErrorBody? body = await readSyncErrorBody(res);
+    final InterconnectProfileDenial? denial =
+        parseInterconnectProfileDenialBody(body?.reason ?? '');
+    if (denial != null) {
+      throw InterconnectProfileRejected(denial, statusCode: res.statusCode);
+    }
+    _ops!.checkStatus(res.statusCode, label, serverReason: body);
   }
 
   /// 互联「主机版本」：取 host 的 app 版本、可用更新与更新进度（反馈 Pp8XPyve0N）。
