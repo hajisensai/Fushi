@@ -2045,6 +2045,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (mounted) _rebuild(() {});
   }
 
+  /// 漫画卡「导入漫画有声」直达入口（拍板 Ew0AxAgycu）：与有声漫画工作台里的导入
+  /// 步骤同一个函数，只是不必先进工作台。
+  Future<void> _importMangaAudio(String bookKey) async {
+    Navigator.pop(context);
+    await pickAndImportMangaAudio(appModel.database, bookKey);
+    if (mounted) _rebuild(() {});
+  }
+
   /// 打开 [AudiobookImportDialog] 本体（调用方负责先收起自己的菜单）。
   /// 卡菜单入口与字幕书「重新导入」的分流入口共用，避免第二处手抄 extractDir 查询。
   Future<void> _openAudiobookImportForKey(String bookKey) async {
