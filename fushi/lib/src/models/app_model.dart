@@ -431,6 +431,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/sync/online_library_items.dart'
+    show AppOnlineLibraryParticipant;
 import 'package:fushi/src/sync/interconnect_host_channel.dart'
     show InterconnectHostRef;
 import 'package:fushi/src/sync/app_peer_torrent_engine.dart';
@@ -1337,6 +1339,9 @@ class AppModel
       onlineMangaReader: InterconnectOnlineMangaHostReader(
         onlineMangaLibraryService,
       ),
+      // 在线源条目跨设备同步（拍板台 mY5VWg1nD-）：对端交来的清单并进本机库，
+      // GET 时附上本机自己的清单。
+      onlineLibraryParticipant: AppOnlineLibraryParticipant(database),
       refreshDictionaryCache: () async {
         // host 侧（互联对端上传/删除词典）直接改 DB，Dart 侧内存 cache 不会自己
         // 跟上：不先 loadFromDb，_rebuildDictPathsCacheAsync 读的还是旧列表，刚被

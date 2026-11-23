@@ -659,6 +659,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,
+        // 在线源条目清单（`/api/library/online-items`，拍板台 mY5VWg1nD-）。老 host
+        // 无此字段 → client 遇 404 时提示升级对端。
+        kLiveLibraryOnlineItemsCapability:
+            _libraryService is OnlineLibrarySyncHost,
         // 流媒体书注册（`PUT /api/library/videos/<id>/streamentry`，拍板台
         // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
         kLiveLibraryStreamVideosCapability:
