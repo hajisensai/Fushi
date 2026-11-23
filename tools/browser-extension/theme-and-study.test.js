@@ -513,9 +513,12 @@ test('study-tracker：identity() 给出正在统计的视频（标题在开表�
   assert.strictEqual(h.sandbox.window.fushiStudyTracker.identity(), null);
 });
 
-function loadBackgroundForStudy() {
+function loadBackgroundForStudy(opts) {
+  opts = opts || {};
   const fetches = [];
   const tabRemoved = [];
+  // 浏览器侧的事实：侧边栏上下文（runtime.getContexts）与各窗口的活动标签页（tabs.query）。
+  const browser = { contexts: [], activeByWindow: new Map() };
   const sandbox = {
     console, URL, btoa: (s) => Buffer.from(s).toString('base64'),
     setTimeout, clearTimeout, setInterval: () => 0, clearInterval,
@@ -532,10 +535,19 @@ function loadBackgroundForStudy() {
     importScripts() {},
     chrome: {
       storage: storageMock({}),
-      runtime: { onMessage: { addListener: (fn) => { sandbox._onMessage = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} }, getURL: (r) => r, id: 'x' },
+      runtime: {
+        onMessage: { addListener: (fn) => { sandbox._onMessage = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} },
+        getURL: (r) => 'chrome-extension://x/' + r, id: 'x',
+        ...(opts.noGetContexts ? {} : {
+          getContexts: (filter) => Promise.resolve(browser.contexts.filter((c) =>
+            (!filter.contextTypes || filter.contextTypes.includes(c.contextType)) &&
+            (!filter.documentIds || filter.documentIds.includes(c.documentId)))),
+        }),
+      },
       alarms: { create() {}, onAlarm: { addListener() {} } },
       action: { setBadgeText() {}, setBadgeBackgroundColor() {}, setTitle() {}, onClicked: { addListener() {} } },
-      tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener: (fn) => { tabRemoved.push(fn); } }, query: () => Promise.resolve([]) },
+      tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener: (fn) => { tabRemoved.push(fn); } }, query: (q) => Promise.resolve(
+        q && q.active === true && browser.activeByWindow.has(q.windowId) ? [{ id: browser.activeByWindow.get(q.windowId) }] : []) },
       webNavigation: { onCompleted: { addListener() {} } },
       sidePanel: { setPanelBehavior: () => Promise.resolve(), setOptions() {} },
       offscreen: { hasDocument: () => Promise.resolve(false) },
@@ -549,9 +561,11 @@ function loadBackgroundForStudy() {
   const ask = (msg, tabId) => new Promise((resolve) => {
     sandbox._onMessage(msg, tabId == null ? {} : { tab: { id: tabId } }, resolve);
   });
+  // 按 sender 原样发（侧边栏这类扩展页没有 sender.tab，带 id / url / documentId）。
+  const askFrom = (msg, sender) => new Promise((resolve) => { sandbox._onMessage(msg, sender, resolve); });
   const last = (re) => fetches.filter((f) => re.test(f.url)).at(-1);
   const sample = (over) => Object.assign({ mediaKind: 'video', mediaKey: 'web:yt-a', title: 'A 第1話', positionMs: 1000, playing: true, speed: 1 }, over);
-  return { ask, last, sample, removeTab: (id) => { for (const fn of tabRemoved) fn(id); } };
+  return { ask, askFrom, last, sample, browser, removeTab: (id) => { for (const fn of tabRemoved) fn(id); } };
 }
 
 test('background：查词 / 制卡带上本标签页正在统计的视频；别的标签页、停表后、关页后都不带', async () => {
@@ -572,7 +586,7 @@ test('background：查词 / 制卡带上本标签页正在统计的视频；别�
   await b.ask({ type: 'lookup', term: '世界' }, 2);
   assert.ok(!('study' in b.last(LOOKUP).body), '在别的标签页查的不记到这条视频');
   await b.ask({ type: 'lookup', term: '世界' });
-  assert.ok(!('study' in b.last(LOOKUP).body), '侧边栏（无 sender.tab）不归属');
+  assert.ok(!('study' in b.last(LOOKUP).body), '无 sender.tab 又无侧边栏背书的消息不归属');
 
   // 消息显式带的身份（批量队列项入队时冻结）优先。
   await b.ask({ type: 'mineClip', fields: {}, sentence: 's', clipBase64: 'AA==', clipDurationMs: 1000, study: { mediaKey: 'web:nf-9', title: 'N' } }, 1);
@@ -594,4 +608,57 @@ test('YouTube 批量制卡：队列项入队时冻结的 study 随 /api/mine 发
   assert.match(CONTENT_SRC, /tracker\.identity\(\)/, 'fushiEnqueue 要在点击那一刻冻结统计身份');
   assert.match(CONTENT_SRC, /\.\.\.\(study \? \{ study: study \} : \{\}\)/);
   assert.match(CONTENT_SRC, /\.\.\.\(q\.study \? \{ study: q\.study \} : \{\}\)/, 'Netflix 回放生成要透传队列项的 study');
+});
+
+test('独立侧边栏查词：按浏览器背书的侧栏窗口 → 该窗口活动标签页归属（拍板 PtsjrnVmH9-sidepanel）', async () => {
+  const b = loadBackgroundForStudy();
+  const LOOKUP = /\/api\/lookup\/dictionary$/;
+  const panel = { id: 'x', url: 'chrome-extension://x/side-panel.html', documentId: 'doc-panel' };
+  const lookupFrom = async (sender, extra) => {
+    await b.askFrom(Object.assign({ type: 'lookup', term: '世界' }, extra), sender);
+    return b.last(LOOKUP).body;
+  };
+  await b.ask({ type: 'studySample', sample: b.sample() }, 1);
+  await b.ask({ type: 'studySample', sample: b.sample({ mediaKey: 'web:yt-b', title: 'B' }) }, 2);
+  b.browser.contexts.push({ contextType: 'SIDE_PANEL', documentId: 'doc-panel', windowId: 7, tabId: -1 });
+  b.browser.activeByWindow.set(7, 1);
+
+  assert.deepStrictEqual((await lookupFrom(panel)).study, { mediaKey: 'web:yt-a', title: 'A 第1話' },
+    '全窗口侧栏：记到所在窗口的活动标签页正在统计的视频');
+  b.browser.activeByWindow.set(7, 2);
+  assert.deepStrictEqual((await lookupFrom(panel)).study, { mediaKey: 'web:yt-b', title: 'B' },
+    '切标签页后以浏览器此刻的活动标签页为准');
+  b.browser.activeByWindow.set(7, 5);
+  assert.ok(!('study' in await lookupFrom(panel)), '活动标签页没在统计视频就不归属');
+
+  // 侧边栏不许自报：消息里塞 tabId 不起作用。
+  assert.ok(!('study' in await lookupFrom(panel, { tabId: 1 })), '自报的 tabId 一律不认');
+
+  // 按标签页打开的侧栏：浏览器给的上下文自带 tabId，直接用它。
+  b.browser.contexts.push({ contextType: 'SIDE_PANEL', documentId: 'doc-tab', windowId: 7, tabId: 1 });
+  assert.deepStrictEqual((await lookupFrom(Object.assign({}, panel, { documentId: 'doc-tab' }))).study,
+    { mediaKey: 'web:yt-a', title: 'A 第1話' });
+
+  b.browser.activeByWindow.set(7, 1);
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { documentId: 'doc-gone' }))),
+    '找不到这份侧栏上下文（已关 / 伪造 documentId）不归属');
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { url: 'chrome-extension://x/options.html' }))),
+    '只认 side-panel.html 文档');
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { id: 'other-ext' }))),
+    '别的扩展发来的不认');
+  b.browser.contexts.push({ contextType: 'TAB', documentId: 'doc-tabctx', windowId: 7, tabId: 1 });
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { documentId: 'doc-tabctx' }))),
+    '上下文类型不是 SIDE_PANEL 不认');
+  // 嵌进网页的侧边栏有 sender.tab：只认那一页，不走窗口活动页。
+  await b.askFrom({ type: 'lookup', term: '世界' }, Object.assign({}, panel, { tab: { id: 2 } }));
+  assert.deepStrictEqual(b.last(LOOKUP).body.study, { mediaKey: 'web:yt-b', title: 'B' });
+});
+
+test('独立侧边栏查词：浏览器没有 runtime.getContexts 时不归属（不猜）', async () => {
+  const b = loadBackgroundForStudy({ noGetContexts: true });
+  await b.ask({ type: 'studySample', sample: b.sample() }, 1);
+  b.browser.activeByWindow.set(7, 1);
+  await b.askFrom({ type: 'lookup', term: '世界' },
+    { id: 'x', url: 'chrome-extension://x/side-panel.html', documentId: 'doc-panel' });
+  assert.ok(!('study' in b.last(/\/api\/lookup\/dictionary$/).body));
 });
