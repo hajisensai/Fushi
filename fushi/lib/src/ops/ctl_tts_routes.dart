@@ -29,6 +29,8 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart'
+    show MangaVolumeBusyException;
 import 'package:fushi/src/ops/ctl_tts_batch.dart';
 import 'package:fushi/src/ops/ctl_tts_package_routes.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
@@ -73,9 +75,12 @@ class _TtsHandlers {
     return ttsMangaBookKey(_deps, call.params['key'] ?? '');
   }
 
+  /// 写操作的卷：可写、且没有导出包的导入正占着它（所有写入口都经这里，导入落库时
+  /// 标注 / 生成 / 改演出稿 / 换成品一律 409）。
   Future<String> _writableBookKey(CtlCall call) async {
     final String bookKey = await _bookKey(call);
     requireTtsWritable(_deps);
+    requireNotImportingPackage(_deps, bookKey);
     return bookKey;
   }
 
@@ -171,6 +176,8 @@ class _TtsHandlers {
       );
     } on MangaAnnotateBusy {
       throw const CtlFailure.conflict('这一卷正在标注');
+    } on MangaVolumeBusyException {
+      throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
     }
     watchMangaAnnotateResult(_deps, task);
     return <String, Object?>{
@@ -359,12 +366,17 @@ class _TtsHandlers {
     final TtsRenderQueue queue = _deps.renderQueue();
     final TtsRenderJob? before = queue.latestFor(bookKey);
     final bool pending = before != null && !before.isTerminal;
-    final TtsRenderJob job = await queue.enqueue(
-      bookKey: bookKey,
-      title: volume.row.title.isEmpty ? bookKey : volume.row.title,
-      presetId: voice,
-      kind: TtsRenderJobKind.manga,
-    );
+    final TtsRenderJob job;
+    try {
+      job = await queue.enqueue(
+        bookKey: bookKey,
+        title: volume.row.title.isEmpty ? bookKey : volume.row.title,
+        presetId: voice,
+        kind: TtsRenderJobKind.manga,
+      );
+    } on TtsRenderRejected {
+      throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
+    }
     return <String, Object?>{
       'taskId': ttsMangaWireKey(bookKey),
       if (pending) 'alreadyQueued': true,

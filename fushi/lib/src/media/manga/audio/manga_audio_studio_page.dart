@@ -361,12 +361,20 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     final MangaAudioVolume? volume = _volume;
     final String? base = _basePresetId;
     if (volume == null || base == null || _busy) return;
-    await _queue.enqueue(
-      bookKey: volume.bookKey,
-      title: _title(volume),
-      presetId: base,
-      kind: TtsRenderJobKind.manga,
-    );
+    try {
+      await _queue.enqueue(
+        bookKey: volume.bookKey,
+        title: _title(volume),
+        presetId: base,
+        kind: TtsRenderJobKind.manga,
+      );
+    } on TtsRenderRejected {
+      FushiToast.show(
+        msg: t.manga_audio_package_error_importing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (mounted) setState(() {});
   }
 
@@ -570,13 +578,21 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       FushiToast.show(msg: t.manga_audio_job_busy);
       return;
     }
-    await _queue.enqueue(
-      bookKey: volume.bookKey,
-      title: _title(volume),
-      presetId: base,
-      kind: TtsRenderJobKind.manga,
-      lineRequests: requests,
-    );
+    try {
+      await _queue.enqueue(
+        bookKey: volume.bookKey,
+        title: _title(volume),
+        presetId: base,
+        kind: TtsRenderJobKind.manga,
+        lineRequests: requests,
+      );
+    } on TtsRenderRejected {
+      FushiToast.show(
+        msg: t.manga_audio_package_error_importing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     FushiToast.show(msg: t.manga_audio_backfill_queued);
     if (mounted) setState(() {});
   }

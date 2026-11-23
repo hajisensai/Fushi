@@ -6,6 +6,12 @@
 /// 写包 / 解包阶段随时可取消（杀掉工作 isolate、删半成品）；导入进入落库阶段
 /// （[MangaAudioPackageTask.markCommitting]）后拒绝取消——半途停下会留下「书已建、
 /// 成品没登记」的残局。
+///
+/// 导入任务从起任务那一刻到结束都「占住」它要写的卷（[MangaAudioPackageTask.claims]：
+/// 本机已有的卷按书键、要新建的卷按内容签名，新建出来后再补上书键）。卷忙不忙的唯一
+/// 判据（`manga_audio_volume_busy.dart`）据此把「正在导入」算进去：标注 / 生成 / 导出 /
+/// 再导入都不能碰正在导入的卷；同一个包、或要写同一卷的两次导入不能并发（否则两边都
+/// 判「新建」、各建一卷重复的）。
 library;
 
 import 'dart:async';
@@ -37,6 +43,16 @@ class MangaAudioPackageTask extends ChangeNotifier {
   final String path;
   final int createdAt;
   final MangaPackageCancelToken cancelToken = MangaPackageCancelToken();
+
+  /// 导入任务占住的卷（[mangaPackageBookClaim] / [mangaPackageContentClaim]）；导出为空。
+  final Set<String> _claims = <String>{};
+  Set<String> get claims => Set<String>.unmodifiable(_claims);
+
+  /// 导入新建出一卷后补占它的书键（建好到这次导入结束之间别处也不能碰它）。
+  void claimVolume(String bookKey) {
+    if (isTerminal) return;
+    _claims.add(mangaPackageBookClaim(bookKey));
+  }
 
   MangaAudioPackageTaskStatus status = MangaAudioPackageTaskStatus.running;
 
@@ -98,6 +114,13 @@ class MangaAudioPackageTask extends ChangeNotifier {
   };
 }
 
+/// 导入任务占住本机已有的一卷（按书键）。
+String mangaPackageBookClaim(String bookKey) => 'book:$bookKey';
+
+/// 导入任务占住包里要新建的一卷（按页数与 OCR 的内容签名：同一卷不管在哪个包里都一样）。
+String mangaPackageContentClaim(String contentSignature) =>
+    'content:$contentSignature';
+
 class MangaAudioPackageTasks extends ChangeNotifier {
   MangaAudioPackageTasks({DateTime Function()? now})
     : _now = now ?? DateTime.now;
@@ -134,6 +157,39 @@ class MangaAudioPackageTasks extends ChangeNotifier {
     return null;
   }
 
+  /// 正在导入、占住了 [bookKey] 这一卷的任务（[except] = 不算这个任务自己）。
+  MangaAudioPackageTask? importingVolume(
+    String bookKey, {
+    MangaAudioPackageTask? except,
+  }) {
+    final String claim = mangaPackageBookClaim(bookKey);
+    for (final MangaAudioPackageTask task in _tasks) {
+      if (task.kind == MangaAudioPackageTaskKind.import &&
+          !task.isTerminal &&
+          !identical(task, except) &&
+          task._claims.contains(claim)) {
+        return task;
+      }
+    }
+    return null;
+  }
+
+  /// 与「导入 [path]、占住 [claims]」冲突的在跑导入：同一个包文件，或要写同一卷。
+  MangaAudioPackageTask? activeImportOverlapping(
+    String path,
+    Set<String> claims,
+  ) {
+    for (final MangaAudioPackageTask task in _tasks) {
+      if (task.kind != MangaAudioPackageTaskKind.import || task.isTerminal) {
+        continue;
+      }
+      if (p.equals(task.path, path) || task._claims.any(claims.contains)) {
+        return task;
+      }
+    }
+    return null;
+  }
+
   /// 起一个任务并立即返回；[run] 的返回值落 [MangaAudioPackageTask.result]。
   /// [run] 抛 [MangaAudioPackageCancelled] = 取消；[MangaAudioPackageException] = 失败
   /// （带原因码）；别的异常 = 失败（`internal`）。
@@ -141,15 +197,27 @@ class MangaAudioPackageTasks extends ChangeNotifier {
   /// 同一个目标文件已有导出在写时同步抛 [MangaAudioPackageException]
   /// （`export_running`）：两个任务往同一个 `.part` 写会互相毁掉对方的包。判据放在
   /// 任务表这里，界面与控制通道起任务都过这一道。
+  ///
+  /// 导入任务带上它要写的卷 [claims]（`mangaPackageImportClaims`）：与在跑的导入是
+  /// 同一个包、或占住的卷有重叠时同步抛 [MangaAudioPackageException]
+  /// （`import_running`）——判据与占卷在同一个同步段里，两次导入不会都判成可以。
   MangaAudioPackageTask start({
     required MangaAudioPackageTaskKind kind,
     required String path,
     required Future<Map<String, Object?>> Function(MangaAudioPackageTask task)
     run,
+    Set<String> claims = const <String>{},
   }) {
     if (kind == MangaAudioPackageTaskKind.export &&
         activeExportTo(path) != null) {
       throw MangaAudioPackageException('export_running', '已经在往 $path 导出');
+    }
+    if (kind == MangaAudioPackageTaskKind.import &&
+        activeImportOverlapping(path, claims) != null) {
+      throw const MangaAudioPackageException(
+        'import_running',
+        '这个包或包里的卷已经在导入，等它结束',
+      );
     }
     final int now = _now().millisecondsSinceEpoch;
     final MangaAudioPackageTask task = MangaAudioPackageTask._(
@@ -158,6 +226,7 @@ class MangaAudioPackageTasks extends ChangeNotifier {
       path: path,
       createdAt: now,
     );
+    if (kind == MangaAudioPackageTaskKind.import) task._claims.addAll(claims);
     _tasks.add(task);
     _trimFinished();
     notifyListeners();

@@ -1,0 +1,20 @@
+## BUG-5337 · manga-audio-package-import-busy
+- **报告**：2026-11-23（PR #4240 审查发现、合入时登记未修：有声漫画包导入落库期间同一卷仍能标注 / 生成；同一个包的两次导入都判「新建」，建出重复的卷）
+- **真实性**：✅ 真 bug。根因是「卷忙不忙」没有单一判据、导入任务也不占卷：
+  - `fushi/lib/src/ops/ctl_tts_package_routes.dart:35`（`ttsMangaBusyReason`）与 `fushi/lib/src/media/manga/audio/manga_audio_package_page.dart:64`（`mangaAudioPackageBusyCheck`）各拼一份判据，只看标注任务表与生成队列，不知道有导入在跑；
+  - 标注 / 生成的入口（`ctl_tts_routes.dart` 的 `annotate` / `render` / 改句等写路由，工作台 `MangaAnnotateTasks.start`、`TtsRenderQueue.enqueue`）完全不看导入任务表，导入落库（替换演出稿、成品目录、有声登记）时同卷照样能起标注 / 生成，两边互相覆盖；
+  - `fushi/lib/src/media/manga/audio/manga_audio_package_tasks.dart:144`（`start`）只拦「同一目标文件的导出」，导入不去重：同一个包（或它的副本）的两次导入在读包时都判 `create`，各自 `MangaImporter.importFromMangaJson` 建一卷；
+  - `manga_audio_package_import.dart` 的 `_importVolume` 新建分支照读包时的旧计划直接建卷，不复核本机现状：第一次导入结束后再用旧计划导入同样建出重复卷。
+- **[x] ① 已修复** —
+  - 新增 `manga_audio_volume_busy.dart`：`mangaVolumeBusy`（标注在跑 / 生成未结束 / 导入占着，三者唯一判据，`except` 排除导入任务自己）。`ttsMangaBusyReason`、`mangaAudioPackageBusyCheck` 都改由它推出（导出预检、导入计划、导入落库逐卷复查、撤销导入共用）；
+  - 导入任务占卷：`MangaAudioPackageTasks.start` 的 `claims`（`mangaPackageImportClaims`：已有卷按书键、要写的每卷按内容签名，无 OCR 块时带标题），新建出卷后 `onCreated → claimVolume` 补占书键；同一个包或占卷重叠的导入同步抛 `import_running`（判据与占卷在同一同步段）；任务结束即释放；
+  - 标注 / 生成任务表开始前过「正在导入」：`MangaAnnotateTasks` 的 `blocker`（抛 `MangaVolumeBusyException`）、`TtsRenderQueue` 的 `admission`（引擎层通用准入钩子，抛 `TtsRenderRejected`），装配在 `mangaAnnotateTasksFor` / `ttsRenderQueueFor`——入口漏查也写不进正在导入的卷；
+  - 控制通道 / CLI：`ctl_tts_routes.dart` 的 `_writableBookKey`（所有写路由都经它）加 `requireNotImportingPackage` → 409；`annotate` / `render` / 按角色批量重生成兜住拒收异常转 409（批量重生成同时丢掉备份）；导入路由带 `claims` / `onCreated` / `except`，`import_running` / `plan_stale` → 409；
+  - 工作台：导入起任务兜住 `import_running` 提示；脚本页、制作台整卷生成 / 补回、按系列跑遇拒收提示或记失败码 `manga_package_importing` 跳过该卷；
+  - 落库前复核：新建分支按本机现状再匹配一次，已有同一卷（或原判「新建」现在出现同名卷）就判 `plan_stale`、不建；
+  - i18n：`manga_audio_package_error_importing` / `manga_audio_package_error_plan_stale`（`i18n_sync.dart --add`，17 语言）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/manga/audio/manga_audio_package_roundtrip_test.dart`：「同一个包导两次（含换个文件名的副本）」（在跑时同包 / 副本都 `import_running`；新建出的卷算导入占着、`except` 自己不算；结束释放；之后用旧计划落库判 `plan_stale`、本机只有一卷）；「导入占住的卷算忙」（`mangaVolumeBusy` 判 importing、`except` 为 null；标注任务表抛 `MangaVolumeBusyException`、生成队列抛 `TtsRenderRejected` 且不落任务；结束后两者都放行）；
+  - `fushi/test/ops/ctl_tts_routes_test.dart`「导出包正在导入这一卷」（标注 / 生成 / 改句 409、标注器零调用、队列无任务；导入结束后整卷生成排上）；
+  - `packages/fushi_engine/test/tts/tts_render_queue_test.dart`「准入判据拒收」（抛 `TtsRenderRejected`、不落清单；放行后照常排上）。
+- **备注**：未在真机复测（维护者已取消真机验证）。工作台制作台的「单句重生成 / 改句」按钮不随导入状态置灰（只在真正写入的入口拦：标注 / 生成任务表与控制通道写路由），导入期间在制作台手改单句仍可能被导入覆盖，影响面小，未一并处理。

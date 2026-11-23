@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
     show registerMangaAudio;
 import 'package:fushi/src/media/manga/audio/manga_audio_package_export.dart';
@@ -16,13 +17,18 @@ import 'package:fushi/src/media/manga/audio/manga_audio_package_import.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_package_io.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart'
+    show MangaAnnotateRunSummary;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
+import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
 class _Session implements AudiobookSession {
@@ -31,6 +37,15 @@ class _Session implements AudiobookSession {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailingRunner implements TtsRenderRunner {
+  @override
+  Future<({bool verified, List<TtsRenderFlag> flags})> run(
+    TtsRenderJob job, {
+    required TtsRenderProgress onProgress,
+    required TtsRenderCancelToken cancel,
+  }) async => throw const TtsRenderFailure('synthesis_failed');
 }
 
 class _Host implements AudioProductionHost {
@@ -532,6 +547,188 @@ void main() {
     );
     await second.whenDone;
     expect(second.status, MangaAudioPackageTaskStatus.done);
+  });
+
+  Future<int> mangaBookCount() async => (await targetDb.getAllEpubBooks())
+      .where((EpubBookRow r) => r.format == 'manga')
+      .length;
+
+  test('同一个包导两次（含换个文件名的副本）：在跑时第二次起不来；之后拿旧计划落库判 plan_stale，'
+      '不建重复的卷（BUG-5337）', () async {
+    final String path = await exportPackage();
+    final String copy = p.join(tmp.path, 'copy$kMangaAudioPackageExtension');
+    await File(path).copy(copy);
+    final MangaPackageImportPlan first = await planMangaAudioPackageImport(
+      target,
+      path,
+    );
+    final MangaPackageImportPlan second = await planMangaAudioPackageImport(
+      target,
+      copy,
+    );
+    // 两份计划都是读包时定的：本机还没有这一卷，都判「新建」。
+    expect(first.volumes.single.action, MangaPackageImportAction.create);
+    expect(second.volumes.single.action, MangaPackageImportAction.create);
+
+    final MangaAudioPackageTasks tasks = MangaAudioPackageTasks();
+    final Completer<void> gate = Completer<void>();
+    final List<String> created = <String>[];
+    final List<bool> claimedWhileRunning = <bool>[];
+    final MangaAudioPackageTask running = tasks.start(
+      kind: MangaAudioPackageTaskKind.import,
+      path: path,
+      claims: mangaPackageImportClaims(first),
+      run: (MangaAudioPackageTask task) async {
+        await gate.future;
+        return runMangaAudioPackageImport(
+          target,
+          first,
+          runId: task.id,
+          onCommit: task.markCommitting,
+          onCreated: (String bookKey) {
+            created.add(bookKey);
+            task.claimVolume(bookKey);
+            // 新建出来的卷从这一刻起算「正在导入」，别处判忙；任务自己不算。
+            claimedWhileRunning
+              ..add(identical(tasks.importingVolume(bookKey), task))
+              ..add(tasks.importingVolume(bookKey, except: task) == null);
+          },
+        );
+      },
+    );
+    Matcher importRunning() => throwsA(
+      isA<MangaAudioPackageException>().having(
+        (MangaAudioPackageException e) => e.code,
+        'code',
+        'import_running',
+      ),
+    );
+    for (final (String file, MangaPackageImportPlan plan)
+        in <(String, MangaPackageImportPlan)>[(path, first), (copy, second)]) {
+      expect(
+        () => tasks.start(
+          kind: MangaAudioPackageTaskKind.import,
+          path: file,
+          claims: mangaPackageImportClaims(plan),
+          run: (MangaAudioPackageTask task) async => <String, Object?>{},
+        ),
+        importRunning(),
+      );
+    }
+    gate.complete();
+    await running.whenDone;
+    expect(running.status, MangaAudioPackageTaskStatus.done);
+    expect(running.result!['imported'], 1, reason: '${running.result}');
+    expect(created, hasLength(1));
+    expect(claimedWhileRunning, <bool>[true, true]);
+    expect(tasks.importingVolume(created.single), isNull, reason: '结束即释放');
+    expect(await mangaBookCount(), 1);
+
+    // 第一次结束后再用读包时那份「新建」计划落库：本机已经有这一卷，不再建。
+    final Map<String, Object?> stale = await runMangaAudioPackageImport(
+      target,
+      second,
+      runId: 'r2',
+    );
+    final Map<String, Object?> outcome =
+        (stale['volumes']! as List<Object?>).single! as Map<String, Object?>;
+    expect(stale['imported'], 0, reason: '$stale');
+    expect(outcome['code'], 'plan_stale', reason: '$outcome');
+    expect(await mangaBookCount(), 1);
+  });
+
+  test('导入占住的卷算忙：标注任务表与生成队列都拒收，判据排除导入自己；结束后放行（BUG-5337）', () async {
+    const String key = 'vol-x';
+    final MangaAudioPackageTasks packages = MangaAudioPackageTasks();
+    final MangaAnnotateTasks annotate = MangaAnnotateTasks(
+      runner:
+          (
+            MangaAnnotateRequest request,
+            MangaAnnotateTaskSink sink,
+            bool Function() isCancelled,
+          ) => Completer<MangaAnnotateRunSummary>().future,
+      blocker: (String bookKey) =>
+          mangaVolumeImportBlocker(bookKey, packages: packages),
+    );
+    final TtsRenderQueue queue = TtsRenderQueue(
+      store: File(p.join(tmp.path, 'jobs.json')),
+      workRoot: Directory(p.join(tmp.path, 'work')),
+      runner: _FailingRunner(),
+      admission: (String bookKey) =>
+          mangaVolumeImportBlocker(bookKey, packages: packages) == null
+          ? null
+          : kMangaPackageImportingCode,
+    );
+    addTearDown(queue.close);
+    MangaVolumeBusy? busy({MangaAudioPackageTask? except}) => mangaVolumeBusy(
+      key,
+      annotate: annotate,
+      renderQueue: queue,
+      packages: packages,
+      except: except,
+    );
+    final MangaAnnotateRequest request = MangaAnnotateRequest.annotate(
+      bookKey: key,
+      provider: AiProviderConfig(
+        id: 'p1',
+        presetId: 'openai',
+        name: 'Test',
+        baseUrl: Uri.parse('https://example.invalid'),
+      ),
+    );
+
+    final Completer<void> gate = Completer<void>();
+    final MangaAudioPackageTask importing = packages.start(
+      kind: MangaAudioPackageTaskKind.import,
+      path: p.join(tmp.path, 'in$kMangaAudioPackageExtension'),
+      claims: <String>{mangaPackageBookClaim(key)},
+      run: (MangaAudioPackageTask task) async {
+        await gate.future;
+        return <String, Object?>{};
+      },
+    );
+    expect(busy(), MangaVolumeBusy.importing);
+    expect(busy(except: importing), isNull);
+    expect(
+      () => annotate.start(request),
+      throwsA(
+        isA<MangaVolumeBusyException>().having(
+          (MangaVolumeBusyException e) => e.busy,
+          'busy',
+          MangaVolumeBusy.importing,
+        ),
+      ),
+    );
+    expect(annotate.isRunning(key), isFalse);
+    await expectLater(
+      queue.enqueue(
+        bookKey: key,
+        title: 't',
+        presetId: 'v1',
+        kind: TtsRenderJobKind.manga,
+      ),
+      throwsA(
+        isA<TtsRenderRejected>().having(
+          (TtsRenderRejected e) => e.reason,
+          'reason',
+          kMangaPackageImportingCode,
+        ),
+      ),
+    );
+    expect(queue.latestFor(key), isNull);
+
+    gate.complete();
+    await importing.whenDone;
+    expect(busy(), isNull);
+    annotate.start(request, announce: false);
+    expect(busy(), MangaVolumeBusy.annotating);
+    final TtsRenderJob job = await queue.enqueue(
+      bookKey: key,
+      title: 't',
+      presetId: 'v1',
+      kind: TtsRenderJobKind.manga,
+    );
+    expect(job.bookKey, key);
   });
 
   test('不是有声漫画包：计划阶段就报 not_package', () async {

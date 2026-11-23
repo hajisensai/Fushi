@@ -1119,6 +1119,40 @@ void main() {
     await expectLater(importManifest(file.path), failure(409));
   });
 
+  test('导出包正在导入这一卷：标注 / 生成 409、什么都不跑；导入结束后放行（BUG-5337）', () async {
+    consent = true;
+    final Completer<void> gate = Completer<void>();
+    final MangaAudioPackageTask importing = packageTasks.start(
+      kind: MangaAudioPackageTaskKind.import,
+      path: p.join(tmp.path, 'in.fushi-manga-audio'),
+      claims: <String>{mangaPackageBookClaim(bookKey)},
+      run: (MangaAudioPackageTask task) async {
+        await gate.future;
+        return <String, Object?>{};
+      },
+    );
+    await expectLater(call('POST', '$item/annotate'), failure(409));
+    await expectLater(call('POST', '$item/render'), failure(409));
+    await expectLater(
+      call(
+        'PUT',
+        '$item/lines/:line',
+        params: <String, String>{'key': wire, 'line': 'p0b0'},
+        body: <String, Object?>{'speaker': kTtsNarrator},
+      ),
+      failure(409),
+    );
+    expect(annotator.calls, 0);
+    expect(queue.latestFor(bookKey), isNull);
+
+    gate.complete();
+    await importing.whenDone;
+    final Map<String, Object?> rendered =
+        await call('POST', '$item/render') as Map<String, Object?>;
+    expect(rendered['render'], isNotNull);
+    expect(queue.latestFor(bookKey), isNotNull);
+  });
+
   /// 本机生成过的成品：p0b0（太郎）/ p0b1（不明）/ p1b0（旁白）三句，各有音频，已入库。
   Future<File> writeRendered() async {
     final File manifestFile = mangaRenderManifestFile(model, bookKey);
