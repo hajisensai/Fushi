@@ -1,3 +1,4 @@
+import 'package:fushi_engine/models/content_language.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:test/test.dart';
 
@@ -15,21 +16,21 @@ String? _first(TtsMediaVoices voices, TtsMediaVoiceScope scope) {
 }
 
 void main() {
-  group('ttsMediaVoiceLanguageKey', () {
+  group('contentLanguageKey', () {
     test('keeps only the primary language subtag', () {
-      expect(ttsMediaVoiceLanguageKey('ja'), 'ja');
-      expect(ttsMediaVoiceLanguageKey('ja-JP'), 'ja');
-      expect(ttsMediaVoiceLanguageKey('zh-Hant-TW'), 'zh');
-      expect(ttsMediaVoiceLanguageKey('zh_TW'), 'zh');
-      expect(ttsMediaVoiceLanguageKey(' ZH '), 'zh');
+      expect(contentLanguageKey('ja'), 'ja');
+      expect(contentLanguageKey('ja-JP'), 'ja');
+      expect(contentLanguageKey('zh-Hant-TW'), 'zh');
+      expect(contentLanguageKey('zh_TW'), 'zh');
+      expect(contentLanguageKey(' ZH '), 'zh');
     });
 
     test('unknown or malformed values become the empty key', () {
-      expect(ttsMediaVoiceLanguageKey(null), '');
-      expect(ttsMediaVoiceLanguageKey(''), '');
-      expect(ttsMediaVoiceLanguageKey('und'), '');
-      expect(ttsMediaVoiceLanguageKey('x'), '');
-      expect(ttsMediaVoiceLanguageKey('12'), '');
+      expect(contentLanguageKey(null), '');
+      expect(contentLanguageKey(''), '');
+      expect(contentLanguageKey('und'), '');
+      expect(contentLanguageKey('x'), '');
+      expect(contentLanguageKey('12'), '');
     });
   });
 

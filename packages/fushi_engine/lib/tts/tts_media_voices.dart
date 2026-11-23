@@ -2,14 +2,16 @@
 ///
 /// 查找顺序：本书指定 → 「系列 + 本书语言」→ 全局「使用中」声音（[TtsPresetStore]）。
 /// 在朗读中快速切换声音时写进这里：书属于系列就记到「系列 + 语言」（同系列同语言的
-/// 其它卷一起用，换语言的版本互不影响——如日文版与台版《化物語》被自动归进同一个
-/// 合集），没有系列就只记这本书。全局默认仍由「朗读声音」设置页决定。
+/// 其它卷一起用，换语言的版本互不影响——如日文版与台版《化物語》在同一个合集里：
+/// 用户手动建的混合合集，或按语言拆组之前就建好的合集），没有系列就只记这本书。全局默认仍由「朗读声音」设置页决定。
 ///
 /// 值都是本机声音预设 id，与 `tts_voice_presets` / `tts_active_preset_id` 同族：设备本地，
 /// 不进同步 / 备份 / Profile。整张表落一个偏好键（[TtsPresetStore.mediaVoicesKey]）。
 library;
 
 import 'dart:convert';
+
+import 'package:fushi_engine/models/content_language.dart';
 
 /// 一次朗读所属的作品：书键、所属系列（null = 不属任何系列）与语言。
 class TtsMediaVoiceScope {
@@ -24,12 +26,12 @@ class TtsMediaVoiceScope {
   /// 系列身份（如 `collection:<id>`）；null = 这本书不属任何系列。
   final String? seriesKey;
 
-  /// 本书的内容语言（BCP-47 / 自由文本均可，[ttsMediaVoiceLanguageKey] 归一）；
+  /// 本书的内容语言（BCP-47 / 自由文本均可，[contentLanguageKey] 归一）；
   /// null = 未知。
   final String? language;
 
   /// 归一后的语言键（未知为空串：同系列里语言未知的书共用一格）。
-  String get languageKey => ttsMediaVoiceLanguageKey(language);
+  String get languageKey => contentLanguageKey(language);
 }
 
 /// 声音从哪一层来。
@@ -44,25 +46,6 @@ enum TtsVoiceSource {
   defaultVoice,
 }
 
-/// 语言归一成主语言子标签（`zh-Hant-TW` / `zh_TW` / `ZH` → `zh`）：同系列的日文版与
-/// 中文版分开记，同一种语言写法不同（`zh-TW` 与 `zh-Hant`）不分家。不像语言标签的
-/// 值（空、`und`、数字）归为空串。
-String ttsMediaVoiceLanguageKey(String? raw) {
-  final String trimmed = raw?.trim() ?? '';
-  if (trimmed.isEmpty) return '';
-  final String primary = trimmed
-      .replaceAll('_', '-')
-      .split('-')
-      .first
-      .toLowerCase();
-  if (primary.length < 2 || primary.length > 8) return '';
-  if (primary == 'und') return '';
-  for (final int unit in primary.codeUnits) {
-    if (unit < 0x61 || unit > 0x7a) return '';
-  }
-  return primary;
-}
-
 /// 作品 → 声音预设 id 的两张表（本书、系列 × 语言）。纯数据，读写经
 /// [TtsPresetStore.loadMediaVoices] / [TtsPresetStore.saveMediaVoices]。
 class TtsMediaVoices {
@@ -75,7 +58,7 @@ class TtsMediaVoices {
   /// 书键 → 预设 id。
   final Map<String, String> books;
 
-  /// 系列身份 → 语言键（[ttsMediaVoiceLanguageKey]，未知为空串）→ 预设 id。
+  /// 系列身份 → 语言键（[contentLanguageKey]，未知为空串）→ 预设 id。
   final Map<String, Map<String, String>> series;
 
   bool get isEmpty => books.isEmpty && series.isEmpty;
