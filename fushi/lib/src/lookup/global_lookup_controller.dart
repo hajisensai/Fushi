@@ -1092,6 +1092,17 @@ class GlobalLookupController {
       // (linux/runner/global_lookup_channel.cc `CaptureGtkPrimary`). The other
       // app's selection stays primary after it loses focus; raising selects
       // nothing in Fushi, so it cannot replace that selection.
+      //
+      // Linux context capture (AT-SPI) runs BEFORE that: it finds the text by
+      // the foreground window's ACTIVE / FOCUSED state, which raising Fushi
+      // takes away. Reading it needs no focus and touches no selection.
+      final bool contextFirst =
+          Platform.isLinux && model.globalContextCaptureEnabled;
+      ForegroundSelectionContext? earlyContext;
+      if (contextFirst) {
+        earlyContext = await SelectionCapture.captureForegroundContext();
+        if (!_isCurrentRoute) return;
+      }
       final bool overlay = isSupported;
       if (overlay) {
         await GlobalLookupChannel.hide(notify: false);
@@ -1100,15 +1111,17 @@ class GlobalLookupController {
       }
       if (!_isCurrentRoute) return;
       // TODO-1030 M0 — when the user opted into context capture, try UI
-      // Automation first: it yields the selected term PLUS the sentence it sits
-      // in. On any miss (no UIA text element, non-Windows, channel unavailable)
+      // Automation / AX / AT-SPI first: it yields the selected term PLUS the
+      // sentence it sits in. On any miss (no accessible text element, channel
+      // or accessibility bus unavailable)
       // fall back to the clipboard capture (inject Ctrl+C), which yields only
       // the bare selection — never break the existing path.
       String text = '';
       String sentence = '';
       if (model.globalContextCaptureEnabled) {
-        final ForegroundSelectionContext? ctx =
-            await SelectionCapture.captureForegroundContext();
+        final ForegroundSelectionContext? ctx = contextFirst
+            ? earlyContext
+            : await SelectionCapture.captureForegroundContext();
         if (!_isCurrentRoute) return;
         if (ctx != null) {
           text = ctx.selectedText.trim();
