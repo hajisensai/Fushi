@@ -28,6 +28,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 
 /// 字幕对轴的「音频波形」入口面板（TODO-1051 阶段B；TODO-1207 改为按钮触发的放大可交互视图）。
 ///
@@ -1085,7 +1086,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
           // 拖动滚动。
           child: WheelToHorizontalScroll(
             controller: _scrollController,
-            child: Scrollbar(
+            child: FushiScrollbar(
               key: const ValueKey<String>('subtitle-waveform-hscroll'),
               controller: _scrollController,
               thumbVisibility: true,
@@ -1466,9 +1467,8 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             valueListenable: _livePositionMs,
             builder: (BuildContext _, int posMs, __) {
               final int activeIdx = _currentCueIndex(posMs);
-              return Scrollbar(
+              return FushiScrollbar(
                 controller: _listController,
-                thumbVisibility: true,
                 child: ListView.builder(
                   controller: _listController,
                   itemExtent: _listItemExtent,

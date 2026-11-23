@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
@@ -10,8 +12,18 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show FushiAppleBarProminentButton, fushiAppleBarCapsuleExtent;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show fushiAppleCompact;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show showFushiMenu;
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSegmentedButton;
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
@@ -747,6 +759,11 @@ TextStyle fushiAppleNavTitleStyle(
   );
 }
 
+///
+/// @design dual
+/// M3E：页头大字（[fushiMastheadTitleStyle]）。Apple（[isGlassDesign]）：导航栏
+/// 标题字阶 [fushiAppleNavTitleStyle]（窄窗 iOS 大标题 34pt bold、宽窗 macOS
+/// 工具栏标题）。调用方显式给 [style] 时两套都用它。
 class FushiMastheadTitle extends StatelessWidget {
   const FushiMastheadTitle({
     required this.title,
@@ -779,7 +796,10 @@ class FushiMastheadTitle extends StatelessWidget {
     // 向上并进外壳的手势 / 焦点节点（与侧栏、页签争成兄弟合并组），换页或
     // 重排时框架复用这些共享节点就会断言 `!child.attached`。
     final TextStyle base =
-        style ?? fushiMastheadTitleStyle(context, compact: compact, tier: tier);
+        style ??
+        (isGlassDesign(context)
+            ? fushiAppleNavTitleStyle(context, compact: compact)
+            : fushiMastheadTitleStyle(context, compact: compact, tier: tier));
     return Semantics(
       container: true,
       header: true,
@@ -840,6 +860,10 @@ class FushiMastheadTitle extends StatelessWidget {
 /// 一级切换写成大字：当前项 [FushiMastheadPalette.strong]、其余 onSurface 26%
 /// （悬停 60%），项间「/」分隔。只接指针；键盘 / 手柄由外层
 /// `FushiAdjustableSegmented` 的单个停靠点左右切换。
+///
+/// @design dual
+/// Apple（[isGlassDesign]）：Cupertino 分段控件（[FushiAppleSectionSegments]，
+/// 按内容取宽），与库页 Apple 导航栏的一级切换同一组件。
 class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
   const FushiMastheadSwitch({
     required this.tabs,
@@ -860,6 +884,15 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return FushiAppleSectionSegments<T>(
+        tabs: tabs,
+        selected: selected,
+        onChanged: onChanged,
+        fill: false,
+        selectedIsCurrent: selectedIsCurrent,
+      );
+    }
     final bool headline = FushiMastheadSwitchHeadline.of(context);
     final bool compact = fushiMastheadCompact(context) && !headline;
     final TextStyle style = fushiMastheadSwitchStyle(context, compact: compact);
@@ -1072,6 +1105,10 @@ class _MastheadSwitchItemState extends State<_MastheadSwitchItem> {
 /// 20；选中项四角全圆 20、底 [FushiMastheadPalette.strong]、字为页面底色）。
 /// 命中区上下外扩到 48。放不下时横向滚动、不换行。挂载时（换组即换一份）
 /// 小幅位移 + 淡入。只接指针；键盘 / 手柄由外层单个停靠点左右切换。
+///
+/// @design dual
+/// Apple（[isGlassDesign]）：Cupertino 分段控件（[FushiAppleSectionSegments]），
+/// 窄窗铺满整行，与库页 Apple 导航栏的二级视图同一组件。
 class FushiMastheadSegmentedTabs<T extends Object> extends StatefulWidget {
   const FushiMastheadSegmentedTabs({
     required this.tabs,
@@ -1119,6 +1156,15 @@ class _FushiMastheadSegmentedTabsState<T extends Object>
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return FushiAppleSectionSegments<T>(
+        tabs: widget.tabs,
+        selected: widget.selected,
+        onChanged: widget.onChanged,
+        fill: fushiMastheadCompact(context),
+        selectedIsCurrent: widget.selectedIsCurrent,
+      );
+    }
     final List<LibrarySectionTab<T>> tabs = widget.tabs;
     final int count = tabs.length;
     final Widget group = Row(
@@ -1283,6 +1329,13 @@ class _MastheadSegmentState extends State<_MastheadSegment> {
 /// [FushiMastheadPalette.indicator]、图标 onIndicator；悬停 / 选中时圆角弹到 28。
 /// 按钮本体由调用方给的 [builder] 按传入的形状 / 颜色 / 尺寸画（沿用原按钮的
 /// 焦点、tooltip 与 Semantics）。
+///
+/// @design dual
+/// Apple（[isGlassDesign]）：iOS 27 prominent bar button——强调色玻璃圆钮
+/// （[FushiAppleBarProminentButton]，`GlassBarItemBackground.separate` +
+/// tint，窄窗 44 / 宽窗 36，随玻璃画质档位）。[builder] 收到圆形、透明底
+/// （[FushiMastheadPalette.indicator] 透明、onIndicator = onPrimary）与圆钮
+/// 边长，底由玻璃圆钮画；没有悬停弹角与投影。
 class FushiMastheadPrimaryButton extends StatefulWidget {
   const FushiMastheadPrimaryButton({
     required this.selected,
@@ -1308,8 +1361,29 @@ class _FushiMastheadPrimaryButtonState
     extends State<FushiMastheadPrimaryButton> {
   bool _hovered = false;
 
+  Widget _buildApple(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final FushiMastheadPalette base = fushiMastheadPaletteOf(context);
+    final bool compact = fushiMastheadCompact(context);
+    final double extent = fushiAppleBarCapsuleExtent(compact: compact);
+    final FushiMastheadPalette palette = FushiMastheadPalette(
+      strong: base.strong,
+      indicator: const Color(0x00000000),
+      onIndicator: scheme.onPrimary,
+      ink: base.ink,
+      segment: base.segment,
+      segmentHover: base.segmentHover,
+    );
+    return FushiAppleBarProminentButton(
+      tint: scheme.primary,
+      compact: compact,
+      child: widget.builder(context, const CircleBorder(), palette, extent),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiMotionScheme motion = context.fushiMotion;
     final double extent = FushiPageTitleMetrics.of(context).primaryExtent;
     final double target = _hovered || widget.selected ? 28 : 20;
@@ -1368,6 +1442,11 @@ class FushiMastheadBadgeScope extends InheritedWidget {
 
 /// 页名右侧的徽标：一枚 indicator 色的模块多边形，纯装饰（不进语义）。边长取
 /// 展开态（宽窗 44 / 窄窗 22），收缩由绘制层缩放。
+///
+/// @design dual
+/// Apple（[isGlassDesign]）：不画。Apple 导航栏没有 M3E 模块多边形这种装饰
+/// （库页 Apple 导航栏同样不挂徽标，见 `FushiFloatingChromeBar`）；
+/// `FushiBadgeControl` 是计数 / 红点徽标，语义不同，不拿来顶替。
 class FushiMastheadBadge extends StatelessWidget {
   const FushiMastheadBadge({
     required this.shape,
@@ -1380,6 +1459,7 @@ class FushiMastheadBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return const SizedBox.shrink();
     final FushiMastheadPalette palette = fushiMastheadPaletteOf(context);
     return ExcludeSemantics(
       child: SizedBox.square(
@@ -1515,6 +1595,212 @@ const double kFushiAppleScrollEdgeDistance = 24;
 /// Apple scroll edge 在最后一行吸顶工具（分段 / 标签行）下沿之外再延伸的缓冲
 /// （逻辑 px）：soft 曲线的尾巴落在这里，工具行背后仍有一层可读的底色。
 const double kFushiAppleScrollEdgeFade = 24;
+
+/// `LibrarySectionTabs` 与页头大字一级 / 二级切换（[FushiMastheadSwitch] /
+/// [FushiMastheadSegmentedTabs]）在 Apple 设计系统下的呈现层：原生 Cupertino 分段控件
+/// （用户 2026-10-12「顶部的标签页改回为 Cupertino 的分段选择器」，取代 10-04
+/// 的 iOS 文字页签 + 下划线）。
+///
+/// 段宽一律等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
+/// 否则按内容取宽贴左。段数多到摆不下时不横滑（横滑会把首尾段切掉一截，
+/// 2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排得下
+/// 的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
+/// 末位，永远看得到自己在哪。焦点契约在外层 [FushiAdjustableSegmented]（与
+/// MD3 的 TabBar 同一外壳）。
+///
+/// @design dual（Apple 专用分支：M3E 侧是 `FushiSectionTabBar` /
+/// [FushiMastheadSegmentedTabs] / [FushiMastheadSwitch]）
+class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
+  const FushiAppleSectionSegments({
+    required this.tabs,
+    required this.selected,
+    required this.onChanged,
+    required this.fill,
+    required this.selectedIsCurrent,
+  });
+
+  final List<LibrarySectionTab<T>> tabs;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final bool fill;
+
+  /// 见 [LibrarySectionTabs.selectedIsCurrent]。
+  final bool selectedIsCurrent;
+
+  /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
+  double _cellWidth(BuildContext context) {
+    final bool compact = fushiAppleCompact(context);
+    final TextStyle style =
+        (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
+          fontSize: compact ? 13 : 15,
+          fontWeight: FontWeight.w600,
+        );
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double widest = 0;
+    for (final LibrarySectionTab<T> tab in tabs) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: tab.label, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      widest = math.max(widest, painter.width);
+      painter.dispose();
+    }
+    return widest + 28;
+  }
+
+  /// [count] 段的控件宽（轨道两端各 3）。
+  static double _controlWidth(double cell, int count) => count * cell + 6;
+
+  Future<void> _showOverflow(
+    BuildContext anchorContext,
+    List<int> hidden,
+  ) async {
+    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(anchorContext).overlay!.context.findRenderObject()!
+            as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    final int? picked = await showFushiMenu<int>(
+      context: anchorContext,
+      position: position,
+      items: <PopupMenuEntry<int>>[
+        for (final int i in hidden)
+          PopupMenuItem<int>(value: i, child: Text(tabs[i].label)),
+      ],
+    );
+    if (picked != null) onChanged(tabs[picked].value);
+  }
+
+  Widget _control(List<int> visible, {required bool expand}) {
+    return FushiSegmentedButton<T>(
+      segments: <ButtonSegment<T>>[
+        for (final int i in visible)
+          ButtonSegment<T>(
+            value: tabs[i].value,
+            label: Text(tabs[i].label, key: tabs[i].labelKey),
+          ),
+      ],
+      selected: <T>{selected},
+      showSelectedIcon: false,
+      onSelectionChanged: (Set<T> values) {
+        if (values.isNotEmpty) onChanged(values.first);
+      },
+      notifyReselect: !selectedIsCurrent,
+      expandedInsets: expand ? EdgeInsets.zero : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double cell = _cellWidth(context);
+    final double natural = _controlWidth(cell, tabs.length);
+    FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(natural);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double max = constraints.maxWidth;
+        final List<int> all = <int>[for (int i = 0; i < tabs.length; i++) i];
+        if (!max.isFinite || natural <= max) {
+          return Align(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: fill ? null : 1,
+            child: SizedBox(
+              width: fill && max.isFinite ? max : natural,
+              child: _control(all, expand: true),
+            ),
+          );
+        }
+        // 溢出：留出「更多」钮的位置，算排得下几段（至少 1 段）。
+        final int count = math.max(
+          1,
+          ((max - _kAppleSegmentsMoreWidth - 6) / cell).floor(),
+        );
+        final int selectedIndex = math.max(
+          0,
+          tabs.indexWhere((LibrarySectionTab<T> tab) => tab.value == selected),
+        );
+        final List<int> visible = <int>[
+          for (int i = 0; i < count - 1; i++) i,
+          selectedIndex >= count - 1 ? selectedIndex : count - 1,
+        ];
+        final List<int> hidden = <int>[
+          for (final int i in all)
+            if (!visible.contains(i)) i,
+        ];
+        // 铺满档溢出时同样占满整行（2026-10-30「二级菜单要做成全宽的」）：
+        // 可见段吃掉「更多」钮以外的全部宽度。
+        final Widget control = _control(visible, expand: true);
+        return Row(
+          mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
+          children: <Widget>[
+            if (fill)
+              Expanded(child: control)
+            else
+              SizedBox(
+                width: _controlWidth(cell, visible.length),
+                child: control,
+              ),
+            Builder(
+              builder: (BuildContext anchorContext) => _AppleSegmentsMoreButton(
+                onTap: () => _showOverflow(anchorContext, hidden),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// [FushiAppleSectionSegments] 溢出档末尾「更多」的宽（也是它的高与点按区）。
+const double _kAppleSegmentsMoreWidth = 40.0;
+
+/// [FushiAppleSectionSegments] 溢出档末尾的「更多」：与分段同高的 SF chevron，
+/// 点开列出未显示的分区（与 `LibrarySectionTabs` 的「更多」Apple 形态同一画法）。
+///
+/// 它在外层 `FushiAdjustableSegmented` 的 ExcludeFocus 里，不是单独的焦点停靠
+/// 点——键盘 / 手柄在整排这一个停靠点上用左右方向键走遍全部分区，菜单只服务指针。
+class _AppleSegmentsMoreButton extends StatelessWidget {
+  const _AppleSegmentsMoreButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiTooltip(
+      message: t.common_more_actions,
+      child: Semantics(
+        button: true,
+        label: t.common_more_actions,
+        child: InkResponse(
+          onTap: onTap,
+          radius: _kAppleSegmentsMoreWidth / 2,
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: const Color(0x00000000),
+          child: SizedBox(
+            width: _kAppleSegmentsMoreWidth,
+            height: _kAppleSegmentsMoreWidth,
+            child: Icon(
+              CupertinoIcons.chevron_down,
+              size: 17,
+              color: appleColorsOf(context).secondaryLabel,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 在系统字号缩放之上再乘一个放不下时的缩放（[FushiTitleFit.scale]）。
 @immutable

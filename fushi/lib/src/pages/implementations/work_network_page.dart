@@ -33,6 +33,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 
 /// 关系网页（AI 库管家 spec `docs/specs/2026-11-18-ai-library-curator-design.md`
 /// §4.4）：一部作品的成员、卫星（主题曲 / 原声 / 配音）与它们之间的全部连接。
@@ -348,15 +349,17 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
         final double width = math.max(layout.size.width, constraints.maxWidth);
         return FushiEntranceScope(
           replayKey: widget.endpoint,
-          child: Scrollbar(
+          child: FushiScrollbar(
             controller: _vertical,
+            thumbVisibility: null,
             child: SingleChildScrollView(
               key: const ValueKey<String>('work-network-vertical'),
               controller: _vertical,
               physics: desktopAwareScrollPhysics(),
               padding: EdgeInsets.only(top: topInset),
-              child: Scrollbar(
+              child: FushiScrollbar(
                 controller: _horizontal,
+                thumbVisibility: null,
                 notificationPredicate: (ScrollNotification n) =>
                     n.metrics.axis == Axis.horizontal,
                 child: HorizontalDragScrollable(

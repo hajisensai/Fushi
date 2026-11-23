@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 
 /// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
 enum _ChapterDownloadState {
@@ -799,13 +800,11 @@ class MangaChapterFastScrollbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!neededOn(Theme.of(context).platform)) return child;
-    return Scrollbar(
+    return FushiScrollbar(
       key: const ValueKey<String>('manga_chapter_fast_scrollbar'),
       controller: controller,
       thumbVisibility: thumbVisibility,
-      interactive: true,
-      notificationPredicate:
-          notificationPredicate ?? defaultScrollNotificationPredicate,
+      notificationPredicate: notificationPredicate,
       child: child,
     );
   }
