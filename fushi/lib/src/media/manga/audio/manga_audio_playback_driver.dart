@@ -110,6 +110,14 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
     return item == null || !item.isLine ? null : manifest.lines[item.lineIndex];
   }
 
+  /// 阅读器此刻框着的那句（[MangaRenderManifest.lines] 下标）：句间停顿 / 页首 lead /
+  /// 页尾补齐里仍是本页那句，口径同显示（[MangaAudioPlaybackPlan.currentLineItemIndex]）。
+  /// 整页无台词（页停留）为 null。「导出片段视频」导出的就是这一句。
+  int? get displayedLineIndex {
+    final int index = _item >= 0 ? _item : plan.itemIndexAt(positionMs);
+    return _displayLineAt(index);
+  }
+
   /// 正在播的页（页段语义）。
   int get currentPage => currentItem?.page ?? plan.pageAt(positionMs);
 

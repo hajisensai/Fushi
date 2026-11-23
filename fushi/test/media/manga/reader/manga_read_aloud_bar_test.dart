@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
     show kMangaChromeToolbarHeight;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -415,6 +416,69 @@ void main() {
         await tester.pumpWidget(const SizedBox());
         d.dispose();
         semantics.dispose();
+      },
+    );
+  }
+
+  for (final bool apple in <bool>[false, true]) {
+    testWidgets(
+      '${apple ? 'Apple' : 'MD3'}：成品音频播放条的「导出片段视频」按钮导出框着的那句（pZhONQTAap）',
+      (WidgetTester tester) async {
+        final _AudioPlayer player = _AudioPlayer();
+        final MangaAudioPlaybackDriver d = _audioDriver(player);
+        int exports = 0;
+        Widget bar({required bool busy}) => _app(
+          MangaAudioPlaybackBar(
+            driver: d,
+            onStop: () {},
+            onExportClip: () => exports++,
+            exportingClip: busy,
+          ),
+          apple: apple,
+        );
+        await tester.pumpWidget(bar(busy: false));
+        player.pos = d.plan.lineStartMs(0) + 10;
+        player.notifyListeners();
+        await tester.pump();
+        expect(d.displayedLineIndex, 0);
+        final Finder button = find.byKey(
+          const ValueKey<String>('manga_audio_export_clip'),
+        );
+        expect(button, findsOneWidget);
+        expect(
+          find.byWidgetPredicate(
+            (Widget w) =>
+                w is FushiIconButton && w.tooltip == t.audiobook_export_clip,
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(button);
+        await tester.pump();
+        expect(exports, 1);
+
+        // 导出中：按钮转圈。
+        await tester.pumpWidget(bar(busy: true));
+        expect(tester.widget<FushiIconButton>(button).busy, isTrue);
+
+        // 框着的是没配上音的占位句：没有可导出的声音，按钮置灰。
+        await tester.pumpWidget(bar(busy: false));
+        player.pos = d.plan.lineStartMs(1) + 10;
+        player.notifyListeners();
+        await tester.pump();
+        expect(d.displayedLineIndex, 1);
+        expect(tester.widget<FushiIconButton>(button).enabled, isFalse);
+
+        // 不传回调（现场合成等）就不画这颗按钮。
+        await tester.pumpWidget(
+          _app(
+            MangaAudioPlaybackBar(driver: d, onStop: () {}),
+            apple: apple,
+          ),
+        );
+        expect(button, findsNothing);
+
+        await tester.pumpWidget(const SizedBox());
+        d.dispose();
       },
     );
   }

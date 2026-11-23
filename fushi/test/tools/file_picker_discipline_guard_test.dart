@@ -124,8 +124,8 @@ const Map<String, String> kCustomFileTypeAllowlist = <String, String>{
   // 选择器里置灰，不受 MIME 丢弃影响。
   'lib/src/pages/implementations/media_sources_view.dart':
       'saveFile：导出刮削诊断包 zip',
-  'lib/src/pages/implementations/reader_fushi/audiobook.part.dart':
-      'saveFile：导出有声书片段',
+  'lib/src/media/audiobook/audiobook_clip_delivery.dart':
+      'saveFile：导出有声书片段（小说 / 漫画有声书共用的交付步）',
   'lib/src/pages/implementations/video_fushi/clip_export.part.dart':
       'saveFile：导出视频片段',
   'lib/src/sync/sync_settings_schema/backup.part.dart': 'saveFile：导出备份 zip',

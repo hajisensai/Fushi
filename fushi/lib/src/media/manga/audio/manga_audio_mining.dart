@@ -74,14 +74,40 @@ MangaMiningAudioClip? resolveMangaMiningAudioClip({
     blocks: blocks,
   );
   if (index == null) return null;
+  return resolveMangaLineAudioClip(
+    registration: registration,
+    lineIndex: index,
+    headPadMs: headPadMs,
+    tailPadMs: tailPadMs,
+  );
+}
+
+/// 清单第 [lineIndex] 句的成品音频片段（制卡与「导出片段视频」共用同一套留白规则：
+/// [miningCueAudioRange]）。
+///
+/// 返回 null：没登记成品、下标越界、该句是没配上音的占位静音行（没有可导出的声音）。
+/// [lineId] 非 null 时还要求登记里那一句的 id 与之相同——调用方手里的清单（播放驱动
+/// 持有的那份）若已被单句补回 / 整份替换换掉，按下标取到的会是别的台词，宁可不给。
+MangaMiningAudioClip? resolveMangaLineAudioClip({
+  required MangaAudioRegistration? registration,
+  required int lineIndex,
+  String? lineId,
+  int headPadMs = kMiningHeadPadMs,
+  int tailPadMs = kMiningTailPadMs,
+}) {
+  if (registration == null) return null;
+  final MangaRenderManifest manifest = registration.manifest;
+  if (lineIndex < 0 || lineIndex >= manifest.lines.length) return null;
+  final MangaRenderedLine line = manifest.lines[lineIndex];
+  if (line.placeholder) return null;
+  if (lineId != null && line.lineId != lineId) return null;
   final List<AudioCue> cues = mangaAudioCues(registration.bookKey, manifest);
-  final MangaRenderedLine line = manifest.lines[index];
   return MangaMiningAudioClip(
     line: line,
     inputPath: registration.linePath(line),
     range: miningCueAudioRange(
       cues: cues,
-      cue: cues[index],
+      cue: cues[lineIndex],
       headPadMs: headPadMs,
       tailPadMs: tailPadMs,
     ),

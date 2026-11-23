@@ -91,6 +91,8 @@ import 'package:fushi/src/media/manga/reader/manga_lookup_pause.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_clip_export.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_delivery.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
@@ -8377,6 +8379,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         driver: audio,
         keyHints: _readAloudKeyHints,
         onStop: _readAloud.stopAudio,
+        onExportClip: () => unawaited(_readAloud.exportClip()),
+        exportingClip: _readAloud.clipExporting,
         middle: _playbackBarMiddle(plan),
       );
     }

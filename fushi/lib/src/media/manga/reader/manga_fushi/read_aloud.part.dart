@@ -425,6 +425,119 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
+  // ── 导出片段视频（反馈 pZhONQTAap）────────────────────────────────────
+
+  /// 正在导出（播放条上的按钮转圈、再点只提示进行中）。
+  bool clipExporting = false;
+
+  /// 把阅读器此刻框着的那句（[MangaAudioPlaybackDriver.displayedLineIndex]）导出成
+  /// 片段视频：画面 = 那句所在的漫画页，音频 = 那句的成品音频（留白同制卡）。合成走
+  /// 与小说有声书同一条管线（[synthMangaAudioClipVideo]），交付走
+  /// [deliverAudiobookClipVideo]。任何一步失败都提示并记日志，绝不抛。
+  Future<void> exportClip() async {
+    if (clipExporting) {
+      FushiToast.show(
+        msg: t.audiobook_export_clip_in_progress,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final MangaAudioPlaybackDriver? driver = audio;
+    final MangaReaderSession? session = _s._pageSession;
+    if (driver == null || session == null) return;
+    final int? lineIndex = driver.displayedLineIndex;
+    if (lineIndex == null || driver.manifest.lines[lineIndex].placeholder) {
+      FushiToast.show(
+        msg: t.manga_audio_export_clip_no_line,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String lineId = driver.manifest.lines[lineIndex].lineId;
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final String bookKey = _s.widget.bookKey;
+    clipExporting = true;
+    _rebuild();
+    Directory? workDir;
+    bool keepWorkDir = false;
+    try {
+      FushiToast.show(
+        msg: t.audiobook_export_clip_in_progress,
+        severity: ToastSeverity.info,
+      );
+      final MangaMiningAudioClip? clip = resolveMangaLineAudioClip(
+        registration: await loadMangaAudio(_s.appModel.database, bookKey),
+        lineIndex: lineIndex,
+        lineId: lineId,
+        headPadMs: _s.appModel.miningAudioHeadPadMs,
+        tailPadMs: _s.appModel.miningAudioTailPadMs,
+      );
+      if (clip == null || !await File(clip.inputPath).exists()) {
+        ErrorLogService.instance.log(
+          'MangaReadAloud.exportClip',
+          'no rendered audio for line $lineId (index=$lineIndex, '
+              'resolved=${clip != null})',
+          StackTrace.current,
+        );
+        if (_s.mounted) {
+          FushiToast.show(
+            msg: t.audiobook_export_clip_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+        return;
+      }
+      final Uint8List? pageBytes = await _s._loadMiningPageBytes(
+        session,
+        clip.line.page,
+      );
+      workDir = await Directory.systemTemp.createTemp('fushi_manga_clip_');
+      final MangaAudioClipExportResult result = pageBytes == null
+          ? const MangaAudioClipExportResult.failure(
+              MangaAudioClipExportFailure.pageImage,
+            )
+          : await synthMangaAudioClipVideo(
+              pageBytes: pageBytes,
+              clip: clip,
+              workDir: workDir,
+            );
+      final String? videoPath = result.videoPath;
+      if (videoPath == null) {
+        if (_s.mounted) {
+          FushiToast.show(
+            msg: t.audiobook_export_clip_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+        return;
+      }
+      // 移动端系统分享异步读原文件：成品留在工作目录里，不删。
+      keepWorkDir = !isDesktop;
+      final AudiobookClipDeliveryOutcome delivered =
+          await deliverAudiobookClipVideo(
+            videoPath: videoPath,
+            fileName: 'manga_clip_${DateTime.now().millisecondsSinceEpoch}.mp4',
+            subject: clip.line.text,
+            isDesktop: isDesktop,
+          );
+      if (_s.mounted) toastAudiobookClipDelivery(delivered);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaReadAloud.exportClip', error, stack);
+      if (_s.mounted) {
+        FushiToast.show(
+          msg: t.audiobook_export_clip_failed,
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      clipExporting = false;
+      final Directory? dir = workDir;
+      if (dir != null && !keepWorkDir) unawaited(_s._deleteTempDir(dir));
+      if (_s.mounted) _rebuild();
+    }
+  }
+
   // ── 查词暂停 ────────────────────────────────────────────────────────
 
   /// 查词按住播放的标记（BUG-4907 / 4908 / 4909，见 [MangaLookupPause]）。

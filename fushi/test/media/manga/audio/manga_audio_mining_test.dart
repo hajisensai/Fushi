@@ -191,4 +191,57 @@ void main() {
       );
     });
   });
+
+  group('resolveMangaLineAudioClip（导出片段视频按句取音频，pZhONQTAap）', () {
+    test('按下标取那一句：文件与留白规则同制卡', () {
+      final MangaMiningAudioClip? clip = resolveMangaLineAudioClip(
+        registration: _registration(null),
+        lineIndex: 1,
+        lineId: 'p0b',
+        headPadMs: 80,
+        tailPadMs: 300,
+      );
+      expect(clip, isNotNull);
+      expect(clip!.inputPath, p.normalize(p.join('root', 'vol-1', 'p0b.m4a')));
+      expect(clip.range.audioFileIndex, 1);
+      expect(clip.range.startMs, 0);
+      expect(clip.range.endMs, 1800);
+    });
+
+    test('占位静音行 / 越界 / 句 id 对不上（清单已换）/ 没登记：不给', () {
+      expect(
+        resolveMangaLineAudioClip(
+          registration: _registration(null),
+          lineIndex: 2,
+        ),
+        isNull,
+      );
+      expect(
+        resolveMangaLineAudioClip(
+          registration: _registration(null),
+          lineIndex: 4,
+        ),
+        isNull,
+      );
+      expect(
+        resolveMangaLineAudioClip(
+          registration: _registration(null),
+          lineIndex: -1,
+        ),
+        isNull,
+      );
+      expect(
+        resolveMangaLineAudioClip(
+          registration: _registration(null),
+          lineIndex: 1,
+          lineId: 'p0a',
+        ),
+        isNull,
+      );
+      expect(
+        resolveMangaLineAudioClip(registration: null, lineIndex: 0),
+        isNull,
+      );
+    });
+  });
 }
