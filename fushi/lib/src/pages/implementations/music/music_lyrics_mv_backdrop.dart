@@ -127,8 +127,20 @@ Future<MusicMvBackdropSource?> resolveMusicMvBackdropSource(
   return null;
 }
 
-/// 歌词页持有的 MV 背景控制器：盯引擎换歌、解析 / 自动匹配 MV、管一个只出画面的 mpv
-/// 实例并让它跟音频对齐。用完调 [dispose]。
+/// 曲目 [trackUid] 当前能当背景放的 MV（[resolveMusicMvBackdropSource]），绑定一变就
+/// 重发：后台匹配绑上、曲目详情里手动找到 / 解绑、MV 页改了偏移，正开着的歌词页都跟着换。
+Stream<MusicMvBackdropSource?> watchMusicMvBackdropSource(
+  FushiDatabase db,
+  String trackUid,
+) => db
+    .watchMusicVideos(trackUid)
+    .asyncMap(
+      (List<MusicVideoRow> rows) => resolveMusicMvBackdropSource(db, rows),
+    )
+    .distinct();
+
+/// 歌词页持有的 MV 背景控制器：盯引擎换歌、订阅当前曲目的 MV 绑定、管一个只出画面的
+/// mpv 实例并让它跟音频对齐。用完调 [dispose]。
 class MusicMvBackdropController extends ChangeNotifier
     with WidgetsBindingObserver {
   MusicMvBackdropController({
@@ -154,6 +166,7 @@ class MusicMvBackdropController extends ChangeNotifier
   bool _foreground = true;
   String? _trackUid;
   int _loadToken = 0;
+  StreamSubscription<MusicMvBackdropSource?>? _bindingSub;
   MusicMvBackdropSource? _source;
   Player? _player;
   VideoController? _video;
@@ -189,31 +202,34 @@ class MusicMvBackdropController extends ChangeNotifier
     if (uid == _trackUid) return;
     _trackUid = uid;
     final int token = ++_loadToken;
-    unawaited(_load(item, token));
-  }
-
-  Future<void> _load(MusicPlayItem? item, int token) async {
-    MusicMvBackdropSource? src;
-    if (item != null) {
-      try {
-        src = musicMvBackdropSelfSource(item) ?? await _bound(item.trackUid);
-      } on Object catch (e, st) {
-        ErrorLogService.instance.log('MusicMvBackdrop.load', e, st);
-        src = null;
-      }
+    unawaited(_bindingSub?.cancel());
+    _bindingSub = null;
+    final MusicMvBackdropSource? self = item == null
+        ? null
+        : musicMvBackdropSelfSource(item);
+    if (item == null || self != null) {
+      unawaited(_apply(self));
+      return;
     }
-    if (_disposed || token != _loadToken) return;
-    await _apply(src);
+    _bindingSub = watchMusicMvBackdropSource(_database, item.trackUid).listen(
+      (MusicMvBackdropSource? src) {
+        if (_disposed || token != _loadToken) return;
+        unawaited(_apply(src));
+      },
+      onError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('MusicMvBackdrop.load', e, st),
+    );
   }
-
-  Future<MusicMvBackdropSource?> _bound(String trackUid) async =>
-      resolveMusicMvBackdropSource(
-        _database,
-        await _database.listMusicVideos(trackUid),
-      );
 
   Future<void> _apply(MusicMvBackdropSource? src) async {
     if (src == _source) return;
+    final MusicMvBackdropSource? prev = _source;
+    if (src != null && prev != null && src.path == prev.path && _opened) {
+      // 只改了偏移（MV 页里调过）：同一个文件不重开，下一次同步按新偏移对齐。
+      _source = src;
+      _sync();
+      return;
+    }
     _source = src;
     _setVisible(false);
     if (src == null) {
@@ -310,6 +326,8 @@ class MusicMvBackdropController extends ChangeNotifier
     _loadToken++;
     _engine.removeListener(_onEngine);
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_bindingSub?.cancel());
+    _bindingSub = null;
     _timer?.cancel();
     unawaited(_player?.dispose());
     super.dispose();

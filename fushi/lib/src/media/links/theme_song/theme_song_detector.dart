@@ -203,8 +203,13 @@ class ThemeSongDetector {
   /// 置信度低于它视为没出现。
   final double minConfidence;
 
-  /// 歌曲声纹缓存（一次识别会话内，一首歌只解码一次）。
+  /// 歌曲声纹的进程内缓存（键 = track_uid + 文件大小 + 修改时刻，文件换了自然失效）。
+  /// 识别器按库常驻、后台 MV 匹配会走遍整个曲库，所以按最近使用淘汰、有上限：同一首歌
+  /// 的复用都挨在一起（一集里的几首 OP / ED、一首歌对附近的几个视频）。
   final Map<String, Uint32List> _songPrints = <String, Uint32List>{};
+
+  /// [_songPrints] 最多留几条（一条约几 KB）。
+  static const int kSongPrintCacheSize = 64;
 
   Future<void> _tail = Future<void>.value();
 
@@ -355,7 +360,11 @@ class ThemeSongDetector {
     Directory work,
     ThemeSongDetectionReport report,
   ) async {
-    final Uint32List? hit = _songPrints[song.trackUid];
+    final ({int size, int modifiedAt})? stat = _fileStat(song.path);
+    final String key = stat == null
+        ? song.trackUid
+        : '${song.trackUid}|${stat.size}|${stat.modifiedAt}';
+    final Uint32List? hit = _lruGet(_songPrints, key);
     if (hit != null) return hit;
     final String raw = p.join(
       work.path,
@@ -372,7 +381,12 @@ class ThemeSongDetector {
             ? end - start
             : null,
       );
-      return _songPrints[song.trackUid] = await engine.fingerprintRawPcm(raw);
+      return _lruPut(
+        _songPrints,
+        key,
+        await engine.fingerprintRawPcm(raw),
+        kSongPrintCacheSize,
+      );
     } on ThemeSongDecodeException {
       report.decodeFailures++;
       return null;
@@ -428,7 +442,7 @@ class ThemeSongDetector {
         ? null
         : '$mvPath|${stamp.size}|${stamp.mtimeMs}';
     if (stamp != null && key != null) {
-      final Uint32List? hot = _mvPrints[key];
+      final Uint32List? hot = _lruGet(_mvPrints, key);
       if (hot != null) return hot;
       final Uint8List? stored = await database.getMusicVideoPrint(
         mvPath,
@@ -463,12 +477,29 @@ class ThemeSongDetector {
     return _rememberMvPrint(key, print);
   }
 
-  Uint32List _rememberMvPrint(String key, Uint32List print) {
-    _mvPrints[key] = print;
-    while (_mvPrints.length > kMvPrintCacheSize) {
-      _mvPrints.remove(_mvPrints.keys.first);
+  Uint32List _rememberMvPrint(String key, Uint32List print) =>
+      _lruPut(_mvPrints, key, print, kMvPrintCacheSize);
+
+  /// 最近使用淘汰：命中的挪到队尾（Map 按插入顺序迭代，队首最久没用）。
+  static Uint32List? _lruGet(Map<String, Uint32List> cache, String key) {
+    final Uint32List? hit = cache.remove(key);
+    if (hit != null) cache[key] = hit;
+    return hit;
+  }
+
+  static Uint32List _lruPut(
+    Map<String, Uint32List> cache,
+    String key,
+    Uint32List value,
+    int capacity,
+  ) {
+    cache
+      ..remove(key)
+      ..[key] = value;
+    while (cache.length > capacity) {
+      cache.remove(cache.keys.first);
     }
-    return print;
+    return value;
   }
 
   /// 同 [mvOffset]，但返回完整对齐结果（置信度 / 命中段，MV 匹配要按置信度排序与判定）。

@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
+import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart'
+    show ThemeSongSong;
 import 'package:fushi/src/media/music/metadata/music_video_auto_match.dart';
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyrics_mv_backdrop.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/metadata/music_video_match.dart'
+    show MusicVideoKind;
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -174,6 +180,85 @@ void main() {
       ]),
       isTrue,
     );
+  });
+
+  test('歌曲声纹缓存有上限、按最近使用淘汰；歌曲文件换了重算', () async {
+    final _FakeDecoder decoder = _FakeDecoder();
+    final ThemeSongDetector detector = ThemeSongDetector(
+      database: db,
+      decoder: decoder,
+      engine: _PairEngine(const <(String, String)>{}),
+      workDirectory: work,
+    );
+    ThemeSongSong song(int i) => ThemeSongSong(
+      trackUid: 's$i',
+      title: 's$i',
+      path: p.join(cd, 's$i.flac'),
+    );
+    Future<void> align(int i) =>
+        detector.mvAlignment(audio: song(i), mvPath: stream);
+    int decodes(int i) => decodesOf(decoder, song(i).path);
+
+    const int cap = ThemeSongDetector.kSongPrintCacheSize;
+    for (int i = 0; i < cap; i++) {
+      await align(i);
+    }
+    await align(0); // 命中并挪到队尾
+    await align(cap); // 挤掉最久没用的 s1
+    await align(0);
+    await align(1);
+    expect(decodes(0), 1, reason: '最近用过的留着');
+    expect(decodes(1), 2, reason: '超出上限被淘汰后重算');
+
+    final File a = File(p.join(cd, 'a.flac'));
+    final ThemeSongSong real = ThemeSongSong(
+      trackUid: 'a',
+      title: 'a',
+      path: a.path,
+    );
+    await detector.mvAlignment(audio: real, mvPath: stream);
+    await detector.mvAlignment(audio: real, mvPath: stream);
+    a.writeAsStringSync('audio-retagged');
+    await detector.mvAlignment(audio: real, mvPath: stream);
+    expect(decodesOf(decoder, a.path), 2, reason: '同一文件只算一次，换了才重算');
+  });
+
+  test('歌词页 MV 背景跟着绑定变：绑上 / 改偏移 / 解绑都重发', () async {
+    await addTrack('a', p.join(cd, 'a.flac'));
+    final StreamIterator<MusicMvBackdropSource?> events =
+        StreamIterator<MusicMvBackdropSource?>(
+          watchMusicMvBackdropSource(db, 'a'),
+        );
+    Future<MusicMvBackdropSource?> next() async {
+      expect(await events.moveNext(), isTrue);
+      return events.current;
+    }
+
+    expect(await next(), isNull, reason: '还没有绑定');
+    Future<void> bind(int offsetMs) => db.upsertMusicVideo(
+      MusicVideosCompanion.insert(
+        trackUid: 'a',
+        kind: MusicVideoKind.local,
+        ref: stream,
+        offsetMs: Value<int>(offsetMs),
+        updatedAt: offsetMs,
+      ),
+    );
+    await bind(5000);
+    expect(
+      await next(),
+      MusicMvBackdropSource(path: stream, offsetMs: 5000),
+      reason: '后台匹配绑上后正开着的歌词页拿到 MV',
+    );
+    await bind(4200);
+    expect(
+      await next(),
+      MusicMvBackdropSource(path: stream, offsetMs: 4200),
+      reason: '偏移改了跟着改',
+    );
+    await db.deleteMusicVideo((await db.listMusicVideos('a')).single.id);
+    expect(await next(), isNull, reason: '解绑后撤掉');
+    await events.cancel();
   });
 
   test('声纹落库编码往返', () {

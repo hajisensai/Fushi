@@ -2811,13 +2811,13 @@ class AppModel
   Future<void> setMusicLyricsBlurInactive(bool value) =>
       prefsRepo.setMusicLyricsBlurInactive(value);
 
-  /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   /// 本地 MV 后台自动匹配（音乐来源扫完后跑；「有 MV 时背景放 MV」关着不跑）。
   late final MusicVideoAutoMatcher musicVideoAutoMatch = MusicVideoAutoMatcher(
     database: () => isDatabaseReady ? database : null,
     enabled: () => isDatabaseReady && prefsRepo.musicLyricsMvBackdrop,
   );
 
+  /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
     database: () => isDatabaseReady ? database : null,
     enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
