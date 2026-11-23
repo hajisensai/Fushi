@@ -1256,6 +1256,18 @@ void main() {
       await pumpFrames(tester);
       expect(lookedUp(shared), isEmpty);
     });
+
+    testWidgets('上一句还没弹出就来了不可查的新句：旧目标作废，不弹旧句', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      // 同一帧内连到两句：前一句可查、后一句整句没有可查字。只查最新那句 = 都不弹。
+      TexthookerService.instance.appendLine('今日は晴れ');
+      TexthookerService.instance.appendLine('「……」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
   });
 
   testWidgets('制卡热键只作用于本页在屏上的会话：tab 藏起或栈归查词 tab 时不武装', (

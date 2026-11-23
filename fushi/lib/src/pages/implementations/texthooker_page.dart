@@ -1689,7 +1689,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         receivedNewLine && follow ? _autoLookupTargetFor(lines.last) : null;
     setState(() {
       if (!follow && receivedNewLine) _unreadLines++;
-      if (autoLookup != null) _autoLookupTarget = autoLookup;
+      // 新句一到，上一句还没弹出的自动查词就作废（只查最新那句）：新句不符合条件
+      // （没有可查字 / 回看历史中）时也不能让旧目标在帧后弹出来。
+      if (receivedNewLine) _autoLookupTarget = autoLookup;
     });
     _maybeScheduleCaptureSetupDialog();
     if (!receivedNewLine || !follow) return;
