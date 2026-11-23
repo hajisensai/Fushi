@@ -180,6 +180,8 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
 import 'package:fushi/src/shortcuts/manga_arrow_override.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/media/audiobook/pointer_seek.dart'
+    show isSeekToClickedSentenceButton;
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_document_snapshot.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
@@ -586,6 +588,7 @@ Future<String> ensureMangaCoverPng(String sourcePath) async {
 }
 
 enum _MangaContextAction {
+  playFromSentence,
   copyText,
   copyPageText,
   editAudioLine,
@@ -979,6 +982,21 @@ class MangaFushiPage extends BaseSourcePage {
         forwardRepeats: false,
         stopPropagation: true,
       );
+
+  /// [button] 这次按下归不归「跳到点击句」：绑定解析到它，且漫画页自己的鼠标阶梯
+  /// （[_kMangaMouseLadder]）没把这个键派给别的动作。
+  @visibleForTesting
+  static bool seekToClickedLineClaimsButton(
+    FushiShortcutRegistry registry,
+    int button,
+  ) =>
+      isSeekToClickedSentenceButton(registry, button) &&
+      resolveMouseBindingActionForButton(
+            registry: registry,
+            button: button,
+            ladder: _kMangaMouseLadder,
+          ) ==
+          null;
 
   /// 本页鼠标桥要拦截的按钮号：manga / universal / global 三段阶梯上**所有**已绑
   /// 按钮的并集（与 [_kMangaMouseLadder] 同源）。
@@ -7566,6 +7584,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (pageIndex == null) return;
     final _MangaOcrCopyTexts texts = _ocrCopyTextsAt(decoded);
     fushiLiftHaptic(context);
+    final _MangaHitSentence? playFrom = _playFromTargetAt(decoded);
     final _MangaHitSentence? audioLine = await _audioLineTargetAt(decoded);
     if (!mounted) return;
     final File? file = await _mangaPageFileAt(pageIndex);
@@ -7584,6 +7603,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       context,
       file: file,
       extraActions: <ImageSheetExtraAction>[
+        // 触屏上「跳到这句播放」的入口（桌面另有中键，见 [_onMangaPointerSeek]）：
+        // 与小说有声书长按选区操作条的「从本句播放」同名同义。
+        if (playFrom != null)
+          ImageSheetExtraAction(
+            id: 'manga_play_from_sentence',
+            icon: FushiIcons.playCircle,
+            label: t.play_from_cue,
+            run: () async {
+              _readAloud.playFromSentence(playFrom);
+            },
+          ),
         if (sentence != null)
           ImageSheetExtraAction(
             id: 'manga_copy_text',
@@ -7622,6 +7652,42 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       group.toInt(),
     );
     return blocks.isEmpty ? null : (pageIndex: pageIndex, blocks: blocks);
+  }
+
+  /// 落点那句能「从此句播放」时返回它（右键菜单 / 长按面板据此列这一项）：点中了
+  /// 气泡，且成品音频 / 现场朗读正在进行、接得上这句（[_MangaReadAloudSupport.canPlayFromSentence]）。
+  _MangaHitSentence? _playFromTargetAt(Map<dynamic, dynamic> hit) {
+    final _MangaHitSentence? target = _hitSentenceAt(hit);
+    if (target == null || !_readAloud.canPlayFromSentence(target)) return null;
+    return target;
+  }
+
+  /// 页内 JS 的非左键、非右键按下（`onMangaPointerSeek`，payload 同右键菜单的落点
+  /// `{page, group}`）：按键绑的是有声书的「跳到点击句」（默认中键，与小说阅读器、
+  /// 歌词页同一个绑定 [isSeekToClickedSentenceButton]）就从点中那句播。
+  ///
+  /// 漫画页自己的鼠标绑定优先：同一个键在 manga / universal / global 阶梯上绑了别的
+  /// 动作时（由 Flutter 侧 [_handleMangaPointerDown] 或鼠标桥执行），这里让位，不让
+  /// 一次按下既翻页又跳句（[MangaFushiPage.seekToClickedLineClaimsButton]）。
+  void _onMangaPointerSeek(int button, String payloadJson) {
+    if (!MangaFushiPage.seekToClickedLineClaimsButton(
+      appModel.shortcutRegistry,
+      button,
+    )) {
+      return;
+    }
+    // 非左键按下已把 OS 键盘焦点交给原生 WebView（BUG-4718 同族），收回来。
+    _focusOwnership.reclaim(FocusReclaimCause.gesture);
+    Object? decoded;
+    try {
+      decoded = jsonDecode(payloadJson);
+    } on FormatException {
+      return;
+    }
+    if (decoded is! Map || !mounted) return;
+    final _MangaHitSentence? target = _hitSentenceAt(decoded);
+    if (target == null) return;
+    _readAloud.playFromSentence(target);
   }
 
   /// 落点那句在这卷有声漫画演出稿里时返回它（菜单 / 长按面板据此列「编辑这句配音」，
@@ -7718,6 +7784,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (decoded is! Map || !mounted) return;
     final _MangaOcrCopyTexts ocrTexts = _ocrCopyTextsAt(decoded);
+    final _MangaHitSentence? playFrom = _playFromTargetAt(decoded);
     final _MangaHitSentence? audioLine = await _audioLineTargetAt(decoded);
     if (!mounted) return;
     // 图片项（复制 / 分享 / 保存 / 设为封面）绑右键落点那一页；没落在页上就不列，
@@ -7757,6 +7824,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             Offset.zero & overlay.size,
           ),
           items: <PopupMenuEntry<_MangaContextAction>>[
+            // 有声漫画 / 朗读进行中右键点在气泡上：从这句播（反馈 RCsvzByem-，与小说
+            // 有声书的「从本句播放」同名同义）。
+            if (playFrom != null)
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.playFromSentence,
+                child: Text(t.play_from_cue),
+              ),
             // 右键点在 OCR 文本块上才有「复制文字」；本页有 OCR 文字就有「复制本页
             // 文字」（反馈 hjUlprxxKI）。
             if (ocrTexts.sentence != null)
@@ -7775,7 +7849,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 value: _MangaContextAction.editAudioLine,
                 child: Text(t.manga_audio_line_edit),
               ),
-            if (ocrTexts.sentence != null ||
+            if (playFrom != null ||
+                ocrTexts.sentence != null ||
                 ocrTexts.page != null ||
                 audioLine != null)
               const PopupMenuDivider(),
@@ -7827,6 +7902,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
     if (!mounted || action == null) return;
     switch (action) {
+      case _MangaContextAction.playFromSentence:
+        if (playFrom != null) _readAloud.playFromSentence(playFrom);
+        return;
       case _MangaContextAction.copyText:
         final String? sentence = ocrTexts.sentence;
         if (sentence != null) await _copyOcrText(sentence);
@@ -9670,6 +9748,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               return;
             }
             unawaited(_showReaderContextMenu(args[0] as String));
+          },
+        );
+        // 非左键、非右键按下（中键 / 侧键）带落点回传：「跳到点击句」只有页内 JS
+        // 拿得到点在哪句上，所以它恒走这条路，各平台都装（与小说阅读器的
+        // `onPointerSeek` 同构）；是不是这个动作由 [_onMangaPointerSeek] 按绑定判。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaPointerSeek',
+          callback: (List<dynamic> args) {
+            if (args.length < 2 || args[1] is! String) return;
+            final int button = (args[0] as num?)?.toInt() ?? -1;
+            if (button < 0) return;
+            _onMangaPointerSeek(button, args[1] as String);
           },
         );
         _menuDismiss.attach(controller);

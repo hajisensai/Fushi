@@ -3363,6 +3363,19 @@ String _mangaGestureJs({
     }
     return false;
   }
+  // 中键 / 侧键：带落点（与右键菜单同一份 _ocrHitPayload）回传 Dart，由绑定判定是不是
+  // 有声书的「跳到点击句」（onMangaPointerSeek，与小说阅读器 onPointerSeek 同构）。
+  // 鼠标专属：触屏合成事件 button 恒 0。右键另有菜单 / 拖拽平移，不走这里。漫画页
+  // 自己绑了的键被鼠标桥在捕获阶段截走，到不了这里。preventDefault 压掉中键自动滚动。
+  document.addEventListener('mousedown', function(e){
+    if (e.button === 0 || e.button === 2) return;
+    e.preventDefault();
+    var b = _bridge();
+    if (!b) return;
+    b.callHandler('onMangaPointerSeek', e.button,
+        JSON.stringify(_ocrHitPayload(e.clientX, e.clientY,
+            _mangaPageIndexAt(e.clientX, e.clientY))));
+  }, {passive: false});
   document.addEventListener('pointerdown', function(e){
     if (mouseOcrSelectionEnabled && e.pointerType === 'mouse' &&
         e.button === 0 && e.target && e.target.closest &&

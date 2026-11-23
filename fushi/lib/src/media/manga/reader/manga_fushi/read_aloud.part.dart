@@ -502,6 +502,55 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
+  // ── 从此句播放 ──────────────────────────────────────────────────────
+
+  /// 「从此句播放」能不能接到 [sentence]（右键菜单 / 长按面板据此列不列这一项）：
+  /// 成品音频在播时要这句在清单里（与制卡取句子音频同一判据
+  /// [mangaMiningAudioLineIndex]）；现场合成朗读进行中时任何 OCR 句都能读。都没在
+  /// 播时为 false——与小说有声书一样，没有音频会话就没有「跳到这句」。
+  bool canPlayFromSentence(MangaLookupSentence sentence) {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null && !driver.isDisposed) {
+      return _driverLineOf(driver, sentence) != null;
+    }
+    return controller?.isActive ?? false;
+  }
+
+  /// 从 [sentence] 句首接着播（小说有声书「从本句播放」/ 中键「跳到点击句」的漫画
+  /// 版）。返回是否真的跳了：成品清单里没有这句时提示「这句没有对应的音频」，不静默
+  /// 无反应；没有任何音源在播时返回 false。
+  bool playFromSentence(MangaLookupSentence sentence) {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null && !driver.isDisposed) {
+      final int? line = _driverLineOf(driver, sentence);
+      if (line == null) {
+        FushiToast.show(
+          msg: t.audiobook_play_from_selection_no_cue,
+          severity: ToastSeverity.error,
+        );
+        return false;
+      }
+      // 查词按住的标记作废：用户已经明确要从这句播。
+      _lookupPause.drop();
+      unawaited(driver.playFromLine(line));
+      return true;
+    }
+    final MangaReadAloudController? c = controller;
+    if (c == null || !c.isActive) return false;
+    _lookupPause.drop();
+    c.playFromSentence(sentence.pageIndex, sentence.blocks);
+    return true;
+  }
+
+  int? _driverLineOf(
+    MangaAudioPlaybackDriver driver,
+    MangaLookupSentence sentence,
+  ) => mangaMiningAudioLineIndex(
+    driver.manifest,
+    pageIndex: sentence.pageIndex,
+    blocks: sentence.blocks,
+  );
+
   Future<void> start() async {
     if (_starting || !_s.mounted || _s._payload == null) return;
     _starting = true;
