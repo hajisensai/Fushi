@@ -84,9 +84,9 @@ void main() {
     await raw('v2', '[ABCD1234]');
     await raw('v3', '86');
     await _insertEpub(seeded, _dirtyBook);
-    await seeded.customStatement(
-      'PRAGMA user_version = ${kFushiDbSchemaVersion - 1}',
-    );
+    // 退回 v172 清洗步之前（固定 171，不随 schema 涨：写成「当前 - 1」时 schema 一过
+    // 173，清洗步就不在升级区间里，断言测的不再是这一步）。
+    await seeded.customStatement('PRAGMA user_version = 171');
     await seeded.close();
 
     final FushiDatabase upgraded = FushiDatabase.forTesting(

@@ -152,6 +152,35 @@ DictionaryPopupInputSpec withPopupArrowPageTurnKeys(
   );
 }
 
+/// 宿主转发集合里**含**翻页动作时的弹窗输入表（漫画，BUG-5364）：鼠标键按
+/// [forwardedActions] 全量交回（侧键关弹窗的落地判据不变），键盘只交回非翻页动作的
+/// 键位，翻页动作只经 [withPopupArrowPageTurnKeys] 追加裸 ← / →——翻页的其余键位
+/// （PageDown / ↓ / ↑ / 空格）留给弹窗滚动释义，与小说同一条规则。
+DictionaryPopupInputSpec dictionaryPopupInputSpecArrowPageTurn({
+  required FushiShortcutRegistry registry,
+  required ShortcutScope scope,
+  required Set<ShortcutAction> forwardedActions,
+  required Set<ShortcutAction> pageTurnActions,
+}) {
+  final DictionaryPopupInputSpec full = dictionaryPopupInputSpecFor(
+    registry: registry,
+    actions: forwardedActions,
+  );
+  final DictionaryPopupInputSpec nonTurn = dictionaryPopupInputSpecFor(
+    registry: registry,
+    actions: forwardedActions.difference(pageTurnActions),
+  );
+  return withPopupArrowPageTurnKeys(
+    DictionaryPopupInputSpec(
+      keyTokens: nonTurn.keyTokens,
+      mouseButtons: full.mouseButtons,
+    ),
+    registry: registry,
+    scope: scope,
+    pageTurnActions: pageTurnActions,
+  );
+}
+
 /// 弹窗回传的 token → 动作。键盘与鼠标 token 的取值域天然不相交
 /// （`MouseBinding.deserialize('Escape')` 与 `InputBinding.deserialize('Mouse3')`
 /// 都是 null），故先试哪个都一样，不需要额外的类型标记位。

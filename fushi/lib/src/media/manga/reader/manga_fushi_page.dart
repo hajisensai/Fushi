@@ -191,6 +191,8 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_document_snapshot.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart'
+    show DictionaryPopupInputSpec, dictionaryPopupInputSpecArrowPageTurn;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
@@ -4945,6 +4947,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ShortcutAction.globalBack,
         ShortcutAction.globalToggleFullscreen,
       };
+
+  static const Set<ShortcutAction> _kPopupPageTurnActions = <ShortcutAction>{
+    ShortcutAction.mangaPageForward,
+    ShortcutAction.mangaPageBackward,
+  };
+
+  /// 弹窗持焦时交回宿主的键：翻页动作**只交回裸 ← / →**（BUG-5364，与小说同一套
+  /// [withPopupArrowPageTurnKeys]）。翻页动作的其余键位（PageDown / ↓ / ↑ / 空格）
+  /// 留给弹窗滚动释义——此前整组翻页键位都被截走，弹窗里这些键一按就关弹窗翻页。
+  /// 鼠标翻页键照旧交回（[dictionaryPopupForwardedActions] 仍含翻页动作，鼠标那条
+  /// 落地判据不变）。
+  @override
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      dictionaryPopupInputSpecArrowPageTurn(
+        registry: appModel.shortcutRegistry,
+        scope: ShortcutScope.manga,
+        forwardedActions: dictionaryPopupForwardedActions,
+        pageTurnActions: _kPopupPageTurnActions,
+      );
 
   @override
   bool onDictionaryPopupInputToken(String token) {

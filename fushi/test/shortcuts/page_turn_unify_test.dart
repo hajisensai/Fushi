@@ -295,6 +295,61 @@ void main() {
       expect(spec.keyTokens, isNot(contains('ArrowDown')));
     });
 
+    test('漫画：翻页只交回 ← →，PageDown / ↓ / 空格留给弹窗滚动，鼠标键照旧（BUG-5364）', () {
+      final FushiShortcutRegistry r = registry();
+      const Set<ShortcutAction> turn = <ShortcutAction>{
+        ShortcutAction.mangaPageForward,
+        ShortcutAction.mangaPageBackward,
+      };
+      const Set<ShortcutAction> forwarded = <ShortcutAction>{
+        ...turn,
+        ShortcutAction.mangaDismissDict,
+        ShortcutAction.globalBack,
+        ShortcutAction.globalToggleFullscreen,
+      };
+      final DictionaryPopupInputSpec full = dictionaryPopupInputSpecFor(
+        registry: r,
+        actions: forwarded,
+      );
+      // 前提：旧做法确实把翻页的非左右键位截走（否则本用例测不到回归）。
+      final List<String> turnOnlyKeys = full.keyTokens
+          .where(
+            (String t) =>
+                t != 'ArrowLeft' &&
+                t != 'ArrowRight' &&
+                dictionaryPopupInputSpecFor(
+                  registry: r,
+                  actions: turn,
+                ).keyTokens.contains(t),
+          )
+          .toList();
+      expect(turnOnlyKeys, isNotEmpty);
+
+      final DictionaryPopupInputSpec spec =
+          dictionaryPopupInputSpecArrowPageTurn(
+            registry: r,
+            scope: ShortcutScope.manga,
+            forwardedActions: forwarded,
+            pageTurnActions: turn,
+          );
+      expect(spec.keyTokens, containsAll(<String>['ArrowLeft', 'ArrowRight']));
+      expect(spec.keyTokens, contains('Escape'));
+      for (final String t in turnOnlyKeys) {
+        expect(spec.keyTokens, isNot(contains(t)), reason: t);
+      }
+      expect(spec.mouseButtons, full.mouseButtons);
+    });
+
+    test('漫画页用 dictionaryPopupInputSpecArrowPageTurn 生成弹窗输入表（源码守卫）', () {
+      final String src = maskComments(
+        File(
+          'lib/src/media/manga/reader/manga_fushi_page.dart',
+        ).readAsStringSync(),
+      );
+      expect(src, contains('get dictionaryPopupInputSpec =>'));
+      expect(src, contains('dictionaryPopupInputSpecArrowPageTurn('));
+    });
+
     test('用户把左键改绑到别的动作后不再截走弹窗里的左键', () {
       final FushiShortcutRegistry r = registry();
       final ShortcutBindingSet backward = r.bindingsFor(
