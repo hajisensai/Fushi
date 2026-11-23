@@ -521,7 +521,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('分栏布局：唱片压在封面上（有盘面扫描图转真盘面，没有转银色 CD）', (WidgetTester tester) async {
+  testWidgets('分栏布局：有盘面扫描图才把唱片压在封面上，没有只摆封面', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1424, 951);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -578,15 +578,25 @@ void main() {
       findsWidgets,
     );
 
-    // 没有盘面扫描图：转银色 CD 盘，不是黑胶。
+    // 没有盘面扫描图：只摆封面，不画任何唱片（拍板台 SsFKKF0bo0：银色 CD 与黑胶
+    // 兜底都不要）。
     MusicDiscArtIndex.instance.publish(const <String, String>{});
     await tester.pump();
+    expect(find.byKey(sleeve), findsNothing);
+    const ValueKey<String> plain = ValueKey<String>(
+      'music-player-sleeve-plain',
+    );
+    expect(find.byKey(plain), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byKey(sleeve),
-        matching: find.byKey(const ValueKey<String>('music-player-silver-cd')),
+        of: find.byKey(plain),
+        matching: find.byType(RotationTransition),
       ),
-      findsOneWidget,
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-player-real-disc')),
+      findsNothing,
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
