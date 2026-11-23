@@ -400,6 +400,25 @@ class ThemeSongDetector {
     required String mvPath,
   }) async => (await mvAlignment(audio: audio, mvPath: mvPath))?.offset;
 
+  /// MV 视频音轨声纹的进程内缓存（键 = 路径 + 大小 + 修改时间，按插入顺序淘汰）。同一张
+  /// 蓝光里的流要和专辑里每首歌各对一次，不缓存就每首歌都整段重解码一遍。
+  final Map<String, Uint32List> _mvPrints = <String, Uint32List>{};
+
+  /// [_mvPrints] 最多留几条（一条约几 KB）。
+  static const int kMvPrintCacheSize = 32;
+
+  /// 本机文件按「路径 + 大小 + 修改时间」作缓存键；网络地址 / 读不到的不缓存。
+  String? _mvPrintCacheKey(String mvPath) {
+    if (mvPath.contains('://')) return null;
+    try {
+      final FileStat s = File(mvPath).statSync();
+      if (s.type != FileSystemEntityType.file) return null;
+      return '$mvPath|${s.size}|${s.modified.millisecondsSinceEpoch}';
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// 同 [mvOffset]，但返回完整对齐结果（置信度 / 命中段，MV 匹配要按置信度排序与判定）。
   /// 置信度低于 [minConfidence] 视为没对上。
   Future<AudioFingerprintMatch?> mvAlignment({
@@ -410,18 +429,27 @@ class ThemeSongDetector {
     final ThemeSongDetectionReport report = ThemeSongDetectionReport();
     final Uint32List? needle = await _songPrint(audio, work, report);
     if (needle == null) return null;
-    final String raw = p.join(
-      work.path,
-      'mv_${mvPath.hashCode.toUnsigned(32)}.s16le',
-    );
-    final Uint32List haystack;
-    try {
-      await decoder.decodeToRawPcm(input: mvPath, output: raw);
-      haystack = await engine.fingerprintRawPcm(raw);
-    } on ThemeSongDecodeException {
-      return null;
-    } finally {
-      _deleteQuietly(raw);
+    final String? cacheKey = _mvPrintCacheKey(mvPath);
+    Uint32List? haystack = cacheKey == null ? null : _mvPrints[cacheKey];
+    if (haystack == null) {
+      final String raw = p.join(
+        work.path,
+        'mv_${mvPath.hashCode.toUnsigned(32)}.s16le',
+      );
+      try {
+        await decoder.decodeToRawPcm(input: mvPath, output: raw);
+        haystack = await engine.fingerprintRawPcm(raw);
+      } on ThemeSongDecodeException {
+        return null;
+      } finally {
+        _deleteQuietly(raw);
+      }
+      if (cacheKey != null) {
+        _mvPrints[cacheKey] = haystack;
+        while (_mvPrints.length > kMvPrintCacheSize) {
+          _mvPrints.remove(_mvPrints.keys.first);
+        }
+      }
     }
     final AudioFingerprintMatch? m = await engine.align(needle, haystack);
     if (m == null || m.confidence < minConfidence) return null;

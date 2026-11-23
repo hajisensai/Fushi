@@ -15,6 +15,7 @@ import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
@@ -54,7 +55,7 @@ class MusicLocalVideoMatch {
 }
 
 /// 列出曲目附近可能是 MV 的视频文件（同目录、同目录下的 MV 目录、上一级的 MV 目录），
-/// 按文件名分数降序。纯 IO，不解码。
+/// 按文件名分数降序；后面再接附近蓝光盘里的流（[listDiscMusicVideoStreams]）。纯 IO，不解码。
 List<({String path, double score})> listLocalMusicVideoFiles(
   MusicTrackRow track, {
   int limit = 5,
@@ -107,7 +108,118 @@ List<({String path, double score})> listLocalMusicVideoFiles(
     (({String path, double score}) a, ({String path, double score}) b) =>
         b.score.compareTo(a.score),
   );
-  return out.take(limit).toList();
+  return <({String path, double score})>[
+    ...out.take(limit),
+    // 蓝光里的 MV（`BDMV/STREAM/00001.m2ts`）文件名不带歌名，文件名打分恒为 0：
+    // 不按名字筛，交给声纹对齐判（分数记 0，排在按名字命中的候选之后）。
+    for (final String s in listDiscMusicVideoStreams(home, seen: seen))
+      (path: s, score: 0),
+  ];
+}
+
+/// 蓝光流文件小于这个大小的不当 MV 候选（菜单背景、片头 logo、静帧）。
+const int kMusicDiscVideoStreamMinBytes = 20 * 1024 * 1024;
+
+/// 蓝光流文件大于这个大小的不当 MV 候选（整场演唱会 / 正片：整段解码对齐太慢，
+/// 这类盘走「章节导入为曲目」）。约 25 分钟的 35 Mbps 流。
+const int kMusicDiscVideoStreamMaxBytes = 6 * 1024 * 1024 * 1024;
+
+/// 一张盘最多取几条流去对齐（按大小降序）。
+const int kMusicDiscVideoStreamLimit = 12;
+
+/// 曲目附近蓝光盘里可能是 MV 的流（`BDMV/STREAM/*.m2ts`）：盘根可以是曲目目录本身、
+/// 它的子目录（`专辑/BD/BDMV`）、上一级目录或上一级的子目录（`专辑/CD/` 与 `专辑/BD/` 并列）。
+/// 按大小过滤（[minBytes]–[maxBytes]，默认 [kMusicDiscVideoStreamMinBytes]–
+/// [kMusicDiscVideoStreamMaxBytes]）、
+/// 每张盘按大小降序取前 [kMusicDiscVideoStreamLimit] 条。[seen] 里已有的路径跳过并登记。
+/// 纯 IO，不解码。
+List<String> listDiscMusicVideoStreams(
+  Directory home, {
+  Set<String>? seen,
+  int minBytes = kMusicDiscVideoStreamMinBytes,
+  int maxBytes = kMusicDiscVideoStreamMaxBytes,
+}) {
+  final Set<String> visited = seen ?? <String>{};
+  final List<Directory> roots = <Directory>[home];
+  void addChildren(Directory d) {
+    try {
+      for (final FileSystemEntity e in d.listSync(followLinks: false)) {
+        if (e is Directory) roots.add(e);
+      }
+    } on FileSystemException {
+      return;
+    }
+  }
+
+  addChildren(home);
+  final Directory parent = home.parent;
+  if (parent.path != home.path) {
+    roots.add(parent);
+    addChildren(parent);
+  }
+  final List<String> out = <String>[];
+  final Set<String> seenRoots = <String>{};
+  for (final Directory root in roots) {
+    if (!seenRoots.add(p.normalize(root.path))) continue;
+    final Directory stream = Directory(p.join(root.path, 'BDMV', 'STREAM'));
+    if (!stream.existsSync()) continue;
+    final List<({String path, int size})> files = <({String path, int size})>[];
+    try {
+      for (final FileSystemEntity e in stream.listSync(followLinks: false)) {
+        if (e is! File) continue;
+        if (p.extension(e.path).toLowerCase() != '.m2ts') continue;
+        final int size;
+        try {
+          size = e.lengthSync();
+        } on FileSystemException {
+          continue;
+        }
+        if (size < minBytes || size > maxBytes) {
+          continue;
+        }
+        files.add((path: e.path, size: size));
+      }
+    } on FileSystemException {
+      continue;
+    }
+    files.sort(
+      (({String path, int size}) a, ({String path, int size}) b) =>
+          b.size.compareTo(a.size),
+    );
+    for (final ({String path, int size}) f in files.take(
+      kMusicDiscVideoStreamLimit,
+    )) {
+      if (visited.add(p.normalize(f.path))) out.add(f.path);
+    }
+  }
+  return out;
+}
+
+/// MV 绑定对应的**本机视频文件**（背景播放 / 本地对齐用）：本地 MV 是绑定里的路径，
+/// 动画集按视频库行解析到那一集的文件。YouTube 等网络 MV、文件已不在的返回 null。
+Future<String?> resolveMusicVideoLocalFile(
+  FushiDatabase db,
+  MusicVideoRow row,
+) async {
+  switch (row.kind) {
+    case MusicVideoKind.local:
+      return await File(row.ref).exists() ? row.ref : null;
+    case MusicVideoKind.animeEpisode:
+      final ({String bookUid, int episodeIndex})? ref =
+          parseAnimeEpisodeMusicVideoRef(row.ref);
+      if (ref == null) return null;
+      final VideoBookRow? book = await VideoBookRepository(
+        db,
+      ).getByBookUid(ref.bookUid);
+      if (book == null) return null;
+      for (final ({int index, String path}) f in themeSongFilesOf(book)) {
+        if (f.index == ref.episodeIndex) {
+          return await File(f.path).exists() ? f.path : null;
+        }
+      }
+      return null;
+  }
+  return null;
 }
 
 class MusicVideoService {

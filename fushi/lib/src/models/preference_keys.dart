@@ -711,6 +711,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_lookup_pause',
   // bool（默认 true）：锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。
   'music_lyrics_media_session',
+  // bool（默认 true）：曲目有本机 MV 时歌词页 / 全屏歌词动画背景放 MV 画面；false = 始终
+  // 动画背景。设备本地观感偏好（MusicMvBackdropController）。
+  'music_lyrics_mv_backdrop',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
