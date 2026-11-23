@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T17:56:53Z",
+ "generatedAt": "2026-11-23T18:06:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
    "unknown": false,
-   "publishedAt": "2026-11-23T17:56:41Z",
+   "publishedAt": "2026-11-23T18:06:08Z",
    "testflight": false,
    "baseSeq": 32101,
    "prs": [],
@@ -56,16 +56,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574255"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574255"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45225574255"
+     "state": "ok"
     }
    }
   },
@@ -171,7 +168,7 @@
    "unknown": false,
    "publishedAt": "2026-11-23T15:57:49Z",
    "testflight": true,
-   "baseSeq": 32021,
+   "baseSeq": 32001,
    "prs": [],
    "direct": [
     {
@@ -205,34 +202,7 @@
     {
      "sha": "bb8e7966ccad19c9c4e401c8a3d91b26e0ca7d9d",
      "subject": "Merge #4256 (claude/dec-music-lyric-chars) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32021,
-   "version": "3.4.0",
-   "sha": "4d07116942973886b753551ff22d9390930bc736",
-   "unknown": false,
-   "publishedAt": "2026-11-23T14:56:06Z",
-   "testflight": true,
-   "baseSeq": 32001,
-   "prs": [],
-   "direct": [
     {
      "sha": "4d07116942973886b753551ff22d9390930bc736",
      "subject": "docs(bugs): BUG-5347 正文标题与文件名对齐"
@@ -265,8 +235,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983447"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
