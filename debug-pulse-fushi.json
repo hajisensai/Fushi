@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T12:53:00Z",
+ "generatedAt": "2026-11-23T13:26:23Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4e31e0e4ab4af4c10d4669fdc116be21c5f383a5",
-  "seq": 32001
+  "sha": "4d07116942973886b753551ff22d9390930bc736",
+  "seq": 32021
  },
  "builds": [
   {
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "9ea8a7ad2d24f7a073f1425d231d40adfeaee7ed",
    "unknown": false,
-   "publishedAt": "2026-11-23T12:47:18Z",
+   "publishedAt": "2026-11-23T13:26:14Z",
    "testflight": true,
    "baseSeq": 31707,
    "prs": [
@@ -175,8 +175,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988313"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -268,62 +267,41 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31532,
-   "version": "3.4.0",
-   "sha": "5735e6dc231db5f3c0df629e27d73f295780ead6",
-   "unknown": false,
-   "publishedAt": "2026-11-23T03:44:33Z",
-   "testflight": false,
-   "baseSeq": 31474,
-   "prs": [
-    4201,
-    4197,
-    4194,
-    4195,
-    4189,
-    4193,
-    4192,
-    4188,
-    4187,
-    4185
-   ],
-   "direct": [
-    {
-     "sha": "e0dd8b4d4e2f60c0bf7e74d0dca389d74e4c1a87",
-     "subject": "chore(bugs): settle BUG number collisions on 023e72ef7"
-    },
-    {
-     "sha": "35a5ffbc7dbc22c8ed32ac841986575e966a5cf8",
-     "subject": "chore(bugs): settle BUG number collisions on 3c8d64b87"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "4e31e0e4ab4af4c10d4669fdc116be21c5f383a5",
-  "headSeq": 32001,
+  "headSha": "4d07116942973886b753551ff22d9390930bc736",
+  "headSeq": 32021,
   "prs": [],
   "direct": [
+   {
+    "sha": "4d07116942973886b753551ff22d9390930bc736",
+    "subject": "docs(bugs): BUG-5347 正文标题与文件名对齐"
+   },
+   {
+    "sha": "78245c86828bcbc21bf986b954d5c38d5ac59951",
+    "subject": "docs(bugs): 第 4 批合流后重建索引"
+   },
+   {
+    "sha": "7126c4e72346d572f5148311a51a54b026a47c46",
+    "subject": "Merge #4284 (claude/dec-rf-external-lookup-sentence-picker) into develop"
+   },
+   {
+    "sha": "26b0be11f86ad0ae2af042a5e29066308733762a",
+    "subject": "Merge #4283 (claude/dec-r721-manga-swipe-sensitivity) into develop"
+   },
+   {
+    "sha": "94726a91949a55784d0059ce194a5c1c979fefbb",
+    "subject": "Merge #4281 (claude/dec-pr4255a-manifest-unknown-keys) into develop"
+   },
+   {
+    "sha": "c5129efb1167f7d40e6aff5e56d527d2cc64da4d",
+    "subject": "fix(video): 直播聊天栏关按钮去掉局部 VisualDensity；聊天内容字号按视频内容面板登记 m3e 豁免（develop 守卫红）"
+   },
+   {
+    "sha": "2791c70dac4ea7025c53ef5045652ae2c7dd8ce3",
+    "subject": "Merge #4282 (claude/dec-ew0-import-audiobook-first) into develop"
+   },
    {
     "sha": "4e31e0e4ab4af4c10d4669fdc116be21c5f383a5",
     "subject": "fix: 第二批合流后守卫收口——拆出 AnimeSourceBookSpec 让同步编排层退出 import 大环；中继走统一出站装配点；补 game ocr-start/ocr-region CLI；v178 查词索引的 v105 种子、格式枚举比较、偏好键序、横拖、封面派生登记、纯 Dart 测试"
@@ -433,19 +411,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45176121572"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983447"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45176121922"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45176121922"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45176121922"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
    }
   }
  },
@@ -475,96 +453,6 @@
    "mergedAt": "2026-11-23T04:40:06Z",
    "additions": 938,
    "deletions": 161,
-   "labels": []
-  },
-  "4185": {
-   "number": 4185,
-   "title": "fix(media): 波奇蓝光多卷并成一个合集、首页色块 logo、媒体页滚动卡顿",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:33:40Z",
-   "additions": 1625,
-   "deletions": 177,
-   "labels": []
-  },
-  "4187": {
-   "number": 4187,
-   "title": "feat(audiobook): 选角让模型对括弧行显式回旁白，独立书名 / 标牌不再进复核",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:38:49Z",
-   "additions": 66,
-   "deletions": 12,
-   "labels": []
-  },
-  "4188": {
-   "number": 4188,
-   "title": "feat(collections): 合集详情 hero 背景带接上下到的系列横幅（#3467 拍板 a）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:38:53Z",
-   "additions": 193,
-   "deletions": 5,
-   "labels": []
-  },
-  "4189": {
-   "number": 4189,
-   "title": "refactor(reader): 删除阅读器整句扫词（拍板台 pr4141a）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:39:19Z",
-   "additions": 27,
-   "deletions": 1309,
-   "labels": []
-  },
-  "4192": {
-   "number": 4192,
-   "title": "feat(manga-audio): 单句编辑改语气 / 强度 + 导出包格式设计稿（bnAC_eferQ-2）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:39:01Z",
-   "additions": 829,
-   "deletions": 33,
-   "labels": []
-  },
-  "4193": {
-   "number": 4193,
-   "title": "feat(reader): 阅读器纸色可直接选（羊皮纸 / 护眼 / 深灰等，拍板台 vJSj4RsKFt）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:39:06Z",
-   "additions": 702,
-   "deletions": 57,
-   "labels": []
-  },
-  "4194": {
-   "number": 4194,
-   "title": "feat(books): 书架 / 拖放按内容接收一包书（7z、装着 epub/txt 的 zip/rar），解包整批导入、一份汇总",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:59:44Z",
-   "additions": 2164,
-   "deletions": 17,
-   "labels": []
-  },
-  "4195": {
-   "number": 4195,
-   "title": "merge: 拍板台执行批（汉字卡默认折叠 #4190 + 外部 PR #4191）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:42:24Z",
-   "additions": 1497,
-   "deletions": 199,
-   "labels": []
-  },
-  "4197": {
-   "number": 4197,
-   "title": "feat(music): 歌词转录用歌曲档位（识别前人声分离），fushi-subtitles 钉到 a5a9a90",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T16:18:15Z",
-   "additions": 789,
-   "deletions": 94,
-   "labels": []
-  },
-  "4201": {
-   "number": 4201,
-   "title": "fix(import): 导入框完成后只关自己的路由（BUG-5263）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T02:53:51Z",
-   "additions": 214,
-   "deletions": 29,
    "labels": []
   },
   "4202": {
