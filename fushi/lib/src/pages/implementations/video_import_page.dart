@@ -14,12 +14,13 @@
 library;
 
 import 'dart:async' show unawaited;
-import 'dart:io' show Platform;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audio_cd/audio_cd_import.dart'
+    show audioCdRipAvailableOnHost;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
@@ -46,9 +47,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 /// 视频「导入文件夹」块的音频 CD 附注只在能抓轨的桌面出现（与
-/// `audio_cd_import.dart` 的 `_canRip` 一致：Windows 光驱 / macOS 挂载点）。
-bool get videoImportFolderShowsAudioCdNote =>
-    Platform.isWindows || Platform.isMacOS;
+/// `audio_cd_import.dart` 的 `_canRip` 同源：Windows / macOS / Linux）。
+bool get videoImportFolderShowsAudioCdNote => audioCdRipAvailableOnHost;
 
 /// 视频导入面的 spec（纯数据装配，便于单测）。
 ImportSurfaceSpec buildVideoImportSpec({
