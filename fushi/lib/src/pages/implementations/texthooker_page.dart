@@ -2720,97 +2720,109 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // 列表头（2026-11 改版）：一条工具条——左侧标题 + 计数签 + 未读，右侧
-          // 「跟随实时」开关 chip 与「特殊码」菜单 chip（都带字，不再是无字图标）。
+          // 「跟随实时」「自动查词」开关 chip 与「特殊码」菜单 chip（宽时都带字；
+          // 窄时两个开关收成纯图标，见下方 compact）。
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 4),
-            child: Row(
-              children: <Widget>[
-                // 标题 + 未读占满剩余宽度：Flexible 与 Spacer 并列会平分空余，
-                // 把右侧开关推到列表头中间。
-                Expanded(
-                  child: Row(
-                    children: <Widget>[
-                      Flexible(
-                        child: Text(
-                          t.game_live_lines,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: type.titleLargeEmphasized,
-                        ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                final Widget title = Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        t.game_live_lines,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.titleLargeEmphasized,
                       ),
-                      const SizedBox(width: 8),
-                      _LineCountBadge(count: lines.length),
-                      const SizedBox(width: 8),
-                      // 未读计数：M3E 超小号 tonal 按钮（secondaryContainer 全胶囊、
-                      // 按压形变；Apple = 玻璃胶囊）。点击 = 跳到最新一行并清零未读。
-                      // 出现 / 消失走 effects 弹簧的缩放淡入，不再瞬间闪现。
-                      AnimatedSwitcher(
-                        duration: context.fushiMotion.effectsDefault.duration,
-                        switchInCurve: context.fushiMotion.effectsDefault.curve,
-                        switchOutCurve: context.fushiMotion.effectsFast.curve,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                ScaleTransition(
-                                  scale: animation,
-                                  child: FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    _LineCountBadge(count: lines.length),
+                    const SizedBox(width: 8),
+                    // 未读计数：M3E 超小号 tonal 按钮（secondaryContainer 全胶囊、
+                    // 按压形变；Apple = 玻璃胶囊）。点击 = 跳到最新一行并清零未读。
+                    // 出现 / 消失走 effects 弹簧的缩放淡入，不再瞬间闪现。
+                    AnimatedSwitcher(
+                      duration: context.fushiMotion.effectsDefault.duration,
+                      switchInCurve: context.fushiMotion.effectsDefault.curve,
+                      switchOutCurve: context.fushiMotion.effectsFast.curve,
+                      transitionBuilder:
+                          (Widget child, Animation<double> animation) =>
+                              ScaleTransition(
+                                scale: animation,
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
                                 ),
-                        child: _unreadLines > 0
-                            ? FushiFilledButton.tonal(
-                                key: const ValueKey<String>(
-                                  'game-unread-lines',
-                                ),
-                                size: FushiButtonSize.xs,
-                                onPressed: _jumpToLatestAndClearUnread,
-                                // 不另给字阶：主题字阶自带 onSurface 色，会盖掉
-                                // 按钮的 onSecondaryContainer 前景。
-                                child: Text(
-                                  '${t.game_unread_lines} $_unreadLines',
-                                ),
-                              )
-                            : const SizedBox.shrink(
-                                key: ValueKey<String>('game-unread-none'),
                               ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FushiSelectableChip(
-                  key: const ValueKey<String>('game-follow-live'),
-                  label: t.game_follow_live,
-                  leadingIcon: Icons.vertical_align_bottom_rounded,
-                  selected: _followLive,
-                  focusId: const FushiFocusId('game-follow-live'),
-                  onSelected: (bool value) {
-                    setState(() {
-                      _followLive = value;
-                      if (value) _unreadLines = 0;
-                    });
-                    if (value) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_scroll.hasClients) {
-                          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-                        }
+                      child: _unreadLines > 0
+                          ? FushiFilledButton.tonal(
+                              key: const ValueKey<String>('game-unread-lines'),
+                              size: FushiButtonSize.xs,
+                              onPressed: _jumpToLatestAndClearUnread,
+                              // 不另给字阶：主题字阶自带 onSurface 色，会盖掉
+                              // 按钮的 onSecondaryContainer 前景。
+                              child: Text(
+                                '${t.game_unread_lines} $_unreadLines',
+                              ),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey<String>('game-unread-none'),
+                            ),
+                    ),
+                  ],
+                );
+                // 宽时三个 chip 都带字（约 420），标题 + 计数签 + 未读胶囊还要约 250；
+                // 窄于此两个开关 chip 收成纯图标（字进 tooltip，TODO-640 同款），
+                // 列表头仍是一行、高度不变，不把标题一侧挤溢出。阈值与第二行同为 760。
+                final bool compact = box.maxWidth < 760;
+                final List<Widget> actions = <Widget>[
+                  FushiSelectableChip(
+                    key: const ValueKey<String>('game-follow-live'),
+                    label: t.game_follow_live,
+                    iconOnly: compact,
+                    leadingIcon: Icons.vertical_align_bottom_rounded,
+                    selected: _followLive,
+                    focusId: const FushiFocusId('game-follow-live'),
+                    onSelected: (bool value) {
+                      setState(() {
+                        _followLive = value;
+                        if (value) _unreadLines = 0;
                       });
-                    }
-                  },
-                ),
-                const SizedBox(width: 6),
-                FushiSelectableChip(
-                  key: const ValueKey<String>('game-auto-lookup'),
-                  label: t.game_auto_lookup_new_lines,
-                  tooltip: t.game_auto_lookup_new_lines_tooltip,
-                  leadingIcon: Icons.manage_search_rounded,
-                  selected: _autoLookupNewLines,
-                  focusId: const FushiFocusId('game-auto-lookup'),
-                  onSelected: _setAutoLookupNewLines,
-                ),
-                const SizedBox(width: 6),
-                _buildHookCodeMenuButton(),
-              ],
+                      if (value) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (_scroll.hasClients) {
+                            _scroll.jumpTo(_scroll.position.maxScrollExtent);
+                          }
+                        });
+                      }
+                    },
+                  ),
+                  FushiSelectableChip(
+                    key: const ValueKey<String>('game-auto-lookup'),
+                    label: t.game_auto_lookup_new_lines,
+                    tooltip: t.game_auto_lookup_new_lines_tooltip,
+                    iconOnly: compact,
+                    leadingIcon: Icons.manage_search_rounded,
+                    selected: _autoLookupNewLines,
+                    focusId: const FushiFocusId('game-auto-lookup'),
+                    onSelected: _setAutoLookupNewLines,
+                  ),
+                  _buildHookCodeMenuButton(),
+                ];
+                // 标题占满剩余宽度：Flexible 与 Spacer 并列会平分空余，把右侧开关
+                // 推到列表头中间。
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: title),
+                    const SizedBox(width: 8),
+                    for (int i = 0; i < actions.length; i++) ...<Widget>[
+                      if (i > 0) const SizedBox(width: 6),
+                      actions[i],
+                    ],
+                  ],
+                );
+              },
             ),
           ),
           // 第二行：线程选择 + 文本处理 + 筛选分段（单选，设计系统分段组件）。
