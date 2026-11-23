@@ -339,9 +339,33 @@ void main() {
       );
       expect(slider, findsOneWidget);
       expect(tester.getRect(slider).bottom, lessThan(bar.top));
+      // 弹层按内容定高：浮层给的高度上限是整屏，Material Slider 有界就取
+      // maxHeight——此前倍速面板从按钮上方一路撑到屏顶（BUG-5348）。
+      expect(
+        tester.getRect(slider).height,
+        lessThanOrEqualTo(kMangaChromeToolbarHeight),
+      );
       await tester.tap(find.byKey(const ValueKey<String>('manga_audio_speed')));
       await tester.pump();
       expect(slider, findsNothing);
+      // 音量弹层共用同一个弹层按钮，同一判据。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_audio_volume')),
+      );
+      await tester.pump();
+      final Finder volume = find.byKey(
+        const ValueKey<String>('manga_audio_volume_slider'),
+      );
+      expect(volume, findsOneWidget);
+      expect(
+        tester.getRect(volume).height,
+        lessThanOrEqualTo(kMangaChromeToolbarHeight),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_audio_volume')),
+      );
+      await tester.pump();
+      expect(volume, findsNothing);
 
       // 底边进度线：点中点 = 跳到整卷一半。
       final Rect line = tester.getRect(
