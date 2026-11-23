@@ -222,10 +222,6 @@ class MusicSession extends ChangeNotifier {
     value?.addListener(notifyListeners);
   }
 
-  /// 给最近播放重建出来、没带服务器身份的播放项补身份（app 装配：
-  /// `MusicServerTrackResolver.withIdentity`）；未装配时原样返回。
-  Future<MusicPlayItem> Function(MusicPlayItem item)? serverIdentity;
-
   /// 这一首能不能收藏：声明了 `like` 的插件曲目、已连接账号时的 Apple Music 整曲，或
   /// Jellyfin / Subsonic 曲目；本地曲目为 false。
   bool canFavorite(MusicPlayItem item) =>
@@ -401,26 +397,7 @@ class MusicSession extends ChangeNotifier {
   Future<List<MusicRecentTrack>> recentTracks({int limit = 20}) async {
     final FushiDatabase? db = _database();
     if (db == null) return const <MusicRecentTrack>[];
-    final List<MusicRecentTrack> tracks = await loadRecentMusicTracks(
-      db,
-      limit: limit,
-    );
-    // 快照重建的服务器曲目项只有流地址 / 离线副本路径：补上服务器身份，响度补查、生成
-    // 字幕、收藏才认得出是哪首。
-    final Future<MusicPlayItem> Function(MusicPlayItem item)? identify =
-        serverIdentity;
-    if (identify == null) return tracks;
-    return <MusicRecentTrack>[
-      for (final MusicRecentTrack t in tracks)
-        t.item.serverTrack != null
-            ? t
-            : MusicRecentTrack(
-                item: await identify(t.item),
-                lastPlayedAt: t.lastPlayedAt,
-                inLibrary: t.inLibrary,
-                source: t.source,
-              ),
-    ];
+    return loadRecentMusicTracks(db, limit: limit);
   }
 
   /// 最近播放的来源（专辑 / 歌单 …，按来源去重，新的在前）。没有数据库时为空。

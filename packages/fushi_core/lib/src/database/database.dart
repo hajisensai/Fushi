@@ -30,6 +30,7 @@ import 'media_link_kind.dart';
 import 'media_source_util.dart'
     show musicAlbumNameKey, musicTrackDirPrefix, musicTrackPathKey;
 import 'music_scrape_tables.dart';
+import 'music_server_ref.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
 import 'sql_functions.dart';
@@ -3682,7 +3683,18 @@ class FushiDatabase extends _$FushiDatabase
         }
       }
       if (from < 172) {
-        // v172：music_server_downloads——Jellyfin / Subsonic 曲目的离线副本（设备本地，
+        // v172：表结构不变，清洗 music_play_events 快照里带账号凭据的服务器地址
+        // （BUG-5267：服务器曲目的播放流 / 封面地址原样落库，Jellyfin 带 api_key、
+        // Subsonic 带 u + t + s / apiKey）。认得出曲目 / 封面 id 的换成身份占位
+        // （`fushi-music-server://…`，重播时由当前配置的服务器现算地址），认不出的置
+        // NULL。v139 之前的库没有快照列，跳过；幂等。
+        if (await _tableExists('music_play_events') &&
+            await _columnExists('music_play_events', 'source_cover')) {
+          await scrubMusicPlayEventCredentials();
+        }
+      }
+      if (from < 173) {
+        // v173：music_server_downloads——Jellyfin / Subsonic 曲目的离线副本（设备本地，
         // 一首一行：本机文件路径 + 服务器身份 + 条目 id，不存带凭据的地址）。纯新表、
         // 不动数据；幂等守卫同 v148。
         if (!await _tableExists('music_server_downloads')) {

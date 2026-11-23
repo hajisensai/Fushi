@@ -1,4 +1,4 @@
-// 服务器曲目身份打通后的几处：生成字幕优先用离线副本、最近播放重建的项补身份、
+// 服务器曲目身份打通后的几处：生成字幕优先用离线副本、只给 uid + 路径时的认法（歌词）、
 // 「正在播放」里服务器曲目的收藏。
 
 import 'dart:io';
@@ -101,7 +101,7 @@ void main() {
     });
   });
 
-  group('最近播放重建的项补身份', () {
+  group('只给 uid + 路径的认法（歌词解析）', () {
     late Map<String, MusicServerLocalCopy> copies;
     late MusicServerTrackResolver resolver;
     setUp(() {
@@ -112,46 +112,39 @@ void main() {
       );
     });
 
-    test('快照里的流地址：认回服务器与曲目，其余字段原样', () async {
-      final MusicPlayItem rebuilt = MusicPlayItem(
+    test('流地址：认回服务器与曲目', () async {
+      final MusicServerResolvedTrack? r = await resolver.resolve(
         trackUid: musicServerTrackUid('jf1', 't1'),
         path: 'http://srv/t1',
-        title: 'T1',
-        durationMs: 1000,
-        coverPath: 'C:/c.jpg',
       );
-      final MusicPlayItem item = await resolver.withIdentity(rebuilt);
-      expect(item.serverTrack?.serverId, 'jf1');
-      expect(item.serverTrack?.trackId, 't1');
-      expect(item.serverTrack?.kind, MusicServerKind.jellyfin);
-      expect(item.path, rebuilt.path);
-      expect(item.title, 'T1');
-      expect(item.durationMs, 1000);
-      expect(item.coverPath, 'C:/c.jpg');
+      expect(r?.browser, same(server));
+      expect(r?.trackId, 't1');
+      expect(r?.ref.kind, MusicServerKind.jellyfin);
     });
 
-    test('快照里是离线副本路径：经副本索引认回', () async {
+    test('离线副本路径：经副本索引认回', () async {
       final String uid = musicServerTrackUid('jf1', 't2');
       copies[uid] = _copy('C:/dl/t2.flac', 'jf1', 't2');
-      final MusicPlayItem item = await resolver.withIdentity(
-        MusicPlayItem(trackUid: uid, path: 'C:/dl/t2.flac', title: 'T2'),
+      final MusicServerResolvedTrack? r = await resolver.resolve(
+        trackUid: uid,
+        path: 'C:/dl/t2.flac',
       );
-      expect(item.serverTrack?.trackId, 't2');
+      expect(r?.trackId, 't2');
+      expect(r?.transcoded, isFalse);
     });
 
-    test('别的服务器的同形地址 / 本地曲目：原样不动', () async {
-      final MusicPlayItem other = MusicPlayItem(
-        trackUid: musicServerTrackUid('jf9', 't1'),
-        path: 'http://srv/t1',
-        title: 'x',
+    test('别的服务器的同形地址 / 本地曲目：认不出', () async {
+      expect(
+        await resolver.resolve(
+          trackUid: musicServerTrackUid('jf9', 't1'),
+          path: 'http://srv/t1',
+        ),
+        isNull,
       );
-      expect((await resolver.withIdentity(other)).serverTrack, isNull);
-      const MusicPlayItem local = MusicPlayItem(
-        trackUid: 'local',
-        path: 'C:/m/a.flac',
-        title: 'a',
+      expect(
+        await resolver.resolve(trackUid: 'local', path: 'C:/m/a.flac'),
+        isNull,
       );
-      expect(identical(await resolver.withIdentity(local), local), isTrue);
     });
   });
 

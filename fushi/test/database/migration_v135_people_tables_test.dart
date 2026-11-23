@@ -38,7 +38,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 172);
+    expect(migrated.schemaVersion, 173);
     await migrated.upsertGameVoiceCast(
       GameVoiceCastsCompanion.insert(
         gameId: 'g',
@@ -50,7 +50,7 @@ void main() {
     await migrated.close();
 
     raw = sqlite.sqlite3.open(path);
-    expect(raw.select('PRAGMA user_version').first.values.first, 172);
+    expect(raw.select('PRAGMA user_version').first.values.first, 173);
     for (final String t in tables) {
       expect(tableExists(raw, t), isTrue, reason: t);
     }

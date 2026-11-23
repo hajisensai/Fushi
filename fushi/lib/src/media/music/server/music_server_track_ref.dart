@@ -1,13 +1,13 @@
-/// 播放项 → 当前配置的服务器与服务器侧曲目（播放上报、服务器歌词、「正在播放」的收藏、
-/// 最近播放重建的项补身份）。
+/// 播放项 → 当前配置的服务器与服务器侧曲目（播放上报、服务器歌词、「正在播放」的收藏）。
 ///
 /// 服务器曲目的身份只有一种：[MusicServerTrackRef]（播放项的 `serverTrack`：服务器页、曲库 /
 /// 本地歌单里的服务器曲目（v149）、离线副本（v172）建的项都带）。按顺序认：
-/// 1. 播放项自带的 [MusicServerTrackRef]；
+/// 1. 播放项自带的 [MusicServerTrackRef]（最近播放重播的项由 `music_history.dart` 按快照里的
+///    身份占位重建，同样带着，BUG-5267）；
 /// 2. 离线副本索引（[musicServerLocalCopyLookup]，按 uid 查到行里的服务器身份 + 条目 id）：
 ///    只给了 uid + 本机路径的调用方（歌词解析）、路径是离线副本的旧项用；
-/// 3. 没带身份、路径是服务器流地址的旧项（最近播放快照重建的）：按当前配置的服务器逐台问
-///    [MusicServerStreamIdentity.streamRefOf] 认流地址。
+/// 3. 只给了 uid + 流地址的调用方（歌词解析只拿得到这两样）：按当前配置的服务器逐台问
+///    [MusicServerStreamIdentity.streamRefOf] 认流地址（同一份认法也给出是不是转码流）。
 ///
 /// 三种都再用 [musicServerTrackUid] 核对 uid：两台同类服务器、别的服务器的同形地址都不会认错；
 /// 网络音乐来源（WebDAV 等）的 http 地址、YouTube 内置音源（同用 `srv` 前缀，但路径是
@@ -182,13 +182,6 @@ class MusicServerTrackResolver {
     path: item.path,
     serverTrack: item.serverTrack,
   );
-
-  /// 没带服务器身份的播放项（最近播放快照重建的）补上身份；本来就带着、或认不出的原样回。
-  Future<MusicPlayItem> withIdentity(MusicPlayItem item) async {
-    if (item.serverTrack != null) return item;
-    final MusicServerResolvedTrack? r = await resolveItem(item);
-    return r == null ? item : item.withServerTrack(r.ref);
-  }
 
   /// 下次解析时重读服务器配置。
   void invalidate() {

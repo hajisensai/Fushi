@@ -892,6 +892,10 @@ mixin _FushiDbMusic on _$FushiDatabase {
   /// 记一次播放（最近播放流）；返回行 id，播放结束时用 [finishMusicPlayEvent] 补时长。
   /// [snapshot] 是播放项快照 + 播放来源（v139）：在线 / 服务器曲目不进曲库，最近播放
   /// 只能靠它显示与重播。
+  ///
+  /// 写入守门（BUG-5267）：快照里的路径 / 封面 / 来源封面先过 [scrubMusicPersistedUrl]——
+  /// 带账号凭据的服务器地址换成身份占位或丢掉，凭据绝不落库（app 侧已按服务器身份写占位，
+  /// 这里兜住任何漏网的调用方）。
   Future<int> startMusicPlayEvent({
     required String trackUid,
     required int startedAt,
@@ -900,7 +904,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
     MusicPlayEventsCompanion.insert(
       trackUid: trackUid,
       startedAt: startedAt,
-      path: Value<String?>(snapshot?.path),
+      path: Value<String?>(scrubMusicPersistedUrl(snapshot?.path)),
       cueStartMs: Value<int?>(snapshot?.cueStartMs),
       cueEndMs: Value<int?>(snapshot?.cueEndMs),
       title: Value<String?>(snapshot?.title),
@@ -908,15 +912,72 @@ mixin _FushiDbMusic on _$FushiDatabase {
       album: Value<String?>(snapshot?.album),
       albumUid: Value<String?>(snapshot?.albumUid),
       durationMs: Value<int?>(snapshot?.durationMs),
-      coverPath: Value<String?>(snapshot?.coverPath),
+      coverPath: Value<String?>(scrubMusicPersistedUrl(snapshot?.coverPath)),
       sourceKind: Value<String?>(snapshot?.sourceKind),
       sourceId: Value<String?>(
         snapshot?.sourceKind == null ? null : snapshot?.sourceId,
       ),
       sourceTitle: Value<String?>(snapshot?.sourceTitle),
-      sourceCover: Value<String?>(snapshot?.sourceCover),
+      sourceCover: Value<String?>(
+        scrubMusicPersistedUrl(
+          snapshot?.sourceCover,
+          serverId: musicServerIdOfPlaySource(
+            snapshot?.sourceKind,
+            snapshot?.sourceId,
+          ),
+        ),
+      ),
     ),
   );
+
+  /// 清洗播放流快照里带账号凭据的服务器地址（BUG-5267）：`path` / `cover_path` /
+  /// `source_cover` 里凡是带凭据的 http(s) 地址，按 [scrubMusicPersistedUrl] 换成身份占位
+  /// （认不出曲目 / 封面 id 的置 NULL）。v172 迁移、备份恢复 / 合并导入之后各跑一次；
+  /// 幂等，只扫 http(s) 开头的行。返回改写的行数。
+  Future<int> scrubMusicPlayEventCredentials() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT id, path, cover_path, source_cover, source_kind, source_id '
+      'FROM music_play_events '
+      "WHERE path LIKE 'http%' OR cover_path LIKE 'http%' "
+      "OR source_cover LIKE 'http%'",
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{musicPlayEvents},
+    ).get();
+    int changed = 0;
+    await transaction(() async {
+      for (final QueryRow r in rows) {
+        final String? path = r.read<String?>('path');
+        final String? cover = r.read<String?>('cover_path');
+        final String? sourceCover = r.read<String?>('source_cover');
+        final String? newPath = scrubMusicPersistedUrl(path);
+        final String? newCover = scrubMusicPersistedUrl(cover);
+        final String? newSourceCover = scrubMusicPersistedUrl(
+          sourceCover,
+          serverId: musicServerIdOfPlaySource(
+            r.read<String?>('source_kind'),
+            r.read<String?>('source_id'),
+          ),
+        );
+        if (newPath == path &&
+            newCover == cover &&
+            newSourceCover == sourceCover) {
+          continue;
+        }
+        await customUpdate(
+          'UPDATE music_play_events SET path = ?, cover_path = ?, '
+          'source_cover = ? WHERE id = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(newPath),
+            Variable<String>(newCover),
+            Variable<String>(newSourceCover),
+            Variable<int>(r.read<int>('id')),
+          ],
+          updates: <TableInfo<Table, dynamic>>{musicPlayEvents},
+        );
+        changed++;
+      }
+    });
+    return changed;
+  }
 
   Future<void> finishMusicPlayEvent(
     int id, {

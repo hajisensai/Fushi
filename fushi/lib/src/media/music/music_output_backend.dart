@@ -59,8 +59,10 @@ class MusicPlayItem {
   final int? sourceId;
 
   /// 服务器曲库曲目（Jellyfin / Subsonic / Apple Music / YouTube 经 `musicServerPlayItem` 建的
-  /// 项）的服务器身份：[path] 是带凭据的流地址、[trackUid] 是哈希，都推不回是哪台服务器的
-  /// 哪一首；起播期补查响度、生成字幕取流按它找回当前配置的服务器。其余曲目为 null。
+  /// 项，含离线副本）的服务器身份：[path] / [coverPath] 是带账号凭据的地址（或本机副本路径）、
+  /// [trackUid] 是哈希，都推不回是哪台服务器的哪一首。最近播放快照只落这份身份（BUG-5267），
+  /// 重播时由当前配置的服务器现算地址；播放上报、服务器歌词、起播期补查响度、生成字幕取流都按它
+  /// 找回当前配置的服务器。其余曲目为 null。
   final MusicServerTrackRef? serverTrack;
 
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
@@ -102,36 +104,6 @@ class MusicPlayItem {
   final double? rgAlbumPeak;
 
   bool get isDsd => codec == 'dsd';
-
-  /// 同一首、补上服务器身份（最近播放快照重建的服务器曲目项：重建时只有流地址 / 本机路径，
-  /// 由 `MusicServerTrackResolver.withIdentity` 认回后补上）。
-  MusicPlayItem withServerTrack(MusicServerTrackRef ref) => MusicPlayItem(
-    trackUid: trackUid,
-    path: path,
-    title: title,
-    startMs: startMs,
-    endMs: endMs,
-    artist: artist,
-    album: album,
-    albumUid: albumUid,
-    discNo: discNo,
-    trackNo: trackNo,
-    durationMs: durationMs,
-    coverPath: coverPath,
-    codec: codec,
-    sampleRate: sampleRate,
-    bitDepth: bitDepth,
-    channels: channels,
-    rgTrackGain: rgTrackGain,
-    rgTrackPeak: rgTrackPeak,
-    rgAlbumGain: rgAlbumGain,
-    rgAlbumPeak: rgAlbumPeak,
-    artistRefs: artistRefs,
-    sourceAlbumId: sourceAlbumId,
-    sourceId: sourceId,
-    serverTrack: ref,
-    isPreview: isPreview,
-  );
 
   @override
   bool operator ==(Object other) =>

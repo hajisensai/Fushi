@@ -2627,11 +2627,10 @@ class AppModel
           e is JellyfinTransportException || musicServerReportUnreachable(e),
     );
     session.serverReporting = serverReporting;
-    // 「正在播放」里服务器曲目的收藏；最近播放重建的服务器曲目项补身份。
+    // 「正在播放」里服务器曲目的收藏。
     session.serverFavorites = MusicServerTrackFavorites(
       resolve: musicServerTracks.resolveItem,
     );
-    session.serverIdentity = musicServerTracks.withIdentity;
     // 下载离线副本时顺带把服务器歌词存进歌词缓存（离线照样有歌词）。
     musicServerDownloadLyricsSaver ??=
         ({

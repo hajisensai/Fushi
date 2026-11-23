@@ -6,7 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
-/// v172：新表 `music_server_downloads`（Jellyfin / Subsonic 曲目的离线副本，设备本地）。
+/// v173：新表 `music_server_downloads`（Jellyfin / Subsonic 曲目的离线副本，设备本地）。
 /// 纯新增：升级建表、不碰存量远程曲目；建过的库幂等跳过。另钉死专辑 / 艺人整体入库与
 /// 移出（一个事务）、「下载 ⊂ 音乐库」的读写 API。
 void main() {
@@ -50,9 +50,9 @@ void main() {
         sizeBytes: const Value<int?>(1234),
       );
 
-  test('v171 → v172：建出离线副本表，存量远程曲目原样', () async {
+  test('v172 → v173：建出离线副本表，存量远程曲目原样', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'musdlv172',
+      'musdlv173',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
@@ -66,7 +66,7 @@ void main() {
 
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     raw.execute('DROP TABLE music_server_downloads');
-    raw.execute('PRAGMA user_version = 171');
+    raw.execute('PRAGMA user_version = 172');
     expect(hasTable(raw), isFalse);
     raw.dispose();
 
@@ -74,7 +74,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 172);
+    expect(migrated.schemaVersion, 173);
     expect((await migrated.getMusicRemoteTrack('srv-a'))?.libraryAddedAt, 5);
     await migrated.recordMusicServerDownload(
       download('a', '/music/a.flac'),
@@ -91,13 +91,13 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 172);
+    expect(probe.select('PRAGMA user_version').first.values.first, 173);
     expect(hasTable(probe), isTrue);
   });
 
-  test('v172 步幂等：表已在时跳过，已有行不丢', () async {
+  test('v173 步幂等：表已在时跳过，已有行不丢', () async {
     final Directory directory = Directory.systemTemp.createTempSync(
-      'musdlv172idem',
+      'musdlv173idem',
     );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await createDbAt(directory);
@@ -113,7 +113,7 @@ void main() {
     await seeded.close();
 
     final sqlite.Database raw = sqlite.sqlite3.open(path);
-    raw.execute('PRAGMA user_version = 171');
+    raw.execute('PRAGMA user_version = 172');
     raw.dispose();
 
     final FushiDatabase migrated = FushiDatabase.atFile(
