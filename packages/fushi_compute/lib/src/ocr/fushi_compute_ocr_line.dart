@@ -14,6 +14,8 @@ typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeDart = void Function(Pointer<Void>);
 typedef _ResetC = Int32 Function(Pointer<Void>);
 typedef _ResetDart = int Function(Pointer<Void>);
+typedef _ConfigureC = Int32 Function(Pointer<Void>, Uint32);
+typedef _ConfigureDart = int Function(Pointer<Void>, int);
 typedef _FeedPngC =
     Int32 Function(
       Pointer<Void>,
@@ -69,7 +71,8 @@ enum FfcOcrLineFrameAction {
 }
 
 /// 一帧的判定结果。只有 [action] 为 [FfcOcrLineFrameAction.ocr] 时 [rgba] 非空
-/// （`width * height * 4`，RGBA8888 行紧排）。
+/// （`width * height * 4`，RGBA8888 行紧排）。这是**预处理后**的图：小字会被整数倍放大、
+/// 开了二值化时是白底黑字，所以 [width] / [height] 可能大于裁出的台词框。
 final class FfcOcrLineFrame {
   const FfcOcrLineFrame(
     this.action, {
@@ -112,6 +115,9 @@ final class _OcrLineBindings {
       forgetFrame = lib.library.lookupFunction<_ResetC, _ResetDart>(
         'ffc_ocrline_forget_frame',
       ),
+      configure = lib.library.lookupFunction<_ConfigureC, _ConfigureDart>(
+        'ffc_ocrline_configure',
+      ),
       feedPng = lib.library.lookupFunction<_FeedPngC, _FeedPngDart>(
         'ffc_ocrline_feed_png',
       ),
@@ -127,6 +133,7 @@ final class _OcrLineBindings {
   final _FreeDart free;
   final _ResetDart reset;
   final _ResetDart forgetFrame;
+  final _ConfigureDart configure;
   final _FeedPngDart feedPng;
   final _FeedTextDart feedText;
   final NativeFinalizer finalizer;
@@ -302,6 +309,18 @@ final class FfcOcrLineTracker implements Finalizable {
     _ensureOpen();
     _check('ffc_ocrline_forget_frame', _b.forgetFrame(_handle));
   }
+
+  /// 送 OCR 前的预处理选项（ocrline.rs `flags`）。小字放大总是开着；[binarize] = 按 Otsu
+  /// 阈值二值化成白底黑字（低对比 / 描边字）。选项变了时同一画面会按新选项再交出一次。
+  void configure({required bool binarize}) {
+    _ensureOpen();
+    _check(
+      'ffc_ocrline_configure',
+      _b.configure(_handle, binarize ? _kFlagBinarize : 0),
+    );
+  }
+
+  static const int _kFlagBinarize = 1;
 
   /// 立即释放原生 tracker（幂等）。
   void close() {
