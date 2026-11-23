@@ -1531,6 +1531,16 @@ mixin DictionaryPageMixin {
             query: query,
             autoRead: autoReadOnNavigate,
           ),
+          // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+          onRefineQuery: (String query, String source) => navigatePopupInPlace(
+            controller: controller,
+            index: index,
+            entry: entry,
+            query: query,
+            autoRead: autoReadOnNavigate,
+            refineSource: source,
+          ),
+          refineSource: entry.refineSource,
           // 制卡四个出口都先过 [miningFieldsForLayer]：宿主按层补上它知道的上下文
           // （主窗查词宿主补出自那一行原文的例句，反馈 1Mwaro8UTC）。
           onMineEntry: closePopupAfterAcceptedMine(
@@ -1893,12 +1903,17 @@ mixin DictionaryPageMixin {
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃。查询期间置
   /// [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  ///
+  /// [refineSource] 非 null = 从「查不到」的词块 / 修改框换词（拍板台 Um72dWD9Cz）：
+  /// 空结果**也**换，新页记下词块来源、沿用原页那一句。与
+  /// [BaseSourcePageState.navigatePopupInPlace] 同语义。
   Future<void> navigatePopupInPlace({
     required DictionaryPopupController controller,
     required int index,
     required DictionaryPopupEntry entry,
     required String query,
     bool autoRead = false,
+    String? refineSource,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || entry.isSearching) return;
@@ -1921,12 +1936,15 @@ mixin DictionaryPageMixin {
           entry.searchTerm != termAtStart) {
         return;
       }
-      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
-      mixinAppModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: trimmed,
-      );
-      mixinAppModel.addToDictionaryHistory(result: result);
+      final bool empty = result.entries.isEmpty && result.kanjiResults.isEmpty;
+      if (empty && refineSource == null) return;
+      if (!empty) {
+        mixinAppModel.addToSearchHistory(
+          historyKey: DictionaryMediaType.instance.uniqueKey,
+          searchTerm: trimmed,
+        );
+        mixinAppModel.addToDictionaryHistory(result: result);
+      }
       // navigateInPlace 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
       controller.navigateInPlace(
         entry,
@@ -1934,6 +1952,8 @@ mixin DictionaryPageMixin {
         result: result,
         allLoaded: !result.truncated,
         scrollTop: scrollTop,
+        refineSource: refineSource ?? '',
+        contextSentence: refineSource == null ? '' : entry.contextSentence,
       );
       if (autoRead &&
           ReaderFushiSource.instance.autoReadOnLookup &&
