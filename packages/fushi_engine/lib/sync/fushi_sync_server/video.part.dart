@@ -108,22 +108,21 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final int? transcodeAudioStreamIndex = transcodeProfile == null
           ? null
           : int.tryParse(request.url.queryParameters['audioStreamIndex'] ?? '');
-      // BUG-1568：签发前先按 TTL 清过期，再把数量收束到 [_maxVideoStreamTokens] 内
-      // （淘汰最旧者）。对照 audio token 的 BUG-908(a) 修法：消费侧（GET /stream）的
-      // prune 等不到「只签发不取流」的调用者，上限必须在签发侧强制。
-      _pruneVideoTokens();
-      _enforceVideoTokenCap();
-      final String tokenValue = _generateVideoToken();
-      _videoStreamTokens[tokenValue] = _VideoStreamToken(
-        videoId: streamUrlId,
+      // 视频流票与音乐共用统一流票表（[LibraryMediaStreams]，wire 不变）。签发时按 TTL
+      // 清过期、再收束到上限内（BUG-1568：消费侧的 prune 等不到「只签发不取流」的调用者，
+      // 上限必须在签发侧强制）。
+      final String tokenValue = _mediaStreams.issue(
+        kind: LibraryMediaStreamKind.video,
+        id: streamUrlId,
         issuer: issuer,
-        createdAt: _now(),
-        episodeIndex: episodeIndex,
-        transcodeProfile: transcodeProfile,
-        transcodeAudioStreamIndex: transcodeAudioStreamIndex,
-        transcodeDurationMs: transcodeProfile == null
-            ? null
-            : transcodeDurationMs,
+        options: _VideoStreamOptions(
+          episodeIndex: episodeIndex,
+          transcodeProfile: transcodeProfile,
+          transcodeAudioStreamIndex: transcodeAudioStreamIndex,
+          transcodeDurationMs: transcodeProfile == null
+              ? null
+              : transcodeDurationMs,
+        ),
       );
       final String encodedId = Uri.encodeFull(streamUrlId);
       // stream / subtitle URL 都带 episode=N，让 client 取流 / 下字幕命中同一集。
@@ -156,16 +155,16 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       // 端裁切（`/clipaudio`），不依赖这条。
       Uri? miningUri;
       if (discTitle != null && _videoTranscodeEnabled) {
-        _enforceVideoTokenCap();
-        final String miningToken = _generateVideoToken();
-        _videoStreamTokens[miningToken] = _VideoStreamToken(
-          videoId: streamUrlId,
+        final String miningToken = _mediaStreams.issue(
+          kind: LibraryMediaStreamKind.video,
+          id: streamUrlId,
           issuer: issuer,
-          createdAt: _now(),
-          episodeIndex: episodeIndex,
-          transcodeProfile: _kDiscMiningTranscodeProfile,
-          transcodeDurationMs: disc!.playlist.duration.inMilliseconds,
           ticket: tokenValue,
+          options: _VideoStreamOptions(
+            episodeIndex: episodeIndex,
+            transcodeProfile: _kDiscMiningTranscodeProfile,
+            transcodeDurationMs: disc!.playlist.duration.inMilliseconds,
+          ),
         );
         miningUri = request.requestedUri.replace(
           path: '/api/library/videos/$encodedId/hls.m3u8',
@@ -278,7 +277,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     final String? streamId = _extractVideoId(reqPath, 'stream');
     if (streamId != null) {
       if (method != 'GET') return shelf.Response(405);
-      _pruneVideoTokens();
+      _mediaStreams.prune();
       final String? tokenValue = request.url.queryParameters['token'];
       if (tokenValue == null || tokenValue.isEmpty) {
         return shelf.Response(
@@ -287,7 +286,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           headers: <String, String>{'Content-Type': 'text/plain'},
         );
       }
-      final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+      final _VideoStreamToken? tok = _videoGrant(tokenValue);
       if (tok == null || tok.videoId != streamId) {
         return shelf.Response(
           403,
@@ -1287,16 +1286,19 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     return await _coverFile(await service.videoCoverPath(id));
   }
 
-  String _generateVideoToken() {
-    final Random random = Random.secure();
-    final List<int> bytes = List<int>.generate(24, (_) => random.nextInt(256));
-    return base64UrlEncode(bytes);
+  /// [tokenValue] 是不是一张有效的**视频**票（音乐票拿到视频路径上一律不认）。
+  _VideoStreamToken? _videoGrant(String tokenValue) {
+    final LibraryMediaGrant? grant = _mediaStreams[tokenValue];
+    if (grant == null || grant.kind != LibraryMediaStreamKind.video) {
+      return null;
+    }
+    return _VideoStreamToken(grant);
   }
 
   /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4393）。正在发送的单个直传
   /// 响应不被切断，下一次 Range / 下一个 HLS 分段即 403。
   shelf.Response _revokedVideoToken(String tokenValue) {
-    _dropVideoToken(tokenValue);
+    _mediaStreams.drop(tokenValue);
     return shelf.Response(
       403,
       body: 'Token revoked',
@@ -1312,26 +1314,21 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   /// TTL / 数量上限淘汰 token 时**不**走这里（不 kill 在跑的分段），排队中的分段
   /// 在拿到名额后的存活判定处放弃。
   void _releaseVideoTicket(String videoId, String ticket) {
-    final List<String> keys = <String>[
-      for (final MapEntry<String, _VideoStreamToken> e
-          in _videoStreamTokens.entries)
-        if (e.value.videoId == videoId &&
-            (e.key == ticket || e.value.ticket == ticket))
-          e.key,
-    ];
-    for (final String key in keys) {
-      _dropVideoToken(key);
+    for (final String key in _mediaStreams.release(
+      kind: LibraryMediaStreamKind.video,
+      id: videoId,
+      ticket: ticket,
+    )) {
       cancelTranscodeWork(key);
       // 已被前台请求合流的预取也是这条流的工作，一并取消（等它的请求回 410）。
       _cancelTranscodePrefetches(key, (_TranscodePrefetch _) => true);
     }
   }
 
-  /// 作废一张流 token：摘出登记表，并把它名下缓存的转码分段一并清掉（video-34）——
-  /// 缓存的生命周期跟 token 走，作废后留着的段既取不到又占内存。所有删 token 的
-  /// 路径（释放流票 / 吊销 / TTL / 上限淘汰）都经这里。
-  void _dropVideoToken(String tokenValue) {
-    _videoStreamTokens.remove(tokenValue);
+  /// 流票表摘掉一张票时（释放 / 吊销 / TTL / 上限淘汰都经 [LibraryMediaStreams.drop]）：把它名下缓存
+  /// 的转码分段一并清掉（video-34）——缓存的生命周期跟 token 走，作废后留着的段既取不到又占内存。
+  /// 音乐票名下没有分段，这里对它们是空操作。
+  void _onMediaStreamDropped(String tokenValue) {
     _transcodeSegments.evictStream(tokenValue);
     // 没人等的预取直接取消：token 没了，转出来也取不到。已被前台请求合流的与在跑
     // 的前台分段同口径（TTL / 上限淘汰不 kill 在跑的分段），只有释放流票时才取消。
@@ -1422,7 +1419,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         durationMs: durationMs,
         audioStreamIndex: tok.transcodeAudioStreamIndex,
         workKey: record.workKey,
-        isAlive: () => _videoStreamTokens.containsKey(stream),
+        isAlive: () => _mediaStreams.contains(stream),
         slot: slot,
       ),
     );
@@ -1455,36 +1452,6 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           _transcodePrefetchRuns.remove(settled);
         });
     _transcodePrefetchRuns.add(settled);
-  }
-
-  void _pruneVideoTokens() {
-    // 视频播放时间长，token 有效期设为 6 小时
-    final DateTime cutoff = _now().subtract(const Duration(hours: 6));
-    final List<String> expired = <String>[
-      for (final MapEntry<String, _VideoStreamToken> e
-          in _videoStreamTokens.entries)
-        if (e.value.createdAt.isBefore(cutoff)) e.key,
-    ];
-    expired.forEach(_dropVideoToken);
-  }
-
-  /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
-  /// 时，按 createdAt 淘汰最旧者直到回到上限内（对照 [RemoteAudioTokenStore]）。
-  /// 签发前调用，使插入新 token 后总数 <= [_maxVideoStreamTokens]。
-  void _enforceVideoTokenCap() {
-    while (_videoStreamTokens.length >= _maxVideoStreamTokens) {
-      String? oldestKey;
-      DateTime? oldestAt;
-      for (final MapEntry<String, _VideoStreamToken> e
-          in _videoStreamTokens.entries) {
-        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
-          oldestAt = e.value.createdAt;
-          oldestKey = e.key;
-        }
-      }
-      if (oldestKey == null) break;
-      _dropVideoToken(oldestKey);
-    }
   }
 
   /// 本 host 此刻认不认转码请求：用户开关 ∧ 本机能 exec ffmpeg 子进程。
@@ -1533,7 +1500,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     String videoId,
     String suffix,
   ) async {
-    _pruneVideoTokens();
+    _mediaStreams.prune();
     final String? tokenValue = request.url.queryParameters['token'];
     if (tokenValue == null || tokenValue.isEmpty) {
       return shelf.Response(
@@ -1542,7 +1509,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         headers: <String, String>{'Content-Type': 'text/plain'},
       );
     }
-    final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+    final _VideoStreamToken? tok = _videoGrant(tokenValue);
     if (tok == null || tok.videoId != videoId) {
       return shelf.Response(
         403,
@@ -1612,7 +1579,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         durationMs: durationMs,
         audioStreamIndex: tok.transcodeAudioStreamIndex,
         workKey: tokenValue,
-        isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+        isAlive: () => _mediaStreams.contains(tokenValue),
       ),
     );
     _prefetchTranscodeSegment(
@@ -1646,7 +1613,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     shelf.Request request,
     String videoId,
   ) async {
-    _pruneVideoTokens();
+    _mediaStreams.prune();
     final String? tokenValue = request.url.queryParameters['token'];
     if (tokenValue == null || tokenValue.isEmpty) {
       return shelf.Response(
@@ -1655,7 +1622,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         headers: <String, String>{'Content-Type': 'text/plain'},
       );
     }
-    final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+    final _VideoStreamToken? tok = _videoGrant(tokenValue);
     if (tok == null || tok.videoId != videoId) {
       return shelf.Response(
         403,
@@ -1818,12 +1785,6 @@ class _TranscodePrefetch {
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到
 //    宿主类的 static，故提到库顶层）。
-
-/// BUG-1568（BUG-908(a) 的视频同形问题）：视频流 token 的数量上限。签发侧
-/// （GET /streamurl）先按 TTL prune、再淘汰最旧者收束到上限内。此前 prune 只挂在
-/// GET /stream 消费侧——只 GET /streamurl 却从不取流的调用者会让
-/// [_videoStreamTokens] 无界堆积（6 小时 TTL 内每次签发都是净增长）。
-const int _maxVideoStreamTokens = 128;
 
 /// 蓝光加密段转发：解密回环在这么久里一个字节都没给出就截断本次响应。
 const Duration _kBlurayClipStallTimeout = Duration(seconds: 60);

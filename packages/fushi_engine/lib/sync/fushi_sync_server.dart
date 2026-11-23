@@ -56,6 +56,8 @@ import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_plugin_relay.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/library_media_streams.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
@@ -71,8 +73,6 @@ import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
-import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart'
-    show kTorrentEngineCapability, kTorrentEngineRoutePrefix;
 import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
@@ -111,6 +111,7 @@ part 'fushi_sync_server/leaderboard_link.part.dart';
 part 'fushi_sync_server/source_share.part.dart';
 part 'fushi_sync_server/plugin_relay.part.dart';
 part 'fushi_sync_server/host_update.part.dart';
+part 'fushi_sync_server/media_streams.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
 ///
@@ -539,6 +540,7 @@ class FushiSyncServer {
     HostDownloadHost? downloads,
     HostTorrentEngine? torrentEngine,
     HostAssistantProvider? assistant,
+    List<InterconnectHostModule> modules = const <InterconnectHostModule>[],
     SecurityContext? securityContext,
     String? hostFingerprint,
     String? deviceName,
@@ -576,19 +578,29 @@ class FushiSyncServer {
        _miningService = miningService,
        _historyService = historyService,
        _libraryService = libraryService,
-       _mangaOcrJobs = mangaOcrJobs,
        _screenOcr = screenOcr,
-       _hostJobs = hostJobs,
-       _downloads = downloads,
-       _torrentEngine = torrentEngine,
-       _assistant = assistant == null ? null : HostAssistantSessions(assistant),
-       _subscriptions = subscriptions,
+       // 统一互联模块层（设计 2026-11-23 §3.5）：分发、能力位、流解析器都是对这张表的循环。
+       // 前六个是迁进来的既有功能（构造参数保留为装配糖，未接线时模块照样占住前缀、回 404），
+       // 顺序即 `/api/capabilities` 的键序，与迁移前逐字节相同。新功能只经 [modules] 注册。
+       _modules = InterconnectModuleTable(<InterconnectHostModule>[
+         MangaOcrInterconnectModule(mangaOcrJobs),
+         HostJobsInterconnectModule(hostJobs),
+         HostDownloadsInterconnectModule(downloads),
+         HostTorrentEngineInterconnectModule(torrentEngine),
+         HostSubscriptionsInterconnectModule(subscriptions),
+         HostAssistantInterconnectModule(assistant),
+         ...modules,
+       ]),
        _dictionaryMediaProvider = dictionaryMediaProvider,
        _dictionaryStylesProvider = dictionaryStylesProvider,
        _gameStreamService = gameStreamService,
        _videoRemoteService = videoRemoteService,
        _prefs = prefs,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now {
+    for (final InterconnectHostModule m in _modules.modules) {
+      m.streamResolvers.forEach(_mediaStreams.registerResolver);
+    }
+  }
 
   final String syncDataDir;
   final int _requestedPort;
@@ -611,30 +623,12 @@ class FushiSyncServer {
   final FushiRemoteHistoryService? _historyService;
   final FushiLibraryHostService? _libraryService;
 
-  /// 漫画 P3：互联 host 代跑 OCR 的任务管理器（`/api/ocr/*` + capabilities
-  /// `mangaOcr` 字段）。null = 未接线（headless/单测/host 未启用），端点 404、
-  /// capabilities 不带该字段——老 client / 老 host 双向兼容。
-  final MangaOcrHostJobManager? _mangaOcrJobs;
+  /// 互联模块表（漫画 OCR 任务、通用任务、代下载、BT 引擎、订阅、助手，以及经 `modules` 注册的新功能
+  /// 如音乐库）。
+  final InterconnectModuleTable _modules;
 
   /// 截屏识字（`/api/ocr/screen` + capabilities `screenOcrV1`）。null = host 不提供，端点 404。
   final ScreenOcrHost? _screenOcr;
-
-  /// 通用任务（ASR 等，设计 §3.4）。null = host 不提供，`/api/jobs` 404、能力位无 `jobs`。
-  final HostJobManager? _hostJobs;
-
-  /// 代下载（设计 §3.3）。null = host 不提供，`/api/downloads` 404、能力位无 `downloads`。
-  final HostDownloadHost? _downloads;
-
-  /// 把本机 BT 引擎借给已配对设备当下载后端。null = host 不提供，
-  /// `/api/torrent-engine` 404、能力位无 `torrentEngine`。
-  final HostTorrentEngine? _torrentEngine;
-
-  /// AI 助手会话（手机把一句话交给电脑的 AI 去办）。null = host 不提供，
-  /// `/api/assistant` 404、能力位无 `assistant`。
-  final HostAssistantSessions? _assistant;
-
-  /// 内容订阅（host 自建自跑）。null = 不提供，`/api/subscriptions` 404、能力位无 `subscriptions`。
-  final HostSubscriptionHost? _subscriptions;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
   /// Injected rather than depending on the FushiDicts singleton directly, so
@@ -702,8 +696,11 @@ class FushiSyncServer {
     issuerValid: _issuerStillValid,
   );
 
-  final Map<String, _VideoStreamToken> _videoStreamTokens =
-      <String, _VideoStreamToken>{};
+  /// 统一流票（视频、音乐曲目、MV 共用，设计 2026-11-23 §3.5）。
+  late final LibraryMediaStreams _mediaStreams = LibraryMediaStreams(
+    now: _now,
+    onDrop: _onMediaStreamDropped,
+  );
 
   /// 转码 HLS 分段的小 LRU（video-34），键含签发分段的流 token + 段号；token 作废
   /// （释放流票 / TTL / 上限淘汰 / 吊销）时连同它的段一起清掉。
@@ -1247,10 +1244,8 @@ class FushiSyncServer {
     }
     _transcodeSegments.clear();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
-    await _mangaOcrJobs?.disposeAll();
+    await _modules.disposeAll();
     await _screenOcr?.dispose();
-    await _hostJobs?.disposeAll();
-    await _assistant?.dispose();
     await _stopVideoFingerprintWarmup();
   }
 
@@ -1474,79 +1469,14 @@ class FushiSyncServer {
       if (screenOcr == null) return shelf.Response.notFound('Screen OCR off');
       return screenOcr.handle(request);
     }
-    if (reqPath == '/api/ocr/job' || reqPath.startsWith('/api/ocr/job/')) {
-      final MangaOcrHostJobManager? mangaOcr = _mangaOcrJobs;
-      if (mangaOcr == null) return shelf.Response.notFound('Manga OCR off');
-      return handleMangaOcrRequest(mangaOcr, request, method, reqPath);
+    // 互联模块（设计 2026-11-23 §3.5）：一个功能一个模块，按模块表分发，服务器本体不再为它们写分支。
+    final InterconnectHostModule? module = _modules.match(reqPath);
+    if (module != null) {
+      return module.handle(_interconnectRequest(request, reqPath));
     }
-    // 通用任务协议（设计 §3.4）：/api/ocr/job 原样冻结，新任务类型一律走这里。
-    if (reqPath == '/api/jobs' || reqPath.startsWith('/api/jobs/')) {
-      final HostJobManager? jobs = _hostJobs;
-      if (jobs == null) return shelf.Response.notFound('Host jobs off');
-      return handleHostJobRequest(jobs, request, method, reqPath);
-    }
-    if (reqPath == '/api/downloads' || reqPath.startsWith('/api/downloads/')) {
-      final HostDownloadHost? downloads = _downloads;
-      if (downloads == null) {
-        return shelf.Response.notFound('Host downloads off');
-      }
-      return handleHostDownloadRequest(downloads, request, method, reqPath);
-    }
-    if (reqPath == kTorrentEngineRoutePrefix ||
-        reqPath.startsWith('$kTorrentEngineRoutePrefix/')) {
-      final HostTorrentEngine? engine = _torrentEngine;
-      if (engine == null) {
-        return shelf.Response.notFound('Host torrent engine off');
-      }
-      // 操纵 host 的下载引擎与磁盘：只认已配对设备自己的凭据，共享 token / legacy
-      // 行都不行（与 AI 中继、视频遥控同一道门）。
-      final String? authorization = request.headers['authorization'];
-      if (!await _validatePeerAuth(authorization)) {
-        return shelf.Response(
-          403,
-          body: '{"error":"paired_peer_required"}',
-          headers: <String, String>{'content-type': 'application/json'},
-        );
-      }
-      return handleHostTorrentEngineRequest(
-        engine,
-        request,
-        method,
-        reqPath,
-        owner: _credentialFingerprint(_basicPassword(authorization!)!),
-      );
-    }
-    if (reqPath == '/api/assistant' || reqPath.startsWith('/api/assistant/')) {
-      final HostAssistantSessions? assistant = _assistant;
-      if (assistant == null) {
-        return shelf.Response.notFound('Host assistant off');
-      }
-      // 会话归属（BUG-4067）：认得出的 per-peer 口令才算「哪台设备」；共享口令 /
-      // 老 client 是匿名调用方——能开会话，但看不到任何会话历史。
-      final String? authorization = request.headers['authorization'];
-      final HostAssistantCaller caller = await _validatePeerAuth(authorization)
-          ? HostAssistantCaller(peerToken: _basicPassword(authorization!))
-          : HostAssistantCaller.anonymous;
-      return handleHostAssistantRequest(
-        assistant,
-        request,
-        method,
-        reqPath,
-        caller: caller,
-      );
-    }
-    if (reqPath == '/api/subscriptions' ||
-        reqPath.startsWith('/api/subscriptions/')) {
-      final HostSubscriptionHost? subscriptions = _subscriptions;
-      if (subscriptions == null) {
-        return shelf.Response.notFound('Host subscriptions off');
-      }
-      return handleHostSubscriptionRequest(
-        subscriptions,
-        request,
-        method,
-        reqPath,
-      );
+    // 统一流票的签发 / 释放（取流那条免 Basic，同在 media_streams.part.dart）。
+    if (isLibraryMediaStreamRoute(reqPath)) {
+      return _handleLibraryMediaStreams(request, method, reqPath);
     }
     if (reqPath == '/api/library/dictionaries' ||
         reqPath.startsWith('/api/library/dictionaries/')) {
@@ -1803,7 +1733,12 @@ class FushiSyncServer {
 
   /// BUG-1568 测试钩子：当前驻留的视频流 token 数（验证签发侧 cap 逐出行为）。
   @visibleForTesting
-  int get videoStreamTokenCount => _videoStreamTokens.length;
+  int get videoStreamTokenCount =>
+      _mediaStreams.countOf(LibraryMediaStreamKind.video);
+
+  /// 统一流票表里的票数（全部种类）。
+  @visibleForTesting
+  int get mediaStreamCount => _mediaStreams.length;
 
   /// video-34 测试钩子：当前缓存的转码分段数（验证 token 作废时段随之清掉）。
   @visibleForTesting
@@ -2286,34 +2221,36 @@ class _DavEntry {
   final DateTime? modified;
 }
 
-/// 视频流短时 token（P4-2）。
-///
-/// token 绑定到特定 [videoId]，到期时间由 [_pruneVideoTokens] 管控（6 小时）。
-/// 有效期长于音频 token（5 分钟）是因为视频播放时长远超音频片段。
+/// 视频流票的视图（P4-2）：票本身在统一流票表 [LibraryMediaStreams] 里（6 小时 TTL、128 上限、按签发
+/// 凭据吊销），视频专属的签发参数在 [_VideoStreamOptions]。
 class _VideoStreamToken {
-  const _VideoStreamToken({
-    required this.videoId,
-    required this.issuer,
-    required this.createdAt,
+  const _VideoStreamToken(this._grant);
+
+  final LibraryMediaGrant _grant;
+
+  _VideoStreamOptions get _options =>
+      _grant.options as _VideoStreamOptions? ?? const _VideoStreamOptions();
+
+  /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
+  String get videoId => _grant.id;
+
+  /// 签发请求所用凭据的指纹（BUG-4393）。
+  String get issuer => _grant.issuer;
+
+  int get episodeIndex => _options.episodeIndex;
+  VideoTranscodeProfile? get transcodeProfile => _options.transcodeProfile;
+  int? get transcodeAudioStreamIndex => _options.transcodeAudioStreamIndex;
+  int? get transcodeDurationMs => _options.transcodeDurationMs;
+}
+
+/// 视频票的签发参数。
+class _VideoStreamOptions {
+  const _VideoStreamOptions({
     this.episodeIndex = 0,
     this.transcodeProfile,
     this.transcodeAudioStreamIndex,
     this.transcodeDurationMs,
-    this.ticket,
   });
-
-  /// 随哪张流票一起释放（BUG-4461）。null = 这张 token 本身就是流票（`/streamurl`
-  /// 回给 client 的 `ticket` 即它的值）；光盘制卡 token 填主 token 的值，client 释放
-  /// 播放票时一并作废。
-  final String? ticket;
-
-  /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
-  final String videoId;
-
-  /// 签发请求所用凭据的指纹（`_credentialFingerprint`）。每次取流都对照当前凭据
-  /// 快照，签发凭据被吊销即作废（BUG-4393）。
-  final String issuer;
-  final DateTime createdAt;
 
   /// 远端播放列表集下标（TODO-885）；单视频 / 当前集恒 0。
   final int episodeIndex;
@@ -2326,14 +2263,9 @@ class _VideoStreamToken {
   /// （`/streamurl`，要 Basic）定档，取流侧只认 token 里的那一份。
   final VideoTranscodeProfile? transcodeProfile;
 
-  /// 转码流选哪条音轨（多音轨番剧的日配/中配）。null = 源的第一条音轨。转码后的流
-  /// 只能带一条音轨，播放器侧的音轨切换在这条流上是空的——所以选哪条必须在签发时定。
+  /// 转码流选哪条音轨（多音轨番剧的日配/中配）。null = 源的第一条音轨。
   final int? transcodeAudioStreamIndex;
 
-  /// 转码流的源时长（毫秒），签发时 ffprobe 一次。
-  ///
-  /// HLS playlist 要按它切段，每个分段请求也要按它算自己的时间范围。存在 token 上
-  /// 而不是每次请求重探：一次播放会打几十上百个分段请求，每个都 ffprobe 一遍纯属
-  /// 白烧 CPU，而同一个 token 指向的文件在其生命周期内不会变。
+  /// 转码流的源时长（毫秒），签发时 ffprobe 一次（HLS playlist 与每个分段都按它算）。
   final int? transcodeDurationMs;
 }
