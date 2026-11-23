@@ -154,7 +154,7 @@ ext.fushiVerifyExtensionAbiOutputs = { Iterable<File> roots ->
             dexes[f.absolutePath] = f.bytes
         }
     }
-    fushiVerifyExtensionAbiDex("R8 output ${roots}", dexes)
+    fushiVerifyExtensionAbiDex("R8 output", dexes)
 }
 
 // 手动验任意 APK（例如线上发布包）：
