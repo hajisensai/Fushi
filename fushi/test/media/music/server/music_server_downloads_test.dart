@@ -12,6 +12,7 @@ import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 import 'package:path/path.dart' as p;
 
 /// 服务器曲目离线副本（v172）：落点、凭据脱敏、下载 → 入库 + 副本行 → 播放项换成本地文件、
@@ -196,6 +197,75 @@ void main() {
       );
     });
 
+    test('下完顺带存服务器歌词与响度：离线副本的播放项带服务器身份与增益', () async {
+      final _RichServer rich = _RichServer();
+      final List<String> saved = <String>[];
+      final MusicServerDownloadService withLyrics = MusicServerDownloadService(
+        downloads: downloads,
+        db: db,
+        root: () async => root,
+        index: index,
+        transfer:
+            ({
+              required String url,
+              required Map<String, String> headers,
+              required File dest,
+              void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal,
+            }) async {
+              await dest.parent.create(recursive: true);
+              await dest.writeAsBytes(flacBytes());
+            },
+        fetchBytes: (Uri uri) async => jpegBytes(),
+        saveLyrics:
+            ({
+              required String trackUid,
+              required int? durationMs,
+              required MusicServerLyrics? lyrics,
+            }) async => saved.add('$trackUid ${lyrics?.lines.first.text}'),
+        clock: () => 1000,
+      );
+      final String uid = musicServerTrackUid(rich.serverId, track.id);
+      await withLyrics.download(rich, track, album: album);
+      await settle(() => index.isDownloaded(uid));
+
+      expect(saved, <String>['$uid 歌詞']);
+      final MusicServerDownloadRow row = index.rowOf(uid)!;
+      final File sidecar = File(musicServerDownloadLoudnessPath(row.filePath));
+      expect(sidecar.existsSync(), isTrue);
+      expect(sidecar.readAsStringSync(), isNot(contains('api_key')));
+      expect(
+        await readMusicServerDownloadLoudness(row.filePath),
+        const MusicServerLoudness(
+          trackGainDb: -3,
+          trackPeak: 0.9,
+          albumGainDb: -4,
+          albumPeak: 0.95,
+        ),
+      );
+
+      final MusicServerLocalCopy copy = index.lookup(uid)!;
+      expect(copy.serverId, rich.serverId);
+      expect(copy.trackId, track.id);
+      final MusicPlayItem item = musicServerPlayItem(rich, track);
+      expect(item.path, row.filePath);
+      expect(item.serverTrack?.trackId, track.id);
+      expect(item.serverTrack?.serverId, rich.serverId);
+      expect(item.rgTrackGain, -3);
+      expect(item.rgAlbumGain, -4);
+
+      // 曲库那行：服务器没配时没有身份，但增益照样来自下载时存下的那份。
+      final MusicRemoteTrackRow lib = (await db.getMusicRemoteTrack(uid))!;
+      final MusicPlayItem? offline = musicPlayItemOfRemote(lib);
+      expect(offline?.serverTrack, isNull);
+      expect(offline?.rgAlbumGain, -4);
+
+      // 删副本：旁边的响度文件一起删。
+      expect(await withLyrics.removeDownloads(<String>[uid]), 1);
+      expect(sidecar.existsSync(), isFalse);
+    });
+
     test('删除副本：行与文件都没了，之后串流；曲目仍在曲库', () async {
       final String uid = musicServerTrackUid(server.serverId, track.id);
       await service.download(server, track, album: album);
@@ -356,4 +426,31 @@ class _FakeServer implements MusicServerBrowser, MusicServerDownloading {
 
   @override
   void close() {}
+}
+
+/// 还存歌词、能补查响度的服务器（Jellyfin 家族）。
+class _RichServer extends _FakeServer
+    implements MusicServerLyricsProvider, MusicServerLoudnessLookup {
+  @override
+  String get serverId => 'jf-rich';
+
+  @override
+  MusicServerStreamRef? streamRefOf(Uri uri) => null;
+
+  @override
+  Future<MusicServerLyrics?> lyricsFor(String trackId) async =>
+      const MusicServerLyrics(
+        lines: <MusicServerLyricLine>[
+          MusicServerLyricLine(text: '歌詞', startMs: 0),
+        ],
+      );
+
+  @override
+  Future<MusicServerLoudness?> loudnessOf(MusicServerTrackRef track) async =>
+      const MusicServerLoudness(
+        trackGainDb: -3,
+        trackPeak: 0.9,
+        albumGainDb: -4,
+        albumPeak: 0.95,
+      );
 }

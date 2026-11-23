@@ -584,7 +584,11 @@ class MusicLyricsService {
     // 「文件自带」那一档，排在在线搜索前。缓存（含负缓存）→ 问服务器；服务器报错不写负缓存，
     // 继续往在线来源回落。
     final MusicServerLyricsFetcher? fetchServer = _serverLyrics;
-    if (fetchServer != null && !track.isLocalFile && !track.isCueTrack) {
+    // 离线副本（本机文件、uid 仍在服务器曲目命名空间 `srv`）也走这一档：下载时存下的那行
+    // 直接用，服务器不在也有歌词。
+    if (fetchServer != null &&
+        !track.isCueTrack &&
+        (!track.isLocalFile || track.trackUid.startsWith('srv'))) {
       final MusicLyricsResolution? hit = await _resolveServerLyrics(
         db,
         track,
@@ -739,11 +743,32 @@ class MusicLyricsService {
       return null;
     }
     if (got == null) return null;
-    final MusicServerLyrics? lyrics = got.lyrics;
+    final LyricTimeline? t = await _writeServerLyrics(
+      db,
+      trackUid: track.trackUid,
+      durationMs: track.durationMs,
+      lyrics: got.lyrics,
+    );
+    if (t == null) return null;
+    return MusicLyricsResolution(
+      timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
+      source: source,
+    );
+  }
+
+  /// 服务器给的歌词落库（[MusicLyricsSource.server] 行；[lyrics] 为 null 记负缓存）。回生效的
+  /// 时间轴，没有歌词回 null。
+  Future<LyricTimeline?> _writeServerLyrics(
+    FushiDatabase db, {
+    required String trackUid,
+    required int? durationMs,
+    required MusicServerLyrics? lyrics,
+  }) async {
+    const String source = MusicLyricsSource.server;
     if (lyrics == null) {
       await _upsert(
         db,
-        trackUid: track.trackUid,
+        trackUid: trackUid,
         source: source,
         format: kMusicLyricsNoneFormat,
         raw: Uint8List(0),
@@ -755,19 +780,42 @@ class MusicLyricsService {
     final LyricTimeline t = (await _parse(
       bytes,
       raw.format,
-      track.durationMs,
+      durationMs,
     )).copyWith(source: source);
     await _upsert(
       db,
-      trackUid: track.trackUid,
+      trackUid: trackUid,
       source: source,
       format: raw.format,
       raw: bytes,
       timeline: t,
     );
-    return MusicLyricsResolution(
-      timeline: t.copyWith(offsetMs: prev?.offsetMs ?? 0),
-      source: source,
+    return t;
+  }
+
+  /// 下载离线副本时把服务器歌词存进歌词缓存（`music_lyrics` 的 [MusicLyricsSource.server]
+  /// 行，与串流时解析出的是同一行）：离线放下载的那份时照样有歌词。已有服务器歌词时服务器
+  /// 说「没有」不覆盖（保留能用的那份）；用户调过的偏移不动。
+  Future<void> storeServerLyrics({
+    required String trackUid,
+    required int? durationMs,
+    required MusicServerLyrics? lyrics,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    if (lyrics == null) {
+      for (final MusicLyricRow r in await _rows(db, trackUid)) {
+        if (r.source == MusicLyricsSource.server &&
+            r.format != kMusicLyricsNoneFormat) {
+          return;
+        }
+      }
+    }
+    await _writeServerLyrics(
+      db,
+      trackUid: trackUid,
+      durationMs: durationMs,
+      lyrics: lyrics,
     );
   }
 

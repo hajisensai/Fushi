@@ -11,6 +11,9 @@
 /// - 落点：`<下载根>/music/media-servers/<服务器名> [<服务器哈希>]/<专辑名> [<专辑哈希>]/
 ///   <碟-曲序> <标题> [<曲目哈希>].<扩展名>`（[musicServerDownloadTarget]），同目录 `cover.<ext>`
 ///   是专辑封面（离线时显示）。扩展名按文件头嗅探，认不出才用服务器报的容器。
+/// - 离线用的附带数据：下完时顺带取服务器的歌词（[MusicServerLyricsProvider]，存进歌词缓存
+///   `music_lyrics`，经 [musicServerDownloadLyricsSaver]）与响度（列表给的 +
+///   [MusicServerLoudnessLookup] 补查，存到音频旁 `.loudness.json`）。取不到不让下载失败。
 /// - 状态：下完在同一个事务里把这首写进音乐库并落 `music_server_downloads` 行（设备本地，
 ///   只有本机路径 + 服务器身份 + 条目 id，不存地址）；播放时由进程内索引
 ///   （`music_server_download_index.dart`）换成本地文件。uid 不变，歌词缓存 / 断点 / 统计照旧。
@@ -25,11 +28,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
@@ -186,8 +191,10 @@ class MusicServerDownloadService {
     MusicServerDownloadIndex? index,
     MusicServerDownloadTransfer? transfer,
     MusicServerDownloadBytesFetcher? fetchBytes,
+    MusicServerDownloadLyricsSaver? saveLyrics,
     int Function()? clock,
   }) : index = index ?? MusicServerDownloadIndex.instance,
+       _saveLyrics = saveLyrics,
        _transfer = transfer ?? AnimeEpisodeDownloader().download,
        _fetchBytes = fetchBytes ?? _httpBytes,
        _clock = clock ?? _now;
@@ -208,7 +215,12 @@ class MusicServerDownloadService {
   final MusicServerDownloadIndex index;
   final MusicServerDownloadTransfer _transfer;
   final MusicServerDownloadBytesFetcher _fetchBytes;
+  final MusicServerDownloadLyricsSaver? _saveLyrics;
   final int Function() _clock;
+
+  /// 下完存歌词用哪个（构造时给的优先，否则进程级装配点）。
+  MusicServerDownloadLyricsSaver? get _lyricsSaver =>
+      _saveLyrics ?? musicServerDownloadLyricsSaver;
 
   static int _now() => DateTime.now().millisecondsSinceEpoch;
 
@@ -426,7 +438,73 @@ class _ServerTrackDownload {
     _audio = audio;
     _codec = p.extension(audio.path).replaceFirst('.', '').toLowerCase();
     _cover = await _writeCover();
+    await _saveLoudness(audio);
+    await _saveLyrics();
     onProgress?.call(1);
+  }
+
+  String get _uid => row.trackUid.value;
+
+  /// 服务器响度存到音频旁（离线时用）：列表给的为主，缺专辑增益时向服务器补查一次（与起播期
+  /// 补查同一规则）。取不到不让下载失败。
+  Future<void> _saveLoudness(File audio) async {
+    MusicServerLoudness? l = track.loudness;
+    final MusicServerBrowser s = server;
+    if (l?.albumGainDb == null && s is MusicServerLoudnessLookup) {
+      try {
+        final MusicServerLoudness? extra =
+            await (s as MusicServerLoudnessLookup).loudnessOf(
+              MusicServerTrackRef(
+                kind: s.kind,
+                serverId: s.serverId,
+                trackId: track.id,
+                albumId: track.albumId,
+              ),
+            );
+        if (extra != null) {
+          l = MusicServerLoudness(
+            trackGainDb: l?.trackGainDb ?? extra.trackGainDb,
+            trackPeak: l?.trackGainDb != null ? l?.trackPeak : extra.trackPeak,
+            albumGainDb: extra.albumGainDb,
+            albumPeak: extra.albumPeak,
+          );
+        }
+      } on Object catch (e) {
+        debugPrint(
+          '[music-download] loudness lookup failed: '
+          '${redactCredentialsInText('$e')}',
+        );
+      }
+    }
+    if (l == null || l.isEmpty) return;
+    try {
+      await writeMusicServerDownloadLoudness(audio.path, l);
+    } on FileSystemException catch (e, st) {
+      ErrorLogService.instance.log('MusicServerDownload.loudness', e, st);
+    }
+  }
+
+  /// 服务器歌词存进歌词缓存（离线时用）。服务器不存歌词 / 没装配存储时跳过；取不到不让下载
+  /// 失败。
+  Future<void> _saveLyrics() async {
+    final MusicServerDownloadLyricsSaver? save = service._lyricsSaver;
+    final MusicServerBrowser s = server;
+    if (save == null || s is! MusicServerLyricsProvider) return;
+    final MusicServerLyrics? lyrics;
+    try {
+      lyrics = await (s as MusicServerLyricsProvider).lyricsFor(track.id);
+    } on Object catch (e) {
+      debugPrint(
+        '[music-download] lyrics fetch failed: '
+        '${redactCredentialsInText('$e')}',
+      );
+      return;
+    }
+    try {
+      await save(trackUid: _uid, durationMs: track.durationMs, lyrics: lyrics);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('MusicServerDownload.lyrics', e, st);
+    }
   }
 
   Future<String?> _formatOf(File file, MusicServerDownloadSource source) async {

@@ -379,6 +379,15 @@ class SubsonicMusicClient
     }: id,
   });
 
+  @override
+  Future<bool?> trackFavorite(String trackId) async {
+    final Map<String, Object?> r = await _call('getSong', <String, String>{
+      'id': trackId,
+    });
+    final Map<String, Object?>? song = _obj(r['song']);
+    return song == null ? null : _starred(song);
+  }
+
   /// `getStarred2` 不分页：一次全取，各组截到 [limit]。
   @override
   Future<MusicServerItems> listFavorites({

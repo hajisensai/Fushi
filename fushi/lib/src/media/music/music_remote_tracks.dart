@@ -328,6 +328,7 @@ MusicPlayItem? musicPlayItemOfRemote(
           fallbackCoverPath: bound
               ? server.browser.coverUri(row.coverRef)?.toString()
               : null,
+          kind: bound ? server.browser.kind : null,
         );
       }
       if (!bound) return null;

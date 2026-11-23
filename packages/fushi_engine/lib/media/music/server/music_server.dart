@@ -371,6 +371,10 @@ abstract interface class MusicServerFavoriteEditing {
 
   /// 当前账号收藏的专辑 / 艺人 / 曲目（各自至多 [limit] 条）。
   Future<MusicServerItems> listFavorites({int limit = kMusicServerPageSize});
+
+  /// 一首曲目此刻是否已收藏（「正在播放」页的心形：播放项不带列表里读到的收藏状态）。
+  /// 服务器上没有这首回 null；网络 / 服务器错误抛。
+  Future<bool?> trackFavorite(String trackId);
 }
 
 /// 能按流派 / 最近添加 / 播放统计浏览的服务器（Jellyfin `MusicGenres` 与 `Items` 排序；
@@ -605,4 +609,47 @@ String musicServerAlbumUid(String serverId, String albumId) {
     b.write(d[i].toRadixString(16).padLeft(2, '0'));
   }
   return b.toString();
+}
+
+/// 播放项里的服务器曲目身份（不含任何凭据）：播放流 / 封面地址带账号凭据、`trackUid` 是哈希，
+/// 两样都推不回是哪台服务器的哪一首。播放上报、服务器歌词、起播期补查响度、生成字幕时取流都
+/// 按它找回当前配置的那台服务器（[MusicServerBrowser.serverId]）与服务器侧条目；离线副本的
+/// 播放项也带着它（路径是本机文件时照样认得出是哪首）。
+class MusicServerTrackRef {
+  const MusicServerTrackRef({
+    required this.kind,
+    required this.serverId,
+    required this.trackId,
+    this.albumId,
+    this.coverRef,
+  });
+
+  final MusicServerKind kind;
+
+  /// [MusicServerBrowser.serverId]。
+  final String serverId;
+
+  /// 服务器侧曲目 id。
+  final String trackId;
+
+  /// 服务器侧专辑 id（Jellyfin 的专辑响度挂在专辑条目上，补查时一并取）。
+  final String? albumId;
+
+  /// 服务器侧封面引用（[MusicServerBrowser.coverUri] 的入参）。
+  final String? coverRef;
+
+  /// 播放身份（[musicServerTrackUid]），与播放项的 `trackUid` 相同。
+  String get trackUid => musicServerTrackUid(serverId, trackId);
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicServerTrackRef &&
+      other.kind == kind &&
+      other.serverId == serverId &&
+      other.trackId == trackId &&
+      other.albumId == albumId &&
+      other.coverRef == coverRef;
+
+  @override
+  int get hashCode => Object.hash(kind, serverId, trackId, albumId, coverRef);
 }

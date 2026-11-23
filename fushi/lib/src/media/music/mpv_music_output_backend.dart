@@ -44,7 +44,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
-    show MusicServerLoudness, MusicServerTrackRef;
+    show MusicServerLoudness;
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;

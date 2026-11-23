@@ -117,6 +117,42 @@ void main() {
     expect(asked, isEmpty);
   });
 
+  test('下载时存下的服务器歌词：离线副本（本机文件、srv uid）离线照样用，不再问服务器', () async {
+    await service().storeServerLyrics(
+      trackUid: 'srv0002',
+      durationMs: 30000,
+      lyrics: _lyrics,
+    );
+    answer = () async => throw Exception('offline');
+    final MusicLyricsResolution r = (await service().resolve(
+      const MusicLyricsTrackRef(
+        trackUid: 'srv0002',
+        path: '/nonexistent/download/Track 1.flac',
+        title: '初恋テスト Track 1',
+        durationMs: 30000,
+      ),
+    ))!;
+    expect(r.source, MusicLyricsSource.server);
+    expect(r.timeline.lines.length, 2);
+    expect(asked, isEmpty);
+    expect(lrclibCalls, isEmpty);
+  });
+
+  test('下载时服务器说没有：不覆盖已有的服务器歌词', () async {
+    await service().storeServerLyrics(
+      trackUid: 'srv0003',
+      durationMs: 30000,
+      lyrics: _lyrics,
+    );
+    await service().storeServerLyrics(
+      trackUid: 'srv0003',
+      durationMs: 30000,
+      lyrics: null,
+    );
+    final List<MusicLyricRow> rows = await db.select(db.musicLyrics).get();
+    expect(rows.single.format, isNot(kMusicLyricsNoneFormat));
+  });
+
   test('服务器歌词档位在生成字幕之后、LRCLIB 之前', () {
     expect(
       MusicLyricsSource.automaticRank(MusicLyricsSource.server),

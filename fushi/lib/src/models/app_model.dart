@@ -500,7 +500,11 @@ import 'package:fushi/src/media/music/server/music_servers.dart'
 import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/media/music/server/music_server_track_ref.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerBrowser, MusicServerLyricsProvider;
+    show MusicServerBrowser, MusicServerLyrics, MusicServerLyricsProvider;
+import 'package:fushi/src/media/music/server/music_server_favorites.dart'
+    show MusicServerTrackFavorites;
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinTransportException;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -2615,13 +2619,30 @@ class AppModel
     final MusicServerPlaybackReporter
     serverReporting = MusicServerPlaybackReporter(
       engine: engine,
-      lookup: (MusicPlayItem item) =>
-          musicServerTracks.resolve(trackUid: item.trackUid, path: item.path),
+      lookup: musicServerTracks.resolveItem,
       onTargetFailure: musicServerTracks.invalidate,
       onError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('MusicServerPlaybackReporter', e, st),
+      isUnreachable: (Object e) =>
+          e is JellyfinTransportException || musicServerReportUnreachable(e),
     );
     session.serverReporting = serverReporting;
+    // 「正在播放」里服务器曲目的收藏；最近播放重建的服务器曲目项补身份。
+    session.serverFavorites = MusicServerTrackFavorites(
+      resolve: musicServerTracks.resolveItem,
+    );
+    session.serverIdentity = musicServerTracks.withIdentity;
+    // 下载离线副本时顺带把服务器歌词存进歌词缓存（离线照样有歌词）。
+    musicServerDownloadLyricsSaver ??=
+        ({
+          required String trackUid,
+          required int? durationMs,
+          required MusicServerLyrics? lyrics,
+        }) => musicLyrics.storeServerLyrics(
+          trackUid: trackUid,
+          durationMs: durationMs,
+          lyrics: lyrics,
+        );
     ExitFlushRegistry.instance.register(serverReporting.flush);
     _musicStudy = MusicStudyTracker(
       engine: engine,
@@ -2714,7 +2735,7 @@ class AppModel
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
     serverLyrics: (String trackUid, String path) async {
-      final MusicServerTrackRef? ref = await musicServerTracks.resolve(
+      final MusicServerResolvedTrack? ref = await musicServerTracks.resolve(
         trackUid: trackUid,
         path: path,
       );

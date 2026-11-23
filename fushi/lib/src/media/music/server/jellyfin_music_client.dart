@@ -24,7 +24,6 @@ class JellyfinMusicClient
         MusicServerInstantMix,
         MusicServerPlaybackReporting,
         MusicServerLyricsProvider,
-
         MusicServerLoudnessLookup {
   JellyfinMusicClient(this.config, {http.Client? httpClient})
     : _api = JellyfinApi(
@@ -116,12 +115,14 @@ class JellyfinMusicClient
   @override
   Future<MusicServerLoudness?> loudnessOf(MusicServerTrackRef track) async {
     final String? albumId = track.albumId;
-    final Object? json = await _api
-        .getDecodedJson('$_userPath/Items', <String, String>{
-          'Ids': <String>[track.trackId, ?albumId].join(','),
-          'EnableImages': 'false',
-          'EnableUserData': 'false',
-        });
+    final Object? json = await _api.getDecodedJson(
+      '$_userPath/Items',
+      <String, String>{
+        'Ids': <String>[track.trackId, ?albumId].join(','),
+        'EnableImages': 'false',
+        'EnableUserData': 'false',
+      },
+    );
     return jellyfinLoudnessOfItems(
       jellyfinItemsOf(json),
       trackId: track.trackId,
@@ -461,6 +462,19 @@ class JellyfinMusicClient
     favorite ? 'POST' : 'DELETE',
     '$_userPath/FavoriteItems/${Uri.encodeComponent(id)}',
   );
+
+  @override
+  Future<bool?> trackFavorite(String trackId) async {
+    final List<Map<String, Object?>> items = jellyfinItemsOf(
+      await _api.getDecodedJson('$_userPath/Items', <String, String>{
+        'Ids': trackId,
+        'EnableImages': 'false',
+        'EnableUserData': 'true',
+      }),
+    );
+    if (items.isEmpty) return null;
+    return jellyfinIsFavorite(items.first) ?? false;
+  }
 
   @override
   Future<MusicServerItems> listFavorites({

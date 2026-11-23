@@ -9,25 +9,100 @@
 ///
 /// 只认**文件确实在**的行：下载根所在的盘没挂上、文件被手动删了时，这一首退回串流（行不删：
 /// 盘挂回来就又是离线副本）。每个路径只在第一次见到时查一次存在性。
+///
+/// 下载时一并存下的服务器响度在音频旁的 `<文件名>.loudness.json`
+/// （[musicServerDownloadLoudnessPath]，设备本地、只有四个数，没有地址 / 凭据）：服务器离线时
+/// 离线副本照样按服务器测的增益放。与存在性一样每个路径只读一次。
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerLyrics;
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+    show MusicServerLoudness;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show MusicServerLocalCopy, musicServerLocalCopyLookup;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// 把服务器歌词存进歌词缓存（[lyrics] 为 null = 服务器上这首没有歌词）。
+typedef MusicServerDownloadLyricsSaver =
+    Future<void> Function({
+      required String trackUid,
+      required int? durationMs,
+      required MusicServerLyrics? lyrics,
+    });
+
+/// 进程级装配点：`AppModel` 建音乐会话时装上（`MusicLyricsService.storeServerLyrics`）；
+/// 未装配（测试 / 无头入口）时下载不顺带存歌词。
+MusicServerDownloadLyricsSaver? musicServerDownloadLyricsSaver;
+
 /// 判断一个本机路径是不是文件（测试注入）。
 typedef MusicServerDownloadFileExists = Future<bool> Function(String path);
 
+/// 读离线副本旁存下的服务器响度（测试注入）。
+typedef MusicServerDownloadLoudnessReader =
+    Future<MusicServerLoudness?> Function(String audioPath);
+
+/// 离线副本旁存服务器响度的文件（音频路径 + `.loudness.json`）。
+String musicServerDownloadLoudnessPath(String audioPath) =>
+    '$audioPath.loudness.json';
+
+/// 把服务器响度存到离线副本旁（[musicServerDownloadLoudnessPath]）；空的不写。
+Future<void> writeMusicServerDownloadLoudness(
+  String audioPath,
+  MusicServerLoudness loudness,
+) async {
+  if (loudness.isEmpty) return;
+  await File(musicServerDownloadLoudnessPath(audioPath)).writeAsString(
+    jsonEncode(<String, double?>{
+      'trackGainDb': loudness.trackGainDb,
+      'trackPeak': loudness.trackPeak,
+      'albumGainDb': loudness.albumGainDb,
+      'albumPeak': loudness.albumPeak,
+    }),
+    flush: true,
+  );
+}
+
+/// 读离线副本旁存下的服务器响度；没有 / 读不了 / 内容不对回 null（按没有响度放）。
+Future<MusicServerLoudness?> readMusicServerDownloadLoudness(
+  String audioPath,
+) async {
+  final File f = File(musicServerDownloadLoudnessPath(audioPath));
+  try {
+    if (!await f.exists()) return null;
+    final Object? j = jsonDecode(await f.readAsString());
+    if (j is! Map<String, Object?>) return null;
+    double? d(String k) => switch (j[k]) {
+      final num v => v.toDouble(),
+      _ => null,
+    };
+    final MusicServerLoudness l = MusicServerLoudness(
+      trackGainDb: d('trackGainDb'),
+      trackPeak: d('trackPeak'),
+      albumGainDb: d('albumGainDb'),
+      albumPeak: d('albumPeak'),
+    );
+    return l.isEmpty ? null : l;
+  } on Object catch (e) {
+    debugPrint('[music-download] loudness sidecar unreadable: $e');
+    return null;
+  }
+}
+
 class MusicServerDownloadIndex extends ChangeNotifier {
-  MusicServerDownloadIndex({MusicServerDownloadFileExists? fileExists})
-    : _fileExists = fileExists ?? _defaultExists;
+  MusicServerDownloadIndex({
+    MusicServerDownloadFileExists? fileExists,
+    MusicServerDownloadLoudnessReader? readLoudness,
+  }) : _fileExists = fileExists ?? _defaultExists,
+       _readLoudness = readLoudness ?? readMusicServerDownloadLoudness;
 
   /// 进程级实例：`AppModel` 建音乐会话时 [attach] 到用户库，并装成
   /// [musicServerLocalCopyLookup]。
@@ -36,6 +111,7 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   static Future<bool> _defaultExists(String path) => File(path).exists();
 
   final MusicServerDownloadFileExists _fileExists;
+  final MusicServerDownloadLoudnessReader _readLoudness;
 
   FushiDatabase? _db;
   StreamSubscription<List<MusicServerDownloadRow>>? _sub;
@@ -44,6 +120,10 @@ class MusicServerDownloadIndex extends ChangeNotifier {
 
   /// 路径 → 是否存在（只查一次）。
   final Map<String, bool> _exists = <String, bool>{};
+
+  /// 路径 → 旁边存下的服务器响度（只读一次；没有记 null）。
+  final Map<String, MusicServerLoudness?> _loudness =
+      <String, MusicServerLoudness?>{};
 
   /// 每次快照换代 +1：异步查存在性期间又来了新快照，旧的那轮作废。
   int _generation = 0;
@@ -97,7 +177,13 @@ class MusicServerDownloadIndex extends ChangeNotifier {
     for (final MusicServerDownloadRow r in rows) {
       final bool exists = _exists[r.filePath] ??= await _fileExists(r.filePath);
       if (generation != _generation) return;
-      if (exists) next[r.trackUid] = r;
+      if (!exists) continue;
+      if (!_loudness.containsKey(r.filePath)) {
+        final MusicServerLoudness? l = await _readLoudness(r.filePath);
+        if (generation != _generation) return;
+        _loudness[r.filePath] = l;
+      }
+      next[r.trackUid] = r;
     }
     _rows = next;
     notifyListeners();
@@ -107,6 +193,7 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   void forgetPaths(Iterable<String> paths) {
     for (final String p in paths) {
       _exists.remove(p);
+      _loudness.remove(p);
     }
   }
 
@@ -128,7 +215,14 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   MusicServerLocalCopy? lookup(String trackUid) {
     final MusicServerDownloadRow? r = _rows[trackUid];
     if (r == null) return null;
-    return (path: r.filePath, coverPath: r.coverPath, codec: r.codec);
+    return (
+      path: r.filePath,
+      coverPath: r.coverPath,
+      codec: r.codec,
+      serverId: r.sourceKey,
+      trackId: r.itemId,
+      loudness: _loudness[r.filePath],
+    );
   }
 
   @override
@@ -149,11 +243,16 @@ Future<void> deleteMusicServerDownloadFiles(
   final Set<String> dirs = <String>{};
   for (final MusicServerDownloadRow r in rows) {
     dirs.add(p.dirname(r.filePath));
-    try {
-      final File f = File(r.filePath);
-      if (await f.exists()) await f.delete();
-    } on FileSystemException catch (e, s) {
-      ErrorLogService.instance.log('MusicServerDownload.delete', e, s);
+    for (final String path in <String>[
+      r.filePath,
+      musicServerDownloadLoudnessPath(r.filePath),
+    ]) {
+      try {
+        final File f = File(path);
+        if (await f.exists()) await f.delete();
+      } on FileSystemException catch (e, s) {
+        ErrorLogService.instance.log('MusicServerDownload.delete', e, s);
+      }
     }
   }
   for (final String dir in dirs) {

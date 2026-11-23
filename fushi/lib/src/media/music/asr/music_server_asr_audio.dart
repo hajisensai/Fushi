@@ -10,16 +10,19 @@
 /// （不带码率上限：转写不需要再转码一次）；地址只在内存里交给 ffmpeg，报错文本由取音频步骤
 /// 脱敏，不进日志 / 数据库。
 ///
-/// 输入是 [MusicAsrAudioInput]：现在只有「流」一种来源；服务器曲目有了本机离线副本后，在
-/// [musicServerAsrAudioInput] 开头先返回 [MusicAsrLocalAudio] 即可（副本直接转写、不删）。
+/// 输入是 [MusicAsrAudioInput]：这首有本机离线副本（v172 下载，[musicServerLocalCopyLookup]）
+/// 时直接转写那份文件（[MusicAsrLocalAudio]，不删、不连服务器——服务器离线也能生成）；否则从
+/// 服务器取流（[MusicAsrStreamAudio]）。
 library;
 
 import 'dart:io';
 
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerStream, MusicServerTrack, musicServerTrackUid;
-import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
-    show MusicServerTrackRef;
+    show
+        MusicServerStream,
+        MusicServerTrack,
+        MusicServerTrackRef,
+        musicServerTrackUid;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
 
 import 'package:fushi/src/media/music/asr/music_plugin_asr_audio.dart';
@@ -27,6 +30,11 @@ import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show MusicServerBinding, MusicServerBindingLoader, musicServerKindStorable;
+import 'package:fushi/src/media/music/server/music_server_play_item.dart'
+    show
+        MusicServerLocalCopy,
+        MusicServerLocalCopyLookup,
+        musicServerLocalCopyLookup;
 
 /// 一首要转写的服务器曲目从哪来。
 sealed class MusicAsrAudioInput {
@@ -53,11 +61,19 @@ bool musicItemIsTranscribableServerTrack(MusicPlayItem item) {
   return ref != null && musicServerKindStorable(ref.kind) && !item.isPreview;
 }
 
-/// 服务器曲目 → 转写输入。这台设备上没配这台服务器时抛 [MusicPluginAsrAudioUnavailable]。
+/// 服务器曲目 → 转写输入。有离线副本（[localCopies]，缺省进程级
+/// [musicServerLocalCopyLookup]）时用副本；否则这台设备上没配这台服务器时抛
+/// [MusicPluginAsrAudioUnavailable]。
 Future<MusicAsrAudioInput> musicServerAsrAudioInput(
   MusicServerTrackRef ref, {
   required MusicServerBindingLoader servers,
+  MusicServerLocalCopyLookup? localCopies,
 }) async {
+  final MusicServerLocalCopy? local =
+      (localCopies ?? musicServerLocalCopyLookup)?.call(ref.trackUid);
+  if (local != null && await File(local.path).exists()) {
+    return MusicAsrLocalAudio(File(local.path));
+  }
   final MusicServerBinding? binding = (await servers())[ref.serverId];
   if (binding == null || binding.browser.kind != ref.kind) {
     throw const MusicPluginAsrAudioUnavailable(

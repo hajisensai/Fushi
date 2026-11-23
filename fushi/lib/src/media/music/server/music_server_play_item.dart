@@ -8,21 +8,29 @@ library;
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show
         MusicServerBrowser,
+        MusicServerKind,
         MusicServerStream,
         MusicServerTrack,
+        MusicServerTrackRef,
         musicServerAlbumUid,
         musicServerTrackUid;
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
-    show MusicServerLoudness, MusicServerTrackRef;
+    show MusicServerLoudness;
 
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 
 /// 一首服务器曲目在本机的离线副本（v172 `music_server_downloads`：下完的原文件）。
+/// [serverId] / [trackId] 是这首在服务器上的身份（行里存的服务器配置身份与条目 id，不含
+/// 凭据）：离线副本的播放项照样带 [MusicPlayItem.serverTrack]，播放上报、服务器歌词、
+/// 响度补查、生成字幕都认得出是哪首。[loudness] 是下载时一并存下的服务器响度（离线时用）。
 typedef MusicServerLocalCopy = ({
   String path,
   String? coverPath,
   String? codec,
+  String serverId,
+  String trackId,
+  MusicServerLoudness? loudness,
 });
 
 /// 按播放身份（[musicServerTrackUid]）查离线副本；没有回 null。
@@ -59,6 +67,7 @@ MusicPlayItem musicServerPlayItem(
       albumTitle: albumTitle,
       fallbackCoverPath:
           coverPath ?? browser.coverUri(track.coverRef)?.toString(),
+      kind: browser.kind,
     );
   }
   final MusicServerStream stream = browser.streamFor(
@@ -92,6 +101,7 @@ MusicPlayItem musicServerPlayItem(
       serverId: browser.serverId,
       trackId: track.id,
       albumId: track.albumId,
+      coverRef: track.coverRef,
     ),
     isPreview: stream.isPreview,
   );
@@ -99,6 +109,10 @@ MusicPlayItem musicServerPlayItem(
 
 /// 有离线副本的服务器曲目 → 播放项（不需要服务器配置：曲库里的这首在服务器删了 / 离线时
 /// 也能放）。uid 与串流时一致；封面优先本机那张，没有才用 [fallbackCoverPath]。
+///
+/// [kind] 是这台服务器的协议家族（这台设备上还配着它时由调用方给）：给了才带
+/// [MusicPlayItem.serverTrack]（播放上报 / 响度补查 / 生成字幕要找回那台服务器）。响度取
+/// 列表接口当场给的（[MusicServerTrack.loudness]），没有时用下载时存下的那份。
 MusicPlayItem musicServerLocalPlayItem(
   String trackUid,
   MusicServerLocalCopy local,
@@ -106,19 +120,36 @@ MusicPlayItem musicServerLocalPlayItem(
   String? albumUid,
   String? albumTitle,
   String? fallbackCoverPath,
-}) => MusicPlayItem(
-  trackUid: trackUid,
-  path: local.path,
-  title: track.title,
-  artist: track.artist,
-  album: albumTitle ?? track.album,
-  albumUid: albumUid,
-  discNo: track.discNo,
-  trackNo: track.trackNo,
-  durationMs: track.durationMs,
-  coverPath: local.coverPath ?? fallbackCoverPath,
-  codec: local.codec ?? track.codec ?? track.container,
-  sampleRate: track.sampleRate,
-  bitDepth: track.bitDepth,
-  channels: track.channels,
-);
+  MusicServerKind? kind,
+}) {
+  final MusicServerLoudness? loudness = track.loudness ?? local.loudness;
+  return MusicPlayItem(
+    trackUid: trackUid,
+    path: local.path,
+    title: track.title,
+    artist: track.artist,
+    album: albumTitle ?? track.album,
+    albumUid: albumUid,
+    discNo: track.discNo,
+    trackNo: track.trackNo,
+    durationMs: track.durationMs,
+    coverPath: local.coverPath ?? fallbackCoverPath,
+    codec: local.codec ?? track.codec ?? track.container,
+    sampleRate: track.sampleRate,
+    bitDepth: track.bitDepth,
+    channels: track.channels,
+    rgTrackGain: loudness?.trackGainDb,
+    rgTrackPeak: loudness?.trackPeak,
+    rgAlbumGain: loudness?.albumGainDb,
+    rgAlbumPeak: loudness?.albumPeak,
+    serverTrack: kind == null
+        ? null
+        : MusicServerTrackRef(
+            kind: kind,
+            serverId: local.serverId,
+            trackId: local.trackId,
+            albumId: track.albumId,
+            coverRef: track.coverRef,
+          ),
+  );
+}

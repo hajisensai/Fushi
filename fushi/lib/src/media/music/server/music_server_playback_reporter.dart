@@ -4,8 +4,10 @@
 /// 接在 `MusicSession` 的曲目生命周期上（开播 [trackStarted] / 换下 [trackLeft] / 引擎
 /// 状态变化 [engineChanged]），所以单曲循环重播、无缝推进、停止都按一次播放算。
 /// - 只上报服务器曲目：播放项经 [MusicServerTrackResolver] 认回服务器与曲目 id（从服务器
-///   页、曲库里的服务器曲目、最近播放重播都一样），本地 / 插件 / 网络来源曲目认不出就什么
-///   都不发；
+///   页、曲库里的服务器曲目、最近播放重播、离线副本都一样），本地 / 插件 / 网络来源曲目认不出
+///   就什么都不发；
+/// - 离线副本（本机文件）照样上报（`PlayMethod` 为直放）；服务器连不上时（网络错误）静默
+///   跳过这次播放，不记错误日志——离线听下载的曲目是正常用法。
 /// - 不挡播放：全部请求在后台串行队列里发，失败只记一次日志；这一首的开播上报失败后，后面
 ///   的进度 / 停止都不再发（不在断网时每 10 秒刷一次错）；
 /// - 不刷屏：进度按 [kMusicServerProgressInterval]（与 Jellyfin web 同一档）节流，暂停 /
@@ -13,7 +15,11 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show HandshakeException, HttpException, SocketException;
 import 'dart:math';
+
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:http/http.dart' as http show ClientException;
 
 import 'package:fushi_engine/media/music/server/music_server.dart';
 
@@ -29,7 +35,16 @@ const Duration kMusicServerFlushTimeout = Duration(seconds: 3);
 
 /// 播放项 → 服务器曲目（app 装配：`MusicServerTrackResolver.resolve`）。
 typedef MusicServerTrackLookup =
-    Future<MusicServerTrackRef?> Function(MusicPlayItem item);
+    Future<MusicServerResolvedTrack?> Function(MusicPlayItem item);
+
+/// 连不上服务器一类的错误（离线）。传输层自己包过的（Jellyfin 的 transport 异常）由 app 装配
+/// 时经 `isUnreachable` 补进来。
+bool musicServerReportUnreachable(Object e) =>
+    e is SocketException ||
+    e is TimeoutException ||
+    e is HandshakeException ||
+    e is HttpException ||
+    e is http.ClientException;
 
 /// 上报失败的日志出口（app 装配：`ErrorLogService`）。
 typedef MusicServerReportErrorSink = void Function(Object error, StackTrace st);
@@ -46,8 +61,14 @@ class _Play {
   final String sessionId;
   final int startedAtMs;
 
+  /// 放的是离线副本（本机文件）：服务器连不上时静默。
+  bool get offlineCopy =>
+      !item.path.startsWith('http://') && !item.path.startsWith('https://');
+
   /// 认出来的服务器曲目（认不出 / 不支持上报为 null，此后什么都不发）。
-  Future<({MusicServerPlaybackReporting server, MusicServerStreamRef ref})?>?
+  Future<
+    ({MusicServerPlaybackReporting server, MusicServerResolvedTrack ref})?
+  >?
   target;
 
   /// [target] 已落地且可上报（同步判断用：进度 / 暂停只在它之后才发）。
@@ -70,7 +91,9 @@ class MusicServerPlaybackReporter {
     void Function()? onTargetFailure,
     DateTime Function()? now,
     String Function()? sessionIds,
+    bool Function(Object error)? isUnreachable,
   }) : _engine = engine,
+       _isUnreachable = isUnreachable ?? musicServerReportUnreachable,
        _lookup = lookup,
        _onError = onError,
        _onTargetFailure = onTargetFailure,
@@ -85,6 +108,7 @@ class MusicServerPlaybackReporter {
   final void Function()? _onTargetFailure;
   final DateTime Function() _now;
   final String Function() _sessionIds;
+  final bool Function(Object error) _isUnreachable;
 
   static final Random _random = Random.secure();
 
@@ -108,7 +132,11 @@ class MusicServerPlaybackReporter {
   void trackStarted(MusicPlayItem item) {
     final _Play? prev = _play;
     if (prev != null) _finish(prev, _engine.listenedBeforeStart);
-    if (!musicServerTrackCandidate(item.trackUid, item.path)) {
+    if (!musicServerTrackCandidate(
+      item.trackUid,
+      item.path,
+      serverTrack: item.serverTrack,
+    )) {
       _play = null;
       return;
     }
@@ -121,7 +149,10 @@ class MusicServerPlaybackReporter {
     play.lastProgressAt = _now();
     _play = play;
     play.target = _resolve(play);
-    _enqueue(play, (MusicServerPlaybackReporting s, MusicServerStreamRef r) {
+    _enqueue(play, (
+      MusicServerPlaybackReporting s,
+      MusicServerResolvedTrack r,
+    ) {
       final int pos = identical(_play, play)
           ? _engine.position.inMilliseconds
           : 0;
@@ -166,7 +197,7 @@ class MusicServerPlaybackReporter {
     final int pos = _engine.position.inMilliseconds;
     _enqueue(
       play,
-      (MusicServerPlaybackReporting s, MusicServerStreamRef r) => s
+      (MusicServerPlaybackReporting s, MusicServerResolvedTrack r) => s
           .reportPlaybackProgress(_report(play, r, pos), event: event)
           .whenComplete(() => play.progressInFlight = false),
     );
@@ -187,19 +218,19 @@ class MusicServerPlaybackReporter {
     final int pos = (position ?? Duration.zero).inMilliseconds;
     _enqueue(
       play,
-      (MusicServerPlaybackReporting s, MusicServerStreamRef r) =>
+      (MusicServerPlaybackReporting s, MusicServerResolvedTrack r) =>
           s.reportPlaybackStopped(_report(play, r, pos)),
     );
   }
 
-  Future<({MusicServerPlaybackReporting server, MusicServerStreamRef ref})?>
+  Future<({MusicServerPlaybackReporting server, MusicServerResolvedTrack ref})?>
   _resolve(_Play play) async {
     try {
-      final MusicServerTrackRef? ref = await _lookup(play.item);
+      final MusicServerResolvedTrack? ref = await _lookup(play.item);
       final MusicServerBrowser? b = ref?.browser;
       if (ref == null || b is! MusicServerPlaybackReporting) return null;
       play.ready = true;
-      return (server: b as MusicServerPlaybackReporting, ref: ref.stream);
+      return (server: b as MusicServerPlaybackReporting, ref: ref);
     } on Object catch (e, st) {
       play.failed = true;
       _onError?.call(e, st);
@@ -209,7 +240,7 @@ class MusicServerPlaybackReporter {
 
   MusicServerPlaybackReport _report(
     _Play play,
-    MusicServerStreamRef ref,
+    MusicServerResolvedTrack ref,
     int positionMs,
   ) => MusicServerPlaybackReport(
     trackId: ref.trackId,
@@ -227,12 +258,15 @@ class MusicServerPlaybackReporter {
     _Play play,
     Future<void> Function(
       MusicServerPlaybackReporting server,
-      MusicServerStreamRef ref,
+      MusicServerResolvedTrack ref,
     )
     send,
   ) {
     _queue = _queue.then((_) async {
-      final ({MusicServerPlaybackReporting server, MusicServerStreamRef ref})?
+      final ({
+        MusicServerPlaybackReporting server,
+        MusicServerResolvedTrack ref,
+      })?
       target = await play.target;
       if (target == null || play.failed) return;
       try {
@@ -240,6 +274,13 @@ class MusicServerPlaybackReporter {
       } on Object catch (e, st) {
         // 只记第一次失败；这次播放后面的上报都不再发。
         play.failed = true;
+        if (play.offlineCopy && _isUnreachable(e)) {
+          // 离线听下载的曲目：服务器不在是常态，不记错、不让解析器重读配置。
+          debugPrint(
+            '[music-report] server unreachable, skipped (offline copy)',
+          );
+          return;
+        }
         _onTargetFailure?.call();
         _onError?.call(e, st);
       }

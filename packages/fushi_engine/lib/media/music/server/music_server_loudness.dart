@@ -1,4 +1,4 @@
-/// 服务器曲目的响度（ReplayGain 2.0 口径）与「播放项里的服务器曲目身份」。
+/// 服务器曲目的响度（ReplayGain 2.0 口径）。
 ///
 /// 本地曲库的响度来自标签或后台 `ebur128` 扫描，结果落 `music_tracks.rg_*`。服务器曲目
 /// （Jellyfin / Subsonic）不进那张表：服务器自己已经测过 / 读过响度，直接用服务器给的——
@@ -53,39 +53,6 @@ class MusicServerLoudness {
   String toString() =>
       'MusicServerLoudness(track: $trackGainDb dB / $trackPeak, '
       'album: $albumGainDb dB / $albumPeak)';
-}
-
-/// 播放项里的服务器曲目身份（不含任何凭据）：起播期补查响度、生成字幕时取流都按它找回
-/// 当前配置的那台服务器（[MusicServerBrowser.serverId]）与服务器侧条目。
-class MusicServerTrackRef {
-  const MusicServerTrackRef({
-    required this.kind,
-    required this.serverId,
-    required this.trackId,
-    this.albumId,
-  });
-
-  final MusicServerKind kind;
-
-  /// [MusicServerBrowser.serverId]。
-  final String serverId;
-
-  /// 服务器侧曲目 id。
-  final String trackId;
-
-  /// 服务器侧专辑 id（Jellyfin 的专辑响度挂在专辑条目上，补查时一并取）。
-  final String? albumId;
-
-  @override
-  bool operator ==(Object other) =>
-      other is MusicServerTrackRef &&
-      other.kind == kind &&
-      other.serverId == serverId &&
-      other.trackId == trackId &&
-      other.albumId == albumId;
-
-  @override
-  int get hashCode => Object.hash(kind, serverId, trackId, albumId);
 }
 
 /// 可选能力：按曲目向服务器补查响度（与 [MusicServerPlaylistEditing] 同模式，浏览器实现了

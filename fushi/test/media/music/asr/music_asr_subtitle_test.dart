@@ -20,7 +20,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_languag
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicServerKind, musicServerAlbumUid, musicServerTrackUid;
-import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicServerTrackRef;
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;

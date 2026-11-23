@@ -1,6 +1,10 @@
+import 'dart:io' show SocketException;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/server/music_server_play_item.dart'
+    show MusicServerLocalCopy;
 import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/media/music/server/music_server_track_ref.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
@@ -32,8 +36,11 @@ class _FakeServer extends Fake
 
   @override
   final String serverId;
+  @override
+  MusicServerKind get kind => MusicServerKind.jellyfin;
   final List<String> calls = <String>[];
   bool failStart = false;
+  Exception? startError;
 
   @override
   MusicServerStreamRef? streamRefOf(Uri uri) => uri.host == 'srv'
@@ -46,7 +53,7 @@ class _FakeServer extends Fake
   @override
   Future<void> reportPlaybackStarted(MusicServerPlaybackReport r) async {
     calls.add('start ${r.trackId} ${r.positionMs} ${r.playSessionId}');
-    if (failStart) throw Exception('401');
+    if (failStart) throw startError ?? Exception('401');
   }
 
   @override
@@ -78,6 +85,9 @@ void main() {
   late List<Object> errors;
   late MusicServerPlaybackReporter reporter;
 
+  /// 离线副本索引（uid → 副本）。
+  late Map<String, MusicServerLocalCopy> copies;
+
   setUp(() {
     engine = _FakeEngine();
     server = _FakeServer('jf1');
@@ -85,17 +95,18 @@ void main() {
     lookups = 0;
     failures = 0;
     errors = <Object>[];
+    copies = <String, MusicServerLocalCopy>{};
     final MusicServerTrackResolver resolver = MusicServerTrackResolver(
       () async {
         lookups++;
         return <MusicServerBrowser>[server];
       },
+      localCopies: (String uid) => copies[uid],
     );
     int session = 0;
     reporter = MusicServerPlaybackReporter(
       engine: engine,
-      lookup: (MusicPlayItem i) =>
-          resolver.resolve(trackUid: i.trackUid, path: i.path),
+      lookup: resolver.resolveItem,
       onTargetFailure: () => failures++,
       onError: (Object e, StackTrace _) => errors.add(e),
       now: () => now,
@@ -242,15 +253,84 @@ void main() {
     expect(server.calls.last, 'stop a 42000');
   });
 
-  test('musicServerTrackRefOf：两台同类服务器靠 uid 区分', () {
+  test('musicServerResolveTrack：两台同类服务器靠 uid 区分', () {
     final _FakeServer other = _FakeServer('jf2');
-    final MusicServerTrackRef? ref = musicServerTrackRefOf(
+    final MusicServerResolvedTrack? ref = musicServerResolveTrack(
       trackUid: musicServerTrackUid('jf2', 'x'),
       path: 'http://srv/x?t=1',
       browsers: <MusicServerBrowser>[server, other],
+      localCopies: (_) => null,
     );
     expect(ref?.browser, same(other));
     expect(ref?.trackId, 'x');
-    expect(ref?.stream.transcoded, isTrue);
+    expect(ref?.ref.serverId, 'jf2');
+    expect(ref?.transcoded, isTrue);
+  });
+
+  test('播放项自带的服务器身份优先，uid 对不上不认', () {
+    const MusicServerTrackRef ref = MusicServerTrackRef(
+      kind: MusicServerKind.jellyfin,
+      serverId: 'jf1',
+      trackId: 'z',
+    );
+    final MusicServerResolvedTrack? hit = musicServerResolveTrack(
+      trackUid: musicServerTrackUid('jf1', 'z'),
+      path: 'C:/music/z.flac',
+      serverTrack: ref,
+      browsers: <MusicServerBrowser>[server],
+      localCopies: (_) => null,
+    );
+    expect(hit?.browser, same(server));
+    expect(hit?.ref, ref);
+    expect(hit?.transcoded, isFalse);
+    expect(
+      musicServerResolveTrack(
+        trackUid: musicServerTrackUid('jf1', 'other'),
+        path: 'C:/music/z.flac',
+        serverTrack: ref,
+        browsers: <MusicServerBrowser>[server],
+        localCopies: (_) => null,
+      ),
+      isNull,
+    );
+  });
+
+  MusicPlayItem localCopy(String id) {
+    final String uid = musicServerTrackUid('jf1', id);
+    copies[uid] = (
+      path: 'C:/music/$id.flac',
+      coverPath: null,
+      codec: 'flac',
+      serverId: 'jf1',
+      trackId: id,
+      loudness: null,
+    );
+    return MusicPlayItem(trackUid: uid, path: 'C:/music/$id.flac', title: id);
+  }
+
+  test('离线副本（本机文件、没带身份）经副本索引认回，照样上报', () async {
+    final MusicPlayItem a = localCopy('d');
+    start(a);
+    engine.pos = const Duration(seconds: 5);
+    await reporter.flush();
+    expect(server.calls, <String>['start d 0 sess0', 'stop d 5000']);
+  });
+
+  test('离线副本服务器连不上：静默跳过（不记错、不重读配置）', () async {
+    server.failStart = true;
+    server.startError = const SocketException('unreachable');
+    start(localCopy('d'));
+    await reporter.idle;
+    expect(errors, isEmpty);
+    expect(failures, 0);
+  });
+
+  test('串流时服务器连不上照常记错', () async {
+    server.failStart = true;
+    server.startError = const SocketException('unreachable');
+    start(_item('jf1', 'a'));
+    await reporter.idle;
+    expect(errors.length, 1);
+    expect(failures, 1);
   });
 }

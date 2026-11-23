@@ -11,6 +11,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef;
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
     show redactSubsonicCredentials;

@@ -6,7 +6,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicServerTrackRef;
 
 import 'package:fushi/src/media/music/music_audio_effects.dart';
@@ -102,6 +102,36 @@ class MusicPlayItem {
   final double? rgAlbumPeak;
 
   bool get isDsd => codec == 'dsd';
+
+  /// 同一首、补上服务器身份（最近播放快照重建的服务器曲目项：重建时只有流地址 / 本机路径，
+  /// 由 `MusicServerTrackResolver.withIdentity` 认回后补上）。
+  MusicPlayItem withServerTrack(MusicServerTrackRef ref) => MusicPlayItem(
+    trackUid: trackUid,
+    path: path,
+    title: title,
+    startMs: startMs,
+    endMs: endMs,
+    artist: artist,
+    album: album,
+    albumUid: albumUid,
+    discNo: discNo,
+    trackNo: trackNo,
+    durationMs: durationMs,
+    coverPath: coverPath,
+    codec: codec,
+    sampleRate: sampleRate,
+    bitDepth: bitDepth,
+    channels: channels,
+    rgTrackGain: rgTrackGain,
+    rgTrackPeak: rgTrackPeak,
+    rgAlbumGain: rgAlbumGain,
+    rgAlbumPeak: rgAlbumPeak,
+    artistRefs: artistRefs,
+    sourceAlbumId: sourceAlbumId,
+    sourceId: sourceId,
+    serverTrack: ref,
+    isPreview: isPreview,
+  );
 
   @override
   bool operator ==(Object other) =>

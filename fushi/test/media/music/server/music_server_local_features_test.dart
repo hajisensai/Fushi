@@ -259,7 +259,7 @@ void main() {
       expect(u.queryParameters.containsKey('MaxStreamingBitrate'), isFalse);
     });
 
-    test('离线副本：直接转写、不删（以后有下载时在 musicServerAsrAudioInput 里先返回它）', () async {
+    test('离线副本：直接转写、不删', () async {
       final File f = File(p.join(tmp.path, 'x.flac'))
         ..writeAsBytesSync(<int>[1]);
       final ({File audio, bool staged}) got = await musicAsrAudioFileOf(
