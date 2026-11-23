@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 
 /// 气泡原位放大（方案 A）的页内脚本，拼进 `mangaWindowDocument` 的手势机 IIFE。
@@ -41,6 +43,8 @@ String mangaBubbleZoomJs({
   required int openMs,
   required int closeMs,
   required String easing,
+  // 浮层左上角「×」收起按钮的无障碍名 / 悬停提示。
+  String closeLabel = '',
 }) {
   final bool enabled = preferences.bubbleZoom;
   final int openDuration = preferences.einkMode ? 0 : openMs;
@@ -66,6 +70,7 @@ String mangaBubbleZoomJs({
   // 动效时长由 Dart 的 FushiMotion 经 fushiMotionDuration 注入（减弱动态 / 墨水屏 = 0）。
   var BZ_OPEN_MS = $openDuration, BZ_CLOSE_MS = $closeDuration;
   var BZ_EASE = '$easing';
+  var BZ_CLOSE_LABEL = ${jsonEncode(closeLabel)};
   // 鼠标移出浮层多久收起。
   var BZ_LEAVE_MS = 300;
   // barrier 只报松手：双击窗口从「第一击松手→第二击按下」(DBL_MS) 换成「松手→
@@ -224,10 +229,19 @@ String mangaBubbleZoomJs({
       }
     }
     layer.appendChild(clone);
+    // 左上角「×」：显式的收起入口（拍板台 _5emrTFV1l）。按压由 _bzPointerDown 认领、
+    // _bzRelease 收起；查词弹窗开着时点它经 barrier 进 _bzBarrierTap。
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'manga-bz-close';
+    close.setAttribute('aria-label', BZ_CLOSE_LABEL);
+    close.title = BZ_CLOSE_LABEL;
+    close.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6L18 18M18 6L6 18"/></svg>';
+    layer.appendChild(close);
     // 逐格读（manga_bubble_focus_js.dart）在浮层右上角加「⤢」入口。
     if (typeof _fcDecorateLayer === 'function') _fcDecorateLayer(layer);
     document.body.appendChild(layer);
-    return {el: layer, geom: g, bubble: bubble};
+    return {el: layer, geom: g, bubble: bubble, close: close};
   }
   // 从「贴在原气泡上、缩回 1/s」的状态长出来：起点与原图逐像素重合，看起来是气泡
   // 在原位鼓起来；收起反向。
@@ -273,6 +287,14 @@ String mangaBubbleZoomJs({
     return typeof _tsScopeAt === 'function' ? _tsScopeAt(x, y) : null;
   }
   // 当前选区（查词）是否落在浮层里——查词弹窗开着时浮层不随鼠标离开收起。
+  // 落点是否在浮层的「×」上（含按钮四周补足到 48px 的命中区，同 CSS 的 ::before）。
+  function _bzOnCloseButton(x, y){
+    var btn = bzLayer && bzLayer.close;
+    if (!btn) return false;
+    var r = btn.getBoundingClientRect();
+    var pad = Math.max(0, (48 - Math.min(r.right - r.left, r.bottom - r.top)) / 2);
+    return !(x < r.left - pad || x > r.right + pad || y < r.top - pad || y > r.bottom + pad);
+  }
   function _bzSelectionInLayer(){
     var s = window.fushiSelection && window.fushiSelection.selection;
     var node = s && s.startNode;
@@ -372,6 +394,8 @@ String mangaBubbleZoomJs({
     if (!BZ_ENABLED || (typeof fcOn !== 'undefined' && fcOn)) return null;
     if (bzLayer) {
       if (!_bzInLayer(x, y)) { bzLastTap = null; _bzClose(false, false); return 'miss'; }
+      // 弹窗开着时点「×」：收起浮层，Dart 照常关弹窗（选区在浮层里，_bzClose 会清）。
+      if (_bzOnCloseButton(x, y)) { bzLastTap = null; _bzClose(false, false); return 'miss'; }
       if (_bzRecentTap(x, y, BZ_BARRIER_SLACK, true)) {
         bzLastTap = null;
         _bzTakeSelection();
@@ -413,12 +437,15 @@ String mangaBubbleZoomJs({
       _bzArmOnDown(e.clientX, e.clientY);
       return false;
     }
+    var target = e.target && e.target.closest ? e.target : null;
     bzPress = {id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(),
       type: e.pointerType || '', armed: _bzRecentTap(e.clientX, e.clientY, 0, true),
-      btn: !!(e.target && e.target.closest && e.target.closest('.manga-bz-focus'))};
+      btn: !!(target && target.closest('.manga-bz-focus')),
+      close: !!(target && target.closest('.manga-bz-close'))};
     has = false;
     _cancelPendingEmptyTap();
-    _armLongPress(e);
+    // 按在角上按钮上不弹图片动作面板：那是按钮，不是页图。
+    if (!bzPress.btn && !bzPress.close) _armLongPress(e);
     return true;
   }
   function _bzRelease(p, x, y){
@@ -430,6 +457,11 @@ String mangaBubbleZoomJs({
     }
     if (p.btn) {
       if (ax < 20 && ay < 20 && bzLayer && typeof _fcEnter === 'function') _fcEnter(bzLayer.bubble);
+      return;
+    }
+    // 「×」：按下松开在原处才收起（按下后拖走 = 反悔）。浮层里的选区由 _bzClose 清掉。
+    if (p.close) {
+      if (ax < 20 && ay < 20) { bzLastTap = null; _bzClose(false, false); }
       return;
     }
     // 左右滑 = 换相邻气泡（阈值与翻页 swipe 同口径）；RTL 书向右滑是下一个。
@@ -552,4 +584,97 @@ String mangaBubbleZoomJs({
   window.__mangaBubbleZoomClose = function(){ return _bzClose(false, false); };
   window.__mangaBubbleZoomOpen = function(){ return !!bzLayer; };
 ''';
+}
+
+/// 放大浮层角上按钮的样式表：左上「×」收起（`.manga-bz-close`）、右上「⤢ 逐格读」
+/// （`.manga-bz-focus`，manga_bubble_focus_js.dart）。两颗按钮同一套外观：
+/// - MD3（[appleStyle] = false）：40px 圆形深色容器 + 白色图标，悬停 / 按下叠 8% / 12%
+///   的 state layer（`::after`），按下缩到 0.92（同 `FushiPressScale`）、悬停放大 1.06
+///   （同 `FushiHoverLift`）；
+/// - Apple：30px 圆形半透明毛玻璃（`backdrop-filter`）+ 粗笔画 xmark，按下缩到 0.9 并
+///   变暗（iOS 按压惯例），悬停只加深底色。
+/// 视觉尺寸不足 48px 的部分由透明 `::before` 补足命中区（`_bzOnCloseButton` 同口径）。
+/// [motionMs] 来自 Dart 的 `fushiMotionDuration(FushiMotion.short)`：减弱动态效果时为 0，
+/// 此时不写过渡、不做缩放；墨水屏一律不做动效与半透明。
+String mangaBubbleZoomButtonCss({
+  required bool einkMode,
+  required bool appleStyle,
+  required int motionMs,
+}) {
+  final int size = appleStyle ? 30 : 40;
+  final int icon = appleStyle ? 13 : 20;
+  final double stroke = appleStyle ? 3.2 : 2.2;
+  final int pad = (48 - size) ~/ 2;
+  final bool animate = motionMs > 0 && !einkMode;
+  const String both = '.manga-bz-close,.manga-bz-focus';
+  final String surface;
+  if (einkMode) {
+    surface = 'background:#fff;color:#000;border:1px solid #000;';
+  } else if (appleStyle) {
+    surface =
+        'border:0;background:rgba(44,44,46,.58);color:rgba(255,255,255,.94);'
+        '-webkit-backdrop-filter:blur(18px) saturate(180%);'
+        'backdrop-filter:blur(18px) saturate(180%);';
+  } else {
+    surface =
+        'border:0;background:rgba(20,20,20,.62);color:#fff;'
+        'box-shadow:0 1px 2px rgba(0,0,0,.3),0 1px 3px 1px rgba(0,0,0,.15);';
+  }
+  final String transition = animate
+      ? 'transition:transform ${motionMs}ms cubic-bezier(.2,0,0,1),'
+            'background-color ${motionMs}ms linear,opacity ${motionMs}ms linear;'
+      : '';
+  final StringBuffer css = StringBuffer()
+    ..write(
+      '$both{position:absolute;top:6px;z-index:2;box-sizing:border-box;'
+      'width:${size}px;height:${size}px;border-radius:${size ~/ 2}px;'
+      'padding:0;margin:0;cursor:pointer;display:flex;align-items:center;'
+      'justify-content:center;font:${appleStyle ? 16 : 20}px/1 sans-serif;'
+      '-webkit-tap-highlight-color:transparent;user-select:none;'
+      '$surface$transition}',
+    )
+    ..write('.manga-bz-close{left:6px;}.manga-bz-focus{right:6px;}')
+    ..write(
+      '.manga-bz-close::before,.manga-bz-focus::before{content:"";'
+      'position:absolute;left:-${pad}px;top:-${pad}px;right:-${pad}px;'
+      'bottom:-${pad}px;}',
+    )
+    ..write(
+      '.manga-bz-close svg{width:${icon}px;height:${icon}px;'
+      'pointer-events:none;}'
+      '.manga-bz-close path{fill:none;stroke:currentColor;'
+      'stroke-width:$stroke;stroke-linecap:round;}',
+    );
+  if (einkMode) return css.toString();
+  if (appleStyle) {
+    css
+      ..write(
+        '@media (hover:hover){.manga-bz-close:hover,.manga-bz-focus:hover'
+        '{background:rgba(44,44,46,.74);}}',
+      )
+      ..write(
+        '.manga-bz-close:active,.manga-bz-focus:active{opacity:.7;'
+        '${animate ? 'transform:scale(.9);' : ''}}',
+      );
+  } else {
+    css
+      ..write(
+        '.manga-bz-close::after,.manga-bz-focus::after{content:"";'
+        'position:absolute;left:0;top:0;right:0;bottom:0;'
+        'border-radius:inherit;background:currentColor;opacity:0;'
+        'pointer-events:none;'
+        '${animate ? 'transition:opacity ${motionMs}ms linear;' : ''}}',
+      )
+      ..write(
+        '@media (hover:hover){.manga-bz-close:hover::after,'
+        '.manga-bz-focus:hover::after{opacity:.08;}'
+        '${animate ? '.manga-bz-close:hover,.manga-bz-focus:hover{transform:scale(1.06);}' : ''}}',
+      )
+      ..write(
+        '.manga-bz-close:active::after,.manga-bz-focus:active::after'
+        '{opacity:.12;}'
+        '${animate ? '.manga-bz-close:active,.manga-bz-focus:active{transform:scale(.92);}' : ''}',
+      );
+  }
+  return css.toString();
 }

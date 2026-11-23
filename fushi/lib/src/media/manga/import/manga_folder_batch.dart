@@ -293,8 +293,11 @@ Future<MangaBatchVolumeResult> _importOneVolume({
           policy: const DuplicatePolicy.skip(),
         );
       case ImportCarrier.mangaBatchFolder:
+      case ImportCarrier.mangaAudioPackage:
       case ImportCarrier.epub:
       case ImportCarrier.text:
+        // 有声漫画包不是一卷漫画，要走它自己的导入页（逐卷认本机同一卷、确认替换），
+        // 不在逐卷批量里导。
         // 扩展名对得上但内容不是漫画：词典 `.zip`、文字 `.epub`。不静默吞，
         // 计数后在汇总里如实报出来。（整卷目录在这里不可达——
         // [importMangaBatchPaths] 已把它展开成其中的每一卷。）

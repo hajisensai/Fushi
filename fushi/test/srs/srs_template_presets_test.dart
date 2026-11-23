@@ -138,6 +138,15 @@ void main() {
         SrsTemplatePresetKind.listening,
       );
       expect(p.audio!.name, 'TermAudio');
+      // BUG-5297：正面是区块布局认得出的大号发音键字段区块（原生卡面、可视化编辑），不是手写 HTML。
+      expect(fushiCardFrontLayoutOf(_names(t, p.front)), <FushiCardItem>[
+        FushiCardFieldItem(
+          field: 'TermAudio',
+          style: FushiCardFieldStyle.audio,
+        ),
+      ]);
+      // 模板（Anki / WebView）沿用修复前的大号发音键样式。
+      expect(_names(t, p.front), contains('fc-audio fc-audio--large'));
       expect(_names(t, p.front), contains('{{TermAudio}}'));
       expect(_names(t, p.front), isNot(contains('{{Term}}')));
       expect(
@@ -151,6 +160,52 @@ void main() {
         _empty(t, p.front, <String, String>{'TermAudio': '[sound:a.mp3]'}),
         isFalse,
       );
+    });
+
+    test('BUG-5297：已有修复前手写的听力模板时，新听力预设按区块布局判为重复', () {
+      const String legacy =
+          '<div class="fc fc-front" lang="ja">\n'
+          '  <div class="fc-front-audio">\n'
+          '    <div class="fc-audio fc-audio--large">{{TermAudio}}</div>\n'
+          '  </div>\n'
+          '</div>\n';
+      final SrsNoteTypeView t = _type(
+        fieldNames: FushiCardNoteType.fields,
+        templatesByName: <({String front, String back})>[
+          (front: kFushiCardFrontTemplate, back: kFushiCardBackTemplate),
+          (front: legacy, back: kFushiCardBackTemplate),
+        ],
+        builtinKey: kSrsBuiltinFushiCardKey,
+        termField: 'Term',
+        css: kFushiCardStylingCss,
+      );
+      final SrsTemplatePreset p = _of(
+        srsTemplatePresets(t),
+        SrsTemplatePresetKind.listening,
+      );
+      expect(p.duplicateOf?.id, 't1');
+      expect(p.available, isFalse);
+      // 两个模板本身也成一组重复（笔记类型页的「修复重复」入口）。
+      final SrsNoteTypeView both = _type(
+        fieldNames: FushiCardNoteType.fields,
+        templatesByName: <({String front, String back})>[
+          (front: legacy, back: kFushiCardBackTemplate),
+          (front: _names(t, p.front), back: kFushiCardBackTemplate),
+        ],
+        builtinKey: kSrsBuiltinFushiCardKey,
+        termField: 'Term',
+        css: kFushiCardStylingCss,
+      );
+      expect(srsDuplicateFrontGroups(both), hasLength(1));
+      // 不是内置 Fushi 卡片：照旧按原文比较，写法不同不算重复。
+      final SrsNoteTypeView plain = _type(
+        fieldNames: FushiCardNoteType.fields,
+        templatesByName: <({String front, String back})>[
+          (front: legacy, back: ''),
+          (front: _names(t, p.front), back: ''),
+        ],
+      );
+      expect(srsDuplicateFrontGroups(plain), isEmpty);
     });
 
     test('空白：正面认得出区块布局但不引用字段——一张卡都不出，不算重复', () {

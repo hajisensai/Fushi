@@ -157,7 +157,7 @@ void main() {
     raw.dispose();
 
     Future<void> check(FushiDatabase db) async {
-      expect(db.schemaVersion, 171);
+      expect(db.schemaVersion, kFushiDbSchemaVersion);
       expect(
         await _col(db, 'SELECT track_uid FROM music_tracks ORDER BY track_uid'),
         <String>['other', 'win'],
@@ -380,6 +380,12 @@ void main() {
       // 远程曲目（v148）的主键：来源 + 条目 id 派生的 uid（srv / plg 命名空间），从来不是
       // 本地曲库的内容派生 uid，曲库合并不会改指它。
       'music_remote_tracks.track_uid',
+      // 服务器曲目的离线副本（v175）：主键与 music_remote_tracks 同一个服务器曲目 uid
+      // （`musicServerTrackUid`，srv 命名空间），同理不在本地曲库合并的改指范围里。
+      'music_server_downloads.track_uid',
+      // v176：服务器曲目的离线补发队列与客户端状态，同一个服务器曲目 uid（srv 命名空间）。
+      'music_server_pending_actions.track_uid',
+      'music_server_track_states.track_uid',
     };
     final List<String> found = <String>[];
     for (final QueryRow t

@@ -42,13 +42,16 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 171);
+      expect(migrated.schemaVersion, kFushiDbSchemaVersion);
       await migrated.setMediaLocked(TagHostKind.video, 'v1', true, at: 10);
       await migrated.setMediaLockCredential('digest', at: 10);
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
-      expect(probe.select('PRAGMA user_version').first.values.first, 171);
+      expect(
+        probe.select('PRAGMA user_version').first.values.first,
+        kFushiDbSchemaVersion,
+      );
       expect(tableExists(probe, 'media_locked_flags'), isTrue);
       expect(tableExists(probe, 'media_lock_credentials'), isTrue);
       expect(
