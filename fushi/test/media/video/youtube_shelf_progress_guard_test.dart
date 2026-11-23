@@ -113,7 +113,8 @@ void main() {
       _flat(pageSrc).contains(
         _flat(
           'onEpisodeCompleted: _remoteTrackingCompletion() ?? '
-          '(hasLibraryRow ? _libraryTrackingCompletion : null)',
+          // BUG-5356：本地链路的完成回调在建采集器那一刻按当时身份生成。
+          '(hasLibraryRow ? _libraryTrackingCompletionFor() : null)',
         ),
       ),
       isTrue,

@@ -98,7 +98,7 @@ void main() {
   group('接线守卫（源码文本）', () {
     late final String pageSource = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     test('barrier hover 在 Shift 门控**之前**先做离开判定', () {
       // 顺序是本功能的正确性前提：Shift-悬停开的会话，用户松开 Shift 再移开鼠标是最
@@ -164,8 +164,27 @@ void main() {
       );
       expect(hoverEnd, greaterThan(hoverAt));
       final String hoverBody = pageSource.substring(hoverAt, hoverEnd);
-      expect(hoverBody, contains('_handleSubtitleListLookup('));
-      expect(hoverBody, contains('fromHover: true'));
+      // 聊天回放栏（拍板台 zTedU_pOQF）落地后，字幕列表与聊天栏两种推挤式侧栏共用一条
+      // 反查 [_sideListHitAt]，barrier 拿到的是带 `lookup` 闭包的命中：hover 分支标来源，
+      // 闭包再把来源原样转给 _handleSubtitleListLookup。两跳都要钉住。
+      expect(hoverBody, contains('_sideListHitAt(event.position)'));
+      expect(hoverBody, contains('listHit.lookup(fromHover: true)'));
+      final String liveChatSource = File(
+        'lib/src/pages/implementations/video_fushi/live_chat.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final int sideAt = liveChatSource.indexOf(
+        '_SideListHit? _sideListHitAt(',
+      );
+      expect(sideAt, greaterThan(0));
+      final int sideEnd = liveChatSource.indexOf('\n  }\n', sideAt);
+      expect(sideEnd, greaterThan(sideAt));
+      final String sideBody = liveChatSource.substring(sideAt, sideEnd);
+      final int listAt = sideBody.indexOf('_handleSubtitleListLookup(');
+      expect(listAt, greaterThan(0));
+      expect(
+        sideBody.substring(listAt, sideBody.indexOf(')', listAt)),
+        contains('fromHover: fromHover'),
+      );
     });
 
     test('Shift 在静止指针处查词（BUG-880）两条分支都算悬停会话', () {
@@ -187,10 +206,11 @@ void main() {
     test('dispose 收掉意图确认表', () {
       final int disposeAt = pageSource.indexOf('  void dispose() {');
       expect(disposeAt, greaterThan(0));
-      final String disposeBody = pageSource.substring(
-        disposeAt,
-        disposeAt + 3000,
-      );
+      // 切到 dispose 方法体结尾（两格缩进的闭括号），不按固定字数截：dispose 随功能增长，
+      // 固定窗口会把仍在方法体里的调用切出去。
+      final int disposeEnd = pageSource.indexOf('\n  }\n', disposeAt);
+      expect(disposeEnd, greaterThan(disposeAt));
+      final String disposeBody = pageSource.substring(disposeAt, disposeEnd);
       expect(
         disposeBody,
         contains('_cancelHoverLeaveResume()'),

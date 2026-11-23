@@ -307,6 +307,27 @@ void main() {
       expect(audio.sessionOwner.value, MediaSessionOwner.music);
     });
 
+    test('refreshInfo：卡片信息后到（封面异步探测完）按最新信息重推；没挂着时不推', () async {
+      final VideoBackgroundMediaSession session = build();
+      session.refreshInfo();
+      expect(handler.mediaItem.value, isNull, reason: '未 engage 不得推卡');
+      VideoMediaSessionInfo info = _info;
+      await session.engage(target, () => info);
+      expect(handler.mediaItem.value?.artUri, isNull);
+      final Uri cover = Uri.file('/covers/yurucamp.jpg');
+      info = VideoMediaSessionInfo(
+        title: _info.title,
+        subtitle: _info.subtitle,
+        artUri: cover,
+      );
+      session.refreshInfo();
+      expect(handler.mediaItem.value?.artUri, cover);
+      await session.release();
+      info = const VideoMediaSessionInfo(title: 'stale');
+      session.refreshInfo();
+      expect(handler.mediaItem.value, isNull, reason: '让出后不得再推卡');
+    });
+
     test('release：撤卡（Android 随之结束前台服务）并让回 none', () async {
       final VideoBackgroundMediaSession session = build();
       await session.engage(target, () => _info);

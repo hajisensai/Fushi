@@ -802,7 +802,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.live_chat.show_author',
             title: t.video_setting_live_chat_show_author,
             subtitle: t.video_setting_live_chat_show_author_hint,
-            icon: Icons.person_outline,
+            icon: FushiIcons.person,
             video: VideoPlacement(group: VideoGroup.danmaku, order: 110),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoLiveChatShowAuthor,
