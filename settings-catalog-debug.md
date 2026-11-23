@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 901 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 903 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -49,6 +49,8 @@ How to read this:
 | `appearance.design_system` | Design system | 设计系统 | Theme | choice | `auto`, `material`, `glass` | `auto` |  |
 | `appearance.theme` | Theme | 主题 | Theme | choice | `system-theme`, `m3-baseline`, `m3-indigo`, `m3-blue`, `m3-teal`, `m3-green`, `m3-yellow`, `m3-orange`, `m3-red`, `m3-pink`, `m3-neutral` | `system-theme` |  |
 | `appearance.brightness` | Dark mode | 深色模式 | Theme | choice | `light`, `system`, `dark` | `system` |  |
+| `appearance.reader_paper_light` | Light reading paper | 浅色阅读纸色 | Theme | text | `follow`, `ecru-theme`, `water-theme`, `eyecare-theme` | `follow` | follow \| ecru-theme \| water-theme \| eyecare-theme |
+| `appearance.reader_paper_dark` | Dark reading paper | 深色阅读纸色 | Theme | text | `follow`, `gray-theme`, `dark-theme`, `black-theme` | `follow` | follow \| gray-theme \| dark-theme \| black-theme |
 | `appearance.pure_black_dark` | Pure black dark | 纯黑深色背景 | Theme | bool |  | `false` | Use true black backgrounds in dark mode (OLED) |
 | `appearance.eink_mode` | E-ink mode | 墨水屏模式 | Theme | bool |  | `false` | Pure black-and-white theme with no animations and line-style highlights, for e-ink displays |
 | `appearance.eink_full_refresh_interval` | E-ink full refresh | 墨水屏全刷 | Theme | choice | `0`, `1`, `2`, `3`, `5`, `10`, `20` | `0` | While reading novels or manga, do a full e-ink refresh every few page turns to clear ghosting |

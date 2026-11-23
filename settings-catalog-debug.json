@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 901,
+ "count": 903,
  "settings": [
   {
    "key": "appearance.language",
@@ -899,6 +899,72 @@
     }
    ],
    "default": "system"
+  },
+  {
+   "key": "appearance.reader_paper_light",
+   "kind": "value",
+   "type": "text",
+   "title": {
+    "en": "Light reading paper",
+    "zh-CN": "浅色阅读纸色"
+   },
+   "path": {
+    "en": "Appearance › Theme",
+    "zh-CN": "外观 › 主题"
+   },
+   "options": [
+    {
+     "value": "follow",
+     "label": {}
+    },
+    {
+     "value": "ecru-theme",
+     "label": {}
+    },
+    {
+     "value": "water-theme",
+     "label": {}
+    },
+    {
+     "value": "eyecare-theme",
+     "label": {}
+    }
+   ],
+   "default": "follow",
+   "help": "follow | ecru-theme | water-theme | eyecare-theme"
+  },
+  {
+   "key": "appearance.reader_paper_dark",
+   "kind": "value",
+   "type": "text",
+   "title": {
+    "en": "Dark reading paper",
+    "zh-CN": "深色阅读纸色"
+   },
+   "path": {
+    "en": "Appearance › Theme",
+    "zh-CN": "外观 › 主题"
+   },
+   "options": [
+    {
+     "value": "follow",
+     "label": {}
+    },
+    {
+     "value": "gray-theme",
+     "label": {}
+    },
+    {
+     "value": "dark-theme",
+     "label": {}
+    },
+    {
+     "value": "black-theme",
+     "label": {}
+    }
+   ],
+   "default": "follow",
+   "help": "follow | gray-theme | dark-theme | black-theme"
   },
   {
    "key": "appearance.pure_black_dark",
