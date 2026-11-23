@@ -474,6 +474,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // ci/patches/flutter-engine/<版本>/engine-impeller-hdr.patch 接上；没有它的
   // 引擎产物会让 HDR 视频静默退回 SDR（守卫 compositor_hdr_engine_guard_test）。
   project.set_impeller_switch(flutter::ImpellerSwitch::Enabled);
+  // Flutter GPU（package:flutter_gpu）：全屏歌词「镜台」的真 3D 渲染器。只是放开 Dart 侧
+  // 拿 GpuContext，不改 Impeller 后端；拿不到时样式自己退回 Canvas 实现
+  // （lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_gpu.dart）。
+  project.set_enable_flutter_gpu(true);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();

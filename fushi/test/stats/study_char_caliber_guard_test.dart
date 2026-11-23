@@ -133,6 +133,23 @@ void main() {
         // PDF 文字层：一页文字层字素数是否达到「整页正文就是文字层」门槛
         // （kPdfTextLayerCompletePageMinChars），是覆盖判据不是学习计数。
         'packages/fushi_engine/lib/media/manga/manga_pdf_text_layer.dart': 1,
+        // 全屏歌词动画（PR #4211，照 folia-major 移植）：按歌词行的码点 / 字素数排版
+        // （逐字格宽、气泡与图形尺寸、单字判定、按字数分配时长），是排版几何与动画
+        // 计时，不是学习计数。cappella_scene 那处是逐字排布计划的条目数。
+        'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_messages.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text_layout.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_layout.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/partita/partita_layout.dart':
+            2,
         // 漫画页面注音（BUG-5216）：无逐行框时按最长行码点数均分行框（两处，是
         // 排版几何），学已注音词时单字底本不学（一处，是匹配判据），都不是学习计数。
         'packages/fushi_engine/lib/media/manga/manga_ruby.dart': 3,

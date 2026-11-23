@@ -4,7 +4,8 @@
 //! ```text
 //! timeline := "FMLT" | u32 version (= TIMELINE_WIRE_VERSION)
 //!           | str source | str format | i64 offsetMs | opt_str language
-//!           | u8 timingQuality | u8 flags(bit0 isUserEdited, bit1 hasEffects, bit2 rubyDropped)
+//!           | u8 timingQuality
+//!           | u8 flags(bit0 isUserEdited, bit1 hasEffects, bit2 rubyDropped, bit3 hasSongParts)
 //!           | opt_str title | opt_str artist
 //!           | u32 agentCount | (str id | str name | u8 kind)*agentCount
 //!           | u32 lineCount | line*lineCount
@@ -12,6 +13,7 @@
 //!           | u32 syllableCount | (str text | i64 startMs | i64 endMs | u8 fill | opt_str ruby)*
 //!           | u32 translationCount | (str lang | str text)*
 //!           | opt_str romanization | opt_str style
+//! [bit3 时追加] songParts := opt_str songPart * lineCount（逐行段落标注，与行一一对应）
 //! str      := u32 byteLen | utf8
 //! opt_str  := u32 byteLen（0xFFFFFFFF = null）| utf8
 //! ```
@@ -123,9 +125,11 @@ pub fn encode(t: &Timeline) -> Vec<u8> {
     w.i64(t.meta.offset_ms);
     w.opt_str(t.meta.language.as_deref());
     w.u8(t.timing_quality.to_u8());
+    let has_parts = t.lines.iter().any(|l| l.song_part.is_some());
     w.u8((t.meta.is_user_edited as u8)
         | ((t.meta.has_effects as u8) << 1)
-        | ((t.meta.ruby_dropped as u8) << 2));
+        | ((t.meta.ruby_dropped as u8) << 2)
+        | ((has_parts as u8) << 3));
     w.opt_str(t.meta.title.as_deref());
     w.opt_str(t.meta.artist.as_deref());
     w.u32(t.agents.len() as u32);
@@ -158,6 +162,13 @@ pub fn encode(t: &Timeline) -> Vec<u8> {
         }
         w.opt_str(l.romanization.as_deref());
         w.opt_str(l.style.as_deref());
+    }
+    // 段落表放在尾部、由 flags bit3 开关：不带段落的时间轴字节与旧格式完全一致，
+    // `timeline_cache` 里的旧数据照常解得开（不升线格式版本）。
+    if has_parts {
+        for l in &t.lines {
+            w.opt_str(l.song_part.as_deref());
+        }
     }
     w.buf
 }
@@ -231,6 +242,11 @@ pub fn decode(data: &[u8]) -> Option<Timeline> {
         line.style = r.opt_str()?;
         t.lines.push(line);
     }
+    if flags & 8 != 0 {
+        for line in &mut t.lines {
+            line.song_part = r.opt_str()?;
+        }
+    }
     r.at_end().then_some(t)
 }
 
@@ -256,5 +272,20 @@ mod tests {
         let bytes = encode(&t);
         assert_eq!(decode(&bytes), Some(t));
         assert_eq!(decode(&bytes[..bytes.len() - 1]), None);
+    }
+
+    #[test]
+    fn song_parts_round_trip_and_stay_optional() {
+        let mut t = Timeline::new("ttml", TimingQuality::Line);
+        t.lines.push(Line::whole("a", 0, 10));
+        let plain = encode(&t);
+        // 没有段落：不置 bit3、不写尾部表（与旧格式字节一致）。
+        assert_eq!(decode(&plain), Some(t.clone()));
+        let mut l = Line::whole("b", 10, 20);
+        l.song_part = Some("Chorus".into());
+        t.lines.push(l);
+        let bytes = encode(&t);
+        assert_eq!(bytes.len() > plain.len(), true);
+        assert_eq!(decode(&bytes), Some(t));
     }
 }

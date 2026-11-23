@@ -1,0 +1,8 @@
+{
+  "DioramaParticleVertex": {"type": "vertex", "file": "shaders/diorama_particle.vert"},
+  "DioramaParticleFragment": {"type": "fragment", "file": "shaders/diorama_particle.frag"},
+  "DioramaPlaneVertex": {"type": "vertex", "file": "shaders/diorama_plane.vert"},
+  "DioramaPlaneFragment": {"type": "fragment", "file": "shaders/diorama_plane.frag"},
+  "DioramaMoteVertex": {"type": "vertex", "file": "shaders/diorama_mote.vert"},
+  "DioramaMoteFragment": {"type": "fragment", "file": "shaders/diorama_mote.frag"}
+}
