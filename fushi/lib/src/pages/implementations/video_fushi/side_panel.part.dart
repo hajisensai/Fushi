@@ -61,6 +61,10 @@ extension _VideoSidePanel on _VideoFushiPageState {
     if (_episodeListVisible.value) {
       _episodeListVisible.value = false;
     }
+    // 聊天回放栏同处右栏：开浮层面板时一并收起（拍板台 zTedU_pOQF）。
+    if (_liveChatVisible.value) {
+      _liveChatVisible.value = false;
+    }
     // BUG-253：开面板时不再唤起背景控制条（旧 [_pokeControlsVisible]），而是立刻把
     // 已经在显示的 media_kit 控制条 / 右侧 rail 镜像收起，避免它们冒在面板后面。
     // 面板开着期间 [_markControlsVisible] / [_pokeControlsVisible] 都被门控成不可见。

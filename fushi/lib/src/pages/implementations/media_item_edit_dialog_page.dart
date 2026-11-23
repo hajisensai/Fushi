@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show ItemScrapeMetaRow;
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -9,6 +11,8 @@ import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart'
+    show itemScrapeKeyForBook;
 import 'package:fushi_engine/media/collections/book_series_key.dart'
     show parseBookSeriesKey;
 import 'package:fushi/src/models/module_id.dart';
@@ -64,10 +68,43 @@ class _MediaItemEditDialogPageState
 
   bool get _supportsAuthorEdit => mediaSource.supportsAuthorEdit;
 
+  /// 书族条目（EPUB / 漫画 / PDF / 字幕书）在 `item_scrape_meta` 里的身份；
+  /// null = 还没读完 / 不是书（视频、游戏不显示简介框）。BUG-5111：刮不到资料
+  /// 的书也能手填简介，手填即上锁，之后条目刮削不覆盖。
+  ItemScrapeKey? _scrapeKey;
+
+  /// 打开弹窗时库里的简介（判「改没改」；没改就不写，免得给刮来的简介凭空上锁）。
+  String _initialSummary = '';
+  final TextEditingController _summaryController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSummary();
+  }
+
+  Future<void> _loadSummary() async {
+    // initState 里调用：不能 ref.watch，读缓存的 AppModel。
+    final ItemScrapeKey? key = await itemScrapeKeyForBook(
+      appModelNoUpdate.database,
+      widget.item,
+    );
+    if (key == null) return;
+    final ItemScrapeMetaRow? row = await appModelNoUpdate.database
+        .getItemScrapeMeta(key.mediaType, key.entryKey);
+    if (!mounted) return;
+    setState(() {
+      _scrapeKey = key;
+      _initialSummary = row?.summary ?? '';
+      _summaryController.text = _initialSummary;
+    });
+  }
+
   @override
   void dispose() {
     _nameOverrideController.dispose();
     _authorController.dispose();
+    _summaryController.dispose();
     super.dispose();
   }
 
@@ -140,6 +177,28 @@ class _MediaItemEditDialogPageState
                 },
               ),
             ),
+          ],
+          if (_scrapeKey != null) ...<Widget>[
+            const SizedBox(height: 8),
+            FushiTextField(
+              key: const ValueKey<String>('book_edit_summary_field'),
+              controller: _summaryController,
+              labelText: t.book_edit_summary,
+              helperText: t.book_edit_summary_helper,
+              keyboardType: TextInputType.multiline,
+              minLines: 2,
+              maxLines: 6,
+              suffixIcon: FushiIconButton(
+                tooltip: t.undo,
+                isWideTapArea: true,
+                icon: FushiIcons.undo,
+                onTap: () async {
+                  _summaryController.text = _initialSummary;
+                  FocusScope.of(context).unfocus();
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
           ],
           MediaItemCoverOverrideField(
             imageProvider: _coverImageProvider ?? _defaultImageProvider!,
@@ -277,6 +336,18 @@ class _MediaItemEditDialogPageState
         await mediaSource.setAuthorFromMediaItem(
           item: widget.item,
           author: _authorController.text,
+        );
+      }
+
+      // BUG-5111：简介改过才写（手填 = 上锁，清空 = 解锁交还刮削）。
+      final ItemScrapeKey? scrapeKey = _scrapeKey;
+      if (scrapeKey != null &&
+          _summaryController.text.trim() != _initialSummary.trim()) {
+        await ItemScrapeStore(appModel.database).setManualFields(
+          scrapeKey,
+          <ItemScrapeLockableField, String?>{
+            ItemScrapeLockableField.summary: _summaryController.text,
+          },
         );
       }
 

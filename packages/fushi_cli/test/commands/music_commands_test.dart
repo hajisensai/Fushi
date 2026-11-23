@@ -238,4 +238,117 @@ void main() {
     expect(job, contains('已完成'));
     expect(job, contains('识别 2'));
   });
+
+  group('导入 / 导出（music_import_commands）', () {
+    test('import：文件转绝对路径，一个都不给是用法错误', () {
+      final CtlRequestSpec r = _build('import', <String>['a.flac', 'b.mp4']);
+      expect(r.method, 'POST');
+      expect(r.path, '/api/admin/music/import');
+      final List<Object?> paths = r.body!['paths']! as List<Object?>;
+      expect(paths, hasLength(2));
+      expect('${paths.first}', endsWith('a.flac'));
+      expect('${paths.last}', endsWith('b.mp4'));
+      expect(() => _build('import', <String>[]), _usageError());
+    });
+
+    test('光盘：add / titles / chapters（--title 可重复且必须是数字）/ rm 要 --yes', () {
+      expect(_build('discs', <String>[]).path, '/api/admin/music/discs');
+      final CtlRequestSpec add = _build('disc-add', <String>['/discs/live']);
+      expect(add.method, 'POST');
+      expect(add.path, '/api/admin/music/discs');
+      expect(
+        _build('disc-titles', <String>['d1']).path,
+        '/api/admin/music/discs/d1/titles',
+      );
+      final CtlRequestSpec chapters = _build('disc-chapters', <String>[
+        'd1',
+        '--title',
+        '1',
+        '--title',
+        '3',
+      ]);
+      expect(chapters.path, '/api/admin/music/discs/d1/chapters');
+      expect(chapters.body, <String, Object?>{
+        'titles': <String>['1', '3'],
+      });
+      expect(_build('disc-chapters', <String>['d1']).body, isEmpty);
+      expect(
+        () => _build('disc-chapters', <String>['d1', '--title', 'x']),
+        _usageError(),
+      );
+      expect(() => _build('disc-rm', <String>['d1']), _usageError());
+      final CtlRequestSpec rm = _build('disc-rm', <String>['d1', '--yes']);
+      expect(rm.method, 'DELETE');
+      expect(rm.body, <String, Object?>{'confirm': true});
+    });
+
+    test('插件：inspect / install 要 --yes 且带 digest / 启停 / 卸载', () {
+      final CtlRequestSpec inspect = _build('plugin-inspect', <String>[
+        '/p/a.fushiplug',
+      ]);
+      expect(inspect.path, '/api/admin/music/plugins/inspect');
+      expect(
+        () => _build('plugin-install', <String>['/p/a.fushiplug']),
+        _usageError(),
+      );
+      final CtlRequestSpec install = _build('plugin-install', <String>[
+        '/p/a.fushiplug',
+        '--yes',
+        '--digest',
+        'abc',
+      ]);
+      expect(install.body!['confirm'], isTrue);
+      expect(install.body!['digest'], 'abc');
+      final CtlRequestSpec off = _build('plugin-disable', <String>['lyr']);
+      expect(off.method, 'PUT');
+      expect(off.path, '/api/admin/music/plugins/lyr/enabled');
+      expect(off.body, <String, Object?>{'enabled': false});
+      expect(_build('plugin-enable', <String>['lyr']).body, <String, Object?>{
+        'enabled': true,
+      });
+      expect(() => _build('plugin-rm', <String>['lyr']), _usageError());
+      expect(_build('plugin-rm', <String>['lyr', '-y']).method, 'DELETE');
+    });
+
+    test('lyrics-export：默认 ttml，--format lrc / --overwrite', () {
+      final CtlRequestSpec r = _build('lyrics-export', <String>['t-1']);
+      expect(r.path, '/api/admin/music/tracks/t-1/lyrics/export');
+      expect(r.body, <String, Object?>{'format': 'ttml'});
+      expect(
+        _build('lyrics-export', <String>[
+          't-1',
+          '--format',
+          'lrc',
+          '--overwrite',
+        ]).body,
+        <String, Object?>{'format': 'lrc', 'overwrite': true},
+      );
+    });
+
+    test('audio-cd：起任务 / 查进度 / 取消', () {
+      final CtlRequestSpec start = _build('audio-cd', <String>['E:/']);
+      expect(start.method, 'POST');
+      expect(start.path, '/api/admin/music/audio-cd');
+      expect(start.body!['dir'], isA<String>());
+      expect(_build('audio-cd-status', <String>[]).method, 'GET');
+      expect(
+        _build('audio-cd-cancel', <String>[]).path,
+        '/api/admin/music/audio-cd/cancel',
+      );
+      final String Function(Object?) render = _spec('audio-cd-status').render!;
+      expect(
+        render(<String, Object?>{
+          'id': 'x',
+          'status': 'running',
+          'track': 1,
+          'trackCount': 9,
+        }),
+        contains('1/9'),
+      );
+      expect(
+        render(<String, Object?>{'id': 'x', 'status': 'done', 'imported': 9}),
+        contains('导入 9 首'),
+      );
+    });
+  });
 }

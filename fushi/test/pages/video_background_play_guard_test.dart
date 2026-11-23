@@ -175,6 +175,34 @@ void main() {
       );
     });
 
+    test('后台放声音时挂进系统媒体会话，回前台让出（拍板台 42UUu_kcwD-media）', () {
+      final String pauseBody = region(
+        'void _pauseForBackground() {',
+        'void _resumeAfterBackgroundIfNeeded() {',
+      );
+      final int suspend = pauseBody.indexOf('suspendVideoForBackground()');
+      final int enter = pauseBody.indexOf('_enterBackgroundAudio(controller)');
+      final int mark = pauseBody.indexOf('_pausedForBackground = true');
+      expect(enter, greaterThan(suspend));
+      expect(mark, greaterThan(enter), reason: '只在后台放声音分支里认领会话');
+      final String resumed = region(
+        'case AppLifecycleState.resumed:',
+        'case AppLifecycleState.detached:',
+      );
+      final int leave = resumed.indexOf('_leaveBackgroundAudio()');
+      final int restart = resumed.indexOf('_watchTracker?.start()');
+      expect(leave, greaterThanOrEqualTo(0));
+      expect(restart, greaterThan(leave), reason: '先恢复前台口径再续表');
+      final String enterBody = region(
+        'void _enterBackgroundAudio(VideoPlayerController controller) {',
+        'void _leaveBackgroundAudio() {',
+      );
+      expect(enterBody.contains('MediaSessionOwner.video'), isTrue);
+      expect(enterBody.contains('countSubtitleChars = false'), isTrue);
+      expect(enterBody.contains('setLifecycleStopped(false)'), isTrue);
+      expect(code.contains('_backgroundMediaSession?.dispose()'), isTrue);
+    });
+
     test('判据不在页面里另写一份', () {
       expect(
         code.contains('VideoFushiPage.shouldKeepAudioInBackground('),

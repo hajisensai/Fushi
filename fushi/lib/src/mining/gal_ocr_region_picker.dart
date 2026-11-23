@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 读 PNG 头（IHDR）里的宽高；不是 PNG 返回 null。
@@ -28,42 +29,54 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
   return (width: width, height: height);
 }
 
-/// 弹出框选对话框：[framePng] 是游戏窗口客户区的一帧截图，[initial] 是初始框。
-/// 确认返回框（客户区归一化），取消返回 null；截图读不出尺寸直接返回 null。
-Future<GalOcrRegion?> showGalOcrRegionPicker(
+/// 框选对话框的结果：台词框（客户区归一化）与「二值化」预处理开关。
+typedef GalOcrRegionChoice = ({GalOcrRegion region, bool binarize});
+
+/// 弹出框选对话框：[framePng] 是游戏窗口客户区的一帧截图，[initial] 是初始框，
+/// [initialBinarize] 是二值化开关的初值（这个游戏上次的选择）。
+/// 确认返回框与开关，取消返回 null；截图读不出尺寸直接返回 null。
+Future<GalOcrRegionChoice?> showGalOcrRegionPicker(
   BuildContext context, {
   required Uint8List framePng,
   required GalOcrRegion initial,
+  bool initialBinarize = false,
 }) {
   final ({int width, int height})? size = galOcrPngSize(framePng);
-  if (size == null) return Future<GalOcrRegion?>.value();
-  return showAppDialog<GalOcrRegion>(
+  if (size == null) return Future<GalOcrRegionChoice?>.value();
+  return showAppDialog<GalOcrRegionChoice>(
     context: context,
-    builder: (BuildContext dialogContext) => _GalOcrRegionDialog(
+    builder: (BuildContext dialogContext) => GalOcrRegionDialog(
       framePng: framePng,
       aspectRatio: size.width / size.height,
       initial: initial,
+      initialBinarize: initialBinarize,
     ),
   );
 }
 
-class _GalOcrRegionDialog extends StatefulWidget {
-  const _GalOcrRegionDialog({
+/// 框选对话框本体（[showGalOcrRegionPicker] 用；公开给 widget 测试）。
+@visibleForTesting
+class GalOcrRegionDialog extends StatefulWidget {
+  const GalOcrRegionDialog({
     required this.framePng,
     required this.aspectRatio,
     required this.initial,
+    this.initialBinarize = false,
+    super.key,
   });
 
   final Uint8List framePng;
   final double aspectRatio;
   final GalOcrRegion initial;
+  final bool initialBinarize;
 
   @override
-  State<_GalOcrRegionDialog> createState() => _GalOcrRegionDialogState();
+  State<GalOcrRegionDialog> createState() => _GalOcrRegionDialogState();
 }
 
-class _GalOcrRegionDialogState extends State<_GalOcrRegionDialog> {
+class _GalOcrRegionDialogState extends State<GalOcrRegionDialog> {
   late GalOcrRegion _region = widget.initial;
+  late bool _binarize = widget.initialBinarize;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +107,18 @@ class _GalOcrRegionDialogState extends State<_GalOcrRegionDialog> {
                   ),
                 ),
               ),
+              const SizedBox(height: 8),
+              FushiStaggeredEntrance(
+                index: 2,
+                child: FushiSwitchListTile(
+                  key: const ValueKey<String>('gal-ocr-binarize'),
+                  contentPadding: EdgeInsets.zero,
+                  value: _binarize,
+                  onChanged: (bool value) => setState(() => _binarize = value),
+                  title: Text(t.game_ocr_binarize_title),
+                  subtitle: Text(t.game_ocr_binarize_hint),
+                ),
+              ),
             ],
           ),
         ),
@@ -108,7 +133,10 @@ class _GalOcrRegionDialogState extends State<_GalOcrRegionDialog> {
           // 焦点驱动：打开即落在确认上，回车直接按当前框开始识别。
           autofocus: true,
           onPressed: _region.isValid
-              ? () => Navigator.of(context).pop(_region)
+              ? () => Navigator.of(context).pop<GalOcrRegionChoice>((
+                  region: _region,
+                  binarize: _binarize,
+                ))
               : null,
           child: Text(t.game_ocr_region_confirm),
         ),

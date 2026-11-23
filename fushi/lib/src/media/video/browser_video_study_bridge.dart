@@ -5,6 +5,7 @@ import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -468,11 +469,12 @@ class BrowserVideoStudyBridge {
         final FushiDatabase db = _database();
         switch (activity) {
           case BrowserVideoStudyActivity.lookup:
-            await db.addLookupCount(
+            await recordStudyLookup(
+              db,
               bookKey: identity.mediaKey,
               title: title,
               sourceType: kStatSourceVideo,
-              dateKey: FushiDatabase.statDateKeyOf(at),
+              at: at,
             );
           case BrowserVideoStudyActivity.mine:
             await db.recordMiningEvent(

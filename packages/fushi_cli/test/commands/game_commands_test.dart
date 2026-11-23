@@ -64,6 +64,39 @@ void main() {
     expect(() => _build('attach', <String>['--pid', '0']), _usageError());
   });
 
+  test('ocr-start / ocr-region 参数', () {
+    expect(
+      _build('ocr-start', <String>[
+        '--pid',
+        '7',
+        '--area',
+        '0.1,0.7,0.8,0.25',
+        '--no-binarize',
+      ]).body,
+      <String, Object?>{
+        'pid': 7,
+        'left': 0.1,
+        'top': 0.7,
+        'width': 0.8,
+        'height': 0.25,
+        'binarize': false,
+      },
+    );
+    final CtlRequestSpec start = _build('ocr-start', <String>['--hwnd', '42']);
+    expect(start.path, '/api/admin/game/ocr/start');
+    expect(start.body, <String, Object?>{'hwnd': 42});
+    expect(() => _build('ocr-start', <String>[]), _usageError());
+    expect(
+      () => _build('ocr-start', <String>['--hwnd', '1', '--area', '0.1,0.2']),
+      _usageError(),
+    );
+    final CtlRequestSpec region = _build('ocr-region', <String>['--binarize']);
+    expect(region.method, 'PUT');
+    expect(region.path, '/api/admin/game/ocr/region');
+    expect(region.body, <String, Object?>{'binarize': true});
+    expect(() => _build('ocr-region', <String>[]), _usageError());
+  });
+
   test('stop / status / text 参数', () {
     expect(_build('stop', <String>[]).body, isEmpty);
     expect(_build('stop', <String>['--unbind']).body, <String, Object?>{

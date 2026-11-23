@@ -609,6 +609,8 @@ function parseMineResult(reply) {
             message,
             duplicate: reply.duplicate === true,
             queued: reply.queued === true,
+            // 拍板 EuOLprw_dV：用户在截屏识字的框选页点了「×」，自己放弃了这张卡。
+            cancelled: reply.cancelled === true,
             // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
             // （MineFailureNotice.settle）。这里就不能再说第二遍。
             hostReported: reply.hostReported === true,
@@ -2238,26 +2240,42 @@ function escapePitchText(text) {
 // styling — 40px of dead space on the left, 1em of margin above and below, and
 // no `・` between two transcriptions.
 function constructPitchPositionHtml(pitches) {
-    if (!pitches?.length) {
-        return '';
-    }
-
-    let items = '';
-    pitches.forEach(pitchGroup => {
-        pitchGroup.pitchPositions.forEach(pos => {
-            items += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
-        });
-        // 79c55c2 二期：pattern 式 accent 同样进 {pitch-accent-positions} 字段。
-        (pitchGroup.patterns || []).forEach(pattern => {
-            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(pattern)}</span><span>]</span></span></li>`;
-        });
-        (pitchGroup.transcriptions || []).forEach(ipa => {
-            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
-        });
-    });
+    const items = pitchPositionEntries(pitches).map(entry => `<li>${entry}</li>`).join('');
     // No positions AND no patterns AND no transcriptions: return '' instead of
     // an empty <ul> shell, so the field is treated as empty and skipped.
     return items ? `<ul>${items}</ul>` : '';
+}
+
+// 反馈 iTMx1pCb2V：{pitch-accent-positions-inline} 是同一组条目的单行变体——不包
+// <ul>，条目之间用「・」连起来，多音调的词在非 Lapis 模板里只占一行。默认的
+// {pitch-accent-positions} 仍是 <ul>（BUG-2151，Lapis 靠 `#pitch-tags ul` 归一样式），
+// 两者只差外层结构，条目内容与顺序同源（pitchPositionEntries）。
+function constructPitchPositionInlineHtml(pitches) {
+    return pitchPositionEntries(pitches).join('・');
+}
+
+// {pitch-accent-positions} 与 {pitch-accent-positions-inline} 共用的条目：每组的数字位、
+// pattern 式 accent（79c55c2 二期）、IPA 音标（TODO-688）依次排开，每条是一个
+// `[x]` span。pattern / IPA 来自词典数据，进 HTML 前必须转义。
+function pitchPositionEntries(pitches) {
+    if (!pitches?.length) {
+        return [];
+    }
+
+    const entries = [];
+    const entry = text => `<span style="display:inline;"><span>[</span><span>${text}</span><span>]</span></span>`;
+    pitches.forEach(pitchGroup => {
+        pitchGroup.pitchPositions.forEach(pos => {
+            entries.push(entry(pos));
+        });
+        (pitchGroup.patterns || []).forEach(pattern => {
+            entries.push(entry(escapePitchText(pattern)));
+        });
+        (pitchGroup.transcriptions || []).forEach(ipa => {
+            entries.push(entry(escapePitchText(ipa)));
+        });
+    });
+    return entries;
 }
 
 // Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
@@ -2868,6 +2886,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const patternNormalizedPitches = normalizePitchPatterns(pitches || [], reading);
     const normalizedPitches = mergeIdenticalPitchGroups(patternNormalizedPitches);
     const pitchPositions = constructPitchPositionHtml(normalizedPitches);
+    const pitchPositionsInline = constructPitchPositionInlineHtml(normalizedPitches);
     // categories 自己按值去重（`!categories.includes(category)`），且要的是原始分组，
     // 不受合并影响，喂未合并的分组；但要换算后的数字位，H/L 串词典才有分类。
     const pitchCategories = constructPitchCategories(patternNormalizedPitches, reading, rules);
@@ -2915,6 +2934,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         glossaryFirst,
         singleGlossaries: JSON.stringify(singleGlossaries),
         pitchPositions,
+        pitchPositionsInline,
         pitchCategories,
         phoneticTranscriptions,
         popupSelectionText,
@@ -6645,6 +6665,10 @@ function createEntryHeader(entry, idx) {
 
                 if (result.queued) {
                     queuedLocally = true;
+                    setMineState(false);
+                } else if (result.cancelled) {
+                    // 拍板 EuOLprw_dV：用户自己在框选页放弃了这次制卡——不是失败，不说
+                    // 「制卡失败」，也不回查 Anki（TODO-448），按钮放回可点的 '+'。
                     setMineState(false);
                 } else if (result.ankiConnect) {
                     // TODO-270 D: a freshly mined card with a real note id becomes

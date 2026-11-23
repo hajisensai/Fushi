@@ -121,7 +121,7 @@ void main() {
     // 注释与修改记录 ID 不算。
     expect(
       _offenders('x.dart', <String>[
-        "/// 笔记：`v5(NS, uid/note/guid)`",
+        '/// 笔记：`v5(NS, uid/note/guid)`',
         "  // '\$uid/note/\$guid' 以前在 Dart 拼",
       ]),
       isEmpty,

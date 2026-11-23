@@ -123,9 +123,28 @@ const List<CtlCommandGroup> srsCommandGroups = <CtlCommandGroup>[
         build: _buildRetainedDelete,
         render: _renderRetainedDelete,
       ),
+      CtlCommandSpec(
+        name: 'import-mined',
+        summary: '把制卡历史导入当前 profile 的默认牌组（已导入过的跳过；需 --yes）',
+        configure: _configureYes,
+        build: _buildImportMined,
+        render: _renderImportMined,
+      ),
     ],
   ),
 ];
+
+CtlRequestSpec _buildImportMined(CtlCommandContext c) {
+  if (!c.flag('yes')) throw const CtlUsageError('导入整份制卡历史请加 --yes');
+  return const CtlRequestSpec.post(
+    '$_root/import-mined',
+    body: <String, Object?>{'confirm': true},
+  );
+}
+
+String _renderImportMined(Object? data) => data is Map
+    ? '已导入 ${data['imported']} 条，跳过 ${data['skipped']} 条（已导入过 / 词形为空）'
+    : renderCtlJson(data);
 
 const String _root = '/api/admin/srs';
 

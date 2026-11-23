@@ -22,6 +22,7 @@ import 'dart:io';
 import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
@@ -162,4 +163,36 @@ Future<shelf.Response> handleHostJobRequest(
   } on FormatException catch (e) {
     return shelf.Response(400, body: e.message);
   }
+}
+
+/// 通用任务协议（ASR 等，设计 §3.4）的互联模块（`/api/jobs*` + 能力位 `jobs`）。[jobs] 为 null =
+/// host 不提供：端点 404、能力位无 `jobs`。
+class HostJobsInterconnectModule extends InterconnectHostModule {
+  HostJobsInterconnectModule(this.jobs);
+
+  final HostJobManager? jobs;
+
+  @override
+  String get capabilityKey => 'jobs';
+
+  @override
+  Future<Object?> capability() async => jobs?.capability();
+
+  @override
+  List<String> get routePrefixes => const <String>['/api/jobs'];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final HostJobManager? j = jobs;
+    if (j == null) return shelf.Response.notFound('Host jobs off');
+    return handleHostJobRequest(
+      j,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+    );
+  }
+
+  @override
+  Future<void> dispose() async => jobs?.disposeAll();
 }

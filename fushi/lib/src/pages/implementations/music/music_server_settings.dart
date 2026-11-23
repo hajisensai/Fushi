@@ -177,6 +177,8 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
                             t.music_server_apple_music_subtitle,
                           MusicServerKind.youtube =>
                             t.music_server_youtube_subtitle,
+                          MusicServerKind.fushiHost =>
+                            t.music_server_fushi_host_subtitle,
                         },
                         value: mix.contains(servers[i].serverId),
                         onChanged: (bool v) =>

@@ -46,7 +46,7 @@ import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
     show MusicServerLoudness;
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerTrackRef;
+    show MusicServerTrackRef, isFushiHostMusicPath;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
@@ -164,7 +164,29 @@ Future<MusicResolvedMedia> resolveMusicMedia(
   MusicPluginStreamResolver? pluginResolver,
   MusicRemoteMediaResolver? remoteResolver,
   MusicYoutubeStreamResolver? youtubeResolver,
+  MusicFushiHostTrackOpener? fushiHostOpener,
 }) async {
+  // 互联 host 曲目（design-imusic-q1）：此时才向 host 签统一流票；CUE 虚拟曲目取 host 曲目行
+  // 的起止（播放项自带的优先），EDL 段指向流地址。
+  if (isFushiHostMusicPath(item.path)) {
+    final MusicFushiHostTrackOpener? open =
+        fushiHostOpener ?? musicFushiHostTrackOpener;
+    if (open == null) {
+      throw StateError('interconnect music library is not installed');
+    }
+    final ({String url, int? startMs, int? endMs}) s = await open(item.path);
+    final int start = item.startMs ?? s.startMs ?? 0;
+    final int? end = (playThrough ?? item).endMs ?? s.endMs;
+    return (
+      media: Media(
+        start == 0 && end == null
+            ? s.url
+            : musicEdlUri(s.url, startMs: start, endMs: end),
+      ),
+      fileLocal: const <String, String>{},
+      expiresAt: null,
+    );
+  }
   final String? youtubeId = youtubeMusicVideoIdFromPath(item.path);
   if (youtubeId != null) {
     final MusicYoutubeStream s =
