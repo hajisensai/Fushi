@@ -516,15 +516,24 @@ void main() {
         BrowserVideoStudyActivity.mine,
       );
       await rig.bridge.stopAll();
+      // 同 key 正在计时的查词记进统计段（v172，拍板台 4KOWK3c2mn）；别的 key 的制卡
+      // 仍记按天计数表。两处合起来就是统计面读到的查词 / 制卡行。
       final Map<String, String> titleByKey = <String, String>{
-        for (final LookupMiningCounterRow r
-            in await rig.db.getAllLookupMiningCounters())
+        for (final LookupMiningCounterRow r in <LookupMiningCounterRow>[
+          ...await rig.db.getAllLookupMiningCounters(),
+          ...await rig.db.getStudySegmentLookupCounters(),
+        ])
           r.bookKey: r.title,
       };
       expect(titleByKey, <String, String>{
         'web:yt-abc': 'Video A',
         'web:yt-old': 'web:yt-old',
       });
+      expect(
+        (await rig.db.getStudySegmentLookupCounters()).single.lookupCount,
+        1,
+        reason: '正在计时的那条视频：查词进段，不进计数表',
+      );
     });
 
     test('study 字段解析：缺 mediaKey / 类型不对 / 超长 → null', () {

@@ -169,9 +169,10 @@ void main() {
     final FushiDatabase db = await _openDb();
     DateTime now = DateTime(2026, 9, 8, 10);
     final StudyClock clock = _clock(db, () => now)..start();
-    now = now.add(const Duration(minutes: 3));
+    // 窗口都在 120s 断档门以内（真实时钟每 60s 一个 tick），段有时长、进会话流。
+    now = now.add(const Duration(seconds: 50));
     expect(clock.addLookup(), isTrue);
-    now = now.add(const Duration(minutes: 3));
+    now = now.add(const Duration(seconds: 50));
     await clock.stop();
 
     final StatFacts facts = await loadStatFacts(db, includeCounters: true);
