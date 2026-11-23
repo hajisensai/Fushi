@@ -25,10 +25,14 @@ void main() {
     if (sandbox.existsSync()) sandbox.deleteSync(recursive: true);
   });
 
-  test('ensureKindFolders 建出三个分类子目录，重复调用不炸', () async {
+  test('ensureKindFolders 建出三个分类子目录与预留的 Games，重复调用不炸', () async {
     await ImportInbox.ensureKindFolders(inbox);
     await ImportInbox.ensureKindFolders(inbox);
-    for (final String name in ImportInbox.kindFolderNames.values) {
+    expect(
+      ImportInbox.allFolderNames,
+      unorderedEquals(<String>['Books', 'Video', 'Manga', 'Games']),
+    );
+    for (final String name in ImportInbox.allFolderNames) {
       expect(Directory(p.join(inbox.path, name)).existsSync(), isTrue);
     }
   });
@@ -266,12 +270,47 @@ void main() {
 
   // 拍板台 kmfCiXlIU_：iTunes 文件共享只看得见 Documents 最外层。
   group('收件箱根上的散文件（iTunes）', () {
-    test('没有 Games 收件箱：iOS 游戏模块只是串流接收端，本机无游戏导入', () {
+    test('Games 只是预留目录：不映射任何媒体种类（iOS 游戏模块只是串流接收端）', () {
       expect(ImportInbox.folderNameFor('game'), isNull);
       expect(
         ImportInbox.kindFolderNames.keys,
         unorderedEquals(<String>['book', 'video', 'manga']),
       );
+      expect(ImportInbox.reservedFolderNames, <String>['Games']);
+      expect(
+        ImportInbox.kindFolderNames.values,
+        isNot(contains('Games')),
+        reason: 'Games 不进收件箱管线，放进去的文件不会被任何页面收走',
+      );
+    });
+
+    test('预留的 Games 目录里的文件哪个页面都不收、也不动', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      final File game = touch(p.join(inbox.path, 'Games', 'clip.mp4'));
+      final File book = touch(p.join(inbox.path, 'Games', 'novel.epub'));
+      for (final String kind in <String>['book', 'video', 'manga', 'game']) {
+        expect(
+          await ImportInbox.pendingEntries(inbox: inbox, mediaKind: kind),
+          isEmpty,
+          reason: kind,
+        );
+        expect(
+          await ImportInbox.pendingRootFiles(inbox: inbox, mediaKind: kind),
+          isEmpty,
+          reason: '根上的 Games 是目录，不当散文件收：$kind',
+        );
+        expect(
+          await ImportInbox.takeBatch(
+            inbox: inbox,
+            stagingRoot: staging,
+            mediaKind: kind,
+          ),
+          isNull,
+          reason: kind,
+        );
+      }
+      expect(game.existsSync(), isTrue);
+      expect(book.existsSync(), isTrue);
     });
 
     test('pendingRootFiles 只列本页认的根上文件，不碰目录 / 隐藏项 / 分类子目录', () async {
