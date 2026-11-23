@@ -434,7 +434,7 @@ SettingsDestination buildAppearanceDestination() {
           // 显式选羊皮纸 / 护眼 / 深灰等即覆盖；与主题种子色无关。
           SettingsCustomItem(
             id: 'appearance.reader_paper_light',
-            icon: Icons.light_mode_outlined,
+            icon: FushiIcons.lightMode,
             searchTitle: t.reader_paper_light,
             builder: (SettingsContext settingsContext) =>
                 buildReaderPaperSelector(settingsContext, dark: false),
@@ -442,7 +442,7 @@ SettingsDestination buildAppearanceDestination() {
           ),
           SettingsCustomItem(
             id: 'appearance.reader_paper_dark',
-            icon: Icons.dark_mode_outlined,
+            icon: FushiIcons.darkMode,
             searchTitle: t.reader_paper_dark,
             builder: (SettingsContext settingsContext) =>
                 buildReaderPaperSelector(settingsContext, dark: true),

@@ -81,6 +81,8 @@ const Map<String, String> _notRouted = <String, String>{
       'internal: 音乐导入端口给视频侧的纯音频入口（用户入口 importMusicFiles 另行登记）',
   'lib/src/media/music/music_audio_intake.dart#importAudioFiles':
       'internal: 音乐导入端口的底层实现（用户入口 importMusicFiles 另行登记）',
+  'importDiscoveryPdf':
+      'internal: 发现页下载队列自动入库 / 书架一包书解包后的 PDF 导入端口（用户直接导 PDF 走 fushi_cli library import <pdf>）',
   'exportBatch': 'ui-only: 旧版只读后的一次性迁移向导（migration_page），不是日常操作',
   'importPastedTextBook':
       'ui-only: 输入是剪贴板粘贴的文本；CLI 等价做法是存成 .txt 后 fushi_cli library import',
