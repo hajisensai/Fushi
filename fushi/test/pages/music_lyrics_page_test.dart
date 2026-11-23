@@ -579,7 +579,8 @@ void main() {
     );
 
     // 没有盘面扫描图：只摆封面，不画任何唱片（拍板台 SsFKKF0bo0：银色 CD 与黑胶
-    // 兜底都不要）。
+    // 兜底都不要）。封面尺寸与有唱片时的封套一致，不随左栏列宽放大。
+    final Size sleeveSize = tester.getSize(find.byKey(sleeve));
     MusicDiscArtIndex.instance.publish(const <String, String>{});
     await tester.pump();
     expect(find.byKey(sleeve), findsNothing);
@@ -587,6 +588,7 @@ void main() {
       'music-player-sleeve-plain',
     );
     expect(find.byKey(plain), findsOneWidget);
+    expect(tester.getSize(find.byKey(plain)), sleeveSize);
     expect(
       find.descendant(
         of: find.byKey(plain),

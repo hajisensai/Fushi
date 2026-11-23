@@ -1710,8 +1710,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       albumUid: item?.albumUid,
       trackPath: item?.path,
       builder: (BuildContext context, String? discArt) => discArt == null
-          ? KeyedSubtree(
+          // 封面框本身不定尺寸（按父级宽度铺满），这里钉成与封套同一个方块，
+          // 不随左栏列宽（为错出的唱片留的宽度）放大。
+          ? SizedBox.square(
               key: const ValueKey<String>('music-player-sleeve-plain'),
+              dimension: cover,
               child: _LyricsCover(item: item, size: cover),
             )
           : _buildSleeve(context, item, cover, discArt),
