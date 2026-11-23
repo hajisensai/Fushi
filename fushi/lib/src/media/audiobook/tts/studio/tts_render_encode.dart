@@ -15,6 +15,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_cast_timing.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:path/path.dart' as p;
@@ -118,6 +119,19 @@ TtsDirection ttsSentenceDirection({
         : TtsDirection.fromLine(line.direction, seed: seed),
   );
 }
+
+/// 一句在合成缓存里的键：声音身份 + 实际生效的演出（[ttsSentenceDirection]）+ 念的
+/// 文字。制作（`tts_render_runner.dart`）与补回未配音句（`tts_unvoiced_backfill.dart`）
+/// 必须同一口径——补回写进缓存的音频要被随后的制作任务按同一个键命中，否则补回白做、
+/// 制作时又按原样重合成一遍。
+String ttsSentenceCacheKey({
+  required Map<String, Object?> voiceIdentity,
+  required TtsDirection direction,
+  required String text,
+}) => TtsAudioCache.keyFor(<String, Object?>{
+  ...voiceIdentity,
+  ...direction.cacheIdentity,
+}, text);
 
 /// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
 /// 句之后、`[n]` 章尾。
