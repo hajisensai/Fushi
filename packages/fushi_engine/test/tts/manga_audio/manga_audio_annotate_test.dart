@@ -81,6 +81,38 @@ void main() {
       }
     });
 
+    test(
+      'page / review prompts ask for a per-line tone and line-to-line variation',
+      () {
+        for (final String prompt in <String>[
+          kMangaPageSystemPrompt,
+          kMangaSceneReviewSystemPrompt,
+        ]) {
+          expect(prompt, contains('"tone"'));
+          expect(prompt, contains('sentence-final particles'));
+          expect(prompt, contains('own "e" / "ei" / "tone"'));
+        }
+        expect(
+          kMangaSceneReviewSystemPrompt,
+          contains('Smooth the emotion curve'),
+        );
+        // 示例 JSON 仍是合法 JSON，且带上了 tone。
+        for (final String prompt in <String>[
+          kMangaPageSystemPrompt,
+          kMangaSceneReviewSystemPrompt,
+        ]) {
+          final String example = prompt
+              .split('\n')
+              .firstWhere(
+                (String l) =>
+                    l.startsWith('{"lines"') || l.startsWith('{"edits"'),
+              );
+          final Object? decoded = jsonDecode(example);
+          expect(jsonEncode(decoded), contains('"tone"'));
+        }
+      },
+    );
+
     test('roster prompt names attached images in order', () {
       final String prompt = buildMangaRosterUserPrompt(
         roster: const <TtsCastCharacter>[],
@@ -320,7 +352,13 @@ void main() {
       final List<MangaReviewEdit>? edits = parseMangaSceneReviewReply(
         jsonEncode(<String, Object?>{
           'edits': <Object?>[
-            <String, Object?>{'id': 'p0b0', 's': '仙台', 'e': 'anger', 'ei': 300},
+            <String, Object?>{
+              'id': 'p0b0',
+              's': '仙台',
+              'e': 'anger',
+              'ei': 300,
+              'tone': '必死に食い下がる',
+            },
             <String, Object?>{'id': 'p0b1', 's': '仙台'},
             <String, Object?>{'id': 'p1b0', 's': '知らない人', 'k': 'thought'},
             <String, Object?>{'id': 'p5b0', 's': '仙台'},
@@ -335,6 +373,8 @@ void main() {
       expect(script.lines[0].speaker, '仙台');
       expect(script.lines[0].emotion, CastEmotion.anger);
       expect(script.lines[0].intensity, MangaScriptLimits.maxIntensity);
+      expect(script.lines[0].tone, '必死に食い下がる');
+      expect(script.lines[2].tone, isNull);
       expect(script.lines[1].speaker, '宮城', reason: 'user line untouched');
       expect(script.lines[2].speaker, '宮城', reason: 'unknown name dropped');
       expect(script.lines[2].kind, CastLineKind.thought);
@@ -354,7 +394,7 @@ void main() {
         roster: _roster().values,
         textOf: (MangaScriptLine l) => 'T',
       );
-      expect(prompt, contains('p2b1.0 | NARRATOR | spoken | - | 0 | "T"'));
+      expect(prompt, contains('p2b1.0 | NARRATOR | spoken | - | - | 0 | "T"'));
       expect(prompt, isNot(contains('p2b2')));
     });
   });

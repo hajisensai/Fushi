@@ -6234,6 +6234,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 曲目有本机 MV（绑定的 MV 或曲目本身是 MV 视频）时，歌词页与全屏歌词动画的背景放
+  /// MV 画面（静音，跟曲库音轨按偏移对齐），默认 true；false = 始终用动画背景。
+  bool get musicLyricsMvBackdrop =>
+      getPref('music_lyrics_mv_backdrop', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsMvBackdrop(bool value) async {
+    await setPref('music_lyrics_mv_backdrop', value);
+    notifyListeners();
+  }
+
   /// 歌词页流体背景算法（`pixi` / `mesh` / `classic`），默认 `pixi`（反馈
   /// l1ERGmWxjF）。只在用户手选时落库：没有行 = 跟着出厂默认走，所以默认从 `mesh`
   /// 改成 `pixi` 后，没手选过的老用户自动切过去，手选过 `mesh` 的保持不变。
@@ -6246,6 +6256,10 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('music_lyrics_backdrop_style', value);
     notifyListeners();
   }
+
+  /// 库里是否存着显式选择（手选过，哪怕选的正是出厂默认）；没存 = 跟出厂默认走。
+  bool get hasStoredMusicLyricsBackdropStyle =>
+      containsKey('music_lyrics_backdrop_style');
 
   /// 「恢复默认」：删掉这一行回到「跟着出厂默认走」，而不是把此刻的默认值钉死成
   /// 显式选择（钉死后再改出厂默认就分不清「手选」与「默认」，BUG-5167）。

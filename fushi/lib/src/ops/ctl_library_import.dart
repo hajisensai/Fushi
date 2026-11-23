@@ -368,6 +368,7 @@ class LibraryCtlImporter {
       case ImportCarrier.mangaBatchFolder:
       case ImportCarrier.mangaMokuro:
       case ImportCarrier.mangaArchive:
+      case ImportCarrier.mangaAudioPackage:
         return _importMangaCarrier(path, carrier, allowPdf: false);
     }
     return _imported(path, kind, bookKey);
@@ -450,6 +451,12 @@ class LibraryCtlImporter {
             title: p.basenameWithoutExtension(path),
             policy: _policy,
           ),
+        );
+      case ImportCarrier.mangaAudioPackage:
+        return _unsupported(
+          path,
+          '有声漫画包要用 tts import-package 导入（逐卷认本机同一卷，替换已有成品要确认）',
+          kind: LibraryCtlKind.manga,
         );
       case ImportCarrier.epub:
       case ImportCarrier.text:

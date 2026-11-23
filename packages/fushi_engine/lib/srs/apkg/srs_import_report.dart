@@ -119,6 +119,10 @@ class SrsImportReport {
   /// 不含排程：来源里学过 / 暂停过、本次作为新卡导入的卡片数。
   int cardsResetToNew = 0;
 
+  /// 本机已有、来源里在另一个牌组的卡片数：重新导入不换已有卡的牌组（同 Anki），它们留在本机所在的
+  /// 牌组（BUG-5274）。恢复的笔记不算（它的卡回到来源牌组）。
+  int cardsKeptInDeck = 0;
+
   /// 不含排程：包里没导入的 revlog 条数。
   int reviewLogsSkipped = 0;
 
@@ -202,6 +206,7 @@ class SrsImportReport {
     'noteTypesDuplicated': noteTypesDuplicated,
     'noteTypesRestored': noteTypesRestored,
     'cardsResetToNew': cardsResetToNew,
+    'cardsKeptInDeck': cardsKeptInDeck,
     'reviewLogsSkipped': reviewLogsSkipped,
     'deckPresetsSkipped': deckPresetsSkipped,
     'cardsAdded': cardsAdded,

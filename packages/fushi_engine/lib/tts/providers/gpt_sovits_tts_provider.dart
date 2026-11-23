@@ -2,14 +2,18 @@
 ///
 /// - 模型 / 权重由服务端预先加载，客户端不调全局切权重接口（会影响同一服务的其它用户）。
 /// - `ref_audio_path` 是**服务端**路径，客户端不上传文件。
-/// - 调用方已按句切好：`text_split_method=cut0`（不再切），非流式 WAV，服务端倍速 1.0，
-///   播放倍速由本地播放器控制。
+/// - 调用方已按句切好：`text_split_method=cut0`（不再切），非流式 WAV。整体播放倍速由
+///   本地播放器控制，服务端 `speed_factor` 默认 1.0，只承载逐句语气的语速偏移。
+/// - 逐句语气（[TtsDirectedSynthesis]）：api_v2 只有 `speed_factor` 一个能逐句调的
+///   演出旋钮（音高 / 音量 / 情绪都没有请求参数），所以只声明语速；情绪由
+///   [effectiveTtsDirection] 折成语速偏移。
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/tts/providers/tts_http.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -92,7 +96,7 @@ class GptSovitsTtsDescriptor extends TtsProviderDescriptor {
       );
 }
 
-class GptSovitsTtsProvider extends TtsProvider {
+class GptSovitsTtsProvider extends TtsProvider implements TtsDirectedSynthesis {
   GptSovitsTtsProvider({
     required String endpoint,
     required this.textLang,
@@ -135,11 +139,40 @@ class GptSovitsTtsProvider extends TtsProvider {
   TtsCapabilities get capabilities =>
       const GptSovitsTtsDescriptor().capabilities;
 
+  /// 只有语速（`speed_factor`）能逐句调，见库注释。
+  static const TtsDirectionSupport support = TtsDirectionSupport(rate: true);
+
+  @override
+  TtsDirectionSupport get directionSupport => support;
+
+  /// 逐句语速偏移 → api_v2 的 `speed_factor`：`1 + rateOffset`，取两位小数（与
+  /// [TtsDirection.cacheIdentity] 的精度一致），夹到 `CastLineLimits` 语速范围对应的 0.5..2.0。
+  /// 没有语速偏移时就是原来的 1.0。
+  static double speedFactorOf(TtsDirection direction) {
+    final double? rate = direction.rateOffset;
+    if (rate == null) return 1.0;
+    final double factor = (1 + rate).clamp(0.5, 2.0).toDouble();
+    return (factor * 100).round() / 100;
+  }
+
   @override
   Future<TtsResult> synthesize(
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
     final Uri? uri = _uri;
     if (uri == null || refAudioPath.trim().isEmpty) {
@@ -156,7 +189,7 @@ class GptSovitsTtsProvider extends TtsProvider {
         'streaming_mode': false,
         'text_split_method': 'cut0',
         'batch_size': 1,
-        'speed_factor': 1.0,
+        'speed_factor': speedFactorOf(direction),
       }),
     );
     await ttsSendToFile(

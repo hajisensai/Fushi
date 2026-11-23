@@ -40,6 +40,26 @@ void registerLibraryCuratorProvider(LibraryCurator? Function()? provider) =>
 /// 进程级编排器；根组件还没登记时为 null。
 LibraryCurator? appLibraryCurator() => _curatorProvider?.call();
 
+final StreamController<LibraryCurateRun> _appRunFinished =
+    StreamController<LibraryCurateRun>.broadcast();
+StreamSubscription<LibraryCurateRun>? _relaySub;
+LibraryCurator? _relayed;
+
+/// 进程级「库管家一趟结束」（含单条重试、撤销）。始终跟着**当前**编排器：编排器
+/// 重建（操作上下文换了）后由 [relayLibraryCuratorRuns] 改挂新实例，订阅方不用
+/// 重订，也不会在编排器还没建出来时漏订。
+Stream<LibraryCurateRun> get appLibraryCuratorRunFinished =>
+    _appRunFinished.stream;
+
+/// 编排器建出 / 换掉时调（`library_curate_host.dart`）：把它的 `runFinished` 转进
+/// [appLibraryCuratorRunFinished]，旧实例的转发同时取消。
+void relayLibraryCuratorRuns(LibraryCurator? curator) {
+  if (identical(curator, _relayed)) return;
+  _relayed = curator;
+  unawaited(_relaySub?.cancel());
+  _relaySub = curator?.runFinished.listen(_appRunFinished.add);
+}
+
 /// 自动路径的装配（主进程 `AppModel.initialise()` 里装一次；弹窗 / 悬浮词典进程
 /// 不装 = 自动路径什么都不做）。
 class LibraryCurateAutoHost {

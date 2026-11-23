@@ -38,6 +38,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
+    show redactSubsonicCredentials;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show parseHlsAttributeList;
@@ -49,6 +51,13 @@ import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
+
+/// 进调试日志 / 错误日志的异常文本：传输异常（`HttpException` 等）的文本带着完整请求地址，
+/// 媒体服务器下载（Jellyfin `api_key` / `apiKey`、Subsonic `u` + `t` + `s` / `p`）的地址里
+/// 有账号凭据，`debugPrint` 又会被调试日志服务收走——一律先脱敏。
+@visibleForTesting
+String animeDownloadLogText(Object error) =>
+    redactSubsonicCredentials('$error');
 
 /// 首字节 / 流内空闲超时：与互联视频下载的 `downloadStallTimeout` 同量级。一个
 /// 分片 / 一段直链字节超过这么久一个字节都不来，就当这次下载卡死了。
@@ -724,7 +733,8 @@ class AnimeEpisodeDownloader {
           'AnimeEpisodeDownloader.externalAudioTrack',
           StateError(
             'external audio track $i of ${dest.path} failed, skipped '
-            '(video has own audio: ${videoHasAudio ?? 'unknown'}): $error',
+            '(video has own audio: ${videoHasAudio ?? 'unknown'}): '
+            '${animeDownloadLogText(error)}',
           ),
           stack,
         );
@@ -807,7 +817,10 @@ class AnimeEpisodeDownloader {
     try {
       await done.writeAsString(identity.encode(), flush: true);
     } on Object catch (error) {
-      debugPrint('[anime-download] component identity write failed: $error');
+      debugPrint(
+        '[anime-download] component identity write failed: '
+        '${animeDownloadLogText(error)}',
+      );
     }
   }
 
@@ -890,7 +903,10 @@ class AnimeEpisodeDownloader {
           : AnimeComponentIdentity.direct(validator);
     } on Object catch (error) {
       if (cancelled) throw const RemoteDownloadCancelled();
-      debugPrint('[anime-download] component identity probe failed: $error');
+      debugPrint(
+        '[anime-download] component identity probe failed: '
+        '${animeDownloadLogText(error)}',
+      );
       return null;
     } finally {
       client.close(force: true);
@@ -1035,7 +1051,10 @@ class AnimeEpisodeDownloader {
       }
       file.writeAsStringSync(validator.encode(), flush: true);
     } on Object catch (error) {
-      debugPrint('[anime-download] validator write failed: $error');
+      debugPrint(
+        '[anime-download] validator write failed: '
+        '${animeDownloadLogText(error)}',
+      );
     }
   }
 
