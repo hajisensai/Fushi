@@ -192,27 +192,34 @@ LiquidGlassSettings _overlayGlassSettings(
 //   （带副标题更高）、17 号字、副标题 15 号 secondaryLabel、✓ 列 24、图标 22；
 //   按下 / 悬停 / 键盘焦点 = 中性灰全圆角胶囊（左右内缩 12）；分组发丝线左右
 //   缩进 24；
-// - macOS（桌面宽窗）：面板圆角 10、内边距 5；行高 24、行圆角 6、13 号字、
-//   ✓ 列 16、行左右内边距 10；鼠标悬停 / 按下 = 强调色圆角底 + 白字（只跟
-//   指针），键盘焦点 = 中性底；快捷键在行尾 secondaryLabel；分组线缩进 10。
+// - macOS 26 / 27（宽屏）：面板圆角 12、内边距 5；行高 24、高亮圆角矩形 7、
+//   13 号字、✓ 列 16、行左右内边距 8；快捷键在行尾；分组线缩进 10。
+// - 高亮：两档都是中性浅灰（[_menuHighlight]），文字保持 label 色。系统
+//   macOS 菜单的悬停高亮其实是强调色圆角块 + 白字，用户 2026-11-24 嫌「下拉
+//   框还是有强调色」，暂按中性灰，待用户拍板。
 // 面板是随「玻璃画质」的厚玻璃（实色档 = 系统实色面）+ 外圈柔和阴影，从锚点
 // 形变展开。
 
-/// 菜单面板圆角：与高亮胶囊同心——R = 行高 / 2 + 内缩（iOS 25 + 12 = 37，
-/// macOS 宽窗 15 + 6 = 21），胶囊贴到面板拐角时两条圆弧等距。
-double _menuRadius(BuildContext context) =>
-    _menuRowHeight(context) / 2 + _menuRowInset(context);
+/// 菜单面板圆角：与行高亮块同心——R = 高亮圆角 + 内缩。
+/// - 窄屏 iOS 27（截图规格）：胶囊半高 25 + 内缩 12 = 37；
+/// - 宽屏 macOS 26 / 27 菜单：高亮圆角矩形 7 + 内缩 5 = 12（Tahoe 起菜单比
+///   Sequoia 的 6 更圆）。
+double _menuRadius(BuildContext context) => fushiAppleCompact(context)
+    ? _menuRowRadius(context) + _menuRowInset(context)
+    : _menuRowHeight(context) / 2 + _menuRowInset(context);
 
-/// 菜单行高（iOS 50；macOS 宽窗紧凑 30）。
+/// 菜单行高（窄屏 iOS 50；宽屏 macOS 24）。
 double _menuRowHeight(BuildContext context) =>
-    fushiAppleCompact(context) ? 30 : 50;
+    fushiAppleCompact(context) ? 24 : 50;
 
-/// 菜单行高亮块圆角：一律全圆角胶囊（取半高，带副标题的高行同样全圆）。
-double _menuRowRadius(BuildContext context) => 999;
+/// 菜单行高亮块圆角：窄屏 iOS 全圆角胶囊（取半高，带副标题的高行同样全圆）；
+/// 宽屏 macOS 圆角矩形 7。
+double _menuRowRadius(BuildContext context) =>
+    fushiAppleCompact(context) ? 7 : 999;
 
 /// 菜单行与面板边缘的内缩（左右与上下同值，保证同心）。
 double _menuRowInset(BuildContext context) =>
-    fushiAppleCompact(context) ? 6 : 12;
+    fushiAppleCompact(context) ? 5 : 12;
 
 /// 菜单行高亮（悬停 / 按下 / 键盘焦点）：中性浅灰，不用强调色（用户
 /// 2026-11-24「下拉框还是有强调色」）。深色 white 14% / 浅色 black 8%，按下
@@ -226,7 +233,7 @@ Color _menuHighlight(BuildContext context, {bool pressed = false}) {
 
 /// 菜单行字号（iOS 17；macOS 宽窗 14）。
 double _menuFontSize(BuildContext context) =>
-    fushiAppleCompact(context) ? 14 : 17;
+    fushiAppleCompact(context) ? 13 : 17;
 
 /// 菜单面板默认宽度：macOS 菜单 200–280，iOS 上下文菜单 250 起（系统定宽
 /// 约 250）。
@@ -1379,7 +1386,7 @@ class FushiDialog extends StatelessWidget {
 // ===========================================================================
 
 /// Apple 菜单 / 列表选项行：无底，[leading]（行首对勾列）+ 内容。
-/// 高亮：悬停 / 按下 / 键盘焦点一律中性浅灰全圆角胶囊（[_menuHighlight]），
+/// 高亮：悬停 / 按下 / 键盘焦点一律中性浅灰（iOS 全圆角胶囊 / macOS 圆角矩形，[_menuHighlight]），
 /// 文字保持 label 色，所有尺寸档都不用强调色。前景色由行自己给（[foreground]），高亮时才能整体反色。
 /// 自带焦点节点，[ActivateIntent]（Enter / 手柄 A）与点击都触发 [onTap]。
 class _AppleMenuRow extends StatefulWidget {
@@ -3136,7 +3143,7 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
 /// 下被清成透明无阴影，全部菜单项收进 [_appleMenuSurface] 这一块面板里（项仍
 /// 是 MenuAnchor 的直接后代，方向键 / Esc / 子菜单行为不变）。菜单项
 /// （[MenuItemButton] 等）经 [MenuButtonTheme] 改成与 showFushiMenu 同一套
-/// 行（与 showFushiMenu 同一规格：中性浅灰全圆角胶囊高亮、不用强调色；
+/// 行（与 showFushiMenu 同一规格：中性浅灰高亮、不用强调色；
 /// 行高 / 字号 / 内缩见 [_menuRowHeight] 一组）。
 class _FushiGlassMenuPanel extends StatefulWidget {
   const _FushiGlassMenuPanel({required this.children});
@@ -3165,7 +3172,7 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
         states.contains(WidgetState.hovered) ||
         states.contains(WidgetState.pressed) ||
         states.contains(WidgetState.focused);
-    // 所有尺寸档：中性浅灰全圆角胶囊高亮，文字保持 label 色（不用强调色）。
+    // 所有尺寸档：中性浅灰高亮（iOS 胶囊 / macOS 圆角矩形），文字保持 label 色。
     Color fg(Set<WidgetState> states) {
       if (states.contains(WidgetState.disabled)) return apple.tertiaryLabel;
       return apple.label;
@@ -3186,7 +3193,11 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
       visualDensity: VisualDensity.standard,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       alignment: AlignmentDirectional.centerStart,
-      shape: const WidgetStatePropertyAll<OutlinedBorder>(StadiumBorder()),
+      shape: WidgetStatePropertyAll<OutlinedBorder>(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_menuRowRadius(context)),
+        ),
+      ),
       backgroundColor: WidgetStateProperty.resolveWith((
         Set<WidgetState> states,
       ) {
@@ -3260,7 +3271,8 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
 }
 
 /// macOS / iOS 菜单行的左右内边距（MenuItemButton 与 showFushiMenu 行同值）。
-double _menuItemPadding(BuildContext context) => 12;
+double _menuItemPadding(BuildContext context) =>
+    fushiAppleCompact(context) ? 8 : 12;
 
 /// 行首对勾列宽（[FushiAppleMenuCheck] 的宽度）。
 double _menuCheckSlot(BuildContext context) =>
