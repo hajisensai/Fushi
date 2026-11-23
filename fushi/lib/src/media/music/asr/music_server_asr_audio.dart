@@ -10,7 +10,7 @@
 /// （不带码率上限：转写不需要再转码一次）；地址只在内存里交给 ffmpeg，报错文本由取音频步骤
 /// 脱敏，不进日志 / 数据库。
 ///
-/// 输入是 [MusicAsrAudioInput]：这首有本机离线副本（v172 下载，[musicServerLocalCopyLookup]）
+/// 输入是 [MusicAsrAudioInput]：这首有本机离线副本（v173 下载，[musicServerLocalCopyLookup]）
 /// 时直接转写那份文件（[MusicAsrLocalAudio]，不删、不连服务器——服务器离线也能生成）；否则从
 /// 服务器取流（[MusicAsrStreamAudio]）。
 library;

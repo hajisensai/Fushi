@@ -294,7 +294,7 @@ MusicServerLocalCopy? musicRemoteLocalCopyOf(MusicRemoteTrackRow row) =>
 /// 服务器曲目在 [server] 缺席（这台设备没配这台服务器）或对不上、又没有离线副本时回 null
 /// （不可用）。
 ///
-/// 服务器曲目有离线副本（v172）时放本机文件，不需要 [server]；否则流地址与封面地址此时由
+/// 服务器曲目有离线副本（v173）时放本机文件，不需要 [server]；否则流地址与封面地址此时由
 /// [server] 的客户端按当前配置现算（带凭据，只在内存里）；YouTube / 插件是占位路径，起播时
 /// 才取流。
 MusicPlayItem? musicPlayItemOfRemote(

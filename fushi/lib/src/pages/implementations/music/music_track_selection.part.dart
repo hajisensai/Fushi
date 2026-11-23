@@ -10,43 +10,6 @@ part of 'music_track_list.dart';
 
 int _selectionNow() => DateTime.now().millisecondsSinceEpoch;
 
-/// 完成提示 + 「撤销」：有 [messenger] 时走 SnackBar（带撤销钮），没有（独立弹窗等）退回
-/// 普通 toast（撤销不可达，本地曲目仍可在「已移除的曲目」页恢复）。
-///
-/// [onCommitted]：撤销窗口过去（提示没被点「撤销」就关了，或根本没有撤销钮）后才做的、撤销
-/// 不了的收尾（删服务器曲目的离线副本文件，v172）。
-void musicShowUndoableNotice(
-  ScaffoldMessengerState? messenger,
-  String message,
-  Future<void> Function() undo, {
-  Future<void> Function()? onCommitted,
-}) {
-  if (messenger == null) {
-    FushiToast.show(msg: message, severity: ToastSeverity.success);
-    if (onCommitted != null) unawaited(onCommitted());
-    return;
-  }
-  messenger.hideCurrentSnackBar();
-  final ScaffoldFeatureController<SnackBar, SnackBarClosedReason> shown =
-      messenger.showSnackBar(
-        FushiSnackBar(
-          content: Text(message),
-          action: SnackBarAction(
-            key: const ValueKey<String>('music-undo-action'),
-            label: t.undo,
-            onPressed: () => unawaited(undo()),
-          ),
-        ),
-      );
-  if (onCommitted != null) {
-    unawaited(
-      shown.closed.then((SnackBarClosedReason reason) async {
-        if (reason != SnackBarClosedReason.action) await onCommitted();
-      }),
-    );
-  }
-}
-
 /// [entries] 里能「从音乐库移除」的：本地曲目，以及在库、种类认得的远程曲目（只在歌单里
 /// 的远程条目不在库，跳过）。
 ({List<String> local, List<MusicRemoteTrackRow> remote}) musicLibraryRemovable(
@@ -86,9 +49,9 @@ Future<int> musicRemoveEntriesFromLibrary(
   if (count == 0) return 0;
   final int at = _selectionNow();
   await db.hideMusicTracks(targets.local, at: at);
-  for (final MusicRemoteTrackRow r in targets.remote) {
-    await db.removeMusicRemoteTrackFromLibrary(r.trackUid, at: at);
-  }
+  // 远程曲目走共用写路径：同时取消它们在跑的下载；离线副本等撤销窗口过去再删。
+  final MusicRemoteLibraryRemoval removal =
+      await musicRemoveRemoteTracksFromLibrary(db, targets.remote, at: at);
   musicShowUndoableNotice(
     messenger,
     notice ??
@@ -97,24 +60,9 @@ Future<int> musicRemoveEntriesFromLibrary(
             : t.music_selection_removed_from_library(n: count)),
     () async {
       await db.unhideMusicTracks(targets.local);
-      for (final MusicRemoteTrackRow r in targets.remote) {
-        await db.upsertMusicRemoteTrack(
-          musicRemoteTrackCompanionOfRow(
-            r,
-          ).copyWith(libraryAddedAt: Value<int?>(r.libraryAddedAt)),
-          at: _selectionNow(),
-        );
-      }
+      await removal.undo();
     },
-    // 下载 ⊂ 音乐库：没撤销的话，移出曲库的服务器曲目连离线副本一起删（撤销期间文件留着，
-    // 撤销后照旧离线可放）。
-    onCommitted: targets.remote.isEmpty
-        ? null
-        : () => MusicServerDownloadIndex.instance.dropDownloadsOutsideLibrary(
-            <String>[
-              for (final MusicRemoteTrackRow r in targets.remote) r.trackUid,
-            ],
-          ),
+    onCommitted: targets.remote.isEmpty ? null : removal.commit,
   );
   return count;
 }

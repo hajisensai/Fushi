@@ -1532,8 +1532,9 @@ mixin _FushiDbMusic on _$FushiDatabase {
     }
   });
 
-  /// 不在音乐库里的离线副本行（下载 ⊂ 音乐库：移出曲库后过了撤销窗口、或撤销窗口里进程
-  /// 被杀留下的，由调用方连文件一起删）。[trackUids] 给了只看这几首。
+  /// 不在音乐库里的离线副本行（下载 ⊂ 音乐库：用户在本机「移出音乐库」、撤销窗口过去后由
+  /// 调用方连文件一起删）。[trackUids] 给了只看这几首。只用于本机显式移除的收尾——启动 /
+  /// 恢复 / 合并后的对账走 [reconcileMusicServerDownloadsIntoLibrary]（放回曲库，不删文件）。
   Future<List<MusicServerDownloadRow>> listMusicServerDownloadsOutsideLibrary([
     Iterable<String>? trackUids,
   ]) async {
@@ -1584,16 +1585,95 @@ mixin _FushiDbMusic on _$FushiDatabase {
 
   /// 记一份下完的离线副本：同一个事务里把这首写进音乐库（已在库不改入库时刻）并落副本行
   /// （同一首重下覆盖旧行）。
-  Future<void> recordMusicServerDownload(
+  ///
+  /// [stillWanted] 在事务**里面**、写入之前判一次：下载开始之后这首被「移出音乐库」了就回假，
+  /// 这里什么都不写、返回 false（调用方删掉落地的文件）——不让下完的任务把刚移出的曲目又
+  /// 加回曲库。判据放在事务里：移出的写入与这里的写入在同一个连接上串行，先判后移出的那次
+  /// 移出一定落在这次写入之后（曲目照样被移出，副本由移出的收尾删）。
+  Future<bool> recordMusicServerDownload(
     MusicServerDownloadsCompanion download, {
     required MusicRemoteTracksCompanion track,
     required int at,
+    bool Function()? stillWanted,
   }) => transaction(() async {
+    if (stillWanted != null && !stillWanted()) return false;
     await addMusicRemoteTrackToLibrary(track, at: at);
     await into(
       musicServerDownloads,
     ).insertOnConflictUpdate(download.copyWith(downloadedAt: Value<int>(at)));
+    return true;
   });
+
+  /// 离线副本是设备本地的事实（下载 ⊂ 音乐库）：把每个副本行对应的曲目放回音乐库，返回放回
+  /// 的首数。启动接上库时、覆盖恢复与合并导入之后各跑一次——备份里没有这首（覆盖恢复把
+  /// `music_remote_tracks` 换成了备份的）、或合并进来的较新一行清了入库时刻（别的设备移出过）
+  /// 都不许让本机下好的文件变成没人认的孤儿、更不许被删。
+  ///
+  /// - 行在、不在库：入库时刻填成下完的时刻，`updated_at` **不动**——这是本机的设备本地修正，
+  ///   不该在下次合并时把「放回曲库」当成更新的一次编辑传给别的设备（那边仍按它自己的 LWW）。
+  /// - 行都没了：按副本行的服务器身份重建一行（种类 `server` + 服务器配置身份 + 条目 id）；标题 /
+  ///   专辑按落点文件名推（`<曲序> <标题> [哈希].<扩展名>`、专辑目录 `<专辑名> [哈希]`），
+  ///   之后在服务器页上再入库 / 播放时刷新成服务器的元数据。覆盖恢复会先从恢复前的本机库把
+  ///   这些行原样搬回来（[copyMusicRemoteTracksOfDownloadsFrom]），这里只是兜底。
+  Future<int> reconcileMusicServerDownloadsIntoLibrary({
+    required int at,
+  }) => transaction(() async {
+    final List<MusicServerDownloadRow> downloads = await select(
+      musicServerDownloads,
+    ).get();
+    if (downloads.isEmpty) return 0;
+    final Map<String, MusicRemoteTrackRow> remote = await listMusicRemoteTracks(
+      <String>[for (final MusicServerDownloadRow d in downloads) d.trackUid],
+    );
+    int n = 0;
+    for (final MusicServerDownloadRow d in downloads) {
+      final MusicRemoteTrackRow? r = remote[d.trackUid];
+      if (r != null && r.libraryAddedAt != null) continue;
+      if (r == null) {
+        await into(musicRemoteTracks).insert(
+          MusicRemoteTracksCompanion.insert(
+            trackUid: d.trackUid,
+            kind: 'server',
+            sourceKey: d.sourceKey,
+            itemId: d.itemId,
+            title: musicServerDownloadTitleFromPath(d.filePath),
+            album: Value<String?>(musicServerDownloadAlbumFromPath(d.filePath)),
+            libraryAddedAt: Value<int?>(d.downloadedAt),
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      } else {
+        await (update(musicRemoteTracks)..where(
+              ($MusicRemoteTracksTable t) => t.trackUid.equals(d.trackUid),
+            ))
+            .write(
+              MusicRemoteTracksCompanion(
+                libraryAddedAt: Value<int?>(d.downloadedAt),
+              ),
+            );
+      }
+      n++;
+    }
+    return n;
+  });
+
+  /// 覆盖恢复：恢复进来的库里缺了离线副本对应的 `music_remote_tracks` 行时，从 ATTACH 成
+  /// [schema] 的恢复前本机库原样搬回来（元数据 / 封面引用 / 艺人引用都在），已有的行不动。
+  /// 两个库此刻都在当前 schema（恢复前的库就是本机活库的副本）。返回搬回的行数。
+  Future<int> copyMusicRemoteTracksOfDownloadsFrom(String schema) async {
+    final String cols = <String>[
+      for (final GeneratedColumn<Object> c in musicRemoteTracks.$columns)
+        '"${c.name}"',
+    ].join(', ');
+    return customUpdate(
+      'INSERT OR IGNORE INTO main.music_remote_tracks ($cols) '
+      'SELECT $cols FROM $schema.music_remote_tracks '
+      'WHERE track_uid IN (SELECT track_uid FROM main.music_server_downloads)',
+      updates: <TableInfo<Table, Object?>>{musicRemoteTracks},
+      updateKind: UpdateKind.insert,
+    );
+  }
 
   /// 删一批离线副本行（文件由调用方删）。返回被删的行。
   Future<List<MusicServerDownloadRow>> deleteMusicServerDownloads(
@@ -1769,4 +1849,26 @@ class MusicRecentSource {
   final String? title;
   final String? cover;
   final int lastPlayedAt;
+}
+
+/// 落点名末尾的 ` [<十六进制哈希>]`（`musicServerDownloadTarget` 写的去重后缀）。
+final RegExp _musicServerDownloadHashSuffix = RegExp(r' \[[0-9a-f]+\]$');
+
+/// 离线副本文件名推出的曲目标题（`<曲序> <标题> [哈希].<扩展名>` → `<曲序> <标题>`）：只在
+/// `music_remote_tracks` 行没了、要按副本重建时用（[FushiDatabase.reconcileMusicServerDownloadsIntoLibrary]）。
+String musicServerDownloadTitleFromPath(String filePath) {
+  final String stem = p
+      .basenameWithoutExtension(filePath)
+      .replaceFirst(_musicServerDownloadHashSuffix, '')
+      .trim();
+  return stem.isEmpty ? p.basename(filePath) : stem;
+}
+
+/// 离线副本所在专辑目录推出的专辑名（`<专辑名> [哈希]` → `<专辑名>`）；推不出回 null。
+String? musicServerDownloadAlbumFromPath(String filePath) {
+  final String dir = p.basename(p.dirname(filePath));
+  final String name = dir
+      .replaceFirst(_musicServerDownloadHashSuffix, '')
+      .trim();
+  return name.isEmpty || name == dir ? null : name;
 }

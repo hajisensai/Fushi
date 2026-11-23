@@ -205,6 +205,16 @@ void main() {
       findsOneWidget,
     );
 
+    // 提示带「撤销」：按原入库时刻放回那两首（第三首本来就不在库）。
+    final Finder undo = find.byKey(const ValueKey<String>('music-undo-action'));
+    expect(undo, findsOneWidget);
+    await tester.tap(undo);
+    await _settle(tester);
+    expect(
+      (await tester.runAsync(() => h.db.musicRemoteLibraryUidsOf(uids)))!,
+      uids.take(2).toSet(),
+    );
+
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -260,6 +270,46 @@ void main() {
         ),
       ),
       findsOneWidget,
+    );
+
+    // 移出曲库：撤销窗口里副本（行 + 文件）还在；窗口过去（提示关掉、没点撤销）才删。
+    await tester.tap(libraryButton());
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'music-menu-action-serverCollectionRemoveFromLibrary',
+        ),
+      ),
+    );
+    await _settle(tester);
+    expect(
+      (await tester.runAsync(
+        () => h.db.musicRemoteLibraryUidsOf(<String>[uid]),
+      ))!,
+      isEmpty,
+    );
+    expect(File(file).existsSync(), isTrue);
+    expect(
+      (await tester.runAsync(
+        () => h.db.listMusicServerDownloadsOf(<String>[uid]),
+      ))!,
+      hasLength(1),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-undo-action')),
+      findsOneWidget,
+    );
+    ScaffoldMessenger.of(
+      tester.element(find.byType(Scaffold).first),
+    ).hideCurrentSnackBar();
+    await _settle(tester);
+    expect(File(file).existsSync(), isFalse);
+    expect(
+      (await tester.runAsync(
+        () => h.db.listMusicServerDownloadsOf(<String>[uid]),
+      ))!,
+      isEmpty,
     );
 
     await tester.pumpWidget(const SizedBox.shrink());

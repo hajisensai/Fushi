@@ -1,11 +1,14 @@
-/// 服务器曲目离线副本的进程内索引（v172 `music_server_downloads`）。
+/// 服务器曲目离线副本的进程内索引（v173 `music_server_downloads`）。
 ///
 /// 播放项是同步现算的（`musicServerPlayItem`），起播前不能为每首去查一次库，所以这里持一份
 /// 「trackUid → 副本行」的内存快照：初值与之后的每次变化都来自 Drift 的 watch（下完 / 删副本 /
 /// 移出曲库任何一条写路径改了表都会推新快照），本身不另记状态。
 ///
-/// 下载 ⊂ 音乐库：[attach] 时把不在曲库里的副本（移出曲库的撤销窗口里进程被杀留下的）连文件
-/// 一起删掉；移出曲库过了撤销窗口由 [MusicServerDownloadIndex.dropDownloadsOutsideLibrary] 删。
+/// 下载 ⊂ 音乐库，离线副本是设备本地的事实：恢复 / 合并 / 启动**从不删文件**。[attach] 时把
+/// 副本对应、却不在曲库里的曲目放回曲库（[FushiDatabase.reconcileMusicServerDownloadsIntoLibrary]：
+/// 覆盖恢复换掉了 `music_remote_tracks`、合并进来的较新一行清了入库时刻、移出曲库的撤销窗口里
+/// 进程被杀）。副本文件只在本机显式「移出音乐库」([removeTracksFromLibrary]) 过了撤销窗口后由
+/// [MusicServerDownloadIndex.dropDownloadsOutsideLibrary] 删、或「删除下载」删。
 ///
 /// 只认**文件确实在**的行：下载根所在的盘没挂上、文件被手动删了时，这一首退回串流（行不删：
 /// 盘挂回来就又是离线副本）。每个路径只在第一次见到时查一次存在性。
@@ -101,8 +104,12 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   MusicServerDownloadIndex({
     MusicServerDownloadFileExists? fileExists,
     MusicServerDownloadLoudnessReader? readLoudness,
+    int Function()? clock,
   }) : _fileExists = fileExists ?? _defaultExists,
-       _readLoudness = readLoudness ?? readMusicServerDownloadLoudness;
+       _readLoudness = readLoudness ?? readMusicServerDownloadLoudness,
+       _clock = clock ?? _now;
+
+  static int _now() => DateTime.now().millisecondsSinceEpoch;
 
   /// 进程级实例：`AppModel` 建音乐会话时 [attach] 到用户库，并装成
   /// [musicServerLocalCopyLookup]。
@@ -112,6 +119,7 @@ class MusicServerDownloadIndex extends ChangeNotifier {
 
   final MusicServerDownloadFileExists _fileExists;
   final MusicServerDownloadLoudnessReader _readLoudness;
+  final int Function() _clock;
 
   FushiDatabase? _db;
   StreamSubscription<List<MusicServerDownloadRow>>? _sub;
@@ -138,14 +146,59 @@ class MusicServerDownloadIndex extends ChangeNotifier {
       (List<MusicServerDownloadRow> rows) => unawaited(_apply(rows)),
     );
     unawaited(
-      dropDownloadsOutsideLibrary().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('MusicServerDownload.prune', e, s);
+      reconcileIntoLibrary().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('MusicServerDownload.reconcile', e, s);
         return 0;
       }),
     );
   }
 
+  /// 把离线副本对应、却不在音乐库里的曲目放回音乐库（不删任何文件）。返回放回的首数。
+  Future<int> reconcileIntoLibrary() async {
+    final FushiDatabase? db = _db;
+    if (db == null) return 0;
+    return db.reconcileMusicServerDownloadsIntoLibrary(at: _clock());
+  }
+
+  /// 每首曲目「移出音乐库」的次数（进程内）：下载任务开跑时记下，下完落库时比一次
+  /// （[FushiDatabase.recordMusicServerDownload] 的 `stillWanted`）——开跑之后被移出过的不加回曲库。
+  /// 下载任务的闭包本身只活在进程里（重启后不会自己接着跑），进程内计数就够。
+  final Map<String, int> _removals = <String, int>{};
+
+  /// 这首此刻的「移出音乐库」计数（见 [_removals]）。
+  int removalMark(String trackUid) => _removals[trackUid] ?? 0;
+
+  /// 取消一首曲目在跑 / 停着的下载并删半成品（`MusicServerDownloadService` 构造时装上：没建过
+  /// 下载服务就不会有下载任务）。
+  Future<bool> Function(String trackUid)? cancelDownload;
+
+  /// 本机「从音乐库移除」服务器（及其他远程）曲目的唯一写路径：先记移出（在跑的下载下完也不
+  /// 加回曲库），再清入库时刻，再取消这些曲目在跑 / 停着的下载（删半成品）。离线副本**不在
+  /// 这里删**：调用方带撤销，过了撤销窗口再 [dropDownloadsOutsideLibrary]。
+  Future<void> removeTracksFromLibrary(
+    FushiDatabase db,
+    Iterable<String> trackUids, {
+    required int at,
+  }) async {
+    final List<String> uids = trackUids.toSet().toList();
+    if (uids.isEmpty) return;
+    for (final String uid in uids) {
+      _removals[uid] = removalMark(uid) + 1;
+    }
+    await db.removeMusicRemoteTracksFromLibrary(uids, at: at);
+    final Future<bool> Function(String trackUid)? cancel = cancelDownload;
+    if (cancel == null) return;
+    for (final String uid in uids) {
+      try {
+        await cancel(uid);
+      } on Object catch (e, s) {
+        ErrorLogService.instance.log('MusicServerDownload.cancel', e, s);
+      }
+    }
+  }
+
   /// 删掉不在音乐库里的离线副本（行 + 文件）；[trackUids] 给了只看这几首。返回删掉的个数。
+  /// 只给本机显式移出的收尾用（撤销窗口过去之后）。
   Future<int> dropDownloadsOutsideLibrary([Iterable<String>? trackUids]) async {
     final FushiDatabase? db = _db;
     if (db == null) return 0;

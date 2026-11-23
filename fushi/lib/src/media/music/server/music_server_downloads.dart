@@ -18,8 +18,10 @@
 ///   只有本机路径 + 服务器身份 + 条目 id，不存地址）；播放时由进程内索引
 ///   （`music_server_download_index.dart`）换成本地文件。uid 不变，歌词缓存 / 断点 / 统计照旧。
 /// - 删除：[MusicServerDownloadService.removeDownloads] 删行再删文件（专辑目录里没有别的曲目时
-///   连封面与空目录一起删）；「从音乐库移除」过了撤销窗口后经
-///   [MusicServerDownloadIndex.dropDownloadsOutsideLibrary] 连带删副本。
+///   连封面与空目录一起删）；本机「从音乐库移除」（[MusicServerDownloadIndex.removeTracksFromLibrary]：
+///   同时取消在跑的下载，下完的也不加回曲库）过了撤销窗口后经
+///   [MusicServerDownloadIndex.dropDownloadsOutsideLibrary] 连带删副本。恢复 / 合并 / 启动从不
+///   删副本（[MusicServerDownloadIndex.reconcileIntoLibrary] 把曲目放回曲库）。
 library;
 
 import 'dart:async';
@@ -31,10 +33,10 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/metadata/credential_redaction.dart'
-    show redactCredentialsInText;
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
+import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
+    show redactSubsonicCredentials;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
@@ -124,7 +126,7 @@ String musicServerDownloadErrorText(Object error, Uri uri) {
     text = text.replaceAll(uri.query, '<redacted>');
     text = text.replaceAll(Uri.decodeQueryComponent(uri.query), '<redacted>');
   }
-  return redactCredentialsInText(text);
+  return redactSubsonicCredentials(text);
 }
 
 /// 下载失败（文本已脱敏）。
@@ -197,7 +199,11 @@ class MusicServerDownloadService {
        _saveLyrics = saveLyrics,
        _transfer = transfer ?? AnimeEpisodeDownloader().download,
        _fetchBytes = fetchBytes ?? _httpBytes,
-       _clock = clock ?? _now;
+       _clock = clock ?? _now {
+    // 本机「移出音乐库」要能取消这里发起的下载（没建过下载服务就没有下载任务）。
+    this.index.cancelDownload = (String trackUid) =>
+        downloads.cancel(musicServerDownloadTaskId(trackUid));
+  }
 
   /// 生产装配：下载根 `<下载根>/music`。
   factory MusicServerDownloadService.forApp({
@@ -404,12 +410,16 @@ class _ServerTrackDownload {
   String? _codec;
   File? _cover;
 
+  /// 这一轮开跑时这首的「移出音乐库」计数（[MusicServerDownloadIndex.removalMark]）。
+  int _removalMark = 0;
+
   Future<void> run(
     File staging, {
     void Function(double progress)? onProgress,
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
   }) async {
+    _removalMark = service.index.removalMark(_uid);
     final MusicServerDownloadSource source = browser.downloadSourceFor(track);
     File? audio = await target.existingAudio();
     if (audio == null) {
@@ -472,7 +482,7 @@ class _ServerTrackDownload {
       } on Object catch (e) {
         debugPrint(
           '[music-download] loudness lookup failed: '
-          '${redactCredentialsInText('$e')}',
+          '${redactSubsonicCredentials('$e')}',
         );
       }
     }
@@ -496,7 +506,7 @@ class _ServerTrackDownload {
     } on Object catch (e) {
       debugPrint(
         '[music-download] lyrics fetch failed: '
-        '${redactCredentialsInText('$e')}',
+        '${redactSubsonicCredentials('$e')}',
       );
       return;
     }
@@ -556,21 +566,39 @@ class _ServerTrackDownload {
     final File? audio = _audio ?? await target.existingAudio();
     if (audio == null) throw const MusicServerDownloadUnknownFormat();
     service.index.forgetPaths(<String>[audio.path]);
-    await service.db.recordMusicServerDownload(
-      MusicServerDownloadsCompanion(
-        trackUid: row.trackUid,
-        sourceKey: row.sourceKey,
-        itemId: row.itemId,
-        filePath: Value<String>(audio.path),
-        coverPath: Value<String?>(_cover?.path),
-        sizeBytes: Value<int?>(await audio.length()),
-        codec: Value<String?>(
-          _codec ?? p.extension(audio.path).replaceFirst('.', ''),
-        ),
-      ),
+    final MusicServerDownloadsCompanion download =
+        MusicServerDownloadsCompanion(
+          trackUid: row.trackUid,
+          sourceKey: row.sourceKey,
+          itemId: row.itemId,
+          filePath: Value<String>(audio.path),
+          coverPath: Value<String?>(_cover?.path),
+          sizeBytes: Value<int?>(await audio.length()),
+          codec: Value<String?>(
+            _codec ?? p.extension(audio.path).replaceFirst('.', ''),
+          ),
+        );
+    final int at = service._clock();
+    final bool recorded = await service.db.recordMusicServerDownload(
+      download,
       track: row,
-      at: service._clock(),
+      at: at,
+      stillWanted: () => service.index.removalMark(_uid) == _removalMark,
     );
+    if (recorded) return;
+    // 开跑之后这首被移出了音乐库：不落库、不加回曲库，删掉刚落地的文件，任务按「已取消」收。
+    await deleteMusicServerDownloadFiles(<MusicServerDownloadRow>[
+      MusicServerDownloadRow(
+        trackUid: _uid,
+        sourceKey: row.sourceKey.value,
+        itemId: row.itemId.value,
+        filePath: audio.path,
+        coverPath: _cover?.path,
+        downloadedAt: at,
+      ),
+    ]);
+    service.index.forgetPaths(<String>[audio.path]);
+    throw const RemoteDownloadCancelled('removed from music library');
   }
 
   /// 下载中心「删除并删文件」：暂存字节与断点、以及已落地但没记进库的成品。

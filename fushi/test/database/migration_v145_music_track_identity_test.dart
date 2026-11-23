@@ -380,6 +380,9 @@ void main() {
       // 远程曲目（v148）的主键：来源 + 条目 id 派生的 uid（srv / plg 命名空间），从来不是
       // 本地曲库的内容派生 uid，曲库合并不会改指它。
       'music_remote_tracks.track_uid',
+      // 服务器曲目的离线副本（v173）：主键与 music_remote_tracks 同一个服务器曲目 uid
+      // （`musicServerTrackUid`，srv 命名空间），同理不在本地曲库合并的改指范围里。
+      'music_server_downloads.track_uid',
     };
     final List<String> found = <String>[];
     for (final QueryRow t

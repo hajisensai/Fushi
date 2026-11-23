@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,13 +10,15 @@ import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
 import 'package:fushi/src/media/music/server/music_server_downloads.dart';
 import 'package:fushi/src/media/music/server/music_server_play_item.dart';
+import 'package:fushi/src/media/video/online/anime_episode_downloader.dart'
+    show animeDownloadLogText;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 import 'package:path/path.dart' as p;
 
-/// 服务器曲目离线副本（v172）：落点、凭据脱敏、下载 → 入库 + 副本行 → 播放项换成本地文件、
+/// 服务器曲目离线副本（v173）：落点、凭据脱敏、下载 → 入库 + 副本行 → 播放项换成本地文件、
 /// 删除副本 / 移出曲库连带删文件、没有服务器配置时仍能放。
 void main() {
   Uint8List flacBytes() => Uint8List.fromList(<int>[
@@ -90,6 +93,27 @@ void main() {
       expect(text, isNot(contains('abcdef0123')));
       expect(text, isNot(contains('salt99')));
       expect(text, isNot(contains('u=bob')));
+    });
+
+    test('下载器调试日志的异常文本脱敏（Jellyfin api_key / OpenSubsonic apiKey / t+s）', () {
+      final String text = animeDownloadLogText(
+        HttpException(
+          'HTTP 500',
+          uri: Uri.parse(
+            'https://nd.example/rest/download?apiKey=KEY1&t=tok22&s=salt33'
+            '&id=7&api_key=KEY4',
+          ),
+        ),
+      );
+      for (final String secret in <String>['KEY1', 'tok22', 'salt33', 'KEY4']) {
+        expect(text, isNot(contains(secret)));
+      }
+      expect(text, contains('/rest/download'));
+      final Uri ss = Uri.parse('https://nd.example/rest/download?apiKey=K9');
+      expect(
+        musicServerDownloadErrorText(Exception('boom t=x1&s=y2 $ss'), ss),
+        allOf(isNot(contains('K9'))),
+      );
     });
   });
 
@@ -298,6 +322,93 @@ void main() {
       expect(await index.dropDownloadsOutsideLibrary(<String>[uid]), 1);
       await settle(() => !index.isDownloaded(uid));
       expect(File(path).existsSync(), isFalse);
+    });
+
+    test('接上库（启动）：不在曲库的副本放回曲库，文件不删（副本是设备本地的事实）', () async {
+      final String uid = musicServerTrackUid(server.serverId, track.id);
+      await service.download(server, track, album: album);
+      await settle(() => index.isDownloaded(uid));
+      final String path = index.rowOf(uid)!.filePath;
+      // 例如合并进来的较新一行清了入库时刻，或撤销窗口里进程被杀。
+      await db.removeMusicRemoteTracksFromLibrary(<String>[uid], at: 2000);
+
+      final MusicServerDownloadIndex fresh = MusicServerDownloadIndex();
+      addTearDown(fresh.dispose);
+      fresh.attach(db);
+      await settle(() => fresh.isDownloaded(uid));
+      expect(await fresh.reconcileIntoLibrary(), 0, reason: 'attach 时已放回');
+      expect(File(path).existsSync(), isTrue);
+      expect((await db.getMusicRemoteTrack(uid))!.libraryAddedAt, 1000);
+    });
+
+    test('下载开跑后移出曲库：任务取消，下完的不加回曲库，落地文件删掉', () async {
+      final String uid = musicServerTrackUid(server.serverId, track.id);
+      final Completer<void> entered = Completer<void>();
+      final Completer<void> gate = Completer<void>();
+      final MusicServerDownloadService slow = MusicServerDownloadService(
+        downloads: downloads,
+        db: db,
+        root: () async => root,
+        index: index,
+        transfer:
+            ({
+              required String url,
+              required Map<String, String> headers,
+              required File dest,
+              void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal,
+            }) async {
+              await dest.parent.create(recursive: true);
+              await dest.writeAsBytes(flacBytes());
+              entered.complete();
+              // 取消信号来了也把这一轮跑完：模拟「恰好下完」与移出撞在一起。
+              await gate.future;
+            },
+        fetchBytes: (Uri uri) async => jpegBytes(),
+        clock: () => 1000,
+      );
+      expect(
+        await slow.download(server, track, album: album),
+        MusicServerDownloadStart.started,
+      );
+      await entered.future;
+      final Future<void> removal = index.removeTracksFromLibrary(db, <String>[
+        uid,
+      ], at: 2000);
+      gate.complete();
+      await removal;
+      await settle(
+        () => !downloads.tasks.containsKey(musicServerDownloadTaskId(uid)),
+      );
+
+      expect(await db.listMusicServerDownloadsOf(<String>[uid]), isEmpty);
+      expect((await db.getMusicRemoteTrack(uid))?.libraryAddedAt, isNull);
+      final List<File> left = root
+          .listSync(recursive: true)
+          .whereType<File>()
+          .toList();
+      expect(left, isEmpty, reason: '落地的音频 / 封面 / 半成品都删了：$left');
+      expect(index.isDownloaded(uid), isFalse);
+    });
+
+    test('记副本：stillWanted 为假时什么都不写', () async {
+      final String uid = musicServerTrackUid(server.serverId, track.id);
+      final bool recorded = await db.recordMusicServerDownload(
+        MusicServerDownloadsCompanion.insert(
+          trackUid: uid,
+          sourceKey: server.serverId,
+          itemId: track.id,
+          filePath: p.join(root.path, 'x.flac'),
+          downloadedAt: 1,
+        ),
+        track: musicServerRemoteTrackCompanion(server, track)!,
+        at: 1,
+        stillWanted: () => false,
+      );
+      expect(recorded, isFalse);
+      expect(await db.listMusicServerDownloadsOf(<String>[uid]), isEmpty);
+      expect(await db.getMusicRemoteTrack(uid), isNull);
     });
 
     test('文件不在（盘没挂 / 被删）：索引不认，退回串流，行不删', () async {

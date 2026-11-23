@@ -353,7 +353,7 @@ class MusicRemoteTracks extends Table {
   Set<Column> get primaryKey => <Column>{trackUid};
 }
 
-/// 服务器曲目的离线副本（schema v172）：Jellyfin / Subsonic 曲目下载到本机的原文件，一首
+/// 服务器曲目的离线副本（schema v173）：Jellyfin / Subsonic 曲目下载到本机的原文件，一首
 /// 一行。**设备本地**（不进备份、不同步）：[filePath] 是这台设备上的绝对路径。
 ///
 /// 身份 [trackUid] 与 [MusicRemoteTracks] 同一个（`musicServerTrackUid(serverId, itemId)`），
@@ -362,7 +362,9 @@ class MusicRemoteTracks extends Table {
 /// 服务器侧条目 id（[sourceKey] / [itemId]），**不存任何带凭据的地址**。
 ///
 /// 下完的曲目同时在音乐库里（[MusicRemoteTracks.libraryAddedAt] 非空，离线时从曲库进入）；
-/// 「从音乐库移除」连带删掉离线副本。
+/// 本机「从音乐库移除」过了撤销窗口连带删掉离线副本。副本是设备本地的事实：覆盖恢复 / 合并
+/// 导入 / 启动时，不在库的副本把曲目放回曲库（`reconcileMusicServerDownloadsIntoLibrary`），
+/// 从不因此删文件。
 @DataClassName('MusicServerDownloadRow')
 class MusicServerDownloads extends Table {
   TextColumn get trackUid => text()();

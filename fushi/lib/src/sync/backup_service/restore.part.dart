@@ -457,6 +457,13 @@ class BackupRestoreService {
         // 曲目 uid 别名随本机回灌回来（v145）：备份里的歌单 / 播放记录 / 收藏句可能
         // 还挂着本机已并掉的重复曲目 uid，改指胜者。
         await db!.applyMusicTrackUidAliases();
+        // 服务器曲目的离线副本（v173）是本机的事实，备份换掉了 `music_remote_tracks`：
+        // 副本对应的行从恢复前的本机库原样搬回（备份里没有的），再把不在库的放回曲库——
+        // 恢复从不让本机下好的文件变成孤儿（启动时 [MusicServerDownloadIndex] 也会再对一次）。
+        await db!.copyMusicRemoteTracksOfDownloadsFrom('devbak');
+        await db!.reconcileMusicServerDownloadsIntoLibrary(
+          at: DateTime.now().millisecondsSinceEpoch,
+        );
       });
       await db.customStatement('DETACH DATABASE devbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

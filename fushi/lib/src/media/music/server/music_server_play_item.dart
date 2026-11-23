@@ -20,7 +20,7 @@ import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 
-/// 一首服务器曲目在本机的离线副本（v172 `music_server_downloads`：下完的原文件）。
+/// 一首服务器曲目在本机的离线副本（v173 `music_server_downloads`：下完的原文件）。
 /// [serverId] / [trackId] 是这首在服务器上的身份（行里存的服务器配置身份与条目 id，不含
 /// 凭据）：离线副本的播放项照样带 [MusicPlayItem.serverTrack]，播放上报、服务器歌词、
 /// 响度补查、生成字幕都认得出是哪首。[loudness] 是下载时一并存下的服务器响度（离线时用）。

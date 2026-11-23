@@ -334,6 +334,13 @@ class BackupMergeEngine {
       // BUG-5267：合进来的播放流快照可能带旧版本落的服务器凭据（备份库迁移到当前
       // schema 时已清洗过一遍；同版本 / 外来拼出的备份不走迁移），合并后再清洗一次。
       if (_wants('music')) await _db.scrubMusicPlayEventCredentials();
+      // 合进来的较新远程曲目行可能清了入库时刻（别的设备移出过）：本机有离线副本（v173，
+      // 设备本地的事实）的放回曲库，副本文件从不因合并被删。
+      if (_wants('music')) {
+        await _db.reconcileMusicServerDownloadsIntoLibrary(
+          at: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
       await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
     });

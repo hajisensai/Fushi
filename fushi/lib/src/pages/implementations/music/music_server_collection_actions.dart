@@ -3,8 +3,8 @@
 /// - 入库：逐曲落 `music_remote_tracks`（[musicServerRemoteTrackCompanion]，与单曲「加入音乐库」
 ///   同一条路径），整批在一个事务里（[FushiDatabase.addMusicRemoteTracksToLibrary]）。状态按这批
 ///   曲目里在库的个数算「全部 / 部分 / 都不在」，随任何写路径实时更新（Drift watch）。
-/// - 移出：只清入库时刻；离线副本随之删掉（下载 ⊂ 音乐库，
-///   [MusicServerDownloadIndex.dropDownloadsOutsideLibrary]）。
+/// - 移出：只清入库时刻，在跑的下载随之取消；提示带「撤销」，离线副本等撤销窗口过去再删
+///   （下载 ⊂ 音乐库，[musicRemoveRemoteTracksWithUndo]）。
 /// - 下载：[MusicServerDownloadService]（进度 / 暂停 / 重试在下载中心；这里的按钮同时显示进度、
 ///   可取消，iOS 没有下载中心也停得下来）。
 library;
@@ -20,6 +20,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
 import 'package:fushi/src/media/music/server/music_server_downloads.dart';
+import 'package:fushi/src/pages/implementations/music/music_library_removal.dart'
+    show musicRemoveRemoteTracksWithUndo;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
@@ -87,8 +89,10 @@ Future<void> musicServerAddTracksToLibrary(
   );
 }
 
-/// 整批移出音乐库（只清入库时刻），连带删掉这些曲目的离线副本。
+/// 整批移出音乐库（只清入库时刻），提示带「撤销」（按原入库时刻放回）；在跑的下载随之取消，
+/// 离线副本等撤销窗口过去再删。[messenger] 由调用方在第一个 await 之前取。
 Future<void> musicServerRemoveTracksFromLibrary(
+  ScaffoldMessengerState? messenger,
   FushiDatabase db,
   MusicServerBrowser browser,
   List<MusicServerTrack> tracks, {
@@ -96,12 +100,12 @@ Future<void> musicServerRemoveTracksFromLibrary(
 }) async {
   final List<String> uids = musicServerTrackUids(browser, tracks);
   if (uids.isEmpty) return;
-  await db.removeMusicRemoteTracksFromLibrary(uids, at: _now());
-  await (index ?? MusicServerDownloadIndex.instance)
-      .dropDownloadsOutsideLibrary(uids);
-  FushiToast.show(
-    msg: t.music_server_library_removed_count(count: uids.length),
-    severity: ToastSeverity.success,
+  await musicRemoveRemoteTracksWithUndo(
+    messenger,
+    db,
+    uids,
+    message: (int n) => t.music_server_library_removed_count(count: n),
+    index: index,
   );
 }
 
@@ -261,8 +265,13 @@ List<MusicMenuAction> musicServerCollectionActions({
         id: 'serverCollectionRemoveFromLibrary',
         label: t.music_action_remove_from_library,
         icon: FushiIcons.close,
-        run: (_) =>
-            musicServerRemoveTracksFromLibrary(db, browser, tracks, index: idx),
+        run: (BuildContext context) => musicServerRemoveTracksFromLibrary(
+          ScaffoldMessenger.maybeOf(context),
+          db,
+          browser,
+          tracks,
+          index: idx,
+        ),
       ),
     if (downloads != null && running)
       MusicMenuAction(

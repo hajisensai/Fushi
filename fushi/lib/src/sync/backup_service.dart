@@ -581,7 +581,7 @@ const List<String> _deviceLocalTables = <String>[
   // live 值）。配对本身（sync_hibiki_client_urls）就是设备本地的，换台设备 hostId 对不上
   // 任何配对；覆盖恢复后从本机 bak 回灌，下次目录刷新再对账。无外键。
   'remote_dictionary_metadata',
-  // v172：服务器曲目（Jellyfin / Subsonic）的离线副本。装的是本机文件路径，另一台设备上
+  // v173：服务器曲目（Jellyfin / Subsonic）的离线副本。装的是本机文件路径，另一台设备上
   // 没有这些文件；覆盖恢复后从本机 bak 回灌。无外键。
   'music_server_downloads',
 ];
