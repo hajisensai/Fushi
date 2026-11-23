@@ -613,10 +613,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃，不灌进别的词。
   /// 查询期间置 [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  ///
+  /// [refineSource] 非 null = 从「查不到」的词块 / 修改框换词（拍板台 Um72dWD9Cz）：
+  /// 空结果**也**换（新页显示「X 也查不到」并留着词块可接着点），新页记下词块来源、
+  /// 沿用原页那一句（见 [DictionaryPopupController.navigateInPlace]）。
   Future<void> navigatePopupInPlace({
     required int index,
     required DictionaryPopupEntry item,
     required String query,
+    String? refineSource,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || item.isSearching) return;
@@ -638,14 +643,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           item.searchTerm != termAtStart) {
         return;
       }
-      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
-      appModel.addToDictionaryHistory(result: result);
+      final bool empty = result.entries.isEmpty && result.kanjiResults.isEmpty;
+      if (empty && refineSource == null) return;
+      if (!empty) appModel.addToDictionaryHistory(result: result);
       _popup.navigateInPlace(
         item,
         term: trimmed,
         result: result,
         allLoaded: !result.truncated,
         scrollTop: scrollTop,
+        refineSource: refineSource ?? '',
+        contextSentence: refineSource == null ? '' : item.contextSentence,
       );
       if (ReaderFushiSource.instance.autoReadOnLookup &&
           result.entries.isNotEmpty) {
@@ -1308,6 +1316,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 仍叠子层，也与 Hoshi 一致（那边 `textSelected` 走 `popups.append`）。
         onLinkClick: (query, localRect) =>
             navigatePopupInPlace(index: index, item: item, query: query),
+        // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+        onRefineQuery: (String query, String source) => navigatePopupInPlace(
+          index: index,
+          item: item,
+          query: query,
+          refineSource: source,
+        ),
+        refineSource: item.refineSource,
         historyNav: item.hasNavigationHistory
             ? DictionaryPopupHistoryNav(
                 canGoBack: item.canGoBack,
