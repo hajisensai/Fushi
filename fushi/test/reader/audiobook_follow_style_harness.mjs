@@ -25,6 +25,14 @@ const COMMON = String.raw`
     new Promise((r) => setTimeout(() => r(false), 30000))]);
   if (!restored) throw new Error('the reader engine never reported onRestoreComplete');
   await frames();
+  // The page must be laid out in the fixture CJK font the Dart test embeds, not a host fallback:
+  // without a CJK font (Linux CI) the fallback glyphs are narrower, the text runs shorter, and
+  // which sentence crosses a page / where the scroll range ends is no longer the same layout.
+  await document.fonts.ready;
+  const fixture = [...document.fonts].find((f) => f.family.replace(/["']/g, '') === 'Fushi Follow Fixture CJK');
+  if (!fixture || fixture.status !== 'loaded') {
+    return { errors: ['fixture CJK font not loaded (' + (fixture ? fixture.status : 'no @font-face') + ')'], checks: 1 };
+  }
   const R = window.fushiReader;
   const ids = window.__cueIds;
   const wm = getComputedStyle(document.body).writingMode;

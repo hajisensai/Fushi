@@ -37,10 +37,22 @@ void main() {
     });
 
     test('视频收藏句写入 cue startMs 锚点并用兼容匹配判定收藏态', () {
+      // BUG-5340：锚点仍取 cue.startMs，但先换到句子所属那一行的时间轴（原盘「全部播放」
+      // = 那一集）再存，查词浮层与字幕列表两条收藏路径都如此。
       expect(
         src,
-        contains('normCharOffset: cue.startMs'),
-        reason: '字幕列表收藏必须把 cue.startMs 存入 FavoriteSentence',
+        contains('_libraryAnchorAt(cue.startMs)'),
+        reason: '收藏锚点必须由 cue.startMs 换算（按句子所属那一行的时间轴）',
+      );
+      expect(
+        src,
+        contains('normCharOffset: anchor.ms'),
+        reason: '字幕列表收藏必须把 cue.startMs 换算后的锚点存入 FavoriteSentence',
+      );
+      expect(
+        src,
+        contains('normCharOffset: anchor?.ms'),
+        reason: '查词浮层收藏同样存 cue.startMs 换算后的锚点（无 cue 时为 null）',
       );
       expect(
         src,

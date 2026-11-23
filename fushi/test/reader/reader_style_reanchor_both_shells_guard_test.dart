@@ -464,6 +464,24 @@ const Map<String, _ShellSpecific> _shellSpecific = <String, _ShellSpecific>{
     _scrollShells,
     '同 revealElement（BUG-3518：WebKit 上当前句是 Range）；共享段用 this.revealRange && 探测',
   ),
+  // 有声书跟读的跨页句 / 整行对齐（反馈 tUJsiLpL9d）。
+  'revealAudioCue': _ShellSpecific(
+    _scrollShells,
+    '跟读揭示当前句的整句入口：分页量跨页分界再翻到句首页、连续做整行对齐；bridge 的 '
+    '__fushiHighlight 与共享段都先探测它，缺席退回 revealElement / revealRange。'
+    'VN 的揭示是换屏，没有跨页 / 行对齐',
+  ),
+  'audioCueSpan': _ShellSpecific(
+    _scrollShells,
+    '共享段（_sharedJs）把当前句的包裹 / 注音 / Range 片段并成整句区间，只喂 revealAudioCue；'
+    'VN 不拼共享段，也没有 revealAudioCue',
+  ),
+  'audioCuePageSplit': _ShellSpecific(
+    _pagedOnly,
+    '「读到页边就翻」的跨页分界只有分页有页；连续是整行对齐、VN 按屏切句，Dart 探测不到即不挂观察',
+  ),
+  'revealAudioCueTail': _ShellSpecific(_pagedOnly, '同 audioCuePageSplit'),
+  'dropAudioCueTail': _ShellSpecific(_pagedOnly, '同 audioCuePageSplit'),
   'sourceTextPosition': _ShellSpecific(
     _vnOnly,
     'VN 重排后的 (节点, 偏移) → 原文位置映射；选区脚本探测不到时按 DOM 原样取',
