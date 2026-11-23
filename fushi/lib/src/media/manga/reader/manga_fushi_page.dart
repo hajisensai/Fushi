@@ -3741,6 +3741,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         context,
         FushiMotion.short,
       ).inMilliseconds,
+      // 浮层角上按钮（「×」收起 / 「⤢」逐格读）跟随设计系统：Apple 毛玻璃 / MD3 容器。
+      bubbleZoomAppleStyle: isGlassDesign(context),
+      bubbleZoomCloseLabel: t.manga_bubble_zoom_close,
       textStripLayout: _textStripLayout,
       bubbleFocusLabel: t.manga_bubble_focus_enter,
       bubbleFocusResume: navigation.bubbleFocusResume,

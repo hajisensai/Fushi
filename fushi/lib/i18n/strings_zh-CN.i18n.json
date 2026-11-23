@@ -5970,6 +5970,7 @@
   "manga_bubble_focus_exit": "退出逐格读",
   "manga_bubble_focus_next": "下一个气泡",
   "manga_bubble_focus_previous": "上一个气泡",
+  "manga_bubble_zoom_close": "收起放大",
   "manga_chapter_download_action": "下载",
   "manga_chapter_download_cancel_action": "取消下载",
   "manga_chapter_download_delete_action": "删除下载",
