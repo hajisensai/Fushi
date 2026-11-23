@@ -380,10 +380,15 @@ mixin DictionaryPageMixin {
   /// [lookupContext] 是这个表面自己的查词语境（字段预填里 Sentence 的兜底句）；不给时用
   /// 宿主级的 [favoriteLookupContext]。查词页结果区的语境是源文本条那一句，只属于
   /// 结果区、不属于浮层（BUG-3216 / BUG-4209），所以按表面传，不覆写宿主级 getter。
+  ///
+  /// [sentenceSection] 同理是这个表面自己的句子分区（拍板台 rf--UcsGta：查词页结果区
+  /// 来自应用外「抓取上下文」时的前后句），页面级 [buildAdvancedMiningSections] 没给
+  /// 句子分区时补上；返回 null = 这次没有。浮层各层不传。
   @protected
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
     GlobalKey<DictionaryPopupRealmState> webViewKey, {
     FavoriteLookupContext? Function()? lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) => mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
       ? (int entryIndex, String matched, String expression, String reading) =>
             _openAdvancedMiningDialog(
@@ -393,6 +398,7 @@ mixin DictionaryPageMixin {
               expression: expression,
               reading: reading,
               lookupContext: lookupContext ?? () => favoriteLookupContext,
+              sentenceSection: sentenceSection,
             )
       : null;
 
@@ -413,6 +419,7 @@ mixin DictionaryPageMixin {
     required String expression,
     required String reading,
     required FavoriteLookupContext? Function() lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) async {
     if (!mounted) return;
     // 本 mixin 没有 State 的 mounted 语义可借（mounted 是抽象成员），按 lint 的要求
@@ -435,8 +442,9 @@ mixin DictionaryPageMixin {
               fallbackSentence: () => lookupContext()?.sentence ?? '',
             )
           : null;
-      final AdvancedMiningSections sections = await buildAdvancedMiningSections(
-        matched: matched,
+      final AdvancedMiningSections sections = withSurfaceSentenceSection(
+        await buildAdvancedMiningSections(matched: matched),
+        sentenceSection?.call(),
       );
       if (!dialogContext.mounted) {
         await sections.onClosed?.call();

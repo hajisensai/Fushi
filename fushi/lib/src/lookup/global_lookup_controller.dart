@@ -22,6 +22,7 @@ import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -1118,6 +1119,7 @@ class GlobalLookupController {
       // the bare selection — never break the existing path.
       String text = '';
       String sentence = '';
+      CapturedSentenceContext? sentences;
       if (model.globalContextCaptureEnabled) {
         final ForegroundSelectionContext? ctx = contextFirst
             ? earlyContext
@@ -1126,6 +1128,7 @@ class GlobalLookupController {
         if (ctx != null) {
           text = ctx.selectedText.trim();
           sentence = ctx.sentence;
+          sentences = ctx.sentences;
         }
       }
       if (text.isEmpty) {
@@ -1141,13 +1144,16 @@ class GlobalLookupController {
                 .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
+        sentences = null;
       }
       if (!overlay) {
         // Main-window exit ([AppModel.queueExternalLookup], the same one
         // `fushi://lookup` uses). Nothing selected: open the lookup page with
         // the search box focused, so the key press always does something
         // visible. The route ends in `finally` (no card is shown, so nothing
-        // else would retire it).
+        // else would retire it). The captured sentences ride along so the
+        // lookup page's advanced-mining dialog can add the previous / next
+        // sentences (rf--UcsGta); without context capture there are none.
         glog(
           'hotkey(main window): selection='
           '${text.isEmpty ? 'empty' : '${text.length} chars'}',
@@ -1155,7 +1161,7 @@ class GlobalLookupController {
         if (text.isEmpty) {
           model.requestHomeDictionaryTab(focusSearch: true);
         } else {
-          model.queueExternalLookup(text);
+          model.queueExternalLookup(text, capturedContext: sentences);
         }
         return;
       }

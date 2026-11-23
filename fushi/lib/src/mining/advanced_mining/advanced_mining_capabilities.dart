@@ -485,6 +485,23 @@ class AdvancedMiningSections {
   final Future<void> Function()? onClosed;
 }
 
+/// 把表面级句子分区 [surface] 并进页面级分区 [page]（拍板台 rf--UcsGta）：页面自己
+/// 给了句子分区时以页面为准，[surface] 为 null 时原样返回。
+AdvancedMiningSections withSurfaceSentenceSection(
+  AdvancedMiningSections page,
+  AdvancedMiningSentenceSection? surface,
+) {
+  if (surface == null || page.sentence != null) return page;
+  return AdvancedMiningSections(
+    sentence: surface,
+    audio: page.audio,
+    videoImage: page.videoImage,
+    mangaImage: page.mangaImage,
+    stillImage: page.stillImage,
+    onClosed: page.onClosed,
+  );
+}
+
 /// 对话框收到的全部输入。
 class AdvancedMiningCapabilities {
   const AdvancedMiningCapabilities({
