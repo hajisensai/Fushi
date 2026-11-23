@@ -592,6 +592,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',
+  // double（默认 1.0，0.5–3.0，越大越灵敏）：漫画滑动翻页灵敏度（R721ZgWVSB），
+  // 缩放跟手与不跟手两组提交阈值，见 manga_swipe_thresholds.dart。
+  'manga_swipe_page_turn_sensitivity',
   // String（`MangaTapZoneLayout.key`，默认 `left_right`）：点击翻页热区布局。
   'manga_tap_zone_layout',
   'manga_tap_zone_paging',

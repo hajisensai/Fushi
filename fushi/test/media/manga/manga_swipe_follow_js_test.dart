@@ -71,7 +71,8 @@ const assert=require('node:assert/strict');
 let ZOOM=1, PAN_X=0, PAN_Y=0, PAN_WIDE=true, IS_WEBTOON=false, IS_RTL=true;
 let SPLIT_ACTIVE=false, CURRENT=2, PAGE_HALF=0;
 let PAGE_ANIM='slide', PAGE_ANIM_MS=220, FOLLOW_DRAG=true;
-const MAX_ANIM_DIST=1, FOLLOW_COMMIT=0.25, FOLLOW_FLING=0.6;
+// FOLLOW_COMMIT / FOLLOW_FLING 等提交阈值随抽出的 `_end` 段一起注入（灵敏度 1.0）。
+const MAX_ANIM_DIST=1;
 const FOLLOW_EDGE_DAMPING=0.3, PAGE_EASE='ease';
 const window={innerWidth:412,innerHeight:860};
 function mkEl(props){

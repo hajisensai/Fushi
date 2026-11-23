@@ -15477,6 +15477,11 @@ class AppModel
   Future<void> setMangaPageTurnFollowDrag(bool value) =>
       prefsRepo.setMangaPageTurnFollowDrag(value);
 
+  double get mangaSwipePageTurnSensitivity =>
+      prefsRepo.mangaSwipePageTurnSensitivity;
+  Future<void> setMangaSwipePageTurnSensitivity(double value) =>
+      prefsRepo.setMangaSwipePageTurnSensitivity(value);
+
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>
       prefsRepo.setMangaVolumeKeyPaging(value);

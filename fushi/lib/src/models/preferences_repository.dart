@@ -163,6 +163,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression, miningAnimatedPlayOnceReader;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
@@ -7254,6 +7255,20 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaPageTurnFollowDrag(bool value) async {
     await setPref('manga_page_turn_follow_drag', value);
+    notifyListeners();
+  }
+
+  /// 漫画滑动翻页灵敏度（R721ZgWVSB，值越大越灵敏，默认 1.0）。读写都夹回值域。
+  double get mangaSwipePageTurnSensitivity =>
+      normalizeMangaSwipePageTurnSensitivity(
+        getPref(kMangaSwipePageTurnSensitivityKey) as num?,
+      );
+
+  Future<void> setMangaSwipePageTurnSensitivity(double value) async {
+    await setPref(
+      kMangaSwipePageTurnSensitivityKey,
+      normalizeMangaSwipePageTurnSensitivity(value),
+    );
     notifyListeners();
   }
 
