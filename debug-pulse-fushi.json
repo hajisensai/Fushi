@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-22T17:58:41Z",
+ "generatedAt": "2026-11-23T02:57:05Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "06c73737a2016c021a9dd5c03f18ebcc8da23c1a",
-  "seq": 31528
+  "sha": "5735e6dc231db5f3c0df629e27d73f295780ead6",
+  "seq": 31532
  },
  "builds": [
   {
@@ -144,7 +144,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "5735e6dc231db5f3c0df629e27d73f295780ead6",
+  "headSeq": 31532,
+  "prs": [
+   4201
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786777"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+   }
+  }
+ },
  "prs": {
   "3400": {
    "number": 3400,
@@ -270,6 +296,15 @@
    "mergedAt": "2026-11-22T16:18:15Z",
    "additions": 789,
    "deletions": 94,
+   "labels": []
+  },
+  "4201": {
+   "number": 4201,
+   "title": "fix(import): 导入框完成后只关自己的路由（BUG-5263）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T02:53:51Z",
+   "additions": 214,
+   "deletions": 29,
    "labels": []
   }
  }
