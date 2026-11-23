@@ -67,6 +67,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5276](bugs/BUG-5276-settings-reset-pinned-default.md) | ✅ | ✅ | 「恢复本页默认」删不掉与默认同值的显式选择，跟别的设置走的行恢复后反被钉死 |
+> 共 4600 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5276](bugs/BUG-5276-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
 | [BUG-5273](bugs/BUG-5273-mihon-desugar-kotlin-abi.md) | ✅ | ✅ | Mihon / Aniyomi 扩展调宿主 kotlin-stdlib 等 java.time 签名 NoSuchMethodError（minSdk 24 脱糖改写成 j$.time） |
