@@ -2329,6 +2329,8 @@ class SyncRepository {
     // 当前预设 id 指向的就是这份清单里的条目，一起留在本机。
     'tts_voice_presets',
     'tts_active_preset_id',
+    // 朗读声音按作品记（本书 / 系列 + 语言 → 预设 id）：同样指向上面清单里的条目。
+    'tts_media_voices',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
     // 各配置自己那份按 uid 停放（`mining_tts_fallback_voice::<uid>`，
     // PrefRedactionPolicy.deviceLocalKeyPrefixes），同样不离开本机。

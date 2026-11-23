@@ -1077,6 +1077,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
   // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
   'tts_irodori_local',
+  // JSON：朗读声音按作品记（TtsMediaVoices）：`{"books":{bookKey:presetId},
+  // "series":{seriesKey:{语言:presetId}}}`。指向本机预设，设备本地。
+  'tts_media_voices',
   // JSON：TTS 识别后替换（TtsTextRulesStore / TtsTextRuleKind.postRecognition）：
   // 制作有声书语音识别校对时把识别结果改回原文写法再比对。
   'tts_post_recognition_rules',

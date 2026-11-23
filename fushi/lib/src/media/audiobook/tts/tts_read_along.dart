@@ -261,18 +261,20 @@ class TtsReadAlong extends ChangeNotifier {
       300 + spokenText.length * 140;
 
   /// 建计划、起会话、定位到起点。失败抛 [TtsStartException] / 透传会话加载异常。
+  ///
+  /// [voice] 是这本书的默认声音（[TtsServices.voiceForMedia]：本书 → 系列 + 语言 →
+  /// 全局使用中），null = 一个可用的声音都没有。
   static Future<TtsReadAlong> start({
     required AudiobookSession session,
     required TtsServices services,
     required EpubBook book,
     required SessionBookInfo info,
     required TtsStartPoint startPoint,
+    required TtsResolvedVoice? voice,
     bool autoplay = true,
     TtsCast? cast,
   }) async {
     final TtsServices tts = services;
-    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
-        tts.activeVoice();
     if (voice == null) throw const TtsStartException(TtsStartProblem.noVoice);
     if (voice.descriptor.validate(voice.preset).isNotEmpty) {
       throw const TtsStartException(TtsStartProblem.voiceIncomplete);

@@ -101,6 +101,7 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart'
     show AudiobookSessionStartRequest;
 import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_media_voice_scope.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart'
