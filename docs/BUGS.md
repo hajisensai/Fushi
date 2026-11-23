@@ -33,29 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4583 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5259](bugs/BUG-5259-music-continue-card-no-player-page.md) | ✅ | ✅ | music-continue-card-no-player-page |
-| [BUG-5258](bugs/BUG-5258-status-monitor-overlay-section-last.md) | ✅ | ✅ | status-monitor-overlay-section-last |
-| [BUG-5266](bugs/BUG-5266-manga-audio-no-volume-control.md) | ✅ | ✅ | manga-audio-no-volume-control |
-| [BUG-5265](bugs/BUG-5265-manga-audio-previous-replays-current.md) | ✅ | ✅ | manga-audio-previous-replays-current |
-> 共 4582 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5267](bugs/BUG-5267-gen4-parity-cross-profile-entities.md) | ✅ | ✅ | gen4 迁移对拍：同库另一个 profile 占走了 `srs_entities` 行的实体，`entities` 判新代多出、整份撤回 |
-| [BUG-5261](bugs/BUG-5261-interconnect-profile-403-english-reason.md) | ✅ | ✅ | interconnect-profile-403-english-reason |
-> 共 4584 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5262](bugs/BUG-5262-interconnect-offline-log-noise.md) | ✅ | ✅ | interconnect-offline-log-noise |
-> 共 4584 条。点号进各自文件。
-> 共 4586 条。点号进各自文件。
-> 共 4592 条。点号进各自文件。
-> 共 4593 条。点号进各自文件。
+> 共 4595 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -63,6 +41,7 @@
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
 | [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |
 | [BUG-5268](bugs/BUG-5268-windows-display-off-black-screen.md) | 🚧 | 🚧 | windows-display-off-black-screen |
+| [BUG-5267](bugs/BUG-5267-gen4-parity-cross-profile-entities.md) | ✅ | ✅ | gen4 迁移对拍：同库另一个 profile 占走了 `srs_entities` 行的实体，`entities` 判新代多出、整份撤回 |
 | [BUG-5266](bugs/BUG-5266-manga-audio-no-volume-control.md) | ✅ | ✅ | manga-audio-no-volume-control |
 | [BUG-5265](bugs/BUG-5265-manga-audio-previous-replays-current.md) | ✅ | ✅ | manga-audio-previous-replays-current |
 | [BUG-5263](bugs/BUG-5263-import-dialog-pops-page-above.md) | ✅ | ✅ | import-dialog-pops-page-above |
@@ -112,6 +91,7 @@
 | [BUG-5219](bugs/BUG-5219-lyrics-word-sweep-input-dispatch.md) | ✅ | ✅ | 有声书歌词视图里整句扫词键 / 鼠标侧键失效（键桥漏动作、非 Windows 鼠标回调只认跳句） |
 | [BUG-5218](bugs/BUG-5218-lyrics-sleeve-disc-group-tilt.md) | ✅ | ✅ | lyrics-sleeve-disc-group-tilt |
 | [BUG-5217](bugs/BUG-5217-music-sources-switch-away-notify.md) | ✅ | ✅ | music-sources-switch-away-notify |
+| [BUG-5216](bugs/BUG-5216-manga-ruby-reading-ignored-in-tts.md) | ✅ | ✅ | manga-ruby-reading-ignored-in-tts |
 | [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
 | [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
 | [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |
