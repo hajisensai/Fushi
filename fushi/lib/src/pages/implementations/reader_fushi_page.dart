@@ -65,6 +65,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
         DictionaryPopupToolGroup,
         dictionaryPopupTopActionConstraints,
         kDictionaryPopupTopActionIconSize;
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart'
+    show DictionaryPopupInputSpec, withPopupArrowPageTurnKeys;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_progress_conflict_dialog.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -286,6 +288,7 @@ import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart';
 // after its definition moved into the shared caret controller (TODO-387).
 export 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface;
+import 'package:fushi/src/shortcuts/directional_page_turn.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
     show WindowFullscreenHost;
@@ -6017,6 +6020,48 @@ $liveConfigJs
         // 那条鼠标通道的唯一消费者，保留。
         ShortcutAction.readerDismissDict,
       };
+
+  /// 查词弹窗开着且弹窗持焦时，裸 ← / → 也要交回来「关弹窗并翻页」（反馈
+  /// uz_2m0E_Eu ③，与漫画一致）。只追加左右键，翻页动作的其它键位留给弹窗滚动释义；
+  /// 见 [withPopupArrowPageTurnKeys]。
+  @override
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      withPopupArrowPageTurnKeys(
+        super.dictionaryPopupInputSpec,
+        registry: appModel.shortcutRegistry,
+        scope: ShortcutScope.reader,
+        pageTurnActions: const <ShortcutAction>{
+          ShortcutAction.readerPageForward,
+          ShortcutAction.readerPageBackward,
+        },
+      );
+
+  /// 弹窗回传的裸 ← / → 走与键盘焦点路径同一个 [_resolveReaderArrowKey]（阅读方向 /
+  /// 反转开关校正），再经 [_executeShortcutAction] 关弹窗并翻页；其余 token 交回基类
+  /// （「返回上一级」/「只关词典」= 关整条弹窗栈）。
+  @override
+  bool onDictionaryPopupInputToken(String token) {
+    final InputBinding? binding = InputBinding.deserialize(token);
+    if (binding != null &&
+        binding.modifiers.isEmpty &&
+        directionalPageTurnSideForKey(binding.key) != null) {
+      final ShortcutAction? action = _resolveReaderArrowKey(
+        binding.key,
+        modifiers: binding.modifiers,
+        boundAction: appModel.shortcutRegistry.resolveKeyboard(
+          binding.key,
+          modifiers: binding.modifiers,
+          scope: ShortcutScope.reader,
+        ),
+      );
+      if (action == ShortcutAction.readerPageForward ||
+          action == ShortcutAction.readerPageBackward) {
+        _executeShortcutAction(action!, keyboardTriggerKey: binding.key);
+        return true;
+      }
+    }
+    return super.onDictionaryPopupInputToken(token);
+  }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

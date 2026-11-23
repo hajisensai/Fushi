@@ -106,6 +106,52 @@ DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
   );
 }
 
+/// 在 [base] 末尾追加「弹窗可见时也要关弹窗并翻页」的裸 ← / → token（反馈
+/// uz_2m0E_Eu ③：小说跟漫画走，查词弹窗开着时左右键关弹窗并翻页）。
+///
+/// 为什么不直接把翻页动作放进宿主的 `dictionaryPopupForwardedActions`：那会把翻页
+/// 动作的**全部**键位（PageDown / ↓ / 空格 …）都从弹窗里截走，弹窗就没法用这些键
+/// 滚动释义。本统一只针对左右键，所以只追加 ← / →，且只在该键此刻在宿主 [scope]
+/// 里仍解析成 [pageTurnActions] 之一时追加——用户把左右键改绑到别处，弹窗里的左右键
+/// 原样留给弹窗。[ShortcutScope.dictionaryPopup] 自己占用的键恒不追加（与
+/// [dictionaryPopupInputSpecFor] 同一条不变式）。
+DictionaryPopupInputSpec withPopupArrowPageTurnKeys(
+  DictionaryPopupInputSpec base, {
+  required FushiShortcutRegistry registry,
+  required ShortcutScope scope,
+  required Set<ShortcutAction> pageTurnActions,
+}) {
+  if (!registry.isLoaded) return base;
+  final Set<String> reserved = <String>{
+    for (final ShortcutAction action in ShortcutAction.actionsForScope(
+      ShortcutScope.dictionaryPopup,
+    ))
+      for (final InputBinding kb
+          in registry.bindingsFor(action).keyboardBindings)
+        kb.serialize(),
+  };
+  final List<String> keys = List<String>.of(base.keyTokens);
+  for (final LogicalKeyboardKey arrow in const <LogicalKeyboardKey>[
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+  ]) {
+    final ShortcutAction? bound = registry.resolveKeyboard(
+      arrow,
+      modifiers: const <ModifierKey>{},
+      scope: scope,
+    );
+    if (!pageTurnActions.contains(bound)) continue;
+    final String token = InputBinding(key: arrow).serialize();
+    if (reserved.contains(token) || keys.contains(token)) continue;
+    keys.add(token);
+  }
+  if (keys.length == base.keyTokens.length) return base;
+  return DictionaryPopupInputSpec(
+    keyTokens: List<String>.unmodifiable(keys),
+    mouseButtons: base.mouseButtons,
+  );
+}
+
 /// 弹窗回传的 token → 动作。键盘与鼠标 token 的取值域天然不相交
 /// （`MouseBinding.deserialize('Escape')` 与 `InputBinding.deserialize('Mouse3')`
 /// 都是 null），故先试哪个都一样，不需要额外的类型标记位。

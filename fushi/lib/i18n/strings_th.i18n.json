@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "ข้ามตอนที่อ่านจบแล้ว",
   "manga_resume_target_last": "ตำแหน่งที่อ่านล่าสุด",
   "manga_resume_target_subtitle": "เฉพาะมังงะออนไลน์ ข้ามตอนที่อ่านจบแล้ว: ถ้าตอนที่อ่านล่าสุดเคยอ่านจบแล้ว จะอ่านต่อที่ตอนถัดไป และการเปิดตอนที่อ่านจบแล้วซ้ำจะเริ่มที่หน้า 1 ตำแหน่งที่อ่านล่าสุด: เหมือนหนังสือ กลับไปยังหน้าที่หยุดไว้ แม้เป็นตอนที่เคยอ่านจบแล้ว และจะไปตอนถัดไปก็ต่อเมื่อหยุดที่หน้าสุดท้ายเท่านั้น",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "พอดีความสูง",
   "manga_scale_fit_screen": "พอดีหน้าจอ",
   "manga_scale_fit_width": "พอดีความกว้าง",

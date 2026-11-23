@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Skip finished chapters",
   "manga_resume_target_last": "Last read position",
   "manga_resume_target_subtitle": "Online manga only: continue with the next chapter once the last one is finished, or return to the page you left.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Fit height",
   "manga_scale_fit_screen": "Fit screen",
   "manga_scale_fit_width": "Fit width",

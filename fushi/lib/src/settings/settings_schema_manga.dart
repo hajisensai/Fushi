@@ -284,6 +284,18 @@ SettingsSection _mangaPagingSection() {
             c.appModel.setMangaResumeTarget(value),
         defaultValue: kMangaResumeTargetDefault,
       ),
+      // 反转键盘左右键翻页方向：漫画自己的一份，与小说「阅读控制」里的同名开关分开
+      // （维护者 2026-11-23 拍板，反馈 uz_2m0E_Eu ④）。只管键盘，手柄十字键不受影响。
+      SettingsSwitchItem(
+        id: 'manga.reverse_arrow_page_turn',
+        title: t.manga_reverse_arrow_page_turn,
+        subtitle: t.manga_reverse_arrow_page_turn_subtitle,
+        icon: FushiIcons.swap,
+        value: (SettingsContext c) => c.appModel.mangaReverseArrowPageTurn,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaReverseArrowPageTurn(value),
+        defaultValue: false,
+      ),
       // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
       // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
       SettingsSwitchItem(

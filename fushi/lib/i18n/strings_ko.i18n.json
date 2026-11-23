@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "다 읽은 화 건너뛰기",
   "manga_resume_target_last": "마지막 읽은 위치",
   "manga_resume_target_subtitle": "온라인 만화 전용. 다 읽은 화 건너뛰기: 마지막으로 읽은 화를 전에 끝까지 읽었다면 다음 화부터 이어 보고, 다 읽은 화를 다시 열면 1페이지부터 시작합니다. 마지막 읽은 위치: 책처럼 멈췄던 페이지로 돌아갑니다(전에 다 읽은 화라도 마찬가지). 마지막 페이지에서 멈췄을 때만 다음 화로 넘어갑니다.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "높이에 맞춤",
   "manga_scale_fit_screen": "화면에 맞춤",
   "manga_scale_fit_width": "너비에 맞춤",

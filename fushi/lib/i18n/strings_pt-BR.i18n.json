@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Pular capítulos lidos",
   "manga_resume_target_last": "Última posição de leitura",
   "manga_resume_target_subtitle": "Apenas mangá online. Pular capítulos lidos: se o último capítulo lido já foi terminado alguma vez, continua no próximo capítulo; um capítulo terminado reabre na página 1. Última posição de leitura: como nos livros, volta à página onde você parou, mesmo em um capítulo já terminado; só avança para o próximo se você parou na última página.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Ajustar à altura",
   "manga_scale_fit_screen": "Ajustar à tela",
   "manga_scale_fit_width": "Ajustar à largura",

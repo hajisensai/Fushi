@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Gelesene überspringen",
   "manga_resume_target_last": "Letzte Leseposition",
   "manga_resume_target_subtitle": "Nur Online-Manga. Gelesene überspringen: Wurde das zuletzt gelesene Kapitel schon einmal zu Ende gelesen, geht es mit dem nächsten Kapitel weiter; ein gelesenes Kapitel öffnet wieder ab Seite 1. Letzte Leseposition: wie bei Büchern zurück zur Seite, an der du aufgehört hast, auch in einem früher gelesenen Kapitel; erst wer auf der letzten Seite aufhört, kommt zum nächsten Kapitel.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "An Höhe anpassen",
   "manga_scale_fit_screen": "An Bildschirm anpassen",
   "manga_scale_fit_width": "An Breite anpassen",

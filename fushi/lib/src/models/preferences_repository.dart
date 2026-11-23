@@ -7326,6 +7326,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 漫画「反转方向键翻页」（默认关）：键盘裸 ← / → 在按跨页方向校正后的结果上整体
+  /// 左右对调。与小说的 `reverse_arrow_page_turn` 分开各一个（维护者 2026-11-23 拍板，
+  /// 反馈 uz_2m0E_Eu ④），手柄 D-pad 不受影响。
+  bool get mangaReverseArrowPageTurn =>
+      getPref('manga_reverse_arrow_page_turn', defaultValue: false) as bool;
+
+  Future<void> setMangaReverseArrowPageTurn(bool value) async {
+    await setPref('manga_reverse_arrow_page_turn', value);
+    notifyListeners();
+  }
+
   /// 音量键翻页（漫画阅读器）。默认开：与 EPUB 阅读器的音量键翻页一致。
   bool get mangaVolumeKeyPaging =>
       getPref('manga_volume_key_paging', defaultValue: true) as bool;

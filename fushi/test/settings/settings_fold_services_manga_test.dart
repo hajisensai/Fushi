@@ -79,6 +79,7 @@ void main() {
         'manga.chrome_floating',
         'manga.controls_editor',
         'manga.resume_target',
+        'manga.reverse_arrow_page_turn',
         'manga.volume_key_paging',
       });
       for (final SettingsSection s in manga.sections) {

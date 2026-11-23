@@ -101,6 +101,18 @@ PageTurnAnimation effectivePageTurnAnimation(
   return selected;
 }
 
+/// 一次翻页动画从开始到落定的时长：效果为无时为零，卷页取 [PageTurnAnimationSpeed.curlDuration]，
+/// 其余取 [PageTurnAnimationSpeed.duration]。[effective] 必须是已经过
+/// [effectivePageTurnAnimation] 降级后的效果（墨水屏 / 减弱动态效果下为零）。
+Duration pageTurnAnimationDuration(
+  PageTurnAnimation effective,
+  PageTurnAnimationSpeed speed,
+) => switch (effective) {
+  PageTurnAnimation.none => Duration.zero,
+  PageTurnAnimation.curl => speed.curlDuration,
+  _ => speed.duration,
+};
+
 /// 两个阅读器共用的「翻页动效是否可播」判据：阅读器自身的墨水屏开关 [eink] +
 /// [fushiMotionEnabled]（墨水屏主题 / 系统「减弱动态效果」）。结果喂给
 /// [effectivePageTurnAnimation] 的 `motionEnabled`。

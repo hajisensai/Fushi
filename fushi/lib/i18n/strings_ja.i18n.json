@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "読了した話を飛ばす",
   "manga_resume_target_last": "最後に読んだ位置",
   "manga_resume_target_subtitle": "オンライン漫画のみ。読了した話を飛ばす：最後に読んだ話を以前に読み終えていれば次の話から続け、読了済みの話を開き直すと 1 ページ目から始まります。最後に読んだ位置：書籍と同じく中断したページに戻ります（以前読み終えた話でも同様）。最後のページで止めたときだけ次の話に進みます。",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "高さに合わせる",
   "manga_scale_fit_screen": "画面に合わせる",
   "manga_scale_fit_width": "幅に合わせる",

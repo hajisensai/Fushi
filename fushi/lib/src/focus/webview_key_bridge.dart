@@ -79,9 +79,13 @@ bool get hostOwnsWebViewHoverLookup => isMacOSPlatform;
 /// 且极难定位。裹进 IIFE 后每份桥各自闭包持有自己的键表，多份共存互不相干。
 /// 前导 `;` 是拼接安全惯例：本脚本被插进一大段 setup 脚本中间，前一条语句若少了
 /// 分号，裸 `(function…` 会被解析成对它的调用。
-/// [forwardRepeats] 为 false 时丢弃长按产生的 `KeyRepeatEvent`（`e.repeat`）。
-/// 漫画页要的是「按住方向键不堆翻页风暴」，阅读器则保留连发，故做成参数而不是
-/// 二选一写死。
+/// [forwardRepeats] 为 false 时丢弃长按产生的 `KeyRepeatEvent`（`e.repeat`）：一次性
+/// 动作（关词典、书签）按住不该反复触发。
+///
+/// [reportRepeats] 为 true 时（要求 [forwardRepeats] 也为 true）回传第二个参数
+/// `e.repeat`（布尔），让 Dart 侧把长按的自动重复与新的一次按下分开处理——漫画翻页
+/// 桥靠它对长按连发做「等上一页动画落定」节流，而新按下照常排队（反馈 uz_2m0E_Eu ②）。
+/// 默认 false：生成的 `callHandler` 只带 token，与既有宿主逐字一致。
 ///
 /// [stopPropagation] 为 true 时额外 `stopImmediatePropagation()`，用于宿主文档里
 /// 还有别的 keydown 监听、且这些键必须**独占**给 Dart 的场合。
@@ -124,6 +128,7 @@ String webViewKeyBridgeScript({
   bool installMouseListeners = false,
   bool deferToPopupModal = false,
   bool forwardRepeats = true,
+  bool reportRepeats = false,
   bool stopPropagation = false,
   bool listenOnWindow = false,
   bool yieldActivationToKeyboardFocus = false,
@@ -137,6 +142,10 @@ String webViewKeyBridgeScript({
     keys.isNotEmpty || installMouseListeners || mouseButtons.isEmpty,
     'a bridge with mouse tokens but no mouse listeners can never fire them',
   );
+  assert(
+    forwardRepeats || !reportRepeats,
+    'reportRepeats needs forwardRepeats: dropped repeats can never be reported',
+  );
   final String keyList = keys.map(_jsStringLiteral).join(', ');
   final String buttonList = mouseButtons.join(', ');
   final String installFlag = _jsStringLiteral(
@@ -146,6 +155,7 @@ String webViewKeyBridgeScript({
   final String buttonsVar = _jsStringLiteral(
     '__fushiKeyBridgeButtons_$handlerName',
   );
+  final String repeatArg = reportRepeats ? ', !!e.repeat' : '';
   final String repeatGuard = forwardRepeats
       ? ''
       : '\n    if (e.repeat) return;';
@@ -230,7 +240,7 @@ String webViewKeyBridgeScript({
     if (_hit === null) return;
     e.preventDefault();$propagationGuard
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('$handlerName', _hit);
+      window.flutter_inappwebview.callHandler('$handlerName', _hit$repeatArg);
     }
   }, {capture: true});
 $mouseListeners  })();''';

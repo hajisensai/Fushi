@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Пропуск прочитанных глав",
   "manga_resume_target_last": "Последняя позиция",
   "manga_resume_target_subtitle": "Только онлайн-манга. Пропуск прочитанных глав: если последняя открытая глава уже была дочитана, чтение продолжается со следующей главы; дочитанная глава открывается заново с 1-й страницы. Последняя позиция: как в книгах, возврат к странице, на которой вы остановились, даже в уже дочитанной главе; переход к следующей главе — только после остановки на последней странице.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "По высоте",
   "manga_scale_fit_screen": "По экрану",
   "manga_scale_fit_width": "По ширине",

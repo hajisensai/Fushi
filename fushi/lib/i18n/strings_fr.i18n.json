@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Sauter les chapitres lus",
   "manga_resume_target_last": "Dernière position de lecture",
   "manga_resume_target_subtitle": "Manga en ligne uniquement. Sauter les chapitres lus : si le dernier chapitre lu a déjà été terminé, la lecture reprend au chapitre suivant ; un chapitre terminé se rouvre à la page 1. Dernière position de lecture : comme pour les livres, retour à la page où vous vous êtes arrêté, même dans un chapitre déjà terminé ; on ne passe au chapitre suivant qu'après un arrêt sur sa dernière page.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Ajuster à la hauteur",
   "manga_scale_fit_screen": "Ajuster à l'écran",
   "manga_scale_fit_width": "Ajuster à la largeur",

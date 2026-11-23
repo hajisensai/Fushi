@@ -128,6 +128,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 本批合入的三组新设置（拍板 R721ZgWVSB / EuOLprw_dV / zTedU_pOQF）：生效点分别在
   // 漫画阅读器的翻页手势、截屏识字浮层的制卡、视频页的聊天回放栏，harness 设置页里
   // 都没有。偏好 → 生效的链由各自专项测试咬住。
+  // 漫画「反转方向键翻页」（反馈 uz_2m0E_Eu ④）：生效点是漫画页的键盘解析，harness
+  // 设置页里没有漫画页；偏好 → resolveMangaArrowPageTurn(reverse:) 的链由专项测试咬住。
+  'manga/Reverse arrow-key page turns':
+      'test/shortcuts/page_turn_unify_test.dart（reverse 对调跨页方向校正结果；漫画页按 mangaReverseArrowPageTurn 传 reverse）',
   'manga/Swipe page-turn sensitivity':
       'test/media/manga/manga_swipe_sensitivity_test.dart（阈值 = 基准 / 灵敏度，注入手势 JS 后慢拖翻不翻页随值变）',
   'floatingBall/Frame the screenshot when adding a card':

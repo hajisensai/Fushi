@@ -6451,6 +6451,8 @@
   "manga_resume_target_furthest": "Gelezen overslaan",
   "manga_resume_target_last": "Laatste leespositie",
   "manga_resume_target_subtitle": "Alleen online manga. Gelezen overslaan: is het laatst gelezen hoofdstuk ooit uitgelezen, dan ga je verder met het volgende hoofdstuk; een uitgelezen hoofdstuk opent opnieuw vanaf pagina 1. Laatste leespositie: net als bij boeken terug naar de pagina waar je stopte, ook in een eerder uitgelezen hoofdstuk; alleen wie op de laatste pagina stopt, gaat door naar het volgende.",
+  "manga_reverse_arrow_page_turn": "Reverse arrow-key page turns",
+  "manga_reverse_arrow_page_turn_subtitle": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
   "manga_scale_fit_height": "Aan hoogte aanpassen",
   "manga_scale_fit_screen": "Aan scherm aanpassen",
   "manga_scale_fit_width": "Aan breedte aanpassen",

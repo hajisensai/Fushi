@@ -250,6 +250,26 @@
 | 竖排 RTL（日文默认）+ 无修饰 ← | readerPageForward（下一页在左） |
 | 竖排 RTL + 无修饰 → | readerPageBackward |
 | 横排 LTR + 无修饰 ←/→ | 后退 / 前进（默认方向） |
+| 有声书激活 + 弹窗不可见 + 无修饰 ←/→ | 上述页序再改作上一句 / 下一句（见 2d+） |
+
+### 2d+. 小说 / 漫画左右键统一（反馈 uz_2m0E_Eu，2026-11 拍板「做」）
+
+两个阅读器的裸 ← → 走同一套原语（`shortcuts/directional_page_turn.dart`）：
+`resolveDirectionalPageTurn`（只接管出厂翻页绑定，`leftIsForward = rtl ^ reverse`）→
+`resolveAudioArrowTakeover`（有声在场切句）。
+
+| 条件 | 小说（reader） | 漫画（manga） |
+|---|---|---|
+| 裸 ← →，无有声 | 按阅读方向翻页 | 按跨页方向翻页 |
+| 裸 ← →，有声在场、弹窗不可见 | 上一句 / 下一句（audiobookPrev/NextSentence） | 上一句 / 下一句（mangaAudioPrevious/NextLine） |
+| PageUp / PageDown / ↑ / ↓，有声在场 | 照旧翻页 | 照旧翻页 |
+| 裸空格，有声在场 | 播放 / 暂停 | 播放 / 暂停 |
+| 长按 ← →（翻页） | 连发（BUG-687 / TODO-1370） | 连发，但等上一页翻页动画落定才翻下一页（`MangaHeldTurnGate`） |
+| 查词弹窗开着时 ← → | 关弹窗并翻页（正文持焦 / 弹窗持焦两条路都接） | 关弹窗并翻页 |
+| 「反转方向键翻页」开关 | 阅读控制 · `reverse_arrow_page_turn`（冻结键名） | 漫画 · 翻页 · `manga_reverse_arrow_page_turn`（两边分开） |
+
+用户改绑 / 解绑过左右键时上表全部让路，交回注册表的真实绑定。手柄 D-pad 跟随阅读方向，
+但不受「反转方向键翻页」与有声切句影响。
 
 ### 2e. 查词弹窗
 
