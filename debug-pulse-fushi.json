@@ -1,12 +1,74 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T15:02:00Z",
+ "generatedAt": "2026-11-23T15:48:54Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
-  "seq": 32050
+  "sha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
+  "seq": 32092
  },
  "builds": [
+  {
+   "seq": 32049,
+   "version": "3.4.0",
+   "sha": "4ad722660ac2e56212f658c329b0dd501479c41c",
+   "unknown": false,
+   "publishedAt": "2026-11-23T15:48:42Z",
+   "testflight": false,
+   "baseSeq": 32021,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "4ad722660ac2e56212f658c329b0dd501479c41c",
+     "subject": "Merge #4285 (pr/manga-popover-height) into develop"
+    },
+    {
+     "sha": "a601959fe5c8b9d6b2b661d292f98b8a53be9fda",
+     "subject": "fix: 查词换词面板与词块行改用 FushiAnimatedSize（关动效时零时长 AnimatedSize 布局中自我置脏断言）"
+    },
+    {
+     "sha": "5fa57da73974bc96dec3664cd0482ed7e19790b0",
+     "subject": "fix: #4249 歌词页测试卡死（卸载补零延时帧冲掉 drift 关流 timer）；MV 背景开关关不掉（BUG-5348）；补本批新设置的效果证据"
+    },
+    {
+     "sha": "777646d7b20705f418b30c038aa593d731892dcb",
+     "subject": "Merge #4258 (claude/dec-card-audio-follow-volume) into develop"
+    },
+    {
+     "sha": "c8e43b062bcfa026059b49fdaac551318e73b361",
+     "subject": "Merge #4252 (claude/dec-ios-inbox-games-dir) into develop"
+    },
+    {
+     "sha": "a577570988a637eeeb8c6ba99626efdc477e761c",
+     "subject": "Merge #4253 (claude/dec-sidepanel-stats) into develop"
+    },
+    {
+     "sha": "9315ba53d48d962489ca5d01ae0fa0ff3625c920",
+     "subject": "Merge #4254 (claude/dec-skip-sentence-audio) into develop"
+    },
+    {
+     "sha": "bb8e7966ccad19c9c4e401c8a3d91b26e0ca7d9d",
+     "subject": "Merge #4256 (claude/dec-music-lyric-chars) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+    }
+   }
+  },
   {
    "seq": 32021,
    "version": "3.4.0",
@@ -374,261 +436,83 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31707,
-   "version": "3.4.0",
-   "sha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
-   "unknown": false,
-   "publishedAt": "2026-11-23T06:16:53Z",
-   "testflight": false,
-   "baseSeq": 31534,
-   "prs": [
-    4211,
-    4208,
-    4166,
-    4165,
-    4168,
-    4204,
-    4206,
-    4207,
-    4205,
-    4202,
-    4220,
-    4203,
-    4209,
-    4219,
-    4229,
-    4227
-   ],
-   "direct": [
-    {
-     "sha": "f4586576fc993b42f114fb054135bed05d0cca2d",
-     "subject": "chore(bugs): settle BUG number collisions on 1e36646b7"
-    },
-    {
-     "sha": "160eb9ae14eeed84b45408c7d0c07a74293bdd8d",
-     "subject": "chore(bugs): settle BUG number collisions on 87cb892ac"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
-  "headSeq": 32050,
-  "prs": [],
+  "headSha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
+  "headSeq": 32092,
+  "prs": [
+   4296,
+   4295,
+   4294,
+   4293,
+   4288,
+   4278,
+   4286
+  ],
   "direct": [
+   {
+    "sha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
+    "subject": "chore(bugs): settle BUG number collisions on 84c399b1a"
+   },
+   {
+    "sha": "84c399b1aa4a63521f336fe251a1ec5bc31e733f",
+    "subject": "Merge #4291 (claude/fb-uz_2m0E_Eu) into develop"
+   },
+   {
+    "sha": "f0cc8d4dff68fde49bb71f88fa9378d66233d358",
+    "subject": "Merge #4287 (pr/music-visualizer-fixes) into develop"
+   },
+   {
+    "sha": "57ead9003dfe22e7470e4486108112138ffcdad2",
+    "subject": "Merge #4301 (claude/fb-video-extras-subfolder-not-attached) into develop"
+   },
+   {
+    "sha": "55303da493645e2163fadca6a5cf89352720a5a8",
+    "subject": "Merge #4300 (claude/fb-srs-web-face-autoplay-visibility-race) into develop"
+   },
+   {
+    "sha": "0055830f0e8eea1b73f5fd8492b43453d06fc20b",
+    "subject": "Merge #4299 (claude/fb-manga-double-tap-zoom-flash-offset) into develop"
+   },
+   {
+    "sha": "726b7fd5f4672da312ef11d8b053d9bf4e6d35c4",
+    "subject": "Merge #4298 (claude/fb-android-330-java-crash-mihon) into develop"
+   },
+   {
+    "sha": "b56b33312142fbb246997b72696aa2822c2e5c7c",
+    "subject": "Merge #4297 (claude/fb-interconnect-manga-progress-key-mismatch) into develop"
+   },
+   {
+    "sha": "8b564d7d8bde25b1e5bd6d2ab22aad76df10a872",
+    "subject": "Merge #4289 (claude/dec-dub-track-edit-guard) into develop"
+   },
    {
     "sha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
     "subject": "chore(bugs): settle BUG number collisions on 4ad722660"
-   },
-   {
-    "sha": "4ad722660ac2e56212f658c329b0dd501479c41c",
-    "subject": "Merge #4285 (pr/manga-popover-height) into develop"
-   },
-   {
-    "sha": "a601959fe5c8b9d6b2b661d292f98b8a53be9fda",
-    "subject": "fix: 查词换词面板与词块行改用 FushiAnimatedSize（关动效时零时长 AnimatedSize 布局中自我置脏断言）"
-   },
-   {
-    "sha": "5fa57da73974bc96dec3664cd0482ed7e19790b0",
-    "subject": "fix: #4249 歌词页测试卡死（卸载补零延时帧冲掉 drift 关流 timer）；MV 背景开关关不掉（BUG-5348）；补本批新设置的效果证据"
-   },
-   {
-    "sha": "777646d7b20705f418b30c038aa593d731892dcb",
-    "subject": "Merge #4258 (claude/dec-card-audio-follow-volume) into develop"
-   },
-   {
-    "sha": "c8e43b062bcfa026059b49fdaac551318e73b361",
-    "subject": "Merge #4252 (claude/dec-ios-inbox-games-dir) into develop"
-   },
-   {
-    "sha": "a577570988a637eeeb8c6ba99626efdc477e761c",
-    "subject": "Merge #4253 (claude/dec-sidepanel-stats) into develop"
-   },
-   {
-    "sha": "9315ba53d48d962489ca5d01ae0fa0ff3625c920",
-    "subject": "Merge #4254 (claude/dec-skip-sentence-audio) into develop"
-   },
-   {
-    "sha": "bb8e7966ccad19c9c4e401c8a3d91b26e0ca7d9d",
-    "subject": "Merge #4256 (claude/dec-music-lyric-chars) into develop"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45199342000"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838134"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838253"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838253"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838253"
    }
   }
  },
  "prs": {
-  "4165": {
-   "number": 4165,
-   "title": "fix(downloads): 继续 / 重试时种子不在原后端就在同一后端重建；批量失败可查看原因（BUG-5212）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:42:18Z",
-   "additions": 434,
-   "deletions": 33,
-   "labels": []
-  },
-  "4166": {
-   "number": 4166,
-   "title": "feat(android): 书库默认放 Android/data/<包名>/files，老安装一次性提示迁移",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:50:02Z",
-   "additions": 1054,
-   "deletions": 28,
-   "labels": []
-  },
-  "4168": {
-   "number": 4168,
-   "title": "fix(manga): 朗读与有声剧按页面印着的注音念（BUG-5216）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:40:06Z",
-   "additions": 938,
-   "deletions": 161,
-   "labels": []
-  },
-  "4202": {
-   "number": 4202,
-   "title": "fix(interconnect): 配置传输被拒时显示本地化原因（BUG-5261，反馈 G-ebgSnoK8）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:35:10Z",
-   "additions": 460,
-   "deletions": 29,
-   "labels": []
-  },
-  "4203": {
-   "number": 4203,
-   "title": "fix(sync): 互联对端离线不再刷错误日志与诊断（BUG-5262，反馈 w8sFMyflft）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:30:25Z",
-   "additions": 353,
-   "deletions": 14,
-   "labels": []
-  },
-  "4204": {
-   "number": 4204,
-   "title": "fix(srs): gen4 迁移对拍认出被同库另一个 profile 占走行的实体（BUG-5267，反馈 n4WhWEKPtQ）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:37:37Z",
-   "additions": 188,
-   "deletions": 12,
-   "labels": []
-  },
-  "4205": {
-   "number": 4205,
-   "title": "fix(manga-audio): 上一句始终到前一句；成品播放条加音量（BUG-5265 BUG-5266）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:35:31Z",
-   "additions": 503,
-   "deletions": 63,
-   "labels": []
-  },
-  "4206": {
-   "number": 4206,
-   "title": "fix(video): 文件名带 Menu/CM 的同目录特典挂到父作品，文件级与发布级共用特典词表（BUG-5260）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:37:02Z",
-   "additions": 263,
-   "deletions": 34,
-   "labels": []
-  },
-  "4207": {
-   "number": 4207,
-   "title": "fix(ui): 状态监测页悬浮小窗排第一；音乐「继续收听」卡进播放页",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:35:52Z",
-   "additions": 346,
-   "deletions": 28,
-   "labels": []
-  },
-  "4208": {
-   "number": 4208,
-   "title": "fix(srs): 校时偏移只在同一次开机内跨进程接上，SRS「今天」不再永久多一天（BUG-5264）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:59:14Z",
-   "additions": 300,
-   "deletions": 327,
-   "labels": []
-  },
-  "4209": {
-   "number": 4209,
-   "title": "feat(linux): Linux 自动出包真正发布（Flatpak + tar.gz），放开两处过时的 Linux 平台门",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:30:03Z",
-   "additions": 27,
-   "deletions": 15,
-   "labels": []
-  },
-  "4211": {
-   "number": 4211,
-   "title": "feat(music): 全屏歌词动画（移植 folia-major 18 套样式、整首音频分析、AI 主题、镜台 Flutter GPU）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T05:07:14Z",
-   "additions": 143823,
-   "deletions": 227,
-   "labels": []
-  },
-  "4219": {
-   "number": 4219,
-   "title": "feat(lookup): Linux 应用外查词经 AT-SPI 抓整句上下文",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:29:58Z",
-   "additions": 1083,
-   "deletions": 67,
-   "labels": []
-  },
-  "4220": {
-   "number": 4220,
-   "title": "feat(linux): 悬浮字幕 / 桌面歌词窗 Linux 原生后端",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:32:11Z",
-   "additions": 2981,
-   "deletions": 37,
-   "labels": []
-  },
-  "4227": {
-   "number": 4227,
-   "title": "fix(develop): 修 develop 自身的六个守卫红",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:07:26Z",
-   "additions": 195,
-   "deletions": 124,
-   "labels": []
-  },
   "4228": {
    "number": 4228,
    "title": "docs(bugs): 长跑拍板项巡检补记 BUG-4959 / BUG-5083 状态，登记 BUG-5271",
@@ -638,13 +522,67 @@
    "deletions": 8,
    "labels": []
   },
-  "4229": {
-   "number": 4229,
-   "title": "docs(bugs): 反馈分诊登记 BUG-5274 / BUG-5275",
+  "4278": {
+   "number": 4278,
+   "title": "fix(bluray): 原盘菜单全部播放不再凭空多一集；加密剧集盘封面走解密输入链 (BUG-5312)",
    "author": "hajisensai",
-   "mergedAt": "2026-11-23T04:19:56Z",
-   "additions": 23,
-   "deletions": 1,
+   "mergedAt": "2026-11-23T15:32:14Z",
+   "additions": 1144,
+   "deletions": 80,
+   "labels": []
+  },
+  "4286": {
+   "number": 4286,
+   "title": "perf(subtitle): 字幕搜索提速——Jimaku 每条目只列一次全表 + 连接预热",
+   "author": "W1ght",
+   "mergedAt": "2026-11-23T15:32:08Z",
+   "additions": 419,
+   "deletions": 33,
+   "labels": []
+  },
+  "4288": {
+   "number": 4288,
+   "title": "feat(extension): 字幕自适应缩放只缩不放（与 mpv 一致），快捷面板加开关",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T15:32:18Z",
+   "additions": 283,
+   "deletions": 71,
+   "labels": []
+  },
+  "4293": {
+   "number": 4293,
+   "title": "feat(manga-audio): 有声漫画 / 朗读也能「从本句播放」（反馈 RCsvzByem-）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T15:32:25Z",
+   "additions": 311,
+   "deletions": 21,
+   "labels": []
+  },
+  "4294": {
+   "number": 4294,
+   "title": "feat: 漫画有声书支持导出片段视频（反馈 pZhONQTAap）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T15:32:30Z",
+   "additions": 876,
+   "deletions": 61,
+   "labels": []
+  },
+  "4295": {
+   "number": 4295,
+   "title": "feat: 句子音频跟随播放音量扩展到视频卡与有声漫画卡（d7mXlstcv9-video）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T15:32:36Z",
+   "additions": 559,
+   "deletions": 19,
+   "labels": []
+  },
+  "4296": {
+   "number": 4296,
+   "title": "feat: 应用外查词覆盖窗加「高级制卡」，转交主窗打开完整对话框（rf--UcsGta-overlay）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T15:32:41Z",
+   "additions": 784,
+   "deletions": 10,
    "labels": []
   }
  }
