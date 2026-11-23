@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4645 条。点号进各自文件。
+> 共 4646 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | 🚧 | 🚧 | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
 | [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | 🚧 | 🚧 | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
 | [BUG-5337](bugs/BUG-5337-manga-audio-package-import-busy.md) | ✅ | ✅ | manga-audio-package-import-busy |
 | [BUG-5336](bugs/BUG-5336-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |

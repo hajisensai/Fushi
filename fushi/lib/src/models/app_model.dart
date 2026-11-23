@@ -238,6 +238,7 @@ import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
@@ -3701,8 +3702,17 @@ class AppModel
   /// 只排队不切 tab 时，词会一直挂在 [DesktopLookupService.pendingText] 上——唯一的
   /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4117）。
   /// 唤前台由调用方负责（深链由原生层前置主窗，ctl 先调 `_focusMainWindowForCtl`）。
-  void queueExternalLookup(String text) {
-    if (DesktopLookupService.instance.triggerLookup(text)) {
+  ///
+  /// [capturedContext]：应用外热键查词开了「抓取上下文」时切好的前后句（拍板台
+  /// rf--UcsGta），查词页据此给高级制卡的句子分区；其它来源为 null。
+  void queueExternalLookup(
+    String text, {
+    CapturedSentenceContext? capturedContext,
+  }) {
+    if (DesktopLookupService.instance.triggerLookup(
+      text,
+      capturedContext: capturedContext,
+    )) {
       requestHomeDictionaryTab();
     }
   }
