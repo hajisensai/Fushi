@@ -162,8 +162,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
             ),
           ],
         ),
-        // 语言绑定的优先级高于上面的媒体类型绑定、低于书架上的单条目绑定
-        // （book > language > mediaType > 当前激活）。
+        // 语言绑定的优先级低于上面的媒体类型绑定与书架上的单条目绑定（组合模型逐叶子解析：
+        // 作品 > 媒体类型 > 语言 > 默认，拍板台 design-combo-node-split）。
         AdaptiveSettingsSection(
           title: t.profile_language_bindings,
           children: [
