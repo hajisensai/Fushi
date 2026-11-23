@@ -55,6 +55,7 @@
 > 共 4584 条。点号进各自文件。
 > 共 4586 条。点号进各自文件。
 > 共 4592 条。点号进各自文件。
+> 共 4593 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -67,6 +68,7 @@
 | [BUG-5263](bugs/BUG-5263-import-dialog-pops-page-above.md) | ✅ | ✅ | import-dialog-pops-page-above |
 | [BUG-5262](bugs/BUG-5262-interconnect-offline-log-noise.md) | ✅ | ✅ | interconnect-offline-log-noise |
 | [BUG-5261](bugs/BUG-5261-interconnect-profile-403-english-reason.md) | ✅ | ✅ | interconnect-profile-403-english-reason |
+| [BUG-5260](bugs/BUG-5260-video-menu-cm-extra-filename.md) | ✅ | ✅ | video-menu-cm-extra-filename |
 | [BUG-5259](bugs/BUG-5259-music-continue-card-no-player-page.md) | ✅ | ✅ | music-continue-card-no-player-page |
 | [BUG-5258](bugs/BUG-5258-status-monitor-overlay-section-last.md) | ✅ | ✅ | status-monitor-overlay-section-last |
 | [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
