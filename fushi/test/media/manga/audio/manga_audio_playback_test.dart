@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
     show mangaPayloadOcrSignature;
 import 'package:flutter_test/flutter_test.dart';
@@ -52,11 +53,35 @@ const String _fixture = '''
 MangaRenderManifest _manifest() =>
     MangaRenderManifest.fromJson(jsonDecode(_fixture))!;
 
+MangaRenderedLine _longLine(String id, int page, int ms) => MangaRenderedLine(
+  lineId: id,
+  page: page,
+  blocks: const <int>[0],
+  speaker: 'A',
+  kind: CastLineKind.spoken,
+  beatMs: 0,
+  file: '$id.wav',
+  durationMs: ms,
+  text: id,
+);
+
+/// 长句清单（「上一句」用）：第 0 页两句（3 秒、4 秒），第 1 页无台词，第 2 页
+/// 一句 3 秒。句子都长过旧的 1.5 秒「回句首」窗口。
+MangaRenderManifest _longManifest() => MangaRenderManifest(
+  pageCount: 3,
+  lines: <MangaRenderedLine>[
+    _longLine('p0a', 0, 3000),
+    _longLine('p0b', 0, 4000),
+    _longLine('p2a', 2, 3000),
+  ],
+);
+
 /// 假播放器：位置由测试设定，seek 立即生效。
 class _Player extends ChangeNotifier implements MangaAudioPlayerPort {
   int pos = 0;
   bool playing = false;
   double rate = 1.0;
+  double vol = 1.0;
   final List<int> seeks = <int>[];
 
   void at(int ms) {
@@ -70,6 +95,8 @@ class _Player extends ChangeNotifier implements MangaAudioPlayerPort {
   bool get isPlaying => playing;
   @override
   double get speed => rate;
+  @override
+  double get volume => vol;
   @override
   Future<void> play() async {
     playing = true;
@@ -96,6 +123,12 @@ class _Player extends ChangeNotifier implements MangaAudioPlayerPort {
 
   @override
   Future<void> setSpeed(double speed) async => rate = speed;
+
+  @override
+  Future<void> setVolume(double volume) async {
+    vol = volume;
+    notifyListeners();
+  }
 }
 
 /// 假宿主：[pairs] = 翻页式（spread 0-1、2-3、4），否则条漫（每页自成一屏）。
@@ -193,6 +226,40 @@ void main() {
         (MangaAudioItem i) => i.kind == MangaAudioItemKind.gap,
       );
       expect(plan.listenOnlySkipTarget(gap), isNull);
+    });
+
+    test('上一句始终到正高亮那句的前一句，不在句中 / 句后停顿里重播本句（02uXqiI-xd）', () {
+      final MangaAudioPlaybackPlan plan = MangaAudioPlaybackPlan.build(
+        _longManifest(),
+      );
+      final int l0 = plan.lineStartMs(0);
+      final int l1 = plan.lineStartMs(1);
+      final int l2 = plan.lineStartMs(2);
+      // 句中已播超过 1.5 秒：到前一句，不回本句句首。
+      expect(plan.previousLineStartMs(l1 + 2500), l0);
+      expect(plan.previousLineStartMs(l2 + 2000), l1);
+      // 句后停顿 / 页尾补齐（高亮还是刚读完的那句）：到它的前一句。
+      final int afterL1 = plan.itemIndexOfLine(1) + 1;
+      expect(plan.items[afterL1].isLine, isFalse);
+      expect(plan.items[afterL1].page, 0);
+      for (int i = afterL1; plan.items[i].page == 0; i++) {
+        expect(
+          plan.previousLineStartMs(plan.items[i].startMs + 10),
+          l0,
+          reason: '${plan.items[i]}',
+        );
+      }
+      // 页停留（无台词页，没有高亮）：回到此前最近读过的那句。
+      final int hold = plan.itemIndexAt(plan.pageStartMs(1) + 10);
+      expect(plan.items[hold].kind, MangaAudioItemKind.hold);
+      expect(plan.previousLineStartMs(plan.pageStartMs(1) + 10), l1);
+      // 页首 lead（高亮本页马上要读的第一句）：到它的前一句。
+      final int lead = plan.itemIndexAt(plan.pageStartMs(2));
+      expect(plan.items[lead].kind, MangaAudioItemKind.lead);
+      expect(plan.previousLineStartMs(plan.pageStartMs(2) + 10), l1);
+      // 首句：回到开头。
+      expect(plan.previousLineStartMs(l0 + 2000), 0);
+      expect(plan.previousLineStartMs(0), 0);
     });
 
     test('进度口径：播放毫秒 ↔ 只数句子音频的毫秒，静音里续播从下一句开始', () {
@@ -477,10 +544,46 @@ void main() {
       expect(player.pos, plan.lineStartMs(1));
       player.at(plan.lineStartMs(3) + 1600);
       await driver.previous();
-      expect(player.pos, plan.lineStartMs(3), reason: '句中超过 1.5 秒回到本句开头');
+      expect(
+        player.pos,
+        plan.lineStartMs(2),
+        reason: '句后停顿里按也到上一句，不重播本句（02uXqiI-xd）',
+      );
       await driver.seekTo(plan.totalMs + 999);
       expect(player.pos, plan.totalMs);
       expect(driver.skipLine(-1), isTrue);
+    });
+
+    test('连按上一句：跳转在途时第二下接着往前一句（02uXqiI-xd）', () async {
+      final MangaAudioPlaybackPlan long = MangaAudioPlaybackPlan.build(
+        _longManifest(),
+      );
+      final _Player p = _Player();
+      final MangaAudioPlaybackDriver d = MangaAudioPlaybackDriver(
+        bookKey: 'long',
+        plan: long,
+        player: p,
+      );
+      p.at(long.lineStartMs(2) + 2000);
+      final Completer<void> gate = Completer<void>();
+      p.seekGate = gate;
+      final Future<void> first = d.previous();
+      final Future<void> second = d.previous();
+      expect(p.seeks, <int>[long.lineStartMs(1), long.lineStartMs(0)]);
+      gate.complete();
+      await Future.wait(<Future<void>>[first, second]);
+      expect(p.pos, long.lineStartMs(0));
+      d.dispose();
+    });
+
+    test('音量：驱动转接播放器音量并通知播放条（SDfRadAtkL）', () async {
+      int notified = 0;
+      driver.addListener(() => notified++);
+      expect(driver.volume, 1.0);
+      await driver.setVolume(0.4);
+      expect(player.vol, 0.4);
+      expect(driver.volume, 0.4);
+      expect(notified, greaterThan(0));
     });
 
     test('查后从句首重播：指定句 / 当前页刚读过的句 / 本页还没读到句子原地播（BUG-4909）', () async {

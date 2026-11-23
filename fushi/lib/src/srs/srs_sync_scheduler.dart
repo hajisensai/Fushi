@@ -44,6 +44,7 @@ import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart' show SyncPeerUnreachableError;
 import 'package:fushi/src/sync/sync_module_gate.dart'
     show SyncRunTicket, syncModuleGate;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -114,6 +115,11 @@ class SrsSyncRoundStats {
   int coalesced = 0;
   int consecutiveFailures = 0;
   DateTime? lastFailureAt;
+
+  /// 这串连续失败里最近一次记进诊断的失败原因；null = 这条路径此刻没有在失败。
+  /// 诊断只在状态切换时记（成功→失败、失败原因变了、失败→恢复），同一原因每轮重复
+  /// 失败不再逐轮刷（BUG-5262）。
+  String? loggedFailure;
 
   String describe() =>
       'queued=$queued running=$running coalesced=$coalesced '
@@ -232,6 +238,11 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
 /// 到点都会再推一次，host 长时间不在时不刷屏、也不至于完全看不到。稳定的跳过原因（模块关着、没配对、不在前台）只在
 /// 原因变化时记一次。
 const Duration kSrsAutoPushSkipLogInterval = Duration(minutes: 10);
+
+/// [SrsSyncScheduler.autoPushSkipReason]：这组通道全部因对端离线
+/// （[SyncPeerUnreachableError]）没推出去。
+const String kSrsAutoPushPeerOffline =
+    'peer offline (paired device unreachable)';
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
 /// 返回跑成功的通道数与抛错通道的异常。
@@ -843,7 +854,13 @@ class SrsSyncScheduler {
         });
         failed.addAll(r.errors.map((Object e) => '$e'));
         ok = failed.isEmpty;
-        if (!ok) {
+        if (!ok &&
+            failed.length == r.errors.length &&
+            r.errors.every((Object e) => e is SyncPeerUnreachableError)) {
+          // BUG-5262：对端离线是稳定状态（不是每次细节都不同的推送失败），只在状态
+          // 变化时记一次；推送照样算没推成，[SrsLocalPush] 照常退避。
+          _noteAutoPushSkipped(lane, kSrsAutoPushPeerOffline, steady: true);
+        } else if (!ok) {
           _noteAutoPushSkipped(lane, 'push failed: ${failed.join('; ')}');
         } else if (ticket.isCancelled) {
           // 途中关了模块：后面的通道没跑（通道运行器照样把它们算进 ran），不能说成推成了。
@@ -1022,7 +1039,7 @@ class SrsSyncScheduler {
       if (!(countedOf?.call(result) ?? true)) {
         // 不计：见上。
       } else if (error == null) {
-        stats.consecutiveFailures = 0;
+        _noteRoundRecovered(backendLabel, stats);
         srsSyncRoundsSucceeded.value++;
       } else {
         _noteRoundFailure(stats, describe, 'report error: $error');
@@ -1049,10 +1066,32 @@ class SrsSyncScheduler {
     stats
       ..consecutiveFailures += 1
       ..lastFailureAt = now;
+    // BUG-5262（反馈 w8sFMyflft）：只在状态切换时记——这条路径刚开始失败，或失败
+    // 原因变了。对端离线时每次推送都会以同一原因失败，逐轮记一条只是把随反馈上传的
+    // 日志刷满；连续失败数照常累计，恢复时由 [_noteRoundRecovered] 一并报出。
+    final String signature = '$error';
+    if (stats.loggedFailure == signature) return;
+    stats.loggedFailure = signature;
     ErrorLogService.instance.logDiagnostic(
       'SrsSyncScheduler.roundFailed',
       '${describe('failed')} previousFailureAt=${previous?.toIso8601String()}: '
           '$error',
+    );
+  }
+
+  /// 一轮成功：清连续失败；此前在失败（记过 roundFailed）就记一条恢复，与失败那条
+  /// 成对，日志里看得出这段失败持续了多少轮、到何时为止。
+  void _noteRoundRecovered(String backendLabel, SrsSyncRoundStats stats) {
+    final int failures = stats.consecutiveFailures;
+    final bool wasFailing = stats.loggedFailure != null;
+    stats
+      ..consecutiveFailures = 0
+      ..loggedFailure = null;
+    if (!wasFailing) return;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsSyncScheduler.roundRecovered',
+      'backend=$backendLabel after consecutiveFailures=$failures '
+          'lastFailureAt=${stats.lastFailureAt?.toIso8601String()}',
     );
   }
 
