@@ -64,6 +64,12 @@ TextPainter _layoutFitTitle(
 /// 只有 [minSize]（唱片 / 海报大字 10 px，水印 max(22, 0.12 × 块高)）下单词
 /// 仍放不进盒宽时，才退回词内换行（原型的 `overflow-wrap: anywhere`），照样完整
 /// 显示。水印与唱片 / 海报大字共用这一套判据。
+///
+/// 结果按全部输入（[text]、[style]、[box]、[minSize]、[maxSize]、[direction]；
+/// 排版固定 [TextScaler.noScaling]）记进有界 LRU（[_FitTitleSizeCache]）：同一
+/// 标题、同一盒子在每次重建里不再重跑十几次 [TextPainter] 排版（实测视频库 /
+/// 首页切页时这一处在 UI isolate 上占十几到二十毫秒）。字体集变化（
+/// [PaintingBinding.systemFonts]，如运行时加载自定义字体）时整表作废，度量不会陈旧。
 double? fushiFitTitleFontSize({
   required String text,
   required TextStyle style,
@@ -74,6 +80,132 @@ double? fushiFitTitleFontSize({
 }) {
   if (text.trim().isEmpty || box.width <= 0 || box.height <= 0) return null;
   if (maxSize < minSize) return null;
+  return _FitTitleSizeCache.instance.lookup(
+    _FitTitleSizeKey(
+      text: text,
+      style: style,
+      box: box,
+      minSize: minSize,
+      maxSize: maxSize,
+      direction: direction,
+    ),
+    () => _computeFitTitleFontSize(
+      text: text,
+      style: style,
+      box: box,
+      minSize: minSize,
+      maxSize: maxSize,
+      direction: direction,
+    ),
+  );
+}
+
+/// 字号缓存现有条目数（测试看命中 / 作废）。
+@visibleForTesting
+int get debugFushiFitTitleCacheLength => _FitTitleSizeCache.instance.length;
+
+/// 清空字号缓存（测试之间隔离）。
+@visibleForTesting
+void debugFushiFitTitleCacheClear() => _FitTitleSizeCache.instance.clear();
+
+/// [fushiFitTitleFontSize] 的缓存键：决定结果的全部输入。[TextStyle] 的 `==`
+/// 是逐字段比较，样式内容相同即命中。
+@immutable
+class _FitTitleSizeKey {
+  const _FitTitleSizeKey({
+    required this.text,
+    required this.style,
+    required this.box,
+    required this.minSize,
+    required this.maxSize,
+    required this.direction,
+  });
+
+  final String text;
+  final TextStyle style;
+  final Size box;
+  final double minSize;
+  final double maxSize;
+  final TextDirection direction;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _FitTitleSizeKey &&
+      other.text == text &&
+      other.box == box &&
+      other.minSize == minSize &&
+      other.maxSize == maxSize &&
+      other.direction == direction &&
+      other.style == style;
+
+  @override
+  int get hashCode =>
+      Object.hash(text, style, box, minSize, maxSize, direction);
+}
+
+/// 有界 LRU：命中挪到队尾，超出 [capacity] 从队首淘汰。值可为 null（「最小字号
+/// 都放不下」也是要记住的结果），所以用 [Map.containsKey] 判命中。
+class _FitTitleSizeCache {
+  _FitTitleSizeCache._();
+
+  static final _FitTitleSizeCache instance = _FitTitleSizeCache._();
+
+  /// 一屏的大字 / 水印在几十个量级，切页、滚动来回的也在其内；512 留足余量，
+  /// 条目只是一个键加一个 double，内存可忽略。
+  static const int capacity = 512;
+
+  final Map<_FitTitleSizeKey, double?> _entries = <_FitTitleSizeKey, double?>{};
+  bool _listeningFonts = false;
+
+  int get length => _entries.length;
+
+  void clear() => _entries.clear();
+
+  double? lookup(_FitTitleSizeKey key, double? Function() compute) {
+    _ensureFontListener();
+    _checkLocale();
+    if (_entries.containsKey(key)) {
+      final double? hit = _entries.remove(key);
+      _entries[key] = hit;
+      return hit;
+    }
+    final double? value = compute();
+    _entries[key] = value;
+    if (_entries.length > capacity) _entries.remove(_entries.keys.first);
+    return value;
+  }
+
+  /// 字体集变了（加载 / 卸载字体），旧度量全部作废。与 [RenderParagraph] 同一信号。
+  /// 平台语言区域变了也作废：样式不带 locale 时，引擎按平台语言挑 CJK 字形与回退
+  /// 字体，同一串文字的度量会跟着变。
+  void _ensureFontListener() {
+    if (_listeningFonts) return;
+    _listeningFonts = true;
+    PaintingBinding.instance.systemFonts.addListener(clear);
+    _locale = PaintingBinding.instance.platformDispatcher.locale;
+  }
+
+  Locale? _locale;
+
+  /// 读缓存前核对平台语言区域（不挂 `onLocaleChanged`：那是单一回调槽，框架
+  /// 自己在用）。
+  void _checkLocale() {
+    final Locale current = PaintingBinding.instance.platformDispatcher.locale;
+    if (_locale != current) {
+      _locale = current;
+      _entries.clear();
+    }
+  }
+}
+
+double? _computeFitTitleFontSize({
+  required String text,
+  required TextStyle style,
+  required Size box,
+  required double minSize,
+  required double maxSize,
+  required TextDirection direction,
+}) {
   bool fits(double size, {required bool keepWords}) {
     final TextPainter painter = _layoutFitTitle(
       text,

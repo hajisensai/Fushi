@@ -43,21 +43,41 @@ export const SUBAGENT_FOREGROUND_TIMEOUT_MS = 270000;
 export const SUBAGENT_HEAVY_WAIT_MAX_MIN = 10;
 
 /**
+ * heavy.dart's own flags of the run whose `heavy.dart` token ends at [from]:
+ * the text up to its `--` (the wrapped command starts there) or the end of
+ * that shell command (`;`, `&`, `|`, newline), whichever comes first.
+ * @param {string} command
+ * @param {number} from
+ * @returns {string}
+ */
+function heavyOwnArgs(command, from) {
+  const rest = command.slice(from);
+  const end = rest.search(/\s--(?=\s|$)|[;&|\n]/);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/**
  * [command] with every `heavy.dart` run given the subagent wait limit, or
- * null when it has none to give (no such run, a limit already set, or a
- * `--status` / `--stats` / `--replay` report).
+ * null when it has none to give (no such run, every run already sets its
+ * own limit, or a `--status` / `--stats` / `--replay` report). Each run is
+ * judged by its own flags, so a limit set on one run of a chained command
+ * does not exempt the others (HBK-AUDIT-234).
  * @param {string} command
  * @returns {string | null}
  */
 export function withHeavyWaitLimit(command) {
-  if (command.includes('--wait-max-min')) return null;
   // Only a run of it (`dart [run] <path>/heavy.dart`), not a mention such as
   // `grep -n heavy.dart x` or `git diff -- fushi/tool/heavy.dart y`, which
   // the inserted flag would break.
   const run =
     /(\bdart(?:\.exe)?\s+(?:run\s+)?["']?[^\s"']*\bheavy\.dart["']?)(?=\s)(?!\s+--(?:status|stats|replay)\b)/g;
-  if (!run.test(command)) return null;
-  return command.replace(run, `$1 --wait-max-min=${SUBAGENT_HEAVY_WAIT_MAX_MIN}`);
+  let changed = false;
+  const out = command.replace(run, (match, head, offset) => {
+    if (heavyOwnArgs(command, offset + match.length).includes('--wait-max-min')) return match;
+    changed = true;
+    return `${head} --wait-max-min=${SUBAGENT_HEAVY_WAIT_MAX_MIN}`;
+  });
+  return changed ? out : null;
 }
 
 /**

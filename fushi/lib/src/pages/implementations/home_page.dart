@@ -130,6 +130,10 @@ import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
+import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
+    show maybeShowAndroidStorageMovePrompt;
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show startAndroidDocumentsMigration;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry, pushMediaServerPlayer;
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart'
@@ -780,6 +784,19 @@ class _HomePageState extends BasePageState<HomePage>
         await maybeShowOverwriteSnapshotNotice(
           context: context,
           appModel: appModelNoUpdate,
+        );
+      }
+
+      // Android 老安装：一次性提示把书库移到可访问的外部 app 专属目录（新装已在那里）。
+      // 选「现在迁移」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
+      if (mounted) {
+        await maybeShowAndroidStorageMovePrompt(
+          context: context,
+          startMigration: () => startAndroidDocumentsMigration(
+            context: context,
+            appModel: appModelNoUpdate,
+            toExternal: true,
+          ),
         );
       }
 
@@ -1794,7 +1811,7 @@ class _HomePageState extends BasePageState<HomePage>
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
-        if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+        if (!fushiNotificationDrivesPageChrome(notification)) return false;
         _largeTitle.handleNotification(notification);
         // 底栏随滚动收起（Apple 胶囊 / MD3 悬浮胶囊共用同一台状态机：只认
         // 用户滚动、到顶到底的回弹不触发，见 GlassTabBarMinimizeController）。
@@ -3329,12 +3346,21 @@ class _HomePageState extends BasePageState<HomePage>
       client.dispose();
       return;
     }
-    final HostAssistantTarget target;
+    // 每个 case 的后续工作都在 case 里做完，不把推迟赋值的 final 带出 switch：
+    // Dart 3.14.0 对「switch 里赋值、之后被闭包捕获的推迟 final」AOT 编译崩溃
+    // （dart-lang/sdk#64917，release 才暴露；修复 dart-lang/sdk@7848cfe821d）。
+    // 升到含该修复的 Flutter 补丁版后可不再受此约束（守卫
+    // test/build/aot_deferred_final_switch_capture_guard_test.dart 可删）。
     switch (outcome) {
       case InterconnectCapabilityAvailable<HostAssistantTarget>(
-        target: final HostAssistantTarget available,
+        :final HostAssistantTarget target,
       ):
-        target = available;
+        await _openRemoteAiVideoAcquisitionOn(
+          context,
+          client,
+          target,
+          initialQuery,
+        );
       case InterconnectCapabilityUnavailable<HostAssistantTarget>(
         :final InterconnectHostFailure failure,
         :final String label,
@@ -3352,8 +3378,16 @@ class _HomePageState extends BasePageState<HomePage>
                   statusCode: statusCode,
                 ),
         );
-        return;
     }
+  }
+
+  /// host 探测可用后：确认它支持 AI 下视频、开会话、推页面。[client] 归本方法。
+  Future<void> _openRemoteAiVideoAcquisitionOn(
+    BuildContext context,
+    InterconnectAssistantClient client,
+    HostAssistantTarget target,
+    String? initialQuery,
+  ) async {
     if (!target.supports(kHostAssistantFeatureVideoAcquire)) {
       client.dispose();
       _showRemoteAiAcquisitionBlocked(

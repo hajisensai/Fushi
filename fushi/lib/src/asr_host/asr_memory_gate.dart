@@ -122,9 +122,41 @@ final class IosJetsamMemorySnapshot extends DeviceMemorySnapshot {
 }
 
 /// 纯函数：估算用 [pack] 的 [variant] 跑一次转录的进程内存净增峰值。
-int estimateAsrPeakMemoryBytes(AsrModelPack pack, AsrEncoderVariant variant) =>
-    pack.totalBytes(variant) * kAsrMemoryModelMultiplier +
-    kAsrMemoryBaseWorkingSetBytes;
+///
+/// 歌曲包（[AsrModelPack.hasVocalSeparator]，`AsrAudioProfile.song` 派生）多一个人声
+/// 分离会话：按上游实测的 [kAsrVocalSeparationWorkingSetBytes] 记（已含分离模型
+/// 权重），分离模型文件不再走「文件 × [kAsrMemoryModelMultiplier]」那一项。
+int estimateAsrPeakMemoryBytes(AsrModelPack pack, AsrEncoderVariant variant) {
+  int separatorBytes = 0;
+  for (final AsrModelFile f in pack.filesFor(variant)) {
+    if (f.role == AsrModelRole.vocalSeparator) {
+      separatorBytes += f.expectedBytes;
+    }
+  }
+  final int recognizerBytes = pack.totalBytes(variant) - separatorBytes;
+  return recognizerBytes * kAsrMemoryModelMultiplier +
+      kAsrMemoryBaseWorkingSetBytes +
+      (pack.hasVocalSeparator ? kAsrVocalSeparationWorkingSetBytes : 0);
+}
+
+/// 纯函数：歌曲素材（音乐库歌词）这次用不用人声分离。
+///
+/// [memory] 为 null（桌面端，不设门槛）恒用 [AsrAudioProfile.song]；手机上按
+/// [estimateAsrPeakMemoryBytes]（[songPack] 已带分离模型、估算含分离那一截）与此刻
+/// 余量比，放不下就退回 [AsrAudioProfile.mixedAudio]——不分离照样出字，只是伴奏
+/// 重的句子可能漏，比开跑后被系统杀掉强。退回后混音那份估算仍由
+/// [MemoryGatedAsrTranscriptionService.start] 的门槛把关。
+AsrAudioProfile songAsrAudioProfileFor({
+  required AsrModelPack songPack,
+  required AsrEncoderVariant variant,
+  required DeviceMemorySnapshot? memory,
+}) {
+  if (memory == null) return AsrAudioProfile.song;
+  return estimateAsrPeakMemoryBytes(songPack, variant) <=
+          asrMemoryHeadroomBytes(memory)
+      ? AsrAudioProfile.song
+      : AsrAudioProfile.mixedAudio;
+}
 
 /// 纯函数：此刻还能给转录腾出多少内存（可为负 = 本进程已经超过天花板）。
 int asrMemoryHeadroomBytes(DeviceMemorySnapshot memory) => memory.headroomBytes;
@@ -504,7 +536,10 @@ class MemoryGatedAsrTranscriptionService extends AsrTranscriptionService {
         for (final AsrModelPack candidate in asrModelRegistry.packs)
           if (candidate.languages.contains(language) &&
               candidate.servesProfile(audioProfile))
-            candidate,
+            // 歌曲按「同一个包 + 分离模型」估算，建议才说得准。
+            audioProfile.separatesVocals
+                ? candidate.withVocalSeparation()
+                : candidate,
       ],
     );
     if (failure == null) return diagnostic;

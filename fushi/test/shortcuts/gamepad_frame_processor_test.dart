@@ -398,4 +398,97 @@ void main() {
       expect(events, isEmpty, reason: 'nothing held → nothing released');
     });
   });
+
+  group(
+    'right stick horizontal → RS← / RS→ virtual keys (lookup unification)',
+    () {
+      late List<String> events;
+      late List<double> scrolls;
+      late int stickReleases;
+      late GamepadFrameProcessor rp;
+
+      setUp(() {
+        events = <String>[];
+        scrolls = <double>[];
+        stickReleases = 0;
+        rp = GamepadFrameProcessor(
+          onButton: (GamepadButton b) => events.add('down:${b.name}'),
+          onButtonRelease: (GamepadButton b) => events.add('up:${b.name}'),
+          onStickMove: (TraversalDirection _) {},
+          onStickRelease: () => stickReleases++,
+          onRightStickScroll: scrolls.add,
+        );
+      });
+
+      void rFrame({int rx = 0, int ry = 0, int lx = 0, int nowMs = 0}) =>
+          rp.processFrame(
+            buttons: 0,
+            leftTrigger: 0,
+            rightTrigger: 0,
+            stickX: lx,
+            stickY: 0,
+            nowMs: nowMs,
+            rightStickX: rx,
+            rightStickY: ry,
+          );
+
+      test(
+        'a horizontal push is one press and one release, no auto-repeat',
+        () {
+          rFrame(rx: GamepadFrameProcessor.stickEnter);
+          rFrame(rx: 30000, nowMs: 600);
+          rFrame(rx: 30000, nowMs: 1200);
+          // Hysteresis: between exit and enter it stays held.
+          rFrame(rx: GamepadFrameProcessor.stickExit + 1, nowMs: 1300);
+          expect(events, <String>['down:rightStickRight']);
+          rFrame(rx: GamepadFrameProcessor.stickExit - 1, nowMs: 1400);
+          expect(events, <String>[
+            'down:rightStickRight',
+            'up:rightStickRight',
+          ]);
+          rFrame(rx: -GamepadFrameProcessor.stickEnter, nowMs: 1500);
+          expect(events.last, 'down:rightStickLeft');
+        },
+      );
+
+      test('flipping sides releases the old key before pressing the new', () {
+        rFrame(rx: 30000);
+        rFrame(rx: -30000, nowMs: 60);
+        expect(events, <String>[
+          'down:rightStickRight',
+          'up:rightStickRight',
+          'down:rightStickLeft',
+        ]);
+      });
+
+      test('a mostly-vertical push scrolls and presses no key', () {
+        rFrame(rx: 20000, ry: -30000);
+        expect(events, isEmpty);
+        expect(scrolls, hasLength(1));
+        expect(scrolls.single, greaterThan(0));
+      });
+
+      test('below the enter threshold nothing fires', () {
+        rFrame(rx: GamepadFrameProcessor.stickEnter - 1);
+        expect(events, isEmpty);
+      });
+
+      test('reset releases a held RS key', () {
+        rFrame(rx: -30000);
+        events.clear();
+        rp.reset();
+        expect(events, <String>['up:rightStickLeft']);
+      });
+
+      test('the left stick reports the end of a held direction', () {
+        rFrame(lx: 30000);
+        rFrame(lx: 30000, nowMs: 600);
+        expect(stickReleases, 0);
+        rFrame(nowMs: 700);
+        expect(stickReleases, 1);
+        rFrame(nowMs: 760);
+        expect(stickReleases, 1, reason: 'centred stays released');
+      });
+    },
+  );
 }

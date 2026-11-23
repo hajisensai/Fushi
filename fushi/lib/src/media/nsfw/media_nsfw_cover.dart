@@ -1,11 +1,14 @@
 /// 作品级「NSFW」封面模糊（拍板台 w04vrhUAaX：所有媒体都支持是否 NSFW）。
 ///
+/// Riverpod 接线（读 AppModel 的那一层）在 `media_nsfw_providers.dart`；本文件只放
+/// 快照流、宿主身份与封面消费端，不 import AppModel，封面件留在 import 大环外。
+///
 /// 结构：
-/// - [mediaNsfwSnapshotProvider]：`media_nsfw_flags` + NSFW 合集成员的只读快照，
+/// - `mediaNsfwSnapshotProvider`：`media_nsfw_flags` + NSFW 合集成员的只读快照，
 ///   表变更时自动重载（标 / 取消 NSFW、加入 / 移出合集、互联同步过来的标记都会
 ///   触发），消费端不用各自 invalidate；
-/// - [blurNsfwCoversProvider]：全局「模糊 NSFW 封面」开关；
-/// - [MediaNsfwStateHost]：挂在 app 根（`main.dart` MaterialApp.builder，导航器之上），
+/// - `blurNsfwCoversProvider`：全局「模糊 NSFW 封面」开关；
+/// - `MediaNsfwStateHost`：挂在 app 根（`main.dart` MaterialApp.builder，导航器之上），
 ///   把上面两份状态经 [MediaNsfwState] 广播给所有路由（含对话框 / 菜单）。封面消费端
 ///   只读这一层、不直接依赖 Riverpod——视频合集详情页这类普通 StatefulWidget 页面
 ///   （及其不挂 ProviderScope 的测试）也能用；没有这一层（独立的伴屏 / 弹窗 app、
@@ -18,24 +21,12 @@ library;
 
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdateQuery;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// NSFW 标记快照（按 `media_nsfw_flags` / 合集成员表变更重载）。首份加载完成前
-/// 消费端按 [MediaNsfwSnapshot.none] 处理（[watchIsMediaNsfw]）。
-final StreamProvider<MediaNsfwSnapshot> mediaNsfwSnapshotProvider =
-    StreamProvider<MediaNsfwSnapshot>((Ref ref) {
-      final FushiDatabase db = ref.watch(
-        appProvider.select((AppModel m) => m.database),
-      );
-      return watchMediaNsfwSnapshot(db);
-    });
-
-/// [mediaNsfwSnapshotProvider] 的流本体：先发一份，之后每次相关表变更重读一份。
+/// `mediaNsfwSnapshotProvider` 的流本体：先发一份，之后每次相关表变更重读一份。
 /// 音乐专辑 / 曲目表也在里面（NSFW 专辑的封面图源随扫描变），这两张表写得勤
 /// （扫描分批落库），内容没变的重读不再发，免得整树封面跟着重建。
 Stream<MediaNsfwSnapshot> watchMediaNsfwSnapshot(FushiDatabase db) {
@@ -63,12 +54,6 @@ Stream<void> _nsfwReloadTriggers(FushiDatabase db) async* {
     ]),
   );
 }
-
-/// 全局「模糊 NSFW 封面」开关（偏好 `blur_nsfw_covers`，默认开）。
-final Provider<bool> blurNsfwCoversProvider = Provider<bool>(
-  (Ref ref) =>
-      ref.watch(appProvider.select((AppModel m) => m.prefsRepo.blurNsfwCovers)),
-);
 
 /// 一个可标 NSFW 的宿主（[kind] + [entryKey]，与 `media_nsfw_flags` 同一套逻辑外键）。
 /// [alsoNsfw] 并入宿主自己表外的成人向信号（游戏的 `GalgameCustomData.nsfw` /
@@ -125,12 +110,7 @@ class MediaNsfwTarget {
   int get hashCode => Object.hash(kind, entryKey, alsoNsfw);
 }
 
-/// [target] 当前是否 NSFW（watch 快照）。供卡壳之外需要判定的消费端（制卡等）用。
-bool watchIsMediaNsfw(WidgetRef ref, MediaNsfwTarget target) => target.resolve(
-  ref.watch(mediaNsfwSnapshotProvider).valueOrNull ?? MediaNsfwSnapshot.none,
-);
-
-/// 全应用的 NSFW 显示状态（[MediaNsfwStateHost] 写，封面消费端经
+/// 全应用的 NSFW 显示状态（`MediaNsfwStateHost` 写，封面消费端经
 /// [mediaNsfwBlurOf] 读）。
 class MediaNsfwState extends InheritedWidget {
   const MediaNsfwState({
@@ -153,22 +133,6 @@ class MediaNsfwState extends InheritedWidget {
   bool updateShouldNotify(MediaNsfwState oldWidget) =>
       oldWidget.blurCovers != blurCovers ||
       !identical(oldWidget.snapshot, snapshot);
-}
-
-/// app 根挂的 [MediaNsfwState] 来源：watch 快照与开关，变了整树里读它的封面重建。
-class MediaNsfwStateHost extends ConsumerWidget {
-  const MediaNsfwStateHost({required this.child, super.key});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => MediaNsfwState(
-    blurCovers: ref.watch(blurNsfwCoversProvider),
-    snapshot:
-        ref.watch(mediaNsfwSnapshotProvider).valueOrNull ??
-        MediaNsfwSnapshot.none,
-    child: child,
-  );
 }
 
 /// [target] 的封面在 [context] 下要不要模糊：开关开着且 [target] 是 NSFW。

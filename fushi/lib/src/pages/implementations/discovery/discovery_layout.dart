@@ -23,7 +23,6 @@ import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoCardOrientation;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
@@ -47,6 +46,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 书 / 漫画封面的宽高比：与书架书卡封面区同一口径（约 1:1.42，见
 /// `kShelfBookCardAspectRatio` 的推导——那个常量是**整张卡槽**的比例，封面区
@@ -836,9 +836,9 @@ class DiscoveryCoverGrid extends StatelessWidget {
             tokens.spacing.page,
             tokens.spacing.card,
           ),
-      sliver: SliverLayoutBuilder(
-        builder: (BuildContext context, SliverConstraints constraints) {
-          final double available = constraints.crossAxisExtent;
+      sliver: FushiSliverWidthBuilder(
+        builder: (BuildContext context, double crossAxisExtent) {
+          final double available = crossAxisExtent;
           final double maxExtent = discoveryGridMaxExtent(
             MediaQuery.sizeOf(context).width,
             shape,

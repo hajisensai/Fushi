@@ -22,6 +22,21 @@ const int kShortcutSchemaVersion = 15;
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
 const String kShortcutSchemaVersionKey = '__schema_version__';
 
+/// 已从 [ShortcutAction] 删除的动作的持久化 key：装载时忽略并丢弃（不当作未知
+/// 条目保留回写）。
+///
+/// * `video_lookup_next_word` / `video_lookup_prev_word`：视频「整句扫词」，
+///   2026-11-22 手柄查词统一时删除（由 ControllerLookupMode 取代）。
+/// * `reader_lookup_next_word` / `reader_lookup_prev_word`：阅读器「整句扫词」
+///   （拍板台 5H922XeDHM），2026-11-23 按拍板台 pr4141a 同样删除（查词模式的按词
+///   步进 + 停下即查覆盖其用法）。
+const Set<String> kRetiredShortcutActionKeys = <String>{
+  'video_lookup_next_word',
+  'video_lookup_prev_word',
+  'reader_lookup_next_word',
+  'reader_lookup_prev_word',
+};
+
 class FushiShortcutRegistry extends ChangeNotifier {
   final Map<ShortcutAction, ShortcutBindingSet> _bindings = {};
   final Map<String, dynamic> _unknownEntries = {};
@@ -65,12 +80,18 @@ class FushiShortcutRegistry extends ChangeNotifier {
       }
       final action = ShortcutAction.fromKey(entry.key);
       if (action == null) {
-        parsedUnknown[entry.key] = entry.value;
+        // 已删除动作的 key：直接丢弃，不进 _unknownEntries（否则随 [toJson] 永久回写）。
+        if (!kRetiredShortcutActionKeys.contains(entry.key)) {
+          parsedUnknown[entry.key] = entry.value;
+        }
         continue;
       }
       final value = entry.value;
       if (value is Map<String, dynamic>) {
-        parsedBindings[action] = ShortcutBindingSet.fromJson(value);
+        parsedBindings[action] = _withoutClosedGamepadChannel(
+          action,
+          ShortcutBindingSet.fromJson(value),
+        );
       }
     }
     // 解析全部成功，覆盖默认值中被显式声明的条目（保留未在 JSON 中出现的默认）。
@@ -83,6 +104,23 @@ class FushiShortcutRegistry extends ChangeNotifier {
       _migratePersistedDefaults(persistedVersion, platform);
     }
     notifyListeners();
+  }
+
+  /// 动作的手柄通道已关闭（[ShortcutAction.channels] 不含 gamepad）时剥掉快照里残留
+  /// 的手柄绑定：通道关了就没有派发点，留着它会在 [resolveGamepad] / 直接读
+  /// [bindingsFor] 的页面里继续生效（2026-11-22 手柄查词统一关掉 videoEnterCaret /
+  /// readerEnterCaret / readerLookupAtCursor 的手柄通道，老快照里的 Select / A
+  /// 自定义绑定随之失效）。只动 gamepad，其余通道原样保留（鼠标绑定另有弹窗桥
+  /// 消费者，见 v10→v11 迁移注释）。
+  static ShortcutBindingSet _withoutClosedGamepadChannel(
+    ShortcutAction action,
+    ShortcutBindingSet bindings,
+  ) {
+    if (bindings.gamepadBindings.isEmpty ||
+        action.channels.contains(ShortcutChannel.gamepad)) {
+      return bindings;
+    }
+    return bindings.copyWith(gamepadBindings: const <GamepadBinding>[]);
   }
 
   /// 把 [from]（含）之后、直到 [kShortcutSchemaVersion] 之间每一步「给老 action 新增

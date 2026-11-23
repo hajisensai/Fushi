@@ -585,6 +585,61 @@ void main() {
       isA<MemoryGatedAsrTranscriptionService>(),
     );
   });
+  group('歌曲素材：人声分离那一截（拍板 I9ici7ZmKd）', () {
+    test('歌曲包估算 = 识别模型 × 倍数 + 底座 + 分离工作集（分离模型不再 × 倍数）', () {
+      final AsrModelPack mixed = _pack('p', 300 * _mb);
+      final AsrModelPack song = mixed.withVocalSeparation();
+      expect(song.hasVocalSeparator, isTrue);
+      expect(
+        estimateAsrPeakMemoryBytes(song, AsrEncoderVariant.int8),
+        estimateAsrPeakMemoryBytes(mixed, AsrEncoderVariant.int8) +
+            kAsrVocalSeparationWorkingSetBytes,
+      );
+    });
+
+    test('桌面（没有内存快照）恒用 song', () {
+      expect(
+        songAsrAudioProfileFor(
+          songPack: _pack('p', 300 * _mb).withVocalSeparation(),
+          variant: AsrEncoderVariant.int8,
+          memory: null,
+        ),
+        AsrAudioProfile.song,
+      );
+    });
+
+    test('手机：放得下分离 → song；只放得下混音 → 退回 mixedAudio', () {
+      final AsrModelPack mixed = _pack('p', 300 * _mb);
+      final AsrModelPack song = mixed.withVocalSeparation();
+      final int mixedNeed = estimateAsrPeakMemoryBytes(
+        mixed,
+        AsrEncoderVariant.int8,
+      );
+      final int songNeed = estimateAsrPeakMemoryBytes(
+        song,
+        AsrEncoderVariant.int8,
+      );
+      IosJetsamMemorySnapshot spare(int bytes) =>
+          IosJetsamMemorySnapshot(availableBytes: bytes, processRssBytes: 0);
+      expect(
+        songAsrAudioProfileFor(
+          songPack: song,
+          variant: AsrEncoderVariant.int8,
+          memory: spare(songNeed),
+        ),
+        AsrAudioProfile.song,
+      );
+      expect(
+        songAsrAudioProfileFor(
+          songPack: song,
+          variant: AsrEncoderVariant.int8,
+          memory: spare(songNeed - 1),
+        ),
+        AsrAudioProfile.mixedAudio,
+      );
+      expect(songNeed - 1, greaterThanOrEqualTo(mixedNeed));
+    });
+  });
 }
 
 class _FakeRunning implements AsrRunningTranscription {

@@ -294,8 +294,8 @@ Rules:
   item that clearly does not belong out of it ("evictions"), always with a
   short "reason" naming what the item really is (e.g. "volume 3 of another
   work X"). Merging two "user_owned" collections, and "renames" (only for
-  "user_owned" collections whose name is clearly wrong), are shown to the user
-  for confirmation instead of being applied.
+  "user_owned" collections whose name is clearly wrong), are applied directly
+  (the user can undo them): propose them only with "high" confidence.
 - Never take an item out of a collection listed in its "pinned_in" (the user
   put it there) or "evicted_from" (it was already taken out once), and never
   put it back into an "evicted_from" collection.

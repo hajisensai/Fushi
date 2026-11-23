@@ -21,6 +21,7 @@ import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ops/ctl_library_agent_routes.dart';
 import 'package:fushi/src/ops/ctl_library_curate_routes.dart';
 import 'package:fushi/src/ops/ctl_library_organize_routes.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
@@ -75,6 +76,8 @@ List<CtlRoute> buildLibraryCtlRoutes(OpContext context) {
     ...buildLibraryOrganizeCtlRoutes(context),
     // AI 库管家（CLI `library curate` / `curate-*`，spec 2026-11-18）。
     ...buildLibraryCurateCtlRoutes(context),
+    // AI 管库 v3：整库地图与批量变更集（spec 2026-11-22）。
+    ...buildLibraryAgentCtlRoutes(context),
   ];
 }
 

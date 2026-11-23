@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerEnterEvent, PointerExitEvent;
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
@@ -9,6 +8,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart'
     show kFushiHoverLiftOverflow;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
     show SectionSwipeCascade;
@@ -643,6 +643,14 @@ typedef FushiCoverBlockItemBuilder =
 
 /// 色块布局 sliver：按行懒构建，每格包 [FushiStaggeredEntrance]（错峰进场由祖先
 /// [FushiEntranceScope] 管）。左右边距由调用点的 `SliverPadding` 给。
+///
+/// 排布只取决于横轴宽度（与本 widget 的参数、摆放姿态），**与滚动位置无关**。
+/// 但 [SliverLayoutBuilder] 在 [SliverConstraints] 任何一项变了都会重跑 builder，
+/// 而 `scrollOffset` 每个滚动帧都在变（BUG-5253）：旧实现因此每帧重算整库排布、
+/// 交出一个新的 [SliverList.builder]（builder 委托的 `shouldRebuild` 恒为真），
+/// 视口里每一格的 [itemBuilder] 连同整张卡的 build 都在 UI 线程上逐帧重跑——
+/// 视频 / 书 / 游戏库页色块布局滚动掉帧的根因。现在走 [FushiSliverWidthBuilder]：
+/// 只有横轴宽度、本 widget 实例或摆放姿态变了才重排，只滚动时子树原样保留。
 class SliverFushiCoverBlocks extends StatelessWidget {
   const SliverFushiCoverBlocks({
     required this.itemCount,
@@ -685,10 +693,10 @@ class SliverFushiCoverBlocks extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ShellBlockArrangement arrangement = shellBlockArrangementOf(context);
-    return SliverLayoutBuilder(
-      builder: (BuildContext context, SliverConstraints constraints) {
+    return FushiSliverWidthBuilder(
+      builder: (BuildContext context, double width) {
         final List<FushiCoverBlockRow> plan = computeFushiCoverBlockPlacement(
-          width: constraints.crossAxisExtent,
+          width: width,
           itemCount: itemCount,
           layout: layout,
           targetWidth: targetWidth,
@@ -709,7 +717,7 @@ class SliverFushiCoverBlocks extends StatelessWidget {
             rows,
             r,
             arrangement: arrangement,
-            rowWidth: constraints.crossAxisExtent,
+            rowWidth: width,
             spacing: spacing,
             itemBuilder: itemBuilder,
             staggerEntrance: true,

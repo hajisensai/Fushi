@@ -4594,12 +4594,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         extraActions: removeFromCollection == null
             ? (MediaItem it) =>
                   _epubExtraActions(it, fromSeriesPage: fromSeriesPage)
+            // 「移出合集」排在整理段最前：整理段只平铺前
+            // [MediaItemDialogFrame.organizeMaxRows] 行、其余收进「更多 ›」，排在末尾
+            // 时书卡整理项一多它就被挤进二级菜单——而它正是合集语境的主操作。
             : (MediaItem it) => <DialogAction>[
-                ..._epubExtraActions(it, inCollectionDetail: true),
                 ..._removeFromCollectionActions(
                   dialogCtx,
                   removeFromCollection,
                 ),
+                ..._epubExtraActions(it, inCollectionDetail: true),
               ],
       ),
     );
@@ -4990,7 +4993,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
       // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块；平台门 = 有原生悬浮窗后端
-      // （FloatingLyricChannel.supported：Android / Windows / macOS）。
+      // （FloatingLyricChannel.supported：Android / Windows / macOS / Linux）。
       if (FloatingLyricChannel.supported &&
           modules.isEnabled(ModuleId.listening))
         // 2026-10 体验优化：开启态不再拼「悬浮字幕 ✓」（看不出点了是开还是关），

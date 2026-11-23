@@ -8,8 +8,14 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show
         CustomThemeEntry,
         ThemeAccentOverrideSource,
+        ThemeNotifier,
         ThemePreset,
         kCustomThemeDefaultSeed;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show ReaderThemeColors, kReaderPaperPresets, resolveReaderThemeColors;
+import 'package:fushi/src/settings/settings_destination.dart'
+    show SettingsCliValue;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/theme_preset_card.dart';
@@ -526,6 +532,145 @@ Widget buildBrightnessSelector(SettingsContext settingsContext) {
       await settingsContext.appModel.setBrightnessMode(value);
       notifyReaderSettingsChanged(settingsContext);
     },
+  );
+}
+
+/// 「跟随主题」在 [dark] 明暗下的阅读器纸色（与阅读器同一条解析链）：给纸色行
+/// 的跟随色卡预览用，所见即所得。
+ReaderThemeColors readerFollowPaperPreview(
+  AppModel appModel, {
+  required bool dark,
+}) {
+  return resolveReaderThemeColors(
+    themeKey: appModel.readerFollowThemeKey,
+    presetMap: kReaderPaperPresets,
+    scheme: appModel.buildColorScheme(
+      dark ? Brightness.dark : Brightness.light,
+    ),
+    customOverrides: (
+      bg: appModel.activeCustomThemeBackgroundColor,
+      fg: appModel.activeCustomThemeFontColor,
+      selection: appModel.activeCustomThemeSelectionColor,
+      link: appModel.activeCustomThemeLinkColor,
+    ),
+  );
+}
+
+/// 纸色 id 的显示名（复用旧阅读主题文案）。
+String readerPaperLabel(String key) => switch (key) {
+  'ecru-theme' => t.reader_theme_ecru,
+  'water-theme' => t.reader_theme_water,
+  'eyecare-theme' => t.reader_theme_eyecare,
+  'gray-theme' => t.reader_theme_gray,
+  'dark-theme' => t.reader_theme_dark,
+  'black-theme' => t.reader_theme_black,
+  _ => key,
+};
+
+/// `config set` 的「跟随主题」写法。
+const String readerPaperFollowToken = 'follow';
+
+/// 阅读器纸色行（拍板台 vJSj4RsKFt）：[dark] 这一明暗下的阅读背景——「跟随主题」
+/// （默认，按 app 主题配色派生）或直接选一种手调纸色（浅色：羊皮纸 / 水蓝 / 护眼；
+/// 深色：灰 / 深色 / 纯黑），与 app 主题种子色无关。每张色卡用该纸的底色铺底、
+/// 正文字色写「Aa」，选中态与按压缩放走设计系统色卡。
+Widget buildReaderPaperSelector(
+  SettingsContext settingsContext, {
+  required bool dark,
+}) {
+  final AppModel appModel = settingsContext.appModel;
+  return ListenableBuilder(
+    listenable: appModel,
+    builder: (BuildContext context, Widget? _) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+      final String? current = appModel.readerPaperFor(dark: dark);
+      final bool eink = appModel.einkMode;
+      final String side = dark ? 'dark' : 'light';
+      Future<void> pick(String? key) async {
+        await appModel.setReaderPaper(dark: dark, key: key);
+        notifyReaderSettingsChanged(settingsContext);
+      }
+
+      Widget paperCard({
+        required String id,
+        required ReaderThemeColors colors,
+        required String label,
+        required bool selected,
+        required VoidCallback onTap,
+      }) {
+        return FushiPressScale(
+          child: FushiColorSwatch(
+            key: ValueKey<String>('reader-paper-$side-$id'),
+            color: colors.bg,
+            width: 64,
+            height: 44,
+            selected: selected,
+            label: label,
+            onTap: onTap,
+            overlay: Text(
+              'Aa',
+              style: tokens.type.metadata.copyWith(color: colors.fg),
+            ),
+          ),
+        );
+      }
+
+      return AdaptiveSettingsRow(
+        title: dark ? t.reader_paper_dark : t.reader_paper_light,
+        subtitle: eink
+            ? t.reader_paper_eink_hint
+            : (dark ? t.reader_paper_dark_hint : t.reader_paper_light_hint),
+        icon: dark ? FushiIcons.darkMode : FushiIcons.lightMode,
+        controlBelow: true,
+        trailing: Wrap(
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            paperCard(
+              id: readerPaperFollowToken,
+              colors: readerFollowPaperPreview(appModel, dark: dark),
+              label: t.reader_paper_follow,
+              selected: current == null,
+              onTap: () => pick(null),
+            ),
+            for (final String key in ThemeNotifier.readerPaperKeysFor(
+              dark: dark,
+            ))
+              paperCard(
+                id: key,
+                colors: kReaderPaperPresets[key]!,
+                label: readerPaperLabel(key),
+                selected: current == key,
+                onTap: () => pick(key),
+              ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+/// [buildReaderPaperSelector] 的控制通道读写（`fushi_cli config set
+/// appearance.reader_paper_light ecru-theme` / `follow`）。
+SettingsCliValue readerPaperCliValue({required bool dark}) {
+  return SettingsCliValue(
+    read: (SettingsContext c) =>
+        c.appModel.readerPaperFor(dark: dark) ?? readerPaperFollowToken,
+    write: (SettingsContext c, String raw) async {
+      final String value = raw.trim();
+      await c.appModel.setReaderPaper(
+        dark: dark,
+        key: value == readerPaperFollowToken ? null : value,
+      );
+      notifyReaderSettingsChanged(c);
+    },
+    help:
+        'follow | ${ThemeNotifier.readerPaperKeysFor(dark: dark).join(' | ')}',
+    options: (SettingsContext _) => <String>[
+      readerPaperFollowToken,
+      ...ThemeNotifier.readerPaperKeysFor(dark: dark),
+    ],
   );
 }
 

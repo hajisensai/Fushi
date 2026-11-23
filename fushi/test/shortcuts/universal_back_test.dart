@@ -132,6 +132,10 @@ void main() {
               .toSet();
       for (final ShortcutAction action in ShortcutAction.values) {
         if (action.scope == ShortcutScope.universal) continue;
+        // 手柄查词模式不是页面 scope：它只在模式激活时由 ControllerLookupMode
+        // 解析（截在页面派发之前），模式关着时 B 照常落到「返回上一级」；模式里
+        // 的 B（关结果 / 退出模式）本身就是模式内的「返回」。
+        if (action.scope == ShortcutScope.controllerLookup) continue;
         for (final GamepadBinding gp in defaults[action]!.gamepadBindings) {
           if (!backButtons.contains(gp.button)) continue;
           expect(

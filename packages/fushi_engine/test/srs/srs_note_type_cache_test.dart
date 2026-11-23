@@ -26,11 +26,8 @@ void main() {
     t = DateTime.utc(2026, 10, 28, 12).millisecondsSinceEpoch;
   });
 
-  SrsTrustedClock clock(String id) => SrsTrustedClock(
-    wallClockMs: () => t,
-    bootClockMs: () => t,
-    bootId: 'boot-$id',
-  );
+  SrsTrustedClock clock(String id) =>
+      SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t);
 
   Future<(SrsDbStore, SrsReadCounter)> counted(String id) async {
     final SrsReadCounter counter = SrsReadCounter();

@@ -229,12 +229,7 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
           bookKey: bookKey,
           remoteIndex: manifest.pages[index].index,
           chapterDigest: digest,
-          // host 报的页身份前缀上 host 侧 bookKey + 章摘要：同一个源端身份在
-          // 不同的书 / 章里不是同一页。
-          pageKey: switch (manifest.pages[index].key) {
-            final String key => '$bookKey\u0000${digest ?? ''}\u0000$key',
-            null => null,
-          },
+          remotePageKey: manifest.pages[index].key,
         ),
     ];
   }
@@ -252,13 +247,36 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
       );
     }
     final String? digest = page.chapterDigest;
-    final Uint8List bytes = digest == null
-        ? await backend.fetchRemoteMangaPage(page.bookKey, page.remoteIndex)
-        : await backend.fetchRemoteMangaChapterPage(
-            page.bookKey,
-            digest,
-            page.remoteIndex,
-          );
+    // 带上「我以为这一页是谁」（HBK-AUDIT-205）：host 重启或页表缓存被淘汰后重解析
+    // 出的可能是换了页的一份，同一个页序已是另一页；host 在同一份页表上核对，
+    // 对不上回 409。
+    final String? expectedKeyDigest = switch (page.remotePageKey) {
+      final String key => remoteMangaPageKeyDigest(key),
+      null => null,
+    };
+    final Uint8List bytes;
+    try {
+      bytes = digest == null
+          ? await backend.fetchRemoteMangaPage(
+              page.bookKey,
+              page.remoteIndex,
+              expectedKeyDigest: expectedKeyDigest,
+            )
+          : await backend.fetchRemoteMangaChapterPage(
+              page.bookKey,
+              digest,
+              page.remoteIndex,
+              expectedKeyDigest: expectedKeyDigest,
+            );
+    } on MangaPageChanged catch (error) {
+      // 手上这份页表的引用过期了：交给 [OnlineMangaChapterPageRefs] 重取页表逐页
+      // 比对，换了页就判 pageTableChanged（阅读器报失败、下载按新页表重新对账），
+      // 没换（host 端的竞争）就用新引用再取一次。
+      throw OnlineMangaPageRefExpired(
+        'The peer page table changed: ${page.bookKey}#${page.index}',
+        cause: error,
+      );
+    }
     if (bytes.isEmpty) {
       throw StateError(
         'Peer returned an empty manga page: ${page.bookKey}#${page.index}',

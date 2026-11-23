@@ -14,12 +14,12 @@ list(APPEND FLUTTER_PLUGIN_LIST
   gamepads_windows
   hotkey_manager_windows
   media_kit_libs_windows_video
-  media_kit_video
   permission_handler_windows
   record_windows
   screen_retriever_windows
-  share_plus
   url_launcher_windows
+  share_plus
+  media_kit_video
   window_manager
 )
 

@@ -3,6 +3,8 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForFile;
+import 'package:fushi_engine/utils/archive/archive_volumes.dart'
+    show isFirstSplitArchiveVolume;
 import 'package:path/path.dart' as p;
 
 /// 书籍扩展名（不带点，小写）。= epub + pdf + TextToEpub.supportedExtensions。
@@ -118,6 +120,25 @@ const Set<String> kDragMangaSurfaceProbeExtensions = <String>{
 /// 在漫画库里就按落点意图走漫画；书架上它仍是一本 PDF 书。
 const Set<String> kDragMangaSurfaceDirectExtensions = <String>{'pdf'};
 
+/// 要**看条目名**才能判断「是不是装着一批书」的压缩包扩展名（不带点，小写）。
+///
+/// `.zip` 同时可能是页图漫画包、Yomitan 词典包、一批 EPUB / TXT；`.rar` 同时可能是漫画包
+/// 和一批书。判据由调用方注入（widget 层传 `probeDroppedBookArchives` 的结果，即引擎
+/// `looksLikeBookArchive`：zip 读中央目录、rar 经 7-Zip 列目录），分类层不碰文件系统；
+/// 判据缺席时维持原分类（zip → 词典包、rar → 漫画包），词典页等不注入判据的落点行为不变。
+/// 判定顺序在页图判据之后：一包页图仍归漫画（拍板 83Fe7zQbhv）。
+const Set<String> kDragBookArchiveProbeExtensions = <String>{'zip', 'rar'};
+
+/// 不解开就**列不出名字**、要「解开一次再按内容分流」的压缩包扩展名（不带点，小写）：`.7z`。
+///
+/// 它不是任何落点的载体扩展名（漫画是 `.cb7`），条目表又可能加密，所以这里**不定性**是书
+/// 还是漫画，只把它交给解包导入（`BookArchiveImporter`）：解开后有书 → 整批导入书；只有
+/// 页图 → 解出的目录交给漫画导入（一卷漫画，不解第二次）；都没有 → 如实报。改动前
+/// `.7z` 落 unknown、拖进书架 / 漫画库静默无反应。分卷第一卷（`book.7z.001` /
+/// `book.zip.001`）同理，由 [isFirstSplitArchiveVolume] 另认；后续卷随第一卷解开，自己
+/// 不单独导入。
+const Set<String> kDragBookArchiveExtensions = <String>{'7z'};
+
 /// [classifyDroppedFiles] / `probeDroppedImageArchives` 按落点取开包扩展名。
 Set<String> dragImageArchiveProbeExtensionsFor({required bool preferManga}) =>
     preferManga
@@ -201,6 +222,7 @@ class DroppedFiles {
     this.blurayDiscs = const <String>[],
     this.pureAudios = const <String>[],
     this.plugins = const <String>[],
+    this.bookArchives = const <String>[],
   });
 
   final List<String> books;
@@ -279,6 +301,12 @@ class DroppedFiles {
   /// （`PluginPackageDropTarget`）；其余落点据 [hasAny] 给「本页不支持」提示，不再静默。
   final List<String> plugins;
 
+  /// 交给「解开一次、按内容分流」的压缩包：经 `isBookArchive` 判据确认装着 EPUB / TXT /
+  /// PDF（或列不出名字）的 `.zip` / `.rar`，以及列不出名字的 `.7z` 与分卷第一卷（见
+  /// [kDragBookArchiveProbeExtensions] / [kDragBookArchiveExtensions]）。书架 / 漫画库
+  /// 据此解包：书整批导入、一包多本给一份汇总；只有页图的交漫画导入。
+  final List<String> bookArchives;
+
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
       books.isNotEmpty ||
@@ -293,7 +321,8 @@ class DroppedFiles {
       unsupportedMangas.isNotEmpty ||
       torrents.isNotEmpty ||
       blurayDiscs.isNotEmpty ||
-      plugins.isNotEmpty;
+      plugins.isNotEmpty ||
+      bookArchives.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -335,10 +364,15 @@ bool isImportableDropUrl(String candidate) {
 /// [preferManga]：落点是漫画库。图片型 `.epub` 经 [isImageArchive] 归漫画、`.pdf`
 /// 直接归漫画（见 [kDragMangaSurfaceProbeExtensions] / [kDragMangaSurfaceDirectExtensions]）。
 /// 默认 false，书架与其它落点的分类与历史逐字节一致。
+///
+/// [isBookArchive]：`.zip` / `.rar` 是不是装着一批书（按条目名，见
+/// [kDragBookArchiveProbeExtensions]），在 [isImageArchive] 之后问。与 [isImageArchive]
+/// 一样是查表谓词，调用方先离线程判完。
 DroppedFiles classifyDroppedFiles(
   List<String> paths, {
   bool Function(String path)? isDirectory,
   bool Function(String path)? isImageArchive,
+  bool Function(String path)? isBookArchive,
   String? Function(String directory)? blurayDiscRootForDirectory,
   bool preferManga = false,
 }) {
@@ -358,6 +392,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> directories = <String>[];
   final List<String> torrents = <String>[];
   final List<String> plugins = <String>[];
+  final List<String> bookArchives = <String>[];
   final List<String> unknown = <String>[];
   final Set<String> blurayDiscs = <String>{};
 
@@ -389,6 +424,19 @@ DroppedFiles classifyDroppedFiles(
         probeExtensions.contains(ext) &&
         isImageArchive(path)) {
       mangas.add(path);
+      continue;
+    }
+    // 装着一批书的 `.zip` / `.rar`：命中即**只**归 bookArchives（不再落词典包 / 漫画包），
+    // 否则一包 EPUB 会被当词典包回「本页面不支持」、一包 TXT 的 rar 会被交给漫画导入。
+    if (isBookArchive != null &&
+        kDragBookArchiveProbeExtensions.contains(ext) &&
+        isBookArchive(path)) {
+      bookArchives.add(path);
+      continue;
+    }
+    if (kDragBookArchiveExtensions.contains(ext) ||
+        isFirstSplitArchiveVolume(path)) {
+      bookArchives.add(path);
       continue;
     }
     if (preferManga && kDragMangaSurfaceDirectExtensions.contains(ext)) {
@@ -458,6 +506,7 @@ DroppedFiles classifyDroppedFiles(
     blurayDiscs: blurayDiscs.toList(),
     pureAudios: pureAudios,
     plugins: plugins,
+    bookArchives: bookArchives,
   );
 }
 

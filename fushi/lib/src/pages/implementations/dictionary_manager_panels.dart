@@ -178,10 +178,10 @@ class DictionaryManagerDetail extends StatelessWidget {
 
   final ValueChanged<bool> onEnabledChanged;
 
-  /// null = 不给折叠控件。折叠管的是查词弹窗里这本的**释义**；「汉字」分区里的行
-  /// （纯 kanji 词典 / 混合词典的汉字部分）对应的是汉字卡，汉字卡不折叠——在那里给
-  /// 这个控件，改的其实是混合词典术语部分的折叠状态（BUG-3573）。
-  final ValueChanged<DictionaryCollapseState>? onCollapseChanged;
+  /// 折叠三态的提交。折叠管的是查词弹窗里这本的**释义**；「汉字」分区里的行
+  /// （纯 kanji 词典 / 混合词典的汉字部分）管的是它的汉字卡（拍板台 6uasoIUvSR），
+  /// 混合词典的汉字部分单记一份、不改术语部分（BUG-3573）。分区判据在调用方。
+  final ValueChanged<DictionaryCollapseState> onCollapseChanged;
   final VoidCallback onRename;
   final VoidCallback onLanguage;
   final VoidCallback onUpdate;
@@ -231,31 +231,28 @@ class DictionaryManagerDetail extends StatelessWidget {
               value: enabled,
               onChanged: onEnabledChanged,
             ),
-            if (onCollapseChanged != null)
-              AdaptiveSettingsSegmentedRow<DictionaryCollapseState>(
-                key: ValueKey<String>(
-                  'dict-detail-collapse-${dictionary.name}',
+            AdaptiveSettingsSegmentedRow<DictionaryCollapseState>(
+              key: ValueKey<String>('dict-detail-collapse-${dictionary.name}'),
+              title: t.dict_detail_collapse_title,
+              icon: Icons.unfold_more,
+              showIcon: true,
+              segments: <ButtonSegment<DictionaryCollapseState>>[
+                ButtonSegment<DictionaryCollapseState>(
+                  value: DictionaryCollapseState.inherit,
+                  label: Text(t.dict_collapse_state_inherit),
                 ),
-                title: t.dict_detail_collapse_title,
-                icon: Icons.unfold_more,
-                showIcon: true,
-                segments: <ButtonSegment<DictionaryCollapseState>>[
-                  ButtonSegment<DictionaryCollapseState>(
-                    value: DictionaryCollapseState.inherit,
-                    label: Text(t.dict_collapse_state_inherit),
-                  ),
-                  ButtonSegment<DictionaryCollapseState>(
-                    value: DictionaryCollapseState.expanded,
-                    label: Text(t.dict_collapse_state_expanded),
-                  ),
-                  ButtonSegment<DictionaryCollapseState>(
-                    value: DictionaryCollapseState.collapsed,
-                    label: Text(t.dict_collapse_state_collapsed),
-                  ),
-                ],
-                selected: collapseState,
-                onChanged: onCollapseChanged!,
-              ),
+                ButtonSegment<DictionaryCollapseState>(
+                  value: DictionaryCollapseState.expanded,
+                  label: Text(t.dict_collapse_state_expanded),
+                ),
+                ButtonSegment<DictionaryCollapseState>(
+                  value: DictionaryCollapseState.collapsed,
+                  label: Text(t.dict_collapse_state_collapsed),
+                ),
+              ],
+              selected: collapseState,
+              onChanged: onCollapseChanged,
+            ),
           ],
         ),
         SizedBox(height: gap),

@@ -231,11 +231,11 @@ jobs:
     - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '21'
 
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -636,7 +636,7 @@ jobs:
     # 钉 commit（v2 = v2.23.0）：第三方 action 按 tag 引用时，tag 可被改指任意提交。
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -704,6 +704,21 @@ jobs:
       run: |
         ulimit -c unlimited
         dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
+    # Flutter GPU 测试（标签 flutter-gpu）要 Impeller + Flutter GPU 开着的 flutter_tester：它在 Linux 上
+    # 走 Vulkan，GitHub runner 没有 GPU，用 Mesa 的软件 Vulkan（lavapipe）。上面的分片不带这两个开关
+    # （--enable-impeller 会把全部测试换成 Impeller 渲染），这些文件在那里自行跳过、在这里真跑；
+    # FUSHI_REQUIRE_FLUTTER_GPU=1 让「拿不到 GPU 上下文」判红而不是跳过。只在第 0 片跑一次。
+    - name: Flutter GPU tests
+      if: matrix.shard == 0
+      working-directory: fushi
+      env:
+        FUSHI_REQUIRE_FLUTTER_GPU: '1'
+      run: |
+        set -euo pipefail
+        sudo apt-get install -y -qq mesa-vulkan-drivers > /dev/null
+        mapfile -t files < <(grep -rl --include='*_test.dart' "@Tags(<String>\['flutter-gpu'\])" test | sort)
+        flutter test --no-pub --enable-impeller --enable-flutter-gpu "${files[@]}"
+
     - name: Native backtrace of a crashed flutter_tester
       if: failure()
       shell: bash
@@ -815,7 +830,7 @@ jobs:
 
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     - uses: ./.github/actions/pdfium-hook-cache
       with:
@@ -866,6 +881,22 @@ jobs:
         set -euo pipefail
         gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename' > "$RUNNER_TEMP/changed.txt"
         dart run tool/pre_push_check.dart --gate=0 --skip-analyze --app-tests-only --hub-limit=1000000 --batch-size=400 --max-minutes=45 "--files-from=$RUNNER_TEMP/changed.txt"
+
+    # 改动碰到 Flutter GPU 渲染（镜台、着色器、构建钩子）时补跑 flutter-gpu 标签的测试，
+    # 开关与软件 Vulkan 的理由见 unit-tests 的「Flutter GPU tests」一步。
+    - name: Flutter GPU tests (when GPU rendering changed)
+      working-directory: fushi
+      env:
+        FUSHI_REQUIRE_FLUTTER_GPU: '1'
+      run: |
+        set -euo pipefail
+        if ! grep -Eq '^fushi/(shaders/|hook/|lib/src/media/music/lyrics/visualizer/|test/media/music/visualizer/|pubspec\.yaml$)|^pubspec\.lock$' "$RUNNER_TEMP/changed.txt"; then
+          echo "No Flutter GPU rendering change; skipped."
+          exit 0
+        fi
+        sudo apt-get install -y -qq mesa-vulkan-drivers > /dev/null
+        mapfile -t files < <(grep -rl --include='*_test.dart' "@Tags(<String>\['flutter-gpu'\])" test | sort)
+        flutter test --no-pub --enable-impeller --enable-flutter-gpu "${files[@]}"
 
     - name: Upload test event logs
       if: failure()

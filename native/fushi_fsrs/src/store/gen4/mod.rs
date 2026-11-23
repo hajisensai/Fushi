@@ -78,6 +78,8 @@ pub mod refresh;
 pub mod retained;
 pub mod schema;
 pub(crate) mod scrub;
+pub(crate) mod stale;
 pub mod sync_state;
+pub(crate) mod trace;
 pub mod truth;
 pub mod weigh;

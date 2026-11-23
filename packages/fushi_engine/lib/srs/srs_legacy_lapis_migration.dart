@@ -550,25 +550,25 @@ class SrsLegacyLapisMigrationPreview {
   final int fallbackFills;
 }
 
-/// 「遗漏字段补迁」的预演。
+/// 「遗漏字段补迁」的预演：只有计数。要补的正文不留——迁移页一直拿着这个对象，留着每条笔记要补的全文，
+/// 改过类型、留着大量长释义的库照样撑爆 Dart 堆（HBK-AUDIT-209）；真正的补迁由内核逐条算
+/// （[SrsLegacyLapisMigrationOps.applyLapisBackfill]）。
 class SrsLapisBackfillPreview {
-  const SrsLapisBackfillPreview({required this.fills});
+  const SrsLapisBackfillPreview({
+    required this.notes,
+    required this.fieldCounts,
+  });
 
-  /// noteId → 要补的 fieldId → 值。
-  final Map<String, Map<String, String>> fills;
+  static const SrsLapisBackfillPreview empty = SrsLapisBackfillPreview(
+    notes: 0,
+    fieldCounts: <String, int>{},
+  );
 
-  int get notes => fills.length;
+  /// 要补至少一个字段的笔记数。
+  final int notes;
 
   /// 目标 fieldId → 要补的笔记数。
-  Map<String, int> get fieldCounts {
-    final Map<String, int> out = <String, int>{};
-    for (final Map<String, String> f in fills.values) {
-      for (final String id in f.keys) {
-        out[id] = (out[id] ?? 0) + 1;
-      }
-    }
-    return out;
-  }
+  final Map<String, int> fieldCounts;
 }
 
 extension SrsLegacyLapisMigrationOps on SrsDbStore {
@@ -871,23 +871,22 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
 
   /// 预演「遗漏字段补迁」：当前是 Fushi 卡片的笔记（缺省全部，或只看 [noteIds]），新字段
   /// 为空、迁移前所属的旧 Lapis 变体里同语义的字段有内容的。不写库。候选按块（[chunk] 条）物化、判完就丢，
-  /// Dart 侧同时持有的笔记视图不超过一块（BUG-5176：整批物化在大牌组上撑爆 Dart 堆）。
+  /// Dart 侧同时持有的笔记视图不超过一块（BUG-5176：整批物化在大牌组上撑爆 Dart 堆）；判出的要补的值也
+  /// 判完就丢，只累计笔记数与字段计数（HBK-AUDIT-209）。[onFill] 只给测试核对逐条判定的结果。
   Future<SrsLapisBackfillPreview> previewLapisBackfill({
     List<String>? noteIds,
     @visibleForTesting int chunk = kSrsLapisPreviewChunk,
+    @visibleForTesting
+    void Function(String noteId, Map<String, String> fill)? onFill,
   }) async {
     final SrsNoteTypeView? to = await noteType(fushiCardNoteTypeId);
     if (to == null || to.deletedAt != null) {
-      return const SrsLapisBackfillPreview(
-        fills: <String, Map<String, String>>{},
-      );
+      return SrsLapisBackfillPreview.empty;
     }
     final Map<String, SrsLapisFieldCandidate> owners = await _lapisFieldOwners(
       exceptTypeId: to.id,
     );
-    final Map<String, Map<String, String>> fills =
-        <String, Map<String, String>>{};
-    if (owners.isEmpty) return SrsLapisBackfillPreview(fills: fills);
+    if (owners.isEmpty) return SrsLapisBackfillPreview.empty;
     // 只物化 SQL 预筛出的候选（必要条件的超集，判定仍走下面同一套逐条逻辑）。以前把全部
     // Fushi 卡片笔记的修改记录读回来逐条物化——内置 Lapis 永远在，owners 永不为空，笔记类型页
     // 每打开一次都全量物化一遍。
@@ -896,7 +895,9 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       owners,
       noteIds: noteIds,
     );
-    if (candidates.isEmpty) return SrsLapisBackfillPreview(fills: fills);
+    if (candidates.isEmpty) return SrsLapisBackfillPreview.empty;
+    int notesToFill = 0;
+    final Map<String, int> fieldCounts = <String, int>{};
     final List<String> ids = noteIds == null
         ? candidates.toList()
         : <String>[
@@ -921,10 +922,18 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
               if (n.edits[SrsFieldKeys.noteField(f.id)] != null) f.id,
           },
         );
-        if (fill.isNotEmpty) fills[id] = fill;
+        if (fill.isEmpty) continue;
+        notesToFill++;
+        for (final String field in fill.keys) {
+          fieldCounts[field] = (fieldCounts[field] ?? 0) + 1;
+        }
+        onFill?.call(id, fill);
       }
     }
-    return SrsLapisBackfillPreview(fills: fills);
+    return SrsLapisBackfillPreview(
+      notes: notesToFill,
+      fieldCounts: fieldCounts,
+    );
   }
 
   /// 执行「遗漏字段补迁」（只写空字段，幂等）。返回补过的笔记数。候选照 [previewLapisBackfill] 的 SQL 预筛找，逐条

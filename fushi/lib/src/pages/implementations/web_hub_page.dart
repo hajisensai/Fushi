@@ -15,7 +15,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope,
         FushiShellInlineTitle;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -94,7 +94,7 @@ class _WebHubPageState extends State<WebHubPage> {
 
   bool _onScroll(ScrollNotification notification) {
     // 保活的离屏子页（TickerMode 关着）发来的通知不算。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 

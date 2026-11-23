@@ -5,7 +5,14 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show kMusicCoverRequestHeaders;
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+
+// 在线封面请求头定义在歌词动画框架的封面工具里（样式不 import 页面文件），这里转出给页面用。
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show kMusicCoverRequestHeaders;
+import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -78,11 +85,6 @@ Widget musicMaterialCover(
 }
 
 /// 专辑 / 曲目封面：目录封面文件优先，其次曲目内嵌封面，都没有画音符占位。
-/// 在线封面请求头：部分音乐 CDN 对 `Dart/x (dart:io)` 这个默认 UA 一律回 403，
-/// 浏览器形态的 UA 才放行（2026-10-29 实测）。
-const Map<String, String> kMusicCoverRequestHeaders = <String, String>{
-  'User-Agent': 'Mozilla/5.0',
-};
 
 class MusicCover extends StatelessWidget {
   const MusicCover({
@@ -193,12 +195,14 @@ class MusicCover extends StatelessWidget {
 }
 
 /// 专辑盘面扫描图（[MusicDiscArtIndex] 认出的本地文件）画进唱片色块
-/// （[FushiCoverBlock.disc]）的图：默认按 512 宽解码（播放页大唱片传实际像素宽），
-/// 铺满圆形裁切。
-Widget musicDiscArtImage(String path, {int decodeWidth = 512}) => Image(
-  image: ResizeImage.resizeIfNeeded(decodeWidth, null, FileImage(File(path))),
-  fit: BoxFit.cover,
-  excludeFromSemantics: true,
+/// （[FushiCoverBlock.disc]）的唱片：[MusicDiscFace] 按量出的印刷区对正、轮毂
+/// 透明，自带投影（原型 `.dc`：`0 10px 26px rgba(0,0,0,.55)`；投影在轮毂处裁掉，
+/// 所以不能由色块画整圆投影）。
+Widget musicDiscArtImage(String path) => MusicDiscFace(
+  path: path,
+  shadows: const <BoxShadow>[
+    BoxShadow(color: Color(0x8C000000), offset: Offset(0, 10), blurRadius: 26),
+  ],
 );
 
 /// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：

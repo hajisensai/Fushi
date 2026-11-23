@@ -1,6 +1,10 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
+import 'package:fushi/src/stats/study_goal_record.dart'
+    show StudyGoal, StudyGoalId;
+import 'package:fushi/src/stats/study_goals.dart'
+    show studyGoalStatsCharsFactsFrom;
 
 /// 目标周期的窗口：每日 = 当天；每周 = 本自然周（周一起，与 [StatWindow.inWeek] /
 /// [StatWindow.weekStartOf] 同一个「本周」）；每月 = 本日历月 1 日起。
@@ -139,5 +143,31 @@ void main() {
       expect(w.inWeek('2026-08-23'), isTrue);
       expect(w.inWeek('2026-08-22'), isFalse);
     });
+  });
+
+  test('HBK-AUDIT-219：统计页字数环读日面的起点 = 那条目标自己周期窗口的起点', () {
+    StudyGoal chars(StudyGoalPeriod period) => StudyGoal(
+      id: period.wire,
+      metric: StudyGoalId.chars,
+      period: period,
+      target: 1000,
+    );
+    // 2026-08-29 是周六：周窗口从 08-24（周一）起，月窗口从 08-01 起。
+    expect(studyGoalStatsCharsFactsFrom(null, '2026-08-29'), '2026-08-29');
+    expect(
+      studyGoalStatsCharsFactsFrom(chars(StudyGoalPeriod.daily), '2026-08-29'),
+      '2026-08-29',
+    );
+    expect(
+      studyGoalStatsCharsFactsFrom(chars(StudyGoalPeriod.weekly), '2026-08-29'),
+      studyGoalWindowStart(StudyGoalPeriod.weekly, '2026-08-29'),
+    );
+    expect(
+      studyGoalStatsCharsFactsFrom(
+        chars(StudyGoalPeriod.monthly),
+        '2026-08-29',
+      ),
+      '2026-08-01',
+    );
   });
 }

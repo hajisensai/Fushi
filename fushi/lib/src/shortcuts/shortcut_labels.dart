@@ -238,14 +238,6 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_align_subtitle_to_next;
       case ShortcutAction.videoEnterCaret:
         return t.shortcut_action_video_enter_caret;
-      case ShortcutAction.readerLookupNextWord:
-        return t.shortcut_action_reader_lookup_next_word;
-      case ShortcutAction.readerLookupPrevWord:
-        return t.shortcut_action_reader_lookup_prev_word;
-      case ShortcutAction.videoLookupNextWord:
-        return t.shortcut_action_video_lookup_next_word;
-      case ShortcutAction.videoLookupPrevWord:
-        return t.shortcut_action_video_lookup_prev_word;
       case ShortcutAction.webBrowserNewTab:
         return t.shortcut_action_web_browser_new_tab;
       case ShortcutAction.webBrowserCloseTab:
@@ -373,6 +365,32 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_popup_mine_entry;
       case ShortcutAction.popupPlayAudio:
         return t.shortcut_action_popup_play_audio;
+      case ShortcutAction.controllerLookupCursorLeft:
+        return t.shortcut_action_controller_lookup_cursor_left;
+      case ShortcutAction.controllerLookupCursorRight:
+        return t.shortcut_action_controller_lookup_cursor_right;
+      case ShortcutAction.controllerLookupLineUp:
+        return t.shortcut_action_controller_lookup_line_up;
+      case ShortcutAction.controllerLookupLineDown:
+        return t.shortcut_action_controller_lookup_line_down;
+      case ShortcutAction.controllerLookupToggleGranularity:
+        return t.shortcut_action_controller_lookup_toggle_granularity;
+      case ShortcutAction.controllerLookupShrinkEnd:
+        return t.shortcut_action_controller_lookup_shrink_end;
+      case ShortcutAction.controllerLookupExtendEnd:
+        return t.shortcut_action_controller_lookup_extend_end;
+      case ShortcutAction.controllerLookupMine:
+        return t.shortcut_action_controller_lookup_mine;
+      case ShortcutAction.controllerLookupPlayAudio:
+        return t.shortcut_action_controller_lookup_play_audio;
+      case ShortcutAction.controllerLookupNextEntry:
+        return t.shortcut_action_controller_lookup_next_entry;
+      case ShortcutAction.controllerLookupPrevEntry:
+        return t.shortcut_action_controller_lookup_prev_entry;
+      case ShortcutAction.controllerLookupEnterResult:
+        return t.shortcut_action_controller_lookup_enter_result;
+      case ShortcutAction.controllerLookupCloseOrExit:
+        return t.shortcut_action_controller_lookup_close_or_exit;
     }
   }
 }
@@ -428,6 +446,8 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_focus_navigation;
       case ShortcutScope.globalExternal:
         return t.shortcut_scope_global_external;
+      case ShortcutScope.controllerLookup:
+        return t.shortcut_scope_controller_lookup;
       case ShortcutScope.dictionaryPopup:
         return t.shortcut_scope_dictionary_popup;
       case ShortcutScope.music:
@@ -622,15 +642,6 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.timer;
       case ShortcutAction.videoEnterCaret:
         return FushiIcons.textFields;
-      // 扫词：同一根「逐词移动」的语义，用前后向的小三角图标区分方向。
-      case ShortcutAction.readerLookupNextWord:
-        return FushiIcons.stepForward;
-      case ShortcutAction.readerLookupPrevWord:
-        return FushiIcons.stepBackward;
-      case ShortcutAction.videoLookupNextWord:
-        return FushiIcons.stepForward;
-      case ShortcutAction.videoLookupPrevWord:
-        return FushiIcons.stepBackward;
 
       // 全 app 共用「返回上一级」：视频页把它解释成逐级退出阶梯。
       case ShortcutAction.globalBack:

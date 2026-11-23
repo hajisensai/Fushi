@@ -28,6 +28,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 一行元信息：跳过空片段后用 ` · ` 串成**单行**。
 ///
@@ -493,12 +494,9 @@ class ExtensionCatalogSliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double gap = FushiDesignTokens.of(context).spacing.gap;
-    return SliverLayoutBuilder(
-      builder: (BuildContext context, SliverConstraints constraints) {
-        final int columns = extensionCatalogColumns(
-          constraints.crossAxisExtent,
-          gap: gap,
-        );
+    return FushiSliverWidthBuilder(
+      builder: (BuildContext context, double crossAxisExtent) {
+        final int columns = extensionCatalogColumns(crossAxisExtent, gap: gap);
         final List<List<int>> lines = extensionCatalogLines(isHeader, columns);
         return SliverList.builder(
           itemCount: lines.length,

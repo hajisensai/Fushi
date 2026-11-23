@@ -430,6 +430,24 @@ SettingsDestination buildAppearanceDestination() {
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
           ),
+          // 阅读器纸色（拍板台 vJSj4RsKFt）：浅色 / 深色各一行，默认跟随 app 主题，
+          // 显式选羊皮纸 / 护眼 / 深灰等即覆盖；与主题种子色无关。
+          SettingsCustomItem(
+            id: 'appearance.reader_paper_light',
+            icon: FushiIcons.lightMode,
+            searchTitle: t.reader_paper_light,
+            builder: (SettingsContext settingsContext) =>
+                buildReaderPaperSelector(settingsContext, dark: false),
+            cliValue: readerPaperCliValue(dark: false),
+          ),
+          SettingsCustomItem(
+            id: 'appearance.reader_paper_dark',
+            icon: FushiIcons.darkMode,
+            searchTitle: t.reader_paper_dark,
+            builder: (SettingsContext settingsContext) =>
+                buildReaderPaperSelector(settingsContext, dark: true),
+            cliValue: readerPaperCliValue(dark: true),
+          ),
           // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
           // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题
           // 一律生效，只在深色下起作用。
@@ -1134,8 +1152,8 @@ List<SettingsItem> buildSteamShortcutItems() {
 /// 「通用 › 键盘与手柄」的手柄查词模式行。没有第二块屏也能用，是手柄输入方式，
 /// 所以和快捷键、焦点导航放在一起；id 不变（历史 appearance 前缀）。
 SettingsItem buildControllerLookupStyleItem() {
-  // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
-  // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
+  // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时一律按住 L1，单屏也是
+  // （2026-11-22 手柄查词统一拍板）。
   return SettingsSegmentedItem<ControllerLookupStyle>(
     id: 'appearance.controller_lookup_style',
     title: t.second_screen_controller_lookup_title,
@@ -1157,14 +1175,13 @@ SettingsItem buildControllerLookupStyleItem() {
     ],
     selected: (SettingsContext c) => ControllerLookupStyle.resolve(
       c.appModel.prefsRepo.getPref(kControllerLookupStylePrefKey),
-      companionActive: c.ref.read(secondScreenControllerProvider).isActive,
     ),
     onChanged: (SettingsContext c, ControllerLookupStyle value) => c
         .appModel
         .prefsRepo
         .setPref(kControllerLookupStylePrefKey, value.name)
         .then((_) => c.refresh()),
-    defaultValue: ControllerLookupStyle.off,
+    defaultValue: ControllerLookupStyle.holdL1,
   );
 }
 

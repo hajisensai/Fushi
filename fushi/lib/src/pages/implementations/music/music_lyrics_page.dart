@@ -23,6 +23,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
@@ -50,6 +51,19 @@ import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/analysis/music_audio_analysis_service.dart'
+    show
+        MusicAudioAnalysisService,
+        MusicAudioAnalysisSnapshot,
+        MusicAudioAnalysisTarget;
+import 'package:fushi/src/media/music/music_remote_media.dart'
+    show musicItemResolvesStream;
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_controller.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
+    show pushAiSettingsPage;
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
     show LyricsScript;
@@ -74,6 +88,7 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionContexts;
@@ -84,6 +99,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
@@ -140,6 +156,23 @@ part 'music_lyrics_controller_lookup.part.dart';
 
 /// 一次 ± 按钮调整的偏移步长。
 const int kMusicLyricsOffsetStepMs = 100;
+
+/// 播放项 → 整首音频分析的目标；本机没有这个文件的（插件 / 网络来源 / 服务器曲库 / 试听片段）
+/// 为 null，全屏歌词动画退回歌词包络。
+MusicAudioAnalysisTarget? musicAudioAnalysisTargetOf(MusicPlayItem? item) {
+  if (item == null || item.isPreview || item.path.isEmpty) return null;
+  if (musicItemResolvesStream(item) || item.path.contains('://')) return null;
+  final int? start = item.startMs;
+  final int? end = item.endMs;
+  return MusicAudioAnalysisTarget(
+    trackUid: item.trackUid,
+    path: item.path,
+    cueStartMs: start,
+    durationMs: start != null && end != null && end > start
+        ? end - start
+        : null,
+  );
+}
 
 /// 播放项 → 歌词解析所需的曲目信息。
 MusicLyricsTrackRef musicLyricsTrackRefOf(MusicPlayItem item) =>
@@ -199,25 +232,63 @@ String? musicCdgCompanionOf(MusicPlayItem item) {
 /// 纯函数：查词命中 → 查词起点在行内的下标。拉丁单词字符回退到词首（点 `world` 的
 /// `r` 从 `w` 起查，与视频字幕 / 截屏识字同一规则 [latinWordRangeAt]）；其余脚本
 /// 起点就是被点字本身。越界夹到 `[0, 行长]`。
-int musicLyricsLookupStart(KaraokeLookupHit hit) {
-  final int at = hit.charIndexInLine.clamp(0, hit.lineText.length);
-  return latinWordRangeAt(hit.lineText, at)?.start ?? at;
+int musicLyricsLookupStart(KaraokeLookupHit hit) =>
+    musicLyricsLookupStartAt(hit.lineText, hit.charIndexInLine);
+
+/// 纯函数：[musicLyricsLookupStart] 的文本版（行文本 + 行内 UTF-16 下标），手柄查词
+/// 模式没有命中矩形时用。
+int musicLyricsLookupStartAt(String lineText, int charIndex) {
+  final int at = charIndex.clamp(0, lineText.length);
+  return latinWordRangeAt(lineText, at)?.start ?? at;
 }
 
 /// 纯函数：查词命中 → 查词起点文本（从 [musicLyricsLookupStart] 到行尾，查词引擎
-/// 自己取最长匹配）。
-String musicLyricsLookupTerm(KaraokeLookupHit hit) =>
-    hit.lineText.substring(musicLyricsLookupStart(hit));
+/// 自己取最长匹配）。[maxGraphemes]（手柄查词模式的选区右端上限，null = 不截）把它
+/// 截到最多这么多个字素，至少 1 个。
+String musicLyricsLookupTerm(KaraokeLookupHit hit, {int? maxGraphemes}) {
+  final String term = hit.lineText.substring(musicLyricsLookupStart(hit));
+  if (maxGraphemes == null) return term;
+  return term.characters.take(math.max(1, maxGraphemes)).toString();
+}
+
+/// 纯函数：副屏接手查词时发过去的查询（行文本 + 行内下标）。不截时原样是整行 +
+/// 命中字；截了就是「行首到截断词尾」+ 查词起点（拉丁词中段的光标也已回退到词首，
+/// 截短的行里不会越界）。制卡句子另由调用方给整行。
+({String text, int charIndex}) musicLyricsCompanionQuery(
+  KaraokeLookupHit hit, {
+  int? maxGraphemes,
+}) {
+  if (maxGraphemes == null) {
+    return (text: hit.lineText, charIndex: hit.charIndexInLine);
+  }
+  final int start = musicLyricsLookupStart(hit);
+  final String term = musicLyricsLookupTerm(hit, maxGraphemes: maxGraphemes);
+  return (
+    text: hit.lineText.substring(0, start + term.length),
+    charIndex: start,
+  );
+}
+
+/// 纯函数：手柄查词模式的选区右端上限——行文本从光标处的查词起点
+/// （[musicLyricsLookupStartAt]，拉丁词回退到词首，与真正查的串同起点）到行尾的
+/// 字素数。
+int musicLyricsGraphemesFromCursor(String lineText, int charIndex) => lineText
+    .substring(musicLyricsLookupStartAt(lineText, charIndex))
+    .characters
+    .length;
 
 /// 纯函数：[musicLyricsLookupTerm] 查词串上的源注音区间（坐标系 = 查词串）。
 ///
 /// [syllables] 是命中行的音节（行文本 = 音节文本拼接），只取起点不早于
 /// [charIndexInLine]（= [musicLyricsLookupStart]）的音节：被查词起点截断的注音基字丢弃。只用解析器读出的
 /// `LyricSyllable.ruby`，不推断读音。
+///
+/// [termLength]（查词串被手柄右端上限截短时的长度）：越过截断处的注音一并丢弃。
 List<FushiRubySpan> musicLyricsRubySpans(
   List<LyricSyllable> syllables,
-  int charIndexInLine,
-) {
+  int charIndexInLine, {
+  int? termLength,
+}) {
   final List<FushiRubySpan> spans = <FushiRubySpan>[];
   int offset = 0;
   for (final LyricSyllable s in syllables) {
@@ -225,6 +296,7 @@ List<FushiRubySpan> musicLyricsRubySpans(
     offset += s.text.length;
     final String reading = (s.ruby ?? '').trim();
     if (reading.isEmpty || s.text.isEmpty || start < charIndexInLine) continue;
+    if (termLength != null && offset - charIndexInLine > termLength) break;
     spans.add(
       FushiRubySpan(
         start: start - charIndexInLine,
@@ -470,6 +542,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     unawaited(_generatedSub?.cancel());
+    _releaseAnalysis();
+    _aiTheme.dispose();
     _clock.dispose();
     super.dispose();
   }
@@ -570,6 +644,147 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     unawaited(appModel.prefsRepo.setMusicLyricsLayout(layout.prefValue));
   }
 
+  // ── 全屏歌词动画（folia-major 式样式；纯观赏，点一下退出） ─────────────────
+
+  /// 正在全屏歌词动画里。不落库：每次进歌词页回到原布局。
+  bool _visualizerOn = false;
+
+  /// 每首的 AI 主题（读缓存 / 生成 / 撤销），全屏动画的悬停条里有入口。
+  late final LyricVisualizerAiThemeController _aiTheme =
+      LyricVisualizerAiThemeController.forPrefs(
+        appModelNoUpdate.prefsRepo,
+        openAiSettings: pushAiSettingsPage,
+      );
+
+  /// 本首实际用的样式：开了「每首随机」时按曲目种子挑。
+  LyricVisualizerMode _visualizerModeFor(MusicPlayItem? item) {
+    if (appModel.prefsRepo.musicVisualizerRandom && item != null) {
+      return lyricVisualizerRandomModeFor(item.trackUid);
+    }
+    return LyricVisualizerMode.fromPref(appModel.prefsRepo.musicVisualizerMode);
+  }
+
+  /// 选样式（工具栏按钮 / 全屏里的悬停条）。选中即进入全屏。
+  Future<void> _pickVisualizer() async {
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    final LyricVisualizerPick? pick = await showLyricVisualizerPicker(
+      context: _themedContext,
+      current: LyricVisualizerMode.fromPref(prefs.musicVisualizerMode),
+      random: prefs.musicVisualizerRandom,
+      tunings: prefs.musicVisualizerTunings,
+      backgroundId: prefs.musicVisualizerBackground,
+      onTuningsChanged: (String mode, Map<String, Object?> values) async {
+        await prefs.setMusicVisualizerTuning(mode, values);
+        if (mounted) setState(() {});
+      },
+    );
+    if (pick == null || !mounted) return;
+    await prefs.setMusicVisualizerMode(pick.mode.prefValue);
+    await prefs.setMusicVisualizerRandom(pick.random);
+    if (mounted) setState(() => _visualizerOn = true);
+  }
+
+  void _exitVisualizer() {
+    if (_visualizerOn) setState(() => _visualizerOn = false);
+    _releaseAnalysis();
+  }
+
+  /// 本首的整首音频分析（只在全屏歌词动画开着时要；样式经 `context.audio` 读）。
+  ValueListenable<MusicAudioAnalysisSnapshot>? _analysis;
+  MusicAudioAnalysisTarget? _analysisTarget;
+
+  /// 换到 [item] 这首的分析：同一首不重复请求；顺带预取队列里下一首，别的排队任务取消。
+  ValueListenable<MusicAudioAnalysisSnapshot>? _analysisFor(
+    MusicPlayItem? item,
+  ) {
+    final MusicAudioAnalysisTarget? target = musicAudioAnalysisTargetOf(item);
+    if (target == _analysisTarget) return _analysis;
+    final MusicAudioAnalysisService service =
+        MusicAudioAnalysisService.instance;
+    _analysisTarget = target;
+    if (target == null) {
+      _analysis = null;
+      service.cancelExcept(const <MusicAudioAnalysisTarget>{});
+      return null;
+    }
+    _analysis = service.analyze(target);
+    final List<MusicPlayItem> queue = _engine.queue;
+    final int next = _engine.index + 1;
+    final MusicAudioAnalysisTarget? ahead = next >= 0 && next < queue.length
+        ? musicAudioAnalysisTargetOf(queue[next])
+        : null;
+    service.cancelExcept(<MusicAudioAnalysisTarget>{
+      target,
+      if (ahead != null) ahead,
+    });
+    if (ahead != null) service.prefetch(<MusicAudioAnalysisTarget>[ahead]);
+    return _analysis;
+  }
+
+  /// 退出全屏动画 / 离开页面：不再要分析，排队和正在跑的都取消（已落盘的结果留着）。
+  void _releaseAnalysis() {
+    if (_analysisTarget == null) return;
+    _analysisTarget = null;
+    _analysis = null;
+    MusicAudioAnalysisService.instance.cancelExcept(
+      const <MusicAudioAnalysisTarget>{},
+    );
+  }
+
+  Widget _buildVisualizer(BuildContext context, MusicPlayItem? item) {
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    final ValueListenable<MusicAudioAnalysisSnapshot>? analysis = _analysisFor(
+      item,
+    );
+    if (analysis == null) return _visualizerView(item, prefs, null);
+    return ValueListenableBuilder<MusicAudioAnalysisSnapshot>(
+      valueListenable: analysis,
+      builder: (BuildContext context, MusicAudioAnalysisSnapshot s, _) =>
+          _visualizerView(item, prefs, s.audio),
+    );
+  }
+
+  Widget _visualizerView(
+    MusicPlayItem? item,
+    PreferencesRepository prefs,
+    LyricVisualizerAudio? audio,
+  ) {
+    return MusicLyricVisualizerView(
+      key: const ValueKey<String>('music_visualizer'),
+      audio: audio,
+      aiTheme: _aiTheme,
+      mode: _visualizerModeFor(item),
+      timeline: _lyrics?.timeline,
+      clock: _clock,
+      offsetMs: _offsetMs,
+      playing: _engine.isPlaying,
+      trackUid: item?.trackUid ?? '',
+      tunings: prefs.musicVisualizerTunings,
+      fontScale: prefs.musicVisualizerFontScale,
+      intensity: LyricVisualizerIntensity.fromPref(
+        prefs.musicVisualizerIntensity,
+      ),
+      backgroundId: prefs.musicVisualizerBackground,
+      subtitle: LyricVisualizerSubtitleSettings(
+        content: LyricVisualizerSubtitleContent.fromPref(
+          prefs.musicVisualizerSubtitleContent,
+        ),
+        hideTranslation: prefs.musicVisualizerSubtitleHide,
+        fontScale: prefs.musicVisualizerSubtitleFontScale,
+        font: LyricVisualizerSubtitleFont.fromPref(
+          prefs.musicVisualizerSubtitleFont,
+        ),
+      ),
+      coverPath: item?.coverPath,
+      title: item?.title,
+      artist: item?.artist,
+      album: item?.album,
+      onExit: _exitVisualizer,
+      onPickStyle: () => unawaited(_pickVisualizer()),
+      onSeek: (int ms) => unawaited(_engine.seek(Duration(milliseconds: ms))),
+    );
+  }
+
   Future<void> _load(MusicPlayItem item) async {
     _loadedUid = item.trackUid;
     setState(() {
@@ -626,21 +841,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     if (loop != null) unawaited(_applyLoop(loop.$1, loop.$2));
   }
 
-  Future<void> _onLookup(KaraokeLookupHit hit) async {
+  /// 查 [hit] 处的词：点按 / 长按与手柄查词模式（[_MusicControllerLookupTarget]）
+  /// 同一条链路。[maxGraphemes] = 手柄模式的选区右端上限（null = 不截，交给词典
+  /// 最长匹配），只截查询串。返回命中高亮长度（字素数）；查不到、被后一次查词取代、
+  /// 或副屏接手而 [measureMatch] 为 false 时 = 0。[measureMatch]：副屏接手时也在
+  /// 本机按同一查询量一次命中长度（同查词缓存，手柄右端微调要用）。
+  Future<int> _onLookup(
+    KaraokeLookupHit hit, {
+    int? maxGraphemes,
+    bool measureMatch = false,
+  }) async {
     _lookupLine = hit.lineIndex;
     final int lookupStart = musicLyricsLookupStart(hit);
     _lookupCharIndex = lookupStart;
     // 换词查询：上下文从零开始，不带上一个词选的前后文（与阅读器 / 视频同语义）。
     _miningDraft.clear();
     appModel.musicStudy.noteLearningAction();
-    // 副屏在用：查词结果显示在副屏「查词」页，本页不弹窗；否则照常弹窗（未启用副屏
-    // 时这里只是一次同步判断，不多等一拍）。「查词时暂停」两边同一入口：副屏接手查词
-    // 时由副屏注册表调 [_pauseForLookup]，副屏关查词时 [_companionLookupClosed] 续播。
-    if (companionContexts.routesLookups) {
-      if (await routeMusicLyricLookup(hit)) return;
-      if (!mounted) return;
-    }
-    _pauseForLookup();
+    final String term = musicLyricsLookupTerm(hit, maxGraphemes: maxGraphemes);
     final LyricTimeline? timeline = _timeline;
     final LyricLine? line =
         timeline != null &&
@@ -648,13 +865,49 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             hit.lineIndex < timeline.lines.length
         ? timeline.lines[hit.lineIndex]
         : null;
-    await searchDictionaryResult(
-      searchTerm: musicLyricsLookupTerm(hit),
-      rubySpans: line != null && line.text == hit.lineText
-          ? musicLyricsRubySpans(line.syllables, lookupStart)
-          : const <FushiRubySpan>[],
+    final List<FushiRubySpan> rubySpans =
+        line != null && line.text == hit.lineText
+        ? musicLyricsRubySpans(
+            line.syllables,
+            lookupStart,
+            termLength: term.length,
+          )
+        : const <FushiRubySpan>[];
+    // 副屏在用：查词结果显示在副屏「查词」页，本页不弹窗；否则照常弹窗（未启用副屏
+    // 时这里只是一次同步判断，不多等一拍）。「查词时暂停」两边同一入口：副屏接手查词
+    // 时由副屏注册表调 [_pauseForLookup]，副屏关查词时 [_companionLookupClosed] 续播。
+    if (companionContexts.routesLookups) {
+      final ({String text, int charIndex}) query = musicLyricsCompanionQuery(
+        hit,
+        maxGraphemes: maxGraphemes,
+      );
+      if (await routeMusicLyricLookup(
+        hit,
+        text: query.text,
+        charIndex: query.charIndex,
+      )) {
+        if (!measureMatch || !mounted) return 0;
+        return measureLookupMatchGraphemes(
+          appModel,
+          term,
+          rubySpans: rubySpans,
+        );
+      }
+      if (!mounted) return 0;
+    }
+    _pauseForLookup();
+    // 换词：已开着的页内查词（连同嵌套层）先收回热槽，新词原地复用热槽，不在上面
+    // 再叠一层顶层弹窗。不走 [clearDictionaryResult]：那条是「关查词」，会续播。
+    if (dictionaryPopupShown) {
+      dismissDescendantsOf(0);
+      dismissTopPopup();
+    }
+    final int highlight = await searchDictionaryResult(
+      searchTerm: term,
+      rubySpans: rubySpans,
       selectionRect: hit.globalRect,
     );
+    return lookupMatchedGraphemes(term, highlight);
   }
 
   /// 「查词时暂停」（页内弹窗与副屏查词页同一入口，含副屏歌词上点的词）：设置开着
@@ -1088,6 +1341,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       FushiToast.showMine(
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
+        term: fields['expression'],
+        reading: fields['reading'],
       );
       final MineOutcome outcome = overwriteNoteId != null
           ? await repo.updateMinedNote(
@@ -1125,10 +1380,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               ? '${described.message}\n${t.music_apple_music_card_audio_unavailable}'
               : described.message,
           status: described.status,
-          // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+          detail: described.detail,
+          term: fields['expression'],
+          reading: fields['reading'],
+          // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
           action: overwriteNoteId != null
               ? null
-              : minedCardUndoToastAction(repo, outcome),
+              : mineResultToastAction(repo, outcome),
         );
         return MinePopupResult.mined(outcome);
       }
@@ -1448,8 +1706,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                         FushiMotion.medium,
                       ),
                       child: KeyedSubtree(
-                        key: ValueKey<String>('${_layout.name}-$wide'),
+                        key: ValueKey<String>(
+                          _visualizerOn
+                              ? 'visualizer'
+                              : '${_layout.name}-$wide',
+                        ),
                         child: switch ((_layout, wide)) {
+                          _ when _visualizerOn => _buildVisualizer(
+                            context,
+                            item,
+                          ),
                           (MusicLyricsLayout.split, true) => _buildSplit(
                             context,
                             item,
@@ -1487,6 +1753,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     // 2026-10-30「视频、小说、漫画、音乐都要占满」）。配色取封面主题的表面色，
     // 只用来托窗口按钮的柔光；macOS 红绿灯收不起，不上报，保持原来的叠放。
     page = _TitleBarScope(child: page);
+    // 全屏歌词动画里按返回 = 退出动画回原布局，不离开歌词页。
+    page = PopScope<Object?>(
+      canPop: !_visualizerOn,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) _exitVisualizer();
+      },
+      child: page,
+    );
     // 播放控制键（空格 / K / N / P / Shift+←→ / 媒体键）与曲库页同一份执行体；autofocus
     // 让打开歌词页即能收键（页内没有别的控件持焦时主焦点落在这里）。
     page = Focus(
@@ -1633,25 +1907,30 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       builder: (BuildContext context, double t, Widget? child) =>
           Transform.translate(
             offset: Offset(-peek * t / 2, 0),
-            child: SizedBox.square(
-              dimension: cover,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  child!,
-                  Positioned(
-                    left: inset + peek * t,
-                    top: inset,
-                    child: _SpinningDisc(
-                      coverPath: item?.coverPath,
-                      albumUid: item?.albumUid,
-                      trackPath: item?.path,
-                      size: disc,
-                      spinning: _engine.isPlaying,
-                      fallback: _DiscFallback.silverCd,
+            // 封面与唱片共用这一层倾斜（封面框自带的那层被 group 收掉），
+            // 唱片不会留在平面上、两层不会错开。
+            child: FushiTilt(
+              group: true,
+              child: SizedBox.square(
+                dimension: cover,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    child!,
+                    Positioned(
+                      left: inset + peek * t,
+                      top: inset,
+                      child: _SpinningDisc(
+                        coverPath: item?.coverPath,
+                        albumUid: item?.albumUid,
+                        trackPath: item?.path,
+                        size: disc,
+                        spinning: _engine.isPlaying,
+                        fallback: _DiscFallback.silverCd,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1860,6 +2139,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   : t.music_lyrics_title,
               onPressed: () => setState(() => _showLyrics = !_showLyrics),
             ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('music_lyrics_visualizer'),
+            icon: FushiIcons.animation,
+            label: t.music_visualizer_open,
+            onPressed: () => unawaited(_pickVisualizer()),
+          ),
           if (_hasKaraokeStage)
             FushiToolbarItem(
               key: const ValueKey<String>('music_lyrics_karaoke'),
@@ -2750,24 +3035,27 @@ class _SpinningDiscState extends State<_SpinningDisc>
     final double size = widget.size;
     final String? discArt = _discArtPath;
     if (discArt != null) {
-      return _buildCd(
-        size,
+      // 真盘面：按量出的印刷区圆心转（不晃），透明边与轮毂不画扫描底板的白。
+      return RepaintBoundary(
         key: const ValueKey<String>('music-player-real-disc'),
-        face: ClipOval(
-          child: musicDiscArtImage(
-            discArt,
-            decodeWidth: (size * MediaQuery.devicePixelRatioOf(context))
-                .round(),
+        child: SizedBox.square(
+          dimension: size,
+          child: MusicDiscFace(
+            path: discArt,
+            turns: _turn,
+            shadows: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: size * 0.1,
+                offset: Offset(0, size * 0.05),
+              ),
+            ],
           ),
         ),
       );
     }
     if (widget.fallback == _DiscFallback.silverCd) {
-      return _buildCd(
-        size,
-        key: const ValueKey<String>('music-player-silver-cd'),
-        face: const CustomPaint(painter: _SilverCdPainter()),
-      );
+      return _buildSilverCd(size);
     }
     // 黑胶（用户 2026-10-29：「唱片那个材质改成黑胶」）：密纹盘面 + 两道随盘面
     // 转动的扇形反光 + 中央圆形贴标（封面）+ 中心轴孔。整张一起转，反光跟着转
@@ -2825,17 +3113,16 @@ class _SpinningDiscState extends State<_SpinningDisc>
 }
 
 extension on _SpinningDiscState {
-  /// CD 盘：[face]（盘面扫描图 / 银色 CD 盘）铺满圆形整张转（扫图本身就有贴标与
-  /// 反光，不再叠黑胶纹路和假贴标）；外缘一道细亮边让浅色盘面在浅色背景上也有
-  /// 轮廓。中心轴孔挖空透出底下（用户 2026-11-22：扫描图的孔是扫描仪底板的白色，
-  /// 像贴了一块白片）。阴影也在挖孔之内裁掉，孔里看到的是底下本身而不是一团阴影。
-  Widget _buildCd(double size, {required Key key, required Widget face}) {
-    final double hole = size * _kDiscHoleFraction;
+  /// 银色 CD 盘（[_SilverCdPainter]）整张转；外缘一道细亮边让它在浅色背景上也有
+  /// 轮廓。中心轴孔挖空透出底下的封面，阴影也在挖孔之内裁掉。
+  Widget _buildSilverCd(double size) {
+    const Widget face = CustomPaint(painter: _SilverCdPainter());
+    final double hole = size * _kSilverCdHoleFraction;
     final double edge = math.max(1, size * 0.004);
     return RepaintBoundary(
-      key: key,
+      key: const ValueKey<String>('music-player-silver-cd'),
       child: ClipPath(
-        clipper: _DiscHoleClipper(holeFraction: _kDiscHoleFraction),
+        clipper: const MusicDiscHubClipper(hubFraction: _kSilverCdHoleFraction),
         child: SizedBox.square(
           dimension: size,
           child: DecoratedBox(
@@ -2980,35 +3267,9 @@ class _SilverCdPainter extends CustomPainter {
   bool shouldRepaint(covariant _SilverCdPainter oldDelegate) => false;
 }
 
-/// 真盘面中心挖孔占盘面直径的比例。实物 CD 轴孔 15mm / 盘径 120mm = 0.125，
-/// 放宽到 0.15 盖住扫描图裁切不正时孔边露出的那圈底板白。
-const double _kDiscHoleFraction = 0.15;
-
-/// 盘面中心挖孔：裁剪区是「组件外扩一圈（留给投影）减去中心圆孔」，所以孔里连
-/// 投影一起裁掉，而盘外的投影照常画出来。
-class _DiscHoleClipper extends CustomClipper<Path> {
-  const _DiscHoleClipper({required this.holeFraction});
-
-  final double holeFraction;
-
-  @override
-  Path getClip(Size size) {
-    final double side = size.shortestSide;
-    return Path()
-      ..fillType = PathFillType.evenOdd
-      ..addRect((Offset.zero & size).inflate(side * 0.5))
-      ..addOval(
-        Rect.fromCircle(
-          center: size.center(Offset.zero),
-          radius: side * holeFraction / 2,
-        ),
-      );
-  }
-
-  @override
-  bool shouldReclip(covariant _DiscHoleClipper oldClipper) =>
-      oldClipper.holeFraction != holeFraction;
-}
+/// 银色 CD 盘中心挖孔占盘径的比例（实物轴孔 15mm / 盘径 120mm = 0.125，放宽
+/// 一点留出孔边亮环）。
+const double _kSilverCdHoleFraction = 0.15;
 
 /// 黑胶盘面：近黑底、一圈圈细密纹（亮暗交替的同心圆）、外缘一道唇边、贴标外
 /// 一圈无纹带，再叠两道对角的扇形反光（SweepGradient）。

@@ -20,7 +20,7 @@ void main() {
     final String page = read(
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
-    final int start = page.indexOf('void _handleSubtitleLookupTap(');
+    final int start = page.indexOf('Future<int> _handleSubtitleLookupTap(');
     expect(start, greaterThanOrEqualTo(0));
     // 用 `\n  }\n` 而不是 `\n  }`：后者会提前命中签名收尾的 `  }) {`（方法带可选
     // 命名参数块时），body 只剩签名、下面的断言全部落空 = 守卫静默失效。

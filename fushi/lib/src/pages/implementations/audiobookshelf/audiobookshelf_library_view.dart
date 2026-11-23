@@ -8,7 +8,6 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart';
@@ -38,6 +37,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 每页条数。
 const int kAudiobookshelfPageSize = 40;
@@ -503,9 +503,9 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
     final double gap = tokens.spacing.card;
     return SliverPadding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-      sliver: SliverLayoutBuilder(
-        builder: (BuildContext context, SliverConstraints constraints) {
-          final double width = constraints.crossAxisExtent;
+      sliver: FushiSliverWidthBuilder(
+        builder: (BuildContext context, double crossAxisExtent) {
+          final double width = crossAxisExtent;
           final double maxExtent = readerShelfGridExtentForWidth(width);
           final int columns = ((width + gap) / (maxExtent + gap)).ceil().clamp(
             1,

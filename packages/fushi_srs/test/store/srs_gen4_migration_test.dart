@@ -31,6 +31,13 @@ void main() {
       expect(rust, SrsGen4BlockedReason.kernelCodes.toSet());
     });
 
+    test('the report file name is migrate.rs REPORT_FILE', () {
+      final RegExpMatch? m = RegExp(
+        r'pub const REPORT_FILE: &str = "([^"]+)";',
+      ).firstMatch(_migrateRs.readAsStringSync());
+      expect(m?.group(1), SrsGen4Migration.reportFileName);
+    });
+
     test('codes map to kinds; the reason text is never parsed', () {
       final Map<String, SrsGen4BlockedReason> want =
           <String, SrsGen4BlockedReason>{
@@ -183,6 +190,85 @@ void main() {
           'landed': 'o:4',
         }),
         throwsStateError,
+      );
+    });
+  });
+
+  group('failure reason', () {
+    test('the Dart reasons are exactly migrate.rs Failure::wire', () {
+      final String src = _migrateRs.readAsStringSync();
+      final Set<String> rust = <String>{
+        for (final RegExpMatch m in RegExp(
+          r'(?:AbortReason|Failure)::\w+ => "(\w+)",',
+        ).allMatches(src))
+          m.group(1)!,
+      };
+      expect(rust, <String>{'fail', 'incomplete', 'error', 'interrupted'});
+      expect(rust, <String>{
+        for (final SrsGen4MigrationFailureReason r
+            in SrsGen4MigrationFailureReason.values)
+          r.wire,
+      });
+    });
+
+    test('status, open error and aborted outcome carry the same shape', () {
+      const SrsGen4MigrationFailure want = SrsGen4MigrationFailure(
+        reason: SrsGen4MigrationFailureReason.incomplete,
+        reportPath: '/d/srs4-migration-report.json',
+      );
+      final Map<String, Object?> failure = <String, Object?>{
+        'reason': 'incomplete',
+        'reportPath': '/d/srs4-migration-report.json',
+      };
+      expect(
+        SrsGen4MigrationStatus.fromJson(<String, Object?>{
+          'state': 'migrationFailed',
+          'failure': failure,
+          'running': null,
+        }).failure,
+        want,
+      );
+      expect(
+        SrsGen4MigrationOutcome.fromJson(<String, Object?>{
+          'verdict': 'aborted',
+          'reportPath': '/d/srs4-migration-report.json',
+          'failure': failure,
+        }).failure,
+        want,
+      );
+      // store/ffi.rs open_error：说明文字 + `GenState::json`（键按字母序，failure 在 state 前）。
+      final SrsCoreException e = SrsCoreException.of(
+        SrsStoreNotMigrated.statusCode,
+        'gen4 store: not migrated yet '
+        '{"failure":{"reason":"incomplete","reportPath":"/d/srs4-migration-report.json"},'
+        '"state":"migrationFailed"}',
+      );
+      expect(e, isA<SrsStoreNotMigrated>());
+      final SrsStoreNotMigrated n = e as SrsStoreNotMigrated;
+      expect(n.state, SrsGenState.migrationFailed);
+      expect(n.failure, want);
+    });
+
+    test('interrupted has no report; other states have no failure', () {
+      expect(
+        SrsGen4MigrationFailure.tryParse(<String, Object?>{
+          'reason': 'interrupted',
+        }),
+        const SrsGen4MigrationFailure(
+          reason: SrsGen4MigrationFailureReason.interrupted,
+        ),
+      );
+      expect(SrsGen4MigrationFailure.tryParse(null), isNull);
+      expect(
+        SrsGen4MigrationFailure.tryParse(<String, Object?>{'reason': 'x'}),
+        isNull,
+      );
+      expect(
+        SrsGen4MigrationStatus.fromJson(<String, Object?>{
+          'state': 'needsMigration',
+          'failure': null,
+        }).failure,
+        isNull,
       );
     });
   });

@@ -21,6 +21,11 @@ enum DropIntent {
   /// 单列一个意图只为给明确提示，不再静默无反应。
   unsupportedMangaArchive,
 
+  /// 拖入装着一批书的压缩包、或列不出名字的包（[DroppedFiles.bookArchives]）→ 解开一次
+  /// 按内容分流：书整批导入、一包多本给一份汇总；只有页图的交漫画导入（拍板 83Fe7zQbhv）。
+  /// books 与 manga 两个表面都产出它；同批拖入的单本书一并交给这次批量导入，不被静默丢掉。
+  importBookArchive,
+
   importNewVideo,
   importNewPlaylist,
 
@@ -77,6 +82,7 @@ DropIntent decideDropIntent({
       if (files.unsupportedMangas.isNotEmpty) {
         return DropIntent.unsupportedMangaArchive;
       }
+      if (files.bookArchives.isNotEmpty) return DropIntent.importBookArchive;
       if (files.books.isNotEmpty) return DropIntent.importNewBook;
       // 拖字幕/音频到具体书卡 → 附加到那本书（含拖 .mp4 给书加音频）。视频判定放在
       // 其后，避免把「拖 mp4 到书卡挂音频」误判成新建视频。

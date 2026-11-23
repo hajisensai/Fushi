@@ -168,6 +168,13 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   bool _previewAnswer = false;
   bool _loading = true;
   bool _saving = false;
+
+  /// 在途保存的结束信号（[_saving] 期间非空）：返回时等它写完再判有没有未保存的修改，而不是把正在写入的
+  /// 修改当成「未保存」问放弃（大库一次保存要好几秒，放弃也撤不回已发出的写入）。
+  Completer<void>? _saveDone;
+
+  /// 一次返回正在等在途保存：再按返回不重复排队（否则写完后连 pop 两次）。
+  bool _popPending = false;
   Object? _error;
 
   SrsDbStore? _store;
@@ -499,8 +506,13 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
       return;
     }
-    final bool templateChanged =
-        _front.text != _savedFront || _back.text != _savedBack;
+    // 写入的是点保存这一刻的内容：保存在途时编辑框还能继续改，写完只把这份快照记成「已保存」，
+    // 途中再改的仍算未保存。
+    final String front = _front.text;
+    final String back = _back.text;
+    final String css = _css.text;
+    final Map<String, String> descriptions = _pendingDescriptions;
+    final bool templateChanged = front != _savedFront || back != _savedBack;
     // 存下去会是重复模板：先说清楚后果，默认不存。
     final SrsTemplateDef? twin = templateChanged
         ? _sameFront.firstOrNull
@@ -517,6 +529,8 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
       if (!ok || !mounted) return;
     }
+    final Completer<void> done = Completer<void>();
+    _saveDone = done;
     setState(() => _saving = true);
     try {
       final Map<String, String> nameToId = _nameToId;
@@ -524,20 +538,21 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       final bool wrote = await store.saveTemplateEdits(
         type.id,
         tpl.id,
-        front: templateChanged
-            ? templateNamesToIds(_front.text, nameToId)
-            : null,
-        back: templateChanged ? templateNamesToIds(_back.text, nameToId) : null,
-        css: _css.text != _savedCss ? _css.text : null,
-        fieldDescriptions: _pendingDescriptions,
+        front: templateChanged ? templateNamesToIds(front, nameToId) : null,
+        back: templateChanged ? templateNamesToIds(back, nameToId) : null,
+        css: css != _savedCss ? css : null,
+        fieldDescriptions: descriptions,
       );
       if (!mounted) return;
       if (wrote) bumpSrsRevision(ref);
       setState(() {
-        _savedFront = _front.text;
-        _savedBack = _back.text;
-        _savedCss = _css.text;
-        _pendingDescriptions = const <String, String>{};
+        _savedFront = front;
+        _savedBack = back;
+        _savedCss = css;
+        // 途中 AI 又给了新说明（整份替换）就留着，等下次保存。
+        if (identical(_pendingDescriptions, descriptions)) {
+          _pendingDescriptions = const <String, String>{};
+        }
       });
       _refreshPreview();
       FushiToast.show(
@@ -551,7 +566,26 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
         severity: ToastSeverity.error,
       );
     } finally {
+      _saveDone = null;
       if (mounted) setState(() => _saving = false);
+      done.complete();
+    }
+  }
+
+  /// 返回被 [PopScope] 拦下时：保存在途就先等它写完；之后没有未保存的修改直接退出，有（保存失败 / 途中又改）
+  /// 才问放弃。
+  Future<void> _onPopBlocked() async {
+    if (_popPending) return;
+    _popPending = true;
+    try {
+      final NavigatorState navigator = Navigator.of(context);
+      final Completer<void>? saving = _saveDone;
+      if (saving != null) await saving.future;
+      if (!mounted) return;
+      // 放弃修改：Navigator.pop 不经 PopScope 拦截，直接退出。
+      if (await _confirmDiscard() && mounted) navigator.pop();
+    } finally {
+      _popPending = false;
     }
   }
 
@@ -711,12 +745,9 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     final bool masthead = shellRedesignActive(context);
     final String title = _template?.name ?? t.srs_note_types_template_edit;
     return PopScope<Object?>(
-      canPop: !_dirty,
-      onPopInvokedWithResult: (bool didPop, Object? result) async {
-        if (didPop) return;
-        final NavigatorState navigator = Navigator.of(context);
-        // 放弃修改：Navigator.pop 不经 PopScope 拦截，直接退出。
-        if (await _confirmDiscard() && mounted) navigator.pop();
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) unawaited(_onPopBlocked());
       },
       child: FushiPageScaffold(
         title: title,

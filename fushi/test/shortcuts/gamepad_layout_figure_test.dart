@@ -17,7 +17,8 @@ import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 void main() {
   group('buildGamepadFigure (pure data table)', () {
     for (final GamepadBrand brand in GamepadBrand.values) {
-      test('$brand: all 17 GamepadButton values appear exactly once', () {
+      test('$brand: every GamepadButton value (17 physical + 2 right-stick '
+          'virtual keys) appears exactly once', () {
         final List<GamepadPadSpec> specs = buildGamepadFigure(brand);
         final List<GamepadButton> buttons = specs
             .map((GamepadPadSpec s) => s.button)
@@ -276,7 +277,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('renders all 17 keyed buttons in one figure', (
+    testWidgets('renders every keyed button in one figure', (
       WidgetTester tester,
     ) async {
       final FushiShortcutRegistry registry = buildRegistry();
@@ -474,7 +475,7 @@ void main() {
         isTrue,
         reason: 'narrow gamepad figure must add a horizontal scroll fallback',
       );
-      // 全部 17 按钮仍在图上。
+      // 全部按钮仍在图上。
       for (final GamepadButton button in GamepadButton.values) {
         expect(find.byKey(Key('gamepad_btn_${button.label}')), findsOneWidget);
       }

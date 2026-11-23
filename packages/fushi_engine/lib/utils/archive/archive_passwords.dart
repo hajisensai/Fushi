@@ -102,7 +102,7 @@ enum ArchiveUnpackFailure {
   /// 解出的大小 / 文件数超过上限。
   tooLarge,
 
-  /// 格式不支持（不认识的包、分卷 7z 等）。
+  /// 格式不支持（不认识的包等）。
   unsupported,
 
   /// 包坏了 / 解压失败。
@@ -110,6 +110,10 @@ enum ArchiveUnpackFailure {
 
   /// RAR 需要 7-Zip 命令行而本机没有。
   toolMissing,
+
+  /// 分卷包（`book.7z.001`…）拼不全：选的不是第一卷（`.001`），或其余各卷不在同一个
+  /// 文件夹里。
+  missingVolume,
 }
 
 /// 归档解包失败。

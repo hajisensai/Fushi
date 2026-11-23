@@ -61,10 +61,12 @@ void main() {
       greaterThanOrEqualTo(2),
       reason: '键盘与手柄的 caret 激活分支都必须用总开关短路。',
     );
+    // 2026-11-22 手柄查词统一：手柄不再进 caret（isEnterTriggerGamepad 已删），
+    // 只剩键盘 Enter 一处进 caret 判定。
     expect(
       'focusNavEnabled: _focusNavEnabled'.allMatches(code).length,
-      greaterThanOrEqualTo(2),
-      reason: '键盘 Enter 与手柄 A 的进 caret 判定都必须透传总开关。',
+      greaterThanOrEqualTo(1),
+      reason: '键盘 Enter 的进 caret 判定必须透传总开关。',
     );
     // TODO-700 T8：底栏被 ExcludeFocus 排出焦点遍历池后，「↓ 跳底栏」的焦点搬运整段
     // 删除（底栏不再是焦点目标），原 BUG-161「↓ 跳底栏要门控在开关上」诉求随之消失。

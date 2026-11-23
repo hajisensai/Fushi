@@ -1,0 +1,6 @@
+## BUG-5248 · manga-audio-batch-cancel-overwrites-live
+- **报告**：2026-11-22（合并后审查 HBK-AUDIT-207，来源 PR #4122 `docs/reviews/2026-11-22-project-review.md`）
+- **真实性**：✅ 真 bug。工作台「读法变了的台词 → 一键重新生成」（`fushi/lib/src/media/manga/audio/manga_audio_studio_page.dart:1080`）把**已配好音**的句子交给补回任务（`seed == null`），`MangaAudioRenderer.backfill`→`_produce` 逐句先写 `.part` 再**立即改名覆盖** `mangaLineFileName(lineId)`——旧清单正在引用的文件（develop@283a920286 `manga_audio_renderer.dart:497-500` `_publish`）。批次中途取消时 `backfill` 在 `cancel.throwIfCancelled()` 抛出，清单、演出稿、库都不写回（`manga_audio_render_service.dart:230-257`），已处理句子的音频换成了新读法，清单 / 库里的时长、cue 文本、朗读文还是旧的。整卷重跑（`render` → `_renderOne`）取消时同样已就地覆盖了前面几句，且账本里已 `resolve` 掉这次配上音、但没提交的占位句。
+- **[x] ① 已修复** — 生成端改为「成品与清单一起提交」（与 BUG-5247 同一个 `_AudioBatch`）：`render` / `backfill` / `bindLocalAudio` 新出的音频只进暂存文件；没被取消、全部跑完才 `publish` → 存清单，演出稿改动与账本出账也推迟到提交时（`backfill` 收集 `commits`，`render` 收集 `resolved`）；取消 / 整卷级失败时只删暂存文件，旧清单、它引用的音频、演出稿、账本出账状态全保持旧版本（各句失败尝试照常记账）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/tts/manga_audio/manga_audio_renderer_test.dart`：`补回中途取消：已处理的句子音频、清单、演出稿、账本都保持旧版本`、`整卷重跑中途取消：旧清单引用的音频一个字节都不变`（修复前都红：第一句文件内容已被改写）。
+- **备注**：取消即整批不生效（已出完的句子丢掉，下次重出），换来「库里看到的就是能播的」；同 BUG-5247 备注里的崩溃窗口。

@@ -3,11 +3,14 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_backend.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
@@ -18,7 +21,7 @@ import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart'
-    show MangaAudiobookClip;
+    show MangaAudiobookClip, MangaAudioScript, MangaScriptLine;
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
@@ -40,6 +43,34 @@ Future<String> _insertBook(
     ),
   );
   return (await db.resolveEpubBookUid(bookKey))!;
+}
+
+class _Session implements AudiobookSession {
+  final List<String> stopped = <String>[];
+
+  @override
+  Future<void> stopIfPlayingAny(Iterable<String> bookKeys) async {
+    stopped.addAll(bookKeys);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Host implements AudioProductionHost {
+  _Host(this.database, this.databaseDirectory, this.audiobookSession);
+
+  @override
+  final FushiDatabase database;
+
+  @override
+  final Directory databaseDirectory;
+
+  @override
+  final AudiobookSession audiobookSession;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -339,6 +370,99 @@ void main() {
     });
   });
 
+  test('单句改成「不读」：从成品清单与库里拿掉，播放器不再念它（HBK-AUDIT-214）', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'manga_audio_drop_test_',
+    );
+    addTearDown(() async {
+      await db.close();
+      await tmp.delete(recursive: true);
+    });
+    final _Session session = _Session();
+    final _Host host = _Host(db, tmp, session);
+    const String bookKey = 'vol-1';
+    await _insertBook(db, bookKey);
+    final File manifestFile = mangaRenderManifestFile(host, bookKey);
+    MangaRenderedLine rendered(String id, int page) => MangaRenderedLine(
+      lineId: id,
+      page: page,
+      blocks: const <int>[0],
+      speaker: 'A',
+      kind: CastLineKind.spoken,
+      beatMs: 0,
+      file: '$id.m4a',
+      durationMs: 1000,
+      text: id,
+    );
+    final MangaRenderManifest manifest = MangaRenderManifest(
+      pageCount: 3,
+      lines: <MangaRenderedLine>[rendered('p0b0', 0), rendered('p2b0', 2)],
+    );
+    await manifest.save(manifestFile);
+    for (final MangaRenderedLine l in manifest.lines) {
+      await File(p.join(manifestFile.parent.path, l.file)).writeAsString('a');
+    }
+    await registerMangaAudio(
+      db,
+      bookKey: bookKey,
+      manifestFile: manifestFile,
+      manifest: manifest,
+    );
+    final MangaAudioScript script = MangaAudioScript(
+      lines: <MangaScriptLine>[
+        MangaScriptLine(
+          page: 0,
+          blocks: <int>[0],
+          speaker: 'A',
+          kind: CastLineKind.spoken,
+        ),
+        MangaScriptLine(
+          page: 2,
+          blocks: <int>[0],
+          speaker: 'A',
+          kind: CastLineKind.skip,
+        ),
+      ],
+    );
+
+    // 还在读的句子不动。
+    expect(
+      await dropMangaUnreadLines(
+        host,
+        bookKey: bookKey,
+        script: script,
+        lineIds: <String>['p0b0'],
+      ),
+      isFalse,
+    );
+    expect(
+      await dropMangaUnreadLines(
+        host,
+        bookKey: bookKey,
+        script: script,
+        lineIds: <String>['p2b0'],
+      ),
+      isTrue,
+    );
+    expect(session.stopped, <String>[bookKey]);
+    final MangaRenderManifest? saved = await MangaRenderManifest.load(
+      manifestFile,
+    );
+    expect(saved!.lines.map((MangaRenderedLine l) => l.lineId), <String>[
+      'p0b0',
+    ]);
+    expect(
+      File(p.join(manifestFile.parent.path, 'p2b0.m4a')).existsSync(),
+      isFalse,
+    );
+    final AudiobookRepository repo = AudiobookRepository(db);
+    expect((await repo.findByBookKey(bookKey))!.audioPaths, <String>[
+      p.join(manifestFile.parent.path, 'p0b0.m4a'),
+    ]);
+    expect((await repo.cuesForBook(bookKey)).length, 1);
+  });
+
   test('任务 / 一句级失败码有文案', () {
     for (final String code in <String>[
       'manga_script_stale',
@@ -347,6 +471,7 @@ void main() {
       'silent_output',
       'clip_source_missing',
       'ffmpeg_missing',
+      'line_not_read',
     ]) {
       expect(
         ttsRenderFailureText(code),

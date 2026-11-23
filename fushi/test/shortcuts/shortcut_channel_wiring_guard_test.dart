@@ -173,10 +173,13 @@ void main() {
         for (final MapEntry<ShortcutChannel, bool> ch in declared.entries) {
           if (!ch.value) continue;
           final String pair = '${scope.name}.${ch.key.name}';
-          if (!scope.channels.contains(ch.key)) {
+          // 按**动作**的通道判（[ShortcutAction.channels] 默认 = scope.channels，
+          // 个别动作收窄，如 2026-11-22 去掉手柄通道的光标入口）：收窄后的通道上
+          // 再配默认绑定就是死绑定。
+          if (!entry.key.channels.contains(ch.key)) {
             violations.add(
               '$platform ${entry.key.key}：默认表配了 '
-              '${ch.key.name} 绑定，但 ${scope.name}.channels 没开放该通道',
+              '${ch.key.name} 绑定，但 ${entry.key.key} 的 channels 没开放该通道',
             );
           } else if (!consumed.contains(pair)) {
             violations.add(
