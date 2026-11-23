@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T19:11:23Z",
+ "generatedAt": "2026-11-23T20:35:49Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
-  "seq": 32135
+  "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
+  "seq": 32137
  },
  "builds": [
   {
@@ -209,7 +209,36 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
+  "headSeq": 32137,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
+    "subject": "Merge #4322 (claude/fix-cover-guard-4312) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592808"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+   }
+  }
+ },
  "prs": {
   "4278": {
    "number": 4278,
