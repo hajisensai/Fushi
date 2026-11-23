@@ -1710,28 +1710,18 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
 }
 
 /// 「玻璃」设计系统设置行的开关：与 [FushiSwitch] 的 Apple 分支同一枚
-/// [FushiAppleSwitch]——经典 iOS / macOS 开关（触屏 51×31、桌面 38×22 全胶囊
-/// 轨 + 正圆钮带柔和投影，弹簧过渡）。开启色恒为强调色（用户 2026-10-04 拍板）；
-/// 开态圆钮取强调色上的前景色——默认单色主题深色下强调色是白，圆钮随之变黑，
-/// 不会白上白；关态 systemFill 灰轨 + 白钮。禁用态与 [adaptiveSwitch] 同语义
-/// （不可点、不可聚焦）。
-///
-/// 不再用库的 `GlassSwitch`（用户 2026-10-05 Windows 深色截图）：它的圆钮是
-/// 比例写死的横向长胶囊（1.6 倍轨高），开态轨道还带一圈强调色外发光，压在
-/// 深色分组卡上像白钮溢出 / 被裁；圆钮的玻璃透镜走 GlassEffect，在 Skia 上
-/// 没有回退。设置页里同一屏同时出现两种开关（行内 FushiSwitch 与设置行）也
-/// 不该长得不一样。
+/// [FushiAppleSwitch]（库 `GlassSwitch`，iOS 27 的 63×28 全胶囊轨 + 横向白色
+/// 胶囊圆钮，开 = systemGreen、关 = 灰轨，按下 / 拖动浮起玻璃透镜、画质跟随
+/// 玻璃档位）。设置页里行内 FushiSwitch 与设置行的开关是同一枚，长得一样。
+/// 禁用态与 [adaptiveSwitch] 同语义（不可点、不可聚焦、变淡）。
 Widget glassSettingsSwitch({
   required BuildContext context,
   required bool value,
   required ValueChanged<bool>? onChanged,
 }) {
-  final FushiAppleColors apple = appleColorsOf(context);
   final Widget glassSwitch = FushiAppleSwitch(
     value: value,
     onChanged: onChanged,
-    activeTrackColor: apple.accent,
-    inactiveTrackColor: apple.fill,
   );
   if (onChanged != null) return glassSwitch;
   return IgnorePointer(
@@ -2481,7 +2471,7 @@ bool settingsChoiceUsesSegments({
 
 /// [AppleSettingsSegmentedControl] 的估宽（纯函数，供判据在布局前用）。与
 /// [FushiSegmentedButton] 的 Apple 分支同一口径：等宽段，每段 = 最宽文字 + 28，
-/// 两侧轨道内边距共 6；纯图标段按 20 宽计。
+/// 两侧轨道内边距共 4；纯图标段按 20 宽计。
 double appleSegmentedControlWidth(List<String> labels) {
   double widest = 0;
   for (final String label in labels) {
@@ -2490,12 +2480,12 @@ double appleSegmentedControlWidth(List<String> labels) {
         : settingsChoiceLabelWeight(label) * 7.0;
     if (w > widest) widest = w;
   }
-  return labels.length * (widest + 28) + 6;
+  return labels.length * (widest + 28) + 4;
 }
 
-/// 「Apple」设计系统设置行的分段控件：直接用全应用统一的液态玻璃分段控件
-/// （[FushiSegmentedButton] 的 Apple 分支 = liquid_glass_widgets 的
-/// `GlassSegmentedControl`，玻璃透镜滑块、选中态跟随强调色），这里只负责
+/// 「Apple」设计系统设置行的分段控件：直接用全应用统一的 iOS 27 分段控件
+/// （[FushiSegmentedButton] 的 Apple 分支 = [FushiAppleSegmentedControl]，
+/// tertiarySystemFill 灰胶囊轨 + 更亮的灰 / 白色滑块，选中字不着强调色），这里只负责
 /// 「行右侧、随内容收宽」的摆放与焦点：整枚控件是一个停靠点
 /// （[_GamepadAdjustableValue]），左右键 / 手柄十字键逐段切换。
 class AppleSettingsSegmentedControl extends StatelessWidget {
