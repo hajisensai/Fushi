@@ -423,6 +423,9 @@ class MangaAudioRenderer {
         lines: lines,
         pages: Map<int, MangaPageDirective>.of(script.pages),
         engineSignature: script.engineSignature,
+        // 外部管线写进清单的未知键整卷重跑也带上（按行身份，拿掉的句子随之丢弃）。
+        extras: previous?.extras,
+        lineExtras: previous?.liveLineExtras,
       );
       await batch.publish();
       await manifest.save(manifestFile);

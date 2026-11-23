@@ -48,6 +48,43 @@ List<int> parseMangaBlocksFragment(String fragment) {
   return out;
 }
 
+/// 清单一行里 app 自己读写的键（[MangaRenderedLine.toJson] / `fromJson`）；别的键都算
+/// 外部管线的未知字段，见 [MangaRenderManifest.lineExtras]。
+const Set<String> kMangaRenderedLineKeys = <String>{
+  'id',
+  'p',
+  'b',
+  's',
+  'k',
+  'beat',
+  'f',
+  'ms',
+  't',
+  'sp',
+  'ph',
+  'voice',
+  'seed',
+  'shape',
+  'dir',
+};
+
+/// 清单顶层里 app 自己读写的键；别的键见 [MangaRenderManifest.extras]。
+const Set<String> kMangaRenderManifestKeys = <String>{
+  'v',
+  'pageCount',
+  'ocr',
+  'cont',
+  'lines',
+  'pages',
+};
+
+/// [raw] 里不在 [known] 中的键（外部管线写的未知字段），按原顺序；没有返回空表。
+Map<String, Object?> _unknownKeys(Map<Object?, Object?> raw, Set<String> known) =>
+    <String, Object?>{
+      for (final MapEntry<Object?, Object?> e in raw.entries)
+        if (e.key is String && !known.contains(e.key)) e.key as String: e.value,
+    };
+
 /// 清单里的一句。
 class MangaRenderedLine {
   const MangaRenderedLine({
@@ -214,6 +251,11 @@ class MangaRenderedLine {
 }
 
 /// 一卷的成品清单。
+///
+/// 外部管线导入的清单（`tts import`）会被 app 原地改写（单句重生成 / 换本地音频 / 按角色
+/// 重生成，拍板 pr4255a）。外部管线写进去、app 不认识的键原样保留：顶层的放
+/// [extras]，每行的按行身份放 [lineExtras]（不按下标——行会被拿掉、整卷重排）。存盘时
+/// 合并回去，同名时 app 自己的键优先；行已不在 [lines] 里，它的未知字段随之丢弃。
 class MangaRenderManifest {
   MangaRenderManifest({
     required this.pageCount,
@@ -221,7 +263,23 @@ class MangaRenderManifest {
     Map<int, MangaPageDirective>? pages,
     this.engineSignature,
     this.continuous = false,
-  }) : pages = pages ?? <int, MangaPageDirective>{};
+    Map<String, Object?>? extras,
+    Map<String, Map<String, Object?>>? lineExtras,
+  }) : pages = pages ?? <int, MangaPageDirective>{},
+       extras = extras == null
+           ? const <String, Object?>{}
+           : Map<String, Object?>.unmodifiable(extras),
+       lineExtras = lineExtras == null
+           ? const <String, Map<String, Object?>>{}
+           : Map<String, Map<String, Object?>>.unmodifiable(
+               <String, Map<String, Object?>>{
+                 for (final MapEntry<String, Map<String, Object?>> e
+                     in lineExtras.entries)
+                   if (e.value.isNotEmpty &&
+                       lines.any((MangaRenderedLine l) => l.lineId == e.key))
+                     e.key: Map<String, Object?>.unmodifiable(e.value),
+               },
+             );
 
   static const int schemaVersion = 1;
 
@@ -240,6 +298,21 @@ class MangaRenderManifest {
   /// 原音频，停顿与翻页节奏都已经在音频里，时间表不再插入页停留、`lead` 与句间停顿
   /// （[MangaTimingParams.continuous]）。逐句合成的成品为 false。
   final bool continuous;
+
+  /// 清单顶层 app 不认识的键（外部管线写的），存盘时原样写回；app 自己的键同名时优先。
+  final Map<String, Object?> extras;
+
+  /// 行身份 → 该行 app 不认识的键（外部管线写的）。构造时只收 [lines] 里有的行；之后
+  /// 从 [lines] 拿掉的行不再写回（见 [liveLineExtras]）。
+  final Map<String, Map<String, Object?>> lineExtras;
+
+  /// [lineExtras] 里仍在 [lines] 中的那些（拿掉的句子不带到新清单）。
+  Map<String, Map<String, Object?>> get liveLineExtras =>
+      <String, Map<String, Object?>>{
+        for (final MangaRenderedLine l in lines)
+          if (lineExtras[l.lineId] case final Map<String, Object?> extra)
+            l.lineId: extra,
+      };
 
   /// `Audiobooks.audioPathsJson` 的内容（相对清单目录，按行顺序）。
   List<String> get audioFiles => <String>[
@@ -282,19 +355,36 @@ class MangaRenderManifest {
     return true;
   }
 
-  Map<String, Object?> toJson() => <String, Object?>{
+  Map<String, Object?> toJson() => _withExtras(<String, Object?>{
     'v': schemaVersion,
     'pageCount': pageCount,
     if (engineSignature != null) 'ocr': engineSignature,
     if (continuous) 'cont': true,
-    'lines': <Object?>[for (final MangaRenderedLine l in lines) l.toJson()],
+    'lines': <Object?>[
+      for (final MangaRenderedLine l in lines)
+        _withExtras(l.toJson(), lineExtras[l.lineId]),
+    ],
     'pages': <String, Object?>{
       for (final MapEntry<int, MangaPageDirective> e in pages.entries)
         '${e.key}': e.value.toJson(),
     },
-  };
+  }, extras);
 
-  /// 解析；结构坏（缺页数、行页码越界 / 乱序）返回 null，不认识的行丢弃。
+  /// [own] 后面补上 [extra] 里 [own] 没有的键（app 自己的键优先）。
+  static Map<String, Object?> _withExtras(
+    Map<String, Object?> own,
+    Map<String, Object?>? extra,
+  ) {
+    if (extra == null || extra.isEmpty) return own;
+    return <String, Object?>{
+      ...own,
+      for (final MapEntry<String, Object?> e in extra.entries)
+        if (!own.containsKey(e.key)) e.key: e.value,
+    };
+  }
+
+  /// 解析；结构坏（缺页数、行页码越界 / 乱序）返回 null，不认识的行丢弃。顶层与每行
+  /// app 不认识的键收进 [extras] / [lineExtras]。
   static MangaRenderManifest? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final Object? count = raw['pageCount'];
@@ -302,11 +392,19 @@ class MangaRenderManifest {
     final Object? pages = raw['pages'];
     final Object? ocr = raw['ocr'];
     if (count is! int || count < 0 || lines is! List) return null;
-    final List<MangaRenderedLine> parsed = <MangaRenderedLine>[
-      for (final Object? l in lines)
-        if (MangaRenderedLine.fromJson(l) case final MangaRenderedLine line)
-          line,
-    ];
+    final List<MangaRenderedLine> parsed = <MangaRenderedLine>[];
+    final Map<String, Map<String, Object?>> lineExtras =
+        <String, Map<String, Object?>>{};
+    for (final Object? l in lines) {
+      final MangaRenderedLine? line = MangaRenderedLine.fromJson(l);
+      if (line == null) continue;
+      parsed.add(line);
+      final Map<String, Object?> extra = _unknownKeys(
+        l! as Map<Object?, Object?>,
+        kMangaRenderedLineKeys,
+      );
+      if (extra.isNotEmpty) lineExtras[line.lineId] = extra;
+    }
     int prev = 0;
     for (final MangaRenderedLine l in parsed) {
       if (l.page < prev || l.page >= count) return null;
@@ -317,6 +415,8 @@ class MangaRenderManifest {
       lines: parsed,
       engineSignature: ocr is String ? ocr : null,
       continuous: raw['cont'] == true,
+      extras: _unknownKeys(raw, kMangaRenderManifestKeys),
+      lineExtras: lineExtras,
       pages: <int, MangaPageDirective>{
         if (pages is Map)
           for (final MapEntry<Object?, Object?> e in pages.entries)
