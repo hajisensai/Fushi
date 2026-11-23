@@ -304,6 +304,10 @@ Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
       ran++;
     } catch (e, stack) {
       errors.add(e);
+      // BUG-5262（反馈 w8sFMyflft）：互联对端离线（电脑没开 / 不在同一网络）是预期
+      // 状态，不是应用错误：交还给调用方（推送退避、界面显示「对端离线」），不进用户
+      // 可见错误日志。此前每次复习自动推送都在这里记一条带整段堆栈的错误。
+      if (e is SyncPeerUnreachableError) continue;
       ErrorLogService.instance.log(
         'runOnAuthenticatedSyncChannels(interconnect=${channel.isInterconnect})',
         e,

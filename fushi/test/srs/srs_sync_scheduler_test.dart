@@ -2307,6 +2307,107 @@ void main() {
       expect(n.errors, <Object>[unreachable]);
     });
 
+    // BUG-5262（反馈 w8sFMyflft）：互联对端离线（电脑没开）是预期状态。此前每次复习自动推送都把
+    // 「No reachable Fushi server address」连同整段堆栈记成用户可见错误，roundFailed / autoPushSkipped
+    // 诊断也逐轮刷。改后：错误日志一条不加；诊断只在状态切换（失败开始 / 恢复）时各记一条。
+    test('对端离线：自动推送几轮，错误日志 0 条，诊断只记状态切换', () async {
+      final _AssetBackend interconnect = _AssetBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[
+        SyncChannel(
+          interconnect,
+          type: SyncBackendType.fushiServer,
+          isInterconnect: true,
+        ),
+      ];
+      bool peerOnline = false;
+      // 生产的通道运行器（srs_app_runtime.dart 的互联那条推送）。
+      Future<({int ran, List<Object> errors})> channels(
+        Future<void> Function(SyncAssetStore) body,
+      ) => runOnAuthenticatedSyncChannels(
+        db: db,
+        body: (SyncBackend b) => body(b),
+      );
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: channels,
+        directoryKeyOf: (SyncAssetStore b) async => 'interconnect',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              if (!peerOnline) throw SyncPeerUnreachableError();
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      final ErrorLogService logs = ErrorLogService.instance;
+      await logs.clear();
+      int diagnostics(String source) => logs.diagnosticEntries
+          .where((ErrorLogEntry e) => e.source == source)
+          .length;
+
+      for (int i = 0; i < 4; i++) {
+        expect(
+          await s.autoPush(channels, lane: 'interconnect'),
+          isFalse,
+          reason: '离线仍算没推成，SrsLocalPush 照常退避',
+        );
+      }
+      expect(s.autoPushSkipReason('interconnect'), kSrsAutoPushPeerOffline);
+      expect(logs.entries, isEmpty, reason: '对端离线不是应用错误');
+      expect(diagnostics('SrsSyncScheduler.roundFailed'), 1);
+      expect(diagnostics('SrsSyncScheduler.autoPushSkipped'), 1);
+      expect(s.roundStatsFor(interconnect).consecutiveFailures, 4);
+
+      peerOnline = true;
+      expect(await s.autoPush(channels, lane: 'interconnect'), isTrue);
+      expect(await s.autoPush(channels, lane: 'interconnect'), isTrue);
+      expect(s.autoPushSkipReason('interconnect'), isNull);
+      expect(s.roundStatsFor(interconnect).consecutiveFailures, 0);
+      expect(
+        diagnostics('SrsSyncScheduler.roundRecovered'),
+        1,
+        reason: '恢复只记一次',
+      );
+
+      peerOnline = false;
+      expect(await s.autoPush(channels, lane: 'interconnect'), isFalse);
+      expect(
+        diagnostics('SrsSyncScheduler.roundFailed'),
+        2,
+        reason: '恢复后再次离线是新的一次状态切换',
+      );
+      expect(logs.entries, isEmpty);
+    });
+
+    test('非离线的通道异常照常记进错误日志', () async {
+      final _AssetBackend interconnect = _AssetBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[
+        SyncChannel(
+          interconnect,
+          type: SyncBackendType.fushiServer,
+          isInterconnect: true,
+        ),
+      ];
+      await ErrorLogService.instance.clear();
+      final ({int ran, List<Object> errors}) n =
+          await runOnAuthenticatedSyncChannels(
+            db: db,
+            body: (SyncBackend _) async => throw StateError('boom'),
+          );
+      expect(n.errors, hasLength(1));
+      expect(ErrorLogService.instance.entries, hasLength(1));
+    });
+
     test('没配置任何同步后端：什么都不做', () async {
       debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[];
       int called = 0;
