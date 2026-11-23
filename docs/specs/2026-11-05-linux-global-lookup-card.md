@@ -37,7 +37,13 @@ WebKitGTK 4.1 的 script message 不带来源 frame，Windows / macOS 的第二�
 
 **整句（「抓取选中文本上下文」开着时）**：不经 runner（`captureContext` 在 Linux 回 notImplemented），由 Dart 直接走 AT-SPI（`lib/src/lookup/linux_atspi_context.dart`，`package:dbus` 连无障碍总线）：注册表根 → 各应用（跳过 Fushi 自己的进程）→ 带 ACTIVE 的顶层窗 → FOCUSED 后代（GTK 3 等实现了 `Collection` 的一次 `GetMatches`；GTK 4 等没有的按 SHOWING 剪枝深搜，上限 1500 节点、不进 MANAGES_DESCENDANTS 子树）→ `Text` 的第 0 个选区与两侧各 600 字，再交给与 Windows / macOS 同一个 `extractSentenceAt`。AT-SPI 偏移按字符（码点）计，转成 UTF-16 下标。整体限时 800 ms；它看的是前台窗口的 ACTIVE / FOCUSED，所以在隐藏卡片 / 前置主窗**之前**读（`global_lookup_controller.dart`）。拿不到（没有无障碍总线、应用没开无障碍、没有焦点或选区、超时）一律返回 null，照常退回 `captureSelection` 只拿选区文字。放 Dart 而不放 runner / helper：D-Bus 全异步、不阻塞 GTK 主线程（libatspi 是同步且非线程安全的），零新增构建依赖，遍历逻辑可用假树单测（`test/lookup/linux_atspi_context_test.dart`）。实测：Xvfb + 私有会话总线里 GTK 3 / GTK 4 的 `GtkTextView` 都取到整句（约 20 ms）。
 
-**Flatpak 限制**：flatpak 把无障碍总线换成过滤代理（`flatpak-run-dbus.c` 的 `flatpak_run_add_a11y_dbus_args`：只放行注册表的 `Socket.Embed` 等几条），沙箱里调不到别的应用，Flatpak 版因此安静退回只拿选区；源码构建 / tar.gz 包不受影响。要不要为此放宽沙箱权限见拍板台 `design-linux-atspi-flatpak`。
+**Flatpak（拍板台 `design-linux-atspi-flatpak`，2026-11-23 拍板「做」）**：flatpak 把沙箱里的 `AT_SPI_BUS_ADDRESS` 指向过滤代理（`flatpak-run-dbus.c` 的 `flatpak_run_add_a11y_dbus_args`：只放行注册表的 `Socket.Embed` 等几条，调不到别的应用）。这层代理**没有 finish-arg 能关**：只有 `flatpak run --no-a11y-bus`（`app/flatpak-builtins-run.c`）会跳过它，`--socket=session-bus` 也不行（a11y 代理照建、环境变量照设），所以候选里的「放开整条会话总线」既过宽又无效。改为绕过代理直连宿主无障碍总线，最小权限两条：
+- `--talk-name=org.a11y.Bus`：在会话总线上问 `org.a11y.Bus.GetAddress` 拿宿主总线地址；
+- `--filesystem=xdg-run/at-spi:ro`：宿主总线的 socket 在 `$XDG_RUNTIME_DIR/at-spi/bus_N`（at-spi2-core 现行做法；只读绑定照样能 `connect`，flatpak 自己的代理 socket 就是只读绑定的）。旧式 abstract socket 走已有的 `--share=network`。
+
+代码（`connectAtspiBus` / `resolveAtspiBusAddress`）：在 Flatpak 里（有 `/.flatpak-info`）先问宿主地址，会话总线拒绝（旧权限的安装）才退回代理，退回时记一行 D-Bus 错误名；没取到整句时记 `atspi: bus=<来源>`（`flatpakHost` / `flatpakProxy` / `environment` / `registry`），日志里一眼分清「权限不够」和「前台应用不暴露文字」。跳过 Fushi 自己：沙箱有独立 pid 命名空间，且 Fushi 的工具包是经 flatpak 的 xdg-dbus-proxy 注册的，宿主总线看到的是代理进程的 pid，所以 Flatpak 里另经代理问一次自己连接的 pid（`GetId` 恒放行、`--sloppy-names` 让 unique name 可见），与本进程 pid 一起当「自己」。
+
+代价：Fushi 能读宿主上任何开了无障碍的应用的无障碍树（与源码构建 / tar.gz 包相同的能力）；改 finish-args 让已装用户的应用内自更新被 portal 拒绝一次（`flatpak_updater.dart` 的 `needsNewPermissions`，提示 `flatpak update app.fushi.reader`），手动更新一次后恢复。**未实测**：Steam Deck（SteamOS 3.9 Plasma Wayland、Game Mode gamescope）上这两条是否足够，尚待 Deck 实测；判据看日志 `atspi: bus=flatpakHost` 且取到整句。
 
 ## 4. 平台门与限制
 
