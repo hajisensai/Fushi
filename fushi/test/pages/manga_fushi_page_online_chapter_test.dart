@@ -103,6 +103,11 @@ class _MangaTestAppModel extends AppModel {
   @override
   Directory get temporaryDirectory => _temp;
 
+  /// 朗读起播先解析这部漫画的作品身份（`resolveTtsMediaVoiceScope` → 系列选角档案
+  /// `<databaseDirectory>/tts_cast`），真实 AppModel 启动时一定设好这个目录。
+  @override
+  Directory get databaseDirectory => _temp;
+
   @override
   FushiDatabase get database => _db;
 
