@@ -22,6 +22,8 @@ import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show localMediaServerItemKeyOfVideo;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -42,6 +44,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/shelf_collection_open_request.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/collections/book_continue.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -60,8 +63,6 @@ import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 export 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 import 'package:fushi/src/pages/implementations/home_continue_compose.dart';
-export 'package:fushi/src/pages/implementations/home_continue_compose.dart'
-    show dashboardBookCollectionContinueIndex;
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_derived.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
@@ -3210,7 +3211,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         lastReadByUid: lastReadByKey,
         epubUidByKey: epubUidByKey,
         completedBookKeys: completedBookKeys,
-        collectionEpubUidByKey: _epubUidByBookKey,
+        bookTitleOf: bookContinueDisplayTitle,
         primaryCollectionByEntry: _primaryCollectionByEntry,
         memberSortIndex: _memberSortIndex,
         collectionNamesById: _collectionNamesById,
@@ -3220,6 +3221,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
           prefs.getPref(videoDurationPrefKey(bookUid)),
         ),
         videoResumeTargetOf: _collectionResumeTarget,
+        localMediaServerItemKeyOf: localMediaServerItemKeyOfVideo,
         games: _games,
         remote: _remoteContinue,
         server: _serverContinue,
@@ -4049,12 +4051,11 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         _computeBookCollectionKey(item);
   }
 
-  String _computeBookCollectionKey(MediaItem item) =>
-      homeContinueBookCollectionKey(
-        item,
-        epubUidByKey: _epubUidByBookKey,
-        primaryCollectionByEntry: _primaryCollectionByEntry,
-      );
+  String _computeBookCollectionKey(MediaItem item) => bookCollectionEntryKey(
+    item,
+    epubUidByKey: _epubUidByBookKey,
+    primaryCollectionIdByEntry: _primaryCollectionByEntry,
+  );
 
   /// 视频行 → 继续卡条目（散卡与合集续播目标共用），进度见
   /// [dashboardVideoContinueProgress]（反馈「小说有进度显示，视频缺了进度显示」）。

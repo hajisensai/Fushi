@@ -403,11 +403,12 @@ void main() {
       final String source = File(
         'lib/src/pages/implementations/reader_fushi_history_page.dart',
       ).readAsStringSync();
-      final int call = source.indexOf('tallyShelfProgress<MediaItem>(');
+      // BUG-5278：hero 改走共享选书 selectMediaItemContinueCandidates（与速览、
+      // 首页同一份），读完判据随参数传入。
+      final int call = source.indexOf('selectMediaItemContinueCandidates(');
       expect(call, isNonNegative);
       final String args = source.substring(call, source.indexOf(');', call));
-      expect(args, contains('isCompleted:'));
-      expect(args, contains('_completedBookKeys.contains('));
+      expect(args, contains('completedBookKeys: _completedBookKeys'));
     });
   });
 }

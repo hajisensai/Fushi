@@ -10,4 +10,5 @@
   - 速览打开服务器条目后不强制重拉服务器「继续」（那是首页页面状态的节流取数；首页下次进入按 TTL 自己重取）；
   - 首页从未在本进程加载过时，`RemoteContinueFeed` / `ServerContinueFeed` 为空，速览暂时只有本地条目（与桌面小组件同一取舍）；
   - 漫画在首页速览里不再带「有声 / 加声音」入口（首页「继续」卡也没有；漫画 tab 速览照旧带）。
-- **备注**：未在桌面肉眼复测悬停速览。书的单模块选集正由并行分支统一（fix/book-peek-continue），合入时把 `home_continue_compose.dart` 的 `_bookUnits` 换成那边的共享选集函数即可。
+- **合并审查**：与 BUG-5278 合流后 `_bookUnits` 改调共享选书 `selectMediaItemContinueCandidates`（`fushi/lib/src/media/collections/book_continue.dart`），compose 里那份书合集续读 / 归属键副本删掉。`home_continue_compose.dart` 原先 import 阅读器源、漫画源、媒体服务器库、`dashboard_continue_logic`，把这份纯编排拖进 lib/ 最大 import 环（624 > 623）：书名改由 `HomeContinueInputs.bookTitleOf`（`bookContinueDisplayTitle`）注入、本机媒体服务器条目键改由 `localMediaServerItemKeyOf`（`localMediaServerItemKeyOfVideo`，`media_server_library.dart`）注入、身份串解析用叶子 `book_media_identifier.dart`，compose 出环，最大环回到 623。BUG-5260 撞号改为 BUG-5277。
+- **备注**：未在桌面肉眼复测悬停速览。

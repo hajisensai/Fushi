@@ -37,6 +37,8 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart'
     show onlineMangaShelfProgress;
+import 'package:fushi/src/media/collections/book_continue.dart'
+    show mergeMangaChapterReadRecency;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_reshelf.dart';
@@ -59,6 +61,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
+import 'package:fushi/src/media/sources/book_media_identifier.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 export 'package:fushi_engine/media/media_pref_keys.dart'
     show kReaderSourcePersistedKey;
@@ -103,6 +106,15 @@ final fushiBooksProvider = FutureProvider.family<List<MediaItem>, Language>((
   ref.watch(_epubBookKeysProvider);
   // BUG-4356：章已读集合一变（任一标记已读入口），在线漫画进度即时重算。
   ref.watch(_mangaChapterReadKeysProvider);
+  // BUG-5278：最近阅读时刻表（[bookLastReadAtProvider]）也认章 readAt，章已读集合
+  // 变了要一起重算。在这里转一手：时刻表自己再订一条 drift 流的话，没人监听时
+  // 首次出值会把还在加载的它标脏，`ref.read(...future)` 就永远等不到结果。
+  ref.listen<AsyncValue<List<String>>>(_mangaChapterReadKeysProvider, (
+    AsyncValue<List<String>>? previous,
+    AsyncValue<List<String>> next,
+  ) {
+    if (previous?.hasValue ?? false) ref.invalidate(bookLastReadAtProvider);
+  });
   return ReaderFushiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
   );
@@ -130,12 +142,26 @@ final srtBookMissingAudioUidsProvider = FutureProvider<Set<String>>((
 /// [epubBookUidByKeyProvider] 换算再查。BUG-777：继续阅读 hero 与书架「最近阅读」
 /// 排序的唯一 recency 真相源；关书时与 [fushiBooksProvider] 同点失效
 /// （[ReaderFushiSource.onSourceExit]），不会陈旧。
+///
+/// BUG-5278：在线漫画只在作品页「标记已读」（或 Kavita 对齐）过的章不写
+/// `reader_positions`，这里与各章 `manga_chapter_states.readAt` 取大
+/// （[mergeMangaChapterReadRecency]）。章已读集合一变由 [fushiBooksProvider] 转手
+/// 失效本表（它本来就订着那条流），本表不再自己订 drift 流。
 final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   final FushiDatabase db = ref.watch(appProvider).database;
   final List<ReaderPositionRow> rows = await db.getAllReaderPositions();
-  return <String, int>{
-    for (final ReaderPositionRow r in rows) r.bookUid: r.updatedAt,
-  };
+  final Map<String, Map<String, MangaChapterStateRow>> chapterStates = await db
+      .getAllMangaChapterStatesByBook();
+  return mergeMangaChapterReadRecency(
+    readerPositionUpdatedAt: <String, int>{
+      for (final ReaderPositionRow r in rows) r.bookUid: r.updatedAt,
+    },
+    chapterStates: <({String bookUid, int? readAt})>[
+      for (final Map<String, MangaChapterStateRow> book in chapterStates.values)
+        for (final MangaChapterStateRow s in book.values)
+          (bookUid: s.bookUid, readAt: s.readAt),
+    ],
+  );
 });
 
 /// 「读完」的书的 bookKey 集合（`EpubBooks.completedAt` 非 null：手动标记或读到
@@ -324,10 +350,10 @@ class ReaderFushiSource extends ReaderMediaSource {
   // BUG-658 / TODO-1344: embed the bookKey RAW (no percent-encoding). The
   // inverse [parseBookKey] slices the raw remainder back off, so the two are
   // lossless for keys that contain literal `%XX` sanitize escapes. Both share
-  // the [_bookIdentifierPrefix] constant so the encode/decode pair can never
+  // the [kBookMediaIdentifierPrefix] constant so the encode/decode pair can never
   // drift apart.
   static String mediaIdentifierFor(String bookKey) =>
-      '$_bookIdentifierPrefix$bookKey';
+      bookMediaIdentifierFor(bookKey);
 
   /// 「这本书该用哪个阅读器打开」的**唯一派生点**：`EpubBooks.format` →
   /// `MediaItem.mediaSourceIdentifier`。
@@ -455,15 +481,11 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// that contain no `%` (the common case), so nothing that worked before
   /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
   /// [epubUrl]/[fontUrl].
-  static const String _bookIdentifierPrefix =
-      pref_keys.kReaderBookIdentifierPrefix;
-
-  static String? parseBookKey(String identifier) {
-    if (!identifier.startsWith(_bookIdentifierPrefix)) return null;
-    final String bookKey = identifier.substring(_bookIdentifierPrefix.length);
-    if (bookKey.isEmpty) return null;
-    return bookKey;
-  }
+  ///
+  /// 编码 / 解码本体在叶子文件 `book_media_identifier.dart`（纯逻辑消费点不必
+  /// import 本源）。
+  static String? parseBookKey(String identifier) =>
+      parseBookKeyOfMediaIdentifier(identifier);
 
   /// BUG-1018 (A3): standalone SRT books (empty bookKey sentinel) need their
   /// OWN media identity. They previously all shared `mediaIdentifierFor('')`
@@ -472,18 +494,13 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// save silently no-opped (parseBookKey returned null). Their identity is
   /// the stable `SrtBook.uid` under a distinct prefix that can never collide
   /// with a sanitized EPUB bookKey identifier.
-  static const String _srtBookIdentifierPrefix = 'fushi://srtbook/';
-
+  /// 前缀与编码 / 解码本体在叶子文件 `book_media_identifier.dart`。
   static String mediaIdentifierForSrtUid(String uid) =>
-      '$_srtBookIdentifierPrefix$uid';
+      srtBookMediaIdentifierFor(uid);
 
   /// Inverse of [mediaIdentifierForSrtUid]; null for non-SRT identifiers.
-  static String? parseSrtBookUid(String identifier) {
-    if (!identifier.startsWith(_srtBookIdentifierPrefix)) return null;
-    final String uid = identifier.substring(_srtBookIdentifierPrefix.length);
-    if (uid.isEmpty) return null;
-    return uid;
-  }
+  static String? parseSrtBookUid(String identifier) =>
+      parseSrtBookUidOfMediaIdentifier(identifier);
 
   /// BUG-1018 (A1): resolve the user's override display title for a book by
   /// its stable [bookKey], for surfaces that don't hold a full [MediaItem]
@@ -3107,3 +3124,10 @@ class ReaderFushiSource extends ReaderMediaSource {
   static String furiganaModeToStyle(String mode) =>
       ReaderSettings.furiganaModeToStyle(mode);
 }
+
+/// 「继续阅读」卡上显示的书名：与书架卡同一 override 通道（编辑对话框改名后
+/// 同步显示新名，BUG-1018 / BUG-1108）。首页「继续」、书架「继续阅读」与侧栏
+/// 速览都用它，也是 `BookContinueCandidate.volumeNumber` 的书名来源（BUG-5278）。
+/// 住在本源而不在纯逻辑的 `book_continue.dart`：override 读的是本源的偏好。
+String bookContinueDisplayTitle(MediaItem item) =>
+    ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item);

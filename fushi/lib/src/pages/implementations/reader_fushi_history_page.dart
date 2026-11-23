@@ -114,6 +114,8 @@ import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
+import 'package:fushi/src/media/collections/book_continue.dart'
+    show BookContinueCandidate, selectMediaItemContinueCandidates;
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
@@ -2274,37 +2276,32 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 「继续阅读」候选：[hero] = 在读书里最后阅读时间最新的那本，[others] = 其余
-  /// 在读的书（最近阅读倒序）；没有在读的书为 null。口径（BUG-777 / BUG-804）
-  /// 见 [_shelfCardLayout] 上方「UI v2：书架顶部继续阅读」那段注释。
+  /// 「继续阅读」候选：[hero] = 第一个候选，[others] = 其余候选（时刻倒序）；
+  /// 没有候选为 null。选书与侧栏速览、首页「继续」区同一份
+  /// [selectMediaItemContinueCandidates]（BUG-5278）：合集按 Next-Up 推进（读完
+  /// 第 1 卷 → hero 是第 2 卷），散书只收「在读」，读完判据同阅读状态筛选
+  /// （[_completedBookKeys]）。输入口径（BUG-777 / BUG-804）见 [_shelfCardLayout]
+  /// 上方「UI v2：书架顶部继续阅读」那段注释。
   ({MediaItem hero, List<MediaItem> others})? _pickShelfContinue(
     List<MediaItem> progressBooks,
   ) {
-    final ShelfProgressTally<MediaItem> tally = tallyShelfProgress<MediaItem>(
-      progressBooks,
-      (MediaItem item) => item.position,
-      (MediaItem item) => item.duration,
-      // 与阅读状态筛选同一判据：标了读完的书不再当「在读」顶进继续阅读。
-      isCompleted: (MediaItem item) =>
-          _completedBookKeys.contains(_parseBookKey(item.mediaIdentifier)),
-    );
-    // BUG-2904：映射键是 uid，bookKey 必须经换算表一跳（与「最近阅读」排序同）。
-    int readAt(MediaItem item) =>
-        lastReadAtForBookKey(
-          _lastReadAtByBookKey,
-          _epubUidByKey,
-          _parseBookKey(item.mediaIdentifier),
-        ) ??
-        0;
-    final MediaItem? hero = mostRecentlyReadCandidate(tally.inProgress, readAt);
-    if (hero == null) return null;
+    final List<BookContinueCandidate<MediaItem>> candidates =
+        selectMediaItemContinueCandidates(
+          books: progressBooks,
+          lastReadAtByUid: _lastReadAtByBookKey,
+          epubUidByKey: _epubUidByKey,
+          completedBookKeys: _completedBookKeys,
+          primaryCollectionIdByEntry: _primaryCollectionByEntry,
+          collectionIds: _collectionsById.keys.toSet(),
+          memberSortIndex: _memberSortIndex,
+        );
+    if (candidates.isEmpty) return null;
     return (
-      hero: hero,
-      others:
-          tally.inProgress.where((MediaItem m) => !identical(m, hero)).toList()
-            ..sort(
-              (MediaItem a, MediaItem b) => readAt(b).compareTo(readAt(a)),
-            ),
+      hero: candidates.first.item,
+      others: <MediaItem>[
+        for (final BookContinueCandidate<MediaItem> c in candidates.skip(1))
+          c.item,
+      ],
     );
   }
 

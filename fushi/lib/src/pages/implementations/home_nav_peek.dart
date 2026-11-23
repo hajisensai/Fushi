@@ -7,8 +7,12 @@ import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
 import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
+    show filterShelfEntriesByMangaSplit;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show localMediaServerItemKeyOfVideo;
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
@@ -77,8 +81,6 @@ import 'package:fushi_core/fushi_core.dart'
         VideoFileSpecRow,
         kActivityMediaVideo;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
-import 'package:fushi_engine/media/collections/shelf_sort.dart'
-    show ShelfReadStatus, classifyShelfReadStatus;
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, DictionarySearchResult, JapaneseLanguage;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -143,8 +145,8 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
 /// 历史时列已装词典）；网页 = 上次的标签页 + 浏览历史；设置 = 最近打开的分类
 /// （还没打开过时列前几个分类）。
 ///
-/// 口径对齐首页 dashboard 的「继续」区：书按 `reader_positions.updatedAt` 排、
-/// 只把「在读」的书当继续项（与首页同一判据 [classifyShelfReadStatus]）；视频按最后播放时刻；
+/// 口径对齐各自打开的库页：书 / 漫画的继续项与书架顶部「继续阅读」、首页「继续」
+/// 区同一份 [selectMediaItemContinueCandidates]（合集 Next-Up、散书只收在读）；视频按最后播放时刻；
 /// 游戏按最后游玩时刻、没有完成度。打开方式也与首页同：书 / 漫画进阅读器、
 /// 视频进播放页、游戏切到游戏库（首页同样不直接启动游戏）。
 AdaptiveNavPeek homeNavPeekFor(
@@ -272,6 +274,64 @@ Future<Map<String, _MangaPeekAudio>> _loadMangaPeekAudio(
   return out;
 }
 
+/// 书 / 漫画速览「最近」里的一项：继续阅读候选，或最近读过、不在继续阅读里的
+/// 条目（按合集折叠后的单元，如整套读完的系列）。二者恰一非空。
+typedef BookNavPeekItem<T> = ({
+  BookContinueCandidate<T>? candidate,
+  NavPeekUnit<T>? read,
+});
+
+/// 续读候选在速览里的副行前缀：「第 N 卷」（卷号判据同首页继续卡徽标，
+/// [BookContinueCandidate.volumeNumber]），单卷合集退回合集名，散书 null。
+String? bookNavPeekSeriesCue(
+  BookContinueCandidate<MediaItem> candidate, {
+  String? collectionName,
+}) {
+  final num? volume = candidate.volumeNumber(bookContinueDisplayTitle);
+  if (volume != null) return t.home_continue_volume(n: volume);
+  return candidate.isSeries ? collectionName : null;
+}
+
+/// 书 / 漫画速览的编排（纯函数，BUG-5278）：「继续」= 继续阅读第一项（与书架 /
+/// 漫画库顶部「继续阅读」主卡同一份 [selectBookContinueCandidates] 结果）；
+/// 「最近」= 其余继续阅读候选，再接最近读过的其它条目（按合集折叠，已在继续阅读
+/// 里的合集 / 散书不再重复）。只看本机书架（与它打开的库页一致，不混互联远端）。
+({BookContinueCandidate<T>? resume, List<BookNavPeekItem<T>> recent})
+planBookNavPeek<T>({
+  required List<BookContinueCandidate<T>> candidates,
+  required List<T> recentlyRead,
+  required String Function(T item) compositeKeyOf,
+  required Map<String, int> primaryCollectionIdByEntry,
+  required Map<int, MediaCollectionRow> collectionsById,
+  int recentCount = _kPeekRecentCount,
+}) {
+  final Set<int> coveredCollections = <int>{
+    for (final BookContinueCandidate<T> c in candidates)
+      if (c.collectionId case final int id) id,
+  };
+  final Set<T> coveredItems = <T>{
+    for (final BookContinueCandidate<T> c in candidates)
+      if (!c.isSeries) c.item,
+  };
+  return (
+    resume: candidates.firstOrNull,
+    recent: <BookNavPeekItem<T>>[
+      for (final BookContinueCandidate<T> c in candidates.skip(1))
+        (candidate: c, read: null),
+      for (final NavPeekUnit<T> unit in foldNavPeekByCollection<T>(
+        recentFirst: recentlyRead,
+        compositeKeyOf: compositeKeyOf,
+        primaryCollectionIdByEntry: primaryCollectionIdByEntry,
+        collectionsById: collectionsById,
+      ))
+        if (unit.collectionId == null
+            ? !coveredItems.contains(unit.item)
+            : !coveredCollections.contains(unit.collectionId))
+          (candidate: null, read: unit),
+    ].take(recentCount).toList(),
+  );
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
@@ -282,7 +342,8 @@ Future<NavPeekFeed> _loadBooks({
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
-  final List<MediaItem> all = <MediaItem>[
+  // 与库页同一条书 / 漫画分架谓词（[filterShelfEntriesByMangaSplit]）。
+  final List<MediaItem> all = filterShelfEntriesByMangaSplit(<MediaItem>[
     for (final MediaItem item in await ref.read(
       fushiBooksProvider(JapaneseLanguage.instance).future,
     ))
@@ -290,7 +351,7 @@ Future<NavPeekFeed> _loadBooks({
           case final String? key
           when key == null || !lockVisibility.hidesBook(key))
         item,
-  ];
+  ], mangaOnly: manga);
   final Map<String, int> lastReadByUid = await ref.read(
     bookLastReadAtProvider.future,
   );
@@ -309,23 +370,51 @@ Future<NavPeekFeed> _loadBooks({
   }
 
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final Map<String, int> memberSortIndex = await loadPrimaryMemberSortIndex(
+    appModel.database,
+    collections.primaryByEntry,
+  );
   final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
-  final List<MediaItem> read =
-      all
-          .where(
-            (MediaItem item) =>
-                (item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey) ==
-                    manga &&
-                recentOf(item) > 0,
-          )
-          .toList()
-        ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a));
+  String compositeKeyOf(MediaItem item) => bookCollectionEntryKey(
+    item,
+    epubUidByKey: uidByKey,
+    primaryCollectionIdByEntry: collections.primaryByEntry,
+  );
+  final ({
+    BookContinueCandidate<MediaItem>? resume,
+    List<BookNavPeekItem<MediaItem>> recent,
+  })
+  plan = planBookNavPeek<MediaItem>(
+    candidates: selectMediaItemContinueCandidates(
+      books: all,
+      lastReadAtByUid: lastReadByUid,
+      epubUidByKey: uidByKey,
+      completedBookKeys: completed,
+      primaryCollectionIdByEntry: collections.primaryByEntry,
+      collectionIds: collections.byId.keys.toSet(),
+      memberSortIndex: memberSortIndex,
+    ),
+    recentlyRead: all.where((MediaItem item) => recentOf(item) > 0).toList()
+      ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a)),
+    compositeKeyOf: compositeKeyOf,
+    primaryCollectionIdByEntry: collections.primaryByEntry,
+    collectionsById: collections.byId,
+  );
   // 漫画行的有声入口（2026-11-20 反馈 #6）：已有有声版常显「有声」签，没有的
   // 悬停 / 聚焦时给「加声音」打开有声漫画工作台。生成 / 导入受听书模块门控。
   Map<String, _MangaPeekAudio> audio = const <String, _MangaPeekAudio>{};
-  AdaptiveNavPeekEntry entryOf(MediaItem item, {String? collection}) {
-    final String itemTitle = ReaderFushiSource.instance
-        .getDisplayTitleFromMediaItem(item);
+  if (manga && appModel.moduleVisibility.isEnabled(ModuleId.listening)) {
+    audio = await _loadMangaPeekAudio(appModel, <String>[
+      if (plan.resume case final BookContinueCandidate<MediaItem> c)
+        keyOf(c.item),
+      for (final BookNavPeekItem<MediaItem> e in plan.recent)
+        keyOf(e.candidate?.item ?? e.read!.item),
+    ]);
+  }
+  // 条目呈现：标题恒为这一卷的书名（与书架 hero、首页继续卡同一份
+  // [bookContinueDisplayTitle]）；副行 = 「第 N 卷」（续读候选，卷号判据同首页
+  // 徽标）或合集名（最近读过的折叠单元）· 进度。
+  AdaptiveNavPeekEntry entryOf(MediaItem item, {String? seriesCue}) {
     final ImageProvider image = ReaderFushiSource.instance
         .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
     final bool noCover =
@@ -337,7 +426,7 @@ Future<NavPeekFeed> _loadBooks({
     final _MangaPeekAudio? audioState = audio[bookKey];
     final bool hasAudio = audioState == _MangaPeekAudio.ready;
     return AdaptiveNavPeekEntry(
-      title: collection ?? itemTitle,
+      title: bookContinueDisplayTitle(item),
       cover: noCover ? null : image,
       blurCover: nsfw(MediaNsfwTarget.book(bookKey)),
       status: hasAudio ? t.manga_audio_workbench_has_audio : null,
@@ -356,7 +445,7 @@ Future<NavPeekFeed> _loadBooks({
           : null,
       progress: progress,
       subtitle: _peekSubtitle(
-        collection == null ? null : itemTitle,
+        seriesCue,
         progress == null ? null : '${(progress * 100).round()}%',
       ),
       onOpen: () => unawaited(
@@ -369,46 +458,29 @@ Future<NavPeekFeed> _loadBooks({
     );
   }
 
-  // 与书架同一份折叠：同一系列 / 合集只占一项，由其最近读过的那本代表
-  // （2026-10-25 用户「侧栏预览系列和合集没正确显示」：此前逐本列，同一系列
-  // 的几卷各占一格、标题是单卷名）。合集身份键与书架同为 `epub|<uid>`。
-  final List<NavPeekUnit<MediaItem>> units = foldNavPeekByCollection<MediaItem>(
-    recentFirst: read,
-    compositeKeyOf: (MediaItem item) {
-      final String key = keyOf(item);
-      return MediaKind.epub.compositeKey(uidByKey[key] ?? key);
-    },
-    primaryCollectionIdByEntry: collections.primaryByEntry,
-    collectionsById: collections.byId,
+  NavPeekTimed candidateTimed(BookContinueCandidate<MediaItem> c) => (
+    at: c.recentMs,
+    entry: entryOf(
+      c.item,
+      seriesCue: bookNavPeekSeriesCue(
+        c,
+        collectionName: collections.byId[c.collectionId]?.name,
+      ),
+    ),
   );
-  final NavPeekUnit<MediaItem>? resume = units
-      .where(
-        (NavPeekUnit<MediaItem> unit) =>
-            classifyShelfReadStatus(
-              completed: completed.contains(keyOf(unit.item)),
-              position: unit.item.position,
-              duration: unit.item.duration,
-            ) ==
-            ShelfReadStatus.reading,
-      )
-      .firstOrNull;
-  final List<NavPeekUnit<MediaItem>> recentUnits = units
-      .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
-      .take(_kPeekRecentCount)
-      .toList();
-  if (manga && appModel.moduleVisibility.isEnabled(ModuleId.listening)) {
-    audio = await _loadMangaPeekAudio(appModel, <String>[
-      if (resume != null) keyOf(resume.item),
-      for (final NavPeekUnit<MediaItem> unit in recentUnits) keyOf(unit.item),
-    ]);
-  }
-  NavPeekTimed timed(NavPeekUnit<MediaItem> unit) => (
-    at: recentOf(unit.item),
-    entry: entryOf(unit.item, collection: unit.collectionName),
-  );
+
   return NavPeekFeed(
-    resume: resume == null ? null : timed(resume),
-    recent: recentUnits.map(timed).toList(),
+    resume: plan.resume == null ? null : candidateTimed(plan.resume!),
+    recent: <NavPeekTimed>[
+      for (final BookNavPeekItem<MediaItem> e in plan.recent)
+        if (e.candidate case final BookContinueCandidate<MediaItem> c)
+          candidateTimed(c)
+        else
+          (
+            at: recentOf(e.read!.item),
+            entry: entryOf(e.read!.item, seriesCue: e.read!.collectionName),
+          ),
+    ],
   );
 }
 
@@ -1136,7 +1208,7 @@ Future<AdaptiveNavPeekData> _loadHome({
       lastReadByUid: await lastReadF,
       epubUidByKey: uidByKey,
       completedBookKeys: await completedF,
-      collectionEpubUidByKey: uidByKey,
+      bookTitleOf: bookContinueDisplayTitle,
       primaryCollectionByEntry: membership.primaryByEntry,
       memberSortIndex: membership.sortIndex,
       collectionNamesById: <int, String>{
@@ -1149,6 +1221,7 @@ Future<AdaptiveNavPeekData> _loadHome({
       ),
       videoWatchAtByUid: await watchAtF,
       videoDurationMsOf: durationMsOf,
+      localMediaServerItemKeyOf: localMediaServerItemKeyOfVideo,
       games: games,
       // 「显示远端条目」关着时首页不混排远端（首页取数前同一道门）。
       remote: appModel.prefsRepo.showRemoteEntries
