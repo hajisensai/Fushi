@@ -37,8 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5349](bugs/BUG-5349-manga-speed-popover-full-height.md) | ✅ | ✅ | 漫画播放条倍速 / 音量弹层撑满屏高 |
 | [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
-| [BUG-5348](bugs/BUG-5348-manga-speed-popover-full-height.md) | ✅ | ✅ | 漫画播放条倍速 / 音量弹层撑满屏高 |
 | [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | 🚧 | 🚧 | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
 | [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | 🚧 | 🚧 | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
 | [BUG-5337](bugs/BUG-5337-manga-audio-package-import-busy.md) | ✅ | ✅ | manga-audio-package-import-busy |

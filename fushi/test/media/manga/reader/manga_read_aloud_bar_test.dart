@@ -340,7 +340,7 @@ void main() {
       expect(slider, findsOneWidget);
       expect(tester.getRect(slider).bottom, lessThan(bar.top));
       // 弹层按内容定高：浮层给的高度上限是整屏，Material Slider 有界就取
-      // maxHeight——此前倍速面板从按钮上方一路撑到屏顶（BUG-5348）。
+      // maxHeight——此前倍速面板从按钮上方一路撑到屏顶（BUG-5349）。
       expect(
         tester.getRect(slider).height,
         lessThanOrEqualTo(kMangaChromeToolbarHeight),
