@@ -33,14 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4600 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
-| [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
-| [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
-> 共 4629 条。点号进各自文件。
+> 共 4630 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -51,6 +44,7 @@
 | [BUG-5332](bugs/BUG-5332-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
 | [BUG-5331](bugs/BUG-5331-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
 | [BUG-5330](bugs/BUG-5330-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
+| [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
 | [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
 | [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
