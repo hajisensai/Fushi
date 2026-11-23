@@ -1,6 +1,7 @@
 // 服务器曲目身份打通后的几处：生成字幕优先用离线副本、只给 uid + 路径时的认法（歌词）、
 // 「正在播放」里服务器曲目的收藏。
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,30 @@ class _Server extends Fake
     } else {
       starred.remove(id);
     }
+  }
+}
+
+/// 收藏请求由测试逐个放行 / 失败的服务器。
+class _GatedFavServer extends Fake
+    implements MusicServerBrowser, MusicServerFavoriteEditing {
+  _GatedFavServer(this.serverId);
+
+  @override
+  final String serverId;
+  @override
+  MusicServerKind get kind => MusicServerKind.jellyfin;
+
+  final List<Completer<void>> calls = <Completer<void>>[];
+
+  @override
+  Future<void> setFavorite(
+    MusicServerItemKind kind,
+    String id, {
+    required bool favorite,
+  }) {
+    final Completer<void> c = Completer<void>();
+    calls.add(c);
+    return c.future;
   }
 }
 
@@ -149,6 +174,73 @@ void main() {
   });
 
   group('正在播放：服务器曲目的收藏', () {
+    test('连点：早先那次晚到的失败不抹掉后来那次的显示；最后一次失败还原到服务器确认的值', () async {
+      final _GatedFavServer gated = _GatedFavServer('jf9');
+      final MusicServerFavoriteStore store = MusicServerFavoriteStore();
+      bool shown() => store.isFavorite(
+        gated,
+        MusicServerItemKind.track,
+        't',
+        reported: false,
+      );
+
+      // A：收藏（会失败、晚到）；B：取消收藏（成功）。
+      final Future<void> a = store.setFavorite(
+        gated,
+        MusicServerItemKind.track,
+        't',
+        favorite: true,
+      );
+      expect(shown(), isTrue);
+      final Future<void> b = store.setFavorite(
+        gated,
+        MusicServerItemKind.track,
+        't',
+        favorite: false,
+      );
+      expect(shown(), isFalse);
+      gated.calls[1].complete();
+      await b;
+      gated.calls[0].completeError(StateError('A failed'));
+      await expectLater(a, throwsStateError);
+      expect(shown(), isFalse, reason: 'A 不是最后一次：不还原，显示归 B');
+
+      // C：收藏（失败，且是最后一次）→ 还原到服务器确认过的 B（取消收藏）。
+      final Future<void> c = store.setFavorite(
+        gated,
+        MusicServerItemKind.track,
+        't',
+        favorite: true,
+      );
+      expect(shown(), isTrue);
+      gated.calls[2].completeError(StateError('C failed'));
+      await expectLater(c, throwsStateError);
+      expect(shown(), isFalse);
+
+      // 没有确认过的值：失败还原到服务器报的值。
+      final Future<void> d = store.setFavorite(
+        gated,
+        MusicServerItemKind.track,
+        'u',
+        favorite: true,
+      );
+      gated.calls[3].completeError(StateError('D failed'));
+      await expectLater(d, throwsStateError);
+      expect(
+        store.isFavorite(gated, MusicServerItemKind.track, 'u', reported: true),
+        isTrue,
+      );
+      expect(
+        store.isFavorite(
+          gated,
+          MusicServerItemKind.track,
+          'u',
+          reported: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('能收藏；首次显示问一次服务器；切换回写服务器并刷新', () async {
       server.starred
         ..clear()

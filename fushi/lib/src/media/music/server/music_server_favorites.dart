@@ -24,6 +24,13 @@ class MusicServerFavoriteStore extends ChangeNotifier {
 
   final Map<String, bool> _overrides = <String, bool>{};
 
+  /// 服务器确认过的切换（请求成功的最后一次）：失败时还原到这里，没有 = 还原到服务器报的值。
+  final Map<String, bool> _confirmed = <String, bool>{};
+
+  /// 每个条目的切换代数：连点时只有最后一次请求有权还原（早先那次晚到的失败不能把后来
+  /// 那次的乐观值抹掉）。
+  final Map<String, int> _generations = <String, int>{};
+
   static String _key(String serverId, MusicServerItemKind kind, String id) =>
       '$serverId\u0000${kind.name}\u0000$id';
 
@@ -43,8 +50,8 @@ class MusicServerFavoriteStore extends ChangeNotifier {
     bool? reported,
   }) => _overrides[_key(serverId, kind, id)] ?? reported ?? false;
 
-  /// 设成 [favorite]：先改本机显示，再请服务器；失败还原并抛（调用方提示）。[browser] 不能
-  /// 收藏时抛 [UnsupportedError]。
+  /// 设成 [favorite]：先改本机显示，再请服务器；失败还原到服务器最后确认的状态并抛（调用方
+  /// 提示）——只有这个条目最后一次切换的失败才还原。[browser] 不能收藏时抛 [UnsupportedError]。
   Future<void> setFavorite(
     MusicServerBrowser browser,
     MusicServerItemKind kind,
@@ -55,7 +62,8 @@ class MusicServerFavoriteStore extends ChangeNotifier {
       throw UnsupportedError('${browser.kind.wire} cannot favorite items');
     }
     final String key = _key(browser.serverId, kind, id);
-    final bool? before = _overrides[key];
+    final int generation = (_generations[key] ?? 0) + 1;
+    _generations[key] = generation;
     _overrides[key] = favorite;
     notifyListeners();
     try {
@@ -64,13 +72,18 @@ class MusicServerFavoriteStore extends ChangeNotifier {
         id,
         favorite: favorite,
       );
+      _confirmed[key] = favorite;
     } on Object {
-      if (before == null) {
-        _overrides.remove(key);
-      } else {
-        _overrides[key] = before;
+      // 之后又切换过：显示归那次（它自己成功 / 失败时再定），这里不动。
+      if (_generations[key] == generation) {
+        final bool? confirmed = _confirmed[key];
+        if (confirmed == null) {
+          _overrides.remove(key);
+        } else {
+          _overrides[key] = confirmed;
+        }
+        notifyListeners();
       }
-      notifyListeners();
       rethrow;
     }
   }
