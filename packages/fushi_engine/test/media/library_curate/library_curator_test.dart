@@ -1440,6 +1440,155 @@ void main() {
       expect(applyArgs.single['source'], 'openbd');
       expect(applyArgs.single['fields'], <String>['cover', 'author', 'title']);
     });
+
+    // BUG-5283：待确认项要带候选数与 AI 结论，待确认身份队列才说得清「为什么」。
+    test('待确认项记下候选数与 AI 结论（没指派 / 问过没采用 / 不到两个候选）', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Gamma')),
+        single(vol('k2', 'Lone')),
+      ];
+      bookFound['Gamma'] = <Map<String, Object?>>[
+        book('1', 'Gamma'),
+        book('2', 'Gamma 2'),
+      ];
+      bookFound['Lone'] = <Map<String, Object?>>[book('3', 'Different')];
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Delta'),
+      ];
+      gameFound['g1'] = <Map<String, Object?>>[
+        game('vndb:v1', 'Delta One'),
+        game('vndb:v2', 'Delta Two'),
+      ];
+      mediaAssigned = false;
+      ai = kLibraryCurateNoAi;
+      final LibraryCurateRun none = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      String summary(LibraryCurateRun r) => <String>[
+        for (final LibraryCuratePendingItem p in r.pendingItems)
+          '${p.ref}|${p.reason}|${p.candidates}|${p.ai}',
+      ].join(',');
+      expect(
+        summary(none),
+        'book:k1|ambiguous|2|unassigned,book:k2|ambiguous|1|not_asked,'
+        'game:g1|ambiguous|2|unassigned',
+      );
+      // JSON 往返不丢。
+      final LibraryCurateRun back = LibraryCurateRun.fromJson(
+        jsonDecode(jsonEncode(none.toJson())),
+      )!;
+      expect(summary(back), summary(none));
+
+      mediaAssigned = true;
+      ai = (organize: false, videoIdentify: true, mediaLinks: false);
+      mediaAnswer = (_) => null;
+      final LibraryCurateRun asked = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+        full: true,
+      );
+      expect(
+        asked.pendingItems
+            .firstWhere((LibraryCuratePendingItem p) => p.ref == 'book:k1')
+            .ai,
+        'declined',
+      );
+    });
+
+    test('单条重试：只刮目标单元，不看 seen / 进度 / 抑制，不推进水位，结束发通知', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Gamma')),
+        single(vol('k2', 'Other')),
+      ];
+      bookFound['Gamma'] = <Map<String, Object?>>[
+        book('1', 'Gamma'),
+        book('2', 'Gamma 2'),
+      ];
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:9', confidence: 0.5);
+      final LibraryCurator c = curator();
+      await c.run(trigger: LibraryCurateTrigger.auto);
+      final LibraryCurateState before = await store.load();
+      expect(before.seen, contains('scrape.books:book:k1'));
+      final int? watermark =
+          before.watermarks[LibraryCurateStage.scrapeBooks.wire];
+      before.suppressed.add('scrape.books:book:k1');
+      await store.save(before);
+
+      // 这回 AI 认得出了。
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.95);
+      final List<LibraryCurateRun> finished = <LibraryCurateRun>[];
+      c.runFinished.listen(finished.add);
+      final int from = toolbox.calls.length;
+      final LibraryCurateRun retry = await c.retryScrape(
+        stage: LibraryCurateStage.scrapeBooks,
+        ref: 'book:k1',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        <Object?>[
+          for (int i = from; i < toolbox.calls.length; i++)
+            if (toolbox.calls[i] == LibraryCurateOps.bookScrapeSearch)
+              toolbox.args[i]['query'],
+        ],
+        <Object?>['Gamma'],
+      );
+      expect(bookWrites.keys, <String>['book:k1']);
+      expect(retry.target, 'book:k1');
+      expect(retry.trigger, LibraryCurateTrigger.manual);
+      expect(
+        retry.stages.map((LibraryCurateStageResult s) => s.stage),
+        <LibraryCurateStage>[LibraryCurateStage.scrapeBooks],
+      );
+      final LibraryCurateState after = await store.load();
+      expect(after.watermarks[LibraryCurateStage.scrapeBooks.wire], watermark);
+      expect(after.runs.first.target, 'book:k1');
+      expect(finished.map((LibraryCurateRun r) => r.id), <int>[retry.id]);
+      expect(
+        () => c.retryScrape(stage: LibraryCurateStage.links, ref: 'x'),
+        throwsArgumentError,
+      );
+    });
+
+    test('单条重试游戏：按 game:<id> 定位', () async {
+      facts.gameUnits = const <LibraryCurateGameUnit>[
+        LibraryCurateGameUnit(id: 'g1', title: 'Clannad'),
+        LibraryCurateGameUnit(id: 'g2', title: 'Kanon'),
+      ];
+      gameFound['g1'] = <Map<String, Object?>>[game('bgm:1', 'Clannad')];
+      gameFound['g2'] = <Map<String, Object?>>[game('bgm:2', 'Kanon')];
+      await curator().retryScrape(
+        stage: LibraryCurateStage.scrapeGames,
+        ref: 'game:g1',
+      );
+      expect(gameWrites, <String, String>{'g1': 'bgm:1'});
+    });
+
+    test('targetBookUnits：单元 id 命中整个单元，卷键只留那一卷，找不到为空', () {
+      final LibraryCurateBookUnit series = LibraryCurateBookUnit(
+        id: 'collection:7',
+        title: 'Saga',
+        isSeries: true,
+        volumes: <LibraryCurateBookVolume>[
+          vol('a', 'Saga 1'),
+          vol('b', 'Saga 2'),
+        ],
+      );
+      expect(
+        targetBookUnits(<LibraryCurateBookUnit>[series], 'collection:7'),
+        <LibraryCurateBookUnit>[series],
+      );
+      final List<LibraryCurateBookUnit> one = targetBookUnits(
+        <LibraryCurateBookUnit>[series],
+        'book:b',
+      );
+      expect(one.single.id, 'collection:7');
+      expect(one.single.volumes.single.bookKey, 'b');
+      expect(
+        targetBookUnits(<LibraryCurateBookUnit>[series], 'book:z'),
+        isEmpty,
+      );
+    });
   });
 
   test('书名是文件名的判据', () {

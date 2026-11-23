@@ -13,6 +13,7 @@
 /// 本文件纯 Dart（不 import flutter / 插件 / `package:fushi`）。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
@@ -20,6 +21,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/identity/pending_identity.dart'
+    show PendingIdentityAiOutcome;
 import 'package:fushi_engine/media/collections/book_series_grouper.dart'
     show isOnlineMangaSourceMetadata;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart';
@@ -281,6 +284,47 @@ class LibraryCurator {
   /// 本机运行记录（新的在前）。
   Future<List<LibraryCurateRun>> runs() async => (await store.load()).runs;
 
+  final StreamController<LibraryCurateRun> _runFinished =
+      StreamController<LibraryCurateRun>.broadcast();
+
+  /// 每趟（含单条重试、整趟撤销）结束后发一次：待确认身份队列据此重算（书 / 游戏
+  /// 的待确认条目从运行记录派生，见 `curator_pending_identity.dart`）。
+  Stream<LibraryCurateRun> get runFinished => _runFinished.stream;
+
+  /// 对**一个**书 / 游戏刮削单元重跑刮削阶段（待确认队列的「AI 重试」）。
+  ///
+  /// [stage] 只能是 [LibraryCurateStage.scrapeBooks] / [LibraryCurateStage.scrapeGames]；
+  /// [ref] 是待确认条目的键（书：刮削单元 id `collection:<id>` / `book:<bookKey>`，或
+  /// 系列里一卷的 `book:<bookKey>`；游戏：`game:<id>` 或裸 id）。这是用户对这一条的
+  /// 明确请求：不看水位、进度、`seen` 与撤销抑制（[LibraryCurateState.suppressed]）；
+  /// 照常记一趟运行（手动触发、只含这一个阶段、[LibraryCurateRun.target] = [ref]），
+  /// 写入照常经目录记账、整趟可撤销；不推进水位、不动该阶段的增量进度。
+  /// 已有一趟在跑抛 [LibraryCurateBusy]。
+  Future<LibraryCurateRun> retryScrape({
+    required LibraryCurateStage stage,
+    required String ref,
+  }) async {
+    if (stage != LibraryCurateStage.scrapeBooks &&
+        stage != LibraryCurateStage.scrapeGames) {
+      throw ArgumentError.value(stage, 'stage', 'not a book / game scrape');
+    }
+    if (_busy) throw LibraryCurateBusy(_current?.id ?? 0);
+    _busy = true;
+    try {
+      return await _runLocked(
+        trigger: LibraryCurateTrigger.manual,
+        full: false,
+        isCancelled: null,
+        onProgress: null,
+        onStarted: null,
+        stages: <LibraryCurateStage>[stage],
+        target: ref,
+      );
+    } finally {
+      _busy = false;
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────
   // 运行
   // ─────────────────────────────────────────────────────────────────────
@@ -317,6 +361,8 @@ class LibraryCurator {
     required bool Function()? isCancelled,
     required LibraryCurateProgress? onProgress,
     required void Function(LibraryCurateRun run)? onStarted,
+    List<LibraryCurateStage> stages = LibraryCurateStage.values,
+    String? target,
   }) async {
     final LibraryCurateState state = await store.load();
     final int now = _clock().millisecondsSinceEpoch;
@@ -325,6 +371,7 @@ class LibraryCurator {
       trigger: trigger,
       startedAt: now,
       full: full,
+      target: target,
     );
     _current = run;
     state.upsertRun(run);
@@ -338,8 +385,8 @@ class LibraryCurator {
           ? limits.autoMaxRequests
           : null,
       isCancelled: isCancelled ?? () => false,
+      target: target,
     );
-    const List<LibraryCurateStage> stages = LibraryCurateStage.values;
     try {
       for (int i = 0; i < stages.length; i++) {
         final LibraryCurateStage stage = stages[i];
@@ -366,7 +413,8 @@ class LibraryCurator {
           }
         }
         run.stages.add(result);
-        if (result.status == LibraryCurateStageStatus.done) {
+        // 单条重试只看了一个单元：不代表这一阶段做完了，水位与进度都不动。
+        if (target == null && result.status == LibraryCurateStageStatus.done) {
           // 水位 = 这一趟的开始时刻；进度清空（下一趟从新水位重新数）。
           state.watermarks[stage.wire] = run.startedAt;
           state.progress.remove(stage.wire);
@@ -381,6 +429,7 @@ class LibraryCurator {
       await store.save(state);
       _current = null;
       _currentStage = null;
+      _runFinished.add(run);
     }
     return run;
   }
@@ -1149,12 +1198,15 @@ class LibraryCurator {
     }
     final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
     final Set<String> progress = ctx.progressOf(stage);
-    final List<LibraryCurateBookUnit> units = _openBookUnits(
-      await facts.bookScrapeUnits(_since(stage, ctx)),
-      ctx.state,
-      progress: progress,
-      auto: auto,
-    );
+    final String? target = ctx.target;
+    final List<LibraryCurateBookUnit> units = target == null
+        ? _openBookUnits(
+            await facts.bookScrapeUnits(_since(stage, ctx)),
+            ctx.state,
+            progress: progress,
+            auto: auto,
+          )
+        : targetBookUnits(await facts.bookScrapeUnits(null), target);
     final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
         ? mediaDecider?.call()
         : null;
@@ -1186,6 +1238,11 @@ class LibraryCurator {
       }
       Map<String, Object?>? pick;
       String reason = candidates.isEmpty ? 'no_candidates' : 'ambiguous';
+      PendingIdentityAiOutcome ai = _aiNotAskedOutcome(
+        candidates.length,
+        ctx,
+        decide,
+      );
       if (candidates.length == 1 &&
           (exact || _strongBookMatch(unit.title, candidates[0]))) {
         pick = candidates[0];
@@ -1203,6 +1260,7 @@ class LibraryCurator {
           incomplete = true;
           continue;
         }
+        ai = PendingIdentityAiOutcome.declined;
         if (decision != null && decision.isAutoAcceptable) {
           for (final Map<String, Object?> c in candidates) {
             if (_bookCandidateKey(c) == decision.key) pick = c;
@@ -1224,6 +1282,8 @@ class LibraryCurator {
                 ? unit.volumes.single.shelfKey
                 : unit.id,
             reason: reason,
+            candidates: candidates.length,
+            ai: ai.wire,
           ),
         );
         continue;
@@ -1351,6 +1411,21 @@ class LibraryCurator {
   static String _bookDoneKey(LibraryCurateBookVolume v) =>
       'scrape.books.done:${v.shelfKey}';
 
+  /// 还没问 AI 时，这一条若留在待确认，AI 一栏该写什么：候选不到两个时 AI 本来就
+  /// 不参与（`not_asked`）；两个以上却没问，是没指派（`unassigned`）或指派了但宿主
+  /// 没装配决策器（`unavailable`）。问过之后由调用方改成 `declined`。
+  static PendingIdentityAiOutcome _aiNotAskedOutcome(
+    int candidateCount,
+    _RunContext ctx,
+    AiMediaIdentityDecider? decide,
+  ) {
+    if (candidateCount < 2) return PendingIdentityAiOutcome.notAsked;
+    if (decide != null) return PendingIdentityAiOutcome.notAsked;
+    return ctx.ai.videoIdentify
+        ? PendingIdentityAiOutcome.unavailable
+        : PendingIdentityAiOutcome.unassigned;
+  }
+
   /// `book.scrape.search` 一次；读不到 / 出错为 null。
   Future<List<Map<String, Object?>>?> _bookCandidates(
     String? source,
@@ -1432,13 +1507,16 @@ class LibraryCurator {
     }
     final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
     final Set<String> progress = ctx.progressOf(stage);
+    final String? target = ctx.target;
     final List<LibraryCurateGameUnit> units = <LibraryCurateGameUnit>[
       for (final LibraryCurateGameUnit g in await facts.gameScrapeUnits(
-        _since(stage, ctx),
+        target == null ? _since(stage, ctx) : null,
       ))
-        if (!progress.contains(g.id) &&
-            !ctx.state.suppressed.contains('scrape.games:${g.id}') &&
-            !(auto && ctx.state.seen.contains('scrape.games:${g.id}')))
+        if (target != null
+            ? (g.id == target || 'game:${g.id}' == target)
+            : !progress.contains(g.id) &&
+                  !ctx.state.suppressed.contains('scrape.games:${g.id}') &&
+                  !(auto && ctx.state.seen.contains('scrape.games:${g.id}')))
           g,
     ];
     final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
@@ -1476,6 +1554,11 @@ class LibraryCurator {
         candidates,
       );
       String reason = candidates.isEmpty ? 'no_candidates' : 'ambiguous';
+      PendingIdentityAiOutcome ai = _aiNotAskedOutcome(
+        pick == null ? candidates.length : 0,
+        ctx,
+        decide,
+      );
       if (pick == null && candidates.length > 1 && decide != null) {
         if (!ctx.spend(1)) {
           incomplete = true;
@@ -1490,6 +1573,7 @@ class LibraryCurator {
           incomplete = true;
           continue;
         }
+        ai = PendingIdentityAiOutcome.declined;
         if (decision != null && decision.isAutoAcceptable) {
           for (final Map<String, Object?> c in candidates) {
             if ('${c['id']}' == decision.key) pick = c;
@@ -1509,6 +1593,8 @@ class LibraryCurator {
             title: game.title,
             ref: 'game:${game.id}',
             reason: reason,
+            candidates: candidates.length,
+            ai: ai.wire,
           ),
         );
         continue;
@@ -1936,6 +2022,7 @@ class LibraryCurator {
     }
     await store.save(state);
     if (undone > 0) onWorksChanged?.call();
+    if (run != null) _runFinished.add(run);
     return LibraryCurateUndoResult(
       runId: runId,
       undone: undone,
@@ -1981,9 +2068,13 @@ class LibraryCurateBookVolume {
     this.isbn,
     required this.missingCover,
     required this.fileNameTitle,
+    this.manga = false,
   });
 
   final String bookKey;
+
+  /// 漫画（`epub_books.format = 'manga'`）：待确认队列按它分到漫画书架。
+  final bool manga;
   final String title;
   final String? author;
 
@@ -2080,6 +2171,25 @@ final RegExp _kLeadingTag = RegExp(r'^\s*[\[【［][^\]】］]+[\]】］]');
   return (null, unit.title, false);
 }
 
+/// 单条重试（[LibraryCurator.retryScrape]）要刮的书单元：[target] 是单元 id 就整个
+/// 单元；是系列里某一卷的书架键（`book:<bookKey>`）就只留那一卷（仍按系列名查）。
+/// 找不到为空（这本书已经不缺资料 / 已删除）。
+List<LibraryCurateBookUnit> targetBookUnits(
+  List<LibraryCurateBookUnit> all,
+  String target,
+) {
+  for (final LibraryCurateBookUnit u in all) {
+    if (u.id == target) return <LibraryCurateBookUnit>[u];
+  }
+  for (final LibraryCurateBookUnit u in all) {
+    final LibraryCurateBookUnit? one = u.only(
+      (LibraryCurateBookVolume v) => v.shelfKey == target,
+    );
+    if (one != null) return <LibraryCurateBookUnit>[one];
+  }
+  return const <LibraryCurateBookUnit>[];
+}
+
 /// 游戏候选的规则认领：标题（`name` / `nameCn`）规范化后与本地显示名一致的候选，
 /// 每个资料源至多一条（同一款游戏在 bgm / vndb / dlsite 各出一条是常态）→ 认第一条；
 /// 没有或某个源里有两条一致的（同名不同作）→ null。
@@ -2116,9 +2226,16 @@ class _RunContext {
     required this.ai,
     required this.budget,
     required this.isCancelled,
+    this.target,
   });
 
   final LibraryCurateRun run;
+
+  /// 单条重试的目标（[LibraryCurator.retryScrape]）；null = 正常一趟。
+  final String? target;
+
+  /// 单条重试用的一次性进度（不污染该阶段的增量进度）。
+  final Map<String, Set<String>> _scratchProgress = <String, Set<String>>{};
   final LibraryCurateState state;
   final LibraryCurateAiAvailability ai;
 
@@ -2145,7 +2262,10 @@ class _RunContext {
   }
 
   Set<String> progressOf(LibraryCurateStage stage) =>
-      state.progress.putIfAbsent(stage.wire, () => <String>{});
+      (target == null ? state.progress : _scratchProgress).putIfAbsent(
+        stage.wire,
+        () => <String>{},
+      );
 }
 
 /// 视频摆放纠正这一阶段的累计（两种判断路径共用）。
@@ -2326,6 +2446,7 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
         isbn: book.isbn,
         missingCover: (book.coverPath ?? '').trim().isEmpty,
         fileNameTitle: looksLikeFileNameTitle(book.title),
+        manga: book.format == 'manga',
       );
       if (!v.missing) continue;
       missing[book.uid] = (v, book.bookKey, book.localAddedAt);
