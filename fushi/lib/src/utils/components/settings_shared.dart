@@ -2926,7 +2926,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     Widget button = FushiPlainButton(
       onPressed: _openMenu,
-      borderRadius: BorderRadius.circular(desktop ? 6 : 17),
+      borderRadius: BorderRadius.circular(desktop ? 11 : 17),
       semanticLabel: widget.semanticLabel,
       child: face,
     );
@@ -4352,7 +4352,7 @@ class _AppleCompactStepper extends StatelessWidget {
         child: FushiPressScale(
           enabled: enabled,
           child: SizedBox(
-            width: 26,
+            width: 30,
             height: 22,
             child: Center(
               child: FushiIcon(
@@ -4373,7 +4373,8 @@ class _AppleCompactStepper extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: apple.secondaryFill,
-        borderRadius: BorderRadius.circular(6),
+        // macOS 27 stepper：全胶囊（与 pop-up / 分段同形）。
+        borderRadius: BorderRadius.circular(11),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -106,11 +106,10 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
     return active ? apple.secondaryFill : apple.tertiaryFill;
   }
 
-  /// 按钮圆角：macOS 圆角 6（高于 24 的大号控件 7），iOS 全胶囊。
+  /// 按钮圆角：iOS 27 / macOS 27 的 pop-up 按钮都是全胶囊（Tahoe 起 macOS
+  /// 控件改成胶囊形），两档一致。
   static BorderRadius radiusOf(BuildContext context, double height) =>
-      BorderRadius.circular(
-        desktopOf(context) ? (height > 24 ? 7 : 6) : height / 2,
-      );
+      BorderRadius.circular(height / 2);
 
   @override
   Widget build(BuildContext context) {
