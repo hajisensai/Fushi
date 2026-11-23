@@ -2312,6 +2312,9 @@ class SyncRepository {
     // 混排开关按这些服务器的 id 记，跟着一起设备本地。
     'music_subsonic_servers',
     'music_server_library_mix',
+    // 音乐库生成字幕按条目记住的「先分离人声」：键是本机曲库的曲目 / 专辑身份与本库
+    // 自增的来源 id，换台设备指向别的条目。
+    'music_subtitle_vocal_separation',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

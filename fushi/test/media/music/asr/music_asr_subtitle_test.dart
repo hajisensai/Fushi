@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -52,6 +53,9 @@ void main() {
   /// 每次挑识别器时收到的素材（音乐库歌词应为 `song`，手机内存不够时 `mixedAudio`）。
   final List<AsrAudioProfile> resolvedProfiles = <AsrAudioProfile>[];
 
+  /// 歌曲档判定（探内存）被调了几次：关掉分离的条目不该再探。
+  int musicProfileProbes = 0;
+
   AppVideoSubtitleService service({
     AsrAudioProfile musicProfile = AsrAudioProfile.song,
     FakeVideoSubtitleSettings? settings,
@@ -74,7 +78,10 @@ void main() {
           resolvedProfiles.add(audioProfile);
           return VideoSubtitleRecognizerChoice(recognizer: recognizer);
         },
-    musicAudioProfile: (VideoSubtitleLanguage _) async => musicProfile,
+    musicAudioProfile: (VideoSubtitleLanguage _) async {
+      musicProfileProbes++;
+      return musicProfile;
+    },
     completerFactory: (AiProviderConfig _) =>
         (completer: FakeAiCompleter(answerAll), close: () {}),
   );
@@ -130,6 +137,7 @@ void main() {
 
   setUp(() async {
     resolvedProfiles.clear();
+    musicProfileProbes = 0;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     tmp = Directory.systemTemp.createTempSync('music_asr_');
     out = Directory(p.join(tmp.path, 'support', 'asr_jobs', 'music_subtitles'));
@@ -507,6 +515,82 @@ void main() {
       expect(job.status, AppVideoSubtitleJobStatus.succeeded);
       expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
     });
+    test('单曲的记忆身份由近到远：曲目 → 专辑 → 来源', () async {
+      final String song = audio('a/01.flac');
+      await addTrack('t1', song, trackNo: 1);
+      await (db.update(db.musicTracks)
+            ..where(($MusicTracksTable t) => t.trackUid.equals('t1')))
+          .write(const MusicTracksCompanion(sourceId: Value<int?>(7)));
+      final AppVideoSubtitleTarget target = await targets().forTrack('t1');
+      expect(target.settingScopes, <String>[
+        'music:track:t1',
+        'music:album:alb',
+        'music:source:7',
+      ]);
+      expect((await targets().forAlbum('alb')).settingScopes, <String>[
+        'music:album:alb',
+      ]);
+    });
+
+    test('关掉分离（拍板 W_wrz-ZPU8）：按原音频档跑，不探歌曲档；在专辑上关的单曲也沿用', () async {
+      final String song = audio('a/01.flac');
+      await addTrack('t1', song, trackNo: 1);
+      final FakeVideoSubtitleSettings settings = FakeVideoSubtitleSettings();
+      final AppVideoSubtitleService svc = service(settings: settings);
+      final AppVideoSubtitleTarget album = await targets().forAlbum('alb');
+      final AppVideoSubtitleTarget track = await targets().forTrack('t1');
+      expect(svc.separatesVocalsFor(track), isTrue, reason: '没记过默认开');
+
+      await svc.setSeparatesVocals(album, false);
+      expect(settings.vocalSeparation, <String, bool>{
+        'music:album:alb': false,
+      });
+      expect(svc.separatesVocalsFor(track), isFalse, reason: '单曲沿用专辑上的选择');
+      expect(
+        await svc.asrAudioProfileFor(track, VideoSubtitleLanguage.japanese),
+        AsrAudioProfile.mixedAudio,
+      );
+      final AppVideoSubtitleJob job = svc.start(
+        track,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
+      expect(musicProfileProbes, 0, reason: '关着就不探内存 / 不建分离服务');
+
+      // 单曲上单独开回来：单曲自己的选择压过专辑的。
+      await svc.setSeparatesVocals(track, true);
+      expect(svc.separatesVocalsFor(track), isTrue);
+      expect(svc.separatesVocalsFor(album), isFalse);
+      // 面板上此刻的开关压过记住的。
+      expect(
+        await svc.asrAudioProfileFor(
+          track,
+          VideoSubtitleLanguage.japanese,
+          separateVocals: false,
+        ),
+        AsrAudioProfile.mixedAudio,
+      );
+    });
+
+    test('偏好仓按条目记住「先分离人声」（PrefsVideoSubtitleSettings）', () async {
+      final PreferencesRepository prefs = PreferencesRepository(db);
+      await prefs.loadFromDb();
+      final PrefsVideoSubtitleSettings settings = PrefsVideoSubtitleSettings(
+        prefs,
+      );
+      expect(settings.musicVocalSeparation('music:track:t1'), isNull);
+      await settings.setMusicVocalSeparation('music:track:t1', false);
+      await settings.setMusicVocalSeparation('music:source:3', true);
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.musicSubtitleVocalSeparation, <String, bool>{
+        'music:track:t1': false,
+        'music:source:3': true,
+      });
+    });
+
     test('只重跑写法统一：按上次记的识别器（sliding_song）沿用歌曲素材，不随此刻判定换成混音', () async {
       final String song = audio('a/01.flac');
       await addTrack('t1', song, trackNo: 1);

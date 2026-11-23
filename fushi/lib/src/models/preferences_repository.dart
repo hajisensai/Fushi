@@ -6114,6 +6114,36 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 音乐库生成字幕前「先分离人声」按条目记住的选择（拍板 W_wrz-ZPU8）：条目身份
+  /// （`AppVideoSubtitleTarget.settingScopes` 里的一项）→ 开 / 关。没记过的条目不在
+  /// map 里（按默认开）。解析失败回退空 map。设备本地。
+  Map<String, bool> get musicSubtitleVocalSeparation {
+    final Object? raw = getPref(
+      'music_subtitle_vocal_separation',
+      defaultValue: '',
+    );
+    if (raw is! String || raw.trim().isEmpty) return <String, bool>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return <String, bool>{
+        if (decoded is Map<String, Object?>)
+          for (final MapEntry<String, Object?> e in decoded.entries)
+            if (e.value case final bool on) e.key: on,
+      };
+    } on FormatException {
+      return <String, bool>{};
+    }
+  }
+
+  /// 记下条目 [scope] 的「先分离人声」选择（读改写整 map）。
+  Future<void> setMusicSubtitleVocalSeparation(String scope, bool on) async {
+    final Map<String, bool> map = musicSubtitleVocalSeparation;
+    if (map[scope] == on) return;
+    map[scope] = on;
+    await setPref('music_subtitle_vocal_separation', jsonEncode(map));
+    notifyListeners();
+  }
+
   /// 服务器曲库的码率上限（kbps）：0 = 原样直出（direct play，缺省），其余请服务器转码。
   int get musicServerMaxBitrate {
     final Object? raw = getPref('music_server_max_bitrate', defaultValue: 0);

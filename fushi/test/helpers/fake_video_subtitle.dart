@@ -65,6 +65,16 @@ class FakeVideoSubtitleSettings implements AppVideoSubtitleSettings {
 
   @override
   WebSearchConfig? webSearch;
+
+  /// 按条目记住的「先分离人声」（条目身份 → 开 / 关）。
+  final Map<String, bool> vocalSeparation = <String, bool>{};
+
+  @override
+  bool? musicVocalSeparation(String scope) => vocalSeparation[scope];
+
+  @override
+  Future<void> setMusicVocalSeparation(String scope, bool on) async =>
+      vocalSeparation[scope] = on;
 }
 
 class MemoryGlossaryStore implements SubtitleGlossaryStore {
