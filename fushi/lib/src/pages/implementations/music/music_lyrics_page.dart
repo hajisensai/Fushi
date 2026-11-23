@@ -1739,7 +1739,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             // 歌词列表照常先命中。
             Positioned.fill(child: FushiWindowDragArea(child: background)),
             Positioned.fill(
+              // 全屏歌词动画铺满整窗（含顶栏拖动条与系统安全区那一条）：场景是
+              // 整页画面，让出一条会露出下面的封面背景；动画自己的悬停条 /
+              // 字幕按安全区内缩（见 MusicLyricVisualizerView）。
               child: SafeArea(
+                left: !_visualizerOn,
+                top: !_visualizerOn,
+                right: !_visualizerOn,
+                bottom: !_visualizerOn,
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints box) {
                     final bool wide = lyricsPlayerIsWide(box.biggest);
