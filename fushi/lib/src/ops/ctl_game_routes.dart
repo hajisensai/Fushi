@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -18,6 +19,9 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
+import 'package:fushi/src/mining/gal_ocr_recognizer.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
@@ -82,6 +86,8 @@ List<CtlRoute> buildGameCtlRoutesWith(GameCtlHost host) {
     CtlRoute.post('/api/admin/game/launch', ctl.launch),
     CtlRoute.get('/api/admin/game/windows', ctl.listWindows),
     CtlRoute.post('/api/admin/game/attach', ctl.attach),
+    CtlRoute.post('/api/admin/game/ocr/start', ctl.startOcr),
+    CtlRoute.put('/api/admin/game/ocr/region', ctl.setOcrRegion),
     CtlRoute.post('/api/admin/game/stop', ctl.stop),
     CtlRoute.get('/api/admin/game/status', ctl.status),
     // 静态段 `/threads/select` 只有 POST，`/threads` 只有 GET，不会互相遮挡。
@@ -239,6 +245,28 @@ abstract interface class GameCtlHost {
   Future<List<ExternalWindowInfo>> listWindows();
   Future<void> attach(ExternalWindowInfo window);
   Future<void> stop({required bool keepBinding});
+
+  // ── OCR 游戏模式（工作台「OCR 识别台词」，BUG-5141 ⑤）──────────────────
+
+  /// 这个窗口开 OCR 模式的初始设置：该游戏记住的框 / 全局上次的框 / 默认的画面下方，
+  /// 与该游戏记住的二值化开关。
+  ({GalOcrRegion region, bool binarize}) ocrDefaultsFor(
+    ExternalWindowInfo window,
+  );
+
+  /// 工作台「OCR 识别台词」同一组步骤：按偏好解析识别器 → 起 OCR 会话。识别器不可用时
+  /// 不起会话，返回原因（`model_missing` / 平台给的原因）；成功返回 null。
+  Future<String?> startOcr(
+    ExternalWindowInfo window, {
+    required GalOcrRegion region,
+    required bool binarize,
+  });
+
+  /// 会话中换识别区域（工作台「调整识别区域」）。
+  void setOcrRegion(GalOcrRegion region);
+
+  /// 会话中开关二值化预处理。
+  void setOcrBinarize(bool binarize);
 
   /// [thread] 为 null = 清除选择。
   Future<bool> selectThread(TexthookerTextThread? thread);
@@ -737,6 +765,66 @@ class _AppGameCtlHost implements GameCtlHost {
       _session.stopCapture(keepBinding: keepBinding);
 
   @override
+  ({GalOcrRegion region, bool binarize}) ocrDefaultsFor(
+    ExternalWindowInfo window,
+  ) {
+    final GalOcrRememberedSettings remembered = _session
+        .rememberedOcrSettingsFor(window);
+    return (
+      region:
+          remembered.region ??
+          GalOcrRegion.fromJsonString(_app.prefsRepo.galOcrRegionJson) ??
+          GalOcrRegion.defaultDialogue,
+      binarize: remembered.binarize,
+    );
+  }
+
+  /// 工作台 `_startOcrCapture` 同一组步骤（选窗口与框选由调用方给出）：解析识别器 →
+  /// `startOcrCapture` + 「游戏」媒体类型的作品级配置会话；框记进全局「上次的框」。
+  @override
+  Future<String?> startOcr(
+    ExternalWindowInfo window, {
+    required GalOcrRegion region,
+    required bool binarize,
+  }) async {
+    final GalOcrRecognizerResolution resolution =
+        await resolveGalOcrRecognizerFromPrefs(
+          _app.prefsRepo,
+          localService: context.ref.read(mangaOcrServiceProvider),
+        );
+    final GalOcrRecognize? recognize = resolution.recognize;
+    if (recognize == null) {
+      return galOcrModelMissing(resolution)
+          ? 'model_missing'
+          : resolution.unavailableReason ?? 'unavailable';
+    }
+    final ProfileViewModel profileVm = context.ref.read(
+      profileViewModelProvider.notifier,
+    );
+    await _session.startOcrCapture(
+      window,
+      region: region,
+      binarize: binarize,
+      recognize: recognize,
+    );
+    unawaited(_app.prefsRepo.setGalOcrRegionJson(jsonEncode(region.toJson())));
+    unawaited(
+      profileVm.enterWorkSession(
+        owner: _session,
+        mediaType: ProfileMediaKind.game,
+        endWhen: (listenable: _session, ended: () => !_session.state.isActive),
+      ),
+    );
+    return null;
+  }
+
+  @override
+  void setOcrRegion(GalOcrRegion region) => _session.setOcrRegion(region);
+
+  @override
+  void setOcrBinarize(bool binarize) => _session.setOcrBinarize(binarize);
+
+  @override
   Future<bool> selectThread(TexthookerTextThread? thread) =>
       _session.selectTextThread(
         thread?.nativeThreadId,
@@ -1007,9 +1095,11 @@ class _GameCtl {
     final ExternalWindowInfo window = await _resolveWindow(call);
     final GalHookSessionState before = host.snapshot().state;
     // 已在捕获这个窗口：重来一遍只会丢掉正在跑的 hook 与已收台词（与工作台同判据）。
+    // 对它跑的是 OCR 模式不算：那一局没有 hook，附着就是要换成注入捕获。
     final bool already =
         before.isActive &&
         before.externalWindowMode &&
+        !before.isOcrMode &&
         before.boundWindow?.hwnd == window.hwnd;
     if (!already) await host.attach(window);
     final GameCtlSessionSnapshot after = host.snapshot();
@@ -1024,6 +1114,101 @@ class _GameCtl {
       'session': _sessionJson(after),
       'stages': galHookCtlStages(after),
     };
+  }
+
+  // ── OCR 游戏模式 ───────────────────────────────────────────────────────
+
+  /// 对窗口开 OCR 游戏模式（不注入）。框 / 二值化不给就用该游戏记住的（再退到全局上次的框 /
+  /// 默认框）。已在对这个窗口跑 OCR：不重起会话（重起会丢掉已收台词），只套用给出的框 / 开关。
+  Future<Object?> startOcr(CtlCall call) async {
+    _requireHook();
+    _requireWritable();
+    final ExternalWindowInfo window = await _resolveWindow(call);
+    final GalOcrRegion? askedRegion = _optOcrRegion(call);
+    final bool? askedBinarize = call.optBool('binarize');
+    final GalHookSessionState before = host.snapshot().state;
+    final bool already =
+        before.isActive &&
+        before.isOcrMode &&
+        before.boundWindow?.hwnd == window.hwnd;
+    if (already) {
+      if (askedRegion != null) host.setOcrRegion(askedRegion);
+      if (askedBinarize != null) host.setOcrBinarize(askedBinarize);
+    } else {
+      final ({GalOcrRegion region, bool binarize}) defaults = host
+          .ocrDefaultsFor(window);
+      final String? unavailable = await host.startOcr(
+        window,
+        region: askedRegion ?? defaults.region,
+        binarize: askedBinarize ?? defaults.binarize,
+      );
+      if (unavailable != null) {
+        throw CtlFailure.rejected(
+          unavailable == 'model_missing'
+              ? '文字识别器不可用：本机 OCR 模型未下载（设置 › OCR 下载，或改用系统 OCR）'
+              : '文字识别器不可用（$unavailable）：检查截屏识字的引擎设置与系统 OCR 语言包',
+        );
+      }
+    }
+    final GameCtlSessionSnapshot after = host.snapshot();
+    return <String, Object?>{
+      'ok': after.state.isActive && after.state.isOcrMode,
+      'alreadyRunning': already,
+      'window': <String, Object?>{
+        'hwnd': window.hwnd,
+        'pid': window.pid,
+        'title': window.title,
+      },
+      'session': _sessionJson(after),
+      'stages': galHookCtlStages(after),
+    };
+  }
+
+  /// 会话中换识别区域 / 开关二值化（两者至少给一个）。
+  Future<Object?> setOcrRegion(CtlCall call) async {
+    _requireHook();
+    _requireWritable();
+    final GalHookSessionState state = host.snapshot().state;
+    if (!state.isActive || !state.isOcrMode) {
+      throw const CtlFailure.conflict('没有正在进行的 OCR 捕获会话（先 game ocr start）');
+    }
+    final GalOcrRegion? region = _optOcrRegion(call);
+    final bool? binarize = call.optBool('binarize');
+    if (region == null && binarize == null) {
+      throw const CtlFailure.badRequest(
+        '给出 left / top / width / height 或 binarize',
+      );
+    }
+    if (region != null) host.setOcrRegion(region);
+    if (binarize != null) host.setOcrBinarize(binarize);
+    return galHookCtlOcrJson(host.snapshot().state);
+  }
+
+  /// body 里的识别区域（客户区归一化 left / top / width / height）：四个都不给返回 null，
+  /// 只给一部分或框非法抛 400。
+  static GalOcrRegion? _optOcrRegion(CtlCall call) {
+    final List<double?> values = <double?>[
+      for (final String name in <String>['left', 'top', 'width', 'height'])
+        _optDouble(call, name),
+    ];
+    if (values.every((double? v) => v == null)) return null;
+    if (values.any((double? v) => v == null)) {
+      throw const CtlFailure.badRequest(
+        'left / top / width / height 要么都给，要么都不给',
+      );
+    }
+    final GalOcrRegion region = GalOcrRegion(
+      left: values[0]!,
+      top: values[1]!,
+      width: values[2]!,
+      height: values[3]!,
+    );
+    if (!region.isValid) {
+      throw const CtlFailure.badRequest(
+        '识别区域须落在 0～1 内，宽高都不小于 ${GalOcrRegion.minExtent}',
+      );
+    }
+    return region;
   }
 
   Future<Object?> stop(CtlCall call) async {
@@ -2490,6 +2675,8 @@ Map<String, Object?> galHookCtlSessionJson(GameCtlSessionSnapshot snap) {
         ? null
         : s.launchExe != null
         ? 'launch'
+        : s.isOcrMode
+        ? 'ocr'
         : 'attach',
     'pid': s.gamePid,
     'executable': snap.captureExecutable,
@@ -2511,8 +2698,19 @@ Map<String, Object?> galHookCtlSessionJson(GameCtlSessionSnapshot snap) {
     'selectedThread': snap.selectedThreadKey,
     'threadCount': snap.textThreads.length,
     'lineCount': snap.sessionLines.length,
+    if (s.isOcrMode) 'ocr': galHookCtlOcrJson(s),
   };
 }
+
+/// OCR 游戏模式的设置快照（`game status` 的 `session.ocr`、`game ocr region` 的应答）。
+/// 撤销按 region + binarize 比对，issue 是泵的健康状况、不参与撤销。
+@visibleForTesting
+Map<String, Object?> galHookCtlOcrJson(GalHookSessionState s) =>
+    <String, Object?>{
+      'region': s.ocrRegion?.toJson(),
+      'binarize': s.ocrBinarize,
+      'issue': s.ocrIssue.name,
+    };
 
 @visibleForTesting
 Map<String, Object?> galHookCtlThreadJson(

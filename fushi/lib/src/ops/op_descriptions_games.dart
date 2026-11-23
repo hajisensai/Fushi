@@ -132,6 +132,72 @@ List<OpDescription> describeGameOps(OpDescribeKit kit) {
         ),
       ],
     ),
+    // 不可逆：替换当前捕获会话（丢掉进行中的 hook / 台词缓冲 / 计时），没有路由能接回原会话。
+    // 不注入游戏进程。
+    irreversible(
+      'game.ocr.start',
+      'POST',
+      '/api/admin/game/ocr/start',
+      'Start OCR capture on a running game window (no injection: periodically '
+          'captures the window and recognizes the dialogue box; for games '
+          'hooks cannot reach). Replaces the current session unless OCR is '
+          'already running on that window, in which case only the given '
+          'area / binarize are applied. Area and binarize default to what was '
+          'remembered for that game. Give exactly one of hwnd / pid.',
+      const <OpParam>[
+        OpParam.integer(
+          'hwnd',
+          description: 'Window handle from game.window.list.',
+        ),
+        OpParam.integer(
+          'pid',
+          description:
+              'Process id from game.window.list (must own one window).',
+        ),
+        ..._ocrRegionParams,
+        OpParam.boolean(
+          'binarize',
+          description:
+              'Binarize before OCR (helps low-contrast or outlined text).',
+        ),
+      ],
+    ),
+    write(
+      'game.ocr.region.set',
+      'PUT',
+      '/api/admin/game/ocr/region',
+      'Change the dialogue area and/or binarize option of the running OCR '
+          'capture session (remembered for that game). Give all four area '
+          'values, binarize, or both.',
+      const <OpParam>[
+        ..._ocrRegionParams,
+        OpParam.boolean(
+          'binarize',
+          description:
+              'Binarize before OCR (helps low-contrast or outlined text).',
+        ),
+      ],
+      kit.snapshotUndo(
+        read: (Map<String, String> params) async => _ocrSettings(
+          _field(await kit.callRoute('GET', '/api/admin/game/status'), <String>[
+            'session',
+            'ocr',
+          ]),
+        ),
+        write: (Map<String, String> params, Object? old) async {
+          if (old is! Map || old['region'] is! Map) return;
+          await kit.callRoute(
+            'PUT',
+            '/api/admin/game/ocr/region',
+            body: <String, Object?>{
+              ...(old['region'] as Map).cast<String, Object?>(),
+              'binarize': old['binarize'] == true,
+            },
+          );
+        },
+        newValue: (CtlCall call, Object? result) => _ocrSettings(result),
+      ),
+    ),
     // 不可逆：结束会话会丢掉进行中的 hook、台词缓冲与计时，没有路由能接回同一会话。
     irreversible(
       'game.stop',
@@ -1008,6 +1074,25 @@ OpAvailability _windowsOnly() => gameOpsPlatformSupported()
         'platform_unsupported',
         'Galgame Hook 只支持 Windows',
       );
+
+/// OCR 识别区域四个参数（客户区归一化 0～1）。
+const List<OpParam> _ocrRegionParams = <OpParam>[
+  OpParam.number(
+    'left',
+    description: 'Dialogue area left edge, 0-1 of the client area width.',
+  ),
+  OpParam.number(
+    'top',
+    description: 'Dialogue area top edge, 0-1 of the client area height.',
+  ),
+  OpParam.number('width', description: 'Dialogue area width, 0-1.'),
+  OpParam.number('height', description: 'Dialogue area height, 0-1.'),
+];
+
+/// `session.ocr` / `game ocr region` 应答里参与撤销比对的部分（region + binarize）。
+Object? _ocrSettings(Object? ocr) => ocr is Map
+    ? <String, Object?>{'region': ocr['region'], 'binarize': ocr['binarize']}
+    : null;
 
 /// 沿 [path] 取嵌套 Map 里的一个值；任一层不是 Map 时为 null。
 Object? _field(Object? value, List<String> path) {

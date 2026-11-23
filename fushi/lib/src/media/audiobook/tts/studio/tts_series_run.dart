@@ -22,6 +22,8 @@ import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart'
+    show MangaVolumeBusyException, kMangaPackageImportingCode;
 
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
@@ -195,12 +197,19 @@ class TtsSeriesRun extends ChangeNotifier {
             notifyListeners();
             continue;
           }
-          await queue.enqueue(
-            bookKey: bookKey,
-            title: title,
-            presetId: render.presetId,
-            kind: TtsRenderJobKind.manga,
-          );
+          try {
+            await queue.enqueue(
+              bookKey: bookKey,
+              title: title,
+              presetId: render.presetId,
+              kind: TtsRenderJobKind.manga,
+            );
+          } on TtsRenderRejected catch (e) {
+            // 这一卷正被导出包的导入占着：跳过它，接着排下一卷。
+            failures.add((bookKey: bookKey, code: e.reason));
+            notifyListeners();
+            continue;
+          }
           queued.add(bookKey);
           notifyListeners();
         }
@@ -226,10 +235,16 @@ class TtsSeriesRun extends ChangeNotifier {
       await busy.finished;
       if (_cancelled) return 'cancelled';
     }
-    final MangaAnnotateTask task = tasks.start(
-      MangaAnnotateRequest.annotate(bookKey: bookKey, provider: provider),
-      announce: false,
-    );
+    final MangaAnnotateTask task;
+    try {
+      task = tasks.start(
+        MangaAnnotateRequest.annotate(bookKey: bookKey, provider: provider),
+        announce: false,
+      );
+    } on MangaVolumeBusyException {
+      // 这一卷正被导出包的导入占着：记失败、跳过这一卷。
+      return kMangaPackageImportingCode;
+    }
     _mangaTask = task;
     void onTask() {
       annotateDone = task.progressDone;

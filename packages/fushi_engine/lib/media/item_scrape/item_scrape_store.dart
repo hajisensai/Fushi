@@ -16,7 +16,9 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 ///
 /// 书籍刮削门面（Bangumi / DLsite，以及之后的 AniList / openBD / NDL / 楽天）、
 /// 游戏元数据刮削、控制通道的 `library scrape-meta set` 都只经这里写：
-/// - [writeMeta]：整行写入 / 覆盖文字资料；
+/// - [writeMeta]：整行写入 / 覆盖文字资料（刮削口径：v177 字段锁住的字段保留旧值）；
+/// - [setManualFields]：用户手填（写值并上锁；清空 = 解锁交还刮削，BUG-5111）；
+/// - [mergeMeta] / [restoreMeta]：脚本合并写 / 撤销快照原样写回；
 /// - [setImageFromFile] / [setImageFromUrl]：附加图（backdrop / logo）原子落盘到
 ///   `video_covers/items/` 并登记；换图时旧文件随即回收；
 /// - [applyScrape]：上面两步的组合（刮削源一次响应 = 资料 + 可选横版图）。
@@ -46,21 +48,88 @@ class ItemScrapeStore {
   Future<Directory> _dir() async =>
       _imagesDirectory ?? await VideoStorage.itemImagesDir();
 
-  /// 写入 / 整行覆盖 [key] 的文字资料。
-  Future<void> writeMeta(ItemScrapeKey key, ItemScrapeDetails details) =>
-      _db.upsertItemScrapeMeta(details.toCompanion(key, _now()));
+  /// 写入 / 整行覆盖 [key] 的文字资料（刮削写回的口径）。
+  ///
+  /// v177 字段锁：已有行上锁住的字段（用户手填过的）保留旧值，锁随行保留；
+  /// [details] 自带的 [ItemScrapeDetails.lockedFields] 不参与（刮削结果不改锁）。
+  /// [overrideLocked] = true 时（脚本 / AI 的明确整行替换）锁住的字段也写新值，
+  /// 锁照旧保留——之后的刮削仍不覆盖它。
+  Future<void> writeMeta(
+    ItemScrapeKey key,
+    ItemScrapeDetails details, {
+    bool overrideLocked = false,
+  }) async {
+    final ItemScrapeMetaRow? old = await _db.getItemScrapeMeta(
+      key.mediaType,
+      key.entryKey,
+    );
+    final ItemScrapeDetails previous = old == null
+        ? const ItemScrapeDetails(source: manualSource)
+        : ItemScrapeDetails.fromRow(old);
+    await _write(
+      key,
+      overrideLocked
+          ? details.withLockedFields(previous.lockedFields)
+          : details.keepingLockedOf(previous),
+    );
+  }
 
   /// 合并写：[patch] 里非 null 的字段覆盖已有行，其余保留（脚本「只改简介」用）。
+  /// 这是明确的手动写入：[patch] 给出的值即使落在锁住的字段上也照写，锁保留。
   Future<void> mergeMeta(ItemScrapeKey key, ItemScrapeDetails patch) async {
     final ItemScrapeMetaRow? old = await _db.getItemScrapeMeta(
       key.mediaType,
       key.entryKey,
     );
-    await writeMeta(
+    await _write(
       key,
-      old == null ? patch : ItemScrapeDetails.fromRow(old).overlay(patch),
+      old == null
+          ? patch.withLockedFields(const <ItemScrapeLockableField>{})
+          : ItemScrapeDetails.fromRow(old).overlay(patch),
     );
   }
+
+  /// 撤销快照原样写回（含 [ItemScrapeDetails.lockedFields]，不看库里现有的锁）。
+  Future<void> restoreMeta(ItemScrapeKey key, ItemScrapeDetails details) =>
+      _write(key, details);
+
+  /// 用户手填 [values] 里的字段（BUG-5111：刮不到资料的书也能补简介）：
+  /// 非空 = 写值并上锁，之后条目刮削不再覆盖；空 / 全空白 = 清值并解锁，交还给
+  /// 下一次刮削回填。没有行时以 [manualSource] 新建；清空后整行只剩手动来源的
+  /// 空壳时删掉该行（回到「未刮削」，不留空资料）。返回是否有改动。
+  Future<bool> setManualFields(
+    ItemScrapeKey key,
+    Map<ItemScrapeLockableField, String?> values,
+  ) async {
+    if (values.isEmpty) return false;
+    final ItemScrapeMetaRow? old = await _db.getItemScrapeMeta(
+      key.mediaType,
+      key.entryKey,
+    );
+    final ItemScrapeDetails previous = old == null
+        ? const ItemScrapeDetails(source: manualSource)
+        : ItemScrapeDetails.fromRow(old);
+    ItemScrapeDetails next = previous;
+    for (final MapEntry<ItemScrapeLockableField, String?> entry
+        in values.entries) {
+      next = next.withManualField(entry.key, _blankToNull(entry.value));
+    }
+    if (old != null &&
+        next.summary == previous.summary &&
+        _sameLocks(next.lockedFields, previous.lockedFields)) {
+      return false;
+    }
+    if (next.isEmptyManualShell) {
+      if (old == null) return false;
+      await _db.deleteItemScrapeMeta(key.mediaType, key.entryKey);
+      return true;
+    }
+    await _write(key, next);
+    return true;
+  }
+
+  Future<void> _write(ItemScrapeKey key, ItemScrapeDetails details) =>
+      _db.upsertItemScrapeMeta(details.toCompanion(key, _now()));
 
   /// 刮削源一次响应落库：文字资料 + 可选横版背景（[backdropUrl] 下载，或已在
   /// 本地的 [backdropFile]）。背景下载失败不回滚资料（资料本身已可用），失败
@@ -199,6 +268,47 @@ class ItemScrapeKey {
   String toString() => '${mediaType.dbValue}:$entryKey';
 }
 
+/// `item_scrape_meta.locked_fields` 里可锁的字段（v177，BUG-5111）。wire 值 =
+/// [name]，只增不改名；未知值解析时静默忽略。
+enum ItemScrapeLockableField {
+  /// 简介。
+  summary;
+
+  static ItemScrapeLockableField? tryParse(String raw) {
+    for (final ItemScrapeLockableField f in values) {
+      if (f.name == raw) return f;
+    }
+    return null;
+  }
+}
+
+/// `locked_fields` 列 → 字段集合（NULL / 空 / 未知值 = 不锁）。
+Set<ItemScrapeLockableField> parseItemScrapeLockedFields(String? raw) {
+  if (raw == null || raw.trim().isEmpty) {
+    return const <ItemScrapeLockableField>{};
+  }
+  return <ItemScrapeLockableField>{
+    for (final String part in raw.split(','))
+      if (ItemScrapeLockableField.tryParse(part.trim())
+          case final ItemScrapeLockableField f)
+        f,
+  };
+}
+
+/// 字段集合 → `locked_fields` 列（按枚举声明序；空 = NULL，唯一的「无锁」形态）。
+String? encodeItemScrapeLockedFields(Set<ItemScrapeLockableField> fields) {
+  if (fields.isEmpty) return null;
+  return <String>[
+    for (final ItemScrapeLockableField f in ItemScrapeLockableField.values)
+      if (fields.contains(f)) f.name,
+  ].join(',');
+}
+
+bool _sameLocks(
+  Set<ItemScrapeLockableField> a,
+  Set<ItemScrapeLockableField> b,
+) => a.length == b.length && a.containsAll(b);
+
 /// 一次刮削 / 手动写入的文字资料（与媒体、来源无关的形状；各源各自折进来）。
 class ItemScrapeDetails {
   const ItemScrapeDetails({
@@ -212,6 +322,7 @@ class ItemScrapeDetails {
     this.ratingCount,
     this.tags = const <String>[],
     this.detailUrl,
+    this.lockedFields = const <ItemScrapeLockableField>{},
   });
 
   factory ItemScrapeDetails.fromRow(ItemScrapeMetaRow row) => ItemScrapeDetails(
@@ -225,6 +336,7 @@ class ItemScrapeDetails {
     ratingCount: row.ratingCount,
     tags: decodeItemScrapeTags(row.tagsJson),
     detailUrl: row.detailUrl,
+    lockedFields: parseItemScrapeLockedFields(row.lockedFields),
   );
 
   /// 来源（书籍刮削源名 / 游戏元数据源 key / [ItemScrapeStore.manualSource]）。
@@ -245,7 +357,77 @@ class ItemScrapeDetails {
   final List<String> tags;
   final String? detailUrl;
 
-  /// [patch] 非 null / 非空的字段盖在本对象上（来源取 [patch] 的）。
+  /// 用户手填过、刮削不再覆盖的字段（v177）。
+  final Set<ItemScrapeLockableField> lockedFields;
+
+  /// 只有手动来源、没有任何资料也没有锁的空壳（清空手填后据此删行）。
+  bool get isEmptyManualShell =>
+      source == ItemScrapeStore.manualSource &&
+      lockedFields.isEmpty &&
+      _blankToNull(subjectId) == null &&
+      _blankToNull(title) == null &&
+      _blankToNull(originalTitle) == null &&
+      _blankToNull(summary) == null &&
+      _blankToNull(airDate) == null &&
+      rating == null &&
+      ratingCount == null &&
+      tags.isEmpty &&
+      _blankToNull(detailUrl) == null;
+
+  ItemScrapeDetails _copy({
+    required String? summary,
+    required Set<ItemScrapeLockableField> lockedFields,
+  }) => ItemScrapeDetails(
+    source: source,
+    subjectId: subjectId,
+    title: title,
+    originalTitle: originalTitle,
+    summary: summary,
+    airDate: airDate,
+    rating: rating,
+    ratingCount: ratingCount,
+    tags: tags,
+    detailUrl: detailUrl,
+    lockedFields: lockedFields,
+  );
+
+  /// 换成 [locks] 这组锁，其余不变。
+  ItemScrapeDetails withLockedFields(Set<ItemScrapeLockableField> locks) =>
+      _copy(summary: summary, lockedFields: locks);
+
+  /// 刮削口径的合并：[previous] 锁住的字段取它的旧值，锁沿用 [previous] 的。
+  ItemScrapeDetails keepingLockedOf(ItemScrapeDetails previous) {
+    final Set<ItemScrapeLockableField> locks = previous.lockedFields;
+    return _copy(
+      summary: locks.contains(ItemScrapeLockableField.summary)
+          ? previous.summary
+          : summary,
+      lockedFields: locks,
+    );
+  }
+
+  /// 手填 [field]：[value] 非 null = 写值并上锁；null = 清值并解锁。
+  ItemScrapeDetails withManualField(
+    ItemScrapeLockableField field,
+    String? value,
+  ) {
+    final Set<ItemScrapeLockableField> locks = <ItemScrapeLockableField>{
+      ...lockedFields,
+    };
+    if (value == null) {
+      locks.remove(field);
+    } else {
+      locks.add(field);
+    }
+    return switch (field) {
+      ItemScrapeLockableField.summary => _copy(
+        summary: value,
+        lockedFields: locks,
+      ),
+    };
+  }
+
+  /// [patch] 非 null / 非空的字段盖在本对象上（来源取 [patch] 的，锁沿用本对象的）。
   ItemScrapeDetails overlay(ItemScrapeDetails patch) => ItemScrapeDetails(
     source: patch.source,
     subjectId: patch.subjectId ?? subjectId,
@@ -257,6 +439,7 @@ class ItemScrapeDetails {
     ratingCount: patch.ratingCount ?? ratingCount,
     tags: patch.tags.isNotEmpty ? patch.tags : tags,
     detailUrl: patch.detailUrl ?? detailUrl,
+    lockedFields: lockedFields,
   );
 
   ItemScrapeMetaCompanion toCompanion(ItemScrapeKey key, DateTime now) =>
@@ -274,6 +457,9 @@ class ItemScrapeDetails {
         tagsJson: Value<String?>(encodeItemScrapeTags(tags)),
         detailUrl: Value<String?>(_blankToNull(detailUrl)),
         scrapedAt: now.millisecondsSinceEpoch,
+        lockedFields: Value<String?>(
+          encodeItemScrapeLockedFields(lockedFields),
+        ),
       );
 }
 

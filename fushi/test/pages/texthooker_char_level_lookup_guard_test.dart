@@ -41,12 +41,20 @@ void main() {
   // 从命中字起算，被调方必须真的从该下标切并截断。只钉一头都能被绕过——只钉调用点，
   // 共享函数可以偷偷改成传词；只钉共享函数，本页可以绕开它自己切。
   test('查询串从命中的那个字起算，交给引擎最长匹配', () {
-    final String body = methodBody(
+    // 手点与新句自动查词（反馈 q9Jcu_Zr2_）共用 _lookupFromChar：手点入口必须原样
+    // 把命中字下标交过去，共用入口必须从该下标起切查询串。
+    final String tap = methodBody(
       page,
       // 锚点跟随实际写法：#1093 之后这个签名是一行写完的。多行字面量锚点
       // 一旦被格式化收行就恒不匹配，这是本仓反复出现的脆弱形状。
       'void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect)',
     );
+    expect(
+      tap.contains('_lookupFromChar(line, charIndex, rect'),
+      isTrue,
+      reason: '手点必须把命中字下标原样交给共用查词入口',
+    );
+    final String body = methodBody(page, 'void _lookupFromChar(');
     expect(
       body.contains('lookupQueryFromIndex(line.text, charIndex)'),
       isTrue,

@@ -64,6 +64,7 @@ class DictionaryPopupHistoryPage {
     required this.scrollTop,
     this.rubySpans = const <FushiRubySpan>[],
     this.contextSentence = '',
+    this.refineSource = '',
   });
 
   final String searchTerm;
@@ -75,6 +76,9 @@ class DictionaryPopupHistoryPage {
 
   /// 该页 [searchTerm] 出自的那一句（见 [DictionaryPopupEntry.contextSentence]）。
   final String contextSentence;
+
+  /// 该页的词块来源（见 [DictionaryPopupEntry.refineSource]）。
+  final String refineSource;
 
   /// 离开该页时弹窗内容的 `scrollTop`（CSS px，WebView 局部）；回来时恢复。
   final double scrollTop;
@@ -92,6 +96,7 @@ class DictionaryPopupEntry {
     this.allLoaded = false,
     this.rubySpans = const <FushiRubySpan>[],
     this.contextSentence = '',
+    this.refineSource = '',
     GlobalKey<DictionaryPopupRealmState>? webViewKey,
   }) : webViewKey = webViewKey ?? GlobalKey<DictionaryPopupRealmState>();
 
@@ -113,6 +118,12 @@ class DictionaryPopupEntry {
   /// 原地跳转 / 后退前进 / 热槽复位）时一并替换；原地跳到的词（词头 / 链接 / 汉字）不
   /// 出自任何句子，为空。
   String contextSentence;
+
+  /// 拍板台 Um72dWD9Cz：本页是从「查不到」的词块 / 修改框点进来的话，这里是词块
+  /// 的来源串（最初查不到的那串，或用户改过的那串），层把它拆成词块画在结果上方，
+  /// 便于连续换词；空串 = 普通页。与 [contextSentence] 同生同灭：随历史页保存 /
+  /// 恢复，顶层换词 / 热槽复位清空。
+  String refineSource;
 
   /// 该层是否被绘制/可交互。常驻热槽在两次查词之间 `visible=false` 隐身，
   /// 但 WebView 仍挂载预热；一次查词把它翻为可见。
@@ -521,6 +532,7 @@ class DictionaryPopupController extends ChangeNotifier {
       ..searchTerm = ''
       ..rubySpans = const <FushiRubySpan>[]
       ..contextSentence = ''
+      ..refineSource = ''
       ..selectionRect = Rect.zero
       ..result = kPopupSearchingPlaceholderResult
       ..visible = false
@@ -603,6 +615,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..searchTerm = term
         ..rubySpans = rubySpans
         ..contextSentence = contextSentence
+        ..refineSource = ''
         ..selectionRect = rect
         ..result = initialResult
         ..allLoaded = false
@@ -741,6 +754,7 @@ class DictionaryPopupController extends ChangeNotifier {
       scrollTop: scrollTop,
       rubySpans: e.rubySpans,
       contextSentence: e.contextSentence,
+      refineSource: e.refineSource,
     );
   }
 
@@ -753,6 +767,7 @@ class DictionaryPopupController extends ChangeNotifier {
       ..searchTerm = page.searchTerm
       ..rubySpans = page.rubySpans
       ..contextSentence = page.contextSentence
+      ..refineSource = page.refineSource
       ..result = page.result
       ..allLoaded = page.allLoaded
       ..isSearching = false
@@ -769,6 +784,11 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 「搜索期」中间态，`isSearching` 由宿主自己在查询期间置位。
   ///
   /// [e] 已不在栈内（查询期间被关掉 / 顶层换词）→ no-op，返回 false。
+  ///
+  /// [refineSource] / [contextSentence]：从「查不到」的词块 / 修改框换词（拍板台
+  /// Um72dWD9Cz）时，新页记下词块来源（结果上方接着画词块），并沿用原页那一句——
+  /// 词块就是从那句里取的词，制卡的 `{sentence}` 不该因此丢掉。其余原地跳转（词头 /
+  /// 链接 / 汉字）不出自任何句子，两者都为空。
   bool navigateInPlace(
     DictionaryPopupEntry e, {
     required String term,
@@ -776,6 +796,8 @@ class DictionaryPopupController extends ChangeNotifier {
     required bool allLoaded,
     required double scrollTop,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    String refineSource = '',
+    String contextSentence = '',
   }) {
     if (!_entries.contains(e)) return false;
     onLookupStarted?.call();
@@ -789,6 +811,8 @@ class DictionaryPopupController extends ChangeNotifier {
         allLoaded: allLoaded,
         scrollTop: 0,
         rubySpans: rubySpans,
+        refineSource: refineSource,
+        contextSentence: contextSentence,
       ),
       restoreScrollTop: null,
     );

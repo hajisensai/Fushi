@@ -3810,9 +3810,39 @@ async function testQueueFailureKeepsPlusAndAllowsRetry() {
   assert.equal(calls, 2);
 }
 
+// 拍板 EuOLprw_dV：截屏识字「制卡时框选截图」页点了「×」，宿主回 cancelled——用户自己
+// 放弃了这张卡，不是失败：按钮放回可点的「+」，不说「制卡失败」，也不回查 Anki。
+async function testCancelledMineRestoresPlusSilently() {
+  const context = loadPopup();
+  let mines = 0;
+  let duplicates = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') { duplicates++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      mines++;
+      return Promise.resolve({ ankiConnect: false, noteId: null, cancelled: true });
+    }
+    if (name === 'mineFailureUnseen') throw new Error('cancel must not be reported as a failure');
+    return Promise.resolve(null);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  const before = duplicates;
+  await button.onclick();
+  await flush();
+  assert.equal(button.textContent, '+', 'cancelled mine goes back to a clickable +');
+  assert.notEqual(button.dataset.mined, '1');
+  assert.notEqual(button.dataset.queued, '1');
+  assert.equal(inlineHintText(context), null, 'cancel is not a failure: no inline hint');
+  assert.equal(duplicates, before, 'cancel must not probe Anki');
+  await button.onclick();
+  assert.equal(mines, 2, 'the user can click + again right away');
+}
+
 Promise.all([
   testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
   testQueueFailureKeepsPlusAndAllowsRetry(),
+  testCancelledMineRestoresPlusSilently(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
 // BUG-3492：app 内（在线视频后台制卡）没有宿主队列，「已加入」只是本弹窗的一个标记。

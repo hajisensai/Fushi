@@ -12,10 +12,13 @@
 /// 一张光盘」。像素判据是纯函数，解码在 [sampleMusicDiscFace]（引擎按 96×96 降采样
 /// 解码，不在 Dart 堆里解整张大图）。
 ///
-/// **存放方式**：不落库，按专辑目录现场识别、进程内缓存。`media_images`
+/// **存放方式**：不落库，按专辑目录现场列目录识别。`media_images`
 /// （`MediaImageKind.discArt`）的单一归属 CHECK 只允许合集 / 视频两种归属，挂不到
-/// `music_albums` 上（`music_tables.dart` 的 `coverPath` 注释同一原因）；新开列要升
-/// schema 且盘面图该由 Rust 扫描器（`native/fushi_music`）在扫描时一并认出，留作后续。
+/// `music_albums` 上（`music_tables.dart` 的 `coverPath` 注释同一原因）。列目录便宜，
+/// 每个进程第一次读快照时重列一次（文件增删立即生效）；贵的是解码——按内容判扫图与
+/// 量盘面几何——两者按图片文件（路径 + 大小 + 修改时间）落盘缓存在
+/// [MusicDiscArtStore]（app 缓存目录；BUG-5311：原先只在进程里，冷启动每次重解码，
+/// 唱片要等一会才出来）。
 /// 现场识别只读本地目录：远程来源（SFTP / WebDAV / 服务器）的专辑不认盘面图。
 library;
 
@@ -28,6 +31,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
     show SynchronousFuture, ValueNotifier, immutable, visibleForTesting;
 import 'package:path/path.dart' as p;
+
+import 'package:fushi/src/media/music/music_disc_art_store.dart';
 
 /// 认作盘面图的图片扩展名（小写，带点）。
 const Set<String> kMusicDiscArtImageExtensions = <String>{
@@ -554,11 +559,14 @@ List<String> musicDiscFaceCandidates(Iterable<String> relativePaths) {
   return out;
 }
 
-/// 一个根目录的列目录结果：按文件名认出的最佳盘面图，以及（认不出时）按内容判的
-/// 候选（绝对路径，自然序）。
-typedef _RootScan = ({MusicDiscArtHit? hit, List<String> faceCandidates});
+/// 一张图片文件：绝对路径 + 文件身份（落盘缓存按它判「文件变没变」）。
+typedef _StampedFile = ({String path, MusicDiscArtFileStamp stamp});
 
-const _RootScan _emptyRootScan = (hit: null, faceCandidates: <String>[]);
+/// 一个根目录的列目录结果：按文件名认出的最佳盘面图，以及（认不出时）按内容判的
+/// 候选（自然序）。
+typedef _RootScan = ({MusicDiscArtHit? hit, List<_StampedFile> faceCandidates});
+
+const _RootScan _emptyRootScan = (hit: null, faceCandidates: <_StampedFile>[]);
 
 /// 列 [root] 根下的文件与扫图收纳目录（下探两层），挑出按文件名认的最佳盘面图；
 /// 认不出时给出按内容判的候选。目录不存在或读不了（权限 / 已拔出的移动盘）时
@@ -591,18 +599,18 @@ _RootScan _scanRoot(String root) {
   if (best != null) {
     return (
       hit: (path: byRelative[best]!, score: musicDiscArtScore(best)!),
-      faceCandidates: const <String>[],
+      faceCandidates: const <_StampedFile>[],
     );
   }
-  return (
-    hit: null,
-    faceCandidates: <String>[
-      for (final String rel in musicDiscFaceCandidates(
-        byRelative.keys,
-      ).take(kMusicDiscFaceMaxCandidates))
-        byRelative[rel]!,
-    ],
-  );
+  final List<_StampedFile> candidates = <_StampedFile>[];
+  for (final String rel in musicDiscFaceCandidates(
+    byRelative.keys,
+  ).take(kMusicDiscFaceMaxCandidates)) {
+    final String path = byRelative[rel]!;
+    final MusicDiscArtFileStamp? stamp = musicDiscArtFileStampSync(path);
+    if (stamp != null) candidates.add((path: path, stamp: stamp));
+  }
+  return (hit: null, faceCandidates: candidates);
 }
 
 Map<String, _RootScan> _scanRoots(List<String> roots) => <String, _RootScan>{
@@ -613,7 +621,8 @@ Map<String, _RootScan> _scanRoots(List<String> roots) => <String, _RootScan>{
 ///
 /// 按专辑目录（[musicAlbumDiscArtRoots]）在后台 isolate 里列目录识别，结果按目录
 /// 缓存在进程里：曲库快照每次重读（播放计数等表变更也会触发）只扫没见过的目录。
-/// 用户重扫曲库 / 加了文件夹后调 [invalidate]，下次重读时重新识别。
+/// 用户重扫曲库 / 加了文件夹后调 [invalidate]，下次重读时重新列目录。按内容判扫图
+/// 的结论另按图片文件落盘（[MusicDiscArtStore]），重列 / 冷启动时文件没变就不再解码。
 class MusicDiscArtIndex {
   MusicDiscArtIndex._();
 
@@ -653,13 +662,18 @@ class MusicDiscArtIndex {
   @visibleForTesting
   MusicDiscFaceSampler sampler = sampleMusicDiscFace;
 
-  /// 按自然序逐张判 [candidates]，第一张像光盘的就是盘面图（第一张盘）。
-  Future<MusicDiscArtHit?> _faceHit(List<String> candidates) async {
-    for (final String path in candidates) {
-      final MusicDiscFaceSample? sample = await sampler(path);
-      if (sample != null && isMusicDiscFace(sample)) {
-        return (path: path, score: kMusicDiscFaceScore);
+  /// 按自然序逐张判 [candidates]，第一张像光盘的就是盘面图（第一张盘）。文件没变
+  /// 的图直接用落盘的结论，不再解码。
+  Future<MusicDiscArtHit?> _faceHit(List<_StampedFile> candidates) async {
+    final MusicDiscArtStore store = MusicDiscArtStore.instance;
+    for (final _StampedFile file in candidates) {
+      bool? isFace = store.faceVerdict(file.path, file.stamp);
+      if (isFace == null) {
+        final MusicDiscFaceSample? sample = await sampler(file.path);
+        isFace = sample != null && isMusicDiscFace(sample);
+        store.putFaceVerdict(file.path, file.stamp, isFace);
       }
+      if (isFace) return (path: file.path, score: kMusicDiscFaceScore);
     }
     return null;
   }
@@ -681,6 +695,10 @@ class MusicDiscArtIndex {
     final Map<String, _RootScan> listed = unknown.isEmpty
         ? const <String, _RootScan>{}
         : await Isolate.run(() => _scanRoots(unknown));
+    if (listed.isNotEmpty) {
+      await MusicDiscArtStore.instance.ensureLoaded();
+      _forgetStaleVerdicts(listed);
+    }
     // 文件名认不出的根目录，扫图按内容判（解码交给引擎，逐张串行，不并发解大图）。
     final Map<String, MusicDiscArtHit?> scanned = <String, MusicDiscArtHit?>{};
     for (final MapEntry<String, _RootScan> e in listed.entries) {
@@ -705,7 +723,37 @@ class MusicDiscArtIndex {
       }
       if (best != null) out[e.key] = best.path;
     }
+    // 发布前先把落盘的几何认领进进程缓存：卡片首帧就按真实盘面画，不再等解码。
+    await MusicDiscFaceGeometryCache.instance.preload(out.values.toSet());
     return out;
+  }
+
+  /// 重新列过的根目录里、已不再是候选的图（删了 / 改名 / 改由文件名命中）：落盘结论
+  /// 一并去掉，缓存不随曲库变动无限长。
+  void _forgetStaleVerdicts(Map<String, _RootScan> listed) {
+    // 本轮所有重列根的候选取并集：同一张图可能同时落在两个嵌套根（`Album` 与
+    // `Album/CD2`）的扫描范围里，只要任一根还把它当候选就留着，不能拿离它最近的
+    // 那个根单独判（否则那个根改由文件名命中时，外层根的候选结论每次启动都被删、
+    // 每次都重解码）。
+    final Set<String> live = <String>{
+      for (final _RootScan scan in listed.values)
+        for (final _StampedFile f in scan.faceCandidates) f.path,
+    };
+    MusicDiscArtStore.instance.removeFaceVerdictsWhere((String path) {
+      if (live.contains(path)) return false;
+      // 候选最深在根下三层（`Scans/Disc/01.jpg`）。
+      String dir = p.dirname(path);
+      for (int depth = 0; depth < 3; depth++) {
+        if (listed.containsKey(dir)) return true;
+        // 离它最近的根是本轮没重列的已知根（另一张专辑的嵌套目录）：结论归那个根
+        // 管，这轮不动。
+        if (_byRoot.containsKey(dir)) return false;
+        final String parent = p.dirname(dir);
+        if (parent == dir) break;
+        dir = parent;
+      }
+      return false;
+    });
   }
 }
 
@@ -917,7 +965,8 @@ MusicDiscFaceGeometry? measureMusicDiscFace(MusicDiscFaceSample sample) {
 }
 
 /// 盘面扫描图的几何缓存（路径 → [MusicDiscFaceGeometry]）：每张图量一次，进程内
-/// 缓存。曲库卡、播放页、CD 详情页共用。
+/// 缓存，并按图片文件身份落盘（[MusicDiscArtStore]），冷启动文件没变就不再解码。
+/// 曲库卡、播放页、CD 详情页共用。
 class MusicDiscFaceGeometryCache {
   MusicDiscFaceGeometryCache._();
 
@@ -950,19 +999,65 @@ class MusicDiscFaceGeometryCache {
     return _pending.putIfAbsent(path, () => _measure(path));
   }
 
+  /// 把 [paths] 落盘过、文件没变的几何认领进进程缓存（[peek] 随即可用）；没量过 /
+  /// 文件变了的不量（等 [load]）。
+  Future<void> preload(Set<String> paths) async {
+    final List<String> todo = <String>[
+      for (final String path in paths)
+        if (!_done.containsKey(path)) path,
+    ];
+    if (todo.isEmpty) return;
+    final MusicDiscArtStore store = MusicDiscArtStore.instance;
+    await store.ensureLoaded();
+    for (final String path in todo) {
+      final MusicDiscArtFileStamp? stamp = await musicDiscArtFileStamp(path);
+      if (stamp == null) continue;
+      final MusicDiscFaceGeometry? g = _fromStore(store.geometry(path, stamp));
+      if (g != null) _done.putIfAbsent(path, () => g);
+    }
+  }
+
   Future<MusicDiscFaceGeometry> _measure(String path) async {
-    final MusicDiscFaceSample? sample = await sampler(path);
-    final MusicDiscFaceGeometry geometry = sample == null
-        ? MusicDiscFaceGeometry.fallback
-        : await Isolate.run(() => measureMusicDiscFace(sample)) ??
-              MusicDiscFaceGeometry.inscribed(
-                sample.sourceWidth,
-                sample.sourceHeight,
-              );
+    final MusicDiscArtStore store = MusicDiscArtStore.instance;
+    await store.ensureLoaded();
+    final MusicDiscArtFileStamp? stamp = await musicDiscArtFileStamp(path);
+    MusicDiscFaceGeometry? geometry = stamp == null
+        ? null
+        : _fromStore(store.geometry(path, stamp));
+    if (geometry == null) {
+      final MusicDiscFaceSample? sample = await sampler(path);
+      geometry = sample == null
+          ? MusicDiscFaceGeometry.fallback
+          : await Isolate.run(() => measureMusicDiscFace(sample)) ??
+                MusicDiscFaceGeometry.inscribed(
+                  sample.sourceWidth,
+                  sample.sourceHeight,
+                );
+      // 读不了的图（sample 为 null）不落盘：可能只是暂时读不到（移动盘未挂）。
+      if (stamp != null && sample != null) {
+        store.putGeometry(path, stamp, <double>[
+          geometry.centerX,
+          geometry.centerY,
+          geometry.radiusX,
+          geometry.radiusY,
+          geometry.hubFraction,
+        ]);
+      }
+    }
     _done[path] = geometry;
     _pending.remove(path);
     return geometry;
   }
+
+  static MusicDiscFaceGeometry? _fromStore(List<double>? g) => g == null
+      ? null
+      : MusicDiscFaceGeometry(
+          centerX: g[0],
+          centerY: g[1],
+          radiusX: g[2],
+          radiusY: g[3],
+          hubFraction: g[4],
+        );
 
   /// 丢掉缓存（扫图文件被替换后）。
   @visibleForTesting

@@ -32,6 +32,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/lookup/lookup_refine.dart';
 import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -1393,11 +1394,28 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onResizeEnd,
     this.onResizeCancel,
     this.resourceSource,
+    this.onRefineQuery,
+    this.refineSource = '',
+    this.refineTokenizer = defaultLookupRefineTokenizer,
     super.key,
   });
 
   final DictionarySearchResult? result;
   final bool isSearching;
+
+  /// 拍板台 Um72dWD9Cz（方案 B）：「查不到」时的词块 / 修改框换词入口
+  /// `(要查的词, 词块来源)`，宿主在**同一层**原地换词（空结果也换，好让用户看到
+  /// 「这个词也查不到」并接着点别的）。null = 本宿主不支持（空态只显示「未找到」，
+  /// 与旧行为一致）。
+  final void Function(String query, String refineSource)? onRefineQuery;
+
+  /// 本页的词块来源（[DictionaryPopupEntry.refineSource]）：非空时结果上方画一行
+  /// 词块，点进来的那个高亮，可接着换词；空态里也优先用它拆词块（不然点进一个同样
+  /// 查不到的词块后，词块就只剩它自己）。
+  final String refineSource;
+
+  /// 词块切分器；只有测试注入。
+  final LookupRefineTokenizer refineTokenizer;
 
   /// 透传给 [DictionaryPopupWebView.resourceSource]：结果来自别的设备时，词典样式 /
   /// 媒体 / 发音取自那台设备。null = 本机。
@@ -2304,14 +2322,66 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 是一整块最大高度的空面板。
     // 反馈 vXYKPudf7U：空态写明查的是哪个词——取词结果和读者以为点中的词对不上
     // （漫画 OCR 粘词、点到词中间）时，一眼能看出问题在取词而不在词典。
+    // 拍板台 Um72dWD9Cz：宿主支持换词时，空态里把查询词拆成可点的词块 + 「修改」，
+    // OCR 多框进的词 / 认错的字就地自救。
+    final void Function(String query, String refineSource)? refine =
+        onRefineQuery;
+    final String source = _refineSourceFor(result?.searchTerm);
+    final bool showRefine = refine != null && source.isNotEmpty;
     return Center(
       child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           message: dictionaryPopupNoResultsMessage(result?.searchTerm),
-          detail: t.settings_search_empty_hint,
+          detail: showRefine
+              ? t.dictionary_popup_refine_hint
+              : t.settings_search_empty_hint,
+          action: showRefine
+              ? LookupRefinePanel(
+                  key: const ValueKey<String>('lookup-refine-empty'),
+                  source: source,
+                  currentTerm: result?.searchTerm ?? '',
+                  onQuery: refine,
+                  tokenizer: refineTokenizer,
+                )
+              : null,
         ),
       ),
+    );
+  }
+
+  /// 词块来源：本页记着的来源优先（从词块点进来的页），否则就是本页查不到的词。
+  String _refineSourceFor(String? searchTerm) {
+    final String recorded = refineSource.trim();
+    if (recorded.isNotEmpty) return recorded;
+    return searchTerm?.trim() ?? '';
+  }
+
+  /// 结果页上方的一行词块（只在从词块 / 修改框点进来、且查到了的页上画）。
+  /// 结构恒定：不画时是零尺寸的 [SizedBox]，下面的 WebView 永远在同一个树深度，
+  /// 不会因为这一行的有无而被搬家重建（见 [popupWebViewOverflow] 同一条约束）。
+  Widget _buildRefineBar(BuildContext context) {
+    final void Function(String query, String refineSource)? refine =
+        onRefineQuery;
+    final bool show =
+        refine != null &&
+        refineSource.trim().isNotEmpty &&
+        _hasRenderableResults;
+    return AnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      alignment: Alignment.topCenter,
+      child: show
+          ? LookupRefinePanel(
+              key: const ValueKey<String>('lookup-refine-bar'),
+              source: refineSource.trim(),
+              currentTerm: result?.searchTerm ?? '',
+              onQuery: refine,
+              compact: true,
+              tokenizer: refineTokenizer,
+            )
+          : const SizedBox(width: double.infinity),
     );
   }
 
@@ -2327,7 +2397,14 @@ class DictionaryPopupLayer extends StatelessWidget {
     }
     // header 不再在此处包 Column——顶栏（header + X）由 [build] 经 [_buildTopBar]
     // 渲染并与 body 拆成上下两块，使 swipe 只裹顶栏、body 脱离滑动判定（TODO-406）。
-    return body;
+    // 词块行（拍板台 Um72dWD9Cz）排在 WebView **之前**绘制：macOS 上画在平台视图
+    // 之后的 Flutter 层会被并进命中忽略区（BUG-1692），这里不会。
+    return Column(
+      children: <Widget>[
+        _buildRefineBar(context),
+        Expanded(child: body),
+      ],
+    );
   }
 }
 

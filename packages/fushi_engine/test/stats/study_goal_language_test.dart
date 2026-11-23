@@ -1,6 +1,5 @@
 // 字数目标的语言维度：单位（字 / 词）、按语言的预设、「只算目标语言」过滤，
 // 以及媒体语言表的读取（键与 StatFact.mediaKey 同一身份）。
-import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -244,7 +243,7 @@ void main() {
 
     test('maps video bookUid and galgame id to their language', () async {
       await db.customStatement(
-        "INSERT INTO galgames (id, name, exe_path, workdir, added_at, language) "
+        'INSERT INTO galgames (id, name, exe_path, workdir, added_at, language) '
         "VALUES ('g-ja', 'a', 'a.exe', '.', 0, 'ja'), "
         "('g-none', 'b', 'b.exe', '.', 0, NULL)",
       );

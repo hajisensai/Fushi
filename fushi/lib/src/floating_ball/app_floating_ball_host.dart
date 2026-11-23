@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +32,7 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_recognition_cancellation.dart';
@@ -1424,9 +1426,27 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           ),
           sentenceContext: lookup.sentence,
           sentenceAudio: sentenceAudio,
+          pickFrame: _pickDesktopScreenOcrCardFrame,
         ),
       ),
     );
+  }
+
+  /// 拍板 EuOLprw_dV（选 b）：桌面截屏识字「制卡时框选截图」。冻结层与查词卡都是盖在
+  /// 最上层的原生窗口，框选页在主窗里：先收起两者、把主窗拉到前台，再用导航器的
+  /// context 推框选页（宿主与 Navigator 平级）。截图字节已在 [source] 里，收起冻结层
+  /// 不丢图。返回 null = 用户放弃 / 主窗不可用，这张卡不制。
+  Future<MiningRequestOverrides?> _pickDesktopScreenOcrCardFrame(
+    ScreenOcrCardImage source,
+  ) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    _desktopOcr = null;
+    await FloatingBallChannel.stopScreenOcr();
+    await target.dismissLookup();
+    await target.bringMainWindowToFront();
+    final BuildContext? navigatorContext = _navigatorContext;
+    if (navigatorContext == null || !navigatorContext.mounted) return null;
+    return pickScreenOcrCardFrame(navigatorContext, source);
   }
 
   /// 冻结层被 Esc / 右键 / 关闭钮关掉（原生已关层、已恢复球）。

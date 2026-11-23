@@ -46,6 +46,9 @@ import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
+import 'package:fushi_engine/media/music/host/engine_music_library_host.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/music_library_host_module.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
 import 'package:fushi_engine/sync/host_jobs/host_audiobook_inputs.dart';
@@ -554,6 +557,14 @@ class HeadlessHost {
             // 把本机 BT 引擎借给已配对设备当下载后端（桌面端「下载后端 = 互联设备」）。
             torrentEngine: ServerPeerTorrentEngine(downloads),
             subscriptions: downloads.subscriptions,
+            // 互联共享音乐库（设计 2026-11-23）：与 app 当 host 同一个引擎实现。服务端自己扫描音乐
+            // 是第 3 期（扫描栈搬进引擎 + 随包 native/fushi_music），在那之前曲库为空，客户端照出
+            // 这台 host、页面提示还没有音乐来源。
+            modules: <InterconnectHostModule>[
+              MusicLibraryHostModule(
+                EngineMusicLibraryHost(database: () => db),
+              ),
+            ],
             securityContext: securityContext,
             hostFingerprint: _hostFingerprint,
             deviceName: config.deviceName,

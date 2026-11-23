@@ -1,6 +1,7 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'music_import_commands.dart';
 
 /// `fushi_cli music …`：音乐库：列表 / 刮削 / 指定录音 / 歌单 / 播放（app 侧路由见 `fushi/lib/src/ops/ctl_music_routes.dart`）。
 ///
@@ -9,7 +10,7 @@ import '../ctl_commands.dart';
 const List<CtlCommandGroup> musicCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'music',
-    summary: '音乐库：曲库 / 识别 / 歌单 / 扫描根 / 播放遥控',
+    summary: '音乐库：曲库 / 识别 / 歌单 / 扫描根 / 播放遥控 / 导入（文件 / 光盘 / 插件 / 音频 CD）/ 歌词导出',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'albums',
@@ -153,6 +154,7 @@ const List<CtlCommandGroup> musicCommandGroups = <CtlCommandGroup>[
         build: _buildJump,
         render: renderMusicPlayer,
       ),
+      ...musicImportCommands,
     ],
   ),
 ];

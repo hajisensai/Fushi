@@ -39,6 +39,8 @@ import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_package_export.dart'
     show MangaPackageBusyCheck;
 import 'package:fushi/src/media/manga/audio/manga_audio_package_io.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart'
+    show mangaPackageBookClaim, mangaPackageContentClaim;
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
@@ -320,11 +322,30 @@ class _VolumeOutcome {
   };
 }
 
+/// 按 [plan] 导入时要占住的卷（交给 `MangaAudioPackageTasks.start` 的 `claims`）：
+/// 本机已有的卷按书键，要写的每一卷（含新建）按内容签名——两次导入要写同一卷时
+/// 在起任务时就撞上，不会都判「新建」各建一卷。没有 OCR 块的卷内容签名只剩页数，
+/// 与卷匹配同口径再带上标题。
+Set<String> mangaPackageImportClaims(MangaPackageImportPlan plan) => <String>{
+  for (final MangaPackageImportVolumePlan v in plan.volumes)
+    if (v.action != MangaPackageImportAction.skip) ...<String>{
+      mangaPackageContentClaim(
+        v.volume.blocks > 0
+            ? v.volume.content
+            : '${v.volume.content}|${v.volume.title.trim()}',
+      ),
+      if (v.action == MangaPackageImportAction.useExisting)
+        mangaPackageBookClaim(v.bookKey!),
+    },
+};
+
 /// 撤销日志与旧文件备份目录。
 Directory mangaPackageUndoDir(AudioProductionHost host, String runId) =>
     Directory(p.join(mangaAudioRoot(host).path, '_undo', 'pkg-$runId'));
 
 /// 按 [plan] 导入。[onCommit] 在进入落库阶段时调一次（任务据此拒绝之后的取消）。
+/// [onCreated] 在新建出一卷后立刻调（任务据此补占这一卷的书键）。[busy] 落库时逐卷
+/// 复查本机卷忙不忙——调用方要排除这次导入任务自己（它本身就占着这些卷）。
 /// 解包阶段取消抛 [MangaAudioPackageCancelled]（暂存已删）。返回逐卷结果与 `runId`
 /// （撤销用）。
 Future<Map<String, Object?>> runMangaAudioPackageImport(
@@ -334,6 +355,7 @@ Future<Map<String, Object?>> runMangaAudioPackageImport(
   MangaPackageBusyCheck? busy,
   void Function(String phase, double? progress)? onProgress,
   void Function()? onCommit,
+  void Function(String bookKey)? onCreated,
   MangaPackageCancelToken? cancel,
 }) async {
   final Directory staging = Directory(
@@ -395,7 +417,7 @@ Future<Map<String, Object?>> runMangaAudioPackageImport(
     try {
       for (int i = 0; i < todo.length; i++) {
         onProgress?.call('importing', i / todo.length);
-        await _importVolume(host, staging, undoDir, todo[i], busy);
+        await _importVolume(host, staging, undoDir, todo[i], busy, onCreated);
       }
       onProgress?.call('importing', 1);
       for (final MangaAudioPackageSeries series in plan.manifest.series) {
@@ -485,6 +507,7 @@ Future<void> _importVolume(
   Directory undoDir,
   _VolumeOutcome o,
   MangaPackageBusyCheck? busy,
+  void Function(String bookKey)? onCreated,
 ) async {
   final MangaAudioPackageVolume volume = o.plan.volume;
   final FushiDatabase db = host.database;
@@ -501,6 +524,20 @@ Future<void> _importVolume(
         throw MangaAudioPackageException('busy', busyReason);
       }
     } else {
+      // 计划是读包时定的：之后（本机别处导入 / 另一次导入刚结束）本机可能已经有了这
+      // 一卷，照旧计划新建就是重复的一卷。落库前按本机现状再匹配一次，变了就不建。
+      final MangaPackageVolumeMatch now = matchMangaAudioPackageVolume(
+        volume,
+        await _localVolumes(host, <int>{volume.pageCount}),
+      );
+      if (now.kind == MangaPackageMatchKind.existing ||
+          (now.kind == MangaPackageMatchKind.conflict &&
+              o.plan.match.kind == MangaPackageMatchKind.create)) {
+        throw const MangaAudioPackageException(
+          'plan_stale',
+          '读包之后本机已经有了这一卷（别处刚导入过），重新读包再导入',
+        );
+      }
       bookKey = await MangaImporter.importFromMangaJson(
         db: db,
         mangaJsonPath: p.join(volumeDir, 'manga.json'),
@@ -509,6 +546,7 @@ Future<void> _importVolume(
         pageSource: MangaPageSource.disposable,
       );
       o.created = true;
+      onCreated?.call(bookKey);
       rollback.add(() => _deleteCreatedBook(db, bookKey));
       final EpubBookRow? row = await db.getEpubBook(bookKey);
       final MokuroPayload? payload = row == null

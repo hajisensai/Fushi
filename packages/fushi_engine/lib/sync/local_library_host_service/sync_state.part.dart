@@ -232,6 +232,16 @@ mixin _LocalLibraryHostSyncState
     return merged;
   }
 
+  /// 在线源条目清单（`online_library_sync.dart`）：host 自己（app 当 host）+ 信箱。
+  @override
+  Future<List<OnlineLibraryManifest>> getOnlineLibraryManifests() =>
+      _onlineLibrary.getOnlineLibraryManifests();
+
+  /// 收下一台设备的在线源条目清单（存信箱；app 当 host 时并进本机库，持同步状态锁）。
+  @override
+  Future<void> putOnlineLibraryManifest(OnlineLibraryManifest incoming) =>
+      _onlineLibrary.putOnlineLibraryManifest(incoming);
+
   @override
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
   listDeletionTombstones() async {

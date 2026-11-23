@@ -412,11 +412,13 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
           '(line id -> absolute path; WAV / FLAC / MP3 / M4A / AAC / OGG / '
           'OPUS). Every line is checked first (in the script and the rendered '
           'audio, file exists, known format); dryRun only returns the per-line '
-          'check. All-or-nothing: the files are copied into the app, shaped '
+          'check. All-or-nothing: the files are copied next to the rendered '
+          'audio, shaped '
           'like the other lines, and the line keeps this audio on later '
           're-renders; audio paths, cue durations and the resume position are '
-          'updated for these lines only. Only audio rendered on this device '
-          '(not an imported manifest). Undo puts the previous audio back.',
+          'updated for these lines only. For an imported manifest the '
+          'manifest and the audio next to it are rewritten in place. Undo '
+          'puts the previous audio back.',
       risk: OpRisk.write,
       availability: manga,
       params: const <OpParam>[
@@ -564,8 +566,10 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
           'volume: same checks as the manga card import (structure, page count '
           'and OCR signature match the volume, every audio file exists). '
           'Replacing audio already registered for the volume needs confirm. '
-          'Audio files are referenced in place, not copied. Undo restores the '
-          'previous registration.',
+          'Audio files are referenced in place; later line regenerate / '
+          'replace / character regenerate rewrite that manifest and the '
+          'audio next to it in place. Undo restores the previous '
+          'registration.',
       risk: OpRisk.write,
       availability: manga,
       params: const <OpParam>[

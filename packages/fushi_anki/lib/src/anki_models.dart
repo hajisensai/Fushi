@@ -800,6 +800,7 @@ class AnkiMiningPayload {
     this.glossaryFirst = '',
     this.singleGlossaries = const {},
     this.pitchPositions = '',
+    this.pitchPositionsInline = '',
     this.pitchCategories = '',
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
@@ -911,6 +912,7 @@ class AnkiMiningPayload {
       glossaryFirst: json['glossaryFirst'] as String? ?? '',
       singleGlossaries: singleGlossaries,
       pitchPositions: json['pitchPositions'] as String? ?? '',
+      pitchPositionsInline: json['pitchPositionsInline'] as String? ?? '',
       pitchCategories: json['pitchCategories'] as String? ?? '',
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
@@ -944,6 +946,11 @@ class AnkiMiningPayload {
   final String glossaryFirst;
   final Map<String, String> singleGlossaries;
   final String pitchPositions;
+
+  /// `{pitch-accent-positions-inline}`：与 [pitchPositions] 同一组条目的单行变体
+  /// （popup.js `constructPitchPositionInlineHtml`，不包 `<ul>`，条目间用「・」连接）。
+  /// [pitchPositions] 保持 `<ul>`（BUG-2151，Lapis 靠 `#pitch-tags ul` 归一样式）。
+  final String pitchPositionsInline;
   final String pitchCategories;
 
   /// Yomitan `ipa`-mode 词典的音标（IPA）HTML；纯声调（positions）词典恒为空。
@@ -1298,6 +1305,8 @@ class AnkiHandlebarRenderer {
         return payload.freqHarmonicRank;
       case '{pitch-accent-positions}':
         return payload.pitchPositions;
+      case '{pitch-accent-positions-inline}':
+        return payload.pitchPositionsInline;
       case '{pitch-accent-categories}':
         return payload.pitchCategories;
       case '{phonetic-transcriptions}':
@@ -1532,6 +1541,7 @@ class AnkiHandlebarOptions {
     '{frequencies}',
     '{frequency-harmonic-rank}',
     '{pitch-accent-positions}',
+    '{pitch-accent-positions-inline}',
     '{pitch-accent-categories}',
     '{phonetic-transcriptions}',
     '{document-title}',

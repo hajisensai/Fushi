@@ -389,16 +389,36 @@ abstract interface class TtsRenderRunner {
   });
 }
 
+/// [TtsRenderQueue.enqueue] 拒收：这本书现在被别处占着（[reason] 是原因码，由装配方的
+/// [TtsRenderAdmission] 给出）。
+class TtsRenderRejected implements Exception {
+  const TtsRenderRejected(this.bookKey, this.reason);
+
+  final String bookKey;
+  final String reason;
+
+  @override
+  String toString() => 'TtsRenderRejected($bookKey, $reason)';
+}
+
+/// 排新任务前的准入判据：返回原因码 = 拒收，null = 放行。
+typedef TtsRenderAdmission = String? Function(String bookKey);
+
 class TtsRenderQueue extends EngineChangeNotifier {
   TtsRenderQueue({
     required File store,
     required Directory workRoot,
     required TtsRenderRunner runner,
     DateTime Function()? now,
+    TtsRenderAdmission? admission,
   }) : _store = store,
        _workRoot = workRoot,
        _runner = runner,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _admission = admission;
+
+  /// 排新任务前的准入判据（null = 一律放行）。
+  final TtsRenderAdmission? _admission;
 
   final File _store;
 
@@ -484,7 +504,8 @@ class TtsRenderQueue extends EngineChangeNotifier {
     }
   }
 
-  /// 排一个任务。同一本书已有未结束的任务时直接返回那个。
+  /// 排一个任务。同一本书已有未结束的任务时直接返回那个；准入判据拒收时抛
+  /// [TtsRenderRejected]（判据与入队在同一个同步段里，不会判完放行又被别处占走）。
   ///
   /// 新任务取代这本书之前所有已结束的任务（失败 / 取消 / 完成）：它们的清单条目与
   /// 工作目录一起删掉——新任务换了 id 与目录，旧目录里的按章成品再也不会被读到。
@@ -507,6 +528,8 @@ class TtsRenderQueue extends EngineChangeNotifier {
     for (final TtsRenderJob job in _jobs) {
       if (!job.isTerminal && job.bookKey == bookKey) return job;
     }
+    final String? rejected = _admission?.call(bookKey);
+    if (rejected != null) throw TtsRenderRejected(bookKey, rejected);
     final int now = _now().millisecondsSinceEpoch;
     final TtsRenderJob job = TtsRenderJob(
       id: '$now-${_idSeq++}',
