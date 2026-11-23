@@ -390,7 +390,7 @@ class MusicMvBackdropSource {
 | **1 引擎读层** | `fushi_music` 进引擎依赖；歌词本地层、MV 引用解析、封面选取搬进引擎，app 改调引擎、删 app 版；修 §2.5 的注释 | 引擎纯度守卫绿；歌词 / MV 解析单测从 app 挪到引擎后照样绿 |
 | **2 音乐模块 + 客户端（app 当 host）** | `MusicLibraryHostModule` / `EngineMusicLibraryHost`、路由与 DTO、能力位；`InterconnectMusicBrowser`、`fushiHost` 播放解析、`music_remote_tracks` 新 kind；MV 解析器重构 + 远端解析器；卡拉 OK 页接远端；合规判据 + 守卫 | 引擎路由测试（分页、流票吊销 / 释放、Range、`peerPlayable`、YouTube / 插件曲目不出）；客户端假 host 测试；两台真机：远端曲目播放 + 歌词页 MV 背景对齐（蓝光 m2ts 一例） |
 | **3 服务端扫描与随包** | 扫描 / 刮削 / MV 自动匹配写层搬进引擎；`scanAll` 加 music + prune（走音乐扫描器的软删）、`kServerLibraryRootKinds` 加 music、admin purge；`release-server.yml` / `build-multiplatform.yml` 构建随包 `native/fushi_music`（照 `fushi_fsrs`：Rust 缓存、Linux x64、`bin/../lib/` 查找、构建失败即失败）；服务端操作目录 / WebUI 允许 music 根 | 服务端集成测试扫一个带 CUE + 蓝光 MV 的夹具目录，客户端经服务端播放并出 MV 背景；`server-parity-gaps.md` 删掉音乐那一节 |
-| 4（均已拍「做」） | Q4 网络来源曲目经 host 中继（BUG-5303）、Q5 光盘标题 / CDDA（BUG-5304）、Q6 转码（BUG-5305）、Q9 远程重新匹配（BUG-5306）、Q12 下载到本机（BUG-5307）；Q3 回写已并入第 2 期 | 各自 |
+| 4（均已拍「做」） | Q4 / Q5 / Q6 / Q12 已并入本 PR；Q9 远程重新匹配（BUG-5306）待 #4249；Q3 回写已并入第 2 期 | 各自 |
 
 操作目录：第 2、3 期若新增 `ctl_<域>_routes.dart` 路由（例如服务端 `/api/admin/libraries` 放开 music、
 app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设计不为 AI 新增浏览远端音乐的写操作。
@@ -406,15 +406,15 @@ app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设�
 | **Q1** 播放身份 | a：直接用 host `track_uid` | 已做：`musicServerPlaybackUid` / `musicServerPlaybackAlbumUid`，`music_remote_tracks` 新 kind `fushi_host`（uid = host uid），歌词偏移 / 歌单 / 播放记录与 host 同键 |
 | **Q2** 单独开关 | 不加：与视频库 / 书库同级，跟互联总开关走 | 已做：`MusicLibraryHostModule` 无独立开关，app 与服务端同装 |
 | **Q3** 写回 host | 你定 + 「根本性做完，照合集」→ c：全部写回 | 已做：歌词整首偏移（LWW `updatedAt`）、换歌词来源（手动指定）、MV 偏移（LWW）、host 歌单编辑（`MusicServerPlaylistEditing`；智能歌单 409）；歌词服务 ⓪ 层以 host 那份为准并写回 |
-| **Q4** 网络来源曲目中继 | 做 | 未做：host 标 `networkSource`、客户端暂不列出 → BUG-5303 |
-| **Q5** 光盘标题 / CDDA | 做 | 未做：host 标 `discTitle` / `cdda`、客户端暂不列出 → BUG-5304 |
-| **Q6** host 转码 | 做 | 未做：现原样直出 → BUG-5305 |
+| **Q4** 网络来源曲目中继 | 做 | 已做：host 用自己的来源解析器代读、Range 透传（`LibraryMediaUpstream` + `library_media_relay.dart`），凭据不出 host（BUG-5303 已修） |
+| **Q5** 光盘标题 / CDDA | 做 | 已做：`MusicStreamMaterializer` 按章节 / 盘时间轴截成 FLAC 缓存文件（CDDA 限 Windows host），签票回 `segmentApplied`（BUG-5304 已修） |
+| **Q6** host 转码 | 做 | 已做：签票带 `maxBitrateKbps`，源码率高于上限时整首转 AAC 缓存文件（可 seek）；未用视频 HLS 分段方案，理由见 BUG-5305（已修） |
 | **Q7** 下发 YouTube MV 绑定 | 做 | host 侧已做（`RemoteMusicVideo.youtubeRef`）；客户端消费随 MV 背景 → BUG-5302 |
 | **Q8** MV 曲目两条连接 | 你定 + 根本性做完 → a：接受两条，与本机实现一致 | 随客户端 MV 背景落地 → BUG-5302 |
 | **Q9** 远程重新匹配 / 手动绑定 | 做 | 未做：匹配器在未合并的 #4249 → BUG-5306 |
 | **Q10** iOS 合规单列判据 | 做 | 已做：`store_compliance.dart` 的 `interconnectMusicLibraryAvailableOn`（恒 true），`music_servers.dart` / `music_remote_tracks.dart` 只问它，守卫钉住 |
 | **Q11** 分期顺序 | a：先模块层与引擎 | 已按 a：第 0 期 → 第 1 期（部分）→ 第 2 期；第 1 期余项 → BUG-5300，第 3 期 → BUG-5301 |
-| **Q12** 下载到本机 | 做 | 未做 → BUG-5307 |
+| **Q12** 下载到本机 | 做 | 已做：复用插件下载管线，`forDownload` 签票（原样 + 整首），host 歌词写 sidecar，导入后 host uid 记别名并改指引用（BUG-5307 已修） |
 
 ### 9.1 实现与原设计的出入
 
@@ -425,4 +425,5 @@ app 侧列出远端曲库），同步写 `op_descriptions_<域>.dart`。本设�
   `cueStartMs` / `cueEndMs` 拼 EDL 段；播放项自带的起止优先。
 - **流票**：客户端只留最近 3 张曲目票（当前 + 预载 + 余量），更早的主动 `streamrelease`；host 侧 6 小时 TTL 与
   128 张上限兜底。
-- **本机放不了的曲目**（Q4 / Q5 未落地前）先不列出，与服务器页「放不了的曲目不列出」一致；落地时改成灰显。
+- **本机放不了的曲目**：只剩这台 host 确实给不出字节的（无头服务端没有网络来源解析器、非 Windows host 的 CDDA），不列出，与服务器页一致。曲目本身是 MV 视频的照常列（Q8 a）。
+- **统一流票的解析器**从「id → 文件」改成「请求 → 字节来源」（`LibraryMediaFile` / `LibraryMediaUpstream`），签票可带种类专属 `options`（音乐：`maxBitrateKbps`、`segment`），解析器回的说明并进签票响应。

@@ -57,6 +57,7 @@ import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_plugin_relay.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/library_media_relay.dart';
 import 'package:fushi_engine/sync/library_media_streams.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';

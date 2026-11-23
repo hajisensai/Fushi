@@ -134,7 +134,12 @@ void main() {
         'sort': 'newest',
       });
       final List<MusicServerTrack> tracks = await b.albumTracks('alb1');
-      expect(tracks.map((MusicServerTrack x) => x.id), <String>['u1', 'u4']);
+      // 曲目本身是 MV 视频的照常列（design-imusic-q8）；host 给不出字节的不列。
+      expect(tracks.map((MusicServerTrack x) => x.id), <String>[
+        'u1',
+        'u3',
+        'u4',
+      ]);
       expect(b.kind, MusicServerKind.fushiHost);
     });
 
@@ -210,6 +215,42 @@ void main() {
             .where((_Call c) => c.path == '/api/library/media/streamrelease')
             .map((_Call c) => c.query['ticket']),
         containsAll(<String>['k1', 'k2', 'k3', 'k4']),
+      );
+    });
+
+    test('码率上限随签票带给 host；host 截好段时不再用曲目行的 CUE 起止', () async {
+      final _FakeTransport t = _FakeTransport((_Call c) {
+        if (c.path == '/api/library/media/streamurl') {
+          return (
+            status: 200,
+            body: <String, Object?>{
+              'url': 'https://h/api/library/media/stream?token=z',
+              'ticket': 'z',
+              'segmentApplied': true,
+              'transcoded': true,
+            },
+          );
+        }
+        return (status: 200, body: _track('u1', cueStart: 5000, cueEnd: 9000));
+      });
+      final InterconnectMusicBrowser b = InterconnectMusicBrowser(
+        serverId: serverId,
+        displayName: 'PC',
+        transport: t,
+        maxBitrateKbps: () => 128,
+      );
+      final InterconnectMusicOpenedTrack o = await b.openTrack('u1');
+      expect(o.startMs, isNull);
+      expect(o.endMs, isNull);
+      expect(
+        t.calls
+            .firstWhere((_Call c) => c.path == '/api/library/media/streamurl')
+            .json,
+        <String, Object?>{
+          'kind': 'musicTrack',
+          'id': 'u1',
+          'options': <String, Object?>{'maxBitrateKbps': 128},
+        },
       );
     });
 

@@ -51,8 +51,40 @@ final class LibraryMediaStreamKind {
   String toString() => wireName;
 }
 
-/// 「id → 文件」：模块只提供这个，签发 / 取流 / 吊销都归 [LibraryMediaStreams]。null = 找不到（404）。
-typedef LibraryMediaFileResolver = Future<File?> Function(String id);
+/// 一次签发 / 取流要的东西：票上绑定的 id + 签发时 client 给的种类专属参数（如音乐的码率上限）。
+typedef LibraryMediaRequest = ({String id, Map<String, Object?> options});
+
+/// 解析出来的字节来源。
+sealed class LibraryMediaSource {
+  const LibraryMediaSource({this.info = const <String, Object?>{}});
+
+  /// 签发时随 `url` / `ticket` 一起回给 client 的说明（如 `transcoded` / `segmentApplied`）。
+  final Map<String, Object?> info;
+}
+
+/// host 本机的一个文件（含按需转码 / 截段后落在缓存里的文件），按 Range 直出。
+final class LibraryMediaFile extends LibraryMediaSource {
+  const LibraryMediaFile(this.file, {super.info});
+
+  final File file;
+}
+
+/// host 代读的上游 HTTP(S) 地址（网络音乐来源，design-imusic-q4）：Range 原样透传。
+final class LibraryMediaUpstream extends LibraryMediaSource {
+  const LibraryMediaUpstream(
+    this.url, {
+    this.headers = const <String, String>{},
+    super.info,
+  });
+
+  final Uri url;
+  final Map<String, String> headers;
+}
+
+/// 「请求 → 字节来源」：模块只提供这个，签发 / 取流 / 吊销都归 [LibraryMediaStreams]。null = 找不到（404）。
+/// 签发时调一次（校验存在、可预热缓存），取流时再调一次（实现应缓存，第二次即时）。
+typedef LibraryMediaResolver =
+    Future<LibraryMediaSource?> Function(LibraryMediaRequest request);
 
 /// 一张已签发的票。
 class LibraryMediaGrant {
@@ -107,8 +139,8 @@ class LibraryMediaStreams {
   final Random _random;
 
   final Map<String, LibraryMediaGrant> _grants = <String, LibraryMediaGrant>{};
-  final Map<LibraryMediaStreamKind, LibraryMediaFileResolver> _resolvers =
-      <LibraryMediaStreamKind, LibraryMediaFileResolver>{};
+  final Map<LibraryMediaStreamKind, LibraryMediaResolver> _resolvers =
+      <LibraryMediaStreamKind, LibraryMediaResolver>{};
 
   int get length => _grants.length;
 
@@ -119,7 +151,7 @@ class LibraryMediaStreams {
   /// 注册某种流的解析器。同一种只能注册一次（两个模块抢同一种流是装配错误）。
   void registerResolver(
     LibraryMediaStreamKind kind,
-    LibraryMediaFileResolver resolver,
+    LibraryMediaResolver resolver,
   ) {
     if (_resolvers.containsKey(kind)) {
       throw StateError('流种类 $kind 的解析器已注册');
@@ -128,7 +160,7 @@ class LibraryMediaStreams {
   }
 
   /// [kind] 的解析器；没有模块提供这种流时 null。
-  LibraryMediaFileResolver? resolverFor(LibraryMediaStreamKind kind) =>
+  LibraryMediaResolver? resolverFor(LibraryMediaStreamKind kind) =>
       _resolvers[kind];
 
   /// 签发一张票：先按 TTL 清过期、再收束到上限内（淘汰最旧者），保证插入后总数 ≤ [capacity]。
@@ -229,3 +261,14 @@ const String kLibraryMediaStreamPath = '/api/library/media/stream';
 /// 统一释放路径（Basic）：`POST ?ticket=` → 204，幂等。
 const String kLibraryMediaStreamReleasePath =
     '/api/library/media/streamrelease';
+
+/// 解析器明确拒绝（带 HTTP 状态）：如上游来源连不上（502）、转码失败（500）。
+class LibraryMediaUnavailable implements Exception {
+  const LibraryMediaUnavailable(this.status, this.message);
+
+  final int status;
+  final String message;
+
+  @override
+  String toString() => 'LibraryMediaUnavailable($status $message)';
+}

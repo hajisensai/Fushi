@@ -85,12 +85,22 @@ extension _MediaStreamsDomain on FushiSyncServer {
     if (kind == null || id is! String || id.isEmpty) {
       return shelf.Response(400, body: 'Missing kind / id');
     }
-    final LibraryMediaFileResolver? resolver = _mediaStreams.resolverFor(kind);
+    final LibraryMediaResolver? resolver = _mediaStreams.resolverFor(kind);
     if (resolver == null) {
       return shelf.Response.notFound('Stream kind not offered');
     }
-    final File? file = await resolver(id);
-    if (file == null) return shelf.Response.notFound('Media not found');
+    // 种类专属参数（音乐的码率上限等）：只收 JSON 对象，原样记在票上，取流时再交给解析器。
+    final Object? rawOptions = body['options'];
+    final Map<String, Object?> options = rawOptions is Map<String, dynamic>
+        ? Map<String, Object?>.unmodifiable(rawOptions)
+        : const <String, Object?>{};
+    final LibraryMediaSource? source;
+    try {
+      source = await resolver((id: id, options: options));
+    } on LibraryMediaUnavailable catch (e) {
+      return shelf.Response(e.status, body: e.message);
+    }
+    if (source == null) return shelf.Response.notFound('Media not found');
     // BUG-4393：票记签发凭据，取流时对照当前快照（吊销即连带作废）。
     final String? issuer = _requestCredentialFingerprint(request);
     if (issuer == null) return shelf.Response(401);
@@ -98,12 +108,14 @@ extension _MediaStreamsDomain on FushiSyncServer {
       kind: kind,
       id: id,
       issuer: issuer,
+      options: options,
     );
     final Uri url = request.requestedUri.replace(
       path: kLibraryMediaStreamPath,
       queryParameters: <String, String>{'token': token},
     );
     return jsonResponse(<String, dynamic>{
+      ...source.info,
       'url': url.toString(),
       'ticket': token,
     });
@@ -120,7 +132,7 @@ extension _MediaStreamsDomain on FushiSyncServer {
       );
     }
     final LibraryMediaGrant? grant = _mediaStreams[token];
-    final LibraryMediaFileResolver? resolver = grant == null
+    final LibraryMediaResolver? resolver = grant == null
         ? null
         : _mediaStreams.resolverFor(grant.kind);
     if (grant == null || resolver == null) {
@@ -138,9 +150,28 @@ extension _MediaStreamsDomain on FushiSyncServer {
         headers: <String, String>{'Content-Type': 'text/plain'},
       );
     }
-    // 只认票上的 id，不认 URL 里的任何东西。
-    final File? file = await resolver(grant.id);
-    if (file == null) return shelf.Response.notFound('Media not found');
+    // 只认票上的 id 与参数，不认 URL 里的任何东西。
+    final Object? options = grant.options;
+    final LibraryMediaSource? source;
+    try {
+      source = await resolver((
+        id: grant.id,
+        options: options is Map<String, Object?>
+            ? options
+            : const <String, Object?>{},
+      ));
+    } on LibraryMediaUnavailable catch (e) {
+      return shelf.Response(e.status, body: e.message);
+    }
+    final File file;
+    switch (source) {
+      case null:
+        return shelf.Response.notFound('Media not found');
+      case LibraryMediaUpstream():
+        return relayLibraryMediaUpstream(source, request);
+      case LibraryMediaFile():
+        file = source.file;
+    }
     final String etag;
     try {
       etag = await videoFileEtag(file);

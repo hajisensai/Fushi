@@ -136,9 +136,12 @@ class _StreamModule extends InterconnectHostModule {
       );
 
   @override
-  Map<LibraryMediaStreamKind, LibraryMediaFileResolver> get streamResolvers =>
-      <LibraryMediaStreamKind, LibraryMediaFileResolver>{
-        LibraryMediaStreamKind.musicTrack: (String id) async => files[id],
+  Map<LibraryMediaStreamKind, LibraryMediaResolver> get streamResolvers =>
+      <LibraryMediaStreamKind, LibraryMediaResolver>{
+        LibraryMediaStreamKind.musicTrack: (LibraryMediaRequest r) async {
+          final File? f = files[r.id];
+          return f == null ? null : LibraryMediaFile(f);
+        },
       };
 }
 
@@ -567,12 +570,12 @@ void main() {
       );
       streams.registerResolver(
         LibraryMediaStreamKind.musicTrack,
-        (String _) async => null,
+        (LibraryMediaRequest _) async => null,
       );
       expect(
         () => streams.registerResolver(
           LibraryMediaStreamKind.musicTrack,
-          (String _) async => null,
+          (LibraryMediaRequest _) async => null,
         ),
         throwsStateError,
       );

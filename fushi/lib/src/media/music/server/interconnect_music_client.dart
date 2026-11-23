@@ -128,9 +128,16 @@ class InterconnectMusicBrowser
     required this.displayName,
     required InterconnectMusicTransport transport,
     this.timeout = const Duration(seconds: 15),
+    int? Function()? maxBitrateKbps,
     @visibleForTesting DateTime Function()? now,
   }) : _transport = transport,
+       _maxBitrateKbps = maxBitrateKbps ?? _noLimit,
        _now = now ?? DateTime.now;
+
+  static int? _noLimit() => null;
+
+  /// 设置里的码率上限（null = 原样直出）。签票时带给 host，host 按源码率决定转不转（design-imusic-q6）。
+  final int? Function() _maxBitrateKbps;
 
   @override
   MusicServerKind get kind => MusicServerKind.fushiHost;
@@ -295,15 +302,28 @@ class InterconnectMusicBrowser
 
   // ── 取流 ──
 
-  /// 签一首曲目的流票（host 的 `track_uid`）。CUE 虚拟曲目的起止取 host 的曲目行。
-  Future<InterconnectMusicOpenedTrack> openTrack(String trackUid) async {
+  /// 签一首曲目的流票（host 的 `track_uid`）。host 截好段（光盘 / CDDA / 转码，回 `segmentApplied`）时
+  /// 流就是这一首；否则 CUE 虚拟曲目的起止取 host 的曲目行，由播放器拼 EDL 段。
+  ///
+  /// [forDownload]：下载到本机（design-imusic-q12）——原样音质（不带码率上限），且要「就是这一首」的
+  /// 文件（CUE 虚拟曲目由 host 无损截段）。
+  Future<InterconnectMusicOpenedTrack> openTrack(
+    String trackUid, {
+    bool forDownload = false,
+  }) async {
     final Future<Map<String, Object?>> meta = _getJson(
       'tracks/${_seg(trackUid)}',
     );
-    final ({Uri url, String ticket}) stream = await _issue(
-      LibraryMediaStreamKind.musicTrack,
-      trackUid,
-    );
+    final int? cap = forDownload ? null : _maxBitrateKbps();
+    final ({Uri url, String ticket, Map<String, Object?> info}) stream =
+        await _issue(
+          LibraryMediaStreamKind.musicTrack,
+          trackUid,
+          options: <String, Object?>{
+            kMusicStreamOptionMaxBitrate: ?cap,
+            if (forDownload) kMusicStreamOptionSegment: true,
+          },
+        );
     final RemoteMusicTrack? track;
     try {
       track = RemoteMusicTrack.fromJson(await meta);
@@ -315,21 +335,27 @@ class InterconnectMusicBrowser
     while (_trackTickets.length > kHeldTrackTickets) {
       unawaited(_release(_trackTickets.removeAt(0)));
     }
+    final bool applied = stream.info['segmentApplied'] == true;
     return (
       url: stream.url.toString(),
-      startMs: track?.cueStartMs,
-      endMs: track?.cueEndMs,
+      startMs: applied ? null : track?.cueStartMs,
+      endMs: applied ? null : track?.cueEndMs,
     );
   }
 
-  Future<({Uri url, String ticket})> _issue(
+  Future<({Uri url, String ticket, Map<String, Object?> info})> _issue(
     LibraryMediaStreamKind kind,
-    String id,
-  ) async {
+    String id, {
+    Map<String, Object?>? options,
+  }) async {
     final InterconnectMusicResponse res = await _transport.send(
       'POST',
       kLibraryMediaStreamUrlPath,
-      json: <String, Object?>{'kind': kind.wireName, 'id': id},
+      json: <String, Object?>{
+        'kind': kind.wireName,
+        'id': id,
+        if (options != null && options.isNotEmpty) 'options': options,
+      },
       timeout: timeout,
     );
     _check(res, kLibraryMediaStreamUrlPath);
@@ -343,7 +369,7 @@ class InterconnectMusicBrowser
     final Uri issued = Uri.parse(url);
     final Uri? resolved = res.resolve(issued.path, issued.queryParameters);
     if (resolved == null) throw const FormatException('streamurl: bad url');
-    return (url: resolved, ticket: ticket);
+    return (url: resolved, ticket: ticket, info: body!);
   }
 
   Future<void> _release(String ticket) async {
@@ -512,10 +538,8 @@ class InterconnectMusicBrowser
     if (video.youtubeRef != null) {
       throw StateError('YouTube MV is played by the client YouTube source');
     }
-    final ({Uri url, String ticket}) s = await _issue(
-      LibraryMediaStreamKind.musicVideo,
-      video.id,
-    );
+    final ({Uri url, String ticket, Map<String, Object?> info}) s =
+        await _issue(LibraryMediaStreamKind.musicVideo, video.id);
     bool released = false;
     return MusicServerMediaLease(
       uri: s.url,
@@ -577,8 +601,10 @@ class InterconnectMusicBrowser
     }
   }
 
-  static bool _playable(RemoteMusicTrack t) =>
-      t.unplayableReason == null && !t.isVideo;
+  /// 这台 host 确实给不出字节的才不列（host 已经把网络来源 / 光盘 / CDDA 经自己给出，只剩无头服务端
+  /// 没有网络来源解析器、非 Windows host 的 CDDA 这类）。曲目本身是 MV 视频的照常列：音频与画面
+  /// 两条连接（design-imusic-q8 选 a）。
+  static bool _playable(RemoteMusicTrack t) => t.unplayableReason == null;
 
   List<MusicServerTrack> _tracks(Map<String, Object?> body) {
     final Object? items = body['items'];
@@ -587,8 +613,7 @@ class InterconnectMusicBrowser
         for (final Object? e in items)
           if (e is Map<String, Object?>)
             if (RemoteMusicTrack.fromJson(e) case final RemoteMusicTrack t)
-              // 本机放不了的（光盘章节 / 音频 CD / host 的网络来源曲目，§4.4）先不列出，
-              // 与服务器页「放不了的曲目不列出」一致；中继与光盘见 design-imusic-q4 / q5 登记项。
+              // 这台 host 给不出字节的不列出，与服务器页「放不了的曲目不列出」一致。
               if (_playable(t)) _track(t),
     ];
   }
@@ -652,12 +677,16 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
     this._repository, {
     this.cacheTtl = const Duration(minutes: 1),
     this.probeTimeout = const Duration(seconds: 6),
+    int? Function()? maxBitrateKbps,
     @visibleForTesting
     InterconnectMusicTransport Function(InterconnectHostRef host)?
     transportFactory,
     @visibleForTesting DateTime Function()? now,
   }) : _transportFactory = transportFactory,
+       _maxBitrateKbps = maxBitrateKbps,
        _now = now ?? DateTime.now;
+
+  final int? Function()? _maxBitrateKbps;
 
   /// 进程级装配点（`AppModel` 装）；未装配（测试 / 无头入口）时没有互联音乐库。
   static InterconnectMusicHosts? instance;
@@ -782,6 +811,7 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
           serverId: host.key,
           displayName: label,
           transport: t,
+          maxBitrateKbps: _maxBitrateKbps,
         ),
       );
     }
@@ -810,6 +840,7 @@ class InterconnectMusicHosts implements RemoteCoverFetcher {
       serverId: host.key,
       displayName: label,
       transport: ChannelInterconnectMusicTransport(channel),
+      maxBitrateKbps: _maxBitrateKbps,
     );
   }
 

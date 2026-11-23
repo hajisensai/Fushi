@@ -33,10 +33,10 @@ abstract class InterconnectHostModule {
   /// 处理一个已过 Basic 鉴权的请求。
   Future<shelf.Response> handle(InterconnectRequest request);
 
-  /// 本模块经 [LibraryMediaStreams] 签发的流种类，以及「id → 文件」的解析器。服务器启动时逐个注册；
+  /// 本模块经 [LibraryMediaStreams] 签发的流种类，以及「请求 → 字节来源」的解析器。服务器启动时逐个注册；
   /// 没有流的模块为空。
-  Map<LibraryMediaStreamKind, LibraryMediaFileResolver> get streamResolvers =>
-      const <LibraryMediaStreamKind, LibraryMediaFileResolver>{};
+  Map<LibraryMediaStreamKind, LibraryMediaResolver> get streamResolvers =>
+      const <LibraryMediaStreamKind, LibraryMediaResolver>{};
 
   /// host 停机时调用（中止在跑的任务等）。默认什么也不做。
   Future<void> dispose() async {}

@@ -54,6 +54,10 @@ class MusicLibraryHostModule extends InterconnectHostModule {
       'lyrics': true,
       'videos': true,
       'writeback': RemoteMusicWriteback.all,
+      // 签票可带码率上限（design-imusic-q6）；光盘 / CDDA / 网络来源经 host 给（q4 / q5）。
+      'transcode': true,
+      'relay': true,
+      'discs': true,
     };
   }
 
@@ -61,14 +65,17 @@ class MusicLibraryHostModule extends InterconnectHostModule {
   List<String> get routePrefixes => const <String>[kRemoteMusicRoutePrefix];
 
   @override
-  Map<LibraryMediaStreamKind, LibraryMediaFileResolver> get streamResolvers {
+  Map<LibraryMediaStreamKind, LibraryMediaResolver> get streamResolvers {
     final EngineMusicLibraryHost? h = host;
     if (h == null) {
-      return const <LibraryMediaStreamKind, LibraryMediaFileResolver>{};
+      return const <LibraryMediaStreamKind, LibraryMediaResolver>{};
     }
-    return <LibraryMediaStreamKind, LibraryMediaFileResolver>{
-      LibraryMediaStreamKind.musicTrack: h.trackFile,
-      LibraryMediaStreamKind.musicVideo: h.videoFile,
+    return <LibraryMediaStreamKind, LibraryMediaResolver>{
+      LibraryMediaStreamKind.musicTrack: h.trackSource,
+      LibraryMediaStreamKind.musicVideo: (LibraryMediaRequest r) async {
+        final File? f = await h.videoFile(r.id);
+        return f == null ? null : LibraryMediaFile(f);
+      },
     };
   }
 

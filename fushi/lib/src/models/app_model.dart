@@ -499,7 +499,10 @@ import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart'
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
-    show appleMusicTokenSource, loadMusicServerBindings;
+    show
+        appleMusicTokenSource,
+        loadMusicServerBindings,
+        musicServerBitrateLimit;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -1243,6 +1246,23 @@ class AppModel
       MusicLibraryHostModule(
         EngineMusicLibraryHost(
           database: () => isDatabaseReady ? database : null,
+          // 网络来源（SFTP / WebDAV / AList）曲目由 host 用自己的来源解析器代读（design-imusic-q4），
+          // 与本机播放同一个解析器（按来源缓存连接）。
+          networkSource: (MusicTrackRow row) async {
+            final MusicRemoteMediaResolver? resolver = musicRemoteMediaResolver;
+            if (resolver == null) return null;
+            final MusicRemoteStream? s = await resolver.resolve(
+              MusicPlayItem(
+                trackUid: row.trackUid,
+                path: row.path,
+                title: row.title,
+                sourceId: row.sourceId,
+              ),
+            );
+            return s == null
+                ? null
+                : (url: Uri.parse(s.url), headers: s.headers);
+          },
         ),
       ),
     ],
@@ -2465,6 +2485,10 @@ class AppModel
     final InterconnectMusicHosts musicHosts =
         InterconnectMusicHosts.instance ??= InterconnectMusicHosts(
           () => SyncRepository(database),
+          // 与服务器曲库同一个「码率上限」设置：设了就请 host 转码（design-imusic-q6）。
+          maxBitrateKbps: () => musicServerBitrateLimit(
+            isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 0,
+          ),
         );
     musicFushiHostTrackOpener ??= musicHosts.openTrackPath;
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md

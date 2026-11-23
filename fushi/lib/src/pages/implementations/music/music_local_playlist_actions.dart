@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -21,9 +22,20 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_download.dart'
+    show MusicPluginDownloadStart;
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_download.dart';
+import 'package:fushi/src/media/source_library/add_local_folder_source.dart'
+    show importLocalFolderOnceAt;
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show SourceScanSummary;
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/storage/download_layout.dart' show DownloadRoot;
+import 'package:fushi/src/sync/interconnect_download_manager.dart'
+    show interconnectDownloadManagerProvider;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -270,13 +282,32 @@ MusicItemMenu? musicServerTrackLibraryMenu(
     open: (MusicMenuAnchor? anchor) => unawaited(() async {
       // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
       final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
-      final List<MusicMenuAction> actions =
-          await musicServerTrackLibraryActions(
-            app.database,
-            browser,
-            track,
-            albumTitle: albumTitle,
-          );
+      final ProviderContainer container = ProviderScope.containerOf(
+        context,
+        listen: false,
+      );
+      final List<MusicMenuAction> actions = <MusicMenuAction>[
+        ...await musicServerTrackLibraryActions(
+          app.database,
+          browser,
+          track,
+          albumTitle: albumTitle,
+        ),
+        // 互联 host 曲目：下载成本机曲目离线听（design-imusic-q12）。
+        if (browser is InterconnectMusicBrowser)
+          MusicMenuAction(
+            id: 'download',
+            label: t.music_action_download,
+            icon: FushiIcons.download,
+            run: (_) => _downloadHostTrack(
+              app,
+              container,
+              browser,
+              track,
+              albumTitle: albumTitle,
+            ),
+          ),
+      ];
       if (!context.mounted) return;
       await showMusicActionMenu(
         context,
@@ -312,4 +343,57 @@ Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
     inLibrary: inLibrary,
     playlistLabel: playlistLabel,
   );
+}
+
+/// 互联 host 曲目 → 本机曲目（下载中心可见进度 / 暂停 / 重试）。
+Future<void> _downloadHostTrack(
+  AppModel app,
+  ProviderContainer container,
+  InterconnectMusicBrowser browser,
+  MusicServerTrack track, {
+  String? albumTitle,
+}) async {
+  final InterconnectMusicDownloadService service =
+      InterconnectMusicDownloadService(
+        downloads: container.read(interconnectDownloadManagerProvider),
+        root: () async => Directory((await DownloadRoot.current()).musicRoot),
+        import: (String path) async {
+          final SourceScanSummary? summary = await importLocalFolderOnceAt(
+            db: app.database,
+            transcribeAudiobook: null,
+            mediaKind: SourceLibraryKind.music.dbValue,
+            path: path,
+            recursive: false,
+          );
+          return summary?.error;
+        },
+        adopt: ({required String hostUid, required String localPath}) =>
+            adoptInterconnectMusicDownload(
+              app.database,
+              hostUid: hostUid,
+              localPath: localPath,
+            ),
+      );
+  final MusicPluginDownloadStart outcome = await service.download(
+    browser,
+    track,
+    albumTitle: albumTitle,
+  );
+  final ({String msg, ToastSeverity severity}) toast = switch (outcome) {
+    MusicPluginDownloadStart.started => (
+      msg: t.music_download_started,
+      severity: ToastSeverity.success,
+    ),
+    MusicPluginDownloadStart.alreadyRunning => (
+      msg: t.music_download_already_running,
+      severity: ToastSeverity.info,
+    ),
+    MusicPluginDownloadStart.alreadyDownloaded => (
+      msg: t.music_download_already_done,
+      severity: ToastSeverity.info,
+    ),
+    MusicPluginDownloadStart.trialOnly || MusicPluginDownloadStart.unplayable =>
+      (msg: t.music_download_unplayable, severity: ToastSeverity.warning),
+  };
+  FushiToast.show(msg: toast.msg, severity: toast.severity);
 }

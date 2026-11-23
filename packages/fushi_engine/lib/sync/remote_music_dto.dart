@@ -22,6 +22,13 @@ const int kRemoteMusicWireVersion = 1;
 const int kRemoteMusicPageLimit = 100;
 
 /// 能力位里 `writeback` 列出的回写种类（拍板 design-imusic-q3：照合集的做法，客户端上的修改写回 host）。
+/// `musicTrack` 签票参数（`streamurl` 的 `options`）里的码率上限（kbps，design-imusic-q6）。
+const String kMusicStreamOptionMaxBitrate = 'maxBitrateKbps';
+
+/// `musicTrack` 签票参数：要「就是这一首」的文件（CUE 虚拟曲目也由 host 无损截好段，下载到本机用，
+/// design-imusic-q12）。
+const String kMusicStreamOptionSegment = 'segment';
+
 abstract final class RemoteMusicWriteback {
   /// `PUT …/tracks/<uid>/lyrics/offset`：整首歌词偏移。
   static const String lyricsOffset = 'lyricsOffset';

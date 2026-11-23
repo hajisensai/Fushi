@@ -6,8 +6,14 @@
 /// - 内嵌封面经 `fushi_music` 在后台 isolate 读（原生库不在时只出目录封面）。
 /// 两者都可由测试替换（[MusicHostAnimeEpisodeFile] / [MusicHostEmbeddedCover]）。
 ///
-/// 只出 host 本机能读到字节的曲目：网络来源 / 光盘标题 / CDDA 标 [RemoteMusicTrack.unplayableReason]
-/// （design-imusic-q4 / q5 的中继与盘共享接入登记在设计稿 §8 第 4 期）。
+/// 曲目字节怎么给（[trackSource]，统一流票 `musicTrack`）：
+/// - 本机文件：原样按 Range 直出（bit-perfect）；
+/// - 网络来源（SFTP / WebDAV / AList，design-imusic-q4）：host 用自己的来源凭据代读，Range 透传
+///   （[LibraryMediaUpstream]），凭据不出 host；
+/// - 光盘标题 / CDDA（design-imusic-q5）：按章节 / 轨起止截成 FLAC 缓存文件（[MusicStreamMaterializer]）；
+/// - client 带码率上限（design-imusic-q6）且源码率高于上限：转成 AAC 缓存文件。
+/// 只有这台 host 确实给不出字节时才标 [RemoteMusicTrack.unplayableReason]（没装网络来源解析器的
+/// 无头服务端、非 Windows 上的 CDDA）。
 library;
 
 import 'dart:io';
@@ -16,13 +22,19 @@ import 'dart:isolate';
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart'
-    show isMusicDiscTitlePath;
+    show isMusicDiscTitlePath, musicDvdDemuxerSource;
+import 'package:fushi_engine/media/music/host/music_stream_materializer.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart'
     show MusicVideoKind, kMusicVideoExtensions, parseAnimeEpisodeMusicVideoRef;
+import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart'
+    show DvdTitleInput, encodeDvdTitleInput;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdDiscRootForTitlePath, dvdTitleNumberForPath, isDvdTitlePath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show themeSongFilesOf;
+import 'package:fushi_engine/sync/library_media_streams.dart';
 import 'package:fushi_engine/sync/remote_music_dto.dart';
 import 'package:fushi_music/fushi_music.dart' show readMusicEmbeddedCover;
 import 'package:path/path.dart' as p;
@@ -33,6 +45,13 @@ typedef MusicHostAnimeEpisodeFile =
 
 /// 曲目文件的内嵌封面字节；没有为 null。
 typedef MusicHostEmbeddedCover = Future<Uint8List?> Function(String audioPath);
+
+/// 网络来源曲目 → host 能读的上游地址（+ 头部）。app 当 host 装它（来源解析器在 app 里）；
+/// 无头服务端没有网络来源，不装 → 这类曲目标 `networkSource`。解析不出回 null。
+typedef MusicHostNetworkSource =
+    Future<({Uri url, Map<String, String> headers})?> Function(
+      MusicTrackRow track,
+    );
 
 /// 封面：文件或内存字节，二选一。
 typedef MusicHostCover = ({File? file, Uint8List? bytes});
@@ -53,11 +72,34 @@ class EngineMusicLibraryHost {
     required FushiDatabase? Function() database,
     MusicHostAnimeEpisodeFile? animeEpisodeFile,
     MusicHostEmbeddedCover? embeddedCover,
+    MusicHostNetworkSource? networkSource,
+    MusicStreamMaterializer? materializer,
+    bool? cddaSupported,
     DateTime Function()? now,
   }) : _database = database,
        _animeEpisodeFile = animeEpisodeFile,
        _embeddedCover = embeddedCover ?? _readEmbeddedCover,
+       _networkSource = networkSource,
+       _materializer = materializer ?? MusicStreamMaterializer(),
+       _cddaSupported = cddaSupported ?? Platform.isWindows,
        _now = now ?? DateTime.now;
+
+  final MusicHostNetworkSource? _networkSource;
+  final MusicStreamMaterializer _materializer;
+
+  /// CDDA 能不能截：只有 Windows 有按扇区读光驱的实现（macOS 的 CD 挂成 AIFF 文件，入库就是本机文件）。
+  final bool _cddaSupported;
+
+  /// 这首经互联放不了的原因（这台 host 给不出字节）；能放为 null。
+  String? unplayableReason(MusicTrackRow t) => switch (musicHostTrackOrigin(
+    t,
+  )) {
+    MusicHostTrackOrigin.localFile || MusicHostTrackOrigin.discTitle => null,
+    MusicHostTrackOrigin.networkSource =>
+      _networkSource == null ? RemoteMusicUnplayable.networkSource : null,
+    MusicHostTrackOrigin.cdda =>
+      _cddaSupported ? null : RemoteMusicUnplayable.cdda,
+  };
 
   final FushiDatabase? Function() _database;
   final MusicHostAnimeEpisodeFile? _animeEpisodeFile;
@@ -287,13 +329,117 @@ class EngineMusicLibraryHost {
 
   // ── 流 / 封面 ───────────────────────────────────────────────────────────
 
-  /// 统一流票 `musicTrack` 的「id → 文件」：只认在库、能经互联放的曲目，文件得在。
-  Future<File?> trackFile(String trackUid) async {
-    final MusicTrackRow? row = await _db.getMusicTrack(trackUid);
+  /// 统一流票 `musicTrack` 的「请求 → 字节来源」：只认在库、这台 host 给得出字节的曲目。
+  ///
+  /// 回的说明（随签票响应给 client）：`transcoded` / `codec` / `bitrateKbps`（转了码）、
+  /// `segmentApplied`（文件就是这一首，CUE / 章节起止已截好，client 不再拼 EDL 段）。
+  Future<LibraryMediaSource?> trackSource(LibraryMediaRequest request) async {
+    final MusicTrackRow? row = await _db.getMusicTrack(request.id);
     if (row == null || row.deletedAt != null) return null;
-    if (musicHostUnplayableReason(row) != null) return null;
-    final File f = File(row.path);
-    return await f.exists() ? f : null;
+    if (unplayableReason(row) != null) return null;
+    final int? cap = _bitrateCap(request.options);
+    // 源本身就不超过上限（有损小码率）时不转：转了只会更差。
+    final int? sourceKbps = row.bitrate == null
+        ? null
+        : (row.bitrate! / 1000).round();
+    final int? kbps = cap != null && (sourceKbps == null || sourceKbps > cap)
+        ? cap
+        : null;
+    final int? start = row.cueStartMs;
+    final int? end = row.cueEndMs;
+    final String version = '${row.fileMtimeAt}|${row.fileSize}';
+    Map<String, Object?> info({required bool segment}) => <String, Object?>{
+      'transcoded': kbps != null,
+      if (kbps != null) 'codec': 'aac',
+      if (kbps != null) 'bitrateKbps': kbps,
+      'segmentApplied': segment,
+    };
+    Future<LibraryMediaSource> cut(MusicMaterializeInput input) async {
+      try {
+        final File f = await _materializer.materialize(
+          input,
+          startMs: start,
+          endMs: end,
+          bitrateKbps: kbps,
+        );
+        return LibraryMediaFile(f, info: info(segment: true));
+      } on MusicMaterializeException catch (e) {
+        throw LibraryMediaUnavailable(500, e.message);
+      } on Exception catch (e) {
+        throw LibraryMediaUnavailable(500, '$e');
+      }
+    }
+
+    switch (musicHostTrackOrigin(row)) {
+      case MusicHostTrackOrigin.localFile:
+        final File f = File(row.path);
+        if (!await f.exists()) return null;
+        // 下载要整首（CUE 虚拟曲目也截成单独的文件）；播放时整文件 + client 拼 EDL 段即可。
+        final bool wantSegment =
+            request.options[kMusicStreamOptionSegment] == true && start != null;
+        if (kbps == null && !wantSegment) {
+          return LibraryMediaFile(f, info: info(segment: false));
+        }
+        return cut(MusicFfmpegInput(f.path, version: version));
+      case MusicHostTrackOrigin.networkSource:
+        final ({Uri url, Map<String, String> headers})? up;
+        try {
+          up = await _networkSource!(row);
+        } on Object catch (e) {
+          throw LibraryMediaUnavailable(502, 'Source unreachable: $e');
+        }
+        if (up == null) {
+          throw const LibraryMediaUnavailable(502, 'Source unavailable');
+        }
+        if (kbps == null &&
+            !(request.options[kMusicStreamOptionSegment] == true &&
+                start != null)) {
+          return LibraryMediaUpstream(
+            up.url,
+            headers: up.headers,
+            info: info(segment: false),
+          );
+        }
+        return cut(
+          MusicFfmpegInput(
+            up.url.toString(),
+            headers: up.headers,
+            version: version,
+          ),
+        );
+      case MusicHostTrackOrigin.discTitle:
+        final String? input = _discTitleInput(row.path);
+        if (input == null) return null;
+        return cut(MusicFfmpegInput(input, version: version));
+      case MusicHostTrackOrigin.cdda:
+        return cut(
+          MusicCddaInput(
+            row.path.substring('cdda://'.length),
+            discId: row.albumUid ?? row.trackUid,
+          ),
+        );
+    }
+  }
+
+  static int? _bitrateCap(Map<String, Object?> options) {
+    final Object? v = options[kMusicStreamOptionMaxBitrate];
+    if (v is! num) return null;
+    final int k = v.toInt();
+    // 不合理的值当没给（不让 client 把 host 拖去转 8 kbps）。
+    return k >= 32 && k <= 1411 ? k : null;
+  }
+
+  /// 光盘标题曲目的 ffmpeg 输入：DVD → `dvdvideo` title 输入；BD → `.mpls` 本身（原盘适配器改写）。
+  static String? _discTitleInput(String path) {
+    if (isDvdTitlePath(path)) {
+      final String? root = dvdDiscRootForTitlePath(path);
+      final int? title = dvdTitleNumberForPath(path);
+      if (root == null || title == null) return null;
+      return encodeDvdTitleInput(
+        DvdTitleInput(disc: musicDvdDemuxerSource(root), title: title),
+      );
+    }
+    return path;
   }
 
   /// 统一流票 `musicVideo` 的「id → 文件」：host 本机能解析成文件的绑定（`local` 含蓝光 `.m2ts`、
@@ -366,7 +512,9 @@ class EngineMusicLibraryHost {
       }
     }
     if (source == null || !source.hasEmbeddedCover) return null;
-    if (musicHostUnplayableReason(source) != null) return null;
+    if (musicHostTrackOrigin(source) != MusicHostTrackOrigin.localFile) {
+      return null;
+    }
     final Uint8List? bytes = await _embeddedCover(source.path);
     return bytes == null || bytes.isEmpty ? null : (file: null, bytes: bytes);
   }
@@ -408,7 +556,8 @@ class EngineMusicLibraryHost {
       );
     }
     // CUE 虚拟曲目与非本机文件没有 sidecar（与 `MusicLyricsTrackRef.readsLocalLyrics` 同口径）。
-    if (track.cueStartMs != null || musicHostUnplayableReason(track) != null) {
+    if (track.cueStartMs != null ||
+        musicHostTrackOrigin(track) != MusicHostTrackOrigin.localFile) {
       return null;
     }
     final LyricSidecarFile? side = await _sidecarOf(track.path);
@@ -714,7 +863,7 @@ class EngineMusicLibraryHost {
       cueStartMs: t.cueStartMs,
       cueEndMs: t.cueEndMs,
       isVideo: kMusicVideoExtensions.contains(ext),
-      unplayableReason: musicHostUnplayableReason(t),
+      unplayableReason: unplayableReason(t),
       hasVideos: hasVideos,
       updatedAt: t.fileMtimeAt,
     );
@@ -882,18 +1031,21 @@ String musicHostAlbumCoverRef(String albumUid) =>
 String musicHostTrackCoverRef(String trackUid) =>
     '$_kTrackCoverPrefix$trackUid';
 
-/// 这首经互联放不了的原因；能放为 null。网络来源（SFTP / WebDAV / AList）、光盘标题、CDDA。
-String? musicHostUnplayableReason(MusicTrackRow t) {
+/// 曲目字节从哪来。
+enum MusicHostTrackOrigin { localFile, networkSource, discTitle, cdda }
+
+/// 按路径判曲目来源：`cdda://` 整盘、光盘 title 身份路径、网络来源（有 sourceId 的远程地址）、本机文件。
+MusicHostTrackOrigin musicHostTrackOrigin(MusicTrackRow t) {
   final String lower = t.path.toLowerCase();
-  if (lower.startsWith('cdda://')) return RemoteMusicUnplayable.cdda;
-  if (isMusicDiscTitlePath(t.path)) return RemoteMusicUnplayable.discTitle;
+  if (lower.startsWith('cdda://')) return MusicHostTrackOrigin.cdda;
+  if (isMusicDiscTitlePath(t.path)) return MusicHostTrackOrigin.discTitle;
   if (t.sourceId != null &&
       (lower.startsWith('sftp://') ||
           lower.startsWith('https://') ||
           lower.startsWith('http://'))) {
-    return RemoteMusicUnplayable.networkSource;
+    return MusicHostTrackOrigin.networkSource;
   }
-  return null;
+  return MusicHostTrackOrigin.localFile;
 }
 
 /// 内嵌封面（读整个文件头里的图片块，放后台 isolate）。`fushi_music` 原生库不在（未随包的服务端）
