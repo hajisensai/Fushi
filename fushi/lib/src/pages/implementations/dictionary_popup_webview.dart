@@ -2104,6 +2104,25 @@ JSON.stringify((function(){
   /// 要等首帧可播（play() resolve），弱网下给足余量。超时按失败处理走 Dart 兜底。
   static const Duration _kWordAudioPlayReportTimeout = Duration(seconds: 5);
 
+  /// 自动发音的 WebView 播放目标：**本次查词那一层**的 state，在解析完音频、真正要播
+  /// 时才经 [resolve] 取（BUG-5278）。
+  ///
+  /// 不能在触发自动发音的当下取：自动发音在查词结果一到就触发，同一帧新建的层此刻
+  /// state 可能还没挂上；更不能用「最上层**可见**弹窗」——本层这时还挂在「等首帧渲染
+  /// 再翻出」上、尚不可见，拿到的是 null（顶层查词）或下面那层旧弹窗（嵌套查词）。
+  /// 两种情况都让自动发音错过弹窗 `<audio>` 快路径、回落 media_kit（每次播放重建 mpv，
+  /// 首次还要先排完静音预热）——「第一次自动发音要等一会」。
+  ///
+  /// [resolve] 回 null（层已关 / 未挂载）时答 false，[playResolvedLookupAudio] 回落
+  /// Dart 播放器，不会无声。
+  static Future<bool> Function(String url) lazyWordAudioPlayer(
+    DictionaryPopupWebViewState? Function() resolve,
+  ) => (String url) async {
+    final DictionaryPopupWebViewState? state = resolve();
+    if (state == null || !state.mounted) return false;
+    return state.playWordAudioUrl(url);
+  };
+
   /// Auto-read entry point: drives the popup's own `<audio>` element to play an
   /// already-resolved URL (from [resolveWordAudioWebViewUrl]). Returns whether
   /// playback truly started — false when the WebView is not ready, the JS side

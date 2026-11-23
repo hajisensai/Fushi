@@ -566,6 +566,10 @@ const List<String> _deviceLocalTables = <String>[
   // v165：视频内容指纹（搬家识别）。纯缓存、可由本机文件重算；另一台设备同一个
   // book_uid 可能是另一份片源，设备本地。无外键，删除 / 回灌顺序无约束。
   'video_content_fingerprints',
+  // v172：本地 MV 自动匹配的视频声纹 / 已对齐记录。纯缓存、由本机文件算出，键是本机
+  // 路径与 track_uid，设备本地。无外键，删除 / 回灌顺序无约束。
+  'music_video_prints',
+  'music_video_match_checks',
   // v135：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
   'game_voice_casts',
   // v133：音乐刮削三表。键是 track_uid（含本机路径）、内容可由重刮重建，与曲库目录
@@ -581,6 +585,14 @@ const List<String> _deviceLocalTables = <String>[
   // live 值）。配对本身（sync_hibiki_client_urls）就是设备本地的，换台设备 hostId 对不上
   // 任何配对；覆盖恢复后从本机 bak 回灌，下次目录刷新再对账。无外键。
   'remote_dictionary_metadata',
+  // v175：服务器曲目（Jellyfin / Subsonic）的离线副本。装的是本机文件路径，另一台设备上
+  // 没有这些文件；覆盖恢复后从本机 bak 回灌。无外键。
+  'music_server_downloads',
+  // v176：服务器曲目没送达的播放 / 收藏（补发队列）与客户端状态（收藏最后已知值、客户端测的
+  // 响度）。都是这台设备的事：恢复别的设备的备份不能把那台的播放再补报一遍；覆盖恢复后从
+  // 本机 bak 回灌。无外键。
+  'music_server_pending_actions',
+  'music_server_track_states',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -618,12 +630,17 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_theme_song_spans',
   'media_link_ai_verdicts',
   'video_content_fingerprints',
+  'music_video_prints',
+  'music_video_match_checks',
   'game_voice_casts',
   'music_scrape_meta',
   'music_metadata_raw_snapshots',
   'music_locked_fields',
   'music_track_uid_aliases',
   'remote_dictionary_metadata',
+  'music_server_downloads',
+  'music_server_pending_actions',
+  'music_server_track_states',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`

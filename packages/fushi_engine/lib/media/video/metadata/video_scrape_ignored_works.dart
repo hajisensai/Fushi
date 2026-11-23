@@ -13,34 +13,22 @@
 /// 快照，见 app 侧 `SyncRepository.deviceLocalPrefKeys` 与 `ProfileKeys`）。
 library;
 
-import 'dart:convert';
-
+// 存储已推广到所有媒体共用的忽略机制（`media/identity/pending_identity.dart`
+// 的 [PendingIdentityIgnoreDomain]）；视频域的偏好键仍是这一个，旧数据原样有效。
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/identity/pending_identity.dart';
 
 /// 已忽略作品的偏好键（值：JSON 字符串数组，元素是作品 stableKey）。
 const String kVideoScrapeIgnoredWorksPrefKey = 'video_scrape_ignored_works';
 
 /// 读已忽略的作品 stableKey 集合。值缺失 / 损坏一律当作空集（= 不忽略任何作品：
 /// 宁可多提醒，也不静默吞掉待确认作品）。
-Future<Set<String>> loadIgnoredVideoScrapeWorks(FushiDatabase database) async =>
-    decodeIgnoredVideoScrapeWorks(
-      await database.getPref(kVideoScrapeIgnoredWorksPrefKey),
-    );
+Future<Set<String>> loadIgnoredVideoScrapeWorks(FushiDatabase database) =>
+    loadPendingIdentityIgnored(database, PendingIdentityIgnoreDomain.video);
 
 /// [loadIgnoredVideoScrapeWorks] 的纯解码部分。
-Set<String> decodeIgnoredVideoScrapeWorks(String? raw) {
-  if (raw == null || raw.isEmpty) return <String>{};
-  try {
-    final Object? decoded = jsonDecode(raw);
-    if (decoded is! List<Object?>) return <String>{};
-    return <String>{
-      for (final Object? key in decoded)
-        if (key is String && key.isNotEmpty) key,
-    };
-  } on FormatException {
-    return <String>{};
-  }
-}
+Set<String> decodeIgnoredVideoScrapeWorks(String? raw) =>
+    decodePendingIdentityIgnored(raw);
 
 /// 把 [stableKeys] 标为忽略（[ignored] = true）或撤销忽略。读改写在一个事务里，
 /// 并发的两次切换不会互相覆盖。集合变空时删键，不留空数组。
@@ -48,22 +36,9 @@ Future<void> setVideoScrapeWorksIgnored(
   FushiDatabase database,
   Iterable<String> stableKeys, {
   required bool ignored,
-}) => database.transaction(() async {
-  final Set<String> keys = await loadIgnoredVideoScrapeWorks(database);
-  final int before = keys.length;
-  final List<String> changed = stableKeys
-      .where((String key) => key.isNotEmpty)
-      .toList(growable: false);
-  if (ignored) {
-    keys.addAll(changed);
-  } else {
-    keys.removeAll(changed);
-  }
-  if (keys.length == before) return;
-  if (keys.isEmpty) {
-    await database.deletePref(kVideoScrapeIgnoredWorksPrefKey);
-    return;
-  }
-  final List<String> sorted = keys.toList()..sort();
-  await database.setPref(kVideoScrapeIgnoredWorksPrefKey, jsonEncode(sorted));
-});
+}) => setPendingIdentityIgnored(
+  database,
+  PendingIdentityIgnoreDomain.video,
+  stableKeys,
+  ignored: ignored,
+);

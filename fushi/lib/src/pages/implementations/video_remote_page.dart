@@ -1307,7 +1307,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState, {
+    DictionaryPopupWebViewState? Function()? popupState, {
     // 发音问那台设备要：远端解析 / TTS 兜底由它按自己的口径做，命中原文不上送。
     String matched = '',
   }) async {
@@ -1321,7 +1321,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     return playResolvedLookupAudio(
       ref,
       label: expression,
-      playInWebView: popupState?.playWordAudioUrl,
+      playInWebView: popupState == null
+          ? null
+          : DictionaryPopupWebViewState.lazyWordAudioPlayer(popupState),
     );
   }
 

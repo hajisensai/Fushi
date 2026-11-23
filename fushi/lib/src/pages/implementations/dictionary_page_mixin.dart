@@ -688,13 +688,15 @@ mixin DictionaryPageMixin {
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState, {
+    DictionaryPopupWebViewState? Function()? popupState, {
     String matched = '',
   }) => autoReadWordUnified(
     mixinAppModel,
     expression,
     reading,
-    playInWebView: popupState?.playWordAudioUrl,
+    playInWebView: popupState == null
+        ? null
+        : DictionaryPopupWebViewState.lazyWordAudioPlayer(popupState),
     matched: matched,
   );
 
@@ -937,15 +939,18 @@ mixin DictionaryPageMixin {
     return MinePopupResult.failed(outcome, message: described.message);
   }
 
-  /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
-  /// the just-rendered popup WebView (when this surface renders results in a
-  /// popup): auto-read then plays through its own `<audio>` element — the unified
-  /// fast path shared with the manual ♪ button and every surface. Null (e.g. an
-  /// inline full-page view with no popup WebView) falls back to the Dart player.
+  /// Resolves and plays the audio for [expression] / [reading]. [popupState]
+  /// looks up the WebView of the popup layer this lookup rendered into (when
+  /// this surface renders results in a popup): auto-read then plays through its
+  /// own `<audio>` element — the unified fast path shared with the manual ♪
+  /// button and every surface. It is called only when the audio is resolved and
+  /// about to play, not when auto-read fires: a layer created in the same frame
+  /// may not have mounted its state yet (BUG-5278). Null (e.g. an inline
+  /// full-page view with no popup WebView) falls back to the Dart player.
   Future<void> autoReadWord(
     String expression,
     String reading, {
-    DictionaryPopupWebViewState? popupState,
+    DictionaryPopupWebViewState? Function()? popupState,
     String matched = '',
   }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
@@ -1834,7 +1839,7 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.webViewState,
+            popupState: () => entry.webViewKey.webViewState,
             matched: lookupEntryMatchedText(first),
           );
         }
@@ -1959,7 +1964,7 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.webViewState,
+            popupState: () => entry.webViewKey.webViewState,
             matched: lookupEntryMatchedText(first),
           );
         }

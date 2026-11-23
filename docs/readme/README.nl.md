@@ -24,7 +24,7 @@
 
 | Platform | Status | Opmerkingen |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) of hoger |
+| Android | ✅ | Android 8.0 (API 26) of hoger |
 | Windows | ✅ | Het hooken van galgame-tekst en -stem werkt alleen op Windows |
 | macOS | ✅ | Alleen Apple Silicon; Intel-Macs worden niet ondersteund |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Geen ontdekken, online bronnen of downloadcentrum (App Store-richtlijnen) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Download de nieuwste versie van de [Fushi-website](https://fushi.moe/) — er zijn een Android-APK, een Windows-installatieprogramma en macOS-builds beschikbaar (alleen Apple Silicon; Intel-Macs worden niet ondersteund); iOS wordt geïnstalleerd via [TestFlight](https://testflight.apple.com/join/j88d69jx). Voor Linux bestaat nog geen kant-en-klare app-release; bouw de app vanuit de broncode. De headless Fushi Server wordt apart uitgebracht op [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Vereist Android 7.0 (API 24) of hoger.
+> Vereist Android 8.0 (API 26) of hoger.
 
 ## Bouwen
 

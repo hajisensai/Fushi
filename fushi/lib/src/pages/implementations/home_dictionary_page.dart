@@ -1931,7 +1931,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             autoReadWord(
               entry.word,
               entry.reading,
-              popupState: _resultWebViewKey.currentState,
+              popupState: () => _resultWebViewKey.currentState,
               matched: lookupEntryMatchedText(entry),
             );
           }

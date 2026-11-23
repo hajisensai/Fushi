@@ -63,9 +63,10 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final DiscoveryDownloadQueue? queue = queueOverride ?? _appQueue(ref);
+    final DiscoveryDownloadQueue? queue =
+        queueOverride ?? appQueue(ref.read(appProvider));
     final bool Function(String sourceId) external = queueOverride == null
-        ? _externalSourceResolver(ref)
+        ? externalSourceResolver(ref.read(appProvider))
         : (String _) => true;
     if (queue == null) {
       return tasksBuilder?.call(context, const <DownloadTaskEntry>[]) ??
@@ -76,10 +77,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
       builder: (BuildContext context, Widget? _) {
         final List<DiscoveryDownloadTask> tasks = queue.tasks;
         if (tasksBuilder != null) {
-          return tasksBuilder!(context, <DownloadTaskEntry>[
-            for (final DiscoveryDownloadTask task in tasks)
-              _buildEntry(queue, task, external: external(task.item.sourceId)),
-          ]);
+          return tasksBuilder!(context, entriesOf(queue, external: external));
         }
         if (tasks.isEmpty) return const SizedBox.shrink();
         final ThemeData theme = Theme.of(context);
@@ -148,6 +146,16 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     );
   }
 
+  /// 队列此刻的任务 → 统一任务列表条目。下载页与侧栏下载速览共用这一份映射
+  /// （见 `download_task_sources.dart`）。
+  List<DownloadTaskEntry> entriesOf(
+    DiscoveryDownloadQueue queue, {
+    required bool Function(String sourceId) external,
+  }) => <DownloadTaskEntry>[
+    for (final DiscoveryDownloadTask task in queue.tasks)
+      _buildEntry(queue, task, external: external(task.item.sourceId)),
+  ];
+
   DownloadTaskEntry _buildEntry(
     DiscoveryDownloadQueue queue,
     DiscoveryDownloadTask task, {
@@ -184,6 +192,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
         DiscoveryDownloadStatus.cancelled => DownloadTaskStatus.cancelled,
       },
       progress: progress,
+      subtitle: discoveryMediaKindLabel(task.item.kind),
       // No collection identity in direct resources: never infer it from titles.
       searchTerms: <String>[task.item.sourceId],
       builder: (BuildContext context) => DownloadTaskCard(
@@ -374,14 +383,15 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
 
   /// 生产队列。与漫画目录区同一道门：BrowsePage 会在数据库打开前被轻量
   /// widget 测试 / AppModel 桩渲染，空的可选任务区不该在这个窗口里去拉组装点。
-  static DiscoveryDownloadQueue? _appQueue(WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
+  /// app 持有的直链队列；库没就绪时为 null。
+  static DiscoveryDownloadQueue? appQueue(AppModel appModel) {
     return appModel.isDatabaseReady ? appModel.discoveryDownloadQueue : null;
   }
 
   /// 外部来源判据与发现页结果行同一个（[isExternalDiscoverySource]）。
-  static bool Function(String sourceId) _externalSourceResolver(WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
+  static bool Function(String sourceId) externalSourceResolver(
+    AppModel appModel,
+  ) {
     return (String sourceId) =>
         isExternalDiscoverySource(appModel.mediaDiscoveryService, sourceId);
   }

@@ -21,6 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
+use serde_json::{Value, json};
 
 use super::cache::CFG_KEY;
 use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon, legacy_config_for};
@@ -662,6 +663,10 @@ pub(crate) struct Collisions {
     /// 跨 profile 撞车的实体（[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 行却归了
     /// 同库另一个 profile。`entities` 一类按本 profile 的操作集合把它们算进协议 3 一侧；其中的笔记同时进 [notes]。
     pub entities: BTreeSet<Ref>,
+    /// 行没了的实体（BUG-5294，[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 里哪个
+    /// profile 名下都没有这一行（行归过同库另一个 profile，那个 profile 后来被删、行随它删掉）。协议 3 自己的规则下
+    /// （`project_entity`：没有行就写）它是这个 profile 的实体，`entities` 一类照样算进协议 3 一侧；其中的笔记同时进 [notes]。
+    pub orphaned: BTreeSet<Ref>,
 }
 
 /// 扫一遍 `reg_ix` 的全部写入，找出 [Collisions]。同时在内存里的只有每个旧 dot 的第一条修改（大库三十多万个）。
@@ -1352,13 +1357,18 @@ pub(crate) fn against_protocol_3(
         profile,
     )?;
     let new_entities = refs("SELECT DISTINCT id FROM ent_ix WHERE col = ?1")?;
-    for (id, kind) in taken_entities(src, profile, &entities, &new_entities)? {
+    for (id, (kind, row_elsewhere)) in taken_entities(src, profile, &entities, &new_entities)? {
         if kind == EntKind::Note {
             collided.notes.insert(format!("note:{}", id.text()));
         }
-        collided.entities.insert(id);
+        if row_elsewhere {
+            collided.entities.insert(id);
+        } else {
+            collided.orphaned.insert(id);
+        }
     }
     entities.extend(collided.entities.iter().cloned());
+    entities.extend(collided.orphaned.iter().cloned());
     push_refs(&mut diff, "entities", entities, new_entities);
     push_pair(&mut diff, ("tags", old_tags, new_tags));
     let media = texts(
@@ -1416,22 +1426,35 @@ pub(crate) fn against_protocol_3(
 /// （`store/schema.rs`），同库两个 profile 的操作日志里都有同一个实体的身份记录时只存一行——内容相同的留给先落投影的
 /// profile，不同的归规范 JSON 小者（`sync2::project_entity`）。另一个 profile 名下就没有这一行，而新代按集合各存各的。
 ///
-/// 只从 [new] 里协议 3 一侧没有的 ID 找（[own] 是本 profile 名下的行）：这一行在库里、归了另一个 profile，且本
-/// profile 已应用的操作（`sync2_ops`）里有它的身份记录，才算撞车（ID → 种类）；证不出的照常记成差异。
+/// 只从 [new] 里协议 3 一侧没有的 ID 找（[own] 是本 profile 名下的行）：本 profile 已应用的操作（`sync2_ops`）里有它的
+/// 身份记录，且这一行要么在库里、归了另一个 profile（撞车，BUG-5267），要么整张表里都没有（行随另一个 profile 的删除
+/// 没了，BUG-5294：`srs_entities` 只有按 `profile_uid` 整批删的路径，`store/profile_data.rs` `purge_on`）——才算协议 3
+/// 一侧的实体。返回 ID → (种类, 行是否归了别的 profile)；证不出的照常记成差异。行在本 profile 名下却不在 [own] 里的
+/// 不会出现（[own] 就是这些行）。
 fn taken_entities(
     src: &Connection,
     profile: &str,
     own: &BTreeSet<Ref>,
     new: &BTreeSet<Ref>,
-) -> Result<BTreeMap<Ref, EntKind>, String> {
-    let mut elsewhere: BTreeSet<&Ref> = BTreeSet::new();
+) -> Result<BTreeMap<Ref, (EntKind, bool)>, String> {
+    let mut elsewhere: BTreeMap<&Ref, bool> = BTreeMap::new();
     {
         let mut stmt = src
-            .prepare("SELECT 1 FROM srs_entities WHERE id = ?1 AND profile_uid != srs_id(?2)")
+            .prepare("SELECT profile_uid != srs_id(?2) FROM srs_entities WHERE id = ?1")
             .map_err(sql)?;
         for id in new.difference(own) {
-            if stmt.exists(params![id, profile]).map_err(sql)? {
-                elsewhere.insert(id);
+            let other: Option<bool> = stmt
+                .query_row(params![id, profile], |r| r.get(0))
+                .optional()
+                .map_err(sql)?;
+            match other {
+                Some(true) => {
+                    elsewhere.insert(id, true);
+                }
+                None => {
+                    elsewhere.insert(id, false);
+                }
+                Some(false) => {}
             }
         }
     }
@@ -1462,12 +1485,98 @@ fn taken_entities(
             .ok_or_else(|| format!("compare: op {} vanished", op_text(&op_id)))?;
         if let Body::Entity { kind, id, .. } = op.body().map_err(|e| e.to_string())? {
             let id = Ref::of(&id);
-            if elsewhere.contains(&id) {
-                out.insert(id, kind);
+            if let Some(&taken) = elsewhere.get(&id) {
+                out.insert(id, (kind, taken));
             }
         }
     }
     Ok(out)
+}
+
+/// 给 `trace::id_trace` 的结果逐个 ID 补上协议 3 一侧的行归属（`p3`，BUG-5294 / BUG-5295）：`srs_entities` /
+/// `srs_field_edits` / `srs_review_logs` 里有没有这个 ID 的行、归本 profile（`self`）还是同库别的 profile（`other`），
+/// 以及修改记录 / 日志的操作映射（`sync2_edit_ops` / `sync2_log_meta`）归谁、映射到的操作在不在本 profile 的日志里、
+/// 是否已清除。三张表里都没有的 ID 写 `"p3": {}`。只有归属、字段键与布尔值，不含内容。
+pub(crate) fn annotate_protocol_3(
+    src: &Connection,
+    profile: &str,
+    v: &mut Value,
+) -> Result<(), String> {
+    let Some(ids) = v.get_mut("ids").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    let owner = |mine: bool| if mine { "self" } else { "other" };
+    for item in ids {
+        let Some(id) = item.get("id").and_then(Value::as_str).map(str::to_owned) else {
+            continue;
+        };
+        let mut p3 = serde_json::Map::new();
+        let ent: Option<(bool, String)> = src
+            .prepare_cached(
+                "SELECT profile_uid = srs_id(?2), kind FROM srs_entities WHERE id = srs_id(?1)",
+            )
+            .map_err(sql)?
+            .query_row(params![id, profile], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .map_err(sql)?;
+        if let Some((mine, kind)) = ent {
+            p3.insert("entity".into(), json!({"row": owner(mine), "kind": kind}));
+        }
+        // 修改记录 / 日志：投影行与操作映射各自归谁；映射到的操作在本 profile 的日志里吗、清除了没有。
+        for (what, row_q, map_q) in [
+            (
+                "edit",
+                "SELECT profile_uid = srs_id(?2), field_key FROM srs_field_edits WHERE id = srs_id(?1)",
+                "SELECT m.profile_uid = srs_id(?2), o.purged FROM sync2_edit_ops m LEFT JOIN sync2_ops o                  ON o.profile_uid = srs_id(?2) AND o.device = m.device AND o.seq = m.seq WHERE m.edit_id = srs_id(?1)",
+            ),
+            (
+                "log",
+                "SELECT profile_uid = srs_id(?2), NULL FROM srs_review_logs WHERE id = srs_id(?1)",
+                "SELECT m.profile_uid = srs_id(?2), o.purged FROM sync2_log_meta m LEFT JOIN sync2_ops o                  ON o.profile_uid = srs_id(?2) AND o.device = m.device AND o.seq = m.seq WHERE m.log_id = srs_id(?1)",
+            ),
+        ] {
+            let row: Option<(bool, Option<String>)> = src
+                .prepare_cached(row_q)
+                .map_err(sql)?
+                .query_row(params![id, profile], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?;
+            let map: Option<(bool, Option<i64>)> = src
+                .prepare_cached(map_q)
+                .map_err(sql)?
+                .query_row(params![id, profile], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?;
+            if row.is_none() && map.is_none() {
+                continue;
+            }
+            let mut m = serde_json::Map::new();
+            m.insert(
+                "row".into(),
+                row.as_ref()
+                    .map_or(json!(null), |(mine, _)| json!(owner(*mine))),
+            );
+            if let Some((_, Some(key))) = &row {
+                m.insert("key".into(), json!(key));
+            }
+            m.insert(
+                "op".into(),
+                match &map {
+                    None => json!(null),
+                    Some((mine, purged)) => json!({
+                        "owner": owner(*mine),
+                        "inThisLog": purged.is_some(),
+                        "purged": purged.is_some_and(|p| p != 0),
+                    }),
+                },
+            );
+            p3.insert(what.into(), Value::Object(m));
+        }
+        if let Some(o) = item.as_object_mut() {
+            o.insert("p3".into(), Value::Object(p3));
+        }
+    }
+    Ok(())
 }
 
 /// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）

@@ -43,12 +43,15 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 171);
+    expect(migrated.schemaVersion, kFushiDbSchemaVersion);
     await migrated.setMediaNsfw(TagHostKind.epub, 'book-a', true, at: 10);
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     expect(columnsOf(probe, 'media_nsfw_flags'), <String>{
       'media_kind',
       'entry_key',

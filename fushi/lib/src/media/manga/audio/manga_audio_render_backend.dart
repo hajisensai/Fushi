@@ -278,18 +278,25 @@ class _MangaVoice {
 
   TtsDirectionSupport get support => ttsDirectionSupportOf(provider);
 
-  /// 一个片段实际下发的演出参数（只含引擎支持的字段）。短句定长只给不挂 LoRA 的
-  /// 声音（handoff：挂 LoRA 的时长预测可靠）。
-  TtsDirection directionFor(String segment, int seed) {
+  /// 一个片段实际下发的演出参数（只含引擎支持的字段；不能表达情绪的引擎把情绪折成
+  /// 语速 / 音高 / 音量）。[line] 是这句标注的演出（情绪 / 强度 / 语气说明 / 偏移）。
+  /// 短句定长只给不挂 LoRA 的声音（handoff：挂 LoRA 的时长预测可靠）。
+  TtsDirection directionFor(String segment, int seed, CastLineDirection line) {
     final TtsDirectionSupport s = support;
     return effectiveTtsDirection(
       s,
-      TtsDirection(
+      TtsDirection.fromLine(
+        line,
         seed: seed,
         durationSeconds: irodoriManualSeconds(segment, lora: s.adapter),
       ),
     );
   }
+
+  /// 这句生效的演出指纹（与片段无关的部分；见 `mangaDirectionKey`）。
+  String? directionKey(CastLineDirection line) => mangaDirectionKey(
+    effectiveTtsDirection(support, TtsDirection.fromLine(line)),
+  );
 
   /// 片段的缓存键（音色身份 + 生效的演出参数 + 文字）。
   String cacheKey(String segment, TtsDirection direction) =>
@@ -494,6 +501,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
         :final String voice,
         :final int seed,
         :final List<String> segments,
+        direction: final CastLineDirection line,
       )) {
         final _MangaVoice v;
         try {
@@ -505,7 +513,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
         for (final String segment in segments) {
           // 纯标点片段不送引擎：逐句合成时由 ttsSynthesizeSplittingOnReject 写静音。
           if (ttsTextIsSilent(segment)) continue;
-          final TtsDirection direction = v.directionFor(segment, seed);
+          final TtsDirection direction = v.directionFor(segment, seed, line);
           final String key = v.cacheKey(segment, direction);
           if (batch.containsKey(key) || await _cache.lookup(key) != null) {
             continue;
@@ -594,21 +602,36 @@ class AppMangaRenderBackend implements MangaRenderBackend {
   }
 
   @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async {
+    try {
+      return (await _voice(voice)).directionKey(direction);
+    } on MangaLineFailure {
+      // 声音解析不了：这句反正出不了新音频，按「没有生效的演出」比对，不为此丢掉旧音频。
+      return null;
+    }
+  }
+
+  @override
   Future<int> synthesizeLine({
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) async {
     final _MangaVoice v = await _voice(voice);
+    final CastLineDirection line = direction;
     final TtsCancelToken ttsCancel = TtsCancelToken();
     cancel.onCancel(ttsCancel.cancel);
     final List<String> keys = <String>[];
     final List<String> paths = <String>[];
     try {
       for (final String segment in segments) {
-        final TtsDirection direction = v.directionFor(segment, seed);
+        final TtsDirection direction = v.directionFor(segment, seed, line);
         final String key = v.cacheKey(segment, direction);
         // 整批合成里这段失败过：这一句直接记失败（走占位 + 账本），不再逐句重跑 worker。
         final MangaLineFailure? batchFailure = _batchFailures[key];
@@ -793,9 +816,16 @@ class MangaLocalAudioBackend implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) => throw UnsupportedError('local audio only');
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => null;
 
   @override
   Future<int> cutClip({

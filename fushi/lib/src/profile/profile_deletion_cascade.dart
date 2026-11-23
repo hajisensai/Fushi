@@ -53,13 +53,25 @@ class ProfileDeletionBackupException implements Exception {
   String toString() => 'ProfileDeletionBackupException: $cause';
 }
 
+/// 复习库此刻打不开（要先升级 / 上次升级没完成 / 别的进程正在升级 / 库打不开……，[cause] 是打开时的原始异常）：
+/// 数不了、也备份不了这个 Profile 的复习数据。删除同样中止、Profile 原样保留——删前先备份是删除的前提
+/// （反馈 8TaOy2i-lL 方案 A），打不开就没有撤销途径；不删 `profiles` 行而把复习数据留成无主副本（BUG-5275）。
+class ProfileDeletionSrsUnavailableException implements Exception {
+  const ProfileDeletionSrsUnavailableException(this.cause);
+
+  final Object cause;
+
+  @override
+  String toString() => 'ProfileDeletionSrsUnavailableException: $cause';
+}
+
 /// 删 Profile 的级联清理。
 abstract interface class ProfileDeletionCascade {
-  /// [profile] 被删时会连带删掉的数据规模。
+  /// [profile] 被删时会连带删掉的数据规模。复习库打不开时抛 [ProfileDeletionSrsUnavailableException]。
   Future<ProfileDeletionImpact> impactOf(ProfileRow profile);
 
-  /// 备份 [profile] 的复习数据并返回之后要执行的清理。备份失败抛 [ProfileDeletionBackupException]
-  /// （调用方据此中止删除）。
+  /// 备份 [profile] 的复习数据并返回之后要执行的清理。复习库打不开抛 [ProfileDeletionSrsUnavailableException]，
+  /// 备份失败抛 [ProfileDeletionBackupException]（调用方据此中止删除）。
   Future<ProfileDeletionCleanup> prepare(ProfileRow profile);
 
   /// 一次性存量扫描：清掉 srs.db 里不属于 [live] 中任何 Profile 的数据（同样先备份）。已扫过就什么都不做。
