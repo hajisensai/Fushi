@@ -20,6 +20,7 @@ import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -28,6 +29,7 @@ import 'package:fushi_engine/tts/tts_reject_split.dart';
 
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
@@ -271,7 +273,18 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
           final TtsProvider provider = providers[attempt.presetId] ??= voice
               .descriptor
               .create(voice.preset, tts.host);
-          final String key = TtsAudioCache.keyFor(voice.identity, attempt.text);
+          // 与制作任务同一口径（演出参数 + 缓存键），随后排的制作任务才能直接命中这次
+          // 补回的音频，而不是按原样再合成一遍。
+          final TtsDirection direction = ttsSentenceDirection(
+            support: ttsDirectionSupportOf(provider),
+            cast: cast,
+            sentence: attempt.sentence,
+          );
+          final String key = ttsSentenceCacheKey(
+            voiceIdentity: voice.identity,
+            direction: direction,
+            text: attempt.text,
+          );
           await ttsWithRetry(
             () => cache.obtain(
               key,
@@ -280,6 +293,7 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
                 attempt.text,
                 outputPath: outputPath,
                 cancel: cancel,
+                direction: direction,
               ),
             ),
             cancel: cancel,

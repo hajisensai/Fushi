@@ -81,6 +81,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/sync/sync_activity.dart' show SyncActivityKind;
+import 'package:fushi/src/sync/sync_task_board.dart'
+    show SyncTaskHandle, beginSyncTask, resetSyncTasksForTest;
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -4993,6 +4996,105 @@ void main() {
     await db.setPref('active_profile_id', '$bob');
     await pumpDashboard(tester);
     expect(avatarLabel(), 'Bob', reason: '切换激活 Profile 后头像要跟着变');
+  });
+
+  testWidgets('头像只管账户：同步在跑时头像不画同步环、标签不带同步文字', (WidgetTester tester) async {
+    // 拍板台 design-avatar-combo-placement（2026-11-23）：此前有后台任务时头像外圈
+    // 画进度环、点击改成打开任务明细，同步期间进不了排行榜。
+    useSize(tester, const Size(1280, 900));
+    final int alice = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
+    );
+    await db.setPref('active_profile_id', '$alice');
+    addTearDown(resetSyncTasksForTest);
+    final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+    sweep.error('boom');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('home-avatar-sync-ring')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-avatar-sync-error')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<Semantics>(
+            find.byKey(const ValueKey<String>('home-toolbar-avatar')),
+          )
+          .properties
+          .label,
+      'Alice',
+      reason: '头像标签只说账户 / 名字，不再拼同步状态',
+    );
+    sweep.finish();
+  });
+
+  testWidgets('默认配置胶囊：一份配置时不出现；两份以上时在头像右边显示激活配置并随切换更新', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    final Finder chip = find.byKey(const ValueKey<String>('home-profile-chip'));
+    final Finder chipName = find.byKey(
+      const ValueKey<String>('home-profile-chip-name'),
+    );
+    final int alice = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
+    );
+    await db.setPref('active_profile_id', '$alice');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect((await db.getAllProfiles()).length, 1, reason: '前提：只有一份配置');
+    expect(chip, findsNothing, reason: '只有一份配置时不出现切换入口');
+
+    final int bob = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Bob', createdAt: 0, updatedAt: 0),
+    );
+    await pumpDashboard(tester);
+    expect(chip, findsOneWidget, reason: '新建第二份配置后出现（听 profiles 表）');
+    expect(tester.widget<Text>(chipName).data, 'Alice');
+    final Finder avatar = find.byKey(
+      const ValueKey<String>('home-toolbar-avatar'),
+    );
+    expect(
+      tester.getTopLeft(chip).dx,
+      greaterThan(tester.getTopRight(avatar).dx),
+      reason: '方案 a：胶囊在头像右边',
+    );
+    expect(
+      tester.getCenter(chip).dy,
+      moreOrLessEquals(tester.getCenter(avatar).dy, epsilon: 1),
+      reason: '与头像同一行、垂直居中对齐',
+    );
+
+    await db.setPref('active_profile_id', '$bob');
+    await pumpDashboard(tester);
+    expect(
+      tester.widget<Text>(chipName).data,
+      'Bob',
+      reason: '别处（设置页 / 悬浮球）切换后胶囊跟着变',
+    );
+
+    await tester.tap(chip);
+    await pumpDashboard(tester);
+    expect(
+      find.byKey(ValueKey<String>('home-profile-menu-$alice')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey<String>('home-profile-menu-$bob')),
+      findsOneWidget,
+    );
+    expect(find.text(t.home_profile_menu_header), findsOneWidget);
+    expect(find.text(t.home_profile_menu_binding_note), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-profile-menu-manage')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('切换激活 Profile 后首页统计立即换成新配置的（反馈 FH1toxJJxz）', (

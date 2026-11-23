@@ -271,8 +271,9 @@ void _redirectFlagMigrationGroup(String? lib, bool haveLib) {
         plain: 0,
       }, reason: '不存在的目录跳过，不进结果');
       expect(first.deferred, isEmpty);
-      expect(flagOf(withRedirect).readAsStringSync(), '1 $redirectSize\n');
-      expect(flagOf(plain).readAsStringSync(), '0 $plainSize\n');
+      // 第三列是判据版本（redirect_glossary.hpp kFlagCriterion，BUG-5272 起为 2）。
+      expect(flagOf(withRedirect).readAsStringSync(), '1 $redirectSize 2\n');
+      expect(flagOf(plain).readAsStringSync(), '0 $plainSize 2\n');
 
       final DateTime stamp = flagOf(withRedirect).lastModifiedSync();
       await Future<void>.delayed(const Duration(milliseconds: 20));

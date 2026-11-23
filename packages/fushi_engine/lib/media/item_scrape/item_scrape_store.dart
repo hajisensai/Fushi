@@ -16,7 +16,7 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 ///
 /// 书籍刮削门面（Bangumi / DLsite，以及之后的 AniList / openBD / NDL / 楽天）、
 /// 游戏元数据刮削、控制通道的 `library scrape-meta set` 都只经这里写：
-/// - [writeMeta]：整行写入 / 覆盖文字资料（刮削口径：v172 字段锁住的字段保留旧值）；
+/// - [writeMeta]：整行写入 / 覆盖文字资料（刮削口径：v177 字段锁住的字段保留旧值）；
 /// - [setManualFields]：用户手填（写值并上锁；清空 = 解锁交还刮削，BUG-5111）；
 /// - [mergeMeta] / [restoreMeta]：脚本合并写 / 撤销快照原样写回；
 /// - [setImageFromFile] / [setImageFromUrl]：附加图（backdrop / logo）原子落盘到
@@ -50,7 +50,7 @@ class ItemScrapeStore {
 
   /// 写入 / 整行覆盖 [key] 的文字资料（刮削写回的口径）。
   ///
-  /// v172 字段锁：已有行上锁住的字段（用户手填过的）保留旧值，锁随行保留；
+  /// v177 字段锁：已有行上锁住的字段（用户手填过的）保留旧值，锁随行保留；
   /// [details] 自带的 [ItemScrapeDetails.lockedFields] 不参与（刮削结果不改锁）。
   /// [overrideLocked] = true 时（脚本 / AI 的明确整行替换）锁住的字段也写新值，
   /// 锁照旧保留——之后的刮削仍不覆盖它。
@@ -268,7 +268,7 @@ class ItemScrapeKey {
   String toString() => '${mediaType.dbValue}:$entryKey';
 }
 
-/// `item_scrape_meta.locked_fields` 里可锁的字段（v172，BUG-5111）。wire 值 =
+/// `item_scrape_meta.locked_fields` 里可锁的字段（v177，BUG-5111）。wire 值 =
 /// [name]，只增不改名；未知值解析时静默忽略。
 enum ItemScrapeLockableField {
   /// 简介。
@@ -357,7 +357,7 @@ class ItemScrapeDetails {
   final List<String> tags;
   final String? detailUrl;
 
-  /// 用户手填过、刮削不再覆盖的字段（v172）。
+  /// 用户手填过、刮削不再覆盖的字段（v177）。
   final Set<ItemScrapeLockableField> lockedFields;
 
   /// 只有手动来源、没有任何资料也没有锁的空壳（清空手填后据此删行）。

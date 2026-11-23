@@ -76,7 +76,13 @@ pub fn preflight(conn: &Connection, profile: &str) -> Result<Vec<String>, String
     match migrated {
         None => out.push("profile has no protocol 3 identity (sync2_self)".to_owned()),
         Some(None) => out.push("legacy rows are not migrated into the op log yet".to_owned()),
-        Some(Some(_)) => {}
+        // 迁移做完了、投影里却还有没被本 profile 的操作代表的旧修改记录 / 日志（BUG-5295）：补包（`migrate` 对这种
+        // profile 照样补，`store/sync2/mod.rs` `sync2_migrate`）之前新代读不到它们。
+        Some(Some(_)) => {
+            if crate::store::sync2::has_unrepresented_rows(conn, profile)? {
+                out.push("legacy rows are not represented in this profile's op log".to_owned());
+            }
+        }
     }
     for (table, what) in [
         (

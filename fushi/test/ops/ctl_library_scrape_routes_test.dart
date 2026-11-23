@@ -107,7 +107,7 @@ void main() {
     expect(ref.invalidations, greaterThan(0));
   });
 
-  test('v172 字段锁：手填的简介经 replace 照写、锁保留；undo 连锁一起恢复', () async {
+  test('v177 字段锁：手填的简介经 replace 照写、锁保留；undo 连锁一起恢复', () async {
     await seedBook(db, '锁');
     final String uid = (await db.resolveEpubBookUid('锁'))!;
     final ItemScrapeKey key = ItemScrapeKey(MediaKind.epub, uid);

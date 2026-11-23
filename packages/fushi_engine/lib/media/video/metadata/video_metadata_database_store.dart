@@ -1162,14 +1162,21 @@ class VideoMetadataDatabaseStore {
     final List<VideoMetadataCreditsCompanion> rows =
         <VideoMetadataCreditsCompanion>[];
     final Set<String> seenCredits = <String>{};
+    // 真正写进库的 credit。下面补外部 id 时只认它们：去重丢掉的那条 credit 的人物 /
+    // 角色行没写，给它写 provider identity 会撞外键、让整部作品刮削失败（BUG-5281：
+    // AniDB 同一部作品里两个同名角色由同一位声优配音，第二条 credit 被去重，它的
+    // 角色 id 却照样去写 identity）。
+    final List<VideoMetadataCredit> written = <VideoMetadataCredit>[];
     for (final VideoMetadataCredit credit in credits) {
       final String personKey = _personKey(credit.person);
+      // 与表上 UNIQUE(owner, person_key, credit_kind, role_name) 同一判据。
       final String creditKey = <String>[
         personKey,
         credit.kind.name,
         credit.roleName ?? credit.character?.name ?? '',
       ].join('\u0000');
       if (!seenCredits.add(creditKey)) continue;
+      written.add(credit);
       people.add(
         VideoMetadataPeopleCompanion.insert(
           personKey: personKey,
@@ -1226,7 +1233,7 @@ class VideoMetadataDatabaseStore {
       credits: rows,
       keepExisting: keepExisting,
     );
-    for (final VideoMetadataCredit credit in credits) {
+    for (final VideoMetadataCredit credit in written) {
       await _mergeEntityIdentities(
         personKey: _personKey(credit.person),
         ids: credit.person.ids,

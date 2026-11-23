@@ -328,6 +328,10 @@ enum FushiCardFieldStyle {
 
   /// 小字（次要色）。
   small,
+
+  /// 大号发音键（听力卡正面同款）：字段里的音频画成大号发音键，模板沿用
+  /// `fc-audio fc-audio--large` 样式（BUG-5297：听力预设正面与修复前一样大）。
+  audio,
 }
 
 /// 字段区块：一个字段 + 显示样式 + 可选标题。字段为空时整块不显示（与模板条件段同义）。
@@ -661,7 +665,9 @@ String fushiCardItemSnippet(FushiCardItem item) {
           'data-fc-block="field" data-fc-style="${style.name}"'
           '${title.isEmpty ? '' : ' data-fc-title="$t"'}>'
           '${title.isEmpty ? '' : '<div class="fc-field-title">$t</div>'}'
-          '<div class="fc-field-body">{{$field}}</div></div>{{/$field}}';
+          '<div class="fc-field-body'
+          '${style == FushiCardFieldStyle.audio ? ' fc-audio fc-audio--large' : ''}'
+          '">{{$field}}</div></div>{{/$field}}';
     case FushiCardHtmlItem(:final String html, :final bool wrapped):
       return wrapped
           ? '<div class="fc-html" data-fc-block="html">$html</div>'
@@ -902,13 +908,40 @@ FushiCardLayoutProbe _layoutProbe(String template, FushiCardSide side) {
       );
     }
   }
-  final List<FushiCardItem>? old = _historicLayout(template, side);
+  final List<FushiCardItem>? old =
+      _historicLayout(template, side) ?? _legacyListeningLayout(template, side);
   if (old != null) return (items: old, mismatch: null);
   if (spans == null) return (items: null, mismatch: 'block markup is broken');
   return (
     items: null,
     mismatch: _firstDifference(rest ?? _norm(template), current),
   );
+}
+
+/// 「加模板 › 听力」预设在 BUG-5297 修复之前写的正面（a5d5863e50 起，规范形）：手写的一个音频
+/// 字段大号发音键，没有区块标记、也不是内置骨架，区块布局认不出、整面回退 WebView。现在预设
+/// 改用 [fushiCardTemplateFor] 生成；那之前加的听力模板在这里读成同一字段的大号发音键字段区块，与新预设
+/// 生成的布局一致，在区块布局里一改就写回标准骨架。
+final RegExp _legacyListeningFront = RegExp(
+  r'^<div class="fc fc-front" lang="ja"><div class="fc-front-audio">'
+  r'<div class="fc-audio fc-audio--large">\{\{([^{}#^/!:>][^{}:]*)\}\}</div>'
+  r'</div></div>$',
+);
+
+/// 旧听力预设正面（[_legacyListeningFront]）的布局：那个音频字段的大号发音键字段区块；不是为 null。
+List<FushiCardItem>? _legacyListeningLayout(
+  String template,
+  FushiCardSide side,
+) {
+  if (side != FushiCardSide.front) return null;
+  final RegExpMatch? m = _legacyListeningFront.firstMatch(_norm(template));
+  if (m == null) return null;
+  return List<FushiCardItem>.unmodifiable(<FushiCardItem>[
+    FushiCardFieldItem(
+      field: m.group(1)!.trim(),
+      style: FushiCardFieldStyle.audio,
+    ),
+  ]);
 }
 
 /// 从 [side] 面的模板 [template]（名字形式）读出区块布局：自上而下的布局项，删掉的区块不在

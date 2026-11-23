@@ -161,7 +161,7 @@ void main() {
     expect(() => ItemScrapeKey(MediaKind.epub, ''), throwsArgumentError);
   });
 
-  group('v172 字段锁（BUG-5111 书的简介手填）', () {
+  group('v177 字段锁（BUG-5111 书的简介手填）', () {
     const Map<ItemScrapeLockableField, String?> typed =
         <ItemScrapeLockableField, String?>{
           ItemScrapeLockableField.summary: '  我写的简介  ',

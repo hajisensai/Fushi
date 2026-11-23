@@ -776,7 +776,7 @@ ItemScrapeDetails itemScrapeDetailsOfCandidate(BookScrapeCandidate c) =>
       detailUrl: c.detailUrl,
     );
 
-/// [ItemScrapeDetails] ↔ JSON（撤销快照 / 控制通道用；不含写入时刻，含 v172 字段锁）。
+/// [ItemScrapeDetails] ↔ JSON（撤销快照 / 控制通道用；不含写入时刻，含 v177 字段锁）。
 Map<String, Object?> itemScrapeDetailsToJson(ItemScrapeDetails d) =>
     <String, Object?>{
       'source': d.source,

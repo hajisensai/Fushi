@@ -24,7 +24,7 @@
 
 | プラットフォーム | 状態 | 備考 |
 |---|---|---|
-| Android | ✅ | Android 7.0（API 24）以降 |
+| Android | ✅ | Android 8.0（API 26）以降 |
 | Windows | ✅ | ギャルゲーのテキスト／音声フックは Windows 限定 |
 | macOS | ✅ | Apple Silicon のみ。Intel Mac は非対応 |
 | iOS | ✅（[TestFlight](https://testflight.apple.com/join/j88d69jx)） | App Store の審査ガイドラインにより、発見・オンラインソース・ダウンロードセンターは含まれません |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 [Fushi 公式サイト](https://fushi.moe/)から最新版をダウンロードしてください。Android APK、Windows インストーラー、macOS ビルド（Apple Silicon のみ。Intel Mac は非対応）を提供しています。iOS は [TestFlight](https://testflight.apple.com/join/j88d69jx) からインストールします。Linux 向けのビルド済みアプリはまだないため、ソースからビルドしてください。ヘッドレスの Fushi Server は [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) で別途リリースされます。
 
-> Android 7.0（API 24）以降が必要です。
+> Android 8.0（API 26）以降が必要です。
 
 ## ビルド
 

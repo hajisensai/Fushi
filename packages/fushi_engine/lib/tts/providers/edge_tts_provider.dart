@@ -14,6 +14,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import 'package:fushi_engine/tts/providers/tts_http.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -79,7 +80,7 @@ class EdgeTtsClientIdentity {
   }
 }
 
-class EdgeTtsProvider extends TtsProvider {
+class EdgeTtsProvider extends TtsProvider implements TtsDirectedSynthesis {
   EdgeTtsProvider({required this.voice, required TtsHost host}) : _host = host;
 
   final String voice;
@@ -118,14 +119,39 @@ class EdgeTtsProvider extends TtsProvider {
     'Cookie': 'muid=${_connectionId().toUpperCase()};',
   };
 
+  /// 逐句语气只走 `<prosody>` 的语速 / 音高 / 音量：大声朗读端点不接受
+  /// `mstts:express-as`（edge-tts 上游同样只开放这三项），情绪由
+  /// [effectiveTtsDirection] 折成这三项偏移。
+  @override
+  TtsDirectionSupport get directionSupport =>
+      const TtsDirectionSupport(rate: true, pitch: true, volume: true);
+
   @override
   Future<TtsResult> synthesize(
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
+    final String ssml = edgeTtsSsml(
+      voice: voice,
+      text: text,
+      direction: direction,
+    );
     try {
-      return await _synthesizeOnce(text, outputPath, cancel);
+      return await _synthesizeOnce(text, ssml, outputPath, cancel);
     } on _EdgeHandshakeRejected {
       // 403 多半是本机时钟偏差导致令牌过期：按服务器时间校正一次再试（edge-tts 同做法），
       // 第二次仍拒绝就如实报错。
@@ -133,7 +159,7 @@ class EdgeTtsProvider extends TtsProvider {
         throw const TtsFailure(TtsFailureCode.unauthorized, 'handshake');
       }
       try {
-        return await _synthesizeOnce(text, outputPath, cancel);
+        return await _synthesizeOnce(text, ssml, outputPath, cancel);
       } on _EdgeHandshakeRejected {
         throw const TtsFailure(TtsFailureCode.unauthorized, 'handshake');
       }
@@ -164,6 +190,7 @@ class EdgeTtsProvider extends TtsProvider {
 
   Future<TtsResult> _synthesizeOnce(
     String text,
+    String ssml,
     String outputPath,
     TtsCancelToken cancel,
   ) async {
@@ -231,10 +258,7 @@ class EdgeTtsProvider extends TtsProvider {
         'Content-Type:application/ssml+xml\r\n'
         'X-Timestamp:${timestamp}Z\r\n'
         'Path:ssml\r\n\r\n'
-        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
-        "xml:lang='en-US'><voice name='${ttsEscapeXml(voice)}'>"
-        "<prosody pitch='+0Hz' rate='+0%' volume='+0%'>"
-        '${ttsEscapeXml(text)}</prosody></voice></speak>',
+        '$ssml',
       );
     } on Object catch (_) {
       // 发送失败（连接刚建好就断）：收帧那边会以 onError / onDone 结束，结果以它为准。
@@ -306,6 +330,51 @@ class EdgeTtsProvider extends TtsProvider {
       client.close(force: true);
     }
   }
+}
+
+/// Edge 一句的 SSML。没有语气偏移时与历来发送的完全一致（`+0Hz` / `+0%`）。
+String edgeTtsSsml({
+  required String voice,
+  required String text,
+  required TtsDirection direction,
+}) {
+  final MicrosoftProsody? p = microsoftProsodyOf(direction);
+  return "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
+      "xml:lang='en-US'><voice name='${ttsEscapeXml(voice)}'>"
+      "<prosody pitch='${p?.pitch ?? '+0Hz'}' rate='${p?.rate ?? '+0%'}' "
+      "volume='${p?.volume ?? '+0%'}'>"
+      '${ttsEscapeXml(text)}</prosody></voice></speak>';
+}
+
+/// 微软 SSML `<prosody>` 的三个属性值（Edge / Azure 共用）。
+typedef MicrosoftProsody = ({String rate, String pitch, String volume});
+
+/// 把 [direction] 的语速 / 音高 / 音量偏移换成 SSML `<prosody>` 属性；三项都没有
+/// 返回 null。三项都写成相对百分比（属性格式见
+/// https://learn.microsoft.com/azure/ai-services/speech-service/speech-synthesis-markup-voice#adjust-prosody ）：
+/// - rate：倍率 `1 + rateOffset`，夹到文档要求的 0.5..2 倍（`-0.12` → `-12%`）；
+/// - pitch：半音换成频率倍率 `2^(st/12)`，夹到文档要求的 0.5..1.5 倍（`+2` 半音 →
+///   `+12%`）。不用 `st` 单位：2026-11 实测 Edge 端把 `+2st` 读成约 +5 半音、
+///   `+34Hz` 也偏大，百分比则与换算一致（`+12%` 实测 +2.0 半音）；
+/// - volume：dB 换成振幅倍率 `10^(dB/20)`（`-6dB` → `-50%`，实测 -6.0 dB）。
+MicrosoftProsody? microsoftProsodyOf(TtsDirection direction) {
+  final double? rate = direction.rateOffset;
+  final double? pitch = direction.pitchOffset;
+  final double? volume = direction.volumeOffset;
+  if (rate == null && pitch == null && volume == null) return null;
+  String percent(double ratio) {
+    final int pct = ((ratio - 1) * 100).round();
+    return pct < 0 ? '$pct%' : '+$pct%';
+  }
+
+  return (
+    rate: percent((1 + (rate ?? 0)).clamp(0.5, 2.0).toDouble()),
+    // 没给音高时沿用历来的 `+0Hz`（语速 / 音量单独变化时请求只差那一项）。
+    pitch: pitch == null
+        ? '+0Hz'
+        : percent(pow(2, pitch / 12).toDouble().clamp(0.5, 1.5).toDouble()),
+    volume: percent(pow(10, (volume ?? 0) / 20).toDouble()),
+  );
 }
 
 /// 一轮合成收到的音频与词边界。
