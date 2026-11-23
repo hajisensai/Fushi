@@ -64,6 +64,10 @@ try {
       ${page.calls}
       await new Promise((r) => setTimeout(r, 0));
       ${prelude}
+      // The visible-sounds report comes once the face has rendered (BUG-5353).
+      for (let i = 0; i < 150 && calls('onSrsVisibleSounds').length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
       try { ${body} } catch (err) { fails.push('threw: ' + err); }
       return fails;
     })()`);

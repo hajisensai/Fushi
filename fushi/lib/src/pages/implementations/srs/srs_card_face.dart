@@ -1145,19 +1145,49 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 脚本与钩子都已跑完的那一面（finish 记下的 seq）：换主题赶在慢卡外部脚本加载期间时不报半成品。
+  var shownSeq = 0;
+  // 等这一面第一帧画出来再回调（BUG-5353）。换卡是同一个任务里插 DOM、重放脚本、跑钩子，此刻
+  // 页面一帧都没画：模板排在下一拍 / 下一帧的入场过渡（setTimeout / rAF 里加类名淡入）还没开始，
+  // 发音键停在 opacity:0 的起点，被当成看不见。两次 rAF = 这一面的第一帧已经画出、模板排的下一
+  // 拍也跑过了。页面不出帧时（WebView 藏起来，rAF 暂停）上报不能一直不来、宿主一直等着自动播：
+  // 转入后台立刻报，另有 1 秒兜底（只在页面声称可见却不出帧时才会用上）。
+  function afterFirstFrame(cb){
+    var fired = false;
+    function go(){
+      if (fired) return;
+      fired = true;
+      document.removeEventListener('visibilitychange', onHide);
+      cb();
+    }
+    function onHide(){ if (document.hidden) go(); }
+    if (document.hidden || typeof window.requestAnimationFrame !== 'function') {
+      setTimeout(go, 0);
+      return;
+    }
+    document.addEventListener('visibilitychange', onHide);
+    window.requestAnimationFrame(function(){ window.requestAnimationFrame(go); });
+    setTimeout(go, 1000);
+  }
   // 这一面渲染后看得见的发音键上报宿主（srs_card_autoplay.dart 的
   // kSrsCardVisibleSoundsScript / kSrsVisibleSoundsHandler）：宿主的自动播放与重播只播它们。
   function reportSounds(){
-    try {
-      if (!window.__fushiSrsVisibleSounds || !window.flutter_inappwebview) return;
-      window.flutter_inappwebview.callHandler('onSrsVisibleSounds',
-        faceToken, window.__fushiSrsVisibleSounds(root()));
-    } catch (e) {
-      if (window.console) console.error(e);
-    }
+    var my = seq;
+    afterFirstFrame(function(){
+      // 期间换了卡（faceToken 已是下一面的），或这一面的脚本与钩子还没跑完：不报。
+      if (my !== seq || shownSeq !== seq) return;
+      try {
+        if (!window.__fushiSrsVisibleSounds || !window.flutter_inappwebview) return;
+        window.flutter_inappwebview.callHandler('onSrsVisibleSounds',
+          faceToken, window.__fushiSrsVisibleSounds(root()));
+      } catch (e) {
+        if (window.console) console.error(e);
+      }
+    });
   }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
+    shownSeq = my;
     dictStyle();
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);

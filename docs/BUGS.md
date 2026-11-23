@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4654 条。点号进各自文件。
+> 共 4655 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5353](bugs/BUG-5353-srs-web-face-autoplay-visibility-race.md) | ✅ | ✅ | srs-web-face-autoplay-visibility-race |
 | [BUG-5352](bugs/BUG-5352-interconnect-manga-progress-key-mismatch.md) | ✅ | ✅ | interconnect-manga-progress-key-mismatch |
 | [BUG-5351](bugs/BUG-5351-manga-double-tap-zoom-flash-offset.md) | ✅ | ✅ | 漫画双击放大 / 缩回落定后黑屏闪一帧，缩回最后一帧位置跳动 |
 | [BUG-5350](bugs/BUG-5350-android-330-java-crash-mihon.md) | ✅ | ✅ | Android 用 Mihon 在线源时闪退：扩展抛 Error（LinkageError 等）漏过宿主拦截器，经 OkHttp 异步线程重抛带崩进程 |

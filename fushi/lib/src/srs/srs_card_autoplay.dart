@@ -554,8 +554,14 @@ String srsCardSetFaceTokenScript(String token) =>
 /// 以前宿主用正则扫整张答案 HTML 的 `[sound:]`：CSS 隐藏的容器（Lapis 把音频容器复制多份、
 /// 只显示一处）、收起的 `<details>` 里的音频全被收进自动播放与重播（「隐藏的也播」）。可见性
 /// 只有页面自己知道，所以由页面判定：没有布局盒（`display:none` 祖先 / 收起的 `<details>`
-/// 内容 / 不在文档里）、自身 `visibility:hidden`、祖先链上 `opacity:0` 的都不算。
-/// 外壳在卡片脚本与钩子都跑完后（以及换主题后）调用一次，经 [kSrsVisibleSoundsHandler] 上报。
+/// 内容 / 不在文档里）、自身 `visibility:hidden`、祖先链上**定住的** `opacity:0` 的都不算。
+///
+/// 入场效果不算隐藏（BUG-5353，反馈 FJXqvneRRp）：模板常让答案块从 opacity:0 淡入（CSS 关键帧、
+/// 脚本加类名触发的过渡、`element.animate`），判定那一刻正停在 0 附近。祖先上有一条还在跑、
+/// 且动的是 opacity 的动画 / 过渡时，这一层的 opacity 是过渡态，不当隐藏——否则整面发音键被
+/// 判成看不见、自动播放什么都不播（Anki 播这一面所有 `[sound:]`）。
+/// 外壳在卡片脚本与钩子都跑完、且这一面已经渲染出来之后（以及换主题后）调用，经
+/// [kSrsVisibleSoundsHandler] 上报（见 srs_card_face.dart 的 `reportSounds`）。
 const String kSrsCardVisibleSoundsScript = r'''
 (function(){
   if (window.__fushiSrsVisibleSounds) return;
@@ -572,6 +578,26 @@ const String kSrsCardVisibleSoundsScript = r'''
     }
     return false;
   }
+  // n 上有没有一条还在跑（含 delay 阶段）、且动的是 opacity 的动画 / 过渡（入场淡入）。
+  function fadingOpacity(n){
+    if (typeof n.getAnimations !== 'function') return false;
+    var list;
+    try { list = n.getAnimations(); } catch (e) { return false; }
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (a.playState !== 'running') continue;
+      if (a.transitionProperty === 'opacity') return true;
+      var frames = null;
+      try {
+        frames = a.effect && a.effect.getKeyframes ? a.effect.getKeyframes() : null;
+      } catch (e) {}
+      if (!frames) continue;
+      for (var k = 0; k < frames.length; k++) {
+        if (frames[k].opacity !== undefined) return true;
+      }
+    }
+    return false;
+  }
   function shown(el){
     if (typeof el.getClientRects !== 'function') return false;
     if (el.getClientRects().length === 0) return false;
@@ -584,7 +610,7 @@ const String kSrsCardVisibleSoundsScript = r'''
       var cs = n === el ? own : styleOf(n);
       if (!cs) continue;
       if (cs.display === 'none') return false;
-      if (parseFloat(cs.opacity) === 0) return false;
+      if (parseFloat(cs.opacity) === 0 && !fadingOpacity(n)) return false;
     }
     return true;
   }
