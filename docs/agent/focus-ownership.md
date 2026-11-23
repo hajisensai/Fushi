@@ -65,7 +65,7 @@
 
 实现在 `lib/src/media/manga/reader/manga_fushi_page.dart`（`lib/src/pages/implementations/manga_fushi_page.dart` 只是 3 行兼容 export，别改那个）。三层都已接：`PageFocusOwnership` + `ShortcutScope.manga` + 共享键盘桥。
 
-**① 词典弹窗可见时，漫画不让位。** 阅读器的 `gesture` 判据在弹窗可见时早退（弹窗自持焦点，BUG-136）；漫画的 `_canOwnMangaFocus` 必须相反——本页规定弹窗可见时左右键仍要「关弹窗并翻页」、Escape 要关弹窗，而弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回这些键就全部落空。这与本页覆写 `capturesDictionaryPopupNavigationKeys` 是同一诉求的两半，改任一边都要同时想另一边。小说阅读器 2026-11 起也是「弹窗开着时 ← → 关弹窗并翻页」（反馈 uz_2m0E_Eu ③），但它不改焦点判据：正文持焦时由 `_executeShortcutAction` 在 ← → 触发的翻页前关弹窗；弹窗持焦时由 `withPopupArrowPageTurnKeys` 只把裸 ← → 追加进弹窗回传表（翻页的其它键位留给弹窗滚动释义），回传后走同一个 `_resolveReaderArrowKey`。
+**① 词典弹窗可见时，漫画不让位。** 阅读器的 `gesture` 判据在弹窗可见时早退（弹窗自持焦点，BUG-136）；漫画的 `_canOwnMangaFocus` 必须相反——本页规定弹窗可见时左右键仍要「关弹窗并翻页」、Escape 要关弹窗，而弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回这些键就全部落空。这与本页覆写 `capturesDictionaryPopupNavigationKeys` 是同一诉求的两半，改任一边都要同时想另一边。小说阅读器 2026-11 起也是「弹窗开着时 ← → 关弹窗并翻页」（反馈 uz_2m0E_Eu ③），但它不改焦点判据：正文持焦时由 `_executeShortcutAction` 在 ← → 触发的翻页前关弹窗；弹窗持焦时由 `withPopupArrowPageTurnKeys` 只把裸 ← → 追加进弹窗回传表（翻页的其它键位留给弹窗滚动释义），回传后走同一个 `_resolveReaderArrowKey`。弹窗层的 Flutter 侧回传（`DictionaryPopupLayer._maybeWrapHostKeyInput`）在**顶栏按钮持焦**时把方向键 / Enter / 空格留给按钮（`dictionaryPopupTopBarOwnsKey`）：键盘光标从弹窗正文顶端上移进顶栏后，左右键是按钮间遍历，不是关弹窗翻页。
 
 **② 左右方向键不受 webtoon / 弹窗门控。** 它们是**跨页步进**语义（`inputActionForShortcut` 的 `horizontalArrow` 参数）：webtoon 的纵向滚动不影响它们，弹窗可见时也要生效。其余前进/后退键则要让位——弹窗可见时空格归词典，webtoon 下纵向键归 WebView 原生竖滚。
 

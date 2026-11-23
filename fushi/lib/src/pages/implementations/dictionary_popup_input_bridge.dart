@@ -242,6 +242,20 @@ String? dictionaryPopupKeyToken({
   return spec.keyTokens.contains(token) ? token : null;
 }
 
+/// 查词弹窗**顶栏里的 Flutter 控件**（阅读器有声控制、视频收藏星标等按钮）持键盘焦点时
+/// 归控件自己的键：方向键做按钮间焦点遍历，Enter / 空格激活。此时宿主键盘通道
+/// （`DictionaryPopupLayer` 的 `onHostInputToken`）不截走这些键——否则宿主把 ← / →
+/// 转发成「关弹窗并翻页」（反馈 uz_2m0E_Eu ③）后，键盘光标从弹窗正文顶端上移进顶栏、
+/// 再按左右切按钮，会变成关掉弹窗翻页。弹窗正文（WebView）持焦时不受影响。
+bool dictionaryPopupTopBarOwnsKey(LogicalKeyboardKey key) =>
+    key == LogicalKeyboardKey.arrowLeft ||
+    key == LogicalKeyboardKey.arrowRight ||
+    key == LogicalKeyboardKey.arrowUp ||
+    key == LogicalKeyboardKey.arrowDown ||
+    key == LogicalKeyboardKey.enter ||
+    key == LogicalKeyboardKey.numpadEnter ||
+    key == LogicalKeyboardKey.space;
+
 /// 指针落在弹窗表面时，把命中 [spec] 的鼠标按下折成与 JS 桥**完全同形**的 token
 /// （`Mouse1`/`Mouse2`/`Mouse3`/`Mouse4`），未命中返回 null。
 ///
