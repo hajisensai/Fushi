@@ -208,9 +208,9 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
         return Some(t);
     };
     let mut ps = Vec::new();
-    body.find_all("p", &mut ps);
+    collect_ps(body, None, &mut ps);
     let mut any_timed = false;
-    for p in ps {
+    for (p, song_part) in ps {
         let start = p.attr("begin").and_then(ttml_time).unwrap_or(0);
         let end = p.attr("end").and_then(ttml_time).unwrap_or(0);
         let mut b = Build::default();
@@ -226,6 +226,7 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
             syllables: trim_syllables(b.syllables),
             translations: Vec::new(),
             romanization: b.roman,
+            song_part: song_part.map(str::to_owned),
             ..Line::default()
         };
         for (lang, txt) in b.translations {
@@ -248,6 +249,7 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
             continue;
         }
         let bg = trim_syllables(b.bg);
+        let line_part = line.song_part.clone();
         t.lines.push(line);
         if !bg.is_empty() {
             let bs = bg.iter().map(|s| s.start_ms).min().unwrap_or(start);
@@ -258,6 +260,7 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
                 agent,
                 role: Role::Background,
                 syllables: bg,
+                song_part: line_part,
                 ..Line::default()
             });
         }
@@ -272,6 +275,25 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Option<Timeline> {
     };
     t.finalize(duration_ms);
     Some(t)
+}
+
+/// 按文档序收集 `<p>`，带上最近一层 `<div>` 的段落标注（Apple `itunes:song-part`）。
+fn collect_ps<'a>(el: &'a El, part: Option<&'a str>, out: &mut Vec<(&'a El, Option<&'a str>)>) {
+    for c in el.elements() {
+        if c.name == "p" {
+            out.push((c, part));
+            continue;
+        }
+        let inner = if c.name == "div" {
+            c.attr("song-part")
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .or(part)
+        } else {
+            part
+        };
+        collect_ps(c, inner, out);
+    }
 }
 
 /// 去掉行首行尾的纯空白音节、修剪首尾音节的空白。
@@ -459,6 +481,23 @@ mod tests {
         assert_eq!(
             t.lines[0].translations,
             vec![("en".to_string(), "Hi".to_string())]
+        );
+    }
+
+    #[test]
+    fn apple_song_parts_from_div() {
+        let x = r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"><body><div itunes:song-part="Verse"><p begin="1.0" end="2.0">a</p><p begin="2.0" end="3.0">b</p></div><div itunes:song-part="Chorus"><p begin="3.0" end="4.0">c<span ttm:role="x-bg" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><span begin="3.5" end="3.9">(d)</span></span></p></div><div><p begin="5.0" end="6.0">e</p></div></body></tt>"#;
+        let t = parse(x, None).unwrap();
+        let parts: Vec<Option<&str>> = t.lines.iter().map(|l| l.song_part.as_deref()).collect();
+        assert_eq!(
+            parts,
+            vec![
+                Some("Verse"),
+                Some("Verse"),
+                Some("Chorus"),
+                Some("Chorus"),
+                None
+            ]
         );
     }
 }

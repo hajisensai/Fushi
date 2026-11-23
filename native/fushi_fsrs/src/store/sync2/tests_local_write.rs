@@ -93,7 +93,7 @@ fn apply_with_local_state_lands_command_caches_and_local_state_together() {
     let r = dispatch(
         &d,
         json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev",
-               "anchor": {"o": 3, "b": "boot", "s": 10, "t": 20}}),
+               "anchor": {"s": 10, "t": 20, "e": 3}}),
         Some(note_events(&deck)),
     )
     .unwrap();
@@ -109,10 +109,7 @@ fn apply_with_local_state_lands_command_caches_and_local_state_together() {
     assert_eq!(row["revision"], json!(expected));
     assert_eq!(row["epoch"], json!("e1"));
     assert_eq!(r["localEpoch"], json!("e1"), "{r}");
-    assert_eq!(
-        row["anchor"],
-        json!({"o": 3, "b": "boot", "s": 10, "t": 20})
-    );
+    assert_eq!(row["anchor"], json!({"s": 10, "t": 20, "e": 3}));
     // 旧版时钟 / 写入者由命令本体写进同一行（没推进过 = 零点）。
     assert_eq!(row["hlc"], json!("0:0:dev#1"));
     assert_eq!(row["writerId"], json!("dev#1"));

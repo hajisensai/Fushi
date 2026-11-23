@@ -740,6 +740,36 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_subsonic_servers',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
+  // bool（默认 false）：打开全屏歌词动画时给还没有 AI 主题的歌自动生成一份
+  // （AiFeature.musicVisualizerTheme；没指派提供商时不发请求）。
+  'music_visualizer_ai_theme_auto',
+  // String（默认 'fluid'）：全屏歌词动画的共享背景（LyricVisualizerBackgroundEntry.id）。
+  // 背景自己的参数存在 music_visualizer_tunings 的 'background:<id>' 项里。
+  'music_visualizer_background',
+  // double（默认 1.0，0.6–2.0）：全屏歌词动画字号倍数。
+  'music_visualizer_font_scale',
+  // String（默认 'normal'）：全屏歌词动画强度（LyricVisualizerIntensity.prefValue：
+  // calm / normal / chaotic）；AI 主题可按歌曲覆盖。
+  'music_visualizer_intensity',
+  // String（默认 'classic'）：全屏歌词动画样式（LyricVisualizerMode.prefValue，
+  // 与 folia-major 的模式 id 同名）。设备本地观感偏好。
+  'music_visualizer_mode',
+  // bool（默认 false）：每首歌随机换一个全屏歌词动画样式。
+  'music_visualizer_random',
+  // String（默认 'translation'）：全屏歌词动画的副字幕内容
+  // （LyricVisualizerSubtitleContent.prefValue：translation / romanization / both / none，
+  // 与 folia subtitleContentMode 同名）。
+  'music_visualizer_subtitle_content',
+  // String（默认 'inherit'）：全屏歌词动画副字幕字体（LyricVisualizerSubtitleFont.prefValue：
+  // inherit = 跟随歌词 / sans / serif / mono；folia subtitleTheme）。
+  'music_visualizer_subtitle_font',
+  // double（默认 1.0，0.6–2.0）：全屏歌词动画副字幕字号倍数（folia subtitleFontScale）。
+  'music_visualizer_subtitle_font_scale',
+  // bool（默认 false）：全屏歌词动画隐藏副字幕（folia hideTranslationSubtitle）。
+  'music_visualizer_subtitle_hide',
+  // String（JSON，默认空）：各全屏歌词动画样式的可调参数
+  // {样式 prefValue: {参数 key: 值}}，只存改过的项。
+  'music_visualizer_tunings',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
   // bool（默认 false）：在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG，显式 opt-in；
