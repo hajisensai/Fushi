@@ -7,7 +7,8 @@
 ///   角色、单句换种子重生成（并保留）、按角色批量重生成（排进制作队列）、按句换上本地
 ///   音频（可只预检）、发起 / 取消整卷生成（全应用唯一的制作队列）、导入外部做好的成品
 ///   清单（`manifest.json`，与漫画卡「导入漫画有声」同一套校验与登记）。批量两项的本体
-///   与撤销在 `ctl_tts_batch.dart`。
+///   与撤销在 `ctl_tts_batch.dart`；有声漫画导出包的导出 / 导入在
+///   `ctl_tts_package_routes.dart`。
 ///
 /// 本卷标注在跑时改演出稿、重生成、发起生成一律 409（复核页同样锁住编辑）。业务与
 /// 快照逻辑在 `ctl_tts_support.dart`，路由只做参数与门。
@@ -29,6 +30,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/ops/ctl_tts_batch.dart';
+import 'package:fushi/src/ops/ctl_tts_package_routes.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
@@ -57,6 +59,7 @@ List<CtlRoute> buildTtsCtlRoutesFor(TtsCtlDeps deps) {
     CtlRoute.post('$item/render', h.render),
     CtlRoute.post('$item/render/cancel', h.cancelRender),
     CtlRoute.post('$item/import', h.importManifest),
+    ...buildTtsPackageCtlRoutes(deps),
   ];
 }
 

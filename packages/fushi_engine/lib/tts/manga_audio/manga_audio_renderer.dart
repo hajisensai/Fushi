@@ -60,14 +60,24 @@ abstract interface class MangaRenderBackend {
   /// 重跑时与旧行比对，不同就不沿用旧音频（[MangaRenderItem.canReuse]）。
   String get shapeVersion;
 
-  /// 用声音 [voice] 依次合成 [segments]，拼成一个文件并裁掉首尾静音。[seed] 与短句
-  /// 定长只在引擎支持时生效（`tts_direction.dart`）。
+  /// 用声音 [voice] 依次合成 [segments]，拼成一个文件并裁掉首尾静音。[seed]、短句
+  /// 定长与这句的演出 [direction]（情绪 / 强度 / 语气说明 / 偏移）只取引擎支持的部分
+  /// （`effectiveTtsDirection`：不能表达情绪的引擎折成语速 / 音高 / 音量）。
   Future<int> synthesizeLine({
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
+  });
+
+  /// 声音 [voice] 合成 [direction] 时实际生效的演出指纹（`mangaDirectionKey`：按引擎
+  /// 能力取舍 / 折算之后，不含种子与时长）。写进清单行，重跑时比对：变了才重出这句，
+  /// 只改了引擎表达不了的字段时照用旧音频。不合成的后端、或声音解析不了时返回 null。
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
   });
 
   /// 从关联有声书里剪出 [clip]（不裁静音：边界就是 cue 边界）。
@@ -219,6 +229,7 @@ class MangaRegenerateCandidate {
     required this.voice,
     required this.text,
     required this.shape,
+    this.direction,
     String? spoken,
     String? stagedFile,
   }) : spoken = spoken ?? text,
@@ -233,6 +244,9 @@ class MangaRegenerateCandidate {
 
   /// 出候选时后端的整形版本（[MangaRenderBackend.shapeVersion]），保留时写进清单。
   final String shape;
+
+  /// 出候选时生效的演出指纹（[MangaRenderBackend.directionKey]），保留时写进清单。
+  final String? direction;
 
   /// 候选文件名（相对清单目录）。
   final String file;
@@ -317,6 +331,8 @@ class MangaAudioRenderer {
       items.length,
       null,
     );
+    // 每句生效的演出指纹（开跑前整批算好，沿用判定与新出的清单行共用）。
+    final List<String?> directions = List<String?>.filled(items.length, null);
     final _AudioBatch batch = _AudioBatch(directory);
     // 配上音的句子（沿用或新出），提交时才从账本出账：取消了它们仍是旧清单里的样子。
     final Set<String> resolved = <String>{};
@@ -335,8 +351,9 @@ class MangaAudioRenderer {
         final MangaRenderItem item = items[i];
         try {
           final MangaRenderedLine? old = before[item.lineId];
+          final String? direction = directions[i];
           if (old != null &&
-              item.canReuse(old, shape: shape) &&
+              item.canReuse(old, shape: shape, direction: direction) &&
               await File(_pathOf(old.file)).exists()) {
             resolved.add(item.lineId);
             reused++;
@@ -344,12 +361,14 @@ class MangaAudioRenderer {
               file: old.file,
               durationMs: old.durationMs,
               shape: shape,
+              direction: direction,
             );
           } else {
             results[i] = await _renderOne(
               item,
               old,
               shape,
+              direction,
               ledger,
               batch,
               resolved,
@@ -372,11 +391,13 @@ class MangaAudioRenderer {
     try {
       // 先把要新出的句子整批交给后端（批处理引擎在这里一次合成完）。
       final List<MangaRenderItem> pending = <MangaRenderItem>[];
-      for (final MangaRenderItem item in items) {
+      for (int i = 0; i < items.length; i++) {
+        final MangaRenderItem item = items[i];
+        final String? direction = directions[i] = await _directionKeyOf(item);
         final MangaRenderedLine? old = before[item.lineId];
         final bool reusable =
             old != null &&
-            item.canReuse(old, shape: shape) &&
+            item.canReuse(old, shape: shape, direction: direction) &&
             await File(_pathOf(old.file)).exists();
         if (!reusable) pending.add(item);
       }
@@ -428,6 +449,7 @@ class MangaAudioRenderer {
     MangaRenderItem item,
     MangaRenderedLine? old,
     String shape,
+    String? direction,
     CastVoicingLedger ledger,
     _AudioBatch batch,
     Set<String> resolved,
@@ -445,6 +467,7 @@ class MangaAudioRenderer {
         file: r.file,
         durationMs: r.durationMs,
         shape: shape,
+        direction: direction,
       );
     } catch (e, stack) {
       final MangaLineFailure failure = _lineFailure(e, stack, cancel);
@@ -512,6 +535,7 @@ class MangaAudioRenderer {
           :final String voice,
           :final int seed,
           :final List<String> segments,
+          :final CastLineDirection direction,
         ):
           if (segments.isEmpty) throw const MangaLineFailure('empty_text');
           ms = pause
@@ -523,6 +547,7 @@ class MangaAudioRenderer {
                   voice: voice,
                   seed: seed,
                   segments: segments,
+                  direction: direction,
                   outputPath: part.path,
                   cancel: cancel,
                 );
@@ -574,6 +599,17 @@ class MangaAudioRenderer {
       _ => _internal(e, stack),
     };
   }
+
+  /// 一句生效的演出指纹（只有合成句有；见 [MangaRenderBackend.directionKey]）。
+  Future<String?> _directionKeyOf(MangaRenderItem item) =>
+      switch (item.source) {
+        MangaRenderSynth(
+          :final String voice,
+          :final CastLineDirection direction,
+        ) =>
+          backend.directionKey(voice: voice, direction: direction),
+        MangaRenderClip() || MangaRenderLocal() => Future<String?>.value(),
+      };
 
   static MangaLineFailure _internal(Object e, StackTrace stack) {
     engineLog.log('MangaAudioRenderer.line', e, stack);
@@ -708,6 +744,7 @@ class MangaAudioRenderer {
         voice: voice,
         seed: seed,
         segments: splitMangaLineSegments(texts.spoken),
+        direction: line.direction,
       ),
     );
     return (
@@ -748,6 +785,7 @@ class MangaAudioRenderer {
         cancel,
       );
       final String shape = backend.shapeVersion;
+      final String? direction = await _directionKeyOf(item);
       commits.add(() {
         script.replaceLine(
           req.lineId,
@@ -771,6 +809,7 @@ class MangaAudioRenderer {
             text: text,
             spoken: item.spoken,
             shape: shape,
+            direction: direction,
           ),
         );
         ledger.resolve(req.lineId);
@@ -832,6 +871,7 @@ class MangaAudioRenderer {
         voice: voice,
         seed: seed,
         segments: splitMangaLineSegments(texts.spoken),
+        direction: line.direction,
       ),
     );
     await directory.create(recursive: true);
@@ -853,6 +893,7 @@ class MangaAudioRenderer {
         text: text,
         spoken: texts.spoken,
         shape: backend.shapeVersion,
+        direction: await _directionKeyOf(item),
       );
     } catch (e, stack) {
       throw _lineFailure(e, stack, cancel);
@@ -892,6 +933,7 @@ class MangaAudioRenderer {
         text: candidate.text,
         spoken: candidate.spoken,
         shape: candidate.shape,
+        direction: candidate.direction,
       ),
     );
     if (!replaced) {

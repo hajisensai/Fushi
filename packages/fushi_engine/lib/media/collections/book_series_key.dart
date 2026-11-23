@@ -23,6 +23,7 @@
 library;
 
 import 'package:fushi_engine/media/collections/store_series_annotation.dart';
+import 'package:fushi_engine/media/titles/media_title_clean.dart';
 
 /// 一个分卷标题解析出的系列身份。
 class BookSeriesKey {
@@ -125,9 +126,10 @@ BookSeriesPosition? bookSeriesPositionOf({
   );
 }
 
-/// 发布文件名里的 8 位十六进制 CRC 标签（`志乃と恋 [3574f94a].cbz`，导入时
-/// 文件名原样成了书名）。
-final RegExp _hashSuffix = RegExp(r'\s*\[[0-9a-fA-F]{8}\]\s*$');
+/// 发布文件名末尾的 8 位十六进制 CRC 标签（`志乃と恋 [3574f94a].cbz`，导入时
+/// 文件名原样成了书名）。判据是全媒体共用的 [trailingCrcTagsPattern]（方括号 /
+/// 圆括号、大小写都认、可连续多段；此前这里只认一段方括号）。
+final RegExp _hashSuffix = trailingCrcTagsPattern;
 
 /// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `Vol-2` / `Volume 2` / `v02` /
 /// `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，

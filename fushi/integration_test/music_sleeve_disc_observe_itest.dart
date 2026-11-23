@@ -18,7 +18,7 @@ import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// 观察用：歌词页分栏布局「唱片压在封面上」（有盘面扫描图 / 没有转银色 CD）与
+/// 观察用：歌词页分栏布局「唱片压在封面上」（有盘面扫描图压唱片 / 没有只摆封面）与
 /// 唱片布局真盘面中心挖孔的真实像素。素材全在临时目录现画，不碰用户库。
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +32,7 @@ void main() {
     final Directory dir = await Directory.systemTemp.createTemp('sleeve-disc');
     final String cover = '${dir.path}${Platform.pathSeparator}cover.png';
     // 盘面图放在与歌曲无关的临时目录：歌曲目录及其 scans 等子目录都会被按目录现找到，
-    // 银色 CD 那张就拍不到。
+    // 「没有盘面图只摆封面」那张就拍不到。
     final Directory scans = await Directory.systemTemp.createTemp(
       'sleeve-scan',
     );
@@ -86,7 +86,7 @@ void main() {
       ]);
       await appModel.musicSession.engine.pause();
       await shoot('split', true, '01-split-real-disc');
-      await shoot('split', false, '02-split-silver-cd');
+      await shoot('split', false, '02-split-plain-cover');
       await shoot('disc', true, '03-disc-real-hole');
     } finally {
       await appModel.prefsRepo.setMusicLyricsLayout(userLayout);

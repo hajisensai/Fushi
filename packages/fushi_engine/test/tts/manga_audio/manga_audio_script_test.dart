@@ -52,6 +52,7 @@ MangaAudioScript _fullScript() => MangaAudioScript(
       pitchOffset: 2,
       volumeOffset: -3,
       seed: 7,
+      tone: '声を落として',
       textFixes: <int, String>{2: 'かきく'},
       source: TtsCastSource.user,
       confidence: 0.4,
@@ -83,6 +84,15 @@ void main() {
       expect(l0.emotion, CastEmotion.tension);
       expect(l0.intensity, 70);
       expect(l0.seed, 7);
+      expect(l0.tone, '声を落として');
+      expect(l0.direction.tone, '声を落として');
+      expect(l0.toJson()['tone'], '声を落として');
+      expect(back.lines[1].tone, isNull);
+      expect(back.lines[1].toJson().containsKey('tone'), isFalse);
+      // copyWith：给了就换（同样截断 / 去空白），clearTone 清掉，不给保留。
+      expect(l0.copyWith(tone: '  必死に食い下がる ').tone, '必死に食い下がる');
+      expect(l0.copyWith(beatMs: 0).tone, '声を落として');
+      expect(l0.copyWith(clearTone: true).tone, isNull);
       expect(l0.effectiveSeed(back.defaultSeed), 7);
       expect(back.lines[1].effectiveSeed(back.defaultSeed), 42);
       expect(l0.textFixes, <int, String>{2: 'かきく'});

@@ -12,6 +12,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart' show castToneOf;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
@@ -44,17 +45,18 @@ enum MangaLineEditAction {
   kind,
   beat,
   emotion,
+  tone,
   say,
   clearSay,
   up,
   down,
   regenerate;
 
-  /// 改了会影响这一句读出来的声音（换人 / 换类型 / 换念法）；一拍与调序只动时间表；
-  /// 语气只记在演出稿里、不参与合成（设计 §5），改了也不必重新生成。
+  /// 改了会影响这一句读出来的声音（换人 / 换类型 / 换念法 / 换情绪或语气说明——
+  /// 2026-11-23 起演法进合成，设计 §5）；一拍与调序只动时间表。
   bool get changesVoice => switch (this) {
-    speaker || kind || say || clearSay => true,
-    beat || emotion || up || down || regenerate => false,
+    speaker || kind || emotion || tone || say || clearSay => true,
+    beat || up || down || regenerate => false,
   };
 }
 
@@ -134,8 +136,14 @@ Future<MangaLineEditAction?> showMangaLineEditDialog(
             value: MangaLineEditAction.emotion,
             label: t.manga_audio_line_emotion,
             subtitle:
-                mangaLineToneLabel(line) ?? mangaEmotionLabel(line.emotion),
+                mangaLineEmotionLabel(line) ?? mangaEmotionLabel(line.emotion),
             icon: FushiIcons.voice,
+          ),
+          FushiChoiceOption<MangaLineEditAction>(
+            value: MangaLineEditAction.tone,
+            label: t.manga_audio_line_tone,
+            subtitle: line.tone ?? t.manga_audio_line_tone_none,
+            icon: FushiIcons.mic,
           ),
           FushiChoiceOption<MangaLineEditAction>(
             value: MangaLineEditAction.say,
@@ -212,6 +220,19 @@ Future<MangaLineEditAction?> showMangaLineEditDialog(
       final MangaScriptLine? next = await _pickTone(context, line, text);
       if (next == null) return null;
       replace(next.copyWith(source: TtsCastSource.user));
+    case MangaLineEditAction.tone:
+      final String? typed = await showFushiTextInputDialog(
+        context: context,
+        title: t.manga_audio_line_tone,
+        message: '$text\n\n${t.manga_audio_line_tone_hint}',
+        initialValue: line.tone ?? '',
+        allowEmpty: true,
+        icon: FushiIcons.mic,
+      );
+      if (typed == null) return null;
+      final MangaScriptLine? next = mangaLineWithTone(line, typed);
+      if (next == null) return null;
+      replace(next.copyWith(source: TtsCastSource.user));
     case MangaLineEditAction.say:
       final String? typed = await showFushiTextInputDialog(
         context: context,
@@ -258,7 +279,7 @@ Future<MangaScriptLine?> _pickTone(
   final Object? picked = await showFushiChoiceDialog<Object>(
     context: context,
     title: t.manga_audio_line_emotion,
-    message: '$text\n\n${t.manga_audio_line_emotion_hint}',
+    message: '$text\n\n${t.manga_audio_line_emotion_synth_hint}',
     selected: line.emotion ?? _ToneChoice.none,
     icon: FushiIcons.voice,
     options: <FushiChoiceOption<Object>>[
@@ -298,6 +319,15 @@ Future<MangaScriptLine?> _pickTone(
   return next.emotion == line.emotion && next.intensity == line.intensity
       ? null
       : next;
+}
+
+/// 语气说明输入 → 改好的行（空 = 清掉；超长截断，同 [castToneOf]）；没变返回 null。
+MangaScriptLine? mangaLineWithTone(MangaScriptLine line, String typed) {
+  final String? tone = castToneOf(typed);
+  if (tone == line.tone) return null;
+  return tone == null
+      ? line.copyWith(clearTone: true)
+      : line.copyWith(tone: tone);
 }
 
 /// 强度输入 → 0..100（越界夹到范围）；空或不是整数返回 null。

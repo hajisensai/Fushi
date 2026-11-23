@@ -109,8 +109,9 @@ class MangaAudioEditTarget {
 }
 
 /// [bookKey] 当前要改的成品：登记了漫画有声成品就是登记的那份（本机 / 外部；登记的是
-/// 广播剧时仍改本机生成的那份、[MangaAudioEditTarget.kind] 记 drama），没登记（只生成没入库，或从没生成过）就是本机生成的那份。整卷生成不走这里（总是出到
-/// 本机目录、整份登记，见 `runMangaRenderJob`）。
+/// 广播剧时仍改本机生成的那份、[MangaAudioEditTarget.kind] 记 drama），没登记（只生成
+/// 没入库，或从没生成过）就是本机生成的那份。整卷生成不走这里（总是出到本机目录、整份
+/// 登记，见 `runMangaRenderJob`）。
 Future<MangaAudioEditTarget> mangaAudioEditTarget(
   AudioProductionHost appModel,
   String bookKey,

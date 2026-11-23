@@ -366,9 +366,20 @@ class SettingsResetSpec {
     required this.reset,
     required this.currentLabel,
     required this.defaultLabel,
-  });
+    this.pinnedAtDefault = false,
+  }) : assert(!(modified && pinnedAtDefault));
 
+  /// 生效值偏离了出厂默认（用户看得见的「改过」；分组头「N 项已修改」只数它）。
   final bool modified;
+
+  /// 生效值等于出厂默认，但偏好里显式存着它（[SettingsStoredChoice] 行先改走、
+  /// 再手动选回默认值）：现在看不出差别，以后出厂默认一改它就钉在旧值上。页级
+  /// 「恢复本页默认」把它列成「当前值 → 跟随默认」并删值（HBK-AUDIT-235）。
+  final bool pinnedAtDefault;
+
+  /// 恢复默认会改变偏好：[modified] 或 [pinnedAtDefault]。
+  bool get resettable => modified || pinnedAtDefault;
+
   final Future<void> Function() reset;
   final String currentLabel;
   final String defaultLabel;
@@ -437,15 +448,16 @@ SettingsResetSpec? settingsResetSpecFor(
       return value.toString();
     }
 
+    final SettingsStoredChoice? storedChoice = segmented.storedChoice;
+    final bool modified = current != defaultValue;
     return SettingsResetSpec(
-      modified: current != defaultValue,
+      modified: modified,
+      pinnedAtDefault: !modified && (storedChoice?.isStored(context) ?? false),
       currentLabel: format(current),
       defaultLabel: format(defaultValue),
       reset: () async {
-        final Future<void> Function(SettingsContext)? resetToDefault =
-            segmented.resetToDefault;
-        if (resetToDefault != null) {
-          await resetToDefault(context);
+        if (storedChoice != null) {
+          await storedChoice.clear(context);
         } else {
           await segmented.dispatchChange(context, defaultValue);
         }

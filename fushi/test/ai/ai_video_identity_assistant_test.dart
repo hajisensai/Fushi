@@ -43,9 +43,9 @@ AiVideoIdentityQuery _query() => AiVideoIdentityQuery(
 );
 
 void main() {
-  group('parseAiVideoIdentityDecision', () {
+  group('parseAiIdentityDecision', () {
     test('合法回复：key 在集合内、置信度与理由原样带回', () {
-      final AiVideoIdentityDecision decision = parseAiVideoIdentityDecision(
+      final AiVideoIdentityDecision decision = parseAiIdentityDecision(
         '```json\n{"key": "mal:1", "confidence": 0.93, "reason": "标题年份一致"}\n```',
         allowedKeys: _keys,
       );
@@ -57,7 +57,7 @@ void main() {
     });
 
     test('key 不在候选集合里视为 null，置信度归零', () {
-      final AiVideoIdentityDecision decision = parseAiVideoIdentityDecision(
+      final AiVideoIdentityDecision decision = parseAiIdentityDecision(
         '{"key": "mal:999", "confidence": 0.99, "reason": "编的"}',
         allowedKeys: _keys,
       );
@@ -67,7 +67,7 @@ void main() {
     });
 
     test('key 为 null 时不自动采用', () {
-      final AiVideoIdentityDecision decision = parseAiVideoIdentityDecision(
+      final AiVideoIdentityDecision decision = parseAiIdentityDecision(
         '{"key": null, "confidence": 0.95, "reason": "两条都像"}',
         allowedKeys: _keys,
       );
@@ -78,7 +78,7 @@ void main() {
 
     test('置信度越界 / 非数值 → 0', () {
       for (final String raw in <String>['1.5', '-0.1', '"high"', 'null']) {
-        final AiVideoIdentityDecision decision = parseAiVideoIdentityDecision(
+        final AiVideoIdentityDecision decision = parseAiIdentityDecision(
           '{"key": "mal:1", "confidence": $raw}',
           allowedKeys: _keys,
         );
@@ -89,7 +89,7 @@ void main() {
     });
 
     test('低于门槛的合法置信度不自动采用', () {
-      final AiVideoIdentityDecision decision = parseAiVideoIdentityDecision(
+      final AiVideoIdentityDecision decision = parseAiIdentityDecision(
         '{"key": "mal:1", "confidence": 0.6}',
         allowedKeys: _keys,
       );
@@ -101,7 +101,7 @@ void main() {
 
     test('坏 JSON / 没有对象 → key null、置信度 0', () {
       for (final String reply in <String>['{"key": }', 'no json', '[1]']) {
-        final AiVideoIdentityDecision decision = parseAiVideoIdentityDecision(
+        final AiVideoIdentityDecision decision = parseAiIdentityDecision(
           reply,
           allowedKeys: _keys,
         );
@@ -161,13 +161,19 @@ void main() {
       final List<Object?> reference = withRef['reference']! as List<Object?>;
       expect(reference.single, containsPair('text', '2005年4月から放送'));
       expect(
-        buildAiVideoIdentitySystemPrompt(locale: 'zh-CN'),
+        buildAiIdentitySystemPrompt(
+          AiIdentityScenario.videoFolder,
+          locale: 'zh-CN',
+        ),
         contains('"reference"'),
       );
     });
 
     test('fetchAiIdentityReferences：没开来源不请求；按第一个本地标题搜，最多 3 页', () async {
-      expect(await fetchAiIdentityReferences(null, _query()), isEmpty);
+      expect(
+        await fetchAiIdentityReferences(null, _query().localTitles.first),
+        isEmpty,
+      );
       final _FakeWeb web = _FakeWeb(<WebKnowledgePage>[
         for (int i = 0; i < 5; i++)
           WebKnowledgePage(
@@ -179,7 +185,7 @@ void main() {
       ]);
       final List<WebKnowledgePage> pages = await fetchAiIdentityReferences(
         web,
-        _query(),
+        _query().localTitles.first,
       );
       expect(web.queries, <String>['ドラえもん 2005']);
       expect(web.maxChars, kAiIdentityReferenceMaxChars);
@@ -187,13 +193,42 @@ void main() {
     });
 
     test('系统提示要求只回 JSON、说明 null 规则、带上 locale', () {
-      final String prompt = buildAiVideoIdentitySystemPrompt(locale: 'ja');
+      final String prompt = buildAiIdentitySystemPrompt(
+        AiIdentityScenario.videoFolder,
+        locale: 'ja',
+      );
       expect(prompt, contains('"key"'));
       expect(prompt, contains('"confidence"'));
       expect(prompt, contains('null'));
       expect(prompt, contains('season'));
       expect(prompt, contains('episode count'));
       expect(prompt, contains('"ja"'));
+    });
+
+    test('四个场景共用同一套规则（分卷 / 缺字段 / 门槛 / 联网资料），只有场景段不同', () {
+      final Map<AiIdentityScenario, String> prompts =
+          <AiIdentityScenario, String>{
+            for (final AiIdentityScenario s in AiIdentityScenario.values)
+              s: buildAiIdentitySystemPrompt(s, locale: 'zh-CN'),
+          };
+      for (final String prompt in prompts.values) {
+        expect(prompt, contains('copied verbatim'));
+        expect(prompt, contains('treat it as unknown'));
+        expect(prompt, contains('stay below 0.85'));
+        expect(prompt, contains('"reference"'));
+        expect(prompt, contains('"zh-CN"'));
+      }
+      // 本地条目是一部作品的一部分（分卷 / 分盘）：书和游戏也有，不再只有视频。
+      expect(prompts[AiIdentityScenario.videoFolder], contains('"上巻"'));
+      expect(prompts[AiIdentityScenario.book], contains('"第2巻"'));
+      expect(prompts[AiIdentityScenario.game], contains('"Disc 2"'));
+      // 用户口头点名没有本地文件，不带分卷规则。
+      expect(
+        prompts[AiIdentityScenario.videoRequest],
+        isNot(contains('volume of')),
+      );
+      expect(prompts[AiIdentityScenario.game], contains('fan disc'));
+      expect(prompts[AiIdentityScenario.book], contains('anthology'));
     });
 
     test('cacheKey 只看本地线索与候选 key，与候选顺序无关的字段变了才变', () {

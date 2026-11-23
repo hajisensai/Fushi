@@ -22,6 +22,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart'
@@ -61,6 +62,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
     show updateMangaAudioLine;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -101,7 +103,10 @@ class TtsCtlDeps {
     required this.regenerate,
     required this.stopPlayback,
     required this.localAudioBackend,
-  });
+    MangaAudioPackageTasks Function()? packageTasks,
+    String Function()? appLabel,
+  }) : packageTasks = packageTasks ?? (() => MangaAudioPackageTasks.instance),
+       appLabel = appLabel ?? (() => 'fushi');
 
   factory TtsCtlDeps.of(OpContext context) => TtsCtlDeps(
     app: () => context.appModel,
@@ -134,6 +139,7 @@ class TtsCtlDeps {
     stopPlayback: (List<String> bookKeys) =>
         context.appModel.audiobookSession.stopIfPlayingAny(bookKeys),
     localAudioBackend: mangaLocalAudioBackend,
+    appLabel: () => 'fushi ${context.appModel.packageInfo.version}',
   );
 
   final AppModel Function() app;
@@ -162,6 +168,12 @@ class TtsCtlDeps {
   /// 「按句替换本地音频」整形用的后端（只整形本地音频；ffmpeg 不可用抛
   /// [TtsRenderFailure]）。
   final Future<MangaRenderBackend> Function() localAudioBackend;
+
+  /// 有声漫画导出包的任务表（工作台同一张，默认进程级那张）。
+  final MangaAudioPackageTasks Function() packageTasks;
+
+  /// 导出包里记的导出方（`fushi <版本>`）。
+  final String Function() appLabel;
 
   /// 标注任务结束时演出稿的指纹（`<bookKey>@<startedAt>` → 指纹）：撤销标注时据此判断
   /// 之后有没有被手改过。进程内有效；app 重启后撤销报 superseded，不盲目覆盖。
@@ -343,6 +355,7 @@ Map<String, Object?> ttsMangaLineJson(
   if (line.beatMs != 0) 'beatMs': line.beatMs,
   if (line.emotion != null) 'emotion': line.emotion!.wire,
   if (line.intensity != null) 'intensity': line.intensity,
+  if (line.tone != null) 'tone': line.tone,
   if (line.seed != null) 'seed': line.seed,
   if (line.say != null) 'say': line.say,
   if (line.textFixes.isNotEmpty)
@@ -559,7 +572,7 @@ class TtsLineEdit {
 /// 线上「不标语气」的写法（`tts.manga.line.edit` 的 `emotion`）。
 const String kTtsEmotionNone = 'none';
 
-/// 改一句：说话人 / 类型 / 一拍 / 语气与强度 / 页内位置 / 手填文字 / OCR 错字修正。改过的行记为
+/// 改一句：说话人 / 类型 / 一拍 / 语气与强度 / 语气说明 / 页内位置 / 手填文字 / OCR 错字修正。改过的行记为
 /// 用户手改（重新标注时保留，复核页同一语义）。参数不对抛 400，行不在 404。
 TtsLineEdit editMangaLine(
   MangaAudioVolume volume,
@@ -626,8 +639,9 @@ TtsLineEdit editMangaLine(
     changed = true;
   }
 
-  // 语气（情绪）与强度：只记在演出稿里，现有引擎不据此改读法（设计 §5「情绪字段只标注、
-  // 不参与合成」），所以改了不必重新生成。`none` / 空串清掉情绪（强度随之清掉）。
+  // 语气（情绪）与强度：进合成（2026-11-23 起；能原生表达情绪的引擎直接用，其余折成
+  // 语速 / 音高 / 音量）。改了之后整卷生成按清单行的演出指纹重出这句。`none` / 空串
+  // 清掉情绪（强度随之清掉）。
   if (body.containsKey('emotion')) {
     final String raw = '${body['emotion'] ?? ''}'.trim();
     if (raw.isEmpty || raw == kTtsEmotionNone) {
@@ -665,6 +679,19 @@ TtsLineEdit editMangaLine(
       }
       next = next.copyWith(intensity: intensity);
     }
+    changed = true;
+  }
+
+  // 语气说明（自由文本演技指令，如「おずおずと」）：空串清掉；超长截断（[castToneOf]）。
+  if (body.containsKey('tone')) {
+    final Object? toneRaw = body['tone'];
+    if (toneRaw != null && toneRaw is! String) {
+      throw const CtlFailure.badRequest('tone 应为文字（空串 = 清掉）');
+    }
+    final String? tone = castToneOf(toneRaw);
+    next = tone == null
+        ? next.copyWith(clearTone: true)
+        : next.copyWith(tone: tone);
     changed = true;
   }
 
@@ -717,7 +744,7 @@ TtsLineEdit editMangaLine(
 
   if (!changed) {
     throw const CtlFailure.badRequest(
-      '没有要改的字段（speaker / kind / beat / emotion / intensity / say / '
+      '没有要改的字段（speaker / kind / beat / emotion / intensity / tone / say / '
       'fixes / position）',
     );
   }
@@ -1206,6 +1233,7 @@ MangaRenderedLine mangaRenderedAudioRestored(
   text: before.text,
   spoken: before.spoken,
   shape: before.shape,
+  direction: before.direction,
 );
 
 /// 撤销「换音」类操作时演出稿这一句只放回这次操作改过的字段：音源（[MangaScriptLine.audio]）
@@ -1350,9 +1378,16 @@ class TtsCtlNoSynthesis implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) => throw UnsupportedError('no synthesis here');
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => null;
 
   @override
   Future<int> cutClip({

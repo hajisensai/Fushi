@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -42,6 +43,11 @@ void main() {
 
   Iterable<FakePageRequest> childrenRequests() =>
       browser.requests.where((FakePageRequest r) => r.kind == 'children');
+
+  double gridOffset(WidgetTester tester) => tester
+      .widget<CustomScrollView>(find.byType(CustomScrollView))
+      .controller!
+      .offset;
 
   Future<void> scrollToBottom(WidgetTester tester) async {
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -20000));
@@ -289,5 +295,58 @@ void main() {
     final FakePageRequest last = childrenRequests().last;
     expect(last.startIndex, 0);
     expect(last.sort, MediaServerSort.dateAdded);
+  });
+
+  testWidgets('服务器用户数据变更：已加载的页原地重拉，不回顶、不出骨架；别的服务器不理', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    browser.children['lib-movies'] = fakeMovies(150);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    await scrollToBottom(tester);
+    final int loadedPages = childrenRequests().length;
+    expect(loadedPages, greaterThanOrEqualTo(2));
+    final double offset = gridOffset(tester);
+    expect(offset, greaterThan(0));
+
+    MediaServerUserDataChanges.notify('other:server');
+    await tester.pumpAndSettle();
+    expect(childrenRequests().length, loadedPages, reason: '别的服务器的变更不重拉');
+
+    // 服务器上第一部被标了已看（详情页标记 / 播放页退回后的通知）。
+    final List<MediaServerItem> movies = fakeMovies(150);
+    movies[0] = MediaServerItem(
+      id: movies[0].id,
+      name: 'Movie 0 (watched)',
+      type: MediaServerItemType.movie,
+      played: true,
+    );
+    browser.children['lib-movies'] = movies;
+    MediaServerUserDataChanges.notify(browser.serverId);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('media-server-grid-skeleton')),
+      findsNothing,
+      reason: '原地重拉不出骨架',
+    );
+    await tester.pumpAndSettle();
+
+    final List<FakePageRequest> refetched = childrenRequests()
+        .skip(loadedPages)
+        .toList();
+    expect(refetched.first.startIndex, 0, reason: '从头按页重拉');
+    expect(
+      refetched.length,
+      greaterThanOrEqualTo(loadedPages),
+      reason: '重拉到已加载的条数为止',
+    );
+    expect(gridOffset(tester), offset, reason: '不滚回顶部');
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 20000));
+    await tester.pumpAndSettle();
+    expect(find.text('Movie 0 (watched)'), findsOneWidget);
   });
 }

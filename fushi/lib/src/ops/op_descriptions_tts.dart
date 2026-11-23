@@ -6,8 +6,13 @@ import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
         audiobookRegistrationRevision,
         captureAudiobookRegistration,
         restoreAudiobookRegistration;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_import.dart'
+    show MangaPackageUndoResult, revertMangaAudioPackageImport;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/ctl_tts_batch.dart' show revertMangaLineBatch;
+import 'package:fushi/src/ops/ctl_tts_package_routes.dart'
+    show kTtsMangaPackageCtlRoot, ttsMangaBusyReason;
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
 
@@ -28,6 +33,11 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 /// - 导入成品清单：执行前给登记（音频 / 对齐四列、整组 cue、断点）拍快照，撤销时登记
 ///   还是导入后的样子（指纹相同）才放回，之后被重新生成 / 补句 / 再导入改过报
 ///   superseded。只动登记，不删音频文件。
+/// - 导出有声漫画包：只写一个文件（目标已存在时覆盖），标 irreversible
+///   （同 `library.favorite.export`）；
+/// - 导入有声漫画包：执行前确认；撤销按导入时写的撤销日志删掉新建的卷与成品、放回
+///   被替换的演出稿 / 成品目录 / 登记、系列档案放回导入前（之后又被改过的不覆盖，
+///   报 partial / superseded）。
 List<OpDescription> describeTtsOps(OpDescribeKit kit) {
   final OpAvailability Function() manga = kit.whenModule(ModuleId.manga);
   final TtsCtlDeps deps = ttsCtlDeps(kit.context);
@@ -186,11 +196,13 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
       method: 'PUT',
       pattern: '$item/lines/:line',
       summary:
-          'Edit one script line: speaker, kind, extra pause after it, tone '
-          '(emotion + intensity), its position on the page, manual text, or '
-          'OCR typo fixes. The line is marked as user-edited (kept on '
-          're-annotation). Tone is a script note only: current voices do not '
-          'read it, so changing it needs no regeneration.',
+          'Edit one script line: speaker, kind, extra pause after it, '
+          'emotion + intensity, a free-text acting note (tone), its position '
+          'on the page, manual text, or OCR typo fixes. The line is marked as '
+          'user-edited (kept on re-annotation). Emotion, intensity and tone '
+          'are used when the line is synthesized (voices without an emotion '
+          'control fold the emotion into speed / pitch / volume); the next '
+          'full render regenerates lines whose effective direction changed.',
       risk: OpRisk.write,
       availability: manga,
       params: const <OpParam>[
@@ -232,6 +244,13 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
           description:
               'Tone intensity 0-100 (needs an emotion on the line or in this '
               'call); -1 clears it.',
+        ),
+        OpParam.string(
+          'tone',
+          description:
+              'Short Japanese acting note for how the line is delivered '
+              '(e.g. おずおずと / 必死に食い下がる / 声を落として; at most 40 '
+              'characters); empty string clears it.',
         ),
         OpParam.integer(
           'position',
@@ -613,6 +632,196 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
           return const OpUndoOutcome.done();
         },
       ),
+    ),
+    ..._describePackageOps(kit, deps, manga),
+  ];
+}
+
+/// 有声漫画导出包（`.fushi-manga-audio`）：导出、导入、任务查询 / 取消。
+List<OpDescription> _describePackageOps(
+  OpDescribeKit kit,
+  TtsCtlDeps deps,
+  OpAvailability Function() manga,
+) {
+  const String root = kTtsMangaPackageCtlRoot;
+  Future<OpTaskStatus> packageStatus(String taskId) async {
+    final Object? raw = await kit.callRoute(
+      'GET',
+      '$root/tasks/:id',
+      params: <String, String>{'id': taskId},
+    );
+    final Map<Object?, Object?> task = raw is Map
+        ? raw
+        : const <Object?, Object?>{};
+    final String status = '${task['status']}';
+    return OpTaskStatus(
+      terminal: status != MangaAudioPackageTaskStatus.running.name,
+      succeeded: status == MangaAudioPackageTaskStatus.done.name,
+      summary:
+          '${task['kind']} $status'
+          '${task['progress'] == null ? '' : ' ${task['progress']}%'}'
+          '${task['error'] == null ? '' : ': ${task['error']}'}',
+      data: raw,
+    );
+  }
+
+  return <OpDescription>[
+    OpDescription(
+      id: 'tts.manga.export',
+      method: 'POST',
+      pattern: '$root/export',
+      summary:
+          'Export manga volumes with their finished audio as one manga audio '
+          'package (.fushi-manga-audio: page images, OCR, performance script, '
+          'finished audio, series cast) that another Fushi device imports and '
+          'plays without regenerating. Writes one file (overwrites it when it '
+          'already exists); nothing else changes. Volumes need registered '
+          'audio unless scriptOnly. Returns a task id.',
+      risk: OpRisk.irreversible,
+      longRunning: true,
+      taskStatus: packageStatus,
+      availability: manga,
+      params: const <OpParam>[
+        OpParam.stringList(
+          'keys',
+          description: 'Manga item keys (book:...) to export, in order.',
+        ),
+        OpParam.string(
+          'series',
+          description:
+              'Instead of keys: a series (book:<any volume of it>, its series '
+              'key like collection:<id>, or the collection name).',
+        ),
+        OpParam.stringList(
+          'volumes',
+          description: 'With series: only these volumes (book:...).',
+        ),
+        OpParam.string(
+          'out',
+          description:
+              'Absolute path of the package file to write '
+              '(.fushi-manga-audio is appended when missing).',
+          required: true,
+        ),
+        OpParam.boolean(
+          'scriptOnly',
+          description:
+              'Export only the performance scripts (no audio), for continuing '
+              'the rendering on another device.',
+        ),
+        OpParam.boolean('wait', description: 'Wait until the file is written.'),
+      ],
+    ),
+    OpDescription(
+      id: 'tts.manga.import-package',
+      method: 'POST',
+      pattern: '$root/import',
+      summary:
+          'Import a manga audio package (.fushi-manga-audio): each volume is '
+          'matched to the same local volume (page count + OCR) or imported as a '
+          'new manga, then its script and finished audio are copied in and '
+          'registered, and the series cast is merged (local voice assignments '
+          'win). dryRun only lists what would happen. Replacing an existing '
+          'script / audio needs confirm. Undo deletes the volumes it created and '
+          'restores replaced scripts, audio and series. Returns a task id.',
+      risk: OpRisk.write,
+      confirm: true,
+      longRunning: true,
+      taskStatus: packageStatus,
+      availability: manga,
+      params: const <OpParam>[
+        OpParam.string(
+          'file',
+          description: 'Absolute path of the .fushi-manga-audio file.',
+          required: true,
+        ),
+        OpParam.boolean(
+          'dryRun',
+          description: 'Only read the package and report the plan per volume.',
+        ),
+        OpParam.boolean(
+          'asNew',
+          description:
+              'Import volumes that conflict with a same-titled local volume '
+              '(different pages / OCR) as new volumes instead of skipping them.',
+        ),
+        OpParam.userGate(
+          'confirm',
+          description:
+              'User agreed to replace the script / audio that matched local '
+              'volumes already have.',
+        ),
+        OpParam.boolean('wait', description: 'Wait until the import finishes.'),
+      ],
+      undo: opCustomUndo(
+        payloadOf:
+            (CtlCall call, Map<String, Object?> before, Object? result) =>
+                <String, Object?>{
+                  if (result is Map && result['dryRun'] != true)
+                    'runId': result['taskId'],
+                  'file': call.optString('file'),
+                },
+        describe: (Map<String, Object?> p) =>
+            'manga audio package ${p['file']}',
+        revert: (Map<String, Object?> payload) async {
+          final Object? runId = payload['runId'];
+          if (runId == null) return const OpUndoOutcome.done();
+          final MangaAudioPackageTask? task = deps.packageTasks().byId(
+            '$runId',
+          );
+          if (task != null && !task.isTerminal) {
+            return const OpUndoOutcome.failed('导入还在进行，结束后再撤销');
+          }
+          final MangaPackageUndoResult result =
+              await revertMangaAudioPackageImport(
+                deps.appModel,
+                '$runId',
+                busy: (String bookKey) => ttsMangaBusyReason(deps, bookKey),
+              );
+          return switch (result.status) {
+            'done' => OpUndoOutcome.done(result.message),
+            'partial' => OpUndoOutcome.partial(result.message),
+            'superseded' => OpUndoOutcome.superseded(result.message),
+            _ => OpUndoOutcome.failed(result.message),
+          };
+        },
+      ),
+    ),
+    OpDescription(
+      id: 'tts.manga.package-task',
+      method: 'GET',
+      pattern: '$root/tasks/:id',
+      summary:
+          'One manga audio package export / import task (wait=true waits '
+          'until it ends).',
+      availability: manga,
+      params: const <OpParam>[
+        OpParam.string(
+          'id',
+          description: 'Task id from tts.manga.export / import-package.',
+          required: true,
+          inPath: true,
+        ),
+        OpParam.boolean('wait', description: 'Wait until it finishes.'),
+      ],
+    ),
+    OpDescription(
+      id: 'tts.manga.package-cancel',
+      method: 'POST',
+      pattern: '$root/tasks/:id/cancel',
+      summary:
+          'Cancel a manga audio package export (the partial file is deleted) or '
+          'an import that has not started writing to the library yet.',
+      risk: OpRisk.irreversible,
+      availability: manga,
+      params: const <OpParam>[
+        OpParam.string(
+          'id',
+          description: 'Task id from tts.manga.export / import-package.',
+          required: true,
+          inPath: true,
+        ),
+      ],
     ),
   ];
 }
