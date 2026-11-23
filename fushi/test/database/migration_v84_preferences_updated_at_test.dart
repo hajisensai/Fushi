@@ -57,8 +57,8 @@ void main() {
     final QueryRow version = await db
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 171);
-    expect(db.schemaVersion, 171);
+    expect(version.read<int>('user_version'), kFushiDbSchemaVersion);
+    expect(db.schemaVersion, kFushiDbSchemaVersion);
 
     // 存量行零丢失——改名是用户数据，迁移丢一行就是丢一个书名。
     expect(await db.getPref(_overrideKey), 's:母设备改的名');

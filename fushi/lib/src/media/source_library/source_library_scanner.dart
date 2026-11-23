@@ -2628,6 +2628,7 @@ class SourceLibraryScanner {
       case ImportCarrier.mangaFolder:
       case ImportCarrier.mangaBatchFolder:
       case ImportCarrier.mangaMokuro:
+      case ImportCarrier.mangaAudioPackage:
       case ImportCarrier.epub:
       case ImportCarrier.text:
         debugPrint(
