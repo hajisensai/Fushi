@@ -1157,12 +1157,15 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     _setAudioCueEdgeWatch(cue, split, gen);
   }
 
+  /// 按 JS 量出的下一个分界 [split] 挂句内观察：到点翻到后半截；已翻到后半截（
+  /// [_audioCueTail] 是这句）时同时看音频有没有退回翻页时刻之前——同一句内的快退 /
+  /// 拖进度不换当前句、不会经 [_onCueChanged]，只能由这枚观察把页面带回句首页。
   void _setAudioCueEdgeWatch(
     AudioCue cue,
     ({int before, int total})? split,
     int gen,
   ) {
-    if (split == null || !mounted || gen != _audioCueEdgeGen) return;
+    if (!mounted || gen != _audioCueEdgeGen) return;
     final AudiobookPlayerController? controller = _audiobookController;
     final AudioCue? current = controller?.currentCue;
     if (controller == null ||
@@ -1170,19 +1173,33 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         !sameTextLeadsCue(current, cue)) {
       return;
     }
-    final int atMs = audiobookCueSplitMs(
-      cue: cue,
-      charsBefore: split.before,
-      totalChars: split.total,
-    );
+    final int? atMs = split == null
+        ? null
+        : audiobookCueSplitMs(
+            cue: cue,
+            charsBefore: split.before,
+            totalChars: split.total,
+          );
+    final ({AudioCue cue, int fromMs})? tail = _audioCueTail;
+    final int? rewindBelowMs = tail != null && sameTextLeadsCue(tail.cue, cue)
+        ? tail.fromMs
+        : null;
+    if (atMs == null && rewindBelowMs == null) return;
     controller.setCueEdgeWatch(
       cue: cue,
       atMs: atMs,
-      onReached: () => unawaited(
-        _onAudioCuePageEdge(
-          cue,
-          atMs,
-        ).catchError(AudiobookBridge.logHighlightError),
+      rewindBelowMs: rewindBelowMs,
+      onReached: () {
+        if (atMs == null) return;
+        unawaited(
+          _onAudioCuePageEdge(
+            cue,
+            atMs,
+          ).catchError(AudiobookBridge.logHighlightError),
+        );
+      },
+      onRewound: () => unawaited(
+        _onAudioCueRewound(cue).catchError(AudiobookBridge.logHighlightError),
       ),
     );
   }
@@ -1208,6 +1225,36 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (!mounted) return;
     _scheduleReanchorSettleProgressRefresh();
     _setAudioCueEdgeWatch(cue, next, gen);
+  }
+
+  /// 已翻到后半截后音频在同一句内退回翻页时刻之前（快退 / 拖进度）：作废后半截记录，
+  /// 按句首重新揭示这句（回到句首页），再按新量的分界重挂观察。只在跟随态下做。
+  Future<void> _onAudioCueRewound(AudioCue cue) async {
+    final InAppWebViewController? web = _controller;
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (!mounted ||
+        web == null ||
+        controller == null ||
+        !controller.shouldRevealCurrentCue ||
+        !_audiobookPageEdgeFollowActive) {
+      return;
+    }
+    final int gen = ++_audioCueEdgeGen;
+    _audioCueTail = null;
+    _reanchorClearedAt = DateTime.now();
+    await AudiobookBridge.dropAudioCueTail(web);
+    if (!mounted || gen != _audioCueEdgeGen) return;
+    // 同一句重揭：上一句锚点就是这句，跨图判定天然为空，pauseEnabled 无从生效。
+    await AudiobookBridge.highlight(
+      web,
+      cue: cue,
+      reveal: true,
+      pauseEnabled: false,
+      fromChapterStart: false,
+    );
+    if (!mounted) return;
+    _scheduleReanchorSettleProgressRefresh();
+    await _armAudioCuePageEdge(cue, gen);
   }
 
   /// 听书跟随 reveal（`AudiobookBridge.highlight(reveal: true)`）落定后补刷一次进度。

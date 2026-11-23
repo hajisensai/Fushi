@@ -72,25 +72,37 @@ int _countedRunes(String token) {
   return n;
 }
 
-/// 播放器 tick 上挂的一枚一次性「句内时刻」观察：[cue] 正在播、且 cue 时钟走到 [atMs]
-/// 时调一次 [onReached]。分页「读到页边就翻」用它在声音越过页边的那一刻翻页。
+/// 播放器 tick 上挂的一枚一次性「句内时刻」观察（分页「读到页边就翻」）：[cue] 正在播时，
+/// * cue 时钟走到 [atMs]（下一页第一个字开始发声）→ 调一次 [onReached] 翻到后半截页；
+/// * 已翻到后半截后，cue 时钟退回 [rewindBelowMs]（翻页时刻）之前 → 调一次 [onRewound]
+///   回到句首页。同一句内的 seek（快退几秒、拖进度）不换当前句，播放器不会为它通知
+///   reader，没有这一路页面就停在后半截、耳朵里却在读前半截。
+/// 两个时刻至少给一个；触发任一路后整枚观察作废，由 reader 按新状态重挂。
 class CueEdgeWatch {
   const CueEdgeWatch({
     required this.cue,
-    required this.atMs,
+    this.atMs,
+    this.rewindBelowMs,
     required this.onReached,
-  });
+    this.onRewound,
+  }) : assert(atMs != null || rewindBelowMs != null);
 
   final AudioCue cue;
-  final int atMs;
+  final int? atMs;
+  final int? rewindBelowMs;
   final void Function() onReached;
+  final void Function()? onRewound;
 }
 
-/// [watch] 这一 tick 是否到点。只在「正在播、文件对得上、当前句仍是被观察的那句、
-/// 且这一 tick 的命中句不是别的句子」时成立——换句了由新句的 reveal 负责翻页，
+/// [cueEdgeWatchEvent] 的结果。
+enum CueEdgeWatchEvent { none, reached, rewound }
+
+/// [watch] 这一 tick 该触发哪一路。只在「正在播、文件对得上、当前句仍是被观察的那句、
+/// 且这一 tick 的命中句不是别的句子」时可能触发——换句了由新句的 reveal 负责翻页，
 /// 旧观察作废（不先翻一次再翻回）。句间静音里（[hitCue] 为 null）当前句仍是被观察的
-/// 那句，到点照样触发：这句已读完，后半截正该露出来。
-bool cueEdgeWatchDue({
+/// 那句：到点照样触发（这句已读完，后半截正该露出来）；退到本句之前的静音也算退回。
+/// 暂停时不触发，观察留着，续播的第一个 tick 再判。
+CueEdgeWatchEvent cueEdgeWatchEvent({
   required CueEdgeWatch watch,
   required AudioCue? currentCue,
   required AudioCue? hitCue,
@@ -99,9 +111,17 @@ bool cueEdgeWatchDue({
   required bool playing,
   required bool Function(AudioCue a, AudioCue b) isSameCue,
 }) {
-  if (!playing) return false;
-  if (watch.cue.audioFileIndex != audioFileIndex) return false;
-  if (currentCue == null || !isSameCue(currentCue, watch.cue)) return false;
-  if (hitCue != null && !isSameCue(hitCue, watch.cue)) return false;
-  return effectiveMs >= watch.atMs;
+  if (!playing) return CueEdgeWatchEvent.none;
+  if (watch.cue.audioFileIndex != audioFileIndex) return CueEdgeWatchEvent.none;
+  if (currentCue == null || !isSameCue(currentCue, watch.cue)) {
+    return CueEdgeWatchEvent.none;
+  }
+  if (hitCue != null && !isSameCue(hitCue, watch.cue)) {
+    return CueEdgeWatchEvent.none;
+  }
+  final int? rewind = watch.rewindBelowMs;
+  if (rewind != null && effectiveMs < rewind) return CueEdgeWatchEvent.rewound;
+  final int? at = watch.atMs;
+  if (at != null && effectiveMs >= at) return CueEdgeWatchEvent.reached;
+  return CueEdgeWatchEvent.none;
 }

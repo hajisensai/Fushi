@@ -2957,8 +2957,10 @@ $kReaderPageTurnJs
     } else if (targetRange) {
       startRange = targetRange.cloneRange();
     } else if (target) {
+      // selectNode 取元素自身盒（与 __fushiRevealTarget 同口径）：bridge 那条路的 cue
+      // 元素可能是空的 img，selectNodeContents 对它取不到 rect。
       startRange = document.createRange();
-      startRange.selectNodeContents(target);
+      startRange.selectNode(target);
     }
     if (!startRange) return false;
     try {
@@ -4482,6 +4484,9 @@ $kSentenceAudioRubyGapJs
       bandEnd = vw - (parseFloat(cs.paddingRight) || 0);
     }
     if (bandEnd <= bandStart) return null;
+    // BUG-2744：跟读目标替换恢复锚（与 scrollToTarget 同一不变量：不滚也登记，迟到的图
+    // load 后按当前句重对齐，而不是按上一次滚动时的旧句）。
+    if (startTarget) this.registerImageLateAnchor({target: startTarget});
     if (minS >= bandStart && maxE <= bandEnd) return false;
     // 句首所在行的行框起始边 = 首字字形盒起始边 − 半行距（行高 − 字形高）/2。注音落在
     // 行距里，所以对齐行框起始边就把注音一并留在屏内。
@@ -4498,8 +4503,6 @@ $kSentenceAudioRubyGapJs
     }
     var delta = lineStart - bandStart;
     if (Math.abs(delta) < 1) return false;
-    // BUG-2744：跟读目标替换恢复锚（与 scrollToTarget 同一不变量）。
-    if (startTarget) this.registerImageLateAnchor({target: startTarget});
     // 墨水屏瞬时跳；跨过一整屏以上是「跳」不是「跟」，也瞬时落地（BUG-2466 同口径），
     // 其余平滑滚（TODO-825）。
     var eink = window.getComputedStyle(document.documentElement)

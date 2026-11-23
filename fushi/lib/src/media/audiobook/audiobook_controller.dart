@@ -1020,14 +1020,23 @@ class AudiobookPlayerController extends ChangeNotifier {
   }
 
   /// 句内时刻观察（分页「读到页边就翻」，反馈 tUJsiLpL9d）：[cue] 正在播、cue 时钟
-  /// 走到 [atMs] 时在播放 tick 里调一次 [onReached]，之后自动撤掉。同时只挂一枚，
-  /// 新设覆盖旧的；换句后旧观察不再触发（判据见 [cueEdgeWatchDue]）。
+  /// 走到 [atMs] 时在播放 tick 里调一次 [onReached]；退回 [rewindBelowMs] 之前时调一次
+  /// [onRewound]。触发任一路后自动撤掉。同时只挂一枚，新设覆盖旧的；换句后旧观察不再
+  /// 触发（判据见 [cueEdgeWatchEvent]）。
   void setCueEdgeWatch({
     required AudioCue cue,
-    required int atMs,
+    int? atMs,
+    int? rewindBelowMs,
     required void Function() onReached,
+    void Function()? onRewound,
   }) {
-    _cueEdgeWatch = CueEdgeWatch(cue: cue, atMs: atMs, onReached: onReached);
+    _cueEdgeWatch = CueEdgeWatch(
+      cue: cue,
+      atMs: atMs,
+      rewindBelowMs: rewindBelowMs,
+      onReached: onReached,
+      onRewound: onRewound,
+    );
   }
 
   void clearCueEdgeWatch() {
@@ -1046,7 +1055,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   }) {
     final CueEdgeWatch? watch = _cueEdgeWatch;
     if (watch == null) return;
-    if (!cueEdgeWatchDue(
+    final CueEdgeWatchEvent event = cueEdgeWatchEvent(
       watch: watch,
       currentCue: _currentCue,
       hitCue: hitCue,
@@ -1054,11 +1063,17 @@ class AudiobookPlayerController extends ChangeNotifier {
       effectiveMs: effectiveMs,
       playing: _player.playing,
       isSameCue: _isSameCue,
-    )) {
-      return;
+    );
+    switch (event) {
+      case CueEdgeWatchEvent.none:
+        return;
+      case CueEdgeWatchEvent.reached:
+        _cueEdgeWatch = null;
+        watch.onReached();
+      case CueEdgeWatchEvent.rewound:
+        _cueEdgeWatch = null;
+        watch.onRewound?.call();
     }
-    _cueEdgeWatch = null;
-    watch.onReached();
   }
 
   /// 当前全局播放位置。

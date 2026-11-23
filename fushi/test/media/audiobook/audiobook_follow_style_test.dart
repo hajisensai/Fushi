@@ -109,7 +109,7 @@ void main() {
     });
   });
 
-  group('cueEdgeWatchDue', () {
+  group('cueEdgeWatchEvent', () {
     final AudioCue watched = _cue();
     final CueEdgeWatch watch = CueEdgeWatch(
       cue: watched,
@@ -117,15 +117,16 @@ void main() {
       onReached: () {},
     );
 
-    bool due({
+    CueEdgeWatchEvent event({
+      CueEdgeWatch? w,
       AudioCue? current,
       AudioCue? hit,
       bool hitNull = false,
       int file = 0,
       int ms = 3000,
       bool playing = true,
-    }) => cueEdgeWatchDue(
-      watch: watch,
+    }) => cueEdgeWatchEvent(
+      watch: w ?? watch,
       currentCue: current ?? watched,
       hitCue: hitNull ? null : (hit ?? watched),
       audioFileIndex: file,
@@ -135,22 +136,63 @@ void main() {
     );
 
     test('fires once the cue clock reaches the split while playing', () {
-      expect(due(ms: 2999), isFalse);
-      expect(due(ms: 3000), isTrue);
-      expect(due(ms: 4200), isTrue);
+      expect(event(ms: 2999), CueEdgeWatchEvent.none);
+      expect(event(ms: 3000), CueEdgeWatchEvent.reached);
+      expect(event(ms: 4200), CueEdgeWatchEvent.reached);
     });
 
     test('does not fire when paused, in another file, or on another cue', () {
-      expect(due(playing: false), isFalse);
-      expect(due(file: 1), isFalse);
+      expect(event(playing: false), CueEdgeWatchEvent.none);
+      expect(event(file: 1), CueEdgeWatchEvent.none);
       final AudioCue other = _cue(id: 'c2', startMs: 5000, endMs: 8000);
-      expect(due(current: other, hit: other, ms: 6000), isFalse);
+      expect(
+        event(current: other, hit: other, ms: 6000),
+        CueEdgeWatchEvent.none,
+      );
       // 这一 tick 已命中下一句：换句由下一句自己的揭示翻页，不先翻一次后半截。
-      expect(due(hit: other, ms: 5100), isFalse);
+      expect(event(hit: other, ms: 5100), CueEdgeWatchEvent.none);
     });
 
     test('fires in the silence after the watched cue (it was fully read)', () {
-      expect(due(hitNull: true, ms: 5200), isTrue);
+      expect(event(hitNull: true, ms: 5200), CueEdgeWatchEvent.reached);
+    });
+
+    // 已翻到后半截后在同一句内快退 / 拖回翻页时刻之前：当前句不变、播放器不通知 reader，
+    // 只有这一路能把页面带回句首页。
+    test('reports a rewind back across the split within the same cue', () {
+      final CueEdgeWatch tailOnly = CueEdgeWatch(
+        cue: watched,
+        rewindBelowMs: 3000,
+        onReached: () {},
+      );
+      expect(event(w: tailOnly, ms: 3000), CueEdgeWatchEvent.none);
+      expect(event(w: tailOnly, ms: 4800), CueEdgeWatchEvent.none);
+      expect(event(w: tailOnly, ms: 2999), CueEdgeWatchEvent.rewound);
+      // 退到本句之前的静音（当前句仍 hold 这句）也算退回。
+      expect(
+        event(w: tailOnly, hitNull: true, ms: 800),
+        CueEdgeWatchEvent.rewound,
+      );
+      // 暂停中拖回去不翻；续播的第一个 tick 再判。
+      expect(
+        event(w: tailOnly, ms: 2000, playing: false),
+        CueEdgeWatchEvent.none,
+      );
+      // 退进上一句：换句由上一句的揭示处理。
+      final AudioCue prev = _cue(id: 'c0', startMs: 0, endMs: 1000);
+      expect(event(w: tailOnly, hit: prev, ms: 500), CueEdgeWatchEvent.none);
+    });
+
+    test('a three-page sentence watches both directions at once', () {
+      final CueEdgeWatch both = CueEdgeWatch(
+        cue: watched,
+        atMs: 4000,
+        rewindBelowMs: 3000,
+        onReached: () {},
+      );
+      expect(event(w: both, ms: 3500), CueEdgeWatchEvent.none);
+      expect(event(w: both, ms: 4000), CueEdgeWatchEvent.reached);
+      expect(event(w: both, ms: 2500), CueEdgeWatchEvent.rewound);
     });
   });
 
