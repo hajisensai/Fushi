@@ -139,7 +139,7 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
 /// 进度），「最近」= 其余最近更新的任务（2026-10-25 用户「侧边栏预览给复习和
 /// 浏览加一下」）。2026-10-26 用户「所有的都支持一下」补齐其余目的地：首页 =
 /// 与 dashboard「继续」区同一份 [composeHomeContinue] 编排（含互联远端、服务器条目，
-/// BUG-5260）；音乐 = 正在播放 + 最近播放（按专辑折叠）；查词 = 查词历史（没有
+/// BUG-5277）；音乐 = 正在播放 + 最近播放（按专辑折叠）；查词 = 查词历史（没有
 /// 历史时列已装词典）；网页 = 上次的标签页 + 浏览历史；设置 = 最近打开的分类
 /// （还没打开过时列前几个分类）。
 ///
@@ -1048,7 +1048,7 @@ class NavPeekFeed {
 
 /// 首页速览的编排（纯函数）：与首页 dashboard「继续」区同一份 [composeHomeContinue]
 /// 结果、同一顺序——「继续」= 第一张卡，「最近」= 接下来的 [recentCount] 张
-/// （2026-11-22 用户拍板「每张卡跟它打开的页面一致」，BUG-5260）。
+/// （2026-11-22 用户拍板「每张卡跟它打开的页面一致」，BUG-5277）。
 ({HomeContinueUnit? resume, List<HomeContinueUnit> recent}) planHomeNavPeek(
   List<HomeContinueUnit> units, {
   int recentCount = _kPeekRecentCount,

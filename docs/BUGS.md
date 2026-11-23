@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4600 条。点号进各自文件。
+> 共 4601 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5277](bugs/BUG-5277-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
 | [BUG-5276](bugs/BUG-5276-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
@@ -54,12 +55,6 @@
 | [BUG-5260](bugs/BUG-5260-video-menu-cm-extra-filename.md) | ✅ | ✅ | video-menu-cm-extra-filename |
 | [BUG-5259](bugs/BUG-5259-music-continue-card-no-player-page.md) | ✅ | ✅ | music-continue-card-no-player-page |
 | [BUG-5258](bugs/BUG-5258-status-monitor-overlay-section-last.md) | ✅ | ✅ | status-monitor-overlay-section-last |
-> 共 4583 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5260](bugs/BUG-5260-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
-| [BUG-5258](bugs/BUG-5258-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
 | [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
 | [BUG-5256](bugs/BUG-5256-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
 | [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |

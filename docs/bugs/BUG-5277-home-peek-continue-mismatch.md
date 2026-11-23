@@ -1,5 +1,5 @@
-## BUG-5260 · 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠
-- **报告**：2026-11-22（只读审计，接 BUG-5258：用户拍板「每张卡跟它打开的页面一致」，首页速览必须显示首页 dashboard「继续」区显示的东西）
+## BUG-5277 · 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠
+- **报告**：2026-11-22（只读审计，接 BUG-5276：用户拍板「每张卡跟它打开的页面一致」，首页速览必须显示首页 dashboard「继续」区显示的东西）
 - **真实性**：✅ 真 bug。首页速览与首页 dashboard 各写了一套「继续」编排：
   - 速览 `_loadHome`（改前 `fushi/lib/src/pages/implementations/home_nav_peek.dart:1046`）只把本地书、本地漫画、`_loadVideos`、本地游戏四路用 `mergeNavPeekFeeds`（改前同文件 `:1028`）按时刻混排；
   - dashboard `_computeContinueEntries`（改前 `fushi/lib/src/pages/implementations/home_dashboard_page.dart:3230`）另外还混排互联 host 远端补位（`_remoteContinue`，经 `withoutLocallyCoveredCollections` 与本地同名合集去重，改前 `:3426`）和用户自配服务器条目（Jellyfin / Emby / Plex、Audiobookshelf，`_serverContinue` 按 `serverContinueGates` 两道门过滤并让位给已入库的本地行，改前 `:3457`），游戏按主合集折叠成一张卡、标题取合集名（改前 `:3398`）。
