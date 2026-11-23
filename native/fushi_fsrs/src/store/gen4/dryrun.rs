@@ -768,7 +768,7 @@ pub(crate) fn profile_stages(
         "idTrace".into(),
         trace::id_trace(t, col, &canon, baseline.rows(), &trace_ids)
             .and_then(|mut v| {
-                trace::annotate_protocol_3(src, profile, &mut v)?;
+                compare::annotate_protocol_3(src, profile, &mut v)?;
                 Ok(v)
             })
             .unwrap_or_else(|e| json!({ "error": e })),

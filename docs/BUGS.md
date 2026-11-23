@@ -38,8 +38,8 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
-| [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | 🚧 | 🚧 | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
-| [BUG-5294](bugs/BUG-5294-gen4-parity-secondary-profile-builtins-missing.md) | 🚧 | 🚧 | gen4 迁移对拍：第二个 profile 的三个加盐内置实体协议 3 一侧哪儿都没有，`entities` 判新代多出、整份撤回 |
+| [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
+| [BUG-5294](bugs/BUG-5294-gen4-parity-secondary-profile-builtins-missing.md) | ✅ | ✅ | gen4 迁移对拍：第二个 profile 的三个加盐内置实体协议 3 一侧哪儿都没有，`entities` 判新代多出、整份撤回 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
 | [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
