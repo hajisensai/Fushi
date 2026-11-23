@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_models.dart';
+import 'package:fushi_engine/models/content_language.dart';
 import 'package:image/image.dart' as img;
 
 /// 刮来的图要比本地大这么多倍（面积）才替换。
@@ -103,7 +104,7 @@ Map<num, MangaBakaImage> pickMangaBakaVolumeImages(
     final num? index = image.indexNumeric;
     if (index == null ||
         image.type != 'volume' ||
-        _primaryLanguage(image.language) != language ||
+        contentLanguageKey(image.language) != language ||
         _ratingRank(image.contentRating) > 1 ||
         !_downloadable(image.raw)) {
       continue;
@@ -119,9 +120,6 @@ Map<num, MangaBakaImage> pickMangaBakaVolumeImages(
   }
   return best;
 }
-
-String _primaryLanguage(String? code) =>
-    (code ?? '').trim().toLowerCase().split(RegExp('[-_]')).first;
 
 bool _betterVolumeImage(MangaBakaImage a, MangaBakaImage b) {
   final int ra = _ratingRank(a.contentRating);

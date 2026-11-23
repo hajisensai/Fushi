@@ -28,3 +28,24 @@ String? resolveContentLanguage({
   }
   return null;
 }
+
+/// 内容语言归一成主语言子标签小写（`zh-Hant-TW` / `zh_TW` / `ZH` → `zh`，`ja-JP` →
+/// `ja`）：同一种语言写法不同不分家。空、`und`、不像语言标签的值（数字、单字母、
+/// 超过 8 位）归为空串 = 未知。
+///
+/// 「同名不同语言的版本」一律按它分：书籍系列归组按语言拆组、刮封面按版本语言挑卷图、
+/// 朗读声音按「系列 + 语言」记，判据只有这一份。
+String contentLanguageKey(String? raw) {
+  final String trimmed = raw?.trim() ?? '';
+  if (trimmed.isEmpty) return '';
+  final String primary = trimmed
+      .replaceAll('_', '-')
+      .split('-')
+      .first
+      .toLowerCase();
+  if (primary.length < 2 || primary.length > 8 || primary == 'und') return '';
+  for (final int unit in primary.codeUnits) {
+    if (unit < 0x61 || unit > 0x7a) return '';
+  }
+  return primary;
+}

@@ -344,6 +344,84 @@ void main() {
     );
   });
 
+  // BUG-5287：选了「用 MangaBaka 封面」后本语言补上了这一卷、但不如书里的清晰：
+  // 本语言那张不写，旧的日文版封面也不能接着盖在中文版上。
+  test('原版封面在本语言补卷后不再保留：本语言不如书里清晰时露出书里的封面', () async {
+    await seed('k1', 'テスト漫画 1');
+    final Directory extract = await Directory(
+      '${thumbs.path}/extract_k2',
+    ).create();
+    await File('${extract.path}/cover.png').writeAsBytes(png(1600, 2400));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'k2',
+        title: 'テスト漫画 2',
+        epubPath: '/nonexistent/k2.cbz',
+        extractDir: extract.path,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+        author: const Value<String?>('Taro'),
+        format: const Value<String>('manga'),
+        coverPath: const Value<String?>('cover.png'),
+      ),
+    );
+    await db.updateEpubBookLanguage('k1', 'zh-Hant');
+    await db.updateEpubBookLanguage('k2', 'zh-TW');
+    Map<String, Object?> zh(int id, String index) => mbImage(id, index)
+      ..['language'] = 'zh-tw'
+      ..['image'] = <String, Object?>{
+        'raw': <String, Object?>{
+          'url': 'https://images.mangabaka.dev/volume/zh$index',
+          'width': 1200,
+          'height': 1800,
+          'format': 'jpeg',
+        },
+      };
+    bool zhVolume2 = false;
+    Future<http.Response> handler(http.Request req) async {
+      if (req.url.path == '/v1/series/100/images' &&
+          req.url.queryParameters['type'] == 'volume') {
+        return page(<Object?>[
+          mbImage(1, '1'),
+          mbImage(2, '2'),
+          zh(11, '1'),
+          if (zhVolume2) zh(12, '2'),
+        ]);
+      }
+      return mangaBakaOk(req);
+    }
+
+    Future<BookArtSeriesPlan> scrape([
+      Map<String, bool> choice = const <String, bool>{},
+    ]) async {
+      final BookArtScrapeService svc = service(handler);
+      final BookArtRunResult result = await svc.run(
+        <String>['k1', 'k2'],
+        originalEditionCovers: choice,
+        onlyPinnedGroups: choice.isNotEmpty,
+      );
+      svc.close();
+      return result.series.single;
+    }
+
+    final BookArtSeriesPlan first = await scrape();
+    await scrape(<String, bool>{first.seriesKey: true});
+    expect(store.hasCover('k2'), isTrue, reason: '选了原版封面：不与书里的封面比清晰度');
+    expect(store.recordFor('k2')!.coverFromOriginalEdition, isTrue);
+
+    zhVolume2 = true;
+    final BookArtSeriesPlan again = await scrape();
+    expect(again.originalEditionCovers, isTrue);
+    expect(
+      again.books.singleWhere((BookArtBookPlan b) => b.bookKey == 'k2').outcome,
+      BookArtBookOutcome.localSharper,
+    );
+    expect(store.hasCover('k2'), isFalse, reason: '日文版封面不再盖着中文版');
+    expect(store.recordFor('k2')!.coverFromOriginalEdition, isFalse);
+    expect(store.recordFor('k2')!.originalEditionCovers, isTrue);
+  });
+
   test('dryRun 出同结构计划但不下载不写', () async {
     await seed('k1', 'テスト漫画 1');
     final BookArtScrapeService svc = service(mangaBakaOk);

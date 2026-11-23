@@ -24,8 +24,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/collections/book_series_grouper.dart'
-    show bookSeriesLanguageKey;
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
@@ -35,6 +33,7 @@ import 'package:fushi_engine/media/metadata/image_download.dart'
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_models.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/models/content_language.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -374,7 +373,7 @@ class BookArtScrapeService {
       final BookSeriesKey? series = parseBookSeriesKey(row.title);
       final String base = series?.key ?? row.title;
       found.add((row: row, series: series, base: base));
-      final String language = bookSeriesLanguageKey(row.language);
+      final String language = contentLanguageKey(row.language);
       if (language.isNotEmpty) {
         languagesByBase.putIfAbsent(base, () => <String>{}).add(language);
       }
@@ -383,7 +382,7 @@ class BookArtScrapeService {
         in found) {
       final bool split = (languagesByBase[base]?.length ?? 0) > 1;
       final String groupKey = split
-          ? '$base|lang:${bookSeriesLanguageKey(row.language)}'
+          ? '$base|lang:${contentLanguageKey(row.language)}'
           : base;
       groups.putIfAbsent(groupKey, () => <EpubBookRow>[]).add(row);
       groupTitles.putIfAbsent(groupKey, () => series?.seriesTitle ?? row.title);
@@ -425,7 +424,7 @@ class BookArtScrapeService {
   /// 与修复前相同）。
   static String _groupLanguage(List<EpubBookRow> rows) {
     final Set<String> languages = <String>{
-      for (final EpubBookRow r in rows) bookSeriesLanguageKey(r.language),
+      for (final EpubBookRow r in rows) contentLanguageKey(r.language),
     }..remove('');
     return languages.length == 1 ? languages.single : '';
   }
@@ -890,9 +889,12 @@ class BookArtScrapeService {
     );
     final bool hadCover = store.hasCover(bookKey);
     final bool writesCover = bytes != null;
-    // 改回「保留书里的封面」：之前按原版取的卷封面删掉，露出书里的封面。
+    // 之前按原版取的卷封面，这次没再选它就删掉、露出书里的封面：改回「保留书里的
+    // 封面」，或本语言有了这一卷但不如书里的清晰（本语言那张没写进来，旧的日文版
+    // 封面不能接着盖在书上）。
     final bool dropOriginal =
-        !ctx.originalEdition && (previous?.coverFromOriginalEdition ?? false);
+        !plan.fromOriginalEdition &&
+        (previous?.coverFromOriginalEdition ?? false);
     final bool removeCover =
         !writesCover &&
         hadCover &&

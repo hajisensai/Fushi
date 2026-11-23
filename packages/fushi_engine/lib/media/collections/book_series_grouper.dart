@@ -7,6 +7,7 @@ import 'package:fushi_engine/epub/epub_series_backfill.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:fushi_engine/models/content_language.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 
 /// 在线漫画描述符类型标记（写进 `sourceMetadata`，永不变；同
@@ -254,7 +255,7 @@ class BookSeriesGrouper {
             ),
           ),
         ],
-        language: bookSeriesLanguageKey(book.language),
+        language: contentLanguageKey(book.language),
       );
       out.add(v);
       byBookKey[book.bookKey] = v;
@@ -276,7 +277,7 @@ class BookSeriesGrouper {
           key: key,
           shelf: 'book',
           members: <_Member>[member],
-          language: bookSeriesLanguageKey(srt.language),
+          language: contentLanguageKey(srt.language),
         ),
       );
     }
@@ -661,7 +662,7 @@ class _Volume {
   final String shelf;
   final List<_Member> members;
 
-  /// 本卷内容语言的主语言子标签（[bookSeriesLanguageKey]），未知为空串。
+  /// 本卷内容语言的主语言子标签（[contentLanguageKey]），未知为空串。
   final String language;
 
   /// 同系列（同书架、同系列名）的卷带着两种以上已知语言（BUG-5286：日文版与台版
@@ -673,23 +674,6 @@ class _Volume {
 
   String get groupKey =>
       splitByLanguage ? '$seriesKey|lang:$language' : seriesKey;
-}
-
-/// 归组用的语言键：主语言子标签小写（`zh-Hant-TW` / `zh_TW` → `zh`，`ja-JP` →
-/// `ja`）；空、`und`、不像语言标签的值为空串（未知）。同一种语言写法不同不分家。
-String bookSeriesLanguageKey(String? raw) {
-  final String trimmed = raw?.trim() ?? '';
-  if (trimmed.isEmpty) return '';
-  final String primary = trimmed
-      .replaceAll('_', '-')
-      .split('-')
-      .first
-      .toLowerCase();
-  if (primary.length < 2 || primary.length > 8 || primary == 'und') return '';
-  for (final int unit in primary.codeUnits) {
-    if (unit < 0x61 || unit > 0x7a) return '';
-  }
-  return primary;
 }
 
 /// 给带两种以上已知语言的系列打上 [_Volume.splitByLanguage]。
