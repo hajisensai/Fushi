@@ -75,6 +75,52 @@ void main() {
     });
   });
 
+  group('heavyCommandAnalyzesApp', () {
+    bool analyzes(List<String> cmd, String cwd, {bool win = true}) =>
+        heavyCommandAnalyzesApp(
+          cmd,
+          cwd: cwd,
+          checkout: win ? r'D:\wt' : '/wt',
+          isWindows: win,
+        );
+
+    test('fushi/ 下的 flutter / dart analyze 要先编着色器包', () {
+      const String fl = r'D:\sdk\bin\flutter.bat';
+      const String dt = r'D:\sdk\bin\dart.bat';
+      expect(
+        analyzes(<String>[fl, 'analyze', '--no-pub'], r'D:\WT\Fushi'),
+        true,
+      );
+      expect(
+        analyzes(<String>[dt, 'analyze', 'lib'], r'D:\wt\fushi\lib'),
+        true,
+      );
+      expect(
+        analyzes(
+          <String>['/sdk/bin/flutter', 'analyze'],
+          '/wt/fushi',
+          win: false,
+        ),
+        true,
+      );
+    });
+
+    test('test / build / fushi/ 以外的 analyze 不编（构建钩子自己会编或不需要）', () {
+      const String fl = r'D:\sdk\bin\flutter.bat';
+      expect(analyzes(<String>[fl, 'test'], r'D:\wt\fushi'), false);
+      expect(analyzes(<String>[fl, 'build', 'windows'], r'D:\wt\fushi'), false);
+      expect(
+        analyzes(<String>[fl, 'analyze'], r'D:\wt\packages\fushi_srs'),
+        false,
+      );
+      expect(
+        analyzes(<String>[r'.\gradlew.bat', 'analyze'], r'D:\wt\fushi'),
+        false,
+      );
+      expect(analyzes(<String>[], r'D:\wt\fushi'), false);
+    });
+  });
+
   group('heavyI18nDart', () {
     test('取命令自己那份 SDK 的 dart（stamp 认 Dart 版本，format 决定字节）', () {
       expect(
