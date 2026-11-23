@@ -1419,6 +1419,9 @@ void main() {
               db.execute('UPDATE cards SET mod = ?', <Object?>[newer]);
             },
           ),
+          options: kFullOptions.copyWith(
+            updateNotes: SrsImportUpdateCondition.ifNewer,
+          ),
         );
         expect(rep.notesUpdated, greaterThan(0), reason: label);
         expect(rep.cardsKeptInDeck, 2, reason: label);
