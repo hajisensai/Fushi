@@ -12,7 +12,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 ///   所以行内统一抬到 40）。
 /// - Apple iOS 档（触屏 / 桌面窄窗）：36（iOS 27 搜索胶囊 / 筛选 pop-up 胶囊）。
 /// - Apple macOS 档（桌面宽窗，[FushiAppleMetrics.desktop]）：28（macOS 27
-///   搜索框 / large 尺寸 pop-up button）。
+///   搜索框 / large 尺寸 pop-up button），乘 [FushiAppleMetrics.scale]。
 /// - 墨水屏随 MD3。
 const double kFushiInlineControlHeightMd3 = 40;
 
@@ -25,7 +25,8 @@ const double kFushiInlineControlHeightAppleDesktop = 28;
 /// 当前设计系统下的行内控件高度，见 [kFushiInlineControlHeightMd3]。
 double fushiInlineControlHeight(BuildContext context) {
   if (!isGlassDesign(context)) return kFushiInlineControlHeightMd3;
-  return FushiAppleMetrics.of(context).desktop
-      ? kFushiInlineControlHeightAppleDesktop
+  final FushiAppleMetrics apple = FushiAppleMetrics.of(context);
+  return apple.desktop
+      ? kFushiInlineControlHeightAppleDesktop * apple.scale
       : kFushiInlineControlHeightApple;
 }

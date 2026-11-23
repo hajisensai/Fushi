@@ -86,11 +86,11 @@ Widget _glassCircle(
 /// Apple 导航栏 bar button 的直径 / 胶囊高：窄窗（手机）44、宽窗（桌面工具栏）
 /// 36，与库页动作胶囊（[fushiAppleBarCapsuleExtent]）同一判据。
 double fushiAppleBarButtonExtent(BuildContext context) =>
-    fushiAppleBarCapsuleExtent(compact: fushiMastheadCompact(context));
+    fushiAppleBarCapsuleExtent(context, compact: fushiMastheadCompact(context));
 
 /// 导航栏两端离屏幕边的距离（iOS 导航栏 16、macOS 工具栏 12）。
 double _appleBarSideInset(BuildContext context) =>
-    fushiMastheadCompact(context) ? 16 : 12;
+    fushiMastheadCompact(context) ? 16 : 12 * fushiAppleMacScale(context);
 
 /// iOS 27 / macOS 27 的独立 bar button：一枚自己的玻璃圆
 /// （liquid_glass_widgets 的 [GlassBarItem.custom] +
@@ -215,7 +215,9 @@ TextStyle fushiAppleInlineTitleStyle(BuildContext context) {
   return (Theme.of(context).textTheme.titleMedium ?? const TextStyle())
       .copyWith(
         color: appleColorsOf(context).label,
-        fontSize: fushiAppleCompact(context) ? 15 : 17,
+        fontSize: fushiAppleCompact(context)
+            ? 15 * fushiAppleMacScale(context)
+            : 17,
         fontWeight: FontWeight.w600,
       );
 }
@@ -224,7 +226,9 @@ TextStyle fushiAppleInlineTitleStyle(BuildContext context) {
 TextStyle fushiAppleInlineSubtitleStyle(BuildContext context) {
   return (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
     color: appleColorsOf(context).secondaryLabel,
-    fontSize: fushiAppleCompact(context) ? 11 : 12,
+    fontSize: fushiAppleCompact(context)
+        ? 11 * fushiAppleMacScale(context)
+        : 12,
   );
 }
 
@@ -712,7 +716,7 @@ class FushiAppleNavBar extends StatelessWidget implements PreferredSizeWidget {
 /// iOS 大标题（[FushiAppleLargeTitle]）占的那一行高：iOS 52（UINavigationBar
 /// 大标题模式 96 − 内联 44）、桌面 44。
 double fushiAppleLargeTitleBand(BuildContext context) => _isDesktopBar(context)
-    ? _kAppleLargeTitleBandDesktop
+    ? _kAppleLargeTitleBandDesktop * fushiAppleMacScale(context)
     : _kAppleLargeTitleBand;
 
 /// iOS 大标题行（`prefersLargeTitles`，与库 `GlassLargeTitle` 同字阶：iOS 34 /
@@ -1652,7 +1656,9 @@ class FushiSliverAppBar extends StatelessWidget {
               largeTitleStyle: _glassLargeTitleStyle(context),
               band: band,
               bottomHeight: bottomHeight,
-              horizontalPadding: desktop ? 20 : 16,
+              horizontalPadding: desktop
+                  ? 20 * fushiAppleMacScale(context)
+                  : 16,
             )
           : flexibleSpace,
       bottom: bottom,
@@ -1711,7 +1717,7 @@ TextStyle _glassLargeTitleStyle(BuildContext context) {
   final bool desktop = _isDesktopBar(context);
   return (Theme.of(context).textTheme.headlineMedium ?? const TextStyle())
       .copyWith(
-        fontSize: desktop ? 26 : 34,
+        fontSize: desktop ? 26 * fushiAppleMacScale(context) : 34,
         fontWeight: FontWeight.w700,
         height: 1.2,
         letterSpacing: desktop ? 0 : 0.37,
@@ -2045,7 +2051,7 @@ class FushiShellLargeTitleBar extends StatelessWidget {
     // 收起后贴着窗口控制条只留一条 32 的内联标题行。MD3：标题行 + large app
     // bar 的下边距（移动 64 / 桌面 56），收起成紧凑的 titleLarge 行。
     final double baseExpandedHeight = apple
-        ? (desktop ? 46 : 52)
+        ? (desktop ? 46 * fushiAppleMacScale(context) : 52)
         : (desktop ? 56 : 64);
     // 标题行右侧挂着动作时，收起后也要容得下一排 44 的按钮（桌面 Apple 的
     // 32 内联行放不下）。
@@ -2054,7 +2060,9 @@ class FushiShellLargeTitleBar extends StatelessWidget {
     // 就会把胶囊下半截裁平）。
     const double md3CollapsedHeight = kFushiPageChromeExtent + 8;
     final double collapsedHeight = math.max(
-      apple ? (desktop ? 32 : 44) : md3CollapsedHeight,
+      apple
+          ? (desktop ? 32 * fushiAppleMacScale(context) : 44)
+          : md3CollapsedHeight,
       trailing == null ? 0.0 : (apple ? 44.0 : md3CollapsedHeight),
     );
     // 展开态不得比收起态矮（桌面 MD3 展开 56 < 胶囊行 64），否则「收起」反而

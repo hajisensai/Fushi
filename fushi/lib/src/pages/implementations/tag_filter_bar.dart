@@ -654,7 +654,11 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
                 children: <Widget>[
                   if (appleGlyph != null) ...<Widget>[
                     appleGlyph,
-                    SizedBox(width: fushiAppleCompact(context) ? 6 : 12),
+                    SizedBox(
+                      width: fushiAppleCompact(context)
+                          ? 6 * fushiAppleMacScale(context)
+                          : 12,
+                    ),
                   ],
                   Text(label),
                 ],

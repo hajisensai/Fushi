@@ -74,10 +74,10 @@ class SettingsSectionHeader extends StatelessWidget {
         padding:
             padding ??
             EdgeInsets.fromLTRB(
-              apple.desktop ? 10 : 16,
+              apple.desktop ? 10 * apple.scale : 16,
               16,
               16,
-              apple.desktop ? 6 : 7,
+              apple.desktop ? 6 * apple.scale : 7,
             ),
         child: Text(text, style: settingsAppleSectionTitleStyle(context)),
       );
@@ -680,7 +680,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
                       apple.rowHorizontal,
                       0,
                       apple.rowHorizontal,
-                      apple.desktop ? 6 : 7,
+                      apple.desktop ? 6 * apple.scale : 7,
                     ),
                     child: Text(
                       widget.title!,
@@ -2756,10 +2756,12 @@ class GlassSettingsPopUpButton extends StatefulWidget {
 
   /// 按钮面的水平几何（桌面 / 触屏）：前后内边距、值与箭头的间距、箭头尺寸。
   /// [build] 与 [maxFaceWidth] 共用这一份，宽度判据不另抄一遍数字。
-  static double _leadingPadding(bool desktop) => desktop ? 12 : 8;
-  static double _trailingPadding(bool desktop) => desktop ? 10 : 4;
-  static double _chevronGap(bool desktop) => desktop ? 6 : 5;
-  static double _chevronSize(bool desktop) => desktop ? 10 : 13;
+  /// [k] 是 macOS 档放大系数（[fushiAppleMacScale]），iOS 档为 1。
+  static double _leadingPadding(bool desktop, double k) => desktop ? 12 * k : 8;
+  static double _trailingPadding(bool desktop, double k) =>
+      desktop ? 10 * k : 4;
+  static double _chevronGap(bool desktop, double k) => desktop ? 6 * k : 5;
+  static double _chevronSize(bool desktop, double k) => desktop ? 10 * k : 13;
   static double _labelMaxWidth(bool desktop, double maxLabelWidth) =>
       desktop || maxLabelWidth < _touchLabelMaxWidth
       ? maxLabelWidth
@@ -2772,12 +2774,14 @@ class GlassSettingsPopUpButton extends StatefulWidget {
     BuildContext context, {
     double maxLabelWidth = 240,
   }) {
-    final bool desktop = FushiAppleMetrics.of(context).desktop;
-    return _leadingPadding(desktop) +
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final bool desktop = metrics.desktop;
+    final double k = metrics.scale;
+    return _leadingPadding(desktop, k) +
         _labelMaxWidth(desktop, maxLabelWidth) +
-        _chevronGap(desktop) +
-        _chevronSize(desktop) +
-        _trailingPadding(desktop);
+        _chevronGap(desktop, k) +
+        _chevronSize(desktop, k) +
+        _trailingPadding(desktop, k);
   }
 
   @override
@@ -2826,11 +2830,14 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
         for (int i = 0; i < widget.labels.length; i++)
           PopupMenuItem<int>(
             value: i,
-            height: metrics.desktop ? 32 : 44,
+            height: metrics.desktop ? 32 * metrics.scale : 44,
             child: Row(
               children: <Widget>[
                 if (icons != null && i < icons.length && icons[i] != null) ...[
-                  FushiIcon(icons[i], size: metrics.desktop ? 15 : 18),
+                  FushiIcon(
+                    icons[i],
+                    size: metrics.desktop ? 15 * metrics.scale : 18,
+                  ),
                   const SizedBox(width: 10),
                 ],
                 Flexible(
@@ -2855,6 +2862,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final FushiAppleColors apple = appleColorsOf(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     final bool desktop = metrics.desktop;
+    final double k = metrics.scale;
     final int? selected = widget.selectedIndex;
     final String value =
         selected != null && selected >= 0 && selected < widget.labels.length
@@ -2870,7 +2878,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final Color fg = desktop ? apple.label : apple.secondaryLabel;
     final TextStyle style = metrics
         .subtitleStyle(context)
-        .copyWith(fontSize: desktop ? 13 : 17, color: fg);
+        .copyWith(fontSize: desktop ? 13 * k : 17, color: fg);
     // macOS 27 pop-up button：共享外观 [FushiApplePopUpButtonFace]（灰填充、
     // 高 22、右侧上下双箭头）；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。
     // 只有图标、没有文字的值（icons 给了而 label 为空）仍走下面的自绘外观。
@@ -2879,7 +2887,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
             key: _anchorKey,
             child: FushiApplePopUpButtonFace(
               label: value,
-              height: 22,
+              height: 22 * k,
               maxLabelWidth: GlassSettingsPopUpButton._labelMaxWidth(
                 desktop,
                 widget.maxLabelWidth,
@@ -2888,16 +2896,16 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
           )
         : Container(
             key: _anchorKey,
-            constraints: BoxConstraints(minHeight: desktop ? 22 : 34),
+            constraints: BoxConstraints(minHeight: desktop ? 22 * k : 34),
             padding: EdgeInsets.only(
-              left: GlassSettingsPopUpButton._leadingPadding(desktop),
-              right: GlassSettingsPopUpButton._trailingPadding(desktop),
+              left: GlassSettingsPopUpButton._leadingPadding(desktop, k),
+              right: GlassSettingsPopUpButton._trailingPadding(desktop, k),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 if (valueIcon != null && value.isEmpty)
-                  FushiIcon(valueIcon, size: desktop ? 14 : 17, color: fg)
+                  FushiIcon(valueIcon, size: desktop ? 14 * k : 17, color: fg)
                 else
                   ConstrainedBox(
                     // 触屏行窄（≈ 360），当前值再收一截，给行标题留出位置。
@@ -2914,10 +2922,12 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                SizedBox(width: GlassSettingsPopUpButton._chevronGap(desktop)),
+                SizedBox(
+                  width: GlassSettingsPopUpButton._chevronGap(desktop, k),
+                ),
                 FushiIcon(
                   CupertinoIcons.chevron_up_chevron_down,
-                  size: GlassSettingsPopUpButton._chevronSize(desktop),
+                  size: GlassSettingsPopUpButton._chevronSize(desktop, k),
                   color: desktop ? apple.secondaryLabel : apple.tertiaryLabel,
                 ),
               ],
@@ -2926,7 +2936,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     Widget button = FushiPlainButton(
       onPressed: _openMenu,
-      borderRadius: BorderRadius.circular(desktop ? 11 : 17),
+      borderRadius: BorderRadius.circular(desktop ? 11 * k : 17),
       semanticLabel: widget.semanticLabel,
       child: face,
     );
@@ -4339,6 +4349,7 @@ class _AppleCompactStepper extends StatelessWidget {
 
   Widget _half(
     FushiAppleColors apple, {
+    required double k,
     required IconData icon,
     required bool enabled,
     required VoidCallback onTap,
@@ -4352,12 +4363,12 @@ class _AppleCompactStepper extends StatelessWidget {
         child: FushiPressScale(
           enabled: enabled,
           child: SizedBox(
-            width: 30,
-            height: 22,
+            width: 30 * k,
+            height: 22 * k,
             child: Center(
               child: FushiIcon(
                 icon,
-                size: 12,
+                size: 12 * k,
                 color: enabled ? apple.label : apple.tertiaryLabel,
               ),
             ),
@@ -4370,28 +4381,32 @@ class _AppleCompactStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
+    // macOS 档放大系数（Windows / Linux 放大，Mac 1.0）。
+    final double k = fushiAppleMacScale(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: apple.secondaryFill,
-        // macOS 27 stepper：全胶囊（与 pop-up / 分段同形）。
-        borderRadius: BorderRadius.circular(11),
+        // macOS 27 stepper：全胶囊（与 pop-up / 分段同形），半径 = 高 / 2。
+        borderRadius: BorderRadius.circular(22 * k / 2),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           _half(
             apple,
+            k: k,
             icon: FushiIcons.remove,
             enabled: canDecrement,
             onTap: onDecrement,
           ),
           Container(
             width: fushiHairline(context),
-            height: 12,
+            height: 12 * k,
             color: apple.separator,
           ),
           _half(
             apple,
+            k: k,
             icon: FushiIcons.add,
             enabled: canIncrement,
             onTap: onIncrement,

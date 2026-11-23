@@ -68,7 +68,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
         fushiRouteImpliesBack,
         kFushiAppleScrollEdgeTail;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show fushiAppleCompact;
+    show fushiAppleCompact, fushiAppleMacScale;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
@@ -761,7 +761,9 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
     double band,
   ) {
     final bool extend = widget.extendBodyBehindHeader;
-    final double side = fushiAppleCompact(context) ? 20 : 16;
+    final double side = fushiAppleCompact(context)
+        ? 20 * fushiAppleMacScale(context)
+        : 16;
     final Widget? subtitle = widget.subtitle;
     final Widget? bottom = widget.bottom;
     final Widget largeTitle = ListenableBuilder(

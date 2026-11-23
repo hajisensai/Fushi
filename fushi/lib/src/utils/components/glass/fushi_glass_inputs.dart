@@ -1278,6 +1278,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 尺寸档：桌面宽窗按 macOS 27（正文 13、搜索框高 28、输入框圆角 6 + 描边），
     // 触屏 / 桌面窄窗按 iOS 27（正文 17、搜索胶囊高 36、输入框圆角 10 无描边）。
     final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double macScale = fushiAppleMacScale(context);
 
     // 单行框收紧行高（1.25）；行距一律上下均分（[fushiFieldTextStyle]），
     // 均分放在合并调用方样式**之后**：调用方常传 inherit: false 的主题样式，
@@ -1285,7 +1286,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final TextStyle style = fushiFieldTextStyle(
       (tt.bodyLarge ?? const TextStyle())
           .copyWith(
-            fontSize: desktop ? 13 : 17,
+            fontSize: desktop ? 13 * macScale : 17,
             color: enabled ? apple.label : apple.tertiaryLabel,
             height: _c.maxLines == 1 ? 1.25 : null,
           )
@@ -1322,7 +1323,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
         data: IconThemeData(
           color: iconColor,
           size: desktop
-              ? (search ? 14 : 15)
+              ? (search ? 14 : 15) * macScale
               : (search ? 17 : (dense ? 18 : 20)),
         ),
         child: icon,
@@ -1341,7 +1342,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 偏离竖直中线（用户 2026-10-04「搜索框文字没有垂直居中」）。布局上只给
     // 尾部图标比胶囊矮 8 的高度，按钮本体照原尺寸居中绘制在上面
     // （OverflowBox），点按区不变小。
-    final double searchHeight = desktop ? 28 : 36;
+    final double searchHeight = desktop ? 28 * macScale : 36;
     Widget? suffixIcon = iconSlot(decoration.suffixIcon);
     if (search && suffixIcon != null && _c.maxLines == 1) {
       suffixIcon = _CappedHeightBox(
@@ -1368,13 +1369,15 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       children: <Widget>[
         if (prefixIcon != null) ...<Widget>[
           prefixIcon,
-          SizedBox(width: search ? 6 : (dense ? 8 : 10)),
+          SizedBox(
+            width: (search ? 6 : (dense ? 8 : 10)) * (desktop ? macScale : 1),
+          ),
         ],
         if (prefix != null) prefix,
         Expanded(child: editable),
         if (suffix != null) suffix,
         if (suffixIcon != null) ...<Widget>[
-          SizedBox(width: dense ? 6 : 8),
+          SizedBox(width: (dense ? 6 : 8) * (desktop ? macScale : 1)),
           suffixIcon,
         ],
       ],
@@ -1392,9 +1395,12 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final EdgeInsetsGeometry padding =
         decoration.contentPadding ??
         (search
-            ? EdgeInsets.symmetric(horizontal: desktop ? 8 : 10)
+            ? EdgeInsets.symmetric(horizontal: desktop ? 8 * macScale : 10)
             : (desktop
-                  ? EdgeInsets.symmetric(horizontal: 8, vertical: dense ? 3 : 5)
+                  ? EdgeInsets.symmetric(
+                      horizontal: 8 * macScale,
+                      vertical: (dense ? 3 : 5) * macScale,
+                    )
                   : EdgeInsets.symmetric(
                       horizontal: dense ? 10 : 12,
                       vertical: dense ? 7 : 11,
@@ -1411,7 +1417,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
               ? (dark ? apple.tertiaryFill : Colors.white)
               : apple.tertiaryFill);
     final BorderRadius shellRadius = BorderRadius.circular(
-      capsule ? searchHeight / 2 : (desktop ? 6 : 10),
+      capsule ? searchHeight / 2 : (desktop ? 6 * macScale : 10),
     );
     // 聚焦本身在 iOS 上没有描边；这里只给一圈细的强调色内环（1.5px、画在框内），
     // 作为键盘 / 手柄导航落到输入框时的焦点指示（macOS 的 focus ring 同理）。

@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleMacScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
     show FushiAppleFloatingSurface;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
@@ -19,8 +21,12 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
 // 增强对比度 / 墨水屏，见 [glassMaterialOf]）库没有实色钮，退回同形状的
 // 系统材质实色面（[FushiAppleFloatingSurface]）。
 
-/// 玻璃钮直径：iOS 导航栏 44、macOS 工具栏 36（设计稿 v5 `.cap`）。
-double fushiAppleBarCapsuleExtent({required bool compact}) => compact ? 44 : 36;
+/// 玻璃钮直径：iOS 导航栏 44、macOS 工具栏 36（设计稿 v5 `.cap`；宽窗乘
+/// [fushiAppleMacScale]，Windows / Linux 放大、Mac 不变）。
+double fushiAppleBarCapsuleExtent(
+  BuildContext context, {
+  required bool compact,
+}) => compact ? 44 : 36 * fushiAppleMacScale(context);
 
 /// 相邻两枚独立玻璃钮之间的间距（iOS 27 导航栏实测 ≈ 8）。
 const double kFushiAppleBarItemGap = 8;
@@ -44,9 +50,12 @@ class FushiAppleBarCluster extends StatelessWidget {
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
     final FushiAppleColors apple = appleColorsOf(context);
-    final double extent = fushiAppleBarCapsuleExtent(compact: compact);
+    final double extent = fushiAppleBarCapsuleExtent(context, compact: compact);
     Widget wrap(Widget item) => IconTheme.merge(
-      data: IconThemeData(color: apple.label, size: compact ? 20 : 17),
+      data: IconThemeData(
+        color: apple.label,
+        size: compact ? 20 : 17 * fushiAppleMacScale(context),
+      ),
       child: FushiToolbarScope(
         inGlassGroup: true,
         child: _AppleBarSlot(extent: extent, child: item),
@@ -167,7 +176,7 @@ class FushiAppleBarProminentButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double extent = fushiAppleBarCapsuleExtent(compact: compact);
+    final double extent = fushiAppleBarCapsuleExtent(context, compact: compact);
     final Widget content = _AppleBarSlot(extent: extent, child: child);
     if (glassMaterialOf(context) == FushiGlassMaterial.off) {
       return FushiAppleFloatingSurface(

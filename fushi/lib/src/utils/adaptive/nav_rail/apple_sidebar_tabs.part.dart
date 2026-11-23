@@ -145,6 +145,10 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     super.dispose();
   }
 
+  /// macOS 档放大系数（[fushiAppleMacScale]）：侧栏行高 / 字号 / 图标在
+  /// Windows / Linux 宽窗放大，Mac 与 iPad 1.0。标签栏形态不随它变。
+  double get _k => fushiAppleMacScale(context);
+
   bool _matches(int index) {
     return matchesMediaSearch(
       query: _query.text,
@@ -160,11 +164,14 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   ) {
     const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
+    final double k = _k;
+    final double rowHeight = _kAppleSidebarRowHeight * k;
+    final double rowGap = _kAppleSidebarRowGap * k;
     double y =
         topInset +
         _kAppleSidebarPadding +
         _kAppleSidebarHeaderHeight +
-        _kAppleSidebarSearchHeight +
+        _kAppleSidebarSearchHeight * k +
         8;
     final Map<int, Rect> rows = <int, Rect>{};
     final List<double> sectionTops = <double>[];
@@ -172,23 +179,23 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
       final AppleSidebarSection section = widget.sections[s];
       if (section.title != null) {
         sectionTops.add(y);
-        y += _kAppleSidebarSectionHeight;
+        y += _kAppleSidebarSectionHeight * k;
       } else {
         sectionTops.add(double.nan);
       }
       if (_shutSections.contains(s)) continue;
       for (final int i in section.indices) {
         if (!_matches(i)) continue;
-        rows[i] = Rect.fromLTWH(left, y, width, _kAppleSidebarRowHeight);
-        y += _kAppleSidebarRowHeight + _kAppleSidebarRowGap;
+        rows[i] = Rect.fromLTWH(left, y, width, rowHeight);
+        y += rowHeight + rowGap;
       }
-      y += 6;
+      y += 6 * k;
     }
     double bottom = size.height - _kAppleSidebarPadding;
     for (final int i in widget.footer.reversed) {
-      bottom -= _kAppleSidebarRowHeight;
-      rows[i] = Rect.fromLTWH(left, bottom, width, _kAppleSidebarRowHeight);
-      bottom -= _kAppleSidebarRowGap;
+      bottom -= rowHeight;
+      rows[i] = Rect.fromLTWH(left, bottom, width, rowHeight);
+      bottom -= rowGap;
     }
     return (rows: rows, sectionTops: sectionTops);
   }
@@ -429,6 +436,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   }) {
     const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
+    final double k = _k;
     final TextTheme text = Theme.of(context).textTheme;
     Widget fade(Widget child) => Opacity(
       opacity: opacity,
@@ -455,25 +463,25 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         left: left,
         top: topInset + _kAppleSidebarPadding + _kAppleSidebarHeaderHeight,
         width: width,
-        height: _kAppleSidebarSearchHeight,
+        height: _kAppleSidebarSearchHeight * k,
         child: fade(
           DecoratedBox(
             // macOS 26 侧栏搜索框：胶囊形 tertiaryFill 井。
             decoration: BoxDecoration(
               color: apple.tertiaryFill,
               borderRadius: BorderRadius.circular(
-                _kAppleSidebarSearchHeight / 2,
+                _kAppleSidebarSearchHeight * k / 2,
               ),
             ),
             child: Row(
               children: <Widget>[
-                const SizedBox(width: 9),
+                SizedBox(width: 9 * k),
                 FushiIcon(
                   FushiIcons.search,
-                  size: 14,
+                  size: 14 * k,
                   color: apple.secondaryLabel,
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: 6 * k),
                 Expanded(
                   // 胶囊（tertiaryFill 圆角 10 + 放大镜）由侧栏自己画，输入框
                   // 走设计系统分派但不带装饰（decoration: null 在两套设计系统
@@ -495,7 +503,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: text.bodyMedium?.copyWith(
-                              fontSize: _kAppleSidebarFontSize,
+                              fontSize: _kAppleSidebarFontSize * k,
                               color: apple.secondaryLabel,
                             ),
                           ),
@@ -504,7 +512,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                       FushiTextFieldControl(
                         controller: _query,
                         style: text.bodyMedium?.copyWith(
-                          fontSize: _kAppleSidebarFontSize,
+                          fontSize: _kAppleSidebarFontSize * k,
                           color: apple.label,
                         ),
                         decoration: null,
@@ -524,7 +532,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               left: left,
               top: sectionTops[s],
               width: width,
-              height: _kAppleSidebarSectionHeight,
+              height: _kAppleSidebarSectionHeight * k,
               child: fade(
                 _AppleSidebarSectionHeader(
                   title: title,
@@ -559,8 +567,9 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     final double s = t.clamp(0.0, 1.0);
     final bool selected = index == widget.currentIndex;
     final AdaptiveNavItem item = widget.items[index];
+    final double k = _k;
     final TextStyle sideLabel = context.fushiType.bodyMedium.copyWith(
-      fontSize: _kAppleSidebarFontSize,
+      fontSize: _kAppleSidebarFontSize * k,
       fontWeight: FontWeight.w400,
       height: 1.2,
     );
@@ -581,8 +590,8 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     final Color sideIcon = windowActive ? apple.accent : apple.secondaryLabel;
     final Color iconColor = Color.lerp(sideIcon, apple.accent, s)!;
     final double radius =
-        _kAppleSidebarRowRadius +
-        (_kAppleTabCellHeight / 2 - _kAppleSidebarRowRadius) * s;
+        _kAppleSidebarRowRadius * k +
+        (_kAppleTabCellHeight / 2 - _kAppleSidebarRowRadius * k) * s;
     final double labelOpacity = iconOnly ? (1 - s * 2).clamp(0.0, 1.0) : 1;
     // 选中 / 悬停底色的补间只在两端静止时播；变形途中逐帧插值，不叠补间。
     final bool settled = t <= 0 || t >= 1;
@@ -606,9 +615,12 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               alpha: apple.tertiaryFill.a * 0.6,
             ),
             radius: radius,
-            padding: 8 + 4 * s,
-            gap: 7 - s,
-            iconSize: _kAppleSidebarIconSize + 2 * s,
+            // 侧栏端（s = 0）乘 macOS 档系数，标签栏端（s = 1）不变。
+            padding: 8 * k + (12 - 8 * k) * s,
+            gap: 7 * k + (6 - 7 * k) * s,
+            iconSize:
+                _kAppleSidebarIconSize * k +
+                (18 - _kAppleSidebarIconSize * k) * s,
             iconColor: iconColor,
             fillDuration: settled
                 ? fushiMotionDuration(context, FushiMotion.short)
@@ -761,7 +773,9 @@ class _AppleSidebarSectionHeader extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: text.labelSmall?.copyWith(
-                      fontSize: _kAppleSidebarSectionFontSize,
+                      fontSize:
+                          _kAppleSidebarSectionFontSize *
+                          fushiAppleMacScale(context),
                       color: color,
                       fontWeight: FontWeight.w600,
                     ),

@@ -48,7 +48,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// iOS 26 alert 的圆角：移动端 30，桌面 26。
 double _alertRadius(BuildContext context) =>
-    fushiAppleCompact(context) ? 26 : 30;
+    fushiAppleCompact(context) ? 26 * fushiAppleMacScale(context) : 30;
 
 /// macOS 26 sheet 的圆角。
 const double _kSheetRadius = 24;
@@ -57,7 +57,8 @@ const double _kSheetRadius = 24;
 const double _kGlassDialogPad = 20;
 
 /// sheet 内边距：桌面 20、移动 24。
-double _sheetPad(BuildContext context) => fushiAppleCompact(context) ? 20 : 24;
+double _sheetPad(BuildContext context) =>
+    fushiAppleCompact(context) ? 20 * fushiAppleMacScale(context) : 24;
 
 /// iOS 26 alert 宽度：纯文字 alert 固定在 270–300 之间。
 const double _kGlassAlertMinWidth = 270;
@@ -210,16 +211,16 @@ double _menuRadius(BuildContext context) => fushiAppleCompact(context)
 
 /// 菜单行高（窄屏 iOS 50；宽屏 macOS 24）。
 double _menuRowHeight(BuildContext context) =>
-    fushiAppleCompact(context) ? 24 : 50;
+    fushiAppleCompact(context) ? 24 * fushiAppleMacScale(context) : 50;
 
 /// 菜单行高亮块圆角：窄屏 iOS 全圆角胶囊（取半高，带副标题的高行同样全圆）；
 /// 宽屏 macOS 圆角矩形 7。
 double _menuRowRadius(BuildContext context) =>
-    fushiAppleCompact(context) ? 7 : 999;
+    fushiAppleCompact(context) ? 7 * fushiAppleMacScale(context) : 999;
 
 /// 菜单行与面板边缘的内缩（左右与上下同值，保证同心）。
 double _menuRowInset(BuildContext context) =>
-    fushiAppleCompact(context) ? 5 : 12;
+    fushiAppleCompact(context) ? 5 * fushiAppleMacScale(context) : 12;
 
 /// 菜单行高亮（悬停 / 按下 / 键盘焦点）：中性浅灰，不用强调色（用户
 /// 2026-11-24「下拉框还是有强调色」）。深色 white 14% / 浅色 black 8%，按下
@@ -233,13 +234,16 @@ Color _menuHighlight(BuildContext context, {bool pressed = false}) {
 
 /// 菜单行字号（iOS 17；macOS 宽窗 14）。
 double _menuFontSize(BuildContext context) =>
-    fushiAppleCompact(context) ? 13 : 17;
+    fushiAppleCompact(context) ? 13 * fushiAppleMacScale(context) : 17;
 
 /// 菜单面板默认宽度：macOS 菜单 200–280，iOS 上下文菜单 250 起（系统定宽
 /// 约 250）。
 BoxConstraints _menuConstraints(BuildContext context) =>
     fushiAppleCompact(context)
-    ? const BoxConstraints(minWidth: 200, maxWidth: 280)
+    ? BoxConstraints(
+        minWidth: 200 * fushiAppleMacScale(context),
+        maxWidth: 280 * fushiAppleMacScale(context),
+      )
     : const BoxConstraints(minWidth: 250, maxWidth: 280);
 
 /// 带结构化文案的菜单项（仓库的 FushiPopupMenuItem 实现它）：Apple 菜单据
@@ -265,6 +269,7 @@ Widget _appleMenuSurface(
 }) {
   final double r = radius ?? _menuRadius(context);
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
   return CustomPaint(
     // Apple 浮层投影：大半径、很淡、偏移小于模糊半径（面板下沿不出现硬边
@@ -274,8 +279,8 @@ Widget _appleMenuSurface(
       color: Colors.black.withValues(
         alpha: (dark ? 0.30 : 0.12) * shadowOpacity.clamp(0.0, 1.0),
       ),
-      blur: compact ? 28 : 44,
-      offset: Offset(0, compact ? 6 : 10),
+      blur: compact ? 28 * macScale : 44,
+      offset: Offset(0, compact ? 6 * macScale : 10),
     ),
     child: GlassContainer(
       useOwnLayer: true,
@@ -554,7 +559,9 @@ class _FushiGlassDialogShell extends StatelessWidget {
 TextStyle _glassDialogTitleStyle(BuildContext context) {
   final ThemeData theme = Theme.of(context);
   return (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
-    fontSize: fushiAppleCompact(context) ? 15 : 17,
+    fontSize: fushiAppleCompact(context)
+        ? 15 * fushiAppleMacScale(context)
+        : 17,
     fontWeight: FontWeight.w600,
     height: 1.3,
     letterSpacing: 0,
@@ -566,7 +573,9 @@ TextStyle _glassDialogTitleStyle(BuildContext context) {
 TextStyle _glassDialogContentStyle(BuildContext context) {
   final ThemeData theme = Theme.of(context);
   return (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-    fontSize: fushiAppleCompact(context) ? 13 : 15,
+    fontSize: fushiAppleCompact(context)
+        ? 13 * fushiAppleMacScale(context)
+        : 15,
     color: appleColorsOf(context).label,
     height: 1.35,
   );
@@ -1016,6 +1025,7 @@ class FushiAlertDialog extends StatelessWidget {
     final FushiAppleColors apple = appleColorsOf(context);
     final double pad = _sheetPad(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool hasHead = title != null || icon != null;
     final List<Widget> head = <Widget>[
       if (hasHead)
@@ -1030,11 +1040,11 @@ class FushiAlertDialog extends StatelessWidget {
                 IconTheme(
                   data: IconThemeData(
                     color: iconColor ?? apple.secondaryLabel,
-                    size: compact ? 17 : 20,
+                    size: compact ? 17 * macScale : 20,
                   ),
                   child: icon!,
                 ),
-                if (title != null) SizedBox(width: compact ? 8 : 10),
+                if (title != null) SizedBox(width: compact ? 8 * macScale : 10),
               ],
               if (title != null)
                 Expanded(child: _wrapTitle(context, TextAlign.start)),
@@ -1273,18 +1283,22 @@ class FushiSimpleDialogOption extends StatelessWidget {
     }
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     // 菜单式选项行：行高 36（桌面）/ 44（移动），悬停 tertiaryFill 圆角底。
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 8 * macScale : 10),
       child: _AppleMenuRow(
         onTap: onPressed ?? () {},
         enabled: onPressed != null,
-        minHeight: compact ? 36 : 44,
-        radius: compact ? 8 : 12,
+        minHeight: compact ? 36 * macScale : 44,
+        radius: compact ? 8 * macScale : 12,
         foreground: onPressed != null ? apple.label : apple.tertiaryLabel,
         padding:
             padding ??
-            EdgeInsets.symmetric(vertical: 6, horizontal: compact ? 12 : 14),
+            EdgeInsets.symmetric(
+              vertical: 6,
+              horizontal: compact ? 12 * macScale : 14,
+            ),
         child: child ?? const SizedBox.shrink(),
       ),
     );
@@ -1566,7 +1580,7 @@ Widget _appleMenuStripLeadingIcon(Widget child) {
 
 /// 菜单副标题字样。
 TextStyle _menuSubtitleStyle(BuildContext context) => TextStyle(
-  fontSize: fushiAppleCompact(context) ? 11 : 15,
+  fontSize: fushiAppleCompact(context) ? 11 * fushiAppleMacScale(context) : 15,
   height: 1.25,
   letterSpacing: 0,
   color: appleColorsOf(context).secondaryLabel,
@@ -1574,7 +1588,7 @@ TextStyle _menuSubtitleStyle(BuildContext context) => TextStyle(
 
 /// 菜单行 ✓ 列 / 图标与文字的间距。
 double _menuIconGap(BuildContext context) =>
-    fushiAppleCompact(context) ? 6 : 12;
+    fushiAppleCompact(context) ? 6 * fushiAppleMacScale(context) : 12;
 
 /// Apple 弹出菜单的公共面板（与 showFushiMenu / FushiMenuAnchor 同一块）：
 /// 随「玻璃画质」的厚玻璃（实色档 = 系统实色面）+ 外圈柔和阴影，圆角取菜单
@@ -1624,6 +1638,7 @@ class FushiAppleMenuItemRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool enabled = onPressed != null;
     final Color fg = !enabled
         ? apple.tertiaryLabel
@@ -1657,7 +1672,7 @@ class FushiAppleMenuItemRow extends StatelessWidget {
       foreground: fg,
       padding: EdgeInsetsDirectional.symmetric(
         horizontal: _menuItemPadding(context),
-        vertical: compact ? 2 : 6,
+        vertical: compact ? 2 * macScale : 6,
       ),
       leading: checkColumn || selected
           ? Padding(
@@ -1666,7 +1681,7 @@ class FushiAppleMenuItemRow extends StatelessWidget {
             )
           : null,
       child: IconTheme.merge(
-        data: IconThemeData(size: compact ? 15 : 22),
+        data: IconThemeData(size: compact ? 15 * macScale : 22),
         child: DefaultTextStyle.merge(
           style: TextStyle(
             fontSize: _menuFontSize(context),
@@ -1704,12 +1719,13 @@ class FushiAppleMenuDivider extends StatelessWidget {
 /// Apple 菜单的组间细分隔线（separator 色，半像素，两侧内缩）。
 Widget _appleMenuDivider(BuildContext context) {
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
   return SizedBox(
-    height: compact ? 11 : 17,
+    height: compact ? 11 * macScale : 17,
     child: Center(
       child: Container(
         height: 0.5,
-        margin: EdgeInsets.symmetric(horizontal: compact ? 10 : 24),
+        margin: EdgeInsets.symmetric(horizontal: compact ? 10 * macScale : 24),
         color: appleColorsOf(context).separator,
       ),
     ),
@@ -2614,6 +2630,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     if (entry is PopupMenuDivider) return _appleMenuDivider(context);
     if (entry is! PopupMenuItem<T>) return entry;
     final PopupMenuItem<T> item = entry;
@@ -2626,7 +2643,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         highlighted;
     Color fg = item.enabled ? apple.label : apple.tertiaryLabel;
     if (item.enabled && data?.color != null) fg = apple.destructive;
-    final double iconSize = compact ? 15 : 22;
+    final double iconSize = compact ? 15 * macScale : 22;
     // MD3 的默认行高（48 / kMinInteractiveDimension）换成 Apple 行高；调用方
     // 显式要的更高行照用。
     final double rowHeight = item.height <= kMinInteractiveDimension
@@ -2672,7 +2689,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         mouseCursor: item.mouseCursor,
         padding: EdgeInsetsDirectional.symmetric(
           horizontal: _menuItemPadding(context),
-          vertical: compact ? 2 : 6,
+          vertical: compact ? 2 * macScale : 6,
         ),
         // 当前项：行首对勾（label 色，高亮时随行反色），不铺强调色底。
         leading: checkColumn
@@ -3195,6 +3212,7 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
     final List<Widget> children = widget.children;
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     bool lit(Set<WidgetState> states) =>
         states.contains(WidgetState.hovered) ||
         states.contains(WidgetState.pressed) ||
@@ -3238,7 +3256,7 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
       }),
       foregroundColor: WidgetStateProperty.resolveWith(fg),
       iconColor: WidgetStateProperty.resolveWith(fg),
-      iconSize: WidgetStatePropertyAll<double>(compact ? 15 : 22),
+      iconSize: WidgetStatePropertyAll<double>(compact ? 15 * macScale : 22),
       overlayColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
       textStyle: WidgetStatePropertyAll<TextStyle>(
         TextStyle(
@@ -3299,11 +3317,11 @@ class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
 
 /// macOS / iOS 菜单行的左右内边距（MenuItemButton 与 showFushiMenu 行同值）。
 double _menuItemPadding(BuildContext context) =>
-    fushiAppleCompact(context) ? 8 : 12;
+    fushiAppleCompact(context) ? 8 * fushiAppleMacScale(context) : 12;
 
 /// 行首对勾列宽（[FushiAppleMenuCheck] 的宽度）。
 double _menuCheckSlot(BuildContext context) =>
-    fushiAppleCompact(context) ? 16 : 24;
+    fushiAppleCompact(context) ? 16 * fushiAppleMacScale(context) : 24;
 
 /// MenuItemButton 前置图标与文字的间距（material 按 Theme 密度算，这里同算）。
 double _menuLabelGap(BuildContext context) =>
@@ -3322,7 +3340,9 @@ class FushiAppleMenuCheck extends StatelessWidget {
     child: checked
         ? FushiIcon(
             CupertinoIcons.checkmark,
-            size: fushiAppleCompact(context) ? 12 : 17,
+            size: fushiAppleCompact(context)
+                ? 12 * fushiAppleMacScale(context)
+                : 17,
           )
         : null,
   );
@@ -3344,6 +3364,7 @@ class FushiAppleMenuSectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final double start =
         _menuItemPadding(context) +
         (alignWithCheck ? _menuCheckSlot(context) + _menuLabelGap(context) : 0);
@@ -3351,16 +3372,16 @@ class FushiAppleMenuSectionHeader extends StatelessWidget {
       child: Padding(
         padding: EdgeInsetsDirectional.fromSTEB(
           start,
-          compact ? 4 : 8,
+          compact ? 4 * macScale : 8,
           _menuItemPadding(context),
-          compact ? 2 : 4,
+          compact ? 2 * macScale : 4,
         ),
         child: Text(
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: compact ? 11 : 13,
+            fontSize: compact ? 11 * macScale : 13,
             fontWeight: compact ? FontWeight.w600 : FontWeight.w400,
             color: appleColorsOf(context).secondaryLabel,
             letterSpacing: 0,
@@ -3387,6 +3408,7 @@ Widget _appleMenuItemButton(
   required bool checkColumn,
 }) {
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
   final FushiAppleColors apple = appleColorsOf(context);
   Widget checkSlot(bool checked) => FushiAppleMenuCheck(checked: checked);
   if (child is FushiDivider || child is Divider) {
@@ -3511,7 +3533,7 @@ Widget _appleMenuItemButton(
       submenuIcon: WidgetStatePropertyAll<Widget?>(
         FushiIcon(
           CupertinoIcons.chevron_forward,
-          size: compact ? 11 : 17,
+          size: compact ? 11 * macScale : 17,
           color: compact ? apple.secondaryLabel : apple.label,
         ),
       ),
@@ -3740,7 +3762,7 @@ Widget _glassDropdownField(
   final double height = expanded && !desktop && !dense
       ? 44
       : FushiApplePopUpButtonFace.defaultHeightOf(context);
-  final double chevronSize = desktop ? 10 : 12;
+  final double chevronSize = desktop ? 10 * fushiAppleMacScale(context) : 12;
   Widget? chevron = icon == null ? null : _pullDownChevron(icon, chevronSize);
   if (chevron != null && iconColor != null) {
     chevron = IconTheme.merge(

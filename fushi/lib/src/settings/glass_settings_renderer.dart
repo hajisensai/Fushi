@@ -287,7 +287,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
         : 0;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal,
-      (inlineHeader ? (metrics.desktop ? 22 : 12) : 12) +
+      (inlineHeader ? (metrics.desktop ? 22 * metrics.scale : 12) : 12) +
           (consumeTopPadding ? MediaQuery.paddingOf(context).top : 0) +
           topInset,
       horizontal,
@@ -316,10 +316,10 @@ class GlassSettingsRenderer implements SettingsRenderer {
       if (inlineHeader)
         Padding(
           padding: EdgeInsets.fromLTRB(
-            metrics.desktop ? 2 : 4,
+            metrics.desktop ? 2 * metrics.scale : 4,
             0,
             0,
-            metrics.desktop ? 18 : 14,
+            metrics.desktop ? 18 * metrics.scale : 14,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,7 +327,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
               Text(
                 destination.title,
                 style: TextStyle(
-                  fontSize: metrics.desktop ? 24 : 30,
+                  fontSize: metrics.desktop ? 24 * metrics.scale : 30,
                   fontWeight: FontWeight.w700,
                   height: 1.2,
                   letterSpacing: metrics.desktop ? 0 : 0.2,

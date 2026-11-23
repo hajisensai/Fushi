@@ -66,7 +66,9 @@ class VideoFloatingPanelSurface extends StatelessWidget {
 
   /// 当前设计系统下的面板圆角。
   static double radiusOf(BuildContext context) {
-    if (isGlassDesign(context)) return fushiAppleCompact(context) ? 18 : 28;
+    if (isGlassDesign(context)) {
+      return fushiAppleCompact(context) ? 18 * fushiAppleMacScale(context) : 28;
+    }
     return 28;
   }
 
@@ -195,7 +197,9 @@ FushiAppleColors videoPanelAppleColors(BuildContext context) {
 TextStyle? videoPanelTitleStyle(BuildContext context) {
   if (isGlassDesign(context)) {
     return TextStyle(
-      fontSize: fushiAppleCompact(context) ? 15 : 17,
+      fontSize: fushiAppleCompact(context)
+          ? 15 * fushiAppleMacScale(context)
+          : 17,
       fontWeight: FontWeight.w600,
       height: 1.25,
       color: appleColorsOf(context).label,

@@ -769,7 +769,9 @@ class _ItemWorkbenchTile extends StatelessWidget {
             focusNode: focusNode,
             trailing: FushiIcon(
               FushiIcons.chevronRight,
-              size: fushiAppleCompact(context) ? 11 : 17,
+              size: fushiAppleCompact(context)
+                  ? 11 * fushiAppleMacScale(context)
+                  : 17,
               color: appleColorsOf(context).label,
             ),
           ),

@@ -6,7 +6,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiBadgeControl, FushiGroupedListItem;
+    show FushiBadgeControl, FushiGroupedListItem, fushiAppleMacScale;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/foundation.dart' show listEquals;

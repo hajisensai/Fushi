@@ -1033,7 +1033,9 @@ class MediaItemDialogFrame extends StatelessWidget {
 
   Widget _buildLaunchButton(BuildContext context) {
     final bool apple = isGlassDesign(context);
-    final double height = apple ? (fushiAppleCompact(context) ? 36 : 50) : 52;
+    final double height = apple
+        ? (fushiAppleCompact(context) ? 36 * fushiAppleMacScale(context) : 50)
+        : 52;
     return SizedBox(
       width: double.infinity,
       height: height,

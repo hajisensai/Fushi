@@ -1049,7 +1049,7 @@ class _FushiListItemState extends State<FushiListItem> {
       ),
     );
     final BorderRadius radius = pill || inDialog
-        ? BorderRadius.circular(metrics.desktop ? 8 : 12)
+        ? BorderRadius.circular(metrics.desktop ? 8 * metrics.scale : 12)
         : BorderRadius.zero;
     return Padding(
       padding: pill
@@ -1147,7 +1147,9 @@ class FushiSearchField extends StatelessWidget {
     // 清除钮之后；macOS 宽窗的搜索框只有 28 高，图标再收一档。
     final bool apple = isGlassDesign(context);
     final bool appleDesktop = apple && FushiAppleMetrics.of(context).desktop;
-    final double appleIconSize = appleDesktop ? 14 : 16;
+    final double appleIconSize = appleDesktop
+        ? 14 * fushiAppleMacScale(context)
+        : 16;
     final Color? appleIconColor = apple
         ? appleColorsOf(context).secondaryLabel
         : null;
@@ -2846,8 +2848,9 @@ class FushiModalSheetFrame extends StatelessWidget {
   Widget _buildAppleHeader(BuildContext context, FushiDesignTokens tokens) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final TextTheme tt = Theme.of(context).textTheme;
-    final double pad = compact ? 20 : 24;
+    final double pad = compact ? 20 * macScale : 24;
     return Padding(
       padding: EdgeInsets.fromLTRB(pad, pad, pad, tokens.spacing.gap),
       child: Column(
@@ -2860,7 +2863,7 @@ class FushiModalSheetFrame extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: (tt.titleMedium ?? const TextStyle()).copyWith(
-                fontSize: compact ? 15 : 17,
+                fontSize: compact ? 15 * macScale : 17,
                 fontWeight: FontWeight.w600,
                 height: 1.3,
                 letterSpacing: 0,
@@ -7920,13 +7923,14 @@ class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField> {
   @override
   Widget build(BuildContext context) {
     final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double macScale = fushiAppleMacScale(context);
     final FushiHeaderSearchController search = widget.controller;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         FushiDesignTokens.of(context).spacing.page,
-        desktop ? 4 : 2,
+        desktop ? 4 * macScale : 2,
         FushiDesignTokens.of(context).spacing.page,
-        desktop ? 8 : 10,
+        desktop ? 8 * macScale : 10,
       ),
       child: Focus(
         canRequestFocus: false,

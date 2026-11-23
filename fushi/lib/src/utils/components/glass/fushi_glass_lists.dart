@@ -32,7 +32,11 @@ export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 /// 紧凑尺寸。按 [ThemeData.platform] 判，测试可经主题覆盖平台。
 @immutable
 class FushiAppleMetrics {
-  const FushiAppleMetrics._({required this.desktop, this.form = false});
+  const FushiAppleMetrics._({
+    required this.desktop,
+    this.form = false,
+    this.scale = 1.0,
+  });
 
   ///
   /// 桌面平台的窄窗（宽 < [kFushiAppleCompactMetricsWidth]）版面就是 iOS 的单列
@@ -42,9 +46,11 @@ class FushiAppleMetrics {
     if (!fushiAppleUsesMacMetrics(context)) {
       return const FushiAppleMetrics._(desktop: false);
     }
-    return FushiAppleFormScope.activeOf(context)
-        ? const FushiAppleMetrics._(desktop: true, form: true)
-        : const FushiAppleMetrics._(desktop: true);
+    return FushiAppleMetrics._(
+      desktop: true,
+      form: FushiAppleFormScope.activeOf(context),
+      scale: fushiAppleMacScale(context),
+    );
   }
 
   /// 按主题平台取档（没有 BuildContext 的装配点用；与 [FushiAppleMetrics.of] 同一判据）。
@@ -65,23 +71,27 @@ class FushiAppleMetrics {
   /// （用户 2026-11-24），分组卡换 form 底色 + 0.5 px 描边。
   final bool form;
 
+  /// macOS 档尺寸的放大系数（[fushiAppleMacScale]）：Mac 上 1.0，Windows /
+  /// Linux 宽窗放大；iOS 档恒 1.0。下面所有尺寸 getter 都已乘过它。
+  final double scale;
+
   /// 列表行最小高：iOS 27 inset grouped 行 52pt，macOS 27 grouped form 单行 40。
-  double get rowMinHeight => desktop ? 40 : 52;
+  double get rowMinHeight => (desktop ? 40 : 52) * scale;
 
   /// 行的水平内边距：iOS inset grouped 16；macOS 27 grouped form 10。
-  double get rowHorizontal => form ? 10 : 16;
+  double get rowHorizontal => (form ? 10 : 16) * scale;
 
   /// 行的竖直内边距：只在多行（带副标题）时撑高，单行靠 [rowMinHeight]。
-  double get rowVertical => desktop ? 6 : 8;
+  double get rowVertical => (desktop ? 6 : 8) * scale;
 
   /// 行标题字号：iOS body 17，macOS 27 系统设置 body 13。
-  double get titleSize => desktop ? 13 : 17;
+  double get titleSize => (desktop ? 13 : 17) * scale;
 
   /// 行副标题字号：iOS subheadline 15，macOS 27 系统设置说明 11。
-  double get subtitleSize => desktop ? 11 : 15;
+  double get subtitleSize => (desktop ? 11 : 15) * scale;
 
   /// 分组脚注字号：iOS footnote 13；macOS 27 grouped form 的组尾说明 11。
-  double get footnoteSize => form ? 11 : 13;
+  double get footnoteSize => (form ? 11 : 13) * scale;
 
   /// grouped form 的内容底（详情窗格，macOS 27 窗口底）：深 #1E1E1E、浅 #F5F5F5。
   Color formBackground(BuildContext context) =>
@@ -96,23 +106,23 @@ class FushiAppleMetrics {
       : const Color(0xFFFFFFFF);
 
   /// 行首图标尺寸。
-  double get leadingIconSize => desktop ? 18 : 22;
+  double get leadingIconSize => (desktop ? 18 : 22) * scale;
 
   /// 行首图标与文字的间距。
-  double get leadingGap => desktop ? 10 : 14;
+  double get leadingGap => (desktop ? 10 : 14) * scale;
 
   /// 行尾 chevron 尺寸。
-  double get chevronSize => desktop ? 13 : 15;
+  double get chevronSize => (desktop ? 13 : 15) * scale;
 
   /// 卡片 / 分组圆角：iOS 27 inset grouped ≈ 26（与屏幕圆角同心的胶囊感），
   /// macOS ≈ 12。
-  double get groupRadius => desktop ? 10 : 26;
+  double get groupRadius => (desktop ? 10 : 26) * scale;
 
   /// 分组之间的竖直间距（分组标题在这段间距里）：iOS 27 ≈ 22。
-  double get groupSpacing => desktop ? 20 : 22;
+  double get groupSpacing => (desktop ? 20 : 22) * scale;
 
   /// 设置页行首「彩色圆角方块」图标底的边长。
-  double get iconTileSize => desktop ? 22 : 29;
+  double get iconTileSize => (desktop ? 22 : 29) * scale;
 
   /// 分组 / 卡片圆角。
   BorderRadius get groupBorderRadius => BorderRadius.circular(groupRadius);
@@ -165,6 +175,25 @@ bool fushiAppleUsesMacMetrics(BuildContext context) {
   return width == null || width >= kFushiAppleCompactMetricsWidth;
 }
 
+/// macOS 档在非 Mac 桌面（Windows / Linux）上的统一放大系数。macOS 原生数值
+/// （正文 13、控件高 22–28、菜单行 24、列表行 40）是给 Mac Retina + SF 定的，
+/// Windows 上配 Segoe UI / 微软雅黑显得又小又挤（用户 2026-11-24 拍板：
+/// Windows / Linux 上 macOS 档整体放大，Mac 不变）。13 → 15、22 → 25.3、
+/// 40 → 46。
+const double kFushiAppleMacScaleNonMac = 1.15;
+
+/// Apple macOS 档尺寸（字号、控件高、行高、内边距、图标、圆角）的**唯一**放大
+/// 系数：iOS 档（[fushiAppleUsesMacMetrics] 为 false）恒 1.0；macOS 档在主题
+/// 平台为 macOS 时 1.0，其余桌面平台（Windows / Linux）为
+/// [kFushiAppleMacScaleNonMac]。只放大 Apple 控件与 chrome，不碰正文排版的
+/// textScaler；调用点不另写平台判断。
+double fushiAppleMacScale(BuildContext context) {
+  if (!fushiAppleUsesMacMetrics(context)) return 1.0;
+  return Theme.of(context).platform == TargetPlatform.macOS
+      ? 1.0
+      : kFushiAppleMacScaleNonMac;
+}
+
 /// 子树按 macOS 27「系统设置」grouped form 排版（[FushiAppleMetrics.form]）。
 /// 只在桌面档生效：窄窗（< [kFushiAppleCompactMetricsWidth]）仍是 iOS 档。
 /// 纯度量作用域，本身不画任何东西（与设计系统分派无关）。
@@ -208,7 +237,7 @@ class FushiAppleCheckmark extends StatelessWidget {
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     return FushiIcon(
       CupertinoIcons.checkmark_alt,
-      size: metrics.desktop ? 16 : 20,
+      size: metrics.desktop ? 16 * metrics.scale : 20,
       color: appleColorsOf(context).accent,
     );
   }

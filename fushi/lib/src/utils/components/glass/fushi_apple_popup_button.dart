@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiAppleMetrics;
+    show FushiAppleMetrics, fushiAppleMacScale;
 
 /// Apple 设计系统的 pop-up 按钮外观（iOS 27 / macOS 27），筛选胶囊、行内下拉、
 /// 表单下拉的 Apple 分支共用这一份。
@@ -92,8 +92,9 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
       FushiAppleMetrics.of(context).desktop;
 
   /// 当前档位的默认高度。
-  static double defaultHeightOf(BuildContext context) =>
-      desktopOf(context) ? macosHeight : iosHeight;
+  static double defaultHeightOf(BuildContext context) => desktopOf(context)
+      ? macosHeight * fushiAppleMacScale(context)
+      : iosHeight;
 
   /// 按钮底色（见 [paintFill]）。
   static Color fillOf(BuildContext context, {bool active = false}) {
@@ -115,6 +116,7 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool desktop = desktopOf(context);
+    final double k = fushiAppleMacScale(context);
     final double h = height ?? defaultHeightOf(context);
     final bool multiline = labelMaxLines > 1 || labelWidget != null;
     final Color foreground = enabled ? apple.label : apple.tertiaryLabel;
@@ -123,7 +125,7 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
         : apple.tertiaryLabel;
     final TextStyle base =
         (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).copyWith(
-          fontSize: desktop ? 13 : 15,
+          fontSize: desktop ? 13 * k : 15,
           fontWeight: active ? FontWeight.w600 : FontWeight.w400,
           color: foreground,
           height: 1.2,
@@ -161,18 +163,18 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
     } else {
       text = Flexible(child: text);
     }
-    final double chevronSize = desktop ? 10 : 12;
+    final double chevronSize = desktop ? 10 * k : 12;
     final Widget row = IconTheme.merge(
-      data: IconThemeData(color: foreground, size: desktop ? 14 : 17),
+      data: IconThemeData(color: foreground, size: desktop ? 14 * k : 17),
       child: Row(
         mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
         children: <Widget>[
           if (leading != null) ...<Widget>[
             leading!,
-            SizedBox(width: desktop ? 5 : 8),
+            SizedBox(width: desktop ? 5 * k : 8),
           ],
           text,
-          SizedBox(width: desktop ? 5 : 6),
+          SizedBox(width: desktop ? 5 * k : 6),
           IconTheme.merge(
             data: IconThemeData(color: chevronColor, size: chevronSize),
             child:
@@ -192,10 +194,10 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
       height: multiline ? null : h,
       constraints: multiline ? BoxConstraints(minHeight: h) : null,
       padding: EdgeInsetsDirectional.only(
-        start: desktop ? 8 : 14,
-        end: desktop ? 6 : 11,
-        top: multiline ? (desktop ? 3 : 6) : 0,
-        bottom: multiline ? (desktop ? 3 : 6) : 0,
+        start: desktop ? 8 * k : 14,
+        end: desktop ? 6 * k : 11,
+        top: multiline ? (desktop ? 3 * k : 6) : 0,
+        bottom: multiline ? (desktop ? 3 * k : 6) : 0,
       ),
       alignment: expand
           ? AlignmentDirectional.centerStart

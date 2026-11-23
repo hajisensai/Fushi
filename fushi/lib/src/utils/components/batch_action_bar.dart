@@ -154,7 +154,8 @@ class BatchActionBar extends StatelessWidget {
     const EdgeInsets outer = EdgeInsets.fromLTRB(12, 4, 12, 12);
     if (isGlassDesign(context)) {
       final bool compact = fushiAppleCompact(context);
-      final double minHeight = compact ? 44 : 52;
+      final double macScale = fushiAppleMacScale(context);
+      final double minHeight = compact ? 44 * macScale : 52;
       return SafeArea(
         top: false,
         child: Padding(

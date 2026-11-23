@@ -338,7 +338,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: fushiAppleCompact(context) ? 11 : 13,
+            fontSize: fushiAppleCompact(context)
+                ? 11 * fushiAppleMacScale(context)
+                : 13,
             color: appleColorsOf(context).secondaryLabel,
           ),
         ),

@@ -4347,7 +4347,10 @@ class _HomePageState extends BasePageState<HomePage>
         // 再各让 5dp（MD3 56 → 46；Apple 移动 50 → 40、桌面 44 → 34）。
         final ({double size, double iconSize}) ring = isGlassDesign(context)
             ? fushiAppleCompact(context)
-                  ? (size: 34, iconSize: 18)
+                  ? (
+                      size: 44 * fushiAppleMacScale(context) - 10,
+                      iconSize: 18 * fushiAppleMacScale(context),
+                    )
                   : (size: 40, iconSize: 22)
             : (
                 size: fushiFabMetrics(FushiFabSize.regular).extent - 10,

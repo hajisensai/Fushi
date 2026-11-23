@@ -503,7 +503,7 @@ class FushiMastheadCtaButton extends StatelessWidget {
 
   Widget _buildApple(BuildContext context, {required bool compact}) {
     final Color fg = appleColorsOf(context).onAccent;
-    final double extent = fushiAppleBarCapsuleExtent(compact: compact);
+    final double extent = fushiAppleBarCapsuleExtent(context, compact: compact);
     final Widget icon = FushiIcon(
       this.icon,
       size: compact ? 22 : 17,

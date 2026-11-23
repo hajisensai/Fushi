@@ -85,4 +85,72 @@ void main() {
       expect(p, (mac: false, compact: false, metricsDesktop: false));
     }
   });
+
+  // macOS 档放大系数（用户 2026-11-24：Windows / Linux 上 macOS 档整体放大，
+  // Mac 不变，iOS 档恒 1.0）：唯一判据 fushiAppleMacScale，度量对象同值。
+  group('fushiAppleMacScale', () {
+    Future<({double scale, double metricsScale, double title})> scaleProbe(
+      WidgetTester tester, {
+      required TargetPlatform platform,
+      required double width,
+    }) async {
+      late ({double scale, double metricsScale, double title}) result;
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(size: Size(width, 900)),
+          child: Theme(
+            data: ThemeData(platform: platform),
+            child: Builder(
+              builder: (BuildContext context) {
+                final FushiAppleMetrics m = FushiAppleMetrics.of(context);
+                result = (
+                  scale: fushiAppleMacScale(context),
+                  metricsScale: m.scale,
+                  title: m.titleSize,
+                );
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      return result;
+    }
+
+    testWidgets('macOS 宽窗（1440）系数 1.0，正文 13', (WidgetTester tester) async {
+      expect(
+        await scaleProbe(tester, platform: TargetPlatform.macOS, width: 1440),
+        (scale: 1.0, metricsScale: 1.0, title: 13.0),
+      );
+    });
+
+    testWidgets('Windows / Linux 宽窗（1440）放大', (WidgetTester tester) async {
+      for (final TargetPlatform platform in <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        final ({double scale, double metricsScale, double title}) p =
+            await scaleProbe(tester, platform: platform, width: 1440);
+        expect(p.scale, kFushiAppleMacScaleNonMac);
+        expect(p.metricsScale, kFushiAppleMacScaleNonMac);
+        expect(p.title, closeTo(13 * kFushiAppleMacScaleNonMac, 1e-9));
+      }
+      expect(kFushiAppleMacScaleNonMac, greaterThan(1.0));
+    });
+
+    testWidgets('任何平台窄窗（430）系数 1.0', (WidgetTester tester) async {
+      for (final TargetPlatform platform in <TargetPlatform>[
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.iOS,
+        TargetPlatform.android,
+      ]) {
+        final ({double scale, double metricsScale, double title}) p =
+            await scaleProbe(tester, platform: platform, width: 430);
+        expect(p.scale, 1.0, reason: '$platform');
+        expect(p.metricsScale, 1.0, reason: '$platform');
+      }
+    });
+  });
 }

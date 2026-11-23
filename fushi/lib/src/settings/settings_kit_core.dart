@@ -117,7 +117,9 @@ enum SettingsKitStyle {
 /// 整个设置 renderer——后者经 schema 连着各页面，会把这些页拖进 import 大环
 /// （import_cycle_guard_test）。
 double settingsGlassDetailHorizontalInset(BuildContext context) =>
-    FushiAppleMetrics.of(context).desktop ? 28 : 16;
+    FushiAppleMetrics.of(context).desktop
+    ? 28 * fushiAppleMacScale(context)
+    : 16;
 
 /// M3E 圆角分级：大容器 28 / 内卡 20 / 小件 12（Apple 走 iOS 的 12 / 10 / 8）。
 class SettingsKitRadii {
@@ -332,7 +334,10 @@ class SettingsShapeIcon extends StatelessWidget {
       // 玻璃：图标不垫底色块（用户 2026-10-04「图标不要填充底」），只用 iOS
       // 系统色给字形着色区分分类；占位宽度与 iOS 图标位一致，文字左缘对齐。
       final double extent =
-          size ?? (FushiAppleMetrics.of(context).desktop ? 22 : 30);
+          size ??
+          (FushiAppleMetrics.of(context).desktop
+              ? 22 * fushiAppleMacScale(context)
+              : 30);
       return SizedBox.square(
         dimension: extent,
         child: Center(
@@ -1270,6 +1275,7 @@ class _JumpChip extends StatelessWidget {
   Widget _buildApple(BuildContext context) {
     final FushiAppleColors colors = appleColorsOf(context);
     final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double macScale = fushiAppleMacScale(context);
     final Color active = colors.secondaryFill;
     final Color idle = active.withValues(alpha: 0);
     return KeyedSubtree(
@@ -1282,7 +1288,7 @@ class _JumpChip extends StatelessWidget {
             child: Material(
               color: Color.lerp(idle, active, c),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(desktop ? 6 : 8),
+                borderRadius: BorderRadius.circular(desktop ? 6 * macScale : 8),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -1292,14 +1298,14 @@ class _JumpChip extends StatelessWidget {
                 highlightColor: colors.fill,
                 child: Padding(
                   padding: EdgeInsets.symmetric(
-                    horizontal: desktop ? 10 : 12,
-                    vertical: desktop ? 4 : 6,
+                    horizontal: desktop ? 10 * macScale : 12,
+                    vertical: desktop ? 4 * macScale : 6,
                   ),
                   child: Text(
                     label,
                     maxLines: 1,
                     style: TextStyle(
-                      fontSize: desktop ? 13 : 15,
+                      fontSize: desktop ? 13 * macScale : 15,
                       height: 1.25,
                       color: colors.label,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
@@ -1847,7 +1853,9 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
           : SettingsShapeIcon(
               icon: icon,
               tone: widget.leadingTone,
-              size: fushiAppleCompact(context) ? 26 : 30,
+              size: fushiAppleCompact(context)
+                  ? 26 * fushiAppleMacScale(context)
+                  : 30,
             ),
     );
     final double inset = settingsGlassDetailHorizontalInset(context);

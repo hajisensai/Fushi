@@ -26,7 +26,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show fushiAppleOverlayShadows;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show fushiAppleUsesMacMetrics;
+    show fushiAppleMacScale, fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiSegmentedButton, FushiSlider, FushiSwitch;
@@ -683,15 +683,18 @@ class _AppleDesktopSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Size size = MediaQuery.sizeOf(context);
-    const BorderRadius radius = BorderRadius.all(Radius.circular(20));
-    final double width = (size.width - 48).clamp(0, 640).toDouble();
+    // macOS 档放大系数（Windows / Linux 宽窗放大，Mac 1.0）：面板宽与圆角
+    // 随控件一起放大，内容不被挤窄。
+    final double k = fushiAppleMacScale(context);
+    final BorderRadius radius = BorderRadius.all(Radius.circular(20 * k));
+    final double width = (size.width - 48).clamp(0, 640 * k).toDouble();
     return SafeArea(
       child: Align(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minWidth: width < 480 ? width : 480,
+              minWidth: width < 480 * k ? width : 480 * k,
               maxWidth: width,
               maxHeight: size.height * 0.85,
             ),

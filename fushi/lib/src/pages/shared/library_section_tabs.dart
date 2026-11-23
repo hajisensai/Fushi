@@ -509,9 +509,10 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
   /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
   double _cellWidth(BuildContext context) {
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final TextStyle style =
         (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
-          fontSize: compact ? 13 : 15,
+          fontSize: compact ? 13 * macScale : 15,
           fontWeight: FontWeight.w600,
         );
     final TextScaler scaler = MediaQuery.textScalerOf(context);

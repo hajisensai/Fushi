@@ -8,7 +8,9 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiAppleMetrics, fushiAppleUsesMacMetrics;
+    show FushiAppleMetrics, fushiAppleMacScale, fushiAppleUsesMacMetrics;
+export 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleMacScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -286,19 +288,23 @@ class FushiAppleButtonMetrics {
     BuildContext context, [
     FushiButtonSize? size,
   ]) {
-    final bool desktop = FushiAppleMetrics.of(context).desktop;
-    if (desktop) {
+    final FushiAppleMetrics apple = FushiAppleMetrics.of(context);
+    if (apple.desktop) {
+      // macOS 档：Windows / Linux 上整体乘 [fushiAppleMacScale]，Mac 上 1.0。
+      final double k = apple.scale;
       return FushiAppleButtonMetrics._(
-        height: switch (size) {
-          FushiButtonSize.xs => 22,
-          FushiButtonSize.s => 24,
-          _ => 28,
-        },
-        fontSize: 13,
-        iconSize: 14,
-        horizontalPadding: size == FushiButtonSize.xs ? 8 : 10,
-        plainHorizontalPadding: 6,
-        iconGap: 4,
+        height:
+            switch (size) {
+              FushiButtonSize.xs => 22,
+              FushiButtonSize.s => 24,
+              _ => 28,
+            } *
+            k,
+        fontSize: 13 * k,
+        iconSize: 14 * k,
+        horizontalPadding: (size == FushiButtonSize.xs ? 8 : 10) * k,
+        plainHorizontalPadding: 6 * k,
+        iconGap: 4 * k,
       );
     }
     final bool small = size == FushiButtonSize.xs || size == FushiButtonSize.s;
@@ -358,6 +364,7 @@ Widget _glassButton(
   final ThemeData theme = Theme.of(context);
   final FushiAppleColors apple = appleColorsOf(context);
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
   final FushiAppleButtonMetrics metrics = FushiAppleButtonMetrics.of(
     context,
     size,
@@ -420,7 +427,9 @@ Widget _glassButton(
     }
   }
 
-  final double height = alertAction ? (compact ? 36 : 48) : metrics.height;
+  final double height = alertAction
+      ? (compact ? 36 * macScale : 48)
+      : metrics.height;
   final EdgeInsetsGeometry padding =
       style?.padding?.resolve(resolveStates) ??
       EdgeInsets.symmetric(
@@ -563,8 +572,9 @@ TextStyle fushiAppleButtonTextStyle(
   bool prominent = false,
 }) {
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
   return (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
-    fontSize: compact ? 15 : 17,
+    fontSize: compact ? 15 * macScale : 17,
     fontWeight: prominent ? FontWeight.w600 : FontWeight.w500,
   );
 }
@@ -1732,6 +1742,7 @@ class FushiIconButtonControl extends StatelessWidget {
   Widget _buildGlass(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool selected = isSelected ?? false;
     final bool enabled = onPressed != null || onLongPress != null;
     final Set<WidgetState> states = <WidgetState>{
@@ -1769,8 +1780,10 @@ class FushiIconButtonControl extends StatelessWidget {
         ? styleBg
         : (prominent && enabled ? apple.accent : null);
     final double effectiveIconSize =
-        iconSize ?? style?.iconSize?.resolve(states) ?? (compact ? 18 : 20);
-    final double defaultExtent = compact ? 36 : 44;
+        iconSize ??
+        style?.iconSize?.resolve(states) ??
+        (compact ? 18 * macScale : 20);
+    final double defaultExtent = compact ? 36 * macScale : 44;
     final double extent =
         constraints?.minWidth != null && constraints!.minWidth > 0
         ? constraints!.minWidth

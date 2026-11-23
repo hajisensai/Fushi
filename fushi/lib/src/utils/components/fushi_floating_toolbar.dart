@@ -203,7 +203,7 @@ fushiFloatingToolbarPalette(
 /// Apple 悬浮胶囊 / 工具栏按钮的边长：桌面 36（macOS 26 工具栏）、移动 44
 /// （iOS 26 bar button）。与 [FushiIconButtonControl] 的 Apple 触控区同口径。
 double fushiAppleFloatingExtent(BuildContext context) =>
-    fushiAppleCompact(context) ? 36 : 44;
+    fushiAppleCompact(context) ? 36 * fushiAppleMacScale(context) : 44;
 
 /// 悬浮胶囊的装饰：全圆角 + 阴影（MD3 Elevation 3 的两层投影 / Apple 柔和单层投影
 /// + 发丝描边）。墨水屏不画阴影，改一圈 outline 切出轮廓。
@@ -466,7 +466,7 @@ class FushiToolbarButton extends StatelessWidget {
       // （玻璃套玻璃）；字号随 bar button（桌面 18 / 移动 20）。
       final bool apple = isGlassDesign(context);
       final double glyph = apple
-          ? (fushiAppleCompact(context) ? 18 : 20)
+          ? (fushiAppleCompact(context) ? 18 * fushiAppleMacScale(context) : 20)
           : iconSize;
       // 有长按 / 右键时提示、长按、语义一律交给 [FushiToolbarLongPressTarget]
       // （与桌面经典顶栏同一份手势装配），按钮本身不带 tooltip / 长按。
@@ -737,7 +737,7 @@ class FushiToolbarOverflowButton extends StatelessWidget {
         color: foreground,
       ),
       iconSize: isGlassDesign(context)
-          ? (fushiAppleCompact(context) ? 18 : 20)
+          ? (fushiAppleCompact(context) ? 18 * fushiAppleMacScale(context) : 20)
           : 24,
       onSelected: (FushiToolbarItem item) => item.onPressed?.call(),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<FushiToolbarItem>>[
@@ -968,6 +968,7 @@ class FushiFloatingToolbar extends StatelessWidget {
   ) {
     final double extent = fushiAppleFloatingExtent(context);
     final bool compactMetrics = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final List<List<Widget>> capsules = <List<Widget>>[
       for (final List<FushiToolbarItem> group in nonEmpty)
         <Widget>[
@@ -1013,8 +1014,12 @@ class FushiFloatingToolbar extends StatelessWidget {
             padding: single
                 ? EdgeInsets.zero
                 : (axis == Axis.horizontal
-                      ? EdgeInsets.symmetric(horizontal: compactMetrics ? 2 : 4)
-                      : EdgeInsets.symmetric(vertical: compactMetrics ? 2 : 4)),
+                      ? EdgeInsets.symmetric(
+                          horizontal: compactMetrics ? 2 * macScale : 4,
+                        )
+                      : EdgeInsets.symmetric(
+                          vertical: compactMetrics ? 2 * macScale : 4,
+                        )),
             child: Flex(
               direction: axis,
               mainAxisSize: MainAxisSize.min,
@@ -2277,7 +2282,9 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
                 widget.icon,
                 key: ValueKey<IconData>(widget.icon),
                 color: fg,
-                size: fushiAppleCompact(context) ? 18 : 22,
+                size: fushiAppleCompact(context)
+                    ? 18 * fushiAppleMacScale(context)
+                    : 22,
               ),
             ),
           ),

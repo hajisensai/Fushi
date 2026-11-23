@@ -71,7 +71,9 @@ enum DiscoveryCoverShape {
 BorderRadius discoveryCoverRadius(BuildContext context) {
   if (isGlassDesign(context)) {
     return BorderRadius.circular(
-      FushiAppleMetrics.of(context).desktop ? 10 : 12,
+      FushiAppleMetrics.of(context).desktop
+          ? 10 * fushiAppleMacScale(context)
+          : 12,
     );
   }
   return BorderRadius.circular(FushiRadii.posterValue);
@@ -82,7 +84,9 @@ BorderRadius discoveryCoverRadius(BuildContext context) {
 BorderRadius discoveryHeroRadius(BuildContext context) {
   if (isGlassDesign(context)) {
     return BorderRadius.circular(
-      FushiAppleMetrics.of(context).desktop ? 16 : 24,
+      FushiAppleMetrics.of(context).desktop
+          ? 16 * fushiAppleMacScale(context)
+          : 24,
     );
   }
   return BorderRadius.circular(28);
