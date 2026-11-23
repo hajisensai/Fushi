@@ -304,7 +304,8 @@ class OverlayWindowChannel {
   /// （走既有嵌套查词链），回 true；否则回 false，调用方照旧收卡、抓前台选区。
   ///
   /// 只有 Windows 覆盖窗上报卡片选区（BUG-2651 的 overlaySelection）；macOS / Linux
-  /// 的 native 没有这条方法，[MissingPluginException] 就是「卡片不接手」。
+  /// 的 native 显式回 false（卡片不接手）。没有这条方法的旧 native 回
+  /// [MissingPluginException]，同样当作不接手。
   Future<bool> lookupOverlaySelection() async {
     try {
       return (await _invoke<bool>('lookupOverlaySelection')) ?? false;
