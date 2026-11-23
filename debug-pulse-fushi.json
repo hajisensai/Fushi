@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T06:35:00Z",
+ "generatedAt": "2026-11-23T11:10:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "d095b87a48ab1cfd8dccc7d3e23b83834ae9508a",
-  "seq": 31711
+  "sha": "9ea8a7ad2d24f7a073f1425d231d40adfeaee7ed",
+  "seq": 31907
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
    "unknown": false,
    "publishedAt": "2026-11-23T06:34:47Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 31534,
    "prs": [
     4211,
@@ -135,25 +135,182 @@
   }
  ],
  "pending": {
-  "headSha": "d095b87a48ab1cfd8dccc7d3e23b83834ae9508a",
-  "headSeq": 31711,
+  "headSha": "9ea8a7ad2d24f7a073f1425d231d40adfeaee7ed",
+  "headSeq": 31907,
   "prs": [
    4228
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "9ea8a7ad2d24f7a073f1425d231d40adfeaee7ed",
+    "subject": "test: 合批后收口——v127 迁移测试读 kFushiDbSchemaVersion；有声漫画包导入入口登记为 covered"
+   },
+   {
+    "sha": "2c82ad8cd3da83931ba17ccea5713ec030ec1670",
+    "subject": "docs(bugs): 合批后收口撞号（外部 PR 的速览类 BUG 改到 5330–5336）"
+   },
+   {
+    "sha": "10bad780882241fd793399bab1b8ea5d36573886",
+    "subject": "Merge #4272 (claude/fix-gen4-5294-5295) into develop"
+   },
+   {
+    "sha": "ca52cc87b91dfe8b7699bd052d48c49be7265723",
+    "subject": "Merge #4245 (claude/merge-fix-pr4245) into develop"
+   },
+   {
+    "sha": "81e22bacf0ab7036c94c13dc1129e34de22d99c6",
+    "subject": "Merge #4210 (claude/merge-fix-pr4210) into develop"
+   },
+   {
+    "sha": "9516856568f64323f7ed5acd317a55b773a28d39",
+    "subject": "Merge #4200 (claude/merge-fix-pr4200) into develop"
+   },
+   {
+    "sha": "abe6550c5d1b5bbed3ce276e35d8241379204a1b",
+    "subject": "Merge #4199 (claude/merge-fix-pr4199) into develop"
+   },
+   {
+    "sha": "bc5356c15d8813f0970401bf1898ae5a4e7a5e36",
+    "subject": "Merge #4222 (claude/merge-fix-pr4222) into develop"
+   },
+   {
+    "sha": "e344cbd87898360514f16844a3103ac5892a3efb",
+    "subject": "Merge #4221 (claude/merge-fix-pr4221) into develop"
+   },
+   {
+    "sha": "b1306316af28752736d9f0abf06344c0bad440b0",
+    "subject": "Merge #4198 (claude/merge-fix-pr4198) into develop"
+   },
+   {
+    "sha": "2adadfadb4501db480e682169a003c9c5feff5c7",
+    "subject": "Merge #4216 (claude/merge-fix-pr4216) into develop"
+   },
+   {
+    "sha": "e9c10a41bb2529f1626b5cebd75ab2020b27d2ea",
+    "subject": "Merge #4217 (claude/merge-fix-pr4217) into develop"
+   },
+   {
+    "sha": "2077ec6345c629fa8cbfc9ee7302eb5440b74992",
+    "subject": "Merge #4215 (claude/merge-fix-pr4215) into develop"
+   },
+   {
+    "sha": "5075d7379455e60ce135b71620498d8a51dd7c7a",
+    "subject": "Merge #4213 (claude/merge-fix-pr4213) into develop"
+   },
+   {
+    "sha": "3fedcb320c7c47828b9091226e989e4d03d4caf1",
+    "subject": "Merge #4214 (claude/merge-fix-pr4214) into develop"
+   },
+   {
+    "sha": "bece5413933784c1b39591daa65d95f7c181b527",
+    "subject": "Merge #4212 (claude/merge-fix-pr4212) into develop"
+   },
+   {
+    "sha": "0da87cc0f5c7d457037de73097e4451d8c323222",
+    "subject": "Merge #4230 (claude/dec-qkis9sprrb) into develop"
+   },
+   {
+    "sha": "fe11910fd9231bd63b91c3afb28d3bbded86faab",
+    "subject": "Merge #4231 (claude/dec-design-dict-drop-7z-rar) into develop"
+   },
+   {
+    "sha": "68829c3f4a4ca8cbf5f56bd24d45aed9c17560a0",
+    "subject": "Merge #4232 (claude/dec-vo1kpp0rh) into develop"
+   },
+   {
+    "sha": "449c6c8f203c3b98f92ada8b026e32a667439341",
+    "subject": "Merge #4233 (claude/dec-ssfkkf0bo0) into develop"
+   },
+   {
+    "sha": "78514e9282309639ecfb2680fbb926899ef64fbe",
+    "subject": "Merge #4234 (claude/dec-review-hbk-audit-220-player-sub-owner) into develop"
+   },
+   {
+    "sha": "ba856c316646831aaa7b0fef969baf4838091174",
+    "subject": "Merge #4235 (claude/dec-review-hbk-audit-235-pixi-restore) into develop"
+   },
+   {
+    "sha": "839b035b8fa545b5bac409e1e073e0c11fa0f1a3",
+    "subject": "Merge #4236 (claude/fb-bug5274) into develop"
+   },
+   {
+    "sha": "0af1f51c07f800954c36b942b0af1acae4954171",
+    "subject": "Merge #4237 (claude/dec-5emrtfv1l) into develop"
+   },
+   {
+    "sha": "a60f7295b8ee656929a0d8ecc2da4052a34fa86d",
+    "subject": "Merge #4238 (claude/dec-design-mihon-desugar-abi) into develop"
+   },
+   {
+    "sha": "937d40e6d08e9abebb4395e0cde09075aa0ab23f",
+    "subject": "Merge #4239 (claude/fb-bug5275) into develop"
+   },
+   {
+    "sha": "e47606aed04e503cc65d7ca5ac90b4c9ae26a53d",
+    "subject": "Merge #4241 (claude/dec-design-linux-atspi-flatpak) into develop"
+   },
+   {
+    "sha": "922bb8f5f283c4485a9b0ee407ad7f737f6af88a",
+    "subject": "Merge #4242 (claude/dec-review-interconnect-page-id-on-download) into develop"
+   },
+   {
+    "sha": "6ef4f1f0dc57b20f92de91d4308a8d62ab02491a",
+    "subject": "Merge #4243 (claude/word-lookup-audio-delay-73397f) into develop"
+   },
+   {
+    "sha": "c634f80e36c6956366772d05c9b01b398a58fcc2",
+    "subject": "Merge #4247 (claude/continuous-subtitle-movement-db1ea4) into develop"
+   },
+   {
+    "sha": "fcb85f8b6a84f8788163cc7d6506914bde2d9d8b",
+    "subject": "Merge #4250 (claude/profile-button-behavior-713747) into develop"
+   },
+   {
+    "sha": "19c720534141823d7e23ea11ceebfe9dc39081d5",
+    "subject": "Merge #4249 (claude/music-default-mv-support-d97e12) into develop"
+   },
+   {
+    "sha": "68c59b3fa8dfd1bf8427dc9e9134e2807d58d451",
+    "subject": "Merge #4226 (claude/text-tone-variation-0bf4ea) into develop"
+   },
+   {
+    "sha": "b0cb808fb93304eff66f5c9b0c6e9cc1f746ca91",
+    "subject": "Merge #4240 (claude/dec-design-manga-audio-export-pkg) into develop"
+   },
+   {
+    "sha": "49c64612595bb68e7a0981819a0a951033ef174d",
+    "subject": "Merge #4248 (claude/auto-confirm-file-cleanup-21df14) into develop"
+   },
+   {
+    "sha": "9c096d84b7416f22f7da8f2165f93b02ad46b247",
+    "subject": "Merge devred-tools (claude/devred-tools) into develop"
+   },
+   {
+    "sha": "0230c00d562cc5ad661d98802eeccaf1232f8bcc",
+    "subject": "Merge devred-video (claude/devred-video) into develop"
+   },
+   {
+    "sha": "7e70e25211ce6e7c590cecc7bb60417f10adcb1f",
+    "subject": "Merge devred-analyze-ui (claude/devred-analyze-ui) into develop"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988313"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988357"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988357"
    },
    "ios": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988357"
    }
   }
  },
