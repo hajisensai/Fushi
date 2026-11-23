@@ -2,8 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show ProgressiveBlur;
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
@@ -399,13 +397,20 @@ class FushiMastheadGeometry {
       : topPadAt(p) + firstRowHeightAt(p) - actionLiftAt(p);
 
   /// 第一、二行之间：设计稿 14 → 8，减去二级页签自带的上命中带。
-  double rowGapAt(double p) =>
-      math.max(0.0, _lerp(14, 8, p) - _kSegmentHitBand);
+  ///
+  /// Apple（设计稿 v5）：窄窗大标题行下沿到二级分段 16（`.titlerow` 后 8 +
+  /// `.palette` 上内边距 8），收起后分段贴在导航栏下 8；宽窗工具栏下 6
+  /// （`.desk .palette`）。Apple 分段控件没有命中带，不扣。
+  double rowGapAt(double p) => apple
+      ? (compact ? _lerp(16, 8, p) : 6)
+      : math.max(0.0, _lerp(14, 8, p) - _kSegmentHitBand);
 
   /// 面板下内边距：桌面 12、手机 16（二级页签的下命中带算在里面）。手机原为 8，
   /// 比页边距 / 卡片间距都小，首张卡贴着顶栏（2026-11-16 用户反馈）。
-  double get bottomPad =>
-      (compact ? 16 : 12) - (hasSecondary ? _kSegmentHitBand : 0);
+  /// Apple：设计稿 v5 `.palette` 下内边距 10（无二级分段时动作 / 标题行下留 8）。
+  double get bottomPad => apple
+      ? (hasSecondary ? 10 : 8)
+      : (compact ? 16 : 12) - (hasSecondary ? _kSegmentHitBand : 0);
 
   double secondaryTopAt(double p) =>
       topPadAt(p) + firstRowHeightAt(p) + rowGapAt(p);
@@ -1455,48 +1460,61 @@ class FushiMastheadPanel extends StatelessWidget {
 }
 
 extension on FushiMastheadPanel {
-  /// Apple（Cupertino）scroll edge（iOS 26 / 27 `.scrollEdgeEffectStyle`）：
-  /// 栏区页面底色 + 下沿 [kFushiAppleScrollEdgeFade] 渐隐，背后渐进模糊（库的
-  /// [ProgressiveBlur]，顶部最强、向下变清晰）。玻璃画质实色档（含系统降低
-  /// 透明度 / 增强对比度 / 墨水屏，见 [glassMaterialOf]）只渐隐、不模糊。
+  /// Apple（Cupertino）scroll edge：库的 `GlassScrollEdgeEffect`
+  /// （`GlassScrollEdgeStyle.soft`，iOS 26 / 27 `.scrollEdgeEffectStyle(.soft)`）
+  /// 在 GlassPage 外的画法——页面底色按 soft 曲线从窗口顶渐隐到 [height]
+  /// （调用方给的是栏 + 吸顶分段 / 标签行 + [kFushiAppleScrollEdgeFade] 缓冲），
+  /// 内容平滑溶进栏里，没有实底、没有硬边，不叠模糊（blur 档是库的可选增强，
+  /// 不默认开）。那个组件要包住滚动视图，而外壳的保活分区各有自己的滚动视图，
+  /// 所以这里只取同一条曲线（[kFushiAppleSoftEdgeAlphas] /
+  /// [kFushiAppleSoftEdgeStops]）画成覆盖层；整条按 [progress] 淡入，停在顶部
+  /// 不出现。
   Widget _buildApple(BuildContext context) {
-    final bool blur = glassMaterialOf(context) != FushiGlassMaterial.off;
-    final Color page = fushiMastheadPageColor(context);
-    final double alpha = (blur ? 0.72 : 1) * progress;
-    final double total = height + kFushiAppleScrollEdgeFade;
+    final Color page = fushiMastheadPageColor(context).withValues(alpha: 1);
     return IgnorePointer(
       child: SizedBox(
-        height: total,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            if (blur) ProgressiveBlur(maxSigma: 14 * progress),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: <double>[0, height / total, 1],
-                  colors: <Color>[
-                    page.withValues(alpha: alpha),
-                    page.withValues(alpha: alpha * 0.85),
-                    page.withValues(alpha: 0),
-                  ],
-                ),
-              ),
+        height: height,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: kFushiAppleSoftEdgeStops,
+              colors: <Color>[
+                for (final double a in kFushiAppleSoftEdgeAlphas)
+                  page.withValues(alpha: a * progress),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Apple scroll edge 的底板从透明到满所需的滚动距离（逻辑 px）。
+/// 库 `GlassScrollEdgeEffect` soft 档的渐隐曲线（`_kFadeCurves[soft]`，库未导出，
+/// 照抄数值）：边缘不透明，先缓后急，长尾在 92% 处归零，没有接缝。
+const List<double> kFushiAppleSoftEdgeAlphas = <double>[
+  1.0,
+  0.70,
+  0.30,
+  0.04,
+  0.0,
+];
+const List<double> kFushiAppleSoftEdgeStops = <double>[
+  0.0,
+  0.15,
+  0.45,
+  0.75,
+  0.92,
+];
+
+/// Apple scroll edge 从透明到满所需的滚动距离（逻辑 px）。
 const double kFushiAppleScrollEdgeDistance = 24;
 
-/// Apple scroll edge 栏下沿的渐隐带高度（逻辑 px）。
-const double kFushiAppleScrollEdgeFade = 26;
+/// Apple scroll edge 在最后一行吸顶工具（分段 / 标签行）下沿之外再延伸的缓冲
+/// （逻辑 px）：soft 曲线的尾巴落在这里，工具行背后仍有一层可读的底色。
+const double kFushiAppleScrollEdgeFade = 24;
 
 /// 在系统字号缩放之上再乘一个放不下时的缩放（[FushiTitleFit.scale]）。
 @immutable

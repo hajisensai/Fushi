@@ -61,6 +61,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
         FushiMastheadActionGroup,
         FushiMastheadRole,
+        fushiMastheadCompact,
         fushiMastheadRoleOf,
         kFushiMastheadActionExtent,
         kFushiMastheadActionGap;
@@ -70,6 +71,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show FushiAppleBarCluster;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -4934,7 +4937,10 @@ Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
   return Builder(
     key: kFushiHeaderOverflowMenuKey,
     builder: (BuildContext anchorContext) => FushiIconButton(
-      icon: FushiIcons.more,
+      // Apple：iOS 导航栏的「更多」是横向 ⋯。
+      icon: isGlassDesign(anchorContext)
+          ? FushiIcons.moreHoriz
+          : FushiIcons.more,
       tooltip: t.common_more_actions,
       // Apple：收进来的动作带角标（如待确认身份数）时 ⋯ 也亮红点，不让提醒随
       // 收起消失（设计稿 v5）。M3E 不变。
@@ -5061,6 +5067,24 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
           collapsePinned: masthead,
           fit: _overflowFit,
         ).items;
+        if (masthead && apple) {
+          // Apple 库页导航栏：库的 bar button 渲染——相邻动作合成一枚玻璃
+          // 胶囊（GlassBarItemBackground.shared），跟随画质档位。
+          return FushiHeaderLabelScope(
+            expandLabels: false,
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                clipBehavior: Clip.none,
+                child: FushiAppleBarCluster(
+                  items: items,
+                  compact: fushiMastheadCompact(context),
+                ),
+              ),
+            ),
+          );
+        }
         if (masthead) {
           return FushiHeaderLabelScope(
             expandLabels: false,

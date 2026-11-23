@@ -23,9 +23,8 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         fushiMastheadCompact,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
-    show FushiAppleFloatingSurface;
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show FushiAppleBarProminentButton, fushiAppleBarCapsuleExtent;
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
@@ -180,23 +179,24 @@ class _AppleImportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final double extent = fushiMastheadCompact(context) ? 44 : 36;
-    return FushiPressScale(
-      child: FushiAppleFloatingSurface(
-        shape: const CircleBorder(),
-        tint: scheme.primary,
-        child: FushiIconButton(
-          icon: FushiIcons.libraryAdd,
-          tooltip: t.library_view_import,
-          selected: selected,
-          alwaysVisible: true,
-          onTap: onTap,
-          shapeBorder: const CircleBorder(),
-          backgroundColor: Colors.transparent,
-          enabledColor: scheme.onPrimary,
-          padding: EdgeInsets.all((extent - 22) / 2),
-          constraints: BoxConstraints.tightFor(width: extent, height: extent),
-        ),
+    final bool compact = fushiMastheadCompact(context);
+    final double extent = fushiAppleBarCapsuleExtent(compact: compact);
+    // 库的 prominent bar button（GlassBarItemBackground.separate + tintColor）：
+    // 独立一枚强调色玻璃圆钮，按压拉伸由库的玻璃按钮自己做。
+    return FushiAppleBarProminentButton(
+      tint: scheme.primary,
+      compact: compact,
+      child: FushiIconButton(
+        icon: FushiIcons.libraryAdd,
+        tooltip: t.library_view_import,
+        selected: selected,
+        alwaysVisible: true,
+        onTap: onTap,
+        shapeBorder: const CircleBorder(),
+        backgroundColor: Colors.transparent,
+        enabledColor: scheme.onPrimary,
+        padding: EdgeInsets.all((extent - 22) / 2),
+        constraints: BoxConstraints.tightFor(width: extent, height: extent),
       ),
     );
   }
@@ -700,8 +700,9 @@ class _MediaLibraryShellState extends State<MediaLibraryShell>
   ) => members.length == 1
       ? members.single.label
       : switch (group) {
-          // 「我的」组以库视图自己的名字命名（书架）。
-          LibrarySectionGroup.library => members.first.label,
+          // 「我的」组叫组名「媒体库」（与视频页同一口径）：页名（书架 / 漫画）
+          // 已画在标题上，组页签再叫「书架」就紧挨着重复一遍。
+          LibrarySectionGroup.library => t.library_view_media,
           LibrarySectionGroup.online => t.library_view_online,
         };
 

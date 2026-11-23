@@ -1048,7 +1048,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                   // 没有任何可见工具（MD3 库页的外壳标题条是收起态），这条纯色带
                   // 只会盖住页面背景装饰，成了「下滑后顶部一条白边」（2026-11
                   // 用户截图，反馈 03cff3908u / Sb7jHbNO43）。
-                  child: shown <= 0.001 || (nested && _chromeHeight <= 0)
+                  child:
+                      shown <= 0.001 ||
+                          (nested && _chromeHeight <= 0) ||
+                          // Apple：整摞只有最外层一条 scroll edge，从窗口顶一直
+                          // 渐隐到最深一行吸顶工具下沿再过缓冲；嵌套工具行（标签
+                          // 行等）背后透明，不再垫各自的底色条。
+                          (nested && appleBar)
                       ? const SizedBox.shrink()
                       : mastheadStack
                       // 页头大字：90% 页面底色 + 高斯模糊，按滚动进度渐入；
@@ -1056,7 +1062,12 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                       ? Opacity(
                           opacity: nested ? 1 : shown,
                           child: FushiMastheadPanel(
-                            height: scrimSeam - scrimTop + bleed,
+                            height: appleBar
+                                ? math.max(scrimSeam, _nestedReach.value) -
+                                      scrimTop +
+                                      bleed +
+                                      kFushiAppleScrollEdgeFade
+                                : scrimSeam - scrimTop + bleed,
                             progress: panelProgress,
                             // 页头与嵌套工具行（标签条）是同一块吸顶面（设计稿
                             // V3）：只有根层开背景模糊，嵌套层画不透明同色填充
