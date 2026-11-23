@@ -4656,7 +4656,7 @@
   "glass_material_hint": "Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast.",
   "glass_material_liquid": "Liquid",
   "global_context_capture": "선택 컨텍스트 캡처",
-  "global_context_capture_hint": "포그라운드 앱에서 주변 텍스트를 읽어 현재 문장을 표시합니다 (Windows / macOS)",
+  "global_context_capture_hint": "포그라운드 앱에서 주변 텍스트를 읽어 현재 문장을 표시합니다 (Windows / macOS / Linux)",
   "go_to_chapter": "챕터 $n",
   "handlebar_audio": "오디오",
   "handlebar_book_cover": "책 표지",

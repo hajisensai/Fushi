@@ -4656,7 +4656,7 @@
   "glass_material_hint": "Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast.",
   "glass_material_liquid": "Liquid",
   "global_context_capture": "Thu thập ngữ cảnh lựa chọn",
-  "global_context_capture_hint": "Đọc văn bản xung quanh từ ứng dụng tiền cảnh để hiển thị câu hiện tại (Windows / macOS)",
+  "global_context_capture_hint": "Đọc văn bản xung quanh từ ứng dụng tiền cảnh để hiển thị câu hiện tại (Windows / macOS / Linux)",
   "go_to_chapter": "Chương $n",
   "handlebar_audio": "Âm thanh",
   "handlebar_book_cover": "Bìa sách",
