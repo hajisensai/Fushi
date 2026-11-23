@@ -12,8 +12,9 @@ import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -643,11 +644,19 @@ bool _appleDesktopMetrics(BuildContext context) {
 }
 
 /// Apple 开关轨道尺寸：iOS 26 / 27 `UISwitch` 的 63×28 全胶囊（库 [GlassSwitch]
-/// 注释里的 iOS 27.2 模拟器实测值）。触屏与桌面同一尺寸。
+/// 注释里的 iOS 27.2 模拟器实测值）。触屏与桌面窄窗（< 600）用它。
 const Size kFushiAppleSwitchSize = Size(63, 28);
 
-/// 开关在布局里占的尺寸（[FushiSwitch] 据此补齐 Material 行高）。
-Size _appleSwitchSize(BuildContext context) => kFushiAppleSwitchSize;
+/// macOS 27 宽窗的紧凑开关：高 22。宽取 42 而不是 NSSwitch 的 38——库的圆钮是
+/// 轨高 − 4 × 37/24 的横向胶囊（≈ 28 宽），38 宽只剩 6 px 行程，开关看不出动。
+const Size kFushiAppleCompactSwitchSize = Size(42, 22);
+
+/// 开关尺寸：判据与 [FushiAppleMetrics] 的 iOS / 桌面分档同一个（桌面宽窗紧凑，
+/// 触屏与桌面窄窗 iOS 尺寸）。[FushiSwitch] 据此补齐 Material 行高。
+Size _appleSwitchSize(BuildContext context) =>
+    FushiAppleMetrics.of(context).desktop
+    ? kFushiAppleCompactSwitchSize
+    : kFushiAppleSwitchSize;
 
 /// 滑块圆钮拖动时是否浮起成液态玻璃透镜（iOS 26 / 27 `UISlider`）：只在着色器
 /// 档（标准 / 高级，[FushiGlassMaterial.usesShader]）放开，精简 / 实色档仍是
@@ -776,9 +785,9 @@ List<BoxShadow> _appleKnobShadow(bool desktop) {
 /// Apple 设计系统下 [FushiSwitch] 与开关列表行的开关：直接用库的
 /// [GlassSwitch]（iOS 26 / 27 `UISwitch` 形态，**不是玻璃面**，内容层控件）。
 ///
-/// 几何（[kFushiAppleSwitchSize]）：63×28 全胶囊轨，圆钮是横向拉长的白色胶囊
-/// （库按轨高 − 4 × 37/24 算，≈37×24），iOS 27.2 实测尺寸；桌面也用同一尺寸
-/// （用户拿 iOS 27 设置页对比，2026-11-24）。配色：开 = 库默认 systemGreen
+/// 几何：触屏与桌面窄窗 [kFushiAppleSwitchSize]（63×28 全胶囊轨，圆钮是横向
+/// 拉长的白色胶囊，库按轨高 − 4 × 37/24 算，≈37×24，iOS 27.2 实测尺寸）；桌面
+/// 宽窗 [kFushiAppleCompactSwitchSize]（42×22，macOS 27 系统设置）。配色：开 = 库默认 systemGreen
 /// （调用方显式给 [activeTrackColor] 时用它）、关 = 库的 iOS 27 灰轨（深
 /// rgba(235,235,245,.30) / 浅 rgba(60,60,67,.30)，[inactiveTrackColor] 可覆盖）、
 /// 圆钮白（[activeThumbColor] / [inactiveThumbColor] 按当前状态覆盖）。
@@ -822,6 +831,7 @@ class FushiAppleSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ValueChanged<bool>? changed = onChanged;
+    final Size size = _appleSwitchSize(context);
     final Widget control = GlassSwitch(
       value: value,
       // 纯展示也给一个空回调：库在 onChanged 为 null 时按禁用态画 50% 透明，
@@ -831,8 +841,8 @@ class FushiAppleSwitch extends StatelessWidget {
       inactiveColor: inactiveTrackColor,
       thumbColor:
           (value ? activeThumbColor : inactiveThumbColor) ?? Colors.white,
-      width: kFushiAppleSwitchSize.width,
-      height: kFushiAppleSwitchSize.height,
+      width: size.width,
+      height: size.height,
       focusNode: focusNode,
       autofocus: autofocus,
       // 不给库的英文默认标签「Switch」；行标题由外层行语义合并提供。
@@ -1076,12 +1086,12 @@ typedef _AppleSliderMetrics = ({
 });
 
 _AppleSliderMetrics _appleSliderMetrics(BuildContext context) {
-  return (
-    track: 6,
-    thumbWidth: 37,
-    thumbHeight: 24,
-    height: _appleDesktopMetrics(context) ? 36 : 44,
-  );
+  // 桌面宽窗（macOS 27 系统设置）：4 px 轨、20×14 胶囊钮、控件高 28；判据与
+  // [FushiAppleMetrics] 同一个，触屏与桌面窄窗是 iOS 27 尺寸。
+  if (FushiAppleMetrics.of(context).desktop) {
+    return (track: 4, thumbWidth: 20, thumbHeight: 14, height: 28);
+  }
+  return (track: 6, thumbWidth: 37, thumbHeight: 24, height: 44);
 }
 
 /// 滑块轨道（单值与区间共用）：整条未填段 + 已填段 + 可选的次级段 + 离散刻度。
@@ -3688,8 +3698,10 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
   Widget _buildSegmentedControl(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
-    final bool compact = fushiAppleCompact(context);
-    // iOS 26 分段控件 15 号 / macOS 26 13 号，选中段 semibold。
+    // 判据与 [FushiAppleMetrics] 同一个：桌面宽窗 macOS 27（高 24、13 号），
+    // 触屏与桌面窄窗 iOS 27（高 36、15 号）。
+    final bool compact = FushiAppleMetrics.of(context).desktop;
+    // 选中段 semibold。
     final TextStyle base = (theme.textTheme.labelLarge ?? const TextStyle())
         .copyWith(fontSize: compact ? 13 : 15, letterSpacing: -0.1);
     // iOS 27 `UISegmentedControl`（与库 GlassSegmentedControl 的 ios27 静止态
@@ -3744,8 +3756,8 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
     final double intrinsic = segments.length * (widest + 28) + 4;
     // iOS 27 分段控件：轨道是 tertiarySystemFill 灰色全胶囊（[_appleSegmentTrack]），
     // 选中滑块由 [FushiAppleSegmentedControl] 自绘在文字**之下**（更亮的灰 /
-    // 浅色白胶囊）。高度：iOS 36、macOS 30；图标 + 文字叠排 50。
-    final double height = stacked ? 50 : (compact ? 30 : 36);
+    // 浅色白胶囊）。高度：iOS 36、macOS 24；图标 + 文字叠排 iOS 50 / macOS 40。
+    final double height = stacked ? (compact ? 40 : 50) : (compact ? 24 : 36);
     final Widget control = FushiAppleSegmentedControl(
       segments: appleSegments,
       selectedIndex: selectedIndex,
@@ -3754,7 +3766,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
           : null,
       notifyReselect: widget.notifyReselect,
       height: height,
-      iconSize: compact ? 15 : 17,
+      iconSize: compact ? 13 : 17,
       selectedStyle: selectedStyle,
       unselectedStyle: unselectedStyle,
     );
@@ -3850,7 +3862,7 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
       data: IconThemeData(color: fg, size: 15),
       child: DefaultTextStyle.merge(
         style: (theme.textTheme.labelLarge ?? const TextStyle()).copyWith(
-          fontSize: fushiAppleCompact(context) ? 13 : 15,
+          fontSize: FushiAppleMetrics.of(context).desktop ? 13 : 15,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
           color: fg,
         ),
@@ -4432,7 +4444,7 @@ class _AppleSegmentState extends State<_AppleSegment> {
       curve: fade.curve,
       constraints: BoxConstraints(
         minWidth: 44,
-        minHeight: fushiAppleCompact(context) ? 24 : 30,
+        minHeight: FushiAppleMetrics.of(context).desktop ? 20 : 30,
       ),
       // 选中段与 [FushiAppleSegmentedControl] 的滑块同一套样子；键盘焦点
       // 叠一圈强调色环。

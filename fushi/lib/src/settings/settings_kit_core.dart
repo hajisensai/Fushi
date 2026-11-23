@@ -1279,11 +1279,63 @@ class _JumpChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// Apple：macOS 27 系统设置 / iOS 27 的无底文字标签——未选中透明、label 色
+  /// regular；选中是中性灰（secondaryFill）圆角底 + semibold，不用强调色实心。
+  /// 字号随 [FushiAppleMetrics]（桌面宽窗 13 / 触屏与窄窗 15）。填色按设置弹簧
+  /// 过渡（[SettingsSpringValue]），按下缩放（[FushiPressScale]）。
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors colors = appleColorsOf(context);
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final Color active = colors.secondaryFill;
+    final Color idle = active.withValues(alpha: 0);
+    return KeyedSubtree(
+      key: valueKey,
+      child: SettingsSpringValue(
+        value: selected ? 1 : 0,
+        builder: (BuildContext context, double t, Widget? _) {
+          final double c = t.clamp(0.0, 1.0);
+          return FushiPressScale(
+            child: Material(
+              color: Color.lerp(idle, active, c),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(desktop ? 6 : 8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                splashFactory: NoSplash.splashFactory,
+                hoverColor: colors.tertiaryFill,
+                highlightColor: colors.fill,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: desktop ? 10 : 12,
+                    vertical: desktop ? 4 : 6,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: desktop ? 13 : 15,
+                      height: 1.25,
+                      color: colors.label,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final bool eink = isEinkTheme(context);
+    if (apple && !eink) return _buildApple(context);
     final Color idle = apple
         ? appleColorsOf(context).tertiaryFill
         : scheme.surfaceContainerHigh;

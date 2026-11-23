@@ -63,8 +63,8 @@ class FushiAppleMetrics {
   /// 桌面档（macOS / Windows / Linux）。
   final bool desktop;
 
-  /// 列表行最小高：iOS 27 inset grouped 行 52pt，macOS 紧凑行 ≈ 38。
-  double get rowMinHeight => desktop ? 38 : 52;
+  /// 列表行最小高：iOS 27 inset grouped 行 52pt，macOS 27 grouped form 单行 40。
+  double get rowMinHeight => desktop ? 40 : 52;
 
   /// 行的水平内边距（两档都是 16，与 iOS inset grouped 一致）。
   double get rowHorizontal => 16;
@@ -72,11 +72,11 @@ class FushiAppleMetrics {
   /// 行的竖直内边距：只在多行（带副标题）时撑高，单行靠 [rowMinHeight]。
   double get rowVertical => desktop ? 6 : 8;
 
-  /// 行标题字号：iOS body 17，macOS body 13–15 取 15。
-  double get titleSize => desktop ? 15 : 17;
+  /// 行标题字号：iOS body 17，macOS 27 系统设置 body 13。
+  double get titleSize => desktop ? 13 : 17;
 
-  /// 行副标题字号：iOS subheadline 15，macOS 13。
-  double get subtitleSize => desktop ? 13 : 15;
+  /// 行副标题字号：iOS subheadline 15，macOS 27 系统设置说明 11。
+  double get subtitleSize => desktop ? 11 : 15;
 
   /// 分组标题 / 脚注字号（iOS footnote 13，两档一致）。
   double get footnoteSize => 13;
@@ -92,10 +92,10 @@ class FushiAppleMetrics {
 
   /// 卡片 / 分组圆角：iOS 27 inset grouped ≈ 26（与屏幕圆角同心的胶囊感），
   /// macOS ≈ 12。
-  double get groupRadius => desktop ? 12 : 26;
+  double get groupRadius => desktop ? 10 : 26;
 
   /// 分组之间的竖直间距（分组标题在这段间距里）：iOS 27 ≈ 22。
-  double get groupSpacing => desktop ? 18 : 22;
+  double get groupSpacing => desktop ? 20 : 22;
 
   /// 设置页行首「彩色圆角方块」图标底的边长。
   double get iconTileSize => desktop ? 22 : 29;

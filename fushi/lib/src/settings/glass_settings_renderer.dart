@@ -477,9 +477,11 @@ class GlassSettingsSidebarList extends StatelessWidget {
   }
 }
 
-/// macOS 侧栏行：行高 32、圆角 8；选中 = 强调色实底 + onAccent 图标 / 文字，
-/// 悬停 = tertiaryFill，按下 = systemFill。可选 [subtitle] 给搜索结果的面包屑
-/// 用（行随之长高）。
+/// macOS 27 源列表行（与主侧栏 `apple_sidebar_tabs.part.dart` 同规格）：行高
+/// 28、圆角 8、13 号常规字重标题；选中 = 中性色 secondaryFill 圆角底（不着强调
+/// 色），图标保持分类彩色 / 强调色；窗口失焦时选中底淡到一半、强调色图标退成
+/// secondaryLabel（macOS 非激活窗口的源列表）。悬停 = tertiaryFill，按下 =
+/// systemFill。可选 [subtitle] 给搜索结果的面包屑用（行随之长高）。
 ///
 /// 焦点契约同 [FushiListItem]：有 [FushiFocusRoot] 时外包一个焦点目标（方向键
 /// / 手柄可达，Enter / A 经 [ActivateIntent] 触发），行自身不再是停靠点；没有
@@ -509,26 +511,59 @@ class GlassSettingsSidebarRow extends StatefulWidget {
       _GlassSettingsSidebarRowState();
 }
 
-class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
+class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow>
+    with WidgetsBindingObserver {
   late final FushiFocusId _focusId = FushiFocusId(
     'settings-sidebar-${identityHashCode(this)}',
   );
+
+  /// 窗口是否前台激活（桌面失焦时引擎报 [AppLifecycleState.inactive]）。
+  late bool _windowActive = _isActive(WidgetsBinding.instance.lifecycleState);
+
+  static bool _isActive(AppLifecycleState? state) =>
+      state == null || state == AppLifecycleState.resumed;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool active = _isActive(state);
+    if (active != _windowActive && mounted) {
+      setState(() => _windowActive = active);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool selected = widget.selected;
-    final Color fg = selected ? apple.onAccent : apple.label;
+    final Color fg = apple.label;
+    final Color selectedFill = _windowActive
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
+    final Color accentIcon = _windowActive
+        ? apple.accent
+        : apple.secondaryLabel;
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     final String? subtitle = widget.subtitle;
     final Widget row = FushiAppleRow(
       onTap: widget.onTap,
       selected: selected,
-      selectedBackground: apple.accent,
+      selectedBackground: selectedFill,
       focusable: !hasFocusRoot,
       borderRadius: BorderRadius.circular(8),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 32),
+        constraints: const BoxConstraints(minHeight: 28),
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: 10,
@@ -537,19 +572,14 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
           child: Row(
             children: <Widget>[
               if (widget.tone == null)
-                FushiIcon(
-                  widget.icon,
-                  size: 17,
-                  color: selected ? apple.onAccent : apple.accent,
-                )
+                FushiIcon(widget.icon, size: 16, color: accentIcon)
               else
                 SettingsShapeIcon(
                   icon: widget.icon,
                   tone: widget.tone!,
-                  selected: selected,
-                  size: 22,
+                  size: 20,
                 ),
-              const SizedBox(width: 9),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -560,11 +590,9 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 13,
                         height: 1.25,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
+                        fontWeight: FontWeight.w400,
                         color: fg,
                       ),
                     ),
@@ -576,9 +604,7 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
                         style: TextStyle(
                           fontSize: 11,
                           height: 1.3,
-                          color: selected
-                              ? apple.onAccent.withValues(alpha: 0.8)
-                              : apple.secondaryLabel,
+                          color: apple.secondaryLabel,
                         ),
                       ),
                   ],

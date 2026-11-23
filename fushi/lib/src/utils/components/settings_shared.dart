@@ -35,15 +35,12 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show
-        FushiIconButtonControl,
-        FushiPlainButton,
-        fushiClearGlassBezel,
-        fushiClearGlassSettings;
+    show FushiIconButtonControl, FushiPlainButton, fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
@@ -650,11 +647,11 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
             apple != null
                 ? Padding(
                     // 分组外标题：13 号 semibold secondaryLabel（macOS 系统设置
-                    // 的分组标题口径），与行文字起点对齐缩进。
+                    // 的分组标题口径），与卡片内行文字起点（行内边距）左对齐。
                     padding: EdgeInsets.fromLTRB(
-                      apple.desktop ? 10 : 16,
+                      apple.rowHorizontal,
                       0,
-                      16,
+                      apple.rowHorizontal,
                       apple.desktop ? 6 : 7,
                     ),
                     child: Text(
@@ -2822,7 +2819,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
         .copyWith(fontSize: desktop ? 13 : 17, color: fg);
     final Widget face = Container(
       key: _anchorKey,
-      constraints: BoxConstraints(minHeight: desktop ? 28 : 34),
+      constraints: BoxConstraints(minHeight: desktop ? 22 : 34),
       padding: EdgeInsets.only(
         left: GlassSettingsPopUpButton._leadingPadding(desktop),
         right: GlassSettingsPopUpButton._trailingPadding(desktop),
@@ -2860,15 +2857,20 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     Widget button = FushiPlainButton(
       onPressed: _openMenu,
-      borderRadius: BorderRadius.circular(desktop ? 13 : 17),
+      borderRadius: BorderRadius.circular(desktop ? 6 : 17),
       semanticLabel: widget.semanticLabel,
       child: face,
     );
-    // macOS 26 弹出按钮（Niratan「Klee ⌃⌄」）是无色透明玻璃胶囊，不是
-    // systemFill 灰块；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。desktop 按
-    // 平台恒定，不会在运行中增删这层。
+    // macOS 27 pop-up button：secondaryFill 灰填充、圆角 6、高 22，右侧上下
+    // 双箭头；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。
     if (desktop) {
-      button = fushiClearGlassBezel(context, radius: 13, child: button);
+      button = DecoratedBox(
+        decoration: BoxDecoration(
+          color: apple.secondaryFill,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: button,
+      );
     }
     if (!hasFocusRoot) return button;
     return Actions(
@@ -4177,20 +4179,29 @@ class _KeyboardStepper extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              GlassStepper(
-                value: value,
-                min: min,
-                max: max,
-                step: step,
-                width:
-                    kSettingsStepperTrailingWidth -
-                    kSettingsStepperValueWidth -
-                    4,
-                quality: fushiGlassQuality(context),
-                // 库默认 settings 带一层白色填充；步进器是控件层，取无色透明玻璃。
-                settings: fushiClearGlassSettings(context),
-                onChanged: (double next) => onChanged(next.clamp(min, max)),
-              ),
+              if (FushiAppleMetrics.of(context).desktop)
+                // macOS 27 宽窗：紧凑的 −|＋ 灰填充分段小钮（高 22）。
+                _AppleCompactStepper(
+                  canDecrement: value > min,
+                  canIncrement: value < max,
+                  onDecrement: _decrement,
+                  onIncrement: _increment,
+                )
+              else
+                GlassStepper(
+                  value: value,
+                  min: min,
+                  max: max,
+                  step: step,
+                  width:
+                      kSettingsStepperTrailingWidth -
+                      kSettingsStepperValueWidth -
+                      4,
+                  quality: fushiGlassQuality(context),
+                  // 库默认 settings 带一层白色填充；步进器是控件层，取无色透明玻璃。
+                  settings: fushiClearGlassSettings(context),
+                  onChanged: (double next) => onChanged(next.clamp(min, max)),
+                ),
             ],
           ),
         ),
@@ -4246,6 +4257,87 @@ class _KeyboardStepper extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// macOS 27 系统设置宽窗的紧凑步进器：secondaryFill 灰填充、圆角 6、高 22 的
+/// 「− | ＋」两段小钮（各 26 宽，中间一条 separator 发丝线），到端点的一段
+/// 变 tertiaryLabel 并不响应。焦点 / 方向键 / 读屏由外层 [_KeyboardStepper] 的
+/// 单停靠点承担，这里只是指针命中面。
+class _AppleCompactStepper extends StatelessWidget {
+  const _AppleCompactStepper({
+    required this.canDecrement,
+    required this.canIncrement,
+    required this.onDecrement,
+    required this.onIncrement,
+  });
+
+  final bool canDecrement;
+  final bool canIncrement;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+
+  Widget _half(
+    FushiAppleColors apple, {
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: enabled ? onTap : null,
+        child: FushiPressScale(
+          enabled: enabled,
+          child: SizedBox(
+            width: 26,
+            height: 22,
+            child: Center(
+              child: FushiIcon(
+                icon,
+                size: 12,
+                color: enabled ? apple.label : apple.tertiaryLabel,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: apple.secondaryFill,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _half(
+            apple,
+            icon: FushiIcons.remove,
+            enabled: canDecrement,
+            onTap: onDecrement,
+          ),
+          Container(
+            width: fushiHairline(context),
+            height: 12,
+            color: apple.separator,
+          ),
+          _half(
+            apple,
+            icon: FushiIcons.add,
+            enabled: canIncrement,
+            onTap: onIncrement,
+          ),
+        ],
       ),
     );
   }
