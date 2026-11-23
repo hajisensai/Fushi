@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T21:31:39Z",
+ "generatedAt": "2026-11-23T21:32:41Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
    "unknown": false,
-   "publishedAt": "2026-11-23T21:22:48Z",
-   "testflight": false,
+   "publishedAt": "2026-11-23T21:32:27Z",
+   "testflight": true,
    "baseSeq": 32135,
    "prs": [],
    "direct": [
@@ -28,16 +28,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592614"
+     "state": "ok"
     }
    }
   },
@@ -146,102 +143,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 32101,
-   "version": "3.4.0",
-   "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
-   "unknown": false,
-   "publishedAt": "2026-11-23T16:56:20Z",
-   "testflight": true,
-   "baseSeq": 32049,
-   "prs": [
-    4296,
-    4295,
-    4294,
-    4293,
-    4288,
-    4278,
-    4286
-   ],
-   "direct": [
-    {
-     "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
-     "subject": "Merge #4305 (claude/audit-ic-manga-progress) into develop"
-    },
-    {
-     "sha": "50cc7e08124602ec28860009ed78ddbbff6957f4",
-     "subject": "Merge #4304 (claude/audit-overlay-handoff) into develop"
-    },
-    {
-     "sha": "95f062be9cabd28763d84ec60eafdbdc5c983af2",
-     "subject": "Merge #4303 (claude/audit-jimaku-mixed-numbering) into develop"
-    },
-    {
-     "sha": "1b17efb74807d0757b63dc69e1231d9549cd45ce",
-     "subject": "Merge #4302 (claude/audit-srs-autoplay-opacity) into develop"
-    },
-    {
-     "sha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
-     "subject": "test: 登记 #4287 新增歌词动画场景字号与码点排版（M3E / 计字口径守卫 develop 红）"
-    },
-    {
-     "sha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
-     "subject": "chore(bugs): settle BUG number collisions on 84c399b1a"
-    },
-    {
-     "sha": "84c399b1aa4a63521f336fe251a1ec5bc31e733f",
-     "subject": "Merge #4291 (claude/fb-uz_2m0E_Eu) into develop"
-    },
-    {
-     "sha": "f0cc8d4dff68fde49bb71f88fa9378d66233d358",
-     "subject": "Merge #4287 (pr/music-visualizer-fixes) into develop"
-    },
-    {
-     "sha": "57ead9003dfe22e7470e4486108112138ffcdad2",
-     "subject": "Merge #4301 (claude/fb-video-extras-subfolder-not-attached) into develop"
-    },
-    {
-     "sha": "55303da493645e2163fadca6a5cf89352720a5a8",
-     "subject": "Merge #4300 (claude/fb-srs-web-face-autoplay-visibility-race) into develop"
-    },
-    {
-     "sha": "0055830f0e8eea1b73f5fd8492b43453d06fc20b",
-     "subject": "Merge #4299 (claude/fb-manga-double-tap-zoom-flash-offset) into develop"
-    },
-    {
-     "sha": "726b7fd5f4672da312ef11d8b053d9bf4e6d35c4",
-     "subject": "Merge #4298 (claude/fb-android-330-java-crash-mihon) into develop"
-    },
-    {
-     "sha": "b56b33312142fbb246997b72696aa2822c2e5c7c",
-     "subject": "Merge #4297 (claude/fb-interconnect-manga-progress-key-mismatch) into develop"
-    },
-    {
-     "sha": "8b564d7d8bde25b1e5bd6d2ab22aad76df10a872",
-     "subject": "Merge #4289 (claude/dec-dub-track-edit-guard) into develop"
-    },
-    {
-     "sha": "0c35a05504b87b103e6eb83a21ab5d1e6dc9e820",
-     "subject": "chore(bugs): settle BUG number collisions on 4ad722660"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314530"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
@@ -282,69 +183,5 @@
    }
   }
  },
- "prs": {
-  "4278": {
-   "number": 4278,
-   "title": "fix(bluray): 原盘菜单全部播放不再凭空多一集；加密剧集盘封面走解密输入链 (BUG-5312)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T15:32:14Z",
-   "additions": 1144,
-   "deletions": 80,
-   "labels": []
-  },
-  "4286": {
-   "number": 4286,
-   "title": "perf(subtitle): 字幕搜索提速——Jimaku 每条目只列一次全表 + 连接预热",
-   "author": "W1ght",
-   "mergedAt": "2026-11-23T15:32:08Z",
-   "additions": 419,
-   "deletions": 33,
-   "labels": []
-  },
-  "4288": {
-   "number": 4288,
-   "title": "feat(extension): 字幕自适应缩放只缩不放（与 mpv 一致），快捷面板加开关",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T15:32:18Z",
-   "additions": 283,
-   "deletions": 71,
-   "labels": []
-  },
-  "4293": {
-   "number": 4293,
-   "title": "feat(manga-audio): 有声漫画 / 朗读也能「从本句播放」（反馈 RCsvzByem-）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T15:32:25Z",
-   "additions": 311,
-   "deletions": 21,
-   "labels": []
-  },
-  "4294": {
-   "number": 4294,
-   "title": "feat: 漫画有声书支持导出片段视频（反馈 pZhONQTAap）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T15:32:30Z",
-   "additions": 876,
-   "deletions": 61,
-   "labels": []
-  },
-  "4295": {
-   "number": 4295,
-   "title": "feat: 句子音频跟随播放音量扩展到视频卡与有声漫画卡（d7mXlstcv9-video）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T15:32:36Z",
-   "additions": 559,
-   "deletions": 19,
-   "labels": []
-  },
-  "4296": {
-   "number": 4296,
-   "title": "feat: 应用外查词覆盖窗加「高级制卡」，转交主窗打开完整对话框（rf--UcsGta-overlay）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T15:32:41Z",
-   "additions": 784,
-   "deletions": 10,
-   "labels": []
-  }
- }
+ "prs": {}
 }
