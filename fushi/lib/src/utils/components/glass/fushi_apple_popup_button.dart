@@ -19,13 +19,19 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 /// - macOS（桌面宽窗）：pop-up button——`secondarySystemFill` 灰填充、圆角 6、
 ///   默认高 [macosHeight]，13pt 文字 + 尾部 10pt 上下双箭头（与设置页
 ///   `GlassSettingsPopUpButton` 同一规格）。
-/// - [active]（筛选已生效）：底换成强调色淡染、文字与箭头换强调色。
+/// - [active]（筛选已生效）：中性表达——灰填充加深一档、文字 label 色
+///   semibold；Apple 下拉按钮一律不带强调色。
 /// - 不用玻璃：pop-up 按钮在 iOS 27 内容区里是实色控件，所以也不随玻璃画质档
 ///   变化（实色档与玻璃档外观一致）。
 class FushiApplePopUpButtonFace extends StatelessWidget {
   const FushiApplePopUpButtonFace({
-    required this.label,
+    this.label,
     super.key,
+    this.labelWidget,
+    this.leading,
+    this.chevron,
+    this.style,
+    this.contentAlignment,
     this.active = false,
     this.enabled = true,
     this.height,
@@ -33,7 +39,7 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
     this.maxLabelWidth,
     this.paintFill = true,
     this.labelMaxLines = 1,
-  });
+  }) : assert(label != null || labelWidget != null);
 
   /// iOS 默认高度（与库页行内控件 / 搜索胶囊同高）。
   static const double iosHeight = 36;
@@ -41,10 +47,26 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
   /// macOS pop-up button 默认高度（regular control size）。
   static const double macosHeight = 22;
 
-  /// 当前文案（选中值或维度名）。
-  final String label;
+  /// 当前文案（选中值或维度名）。与 [labelWidget] 二选一。
+  final String? label;
 
-  /// 筛选已生效：强调色淡染底 + 强调色文字。
+  /// 自定义文案控件（`DropdownMenuItem.child`、带小标题的两行值等）：套上本
+  /// 外观的字号 / 颜色；给了它时高度按内容长（[height] 是最小高）。
+  final Widget? labelWidget;
+
+  /// 文案前的图标（下拉菜单的 leadingIcon）。
+  final Widget? leading;
+
+  /// 替换尾部上下双箭头（调用方显式给的自定义箭头；`SizedBox.shrink()` = 不要）。
+  final Widget? chevron;
+
+  /// 叠在本外观字号 / 颜色之上的文字样式（调用方的 `style` / `textStyle`）。
+  final TextStyle? style;
+
+  /// [expand] 时文案在剩余宽度里的对齐；null = 起始端。
+  final AlignmentGeometry? contentAlignment;
+
+  /// 筛选已生效：灰填充加深一档 + semibold 文字（不带强调色）。
   final bool active;
   final bool enabled;
 
@@ -76,12 +98,12 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
   /// 按钮底色（见 [paintFill]）。
   static Color fillOf(BuildContext context, {bool active = false}) {
     final FushiAppleColors apple = appleColorsOf(context);
-    if (active) {
-      final bool dark =
-          Theme.of(context).colorScheme.brightness == Brightness.dark;
-      return apple.accent.withValues(alpha: dark ? 0.24 : 0.14);
+    // 不带强调色（用户 2026-11-24「下拉框还是有强调色」）：生效时只把灰填充
+    // 加深一档（iOS tertiary → secondary、macOS secondary → fill）。
+    if (desktopOf(context)) {
+      return active ? apple.fill : apple.secondaryFill;
     }
-    return desktopOf(context) ? apple.secondaryFill : apple.tertiaryFill;
+    return active ? apple.secondaryFill : apple.tertiaryFill;
   }
 
   /// 按钮圆角：macOS 圆角 6（高于 24 的大号控件 7），iOS 全胶囊。
@@ -95,14 +117,12 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool desktop = desktopOf(context);
     final double h = height ?? defaultHeightOf(context);
-    final bool multiline = labelMaxLines > 1;
-    final Color foreground = !enabled
-        ? apple.tertiaryLabel
-        : (active ? apple.accent : apple.label);
-    final Color chevron = !enabled
-        ? apple.tertiaryLabel
-        : (active ? apple.accent : apple.secondaryLabel);
-    final TextStyle style =
+    final bool multiline = labelMaxLines > 1 || labelWidget != null;
+    final Color foreground = enabled ? apple.label : apple.tertiaryLabel;
+    final Color chevronColor = enabled
+        ? apple.secondaryLabel
+        : apple.tertiaryLabel;
+    final TextStyle base =
         (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).copyWith(
           fontSize: desktop ? 13 : 15,
           fontWeight: active ? FontWeight.w600 : FontWeight.w400,
@@ -110,15 +130,30 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
           height: 1.2,
           leadingDistribution: TextLeadingDistribution.even,
         );
-    Widget text = Text(
-      label,
-      maxLines: labelMaxLines,
-      softWrap: multiline,
-      overflow: multiline ? null : TextOverflow.ellipsis,
-      style: style,
-    );
+    final TextStyle textStyle = base
+        .merge(style)
+        .copyWith(color: enabled ? style?.color ?? foreground : foreground);
+    Widget text = labelWidget != null
+        ? DefaultTextStyle(
+            style: textStyle,
+            maxLines: labelMaxLines,
+            overflow: TextOverflow.ellipsis,
+            child: labelWidget!,
+          )
+        : Text(
+            label!,
+            maxLines: labelMaxLines,
+            softWrap: labelMaxLines > 1,
+            overflow: labelMaxLines > 1 ? null : TextOverflow.ellipsis,
+            style: textStyle,
+          );
     if (expand) {
-      text = Expanded(child: text);
+      text = Expanded(
+        child: Align(
+          alignment: contentAlignment ?? AlignmentDirectional.centerStart,
+          child: text,
+        ),
+      );
     } else if (maxLabelWidth != null) {
       text = ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxLabelWidth!),
@@ -127,17 +162,30 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
     } else {
       text = Flexible(child: text);
     }
-    final Widget row = Row(
-      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-      children: <Widget>[
-        text,
-        SizedBox(width: desktop ? 5 : 6),
-        Icon(
-          CupertinoIcons.chevron_up_chevron_down,
-          size: desktop ? 10 : 12,
-          color: chevron,
-        ),
-      ],
+    final double chevronSize = desktop ? 10 : 12;
+    final Widget row = IconTheme.merge(
+      data: IconThemeData(color: foreground, size: desktop ? 14 : 17),
+      child: Row(
+        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+        children: <Widget>[
+          if (leading != null) ...<Widget>[
+            leading!,
+            SizedBox(width: desktop ? 5 : 8),
+          ],
+          text,
+          SizedBox(width: desktop ? 5 : 6),
+          IconTheme.merge(
+            data: IconThemeData(color: chevronColor, size: chevronSize),
+            child:
+                chevron ??
+                Icon(
+                  CupertinoIcons.chevron_up_chevron_down,
+                  size: chevronSize,
+                  color: chevronColor,
+                ),
+          ),
+        ],
+      ),
     );
     return AnimatedContainer(
       duration: fushiMotionDuration(context, FushiMotion.short),
@@ -147,8 +195,8 @@ class FushiApplePopUpButtonFace extends StatelessWidget {
       padding: EdgeInsetsDirectional.only(
         start: desktop ? 8 : 14,
         end: desktop ? 6 : 11,
-        top: multiline ? 6 : 0,
-        bottom: multiline ? 6 : 0,
+        top: multiline ? (desktop ? 3 : 6) : 0,
+        bottom: multiline ? (desktop ? 3 : 6) : 0,
       ),
       alignment: expand
           ? AlignmentDirectional.centerStart

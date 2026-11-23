@@ -103,7 +103,7 @@ double librarySearchFieldHeight(BuildContext context) =>
 /// Apple：公共 pop-up 按钮外观 [FushiApplePopUpButtonFace]——iOS 27 是
 /// `tertiarySystemFill` 灰填充胶囊（无描边、内容自适应宽、15pt + 上下双箭头），
 /// macOS 27 宽窗是 `secondarySystemFill` 圆角 7 的 pop-up button（13pt）；高度
-/// 与并排搜索框同为 [fushiInlineControlHeight]。激活 = 强调色淡染底 + 强调色字。
+/// 与并排搜索框同为 [fushiInlineControlHeight]。激活 = 灰底加深一档 + semibold（不带强调色）。
 ///
 /// @design dual
 ///

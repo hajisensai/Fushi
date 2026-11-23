@@ -135,7 +135,10 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isPolledGamepadPlatform(context)) {
+    // Apple 设计系统（含安卓上选 Cupertino）一律走 Apple pop-up 按钮 + 统一
+    // Apple 菜单（showFushiMenu 自带焦点进菜单、方向键 / 手柄导航），不落到
+    // 安卓的原生 DropdownMenu。
+    if (!isGlassDesign(context) && !_isPolledGamepadPlatform(context)) {
       return _buildStockDropdown(context);
     }
     return _buildMenuAnchor(context);
