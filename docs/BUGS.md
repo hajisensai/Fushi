@@ -33,11 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4652 条。点号进各自文件。
+> 共 4653 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5352](bugs/BUG-5352-interconnect-manga-progress-key-mismatch.md) | ✅ | ✅ | interconnect-manga-progress-key-mismatch |
+| [BUG-5350](bugs/BUG-5350-android-330-java-crash-mihon.md) | ✅ | ✅ | Android 用 Mihon 在线源时闪退：扩展抛 Error（LinkageError 等）漏过宿主拦截器，经 OkHttp 异步线程重抛带崩进程 |
 | [BUG-5349](bugs/BUG-5349-manga-speed-popover-full-height.md) | ✅ | ✅ | 漫画播放条倍速 / 音量弹层撑满屏高 |
 | [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
 | [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | ✅ | ✅ | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
