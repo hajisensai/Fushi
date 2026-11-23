@@ -305,7 +305,6 @@ void main() {
         trustedClock: SrsTrustedClock(
           wallClockMs: () => now,
           bootClockMs: () => now,
-          bootId: 'b',
         ),
         fallbackRolloverHour: () => 4,
       );

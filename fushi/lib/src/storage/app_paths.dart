@@ -96,6 +96,8 @@ class AppPaths {
     // 解析：`testWidgets` 跑在 FakeAsync 上，真实文件 IO 的 future 在那里永不完成、
     // `.timeout()` 还会留下 pending timer，整批页面测试会挂死或报「Timer is still pending」。
     await _ensureDocumentsLayoutDecided();
+    // Android：书库根内部 / 外部的判定（新装外部、老安装内部），外部时解析外部目录。
+    await _ensureAndroidDocumentsLocationDecided();
     // 拍板台 nLXhu0d7gV：iOS 的 Documents 改作「文件」App 可见的导入收件箱，书库搬出去。
     // 必须在解析根之前跑完：搬完之后 [_resolveDocumentsRoot] 解析出的新根才有数据，
     // 紧随其后的 `SandboxRelocation.reconcile` 按台账把库里的绝对路径重基过去。
@@ -235,6 +237,158 @@ class AppPaths {
   /// 盘醒了即自动用回真实数据；用户的 `data_root` 配置与原盘数据一字节不动。
   static bool forceDefaultRootForSession = false;
 
+  // ---- Android：书库根放内部私有目录还是外部 app 专属目录 ----
+
+  /// Android 书库根（documents 根）位置锚点（SharedPreferences，与布局锚点同通道：
+  /// 必须在 DB 打开前可读）。值 [androidDocumentsLocationInternal] /
+  /// [androidDocumentsLocationExternal]。
+  ///
+  /// - 外部 = `getExternalFilesDir(null)/data`（`Android/data/<包名>/files/data`）：
+  ///   USB / 电脑能直接拿到有声书、下载、字幕与转录结果；不需要任何存储权限，卸载时随
+  ///   app 一起删除。**全新安装默认外部**。
+  /// - 内部 = `app_flutter` 下的旧布局（flat 或 nested）。**升级上来的老安装锚定内部**、
+  ///   一个字节都不自动搬：内部到外部跨挂载点，只能逐文件复制，GB 级书库在启动期悄悄搬
+  ///   会卡死启动画面。老用户由首页一次性提示（或设置「数据存储位置」）走带进度的
+  ///   `DataRootMigrator` 迁移，迁完提交本锚点。
+  ///
+  /// 数据库（support 根）两种情况下都留在内部 `filesDir`，不随本锚点移动。
+  static const String androidDocumentsLocationPrefKey =
+      'android_documents_location';
+  static const String androidDocumentsLocationInternal = 'internal';
+  static const String androidDocumentsLocationExternal = 'external';
+
+  /// 老安装「把书库移到可访问文件夹」一次性提示已处理（弹过 / 已迁移）的标记。
+  static const String androidDocumentsMovePromptedPrefKey =
+      'android_documents_move_prompted';
+
+  /// 外部 app 专属目录下书库根的子目录名。不直接用 `files/` 本身：`files/logs`（诊断）、
+  /// `files/video_clips`（导出剪辑）、`files/Download`（浏览器下载兜底）与书库并列，
+  /// 迁移引擎整树搬书库根时不会把它们卷进去。
+  static const String androidExternalDocumentsChild = 'data';
+
+  /// 本进程已判定的 Android 书库位置；[_ensureAndroidDocumentsLocationDecided] 启动期写一次。
+  static String? _androidDocumentsLocation;
+
+  /// 启动期解析到的 `getExternalFilesDir(null)`（null：没解析过或外部存储未挂载）。
+  static Directory? _androidExternalFilesDir;
+
+  /// 仅供测试：注入 / 清掉进程内的 Android 书库位置判定与外部目录。
+  @visibleForTesting
+  static void debugSetAndroidDocumentsLocation(
+    String? location, {
+    Directory? externalFilesDir,
+  }) {
+    _androidDocumentsLocation = location;
+    _androidExternalFilesDir = externalFilesDir;
+  }
+
+  /// 纯判定（测试钉住）：已有合法锚点就沿用；否则按「本机是否已有跑过的安装」决定——
+  /// 老安装 = 内部（不自动搬），全新安装 = 外部。
+  static String decideAndroidDocumentsLocation({
+    required String? stored,
+    required bool existingInstall,
+  }) {
+    if (stored == androidDocumentsLocationInternal ||
+        stored == androidDocumentsLocationExternal) {
+      return stored!;
+    }
+    return existingInstall
+        ? androidDocumentsLocationInternal
+        : androidDocumentsLocationExternal;
+  }
+
+  /// 外部书库根的展示串（外部存储不可用、拿不到真实路径时给逃生屏用）。
+  static String get _androidExternalDocumentsLabel =>
+      p.join('Android', 'data', '…', 'files', androidExternalDocumentsChild);
+
+  /// 判定 + 固化 Android 书库位置，外部时顺带解析外部目录。只由 [resolve] 调用一次。
+  ///
+  /// 外部锚定但外部存储本次不可用（`getExternalFilesDir` 返回 null）时抛
+  /// [DataRootUnavailableException]——与桌面自定义根不可达同一铁律：绝不静默派生空的
+  /// 内部根，让用户看成「书库被清空」。
+  static Future<void> _ensureAndroidDocumentsLocationDecided() async {
+    if (!Platform.isAndroid) return;
+    if (fushiTestDirectory('app-documents') != null) return;
+    if (_androidDocumentsLocation == null) {
+      final SharedPreferences? prefs = await _prefsOrNull();
+      final String? stored = prefs?.getString(androidDocumentsLocationPrefKey);
+      final String decided = decideAndroidDocumentsLocation(
+        stored: stored,
+        existingInstall: stored != null || await existingInstallHasDatabase(),
+      );
+      _androidDocumentsLocation = decided;
+      if (stored != decided) {
+        try {
+          await prefs?.setString(androidDocumentsLocationPrefKey, decided);
+        } catch (e) {
+          // 写失败只意味着下次启动再判一次。
+          debugPrint('AppPaths: 固化 Android 书库位置失败（下次启动重新判定）: $e');
+        }
+      }
+    }
+    if (_androidDocumentsLocation != androidDocumentsLocationExternal) return;
+    _androidExternalFilesDir = await getExternalStorageDirectory();
+    if (_androidExternalFilesDir == null) {
+      throw DataRootUnavailableException(
+        configuredPath: _androidExternalDocumentsLabel,
+      );
+    }
+  }
+
+  /// 本机 Android 书库是否在外部 app 专属目录。**纯读取、绝不探测文件系统**（理由同
+  /// [_useLegacyFlatDocumentsRoot]）：本进程已判定 → 用判定值；否则读锚点；没有锚点 →
+  /// 内部（保守：没跑过 [resolve] 的夹具不会被切到一个空的外部根）。
+  static Future<bool> androidDocumentsAreExternal() async {
+    if (!Platform.isAndroid) return false;
+    final String? decided = _androidDocumentsLocation;
+    if (decided != null) return decided == androidDocumentsLocationExternal;
+    final SharedPreferences? prefs = await _prefsOrNull();
+    return prefs?.getString(androidDocumentsLocationPrefKey) ==
+        androidDocumentsLocationExternal;
+  }
+
+  /// `getExternalFilesDir(null)`（`Android/data/<包名>/files`）；外部存储不可用时 null。
+  /// 启动期已解析过就复用，不再走平台通道。
+  static Future<Directory?> androidExternalFilesDirectory() async =>
+      _androidExternalFilesDir ??= await getExternalStorageDirectory();
+
+  /// Android 外部书库根 `Android/data/<包名>/files/data`（不创建）。外部存储不可用时抛
+  /// [DataRootUnavailableException]。
+  static Future<Directory> androidExternalDocumentsRoot() async {
+    final Directory? ext = await androidExternalFilesDirectory();
+    if (ext == null) {
+      throw DataRootUnavailableException(
+        configuredPath: _androidExternalDocumentsLabel,
+      );
+    }
+    return Directory(p.join(ext.path, androidExternalDocumentsChild));
+  }
+
+  /// Android 内部书库根（迁回内部时的目标）= `app_flutter/<容器>/data`（nested 布局）。
+  /// 迁回时一律落 nested，提交时把布局锚点一起锚成 nested：老 flat 安装迁出再迁回也不会
+  /// 摊回 `app_flutter` 根。
+  static Future<Directory> androidInternalDocumentsRoot() async {
+    final Directory platformDocuments =
+        await getApplicationDocumentsDirectory();
+    return Directory(
+      p.joinAll(<String>[
+        platformDocuments.path,
+        ...defaultDocumentsChildSegments,
+      ]),
+    );
+  }
+
+  /// 用户导出物（视频剪辑等）的基目录：Android 落外部 app 专属目录（USB / 电脑可见），
+  /// 外部存储不可用时退回 `app_flutter`；其它平台保持 `getApplicationDocumentsDirectory()`
+  /// （iOS 那就是「文件」App 可见的 Documents）。
+  static Future<Directory> userExportsBaseDirectory() async {
+    if (Platform.isAndroid) {
+      final Directory? ext = await androidExternalFilesDirectory();
+      if (ext != null) return ext;
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
   /// 读取桌面自定义数据根**配置路径**（绝对路径，不做存在性探测）。无覆盖 / 非桌面 /
   /// 未设 / 空白 / prefs 通道不可用 → 返回 null（调用方退回默认根）。macOS 下顺带激活
   /// 安全域书签。存在性探测分离到 [_probeDataRootExists]。
@@ -327,6 +481,10 @@ class AppPaths {
   static Future<Directory> _resolveDefaultDocumentsRoot() async {
     // iOS 不论 flat / nested：书库一律在 `<Library>/Fushi/data`，Documents 只当收件箱。
     if (Platform.isIOS) return iosDocumentsRoot();
+    // Android 外部锚定：书库在 `Android/data/<包名>/files/data`，与 flat/nested 无关。
+    if (await androidDocumentsAreExternal()) {
+      return androidExternalDocumentsRoot();
+    }
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
     if (await _useLegacyFlatDocumentsRoot()) return platformDocuments;
@@ -857,7 +1015,9 @@ class AppPaths {
   ///   导入收件箱（拍板台 nLXhu0d7gV），未脱敏的错误日志不能摊在那里；原生 MetricKit
   ///   落盘 `<ApplicationSupport>/logs/metrickit/` 与它同目录约定（`AppDelegate.swift`），
   ///   旧版留在 `Documents/metrickit/` 的待摘要诊断随诊断文件一起搬过来；
-  /// - Android：沿用 app 沙盒内的 documents 目录（`app_flutter`，用户看不到）。
+  /// - Android：外部 app 专属目录 `Android/data/<包名>/files/logs`（USB / 电脑可直接拿去
+  ///   反馈；其它 app 读不到，分区存储隔离）。旧版留在 `app_flutter` 的诊断文件首次解析时
+  ///   搬过来；外部存储本次不可用时退回 `app_flutter`。
   ///
   /// 测试分支与旧实现同一个键（`app-documents`），测试注入不变。首次解析时把旧位置
   /// （平台 Documents 根）残留的诊断文件搬过来（[migrateLegacyDiagnostics]），再交给
@@ -884,6 +1044,18 @@ class AppPaths {
   }
 
   static Future<Directory> _resolveDiagnosticsDirectory() async {
+    if (Platform.isAndroid) {
+      final Directory legacy = await getApplicationDocumentsDirectory();
+      final Directory? ext = await androidExternalFilesDirectory();
+      // 外部存储本次不可用：留在 app_flutter（下次可用时再搬）。
+      if (ext == null) return legacy;
+      final Directory dir = Directory(p.join(ext.path, 'logs'));
+      await dir.create(recursive: true);
+      _diagnosticsMigrationFailures.addAll(
+        await migrateLegacyDiagnostics(from: legacy, to: dir),
+      );
+      return dir;
+    }
     if (!isDesktopPlatform && !Platform.isIOS) {
       return getApplicationDocumentsDirectory();
     }

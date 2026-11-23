@@ -1,0 +1,217 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/music/analysis/music_audio_analysis.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_audio.dart';
+
+/// 夹具由 native/fushi_compute 的 `format::tests::golden()` 编码写出（Rust 测试
+/// `golden_fixture_matches_dart_side` 逐字节比对同一个文件），这里按同一份已知值断言：两侧布局一致。
+Uint8List _golden() =>
+    File('test/media/music/analysis/fixtures/golden.fma').readAsBytesSync();
+
+/// 同一份结果的 v2 布局（没有分开的两段中频；Rust `reads_version_2_files_with_merged_mids` 读同一个文件）。
+Uint8List _goldenV2() =>
+    File('test/media/music/analysis/fixtures/golden_v2.fma').readAsBytesSync();
+
+/// 同一份结果的 v1 布局（没有重音段；Rust `reads_version_1_files_with_neutral_accents` 读同一个文件）。
+Uint8List _goldenV1() =>
+    File('test/media/music/analysis/fixtures/golden_v1.fma').readAsBytesSync();
+
+void main() {
+  group('MusicAudioAnalysis.tryParse', () {
+    test('reads the Rust-written golden file', () {
+      final MusicAudioAnalysis a = MusicAudioAnalysis.tryParse(_golden())!;
+      expect(
+        a.flags,
+        MusicAudioAnalysisFlags.beatsModel | MusicAudioAnalysisFlags.drumsModel,
+      );
+      expect(a.beatsFromModel, isTrue);
+      expect(a.drumsFromModel, isTrue);
+      expect(a.vocalFromModel, isFalse);
+      expect(a.drumless, isFalse);
+      expect(a.frameRate, closeTo(22050 / 256, 1e-3));
+      expect(a.frameCount, 5);
+      expect(a.bpm, 120);
+      expect(a.beatsPerBar, 3);
+      expect(a.durationMs, 58);
+      expect(a.pipelineVersion, 3);
+      expect(a.formatVersion, 3);
+      expect(a.beatTimesMs, <int>[0, 500, 1000, 1500]);
+      expect(a.downbeatTimesMs, <int>[0, 1500]);
+      expect(a.hitTimesMs, <int>[10, 510, 1010]);
+      expect(a.hitStrength(0), 1.0);
+      expect(a.hitStrength(1), closeTo(0.5, 0.01));
+      expect(a.hitKind(0), LyricVisualizerDrumKind.kick);
+      expect(a.hitKind(1), LyricVisualizerDrumKind.snare);
+      expect(a.hitKind(2), LyricVisualizerDrumKind.hat);
+      expect(a.vocalOnsetsMs, <int>[20, 40]);
+      expect(a.envelopeReady, isTrue);
+      expect(a.beatsReady, isTrue);
+      expect(a.drumsReady, isTrue);
+      // 每拍重音（golden() 里的 accents）。
+      expect(a.hasBeatAccents, isTrue);
+      expect(a.trackScale, 0.75);
+      expect(a.stemsPartial, isFalse);
+      expect(a.stemsUntilMs, 0);
+      expect(a.vocalCoveredUntilMs, isNull);
+      expect(a.beatImpact(0), 1.0);
+      expect(a.beatImpact(1), closeTo(0.2, 0.01));
+      expect(a.beatImpact(3), 0.0);
+      expect(a.beatLowShare(3), 1.0);
+      expect(a.beatMidShare(1), closeTo(0.5, 0.01));
+      expect(a.beatHighShare(2), 1.0);
+      expect(
+        <bool>[for (int i = 0; i < 4; i++) a.beatRhythmic(i)],
+        <bool>[true, false, true, true],
+      );
+      expect(
+        <bool>[for (int i = 0; i < 4; i++) a.beatPulse(i)],
+        <bool>[true, true, false, true],
+      );
+      // 契约的逐拍表：强拍标记、重音、音色、门控与上面的访问器一致。
+      expect(a.beats, hasLength(4));
+      expect(a.beats[0].downbeat && a.beats[3].downbeat, isTrue);
+      expect(a.beats[1].downbeat || a.beats[2].downbeat, isFalse);
+      expect(a.beats[1].impact, closeTo(0.2, 0.01));
+      expect(a.beats[3].lowShare, 1.0);
+      expect(a.beats[1].rhythmic, isFalse);
+      expect(a.beats[2].pulse, isFalse);
+      // 契约的鼓击表。
+      expect(
+        a.drumHits.map((LyricVisualizerDrumHit h) => h.kind),
+        <LyricVisualizerDrumKind>[
+          LyricVisualizerDrumKind.kick,
+          LyricVisualizerDrumKind.snare,
+          LyricVisualizerDrumKind.hat,
+        ],
+      );
+      expect(a.drumHits[1].timeMs, 510);
+      expect(a.drumHits[1].strength, closeTo(0.5, 0.01));
+    });
+
+    test('reads version-2 files with merged mids', () {
+      final MusicAudioAnalysis a = MusicAudioAnalysis.tryParse(_goldenV2())!;
+      expect(a.formatVersion, 2);
+      expect(a.pipelineVersion, 2);
+      expect(a.hasBeatAccents, isTrue);
+      expect(a.beats[1].impact, closeTo(0.2, 0.01));
+      final LyricVisualizerAudioFrame f = a.frameAt(30);
+      expect(f.lowMid, f.mid);
+      expect(f.upperMid, f.mid);
+    });
+
+    test('reads version-1 files with neutral accents', () {
+      final MusicAudioAnalysis a = MusicAudioAnalysis.tryParse(_goldenV1())!;
+      expect(a.formatVersion, 1);
+      expect(a.pipelineVersion, 1);
+      expect(a.beatTimesMs, <int>[0, 500, 1000, 1500]);
+      expect(a.vocalOnsetsMs, <int>[20, 40]);
+      expect(a.hasBeatAccents, isFalse);
+      expect(a.trackScale, 1);
+      expect(a.beatImpact(2), 1);
+      expect(a.beatLowShare(2), closeTo(1 / 3, 1e-9));
+      expect(a.beatRhythmic(1) && a.beatPulse(2), isTrue);
+      expect(a.stemsPartial, isFalse);
+      expect(a.beats.every((LyricVisualizerBeat b) => !b.hasAccents), isTrue);
+      expect(a.beats[0].lowShare, closeTo(1 / 3, 1e-9));
+      // 不认识的新布局照样拒。
+      final Uint8List future = Uint8List.fromList(_goldenV1())..[4] = 4;
+      expect(MusicAudioAnalysis.tryParse(future), isNull);
+    });
+
+    test('rejects garbage, truncation and other versions', () {
+      expect(MusicAudioAnalysis.tryParse(Uint8List(10)), isNull);
+      final Uint8List g = _golden();
+      expect(
+        MusicAudioAnalysis.tryParse(Uint8List.sublistView(g, 0, g.length - 4)),
+        isNull,
+      );
+      final Uint8List wrongFormat = Uint8List.fromList(g)..[4] = 9;
+      expect(MusicAudioAnalysis.tryParse(wrongFormat), isNull);
+      expect(
+        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 1),
+        isNull,
+      );
+      expect(
+        MusicAudioAnalysis.tryParse(g, expectedPipelineVersion: 3),
+        isNotNull,
+      );
+    });
+  });
+
+  group('frameAt', () {
+    final MusicAudioAnalysis a = MusicAudioAnalysis.tryParse(_golden())!;
+    final double frameMs = 1000 / a.frameRate;
+
+    test('samples envelope frames and interpolates between them', () {
+      final LyricVisualizerAudioFrame f1 = a.frameAt((frameMs * 1).round());
+      // 整毫秒取不到帧中心：帧 1 之后约 0.03 帧。
+      expect(f1.power, closeTo(0.5, 0.04));
+      expect(f1.onset, closeTo(1.0, 0.04));
+      expect(f1.low, closeTo(0.0, 0.02));
+      final LyricVisualizerAudioFrame mid = a.frameAt((frameMs * 1.5).round());
+      expect(mid.power, closeTo(0.75, 0.04));
+      expect(mid.envelopeReady, isTrue);
+      expect(mid.fallback, isFalse);
+      expect(mid.bpm, 120);
+      // 分开的两段中频（golden：lowMid 0.2 0.4 0.6 …，upperMid 0 0.1 0 …）。
+      expect(mid.lowMid, closeTo(0.5, 0.04));
+      expect(f1.upperMid, closeTo(0.1, 0.02));
+      expect(mid.mid, isNot(mid.lowMid));
+    });
+
+    test('outside the analysed range the envelope is silent', () {
+      expect(a.frameAt(-100).power, 0);
+      expect(a.frameAt(100000).power, 0);
+    });
+
+    test('beat, downbeat and drum impacts decay from the last hit', () {
+      final LyricVisualizerAudioFrame onBeat = a.frameAt(500);
+      expect(onBeat.beatImpact, closeTo(1, 1e-9));
+      expect(onBeat.downbeatImpact, lessThan(0.3));
+      final LyricVisualizerAudioFrame later = a.frameAt(
+        500 + kMusicBeatImpactDecayMs,
+      );
+      expect(later.beatImpact, closeTo(0.3679, 1e-3));
+      final LyricVisualizerAudioFrame bar = a.frameAt(1500);
+      expect(bar.downbeatImpact, closeTo(1, 1e-9));
+      // 鼓点 510 ms 强度 0.5。
+      expect(a.frameAt(510).drumImpact, closeTo(0.5, 0.01));
+      // 10 ms 处强度 1 的底鼓衰减到 520 ms 时已小于新的那一下。
+      expect(a.frameAt(520).drumImpact, closeTo(0.5 * 0.936, 0.02));
+      expect(a.frameAt(5).drumImpact, 0);
+      expect(
+        onBeat.beatsReady && onBeat.drumsReady && onBeat.vocalReady,
+        isTrue,
+      );
+    });
+
+    test('accented beat impact skips gated beats and scales by accent', () {
+      // 拍 0：impact 1 × trackScale 0.75。
+      expect(a.accentedBeatImpactAt(0), closeTo(0.75, 1e-9));
+      // 拍 1（500 ms）没有节奏：仍从拍 0 衰减。
+      expect(
+        a.accentedBeatImpactAt(500),
+        closeTo(0.75 * math.exp(-500 / kMusicBeatImpactDecayMs), 1e-9),
+      );
+      // 拍 2（1000 ms）不是听感拍：同上，从拍 0 衰减。
+      expect(
+        a.accentedBeatImpactAt(1000),
+        closeTo(0.75 * math.exp(-1000 / kMusicBeatImpactDecayMs), 1e-9),
+      );
+      // 拍 3（1500 ms）impact 0：打了也是 0。
+      expect(a.accentedBeatImpactAt(1500), 0);
+      expect(a.accentedBeatImpactAt(-5), 0);
+      // v1 文件：每拍满强度，等于原始拍点冲击。
+      final MusicAudioAnalysis old = MusicAudioAnalysis.tryParse(_goldenV1())!;
+      expect(old.accentedBeatImpactAt(500), closeTo(1, 1e-9));
+      // 帧里带重音：有重音数据时 = accentedBeatImpactAt，旧文件为 null、退回原始拍点冲击。
+      expect(a.frameAt(0).accentImpact, closeTo(0.75, 1e-9));
+      expect(a.frameAt(0).accentOrBeat, closeTo(0.75, 1e-9));
+      expect(old.frameAt(500).accentImpact, isNull);
+      expect(old.frameAt(500).accentOrBeat, old.frameAt(500).beatImpact);
+    });
+  });
+}

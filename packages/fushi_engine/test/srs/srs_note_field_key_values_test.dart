@@ -42,11 +42,7 @@ void main() {
       profileUid: kProfile,
       deviceId: 'dev',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
       fallbackRolloverHour: () => 4,
     );
     return (store, counter);

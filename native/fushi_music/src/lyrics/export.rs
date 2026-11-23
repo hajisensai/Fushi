@@ -72,11 +72,24 @@ pub fn to_ttml(t: &Timeline) -> String {
             ));
         }
     }
-    o.push_str("</metadata></head><body><div>");
+    o.push_str("</metadata></head><body>");
     let timed = t.timing_quality >= TimingQuality::Word;
+    // 段落标注按 Apple 写法落在 `<div itunes:song-part>` 上：段落一变就另起一个 div。
+    let mut div_part: Option<Option<&str>> = None;
     let mut i = 0;
     while i < t.lines.len() {
         let l = &t.lines[i];
+        let part = l.song_part.as_deref();
+        if div_part != Some(part) {
+            if div_part.is_some() {
+                o.push_str("</div>");
+            }
+            match part {
+                Some(p) => o.push_str(&format!("<div itunes:song-part=\"{}\">", esc(p))),
+                None => o.push_str("<div>"),
+            }
+            div_part = Some(part);
+        }
         o.push_str(&format!(
             "<p begin=\"{}\" end=\"{}\"",
             ttml_time(l.start_ms),
@@ -114,6 +127,9 @@ pub fn to_ttml(t: &Timeline) -> String {
         }
         o.push_str("</p>");
         i = j;
+    }
+    if div_part.is_none() {
+        o.push_str("<div>");
     }
     o.push_str("</div></body></tt>\n");
     o
@@ -221,7 +237,11 @@ mod tests {
 
     #[test]
     fn ttml_round_trip_is_lossless() {
-        let t = sample();
+        let mut t = sample();
+        let mut chorus = Line::whole("サビ", 4000, 5000);
+        chorus.song_part = Some("Chorus".into());
+        t.lines.push(chorus);
+        t.lines.push(Line::whole("end", 6000, 7000));
         let back = super::super::ttml::parse(&to_ttml(&t), None).unwrap();
         assert_eq!(back.lines, t.lines);
         assert_eq!(back.agents, t.agents);

@@ -62,11 +62,13 @@ enum FushiPingFailure {
 class FushiPingOutcome {
   const FushiPingOutcome.ok(FushiPingResult this.result)
     : failure = null,
-      statusCode = null;
+      statusCode = null,
+      cause = null;
 
   const FushiPingOutcome.failed(
     FushiPingFailure this.failure, {
     this.statusCode,
+    this.cause,
   }) : result = null;
 
   /// 探测成功时的应答（`isFushi` 恒为 true）；失败时为 null。
@@ -78,7 +80,33 @@ class FushiPingOutcome {
   /// [FushiPingFailure.notFushi] 由「非 200 应答」引起时的状态码，便于日志定位。
   final int? statusCode;
 
+  /// 传输层失败时的原始异常（「No route to host」/ 超时 / 握手失败），留给调用方
+  /// 写诊断；其余失败为 null。
+  final Object? cause;
+
   bool get isOk => result != null;
+
+  /// 失败的一行描述（分型 + 状态码 / 原始异常），写诊断用；成功为 null。
+  String? get failureDetail {
+    final FushiPingFailure? f = failure;
+    if (f == null) return null;
+    final Object? c = cause;
+    final int? code = statusCode;
+    return <String>[
+      f.name,
+      if (code != null) 'HTTP $code',
+      if (c != null) '$c',
+    ].join(': ');
+  }
+}
+
+/// 一次 [probeFushiPing] 失败的诊断（BUG-1741 的留痕）。[probeFushiPing] 自己不记
+/// 日志——是否该记、记几次由调用方定：配对是用户当场发起的一次探测，每次失败都记；
+/// 互联选路是后台每轮对每个候选的探测，只在该地址的状态切换时记（BUG-5262）。
+void logFushiPingFailure(String baseUrl, FushiPingOutcome outcome) {
+  final String? detail = outcome.failureDetail;
+  if (detail == null) return;
+  engineLog.logDiagnostic('Ping:$baseUrl', detail);
 }
 
 /// 向 [baseUrl] 的 `/api/ping` 发一次探测，**带失败原因**。
@@ -143,14 +171,10 @@ Future<FushiPingOutcome> probeFushiPing(
     );
   } catch (e) {
     // BUG-1741：分型 + 留痕。此前这里是裸 `on Object { return null; }`，
-    // 「钉扎指纹不符」查不到任何线索，事后连日志都没有。
-    //
-    // 走 logDiagnostic 而非 log：配对是「多候选依次探测」的 failover，明文 host
-    // 上的 https 候选每次都必然抛一次 HandshakeException，属预期路径。把它计进
-    // 用户可见错误计数 + 持久化日志只是噪声（见 ErrorLogService.logDiagnostic
-    // 的文档：多镜像 failover 的瞬时探测失败正是它点名的场景）。
-    engineLog.logDiagnostic('Ping:$baseUrl', e);
-    return FushiPingOutcome.failed(classifyFushiProbeFailure(e));
+    // 「钉扎指纹不符」查不到任何线索，事后连日志都没有。原始异常随结果交回
+    // （[FushiPingOutcome.cause]），由调用方经 [logFushiPingFailure] 写诊断：
+    // 后台选路每轮对每个候选都探一次，在这里逐次记会把日志刷满（BUG-5262）。
+    return FushiPingOutcome.failed(classifyFushiProbeFailure(e), cause: e);
   } finally {
     if (ownsClient) client.close();
   }

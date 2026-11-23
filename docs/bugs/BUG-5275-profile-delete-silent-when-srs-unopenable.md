@@ -1,0 +1,8 @@
+## BUG-5275 · 复习库打不开（升级失败等）时删 Profile 点了没反应
+- **报告**：2026-11-23（用户：应用内反馈 s9Gq2L_ao9，Android TECNO KL4 / SDK 34，3.4.0-debug.31366；「删除按钮什么都不做，所有 Profile 都删不掉」，截图是配置管理页四个 Profile 都带删除按钮）
+- **真实性**：✅ 真 bug。用户日志里复习库一直打不开：先是 BUG-5065 的 `gen4 lock ... try_lock() not supported`，之后 `SrsStoreNotMigrated(migrationFailed)`（`SrsAppRuntime.readStore` 99 次、`UncaughtZone` 83 次，栈止于 `SrsCore.open` 的后台 isolate）。
+  - 根因 `fushi/lib/src/pages/implementations/profile_management_page.dart:407`：`_showDeleteDialog` 先 `await vm.deletionImpact(id)` 再弹确认框，这一句在 `try`（`:418` 起）之外。`deletionImpact` → `SrsProfileCleanup.impactOf` → `_scan`（`fushi/lib/src/srs/srs_profile_cleanup.dart:169-171`）→ `_deps.storage()` = `AppModel.srsStorageForBackup`（`fushi/lib/src/models/app_model.dart:1792`）→ `acquireIfStored` 打开复习库，复习库处于 `migrationFailed` 时抛 `SrsStoreNotMigrated`。异常逃出按钮回调，只进 UncaughtZone，确认框永远不弹、也没有任何提示。同一条依赖链在进页面的 `ProfileManagement.sweepOrphans` 上同样抛（日志 35 次，栈与上同），证明 `_deps.storage()` 在这台设备上必抛。
+  - 即使弹出确认框，`deleteProfile` 里的 `_deletionCascade.prepare`（`fushi/lib/src/profile/profile_view_model.dart:433`）走同一条 `_scan`，也会以通用的 `profile_delete_failed` 失败——删 Profile 与「复习库能否打开」硬绑定，复习库坏了就永远删不掉 Profile。
+- **[ ] ① 未修复** — 修复方向（待实现方定）：删除流程要显式处理「复习库存在但打不开」：确认框照常弹，写明复习数据此刻无法统计 / 清理及原因（迁移失败指向升级失败页），并定下语义（阻止删除并说明原因，或删主库行、复习数据留给已有的无主数据扫描在复习库恢复后清理——后者需保证扫描标记不会在打不开时被写）。不吞异常、不加重试。
+- **[ ] ② 未加自动化测试** — 应加 widget 测试：注入一个 `storage()` 抛 `SrsStoreNotMigrated` 的 `ProfileDeletionCascade`，点删除按钮后必须出现确认框或明确的错误提示。
+- **备注**：同一用户的 na0awVrSx2（kuma3 制卡牌组）日志里 `Anki.mineEntry` 也记过 `SrsStoreNotMigrated`；复习库迁移失败本身见 BUG-5065 / BUG-5210 / BUG-5214。

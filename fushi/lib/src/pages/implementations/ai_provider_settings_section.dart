@@ -1607,6 +1607,7 @@ class _AiProviderSettingsSectionState
     AiFeature.subtitleProofread => FushiIcons.edit,
     AiFeature.cloudTranscription => FushiIcons.subtitles,
     AiFeature.mediaLinks => FushiIcons.aiAssistant,
+    AiFeature.musicVisualizerTheme => FushiIcons.animation,
     AiFeature.agent => FushiIcons.aiAssistant,
   };
 
@@ -1886,6 +1887,7 @@ class _AiProviderSettingsSectionState
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
     AiFeature.cloudTranscription => t.ai_feature_cloud_transcription,
     AiFeature.mediaLinks => t.ai_feature_media_links,
+    AiFeature.musicVisualizerTheme => t.ai_feature_music_visualizer_theme,
     AiFeature.agent => t.ai_feature_agent,
   };
 
@@ -1907,6 +1909,8 @@ class _AiProviderSettingsSectionState
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
     AiFeature.cloudTranscription => t.ai_feature_cloud_transcription_summary,
     AiFeature.mediaLinks => t.ai_feature_media_links_summary,
+    AiFeature.musicVisualizerTheme =>
+      t.ai_feature_music_visualizer_theme_summary,
     AiFeature.agent => t.ai_feature_agent_summary,
   };
 

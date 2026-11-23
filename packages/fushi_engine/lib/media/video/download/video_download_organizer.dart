@@ -1078,8 +1078,9 @@ class VideoDownloadOrganizer {
   /// 是否为发布组明确标出的非正片附件。
   ///
   /// 目录继续走整理器的宽词表；文件名只复用元数据链路的严格附件分类器，它按
-  /// token 边界识别 `NCOP` / `NCED` / `creditless OP|ED` / `PV`，不会把普通
-  /// 标题里的 `Extra` / `Special` 等宽泛词直接当附件（BUG-1969）。
+  /// token 边界识别 `NCOP` / `NCED` / `creditless` / `PV` / `CM` / `Menu` /
+  /// `Trailer` 等（词表见 `videoExtraMarkerKind`），不会把普通标题里的
+  /// `Extra` / `Special` 等宽泛词直接当附件（BUG-1969）。
   static bool _isExplicitExtra(String name, {String? sharedRoot}) {
     if (_isInExtraDirectory(name, sharedRoot: sharedRoot)) return true;
     final List<String> segments = _segments(name);
