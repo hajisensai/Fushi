@@ -1,4 +1,4 @@
-## BUG-5273 · mihon-desugar-kotlin-abi
+## BUG-5273 · Mihon / Aniyomi 扩展调宿主 kotlin-stdlib 等 java.time 签名 NoSuchMethodError（minSdk 24 脱糖改写成 j$.time）
 - **报告**：2026-11-23（应用内反馈 uhUVUI-Avo 分诊时发现；拍板台 design-mihon-desugar-abi 选 a）
 - **真实性**：✅ 真 bug。`fushi/android/app/build.gradle` 开着 `coreLibraryDesugaringEnabled true`（flutter_local_notifications 要求）且 `minSdkVersion 24`：L8/R8 把 minSdk 以下没有的 `java.time.*` 改写成 `j$.time.*`，宿主 dex 里 kotlin-stdlib 的 `kotlin.time.Instant.toJavaInstant()` 等公开签名随之变成返回 `j$.time.Instant`。Mihon / Aniyomi 扩展是独立编译的 APK、按 `()Ljava/time/Instant;` 链接宿主 kotlin-stdlib → `NoSuchMethodError`（反馈日志里 getDetailsManga 连续失败 8 次）。
 - **[x] ① 已修复** — `minSdkVersion` 24 → 26（Android 8.0，与上游 Mihon 一致）：java.time 原生可用，脱糖不再改写它。desugaring 本身去不掉：实测关掉后 `:app:checkReleaseAarMetadata` 报 `Dependency ':flutter_local_notifications' requires core library desugaring to be enabled for :app`，所以保留并在注释写明原因。README（17 种语言）、`docs/agent/build.md` / `repo-map.md` / `rules-detail.md` 的最低版本同步改成 Android 8.0（API 26）。
