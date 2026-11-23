@@ -33,11 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4660 条。点号进各自文件。
+> 共 4661 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5363](bugs/BUG-5363-srs-visible-sounds-zero-opacity-animation.md) | ✅ | ✅ | 整面卡面：关键帧 opacity 始终为 0 的动画被当淡入，隐藏发音进自动播放 |
+| [BUG-5360](bugs/BUG-5360-jimaku-mixed-numbering-server-fallback.md) | ✅ | ✅ | Jimaku 混合编号：本地集号命中挡住服务端按集回退，要的语言 / 版本整个漏掉 |
 | [BUG-5357](bugs/BUG-5357-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5356](bugs/BUG-5356-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |
 | [BUG-5355](bugs/BUG-5355-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |
