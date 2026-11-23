@@ -409,6 +409,57 @@ void main() {
       expect(appModel.upserts.single.linkColor, isNull);
     });
 
+    testWidgets('查词高亮文字默认「跟随正文」；改色后落进 selectionTextColor（拍板台 -8azTfJh_v）', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingAppModel appModel = _RecordingAppModel();
+      await tester.pumpWidget(_host(appModel, const CustomThemePage()));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text(t.theme_role_selection_text),
+        120,
+        scrollable: _verticalScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.theme_role_follows_body_text), findsOneWidget);
+
+      await _tapRow(tester, t.theme_role_selection_text);
+      expect(find.byType(ColorPickerArea), findsOneWidget);
+      await _pickInArea(tester);
+      await tester.tap(find.text(t.dialog_done));
+      await tester.pumpAndSettle();
+      expect(find.text(t.theme_role_follows_body_text), findsNothing);
+
+      await _tapApply(tester);
+      final CustomThemeEntry saved = appModel.upserts.single;
+      expect(saved.selectionTextColor, isNotNull);
+      // 只改字色，不顺带钉死查词底色。
+      expect(saved.selectionColor, isNull);
+    });
+
+    testWidgets('已存的查词高亮文字色随条目载入、重存不丢', (WidgetTester tester) async {
+      const CustomThemeEntry existing = CustomThemeEntry(
+        id: 'ct-1',
+        name: 'Mine',
+        seed: 0xFF336699,
+        selectionColor: 0xFF000000,
+        selectionTextColor: 0xFFFFFFFF,
+      );
+      final _RecordingAppModel appModel = _RecordingAppModel(
+        themes: <CustomThemeEntry>[existing],
+      );
+      await tester.pumpWidget(
+        _host(appModel, const CustomThemePage(themeId: 'ct-1')),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapApply(tester);
+      final CustomThemeEntry saved = appModel.upserts.single;
+      expect(saved.selectionColor, 0xFF000000);
+      expect(saved.selectionTextColor, 0xFFFFFFFF);
+    });
+
     testWidgets('当前句高亮是全局偏好：改色/恢复立即写穿 AppModel', (WidgetTester tester) async {
       final _RecordingAppModel appModel = _RecordingAppModel();
       await tester.pumpWidget(_host(appModel, const CustomThemePage()));

@@ -522,11 +522,15 @@ DateTime contentReadyTimeoutDeadline({
 /// 是否暗色。preset 主题在 [_ReaderFushiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
 /// 回落到真实 ColorScheme 派生，避免再写死成白底（BUG-208 / TODO-143）。
+///
+/// [selectionText]：查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）。null = 跟随正文
+/// 字色（历史行为）；只有自定义主题能设，用来做反色高亮。
 typedef ReaderThemeColors = ({
   Color bg,
   Color fg,
   Color sentenceAudioHighlight,
   Color selection,
+  Color? selectionText,
   Color link,
   bool dark,
 });
@@ -542,6 +546,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDE000000),
         sentenceAudioHighlight: Color(0x66A8C68C),
         selection: Color(0x59C2B280),
+        selectionText: null,
         link: Color(0xFF7A6232),
         dark: false,
       ),
@@ -550,6 +555,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDE000000),
         sentenceAudioHighlight: Color(0x6664B4DC),
         selection: Color(0x59C8AA6E),
+        selectionText: null,
         link: Color(0xFF3A5FAD),
         dark: false,
       ),
@@ -560,6 +566,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDE000000),
         sentenceAudioHighlight: Color(0x66A0C878),
         selection: Color(0x5988B583),
+        selectionText: null,
         link: Color(0xFF4C7A3E),
         dark: false,
       ),
@@ -568,6 +575,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDEFFFFFF),
         sentenceAudioHighlight: Color(0x595096C8),
         selection: Color(0x59BE9B64),
+        selectionText: null,
         link: Color(0xFF6FA8DC),
         dark: true,
       ),
@@ -576,6 +584,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0x99FFFFFF),
         sentenceAudioHighlight: Color(0x594682B4),
         selection: Color(0x59B4915A),
+        selectionText: null,
         link: Color(0xFF7AACDF),
         dark: true,
       ),
@@ -584,6 +593,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDEFFFFFF),
         sentenceAudioHighlight: Color(0x663C78AA),
         selection: Color(0x66AA8750),
+        selectionText: null,
         link: Color(0xFF5B9BD5),
         dark: true,
       ),
@@ -633,6 +643,7 @@ ReaderThemeColors resolveReaderThemeColors({
     fg: base.fg,
     sentenceAudioHighlight: audioHighlightOverride,
     selection: base.selection,
+    selectionText: base.selectionText,
     link: base.link,
     dark: base.dark,
   );
@@ -666,6 +677,7 @@ ReaderThemeColors readerThemeColorsFromPalette(FushiReaderPalette palette) {
     fg: palette.text,
     sentenceAudioHighlight: palette.sentenceHighlight,
     selection: palette.lookupHighlight,
+    selectionText: null,
     link: palette.link,
     dark: palette.dark,
   );
@@ -719,6 +731,8 @@ ReaderThemeColors einkReaderThemeColors(
     fg: dark ? Colors.white : Colors.black,
     sentenceAudioHighlight: themed.sentenceAudioHighlight,
     selection: themed.selection,
+    // 墨水屏的查词高亮是线式下划线、不画底色，换字色没有意义（还会与纸色撞色）。
+    selectionText: null,
     link: dark ? Colors.white : Colors.black,
     dark: dark,
   );
@@ -763,6 +777,7 @@ typedef ReaderThemeOverrides = ({
   Color? bg,
   Color? fg,
   Color? selection,
+  Color? selectionText,
   Color? link,
 });
 
@@ -789,6 +804,7 @@ ReaderThemeColors applyReaderThemeOverrides(
     fg: fg,
     sentenceAudioHighlight: base.sentenceAudioHighlight,
     selection: overrides.selection ?? base.selection,
+    selectionText: overrides.selectionText ?? base.selectionText,
     link: overrides.link ?? base.link,
     dark: dark,
   );
@@ -5254,6 +5270,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
       // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
       selectionColor: _colorToCssRgba(rc.selection),
+      // 拍板台 -8azTfJh_v：查词高亮文字色，null = 跟随正文（CSS 不写字色规则）。
+      selectionTextColor: _colorToCssRgba(rc.selectionText),
       sentenceAudioHighlightColor: _colorToCssRgba(audioStyle.background),
       sentenceAudioTextColor: audioStyle.text == null
           ? null
