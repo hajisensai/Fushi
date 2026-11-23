@@ -1,4 +1,4 @@
-## BUG-5200 · 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面
+## BUG-5297 · 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面
 - **报告**：2026-11-22（用户：给内置 Fushi 卡片加「听力」模板后，可视化编辑的正面直接显示 `srs_fushi_layout_unrecognized` 警告，什么都没改过）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/srs/srs_template_presets.dart` 旧 `_fushiListeningFront`：手写一段不带区块标记、不是内置骨架的正面 HTML；`packages/fushi_anki/lib/src/fushi_card_blocks.dart` `_layoutProbe` 认不出 → 区块布局面板 `_recognized = false`、`srsFushiCardNative` 回退 `frontTemplate`）
 - **[x] ① 已修复** — 听力预设改用 `fushiCardTemplateFor` 生成「单词音频大号发音键字段区块」正面（与反向预设同一做法）；`_legacyListeningLayout` 把修复前加的听力正面读成同一大号发音键字段区块（已有模板不用重置）；原生卡面计划把字段区块 / HTML 区块里画出来的 `[sound:]` 并进自动播放与重播（`srsFushiCustomItemSounds`，`SrsFushiCardMedia.custom`）

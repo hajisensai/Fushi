@@ -208,7 +208,7 @@ void main() {
     ]);
   });
 
-  test('BUG-5200：修复前听力预设手写的正面读成音频字段区块；骨架改过仍认不出', () {
+  test('BUG-5297：修复前听力预设手写的正面读成音频字段区块；骨架改过仍认不出', () {
     String legacy(String field) =>
         '<div class="fc fc-front" lang="ja">\n'
         '  <div class="fc-front-audio">\n'

@@ -26,7 +26,7 @@ List<String> srsDedupeMediaNames(Iterable<String> names) {
 ///
 /// 原生卡面画的会出声的东西：词条旁的单词音频键（`ExpressionAudio`）、Picture 里的视频
 /// 片段、例句卡里的例句音频键（`SentenceAudio`），以及用户加的字段区块 / HTML 区块里的
-/// `[sound:]` 发音键（BUG-5200：以前画出来却不进自动播放与重播）。以前复习页按整张背面 HTML 收集媒体
+/// `[sound:]` 发音键（BUG-5297：以前画出来却不进自动播放与重播）。以前复习页按整张背面 HTML 收集媒体
 /// （srs_card_autoplay.dart 的 `srsCardMediaNames`）——释义区里词典自带的 `<audio>` / `[sound:]`、模板复制的多份
 /// 容器都被算进来，于是卡面上只有一两颗发音键、底栏却出一排重播键，自动播放也把它们全播
 /// 了（#15）。底栏重播键、自动播放、R 重播与卡面上的发音键现在是同一份清单。

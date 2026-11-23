@@ -149,7 +149,7 @@ void main() {
       );
     });
 
-    test('BUG-5200：字段区块 / HTML 区块里画出来的发音键进自动播放与重播（标签样式不画按钮、不算）', () {
+    test('BUG-5297：字段区块 / HTML 区块里画出来的发音键进自动播放与重播（标签样式不画按钮、不算）', () {
       // 听力预设的正面：只有单词音频的字段区块，不是听力卡型（题面区块不在）。
       final SrsFushiCardPlan listening = srsFushiCardPlan(
         _fields(),

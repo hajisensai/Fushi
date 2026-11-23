@@ -33,7 +33,7 @@ String srsTemplateFrontKey(String front) =>
     front.replaceAll(_comment, '').replaceAll(_space, ' ').trim();
 
 /// [type] 里判重用的正面键：内置 Fushi 卡片的正面认得出区块布局时按**布局**比较——同一布局对每条笔记
-/// 画出同一张题面，写法不同（修复前听力预设手写的正面 vs 区块骨架生成的，BUG-5200）也是同一道题；
+/// 画出同一张题面，写法不同（修复前听力预设手写的正面 vs 区块骨架生成的，BUG-5297）也是同一道题；
 /// 认不出布局的、其它笔记类型按 [srsTemplateFrontKey]。[front] 是存储形态。
 String srsTemplateFrontKeyIn(SrsNoteTypeView type, String front) {
   if (type.builtinKey == kSrsBuiltinFushiCardKey) {

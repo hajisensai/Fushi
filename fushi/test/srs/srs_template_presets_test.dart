@@ -138,7 +138,7 @@ void main() {
         SrsTemplatePresetKind.listening,
       );
       expect(p.audio!.name, 'TermAudio');
-      // BUG-5200：正面是区块布局认得出的大号发音键字段区块（原生卡面、可视化编辑），不是手写 HTML。
+      // BUG-5297：正面是区块布局认得出的大号发音键字段区块（原生卡面、可视化编辑），不是手写 HTML。
       expect(fushiCardFrontLayoutOf(_names(t, p.front)), <FushiCardItem>[
         FushiCardFieldItem(
           field: 'TermAudio',
@@ -162,7 +162,7 @@ void main() {
       );
     });
 
-    test('BUG-5200：已有修复前手写的听力模板时，新听力预设按区块布局判为重复', () {
+    test('BUG-5297：已有修复前手写的听力模板时，新听力预设按区块布局判为重复', () {
       const String legacy =
           '<div class="fc fc-front" lang="ja">\n'
           '  <div class="fc-front-audio">\n'

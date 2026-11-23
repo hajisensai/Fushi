@@ -330,7 +330,7 @@ enum FushiCardFieldStyle {
   small,
 
   /// 大号发音键（听力卡正面同款）：字段里的音频画成大号发音键，模板沿用
-  /// `fc-audio fc-audio--large` 样式（BUG-5200：听力预设正面与修复前一样大）。
+  /// `fc-audio fc-audio--large` 样式（BUG-5297：听力预设正面与修复前一样大）。
   audio,
 }
 
@@ -918,7 +918,7 @@ FushiCardLayoutProbe _layoutProbe(String template, FushiCardSide side) {
   );
 }
 
-/// 「加模板 › 听力」预设在 BUG-5200 修复之前写的正面（a5d5863e50 起，规范形）：手写的一个音频
+/// 「加模板 › 听力」预设在 BUG-5297 修复之前写的正面（a5d5863e50 起，规范形）：手写的一个音频
 /// 字段大号发音键，没有区块标记、也不是内置骨架，区块布局认不出、整面回退 WebView。现在预设
 /// 改用 [fushiCardTemplateFor] 生成；那之前加的听力模板在这里读成同一字段的大号发音键字段区块，与新预设
 /// 生成的布局一致，在区块布局里一改就写回标准骨架。
