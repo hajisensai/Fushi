@@ -1665,6 +1665,10 @@ class AnotherPopupPart {
         'BorderRadius.circular(',
         'fontSize:',
       },
+      'lib/src/media/video/video_live_chat_panel.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/video_fushi/live_chat.part.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/media/video/video_subtitle_jump_panel.dart': <String>{
         'VisualDensity.compact',
         'fontSize:',
