@@ -10173,6 +10173,8 @@
   "settings_services_link_subtitle": "Jimaku, OpenSubtitles, Torznab, Jellyfin, AniDB et TMDB se configurent tous ici",
   "settings_services_subtitle_search_language_title": "Language for subtitle search",
   "settings_services_summary_accounts": "Accounts for subtitles, indexers, metadata sources and media servers",
+  "settings_slider_decrease": "Decrease $title",
+  "settings_slider_increase": "Increase $title",
   "settings_status_monitor_hint": "Live CPU, memory and frame timing to track down lag",
   "settings_status_monitor_title": "Status monitor",
   "settings_steam_shortcut_add": "Add to Steam",

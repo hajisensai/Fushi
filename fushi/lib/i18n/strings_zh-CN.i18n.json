@@ -10173,6 +10173,8 @@
   "settings_services_link_subtitle": "Jimaku、OpenSubtitles、Torznab、Jellyfin、AniDB、TMDB 统一在此配置",
   "settings_services_subtitle_search_language_title": "搜索字幕的语言",
   "settings_services_summary_accounts": "字幕、索引器、资料源与媒体服务器的账号",
+  "settings_slider_decrease": "减小$title",
+  "settings_slider_increase": "增大$title",
   "settings_status_monitor_hint": "实时查看 CPU、内存和帧耗时，排查卡顿",
   "settings_status_monitor_title": "状态监测",
   "settings_steam_shortcut_add": "添加到 Steam",

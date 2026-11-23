@@ -3956,8 +3956,14 @@ class _FushiAppleSegmentedControlState
   /// 轨道内边距：滑块与轨道外沿之间留 2 px（iOS 27 / 库 GlassSegmentedControl 同）。
   static const double _inset = 2;
 
-  /// 拖动中滑块中心（控件局部坐标）；null = 不在拖动。
+  /// 拖着选中滑块走时的滑块中心（控件局部坐标）；null = 没在拖滑块。
   double? _dragCenter;
+
+  /// 起拖点相对滑块中心的偏移：滑块按手指位移跟手，不在起拖瞬间瞬移到指针下。
+  double _dragGrab = 0;
+
+  /// 不在滑块上起手的横拖：松手时指针所在位置（选中该段，滑块再滑过去）。
+  double? _dragPointer;
   int? _pressedIndex;
   int? _focusedIndex;
 
@@ -4021,8 +4027,11 @@ class _FushiAppleSegmentedControlState
             children: <Widget>[icon, const SizedBox(height: 2), text],
           )
         : (icon ?? text ?? const SizedBox.shrink());
+    // 字重 / 颜色随选中过渡，与滑块同一弹簧时长（临界阻尼，不过冲）。
+    final FushiSpringSpec fade = context.fushiMotion.effectsSlow;
     return AnimatedDefaultTextStyle(
-      duration: einkSafeDuration(context, const Duration(milliseconds: 180)),
+      duration: fade.duration,
+      curve: fade.curve,
       style: style,
       child: body,
     );
@@ -4033,9 +4042,11 @@ class _FushiAppleSegmentedControlState
     final FushiAppleColors apple = appleColorsOf(context);
     final int count = widget.segments.length;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    final bool reduceMotion =
-        (MediaQuery.maybeDisableAnimationsOf(context) ?? false) ||
-        isEinkTheme(context);
+    // 选中滑块滑动：Apple 方案 spatialFast（SwiftUI .snappy 短档，≈0.35 s、
+    // bounce 0.15，iOS 分段滑块的轻微弹性）；减少动态效果 / 墨水屏下
+    // context.fushiMotion 给的是零时长的降级弹簧，滑块直接到位。
+    final FushiSpringSpec slide = context.fushiMotion.spatialFast;
+    final FushiSpringSpec press = context.fushiMotion.effectsFast;
     return SizedBox(
       height: widget.height,
       child: LayoutBuilder(
@@ -4121,22 +4132,51 @@ class _FushiAppleSegmentedControlState
                     ) {
                       r.allowStartAt = allowsThumbDragFrom;
                       r.dragStartBehavior = DragStartBehavior.down;
+                      // 只有从选中滑块上起手的横拖才拖滑块（按手指位移跟手）；
+                      // 从别的段起手的横拖（鼠标点按时 1 px 的抖动就会被判成
+                      // 拖动）滑块不动，松手选中指针所在段、滑块再弹簧滑过去——
+                      // 以前起拖即把滑块瞬移到指针下，点击看起来没有切换动效。
                       r.onStart = (DragStartDetails d) {
-                        setState(() => _dragCenter = d.localPosition.dx);
+                        final double x = d.localPosition.dx;
+                        final bool onThumb =
+                            selected >= 0 &&
+                            x >= thumbLeft &&
+                            x <= thumbLeft + thumbWidth;
+                        setState(() {
+                          if (onThumb) {
+                            _dragCenter = thumbLeft + thumbWidth / 2;
+                            _dragGrab = x - _dragCenter!;
+                            _dragPointer = null;
+                          } else {
+                            _dragCenter = null;
+                            _dragPointer = x;
+                          }
+                        });
                       };
                       r.onUpdate = (DragUpdateDetails d) {
-                        setState(() => _dragCenter = d.localPosition.dx);
+                        final double x = d.localPosition.dx;
+                        setState(() {
+                          if (_dragCenter != null) {
+                            _dragCenter = x - _dragGrab;
+                          } else {
+                            _dragPointer = x;
+                          }
+                        });
                       };
                       r.onEnd = (DragEndDetails _) {
-                        final double? center = _dragCenter;
+                        final double? target = _dragCenter ?? _dragPointer;
                         setState(() {
                           _dragCenter = null;
+                          _dragPointer = null;
                           _pressedIndex = null;
                         });
-                        if (center != null) _select(logicalIndexAt(center));
+                        if (target != null) _select(logicalIndexAt(target));
                       };
                       r.onCancel = () {
-                        setState(() => _dragCenter = null);
+                        setState(() {
+                          _dragCenter = null;
+                          _dragPointer = null;
+                        });
                       };
                     }),
             },
@@ -4146,20 +4186,28 @@ class _FushiAppleSegmentedControlState
                 // 选中滑块：在文字层之下。
                 if (selected >= 0 && count > 0)
                   AnimatedPositioned(
-                    duration: _dragCenter != null || reduceMotion
+                    // 拖动中跟手（零时长），其余时候位置与宽度一起按弹簧插值。
+                    duration: _dragCenter != null
                         ? Duration.zero
-                        : const Duration(milliseconds: 320),
-                    // 略冲过头再落定的弹簧感（iOS 分段滑块）。
-                    curve: const Cubic(0.3, 1.18, 0.55, 1),
+                        : slide.duration,
+                    curve: slide.curve,
                     left: thumbLeft,
                     top: _inset,
                     width: thumbWidth,
                     height: thumbHeight,
                     child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: _appleSegmentThumbDecoration(
-                          context,
-                          radius: radius,
+                      // 按住选中段 / 拖着滑块时滑块微缩到 0.95（iOS 27）。
+                      child: AnimatedScale(
+                        scale: _dragCenter != null || _pressedIndex == selected
+                            ? 0.95
+                            : 1,
+                        duration: press.duration,
+                        curve: press.curve,
+                        child: DecoratedBox(
+                          decoration: _appleSegmentThumbDecoration(
+                            context,
+                            radius: radius,
+                          ),
                         ),
                       ),
                     ),

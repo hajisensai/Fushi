@@ -34,6 +34,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -966,7 +967,12 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.leading,
     this.subtitleLeading,
     this.animateSubtitle = false,
+    this.titleTrailing,
   });
+
+  /// 标题同一行最右侧的件（例如 Apple 滑块行的当前读数，iOS 27「标题 …… 读数」）。
+  /// 标题让出它的宽度后省略；null = 标题独占一行（原行为）。
+  final Widget? titleTrailing;
 
   /// 说明文字随状态变化（例如分段行的说明跟着选中项换）时，旧说明淡出、新说明
   /// 淡入，行高随之弹簧过渡（时长取 [FushiMotion.medium]，减弱动态效果 / 墨水屏
@@ -1245,6 +1251,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
               titleMaxLines: titleMaxLines,
               subtitleMaxLines: subtitleMaxLines,
               animateSubtitle: animateSubtitle,
+              titleTrailing: titleTrailing,
             ),
           ),
           if (trailing != null) ...[
@@ -1303,6 +1310,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
                   titleMaxLines: titleMaxLines,
                   subtitleMaxLines: subtitleMaxLines,
                   animateSubtitle: animateSubtitle,
+                  titleTrailing: titleTrailing,
                 ),
               ),
             ],
@@ -4267,6 +4275,7 @@ class _KeyboardSlider extends StatefulWidget {
     this.onChangeEnd,
     this.step,
     this.autofocus = false,
+    this.stepButtonsTitle,
   });
 
   final double value;
@@ -4278,6 +4287,11 @@ class _KeyboardSlider extends StatefulWidget {
   final ValueChanged<double>? onChangeEnd;
   final double? step;
   final bool autofocus;
+
+  /// 非 null 时滑块两端加「−」「＋」步进钮（iOS 27 设置的滑块行），读屏标签是
+  /// 「减小 / 增大 <本值>」。点按与方向键同一步长、同一提交节奏（onChanged +
+  /// onChangeEnd 各一次）。
+  final String? stepButtonsTitle;
 
   @override
   State<_KeyboardSlider> createState() => _KeyboardSliderState();
@@ -4332,8 +4346,55 @@ class _KeyboardSliderState extends State<_KeyboardSlider> {
     widget.onChangeEnd?.call(next);
   }
 
+  /// iOS 27 滑块行两端的步进钮：secondaryLabel 色图标、44×44 命中区、自带焦点
+  /// （Enter / 手柄 A 触发），到端点时禁用。
+  Widget _stepButton(
+    BuildContext context, {
+    required IconData icon,
+    required String semanticLabel,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return FushiIconButton(
+      icon: icon,
+      tooltip: semanticLabel,
+      enabled: enabled,
+      onTap: onTap,
+      size: 18,
+      enabledColor: appleColorsOf(context).secondaryLabel,
+      // 18 图标 + 四周 13 = 44×44 命中区（Apple 路径的点按面就是这块）。
+      padding: const EdgeInsets.all(13),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Widget slider = _buildSlider(context);
+    final String? title = widget.stepButtonsTitle;
+    if (title == null) return slider;
+    final double value = _shown;
+    return Row(
+      children: <Widget>[
+        _stepButton(
+          context,
+          icon: FushiIcons.remove,
+          semanticLabel: t.settings_slider_decrease(title: title),
+          enabled: value > widget.min,
+          onTap: () => _adjust(-_step),
+        ),
+        Expanded(child: slider),
+        _stepButton(
+          context,
+          icon: FushiIcons.add,
+          semanticLabel: t.settings_slider_increase(title: title),
+          enabled: value < widget.max,
+          onTap: () => _adjust(_step),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSlider(BuildContext context) {
     final double value = _shown;
     return _GamepadAdjustableValue(
       focusIdPrefix: 'settings-slider',
@@ -4435,10 +4496,12 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context) &&
-        !isCupertinoPlatform(context) &&
-        FushiAppleMetrics.of(context).desktop) {
-      return _buildGlassDesktop(context);
+    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
+      // 判据与 [FushiAppleMetrics] 的 iOS / 桌面分档同一个：桌面宽窗是 macOS
+      // 系统设置形态，触屏与桌面窄窗（< 600）是 iOS 27 设置形态。
+      return FushiAppleMetrics.of(context).desktop
+          ? _buildGlassDesktop(context)
+          : _buildGlassStacked(context);
     }
     if (!isCupertinoPlatform(context) && !isGlassDesign(context)) {
       return _buildMd3(context);
@@ -4511,6 +4574,44 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 「玻璃」触屏 / 桌面窄窗（iOS 27 设置）：第一行「标题 …… 读数」（读数靠右、
+  /// label 色、与标题同字号），说明在其下；第二行「− 滑块 ＋」，两端
+  /// secondaryLabel 色步进钮按一个 step 增减。
+  Widget _buildGlassStacked(BuildContext context) {
+    final String? valueText = readout ?? label;
+    return AdaptiveSettingsRow(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      showIcon: showIcon,
+      controlBelow: true,
+      titleTrailing: valueText == null || valueText.isEmpty
+          ? null
+          : Text(
+              valueText,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              style: const TextStyle(
+                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+      trailing: SizedBox(
+        width: double.infinity,
+        child: _KeyboardSlider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: label,
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+          step: step,
+          stepButtonsTitle: title,
+        ),
       ),
     );
   }
@@ -4633,10 +4734,14 @@ class _SettingsLabel extends StatelessWidget {
     this.titleMaxLines,
     this.subtitleMaxLines,
     this.animateSubtitle = false,
+    this.titleTrailing,
   });
 
   final String title;
   final String? subtitle;
+
+  /// 见 [AdaptiveSettingsRow.titleTrailing]。
+  final Widget? titleTrailing;
 
   /// 说明前的行内件（[AdaptiveSettingsRow.subtitleLeading]）。
   final Widget? subtitleLeading;
@@ -4712,12 +4817,28 @@ class _SettingsLabel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          title,
-          style: titleStyle,
-          overflow: TextOverflow.ellipsis,
-          maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
-        ),
+        if (titleTrailing case final Widget end)
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  title,
+                  style: titleStyle,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
+                ),
+              ),
+              const SizedBox(width: 8),
+              DefaultTextStyle.merge(style: titleStyle, child: end),
+            ],
+          )
+        else
+          Text(
+            title,
+            style: titleStyle,
+            overflow: TextOverflow.ellipsis,
+            maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
+          ),
         if (subtitleLeading case final Widget lead)
           Padding(
             padding: const EdgeInsets.only(top: 2),
