@@ -2189,9 +2189,16 @@ window.__fushiInstallShell = function(C) {
       this._audioRevealPageTurn = true;
       var revealed = false;
       try {
-        revealed = targetRange
-          ? !!(this.revealRange && this.revealRange(targetRange))
-          : !!(target && this.revealElement && this.revealElement(target));
+        // 反馈 tUJsiLpL9d：shell 有 revealAudioCue 时把整句区间一并交给它（分页量跨页句的
+        // 翻页时刻、连续做整行对齐）；没有就走原来的单段揭示。
+        if (this.revealAudioCue) {
+          revealed = !!this.revealAudioCue(cueId, target, targetRange,
+            this.audioCueSpan([].concat(wrappers, rubyElements, ranges)));
+        } else {
+          revealed = targetRange
+            ? !!(this.revealRange && this.revealRange(targetRange))
+            : !!(target && this.revealElement && this.revealElement(target));
+        }
       } finally {
         this._audioRevealPageTurn = false;
       }
@@ -2199,6 +2206,75 @@ window.__fushiInstallShell = function(C) {
         return this.calculateProgress(
           this.pendingPageTurnTarget ? this.pendingPageTurnTarget() : undefined);
       }
+    }
+    return null;
+  },
+  // 有声书当前句的整句区间（反馈 tUJsiLpL9d）：一组片段（包裹 span / ruby 元素 / live Range，
+  // 顺序不限）并成一个从最早起点到最晚终点的 Range。没有片段回 null。
+  audioCueSpan: function(segments) {
+    var span = null;
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      if (!seg) continue;
+      var r;
+      try {
+        if (seg.nodeType === 1) {
+          r = document.createRange();
+          r.selectNode(seg);
+        } else if (typeof seg.cloneRange === 'function') {
+          r = seg.cloneRange();
+        } else {
+          continue;
+        }
+      } catch (e) {
+        continue;
+      }
+      if (!span) {
+        span = r;
+        continue;
+      }
+      if (r.compareBoundaryPoints(Range.START_TO_START, span) < 0) {
+        span.setStart(r.startContainer, r.startOffset);
+      }
+      if (r.compareBoundaryPoints(Range.END_TO_END, span) > 0) {
+        span.setEnd(r.endContainer, r.endOffset);
+      }
+    }
+    return span;
+  },
+  // 整句区间里按文档序列出的可数字符 [文本节点, 偏移, 码元长度]：跳过注音（createWalker 已
+  // 排除 rt/rp）、空白与标点（isMatchableChar，与进度字数同口径）——只数念出声的字。
+  audioCueChars: function(span) {
+    var out = [];
+    if (!span) return out;
+    var root = span.commonAncestorContainer;
+    if (root && root.nodeType === 3) root = root.parentNode;
+    if (!root) return out;
+    if (root.nodeType === 3 || root.nodeType === 1) {
+      var walker = this.createWalker(root);
+      var node;
+      while ((node = walker.nextNode())) {
+        if (!span.intersectsNode(node)) continue;
+        var text = node.textContent || '';
+        var from = node === span.startContainer ? span.startOffset : 0;
+        var to = node === span.endContainer ? span.endOffset : text.length;
+        for (var i = from; i < to; ) {
+          var len = text.codePointAt(i) > 0xFFFF ? 2 : 1;
+          if (this.isMatchableChar(text.substr(i, len))) out.push([node, i, len]);
+          i += len;
+        }
+      }
+    }
+    return out;
+  },
+  // 单个可数字符的字形盒（零尺寸盒跳过），量不到回 null。
+  audioCueCharRect: function(entry) {
+    var r = document.createRange();
+    r.setStart(entry[0], entry[1]);
+    r.setEnd(entry[0], entry[1] + entry[2]);
+    var rects = r.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
     }
     return null;
   },
@@ -2858,6 +2934,105 @@ $kReaderPageTurnJs
   // BUG-3518：WebKit 上有声书当前句是 Range（不包裹），跟读揭示直接按它定位。
   revealRange: function(range) {
     return this.scrollToRange(range.cloneRange());
+  },
+  // ── 有声书跨页句（反馈 tUJsiLpL9d 方案 A「读到页边就翻」）──────────────────
+  // 跟读揭示当前句都走 revealAudioCue（highlightSentenceAudioCue 与 bridge 的
+  // __fushiHighlight 两条路）。跨页分界在**翻页之前**量：翻页淡入在途时 getScrollContext
+  // 会同步落位、打断动画，所以落点页按 _alignRangeToPage 同一判据（起始边锚 +
+  // alignToPage）先算出来，再数整句里落在「落点页及之前」的字，结果存进 _audioCueSplit。
+  // Dart 揭示后取走（audioCuePageSplit），按字数比例换成音频时刻挂在播放 tick 上，声音
+  // 到达下一页第一个字时调 revealAudioCueTail 翻过去。页仍是整页，页码 / 恢复 / 动效不变。
+  _audioCueSplit: null,
+  // 已翻到后半截的那句（key + 翻页锚字的 Range）：同一句再次被揭示（暂停后续播等）时
+  // 停在后半截所在页，不翻回句首页。换句、或 Dart 判定音频已回到分界之前
+  // （dropAudioCueTail）时作废。
+  _audioTail: null,
+  revealAudioCue: function(key, target, targetRange, span) {
+    this._audioCueSplit = null;
+    var tail = this._audioTail && this._audioTail.key === key ? this._audioTail : null;
+    if (!tail) this._audioTail = null;
+    var startRange = null;
+    if (tail) {
+      startRange = tail.range.cloneRange();
+    } else if (targetRange) {
+      startRange = targetRange.cloneRange();
+    } else if (target) {
+      startRange = document.createRange();
+      startRange.selectNodeContents(target);
+    }
+    if (!startRange) return false;
+    try {
+      this._audioCueSplit = this._measureAudioCueSplit(key, span, startRange);
+    } catch (e) {
+      this._audioCueSplit = null;
+    }
+    return this.scrollToRange(startRange);
+  },
+  // 以 anchorRange 的起始边所在页为落点页，量整句 span 在落点页之后的第一个字。
+  // 返回 {key, span, before, total, tail}：before = 落点页及之前的可数字数，tail = 下一页
+  // 第一个字的 Range；整句都在落点页内（或量不到）回 null。字的页号沿文档序单调，二分。
+  _measureAudioCueSplit: function(key, span, anchorRange) {
+    if (!span) return null;
+    var context = this.getScrollContext();
+    if (context.pageSize <= 0) return null;
+    var currentScroll = this.getPagePosition(context);
+    var anchorRect = this.getRect(anchorRange);
+    if (!anchorRect) return null;
+    var landing = this.alignToPage(context,
+      this.turnSpan(context.axis, anchorRect).start + currentScroll);
+    var chars = this.audioCueChars(span);
+    if (!chars.length) return null;
+    var self = this;
+    var pageOf = function(k) {
+      var rect = self.audioCueCharRect(chars[k]);
+      if (!rect) return null;
+      return self.alignToPage(context,
+        self.turnSpan(context.axis, rect).start + currentScroll);
+    };
+    var lo = 0;
+    var hi = chars.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var page = pageOf(mid);
+      if (page === null || page <= landing) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo <= 0 || lo >= chars.length) return null;
+    var entry = chars[lo];
+    var tail = document.createRange();
+    tail.setStart(entry[0], entry[1]);
+    tail.setEnd(entry[0], entry[1] + entry[2]);
+    return { key: key, span: span, before: lo, total: chars.length, tail: tail };
+  },
+  // Dart 取本句的跨页分界：JSON {before, total}；不是这句 / 不跨页回 null。
+  audioCuePageSplit: function(key) {
+    var split = this._audioCueSplit;
+    if (!split || split.key !== key) return null;
+    return JSON.stringify({ before: split.before, total: split.total });
+  },
+  // 声音到达下一页第一个字：翻到那一页（跟读淡入），记下后半截，并按新落点页量下一个
+  // 分界（一句跨三页时接着挂观察）。返回新分界（同 audioCuePageSplit）或 null。
+  revealAudioCueTail: function(key) {
+    var split = this._audioCueSplit;
+    if (!split || split.key !== key || !split.tail) return null;
+    var tail = split.tail;
+    this._audioTail = { key: key, range: tail };
+    this._audioCueSplit = null;
+    try {
+      this._audioCueSplit = this._measureAudioCueSplit(key, split.span, tail);
+    } catch (e) {
+      this._audioCueSplit = null;
+    }
+    this._audioRevealPageTurn = true;
+    try {
+      this.scrollToRange(tail.cloneRange());
+    } finally {
+      this._audioRevealPageTurn = false;
+    }
+    return this.audioCuePageSplit(key);
+  },
+  dropAudioCueTail: function() {
+    this._audioTail = null;
   },
   getScrollContext: function() {
     // 翻页动画：update 回调还没落位（旧页快照未截）时有人读几何，先同步落位并跳过这次
@@ -4258,6 +4433,85 @@ $kSentenceAudioRubyGapJs
   // BUG-3518：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
   revealRange: function(range) {
     return this.scrollToTarget(range.cloneRange());
+  },
+  // 有声书跟读揭示（反馈 tUJsiLpL9d 方案 B「整行对齐」，kadoki 的做法）：开关开着
+  // （C.audiobookLineAlignFollow，可热更新）时整句在正文带内就不动；否则把句首所在行
+  // （竖排 = 列）的行框起始边滚到正文起始边，起始侧不露半行。开关关 = 原来的 15% 边距跟随。
+  revealAudioCue: function(key, target, targetRange, span) {
+    if (C.audiobookLineAlignFollow === true && span) {
+      var aligned = this._lineAlignAudioCue(span, targetRange || target);
+      if (aligned !== null) return aligned;
+    }
+    return targetRange
+      ? this.revealRange(targetRange)
+      : !!(target && this.revealElement(target));
+  },
+  // 返回 true = 已滚、false = 整句已在带内不用滚、null = 量不到几何（调用方退回旧跟随）。
+  // 「阅读坐标」d 沿阅读方向递增：横排 d = y，竖排 vertical-rl d = −x，vertical-lr d = x。
+  _lineAlignAudioCue: function(span, startTarget) {
+    var wm = window.getComputedStyle(document.body).writingMode || '';
+    var vertical = wm.indexOf('vertical') === 0;
+    var rl = wm.indexOf('vertical-rl') === 0;
+    var toD = function(rect) {
+      if (!vertical) return { s: rect.top, e: rect.bottom };
+      return rl ? { s: -rect.right, e: -rect.left } : { s: rect.left, e: rect.right };
+    };
+    var rects = span.getClientRects();
+    var minS = Infinity;
+    var maxE = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      if (!(rects[i].width > 0 && rects[i].height > 0)) continue;
+      var d = toD(rects[i]);
+      if (d.s < minS) minS = d.s;
+      if (d.e > maxE) maxE = d.e;
+    }
+    if (minS === Infinity) return null;
+    var cs = window.getComputedStyle(document.body);
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var bandStart;
+    var bandEnd;
+    if (!vertical) {
+      bandStart = parseFloat(cs.paddingTop) || 0;
+      bandEnd = vh - (parseFloat(cs.paddingBottom) || 0);
+    } else if (rl) {
+      bandStart = -(vw - (parseFloat(cs.paddingRight) || 0));
+      bandEnd = -(parseFloat(cs.paddingLeft) || 0);
+    } else {
+      bandStart = parseFloat(cs.paddingLeft) || 0;
+      bandEnd = vw - (parseFloat(cs.paddingRight) || 0);
+    }
+    if (bandEnd <= bandStart) return null;
+    if (minS >= bandStart && maxE <= bandEnd) return false;
+    // 句首所在行的行框起始边 = 首字字形盒起始边 − 半行距（行高 − 字形高）/2。注音落在
+    // 行距里，所以对齐行框起始边就把注音一并留在屏内。
+    var chars = this.audioCueChars(span);
+    var firstRect = chars.length ? this.audioCueCharRect(chars[0]) : null;
+    var lineStart = minS;
+    if (firstRect) {
+      var fd = toD(firstRect);
+      var glyph = fd.e - fd.s;
+      var host = chars[0][0].parentElement || document.body;
+      var lh = parseFloat(window.getComputedStyle(host).lineHeight);
+      var halfLeading = lh > glyph ? (lh - glyph) / 2 : 0;
+      lineStart = fd.s - halfLeading;
+    }
+    var delta = lineStart - bandStart;
+    if (Math.abs(delta) < 1) return false;
+    // BUG-2744：跟读目标替换恢复锚（与 scrollToTarget 同一不变量）。
+    if (startTarget) this.registerImageLateAnchor({target: startTarget});
+    // 墨水屏瞬时跳；跨过一整屏以上是「跳」不是「跟」，也瞬时落地（BUG-2466 同口径），
+    // 其余平滑滚（TODO-825）。
+    var eink = window.getComputedStyle(document.documentElement)
+      .getPropertyValue('--fushi-reader-eink-mode').trim() === '1';
+    var viewport = vertical ? vw : vh;
+    var behavior = (eink || Math.abs(delta) > viewport) ? 'auto' : 'smooth';
+    if (!vertical) {
+      window.scrollBy({top: delta, behavior: behavior});
+    } else {
+      window.scrollBy({left: rl ? -delta : delta, behavior: behavior});
+    }
+    return true;
   },
   chapterCharTotal: function() {
     return this._textIndex().total;

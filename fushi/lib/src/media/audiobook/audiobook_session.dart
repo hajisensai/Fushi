@@ -398,6 +398,8 @@ class AudiobookSession extends ChangeNotifier {
       controller.onBoundarySkip = null;
       controller.onExplicitCueJump = null;
       controller.onBeforeAudioJump = null;
+      // 分页「读到页边就翻」的句内观察回调指向这个 reader 的 WebView，一并撤掉。
+      controller.clearCueEdgeWatch();
       // 离开 reader 时把跨章守卫复位，避免 reader 在跳章 await 中途离开导致
       // _chapterTransition 卡 true，会话继续播却永不推进 cue。
       controller.cancelChapterTransition();

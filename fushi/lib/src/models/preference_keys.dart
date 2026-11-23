@@ -221,6 +221,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
   'audiobook_material_dirs',
+  // String（'page_edge' | 'next_sentence'，默认 'page_edge'）：分页模式「跟随音频」
+  // 遇到跨页句子时何时翻页（反馈 tUJsiLpL9d）。见 media/audiobook/audiobook_follow_style.dart。
+  'audiobook_page_split_follow',
+  // String（'line_align' | 'margin'，默认 'line_align'）：连续模式「跟随音频」的滚动
+  // 方式（反馈 tUJsiLpL9d）。见 media/audiobook/audiobook_follow_style.dart。
+  'audiobook_scroll_follow',
   // bool（默认 false）：是否把 Audiobookshelf 收听中条目混排进首页「继续」（显式
   // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
   'audiobookshelf_show_in_home',
