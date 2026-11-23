@@ -12230,7 +12230,7 @@ class AppModel
   String? _mirroredWorkSession;
 
   /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
-  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterCombos]，
   /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
   Future<void> mirrorMainProcessWorkSession() async {
     final String published = prefsRepo.workProfileSession;

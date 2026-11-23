@@ -14,6 +14,10 @@ import 'package:fushi/src/models/preference_keys.dart'
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository, kFloatingLyricWindowRectPrefKey;
 import 'package:fushi/src/models/theme_notifier.dart' show ThemeNotifier;
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboScope, SettingKey;
+import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
+    show FushiComboNode, fushiSettingsTree;
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
@@ -31,18 +35,50 @@ typedef WorkProfilePrefWriter =
 typedef WorkProfileAnkiWriter =
     Future<void> Function(int profileId, Map<String, String> ankiMap);
 
-/// 从持久层现读作品级配置此刻拥有的 Anki 字段（空 = 快照没有 Anki 字段）。
-typedef WorkProfileAnkiReader =
-    Future<Map<String, String>> Function(int profileId);
+/// 从持久层现读作品会话此刻接管的 Anki 字段（按绑定层重新解析）；null = 制卡叶子全部继承
+/// 默认组合，Anki 设置读 live。
+typedef WorkProfileAnkiReader = Future<Map<String, String>?> Function();
 
-/// 解析 [kWorkProfileSessionPrefKey] 的值；空 / 坏值 = 没有会话。
-int? parseWorkProfileSessionProfileId(String raw) {
+/// 把绑定层编成 [kWorkProfileSessionPrefKey] 的值（不含写入次数）：按
+/// [ComboScope.bindingLayers]（作品、媒体类型、语言）逗号分隔，没有的层留空。
+String encodeWorkProfileSessionLayers(Map<ComboScope, int> layers) => <String>[
+  for (final ComboScope s in ComboScope.bindingLayers)
+    layers[s]?.toString() ?? '',
+].join(',');
+
+/// 解析 [kWorkProfileSessionPrefKey] 的值得到绑定层；空 / 坏值 = 没有会话（空 map）。
+///
+/// 兼容旧格式 `<配置 id>:<写入次数>`（升级时主进程刚发布过的旧值）：当作作品层的那一份。
+Map<ComboScope, int> parseWorkProfileSessionLayers(String raw) {
   final int colon = raw.indexOf(':');
-  final int? id = int.tryParse(colon < 0 ? raw : raw.substring(0, colon));
-  return id != null && id > 0 ? id : null;
+  final String head = colon < 0 ? raw : raw.substring(0, colon);
+  final List<String> parts = head.split(',');
+  if (parts.length == 1) {
+    final int? id = int.tryParse(parts.single);
+    return id != null && id > 0
+        ? <ComboScope, int>{ComboScope.work: id}
+        : const <ComboScope, int>{};
+  }
+  if (parts.length != ComboScope.bindingLayers.length) {
+    return const <ComboScope, int>{};
+  }
+  final Map<ComboScope, int> out = <ComboScope, int>{};
+  for (int i = 0; i < parts.length; i++) {
+    if (parts[i].isEmpty) continue;
+    final int? id = int.tryParse(parts[i]);
+    if (id == null || id <= 0) return const <ComboScope, int>{};
+    out[ComboScope.bindingLayers[i]] = id;
+  }
+  return out;
 }
 
-/// 反馈 kEFPY4cuKZ：一次「打开作品」期间生效的作品级配置（绑定命中的 Profile）。
+/// 反馈 kEFPY4cuKZ：一次「打开作品」期间生效的作品级设置。
+///
+/// 组合模型（拍板台 design-combo-node-split，阶段 2）：作品 / 媒体类型 / 语言三个绑定层各自
+/// 命中的组合逐叶子解析（作品 → 媒体类型 → 语言 → 默认组合，见
+/// `ProfileRepository.loadWorkComboView`），不再整包取一份 Profile。会话期间对某个键的写入
+/// 落到这个键所属叶子的**来源组合**；叶子还在继承默认组合时落到优先级最高的绑定层（在那里
+/// 拆出该叶子），所以作品会话永远不改全局设置（[targetProfileIdFor]）。
 ///
 /// 它是**会话作用域的覆盖层**，不是一次全局切换：App 的激活配置、`preferences` 表、
 /// `dictionary_metadata` 表、live Anki 设置一概不动。会话期间改从这里读的设置——
@@ -55,18 +91,29 @@ int? parseWorkProfileSessionProfileId(String raw) {
 /// * Anki 制卡设置：牌组 / 笔记类型 / 字段映射 / 标签 / 查重范围（[ankiOverrides]）；
 /// * 查词：词典启用 / 顺序过滤（[view] 的 `lookupFilters`）。
 ///
-/// 会话期间对这些设置的写入落到**绑定配置**自己的快照，离开作品时会话整个丢掉，读回落到
-/// 全局——没有任何「切回去」的写入，崩溃 / 杀进程也不会把全局配置留在作品配置上。
+/// 会话期间对这些设置的写入落到组合自己的行，离开作品时会话整个丢掉，读回落到全局——没有
+/// 任何「切回去」的写入，崩溃 / 杀进程也不会把全局配置留在作品配置上。
 class WorkProfileSession {
+  /// [layers]：参与解析的绑定层（层 → Profile id），缺省 = 只有作品层的 [view] 那一份。
+  /// [leafSources]：叶子 id → 来源 Profile id（null = 默认组合）；缺省 = 每个叶子都来自
+  /// 优先级最高的那层（单份 Profile 整体生效，测试与手工构造用）。
   WorkProfileSession({
     required this.owner,
     required this.view,
     required WorkProfilePrefWriter writer,
     WorkProfileAnkiWriter? ankiWriter,
     WorkProfileAnkiReader? ankiReader,
+    Map<ComboScope, int>? layers,
+    Map<String, int?>? leafSources,
   }) : _writer = writer,
        _ankiWriter = ankiWriter,
        _ankiReader = ankiReader,
+       layers = Map<ComboScope, int>.unmodifiable(
+         layers ?? <ComboScope, int>{ComboScope.work: view.profileId},
+       ),
+       _leafSources = leafSources == null
+           ? null
+           : Map<String, int?>.of(leafSources),
        prefs = <String, String>{
          for (final MapEntry<String, String> e in view.prefsMap.entries)
            if (WorkProfileScope.isWorkScopedPrefKey(e.key)) e.key: e.value,
@@ -81,16 +128,60 @@ class WorkProfileSession {
   /// 绑定配置的只读设置视图（查词过滤取它）。
   final ProfileSettingsView view;
 
-  /// 绑定配置 id。
+  /// 优先级最高的绑定层的 Profile id（诊断 / 视图身份；写入目标按叶子选，见
+  /// [targetProfileIdFor]）。
   int get profileId => view.profileId;
+
+  /// 参与解析的绑定层（层 → Profile id），已去掉指向默认组合（激活配置）的层。
+  final Map<ComboScope, int> layers;
+
+  /// 叶子 id → 来源 Profile id（null = 默认组合）；null = 全部来自最高层。
+  final Map<String, int?>? _leafSources;
+
+  /// 优先级最高的绑定层的 Profile id。
+  int get _topProfileId {
+    for (final ComboScope s in ComboScope.bindingLayers) {
+      final int? id = layers[s];
+      if (id != null) return id;
+    }
+    return profileId;
+  }
+
+  /// 叶子 [leafId] 的来源 Profile；null = 默认组合（激活配置）。
+  int? sourceProfileIdOf(String leafId) {
+    final Map<String, int?>? sources = _leafSources;
+    if (sources == null) return _topProfileId;
+    return sources[leafId];
+  }
+
+  /// 会话内写 [key] 落到哪份组合：所属叶子的来源组合；叶子还在继承默认组合时落到优先级
+  /// 最高的绑定层（在那里拆出该叶子）——作品会话绝不写全局。
+  int targetProfileIdFor(SettingKey key) {
+    final String? leaf = fushiSettingsTree.leafOf(key);
+    if (leaf == null) return _topProfileId;
+    return sourceProfileIdOf(leaf) ?? _topProfileId;
+  }
+
+  /// 写进 [target] 之后 [key] 所属叶子的来源就是它（继承中的叶子在那里被拆出来了）。
+  void _markWritten(SettingKey key, int target) {
+    final Map<String, int?>? sources = _leafSources;
+    final String? leaf = fushiSettingsTree.leafOf(key);
+    if (sources == null || leaf == null) return;
+    sources[leaf] = target;
+  }
+
+  /// 会话期间制卡落进哪份 Profile 的复习副本：牌组叶子（Fushi 复习的牌组 id 带配置 uid）的
+  /// 来源；null = 牌组继承默认组合，落激活配置的副本。阶段 4 改由 `srs.library` 叶子解析出
+  /// 的集合决定（共享复习库），届时替换这里。
+  int? get miningProfileId => sourceProfileIdOf(FushiComboNode.miningDeck);
 
   /// 会话期间生效的作品级键（原始编码值，键同 `preferences` 表）。会话内写入只改这里 +
   /// 绑定配置的快照。
   final Map<String, String> prefs;
 
-  /// 绑定配置拥有的 Anki 字段（[ProfileKeys.ankiSettingsToMap] 形）；null = 绑定配置的快照里
-  /// 没有 Anki 字段，Anki 设置照旧读 live（与 `applyProfile` 对空 Anki 快照的处理一致）。
-  /// 会话内改 Anki 设置后变为非 null。
+  /// 会话接管的 Anki 字段（[ProfileKeys.ankiSettingsToMap] 形）；null = 制卡叶子全部继承默认
+  /// 组合（或绑定配置的快照里没有 Anki 字段），Anki 设置照旧读 live。会话内改 Anki 设置后变为
+  /// 非 null。
   Map<String, String>? ankiOverrides;
 
   final WorkProfilePrefWriter _writer;
@@ -222,8 +313,11 @@ class WorkProfileScope extends ChangeNotifier {
     } else {
       session.prefs[key] = raw;
     }
+    final SettingKey settingKey = SettingKey(ProfileKeys.categoryPref, key);
+    final int target = session.targetProfileIdFor(settingKey);
+    session._markWritten(settingKey, target);
     try {
-      await session._writer(session.profileId, key, raw);
+      await session._writer(target, key, raw);
     } catch (e, stack) {
       ErrorLogService.instance.log('WorkProfileScope.write', e, stack);
     }
@@ -245,92 +339,127 @@ class WorkProfileScope extends ChangeNotifier {
     final WorkProfileAnkiReader? reader = session._ankiReader;
     if (reader == null) return session.ankiOverrides;
     try {
-      final Map<String, String> fresh = await reader(session.profileId);
-      session.ankiOverrides = fresh.isEmpty ? null : fresh;
+      final Map<String, String>? fresh = await reader();
+      session.ankiOverrides = fresh == null || fresh.isEmpty ? null : fresh;
     } catch (e, stack) {
       ErrorLogService.instance.log('WorkProfileScope.readAnki', e, stack);
     }
     return session.ankiOverrides;
   }
 
-  /// 会话内写入 Anki 制卡设置里配置拥有的字段 [ankiMap]：内存同步改、绑定配置的持久层异步写。
+  /// 会话内写入 Anki 制卡设置里配置拥有的字段 [ankiMap]（整组）：内存同步改、持久层异步写。
   /// 没有会话时什么都不做（调用方写 live）。
-  Future<void> writeAnki(Map<String, String> ankiMap) async {
+  ///
+  /// [base] 是写入前此刻生效的那组字段（调用方现读的）；只有相对它变了的字段才写，并按各自
+  /// 叶子的来源组合分组落库（[WorkProfileSession.targetProfileIdFor]）——没改的叶子不被顺手
+  /// 拆进最高层。缺省 = 当前 [ankiOverrides]（没有时视为全部变了）。
+  Future<void> writeAnki(
+    Map<String, String> ankiMap, {
+    Map<String, String>? base,
+  }) async {
     final WorkProfileSession? session = active;
     if (session == null) return;
+    final Map<String, String> before =
+        base ?? session.ankiOverrides ?? const <String, String>{};
     session.ankiOverrides = Map<String, String>.of(ankiMap);
+    final Map<int, Map<String, String>> byTarget = <int, Map<String, String>>{};
+    for (final MapEntry<String, String> e in ankiMap.entries) {
+      if (before[e.key] == e.value) continue;
+      final SettingKey key = SettingKey(ProfileKeys.categoryAnki, e.key);
+      (byTarget[session.targetProfileIdFor(key)] ??=
+              <String, String>{})[e.key] =
+          e.value;
+    }
+    for (final MapEntry<int, Map<String, String>> group in byTarget.entries) {
+      for (final String k in group.value.keys) {
+        session._markWritten(
+          SettingKey(ProfileKeys.categoryAnki, k),
+          group.key,
+        );
+      }
+    }
     final WorkProfileAnkiWriter? writer = session._ankiWriter;
     if (writer == null) return;
     try {
-      await writer(session.profileId, ankiMap);
+      for (final MapEntry<int, Map<String, String>> group in byTarget.entries) {
+        await writer(group.key, group.value);
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log('WorkProfileScope.writeAnki', e, stack);
     }
     writeRevision.value++;
   }
 
-  /// 进入 [resolveProfileId] 解析出的那份配置的作品会话（[owner] 持有）：取它的只读设置视图
-  /// 装成覆盖层，写入经 [repository] 落到它自己的快照。解析结果为 null、就是激活配置、已不
-  /// 存在或解析失败时撤掉 [owner] 之前的那层。返回 false = [owner] 在解析期间已离开，什么都
-  /// 没装（解析放在 [begin] 之后跑，正是为了接住这种离开）。
+  /// 进入 [resolveLayers] 给出的绑定层的作品会话（[owner] 持有）：逐叶子解析成只读视图装成
+  /// 覆盖层（`ProfileRepository.loadWorkComboView`），写入经 [repository] 按叶子来源落到各自
+  /// 的组合。没有不同于激活配置的绑定层、解析失败时撤掉 [owner] 之前的那层。返回 false =
+  /// [owner] 在解析期间已离开，什么都没装（解析放在 [begin] 之后跑，正是为了接住这种离开）。
   ///
   /// 本进程的作品入口（`ProfileViewModel.enterWorkSession`）与 Android 弹窗进程镜像主进程
   /// 的会话（`AppModel.mirrorMainProcessWorkSession`）共用这一条，不各写一份。
-  Future<bool> enterProfile({
+  Future<bool> enterCombos({
     required Object owner,
     required ProfileRepository repository,
-    required Future<int?> Function() resolveProfileId,
+    required Future<Map<ComboScope, int>> Function() resolveLayers,
   }) async {
     begin(owner);
     WorkProfileSession? session;
     try {
-      final int? profileId = await resolveProfileId();
-      if (profileId != null &&
-          profileId != await repository.getActiveProfileId()) {
-        final ProfileSettingsView? view = await repository.loadSettingsView(
-          profileId,
+      final WorkComboView? combo = await repository.loadWorkComboView(
+        await resolveLayers(),
+      );
+      if (combo != null) {
+        final Map<ComboScope, int> layers = combo.stack.layers;
+        session = WorkProfileSession(
+          owner: owner,
+          view: combo.view,
+          writer: repository.writeWorkScopedPref,
+          ankiWriter: repository.writeWorkScopedAnkiSettings,
+          ankiReader: () => repository.readWorkScopedAnki(layers),
+          layers: layers,
+          leafSources: <String, int?>{
+            for (final String leaf in combo.stack.settings.sources.keys)
+              leaf: combo.stack.sourceProfileIdOf(leaf),
+          },
         );
-        if (view != null) {
-          session = WorkProfileSession(
-            owner: owner,
-            view: view,
-            writer: repository.writeWorkScopedPref,
-            ankiWriter: repository.writeWorkScopedAnkiSettings,
-            ankiReader: repository.readWorkScopedAnkiSettings,
-          );
-        }
       }
     } catch (e, stack) {
-      ErrorLogService.instance.log('WorkProfileScope.enterProfile', e, stack);
+      ErrorLogService.instance.log('WorkProfileScope.enterCombos', e, stack);
     }
     return install(owner, session);
   }
 
   /// 主进程要发布给 Android 弹窗进程的当前会话值（[kWorkProfileSessionPrefKey]）：
-  /// `<配置 id>:<会话内写入次数>`，没有会话 = 空串。写入次数让弹窗进程在同一会话里改过
-  /// 绑定配置快照后也能经 `prefs_version` 看到变化、重新镜像。
+  /// `<作品层 id>,<媒体类型层 id>,<语言层 id>:<会话内写入次数>`（没有的层留空），没有会话 =
+  /// 空串。弹窗进程按同样的绑定层重新解析，与主进程得到同一份生效值；写入次数让弹窗进程在
+  /// 同一会话里改过组合后也能经 `prefs_version` 看到变化、重新镜像。
   String get publishedSessionValue {
     final WorkProfileSession? session = active;
-    return session == null ? '' : '${session.profileId}:${writeRevision.value}';
+    return session == null
+        ? ''
+        : '${encodeWorkProfileSessionLayers(session.layers)}:'
+              '${writeRevision.value}';
   }
 
   /// 弹窗进程：按主进程发布的值 [published]（[publishedSessionValue] 形）装上 / 换掉 / 撤下
-  /// [owner] 的会话——走与主进程同一条 [enterProfile]，不另写一份作品配置逻辑。坏值 / 空值 =
+  /// [owner] 的会话——走与主进程同一条 [enterCombos]，不另写一份作品配置逻辑。坏值 / 空值 =
   /// 主进程没有会话，撤掉。
   Future<void> mirrorPublishedSession({
     required Object owner,
     required String published,
     required ProfileRepository repository,
   }) async {
-    final int? profileId = parseWorkProfileSessionProfileId(published);
-    if (profileId == null) {
+    final Map<ComboScope, int> layers = parseWorkProfileSessionLayers(
+      published,
+    );
+    if (layers.isEmpty) {
       leave(owner);
       return;
     }
-    await enterProfile(
+    await enterCombos(
       owner: owner,
       repository: repository,
-      resolveProfileId: () async => profileId,
+      resolveLayers: () async => layers,
     );
   }
 

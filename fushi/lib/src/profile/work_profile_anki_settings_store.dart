@@ -78,7 +78,11 @@ class WorkScopedAnkiSettingsStore implements AnkiSettingsStore {
     }
     // 配置拥有的字段写进作品配置；其余字段（设备本地）写回 live，但 live 上配置拥有的字段
     // 保持全局原值——全局配置的牌组不因在书里改了牌组而变。
-    await _scope.writeAnki(wantedOwned);
+    // 只把相对此刻生效值变了的字段写进组合（按叶子来源分组），没改的叶子继续继承。
+    await _scope.writeAnki(
+      wantedOwned,
+      base: overrides ?? ProfileKeys.ankiSettingsToMap(liveSettings),
+    );
     final String merged = jsonEncode(
       ProfileKeys.mapToAnkiSettings(
         ProfileKeys.ankiSettingsToMap(liveSettings),

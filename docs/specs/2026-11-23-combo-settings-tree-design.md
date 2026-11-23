@@ -2,7 +2,7 @@
 
 日期：2026-11-23
 拍板来源：拍板台 `design-combo-node-split`（做）、`design-srs-shared-library`（方案 a）
-状态：阶段 1 已实现（本 PR）；阶段 2～6 待做，见文末「分期与登记」
+状态：阶段 1 已实现（PR #4268）；阶段 2 已实现（见 §3.2）；阶段 3～6 待做，见文末「分期与登记」
 
 ## 1. 要解决的问题
 
@@ -97,11 +97,37 @@
   - key `srs_shared_uid`（只在默认组合上）：共享复习库的集合 uid（§4.1）；
   - key `split:<叶子 id>` value `1`：这个组合单独设置了该叶子（区分「拆了但叶子内键都未设置」与
     「继承」）；
-  - key `role` value `default` | `work_local`：默认组合 / 作品上直接拆出的匿名组合（UI 不列入组合
-    列表）。默认组合不写 `split:*`（所有叶子都有值）。
+  - key `role` value `default` | `named` | `work_local`：默认组合 / 用户建的普通组合 / 作品上直接拆出
+    的匿名组合（UI 不列入组合列表）。**有 `role` 行 = 这份 Profile 已是组合格式**，没有 = 存量整份
+    快照（阶段 2 加了 `named`：否则「什么都没拆」的普通组合没有任何 `combo` 行，会被误认成存量快照）。
+    默认组合不写 `split:*`（所有叶子都有值）。编解码在引擎 `combo_rows.dart`（服务端共用）。
 - 非默认组合的 `profile_settings` 只保留被拆叶子的行 + 上述 `combo` 行。
 
-### 3.2 读写路径（阶段 2）
+### 3.2 读写路径（阶段 2，已实现）
+
+实现落点：`fushi/lib/src/profile/combo/combo_repository.dart`（`ComboRepository`）、
+`packages/fushi_engine/lib/profile/combo/combo_rows.dart`（行编解码）、`ProfileRepository`
+（`currentSettings` / `resolveBindingLayers` / `loadWorkComboView` / 写入路由）、`WorkProfileScope`
+（`enterCombos`、按叶子来源路由写入）。
+
+- 存量整份快照（迁移前的全部 Profile）**读时**按 `diffAgainstDefaults` 化成差异再参与解析。单层时
+  与旧版「整包取快照」的生效值逐键一致（与默认相同的叶子取默认 = 同一个值），多层时逐叶子往下找——
+  媒体类型 / 语言层由此不再整包切换。阶段 3 把这份差异一次性落库后就不再走这条。
+- 作品会话写入：落到该键所属叶子的**来源组合**；叶子在继承默认组合时落到优先级最高的绑定层（在
+  那里拆出）——作品会话永远不写全局。Anki 只写相对此刻生效值变了的字段，按叶子分组落库。
+- Android 弹窗进程：`work_profile_session` 的值改成 `<作品层>,<媒体类型层>,<语言层>:<写入次数>`，
+  弹窗按同样的层重新解析；旧格式 `<id>:<次数>` 当作作品层。
+- 会话制卡落哪份复习副本（过渡）：`mining.deck` 叶子的来源组合（牌组 id 带 uid）；阶段 4 换成
+  `srs.library` 解析。
+- `resolveProfileId` / `resolveBoundProfileId`（浏览器扩展按「浏览器」媒体类型选一份配置）顺序同步
+  改为 作品 > 媒体类型 > 语言。
+- **阶段 2 刻意没动、留给阶段 3 的点**：生产路径不产生组合格式的行（只有 `ComboRepository.saveDocument`
+  会写，供迁移 / 编辑页调用），所以 `applyProfile` / `snapshotCurrentSettings` / `copyProfile` / 导出 /
+  备份合并仍按整份快照处理行。阶段 3 迁移落库前必须先改它们：切换默认组合时 `applyProfile` 要按
+  「默认之上的生效值」应用组合格式的 Profile（否则 prune 会删掉没拆的设置），`snapshotCurrentSettings`
+  只用于默认组合（否则会把差异文档覆盖回全量快照）。`loadSettingsView` 已能读组合格式。
+
+原设计要点：
 
 - 组合仓库层：`ComboRepository` 读写上述行，产出 `ComboDocument` / 默认值 map；写入一律经
   `writeSetting` / `splitNode` / `restoreInheritance`，事务内落库。
@@ -191,8 +217,8 @@
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| 1 | 设置树登记 + 解析 / 编辑 / diff 核心 + 守卫测试，不接 UI、不改持久化 | **本 PR** |
-| 2 | `ComboRepository`（`combo` category 读写）+ 作品会话改由解析结果填充 + 媒体类型 / 语言层不再整包切换 | 待做 |
+| 1 | 设置树登记 + 解析 / 编辑 / diff 核心 + 守卫测试，不接 UI、不改持久化 | 已实现（PR #4268） |
+| 2 | `ComboRepository`（`combo` category 读写）+ 作品会话改由解析结果填充 + 媒体类型 / 语言层不再整包切换 | 已实现（§3.2） |
 | 3 | 一次性迁移（§3.3）+ 迁移报告 + 往返测试 | 待做，依赖 2 |
 | 4 | 复习库解析接入制卡 / .apkg 导入 / 复习页 + 迁移规则（§4.2） | 待做，依赖 3 |
 | 5 | 手动合并进共享库（Rust 核心命令 + 冲突确认 UI + 同步事件） | 待做，依赖 4 |
