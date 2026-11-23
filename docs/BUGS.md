@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4583 条。点号进各自文件。
+> 共 4584 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5269](bugs/BUG-5269-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
 | [BUG-5268](bugs/BUG-5268-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
 | [BUG-5267](bugs/BUG-5267-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
 | [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |

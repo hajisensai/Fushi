@@ -3,7 +3,12 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/asr_host/shared_model_downloads.dart';
 import 'package:fushi_asr_core/asr_core.dart'
-    show AsrAudioProfile, AsrLanguage, ModelDownloadEvent, asrModelPackFor;
+    show
+        AsrAudioProfile,
+        AsrEncoderVariant,
+        AsrLanguage,
+        ModelDownloadEvent,
+        asrModelPackFor;
 
 /// kZZmXQBv7E：模型下载以前挂在弹层上，关掉再开、再点一次就起第二条写者，两条流
 /// 同时往同一个 `.part` 里 append，之后每次 Range 续传都是 HTTP 416。
@@ -155,6 +160,7 @@ void main() {
           StreamController<ModelDownloadEvent>();
       int mixedStarts = 0;
       int songStarts = 0;
+      AsrEncoderVariant? songVariant;
       bool ready = false;
       Stream<ModelDownloadEvent> mixed() {
         mixedStarts++;
@@ -171,9 +177,11 @@ void main() {
         mixedKey: 'asr:p',
         songKey: 'asr:p+vocals',
         downloadMixedMissing: mixed,
-        mixedReady: () async => ready,
-        downloadSongMissing: () {
+        // 有独显的机器：推荐 fp32，但在盘的是 int8（BUG-5269）。
+        mixedReadyVariant: () async => ready ? AsrEncoderVariant.int8 : null,
+        downloadSongMissing: (AsrEncoderVariant variant) {
           songStarts++;
+          songVariant = variant;
           return Stream<ModelDownloadEvent>.value(ev(100));
         },
       ).listen(songSeen.add, onDone: songDone.complete);
@@ -186,6 +194,11 @@ void main() {
       await songDone.future;
       expect(mixedStarts, 1, reason: '同一批识别文件只有一个写者');
       expect(songStarts, 1);
+      expect(
+        songVariant,
+        AsrEncoderVariant.int8,
+        reason: '只补分离模型：按混音包在盘的识别变体下，不按推荐变体重下整套识别权重',
+      );
       expect(songSeen.map((ModelDownloadEvent e) => e.receivedBytes), <int>[
         50,
         100,
@@ -204,8 +217,8 @@ void main() {
         mixedKey: 'asr:p',
         songKey: 'asr:p+vocals',
         downloadMixedMissing: () => mixedSource.stream,
-        mixedReady: () async => false,
-        downloadSongMissing: () {
+        mixedReadyVariant: () async => null,
+        downloadSongMissing: (AsrEncoderVariant _) {
           songStarts++;
           return const Stream<ModelDownloadEvent>.empty();
         },
