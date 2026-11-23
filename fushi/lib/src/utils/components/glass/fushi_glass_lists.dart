@@ -34,8 +34,21 @@ export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 class FushiAppleMetrics {
   const FushiAppleMetrics._({required this.desktop});
 
-  factory FushiAppleMetrics.of(BuildContext context) =>
-      FushiAppleMetrics.forPlatform(Theme.of(context).platform);
+  ///
+  /// 桌面平台的窄窗（宽 < [kFushiAppleCompactMetricsWidth]）版面就是 iOS 的单列
+  /// （设置首页窄屏 = iOS「设置」），取 iOS 档：行高、字号、卡片圆角与 iOS 27
+  /// inset grouped 一致（用户 2026-11-24 对照 iOS 27 截图）。
+  factory FushiAppleMetrics.of(BuildContext context) {
+    final FushiAppleMetrics byPlatform = FushiAppleMetrics.forPlatform(
+      Theme.of(context).platform,
+    );
+    if (!byPlatform.desktop) return byPlatform;
+    final double? width = MediaQuery.maybeSizeOf(context)?.width;
+    if (width != null && width < kFushiAppleCompactMetricsWidth) {
+      return const FushiAppleMetrics._(desktop: false);
+    }
+    return byPlatform;
+  }
 
   /// 按主题平台取档（没有 BuildContext 的装配点用；与 [FushiAppleMetrics.of] 同一判据）。
   factory FushiAppleMetrics.forPlatform(TargetPlatform platform) {
@@ -50,8 +63,8 @@ class FushiAppleMetrics {
   /// 桌面档（macOS / Windows / Linux）。
   final bool desktop;
 
-  /// 列表行最小高：iOS 44pt，macOS 紧凑行 ≈ 38。
-  double get rowMinHeight => desktop ? 38 : 44;
+  /// 列表行最小高：iOS 27 inset grouped 行 52pt，macOS 紧凑行 ≈ 38。
+  double get rowMinHeight => desktop ? 38 : 52;
 
   /// 行的水平内边距（两档都是 16，与 iOS inset grouped 一致）。
   double get rowHorizontal => 16;
@@ -77,11 +90,12 @@ class FushiAppleMetrics {
   /// 行尾 chevron 尺寸。
   double get chevronSize => desktop ? 13 : 15;
 
-  /// 卡片 / 分组圆角：iOS 26 inset grouped ≈ 24，macOS ≈ 12。
-  double get groupRadius => desktop ? 12 : 24;
+  /// 卡片 / 分组圆角：iOS 27 inset grouped ≈ 26（与屏幕圆角同心的胶囊感），
+  /// macOS ≈ 12。
+  double get groupRadius => desktop ? 12 : 26;
 
-  /// 分组之间的竖直间距（分组标题在这段间距里）。
-  double get groupSpacing => desktop ? 18 : 26;
+  /// 分组之间的竖直间距（分组标题在这段间距里）：iOS 27 ≈ 22。
+  double get groupSpacing => desktop ? 18 : 22;
 
   /// 设置页行首「彩色圆角方块」图标底的边长。
   double get iconTileSize => desktop ? 22 : 29;
@@ -119,6 +133,9 @@ class FushiAppleMetrics {
         color: appleColorsOf(context).secondaryLabel,
       );
 }
+
+/// 桌面平台窗口宽于此值才用 macOS 紧凑度量（见 [FushiAppleMetrics.of]）。
+const double kFushiAppleCompactMetricsWidth = 600;
 
 /// 物理 1px 的细线粗细（Apple 的 hairline：1 / 屏幕缩放，2x 屏即 0.5pt）。
 double fushiHairline(BuildContext context) =>

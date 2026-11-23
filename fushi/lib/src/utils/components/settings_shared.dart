@@ -823,9 +823,10 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     final bool glassDesign = isGlassDesign(context);
     for (int i = 0; i < rows.length; i++) {
       if (i > 0 && glassDesign && !cupertino) {
-        // 「玻璃」设计系统：iOS inset grouped 的行分隔——物理 1px separator，
-        // 从上一行的文字起点开始缩进（有行首图标时从图标后开始）、右端顶到
-        // 分组边缘；最后一行之后没有分隔线。
+        // 「玻璃」设计系统：iOS 27 inset grouped 的行分隔——物理 1px
+        // separator，从上一行的文字起点开始缩进（有行首图标时从图标后开始），
+        // 右端同样缩进行内边距（在 chevron 之前结束，左右对称）；最后一行之后
+        // 没有分隔线。
         final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
         final double iconInset = _settingsRowHasIcon(rows[i - 1])
             ? metrics.iconTileSize + tokens.spacing.gap + 4
@@ -835,6 +836,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
             height: fushiHairline(context),
             margin: EdgeInsetsDirectional.only(
               start: metrics.rowHorizontal + iconInset,
+              end: metrics.rowHorizontal,
             ),
             color: appleColorsOf(context).separator,
           ),

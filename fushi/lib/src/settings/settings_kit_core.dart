@@ -482,34 +482,33 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
     );
   }
 
+  /// iOS 27 搜索框：无描边、tertiarySystemFill 灰色填充的胶囊（`UISearchBar`
+  /// 的 search field），灰色放大镜与占位文字。不再垫玻璃边框——列表页里的搜索框
+  /// 不是悬浮控件。
   Widget _buildApple(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool desktop = FushiAppleMetrics.of(context).desktop;
-    final double radius = desktop ? 15 : 19;
-    return fushiClearGlassBezel(
-      context,
-      radius: radius,
-      child: CupertinoSearchTextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        autofocus: widget.autofocus,
-        placeholder: widget.hintText ?? t.settings_search_hint,
-        backgroundColor: Colors.transparent,
-        borderRadius: BorderRadius.circular(radius),
-        itemColor: apple.secondaryLabel,
-        itemSize: desktop ? 15 : 18,
-        style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
-        placeholderStyle: TextStyle(
-          fontSize: desktop ? 13 : 17,
-          color: apple.secondaryLabel,
-        ),
-        padding: desktop
-            ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
-            : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
-        onChanged: widget.onChanged,
-        onSubmitted: widget.onSubmitted,
-        onSuffixTap: _clear,
+    final double radius = desktop ? 15 : 20;
+    return CupertinoSearchTextField(
+      controller: widget.controller,
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      placeholder: widget.hintText ?? t.settings_search_hint,
+      backgroundColor: apple.tertiaryFill,
+      borderRadius: BorderRadius.circular(radius),
+      itemColor: apple.secondaryLabel,
+      itemSize: desktop ? 15 : 18,
+      style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
+      placeholderStyle: TextStyle(
+        fontSize: desktop ? 13 : 17,
+        color: apple.secondaryLabel,
       ),
+      padding: desktop
+          ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
+          : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      onSuffixTap: _clear,
     );
   }
 
