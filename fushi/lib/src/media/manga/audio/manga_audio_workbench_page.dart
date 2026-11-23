@@ -86,6 +86,12 @@ void registerMangaAudioWorkbenchEntry() {
         ),
     statusLine: (BuildContext context, String bookKey) =>
         mangaAudioWorkbenchStatusLine(appOf(context), bookKey),
+    importPackage: (BuildContext context, {required String path}) =>
+        openMangaAudioPackageImportPage(
+          context,
+          appModel: appOf(context),
+          path: path,
+        ),
   );
 }
 

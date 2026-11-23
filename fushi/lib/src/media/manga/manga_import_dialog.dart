@@ -27,8 +27,8 @@ import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show isLegacyMokuroHtmlVolume, kMokuroLegacyHtmlExtension;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
     show kMangaAudioPackageExtension;
-import 'package:fushi/src/media/manga/audio/manga_audio_package_page.dart'
-    show openMangaAudioPackageImportPage;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart'
+    show MangaAudioWorkbenchEntry;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -557,17 +557,9 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   /// 列出会替换什么、确认后导入），不在这里按单卷导。
   void _handOffAudioPackage(String path) {
     final NavigatorState navigator = Navigator.of(context);
-    final AppModel appModel = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appProvider);
     closeOwnRoute(context, false);
     unawaited(
-      openMangaAudioPackageImportPage(
-        navigator.context,
-        appModel: appModel,
-        path: path,
-      ),
+      MangaAudioWorkbenchEntry.importPackage(navigator.context, path: path),
     );
   }
 

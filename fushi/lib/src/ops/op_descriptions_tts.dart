@@ -33,7 +33,8 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 /// - 导入成品清单：执行前给登记（音频 / 对齐四列、整组 cue、断点）拍快照，撤销时登记
 ///   还是导入后的样子（指纹相同）才放回，之后被重新生成 / 补句 / 再导入改过报
 ///   superseded。只动登记，不删音频文件。
-/// - 导出有声漫画包：只写一个新文件，不改任何东西，不需要撤销；
+/// - 导出有声漫画包：只写一个文件（目标已存在时覆盖），标 irreversible
+///   （同 `library.favorite.export`）；
 /// - 导入有声漫画包：执行前确认；撤销按导入时写的撤销日志删掉新建的卷与成品、放回
 ///   被替换的演出稿 / 成品目录 / 登记、系列档案放回导入前（之后又被改过的不覆盖，
 ///   报 partial / superseded）。
@@ -660,10 +661,10 @@ List<OpDescription> _describePackageOps(
           'Export manga volumes with their finished audio as one manga audio '
           'package (.fushi-manga-audio: page images, OCR, performance script, '
           'finished audio, series cast) that another Fushi device imports and '
-          'plays without regenerating. Writes one new file; nothing else '
-          'changes. Volumes need registered audio unless scriptOnly. Returns a '
-          'task id.',
-      risk: OpRisk.write,
+          'plays without regenerating. Writes one file (overwrites it when it '
+          'already exists); nothing else changes. Volumes need registered '
+          'audio unless scriptOnly. Returns a task id.',
+      risk: OpRisk.irreversible,
       longRunning: true,
       taskStatus: packageStatus,
       availability: manga,

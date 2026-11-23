@@ -1,7 +1,7 @@
-# 有声漫画导出包格式（设计稿，未实现）
+# 有声漫画导出包格式（已实现）
 
-> 状态：设计稿，等排期（拍板 bnAC_eferQ-2 (a)：「先出导出包格式设计稿，与现有导入清单格式对齐，再排期」）。
-> 本文只定格式与流程，不含实现。实现时按本文落地，有偏差回来改本文。
+> 状态：已实现（拍板台 `design-manga-audio-export-pkg`，来源拍板 bnAC_eferQ-2 (a)）。
+> 本文是格式与流程的真相源；实现与设计稿的偏差、待定项的取舍见 §9。
 
 ## 1. 要解决的事
 
@@ -72,7 +72,9 @@ volumes/<vid>/
       "title": "…",
       "series": "s1",
       "pageCount": 192,
+      "blocks": 900,
       "ocr": "<engineSignature>",
+      "content": "<OCR 内容签名>",
       "manga": "volumes/v1/manga.json",
       "script": "volumes/v1/script.json",
       "audio": { "manifest": "volumes/v1/audio/manifest.json", "lines": 812,
@@ -87,6 +89,8 @@ volumes/<vid>/
 
 - `pageCount` / `ocr` 与 `MangaRenderManifest.pageCount` / `ocr` 同值，导入前就能用现成的
   `mangaManifestVolumeMismatch` 判一致性，不用先解包。
+- `content`：卷的 OCR **内容**签名（`mangaPayloadContentSignature`，按每页块数、块框与文字算，
+  不看引擎签名）；`blocks` 是整卷 OCR 块数。认「本机同一卷」用它们，不用 `ocr`（§9）。
 - `audio.active` / `drama.active`：源设备当前登记的是哪一份成品（两份都有时导入后登记同一份）。
 - `voices`：清单与演出稿里出现过的声音 id（逐行 `voice` + 指派表解析结果）。**只用于「继续重配」
   前的缺失检查**，播放成品不需要声音模型。
@@ -100,7 +104,8 @@ volumes/<vid>/
 
 入口：工作台「导出有声漫画」（单卷，或系列下多选卷）；CLI `fushi tts export`（§6）；
 操作目录 `tts.manga.export`（`op_descriptions_tts.dart` 写描述，只读本地、写一个新文件，
-`OpRisk.write`，无需撤销——产物是新文件，失败删掉半成品）。
+`OpRisk.irreversible`——只写一个文件，目标已存在时覆盖、没法撤销，与 `library.favorite.export`
+同口径；失败 / 取消删掉半成品）。
 
 规则：
 
@@ -123,7 +128,8 @@ CLI `fushi tts import-package`（§6）；操作目录 `tts.manga.import-package
 
 逐卷：
 
-1. **找目标卷**：按 `pageCount` + `ocr` 签名 + 标题在本机库里找同一卷。
+1. **找目标卷**：按 `pageCount` + `content`（OCR 内容签名）+ 标题在本机库里找同一卷
+   （`matchMangaAudioPackageVolume`；整卷没有 OCR 块时内容签名只剩页数，必须再标题一致）。
    - 找到且一致：不重复导入页图与 OCR，直接用本机这一卷的 bookKey；
    - 找不到：把 `pages/` + `manga.json` 当作一卷新漫画导入（走与 mokuro 导入同一个落库入口，
      新建 bookKey），再继续；
@@ -181,3 +187,38 @@ fushi tts import-package <file.fushi-manga-audio> [--as-new] [--yes] [--dry-run]
    + `tts.manga.import-package`（确认、可撤销）+ CLI `tts import-package` + 导入载体识别。
 4. 工作台 UI：单卷 / 系列多选导出、导入结果按卷列出、缺声音提示（带动效，设计系统组件）。
 5. 往返测试：导出 → 新库导入 → 页数 / OCR / cue 数 / 时长 / 系列角色表一致，单句重生成可用。
+
+## 9. 实现记录（2026-11-23）
+
+代码位置：
+
+- 引擎：`packages/fushi_engine/lib/tts/manga_audio/manga_audio_package.dart`（包清单、路径安全、
+  文件摘要、卷匹配、系列合并）；`MangaImporter.importFromMangaJson` 加 `pageSource`（包里解出的
+  页图是一次性的，按 `disposable` 移入书目录）。
+- App：`fushi/lib/src/media/manga/audio/manga_audio_package_{io,tasks,export,import,page}.dart`
+  （isolate 流式写包 / 解包、进程级后台任务表、导出 / 导入服务、导出 / 导入页）；工作台第 4 步
+  「有声漫画包」一节；漫画导入框识别 `.fushi-manga-audio`（`ImportCarrier.mangaAudioPackage`）后
+  转交导入页。
+- 路由：`fushi/lib/src/ops/ctl_tts_package_routes.dart`（`POST /api/admin/tts/manga-packages/export`、
+  `/import`、`GET /tasks/:id`、`POST /tasks/:id/cancel`），描述在 `op_descriptions_tts.dart`
+  （`tts.manga.export` / `tts.manga.import-package` / `tts.manga.package-task` / `tts.manga.package-cancel`）。
+- CLI：`fushi tts export` / `import-package` / `package-task` / `package-cancel`（默认等任务结束，
+  `--no-wait` 起了就返回）。
+
+与设计稿的偏差：
+
+1. **卷匹配不用 `ocr` 引擎签名**：OCR 自带引擎签名时 `mangaPayloadOcrSignature` 直接返回引擎签名，
+   同一个引擎识别的所有卷都相同，按它认「同一卷」会把页数恰好相同的另一卷认成目标。清单因此多了
+   `content`（OCR 内容签名）与 `blocks`；`ocr` 仍照写，供演出稿新鲜度判断。
+2. **撤销用日志而不是「只删新建的书」**：每次导入在 `<db>/manga_audio/_undo/pkg-<runId>/` 写
+   `journal.json`，并备份被替换的演出稿与成品目录、记下导入前的有声登记与系列档案；撤销按日志
+   删新建的书、恢复演出稿 / 成品 / 登记 / 系列档案与合集归属。只留最近 5 次（`kMangaPackageUndoKeep`）。
+   这样「替换已有卷的演出稿 / 成品」也能撤销，而不只是新建的书。
+3. **取消的边界**：导出全程可取消（杀掉写包 isolate、删 `.part`）；导入在解包与校验阶段可取消，
+   进入落库阶段后不能取消（`cancellable=false`，结束后可撤销）。
+4. **文件校验**：每卷解出的文件按 `files`（数量、字节、整体摘要）核对，不符的卷判 `package_corrupt`、
+   不落库，其它卷照常导入。zip 条目解压时逐条核对 CRC。
+5. **移动端导出**：写到临时目录后走系统分享（桌面端用保存对话框选位置）。
+
+待定项的取舍（按本稿默认）：扩展名用 `.fushi-manga-audio`；系列合并「本机已设的优先，包里的只补空」，
+不做逐条选择。

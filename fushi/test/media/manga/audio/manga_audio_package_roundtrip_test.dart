@@ -102,7 +102,8 @@ Future<void> _seedSource(_Host host, Directory root) async {
       title: _title,
       epubPath: 'manga.json',
       extractDir: volDir.path,
-      chapterCount: 1,
+      // 漫画卷的 chapterCount 是页数（MangaImporter 落库约定）。
+      chapterCount: 3,
       chaptersJson: '[]',
       importedAt: 1000,
       format: const Value<String>('manga'),
@@ -268,7 +269,9 @@ void main() {
     expect(row.title, _title);
     expect(row.format, 'manga');
     final List<String> pages = <String>[
-      for (final FileSystemEntity e in Directory(row.extractDir).listSync())
+      for (final FileSystemEntity e in Directory(
+        row.extractDir,
+      ).listSync(recursive: true))
         if (e.path.endsWith('.jpg')) p.basename(e.path),
     ]..sort();
     expect(pages, <String>['p0.jpg', 'p1.jpg', 'p2.jpg']);

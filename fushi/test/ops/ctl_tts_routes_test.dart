@@ -271,7 +271,8 @@ void main() {
         title: '第1巻',
         epubPath: 'manga.json',
         extractDir: volDir.path,
-        chapterCount: 1,
+        // 漫画卷的 chapterCount 是页数（MangaImporter 落库约定）。
+        chapterCount: 3,
         chaptersJson: '[]',
         importedAt: 1000,
         format: const Value<String>('manga'),
