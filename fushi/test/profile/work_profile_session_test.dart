@@ -262,6 +262,7 @@ void main() {
       term: term,
       maxTerms: maxTerms,
       maxResults: maxTerms,
+      scanLength: FushiDicts.defaultScanLength,
     );
     DictionarySearchResult resultOf(String meaning) => DictionarySearchResult(
       searchTerm: term,

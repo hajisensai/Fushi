@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
@@ -435,6 +436,9 @@ class PreferencesRepository extends ChangeNotifier
     gitHubMirrorsEnabledReader = () => gitHubMirrorsEnabled;
     // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
     miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
+    // 词典扫描窗口（反馈 ezCjUoU2QM）：查词、匹配长度、分词散在拿不到 AppModel 的
+    // 语言层（JapaneseLanguage）与语料服务里，同一时机绑到偏好，改完下一次调用即生效。
+    FushiDicts.scanLengthReader = () => lookupScanLength;
   }
 
   Map<String, String> get prefsSnapshot => Map<String, String>.unmodifiable(
@@ -2140,6 +2144,19 @@ class PreferencesRepository extends ChangeNotifier
 
   void setMaximumTerms(int value) async {
     await setPref('maximum_terms', value);
+    notifyListeners();
+  }
+
+  /// 词典扫描窗口长度（码点，反馈 ezCjUoU2QM）：查词与分词从查询串开头最多取几个码点
+  /// 当最长候选。int，默认 [FushiDicts.defaultScanLength]，读写都夹到
+  /// [FushiDicts.minScanLength]..[FushiDicts.maxScanLength]（库里存了越界值也不外泄）。
+  int get lookupScanLength => FushiDicts.clampScanLength(
+    getPref('lookup_scan_length', defaultValue: FushiDicts.defaultScanLength)
+        as int,
+  );
+
+  Future<void> setLookupScanLength(int value) async {
+    await setPref('lookup_scan_length', FushiDicts.clampScanLength(value));
     notifyListeners();
   }
 

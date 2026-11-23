@@ -556,6 +556,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true = 原行为）：查词结果滚到顶后继续下拉 = 清空查询、回到搜索
   // 历史（反馈 3D-JH966Kr）。关掉后下拉不再清空。
   'lookup_page_pull_to_clear',
+  // int（默认 16，夹到 8..32）：词典扫描窗口长度（码点），查词与分词共用
+  // （`FushiDicts.scanLength`，反馈 ezCjUoU2QM）。
+  'lookup_scan_length',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',

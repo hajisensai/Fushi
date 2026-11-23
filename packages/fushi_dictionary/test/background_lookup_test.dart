@@ -304,6 +304,7 @@ void main() {
         const FushiLookupRequest request = FushiLookupRequest(
           text: '日',
           maxResults: 8,
+          scanLength: FushiDicts.defaultScanLength,
           hiddenDictionaries: <String>{'Mixed'},
         );
         expect(request.hiddenKanjiDictionaries, isEmpty);
