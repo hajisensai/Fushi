@@ -585,13 +585,15 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
     ),
     (
         "compare.rs",
-        "协议 3 投影与新代派生层逐类对拍（`entities` 一类按本 profile 的身份记录认出被同库另一个 profile 占走行的实体，读 sync2_ops）",
+        "协议 3 投影与新代派生层逐类对拍（`entities` 一类按本 profile 的身份记录认出被同库另一个 profile 占走行、或行随别的 profile 删掉的实体，读 sync2_ops；`idTrace` 的 `p3` 读修改记录 / 日志的操作映射）",
         &[
             "srs_entities",
             "srs_event_local",
             "srs_field_edits",
             "srs_review_logs",
+            "sync2_edit_ops",
             "sync2_held",
+            "sync2_log_meta",
             "sync2_media",
             "sync2_ops",
             "sync2_purged",

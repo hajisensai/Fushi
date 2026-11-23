@@ -3092,3 +3092,192 @@ fn duplicate_log_across_three_devices_heals_every_non_representative_copy() {
         }
     }
 }
+
+/// 一份迁移的报告（提交或中止都有）。
+fn report_of(out: &Outcome) -> &Value {
+    match out {
+        Outcome::Committed { report } | Outcome::Aborted { report, .. } => report,
+        _ => panic!("{out:?}"),
+    }
+}
+
+/// 报告里每个 profile 的 (uid, 结论, 对拍差异)。
+fn verdicts_of(report: &Value) -> Vec<(String, String, Value)> {
+    report["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["profile"].as_str().unwrap_or("?").to_owned(),
+                p["verdict"].as_str().unwrap().to_owned(),
+                p["parity"].clone(),
+            )
+        })
+        .collect()
+}
+
+/// 直接往旧投影表插一条 [P] 名下笔记 [note] 的旧修改记录（旧写入者 [writer] 的第 [s] 条，不经操作日志）。返回它的 ID。
+fn legacy_note_edit(
+    c: &Connection,
+    writer: &str,
+    s: i64,
+    note: &str,
+    key: &str,
+    v: Value,
+) -> String {
+    let id = crate::registers::edit_id(writer, s);
+    let j = json!({"ctx": {"vv": {}}, "e": note, "f": key, "hlc": format!("{}:0:{writer}", T0 + s), "id": id, "k": "note",
+                   "p": P, "s": s, "ts": "wall", "v": v, "w": writer})
+    .to_string();
+    c.execute(
+        "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+         VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), ?4, ?5, ?6, ?7)",
+        params![id, P, note, key, writer, s, j],
+    )
+    .unwrap();
+    id
+}
+
+/// BUG-5295（反馈 EapjqHGvCl）：协议 3 的投影里有本 profile 的旧修改记录（笔记的 `source`、`deleted`），本 profile 的
+/// 操作日志里却没有代表它的操作。协议 3 读投影，用户看得见；新代只认操作日志，迁过去就丢了——对拍报 `edits` onlyOld、
+/// `registerWinners` onlyOld、笔记行 `source_*` / `deleted_at` 与卡的 `hidden` 不同，整份撤回。两种来路：
+///
+/// 1. 迁移（`sync2_migrate`）做完之后才出现在投影里的旧行：协议 3 对已迁移的 profile 从不再补包；
+/// 2. 迁移时这条旧行被判成「已被代表」，代表它的却是**别的 profile** 的操作（`sync2_edit_ops` 以修改记录 ID 为主键、
+///    全库共用，别的 profile 收到同一个旧 dot 的操作时 `INSERT OR REPLACE` 占走了这一行；以前的判据不看 profile）。
+///
+/// 修复后两种都在迁移前提补完时包成本 profile 的操作，对拍通过、整份提交。
+#[test]
+fn projection_rows_no_op_of_the_profile_represents_are_wrapped_before_migrating() {
+    // 1：迁移做完之后的旧行。
+    let dir = legacy_dir("g72-unrep-late", &|_| {});
+    {
+        let c = raw(&dir.0);
+        legacy_note_edit(
+            &c,
+            "dart-late",
+            1,
+            N2,
+            "source",
+            json!({"kind": "book", "title": "本", "key": "k1"}),
+        );
+        legacy_note_edit(
+            &c,
+            "dart-late",
+            2,
+            crate::store::gen4::dryrun::tests::N1,
+            "deleted",
+            json!(T0 + 500),
+        );
+    }
+    let out = migrate(&dir.0);
+    let report = report_of(&out);
+    assert_eq!(out.verdict(), "committed", "{report:#}");
+    assert_eq!(
+        verdicts_of(report),
+        vec![(P.to_owned(), "pass".to_owned(), json!([]))],
+        "{report:#}"
+    );
+
+    // 2：迁移时别的 profile 的操作占着同一个修改记录 ID。
+    let Device { core, _dir } = crate::store::gen4::dryrun::tests::library_with(
+        "g72-unrep-taken",
+        &|d| {
+            let w = d.core.writer().unwrap();
+            let id = legacy_note_edit(
+                &w,
+                "dart-old",
+                7,
+                N2,
+                "source",
+                json!({"kind": "book", "title": "旧", "key": "k2"}),
+            );
+            w.execute(
+            "INSERT INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (srs_id(?1), srs_id(?2), ?3, 1)",
+            params![id, Q, vec![0x51u8; 16]],
+        )
+        .unwrap();
+        },
+    );
+    let ops_for_row: i64 = core
+        .writer()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM sync2_edit_ops WHERE edit_id = srs_id(?1) AND profile_uid = srs_id(?2)",
+            params![crate::registers::edit_id("dart-old", 7), P],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ops_for_row, 1, "the profile's own migration wraps the row");
+    core.close();
+    drop(core);
+    let out = migrate_with(&_dir.0, &caches_pq(), &Stop::new(), &mut Vec::new());
+    let report = report_of(&out);
+    assert_eq!(out.verdict(), "committed", "{report:#}");
+}
+
+/// BUG-5294（反馈 CQKRyvMoOC）：本 profile 的操作日志里有身份记录，协议 3 的 `srs_entities` 里却哪个 profile 名下都没有
+/// 这一行。`srs_entities` 以实体 ID 为主键、全库共用（BUG-5267）：两个 profile 的日志里都有同一个实体时只存一行，归先落
+/// 投影的那个；之后那个 profile 被删（`profile_purge` / 并入收尾 / 无主数据扫描都按 `profile_uid` 删投影行），行跟着没了，
+/// 另一个 profile 的日志里那条身份记录还在——协议 3 自己的规则（`project_entity`：没有行就写）下它就是这个 profile 的
+/// 实体，换一台设备收同样的操作就有这一行。对拍的 `entities` 一类把它们算进协议 3 一侧（`orphanedEntities` 计数），
+/// 其中的笔记缓存层不比（协议 3 的缓存按 `profile_uid` 列笔记，行没了就没有）。去掉修复时 [P] 报 `entities` onlyNew。
+#[test]
+fn entities_whose_protocol_3_row_left_with_a_purged_profile_migrate() {
+    let lib = library("g72-pq-orphaned");
+    add_second_profile(&lib.core);
+    let peer = Device::new("g72-pq-orphaned-peer");
+    let entity = |id: &str, kind: &str, d: Value| json!({"t": "entity", "x": {"id": id, "p": P, "k": kind, "d": d}});
+    let deck_q = crate::store::sync2::config::default_deck_id(Q);
+    peer.apply(
+        T0 + 20,
+        vec![
+            entity(
+                &deck_q,
+                "deck",
+                json!({"createdAt": 1, "builtin": "default"}),
+            ),
+            entity(
+                QN1,
+                "note",
+                json!({"createdAt": 1, "guid": QN1, "noteTypeId": "NTQ"}),
+            ),
+        ],
+    );
+    let mut bucket = Bucket::default();
+    peer.sync(&mut bucket, "loc", T0 + 30);
+    lib.sync(&mut bucket, "loc", T0 + 30);
+    let owner = |id: &str| -> Vec<Vec<String>> {
+        lib.rows(&format!(
+            "SELECT srs_idt(profile_uid) AS p FROM srs_entities WHERE id = srs_id('{id}')"
+        ))
+    };
+    assert_eq!(owner(&deck_q)[1][0], Q);
+    lib.core.profile_purge(Q).unwrap();
+    assert_eq!(
+        owner(&deck_q).len(),
+        1,
+        "the row left with the purged profile"
+    );
+    assert_eq!(owner(QN1).len(), 1);
+    let Device { core, _dir: dir } = lib;
+    core.close();
+    drop(core);
+
+    let out = migrate_with(&dir.0, &caches(), &Stop::new(), &mut Vec::new());
+    let report = report_of(&out);
+    assert_eq!(out.verdict(), "committed", "{report:#}");
+    let p = &report["profiles"][0];
+    assert_eq!(
+        (
+            &p["profile"],
+            &p["verdict"],
+            &p["parity"],
+            &p["orphanedEntities"],
+            &p["collidedEntities"]
+        ),
+        (&json!(P), &json!("pass"), &json!([]), &json!(2), &json!(0)),
+        "{report:#}"
+    );
+}

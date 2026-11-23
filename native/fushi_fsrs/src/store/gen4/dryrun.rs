@@ -720,6 +720,7 @@ pub(crate) fn profile_stages(
     }
     out.insert("collidedNotes".into(), json!(collided.notes.len()));
     out.insert("collidedEntities".into(), json!(collided.entities.len()));
+    out.insert("orphanedEntities".into(), json!(collided.orphaned.len()));
     mark("canonLoad");
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
@@ -766,6 +767,10 @@ pub(crate) fn profile_stages(
     out.insert(
         "idTrace".into(),
         trace::id_trace(t, col, &canon, baseline.rows(), &trace_ids)
+            .and_then(|mut v| {
+                compare::annotate_protocol_3(src, profile, &mut v)?;
+                Ok(v)
+            })
             .unwrap_or_else(|e| json!({ "error": e })),
     );
     drop(baseline);

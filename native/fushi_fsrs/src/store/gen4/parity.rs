@@ -206,14 +206,6 @@ const KNOWN: &[Known] = &[
               build's library) to prove the migration refuses it as corrupt: protocol 3's own catch-up fails on \
               the missing table, so there is no protocol 3 cache baseline when the preparation copy is closed",
     },
-    Known {
-        test: "store::sync2::tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
-        what: "entities",
-        old: None,
-        why: "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check \
-              that the channel stays shut when a projected row is gone): its own log still holds the identity \
-              record",
-    },
 ];
 
 /// 这个场景的一类差异（协议 3 一侧 [old]、新代一侧 [new]）在 [KNOWN] 里对得上的那条。
