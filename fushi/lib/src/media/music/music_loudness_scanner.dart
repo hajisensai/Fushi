@@ -95,27 +95,66 @@ MusicLoudnessMeasurement? parseEbur128Summary(String output) {
 }
 
 /// FFmpeg 参数：测一首曲目（CUE 虚拟曲目带起止）。
-List<String> musicEbur128Args(MusicTrackRow track) => <String>[
-  '-hide_banner',
-  '-nostats',
-  if (track.cueStartMs != null && track.cueStartMs! > 0) ...<String>[
-    '-ss',
-    (track.cueStartMs! / 1000).toStringAsFixed(3),
-  ],
-  if (track.cueEndMs != null) ...<String>[
-    '-t',
-    ((track.cueEndMs! - (track.cueStartMs ?? 0)) / 1000).toStringAsFixed(3),
-  ],
-  '-i',
+List<String> musicEbur128Args(MusicTrackRow track) => musicEbur128ArgsFor(
   track.path,
-  '-map',
-  '0:a:0',
-  '-filter:a',
-  'ebur128=peak=true',
-  '-f',
-  'null',
-  '-',
-];
+  startMs: track.cueStartMs,
+  endMs: track.cueEndMs,
+);
+
+/// FFmpeg 参数：测一个输入（本机文件或服务器流地址；[startMs] / [endMs] 是 CUE 起止）。
+List<String> musicEbur128ArgsFor(String input, {int? startMs, int? endMs}) =>
+    <String>[
+      '-hide_banner',
+      '-nostats',
+      if (startMs != null && startMs > 0) ...<String>[
+        '-ss',
+        (startMs / 1000).toStringAsFixed(3),
+      ],
+      if (endMs != null) ...<String>[
+        '-t',
+        ((endMs - (startMs ?? 0)) / 1000).toStringAsFixed(3),
+      ],
+      '-i',
+      input,
+      '-map',
+      '0:a:0',
+      '-filter:a',
+      'ebur128=peak=true',
+      '-f',
+      'null',
+      '-',
+    ];
+
+/// 一次测量的结局（[measureMusicLoudness]）：[measurement] 为 null 且 [failed] 为假 = 测完了但
+/// 测不出（全静音）；[failed] = FFmpeg 起不来 / 读不了输入 / 没出摘要（下次再测）。
+typedef MusicLoudnessOutcome = ({
+  MusicLoudnessMeasurement? measurement,
+  bool failed,
+  int? returnCode,
+});
+
+/// 用统一 FFmpeg 后端测 [input] 的响度（服务器曲目的客户端测量：离线副本的本机文件、或
+/// 播过的服务器流）。**不抛、不记任何带输入的文本**：[input] 可能是带凭据的流地址，FFmpeg 的
+/// 输出 / 失败摘要里会出现它，所以这里只回返回码。
+Future<MusicLoudnessOutcome> measureMusicLoudness(
+  String input, {
+  FfmpegBackend Function()? ffmpeg,
+  Duration timeout = const Duration(minutes: 5),
+}) async {
+  try {
+    final FfmpegRunResult r = await (ffmpeg ?? resolveFfmpegBackend)().run(
+      musicEbur128ArgsFor(input),
+      timeout,
+    );
+    final MusicLoudnessMeasurement? m = r.isSuccess
+        ? parseEbur128Summary(r.output)
+        : null;
+    return (measurement: m, failed: m == null, returnCode: r.returnCode);
+  } on Object catch (e) {
+    debugPrint('[music-loudness] ffmpeg unavailable: ${e.runtimeType}');
+    return (measurement: null, failed: true, returnCode: null);
+  }
+}
 
 /// 后台响度扫描：同一时刻只跑一个循环（一首一个 FFmpeg 进程，串行）；扫描期间再来的
 /// 请求合并成「跑完再看一遍」。

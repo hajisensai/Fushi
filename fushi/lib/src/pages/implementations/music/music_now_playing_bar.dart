@@ -74,6 +74,14 @@ class MusicNowPlayingBar extends ConsumerWidget {
   }
 }
 
+/// 正在播放曲目的副行「歌手 · 专辑」（缺的项不列，都缺为空串）。播放条与侧栏音乐
+/// 速览共用：只看播放项本身，服务器 / 插件 / Apple Music 这些不在曲库表里的曲目
+/// 也有。
+String musicNowPlayingByline(MusicPlayItem item) => <String?>[
+  item.artist,
+  item.album,
+].whereType<String>().where((String v) => v.isNotEmpty).join(' · ');
+
 /// 把音乐会话接到共用的 [FushiNowPlayingBar] 上。
 Widget _musicBar(
   BuildContext context,
@@ -82,10 +90,7 @@ Widget _musicBar(
   MusicPlayItem item,
 ) {
   final MusicPlayerEngine engine = session.engine;
-  final String byline = <String?>[
-    item.artist,
-    item.album,
-  ].whereType<String>().where((String v) => v.isNotEmpty).join(' · ');
+  final String byline = musicNowPlayingByline(item);
   return FushiNowPlayingBar(
     barKey: const ValueKey<String>('music_bar_open_player'),
     playButtonKey: const ValueKey<String>('music_bar_play_pause'),

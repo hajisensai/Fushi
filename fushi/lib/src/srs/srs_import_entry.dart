@@ -120,6 +120,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
   if (r.cardsResetToNew > 0)
     t.srs_import_report_reset_new(n: r.cardsResetToNew),
+  if (r.cardsKeptInDeck > 0)
+    t.srs_import_report_cards_kept_deck(n: r.cardsKeptInDeck),
   if (r.reviewLogsSkipped > 0)
     t.srs_import_report_reviews_skipped(n: r.reviewLogsSkipped),
   if (r.deckPresetsSkipped > 0)

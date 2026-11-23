@@ -155,6 +155,40 @@ List<CtlRoute> buildLibraryCurateCtlRoutesFor({
         throw const CtlFailure.conflict('这一趟还在跑，跑完再撤销');
       }
     }),
+    // 单条重试（待确认身份队列的「让 AI 重试」，BUG-5283）：对一个书 / 游戏刮削单元
+    // 重跑刮削阶段。照常记一趟（手动、只含这一阶段），写入可整趟撤销；不推进水位。
+    CtlRoute.post('$kLibraryCurateCtlRoot/scrape/retry', (CtlCall call) async {
+      requireWritable();
+      final LibraryCurateStage stage = switch (call.requireString('stage')) {
+        'books' => LibraryCurateStage.scrapeBooks,
+        'games' => LibraryCurateStage.scrapeGames,
+        final String other => throw CtlFailure.badRequest(
+          'stage 只能是 books / games：$other',
+        ),
+      };
+      final String ref = call.requireString('ref');
+      final PreferencesRepository p = prefs();
+      final LibraryCurateAiAvailability ai = libraryCurateAiOf(
+        p,
+        aiModuleEnabled: aiModuleEnabled(),
+      );
+      if (ai.videoIdentify && !p.libraryOrganizeConsented) {
+        if (call.optBool('yes') != true) {
+          throw const CtlFailure.rejected(
+            '会把标题、作者或品牌、年份、卷数发给 AI 提供商（可能计费）；'
+            '确认后加 --yes 再运行',
+          );
+        }
+        await p.setLibraryOrganizeConsented(true);
+      }
+      try {
+        return libraryCurateRunJson(
+          await curator().retryScrape(stage: stage, ref: ref),
+        );
+      } on LibraryCurateBusy catch (e) {
+        throw CtlFailure.conflict('已有一趟库管家在跑（#${e.runId}）');
+      }
+    }),
     // 待确认：合集级建议（以用户身份接受 / 拒绝，见 library.organize.proposals）+
     // 最近几趟留下的待确认项（没认出来的视频作品、要用户确认才执行的操作）。
     CtlRoute.get('$kLibraryCurateCtlRoot/pending', (CtlCall call) async {

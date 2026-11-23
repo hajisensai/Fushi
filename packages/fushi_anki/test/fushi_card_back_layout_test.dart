@@ -208,6 +208,45 @@ void main() {
     ]);
   });
 
+  test('BUG-5297：修复前听力预设手写的正面读成音频字段区块；骨架改过仍认不出', () {
+    String legacy(String field) =>
+        '<div class="fc fc-front" lang="ja">\n'
+        '  <div class="fc-front-audio">\n'
+        '    <div class="fc-audio fc-audio--large">{{$field}}</div>\n'
+        '  </div>\n'
+        '</div>\n';
+    expect(fushiCardFrontLayoutOf(legacy('TermAudio')), <FushiCardItem>[
+      FushiCardFieldItem(field: 'TermAudio', style: FushiCardFieldStyle.audio),
+    ]);
+    expect(fushiCardFrontLayoutOf(legacy('Word Audio')), <FushiCardItem>[
+      FushiCardFieldItem(field: 'Word Audio', style: FushiCardFieldStyle.audio),
+    ]);
+    // 与新预设生成的正面是同一布局。
+    expect(
+      fushiCardFrontLayoutOf(legacy('TermAudio')),
+      fushiCardFrontLayoutOf(
+        fushiCardTemplateFor(FushiCardSide.front, <FushiCardItem>[
+          FushiCardFieldItem(
+            field: 'TermAudio',
+            style: FushiCardFieldStyle.audio,
+          ),
+        ]),
+      ),
+    );
+    // 只认正面、只认原样：背面、改过的、条件段 / 过滤器都不认。
+    expect(fushiCardBackLayoutOf(legacy('TermAudio')), isNull);
+    expect(
+      fushiCardFrontLayoutOf(
+        legacy(
+          'TermAudio',
+        ).replaceFirst('</div>\n</div>', '</div><p>x</p></div>'),
+      ),
+      isNull,
+    );
+    expect(fushiCardFrontLayoutOf(legacy('#TermAudio')), isNull);
+    expect(fushiCardFrontLayoutOf(legacy('text:TermAudio')), isNull);
+  });
+
   test('布局项 JSON 往返', () {
     final List<FushiCardItem> items = <FushiCardItem>[
       b(FushiCardBlock.reading, <String, String>{kFushiOptAudio: '0'}),

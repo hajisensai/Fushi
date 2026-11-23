@@ -36,6 +36,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_field_speech.dart' show srsSpeechSourcesOf;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -745,6 +746,13 @@ class _EditTabState extends State<_EditTab> {
                 key: ValueKey<String>('srs-browse-field-${f.name}'),
                 name: f.name,
                 model: _models[f.id]!,
+                speechSources: srsSpeechSourcesOf<SrsFieldModel>(
+                  f.name,
+                  <({String name, SrsFieldModel value})>[
+                    for (final SrsFieldDef g in fields)
+                      (name: g.name, value: _models[g.id]!),
+                  ],
+                ),
                 toggle:
                     builtin &&
                     kFushiCardSwitchFields.contains(

@@ -203,8 +203,13 @@ class ThemeSongDetector {
   /// 置信度低于它视为没出现。
   final double minConfidence;
 
-  /// 歌曲声纹缓存（一次识别会话内，一首歌只解码一次）。
+  /// 歌曲声纹的进程内缓存（键 = track_uid + 文件大小 + 修改时刻，文件换了自然失效）。
+  /// 识别器按库常驻、后台 MV 匹配会走遍整个曲库，所以按最近使用淘汰、有上限：同一首歌
+  /// 的复用都挨在一起（一集里的几首 OP / ED、一首歌对附近的几个视频）。
   final Map<String, Uint32List> _songPrints = <String, Uint32List>{};
+
+  /// [_songPrints] 最多留几条（一条约几 KB）。
+  static const int kSongPrintCacheSize = 64;
 
   Future<void> _tail = Future<void>.value();
 
@@ -355,7 +360,11 @@ class ThemeSongDetector {
     Directory work,
     ThemeSongDetectionReport report,
   ) async {
-    final Uint32List? hit = _songPrints[song.trackUid];
+    final ({int size, int modifiedAt})? stat = _fileStat(song.path);
+    final String key = stat == null
+        ? song.trackUid
+        : '${song.trackUid}|${stat.size}|${stat.modifiedAt}';
+    final Uint32List? hit = _lruGet(_songPrints, key);
     if (hit != null) return hit;
     final String raw = p.join(
       work.path,
@@ -372,7 +381,12 @@ class ThemeSongDetector {
             ? end - start
             : null,
       );
-      return _songPrints[song.trackUid] = await engine.fingerprintRawPcm(raw);
+      return _lruPut(
+        _songPrints,
+        key,
+        await engine.fingerprintRawPcm(raw),
+        kSongPrintCacheSize,
+      );
     } on ThemeSongDecodeException {
       report.decodeFailures++;
       return null;
@@ -400,6 +414,94 @@ class ThemeSongDetector {
     required String mvPath,
   }) async => (await mvAlignment(audio: audio, mvPath: mvPath))?.offset;
 
+  /// MV 视频音轨声纹的进程内缓存（键 = 路径 + 大小 + 修改时间，按插入顺序淘汰），挡在
+  /// 落库缓存（`music_video_prints`，v172）前面：同一轮匹配里同一张盘的流要和专辑里
+  /// 每首歌各对一次。
+  final Map<String, Uint32List> _mvPrints = <String, Uint32List>{};
+
+  /// [_mvPrints] 最多留几条（一条约几 KB）。
+  static const int kMvPrintCacheSize = 32;
+
+  /// 本机文件的大小与修改时刻（毫秒）；网络地址 / 读不到的返回 null（不缓存）。
+  static ({int size, int mtimeMs})? _mvFileStamp(String mvPath) {
+    if (mvPath.contains('://')) return null;
+    try {
+      final FileStat s = File(mvPath).statSync();
+      if (s.type != FileSystemEntityType.file) return null;
+      return (size: s.size, mtimeMs: s.modified.millisecondsSinceEpoch);
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// MV 视频音轨的声纹：进程内缓存 → 落库缓存 → 解码重算（算完两层都写）。解码失败
+  /// 返回 null。本机文件只解码一次，文件换了（大小 / 修改时刻变）才重算。
+  Future<Uint32List?> _mvPrint(String mvPath, Directory work) async {
+    final ({int size, int mtimeMs})? stamp = _mvFileStamp(mvPath);
+    final String? key = stamp == null
+        ? null
+        : '$mvPath|${stamp.size}|${stamp.mtimeMs}';
+    if (stamp != null && key != null) {
+      final Uint32List? hot = _lruGet(_mvPrints, key);
+      if (hot != null) return hot;
+      final Uint8List? stored = await database.getMusicVideoPrint(
+        mvPath,
+        fileSizeBytes: stamp.size,
+        fileModifiedAt: stamp.mtimeMs,
+      );
+      if (stored != null && stored.lengthInBytes % 4 == 0) {
+        return _rememberMvPrint(key, decodeMusicVideoPrint(stored));
+      }
+    }
+    final String raw = p.join(
+      work.path,
+      'mv_${mvPath.hashCode.toUnsigned(32)}.s16le',
+    );
+    final Uint32List print;
+    try {
+      await decoder.decodeToRawPcm(input: mvPath, output: raw);
+      print = await engine.fingerprintRawPcm(raw);
+    } on ThemeSongDecodeException {
+      return null;
+    } finally {
+      _deleteQuietly(raw);
+    }
+    if (stamp == null || key == null) return print;
+    await database.putMusicVideoPrint(
+      mvPath,
+      fileSizeBytes: stamp.size,
+      fileModifiedAt: stamp.mtimeMs,
+      print: encodeMusicVideoPrint(print),
+      computedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    return _rememberMvPrint(key, print);
+  }
+
+  Uint32List _rememberMvPrint(String key, Uint32List print) =>
+      _lruPut(_mvPrints, key, print, kMvPrintCacheSize);
+
+  /// 最近使用淘汰：命中的挪到队尾（Map 按插入顺序迭代，队首最久没用）。
+  static Uint32List? _lruGet(Map<String, Uint32List> cache, String key) {
+    final Uint32List? hit = cache.remove(key);
+    if (hit != null) cache[key] = hit;
+    return hit;
+  }
+
+  static Uint32List _lruPut(
+    Map<String, Uint32List> cache,
+    String key,
+    Uint32List value,
+    int capacity,
+  ) {
+    cache
+      ..remove(key)
+      ..[key] = value;
+    while (cache.length > capacity) {
+      cache.remove(cache.keys.first);
+    }
+    return value;
+  }
+
   /// 同 [mvOffset]，但返回完整对齐结果（置信度 / 命中段，MV 匹配要按置信度排序与判定）。
   /// 置信度低于 [minConfidence] 视为没对上。
   Future<AudioFingerprintMatch?> mvAlignment({
@@ -410,19 +512,8 @@ class ThemeSongDetector {
     final ThemeSongDetectionReport report = ThemeSongDetectionReport();
     final Uint32List? needle = await _songPrint(audio, work, report);
     if (needle == null) return null;
-    final String raw = p.join(
-      work.path,
-      'mv_${mvPath.hashCode.toUnsigned(32)}.s16le',
-    );
-    final Uint32List haystack;
-    try {
-      await decoder.decodeToRawPcm(input: mvPath, output: raw);
-      haystack = await engine.fingerprintRawPcm(raw);
-    } on ThemeSongDecodeException {
-      return null;
-    } finally {
-      _deleteQuietly(raw);
-    }
+    final Uint32List? haystack = await _mvPrint(mvPath, work);
+    if (haystack == null) return null;
     final AudioFingerprintMatch? m = await engine.align(needle, haystack);
     if (m == null || m.confidence < minConfidence) return null;
     return m;
@@ -437,3 +528,22 @@ final Expando<ThemeSongDetector> _detectors = Expando<ThemeSongDetector>(
 
 ThemeSongDetector themeSongDetectorFor(FushiDatabase db) =>
     _detectors[db] ??= ThemeSongDetector(database: db);
+
+/// 声纹 → 落库字节（u32 小端）。
+Uint8List encodeMusicVideoPrint(Uint32List print) {
+  final ByteData out = ByteData(print.length * 4);
+  for (int i = 0; i < print.length; i++) {
+    out.setUint32(i * 4, print[i], Endian.little);
+  }
+  return out.buffer.asUint8List();
+}
+
+/// 落库字节（u32 小端）→ 声纹。长度须是 4 的倍数。
+Uint32List decodeMusicVideoPrint(Uint8List bytes) {
+  final ByteData data = ByteData.sublistView(bytes);
+  final Uint32List out = Uint32List(bytes.lengthInBytes ~/ 4);
+  for (int i = 0; i < out.length; i++) {
+    out[i] = data.getUint32(i * 4, Endian.little);
+  }
+  return out;
+}

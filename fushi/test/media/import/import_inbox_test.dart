@@ -4,6 +4,8 @@ import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show listSidecarSubtitles;
 
 /// 拍板台 nLXhu0d7gV：iOS「文件」App 收件箱——收走本域认的文件 / 目录，留下不认的。
 void main() {
@@ -388,7 +390,7 @@ void main() {
       );
     });
 
-    test('不撞名的组与不相干文件原名搬入；stem 互为前缀时按播放器规则也算交叉（HBK-AUDIT-220）', () async {
+    test('不撞名的组与不相干文件原名搬入；stem 互为前缀时字幕归最长主干，不必改名', () async {
       await ImportInbox.ensureKindFolders(inbox);
       touch(p.join(inbox.path, 'Video', 'EP02.mkv')).writeAsStringSync('old');
       touch(p.join(inbox.path, 'EP01.mkv'));
@@ -399,23 +401,25 @@ void main() {
 
       expect(await adoptAll(), isEmpty);
       final String video = p.join(inbox.path, 'Video');
-      expect(
-        (Directory(video).listSync().map((FileSystemEntity e) {
-          return p.basename(e.path);
-        }).toList()..sort()),
-        <String>[
-          'EP01.mkv',
-          'EP01.v2 (2).mkv',
-          'EP01.v2 (2).srt',
-          'EP02 (2).mkv',
-          'EP02.mkv',
-          'EP03.srt',
-        ],
-      );
-      // `EP01.v2.srt` 落在原名上时，播放器给 `EP01.mkv` 列字幕也会列出它（`.v2` 当语言
-      // 标记）：那一组整组换 stem，两个视频各配各的。
-      expect(videoDirContent('EP01.v2 (2).mkv'), 'v2');
-      expect(videoDirContent('EP01.v2 (2).srt'), 'v2-srt');
+      final List<String> names = Directory(video).listSync().map((
+        FileSystemEntity e,
+      ) {
+        return p.basename(e.path);
+      }).toList()..sort();
+      expect(names, <String>[
+        'EP01.mkv',
+        'EP01.v2.mkv',
+        'EP01.v2.srt',
+        'EP02 (2).mkv',
+        'EP02.mkv',
+        'EP03.srt',
+      ]);
+      // `EP01.v2.srt` 字面上也配得上 `EP01`（`.v2` 像语言标记），但按最长主干认领归
+      // `EP01.v2.mkv`：播放器给 `EP01.mkv` 列字幕时不会列它，两组都保留原名。
+      expect(listSidecarSubtitles('EP01', names), isEmpty);
+      expect(listSidecarSubtitles('EP01.v2', names), <String>['EP01.v2.srt']);
+      expect(videoDirContent('EP01.v2.mkv'), 'v2');
+      expect(videoDirContent('EP01.v2.srt'), 'v2-srt');
       expect(videoDirContent('EP02 (2).mkv'), 'new');
       expect(videoDirContent('EP03.srt'), 'lone');
     });

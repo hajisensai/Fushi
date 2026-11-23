@@ -24,7 +24,7 @@
 
 | 平台 | 狀態 | 說明 |
 |---|---|---|
-| Android | ✅ | Android 7.0（API 24）及以上 |
+| Android | ✅ | Android 8.0（API 26）及以上 |
 | Windows | ✅ | Galgame 文字 / 語音 Hook 僅限 Windows |
 | macOS | ✅ | 僅 Apple Silicon，不支援 Intel Mac |
 | iOS | ✅（[TestFlight](https://testflight.apple.com/join/j88d69jx)） | 依 App Store 審核指南不含發現、線上來源與下載中心 |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 從 [Fushi 官網](https://fushi.moe/) 下載最新版本，提供 Android APK、Windows 安裝包與 macOS 建置（僅 Apple Silicon，不支援 Intel Mac）；iOS 透過 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安裝。Linux 暫無預編譯的 App 安裝包，需自行從原始碼建置。無頭伺服端 Fushi Server 另在 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) 發佈。
 
-> 最低 Android 7.0（API 24）。
+> 最低 Android 8.0（API 26）。
 
 ## 建置
 

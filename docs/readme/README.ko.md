@@ -24,7 +24,7 @@
 
 | 플랫폼 | 상태 | 비고 |
 |---|---|---|
-| Android | ✅ | Android 7.0(API 24) 이상 |
+| Android | ✅ | Android 8.0(API 26) 이상 |
 | Windows | ✅ | 갈게임 텍스트/음성 후킹은 Windows 전용 |
 | macOS | ✅ | Apple Silicon 전용, Intel Mac은 지원하지 않음 |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | App Store 심사 지침에 따라 발견, 온라인 소스, 다운로드 센터는 제외 |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 [Fushi 웹사이트](https://fushi.moe/)에서 최신 버전을 다운로드하세요. Android APK, Windows 설치 프로그램, macOS 빌드(Apple Silicon 전용, Intel Mac은 지원하지 않음)를 제공합니다. iOS는 [TestFlight](https://testflight.apple.com/join/j88d69jx)로 설치합니다. Linux용 앱은 아직 빌드된 릴리스가 없으므로 소스에서 직접 빌드해야 합니다. 헤드리스 Fushi Server는 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)에서 별도로 릴리스됩니다.
 
-> Android 7.0(API 24) 이상이 필요합니다.
+> Android 8.0(API 26) 이상이 필요합니다.
 
 ## 빌드
 
