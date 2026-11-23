@@ -922,7 +922,7 @@ class _LyricVisualizerTuningPanelState
         spec: spec,
         pack: value as String,
         store: widget.assetStore,
-        pickFiles: widget.pickAssetFiles,
+        pickAssetFiles: widget.pickAssetFiles,
         onPackChanged: (String pack) => _set(spec.key, pack),
       ),
     };
@@ -1203,14 +1203,14 @@ class _AssetPackTuningRow extends StatefulWidget {
     required this.spec,
     required this.pack,
     required this.store,
-    required this.pickFiles,
+    required this.pickAssetFiles,
     required this.onPackChanged,
   });
 
   final LyricVisualizerAssetPackSpec spec;
   final String pack;
   final Future<LyricVisualizerAssetStore> Function() store;
-  final Future<List<String>> Function() pickFiles;
+  final Future<List<String>> Function() pickAssetFiles;
   final ValueChanged<String> onPackChanged;
 
   @override
@@ -1426,7 +1426,7 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      final List<String> picked = await widget.pickFiles();
+      final List<String> picked = await widget.pickAssetFiles();
       if (picked.isEmpty) return;
       final LyricVisualizerAssetStore store = await widget.store();
       await store.importFiles(

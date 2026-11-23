@@ -226,6 +226,9 @@ Future<List<String>> pickLyricVisualizerAssetFiles() async {
   final FilePickerResult? result = await FilePicker.platform.pickFiles(
     type: FileType.image,
     allowMultiple: true,
+    // 安卓默认在裸线程里重压缩 image/*，缺权限或解码失败会杀进程（BUG-3601）；
+    // 素材原样拷进素材库，不需要压缩。
+    allowCompression: false,
   );
   if (result == null) return const <String>[];
   return <String>[

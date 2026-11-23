@@ -90,6 +90,9 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
       '（书文件本身已收编到 pickFilesByExtensions）',
   'lib/src/pages/implementations/miscellaneous_settings_page.dart':
       '应用图标：FileType.image，拷进 app 存储（image_picker 在 Windows 无实现，TODO-1239）',
+  'lib/src/media/music/lyrics/visualizer/lyric_visualizer_assets.dart':
+      '全屏歌词动画素材包：FileType.image，选中即拷进 app 的素材库目录（importFiles），'
+      '不长期引用原路径',
   'lib/src/utils/misc/gallery_image_picker.dart':
       '制卡图片：FileType.image，选中即读字节写进卡片，不长期引用',
   'lib/src/feedback/feedback_video.dart':

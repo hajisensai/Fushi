@@ -1,5 +1,5 @@
 // 取帧线程节拍（FrameClock）的回归测试：不依赖 WGC / WinRT / gtest，cl 直接编。
-// 跑法：powershell -ExecutionPolicy Bypass -File tool/run_webview_frame_clock_test.ps1
+// 跑法：在仓库根运行 tool/run_webview_frame_clock_test.ps1（开发期脚本，不随 app 出货）
 //
 // BUG-5270：显示器关着时 DCompositionWaitForCompositorClock 立刻返回
 // STATUS_GRAPHICS_PRESENT_OCCLUDED（0xC01E0006），不看停止事件。旧实现把它当节拍，
