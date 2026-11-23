@@ -43,11 +43,15 @@
   Linux / Android / iOS / macOS 的 Flutter GPU 开关已配，未实机验证。
 - **未在真机量帧耗**：CPU 近似重的样式（绘光、隐喻、花火、雾笺）低端机帧率未测。
 
-## 待所有者拍板
+## 已拍板（2026-11-23）
 
-- CI 每次在 shard 0 装 mesa（lavapipe）跑 flutter-gpu 标签测试，拿不到 GPU 判红：是否接受这份开销与依赖。
-- 分析模型托管：目前从第三方 Hugging Face 仓库 `HUAI4236/folia-models` 下载（sha256 锁定）；是否迁到
-  hajisensai/Fushi 的 release。
+- CI 的 flutter-gpu 标签测试（拍板 pr4211-ci-mesa=b）：只在改动碰到 GPU 渲染（着色器、构建钩子、可视化
+  目录、pubspec / 依赖锁、`dart_test.yaml`、main.yml）时装 mesa（lavapipe）跑，由 main.yml plan 的 gpu
+  判定决定，全量时在 unit-tests 第 0 片、快门时在 affected-tests；非 PR 事件与清单取不到时一律跑。拿不到
+  GPU 照旧判红。守卫 `fushi/test/build/pr_tiered_gate_guard_test.dart`。
+- 分析模型托管（拍板 pr4211-model-hosting=b）：两个模型代码与权重均 MIT，已迁到本仓预发行
+  `music-analysis-models-v1`（附许可原文），与原 Hugging Face `HUAI4236/folia-models` 提交 f316d615 的文件
+  逐字节相同、sha256 不变；下载候选 = GitHub 直连 + GitHub 加速镜像，不再访问第三方仓库。
 
 ## 各样式与 folia 仍存的差异
 
