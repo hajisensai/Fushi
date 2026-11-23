@@ -22,11 +22,8 @@ bool adaptiveAppleTabBarMode(
     sizeClass == WindowSizeClass.expanded &&
     userExpanded == false;
 
-/// 侧栏面板离窗口的边距（与旧玻璃侧栏一致）。
-const double _kAppleSidebarMargin = _kGlassSidebarMargin;
-
-/// 面板内边距。
-const double _kAppleSidebarPadding = 8;
+/// 贴边侧栏的内容内边距（行离侧栏左右缘 / 上下缘的距离）。
+const double _kAppleSidebarPadding = 10;
 const double _kAppleSidebarHeaderHeight = 44;
 const double _kAppleSidebarSearchHeight = 28;
 const double _kAppleSidebarSectionHeight = 26;
@@ -64,9 +61,9 @@ final SpringDescription _kAppleMorphSpring = SpringDescription.withDampingRatio(
 /// Apple 设计系统宽窗口的首页导航外壳（2026-10-23，照 iPadOS 18 的侧栏 ↔
 /// 标签栏）：
 ///
-/// - 侧栏模式：macOS 26（Tahoe）浮在窗口里、四周留 8 的圆角悬浮面板
-///   （[FushiAppleFloatingSurface]，随「玻璃画质」档位：实色档无模糊实色面，
-///   其余档库玻璃），顶部品牌位 + 收起按钮、胶囊搜索框（按名称过滤目的地）、
+/// - 侧栏模式：macOS 27（Golden Gate）贴边侧栏（[AppleEdgeSidebarSurface]：
+///   紧贴窗口左 / 上 / 下缘、无外边距 / 圆角 / 投影，右缘发丝线，随「玻璃
+///   画质」档位：实色档实色面，其余档平面库玻璃；顶部伸到标题行底下），顶部品牌位 + 收起按钮、胶囊搜索框（按名称过滤目的地）、
 ///   可折叠的分组（11 号次要色标题 + 折叠箭头）、底部固定项（设置）。行是
 ///   源列表规格：行高 28、13 号字、16 号强调色图标，选中 = 中性色圆角底
 ///   （secondarySystemFill，窗口失焦时减半、图标退次要灰）。
@@ -157,11 +154,14 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
 
   /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠 / 过滤掉的行给 null。
   /// 同时返回每个分组标题的纵向位置。
-  ({Map<int, Rect> rows, List<double> sectionTops}) _sidebarLayout(Size size) {
-    const double left = _kAppleSidebarMargin + _kAppleSidebarPadding;
+  ({Map<int, Rect> rows, List<double> sectionTops}) _sidebarLayout(
+    Size size,
+    double topInset,
+  ) {
+    const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
     double y =
-        _kAppleSidebarMargin +
+        topInset +
         _kAppleSidebarPadding +
         _kAppleSidebarHeaderHeight +
         _kAppleSidebarSearchHeight +
@@ -184,7 +184,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
       }
       y += 6;
     }
-    double bottom = size.height - _kAppleSidebarMargin - _kAppleSidebarPadding;
+    double bottom = size.height - _kAppleSidebarPadding;
     for (final int i in widget.footer.reversed) {
       bottom -= _kAppleSidebarRowHeight;
       rows[i] = Rect.fromLTWH(left, bottom, width, _kAppleSidebarRowHeight);
@@ -198,6 +198,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   ({Rect capsule, Map<int, Rect> cells, bool iconOnly}) _tabLayout(
     Size size,
     TextStyle labelStyle,
+    double topInset,
   ) {
     final List<int> order = <int>[
       for (final AppleSidebarSection s in widget.sections) ...s.indices,
@@ -230,7 +231,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     }
     final Rect capsule = Rect.fromLTWH(
       ((size.width - width) / 2).clamp(8.0, double.infinity),
-      _kAppleTabBarTop,
+      topInset + _kAppleTabBarTop,
       width,
       _kAppleTabBarHeight,
     );
@@ -239,8 +240,10 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         _kAppleTabBarPadding +
         _kAppleTabCellHeight +
         _kAppleSidebarRowGap;
-    const double top =
-        _kAppleTabBarTop + (_kAppleTabBarHeight - _kAppleTabCellHeight) / 2;
+    final double top =
+        topInset +
+        _kAppleTabBarTop +
+        (_kAppleTabBarHeight - _kAppleTabCellHeight) / 2;
     final Map<int, Rect> cells = <int, Rect>{};
     for (final int i in order) {
       final double w = cellWidth(i, iconOnly: iconOnly);
@@ -271,15 +274,20 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final Size size = constraints.biggest;
+        // 首页外壳不在外层吃顶部安全区（[navRailBleedsToTop]）：侧栏底从窗口
+        // 上沿铺起（伸到桌面自绘标题行 / 状态栏底下），侧栏内容、标签栏胶囊与
+        // 内容区各自让开这一段。
+        final double topInset = MediaQuery.paddingOf(context).top;
         final ({Map<int, Rect> rows, List<double> sectionTops}) side =
-            _sidebarLayout(size);
+            _sidebarLayout(size, topInset);
         final ({Rect capsule, Map<int, Rect> cells, bool iconOnly}) tabs =
-            _tabLayout(size, tabLabel);
+            _tabLayout(size, tabLabel, topInset);
+        // macOS 27（Golden Gate）侧栏贴边：紧贴窗口左 / 上 / 下缘。
         final Rect sidePanel = Rect.fromLTWH(
-          _kAppleSidebarMargin,
-          _kAppleSidebarMargin,
-          kGlassNavSidebarWidth - 2 * _kAppleSidebarMargin,
-          size.height - 2 * _kAppleSidebarMargin,
+          0,
+          0,
+          kGlassNavSidebarWidth,
+          size.height,
         );
         return AnimatedBuilder(
           animation: _t.animation,
@@ -297,21 +305,30 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               children: <Widget>[
                 Positioned(
                   left: kGlassNavSidebarWidth * (1 - settled),
-                  top: _kAppleTabBarInset * settled,
+                  top: topInset + _kAppleTabBarInset * settled,
                   right: 0,
                   bottom: 0,
-                  child: content!,
+                  // 顶部安全区已由上面的 top 让开（与原先外层 SafeArea 同一版面）。
+                  child: MediaQuery.removePadding(
+                    context: context,
+                    removeTop: true,
+                    child: content!,
+                  ),
                 ),
+                // 侧栏静止时是贴边的平面侧栏底；一离开侧栏态就换成悬浮胶囊面，
+                // 从直角贴边形变到标签栏胶囊。
                 Positioned.fromRect(
                   rect: panel,
                   child: IgnorePointer(
-                    child: FushiAppleFloatingSurface(
-                      shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(
-                          20 + (_kAppleTabBarHeight / 2 - 20) * settled,
-                        ),
-                      ),
-                    ),
+                    child: t <= 0
+                        ? const AppleEdgeSidebarSurface()
+                        : FushiAppleFloatingSurface(
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.circular(
+                                _kAppleTabBarHeight / 2 * settled,
+                              ),
+                            ),
+                          ),
                   ),
                 ),
                 if (sideOnly > 0)
@@ -320,11 +337,13 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                     apple: apple,
                     opacity: sideOnly,
                     sectionTops: side.sectionTops,
+                    topInset: topInset,
                   ),
                 if (tabOnly > 0)
                   Positioned(
                     left: tabs.capsule.left + _kAppleTabBarPadding,
                     top:
+                        topInset +
                         _kAppleTabBarTop +
                         (_kAppleTabBarHeight - _kAppleTabCellHeight) / 2,
                     child: Opacity(
@@ -395,8 +414,9 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     required FushiAppleColors apple,
     required double opacity,
     required List<double> sectionTops,
+    required double topInset,
   }) {
-    const double left = _kAppleSidebarMargin + _kAppleSidebarPadding;
+    const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
     final TextTheme text = Theme.of(context).textTheme;
     Widget fade(Widget child) => Opacity(
@@ -406,7 +426,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     return <Widget>[
       Positioned(
         left: left,
-        top: _kAppleSidebarMargin + _kAppleSidebarPadding,
+        top: topInset + _kAppleSidebarPadding,
         width: width,
         height: _kAppleSidebarHeaderHeight,
         child: fade(
@@ -422,10 +442,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
       ),
       Positioned(
         left: left,
-        top:
-            _kAppleSidebarMargin +
-            _kAppleSidebarPadding +
-            _kAppleSidebarHeaderHeight,
+        top: topInset + _kAppleSidebarPadding + _kAppleSidebarHeaderHeight,
         width: width,
         height: _kAppleSidebarSearchHeight,
         child: fade(
@@ -601,6 +618,54 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
           ),
         ),
       ),
+    );
+  }
+}
+
+/// macOS 27（Golden Gate）的贴边侧栏底：紧贴窗口边、无外边距 / 圆角 / 投影 /
+/// 抬起，末端（LTR 右缘）一条 0.5 px `separator` 发丝线与内容区分开。
+///
+/// 材质跟随「玻璃画质」（[glassMaterialOf]）：
+/// - 实色档：系统材质实色（[fushiGlassFill] 的 off 档，深 #1C1C1E / 浅
+///   #F9F9F9，即 secondarySystemBackground 量级），无模糊无着色器；
+/// - 其余档：自带一层的平面库玻璃（[GlassContainer] 直角、`shadowElevation: 0`，
+///   参数取 [fushiGlassSettings]，静态主表面按 prominent 口径取档）。库没有
+///   侧栏组件，这是最贴近的「平铺背景玻璃」。
+///
+/// 宽窗口侧栏（[AppleSidebarTabsShell]）与 medium 窄条（`_NavSurfaceBackdrop`）
+/// 共用这一块。
+class AppleEdgeSidebarSurface extends StatelessWidget {
+  const AppleEdgeSidebarSurface({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Widget hairline = DecoratedBox(
+      decoration: BoxDecoration(
+        border: BorderDirectional(
+          end: BorderSide(color: apple.separator, width: 0.5),
+        ),
+      ),
+    );
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: fushiGlassFill(context)),
+        child: hairline,
+      );
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        GlassContainer(
+          // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+          useOwnLayer: true,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 0),
+          quality: fushiGlassQuality(context, prominent: true),
+          settings: fushiGlassSettings(context).copyWith(shadowElevation: 0),
+          child: const SizedBox.expand(),
+        ),
+        hairline,
+      ],
     );
   }
 }

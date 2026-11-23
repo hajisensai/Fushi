@@ -349,15 +349,11 @@ bool adaptiveNavRailExtended(
 double _glassNavBarBottomMargin(BuildContext context) =>
     math.max(16, MediaQuery.paddingOf(context).bottom - 12);
 
-/// 「玻璃」设计系统（macOS 26）展开态悬浮侧栏占的总宽（含四周 8 的悬浮边距）。
-/// 窄窗口（medium 尺寸档）收成只有图标的窄条，总宽回到 [kAdaptiveNavRailWidth]。
+/// 「玻璃」设计系统展开态侧栏的总宽。macOS 27（Golden Gate）侧栏贴边
+/// （edge-to-edge，紧贴窗口左 / 上 / 下缘、无外边距 / 圆角 / 投影，见
+/// [AppleEdgeSidebarSurface]），这就是面板本身的宽。窄窗口（medium 尺寸档）
+/// 收成只有图标的窄条，总宽回到 [kAdaptiveNavRailWidth]。
 const double kGlassNavSidebarWidth = 208;
-
-/// 悬浮侧栏离窗口左 / 上 / 下边的距离。
-const double _kGlassSidebarMargin = 8;
-
-/// 悬浮侧栏面板的圆角（macOS 26 Finder / 设置侧栏实测 ≈ 20）。
-const double _kGlassSidebarRadius = 20;
 
 /// 侧栏行 / 选中填充的圆角与行高（macOS 26 源列表：行高 32–36、圆角 8–10）。
 const double _kGlassSidebarRowRadius = 9;
@@ -1326,7 +1322,8 @@ class _MaterialNavCluster extends StatelessWidget {
         : (glassDesign
               ? kAdaptiveNavRailWidth
               : kMaterialNavRailCollapsedWidth);
-    const double glassInset = _kGlassSidebarMargin + 8;
+    // 贴边侧栏的内容内边距（面板本身不再离窗口留边）。
+    const double glassInset = 8;
     // 重设计侧栏（镂空脊 / 色脊，见 nav_rail_look.part.dart）；null = 原悬浮面板。
     final _RailLook? look = glassDesign ? null : _RailLook.resolve(context);
     final bool notchRail = look?.notch ?? false;
@@ -1379,10 +1376,6 @@ class _MaterialNavCluster extends StatelessWidget {
     }
     return _NavSurfaceBackdrop(
       baseColor: colors.surface,
-      glassMargin: glassDesign
-          ? const EdgeInsets.all(_kGlassSidebarMargin)
-          : null,
-      glassRadius: _kGlassSidebarRadius,
       child: Material(
         key: fushiMaterialNavKey,
         // 悬浮面板之外透明；底色 / 阴影 / eink 描边画在 [_FloatingNavSurface]。
@@ -1418,7 +1411,6 @@ class _MaterialNavCluster extends StatelessWidget {
                               horizontal: railExtended
                                   ? glassInset
                                   : (kAdaptiveNavRailWidth -
-                                            2 * _kGlassSidebarMargin -
                                             _kGlassSidebarCollapsedCellWidth) /
                                         2,
                               vertical: glassInset,
@@ -3465,16 +3457,14 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
 }
 
 /// 导航面的背衬：一个恒定的 passthrough [Stack]，背景槽按设计系统 / 材质换成
-/// 玻璃设计系统的悬浮 [GlassContainer]（按 [glassMargin] 内缩、[glassRadius]
-/// 圆角：侧栏面板 / 底部胶囊）、MD3 毛玻璃的 [FushiGlassSurface]（同色阶半透明 +
+/// 玻璃设计系统的贴边侧栏底（[AppleEdgeSidebarSurface]，侧栏 / 窄条）或
+/// 底栏的 scroll edge 带（[glassBackground]）、MD3 毛玻璃的 [FushiGlassSurface]（同色阶半透明 +
 /// 背景模糊），或 MD3 实心时的空盒；[child]（带 [fushiMaterialNavKey] 的
 /// Material）恒在第二个槽位，几何与不包时一字不差。
 class _NavSurfaceBackdrop extends StatelessWidget {
   const _NavSurfaceBackdrop({
     required this.baseColor,
     required this.child,
-    this.glassMargin,
-    this.glassRadius = 0,
     this.glassBackground,
   });
 
@@ -3482,12 +3472,8 @@ class _NavSurfaceBackdrop extends StatelessWidget {
   final Widget child;
 
   /// 玻璃设计系统下整个替换背景槽（底栏：胶囊在前景里画，背景槽只放
-  /// scroll edge 带）；null = 按 [glassMargin] / [glassRadius] 画玻璃面板。
+  /// scroll edge 带）；null = 侧栏的 [AppleEdgeSidebarSurface]。
   final Widget? glassBackground;
-
-  /// 玻璃面板相对导航区的内缩；null = 铺满。
-  final EdgeInsets? glassMargin;
-  final double glassRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -3496,18 +3482,8 @@ class _NavSurfaceBackdrop extends StatelessWidget {
     if (isGlassDesign(context) && glassOverride != null) {
       background = glassOverride;
     } else if (isGlassDesign(context)) {
-      // 中性玻璃（iOS 26 实测填充色），不拿 MD3 表面色去染。
-      background = Padding(
-        padding: glassMargin ?? EdgeInsets.zero,
-        child: GlassContainer(
-          // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
-          useOwnLayer: true,
-          shape: LiquidRoundedSuperellipse(borderRadius: glassRadius),
-          quality: fushiGlassQuality(context, prominent: true),
-          settings: fushiGlassSettings(context),
-          child: const SizedBox.expand(),
-        ),
-      );
+      // 侧栏 / 窄条：macOS 27 贴边侧栏底（铺满导航区，右缘发丝线）。
+      background = const AppleEdgeSidebarSurface();
     } else {
       // MD3 导航是悬浮胶囊 / 面板，毛玻璃画在 [_FloatingNavSurface] 里，
       // 胶囊之外不铺底。
