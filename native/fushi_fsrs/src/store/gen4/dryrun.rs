@@ -84,7 +84,9 @@ use crate::sync2::vv::OpId;
 ///   `error`（以前照样 `pass` / `fail`）。
 /// - 5：profile 报告加 `oldSideStaleResults`（`{logs, cards, examples}`，`stale.rs`）：协议 3 一侧被旧代码重放改写过、
 ///   再没改回来的日志结果，基准改回后重建，逐条佐证、不计入判定（反馈 RhMpA6bn8v）。
-pub const REPORT_VERSION: i64 = 5;
+/// - 6：`oldSideStaleResults` 也收协议 3 停在非代表副本上的重复日志（换成新代的最小操作号代表，PR #4245），多一项
+///   `swaps`（其中换代表的条数），这类例子写成「日志 卡 op: M -> W keys: [换了的键] … res: …」。
+pub const REPORT_VERSION: i64 = 6;
 
 /// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
 pub const KNOWN_ENTRIES: usize = 5_000;
@@ -1024,9 +1026,10 @@ fn old_side_pending(src: &Connection, profile: &str) -> Result<Skip, String> {
     Ok(skip)
 }
 
-/// 协议 3 的日志投影表与元数据表（有过期或败者代表结果要改回时建影子，[old_caches]）。
+/// 协议 3 的日志投影表、日志元数据表与 S(e) 表（有要改回的日志投影时按需建影子，[old_caches]）。
 const LOG_TABLE: &str = "srs_review_logs";
 const LOG_META_TABLE: &str = "sync2_log_meta";
+const EVENT_LOCAL_TABLE: &str = "srs_event_local";
 
 /// 协议 3 缓存重建要写的表。
 const CACHE_TABLES: [&str; 4] = [
@@ -1040,8 +1043,9 @@ const CACHE_TABLES: [&str; 4] = [
 /// `main` 的定义建同名的空表与索引——不带库名的表名先找 `temp`，旧代码的读写都落在这几张临时表上——重建、读行、删表。
 /// [cfg] 已是协议 3 口径（带盐的内置 ID，`compare.rs` `cache_pairs` 经 `class.rs` `legacy_config_for` 换好的）。
 ///
-/// [stale] 是协议 3 一侧佐证得了的过期日志结果（`stale.rs`）：非空时日志投影表也在 `temp` 里建一份同名的（这个 profile
-/// 的行），先改回、按协议 3 的重放重放那些卡，再重建。
+/// [stale] 是协议 3 一侧佐证得了的、偏离操作集合规则的日志投影（`stale.rs`）：非空时日志投影表也在 `temp` 里建一份
+/// 同名的（这个 profile 的行；有换代表的再加 `sync2_log_meta`，换代表改了 S(e) 的再加 `srs_event_local`），先改回、
+/// 按协议 3 的重放重放那些卡，再重建。
 fn old_caches(
     src: &Connection,
     profile: &str,
@@ -1077,13 +1081,15 @@ fn old_caches_with(
         &serde_json::from_str(cfg).map_err(|e| Setup(e.to_string()))?,
     )
     .map_err(Setup)?;
-    let has_intent = stale.iter().any(|s| s.author_intent.is_some());
     let mut tables: Vec<&str> = CACHE_TABLES.to_vec();
     let mut copy_tables: Vec<&str> = Vec::new();
     if !stale.is_empty() {
         copy_tables.push(LOG_TABLE);
-        if has_intent {
+        if stale::touches_meta(stale) {
             copy_tables.push(LOG_META_TABLE);
+        }
+        if stale::touches_server_time(stale) {
+            copy_tables.push(EVENT_LOCAL_TABLE);
         }
         tables.extend(copy_tables.iter().copied());
     }
@@ -2031,11 +2037,11 @@ pub(crate) mod tests {
         );
         assert_eq!(
             p["oldSideStaleResults"],
-            json!({"logs": 0, "cards": 0, "examples": []})
+            json!({"logs": 0, "cards": 0, "swaps": 0, "examples": []})
         );
         // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
         let k = &p["knownDifferences"];
-        assert_eq!(r["version"], 5);
+        assert_eq!(r["version"], 6);
         assert_eq!(
             (&k["total"], &k["unproven"]),
             (&json!(0), &json!(0)),
