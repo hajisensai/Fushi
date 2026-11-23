@@ -13,6 +13,8 @@ add_executable(${BINARY_NAME}
   "external_open_handoff.cc"
   "floating_ball_channel.cc"
   "floating_ball_window.cc"
+  "floating_lyric_channel.cc"
+  "floating_lyric_window.cc"
   "screen_capture.cc"
   "screen_ocr_overlay.cc"
   "deck_buttons.cc"
@@ -34,6 +36,12 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+# Floating lyrics (floating_lyric_window.cc): font files from the font library
+# are registered with fontconfig (always there under GTK / Pango); dlopen loads
+# libgtk-layer-shell on Wayland when present.
+pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::FONTCONFIG
+  ${CMAKE_DL_LIBS})
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 

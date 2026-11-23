@@ -140,6 +140,13 @@ enum AiFeature {
   /// 发请求。
   mediaLinks,
 
+  /// 全屏歌词动画的每首主题（`ai_music_visualizer_theme_assistant.dart`，移植 folia-major
+  /// `generate-theme`）：按歌名 / 歌手 / 歌词给出明暗两套配色、关键词着色、动画强度与字体
+  /// 风格。AI 只产出配置，落地前过本地校验（颜色只认 hex、对比度不够就改、关键词必须在歌词
+  /// 里出现、强度与字体是封闭枚举）；结果按曲目缓存在本机（不进备份 / 同步），生成 / 撤销 /
+  /// 改回封面取色都留上一版可撤销。只在用户点「生成」或开了「自动生成」时发请求。
+  musicVisualizerTheme,
+
   /// AI 助手（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`）：用户用一句
   /// 话让 AI 代办 app 里的操作（下扩展 / 视频 / 字幕、调设置、处理刮削与冲突）。
   /// AI 只能调用操作目录里的操作（与 UI 按钮、`fushi_cli` 同一个 handler）。规则是
