@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/reader/manga_page_fit.dart'
         mangaTextBoxSignature,
         mangaTextBoxesOf;
 import 'package:fushi/src/ocr/ocr_text_regions.dart';
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
@@ -107,9 +108,10 @@ String mangaOcrBoxesHtml(MokuroImage page) {
 /// every participating block. Existing single-block mokuro/local OCR remains
 /// unchanged.
 ///
-/// A narrow kana-only run immediately on the annotation side of a kanji run is
-/// treated as furigana: it participates in the group (so clicking it still gets
-/// the complete base sentence) but is omitted from the mined sentence itself.
+/// A narrow kana-only run immediately on the annotation side of a kanji / Latin
+/// run is treated as furigana (`manga_ruby.dart`): it participates in the group
+/// (so clicking it still gets the complete base sentence) but is omitted from
+/// the mined sentence itself; read-aloud speaks the base with that reading.
 @visibleForTesting
 List<String> mangaBlockSentenceTexts(MokuroImage page) {
   return _mangaBlockSentenceAssignments(page)
@@ -163,8 +165,14 @@ Rect? mangaSentenceGroupNormalizedRect(MokuroImage page, int group) {
 }
 
 /// 一个 OCR 块所属的句子分组：[group] 即 overlay 的 `data-manga-sentence-group`，
-/// [sentence] 是整句文本（注音块不进句子），[ruby] 表示这块被判为注音（振假名）。
-typedef MangaBlockSentence = ({int group, String sentence, bool ruby});
+/// [sentence] 是整句文本（注音块不进句子），[spoken] 是合成用的整句——底本按页面
+/// 印着的注音换成读音（见 `manga_ruby.dart`），[ruby] 表示这块被判为注音（振假名）。
+typedef MangaBlockSentence = ({
+  int group,
+  String sentence,
+  String spoken,
+  bool ruby,
+});
 
 /// 每个 OCR 块（与 `page.blocks` 同下标）的句子分组。与 [mangaOcrBoxesHtml] 写进
 /// overlay 的组号同一次算出，漫画朗读按它逐句读、按组号高亮。
@@ -199,34 +207,9 @@ List<MangaBlockSentence> _mangaBlockSentenceAssignments(MokuroImage page) {
     }
   }
 
-  final Set<int> rubyBlocks = <int>{};
-  for (
-    int candidateIndex = 0;
-    candidateIndex < blocks.length;
-    candidateIndex++
-  ) {
-    final MokuroBlock candidate = blocks[candidateIndex];
-    if (!_mangaKanaOnly(_mangaBlockText(candidate))) {
-      continue;
-    }
-    int? closestBase;
-    double closestGap = double.infinity;
-    for (int baseIndex = 0; baseIndex < blocks.length; baseIndex++) {
-      if (baseIndex == candidateIndex) {
-        continue;
-      }
-      final MokuroBlock base = blocks[baseIndex];
-      final double? gap = _mangaRubyGap(candidate, base);
-      if (gap != null && gap < closestGap) {
-        closestGap = gap;
-        closestBase = baseIndex;
-      }
-    }
-    if (closestBase != null) {
-      rubyBlocks.add(candidateIndex);
-      join(candidateIndex, closestBase);
-    }
-  }
+  final MangaPageRuby pageRuby = detectMangaPageRuby(blocks);
+  final Set<int> rubyBlocks = pageRuby.baseOfRuby.keys.toSet();
+  pageRuby.baseOfRuby.forEach(join);
 
   for (int i = 0; i < blocks.length; i++) {
     if (rubyBlocks.contains(i)) {
@@ -269,10 +252,22 @@ List<MangaBlockSentence> _mangaBlockSentenceAssignments(MokuroImage page) {
         : mangaJoinOcrText(
             indices.map((int index) => _mangaBlockText(blocks[index])),
           );
+    final String spoken = sentence.isNotEmpty
+        ? mangaJoinOcrText(
+            indices
+                .where((int index) => !rubyBlocks.contains(index))
+                .map(
+                  (int index) => mangaJoinOcrText(
+                    pageRuby.spokenLinesOf(index, blocks[index].lines),
+                  ),
+                ),
+          )
+        : fallback;
     for (final int index in indices) {
       result[index] = (
         group: groupIndex,
         sentence: fallback,
+        spoken: spoken,
         ruby: rubyBlocks.contains(index),
       );
     }
@@ -282,13 +277,6 @@ List<MangaBlockSentence> _mangaBlockSentenceAssignments(MokuroImage page) {
 }
 
 String _mangaBlockText(MokuroBlock block) => mangaJoinOcrText(block.lines);
-
-bool _mangaKanaOnly(String text) =>
-    text.isNotEmpty &&
-    RegExp(r'^[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9dー]+$').hasMatch(text);
-
-bool _mangaContainsKanji(String text) =>
-    RegExp(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]').hasMatch(text);
 
 double _mangaAxisOverlap(MokuroRect a, MokuroRect b, {required bool vertical}) {
   if (vertical) {
@@ -300,69 +288,11 @@ double _mangaAxisOverlap(MokuroRect a, MokuroRect b, {required bool vertical}) {
 double _mangaAxisLength(MokuroRect rect, {required bool vertical}) =>
     vertical ? rect.height : rect.width;
 
-double _mangaCrossThickness(MokuroRect rect, {required bool vertical}) =>
-    vertical ? rect.width : rect.height;
-
 double _mangaCrossGap(MokuroRect a, MokuroRect b, {required bool vertical}) {
   if (vertical) {
     return math.max(0, math.max(a.left, b.left) - math.min(a.right, b.right));
   }
   return math.max(0, math.max(a.top, b.top) - math.min(a.bottom, b.bottom));
-}
-
-/// Return the cross-axis gap when [candidate] is very likely ruby for [base].
-double? _mangaRubyGap(MokuroBlock candidate, MokuroBlock base) {
-  if (candidate.isVertical != base.isVertical ||
-      !_mangaContainsKanji(_mangaBlockText(base))) {
-    return null;
-  }
-  final bool vertical = candidate.isVertical;
-  final double candidateThickness = _mangaCrossThickness(
-    candidate.rectangle,
-    vertical: vertical,
-  );
-  final double baseThickness = _mangaCrossThickness(
-    base.rectangle,
-    vertical: vertical,
-  );
-  if (candidateThickness <= 0 ||
-      baseThickness <= 0 ||
-      candidateThickness > baseThickness * 0.68) {
-    return null;
-  }
-  // Japanese ruby sits to the right of vertical-rl base text and above
-  // horizontal base text.
-  final bool annotationSide = vertical
-      ? candidate.rectangle.center.dx > base.rectangle.center.dx
-      : candidate.rectangle.center.dy < base.rectangle.center.dy;
-  if (!annotationSide) {
-    return null;
-  }
-  final double candidateLength = _mangaAxisLength(
-    candidate.rectangle,
-    vertical: vertical,
-  );
-  final double baseLength = _mangaAxisLength(
-    base.rectangle,
-    vertical: vertical,
-  );
-  final double overlap = _mangaAxisOverlap(
-    candidate.rectangle,
-    base.rectangle,
-    vertical: vertical,
-  );
-  if (candidateLength <= 0 ||
-      baseLength <= 0 ||
-      overlap / math.min(candidateLength, baseLength) < 0.45) {
-    return null;
-  }
-  final double gap = _mangaCrossGap(
-    candidate.rectangle,
-    base.rectangle,
-    vertical: vertical,
-  );
-  final double maximumGap = math.max(6.0, base.fontSize * 0.45);
-  return gap <= maximumGap ? gap : null;
 }
 
 bool _mangaBlocksAreAdjacent(MokuroBlock a, MokuroBlock b) {

@@ -376,11 +376,7 @@ void main() {
       profileUid: kAcVecProfile,
       deviceId: 'v',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot-v',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
       fallbackRolloverHour: () => 4,
       localOffsetMin: () => 540,
     );

@@ -116,7 +116,7 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         // TODO-354 ③：书架底栏迷你条上的「悬浮字幕」开关——真启停 app 外悬浮字幕
         // 窗口（复用 toggleFloatingLyricFromControls：拉起/隐藏悬浮窗 + 偏好读写）。
         // 只有有 native 悬浮窗后端的平台（FloatingLyricChannel.supported：Android /
-        // Windows / macOS）显示开关，其余（Linux）隐藏（优雅降级）。开着态用实心
+        // Windows / macOS / Linux）显示开关，其余（iOS）隐藏（优雅降级）。开着态用实心
         // 选中态图标提示当前已开。
         if (FloatingLyricChannel.supported)
           FushiIconButtonControl(

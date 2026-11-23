@@ -2,6 +2,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -109,7 +110,7 @@ class _PastedTextBookDialogState extends State<PastedTextBookDialog>
           title: title,
         );
         if (!mounted) return;
-        Navigator.pop(context, bookKey);
+        closeOwnRoute(context, bookKey);
       },
     );
   }

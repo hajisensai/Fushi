@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -88,9 +89,13 @@ Future<bool> importAudioCdIfPresent(
 /// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
 bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
   AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
-  AudioCdLayout.macCddafs =>
-    Platform.isMacOS || Platform.isWindows || Platform.isLinux,
+  AudioCdLayout.macCddafs => audioCdRipAvailableOnHost,
 };
+
+/// 本机能否抓轨（[_canRip] 任一布局可能成立的平台集合）。视频「导入文件夹」块的
+/// 音频 CD 附注按它显示，两处不再各写一份平台判据。
+bool get audioCdRipAvailableOnHost =>
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
 /// 音频 CD 判定里的「旁边有真媒体」（[audioCdLayoutOf] 的 `isImportableMedia`）：视频或
 /// 纯音频都算，与最终由哪个库收它无关（纯音频归音乐库，反馈 QAondMh4M5）。
@@ -187,14 +192,7 @@ class _AudioCdRipDialogState extends State<AudioCdRipDialog> {
   /// （全局快捷键、悬浮反馈球），裸 `pop` 会弹掉那一页而把对话框留成关不掉的孤儿。
   void _close(String? directory) {
     if (!mounted) return;
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (route == null) return;
-    final NavigatorState navigator = Navigator.of(context);
-    if (route.isCurrent) {
-      navigator.pop(directory);
-    } else {
-      navigator.removeRoute(route, directory);
-    }
+    closeOwnRoute<String?>(context, directory);
   }
 
   @override

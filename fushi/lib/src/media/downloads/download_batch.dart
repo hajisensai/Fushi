@@ -16,7 +16,7 @@ class DownloadBatchOutcome {
   const DownloadBatchOutcome({
     this.done = 0,
     this.unsupported = 0,
-    this.failed = 0,
+    this.failures = const <DownloadBatchFailedTask>[],
   });
 
   /// 真正执行成功的条数。
@@ -25,12 +25,28 @@ class DownloadBatchOutcome {
   /// 因来源不支持该动作被跳过的条数。
   final int unsupported;
 
+  /// 支持该动作但执行时抛错的条目（按执行顺序）。只给个数用户没法判断是
+  /// 哪条、要不要重试（BUG-5212），所以逐条留下任务名与错误。
+  final List<DownloadBatchFailedTask> failures;
+
   /// 支持该动作但执行时抛错的条数。
-  final int failed;
+  int get failed => failures.length;
 
   int get total => done + unsupported + failed;
 
   bool get isEmpty => total == 0;
+}
+
+/// 批量里失败的一条：任务名 + 错误（错误文案与单条动作的失败提示同源）。
+class DownloadBatchFailedTask {
+  const DownloadBatchFailedTask({required this.title, required this.error});
+
+  final String title;
+  final Object error;
+
+  /// 给用户看的原因：与单条动作的 `download_task_action_failed` 用同一个
+  /// `toString()`，两处说法一致。
+  String get reason => '$error';
 }
 
 /// 取一条任务在某个批量动作下的执行体；来源不支持该动作时返回 null。
@@ -92,11 +108,16 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
 }) async {
   int done = 0;
   int unsupported = 0;
-  int failed = 0;
+  final List<DownloadBatchFailedTask> failures = <DownloadBatchFailedTask>[];
   final List<DownloadTaskEntry> taskList = tasks.toList(growable: false);
+  void fail(DownloadTaskEntry task, Object error, StackTrace stackTrace) {
+    failures.add(DownloadBatchFailedTask(title: task.title, error: error));
+    onError?.call(error, stackTrace);
+  }
+
   // 组 → 组内条目（只收对本动作有单条执行体的），按出现顺序。
-  final Map<Object, List<DownloadTaskBatchMember<Object?>>> groups =
-      Map<Object, List<DownloadTaskBatchMember<Object?>>>.identity();
+  final Map<Object, List<DownloadTaskEntry>> groups =
+      Map<Object, List<DownloadTaskEntry>>.identity();
   for (final DownloadTaskEntry task in taskList) {
     final DownloadTaskBatchMember<Object?>? member = task.actions.batchMember;
     if (member == null ||
@@ -105,9 +126,7 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
             null) {
       continue;
     }
-    groups
-        .putIfAbsent(member.group, () => <DownloadTaskBatchMember<Object?>>[])
-        .add(member);
+    groups.putIfAbsent(member.group, () => <DownloadTaskEntry>[]).add(task);
   }
   final Set<Object> ranGroups = Set<Object>.identity();
   for (final DownloadTaskEntry task in taskList) {
@@ -121,14 +140,20 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
       continue;
     }
     final DownloadTaskBatchMember<Object?>? member = task.actions.batchMember;
-    final List<DownloadTaskBatchMember<Object?>>? group = member == null
+    final List<DownloadTaskEntry>? group = member == null
         ? null
         : groups[member.group];
     if (member != null && group != null) {
       if (!ranGroups.add(member.group)) continue;
       List<DownloadTaskBatchFailure?> results;
       try {
-        results = await member.runGroup(action, group);
+        results = await member.runGroup(
+          action,
+          <DownloadTaskBatchMember<Object?>>[
+            for (final DownloadTaskEntry entry in group)
+              entry.actions.batchMember!,
+          ],
+        );
         if (results.length != group.length) {
           throw StateError(
             'batch group returned ${results.length} results '
@@ -141,12 +166,12 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
           DownloadTaskBatchFailure(error, stackTrace),
         );
       }
-      for (final DownloadTaskBatchFailure? result in results) {
+      for (int i = 0; i < results.length; i++) {
+        final DownloadTaskBatchFailure? result = results[i];
         if (result == null) {
           done++;
         } else {
-          failed++;
-          onError?.call(result.error, result.stackTrace);
+          fail(group[i], result.error, result.stackTrace);
         }
       }
       continue;
@@ -155,14 +180,13 @@ Future<DownloadBatchOutcome> runDownloadTaskBatch({
       await callable();
       done++;
     } on Object catch (error, stackTrace) {
-      failed++;
-      onError?.call(error, stackTrace);
+      fail(task, error, stackTrace);
     }
   }
   return DownloadBatchOutcome(
     done: done,
     unsupported: unsupported,
-    failed: failed,
+    failures: List<DownloadBatchFailedTask>.unmodifiable(failures),
   );
 }
 
