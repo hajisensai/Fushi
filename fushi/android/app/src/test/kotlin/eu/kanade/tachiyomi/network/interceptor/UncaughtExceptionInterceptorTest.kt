@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * BUG-4951：扩展拦截器（例如把 StreamResetException 包成 PlainTextException 的那类）
@@ -52,6 +53,68 @@ class UncaughtExceptionInterceptorTest {
         assertEquals(emptyList(), uncaught.toList(), "调度线程不得出现未捕获异常（Android 上即进程崩溃）")
         // 原因链保留：通道错误信息与 Cloudflare 判定都沿 cause 链读。
         assertSame(extensionFailure, generateSequence<Throwable>(error) { it.cause }.first { it is PlainTextException })
+    }
+
+    /**
+     * BUG-5350：扩展按宿主 ABI 链接，缺类 / 签名不符是 LinkageError（不是 Exception），
+     * 递归过深是 StackOverflowError；它们同样不得经 AsyncCall 在调度线程重抛。
+     */
+    @Test
+    fun extensionErrorsOnAsyncCallDoNotEscapeToDispatcherThread() {
+        val failures: List<Throwable> = listOf(
+            NoClassDefFoundError("Failed resolution of: Leu/kanade/tachiyomi/AppInfo;"),
+            NoSuchMethodError("No static method toJavaInstant(Lkotlin/time/Instant;)Ljava/time/Instant;"),
+            ExceptionInInitializerError(IllegalStateException("static init")),
+            StackOverflowError(),
+        )
+        for (failure in failures) {
+            val (error: IOException, uncaught: List<Throwable>) = awaitThroughHostChain(failure)
+            assertEquals(emptyList(), uncaught, "${failure::class.simpleName} 不得成为调度线程未捕获异常")
+            assertSame(failure, generateSequence<Throwable>(error) { it.cause }.first { it === failure })
+        }
+    }
+
+    /** OOM 这类 VM 已坏的错误不伪装成网络失败，照原样往上抛。 */
+    @Test
+    fun virtualMachineFailuresOtherThanStackOverflowAreNotWrapped() {
+        val failure = OutOfMemoryError("Java heap space")
+        val client = OkHttpClient.Builder()
+            .addInterceptor(UncaughtExceptionInterceptor())
+            .addInterceptor(Interceptor { throw failure })
+            .build()
+
+        val error = try {
+            client.newCall(Request.Builder().url("http://127.0.0.1:9/page.jpg").build()).execute()
+            fail("expected OutOfMemoryError")
+        } catch (thrown: OutOfMemoryError) {
+            thrown
+        }
+
+        assertSame(failure, error)
+    }
+
+    private fun awaitThroughHostChain(failure: Throwable): Pair<IOException, List<Throwable>> {
+        val uncaught = Collections.synchronizedList(mutableListOf<Throwable>())
+        val executor = Executors.newCachedThreadPool { runnable ->
+            Thread(runnable, "okhttp-dispatcher-test").apply {
+                setUncaughtExceptionHandler { _, error -> uncaught += error }
+            }
+        }
+        val client = OkHttpClient.Builder()
+            .dispatcher(Dispatcher(executor))
+            .addInterceptor(UncaughtExceptionInterceptor())
+            .addInterceptor(Interceptor { throw failure })
+            .build()
+
+        val error = assertFailsWith<IOException> {
+            runBlocking {
+                client.newCall(Request.Builder().url("http://127.0.0.1:9/page.jpg").build()).await()
+            }
+        }
+
+        executor.shutdown()
+        assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS))
+        return error to uncaught.toList()
     }
 
     @Test
