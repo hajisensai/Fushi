@@ -469,6 +469,21 @@ SettingsDestination buildMusicDestination() {
       SettingsSection(
         title: t.music_lyrics_backdrop_title,
         items: <SettingsItem>[
+          // 有 MV 默认放 MV（MusicMvBackdropController）；关掉回到下面的动画背景。
+          SettingsSwitchItem(
+            id: 'music.lyrics_mv_backdrop',
+            title: t.music_lyrics_mv_backdrop_title,
+            subtitle: t.music_lyrics_mv_backdrop_hint,
+            icon: FushiIcons.video,
+            defaultValue: true,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicLyricsMvBackdrop,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.appModel.prefsRepo.setMusicLyricsMvBackdrop(value);
+              // 打开时补一轮后台匹配（只对没对过的）。
+              if (value) unawaited(c.appModel.musicVideoAutoMatch.schedule());
+            },
+          ),
           SettingsSegmentedItem<bool>(
             id: 'music.lyrics_backdrop_animate',
             title: t.music_lyrics_backdrop_motion_title,
@@ -511,9 +526,14 @@ SettingsDestination buildMusicDestination() {
                 .prefsRepo
                 .setMusicLyricsBackdropStyle(value.prefValue),
             defaultValue: MusicLyricsBackdropStyle.defaultStyle,
-            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）。
-            resetToDefault: (SettingsContext c) =>
-                c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）；
+            // 手选回 Pixi 的显式行也能被页级恢复删掉（HBK-AUDIT-235）。
+            storedChoice: SettingsStoredChoice(
+              isStored: (SettingsContext c) =>
+                  c.appModel.prefsRepo.hasStoredMusicLyricsBackdropStyle,
+              clear: (SettingsContext c) =>
+                  c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            ),
           ),
           SettingsSliderItem(
             id: 'music.lyrics_backdrop_saturation',

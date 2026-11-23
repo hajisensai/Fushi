@@ -54,6 +54,8 @@ class BookArtRecord {
     this.matchScore,
     this.pinned = false,
     this.rejectedCoverUrls = const <String>[],
+    this.originalEditionCovers = false,
+    this.coverFromOriginalEdition = false,
   });
 
   /// 用户单本移除了贴错的封面：只留否决记录（没有系列、没有卷封面），重刮时不再
@@ -89,6 +91,8 @@ class BookArtRecord {
     matchScore: (json['matchScore'] as num?)?.toDouble(),
     scrapedAt: (json['scrapedAt'] as num?)?.toInt() ?? 0,
     pinned: json['pinned'] == true,
+    originalEditionCovers: json['originalEditionCovers'] == true,
+    coverFromOriginalEdition: json['coverFromOriginalEdition'] == true,
     rejectedCoverUrls: <String>[
       if (json['rejectedCoverUrls'] is List)
         for (final Object? u in json['rejectedCoverUrls'] as List)
@@ -131,6 +135,15 @@ class BookArtRecord {
   /// 用户移除过的卷封面 URL（贴错了）：重刮不再选它们。
   final List<String> rejectedCoverUrls;
 
+  /// 非日文版的系列，用户在结果面板选了「用 MangaBaka 封面」：本版本语言没有的卷
+  /// 用原版（日文版）卷封面。默认 false = 保留书里的封面（BUG-5287）。按系列记，
+  /// 同组每本的记录都带着，重刮沿用。
+  final bool originalEditionCovers;
+
+  /// 这本的卷封面是按 [originalEditionCovers] 取的原版（日文版）封面：改回「保留
+  /// 书里的封面」时据此删掉它，有了本语言的封面时据此替换（不按清晰度保留它）。
+  final bool coverFromOriginalEdition;
+
   /// 有匹配到的系列（否决记录没有）。
   bool get hasSeries => source.isNotEmpty && seriesId.isNotEmpty;
 
@@ -158,6 +171,8 @@ class BookArtRecord {
     'scrapedAt': scrapedAt,
     if (pinned) 'pinned': true,
     if (rejectedCoverUrls.isNotEmpty) 'rejectedCoverUrls': rejectedCoverUrls,
+    if (originalEditionCovers) 'originalEditionCovers': true,
+    if (coverFromOriginalEdition) 'coverFromOriginalEdition': true,
   };
 }
 

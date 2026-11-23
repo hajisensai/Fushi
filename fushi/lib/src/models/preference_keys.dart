@@ -237,6 +237,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
   // media/nsfw/nsfw_cover_blur.dart。
   'blur_nsfw_covers',
+  // JSON 字符串数组：待确认身份队列里被用户「忽略」的书 / 漫画刮削单元键
+  // （`collection:<id>` / `book:<bookKey>`，BUG-5283，引擎
+  // media/identity/pending_identity.dart）。键里是本机合集自增 id，设备本地。
+  'book_scrape_ignored_works',
   // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
   // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
@@ -408,6 +412,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
   'game_resource_notice_dismissed',
+  // JSON 字符串数组：待确认身份队列里被用户「忽略」的游戏（`game:<id>`，
+  // BUG-5283，引擎 media/identity/pending_identity.dart）。本机自增 id，设备本地。
+  'game_scrape_ignored_works',
   'games_collapsed_collection_ids',
   // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
   // 页头切换钮写入，跨会话记住。
@@ -711,6 +718,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_lookup_pause',
   // bool（默认 true）：锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。
   'music_lyrics_media_session',
+  // bool（默认 true）：曲目有本机 MV 时歌词页 / 全屏歌词动画背景放 MV 画面；false = 始终
+  // 动画背景。设备本地观感偏好（MusicMvBackdropController）。
+  'music_lyrics_mv_backdrop',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
@@ -1067,6 +1077,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
   // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
   'tts_irodori_local',
+  // JSON：朗读声音按作品记（TtsMediaVoices）：`{"books":{bookKey:presetId},
+  // "series":{seriesKey:{语言:presetId}}}`。指向本机预设，设备本地。
+  'tts_media_voices',
   // JSON：TTS 识别后替换（TtsTextRulesStore / TtsTextRuleKind.postRecognition）：
   // 制作有声书语音识别校对时把识别结果改回原文写法再比对。
   'tts_post_recognition_rules',
@@ -1400,6 +1413,12 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   kSrsDayRolloverPendingPrefKeyPrefix,
   kSrsDayRolloverSeenPrefKeyPrefix,
   kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+  // 各配置停放的页面背景图片 / 取色缓存（后缀 = profile uid，
+  // page_backdrop_style.dart 的 kPageBackdropProfileParkedPrefKeyPrefixes）。设备本地。
+  'page_backdrop_image_landscape::',
+  'page_backdrop_image_portrait::',
+  'page_backdrop_module_images::',
+  'page_backdrop_seed_cache::',
   kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的

@@ -219,7 +219,12 @@ class DownloadTaskEntry {
     this.upRateBps,
     this.workIdentity,
     this.coverUrl,
+    this.subtitle,
   });
+
+  /// 卡片副行（资源名 / 来源 / 设备等，与 [builder] 画的卡同一句）；列表外的摘要
+  /// （侧栏下载速览）用它区分同名任务。来源没有时为 null。
+  final String? subtitle;
 
   /// 作品海报（远端 URL）；来源没有时为 null。分组头取组内第一条的海报。
   final String? coverUrl;

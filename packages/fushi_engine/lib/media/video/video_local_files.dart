@@ -22,7 +22,6 @@ import 'package:fushi_core/fushi_core.dart'
     show LocalFileDeleteReport, VideoBookRow, deleteLocalFiles, platformPathKey;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
@@ -255,11 +254,11 @@ Future<LocalFileDeleteReport> deleteLocalVideoFiles({
 /// 纯函数：从同目录文件名清单 [dirFileNames] 里挑出**跟着 [videoFileName] 一起走**
 /// 的 sidecar 外挂字幕文件名（原样返回，便于调用方拼回目录）。
 ///
-/// 归属判据复用 [listSidecarSubtitles]（`<stem>[.lang].srt|ass|ssa|vtt`，大小写
-/// 不敏感），再减去「同目录另一个 stem 更长的**视频文件**也认领的那些」：
-/// `ep01.mkv` 与 `ep01.5.mkv` 并存时，`ep01.5.srt` 按前缀匹配会同时命中两边
-/// （对 `ep01` 而言后缀 `.5.srt` 里的 `5` 正好长得像语言标记），而它显然属于
-/// `ep01.5.mkv`。删 `ep01.mkv` 绝不能顺手带走还在用的那一集的字幕。
+/// 归属判据就是播放器列字幕的那一条 [listSidecarSubtitles]（`<stem>[.lang].srt|ass|
+/// ssa|vtt`，大小写不敏感，「最长主干认领」）：`ep01.mkv` 与 `ep01.5.mkv` 并存时，
+/// `ep01.5.srt` 按前缀匹配会同时命中两边（对 `ep01` 而言后缀 `.5.srt` 里的 `5` 正好
+/// 长得像语言标记），它归 stem 更长的 `ep01.5.mkv`——播放 `ep01.mkv` 不会选它，删
+/// `ep01.mkv` 也绝不顺手带走还在用的那一集的字幕。
 ///
 /// 反过来，`ep01.5.mkv` 若也在同一批删除里，它自己的候选照样包含 `ep01.5.srt`，
 /// 两者并集仍然完整——护栏只挡「实体还在的邻居」，不挡「一起赴死的同伴」。
@@ -269,28 +268,7 @@ List<String> sidecarSubtitlesForDeletedVideo({
 }) {
   final String stem = p.basenameWithoutExtension(videoFileName);
   if (stem.isEmpty) return const <String>[];
-  final List<String> mine = listSidecarSubtitles(stem, dirFileNames);
-  if (mine.isEmpty) return const <String>[];
-  final String stemLower = stem.toLowerCase();
-  final Set<String> claimedByNeighbours = <String>{};
-  for (final String name in dirFileNames) {
-    if (!kVideoExtensions.contains(p.extension(name).toLowerCase())) continue;
-    final String otherStem = p.basenameWithoutExtension(name);
-    // 只有「更长且以本 stem 开头」的邻居才可能抢走本 stem 的候选；其余视频的
-    // sidecar 本就匹配不到这里来。
-    if (otherStem.length <= stem.length) continue;
-    if (!otherStem.toLowerCase().startsWith(stemLower)) continue;
-    for (final String claimed in listSidecarSubtitles(
-      otherStem,
-      dirFileNames,
-    )) {
-      claimedByNeighbours.add(claimed.toLowerCase());
-    }
-  }
-  return <String>[
-    for (final String name in mine)
-      if (!claimedByNeighbours.contains(name.toLowerCase())) name,
-  ];
+  return listSidecarSubtitles(stem, dirFileNames);
 }
 
 /// [videoPaths]（**已过护栏、确定要删**的本机视频文件）各自同目录的 sidecar 外挂

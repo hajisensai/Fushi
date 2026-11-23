@@ -33,7 +33,6 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
@@ -504,7 +503,9 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
     final MusicVideoRow b = widget.binding!;
     switch (b.kind) {
       case MusicVideoKind.local:
-        return _MvSource(video: b.ref);
+      case MusicVideoKind.animeEpisode:
+        final String? file = await resolveMusicVideoLocalFile(_app.database, b);
+        return file == null ? null : _MvSource(video: file);
       case MusicVideoKind.youtube:
         final YoutubeResolvedSource s = await resolveYoutubeSource(
           b.ref,
@@ -515,18 +516,6 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
           mvAudio: s.audioStreamUrl,
           headers: s.httpHeaders,
         );
-      case MusicVideoKind.animeEpisode:
-        final ({String bookUid, int episodeIndex})? ref =
-            parseAnimeEpisodeMusicVideoRef(b.ref);
-        if (ref == null) return null;
-        final VideoBookRow? row = await VideoBookRepository(
-          _app.database,
-        ).getByBookUid(ref.bookUid);
-        if (row == null) return null;
-        for (final ({int index, String path}) f in themeSongFilesOf(row)) {
-          if (f.index == ref.episodeIndex) return _MvSource(video: f.path);
-        }
-        return null;
     }
     return null;
   }
