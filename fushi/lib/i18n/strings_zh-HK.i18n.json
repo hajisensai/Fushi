@@ -3905,6 +3905,8 @@
   "game_audio_resource_id": "音頻資源 ID",
   "game_audio_tracks": "活躍音軌",
   "game_auto_cover": "自動獲取封面",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "返回捕獲工作台",
   "game_back_to_library": "返回遊戲庫",
   "game_capture_active": "正在捕獲",

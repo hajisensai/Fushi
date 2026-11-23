@@ -1072,6 +1072,95 @@ void main() {
     expect(identical(standalone.debugPopupHost, shared), isFalse);
   });
 
+  group('反馈 q9Jcu_Zr2_：新句自动查词', () {
+    Future<SharedLookupPopupHost> pumpWithSharedHost(
+      WidgetTester tester,
+    ) async {
+      final SharedLookupPopupHost shared = SharedLookupPopupHost();
+      addTearDown(shared.dispose);
+      await tester.pumpWidget(
+        _wrapPage(
+          SharedLookupPopupScope(
+            host: shared,
+            child: const Scaffold(body: TexthookerPage()),
+          ),
+        ),
+      );
+      await tester.pump();
+      return shared;
+    }
+
+    Iterable<String> lookedUp(SharedLookupPopupHost shared) => shared
+        .controller
+        .entries
+        .map((DictionaryPopupEntry e) => e.searchTerm)
+        .where((String term) => term.isNotEmpty);
+
+    Future<void> pumpFrames(WidgetTester tester) async {
+      for (int i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+
+    testWidgets('默认关：新句到达只显示，不弹查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      final FushiSelectableChip chip = tester.widget<FushiSelectableChip>(
+        find.byKey(const ValueKey<String>('game-auto-lookup')),
+      );
+      expect(chip.selected, isFalse, reason: '自动弹窗挡画面，默认必须关');
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('打开后新句到达自动从第一个可查字起查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(
+        lookedUp(shared),
+        contains('今日は晴れ」'),
+        reason: '跳过开引号，从「今」起把到行尾的一段交给最长匹配，与手点「今」同一查询串',
+      );
+      final String lineId = TexthookerService.instance.entries.last.id;
+      final FushiCard card = tester.widget<FushiCard>(
+        find.byKey(ValueKey<String>('game-line-$lineId')),
+      );
+      expect(card.selected, isTrue, reason: '自动查词与手点一样选中该句，制卡取这句');
+
+      // 每来一句都跟着查最新那句。
+      TexthookerService.instance.appendLine('明日は雨');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), contains('明日は雨'));
+    });
+
+    testWidgets('关掉跟随实时（在回看历史）时不自动查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey<String>('game-follow-live')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('整句没有可查字时不弹卡', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「……」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+  });
+
   testWidgets('制卡热键只作用于本页在屏上的会话：tab 藏起或栈归查词 tab 时不武装', (
     WidgetTester tester,
   ) async {

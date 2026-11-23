@@ -1316,6 +1316,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_）：新台词到达且列表在跟随实时时，
+  /// 自动从该句第一个可查字起弹查词。默认关——自动弹窗会挡画面、频繁打扰。
+  bool get texthookerAutoLookupNewLines =>
+      getPref('texthooker_auto_lookup_new_lines', defaultValue: false) as bool;
+
+  Future<void> setTexthookerAutoLookupNewLines(bool value) async {
+    await setPref('texthooker_auto_lookup_new_lines', value);
+    notifyListeners();
+  }
+
   // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
 
   /// legacy：v55 之前用户添加的 galgame 列表（单一 JSON 数组落 KV 表）。

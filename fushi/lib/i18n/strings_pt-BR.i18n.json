@@ -3905,6 +3905,8 @@
   "game_audio_resource_id": "ID do recurso de áudio",
   "game_audio_tracks": "Faixas de áudio ativas",
   "game_auto_cover": "Buscar capa automaticamente",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "Voltar para espaço de captura",
   "game_back_to_library": "Voltar para biblioteca de jogos",
   "game_capture_active": "Captura ativa",

@@ -3905,6 +3905,8 @@
   "game_audio_resource_id": "Audiobron-ID",
   "game_audio_tracks": "Actieve audiotracks",
   "game_auto_cover": "Omslag automatisch ophalen",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "Terug naar opnamewerkruimte",
   "game_back_to_library": "Terug naar spelbibliotheek",
   "game_capture_active": "Opname is actief",
