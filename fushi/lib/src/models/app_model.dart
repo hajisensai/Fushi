@@ -5453,7 +5453,7 @@ class AppModel
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
       await _resetSrsStorageHost(isMainProcess: true);
-      // 服务器曲目的离线副本（v172）：进程内索引跟着表走，播放项据此换成本地文件。
+      // 服务器曲目的离线副本（v173）：进程内索引跟着表走，播放项据此换成本地文件。
       MusicServerDownloadIndex.instance.attach(_database);
       // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v174 补发队列）：「连不上」的判据补上
       // Jellyfin 传输层自己的异常；补发时找当前配置的 Jellyfin / Subsonic。
