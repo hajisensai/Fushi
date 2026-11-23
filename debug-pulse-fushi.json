@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T05:09:40Z",
+ "generatedAt": "2026-11-23T05:14:40Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
-  "seq": 31707
+  "sha": "d095b87a48ab1cfd8dccc7d3e23b83834ae9508a",
+  "seq": 31711
  },
  "builds": [
   {
@@ -111,9 +111,10 @@
   }
  ],
  "pending": {
-  "headSha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
-  "headSeq": 31707,
+  "headSha": "d095b87a48ab1cfd8dccc7d3e23b83834ae9508a",
+  "headSeq": 31711,
   "prs": [
+   4228,
    4211,
    4208,
    4166,
@@ -148,15 +149,15 @@
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793460"
    },
    "windows": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
    },
    "macos": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
    },
    "ios": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
    }
   }
@@ -394,6 +395,15 @@
    "mergedAt": "2026-11-23T04:07:26Z",
    "additions": 195,
    "deletions": 124,
+   "labels": []
+  },
+  "4228": {
+   "number": 4228,
+   "title": "docs(bugs): 长跑拍板项巡检补记 BUG-4959 / BUG-5083 状态，登记 BUG-5271",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T05:10:04Z",
+   "additions": 17,
+   "deletions": 8,
    "labels": []
   },
   "4229": {
