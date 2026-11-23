@@ -1,4 +1,4 @@
-## BUG-5340 · 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上
+## BUG-5347 · 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上
 - **报告**：2026-11-23（拍板台 rf--UcsGta 实施时发现；来源 GitHub issue #4244）
 - **真实性**：✅ 真缺口（读代码确认）。拍板台 rf--UcsGta 的前提是「应用外查词走 `dictionary_page_mixin.dart` 默认的 `buildAdvancedMiningSections`、只差句子分区」，与代码不符：
   - Windows / macOS / X11 的应用外查词卡是原生覆盖窗里的 WebView（`global_lookup_controller.dart` `_lookupExternal` → `global_lookup_host.html` + popup.js），**不是** `DictionaryPageMixin` 宿主；宿主从不注入 `window.advancedMiningEnabled`，也不处理 `openAdvancedMining` 桥（`overlay_bridge_handlers.dart` 的分派表里没有），popup.js（`assets/popup/popup.js:6862`）因此根本不渲染「高级制卡」按钮。
