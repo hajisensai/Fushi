@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -1807,6 +1808,106 @@ void main() {
       }
       expect(File(p.join(userLocal.path, 'readme.txt')).existsSync(), isTrue);
       expect(File(p.join(ext.path, 'manifest.json')).existsSync(), isTrue);
+    });
+
+    test('外部清单原地改写保留外部管线写的未知键（拍板 pr4255a）', () async {
+      final Directory ext = Directory(p.join(tmp.path, 'external_keys'))
+        ..createSync();
+      final File manifestFile = File(p.join(ext.path, 'manifest.json'));
+      final MangaAudioRenderer external = MangaAudioRenderer(
+        backend: backend,
+        manifestFile: manifestFile,
+        ownsDirectory: false,
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaAudioScript script = script0()..voices.byCharacter.clear();
+      await external.render(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        previous: null,
+        ledger: ledger,
+        onProgress: (int done, int total) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      // 模拟外部管线：在清单顶层与每行塞进自己的字段。
+      final Map<String, dynamic> raw =
+          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      raw['pipeline'] = <String, Object?>{'name': 'ext', 'rev': 2};
+      for (final dynamic line in raw['lines'] as List<dynamic>) {
+        final Map<String, dynamic> m = line as Map<String, dynamic>;
+        m['extTag'] = 'tag-${m['id']}';
+      }
+      manifestFile.writeAsStringSync(jsonEncode(raw));
+      Map<String, dynamic> onDisk() =>
+          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      Map<String, String?> tags() => <String, String?>{
+        for (final Map<String, dynamic> l
+            in (onDisk()['lines'] as List<dynamic>)
+                .cast<Map<String, dynamic>>())
+          l['id'] as String: l['extTag'] as String?,
+      };
+      final Map<String, String?> allTags = tags();
+      expect(allTags, isNotEmpty);
+
+      // 单句换种子重生成：改的这句与其余句都留着自己的字段。
+      final MangaRenderManifest manifest = (await MangaRenderManifest.load(
+        manifestFile,
+      ))!;
+      final MangaRegenerateCandidate candidate = await external.regenerate(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        lineId: 'p2b0',
+        seed: 100,
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(
+        await external.keepCandidate(
+          script: script,
+          manifest: manifest,
+          ledger: ledger,
+          candidate: candidate,
+        ),
+        isTrue,
+      );
+      expect(onDisk()['pipeline'], <String, Object?>{'name': 'ext', 'rev': 2});
+      expect(tags(), allTags);
+      final Map<String, dynamic> p2b0 = (onDisk()['lines'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((Map<String, dynamic> l) => l['id'] == 'p2b0');
+      expect(p2b0['f'], 'p2b0.s100.m4a');
+
+      // 拿掉一句：它的字段随之消失，别的句子不受影响。
+      script.replaceLine(
+        'p0b1',
+        (MangaScriptLine l) => l.copyWith(kind: CastLineKind.skip),
+      );
+      await external.dropUnreadLines(
+        script: script,
+        manifest: manifest,
+        ledger: ledger,
+        lineIds: <String>['p0b1'],
+      );
+      expect(tags(), <String, String?>{...allTags}..remove('p0b1'));
+
+      // 整卷重跑（按角色重生成走这条）：顶层与仍在的句子的字段都带上；拿掉的那句
+      // 改回能读后重新出，不复活旧字段。
+      script.replaceLine(
+        'p0b1',
+        (MangaScriptLine l) => l.copyWith(kind: CastLineKind.spoken),
+      );
+      await external.render(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        previous: manifest,
+        ledger: ledger,
+        onProgress: (int done, int total) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(onDisk()['pipeline'], <String, Object?>{'name': 'ext', 'rev': 2});
+      expect(tags(), <String, String?>{...allTags, 'p0b1': null});
     });
   });
 
