@@ -62,6 +62,35 @@ Widget _cupertinoContextMenuBuilder(
   );
 }
 
+/// 输入框正文 / 占位符的样式收口：行距**上下均分**（[TextLeadingDistribution.even]）。
+///
+/// 字阶给的行高（M3E bodyLarge 24/16 = 1.5、Apple 单行 1.25）比字体自身的
+/// ascent + descent 高，多出来的行距 Flutter 默认按字体 ascent : descent 的比例
+/// 分（proportional）。界面字体的 ascent 远大于 descent（Segoe UI 1.08 : 0.25、
+/// 微软雅黑 1.06 : 0.26、测试字体 0.75 : 0.25），多出的行距几乎全加在字形上方：
+/// 行盒在框里是居中的，字形却落在行盒中线下方（16 号、1.5 倍行高低约 2px），
+/// 正文与占位符看上去都偏下（用户 2026-11-24「输入框、搜索框的文字都没有上下
+/// 居中」）。均分后行盒中线就是字体 ascent / descent 盒的中线。只改行距在行盒内
+/// 的分配，行盒高度（即框高、内边距）不变，M3E 与 Apple 的外观规格不受影响。
+///
+/// 调用方给的样式（常是 inherit: false 的主题样式）原样保留，只覆盖行距分配；
+/// [WidgetStateTextStyle] 原样返回（copyWith 会丢掉它的状态解析）。
+TextStyle fushiFieldTextStyle(TextStyle? style) {
+  if (style is WidgetStateTextStyle) return style;
+  return (style ?? const TextStyle()).copyWith(
+    leadingDistribution: TextLeadingDistribution.even,
+  );
+}
+
+/// [fushiFieldTextStyle] 的占位符版：InputDecorator 的占位符样式是
+/// `bodyLarge.merge(正文样式).merge(hintStyle)`，调用方的 hintStyle 若是
+/// inherit: false 的完整样式会整个顶掉正文样式里的均分行距，这里补回。
+InputDecoration? _fushiFieldEvenHint(InputDecoration? decoration) {
+  final TextStyle? hint = decoration?.hintStyle;
+  if (decoration == null || hint == null) return decoration;
+  return decoration.copyWith(hintStyle: fushiFieldTextStyle(hint));
+}
+
 /// 装饰是不是「搜索框」：前缀图标是放大镜。iOS 上搜索框是全胶囊
 /// （UISearchBar），普通输入框是圆角 10 的矩形——这是唯一能从调用点无侵入
 /// 读出的信号。
@@ -852,11 +881,13 @@ class FushiTextFieldControl extends StatelessWidget {
         controller: controller,
         focusNode: focusNode,
         undoController: undoController,
-        decoration: fushiMd3FieldDecoration(context, decoration),
+        decoration: _fushiFieldEvenHint(
+          fushiMd3FieldDecoration(context, decoration),
+        ),
         keyboardType: keyboardType,
         textInputAction: textInputAction,
         textCapitalization: textCapitalization,
-        style: style,
+        style: fushiFieldTextStyle(style),
         strutStyle: strutStyle,
         textAlign: textAlign,
         textAlignVertical:
@@ -1025,9 +1056,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final FushiAppleColors apple = appleColorsOf(context);
     final InputDecoration? decoration = _c.decoration;
     // 占位符与正文同字号、secondaryLabel 色（iOS placeholder）。
-    final TextStyle hintStyle = style
-        .copyWith(color: apple.secondaryLabel)
-        .merge(decoration?.hintStyle);
+    final TextStyle hintStyle = fushiFieldTextStyle(
+      style.copyWith(color: apple.secondaryLabel).merge(decoration?.hintStyle),
+    );
     final Color cursorColor = hasError
         ? (_c.cursorErrorColor ?? apple.destructive)
         : (_c.cursorColor ?? apple.accent);
@@ -1248,19 +1279,18 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 触屏 / 桌面窄窗按 iOS 27（正文 17、搜索胶囊高 36、输入框圆角 10 无描边）。
     final bool desktop = FushiAppleMetrics.of(context).desktop;
 
-    final TextStyle style = (tt.bodyLarge ?? const TextStyle())
-        .copyWith(
-          fontSize: desktop ? 13 : 17,
-          color: enabled ? apple.label : apple.tertiaryLabel,
-          // 单行框：正文主题行高 1.5 的行距按字体 ascent/descent 比例分配，
-          // CJK 字体多分在下方，文字明显低于放大镜 / 胶囊中线。收紧行高并
-          // 上下均分，文字与占位符落在框的光学中线上。
-          height: _c.maxLines == 1 ? 1.25 : null,
-          leadingDistribution: _c.maxLines == 1
-              ? TextLeadingDistribution.even
-              : null,
-        )
-        .merge(_c.style);
+    // 单行框收紧行高（1.25）；行距一律上下均分（[fushiFieldTextStyle]），
+    // 均分放在合并调用方样式**之后**：调用方常传 inherit: false 的主题样式，
+    // merge 会整个顶掉这里的设置，文字又落回行盒中线下方。
+    final TextStyle style = fushiFieldTextStyle(
+      (tt.bodyLarge ?? const TextStyle())
+          .copyWith(
+            fontSize: desktop ? 13 : 17,
+            color: enabled ? apple.label : apple.tertiaryLabel,
+            height: _c.maxLines == 1 ? 1.25 : null,
+          )
+          .merge(_c.style),
+    );
 
     final Widget editable = _buildEditable(context, style, hasError);
 
@@ -1697,11 +1727,13 @@ class FushiTextFormFieldControl extends StatelessWidget {
         initialValue: initialValue,
         focusNode: focusNode,
         forceErrorText: forceErrorText,
-        decoration: fushiMd3FieldDecoration(context, decoration),
+        decoration: _fushiFieldEvenHint(
+          fushiMd3FieldDecoration(context, decoration),
+        ),
         keyboardType: keyboardType,
         textCapitalization: textCapitalization,
         textInputAction: textInputAction,
-        style: style,
+        style: fushiFieldTextStyle(style),
         strutStyle: strutStyle,
         textDirection: textDirection,
         textAlign: textAlign,

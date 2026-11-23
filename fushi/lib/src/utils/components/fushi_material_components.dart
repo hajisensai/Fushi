@@ -1409,9 +1409,10 @@ class FushiSearchField extends StatelessWidget {
                   // 占位符与正文同字号、只换颜色（M3 规格；与 BUG-2973 对
                   // FushiTextField 的修法同一口径）：小一号的占位符在竖直居中的
                   // 单行里按基线对齐，会比正文偏下。
-                  hintStyle: tokens.type.listTitle.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  hintStyle: fushiFieldTextStyle(tokens.type.listTitle)
+                      .copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                   prefixIcon: leading == null
                       ? const FushiIcon(
                           FushiIcons.search,
@@ -1439,7 +1440,9 @@ class FushiSearchField extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               autofocus: autofocus,
-              style: tokens.type.listTitle,
+              // 行距上下均分：bodyLarge 1.5 倍行高按比例分配时字形落在行盒
+              // 中线下方约 2px（见 [fushiFieldTextStyle]）。
+              style: fushiFieldTextStyle(tokens.type.listTitle),
               textAlignVertical: TextAlignVertical.center,
               decoration: decoration,
               keyboardType: keyboardType,
@@ -7669,10 +7672,16 @@ class FushiCompactSearchRow extends StatelessWidget {
                 key: fieldKey,
                 controller: controller,
                 focusNode: focusNode,
-                style: tokens.type.listTitle,
+                // 正文行距上下均分（[fushiFieldTextStyle]）；占位符与正文同字号、
+                // 只换颜色——小一号的占位符按基线对齐到正文上，比框中线偏下
+                // （同 BUG-2973）。行盒在 44 高的行里竖直居中。
+                style: fushiFieldTextStyle(tokens.type.listTitle),
+                textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   hintText: hintText,
-                  hintStyle: tokens.type.listSubtitle,
+                  hintStyle: fushiFieldTextStyle(
+                    tokens.type.listTitle,
+                  ).copyWith(color: tokens.type.listSubtitle.color),
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                   // 嵌在卡片里的无框输入：不吃全局输入框主题的填充底。
