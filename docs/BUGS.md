@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4648 条。点号进各自文件。
+> 共 4649 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5349](bugs/BUG-5349-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
 | [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | 🚧 | 🚧 | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
 | [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | 🚧 | 🚧 | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
