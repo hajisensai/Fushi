@@ -190,8 +190,12 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   final Map<String, MusicServerDownloadSidecar?> _loudness =
       <String, MusicServerDownloadSidecar?>{};
 
-  /// 每次快照换代 +1：异步查存在性期间又来了新快照，旧的那轮作废。
+  /// 每次快照换代 +1：异步查存在性期间又来了新快照，旧的那轮作废（[dispose] 也 +1，
+  /// 在途那轮查完文件后不再碰已释放的自己）。
   int _generation = 0;
+
+  /// 已 [dispose]：在途的异步读（[refreshLoudness]）落定后不再通知听众。
+  bool _disposed = false;
 
   /// 接到 [db]（同一个库重复调用是空操作），并装成进程级 [musicServerLocalCopyLookup]。
   void attach(FushiDatabase db) {
@@ -302,6 +306,7 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   /// 刚在离线副本旁写了响度（客户端测量）：重读这一份并推给听众（不必等表变化）。
   Future<void> refreshLoudness(String path) async {
     final MusicServerDownloadSidecar? l = await _readLoudness(path);
+    if (_disposed) return;
     _loudness[path] = l;
     notifyListeners();
   }
@@ -346,6 +351,9 @@ class MusicServerDownloadIndex extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    // 作废在途的 [_apply]：订阅取消挡不住已经在查文件存在性 / 读响度的那一轮。
+    _generation++;
     unawaited(_sub?.cancel());
     if (musicServerLocalCopyLookup == lookup) {
       musicServerLocalCopyLookup = null;
