@@ -85,6 +85,8 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart'
     show RemoteAudioMaterializer;
+import 'package:fushi/src/mining/mining_playback_volume_gain.dart'
+    show musicMiningClipGainDb;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -328,6 +330,7 @@ typedef MusicLyricsClipExtractor =
       required String outputPath,
       required int audioChannels,
       required String audioBitrate,
+      required double? gainDb,
       required void Function(String summary) onFailure,
     });
 
@@ -339,6 +342,7 @@ Future<String?> _ffmpegClip({
   required String outputPath,
   required int audioChannels,
   required String audioBitrate,
+  required double? gainDb,
   required void Function(String summary) onFailure,
 }) => TtsChannel.instance.extractAudioSegment(
   inputPath: inputPath,
@@ -349,6 +353,7 @@ Future<String?> _ffmpegClip({
   audioBitrate: audioBitrate,
   onFailure: onFailure,
   httpHeaders: httpHeaders,
+  gainDb: gainDb,
 );
 
 @visibleForTesting
@@ -1273,6 +1278,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             message: reason,
           );
         }
+        // 句子音频跟随播放音量（d7mXlstcv9）：与播放同一份 ReplayGain + 当前音量滑块；
+        // 开关关 → null，参数与原始电平裁剪逐字节相同。
+        final double? gainDb = musicMiningClipGainDb(
+          followPlayback: appModel.miningAudioFollowPlaybackVolume,
+          item: item,
+          settings: _engine.currentSettings,
+        );
         String? failure;
         audioPath = await musicLyricsClipExtractor(
           inputPath: cutSource.inputPath,
@@ -1285,6 +1297,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           ),
           audioChannels: compression.audioChannels,
           audioBitrate: compression.audioBitrate,
+          gainDb: gainDb,
           onFailure: (String summary) => failure ??= summary,
         );
         if (audioPath == null) {

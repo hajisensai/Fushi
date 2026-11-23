@@ -427,9 +427,17 @@ void main() {
       find.byType(AdaptiveSettingsSliderRow),
       findsNWidgets(Platform.isWindows ? 5 : 4),
     );
-    // 开关只有「句子音频跟随播放倍速」（PR #1537，与音频质量同组）与「动图只播放
-    // 一次」（反馈 ZxyIMK-C5V，与动图格式同组）；通用设置的开关一个都不该出现在这个子页。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(2));
+    // 开关只有「句子音频跟随播放倍速」（PR #1537，与音频质量同组）、「句子音频跟随
+    // 播放音量」（反馈 d7mXlstcv9，同组）与「动图只播放一次」（反馈 ZxyIMK-C5V，与动图
+    // 格式同组）；通用设置的开关一个都不该出现在这个子页。
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(3));
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Match sentence audio to playback volume',
+      ),
+      findsOneWidget,
+    );
     expect(
       find.widgetWithText(
         AdaptiveSettingsSwitchRow,

@@ -7109,6 +7109,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "Cümle sesini oynatma hızına uydur",
   "mining_audio_follow_playback_speed_hint": "Sesli kitap 1×'ten hızlı veya yavaş oynatılırken karttaki cümle sesi, perde korunarak aynı hıza zaman esnetmesiyle uyarlanır. Sesli kitaptan kart oluşturmada geçerlidir; karttaki TTS kelime sesi yedek ses hızını izler.",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Cümleden önce ses payı",
   "mining_audio_head_pad_hint": "İlk hece kesilmesin diye altyazı başlamadan önce tutulan ek ses. Asla önceki satıra taşmaz.",
   "mining_audio_pad_readout": "${ms} ms",

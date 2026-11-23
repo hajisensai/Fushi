@@ -7109,6 +7109,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "Khớp âm thanh câu với tốc độ phát",
   "mining_audio_follow_playback_speed_hint": "Khi sách nói phát nhanh hoặc chậm hơn 1×, âm thanh câu trên thẻ được co giãn thời gian theo cùng tốc độ và giữ nguyên cao độ. Áp dụng cho tạo thẻ từ sách nói; âm thanh từ TTS trên thẻ theo tốc độ giọng dự phòng.",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Đệm âm thanh trước câu",
   "mining_audio_head_pad_hint": "Phần âm thanh thêm giữ lại trước khi phụ đề bắt đầu, để âm tiết đầu không bị cắt. Không bao giờ lấn sang dòng trước.",
   "mining_audio_pad_readout": "${ms} ms",

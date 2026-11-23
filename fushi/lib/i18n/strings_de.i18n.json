@@ -7109,6 +7109,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "Satz-Audio an Wiedergabegeschwindigkeit anpassen",
   "mining_audio_follow_playback_speed_hint": "Wenn das Hörbuch schneller oder langsamer als 1× läuft, wird das Satz-Audio auf der Karte mit erhaltener Tonhöhe auf dieselbe Geschwindigkeit gedehnt. Gilt für Hörbuch-Mining; TTS-Wortaudio auf Karten folgt der Geschwindigkeit der Ersatzstimme.",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Audio-Puffer vor dem Satz",
   "mining_audio_head_pad_hint": "Zusätzliches Audio vor Beginn des Untertitels, damit die erste Silbe nicht abgeschnitten wird. Reicht nie in die vorherige Zeile hinein.",
   "mining_audio_pad_readout": "${ms} ms",

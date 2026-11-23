@@ -7109,6 +7109,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "Согласовывать аудио предложения со скоростью воспроизведения",
   "mining_audio_follow_playback_speed_hint": "Если аудиокнига играет быстрее или медленнее 1×, аудио предложения на карточке растягивается по времени до той же скорости с сохранением высоты тона. Действует для карточек из аудиокниг; TTS-произношение слов на карточках следует скорости резервного голоса.",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Запас аудио перед предложением",
   "mining_audio_head_pad_hint": "Дополнительное аудио перед началом субтитра, чтобы не обрезался первый слог. Никогда не заходит на предыдущую реплику.",
   "mining_audio_pad_readout": "${ms} ms",

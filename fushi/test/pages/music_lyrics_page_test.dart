@@ -169,8 +169,14 @@ class _LyricsAppModel extends AppModel {
   final _Backend backend;
   final List<String> searches = <String>[];
 
+  // 与真 AppModel 同口径从偏好读音量（制卡句子音频跟随播放音量要读到它）。
   late final MusicPlayerEngine _engine = MusicPlayerEngine(
     backendFactory: () => backend,
+    baseSettings: () => MusicOutputSettings(
+      gapless: true,
+      replayGain: MusicReplayGainMode.off,
+      volume: prefsRepo.musicVolume,
+    ),
   );
 
   late final MusicSession _session = MusicSession(
@@ -735,8 +741,8 @@ void main() {
   });
 
   testWidgets('长按查词：查行内起点文本、按设置暂停；制卡带音乐出处与行时间窗', (WidgetTester tester) async {
-    final List<({String input, int startMs, int endMs})> clips =
-        <({String input, int startMs, int endMs})>[];
+    final List<({String input, int startMs, int endMs, double? gainDb})> clips =
+        <({String input, int startMs, int endMs, double? gainDb})>[];
     musicLyricsClipExtractor =
         ({
           required String inputPath,
@@ -746,14 +752,22 @@ void main() {
           required String outputPath,
           required int audioChannels,
           required String audioBitrate,
+          required double? gainDb,
           required void Function(String summary) onFailure,
         }) async {
-          clips.add((input: inputPath, startMs: startMs, endMs: endMs));
+          clips.add((
+            input: inputPath,
+            startMs: startMs,
+            endMs: endMs,
+            gainDb: gainDb,
+          ));
           expect(httpHeaders, isEmpty, reason: '本机文件不带请求头');
           File(outputPath).writeAsBytesSync(<int>[1, 2, 3]);
           return outputPath;
         };
     await pumpPage(tester);
+    // 反馈 d7mXlstcv9：句子音频跟随播放音量（默认开）——播放器音量调到 50。
+    await tester.runAsync(() => app.setMusicVolume(50));
     await app.musicSession.engine.play();
     backend.controller.add(
       const MusicBackendPosition(Duration(milliseconds: 4200), null),
@@ -785,6 +799,13 @@ void main() {
     expect(clips.single.input, item().path, reason: '本机文件原样交给 ffmpeg');
     expect(clips.single.startMs, 3500, reason: '行 [4 s, 8 s) 前后各扩 0.5 s');
     expect(clips.single.endMs, 8500);
+    expect(
+      clips.single.gainDb,
+      closeTo(-18.06, 0.01),
+      reason:
+          '默认跟随播放音量：mpv 音量 50 是立方曲线 (0.5)³ ≈ -18.06 dB；曲目没有 '
+          'ReplayGain 数据，与播放端一样不加响度增益',
+    );
     final AnkiMiningContext ctx = anki.mined.single;
     expect(ctx.sentence, '沈むように');
     expect(ctx.sentenceAudioPath, isNotNull);
@@ -805,6 +826,10 @@ void main() {
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
 
+    // 关掉「跟随播放音量」→ 片段按原始电平裁（gainDb = null，参数与现状逐字节相同）。
+    app.toggleMiningAudioFollowPlaybackVolume();
+    expect(app.miningAudioFollowPlaybackVolume, isFalse);
+
     // BUG-4933：点 ✓ 选「覆盖这张」真的按 id 覆写那张卡（此前落到基类空实现，静默
     // 不写），上下文与新制同一口径（句子 / 句子音频 / 出处）；覆写不新建卡、不进制卡历史。
     final Object? overwrite = await tester.runAsync<Object?>(
@@ -819,6 +844,8 @@ void main() {
     final MinePopupResult overwriteResult = overwrite! as MinePopupResult;
     expect(overwriteResult.ankiConnect, isTrue);
     expect(overwriteResult.noteId, 41);
+    expect(clips, hasLength(2), reason: '覆写同样重截句子音频');
+    expect(clips.last.gainDb, isNull, reason: '开关关：不跟随播放音量');
     expect(anki.mined, hasLength(1), reason: '覆写不走 mineEntry 新建卡');
     final ({int noteId, AnkiMiningContext context}) update =
         anki.updated.single;
@@ -857,6 +884,7 @@ void main() {
           required String outputPath,
           required int audioChannels,
           required String audioBitrate,
+          required double? gainDb,
           required void Function(String summary) onFailure,
         }) async {
           clips.add((startMs: startMs, endMs: endMs));

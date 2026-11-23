@@ -477,6 +477,8 @@ class TtsChannel {
     double? tempo,
     // [inputPath] 是远端地址（流式有声书）时的鉴权头；本机文件留空。
     Map<String, String> httpHeaders = const <String, String>{},
+    // 片段整体增益（dB，`-af volume`）；null = 原始电平。制卡跟随播放音量（d7mXlstcv9）。
+    double? gainDb,
   }) {
     // 全平台一律 ffmpeg 裁剪：桌面 CliFfmpegBackend、移动端 KitFfmpegBackend
     // （resolveFfmpegBackend 按平台分流），消除原 Android 原生 Transformer +
@@ -491,6 +493,7 @@ class TtsChannel {
       audioBitrate: audioBitrate,
       tempo: tempo,
       httpHeaders: httpHeaders,
+      gainDb: gainDb,
     );
   }
 

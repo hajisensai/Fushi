@@ -7109,6 +7109,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "句子音頻跟隨播放倍速",
   "mining_audio_follow_playback_speed_hint": "有聲書以非 1 倍速播放時，卡片的句子音頻按同一倍率變速不變調；對有聲書制卡生效；卡片的 TTS 單詞發音按「兜底發音倍速」變速。",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "句子音頻開頭餘量",
   "mining_audio_head_pad_hint": "字幕開始前多保留這麼多音頻，避免首音被切掉；不會越過上一句。",
   "mining_audio_pad_readout": "${ms} ms",

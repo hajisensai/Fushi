@@ -13072,6 +13072,12 @@ class AppModel
   void toggleMiningAudioFollowPlaybackSpeed() =>
       prefsRepo.toggleMiningAudioFollowPlaybackSpeed();
 
+  /// 制卡句子音频跟随播放音量（默认开，d7mXlstcv9）。
+  bool get miningAudioFollowPlaybackVolume =>
+      prefsRepo.miningAudioFollowPlaybackVolume;
+  void toggleMiningAudioFollowPlaybackVolume() =>
+      prefsRepo.toggleMiningAudioFollowPlaybackVolume();
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

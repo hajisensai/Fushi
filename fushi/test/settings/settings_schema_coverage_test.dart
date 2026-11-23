@@ -1105,6 +1105,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // buildFfmpegClipArgs tempo 参数）+ 偏好写穿 + 阅读器制卡调用点源码守卫，都在专项测试里。
   'cardCreation/Match sentence audio to playback speed':
       'test/settings/mining_audio_follow_playback_speed_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  // 制卡句子音频跟随播放音量（d7mXlstcv9）：效果在 ffmpeg `-af volume`（纯函数
+  // buildFfmpegVolumeFilter / 增益换算）+ 偏好写穿 + 歌曲 / 有声书制卡调用点，都在专项测试里。
+  'cardCreation/Match sentence audio to playback volume':
+      'test/settings/mining_audio_follow_playback_volume_test.dart + test/pages/music_lyrics_page_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（fushi/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 fushi_anki 真制卡

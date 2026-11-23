@@ -7109,6 +7109,8 @@
   "mining_app_audio_unsupported": "需要 Android 10 及以上",
   "mining_audio_follow_playback_speed": "句子音频跟随播放倍速",
   "mining_audio_follow_playback_speed_hint": "有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；对有声书制卡生效；卡片的 TTS 单词发音按「兜底发音倍速」变速。",
+  "mining_audio_follow_playback_volume": "句子音频跟随播放音量",
+  "mining_audio_follow_playback_volume_hint": "歌曲和有声书卡片里的句子音频套用播放时听到的增益：歌曲的 ReplayGain 加上当前音量滑块。关掉则一律按源文件原始音量截取。静音时不跟随。",
   "mining_audio_head_pad": "句子音频开头余量",
   "mining_audio_head_pad_hint": "字幕开始前多保留这么多音频，避免首音被切掉；不会越过上一句。",
   "mining_audio_pad_readout": "${ms} 毫秒",
