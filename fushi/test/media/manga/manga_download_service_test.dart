@@ -436,6 +436,17 @@ void main() {
     expect(payload.images[2].size.width, 102);
     expect(payload.images[2].size.height, 152);
     expect(await isChapterDownloaded(bookDir, '/chapter/1'), isTrue);
+    // 每页从源端哪一页下来记进旁注（互联 host 让这章下载前后报同一个页身份，
+    // review-interconnect-page-id-on-download），并且与 manga.json 逐页对得上。
+    final List<MangaChapterSourcePage?> sourcePages =
+        await readMangaChapterSourcePages(chapterDir);
+    expect(
+      <String?>[
+        for (int i = 0; i < payload.images.length; i++)
+          mangaChapterSourcePageKey(sourcePages, payload, i),
+      ],
+      <String?>[for (int i = 0; i < 3; i++) 'fake\u0000\u0000p$i'],
+    );
     expect(waits, isEmpty);
     downloads.dispose();
   });

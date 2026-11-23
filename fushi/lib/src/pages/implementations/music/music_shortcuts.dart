@@ -1,5 +1,7 @@
-/// 音乐模块的键盘 / 鼠标派发（[ShortcutScope.music]）：曲库页与歌词页共用一份执行体，
-/// 两处按键行为一致（用户 2026-11-02「不要做成不同模块交互方式都不一样」）。
+/// 音乐模块的键盘 / 鼠标派发（[ShortcutScope.music] / [ShortcutScope.musicPlayer]）：曲库页
+/// 与歌词页共用一份执行体，两处按键行为一致（用户 2026-11-02「不要做成不同模块交互方式都
+/// 不一样」）。唯一的页面差异是播放页多解析一组 [ShortcutScope.musicPlayer]（默认裸 ←/→
+/// ±5 秒，拍板台 vo1KPp0_Rh）：曲库页的裸方向键要留给网格焦点移动。
 library;
 
 import 'dart:async';
@@ -33,10 +35,12 @@ bool dispatchMusicShortcut(ShortcutAction? action, MusicPlayerEngine engine) {
       unawaited(engine.skipPrevious());
       return true;
     case ShortcutAction.musicSeekForward:
+    case ShortcutAction.musicPlayerSeekForward:
       if (!engine.isActive) return false;
       unawaited(engine.seekRelative(const Duration(seconds: 5)));
       return true;
     case ShortcutAction.musicSeekBackward:
+    case ShortcutAction.musicPlayerSeekBackward:
       if (!engine.isActive) return false;
       unawaited(engine.seekRelative(const Duration(seconds: -5)));
       return true;
@@ -45,7 +49,61 @@ bool dispatchMusicShortcut(ShortcutAction? action, MusicPlayerEngine engine) {
   }
 }
 
-/// 音乐页键事件节点的 `onKeyEvent` 本体：按 [ShortcutScope.music] 解析后派发。
+/// 音乐键事件节点挂在哪种页面上：决定按哪几组 scope 解析。
+enum MusicShortcutSurface {
+  /// 曲库页（含专辑 / 歌单等列表页）：裸方向键是网格焦点移动，只解析 [ShortcutScope.music]。
+  library(<ShortcutScope>[ShortcutScope.music]),
+
+  /// 全屏播放页 / 歌词页：没有网格焦点要移，先解析播放页独有的
+  /// [ShortcutScope.musicPlayer]（裸 ←/→ ±5 秒），未命中再解析 [ShortcutScope.music]。
+  player(<ShortcutScope>[ShortcutScope.musicPlayer, ShortcutScope.music]);
+
+  const MusicShortcutSurface(this.scopes);
+
+  /// 按顺序解析的 scope，先命中者生效。
+  final List<ShortcutScope> scopes;
+}
+
+/// 在 [surface] 的 scope 组里依次解析一个按键，返回先命中的动作。
+ShortcutAction? resolveMusicShortcut(
+  FushiShortcutRegistry registry,
+  MusicShortcutSurface surface,
+  LogicalKeyboardKey key, {
+  required Set<ModifierKey> modifiers,
+}) {
+  for (final ShortcutScope scope in surface.scopes) {
+    final ShortcutAction? action = registry.resolveKeyboard(
+      key,
+      modifiers: modifiers,
+      scope: scope,
+    );
+    if (action != null) return action;
+  }
+  return null;
+}
+
+/// 把一个键事件按 [surface] 的 scope 组解析成动作。
+///
+/// 音乐两组 scope 只开键盘通道（[ShortcutScope.channels]）：控制器来的键（Android
+/// 手柄 / 遥控器的方向键以 arrow 键事件到达，[GamepadButton.fromKeyEvent] 认得出来）
+/// 不是键盘输入，一律不解析，交回焦点导航 / 全局手柄派发。否则播放页的裸 ←/→ 绑定会
+/// 把手柄十字键的左右移焦夺成 ±5 秒。
+ShortcutAction? resolveMusicKeyEvent(
+  KeyEvent event, {
+  required FushiShortcutRegistry registry,
+  required MusicShortcutSurface surface,
+  required Set<ModifierKey> modifiers,
+}) {
+  if (GamepadButton.fromKeyEvent(event) != null) return null;
+  return resolveMusicShortcut(
+    registry,
+    surface,
+    event.logicalKey,
+    modifiers: modifiers,
+  );
+}
+
+/// 音乐页键事件节点的 `onKeyEvent` 本体：按 [surface] 的 scope 组解析后派发。
 ///
 /// 文本框持焦时一律让路：空格 / 字母键是在打字，不是播放控制（[editableFocused] 缺省
 /// 读当前主焦点，测试可注入）。
@@ -53,6 +111,7 @@ KeyEventResult handleMusicShortcutKey(
   KeyEvent event, {
   required FushiShortcutRegistry registry,
   required MusicPlayerEngine engine,
+  required MusicShortcutSurface surface,
   bool Function()? editableFocused,
 }) {
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
@@ -67,10 +126,11 @@ KeyEventResult handleMusicShortcutKey(
     if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
     if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
   };
-  final ShortcutAction? action = registry.resolveKeyboard(
-    event.logicalKey,
+  final ShortcutAction? action = resolveMusicKeyEvent(
+    event,
+    registry: registry,
+    surface: surface,
     modifiers: modifiers,
-    scope: ShortcutScope.music,
   );
   return dispatchMusicShortcut(action, engine)
       ? KeyEventResult.handled

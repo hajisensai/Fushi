@@ -20,18 +20,25 @@ typedef MangaAudioWorkbenchOpener =
 typedef MangaAudioWorkbenchStatusReader =
     Future<String?> Function(BuildContext context, String bookKey);
 
-/// 工作台入口的注册表：页面实现启动时注册一次，菜单 / 速览经它调用。
+/// 打开有声漫画包（`.fushi-manga-audio`）的导入页。
+typedef MangaAudioPackageImportOpener =
+    Future<void> Function(BuildContext context, {required String path});
+
+/// 工作台入口的注册表：页面实现启动时注册一次，菜单 / 速览 / 漫画导入框经它调用。
 abstract final class MangaAudioWorkbenchEntry {
   static MangaAudioWorkbenchOpener? _open;
   static MangaAudioWorkbenchStatusReader? _status;
+  static MangaAudioPackageImportOpener? _importPackage;
 
   /// 由 `main()` 调用（`registerMangaAudioWorkbenchEntry`）；重复注册以最后一次为准。
   static void register({
     required MangaAudioWorkbenchOpener open,
     required MangaAudioWorkbenchStatusReader statusLine,
+    required MangaAudioPackageImportOpener importPackage,
   }) {
     _open = open;
     _status = statusLine;
+    _importPackage = importPackage;
   }
 
   /// 测试用：清掉注册。
@@ -39,6 +46,18 @@ abstract final class MangaAudioWorkbenchEntry {
   static void reset() {
     _open = null;
     _status = null;
+    _importPackage = null;
+  }
+
+  /// 打开有声漫画包导入页（漫画导入框选中 / 拖入 `.fushi-manga-audio` 时转交）；
+  /// 未注册时什么都不做。
+  static Future<void> importPackage(
+    BuildContext context, {
+    required String path,
+  }) {
+    final MangaAudioPackageImportOpener? open = _importPackage;
+    if (open == null) return Future<void>.value();
+    return open(context, path: path);
   }
 
   /// 是否已注册。未注册（只挂了部分 app 的 widget test）时入口不显示。

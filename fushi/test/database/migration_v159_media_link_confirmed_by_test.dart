@@ -52,7 +52,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 171);
+    expect(migrated.schemaVersion, kFushiDbSchemaVersion);
     final Map<String, String?> byRelation = <String, String?>{
       for (final MediaLinkRow r in await migrated.allMediaLinks())
         r.relation: r.confirmedBy,
@@ -69,7 +69,10 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     probe.execute('PRAGMA user_version = 158');
     probe.dispose();
     final FushiDatabase reopened = FushiDatabase.atFile(

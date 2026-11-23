@@ -24,7 +24,7 @@
 
 | Nền tảng | Trạng thái | Ghi chú |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) trở lên |
+| Android | ✅ | Android 8.0 (API 26) trở lên |
 | Windows | ✅ | Hook văn bản và giọng nói của galgame chỉ có trên Windows |
 | macOS | ✅ | Chỉ Apple Silicon; không hỗ trợ Mac Intel |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Không có khám phá, nguồn trực tuyến và trung tâm tải xuống (nguyên tắc của App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Tải bản mới nhất từ [trang web Fushi](https://fushi.moe/) — có APK Android, trình cài đặt Windows và bản dựng macOS (chỉ Apple Silicon; không hỗ trợ Mac Intel); iOS được cài đặt qua [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux chưa có bản phát hành ứng dụng dựng sẵn; hãy biên dịch từ mã nguồn. Fushi Server (headless) được phát hành riêng tại [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Yêu cầu Android 7.0 (API 24) trở lên.
+> Yêu cầu Android 8.0 (API 26) trở lên.
 
 ## Biên dịch
 

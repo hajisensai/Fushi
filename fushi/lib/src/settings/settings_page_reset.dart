@@ -91,8 +91,10 @@ class SettingsPageResetAction extends StatelessWidget {
       settingsContext,
     );
     if (entries.isEmpty) return const SizedBox.shrink();
-    final bool anyModified = entries.any(
-      (SettingsPageResetEntry entry) => entry.spec.modified,
+    // 值与默认相同但显式存着的（[SettingsResetSpec.pinnedAtDefault]）也算可恢复：
+    // 否则它在「本页均为默认值」下永远删不掉（HBK-AUDIT-235）。
+    final bool anyResettable = entries.any(
+      (SettingsPageResetEntry entry) => entry.spec.resettable,
     );
     // 默认展开、空间不足才收进「⋯」（用户 2026-10-06 拍板）：唯一的动作按可用宽度
     // 平铺成图标钮，页头放不下才收进溢出菜单。保底宽度扣掉返回钮 + 标题 + 搜索钮。
@@ -104,10 +106,10 @@ class SettingsPageResetAction extends StatelessWidget {
           key: const ValueKey<String>('settings-page-reset-menu'),
           foldedKey: const ValueKey<String>('settings-page-reset-item'),
           icon: FushiIcons.undo,
-          label: anyModified
+          label: anyResettable
               ? t.settings_page_reset_menu
               : t.settings_page_reset_all_default,
-          onPressed: anyModified
+          onPressed: anyResettable
               ? () => unawaited(
                   showSettingsPageResetDialog(
                     context: context,
@@ -122,8 +124,9 @@ class SettingsPageResetAction extends StatelessWidget {
   }
 }
 
-/// 列出本页改过默认值的项（标题 + 当前值 → 默认值），默认全选、可逐项取消，
-/// 确认后按页面顺序逐项调用 [SettingsResetSpec.reset]。返回实际恢复的条数。
+/// 列出本页可恢复默认的项（标题 + 当前值 → 默认值；值等于默认、只是显式存着的
+/// 写「当前值（手动选择）→ 跟随默认值」，不出现「Pixi → Pixi」），默认全选、可逐项
+/// 取消，确认后按页面顺序逐项调用 [SettingsResetSpec.reset]。返回实际恢复的条数。
 Future<int> showSettingsPageResetDialog({
   required BuildContext context,
   required SettingsContext settingsContext,
@@ -133,7 +136,7 @@ Future<int> showSettingsPageResetDialog({
   final List<SettingsPageResetEntry> modified = settingsPageResetEntries(
     destination.visibleSections(settingsContext),
     settingsContext,
-  ).where((SettingsPageResetEntry entry) => entry.spec.modified).toList();
+  ).where((SettingsPageResetEntry entry) => entry.spec.resettable).toList();
   if (modified.isEmpty) return 0;
   final Set<String>? chosen = await showAppDialog<Set<String>>(
     context: context,
@@ -149,6 +152,13 @@ Future<int> showSettingsPageResetDialog({
   }
   return count;
 }
+
+/// 恢复确认框里一行的变化描述：改过的写「当前值 → 默认值」；值等于默认、只是显式
+/// 存着的写「当前值（手动选择）→ 跟随默认值」。
+String settingsPageResetChangeLabel(SettingsResetSpec spec) =>
+    spec.pinnedAtDefault
+    ? t.settings_page_reset_value_follow_default(value: spec.currentLabel)
+    : '${spec.currentLabel} → ${spec.defaultLabel}';
 
 class _SettingsPageResetDialog extends StatefulWidget {
   const _SettingsPageResetDialog({required this.entries});
@@ -188,9 +198,7 @@ class _SettingsPageResetDialogState extends State<_SettingsPageResetDialog> {
               controlAffinity: ListTileControlAffinity.leading,
               value: _selected.contains(entry.item.id),
               title: Text(entry.title),
-              subtitle: Text(
-                '${entry.spec.currentLabel} → ${entry.spec.defaultLabel}',
-              ),
+              subtitle: Text(settingsPageResetChangeLabel(entry.spec)),
               onChanged: (bool? value) => setState(() {
                 if (value ?? false) {
                   _selected.add(entry.item.id);

@@ -53,7 +53,12 @@ std::optional<int> get_freq_value_for_dict(const TermResult& term, std::string_v
 // 到了 `instead of`，卡片却只剩 `instead`）。与正文混排的自指标签（OALDPE10 的
 // `["give up", ["Redirected from give up"]]` + 释义，BUG-2566）不动。
 //
-// 判据（原始大小门槛 + `[[` 前置 + 整体解析）在 util/redirect_glossary.hpp 只写一次，
+// Jitendex 的重定向词条（`怖気つく` → `怖気づく`）是同一回事的另一种写法：一张
+// `data.content == "redirect-glossary"` 的「⟶ 目标词」链接卡，通常再跟一条 formOf
+//（BUG-5272）。它同样整条没有释义，同样摘掉并跟随一层——效果与 HoshiDict 一致：
+// 直接出目标词条。
+//
+// 判据（原始大小门槛 + 前置判据 + 整体解析）在 util/redirect_glossary.hpp 只写一次，
 // 导入端打标与迁移扫描共用。所属词典经 sidecar 确认无重定向（dict_redirect_free）时
 // 整条检测跳过：既不读帧头也不解压——冷页下这一步原本要把每个候选命中的每条
 // glossary 所在页都缺页读进来，而它们大多数随后被去重 / 截断丢掉、根本不会 materialize。

@@ -16,6 +16,8 @@ import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
@@ -518,6 +520,48 @@ void main() {
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     expect(find.text('1:01'), findsOneWidget);
+    await _teardown(tester);
+  });
+
+  testWidgets('横排货架行高随卡片副行走：两行标题 + 副行的专辑卡在放大字号下也不溢出', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    final _FakeBrowser navi = _FakeBrowser('subsonic-1');
+    await tester.pumpWidget(
+      _host(
+        env.app,
+        Builder(
+          builder: (BuildContext context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: MusicShelfRow(
+              title: 'Recently added',
+              children: <Widget>[
+                for (int i = 0; i < 3; i++)
+                  MusicServerAlbumCard(
+                    browser: navi,
+                    album: MusicServerAlbum(
+                      id: 'a$i',
+                      title: 'A rather long album title that wraps $i',
+                      artist: 'Band',
+                      year: 2020,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    // 写死 220 的行高在这里会报 RenderFlex overflow。
+    expect(tester.takeException(), isNull);
+    expect(find.text('Band · 2020'), findsNWidgets(3));
     await _teardown(tester);
   });
 }

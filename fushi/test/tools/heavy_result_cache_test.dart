@@ -331,6 +331,31 @@ void main() {
       expect(scratch.listSync(), isEmpty);
     });
 
+    // A same-size edit landing in the same second as the commit that wrote the
+    // index is only caught by git's racy-entry check, which compares entries
+    // with the index file's mtime. Pinned here with explicit timestamps (and
+    // ctime out of the picture), so it does not depend on scheduling: the copy
+    // the tree is computed from must keep the index's mtime.
+    test('sees a same-size edit within the index\'s own second', () async {
+      await _git(repo, <String>['config', 'core.trustctime', 'false']);
+      final DateTime second = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 - 100) * 1000,
+      );
+      final File a = File('${repo.path}/a.dart');
+      final File index = File('${repo.path}/.git/index');
+      a.setLastModifiedSync(second);
+      await _git(repo, <String>['add', '-A']);
+      await _git(repo, <String>['commit', '-qm', 'stamp', '--allow-empty']);
+      index.setLastModifiedSync(second);
+      final String? clean = await heavyWorkingTree(repo.path, scratch: scratch);
+      expect(clean, await _git(repo, <String>['rev-parse', 'HEAD^{tree}']));
+
+      a.writeAsStringSync('b');
+      a.setLastModifiedSync(second);
+      index.setLastModifiedSync(second);
+      expect(await heavyWorkingTree(repo.path, scratch: scratch), isNot(clean));
+    });
+
     test('null outside a repository', () async {
       final Directory plain = Directory.systemTemp.createTempSync('heavy_np_');
       try {

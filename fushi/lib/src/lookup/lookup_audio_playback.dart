@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -395,7 +397,10 @@ Future<bool> playResolvedLookupAudio(
   if (playInWebView != null && !lookupWordAudioPlaysNatively) {
     final String? url = await audioRefToWebViewUrl(ref);
     if (url != null && url.isNotEmpty) {
-      if (await playInWebView(url)) return true;
+      if (await playInWebView(url)) {
+        debugLookupAudioRouteObserver?.call(LookupAudioRoute.webView, label);
+        return true;
+      }
       // The WebView reported a real failure (autoplay blocked / JS error /
       // bridge timeout). Record it — this exact silence used to be invisible
       // (zero logs) and cost a mis-rooted fix in BUG-1015 — then fall back.
@@ -407,11 +412,27 @@ Future<bool> playResolvedLookupAudio(
     }
   }
 
+  debugLookupAudioRouteObserver?.call(LookupAudioRoute.hostPlayer, label);
   return await TtsChannel.instance.playAudioRef(
     ref,
     volume: ReaderFushiSource.instance.lookupAudioVolumeGain,
   );
 }
+
+/// [playResolvedLookupAudio] 这次把单词音频交给了谁。
+enum LookupAudioRoute {
+  /// 弹窗 WebView 自己的 `<audio>` 真的开播了（统一快路径）。
+  webView,
+
+  /// 宿主播放器（桌面 media_kit / Android 原生 MediaPlayer）。
+  hostPlayer,
+}
+
+/// 测试钩子：[playResolvedLookupAudio] 每次选定播放路径后回调（[label] = 词头）。
+/// BUG-5278 的集成测试靠它断言「阅读器自动发音走的是弹窗 `<audio>`」。生产不设。
+@visibleForTesting
+void Function(LookupAudioRoute route, String label)?
+debugLookupAudioRouteObserver;
 
 /// 单词音频是否改走宿主原生播放器而不是弹窗 WebView 的 `<audio>`（BUG-3311）。
 ///

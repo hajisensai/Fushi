@@ -11,6 +11,8 @@ import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_music_visualizer_theme_assistant.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -186,7 +188,7 @@ class _ThemePreview extends StatelessWidget {
       key: const ValueKey<String>('music_visualizer_ai_theme_preview'),
       decoration: BoxDecoration(
         color: variant.background,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: FushiM3eShape.cardRadius,
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
