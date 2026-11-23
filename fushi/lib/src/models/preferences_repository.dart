@@ -1416,6 +1416,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 截屏识字 / 拍照查词每次点「+」制卡前先推出截图框选页（拍板 EuOLprw_dV 选 b：
+  /// 用户想让卡图带上文字旁边的发帖人、时间等上下文）。「制卡」按框出图，「×」不制这张
+  /// 卡。只在 [screenOcrCardImage] 开着时生效。默认关：一键「+」照旧自动裁到文本块。
+  bool get screenOcrCardFrameOnMine =>
+      getPref('screen_ocr.card_frame_on_mine', defaultValue: false);
+
+  Future<void> setScreenOcrCardFrameOnMine(bool value) async {
+    await setPref('screen_ocr.card_frame_on_mine', value);
+    notifyListeners();
+  }
+
   /// Android 截屏识字「保持截屏会话」：第一次同意后录屏会话常驻，之后截屏识字直接取
   /// 最新帧，不再弹系统确认框（反馈 9bdhVTgq3A / LHyeNKyYjH）。默认关。
   bool get screenOcrKeepCaptureSession =>

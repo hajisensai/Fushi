@@ -157,6 +157,7 @@ class MinePopupResult {
     this.noteId,
     this.duplicate = false,
   }) : queued = false,
+       cancelled = false,
        message = null;
 
   /// 制卡请求已接下、在后台进行（在线视频：抽媒体要时间，弹窗不陪着等）。
@@ -169,6 +170,18 @@ class MinePopupResult {
       noteId = null,
       duplicate = false,
       queued = true,
+      cancelled = false,
+      message = null;
+
+  /// 用户自己放弃了这次制卡（截屏识字「制卡时框选」页点了「×」，拍板 EuOLprw_dV）。
+  ///
+  /// 不是失败：popup.js 把按钮放回可点的「+」，不说「制卡失败」、不回查 Anki。
+  const MinePopupResult.cancelled()
+    : ankiConnect = false,
+      noteId = null,
+      duplicate = false,
+      queued = false,
+      cancelled = true,
       message = null;
 
   /// 一次**被收下**的制卡结果（成功，或进了待发制卡队列）。
@@ -205,7 +218,8 @@ class MinePopupResult {
     : ankiConnect = false,
       noteId = null,
       duplicate = outcome.result == MineResult.duplicate,
-      queued = false;
+      queued = false,
+      cancelled = false;
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -228,6 +242,9 @@ class MinePopupResult {
   /// 见 [MinePopupResult.queued]。
   final bool queued;
 
+  /// 见 [MinePopupResult.cancelled]。
+  final bool cancelled;
+
   /// 失败原因（仅 [MinePopupResult.failed] 传入时非空），见那里。
   ///
   /// 弹窗发起的制卡，失败**只在弹窗里**说一次（宿主只在被收下时弹 toast）：此前
@@ -244,6 +261,7 @@ class MinePopupResult {
     // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
     if (duplicate) 'duplicate': true,
     if (queued) 'queued': true,
+    if (cancelled) 'cancelled': true,
     if (message != null && message!.isNotEmpty) 'message': message,
   };
 

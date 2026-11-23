@@ -16,6 +16,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
@@ -763,9 +764,24 @@ mixin DictionaryPageMixin {
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
-      fields,
-    );
+    MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(fields);
+    // 拍板 EuOLprw_dV（选 b）：开了「制卡时框选截图」就先推出框选页，用户框好再制；
+    // 点「×」就不制这张卡（弹窗把按钮放回「+」）。高级制卡里已经选过卡图的不再弹。
+    final ScreenOcrCardImage? frameSource = miningCardImage;
+    if (frameSource != null &&
+        screenOcrCardFrameNeeded(
+          cardImageEnabled: mixinAppModel.prefsRepo.screenOcrCardImage,
+          frameOnMine: mixinAppModel.prefsRepo.screenOcrCardFrameOnMine,
+          overrides: overrides,
+        )) {
+      if (!mounted) return const MinePopupResult.cancelled();
+      // 弹窗 WebView 会盖在 Flutter 路由上（与「高级制卡」对话框同理），框选期间停靠屏外。
+      final MiningRequestOverrides? frame = await runWithLookupPopupHidden(
+        () => pickScreenOcrCardFrame(context, frameSource),
+      );
+      if (frame == null) return const MinePopupResult.cancelled();
+      overrides = mergeScreenOcrCardFrame(overrides, frame);
+    }
     final ({String path, Directory dir})? cover = await _prepareMiningCover(
       overrides,
     );
