@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T03:04:13Z",
+ "generatedAt": "2026-11-23T03:44:46Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "5735e6dc231db5f3c0df629e27d73f295780ead6",
-  "seq": 31532
+  "sha": "e5215fc34e23ff547fee181549eea9d423dec35d",
+  "seq": 31534
  },
  "builds": [
+  {
+   "seq": 31532,
+   "version": "3.4.0",
+   "sha": "5735e6dc231db5f3c0df629e27d73f295780ead6",
+   "unknown": false,
+   "publishedAt": "2026-11-23T03:44:33Z",
+   "testflight": false,
+   "baseSeq": 31528,
+   "prs": [
+    4201
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+    }
+   }
+  },
   {
    "seq": 31528,
    "version": "3.4.0",
@@ -130,7 +161,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45028486764"
     },
     "windows": {
      "state": "ok"
@@ -145,29 +177,29 @@
   }
  ],
  "pending": {
-  "headSha": "5735e6dc231db5f3c0df629e27d73f295780ead6",
-  "headSeq": 31532,
+  "headSha": "e5215fc34e23ff547fee181549eea9d423dec35d",
+  "headSeq": 31534,
   "prs": [
-   4201
+   4224
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786777"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586906"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45102786847"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
    }
   }
  },
@@ -305,6 +337,15 @@
    "mergedAt": "2026-11-23T02:53:51Z",
    "additions": 214,
    "deletions": 29,
+   "labels": []
+  },
+  "4224": {
+   "number": 4224,
+   "title": "feat(srs4): 迁移报告补 ID 溯源，对拍差异能推出原因（BUG-5269）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T03:12:22Z",
+   "additions": 734,
+   "deletions": 7,
    "labels": []
   }
  }
