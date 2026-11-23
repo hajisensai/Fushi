@@ -186,7 +186,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('stage: details'), findsOneWidget);
       expect(find.textContaining('at fixture.Stack'), findsOneWidget);
-      await tester.tap(find.text('CLOSE'));
+      await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
 
       runtime.detailsFailure = null;
