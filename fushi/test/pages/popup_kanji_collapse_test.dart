@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 拍板台 6uasoIUvSR：查词弹窗的汉字卡仍排在词条之上，但整块默认折叠成一行
 /// （「汉字 · 粉  词典名…」），点开才展开；折叠态吃词典管理「汉字」分区的逐本三态

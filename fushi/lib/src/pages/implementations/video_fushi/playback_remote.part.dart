@@ -844,7 +844,7 @@ class _VideoPagePlaybackRemote
       final String target = _state._ensureMp4Extension(
         outputPath ??
             p.join(
-              (await getApplicationDocumentsDirectory()).path,
+              (await AppPaths.userExportsBaseDirectory()).path,
               'video_clips',
               _state._clipExportFileName(
                 inputPath: inputPath,
