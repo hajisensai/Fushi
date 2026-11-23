@@ -6730,21 +6730,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 都无处可落，整段跳过——不拿 bookKey / 现造 uid 兜底写孤儿行。
     final String? bookUid = _bookUid;
     if (bookUid == null) return;
-    try {
-      await ReaderPositionRepository(db).save(
-        bookUid: bookUid,
-        sectionIndex: page,
-        normCharOffset: 0,
-        // 漫画无章内字符偏移。**必须显式传值**（传 null 会掉进 EPUB 专用的「跨
-        // section 精确锚失效」启发式）：spread 恒 0；webtoon 复用 charOffset 存
-        // 页内滚动千分比（0..1000），恢复时换算回 fraction。
-        charOffset: isWebtoon
-            ? MangaFushiPage.webtoonFractionToCharOffset(fraction)
-            : 0,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
-    }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数；双页展开看整屏，见
     // [MangaFushiPage.spreadReachesLastPage]）。
     final int pageCount = _payload?.images.length ?? 0;
@@ -6753,9 +6738,46 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       page,
       pageCount,
     );
+    // 每章状态跟着同一个收口走：位置写哪儿、章状态就写哪儿，不另开一条会漏的
+    // 时机。书架在线条目才有「章」，本地卷 _shelfChapterKey 恒 null 自然跳过。
+    final String? chapterKey = _shelfChapterKey;
+    // 漫画无章内字符偏移。webtoon 复用 charOffset 存页内滚动千分比（0..1000），
+    // 恢复时换算回 fraction；spread 恒 0（书级）/ -1（章级「无精确偏移」）。
+    final int webtoonOffset = MangaFushiPage.webtoonFractionToCharOffset(
+      fraction,
+    );
+    bool chapterSaved = false;
+    try {
+      // 书级位置与章级进度一个事务落盘（BUG-5358）：与互联同步的落地
+      // （`InterconnectBookProgressSync` 同样一个事务、先书级后章级）互斥，
+      // 两张表不会一张是新页、一张被同步退回 host 旧页；任一写失败两张一起回滚。
+      await db.transaction(() async {
+        await ReaderPositionRepository(db).save(
+          bookUid: bookUid,
+          sectionIndex: page,
+          normCharOffset: 0,
+          // **必须显式传值**（传 null 会掉进 EPUB 专用的「跨 section 精确锚失效」
+          // 启发式）。
+          charOffset: isWebtoon ? webtoonOffset : 0,
+        );
+        if (chapterKey == null) return;
+        await db.saveMangaChapterState(
+          bookUid: bookUid,
+          chapterKey: chapterKey,
+          lastPage: page,
+          lastFraction: isWebtoon ? webtoonOffset : -1,
+          pageCount: pageCount > 0 ? pageCount : null,
+          readAt: atLastPage ? DateTime.now().millisecondsSinceEpoch : null,
+        );
+        chapterSaved = true;
+      });
+    } catch (e, stack) {
+      chapterSaved = false;
+      ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
+    }
     // 「末页」是**当前载荷**的末页：本地卷一个载荷就是整本，书架在线条目一个载荷
     // 只是一章。整本「读完」只在读到阅读顺序上的最后一话时才成立
-    // （[mangaChapterCompletesSeries]，BUG-4356）；其余章的末页只写下面的章级 readAt。
+    // （[mangaChapterCompletesSeries]，BUG-4356）；其余章的末页只写上面的章级 readAt。
     final OnlineMangaLibraryEntry? shelfEntry = _shelfEntry;
     final bool completesBook =
         atLastPage &&
@@ -6771,27 +6793,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ErrorLogService.instance.log('MangaFushiPage.markCompleted', e, stack);
       }
     }
-    // 每章状态跟着同一个收口走：位置写哪儿、章状态就写哪儿，不另开一条会漏的
-    // 时机。书架在线条目才有「章」，本地卷 _shelfChapterKey 恒 null 自然跳过。
-    final String? chapterKey = _shelfChapterKey;
-    if (chapterKey == null) {
-      _reportTracking(reachedEnd: atLastPage);
-      return;
-    }
-    try {
-      await db.saveMangaChapterState(
-        bookUid: bookUid,
-        chapterKey: chapterKey,
-        lastPage: page,
-        lastFraction: isWebtoon
-            ? MangaFushiPage.webtoonFractionToCharOffset(fraction)
-            : -1,
-        pageCount: pageCount > 0 ? pageCount : null,
-        readAt: atLastPage ? DateTime.now().millisecondsSinceEpoch : null,
-      );
+    if (chapterKey != null && chapterSaved) {
       _reportKavitaMangaPage(chapterKey, page);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.saveChapterState', e, stack);
     }
     _reportTracking(reachedEnd: atLastPage);
   }

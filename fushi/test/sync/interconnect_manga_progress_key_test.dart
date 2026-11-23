@@ -6,6 +6,7 @@
 /// 修复前进度读写都拿本机键，host 永远回空、推上去判 missing。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -25,6 +26,36 @@ import 'package:path/path.dart' as p;
 
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+/// 同步落地写章级进度时（第一次 [saveMangaChapterState]）先跑一次 [onFirstChapterWrite]，
+/// 用来把「本机阅读器翻页」/「章级写失败」钉在书级写与章级写之间（BUG-5358）。
+class _HookedDb extends FushiDatabase {
+  _HookedDb() : super.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+  Future<void> Function()? onFirstChapterWrite;
+
+  @override
+  Future<void> saveMangaChapterState({
+    required String bookUid,
+    required String chapterKey,
+    required int lastPage,
+    int lastFraction = -1,
+    int? pageCount,
+    int? readAt,
+  }) async {
+    final Future<void> Function()? hook = onFirstChapterWrite;
+    onFirstChapterWrite = null;
+    if (hook != null) await hook();
+    await super.saveMangaChapterState(
+      bookUid: bookUid,
+      chapterKey: chapterKey,
+      lastPage: lastPage,
+      lastFraction: lastFraction,
+      pageCount: pageCount,
+      readAt: readAt,
+    );
+  }
+}
 
 const String _peerKey = 'mihon-573c-peer-volume';
 
@@ -92,7 +123,7 @@ void main() {
   late FushiSyncServer server;
   late FushiDatabase hostDb;
   late LocalLibraryHostService host;
-  late FushiDatabase clientDb;
+  late _HookedDb clientDb;
   late InterconnectSyncBackend backend;
   const String token = 'interconnect-manga-progress-key';
 
@@ -114,7 +145,7 @@ void main() {
       libraryService: host,
     );
     await server.start();
-    clientDb = _memDb();
+    clientDb = _HookedDb();
     final SyncRepository repo = SyncRepository(clientDb);
     await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
@@ -202,6 +233,93 @@ void main() {
     expect(step.action, BookProgressSyncAction.pushLocal);
     expect(step.pushed, isTrue);
     expect((await host.getBookProgress(_peerKey)).sectionIndex, 60);
+  });
+
+  // BUG-5358：同步落地先比较后写书级、再写章级。两次写之间本机阅读器翻页（阅读器
+  // 同样先书级后章级），章级若照写 host 旧页，书级是新页、章级退回旧页，书架开章
+  // 只认章级 → 新页丢失。两张表的落地在一个事务里，阅读器的写只能整体排在前或后。
+  test('单卷互联漫画：同步落地夹着本机翻页 → 书级与章级都保留本机新页', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final EpubBookRow hostBook = await _seedHostVolume(hostDb);
+    await _setPage(hostDb, hostBook, 43, now - 1000);
+    final EpubBookRow book = await _seedClientShelfRow(
+      clientDb,
+      chaptered: false,
+    );
+    final String chapterKey = InterconnectMangaCatalog.chapterFor(_peerKey).key;
+
+    // 阅读器的写入协议：一个事务，先书级后章级（`MangaFushiPage._persistPosition`）。
+    // 在根 zone 里起，模拟与同步并发的另一个写者（不并进同步的事务）。
+    Future<void> readerTurnsTo60() => clientDb.transaction(() async {
+      await _setPage(clientDb, book, 60, now + 10);
+      await clientDb.saveMangaChapterState(
+        bookUid: book.uid,
+        chapterKey: chapterKey,
+        lastPage: 60,
+      );
+    });
+    Future<void>? reader;
+    clientDb.onFirstChapterWrite = () async {
+      reader = Zone.root.run(readerTurnsTo60);
+      // 并发写者能插队就让它先写完（修复前它在此刻已落盘）；被事务挡在后面时
+      // 它在事务结束前不会完成，等到上限后照常继续。
+      await Future.any(<Future<void>>[
+        reader!,
+        Future<void>.delayed(const Duration(milliseconds: 300)),
+      ]);
+    };
+
+    final InterconnectBookProgressSync sync = newSync();
+    final BookProgressSyncStep step = await sync.syncOne(
+      book,
+      remote: await sync.remoteProgress(book),
+    );
+    expect(step.action, BookProgressSyncAction.applyRemote);
+    expect(reader, isNotNull, reason: '钩子必须在同步写章级时触发');
+    await reader;
+
+    expect((await clientDb.getReaderPosition(book.uid))!.sectionIndex, 60);
+    final MangaChapterStateRow? chapter = await clientDb.getMangaChapterState(
+      bookUid: book.uid,
+      chapterKey: chapterKey,
+    );
+    expect(chapter!.lastPage, 60, reason: '章级不得被同步退回 host 旧页');
+  });
+
+  test('单卷互联漫画：章级写失败 → 书级一并回滚，不留半截、不记基线', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final EpubBookRow hostBook = await _seedHostVolume(hostDb);
+    await _setPage(hostDb, hostBook, 43, now - 1000);
+    final EpubBookRow book = await _seedClientShelfRow(
+      clientDb,
+      chaptered: false,
+    );
+    clientDb.onFirstChapterWrite = () async =>
+        throw StateError('chapter write failed');
+
+    final InterconnectBookProgressSync sync = newSync();
+    await expectLater(
+      sync.syncOne(book, remote: await sync.remoteProgress(book)),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(await clientDb.getReaderPosition(book.uid), isNull);
+    expect(
+      await clientDb.getMangaChapterState(
+        bookUid: book.uid,
+        chapterKey: InterconnectMangaCatalog.chapterFor(_peerKey).key,
+      ),
+      isNull,
+    );
+    expect(await sync.baseline(book), isNull);
+
+    // 下一轮照常拉到两张表。
+    final BookProgressSyncStep retry = await sync.syncOne(
+      book,
+      remote: await sync.remoteProgress(book),
+    );
+    expect(retry.action, BookProgressSyncAction.applyRemote);
+    expect((await clientDb.getReaderPosition(book.uid))!.sectionIndex, 43);
   });
 
   test('章节式互联漫画：书级位置不带章身份，不参与书级进度同步', () async {

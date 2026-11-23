@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4659 条。点号进各自文件。
+> 共 4661 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5359](bugs/BUG-5359-sync-compare-chaptered-manga-apply-throws.md) | ✅ | ✅ | 对比弹窗「应用」章节式互联漫画时书级进度抛 ArgumentError，并短路有声书断点 |
+| [BUG-5358](bugs/BUG-5358-interconnect-manga-volume-progress-landing-not-atomic.md) | ✅ | ✅ | 单卷互联漫画同步落地书级 / 章级分两次写，夹着翻页时章级退回 host 旧页 |
 | [BUG-5357](bugs/BUG-5357-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5356](bugs/BUG-5356-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |
 | [BUG-5355](bugs/BUG-5355-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |
