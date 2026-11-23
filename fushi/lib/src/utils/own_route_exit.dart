@@ -14,3 +14,25 @@ bool popRoutesAbove(NavigatorState navigator, Route<dynamic> route) {
   navigator.popUntil((Route<dynamic> r) => identical(r, route));
   return route.isCurrent;
 }
+
+/// 只关掉 [context] 自己所在的那条路由，并以 [result] 结束它；压在它上面的路由原样保留。
+///
+/// 为什么不用 `Navigator.pop(context, result)`：那弹的是导航器**最顶层**的路由，不是
+/// [context] 所在的路由。长耗时的对话框（导入、抓轨）在 await 结束后才关自己，期间用户
+/// 可能从悬浮反馈球、全局快捷键把别的页面推到它上面——裸 `pop` 会关掉那一页（结果还被
+/// 当成那一页的返回值，类型不对直接抛），对话框自己则留成关不掉的孤儿。
+///
+/// 自己就在最顶层时走普通 `pop`（照常播退场动画、触发 PopScope 回调语义）；不在顶层时
+/// `removeRoute` 只摘掉自己。[context] 不在任何路由里、或路由已不在栈里（别的路径先关了
+/// 它）返回 false、什么都不做——这时绝不能退回去 pop 别人的页面。
+bool closeOwnRoute<R extends Object?>(BuildContext context, [R? result]) {
+  final ModalRoute<Object?>? route = ModalRoute.of(context);
+  if (route == null || !route.isActive) return false;
+  final NavigatorState navigator = Navigator.of(context);
+  if (route.isCurrent) {
+    navigator.pop<R>(result);
+  } else {
+    navigator.removeRoute<Object?>(route, result);
+  }
+  return true;
+}
