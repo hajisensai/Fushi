@@ -78,6 +78,7 @@ class BookArtBookPlan {
     this.volume,
     this.option,
     this.error,
+    this.fromOriginalEdition = false,
   });
 
   final String bookKey;
@@ -89,6 +90,10 @@ class BookArtBookPlan {
   final BookArtImageOption? option;
   final String? error;
 
+  /// [option] 是原版（日文版）卷封面：非日文版的系列选了「用 MangaBaka 封面」、
+  /// 本语言又没有这一卷时才会出现。
+  final bool fromOriginalEdition;
+
   BookArtBookPlan copyWith({BookArtBookOutcome? outcome, String? error}) =>
       BookArtBookPlan(
         bookKey: bookKey,
@@ -97,6 +102,7 @@ class BookArtBookPlan {
         option: option,
         outcome: outcome ?? this.outcome,
         error: error ?? this.error,
+        fromOriginalEdition: fromOriginalEdition,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -109,6 +115,7 @@ class BookArtBookPlan {
       'coverUrl': option!.url,
       'coverWidth': ?option!.width,
       'coverHeight': ?option!.height,
+      if (fromOriginalEdition) 'coverFromOriginalEdition': true,
     },
     'error': ?error,
   };
@@ -156,6 +163,9 @@ class BookArtSeriesPlan {
     this.reason,
     this.options = const <BookArtSeriesOption>[],
     this.errors = const <String>[],
+    this.edition,
+    this.originalEditionVolumes = 0,
+    this.originalEditionCovers = false,
   });
 
   /// `parseBookSeriesKey(...).key`。
@@ -171,6 +181,16 @@ class BookArtSeriesPlan {
   final List<BookArtSeriesOption> options;
   final List<String> errors;
   final List<BookArtBookPlan> books;
+
+  /// 非日文版系列的版本语言（主语言子标签，如 `zh`）；日文版 / 未知为 null。
+  final String? edition;
+
+  /// 本版本语言在 MangaBaka 上没有、但原版（日文版）有卷封面的卷数。>0 时结果面板
+  /// 让用户在「保留书里的封面」与「用 MangaBaka 封面」之间选（BUG-5266）。
+  final int originalEditionVolumes;
+
+  /// 这个系列当前用的是「用 MangaBaka 封面」（本次请求或之前记下的选择）。
+  final bool originalEditionCovers;
 
   /// 封面或横幅有任何一项来自 MangaBaka（结果面板要显示署名）。
   bool get usesMangaBaka =>
@@ -202,6 +222,10 @@ class BookArtSeriesPlan {
         for (final BookArtSeriesOption o in options) o.toJson(),
       ],
     if (errors.isNotEmpty) 'errors': errors,
+    'edition': ?edition,
+    if (originalEditionVolumes > 0)
+      'originalEditionVolumes': originalEditionVolumes,
+    if (originalEditionCovers) 'originalEditionCovers': true,
     'books': <Map<String, Object?>>[
       for (final BookArtBookPlan b in books) b.toJson(),
     ],
@@ -255,6 +279,26 @@ class BookArtSeriesPin {
 
   final BookArtSource source;
   final String id;
+}
+
+/// 结果面板里对单个系列的重跑请求：钉死系列（[pins]）或改「用 MangaBaka 封面」
+/// 的选择（[originalEditionCovers]），键都是 [BookArtSeriesPlan.seriesKey]。都为空
+/// = 整个合集正常跑一遍。
+class BookArtRerun {
+  const BookArtRerun({
+    this.pins = const <String, BookArtSeriesPin>{},
+    this.originalEditionCovers = const <String, bool>{},
+  });
+
+  final Map<String, BookArtSeriesPin> pins;
+  final Map<String, bool> originalEditionCovers;
+
+  bool get isEmpty => pins.isEmpty && originalEditionCovers.isEmpty;
+
+  /// 这次重跑包含系列 [seriesKey]。
+  bool covers(String seriesKey) =>
+      pins.containsKey(seriesKey) ||
+      originalEditionCovers.containsKey(seriesKey);
 }
 
 /// 编排服务。注入 [client] 时不负责关闭它（测试用 MockClient 路由三个 host）。
@@ -313,6 +357,7 @@ class BookArtScrapeService {
     List<String> bookKeys, {
     bool dryRun = false,
     Map<String, BookArtSeriesPin> pins = const <String, BookArtSeriesPin>{},
+    Map<String, bool> originalEditionCovers = const <String, bool>{},
     bool onlyPinnedGroups = false,
     bool recordUndo = true,
   }) async {
@@ -346,11 +391,17 @@ class BookArtScrapeService {
     final List<BookArtSeriesPlan> plans = <BookArtSeriesPlan>[];
     final List<BookArtSnapshot> snapshots = <BookArtSnapshot>[];
     for (final MapEntry<String, List<EpubBookRow>> g in groups.entries) {
-      if (onlyPinnedGroups && !pins.containsKey(g.key)) continue;
+      if (onlyPinnedGroups &&
+          !pins.containsKey(g.key) &&
+          !originalEditionCovers.containsKey(g.key)) {
+        continue;
+      }
       final BookArtSeriesPin? pin = pins[g.key] ?? _storedPin(g.value);
       final BookArtSeriesPlan plan = await _runGroup(
         groupKey: g.key,
         language: _groupLanguage(g.value),
+        useOriginalEdition:
+            originalEditionCovers[g.key] ?? _storedOriginalEdition(g.value),
         seriesTitle: groupTitles[g.key]!,
         rows: g.value,
         dryRun: dryRun,
@@ -379,6 +430,12 @@ class BookArtScrapeService {
     return languages.length == 1 ? languages.single : '';
   }
 
+  /// 这组书之前记下的「用 MangaBaka 封面」选择（任何一本记着就算）。
+  bool _storedOriginalEdition(List<EpubBookRow> rows) => rows.any(
+    (EpubBookRow r) =>
+        store.recordFor(r.bookKey)?.originalEditionCovers ?? false,
+  );
+
   /// 刮削层里这组书记下的用户钉死系列：钉死过的记录都指向同一个系列时沿用它。
   BookArtSeriesPin? _storedPin(List<EpubBookRow> rows) {
     final Set<String> seen = <String>{};
@@ -398,6 +455,7 @@ class BookArtScrapeService {
   Future<BookArtSeriesPlan> _runGroup({
     required String groupKey,
     required String language,
+    required bool useOriginalEdition,
     required String seriesTitle,
     required List<EpubBookRow> rows,
     required bool dryRun,
@@ -409,6 +467,8 @@ class BookArtScrapeService {
     // 只能用同语言的封面，找不到就保留书里的封面（BUG-5266）。
     final String edition = language.isEmpty ? 'ja' : language;
     final bool japaneseEdition = edition == 'ja';
+    // 用户按系列选「用 MangaBaka 封面」才回落原版（日文版）卷封面；只对非日文版有意义。
+    final bool originalEdition = useOriginalEdition && !japaneseEdition;
     final ({Map<String, num> volumes, bool singleUnnumbered}) resolved =
         resolveLocalVolumes(<String, num?>{
           for (final EpubBookRow r in rows)
@@ -489,6 +549,20 @@ class BookArtScrapeService {
           };
     BookArtImageOption? mbOptionFor(String bookKey, num volume) {
       final BookArtImageOption? o = _lookup(mbVolumes, volume);
+      return o == null || rejected[bookKey]!.contains(o.url) ? null : o;
+    }
+
+    // 非日文版：原版（日文版）卷封面，只在本语言缺卷时作为可选回落。
+    final Map<num, BookArtImageOption> originalVolumes =
+        mb == null || japaneseEdition
+        ? const <num, BookArtImageOption>{}
+        : <num, BookArtImageOption>{
+            for (final MapEntry<num, MangaBakaImage> e
+                in pickMangaBakaVolumeImages(mb.volumeImages).entries)
+              e.key: mangaBakaOption(e.value),
+          };
+    BookArtImageOption? originalOptionFor(String bookKey, num volume) {
+      final BookArtImageOption? o = _lookup(originalVolumes, volume);
       return o == null || rejected[bookKey]!.contains(o.url) ? null : o;
     }
 
@@ -601,6 +675,7 @@ class BookArtScrapeService {
           ),
     };
     final List<BookArtBookPlan> plans = <BookArtBookPlan>[];
+    int originalEditionVolumes = 0;
     for (final EpubBookRow r in rows) {
       final num? volume = resolved.volumes[r.bookKey];
       if (volume == null) {
@@ -626,27 +701,44 @@ class BookArtScrapeService {
       } else if (mbOption != null) {
         bgmOption = null; // MangaBaka 那张够清晰：不额外量 Bangumi。
       }
+      final BookArtRecord? previous = store.recordFor(r.bookKey);
       final _Relation relation = _relation(
-        store.recordFor(r.bookKey),
+        previous,
         source: source,
         seriesId: seriesId,
         authoritative: authoritative,
       );
+      // 本语言缺这一卷、原版有：记数给结果面板；用户选了「用 MangaBaka 封面」才用。
+      final BookArtImageOption? original = mbOption == null && bgmOption == null
+          ? originalOptionFor(r.bookKey, volume)
+          : null;
+      if (original != null) originalEditionVolumes++;
+      final bool fromOriginal = original != null && originalEdition;
+      // 已有那张与这次候选不是同一种来源（本语言 / 原版）时不按清晰度保留它：本语言
+      // 的封面要换掉原版的，反过来也一样。
+      final bool keptComparable =
+          relation != _Relation.different &&
+          (previous?.coverFromOriginalEdition ?? false) == fromOriginal;
       final ({int? area, bool unmeasured}) localCover = await _localCover(r);
-      final BookArtVolumeChoice choice = chooseBookArtVolume(
-        mangaBaka: mbOption,
-        bangumi: bgmOption,
-        localArea: localCover.area,
-        localUnmeasured: localCover.unmeasured,
-        keptArea: relation == _Relation.different
-            ? null
-            : _scrapedCoverArea(r.bookKey),
-      );
+      final BookArtVolumeChoice choice = fromOriginal
+          // 用户明确选了原版封面：要的是那张图而不是更清晰的图，不比本地封面。
+          ? chooseBookArtVolume(
+              mangaBaka: original,
+              keptArea: keptComparable ? _scrapedCoverArea(r.bookKey) : null,
+            )
+          : chooseBookArtVolume(
+              mangaBaka: mbOption,
+              bangumi: bgmOption,
+              localArea: localCover.area,
+              localUnmeasured: localCover.unmeasured,
+              keptArea: keptComparable ? _scrapedCoverArea(r.bookKey) : null,
+            );
       plans.add(
         BookArtBookPlan(
           bookKey: r.bookKey,
           title: r.title,
           volume: volume,
+          fromOriginalEdition: fromOriginal,
           option: choice.option,
           outcome: switch (choice.outcome) {
             BookArtVolumeOutcome.write => BookArtBookOutcome.written,
@@ -671,6 +763,9 @@ class BookArtScrapeService {
         banner: banner,
         errors: errors,
         books: plans,
+        edition: japaneseEdition ? null : edition,
+        originalEditionVolumes: originalEditionVolumes,
+        originalEditionCovers: originalEdition,
       );
     }
 
@@ -707,6 +802,7 @@ class BookArtScrapeService {
         banner: banner,
         rejected: rejected,
         snapshots: snapshots,
+        originalEdition: originalEdition,
       );
       // 每本下完立刻写盘（并发 [downloadConcurrency]），不把整组图攒在内存里。
       await _pool<BookArtBookPlan>(plans, (BookArtBookPlan plan) async {
@@ -725,6 +821,9 @@ class BookArtScrapeService {
       seriesUrl: seriesUrl,
       banner: banner,
       errors: errors,
+      edition: japaneseEdition ? null : edition,
+      originalEditionVolumes: originalEditionVolumes,
+      originalEditionCovers: originalEdition,
       books: <BookArtBookPlan>[
         for (final BookArtBookPlan p in plans) committed[p.bookKey] ?? p,
       ],
@@ -791,9 +890,16 @@ class BookArtScrapeService {
     );
     final bool hadCover = store.hasCover(bookKey);
     final bool writesCover = bytes != null;
+    // 改回「保留书里的封面」：之前按原版取的卷封面删掉，露出书里的封面。
+    final bool dropOriginal =
+        !ctx.originalEdition && (previous?.coverFromOriginalEdition ?? false);
     final bool removeCover =
-        !writesCover && hadCover && relation == _Relation.different;
+        !writesCover &&
+        hadCover &&
+        (relation == _Relation.different || dropOriginal);
     final bool keepsOldCover = !writesCover && !removeCover && hadCover;
+    final bool choiceChanges =
+        (previous?.originalEditionCovers ?? false) != ctx.originalEdition;
     // 本次没拿到横幅（CDN 抖动 / 本系列没有）：同一系列沿用旧横幅，不抹掉引用。
     final bool keepOldBanner =
         ctx.bannerKey == null &&
@@ -806,7 +912,8 @@ class BookArtScrapeService {
     if (!writesCover &&
         !removeCover &&
         bannerKey == previous?.bannerKey &&
-        !pinChanges) {
+        !pinChanges &&
+        !choiceChanges) {
       return plan;
     }
     final ({int width, int height})? dims = bytes == null
@@ -866,6 +973,10 @@ class BookArtScrapeService {
           scrapedAt: _now().millisecondsSinceEpoch,
           pinned: ctx.pinned,
           rejectedCoverUrls: ctx.rejected[bookKey]!.toList(),
+          originalEditionCovers: ctx.originalEdition,
+          coverFromOriginalEdition: writesCover
+              ? plan.fromOriginalEdition
+              : keepsOldCover && (previous?.coverFromOriginalEdition ?? false),
         ),
       );
     } on Exception catch (e) {
@@ -1314,6 +1425,7 @@ class _GroupWrite {
     required this.banner,
     required this.rejected,
     required this.snapshots,
+    required this.originalEdition,
   });
 
   final BookArtSource source;
@@ -1327,6 +1439,9 @@ class _GroupWrite {
   final BookArtImageOption? banner;
   final Map<String, Set<String>> rejected;
   final List<BookArtSnapshot>? snapshots;
+
+  /// 系列当前的「用 MangaBaka 封面」选择（写进每本的记录）。
+  final bool originalEdition;
 }
 
 class _BangumiHttpException implements Exception {

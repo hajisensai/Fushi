@@ -266,6 +266,84 @@ void main() {
     expect(store.recordFor('k2'), isNull);
   });
 
+  // BUG-5266：台版只有第 1 卷在 MangaBaka 上有中文封面；第 2 卷只有日文版封面，
+  // 默认保留书里的封面，用户按系列改选「用 MangaBaka 封面」才用日文版。
+  test('非日文版：本语言封面优先；缺卷默认保留书里的封面，可按系列改用原版封面并记住', () async {
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    await db.updateEpubBookLanguage('k1', 'zh-Hant');
+    await db.updateEpubBookLanguage('k2', 'zh-TW');
+    Future<http.Response> handler(http.Request req) async {
+      if (req.url.path == '/v1/series/100/images' &&
+          req.url.queryParameters['type'] == 'volume') {
+        final Map<String, Object?> zh1 = mbImage(11, '1')
+          ..['language'] = 'zh-tw'
+          ..['image'] = <String, Object?>{
+            'raw': <String, Object?>{
+              'url': 'https://images.mangabaka.dev/volume/zh1',
+              'width': 1200,
+              'height': 1800,
+              'format': 'jpeg',
+            },
+          };
+        return page(<Object?>[mbImage(1, '1'), mbImage(2, '2'), zh1]);
+      }
+      return mangaBakaOk(req);
+    }
+
+    Future<BookArtSeriesPlan> scrape([
+      Map<String, bool> choice = const <String, bool>{},
+    ]) async {
+      final BookArtScrapeService svc = service(handler);
+      final BookArtRunResult result = await svc.run(
+        <String>['k1', 'k2'],
+        originalEditionCovers: choice,
+        onlyPinnedGroups: choice.isNotEmpty,
+      );
+      svc.close();
+      return result.series.single;
+    }
+
+    final BookArtSeriesPlan first = await scrape();
+    expect(first.edition, 'zh');
+    expect(first.originalEditionVolumes, 1);
+    expect(first.originalEditionCovers, isFalse);
+    expect(
+      store.recordFor('k1')!.coverUrl,
+      'https://images.mangabaka.dev/volume/zh1',
+    );
+    expect(store.hasCover('k2'), isFalse, reason: '不拿日文版封面盖掉书里的封面');
+    expect(requests.where((Uri u) => u.host == 'api.bgm.tv'), isEmpty);
+
+    final BookArtSeriesPlan use = await scrape(<String, bool>{
+      first.seriesKey: true,
+    });
+    expect(use.originalEditionCovers, isTrue);
+    expect(
+      store.recordFor('k2')!.coverUrl,
+      'https://images.mangabaka.dev/volume/2',
+    );
+    expect(store.recordFor('k2')!.coverFromOriginalEdition, isTrue);
+    expect(store.recordFor('k1')!.coverFromOriginalEdition, isFalse);
+    expect(store.recordFor('k1')!.originalEditionCovers, isTrue);
+
+    // 不带选择重刮：沿用记下的选择。
+    final BookArtSeriesPlan again = await scrape();
+    expect(again.originalEditionCovers, isTrue);
+    expect(store.hasCover('k2'), isTrue);
+
+    final BookArtSeriesPlan keep = await scrape(<String, bool>{
+      first.seriesKey: false,
+    });
+    expect(keep.originalEditionCovers, isFalse);
+    expect(store.hasCover('k2'), isFalse, reason: '改回保留书里的封面：原版封面删掉');
+    expect(store.recordFor('k2')?.originalEditionCovers ?? false, isFalse);
+    expect(
+      store.recordFor('k1')!.coverUrl,
+      'https://images.mangabaka.dev/volume/zh1',
+    );
+  });
+
   test('dryRun 出同结构计划但不下载不写', () async {
     await seed('k1', 'テスト漫画 1');
     final BookArtScrapeService svc = service(mangaBakaOk);
