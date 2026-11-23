@@ -3114,7 +3114,7 @@
   "download_subscriptions_tab": "サブスクリプション",
   "download_summary_active": "進行中 $n",
   "download_summary_completed": "完了 $n",
-  "download_summary_queued": "Queued $n",
+  "download_summary_queued": "待機中 $n",
   "download_summary_speed_title": "Total speed",
   "download_target_label": "ダウンロード先",
   "download_target_local": "このデバイス",
