@@ -39,6 +39,8 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart'
+    show FushiApplePopUpButtonFace;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiIconButtonControl, FushiPlainButton, fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -2869,43 +2871,58 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final TextStyle style = metrics
         .subtitleStyle(context)
         .copyWith(fontSize: desktop ? 13 : 17, color: fg);
-    final Widget face = Container(
-      key: _anchorKey,
-      constraints: BoxConstraints(minHeight: desktop ? 22 : 34),
-      padding: EdgeInsets.only(
-        left: GlassSettingsPopUpButton._leadingPadding(desktop),
-        right: GlassSettingsPopUpButton._trailingPadding(desktop),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (valueIcon != null && value.isEmpty)
-            FushiIcon(valueIcon, size: desktop ? 14 : 17, color: fg)
-          else
-            ConstrainedBox(
-              // 触屏行窄（≈ 360），当前值再收一截，给行标题留出位置。
-              constraints: BoxConstraints(
-                maxWidth: GlassSettingsPopUpButton._labelMaxWidth(
-                  desktop,
-                  widget.maxLabelWidth,
-                ),
-              ),
-              child: Text(
-                value,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    // macOS 27 pop-up button：共享外观 [FushiApplePopUpButtonFace]（灰填充、
+    // 高 22、右侧上下双箭头）；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。
+    // 只有图标、没有文字的值（icons 给了而 label 为空）仍走下面的自绘外观。
+    final Widget face = desktop && !(valueIcon != null && value.isEmpty)
+        ? KeyedSubtree(
+            key: _anchorKey,
+            child: FushiApplePopUpButtonFace(
+              label: value,
+              height: 22,
+              maxLabelWidth: GlassSettingsPopUpButton._labelMaxWidth(
+                desktop,
+                widget.maxLabelWidth,
               ),
             ),
-          SizedBox(width: GlassSettingsPopUpButton._chevronGap(desktop)),
-          FushiIcon(
-            CupertinoIcons.chevron_up_chevron_down,
-            size: GlassSettingsPopUpButton._chevronSize(desktop),
-            color: desktop ? apple.secondaryLabel : apple.tertiaryLabel,
-          ),
-        ],
-      ),
-    );
+          )
+        : Container(
+            key: _anchorKey,
+            constraints: BoxConstraints(minHeight: desktop ? 22 : 34),
+            padding: EdgeInsets.only(
+              left: GlassSettingsPopUpButton._leadingPadding(desktop),
+              right: GlassSettingsPopUpButton._trailingPadding(desktop),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (valueIcon != null && value.isEmpty)
+                  FushiIcon(valueIcon, size: desktop ? 14 : 17, color: fg)
+                else
+                  ConstrainedBox(
+                    // 触屏行窄（≈ 360），当前值再收一截，给行标题留出位置。
+                    constraints: BoxConstraints(
+                      maxWidth: GlassSettingsPopUpButton._labelMaxWidth(
+                        desktop,
+                        widget.maxLabelWidth,
+                      ),
+                    ),
+                    child: Text(
+                      value,
+                      style: style,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                SizedBox(width: GlassSettingsPopUpButton._chevronGap(desktop)),
+                FushiIcon(
+                  CupertinoIcons.chevron_up_chevron_down,
+                  size: GlassSettingsPopUpButton._chevronSize(desktop),
+                  color: desktop ? apple.secondaryLabel : apple.tertiaryLabel,
+                ),
+              ],
+            ),
+          );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     Widget button = FushiPlainButton(
       onPressed: _openMenu,
@@ -2913,17 +2930,6 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
       semanticLabel: widget.semanticLabel,
       child: face,
     );
-    // macOS 27 pop-up button：secondaryFill 灰填充、圆角 6、高 22，右侧上下
-    // 双箭头；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。
-    if (desktop) {
-      button = DecoratedBox(
-        decoration: BoxDecoration(
-          color: apple.secondaryFill,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: button,
-      );
-    }
     if (!hasFocusRoot) return button;
     return Actions(
       actions: <Type, Action<Intent>>{

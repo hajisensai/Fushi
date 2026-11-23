@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -380,7 +379,7 @@ Color settingsToneGlyphColor(BuildContext context, SettingsIconTone tone) {
 ///
 /// - M3E：高 56 全圆角胶囊（M3 search bar），surfaceContainerHigh 填充；获得
 ///   焦点时填充提亮一档并画 2px primary 描边，清除钮弹簧放大出现。
-/// - Apple：液态玻璃胶囊里的 [CupertinoSearchTextField]（桌面 13 号、触屏 17 号）。
+/// - Apple：共享 [FushiSearchField] 的 Apple 分支（macOS 宽窗 13 号、触屏 17 号）。
 ///
 /// 键盘：↓ 调 [onArrowDown]（把焦点交给结果列表），回车调 [onSubmitted]
 /// （约定为「打开第一条结果」）。
@@ -482,33 +481,18 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
     );
   }
 
-  /// iOS 27 搜索框：无描边、tertiarySystemFill 灰色填充的胶囊（`UISearchBar`
-  /// 的 search field），灰色放大镜与占位文字。不再垫玻璃边框——列表页里的搜索框
-  /// 不是悬浮控件。
+  /// iOS 27 / macOS 27 搜索框：共享 [FushiSearchField] 的 Apple 分支
+  /// （tertiarySystemFill 实色胶囊、无描边、灰放大镜 / 占位字、有内容时 ⊗；
+  /// iOS 高 36 / 17pt，macOS 宽窗高 28 / 13pt）。
   Widget _buildApple(BuildContext context) {
-    final FushiAppleColors apple = appleColorsOf(context);
-    final bool desktop = FushiAppleMetrics.of(context).desktop;
-    final double radius = desktop ? 15 : 20;
-    return CupertinoSearchTextField(
+    return FushiSearchField(
       controller: widget.controller,
       focusNode: _focusNode,
       autofocus: widget.autofocus,
-      placeholder: widget.hintText ?? t.settings_search_hint,
-      backgroundColor: apple.tertiaryFill,
-      borderRadius: BorderRadius.circular(radius),
-      itemColor: apple.secondaryLabel,
-      itemSize: desktop ? 15 : 18,
-      style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
-      placeholderStyle: TextStyle(
-        fontSize: desktop ? 13 : 17,
-        color: apple.secondaryLabel,
-      ),
-      padding: desktop
-          ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
-          : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
+      hintText: widget.hintText ?? t.settings_search_hint,
       onChanged: widget.onChanged,
-      onSubmitted: widget.onSubmitted,
-      onSuffixTap: _clear,
+      onSubmitted: widget.onSubmitted ?? (String _) {},
+      onClear: _clear,
     );
   }
 
