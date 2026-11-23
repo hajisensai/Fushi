@@ -13,6 +13,7 @@
 #include "clipboard_image_channel.h"
 #include "external_open_handoff.h"
 #include "floating_ball_channel.h"
+#include "floating_lyric_channel.h"
 #include "gamescope_overlay.h"
 #include "global_lookup_channel.h"
 
@@ -31,6 +32,8 @@ struct _MyApplication {
   FlMethodChannel* window_activation_channel;
   // Desktop system floating ball (`app.fushi.reader/floating_ball`).
   FushiFloatingBall* floating_ball;
+  // Floating subtitles / desktop lyrics (`app.fushi.reader/floating_lyric`).
+  FushiFloatingLyric* floating_lyric;
   // App-external lookup card + PRIMARY selection (`app.fushi.reader/
   // global_lookup`, `app.fushi.reader/foreground_selection`).
   FushiGlobalLookup* global_lookup;
@@ -250,6 +253,7 @@ static void my_application_activate(GApplication* application) {
                                             window_activation_method_cb, self,
                                             nullptr);
   self->floating_ball = fushi_floating_ball_new(messenger, window);
+  self->floating_lyric = fushi_floating_lyric_new(messenger, window);
   self->global_lookup = fushi_global_lookup_new(messenger);
 
   // Steam Deck Game Mode, started from Fushi's Steam library entry: Steam can
@@ -331,6 +335,7 @@ static void my_application_dispose(GObject* object) {
   g_clear_object(&self->external_video_channel);
   g_clear_object(&self->window_activation_channel);
   g_clear_pointer(&self->floating_ball, fushi_floating_ball_free);
+  g_clear_pointer(&self->floating_lyric, fushi_floating_lyric_free);
   g_clear_pointer(&self->global_lookup, fushi_global_lookup_free);
   g_clear_pointer(&self->pending_external_args, g_ptr_array_unref);
   if (self->window != nullptr) {

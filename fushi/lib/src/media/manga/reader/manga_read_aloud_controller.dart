@@ -25,6 +25,7 @@ import 'dart:math' as math;
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -225,6 +226,9 @@ class MangaReadAloudController extends ChangeNotifier {
   final Map<int, Future<MangaPageTextResult>> _texts =
       <int, Future<MangaPageTextResult>>{};
   final Map<int, _PagePlan> _plans = <int, _PagePlan>{};
+
+  /// 本卷已排过的页里页面注过音的词：只在首次出现处注音的词，后面页也按它念。
+  final MangaRubyReadings _learnedReadings = MangaRubyReadings();
   final Set<Future<void>> _disposing = <Future<void>>{};
   bool _disposed = false;
 
@@ -618,6 +622,7 @@ class MangaReadAloudController extends ChangeNotifier {
       case MangaPageTextReady(page: final MokuroImage image):
         final _PagePlan? raced = _plans[page];
         if (raced != null) return raced;
+        _learnedReadings.learnPage(image.blocks);
         final List<MangaReadAloudUtterance> utterances = planMangaPageReadAloud(
           image,
           pageIndex: page,
@@ -625,6 +630,7 @@ class MangaReadAloudController extends ChangeNotifier {
           pronunciation: _pronunciation,
           preSynthesis: _preSynthesis,
           maxInputLength: _rig.maxInputLength,
+          learnedReadings: _learnedReadings,
         );
         final List<int> chunkStart = <int>[];
         final List<String> texts = <String>[];
