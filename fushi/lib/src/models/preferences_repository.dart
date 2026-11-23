@@ -5210,6 +5210,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 制卡句子音频跟随播放音量（反馈 d7mXlstcv9，维护者拍板默认开）：歌曲卡施加与播放
+  /// 相同的 ReplayGain + 音量滑块，有声书卡施加音量滑块，卡里的响度与当时听到的一致；
+  /// 关掉则一律按源文件原始电平裁。见 `mining_playback_volume_gain.dart`。
+  bool get miningAudioFollowPlaybackVolume =>
+      getPref('mining_audio_follow_playback_volume', defaultValue: true)
+          as bool;
+
+  void toggleMiningAudioFollowPlaybackVolume() async {
+    await setPref(
+      'mining_audio_follow_playback_volume',
+      !miningAudioFollowPlaybackVolume,
+    );
+    notifyListeners();
+  }
+
   bool get deduplicatePitchAccents =>
       getPref('deduplicate_pitch_accents', defaultValue: true) as bool;
 

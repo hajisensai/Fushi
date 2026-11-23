@@ -7204,6 +7204,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "ปรับเสียงประโยคให้ตรงกับความเร็วการเล่น",
   "mining_audio_follow_playback_speed_hint": "เมื่อหนังสือเสียงเล่นเร็วหรือช้ากว่า 1× เสียงประโยคบนการ์ดจะถูกยืด/หดเวลาให้เป็นความเร็วเดียวกันโดยคงระดับเสียง ใช้กับการสร้างการ์ดจากหนังสือเสียง ส่วนเสียงอ่านคำ TTS บนการ์ดจะใช้ความเร็วเสียงสำรอง",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "ช่องว่างเสียงก่อนประโยค",
   "mining_audio_head_pad_hint": "เสียงเพิ่มเติมที่เก็บไว้ก่อนคำบรรยายเริ่ม เพื่อไม่ให้พยางค์แรกถูกตัด จะไม่ล้ำไปถึงบรรทัดก่อนหน้า",
   "mining_audio_pad_readout": "${ms} ms",

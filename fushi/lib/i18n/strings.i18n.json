@@ -7204,6 +7204,8 @@
   "mining_app_audio_unsupported": "Requires Android 10 or later",
   "mining_audio_follow_playback_speed": "Match sentence audio to playback speed",
   "mining_audio_follow_playback_speed_hint": "When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Applies to audiobook mining; TTS word audio on cards follows the fallback voice speed.",
+  "mining_audio_follow_playback_volume": "Match sentence audio to playback volume",
+  "mining_audio_follow_playback_volume_hint": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
   "mining_audio_head_pad": "Audio padding before sentence",
   "mining_audio_head_pad_hint": "Extra audio kept before the subtitle starts, so the first syllable is not clipped. Never runs into the previous line.",
   "mining_audio_pad_readout": "${ms} ms",

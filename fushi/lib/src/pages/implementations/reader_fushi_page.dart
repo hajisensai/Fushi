@@ -132,6 +132,7 @@ import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/mining_playback_volume_gain.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';

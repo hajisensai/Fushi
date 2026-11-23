@@ -639,6 +639,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_app_audio_capture_desktop',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
+  // 制卡句子音频跟随播放音量（歌曲 ReplayGain + 音量、有声书音量；默认开，d7mXlstcv9）。
+  'mining_audio_follow_playback_volume',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
