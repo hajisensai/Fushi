@@ -13,7 +13,7 @@ import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
-    show FushiAppleBarProminentButton, fushiAppleBarCapsuleExtent;
+    show FushiAppleBarCluster, fushiAppleBarCapsuleExtent;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
@@ -1333,10 +1333,10 @@ class _MastheadSegmentState extends State<_MastheadSegment> {
 /// 焦点、tooltip 与 Semantics）。
 ///
 /// @design dual
-/// Apple（[isGlassDesign]）：iOS 27 prominent bar button——强调色玻璃圆钮
-/// （[FushiAppleBarProminentButton]，`GlassBarItemBackground.separate` +
-/// tint，窄窗 44 / 宽窗 36，随玻璃画质档位）。[builder] 收到圆形、透明底
-/// （[FushiMastheadPalette.indicator] 透明、onIndicator = onPrimary）与圆钮
+/// Apple（[isGlassDesign]）：与顶栏其余动作同一枚中性玻璃圆钮
+/// （[FushiAppleBarCluster]，`GlassBarItemBackground.separate`，不着强调色，
+/// 窄窗 44 / 宽窗 36，随玻璃画质档位）。[builder] 收到圆形、透明底
+/// （[FushiMastheadPalette.indicator] 透明、onIndicator = label 色）与圆钮
 /// 边长，底由玻璃圆钮画；没有悬停弹角与投影。
 class FushiMastheadPrimaryButton extends StatefulWidget {
   const FushiMastheadPrimaryButton({
@@ -1364,22 +1364,22 @@ class _FushiMastheadPrimaryButtonState
   bool _hovered = false;
 
   Widget _buildApple(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiMastheadPalette base = fushiMastheadPaletteOf(context);
     final bool compact = fushiMastheadCompact(context);
     final double extent = fushiAppleBarCapsuleExtent(compact: compact);
     final FushiMastheadPalette palette = FushiMastheadPalette(
       strong: base.strong,
       indicator: const Color(0x00000000),
-      onIndicator: scheme.onPrimary,
+      onIndicator: appleColorsOf(context).label,
       ink: base.ink,
       segment: base.segment,
       segmentHover: base.segmentHover,
     );
-    return FushiAppleBarProminentButton(
-      tint: scheme.primary,
+    return FushiAppleBarCluster(
       compact: compact,
-      child: widget.builder(context, const CircleBorder(), palette, extent),
+      items: <Widget>[
+        widget.builder(context, const CircleBorder(), palette, extent),
+      ],
     );
   }
 
