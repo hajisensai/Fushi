@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart' show musicServerIdOfPlaySource;
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -165,6 +166,35 @@ void main() {
       const Duration(seconds: 7),
     ]);
     expect(engine.listenedBeforeStart, isNull, reason: '只在回调里有效');
+  });
+
+  test('来源 id 拆回（BUG-5268）：服务器身份含 `/`（Jellyfin）也拆对，插件条目 id 含 `/` 照旧', () {
+    const String jf = 'jellyfin:http://nas:8096/jf|user-1';
+    expect(MusicPlaySource.serverAlbum(jf, 'abc123').hostRef, (
+      hostId: jf,
+      itemId: 'abc123',
+    ));
+    expect(MusicPlaySource.serverPlaylist(jf, 'pl9').hostRef, (
+      hostId: jf,
+      itemId: 'pl9',
+    ));
+    expect(MusicPlaySource.serverAlbum('subsonic-navi', 'al-1').hostRef, (
+      hostId: 'subsonic-navi',
+      itemId: 'al-1',
+    ));
+    expect(MusicPlaySource.pluginAlbum('demo', 'path/to/album').hostRef, (
+      hostId: 'demo',
+      itemId: 'path/to/album',
+    ));
+    // 已落库的行（编码没变）：从库里读回的 kind + id 照样拆对；与清洗用的服务器身份一致。
+    final MusicPlaySource stored = MusicPlaySource(
+      kind: MusicPlaySourceKind.fromWire('server_album'),
+      id: '$jf/abc123',
+    );
+    expect(stored.hostRef?.hostId, jf);
+    expect(musicServerIdOfPlaySource('server_album', stored.id), jf);
+    expect(const MusicPlaySource.album('a/b').hostRef, isNull);
+    expect(MusicPlaySource.serverAlbum(jf, '').hostRef, isNull);
   });
 
   test('队列来源：playQueue 记住、onTrackStarted 时可读、换队列替换、stop 清掉', () async {

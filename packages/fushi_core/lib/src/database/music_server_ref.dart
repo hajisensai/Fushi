@@ -177,14 +177,35 @@ String? scrubMusicPersistedUrl(String? value, {String? serverId}) {
   };
 }
 
-/// 播放来源 id（`server_album` / `server_playlist` 的 `<服务器身份>/<条目 id>`）里的服务器
-/// 身份；别的种类回 null。与 app 侧 `MusicPlaySource.serverAlbum / serverPlaylist` 的编码一致。
-String? musicServerIdOfPlaySource(String? kind, String? id) {
-  if (kind != 'server_album' && kind != 'server_playlist') return null;
+/// 插件 / 服务器播放来源 id（`music_play_events.source_id`，`<宿主 id>/<条目 id>`）拆回
+/// (宿主 id, 条目 id)；别的种类、编码不对回 null。编码与拆法的唯一真相源（app 侧
+/// `MusicPlaySource.hostRef`、播放流清洗、最近播放的封面都走这里）。
+///
+/// 两种来源里含 `/` 的一侧不同，按种类各认自己的不变量（不按某家服务器特判）：
+/// - 插件（`plugin_album` / `plugin_playlist`）：宿主 = 插件 id（不含 `/`），条目 id 可以含
+///   （有的插件拿路径当 id）→ 按**第一个** `/` 切。
+/// - 服务器（`server_album` / `server_playlist`）：宿主 = 服务器配置身份，可以含 `/`
+///   （Jellyfin 的身份带服务器地址 `jellyfin:http://…|<userId>`），条目 id 是服务器侧不透明
+///   id（Jellyfin GUID / Subsonic id / Apple Music / YouTube id，都不含 `/`）→ 按**最后一个**
+///   `/` 切。
+/// 两种拆法都与已落库的行兼容（编码本身没变），不需要迁移。
+({String hostId, String itemId})? musicPlaySourceHostRef(
+  String? kind,
+  String? id,
+) {
   if (id == null) return null;
-  // 服务器身份本身可能含 `/`（Jellyfin = `jellyfin:<服务器地址>|<userId>`），条目 id 不含：
-  // 按最后一个 `/` 切。
-  final int slash = id.lastIndexOf('/');
-  if (slash <= 0) return null;
-  return id.substring(0, slash);
+  final int slash = switch (kind) {
+    'plugin_album' || 'plugin_playlist' => id.indexOf('/'),
+    'server_album' || 'server_playlist' => id.lastIndexOf('/'),
+    _ => -1,
+  };
+  if (slash <= 0 || slash == id.length - 1) return null;
+  return (hostId: id.substring(0, slash), itemId: id.substring(slash + 1));
 }
+
+/// 播放来源 id（`server_album` / `server_playlist` 的 `<服务器身份>/<条目 id>`）里的服务器
+/// 身份；别的种类回 null。拆法见 [musicPlaySourceHostRef]。
+String? musicServerIdOfPlaySource(String? kind, String? id) =>
+    kind == 'server_album' || kind == 'server_playlist'
+    ? musicPlaySourceHostRef(kind, id)?.hostId
+    : null;
