@@ -1782,7 +1782,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 片段盒的部分一律丢掉：着重号（傍点）只剩一角，墨迹宽的字体（圆体 / Meiryo 等）在 ruby 基字与行首字上
     // 被切平（::highlight 规则为空也一样，Chromium 实测；WebKit 不受影响）。底色本来就由窄条层画，所以注册表
     // 入口按元素核对这层 ::highlight 的计算样式：对这段字什么都不改（字色相同、无底色 / 装饰 / 阴影 / 描边）
-    // 的文字不交给引擎绘制；带着重号的文字也不交（宁可不换字色，也不能把傍点裁掉）。窄条层仍读调用方给的
+    // 的文字不交给引擎绘制；带着重号的文字也不交（宁可不换字色，也不能把傍点裁掉）——除非这层高亮换了字色：
+    // 窄条底色照画，字色不换就可能和底色撞在一起（查词高亮文字色做的反色高亮，深色条上留着深色正文 = 字
+    // 看不见，拍板台 -8azTfJh_v），能读比傍点完整要紧。有声书当前句换字色时在 Blink 上不走 Range（包裹），
+    // 不经过这里。窄条层仍读调用方给的
     // 完整范围（painted 记着名字 → 原件，get 读回原件）。调用方都是建好整份 Highlight 再 set、之后不再改，剔一次即可。
     var painted = new Map();
     var clipsInk = (function() {
@@ -1792,7 +1795,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     var clearColor = function(c) {
       return c === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\)$/.test(c);
     };
-    // 这一元素里的字不交给引擎绘制：带着重号，或这层高亮对它是空操作。读不到 ::highlight 计算样式的旧内核
+    // 这一元素里的字不交给引擎绘制：带着重号（且这层高亮不换字色），或这层高亮对它是空操作。读不到 ::highlight 计算样式的旧内核
     // 返回空串，按「会改」处理（照旧交给引擎）。
     var unpainted = function(el, name, memo) {
       if (!el) return false;
@@ -1803,7 +1806,8 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var noop = !!hs.color && hs.color === cs.color && clearColor(hs.backgroundColor) &&
           hs.textDecorationLine === 'none' && hs.textShadow === 'none' &&
           !(parseFloat(hs.webkitTextStrokeWidth) > 0);
-      var hit = emphasis || noop;
+      var recolors = !!hs.color && hs.color !== cs.color;
+      var hit = noop || (emphasis && !recolors);
       memo.set(el, hit);
       return hit;
     };

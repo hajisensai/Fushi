@@ -105,6 +105,26 @@ const UNREVEALED = String.raw`(() => {
   return { hidesEmphasis };
 })()`;
 
+// Lookup selection over the whole paragraph (the selection script registers it the same way):
+// with a lookup-highlight text colour (inverted highlight, white text on a dark lane) the
+// emphasised text must still reach the engine, or it stays dark on the dark lane; without one
+// the selection highlight is a no-op for every character and none of it is painted.
+const SELECT = String.raw`(() => {
+  const root = document.querySelector('.fushi-vn-content') || document.body;
+  const el = root.querySelector('.em');
+  const range = document.createRange();
+  range.selectNodeContents(root.querySelector('p'));
+  CSS.highlights.set('fushi-selection', new Highlight(range));
+  const painted = HighlightRegistry.prototype.get.call(CSS.highlights, 'fushi-selection');
+  const emText = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+  let paintsEmphasis = false;
+  let paintsAny = false;
+  if (painted) painted.forEach((r) => { paintsAny = true; if (r.intersectsNode(emText)) paintsEmphasis = true; });
+  const emColor = getComputedStyle(el, '::highlight(fushi-selection)').color;
+  CSS.highlights.delete('fushi-selection');
+  return { paintsEmphasis, paintsAny, emColor };
+})()`;
+
 function decodePng(buf) {
   let p = 8, w = 0, h = 0, ct = 0;
   const idat = [];
@@ -183,6 +203,13 @@ try {
     if (page.customColor && play.rangeMode) fail('a custom cue text colour still goes through a CSS highlight');
     if (page.customColor && play.emColor !== 'rgb(30, 90, 200)') fail('emphasised text did not take the custom cue colour: ' + play.emColor);
     if (play.rangeMode && !page.customColor && play.paintsPlain) fail('a no-op cue highlight is still painted by the engine');
+    const sel = await driver.evalHere(SELECT);
+    if (page.selectionText) {
+      if (!sel.paintsEmphasis) fail('the inverted lookup highlight leaves emphasised text in the body colour on its lane');
+      if (sel.emColor !== 'rgb(255, 255, 255)') fail('emphasised text does not take the lookup highlight text colour: ' + sel.emColor);
+    } else if (sel.paintsAny) {
+      fail('a no-op lookup highlight is still painted by the engine');
+    }
     const unrevealed = await driver.evalHere(UNREVEALED);
     if (!unrevealed.hidesEmphasis) fail('the VN unrevealed highlight no longer covers emphasised text (marks show before their turn)');
     console.log(page.name + ': ink ' + before + ' -> ' + after + (play.rangeMode ? ' (range)' : ' (wrapper)'));
