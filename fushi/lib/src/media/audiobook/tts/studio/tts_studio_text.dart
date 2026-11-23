@@ -13,6 +13,8 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
     show mangaLineKindLabel;
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart'
+    show kMangaAudioDramaFailure;
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -50,6 +52,8 @@ String ttsRenderFailureText(String? code) {
       return t.manga_audio_failure_no_pages;
     case 'manga_not_rendered':
       return t.manga_audio_failure_not_rendered;
+    case kMangaAudioDramaFailure:
+      return t.manga_audio_failure_drama_registered;
     case 'ffmpeg_missing':
       return t.manga_audio_failure_ffmpeg_missing;
     case 'empty_text':

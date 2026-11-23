@@ -156,14 +156,6 @@ Future<AppMangaRenderBackend> _backendFor(
   );
 }
 
-/// 改已生成成品（补回 / 单句重生成）的生成器：登记的是哪份清单就改哪份（外部导入的
-/// 原地改写，[mangaAudioEditTarget]）。
-Future<MangaAudioRenderer> _editRendererFor(
-  AudioProductionHost appModel,
-  String bookKey,
-  MangaRenderBackend backend,
-) async => (await mangaAudioEditTarget(appModel, bookKey)).renderer(backend);
-
 Future<void> _ensureFfmpeg(FfmpegBackend backend) async {
   final FfmpegRunResult result = await backend.runQuery(const <String>[
     '-hide_banner',
@@ -189,6 +181,11 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
   if (volume == null) throw const TtsRenderFailure('book_missing');
   final String? blocker = mangaRenderBlocker(volume);
   if (blocker != null) throw TtsRenderFailure(blocker);
+  // 补回改登记的那份清单（外部导入的原地改写）；登记的是广播剧时不能按句补回，在停播放、
+  // 拉起引擎之前就拦下（[mangaLineEditTarget]）。整卷生成不经这里。
+  final MangaAudioEditTarget? editTarget = job.lineRequests.isEmpty
+      ? null
+      : await mangaLineEditTarget(appModel, job.bookKey);
   await _ensureFfmpeg(resolveFfmpegBackend());
   cancel.throwIfCancelled();
 
@@ -199,12 +196,12 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
     volume.script,
   );
   // 整卷生成总是出到本机目录、整份登记（替换外部导入的登记）；补回改登记的那份。
-  final MangaAudioRenderer renderer = job.lineRequests.isEmpty
-      ? MangaAudioRenderer(
-          backend: backend,
-          manifestFile: mangaRenderManifestFile(appModel, job.bookKey),
-        )
-      : await _editRendererFor(appModel, job.bookKey, backend);
+  final MangaAudioRenderer renderer =
+      editTarget?.renderer(backend) ??
+      MangaAudioRenderer(
+        backend: backend,
+        manifestFile: mangaRenderManifestFile(appModel, job.bookKey),
+      );
   final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(job.bookKey);
   final MangaRenderManifest? previous = await MangaRenderManifest.load(
@@ -286,7 +283,7 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
 }
 
 /// 单句换种子重生成（不经队列：一句、要立刻试听）。失败抛 [MangaLineFailure] /
-/// [TtsRenderFailure]。
+/// [TtsRenderFailure]（登记的是广播剧时 [kMangaAudioDramaFailure]，不合成）。
 Future<MangaRegenerateCandidate> regenerateMangaLine(
   AudioProductionHost appModel, {
   required MangaAudioVolume volume,
@@ -295,24 +292,26 @@ Future<MangaRegenerateCandidate> regenerateMangaLine(
   required String defaultVoice,
   required TtsRenderCancelToken cancel,
 }) async {
+  final MangaAudioEditTarget target = await mangaLineEditTarget(
+    appModel,
+    volume.bookKey,
+  );
   await _ensureFfmpeg(resolveFfmpegBackend());
   final AppMangaRenderBackend backend = await _backendFor(
     appModel,
     volume.script,
   );
   try {
-    return await (await _editRendererFor(
-      appModel,
-      volume.bookKey,
-      backend,
-    )).regenerate(
-      script: volume.script,
-      pageBlocks: volume.pageBlocks,
-      defaultVoice: defaultVoice,
-      lineId: lineId,
-      seed: seed,
-      cancel: cancel,
-    );
+    return await target
+        .renderer(backend)
+        .regenerate(
+          script: volume.script,
+          pageBlocks: volume.pageBlocks,
+          defaultVoice: defaultVoice,
+          lineId: lineId,
+          seed: seed,
+          cancel: cancel,
+        );
   } finally {
     await backend.dispose();
   }
@@ -341,16 +340,20 @@ Future<String> mangaCandidatePath(
 );
 
 /// 保留候选：清单 / 演出稿 / 账本落盘，重新入库。返回 false = 这句已不在清单里，
-/// 或候选文件已被别的操作清掉（什么都没改）。
+/// 或候选文件已被别的操作清掉（什么都没改）。试听期间这卷登记成了广播剧时撤回候选、
+/// 抛 [TtsRenderFailure]（[kMangaAudioDramaFailure]），什么都不写。
 Future<bool> keepMangaCandidate(
   AudioProductionHost appModel, {
   required MangaAudioVolume volume,
   required MangaRegenerateCandidate candidate,
 }) async {
-  final MangaAudioEditTarget target = await mangaAudioEditTarget(
-    appModel,
-    volume.bookKey,
-  );
+  final MangaAudioEditTarget target;
+  try {
+    target = await mangaLineEditTarget(appModel, volume.bookKey);
+  } on TtsRenderFailure {
+    await discardMangaCandidate(appModel, volume.bookKey, candidate);
+    rethrow;
+  }
   final File manifestFile = target.manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
@@ -385,14 +388,15 @@ Future<bool> keepMangaCandidate(
 
 /// 演出稿里已改成「不读」类型的句子（[lineIds] 里的）从成品里拿掉：清单、账本落盘，
 /// 库按新清单整份重登记，播放器不再念它（与整卷生成同一判据，HBK-AUDIT-214）。返回
-/// true = 拿掉了（清单变了）。这卷没生成过 / 这几句都还读时什么都不写。
+/// true = 拿掉了（清单变了）。这卷没生成过 / 这几句都还读时什么都不写；登记的是广播剧
+/// 时抛 [TtsRenderFailure]（[kMangaAudioDramaFailure]），什么都不写。
 Future<bool> dropMangaUnreadLines(
   AudioProductionHost appModel, {
   required String bookKey,
   required MangaAudioScript script,
   required Iterable<String> lineIds,
 }) async {
-  final MangaAudioEditTarget target = await mangaAudioEditTarget(
+  final MangaAudioEditTarget target = await mangaLineEditTarget(
     appModel,
     bookKey,
   );

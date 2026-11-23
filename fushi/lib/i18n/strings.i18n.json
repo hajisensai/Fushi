@@ -5764,6 +5764,7 @@
   "manga_audio_export_clip_no_line": "No voiced line on this page to export",
   "manga_audio_failure_bad_output": "The reply was not in the expected format",
   "manga_audio_failure_clip_missing": "The linked audiobook clip is unavailable",
+  "manga_audio_failure_drama_registered": "This volume's registered audio is a drama CD / anime track, which can't be edited line by line. Generate the whole volume first to switch to synthesized audio.",
   "manga_audio_failure_empty_text": "No text to read",
   "manga_audio_failure_ffmpeg_missing": "FFmpeg is unavailable on this device",
   "manga_audio_failure_image": "The page image could not be read",

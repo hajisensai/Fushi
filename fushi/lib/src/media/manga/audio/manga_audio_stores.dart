@@ -17,6 +17,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
+import 'package:fushi_engine/tts/render/tts_render_queue.dart'
+    show TtsRenderFailure;
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
@@ -140,4 +142,27 @@ Future<MangaAudioEditTarget> mangaAudioEditTarget(
     manifestFile: mangaRenderManifestFile(appModel, bookKey),
     kind: MangaAudioProductKind.drama,
   );
+}
+
+/// 登记的是广播剧 / 动画音轨、不能按句改时的失败码（app 内经 `ttsRenderFailureText`
+/// 出文案，ctl 映射成 409 同名错误码）。
+const String kMangaAudioDramaFailure = 'manga_audio_drama';
+
+/// 按句改（单句重生成 / 保留候选 / 换本地音频 / 按角色重生成 / 补回 / 拿掉不读的句子）
+/// 要改的那份清单：同 [mangaAudioEditTarget]，但登记的是广播剧 / 动画音轨时抛
+/// [TtsRenderFailure]（[kMangaAudioDramaFailure]）——广播剧的段不是按演出稿逐句出的，
+/// 改合成清单再写库会把登记悄悄换回合成成品（BUG-5340），要先整卷生成换成合成成品
+/// （拍板 pr4255b）。app 内入口与 ctl 共用这一个判据。
+Future<MangaAudioEditTarget> mangaLineEditTarget(
+  AudioProductionHost appModel,
+  String bookKey,
+) async {
+  final MangaAudioEditTarget target = await mangaAudioEditTarget(
+    appModel,
+    bookKey,
+  );
+  if (target.kind == MangaAudioProductKind.drama) {
+    throw const TtsRenderFailure(kMangaAudioDramaFailure);
+  }
+  return target;
 }

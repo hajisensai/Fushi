@@ -578,6 +578,18 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       FushiToast.show(msg: t.manga_audio_job_busy);
       return;
     }
+    // 登记的是广播剧时不能按句补回：当场提示，不排一个注定失败的任务（任务里同一判据
+    // 兜底）。
+    try {
+      await mangaLineEditTarget(widget.appModel, volume.bookKey);
+    } on TtsRenderFailure catch (e) {
+      FushiToast.show(
+        msg: ttsRenderFailureText(e.code),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    if (!mounted) return;
     try {
       await _queue.enqueue(
         bookKey: volume.bookKey,
