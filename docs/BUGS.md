@@ -41,6 +41,7 @@
 | [BUG-5281](bugs/BUG-5281-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
 | [BUG-5280](bugs/BUG-5280-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
 | [BUG-5279](bugs/BUG-5279-downloads-peek-sources.md) | ✅ | ✅ | 下载速览只看视频任务：漫画 / 转录 / 直链 / 旧番剧 / 远端 / 互联任务都不在 |
+| [BUG-5277](bugs/BUG-5277-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
 | [BUG-5278](bugs/BUG-5278-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
 | [BUG-5276](bugs/BUG-5276-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
