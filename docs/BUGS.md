@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4604 条。点号进各自文件。
+> 共 4605 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5285](bugs/BUG-5285-legacy-disc-stream-rows-not-converted.md) | ✅ | ✅ | 修复前逐个入库的蓝光流文件行（00000.m2ts）一直留在视频库，不会换成原盘合集 |
 | [BUG-5284](bugs/BUG-5284-media-title-crc-suffix-not-cleaned.md) | ✅ | ✅ | media-title-crc-suffix-not-cleaned |
 | [BUG-5283](bugs/BUG-5283-book-game-pending-identity-invisible.md) | ✅ | ✅ | book-game-pending-identity-invisible |
 | [BUG-5282](bugs/BUG-5282-ai-identity-candidate-type-mislabeled.md) | ✅ | ✅ | AI 识别作品时候选类型被标成本地搜索类型，正确候选被压低置信度不采用 |

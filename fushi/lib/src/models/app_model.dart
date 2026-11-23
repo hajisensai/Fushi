@@ -40,6 +40,7 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
     show isMediaServerVideoPath;
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
+import 'package:fushi_engine/media/video/disc/legacy_disc_stream_rows.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
@@ -4141,6 +4142,27 @@ class AppModel
 
   /// 见 [migrateAudioOnlyVideoBooksToMusic]。失败（原生库缺失、视频库正在清理刮削
   /// 资料）只记错误日志：数据原样保留，下次启动按同一判据重来。
+  Future<void> _migrateLegacyDiscStreamRows() async {
+    try {
+      final LegacyDiscStreamMigrationReport report =
+          await migrateLegacyDiscStreamRows(_database);
+      if (report.candidates == 0) return;
+      debugPrint(
+        '[Fushi] legacy disc stream rows -> disc collections: '
+        'reclaimed ${report.reclaimed}/${report.candidates}, '
+        'discs ${report.discs}, memberships ${report.membershipsCarried}, '
+        'unreadable ${report.unreadableRoots.length}',
+      );
+      if (report.discs > 0) notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.migrateLegacyDiscStreamRows',
+        e,
+        stack,
+      );
+    }
+  }
+
   Future<void> _migrateAudioOnlyVideosToMusic() async {
     try {
       final VideoAudioMigrationReport report =
@@ -5810,6 +5832,9 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // BUG-4245 修复前逐个入库的蓝光流文件行（`BDMV/STREAM/00002.m2ts`）换成正规盘
+      // 合集（BUG-5285）。按数据幂等：没有这类行就什么都不做；盘读不出的行留到下次。
+      unawaited(_migrateLegacyDiscStreamRows());
       // 上个进程被杀 / 崩溃留在书库根的导入残留（`.tmp-*` 暂存、`.bak-*` 让位旧树、
       // 拷到一半的半成品）：开库后清一次，不等下一次导入才清（BUG-4841，#3722 c07
       // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。
