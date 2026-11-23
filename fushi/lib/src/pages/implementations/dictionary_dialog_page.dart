@@ -2640,9 +2640,8 @@ class _DictionaryDialogPageState extends BasePageState {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 折叠管的是查词弹窗里这本的释义；汉字卡不折叠，「汉字」分区不给这个钮。
-              if (_hasCollapseControl(dictionary))
-                _buildDictionaryCollapseButton(dictionary),
+              // 折叠管的是查词弹窗里这本的释义（「汉字」分区里是它的汉字卡）。
+              _buildDictionaryCollapseButton(dictionary),
               _buildDictionaryVisibilityButton(dictionary, enabled),
             ],
           );
@@ -2925,9 +2924,7 @@ class _DictionaryDialogPageState extends BasePageState {
   // 当前态。tooltip 带「默认展示」标题、用详情分段控件同一套状态词，免得中文
   // 「折叠」被读成动作。
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
-    final DictionaryCollapseState state = dictionary.collapseStateFor(
-      JapaneseLanguage.instance,
-    );
+    final DictionaryCollapseState state = _collapseStateInSection(dictionary);
     final (IconData icon, String stateLabel) = switch (state) {
       // 未表态：一条横杠，与两个「已表态」图标一眼可分。点下去 → 显式展开。
       DictionaryCollapseState.inherit => (
@@ -2951,10 +2948,25 @@ class _DictionaryDialogPageState extends BasePageState {
       size: 20,
       tooltip: t.dict_row_collapse_tooltip(state: stateLabel),
       onTap: () => _saveDictionaryChange(
-        () => appModel.cycleDictionaryCollapseState(dictionary),
+        () => _sectionTypeOf(dictionary) == DictionaryType.kanji
+            ? appModel.setDictionaryKanjiCardCollapseState(
+                dictionary,
+                _nextCollapseState(state),
+              )
+            : appModel.cycleDictionaryCollapseState(dictionary),
       ),
     );
   }
+
+  /// 行内按钮的三态循环（继承 → 显式展开 → 显式折叠 → 继承），与
+  /// `DictionaryRepository.cycleDictionaryCollapseState` 同一顺序。
+  static DictionaryCollapseState _nextCollapseState(
+    DictionaryCollapseState state,
+  ) => switch (state) {
+    DictionaryCollapseState.inherit => DictionaryCollapseState.expanded,
+    DictionaryCollapseState.expanded => DictionaryCollapseState.collapsed,
+    DictionaryCollapseState.collapsed => DictionaryCollapseState.inherit,
+  };
 
   // 用自实现的 FushiReorderableColumn（局部坐标长按拖拽），而非 SDK 的
   // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 FushiAppUiScale 的
@@ -3556,7 +3568,7 @@ class _DictionaryDialogPageState extends BasePageState {
       key: ValueKey<String>('dict-detail-${dictionary.name}'),
       dictionary: dictionary,
       enabled: _enabledInSection(dictionary),
-      collapseState: dictionary.collapseStateFor(JapaneseLanguage.instance),
+      collapseState: _collapseStateInSection(dictionary),
       typeLabel: _sectionTypeLabel(dictionary),
       versionLabel: dictionary.revision,
       formatLabel: format?.name ?? dictionary.formatKey,
@@ -3566,10 +3578,8 @@ class _DictionaryDialogPageState extends BasePageState {
       showHeader: showHeader,
       onEnabledChanged: (bool enabled) =>
           _setDictionaryEnabled(dictionary, enabled),
-      onCollapseChanged: _hasCollapseControl(dictionary)
-          ? (DictionaryCollapseState state) =>
-                _setCollapseState(dictionary, state)
-          : null,
+      onCollapseChanged: (DictionaryCollapseState state) =>
+          _setCollapseState(dictionary, state),
       onRename: () => _renameDictionary(dictionary),
       onLanguage: () => _showDictionaryLanguageDialog(dictionary),
       // TODO-839：每本词典都给「更新」（消除「这本能更新那本不能」的断层），按
@@ -3617,7 +3627,9 @@ class _DictionaryDialogPageState extends BasePageState {
     Dictionary dictionary,
     DictionaryCollapseState target,
   ) => _saveDictionaryChange(
-    () => appModel.setDictionaryCollapseState(dictionary, target),
+    () => _sectionTypeOf(dictionary) == DictionaryType.kanji
+        ? appModel.setDictionaryKanjiCardCollapseState(dictionary, target)
+        : appModel.setDictionaryCollapseState(dictionary, target),
   );
 
   /// 宽屏右侧侧板：选中了词典 = 它的详情；没选 = 概览（四类计数 + 自动更新）。
@@ -3901,11 +3913,13 @@ class _DictionaryDialogPageState extends BasePageState {
   DictionaryType _sectionTypeOf(Dictionary dictionary) =>
       _isKanjiPart(dictionary) ? DictionaryType.kanji : dictionary.type;
 
-  /// 这一行给不给「折叠」控件（行内按钮与详情里的分段同一判据）：折叠只作用于查词
-  /// 弹窗里的释义，「汉字」分区的行对应汉字卡（不折叠），在那里给控件改的会是混合
-  /// 词典术语部分的状态。
-  bool _hasCollapseControl(Dictionary dictionary) =>
-      _sectionTypeOf(dictionary) != DictionaryType.kanji;
+  /// 这一行的折叠三态（行内按钮与详情里的分段同一判据）：「汉字」分区的行管的是
+  /// 查词弹窗里它的汉字卡（拍板台 6uasoIUvSR，默认折叠成一行），混合词典的汉字部分
+  /// 有自己的一份、不碰术语部分（BUG-3573）；其余分区是释义的折叠态。
+  DictionaryCollapseState _collapseStateInSection(Dictionary dictionary) =>
+      _sectionTypeOf(dictionary) == DictionaryType.kanji
+      ? dictionary.kanjiCardCollapseStateFor(JapaneseLanguage.instance)
+      : dictionary.collapseStateFor(JapaneseLanguage.instance);
 
   String _sectionTypeLabel(Dictionary dictionary) => _isKanjiPart(dictionary)
       ? '${_typeLabel(DictionaryType.kanji)} · ${t.dict_mixed_kanji_part}'

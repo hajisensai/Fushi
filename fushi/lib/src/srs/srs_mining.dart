@@ -46,8 +46,15 @@ typedef SrsNoteOpener = Future<bool> Function(String noteId);
 
 /// 一张后台制卡写完（或没写成）后的结果：[expression] 是提示用的词条（取不到用句子），
 /// [outcome] 是那次写入的真实结果（成功 / 重复 / 失败）。
+///
+/// [addAnyway]：结果是重复时非空——用同一份冻结载荷、拍上「允许重复」再排一次后台写入
+/// （提示上的「仍要添加」，用户 2026-11-22 重设计）。闭包持有冻结的媒体字节，提示消失即释放。
 typedef SrsBackgroundMineReporter =
-    void Function(String expression, MineOutcome outcome);
+    void Function(
+      String expression,
+      MineOutcome outcome, {
+      Future<void> Function()? addAnyway,
+    });
 
 /// `ankiRepositoryProvider` 装饰链里的 SRS 层（见文件头）。挖词目标 = Fushi 复习时
 /// 制卡链路上**会写卡或依赖 Anki 连接**的操作一律走复习，不再碰 Anki：
@@ -227,12 +234,28 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
       );
     }
     final String expression = _displayExpression(rawPayloadJson, context);
+    _runBackground(miner, payload, expression, allowDuplicate: false);
+    return MineOutcome.queued(deckName: deckName);
+  }
+
+  /// 把冻结好的 [payload] 排进后台写入队列，结果交 [_onBackgroundOutcome]。
+  /// [allowDuplicate]：「仍要添加」那次重排——载荷拍上允许重复的标记再写。
+  void _runBackground(
+    SrsMiner miner,
+    ForwardedMinePayload payload,
+    String expression, {
+    required bool allowDuplicate,
+  }) {
     unawaited(
       _backgroundQueue
           .enqueue<MineOutcome>(
             () => withMaterializedMiningContext<MineOutcome>(
               payload,
-              (String raw, AnkiMiningContext ctx) => _mineNow(miner, raw, ctx),
+              (String raw, AnkiMiningContext ctx) => _mineNow(
+                miner,
+                allowDuplicate ? withAllowDuplicateJson(raw) : raw,
+                ctx,
+              ),
             ),
             buildFailure: (Object e, StackTrace stack) => MineOutcome.failure(
               'Fushi review: $e',
@@ -241,12 +264,39 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
             ),
           )
           // 结果出口（提示）自身抛的异常不在这里吞：照常进 zone 的未处理错误（错误日志）。
-          .then(
-            (MineOutcome outcome) =>
-                _onBackgroundOutcome?.call(expression, outcome),
-          ),
+          .then((MineOutcome outcome) {
+            _onBackgroundOutcome?.call(
+              expression,
+              outcome,
+              addAnyway: outcome.result == MineResult.duplicate
+                  ? () async => _runBackground(
+                      miner,
+                      payload,
+                      expression,
+                      allowDuplicate: true,
+                    )
+                  : null,
+            );
+          }),
     );
-    return MineOutcome.queued(deckName: deckName);
+  }
+
+  /// 给制卡载荷 JSON 拍上「允许重复」（[AnkiMiningPayload.allowDuplicateKey]，与应用内桥
+  /// 的 [AnkiMiningPayload.withAllowDuplicate] 同一个键）。载荷不是 JSON 对象时原样返回：
+  /// 写入那一步会按载荷解析失败报出来。
+  @visibleForTesting
+  static String withAllowDuplicateJson(String rawPayloadJson) {
+    final Object? json;
+    try {
+      json = jsonDecode(rawPayloadJson);
+    } on FormatException {
+      return rawPayloadJson;
+    }
+    if (json is! Map) return rawPayloadJson;
+    return jsonEncode(<Object?, Object?>{
+      ...json,
+      AnkiMiningPayload.allowDuplicateKey: true,
+    });
   }
 
   /// 提示用的词条：取 fields 的 expression，取不到用句子（与待发队列列表同口径）。

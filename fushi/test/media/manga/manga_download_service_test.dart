@@ -97,6 +97,9 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   /// sidecar 重启）旧引用取页就抛 [OnlineMangaPageRefExpired]。
   int generation = 0;
 
+  /// 每个页引用解析时的代。
+  final Expando<int> _generationOf = Expando<int>();
+
   /// 非空时用它改写解析出的页表（造认不出身份的页用）。
   List<OnlineMangaPageRef> Function(List<OnlineMangaPageRef> pages)?
   resolveOverride;
@@ -111,25 +114,31 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
       for (int i = 0; i < sourcePages.length; i++)
         InterconnectMangaPageRef(
           index: i,
-          bookKey: 'fake-gen$generation',
+          bookKey: 'fake',
           remoteIndex: i,
-          pageKey: sourcePages[i],
+          remotePageKey: sourcePages[i],
         ),
     ];
-    return resolveOverride?.call(pages) ?? pages;
+    final List<OnlineMangaPageRef> resolved =
+        resolveOverride?.call(pages) ?? pages;
+    for (final OnlineMangaPageRef page in resolved) {
+      _generationOf[page] = generation;
+    }
+    return resolved;
   }
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
     fetchCounts[page.index] = (fetchCounts[page.index] ?? 0) + 1;
-    final String key = page.pageKey ?? sourcePages[page.index];
+    final String key =
+        (page as InterconnectMangaPageRef).remotePageKey ??
+        sourcePages[page.index];
     fetchedKeys.add(key);
     final Completer<void>? pending = gate;
     if (pending != null) await pending.future;
     final Completer<void>? pageGate = gateFor?.call(page.index);
     if (pageGate != null) await pageGate.future;
-    if (page is InterconnectMangaPageRef &&
-        page.bookKey != 'fake-gen$generation') {
+    if (_generationOf[page] != generation) {
       throw OnlineMangaPageRefExpired('stale page ${page.index}');
     }
     final Exception Function(int index)? error = pageError;
@@ -1652,7 +1661,7 @@ void main() {
                 index: page.index,
                 bookKey: (page as InterconnectMangaPageRef).bookKey,
                 remoteIndex: page.remoteIndex,
-                pageKey: page.index == 0 ? null : page.pageKey,
+                remotePageKey: page.index == 0 ? null : page.remotePageKey,
               ),
           ];
 

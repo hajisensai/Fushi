@@ -90,6 +90,7 @@ Map<String, Object?> bindTestProfile(
     'op': 'cache_config_set',
     'profile': profileUid,
     'caches': srsCacheConfigFor(profileUid),
+    'now': nowMs ?? DateTime.now().millisecondsSinceEpoch,
   });
   return id;
 }

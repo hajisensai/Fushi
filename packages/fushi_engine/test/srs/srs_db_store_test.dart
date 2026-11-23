@@ -63,7 +63,6 @@ void main() {
     final SrsTrustedClock clock = SrsTrustedClock(
       wallClockMs: () => t,
       bootClockMs: () => t,
-      bootId: 'boot-$id',
     );
     return SrsDbStore.open(
       core: srsStorage.core,
@@ -462,11 +461,8 @@ void main() {
 
   test('覆盖恢复备份后：换新化身、全部重新发布、缓存重建', () async {
     final SrsStorage srsStorage = await openTestSrsStorage();
-    SrsTrustedClock clock() => SrsTrustedClock(
-      wallClockMs: () => t,
-      bootClockMs: () => t,
-      bootId: 'boot',
-    );
+    SrsTrustedClock clock() =>
+        SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t);
     final SrsDbStore a = await SrsDbStore.open(
       core: srsStorage.core,
       profileUid: kProfile,

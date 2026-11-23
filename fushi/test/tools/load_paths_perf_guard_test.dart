@@ -173,9 +173,10 @@ void main() {
       final String src = read(
         '../packages/fushi_engine/lib/stats/stat_facts.dart',
       );
+      // BUG-4960：读库 + 派生整体在后台 isolate 的 _loadStatFactsHere 里。
       final String body = methodBody(
         src,
-        'Future<StatFacts> loadStatFacts(',
+        'Future<StatFacts> _loadStatFactsHere(',
         topLevel: true,
       );
       expect(body.contains('await Future.wait<Object?>('), isTrue);

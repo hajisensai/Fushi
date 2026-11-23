@@ -649,4 +649,98 @@ void main() {
       expect(bounds, contains('NotifyParentWindowPositionChanged()'));
     });
   });
+
+  group('headless WebView audio opt-in (allowBackgroundAudioPlaying)', () {
+    const String pkg = 'packages/flutter_inappwebview_windows/windows';
+    String readPkg(String rel) =>
+        _read(<String>['$pkg/$rel', '../$pkg/$rel'], rel);
+
+    test(
+      'InAppWebViewSettings parses and round-trips allowBackgroundAudioPlaying',
+      () {
+        final String hdr = readPkg('in_app_webview/in_app_webview_settings.h');
+        expect(hdr, contains('bool allowBackgroundAudioPlaying = false;'));
+
+        final String src = readPkg(
+          'in_app_webview/in_app_webview_settings.cpp',
+        );
+        final String ctor = _body(
+          src,
+          'InAppWebViewSettings::InAppWebViewSettings(const flutter::EncodableMap& encodableMap)',
+          'flutter::EncodableMap InAppWebViewSettings::toEncodableMap() const',
+        );
+        expect(
+          ctor,
+          contains(
+            'get_fl_map_value(encodableMap, "allowBackgroundAudioPlaying", allowBackgroundAudioPlaying)',
+          ),
+        );
+
+        final String toMap = _body(
+          src,
+          'flutter::EncodableMap InAppWebViewSettings::toEncodableMap() const',
+          'flutter::EncodableMap InAppWebViewSettings::getRealSettings(',
+        );
+        expect(
+          toMap,
+          contains(
+            '{"allowBackgroundAudioPlaying", allowBackgroundAudioPlaying}',
+          ),
+        );
+      },
+    );
+
+    test(
+      'HeadlessInAppWebView::prepare defaults to muted unless allowBackgroundAudioPlaying is true',
+      () {
+        final String src = readPkg(
+          'headless_in_app_webview/headless_in_app_webview.cpp',
+        );
+        final String prepare = _body(
+          src,
+          'void HeadlessInAppWebView::prepare(',
+          'void HeadlessInAppWebView::setSize(',
+        );
+        expect(prepare, contains('webView->isHeadless = true;'));
+        expect(prepare, contains('allowBackgroundAudioPlaying'));
+        expect(prepare, contains('!allowAudio'));
+        expect(prepare, contains('put_IsMuted(TRUE)'));
+        expect(
+          prepare.indexOf('!allowAudio'),
+          lessThan(prepare.indexOf('put_IsMuted(TRUE)')),
+        );
+      },
+    );
+
+    test(
+      'InAppWebView::setSettings syncs put_IsMuted only for headless views',
+      () {
+        final String hdr = readPkg('in_app_webview/in_app_webview.h');
+        expect(hdr, contains('bool isHeadless = false;'));
+
+        final String src = readPkg('in_app_webview/in_app_webview.cpp');
+        final String setSettings = _body(
+          src,
+          'void InAppWebView::setSettings(',
+          'flutter::EncodableValue InAppWebView::getSettings() const',
+        );
+        expect(setSettings, contains(RegExp(r'if\s*\(\s*isHeadless\b')));
+        expect(setSettings, contains('allowBackgroundAudioPlaying'));
+        expect(setSettings, contains('put_IsMuted('));
+      },
+    );
+
+    test('Apple Music web bridge opts in to allowBackgroundAudioPlaying', () {
+      final String bridgeSrc = _read(<String>[
+        'fushi/lib/src/media/music/apple_music/apple_music_web_bridge.dart',
+        'lib/src/media/music/apple_music/apple_music_web_bridge.dart',
+      ], 'apple_music_web_bridge.dart');
+      final String settingsFn = _body(
+        bridgeSrc,
+        'InAppWebViewSettings appleMusicWebViewSettings()',
+        '\n);',
+      );
+      expect(settingsFn, contains('allowBackgroundAudioPlaying: true'));
+    });
+  });
 }

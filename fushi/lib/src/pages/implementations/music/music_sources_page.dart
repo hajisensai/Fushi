@@ -179,7 +179,12 @@ class _MusicOnlineSourcesViewState
 
   /// 可见行的新顺序与开关合并回已存的完整列表：这次没加载到的来源（插件 / 服务器被停用）
   /// 的顺序与开关原样保留，不因在这里排了一次序就被删掉。
+  ///
+  /// 写偏好期间用户可能已切走（本视图嵌在曲库页的「在线」组里，切页签就 dispose）：
+  /// 宿主回调在动手前同步取好，写完照样通知宿主（宿主比本视图活得久，自己判
+  /// mounted），不经已卸载的本 State 取 `widget`，也不因本视图没了就漏通知。
   Future<void> _commit(List<MusicOrderedSource> rows) async {
+    final VoidCallback? notify = widget.onChanged;
     setState(() => _rows = rows);
     await _app.prefsRepo.setMusicOnlineSourcesRaw(
       serializeLyricsProviders(
@@ -192,7 +197,7 @@ class _MusicOnlineSourcesViewState
         ),
       ),
     );
-    widget.onChanged?.call();
+    notify?.call();
   }
 
   void _move(int from, int to) {
@@ -208,14 +213,14 @@ class _MusicOnlineSourcesViewState
     if (rows == null) return;
     if (row.source.key == kAppleMusicSourceKey) {
       // Apple Music 的开关就是启用开关：关着时没有浏览器实例，条目本身恒为显示。
-      await _app.prefsRepo.setMusicAppleMusicEnabled(on);
-      await _reloadAndNotify();
+      await _persistThenReload(
+        () => _app.prefsRepo.setMusicAppleMusicEnabled(on),
+      );
       return;
     }
     if (row.source.key == kYoutubeMusicSourceKey) {
       // 同上：YouTube 内置音源的开关就是启用开关。
-      await _app.prefsRepo.setMusicYoutubeEnabled(on);
-      await _reloadAndNotify();
+      await _persistThenReload(() => _app.prefsRepo.setMusicYoutubeEnabled(on));
       return;
     }
     await _commit(<MusicOrderedSource>[
@@ -224,12 +229,15 @@ class _MusicOnlineSourcesViewState
     ]);
   }
 
-  /// 来源集合本身变了（启用开关 / 地区 / 新加服务器）：重读本页并告诉宿主。
-  Future<void> _reloadAndNotify() async {
-    if (!mounted) return;
-    await _load();
-    if (!mounted) return;
-    widget.onChanged?.call();
+  /// 来源集合本身变了（启用开关 / 地区 / 新加服务器）：先做 [change]（写偏好 / 推
+  /// 添加页），再重读本页并告诉宿主。宿主回调在 [change] 之前同步取好：[change]
+  /// 期间用户切走、本视图已 dispose 时，本页不再重读，但宿主照样收到通知（推荐与
+  /// 统一搜索的来源、混排的服务器专辑由宿主重读，不能因本视图没了就停在旧配置上）。
+  Future<void> _persistThenReload(Future<void> Function() change) async {
+    final VoidCallback? notify = widget.onChanged;
+    await change();
+    if (mounted) await _load();
+    notify?.call();
   }
 
   bool _isOn(MusicOrderedSource row) => switch (row.source.key) {
@@ -238,10 +246,8 @@ class _MusicOnlineSourcesViewState
     _ => row.enabled,
   };
 
-  Future<void> _setStorefront(String sf) async {
-    await _app.prefsRepo.setMusicAppleMusicStorefront(sf);
-    await _reloadAndNotify();
-  }
+  Future<void> _setStorefront(String sf) =>
+      _persistThenReload(() => _app.prefsRepo.setMusicAppleMusicStorefront(sf));
 
   Future<void> _openPlugins() async {
     final VoidCallback? select = widget.onOpenPlugins;
@@ -296,8 +302,7 @@ class _MusicOnlineSourcesViewState
           ],
         );
     if (action == null || !mounted) return;
-    await action();
-    await _reloadAndNotify();
+    await _persistThenReload(action);
   }
 
   /// 「添加 › 服务器」：推设置 › 在线服务 › 媒体服务器里那一页（同一棵

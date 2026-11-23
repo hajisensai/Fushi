@@ -56,7 +56,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show FushiMastheadRole, FushiMastheadScope;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -264,7 +264,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   bool _onScroll(ScrollNotification notification) {
     // 保活的离屏页签 / 内容域（TickerMode 关着）发来的通知不算；横向翻页在
     // controller 内按轴过滤。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 

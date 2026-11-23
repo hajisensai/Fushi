@@ -1,0 +1,26 @@
+## BUG-5197 · 视频合集滚动逐帧离屏重烘、切页派生数据每次 build 全量重算（合集滚动与切页卡顿）
+- **报告**：2026-11-22（用户：视频合集滚动很卡、很多页面切换很卡，要求该丢 Rust / 后台的丢出去，别全压在 UI 线程）
+- **真实性**：✅ 真 bug。Windows profile 包 + 1.6 万条视频的测试库（`integration_test/video_collection_perf_itest.dart`，VM CPU 采样 + FrameTiming）实测，UI isolate 上的热点：
+  - `fushi/lib/src/pages/implementations/home_video_page.dart` `_passesLocalFilters` / 合集折叠 / 排序：每次 build 对全库逐条重算过滤、合集归属（按成员线性扫）、排序键；切到视频 tab 一帧 build 最长 85 ms。
+  - `packages/fushi_engine/lib/media/media_extensions.dart:164` `_mediaExtensionOf`：每条路径都 `Uri.parse`，上面那条全库扫描里被调几万次。
+  - `fushi/lib/src/pages/implementations/home_dashboard_page.dart` 首页「合集成员封面」等派生数据每次 build 全量重算（切回首页 build p90 27.7 ms）。
+  - `fushi/lib/src/utils/components/fushi_fit_title.dart` 标题自适应字号每张卡每帧多次 `TextPainter.layout` 二分。
+  - `fushi/lib/src/media/sources/book_cover_file_resolver.dart` 封面解析在 UI isolate 同步 `existsSync` / 列目录。
+  - `packages/fushi_engine/lib/media/video/bluray/aacs_configuration.dart:222` `_scanKeyDb`：打开蓝光合集时在 UI isolate 上同步扫几十 MB 的 KEYDB.cfg。
+  - **合集页滚动的主因**：`fushi/lib/src/utils/components/baked_surface.dart`（Impeller 下手动 raster cache，所有材质封面卡都套）的「停稳」判据只比相位（`pixelEquivalent`）。滚轮连拨时根部补间每档先 `jumpTo` 回当前补间位置、下一拍才起新动画（`fushi/lib/src/utils/misc/smooth_wheel_scroll.dart:280`），于是每档都有「两帧位置完全相同」的一帧被当成停稳，整屏的面在亚像素位置上逐个 `toImageSync`。4K（缩放 2.1）合集页一次 50 档滚动实测 ≈1700 次离屏烘焙、每帧约 80 个 render pass / 20 张新纹理，raster p90 ≈40 ms、max 160–240 ms，进程提交内存在 3～30 GB 间大起大落（heavy 的 24 GB 上限下直接 `GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT` 崩溃）。
+  - `fushi/lib/src/media/detail/media_detail_kit.dart:158` / `media_poster_detail.dart:1301,1496`：详情页整窗背景用渲染期 `ImageFiltered` 模糊。Impeller 无 raster cache，合集页滚动时每帧在整窗分辨率重新卷积（raster p90 ≈ 50 ms）。
+- **[x] ① 已修复** —
+  - 视频页派生数据全部改成按输入身份 / 值记忆（`fushi/lib/src/media/video/video_library_memo.dart`），合集归属与排序位置建索引（`_collectionIdByUid` / `_sortIndexByUid`），按路径缓存音频 / 附加判定；`recentlyAdded` 记忆按「下次跨阈值时刻」与时钟回拨失效。
+  - `_mediaExtensionOf` 走无分配快路径，只有 http(s) 才解析 URI。
+  - 首页派生数据抽到 `home_dashboard_derived.dart` 纯函数 + 记忆。
+  - `FushiFitTitle` 加进程级 LRU（512 条，字体加载 / 语言变化时清空）。
+  - 封面解析新增 async 版本，`reader_fushi_source.dart` 改走异步 IO。
+  - `_scanKeyDb` 改 `Isolate.run` 后台扫描。
+  - 详情背景改用只烘焙一次的 `PrebakedBlurImage`。
+  - `BakedSurface`：祖先滚动区（最近的纵向 + 横向，`Scrollable.maybeOf(axis:)`）`isScrollingNotifier` 为真时不烘焙（`baked_surface.dart:274`）；「停稳」改按屏幕位置完全不变判（`_Placement.samePosition`，`:117`），已有纹理在整像素位移下照贴的 BUG-4842 路径不变。
+  - 实测（Windows profile、4K、1.6 万视频库、合集 261 集）：切首页 build p90 27.7 → 0.5 ms；切视频页最长 build 85 → 34～48 ms；合集页滚动一次 50 档的离屏烘焙 ≈1700 → 0（停下后只为新露出的面各烘一次），raster p90 38～40 → 19～23 ms、max 160～240 → 44～59 ms，同样 6 s 出帧 ≈350 → ≈640，进程私有提交 p50 8.6 → 3.8 GB、峰值 30.8 → 15 GB。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_library_memo_test.dart`、`fushi/test/pages/home_dashboard_derived_test.dart`、`fushi/test/utils/components/fushi_fit_title_cache_test.dart`、`fushi/test/media/sources/book_cover_file_resolver_async_test.dart`、`packages/fushi_engine/test/media/media_extensions_test.dart`、`fushi/test/media/detail/media_detail_title_and_backdrop_test.dart`（模糊背景必须走预烘焙、不得出现 `ImageFiltered`）、`fushi/test/utils/components/baked_surface_test.dart`「no bakes while an ancestor scrollable is scrolling」（模拟补间每档 jumpTo + animateTo；去掉闸门后该用例实测红：滚动中烘 48 次）；性能探针 `fushi/integration_test/video_collection_perf_itest.dart`（手动跑，不进 CI）。
+- **备注**：
+  - 遗留（未修，另立）：drift 在 UI isolate 上做行映射（`$VideoBooksTable.map` ≈ 17 ms、`$StudySegmentsTable.map` ≈ 15 ms，查询本身已在后台 isolate）。根治要把全表加载 + 聚合挪进 DB isolate / Rust，只回 UI 需要的结果；属跨模块改造，已登记 BUG-5201。
+  - 视频页「继续观看」记忆键不含片长偏好是有意的：片长只在播放器里写（`video_fushi_page.dart` `setPref(videoDurationPrefKey…)`），同一次播放必带进度变化 → `_refreshAfterPlayback` 换行列表 → 记忆重算。
+  - `fushiBooksProvider` 整体 watch `appProvider` 导致首页书架随任意 AppModel 通知整表重载：存量问题，已并入 BUG-5201。

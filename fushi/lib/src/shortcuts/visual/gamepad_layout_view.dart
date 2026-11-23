@@ -43,7 +43,8 @@ class GamepadPadSpec {
   final String? symbol;
 }
 
-/// 纯函数：返回 [brand] 品牌的整张手柄布局（17 个按钮，位置照真实手柄几何）。
+/// 纯函数：返回 [brand] 品牌的整张手柄布局（17 个实体按钮 + 右摇杆横推的 2 个虚拟键，
+/// 位置照真实手柄几何）。
 ///
 /// 可单测，零渲染依赖。三品牌共用同一组 [GamepadButton]（序列化恒定），坐标钉在
 /// `_GamepadChassisPainter` 描出的手柄本体上（TODO-942 用户拍板：按钮要放在
@@ -54,6 +55,10 @@ class GamepadPadSpec {
 /// - **PlayStation**：十字键簇左上（与面键对称）、双摇杆对称居下、PS 键底部中央；
 /// - 十字键四臂坐标聚成一簇，渲染层把它们合成一个整体十字
 ///   （[GamepadDpadCluster]，四方向仍各自独立绑定/高亮/点击）。
+/// 右摇杆横推虚拟键（[GamepadButton.rightStickLeft] / [GamepadButton.rightStickRight]）
+/// 的小圆钮尺寸倍数：它们不是实体按键，画小一号挂在右摇杆下方。
+const double _stickDirectionSize = 0.6;
+
 List<GamepadPadSpec> buildGamepadFigure(GamepadBrand brand) {
   final bool isPlayStation = brand == GamepadBrand.playstation;
   final String selectSymbol = brand == GamepadBrand.nintendoSwitch ? '−' : '⧉';
@@ -122,6 +127,19 @@ List<GamepadPadSpec> buildGamepadFigure(GamepadBrand brand) {
         Offset(0.62, 0.645),
         size: 1.3,
       ),
+      // 右摇杆横推的两个虚拟键挂在右摇杆右下方的握把上（左 / 右各一，两品牌同位）。
+      const GamepadPadSpec(
+        GamepadButton.rightStickLeft,
+        Offset(0.665, 0.79),
+        size: _stickDirectionSize,
+        symbol: '←',
+      ),
+      const GamepadPadSpec(
+        GamepadButton.rightStickRight,
+        Offset(0.735, 0.79),
+        size: _stickDirectionSize,
+        symbol: '→',
+      ),
     ] else ...<GamepadPadSpec>[
       // Xbox / Switch：Guide/Home 顶部中央，View/Menu（−/+）居中两侧。
       GamepadPadSpec(
@@ -156,6 +174,19 @@ List<GamepadPadSpec> buildGamepadFigure(GamepadBrand brand) {
         GamepadButton.thumbRight,
         Offset(0.615, 0.635),
         size: 1.3,
+      ),
+      // 右摇杆横推的两个虚拟键：同上，挂在右摇杆右下方的握把上。
+      const GamepadPadSpec(
+        GamepadButton.rightStickLeft,
+        Offset(0.665, 0.79),
+        size: _stickDirectionSize,
+        symbol: '←',
+      ),
+      const GamepadPadSpec(
+        GamepadButton.rightStickRight,
+        Offset(0.735, 0.79),
+        size: _stickDirectionSize,
+        symbol: '→',
       ),
     ],
   ];

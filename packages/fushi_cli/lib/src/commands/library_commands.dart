@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
@@ -116,6 +119,19 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         usage: '<建议 id>',
         build: _buildOrganizeReject,
         render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
+        name: 'map',
+        summary: '整库地图（AI 管库 v3 用的紧凑列式快照，分页；只读）',
+        configure: _configureMap,
+        build: _buildMap,
+      ),
+      CtlCommandSpec(
+        name: 'apply-changes',
+        summary: '提交一整份库变更集（JSON 文件，AI 身份落库、整份一条撤销记录；--dry-run 只预演）',
+        usage: '<变更集.json>',
+        configure: _configureApplyChanges,
+        build: _buildApplyChanges,
       ),
       CtlCommandSpec(
         name: 'curate',
@@ -1151,4 +1167,79 @@ String _renderCurateLinks(Object? data) {
   return '生效 ${data['applied']} 条 · 建议 ${data['suggested']} 条 · '
       '${data['requests']} 次 AI 请求'
       '${failed.isEmpty ? '' : ' · 失败：${failed.join('、')}'}';
+}
+
+// ── AI 管库 v3（app 侧路由见 ctl_library_agent_routes.dart）─────────────────
+
+const String _agentRoot = '/api/admin/library/agent';
+
+/// `library map --view` 的值域（与 `LibraryMapView.wireName` 同名）。
+const List<String> kLibraryMapViews = <String>[
+  'summary',
+  'books',
+  'manga',
+  'video',
+  'games',
+  'links',
+];
+
+void _configureMap(ArgParser parser) {
+  parser
+    ..addOption(
+      'view',
+      help: '视图：summary（默认，总览）| books | manga | video | games | links',
+      allowed: kLibraryMapViews,
+    )
+    ..addOption('q', help: '只看标题 / 合集名含这段文字的')
+    ..addOption('added-since', help: '只看这个时间（毫秒时间戳）之后入库的')
+    ..addOption('offset', help: '分页起点（上一页给的 nextOffset）')
+    ..addOption('limit', help: '每页行数（默认 400，上限 2000）');
+}
+
+CtlRequestSpec _buildMap(CtlCommandContext context) {
+  final String? view = context.option('view');
+  final String? q = context.option('q');
+  final int? addedSince = context.intOption('added-since');
+  final int? offset = context.intOption('offset');
+  final int? limit = context.intOption('limit');
+  return CtlRequestSpec.get(
+    '$_agentRoot/map',
+    query: <String, String>{
+      if (view != null) 'view': view,
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      if (addedSince != null) 'addedSince': '$addedSince',
+      if (offset != null) 'offset': '$offset',
+      if (limit != null) 'limit': '$limit',
+    },
+  );
+}
+
+void _configureApplyChanges(ArgParser parser) {
+  parser.addFlag('dry-run', negatable: false, help: '只预演、不落库（返回会怎么改）');
+}
+
+CtlRequestSpec _buildApplyChanges(CtlCommandContext context) {
+  final String file = context.positional(0, '变更集 JSON 文件');
+  final String text;
+  try {
+    text = File(ctlAbsolutePath(file)).readAsStringSync();
+  } on FileSystemException catch (e) {
+    throw CtlUsageError('读不了 $file：${e.message}');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException catch (e) {
+    throw CtlUsageError('变更集不是合法 JSON：${e.message}');
+  }
+  if (decoded is! Map || decoded['changes'] is! List) {
+    throw const CtlUsageError('变更集必须是 {"changes": [...]} 形状的 JSON 对象');
+  }
+  return CtlRequestSpec.post(
+    '$_agentRoot/changes',
+    body: <String, Object?>{
+      ...decoded.cast<String, Object?>(),
+      if (context.flag('dry-run')) 'dryRun': true,
+    },
+  );
 }

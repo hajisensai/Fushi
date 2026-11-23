@@ -170,6 +170,29 @@ void main() {
     );
   });
 
+  // Flutter 3.50 prints shader compiler warnings to stdout before the json
+  // reporter's `start`: they are no run of their own (no `done`), so a green
+  // batch stays green.
+  test("tool output before a run's start is no run of its own", () {
+    const List<String> warning = <String>[
+      '',
+      '┌─ Shader Warning ─┐',
+      '│ [WARNING] x.frag │',
+      '└──────────────────┘',
+    ];
+    final List<String> lines = <String>[
+      ...warning,
+      ..._run(<String>[files.first]),
+      ...warning,
+      ..._run(<String>[files.last]),
+    ];
+    expect(splitEventRuns(lines), hasLength(2));
+    final DistBatchResult r = _result(files, lines);
+    expect(r.failure, isNull);
+    expect(r.summary.testsCompleted, 2);
+    expect(splitEventRuns(warning), hasLength(1));
+  });
+
   test('several back-to-back runs (a chunked local batch) merge', () {
     final List<String> lines = <String>[
       ..._run(<String>[files.first]),

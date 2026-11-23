@@ -16,6 +16,8 @@ import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -61,6 +63,35 @@ Future<void> openFeedbackCenter(
     builder: (_) => FeedbackCenterPage(initialScreenshot: shot),
   ),
 );
+
+/// 提交成功后的一句提示（附件全传上 / 部分没传上 / 撞了当日配额）。反馈中心与 [openFeedbackComposeWith] 共用。
+String feedbackSubmittedMessage(FeedbackSubmitResult result) =>
+    result.quotaResetAt != null
+    ? t.feedback_submitted_quota(
+        n: result.failedAttachments,
+        time: feedbackQuotaResetTime(result.quotaResetAt!),
+      )
+    : result.failedAttachments > 0
+    ? t.feedback_submitted_partial(n: result.failedAttachments)
+    : t.feedback_submitted;
+
+/// 带着现场直接打开提交页（[prefill]：分类、标题、正文与自动附上的样本文件），不经反馈中心、不截图——现场已经在
+/// 预填与附件里。提交成功后给出与反馈中心同样的提示。
+Future<void> openFeedbackComposeWith(
+  BuildContext context,
+  FeedbackComposePrefill prefill,
+) async {
+  final FeedbackSubmitResult? result = await Navigator.of(context).push(
+    adaptivePageRoute<FeedbackSubmitResult>(
+      context: context,
+      builder: (_) => FeedbackComposePage(prefill: prefill),
+    ),
+  );
+  if (result == null || !context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    FushiSnackBar(content: Text(feedbackSubmittedMessage(result))),
+  );
+}
 
 /// 点了「开发者回复了你的反馈」的系统通知：直达那条反馈的详情。本机清单里已经没有
 /// 这条（用户删了）就退到反馈中心。清单可能还没加载（被通知冷启动），先等它。

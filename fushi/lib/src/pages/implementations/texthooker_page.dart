@@ -942,6 +942,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       FushiToast.showMine(
         msg: t.game_hook_line_unavailable,
         status: MineToastStatus.failed,
+        term: fields['expression'],
+        reading: fields['reading'],
       );
       return const MinePopupResult();
     }
@@ -951,6 +953,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     // 全局 gal 制卡设置 + 当前游戏的覆盖层（反馈 3dRZdakRdJ），与浮窗同一个解析入口。
@@ -990,6 +994,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             ? '${t.external_window_capture_failed}：${result.failureReason}'
             : t.external_window_capture_failed,
         status: MineToastStatus.failed,
+        term: fields['expression'],
+        reading: fields['reading'],
       );
       return const MinePopupResult();
     }
@@ -1007,8 +1013,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       FushiToast.showMine(
         msg: described.message,
         status: described.status,
-        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-        action: minedCardUndoToastAction(
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+        // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+        action: mineResultToastAction(
           repo,
           outcome,
           expression: fields['expression'],

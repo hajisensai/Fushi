@@ -71,14 +71,17 @@ class UpdateChecker {
       <String, _UpdateDownloadSession>{};
 
   /// 把在途下载的浮层重新显示出来（BUG-5168）。[version] 为 null 时找任一在本机有
-  /// 浮层的在途会话。返回 true = 已拉起；false = 没有在途下载，或它在本机没有浮层。
-  static bool revealActiveDownload({String? version}) {
+  /// 浮层、且目标版本属于 [channel] 的在途会话（HBK-AUDIT-230：手动检查先定通道再
+  /// 唤回，别的通道的下载不截走这次检查）。返回 true = 已拉起；false = 没有匹配的在途
+  /// 下载，或它在本机没有浮层。
+  static bool revealActiveDownload({String? version, UpdateChannel? channel}) {
     if (version != null) {
       return _activeDownloadSessions[_updateFlowKey(version)]?.reveal() ??
           false;
     }
     for (final _UpdateDownloadSession session
         in _activeDownloadSessions.values) {
+      if (channel != null && session.channel != channel) continue;
       if (session.reveal()) return true;
     }
     return false;

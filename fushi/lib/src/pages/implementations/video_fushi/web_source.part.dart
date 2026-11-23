@@ -80,16 +80,18 @@ List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
 ///
 /// 字段（[_webSession] 等）留在主壳——extension 不能带字段。
 extension _VideoWebSource on _VideoFushiPageState {
-  /// 网页站流媒体书的入口（[_initVideo] 分流到这里）：宿主档按用户偏好（没选过且引擎能做
-  /// 底层合成 = 4K 窗口档）。窗口档拿到底层合成就在本页播；否则交给内置网页播放器页
-  /// （它自己的 DOM 字幕层 / 超分 / 制卡重放）。
+  /// 网页站流媒体书的入口（[_initVideo] 分流到这里）：播放方式按 [resolveWebVideoHosting]
+  /// （手动选择 > 按站点实测 > DRM 且能高于 1080p 的预判 > Fushi 播放）。站点原生播放拿到底层
+  /// 合成就在本页播；否则交给内置网页播放器页（它自己的 DOM 字幕层 / 超分 / 制卡重放）。
   Future<void> _openWebSource(VideoBookRow row) async {
-    final Object? pref = appModel.prefsRepo.getPref(kWebVideoHostingPrefKey);
-    final WebVideoHosting hosting =
-        pref == null && await underlayCompositionSupported()
-        ? WebVideoHosting.windowed
-        : webVideoHostingFromPref(pref);
-    if (!mounted) return;
+    final bool underlay = await underlayCompositionSupported();
+    if (!context.mounted) return;
+    final WebVideoHosting hosting = resolveWebVideoHostingFromPrefs(
+      appModel.prefsRepo.getPref,
+      siteKey: webVideoSiteKey(Uri.parse(row.videoPath)),
+      underlaySupported: underlay,
+      displayHeightPx: webVideoDisplayHeightPx(context),
+    );
     if (hosting == WebVideoHosting.windowed &&
         await acquireUnderlayComposition()) {
       if (!mounted) {
@@ -331,6 +333,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     _syncWebAudioTracks(state);
     _syncWebNetflixMetadata(state);
     _notifyWebBlocker(state);
+    _observeWebHosting(state);
     final bool playerMode = _webPlayerModeFor(state);
     session.syncInput(playerMode: playerMode, videoChanged: videoChanged);
     if (playerMode) unawaited(_bindWebEpisode(state));
@@ -349,6 +352,21 @@ extension _VideoWebSource on _VideoFushiPageState {
         _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
       }
     }
+  }
+
+  /// 本页一定是站点原生播放：逐拍喂实测探针，结论按站点记下（下次默认播放方式据此定）。
+  void _observeWebHosting(WebVideoPlaybackState state) {
+    final WebVideoHostingVerdict? verdict = _webHostingProbe.observe(state);
+    final Uri? uri = Uri.tryParse(state.href);
+    if (verdict == null || uri == null || uri.host.isEmpty) return;
+    unawaited(
+      recordWebVideoHostingVerdict(
+        getPref: appModel.prefsRepo.getPref,
+        setPref: appModel.prefsRepo.setPref,
+        siteKey: webVideoSiteKey(uri),
+        verdict: verdict,
+      ),
+    );
   }
 
   /// 播放器档里正在播的这一集 = 本页的书：同一集只把进度写回接上；换了集（站点入口里点了
@@ -1669,16 +1687,53 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
   }
 
+  /// 顶栏「切换到 Fushi 播放」（本页一定是站点原生播放；站点入口没有库里的书、Fushi 播放读不到，
+  /// 小窗 / 沉浸锁下也不画）。与跳转记录胶囊同一套外观，挂在右上组最前面。
+  Widget? _webHostingTopBarButton({required bool desktop}) {
+    if (!_webMode ||
+        widget.webSite != null ||
+        _inMiniWindow ||
+        _immersiveLocked.value) {
+      return null;
+    }
+    return Padding(
+      key: const ValueKey<String>('video_web_hosting_top_bar'),
+      padding: EdgeInsetsDirectional.only(end: 8 * _videoUiScale),
+      child: VideoGlassSurface(
+        enabled: _appleChrome,
+        child: FushiTooltip(
+          message: t.web_video_hosting_switch_to_builtin,
+          child: Semantics(
+            button: true,
+            label: t.web_video_hosting_switch_to_builtin,
+            child: _chromeIconButton(
+              icon: FushiIcons.video,
+              desktop: desktop,
+              onPressed: () => unawaited(_switchWebToBuiltinHosting()),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 「画质增强」说明态里的「切换到内置网页播放器」：记住宿主档偏好（与内置网页播放器页的
   /// 宿主档菜单同一个键），同一本书原地换成内置网页播放器页（它有自己的超分，见
   /// `web_video_shaders.dart`），集 / 轨 / 位置一并带过去。站点入口（[VideoFushiPage.webSite]）
   /// 没有库里的书、内置档读不到，不给这个入口。
   Future<void> _switchWebToBuiltinHosting() async {
     final WebVideoPlaybackState? state = _webSession?.lastState;
-    await appModel.prefsRepo.setPref(
-      kWebVideoHostingPrefKey,
-      WebVideoHosting.builtin.name,
-    );
+    final VideoBookRow? row = _bookRow;
+    if (row != null) {
+      await appModel.prefsRepo.setPref(
+        kWebVideoHostingManualBySitePrefKey,
+        recordManualWebVideoHosting(
+          appModel.prefsRepo.getPref(kWebVideoHostingManualBySitePrefKey),
+          webVideoSiteKey(Uri.parse(row.videoPath)),
+          WebVideoHosting.builtin,
+        ),
+      );
+    }
     await _controller?.flushPosition();
     if (!context.mounted) return;
     await Navigator.of(context).pushReplacement(

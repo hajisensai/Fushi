@@ -283,6 +283,28 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 互相关的累加次序要与旧实现一致，不能向量化重排，只跳过 `audio[i] ≤ 0` 的项（本来就不加）；
 降采样一次性调用基本持平（主要成本是 6 万次 `pow`，两边调的都是 CRT），收益在面板改宽度时不再重算。
 
+## 音乐分析域（`ffc_mana_*`，`src/music_analysis.rs` + `src/music_analysis/`）
+
+全屏歌词动画的音频信号（folia `src/services/analysis/` 的对应物）：整首离线分析出 ≈86 Hz 包络（响度 /
+低中高频段 / 起音 / 人声，按 folia 播放器 `AnalyserNode` 的同一套公式）、拍点 / 强拍 / BPM、每拍重音
+（folia `beatAccents`：impact、低中高占比、有无节奏、听感拍、整曲动感系数，`accents.rs`）、鼓点、人声起音，
+结果写成 `.fma` 文件（布局见 `format.rs` 头注，Dart 读取方 `fushi/lib/src/media/music/analysis/`）。
+进程级单例引擎（一个工作线程 + FIFO 队列），事件回调 `(kind, token, value)`。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_mana_start(cb)` | 启动工作线程（幂等，再调换回调） |
+| `ffc_mana_configure(ort, beat_this, htdemucs, threads, backend)` | 配置可选模型；有模型时经 `upscale::runtime` 接上本进程那份 ORT；`backend` 与超分同码（0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK），失败退 CPU 并发一次 `EVENT_BACKEND_FALLBACK` |
+| `ffc_mana_submit(token, pcm, out, flags)` / `ffc_mana_cancel(token)` | 排队一首（44.1 kHz 立体声 s16le raw）/ 取消 |
+| `ffc_mana_analyze_file(pcm, out, flags)` | 同步分析（无头 / 测试） |
+| `ffc_mana_format_version()` / `ffc_mana_pipeline_version()` / `ffc_mana_last_error` | 版本与错误 |
+
+三步：DSP（总跑：包络、Ellis 动态规划跟拍、HPSS 鼓点）→ Beat This!（模型在时换拍点）→ htdemucs（模型在时
+换鼓点 / 人声，分离途中每秒左右写一次部分结果，`FLAG_STEMS_PARTIAL` + `stems_until_ms`），每步写一次完整结果。
+`.fma` 现为 v2（加重音段），读侧兼容 v1（重音按中性值）；旧管线版本的结果照样读、再补算。
+模型（MIT）按需下载、不随包。真文件手动验证：
+`FUSHI_MANA_PCM=<s16le> [FUSHI_MANA_ORT=… FUSHI_MANA_BEAT_THIS=… FUSHI_MANA_HTDEMUCS=…] cargo test --profile quick --lib real_file_sanity -- --nocapture`。
+
 ## 解析域：EPUB 章节 DOM 派生量（BUG-3433）
 
 `ffc_parse_epub_chapter`（`src/parse/epub.rs`，Dart 绑定 `EpubChapterScanner`）一次解析一章 XHTML，
@@ -534,6 +556,17 @@ crate 的 AES 指令，跳过）。
 `deobfuscateBytes` / `deobfuscateBodyAt`），keystream 在那里另有一份 SHA-256("hibiki")；
 `sync_obfuscator_vectors_test.dart` 与 `crypto_vectors_v2_test.dart` 用删除前的冻结向量同时钉住 Dart 与 Rust 两侧。
 同一份脚本核对了签名与旧实现逐字节相同。
+
+## 学习统计派生域（`ffc_stats_*`，`src/stats.rs`，BUG-4960）
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_stats_derive(const i64* ints, usize, const u32* ends, usize, const u16* text, usize, u8** out, usize* out_len) -> i32` | 统计事实面的整份派生：legacy 四表 / 游戏日时长 / legacy 游戏字数 / 段 / 复习格子 / 游玩会话骨架 → 日面、小时面、会话流、全域与阅读域按日合计；输入是整数流 + UTF-16 字符串流，输出 `[nInts][nEnds][nText]` 头 + 整数流 + 去重字符串表（格式见文件头）。坏输入 `-3` |
+
+唯一调用方是 `packages/fushi_engine/lib/stats/stat_facts.dart` 的 `loadStatFacts`（在一次性后台 isolate 里，
+经 `stat_derive.dart` 打包 / 解快照）。迁自 Dart：字符串比较按 UTF-16 码元（= `String.compareTo`），会话两处排序
+用 `dart::sort`（`List.sort` 逐步复刻，并列元素去向一致）。回归向量是迁移前 Dart 实现冻结的
+`packages/fushi_engine/test/stats/fixtures/stat_facts_parity.json`。
 
 ## 构建
 

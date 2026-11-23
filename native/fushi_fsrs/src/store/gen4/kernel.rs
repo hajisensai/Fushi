@@ -827,9 +827,10 @@ fn dir_of(req: &Value) -> Result<PathBuf, String> {
 
 /// 全局命令（不需要库句柄，`lib.rs` 的 JSON 入口转进来）：
 ///
-/// - `gen4_migrate_status {dir}` → `{state, running}`：`state` 是 `migrate::GenState` 的线上名；`running` = 本进程里
-///   这个目录正在跑的迁移的进度 `{step, done, total}`（没有 = null）。只看文件与锁、读旧库的一行 schema，Dart 在 UI
-///   isolate 上轮询它。
+/// - `gen4_migrate_status {dir}` → `{state, failure, running}`：`state` 是 `migrate::GenState` 的线上名；`failure` =
+///   上次迁移没完成的原因 `{reason: fail|incomplete|error|interrupted, reportPath?}`（`migrate::Failure::json`，只有
+///   `migrationFailed` 有，其余 = null）；`running` = 本进程里这个目录正在跑的迁移的进度 `{step, done, total}`（没有 =
+///   null）。只看文件与锁、读旧库的一行 schema 与身份、目录里那份小报告，Dart 在 UI isolate 上轮询它。
 /// - `gen4_migrate_profiles {dir}` → `{profiles}`：旧库里全部有数据的 profile uid（`legacy::all_profiles`，含主库
 ///   profile 表里没有的孤儿 uid；`gen4_migrate_run` 的 `caches` 要每个都有）。要读旧库的几张大表（按 profile 跳着取），
 ///   调用方在后台 isolate 调（G7-2b）。没有旧库 = 报错。
@@ -846,10 +847,9 @@ pub fn global(op: &str, req: &Value) -> Result<Value, String> {
                 let (step, done, total) = *r.progress.lock().unwrap_or_else(|e| e.into_inner());
                 json!({"step": step.wire(), "done": done, "total": total})
             });
-            Ok(json!({
-                "state": migrate::status(&dir)?.wire(),
-                "running": running.unwrap_or(Value::Null),
-            }))
+            let mut out = migrate::status(&dir)?.json(&dir);
+            out["running"] = running.unwrap_or(Value::Null);
+            Ok(out)
         }
         "gen4_migrate_profiles" => {
             let dir = dir_of(req)?;

@@ -10,13 +10,13 @@ void main() {
   const SrsReviewSide back = SrsReviewSide.back;
 
   group('默认映射', () {
-    test('默认开启：问题面点左右 / 左右滑显示答案，答案面左滑良好、右滑重来，下滑撤销，点中间切换顶栏', () {
+    test('默认开启：问题面左右滑显示答案，答案面左滑良好、右滑重来，下滑撤销，两面三区单击都切换顶栏', () {
       final SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
       const Map<SrsReviewGesture, SrsReviewGestureAction> expectFront =
           <SrsReviewGesture, SrsReviewGestureAction>{
-            SrsReviewGesture.tapLeft: SrsReviewGestureAction.showAnswer,
+            SrsReviewGesture.tapLeft: SrsReviewGestureAction.toggleToolbar,
             SrsReviewGesture.tapCenter: SrsReviewGestureAction.toggleToolbar,
-            SrsReviewGesture.tapRight: SrsReviewGestureAction.showAnswer,
+            SrsReviewGesture.tapRight: SrsReviewGestureAction.toggleToolbar,
             SrsReviewGesture.doubleTap: SrsReviewGestureAction.none,
             SrsReviewGesture.longPress: SrsReviewGestureAction.none,
             SrsReviewGesture.swipeLeft: SrsReviewGestureAction.showAnswer,
@@ -51,16 +51,17 @@ void main() {
       expect(m.isDefault, isTrue);
     });
 
-    test('两面「点中间」都切换顶栏：触屏唤出悬浮顶栏的入口不丢', () {
+    test('两面三区单击都切换顶栏：触屏唤出悬浮顶栏的入口不丢，点空白不翻面 / 不评分', () {
       for (final SrsReviewSide side in SrsReviewSide.values) {
-        expect(
-          SrsReviewGestureMap.defaults.resolve(
-            side,
-            SrsReviewGesture.tapCenter,
-            hideHardEasy: false,
-          ),
-          SrsReviewGestureAction.toggleToolbar,
-        );
+        for (final SrsReviewGesture g in SrsReviewGesture.values.where(
+          (SrsReviewGesture g) => g.isTap,
+        )) {
+          expect(
+            SrsReviewGestureMap.defaults.resolve(side, g, hideHardEasy: false),
+            SrsReviewGestureAction.toggleToolbar,
+            reason: '$side $g',
+          );
+        }
       }
     });
 

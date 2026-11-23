@@ -9,11 +9,13 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
+import 'package:fushi/src/utils/components/fushi_mine_notice_stack.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/notice_dwell.dart';
+import 'package:fushi/src/utils/misc/notice_placement.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
@@ -101,40 +103,51 @@ abstract final class FushiToast {
     );
   }
 
-  /// TODO-1325 #6: 制卡结果 toast。挂在 dictionary_page_mixin 的 onMine 回调之后：
-  /// 按 [status] 配图标与语义色（added 成功 / duplicate 警示 / failed 错误 /
-  /// pending 信息）。有 navigator overlay（主 app，桌面与移动）时走自绘 overlay
-  /// （会顶替上一条，让 pending → 结果自然过渡）；无 overlay 的独立弹窗 Activity
-  /// 降级为原生着色 toast（无图标但仍着色，绝不静默）。
+  /// 制卡结果通知（TODO-1325 #6；用户 2026-11-22 重设计）。有 navigator overlay
+  /// （主 app，桌面与移动）时进 [FushiMineNoticeStack]：处理中的卡被结果原地替换，
+  /// 连续几张结果叠起来、不互相顶掉；无 overlay 的独立弹窗 Activity 降级为原生着色
+  /// toast（无图标但仍着色，绝不静默）。
   ///
   /// 先过 [mineNoticeFilter]：用户在「制卡提示」里关掉的那类结果直接不弹。所有制卡
   /// 结果 toast 都从这里出，所以开关只需在这一处生效。
   ///
-  /// [action]（反馈 JNyykxvuY9：成功提示上的「撤销」）只在自绘 overlay 上画：卡片
-  /// 停留 [kMineNoticeActionVisibleFor]、可点，点下立即收起再执行。无 overlay 的
-  /// 降级原生 toast 点不了，按钮不出——调用方据此不能把动作当成必达。
+  /// [term] / [reading]：这次制卡的词，卡片第一行（调用点拿不到就不传，第一行改放
+  /// 状态标题）。[detail]：第二行标题后的短说明（牌组名 / 原因，见
+  /// `describeMineOutcome().detail`），不传就用 [msg]。
+  ///
+  /// [action]（撤销 / 重试 / 仍要添加 / 查看队列）只在自绘 overlay 上画：点下立即
+  /// 收起这张再执行。无 overlay 的降级原生 toast 点不了，按钮不出——调用方据此不能
+  /// 把动作当成必达。
   static void showMine({
     required String msg,
     required MineToastStatus status,
     MineNoticeAction? action,
+    String? term,
+    String? reading,
+    String? detail,
   }) {
     if (!mineNoticeFilter(status)) return;
     final overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay != null) {
       _showMineOverlay(
         overlay: overlay,
-        msg: msg,
-        status: status,
-        action: action,
+        notice: MineNotice(
+          status: status,
+          message: msg,
+          term: term,
+          reading: reading,
+          detail: detail,
+          action: action,
+        ),
       );
       return;
     }
-    // pending 是过渡态（只有能被结果 toast 顶替时才有意义）。无 overlay 的降级路径
+    // pending 是过渡态（只有能被结果原地替换时才有意义）。无 overlay 的降级路径
     // 用的是会排队的原生 toast，若也弹 pending 会把「制卡中…」卡在结果之前，故跳过。
     if (status == MineToastStatus.pending) return;
     final palette = mineToastPalette(status);
     show(
-      msg: msg,
+      msg: term == null || term.isEmpty ? msg : '$term · $msg',
       backgroundColor: palette.background,
       textColor: palette.foreground,
     );
@@ -189,77 +202,128 @@ abstract final class FushiToast {
   /// 解析尺寸与位置，而不是停在已经消失的区域角上。撤销通常发生在页面 dispose
   /// （树卸载阶段，此时不能 setState），所以挪到帧后再标脏。
   static void _onCornerAnchorsChanged() {
-    final OverlayEntry? entry = _currentEntry;
-    if (entry == null) return;
+    // 角落锚点只影响制卡结果卡（[anchorMineToCorner]）；通用条目一并标脏无害。
+    final List<OverlayEntry> entries = <OverlayEntry>[
+      ?_mineEntry,
+      ?_currentEntry,
+    ];
+    if (entries.isEmpty) return;
     SchedulerBinding.instance.addPostFrameCallback((Duration _) {
-      if (_currentEntry == entry && entry.mounted) entry.markNeedsBuild();
+      for (final OverlayEntry entry in entries) {
+        if ((entry == _mineEntry || entry == _currentEntry) && entry.mounted) {
+          entry.markNeedsBuild();
+        }
+      }
     });
     SchedulerBinding.instance.ensureVisualUpdate();
   }
 
+  /// 制卡结果队列（全局唯一）：[FushiMineNoticeStack] 画它。
+  static final MineNoticeController _mineNotices = MineNoticeController();
+
+  /// 承载 [_mineNotices] 的 overlay 条目；队列清空并播完退场后摘掉。
+  static OverlayEntry? _mineEntry;
+  static _FushiToastHandle? _mineHandle;
+
   static void _showMineOverlay({
     required OverlayState overlay,
-    required String msg,
-    required MineToastStatus status,
-    MineNoticeAction? action,
+    required MineNotice notice,
   }) {
-    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长；带动作按钮的
-    // 停得更久，留出去点的时间（角落小卡同样适用）。
-    final int durationMs = action != null
-        ? kMineNoticeActionVisibleFor.inMilliseconds
-        : status == MineToastStatus.pending
-        ? FushiNoticeDwell.minePending.inMilliseconds
-        : FushiNoticeDwell.mineResult.inMilliseconds;
-    final MineNoticeAction? tapAction = action == null
-        ? null
-        : MineNoticeAction(
-            label: action.label,
-            onPressed: () {
-              dismissCurrent();
-              action.onPressed();
-            },
-          );
-    // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
-    // _FushiToastView 的同一套。小卡 / 大卡由视图每次重建时与位置一起决定。
-    _insertToastEntry(
-      overlay: overlay,
-      durationMs: durationMs,
-      builder: (BuildContext context) => _FushiToastView(
-        msg: msg,
-        icon: mineToastPalette(status).icon,
-        severity: mineToastSeverity(status),
-        interactive: tapAction != null,
-        cornerRegion: _activeCornerRect,
-        cornerTextFlow: _activeCornerTextFlow,
-        bodyBuilder: (bool compact) => FushiMineNoticeCard(
-          status: status,
-          message: msg,
-          visibleFor: Duration(milliseconds: durationMs),
-          action: tapAction,
-          compact: compact,
-          maxWidth: compact ? 300 : 440,
+    // 制卡结果与普通提示共用底部这一个位置：结果来了，普通提示让位。
+    _removeGenericEntry();
+    _mineNotices.show(notice);
+    final _FushiToastHandle? handle = _mineHandle;
+    if (_mineEntry != null && handle != null) {
+      // 队列空了正在播退场时又来一张：把同一条目拉回来，不重建。
+      handle.reshow?.call();
+      return;
+    }
+    final _FushiToastHandle newHandle = _FushiToastHandle();
+    _mineHandle = newHandle;
+    final OverlayEntry entry = OverlayEntry(
+      builder: (BuildContext context) => _FushiToastExitScope(
+        handle: newHandle,
+        child: _FushiToastView(
+          msg: '',
+          icon: null,
+          severity: ToastSeverity.neutral,
+          interactive: true,
+          cornerRegion: _activeCornerRect,
+          cornerTextFlow: _activeCornerTextFlow,
+          bodyBuilder: (bool compact) => FushiMineNoticeStack(
+            controller: _mineNotices,
+            compact: compact,
+            maxWidth: compact ? 300 : 440,
+            // 贴角小卡在正文区域上角，旧卡朝下露边；默认位置在底部，朝上露边。
+            anchor: compact
+                ? MineNoticeStackAnchor.top
+                : MineNoticeStackAnchor.bottom,
+          ),
         ),
       ),
     );
+    _mineEntry = entry;
+    overlay.insert(entry);
+    _mineNotices.removeListener(_onMineNoticesChanged);
+    _mineNotices.addListener(_onMineNoticesChanged);
   }
 
-  /// 立即收起当前 toast（不播退场）：点了卡片上的动作按钮之后。
-  static void dismissCurrent() {
+  /// 队列清空：先播退场再摘条目；退场期间又来了新卡就留着条目（见上面的 reshow）。
+  static void _onMineNoticesChanged() {
+    if (!_mineNotices.isEmpty) return;
+    final OverlayEntry? entry = _mineEntry;
+    final _FushiToastHandle? handle = _mineHandle;
+    if (entry == null) return;
+    void remove() {
+      if (_mineEntry != entry || !_mineNotices.isEmpty) return;
+      entry.remove();
+      _mineEntry = null;
+      _mineHandle = null;
+    }
+
+    final Future<void> Function()? dismiss = handle?.dismiss;
+    if (dismiss == null) {
+      remove();
+      return;
+    }
+    dismiss().whenComplete(remove);
+  }
+
+  static void _removeMineEntry() {
+    _mineNotices.clear();
+    _mineEntry?.remove();
+    _mineEntry = null;
+    _mineHandle = null;
+  }
+
+  static void _removeGenericEntry() {
     _dismissTimer?.cancel();
     _dismissTimer = null;
     _currentEntry?.remove();
     _currentEntry = null;
   }
 
+  /// 立即收起当前 toast 与全部制卡结果卡（不播退场）。
+  static void dismissCurrent() {
+    _removeGenericEntry();
+    _removeMineEntry();
+  }
+
+  /// 测试用：清掉全局队列与计时器，避免计时器跨用例泄漏。
+  @visibleForTesting
+  static void debugReset() => dismissCurrent();
+
+  @visibleForTesting
+  static MineNoticeController get debugMineNotices => _mineNotices;
+
   static void _insertToastEntry({
     required OverlayState overlay,
     required int durationMs,
     required WidgetBuilder builder,
   }) {
-    _dismissTimer?.cancel();
-    // 被新 toast 顶替时旧条立即撤（pending → 结果要无缝衔接，不叠两条）。
-    _currentEntry?.remove();
-    _currentEntry = null;
+    // 被新 toast 顶替时旧条立即撤；底部同一个位置上的制卡结果卡也让位。
+    _removeGenericEntry();
+    _removeMineEntry();
 
     final _FushiToastHandle handle = _FushiToastHandle();
     final entry = OverlayEntry(
@@ -310,6 +374,9 @@ final class FushiToastCornerAnchor {
 /// 退场动画登记进来，到时由计时器调用。
 class _FushiToastHandle {
   Future<void> Function()? dismiss;
+
+  /// 退场途中重新进场（制卡结果队列空了又来新卡）。
+  VoidCallback? reshow;
 }
 
 /// 把 [_FushiToastHandle] 交给条目里的 [_FushiToastView]（视图由调用方 builder
@@ -327,8 +394,9 @@ class _FushiToastExitScope extends InheritedWidget {
       handle != oldWidget.handle;
 }
 
-/// 自绘 toast 距底边的距离：桌面沿用 50；移动端让出系统手势条与底部导航栏
-/// （原生 toast 在 Android 上也落在导航栏上方）。
+/// 自绘 toast 距底边的**基线**距离：桌面 50；移动端让出系统手势条与底部导航栏
+/// （原生 toast 在 Android 上也落在导航栏上方）。页面底部 chrome 比它高时由
+/// [noticeBottomOffset] 抬到 chrome 上方（见 [_FushiToastViewState._bottomOffset]）。
 double _toastBottomOffset(BuildContext context) {
   if (Platform.isAndroid || Platform.isIOS) {
     return MediaQuery.viewPaddingOf(context).bottom + 96;
@@ -547,6 +615,8 @@ class _FushiToastViewState extends State<_FushiToastView>
       ),
     );
     _controller.forward();
+    // 页面 chrome 显隐 / 移动时重新摆位（底栏抬起时卡片跟着抬）。
+    FushiNoticeObstacles.instance.addListener(_onObstaclesChanged);
   }
 
   @override
@@ -554,7 +624,22 @@ class _FushiToastViewState extends State<_FushiToastView>
     super.didChangeDependencies();
     // 墨水屏 / 减弱动态效果：不做进退场（连续重绘 = 残影），直接落到终态。
     if (!fushiMotionEnabled(context)) _controller.value = 1;
-    _FushiToastExitScope.maybeOf(context)?.dismiss = dismiss;
+    final _FushiToastHandle? handle = _FushiToastExitScope.maybeOf(context);
+    handle?.dismiss = dismiss;
+    handle?.reshow = _reshow;
+  }
+
+  void _reshow() {
+    if (!mounted) return;
+    if (!fushiMotionEnabled(context)) {
+      _controller.value = 1;
+      return;
+    }
+    _controller.forward();
+  }
+
+  void _onObstaclesChanged() {
+    if (mounted) setState(() {});
   }
 
   /// 退场动画；播完（或无动效时立即）完成。
@@ -565,6 +650,7 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   void dispose() {
+    FushiNoticeObstacles.instance.removeListener(_onObstaclesChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -605,13 +691,34 @@ class _FushiToastViewState extends State<_FushiToastView>
       );
     }
     return Positioned(
-      bottom: _toastBottomOffset(context),
+      bottom: _bottomOffset(context),
       left: 16,
       right: 16,
       child: IgnorePointer(
         ignoring: !widget.interactive,
         child: Center(child: animated),
       ),
+    );
+  }
+
+  /// 底部居中位置离底边多远：基线 [_toastBottomOffset]，页面底部 chrome（漫画 /
+  /// 阅读器底栏、有声播放条…，经 [FushiNoticeObstacle] 登记）横在卡片竖向通道上时
+  /// 抬到它上方（[noticeBottomOffset]）。
+  double _bottomOffset(BuildContext context) {
+    final double fallback = _toastBottomOffset(context);
+    final RenderObject? overlayBox = Overlay.maybeOf(
+      context,
+    )?.context.findRenderObject();
+    if (overlayBox is! RenderBox || !overlayBox.hasSize) return fallback;
+    final Size size = overlayBox.size;
+    // 卡片宽至多 440、两侧各留 16：通道取中间那一条。
+    final double half = math.min(220, (size.width - 32) / 2);
+    return noticeBottomOffset(
+      overlayHeight: size.height,
+      fallback: fallback,
+      obstacles: FushiNoticeObstacles.instance.inOverlay(overlayBox),
+      laneLeft: size.width / 2 - half,
+      laneRight: size.width / 2 + half,
     );
   }
 

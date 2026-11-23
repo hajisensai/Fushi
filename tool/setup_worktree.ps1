@@ -196,7 +196,7 @@ finally {
 function Resolve-SetupDart {
     [OutputType([string])]
     param([string]$Root)
-    # 用 pub get 写进 package_config 的那份 SDK（即 bootstrap 选中的 3.47.6），不用 PATH 上的 dart。
+    # 用 pub get 写进 package_config 的那份 SDK（即 bootstrap 选中的 3.50.0），不用 PATH 上的 dart。
     $cfg = Join-Path $Root '.dart_tool/package_config.json'
     if (-not (Test-Path -LiteralPath $cfg)) { throw "找不到 $cfg（bootstrap 的 pub get 没成功）。" }
     $m = [regex]::Match([IO.File]::ReadAllText($cfg), '"flutterRoot"\s*:\s*"([^"]*)"')

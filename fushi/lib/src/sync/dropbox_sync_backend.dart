@@ -534,7 +534,14 @@ class DropboxSyncBackend extends SyncBackend
 
   @override
   Future<Uint8List?> getBytesAsset(String assetId) =>
-      _downloadFileBytes(assetId);
+      downloadSyncAssetBytesCapped(
+        http.Request('POST', Uri.parse('$_contentBase/files/download'))
+          ..headers.addAll(_downloadHeaders(assetId)),
+        assetId: assetId,
+        onError: (http.Response resp) => throw SyncBackendError(
+          'Download failed: HTTP ${resp.statusCode} ${resp.body}',
+        ),
+      );
 
   @override
   Future<void> putBytesAsset(
@@ -632,17 +639,16 @@ class DropboxSyncBackend extends SyncBackend
   Future<dynamic> _downloadFileJson(String fileId) async =>
       decodeSyncJsonFileBody(await _downloadFile(fileId));
 
-  Future<Uint8List> _downloadFileBytes(String fileId) async =>
-      (await _downloadFile(fileId)).bodyBytes;
+  /// `/files/download` 的请求头（[_downloadFile] 与 [getBytesAsset] 共用）。
+  Map<String, String> _downloadHeaders(String fileId) => <String, String>{
+    'Authorization': 'Bearer $accessToken',
+    'Dropbox-API-Arg': jsonEncode({'path': fileId}),
+  };
 
   Future<http.Response> _downloadFile(String fileId) async {
-    final apiArg = jsonEncode({'path': fileId});
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/download'),
-      headers: {
-        'Authorization': 'Bearer $accessToken',
-        'Dropbox-API-Arg': apiArg,
-      },
+      headers: _downloadHeaders(fileId),
     );
     if (resp.statusCode >= 400) {
       throw SyncBackendError(

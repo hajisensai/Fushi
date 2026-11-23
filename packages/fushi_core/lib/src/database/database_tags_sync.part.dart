@@ -788,6 +788,27 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     );
   });
 
+  /// 自动来源的「默认 NSFW」（如 R-18 作品的分级）：只在宿主的 NSFW 标记**从没被
+  /// 决定过**（无行，或两只时钟都空）时标上 [at]；用户 / 对端设过或取消过就一律不动。
+  /// 判断与写入是同一条 upsert（`ON CONFLICT … DO UPDATE … WHERE`），中间插不进别的
+  /// 写：先读后写会让「读完之后落库的取消」被这次更晚的 nsfwAt 按 LWW 盖回去
+  /// （HBK-AUDIT-216）。
+  Future<void> markMediaNsfwIfUndecided(
+    TagHostKind kind,
+    String entryKey, {
+    required int at,
+  }) => into(mediaNsfwFlags).insert(
+    MediaNsfwFlagsCompanion.insert(
+      mediaKind: kind.dbValue,
+      entryKey: entryKey,
+      nsfwAt: Value(at),
+    ),
+    onConflict: DoUpdate(
+      (old) => MediaNsfwFlagsCompanion(nsfwAt: Value(at)),
+      where: (old) => old.nsfwAt.isNull() & old.clearedAt.isNull(),
+    ),
+  );
+
   /// 宿主当前的 NSFW 时钟（没有行 = 两只戳都为 null）。
   Future<MediaNsfwClock> mediaNsfwClock(
     TagHostKind kind,

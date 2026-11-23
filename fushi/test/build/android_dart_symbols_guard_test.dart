@@ -211,11 +211,22 @@ void main() {
       final String plugin = File(
         '${root.path}/packages/flutter_tools/gradle/src/main/kotlin/FlutterPlugin.kt',
       ).readAsStringSync();
+      // 3.47 写成 `${variant.name}`；3.50 把 variant.name 先传成参数
+      // `variantName = variant.name` 再拼 `$variantName`，目录布局不变。
+      final bool inlineVariantName = plugin.contains(
+        r'"${FlutterPluginConstants.INTERMEDIATES_DIR}/flutter/${variant.name}/"',
+      );
+      final bool variantNameParam =
+          plugin.contains(
+            r'"${FlutterPluginConstants.INTERMEDIATES_DIR}/flutter/$variantName/"',
+          ) &&
+          plugin.contains('variantName = variant.name,');
       expect(
-        plugin,
-        contains(
-          r'"${FlutterPluginConstants.INTERMEDIATES_DIR}/flutter/${variant.name}/"',
-        ),
+        inlineVariantName || variantNameParam,
+        isTrue,
+        reason:
+            'FlutterPlugin.kt 的 FlutterTask intermediateDir 不再是 '
+            'intermediates/flutter/<variant.name>/，release.yml 的符号收集路径要跟着改',
       );
       final String helper = File(
         '${root.path}/packages/flutter_tools/gradle/src/main/kotlin/tasks/FlutterTaskHelper.kt',

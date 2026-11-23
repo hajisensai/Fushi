@@ -360,11 +360,24 @@ extension _ReaderCaret on _ReaderFushiPageState {
     }
   }
 
+  /// Android delivers controller A as key events: while the caret is active
+  /// (on the popup after the controller lookup mode's "enter result", or a
+  /// keyboard caret) a short A activates at the caret and holding it 500 ms
+  /// long-presses (the desktop poller sends the long press as its own intent,
+  /// [_handleGamepadLongPress]). With no caret A is not consumed here and
+  /// resolves like any other button.
   KeyEventResult? _handleGamepadAKeyEvent(KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.gameButtonA) return null;
-    final ShortcutAction? resolvedAction = appModel.shortcutRegistry
-        .resolveGamepad(GamepadButton.a, scope: ShortcutScope.reader);
-    if (resolvedAction != ShortcutAction.readerLookupAtCursor) return null;
+    // Only a press that went down here is finished here (timer running / long
+    // press fired), even when the caret left meanwhile; a new press needs the
+    // caret, and a stray repeat / release (its press went elsewhere) is not
+    // ours.
+    final bool pressInFlight = _gamepadAHoldTimer != null || _gamepadALongFired;
+    if (event is KeyDownEvent) {
+      if (!_caretActive) return null;
+    } else if (!pressInFlight) {
+      return null;
+    }
     if (event is KeyDownEvent) {
       if (_gamepadAHoldTimer != null) return KeyEventResult.handled;
       _gamepadALongFired = false;
@@ -380,11 +393,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
     if (event is KeyUpEvent) {
       final bool longFired = _gamepadALongFired;
       _clearGamepadAHold();
-      if (longFired) return KeyEventResult.handled;
-      return _executeShortcutAction(
-        ShortcutAction.readerLookupAtCursor,
-        gamepadTriggerButton: GamepadButton.a,
-      );
+      if (longFired || !_caretActive) return KeyEventResult.handled;
+      unawaited(_runCaretAction(CaretAction.activate));
+      return KeyEventResult.handled;
     }
     return KeyEventResult.handled;
   }
@@ -490,14 +501,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         unawaited(_runCaretAction(caretAction));
         return true;
       }
-    } else if (ReaderCaretRouter.isEnterTriggerGamepad(
-      button,
-      focusNavEnabled: _focusNavEnabled,
-      enterButtons: _readerEnterCaretButtons(),
-    )) {
-      unawaited(_enterCaret());
-      return true;
     }
+    // 手柄不再有「进光标」入口（2026-11-22 手柄查词统一：手柄查词只走查词模式，
+    // 光标只在查词模式按「进入结果」后落在弹窗上时由上面的分支驱动）；键盘进光标不变。
     // 手柄重设计 P2：排在 caret 路由**之后**、reader/audiobook 解析**之前**。
     // caret 保留 dpad 四向（方向键移动字级光标去选词，是查词的操作方式本身，不能
     // 让给词条翻页）；但 X / Y 在 reader+audiobook scope 都有绑定
@@ -552,13 +558,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         enterKeys: _readerEnterCaretKeys(),
       );
     }
-    if (gamepadTriggerButton != null) {
-      return ReaderCaretRouter.isEnterTriggerGamepad(
-        gamepadTriggerButton,
-        focusNavEnabled: _focusNavEnabled,
-        enterButtons: _readerEnterCaretButtons(),
-      );
-    }
+    // A gamepad never enters the caret (the controller lookup mode is the
+    // gamepad's lookup path).
+    if (gamepadTriggerButton != null) return false;
     return _focusNavEnabled;
   }
 
@@ -571,16 +573,6 @@ extension _ReaderCaret on _ReaderFushiPageState {
         .bindingsFor(ShortcutAction.readerEnterCaret)
         .keyboardBindings
         .map((b) => b.key)
-        .toSet();
-  }
-
-  /// TODO-700 T7: the live gamepad buttons bound to
-  /// [ShortcutAction.readerEnterCaret] (default A, remappable).
-  Set<GamepadButton> _readerEnterCaretButtons() {
-    return appModel.shortcutRegistry
-        .bindingsFor(ShortcutAction.readerEnterCaret)
-        .gamepadBindings
-        .map((b) => b.button)
         .toSet();
   }
 
@@ -626,9 +618,6 @@ extension _ReaderCaret on _ReaderFushiPageState {
     LogicalKeyboardKey? keyboardTriggerKey,
     GamepadButton? gamepadTriggerButton,
   }) {
-    // 整句扫词（拍板台 5H922XeDHM）：键盘 / 手柄 / 鼠标三条通道都落到本执行体，扫词在
-    // 这里经唯一派发点分流；光标激活时执行体自己让位（仍消费，不让键冒泡去移焦点）。
-    if (_runReaderWordSweepAction(action)) return KeyEventResult.handled;
     switch (action) {
       case ShortcutAction.readerPageForward:
         _paginate(ReaderNavigationDirection.forward);

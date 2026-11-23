@@ -36,18 +36,12 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 export 'package:fushi_engine/srs/srs_edit_undo.dart';
 export 'package:fushi_engine/srs/srs_entity_views.dart' show SrsEntityView;
 
-/// 本进程（isolate）的身份：持久化的校时读数（服务器时间 + 开机时钟读数）只在写下它的进程里接着用。
-/// 同一进程里重开 profile / 副本时它不变，校时不丢；进程重启（含重新开机，开机时钟归零）后换新。
-final String _srsProcessBootId =
-    '${DateTime.now().millisecondsSinceEpoch}_'
-    '${Random.secure().nextInt(1 << 30)}';
-
 /// 本机时间（[SrsTrustedClock]）：校时那一刻的服务器时间 + 原生开机时钟（含睡眠、不受改系统时间影响，
-/// [SrsCore.bootTimeMs]）之后走过的量。进程重启后到下一次校时前按墙钟 + 上一个进程留下的偏移估算。
+/// [SrsCore.bootTimeMs]）之后走过的量。同一次开机里的新进程从本机状态行接上校时；重新开机（或校时后改过系统时间）
+/// 后到下一次校时前按墙钟走，不带上一个进程的偏移（BUG-5264）。
 SrsTrustedClock srsProcessTrustedClock(SrsCore core) => SrsTrustedClock(
   wallClockMs: () => DateTime.now().millisecondsSinceEpoch,
   bootClockMs: core.bootTimeMs,
-  bootId: _srsProcessBootId,
 );
 
 /// 条件写笔记字段的一项（见 [SrsDbStore.editNoteFieldsIf]）：字段现值仍是 [expect] 才写成 [value]。
@@ -545,15 +539,16 @@ class SrsDbStore implements SrsSync2Host {
     // [SrsProfileIdentityPending]。
     await s._sync2Open();
     if (core.mode == SrsOpenMode.primary) {
-      // 注册本 profile 的缓存配置（只有 Dart 知道的内置笔记类型默认值与默认牌组，派生层的输入）：内核与库里存的
-      // 比，变了就整层重建（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）。
-      await s._registerCacheConfig();
       // 新代的派生层是真相的纯函数、随写入维护：本机状态行不在（迁移不带协议 3 的那一行，交接说明 §8.2）不代表缓存
       // 过期，不再按「有事件却没有本机状态」整层重建。行没落盘时当场落下，否则每次打开都是新纪元、指纹每次都「变了」。
-      // 本机第一次跑懂每日上限单位的版本的时刻（[limitUnitLegacyDecks]）同样在这里落下，只落一次。
+      // 本机第一次跑懂每日上限单位的版本的时刻（[limitUnitLegacyDecks]）同样在这里落下，只落一次。要在
+      // `cache_config_set` 之前：那条命令可能顺带落一笔本机写（复活默认牌组），回包要带行里的纪元。
       if (!local.epochStored || s._limitUnitSince == null) {
         await s._ensureLocalState();
       }
+      // 注册本 profile 的缓存配置（只有 Dart 知道的内置笔记类型默认值与默认牌组，派生层的输入）：内核与库里存的
+      // 比，变了就整层重建（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）。
+      await s._registerCacheConfig();
       await s.ensureBuiltins();
     }
     // 只读打开（查词弹窗等辅助进程）：注册类写入都是主进程的事，这里只读。
@@ -1081,16 +1076,17 @@ class SrsDbStore implements SrsSync2Host {
     _absorbLocalState(j);
     _absorbLimitUnitSince(j);
     final Object? anchor = j['anchor'];
-    // `{o, b, s?, t?}`：o = 可信时间 − 墙钟，s / t = 校时时的服务器时间与开机时钟读数（只在写下它的进程 b 里接着
-    // 用，见 [SrsTrustedClock.restoreAnchor]）。更旧的 `{s, m, b}`（服务器时间 + Stopwatch 读数）没有 o，不认。
-    if (anchor is Map && anchor['o'] is int && anchor['b'] is String) {
-      final Object? server = anchor['s'];
-      final Object? boot = anchor['t'];
+    // `{s, t, e}`：校时时的服务器时间、同一刻的开机时钟读数、按墙钟估的开机时刻；只在同一次开机里接上（见
+    // [SrsTrustedClock.restoreAnchor]）。旧版的 `{o, b, s?, t?}`（带「可信时间 − 墙钟」偏移跨进程估算，BUG-5264）
+    // 与更旧的 `{s, m, b}` 没有 e，不认：下一次校时前按墙钟走。
+    if (anchor is Map &&
+        anchor['s'] is int &&
+        anchor['t'] is int &&
+        anchor['e'] is int) {
       _trusted.restoreAnchor(
-        offsetMs: anchor['o']! as int,
-        bootId: anchor['b']! as String,
-        serverTimeMs: server is int ? server : null,
-        bootTimeMs: boot is int ? boot : null,
+        serverTimeMs: anchor['s']! as int,
+        bootTimeMs: anchor['t']! as int,
+        bootEpochMs: anchor['e']! as int,
       );
     }
     return (
@@ -1138,14 +1134,13 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 此刻的校时状态（`{o, b, s?, t?}`，见 [_loadLocal]）；没校过时为 null。改投影的命令随请求带上（`anchor`），内核
-  /// 在命令的同一笔事务里写进本机状态行——o 是「可信时间 − 墙钟」，每次现算，内核算不出来。没带的命令不动行里的值。
+  /// 此刻的校时状态（`{s, t, e}`，见 [_loadLocal]）；没校过时为 null。改投影的命令随请求带上（`anchor`），内核在
+  /// 命令的同一笔事务里写进本机状态行。没带的命令不动行里的值。
   Map<String, Object?>? _anchorArg() => switch (_trusted.anchorState) {
     final SrsClockAnchorState a => <String, Object?>{
-      'o': a.offsetMs,
-      'b': a.bootId,
-      if (a.serverTimeMs case final int server) 's': server,
-      if (a.bootTimeMs case final int boot) 't': boot,
+      's': a.serverTimeMs,
+      't': a.bootTimeMs,
+      'e': a.bootEpochMs,
     },
     null => null,
   };
@@ -2654,6 +2649,9 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 内置实体的 ID 是规范 ID（[srsBuiltinEntities] 向内核要，不带盐，G9-7），与 `entities` 读回的直接比：全新库里
   /// 就是它；迁移来的库里协议 3 按 uid 加盐的内置实体被派生层归到同一个规范 ID，读回的也是它，所以不会另建一份。
+  ///
+  /// 默认牌组是不变式（牌组树 [deckTree] 里恒有它）：身份记录在、却带着删除标记的（旧版删祖先牌组时连带删了它）由
+  /// 内核在开库的 `cache_config_set` 里复活（[_registerCacheConfig]，BUG-5209），这里只补没有身份记录的。
   Future<void> ensureBuiltins() => runExclusive(() async {
     final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
     final Set<String> present = (await _entityIdsWhere(
@@ -3194,11 +3192,18 @@ class SrsDbStore implements SrsSync2Host {
   /// 值比，相同回 `{changed: false}`；变了内核写下并在同一个事务里整层重建派生层，回 `{changed: true, settled}`。
   /// 整层重建不推进本机状态行的修订号（刷新键），所以变了时这里把本对象按刷新键 / 缓存日志记的缓存一并作废。失败照常
   /// 抛出（打开失败），下次打开重来。
+  ///
+  /// 同一条命令里内核还守默认牌组不变式（BUG-5209）：默认牌组带着删除标记（旧版删祖先牌组时连带删了它）就复活并挂回
+  /// 顶层，是一笔本机写（随同步传到别的设备），回包 `revive` 带本机状态行的修订号与纪元，这里照本机写命令接
+  /// （[_absorbLocalWrite]）。宿主不先读默认牌组。
   Future<void> _registerCacheConfig() => runExclusive(() async {
-    final Map<String, Object?> r = await _sync2(const <String, Object?>{
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
       'op': 'cache_config_set',
+      'now': now().$1,
     });
-    if (r['changed'] == true) _invalidateDerivedCaches();
+    final Object? revive = r['revive'];
+    if (revive is Map) _absorbLocalWrite(revive.cast<String, Object?>());
+    if (r['changed'] == true || revive != null) _invalidateDerivedCaches();
   });
 
   /// 派生层整层重建（`rebuild_caches`，`Settle::Rebuild`）：新代的派生层是真相的纯函数，重建结果与随写入维护的

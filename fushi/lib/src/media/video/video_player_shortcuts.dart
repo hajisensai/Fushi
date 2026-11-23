@@ -211,7 +211,7 @@ class VideoPlayerShortcutActions {
   final VoidCallback alignSubtitleToPrev;
   final VoidCallback alignSubtitleToNext;
 
-  /// 进入字级选词光标（videoEnterCaret，默认 Enter / 手柄 Select）。光标已激活时
+  /// 进入字级选词光标（videoEnterCaret，默认 Enter，仅键盘通道）。光标已激活时
   /// 本回调等价于「对光标字符查词」（与阅读器 readerLookupAtCursor 的双语义一致）；
   /// 激活期的方向/确认/退出键不经本表，由页面先于注册表截获。
   final VoidCallback enterCaret;
@@ -409,12 +409,6 @@ const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
   // chrome 显隐是翻转型动作：按住让它以 key-repeat 的频率来回翻，小窗里就是一片
   // 疯狂闪烁的按钮。
   ShortcutAction.videoToggleMiniChrome,
-  // 暂停句「整句扫词」：与进选词光标 / 制卡同属查词动作，一按 = 换一个词重查一次
-  // （WebView 查词 + OSD）。按住让 OS key-repeat 以重复率连发，就是一串来不及看清的
-  // 查词把游标甩过整句、绕圈循环，最后停在哪个词全凭松手时机。本集合只管键盘重复沿；
-  // 手柄 D-pad 的按住自动重复是方向通道自己的语义（不带重复标记），不在这里翻译。
-  ShortcutAction.videoLookupNextWord,
-  ShortcutAction.videoLookupPrevWord,
   // 统计侧栏开关 / 计时停续都是翻转型：按住连发 = 侧栏开关闪烁、计时来回翻。
   ShortcutAction.videoOpenStatistics,
   ShortcutAction.videoToggleStudyClock,
@@ -929,14 +923,6 @@ VideoKeyboardResolution resolveVideoKeyboardShortcut(
       VideoKeyboardDispatch.run,
       ShortcutAction.popupMineEntry,
     );
-  }
-
-  // 暂停句「整句扫词」：与制卡同族必须绕开下面的「浮层可见 → 先关浮层」。扫词每停
-  // 一词都会弹/换同一张浮层，被守卫吃掉就永远只能关浮层、推不动下一词。浮层不可见
-  // 时照旧消费（执行体自带「无字幕则早退」，不会误吞）。
-  if (action == ShortcutAction.videoLookupNextWord ||
-      action == ShortcutAction.videoLookupPrevWord) {
-    return VideoKeyboardResolution(VideoKeyboardDispatch.run, action);
   }
 
   // 进入字级选词光标：命中绑定键（默认 Enter）但**画面不精确持焦**时必须放行，让

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
+import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 
 typedef _TestSession = ({
@@ -140,6 +142,93 @@ void main() {
         isFalse,
         reason: '会话收尾即从登记表注销，不留悬空引用',
       );
+    },
+  );
+
+  testWidgets(
+    'HBK-AUDIT-230: manual check only reveals an in-flight download of the '
+    'channel it is about to check',
+    (WidgetTester tester) async {
+      final OverlayState overlay = await _pumpHost(tester);
+      final _TestSession stable = showUpdateDownloadSessionForTest(
+        overlay,
+        version: '9.9.11',
+      );
+      await tester.pump();
+      await tester.tap(find.text(t.update_hide));
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsNothing);
+
+      // 调试版面板显式按 debug 查：stable 下载在途也不能截走这次检查。
+      expect(
+        UpdateChecker.revealActiveDownload(channel: UpdateChannel.debug),
+        isFalse,
+      );
+      expect(
+        UpdateChecker.revealActiveDownload(channel: UpdateChannel.beta),
+        isFalse,
+      );
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsNothing);
+
+      expect(
+        UpdateChecker.revealActiveDownload(channel: UpdateChannel.stable),
+        isTrue,
+      );
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsOneWidget);
+      stable.dispose();
+      await tester.pump();
+
+      final _TestSession debug = showUpdateDownloadSessionForTest(
+        overlay,
+        version: '9.9.11-debug.42',
+      );
+      await tester.pump();
+      await tester.tap(find.text(t.update_hide));
+      await tester.pump();
+      expect(
+        UpdateChecker.revealActiveDownload(channel: UpdateChannel.stable),
+        isFalse,
+      );
+      expect(
+        UpdateChecker.revealActiveDownload(channel: UpdateChannel.debug),
+        isTrue,
+      );
+      debug.dispose();
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'HBK-AUDIT-230: manual check only lets an explicit channel filter the '
+    'reveal; an implicit check still reveals any in-flight download',
+    (WidgetTester tester) async {
+      final OverlayState overlay = await _pumpHost(tester);
+      final _TestSession stable = showUpdateDownloadSessionForTest(
+        overlay,
+        version: '9.9.12',
+      );
+      await tester.pump();
+      await tester.tap(find.text(t.update_hide));
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsNothing);
+
+      // 调试版面板显式按 debug 查：stable 下载在途也必须照样去查 debug manifest。
+      expect(
+        revealDownloadForManualCheck(explicitChannel: UpdateChannel.debug),
+        isFalse,
+      );
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsNothing);
+
+      // 设置页按用户自己的通道查（debug / beta 用户按嵌套合集也会下正式版，BUG-846）：
+      // 在途下载照旧拉回来（BUG-5168），不退回去重查网络。
+      expect(revealDownloadForManualCheck(), isTrue);
+      await tester.pump();
+      expect(find.text(t.update_cancel), findsOneWidget);
+      stable.dispose();
+      await tester.pump();
     },
   );
 }

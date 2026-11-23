@@ -1065,6 +1065,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 关掉再打开会从 null 重新起基线，第一行只有瞬时量、没有速率。
   VideoMpvStatsSnapshot? _lastDiagStats;
 
+  /// BUG-5200：上一次原生出帧计数（`present` 行的增量基线）；每次 load 清空。
+  VideoPresentStats? _lastPresentStats;
+
   @override
   AudioCue? get currentCue => _currentCue;
 
@@ -3765,6 +3768,7 @@ class VideoPlayerController extends ChangeNotifier
     // 生命周期只提示一次，换集不再重复弹）。
     _blackFlickerDetector.resetWindows();
     _lastFlickerSampleAt = null;
+    _lastPresentStats = null;
     _flickerHwdecActive = null;
     await _playingSub?.cancel();
     _playingSub = null;
@@ -4562,6 +4566,7 @@ class VideoPlayerController extends ChangeNotifier
           '${snapshot.describeSince(_lastDiagStats, windowMs)}',
         );
         _lastDiagStats = snapshot;
+        await _logPresentStats(player, loadToken, windowMs);
       }
 
       if (!flickerAllowed) return;
@@ -4585,6 +4590,30 @@ class VideoPlayerController extends ChangeNotifier
     } finally {
       _flickerSampleInFlight = false;
     }
+  }
+
+  /// BUG-5200：mpv 的 `frame-drop-count` / `vo-delayed-frame-count` 只看得到 mpv
+  /// 自己有没有按时出帧；出了帧、Flutter 却没取走（被下一帧覆盖）的丢帧 mpv 不知道。
+  /// Windows 原生纹理层计了这笔账（出帧 / 被 raster 取走 / 被覆盖 / 出帧到取走的延迟），
+  /// 诊断开着时每秒和 mpv 快照一起打一行 `present`，取不到（别的平台 / 输出忙）不打。
+  Future<void> _logPresentStats(
+    Player player,
+    int loadToken,
+    int windowMs,
+  ) async {
+    final Map<String, int>? stats = await _videoController?.notifier.value
+        ?.frameStats();
+    if (stats == null || !_isCurrentLoad(player, loadToken)) return;
+    final VideoPresentStats now = VideoPresentStats.fromMap(stats);
+    final VideoPresentStats? previous = _lastPresentStats;
+    _lastPresentStats = now;
+    if (previous == null) return;
+    final VideoPresentStats delta = now.since(previous);
+    videoDiag(
+      VideoDiagCategory.mpvStats,
+      delta.lost > 0 && isPlaying ? VideoDiagLevel.warn : VideoDiagLevel.v,
+      'present window=${windowMs}ms ${delta.describe()}',
+    );
   }
 
   void _clearChaptersForNewLoad() {

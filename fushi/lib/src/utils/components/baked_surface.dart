@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -58,15 +59,30 @@ class BakedSurface extends SingleChildRenderObjectWidget {
 
   @override
   RenderBakedSurface createRenderObject(BuildContext context) =>
-      RenderBakedSurface(overflow: overflow);
+      RenderBakedSurface(
+        overflow: overflow,
+        scrollPositions: _ancestorScrollPositions(context),
+      );
 
   @override
   void updateRenderObject(
     BuildContext context,
     RenderBakedSurface renderObject,
   ) {
-    renderObject.overflow = overflow;
+    renderObject
+      ..overflow = overflow
+      ..scrollPositions = _ancestorScrollPositions(context);
   }
+
+  /// 最近的纵向与横向滚动区（[Scrollable.maybeOf] 按轴取，依赖登记在本 element
+  /// 上：滚动区换 position 时会走 [updateRenderObject]）。
+  static List<ScrollPosition> _ancestorScrollPositions(
+    BuildContext context,
+  ) => <ScrollPosition>[
+    for (final Axis axis in Axis.values)
+      if (Scrollable.maybeOf(context, axis: axis) case final ScrollableState s)
+        s.position,
+  ];
 }
 
 /// 本节点坐标 → 物理像素的变换，限于「均匀缩放 + 平移」（只有这种才能 1:1 贴图）。
@@ -95,6 +111,16 @@ class _Placement {
     return _Placement(s[0], s[12], s[13]);
   }
 
+  /// 与 [other] 在屏幕上是同一个位置（缩放相同、平移相同）。决定「停稳了、可以
+  /// 烘焙」只能用这个，不能用 [pixelEquivalent]：滚动中每帧挪整数个物理像素时
+  /// 相位恒等，按相位判就会在滚动途中逐帧把整屏的面离屏重烘一遍。
+  bool samePosition(_Placement other) {
+    const double eps = 1e-3;
+    return (scale - other.scale).abs() < 1e-6 &&
+        (dx - other.dx).abs() < eps &&
+        (dy - other.dy).abs() < eps;
+  }
+
   /// 与 [other] 贴图结果是否完全一致：缩放相同，平移只差整数个物理像素。
   bool pixelEquivalent(_Placement other) {
     const double eps = 1e-3;
@@ -107,8 +133,22 @@ class _Placement {
 
 /// [BakedSurface] 的渲染对象。
 class RenderBakedSurface extends RenderRepaintBoundary {
-  RenderBakedSurface({EdgeInsets overflow = EdgeInsets.zero})
-    : _overflow = overflow;
+  RenderBakedSurface({
+    EdgeInsets overflow = EdgeInsets.zero,
+    List<ScrollPosition> scrollPositions = const <ScrollPosition>[],
+  }) : _overflow = overflow,
+       _scrollPositions = scrollPositions;
+
+  /// 祖先滚动区（最近的纵向 + 最近的横向）。任一正在滚动时不烘焙：滚动途中的
+  /// 位置一直在变，此刻烘出的纹理下一帧就贴不上了（见 [_endOfFrame]）。
+  List<ScrollPosition> _scrollPositions;
+  set scrollPositions(List<ScrollPosition> value) {
+    if (listEquals(value, _scrollPositions)) return;
+    _scrollPositions = value;
+  }
+
+  bool get _ancestorScrolling =>
+      _scrollPositions.any((ScrollPosition p) => p.isScrollingNotifier.value);
 
   EdgeInsets _overflow;
   EdgeInsets get overflow => _overflow;
@@ -225,10 +265,24 @@ class RenderBakedSurface extends RenderRepaintBoundary {
       }
     }
     if (_dirty) return; // 已经标脏，下一帧会实时画。
+    // 滚动途中不烘焙（2026-11-22 视频合集滚动卡顿，BUG-5197）：滚轮连拨时根部补间
+    // （`SmoothWheelScrollScope._ease`）每档先 `jumpTo` 回当前的补间位置、下一拍才
+    // 起新动画，于是每档都有「两帧位置完全相同」的一帧，被当成停稳，整屏的面在
+    // 亚像素位置上逐个 `toImageSync`——一次 50 档的滚动实测烘了约 1700 次，raster
+    // p90 40 ms、提交内存冲到 25 GB+。滚动结束（`isScrollingNotifier` 落回 false）
+    // 后的那一帧照常走下面的稳定判定，再停稳一帧才烘焙。
+    if (_ancestorScrolling) {
+      _seenSerial = _liveSerial;
+      _seenPlacement = null;
+      return;
+    }
     final bool contentStable = _seenSerial == _liveSerial;
     final _Placement? seen = _seenPlacement;
+    // 「停稳」= 屏幕位置连续两帧完全不变（不是相位相同）：滚动 / 补间途中一直在动的
+    // 面不烘焙，照常实时画；已有的纹理在整像素位移下照贴（[_textureFits]），
+    // 停下来那一帧之后才为新露出的面各烘一次。
     final bool placementStable =
-        now != null && seen != null && now.pixelEquivalent(seen);
+        now != null && seen != null && now.samePosition(seen);
     _seenSerial = _liveSerial;
     _seenPlacement = now;
     if (now != null) {

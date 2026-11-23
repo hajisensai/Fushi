@@ -133,9 +133,32 @@ void main() {
         // PDF 文字层：一页文字层字素数是否达到「整页正文就是文字层」门槛
         // （kPdfTextLayerCompletePageMinChars），是覆盖判据不是学习计数。
         'packages/fushi_engine/lib/media/manga/manga_pdf_text_layer.dart': 1,
+        // 全屏歌词动画（PR #4211，照 folia-major 移植）：按歌词行的码点 / 字素数排版
+        // （逐字格宽、气泡与图形尺寸、单字判定、按字数分配时长），是排版几何与动画
+        // 计时，不是学习计数。cappella_scene 那处是逐字排布计划的条目数。
+        'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_messages.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text_layout.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_layout.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/partita/partita_layout.dart':
+            2,
+        // 漫画页面注音（BUG-5216）：无逐行框时按最长行码点数均分行框（两处，是
+        // 排版几何），学已注音词时单字底本不学（一处，是匹配判据），都不是学习计数。
+        'packages/fushi_engine/lib/media/manga/manga_ruby.dart': 3,
         // 作品图谱 L5 人物同名建议：归一化后的名字短于 2 个码点不出建议键（单字名
         // 撞名太多），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/people/person_identity.dart': 1,
+        // TTS 角色读音替换：「单字人名简称只在称呼后缀前命中」的判断（源串恰好一个
+        // 码点），是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/tts/cast/cast_text_substitution.dart': 1,
         // 媒体追踪书目关联：书名方括号里的人名长度上限（≤24 码点才当作者名），
         // 与繁简折叠时「折叠结果恰好是单个码点」的判断，是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/tracking/book_tracking_link.dart': 2,
@@ -181,6 +204,15 @@ void main() {
         // 游戏串流手柄查词模式：当前行与命中词的字素数是查词光标的移动边界、跳过
         // 命中词的步长与命中高亮范围（_moveLookupCaret / lookupHighlight），是导航不是记账。
         'lib/src/pages/implementations/game_stream_page.dart': 2,
+        // 手柄查词模式（书 / 漫画 / 视频三处 ControllerLookupTarget）：查词命中长度
+        // 由 UTF-16 码元折成字素、光标到句尾的字素数、扫描出的查询串字素数，都是查词
+        // 选区右端的上界与步长，是导航不是记账。
+        'lib/src/lookup/lookup_match_measure.dart': 1,
+        'lib/src/media/manga/reader/manga_fushi/controller_lookup.part.dart': 1,
+        'lib/src/pages/implementations/reader_fushi/controller_lookup.part.dart':
+            1,
+        'lib/src/pages/implementations/video_fushi/controller_lookup.part.dart':
+            1,
         // 无封面时按标题生成的封面：首字母的字素数决定排版字号（一字 / 两字），
         // 是排版不是记账。
         'lib/src/utils/components/fushi_generated_cover.dart': 1,

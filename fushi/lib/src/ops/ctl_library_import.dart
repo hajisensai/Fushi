@@ -756,4 +756,6 @@ String libraryCtlBlockerMessage(DiscoveryImportBlocker blocker) =>
       DiscoveryImportBlocker.unsupportedOnThisHost => '本机不支持这种导入',
       DiscoveryImportBlocker.archivePasswordRequired =>
         '压缩包有密码，没拿到口令（取消了口令对话框或当前不能交互）',
+      DiscoveryImportBlocker.archiveVolumesMissing =>
+        '分卷压缩包不全：要从第一卷（.001）导入，其余各卷放在同一个文件夹里',
     };

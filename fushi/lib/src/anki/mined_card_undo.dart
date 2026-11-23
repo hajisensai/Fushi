@@ -101,6 +101,27 @@ ToastSeverity minedCardDeleteResultSeverity(MinedCardDeleteResult result) =>
       MinedCardDeleteResult.failed => ToastSeverity.error,
     };
 
+/// 一次制卡结果提示上的**唯一**动作按钮（用户 2026-11-22 重设计：每种结果有自己的下一步）：
+/// 成功 →「撤销」；复习库要升级的失败 →「打开复习」；进了待发队列 →「查看队列」；
+/// 重复且调用方给了 [addAnyway] →「仍要添加」。都不适用时 null，卡片不出按钮。
+/// 「重试」不在这里：只有手里有重发闭包的调用方（视频页）自己给。
+MineNoticeAction? mineResultToastAction(
+  BaseAnkiRepository repo,
+  MineOutcome outcome, {
+  String? expression,
+  bool overwrite = false,
+  Future<void> Function()? addAnyway,
+}) =>
+    minedCardUndoToastAction(
+      repo,
+      outcome,
+      expression: expression,
+      overwrite: overwrite,
+    ) ??
+    mineFailureToastAction(outcome) ??
+    mineQueuedToastAction(outcome) ??
+    mineAddAnywayToastAction(outcome, addAnyway);
+
 /// 制卡成功 toast 上的「撤销」按钮：[outcome] 不可撤（见 [MinedCardUndo.of]）时
 /// 返回 null，toast 就不出按钮。点下删卡，结局再用一条 toast 说出来。
 ///

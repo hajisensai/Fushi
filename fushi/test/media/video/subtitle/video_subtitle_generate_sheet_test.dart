@@ -11,7 +11,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiModalSheetFrame;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
@@ -92,11 +93,13 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => false;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) {
     downloads++;
     return running.stream;
@@ -105,6 +108,7 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => running.isClosed ? null : running.stream;
 }
 
@@ -116,11 +120,13 @@ class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => false;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => language == VideoSubtitleLanguage.japanese
       ? japanese.stream
       : const Stream<ModelDownloadEvent>.empty();
@@ -128,6 +134,7 @@ class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => language == VideoSubtitleLanguage.japanese && !japanese.isClosed
       ? japanese.stream
       : null;
@@ -189,6 +196,7 @@ void main() {
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
           VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+          AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
         }) async =>
             VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
     completerFactory: (AiProviderConfig _) =>

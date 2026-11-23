@@ -395,6 +395,12 @@
         <meta-data
             android:name="io.flutter.embedding.android.EnableSurfaceControl"
             android:value="false" />
+        <!-- Flutter GPU（package:flutter_gpu）：全屏歌词「镜台」的真 3D 渲染器。只放开 Dart 侧拿
+             GpuContext，不改 Impeller 后端；拿不到（老 GLES 设备）时样式自己退回 Canvas 实现
+             （lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_gpu.dart）。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableFlutterGPU"
+            android:value="true" />
         <!-- 设备自带 OCR（SystemOcrChannel）用的是 unbundled ML Kit：模型住在 Google
              Play 服务里，不进 APK。这条 meta-data 让 Play 服务在**安装时**就把声明的
              四套文字模型取下来，而不是拖到用户第一次识别时才现下——「安装完就能用、
@@ -544,6 +550,8 @@
     <uses-permission android:name="com.ichi2.anki.d.permission.READ_WRITE_DATABASE"/>
     <uses-permission android:name="com.ichi2.anki.e.permission.READ_WRITE_DATABASE"/>
     <uses-permission android:name="com.ichi2.anki.debug.permission.READ_WRITE_DATABASE"/>
+    <!-- kuma3 Anki（AnkiDroid 分支）：release 包名 io.github.pedrubik2000.kuma3，权限同样带包名。 -->
+    <uses-permission android:name="io.github.pedrubik2000.kuma3.permission.READ_WRITE_DATABASE"/>
     <queries>
         <!-- Android 11+ 包可见性。没有这些声明时 resolveContentProvider 查不到并行版，
              isApiAvailable 恒 false，权限框一次都不会弹（BUG-2195 的直接根因）。
@@ -558,6 +566,7 @@
         <package android:name="com.ichi2.anki.d" />
         <package android:name="com.ichi2.anki.e" />
         <package android:name="com.ichi2.anki.debug" />
+        <package android:name="io.github.pedrubik2000.kuma3" />
         <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
         <package android:name="app.hibiki.reader" />
         <!-- 选区「网页搜索」要先解析出默认浏览器再定向 ACTION_WEB_SEARCH（BUG-2491）。

@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 3.4.0+1369
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: "^3.47.0"
+  flutter: "^3.50.0"
 
 dependencies:
   # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/fushi-subtitles，GPL-3.0），本仓只留
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 63881fd547769dea3c1a98b34f5519a984dc280e
+      ref: a5a9a90aacc1ea484f27c53d850104bf499d9225
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 63881fd547769dea3c1a98b34f5519a984dc280e
+      ref: a5a9a90aacc1ea484f27c53d850104bf499d9225
   archive: ^3.6.1
   async_zip: ^0.1.0
   audio_service: ^0.18.9
@@ -76,6 +76,15 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  # 真 3D 渲染（全屏歌词「镜台」）：Impeller 之上的 Flutter GPU。五端的启用开关见
+  # windows/runner/main.cpp、linux/runner、AndroidManifest、Info.plist。
+  # 着色器包由 hook/build.dart 经 flutter_gpu_shaders 调引擎自带 impellerc 编出
+  # （与引擎版本绑定，不入库），产物 build/shaderbundles/*.shaderbundle 登记在下方 assets。
+  flutter_gpu:
+    sdk: flutter
+  flutter_gpu_shaders: ^0.5.2
+  hooks: ^2.0.0
+  vector_math: ^2.1.4
   fushi_core:
     path: ../packages/fushi_core
   fushi_dictionary:
@@ -186,10 +195,9 @@ dependencies:
   pdfrx: 2.4.5
   progress_indicators: ^1.0.0
   recase: ^4.1.0
-  receive_intent:
-    git:
-      url: https://github.com/arianneorpilla/receive_intent
-      ref: 3854d07f8f4e9d5a78589639b18b5d454ddf54a0
+  # Vendored fork (arianneorpilla 3854d07) via the workspace dependency_overrides:
+  # third_party/receive_intent/PATCHES.md.
+  receive_intent: ^0.2.3
   remove_emoji: ^0.0.7
   restart_app: ^1.1.2
   share_plus: ^7.2.2
@@ -310,6 +318,9 @@ flutter:
     # 内置追踪插件（Bangumi）打好的包；源码在仓库根 plugins/tracking/bangumi/，
     # 与包不一致时 test/build/bundled_tracking_plugin_asset_guard_test.dart 判红。
     - assets/tracking_plugins/
+    # Flutter GPU 着色器包（全屏歌词「镜台」的真 3D 渲染）：hook/build.dart 每次构建用引擎自带
+    # impellerc 从 shaders/diorama.shaderbundle.json 编出，不入库（与引擎版本绑定）。
+    - build/shaderbundles/diorama.shaderbundle
 
   # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
   # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。
@@ -318,6 +329,8 @@ flutter:
     - shaders/panorama_backdrop.frag
     - shaders/music_backdrop_pixi.frag
     - shaders/page_curl.frag
+    - shaders/visualizer_sonnet_post.frag
+    - shaders/visualizer_bg_latent.frag
 
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在

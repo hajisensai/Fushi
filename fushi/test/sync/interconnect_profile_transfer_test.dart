@@ -48,13 +48,17 @@ void main() {
       'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
     };
 
-    test('GET 在明文会话上被拒（403 HTTPS required）', () async {
+    test('GET 在明文会话上被拒（403 https_required）', () async {
       final http.Response res = await http.get(
         profileUri(),
         headers: authHeaders(),
       );
       expect(res.statusCode, 403);
-      expect(res.body, contains('HTTPS required'));
+      expect(
+        parseInterconnectProfileDenialBody(res.body),
+        InterconnectProfileDenial.httpsRequired,
+        reason: '拒绝回结构化码，不回英文自由文本（反馈 G-ebgSnoK8）',
+      );
     });
 
     test('PUT 在明文会话上同样被拒（入站写不得走明文）', () async {
@@ -64,7 +68,11 @@ void main() {
         body: '{}',
       );
       expect(res.statusCode, 403);
-      expect(res.body, contains('HTTPS required'));
+      expect(
+        parseInterconnectProfileDenialBody(res.body),
+        InterconnectProfileDenial.httpsRequired,
+        reason: '拒绝回结构化码，不回英文自由文本（反馈 G-ebgSnoK8）',
+      );
     });
 
     test('其它方法一律 405（端点只认 GET/PUT）', () async {
@@ -198,9 +206,11 @@ void main() {
       final String gateTail = body.substring(gate, gate + 240);
       expect(
         gateTail,
-        contains('shelf.Response.forbidden'),
-        reason: '开关关着要 403，让 client 能把「关着」与「不支持」分开报',
+        contains('InterconnectProfileDenial.disabled'),
+        reason:
+            '开关关着要 403 + profile_transfer_disabled，让 client 能把「关着」与「不支持」分开报',
       );
+      expect(InterconnectProfileDenial.disabled.httpStatus, 403);
     });
 
     test('入站导入永不覆盖 host 既有配置（契约写在接口文档里）', () {

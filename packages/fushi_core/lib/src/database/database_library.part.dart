@@ -994,9 +994,42 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     }
     final String oldName = col.name;
     final String type = col.collectionType;
+    // 成员墓碑跟着合集走：「用户移出过 X」是对这个合集的表态，改个名不该把它忘掉
+    // （否则改名后 AI 整理 / 同步并集会把移出过的成员放回来）。只搬成员行，不搬
+    // 合集级哨兵；新名下已有同一成员的墓碑时取较新的 deletedAt。
+    final List<CollectionMemberTombstoneRow> carried =
+        await (select(collectionMemberTombstones)..where(
+              (t) =>
+                  t.collectionName.equals(oldName) &
+                  t.collectionType.equals(type) &
+                  t.mediaType
+                      .equals(FushiDatabase.collectionTombstoneSentinel)
+                      .not(),
+            ))
+            .get();
     await (update(mediaCollections)..where((t) => t.id.equals(id))).write(
       MediaCollectionsCompanion(name: Value(name)),
     );
+    for (final CollectionMemberTombstoneRow m in carried) {
+      if (m.entryKey.isEmpty) continue;
+      final CollectionMemberTombstoneRow? existing =
+          await (select(collectionMemberTombstones)..where(
+                (t) =>
+                    t.collectionName.equals(name) &
+                    t.collectionType.equals(type) &
+                    t.mediaType.equals(m.mediaType) &
+                    t.entryKey.equals(m.entryKey),
+              ))
+              .getSingleOrNull();
+      if (existing != null && existing.deletedAt >= m.deletedAt) continue;
+      await upsertCollectionMemberTombstone(
+        collectionName: name,
+        collectionType: type,
+        mediaType: m.mediaType,
+        entryKey: m.entryKey,
+        deletedAt: m.deletedAt,
+      );
+    }
     // 旧 (oldName, type)：清其全部墓碑，只留合集级哨兵（镜像删除，让对端删旧名副本）。
     await (delete(collectionMemberTombstones)..where(
           (t) =>

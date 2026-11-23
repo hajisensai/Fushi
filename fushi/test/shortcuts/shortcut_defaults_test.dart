@@ -166,10 +166,12 @@ void main() {
       for (final scope in ShortcutScope.reader.coactiveScopes) {
         for (final action in ShortcutAction.actionsForScope(scope)) {
           // TODO-700 T7: readerEnterCaret intentionally PARALLELS
-          // readerLookupAtCursor on A/Enter (one = "enter the cursor", the other
+          // readerLookupAtCursor on Enter (one = "enter the cursor", the other
           // = "look up once inside"). It is never resolved via resolveGamepad —
           // the enter-trigger predicate queries bindingsFor(readerEnterCaret)
           // directly — so there is no enum-order ambiguity to guard against here.
+          // (Both lost their gamepad channel in the 2026-11-22 gamepad lookup
+          // unification.)
           if (action == ShortcutAction.readerEnterCaret) continue;
           for (final gp in defaults[action]!.gamepadBindings) {
             expect(
@@ -196,7 +198,7 @@ void main() {
       for (final scope in ShortcutScope.reader.coactiveScopes) {
         for (final action in ShortcutAction.actionsForScope(scope)) {
           // TODO-700 T7: see the gamepad guard above — readerEnterCaret is a
-          // deliberate Enter/A parallel of readerLookupAtCursor, queried as a
+          // deliberate Enter parallel of readerLookupAtCursor, queried as a
           // predicate (not via resolveKeyboard), so it is excluded here.
           if (action == ShortcutAction.readerEnterCaret) continue;
           for (final kb in defaults[action]!.keyboardBindings) {
@@ -367,11 +369,11 @@ void main() {
         defaults[ShortcutAction.readerLookupAtCursor]!.keyboardBindings,
         contains(const InputBinding(key: LogicalKeyboardKey.enter)),
       );
+      // No gamepad default: the gamepad looks up through the controller lookup
+      // mode only (2026-11-22 gamepad lookup unification).
       expect(
-        defaults[ShortcutAction.readerLookupAtCursor]!.gamepadBindings.map(
-          (b) => b.button,
-        ),
-        contains(GamepadButton.a),
+        defaults[ShortcutAction.readerLookupAtCursor]!.gamepadBindings,
+        isEmpty,
       );
       expect(
         defaults[ShortcutAction.readerShiftLookup]!.keyboardBindings,
@@ -432,33 +434,27 @@ void main() {
       },
     );
 
-    test(
-      'readerEnterCaret defaults to Enter (keyboard) + A (gamepad) on every '
-      'platform (TODO-700 T7: enter-caret is remappable, default unchanged)',
-      () {
-        for (final p in const <TargetPlatform>[
-          TargetPlatform.windows,
-          TargetPlatform.linux,
-          TargetPlatform.macOS,
-          TargetPlatform.android,
-          TargetPlatform.iOS,
-        ]) {
-          final set = ShortcutDefaults.forPlatform(
-            p,
-          )[ShortcutAction.readerEnterCaret]!;
-          expect(
-            set.keyboardBindings.map((b) => b.key),
-            contains(LogicalKeyboardKey.enter),
-            reason: 'enter on $p',
-          );
-          expect(
-            set.gamepadBindings.map((b) => b.button),
-            contains(GamepadButton.a),
-            reason: 'A on $p',
-          );
-        }
-      },
-    );
+    test('readerEnterCaret defaults to Enter (keyboard) only on every platform '
+        '(TODO-700 T7: enter-caret is remappable; no gamepad since the '
+        '2026-11-22 gamepad lookup unification)', () {
+      for (final p in const <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      ]) {
+        final set = ShortcutDefaults.forPlatform(
+          p,
+        )[ShortcutAction.readerEnterCaret]!;
+        expect(
+          set.keyboardBindings.map((b) => b.key),
+          contains(LogicalKeyboardKey.enter),
+          reason: 'enter on $p',
+        );
+        expect(set.gamepadBindings, isEmpty, reason: 'no gamepad on $p');
+      }
+    });
 
     test('dpad four directions each default-bind their own dpad button '
         '(TODO-700 T6: dpad is a bindable trigger in the gamepad scope)', () {

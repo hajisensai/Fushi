@@ -14,6 +14,7 @@
 // is not counted (a later run may go ahead of it, heavyMayGoAhead). Only
 // this machine's queue is predicted: a run also offered to other machines
 // (heavy_offload_rival.dart) is not given up on this way.
+import 'heavy_budget.dart';
 import 'heavy_history.dart';
 
 /// How many recent runs of one kind here it takes to call their median
@@ -73,4 +74,57 @@ Duration heavyPredictedWait({
 Duration _left(Duration? typical, Duration held) {
   if (typical == null || held >= typical) return Duration.zero;
   return typical - held;
+}
+
+/// A waiter ahead in the queue as the prediction sees it: what it books
+/// (null: an older checkout's tool recorded none) and its [HeavyKind] name.
+typedef HeavyWaiterAhead = ({int? bookedMb, String? kind});
+
+/// The predicted wait of a queued run, from the same view of the slots and
+/// the queue that admission (heavy_lease.dart) just judged: [holders] are
+/// all of them, light slots included, [ahead] the waiters before it (oldest
+/// first), [slots] the regular slots, [budgetMb] the memory budget (null:
+/// none), [typical] the typical run per kind name, [nowMs] the clock.
+///
+/// Only regular-slot holders free a slot for it, but every holder books the
+/// budget, as admission counts it (HBK-AUDIT-224: leaving the light holders'
+/// memory out counted waiters ahead that cannot start now -- and that it may
+/// go ahead of, heavyMayGoAhead -- and predicted 20 min for a run admitted
+/// in 1). A waiter ahead that does not fit the budget now is not counted.
+Duration heavyQueuedWait({
+  required int slots,
+  required int? budgetMb,
+  required List<HeavyHolder> holders,
+  required List<HeavyWaiterAhead> ahead,
+  required Map<String, Duration> typical,
+  required int nowMs,
+}) {
+  final List<int> heldCapsMb = <int>[
+    for (final HeavyHolder h in holders) h.bookedMb,
+  ];
+  return heavyPredictedWait(
+    slots: slots,
+    running: <HeavyRunningNow>[
+      for (final HeavyHolder h in holders)
+        if (h.slot < slots)
+          (
+            held: Duration(
+              milliseconds: h.startedAtMs > 0 ? nowMs - h.startedAtMs : 0,
+            ),
+            typical: typical[h.kind],
+          ),
+    ],
+    ahead: <Duration?>[
+      for (final HeavyWaiterAhead q in ahead)
+        if (budgetMb == null ||
+            (q.bookedMb != null &&
+                heavyBudgetBlocker(
+                      needMb: q.bookedMb!,
+                      heldCapsMb: heldCapsMb,
+                      budgetMb: budgetMb,
+                    ) ==
+                    null))
+          typical[q.kind],
+    ],
+  );
 }
