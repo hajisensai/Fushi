@@ -34,6 +34,7 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 4630 条。点号进各自文件。
+> 共 4638 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -51,6 +52,15 @@
 | [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
 | [BUG-5311](bugs/BUG-5311-music-disc-art-cold-start-cache.md) | ✅ | ✅ | music-disc-art-cold-start-cache |
 | [BUG-5308](bugs/BUG-5308-manga-read-aloud-highlight-not-rotated.md) | ✅ | ✅ | manga-read-aloud-highlight-not-rotated |
+| [BUG-5307](bugs/BUG-5307-imusic-offline-download.md) | ✅ | ✅ | 互联音乐库：把 host 曲目下载到本机离线听（design-imusic-q12） |
+| [BUG-5306](bugs/BUG-5306-imusic-remote-mv-rematch.md) | ✅ | ✅ | 互联音乐库：客户端请 host 重新匹配 / 手动绑定 MV（design-imusic-q9） |
+| [BUG-5305](bugs/BUG-5305-imusic-host-transcode.md) | ✅ | ✅ | 互联音乐库：客户端设码率上限时 host 转码（design-imusic-q6） |
+| [BUG-5304](bugs/BUG-5304-imusic-disc-cdda-share.md) | ✅ | ✅ | 互联音乐库：光盘标题与 CDDA 曲目共享（design-imusic-q5） |
+| [BUG-5303](bugs/BUG-5303-imusic-relay-network-source.md) | ✅ | ✅ | 互联音乐库：host 网络来源曲目经 host 中继（design-imusic-q4） |
+| [BUG-5302](bugs/BUG-5302-imusic-mv-remote-client.md) | ✅ | ✅ | 互联音乐库：客户端歌词页 / 卡拉 OK 页放 host 的 MV（依赖 #4249） |
+| [BUG-5301](bugs/BUG-5301-imusic-server-scan-packaging.md) | 🚧 | 🚧 | 互联音乐库第 3 期：服务端扫描音乐与随包 fushi_music |
+| [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | ✅ | ✅ | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
+| [BUG-5298](bugs/BUG-5298-imusic-legacy-library-modules.md) | 🚧 | 🚧 | 互联老库类迁入统一模块层（design-imusic-q0） |
 | [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
 | [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |

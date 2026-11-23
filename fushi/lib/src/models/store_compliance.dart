@@ -153,6 +153,21 @@ bool interconnectPluginRelayAvailableOn({required bool isIOS}) => true;
 bool get interconnectPluginRelayAvailable =>
     interconnectPluginRelayAvailableOn(isIOS: hostPlatform.isIOS);
 
+/// 经 Fushi 互联浏览 / 播放**自己另一台设备**上的本地音乐库（互联共享音乐库，设计
+/// `docs/specs/2026-11-23-interconnect-music-library-design.md`）在目标平台上是否存在：**不是**受限
+/// 能力（拍板 design-imusic-q10「做」：单独一条判据，不并进 [userConfiguredServersAvailableOn]）。
+/// 内容是用户自己设备上的本地文件，经已配对的钉扎通道取，与 Jellyfin / Subsonic 自配服务器同性质；
+/// 不是在线漫画 / 视频 / 小说源宿主，也不经本机跑第三方代码。
+///
+/// 恒 true 仍保留成函数：消费端（`music_servers.dart` 列服务器、`music_remote_tracks.dart` 远程
+/// 曲目可用性）只问这里，若审核以此拒绝，收回只改这一行；守卫
+/// `test/build/ios_store_compliance_guard_test.dart` 钉住它。
+bool interconnectMusicLibraryAvailableOn({required bool isIOS}) => true;
+
+/// 真实平台上的 [interconnectMusicLibraryAvailableOn]。
+bool get interconnectMusicLibraryAvailable =>
+    interconnectMusicLibraryAvailableOn(isIOS: hostPlatform.isIOS);
+
 /// DVD CSS 解密（随包 libdvdcss，`tool/dvd`）**不是**受限能力：所有者 2026-10-24
 /// 拍板五端一致随包，iOS 也链接 libdvdcss（见
 /// `docs/specs/2026-10-24-dvd-original-menu.md`「风险」）。

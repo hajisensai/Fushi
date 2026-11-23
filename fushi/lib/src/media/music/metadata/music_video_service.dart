@@ -17,6 +17,10 @@ import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/music/host/engine_music_library_host.dart'
+    show MusicHostVideoMatcher;
+import 'package:fushi_engine/sync/remote_music_dto.dart'
+    show RemoteMusicVideoCandidate, RemoteMusicVideoCandidateSource;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
@@ -594,3 +598,67 @@ String musicVideoRefLabel(MusicVideoRow row) => switch (row.kind) {
   MusicVideoKind.youtube => youtubeVideoIdOrNull(row.ref) ?? row.ref,
   _ => row.ref,
 };
+
+/// 互联 host 上的 MV 匹配器（design-imusic-q9）：客户端请 host「重新找本机 MV / 从动画找 / 在线搜索 /
+/// 绑定候选」时，host 用自己的 [MusicVideoService] 对自己的文件跑——与本机曲目详情的 MV 一节同一套
+/// 服务、同一份候选与绑定规则。匹配要解码、算声纹，只在 host 上跑，客户端绝不为远端曲目解码。
+class AppMusicHostVideoMatcher implements MusicHostVideoMatcher {
+  AppMusicHostVideoMatcher(this._service, {required bool Function() online})
+    : _online = online;
+
+  final MusicVideoService Function() _service;
+
+  /// 这台 host 能不能在线搜 MV（YouTube，受 host 自己的合规门约束）。
+  final bool Function() _online;
+
+  @override
+  Future<int> rematch(String trackUid) async {
+    final List<MusicLocalVideoMatch> found = await _service().matchLocal(
+      trackUid,
+    );
+    return found.where((MusicLocalVideoMatch m) => m.alignment != null).length;
+  }
+
+  @override
+  Future<List<RemoteMusicVideoCandidate>> candidates(
+    String trackUid,
+    String source,
+  ) async {
+    final MusicVideoService service = _service();
+    final List<MusicVideoCandidate> list = switch (source) {
+      RemoteMusicVideoCandidateSource.anime => await service.animeCandidates(
+        trackUid,
+      ),
+      RemoteMusicVideoCandidateSource.online when _online() =>
+        await service.onlineCandidates(trackUid),
+      _ => const <MusicVideoCandidate>[],
+    };
+    return <RemoteMusicVideoCandidate>[
+      for (final MusicVideoCandidate c in list)
+        RemoteMusicVideoCandidate(
+          kind: c.kind,
+          ref: c.ref,
+          title: c.title,
+          subtitle: c.subtitle,
+          offsetMs: c.offsetMs,
+          confidence: c.confidence,
+        ),
+    ];
+  }
+
+  @override
+  Future<void> bind(String trackUid, RemoteMusicVideoCandidate c) async {
+    await _service().bind(
+      trackUid,
+      MusicVideoCandidate(
+        kind: c.kind,
+        ref: c.ref,
+        title: c.title,
+        subtitle: c.subtitle,
+        offsetMs: c.offsetMs,
+        confidence: c.confidence,
+      ),
+      alignOnline: _online(),
+    );
+  }
+}

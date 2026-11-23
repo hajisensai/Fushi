@@ -17,14 +17,19 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerLyrics;
+    show MusicHostLyrics, MusicHostLyricsLayer, MusicServerLyrics;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_local_lyrics.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
+
+export 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
+    show kMusicLyricsNoneFormat, preferredMusicLyricRow;
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 
 /// 负缓存（在线没查到）的有效期。
@@ -149,32 +154,6 @@ Future<LyricTimeline> parseStoredMusicLyrics(
   );
 }
 
-/// 负缓存行的 format。
-const String kMusicLyricsNoneFormat = 'none';
-
-/// 纯函数：一首歌的多条 `music_lyrics` 行里，播放器（[MusicLyricsService.resolve]）会用
-/// 哪一条——用户手动指定的最高，其次按 [MusicLyricsSource.automaticRank]，同档取最近
-/// 更新的；负缓存行不算。歌词页与曲库歌词搜索共用这一个判据，搜到的
-/// 行与点进去显示的歌词是同一份。没有可用行返回 null。
-///
-/// 只看库里的行：sidecar / 内嵌在 resolve 里每次重读文件，库里这两档是上次读到的缓存。
-MusicLyricRow? preferredMusicLyricRow(Iterable<MusicLyricRow> rows) {
-  MusicLyricRow? best;
-  for (final MusicLyricRow r in rows) {
-    if (r.format == kMusicLyricsNoneFormat) continue;
-    if (best == null || _prefers(r, best)) best = r;
-  }
-  return best;
-}
-
-bool _prefers(MusicLyricRow a, MusicLyricRow b) {
-  if (a.isUserEdited != b.isUserEdited) return a.isUserEdited;
-  final int ra = MusicLyricsSource.automaticRank(a.source);
-  final int rb = MusicLyricsSource.automaticRank(b.source);
-  if (ra != rb) return ra < rb;
-  return a.updatedAt > b.updatedAt;
-}
-
 /// 解析歌词所需的曲目信息。
 class MusicLyricsTrackRef {
   const MusicLyricsTrackRef({
@@ -283,18 +262,7 @@ typedef _PluginFetched = ({
 typedef _Sidecar = ({LyricTimeline timeline, Uint8List raw, String label});
 
 /// 列目录（测试注入）。
-typedef MusicLyricsDirLister = List<String> Function(String dir);
-
-List<String> _listDirFiles(String dir) {
-  try {
-    return <String>[
-      for (final FileSystemEntity e in Directory(dir).listSync())
-        if (e is File) e.path,
-    ];
-  } on FileSystemException {
-    return const <String>[];
-  }
-}
+typedef MusicLyricsDirLister = MusicLocalLyricsDirLister;
 
 /// [audioPath] 旁的 [path] 是不是本机字幕管线（视频库「生成日语字幕」的旧产物，
 /// `<主名>.ja.srt`）写的。生产接 `isDefaultVideoSubtitlePipelineOutput`。
@@ -315,9 +283,8 @@ class MusicLyricsService {
     required FushiDatabase? Function() database,
     required LrclibClient lrclib,
     required bool Function() onlineEnabled,
-    MusicLyricsDirLister listDir = _listDirFiles,
-    Future<List<EmbeddedLyrics>> Function(String path, int? durationMs)?
-    readEmbedded,
+    MusicLyricsDirLister listDir = listMusicDirFiles,
+    MusicEmbeddedLyricsReader? readEmbedded,
     Future<LyricTimeline> Function(Uint8List bytes, String hint, int? durMs)?
     parse,
     int Function()? now,
@@ -327,7 +294,9 @@ class MusicLyricsService {
     MusicPluginLyricsRefFetcher? pluginFetch,
     MusicLyricsProviderIds? providers,
     MusicGeneratedSidecarCheck? isGeneratedSidecar,
+    MusicHostLyricsLayer? hostLyrics,
   }) : _database = database,
+       _hostLyrics = hostLyrics,
        _isGeneratedSidecar = isGeneratedSidecar,
        _serverLyrics = serverLyrics,
        _pluginLyrics = pluginLyrics,
@@ -336,10 +305,7 @@ class MusicLyricsService {
        _providers = providers,
        _lrclib = lrclib,
        _onlineEnabled = onlineEnabled,
-       _listDir = listDir,
-       _readEmbedded =
-           readEmbedded ??
-           ((String p, int? d) => FushiLyricsAsync.embedded(p, durationMs: d)),
+       _local = MusicLocalLyrics(listDir: listDir, readEmbedded: readEmbedded),
        _parse =
            parse ??
            ((Uint8List b, String h, int? d) =>
@@ -349,9 +315,9 @@ class MusicLyricsService {
   final FushiDatabase? Function() _database;
   final LrclibClient _lrclib;
   final bool Function() _onlineEnabled;
-  final MusicLyricsDirLister _listDir;
-  final Future<List<EmbeddedLyrics>> Function(String path, int? durationMs)
-  _readEmbedded;
+
+  /// 本地歌词层（sidecar 选取 + 内嵌），与互联 host 共用（BUG-5300）。
+  final MusicLocalLyrics _local;
   final Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
   _parse;
   final int Function() _now;
@@ -361,6 +327,12 @@ class MusicLyricsService {
   final MusicPluginLyricsRefFetcher? _pluginFetch;
   final MusicLyricsProviderIds? _providers;
   final MusicGeneratedSidecarCheck? _isGeneratedSidecar;
+
+  /// 互联 host 曲目的歌词层（design-imusic-q3 选 c：host 上生效的那份为准，本机的修改写回）。
+  final MusicHostLyricsLayer? _hostLyrics;
+
+  /// 解析过的互联 host 曲目：trackUid → 播放路径（[setOffset] / [choose] 据此写回 host）。
+  final Map<String, String> _hostPaths = <String, String>{};
 
   final StreamController<String> _generated =
       StreamController<String>.broadcast();
@@ -485,6 +457,36 @@ class MusicLyricsService {
         if (r.source == source) return r;
       }
       return null;
+    }
+
+    // ⓪ 互联 host 曲目：host 上生效的那份（含 host 上的手动指定与偏移）为准，落一份本机缓存；
+    // host 离线 / 没有歌词时退回本机已有的行与在线查询。
+    final MusicHostLyricsLayer? hostLayer = _hostLyrics;
+    if (hostLayer != null && hostLayer.handles(track.path)) {
+      _hostPaths[track.trackUid] = track.path;
+      MusicHostLyrics? remote;
+      try {
+        remote = await hostLayer.lyricsFor(track.path);
+      } on Object catch (e) {
+        debugPrint('[music-lyrics] host lyrics failed: $e');
+      }
+      if (remote != null && remote.raw.isNotEmpty) {
+        final LyricTimeline t = await _writeHostLyrics(
+          db,
+          trackUid: track.trackUid,
+          durationMs: track.durationMs,
+          lyrics: remote,
+        );
+        final Uint8List raw = Uint8List.fromList(remote.raw);
+        return MusicLyricsResolution(
+          timeline: t.copyWith(
+            source: remote.source,
+            offsetMs: remote.offsetMs,
+          ),
+          source: remote.source,
+          rawAss: _assRawOf(remote.format, raw),
+        );
+      }
     }
 
     // ① 用户手动指定。
@@ -817,6 +819,50 @@ class MusicLyricsService {
       durationMs: durationMs,
       lyrics: lyrics,
     );
+  }
+
+  /// host 给的歌词落库：按 host 上的来源 / 偏移 / 手动指定写一行本机缓存（host 离线、或放离线副本时
+  /// 照样有 host 上那份）。回解析好的时间轴。
+  Future<LyricTimeline> _writeHostLyrics(
+    FushiDatabase db, {
+    required String trackUid,
+    required int? durationMs,
+    required MusicHostLyrics lyrics,
+  }) async {
+    final Uint8List raw = Uint8List.fromList(lyrics.raw);
+    final LyricTimeline t = await _parse(raw, lyrics.format, durationMs);
+    await _upsert(
+      db,
+      trackUid: trackUid,
+      source: lyrics.source,
+      format: lyrics.format,
+      raw: raw,
+      timeline: t,
+      isUserEdited: lyrics.isUserEdited,
+      offsetMs: lyrics.offsetMs,
+    );
+    return t;
+  }
+
+  /// 下载互联 host 曲目的离线副本时把 host 上生效的歌词存进歌词缓存（design-imusic-q12）；
+  /// [lyrics] 为 null（host 上没有）时什么也不写。
+  Future<void> storeHostLyrics({
+    required String trackUid,
+    required int? durationMs,
+    required MusicHostLyrics? lyrics,
+  }) async {
+    final FushiDatabase? db = _database();
+    if (db == null || lyrics == null || lyrics.raw.isEmpty) return;
+    try {
+      await _writeHostLyrics(
+        db,
+        trackUid: trackUid,
+        durationMs: durationMs,
+        lyrics: lyrics,
+      );
+    } on LyricsParseException catch (e) {
+      debugPrint('[music-lyrics] host lyrics unparsable: $e');
+    }
   }
 
   /// 在线歌词来源的查询顺序：[MusicLyricsSource.lrclib] 或歌词插件 id。没装配来源列表
@@ -1267,27 +1313,14 @@ class MusicLyricsService {
     MusicLyricsTrackRef track, {
     bool skipGenerated = false,
   }) async {
-    final String dir = File(track.path).parent.path;
-    final List<String> siblings = _listDir(dir);
-    LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
     final MusicGeneratedSidecarCheck? generated = _isGeneratedSidecar;
-    if (skipGenerated && generated != null) {
-      final Set<String> own = <String>{};
-      for (final LyricSidecarFile f in <LyricSidecarFile>[
-        if (set.primary != null) set.primary!,
-        ...set.translations,
-      ]) {
-        if (await generated(track.path, f.path)) own.add(f.path);
-      }
-      if (own.isNotEmpty) {
-        set = pickLyricSidecars(track.path, <String>[
-          for (final String s in siblings)
-            if (!own.contains(s)) s,
-        ]);
-      }
-    }
-    final LyricSidecarFile? primary =
-        set.primary ?? await _ultraStarByHeader(track.path, siblings);
+    final LyricSidecarSet set = await _local.sidecars(
+      track.path,
+      exclude: skipGenerated && generated != null
+          ? (String path) => generated(track.path, path)
+          : null,
+    );
+    final LyricSidecarFile? primary = set.primary;
     if (primary == null) return null;
     final Uint8List raw;
     try {
@@ -1322,43 +1355,8 @@ class MusicLyricsService {
     );
   }
 
-  /// UltraStar 歌曲包：主名不同、头部 `#MP3:` / `#AUDIO:` 指向这首音频的 `.txt`。
-  Future<LyricSidecarFile?> _ultraStarByHeader(
-    String audioPath,
-    List<String> siblings,
-  ) async {
-    final String audioName = File(audioPath).uri.pathSegments.last;
-    for (final String p in ultraStarCandidates(audioPath, siblings)) {
-      final List<int> head;
-      try {
-        final RandomAccessFile f = await File(p).open();
-        try {
-          head = await f.read(kUltraStarHeadBytes);
-        } finally {
-          await f.close();
-        }
-      } on FileSystemException {
-        continue;
-      }
-      final String? ref = ultraStarAudioReference(
-        utf8.decode(head, allowMalformed: true),
-      );
-      if (ref != null && ref.toLowerCase() == audioName.toLowerCase()) {
-        return LyricSidecarFile(path: p, ext: 'ultrastar');
-      }
-    }
-    return null;
-  }
-
-  Future<EmbeddedLyrics?> _bestEmbedded(MusicLyricsTrackRef track) async {
-    try {
-      return pickBestEmbedded(
-        await _readEmbedded(track.path, track.durationMs),
-      );
-    } on LyricsParseException {
-      return null;
-    }
-  }
+  Future<EmbeddedLyrics?> _bestEmbedded(MusicLyricsTrackRef track) =>
+      _local.bestEmbedded(track.path, durationMs: track.durationMs);
 
   /// 选来源面板：列出所有本地候选（sidecar 正文、各条内嵌、缓存的 LRCLIB 结果）。
   Future<List<MusicLyricsCandidate>> localCandidates(
@@ -1379,9 +1377,9 @@ class MusicLyricsService {
         );
       }
       try {
-        for (final EmbeddedLyrics e in await _readEmbedded(
+        for (final EmbeddedLyrics e in await _local.allEmbedded(
           track.path,
-          track.durationMs,
+          durationMs: track.durationMs,
         )) {
           out.add(
             MusicLyricsCandidate(
@@ -1581,18 +1579,45 @@ class MusicLyricsService {
       isUserEdited: true,
     );
     final bool ass = musicLyricsFormatIsAss(candidate.format);
+    final String format = ass ? candidate.format.toLowerCase() : 'ttml';
+    final Uint8List raw = ass
+        ? candidate.raw
+        : FushiLyrics.export(t.copyWith(offsetMs: 0), 'ttml');
     await _upsert(
       db,
       trackUid: trackUid,
       source: MusicLyricsSource.user,
-      format: ass ? candidate.format.toLowerCase() : 'ttml',
-      raw: ass
-          ? candidate.raw
-          : FushiLyrics.export(t.copyWith(offsetMs: 0), 'ttml'),
+      format: format,
+      raw: raw,
       timeline: t.copyWith(offsetMs: 0),
       isUserEdited: true,
       offsetMs: candidate.timeline.offsetMs,
     );
+    // 互联 host 曲目：手动指定写回 host（另一台设备也看到同一份）。
+    await _writeBackHost(
+      trackUid,
+      (MusicHostLyricsLayer h, String path) => h.chooseLyrics(
+        path,
+        format: format,
+        raw: raw,
+        offsetMs: candidate.timeline.offsetMs,
+      ),
+    );
+  }
+
+  /// 写回 host 失败不打断本机操作（本机缓存已经改了；host 在线时下一次修改再写回）。
+  Future<void> _writeBackHost(
+    String trackUid,
+    Future<void> Function(MusicHostLyricsLayer host, String path) write,
+  ) async {
+    final MusicHostLyricsLayer? host = _hostLyrics;
+    final String? path = _hostPaths[trackUid];
+    if (host == null || path == null) return;
+    try {
+      await write(host, path);
+    } on Object catch (e) {
+      debugPrint('[music-lyrics] host write-back failed: $e');
+    }
   }
 
   /// 写入本机生成的字幕（[MusicLyricsSource.asr] 行）：重生成覆盖原文与时间轴，保留
@@ -1752,6 +1777,11 @@ class MusicLyricsService {
               r.trackUid.equals(trackUid) & r.source.equals(source),
         ))
         .write(MusicLyricsCompanion(offsetMs: Value<int>(offsetMs)));
+    await _writeBackHost(
+      trackUid,
+      (MusicHostLyricsLayer h, String path) =>
+          h.setLyricsOffset(path, source: source, offsetMs: offsetMs),
+    );
   }
 
   /// 显式操作：把时间轴导出到音频文件旁边（`<主名>.<ext>`），返回写出的路径。

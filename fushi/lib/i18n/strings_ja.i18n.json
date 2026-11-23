@@ -7840,6 +7840,7 @@
   "music_server_field_password": "Password",
   "music_server_field_url": "Server address",
   "music_server_field_user": "Username",
+  "music_server_fushi_host_subtitle": "Fushi device (interconnect)",
   "music_server_genres_empty": "No genres on this server",
   "music_server_home_empty": "Nothing played or added on this server yet",
   "music_server_instant_mix": "Instant mix",

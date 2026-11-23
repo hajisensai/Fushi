@@ -14,7 +14,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kPluginPackageExtensions;
 import 'package:fushi/src/media/drag_drop/plugin_package_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
     show MusicLyricsSource;
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
