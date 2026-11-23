@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T15:51:55Z",
+ "generatedAt": "2026-11-23T15:58:03Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
-  "seq": 32093
+  "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
+  "seq": 32101
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "4ad722660ac2e56212f658c329b0dd501479c41c",
    "unknown": false,
-   "publishedAt": "2026-11-23T15:48:42Z",
-   "testflight": false,
+   "publishedAt": "2026-11-23T15:57:49Z",
+   "testflight": true,
    "baseSeq": 32021,
    "prs": [],
    "direct": [
@@ -56,16 +56,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45199341788"
+     "state": "ok"
     }
    }
   },
@@ -262,7 +259,7 @@
    "sha": "9ea8a7ad2d24f7a073f1425d231d40adfeaee7ed",
    "unknown": false,
    "publishedAt": "2026-11-23T13:26:14Z",
-   "testflight": true,
+   "testflight": false,
    "baseSeq": 31707,
    "prs": [
     4228
@@ -427,20 +424,23 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988357"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988357"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45159988357"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
-  "headSeq": 32093,
+  "headSha": "f61e72ab2cb645227aeb0d5557f3926049871633",
+  "headSeq": 32101,
   "prs": [
    4296,
    4295,
@@ -451,6 +451,22 @@
    4286
   ],
   "direct": [
+   {
+    "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
+    "subject": "Merge #4305 (claude/audit-ic-manga-progress) into develop"
+   },
+   {
+    "sha": "50cc7e08124602ec28860009ed78ddbbff6957f4",
+    "subject": "Merge #4304 (claude/audit-overlay-handoff) into develop"
+   },
+   {
+    "sha": "95f062be9cabd28763d84ec60eafdbdc5c983af2",
+    "subject": "Merge #4303 (claude/audit-jimaku-mixed-numbering) into develop"
+   },
+   {
+    "sha": "1b17efb74807d0757b63dc69e1231d9549cd45ce",
+    "subject": "Merge #4302 (claude/audit-srs-autoplay-opacity) into develop"
+   },
    {
     "sha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
     "subject": "test: 登记 #4287 新增歌词动画场景字号与码点排版（M3E / 计字口径守卫 develop 红）"
@@ -500,19 +516,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566371"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314530"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566368"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314256"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566368"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314256"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566368"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314256"
    }
   }
  },
