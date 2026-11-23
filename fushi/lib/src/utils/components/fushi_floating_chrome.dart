@@ -1062,12 +1062,10 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                       ? Opacity(
                           opacity: nested ? 1 : shown,
                           child: FushiMastheadPanel(
-                            height: appleBar
-                                ? math.max(scrimSeam, _nestedReach.value) -
-                                      scrimTop +
-                                      bleed +
-                                      kFushiAppleScrollEdgeFade
-                                : scrimSeam - scrimTop + bleed,
+                            // Apple：底从窗口顶铺到页头（含一级 / 二级分段）
+                            // 下沿，发丝线落在这里；页面自己的嵌套工具行（搜索
+                            // 框、标签行）随内容滚走，不在底里。
+                            height: scrimSeam - scrimTop + bleed,
                             progress: panelProgress,
                             // 页头与嵌套工具行（标签条）是同一块吸顶面（设计稿
                             // V3）：只有根层开背景模糊，嵌套层画不透明同色填充
@@ -1123,10 +1121,19 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                           // （浏览页的内容域页签）跟着上移同样多，贴在收短后的
                           // 页头底下——底板已经按 `scrimTop` 上移，工具行留在
                           // 原位就是悬在列表中间、和页头之间空出一截。
+                          // Apple 页头大字外壳里，页面自己的嵌套工具行（搜索
+                          // 框、标签行）不吸顶：跟内容一起滚走（iOS 27 图书：
+                          // 只有导航栏与分段吸顶），滚进页头底下被背板盖住。
                           offset: Offset(
                             0,
                             -(1 - value) * (travel - selfFloor) -
-                                (nested ? collapse : 0),
+                                (nested
+                                    ? (appleBar && !widget.masthead
+                                          ? controller
+                                                .mastheadScrollOffset
+                                                .value
+                                          : collapse)
+                                    : 0),
                           ),
                           child: chrome,
                         ),
@@ -1894,7 +1901,9 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
           return ListenableBuilder(
             listenable: search ?? _noSearch,
             builder: (BuildContext context, Widget? _) {
-              final bool expanded = search?.expanded ?? false;
+              // Apple：搜索是大标题下常驻的整宽搜索框（随内容滚动，见
+              // [FushiPageHeader]），动作行不换成搜索栏。
+              final bool expanded = !apple && (search?.expanded ?? false);
               // 展开的搜索栏占动作组的位置（设计稿 `.tb .sr.open`），页名与
               // 页签照常可用；高度与动作组一致，版面不跳。
               final Widget actions = AnimatedSwitcher(

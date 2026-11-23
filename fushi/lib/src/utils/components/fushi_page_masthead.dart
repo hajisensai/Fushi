@@ -18,6 +18,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show fushiAppleCompact;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiAppleScrollEdgeBackdrop, FushiAppleSoftScrollEdge;
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
@@ -161,7 +163,7 @@ double fushiMastheadCollapseDistance({required bool compact}) =>
     compact ? 90 : 130;
 
 /// 工具区控制器最多记到的滚动偏移（再往下滚进度已经满了，不必逐帧通知）。
-const double kFushiMastheadTrackedOffset = 130;
+const double kFushiMastheadTrackedOffset = 400;
 
 /// 生效的收缩进度：减弱动态效果 / 墨水屏下只取两档（过半即收到底），不做
 /// 连续缩放。
@@ -1540,36 +1542,16 @@ class FushiMastheadPanel extends StatelessWidget {
 }
 
 extension on FushiMastheadPanel {
-  /// Apple（Cupertino）scroll edge：库的 `GlassScrollEdgeEffect`
-  /// （`GlassScrollEdgeStyle.soft`，iOS 26 / 27 `.scrollEdgeEffectStyle(.soft)`）
-  /// 在 GlassPage 外的画法——页面底色按 soft 曲线从窗口顶渐隐到 [height]
-  /// （调用方给的是栏 + 吸顶分段 / 标签行 + [kFushiAppleScrollEdgeFade] 缓冲），
-  /// 内容平滑溶进栏里，没有实底、没有硬边，不叠模糊（blur 档是库的可选增强，
-  /// 不默认开）。那个组件要包住滚动视图，而外壳的保活分区各有自己的滚动视图，
-  /// 所以这里只取同一条曲线（[kFushiAppleSoftEdgeAlphas] /
-  /// [kFushiAppleSoftEdgeStops]）画成覆盖层；整条按 [progress] 淡入，停在顶部
-  /// 不出现。
-  Widget _buildApple(BuildContext context) {
-    final Color page = fushiMastheadPageColor(context).withValues(alpha: 1);
-    return IgnorePointer(
-      child: SizedBox(
-        height: height,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              stops: kFushiAppleSoftEdgeStops,
-              colors: <Color>[
-                for (final double a in kFushiAppleSoftEdgeAlphas)
-                  page.withValues(alpha: a * progress),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  /// Apple（Cupertino）scroll edge：iOS 27 导航栏的整块底
+  /// （[FushiAppleScrollEdgeBackdrop]：模糊 + 压暗、下沿发丝线，实色档不透明
+  /// 页面底色），从窗口顶一直铺到最深一行吸顶工具（一级 / 二级分段）的下沿
+  /// （[height]，调用方给），按 [progress] 淡入，停在顶部不出现。与二级页
+  /// 顶栏（[FushiAppleSoftScrollEdge]）同一个组件。
+  Widget _buildApple(BuildContext context) => FushiAppleScrollEdgeBackdrop(
+    height: height,
+    progress: progress,
+    color: fushiMastheadPageColor(context),
+  );
 }
 
 /// 库 `GlassScrollEdgeEffect` soft 档的渐隐曲线（`_kFadeCurves[soft]`，库未导出，

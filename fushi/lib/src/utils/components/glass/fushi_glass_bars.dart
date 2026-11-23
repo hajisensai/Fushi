@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
+import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
@@ -42,9 +42,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         GlassBarItem,
         GlassBarItemBackground,
         GlassPinnedBarChrome,
-        GlassPinnedBarChromeData,
-        GlassScrollEdgeEffect,
-        GlassScrollEdgeStyle;
+        GlassPinnedBarChromeData;
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下
@@ -64,10 +62,6 @@ const double _kGlassBarIconSize = 20;
 /// 玻璃顶栏 leading 槽的宽：玻璃圆钮 + 离屏幕边距（iOS 16 / macOS 12）。
 double _glassLeadingWidth(BuildContext context) =>
     fushiAppleBarButtonExtent(context) + _appleBarSideInset(context);
-
-/// SliverAppBar 在栏内下沿留出的 scroll edge 段：钉住后内容就在栏下面滚，
-/// 这一段从实色渐隐成透明。
-const double _kGlassSliverEdgeExtent = 16;
 
 /// 玻璃顶栏上的一枚圆形玻璃钮（返回键 / 单个导航钮）：库的独立 bar button
 /// （[FushiAppleBarCircle]）。里面的 [FushiIconButtonControl] 自己处理点击、
@@ -442,40 +436,17 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
       clipBehavior: Clip.none,
       fit: StackFit.passthrough,
       children: <Widget>[
-        // 画在顶栏**之下**、盖住整段栏区再往下延伸一条渐隐带：页面把正文铺到
-        // 透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时，只在栏
-        // 下沿画「上实下透」的带，带的实色上沿与栏区里透出来的内容之间是一条
-        // 硬线（2026-10-09 用户 iOS 截图）。栏区实色与带最靠边处同色，正文
-        // 排在栏下的普通页面观感不变（栏区本来就是页面底色）。
-        //
-        // iOS 27：库的 soft scroll edge（[FushiAppleSoftScrollEdge]，不模糊）。
-        // 正文铺到栏底下时整段从窗口顶连续渐隐到栏下沿以下；正文排在栏下面时
-        // 栏区实色盖住视口顶边的裁切线，渐隐从栏下沿往下画。
+        // 画在顶栏**之下**：iOS 27 的 scroll edge 底（[FushiAppleScrollEdgeBackdrop]：
+        // 模糊 + 压暗 / 提亮，下沿一条发丝线）从窗口顶一直铺到栏下沿。正文铺
+        // 到透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时盖住滚进
+        // 栏区的内容；正文排在栏下面的页面栏区本来就是页面底色，只多出下沿
+        // 发丝线。内容没滚到栏下时不画。
         if (widget.enabled)
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: -kFushiAppleSoftEdgeExtent,
-            child:
-                (Scaffold.maybeOf(context)?.widget.extendBodyBehindAppBar ??
-                    false)
-                ? FushiAppleSoftScrollEdge(
-                    visible: _scrolledUnder,
-                    fadeExtent: null,
-                  )
-                : LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) =>
-                            FushiAppleSoftScrollEdge(
-                              visible: _scrolledUnder,
-                              solidExtent: math.max(
-                                0,
-                                constraints.maxHeight -
-                                    kFushiAppleSoftEdgeExtent,
-                              ),
-                            ),
-                  ),
+          Positioned.fill(
+            child: FushiAppleSoftScrollEdge(
+              visible: _scrolledUnder,
+              fill: true,
+            ),
           ),
         widget.child,
       ],
@@ -483,73 +454,149 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
   }
 }
 
-/// iOS 27 / macOS 27 的 scroll edge（soft）：直接用库的 [GlassScrollEdgeEffect]
-/// （[GlassScrollEdgeStyle.soft]，`.scrollEdgeEffectStyle(.soft)`，不叠模糊）画
-/// 页面底色的渐隐。[solidExtent] > 0 时上面先垫一段同色实底（正文排在栏**下面**
-/// 开始的页面：视口顶边那条裁切线要被实色盖住，渐隐从线往下画），渐隐段高
-/// [fadeExtent]；[fadeExtent] 为 null 时整个盒子都是渐隐（正文铺到透明栏底下的
-/// 页面：从窗口顶端一路渐隐下来，没有硬边）。[visible] 为 false（内容没滚到栏
-/// 下面）时淡出、不画；不参与命中测试。实色档同样只是渐隐（本来就没有模糊）。
+/// iOS 27 / macOS 27 导航栏的 scroll edge 底（所有者 2026-11-24 对照 iOS 27
+/// 图书深色截图定版）：内容滚到栏下面时，从窗口顶（含状态栏 / 桌面窗口按钮
+/// 行）到栏下沿是**一整块**模糊 + 压暗（浅色下提亮）的底，下沿较利落、带一条
+/// 极淡的发丝线，再往下只有一小段渐隐。
+///
+/// 画质档位（只认 [glassMaterialOf]）：
+/// - 实色档（[FushiGlassMaterial.off]，含降低透明度 / 增强对比度 / 墨水屏）：
+///   不模糊，不透明的页面底色（systemBackground）+ 发丝线；
+/// - minimal → standard → premium：模糊逐档加重、底色逐档更透。
+///
+/// [height] 是底的高（从调用方坐标的 0 到发丝线；发丝线画在盒内最下一个物理
+/// 像素），[progress] 0…1 是淡入进度（0 不画）。不接指针、不参与语义。
+class FushiAppleScrollEdgeBackdrop extends StatelessWidget {
+  const FushiAppleScrollEdgeBackdrop({
+    required this.height,
+    required this.progress,
+    this.color,
+    super.key,
+  });
+
+  final double height;
+  final double progress;
+
+  /// 底色；默认页面底色（[fushiAppleScrollEdgeColor]）。
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final double p = progress.clamp(0.0, 1.0);
+    if (p <= 0) return SizedBox(height: height);
+    final Color base = (color ?? fushiAppleScrollEdgeColor(context)).withValues(
+      alpha: 1,
+    );
+    final FushiAppleColors apple = appleColorsOf(context);
+    final (double sigma, double alpha) = switch (glassMaterialOf(context)) {
+      FushiGlassMaterial.off => (0.0, 1.0),
+      FushiGlassMaterial.minimal => (12.0, 0.9),
+      FushiGlassMaterial.standard => (20.0, 0.8),
+      FushiGlassMaterial.premium => (30.0, 0.7),
+    };
+    final double hairline = 1 / MediaQuery.devicePixelRatioOf(context);
+    Widget fill = ColoredBox(color: base.withValues(alpha: alpha * p));
+    if (sigma > 0) {
+      fill = ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma * p, sigmaY: sigma * p),
+          child: fill,
+        ),
+      );
+    }
+    return IgnorePointer(
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          fit: StackFit.expand,
+          children: <Widget>[
+            if (height > 0) fill,
+            Positioned(
+              left: 0,
+              right: 0,
+              top: math.max(0, height - hairline),
+              height: hairline,
+              child: ColoredBox(
+                color: apple.separator.withValues(alpha: apple.separator.a * p),
+              ),
+            ),
+            // 下沿外一小段渐隐（实色档同样有：内容不在发丝线处被一刀切）。
+            Positioned(
+              left: 0,
+              right: 0,
+              top: height,
+              height: kFushiAppleScrollEdgeTail,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      base.withValues(alpha: 0.35 * alpha * p),
+                      base.withValues(alpha: 0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [FushiAppleScrollEdgeBackdrop] 发丝线下面那一小段渐隐的高。
+const double kFushiAppleScrollEdgeTail = 8;
+
+/// [FushiAppleScrollEdgeBackdrop] 的开关形态：[visible] 切换时按
+/// [FushiMotion.short] 淡入淡出。底高 [solidExtent]（0 = 只有发丝线与下沿渐隐，
+/// 用于栏本身就是实底、内容在栏下沿被裁的页面）；[fill] 为 true 时铺满父级给的
+/// 高（栏背后整块）。
 class FushiAppleSoftScrollEdge extends StatelessWidget {
   const FushiAppleSoftScrollEdge({
     required this.visible,
     this.solidExtent = 0,
-    this.fadeExtent = kFushiAppleSoftEdgeExtent,
+    this.fill = false,
     this.color,
     super.key,
   });
 
   final bool visible;
   final double solidExtent;
-  final double? fadeExtent;
+  final bool fill;
 
-  /// 渐隐底色；默认页面底色（[fushiAppleScrollEdgeColor]）。
+  /// 底色；默认页面底色（[fushiAppleScrollEdgeColor]）。
   final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final Color base = color ?? fushiAppleScrollEdgeColor(context);
-    Widget soft(double height) => SizedBox(
-      height: height,
-      child: GlassScrollEdgeEffect(
-        fadeBottom: false,
-        topFadeHeight: height,
-        fadeColor: base,
-        style: GlassScrollEdgeStyle.soft,
-        child: const SizedBox.expand(),
-      ),
-    );
-    final double? fade = fadeExtent;
-    final Widget band = fade == null
-        ? LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) =>
-                soft(constraints.maxHeight),
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (solidExtent > 0)
-                SizedBox(
-                  height: solidExtent,
-                  child: ColoredBox(color: base),
-                ),
-              soft(fade),
-            ],
-          );
-    return IgnorePointer(
-      child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
-        duration: fushiMotionDuration(context, FushiMotion.short),
-        curve: FushiMotion.standard,
-        child: band,
-      ),
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: visible ? 1 : 0),
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      builder: (BuildContext context, double p, Widget? _) => fill
+          ? LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) =>
+                  FushiAppleScrollEdgeBackdrop(
+                    height: constraints.maxHeight,
+                    progress: p,
+                    color: color,
+                  ),
+            )
+          : Align(
+              alignment: Alignment.topCenter,
+              heightFactor: 1,
+              child: FushiAppleScrollEdgeBackdrop(
+                height: solidExtent,
+                progress: p,
+                color: color,
+              ),
+            ),
     );
   }
 }
-
-/// [FushiAppleSoftScrollEdge] 实底下沿往内容里延伸的渐隐段高。
-const double kFushiAppleSoftEdgeExtent = 24;
 
 /// iOS 27 / macOS 27 导航栏（Apple 设计系统的二级页顶栏）：直接用库的
 /// [GlassAppBar]——栏本身透明、不画底色，标题是不进玻璃的纯文字（手机 17 /
@@ -1744,31 +1791,15 @@ class _AppleSliverBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        Column(
-          children: <Widget>[
-            Expanded(child: ColoredBox(color: color)),
-            SizedBox(
-              height: _kGlassSliverEdgeExtent,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  AnimatedOpacity(
-                    opacity: under ? 0 : 1,
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    curve: FushiMotion.standard,
-                    child: ColoredBox(color: color),
-                  ),
-                  // iOS 27 soft scroll edge（库 GlassScrollEdgeEffect，不模糊）。
-                  FushiAppleSoftScrollEdge(
-                    visible: under,
-                    color: color,
-                    fadeExtent: _kGlassSliverEdgeExtent,
-                  ),
-                ],
-              ),
-            ),
-          ],
+        // 停在顶部：栏区是页面实底；钉住后内容在栏下面滚：实底淡出，换成
+        // iOS 27 scroll edge 底（模糊 + 压暗、下沿发丝线）。
+        AnimatedOpacity(
+          opacity: under ? 0 : 1,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: ColoredBox(color: color),
         ),
+        FushiAppleSoftScrollEdge(visible: under, color: color, fill: true),
         if (title != null && settings != null)
           Positioned(
             left: horizontalPadding,

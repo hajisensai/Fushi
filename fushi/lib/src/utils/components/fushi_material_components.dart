@@ -2,7 +2,8 @@ import 'dart:async' show FutureOr, unawaited;
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:cupertino_ui/cupertino_ui.dart'
+    show CupertinoIcons, CupertinoSearchTextField;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
@@ -4133,6 +4134,18 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
         ? widget.actionItems
         : const <Widget>[];
     final FushiHeaderSearchController? search = widget.search;
+    if (search != null && shellActions != null && isGlassDesign(context)) {
+      // Apple 库页外壳：搜索不进动作行，是大标题下常驻的整宽搜索框（iOS 27
+      // 图书），在本页的嵌套工具区里、随内容一起滚走。
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildRow(context, leading, actionItems),
+          _AppleHeaderSearchField(controller: search),
+        ],
+      );
+    }
     if (search != null && shellActions == null) {
       // 独立使用（不在库页外壳里）：展开搜索时整行换成搜索栏。
       return ListenableBuilder(
@@ -5064,7 +5077,14 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
         // −16：Apple 工具栏胶囊两端的内边距与 MD3 按钮组胶囊内边距的余量。
         final List<Widget> items = fushiResolveHeaderActions(
           context,
-          actions: widget.actions,
+          actions: masthead && apple && widget.search != null
+              ? <Widget>[
+                  for (final Widget action in widget.actions)
+                    if (action.key !=
+                        const ValueKey<String>('fushi-header-search-button'))
+                      action,
+                ]
+              : widget.actions,
           budget: masthead
               ? (constraints.maxWidth - 16) *
                     (44 /
@@ -5074,8 +5094,9 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
           fit: _overflowFit,
         ).items;
         if (masthead && apple) {
-          // Apple 库页导航栏：库的 bar button 渲染——相邻动作合成一枚玻璃
-          // 胶囊（GlassBarItemBackground.shared），跟随画质档位。
+          // Apple 库页导航栏：库的 bar button 渲染——每个动作一枚独立的中性
+          // 玻璃圆钮（GlassBarItemBackground.separate），跟随画质档位。🔍 不在
+          // 栏上：搜索是大标题下的整宽搜索框（见 [_AppleHeaderSearchField]）。
           return FushiHeaderLabelScope(
             expandLabels: false,
             child: HorizontalDragScrollable(
@@ -7798,4 +7819,119 @@ class SchemeMiniUiPainter extends CustomPainter {
       old.backgroundColor != backgroundColor ||
       old.buttonColor != buttonColor ||
       old.barColor != barColor;
+}
+
+/// Apple 库页大标题下的整宽搜索框（iOS 27 图书：tertiarySystemFill 胶囊、灰
+/// 放大镜、无描边，与设置页搜索框同一套 [CupertinoSearchTextField] 参数）。
+/// 绑定页头搜索的输入框与焦点（[FushiHeaderSearchController]），Ctrl+F / `/`
+/// 照旧落到这里；获得焦点时把本页主滚动区滚回顶部（大标题展开、搜索框露出）。
+/// Esc：有内容先清空，空框再按交还焦点。IME 组字期间不发查询。
+class _AppleHeaderSearchField extends StatefulWidget {
+  const _AppleHeaderSearchField({required this.controller});
+
+  final FushiHeaderSearchController controller;
+
+  @override
+  State<_AppleHeaderSearchField> createState() =>
+      _AppleHeaderSearchFieldState();
+}
+
+class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField> {
+  FocusNode get _focus => widget.controller.fieldFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocus);
+  }
+
+  @override
+  void didUpdateWidget(_AppleHeaderSearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.fieldFocusNode.removeListener(_onFocus);
+      _focus.addListener(_onFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocus);
+    super.dispose();
+  }
+
+  void _onFocus() {
+    if (!_focus.hasFocus || !mounted) return;
+    final ScrollController? scroll = PrimaryScrollController.maybeOf(context);
+    if (scroll == null || !scroll.hasClients) return;
+    final ScrollPosition position = scroll.positions.first;
+    if (position.pixels <= position.minScrollExtent) return;
+    position.animateTo(
+      position.minScrollExtent,
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+    );
+  }
+
+  bool get _composing {
+    final TextRange range = widget.controller.textController.value.composing;
+    return range.isValid && !range.isCollapsed;
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape ||
+        _composing) {
+      return KeyEventResult.ignored;
+    }
+    if (widget.controller.hasQuery) {
+      widget.controller.clear();
+    } else {
+      _focus.unfocus();
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool desktop = fushiAppleCompact(context);
+    final FushiHeaderSearchController search = widget.controller;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        FushiDesignTokens.of(context).spacing.page,
+        desktop ? 4 : 2,
+        FushiDesignTokens.of(context).spacing.page,
+        desktop ? 8 : 10,
+      ),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _onKey,
+        child: CupertinoSearchTextField(
+          key: search.fieldKey,
+          controller: search.textController,
+          focusNode: _focus,
+          placeholder: search.hintText,
+          backgroundColor: apple.tertiaryFill,
+          borderRadius: BorderRadius.circular(desktop ? 15 : 20),
+          itemColor: apple.secondaryLabel,
+          itemSize: desktop ? 15 : 18,
+          style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
+          placeholderStyle: TextStyle(
+            fontSize: desktop ? 13 : 17,
+            color: apple.secondaryLabel,
+          ),
+          padding: desktop
+              ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
+              : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
+          onChanged: (String query) {
+            if (!_composing) search.onQueryChanged(query);
+          },
+          onSubmitted: search.onQueryChanged,
+          onSuffixTap: search.clear,
+        ),
+      ),
+    );
+  }
 }

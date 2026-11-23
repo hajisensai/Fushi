@@ -66,7 +66,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
         fushiAppleLargeTitleBand,
         fushiAppleLargeTitleOpacity,
         fushiRouteImpliesBack,
-        kFushiAppleSoftEdgeExtent;
+        kFushiAppleScrollEdgeTail;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show fushiAppleCompact;
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -724,7 +724,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
           top: 0,
           left: 0,
           right: 0,
-          height: barBottom + kFushiAppleSoftEdgeExtent,
+          height: barBottom + kFushiAppleScrollEdgeTail,
           child: IgnorePointer(
             child: ValueListenableBuilder<double>(
               valueListenable: _offset,
@@ -850,7 +850,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
                           visible: extend ? offset >= band - 0.5 : offset > 0,
                           solidExtent: math.max(
                             0,
-                            constraints.maxHeight - kFushiAppleSoftEdgeExtent,
+                            constraints.maxHeight - kFushiAppleScrollEdgeTail,
                           ),
                         ),
                   ),
@@ -1009,7 +1009,7 @@ enum _AppleMastheadSlot { body, edge, largeTitle, bottom }
 /// bottom）的高，正文让位 = 大标题行 + 吸顶行；大标题与吸顶行随主滚动偏移
 /// 上移（最多一个大标题行），之后吸顶行停在栏下沿。正文不铺到页头底下时整体
 /// 排在让位以下，大标题与吸顶行不动。soft scroll edge 盖住吸顶行背后再往下
-/// 渐隐 [kFushiAppleSoftEdgeExtent]。
+/// 渐隐 [kFushiAppleScrollEdgeTail]。
 class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
   _AppleMastheadDelegate({
     required this.band,
@@ -1052,7 +1052,7 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
     final double solid = extendBody ? band - slide + below : 0;
     layoutChild(
       _AppleMastheadSlot.edge,
-      BoxConstraints.tight(Size(size.width, solid + kFushiAppleSoftEdgeExtent)),
+      BoxConstraints.tight(Size(size.width, solid + kFushiAppleScrollEdgeTail)),
     );
     positionChild(_AppleMastheadSlot.edge, Offset(0, extendBody ? 0 : inset));
     layoutChild(

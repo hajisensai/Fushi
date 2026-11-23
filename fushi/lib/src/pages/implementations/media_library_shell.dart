@@ -23,8 +23,10 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         fushiMastheadCompact,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
-    show FushiAppleBarProminentButton, fushiAppleBarCapsuleExtent;
+    show FushiAppleBarCluster;
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
@@ -122,8 +124,8 @@ Widget libraryImportChromeButton({
       builder: (BuildContext context) =>
           fushiMastheadRoleOf(context) == FushiMastheadRole.primary &&
               isGlassDesign(context)
-          // Apple 导航栏：强调色玻璃圆钮（窄窗 44 / 宽窗 36，设计稿 v5 `.prom`），
-          // 材质随玻璃画质档位（实色档实色圆）。
+          // Apple 导航栏：中性玻璃圆钮（窄窗 44 / 宽窗 36），材质随玻璃画质
+          // 档位（实色档实色圆）。
           ? _AppleImportButton(
               key: ValueKey<String>('$focusIdPrefix-import'),
               selected: selected,
@@ -165,7 +167,9 @@ Widget libraryImportChromeButton({
   );
 }
 
-/// Apple 库页导航栏的「导入」主按钮（见 [libraryImportChromeButton]）。
+/// Apple 库页导航栏的「导入」钮（见 [libraryImportChromeButton]）：iOS 27 导航栏
+/// 的中性玻璃圆钮（[FushiAppleBarCluster]，`separate`、不着强调色，label 色
+/// 图标；窄窗 44 / 宽窗 36），与右侧其它动作同一形态。
 class _AppleImportButton extends StatelessWidget {
   const _AppleImportButton({
     required this.selected,
@@ -178,26 +182,21 @@ class _AppleImportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool compact = fushiMastheadCompact(context);
-    final double extent = fushiAppleBarCapsuleExtent(compact: compact);
-    // 库的 prominent bar button（GlassBarItemBackground.separate + tintColor）：
-    // 独立一枚强调色玻璃圆钮，按压拉伸由库的玻璃按钮自己做。
-    return FushiAppleBarProminentButton(
-      tint: scheme.primary,
+    return FushiAppleBarCluster(
       compact: compact,
-      child: FushiIconButton(
-        icon: FushiIcons.libraryAdd,
-        tooltip: t.library_view_import,
-        selected: selected,
-        alwaysVisible: true,
-        onTap: onTap,
-        shapeBorder: const CircleBorder(),
-        backgroundColor: Colors.transparent,
-        enabledColor: scheme.onPrimary,
-        padding: EdgeInsets.all((extent - 22) / 2),
-        constraints: BoxConstraints.tightFor(width: extent, height: extent),
-      ),
+      items: <Widget>[
+        FushiIconButton(
+          icon: FushiIcons.libraryAdd,
+          tooltip: t.library_view_import,
+          selected: selected,
+          alwaysVisible: true,
+          onTap: onTap,
+          shapeBorder: const CircleBorder(),
+          backgroundColor: Colors.transparent,
+          enabledColor: appleColorsOf(context).label,
+        ),
+      ],
     );
   }
 }
