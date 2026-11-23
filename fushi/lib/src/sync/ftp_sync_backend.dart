@@ -848,7 +848,9 @@ class FtpSyncBackend extends SyncBackend
     }
   }
 
-  /// 整份下载 [fileId]（经临时文件；ftpconnect 只会下载到文件）。
+  /// 整份下载 [fileId]（经临时文件；ftpconnect 只会下载到文件），受
+  /// [kSyncBytesAssetMaxBytes] 上限约束（HBK-AUDIT-223）：服务器报得出大小（SIZE）
+  /// 且已超限就不下载；读临时文件时照样按实际字节计数（SIZE 可能不支持或不准）。
   Future<Uint8List> _downloadBytes(String fileId) => _opLock.withLock(() async {
     await _ensureConnected();
     final dir = _parentPath(fileId);
@@ -856,6 +858,10 @@ class FtpSyncBackend extends SyncBackend
     final tmpFile = _uniqueTempFile('ftp_dl', '.tmp');
     try {
       await _client!.changeDirectory(dir);
+      final int remoteSize = await _client!.sizeFile(name);
+      if (remoteSize > kSyncBytesAssetMaxBytes) {
+        throw SyncAssetTooLarge(fileId, kSyncBytesAssetMaxBytes);
+      }
       final ok = await _client!.downloadFile(name, tmpFile);
       if (!ok) {
         throw SyncBackendError(
@@ -863,9 +869,17 @@ class FtpSyncBackend extends SyncBackend
           isRetryable: true,
         );
       }
-      return await tmpFile.readAsBytes();
+      return await readSyncAssetBytesCapped(
+        tmpFile.openRead(),
+        assetId: fileId,
+        declaredLength: await tmpFile.length(),
+      );
     } catch (e) {
-      if (e is SyncBackendError || e is SyncAuthError) rethrow;
+      if (e is SyncBackendError ||
+          e is SyncAuthError ||
+          e is SyncAssetTooLarge) {
+        rethrow;
+      }
       _resetConnection();
       throw SyncBackendError('Failed to download: $e', isRetryable: true);
     } finally {

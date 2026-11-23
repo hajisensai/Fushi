@@ -1676,11 +1676,6 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       source: ReaderLyricsCaretScripts.source(),
     );
     if (!currentLyricsLoad()) return;
-    // 整句扫词（拍板台 5H922XeDHM）在歌词文档里以「一行 = 一句」取句。
-    await controller.evaluateJavascript(
-      source: ReaderWordSweepScripts.source(),
-    );
-    if (!currentLyricsLoad()) return;
     await controller.evaluateJavascript(
       source: ReaderLyricsCaretScripts.initInvocation(
         color: _caretRingColorCss(),
@@ -1820,21 +1815,44 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
+        // 歌词文档的非左键 `mousedown`（idx = 所在行的 data-cue-index，行外为 -1）。与正文
+        // `onPointerSeek` 同一条三级阶梯（HBK-AUDIT-221：此前只认「seek 到点击句」，非
+        // Windows 上绑到侧键的关词典 / 其余动作在歌词视图里全是死项）。
         controller.addJavaScriptHandler(
           handlerName: 'onLyricsPointerSeek',
           callback: (List<dynamic> args) {
-            if (args.length < 2 || _audiobookController == null) return;
+            if (args.length < 2 || !_lyricsMode) return;
             final int button = (args[0] as num?)?.toInt() ?? -1;
+            if (button < 0) return;
             final int idx = (args[1] as num?)?.toInt() ?? -1;
-            final AudioCue? cue = cueForLyricsPointer(
-              appModel.shortcutRegistry,
-              button,
-              idx,
-              _lyricsCueList,
-            );
-            if (cue != null) _audiobookController!.playCueAndContinue(cue);
-            // 中键 / 侧键点句同样是把 OS 焦点交给 WebView 的指针手势（NmpRV-amTY）。
+            // 中键 / 侧键按下同样是把 OS 焦点交给 WebView 的指针手势（NmpRV-amTY），
+            // 在任何按动作分流的早退之前收回一次。
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
+            final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+            // ① 位置型：seek 到点击的那一行（只有页内 JS 知道点在哪行）。
+            if (isSeekToClickedSentenceButton(registry, button)) {
+              final AudiobookPlayerController? ctrl = _audiobookController;
+              if (ctrl == null) return;
+              final AudioCue? cue = cueForLyricsPointer(
+                registry,
+                button,
+                idx,
+                _lyricsCueList,
+              );
+              if (cue != null) ctrl.playCueAndContinue(cue);
+              return;
+            }
+            // ② 指针归宿主的平台（Windows）上其余绑定由页面根 Listener
+            // （[_handleReaderPointerDown]）派发，这里再派一次就是同一次按下触发两回。
+            if (hostOwnsWebViewPointerInput) return;
+            // ③ 其余一律走与键盘 / 手柄完全相同的执行体。
+            final ShortcutAction? action = resolveMouseBindingActionForButton(
+              registry: registry,
+              button: button,
+              ladder: kReaderMouseLadder,
+            );
+            if (action == null) return;
+            _executeShortcutAction(action);
           },
         );
         // 「↺ 跟随音频」胶囊：纯 JS 恢复跟随，回 Dart 只为收回焦点（NmpRV-amTY：点完

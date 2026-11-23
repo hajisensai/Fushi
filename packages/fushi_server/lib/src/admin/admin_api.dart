@@ -1318,7 +1318,9 @@ class AdminApi {
       return _json(_modelsCache!);
     }
     final List<Object?> asrModels = <Object?>[];
-    for (final asr.AsrAudioProfile profile in asr.AsrAudioProfile.values) {
+    // 按模型包列：只有两种声学素材各自可能对应不同的包；`song` 用混音那个包（外加
+    // 一个人声分离模型），不单列一行。
+    for (final asr.AsrAudioProfile profile in asr.kAsrPackAudioProfiles) {
       final asr.AsrTranscriptionService service =
           createServerAsrTranscriptionService(audioProfile: profile);
       for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {

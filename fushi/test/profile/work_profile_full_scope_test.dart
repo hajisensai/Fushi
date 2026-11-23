@@ -107,6 +107,8 @@ void main() {
       'app_theme_key',
       'brightness_mode',
       'design_system',
+      ThemeNotifier.readerPaperLightPrefKey,
+      ThemeNotifier.readerPaperDarkPrefKey,
       'custom_themes',
       'custom_theme_seed',
       'page_backdrop_preset',

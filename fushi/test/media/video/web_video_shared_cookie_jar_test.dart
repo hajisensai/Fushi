@@ -265,6 +265,18 @@ void main() {
         ).readAsStringSync(),
       );
       expect(src, contains('put_IsMuted(TRUE)'));
+      expect(src, contains('allowBackgroundAudioPlaying'));
+
+      for (final String scraper in <String>[
+        'lib/src/media/manga/web/web_comic_scanner.dart',
+        'lib/src/media/novel/web/web_novel_page_fetcher.dart',
+      ]) {
+        expect(
+          maskComments(File(scraper).readAsStringSync()),
+          isNot(contains('allowBackgroundAudioPlaying: true')),
+          reason: '$scraper 后台抓取页不能绕过无头默认静音',
+        );
+      }
     });
 
     test('窗口宿主档环境由共享罐提供，不再自建独立目录', () {

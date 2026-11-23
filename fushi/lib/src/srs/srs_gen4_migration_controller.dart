@@ -105,6 +105,23 @@ class SrsGen4MigrationController extends ChangeNotifier {
   /// 上一次跑出的错误（内核报错，例如上次失败留下的半成品让迁移拒绝开始）。
   Object? get error => _error;
 
+  /// 页面此刻要说明的那次失败（原因与报告都由内核判定，这里不读报告文件）：
+  /// - 在跑 = null；
+  /// - 本进程这次有了结论：以结论为准，中止的是它带的 [SrsGen4MigrationOutcome.failure]，其余结论 = null；
+  /// - 本次出错（内核报错）= null（页面说「出错停止了」，不再拿上一次的原因说事）；
+  /// - 还没有结论：[previous]，即打开错误里内核与 [SrsGenState.migrationFailed] 同一次判定的上次原因
+  ///   （[SrsStoreNotMigrated.failure]）。
+  /// 有 [SrsGen4MigrationFailure.reportPath] 时页面给「发给开发者」与「分享 / 保存」。
+  SrsGen4MigrationFailure? failureFor(SrsGen4MigrationFailure? previous) {
+    if (_phase != SrsGen4MigrationPhase.idle) return null;
+    final SrsGen4MigrationOutcome? o = _outcome;
+    if (o != null) {
+      return o.verdict == SrsGen4MigrationVerdict.aborted ? o.failure : null;
+    }
+    if (_error != null) return null;
+    return previous;
+  }
+
   /// 已请求取消、还没有结论。
   bool get cancelRequested => _cancelRequested;
 

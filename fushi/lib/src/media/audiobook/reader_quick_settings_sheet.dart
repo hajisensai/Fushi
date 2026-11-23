@@ -1693,6 +1693,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       children: <Widget>[
         buildThemeSelector(_themeSettingsContext()),
         buildBrightnessSelector(_themeSettingsContext()),
+        buildReaderPaperSelector(_themeSettingsContext(), dark: false),
+        buildReaderPaperSelector(_themeSettingsContext(), dark: true),
       ],
     );
   }

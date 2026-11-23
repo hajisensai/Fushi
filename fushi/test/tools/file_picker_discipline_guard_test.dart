@@ -129,6 +129,8 @@ const Map<String, String> kCustomFileTypeAllowlist = <String, String>{
   'lib/src/utils/misc/log_exporter.dart': 'saveFile：导出日志',
   'lib/src/media/audiobook/asr_transcribe_sheet.dart': 'saveFile：导出转录字幕 srt',
   'lib/src/utils/misc/image_file_saver.dart': 'saveFile：桌面另存图片',
+  'lib/src/pages/implementations/srs/srs_gen4_report_actions.dart':
+      'saveFile：桌面导出记忆数据升级报告 json',
   // Windows 专属入口：桌面原生对话框按扩展名过滤可靠。
   'lib/src/mining/galgame_add_flow.dart':
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',

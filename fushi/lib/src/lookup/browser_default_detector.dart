@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
+import 'package:fushi_engine/utils/process/system_command.dart';
 
 /// 浏览器扩展安装引导用的「默认浏览器」探测 + 「尝试打开扩展管理页」。
 ///
@@ -101,11 +102,12 @@ Future<BrowserKind?> detectDefaultBrowserKind() async {
       return progId == null ? null : browserKindFromDefaultBrowserId(progId);
     }
     if (Platform.isMacOS) {
-      final ProcessResult r = await Process.run('defaults', <String>[
-        'read',
-        'com.apple.LaunchServices/com.apple.launchservices.secure',
-        'LSHandlers',
-      ]);
+      final ProcessResult r =
+          await Process.run(systemCommand('defaults'), <String>[
+            'read',
+            'com.apple.LaunchServices/com.apple.launchservices.secure',
+            'LSHandlers',
+          ]);
       if (r.exitCode != 0) return null;
       final String? bundleId = parseMacLaunchServicesHandler('${r.stdout}');
       return bundleId == null

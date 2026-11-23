@@ -137,9 +137,14 @@ void main() {
     test('动作不存在', () {
       expect(ShortcutAction.fromKey('video_lookup_next_word'), isNull);
       expect(ShortcutAction.fromKey('video_lookup_prev_word'), isNull);
+      // 阅读器整句扫词（拍板台 pr4141a）同样删除。
+      expect(ShortcutAction.fromKey('reader_lookup_next_word'), isNull);
+      expect(ShortcutAction.fromKey('reader_lookup_prev_word'), isNull);
       expect(kRetiredShortcutActionKeys, <String>{
         'video_lookup_next_word',
         'video_lookup_prev_word',
+        'reader_lookup_next_word',
+        'reader_lookup_prev_word',
       });
     });
 
@@ -159,6 +164,8 @@ void main() {
           snapshot(<String, dynamic>{
             'video_lookup_next_word': binding,
             'video_lookup_prev_word': binding,
+            'reader_lookup_next_word': binding,
+            'reader_lookup_prev_word': binding,
             futureKey: binding,
           }),
         ),
@@ -167,6 +174,8 @@ void main() {
       final Map<String, dynamic> out = registry.toJson();
       expect(out.containsKey('video_lookup_next_word'), isFalse);
       expect(out.containsKey('video_lookup_prev_word'), isFalse);
+      expect(out.containsKey('reader_lookup_next_word'), isFalse);
+      expect(out.containsKey('reader_lookup_prev_word'), isFalse);
       expect(out.containsKey(futureKey), isTrue);
       // 别的动作照常装载（F7 没被挪给任何视频动作）。
       expect(

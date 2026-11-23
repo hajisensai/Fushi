@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
+import 'package:fushi_engine/utils/process/system_command.dart';
 
 /// 监听某端口的进程信息（用于「端口被占用 → 一键结束占用进程」）。
 class PortListenerInfo {
@@ -96,10 +97,10 @@ class PortProcessTerminator {
   /// POSIX 下探测进程是否仍存活（`ps -p` 退出码 0 = 存活）。
   static Future<bool> _isAlivePosix(int targetPid) async {
     try {
-      final ProcessResult result = await Process.run('ps', <String>[
-        '-p',
-        '$targetPid',
-      ]);
+      final ProcessResult result = await Process.run(
+        systemCommand('ps'),
+        <String>['-p', '$targetPid'],
+      );
       return result.exitCode == 0;
     } on ProcessException {
       return false;
@@ -117,12 +118,10 @@ class PortProcessTerminator {
   }
 
   static Future<int?> _findListenerPidPosix(int port) async {
-    final ProcessResult result = await Process.run('lsof', <String>[
-      '-nP',
-      '-iTCP:$port',
-      '-sTCP:LISTEN',
-      '-t',
-    ]);
+    final ProcessResult result = await Process.run(
+      systemCommand('lsof'),
+      <String>['-nP', '-iTCP:$port', '-sTCP:LISTEN', '-t'],
+    );
     if (result.exitCode != 0) return null;
     final String out = '${result.stdout}'.trim();
     if (out.isEmpty) return null;
@@ -137,12 +136,10 @@ class PortProcessTerminator {
         // 「进程 spawn LOLBin 查进程表」算高权重信号，见 windows_process_query.dart）。
         return windowsProcessById(targetPid)?.name ?? fallback;
       }
-      final ProcessResult result = await Process.run('ps', <String>[
-        '-p',
-        '$targetPid',
-        '-o',
-        'comm=',
-      ]);
+      final ProcessResult result = await Process.run(
+        systemCommand('ps'),
+        <String>['-p', '$targetPid', '-o', 'comm='],
+      );
       if (result.exitCode != 0) return fallback;
       final String name = '${result.stdout}'.trim();
       if (name.isEmpty) return fallback;
@@ -166,12 +163,10 @@ class PortProcessTerminator {
         return await Link('/proc/$targetPid/exe').resolveSymbolicLinks();
       }
       // macOS：`ps -o comm=` 输出即完整可执行路径。
-      final ProcessResult result = await Process.run('ps', <String>[
-        '-p',
-        '$targetPid',
-        '-o',
-        'comm=',
-      ]);
+      final ProcessResult result = await Process.run(
+        systemCommand('ps'),
+        <String>['-p', '$targetPid', '-o', 'comm='],
+      );
       if (result.exitCode != 0) return null;
       final String out = '${result.stdout}'.trim();
       return out.startsWith('/') ? out : null;

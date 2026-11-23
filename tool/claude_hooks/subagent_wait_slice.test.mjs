@@ -97,6 +97,33 @@ test('withHeavyWaitLimit leaves set limits, reports and other commands alone', (
   );
 });
 
+test('withHeavyWaitLimit judges each heavy.dart run of a chain by its own flags', () => {
+  // HBK-AUDIT-234: a limit on the first run used to exempt the whole chain.
+  assert.equal(
+    withHeavyWaitLimit(
+      'dart tool/heavy.dart --wait-max-min=3 -- flutter analyze; dart tool/heavy.dart -- flutter test a.dart',
+    ),
+    'dart tool/heavy.dart --wait-max-min=3 -- flutter analyze; dart tool/heavy.dart --wait-max-min=10 -- flutter test a.dart',
+  );
+  assert.equal(
+    withHeavyWaitLimit(
+      'dart tool/heavy.dart -- flutter analyze && dart tool/heavy.dart --wait-max-min=0 -- flutter test',
+    ),
+    'dart tool/heavy.dart --wait-max-min=10 -- flutter analyze && dart tool/heavy.dart --wait-max-min=0 -- flutter test',
+  );
+  // A `--wait-max-min` after `--` belongs to the wrapped command, not heavy.dart.
+  assert.equal(
+    withHeavyWaitLimit('dart tool/heavy.dart -- tool --wait-max-min=3'),
+    'dart tool/heavy.dart --wait-max-min=10 -- tool --wait-max-min=3',
+  );
+  assert.equal(
+    withHeavyWaitLimit(
+      'dart tool/heavy.dart --wait-max-min=1 -- a; dart tool/heavy.dart --check-only --wait-max-min=2 -- b',
+    ),
+    null,
+  );
+});
+
 test('the hook answers updatedInput JSON on stdin input, nothing otherwise', () => {
   const script = fileURLToPath(new URL('./subagent_wait_slice.mjs', import.meta.url));
   const run = (stdin) => spawnSync(process.execPath, [script], { input: stdin, encoding: 'utf8' });

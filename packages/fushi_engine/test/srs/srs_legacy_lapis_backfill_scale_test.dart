@@ -18,6 +18,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
+import 'support/srs_lapis_preview_fills.dart';
 import 'support/srs_query_counter.dart';
 import 'support/srs_test_storage.dart';
 
@@ -268,11 +269,11 @@ void main() {
     expect(b.statements, a.statements);
     expect(b.rows, a.rows);
     expect(
-      (await small.store.previewLapisBackfill()).fills,
+      await previewFills(small.store),
       await referenceBackfill(small.store),
     );
     expect(
-      (await large.store.previewLapisBackfill()).fills,
+      await previewFills(large.store),
       await referenceBackfill(large.store),
     );
   });
@@ -428,7 +429,7 @@ void main() {
           s,
         );
         expect(want, isNotEmpty, reason: 'seed $seed 应造出待补迁的笔记');
-        expect((await s.previewLapisBackfill()).fills, want);
+        expect(await previewFills(s), want);
         final ({int migratable, int backfill}) counts = await s
             .legacyLapisPendingCounts();
         expect(counts.backfill, want.length);
@@ -444,13 +445,13 @@ void main() {
           'missing-note-id',
         ];
         expect(
-          (await s.previewLapisBackfill(noteIds: subset)).fills,
+          await previewFills(s, noteIds: subset),
           await referenceBackfill(s, noteIds: subset),
         );
         // 补迁后两边都归零（幂等）。
         expect(await s.applyLapisBackfill(), want.length);
         expect(await referenceBackfill(s), isEmpty);
-        expect((await s.previewLapisBackfill()).fills, isEmpty);
+        expect(await previewFills(s), isEmpty);
       });
     }
   });

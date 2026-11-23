@@ -273,7 +273,10 @@ fn a_never_synced_library_is_completed_and_migrated() {
         &json!({"dir": dir.0.to_str().unwrap()}),
     )
     .unwrap();
-    assert_eq!(s, json!({"state": "needsMigration", "running": null}));
+    assert_eq!(
+        s,
+        json!({"state": "needsMigration", "failure": null, "running": null})
+    );
     let mut steps = Vec::new();
     let out = run(
         &dir.0,
@@ -787,7 +790,13 @@ fn an_aborted_migration_of_a_library_without_identity_reads_as_failed() {
     let aborted =
         json!({"version": migrate::REPORT_VERSION, "verdict": "aborted", "legacyIdentity": null});
     std::fs::write(dir.0.join(migrate::REPORT_FILE), aborted.to_string()).unwrap();
-    assert_eq!(status(&dir.0), Ok(GenState::MigrationFailed));
+    // 报告里没有 `profileVerdict`：认不出是哪一种中止，按 `error` 报（不猜成「对拍不过」）。
+    assert_eq!(
+        status(&dir.0),
+        Ok(GenState::MigrationFailed(migrate::Failure::Aborted(
+            migrate::AbortReason::Error
+        )))
+    );
     // 有身份的库：null 身份的报告不是它的。
     let Device { core, _dir: other } = crate::store::gen4::dryrun::tests::library("g72b-id-abort");
     core.close();

@@ -156,11 +156,8 @@ import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
-import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_controller_word_step_scripts.dart';
-import 'package:fushi/src/reader/reader_word_sweep.dart';
-import 'package:fushi/src/reader/reader_word_sweep_scripts.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
@@ -321,7 +318,6 @@ part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
 part 'reader_fushi/seamless.part.dart';
-part 'reader_fushi/word_sweep.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -533,6 +529,64 @@ typedef ReaderThemeColors = ({
   Color link,
   bool dark,
 });
+
+/// 阅读器手调纸色预设（羊皮纸 / 水蓝 / 护眼 / 灰 / 深色 / 纯黑），id 是冻结的旧主题键。
+/// 渲染（[resolveReaderThemeColors] 的 presetMap）与设置页纸色色卡共用这一份。
+/// BUG-396：selection/link 与 css `_themeColors` switch 的预设值逐一相等（ARGB 即
+/// rgba 同值），作为五角色单一真相源透传。
+const Map<String, ReaderThemeColors> kReaderPaperPresets =
+    <String, ReaderThemeColors>{
+      'ecru-theme': (
+        bg: Color(0xFFF7F6EB),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x66A8C68C),
+        selection: Color(0x59C2B280),
+        link: Color(0xFF7A6232),
+        dark: false,
+      ),
+      'water-theme': (
+        bg: Color(0xFFDFECF4),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x6664B4DC),
+        selection: Color(0x59C8AA6E),
+        link: Color(0xFF3A5FAD),
+        dark: false,
+      ),
+      // 护眼（豆沙绿）：与 reader_content_styles `_themeColors['eyecare-theme']` 的
+      // rgba 预设逐一相等（ARGB 同值），作为五角色单一真相源透传。
+      'eyecare-theme': (
+        bg: Color(0xFFC7EDCC),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x66A0C878),
+        selection: Color(0x5988B583),
+        link: Color(0xFF4C7A3E),
+        dark: false,
+      ),
+      'gray-theme': (
+        bg: Color(0xFF23272A),
+        fg: Color(0xDEFFFFFF),
+        sentenceAudioHighlight: Color(0x595096C8),
+        selection: Color(0x59BE9B64),
+        link: Color(0xFF6FA8DC),
+        dark: true,
+      ),
+      'dark-theme': (
+        bg: Color(0xFF121212),
+        fg: Color(0x99FFFFFF),
+        sentenceAudioHighlight: Color(0x594682B4),
+        selection: Color(0x59B4915A),
+        link: Color(0xFF7AACDF),
+        dark: true,
+      ),
+      'black-theme': (
+        bg: Color(0xFF000000),
+        fg: Color(0xDEFFFFFF),
+        sentenceAudioHighlight: Color(0x663C78AA),
+        selection: Color(0x66AA8750),
+        link: Color(0xFF5B9BD5),
+        dark: true,
+      ),
+    };
 
 /// 把当前主题 key 解析成阅读器的颜色角色（背景/字色/跟读高亮/选区高亮/链接）。
 ///
@@ -2993,9 +3047,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   set _caretSurface(CaretSurface value) => _caret.surface = value;
 
   bool get _caretActive => _caret.active;
-
-  /// 整句扫词的会话态（拍板台 5H922XeDHM，见 `reader_fushi/word_sweep.part.dart`）。
-  final _ReaderWordSweepState _wordSweep = _ReaderWordSweepState();
   bool get _caretOnReader => _caret.onReader;
   bool get _caretOnLyrics => _caret.onLyrics;
 
@@ -5956,25 +6007,7 @@ $liveConfigJs
         // 「只关词典」的专用动作（默认无键盘绑定，用户可绑鼠标侧键）——BUG-1071
         // 那条鼠标通道的唯一消费者，保留。
         ShortcutAction.readerDismissDict,
-        // 整句扫词（拍板台 5H922XeDHM）：每停一词就换同一张弹窗，恰恰只在弹窗可见时有
-        // 意义。弹窗持焦（键盘）或指针压在弹窗 / barrier 上（鼠标侧键）时输入只从弹窗
-        // 回传，不转发就等于「点过弹窗一次，扫词键就失效」。
-        ShortcutAction.readerLookupNextWord,
-        ShortcutAction.readerLookupPrevWord,
       };
-
-  /// 弹窗回传 token 的落地点：扫词排在基类「转发动作 = 关整条弹窗栈」**之前**——
-  /// 否则弹窗一持焦，扫词键就退化成「关弹窗」（与视频页同一条约束）。
-  @override
-  bool onDictionaryPopupInputToken(String token) {
-    final ShortcutAction? action = resolveDictionaryPopupInputToken(
-      registry: appModel.shortcutRegistry,
-      token: token,
-      scope: ShortcutScope.reader,
-    );
-    if (action != null && _runReaderWordSweepAction(action)) return true;
-    return super.onDictionaryPopupInputToken(token);
-  }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

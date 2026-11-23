@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -193,12 +194,14 @@ class MusicCover extends StatelessWidget {
 }
 
 /// 专辑盘面扫描图（[MusicDiscArtIndex] 认出的本地文件）画进唱片色块
-/// （[FushiCoverBlock.disc]）的图：默认按 512 宽解码（播放页大唱片传实际像素宽），
-/// 铺满圆形裁切。
-Widget musicDiscArtImage(String path, {int decodeWidth = 512}) => Image(
-  image: ResizeImage.resizeIfNeeded(decodeWidth, null, FileImage(File(path))),
-  fit: BoxFit.cover,
-  excludeFromSemantics: true,
+/// （[FushiCoverBlock.disc]）的唱片：[MusicDiscFace] 按量出的印刷区对正、轮毂
+/// 透明，自带投影（原型 `.dc`：`0 10px 26px rgba(0,0,0,.55)`；投影在轮毂处裁掉，
+/// 所以不能由色块画整圆投影）。
+Widget musicDiscArtImage(String path) => MusicDiscFace(
+  path: path,
+  shadows: const <BoxShadow>[
+    BoxShadow(color: Color(0x8C000000), offset: Offset(0, 10), blurRadius: 26),
+  ],
 );
 
 /// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：

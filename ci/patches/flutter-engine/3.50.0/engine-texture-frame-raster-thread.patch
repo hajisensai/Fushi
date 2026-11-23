@@ -1,0 +1,377 @@
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
+index 21c1b42..eba9a78 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
+@@ -3248,6 +3248,24 @@ FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailable(
+   return kSuccess;
+ }
+ 
++FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailableOnRasterThread(
++    FLUTTER_API_SYMBOL(FlutterEngine) engine,
++    int64_t texture_identifier) {
++  if (engine == nullptr) {
++    return LOG_EMBEDDER_ERROR(kInvalidArguments, "Invalid engine handle.");
++  }
++  if (texture_identifier == 0) {
++    return LOG_EMBEDDER_ERROR(kInvalidArguments, "Invalid texture identifier.");
++  }
++  if (!reinterpret_cast<flutter::EmbedderEngine*>(engine)
++           ->MarkTextureFrameAvailableOnRasterThread(texture_identifier)) {
++    return LOG_EMBEDDER_ERROR(
++        kInternalInconsistency,
++        "Could not mark the texture frame as being available.");
++  }
++  return kSuccess;
++}
++
+ FlutterEngineResult FlutterEngineUpdateSemanticsEnabled(
+     FLUTTER_API_SYMBOL(FlutterEngine) engine,
+     bool enabled) {
+@@ -3832,6 +3850,8 @@ FlutterEngineResult FlutterEngineGetProcAddresses(
+   SET_PROC(AddView, FlutterEngineAddView);
+   SET_PROC(RemoveView, FlutterEngineRemoveView);
+   SET_PROC(SendViewFocusEvent, FlutterEngineSendViewFocusEvent);
++  SET_PROC(MarkExternalTextureFrameAvailableOnRasterThread,
++           FlutterEngineMarkExternalTextureFrameAvailableOnRasterThread);
+ #undef SET_PROC
+ 
+   return kSuccess;
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder.h b/engine/src/flutter/shell/platform/embedder/embedder.h
+index 0c53cb5..a621c9a 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder.h
++++ b/engine/src/flutter/shell/platform/embedder/embedder.h
+@@ -3301,6 +3301,25 @@ FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailable(
+     FLUTTER_API_SYMBOL(FlutterEngine) engine,
+     int64_t texture_identifier);
+ 
++//------------------------------------------------------------------------------
++/// @brief      Fushi patch: like
++///             `FlutterEngineMarkExternalTextureFrameAvailable`, but may be
++///             called on any thread and does not involve the platform or UI
++///             thread: the texture is marked and the last layer trees are
++///             redrawn on the raster thread. Marks that arrive while that
++///             redraw is still queued share it.
++///
++/// @param[in]  engine              A running engine instance.
++/// @param[in]  texture_identifier  The identifier of the texture whose frame
++///                                 has been updated.
++///
++/// @return     The result of the call.
++///
++FLUTTER_EXPORT
++FlutterEngineResult FlutterEngineMarkExternalTextureFrameAvailableOnRasterThread(
++    FLUTTER_API_SYMBOL(FlutterEngine) engine,
++    int64_t texture_identifier);
++
+ //------------------------------------------------------------------------------
+ /// @brief      Enable or disable accessibility semantics.
+ ///
+@@ -3744,6 +3763,10 @@ typedef FlutterEngineResult (
+     *FlutterEngineMarkExternalTextureFrameAvailableFnPtr)(
+     FLUTTER_API_SYMBOL(FlutterEngine) engine,
+     int64_t texture_identifier);
++typedef FlutterEngineResult (
++    *FlutterEngineMarkExternalTextureFrameAvailableOnRasterThreadFnPtr)(
++    FLUTTER_API_SYMBOL(FlutterEngine) engine,
++    int64_t texture_identifier);
+ typedef FlutterEngineResult (*FlutterEngineUpdateSemanticsEnabledFnPtr)(
+     FLUTTER_API_SYMBOL(FlutterEngine) engine,
+     bool enabled);
+@@ -3862,6 +3885,9 @@ typedef struct {
+   FlutterEngineRemoveViewFnPtr RemoveView;
+   FlutterEngineSendViewFocusEventFnPtr SendViewFocusEvent;
+   FlutterEngineSendSemanticsActionFnPtr SendSemanticsAction;
++  // Fushi patch (texture frames on the raster thread); appended last.
++  FlutterEngineMarkExternalTextureFrameAvailableOnRasterThreadFnPtr
++      MarkExternalTextureFrameAvailableOnRasterThread;
+ } FlutterEngineProcTable;
+ 
+ //------------------------------------------------------------------------------
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_engine.cc b/engine/src/flutter/shell/platform/embedder/embedder_engine.cc
+index d3e78ee..32d2b4e 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_engine.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_engine.cc
+@@ -4,7 +4,9 @@
+ 
+ #include "flutter/shell/platform/embedder/embedder_engine.h"
+ 
++#include "flutter/flow/frame_timings.h"
+ #include "flutter/fml/make_copyable.h"
++#include "flutter/fml/time/time_point.h"
+ #include "flutter/shell/platform/embedder/vsync_waiter_embedder.h"
+ 
+ namespace flutter {
+@@ -210,6 +212,84 @@ bool EmbedderEngine::MarkTextureFrameAvailable(int64_t texture) {
+   return true;
+ }
+ 
++// Fushi patch (texture frames on the raster thread).
++//
++// |MarkTextureFrameAvailable| above must run on the platform thread and then
++// waits for the |Animator| on the UI thread: next vsync, then
++// |DrawLastLayerTrees| posted back to the raster thread. With merged platform
++// and UI threads (the Windows default) every external texture frame therefore
++// waits behind whatever the Dart isolate and the Win32 message loop are doing;
++// a busy main thread longer than one video frame drops video frames even when
++// decoder, renderer and raster thread are idle.
++//
++// Here the producer's thread posts straight to the raster thread, which marks
++// the texture and redraws the last layer trees itself -- the same raster-side
++// work the |Animator| would have requested, minus the main-thread round trip.
++// The layer trees are the last ones the framework produced, so nothing the
++// framework drew is changed or skipped; a frame the framework builds later is
++// drawn by the regular pipeline as before. Like |PostRenderThreadTask| (which
++// stock embedders already call from arbitrary threads, e.g. Windows' texture
++// unregistration), this only touches the shell through its task runners and
++// the rasterizer's raster-thread-affine weak pointer.
++bool EmbedderEngine::MarkTextureFrameAvailableOnRasterThread(int64_t texture) {
++  if (!IsValid()) {
++    return false;
++  }
++  std::shared_ptr<RasterTextureRedraw> state = raster_texture_redraw_;
++  {
++    std::scoped_lock lock(state->mutex);
++    state->marked.push_back(texture);
++    if (state->scheduled) {
++      // The queued redraw has not swapped |marked| yet; it picks this one up.
++      return true;
++    }
++    state->scheduled = true;
++  }
++
++  double refresh_rate = shell_->GetMainDisplayRefreshRate();
++  if (!(refresh_rate > 0.0)) {
++    refresh_rate = 60.0;
++  }
++  const fml::TimeDelta frame_interval =
++      fml::TimeDelta::FromSecondsF(1.0 / refresh_rate);
++
++  shell_->GetTaskRunners().GetRasterTaskRunner()->PostTask(
++      [state, rasterizer = shell_->GetRasterizer(), frame_interval]() {
++        std::vector<int64_t> marked;
++        {
++          std::scoped_lock lock(state->mutex);
++          marked.swap(state->marked);
++          // Marks from here on queue the next redraw: they may have produced
++          // a frame this redraw no longer samples.
++          state->scheduled = false;
++        }
++        if (!rasterizer) {
++          return;
++        }
++        std::shared_ptr<TextureRegistry> registry =
++            rasterizer->GetTextureRegistry();
++        if (!registry) {
++          return;
++        }
++        for (int64_t texture_id : marked) {
++          std::shared_ptr<Texture> marked_texture =
++              registry->GetTexture(texture_id);
++          if (marked_texture) {
++            marked_texture->MarkNewFrameAvailable();
++          }
++        }
++        // As in |Animator::DrawLastLayerTrees|: nothing is built, so build
++        // start and end are both "now".
++        auto recorder = std::make_unique<FrameTimingsRecorder>();
++        const fml::TimePoint now = fml::TimePoint::Now();
++        recorder->RecordVsync(now, now + frame_interval);
++        recorder->RecordBuildStart(now);
++        recorder->RecordBuildEnd(now);
++        rasterizer->DrawLastLayerTrees(std::move(recorder));
++      });
++  return true;
++}
++
+ bool EmbedderEngine::SetSemanticsEnabled(bool enabled) {
+   if (!IsValid()) {
+     return false;
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_engine.h b/engine/src/flutter/shell/platform/embedder/embedder_engine.h
+index c9c16ec..ad36dfe 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_engine.h
++++ b/engine/src/flutter/shell/platform/embedder/embedder_engine.h
+@@ -6,7 +6,9 @@
+ #define FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_ENGINE_H_
+ 
+ #include <memory>
++#include <mutex>
+ #include <unordered_map>
++#include <vector>
+ 
+ #include "flutter/fml/macros.h"
+ #include "flutter/shell/common/shell.h"
+@@ -64,6 +66,12 @@ class EmbedderEngine {
+ 
+   bool MarkTextureFrameAvailable(int64_t texture);
+ 
++  // Fushi patch (texture frames on the raster thread): callable from any
++  // thread. Marks |texture| on the raster thread and redraws the last layer
++  // trees there, without the platform / UI thread or the |Animator|. Marks
++  // that arrive before the queued redraw ran share that one redraw.
++  bool MarkTextureFrameAvailableOnRasterThread(int64_t texture);
++
+   bool SetSemanticsEnabled(bool enabled);
+ 
+   bool SetAccessibilityFeatures(int32_t flags);
+@@ -98,6 +106,17 @@ class EmbedderEngine {
+   std::unique_ptr<Shell> shell_;
+   std::unique_ptr<EmbedderExternalTextureResolver> external_texture_resolver_;
+ 
++  // Fushi patch (texture frames on the raster thread): textures marked since
++  // the last raster-thread redraw, and whether that redraw is queued. Shared
++  // with the queued task so it never outlives what it touches.
++  struct RasterTextureRedraw {
++    std::mutex mutex;
++    std::vector<int64_t> marked;
++    bool scheduled = false;
++  };
++  std::shared_ptr<RasterTextureRedraw> raster_texture_redraw_ =
++      std::make_shared<RasterTextureRedraw>();
++
+   FML_DISALLOW_COPY_AND_ASSIGN(EmbedderEngine);
+ };
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc
+index f22ec26..c002c64 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.cc
+@@ -1019,6 +1019,12 @@ bool FlutterWindowsEngine::MarkExternalTextureFrameAvailable(
+               engine_, texture_id) == kSuccess);
+ }
+ 
++bool FlutterWindowsEngine::MarkExternalTextureFrameAvailableOnRasterThread(
++    int64_t texture_id) {
++  return (embedder_api_.MarkExternalTextureFrameAvailableOnRasterThread(
++              engine_, texture_id) == kSuccess);
++}
++
+ bool FlutterWindowsEngine::PostRasterThreadTask(fml::closure callback) const {
+   struct Captures {
+     fml::closure callback;
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
+index d1f4ed5..c8673b3 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
+@@ -247,6 +247,11 @@ class FlutterWindowsEngine {
+   // given |texture_id|.
+   bool MarkExternalTextureFrameAvailable(int64_t texture_id);
+ 
++  // Fushi patch (texture frames on the raster thread): callable from any
++  // thread; marks |texture_id| and redraws the last frame on the raster
++  // thread without going through the platform / UI thread.
++  bool MarkExternalTextureFrameAvailableOnRasterThread(int64_t texture_id);
++
+   // Posts the given callback onto the raster thread.
+   virtual bool PostRasterThreadTask(fml::closure callback) const;
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc
+index f71da67..c6ca4f9 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar.cc
+@@ -100,12 +100,22 @@ void FlutterWindowsTextureRegistrar::UnregisterTexture(int64_t texture_id,
+   }
+ }
+ 
++// Fushi patch (texture frames on the raster thread).
++//
++// Stock: post to the platform thread, which marks the texture and asks the
++// |Animator| (UI thread, merged with the platform thread by default) for a
++// frame at the next vsync. Producers such as video players call this from
++// their own render thread for every frame, so each frame waited behind the
++// Dart isolate and the Win32 message loop; a busy main thread longer than one
++// frame interval silently dropped frames that were already rendered.
++//
++// Now the producer's thread hands the frame straight to the raster thread
++// (see |EmbedderEngine::MarkTextureFrameAvailableOnRasterThread|). DWM
++// composes the window at vsync (Windows sets swap interval 0 under DWM), so
++// presenting from the raster thread needs no vsync wait of its own.
+ bool FlutterWindowsTextureRegistrar::MarkTextureFrameAvailable(
+     int64_t texture_id) {
+-  engine_->task_runner()->RunNowOrPostTask([engine = engine_, texture_id]() {
+-    engine->MarkExternalTextureFrameAvailable(texture_id);
+-  });
+-  return true;
++  return engine_->MarkExternalTextureFrameAvailableOnRasterThread(texture_id);
+ }
+ 
+ bool FlutterWindowsTextureRegistrar::PopulateTexture(
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc
+index a6c2448..79c47a9 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_texture_registrar_unittests.cc
+@@ -2,6 +2,8 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include <thread>
++
+ #include "flutter/fml/synchronization/waitable_event.h"
+ #include "flutter/shell/platform/embedder/test_utils/proc_table_replacement.h"
+ #include "flutter/shell/platform/windows/egl/proc_table.h"
+@@ -107,9 +109,16 @@ TEST(FlutterWindowsTextureRegistrarTest, RegisterUnregisterTexture) {
+         return kSuccess;
+       }));
+ 
++  // Fushi patch (texture frames on the raster thread): marks go to the
++  // raster-thread entry point, never through the platform-thread one.
++  modifier.embedder_api().MarkExternalTextureFrameAvailable = MOCK_ENGINE_PROC(
++      MarkExternalTextureFrameAvailable, ([](auto engine, auto texture_id) {
++        ADD_FAILURE() << "texture marks must not need the platform thread";
++        return kSuccess;
++      }));
+   bool mark_frame_available_called = false;
+-  modifier.embedder_api().MarkExternalTextureFrameAvailable =
+-      MOCK_ENGINE_PROC(MarkExternalTextureFrameAvailable,
++  modifier.embedder_api().MarkExternalTextureFrameAvailableOnRasterThread =
++      MOCK_ENGINE_PROC(MarkExternalTextureFrameAvailableOnRasterThread,
+                        ([&mark_frame_available_called, &registered_texture_id](
+                             auto engine, auto texture_id) {
+                          mark_frame_available_called = true;
+@@ -138,6 +147,47 @@ TEST(FlutterWindowsTextureRegistrarTest, RegisterUnregisterTexture) {
+   ASSERT_TRUE(unregister_called);
+ }
+ 
++// Fushi patch (texture frames on the raster thread): a producer thread's mark
++// reaches the engine on that same thread, synchronously -- no task is queued
++// on the platform thread (which, merged with the UI thread, may be busy).
++TEST(FlutterWindowsTextureRegistrarTest,
++     MarkFrameAvailableFromProducerThreadSkipsPlatformThread) {
++  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
++  EngineModifier modifier(engine.get());
++  auto gl = std::make_shared<egl::MockProcTable>();
++
++  FlutterWindowsTextureRegistrar registrar(engine.get(), gl);
++
++  modifier.embedder_api().MarkExternalTextureFrameAvailable = MOCK_ENGINE_PROC(
++      MarkExternalTextureFrameAvailable, ([](auto engine, auto texture_id) {
++        ADD_FAILURE() << "texture marks must not need the platform thread";
++        return kSuccess;
++      }));
++  std::thread::id marked_on;
++  int64_t marked_texture = 0;
++  modifier.embedder_api().MarkExternalTextureFrameAvailableOnRasterThread =
++      MOCK_ENGINE_PROC(MarkExternalTextureFrameAvailableOnRasterThread,
++                       ([&marked_on, &marked_texture](auto engine,
++                                                      auto texture_id) {
++                         marked_on = std::this_thread::get_id();
++                         marked_texture = texture_id;
++                         return kSuccess;
++                       }));
++
++  bool result = false;
++  std::thread::id producer;
++  std::thread producer_thread([&]() {
++    producer = std::this_thread::get_id();
++    result = registrar.MarkTextureFrameAvailable(42);
++  });
++  producer_thread.join();
++
++  EXPECT_TRUE(result);
++  EXPECT_EQ(marked_texture, 42);
++  EXPECT_EQ(marked_on, producer);
++  EXPECT_NE(marked_on, std::this_thread::get_id());
++}
++
+ TEST(FlutterWindowsTextureRegistrarTest, RegisterUnknownTextureType) {
+   std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
+   auto gl = std::make_shared<egl::MockProcTable>();

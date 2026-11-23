@@ -7,7 +7,8 @@
 // 就是只在那台机器上红的伪红；带上标签，由派发层把它们放到能跑 Chrome 的机器上。
 //
 // 判据与派发层同一份扫描（不在这里另写标签正则）：文件里出现直接起 Chrome 的环境变量
-// 名或 node harness 的 Chrome 探测，就必须扫出 chrome 能力。
+// 名或 node harness 的 Chrome 探测（旧的探测函数或统一入口
+// `NodeTestRuntime.probe` 带 Chrome 开关，HBK-AUDIT-225），就必须扫出 chrome 能力。
 
 import 'dart:io';
 
@@ -28,6 +29,18 @@ const String _nodeChromeProbe =
     'chromeAvailable'
     'Via(';
 
+/// node harness 的统一入口 `NodeTestRuntime.probe` 要 Chrome 时带的开关（同一 helper）。
+final RegExp _nodeRuntimeNeedsChrome = RegExp(
+  r'needs'
+  r'Chrome\s*:\s*true',
+);
+
+/// 文件是否经任一入口起真 headless Chrome。
+bool _launchesChrome(String source) =>
+    source.contains(_chromeEnv) ||
+    source.contains(_nodeChromeProbe) ||
+    _nodeRuntimeNeedsChrome.hasMatch(source);
+
 void main() {
   test('起真 Chrome 的测试文件都带 chrome 标签（dist 只派给有 chrome 能力的 worker）', () {
     final List<String> untagged = <String>[];
@@ -37,9 +50,7 @@ void main() {
     ).listSync(recursive: true, followLinks: false)) {
       if (entity is! File || !entity.path.endsWith('_test.dart')) continue;
       final String source = entity.readAsStringSync();
-      if (!source.contains(_chromeEnv) && !source.contains(_nodeChromeProbe)) {
-        continue;
-      }
+      if (!_launchesChrome(source)) continue;
       launching++;
       if (!scanSuiteRequirement(source).capabilities.contains('chrome')) {
         untagged.add(entity.path.replaceAll(r'\', '/'));

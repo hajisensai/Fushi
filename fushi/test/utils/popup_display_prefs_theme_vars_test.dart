@@ -25,6 +25,8 @@ void main() {
     autoExpandRows: 2,
     collapsedDictionaryNames: <String>['明鏡', 'say "hi"'],
     expandedDictionaryNames: <String>['JMdict'],
+    kanjiCollapsedDictionaryNames: <String>['KANJIDIC'],
+    kanjiExpandedDictionaryNames: <String>['現代新国語辞典'],
   );
 
   test('display prefs are encoded as the extension decoder expects', () {
@@ -40,6 +42,12 @@ void main() {
       'say "hi"',
     ]);
     expect(jsonDecode(vars['--fushi-expanded-dicts']!), <String>['JMdict']);
+    expect(jsonDecode(vars['--fushi-kanji-collapsed-dicts']!), <String>[
+      'KANJIDIC',
+    ]);
+    expect(jsonDecode(vars['--fushi-kanji-expanded-dicts']!), <String>[
+      '現代新国語辞典',
+    ]);
   });
 
   test('booleans flip to 0 and empty name lists encode as []', () {
@@ -52,6 +60,8 @@ void main() {
       autoExpandRows: 0,
       collapsedDictionaryNames: const <String>[],
       expandedDictionaryNames: const <String>[],
+      kanjiCollapsedDictionaryNames: const <String>[],
+      kanjiExpandedDictionaryNames: const <String>[],
     ));
     expect(vars['--fushi-dedup-pitch'], '0');
     expect(vars['--fushi-harmonic-frequency'], '0');

@@ -5,7 +5,8 @@ import 'dart:io';
 
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/ai/web_search.dart';
@@ -83,16 +84,19 @@ class ReadyModels implements VideoSubtitleAsrModelPort, VideoSubtitleMossPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => true;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => const Stream<ModelDownloadEvent>.empty();
 
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => null;
 
   @override

@@ -321,6 +321,14 @@ pub struct ClassWinner {
     pub(super) k: i64,
 }
 
+/// 一个寄存器按类判定的结果（[Index::class_registers_judged]）：胜者，与参与判定的全部写入（操作主键）及各自该有的
+/// 状态（[Index::judged]，下标对齐）。
+struct JudgedRegister {
+    winner: ClassWinner,
+    rows: Vec<i64>,
+    want: Vec<i64>,
+}
+
 impl<'t, 'c> Index<'t, 'c> {
     /// 按类读的入口先过这一关：别名表还没重算（[Index::aliases_stale]：[Index::hold_aliases] 攒着、或证据变了还没
     /// [Index::settle]）时报错，不拿旧别名表静默判。
@@ -375,8 +383,14 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// [Index::class_value_in] 连同生效写入的排序键（`registers::WriteOrder`）：卡片标志按血统继承时，同一层几张前身
-    /// 都有生效写入的取最新的（`registers::later`，新代恢复 `cmd/writes_restore.rs` 用）。排序键取自这条写入按类拼出的
-    /// 落库行（[Index::edit_lines_as]，写入者已归回），与缓存层喂给寄存器内核的那一行同一份。
+    /// 都有生效写入的取最新的（`registers::later`，新代恢复 `cmd/writes_restore.rs` 用）。
+    ///
+    /// 排序键与缓存层（[Index::class_lines_by] → `registers::cards_group`）出自同一份证据：这个寄存器按类判定的全部
+    /// 参与写入一起按类拼成落库行（[Index::edit_lines_as]：同一个规范 dot 的几份副本并成一行，`server_time` 取各份
+    /// 的最小值），再由寄存器内核取胜者的排序键（`registers::register_winner`）。只拼胜出那一份代表的话，`server_time`
+    /// 只是代表那一份的：同一 dot 的另一份副本 `server_time` 更早时，缓存层按更早的钳位排序（`ordering::sort_physical`），
+    /// 恢复却按代表那份的钳位排，夹在两者之间的前身写入在两边谁新谁旧相反，恢复与同一时刻的重建继承到不同前身的
+    /// 标志（HBK-AUDIT-204）。
     pub(super) fn class_winner_in(
         &mut self,
         kind: EntKind,
@@ -384,8 +398,8 @@ impl<'t, 'c> Index<'t, 'c> {
         canon_key: &str,
         keep: &dyn Fn(i64) -> bool,
     ) -> Result<Option<(String, crate::registers::WriteOrder)>, String> {
-        let Some(w) = self
-            .class_registers(kind, canon, Some(canon_key), Some(keep))?
+        let Some(j) = self
+            .class_registers_judged(kind, canon, Some(canon_key), Some(keep))?
             .into_iter()
             .next()
         else {
@@ -400,17 +414,20 @@ impl<'t, 'c> Index<'t, 'c> {
             key: canon_key.to_owned(),
             keys: None,
         };
-        let lines = self.edit_lines_as(&[w.k], &|_| true, Some(&c))?;
-        let line = lines
-            .first()
-            .ok_or_else(|| format!("gen4 index: register row {} renders no line", w.k))?;
-        let order = crate::registers::register_winner(
-            &[(line.json.as_str(), line.server_time, None)],
-            canon_key,
-        )?
-        .map(|(_, o)| o)
-        .unwrap_or_default();
-        Ok(Some((w.value, order)))
+        let lines = self.edit_lines_as(&j.rows, &|i| j.want[i] >= R_LIVE, Some(&c))?;
+        let stored: Vec<crate::registers::StoredEdit<'_>> = lines
+            .iter()
+            .map(|l| (l.json.as_str(), l.server_time, None))
+            .collect();
+        let order = crate::registers::register_winner(&stored, canon_key)?
+            .map(|(_, o)| o)
+            .ok_or_else(|| {
+                format!(
+                    "gen4 index: register of op {} renders no winner",
+                    j.winner.k
+                )
+            })?;
+        Ok(Some((j.winner.value, order)))
     }
 
     /// [Index::class_tags]，但只看 [keep] 留下的标签操作（按操作主键），OR-Set 与顺序提示在这些操作上重判。用途同
@@ -560,6 +577,21 @@ impl<'t, 'c> Index<'t, 'c> {
         only: Option<&str>,
         keep: Option<&dyn Fn(i64) -> bool>,
     ) -> Result<Vec<ClassWinner>, String> {
+        Ok(self
+            .class_registers_judged(kind, canon, only, keep)?
+            .into_iter()
+            .map(|j| j.winner)
+            .collect())
+    }
+
+    /// [Index::class_registers]，每个寄存器另带这次按类判定的全部参与写入与它们的状态（[JudgedRegister]）。
+    fn class_registers_judged(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        only: Option<&str>,
+        keep: Option<&dyn Fn(i64) -> bool>,
+    ) -> Result<Vec<JudgedRegister>, String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
         let mut groups: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new();
@@ -621,12 +653,17 @@ impl<'t, 'c> Index<'t, 'c> {
             } else {
                 canonical.to_string()
             };
-            out.push(ClassWinner {
+            let winner = ClassWinner {
                 key: c.key,
                 op: self.t.id_of_key(k)?,
                 value,
                 conflict: state == R_CONFLICT,
                 k,
+            };
+            out.push(JudgedRegister {
+                winner,
+                rows: live.iter().map(|&(k, _)| k).collect(),
+                want,
             });
         }
         Ok(out)
@@ -2051,6 +2088,54 @@ mod tests {
             .into_iter()
             .filter(|d| d.key == e.key)
             .collect()
+    }
+
+    /// HBK-AUDIT-204：时间线恢复比同一层前身先后用的排序键（[Index::class_winner_in]）与缓存层喂给寄存器内核的
+    /// （[Index::class_lines_keyed]）出自同一份证据。同一个 dot 两份副本（同一条旧写入经两条路径落了两次），操作号小的
+    /// 那份（代表）`server_time` 晚、操作号大的那份早到会被钳位（`ordering::sort_physical`）：缓存层并行时取最早的
+    /// `server_time`，恢复只拼代表那份时取的是晚的那个，排序键不同。
+    #[test]
+    fn the_restore_sort_key_aggregates_every_copy_of_the_winning_dot() {
+        with(|t, col| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let copy = |server_time: i64| {
+                    let mut s = stamp("w1", 1, r#"{"vv":{}}"#, 10_000_000);
+                    s.server_time = Some(server_time);
+                    stamped("x", s)
+                };
+                // 代表（设备号小）的 server_time 晚得不钳位；另一份早，钳到 CLOCK_TOLERANCE_MS。
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &copy(20_000_000)));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &copy(0)));
+                ix.settle()?;
+                let e = native_edit();
+                let Key::Uuid(note) = e.entity else {
+                    unreachable!()
+                };
+                let canon = r(note);
+                let (lines, _) = ix.class_lines_keyed(EntKind::Note, &canon)?;
+                let key = lines[0].0.clone();
+                let stored: Vec<crate::registers::StoredEdit<'_>> = lines
+                    .iter()
+                    .map(|(_, j, st)| (j.as_str(), *st, None))
+                    .collect();
+                let (_, cached) = crate::registers::register_winner(&stored, &key)?.unwrap();
+                assert_eq!(cached.server_time, Some(0), "{cached:?}");
+                let (value, restored) = ix
+                    .class_winner_in(EntKind::Note, &canon, &key, &|_| true)?
+                    .unwrap();
+                assert_eq!(value, "\"x\"");
+                assert_eq!(restored, cached);
+                assert_eq!(
+                    restored.key().unwrap().physical,
+                    crate::ordering::CLOCK_TOLERANCE_MS
+                );
+                Ok(())
+            })
+            .unwrap();
+        });
     }
 
     /// 已知差异的「同 seq 副本」佐证：`(w1, 1)` 原值判与 `(w1, 2)` 并发（`(w1, 2)` 的上下文只写了改名后的

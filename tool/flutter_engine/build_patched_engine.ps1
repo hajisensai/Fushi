@@ -86,6 +86,13 @@ function Set-Toolchain {
     $env:LIB = Join-Path $AtlDir 'lib\x64'
   }
   if ($Proxy) { $env:HTTPS_PROXY = $Proxy; $env:HTTP_PROXY = $Proxy }
+  # flutter/flutter has paths past MAX_PATH (ios_scenario_app goldens): without
+  # core.longpaths a fresh clone fails at checkout on a machine whose global git
+  # config does not set it. Passed through the environment so it also reaches
+  # the gits gclient spawns, without touching the user's git config.
+  $env:GIT_CONFIG_COUNT = '1'
+  $env:GIT_CONFIG_KEY_0 = 'core.longpaths'
+  $env:GIT_CONFIG_VALUE_0 = 'true'
 }
 
 function Set-WindowsSdk {

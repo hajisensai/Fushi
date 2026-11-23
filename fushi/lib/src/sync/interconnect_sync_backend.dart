@@ -2003,31 +2003,52 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 走 [requestTimeout] 封顶而不是大文件那套 stall 超时：一页图是几百 KB 量级，
   /// 且阅读器等着它渲染——挂住不如尽早失败让上层重试。
-  Future<Uint8List> fetchRemoteMangaPage(String bookKey, int index) =>
-      _fetchMangaPageBytes(
-        '/api/library/manga/${Uri.encodeComponent(bookKey)}/pages/$index',
-      );
+  ///
+  /// [expectedKeyDigest]（`remoteMangaPageKeyDigest(RemoteMangaPageInfo.key)`）非
+  /// null 时随请求带给 host 核对（HBK-AUDIT-205）：host 此刻这一页已不是它，回 409，
+  /// 这里抛 [MangaPageChanged]。
+  Future<Uint8List> fetchRemoteMangaPage(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  }) => _fetchMangaPageBytes(
+    '/api/library/manga/${Uri.encodeComponent(bookKey)}/pages/$index',
+    expectedKeyDigest,
+  );
 
   /// 章节式在线漫画的页图（BUG-2474），判据同 [fetchRemoteMangaPage]。
   Future<Uint8List> fetchRemoteMangaChapterPage(
     String bookKey,
     String chapterDigest,
-    int index,
-  ) => _fetchMangaPageBytes(
+    int index, {
+    String? expectedKeyDigest,
+  }) => _fetchMangaPageBytes(
     '/api/library/manga/${Uri.encodeComponent(bookKey)}'
     '/chapters/$chapterDigest/pages/$index',
+    expectedKeyDigest,
   );
 
-  Future<Uint8List> _fetchMangaPageBytes(String path) async {
+  Future<Uint8List> _fetchMangaPageBytes(
+    String path,
+    String? expectedKeyDigest,
+  ) async {
     await _ensureResolved();
+    final String query = expectedKeyDigest == null
+        ? ''
+        : '?$kMangaPageKeyQuery=${Uri.encodeQueryComponent(expectedKeyDigest)}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase$path',
+      '$_apiBase$path$query',
     );
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       throw const MangaInterconnectUnsupported();
+    }
+    if (res.statusCode == 409) {
+      throw MangaPageChanged(
+        'GET $path -> 409: ${await readSyncErrorBody(res)}',
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       await res.drain<void>();

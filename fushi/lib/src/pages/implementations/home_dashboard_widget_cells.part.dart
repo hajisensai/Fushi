@@ -296,7 +296,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               appModel,
               entries[i + 1],
               i + 1,
-              FushiCoverBlockSize.half,
+              homeCoverBlockSizeFor(rowHeight),
               portraitOnly: true,
             ),
           ),
@@ -363,7 +363,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                 appModel,
                 entries[i + 1],
                 i + 1,
-                FushiCoverBlockSize.half,
+                homeCoverBlockSizeFor(height),
                 portraitOnly: true,
               ),
             ),
@@ -2047,7 +2047,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                   appModel,
                   list[i + offset],
                   i + offset,
-                  FushiCoverBlockSize.half,
+                  homeCoverBlockSizeFor(h),
                   now,
                 ),
               ),
@@ -2081,7 +2081,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               appModel,
               list.first,
               0,
-              FushiCoverBlockSize.regular,
+              homeCoverBlockSizeFor(area.height, allowHero: true),
               now,
             ),
           ),
@@ -2148,6 +2148,36 @@ const double _kContinueMiniSideMin = 64;
 
 /// 色块外观其余条目铺多行时每行至少多高。
 const double _kContinueBlockRowMin = 96;
+
+/// 首页色块按格子**实际高度**取尺寸档（BUG-5252）。首页小组件的格子高度连续可调
+/// （「最近添加」/「继续」其余条目的一格约 96～210 高、主色块可到 300+），而
+/// [FushiCoverBlockSize] 是按库页固定高度定的档：半高卡 125、规整块 184 / 204、
+/// 拼贴首块 250 / 264，[FushiCoverBlock] 的 logo 槽高 / 字号 / 内边距按档取（半高
+/// 40、规整 52 / 64、首块 66 / 84）。首页从前不论格子多高一律给半高档 / 规整档：
+/// 半高档那时还不画 logo，系列卡在首页只剩文字 + 大字水印；300+ 高的主色块只有
+/// 64 高的 logo 槽，logo 缩在角落。
+///
+/// - 不矮于库页半高卡（[_kHomeBlockRegularMinHeight]）→ 规整档（与库页系列卡同
+///   一套 logo 槽 / 排版）；更矮的格子才是半高档；
+/// - [allowHero]（「最近添加」主色块）且不矮于窄窗拼贴首块
+///   （[kFushiCoverBlockHeroHeightCompact]）→ 首块档（与库页拼贴首块同一档 logo）。
+///   「继续」其余条目不升首块档：首块档会加状态 chip 与「继续」主按钮。
+FushiCoverBlockSize homeCoverBlockSizeFor(
+  double height, {
+  bool allowHero = false,
+}) {
+  if (allowHero && height >= kFushiCoverBlockHeroHeightCompact) {
+    return FushiCoverBlockSize.hero;
+  }
+  if (height >= _kHomeBlockRegularMinHeight) return FushiCoverBlockSize.regular;
+  return FushiCoverBlockSize.half;
+}
+
+/// 库页半高卡的高度（拼贴首块旁两张叠放：(264 − 间距) / 2 = 125）。首页格子不比
+/// 它矮时按规整档排（规整档窄窗内容：标题槽 52 + chip 行 + 上下内边距 32 ≈ 115，
+/// 放得下）。
+const double _kHomeBlockRegularMinHeight =
+    (kFushiCoverBlockHeroHeight - kFushiCoverBlockSpacing) / 2;
 
 /// 「最近添加」一块色块的最小宽度：再窄标题只剩几个字，退回条目小行。
 const double _kRecentBlockMinWidth = 220;

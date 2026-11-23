@@ -30,7 +30,11 @@ class _MangaHost extends Fake
   }
 
   @override
-  Future<File> mangaPageFile(String bookKey, int index) async {
+  Future<File> mangaPageFile(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  }) async {
     if (bookKey != manifest.bookKey) {
       throw StateError('manga book not found: $bookKey');
     }
