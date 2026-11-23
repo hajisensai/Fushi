@@ -476,6 +476,18 @@ abstract interface class MusicServerPlaybackReporting
   Future<void> reportPlaybackStopped(MusicServerPlaybackReport report);
 }
 
+/// 能补记一次「过去某个时刻的播放」的服务器（离线时没送达的播放，联网后补发）：Jellyfin
+/// `POST /Users/{userId}/PlayedItems/{id}?datePlayed=<ISO 8601>`（播放次数 +1、最近播放时刻 =
+/// 给的时刻），OpenSubsonic `scrobble id time=<毫秒> submission=true`。失败抛。
+abstract interface class MusicServerPlayMarking {
+  Future<void> markPlayed(String trackId, DateTime playedAt);
+
+  /// 这家服务器在开播上报（[MusicServerPlaybackReporting.reportPlaybackStarted]）时就计一次播放
+  /// （Jellyfin），还是要等停止上报听够门槛才计（Subsonic）。补发队列据此判断一次播放算不算
+  /// 已送达。
+  bool get countsPlayOnStart;
+}
+
 /// Subsonic / Last.fm 通行的「算听过一次」门槛：听够一半或 4 分钟（时长未知时只认 4 分钟）。
 bool musicScrobbleThresholdReached(int positionMs, int? durationMs) {
   const int fourMinutes = 4 * 60 * 1000;

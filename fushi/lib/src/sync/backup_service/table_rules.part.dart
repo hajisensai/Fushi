@@ -405,6 +405,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'web_browser_session_tabs': BackupTableRule.deviceLocal(),
   // v173：服务器曲目的离线副本（本机文件路径）。
   'music_server_downloads': BackupTableRule.deviceLocal(),
+  // v174：服务器曲目的离线补发队列与客户端状态（设备本地）。
+  'music_server_pending_actions': BackupTableRule.deviceLocal(),
+  'music_server_track_states': BackupTableRule.deviceLocal(),
   'web_browser_closed_tabs': BackupTableRule.deviceLocal(),
   'web_browser_downloads': BackupTableRule.deviceLocal(),
   // v130 音乐曲库目录：设备本地（本机重扫产物 + 绝对路径，见 _deviceLocalTables）。

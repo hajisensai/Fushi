@@ -584,6 +584,11 @@ const List<String> _deviceLocalTables = <String>[
   // v173：服务器曲目（Jellyfin / Subsonic）的离线副本。装的是本机文件路径，另一台设备上
   // 没有这些文件；覆盖恢复后从本机 bak 回灌。无外键。
   'music_server_downloads',
+  // v174：服务器曲目没送达的播放 / 收藏（补发队列）与客户端状态（收藏最后已知值、客户端测的
+  // 响度）。都是这台设备的事：恢复别的设备的备份不能把那台的播放再补报一遍；覆盖恢复后从
+  // 本机 bak 回灌。无外键。
+  'music_server_pending_actions',
+  'music_server_track_states',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -628,6 +633,8 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_track_uid_aliases',
   'remote_dictionary_metadata',
   'music_server_downloads',
+  'music_server_pending_actions',
+  'music_server_track_states',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`

@@ -1724,6 +1724,252 @@ mixin _FushiDbMusic on _$FushiDatabase {
   Stream<List<MusicServerDownloadRow>> watchMusicServerDownloads() =>
       select(musicServerDownloads).watch();
 
+  // ── v174：服务器曲目没送达的播放 / 收藏（补发队列）与客户端状态 ──
+
+  /// 播放的去重键：同一台服务器、同一首、同一个开播时刻只记一次。
+  String musicServerPendingPlayKey(
+    String serverId,
+    String itemId,
+    int playedAt,
+  ) => 'play\u0000$serverId\u0000$itemId\u0000$playedAt';
+
+  /// 收藏的去重键：同一台服务器、同一首只留最后一次切换。
+  String musicServerPendingFavoriteKey(String serverId, String itemId) =>
+      'favorite\u0000$serverId\u0000$itemId';
+
+  /// 记一次没送达的播放（同一次播放重复记是空操作）。
+  Future<void> enqueueMusicServerPendingPlay({
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required String trackUid,
+    required int playedAt,
+    required int at,
+  }) => into(musicServerPendingActions).insert(
+    MusicServerPendingActionsCompanion.insert(
+      dedupeKey: musicServerPendingPlayKey(serverId, itemId, playedAt),
+      action: 'play',
+      serverKind: serverKind,
+      serverId: serverId,
+      itemId: itemId,
+      trackUid: trackUid,
+      playedAt: Value<int?>(playedAt),
+      createdAt: at,
+    ),
+    mode: InsertMode.insertOrIgnore,
+  );
+
+  /// 记一次没送达的收藏切换：同一首之前没送达的那次被这次覆盖（最后一次切换为准，尝试
+  /// 次数清零）。
+  Future<void> enqueueMusicServerPendingFavorite({
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required String trackUid,
+    required bool favorite,
+    required int at,
+  }) => into(musicServerPendingActions).insertOnConflictUpdate(
+    MusicServerPendingActionsCompanion.insert(
+      dedupeKey: musicServerPendingFavoriteKey(serverId, itemId),
+      action: 'favorite',
+      serverKind: serverKind,
+      serverId: serverId,
+      itemId: itemId,
+      trackUid: trackUid,
+      favorite: Value<bool?>(favorite),
+      createdAt: at,
+      attempts: const Value<int>(0),
+      lastAttemptAt: const Value<int?>(null),
+    ),
+  );
+
+  /// 待补发的条目（[serverId] 给了只看那台服务器），按播放时刻 / 入队时刻从旧到新——
+  /// Jellyfin 的「最近播放时刻」取最后一次标记的值，旧的先发才不会把它改回旧时刻。
+  Future<List<MusicServerPendingActionRow>> listMusicServerPendingActions({
+    String? serverId,
+  }) async {
+    final List<MusicServerPendingActionRow> rows =
+        await (select(musicServerPendingActions)..where(
+              ($MusicServerPendingActionsTable t) => serverId == null
+                  ? const Constant<bool>(true)
+                  : t.serverId.equals(serverId),
+            ))
+            .get();
+    rows.sort((MusicServerPendingActionRow a, MusicServerPendingActionRow b) {
+      final int byTime = (a.playedAt ?? a.createdAt).compareTo(
+        b.playedAt ?? b.createdAt,
+      );
+      return byTime != 0 ? byTime : a.dedupeKey.compareTo(b.dedupeKey);
+    });
+    return rows;
+  }
+
+  /// 盯待送达的收藏切换（「正在播放」的心形显示它）。
+  Stream<List<MusicServerPendingActionRow>>
+  watchMusicServerPendingFavorites() =>
+      (select(musicServerPendingActions)..where(
+            ($MusicServerPendingActionsTable t) => t.action.equals('favorite'),
+          ))
+          .watch();
+
+  /// 补发成功 / 放弃的条目删掉。
+  Future<void> deleteMusicServerPendingActions(Iterable<String> dedupeKeys) =>
+      transaction(() async {
+        final List<String> keys = dedupeKeys.toSet().toList();
+        const int chunk = 500;
+        for (int i = 0; i < keys.length; i += chunk) {
+          final List<String> part = keys.sublist(
+            i,
+            i + chunk > keys.length ? keys.length : i + chunk,
+          );
+          await (delete(musicServerPendingActions)..where(
+                ($MusicServerPendingActionsTable t) => t.dedupeKey.isIn(part),
+              ))
+              .go();
+        }
+      });
+
+  /// 补发成功后删这一条——只删这一版：补发期间同一首又切换了收藏（入队时刻变了），新的那次
+  /// 留着下次发。
+  Future<void> deleteMusicServerPendingActionIfUnchanged(
+    MusicServerPendingActionRow row,
+  ) =>
+      (delete(musicServerPendingActions)..where(
+            ($MusicServerPendingActionsTable t) =>
+                t.dedupeKey.equals(row.dedupeKey) &
+                t.createdAt.equals(row.createdAt),
+          ))
+          .go();
+
+  /// 服务器回了错误（不是连不上）：尝试次数 +1。返回加完之后的次数（行已不在为 null）。
+  Future<int?> bumpMusicServerPendingAttempt(
+    String dedupeKey, {
+    required int at,
+  }) => transaction(() async {
+    await customUpdate(
+      'UPDATE music_server_pending_actions '
+      'SET attempts = attempts + 1, last_attempt_at = ? '
+      'WHERE dedupe_key = ?',
+      variables: <Variable<Object>>[
+        Variable<int>(at),
+        Variable<String>(dedupeKey),
+      ],
+      updates: <TableInfo<Table, Object?>>{musicServerPendingActions},
+      updateKind: UpdateKind.update,
+    );
+    final MusicServerPendingActionRow? row =
+        await (select(musicServerPendingActions)..where(
+              ($MusicServerPendingActionsTable t) =>
+                  t.dedupeKey.equals(dedupeKey),
+            ))
+            .getSingleOrNull();
+    return row?.attempts;
+  });
+
+  /// 队列修剪：① 服务器不在 [configuredServerIds] 里、且入队早于 [orphanBefore] 的条目丢掉
+  /// （那台服务器一直没配回来）；② 超过 [cap] 条时丢最旧的播放（收藏每首只有一条，留着）。
+  /// 返回丢掉的条数。
+  Future<int> pruneMusicServerPendingActions({
+    required Set<String> configuredServerIds,
+    required int orphanBefore,
+    required int cap,
+  }) => transaction(() async {
+    int dropped = 0;
+    final List<MusicServerPendingActionRow> all = await select(
+      musicServerPendingActions,
+    ).get();
+    final List<String> orphans = <String>[
+      for (final MusicServerPendingActionRow r in all)
+        if (!configuredServerIds.contains(r.serverId) &&
+            r.createdAt < orphanBefore)
+          r.dedupeKey,
+    ];
+    if (orphans.isNotEmpty) {
+      await deleteMusicServerPendingActions(orphans);
+      dropped += orphans.length;
+    }
+    final int left = all.length - orphans.length;
+    if (left > cap) {
+      final Set<String> gone = orphans.toSet();
+      final List<MusicServerPendingActionRow> plays =
+          <MusicServerPendingActionRow>[
+            for (final MusicServerPendingActionRow r in all)
+              if (r.action == 'play' && !gone.contains(r.dedupeKey)) r,
+          ]..sort(
+            (MusicServerPendingActionRow a, MusicServerPendingActionRow b) =>
+                (a.playedAt ?? a.createdAt).compareTo(
+                  b.playedAt ?? b.createdAt,
+                ),
+          );
+      final List<String> oldest = <String>[
+        for (final MusicServerPendingActionRow r in plays.take(left - cap))
+          r.dedupeKey,
+      ];
+      await deleteMusicServerPendingActions(oldest);
+      dropped += oldest.length;
+    }
+    return dropped;
+  });
+
+  /// 一首服务器曲目在本机记下的客户端状态；没有为 null。
+  Future<MusicServerTrackStateRow?> getMusicServerTrackState(String trackUid) =>
+      (select(musicServerTrackStates)..where(
+            ($MusicServerTrackStatesTable t) => t.trackUid.equals(trackUid),
+          ))
+          .getSingleOrNull();
+
+  Future<void> _upsertMusicServerTrackState(
+    MusicServerTrackStatesCompanion row,
+  ) => into(musicServerTrackStates).insert(
+    row,
+    onConflict: DoUpdate(
+      (_) => row,
+      target: <Column<Object>>[musicServerTrackStates.trackUid],
+    ),
+  );
+
+  /// 记下一首服务器曲目最后已知的收藏状态。
+  Future<void> writeMusicServerTrackFavorite({
+    required String trackUid,
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required bool favorite,
+    required int at,
+  }) => _upsertMusicServerTrackState(
+    MusicServerTrackStatesCompanion(
+      trackUid: Value<String>(trackUid),
+      serverKind: Value<String>(serverKind),
+      serverId: Value<String>(serverId),
+      itemId: Value<String>(itemId),
+      favorite: Value<bool?>(favorite),
+      favoriteAt: Value<int?>(at),
+      updatedAt: Value<int>(at),
+    ),
+  );
+
+  /// 记下客户端测的响度（[gain] 为 null = 测过、测不出：不再测）。
+  Future<void> writeMusicServerTrackMeasuredLoudness({
+    required String trackUid,
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required double? gain,
+    required double? peak,
+    required int at,
+  }) => _upsertMusicServerTrackState(
+    MusicServerTrackStatesCompanion(
+      trackUid: Value<String>(trackUid),
+      serverKind: Value<String>(serverKind),
+      serverId: Value<String>(serverId),
+      itemId: Value<String>(itemId),
+      measuredTrackGain: Value<double?>(gain),
+      measuredTrackPeak: Value<double?>(peak),
+      loudnessMeasuredAt: Value<int?>(at),
+      updatedAt: Value<int>(at),
+    ),
+  );
+
   Future<MusicRemoteTrackRow?> getMusicRemoteTrack(String trackUid) =>
       (select(musicRemoteTracks)
             ..where(($MusicRemoteTracksTable t) => t.trackUid.equals(trackUid)))

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
 import 'package:fushi/src/media/music/server/music_server_download_index.dart';
@@ -125,6 +126,7 @@ void main() {
     late MusicServerDownloadService service;
     late _FakeServer server;
     final List<String> transferred = <String>[];
+    final List<String> measured = <String>[];
 
     Future<void> settle(bool Function() done) async {
       for (int i = 0; i < 200 && !done(); i++) {
@@ -141,6 +143,7 @@ void main() {
       downloads = InterconnectDownloadManager();
       server = _FakeServer();
       transferred.clear();
+      measured.clear();
       service = MusicServerDownloadService(
         downloads: downloads,
         db: db,
@@ -161,6 +164,17 @@ void main() {
               onProgress?.call(1);
             },
         fetchBytes: (Uri uri) async => jpegBytes(),
+        measureLoudness: (String input) async {
+          measured.add(input);
+          return (
+            measurement: const MusicLoudnessMeasurement(
+              integratedLufs: -12,
+              truePeakDbtp: -1,
+            ),
+            failed: false,
+            returnCode: 0,
+          );
+        },
         clock: () => 1000,
       );
     });
@@ -214,6 +228,23 @@ void main() {
       expect(MusicRemoteEntry(lib).available, isTrue);
       expect(musicRemoteCoverUrlOf(lib), row.coverPath);
 
+      // v174：副本行带服务器种类；服务器配置不在时的播放项照样带服务器身份（离线上报 / 收藏）。
+      expect(row.serverKind, 'jellyfin');
+      expect(offline?.serverTrack?.kind, MusicServerKind.jellyfin);
+      expect(offline?.serverTrack?.serverId, server.serverId);
+      expect(offline?.serverTrack?.trackId, 'trk1');
+      // 服务器没给曲目增益：下完对本机文件测一次，存进 sidecar 的 measured（不进播放项的 rg）。
+      expect(measured, <String>[row.filePath]);
+      final MusicServerDownloadSidecar? sidecar =
+          await readMusicServerDownloadLoudness(row.filePath);
+      expect(sidecar?.server, isNull);
+      expect(sidecar?.measured?.trackGainDb, closeTo(-6, 1e-9));
+      expect(
+        musicServerLocalCopyLookup!(uid)?.measuredLoudness?.trackGainDb,
+        closeTo(-6, 1e-9),
+      );
+      expect(offline?.rgTrackGain, isNull);
+
       // 再点下载：已有副本。
       expect(
         await service.download(server, track, album: album),
@@ -229,6 +260,8 @@ void main() {
         db: db,
         root: () async => root,
         index: index,
+        measureLoudness: (String _) async =>
+            (measurement: null, failed: true, returnCode: null),
         transfer:
             ({
               required String url,
@@ -260,7 +293,7 @@ void main() {
       expect(sidecar.existsSync(), isTrue);
       expect(sidecar.readAsStringSync(), isNot(contains('api_key')));
       expect(
-        await readMusicServerDownloadLoudness(row.filePath),
+        (await readMusicServerDownloadLoudness(row.filePath))?.server,
         const MusicServerLoudness(
           trackGainDb: -3,
           trackPeak: 0.9,
@@ -279,10 +312,13 @@ void main() {
       expect(item.rgTrackGain, -3);
       expect(item.rgAlbumGain, -4);
 
-      // 曲库那行：服务器没配时没有身份，但增益照样来自下载时存下的那份。
+      // 曲库那行：服务器没配时也带服务器身份（副本记着服务器种类，播放 / 收藏能进补发队列），
+      // 增益照样来自下载时存下的那份。
       final MusicRemoteTrackRow lib = (await db.getMusicRemoteTrack(uid))!;
       final MusicPlayItem? offline = musicPlayItemOfRemote(lib);
-      expect(offline?.serverTrack, isNull);
+      expect(offline?.serverTrack?.serverId, rich.serverId);
+      expect(offline?.serverTrack?.trackId, track.id);
+      expect(offline?.serverTrack?.kind, rich.kind);
       expect(offline?.rgAlbumGain, -4);
 
       // 删副本：旁边的响度文件一起删。
@@ -350,6 +386,8 @@ void main() {
         db: db,
         root: () async => root,
         index: index,
+        measureLoudness: (String _) async =>
+            (measurement: null, failed: true, returnCode: null),
         transfer:
             ({
               required String url,

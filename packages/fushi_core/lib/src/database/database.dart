@@ -1217,6 +1217,8 @@ void _requireOneVideoMetadataOwner({
     MusicPlaylistEntries,
     MusicRemoteTracks,
     MusicServerDownloads,
+    MusicServerPendingActions,
+    MusicServerTrackStates,
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
@@ -3699,6 +3701,35 @@ class FushiDatabase extends _$FushiDatabase
         // 不动数据；幂等守卫同 v148。
         if (!await _tableExists('music_server_downloads')) {
           await m.createTable(musicServerDownloads);
+        }
+      }
+      if (from < 174) {
+        // v174：服务器曲目离线 / 删配置时的播放上报与收藏、客户端响度（设备本地）。
+        // - music_server_downloads.server_kind：离线副本的播放项带上完整服务器身份；存量行
+        //   按服务器配置身份的前缀回填（Jellyfin 家族 `jellyfin:`、Subsonic `subsonic-`，
+        //   两种身份格式都是代码里写死的、互不重叠），认不出的留 NULL。
+        // - music_server_pending_actions：没送达的播放 / 收藏切换（补发队列）。
+        // - music_server_track_states：收藏的最后已知状态 + 客户端测的响度。
+        // 列存在性 / 表存在性守卫，回填只补 NULL，重跑幂等。
+        if (await _tableExists('music_server_downloads')) {
+          if (!await _columnExists('music_server_downloads', 'server_kind')) {
+            await m.addColumn(
+              musicServerDownloads,
+              musicServerDownloads.serverKind,
+            );
+          }
+          await customStatement(
+            "UPDATE music_server_downloads SET server_kind = CASE "
+            "WHEN source_key LIKE 'jellyfin:%' THEN 'jellyfin' "
+            "WHEN source_key LIKE 'subsonic-%' THEN 'subsonic' END "
+            'WHERE server_kind IS NULL',
+          );
+        }
+        if (!await _tableExists('music_server_pending_actions')) {
+          await m.createTable(musicServerPendingActions);
+        }
+        if (!await _tableExists('music_server_track_states')) {
+          await m.createTable(musicServerTrackStates);
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

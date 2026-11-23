@@ -23,6 +23,8 @@ import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/server/music_server_favorites.dart'
     show MusicServerTrackFavorites;
+import 'package:fushi/src/media/music/server/music_server_loudness_measurer.dart'
+    show MusicServerLoudnessMeasurer;
 import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -211,6 +213,9 @@ class MusicSession extends ChangeNotifier {
   /// 服务器曲目的播放上报（Jellyfin / Subsonic 的播放次数 / 最近播放）；app 装配，测试 /
   /// 无头入口为 null。挂在本会话的曲目生命周期上（开播 / 换下 / 引擎状态）。
   MusicServerPlaybackReporter? serverReporting;
+
+  /// 服务器没给响度的服务器曲目：播过之后在后台测一次（app 装配，测试 / 无头入口为 null）。
+  MusicServerLoudnessMeasurer? serverLoudnessMeasurer;
 
   /// 服务器曲目（Jellyfin / Subsonic）的收藏；app 装配，测试 / 无头入口为 null。变化时本会话
   /// 也 [notifyListeners]。
@@ -514,6 +519,7 @@ class MusicSession extends ChangeNotifier {
   /// 听完删行（交叉淡入推进时的位置停在淡入起点，见 [MusicTrackLeave.completed]）。
   void _onTrackLeft(MusicTrackLeave leave) {
     serverReporting?.trackLeft(leave);
+    serverLoudnessMeasurer?.trackLeft(leave);
     final bool progressed = _startedProgressed;
     _startedProgressed = false;
     if (leave.restoring) return;

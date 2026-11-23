@@ -14,8 +14,10 @@
 /// 盘挂回来就又是离线副本）。每个路径只在第一次见到时查一次存在性。
 ///
 /// 下载时一并存下的服务器响度在音频旁的 `<文件名>.loudness.json`
-/// （[musicServerDownloadLoudnessPath]，设备本地、只有四个数，没有地址 / 凭据）：服务器离线时
-/// 离线副本照样按服务器测的增益放。与存在性一样每个路径只读一次。
+/// （[musicServerDownloadLoudnessPath]，设备本地、只有几个数，没有地址 / 凭据）：服务器离线时
+/// 离线副本照样按服务器测的增益放。服务器没给响度时，同一个文件里还有客户端对这份副本测的
+/// 值（`measured`，下完时测、存量副本在播过之后补测），只在服务器没有值时用。与存在性一样
+/// 每个路径只读一次（客户端刚测完的经 [MusicServerDownloadIndex.refreshLoudness] 重读）。
 library;
 
 import 'dart:async';
@@ -25,7 +27,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerLyrics;
+    show MusicServerKind, MusicServerLyrics;
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
     show MusicServerLoudness;
 import 'package:path/path.dart' as p;
@@ -49,55 +51,110 @@ MusicServerDownloadLyricsSaver? musicServerDownloadLyricsSaver;
 /// 判断一个本机路径是不是文件（测试注入）。
 typedef MusicServerDownloadFileExists = Future<bool> Function(String path);
 
-/// 读离线副本旁存下的服务器响度（测试注入）。
-typedef MusicServerDownloadLoudnessReader =
-    Future<MusicServerLoudness?> Function(String audioPath);
+/// 离线副本旁 `.loudness.json` 里的两份响度：[server] 是服务器给的（下载时一并存下），
+/// [measured] 是客户端对这份文件用 FFmpeg `ebur128` 测的（服务器没给响度时测，只有曲目增益 /
+/// 峰值）。播放时服务器的值永远优先。
+typedef MusicServerDownloadSidecar = ({
+  MusicServerLoudness? server,
+  MusicServerLoudness? measured,
+});
 
-/// 离线副本旁存服务器响度的文件（音频路径 + `.loudness.json`）。
+/// 读离线副本旁存下的响度（测试注入）。
+typedef MusicServerDownloadLoudnessReader =
+    Future<MusicServerDownloadSidecar?> Function(String audioPath);
+
+/// 离线副本旁存响度的文件（音频路径 + `.loudness.json`）。
 String musicServerDownloadLoudnessPath(String audioPath) =>
     '$audioPath.loudness.json';
 
-/// 把服务器响度存到离线副本旁（[musicServerDownloadLoudnessPath]）；空的不写。
+Map<String, Object?> _loudnessJson(MusicServerLoudness l) => <String, Object?>{
+  'trackGainDb': l.trackGainDb,
+  'trackPeak': l.trackPeak,
+  'albumGainDb': l.albumGainDb,
+  'albumPeak': l.albumPeak,
+};
+
+MusicServerLoudness? _loudnessOf(Object? j) {
+  if (j is! Map<String, Object?>) return null;
+  double? d(String k) => switch (j[k]) {
+    final num v => v.toDouble(),
+    _ => null,
+  };
+  final MusicServerLoudness l = MusicServerLoudness(
+    trackGainDb: d('trackGainDb'),
+    trackPeak: d('trackPeak'),
+    albumGainDb: d('albumGainDb'),
+    albumPeak: d('albumPeak'),
+  );
+  return l.isEmpty ? null : l;
+}
+
+/// 读 sidecar 的原始 JSON（没有 / 坏了为空表）。
+Future<Map<String, Object?>> _readSidecarJson(String audioPath) async {
+  final File f = File(musicServerDownloadLoudnessPath(audioPath));
+  try {
+    if (!await f.exists()) return <String, Object?>{};
+    final Object? j = jsonDecode(await f.readAsString());
+    return j is Map<String, Object?> ? j : <String, Object?>{};
+  } on Object catch (e) {
+    debugPrint('[music-download] loudness sidecar unreadable: $e');
+    return <String, Object?>{};
+  }
+}
+
+Future<void> _writeSidecarJson(
+  String audioPath,
+  Map<String, Object?> json,
+) async {
+  await File(
+    musicServerDownloadLoudnessPath(audioPath),
+  ).writeAsString(jsonEncode(json), flush: true);
+}
+
+/// 把服务器响度存到离线副本旁（[musicServerDownloadLoudnessPath]）；空的不写。服务器的四个数
+/// 在顶层（v173 的格式），已有的客户端测量值（`measured`）保留。
 Future<void> writeMusicServerDownloadLoudness(
   String audioPath,
   MusicServerLoudness loudness,
 ) async {
   if (loudness.isEmpty) return;
-  await File(musicServerDownloadLoudnessPath(audioPath)).writeAsString(
-    jsonEncode(<String, double?>{
-      'trackGainDb': loudness.trackGainDb,
-      'trackPeak': loudness.trackPeak,
-      'albumGainDb': loudness.albumGainDb,
-      'albumPeak': loudness.albumPeak,
-    }),
-    flush: true,
-  );
+  final Map<String, Object?> json = await _readSidecarJson(audioPath);
+  json.addAll(_loudnessJson(loudness));
+  await _writeSidecarJson(audioPath, json);
 }
 
-/// 读离线副本旁存下的服务器响度；没有 / 读不了 / 内容不对回 null（按没有响度放）。
-Future<MusicServerLoudness?> readMusicServerDownloadLoudness(
+/// 把客户端测的响度存到离线副本旁（`measured`：曲目增益 / 峰值 + 测量时刻；增益为 null =
+/// 测过、测不出，不再测）。服务器那份原样保留。
+Future<void> writeMusicServerDownloadMeasuredLoudness(
+  String audioPath, {
+  required double? trackGainDb,
+  required double? trackPeak,
+  required int measuredAt,
+}) async {
+  final Map<String, Object?> json = await _readSidecarJson(audioPath);
+  json['measured'] = <String, Object?>{
+    'trackGainDb': trackGainDb,
+    'trackPeak': trackPeak,
+    'measuredAt': measuredAt,
+  };
+  await _writeSidecarJson(audioPath, json);
+}
+
+/// 读离线副本旁存下的响度；没有 / 读不了为 null。两份都空也为 null。
+Future<MusicServerDownloadSidecar?> readMusicServerDownloadLoudness(
   String audioPath,
 ) async {
-  final File f = File(musicServerDownloadLoudnessPath(audioPath));
-  try {
-    if (!await f.exists()) return null;
-    final Object? j = jsonDecode(await f.readAsString());
-    if (j is! Map<String, Object?>) return null;
-    double? d(String k) => switch (j[k]) {
-      final num v => v.toDouble(),
-      _ => null,
-    };
-    final MusicServerLoudness l = MusicServerLoudness(
-      trackGainDb: d('trackGainDb'),
-      trackPeak: d('trackPeak'),
-      albumGainDb: d('albumGainDb'),
-      albumPeak: d('albumPeak'),
-    );
-    return l.isEmpty ? null : l;
-  } on Object catch (e) {
-    debugPrint('[music-download] loudness sidecar unreadable: $e');
-    return null;
-  }
+  final Map<String, Object?> json = await _readSidecarJson(audioPath);
+  if (json.isEmpty) return null;
+  final MusicServerLoudness? server = _loudnessOf(json);
+  final MusicServerLoudness? measured = _loudnessOf(json['measured']);
+  return (server: server, measured: measured);
+}
+
+/// 这份离线副本客户端测过没有（测过、测不出也算）。
+Future<bool> musicServerDownloadLoudnessMeasured(String audioPath) async {
+  final Object? m = (await _readSidecarJson(audioPath))['measured'];
+  return m is Map<String, Object?> && m['measuredAt'] is num;
 }
 
 class MusicServerDownloadIndex extends ChangeNotifier {
@@ -129,9 +186,9 @@ class MusicServerDownloadIndex extends ChangeNotifier {
   /// 路径 → 是否存在（只查一次）。
   final Map<String, bool> _exists = <String, bool>{};
 
-  /// 路径 → 旁边存下的服务器响度（只读一次；没有记 null）。
-  final Map<String, MusicServerLoudness?> _loudness =
-      <String, MusicServerLoudness?>{};
+  /// 路径 → 旁边存下的响度（只读一次；没有记 null）。
+  final Map<String, MusicServerDownloadSidecar?> _loudness =
+      <String, MusicServerDownloadSidecar?>{};
 
   /// 每次快照换代 +1：异步查存在性期间又来了新快照，旧的那轮作废。
   int _generation = 0;
@@ -232,13 +289,20 @@ class MusicServerDownloadIndex extends ChangeNotifier {
       if (generation != _generation) return;
       if (!exists) continue;
       if (!_loudness.containsKey(r.filePath)) {
-        final MusicServerLoudness? l = await _readLoudness(r.filePath);
+        final MusicServerDownloadSidecar? l = await _readLoudness(r.filePath);
         if (generation != _generation) return;
         _loudness[r.filePath] = l;
       }
       next[r.trackUid] = r;
     }
     _rows = next;
+    notifyListeners();
+  }
+
+  /// 刚在离线副本旁写了响度（客户端测量）：重读这一份并推给听众（不必等表变化）。
+  Future<void> refreshLoudness(String path) async {
+    final MusicServerDownloadSidecar? l = await _readLoudness(path);
+    _loudness[path] = l;
     notifyListeners();
   }
 
@@ -274,7 +338,9 @@ class MusicServerDownloadIndex extends ChangeNotifier {
       codec: r.codec,
       serverId: r.sourceKey,
       trackId: r.itemId,
-      loudness: _loudness[r.filePath],
+      serverKind: MusicServerKind.fromWire(r.serverKind),
+      loudness: _loudness[r.filePath]?.server,
+      measuredLoudness: _loudness[r.filePath]?.measured,
     );
   }
 

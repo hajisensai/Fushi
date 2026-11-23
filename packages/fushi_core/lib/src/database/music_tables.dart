@@ -375,6 +375,12 @@ class MusicServerDownloads extends Table {
   /// 服务器侧曲目 id。
   TextColumn get itemId => text()();
 
+  /// 服务器的协议家族 wire 值（v174，`MusicServerKind.wire`：`jellyfin` | `subsonic`）。离线副本的
+  /// 播放项凭它带上完整的服务器身份——这台设备上的服务器配置删了 / 连不上时，播放上报与收藏
+  /// 照样能记进离线队列（[MusicServerPendingActions]）。v174 之前的行按 [sourceKey] 前缀回填
+  /// （Jellyfin 家族 `jellyfin:`、Subsonic `subsonic-`）；NULL = 认不出。
+  TextColumn get serverKind => text().nullable()();
+
   /// 离线副本的绝对路径（本机）。
   TextColumn get filePath => text()();
 
@@ -392,6 +398,96 @@ class MusicServerDownloads extends Table {
 
   @override
   Set<Column> get primaryKey => <Column>{trackUid};
+}
+
+/// 服务器曲目没送达的播放 / 收藏切换（schema v174，**设备本地**：不进备份、不同步——恢复
+/// 别的设备的备份不该把那台设备的播放再报一遍）。服务器连不上、或这台设备上的服务器配置删了
+/// 时记在这里，那台服务器重新配上且连得通时补发（app 启动、打开服务器页、对那台服务器的任何
+/// 一次请求成功之后）：Jellyfin `POST /Users/{uid}/PlayedItems/{id}?datePlayed=`（按原播放时刻
+/// 计一次播放），OpenSubsonic `scrobble time=<毫秒> submission=true`，收藏走各自的收藏接口。
+///
+/// 去重靠主键 [dedupeKey]：播放 = 服务器 + 条目 + 播放时刻（同一次播放只记一次），收藏 = 服务器
+/// + 条目（同一首只留最后一次切换，后写覆盖）。没有凭据、没有地址，只有服务器配置身份与条目 id。
+/// 上限与过期：见 app 侧 `music_server_offline_queue.dart`（条数上限、服务器一直没配回来的
+/// 条目过了长 TTL 才丢）。
+@DataClassName('MusicServerPendingActionRow')
+class MusicServerPendingActions extends Table {
+  /// 去重键（见类注释）。
+  TextColumn get dedupeKey => text()();
+
+  /// `play` | `favorite`（wire 值，冻结）。
+  TextColumn get action => text()();
+
+  /// 服务器协议家族 wire 值（`jellyfin` | `subsonic`）。
+  TextColumn get serverKind => text()();
+
+  /// 服务器配置身份（`MusicServerBrowser.serverId`）。
+  TextColumn get serverId => text()();
+
+  /// 服务器侧曲目 id。
+  TextColumn get itemId => text()();
+
+  /// 播放身份（`musicServerTrackUid(serverId, itemId)`），显示待送达的收藏状态用。
+  TextColumn get trackUid => text()();
+
+  /// 播放：开播时刻（epoch 毫秒，补发时作为服务器上的播放时刻）。收藏为 NULL。
+  IntColumn get playedAt => integer().nullable()();
+
+  /// 收藏：要设成的状态。播放为 NULL。
+  BoolColumn get favorite => boolean().nullable()();
+
+  /// 入队（收藏：最后一次切换）的时刻。
+  IntColumn get createdAt => integer()();
+
+  /// 服务器回了错误（不是连不上）的次数：到上限丢弃（条目在服务器上删了等）。
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+
+  /// 最近一次补发尝试的时刻；没试过为 NULL。
+  IntColumn get lastAttemptAt => integer().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{dedupeKey};
+}
+
+/// 服务器曲目在这台设备上记下的客户端状态（schema v174，**设备本地**，一首一行）：
+/// - 收藏的最后已知状态（[favorite]）：服务器连不上 / 配置删了时「正在播放」的心形按它显示；
+/// - 客户端测的响度（[measuredTrackGain] / [measuredTrackPeak]）：服务器没给响度（Jellyfin 没开
+///   LUFS 扫描、纯 Subsonic）时，串流播过一次后在后台用 FFmpeg `ebur128` 从服务器流测一次
+///   （离线副本的测量值存在音频旁的 `.loudness.json`，不在这里）。**服务器给的值永远优先**。
+///
+/// 设备本地而不同步：两样都是可再得的缓存（收藏的真相在服务器，响度随时可从服务器重测），
+/// [serverId] 里的服务器身份也只对配着那台服务器的设备有意义；进备份还得给缓存配一套 LWW
+/// 合并，换不来什么。表里没有凭据、没有地址。
+@DataClassName('MusicServerTrackStateRow')
+class MusicServerTrackStates extends Table {
+  /// 播放身份（`musicServerTrackUid(serverId, itemId)`）。
+  TextColumn get trackUid => text()();
+
+  /// 服务器协议家族 wire 值（`jellyfin` | `subsonic`）。
+  TextColumn get serverKind => text()();
+
+  TextColumn get serverId => text()();
+  TextColumn get itemId => text()();
+
+  /// 最后已知的收藏状态（服务器报的 / 服务器确认过的 / 本机最后一次切换）；不知道为 NULL。
+  BoolColumn get favorite => boolean().nullable()();
+
+  /// [favorite] 记下的时刻。
+  IntColumn get favoriteAt => integer().nullable()();
+
+  /// 客户端测的曲目增益（dB，ReplayGain 2.0 参考 -18 LUFS）；静音 / 测不出为 NULL。
+  RealColumn get measuredTrackGain => real().nullable()();
+
+  /// 客户端测的曲目峰值（线性）。
+  RealColumn get measuredTrackPeak => real().nullable()();
+
+  /// 测量时刻；NULL = 没测过（非空而增益为 NULL = 测过、测不出，不再测）。
+  IntColumn get loudnessMeasuredAt => integer().nullable()();
+
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{trackUid};
 }
 
 /// 逐曲断点续播（v146，反馈 QAondMh4M5）：每首曲目上次停在哪，一首一行。

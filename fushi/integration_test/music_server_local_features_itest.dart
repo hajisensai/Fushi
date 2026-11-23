@@ -1,6 +1,7 @@
 // 服务器曲目（Jellyfin）的本机功能对真服务器的端到端取证（feat/server-music-local-features）：
 //
-//   1. 响度：服务器开了 LUFS 扫描后，专辑曲目列表带 `NormalizationGain`；把一首加入音乐库
+//   1. 响度（服务器开了 LUFS 扫描时；关着时的客户端测量后备见 music_server_offline_itest）：
+//      专辑曲目列表带 `NormalizationGain`；把一首加入音乐库
 //      （v149 行，不存响度）再从音乐库还原成播放项起播，后端起播期向服务器补查，mpv 的
 //      `volume-gain` 落到服务器给的增益上（信号路径面板读的就是它）；
 //   2. 生成日语字幕：服务器专辑页出现「为本专辑生成字幕」、曲目菜单出现「生成日语字幕」；
@@ -102,11 +103,10 @@ void main() {
           '[srv-local] album="${album.title}" track="${track.title}" '
           'listLoudness=${track.loudness}',
         );
-        expect(
-          track.loudness?.trackGainDb,
-          isNotNull,
-          reason: '服务器开了 LUFS 扫描：列表应带 NormalizationGain',
-        );
+        // 服务器没开 LUFS 扫描时列表不带 NormalizationGain：起播期补查也查不到服务器值，那条
+        // 路径（客户端测量后备）由 music_server_offline_itest 取证，这里只在有服务器值时验补查。
+        final bool serverHasGain = track.loudness?.trackGainDb != null;
+        debugPrint('[srv-local] server LUFS values present: $serverHasGain');
 
         // ── 1. 响度：音乐库里的服务器曲目（行里没有响度）起播期补查 ──
         final MusicRemoteTracksCompanion row = musicServerRemoteTrackCompanion(
@@ -127,25 +127,27 @@ void main() {
         )!;
         expect(libraryItem.rgTrackGain, isNull, reason: 'v149 行里不存响度');
         await appModel.prefsRepo.setMusicReplayGain(true);
-        await appModel.musicSession.engine.playQueue(<MusicPlayItem>[
-          libraryItem,
-        ]);
-        MusicSignalPathSnapshot? snap;
-        for (int i = 0; i < 40; i++) {
-          await tester.pump(const Duration(milliseconds: 250));
-          snap = await appModel.musicSession.engine.readSignalPath();
-          if (snap != null && snap.volumeGainDb.abs() > 1e-6) break;
+        if (serverHasGain) {
+          await appModel.musicSession.engine.playQueue(<MusicPlayItem>[
+            libraryItem,
+          ]);
+          MusicSignalPathSnapshot? snap;
+          for (int i = 0; i < 40; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+            snap = await appModel.musicSession.engine.readSignalPath();
+            if (snap != null && snap.volumeGainDb.abs() > 1e-6) break;
+          }
+          debugPrint(
+            '[srv-local] library-row play: volume-gain=${snap?.volumeGainDb} dB '
+            '(server track gain ${track.loudness?.trackGainDb})',
+          );
+          expect(
+            snap?.volumeGainDb,
+            closeTo(track.loudness!.trackGainDb!, 0.01),
+            reason: '后端补查到服务器响度后按曲目增益施加',
+          );
+          await appModel.musicSession.engine.stop();
         }
-        debugPrint(
-          '[srv-local] library-row play: volume-gain=${snap?.volumeGainDb} dB '
-          '(server track gain ${track.loudness?.trackGainDb})',
-        );
-        expect(
-          snap?.volumeGainDb,
-          closeTo(track.loudness!.trackGainDb!, 0.01),
-          reason: '后端补查到服务器响度后按曲目增益施加',
-        );
-        await appModel.musicSession.engine.stop();
 
         // ── 2. 生成字幕入口（服务器专辑页按钮 + 曲目菜单项）──
         final NavigatorState rootNav = Navigator.of(

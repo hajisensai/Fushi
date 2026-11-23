@@ -6,8 +6,15 @@
 /// - 只上报服务器曲目：播放项经 [MusicServerTrackResolver] 认回服务器与曲目 id（从服务器
 ///   页、曲库里的服务器曲目、最近播放重播、离线副本都一样），本地 / 插件 / 网络来源曲目认不出
 ///   就什么都不发；
-/// - 离线副本（本机文件）照样上报（`PlayMethod` 为直放）；服务器连不上时（网络错误）静默
-///   跳过这次播放，不记错误日志——离线听下载的曲目是正常用法。
+/// - 离线副本（本机文件）照样上报（`PlayMethod` 为直放）；服务器连不上时（网络错误）不记
+///   错误日志——离线听下载的曲目是正常用法。
+/// - **没送达的播放不丢**：一次听够门槛（[musicScrobbleThresholdReached]）的播放，若计次的那条
+///   上报没到服务器（Jellyfin 在开播时计、Subsonic 在停止时计，[MusicServerPlayMarking.countsPlayOnStart]）——
+///   服务器连不上，或这台设备上已经没有那台服务器的配置（播放项仍带着服务器身份）——就交给
+///   [onUndelivered] 记进离线补发队列（`music_server_offline_queue.dart`），之后按原开播时刻
+///   补记。服务器回了错误（不是连不上）的不入队，照旧记日志。
+/// - 对一台服务器的上报成功过一次，就经 [onDelivered] 通知（补发队列借机把那台服务器积压的
+///   条目发出去）。
 /// - 不挡播放：全部请求在后台串行队列里发，失败只记一次日志；这一首的开播上报失败后，后面
 ///   的进度 / 停止都不再发（不在断网时每 10 秒刷一次错）；
 /// - 不刷屏：进度按 [kMusicServerProgressInterval]（与 Jellyfin web 同一档）节流，暂停 /
@@ -49,6 +56,10 @@ bool musicServerReportUnreachable(Object e) =>
 /// 上报失败的日志出口（app 装配：`ErrorLogService`）。
 typedef MusicServerReportErrorSink = void Function(Object error, StackTrace st);
 
+/// 一次听够门槛、却没送达服务器的播放（app 装配：记进离线补发队列）。
+typedef MusicServerUndeliveredPlay =
+    Future<void> Function(MusicServerTrackRef ref, int playedAtMs);
+
 /// 一次播放（开播到换下）。
 class _Play {
   _Play({
@@ -77,6 +88,16 @@ class _Play {
   /// 有一条上报失败过：这次播放不再发任何上报。
   bool failed = false;
 
+  /// 失败的原因是连不上服务器（或认服务器时出错）：计次没送达时入离线队列。
+  bool unreachable = false;
+
+  /// 开播 / 停止上报送达了服务器。
+  bool startDelivered = false;
+  bool stopDelivered = false;
+
+  /// 这次播放有一条上报送达过（只通知一次 [MusicServerPlaybackReporter._onDelivered]）。
+  bool delivered = false;
+
   /// 有一条进度上报还在路上。
   bool progressInFlight = false;
   bool paused = false;
@@ -92,7 +113,11 @@ class MusicServerPlaybackReporter {
     DateTime Function()? now,
     String Function()? sessionIds,
     bool Function(Object error)? isUnreachable,
+    MusicServerUndeliveredPlay? onUndelivered,
+    void Function(MusicServerBrowser server)? onDelivered,
   }) : _engine = engine,
+       _onUndelivered = onUndelivered,
+       _onDelivered = onDelivered,
        _isUnreachable = isUnreachable ?? musicServerReportUnreachable,
        _lookup = lookup,
        _onError = onError,
@@ -109,6 +134,8 @@ class MusicServerPlaybackReporter {
   final DateTime Function() _now;
   final String Function() _sessionIds;
   final bool Function(Object error) _isUnreachable;
+  final MusicServerUndeliveredPlay? _onUndelivered;
+  final void Function(MusicServerBrowser server)? _onDelivered;
 
   static final Random _random = Random.secure();
 
@@ -131,7 +158,9 @@ class MusicServerPlaybackReporter {
   /// 一首开始播（引擎 `onTrackStarted`）。
   void trackStarted(MusicPlayItem item) {
     final _Play? prev = _play;
-    if (prev != null) _finish(prev, _engine.listenedBeforeStart);
+    if (prev != null) {
+      _finish(prev, _engine.listenedBeforeStart, prev.item.durationMs);
+    }
     if (!musicServerTrackCandidate(
       item.trackUid,
       item.path,
@@ -156,7 +185,9 @@ class MusicServerPlaybackReporter {
       final int pos = identical(_play, play)
           ? _engine.position.inMilliseconds
           : 0;
-      return s.reportPlaybackStarted(_report(play, r, pos));
+      return s
+          .reportPlaybackStarted(_report(play, r, pos))
+          .then((_) => play.startDelivered = true);
     });
   }
 
@@ -170,6 +201,7 @@ class MusicServerPlaybackReporter {
     _finish(
       play,
       leave.completed && duration != null ? duration : leave.position,
+      duration?.inMilliseconds ?? play.item.durationMs,
     );
   }
 
@@ -209,18 +241,51 @@ class MusicServerPlaybackReporter {
     final _Play? play = _play;
     if (play != null) {
       _play = null;
-      _finish(play, _engine.position);
+      _finish(
+        play,
+        _engine.position,
+        _engine.duration?.inMilliseconds ?? play.item.durationMs,
+      );
     }
     await _queue.timeout(kMusicServerFlushTimeout, onTimeout: () {});
   }
 
-  void _finish(_Play play, Duration? position) {
+  void _finish(_Play play, Duration? position, int? durationMs) {
     final int pos = (position ?? Duration.zero).inMilliseconds;
     _enqueue(
       play,
-      (MusicServerPlaybackReporting s, MusicServerResolvedTrack r) =>
-          s.reportPlaybackStopped(_report(play, r, pos)),
+      (MusicServerPlaybackReporting s, MusicServerResolvedTrack r) => s
+          .reportPlaybackStopped(_report(play, r, pos))
+          .then((_) => play.stopDelivered = true),
     );
+    _queue = _queue.then((_) => _settle(play, pos, durationMs));
+  }
+
+  /// 一次播放结束、它的上报都发完之后：听够门槛而计次那条没到服务器（连不上 / 这台设备上没有
+  /// 那台服务器的配置）时交给离线补发队列。
+  Future<void> _settle(_Play play, int positionMs, int? durationMs) async {
+    final MusicServerUndeliveredPlay? undelivered = _onUndelivered;
+    if (undelivered == null || play.item.isPreview) return;
+    if (!musicScrobbleThresholdReached(positionMs, durationMs)) return;
+    final ({MusicServerPlaybackReporting server, MusicServerResolvedTrack ref})?
+    target = await play.target;
+    final MusicServerTrackRef? ref = target?.ref.ref ?? play.item.serverTrack;
+    if (ref == null) return;
+    if (target != null) {
+      final Object server = target.server;
+      final bool counted = server is MusicServerPlayMarking
+          ? (server.countsPlayOnStart
+                ? play.startDelivered
+                : play.stopDelivered)
+          : true;
+      // 服务器回了错误（不是连不上）：照旧只记日志，不补发。
+      if (counted || !play.unreachable) return;
+    }
+    try {
+      await undelivered(ref, play.startedAtMs);
+    } on Object catch (e, st) {
+      _onError?.call(e, st);
+    }
   }
 
   Future<({MusicServerPlaybackReporting server, MusicServerResolvedTrack ref})?>
@@ -232,7 +297,9 @@ class MusicServerPlaybackReporter {
       play.ready = true;
       return (server: b as MusicServerPlaybackReporting, ref: ref);
     } on Object catch (e, st) {
+      // 认不出服务器（读配置出错）：这次播放不上报，计次交给离线队列（[_settle]）。
       play.failed = true;
+      play.unreachable = true;
       _onError?.call(e, st);
       return null;
     }
@@ -271,15 +338,23 @@ class MusicServerPlaybackReporter {
       if (target == null || play.failed) return;
       try {
         await send(target.server, target.ref);
+        if (!play.delivered) {
+          play.delivered = true;
+          _onDelivered?.call(target.ref.browser);
+        }
       } on Object catch (e, st) {
         // 只记第一次失败；这次播放后面的上报都不再发。
         play.failed = true;
-        if (play.offlineCopy && _isUnreachable(e)) {
-          // 离线听下载的曲目：服务器不在是常态，不记错、不让解析器重读配置。
-          debugPrint(
-            '[music-report] server unreachable, skipped (offline copy)',
-          );
-          return;
+        if (_isUnreachable(e)) {
+          play.unreachable = true;
+          if (play.offlineCopy) {
+            // 离线听下载的曲目：服务器不在是常态，不记错、不让解析器重读配置。
+            debugPrint(
+              '[music-report] server unreachable (offline copy); '
+              'a completed play will be queued',
+            );
+            return;
+          }
         }
         _onTargetFailure?.call();
         _onError?.call(e, st);

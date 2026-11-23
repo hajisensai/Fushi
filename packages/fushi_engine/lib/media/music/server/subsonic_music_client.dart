@@ -81,6 +81,7 @@ class SubsonicMusicClient
         MusicServerDiscovery,
         MusicServerInstantMix,
         MusicServerPlaybackReporting,
+        MusicServerPlayMarking,
         MusicServerLyricsProvider,
         MusicServerLoudnessLookup {
   SubsonicMusicClient(
@@ -556,6 +557,20 @@ class SubsonicMusicClient
       'submission': 'true',
     });
   }
+
+  /// 补记离线时的一次播放：`scrobble time=<开播毫秒> submission=true`。
+  @override
+  Future<void> markPlayed(String trackId, DateTime playedAt) async {
+    await _call('scrobble', <String, String>{
+      'id': trackId,
+      'time': '${playedAt.millisecondsSinceEpoch}',
+      'submission': 'true',
+    });
+  }
+
+  /// Subsonic 在停止时听够门槛才 `submission=true`（[reportPlaybackStopped]）。
+  @override
+  bool get countsPlayOnStart => false;
 
   // ---------------------------------------------------------------- 歌词
 

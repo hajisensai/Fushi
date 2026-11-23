@@ -85,7 +85,9 @@ MusicServerLocalCopy _copy(String path, String serverId, String trackId) => (
   codec: 'flac',
   serverId: serverId,
   trackId: trackId,
+  serverKind: null,
   loudness: null,
+  measuredLoudness: null,
 );
 
 void main() {

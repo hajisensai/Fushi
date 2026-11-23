@@ -29,6 +29,18 @@ class _FakeEngine extends Fake implements MusicPlayerEngine {
   Duration? get listenedBeforeStart => before;
 }
 
+/// 能补记播放的服务器（Jellyfin：开播即计次 / Subsonic：停止时计次）。
+class _MarkingServer extends _FakeServer implements MusicServerPlayMarking {
+  _MarkingServer(super.serverId, {required this.countsPlayOnStart});
+
+  @override
+  final bool countsPlayOnStart;
+
+  @override
+  Future<void> markPlayed(String trackId, DateTime playedAt) async =>
+      calls.add('mark $trackId');
+}
+
 /// 一台记录上报的服务器（流地址形如 `http://srv/<id>`）。
 class _FakeServer extends Fake
     implements MusicServerBrowser, MusicServerPlaybackReporting {
@@ -303,7 +315,9 @@ void main() {
       codec: 'flac',
       serverId: 'jf1',
       trackId: id,
+      serverKind: MusicServerKind.jellyfin,
       loudness: null,
+      measuredLoudness: null,
     );
     return MusicPlayItem(trackUid: uid, path: 'C:/music/$id.flac', title: id);
   }
@@ -332,5 +346,148 @@ void main() {
     await reporter.idle;
     expect(errors.length, 1);
     expect(failures, 1);
+  });
+
+  group('没送达的播放进离线队列', () {
+    late List<String> queued;
+    late List<MusicServerBrowser> configured;
+    late List<String> delivered;
+
+    MusicServerPlaybackReporter build() {
+      queued = <String>[];
+      delivered = <String>[];
+      return MusicServerPlaybackReporter(
+        engine: engine,
+        lookup: MusicServerTrackResolver(
+          () async => configured,
+          localCopies: (String uid) => copies[uid],
+        ).resolveItem,
+        onError: (Object e, StackTrace _) => errors.add(e),
+        now: () => now,
+        onUndelivered: (MusicServerTrackRef ref, int at) async =>
+            queued.add('${ref.kind.wire} ${ref.serverId} ${ref.trackId} $at'),
+        onDelivered: (MusicServerBrowser b) => delivered.add(b.serverId),
+      );
+    }
+
+    MusicPlayItem offlineCopy(String id, {int durationMs = 200000}) {
+      final MusicPlayItem base = localCopy(id);
+      return MusicPlayItem(
+        trackUid: base.trackUid,
+        path: base.path,
+        title: id,
+        durationMs: durationMs,
+        serverTrack: MusicServerTrackRef(
+          kind: MusicServerKind.jellyfin,
+          serverId: 'jf1',
+          trackId: id,
+        ),
+      );
+    }
+
+    test('配置删了（认不出服务器）：听够门槛的播放按开播时刻入队', () async {
+      configured = <MusicServerBrowser>[];
+      final MusicServerPlaybackReporter r = build();
+      final MusicPlayItem a = offlineCopy('d');
+      engine.started = a;
+      r.trackStarted(a);
+      r.trackLeft(
+        MusicTrackLeave(
+          item: a,
+          position: const Duration(seconds: 150),
+          duration: const Duration(seconds: 200),
+          restoring: false,
+        ),
+      );
+      await r.idle;
+      expect(queued, <String>[
+        'jellyfin jf1 d ${DateTime(2026, 11, 22, 12).millisecondsSinceEpoch}',
+      ]);
+      expect(errors, isEmpty);
+    });
+
+    test('没听够门槛的不入队', () async {
+      configured = <MusicServerBrowser>[];
+      final MusicServerPlaybackReporter r = build();
+      final MusicPlayItem a = offlineCopy('d');
+      r.trackStarted(a);
+      r.trackLeft(
+        MusicTrackLeave(
+          item: a,
+          position: const Duration(seconds: 20),
+          duration: const Duration(seconds: 200),
+          restoring: false,
+        ),
+      );
+      await r.idle;
+      expect(queued, isEmpty);
+    });
+
+    test('Jellyfin 开播已送达（开播即计次）：停止时连不上也不入队', () async {
+      final _MarkingServer jf = _MarkingServer('jf1', countsPlayOnStart: true);
+      configured = <MusicServerBrowser>[jf];
+      final MusicServerPlaybackReporter r = build();
+      final MusicPlayItem a = offlineCopy('d');
+      r.trackStarted(a);
+      await r.idle;
+      jf.failStart = false;
+      r.trackLeft(
+        MusicTrackLeave(
+          item: a,
+          position: const Duration(seconds: 200),
+          duration: const Duration(seconds: 200),
+          restoring: false,
+          completed: true,
+        ),
+      );
+      await r.idle;
+      expect(jf.calls.first, startsWith('start d'));
+      expect(queued, isEmpty);
+      expect(delivered, <String>['jf1']);
+    });
+
+    test('服务器连不上：开播没送达、听完 → 入队、不记错', () async {
+      final _MarkingServer jf = _MarkingServer('jf1', countsPlayOnStart: true)
+        ..failStart = true
+        ..startError = const SocketException('down');
+      configured = <MusicServerBrowser>[jf];
+      final MusicServerPlaybackReporter r = build();
+      final MusicPlayItem a = offlineCopy('d');
+      r.trackStarted(a);
+      r.trackLeft(
+        MusicTrackLeave(
+          item: a,
+          position: const Duration(seconds: 200),
+          duration: const Duration(seconds: 200),
+          restoring: false,
+          completed: true,
+        ),
+      );
+      await r.idle;
+      expect(queued, hasLength(1));
+      expect(errors, isEmpty);
+      expect(delivered, isEmpty);
+    });
+
+    test('服务器回了别的错（不是连不上）：不入队、记错', () async {
+      final _MarkingServer jf = _MarkingServer('jf1', countsPlayOnStart: true)
+        ..failStart = true;
+      configured = <MusicServerBrowser>[jf];
+      final MusicServerPlaybackReporter r = build();
+      final MusicPlayItem a = offlineCopy('d');
+      r.trackStarted(a);
+      r.trackLeft(
+        MusicTrackLeave(
+          item: a,
+          position: const Duration(seconds: 200),
+          duration: const Duration(seconds: 200),
+          restoring: false,
+          completed: true,
+        ),
+      );
+      await r.idle;
+      expect(queued, isEmpty);
+      expect(errors, hasLength(1));
+    });
   });
 }

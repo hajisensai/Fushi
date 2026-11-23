@@ -23,6 +23,7 @@ class JellyfinMusicClient
         MusicServerDiscovery,
         MusicServerInstantMix,
         MusicServerPlaybackReporting,
+        MusicServerPlayMarking,
         MusicServerLyricsProvider,
         MusicServerLoudnessLookup {
   JellyfinMusicClient(this.config, {http.Client? httpClient})
@@ -687,6 +688,21 @@ class JellyfinMusicClient
         positionMs: report.positionMs,
         session: _session(report),
       );
+
+  /// 补记离线时的一次播放（[MusicServerPlayMarking]）：`PlayedItems` 带 `datePlayed`，服务器把
+  /// 播放次数 +1、最近播放时刻设成给的时刻（10.10 实测；Emby 同一个端点）。
+  @override
+  Future<void> markPlayed(String trackId, DateTime playedAt) async {
+    await _api.sendJson(
+      'POST',
+      '$_userPath/PlayedItems/${Uri.encodeComponent(trackId)}',
+      query: <String, String>{'datePlayed': playedAt.toUtc().toIso8601String()},
+    );
+  }
+
+  /// Jellyfin 开播上报（`/Sessions/Playing`）时就计一次播放。
+  @override
+  bool get countsPlayOnStart => true;
 
   // ---------------------------------------------------------------------------
   // 服务器歌词（[MusicServerLyricsProvider]）：`/Audio/{id}/Lyrics`（Jellyfin 10.9+，读

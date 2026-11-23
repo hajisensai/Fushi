@@ -299,6 +299,8 @@ void main() {
             codec: 'flac',
             serverId: jf.serverId,
             trackId: track.id,
+            serverKind: null,
+            measuredLoudness: null,
             loudness: const MusicServerLoudness(
               trackGainDb: -2,
               albumGainDb: -3,
@@ -344,6 +346,8 @@ void main() {
             codec: 'flac',
             serverId: jf.serverId,
             trackId: track.id,
+            serverKind: null,
+            measuredLoudness: null,
             loudness: const MusicServerLoudness(trackGainDb: -2),
           )
         : null;
@@ -523,7 +527,7 @@ void main() {
       isMainProcess: false,
     );
     addTearDown(migrated.close);
-    expect(migrated.schemaVersion, 173);
+    expect(migrated.schemaVersion, 174);
     await expectNoCredentials(
       migrated,
       secrets: <String>[jfToken, ssToken, ssPassword],

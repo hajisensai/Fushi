@@ -13,7 +13,8 @@
 ///   是专辑封面（离线时显示）。扩展名按文件头嗅探，认不出才用服务器报的容器。
 /// - 离线用的附带数据：下完时顺带取服务器的歌词（[MusicServerLyricsProvider]，存进歌词缓存
 ///   `music_lyrics`，经 [musicServerDownloadLyricsSaver]）与响度（列表给的 +
-///   [MusicServerLoudnessLookup] 补查，存到音频旁 `.loudness.json`）。取不到不让下载失败。
+///   [MusicServerLoudnessLookup] 补查，存到音频旁 `.loudness.json`；服务器没给曲目增益时对
+///   下好的文件用 FFmpeg `ebur128` 测一次，存进同一个文件的 `measured`）。取不到不让下载失败。
 /// - 状态：下完在同一个事务里把这首写进音乐库并落 `music_server_downloads` 行（设备本地，
 ///   只有本机路径 + 服务器身份 + 条目 id，不存地址）；播放时由进程内索引
 ///   （`music_server_download_index.dart`）换成本地文件。uid 不变，歌词缓存 / 断点 / 统计照旧。
@@ -40,6 +41,8 @@ import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/music/music_loudness_scanner.dart'
+    show MusicLoudnessOutcome, measureMusicLoudness;
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show musicServerKindStorable, musicServerRemoteTrackCompanion;
 import 'package:fushi/src/media/music/plugin/music_plugin_download.dart'
@@ -183,6 +186,10 @@ typedef MusicServerDownloadBatchResult = ({
   int failed,
 });
 
+/// 客户端测一份本机文件的响度（测试注入；生产 = [measureMusicLoudness]）。
+typedef MusicServerDownloadLoudnessMeasure =
+    Future<MusicLoudnessOutcome> Function(String input);
+
 /// 服务器曲目下载的编排（无状态：进行中的任务在 [InterconnectDownloadManager]，下完的在
 /// `music_server_downloads`）。
 class MusicServerDownloadService {
@@ -194,9 +201,11 @@ class MusicServerDownloadService {
     MusicServerDownloadTransfer? transfer,
     MusicServerDownloadBytesFetcher? fetchBytes,
     MusicServerDownloadLyricsSaver? saveLyrics,
+    MusicServerDownloadLoudnessMeasure? measureLoudness,
     int Function()? clock,
   }) : index = index ?? MusicServerDownloadIndex.instance,
        _saveLyrics = saveLyrics,
+       _measureLoudness = measureLoudness ?? measureMusicLoudness,
        _transfer = transfer ?? AnimeEpisodeDownloader().download,
        _fetchBytes = fetchBytes ?? _httpBytes,
        _clock = clock ?? _now {
@@ -222,6 +231,7 @@ class MusicServerDownloadService {
   final MusicServerDownloadTransfer _transfer;
   final MusicServerDownloadBytesFetcher _fetchBytes;
   final MusicServerDownloadLyricsSaver? _saveLyrics;
+  final MusicServerDownloadLoudnessMeasure _measureLoudness;
   final int Function() _clock;
 
   /// 下完存歌词用哪个（构造时给的优先，否则进程级装配点）。
@@ -486,9 +496,26 @@ class _ServerTrackDownload {
         );
       }
     }
-    if (l == null || l.isEmpty) return;
     try {
-      await writeMusicServerDownloadLoudness(audio.path, l);
+      if (l != null && !l.isEmpty) {
+        await writeMusicServerDownloadLoudness(audio.path, l);
+      }
+      // 服务器没给曲目增益（Jellyfin 没开 LUFS 扫描、纯 Subsonic）：对下好的文件测一次，存进
+      // 同一个 sidecar 的 `measured`（服务器的值永远优先，见 [MusicServerDownloadSidecar]）。
+      if (l?.trackGainDb == null) {
+        final MusicLoudnessOutcome m = await service._measureLoudness(
+          audio.path,
+        );
+        if (!m.failed) {
+          final double? gain = m.measurement?.replayGainDb;
+          await writeMusicServerDownloadMeasuredLoudness(
+            audio.path,
+            trackGainDb: gain,
+            trackPeak: gain == null ? null : m.measurement?.linearPeak,
+            measuredAt: service._clock(),
+          );
+        }
+      }
     } on FileSystemException catch (e, st) {
       ErrorLogService.instance.log('MusicServerDownload.loudness', e, st);
     }
@@ -571,6 +598,7 @@ class _ServerTrackDownload {
           trackUid: row.trackUid,
           sourceKey: row.sourceKey,
           itemId: row.itemId,
+          serverKind: Value<String?>(server.kind.wire),
           filePath: Value<String>(audio.path),
           coverPath: Value<String?>(_cover?.path),
           sizeBytes: Value<int?>(await audio.length()),

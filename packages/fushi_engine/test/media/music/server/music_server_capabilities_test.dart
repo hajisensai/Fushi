@@ -217,6 +217,20 @@ void main() {
       expect(q['time'], '1700000000000');
     });
 
+    test('补记离线播放：scrobble 带原开播毫秒、submission=true；停止时才计次', () async {
+      final _Rig rig = _Rig((_) async => _json(_ok(<String, Object?>{})));
+      expect(rig.client.countsPlayOnStart, isFalse);
+      await rig.client.markPlayed(
+        's9',
+        DateTime.fromMillisecondsSinceEpoch(1700000123456, isUtc: true),
+      );
+      final Map<String, String> q = rig.requests.single.queryParameters;
+      expect(rig.requests.single.path, '/navi/rest/scrobble');
+      expect(q['id'], 's9');
+      expect(q['time'], '1700000123456');
+      expect(q['submission'], 'true');
+    });
+
     test('收藏按种类发 id / albumId / artistId；starred 读成收藏', () async {
       final _Rig rig = _Rig((http.Request r) async {
         if (r.url.path.endsWith('getStarred2')) {

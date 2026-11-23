@@ -23,14 +23,19 @@ import 'package:fushi/src/media/music/music_output_backend.dart'
 /// 一首服务器曲目在本机的离线副本（v173 `music_server_downloads`：下完的原文件）。
 /// [serverId] / [trackId] 是这首在服务器上的身份（行里存的服务器配置身份与条目 id，不含
 /// 凭据）：离线副本的播放项照样带 [MusicPlayItem.serverTrack]，播放上报、服务器歌词、
-/// 响度补查、生成字幕都认得出是哪首。[loudness] 是下载时一并存下的服务器响度（离线时用）。
+/// 响度补查、生成字幕都认得出是哪首。[serverKind] 是那台服务器的协议家族（v174 行里存的；
+/// 这台设备上的配置删了也知道，播放上报 / 收藏据此记进离线队列）。[loudness] 是下载时一并
+/// 存下的服务器响度（离线时用）；[measuredLoudness] 是客户端对这份文件测的响度（服务器没给
+/// 响度时的后备，服务器的值永远优先）。
 typedef MusicServerLocalCopy = ({
   String path,
   String? coverPath,
   String? codec,
   String serverId,
   String trackId,
+  MusicServerKind? serverKind,
   MusicServerLoudness? loudness,
+  MusicServerLoudness? measuredLoudness,
 });
 
 /// 按播放身份（[musicServerTrackUid]）查离线副本；没有回 null。
@@ -112,9 +117,12 @@ MusicPlayItem musicServerPlayItem(
 /// 有离线副本的服务器曲目 → 播放项（不需要服务器配置：曲库里的这首在服务器删了 / 离线时
 /// 也能放）。uid 与串流时一致；封面优先本机那张，没有才用 [fallbackCoverPath]。
 ///
-/// [kind] 是这台服务器的协议家族（这台设备上还配着它时由调用方给）：给了才带
-/// [MusicPlayItem.serverTrack]（播放上报 / 响度补查 / 生成字幕要找回那台服务器）。响度取
-/// 列表接口当场给的（[MusicServerTrack.loudness]），没有时用下载时存下的那份。
+/// 播放项**总是**带 [MusicPlayItem.serverTrack]（播放上报 / 收藏 / 响度补查 / 生成字幕要找回
+/// 那台服务器；服务器连不上或配置删了时上报与收藏记进离线队列）：协议家族取 [kind]（调用方
+/// 手里有配着的客户端时给）或副本行里存的 [MusicServerLocalCopy.serverKind]；两者都没有
+/// （v174 之前、前缀也认不出的行）才不带。响度取列表接口当场给的
+/// （[MusicServerTrack.loudness]），没有时用下载时存下的服务器那份——客户端测的值不进播放项的
+/// `rg*`，由起播期的响度补查在服务器也没有时才用（服务器的值永远优先）。
 MusicPlayItem musicServerLocalPlayItem(
   String trackUid,
   MusicServerLocalCopy local,
@@ -125,6 +133,7 @@ MusicPlayItem musicServerLocalPlayItem(
   MusicServerKind? kind,
 }) {
   final MusicServerLoudness? loudness = track.loudness ?? local.loudness;
+  final MusicServerKind? serverKind = kind ?? local.serverKind;
   return MusicPlayItem(
     trackUid: trackUid,
     path: local.path,
@@ -144,10 +153,10 @@ MusicPlayItem musicServerLocalPlayItem(
     rgTrackPeak: loudness?.trackPeak,
     rgAlbumGain: loudness?.albumGainDb,
     rgAlbumPeak: loudness?.albumPeak,
-    serverTrack: kind == null
+    serverTrack: serverKind == null
         ? null
         : MusicServerTrackRef(
-            kind: kind,
+            kind: serverKind,
             serverId: local.serverId,
             trackId: local.trackId,
             albumId: track.albumId,

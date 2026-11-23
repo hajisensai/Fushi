@@ -57,7 +57,9 @@ void main() {
             <String, Object?>{'Id': 'g1', 'Name': 'Rock'},
           ]);
         }
-        if (path.startsWith('/Sessions/') || path.contains('/FavoriteItems/')) {
+        if (path.startsWith('/Sessions/') ||
+            path.contains('/FavoriteItems/') ||
+            path.contains('/PlayedItems/')) {
           return http.Response('', 204);
         }
         return _items(<Map<String, Object?>>[
@@ -80,6 +82,26 @@ void main() {
     expect(requests[1].method, 'DELETE');
     expect(requests[1].url.path, '/Users/uid/FavoriteItems/a1');
   });
+
+  test(
+    '补记离线播放：POST /Users/{uid}/PlayedItems/{id}?datePlayed=<UTC ISO>；开播即计次',
+    () async {
+      expect(client.countsPlayOnStart, isTrue);
+      await client.markPlayed(
+        't9',
+        DateTime.fromMillisecondsSinceEpoch(1795600000000, isUtc: true),
+      );
+      expect(requests.single.method, 'POST');
+      expect(requests.single.url.path, '/Users/uid/PlayedItems/t9');
+      expect(
+        requests.single.url.queryParameters['datePlayed'],
+        DateTime.fromMillisecondsSinceEpoch(
+          1795600000000,
+          isUtc: true,
+        ).toIso8601String(),
+      );
+    },
+  );
 
   test('收藏列表按种类各一轮 Filters=IsFavorite', () async {
     final MusicServerItems favs = await client.listFavorites();

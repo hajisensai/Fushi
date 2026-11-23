@@ -74,7 +74,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 173);
+    expect(migrated.schemaVersion, 174);
     expect((await migrated.getMusicRemoteTrack('srv-a'))?.libraryAddedAt, 5);
     await migrated.recordMusicServerDownload(
       download('a', '/music/a.flac'),
@@ -91,7 +91,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 173);
+    expect(probe.select('PRAGMA user_version').first.values.first, 174);
     expect(hasTable(probe), isTrue);
   });
 

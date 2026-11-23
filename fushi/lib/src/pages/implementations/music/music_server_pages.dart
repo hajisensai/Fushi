@@ -30,6 +30,8 @@ import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.da
 import 'package:fushi/src/media/music/server/music_server_downloads.dart'
     show MusicServerDownloadService;
 import 'package:fushi/src/media/music/server/music_server_favorites.dart';
+import 'package:fushi/src/media/music/server/music_server_offline_queue.dart'
+    show MusicServerOfflineQueue;
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart'
@@ -385,6 +387,8 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
   void initState() {
     super.initState();
     if (_section == _BrowseSection.albums) unawaited(_loadMore());
+    // 打开服务器页：把这台服务器上次离线时没送达的播放 / 收藏补发出去（连不上就留着）。
+    unawaited(MusicServerOfflineQueue.instance.flushServer(widget.browser));
   }
 
   Future<void> _loadMore() async {
