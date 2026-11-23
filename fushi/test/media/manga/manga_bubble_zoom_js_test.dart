@@ -119,6 +119,91 @@ void main() {
       );
       expect(doc, contains('var BZ_OPEN_MS = 325, BZ_CLOSE_MS = 165;'));
     });
+
+    test('「×」收起按钮：无障碍名注入、建层时挂上、样式进文档', () {
+      final String doc = mangaWindowDocument(
+        const <MokuroImage>[page],
+        const <String>['page.png'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        readerPreferences: const MangaReaderPreferences(),
+        bubbleZoomCloseLabel: '收起"放大',
+        bubbleZoomAppleStyle: true,
+      );
+      expect(doc, contains(r'var BZ_CLOSE_LABEL = "收起\"放大";'));
+      expect(doc, contains("close.className = 'manga-bz-close';"));
+      expect(
+        doc,
+        contains(
+          mangaBubbleZoomButtonCss(
+            einkMode: false,
+            appleStyle: true,
+            motionMs: 165,
+          ),
+        ),
+      );
+    });
+  });
+
+  group('浮层按钮样式', () {
+    test('MD3：40px 容器 + state layer，按下缩放、悬停抬起', () {
+      final String css = mangaBubbleZoomButtonCss(
+        einkMode: false,
+        appleStyle: false,
+        motionMs: 150,
+      );
+      expect(css, contains('width:40px;height:40px;border-radius:20px;'));
+      expect(
+        css,
+        contains('.manga-bz-close{left:6px;}.manga-bz-focus{right:6px;}'),
+      );
+      expect(css, contains('{opacity:.08;}'));
+      expect(css, contains('{transform:scale(.92);}'));
+      expect(css, contains('{transform:scale(1.06);}'));
+      expect(css, contains('transition:transform 150ms'));
+      expect(css, isNot(contains('backdrop-filter')));
+      // 命中区补足 48px：(48 - 40) / 2 = 4。
+      expect(css, contains('left:-4px;top:-4px;right:-4px;bottom:-4px;'));
+    });
+
+    test('Apple：30px 毛玻璃 + 粗笔画，按下变暗缩小', () {
+      final String css = mangaBubbleZoomButtonCss(
+        einkMode: false,
+        appleStyle: true,
+        motionMs: 150,
+      );
+      expect(css, contains('width:30px;height:30px;border-radius:15px;'));
+      expect(css, contains('backdrop-filter:blur(18px) saturate(180%);'));
+      expect(css, contains('stroke-width:3.2;'));
+      expect(css, contains('{opacity:.7;transform:scale(.9);}'));
+      expect(css, isNot(contains('::after')));
+      expect(css, contains('left:-9px;top:-9px;right:-9px;bottom:-9px;'));
+    });
+
+    test('减弱动态效果：不写过渡、不缩放；墨水屏：黑白描边、无动效', () {
+      for (final bool apple in <bool>[false, true]) {
+        final String still = mangaBubbleZoomButtonCss(
+          einkMode: false,
+          appleStyle: apple,
+          motionMs: 0,
+        );
+        expect(still, isNot(contains('transition')));
+        expect(still, isNot(contains('scale(')));
+        final String eink = mangaBubbleZoomButtonCss(
+          einkMode: true,
+          appleStyle: apple,
+          motionMs: 150,
+        );
+        expect(
+          eink,
+          contains('background:#fff;color:#000;border:1px solid #000;'),
+        );
+        expect(eink, isNot(contains('transition')));
+        expect(eink, isNot(contains(':active')));
+        expect(eink, isNot(contains('backdrop-filter')));
+      }
+    });
   });
 
   group('纯几何', () {
@@ -279,7 +364,8 @@ function _selectOcrChar(x,y,h){ return _selectOcrCharDetail(x,y,h)!=='miss'; }
 function _retryFailedPageAt(){ return false; }
 function _userZoomedIn(){ return false; }
 function _doubleTapZoom(){ pageZooms++; }
-function _armLongPress(){}
+let longPresses=0;
+function _armLongPress(){ longPresses++; }
 $tap
 $barrier
 $hover
@@ -470,7 +556,7 @@ assert.deepEqual(opens(),[]);
 move(150,200);
 advance(BZ_DELAY);
 assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
-'''),
+''', preferences: const MangaReaderPreferences(bubbleZoomHover: 'dwell')),
       );
     });
 
@@ -518,7 +604,7 @@ assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
 
     // 拍板台 pr3839：默认开着的停留放大不能悄悄改掉存量用户的悬停查词习惯——
     // 按住查词修饰键 / 开了悬停自动查词时，原图上的悬停照旧直接查词、不弹浮层。
-    test('默认设置下按住查词修饰键：原图照旧直接查词，停留不放大', () async {
+    test('停留放大下按住查词修饰键：原图照旧直接查词，停留不放大', () async {
       await runJs(
         harness('''
 fire('d:pointermove',{pointerType:'mouse',clientX:120,clientY:200,buttons:0,ctrlKey:false,shiftKey:true});
@@ -527,7 +613,7 @@ advance(2000);
 assert.deepEqual(selects,['hover@page']);
 assert.deepEqual(opens(),[]);
 assert.equal(window.__mangaBarrierHoverAt(122,202),true);
-'''),
+''', preferences: const MangaReaderPreferences(bubbleZoomHover: 'dwell')),
       );
     });
 
@@ -543,19 +629,25 @@ fire('w:keyup',{key:'Shift',shiftKey:false,ctrlKey:false});
 fire('d:pointermove',{pointerType:'mouse',clientX:121,clientY:201,buttons:0,ctrlKey:false,shiftKey:false});
 advance(BZ_DELAY);
 assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
-'''),
+''', preferences: const MangaReaderPreferences(bubbleZoomHover: 'dwell')),
       );
     });
 
     test('开了悬停自动查词：原图悬停照旧查词，停留放大不接管', () async {
       await runJs(
-        harness('''
+        harness(
+          '''
 fire('d:pointermove',{pointerType:'mouse',clientX:120,clientY:200,buttons:0,ctrlKey:false,shiftKey:false});
 fire('d:mousemove',{clientX:120,clientY:200,shiftKey:false,ctrlKey:false});
 advance(2000);
 assert.deepEqual(selects,['hover@page']);
 assert.deepEqual(opens(),[]);
-''', preferences: const MangaReaderPreferences(lookupOnHover: true)),
+''',
+          preferences: const MangaReaderPreferences(
+            lookupOnHover: true,
+            bubbleZoomHover: 'dwell',
+          ),
+        ),
       );
     });
 
@@ -579,6 +671,69 @@ assert.deepEqual(selects,['hover@layer']);
       );
     });
 
+    // 拍板台 _5emrTFV1l：桌面默认改成「按住 Ctrl」，鼠标停在气泡上不再自己弹。
+    test('默认设置：鼠标停在气泡上不弹，按住 Ctrl 才放大', () async {
+      await runJs(
+        harness('''
+assert.equal(BZ_HOVER,'ctrl');
+fire('d:pointermove',{pointerType:'mouse',clientX:150,clientY:200,buttons:0,ctrlKey:false});
+advance(5000);
+assert.deepEqual(opens(),[]);
+fire('d:pointermove',{pointerType:'mouse',clientX:151,clientY:201,buttons:0,ctrlKey:true});
+advance(0);
+assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
+'''),
+      );
+    });
+
+    test('浮层的「×」：按下松开收起，不弹图片动作面板、不查词', () async {
+      await runJs(
+        harness('''
+_bzOpen({key:'p0:3',l:100,t:100,r:200,b:300},false);
+var x={closest(sel){ return sel==='.manga-bz-close' ? x : null; }};
+assert.equal(_bzPointerDown({pointerId:1,clientX:60,clientY:60,pointerType:'mouse',target:x}),true);
+assert.equal(bzPress.close,true);
+assert.equal(longPresses,0);
+now+=80;
+_bzRelease(_bzTakePress(1),61,61);
+assert.equal(bzLayer,null);
+assert.equal(opens().pop(),'onMangaBubbleZoom:close:false');
+assert.deepEqual(selects,[]);
+'''),
+      );
+    });
+
+    test('浮层的「×」：按下后拖走松手 = 反悔，浮层保持', () async {
+      await runJs(
+        harness('''
+_bzOpen({key:'p0:3',l:100,t:100,r:200,b:300},false);
+var x={closest(sel){ return sel==='.manga-bz-close' ? x : null; }};
+_bzPointerDown({pointerId:1,clientX:60,clientY:60,pointerType:'touch',target:x});
+now+=80;
+_bzRelease(_bzTakePress(1),160,60);
+assert.ok(bzLayer);
+assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
+'''),
+      );
+    });
+
+    test('查词弹窗开着时点「×」：barrier 返回 miss 并收起；点浮层别处照常查词', () async {
+      await runJs(
+        harness('''
+_bzOpen({key:'p0:3',l:100,t:100,r:200,b:300},false);
+bzLayer.close={getBoundingClientRect(){ return {left:46,top:46,right:86,bottom:86}; }};
+assert.equal(window.__mangaBarrierTapAt(300,300),'hit');
+assert.ok(bzLayer);
+// 命中区按 48px 补足：按钮 40px，四周各外扩 4px。
+assert.equal(_bzOnCloseButton(43,43),true);
+assert.equal(_bzOnCloseButton(30,30),false);
+assert.equal(window.__mangaBarrierTapAt(66,66),'miss');
+assert.equal(bzLayer,null);
+assert.equal(window.fushiSelection.selection,null);
+'''),
+      );
+    });
+
     test('悬停触发关掉时，原图悬停查词照旧', () async {
       await runJs(
         harness(
@@ -598,7 +753,8 @@ assert.deepEqual(selects,['hover@page']);
   test('偏好读写：默认值、越界钳位、非法枚举回落', () {
     const MangaReaderPreferences defaults = MangaReaderPreferences();
     expect(defaults.bubbleZoom, isTrue);
-    expect(defaults.bubbleZoomHover, 'dwell');
+    expect(defaults.bubbleZoomHover, 'ctrl');
+    expect(kMangaBubbleZoomHoverDefault, 'ctrl');
     expect(defaults.bubbleZoomDelay, 350);
     expect(defaults.bubbleZoomScale, 240);
     final MangaReaderPreferences parsed =
@@ -609,7 +765,14 @@ assert.deepEqual(selects,['hover@page']);
           'bubbleZoomScale': 900,
         });
     expect(parsed.bubbleZoom, isFalse);
-    expect(parsed.bubbleZoomHover, 'dwell');
+    expect(parsed.bubbleZoomHover, kMangaBubbleZoomHoverDefault);
+    // 存过的值原样生效：默认改了不动用户已存的「停留自动放大」。
+    expect(
+      MangaReaderPreferences.fromJson(const <String, Object?>{
+        'bubbleZoomHover': 'dwell',
+      }).bubbleZoomHover,
+      'dwell',
+    );
     expect(parsed.bubbleZoomDelay, kMangaBubbleZoomDelayMin);
     expect(parsed.bubbleZoomScale, kMangaBubbleZoomScaleMax);
     final MangaReaderPreferences back = MangaReaderPreferences.fromJson(
