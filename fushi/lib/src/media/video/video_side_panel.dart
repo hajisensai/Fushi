@@ -95,9 +95,9 @@ class VideoFloatingPanelSurface extends StatelessWidget {
         context,
         glassRadius: glassRadius,
       );
-      return DecoratedBox(
+      return FushiAppleFloatingSurface(
         key: surfaceKey,
-        decoration: fushiAppleSolidFloatingDecoration(context, shape: shape),
+        shape: shape,
         child: Material(
           type: MaterialType.transparency,
           shape: shape,

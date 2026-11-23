@@ -280,13 +280,10 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                 Positioned.fromRect(
                   rect: panel,
                   child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: fushiAppleSolidFloatingDecoration(
-                        context,
-                        shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(
-                            20 + (_kAppleTabBarHeight / 2 - 20) * settled,
-                          ),
+                    child: FushiAppleFloatingSurface(
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.circular(
+                          20 + (_kAppleTabBarHeight / 2 - 20) * settled,
                         ),
                       ),
                     ),

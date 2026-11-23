@@ -5,15 +5,18 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart' show FushiShellTheme;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-/// 「玻璃」设计系统的根作用域：把 Fushi 的 [ColorScheme] 与材质档位映射成
-/// `liquid_glass_widgets` 的 [GlassTheme]，让子树里所有玻璃组件（按钮、开关、
-/// 列表、对话框……）默认就用 app 的配色与渲染档位，调用点不必逐个传 settings。
+/// 「玻璃」设计系统的根作用域：把 Fushi 的 [ColorScheme] 与玻璃画质档位映射成
+/// `liquid_glass_widgets` 的 [GlassTheme]（[GlassStyle.ios27]），让子树里所有
+/// 玻璃组件（按钮、开关、列表、对话框……）默认就用 app 的配色与渲染档位，
+/// 调用点不必逐个传 settings。
 ///
-/// 材质档位 → 渲染档位：
-/// - liquid：[GlassQuality.standard]（轻量着色器，可滚动，Skia / Impeller 都能跑）；
-/// - frosted：[GlassQuality.minimal]（零自定义着色器，BackdropFilter 模糊）；
-/// - off（系统降低透明度 / 增强对比度）：minimal + 不透明玻璃色 + 零模糊——
-///   组件族不变，只是玻璃变实心。
+/// 画质档位（[glassMaterialOf]）→ 主题：
+/// - premium：库 iOS 27 变体，quality 留空——库按组件类别取默认（栏 / 浮层 /
+///   开关滑块分段等英雄控件 premium，其余 standard）；
+/// - standard：库 iOS 27 变体，quality 钉 [GlassQuality.standard]；
+/// - minimal：库 `minimalLight` / `minimalDark`（iOS 27 中性色调，零着色器）；
+/// - off（实色；系统降低透明度 / 增强对比度 / 墨水屏）：minimal + 不透明玻璃色
+///   + 零模糊——组件族不变，只是玻璃变实心。
 ///
 /// 结构恒定：无论设计系统，[child] 永远挂在同一个 [GlassTheme] 下（MD3 时给
 /// 库默认数据，反正 MD3 子树里没有玻璃组件）。按设计系统增删这一层会让整棵
@@ -34,6 +37,7 @@ class FushiGlassScope extends StatelessWidget {
       data: GlassThemeData(
         light: variant,
         dark: variant,
+        style: GlassStyle.ios27,
         brightness: Theme.of(context).colorScheme.brightness,
       ),
       child: child,
@@ -42,106 +46,90 @@ class FushiGlassScope extends StatelessWidget {
 }
 
 /// 当前上下文玻璃组件的渲染档位（见 [FushiGlassScope]）。[prominent] 为
-/// true 的静态主表面（导航栏、顶栏、对话框）在液态档用 [GlassQuality.premium]。
+/// true 的静态主表面（导航栏、顶栏、对话框）只在「高级」档用
+/// [GlassQuality.premium]。
 ///
 /// **premium 只能交给 `useOwnLayer: true` 的 [GlassContainer]**（或已在某个
 /// `LiquidGlassLayer` 里的分组玻璃）：引擎支持着色器 ImageFilter（Impeller，
 /// 任何平台）时，premium 的分组路径要从祖先层取几何渲染链接，找不到就在构建期
 /// 抛错——调试版红块，发布版是一块灰色矩形（BUG-2957：Android 选 Apple + 液态
-/// 底栏「直接炸了」）。Skia 后端上 premium 自动降成轻量着色器，所以只在
-/// Impeller 上暴露。守卫：`test/widgets/glass/glass_premium_own_layer_guard_test.dart`。
+/// 底栏「直接炸了」）。守卫：`test/widgets/glass/glass_premium_own_layer_guard_test.dart`。
 GlassQuality fushiGlassQuality(BuildContext context, {bool prominent = false}) {
-  final FushiGlassMaterial effective = glassMaterialOf(context);
-  // Skia 后端（引擎没开 Impeller：Windows / Linux 的 3.44 默认、Android 关了
-  // Impeller 的机型）没有着色器 ImageFilter，
-  // glassMaterialOf 会把 liquid 降成 frosted（表面颜色按磨砂档取）。但库的
-  // standard 档是 LightweightLiquidGlass 片元着色器，Skia 上照样能跑——
-  // 高光边、折射都在；只有 premium 需要 Impeller（AdaptiveGlass 自己回退）。
-  // 用户选的是液态时，渲染档位按原始偏好给，别掉到 minimal 的纯模糊色块。
-  final bool preferLiquid =
-      Theme.of(context).extension<FushiGlassTheme>()?.material ==
-      FushiGlassMaterial.liquid;
-  if (effective == FushiGlassMaterial.frosted && preferLiquid) {
-    return prominent ? GlassQuality.premium : GlassQuality.standard;
-  }
-  switch (effective) {
-    case FushiGlassMaterial.liquid:
-      return prominent ? GlassQuality.premium : GlassQuality.standard;
-    case FushiGlassMaterial.frosted:
-    case FushiGlassMaterial.off:
-      return GlassQuality.minimal;
-  }
+  return switch (glassMaterialOf(context)) {
+    FushiGlassMaterial.off ||
+    FushiGlassMaterial.minimal => GlassQuality.minimal,
+    FushiGlassMaterial.standard => GlassQuality.standard,
+    FushiGlassMaterial.premium =>
+      prominent ? GlassQuality.premium : GlassQuality.standard,
+  };
 }
 
-/// 玻璃参数（填充色 / 模糊 / 主题变体）按哪一档取。与 [fushiGlassQuality]
-/// 同口径：用户选液态、只因 Skia 后端被 [glassMaterialOf] 降成 frosted 时，
-/// 渲染仍是 standard 着色器（高光边 + 折射），参数也按液态档给——磨砂档的
-/// 72% 实底 + 20 模糊是给纯 BackdropFilter 的 minimal 档调的，叠在着色器
-/// 玻璃上会又厚又闷，一眼就是一块不透明的色板。
-FushiGlassMaterial _glassParamTier(BuildContext context) {
-  final FushiGlassMaterial effective = glassMaterialOf(context);
-  if (effective == FushiGlassMaterial.frosted &&
-      Theme.of(context).extension<FushiGlassTheme>()?.material ==
-          FushiGlassMaterial.liquid) {
-    return FushiGlassMaterial.liquid;
-  }
-  return effective;
-}
-
-/// 玻璃填充色。液态档：深色 #262626 @65%（库 Messages / Music 演示对照
-/// 真机）；浅色白 @55%（库 ios27Light 实测 53%——旧值白 @15% 压在 #F2F2F7
-/// 分组底上控件几乎没有轮廓，Mac 实机反馈「日间可见度差」）——中性灰，
-/// **不**拿 MD3 容器色阶去染，否则玻璃一眼就是「MD3 套了层半透明」。
-/// 磨砂档对应 UIKit systemMaterial（更厚的实底 + 大模糊）；off 档实心。
-/// [tint] 覆盖为有色玻璃（主按钮 / 选中态用强调色）。不透明的 [tint] 按档位
-/// 重铺透明度（液态 0.82 / 磨砂 0.9）；调用方已给半透明色（例如 12% 前景色的
-/// 轻着色）时保留调用方的透明度——一律拉到 0.82 会把轻着色压成近乎实心的色块。
+/// 玻璃填充色。着色器档（standard / premium）与精简档都取库 iOS 27 的中性色调
+/// （浅 #F8F8F8 @53%、深 白 @12%，`GlassThemeSettings.ios27Light` /
+/// `ios27Dark`、`GlassThemeVariant.minimalLight` / `minimalDark` 同值），
+/// **不**拿 MD3 容器色阶去染。off（实色）档是系统材质实色（深 #1C1C1E /
+/// 浅 #F9F9F9）。[tint] 覆盖为有色玻璃（主按钮 / 选中态用强调色）。不透明的
+/// [tint] 按档位重铺透明度（着色器 0.82 / 精简 0.9）；调用方已给半透明色（例如
+/// 12% 前景色的轻着色）时保留调用方的透明度——一律拉到 0.82 会把轻着色压成近乎
+/// 实心的色块。
 Color fushiGlassFill(BuildContext context, {Color? tint}) {
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-  final FushiGlassMaterial material = _glassParamTier(context);
+  final FushiGlassMaterial material = glassMaterialOf(context);
   if (tint != null) {
     if (tint.a < 1.0 && material != FushiGlassMaterial.off) return tint;
     return switch (material) {
-      FushiGlassMaterial.liquid => tint.withValues(alpha: 0.82),
-      FushiGlassMaterial.frosted => tint.withValues(alpha: 0.9),
+      FushiGlassMaterial.standard ||
+      FushiGlassMaterial.premium => tint.withValues(alpha: 0.82),
+      FushiGlassMaterial.minimal => tint.withValues(alpha: 0.9),
       FushiGlassMaterial.off => tint,
     };
   }
   return switch (material) {
-    FushiGlassMaterial.liquid =>
-      dark ? const Color(0xA6262626) : const Color(0x8CFFFFFF),
-    FushiGlassMaterial.frosted =>
-      dark ? const Color(0xB81C1C1E) : const Color(0xB8F9F9F9),
     FushiGlassMaterial.off =>
       dark ? const Color(0xFF1C1C1E) : const Color(0xFFF9F9F9),
+    _ => dark ? kFushiGlassIos27DarkTint : kFushiGlassIos27LightTint,
   };
 }
 
+/// 库 iOS 27 浅色玻璃色调（`GlassThemeSettings.ios27Light.glassColor`）。
+const Color kFushiGlassIos27LightTint = Color(0x87F8F8F8);
+
+/// 库 iOS 27 深色玻璃色调（`GlassThemeSettings.ios27Dark.glassColor`）。
+const Color kFushiGlassIos27DarkTint = Color(0x1FFFFFFF);
+
 /// 单个玻璃组件的完整 settings（需要覆盖主题默认，例如有色主按钮）。
-/// 光照参数同 iOS 26 实测：深色下关掉 fresnel / 环境光、只留柔和高光
-/// （UIVisualEffectView 的平面材质），浅色下保留斜面高光与 fresnel。
+/// 着色器档取库 iOS 27 预设（[LiquidGlassSettings.ios27Light] /
+/// [LiquidGlassSettings.ios27Dark]），精简档同 `GlassThemeVariant.minimalLight`
+/// / `minimalDark`（模糊 8），只换填充色；实色档零模糊不透明。
 LiquidGlassSettings fushiGlassSettings(BuildContext context, {Color? tint}) {
-  final FushiGlassMaterial material = _glassParamTier(context);
+  final FushiGlassMaterial material = glassMaterialOf(context);
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
-  return LiquidGlassSettings(
-    glassColor: fushiGlassFill(context, tint: tint),
-    blur: switch (material) {
-      FushiGlassMaterial.liquid => dark ? 1.8 : 8,
-      FushiGlassMaterial.frosted => 20,
-      FushiGlassMaterial.off => 0,
-    },
-    // 深色 bevel 收薄：轻量着色器的 rim 不透明度随厚度上涨，22 时深底上是
-    // 一圈刺眼的灰白环。浅色库几乎不画 rim，轮廓靠 edgeAbsorption 暗边 + 投影。
-    thickness: dark ? 14 : 18,
-    lightIntensity: dark ? 0.18 : 0.45,
-    ambientStrength: dark ? 0.0 : 0.12,
-    fresnelStrength: dark ? 0.0 : 1.0,
-    chromaticAberration: 0.01,
-    saturation: 1.0,
-    refractiveIndex: dark ? 1.12 : 1.2,
-    edgeAbsorption: dark ? 0.0 : 0.03,
-    shadowElevation: dark ? 0.0 : 1.6,
-  );
+  final Color fill = fushiGlassFill(context, tint: tint);
+  switch (material) {
+    case FushiGlassMaterial.standard:
+    case FushiGlassMaterial.premium:
+      return (dark
+              ? LiquidGlassSettings.ios27Dark
+              : LiquidGlassSettings.ios27Light)
+          .copyWith(glassColor: fill);
+    case FushiGlassMaterial.minimal:
+      return LiquidGlassSettings(glassColor: fill, blur: 8, thickness: 10);
+    case FushiGlassMaterial.off:
+      // 实色档（2026-10-12 起的观感）参数原样保留。
+      return LiquidGlassSettings(
+        glassColor: fill,
+        blur: 0,
+        thickness: dark ? 14 : 18,
+        lightIntensity: dark ? 0.18 : 0.45,
+        ambientStrength: dark ? 0.0 : 0.12,
+        fresnelStrength: dark ? 0.0 : 1.0,
+        chromaticAberration: 0.01,
+        saturation: 1.0,
+        refractiveIndex: dark ? 1.12 : 1.2,
+        edgeAbsorption: dark ? 0.0 : 0.03,
+        shadowElevation: dark ? 0.0 : 1.6,
+      );
+  }
 }
 
 /// 玻璃是否要走「压在原生平台视图上」的渲染路径。
@@ -229,6 +217,75 @@ ShapeDecoration fushiAppleSolidFloatingDecoration(
       ),
     ],
   );
+}
+
+/// Apple 悬浮面（悬浮工具栏 / 动作组胶囊 / 迷你播放条 / 悬浮圆钮 / 侧栏浮板 /
+/// 浮层菜单）：按玻璃画质档位（[glassMaterialOf]）在实色面与库玻璃之间切换。
+///
+/// - off（实色）：[fushiAppleSolidFloatingDecoration]，与 2026-10-12 起的观感
+///   一致；
+/// - 其余档：自带一层（`useOwnLayer`）的 [GlassContainer]，静态主表面按
+///   [fushiGlassQuality] 的 prominent 口径取档（高级档 premium），参数取
+///   [fushiGlassSettingsOverPlatformView]（压在阅读器 / 视频平台视图上时采不到
+///   背景处显示系统材质实色）。
+///
+/// [shape] 支持 [CircleBorder]、[StadiumBorder] 与带 [BorderRadius] 的圆角矩形
+/// / 平滑圆角（见 [fushiLiquidShapeOf]）。
+class FushiAppleFloatingSurface extends StatelessWidget {
+  const FushiAppleFloatingSurface({
+    super.key,
+    required this.shape,
+    this.tint,
+    this.child,
+  });
+
+  final OutlinedBorder shape;
+  final Color? tint;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+      return DecoratedBox(
+        decoration: fushiAppleSolidFloatingDecoration(
+          context,
+          shape: shape,
+          tint: tint,
+        ),
+        child: child,
+      );
+    }
+    return GlassContainer(
+      useOwnLayer: true,
+      quality: fushiGlassQuality(context, prominent: true),
+      shape: fushiLiquidShapeOf(shape),
+      settings: fushiGlassSettingsOverPlatformView(context, tint: tint),
+      platformViewBackdrop: fushiGlassOverPlatformView(context),
+      child: child,
+    );
+  }
+}
+
+/// Flutter 形状 → 库的 [LiquidShape]：圆 → [LiquidOval]；胶囊 → 超大圆角的
+/// [LiquidRoundedRectangle]（库按短边一半钳制）；平滑圆角 → 取左上角半径的
+/// [LiquidRoundedSuperellipse]；其余圆角矩形 → [LiquidRoundedRectangle]。
+LiquidShape fushiLiquidShapeOf(OutlinedBorder shape) {
+  if (shape is LiquidShape) return shape;
+  if (shape is CircleBorder) return const LiquidOval();
+  if (shape is StadiumBorder) {
+    return const LiquidRoundedRectangle(borderRadius: 999);
+  }
+  if (shape is RoundedSuperellipseBorder) {
+    return LiquidRoundedSuperellipse(
+      borderRadius: shape.borderRadius.resolve(TextDirection.ltr).topLeft.x,
+    );
+  }
+  if (shape is RoundedRectangleBorder) {
+    return LiquidRoundedRectangle(
+      borderRadius: shape.borderRadius.resolve(TextDirection.ltr).topLeft.x,
+    );
+  }
+  return const LiquidRoundedSuperellipse(borderRadius: 16);
 }
 
 /// 玻璃着色器「采不到背景」处的实色兜底（UIKit systemMaterial：深 #1C1C1E /
@@ -323,33 +380,37 @@ class FushiAppleDarkTier extends StatelessWidget {
 /// [FushiGlassScope] 用的主题变体（导出供测试断言）。
 GlassThemeVariant fushiGlassVariant(BuildContext context) {
   final ColorScheme cs = Theme.of(context).colorScheme;
-  final FushiGlassMaterial material = _glassParamTier(context);
+  final FushiGlassMaterial material = glassMaterialOf(context);
   final bool dark = cs.brightness == Brightness.dark;
   final FushiAppleColors apple = appleColorsOf(context);
   final GlassThemeVariant base = switch (material) {
-    FushiGlassMaterial.liquid =>
-      dark ? GlassThemeVariant.dark : GlassThemeVariant.light,
-    FushiGlassMaterial.frosted ||
-    FushiGlassMaterial.off => GlassThemeVariant.minimal,
+    FushiGlassMaterial.premium =>
+      dark ? GlassThemeVariant.ios27Dark : GlassThemeVariant.ios27Light,
+    FushiGlassMaterial.standard =>
+      (dark ? GlassThemeVariant.ios27Dark : GlassThemeVariant.ios27Light)
+          .copyWith(quality: GlassQuality.standard),
+    FushiGlassMaterial.minimal =>
+      dark ? GlassThemeVariant.minimalDark : GlassThemeVariant.minimalLight,
+    // 实色档：minimal 组件族 + 不透明填充 + 零模糊（参数原样保留）。
+    FushiGlassMaterial.off => GlassThemeVariant.minimal.copyWith(
+      settings:
+          (GlassThemeVariant.minimal.settings ?? const GlassThemeSettings())
+              .copyWith(
+                glassColor: fushiGlassFill(context),
+                blur: 0.0,
+                thickness: dark ? 14.0 : 18.0,
+                lightIntensity: dark ? 0.18 : 0.45,
+                ambientStrength: dark ? 0.0 : 0.12,
+                fresnelStrength: dark ? 0.0 : 1.0,
+                chromaticAberration: 0.01,
+                saturation: 1.0,
+                refractiveIndex: dark ? 1.12 : 1.2,
+                edgeAbsorption: dark ? 0.0 : 0.03,
+              ),
+      quality: GlassQuality.minimal,
+    ),
   };
   return base.copyWith(
-    settings: (base.settings ?? const GlassThemeSettings()).copyWith(
-      glassColor: fushiGlassFill(context),
-      blur: switch (material) {
-        FushiGlassMaterial.liquid => dark ? 1.8 : 8.0,
-        FushiGlassMaterial.frosted => 20.0,
-        FushiGlassMaterial.off => 0.0,
-      },
-      thickness: dark ? 14.0 : 18.0,
-      lightIntensity: dark ? 0.18 : 0.45,
-      ambientStrength: dark ? 0.0 : 0.12,
-      fresnelStrength: dark ? 0.0 : 1.0,
-      chromaticAberration: 0.01,
-      saturation: 1.0,
-      refractiveIndex: dark ? 1.12 : 1.2,
-      edgeAbsorption: dark ? 0.0 : 0.03,
-    ),
-    quality: fushiGlassQuality(context),
     glowColors: GlassGlowColors(
       secondary: cs.primary,
       success: apple.success,

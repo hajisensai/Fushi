@@ -103,7 +103,7 @@ LiquidGlassSettings fushiClearGlassSettings(
       glassColor: lighter
           ? Colors.white.withValues(alpha: 0.09)
           : Colors.black.withValues(alpha: 0.14),
-      blur: material == FushiGlassMaterial.frosted ? 10 : 2,
+      blur: material == FushiGlassMaterial.minimal ? 10 : 2,
       thickness: 12,
       lightIntensity: 0.3,
       ambientStrength: 0,
@@ -120,7 +120,7 @@ LiquidGlassSettings fushiClearGlassSettings(
   // 白 20% 的旧值压在 #F2F2F7 分组底上几乎看不见轮廓。
   return LiquidGlassSettings(
     glassColor: Colors.white.withValues(alpha: lighter ? 0.92 : 0.62),
-    blur: material == FushiGlassMaterial.frosted ? 10 : 6,
+    blur: material == FushiGlassMaterial.minimal ? 10 : 6,
     thickness: 16,
     lightIntensity: 0.5,
     ambientStrength: 0,
@@ -172,12 +172,12 @@ Widget fushiClearGlassBezel(
 }
 
 /// [fushiClearGlassSettings] 的 `bar` 档（见那里的说明）。[material] 只会是
-/// liquid（Impeller，premium 路径）或 frosted（Skia 回退）。
+/// 着色器档（standard / premium）或 minimal（零着色器，普通模糊兜可读性）。
 LiquidGlassSettings _clearBarGlassSettings(
   FushiGlassMaterial material, {
   required bool dark,
 }) {
-  if (material != FushiGlassMaterial.liquid) {
+  if (!material.usesShader) {
     return LiquidGlassSettings(
       glassColor: Colors.white.withValues(alpha: dark ? 0.08 : 0.3),
       blur: dark ? 10 : 12,

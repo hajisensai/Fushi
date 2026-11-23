@@ -7335,7 +7335,7 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
     // 背景快照组；液态玻璃着色器（liquid_glass_widgets）每个 GlassContainer 自带
     // 私有 BackdropGroup，进不了跨层的组。
     if (md3 ||
-        (realBlur && glassMaterialOf(context) == FushiGlassMaterial.frosted)) {
+        (realBlur && glassMaterialOf(context) == FushiGlassMaterial.minimal)) {
       return IgnorePointer(
         child: ClipRRect(
           borderRadius: borderRadius,

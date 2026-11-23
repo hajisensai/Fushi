@@ -53,7 +53,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show FushiButtonGroup;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
-    show fushiAppleSolidFloatingDecoration;
+    show FushiAppleFloatingSurface, fushiAppleSolidFloatingDecoration;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 可用宽到这个值就用宽屏浮动色块（M3 expanded 档下限之上）。
@@ -412,8 +412,14 @@ class _BarShellState extends State<_BarShell>
       Radius.circular(kFushiNowPlayingRadius),
     );
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final ShapeDecoration decoration;
-    if (eink) {
+    // Apple 非实色档：底由 [FushiAppleFloatingSurface] 的玻璃画，
+    // AnimatedContainer 不再铺底。
+    final bool glassSurface =
+        glass && !eink && glassMaterialOf(context) != FushiGlassMaterial.off;
+    final ShapeDecoration? decoration;
+    if (glassSurface) {
+      decoration = null;
+    } else if (eink) {
       // 墨水屏：中性色底塌成页面底色，描一圈 outline 把条切出来（阴影 / 半透明在
       // 灰阶下都会糊成脏边）。
       decoration = ShapeDecoration(
@@ -445,7 +451,7 @@ class _BarShellState extends State<_BarShell>
       );
     }
     final TextDirection direction = Directionality.of(context);
-    final Widget surface = AnimatedContainer(
+    final Widget surfaceBody = AnimatedContainer(
       duration: duration,
       curve: FushiMotion.standard,
       decoration: decoration,
@@ -494,6 +500,13 @@ class _BarShellState extends State<_BarShell>
         ),
       ),
     );
+    final Widget surface = glassSurface
+        ? FushiAppleFloatingSurface(
+            shape: shellShape(context, radius),
+            tint: colors.container,
+            child: surfaceBody,
+          )
+        : surfaceBody;
     return MouseRegion(
       opaque: false,
       onEnter: _onHover,

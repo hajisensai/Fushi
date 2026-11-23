@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show fushiAppleCompact;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
-    show fushiAppleSolidFloatingDecoration;
+    show FushiAppleFloatingSurface;
 
 /// 告诉后代按钮「你已经在一枚 Apple 玻璃组胶囊里」：[FushiIconButton] 的
 /// 带文字形态与选中态据此不再自带一层玻璃（玻璃叠玻璃会出两圈折射边，
@@ -174,11 +174,8 @@ class FushiToolbar extends StatelessWidget {
         ),
       );
       if (floating) {
-        capsule = DecoratedBox(
-          decoration: fushiAppleSolidFloatingDecoration(
-            context,
-            shape: const StadiumBorder(),
-          ),
+        capsule = FushiAppleFloatingSurface(
+          shape: const StadiumBorder(),
           child: capsule,
         );
       }

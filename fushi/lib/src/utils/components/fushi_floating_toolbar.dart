@@ -291,15 +291,11 @@ class FushiFloatingPill extends StatelessWidget {
       );
     }
     if (isGlassDesign(context)) {
-      // Apple：原生 Cupertino 实色悬浮面（无玻璃 / 无实时模糊，见
-      // [fushiAppleSolidFloatingDecoration]）；[color] 作底色，阅读器按纸色
-      // 传入的面照样生效。
-      return DecoratedBox(
-        decoration: fushiAppleSolidFloatingDecoration(
-          context,
-          shape: shape,
-          tint: color,
-        ),
+      // Apple：悬浮面按玻璃画质档位取实色面或库玻璃（[FushiAppleFloatingSurface]）；
+      // [color] 作底色 / 玻璃着色，阅读器按纸色传入的面照样生效。
+      return FushiAppleFloatingSurface(
+        shape: shape,
+        tint: color,
         child: Material(
           type: MaterialType.transparency,
           shape: shape,
@@ -2161,17 +2157,15 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
       ),
     );
     if (glass) {
-      // Apple：原生 Cupertino 强调色实色圆钮 + 柔和投影（无玻璃 / 实时模糊），
-      // 不变形（iOS 没有形状变形语汇），按下变淡而不是水波纹。
+      // Apple：强调色圆钮（实色档实色 + 柔和投影，其余档强调色玻璃，见
+      // [FushiAppleFloatingSurface]），不变形（iOS 没有形状变形语汇），按下变淡
+      // 而不是水波纹。
       final double extent = widget.size < fushiAppleFloatingExtent(context)
           ? widget.size
           : fushiAppleFloatingExtent(context) + 4;
-      Widget apple = DecoratedBox(
-        decoration: fushiAppleSolidFloatingDecoration(
-          context,
-          shape: const CircleBorder(),
-          tint: bg,
-        ),
+      Widget apple = FushiAppleFloatingSurface(
+        shape: const CircleBorder(),
+        tint: bg,
         child: FushiPlainButton(
           key: const ValueKey<String>('fushi_toolbar_fab'),
           onPressed: widget.onPressed,

@@ -795,18 +795,16 @@ class _AppleModernNarrowChrome extends StatelessWidget {
                   geometry: g,
                 ),
                 // 悬浮面实色（Apple 设计系统组件规则）：系统材质实色 + 发丝描边。
-                surface: (BuildContext context, Widget content) => DecoratedBox(
-                  decoration: fushiAppleSolidFloatingDecoration(
-                    context,
-                    shape: const RoundedSuperellipseBorder(
-                      borderRadius: _kAppleModernCardRadius,
+                surface: (BuildContext context, Widget content) =>
+                    FushiAppleFloatingSurface(
+                      shape: const RoundedSuperellipseBorder(
+                        borderRadius: _kAppleModernCardRadius,
+                      ),
+                      child: ClipRSuperellipse(
+                        borderRadius: _kAppleModernCardRadius,
+                        child: content,
+                      ),
                     ),
-                  ),
-                  child: ClipRSuperellipse(
-                    borderRadius: _kAppleModernCardRadius,
-                    child: content,
-                  ),
-                ),
                 handleBuilder:
                     (
                       BuildContext context,

@@ -153,10 +153,10 @@ BoxConstraints _resolveMd3DialogConstraints(
       );
 }
 
-/// 浮层面板（对话框 / 菜单 / 提示条）的玻璃参数。液态档沿用库 Messages
-/// 演示里 `_kMenuGlass` 的 iOS 26 实测值（深色 #262626 @50%、浅色白 @15%、
-/// blur 8），但对话框要承载大段文字，玻璃色更厚（深 @82% / 浅 @72%）以保证
-/// 可读；磨砂 / 关闭档直接用作用域的实底玻璃。[tint] 为调用方显式背景色。
+/// 浮层面板（对话框 / 菜单 / 提示条）的玻璃参数。着色器档（standard /
+/// premium）取库 iOS 27 预设（[fushiGlassSettings]），但对话框（[thick]）要承载
+/// 大段文字，玻璃色更厚（深 #262626 @82% / 浅白 @72%）以保证可读；精简 / 实色档
+/// 直接用作用域的玻璃。[tint] 为调用方显式背景色。
 LiquidGlassSettings _overlayGlassSettings(
   BuildContext context, {
   bool thick = false,
@@ -168,16 +168,14 @@ LiquidGlassSettings _overlayGlassSettings(
       .copyWith(
         platformViewFallbackColor: fushiGlassPlatformViewFallback(context),
       );
-  if (tint != null || glassMaterialOf(context) != FushiGlassMaterial.liquid) {
+  if (tint != null || !thick || !glassMaterialOf(context).usesShader) {
     return base;
   }
   final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
   return base.copyWith(
     glassColor: dark
-        ? const Color(0xFF262626).withValues(alpha: thick ? 0.82 : 0.5)
-        : Colors.white.withValues(alpha: thick ? 0.72 : 0.15),
-    blur: thick ? 14 : 8,
-    thickness: dark ? 25 : 18,
+        ? const Color(0xFF262626).withValues(alpha: 0.82)
+        : Colors.white.withValues(alpha: 0.72),
   );
 }
 

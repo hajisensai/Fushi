@@ -349,12 +349,12 @@ class _ItemMenuSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
-    final ShapeBorder shape = RoundedRectangleBorder(
+    final OutlinedBorder shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(apple ? 12 : 20)),
     );
     if (apple) {
-      return DecoratedBox(
-        decoration: fushiAppleSolidFloatingDecoration(context, shape: shape),
+      return FushiAppleFloatingSurface(
+        shape: shape,
         child: Material(type: MaterialType.transparency, child: child),
       );
     }
