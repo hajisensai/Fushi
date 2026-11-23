@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// 导入框（长耗时、await 结束后才关自己）一律用 `closeOwnRoute` 关掉自己的路由，不许用
 /// 带结果的裸 `Navigator.pop(context, …)`：导入期间用户可能从悬浮反馈球 / 全局快捷键把
