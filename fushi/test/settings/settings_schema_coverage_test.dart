@@ -125,7 +125,24 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 音乐播放（无缝 / ReplayGain）：生效点是音乐引擎下发给独立 libmpv 实例的属性
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
+  // 本批合入的三组新设置（拍板 R721ZgWVSB / EuOLprw_dV / zTedU_pOQF）：生效点分别在
+  // 漫画阅读器的翻页手势、截屏识字浮层的制卡、视频页的聊天回放栏，harness 设置页里
+  // 都没有。偏好 → 生效的链由各自专项测试咬住。
+  'manga/Swipe page-turn sensitivity':
+      'test/media/manga/manga_swipe_sensitivity_test.dart（阈值 = 基准 / 灵敏度，注入手势 JS 后慢拖翻不翻页随值变）',
+  'floatingBall/Frame the screenshot when adding a card':
+      'test/lookup/screen_ocr_overlay_mining_frame_test.dart（开 → 制卡前弹框选；任一偏好关 → 不弹）',
+  'video/Open chat replay automatically':
+      'test/media/video/video_live_chat_panel_test.dart（videoLiveChatOpensOnLoad：设置开 → 换上聊天回放即开栏）',
+  'video/Show names in chat replay':
+      'test/media/video/video_live_chat_panel_test.dart（关掉「显示用户名」后不出发送者）',
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 歌词页 MV 背景（#4249）：生效点是正在开着的歌词页里的 MusicMvBackdropController
+  // （harness 设置页里没有歌词页、也没有在播的曲目）。歌词页把偏好原样赋给
+  // controller.enabled（music_lyrics_page.dart），开 / 关 / 再开对画面来源订阅的效果
+  // 由专项测试咬住。
+  'music/Show the MV behind lyrics':
+      'test/pages/music_lyrics_mv_backdrop_setting_effect_test.dart',
   // 全屏歌词动画：生效点是歌词页里的全屏动画层（harness 设置页里没有正在播的歌词页）。
   // 歌词页把这几项偏好原样交给宿主，宿主 → 样式 context 由专项测试咬住。
   'music/Animated lyrics style':

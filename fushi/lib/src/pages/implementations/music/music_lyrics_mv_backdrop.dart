@@ -271,18 +271,19 @@ class MusicMvBackdropController extends ChangeNotifier
   set enabled(bool value) {
     if (value == _enabled) return;
     _enabled = value;
+    // 必须强制重算：关掉时目标曲目是 null，若先把 _trackUid 清成 null 再走去重，
+    // 「null == null」会直接返回，旧订阅与正在放的 MV 都留着（开关关不掉）。
     scheduleMicrotask(() {
       if (_disposed) return;
-      _trackUid = null;
-      _onEngine();
+      _onEngine(force: true);
     });
   }
 
-  void _onEngine() {
+  void _onEngine({bool force = false}) {
     if (_disposed) return;
     final MusicPlayItem? item = _enabled ? _engine.current : null;
     final String? uid = item?.trackUid;
-    if (uid == _trackUid) return;
+    if (!force && uid == _trackUid) return;
     _trackUid = uid;
     final int token = ++_loadToken;
     unawaited(_bindingSub?.cancel());

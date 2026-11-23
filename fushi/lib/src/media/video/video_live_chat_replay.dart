@@ -86,3 +86,10 @@ class VideoLiveChatReplay extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// 换上新的聊天回放后要不要直接打开聊天栏：换源 / 换集前栏开着就接着开（不因为换视频把
+/// 用户开着的栏收掉），否则看设置「自动打开聊天回放」（`video.live_chat.auto_open`）。
+bool videoLiveChatOpensOnLoad({
+  required bool wasOpen,
+  required bool autoOpen,
+}) => wasOpen || autoOpen;

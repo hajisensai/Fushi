@@ -49,7 +49,12 @@ extension _VideoLiveChat on _VideoFushiPageState {
       ),
       controller: controller,
     );
-    if (wasOpen || appModel.videoLiveChatAutoOpen) _openLiveChat();
+    if (videoLiveChatOpensOnLoad(
+      wasOpen: wasOpen,
+      autoOpen: appModel.videoLiveChatAutoOpen,
+    )) {
+      _openLiveChat();
+    }
   }
 
   /// 换上（或撤掉）聊天回放。撤掉时一并收起侧栏 / 把竖屏页签切回字幕；旧会话等这一帧
