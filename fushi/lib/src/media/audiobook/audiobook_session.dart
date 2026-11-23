@@ -9,6 +9,7 @@ import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
@@ -46,6 +47,7 @@ class AudiobookSession extends ChangeNotifier {
     required FushiDatabase? Function() database,
     required Duration Function() studyIdleTimeout,
     int Function() audioJumpThresholdSec = _defaultAudioJumpThresholdSec,
+    MediaSessionSeat? mediaSeat,
   }) : _audioJumpThresholdSec = audioJumpThresholdSec,
        _audioHandlerGetter = audioHandler,
        _showFloatingLyric = showFloatingLyric,
@@ -58,7 +60,41 @@ class AudiobookSession extends ChangeNotifier {
        _defaultFloatingLyricLookup = onFloatingLyricLookup,
        _controlStreams = controlStreams,
        _databaseGetter = database,
-       _studyIdleTimeout = studyIdleTimeout;
+       _studyIdleTimeout = studyIdleTimeout,
+       _mediaSeat = mediaSeat {
+    mediaSeat?.onPreempted = _onMediaSessionPreempted;
+  }
+
+  /// 有声书在系统媒体会话上的座位（与音乐 / 后台视频互斥，见 [MediaSessionOwner]）。
+  /// null = 不参与仲裁（测试装置），照旧直接推通知。
+  final MediaSessionSeat? _mediaSeat;
+
+  /// 上一次控制器通知时是否在出声：只在「未播放 → 播放」翻转那一刻认领会话。不在
+  /// 每次 notify 都认领——音乐认领后要等有声书的暂停落地，那之间的进度 notify 仍报
+  /// 「在播」，逐次认领会把会话又抢回来、反把音乐停掉。
+  bool _mediaSeatPlaying = false;
+
+  /// 此刻能往系统媒体会话推内容的 handler：会话归别人（音乐 / 后台视频）时为 null，
+  /// 有声书暂停时推的「未播放」态不会盖掉对方的锁屏卡、停书时也不会清掉对方的通知。
+  FushiAudioHandler? _handler() =>
+      (_mediaSeat?.held ?? true) ? _audioHandlerGetter() : null;
+
+  /// 会话被别人抢走（音乐开播 / 视频进后台继续放声音）：有声书暂停，会话保留。
+  void _onMediaSessionPreempted() {
+    final AudiobookPlayerController? controller = _controller;
+    if (controller != null && controller.isPlaying)
+      unawaited(controller.pause());
+  }
+
+  /// 「未播放 → 播放」翻转时认领会话；持有方因此换了就重推本书的媒体卡（锁屏上
+  /// 还挂着对方的卡片）。
+  void _claimMediaSessionOnPlay(AudiobookPlayerController controller) {
+    final bool playing = controller.isPlaying;
+    final bool started = playing && !_mediaSeatPlaying;
+    _mediaSeatPlaying = playing;
+    if (!started) return;
+    if (_mediaSeat?.claim() ?? false) _setMediaItemForCurrentForm(controller);
+  }
 
   /// 「返回原位置」跳转距离（秒，设置项 `listening.audiobook_jump_threshold`）。闭包
   /// 注入、每次跳转读实时值：改设置对正在播的会话立即生效，不用重开书。
@@ -310,6 +346,7 @@ class AudiobookSession extends ChangeNotifier {
     controller.addListener(_onControllerChanged);
     controller.displayCueChanged.addListener(_onDisplayCueChanged);
     _controller = controller;
+    _mediaSeatPlaying = false;
     _book = info;
     _onReleased = onReleased;
     _companion = companion?.call(controller);
@@ -702,6 +739,7 @@ class AudiobookSession extends ChangeNotifier {
     _reader?.onReaderCueChanged();
     // 常驻同步：悬浮窗 + 媒体通知。即便没有 reader（退书后台听书）也照刷。
     _syncFloatingLyric(controller);
+    _claimMediaSessionOnPlay(controller);
     _syncMediaNotification(controller);
     // BUG-2558：控制器的 notify 覆盖播放态翻转（`playingStream`）与 cue 推进两件事，
     // 正好是后台听书统计需要的两个信号——起停表对齐判据、播放中喂空闲门。
@@ -772,7 +810,7 @@ class AudiobookSession extends ChangeNotifier {
   /// 也不允许无通知的媒体前台服务。所以关着时推最简形态（只有书名 + 播放 / 暂停），
   /// 开着时推完整形态（封面 / 进度条 / 上下句 / 悬浮字幕键 / 当前句副标题）。
   void _syncMediaNotification(AudiobookPlayerController controller) {
-    final FushiAudioHandler? handler = _audioHandlerGetter();
+    final FushiAudioHandler? handler = _handler();
     if (handler == null) return;
     final bool full = _showMediaNotification();
     handler.updatePlaybackState(
@@ -813,7 +851,8 @@ class AudiobookSession extends ChangeNotifier {
   Future<void> _stopBackgroundSurfaces() async {
     FloatingLyricChannel.clearEventHandlers();
     await FloatingLyricChannel.hide();
-    _audioHandlerGetter()?.clearNotification();
+    _handler()?.clearNotification();
+    _mediaSeat?.release();
   }
 
   void _subscribeControlStreams(AudiobookPlayerController controller) {
@@ -993,7 +1032,7 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   void _setMediaItemWithCover(AudiobookPlayerController controller) {
-    final FushiAudioHandler? handler = _audioHandlerGetter();
+    final FushiAudioHandler? handler = _handler();
     if (handler == null) return;
     Uri? artUri;
     final String? coverPath = _book?.coverPath;
@@ -1015,7 +1054,7 @@ class AudiobookSession extends ChangeNotifier {
       _setMediaItemWithCover(controller);
       return;
     }
-    _audioHandlerGetter()?.setMinimalMediaItem(title: _book?.title ?? 'Fushi');
+    _handler()?.setMinimalMediaItem(title: _book?.title ?? 'Fushi');
   }
 
   /// reader / 设置切换媒体通知时调用：会话在场时只换通知形态（开 → 完整、关 →
@@ -1061,6 +1100,7 @@ class AudiobookSession extends ChangeNotifier {
     _controller = null;
     _book = null;
     _reader = null;
+    _mediaSeat?.onPreempted = null;
     super.dispose();
   }
 }
