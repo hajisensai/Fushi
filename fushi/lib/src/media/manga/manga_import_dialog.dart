@@ -25,6 +25,10 @@ import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show isLegacyMokuroHtmlVolume, kMokuroLegacyHtmlExtension;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
+    show kMangaAudioPackageExtension;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_page.dart'
+    show openMangaAudioPackageImportPage;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -399,6 +403,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   static final Set<String> _mangaFileExtensions = <String>{
     for (final String ext in kMangaCarrierFileExtensions) ext.substring(1),
     kMokuroLegacyHtmlExtension.substring(1),
+    // 有声漫画包：选中后转给它自己的导入页（[_handOffAudioPackage]）。
+    kMangaAudioPackageExtension.substring(1),
   };
 
   Future<void> _pickFile() async {
@@ -527,6 +533,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       );
       return false;
     }
+    if (carrier == ImportCarrier.mangaAudioPackage) {
+      _handOffAudioPackage(candidate);
+      return false;
+    }
     final String path = _importPathFor(candidate, carrier);
     setState(() {
       _batchPaths = const <String>[];
@@ -541,6 +551,24 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       }
     });
     return true;
+  }
+
+  /// 有声漫画包不是「一卷漫画」：关掉本框，打开有声漫画包的导入页（逐卷认本机同一卷、
+  /// 列出会替换什么、确认后导入），不在这里按单卷导。
+  void _handOffAudioPackage(String path) {
+    final NavigatorState navigator = Navigator.of(context);
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
+    closeOwnRoute(context, false);
+    unawaited(
+      openMangaAudioPackageImportPage(
+        navigator.context,
+        appModel: appModel,
+        path: path,
+      ),
+    );
   }
 
   void _handleDialogDrop(List<String> paths, Offset _) =>
@@ -776,9 +804,11 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               policy: DuplicatePolicy.ask(_askOnDuplicate),
               onProgress: _reportPageProgress,
             );
+          case ImportCarrier.mangaAudioPackage:
           case ImportCarrier.epub:
           case ImportCarrier.text:
-            // 不可达：[_adoptPath] / [initState] 只收下 isMangaCapable 的载体。
+            // 不可达：[_adoptPath] / [initState] 只收下 isMangaCapable 的载体，
+            // 有声漫画包在 [_adoptPath] 就转给了它自己的导入页。
             throw StateError(
               'non-manga carrier in MangaImportDialog: $carrier',
             );
