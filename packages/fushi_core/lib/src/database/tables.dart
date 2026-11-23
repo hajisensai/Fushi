@@ -2109,6 +2109,12 @@ class ItemScrapeMeta extends Table {
   /// 本行写入毫秒戳。
   IntColumn get scrapedAt => integer()();
 
+  /// v177 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
+  /// 可锁字段名，例如 `summary`。用户手填过的字段进这里，之后条目刮削一律保留
+  /// 旧值（BUG-5111）。NULL / 空 = 无锁；值域由引擎 `ItemScrapeLockableField`
+  /// 维护，未知值静默忽略（前向兼容）。
+  TextColumn get lockedFields => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {mediaType, entryKey};
 }

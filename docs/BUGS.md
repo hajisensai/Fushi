@@ -233,8 +233,8 @@
 | [BUG-5114](bugs/BUG-5114-local-audio-identity-ignores-recordings.md) | ✅ | ✅ | local-audio-identity-ignores-recordings |
 | [BUG-5113](bugs/BUG-5113-upscale-cache-io-under-state-lock.md) | ✅ | ✅ | 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队 |
 | [BUG-5112](bugs/BUG-5112-upscale-stale-generation-models-failed.md) | ✅ | ✅ | 漫画超分：旧档迟到的模型加载失败能关掉新档、清掉新档的队列 |
-| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | 🚧 | 🚧 | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
-| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | 🚧 | 🚧 | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
+| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | ✅ | ✅ | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
+| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | ✅ | ✅ | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
 | [BUG-5109](bugs/BUG-5109-manga-series-page-other-book-progress-refresh.md) | ✅ | ✅ | manga-series-page-other-book-progress-refresh |
 | [BUG-5108](bugs/BUG-5108-manga-download-pause-waits-verify.md) | ✅ | ✅ | manga-download-pause-waits-verify |
 | [BUG-5107](bugs/BUG-5107-tts-silence-not-at-shared-entry.md) | ✅ | ✅ | 纯标点句判定只接了部分合成入口：漫画配音 / Galgame 朗读 / 试听仍把「……」「！」送引擎 |

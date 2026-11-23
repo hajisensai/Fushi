@@ -36652,6 +36652,17 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _lockedFieldsMeta = const VerificationMeta(
+    'lockedFields',
+  );
+  @override
+  late final GeneratedColumn<String> lockedFields = GeneratedColumn<String>(
+    'locked_fields',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     mediaType,
@@ -36667,6 +36678,7 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
     tagsJson,
     detailUrl,
     scrapedAt,
+    lockedFields,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -36772,6 +36784,15 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
     } else if (isInserting) {
       context.missing(_scrapedAtMeta);
     }
+    if (data.containsKey('locked_fields')) {
+      context.handle(
+        _lockedFieldsMeta,
+        lockedFields.isAcceptableOrUnknown(
+          data['locked_fields']!,
+          _lockedFieldsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -36833,6 +36854,10 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
         DriftSqlType.int,
         data['${effectivePrefix}scraped_at'],
       )!,
+      lockedFields: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}locked_fields'],
+      ),
     );
   }
 
@@ -36883,6 +36908,12 @@ class ItemScrapeMetaRow extends DataClass
 
   /// 本行写入毫秒戳。
   final int scrapedAt;
+
+  /// v172 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
+  /// 可锁字段名，例如 `summary`。用户手填过的字段进这里，之后条目刮削一律保留
+  /// 旧值（BUG-5111）。NULL / 空 = 无锁；值域由引擎 `ItemScrapeLockableField`
+  /// 维护，未知值静默忽略（前向兼容）。
+  final String? lockedFields;
   const ItemScrapeMetaRow({
     required this.mediaType,
     required this.entryKey,
@@ -36897,6 +36928,7 @@ class ItemScrapeMetaRow extends DataClass
     this.tagsJson,
     this.detailUrl,
     required this.scrapedAt,
+    this.lockedFields,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -36932,6 +36964,9 @@ class ItemScrapeMetaRow extends DataClass
       map['detail_url'] = Variable<String>(detailUrl);
     }
     map['scraped_at'] = Variable<int>(scrapedAt);
+    if (!nullToAbsent || lockedFields != null) {
+      map['locked_fields'] = Variable<String>(lockedFields);
+    }
     return map;
   }
 
@@ -36968,6 +37003,9 @@ class ItemScrapeMetaRow extends DataClass
           ? const Value.absent()
           : Value(detailUrl),
       scrapedAt: Value(scrapedAt),
+      lockedFields: lockedFields == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lockedFields),
     );
   }
 
@@ -36990,6 +37028,7 @@ class ItemScrapeMetaRow extends DataClass
       tagsJson: serializer.fromJson<String?>(json['tagsJson']),
       detailUrl: serializer.fromJson<String?>(json['detailUrl']),
       scrapedAt: serializer.fromJson<int>(json['scrapedAt']),
+      lockedFields: serializer.fromJson<String?>(json['lockedFields']),
     );
   }
   @override
@@ -37009,6 +37048,7 @@ class ItemScrapeMetaRow extends DataClass
       'tagsJson': serializer.toJson<String?>(tagsJson),
       'detailUrl': serializer.toJson<String?>(detailUrl),
       'scrapedAt': serializer.toJson<int>(scrapedAt),
+      'lockedFields': serializer.toJson<String?>(lockedFields),
     };
   }
 
@@ -37026,6 +37066,7 @@ class ItemScrapeMetaRow extends DataClass
     Value<String?> tagsJson = const Value.absent(),
     Value<String?> detailUrl = const Value.absent(),
     int? scrapedAt,
+    Value<String?> lockedFields = const Value.absent(),
   }) => ItemScrapeMetaRow(
     mediaType: mediaType ?? this.mediaType,
     entryKey: entryKey ?? this.entryKey,
@@ -37042,6 +37083,7 @@ class ItemScrapeMetaRow extends DataClass
     tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
     detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
     scrapedAt: scrapedAt ?? this.scrapedAt,
+    lockedFields: lockedFields.present ? lockedFields.value : this.lockedFields,
   );
   ItemScrapeMetaRow copyWithCompanion(ItemScrapeMetaCompanion data) {
     return ItemScrapeMetaRow(
@@ -37062,6 +37104,9 @@ class ItemScrapeMetaRow extends DataClass
       tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
       detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
       scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+      lockedFields: data.lockedFields.present
+          ? data.lockedFields.value
+          : this.lockedFields,
     );
   }
 
@@ -37080,7 +37125,8 @@ class ItemScrapeMetaRow extends DataClass
           ..write('ratingCount: $ratingCount, ')
           ..write('tagsJson: $tagsJson, ')
           ..write('detailUrl: $detailUrl, ')
-          ..write('scrapedAt: $scrapedAt')
+          ..write('scrapedAt: $scrapedAt, ')
+          ..write('lockedFields: $lockedFields')
           ..write(')'))
         .toString();
   }
@@ -37100,6 +37146,7 @@ class ItemScrapeMetaRow extends DataClass
     tagsJson,
     detailUrl,
     scrapedAt,
+    lockedFields,
   );
   @override
   bool operator ==(Object other) =>
@@ -37117,7 +37164,8 @@ class ItemScrapeMetaRow extends DataClass
           other.ratingCount == this.ratingCount &&
           other.tagsJson == this.tagsJson &&
           other.detailUrl == this.detailUrl &&
-          other.scrapedAt == this.scrapedAt);
+          other.scrapedAt == this.scrapedAt &&
+          other.lockedFields == this.lockedFields);
 }
 
 class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
@@ -37134,6 +37182,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
   final Value<String?> tagsJson;
   final Value<String?> detailUrl;
   final Value<int> scrapedAt;
+  final Value<String?> lockedFields;
   final Value<int> rowid;
   const ItemScrapeMetaCompanion({
     this.mediaType = const Value.absent(),
@@ -37149,6 +37198,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     this.tagsJson = const Value.absent(),
     this.detailUrl = const Value.absent(),
     this.scrapedAt = const Value.absent(),
+    this.lockedFields = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ItemScrapeMetaCompanion.insert({
@@ -37165,6 +37215,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     this.tagsJson = const Value.absent(),
     this.detailUrl = const Value.absent(),
     required int scrapedAt,
+    this.lockedFields = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : mediaType = Value(mediaType),
        entryKey = Value(entryKey),
@@ -37184,6 +37235,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     Expression<String>? tagsJson,
     Expression<String>? detailUrl,
     Expression<int>? scrapedAt,
+    Expression<String>? lockedFields,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -37200,6 +37252,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
       if (tagsJson != null) 'tags_json': tagsJson,
       if (detailUrl != null) 'detail_url': detailUrl,
       if (scrapedAt != null) 'scraped_at': scrapedAt,
+      if (lockedFields != null) 'locked_fields': lockedFields,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -37218,6 +37271,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     Value<String?>? tagsJson,
     Value<String?>? detailUrl,
     Value<int>? scrapedAt,
+    Value<String?>? lockedFields,
     Value<int>? rowid,
   }) {
     return ItemScrapeMetaCompanion(
@@ -37234,6 +37288,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
       tagsJson: tagsJson ?? this.tagsJson,
       detailUrl: detailUrl ?? this.detailUrl,
       scrapedAt: scrapedAt ?? this.scrapedAt,
+      lockedFields: lockedFields ?? this.lockedFields,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -37280,6 +37335,9 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     if (scrapedAt.present) {
       map['scraped_at'] = Variable<int>(scrapedAt.value);
     }
+    if (lockedFields.present) {
+      map['locked_fields'] = Variable<String>(lockedFields.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -37302,6 +37360,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
           ..write('tagsJson: $tagsJson, ')
           ..write('detailUrl: $detailUrl, ')
           ..write('scrapedAt: $scrapedAt, ')
+          ..write('lockedFields: $lockedFields, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -114089,6 +114148,7 @@ typedef $$ItemScrapeMetaTableCreateCompanionBuilder =
       Value<String?> tagsJson,
       Value<String?> detailUrl,
       required int scrapedAt,
+      Value<String?> lockedFields,
       Value<int> rowid,
     });
 typedef $$ItemScrapeMetaTableUpdateCompanionBuilder =
@@ -114106,6 +114166,7 @@ typedef $$ItemScrapeMetaTableUpdateCompanionBuilder =
       Value<String?> tagsJson,
       Value<String?> detailUrl,
       Value<int> scrapedAt,
+      Value<String?> lockedFields,
       Value<int> rowid,
     });
 
@@ -114180,6 +114241,11 @@ class $$ItemScrapeMetaTableFilterComposer
 
   ColumnFilters<int> get scrapedAt => $composableBuilder(
     column: $table.scrapedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lockedFields => $composableBuilder(
+    column: $table.lockedFields,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -114257,6 +114323,11 @@ class $$ItemScrapeMetaTableOrderingComposer
     column: $table.scrapedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get lockedFields => $composableBuilder(
+    column: $table.lockedFields,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ItemScrapeMetaTableAnnotationComposer
@@ -114310,6 +114381,11 @@ class $$ItemScrapeMetaTableAnnotationComposer
 
   GeneratedColumn<int> get scrapedAt =>
       $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lockedFields => $composableBuilder(
+    column: $table.lockedFields,
+    builder: (column) => column,
+  );
 }
 
 class $$ItemScrapeMetaTableTableManager
@@ -114362,6 +114438,7 @@ class $$ItemScrapeMetaTableTableManager
                 Value<String?> tagsJson = const Value.absent(),
                 Value<String?> detailUrl = const Value.absent(),
                 Value<int> scrapedAt = const Value.absent(),
+                Value<String?> lockedFields = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemScrapeMetaCompanion(
                 mediaType: mediaType,
@@ -114377,6 +114454,7 @@ class $$ItemScrapeMetaTableTableManager
                 tagsJson: tagsJson,
                 detailUrl: detailUrl,
                 scrapedAt: scrapedAt,
+                lockedFields: lockedFields,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -114394,6 +114472,7 @@ class $$ItemScrapeMetaTableTableManager
                 Value<String?> tagsJson = const Value.absent(),
                 Value<String?> detailUrl = const Value.absent(),
                 required int scrapedAt,
+                Value<String?> lockedFields = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemScrapeMetaCompanion.insert(
                 mediaType: mediaType,
@@ -114409,6 +114488,7 @@ class $$ItemScrapeMetaTableTableManager
                 tagsJson: tagsJson,
                 detailUrl: detailUrl,
                 scrapedAt: scrapedAt,
+                lockedFields: lockedFields,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

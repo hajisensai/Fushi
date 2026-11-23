@@ -3,7 +3,14 @@ library;
 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:drift/drift.dart' show BooleanExpressionOperators, Value;
+import 'package:drift/drift.dart'
+    show
+        BooleanExpressionOperators,
+        Table,
+        TableInfo,
+        UpdateKind,
+        Value,
+        Variable;
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -210,13 +217,22 @@ class VideoMetadataDatabaseStore {
       // v99 字段锁：先读旧行，被锁字段一律保留旧值。必须在
       // `_removeBookOwnedWorksForCollection` 之前读——那一步只删「成员自己拥有的
       // 作品行」，但把读放在最前面才不用去推理它到底删了谁。
-      final VideoMetadataWorkRow? existingWork = localWork.collection == null
+      VideoMetadataWorkRow? existingWork = localWork.collection == null
           ? await database.getVideoMetadataWorkByBook(
               localWork.members.single.bookUid,
             )
           : await database.getVideoMetadataWorkByCollection(
               localWork.collection!.id,
             );
+      // BUG-5110：单集作品长成合集（下到第二集）后第一次按合集刮——合集还没有
+      // 自己的行、成员上恰好挂着一条作品行时，把那一行升格成合集行（改归属，
+      // 不删），用户手填的值、字段锁、锁住的图 / 词条随行保留；下面的整组替换
+      // 按「同一作品重刮」的语义作用在这条行上。
+      if (existingWork == null) {
+        if (localWork.collection case final MediaCollectionRow collection) {
+          existingWork = await _promoteSoleMemberWork(collection.id);
+        }
+      }
       final Set<VideoMetadataLockableField> locked = parseLockedFields(
         existingWork?.lockedFields,
       );
@@ -649,6 +665,46 @@ class VideoMetadataDatabaseStore {
               table.source.equals('local').not(),
         ))
         .go();
+  }
+
+  /// [collectionId] 没有合集行、视频成员里恰好一个自己挂着作品行时，把那一行
+  /// 改归属到合集（`book_uid` → `collection_id`），返回升格后的行；不满足（0 个
+  /// 或多个成员各有作品——那是各自独立的作品，没有哪一条能代表合集）返回 null。
+  /// 那部作品起点的系列关系一并改挂到合集（合集已有同 `(source, subject_id)` 的
+  /// 行时保留合集的，成员那条随后由 [_removeBookOwnedWorksForCollection] 清掉）。
+  /// 调用方须在事务里。
+  Future<VideoMetadataWorkRow?> _promoteSoleMemberWork(int collectionId) async {
+    final Set<String> memberBookUids =
+        (await database.getCollectionItems(collectionId))
+            .where((MediaCollectionItemRow row) => row.mediaType == 'video')
+            .map((MediaCollectionItemRow row) => row.entryKey)
+            .toSet();
+    if (memberBookUids.isEmpty) return null;
+    final List<VideoMetadataWorkRow> owned = await (database.select(
+      database.videoMetadataWorks,
+    )..where((table) => table.bookUid.isIn(memberBookUids))).get();
+    if (owned.length != 1) return null;
+    final VideoMetadataWorkRow work = owned.single;
+    final String memberUid = work.bookUid!;
+    await (database.update(
+      database.videoMetadataWorks,
+    )..where((table) => table.id.equals(work.id))).write(
+      VideoMetadataWorksCompanion(
+        collectionId: Value<int?>(collectionId),
+        bookUid: const Value<String?>(null),
+      ),
+    );
+    await database.customUpdate(
+      'UPDATE OR IGNORE collection_relations '
+      'SET collection_id = ?, book_uid = NULL WHERE book_uid = ?',
+      variables: <Variable<Object>>[
+        Variable<int>(collectionId),
+        Variable<String>(memberUid),
+      ],
+      updates: <TableInfo<Table, dynamic>>{database.collectionRelations},
+      updateKind: UpdateKind.update,
+    );
+    return database.getVideoMetadataWorkByCollection(collectionId);
   }
 
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {

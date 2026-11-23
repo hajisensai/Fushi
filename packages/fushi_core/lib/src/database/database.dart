@@ -3761,6 +3761,15 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(musicServerTrackStates);
         }
       }
+      if (from < 177) {
+        // v177：item_scrape_meta.locked_fields——条目资料的字段锁（书的简介手填后
+        // 条目刮削不再覆盖，BUG-5111）。纯加列、存量 NULL = 无锁；按列存在性守卫，
+        // 重跑幂等。
+        if (await _tableExists('item_scrape_meta') &&
+            !await _columnExists('item_scrape_meta', 'locked_fields')) {
+          await m.addColumn(itemScrapeMeta, itemScrapeMeta.lockedFields);
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

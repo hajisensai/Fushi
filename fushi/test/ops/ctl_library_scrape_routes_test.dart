@@ -107,6 +107,38 @@ void main() {
     expect(ref.invalidations, greaterThan(0));
   });
 
+  test('v177 字段锁：手填的简介经 replace 照写、锁保留；undo 连锁一起恢复', () async {
+    await seedBook(db, '锁');
+    final String uid = (await db.resolveEpubBookUid('锁'))!;
+    final ItemScrapeKey key = ItemScrapeKey(MediaKind.epub, uid);
+    await ItemScrapeStore(db).setManualFields(
+      key,
+      <ItemScrapeLockableField, String?>{
+        ItemScrapeLockableField.summary: '我写的',
+      },
+    );
+    final Map<String, Object?> before = await call('GET', 'book:锁');
+    expect((before['meta']! as Map<String, Object?>)['lockedFields'], <String>[
+      'summary',
+    ]);
+
+    await call(
+      'PUT',
+      'book:锁',
+      body: <String, Object?>{'summary': 'AI 写的', 'replace': true},
+    );
+    final Map<String, Object?> replaced =
+        (await call('GET', 'book:锁'))['meta']! as Map<String, Object?>;
+    expect(replaced['summary'], 'AI 写的', reason: '明确替换照写');
+    expect(replaced['lockedFields'], <String>['summary'], reason: '锁不被脚本清掉');
+
+    await restoreItemScrapeState(ref.model, 'book:锁', before);
+    final Map<String, Object?> undone =
+        (await call('GET', 'book:锁'))['meta']! as Map<String, Object?>;
+    expect(undone['summary'], '我写的');
+    expect(undone['lockedFields'], <String>['summary']);
+  });
+
   test('游戏键；clear 删行和文件；undo 快照恢复执行前状态', () async {
     await db.upsertGalgame(
       GalgamesCompanion.insert(

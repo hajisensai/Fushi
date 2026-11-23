@@ -1936,6 +1936,8 @@
   "book_detail_unscraped_hint": "No metadata yet. Scrape to fetch the summary, rating and genres.",
   "book_directory_not_found": "책 디렉토리를 찾을 수 없습니다.",
   "book_edit_author": "저자",
+  "book_edit_summary": "Summary",
+  "book_edit_summary_helper": "Re-scraping keeps what you type here. Clear it to let scraping fill it again.",
   "book_file_not_found": "책 파일을 찾을 수 없음",
   "book_import_audio_row_hint": "Pair with subtitles to make an audiobook",
   "book_import_cover_from_audio": "From audio",
