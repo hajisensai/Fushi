@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T04:39:10Z",
+ "generatedAt": "2026-11-23T05:09:40Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e272fb9a51dd4b5af1ad66564becef33e60ecc01",
-  "seq": 31580
+  "sha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
+  "seq": 31707
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "e5215fc34e23ff547fee181549eea9d423dec35d",
    "unknown": false,
-   "publishedAt": "2026-11-23T04:38:56Z",
-   "testflight": false,
+   "publishedAt": "2026-11-23T05:09:22Z",
+   "testflight": true,
    "baseSeq": 31532,
    "prs": [
     4224
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+     "state": "ok"
     },
     "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+     "state": "ok"
     }
    }
   },
@@ -111,41 +108,17 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45043071029"
     }
    }
-  },
-  {
-   "seq": 31474,
-   "version": "3.4.0",
-   "sha": "3c8d64b87b910ea52c1066e8f18b1d283002636d",
-   "unknown": false,
-   "publishedAt": "2026-11-22T16:32:32Z",
-   "testflight": true,
-   "baseSeq": 31437,
-   "prs": [
-    4186
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45036047097"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "e272fb9a51dd4b5af1ad66564becef33e60ecc01",
-  "headSeq": 31580,
+  "headSha": "fe1d3a7eaf46306a91179f948bc6c927e4d75b49",
+  "headSeq": 31707,
   "prs": [
+   4211,
+   4208,
+   4166,
+   4165,
+   4168,
    4204,
    4206,
    4207,
@@ -160,6 +133,10 @@
   ],
   "direct": [
    {
+    "sha": "f4586576fc993b42f114fb054135bed05d0cca2d",
+    "subject": "chore(bugs): settle BUG number collisions on 1e36646b7"
+   },
+   {
     "sha": "160eb9ae14eeed84b45408c7d0c07a74293bdd8d",
     "subject": "chore(bugs): settle BUG number collisions on 87cb892ac"
    }
@@ -168,23 +145,50 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985799"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793460"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985837"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985837"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985837"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45115793247"
    }
   }
  },
  "prs": {
+  "4165": {
+   "number": 4165,
+   "title": "fix(downloads): 继续 / 重试时种子不在原后端就在同一后端重建；批量失败可查看原因（BUG-5212）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:42:18Z",
+   "additions": 434,
+   "deletions": 33,
+   "labels": []
+  },
+  "4166": {
+   "number": 4166,
+   "title": "feat(android): 书库默认放 Android/data/<包名>/files，老安装一次性提示迁移",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:50:02Z",
+   "additions": 1054,
+   "deletions": 28,
+   "labels": []
+  },
+  "4168": {
+   "number": 4168,
+   "title": "fix(manga): 朗读与有声剧按页面印着的注音念（BUG-5216）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:40:06Z",
+   "additions": 938,
+   "deletions": 161,
+   "labels": []
+  },
   "4185": {
    "number": 4185,
    "title": "fix(media): 波奇蓝光多卷并成一个合集、首页色块 logo、媒体页滚动卡顿",
@@ -192,15 +196,6 @@
    "mergedAt": "2026-11-22T15:33:40Z",
    "additions": 1625,
    "deletions": 177,
-   "labels": []
-  },
-  "4186": {
-   "number": 4186,
-   "title": "merge: 2026-11-22 合并后审查修复批（HBK-AUDIT-201~235）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T15:02:11Z",
-   "additions": 5689,
-   "deletions": 781,
    "labels": []
   },
   "4187": {
@@ -338,6 +333,15 @@
    "deletions": 28,
    "labels": []
   },
+  "4208": {
+   "number": 4208,
+   "title": "fix(srs): 校时偏移只在同一次开机内跨进程接上，SRS「今天」不再永久多一天（BUG-5264）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:59:14Z",
+   "additions": 300,
+   "deletions": 327,
+   "labels": []
+  },
   "4209": {
    "number": 4209,
    "title": "feat(linux): Linux 自动出包真正发布（Flatpak + tar.gz），放开两处过时的 Linux 平台门",
@@ -345,6 +349,15 @@
    "mergedAt": "2026-11-23T04:30:03Z",
    "additions": 27,
    "deletions": 15,
+   "labels": []
+  },
+  "4211": {
+   "number": 4211,
+   "title": "feat(music): 全屏歌词动画（移植 folia-major 18 套样式、整首音频分析、AI 主题、镜台 Flutter GPU）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T05:07:14Z",
+   "additions": 143823,
+   "deletions": 227,
    "labels": []
   },
   "4219": {
