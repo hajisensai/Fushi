@@ -141,7 +141,10 @@ String? ttsCastAnnotateFailureText(TtsCastAnnotateFailure failure) =>
     switch (failure.code) {
       'cancelled' => null,
       'no_ai_provider' => t.audiobook_studio_cast_no_ai,
-      'bad_output' => t.audiobook_studio_cast_failure_bad_output,
+      // 带上原因（哪一遍、哪章、怎么坏的），原始回复在错误日志（BUG-5366）。
+      'bad_output' => t.audiobook_studio_cast_failure_bad_output_reason(
+        reason: failure.detail ?? t.audiobook_studio_failure_internal,
+      ),
       'ai_failed' => t.audiobook_studio_cast_failed(
         reason: failure.detail == null
             ? t.audiobook_studio_failure_internal

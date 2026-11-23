@@ -168,8 +168,16 @@ void main() {
         t.audiobook_studio_cast_no_ai,
       );
       expect(
-        ttsCastAnnotateFailureText(const TtsCastAnnotateFailure('bad_output')),
-        t.audiobook_studio_cast_failure_bad_output,
+        ttsCastAnnotateFailureText(
+          const TtsCastAnnotateFailure(
+            'bad_output',
+            'roster, section 6: no usable entries',
+            '[{"op":"update"',
+          ),
+        ),
+        t.audiobook_studio_cast_failure_bad_output_reason(
+          reason: 'roster, section 6: no usable entries',
+        ),
       );
       expect(
         ttsCastAnnotateFailureText(

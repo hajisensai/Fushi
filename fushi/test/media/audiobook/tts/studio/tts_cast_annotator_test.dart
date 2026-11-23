@@ -321,10 +321,22 @@ void main() {
     });
 
     test('系统提示：操作种类、原文字形、规范名 + 别名', () {
-      expect(kTtsRosterSystemPrompt, contains('ONLY a JSON array'));
-      expect(kTtsRosterSystemPrompt, contains('"op":"merge"'));
-      expect(kTtsRosterSystemPrompt, contains('original script'));
-      expect(kTtsRosterSystemPrompt, contains('One canonical name'));
+      expect(
+        ttsRosterSystemPrompt(TtsCastScript.japanese),
+        contains('ONLY a JSON array'),
+      );
+      expect(
+        ttsRosterSystemPrompt(TtsCastScript.japanese),
+        contains('"op":"merge"'),
+      );
+      expect(
+        ttsRosterSystemPrompt(TtsCastScript.japanese),
+        contains('original script'),
+      );
+      expect(
+        ttsRosterSystemPrompt(TtsCastScript.japanese),
+        contains('One canonical name'),
+      );
     });
 
     test('解析 add / update / merge，校验性别年龄、去重别名、丢弃坏元素', () {
@@ -511,25 +523,58 @@ void main() {
     });
 
     test('系统提示：只能从角色表选人、unknown、把握与依据', () {
-      expect(kTtsCastLinesSystemPrompt, contains('ONLY a JSON array'));
       expect(
-        kTtsCastLinesSystemPrompt,
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('ONLY a JSON array'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
         contains('Never use a name that is not'),
       );
-      expect(kTtsCastLinesSystemPrompt, contains('"unknown"'));
-      expect(kTtsCastLinesSystemPrompt, contains('"ev"'));
-      expect(kTtsCastLinesSystemPrompt, contains('「…」とスバルは言った'));
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"unknown"'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"ev"'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('「…」とスバルは言った'),
+      );
       // 演出字段：与漫画同一词表，小说台词不给「叙述」「不读」。
-      expect(kTtsCastLinesSystemPrompt, contains('"thought"'));
-      expect(kTtsCastLinesSystemPrompt, contains('"beat"'));
-      expect(kTtsCastLinesSystemPrompt, contains('"tenderness"'));
-      expect(kTtsCastLinesSystemPrompt, isNot(contains('"skip"')));
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"thought"'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"beat"'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"tenderness"'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        isNot(contains('"skip"')),
+      );
     });
 
     test('系统提示要逐句语气说明；AI 给的 tone 进演出字段', () {
-      expect(kTtsCastLinesSystemPrompt, contains('"tone"'));
-      expect(kTtsCastLinesSystemPrompt, contains('sentence-final particles'));
-      expect(kTtsCastLinesSystemPrompt, contains('"tone":"必死に食い下がる"'));
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"tone"'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('sentence-final particles'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('"tone":"必死に食い下がる"'),
+      );
       final CastLineDirection d = ttsCastAiDirection(<Object?, Object?>{
         'e': 'sadness',
         'ei': 60,
@@ -542,11 +587,26 @@ void main() {
     });
 
     test('系统提示：`*` 行必须逐条回，书名 / 标牌显式回 narrator', () {
-      expect(kTtsCastLinesSystemPrompt, contains('{"i":11,"s":"narrator"}'));
-      expect(kTtsCastLinesSystemPrompt, contains('Give EVERY starred line'));
-      expect(kTtsCastLinesSystemPrompt, contains('『書名』'));
-      expect(kTtsCastLinesSystemPrompt, contains('「立ち入り禁止」'));
-      expect(kTtsCastLinesSystemPrompt, contains('goes to a human for review'));
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('{"i":11,"s":"narrator"}'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('Give EVERY starred line'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('『書名』'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('「立ち入り禁止」'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('goes to a human for review'),
+      );
     });
 
     test('独立书名 / 标牌行：模型显式回 narrator 就记旁白、不进复核；没回的仍进复核', () {
@@ -832,6 +892,130 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  group('BUG-5366：小模型漏掉数组末尾的 ]', () {
+    // Qwen3.5 9B（Unsloth Studio）对《化物語》第一章第四块的真实回复：三条完整
+    // 操作，最后少了闭合的 `]`。旧解析退到第一个嵌套的别名表，判成「没有可用条目」。
+    const String unclosed =
+        '[{"op":"update","name":"戰場原黑儀","aliases":["黑儀","戰原","傲嬌女"]},'
+        '{"op":"update","name":"忍野咩咩","aliases":["忍野先生","忍野桑","禪宗導師","忍野"]},'
+        '{"op":"update","name":"阿良良木","aliases":["我","阿良良木曆","曆","男","不死身少年","阿良良木老弟"]}';
+
+    test('收下没闭合数组里的完整元素，不退到嵌套别名表', () {
+      final TtsRosterParseResult? r = parseTtsRosterReply(unclosed);
+      expect(ttsRosterReplyFailureReason(r), isNull);
+      expect(r!.ops.map((TtsRosterOp o) => o.name), <String>[
+        '戰場原黑儀',
+        '忍野咩咩',
+        '阿良良木',
+      ]);
+      expect(r.ops.first.aliases, <String>['黑儀', '戰原', '傲嬌女']);
+    });
+
+    test('最后一个元素被截断：丢掉半截，前面的照收', () {
+      final TtsRosterParseResult? r = parseTtsRosterReply(
+        '[{"op":"add","name":"小雪"},{"op":"add","name":"陳',
+      );
+      expect(r!.ops.map((TtsRosterOp o) => o.name), <String>['小雪']);
+    });
+
+    test('完整数组里有坏元素：收下坏元素之前的', () {
+      final TtsRosterParseResult? r = parseTtsRosterReply(
+        '[{"op":"add","name":"小雪"},{"op":"add",name:"陳默"}]',
+      );
+      expect(r!.ops.map((TtsRosterOp o) => o.name), <String>['小雪']);
+    });
+
+    test('说明文字里的 [方括号] 与思考段不当回复', () {
+      final TtsRosterParseResult? r = parseTtsRosterReply(
+        '<think>示例是 [{"op":"add","name":"エミリア"}]</think>'
+        'Looking at the [passage]: [{"op":"add","name":"小雪"}]',
+      );
+      expect(r!.ops.map((TtsRosterOp o) => o.name), <String>['小雪']);
+    });
+
+    test('只有嵌套的字符串数组、没有对象数组：仍是缺 JSON 数组', () {
+      expect(
+        ttsRosterReplyFailureReason(parseTtsRosterReply('aliases: ["黑儀"]')),
+        'no JSON array',
+      );
+    });
+
+    test('第二遍同样收下没闭合的数组', () {
+      final TtsCastParseResult? r = parseTtsCastReply(
+        '[{"i":1,"s":"小雪"},{"i":2,"s":"unknown","c":0.2}',
+        2,
+        speakers: TtsCastSpeakerIndex(const <TtsCastCharacter>[
+          TtsCastCharacter(name: '小雪'),
+        ]),
+      );
+      expect(ttsCastReplyFailureReason(r), isNull);
+      expect(r!.labels.map((TtsCastLabel l) => l.speaker), <String>[
+        '小雪',
+        kTtsUnknown,
+      ]);
+    });
+  });
+
+  group('BUG-5366：提示词示例跟着正文的文字走', () {
+    test('按正文判断日文 / 中文 / 其他', () {
+      expect(
+        detectTtsCastScript(<String>['「行くぞ」とスバルは言った。']),
+        TtsCastScript.japanese,
+      );
+      expect(
+        detectTtsCastScript(<String>['戰場原黑儀，在班上被定位成體弱多病的女孩子。']),
+        TtsCastScript.chinese,
+      );
+      expect(
+        detectTtsCastScript(<String>['“走吧。”他说，“別擔心。”']),
+        TtsCastScript.chinese,
+      );
+      expect(
+        detectTtsCastScript(<String>['"Let\'s go," Sam said.']),
+        TtsCastScript.other,
+      );
+      // 中文书里偶尔的片假名、长音符不改判。
+      expect(
+        detectTtsCastScript(<String>[
+          '他戴著一頂「ノーブランド」的帽子，走進了咖啡店，點了一杯拿鐵，坐在窗邊看書看了整個下午。',
+        ]),
+        TtsCastScript.chinese,
+      );
+    });
+
+    test('中文书：中文示例、desc / tone 用中文、不出现日文示例', () {
+      final String roster = ttsRosterSystemPrompt(TtsCastScript.chinese);
+      final String lines = ttsCastLinesSystemPrompt(TtsCastScript.chinese);
+      expect(roster, contains('"desc":"温柔内向'));
+      expect(roster, contains('written in Chinese'));
+      expect(lines, contains('“……”陈默说道'));
+      expect(lines, contains('《书名》'));
+      expect(lines, contains('acting note in Chinese'));
+      for (final String p in <String>[roster, lines]) {
+        expect(p, isNot(contains('スバル')));
+        expect(p, isNot(contains('エミリア')));
+        expect(p, contains('always close the array with "]"'));
+      }
+    });
+
+    test('日文书示例不变、desc 示例改成日文', () {
+      expect(
+        ttsRosterSystemPrompt(TtsCastScript.japanese),
+        contains('"desc":"穏やかなハーフエルフ'),
+      );
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
+        contains('acting note in Japanese'),
+      );
+    });
+
+    test('已在表里的名字 / 别名要 update，不再 add', () {
+      for (final TtsCastScript s in TtsCastScript.values) {
+        expect(ttsRosterSystemPrompt(s), contains('never "add" it again'));
+      }
     });
   });
 }

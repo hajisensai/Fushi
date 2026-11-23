@@ -43,7 +43,9 @@ Future<({TtsCast cast, int saves, List<String> systems})> _run({
     substitutions: const <CastTextSubstitution>[],
     ask: (String system, String user) async {
       systems.add(system);
-      return system == kTtsRosterSystemPrompt ? rosterReply : linesReply;
+      return system.startsWith('You build the cast list')
+          ? rosterReply
+          : linesReply;
     },
     save: () async => saves++,
     onProgress: (int done, int total) {},
@@ -64,8 +66,8 @@ void main() {
       );
 
       expect(r.systems, <String>[
-        kTtsRosterSystemPrompt,
-        kTtsCastLinesSystemPrompt,
+        ttsRosterSystemPrompt(TtsCastScript.japanese),
+        ttsCastLinesSystemPrompt(TtsCastScript.japanese),
       ]);
       expect(r.saves, 2);
       expect(r.cast.annotatedSections, <int>{7});
@@ -126,6 +128,43 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  group('BUG-5366', () {
+    test('中文书两遍都用中文示例的提示词', () async {
+      final ({TtsCast cast, int saves, List<String> systems}) r = await _run(
+        sentences: <TtsPlanSentence>[
+          _s(4, 0, '戰場原黑儀回過頭來。'),
+          _s(4, 20, '「阿良良木同學。」'),
+        ],
+        rosterReply: '[{"op":"add","name":"戰場原黑儀"}',
+        linesReply: '[{"i":2,"s":"戰場原黑儀"}',
+      );
+      expect(r.systems, <String>[
+        ttsRosterSystemPrompt(TtsCastScript.chinese),
+        ttsCastLinesSystemPrompt(TtsCastScript.chinese),
+      ]);
+      expect(r.cast.roster.keys, contains('戰場原黑儀'));
+      expect(r.cast.lines[ttsLineKey(4, 20)]?.speaker, '戰場原黑儀');
+    });
+
+    test('bad_output 带上模型原始回复，进错误日志的文本里有它', () async {
+      Object? error;
+      try {
+        await _run(
+          sentences: <TtsPlanSentence>[_s(5, 0, '「行くぞ」')],
+          rosterReply: 'I cannot help with that.',
+          linesReply: '[]',
+        );
+      } on TtsCastAnnotateFailure catch (e) {
+        error = e;
+      }
+      final TtsCastAnnotateFailure failure = error! as TtsCastAnnotateFailure;
+      expect(failure.code, 'bad_output');
+      expect(failure.detail, 'roster, section 5: no JSON array');
+      expect(failure.reply, 'I cannot help with that.');
+      expect(failure.toString(), contains('I cannot help with that.'));
     });
   });
 }

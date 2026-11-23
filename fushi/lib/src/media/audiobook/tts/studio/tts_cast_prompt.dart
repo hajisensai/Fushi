@@ -238,25 +238,29 @@ class TtsCastSpeakerIndex {
 // 第一遍：角色表
 // ---------------------------------------------------------------------------
 
-const String kTtsRosterSystemPrompt = '''
+String ttsRosterSystemPrompt(TtsCastScript script) {
+  final _TtsCastExamples x = _TtsCastExamples.of(script);
+  return '''
 You build the cast list of a novel so an audiobook can give each character a different voice.
 
-You get the current cast list and a passage of one chapter. Return ONLY a JSON array of operations that bring the cast list up to date for this passage — no prose, no code fence:
-[{"op":"add","name":"エミリア","aliases":["エミリアたん","銀髪の少女"],"gender":"female","age":"teen","desc":"gentle half-elf, polite speech"},
- {"op":"update","name":"スバル","aliases":["菜月昴","スバルくん"]},
- {"op":"merge","name":"昴","into":"スバル"}]
+You get the current cast list and a passage of one chapter. Return ONLY a JSON array of operations that bring the cast list up to date for this passage — no prose, no code fence, and always close the array with "]":
+[{"op":"add","name":"${x.heroine}","aliases":["${x.heroineNick}","${x.heroineDescription}"],"gender":"female","age":"teen","desc":"${x.heroineDesc}"},
+ {"op":"update","name":"${x.hero}","aliases":["${x.heroFullName}","${x.heroHonorific}"]},
+ {"op":"merge","name":"${x.heroAltName}","into":"${x.hero}"}]
 - "add": a character who speaks (or clearly will speak) and is not in the list yet.
 - "update": add aliases or fill in gender / age / desc of someone already in the list.
 - "merge": "name" turned out to be the same person as "into" (an existing canonical name); the two entries become one.
-- "gender": "female" | "male" | "unknown". "age": "child" | "teen" | "adult" | "elderly" | "unknown". "desc": one short phrase about persona and way of speaking, in the book's language.
+- "gender": "female" | "male" | "unknown". "age": "child" | "teen" | "adult" | "elderly" | "unknown". "desc": one short phrase about persona and way of speaking, written in ${x.languageName}.
 
 Rules:
 - Only characters who have spoken lines matter. Ignore people who are merely mentioned.
 - Write names exactly as the book writes them, in the book's original script. Never translate or romanize.
 - One canonical name per character: the name the book uses most for them (usually the given name or how the narration refers to them). Other forms — full name, nicknames, titles, name + honorific, descriptions the narration uses for them — go into "aliases".
-- If a speaker is never named, add them under a short descriptive label from the text (e.g. 店主, 少女, 男の声) so their lines can be attributed later; when their name is revealed, merge the label into the name.
+- A name that is already in the list, as a name or as an alias, is that character: use "update" with the canonical name, never "add" it again.
+- If a speaker is never named, add them under a short descriptive label from the text (e.g. ${x.unnamedLabels}) so their lines can be attributed later; when their name is revealed, merge the label into the name.
 - Do not repeat what the list already says. If nothing changes, return [].
 ''';
+}
 
 /// 角色表提示词里的一行。
 String _rosterLine(TtsCastCharacter c, {required bool withDescription}) {
@@ -338,7 +342,7 @@ TtsRosterParseResult? parseTtsRosterReply(
   String reply, {
   CastPromptRoster? promptRoster,
 }) {
-  final List<Object?>? array = _firstJsonArray(_stripFences(reply));
+  final List<Object?>? array = _replyJsonArray(_stripFences(reply));
   if (array == null) return null;
   final List<TtsRosterOp> ops = <TtsRosterOp>[];
   for (final Object? entry in array) {
@@ -467,29 +471,201 @@ const List<CastLineKind> kTtsCastDialogueKinds = <CastLineKind>[
   CastLineKind.monologue,
 ];
 
-String get kTtsCastLinesSystemPrompt =>
-    '''
+String ttsCastLinesSystemPrompt(TtsCastScript script) {
+  final _TtsCastExamples x = _TtsCastExamples.of(script);
+  return '''
 You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice, and give each line a little direction.
 
-You get the cast list, the last few lines already attributed (for turn-taking), and numbered lines from one chapter (lines marked "context" only help you infer speakers; never label them). Return ONLY a JSON array, no prose, no code fence:
-[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"tone":"必死に食い下がる","c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"},{"i":11,"s":"narrator"}]
+You get the cast list, the last few lines already attributed (for turn-taking), and numbered lines from one chapter (lines marked "context" only help you infer speakers; never label them). Return ONLY a JSON array, no prose, no code fence, and always close the array with "]":
+[{"i":3,"s":"${x.heroine}","k":"shout","e":"anger","ei":70,"tone":"${x.toneDesperate}","c":0.95,"ev":"explicit"},{"i":5,"s":"${x.hero}","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"},{"i":11,"s":"narrator"}]
 - "i": the line number.
 - "s": who speaks the line: EXACTLY one canonical name from the cast list; "unknown" when it is dialogue but you cannot tell who says it; or "narrator" for a starred line that nobody says aloud (see Rules). Never use a name that is not in the cast list; never use an alias.
 - "k": optional, one of ${kTtsCastDialogueKinds.map((CastLineKind k) => '"${k.wire}"').join(' | ')}. "spoken" = normal speech (the default); "shout"; "mutter" = quiet talking to oneself; "thought" = inner voice written as a quoted thought, e.g. （…）; "monologue" = a longer first-person inner passage set off like dialogue.
 - "beat": optional extra pause after the line in milliseconds (0..${CastLineLimits.maxBeatMs}), only for dramatic timing.
 - "e": optional emotion, one of ${CastEmotion.values.map((CastEmotion e) => '"${e.wire}"').join(' | ')}; "ei": its intensity 0..100. Omit both when neutral.
-- "tone": optional short Japanese acting note (at most 20 characters, e.g. "おずおずと", "必死に食い下がる", "声を落として") saying HOW the line is delivered — the nuance the emotion word cannot carry.
+- "tone": optional short acting note in ${x.languageName} (at most 20 characters, e.g. ${x.toneExamples}) saying HOW the line is delivered — the nuance the emotion word cannot carry.
 - "c": your confidence from 0 to 1.
-- "ev": "explicit" (an attribution like 「…」とスバルは言った names the speaker), "anaphoric" (a pronoun, title or description refers to them, e.g. と彼女は言った, 少女が呟いた), or "implicit" (no tag; inferred from turn-taking, address terms, speech style).
+- "ev": "explicit" (an attribution like ${x.explicitTag} names the speaker), "anaphoric" (a pronoun, title or description refers to them, e.g. ${x.anaphoricTags}), or "implicit" (no tag; inferred from turn-taking, address terms, speech style).
 
 Rules:
-- Include the lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside 「」 or 『』 (or “” / "" in Western text). Unstarred narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
-- Lines numbered with a "*" (e.g. "7*: 『…』") open or continue a quotation. Give EVERY starred line an entry: its speaker, "unknown", or {"i":N,"s":"narrator"} when the quoted text is not said by anyone — a book, song or work title (『書名』), a sign or notice (「立ち入り禁止」), a quoted word or phrase, a written message read silently. A starred line you leave out goes to a human for review, so decide it yourself; when it could be either, prefer "unknown" over "narrator".
+- Include the lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside ${x.quotes}. Unstarred narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
+- Lines numbered with a "*" (e.g. "7*: ${x.starredExample}") open or continue a quotation. Give EVERY starred line an entry: its speaker, "unknown", or {"i":N,"s":"narrator"} when the quoted text is not said by anyone — a book, song or work title (${x.workTitle}), a sign or notice (${x.sign}), a quoted word or phrase, a written message read silently. A starred line you leave out goes to a human for review, so decide it yourself; when it could be either, prefer "unknown" over "narrator".
 - A long utterance may be split across several consecutive lines; label every line of it with the same speaker.
 - Use the attribution tags, turn-taking (in a two-person exchange speakers usually alternate), how characters address each other, their speech style and gender, and the surrounding narration (including context lines and the already-attributed lines).
 - Prefer "unknown" with a low "c" over guessing.
-- Direct each line's delivery on its own. When the same speaker says several lines in a row, do NOT copy one direction across all of them: read each line's sentence-final particles and what the line does (apology, excuse, empathy, promise, plea, emotional appeal, …) and give each line its own "e" / "ei" / "tone", so the delivery changes from line to line the way a real actor's would.
+- Direct each line's delivery on its own. When the same speaker says several lines in a row, do NOT copy one direction across all of them: read each line's ${x.deliveryCues} and what the line does (apology, excuse, empathy, promise, plea, emotional appeal, …) and give each line its own "e" / "ei" / "tone", so the delivery changes from line to line the way a real actor's would.
 ''';
+}
+
+/// 提示词示例用哪种文字：小模型会照抄示例的语言（日文示例 → 中文书的 desc /
+/// tone 也写成日文、引号与对白标记认得差），所以按书的正文挑示例。
+enum TtsCastScript { japanese, chinese, other }
+
+/// 按正文判断文字：假名占汉字 + 假名的六分之一以上是日文（日文小说一般四到六成）；汉字为主、几乎没有假名是中文；
+/// 其余（拉丁 / 韩文…）用中性的英文示例。只看前 [_kScriptSampleChars] 个字符。
+///
+/// 不读书的语言元数据：EPUB 的 `dc:language` 与用户设的语言都可能是错的，
+/// 正文本身才是模型要读的东西。
+TtsCastScript detectTtsCastScript(Iterable<String> texts) {
+  int kana = 0;
+  int han = 0;
+  int letters = 0;
+  int seen = 0;
+  for (final String text in texts) {
+    for (final int rune in text.runes) {
+      if (++seen > _kScriptSampleChars) break;
+      if (_isKana(rune)) {
+        kana++;
+      } else if (_isHan(rune)) {
+        han++;
+      } else if (_isLetter(rune)) {
+        letters++;
+      }
+    }
+    if (seen > _kScriptSampleChars) break;
+  }
+  final int cjk = kana + han;
+  if (cjk == 0 || cjk * 2 < letters) return TtsCastScript.other;
+  return kana * 6 >= cjk ? TtsCastScript.japanese : TtsCastScript.chinese;
+}
+
+const int _kScriptSampleChars = 20000;
+
+/// 平假名 / 片假名，不含长音符「ー」与中点「・」（中文书里也会出现）。
+bool _isKana(int r) =>
+    (r >= 0x3041 && r <= 0x309F) ||
+    (r >= 0x30A0 && r <= 0x30FA) ||
+    (r >= 0x31F0 && r <= 0x31FF);
+
+bool _isHan(int r) =>
+    (r >= 0x4E00 && r <= 0x9FFF) ||
+    (r >= 0x3400 && r <= 0x4DBF) ||
+    (r >= 0xF900 && r <= 0xFAFF);
+
+bool _isLetter(int r) =>
+    (r >= 0x41 && r <= 0x5A) ||
+    (r >= 0x61 && r <= 0x7A) ||
+    (r >= 0xC0 && r <= 0x24F) ||
+    (r >= 0x370 && r <= 0x52F) ||
+    (r >= 0xAC00 && r <= 0xD7AF);
+
+/// 两遍提示词里随文字变的示例。
+class _TtsCastExamples {
+  const _TtsCastExamples({
+    required this.languageName,
+    required this.heroine,
+    required this.heroineNick,
+    required this.heroineDescription,
+    required this.heroineDesc,
+    required this.hero,
+    required this.heroFullName,
+    required this.heroHonorific,
+    required this.heroAltName,
+    required this.unnamedLabels,
+    required this.toneDesperate,
+    required this.toneExamples,
+    required this.explicitTag,
+    required this.anaphoricTags,
+    required this.quotes,
+    required this.starredExample,
+    required this.workTitle,
+    required this.sign,
+    required this.deliveryCues,
+  });
+
+  factory _TtsCastExamples.of(TtsCastScript script) => switch (script) {
+    TtsCastScript.japanese => _ja,
+    TtsCastScript.chinese => _zh,
+    TtsCastScript.other => _other,
+  };
+
+  final String languageName;
+  final String heroine;
+  final String heroineNick;
+  final String heroineDescription;
+  final String heroineDesc;
+  final String hero;
+  final String heroFullName;
+  final String heroHonorific;
+  final String heroAltName;
+  final String unnamedLabels;
+  final String toneDesperate;
+  final String toneExamples;
+  final String explicitTag;
+  final String anaphoricTags;
+  final String quotes;
+  final String starredExample;
+  final String workTitle;
+  final String sign;
+  final String deliveryCues;
+
+  static const _TtsCastExamples _ja = _TtsCastExamples(
+    languageName: 'Japanese',
+    heroine: 'エミリア',
+    heroineNick: 'エミリアたん',
+    heroineDescription: '銀髪の少女',
+    heroineDesc: '穏やかなハーフエルフ、丁寧な口調',
+    hero: 'スバル',
+    heroFullName: '菜月昴',
+    heroHonorific: 'スバルくん',
+    heroAltName: '昴',
+    unnamedLabels: '店主, 少女, 男の声',
+    toneDesperate: '必死に食い下がる',
+    toneExamples: '"おずおずと", "必死に食い下がる", "声を落として"',
+    explicitTag: '「…」とスバルは言った',
+    anaphoricTags: 'と彼女は言った, 少女が呟いた',
+    quotes: '「」 or 『』',
+    starredExample: '『…』',
+    workTitle: '『書名』',
+    sign: '「立ち入り禁止」',
+    deliveryCues: 'sentence-final particles',
+  );
+
+  static const _TtsCastExamples _zh = _TtsCastExamples(
+    languageName:
+        'Chinese (the same characters, simplified or traditional, as the book)',
+    heroine: '林小雪',
+    heroineNick: '小雪',
+    heroineDescription: '银发少女',
+    heroineDesc: '温柔内向，说话轻声细语',
+    hero: '陈默',
+    heroFullName: '陈默然',
+    heroHonorific: '陈同学',
+    heroAltName: '阿默',
+    unnamedLabels: '店主, 少女, 男人的声音',
+    toneDesperate: '拼命争辩',
+    toneExamples: '"怯生生地", "拼命争辩", "压低声音"',
+    explicitTag: '“……”陈默说道 / 「……」陈默说',
+    anaphoricTags: '她低声说, 少女喃喃道',
+    quotes: '“” or 「」 / 『』',
+    starredExample: '“……”',
+    workTitle: '《书名》',
+    sign: '“禁止入内”',
+    deliveryCues: 'sentence-final particles (吧、呢、啊、嘛…)',
+  );
+
+  static const _TtsCastExamples _other = _TtsCastExamples(
+    languageName: "the book's language",
+    heroine: 'Emily',
+    heroineNick: 'Em',
+    heroineDescription: 'the silver-haired girl',
+    heroineDesc: 'gentle, soft-spoken, polite',
+    hero: 'Sam',
+    heroFullName: 'Samuel Carter',
+    heroHonorific: 'Mr. Carter',
+    heroAltName: 'Sammy',
+    unnamedLabels: 'shopkeeper, girl, man\'s voice',
+    toneDesperate: 'pleading desperately',
+    toneExamples: '"timidly", "pleading desperately", "lowering her voice"',
+    explicitTag: '"…," Sam said',
+    anaphoricTags: 'she said, the girl whispered',
+    quotes: '“” or ""',
+    starredExample: '"…"',
+    workTitle: 'a book title in quotes',
+    sign: '"No Entry"',
+    deliveryCues: 'wording and punctuation',
+  );
+}
 
 /// 滚动上下文里的一句已归属台词。
 typedef TtsCastRecentLine = ({String speaker, String text});
@@ -600,7 +776,7 @@ TtsCastParseResult? parseTtsCastReply(
   required TtsCastSpeakerIndex speakers,
   CastPromptRoster? promptRoster,
 }) {
-  final List<Object?>? array = _firstJsonArray(_stripFences(reply));
+  final List<Object?>? array = _replyJsonArray(_stripFences(reply));
   if (array == null) return null;
   final Map<int, TtsCastLabel> byIndex = <int, TtsCastLabel>{};
   for (final Object? entry in array) {
@@ -781,30 +957,74 @@ bool _looksLooping(List<Object?> array, int maxEntries) {
   return distinct.length * 2 < array.length;
 }
 
-String _stripFences(String reply) =>
-    reply.replaceAll(RegExp(r'```[a-zA-Z]*'), '');
+/// 去掉代码围栏与推理模型夹在正文里的 `<think>…</think>`（思考里常复述示例数组）。
+String _stripFences(String reply) => reply
+    .replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '')
+    .replaceAll(RegExp(r'```[a-zA-Z]*'), '');
 
-/// 逐个 `[` 起点做括号配对（跳过字符串字面量），第一个能解码成数组的胜出。
-List<Object?>? _firstJsonArray(String text) {
+/// 回复里的那个 JSON 数组：第一个「`[` 后紧跟 `{` 或 `]`」的数组，即对象数组或
+/// 空数组。说明文字里的 `[passage]`、元素里的别名表 `["…"]` 都不是回复，跳过。
+///
+/// 小模型偶尔漏掉末尾的 `]`、或最后一个元素写坏（BUG-5366：Qwen3.5 9B 回了三条
+/// 完整操作却没闭合数组）：这时收下数组里已经完整的 `{…}` 元素，不退到嵌套的
+/// 别名表——旧实现正是退到了 `["黑儀","戰原"]`，把整块判成「没有可用条目」。
+List<Object?>? _replyJsonArray(String text) {
   for (
     int start = text.indexOf('[');
     start >= 0;
     start = text.indexOf('[', start + 1)
   ) {
-    final int? end = _matchingBracket(text, start);
-    if (end == null) continue;
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(text.substring(start, end + 1));
-    } on FormatException {
-      continue;
-    }
-    if (decoded is List) return decoded;
+    final String? first = _nextNonSpace(text, start + 1);
+    if (first != '{' && first != ']') continue;
+    final List<Object?>? array = _decodeArrayAt(text, start);
+    if (array != null) return array;
   }
   return null;
 }
 
-int? _matchingBracket(String text, int start) {
+/// 从 [start]（一个 `[`）起解出数组：括号能配上且整体合法就整个解码；否则逐个
+/// 收下完整的 `{…}` 元素，遇到坏元素 / 没闭合的结尾就停。一个都收不到返回 null。
+List<Object?>? _decodeArrayAt(String text, int start) {
+  final int? end = _matchingClose(text, start);
+  if (end != null && text[end] == ']') {
+    try {
+      final Object? decoded = jsonDecode(text.substring(start, end + 1));
+      if (decoded is List) return decoded;
+    } on FormatException {
+      // 落到下面逐个收元素。
+    }
+  }
+  final List<Object?> items = <Object?>[];
+  int i = start + 1;
+  while (true) {
+    while (i < text.length && (text[i] == ',' || text[i].trim().isEmpty)) {
+      i++;
+    }
+    if (i >= text.length || text[i] != '{') break;
+    final int? close = _matchingClose(text, i);
+    if (close == null || text[close] != '}') break;
+    final Object? item;
+    try {
+      item = jsonDecode(text.substring(i, close + 1));
+    } on FormatException {
+      break;
+    }
+    items.add(item);
+    i = close + 1;
+  }
+  return items.isEmpty ? null : items;
+}
+
+String? _nextNonSpace(String text, int from) {
+  for (int i = from; i < text.length; i++) {
+    if (text[i].trim().isNotEmpty) return text[i];
+  }
+  return null;
+}
+
+/// [start] 处的 `[` / `{` 配对的闭括号下标（跳过字符串字面量）；没闭合返回 null。
+/// 闭括号类型由调用方核对。
+int? _matchingClose(String text, int start) {
   int depth = 0;
   bool inString = false;
   for (int i = start; i < text.length; i++) {
@@ -824,7 +1044,7 @@ int? _matchingBracket(String text, int start) {
         depth++;
       case ']' || '}':
         depth--;
-        if (depth == 0) return c == ']' ? i : null;
+        if (depth == 0) return i;
         if (depth < 0) return null;
     }
   }
