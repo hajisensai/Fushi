@@ -3918,6 +3918,8 @@
   "game_audio_resource_id": "音频资源 ID",
   "game_audio_tracks": "活跃音轨",
   "game_auto_cover": "自动获取封面",
+  "game_auto_lookup_new_lines": "自动查词",
+  "game_auto_lookup_new_lines_tooltip": "新台词到达时自动从第一个词开始查词（仅在跟随实时时）",
   "game_back_to_capture": "返回捕获工作台",
   "game_back_to_library": "返回游戏库",
   "game_capture_active": "正在捕获",

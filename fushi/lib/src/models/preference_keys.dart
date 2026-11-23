@@ -1070,6 +1070,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',
   'sync_backend_type',
+  // bool，默认 false：捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_，texthooker_page.dart）。
+  'texthooker_auto_lookup_new_lines',
   'texthooker_enabled',
   'texthooker_urls',
   'torrent_upload_intro_shown',

@@ -3918,6 +3918,8 @@
   "game_audio_resource_id": "Audio-Ressourcen-ID",
   "game_audio_tracks": "Aktive Audiospuren",
   "game_auto_cover": "Cover automatisch abrufen",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "Zurück zum Aufnahme-Arbeitsbereich",
   "game_back_to_library": "Zurück zur Spielebibliothek",
   "game_capture_active": "Aufnahme ist aktiv",

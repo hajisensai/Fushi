@@ -226,6 +226,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   int _unreadLines = 0;
   String? _lastObservedLineId;
 
+  /// 「新句自动查词」开关（反馈 q9Jcu_Zr2_，偏好 `texthooker_auto_lookup_new_lines`，
+  /// 默认关）。本页是唯一读写方：进页从偏好取一次，chip 切换时写回。
+  bool _autoLookupNewLines = false;
+
+  /// 待自动查词的那句与起查字（整行 UTF-16 下标）。build 时据此把
+  /// [_autoLookupAnchorKey] 挂到该字的命中区上，帧后按它的真实矩形弹卡。
+  ({String lineId, int charIndex})? _autoLookupTarget;
+  final GlobalKey _autoLookupAnchorKey = GlobalKey(
+    debugLabel: 'texthooker-auto-lookup-anchor',
+  );
+
   /// galgame 引擎-hook 启动的**再入守卫**：一次启动含选文件、位数探测、helper 确认/下载对话框、
   /// 注入会话等多个 await，可持续数秒。没有守卫时重复点击会叠出多个下载确认对话框。
   bool _launchingGalHook = false;
@@ -622,6 +633,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final List<TexthookerLineEntry> initialLines =
         TexthookerService.instance.entries;
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
+    _autoLookupNewLines =
+        _appModel.isPreferencesReady &&
+        _appModel.prefsRepo.texthookerAutoLookupNewLines;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
     GalHookTextOverlayController.instance.attachedText.addListener(
@@ -1670,8 +1684,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // 跟随开着但用户手动滚离底部时不硬拽回底部（否则打断上翻回看）；此时累积未读，
     // 露出「未读 N」胶囊供一键回到最新。
     final bool follow = _followLive && _isNearBottom();
+    final ({String lineId, int charIndex})? autoLookup =
+        receivedNewLine && follow ? _autoLookupTargetFor(lines.last) : null;
     setState(() {
       if (!follow && receivedNewLine) _unreadLines++;
+      // 新句一到，上一句还没弹出的自动查词就作废（只查最新那句）：新句不符合条件
+      // （没有可查字 / 回看历史中）时也不能让旧目标在帧后弹出来。
+      if (receivedNewLine) _autoLookupTarget = autoLookup;
     });
     _maybeScheduleCaptureSetupDialog();
     if (!receivedNewLine || !follow) return;
@@ -1679,7 +1698,67 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
+      if (autoLookup == null) return;
+      // 跳底改了视口偏移，新句的屏幕位置要到下一帧布局后才成立：在那一帧之后取矩形。
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _runAutoLookup(autoLookup),
+      );
+      WidgetsBinding.instance.ensureVisualUpdate();
     });
+  }
+
+  /// 新句到达时是否自动查词、从哪个字起查（反馈 q9Jcu_Zr2_）。
+  ///
+  /// 只在开关开着、本页在屏上（[TickerMode]）、没有对话框压着查词层、用户没在
+  /// 嵌套弹窗里往下钻（可见层数 ≤ 1）时触发；超长 / 批量文本不逐字渲染
+  /// （BUG-1597），没有可点的字，不查。起查字取可见文本里第一个可查字
+  /// （[firstLookupCharIndex]），换算回整行下标——与手点那个字同一坐标。
+  ({String lineId, int charIndex})? _autoLookupTargetFor(
+    TexthookerLineEntry line,
+  ) {
+    if (!_autoLookupNewLines ||
+        !TickerMode.of(context) ||
+        lookupPopupHiddenByDialog ||
+        _popup.entries.where((DictionaryPopupEntry e) => e.visible).length >
+            1) {
+      return null;
+    }
+    final ({String text, int sourceOffset}) visible = _visibleHookLineText(
+      line,
+    );
+    if (texthookerLinePresentation(visible.text) !=
+        TexthookerLinePresentation.interactive) {
+      return null;
+    }
+    final int? first = firstLookupCharIndex(visible.text);
+    if (first == null) return null;
+    return (lineId: line.id, charIndex: visible.sourceOffset + first);
+  }
+
+  /// 帧后按锚点字的真实矩形弹卡。锚点没建出来（被筛选隐藏、列表没跟到底）就放弃；
+  /// 期间又来了更新的句子则让给它（只查最新那句）。
+  void _runAutoLookup(({String lineId, int charIndex}) target) {
+    if (!mounted || _autoLookupTarget != target) return;
+    _autoLookupTarget = null;
+    if (!_autoLookupNewLines || lookupPopupHiddenByDialog) return;
+    final RenderObject? anchor = _autoLookupAnchorKey.currentContext
+        ?.findRenderObject();
+    if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
+    final TexthookerLineEntry? line = _session.entryById(target.lineId);
+    if (line == null) return;
+    final Rect rect = anchor.localToGlobal(Offset.zero) & anchor.size;
+    // 不自动发音：新句到达时游戏自己正在放这句的语音，再念一遍首词只会盖住它。
+    _lookupFromChar(line, target.charIndex, rect, autoRead: false);
+  }
+
+  void _setAutoLookupNewLines(bool value) {
+    setState(() {
+      _autoLookupNewLines = value;
+      if (!value) _autoLookupTarget = null;
+    });
+    if (_appModel.isPreferencesReady) {
+      unawaited(_appModel.prefsRepo.setTexthookerAutoLookupNewLines(value));
+    }
   }
 
   void _maybeScheduleCaptureSetupDialog() {
@@ -1761,7 +1840,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 切出来的那个词：引擎本来就按查询串做最长匹配并回报 `bestLength`（弹窗据此高亮
   /// 整词跨度），所以点「永」照样命中「永遠」，而点「遠」能单独查到「遠」——
   /// 老实现把整词当查询串，后者根本无从下手。
-  void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect) {
+  void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect) =>
+      _lookupFromChar(line, charIndex, rect, autoRead: true);
+
+  /// 手点（[_onCharTap]）与新句自动查词（[_runAutoLookup]）共用的查词入口：
+  /// 查询串从命中字起算，顶层复用热槽。
+  void _lookupFromChar(
+    TexthookerLineEntry line,
+    int charIndex,
+    Rect rect, {
+    required bool autoRead,
+  }) {
     final String word = lookupQueryFromIndex(line.text, charIndex);
     if (word.isEmpty) return;
     _selectLine(line);
@@ -1776,7 +1865,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       selectionRect: rect,
       controller: _popup,
       reuseWarmSlot: true,
-      autoRead: true,
+      autoRead: autoRead,
     );
   }
 
@@ -2632,87 +2721,109 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // 列表头（2026-11 改版）：一条工具条——左侧标题 + 计数签 + 未读，右侧
-          // 「跟随实时」开关 chip 与「特殊码」菜单 chip（都带字，不再是无字图标）。
+          // 「跟随实时」「自动查词」开关 chip 与「特殊码」菜单 chip（宽时都带字；
+          // 窄时两个开关收成纯图标，见下方 compact）。
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 4),
-            child: Row(
-              children: <Widget>[
-                // 标题 + 未读占满剩余宽度：Flexible 与 Spacer 并列会平分空余，
-                // 把右侧开关推到列表头中间。
-                Expanded(
-                  child: Row(
-                    children: <Widget>[
-                      Flexible(
-                        child: Text(
-                          t.game_live_lines,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: type.titleLargeEmphasized,
-                        ),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                final Widget title = Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        t.game_live_lines,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.titleLargeEmphasized,
                       ),
-                      const SizedBox(width: 8),
-                      _LineCountBadge(count: lines.length),
-                      const SizedBox(width: 8),
-                      // 未读计数：M3E 超小号 tonal 按钮（secondaryContainer 全胶囊、
-                      // 按压形变；Apple = 玻璃胶囊）。点击 = 跳到最新一行并清零未读。
-                      // 出现 / 消失走 effects 弹簧的缩放淡入，不再瞬间闪现。
-                      AnimatedSwitcher(
-                        duration: context.fushiMotion.effectsDefault.duration,
-                        switchInCurve: context.fushiMotion.effectsDefault.curve,
-                        switchOutCurve: context.fushiMotion.effectsFast.curve,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                ScaleTransition(
-                                  scale: animation,
-                                  child: FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    _LineCountBadge(count: lines.length),
+                    const SizedBox(width: 8),
+                    // 未读计数：M3E 超小号 tonal 按钮（secondaryContainer 全胶囊、
+                    // 按压形变；Apple = 玻璃胶囊）。点击 = 跳到最新一行并清零未读。
+                    // 出现 / 消失走 effects 弹簧的缩放淡入，不再瞬间闪现。
+                    AnimatedSwitcher(
+                      duration: context.fushiMotion.effectsDefault.duration,
+                      switchInCurve: context.fushiMotion.effectsDefault.curve,
+                      switchOutCurve: context.fushiMotion.effectsFast.curve,
+                      transitionBuilder:
+                          (Widget child, Animation<double> animation) =>
+                              ScaleTransition(
+                                scale: animation,
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
                                 ),
-                        child: _unreadLines > 0
-                            ? FushiFilledButton.tonal(
-                                key: const ValueKey<String>(
-                                  'game-unread-lines',
-                                ),
-                                size: FushiButtonSize.xs,
-                                onPressed: _jumpToLatestAndClearUnread,
-                                // 不另给字阶：主题字阶自带 onSurface 色，会盖掉
-                                // 按钮的 onSecondaryContainer 前景。
-                                child: Text(
-                                  '${t.game_unread_lines} $_unreadLines',
-                                ),
-                              )
-                            : const SizedBox.shrink(
-                                key: ValueKey<String>('game-unread-none'),
                               ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FushiSelectableChip(
-                  key: const ValueKey<String>('game-follow-live'),
-                  label: t.game_follow_live,
-                  leadingIcon: Icons.vertical_align_bottom_rounded,
-                  selected: _followLive,
-                  focusId: const FushiFocusId('game-follow-live'),
-                  onSelected: (bool value) {
-                    setState(() {
-                      _followLive = value;
-                      if (value) _unreadLines = 0;
-                    });
-                    if (value) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_scroll.hasClients) {
-                          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-                        }
+                      child: _unreadLines > 0
+                          ? FushiFilledButton.tonal(
+                              key: const ValueKey<String>('game-unread-lines'),
+                              size: FushiButtonSize.xs,
+                              onPressed: _jumpToLatestAndClearUnread,
+                              // 不另给字阶：主题字阶自带 onSurface 色，会盖掉
+                              // 按钮的 onSecondaryContainer 前景。
+                              child: Text(
+                                '${t.game_unread_lines} $_unreadLines',
+                              ),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey<String>('game-unread-none'),
+                            ),
+                    ),
+                  ],
+                );
+                // 宽时三个 chip 都带字（约 420），标题 + 计数签 + 未读胶囊还要约 250；
+                // 窄于此两个开关 chip 收成纯图标（字进 tooltip，TODO-640 同款），
+                // 列表头仍是一行、高度不变，不把标题一侧挤溢出。阈值与第二行同为 760。
+                final bool compact = box.maxWidth < 760;
+                final List<Widget> actions = <Widget>[
+                  FushiSelectableChip(
+                    key: const ValueKey<String>('game-follow-live'),
+                    label: t.game_follow_live,
+                    iconOnly: compact,
+                    leadingIcon: Icons.vertical_align_bottom_rounded,
+                    selected: _followLive,
+                    focusId: const FushiFocusId('game-follow-live'),
+                    onSelected: (bool value) {
+                      setState(() {
+                        _followLive = value;
+                        if (value) _unreadLines = 0;
                       });
-                    }
-                  },
-                ),
-                const SizedBox(width: 6),
-                _buildHookCodeMenuButton(),
-              ],
+                      if (value) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (_scroll.hasClients) {
+                            _scroll.jumpTo(_scroll.position.maxScrollExtent);
+                          }
+                        });
+                      }
+                    },
+                  ),
+                  FushiSelectableChip(
+                    key: const ValueKey<String>('game-auto-lookup'),
+                    label: t.game_auto_lookup_new_lines,
+                    tooltip: t.game_auto_lookup_new_lines_tooltip,
+                    iconOnly: compact,
+                    leadingIcon: Icons.manage_search_rounded,
+                    selected: _autoLookupNewLines,
+                    focusId: const FushiFocusId('game-auto-lookup'),
+                    onSelected: _setAutoLookupNewLines,
+                  ),
+                  _buildHookCodeMenuButton(),
+                ];
+                // 标题占满剩余宽度：Flexible 与 Spacer 并列会平分空余，把右侧开关
+                // 推到列表头中间。
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: title),
+                    const SizedBox(width: 8),
+                    for (int i = 0; i < actions.length; i++) ...<Widget>[
+                      if (i > 0) const SizedBox(width: 6),
+                      actions[i],
+                    ],
+                  ],
+                );
+              },
             ),
           ),
           // 第二行：线程选择 + 文本处理 + 筛选分段（单选，设计系统分段组件）。
@@ -2797,6 +2908,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           recapturing: _session.recapturingLineId == line.id,
                           onSelectLine: _selectLine,
                           onCharTap: _onCharTap,
+                          autoLookupCharIndex:
+                              _autoLookupTarget?.lineId == line.id
+                              ? _autoLookupTarget!.charIndex
+                              : null,
+                          autoLookupAnchorKey: _autoLookupAnchorKey,
                           onToggleFavorite: _toggleLineFavorite,
                           onPreviewAudio: (TexthookerLineEntry l) =>
                               unawaited(_toggleLinePreview(l)),
@@ -4779,6 +4895,8 @@ class _TexthookerLine extends ConsumerWidget {
     required this.recapturing,
     required this.onSelectLine,
     required this.onCharTap,
+    required this.autoLookupCharIndex,
+    required this.autoLookupAnchorKey,
     required this.onToggleFavorite,
     required this.onPreviewAudio,
     required this.onPickTrack,
@@ -4827,6 +4945,12 @@ class _TexthookerLine extends ConsumerWidget {
   /// 命中正文里的某个字：回调带该字在整行文本里的 UTF-16 偏移（BUG-1478）。
   final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
   onCharTap;
+
+  /// 本行若是「新句自动查词」的目标，起查字的整行 UTF-16 下标；否则 null。
+  final int? autoLookupCharIndex;
+
+  /// 挂到起查字命中区上的锚点，宿主帧后据此取该字的屏幕矩形。
+  final GlobalKey autoLookupAnchorKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -4965,6 +5089,8 @@ class _TexthookerLine extends ConsumerWidget {
             style: wordStyle,
             colors: colors,
             onCharTap: onCharTap,
+            autoLookupCharIndex: autoLookupCharIndex,
+            autoLookupAnchorKey: autoLookupAnchorKey,
           ),
           // BUG-4206：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
           // 不报来源（否则一句还没配上的台词会顶着 game_resource 字样）。
@@ -5002,6 +5128,8 @@ class _TexthookerLineText extends StatefulWidget {
     required this.style,
     required this.colors,
     required this.onCharTap,
+    required this.autoLookupCharIndex,
+    required this.autoLookupAnchorKey,
   });
 
   final TexthookerLineEntry line;
@@ -5013,6 +5141,8 @@ class _TexthookerLineText extends StatefulWidget {
   final ColorScheme colors;
   final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
   onCharTap;
+  final int? autoLookupCharIndex;
+  final GlobalKey autoLookupAnchorKey;
 
   @override
   State<_TexthookerLineText> createState() => _TexthookerLineTextState();
@@ -5043,6 +5173,8 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
               word: word,
               startIndex: start + widget.sourceOffset,
               style: widget.style,
+              anchorCharIndex: widget.autoLookupCharIndex,
+              anchorKey: widget.autoLookupAnchorKey,
               onTapChar: (int charIndex, Rect rect) =>
                   widget.onCharTap(widget.line, charIndex, rect),
             ),
@@ -5253,10 +5385,17 @@ class _WordSpan extends StatelessWidget {
     required this.word,
     required this.startIndex,
     required this.style,
+    required this.anchorCharIndex,
+    required this.anchorKey,
     required this.onTapChar,
   });
 
   final String word;
+
+  /// 「新句自动查词」起查字的整行下标（不在本词内或无目标时不命中）：该字的命中区
+  /// 挂 [anchorKey]，宿主据此取矩形定位浮层。
+  final int? anchorCharIndex;
+  final GlobalKey anchorKey;
 
   /// 台词文本样式，由行级的 [_TexthookerLine] 解析一次后传下来（含
   /// [FontTarget.gameLookup] 字体链）。不在这里自己 watch：一行几十个词，逐词订阅
@@ -5284,6 +5423,7 @@ class _WordSpan extends StatelessWidget {
         // InkWell 不抢焦点（canRequestFocus:false）——行内逐字键盘导航不在本轮
         // 范围，行级焦点站点仍由外层 FushiCard 提供。
         _CharSpan(
+          key: charIndex == anchorCharIndex ? anchorKey : null,
           grapheme: grapheme,
           style: style,
           hoverColor: hover,
@@ -5299,6 +5439,7 @@ class _WordSpan extends StatelessWidget {
 class _CharSpan extends StatelessWidget {
   const _CharSpan({
     required this.grapheme,
+    super.key,
     required this.style,
     required this.hoverColor,
     required this.onTap,

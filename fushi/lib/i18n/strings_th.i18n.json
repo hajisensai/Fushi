@@ -3918,6 +3918,8 @@
   "game_audio_resource_id": "รหัสทรัพยากรเสียง",
   "game_audio_tracks": "แทร็กเสียงที่ใช้งาน",
   "game_auto_cover": "ดึงปกอัตโนมัติ",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "กลับไปพื้นที่ทำงานจับภาพ",
   "game_back_to_library": "กลับไปคลังเกม",
   "game_capture_active": "กำลังจับข้อมูลอยู่",

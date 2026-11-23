@@ -3918,6 +3918,8 @@
   "game_audio_resource_id": "ID аудиоресурса",
   "game_audio_tracks": "Активные аудиодорожки",
   "game_auto_cover": "Автоматически загрузить обложку",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "Назад к рабочей области захвата",
   "game_back_to_library": "Назад к библиотеке игр",
   "game_capture_active": "Захват активен",

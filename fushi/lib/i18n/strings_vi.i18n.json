@@ -3918,6 +3918,8 @@
   "game_audio_resource_id": "ID tài nguyên âm thanh",
   "game_audio_tracks": "Track âm thanh đang hoạt động",
   "game_auto_cover": "Tự động lấy ảnh bìa",
+  "game_auto_lookup_new_lines": "Auto lookup",
+  "game_auto_lookup_new_lines_tooltip": "Look up the first word of each new line automatically (only while following live)",
   "game_back_to_capture": "Quay lại không gian thu thập",
   "game_back_to_library": "Quay lại thư viện trò chơi",
   "game_capture_active": "Đang thu thập",
