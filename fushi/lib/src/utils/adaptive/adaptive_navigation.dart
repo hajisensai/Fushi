@@ -1523,6 +1523,7 @@ class _AppleLibraryTabBarState extends State<_AppleLibraryTabBar> {
     final List<int> overflow = _overflow;
     final bool searchSelected = search != null && currentIndex == search;
     final bool moreSelected = overflow.contains(currentIndex);
+    final bool minimizedShowsCurrent = widget.minimized && moreSelected;
     final int selectedPos = moreSelected
         ? shown.length
         : math.max(0, shown.indexOf(currentIndex));
@@ -1552,11 +1553,23 @@ class _AppleLibraryTabBarState extends State<_AppleLibraryTabBar> {
                 semanticLabel: items[i].label,
               ),
             if (overflow.isNotEmpty)
-              GlassTab(
-                icon: _glyph(moreItem, selected: false),
-                activeIcon: _glyph(moreItem, selected: true),
-                semanticLabel: moreSemantics,
-              ),
+              // 缩起态（用户 2026-11-24）：库的最小化圆只画被选中那一格
+              // （`GlassTabBar.minimizable` 没有自定义最小化内容的参数，
+              // `collapsedLogoBuilder` 只在 searchable 形态的 searchConfig
+              // 里），当前目的地收在「更多」里时圆里会是「⋯」。缩起期间把
+              // 这一格换成当前目的地自己的图标 / 徽标 / 语义，展开后恢复「更多」。
+              if (minimizedShowsCurrent)
+                GlassTab(
+                  icon: _glyph(items[currentIndex], selected: true),
+                  activeIcon: _glyph(items[currentIndex], selected: true),
+                  semanticLabel: items[currentIndex].label,
+                )
+              else
+                GlassTab(
+                  icon: _glyph(moreItem, selected: false),
+                  activeIcon: _glyph(moreItem, selected: true),
+                  semanticLabel: moreSemantics,
+                ),
           ],
           selectedIndex: selectedPos,
           onTabSelected: (int pos) {
@@ -1622,7 +1635,10 @@ class _AppleLibraryTabBarState extends State<_AppleLibraryTabBar> {
         count: items.length,
         currentIndex: currentIndex,
         onSelect: _select,
-        onActivate: overflow.isEmpty ? null : () => unawaited(_openMore()),
+        // 缩起时 Enter / A 是展开（与点最小化圆同一动作），展开时打开「更多」。
+        onActivate: widget.minimized
+            ? widget.onExpand
+            : (overflow.isEmpty ? null : () => unawaited(_openMore())),
         child: bar,
       ),
     );
