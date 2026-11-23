@@ -531,6 +531,33 @@ void main() {
       expect(saved.isUsable, isTrue);
     });
 
+    testWidgets('推理档位行只在所配模型收它时显示（BUG-5368）', (WidgetTester tester) async {
+      await pumpSection(tester);
+      await tapKey(tester, 'ai-provider-add');
+      await tapKey(tester, 'ai-provider-preset-openai');
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      final Finder reasoningRow = find.byKey(
+        const ValueKey<String>('ai-provider-0-reasoning'),
+      );
+
+      // 预设建议的 gpt-4o-mini 不收 reasoning_effort：不给一个选了就 400 的开关。
+      expect(prefs.aiProviders.single.model, 'gpt-4o-mini');
+      expect(reasoningRow, findsNothing);
+
+      await enter(tester, 'ai-provider-0-api-key', 'sk-openai');
+      await enter(tester, 'ai-provider-0-model', 'gpt-5-mini');
+      expect(reasoningRow, findsOneWidget);
+
+      // 换回非推理模型：行藏起来（存着的档位不清，载荷侧另有判据不让它生效）。
+      await enter(tester, 'ai-provider-0-model', 'gpt-4o-mini');
+      expect(reasoningRow, findsNothing);
+      // 等防抖写穿落完，别让它撞上 tearDown 里已释放的偏好仓库。
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(prefs.aiProviders.single.model, 'gpt-4o-mini');
+    });
+
     const InterconnectHostTarget desk = InterconnectHostTarget(
       hostId: 'host-1',
       displayName: 'Desk',
@@ -1722,13 +1749,36 @@ void main() {
       });
       addTearDown(client.close);
       await client.complete(
-        provider: _config(reasoningEffort: AiReasoningEffort.medium),
+        provider: _config(
+          model: 'gpt-5-mini',
+          reasoningEffort: AiReasoningEffort.medium,
+        ),
         messages: <AiChatMessage>[const AiChatMessage.user('hi')],
       );
       expect(
         jsonDecode(capturedBody) as Map<String, Object?>,
         containsPair('reasoning_effort', 'medium'),
       );
+    });
+
+    test('OpenAI 官方的非推理模型：存着档位也不发 reasoning_effort（BUG-5368）', () async {
+      final AiChatClient client = clientReturning(<String, Object?>{
+        'choices': <Object?>[
+          <String, Object?>{
+            'message': <String, Object?>{'content': 'x'},
+          },
+        ],
+      });
+      addTearDown(client.close);
+      // 复现路径：gpt-5-mini 选了「低」，再把模型改成 gpt-4o-mini，档位还存着。
+      await client.complete(
+        provider: _config(
+          model: 'gpt-4o-mini',
+          reasoningEffort: AiReasoningEffort.low,
+        ),
+        messages: <AiChatMessage>[const AiChatMessage.user('hi')],
+      );
+      expect(capturedBody, isNot(contains('reasoning_effort')));
     });
 
     test(
@@ -2036,6 +2086,7 @@ void main() {
         'bad_response',
         'empty_response',
         'provider_not_configured',
+        'reasoning_unsupported',
         'http_503',
       ]) {
         final String text = aiFailureText(code);
