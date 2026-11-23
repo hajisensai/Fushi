@@ -6,12 +6,11 @@ import 'package:fushi_engine/media/book_archive/book_archive_import.dart';
 import 'package:fushi_engine/utils/archive/archive_unpacker.dart'
     show ArchiveUnpackFailure;
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
-    show ImportProgressCard;
+import 'package:fushi/src/media/import/import_progress_card.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart'
     show buildProductionBookArchiveImporter;
-import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -24,16 +23,20 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// 打开「从压缩包导入书」：把 [paths]（压缩包 + 可能同批拖入的单本书）解包后整批导入，
 /// 结束时给一份汇总。返回是否至少新导入了一本书或一卷漫画（调用方据此刷新书架）。
 ///
-/// 解开后是一卷漫画（只有页图）的包，解出的目录直接交给既有的 [MangaImportDialog]
-/// （页图目录导入，书名取包名），不按扩展名猜、也不解第二次；漫画框关掉后删掉暂存。
-/// [mangaEnabled] = 漫画模块开着：关着时不开漫画框，汇总里如实说明（与拖漫画包进书架
-/// 时的「模块已关闭」同一句）。
+/// 解开后是一卷漫画（只有页图）的包，解出的目录直接交给 [importMangaDirectories]
+/// （生产是 `showMangaDirectoriesImportDialog`：页图目录导入，书名取包名），不按扩展名
+/// 猜、也不解第二次；漫画框关掉后删掉暂存。回调由调用方注入，本文件不 import 漫画 UI
+/// （否则这个导入框经漫画导入框接进 app 的 UI 大环，见 import_cycle_guard_test）。
+/// [importMangaDirectories] 为 null = 漫画模块关着：不开漫画框，汇总里如实说明（与拖
+/// 漫画包进书架时的「模块已关闭」同一句）。
 Future<bool> showBookArchiveImportDialog({
   required BuildContext context,
   required FushiDatabase db,
   required List<String> paths,
-  required bool mangaEnabled,
+  required Future<bool> Function(List<String> directories)?
+  importMangaDirectories,
 }) async {
+  final bool mangaEnabled = importMangaDirectories != null;
   final BookArchiveImportSummary? summary =
       await showAppDialog<BookArchiveImportSummary>(
         context: context,
@@ -48,17 +51,12 @@ Future<bool> showBookArchiveImportDialog({
   final List<BookArchiveMangaHandoff> handoffs = summary.mangaHandoffs;
   bool mangaImported = false;
   try {
-    if (handoffs.isNotEmpty && mangaEnabled && context.mounted) {
-      final bool? imported = await showAppDialog<bool>(
-        context: context,
-        builder: (_) => MangaImportDialog(
-          db: db,
-          initialPaths: <String>[
-            for (final BookArchiveMangaHandoff h in handoffs) h.directory,
-          ],
-        ),
-      );
-      mangaImported = imported == true;
+    if (handoffs.isNotEmpty &&
+        importMangaDirectories != null &&
+        context.mounted) {
+      mangaImported = await importMangaDirectories(<String>[
+        for (final BookArchiveMangaHandoff h in handoffs) h.directory,
+      ]);
     }
   } finally {
     // 漫画导入把页图拷进了书库，暂存解包目录（书库根下的 `.tmp-*`）此刻就没用了。
@@ -140,7 +138,7 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
   /// 关框并把汇总（连同漫画暂存的所有权）交给 [showBookArchiveImportDialog]。
   void _deliver(BookArchiveImportSummary? summary) {
     _delivered = true;
-    Navigator.pop(context, summary);
+    closeOwnRoute(context, summary);
   }
 
   Future<void> _run() async {

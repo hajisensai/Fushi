@@ -11995,7 +11995,7 @@ class AppModel
       );
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
-  /// 桌面原生窗（Windows / macOS）吃字体；阅读器设置尚未加载时返回 null（原生用
+  /// 桌面原生窗（Windows / macOS / Linux）吃字体；阅读器设置尚未加载时返回 null（原生用
   /// 默认字族）。
   ({String family, String? path})? _floatingLyricNativeFont() {
     if (!isFontTargetAvailableOnPlatform(FontTarget.floatingLyric)) return null;

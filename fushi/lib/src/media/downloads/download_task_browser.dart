@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/media/downloads/download_batch.dart';
+import 'package:fushi/src/media/downloads/download_batch_failures_dialog.dart';
 import 'package:fushi/src/media/downloads/download_task_clear_completed_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -354,9 +355,23 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     });
     final String message = describeDownloadBatchOutcome(outcome);
     if (message.isEmpty) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(FushiSnackBar(content: Text(message)));
+    final List<DownloadBatchFailedTask> failures = outcome.failures;
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(
+        content: Text(message),
+        // 只有个数用户没法判断是哪条、为什么失败（BUG-5212）。
+        action: failures.isEmpty
+            ? null
+            : SnackBarAction(
+                key: const ValueKey<String>('download_batch_failed_details'),
+                label: t.download_batch_failed_details,
+                onPressed: () {
+                  if (!mounted) return;
+                  unawaited(showDownloadBatchFailuresDialog(context, failures));
+                },
+              ),
+      ),
+    );
   }
 
   /// 剔掉选中集里已经不存在的 id，并在真的空了之后退出选择态。

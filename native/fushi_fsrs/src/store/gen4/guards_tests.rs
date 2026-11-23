@@ -585,7 +585,7 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
     ),
     (
         "compare.rs",
-        "协议 3 投影与新代派生层逐类对拍",
+        "协议 3 投影与新代派生层逐类对拍（`entities` 一类按本 profile 的身份记录认出被同库另一个 profile 占走行的实体，读 sync2_ops）",
         &[
             "srs_entities",
             "srs_event_local",
@@ -593,6 +593,7 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
             "srs_review_logs",
             "sync2_held",
             "sync2_media",
+            "sync2_ops",
             "sync2_purged",
             "sync2_tag_adds",
             "sync2_trust_held",
