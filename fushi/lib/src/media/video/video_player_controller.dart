@@ -4960,9 +4960,11 @@ class VideoPlayerController extends ChangeNotifier
     final int effectiveMs = effectiveSubtitlePositionMs(clock, _delayMs);
     bool changed = _syncAuxRenderActivity(clock, effectiveMs);
     if (_cues.isNotEmpty) {
-      // 句尾暂停待触发：本句已播过 endMs、下一拍 tick 就会暂停并 seek 回句尾。这段
-      // overshoot 里渲染集原样冻结（仍是本句），不让下一句先上屏又被拉回。
-      if (_subtitleEndHoldPendingAt(effectiveMs)) {
+      // 句尾动作待触发：本句已播过 endMs、下一拍 tick 就会暂停并 seek 回句尾，或
+      // 「循环当前句」回到句首。这段 overshoot 里渲染集原样冻结（仍是本句），不让
+      // 下一句先上屏又被拉回。
+      if (_subtitleEndHoldPendingAt(effectiveMs) ||
+          _shouldLoopCurrentCue(effectiveMs)) {
         if (changed) notifyListeners();
         return;
       }
@@ -5006,7 +5008,8 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   /// 代表句开着句尾暂停、时钟已越过其 endMs 而这句还没停过：下一拍 tick 必然暂停并
-  /// seek 回句尾（[_shouldHoldAtSubtitleEnd]）。
+  /// seek 回句尾（[_shouldHoldAtSubtitleEnd]）。「循环当前句」的回绕待触发由
+  /// [_shouldLoopCurrentCue] 判（同为纯判定，tick 与时钟路径共用一份口径）。
   bool _subtitleEndHoldPendingAt(int effectiveMs) {
     final int current = _currentCueIndex;
     if (current < 0 || current >= _cues.length) return false;

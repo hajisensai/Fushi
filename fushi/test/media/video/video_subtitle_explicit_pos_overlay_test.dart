@@ -297,6 +297,22 @@ void main() {
       c.debugSyncRenderActivityToClock();
       expect(c.activeCues, <AudioCue>[a]);
     });
+
+    test('循环当前句回绕待触发时渲染集同样冻结在本句', () {
+      final VideoPlayerController c = _controller();
+      addTearDown(c.dispose);
+      final AudioCue a = _cue('A', startMs: 0, endMs: 1000, index: 0);
+      final AudioCue b = _cue('B', startMs: 1000, endMs: 2000, index: 1);
+      c.setCues(<AudioCue>[a, b]);
+      c.setLoopCurrentCue(true);
+      c.debugUpdateCueForPosition(950);
+      expect(c.activeCues, <AudioCue>[a]);
+
+      // 越过 A 句尾、tick 未到：下一拍 tick 会回到 A 句首，B 不得先闪上屏。
+      c.debugSetPositionForTesting(1040);
+      c.debugSyncRenderActivityToClock();
+      expect(c.activeCues, <AudioCue>[a]);
+    });
   });
 
   group('overlay 真布局：相邻对白交接不抬高后句（BUG-5279）', () {
