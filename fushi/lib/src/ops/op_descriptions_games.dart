@@ -1075,7 +1075,6 @@ OpAvailability _windowsOnly() => gameOpsPlatformSupported()
         'Galgame Hook 只支持 Windows',
       );
 
-/// 沿 [path] 取嵌套 Map 里的一个值；任一层不是 Map 时为 null。
 /// OCR 识别区域四个参数（客户区归一化 0～1）。
 const List<OpParam> _ocrRegionParams = <OpParam>[
   OpParam.number(
@@ -1095,6 +1094,7 @@ Object? _ocrSettings(Object? ocr) => ocr is Map
     ? <String, Object?>{'region': ocr['region'], 'binarize': ocr['binarize']}
     : null;
 
+/// 沿 [path] 取嵌套 Map 里的一个值；任一层不是 Map 时为 null。
 Object? _field(Object? value, List<String> path) {
   Object? current = value;
   for (final String key in path) {
