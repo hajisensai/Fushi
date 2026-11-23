@@ -100,7 +100,6 @@ class _Env {
           trustedClock: SrsTrustedClock(
             wallClockMs: () => clock += 1000,
             bootClockMs: () => clock,
-            bootId: 'boot',
           ),
           fallbackRolloverHour: () => 4,
           localOffsetMin: () => 0,

@@ -35,11 +35,7 @@ void main() {
       profileUid: _profile,
       deviceId: id,
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot-$id',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
       fallbackRolloverHour: () => fallbackRollover,
       localOffsetMin: () => localOffset,
     );

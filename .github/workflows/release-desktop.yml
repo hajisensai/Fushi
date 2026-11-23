@@ -2905,6 +2905,10 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" build
           mkdir -p fushi/build/release-artifacts
           cp build/flatpak-out/fushi-*-linux-x86_64.flatpak fushi/build/release-artifacts/
+          # The plain bundle tarball ships too: distros without Flatpak (or users who
+          # want a portable copy) run it directly; it has no in-app installer, so the
+          # updater only opens the release page for it (UnsupportedUpdater).
+          cp "$tarball" fushi/build/release-artifacts/
           # One file instead of thousands of OSTree objects for the artifact upload.
           tar -C build/flatpak-out -cf build/flatpak-repo.tar repo
       - name: Upload Linux Flatpak artifact
@@ -2914,6 +2918,7 @@ jobs:
           name: desktop-artifacts-linux
           path: |
             fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+            fushi/build/release-artifacts/fushi-*-linux-x64.tar.gz
           if-no-files-found: ignore
           retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
       - name: Upload Flatpak repo commit artifact
@@ -4093,12 +4098,12 @@ jobs:
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
           # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
-          # iOS: *-ios.ipa / Linux: *-linux-x86_64.flatpak) so it keeps
+          # iOS: *-ios.ipa / Linux: *-linux-x86_64.flatpak + *-linux-x64.tar.gz) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa|*-linux-x86_64.flatpak) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa|*-linux-x86_64.flatpak|*-linux-x64.tar.gz) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -4359,6 +4364,7 @@ jobs:
           tag_name: ${{ github.event_name == 'release' && steps.channel.outputs.tag || steps.channel.outputs.publish_tag }}
           files: |
             fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+            fushi/build/release-artifacts/fushi-*-linux-x64.tar.gz
       - name: Publish mirror update manifest (Linux assets)
         if: steps.channel.outputs.publish_manifest == 'true' && steps.flatpak_repo.outputs.publish == 'true'
         shell: bash

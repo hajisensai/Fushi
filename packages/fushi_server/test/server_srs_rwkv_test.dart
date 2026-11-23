@@ -79,7 +79,6 @@ void main() {
       trustedClock: SrsTrustedClock(
         wallClockMs: () => clock[0],
         bootClockMs: () => clock[0],
-        bootId: 'boot-$deviceId',
       ),
     );
   }
