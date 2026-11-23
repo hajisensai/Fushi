@@ -1438,7 +1438,36 @@ String _mangaGestureJs({
         ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width + FIT_HQ +
             (FIT_TEXT_GAMMA ? '&$kMangaFitTextBoxQueryParam=' + (page.getAttribute('data-tb') || '0') : '')
         : base;
-    if (img.getAttribute('src') !== next) img.setAttribute('src', next);
+    _swapPageSrc(img, next);
+  }
+  // 换掉正在显示的页图（BUG-5351）：缩放档变了（双击放大 / 缩回后 200ms 的 _scheduleRefit）
+  // 就要换 `fit=` 档。旧实现直接改在屏 <img decoding="async"> 的 src——新图到货后
+  // Chromium 先合成一帧「图还没解码」的画面（async 图不阻塞光栅），整页露出底色，
+  // 录屏里就是放大 / 缩回落定后黑屏闪一帧。改为先在离屏 Image 上取图并 decode()，
+  // 解码好再换 src，并把这张在屏图改成同步解码：换上去的那一帧光栅等解码结果，旧画面
+  // 留到新图能画为止。还没有画面的页（首次挂 src）照旧直接设、照旧异步解码。
+  // 换图途中又要别的档：只认最后一次（__pendingSrc），过时的预取到货后丢弃。
+  function _swapPageSrc(img, next){
+    var current = img.getAttribute('src');
+    if (current === next) { img.__pendingSrc = null; return; }
+    if (!current || !img.complete || !(img.naturalWidth > 0) || typeof Image !== 'function') {
+      img.__pendingSrc = null;
+      img.setAttribute('src', next);
+      return;
+    }
+    if (img.__pendingSrc === next) return;
+    img.__pendingSrc = next;
+    var pre = new Image();
+    pre.src = next;
+    var swap = function(){
+      if (img.__pendingSrc !== next) return;
+      img.__pendingSrc = null;
+      img.decoding = 'sync';
+      img.setAttribute('src', next);
+    };
+    // 预取失败也照换：在屏图的 error 监听负责打失败标记 / 回退原图（data-nofit）。
+    if (pre.decode) pre.decode().then(swap, swap);
+    else { pre.onload = swap; pre.onerror = swap; }
   }
   var _refitTimer = null;
   function _scheduleRefit(){
@@ -1792,26 +1821,67 @@ String _mangaGestureJs({
   function _cancelDoubleTapZoom(){
     if(doubleTapZoomFrame!==null){cancelAnimationFrame(doubleTapZoomFrame);doubleTapZoomFrame=null;}
   }
-  // 动画缩放到 target（以 (x, y) 为锚）。收尾把 ZOOM 钉到 target 本身：_zoomAbout
-  // 对 <0.0005 的差值是 no-op，不钉的话「回到正常比例」会停在 99.97% 这类值上。
-  // after：落定后、回报 Dart 之前再摆一次位（快速缩回用它把页面摆正）。
-  function _animateZoomTo(target,x,y,after){
+  // 缩放落定后的平移（BUG-5351）：以 (ax, ay) 为锚缩放到 target 的终态。<=1 时回中，
+  // >1 时钳进合法区间（与 _zoomAbout / _clampPan 同一条规则）。y 是「纵向内容偏移」：
+  // spread 是 PAN_Y；webtoon 纵向归 scrollY，这里给 -scrollY，与 PAN_Y 同号同义。
+  function _zoomEndPan(target, ax, ay){
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var y0 = IS_WEBTOON ? -window.scrollY : PAN_Y;
+    var x = target <= 1 ? vw * (1 - target) / 2 : ax - (ax - PAN_X) / ZOOM * target;
+    var y = ay - (ay - y0) / ZOOM * target;
+    if (IS_WEBTOON) y = Math.min(0, y);
+    else if (target <= 1) y = vh * (1 - target) / 2;
+    if (target > 1) {
+      x = Math.min(0, Math.max(vw * (1 - target), x));
+      if (!IS_WEBTOON) y = Math.min(0, Math.max(vh * (1 - target), y));
+    }
+    return {x: x, y: y};
+  }
+  // 一帧缩放：倍率与平移整体写入（y 同 _zoomEndPan，webtoon 写回 scrollY）。
+  function _setZoomPan(z, px, py){
+    ZOOM = z;
+    PAN_X = px;
+    PAN_Y = IS_WEBTOON ? 0 : py;
+    _applyCanvas();
+    if (IS_WEBTOON) _zoomAnchorScrollTo(Math.max(0, -py));
+  }
+  // 起点 p0@z0 → 终点 p1@z1 的缩放不动点：以它为锚缩放，路径正好落到终点。
+  // 倍率不变（z0≈z1）时没有不动点，返回 null，由调用方线性平移。
+  function _zoomFixedPoint(p0, p1, z0, z1){
+    if (Math.abs(z0 - z1) < 1e-9) return null;
+    return (p1 * z0 - p0 * z1) / (z0 - z1);
+  }
+  // 动画缩放到 target（以 (x, y) 为锚）。终态（倍率 + 平移）先算好，每一帧都在
+  // 「起点→终态」的同一条缩放路径上，最后一帧就是终态本身（BUG-5351）：旧实现每帧
+  // 以点击点为锚、落定后再回中 / 摆正，两次双击点不在同一处或放大后拖动过时，缩回
+  // 动画停在偏位上、下一帧才「跳」回中间；跨过 100% 的一帧还会从锚点轨迹折到回中轨迹。
+  // endPan：调用方指定的终态平移（快速缩回按跨页摆正），缺省按锚点算。
+  // after：落定后、回报 Dart 之前的记账（快速缩回记静止倍率）。
+  function _animateZoomTo(target,x,y,after,endPan){
     _cancelDoubleTapZoom();
     target=_clampZoom(target);
+    var startZoom=ZOOM, startX=PAN_X, startY=IS_WEBTOON ? -window.scrollY : PAN_Y;
+    var end=endPan||_zoomEndPan(target,x,y);
+    var fx=_zoomFixedPoint(startX,end.x,startZoom,target);
+    var fy=_zoomFixedPoint(startY,end.y,startZoom,target);
     function settle(){
-      if(ZOOM!==target){ZOOM=target;if(ZOOM<=1)_recenterPan();_applyCanvas();}
+      _setZoomPan(target,end.x,end.y);
       if(after)after();
       var b=_bridge();if(b)b.callHandler('onMangaZoomChanged',Math.round(ZOOM*100));
     }
-    if(!${animateDoubleTap && !preferences.einkMode}){_zoomAbout(target,x,y,true);settle();return;}
-    var startZoom=ZOOM,startTime=null;
+    if(!${animateDoubleTap && !preferences.einkMode}){settle();return;}
+    function along(f,p0,p1,z,e){
+      return f===null ? p0+(p1-p0)*e : f-(f-p0)*z/startZoom;
+    }
+    var startTime=null;
     function frame(time){
       if(startTime===null)startTime=time;
       var t=Math.min(1,(time-startTime)/${doubleTapAnimationMs.clamp(100, 600)});
+      if(t>=1){doubleTapZoomFrame=null;settle();return;}
       var eased=1-Math.pow(1-t,3);
-      _zoomAbout(startZoom+(target-startZoom)*eased,x,y,true);
-      if(t<1)doubleTapZoomFrame=requestAnimationFrame(frame);
-      else {doubleTapZoomFrame=null;settle();}
+      var z=startZoom+(target-startZoom)*eased;
+      _setZoomPan(z,along(fx,startX,end.x,z,eased),along(fy,startY,end.y,z,eased));
+      doubleTapZoomFrame=requestAnimationFrame(frame);
     }
     doubleTapZoomFrame=requestAnimationFrame(frame);
   }
@@ -1850,15 +1920,18 @@ String _mangaGestureJs({
     _animateZoomTo(fit.zoom,cx,cy,function(){
       ZOOM_REST=Math.max(ZOOM_REST_DEFAULT,ZOOM);
       QUICK_FIT_ZOOM=ZOOM;
-      if(ZOOM<=1){_recenterPan();_applyCanvas();return;}
-      var vw=window.innerWidth,vh=window.innerHeight;
-      var cw=(rect.r-rect.l)*ZOOM,ch=(rect.b-rect.t)*ZOOM;
-      PAN_X=cw<=vw+0.5 ? vw/2-(rect.l+rect.r)/2*ZOOM
-          : (IS_RTL ? vw-rect.r*ZOOM : -rect.l*ZOOM);
-      PAN_Y=ch<=vh+0.5 ? vh/2-(rect.t+rect.b)/2*ZOOM : -rect.t*ZOOM;
-      _clampPan();
-      _applyCanvas();
-    });
+    },_quickFitPan(rect,_clampZoom(fit.zoom)));
+  }
+  // 快速缩回的终态平移：倍率 zoom 下把跨页 rect（本地坐标）摆正，规则见上。
+  function _quickFitPan(rect,zoom){
+    var vw=window.innerWidth,vh=window.innerHeight;
+    if(zoom<=1)return {x:vw*(1-zoom)/2,y:vh*(1-zoom)/2};
+    var cw=(rect.r-rect.l)*zoom,ch=(rect.b-rect.t)*zoom;
+    var x=cw<=vw+0.5 ? vw/2-(rect.l+rect.r)/2*zoom
+        : (IS_RTL ? vw-rect.r*zoom : -rect.l*zoom);
+    var y=ch<=vh+0.5 ? vh/2-(rect.t+rect.b)/2*zoom : -rect.t*zoom;
+    return {x:Math.min(0,Math.max(vw*(1-zoom),x)),
+            y:Math.min(0,Math.max(vh*(1-zoom),y))};
   }
   function _quickZoom(){
     var fit=_quickZoomFit();
@@ -2409,13 +2482,13 @@ String _mangaGestureJs({
     var img = page && page.querySelector('img');
     if (!img) return;
     if (!img.hasAttribute('data-src')) {
-      if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+      _swapPageSrc(img, url);
       return;
     }
     var previous = img.getAttribute('data-src');
     if (previous === url) return;
     img.setAttribute('data-src', url);
-    if (img.getAttribute('src') === previous) img.setAttribute('src', url);
+    if (img.getAttribute('src') === previous) _swapPageSrc(img, url);
     _refitPage(page);
   };
   // 漫画朗读高亮：{page, blocks} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
