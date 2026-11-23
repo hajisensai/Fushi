@@ -754,6 +754,9 @@ void main() {
   // 反馈 Fbchzxuq6f：特典（SP / OVA / 预告片）在任何资料源上都没有条目，待确认
   // 判据对它们永远成立。用户「忽略」后：不计入待确认清单（提醒条）、不进自动补刮，
   // 只在已忽略清单里列出；忽略落库（跨调度器实例 = 跨进程），可撤销。
+  // 夹具文件名不能带特典标记词（Bonus / Menu / CM / PV…，见
+  // video_extra_markers.dart）：带标记的文件按附件分类，根本不进刮削计划
+  // （BUG-5260），也就到不了待确认清单。OVA 是宽词、不算标记。
   group('忽略待确认作品', () {
     test('忽略的作品移出待确认清单与自动补刮，列进已忽略清单', () async {
       final int sourceId = await addSource('D:/A');
@@ -765,9 +768,9 @@ void main() {
       );
       await addVideo(
         'sp-01',
-        'D:/A/Bonus Feature (2019).mkv',
+        'D:/A/Unscraped OVA (2019).mkv',
         sourceId,
-        title: 'Bonus Feature',
+        title: 'Unscraped OVA',
       );
 
       final VideoLibraryScrapeSweep first = sweep();
@@ -803,9 +806,9 @@ void main() {
       final int sourceId = await addSource('D:/A');
       await addVideo(
         'sp-01',
-        'D:/A/Bonus Feature (2019).mkv',
+        'D:/A/Unscraped OVA (2019).mkv',
         sourceId,
-        title: 'Bonus Feature',
+        title: 'Unscraped OVA',
       );
       final VideoLibraryScrapeSweep service = sweep(isEnabled: () => false);
       await service.setWorksIgnored(<String>['book:sp-01'], ignored: true);
@@ -2075,9 +2078,9 @@ void main() {
       );
       await addVideo(
         'bonus',
-        'D:/A/Bonus Feature.mkv',
+        'D:/A/Director Interview.mkv',
         sourceId,
-        title: 'Bonus Feature',
+        title: 'Director Interview',
       );
       await db.addToCollection(id, MediaKind.video, 'bonus');
 
