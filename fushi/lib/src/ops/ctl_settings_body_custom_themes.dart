@@ -33,6 +33,10 @@ final Map<String, _ColorRole> _colorRoles = <String, _ColorRole>{
   'bg': (help: '阅读器背景色', read: (CustomThemeEntry e) => e.bgColor),
   'font': (help: '阅读器文字色', read: (CustomThemeEntry e) => e.fontColor),
   'selection': (help: '选中高亮色', read: (CustomThemeEntry e) => e.selectionColor),
+  'selection_text': (
+    help: '查词高亮文字色（不给 = 跟随正文字色；配深色高亮可做反色）',
+    read: (CustomThemeEntry e) => e.selectionTextColor,
+  ),
   'link': (help: '链接色', read: (CustomThemeEntry e) => e.linkColor),
   'secondary': (help: '次要强调色', read: (CustomThemeEntry e) => e.secondaryColor),
   'tertiary': (help: '点缀色', read: (CustomThemeEntry e) => e.tertiaryColor),
@@ -195,6 +199,7 @@ CustomThemeEntry _merge(CustomThemeEntry base, Map<String, String> fields) {
     bgColor: role('bg', base.bgColor),
     fontColor: role('font', base.fontColor),
     selectionColor: role('selection', base.selectionColor),
+    selectionTextColor: role('selection_text', base.selectionTextColor),
     linkColor: role('link', base.linkColor),
     secondaryColor: role('secondary', base.secondaryColor),
     tertiaryColor: role('tertiary', base.tertiaryColor),

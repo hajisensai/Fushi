@@ -7122,6 +7122,8 @@ class AppModel
       themeNotifier.activeCustomThemeBackgroundColor;
   Color? get activeCustomThemeSelectionColor =>
       themeNotifier.activeCustomThemeSelectionColor;
+  Color? get activeCustomThemeSelectionTextColor =>
+      themeNotifier.activeCustomThemeSelectionTextColor;
   Color? get activeCustomThemeLinkColor =>
       themeNotifier.activeCustomThemeLinkColor;
   Color? get activeCustomThemeSurfaceColor =>

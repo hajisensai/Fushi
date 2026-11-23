@@ -4085,6 +4085,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     bg: appModel.activeCustomThemeBackgroundColor,
     fg: appModel.activeCustomThemeFontColor,
     selection: appModel.activeCustomThemeSelectionColor,
+    selectionText: appModel.activeCustomThemeSelectionTextColor,
     link: appModel.activeCustomThemeLinkColor,
   );
 

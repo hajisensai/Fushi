@@ -262,6 +262,7 @@ html::after {
     String? customBg,
     String? customFg,
     String? selectionColor,
+    String? selectionTextColor,
     String? sentenceAudioHighlightColor,
     String? sentenceAudioTextColor,
     String? linkColor,
@@ -275,7 +276,7 @@ html::after {
     ReaderSpreadLayout? spreadLayout,
     int? columnGapOverridePx,
   }) {
-    return '<style>\n${css(settings: settings, contentLanguage: contentLanguage, fontFaces: fontFaces, fontFamily: fontFamily, customBg: customBg, customFg: customFg, selectionColor: selectionColor, sentenceAudioHighlightColor: sentenceAudioHighlightColor, sentenceAudioTextColor: sentenceAudioTextColor, linkColor: linkColor, rubyColor: rubyColor, nativeSelectionColor: nativeSelectionColor, themeOverride: themeOverride, einkMode: einkMode, einkDark: einkDark, motionEnabled: motionEnabled, spreadLayout: spreadLayout, columnGapOverridePx: columnGapOverridePx)}\n</style>';
+    return '<style>\n${css(settings: settings, contentLanguage: contentLanguage, fontFaces: fontFaces, fontFamily: fontFamily, customBg: customBg, customFg: customFg, selectionColor: selectionColor, selectionTextColor: selectionTextColor, sentenceAudioHighlightColor: sentenceAudioHighlightColor, sentenceAudioTextColor: sentenceAudioTextColor, linkColor: linkColor, rubyColor: rubyColor, nativeSelectionColor: nativeSelectionColor, themeOverride: themeOverride, einkMode: einkMode, einkDark: einkDark, motionEnabled: motionEnabled, spreadLayout: spreadLayout, columnGapOverridePx: columnGapOverridePx)}\n</style>';
   }
 
   /// 正文 `font-family` 的值：用户字体 -> 内容语言的明朝体/宋体链 -> `serif`。
@@ -511,6 +512,8 @@ body::after {
     String? customBg,
     String? customFg,
     String? selectionColor,
+    // 查词高亮里被选中文字的字色（自定义主题「查词高亮文字」）。null = 跟随正文。
+    String? selectionTextColor,
     String? sentenceAudioHighlightColor,
     // 有声书当前句字色（resolveAudioHighlightStyle 的 text）。null = 沿用正文色。
     String? sentenceAudioTextColor,
@@ -587,7 +590,30 @@ body::after {
     final String themedRubyCss = !einkMode && rubyColor != null
         ? 'ruby > rt, ruby > rtc { color: $rubyColor; }\n'
         : '';
-    final String nativeSelectionCss = !einkMode && nativeSelectionColor != null
+    // 查词高亮文字色（拍板台 -8azTfJh_v）：设了就让查词选区的各条绘制路径
+    // （::highlight、ruby 分流 class、旧 WebView 包裹 span、与当前句重叠的 ruby）都换成
+    // 这个字色，配合底色做出反色高亮；没设时一律 inherit（跟随正文，与历史输出逐字
+    // 相同）。墨水屏的查词是线式下划线、不画底色，换字色只会与纸色撞色，所以忽略。
+    final String? selectionText = einkMode ? null : selectionTextColor;
+    final String selectionTextValue = selectionText ?? 'inherit';
+    final String selectionTextImportant = selectionText == null
+        ? 'inherit'
+        : '$selectionText !important';
+    // 振假名不在窄条底色上（窄条只按基字画，BUG-110）：换了字色的查词 ruby 里 rt 留在
+    // 注音 / 正文原色，否则反色时白字落在白纸上。
+    final String selectionRubyTextCss = selectionText == null
+        ? ''
+        : 'ruby.fushi-selection-ruby-active > rt, '
+              'ruby.fushi-selection-ruby-active > rtc '
+              '{ color: ${rubyColor ?? colors.textColor} !important; }\n';
+    // 桌面鼠标拖出的原生选区：设了查词高亮文字色时与查词高亮同一观感（同底色 + 同
+    // 字色），否则保持旧行为（只有跟随主题配色才写底色）。
+    final String nativeSelectionCss = einkMode
+        ? ''
+        : selectionText != null
+        ? '::selection { background-color: $selectionOpaque; '
+              'color: $selectionText; }\n'
+        : nativeSelectionColor != null
         ? '::selection { background-color: $nativeSelectionColor; }\n'
         : '';
 
@@ -1138,15 +1164,15 @@ $themedRubyCss$nativeSelectionCss/* 高亮条一律一个字高（用户 2026-10
    BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。 */
 ::highlight(fushi-selection) {
   background-color: transparent;
-  color: inherit;
+  color: $selectionTextValue;
 }
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
    加 class，由窄条层按基字画一遍。移植自 Hoshi-Reader-Android。 */
 ruby.fushi-selection-ruby-active {
   background-color: transparent !important;
-  color: inherit;
+  color: $selectionTextImportant;
 }
-/* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
+$selectionRubyTextCss/* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
    三条路径共用 underline，和 sentenceAudioHighlight/current sentence 重叠时仍保留收藏语义。 */
 ${_favoriteHighlightCss('yellow', 'rgb(184, 132, 0)')}
 ${_favoriteHighlightCss('green', 'rgb(0, 126, 54)')}
@@ -1155,7 +1181,7 @@ ${_favoriteHighlightCss('pink', 'rgb(196, 38, 92)')}
 ${_favoriteHighlightCss('purple', 'rgb(126, 0, 190)')}
 ${favoriteHighlightUnderlineOverrideCss(settings.highlightStrokeConfig(HighlightKind.favorite), einkMode: einkMode)}.fushi-dict-highlight {
   background-color: transparent !important;
-  color: inherit;
+  color: $selectionTextImportant;
 }
 ::highlight(fushi-sentence-audio) {
   color: var(--fushi-sentence-audio-text-color);
@@ -1168,7 +1194,7 @@ ruby.fushi-sentence-audio-ruby-active {
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时，振假名字也只显示查词层（查词优先）。 */
 ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
-  color: inherit !important;
+  color: $selectionTextValue !important;
 }
 ::highlight(fushi-search) {
   background-color: transparent;

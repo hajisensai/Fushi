@@ -309,6 +309,7 @@ const ({
   Color fg,
   Color sentenceAudioHighlight,
   Color selection,
+  Color? selectionText,
   Color link,
   bool dark,
 })
@@ -317,6 +318,7 @@ _anyThemed = (
   fg: Color(0xDE000000),
   sentenceAudioHighlight: Color(0x66A8C68C),
   selection: Color(0x59C2B280),
+  selectionText: null,
   link: Color(0xFF7A6232),
   dark: false,
 );
