@@ -328,9 +328,30 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     if (isGlassDesign(context)) {
       // 「玻璃」设计系统：iOS 26 inset grouped 分组——实色
       // secondarySystemGroupedBackground、圆角 iOS 24 / 桌面 12，不是玻璃。
+      final FushiAppleMetrics apple = FushiAppleMetrics.of(context);
+      if (apple.form) {
+        // macOS 27 grouped form：分组框 #2A2A2A / 白底，0.5 px separator 描边、
+        // 圆角 10。描边画在前景层，不挤占内容。
+        return DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: apple.groupBorderRadius,
+            border: Border.all(
+              color: appleColorsOf(context).separator,
+              width: 0.5,
+            ),
+          ),
+          child: FushiCard(
+            padding: EdgeInsets.zero,
+            borderRadius: apple.groupBorderRadius,
+            color: color ?? apple.formGroupBackground(context),
+            child: content,
+          ),
+        );
+      }
       return FushiCard(
         padding: EdgeInsets.zero,
-        borderRadius: FushiAppleMetrics.of(context).groupBorderRadius,
+        borderRadius: apple.groupBorderRadius,
         color: color,
         child: content,
       );
@@ -482,10 +503,15 @@ class AdaptiveSettingsSection extends StatefulWidget {
     this.expanded,
     this.onExpansionChanged,
     this.summary,
+    this.footer,
   });
 
   final String? title;
   final List<Widget> children;
+
+  /// 贴在分组卡下方的说明（macOS 27 grouped form：卡下 6、再隔组间距到下一
+  /// 组）；null = 没有。
+  final Widget? footer;
   final SettingsSectionTitlePlacement titlePlacement;
   final Color? surfaceColor;
 
@@ -677,6 +703,10 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
                     padding: const EdgeInsets.only(bottom: 6),
                   ),
           group,
+          if (widget.footer case final Widget footer) ...<Widget>[
+            const SizedBox(height: 6),
+            footer,
+          ],
         ],
       ),
     );
@@ -826,7 +856,8 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         // 右端同样缩进行内边距（在 chevron 之前结束，左右对称）；最后一行之后
         // 没有分隔线。
         final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-        final double iconInset = _settingsRowHasIcon(rows[i - 1])
+        final double iconInset =
+            !metrics.form && _settingsRowHasIcon(rows[i - 1])
             ? metrics.iconTileSize + tokens.spacing.gap + 4
             : 0;
         result.add(
@@ -856,6 +887,22 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
   }
 
   static bool _settingsRowHasIcon(Widget row) => settingsRowHasLeadingIcon(row);
+}
+
+/// macOS 27 grouped form（[FushiAppleMetrics.form]）里设置行的水平内边距（10）；
+/// 不在 form 作用域 / 不是「玻璃」设计系统时 null（调用方用各自的默认）。
+double? settingsAppleFormRowInset(BuildContext context) {
+  if (!isGlassDesign(context) || isCupertinoPlatform(context)) return null;
+  final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+  return metrics.form ? metrics.rowHorizontal : null;
+}
+
+/// 设置行是否画行首图标：声明了 [showIcon] 且有 [icon]，且不在 macOS 27
+/// grouped form 里——系统设置的表单行不带行首图标，有的行带、有的行不带会让
+/// 文字起点参差（用户 2026-11-24 宽窗截图「界面语言」行）。
+bool settingsRowIconShown(BuildContext context, bool showIcon, IconData? icon) {
+  if (!showIcon || icon == null) return false;
+  return settingsAppleFormRowInset(context) == null;
 }
 
 /// 不改变行外观、只在设置行外面套一层的包装（schema 派发、搜索落点等）实现它，
@@ -1086,7 +1133,11 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 维持原经验值不动（它们的窄屏行为另有守卫钉着）。
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
     final double horizontalInset =
-        horizontalPadding ?? (cupertino ? 16 : tokens.spacing.rowHorizontal);
+        horizontalPadding ??
+        (cupertino
+            ? 16
+            : settingsAppleFormRowInset(context) ??
+                  tokens.spacing.rowHorizontal);
     final double? declaredTrailingWidth = trailingWidth;
     final double stackThreshold = declaredTrailingWidth == null
         ? (220.0 * textScale).clamp(220.0, 420.0)
@@ -1100,7 +1151,8 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 左栏图标占固定宽（badge ~30 + 间距 gap+4 = 12）：堆叠判断必须把它计入
     // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
     // 行内布局，label+trailing 少了一个图标位而右溢出。
-    final double iconExtra = (leading != null || (showIcon && icon != null))
+    final double iconExtra =
+        (leading != null || settingsRowIconShown(context, showIcon, icon))
         ? 42.0
         : 0.0;
     // BUG-3501：LayoutBuilder 不支持 intrinsic 测量（release 恒答 0、debug 抛错），
@@ -1143,9 +1195,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
                 constraints.maxWidth < stackThreshold + iconExtra);
         return Padding(
           padding: EdgeInsets.symmetric(
-            horizontal:
-                horizontalPadding ??
-                (cupertino ? 16 : tokens.spacing.rowHorizontal),
+            horizontal: horizontalInset,
             // MD3 分段行（Android 16 设置）：行内布局也取 rowVertical（12），
             // 配合下面的最小高，单行行高 64、带说明的行更舒展。紧凑档
             // （[SettingsCompactRowsScope]）一律收到 gap。
@@ -1236,7 +1286,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
           if (leading case final Widget lead) ...[
             lead,
             SizedBox(width: tokens.spacing.gap + 4),
-          ] else if (showIcon && icon != null) ...[
+          ] else if (settingsRowIconShown(context, showIcon, icon)) ...[
             _SettingsIcon(icon: icon!),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
@@ -1295,7 +1345,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
               if (leading case final Widget lead) ...[
                 lead,
                 SizedBox(width: tokens.spacing.gap + 4),
-              ] else if (showIcon && icon != null) ...[
+              ] else if (settingsRowIconShown(context, showIcon, icon)) ...[
                 _SettingsIcon(icon: icon!),
                 SizedBox(width: tokens.spacing.gap + 4),
               ],
@@ -2210,8 +2260,10 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     );
     final double rowInset = isCupertinoPlatform(context)
         ? 16
-        : tokens.spacing.rowHorizontal;
-    final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
+        : settingsAppleFormRowInset(context) ?? tokens.spacing.rowHorizontal;
+    final double iconExtra = settingsRowIconShown(context, showIcon, icon)
+        ? 42.0
+        : 0.0;
     final bool enabled = segments.any((ButtonSegment<T> s) => s.enabled);
 
     Widget gamepad(Widget child, String prefix) => _GamepadAdjustableValue(

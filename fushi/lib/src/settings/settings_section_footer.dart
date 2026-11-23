@@ -37,13 +37,29 @@ TextStyle? settingsFootnoteStyle(BuildContext context) {
 /// section 底部说明文字。padding 两渲染器一致；文字样式默认按设计系统取
 /// [settingsFootnoteStyle]，渲染器要别的口径时经 [style] 注入。
 class SettingsSectionFooter extends StatelessWidget {
-  const SettingsSectionFooter(this.text, {super.key, this.style});
+  const SettingsSectionFooter(
+    this.text, {
+    super.key,
+    this.style,
+    this.attached = false,
+  });
 
   final String text;
   final SettingsFooterStyle? style;
 
+  /// 贴在分组卡下方、由分组负责上下间距（macOS 27 grouped form，见
+  /// [AdaptiveSettingsSection.footer]）：只留与卡内行文字对齐的水平内边距。
+  final bool attached;
+
   @override
   Widget build(BuildContext context) {
+    if (attached) {
+      final double inset = FushiAppleMetrics.of(context).rowHorizontal;
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: inset),
+        child: Text(text, style: (style ?? settingsFootnoteStyle)(context)),
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(

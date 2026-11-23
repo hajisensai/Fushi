@@ -32,7 +32,7 @@ export 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 /// 紧凑尺寸。按 [ThemeData.platform] 判，测试可经主题覆盖平台。
 @immutable
 class FushiAppleMetrics {
-  const FushiAppleMetrics._({required this.desktop});
+  const FushiAppleMetrics._({required this.desktop, this.form = false});
 
   ///
   /// 桌面平台的窄窗（宽 < [kFushiAppleCompactMetricsWidth]）版面就是 iOS 的单列
@@ -47,7 +47,9 @@ class FushiAppleMetrics {
     if (width != null && width < kFushiAppleCompactMetricsWidth) {
       return const FushiAppleMetrics._(desktop: false);
     }
-    return byPlatform;
+    return FushiAppleFormScope.activeOf(context)
+        ? const FushiAppleMetrics._(desktop: true, form: true)
+        : byPlatform;
   }
 
   /// 按主题平台取档（没有 BuildContext 的装配点用；与 [FushiAppleMetrics.of] 同一判据）。
@@ -63,11 +65,16 @@ class FushiAppleMetrics {
   /// 桌面档（macOS / Windows / Linux）。
   final bool desktop;
 
+  /// macOS 27「系统设置」grouped form 档：桌面档且在 [FushiAppleFormScope] 里
+  /// （设置宽屏主从的详情窗格）。行内边距收到 10、说明 / 脚注 11 号，内容列
+  /// 限宽 [kFushiAppleFormMaxWidth] 居中，分组卡换 form 底色 + 0.5 px 描边。
+  final bool form;
+
   /// 列表行最小高：iOS 27 inset grouped 行 52pt，macOS 27 grouped form 单行 40。
   double get rowMinHeight => desktop ? 40 : 52;
 
-  /// 行的水平内边距（两档都是 16，与 iOS inset grouped 一致）。
-  double get rowHorizontal => 16;
+  /// 行的水平内边距：iOS inset grouped 16；macOS 27 grouped form 10。
+  double get rowHorizontal => form ? 10 : 16;
 
   /// 行的竖直内边距：只在多行（带副标题）时撑高，单行靠 [rowMinHeight]。
   double get rowVertical => desktop ? 6 : 8;
@@ -78,8 +85,16 @@ class FushiAppleMetrics {
   /// 行副标题字号：iOS subheadline 15，macOS 27 系统设置说明 11。
   double get subtitleSize => desktop ? 11 : 15;
 
-  /// 分组标题 / 脚注字号（iOS footnote 13，两档一致）。
-  double get footnoteSize => 13;
+  /// 分组脚注字号：iOS footnote 13；macOS 27 grouped form 的组尾说明 11。
+  double get footnoteSize => form ? 11 : 13;
+
+  /// grouped form 的分组框底：深色 #2A2A2A、浅色 #F5F5F5。详情窗格本身不铺
+  /// 底、透出外壳的窗口底（Apple 设计系统深色黑 / 浅色白，与窗口标题行同色），
+  /// 分组框比它亮 / 暗一档再加 0.5 px separator 描边分出边界。
+  Color formGroupBackground(BuildContext context) =>
+      Theme.of(context).colorScheme.brightness == Brightness.dark
+      ? const Color(0xFF2A2A2A)
+      : const Color(0xFFF5F5F5);
 
   /// 行首图标尺寸。
   double get leadingIconSize => desktop ? 18 : 22;
@@ -136,6 +151,24 @@ class FushiAppleMetrics {
 
 /// 桌面平台窗口宽于此值才用 macOS 紧凑度量（见 [FushiAppleMetrics.of]）。
 const double kFushiAppleCompactMetricsWidth = 600;
+
+/// macOS 27 grouped form 内容列的最大宽（系统设置详情窗格的表单列 ≈ 640），
+/// 宽窗里在剩余空间居中。
+const double kFushiAppleFormMaxWidth = 640;
+
+/// 子树按 macOS 27「系统设置」grouped form 排版（[FushiAppleMetrics.form]）。
+/// 只在桌面档生效：窄窗（< [kFushiAppleCompactMetricsWidth]）仍是 iOS 档。
+/// 纯度量作用域，本身不画任何东西（与设计系统分派无关）。
+class FushiAppleFormScope extends InheritedWidget {
+  const FushiAppleFormScope({required super.child, super.key});
+
+  /// [context] 是否在 grouped form 作用域里。
+  static bool activeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiAppleFormScope>() != null;
+
+  @override
+  bool updateShouldNotify(FushiAppleFormScope oldWidget) => false;
+}
 
 /// 物理 1px 的细线粗细（Apple 的 hairline：1 / 屏幕缩放，2x 屏即 0.5pt）。
 double fushiHairline(BuildContext context) =>

@@ -30,7 +30,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiAppleMetrics;
+    show FushiAppleFormScope, FushiAppleMetrics, kFushiAppleFormMaxWidth;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
@@ -1707,7 +1707,13 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   Widget build(BuildContext context) {
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color page = apple
+    final bool form = _appleForm(context);
+    // grouped form 不自己铺底：详情窗格透出外壳内容区的窗口底（窗口按钮那一行
+    // 也是它），工具栏行与窗口标题行连成一片、没有接缝；窗口材质（Mica /
+    // vibrancy）与背景图都照常透出。
+    final Color page = form
+        ? Colors.transparent
+        : apple
         ? fushiPageBackgroundColorOr(
             context,
             appleColorsOf(context).groupedBackground,
@@ -1767,6 +1773,8 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
               ? Padding(
                   padding: EdgeInsets.only(bottom: tokens.spacing.gap),
                   child: SettingsSectionJumpBar(
+                    // grouped form：跳转条与内容列同宽、左缘对齐分组卡。
+                    padding: form ? EdgeInsets.zero : null,
                     sections: sections,
                     activeId: _spy.activeId,
                     onSelected: (String id) => _spy.jumpTo(
@@ -1779,7 +1787,17 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
         );
       },
     );
-    final Widget column = apple || isGlassDesign(context)
+    final Widget column = form
+        ? FushiAppleFormScope(
+            child: _buildApple(
+              context,
+              jumpBar: jumpBar,
+              body: body,
+              canPop: canPop,
+              form: true,
+            ),
+          )
+        : apple || isGlassDesign(context)
         ? _buildApple(context, jumpBar: jumpBar, body: body, canPop: canPop)
         : _buildOverlaid(context, header: header, jumpBar: jumpBar, body: body);
     // 独立路由页用 Scaffold（SnackBar / 键盘避让都要它）；嵌在宽屏右窗格时
@@ -1823,14 +1841,18 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     required Widget jumpBar,
     required Widget body,
     required bool canPop,
+    bool form = false,
   }) {
-    final double band = fushiAppleLargeTitleBand(context);
+    // grouped form（macOS 27 系统设置的详情窗格）没有大标题行：标题常驻工具栏。
+    final double band = form ? 0 : fushiAppleLargeTitleBand(context);
     final bool consumes = widget.bodyConsumesTopPadding;
     double offset() =>
         _controller.hasClients ? _controller.positions.first.pixels : 0;
     // 大标题已收走的那段（0…band）；不随内容滚的正文恒为 0。
     double slide() => consumes ? offset().clamp(0.0, band) : 0;
-    double progress() => consumes
+    double progress() => form
+        ? 1.0
+        : consumes
         ? (offset() / band).clamp(0.0, 1.0)
         : (offset() > 12 ? 1.0 : 0.0);
     final IconData? icon = widget.leadingIcon;
@@ -1850,28 +1872,54 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiAppleNavBar(
-            // 已在 SafeArea 里，栏不再让位状态栏 / 窗口标题栏。
-            primary: false,
-            automaticallyImplyLeading: false,
-            leading: canPop
-                ? FushiRouteBackButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                  )
-                : null,
-            title: ListenableBuilder(
-              listenable: _controller,
-              builder: (BuildContext context, Widget? child) {
-                final double o = fushiAppleInlineTitleOpacity(progress());
-                return ExcludeSemantics(
-                  excluding: o == 0,
-                  child: Opacity(opacity: o, child: child),
-                );
-              },
-              child: Text(widget.title),
+          if (form)
+            // macOS 27 窗口工具栏（窗口标题栏下面一行）：‹ 返回（只在能返回时）+
+            // 13 号 bold 标题靠前、左缘对齐内容列；右侧动作（恢复默认圆钮）贴
+            // 详情窗格右缘，同一行垂直居中。
+            _formToolbar(
+              context,
+              FushiAppleNavBar(
+                primary: false,
+                automaticallyImplyLeading: false,
+                leading: canPop
+                    ? FushiRouteBackButton(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      )
+                    : null,
+                centerTitle: false,
+                titleTextStyle: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                  color: appleColorsOf(context).label,
+                ),
+                title: Text(widget.title),
+                actions: widget.actions,
+              ),
+            )
+          else
+            FushiAppleNavBar(
+              // 已在 SafeArea 里，栏不再让位状态栏 / 窗口标题栏。
+              primary: false,
+              automaticallyImplyLeading: false,
+              leading: canPop
+                  ? FushiRouteBackButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    )
+                  : null,
+              title: ListenableBuilder(
+                listenable: _controller,
+                builder: (BuildContext context, Widget? child) {
+                  final double o = fushiAppleInlineTitleOpacity(progress());
+                  return ExcludeSemantics(
+                    excluding: o == 0,
+                    child: Opacity(opacity: o, child: child),
+                  );
+                },
+                child: Text(widget.title),
+              ),
+              actions: widget.actions,
             ),
-            actions: widget.actions,
-          ),
           Expanded(
             child: Builder(
               builder: (BuildContext context) {
@@ -1910,7 +1958,9 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                         builder: (BuildContext context, Widget? _) {
                           final double jumpTop = band - slide();
                           return FushiAppleSoftScrollEdge(
-                            visible: consumes
+                            visible: form
+                                ? offset() > 0
+                                : consumes
                                 ? offset() >= band - 0.5
                                 : offset() > 0,
                             solidExtent: jumpTop + _jumpBarHeight.value,
@@ -1918,42 +1968,43 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                         },
                       ),
                     ),
-                    ListenableBuilder(
-                      listenable: _controller,
-                      child: largeTitle,
-                      builder: (BuildContext context, Widget? title) {
-                        final double o = fushiAppleLargeTitleOpacity(
-                          progress(),
-                        );
-                        return Positioned(
-                          top: -slide(),
-                          left: inset,
-                          right: inset,
-                          height: band,
-                          child: ExcludeSemantics(
-                            excluding: o == 0,
-                            child: AnimatedOpacity(
-                              opacity: o,
-                              duration: consumes
-                                  ? Duration.zero
-                                  : fushiMotionDuration(
-                                      context,
-                                      FushiMotion.short,
-                                    ),
-                              child: Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: title,
+                    if (!form)
+                      ListenableBuilder(
+                        listenable: _controller,
+                        child: largeTitle,
+                        builder: (BuildContext context, Widget? title) {
+                          final double o = fushiAppleLargeTitleOpacity(
+                            progress(),
+                          );
+                          return Positioned(
+                            top: -slide(),
+                            left: inset,
+                            right: inset,
+                            height: band,
+                            child: ExcludeSemantics(
+                              excluding: o == 0,
+                              child: AnimatedOpacity(
+                                opacity: o,
+                                duration: consumes
+                                    ? Duration.zero
+                                    : fushiMotionDuration(
+                                        context,
+                                        FushiMotion.short,
+                                      ),
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: title,
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      ),
                     ListenableBuilder(
                       listenable: _controller,
                       child: FushiHeightReporter(
                         onHeight: _onJumpBarHeight,
-                        child: jumpBar,
+                        child: form ? _formColumn(context, jumpBar) : jumpBar,
                       ),
                       builder: (BuildContext context, Widget? bar) =>
                           Positioned(
@@ -1972,6 +2023,55 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
       ),
     );
   }
+
+  /// 本页是否按 macOS 27 grouped form 排：Apple 设计系统、宽屏主从的详情窗格
+  /// （不画返回钮的那一种）、桌面档宽窗。
+  bool _appleForm(BuildContext context) =>
+      !widget.showBack &&
+      (SettingsKitStyle.of(context) == SettingsKitStyle.apple ||
+          isGlassDesign(context)) &&
+      FushiAppleMetrics.of(context).desktop;
+
+  /// grouped form 内容列：两侧留详情内边距，最宽 [kFushiAppleFormMaxWidth]，
+  /// 在剩余空间居中（与 `settingsAppleFormColumn` 包的正文同一条列）。
+  Widget _formColumn(BuildContext context, Widget child) {
+    final double inset = settingsGlassDetailHorizontalInset(context);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: inset),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: kFushiAppleFormMaxWidth),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  /// grouped form 的工具栏行：整个详情窗格宽，起点对齐内容列左缘（标题），
+  /// 终点留详情内边距（动作贴窗格右缘）。[bar] 自带 [_kFormBarInset] 的水平
+  /// 边距，这里抵掉。
+  Widget _formToolbar(BuildContext context, Widget bar) {
+    final double inset = settingsGlassDetailHorizontalInset(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        final double columnLeft =
+            inset +
+            math.max(0, (width - 2 * inset - kFushiAppleFormMaxWidth) / 2);
+        return Padding(
+          padding: EdgeInsetsDirectional.only(
+            start: math.max(0, columnLeft - _kFormBarInset),
+            end: math.max(0, inset - _kFormBarInset),
+          ),
+          child: bar,
+        );
+      },
+    );
+  }
+
+  /// [FushiAppleNavBar] 桌面档自带的水平边距。
+  static const double _kFormBarInset = 12;
 
   /// M3E 叠放形态（与 [FushiPageScaffold] 的 extendBodyBehindHeader 同一约定）：
   /// 正文占满整页，页头 + 跳转条浮在它上面；正文的 MediaQuery 顶部 padding =

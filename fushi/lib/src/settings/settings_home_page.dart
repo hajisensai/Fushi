@@ -27,6 +27,8 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart'
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
+    show AppleEdgeSidebarSurface;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -603,33 +605,38 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           GlassSettingsRenderer.sidebarWidth +
           _wideNavPanelExtraWidth(FushiDesignTokens.of(context)),
       showDivider: false,
+      // macOS 27 系统设置：设置的二级侧栏与主侧栏同一侧栏材质（玻璃随画质档位、
+      // 实色档是实色侧栏底，右缘 0.5 px separator），详情窗格是窗口底。背景图
+      // 在画时侧栏改成浮在图上的分组卡（[_wideNavPanel]），不再垫侧栏底。
       supporting: FushiSidePaneScrollScope(
-        child: Padding(
-          padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-          child: _wideNavPanel(
-            FushiDesignTokens.of(context),
-            glass: true,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                  child: _buildKitSearchBar(wide: true),
-                ),
-                // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
-                // 占满右侧详情窗格。
-                Expanded(
-                  child: _navListEdgeFade(
-                    renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
+        child: _glassSidebarBackdrop(
+          Padding(
+            padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+            child: _wideNavPanel(
+              FushiDesignTokens.of(context),
+              glass: true,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                    child: _buildKitSearchBar(wide: true),
+                  ),
+                  // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
+                  // 占满右侧详情窗格。
+                  Expanded(
+                    child: _navListEdgeFade(
+                      renderer.buildDestinationList(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        selectedDestinationId: selectedDestinationId,
+                        onDestinationSelected: _selectDestination,
+                        pushRoutes: false,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -797,6 +804,19 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
               color: tokens.surfaces.card.withValues(alpha: 0.9),
               child: child,
             ),
+    );
+  }
+
+  /// 玻璃宽屏二级侧栏的侧栏底（[AppleEdgeSidebarSurface]，与主侧栏同一块）；
+  /// 背景图在画时原样返回 [child]（侧栏是浮在图上的分组卡）。
+  Widget _glassSidebarBackdrop(Widget child) {
+    if (FushiPageBackdrop.imageOf(context)) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        const Positioned.fill(child: AppleEdgeSidebarSurface()),
+        child,
+      ],
     );
   }
 
