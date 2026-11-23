@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4584 条。点号进各自文件。
+> 共 4585 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5272](bugs/BUG-5272-jitendex-redirect-not-followed.md) | ✅ | ✅ | jitendex-redirect-not-followed |
 | [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |
 | [BUG-5268](bugs/BUG-5268-windows-display-off-black-screen.md) | 🚧 | 🚧 | windows-display-off-black-screen |
 | [BUG-5263](bugs/BUG-5263-import-dialog-pops-page-above.md) | ✅ | ✅ | import-dialog-pops-page-above |
